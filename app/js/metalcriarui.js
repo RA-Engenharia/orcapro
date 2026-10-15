@@ -419,6 +419,11 @@
           { id: pre + "y", rotulo: "Cota (Y)", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(li.a[1] * 1e4) / 1e4 },
           { id: pre + "z", rotulo: "Z", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(li.a[2] * 1e4) / 1e4 }
         ] });
+        /* VÍNCULOS (js/bimvinculos.js): "Desligar união" por ponta — a ponta solta não segue a peça em que está presa */
+        sec.push({ nome: "Vínculos", params: [
+          { id: pre + "vinc:a", rotulo: "Ponta inicial acompanha ao mover", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.a) },
+          { id: pre + "vinc:b", rotulo: "Ponta final acompanha ao mover", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.b) }
+        ] });
         sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: m.aco, opcoes: ACOS_PERFIL.concat(ACOS_PERFIL.indexOf(m.aco) < 0 ? [m.aco] : []).map(function (a) { return { id: a, rotulo: a }; }) }] });
       } else {
         var q = BMe.quadro(c);
@@ -452,6 +457,13 @@
       var c = caixaDe(id), M = MC(); if (!c || !M) return false;
       var k = String(pid).replace(/^mcrp:/, ""), mud = {};
       if (k === "busca") { this._buscaPeca = { id: id, texto: String(v || "").slice(0, 60) }; return true; }
+      if (k === "vinc:a" || k === "vinc:b") {   /* VÍNCULOS: a op do motor, um Ctrl+Z */
+        var BV = global.BimVinculos, rv = BV ? BV.opPonta(estado(), id, k.slice(5), !v) : { erro: "O motor dos vínculos (js/bimvinculos.js) não carregou." };
+        if (rv.erro) { status(rv.erro); return false; }
+        if (!enviarLote([rv.op], "Vínculo da ponta")) { status("O editor recusou a mudança."); return false; }
+        status((k === "vinc:a" ? "Ponta inicial" : "Ponta final") + (v ? " ligada: acompanha a peça em que está presa." : " desligada: não acompanha mais (Ctrl+Z desfaz)."));
+        return true;
+      }
       if (k === "cat") mud.cat = v;
       else if (k === "giro" || k === "comprimento" || k === "base" || k === "topo" || k === "elevacao" || k === "L" || k === "B") { var n = num(v, NaN); if (!fin(n)) { status("Valor inválido."); return false; } mud[k] = (k === "L" || k === "B") ? n / 1000 : n; }
       else if (k === "t") { var t = num(v, NaN); if (!(t >= 0.5 && t <= 300)) { status("Espessura entre 0,5 e 300 mm."); return false; } mud.t = t / 1000; }

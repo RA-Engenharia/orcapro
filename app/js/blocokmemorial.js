@@ -51,6 +51,12 @@
     return (v < 0 && Number(s) !== 0 ? MENOS : "") + i + (p.length > 1 ? "," + p[1] : "");
   }
   var PH = '<span class="ph">[a definir]</span>';
+  /* referências do sistema construtivo (as mesmas de js/blocokref.js FONTES) */
+  var REFS = {
+    artigo: "MARTINS, C. M. P.; KRAUSE, M. O.; MARINHO, F. J. E.; LINS, I. O. Estudo comparativo do método de construção da casa pré-moldada em relação ao de alvenaria convencional, um estudo de caso em Itacaré, Bahia. Brazilian Journal of Development, Curitiba, v. 10, n. 11, p. 01-22, 2024.",
+    doi: "10.34117/bjdv10n11-037",
+    site: "Fabricante: Blocok Paredes Prontas ORIGINAL (Franquia Blocok, Nova Friburgo/RJ), site oficial https://blocok.vercel.app/ (acesso em 14/10/2026) — duas placas de microconcreto de 15 mm e EPS tipo F antichama, peça de 90 × 90 cm, espessuras de 10, 13, 15 e 20 cm; o site diz “alta resistência de 12MPa” sem dizer de quê e sem laudo (tratado como valor declarado) e lista ensaios sem resultado numérico."
+  };
   /* número com unidade; não finito → [a definir] */
   function N(v, c, u) { var s = br(v, c); return s == null ? PH : s + (u ? NB + u : ""); }
   /* texto livre; vazio → [a definir]; "[...]" inteiro → vermelho */
@@ -189,22 +195,23 @@
           "A estrutura desta edificação são os <b>pilaretes, vergas e cintas de concreto armado</b> moldados dentro das peças, calculados pela NBR 6118. O painel não é considerado elemento resistente; a cinta, porém, é concretada sobre ele e transmite parte da carga por contato. Essa parcela é limitada pela rigidez da cinta (flecha de ℓ/500 e 10 mm); a compressão por contato é verificada no painel como se ele recebesse toda a carga do topo (seção 8).",
           "Diretriz SiNAT nº 019 (maio/2026): transpasse mínimo da amarração de " + pctTxt(DIR.transpasseMin) + " da peça; elemento estrutural a cada " + N(DIR.espacamentoEstruturaMax, 1, "m") + " no máximo; ligação à estrutura a cada fiada, ancorada " + N(DIR.ancoragemLigacao * 100, 0, "cm") + " no mínimo; encunhamento sob a estrutura de " + N(DIR.encunhamentoMin * 1000, 0, "mm") + " no mínimo."
         ]) +
-        '<p class="ref">Fontes do catálogo: ' + esc((BlocokExec && BlocokExec.FONTES && BlocokExec.FONTES.peca) || "[a definir]") + "; pesos: " + esc((BlocokExec && BlocokExec.FONTES && BlocokExec.FONTES.peso) || "[a definir]") + ".</p>";
+        '<p class="ref">Fontes do catálogo: ' + esc((BlocokExec && BlocokExec.FONTES && BlocokExec.FONTES.peca) || "[a definir]") + "; pesos: " + esc((BlocokExec && BlocokExec.FONTES && BlocokExec.FONTES.peso) || "[a definir]") + ".</p>" +
+        '<p class="ref">Referências do sistema construtivo: ' + esc(REFS.artigo) + ' DOI <span class="ref">' + esc(REFS.doi) + "</span> — casa de Itacaré/BA construída com Blocok: placa de 10 cm, 3 fiadas até a laje, equipe de 3 profissionais, juntas com argamassa AC3, pilares e vergas embutidos na peça. " + esc(REFS.site) + "</p>";
     }
 
     /* ======================= 3 Normas */
     var USO = { nbr6118: "Pilaretes, vergas e cintas de concreto armado", nbr6120: "Cargas variáveis e pesos específicos", nbr6123: "Ação do vento", nbr8681: "Combinações de ações e coeficientes", nbr15575: "Deslocamento da vedação ao vento (h/350)", sinat019: "Paginação, amarração e espaçamento de elementos estruturais", nbr16868: "Resistência à flexão da junta — analogia, só informativa" };
+    /* NORMA LIMPA (pedido do gerente, 14/10/2026): o documento do cliente traz
+       número:ano e título — a nota interna de edição ("texto da biblioteca;
+       vigente … — conferir") NÃO sai aqui; a dúvida da edição mora no arquivo
+       interno docs/blocok/DUVIDAS-REFERENCIA.md. O parêntese com "conferir" de
+       um resultado antigo (gravado antes desta revisão) também é tirado. */
+    function normaLimpa(t) { return String(t).replace(/\s*\([^)]*conferir[^)]*\)/gi, "").replace(/\s*—\s*conferir\b/gi, "").trim(); }
     function s3() {
-      var N0 = obj(r.normas), ks = Object.keys(N0), conferir = [];
-      var linhas = ks.map(function (k) {
-        var t = String(N0[k]), cf = /conferir/i.test(t);
-        if (cf) conferir.push(t);
-        return [T(t.replace(/\s*\((texto da biblioteca;)?[^)]*conferir[^)]*\)/i, "")), esc(USO[k] || "—"), cf ? '<span class="na">edição a conferir</span>' : "—"];
-      });
-      if (r.fundacao && FUND.ref) linhas.push([esc(String(FUND.ref).split(" (")[0]), "Fundações — o projeto de fundação é específico", "—"]);
-      var s = tab("Normas e documentos de referência", ["Norma", "Uso neste memorial", "Observação"], linhas, { larg: ["38%", "46%", "16%"] });
-      if (conferir.length) s += caixa("alerta", "Edições a conferir antes da emissão", conferir.map(esc), "O motor de cálculo usou o texto disponível na biblioteca da RA. Para as normas abaixo, a edição vigente é posterior ao texto consultado; conferir se algum valor muda:");
-      return s;
+      var N0 = obj(r.normas), ks = Object.keys(N0);
+      var linhas = ks.map(function (k) { return [T(normaLimpa(N0[k])), esc(USO[k] || "—")]; });
+      if (r.fundacao && FUND.ref) linhas.push([esc(normaLimpa(String(FUND.ref).split(" (")[0])), "Fundações — o projeto de fundação é específico"]);
+      return tab("Normas e documentos de referência", ["Norma", "Uso neste memorial"], linhas, { larg: ["54%", "46%"] });
     }
 
     /* ======================= 4 Modelo estrutural e hipóteses */
@@ -226,7 +233,7 @@
         "<li>Cinta sem diafragma no topo (sem laje) verifica também a flexão horizontal pelo vento entre as paredes transversais. Diafragma neste cálculo: " + esc(dia) + ".</li>" +
         "<li>Verga ou cinta que não passa na altura de 15 cm tem a altura elevada em passos de 5 cm (verga até 45 cm, cinta até 60 cm); a parede é então paginada de novo com essa altura e todos os resultados deste memorial já são os da segunda passada.</li>" +
         "<li>O painel não é considerado elemento resistente à carga vertical. A cinta é concretada sobre ele e transmite parte da carga por contato; essa parcela é limitada pela rigidez da cinta. A verificação do painel à compressão por contato considera, por segurança, a carga inteira do topo.</li>" +
-        "<li>Rigidez do painel para o deslocamento: sanduíche de composição total com faces de f<sub>ck</sub> = " + N(P.fckFace, 0, "MPa") + " (valor declarado pela empresa ao laboratório) — abaixo do escopo da NBR 6118 (C20); a rigidez EI vem do ensaio simulado e é substituída pela do fabricante, quando informada.</li>" +
+        "<li>Rigidez do painel para o deslocamento: sanduíche de composição total com faces de f<sub>ck</sub> = " + N(P.fckFace, 0, "MPa") + " (declarado pelo fabricante, sem laudo; atribuído só ao microconcreto da face) — abaixo do escopo da NBR 6118 (C20); a rigidez EI vem do ensaio simulado e é substituída pela do fabricante, quando informada.</li>" +
         "<li>Fundação: pré-dimensionamento por carga linear característica, com 10 % a mais para o peso da própria fundação. O projeto de fundação é específico (NBR 6122).</li>" +
         "</ul>";
     }
@@ -243,7 +250,7 @@
         ["Estribos", "φ" + (fin(P.estribo) ? br(P.estribo, 1) : "?") + " mm", "f<sub>ywk</sub> = " + N(P.fywk, 0, "MPa") + " (f<sub>ywd</sub> limitada a 435 MPa)"],
         ["Bitolas longitudinais", "φ" + N(P.barraViga, 0) + " mm (vergas e cintas) · φ" + N(P.barraPilar, 0) + " mm (pilaretes)", "Mínimo de 4 φ" + N(P.barraPilar, 0) + " no pilarete estrutural (NBR 6118, 18.4.2)"],
         ["Classe de agressividade", caaTxt || ("CAA " + T(P.caa)), "Fachadas com a CAA do projeto (" + T(P.caa) + "); parede interna com classe mais branda (NBR 6118:2014, Tabela 6.1, nota a). Cobrimento nominal de viga e pilar: " + (cobTxt || PH) + " (NBR 6118, Tabela 7.2)"],
-        ["Faces do painel", "Microconcreto de 1,5 cm", "f<sub>ck</sub> informado: " + N(P.fckFace, 0, "MPa") + " — declarado pela empresa; usado no ensaio simulado (seção 7)"],
+        ["Faces do painel", "Microconcreto de 1,5 cm", "f<sub>ck</sub> " + N(P.fckFace, 0, "MPa") + " — declarado pelo fabricante, sem laudo (site oficial: “alta resistência de 12MPa”, sem dizer de quê); usado só como f<sub>ck</sub> da face no ensaio simulado (seção 7), nunca como resistência do painel"],
         ["Núcleo", "EPS", "Sem função resistente; retirado nas faixas de concreto"],
         ["Argamassa de assentamento", "Junta de 1,5 cm cheia nos dois sentidos", "Consumo <b>estimado</b> — parâmetro editável, a confirmar com o fabricante"]
       ];
@@ -324,6 +331,8 @@
           "<p>Resistência de projeto adotada: M<sub>Rd,x</sub> = " + N(en.MRdX, 3, "kN·m/m") + " (governa: " + esc(en.governaX || "") + "); M<sub>Rd,y</sub> = " + N(en.MRdY, 3, "kN·m/m") + " (governa: " + esc(en.governaY || "") + "); V<sub>Rd</sub> = " + N(en.VRd, 2, "kN/m") + "; N<sub>Rd</sub> = " + N(en.NRd, 1, "kN/m") + " (governa: " + esc(en.governaN || "") + ").</p>";
       });
       s += caixa("alerta", "Limite do modelo", [], "O f<sub>ck</sub> de 12 MPa das faces está <b>abaixo do escopo da NBR 6118</b> (concreto C20 ou superior): as fórmulas do concreto simples são <b>extrapoladas</b> para esse valor e o resultado é de ensaio simulado, não de laboratório. Os valores do ensaio do fabricante, quando informados, substituem os simulados.");
+      var EF = BlocokEnsaio && BlocokEnsaio.ENSAIOS_FABRICANTE;
+      if (EF && arr(EF.nomes).length) s += "<p>Ensaios que o fabricante <b>lista</b> no site oficial, só pelo nome — o site não publica o resultado de nenhum, e nada disso entra neste cálculo: " + EF.nomes.map(esc).join("; ") + '. <span class="ref">Fonte: ' + esc(EF.fonte) + ".</span></p>";
       return s;
     }
 
@@ -460,7 +469,7 @@
         [acoCalc ? "Aço (armadura calculada, CA-50 e estribos)" : "Aço (armadura construtiva do motor executivo, CA-50 e estribos)", N(TOT.acoKg, 1, "kg") + (ac.length ? " — " + ac.map(function (a) { return "φ" + br(a.bitola, a.bitola % 1 ? 1 : 0) + ": " + br(a.kg, 1) + NB + "kg"; }).join("; ") : "")],
         ["Argamassa de assentamento (estimada)", N(TOT.argamassaM3, 2, "m³")], ["Peso total das paredes", N(TOT.pesoTotalKg, 0, "kg")]
       ], { cls: "ficha", larg: ["46%", "54%"] }) +
-        (acoCalc ? '<p class="ref">O aço dos quantitativos é a armadura calculada nas seções 9 a 11 (contraverga e porta-estribo seguem construtivos); conferir contra o detalhamento antes da compra.</p>'
+        (acoCalc ? '<p class="ref">O aço dos quantitativos é a armadura calculada nas seções 9 a 11 (contraverga e porta-estribo seguem construtivos); na compra, vale o detalhamento das pranchas.</p>'
           : '<p class="ref">O aço dos quantitativos é a armadura construtiva do motor executivo (2 barras por elemento); a armadura calculada nas seções 9 a 11 prevalece onde for maior e deve ser conferida contra o detalhamento antes da compra.</p>');
       return s;
     }

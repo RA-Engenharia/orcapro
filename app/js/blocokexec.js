@@ -118,6 +118,14 @@
         faces: 2, telaLarguraM: 0.10, acIIIkgPorM: 1.0, seladorLPorM: 0.03, estimado: true
       },
       fiadasPorDia: 2,            // referência Blocom (TCC); o Blocok não publica — estimado
+      /* PRODUTIVIDADE DA EQUIPE na obra inteira (várias paredes ao mesmo tempo) —
+         lida pelo cronograma comparativo (js/blocokref.js) e pelo manual.
+         48,20 m²/dia: quadro "Comparativo Blocok x Bloco" de site NÃO oficial (não
+         diz o tamanho da equipe); 3 profissionais: MARTINS et al., BJD v. 10 n. 11,
+         2024, p. 8 ("3 profissionais são o suficiente", casa de Itacaré/BA). O
+         orçamento (js/blocokorc.js) segue com 45 m²/dia: é o lado do custo mais alto. */
+      produtividade: { m2Dia: 48.2, equipe: 3, estimado: true,
+        fonte: "48,20 m²/dia: quadro “Comparativo Blocok x Bloco” de site não oficial (sem tamanho de equipe); equipe de 3 profissionais: MARTINS et al., BJD v. 10, n. 11, 2024, p. 8" },
       encunhamento: DIRETRIZ.encunhamentoMin
     };
   }
@@ -862,7 +870,8 @@
     etapas.push({ n: etapas.length + 1, etapa: "Pilaretes e cinta", texto: "Com a parede no topo, conferir prumo, retirar o EPS das faixas dos pilaretes" + (res.reforcos.cintas.length ? " e da cinta de respaldo" : "") + ", armar e concretar em camadas, adensando." });
     if (res.topo === "encunhamento") etapas.push({ n: etapas.length + 1, etapa: "Encunhamento", texto: "Folga de pelo menos " + Math.round(Math.max(cfg.encunhamento, DIRETRIZ.encunhamentoMin) * 1000) + " mm sob a estrutura; encunhar depois de a estrutura acomodar." });
     etapas.push({ n: etapas.length + 1, etapa: "Tratamento de juntas", texto: "Só depois de concretar a laje e retirar o escoramento. Raspar a junta (0 a 1 cm), quebrar a quina, lixar 2,5 a 3 cm de cada lado, selador diluído 1:1, AC-III com aditivo, tela de fibra de vidro e segunda demão de AC-III. Depois, massa e pintura (sem chapisco nem reboco)." });
-    return { etapas: etapas, diasAssentamento: dias, fiadasPorDia: por, estimado: true };
+    var pr = cfg.produtividade || cfgPadrao().produtividade;
+    return { etapas: etapas, diasAssentamento: dias, fiadasPorDia: por, m2Dia: pr.m2Dia, equipe: pr.equipe, fonteProdutividade: pr.fonte, estimado: true };
   }
 
   return {

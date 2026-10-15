@@ -901,7 +901,7 @@
     return { op: { op: "fixar", ids: muda, fixo: !!fixo } };
   }
   /* CRIAR SIMILAR: quantos pontos a peça pede e a op que cria a nova */
-  var SEM_SIMILAR = ["id", "marca", "comentarios", "fixo", "geoUnioes", "uniaoGeo", "cortesFace", "avisosUniao", "pinturas", "divFaces", "pinturasCalc", "uniao", "topo", "juntas",
+  var SEM_SIMILAR = ["id", "marca", "comentarios", "fixo", "geoUnioes", "uniaoGeo", "cortesFace", "avisosUniao", "pinturas", "divFaces", "pinturasCalc", "uniao", "topo", "juntas", "vinculoSolto",
                      "faces", "medidasCamadas", "recuoIni", "recuoFim", "alturaEfetiva", "avisoNivel", "v1Migrado", "unioes", "comprimentoLiq"];
   function pontosSimilar(el) {
     if (!el) return 0;
@@ -1085,6 +1085,10 @@
         if (f.host.t > td) f.host = { id: o.novo, t: BE.tNaParede(d2, pos) }; else f.host.t = BE.tNaParede(d1, pos);
       });
       ["marca", "fixo", "geoUnioes", "unioes", "pinturas", "divFaces"].forEach(function (k) { delete d2[k]; });
+      /* VÍNCULOS (js/bimvinculos.js): a ponta desligada continua só no pedaço que ficou com ela — a junta nova
+         (o fim de um, o começo do outro) nasce ligada */
+      if (d1.vinculoSolto) { delete d1.vinculoSolto.b; if (!Object.keys(d1.vinculoSolto).length) delete d1.vinculoSolto; }
+      if (d2.vinculoSolto) { delete d2.vinculoSolto.a; if (!Object.keys(d2.vinculoSolto).length) delete d2.vinculoSolto; }
       d1.id = o.id; ctx.caixas[o.id] = d1;
       inserir(ctx, "caixa", o.novo, d2);
       return true;

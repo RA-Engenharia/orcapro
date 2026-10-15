@@ -46,8 +46,26 @@
 
   /* PARÂMETROS DOS MATERIAIS (MPa, salvo indicação). `fonte` diz de onde veio;
      `ref` = valor de referência RA quando a fonte é faixa de literatura. */
+  /* OS 12 MPa (decisão de 14/10/2026): o site oficial diz "O BLOCOK possui alta
+     resistência de 12MPa" sem dizer de quê nem trazer laudo, e no laudo UFMG/LAEES
+     2022 o número foi informado pela empresa, não ensaiado. Entra SÓ aqui, como
+     fck do MICROCONCRETO DA FACE (é o único lugar em que o ensaio simulado aceita
+     valor do fabricante) — nunca como resistência ou função estrutural do painel. */
+  var DECLARADO = {
+    valor: 12, unidade: "MPa", uso: "fck do microconcreto da face (PARAM.face.fck)", semLaudo: true,
+    fonte: "declarado pelo fabricante, sem laudo — site oficial blocok.vercel.app (acesso 14/10/2026): “alta resistência de 12MPa”, sem dizer de quê",
+    naoE: "não é resistência do painel nem dá função estrutural a ele"
+  };
+  /* Os 8 ensaios que o site oficial LISTA (14/10/2026), só com o nome: o site não
+     publica resultado numérico de nenhum. Nada aqui entra no cálculo. */
+  var ENSAIOS_FABRICANTE = {
+    fonte: "site oficial blocok.vercel.app (acesso 14/10/2026) — lista sem resultado numérico",
+    situacao: "listado pelo fabricante, sem resultado publicado",
+    nomes: ["Calor e choque térmico", "Ação de cargas provenientes de peças suspensas", "Impacto de corpo duro", "Estanqueidade",
+      "Impacto de corpo mole", "Desempenho estrutural à compressão excêntrica de paredes", "Assentamento de placas cerâmicas", "Ruído externo e interno"]
+  };
   var PARAM = {
-    face: { t: 0.015, fck: 12, fonte: "faces de 1,5 cm, fck 12 MPa declarado pela empresa ao laboratório (laudo UFMG/LAEES 2022) — abaixo do C20 do escopo da NBR 6118 (1.2): as fórmulas são EXTRAPOLADAS" },
+    face: { t: 0.015, fck: DECLARADO.valor, declarado: true, fonte: "faces de 1,5 cm (site oficial e artigo BJD 2024); fck 12 MPa " + DECLARADO.fonte + " (no laudo UFMG/LAEES 2022 o valor foi informado pela empresa, não ensaiado) — atribuído ao microconcreto da face, " + DECLARADO.naoE + "; abaixo do C20 do escopo da NBR 6118 (1.2): as fórmulas são EXTRAPOLADAS" },
     gamaCSimples: { valor: 1.68, fonte: "NBR 6118:2014, 24.5.2.1 — concreto simples: γc = 1,2 × 1,4; tensões resistentes 24.5.2.2: σcRd = 0,85 fcd, σctRd = 0,85 fctd" },
     eps: { tauK: 0.055, Gc: 1.9, Ec: 3.2, fTperp: 0.080, fonte: "EPS 70 (≈ classe F 13–15 kg/m³): τ médio 69 kPa e G 1,9 MPa (Vėjelis et al., Materials Science 2008, EN 12090), τ característico ≈ 69 − 1,645 × 8,6 ≈ 55 kPa; módulo de compressão 3,2 MPa (geofoam 14 kg/m³, Syracuse); aderência face–EPS ≥ 0,08 MPa (Diretriz SiNAT 019) — pesquisa RA Brain 14/10/2026" },
     gamaEps: { valor: 2.0, fonte: "parâmetro RA (mesmo γm da alvenaria, NBR 16868-1)" },
@@ -115,5 +133,5 @@
     };
   }
 
-  return { PARAM: PARAM, simular: simular };
+  return { PARAM: PARAM, DECLARADO: DECLARADO, ENSAIOS_FABRICANTE: ENSAIOS_FABRICANTE, simular: simular };
 });

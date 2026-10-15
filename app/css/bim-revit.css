@@ -1027,3 +1027,5 @@ body.bim-app .modal .body input[type="number"]:not(.cell) {
 body.bim-app .modal .body input:not([type]):not(.cell):focus-visible,
 body.bim-app .modal .body input[type="text"]:not(.cell):focus-visible,
 body.bim-app .modal .body input[type="number"]:not(.cell):focus-visible { border-color: var(--aco); outline: none; box-shadow: var(--anel); }
+/* VÍNCULOS (js/bimvinculos.js, 14/10/2026): no arraste, as peças que ACOMPANHAM (o fantasma da que anda é o verde) */
+.sl-cam .sl-vinculo { stroke: #f59e0b; stroke-width: 1.6; stroke-dasharray: 6 3; fill: none; }

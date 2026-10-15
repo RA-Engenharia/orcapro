@@ -365,8 +365,30 @@
   };
   var ALT_MAIUSCULA = 0.716;   /* Arial: altura da maiúscula / corpo — texto do CAD (maiúscula) → corpo do SVG */
   var LOGO_RA = { x: 4, y: 65, w: 30.58, h: 25 };   /* a caixa do logo no gabarito (o logo vetorizado mede 30,58 × 25) */
-  function largTexto(s, h) { return txt(s).length * 0.6 * h / ALT_MAIUSCULA; }
-  function cabe(s, h, wmax) { var w = largTexto(s, h); return (wmax > 0 && w > wmax) ? Math.max(0.5, Math.floor(h * wmax / w * 100) / 100) : h; }
+  /* LARGURA DO TEXTO EM ARIAL (a letra do carimbo na tela, no PDF e no DXF — estilo RA-ARIAL): avanço de
+     cada caractere em milésimos do corpo (Arial; negrito +8 %; acento = a letra sem acento; o que não está
+     na tabela vale 0,6 do corpo, a conta antiga). Até 14/10/2026 a conta era 0,6 do corpo para TODA letra:
+     em texto todo em maiúsculas (o aviso de propriedade, nome de empresa) ela erra para menos, e um nome de
+     empresa comprido faria o aviso passar da caixa do carimbo sem encolher. h = altura da MAIÚSCULA. */
+  var ARIAL = (function () {
+    /* ASCII 32..126, na ordem */
+    var w = [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+      1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+      333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584];
+    var t = {};
+    for (var i = 0; i < w.length; i++) t[String.fromCharCode(32 + i)] = w[i];
+    t['º'] = 365; t['ª'] = 370; t['°'] = 400; t['×'] = 584; t['²'] = 333; t['³'] = 333; t['—'] = 1000; t['–'] = 556; t['·'] = 278; t['≥'] = 549; t['≤'] = 549; t['Ø'] = 778; t['ø'] = 611; t['φ'] = 600;
+    return t;
+  })();
+  var SEM_ACENTO = { 'Á': 'A', 'À': 'A', 'Â': 'A', 'Ã': 'A', 'Ä': 'A', 'É': 'E', 'È': 'E', 'Ê': 'E', 'Ë': 'E', 'Í': 'I', 'Ì': 'I', 'Î': 'I', 'Ï': 'I', 'Ó': 'O', 'Ò': 'O', 'Ô': 'O', 'Õ': 'O', 'Ö': 'O',
+    'Ú': 'U', 'Ù': 'U', 'Û': 'U', 'Ü': 'U', 'Ç': 'C', 'Ñ': 'N', 'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'ä': 'a', 'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e', 'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+    'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o', 'ö': 'o', 'ú': 'u', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ç': 'c', 'ñ': 'n' };
+  function largTexto(s, h, negrito) {
+    s = txt(s); var w = 0;
+    for (var i = 0; i < s.length; i++) { var c = s.charAt(i), v = ARIAL[SEM_ACENTO[c] || c]; w += v != null ? v : 600; }
+    return w / 1000 * (h / ALT_MAIUSCULA) * (negrito ? 1.08 : 1);
+  }
+  function cabe(s, h, wmax, negrito) { var w = largTexto(s, h, negrito); return (wmax > 0 && w > wmax) ? Math.max(0.5, Math.floor(h * wmax / w * 100) / 100) : h; }
   function carimboRA(pr, folha, projeto, empresa, geo, opts) {
     opts = opts || {};
     var g = geo || geometriaDe(pr), car = g.carimbo, k = car.k || car.w / CARIMBO_RA.w, H0 = CARIMBO_RA.h, W0 = CARIMBO_RA.w;
@@ -377,7 +399,7 @@
     function tx(s, x, y, h, o) {
       o = o || {}; s = txt(s);
       if (!s && !o.param) return;
-      out.textos.push({ s: s, x: X(x), y: Yt(y), h: r2(cabe(s, h, o.wmax || 0) * k), al: o.al || 'E', camada: o.camada || 'RA-CARIMBO-TEXTO',
+      out.textos.push({ s: s, x: X(x), y: Yt(y), h: r2(cabe(s, h, o.wmax || 0, o.negrito) * k), al: o.al || 'E', camada: o.camada || 'RA-CARIMBO-TEXTO',
                         negrito: !!o.negrito, destaque: !!o.destaque, param: o.param || '', campo: o.campo || '' });
     }
     function rot(s, x, ytopo) { tx(s, x + 1, ytopo - 2.4, 1.6, { camada: 'RA-CARIMBO-ROTULO', campo: 'rotulo' }); }
@@ -673,7 +695,7 @@
     listaFolhas: listaFolhas, listaVistas: listaVistas, tabelaRevisoes: tabelaRevisoes, blocoDeLista: blocoDeLista,
     /* modelo de carimbo RA e o Gerar pranchas (09/10/2026) */
     CARIMBO_RA: CARIMBO_RA, MODELOS_CARIMBO: MODELOS_CARIMBO, CAMADAS_CARIMBO_RA: CAMADAS_CARIMBO_RA, ALT_MAIUSCULA: ALT_MAIUSCULA, ESCALAS_FOLHA: ESCALAS_FOLHA,
-    modeloCarimbo: modeloCarimbo, geometriaDe: geometriaDe, dadosCarimbo: dadosCarimbo, carimboRA: carimboRA, tituloCurto: tituloCurto, fmtRegistro: fmtRegistro, cabe: cabe,
+    modeloCarimbo: modeloCarimbo, geometriaDe: geometriaDe, dadosCarimbo: dadosCarimbo, carimboRA: carimboRA, tituloCurto: tituloCurto, fmtRegistro: fmtRegistro, cabe: cabe, largTexto: largTexto,
     escolherEscala: escolherEscala, empacotar: empacotar, gerarJogo: gerarJogo };
   global.Prancha = Prancha;
   if (typeof module !== 'undefined' && module.exports) module.exports = Prancha;

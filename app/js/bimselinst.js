@@ -173,7 +173,7 @@
           SL.pegaJanela({ x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h, modo: "cruzando" }, SL.pecasDoDesenho(d)).forEach(function (u) { vis[u] = 1; });
           return vis;
         }
-        arr(d.cortes).forEach(function (x) { if (x && x.u) vis[x.u] = 1; });
+        arr(d.cortes).forEach(function (x) { if (x && x.u) vis[x.u] = 1; arr(x && x.partes).forEach(function (q) { if (q && q.u) vis[q.u] = 1; }); });   /* o contorno da união de paredes guarda as peças de origem em `partes` (js/bimuniao.js) */
         arr(d.linhasUd).forEach(function (x) { if (x && x.u) vis[x.u] = 1; });
         arr(d.acima).forEach(function (x) { if (x && x.u) vis[x.u] = 1; });
       } catch (e) {}

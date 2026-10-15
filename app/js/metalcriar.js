@@ -288,6 +288,9 @@
     var m = c.metal, novo;
     if (m.kind === "perfil") {
       var li = linhaAtual(c), a = li.a.slice(), b = li.b.slice();
+      /* VÍNCULOS (js/bimvinculos.js, 14/10/2026): a peça refeita com as DUAS pontas dadas — a ligada, que acompanhou o
+         elemento movido, e a outra exatamente onde estava. A direção é a mesma: giro, justificação e espelhar valem iguais */
+      if (v3ok(mud.a) && v3ok(mud.b)) { a = V(mud.a); b = V(mud.b); }
       var dir = unit(sub(b, a)) || [1, 0, 0];
       if (mud.comprimento != null) { var Ln = num(mud.comprimento, NaN); if (!(Ln > 0.01 && Ln <= 60)) return { erro: "Comprimento entre 1 cm e 60 m." }; b = add(a, mul(dir, Ln)); }
       var vert = Math.abs(dir[1]) > 0.999;

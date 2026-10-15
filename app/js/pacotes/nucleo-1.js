@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.143",
+versao: "1.2.144",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -66256,6 +66256,9 @@ var ang = angGrau * Math.PI / 180;
 var vaos = (opts.vaos || []).map(function (v) {
 return ret(num(v.x), num(v.y), num(v.l), num(v.c));
 });
+var furos = (opts.furos || []).filter(function (f) { return f && f.length >= 3; }).map(function (f) {
+return f.map(function (p) { return [num(p[0]), num(p[1])]; });
+});
 var cb = caixa(amb);
 var cx = (cb.x0 + cb.x1) / 2, cy = (cb.y0 + cb.y1) / 2;
 var ambG = ang ? girar(amb, -ang, cx, cy) : amb;
@@ -66285,6 +66288,13 @@ var aBruta = area(pg);
 if (aBruta <= tolA) continue;
 var pw = ang ? girar(pg, ang, cx, cy) : pg;
 var aVao = vaos.length ? uniaoVaos(pw, vaos) : 0;
+if (furos.length) {
+var celW = ang ? girar(cel, ang, cx, cy) : cel;
+for (var fi = 0; fi < furos.length; fi++) {
+var ifu = recortar(furos[fi], celW);
+if (ifu.length >= 3) aVao += area(ifu);
+}
+}
 if (aVao > aBruta) aVao = aBruta;
 var aLiq = aBruta - aVao;
 if (aLiq <= tolA) continue;
@@ -66317,7 +66327,10 @@ area: r4(aLiq)
 if (menorRecorte === Infinity) menorRecorte = null;
 var bordas = this._bordas(cg, offX, offY, mx, my, pl, pc);
 var areaVaoTotal = uniaoVaos(amb, vaos);
-var somaSolta = 0;
+var areaFuros = 0;
+for (var fk = 0; fk < furos.length; fk++) areaFuros += area(furos[fk]);
+areaVaoTotal += areaFuros;
+var somaSolta = areaFuros;
 for (var vj = 0; vj < vaos.length; vj++) {
 var ivAmb = recortar(amb, vaos[vj]);
 if (ivAmb.length >= 3) somaSolta += area(ivAmb);
@@ -66344,8 +66357,21 @@ menorRecorte: menorRecorte != null ? r3(menorRecorte) : null,
 recorteMin: r3(recMin), fracaoRente: RENTE,
 bordas: bordas,
 vaos: (opts.vaos || []).slice(),
+furos: furos, areaFuros: r4(areaFuros),
 avisos: avisosPag
 };
+},
+_nota: function (res, pl, pc) {
+if (!res || !res.ok) return -1e9;
+var menor = res.menorRecorte == null ? Math.min(pl, pc) : res.menorRecorte;
+var b = res.bordas || { x: { inicio: 0, fim: 0 }, y: { inicio: 0, fim: 0 } };
+var assim = Math.abs(b.x.inicio - b.x.fim) + Math.abs(b.y.inicio - b.y.fim);
+return menor * 1000 - res.bolachas * 10000 - (res.rentes || 0) * 10000 + res.inteiras * 0.5 - assim * 60;
+},
+notaDe: function (res, peca) {
+if (!res || !res.ok) return -1e9;
+var pe = peca || res.peca || {};
+return this._nota(res, num(pe.l), num(pe.c));
 },
 _notaRapida: function (cg, offX, offY, mx, my, pl, pc, recMin) {
 var b = this._bordas(cg, offX, offY, mx, my, pl, pc);
@@ -66393,18 +66419,14 @@ if (!(pl > 0) || !(pc > 0)) return { ok: false, motivo: "Informe as duas dimensÃ
 var j = opts.junta != null ? num(opts.junta) : 0.003;
 var mx = pl + j, my = pc + j;
 var recMin = opts.recorteMin != null ? num(opts.recorteMin) : this.recorteMinDe(pl, pc);
+var fixoX = opts.fixoX != null && isFinite(num(opts.fixoX)) ? num(opts.fixoX) : null;
+var fixoY = opts.fixoY != null && isFinite(num(opts.fixoY)) ? num(opts.fixoY) : null;
 function rodar(ox, oy) {
 var o = {}; for (var k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) o[k] = opts[k];
-o.offX = ox; o.offY = oy;
+o.offX = fixoX != null ? fixoX : ox; o.offY = fixoY != null ? fixoY : oy;
 return self.paginar(o);
 }
-function nota(res) {
-if (!res || !res.ok) return -1e9;
-var menor = res.menorRecorte == null ? Math.min(pl, pc) : res.menorRecorte;
-var b = res.bordas || { x: { inicio: 0, fim: 0 }, y: { inicio: 0, fim: 0 } };
-var assim = Math.abs(b.x.inicio - b.x.fim) + Math.abs(b.y.inicio - b.y.fim);
-return menor * 1000 - res.bolachas * 10000 - (res.rentes || 0) * 10000 + res.inteiras * 0.5 - assim * 60;
-}
+function nota(res) { return self._nota(res, pl, pc); }
 var base = rodar(0, 0);
 if (!base.ok) return base;
 var cbb = caixa(base.ambiente);
@@ -66421,12 +66443,12 @@ if (n > 1 && nota(borda(n - 1)) > nota(borda(n))) n--;
 return min + borda(n);
 }
 var central = rodar(centro(cgb.x0, cgb.x1, mx, pl), centro(cgb.y0, cgb.y1, my, pc));
-var passos = Math.max(12, Math.min(60, Math.round(mx / 0.005)));
-var passosY = Math.max(12, Math.min(60, Math.round(my / 0.005)));
+var passos = fixoX != null ? 1 : Math.max(12, Math.min(60, Math.round(mx / 0.005)));
+var passosY = fixoY != null ? 1 : Math.max(12, Math.min(60, Math.round(my / 0.005)));
 var cands = [];
 for (var a = 0; a < passos; a++) {
 for (var b = 0; b < passosY; b++) {
-var ox = cgb.x0 + (a / passos) * mx, oy = cgb.y0 + (b / passosY) * my;
+var ox = fixoX != null ? fixoX : cgb.x0 + (a / passos) * mx, oy = fixoY != null ? fixoY : cgb.y0 + (b / passosY) * my;
 cands.push({ x: ox, y: oy, n: self._notaRapida(cgb, ox, oy, mx, my, pl, pc, recMin) });
 }
 }
@@ -66643,7 +66665,8 @@ var cb = caixa(res.ambiente);
 var esc = (larg - mg * 2) / Math.max(cb.l, 0.001);
 var altPx = cb.c * esc + mg * 2;
 function X(v) { return mg + (v - cb.x0) * esc; }
-function Y(v) { return altPx - mg - (v - cb.y0) * esc; }
+var yBaixo = !!opts.yBaixo;
+function Y(v) { return yBaixo ? mg + (v - cb.y0) * esc : altPx - mg - (v - cb.y0) * esc; }
 var corInt = opts.corInteira || "#e8eef4";
 var corRec = opts.corRecorte || "#f6d9b0";
 var corBol = opts.corBolacha || "#f2b8b8";
@@ -66661,8 +66684,24 @@ if (p.bolacha) h += '<path d="' + d + '" fill="url(#pgHachB)" opacity="0.55"/>';
 h += '<rect x="' + r3(X(num(v.x))) + '" y="' + r3(Y(num(v.y) + num(v.c))) + '" width="' + r3(num(v.l) * esc) +
 '" height="' + r3(num(v.c) * esc) + '" fill="#fff" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>';
 });
+(res.furos || []).forEach(function (f) {
+var df = f.map(function (q, i) { return (i ? "L" : "M") + r3(X(q[0])) + " " + r3(Y(q[1])); }).join(" ") + " Z";
+h += '<path d="' + df + '" fill="#fff" stroke="#0f172a" stroke-width="1.4"/>';
+});
+if (opts.partida && opts.partida.length === 2) {
+var px = r3(X(num(opts.partida[0]))), py = r3(Y(num(opts.partida[1])));
+h += '<g data-pag-partida="1"><circle cx="' + px + '" cy="' + py + '" r="6" fill="none" stroke="#1a6cb5" stroke-width="2"/>' +
+'<line x1="' + (px - 10) + '" y1="' + py + '" x2="' + (px + 10) + '" y2="' + py + '" stroke="#1a6cb5" stroke-width="1.4"/>' +
+'<line x1="' + px + '" y1="' + (py - 10) + '" x2="' + px + '" y2="' + (py + 10) + '" stroke="#1a6cb5" stroke-width="1.4"/></g>';
+}
 var dAmb = res.ambiente.map(function (q, i) { return (i ? "L" : "M") + r3(X(q[0])) + " " + r3(Y(q[1])); }).join(" ") + " Z";
 h += '<path d="' + dAmb + '" fill="none" stroke="#0f172a" stroke-width="2.2"/>';
+if (opts.marcasBase && opts.marcasBase.length) {
+var yb = Y(cb.y0);
+h += '<g data-pag-marcas="' + opts.marcasBase.length + '">';
+opts.marcasBase.forEach(function (sx) { var xx = r3(X(num(sx))); h += '<path d="M' + xx + " " + r3(yb + 2) + ' l-4 9 h8 z" fill="#0f766e"/>'; });
+h += '<text x="' + (larg - mg) + '" y="' + (mg - 22) + '" text-anchor="end" font-family="Arial" font-size="11.5" fill="#0f766e">â–² junta do piso na base da parede</text></g>';
+}
 var yc = altPx - mg + 22, xc = mg - 26;
 h += '<line x1="' + X(cb.x0) + '" y1="' + yc + '" x2="' + X(cb.x1) + '" y2="' + yc + '" stroke="#0f172a" stroke-width="1"/>';
 h += '<text x="' + ((X(cb.x0) + X(cb.x1)) / 2) + '" y="' + (yc - 5) + '" text-anchor="middle" font-family="Arial" font-size="12" fill="#0f172a">' +

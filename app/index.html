@@ -66,6 +66,7 @@
   <link rel="stylesheet" href="css/bimcotas.css">
   <link rel="stylesheet" href="css/bimprops.css">
   <link rel="stylesheet" href="css/bimtabela.css">
+  <link rel="stylesheet" href="css/bimpaginacao.css">
   <link rel="stylesheet" href="css/bimcorescat.css">
   <link rel="stylesheet" href="css/tour360.css">
   <link rel="stylesheet" href="css/visual.css">
@@ -424,6 +425,8 @@
   <script src="js/ifcp3.js"></script>
   <!-- P2-C: acabamento por ambiente (motor puro: piso, rodapé sem as portas, parede por face sem os vãos, teto) -->
   <script src="js/bimacabamento.js"></script>
+  <!-- PAGINAÇÃO NO MODELO (14/10/2026): do ambiente à paginação de piso e revestimento — motor puro (contorno na face, opções, receita gravada, herança piso → parede) -->
+  <script src="js/bimpaginacao.js"></script>
   <!-- P5: tabela/quantidades (motor puro; a op tabela no replay do js/bimedit.js) e anotação parte 1 (identificadores) -->
   <script src="js/bimtabela.js"></script>
   <script src="js/bimanot.js"></script>
@@ -646,6 +649,7 @@
   <script src="js/blocokcalc.js"></script>
   <script src="js/blocokmodelo.js"></script>
   <script src="js/blocokorc.js"></script>
+  <script src="js/blocokref.js"></script>
   <script src="js/blocokexecxls.js"></script>
   <script src="js/blocokmemorial.js"></script>
   <script src="js/blocokmanual.js"></script>
@@ -655,6 +659,8 @@
   <script src="js/bimpropsui.js"></script>
   <!-- P2-D: ambientes na tela (comando Ambiente, identificador na planta, esquema de cores, Navegador) — só com a prévia do modelador -->
   <script src="js/bimambienteui.js"></script>
+  <!-- PAGINAÇÃO NO MODELO: a tela (Paginar piso / revestimento pelo ambiente, planta baixa, 3D, botão direito, pranchas) -->
+  <script src="js/bimpaginacaoui.js"></script>
   <!-- P7: anotação nas vistas 2D (cotas por referência, texto, nuvem de revisão, linhas e regiões) — só com a prévia do modelador -->
   <script src="js/bimanot2dui.js"></script>
   <!-- COTAS (13/10/2026): cotar fácil — a cota no 3D, na planta e no corte (encaixe, valor antes do clique, Tab face/eixo), Cotar seleção, Cotar a vista, coordenada, nível TOS/TOL, inclinação, furação de chapa; cotas associativas (órfã em vermelho) — só com a prévia do modelador -->
@@ -665,6 +671,9 @@
   <script src="js/bimbarrasnaps.js"></script>
   <script src="js/bimplantamodelar.js"></script>
   <script src="js/bimselecao.js"></script>
+  <!-- VÍNCULOS (14/10/2026): mover ou esticar uma parede/barra leva junto o que está amarrado (canto L, T, emenda, nó da metálica, sapata, ligação desenhada); Alt segurado move só a peça — motor puro + a fiação da tela -->
+  <script src="js/bimvinculos.js"></script>
+  <script src="js/bimvinculosui.js"></script>
   <!-- SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026): o clique direito na peça (3D, planta, corte) — mesmo tipo, descrição, peça pronta, categoria; nesta vista × no projeto; apagar/ocultar/isolar em lote -->
   <script src="js/bimselinst.js"></script>
   <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->

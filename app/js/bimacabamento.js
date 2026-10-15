@@ -63,7 +63,12 @@
     areaPiso: { un: "m2", rotulo: "Área de piso (face a face)" },
     rodape: { un: "m", rotulo: "Rodapé (perímetro − portas)" },
     areaParede: { un: "m2", rotulo: "Área de parede (por face, − vãos)" },
-    areaTeto: { un: "m2", rotulo: "Área de teto (ou do forro)" }
+    areaTeto: { un: "m2", rotulo: "Área de teto (ou do forro)" },
+    /* PAGINAÇÃO NO MODELO (js/bimpaginacao.js): as peças a comprar da paginação
+       GRAVADA no ambiente (número seguro, com a reserva). Sem paginação, a
+       medida não existe — a linha fica pendente com o motivo, nunca zero. */
+    pecasPiso: { un: "un", rotulo: "Peças de piso (paginação)" },
+    pecasParede: { un: "un", rotulo: "Peças de revestimento (paginação)" }
   };
   /* os acabamentos do ambiente: o parâmetro (campo), a medida e as
      classes do mapa SINAPI (data/sinapi-familias-mapa.json) que oferecem
@@ -203,6 +208,18 @@
         pf.trechos.push({ x0: lado.x0, z0: lado.z0, x1: lado.x1, z1: lado.z1 });
       });
       Q.perimetroParedes = r4(perim); Q.rodape = r4(rod); Q.areaParedeBruta = r4(parBruta); Q.areaParede = r4(parLiq); Q.areaVaos = r4(aVaos);
+      /* PAGINAÇÃO NO MODELO: as peças e a perda da paginação gravada (refeita no
+         contorno de agora; desatualizada vai como aviso) */
+      var BPg = a.params ? dep("BimPaginacao", "./bimpaginacao.js") : null;
+      if (BPg && BPg.resumoAmbiente) {
+        var pg = null;
+        try { pg = BPg.resumoAmbiente(estado, a, { niveis: opts.niveis, vaos: vaos }); } catch (ePg) { pg = null; }
+        if (pg) {
+          Q.paginacao = pg;
+          if (pg.piso && pg.piso.pecas != null && pg.piso.estado !== "semContorno") Q.pecasPiso = pg.piso.pecas;
+          if (pg.paredes.length) Q.pecasParede = pg.pecasParede;
+        }
+      }
     });
     Object.keys(porFace).forEach(function (ch) { var p = porFace[ch]; p.area = r4(p.area); p.comprimento = r4(p.comprimento); delete p.trechos; });
     Object.keys(porId).forEach(function (id) { if (!porId[id].avisos.length) delete porId[id].avisos; });

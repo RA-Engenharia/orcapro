@@ -171,6 +171,33 @@
         ls.renderOrder = 998; ls.frustumCulled = false; return ls;
       }
 
+      /* ------------------------------------------- VÍNCULOS (js/bimvinculos.js + js/bimvinculosui.js)
+         Mover (arrastar, ferramenta, cota temporária) e esticar pela alça levam junto o que está amarrado:
+         a op passa pelo motor e sai a mesma (nada amarrado, botão desligado ou Alt segurado) ou UM lote.
+         Na prévia, as que acompanham aparecem em laranja. */
+      var matVinc = new THREE.LineBasicMaterial({ color: 0xf59e0b, depthTest: false, transparent: true, opacity: 0.95 });
+      function VUI() { return global.BimVinculosUI || null; }
+      /* grava a op com os vínculos e fala o resultado (barra de estado + balão) → o resultado do motor (ou null) */
+      function gravarOp(op, msg, ev) {
+        var V = VUI(), g = V ? V.gravar(estado(), op, { evento: ev, novoId: nid }) : { op: op, res: null };
+        api.op(g.op);
+        if (V) V.falar(g.res, (msg || "") + (g.sozinho ? " (Alt: só esta peça)" : ""), hint); else if (msg) hint(msg + " (Ctrl+Z desfaz).");
+        return g.res;
+      }
+      /* a prévia das que acompanham: linhas laranja (parede = contorno em planta; barra = a linha 3D) */
+      function previaVinc(st, op, e, excluir) {
+        var V = VUI(); if (!V) return null;
+        var res = V.previa(st, op, e); if (!res) return null;
+        var ar = [], ls3 = [];
+        V.linhas(res, excluir).forEach(function (l) {
+          if (l.k === "parede") V.contorno(l).forEach(function (s) { ar.push(s); });
+          else ls3.push(new THREE.Vector3(l.a[0], l.a[1], l.a[2]), new THREE.Vector3(l.b[0], l.b[1], l.b[2]));
+        });
+        var lf = segs(ar, matVinc, edit.base + 0.035); if (lf) grp.add(lf);
+        if (ls3.length) { var g3 = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(ls3), matVinc); g3.renderOrder = 998; g3.frustumCulled = false; grp.add(g3); }
+        return res;
+      }
+
       /* ------------------------------------------- PONTO COM SNAP */
       function geometria() {
         /* só a peça cuja ALÇA está sendo arrastada sai do snap (senão a ponta agarra nela mesma e não anda);
@@ -529,8 +556,7 @@
           var v = Pr().lerNumero(inp.value);
           var op = v != null ? Pr().opDaCota(estado(), pr.sel[0], c, v) : null;
           if (!op) { hint("Valor inválido para esta cota."); return; }
-          api.op(op);
-          hint(c.k === "comprimento" ? "Comprimento ajustado para " + fmt(v) + " m (Ctrl+Z desfaz)." : "Movido: a distância agora é " + fmt(v) + " m (Ctrl+Z desfaz).");
+          gravarOp(op, c.k === "comprimento" ? "Comprimento ajustado para " + fmt(v) + " m" : "Movido: a distância agora é " + fmt(v) + " m", ev);
         });
       });
       /* alças: arrastar com o mouse (snap ligado) ou setas no teclado */
@@ -539,24 +565,33 @@
         var a = pr.alcas[+b.getAttribute("data-bp-alca")]; if (!a) return;
         e.preventDefault(); e.stopPropagation();
         try { b.setPointerCapture(e.pointerId); } catch (eC) {}
-        pr.arrasto = { id: pr.sel[0], k: a.k, p: a.p, p0: a.p, b: b }; pr.geo = null;
+        var st0 = estado();
+        pr.arrasto = { id: pr.sel[0], k: a.k, p: a.p, p0: a.p, b: b, st: st0 }; pr.geo = null;
+        if (VUI() && typeof a.k === "string") VUI().preparar(st0);   /* VÍNCULOS: a topologia de antes, uma vez */
       });
       camadaDom.addEventListener("pointermove", function (e) {
         if (!pr.arrasto) return;
         var sp = pontoSnap(e, null); if (!sp) return;
         pr.arrasto.p = sp.p; mostrarMarca(sp); posicionar();
+        /* VÍNCULOS: a peça esticada (azul) e as que acompanham (laranja), em tempo real */
+        if (typeof pr.arrasto.k === "string" && VUI()) {
+          var a = pr.arrasto, opP = { op: "esticar", id: a.id, ponta: a.k, x: sp.p.x, z: sp.p.z };   /* o grp já foi limpo pelo mostrarMarca (as guias do snap ficam) */
+          var el0 = (a.st.caixas || []).filter(function (c) { return c.id === a.id; })[0], n0 = el0 ? Pr().esticarCaixa(el0, a.k, sp.p) : null;
+          if (n0) { var gF = Pr().geometria({ caixas: [n0] }, {}).segs.filter(function (s) { return s.k !== "eixo"; }).map(function (s) { return [s.a, s.b]; }), lF = segs(gF, matFant, edit.base + 0.03); if (lF) grp.add(lF); }
+          var rv = previaVinc(a.st, opP, e, [a.id]);
+          try { if (global.BimShell && global.BimShell.status) global.BimShell.status("Esticando · " + (VUI().textoPrevia(rv, e) || "nada amarrado") + " (Esc cancela)."); } catch (eS) {}
+        }
       });
       function soltarAlca(e) {
         if (!pr.arrasto) return;
-        var a = pr.arrasto; pr.arrasto = null; pr.geo = null;
+        var a = pr.arrasto; pr.arrasto = null; pr.geo = null; limparGrupo(grp);
         try { a.b.releasePointerCapture(e.pointerId); } catch (eR) {}
         api.marcaEsconder();
-        if (!a.p || (Math.abs(a.p.x - a.p0.x) < 1e-6 && Math.abs(a.p.z - a.p0.z) < 1e-6)) { posicionar(); return; }   /* soltou sem arrastar */
-        api.op({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(a.p.x * 10000) / 10000, z: Math.round(a.p.z * 10000) / 10000 });
-        hint("Esticado (Ctrl+Z desfaz).");
+        if (!a.p || (Math.abs(a.p.x - a.p0.x) < 1e-6 && Math.abs(a.p.z - a.p0.z) < 1e-6)) { if (VUI()) VUI().soltar(); posicionar(); return; }   /* soltou sem arrastar */
+        gravarOp({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(a.p.x * 10000) / 10000, z: Math.round(a.p.z * 10000) / 10000 }, "Esticado", e);
       }
       camadaDom.addEventListener("pointerup", soltarAlca);
-      camadaDom.addEventListener("pointercancel", function () { pr.arrasto = null; posicionar(); });
+      camadaDom.addEventListener("pointercancel", function () { pr.arrasto = null; limparGrupo(grp); if (VUI()) VUI().soltar(); posicionar(); });
       camadaDom.addEventListener("keydown", function (e) {
         var b = e.target.closest ? e.target.closest("[data-bp-alca]") : null; if (!b) return;
         var a = pr.alcas[+b.getAttribute("data-bp-alca")], el0 = (estado().caixas || []).filter(function (c) { return c.id === pr.sel[0]; })[0];
@@ -566,8 +601,8 @@
         else { if (e.key === "ArrowRight") d = { x: u.x * passo, z: u.z * passo }; if (e.key === "ArrowLeft") d = { x: -u.x * passo, z: -u.z * passo }; if (e.key === "ArrowUp") d = { x: -n.x * passo, z: -n.z * passo }; if (e.key === "ArrowDown") d = { x: n.x * passo, z: n.z * passo }; }
         if (!d) return;
         e.preventDefault(); e.stopPropagation();
-        var k = a.k, idx = +b.getAttribute("data-bp-alca");
-        api.op({ op: "esticar", id: pr.sel[0], ponta: k, x: Math.round((a.p.x + d.x) * 10000) / 10000, z: Math.round((a.p.z + d.z) * 10000) / 10000 });
+        var k = a.k, idx = +b.getAttribute("data-bp-alca"), opS = { op: "esticar", id: pr.sel[0], ponta: k, x: Math.round((a.p.x + d.x) * 10000) / 10000, z: Math.round((a.p.z + d.z) * 10000) / 10000 };
+        if (typeof k === "string") gravarOp(opS, "Esticado " + fmt(passo) + " m", e); else api.op(opS);   /* VÍNCULOS: só parede/viga (o canto da laje não tem amarradas) */
         var nb = camadaDom.querySelector('[data-bp-alca="' + idx + '"]'); if (nb) nb.focus();
       });
 
@@ -620,6 +655,11 @@
           var b = pr.pts[0], T = { tipo: "mover", dx: Math.round((p.x - b.x) * 10000) / 10000, dz: Math.round((p.z - b.z) * 10000) / 10000 };
           if (Math.abs(T.dx) + Math.abs(T.dz) < 1e-6) { hint("O destino é o próprio ponto base."); return; }
           if (f === "matriz") aplicarResultado(Pr().opMatriz(st, pr.sel, { tipo: "linear", n: pr.mat.n, dx: T.dx, dz: T.dz }, nid), "Matriz linear: " + pr.mat.n + " itens a cada " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m");
+          else if (f === "mover") {   /* VÍNCULOS: o Mover leva junto o que está amarrado (a cópia nasce solta: não leva) */
+            var rM = Pr().opTransformar(st, pr.sel, T, false, nid);
+            if (!rM || rM.erro) hint((rM && rM.erro) || "Não deu para mover.");
+            else { gravarOp(rM.op, "Movido " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m", null); api.fechou(); }
+          }
           else aplicarResultado(Pr().opTransformar(st, pr.sel, T, f === "copiar", nid), (f === "copiar" ? "Copiado" : "Movido") + " " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m");
           limparGrupo(grp); reiniciarPasso(); return;
         }
@@ -788,6 +828,8 @@
         var geoS = Pr().geometria(st, {}).els.filter(function (g) { return pr.sel.indexOf(g.id) >= 0; });
         Ts.forEach(function (Tk) { geoS.forEach(function (g) { g.segs.forEach(function (s) { if (s.k !== "eixo") ar.push([Pr().ponto(s.a, Tk), Pr().ponto(s.b, Tk)]); }); }); });
         var lf = segs(ar, matFant, edit.base + 0.03); if (lf) grp.add(lf);
+        /* VÍNCULOS: no Mover, as que acompanham em laranja */
+        if (f === "mover" && T.tipo === "mover") previaVinc(st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, null, pr.sel);
       }
       /* rubber band das ferramentas de sempre (parede, viga, laje, cobertura) */
       function elastico(p) {
@@ -966,7 +1008,8 @@
           var geoSel = { els: geoT.els.filter(function (g) { return s[g.id]; }), segs: geoT.segs.filter(function (g) { return s[g.id]; }), pontos: geoT.pontos.filter(function (g) { return s[g.id]; }) };
           var cur = { x: pl.x, z: pl.z }, sn0 = Pr().snap(cur, geoSel, { tol: tolM(e), tipos: { fim: true, meio: true, centro: true, intersecao: true } });
           var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
-          pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }) };
+          pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0 };
+          if (VUI()) VUI().preparar(st0);   /* VÍNCULOS: a topologia de antes, uma vez por arraste */
           camadaDom.style.display = "none";   /* as alças e cotas temporárias somem enquanto a peça anda */
           return true;
         },
@@ -981,18 +1024,21 @@
           m.geoSel.segs.forEach(function (sg) { if (sg.k !== "eixo") ar.push([Pr().ponto(sg.a, T), Pr().ponto(sg.b, T)]); });
           var lf = segs(ar, matFant, edit.base + 0.03); if (lf) grp.add(lf);
           var lb = segs([[m.base, r.p]], matLinha, edit.base + 0.02); if (lb) grp.add(lb);
+          /* VÍNCULOS: as que acompanham, em laranja, e quantas na barra de estado */
+          var rv = (Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
+          if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
           caixaMostrar(e, m.base, r.p);
           return true;
         },
-        arrastoSoltar: function () {
+        arrastoSoltar: function (e) {
           var m = pr.mov; pr.mov = null;
           camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder();
           if (!m) return null;
           var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
-          if (Math.abs(dx) + Math.abs(dz) < 1e-4) { posicionar(); return null; }
-          return self.api.mover(dx, dz);
+          if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
+          return self.api.mover(dx, dz, e);
         },
-        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
+        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
         /* o modelo foi refeito (op nova, desfazer, refazer, reabrir) */
         aposRebuild: function (st) {
           pr.geo = null;
@@ -1053,21 +1099,25 @@
           selecao: function () { return pr.sel.slice(); },
           /* SELECIONAR (js/bimselecao.js): arrastar a seleção na planta/3D e a alça da planta — as MESMAS
              ops do Mover (transformar) e das alças (esticar): Ctrl+Z desfaz */
-          mover: function (dx, dz) {
+          /* VÍNCULOS: e = o evento do soltar (Alt segurado = só esta peça); sem evento vale o Alt que a tela viu por último */
+          mover: function (dx, dz, e) {
             var r = Pr().opTransformar(estado(), pr.sel, { tipo: "mover", dx: Math.round(dx * 10000) / 10000, dz: Math.round(dz * 10000) / 10000 }, false, nid);
-            if (!r || r.erro) { hint((r && r.erro) || "Não deu para mover."); return { ok: false, erro: r && r.erro }; }
-            api.op(r.op); hint("Movido " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m (Ctrl+Z desfaz).");
-            return { ok: true };
+            if (!r || r.erro) { if (VUI()) VUI().soltar(); hint((r && r.erro) || "Não deu para mover."); return { ok: false, erro: r && r.erro }; }
+            var res = gravarOp(r.op, "Movido " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m", e);
+            return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
           },
-          esticar: function (id, ponta, p) {
+          esticar: function (id, ponta, p, e) {
             if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };
             if (Pr().fixado(estado(), id)) { hint("Elemento fixado: use Desafixar antes."); return { ok: false }; }
-            api.op({ op: "esticar", id: id, ponta: ponta, x: Math.round(p.x * 10000) / 10000, z: Math.round(p.z * 10000) / 10000 });
-            hint("Esticado (Ctrl+Z desfaz).");
-            return { ok: true };
+            var op = { op: "esticar", id: id, ponta: ponta, x: Math.round(p.x * 10000) / 10000, z: Math.round(p.z * 10000) / 10000 };
+            var res = typeof ponta === "string" ? gravarOp(op, "Esticado", e) : (api.op(op), hint("Esticado (Ctrl+Z desfaz)."), null);
+            return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
           },
+          /* VÍNCULOS: a prévia (e2e e suporte) — o que acompanharia a op, sem gravar */
+          previaVinculos: function (op) { var V = VUI(); if (!V) return null; var r = V.previa(estado(), op, null); return r ? { acompanharam: r.acompanharam.slice(), avisos: r.avisos.slice(), resumo: r.resumo } : null; },
           estado: function () {
             return { passo: pr.passo, ferramenta: ferramenta(), pts: pr.pts.slice(), sel: pr.sel.slice(), ultimo: pr.ult ? { p: pr.ult.p, tipo: pr.ult.sn ? pr.ult.sn.tipo : null } : null,
+                     mov: pr.mov ? { base: { x: pr.mov.base.x, z: pr.mov.base.z }, dest: { x: pr.mov.dest.x, z: pr.mov.dest.z } } : null,   /* VÍNCULOS: o arraste da peça no 3D (e2e e suporte) */
                      cotasTemporarias: pr.cotasTmp.map(function (c) { return { k: c.k, valor: c.valor, vizinho: c.vizinho }; }), alcas: (pr.alcas || []).map(function (a) { return { k: a.k, p: a.p }; }),
                      caixa: caixa.style.display !== "none", cotas3d: cotasGrp.children.length, contorno: selGrp.children.length, opcoes: { copiaEsp: pr.copiaEsp, copiaGir: pr.copiaGir, matriz: JSON.parse(JSON.stringify(pr.mat)) } };
           },

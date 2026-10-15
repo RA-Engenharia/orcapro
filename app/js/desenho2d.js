@@ -385,6 +385,10 @@
     if (cadPath) p.push('<g class="d2-cad"><path d="' + cadPath + '" class="d2-cad-l" stroke-width="' + n4(pena.vista * 0.8) + '" ' + NS + "/>" + cadTx + "</g>");
     /* 0b) P2-D: a COR de cada ambiente (esquema de cores) — por baixo das linhas */
     if (amb) p.push(svgAmbCores(amb));
+    /* 0b') PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js): as peças do piso, os recortes
+       destacados e o ponto de partida; a indicação do revestimento nas faces. Por baixo
+       das paredes cortadas (o recorte encosta na face, nunca passa por cima dela) */
+    if (amb && amb.paginacao) p.push(svgPaginacao(amb.paginacao, e, pena));
     /* 0c) ACIMA DO CORTE (14/10/2026): a projeção tracejada das peças acima do plano, por BAIXO do
        que é visto e do que é cortado (a parede cortada sob a viga ganha do tracejado) */
     if (d.tipo === "planta" && d.acima && d.acima.length) p.push(svgAcima(d.acima, e, pena, d.acimaRotulo, extra && extra.p6 ? extra.p6 : null));
@@ -560,6 +564,46 @@
         txt(it.x, it.y + h2 + 0.6 * k, h2, esc(l2), "d2-amb-tx d2-amb-num" + (it.aviso ? " d2-amb-av" : ""), "middle") + "</g>";
     });
     return s ? '<g class="d2-ambientes">' + s + "</g>" : "";
+  }
+  /* ---------------------------------------------------- PAGINAÇÃO (no ambiente)
+   * d.ambientes.paginacao = {
+   *   pisos:   [{ id, pecas:[{pts:[[x,y]], t:"i"|"r"|"b"}], partida:[x,y], velha, aviso:[x,y] }],
+   *   paredes: [{ id, a:[x,y], b:[x,y], marcas:[[x0,y0,x1,y1]], velha }] }
+   * (montado por js/bimpaginacaoui.js). Peça inteira: só a junta; recorte: o tom
+   * claro; recorte fino (bolacha): o tom de alerta. Desatualizada: junta tracejada
+   * na cor de alerta e o recado no ambiente — nunca peça fora do contorno (as peças
+   * já vêm recortadas pelo contorno de agora). */
+  function svgPaginacao(pg, e, pena) {
+    var k = e.escala / 1000, s = "", lj = n4(pena.vista * 0.7);
+    (pg.pisos || []).forEach(function (P) {
+      var dI = "", dR = "", dB = "";
+      (P.pecas || []).forEach(function (q) {
+        if (!q || !q.pts || q.pts.length < 3) return;
+        var dd = caminho(q.pts, true);
+        if (q.t === "b") dB += dd; else if (q.t === "r") dR += dd; else dI += dd;
+      });
+      var g = '<g class="d2-pag' + (P.velha ? " d2-pag-velha" : "") + '" data-d2-pag="' + esc(P.id) + '" data-d2-pag-n="' + (P.pecas || []).length + '">';
+      if (dR) g += '<path d="' + dR + '" class="d2-pag-rec"/>';
+      if (dB) g += '<path d="' + dB + '" class="d2-pag-bol"/>';
+      if (dI + dR + dB) g += '<path d="' + dI + dR + dB + '" fill="none" class="d2-pag-pc" stroke-width="' + lj + '" ' + NS + (P.velha ? tracoK([1.2, 0.8], k) : "") + "/>";
+      if (P.partida && isFinite(P.partida[0]) && isFinite(P.partida[1])) {
+        var x = P.partida[0], y = P.partida[1], r = 1.4 * k;
+        g += '<g class="d2-pag-part" data-d2-pag-part="1"><circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(r) + '" fill="none" stroke-width="' + n4(pena.marca || pena.vista) + '" ' + NS + "/>" +
+             '<path d="M' + n4(x - 2 * r) + " " + n4(y) + "L" + n4(x + 2 * r) + " " + n4(y) + "M" + n4(x) + " " + n4(y - 2 * r) + "L" + n4(x) + " " + n4(y + 2 * r) + '" fill="none" stroke-width="' + n4(pena.vista) + '" ' + NS + "/></g>";
+      }
+      /* em duas linhas: numa só o recado passava por cima da parede no cômodo estreito */
+      if (P.velha && P.aviso && isFinite(P.aviso[0]) && isFinite(P.aviso[1]))
+        g += txt(P.aviso[0], P.aviso[1] + 7.5 * k, 2.2 * k, esc("PAGINAÇÃO DESATUALIZADA"), "d2-pag-aviso", "middle") +
+             txt(P.aviso[0], P.aviso[1] + 10.5 * k, 2.2 * k, esc("— REPAGINAR"), "d2-pag-aviso", "middle");
+      s += g + "</g>";
+    });
+    (pg.paredes || []).forEach(function (W) {
+      if (!W || !W.a || !W.b) return;
+      var dd = "M" + n4(W.a[0]) + " " + n4(W.a[1]) + "L" + n4(W.b[0]) + " " + n4(W.b[1]);
+      (W.marcas || []).forEach(function (m) { dd += "M" + n4(m[0]) + " " + n4(m[1]) + "L" + n4(m[2]) + " " + n4(m[3]); });
+      s += '<g class="d2-pag-par' + (W.velha ? " d2-pag-velha" : "") + '" data-d2-pag-par="' + esc(W.id) + '"><path d="' + dd + '" fill="none" class="d2-pag-rev" stroke-width="' + n4(pena.vista) + '" ' + NS + (W.velha ? tracoK([1.2, 0.8], k) : "") + "/></g>";
+    });
+    return s ? '<g class="d2-paginacao">' + s + "</g>" : "";
   }
   function svgAmbLegenda(leg, x, y, k, pena) {
     var s = txt(x, y + 3 * k, 2.8 * k, esc(String(leg.titulo || "").toUpperCase()), "d2-amb-leg-tit");

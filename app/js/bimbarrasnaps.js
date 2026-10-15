@@ -63,6 +63,7 @@
     vertice: "O vértice da malha do modelo importado (3D).", aresta: "A aresta da malha do modelo importado (3D).", face: "O ponto na face do modelo importado (3D)."
   };
   var DICA_SNAP = "Snap: clique para escolher os tipos (extremidade, meio, centro, quadrante, interseção, perpendicular, paralelo, tangente, rastreamento…). Vale para tudo o que você cria (2D e 3D). F3 liga e desliga.";
+  var DICA_VINC = "Vínculos: ao mover ou esticar uma parede ou uma barra, o que está amarrado nela acompanha — as paredes do canto esticam, a viga segue o pilar, a sapata vem junto. Segure Alt durante o arraste para mover só a peça. Clique para ligar ou desligar.";
   var DICA_ORTO = "Orto: o traço anda só na horizontal/vertical e nos ângulos marcados (45°, 90°…). Vale para parede, viga, peça metálica, linha, cota, contorno de laje/telhado/fundação, guarda-corpo… F8 liga e desliga; Shift inverte enquanto está apertado (com o Orto apagado, é o orto temporário).";
 
   var BimBarraSnaps = {
@@ -81,7 +82,7 @@
       var g = this._el;
       if (!g || !vb.contains(g)) {
         g = document.createElement("div");
-        g.className = "bbs"; g.setAttribute("data-bbs", "grupo"); g.setAttribute("role", "toolbar"); g.setAttribute("aria-label", "Precisão do desenho: snap e ortogonal");
+        g.className = "bbs"; g.setAttribute("data-bbs", "grupo"); g.setAttribute("role", "toolbar"); g.setAttribute("aria-label", "Precisão do desenho: snap, ortogonal e vínculos");
         this._el = g; this._ligar(g);
         vb.appendChild(g);
       }
@@ -110,9 +111,10 @@
          selecionar"); o liga/desliga geral é a 1ª caixa do menu e o F3 — a luz continua dizendo o estado */
       h += liga("snap", "Snap", p.snap, DICA_SNAP, "ima", (mudou ? '<span class="bbs-n">' + nOn + "/" + T.length + "</span>" : "") + '<span class="bbs-v">▾</span>').replace('class="rv-vb bbs-bt"', 'class="rv-vb bbs-bt" aria-haspopup="true" aria-expanded="' + (this._menu === "snapMenu" ? "true" : "false") + '"') +
            liga("orto", "Orto", p.orto, DICA_ORTO, "regua") +
-           seta.call(this, "incMenu", "Incrementos de ângulo do Orto", B.textoInc(p.inc));
+           seta.call(this, "incMenu", "Incrementos de ângulo do Orto", B.textoInc(p.inc)) +
+           liga("vinculos", "Vínculos", p.vinculos !== false, DICA_VINC, "link");
       g.innerHTML = h;
-      g.setAttribute("data-bbs-snap", p.snap ? "1" : "0"); g.setAttribute("data-bbs-orto", p.orto ? "1" : "0");
+      g.setAttribute("data-bbs-snap", p.snap ? "1" : "0"); g.setAttribute("data-bbs-orto", p.orto ? "1" : "0"); g.setAttribute("data-bbs-vinculos", p.vinculos !== false ? "1" : "0");
       if (this._menu) this._abrir(this._menu, true);
       return true;
     },
@@ -265,6 +267,7 @@
       var B = BO(); if (!B) return;
       var p = B.precisao();
       if (campo === "snap") status(p.snap ? "Snap ligado (F3 desliga)." : "Snap desligado (F3 liga): o ponto fica onde o cursor está.");
+      if (campo === "vinculos") status(p.vinculos !== false ? "Vínculos ligados: ao mover ou esticar, o que está amarrado acompanha (segure Alt para mover só a peça)." : "Vínculos desligados: só a peça que você mexe anda — as amarradas ficam onde estão.");
       if (campo === "orto") status(p.orto ? "Orto ligado (F8 desliga): o traço anda na horizontal/vertical e em " + B.textoInc(p.inc) + "." : "Orto desligado (F8 liga): ângulo livre, atraído a ±" + B.JANELA + "° dos incrementos. Shift trava enquanto está apertado.");
     },
     _ligar: function (g) {
@@ -272,7 +275,7 @@
       g.addEventListener("click", function (e) {
         var b = e.target && e.target.closest ? e.target.closest("[data-bbs]") : null; if (!b || !g.contains(b)) return;
         var k = b.getAttribute("data-bbs");
-        if (k === "orto") { self.alternar(k); return; }
+        if (k === "orto" || k === "vinculos") { self.alternar(k); return; }
         if (k === "snap" || k === "snapMenu") { self._abrir("snapMenu", false); return; }
         if (k === "incMenu") { self._abrir(k, false); }
       });

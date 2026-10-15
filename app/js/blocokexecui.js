@@ -13,7 +13,11 @@
  *   2. Premissas — laje, cobertura, vento, solo, ensaio do painel;
  *   3. Resultado — painel, vergas, cintas, pilaretes e fundação;
  *   4. Orçamento — composições, custo e cronograma;
- *   5. Documentos — memorial, pranchas, DXF, manual de montagem, planilha.
+ *   5. Documentos — memorial, pranchas, DXF, manual de montagem, planilha;
+ *   6. Referência (só com a obra de referência aberta) — a casa REAL de
+ *      Itacaré/BA do artigo BJD 2024 (js/blocokref.js): área de placa × os
+ *      144 m² do artigo, custo e prazo Blocok × convencional pelas duas fontes
+ *      (o que o artigo publicou e o que o sistema calcula), lado a lado.
  *
  * LIBERAÇÃO (decisão do Rogério, 14/10/2026: "módulo pago à parte"):
  * Modela.tem("blocok") — compra, teste de 7 dias ou vitrine — OU a trava
@@ -27,7 +31,15 @@
   var UI = { aba: "paredes", fonte: "", obra: null, res: null, erro: "", avisos: [], parede: null, pecas3d: false, param: ler() };
   var API3 = null, grupo3 = null, escondidas = [], timer = null, estadoAtual = null;
 
-  function num(v, d) { var n = typeof v === "number" ? v : parseFloat(String(v == null ? "" : v).replace(/\./g, "").replace(",", ".")); return isFinite(n) ? n : (d == null ? 0 : d); }
+  /* "1.234,56" (texto BR) ou "0.12" (campo type=number, que sempre usa ponto): só
+     trata o ponto como milhar quando há vírgula. Antes, "0.12" virava 12 — a laje
+     de 12 cm editada no campo saía com 300 kN/m² sem aviso (achado em 14/10/2026). */
+  function num(v, d) {
+    var n;
+    if (typeof v === "number") n = v;
+    else { var s = String(v == null ? "" : v).trim(); n = parseFloat(s.indexOf(",") >= 0 ? s.replace(/\./g, "").replace(",", ".") : s); }
+    return isFinite(n) ? n : (d == null ? 0 : d);
+  }
   function fmt(v, c) { var n = +v; if (!isFinite(n)) return "—"; return n.toLocaleString("pt-BR", { minimumFractionDigits: c == null ? 2 : c, maximumFractionDigits: c == null ? 2 : c }); }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function toast(t, tipo, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, tipo || "ok", ms || 6000); } catch (e) {} }
@@ -70,6 +82,16 @@
     if (estadoAtual) return estadoAtual;
     try { var e = global.BIM && BIM.editarEstado ? BIM.editarEstado() : null; return e && e.estado ? e.estado : null; } catch (e2) { return null; }
   }
+  /* VÍNCULOS (14/10/2026, js/bimvinculos.js — frente S13): o cálculo guarda a ASSINATURA das paredes do modelo (eixo,
+     espessura, base, topo, portas e janelas: BimVinculos.assinatura(estado, {paredes:true})). Com a janela ABERTA o
+     aposRebuild já recalcula; com ela FECHADA a parede pode ser puxada (e as ligadas vão junto) e o abrir() mostrava o
+     resultado de antes como se valesse. Agora: assinatura diferente = DESATUALIZADO — a tela avisa e pranchas, DXF,
+     planilha, memorial, manual e peças no 3D ficam barrados até recalcular (como a metálica). Só vale para o que veio do
+     MODELO: o exemplo e o IFC não mudam por arraste. Teste: tools/test-blocokdesatualizado.js */
+  function assinaturaParedes(st) { var BV = global.BimVinculos; try { return BV && BV.assinatura && st ? BV.assinatura(st, { paredes: true }) : null; } catch (e) { return null; } }
+  function desatualizadoDe(assinCalculo, st) { if (!assinCalculo) return false; var a = assinaturaParedes(st); return a != null && a !== assinCalculo; }
+  function velho() { return !!UI.res && UI.fonte === "modelo" && desatualizadoDe(UI.assin, estado()); }
+  var MSG_VELHO = "DESATUALIZADO — as paredes mudaram no modelo depois deste cálculo: recalcule antes de gerar pranchas, DXF, planilha, memorial ou manual.";
   function paredesDoModelo() {
     var st = estado(), A = global.BimArq; if (!st || !A || !A.frameDe) return [];
     var vaosMap = {};
@@ -115,7 +137,8 @@
   function calcular() {
     UI.erro = "";
     try {
-      if (!lerObra()) { UI.res = null; render(); return; }
+      if (!lerObra()) { UI.res = null; UI.assin = null; render(); return; }
+      UI.assin = UI.fonte === "modelo" ? assinaturaParedes(estado()) : null;   /* as paredes de QUANDO calculou */
       UI.res = BlocokCalc.calcular(UI.obra);
       try { if (global.BlocokOrc) { UI.orc = BlocokOrc.orcar(UI.res, {}); UI.crono = BlocokOrc.cronograma(UI.res, {}); } } catch (eo) { UI.orc = null; UI.crono = null; }
     } catch (e) { UI.erro = String(e && e.message || e); UI.res = null; }
@@ -180,7 +203,7 @@
     return {
       aposRebuild: function (st) {
         estadoAtual = st || null;
-        if (UI.fonte === "exemplo") return;            // o exemplo não é o modelo: não relê por cima dele
+        if (UI.fonte === "exemplo" || UI.fonte === "referencia") return;   // exemplo e referência não são o modelo: não relê por cima deles
         if (!UI.pecas3d && !raiz()) return;
         clearTimeout(timer);
         timer = setTimeout(function () { UI.obra = null; if (raiz()) calcular(); else if (UI.pecas3d) { lerObra(); desenhar3d(); } }, 350);
@@ -206,10 +229,14 @@
       "table.tbl.bkx-t th,table.tbl.bkx-t td{padding:7px 9px;white-space:nowrap}",
       ".bkx-elev{background:white;border:1px solid var(--linha);border-radius:var(--raio);overflow:auto;padding:8px}",
       ".bkx-elev svg{display:block;max-width:100%;height:auto}",
+      ".bkx-modelo{display:inline-flex;align-items:center;gap:8px;font-size:var(--t-peq)} .bkx-modelo select{min-height:32px}",
       ".bkx-docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}",
       ".bkx-doc{border:1px solid var(--linha);border-radius:var(--raio);padding:14px;display:flex;flex-direction:column;gap:8px;background:var(--surface)}",
       ".bkx-doc b{font-weight:var(--p-forte)} .bkx-doc p{margin:0;color:var(--texto-fraco);font-size:var(--t-peq)} .bkx-doc .btn{align-self:flex-start}",
       ".bkx-lista{margin:0;padding-left:18px} .bkx-lista li{margin:4px 0}",
+      ".bkx-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px} .bkx-2col table.tbl.bkx-t td{white-space:normal}",
+      ".bkx-h3{font-size:var(--t-base);font-weight:var(--p-forte);margin:4px 0 6px}",
+      "@media (max-width:900px){.bkx-2col{grid-template-columns:1fr}}",
       "@media (max-width:640px){.bkx-jan{padding:12px 12px 32px}.bkx-docs{grid-template-columns:1fr}}"
     ].join("\n");
     doc.head.appendChild(st);
@@ -230,10 +257,12 @@
   function fechar() { var v = raiz(); if (v) v.remove(); }
   function parametro(caminho, valor) {
     var p = UI.param, k = caminho.split(".");
+    if (caminho === "modeloFolha") { p.modeloFolha = valor === "blocok" ? "blocok" : "ra"; salvar(); return render(); }   /* só muda a cara das pranchas: não recalcula */
     if (k[0] === "apoia") { p.apoia = p.apoia || {}; p.apoia[k[1]] = !!valor; }
     else { var o = p; for (var i = 0; i < k.length - 1; i++) { o[k[i]] = o[k[i]] || {}; o = o[k[i]]; } o[k[k.length - 1]] = valor; }
     salvar();
     if (UI.fonte === "exemplo") return exemplo();      // premissa mudou com o exemplo aberto: recalcula o exemplo
+    if (UI.fonte === "referencia") return referencia(false);
     UI.obra = null;
     calcular();
   }
@@ -245,6 +274,7 @@
       bt("pecas3d", UI.pecas3d ? "Esconder peças no 3D" : "Mostrar peças no 3D", { ico: "camadas", dica: "Mostra cada peça Blocok no 3D: as duas faces, o EPS, o concreto de pilaretes/vergas/cintas e as juntas" })];
     if (Mo) acoes.push(Mo.SEP);
     acoes.push(bt("exemplo", "Carregar exemplo", { ico: "livro", dica: "Casa térrea 10 × 8 m com laje, para conhecer o módulo sem modelo" }));
+    if (global.BlocokRef) acoes.push(bt("referencia", "Abrir obra de referência", { ico: "casa", dica: "Casa real de Itacaré/BA construída com Blocok (artigo BJD 2024): área, custo e prazo comparados com a alvenaria convencional" }));
     var pri = '<button type="button" class="btn primary" data-bkx="calcular">' + ico("raio", 15) + " Calcular</button>";
     var h = Mo ? Mo.cab({ iconeHtml: ico("bloco", 22), titulo: "Blocok — paredes prontas", sub: sub, acoes: acoes, primariaHtml: pri }).replace("<h1>", '<h1 id="bkx-tit">')
       : '<header class="mod-cab"><h1 id="bkx-tit">Blocok — paredes prontas</h1>' + acoes.join("") + pri + "</header>";
@@ -253,8 +283,18 @@
   function avisoTopo() {
     var Mo = M(), r = UI.res; if (!Mo) return "";
     if (UI.erro) return Mo.aviso({ tom: "erro", titulo: "O cálculo não terminou", texto: UI.erro });
-    if (!UI.obra) return Mo.aviso({ tom: "info", titulo: "Nenhuma parede Blocok no modelo", texto: "Desenhe as paredes escolhendo um tipo \"Blocok\" (Propriedades › Tipo) — ou traga um IFC. As peças, a paginação e o cálculo saem daqui.", acaoHtml: bt("exemplo", "Carregar exemplo", { sm: 1 }) });
+    if (!UI.obra) return Mo.aviso({ tom: "info", titulo: "Nenhuma parede Blocok no modelo", texto: "Desenhe as paredes escolhendo um tipo \"Blocok\" (Propriedades › Tipo) — ou traga um IFC. As peças, a paginação e o cálculo saem daqui.", acaoHtml: bt("exemplo", "Carregar exemplo", { sm: 1 }) + (global.BlocokRef ? " " + bt("referencia", "Obra de referência", { sm: 1 }) : "") });
     if (!r) return "";
+    if (velho()) return '<div data-bkx-desatualizado="1">' + Mo.aviso({ tom: "erro", titulo: "DESATUALIZADO — recalcular", texto: "As paredes mudaram no modelo depois deste cálculo (parede movida ou esticada, porta ou janela alterada). Resultado, paginação e quantitativos abaixo são do cálculo anterior; pranchas, DXF, planilha, memorial, manual e peças no 3D ficam bloqueados até recalcular.", acaoHtml: bt("calcular", "Recalcular", { sm: 1, pri: 1 }) }) + "</div>";
+    if (UI.fonte === "referencia") {
+      var vr = (UI.obra && UI.obra.referencia) || {};
+      if (r.erros.length && vr.versao === "construida") return Mo.aviso({ tom: "alerta", titulo: "Obra de referência como construída: " + r.erros.length + " item(ns) que a peça de 10 cm não comporta",
+        texto: "A casa de Itacaré/BA foi feita com placa de 10 cm e pilares embutidos (artigo BJD 2024). O cálculo mostra por que a RA não faria assim: o concreto embutido de 7 cm fica abaixo da NBR 6118. A variante RA (fachadas 20 cm, internas 13 cm) atende.",
+        acaoHtml: bt("ref-versao", "Ver a variante RA", { v: "ra", sm: 1 }) + " " + bt("aba", "Comparativo", { v: "referencia", sm: 1 }) });
+      return Mo.aviso({ tom: r.erros.length ? "erro" : "info", titulo: "Obra de referência — " + (vr.versaoNome || "") + (r.erros.length ? ": " + r.erros.length + " problema(s)" : ""),
+        texto: "Casa real de Itacaré/BA (artigo BJD 2024) remodelada no sistema." + (r.pendencias.length ? " Pendência: " + r.pendencias[0].texto : "") + " Área, custo e prazo comparados com a alvenaria convencional na aba Referência.",
+        acaoHtml: bt("aba", "Comparativo", { v: "referencia", sm: 1 }) + (vr.versao === "ra" ? " " + bt("ref-versao", "Ver como construída", { v: "construida", sm: 1 }) : "") });
+    }
     if (r.erros.length) return Mo.aviso({ tom: "erro", titulo: "Não emitir: " + r.erros.length + " problema(s)", texto: r.erros[0] + (r.erros.length > 1 ? " (e mais " + (r.erros.length - 1) + " — ver Resultado)" : ""), acaoHtml: bt("aba", "Ver", { v: "resultado", sm: 1 }) });
     if (r.pendencias.length) return Mo.aviso({ tom: "alerta", titulo: r.pendencias.length + " pendência(s) para o responsável técnico", texto: r.pendencias[0].texto, acaoHtml: bt("aba", "Premissas", { v: "premissas", sm: 1 }) });
     return Mo.aviso({ tom: "ok", titulo: "Paredes calculadas", texto: "Sem erro nem pendência. Confira os documentos antes de emitir." });
@@ -272,6 +312,7 @@
   }
   function abas() {
     var Mo = M(), L = [{ id: "paredes", r: "Paredes" }, { id: "premissas", r: "Premissas" }, { id: "resultado", r: "Resultado" }, { id: "orcamento", r: "Orçamento" }, { id: "documentos", r: "Documentos" }];
+    if (UI.fonte === "referencia") L.push({ id: "referencia", r: "Referência" });
     return Mo ? Mo.abas(L.map(function (a) { return { rotulo: a.r, ativa: UI.aba === a.id, attrs: 'data-bkx="aba" data-bkx-v="' + a.id + '"' }; })) : "";
   }
   function secao(t, sub, corpo, acoes) { var Mo = M(); return Mo ? Mo.secao({ titulo: t, sub: sub || "", corpoHtml: corpo, acoesHtml: acoes || "" }) : "<section><h2>" + esc(t) + "</h2>" + corpo + "</section>"; }
@@ -376,10 +417,95 @@
     if (c && c.atividades) h += secao("Cronograma", "Pela produtividade parametrizada (estimada até a calibração em obra).", tabela(["Atividade", "Duração (dias)", "Início", "Fim", "Depende de"], c.atividades.map(function (a) { return "<tr><td>" + esc(a.nome) + "</td><td>" + (a.duracao != null ? fmt(a.duracao, 0) : "a definir") + "</td><td>" + (a.inicio != null ? a.inicio : "—") + "</td><td>" + (a.fim != null ? a.fim : "—") + "</td><td>" + esc((a.predecessoras || []).join(", ")) + "</td></tr>"; })));
     return h;
   }
+  /* --------------------------------------------------------- obra de referência (js/blocokref.js) */
+  function refParam() { UI.param.ref = UI.param.ref || {}; return UI.param.ref; }
+  function rs(v) { return "R$ " + fmt(v, 2); }
+  function corpoReferencia() {
+    var Rf = global.BlocokRef, D = UI.ref;
+    if (!Rf) return secao("Obra de referência", "", '<p class="bkx-fraco">O motor da obra de referência não está carregado nesta versão.</p>');
+    if (UI.fonte !== "referencia" || !D) return secao("Obra de referência", "", "<p>A casa real de Itacaré/BA, construída com Blocok e publicada no Brazilian Journal of Development (2024), remodelada no sistema para comparar área, custo e prazo com a alvenaria convencional.</p>" + bt("referencia", "Abrir obra de referência", { pri: 1 }));
+    var F = Rf.FONTES, rp = refParam(), cr = D.crono, a = D.area, ca = D.artigo, cs = D.custo, A = Rf.ARTIGO, o = UI.refObra;
+    var h = "";
+    // 1. a obra e os parâmetros
+    h += secao("A obra", Rf.NOME, "<p class=\"bkx-fraco\">" + esc(F.artigo.ref) + " DOI " + esc(F.artigo.doi) + ". " + esc(F.site.ref) + "</p>" +
+      '<div class="bkx-grade">' + campo("Versão", "ref.versao", rp.versao || "construida", null, [["construida", Rf.VERSOES.construida.nome], ["ra", Rf.VERSOES.ra.nome]]) +
+      campo("Linha cozinha / sala", "ref.bancada", rp.bancada ? "1" : "", null, [["", "Bancada (fora da placa)"], ["1", "Parede de placa (como na Fig. 8)"]]) +
+      campo("Produtividade Blocok (m²/dia)", "ref.m2Dia", rp.m2Dia || cr.parametros.blocok.m2Dia, "number", null, "48,20 — quadro não oficial") +
+      campo("Equipe (profissionais)", "ref.equipe", rp.equipe || cr.parametros.blocok.equipe, "number", null, "3 — artigo, p. 8") + "</div>" +
+      tabela(["Premissa", "Valor", "Fonte"], o.premissas.map(function (p) { return "<tr><td>" + esc(p.item) + "</td><td>" + esc(p.valor) + "</td><td class=\"bkx-fraco\">" + esc(p.fonte) + "</td></tr>"; })));
+    // 2. área de placa × 144 m²
+    h += secao("Área de placa: sistema × artigo", "O artigo diz " + fmt(A.areaParede, 0) + " m² de parede de placa (p. 16).",
+      tabela(["Medida", "Área (m²)"], [["Comprimento nos eixos", fmt(a.comprimentoEixos) + " m"], ["Bruta (eixos × " + fmt(a.altura, 3) + " m, " + a.fiadas + " fiadas)", fmt(a.bruta)],
+        [a.temBancada ? "Bruta (já com a bancada como parede)" : "Bruta + linha cozinha/sala como parede (" + fmt(a.bancadaM2) + " m²)", fmt(a.brutaComBancada)], ["Portas e janelas (estimadas das figuras)", "− " + fmt(a.vaos)],
+        ["<b>Líquida (compra, orçamento e cronograma)</b>", "<b>" + fmt(a.liquida) + "</b>"], ["Peças (sem as juntas)", fmt(a.areaPecas)], ["Artigo", fmt(A.areaParede, 0)]].map(function (l) { return "<tr><td>" + l[0] + "</td><td>" + l[1] + "</td></tr>"; })) +
+      '<ul class="bkx-lista">' + a.explicacao.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>");
+    // 3. custo — as duas fontes lado a lado, sem misturar
+    var colArt = tabela(["Item", "R$/m²", "Total"], A.blocok.itens.map(function (it) { return "<tr><td>Blocok — " + esc(it.item) + "</td><td>" + fmt(it.m2) + "</td><td>" + rs(it.total) + "</td></tr>"; }).concat([
+      "<tr><td><b>Blocok (144 m²)</b></td><td>" + fmt(ca.blocok.porM2) + "</td><td><b>" + rs(A.blocok.total) + "</b></td></tr>",
+      "<tr><td>Convencional — alvenaria (144 m²)</td><td>" + fmt(A.alvenaria.m2) + "</td><td>" + rs(A.alvenaria.total) + "</td></tr>",
+      "<tr><td>Convencional — reboco 2 lados (288 m²)</td><td>" + fmt(A.reboco.m2) + "</td><td>" + rs(A.reboco.total) + "</td></tr>",
+      "<tr><td><b>Convencional</b></td><td>" + fmt(ca.convencional.porM2) + "</td><td><b>" + rs(A.convencionalTotal) + "</b></td></tr>",
+      "<tr><td>Redução publicada (só parede + reboco)</td><td></td><td>" + fmt(A.reducaoPct) + " %</td></tr>"]));
+    /* sistema: DOIS quadros, igual com igual nos dois métodos (pedido do gerente, 14/10/2026) */
+    function pct(v) { return v == null ? "—" : (v >= 0 ? "+" : "") + fmt(v) + " %"; }
+    function linhaC(l) { return "<tr><td>Convencional — " + esc(l.etapa) + (l.codigo ? " (SINAPI " + esc(l.codigo) + (l.onde ? ", " + esc(l.onde) : "") + ")" : " — " + esc(l.descricao)) + "</td><td>" + (l.quantidade != null ? fmt(l.quantidade) + " " + esc(l.unidade || "") : "—") + "</td><td>" + (l.total != null ? rs(l.total) : "pendente") + "</td></tr>"; }
+    var Q = cs.quadros, LV = cs.convencional.linhas.filter(function (l) { return l.grupo === "vedacao"; }), LE = cs.convencional.linhas.filter(function (l) { return l.grupo === "estrutura"; });
+    var qa = tabela(["Item", "Qtd.", "Total"], ["<tr><td>Blocok — peça, assentamento, juntas e ligações</td><td>" + fmt(cs.area) + " m²</td><td>" + rs(cs.blocok.parede) + "</td></tr>"].concat(LV.map(linhaC)).concat([
+      "<tr><td><b>Blocok</b></td><td></td><td><b>" + rs(Q.vedacao.blocok) + "</b></td></tr>",
+      "<tr><td><b>Convencional</b></td><td></td><td><b>" + rs(Q.vedacao.convencional) + "</b></td></tr>",
+      "<tr><td>Blocok × convencional</td><td></td><td><b>" + pct(Q.vedacao.diferencaPct) + "</b></td></tr>"]));
+    var qb = tabela(["Item", "Qtd.", "Total"], ["<tr><td>Quadro (a) — Blocok</td><td></td><td>" + rs(Q.vedacao.blocok) + "</td></tr>",
+      "<tr><td>Blocok — estrutura embutida (concreto e aço na peça, escoramento das vergas)</td><td></td><td>" + rs(cs.blocok.estrutura) + "</td></tr>",
+      "<tr><td>Quadro (a) — convencional</td><td></td><td>" + rs(Q.vedacao.convencional) + "</td></tr>"].concat(LE.map(linhaC)).concat([
+      "<tr><td><b>Blocok</b></td><td></td><td><b>" + rs(Q.comEstrutura.blocok) + "</b></td></tr>",
+      "<tr><td><b>Convencional</b></td><td></td><td><b>" + rs(Q.comEstrutura.convencional) + "</b></td></tr>",
+      "<tr><td>Blocok × convencional</td><td></td><td><b>" + pct(Q.comEstrutura.diferencaPct) + "</b></td></tr>"]));
+    h += secao("Custo: Blocok × convencional", "Duas fontes que não se misturam. Sem BDI nos dois lados.",
+      '<div class="bkx-2col"><div><h3 class="bkx-h3">Referência publicada (2023, BA) — recorte do quadro (a)</h3><p class="bkx-fraco">' + esc(ca.fonte) + ". Só parede + reboco, sem estrutura.</p>" + colArt + "</div>" +
+      '<div><h3 class="bkx-h3">Sistema — ' + esc(Q.vedacao.titulo) + '</h3><p class="bkx-fraco">' + esc(Q.vedacao.texto) + "</p>" + qa +
+      '<h3 class="bkx-h3">Sistema — ' + esc(Q.comEstrutura.titulo) + '</h3><p class="bkx-fraco">' + esc(Q.comEstrutura.texto) + "</p>" + qb +
+      '<p class="bkx-fraco">Preços: Blocok — ' + esc(cs.blocok.fonte) + ". Convencional — " + esc(cs.convencional.fonte) + ". " + esc(cs.notas.join(" ")) + "</p></div></div>");
+    // 4. prazo — os mesmos recortes em dias
+    var GR = { vedacao: "(a)", estrutura: "(b)", acabamento: "acab.", instalacoes: "a definir" };
+    function linhasEt(L) { return L.etapas.map(function (e) { return "<tr><td>" + e.n + ". " + esc(e.nome) + "</td><td>" + (GR[e.grupo] || "") + "</td><td>" + (e.dias == null ? "a definir" : fmt(e.dias, 1)) + "</td><td>" + (e.diasUteis == null ? "—" : e.diasUteis) + "</td><td class=\"bkx-fraco\">" + esc(e.conta) + "</td></tr>"; }); }
+    var CP = cr.comparacao, resumo = tabela(["Recorte", "Blocok (dias úteis)", "Convencional (dias úteis)", "Redução"], [CP.vedacao, CP.comEstrutura, CP.total].map(function (c) { return "<tr><td>" + esc(c.titulo) + "</td><td>" + c.blocok + "</td><td>" + c.convencional + "</td><td>" + (c.reducaoPct == null ? "—" : fmt(c.reducaoPct) + " %") + "</td></tr>"; }));
+    h += secao("Prazo: dias por etapa", "Mesma equipe nos dois métodos, etapas em sequência. (a) vedação + revestimento; (b) + a estrutura de reforço de cada método, com fôrma (no convencional), concretagem e cura.",
+      resumo + '<h3 class="bkx-h3">Blocok</h3>' + tabela(["Etapa", "Recorte", "Dias", "Dias úteis", "Conta e fonte"], linhasEt(cr.blocok)) +
+      '<h3 class="bkx-h3">Alvenaria convencional (SINAPI BA ' + esc(Rf.SINAPI.mes) + ")</h3>" + tabela(["Etapa", "Recorte", "Dias", "Dias úteis", "Conta e fonte"], linhasEt(cr.convencional)) +
+      '<ul class="bkx-lista">' + cr.pendencias.map(function (p) { return "<li>" + esc(p.texto) + "</li>"; }).join("") + "</ul>");
+    // 5. o que não fecha no artigo + peso
+    h += secao("O que não fecha no artigo", "Conferido à mão (Tabelas 2 a 4, Figs. 8, 16 e 17).", '<ul class="bkx-lista">' + ca.inconsistencias.map(function (i) { return "<li>" + esc(i.texto) + "</li>"; }).join("") + "</ul>");
+    var pw = D.peso;
+    h += secao("Peso da peça", "Calculado pelos materiais; o número não oficial não é usado.", '<ul class="bkx-lista"><li>Pelos materiais: ' + esc(pw.conta) + " — " + esc(pw.fonte) + ".</li><li>Tabela do franqueado: " + fmt(pw.catalogo.kg, 0) + " kg por peça (" + fmt(pw.catalogo.kNm2, 2) + " kN/m²) — " + esc(pw.catalogo.fonte) + ".</li><li>Quadro não oficial: 4,7 kN/m² — " + esc(pw.naoOficial.leitura) + "</li></ul>");
+    return h;
+  }
+  function referencia(irAba) {
+    var Rf = global.BlocokRef;
+    if (!Rf) { toast("Obra de referência indisponível nesta versão.", "alerta"); return; }
+    var rp = refParam();
+    UI.erro = "";
+    try {
+      var o = Rf.obra({ versao: rp.versao || "construida", bancadaComoParede: !!rp.bancada, param: { fck: num(UI.param.fck, 25), caa: UI.param.caa } });
+      UI.obra = o.obra; UI.avisos = o.avisos; UI.fonte = "referencia"; UI.refObra = o; UI.mapaParedes = o.paredesModelo; UI.parede = null;
+      UI.res = BlocokCalc.calcular(UI.obra);
+      try { if (global.BlocokOrc) { UI.orc = BlocokOrc.orcar(UI.res, {}); UI.crono = BlocokOrc.cronograma(UI.res, {}); } } catch (eo) { UI.orc = null; UI.crono = null; }
+      var cc = { blocok: {}, convencional: {} };
+      if (num(rp.m2Dia) > 0) cc.blocok.m2Dia = num(rp.m2Dia);
+      if (num(rp.equipe) > 0) { cc.blocok.equipe = num(rp.equipe); cc.convencional.equipe = num(rp.equipe); }
+      cc.obra = UI.obra;
+      UI.ref = { area: Rf.areaPlaca(UI.res), artigo: Rf.contaArtigo(), custo: Rf.custoSistema(UI.res, { obra: UI.obra }), crono: Rf.cronograma(UI.res, cc), peso: Rf.pesoPorMateriais(UI.obra.paredes[0].espessura) };
+    } catch (e) { UI.erro = String(e && e.message || e); UI.res = null; UI.ref = null; }
+    if (irAba) UI.aba = "referencia";
+    render();
+    if (UI.pecas3d) desenhar3d();
+  }
   function corpoDocumentos() {
-    var r = UI.res, dis = !r;
+    var r = UI.res, dis = !r || velho();
     function card(t, txt, acao, mod) { var tem = !!global[mod]; return '<div class="bkx-doc"><b>' + esc(t) + "</b><p>" + esc(txt) + "</p>" + bt(acao, tem ? "Gerar" : "Indisponível", { sm: 1, dis: dis || !tem }) + "</div>"; }
-    return secao("Documentos", r && r.erros.length ? "Há erro de cálculo: os documentos saem marcados como NÃO EMITIR." : "", '<div class="bkx-docs">' +
+    var mf = UI.param.modeloFolha === "blocok" ? "blocok" : "ra";
+    var modelo = '<label class="bkx-modelo">Modelo da folha das pranchas <select data-bkx-p="modeloFolha">' + [["ra", "RA (padrão)"], ["blocok", "Blocok"]].map(function (o) { return '<option value="' + o[0] + '"' + (mf === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
+      '<p class="bkx-fraco" style="margin:4px 0 12px">Blocok = cores da marca na moldura, nos destaques do carimbo e no cabeçalho das tabelas; o desenho técnico imprime em preto e branco. O logo do carimbo é o da conta (⚙ Empresa).</p>';
+    return secao("Documentos", r && r.erros.length ? "Há erro de cálculo: os documentos saem marcados como NÃO EMITIR." : "", modelo + '<div class="bkx-docs">' +
       card("Memorial de cálculo", "Vento, painel, vergas, cintas, pilaretes, fundação, pendências e a memória passo a passo.", "memorial", "BlocokMemorial") +
       card("Pranchas executivas", "Paginação de cada parede com peças numeradas e peso, locação dos reforços, detalhes típicos e tabela de aço.", "pranchas", "BlocokPranchas") +
       card("DXF das pranchas", "Para abrir no AutoCAD (salvar como DWG lá).", "dxf", "BlocokDxf") +
@@ -389,7 +515,7 @@
   }
   function render() {
     var v = garantir(), jan = v.querySelector(".bkx-jan"), top = jan.scrollTop;
-    var corpo = UI.aba === "premissas" ? corpoPremissas() : UI.aba === "resultado" ? corpoResultado() : UI.aba === "orcamento" ? corpoOrcamento() : UI.aba === "documentos" ? corpoDocumentos() : corpoParedes();
+    var corpo = UI.aba === "premissas" ? corpoPremissas() : UI.aba === "resultado" ? corpoResultado() : UI.aba === "orcamento" ? corpoOrcamento() : UI.aba === "documentos" ? corpoDocumentos() : UI.aba === "referencia" ? corpoReferencia() : corpoParedes();
     jan.innerHTML = '<button type="button" class="btn sm bkx-fechar" data-bkx="fechar" title="Fechar (Esc)">' + (ico("fechar", 15) || "×") + '</button><div class="bkx-in">' + cabecalho() + avisoTopo() + kpis() + abas() + corpo + "</div>";
     jan.scrollTop = top;
   }
@@ -408,19 +534,32 @@
   function nomeBase() { return "Blocok - " + ((UI.param.nome || "obra").replace(/[\\/:*?"<>|]/g, "-")); }
   function opDocs() {
     var planta = UI.obra ? { paredes: UI.obra.paredes.filter(function (w) { return w.planta; }).map(function (w) { return { id: w.id, x1: w.planta.p1[0], y1: w.planta.p1[1], x2: w.planta.p2[0], y2: w.planta.p2[1] }; }) } : null;
+    if (UI.fonte === "referencia" && UI.obra) return { obra: UI.obra.nome, cliente: UI.obra.cliente || "", local: UI.obra.local || "", data: new Date().toISOString().slice(0, 10), planta: planta };
     return { obra: UI.param.nome, cliente: "", local: UI.param.local, data: new Date().toISOString().slice(0, 10), planta: planta };
+  }
+  function hojeBR() { var d = new Date(); function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear(); }
+  /* o cadastro da conta (Empresa.dados: nome, CNPJ, responsável, título, CREA…) e o logo — como nas pranchas da metálica */
+  function empresaApp() { var d = {}, logo = null; try { if (global.Empresa && Empresa.dados) d = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {} return { d: d, logo: logo }; }
+  function obraApp() { var g = global.Gestao, o = null; try { if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel); } catch (e) {} return o; }
+  /* as opções das PRANCHAS e do DXF (o memorial e o manual seguem com o opDocs): o que falta sai no carimbo como placeholder vermelho */
+  function opPranchas() {
+    var o = opDocs(), em = empresaApp(), ob = obraApp() || {}, cli = ob.clienteNome || ob.cliente || "";
+    o.obra = o.obra || ob.nome || ""; o.local = o.local || ob.endereco || ob.local || ""; o.contratante = cli; o.proprietario = cli; o.cliente = cli;
+    o.empresa = em.d && em.d.nome ? em.d : ""; o.responsavel = em.d.responsavel || ""; o.registro = em.d.crea || ""; o.tituloProfissional = em.d.titulo || ""; o.logo = em.logo || null;
+    o.data = hojeBR(); o.codigo = "BLK"; o.revisao = "R00"; o.formato = "auto"; o.modelo = UI.param.modeloFolha === "blocok" ? "blocok" : "ra";
+    return o;
   }
   var DOC = {
     memorial: function () { var w = janela("Memorial"); var g = BlocokMemorial.gerar(UI.res, opDocs()); mostrar(w, g.html, nomeBase() + " - memorial.html"); },
     manual: function () { var w = janela("Manual"); var g = BlocokManual.gerar(UI.res, opDocs()); mostrar(w, g.html, nomeBase() + " - manual de montagem.html"); },
     pranchas: function () {
-      var w = janela("Pranchas"), g = BlocokPranchas.gerar(UI.res, opDocs());
-      var html = "<!doctype html><meta charset=utf-8><title>Pranchas Blocok</title><style>@page{size:A1 landscape;margin:0}body{margin:0}.f{page-break-after:always;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}.f svg{width:100%;height:100%}</style>" +
-        (g.folhas || []).map(function (f) { return '<div class="f">' + f.svg + "</div>"; }).join("") + "<script>setTimeout(function(){print()},400)<\/script>";
+      var w = janela("Pranchas"), g = BlocokPranchas.gerar(UI.res, opPranchas());
+      /* cada folha na página do tamanho dela, em mm (o "@page A1" de antes era ignorado e a A1 saía encolhida na Carta) */
+      var html = BlocokPranchas.htmlImpressao(g.folhas || [], nomeBase() + " - pranchas", { imprimir: true });
       mostrar(w, html, nomeBase() + " - pranchas.html");
     },
     dxf: function () {
-      var g = BlocokDxf.gerar(UI.res, opDocs()); var arqs = g.arquivos || [];
+      var g = BlocokDxf.gerar(UI.res, opPranchas()); var arqs = g.arquivos || [];
       if (global.BimBcf && BimBcf.zipEscrever && arqs.length > 1) { var o = {}; arqs.forEach(function (a) { o[a.nome] = a.texto; }); baixar(nomeBase() + " - DXF.zip", BimBcf.zipEscrever(o), "application/zip"); }
       else arqs.forEach(function (a) { baixar(a.nome, a.texto, "application/dxf"); });
       toast("DXF gerado. Para DWG: abra no AutoCAD e salve como DWG.", "ok");
@@ -434,13 +573,15 @@
     try {
       if (a === "fechar") return fechar();
       if (a === "aba") { UI.aba = v; return render(); }
-      if (a === "ler") { UI.obra = null; UI.fonte = ""; return calcular(); }
-      if (a === "calcular") { if (UI.fonte === "exemplo") { UI.res = BlocokCalc.calcular(UI.obra); return render(); } UI.obra = null; return calcular(); }
-      if (a === "pecas3d") return alternar3d();
+      if (a === "ler") { UI.obra = null; UI.fonte = ""; if (UI.aba === "referencia") UI.aba = "paredes"; return calcular(); }
+      if (a === "calcular") { if (UI.fonte === "exemplo") { UI.res = BlocokCalc.calcular(UI.obra); return render(); } if (UI.fonte === "referencia") return referencia(false); UI.obra = null; return calcular(); }
+      if (a === "referencia") return referencia(true);
+      if (a === "ref-versao") { refParam().versao = v === "ra" ? "ra" : "construida"; salvar(); return referencia(false); }
+      if (a === "pecas3d") { if (!UI.pecas3d && velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } return alternar3d(); }
       if (a === "exemplo") return exemplo();
       if (a === "ver") { UI.parede = v; UI.aba = "paredes"; return render(); }
       if (a === "fechar-par") { UI.parede = null; return render(); }
-      if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); return DOC[a](); }
+      if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); if (velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } return DOC[a](); }
     } catch (e) { toast("Blocok: " + (e && e.message ? e.message : e), "erro", 8000); }
   }
   /* exemplo sem modelo: casa térrea 10 × 8 com laje (o mesmo de tools/blocok-exemplo.js) */
@@ -457,7 +598,7 @@
     if (UI.param.solo.tensaoAdm === "") UI.param.solo.tensaoAdm = 120;
     if (!UI.param.nome) UI.param.nome = "Residência exemplo";
     var r = BlocokModelo.obra(ps, opcoesDaObra());
-    UI.obra = r.obra; UI.mapaParedes = ps; UI.fonte = "exemplo"; UI.avisos = r.avisos;
+    UI.obra = r.obra; UI.mapaParedes = ps; UI.fonte = "exemplo"; UI.avisos = r.avisos; UI.assin = null;
     try { UI.res = BlocokCalc.calcular(UI.obra); if (global.BlocokOrc) { UI.orc = BlocokOrc.orcar(UI.res, {}); UI.crono = BlocokOrc.cronograma(UI.res, {}); } } catch (e) { UI.erro = String(e && e.message || e); }
     render();
   }
@@ -489,11 +630,15 @@
   }
 
   global.BlocokExecUI = {
-    registrar: registrar, abrir: abrir, fechar: fechar, montar3d: montar3d, liberado: liberado, alternar3d: alternar3d, exemplo: exemplo,
+    registrar: registrar, abrir: abrir, fechar: fechar, montar3d: montar3d, liberado: liberado, alternar3d: alternar3d, exemplo: exemplo, referencia: function () { referencia(true); },
     /* para as e2e */
-    estado: function () { return { aba: UI.aba, fonte: UI.fonte, paredes: UI.obra ? UI.obra.paredes.length : 0, ok: UI.res ? UI.res.ok : null, erros: UI.res ? UI.res.erros.length : 0, pendencias: UI.res ? UI.res.pendencias.length : 0, pecas3d: UI.pecas3d, instancias: grupo3 ? grupo3.children.reduce(function (s, m) { return s + (m.count || 0); }, 0) : 0 }; },
+    estado: function () { return { aba: UI.aba, fonte: UI.fonte, paredes: UI.obra ? UI.obra.paredes.length : 0, ok: UI.res ? UI.res.ok : null, erros: UI.res ? UI.res.erros.length : 0, pendencias: UI.res ? UI.res.pendencias.length : 0, pecas3d: UI.pecas3d, instancias: grupo3 ? grupo3.children.reduce(function (s, m) { return s + (m.count || 0); }, 0) : 0,
+      ref: UI.ref ? { versao: UI.obra && UI.obra.referencia ? UI.obra.referencia.versao : null, bruta: UI.ref.area.bruta, liquida: UI.ref.area.liquida, brutaComBancada: UI.ref.area.brutaComBancada, diasBlocok: UI.ref.crono.blocok.total.diasUteis, diasConvencional: UI.ref.crono.convencional.total.diasUteis, m2Dia: UI.ref.crono.parametros.blocok.m2Dia } : null }; },
     _paredesDoModelo: paredesDoModelo,
     _resultado: function () { return UI.res; },
-    _opDocs: function () { return opDocs(); }
+    desatualizado: function () { return velho(); },
+    _desatualizadoDe: desatualizadoDe,
+    _opDocs: function () { return opDocs(); },
+    _opPranchas: function () { return opPranchas(); }
   };
 })(typeof window !== "undefined" ? window : this);

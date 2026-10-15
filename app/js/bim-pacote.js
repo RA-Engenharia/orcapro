@@ -4654,7 +4654,7 @@ var s = sel3; if (!s || e.button !== 0 || e.pointerId !== s.id) return false;
 sel3 = null; selRetTirar();
 try { canvasEl.releasePointerCapture(e.pointerId); } catch (_) {}
 if (!s.modo) { sel3Clique(e); return true; }
-if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(); marcarFechamento(); return true; }
+if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(e); marcarFechamento(); return true; }
 if (s.modo === 'janela') {
 var ids = janela3d(s, e);
 selAplicar(ids, s.ctrl ? 'somar' : 'trocar');

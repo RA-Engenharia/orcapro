@@ -123,9 +123,9 @@
           { id: "aplicar-ambiente", emBreve: true, rotulo: "Aplicar por\nambiente", icone: "ambiente", requer: "modelo", dica: "Define o acabamento de um ambiente inteiro de uma vez." }
         ] },
         { nome: "Piso e revestimento", comandos: [
-          { id: "paginar-piso", rotulo: "Paginar\npiso", icone: "grade", grande: true, requer: "modelo", dica: "Escolhe o melhor ponto de partida para o menor recorte e nenhum recorte fino na entrada." },
-          { id: "paginar-parede", rotulo: "Paginar\nrevestimento", icone: "azulejo", grande: true, requer: "modelo", dica: "Paginação do azulejo por parede, alinhada com o piso." },
-          { id: "pranchas-paginacao", rotulo: "Pranchas de\npaginação", icone: "prancha", requer: "modelo", dica: "Gera as pranchas executivas de paginação para o pedreiro." }
+          { id: "paginar-piso", rotulo: "Paginar\npiso", icone: "grade", grande: true, requer: "modelo", dica: "Escolha o ambiente modelado: o contorno sai das paredes (face, portas, pilares) e as configurações aparecem lado a lado com menor recorte, peças, perda e cortadas — a mais eficiente vem marcada. Aplicada, aparece na planta baixa e no 3D. Também no botão direito do ambiente." },
+          { id: "paginar-parede", rotulo: "Paginar\nrevestimento", icone: "azulejo", grande: true, requer: "modelo", dica: "Selecione as paredes (clique, Ctrl+clique ou caixa) ou escolha o ambiente: cada face voltada para o cômodo é paginada, descontando os vãos. Com a mesma peça do piso, a junta vertical sobe da junta do piso." },
+          { id: "pranchas-paginacao", rotulo: "Pranchas de\npaginação", icone: "prancha", requer: "modelo", dica: "As pranchas das paginações aplicadas no modelo (piso com o ponto de partida e cada parede em elevação, com as peças a comprar) para o pedreiro." }
         ] }
       ]
     },

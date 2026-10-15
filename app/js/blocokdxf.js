@@ -5,7 +5,9 @@
  *   Gera cada folha de BlocokPranchas.gerar (as mesmas primitivas do SVG) em DXF R2000 pelo
  *   js/bimdxf.js: BimDxf.daFolha desenha a moldura e o carimbo RA (as mesmas primitivas de
  *   js/prancha.js carimboRA — carimbo INTOCADO) e este módulo acrescenta o desenho, em MILÍMETROS DE
- *   PAPEL (A1 = 841 x 594), com os layers EST-* e as penas do Padrão RA (+ BLK-* criados).
+ *   PAPEL (o formato de cada folha: A3/A2/A1), com os layers EST-* e as penas do Padrão RA (+ BLK-* criados). Modelo de
+ *   folha Blocok: as faixas e o cabeçalho das tabelas saem como hachura sólida nas camadas BLK-MARCA-* (cor ACI mais
+ *   próxima do hex da marca; o DXF R2000 não leva cor verdadeira).
  *
  * ⚠ DWG NATIVO NÃO EXISTE no sistema (BimDxf.DWG.disponivel = false: o conversor de DWG exige licença
  *   comercial). O retorno diz isso (aviso + objeto dwg) — abrir o DXF no AutoCAD e Salvar como DWG.
@@ -40,6 +42,7 @@
         doc.circulo(cam, o.x, Y(o.y), o.r);
         if (o.cheio) { if (o.r >= 0.7) doc.hachura(cam, [polCirculo(o.x, Y(o.y), o.r, 12)], Math.max(0.12, o.r / 4)); else doc.circulo(cam, o.x, Y(o.y), o.r / 2); }
       } else if (o.t === "H") doc.hachura(cam, [o.pts.map(function (p) { return [p[0], Y(p[1])]; })], o.esp);
+      else if (o.t === "F") doc.hachura(cam, [[[o.x, Y(o.y)], [o.x + o.w, Y(o.y)], [o.x + o.w, Y(o.y + o.h)], [o.x, Y(o.y + o.h)]]], 0, true);   /* faixa e cabeçalho do modelo Blocok: hachura sólida na camada da cor */
       else if (o.t === "T") {
         var w = o.w != null ? o.w : larg(o.s, o.h), x = o.x, y = o.y, centro = o.al === "C";
         if (!centro && o.al === "D") { if (o.ang) y = y + w; else x = x - w; }

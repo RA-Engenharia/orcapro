@@ -194,21 +194,35 @@
   }
   /* a peça sob o ponto num desenho 2D (cortes com `u` e arestas com linhasUd): o menor contorno
      fechado que contém o ponto ganha; senão, a linha mais perto dentro da tolerância */
+  /* os cortes POR PEÇA: o contorno que a união de paredes juntou (js/bimuniao.js unirCortes) volta às paredes de
+     origem (`partes`) — o clique, o realce e a janela falam de PEÇA, não do desenho. O mesmo `partes` vai em cada
+     laço do contorno (fora e furo): entra uma vez só. */
+  function cortesDe(dados) {
+    var out = [], vistos = [];
+    ((dados && dados.cortes) || []).forEach(function (c) {
+      if (c && c.partes && c.partes.length) {
+        if (vistos.indexOf(c.partes) >= 0) return; vistos.push(c.partes);
+        c.partes.forEach(function (q) { if (q && q.u && q.pts) out.push({ u: q.u, pts: q.pts, fechado: true }); });
+      } else out.push(c);
+    });
+    return out;
+  }
   function pecaNoDesenho(dados, p, tol) {
     if (!dados || !p) return null;
+    var CORTES = cortesDe(dados);
     var best = null, bestA = Infinity;
     function area(pts) { var s = 0; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(s / 2); }
     function dSeg(q, a, b) {
       var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 > 0 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2)) : 0;
       var x = a[0] + dx * t - q[0], y = a[1] + dy * t - q[1]; return Math.sqrt(x * x + y * y);
     }
-    (dados.cortes || []).forEach(function (c) {
+    CORTES.forEach(function (c) {
       if (!c || !c.u || !c.pts || c.pts.length < 3 || c.fechado === false) return;
       if (pontoEmPol(p, c.pts)) { var a = area(c.pts); if (a < bestA) { bestA = a; best = c.u; } }
     });
     if (best) return best;
     var dm = tol > 0 ? tol : 0.1;
-    (dados.cortes || []).forEach(function (c) {
+    CORTES.forEach(function (c) {
       if (!c || !c.u || !c.pts) return;
       var n = c.pts.length;
       for (var i = 0; i + 1 < n + (c.fechado !== false && n > 2 ? 1 : 0); i++) { var d = dSeg(p, c.pts[i], c.pts[(i + 1) % n]); if (d < dm) { dm = d; best = c.u; } }
@@ -237,7 +251,7 @@
   function pecasDoDesenho(dados, filtro) {
     var m = {}, ordem = [];
     function peca(u) { if (!m[u]) { m[u] = { id: u, pts: [], segs: [], polis: [] }; ordem.push(u); } return m[u]; }
-    ((dados && dados.cortes) || []).forEach(function (c) {
+    cortesDe(dados).forEach(function (c) {
       if (!c || !c.u || !c.pts || !c.pts.length || (filtro && !filtro(c.u))) return;
       var pc = peca(c.u), n = c.pts.length, fecha = c.fechado !== false && n > 2;
       c.pts.forEach(function (q) { pc.pts.push([q[0], q[1]]); });
@@ -282,7 +296,7 @@
   var BimSelecao = {
     /* puro (testes) */
     acao: acao, botoesOrbita: botoesOrbita, arrastou: arrastou, modoJanela: modoJanela, janela: janela, pegaJanela: pegaJanela,
-    combinar: combinar, casco: casco, pecaDoCasco: pecaDoCasco, pontoArrasto: pontoArrasto, pecaNoDesenho: pecaNoDesenho, pecasDoDesenho: pecasDoDesenho,
+    combinar: combinar, casco: casco, pecaDoCasco: pecaDoCasco, pontoArrasto: pontoArrasto, pecaNoDesenho: pecaNoDesenho, pecasDoDesenho: pecasDoDesenho, cortesDe: cortesDe,
     segToca: segToca, LIMIAR: LIMIAR,
 
     /* ------------------------------------------------ a MÃO (ferramenta explícita) */
@@ -364,7 +378,14 @@
         var r = pontoArrasto(d.base, P(p[0], p[1]), d.geo, 12 / this._escala(id), this._cfgMover(), !!ev.shiftKey);
         d.dest = r.p; d.sn = r.sn;
         var dd = dist(d.base, d.dest);
-        status((d.modo === "mover" ? "Movendo: " : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + " (Esc cancela; Shift solta o ângulo).");
+        /* VÍNCULOS (js/bimvinculosui.js): o que acompanha, em tempo real (laranja no desenho) */
+        var VU = global.BimVinculosUI, opV = null, tv = "";
+        if (VU && d.st && dd > 1e-4) {
+          if (d.modo === "mover") opV = { op: "transformar", ids: (d.sel || []).slice(), T: { tipo: "mover", dx: d.dest.x - d.base.x, dz: d.dest.z - d.base.z }, copia: false };
+          else if (typeof d.alca.k === "string") opV = { op: "esticar", id: d.alca.id, ponta: d.alca.k, x: d.dest.x, z: d.dest.z };
+          d.vinc = opV ? VU.previa(d.st, opV, ev) : null; tv = VU.textoPrevia(d.vinc, ev);
+        } else d.vinc = null;
+        status((d.modo === "mover" ? "Movendo: " : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
       }
       this.desenhar(id);
       return true;
@@ -379,6 +400,7 @@
         if (!al) return;
         d.modo = "alca"; d.base = P(al.p.x, al.p.z); d.dest = d.base;
         d.geo = R.geometria(est, { excluir: [d.alca.id], avaliar: this._avaliar() });
+        d.st = est; if (global.BimVinculosUI) global.BimVinculosUI.preparar(est);   /* VÍNCULOS: a topologia de antes, uma vez */
         return;
       }
       if (a === "peca-mover" && prc) {
@@ -396,13 +418,14 @@
         d.base = sn0 ? P(sn0.p.x, sn0.p.z) : cur; d.dest = d.base;
         d.geo = R2.geometria(est2, { excluir: sel, avaliar: this._avaliar() });
         d.modo = "mover";
+        d.st = est2; d.sel = sel.slice(); if (global.BimVinculosUI) global.BimVinculosUI.preparar(est2);   /* VÍNCULOS */
       }
     },
     up2d: function (id, ev, p, cancelou) {
       var d = st.d; if (!d || d.id !== id) return false;
       st.d = null;
       var c = this._cache(id); try { if (c && c.el && ev) c.el.releasePointerCapture(ev.pointerId); } catch (e) {}
-      if (cancelou) { this.desenhar(id); return true; }
+      if (cancelou) { if (global.BimVinculosUI) global.BimVinculosUI.soltar(); this.desenhar(id); return true; }
       var prc = this._precisao();
       if (!d.modo) {   /* CLIQUE */
         if (d.acao === "alca") { this.desenhar(id); return true; }
@@ -417,9 +440,9 @@
         status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
       } else if (d.modo === "mover" && prc && d.dest && d.base) {
         var dx = r4(d.dest.x - d.base.x), dz = r4(d.dest.z - d.base.z);
-        if (Math.abs(dx) + Math.abs(dz) > 1e-4 && prc.mover) prc.mover(dx, dz);
+        if (Math.abs(dx) + Math.abs(dz) > 1e-4 && prc.mover) prc.mover(dx, dz, ev);   /* ev: Alt segurado = só esta peça (vínculos) */
       } else if (d.modo === "alca" && prc && d.dest && d.base && dist(d.dest, d.base) > 1e-4 && prc.esticar) {
-        prc.esticar(d.alca.id, d.alca.k, d.dest);
+        prc.esticar(d.alca.id, d.alca.k, d.dest, ev);
       }
       this.desenhar(id);
       return true;
@@ -432,7 +455,7 @@
       this.desenhar(id);
       return true;
     },
-    cancelar: function () { var d = st.d; if (!d) return false; st.d = null; this.desenhar(d.id); status("Cancelado."); return true; },
+    cancelar: function () { var d = st.d; if (!d) return false; st.d = null; if (global.BimVinculosUI) global.BimVinculosUI.soltar(); this.desenhar(d.id); status("Cancelado."); return true; },
     arrastando: function () { return !!(st.d && st.d.modo); },
     _hover: function (id, ev, p) {
       if (st.mao || !p || (ev && ev.buttons)) return;
@@ -458,7 +481,7 @@
       sel.forEach(function (u) { sm[u] = 1; });
       function el(tag, at, pai) { var e = global.document.createElementNS(NS, tag); Object.keys(at).forEach(function (k) { e.setAttribute(k, at[k]); }); (pai || g).appendChild(e); return e; }
       function contorno(u, cls) {
-        (dados.cortes || []).forEach(function (cc) {
+        cortesDe(dados).forEach(function (cc) {
           if (!cc || cc.u !== u || !cc.pts || cc.pts.length < 2) return;
           var s = ""; cc.pts.forEach(function (q, i) { s += (i ? "L" : "M") + q[0] + " " + q[1]; }); if (cc.fechado !== false && cc.pts.length > 2) s += "Z";
           el("path", { d: s, "class": cls, "vector-effect": "non-scaling-stroke" });
@@ -494,13 +517,21 @@
         d.geoSel.segs.forEach(function (s) { if (s.k === "eixo") return; el("line", { x1: s.a.x + dx, y1: s.a.z + dz, x2: s.b.x + dx, y2: s.b.z + dz, "class": "sl-fantasma", "vector-effect": "non-scaling-stroke" }); });
         el("line", { x1: d.base.x, y1: d.base.z, x2: d.dest.x, y2: d.dest.z, "class": "sl-guia", "vector-effect": "non-scaling-stroke" });
       }
+      /* VÍNCULOS: as que acompanham o arraste (parede = contorno; barra = a linha em planta) */
+      if (d && (d.modo === "mover" || d.modo === "alca") && d.vinc && global.BimVinculosUI) {
+        var VUd = global.BimVinculosUI, fora = d.modo === "mover" ? (d.sel || []) : [d.alca.id];
+        VUd.linhas(d.vinc, fora).forEach(function (l) {
+          var ss = l.k === "parede" ? VUd.contorno(l) : [[{ x: l.a[0], z: l.a[2] }, { x: l.b[0], z: l.b[2] }]];
+          ss.forEach(function (s) { el("line", { x1: s[0].x, y1: s[0].z, x2: s[1].x, y2: s[1].z, "class": "sl-vinculo", "data-sl-vinculo": l.id, "vector-effect": "non-scaling-stroke" }); });
+        });
+      }
       if (d && d.modo === "janela" && d.j) {
         el("rect", { x: d.j.x0, y: d.j.y0, width: Math.max(d.j.x1 - d.j.x0, 1e-6), height: Math.max(d.j.y1 - d.j.y0, 1e-6),
                      "class": "sl-janela sl-janela-" + d.j.modo, "data-sl-janela": d.j.modo, "vector-effect": "non-scaling-stroke" });
       }
     },
     /* estado para o e2e e o suporte (só leitura) */
-    estado: function () { var d = st.d; return { mao: st.mao, arrasto: d ? { id: d.id, modo: d.modo, acao: d.acao, u: d.u, dest: d.dest || null, base: d.base || null, janela: d.j || null } : null, hover: st.hover }; }
+    estado: function () { var d = st.d; return { mao: st.mao, arrasto: d ? { id: d.id, modo: d.modo, acao: d.acao, u: d.u, dest: d.dest || null, base: d.base || null, janela: d.j || null, vinculos: d.vinc ? d.vinc.acompanharam.slice() : null } : null, hover: st.hover }; }
   };
 
   global.BimSelecao = BimSelecao;

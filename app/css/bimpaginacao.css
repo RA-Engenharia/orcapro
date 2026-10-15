@@ -1,0 +1,65 @@
+/* =====================================================================
+ * bimpaginacao.css — PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js): a tela de
+ * paginar piso e revestimento a partir do ambiente e o desenho da paginação
+ * na planta baixa (js/desenho2d.js, svgPaginacao).
+ * Só tokens: os do app (--linha, --aco, --texto…) no modal e os do papel
+ * (--d2-*) na planta, que já trocam com o tema claro/escuro do BIM.
+ * ===================================================================== */
+
+/* ---------- o modal ---------- */
+.pgm { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.pgm-topo { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.pgm-topo > label { flex: 1 1 260px; }
+.pgm-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 8px; }
+.pgm label { display: flex; flex-direction: column; gap: 3px; font-size: var(--t-peq); color: var(--texto-fraco); min-width: 0; }
+.pgm label input, .pgm label select { width: 100%; min-height: var(--h-ctl, 32px); }
+.pgm-info { font-size: var(--t-peq); color: var(--texto-fraco); line-height: 1.45; margin: 0; }
+.pgm-info b { color: var(--texto); font-weight: var(--p-medio); }
+.pgm-sec { font-size: var(--t-peq); font-weight: var(--p-forte); color: var(--texto); margin: 2px 0 -4px; }
+
+/* as configurações lado a lado */
+.pgm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 8px; }
+.pgm-card { display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 8px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--surface); color: var(--texto); cursor: pointer; font: inherit; min-width: 0; height: auto; white-space: normal; }
+.pgm-card:hover { border-color: var(--aco); }
+.pgm-card:focus-visible { outline: 2px solid var(--anel, var(--aco)); outline-offset: 2px; }
+.pgm-card[aria-pressed="true"] { border: 2px solid var(--aco); padding: 7px; background: color-mix(in srgb, var(--aco) 8%, var(--surface)); }
+.pgm-card-cab { display: flex; gap: 6px; align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
+.pgm-card-tit { font-size: var(--t-peq); font-weight: var(--p-forte); }
+.pgm-melhor { font-size: var(--t-micro); font-weight: var(--p-forte); color: var(--verde); border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.pgm-mini { background: #ffffff; border: 1px solid var(--linha); border-radius: var(--raio-sm); }
+.pgm-mini svg { display: block; width: 100%; height: 112px; }
+.pgm-num { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; margin: 0; font-size: var(--t-micro); font-variant-numeric: tabular-nums; }
+.pgm-num dt { color: var(--texto-fraco); }
+.pgm-num dd { margin: 0; text-align: right; font-weight: var(--p-medio); color: var(--texto); }
+.pgm-num .pgm-ruim, .pgm-ruim { color: var(--graf-alerta); }
+
+/* o desenho grande e os números */
+.pgm-desenho { border: 1px solid var(--linha); border-radius: var(--raio-sm); padding: 6px; background: #ffffff; overflow-x: auto; }
+.pgm-tbl { width: 100%; border-collapse: collapse; font-size: var(--t-peq); font-variant-numeric: tabular-nums; }
+.pgm-tbl th, .pgm-tbl td { padding: 5px 8px; border-bottom: 1px solid var(--linha); text-align: left; vertical-align: top; color: var(--texto); }
+.pgm-tbl th { font-size: var(--t-micro); font-weight: var(--p-forte); color: var(--texto-fraco); text-transform: uppercase; letter-spacing: .4px; }
+.pgm-tbl .pgm-d { text-align: right; white-space: nowrap; }
+.pgm-tbl .pgm-nota { display: block; font-size: var(--t-micro); color: var(--texto-fraco); font-weight: var(--p-normal); }
+.pgm-face { cursor: pointer; }
+.pgm-face:hover td { background: color-mix(in srgb, var(--aco) 5%, transparent); }
+.pgm-face:focus-visible { outline: 2px solid var(--anel, var(--aco)); outline-offset: -2px; }
+.pgm-face[aria-selected="true"] td { background: color-mix(in srgb, var(--aco) 10%, transparent); }
+.pgm-herda { color: var(--verde); font-weight: var(--p-medio); }
+.pgm-naoherda { color: var(--texto-fraco); }
+
+/* recados */
+.pgm-aviso { padding: 8px 10px; border-radius: var(--raio-sm); font-size: var(--t-peq); line-height: 1.45; color: var(--texto); border-left: 3px solid var(--amarelo); background: color-mix(in srgb, var(--amarelo) 11%, var(--surface)); }
+.pgm-aviso-erro { border-left-color: var(--vermelho); background: color-mix(in srgb, var(--vermelho) 9%, var(--surface)); }
+.pgm-aviso-ok { border-left-color: var(--verde); background: color-mix(in srgb, var(--verde) 9%, var(--surface)); }
+.pgm-acoes { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- a paginação na planta baixa ---------- */
+.bim-grade > .bim-tela.bim-tela-2d { --d2-pag-junta: #6b7682; --d2-pag-rec: #f4dcb4; --d2-pag-bol: #f0b3b3; --d2-pag-rev: #1a6cb5; --d2-pag-velha: #b42318; }
+.bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-pag-junta: #9aa5b1; --d2-pag-rec: #6b5532; --d2-pag-bol: #7a3636; --d2-pag-rev: #4a9fe0; --d2-pag-velha: #ff8a7a; }
+.d2-pag-pc { stroke: var(--d2-pag-junta, #6b7682); stroke-linejoin: miter; }
+.d2-pag-rec { fill: var(--d2-pag-rec, #f4dcb4); stroke: none; }
+.d2-pag-bol { fill: var(--d2-pag-bol, #f0b3b3); stroke: none; }
+.d2-pag-velha .d2-pag-pc, .d2-pag-velha .d2-pag-rev { stroke: var(--d2-pag-velha, #b42318); }
+.d2-pag-part circle, .d2-pag-part path { stroke: var(--d2-sel, #1a6cb5); }
+.d2-pag-rev { stroke: var(--d2-pag-rev, #1a6cb5); stroke-linecap: butt; }
+.d2-pag-aviso { fill: var(--d2-pag-velha, #b42318); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; font-weight: 600; }

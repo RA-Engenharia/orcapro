@@ -71,15 +71,38 @@
   function br(n, c) { return (+n || 0).toFixed(c == null ? 2 : c).replace(".", ","); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
-  var NORMAS = {
-    nbr6118: "ABNT NBR 6118:2014 (texto da biblioteca; vigente 2023 — conferir)",
-    nbr6120: "ABNT NBR 6120:2019",
-    nbr6123: "ABNT NBR 6123:1988 (texto da biblioteca; vigente 2023 — conferir)",
-    nbr8681: "ABNT NBR 8681:2003 (texto da biblioteca; vigente 2025 — conferir)",
-    nbr15575: "ABNT NBR 15575-4:2013 (texto da biblioteca; vigente 2025 — conferir)",
-    sinat019: "Diretriz SiNAT nº 019 (maio/2026)",
-    nbr16868: "ABNT NBR 16868-1:2020 (analogia — conferir)"
+  /* NORMAS como saem nos documentos de CLIENTE (memorial, pranchas): número:ano e
+     título, LIMPOS. Pedido do gerente em 14/10/2026: a S12a viu "(texto da
+     biblioteca; vigente 2023 — conferir)" nas pranchas — nota interna não sai em
+     documento de cliente. A edição citada é a do TEXTO que o cálculo seguiu (o da
+     biblioteca RA); a edição vigente no catálogo ABNT e o que conferir nela ficam
+     em EDICOES (abaixo, uso interno) e em docs/blocok/DUVIDAS-REFERENCIA.md.
+     NORMA = forma curta (referência de cada passo); NORMAS = com o título (lista). */
+  var NORMA = {
+    nbr6118: "ABNT NBR 6118:2014", nbr6120: "ABNT NBR 6120:2019", nbr6123: "ABNT NBR 6123:1988", nbr8681: "ABNT NBR 8681:2003",
+    nbr15575: "ABNT NBR 15575-4:2025", sinat019: "Diretriz SiNAT nº 019 (maio/2026)", nbr16868: "ABNT NBR 16868-1:2020"
   };
+  var TITULO = {
+    nbr6118: "Projeto de estruturas de concreto — Procedimento",
+    nbr6120: "Ações para o cálculo de estruturas de edificações",
+    nbr6123: "Forças devidas ao vento em edificações",
+    nbr8681: "Ações e segurança nas estruturas — Procedimento",
+    nbr15575: "Edificações habitacionais — Desempenho — Parte 4: Sistemas de vedações verticais internas e externas — SVVIE",
+    sinat019: "Sistemas de paredes sem função estrutural compostas de blocos pré-fabricados de EPS e argamassa ou concreto",   // título: RA Brain\Pesquisas\Paineis EPS-concreto - normas e calculo.md
+    nbr16868: "Alvenaria estrutural — Parte 1: Projeto (usada por analogia)"
+  };
+  var NORMAS = {};
+  Object.keys(NORMA).forEach(function (k) { NORMAS[k] = NORMA[k] + " — " + TITULO[k]; });
+  /* uso INTERNO (nunca impresso): edição usada × vigente — vigencia.json da
+     biblioteca RA (catálogo ABNT, conferido em 12/10/2026). Vazio = não confirmado. */
+  var EDICOES = {
+    nbr6118: { usada: "2014", vigente: "2026" }, nbr6120: { usada: "2019", vigente: "2019" }, nbr6123: { usada: "1988", vigente: "2023" },
+    nbr8681: { usada: "2003", vigente: "2025" },
+    /* 15575-4: CITADA a 2025 (decisão do gerente, 14/10/2026); o h/350 do cálculo veio do texto de 2013 — conferir na 2025 (DUVIDAS-REFERENCIA.md, seção 10) */
+    nbr15575: { usada: "2013", vigente: "2025", citada: "2025" }, nbr16868: { usada: "2020", vigente: "2020" }
+  };
+  /* tira de um texto do motor (vento, avisos) a nota interna de "conferir" */
+  function semNotaInterna(s) { return String(s == null ? "" : s).replace(/\s*\(([^()]*\([^()]*\))?[^()]*conferir[^()]*\)/gi, "").replace(/\s*—\s*conferir\b/gi, "").replace(/\bconferir\b/gi, "verificar"); }
   var CARGAS = {   // NBR 6120:2019, Tabela 10 (p. 26) e 6.4
     residencial: { q: 1.5, ref: "NBR 6120:2019, Tabela 10 — dormitórios, sala, copa, cozinha, sanitários" },
     servico: { q: 2.0, ref: "NBR 6120:2019, Tabela 10 — despensa, área de serviço e lavanderia" },
@@ -88,7 +111,7 @@
     telhado: { q: 0.25, ref: "NBR 6120:2019, 6.4 — mínimo para telhados (0,25 a 0,50 kN/m² conforme a área de influência)" }
   };
   var GAMA = { concretoArmado: 25, argamassa: 21 };   // kN/m³ (NBR 6120:2019, Tabela 1)
-  var COMB = { gg: 1.4, gq: 1.4, gw: 1.4, psi0Q: 0.5, psi0W: 0.6, ggFav: 1.0, ref: NORMAS.nbr8681 };
+  var COMB = { gg: 1.4, gq: 1.4, gw: 1.4, psi0Q: 0.5, psi0W: 0.6, ggFav: 1.0, ref: NORMA.nbr8681 };
   var COBR = { I: 25, II: 30, III: 40, IV: 50 };       // mm, viga/pilar (NBR 6118 Tabela 7.2)
 
   function padroes() {
@@ -97,8 +120,8 @@
       estribo: 5.0, barraViga: 8, barraPilar: 10, dmaxAgregado: 9.5,
       vento: { v0: null, categoria: "IV", grupoS3: 2, s1: { tipo: "plano" }, q: null },
       painel: { MRdX: null, MRdY: null, EI: null, fonte: "" },          // do fabricante (ensaio)
-      analogia: { ftkParalelo: 0.20, ftkPerpendicular: 0.10, gamaM: 2.0, Eface: null, fonte: "NBR 16868-1:2020 por analogia (pesquisa RA Brain 14/10/2026) — conferir" },
-      fckFace: 12,   // MPa, informado pela empresa ao laboratório (laudo UFMG) — não ensaiado
+      analogia: { ftkParalelo: 0.20, ftkPerpendicular: 0.10, gamaM: 2.0, Eface: null, fonte: "ABNT NBR 16868-1:2020, por analogia (pesquisa RA, 14/10/2026)" },
+      fckFace: 12,   // MPa — DECLARADO pelo fabricante, sem laudo (site oficial: "alta resistência de 12MPa", sem dizer de quê; no laudo UFMG foi informado pela empresa, não ensaiado). Só fck do microconcreto da FACE (rigidez), nunca resistência do painel — js/blocokensaio.js DECLARADO
       laje: { tipo: "nenhuma", g: 0, q: 0, vao: 0, uso: "residencial" },     // g = peso próprio + revestimento (kN/m²)
       cobertura: { g: 0.5, q: CARGAS.telhado.q, vao: 0 },
       solo: { tensaoAdm: null, descricao: "" },
@@ -242,7 +265,7 @@
     try { r = AV().calcular(ent, { isopletas: (typeof self !== "undefined" && self.AcoIsopletas) || null, todasDirecoes: true }); } catch (e) { r = { ok: false, erros: [String(e && e.message || e)] }; }
     if (!r || !r.ok) { avisos.push("Vento não calculado: " + ((r && r.erros && r.erros.join("; ")) || "falta V0 ou a localização da obra") + "."); return out; }
     /* só os avisos que dizem respeito às PAREDES (os de beiral/telhado/galpão são do telhado) */
-    (r.avisos || []).forEach(function (x) { if (!/beiral|Tabela 5|Tabela 6|cobertura|telhado|galp/i.test(String(x))) avisos.push("Vento: " + x); });
+    (r.avisos || []).forEach(function (x) { if (!/beiral|Tabela 5|Tabela 6|cobertura|telhado|galp/i.test(String(x))) avisos.push("Vento: " + semNotaInterna(x)); });
     var qv = r.qVedacao != null ? r.qVedacao : r.q;
     var maxF = { frente: 0, fundo: 0, esquerda: 0, direita: 0 }, cpis = [];
     (r.casos || []).forEach(function (c) {
@@ -260,9 +283,9 @@
     out.externa = Math.max.apply(null, Object.keys(out.porFace).map(function (f) { return out.porFace[f]; }));
     out.ok = true; out.qVed = r3(qv); out.v0 = r.v0; out.vk = r.vk; out.coef = maxF; out.dcpi = r3(dcpi); out.bordaLocal = r3(maxLoc);
     out.fonte = NORMAS.nbr6123;
-    (r.memoria || []).slice(0, 12).forEach(function (m) { memoria.push({ passo: "Vento — " + m.passo, formula: m.formula, valores: m.valores, resultado: m.resultadoTexto || (m.resultado + " " + (m.unidade || "")), referencia: m.referencia + " (" + (m.edicao || "") + ")" }); });
+    (r.memoria || []).slice(0, 12).forEach(function (m) { memoria.push({ passo: "Vento — " + m.passo, formula: m.formula, valores: m.valores, resultado: m.resultadoTexto || (m.resultado + " " + (m.unidade || "")), referencia: semNotaInterna(m.referencia + " (" + (m.edicao || "") + ")").replace(/\s*\(\s*\)$/, "") }); });
     memoria.push({ passo: "Vento — pressão característica na vedação", formula: "p = máx[q(vedação) · máx|cpe − cpi| da face, nas 4 direções; faixas de borda com o cpe médio (6.1.2)]; faces permeáveis (6.2.5)", valores: "q = " + br(qv, 3) + " kN/m²",
-      resultado: "fachadas (pior face) " + br(out.externa, 3) + " kN/m²; paredes internas q·Δcpi = " + br(out.interna, 3) + " kN/m²", referencia: NORMAS.nbr6123 });
+      resultado: "fachadas (pior face) " + br(out.externa, 3) + " kN/m²; paredes internas q·Δcpi = " + br(out.interna, 3) + " kN/m²", referencia: NORMA.nbr6123 });
     return out;
   }
 
@@ -656,9 +679,9 @@
     obra = obra || {};
     var P = mesclar(padroes(), clone(obra.parametros || {}));
     var memoria = [], avisos = [], pend = [];
-    memoria.push({ passo: "Modelo estrutural", formula: "Painel Blocok = vedação (laudos UFMG/LAEES 2022); estrutura = pilaretes, vergas e cintas de concreto armado moldados dentro das peças", resultado: "Diretriz SiNAT 019: elemento estrutural a ≤ 4,0 m; amarração ≥ 33 %", referencia: NORMAS.sinat019 });
-    memoria.push({ passo: "Materiais", formula: "concreto de preenchimento C" + P.fck + " (fcd = fck/1,4); aço CA-50 (fyd = fyk/1,15); CAA " + P.caa + " → cobrimento " + (COBR[P.caa] || 30) + " mm", resultado: "Ecs = " + br(mat(P.fck, P.fyk).Ecs / 1000, 1) + " GPa", referencia: NORMAS.nbr6118 + " — 8.2, 8.3 e Tabela 7.2" });
-    if (P.laje.tipo !== "nenhuma") memoria.push({ passo: "Cargas da laje", formula: "g = " + br(P.laje.g) + " kN/m² · q = " + br(P.laje.q) + " kN/m² · vão " + br(P.laje.vao) + " m → reação (g+q)·l/2 por metro de parede de apoio", resultado: br((P.laje.g + P.laje.q) * P.laje.vao / 2) + " kN/m", referencia: NORMAS.nbr6120 + " Tabela 10" });
+    memoria.push({ passo: "Modelo estrutural", formula: "Painel Blocok = vedação (laudos UFMG/LAEES 2022); estrutura = pilaretes, vergas e cintas de concreto armado moldados dentro das peças", resultado: "Diretriz SiNAT 019: elemento estrutural a ≤ 4,0 m; amarração ≥ 33 %", referencia: NORMA.sinat019 });
+    memoria.push({ passo: "Materiais", formula: "concreto de preenchimento C" + P.fck + " (fcd = fck/1,4); aço CA-50 (fyd = fyk/1,15); CAA " + P.caa + " → cobrimento " + (COBR[P.caa] || 30) + " mm", resultado: "Ecs = " + br(mat(P.fck, P.fyk).Ecs / 1000, 1) + " GPa", referencia: NORMA.nbr6118 + " — 8.2, 8.3 e Tabela 7.2" });
+    if (P.laje.tipo !== "nenhuma") memoria.push({ passo: "Cargas da laje", formula: "g = " + br(P.laje.g) + " kN/m² · q = " + br(P.laje.q) + " kN/m² · vão " + br(P.laje.vao) + " m → reação (g+q)·l/2 por metro de parede de apoio", resultado: br((P.laje.g + P.laje.q) * P.laje.vao / 2) + " kN/m", referencia: NORMA.nbr6120 + " Tabela 10" });
     /* LAJE E TELHADO COM EQUILÍBRIO (revisão): a reação por metro de parede de
        apoio é o MAIOR entre (g+q)·vão/2 e a carga total da planta repartida pelo
        comprimento de apoio — assim a soma das reações nunca fica abaixo da carga. */
@@ -670,8 +693,8 @@
       gLajeM: Lap > 0 ? num(P.laje.g) * area0 / Lap : 0, qLajeM: Lap > 0 ? num(P.laje.q) * area0 / Lap : 0,
       gCobM: Lcob > 0 && num(P.cobertura.vao) > 0 ? num(P.cobertura.g) * area0 / Lcob : 0, qCobM: Lcob > 0 && num(P.cobertura.vao) > 0 ? num(P.cobertura.q) * area0 / Lcob : 0
     };
-    if (temLaje0) memoria.push({ passo: "Reação da laje nas paredes de apoio", formula: "máx[(g+q)·vão/2 ; (g+q)·área/Σ comprimento de apoio] — equilíbrio garantido", valores: "área " + br(area0, 1) + " m² · apoio " + br(Lap, 1) + " m", resultado: "g " + br(Math.max(P.laje.g * P.laje.vao / 2, ctx.gLajeM)) + " · q " + br(Math.max(P.laje.q * P.laje.vao / 2, ctx.qLajeM)) + " kN/m", referencia: NORMAS.nbr6120 });
-    if (num(P.cobertura.vao) > 0) memoria.push({ passo: "Cargas da cobertura", formula: "g = " + br(P.cobertura.g) + " · q = " + br(P.cobertura.q) + " kN/m² (" + (temLaje0 && P.cobertura.sobreLaje !== false ? "telhado apoiado na laje: vai às paredes que recebem a laje" : "telhado direto nas paredes de apoio") + ")", resultado: "máx[(g+q)·vão/2 ; total/Σ apoio] = " + br(Math.max((P.cobertura.g + P.cobertura.q) * P.cobertura.vao / 2, ctx.gCobM + ctx.qCobM)) + " kN/m", referencia: NORMAS.nbr6120 + " 6.4" });
+    if (temLaje0) memoria.push({ passo: "Reação da laje nas paredes de apoio", formula: "máx[(g+q)·vão/2 ; (g+q)·área/Σ comprimento de apoio] — equilíbrio garantido", valores: "área " + br(area0, 1) + " m² · apoio " + br(Lap, 1) + " m", resultado: "g " + br(Math.max(P.laje.g * P.laje.vao / 2, ctx.gLajeM)) + " · q " + br(Math.max(P.laje.q * P.laje.vao / 2, ctx.qLajeM)) + " kN/m", referencia: NORMA.nbr6120 });
+    if (num(P.cobertura.vao) > 0) memoria.push({ passo: "Cargas da cobertura", formula: "g = " + br(P.cobertura.g) + " · q = " + br(P.cobertura.q) + " kN/m² (" + (temLaje0 && P.cobertura.sobreLaje !== false ? "telhado apoiado na laje: vai às paredes que recebem a laje" : "telhado direto nas paredes de apoio") + ")", resultado: "máx[(g+q)·vão/2 ; total/Σ apoio] = " + br(Math.max((P.cobertura.g + P.cobertura.q) * P.cobertura.vao / 2, ctx.gCobM + ctx.qCobM)) + " kN/m", referencia: NORMA.nbr6120 + " 6.4" });
     if (temLaje0 && Lap === 0) avisos.push("Há laje, mas nenhuma parede está marcada como apoio dela — marque as paredes que recebem a laje (aba Paredes).");
     var V = vento(obra, P, memoria, avisos);
     if (!V.ok) { V.porFace = { frente: 0, fundo: 0, esquerda: 0, direita: 0 }; V.interna = 0; pend.push({ chave: "vento", texto: "Localização da obra (ou V0) para calcular o vento pela NBR 6123." }); }
@@ -736,6 +759,6 @@
     };
   }
 
-  return { NORMAS: NORMAS, CARGAS: CARGAS, COBR: COBR, padroes: padroes, calcular: calcular,
+  return { NORMAS: NORMAS, NORMA: NORMA, EDICOES: EDICOES, semNotaInterna: semNotaInterna, CARGAS: CARGAS, COBR: COBR, padroes: padroes, calcular: calcular,
     flexao: flexao, cisalhamento: cisalhamento, flecha: flecha, flexoCompressao: flexoCompressao, placaNavier: placaNavier, barras: barras, mat: mat };
 });

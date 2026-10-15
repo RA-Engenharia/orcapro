@@ -796,6 +796,17 @@
        {op:'ajustarTipo', categoria, tipoId, nome?, valores?, ids?}
        {op:'marcar', id, marca?|comentarios?|imagem?|faseCriada?|faseDemolida?|materialProj?|params?}
        {op:'marcar', marcas:{id: marca}} */
+    /* VÍNCULOS (js/bimvinculos.js, 14/10/2026) — a FORMA das duas ops do motor dos vínculos, aqui para o sanear
+       nunca jogar fora a ponta desligada ou a marca de ligação desatualizada numa tela que não carregou o motor:
+       {op:'vinculoPonta', id, ponta:'a'|'b', solto:bool} e {op:'vinculoDesatualizar', ids:[...], motivo?, em?} */
+    opVinculoValida: function (o) {
+      function idOk(v) { return (typeof v === "string" && v.length > 0) || (typeof v === "number" && isFinite(v)); }
+      if (!o) return false;
+      if (o.op === "vinculoPonta") return idOk(o.id) && (o.ponta === "a" || o.ponta === "b") && typeof o.solto === "boolean";
+      if (o.op === "vinculoDesatualizar") return Array.isArray(o.ids) && o.ids.length > 0 && o.ids.length <= 500 && o.ids.every(idOk) &&
+        (o.motivo == null || (typeof o.motivo === "string" && o.motivo.length <= 300)) && (o.em == null || (typeof o.em === "string" && o.em.length <= 40));
+      return false;
+    },
     opParamValida: function (o) {
       function esc(v) { return v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v)); }
       function mapa(m) { return !!m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length > 0 && Object.keys(m).every(function (k) { return esc(m[k]); }); }
@@ -848,7 +859,7 @@
     },
     /* P2-C: de onde sai a quantidade de cada serviço do ambiente, e em que
        unidade (a composição tem de ser a mesma — regra 2 do js/orcmodelo.js) */
-    MEDIDAS_AMBIENTE: { areaPiso: "m2", rodape: "m", areaParede: "m2", areaTeto: "m2" },
+    MEDIDAS_AMBIENTE: { areaPiso: "m2", rodape: "m", areaParede: "m2", areaTeto: "m2", pecasPiso: "un", pecasParede: "un" },   /* pecas*: paginação no modelo (js/bimpaginacao.js) */
     /* P2 integração: as medidas do PRÓPRIO ambiente, pelo REGISTRO (js/bimparam.js:
        Área = ROOM_AREA, Perímetro = ROOM_PERIMETER, Volume = ROOM_VOLUME — na
        regra de "Cálculos de área e volume" do projeto). A unidade da composição
@@ -1123,6 +1134,7 @@
         /* P4: unir/desunir/alternar ordem de união de geometria — duas peças diferentes (a forma fica aqui: o sanear não perde a op sem o js/bimarq.js) */
         if (o.op === "unirGeometria" || o.op === "desunirGeometria" || o.op === "alternarUniao") return ["a", "b"].every(function (k) { return (typeof o[k] === "string" && o[k].length > 0) || fin(o[k]); }) && String(o.a) !== String(o.b);
         if (BimEdit.opAmbiente(o.op)) return BimEdit.opAmbienteValida(o);   /* P2-A */
+        if (o.op === "vinculoPonta" || o.op === "vinculoDesatualizar") return BimEdit.opVinculoValida(o);   /* VÍNCULOS (js/bimvinculos.js) */
         if (o.op === "forro") return BimEdit.opForroValida(o);   /* P2-B */
         if (o.op === "fases" || o.op === "grupo" || o.op === "opcoes") return BimEdit.opP10Valida(o);   /* P10 */
         if (/^(topossolido|subregiao|plataforma|divisa|implantacao|compTerreno|rotuloCurvas)$/.test(o.op)) return BimEdit.opTerrenoValida(o);   /* P11 */

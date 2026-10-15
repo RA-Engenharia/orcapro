@@ -412,7 +412,25 @@
     anotarPlanta: function (d, estilo, niveis) {
       if (!this.ativo() || !d || !d.nivel) return null;
       var st = this.estado(); if (!st || (!arr(st.ambientes).length && !arr(st.separadores).length)) return null;
-      return this.planta(st, d.nivel, niveis, estilo, this._sel);
+      var r = this.planta(st, d.nivel, niveis, estilo, this._sel);
+      if (r) this._chamarExtras("anotarPlanta", [r, st, d, estilo, niveis]);
+      return r;
+    },
+    /* ----------------------------------------------- EXTRAS do ambiente
+     * O que mora DENTRO do ambiente e precisa aparecer com ele (a PAGINAÇÃO de
+     * piso e revestimento, js/bimpaginacaoui.js) entra por aqui, sem um gancho
+     * novo no js/bim.js: { anotarPlanta(r, estado, d, estilo, niveis) — acrescenta
+     * ao que vai para a planta; montar3d(api); aposRebuild(estado) }. Extra com
+     * erro não derruba o ambiente (cada chamada isolada). */
+    _extras: [],
+    registrarExtra: function (x) {
+      if (!x || this._extras.indexOf(x) >= 0) return false;
+      this._extras.push(x);
+      if (this._api && typeof x.montar3d === "function") { try { x.montar3d(this._api); } catch (e) {} }
+      return true;
+    },
+    _chamarExtras: function (metodo, args) {
+      this._extras.forEach(function (x) { if (x && typeof x[metodo] === "function") { try { x[metodo].apply(x, args || []); } catch (e) {} } });
     },
     _redesenharPlantas: function (recalcular) {
       var P = global.Bim2D; if (!P || !P.plantasAbertas) return;
@@ -680,6 +698,7 @@
           if (self._sel && !arr(st && st.ambientes).some(function (a) { return String(a.id) === String(self._sel); })) self._sel = null;
           m3d.limparPrevia();
           m3d.desenhar(st);
+          self._chamarExtras("aposRebuild", [st]);
           if (arr(st && st.ambientes).length || self._assArv) self._arvoreSeMudou();
           self._agendarPlantas();
         },
@@ -692,6 +711,7 @@
         }
       };
       this._m3d = m3d;
+      this._chamarExtras("montar3d", [api]);
       return m3d;
     }
   };

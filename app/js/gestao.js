@@ -10644,12 +10644,16 @@
       reg["peso-total"] = function () { self._pesoPorNivel(); return true; };
 
       /* ---- paginação e elevação: os motores novos ---- */
-      reg["paginar-piso"] = function () { self._paginar("piso"); return true; };
-      reg["paginar-parede"] = function () { self._paginar("parede"); return true; };
+      /* PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js, 14/10/2026): com ambiente no modelo,
+         o piso e o revestimento saem do contorno real (face da parede, portas, ilhas) e
+         ficam gravados no ambiente; sem ambiente, a tela por medidas digitadas de sempre */
+      reg["paginar-piso"] = function () { self._pagModelo("piso"); return true; };
+      reg["paginar-parede"] = function () { self._pagModelo("parede"); return true; };
       reg["pranchas-paginacao"] = function () {
+        if (window.BimPaginacaoUI && BimPaginacaoUI.prancha()) return true;
         /* sem cálculo prévio não há prancha: em vez de imprimir folha em
            branco, abre a tela para o usuário decidir a paginação primeiro */
-        if (!self._pagAtual) { self._paginar(self._pagCfg ? self._pagCfg.modo : "piso"); return true; }
+        if (!self._pagAtual) { self._pagModelo(self._pagCfg ? self._pagCfg.modo : "piso"); return true; }
         self._pagPrancha(); return true;
       };
       reg["paginar-alvenaria"] = function () { self._elevacao(); return true; };
@@ -11224,6 +11228,7 @@
             var q = pt.matrixTransform(m.inverse());
             try { uid = window.BimSelecao ? BimSelecao.pecaEm(vid, [q.x, q.y]) : null; } catch (eP) { uid = null; }
             if (d.tipo === "corte") extra.cotaClique = -q.y;   /* no corte, o y do desenho é a cota com o sinal trocado */
+            if (d.tipo === "planta") extra.pontoPlanta = [q.x, q.y];   /* PAGINAÇÃO: o ponto (x, z) do mundo sob o cursor */
           }
         }
         /* SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026, js/bimselinst.js): a peça SOB o cursor — no 3D pelo raio do clique */
@@ -11233,6 +11238,9 @@
         if (!uid) { try { var s = BIM.selecao().uids || []; if (s.length === 1) uid = s[0]; } catch (eS) {} }
         var info = uid ? self._nivAquiInfo(uid) : null;
         var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }] : [];
+        /* PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js): "Paginar piso" no ambiente sob o
+           cursor (planta ou 3D) e "Paginar revestimento" na parede / nas paredes selecionadas */
+        try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.concat(BimPaginacaoUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (ePg) {}
         var SI = window.BimSelInst, temSel = false;
         try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
         if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
@@ -11787,6 +11795,13 @@
       };
     },
 
+    /* o comando da fita: do AMBIENTE modelado quando houver (js/bimpaginacaoui.js);
+       senão a tela por medidas digitadas (abaixo) */
+    _pagModelo: function (modo) {
+      var PU = window.BimPaginacaoUI;
+      try { if (PU && (modo === "parede" ? PU.abrirParede() : PU.abrirPiso())) return; } catch (ePu) { if (window.console) console.warn("paginação no modelo:", ePu); }
+      this._paginar(modo);
+    },
     _paginar: function (modo) {
       if (!window.Paginacao) { UI.toast("Motor de paginação não carregado.", "erro"); return; }
       if (this._bloqueado && this._bloqueado()) return;
@@ -51301,8 +51316,8 @@ renderFolha: function () {
         case "niveis": return this._niveis();
         case "volumetria": return this._volumetria();
         case "novo-projeto": return this._novoProjeto();
-        case "paginar-piso": return this._paginar("piso");
-        case "paginar-parede": return this._paginar("parede");
+        case "paginar-piso": return this._pagModelo("piso");
+        case "paginar-parede": return this._pagModelo("parede");
         case "elevacao-parede": return this._elevacao();
         case "niv-excluir": return this._nivExcluir(dataset.id);
         case "niv-copiar": return this._nivCopiar(dataset.id);

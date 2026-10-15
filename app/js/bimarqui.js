@@ -529,6 +529,9 @@
         ps.push(ro("b2:esp", "Espessura", n2(c.espessura * 100, 1) + " cm"));
         ps.push({ id: "b2:anexarTopo", rotulo: "Anexar topo", tipo: "sim-nao", valor: !!c.anexarTopo });
         ps.push({ id: "b2:unir", rotulo: "Unir nos cantos", tipo: "sim-nao", valor: c.unir !== false });
+        /* VÍNCULOS (js/bimvinculos.js): "Desligar união" por ponta — a ponta solta não puxa nem é puxada ao mover */
+        ps.push({ id: "b2:vinc:a", rotulo: "Vínculo na ponta inicial (acompanha ao mover)", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.a) });
+        ps.push({ id: "b2:vinc:b", rotulo: "Vínculo na ponta final (acompanha ao mover)", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.b) });
         ps.push({ id: "b2:inverterFaces", rotulo: "Inverter faces (fora ↔ dentro)", tipo: "sim-nao", valor: !!c.inverterFaces });
         ps.push({ id: "b2:juntaCanto", rotulo: "Canto em L", tipo: "lista", valor: c.juntaCanto === "esquadria" ? "esquadria" : "topo", opcoes: OPC_CANTO });
         ps.push(ro("b2:juntas", "Junções", (c.juntas || []).length ? c.juntas.map(function (j) {
@@ -552,6 +555,10 @@
         ps.push(ro("b2:vol", "Volume", n2(c.volume, 4) + " m³"));
         if (c.massa != null) ps.push(ro("b2:massa", "Massa", n2(c.massa, 1) + " kg"));
         secs.push({ nome: "Perfil", params: ps });
+        /* VÍNCULOS (js/bimvinculos.js): a viga acompanha o pilar em que está presa; "Desligar união" por ponta */
+        if (c.tipo === "viga") secs.push({ nome: "Vínculos", params: [
+          { id: "b2:vinc:a", rotulo: "Ponta inicial acompanha ao mover", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.a) },
+          { id: "b2:vinc:b", rotulo: "Ponta final acompanha ao mover", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.b) }] });
       } else if (c.tipo === "escada" && c.escada) {
         var p = c.escada.par || {}, k = c.escada.calc || {};
         ps.push({ id: "b2:esc:forma", rotulo: "Forma", tipo: "lista", valor: p.forma, opcoes: [{ id: "reta", rotulo: "Reta" }, { id: "L", rotulo: "Em L (com patamar)" }] });
@@ -586,7 +593,7 @@
        canto, furo, forma da escada…), numa seção "Modelador (OrçaPRO)". */
     secoesExtrasPaleta: function (info) {
       if (global.BimTerrenoUI) { var t11 = global.BimTerrenoUI.secoesPaleta(info); if (t11) return t11; }   /* P11: plataforma (orçamento), divisa (rumos), terreno (curvas) */
-      var IDS = { "b2:anexarTopo": 1, "b2:unir": 1, "b2:inverterFaces": 1, "b2:juntaCanto": 1, "b2:juntas": 1, "b2:furo": 1, "b2:av": 1,
+      var IDS = { "b2:anexarTopo": 1, "b2:unir": 1, "b2:vinc:a": 1, "b2:vinc:b": 1, "b2:inverterFaces": 1, "b2:juntaCanto": 1, "b2:juntas": 1, "b2:furo": 1, "b2:av": 1,
                   "b2:esc:forma": 1, "b2:esc:giro": 1, "b2:esc:calc": 1, "b2:esc:gc": 1, "b2:esc:av": 1, "b2:gc:q": 1 };
       var ps = [];
       this.secoesProps(info).forEach(function (s) {
@@ -600,6 +607,12 @@
       if (/^b2:p11:/.test(String(pid)) && global.BimTerrenoUI) return global.BimTerrenoUI.mudarPaleta(info, pid, valor);   /* P11 */
       var x = this._peca(info && info.uid); if (!x || !B() || !B().b2Op) return false;
       var c = x.c, k = String(pid).replace(/^b2:/, ""), campos = null, num = parseFloat(String(valor).replace(",", "."));
+      if (k === "vinc:a" || k === "vinc:b") {   /* VÍNCULOS: a op do motor (js/bimvinculos.js), não um campo do ajustar */
+        if (!global.BimVinculos) return false;
+        var rv = global.BimVinculos.opPonta(x.estado, c.id, k.slice(5), !valor);
+        /* o b2Op tem a lista fechada das ops do modelador: esta vai num lote (o sanear confere — BimEdit.opVinculoValida) */
+        return rv.op && B().editarLote ? B().editarLote({ op: "lote", id: "vp" + Date.now().toString(36), origem: "vinculos", pedido: "Vínculo da ponta", ops: [rv.op] }) : false;
+      }
       if (k === "anexarTopo" || k === "unir" || k === "inverterFaces") { campos = {}; campos[k] = !!valor; }
       else if (k === "juntaCanto") campos = { juntaCanto: valor === "esquadria" ? "esquadria" : "topo" };
       else if (k === "tipoParede" && global.AlvTipos && global.AlvTipos.TIPOS[valor]) campos = { tipoParede: A().tipoParede(global.AlvTipos.tipo(valor)) };

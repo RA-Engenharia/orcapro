@@ -112,7 +112,7 @@
    * vêm deste estado, e não mais da ferramenta. ⚠ Antes, ligar o ortogonal na parede e
    * armar a viga trazia o ortogonal desligado de novo: a pessoa não sabia em que estado
    * estava. Um estado só, sempre à vista embaixo, é o que acaba com isso. */
-  var CAMPOS_PREC = ["orto", "inc", "snap", "tipos", "grade", "passo"];
+  var CAMPOS_PREC = ["orto", "inc", "snap", "tipos", "grade", "passo", "vinculos"];   /* VÍNCULOS (js/bimvinculos.js): o que está amarrado acompanha — ligado por padrão */
   var FORTE = { fim: 1, intersecao: 1, meio: 1, centro: 1, perpendicular: 1,
                 centroide: 1, quadrante: 1, insercao: 1, no: 1, tangente: 1, aparente: 1, paralelo: 1, rastreamento: 1 };   /* snaps completos: o paralelo e a guia do rastreamento também mandam na direção */
   function sanearPrec(c) {
@@ -127,6 +127,7 @@
     o.grade = typeof c.grade === "boolean" ? c.grade : p.grade;
     o.tipos.grade = o.grade;   /* "Grade" é um só: o botão e o tipo de snap andam juntos */
     var ps = num(c.passo, p.passo); o.passo = ps > 0 && ps <= 10 ? ps : p.passo;
+    o.vinculos = typeof c.vinculos === "boolean" ? c.vinculos : true;   /* sem o campo (quem usava antes): ligado */
     return o;
   }
 
@@ -228,7 +229,7 @@
     alternar: function (campo) {
       var p = this.precisao(), o = {};
       if (/^tipo:/.test(campo)) { var t = campo.slice(5); if (TIPOS_SNAP.indexOf(t) < 0) return null; o.tipos = {}; o.tipos[t] = !p.tipos[t]; if (t === "grade") o.grade = !p.tipos[t]; return this.precisaoMudar(o).tipos[t]; }
-      if (campo !== "orto" && campo !== "snap" && campo !== "grade") return null;
+      if (campo !== "orto" && campo !== "snap" && campo !== "grade" && campo !== "vinculos") return null;
       o[campo] = !p[campo];
       return this.precisaoMudar(o)[campo];
     },

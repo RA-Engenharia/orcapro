@@ -22,6 +22,17 @@
  * montado em cinza, o que ainda não foi montado tracejado. A etapa 8 usa o
  * corte da peça com o tubo máximo de cada espessura (CATALOGO.tuboMax).
  *
+ * MAIS PERTO DA OBRA REAL (14/10/2026, pedido do Rogério): a sequência segue
+ * a casa de Itacaré/BA construída com Blocok — MARTINS et al., Brazilian
+ * Journal of Development v. 10 n. 11, 2024, DOI 10.34117/bjdv10n11-037 — e o
+ * site oficial (blocok.vercel.app): 3 fiadas até a laje e equipe de 3 (p. 8);
+ * juntas com AC3, massa corrida fina e cerâmica direto na placa (p. 9 e 10);
+ * furo no EPS com tubo de PVC e rasgo com serra (p. 10); EPS retraído, placa
+ * como fôrma, vergas e contravergas embutidas (p. 10 e 11); junta de 1,5 cm
+ * (quadro não oficial). Escolha da RA vai marcada "(recomendação RA)":
+ * soprador térmico no lugar do maçarico (o EPS solta fumaça: ventilação e
+ * EPI), divisão da equipe, fechamento do rasgo e argamassa colante AC-III.
+ *
  * NADA INVENTADO: quantidades vêm de resultado.paredes[i].pag.quant e de
  * resultado.consolidado; o que não está nos dados aparece como "[a definir]"
  * (vermelho); consumo de argamassa, de tratamento de junta e fiadas por dia
@@ -84,7 +95,7 @@
     "td.n, th.n { text-align: right; white-space: nowrap } .tot td { font-weight: 700; background: #e7edf1 !important }",
     ".box { border: .3mm solid " + AREIA + "; background: #faf7f0; padding: 1.8mm 3mm; margin: 2mm 0; font-size: 9.2pt; line-height: 1.4 }",
     ".aten { border-left: 1.2mm solid " + LARANJA + "; background: #fdf3e6; padding: 1.6mm 3mm; margin: 2mm 0; font-size: 9.2pt; line-height: 1.4 } .aten b { color: #8a4b0f }",
-    ".ph { color: #b3261e; font-weight: 600 } .est { color: #8a5a00; font-size: 8pt; font-style: italic }",
+    ".ph { color: #b3261e; font-weight: 600 } .est { color: #8a5a00; font-size: 8pt; font-style: italic } .rec { color: " + VERDE + "; font-size: 8.5pt; font-weight: 600; white-space: nowrap }",
     ".etapa-cab { position: absolute; left: 20mm; top: 12mm; width: 380mm; height: 20mm; display: flex; align-items: center; gap: 5mm }",
     ".etapa-cab .num { width: 20mm; height: 20mm; border-radius: 50%; background: " + A + "; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; flex: none }",
     ".etapa-cab .num small { font-size: 6.5pt; letter-spacing: .4mm; line-height: 1 } .etapa-cab .num b { font-size: 19pt; line-height: 1.05 }",
@@ -304,6 +315,8 @@
     var W = escolher(paredes), pg = W.pag, cam = mkCam(pg), q = obj(pg.quant), cons = obj(r.consolidado), TOT = obj(cons.totais);
     var obraO = obj(opcoes.obra), docO = obj(opcoes.documento), rtO = obj(opcoes.responsavel);
     var mont = BlocokExec.montagem(pg), dias = mont.diasAssentamento, por = mont.fiadasPorDia;
+    /* equipe e produtividade da obra real (FONTES no cabeçalho); o que é da RA vai marcado */
+    var eqObra = mont.equipe || 3, prodM2 = mont.m2Dia, REC = '<span class="rec">(recomendação RA)</span>';
     var esp = pg.espessura, catE = CAT[esp] || {}, rf = obj(pg.reforcos), cfg = obj(pg.cfg);
     var fiadas = arr(pg.fiadas);
     var donos = arr(rf.pilaretes).filter(function (p) { return p.dono !== false; });
@@ -343,14 +356,15 @@
       { n: 3, titulo: "Primeira fiada", sub: "A fiada que dá o nível de toda a parede",
         frases: ["Espalhar a argamassa de nivelamento (cerca de " + N((obj(cfg.argamassa).nivelamento || 0.02) * 100, 0, "cm") + ") e assentar a primeira fiada com linha, nível e prumo.",
           "Peças inteiras nos trechos cegos; os recortes e as peças em L estão numerados na prancha e saem prontos do corte.",
-          "Junta de " + N((cfg.junta || 0.015) * 1000, 0, "mm") + " cheia nos dois sentidos. A franquia acompanha esta fiada."],
+          "Junta de " + N((cfg.junta || 0.015) * 1000, 0, "mm") + " cheia nos dois sentidos. A franquia acompanha esta fiada.",
+          "Equipe de " + N(eqObra, 0) + " profissionais, como na casa de Itacaré: um assenta e dois cortam, preparam e levam as peças " + REC + "."],
         aten: null,
         qt: linhas([["Peças da 1ª fiada", N(f1p.n, 0)], ["Inteiras / recortes", N(f1p.tipos.inteira, 0) + " / " + N((f1p.tipos.recorte || 0) + (f1p.tipos["recorte-L"] || 0), 0)], ["Peso das peças", N(f1p.peso, 0, "kg")], ["Argamassa de assentamento da parede" + estim, N(q.argamassaM3, 3, "m³")]]) },
       { n: 4, titulo: "Fiadas seguintes e amarração", sub: "Meia peça, junta desencontrada, peça em L no canto do vão",
         frases: ["A segunda fiada começa em meia peça ou recorte, e assim a junta vertical nunca fica alinhada com a da fiada de baixo; transpasse mínimo de " + N(DIR.transpasseMin * 100, 0, "%") + " da peça.",
           "Assentar na ordem da numeração e retirar a argamassa que vaza da junta ainda fresca, até 1 cm de profundidade, para o tratamento posterior.",
           "No canto de cada vão entra peça em L (em laranja), de modo que nenhuma junta chegue ao canto da porta ou da janela.",
-          "Ritmo de referência: " + N(por, 0) + " fiadas por dia" + estim + "; esta parede leva " + N(dias, 0) + " " + (dias === 1 ? "dia" : "dias") + " de assentamento" + estim + "."],
+          N(fiadas.length, 0) + " fiadas de 90" + NB + "cm levam a parede a " + N(pg.altura, 2, "m") + " (na casa de Itacaré, 3 fiadas até a laje); ritmo de referência de até " + N(por, 0) + " fiadas por dia na mesma parede" + estim + " e cerca de " + N(prodM2, 2, "m²") + " por dia para a equipe, em várias paredes" + estim + "; esta parede leva " + N(dias, 0) + " " + (dias === 1 ? "dia" : "dias") + " de assentamento" + estim + "."],
         aten: "Peça de uma fiada nunca fica sobre a junta vertical da fiada de baixo.",
         qt: linhas([["Peças das fiadas 2 a " + fiadas.length, N(fRest.n, 0)], ["Em L (cantos de vão)", N(fRest.tipos["recorte-L"], 0)], ["Peso das peças", N(fRest.peso, 0, "kg")], ["Menor transpasse obtido", N(obj(pg.validacao).menorTranspasse, 3, "m") + " (mín. " + br(obj(pg.validacao).transpasseMin, 3) + NB + "m)"], ["Dias de assentamento" + estim, N(dias, 0)]]) },
       { n: 5, titulo: "Cantos e encontros em T", sub: "Amarração alternada nos cantos; grampo no T",
@@ -360,14 +374,15 @@
         aten: null,
         qt: linhas([["Extremidade inicial / final", esc((obj(pg.ini).tipo || "—") + " / " + (obj(pg.fim).tipo || "—"))], ["Grampos de ligação (parede de referência)", N(q.grampos, 0)], ["Grampos de ligação (obra)", N(TOT.grampos, 0)], ["Ancoragem do grampo", N(DIR.ancoragemLigacao * 100, 0, "cm") + " (mín.)"]]) },
       { n: 6, titulo: "Vergas e contravergas", sub: "Escorar, retirar o EPS da faixa, armar e concretar",
-        frases: ["Escorar o fundo de cada verga antes de concretar.",
-          "Retirar o EPS na faixa marcada na prancha, posicionar a armadura do quadro ao lado e concretar; as faces da peça servem de fôrma.",
+        frases: ["As vergas e as contravergas ficam embutidas na própria peça, no lugar do EPS, como na casa de Itacaré. Escorar o fundo de cada verga antes de concretar.",
+          "Retrair o EPS na faixa marcada na prancha, posicionar a armadura do quadro ao lado e concretar; as faces da peça servem de fôrma.",
           "A verga avança de cada lado do vão o maior valor entre " + N(obj(cfg.verga).apoioMin * 100, 0, "cm") + " e " + N(obj(cfg.verga).apoioFrac * 100, 0, "%") + " do vão; a contraverga, entre " + N(obj(cfg.contraverga).apoioMin * 100, 0, "cm") + " e " + N(obj(cfg.contraverga).apoioFrac * 100, 0, "%") + ". Vão acima de " + N(obj(cfg.verga).vaoMaxVerga, 2, "m") + " é viga, com armadura própria."],
         aten: "Só retirar o escoramento depois da cura do concreto, conforme o projeto.",
         qt: linhas([["Vergas / contravergas", N(arr(rf.vergas).length, 0) + " / " + N(arr(rf.contravergas).length, 0)], ["Escoras (uma por verga)", N(q.escoramentoVergas, 0)],
           ["Armadura (calculada) da verga", vgs.length && vgs[0].armadura ? esc(vgs[0].armadura) + (estr(vgs[0]) ? "; estribos " + estr(vgs[0]) : "") : PH], ["Aço de vergas e contravergas", N(aVg.kg, 1, "kg")], ["Concreto C" + br(obj(r.parametros).fck, 0) + " (aprox.)", N(cVg, 3, "m³")]]) },
       { n: 7, titulo: "Pilaretes e cinta", sub: "Com a parede no topo: armar e concretar em camadas",
-        frases: ["Com a parede montada até o topo, conferir o prumo e retirar o EPS das faixas dos pilaretes e da cinta de respaldo.",
+        frases: ["Com a parede montada até o topo, conferir o prumo e retrair o EPS das faixas dos pilaretes e da cinta de respaldo; as faces da peça ficam como fôrma, sem madeira.",
+          "Retrair o EPS de preferência com soprador térmico (a obra de Itacaré usou maçarico): o EPS solta fumaça, então trabalhar com o ambiente ventilado, máscara com filtro para vapores, óculos e luvas " + REC + ".",
           "Armar os pilaretes sobre as esperas da fundação e a cinta com a armadura do quadro; concretar em camadas, adensando.",
           "Pilarete de peça de 20 cm recebe a laje e leva 4 barras; nas peças de 13 e 15 cm o pilarete só trava a parede ao vento."],
         aten: null,
@@ -375,21 +390,22 @@
           ["Armadura da cinta", cintaC && cintaC.armadura ? esc(cintaC.armadura) + (estr(cintaC) ? "; estribos " + estr(cintaC) : "") : PH], ["Aço de pilaretes e estribos / cinta", N(aPil.kg, 1, "kg") + " / " + N(aCin.kg, 1, "kg")], ["Concreto de pilaretes e cinta (por diferença)", N(cPil, 3, "m³")], ["Concreto total da parede", N(cTotal, 3, "m³")]]) },
       { n: 8, titulo: "Instalações", sub: "O tubo passa pelo núcleo de EPS, entre as faixas de concreto",
         frases: ["O núcleo de EPS comporta tubos até o diâmetro máximo de cada espessura, como no corte ao lado.",
+          "Para o tubo, furar o EPS com um pedaço de tubo de PVC ou com a própria tubulação; para caixa e ramal, cortar a face com serra (maquita) e retrair o EPS com soprador térmico.",
           "Não furar nem rasgar as faixas de concreto armado (pilaretes, vergas e cinta): a tubulação passa pelo EPS, entre elas.",
-          "O método de abertura do rasgo e o material de fechamento: " + PH + " (a definir pelo fabricante). Passar as instalações antes do tratamento das juntas."],
+          "Fechar o rasgo com AC-III e tela de fibra de vidro, como a junta " + REC + ", e passar as instalações antes do tratamento das juntas."],
         aten: null, ilus: cortes(esp),
         qt: linhas(Object.keys(CAT).sort(function (a, b) { return a - b; }).map(function (k) { return ["Peça de " + k + " cm" + (+k === esp ? " (esta parede)" : ""), "tubo até " + CAT[k].tuboMax + NB + "mm"]; })) },
       { n: 9, titulo: "Tratamento de juntas", sub: "Sequência do vídeo oficial Blocok Original (11/06/2026)",
-        lista: ["Só depois de concretar a laje e retirar as escoras.", "Raspar a junta até 0 a 1 cm de profundidade (feito no assentamento, com a argamassa fresca).", "Quebrar a quina de 90° das bordas com ponteira triangular.",
+        lista: ["Só depois de concretar a laje e retirar as escoras (sem laje: depois da cura da cinta).", "Junta de 1,5 cm entre as peças, tratada com argamassa AC-III, como na casa de Itacaré.", "Raspar a junta até 0 a 1 cm de profundidade (feito no assentamento, com a argamassa fresca).", "Quebrar a quina de 90° das bordas com ponteira triangular.",
           "Desbastar 2,5 a 3 cm de cada lado da junta, com maquita e disco flap, para abrir os poros do microconcreto.", "Limpar o pó com trincha seca.", "Selar a junta e 2,5 cm de cada lado com selador diluído 1:1 (no vídeo, “Prepara Certo”).",
           "Aplicar argamassa AC-III aditivada com espátula, em três movimentos, no interior da junta e 2,5 a 3 cm de cada lado.", "Assentar a tela de fibra de vidro centralizada na junta, sem dobras; na vertical, deixar sobra para sobrepor à horizontal.",
           "Segunda demão de AC-III escondendo a tela; retirar o excesso."],
         aten: "Fase seguinte só depois de seco: massa e pintura.",
         qt: (function () { var t = obj(q.tratamento); return linhas([["Juntas por face (parede de referência)", N(t.juntaPorFaceM, 1, "m")], ["Tela de fibra de vidro" + estim, N(t.telaM, 1, "m")], ["Argamassa AC-III" + estim, N(t.acIIIkg, 1, "kg")], ["Selador" + estim, N(t.seladorL, 2, "L")], ["Faces tratadas", N(t.faces, 0)]]); })() },
       { n: 10, titulo: "Acabamento", sub: "Massa e pintura sobre o painel; sem chapisco nem reboco",
-        frases: ["Com as juntas tratadas e secas, aplicar massa acrílica ou massa corrida e a pintura.",
-          "O painel dispensa chapisco e reboco; a superfície recebe o acabamento direto.",
-          "Revestimento cerâmico ou pastilha pode ser colado direto na placa; argamassa colante: " + PH + " (a definir pelo fabricante)."],
+        frases: ["Com as juntas tratadas e secas, aplicar a massa corrida em camada fina, porque a face da placa é lisa e regular, e depois a pintura.",
+          "O painel dispensa chapisco, emboço e reboco; a superfície recebe o acabamento direto.",
+          "Cerâmica e azulejo vão colados direto na placa, sem reboco; argamassa colante AC-III " + REC + ", porque o fabricante não especifica."],
         aten: null,
         qt: linhas([["Área líquida da parede (sem vãos)", N(q.areaLiquida, 2, "m²")], ["Área líquida da obra", N(TOT.areaLiquida, 2, "m²")], ["Consumo de massa e tinta", PH]]) }
     ];
@@ -437,7 +453,8 @@
         '<div style="width:170mm"><h2>Cores (as mesmas em todas as páginas)</h2>' + legendaHtml("legenda") +
         "<h2>Em cada etapa</h2><p>A ilustração mostra sempre a <b>mesma parede, do mesmo ponto de vista</b>: as peças e faixas da etapa em cor, o que já foi montado em cinza e o que ainda falta em traço pontilhado. Abaixo, o que fazer e, ao lado, as quantidades da etapa.</p></div>" +
         '<div style="width:110mm"><h2>Parede de referência e números das peças</h2><p>As ilustrações usam a parede <b>' + esc(pg.id) + (pg.nome ? " — " + esc(pg.nome) : "") + "</b>, a de maior número de peças (" + N(arr(pg.pecas).length, 0) + "); as outras seguem o mesmo procedimento. O número dentro de cada peça é o da prancha: assentar na ordem da numeração. Peças cortadas (recortes e peças em L) chegam prontas e numeradas.</p>" +
-        "<h2>Prazos e consumos</h2><p>Consumo de argamassa, consumo do tratamento de juntas e fiadas por dia ainda não foram publicados pelo fabricante: os valores marcados <i>estimado</i> são parâmetros editáveis. A <b>" + N(dias, 0) + " " + (dias === 1 ? "dia" : "dias") + " de assentamento</b> desta parede são " + N(fiadas.length, 0) + " fiadas a " + N(por, 0) + " por dia" + estim + ".</p></div>" +
+        "<h2>Prazos e consumos</h2><p>Consumo de argamassa, consumo do tratamento de juntas e fiadas por dia ainda não foram publicados pelo fabricante: os valores marcados <i>estimado</i> são parâmetros editáveis. A <b>" + N(dias, 0) + " " + (dias === 1 ? "dia" : "dias") + " de assentamento</b> desta parede são " + N(fiadas.length, 0) + " fiadas a " + N(por, 0) + " por dia" + estim + ".</p>" +
+        "<h2>De onde vem a sequência</h2><p>Da obra real de Itacaré/BA, construída com Blocok (MARTINS et al., Brazilian Journal of Development, v. 10, n. 11, 2024), e do site oficial da Blocok. O que é escolha da RA vem marcado " + REC + ".</p></div>" +
         '<div style="width:80mm"><h2>Ordem das etapas</h2><ol style="font-size:9.8pt">' + ordem + "</ol></div></div></div>";
       return moldura(p, c, false);
     }

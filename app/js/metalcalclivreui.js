@@ -63,6 +63,13 @@
     return U.est;
   }
   function caixas() { var M = MU(), st = M && M.estado ? M.estado() : null; return (st && st.caixas) || []; }
+  /* VÍNCULOS (14/10/2026, js/bimvinculos.js): o resultado guarda a ASSINATURA da geometria (linhas das barras, fundações)
+     de quando foi calculado. Mover ou esticar uma peça (e o que acompanhou) muda a assinatura: o resultado passa a
+     DESATUALIZADO — nunca é mostrado nem exportado como se valesse para o modelo de agora. */
+  function assinaturaAgora() { var BV = global.BimVinculos, M = MU(), st = null; try { st = M && M.estado ? M.estado() : null; } catch (e) { st = null; } return BV && BV.assinatura && st ? BV.assinatura(st) : null; }
+  function velho() { var r = U.r; if (!r || !r._assin) return false; var a = assinaturaAgora(); return a != null && a !== r._assin; }
+  var MSG_VELHO = "DESATUALIZADO — o modelo mudou depois deste cálculo (peças movidas, esticadas ou fundação deslocada): recalcule antes de usar o resultado.";
+  function barrarVelho() { if (!velho()) return false; toast(MSG_VELHO, "aviso", 9000); status(MSG_VELHO); return true; }
   function selecao() { var M = MU(); try { return M && M.selecao ? M.selecao() : []; } catch (e) { return []; } }
 
   /* ============================================================ LEITURA (prévia, sem calcular) */
@@ -370,7 +377,12 @@
     var lmin = arr(r.flambagem).reduce(function (a, f) { return f.lambda > 0 && f.lambda < a ? f.lambda : a; }, Infinity);
     /* FRENTE S5: "aprovado" só com o vento verificado (ou a estrutura declarada interna) — senão "incompleto" */
     var sit = r.situacao ? r.situacao.id : (r.aprovado ? "aprovado" : "reprovado"), nvs = arr(r.naoVerificados);
-    h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
+    /* VÍNCULOS: o resultado de ANTES de o modelo mudar não é "aprovado" de nada — diz que está velho e oferece recalcular */
+    if (velho()) {
+      sit = "desatualizado";
+      h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h3 style="margin:0 0 6px">DESATUALIZADO — recalcular</h3><p>O modelo mudou depois deste cálculo (peças movidas ou esticadas — inclusive as que acompanharam pelos vínculos — ou fundação deslocada). Os números abaixo são do modelo de antes e <b>não valem</b> para o de agora; memorial, pranchas, CYPE e a troca de perfis ficam bloqueados até recalcular.</p><button class="ml-bt pri" data-ml-acao="calcular">Recalcular</button></div>';
+    }
+    h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
       '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
       '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
       '<div class="ml-kpi"><small>Modelo</small><b>' + r.modelo.membros.length + ' barras</b><span class="ml-nota">' + r.modelo.modelo.nos.length + " nós · " + r.combinacoes.length + " combinações · " + fmt(r.tempoMs / 1000, 1) + " s</span></div></div>";
@@ -583,6 +595,7 @@
   function fundacoesModelo() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return (st && st.fundacoes) || []; } catch (e) { return []; } }
   function pranchas() {
     var r = U.r, P = PL(); if (!r || !r.ok || !P) { toast("As pranchas saem de um cálculo que fechou.", "aviso"); return; }
+    if (barrarVelho()) return;
     var ligs = []; try { if (global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo) ligs = MetalLigSugUI.ligacoesComCalculo(r); } catch (eL) { ligs = []; }
     U.ultimasLigacoesCompletas = ligs;
     var x; try { x = P.gerar(r, opcoesPranchas()); } catch (e) { toast("Pranchas: " + e.message, "erro", 9000); return; }
@@ -644,6 +657,7 @@
     setTimeout(function () {
       var r;
       try { r = D.calcular(ent); } catch (e) { r = { ok: false, motivo: "Erro no cálculo: " + (e && e.message), problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + (e && e.message), solucoes: [] }] }; }
+      if (r) r._assin = assinaturaAgora();   /* VÍNCULOS: a geometria que este resultado verificou */
       U.calculando = false; U.r = r; U.modo = "resultado"; render();
       status(r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA (" + r.falhas + " falha(s))") + " — " + fmt(r.peso, 0) + " kg de aço." : "Estrutura desenhada: " + (r.motivo || "não calculou"));
     }, 40);
@@ -651,6 +665,7 @@
   }
   function aplicar() {
     var r = U.r, D = DL(), M = MU(); if (!r || !r.ok || !r.trocas || !D || !M) return;
+    if (barrarVelho()) return;   /* VÍNCULOS: a troca de perfis de um modelo que já não existe */
     var lt = D.opsAplicar(r, caixas(), function () { return M.novoId(); });
     if (!lt || !lt.lote) { toast("Nada a aplicar" + (lt && lt.erros.length ? ": " + lt.erros.join("; ") : "."), "aviso", 7000); return; }
     if (!M.enviar(lt.lote)) { toast("O editor recusou a troca de perfis.", "erro"); return; }
@@ -661,6 +676,7 @@
   function soltarVista() { if (vistaCtl && vistaCtl.destruir) { try { vistaCtl.destruir(); } catch (e) {} } vistaCtl = null; }
   function verEm3D() {
     var r = U.r, V3 = global.MetalCalcVista; if (!r || !r.ok || !V3 || !V3.abrir) { toast("A vista 3D dos resultados não carregou.", "aviso"); return; }
+    if (barrarVelho()) return;
     U.modo = "vista"; render();
     try { vistaCtl = V3.abrir(doc.querySelector("[data-ml='vista3d']"), r, { modo: "aproveitamento", tema: "auto" }); } catch (e) { toast("Vista 3D: " + e.message, "erro", 8000); U.modo = "resultado"; render(); }
   }
@@ -683,6 +699,7 @@
   function baixar(nome, dados, mime) { var M = MU(); if (M && M.baixar) return M.baixar(nome, dados, mime); return false; }
   function memorial() {
     var r = U.r, Mm = global.AcoMemorialLivre; if (!r || !r.ok || !Mm) { toast("O memorial sai de um cálculo que fechou.", "aviso"); return; }
+    if (barrarVelho()) return;
     var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
     var emp = {}, logo = null; try { if (global.Empresa && Empresa.dados) emp = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {}
     var o = obra() || {};
@@ -704,6 +721,7 @@
   }
   function cype() {
     var r = U.r, CY = global.AcoCype; if (!r || !r.ok || !CY) { toast("A exportação para o CYPE sai de um cálculo que fechou.", "aviso"); return; }
+    if (barrarVelho()) return;
     var b = (nomeArq() + "-estrutura-cype3d").replace(/[^A-Za-z0-9_-]+/g, "_"), lista;
     try { lista = CY.arquivos(r, { base: b, arquivoIfc: b + ".ifc", obra: (obra() || {}).nome || "" }); } catch (e) { toast("CYPE: " + e.message, "erro", 9000); return; }
     U.ultimoCype = lista.map(function (x) { return x.nome; });
@@ -717,6 +735,8 @@
     abrir: function (passo) { estado(); garantir(); U.modo = "passos"; if (passo) U.passo = Math.max(1, Math.min(3, +passo)); lerModelo(); render(); return true; },
     calcular: function () { estado(); garantir(); return calcular(); },
     resultado: function () { return U.r; },
+    /* VÍNCULOS: o resultado guardado é do modelo de antes? (o memorial das ligações e as e2e perguntam) */
+    desatualizado: function () { return velho(); },
     estado: function () { return estado(); },
     fechar: fechar,
     tela: function () { return raiz() ? U.modo : null; },

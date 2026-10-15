@@ -444,13 +444,26 @@
       var qv = !delim ? null : (reg ? (qr ? (qr.valorOrc != null ? qr.valorOrc : qr.valor) : null) : (q ? q[s.medida] : null));
       if (qv == null) {
         var motivo = !delim ? ((q && q.avisos && q.avisos[0]) || "ambiente sem região fechada: sem quantidade — pendente")
-          : (reg && !BP ? "o registro de parâmetros (js/bimparam.js) não carregou: sem ele a medida do ambiente não sai" : "a medida \"" + s.medida + "\" não existe para este ambiente — pendente");
+          : (reg && !BP ? "o registro de parâmetros (js/bimparam.js) não carregou: sem ele a medida do ambiente não sai"
+            : s.medida === "pecasPiso" || s.medida === "pecasParede" ? "sem paginação " + (s.medida === "pecasPiso" ? "de piso" : "de revestimento") + " aplicada neste ambiente: pagine em Acabamentos › Piso e revestimento — pendente"
+            : "a medida \"" + s.medida + "\" não existe para este ambiente — pendente");
         l = { codigo: s.codigo, descricao: rot, unidade: "", unidadeQto: un, quantidade: 0, status: "pendente", horas: [], servico: "a" + i, rotulo: rot, avisos: [motivo] };
       } else {
         l = arredLinha(orcar({ id: "a" + i, codigo: s.codigo, unidade: un, quantidade: num(qv) * fator, rotulo: rot }, base, opcoes));
         if (qr) { l.param = qr.def.id; l.paramNome = qr.def.nome; }
       }
       l.medida = s.medida; l.fator = fator; l.codigoOrigem = "ambiente"; if (s.acab) l.acab = s.acab;
+      /* PAGINAÇÃO NO MODELO (js/bimpaginacao.js via BimAcabamento.quantidades): o piso e a
+         parede levam as peças a comprar e a perda da paginação gravada — a quantidade da
+         composição continua a área (m²); a peça é o que vai para a compra */
+      var pgA = q && q.paginacao, ehPiso = s.medida === "areaPiso" || s.medida === "pecasPiso", ehPar = s.medida === "areaParede" || s.medida === "pecasParede";
+      if (pgA && (it ? it.id !== "contrapiso" : true) && (ehPiso || ehPar)) {
+        if (ehPiso && pgA.piso) l.paginacao = { pecas: pgA.piso.pecas, perdaPct: pgA.piso.perdaPct, reservaPct: pgA.piso.reservaPct, cortadas: pgA.piso.cortadas, peca: pgA.piso.peca, m2Compra: pgA.piso.m2Compra, estado: pgA.piso.estado };
+        if (ehPar && pgA.paredes.length) l.paginacao = { pecas: pgA.pecasParede, faces: pgA.paredes.length, peca: pgA.paredes.map(function (x) { return x.peca; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(", "), estado: pgA.paredes.every(function (x) { return x.estado === "ok"; }) ? "ok" : "desatualizada" };
+        (ehPiso ? [pgA.piso && pgA.piso.estado !== "ok" ? "paginação do piso " + (pgA.piso.estado === "desatualizada" ? "desatualizada — repaginar" : "sem contorno") + " (" + nome + "): " + pgA.piso.motivo : null]
+                : pgA.paredes.filter(function (x) { return x.estado !== "ok"; }).map(function (x) { return "paginação da parede " + x.chave + " " + (x.estado === "desatualizada" ? "desatualizada — repaginar" : "sem face") + " (" + nome + "): " + x.motivo; }))
+          .forEach(function (av) { if (av && l.avisos.indexOf(av) < 0) l.avisos.push(av); });
+      }
       linhas.push(l);
     });
     /* o acabamento escolhido (texto) sem nenhuma composição da medida dele */
@@ -660,7 +673,7 @@
     var BA = dep("BimAcabamento", "./bimacabamento.js"), ambs = arr(estado && estado.ambientes);
     if (BA && ambs.length) {
       /* P10: o acabamento do ambiente mede as paredes de TODAS as fases (pintar a parede existente é serviço de reforma) */
-      var QA = BA.quantidades(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, vaos: vaos, forroDe: opcoes && opcoes.forroDe });
+      var QA = BA.quantidades(estTodo, { avaliarFam: typeof avaliarFam === "function" ? avaliarFam : null, vaos: vaos, forroDe: opcoes && opcoes.forroDe, niveis: opcoes && opcoes.niveis });
       ambs.forEach(function (a) {
         if (!a || a.id == null) return;
         var r = daAmbiente(a, QA.porId[String(a.id)], base, opcoes, pecaDe(a.id));

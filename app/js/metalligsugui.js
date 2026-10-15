@@ -322,7 +322,9 @@
         var ent = clone(li.entrada) || {};
         var r = C.verificar(li.tipologia, ent), LF0 = global.AcoLigFundacao;
         if (li.fundacao && LF0 && r && r.dimensoes && r.dimensoes.chumbadores) r = LF0.verificar(r, li.fundacao, { suporte: ent.concreto && ent.concreto.suporte, esforcos: arr(ent.esforcos).map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.Vx, num(s.V, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; }) });
-        out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × "), resultado: r, info: li });
+        /* VÍNCULOS (js/bimvinculos.js): um membro mudou de lugar ou de comprimento depois de a ligação ser dimensionada */
+        var dz = c.desatualizado && c.desatualizado.motivo ? "DESATUALIZADA — " + c.desatualizado.motivo + (c.desatualizado.em ? " em " + String(c.desatualizado.em).slice(0, 10) : "") + ": recalcule a estrutura e refaça a ligação" : null;
+        out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × ") + (dz ? " — DESATUALIZADA" : ""), resultado: r, info: li, desatualizada: dz });
       });
       return out;
     },
@@ -344,14 +346,18 @@
           }
         }
         var r0 = novo ? novo.resultado : l.resultado, confere = !!novo && String(r0.resumo || "") === String(li.resumo || "");
-        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere, comCalculo: !!novo, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
-                   diferenca: novo && !confere ? "desenhada: " + (li.resumo || "—") + " · com os esforços deste cálculo: " + (r0.resumo || "—") : null });
+        /* VÍNCULOS: refeita com o cálculo de agora, a comparação é a de agora; sem ele, a marca de desatualizada manda */
+        var velha = !novo && l.desatualizada ? l.desatualizada : null;
+        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere && !velha, comCalculo: !!novo, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
+                   desatualizada: velha, diferenca: velha || (novo && !confere ? "desenhada: " + (li.resumo || "—") + " · com os esforços deste cálculo: " + (r0.resumo || "—") : null) });
       });
       return out;
     },
     memorialHtml: function (lista, titulo) {
       var S0 = S(), sec = S0 ? S0.secaoMemorial(lista) : null;
       return "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>" + esc(titulo || "Memorial das ligações") + "</title><style>body{font:11pt/1.45 system-ui,sans-serif;color:#1d2733;max-width:190mm;margin:12mm auto;padding:0 8mm}h1{font-size:16pt}h3{font-size:12pt;margin-top:8mm;border-bottom:1px solid #ccd5de}h4{font-size:10pt;margin:4mm 0 1mm}.eq{font-family:ui-monospace,monospace;color:#2d6a9c}.nota{color:#5b6774;font-size:9pt}li{margin-bottom:.6mm}</style></head><body><h1>" + esc(titulo || "Memorial das ligações") + "</h1>" +
+        /* VÍNCULOS: a ligação cujo membro mudou NÃO sai como válida — o aviso vem antes de tudo */
+        (arr(lista).some(function (l) { return l && l.desatualizada; }) ? '<div style="border:2px solid #b45309;background:#fff7ed;padding:3mm 4mm;margin:4mm 0"><b>DESATUALIZADO — recalcular.</b> ' + arr(lista).filter(function (l) { return l && l.desatualizada; }).map(function (l) { return esc(l.titulo.replace(/ — DESATUALIZADA$/, "") + ": " + l.desatualizada); }).join("<br>") + "</div>" : "") +
         (sec ? sec.html : "<p>Nenhuma ligação aplicada pela ligação inteligente neste modelo.</p>" + (S0 && S0.escopoHtml ? S0.escopoHtml() : "")) + "</body></html>";
     },
     abrirHtml: function (html, nome) {

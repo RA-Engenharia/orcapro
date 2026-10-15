@@ -298,10 +298,17 @@
       var ok = !lacos.quebrou && lacos.length && Math.abs(areaContornos(lacos) - soma) <= Math.max(1e-6, tol * per);
       if (!ok) { L.forEach(function (c) { out.push(c); }); regioes[s.g] = L.map(function (c) { return c.pts; }); return; }
       var base = L[0];
+      /* ⚠ AS PARTES (14/10/2026, frente S13 — vínculos): o contorno unido copia os campos da 1ª parede, INCLUSIVE
+         o `u` (a peça). Roteiro do defeito: no cômodo fechado de um tipo só, as quatro paredes viravam UM anel com o
+         `u` da primeira — clicar a parede da direita na planta selecionava a de baixo, o realce pintava o anel
+         inteiro e a janela pegava uma peça só. As paredes de origem ficam em `partes` (os mesmos polígonos, por
+         referência) para quem precisa da PEÇA (js/bimselecao.js cortesDe); o desenho continua o contorno unido. */
+      var partes = L.filter(function (c) { return c && c.u != null; }).map(function (c) { return { u: c.u, pts: c.pts }; });
       lacos.forEach(function (l) {
         var n = {}; Object.keys(base).forEach(function (k) { if (k !== "pts" && k !== "arcos" && k !== "fechado") n[k] = base[k]; });
         n.pts = l.pts; n.fechado = true; if (l.arcos) n.arcos = l.arcos;
         n.unidos = L.length;
+        if (partes.length) n.partes = partes;
         out.push(n);
       });
       regioes[s.g] = lacos.map(function (l) { return l.pts; });
