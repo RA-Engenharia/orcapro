@@ -414,7 +414,14 @@
   <script src="js/acoligcalc2.js"></script>
   <!-- SIMULAÇÃO S1 (14/10/2026, js/acoligfundacao.js): a placa de base ancorada na fundação do modelo -->
   <script src="js/acoligfundacao.js"></script>
+  <!-- F3b (15/10/2026): configuração das ligações da obra e o lote com todas as combinações + Tipos (motores puros) -->
+  <script src="js/acoligconfig.js"></script>
   <script src="js/acoligsugere.js"></script>
+  <script src="js/acoliglote.js"></script>
+  <!-- VIGAS ENTRE PILARES (15/10/2026): a linha de fora a fora vira uma viga por vão (ou contínua, no comprimento máximo da barra, com emenda) e a grade de pilares selecionada ganha as vigas em X e Y, com a ligação parafusada da sugestão — motor puro -->
+  <script src="js/metalvigaspilares.js"></script>
+  <!-- LIGAÇÃO AO LANÇAR (15/10/2026, BACKLOG #43): a viga que encosta num pilar ou noutra viga já sai com a ligação (pré-dimensionada pelo peso próprio, A CONFIRMAR NO CÁLCULO); viga em balanço com 3 soluções; o cálculo confirma ou troca — motor puro -->
+  <script src="js/metalligauto.js"></script>
   <script src="js/familia.js"></script>
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
@@ -647,6 +654,10 @@
   <script src="js/metalcatalogoui.js"></script>
   <!-- METÁLICA › L — LIGAÇÃO INTELIGENTE: a tela (sugestões por clique no pilar e na viga, catálogo de ligações, memorial, ligar todos os nós) — só com a prévia do modelador -->
   <script src="js/metalligsugui.js"></script>
+  <!-- VIGAS ENTRE PILARES: a tela (diálogo com prévia, botão direito com pilares selecionados) -->
+  <script src="js/metalvigaspilaresui.js"></script>
+  <!-- LIGAÇÃO AO LANÇAR: a tela (configuração por obra, pergunta e painel do balanço, quadro das ligações ajustadas pelo cálculo) -->
+  <script src="js/metalligautoui.js"></script>
   <script src="js/bimp3ui.js"></script>
   <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
   <script src="js/marcenariaui.js"></script>
@@ -690,6 +701,9 @@
   <!-- VÍNCULOS (14/10/2026): mover ou esticar uma parede/barra leva junto o que está amarrado (canto L, T, emenda, nó da metálica, sapata, ligação desenhada); Alt segurado move só a peça — motor puro + a fiação da tela -->
   <script src="js/bimvinculos.js"></script>
   <script src="js/bimvinculosui.js"></script>
+  <!-- ELEVAR (15/10/2026): subir/descer a seleção, levar a base/topo a um nível, alinhar a viga ao topo do pilar; a seção Elevação das Propriedades — motor puro + a tela -->
+  <script src="js/bimelevar.js"></script>
+  <script src="js/bimelevarui.js"></script>
   <!-- SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026): o clique direito na peça (3D, planta, corte) — mesmo tipo, descrição, peça pronta, categoria; nesta vista × no projeto; apagar/ocultar/isolar em lote -->
   <script src="js/bimselinst.js"></script>
   <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->

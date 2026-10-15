@@ -914,6 +914,9 @@
           pr.tecla = (agora - pr.teclaT < 1200 ? pr.tecla : "") + k; pr.teclaT = agora;
           var sub = Pr().ATALHOS[pr.tecla.slice(-2)];
           if (sub) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; if (edit.sub !== sub) api.armar(sub); return; }
+          /* o atalho que abre um COMANDO da fita (ELEVAR: EL → o diálogo do js/bimelevarui.js) */
+          var cmdA = Pr().ATALHOS_CMD && Pr().ATALHOS_CMD[pr.tecla.slice(-2)];
+          if (cmdA && global.BimShell && global.BimShell.executar) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; global.BimShell.executar(cmdA); return; }
         }
       }, true);
 

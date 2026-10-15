@@ -105,6 +105,7 @@
   function Met() { return dep("BimMetal", "./metalpeca.js"); }
   function Fund() { return dep("AcoLigFundacao", "./acoligfundacao.js"); }
   function Edi() { return dep("BimEdit", "./bimedit.js"); }
+  function Elev() { return dep("BimElevar", "./bimelevar.js"); }
 
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function fin(v) { return typeof v === "number" && isFinite(v); }
@@ -377,6 +378,19 @@
       var ce = porId[String(op.id)]; if (!ce.fixo) { novo(String(op.id), P.esticarCaixa(ce, op.ponta, { x: op.x, z: op.z })); arrastada[String(op.id)] = op.ponta; }
     } else if (op.op === "metalAjustar" && porId[String(op.id)] && op.caixa) {
       novo(String(op.id), clone(op.caixa));
+    } else if (op.op === "elevar" || (op.op === "lote" && op.origem === "elevar" && Array.isArray(op.ops))) {
+      /* ELEVAR (js/bimelevar.js, 15/10/2026): a peça sobe/desce (ou só o topo) — VÁRIAS fontes de uma vez (cada peça com o
+         seu dy), para as selecionadas que se tocam não "acompanharem" umas às outras. A regra da subida é a do replay
+         (BimElevar.elevarEl); o pilar metálico que mudou o topo vem como metalAjustar dentro do lote. */
+      var EL = Elev();
+      (op.op === "lote" ? op.ops : [op]).forEach(function (s) {
+        if (!s) return;
+        if (s.op === "elevar" && EL && Array.isArray(s.ids) && fin(s.dy)) s.ids.forEach(function (id0) {
+          var id = String(id0), c = porId[id]; if (!c || c.fixo || novos[id]) return;
+          var n = EL.elevarEl("caixa", c, s.dy, { so: s.so }); if (n && !n.erro) novo(id, n, s.so === "topo" ? null : [0, s.dy, 0]);
+        });
+        else if (s.op === "metalAjustar" && porId[String(s.id)] && s.caixa && !novos[String(s.id)]) novo(String(s.id), clone(s.caixa));
+      });
     } else return fechar(res);
     if (!ordemNovos.length) return fechar(res);
 
@@ -462,7 +476,9 @@
     /* ---- 7. o lote */
     if (res.ajustes.length) {
       var idL = typeof o.novoId === "function" ? o.novoId("l") : "l" + Date.now().toString(36);
-      res.op = { op: "lote", id: idL, origem: "vinculos", pedido: "Mover com os vínculos", ops: [op].concat(res.ajustes) };
+      /* a op que JÁ é um lote (o Elevar) fica plana: o sanear joga fora o lote dentro de lote */
+      if (op.op === "lote") res.op = { op: "lote", id: op.id || idL, origem: op.origem || "vinculos", pedido: ((op.pedido || "Elevar") + " (com os vínculos)").slice(0, 300), ops: op.ops.concat(res.ajustes) };
+      else res.op = { op: "lote", id: idL, origem: "vinculos", pedido: "Mover com os vínculos", ops: [op].concat(res.ajustes) };
     }
     return fechar(res);
   }

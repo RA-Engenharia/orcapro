@@ -95,6 +95,7 @@
     "R-TRE": "Três ou mais barras concorrentes: nó de treliça com gusset aparafusado (perfis abertos).",
     "R-TUB": "Barras de perfil tubular: nó soldado T/Y (uma diagonal) ou K com afastamento (duas), pela NBR 16239.",
     "R-TER": "Terça apoiada na viga: clip de terça.",
+    "R-CFG": "Tipologia PREFERIDA na configuração das ligações da obra para esta situação (js/acoligconfig.js): vem primeiro se passar; se não passar, as da regra do encontro vêm na frente.",
     "R-TAB": "Padrão da EMPRESA para esta combinação de seções (tabela guardada pelo usuário): consultado PRIMEIRO; a ligação continua dimensionada e, se não passar, as alternativas das regras vêm atrás.",
     "R-EB": "Emenda de barra tracionada (cantoneira, U ou chapa colineares): talas parafusadas na aba/alma ligada (cantoneira, U) ou dos dois lados (chapa).",
     "R-CRUZ": "Duas diagonais que se cruzam: a interrompida é emendada por talas e um parafuso no cruzamento trava as duas.",
@@ -143,7 +144,7 @@
       pecas.push({ id: String(c.id), caixa: c, mb: mb, papel: pap, perfil: pf, aco: aco((c.metal && c.metal.aco) || c.aco, { id: "ASTM A572 Gr.50", fy: 345, fu: 450 }), tubo: tubular(pf) });
     });
     if (!pecas.length) return { ok: false, motivo: "Selecione peças de aço (pilar, viga, diagonal) — chapas e parafusos não contam." };
-    var ctx = { ok: true, pecas: pecas.map(function (p) { return { id: p.id, papel: p.papel, perfil: p.perfil, aco: p.aco, tubo: p.tubo }; }), avisos: avisos, face: "mesa", angulo: 90, topoPilar: false, mesmoTopo: false, no: { rigido: null, fonte: "padrão", texto: "sem cálculo: o padrão do cálculo da estrutura desenhada é ROTULADO" } };
+    var ctx = { ok: true, pecas: pecas.map(function (p) { return { id: p.id, papel: p.papel, perfil: p.perfil, aco: p.aco, tubo: p.tubo, L: p.mb && p.mb.L }; }), avisos: avisos, face: "mesa", angulo: 90, topoPilar: false, mesmoTopo: false, no: { rigido: null, fonte: "padrão", texto: "sem cálculo: o padrão do cálculo da estrutura desenhada é ROTULADO" } };
     var pil = pecas.filter(function (p) { return p.papel === "pilar"; }), vig = pecas.filter(function (p) { return p.papel === "viga"; }), dia = pecas.filter(function (p) { return p.papel === "diagonal" || p.papel === "tirante"; }), ter = pecas.filter(function (p) { return p.papel === "terca"; });
     var tubos = pecas.filter(function (p) { return p.tubo; });
     var A = null, Bp = null;
@@ -358,6 +359,10 @@
     var pp = {}; arr(ctx.pecas).forEach(function (p) { pp[p.id] = p; });
     var A = pp[ctx.A] || {}, B = pp[ctx.B] || {}, e = { viga: A.perfil, apoio: B.perfil || A.perfil, face: /^(cumeeira|emenda)/.test(ctx.relacao) ? "nenhuma" : ctx.face, acoViga: A.aco, acoApoio: B.aco || A.aco, esforcos: ctx.esforcos, estimativa: ctx.estimativa, topoPilar: !!ctx.topoPilar };
     if (ctx.pilarN != null) { e.pilarN = ctx.pilarN; e.pilarM = ctx.pilarM; }   /* M2: a força do pilar do cálculo */
+    /* F4 (15/10/2026): o vão da viga e a altura do pilar (mm) — classificação da ligação pela rigidez (EN 1993-1-8, 5.2.2.5) */
+    /* β (Tabela 5.4): o número de vigas que chegam ao pilar NAQUELE nó não vem do modelo aqui (ctx.pecas é a seleção, sempre 1 viga) —
+       não se manda nVigasNo e a ligação usa β = 2, o seguro (revisão F4, 15/10/2026) */
+    if (num(A.L, 0) > 0) e.Lviga = A.L * 1000; if (num(B.L, 0) > 0 && B.papel === "pilar") e.Lpilar = B.L * 1000;
     if (ctx.relacao === "viga-sobre-pilar") e.capDir = ctx.capDir;
     if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
     if (ctx.relacao === "emenda-barra" || ctx.relacao === "cruz") {
@@ -396,6 +401,10 @@
     var rel = ctx.relacao, rig = ctx.no ? ctx.no.rigido : null, pref = op.preferir, L = [];
     var tab = op.tabela && op.tabela[chaveTabela(ctx)];
     if (tab && Tip() && Tip().obter(tab)) L.push(["R-TAB", [tab]]);
+    /* F3b (15/10/2026): a tipologia preferida da CONFIGURAÇÃO DA OBRA para a situação (viga-pilar na mesa/na alma, viga-viga, base) —
+       só se ela serve nesta geometria (naoServe) */
+    var LCf = dep("AcoLigConfig", "./acoligconfig.js"), sit = LCf ? LCf.situacaoDe(ctx) : null, prf = sit && op.preferidas ? op.preferidas[sit] : null, tPrf = prf && Tip() ? Tip().obter(prf) : null;
+    if (tPrf && prf !== tab && !naoServe(tPrf, ctx, op)) L.push(["R-CFG", [prf]]);
     var Vmax = 0; arr(ctx.esforcos).forEach(function (s) { Vmax = Math.max(Vmax, Math.abs(num(s.V, 0))); });
     var querRig = rig === true || (rig == null && pref === "rigida");
     if (rel === "viga-pilar" && ctx.pilarTubo) {
@@ -471,6 +480,9 @@
         /* M1 (1.2.145): o material escolhido no Catálogo BR (classe do parafuso, aço do chumbador, aço da chapa) — sem
            escolha, op.materiais não vem e a entrada é a de sempre (ASTM A325, F1554 Gr.36, ASTM A36) */
         if (op.materiais) ["parafuso", "chumbador", "aco"].forEach(function (k) { var m = op.materiais[k]; if (m && m.id && (m.fub > 0 || (m.fy > 0 && m.fu > 0))) extra[k] = m; });
+        /* F3b: o eletrodo e a configuração da obra (diâmetros, passo, borda, folga, atrito) — js/acoligconfig.js */
+        if (op.materiais && op.materiais.eletrodo && op.materiais.eletrodo.fw > 0) extra.eletrodo = { id: op.materiais.eletrodo.id, fw: op.materiais.eletrodo.fw };
+        if (op.config) extra.config = op.config;
         if (ctx.relacao === "contraventamento" || ctx.relacao === "no-trelica") { var N = 0; arr(ctx.esforcos).forEach(function (s) { if (Math.abs(num(s.N, 0)) > Math.abs(N)) N = num(s.N, 0); }); extra.N = N; arr(ctx.esforcos).forEach(function (s) { if (num(s.N, 0) < 0) extra.Nc = Math.max(num(extra.Nc, 0), -num(s.N, 0)); else extra.Nt = Math.max(num(extra.Nt, 0), num(s.N, 0)); }); }
         var ent = entradaCalc(ctx, extra), r = C.verificar(tid, ent), avF = [], rPlaca = r, passaAj = false;
         /* SIMULAÇÃO S1: a placa verificada NA fundação do modelo (cone, gancho, borda, altura, A2/A1)
@@ -502,7 +514,7 @@
             passaAj = !!(rAj && rAj.ok && !rAj.ajusteCota);
           }
         }
-        var o = { entrada: ent, tipologia: tid, nome: t.nome, familia: t.familia, meio: t.meio, regra: { id: rid, texto: REGRAS[rid] }, ordemRegra: rid === "R-ALT" ? 20 + k : k, resultado: r, passa: !!(r && r.ok), reforcos: arr(r && r.reforcos), avisos: [], custo: { fabricacao: t.fabricacao, montagem: t.montagem, custo: t.custo } };
+        var o = { entrada: ent, tipologia: tid, nome: t.nome, familia: t.familia, meio: t.meio, regra: { id: rid, texto: REGRAS[rid] }, ordemRegra: rid === "R-ALT" ? 20 + k : rid === "R-CFG" ? -10 : k, resultado: r, passa: !!(r && r.ok), reforcos: arr(r && r.reforcos), avisos: [], custo: { fabricacao: t.fabricacao, montagem: t.montagem, custo: t.custo } };
         if (passaAj) { o.passaComAjuste = true; o.avisos.push("Passa com o AJUSTE DE COTA da fundação: " + String(r.ajusteCota.texto || "").split("AJUSTE DE COTA: ")[1]); }
         if (r && arr(r.naoVerificadoCritico).length) o.avisos.push("PENDÊNCIA (bloqueia a emissão): " + r.naoVerificadoCritico.join("; ") + ". O \"Ligar todos os nós\" não escolhe esta opção — só o engenheiro, aqui.");
         var pc = prosContras(t, r); o.pros = pc.pros; o.contras = pc.contras;
@@ -537,6 +549,8 @@
           o.avisos.unshift("Não serve como está: " + o.bloqueioProlongar + " — prolongue o pilar (pelo menos " + br(r.dimensoes.ext + 50, 0) + " mm acima da viga) e chame de novo, ou use a chapa ajustada ou a viga soldada.");
         }
         if (t.familia === "reforco") o.penal += 40;   /* reforço (barra de cisalhamento, enrijecedor) não vem antes da ligação que ele reforça */
+        /* F3b: meio "soldada" na configuração da obra — as só parafusadas vão para trás (não saem: a obra pode precisar delas) */
+        if (op.meio === "soldada" && t.meio === "parafusada" && ctx.relacao !== "base") { o.penal += 25; o.contras.push("parafusada — a configuração da obra prefere ligação soldada"); }
         if (tid === "base-engastada" && r && r.ok && r.dimensoes && r.dimensoes.t > 31.5) { o.penal = 30; o.contras.unshift("placa grossa (" + br(r.dimensoes.t, 1) + " mm > 31,5 mm): as nervuras reduzem a espessura (R-BASE-ENG)"); }
         if (/^base-/.test(tid) && r && r.verificacoes && r.verificacoes.some(function (v) { return /cisalhamento/i.test(v.nome) && /Chumbador/i.test(v.nome) && v.razao > 1; })) o.contras.unshift("a cortante passa do que os chumbadores aguentam: barra de cisalhamento (R-BASE-ROT/ENG)");
         o.confianca = !o.passa ? "baixa" : (o.avisos.some(function (a) { return /INCOER/.test(a); }) || rid === "R-VP-RIG-A" || rid === "R-ALT") ? "baixa" : (ctx.estimativa || k > 0 || arr(r.naoVerificado).length) ? "média" : "alta";

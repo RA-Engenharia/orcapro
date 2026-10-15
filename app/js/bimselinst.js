@@ -436,6 +436,7 @@
           { sep: 1 },
           { a: "mover", r: "Mover", tecla: "MV", off: !(ed && mod) },
           { a: "copiar", r: "Copiar", tecla: "CO", off: !(ed && mod) },
+          { a: "elevar", r: "Elevar…", tecla: "EL", n: alvosN, off: !(ed && mod && global.BimElevarUI) },   /* ELEVAR (js/bimelevarui.js) */
           { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
           { a: "trocar-tipo", r: "Trocar tipo/perfil…", off: !ed },
           { a: "lista", r: "Lista da seleção" }
@@ -487,6 +488,7 @@
       if (a === "mostrar") return this.mostrarTodos();
       if (a === "mover") return this.comando("mover-preciso");
       if (a === "copiar") return this.comando("copiar");
+      if (a === "elevar") return this.comando("elevar");
       if (a === "props") return this.propriedades();
       if (a === "trocar-tipo") return this.trocarTipo();
       if (a === "lista") return this.lista(alvos);

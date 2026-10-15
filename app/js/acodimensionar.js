@@ -115,7 +115,7 @@
     R.casos.forEach(function (c) {
       var base = "W" + c.direcao; cont[base] = (cont[base] || 0) + 1;
       var id = base + String.fromCharCode(96 + cont[base]);
-      mapa[id] = c; casos.push({ id: id, nome: c.nome, direcao: c.direcao, cpi: c.cpi, origem: c.id });
+      mapa[id] = c; casos.push({ id: id, nome: c.nome, direcao: c.direcao, cpi: c.cpi, origem: c.id, q: c.q });
     });
     function dentro(u, a0, a1) { return u >= a0 - 1e-6 && u <= a1 + 1e-6; }
     var adaptado = {
@@ -134,7 +134,11 @@
         for (var j = 0; j < P.length; j++) if (dentro(u, P[j].s0, P[j].s1)) return num(P[j].p, 0);
         return 0;
       },
-      atrito: function (id) { var c = mapa[id]; return c && c.atrito ? c.atrito : null; }
+      atrito: function (id) { var c = mapa[id]; return c && c.atrito ? c.atrito : null; },
+      /* cpe médio das zonas de borda (NBR 6123:2023, 6.1.2): só para a estrutura secundária (js/acosecundarias.js) —
+         os pórticos continuam com o cpe das zonas */
+      qLocal: R.qLocal,   /* q da classe A (6.1.3): a estrutura secundária escala o q de cada caso por qLocal/q */
+      locais: R.zonas && R.zonas.locais && (arr(R.zonas.locais.cobertura).length || Object.keys(R.zonas.locais.paredes || {}).length) ? R.zonas.locais : null
     };
     return { ok: true, adaptado: adaptado, resultado: R, avisos: avisos.concat(arr(R.avisos).map(function (x) { return "Vento: " + x; })) };
   }
@@ -726,7 +730,7 @@
     return { ok: true, base: b1, atual: a, alternativa: b, texto: txt, resultado: r2 };
   }
 
-  var AcoDimensionar = { calcular: calcular, alternativaBase: alternativaBase, LIMITES: LIMITES, familia: familia, estacoesMembro: estacoesMembro,
+  var AcoDimensionar = { calcular: calcular, ventoDoPar: ventoDoPar, alternativaBase: alternativaBase, LIMITES: LIMITES, familia: familia, estacoesMembro: estacoesMembro,
                          _interno: { escolherPerfis: escolherPerfis, razoesPorGrupo: razoesPorGrupo, flexPortico: flexPortico, previsorTopo: previsorTopo, infoPerfil: infoPerfil } };   /* para teste e depuração */
   global.AcoDimensionar = AcoDimensionar;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDimensionar;

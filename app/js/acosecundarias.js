@@ -63,11 +63,68 @@
     arr(vento.casos).forEach(function (c) {
       var s = 0, n = 0;
       for (var a = 0; a < 4; a++) for (var b = 0; b < 4; b++) { s += num(vento.pressao(c.id, face, u0 + (a + 0.5) / 4 * (u1 - u0), v0 + (b + 0.5) / 4 * (v1 - v0)), 0); n++; }
-      var p = s / n;
+      /* F6 (revisor, 15/10/2026): a estrutura secundária usa o q da CLASSE A também FORA das faixas de borda (NBR 6123:2023,
+         6.1.3) — o caso vem com o q da classe da edificação (4–11 % abaixo); escala qLocal/q do caso, nunca para baixo */
+      var fq = OPC.qClasseA && vento.qLocal > 0 && c.q > 0 ? Math.max(1, vento.qLocal / c.q) : 1;
+      var p = s / n * fq;
       if (p > o.pre) { o.pre = p; o.casoPre = c.id; }
       if (p < o.suc) { o.suc = p; o.casoSuc = c.id; }
     });
     return o;
+  }
+
+  /* cpe MÉDIO das zonas de borda e de canto (NBR 6123:2023, 6.1.2 e 6.1.3; Tabela 4, nota c — paredes: faixa 0,2·b ou h,
+   * o menor, nas pontas de cada face; Tabelas 5 e 6 com as figuras — cobertura: y = h ou 0,15·b, o menor, junto ao oitão,
+   * aos beirais e à cumeeira). Vale para a ESTRUTURA SECUNDÁRIA: o memorial já dizia isso, mas as terças e as travessas
+   * só liam o cpe da zona (achado do revisor, 15/10/2026). As zonas, o cpe médio e p = q(classe A)·(cpe médio − cpi mais
+   * desfavorável) vêm prontos do js/acovento.js (R.zonas.locais), envoltória das quatro direções e das duas águas.
+   * A barra cuja faixa de influência TOCA a zona leva o cpe médio no VÃO INTEIRO (a zona pode cobrir só parte do vão — a
+   * favor da segurança); na largura, só a parte da faixa de influência que cai dentro da zona; vale o pior entre o cpe
+   * médio e o da zona. OPC.cpeMedio = false só para o controle negativo dos testes. */
+  var OPC = { cpeMedio: true, qClasseA: true };
+  function localFaixa(vento, face, u0, u1, v0, v1, base) {
+    var lc = vento && vento.locais; if (!OPC.cpeMedio || !lc) return null;
+    var tol = 1e-6, itens = [];
+    function sobre(a0, a1, b0, b1) { return Math.min(a1, b1) - Math.max(a0, b0); }
+    if (face === "cobertura") {
+      var rs = arr(lc.cobertura).filter(function (r) { return isFinite(r.p) && sobre(u0, u1, r.x0, r.x1) > tol && sobre(v0, v1, r.z0, r.z1) > tol; });
+      if (!rs.length) return null;
+      var cortes = [u0, u1]; rs.forEach(function (r) { [r.x0, r.x1].forEach(function (x) { if (x > u0 && x < u1) cortes.push(x); }); });
+      cortes.sort(function (a, b) { return a - b; });
+      var soma = 0, larg = u1 - u0;
+      for (var i = 1; i < cortes.length; i++) {
+        var s = cortes[i - 1], t = cortes[i], m = (s + t) / 2, pS = base, rS = null; if (t - s < tol) continue;
+        rs.forEach(function (r) { if (m >= r.x0 - tol && m <= r.x1 + tol && r.p < pS) { pS = r.p; rS = r; } });
+        soma += pS * (t - s);
+        if (rS) { var it = itens.filter(function (q) { return q.zona === rS.zona; })[0]; if (it) it.largura += t - s; else itens.push({ zona: rS.zona, cpe: rS.cpe, cpi: rS.cpi, coef: rS.coef, p: rS.p, largura: t - s }); }
+      }
+      return itens.length ? { w: larg > 0 ? soma / larg : base, itens: itens } : null;
+    }
+    var fs = arr((lc.paredes || {})[face]).filter(function (f) { return isFinite(f.p) && sobre(u0, u1, f.s0, f.s1) > tol; }), pior = null;
+    fs.forEach(function (f) { if (f.p < base && (!pior || f.p < pior.p)) pior = f; });
+    return pior ? { w: pior.p, itens: [{ zona: pior.zona, cpe: pior.cpe, cpi: pior.cpi, coef: pior.coef, p: pior.p, largura: null }] } : null;
+  }
+  function fz(v, c) { var s = br(v, c); return v < 0 ? "−" + s.replace("-", "") : s; }
+  var ZONA_TXT = { oitao: "faixa do oitão", beiral1: "beiral junto ao oitão", beiral2: "beiral, trecho central", cumeeira: "cumeeira",
+                   He: "faixa do oitão (metade alta)", Le: "faixa do oitão (metade baixa)", H1: "beiral alto junto ao oitão", L1: "beiral baixo junto ao oitão",
+                   H2: "beiral alto, trecho central", L2: "beiral baixo, trecho central", "cpe médio": "faixa de borda da parede" };
+  /* o registro do memorial: em qual faixa cada barra está e o cpe usado (decisão + objeto no resultado) */
+  function registroBorda(vento, regs, sucZona, suc, nome, rot, decisoes) {
+    var lc = vento && vento.locais;
+    if (!lc) return { aplicado: false, motivo: vento && vento.casos ? "o vento não trouxe as zonas de borda (cpe médio)" : "sem vento" };
+    var fonte = "NBR 6123:2023, 6.1.2 e 6.1.3 — Tabela 4 (nota c: faixa 0,2·b ou h, o menor) e Tabelas 5/6 com as figuras (y = h ou 0,15·b, o menor)";
+    var linhas = regs.map(function (r) {
+      var zs = Object.keys(r.zonas).map(function (k) { return r.zonas[k]; }).sort(function (a, b) { return a.p - b.p; });
+      if (!zs.length) return { barra: rot(r), borda: false, texto: nome + " " + rot(r) + ": fora das faixas de borda — cpe da zona (sucção " + fz(r.sucZona, 3) + " kN/m²)" };
+      return { barra: rot(r), borda: true, vaos: r.vaos.slice(), zonas: zs, suc: r.suc, sucZona: r.sucZona,
+               texto: nome + " " + rot(r) + ": " + zs.map(function (z) { return (ZONA_TXT[z.zona] || z.zona) + " (cpe médio " + fz(z.cpe, 2) + ", cpi " + fz(z.cpi, 2) + " → p = " + fz(z.p, 3) + " kN/m²)"; }).join("; ") +
+                      " nos vãos " + r.vaos.join(", ") + " — sucção usada " + fz(r.suc, 3) + " kN/m² (zona: " + fz(r.sucZona, 3) + ")" };
+    });
+    var nB = linhas.filter(function (l) { return l.borda; }).length;
+    decisoes.push({ tema: (nome === "terça" ? "Terças" : "Travessas") + " — cpe médio das zonas de borda",
+      decisao: nB + " de " + linhas.length + " " + (nome === "terça" ? "linha(s) de terça" : "barra(s)") + " em faixa de borda/canto; sucção de cálculo " + fz(suc, 3) + " kN/m² (só com o cpe da zona seria " + fz(sucZona, 3) + ")" + (linhas.length ? ". " + linhas.map(function (l) { return l.texto; }).join(". ") : ""),
+      motivo: fonte + "; q da classe A, cpi mais desfavorável; a barra que toca a faixa leva o cpe médio no vão inteiro (a favor da segurança) e vale o pior entre o médio e o da zona" });
+    return { aplicado: true, fonte: fonte, sucZona: sucZona, suc: suc, governa: suc < sucZona - 1e-9, linhas: linhas };
   }
 
   /* dimensiona UMA família de barra biapoiada (terça ou travessa)
@@ -176,11 +233,18 @@
     var Mt = Mat(), aco = (Mt && Mt.aco(Mt.PADRAO.frio)) || { id: "NBR 6650 CF-26", fy: 260, fu: 410 };
     var gT = num(cg.telhaPeso, 0.05), gX = num(cg.permanenteExtra, 0.10), gF = num(cg.fechamentoPeso, gT), q = num(p.sobrecarga, 0.25);
     /* TERÇAS: a faixa mais larga e a pior pressão/sucção de qualquer vão de qualquer linha */
-    var lt = arr(G.linhasTerca).slice().sort(function (a, b) { return a.x - b.x; }), faixaMax = 0, wPre = 0, wSuc = 0;   /* a lista do modelo vem intercalada (0, 20, 2, 18…): vizinhos em planta pela ordem de x */
+    var lt = arr(G.linhasTerca).slice().sort(function (a, b) { return a.x - b.x; }), faixaMax = 0, wPre = 0, wSuc = 0, wSucZona = 0, bordaT = [];   /* a lista do modelo vem intercalada (0, 20, 2, 18…): vizinhos em planta pela ordem de x */
     lt.forEach(function (t, i0) {
       var xa = i0 > 0 ? (lt[i0 - 1].x + t.x) / 2 : 0, xb = i0 < lt.length - 1 ? (lt[i0 + 1].x + t.x) / 2 : L.vao;
       var larg = Math.abs(xb - xa) / L.co; if (larg > faixaMax) faixaMax = larg;
-      for (var k = 0; k < L.zs.length - 1; k++) { var w = ventoFaixa(p.vento, "cobertura", xa, xb, L.zs[k], L.zs[k + 1]); if (w.pre > wPre) wPre = w.pre; if (w.suc < wSuc) wSuc = w.suc; }
+      var reg = { x: t.x, vaos: [], zonas: {}, sucZona: 0, suc: 0 };
+      for (var k = 0; k < L.zs.length - 1; k++) {
+        var w = ventoFaixa(p.vento, "cobertura", xa, xb, L.zs[k], L.zs[k + 1]); if (w.pre > wPre) wPre = w.pre; if (w.suc < wSucZona) wSucZona = w.suc;
+        var lo = localFaixa(p.vento, "cobertura", xa, xb, L.zs[k], L.zs[k + 1], w.suc), sk = lo ? Math.min(w.suc, lo.w) : w.suc;
+        if (sk < wSuc) wSuc = sk; if (w.suc < reg.sucZona) reg.sucZona = w.suc; if (sk < reg.suc) reg.suc = sk;
+        if (lo) { reg.vaos.push(k + 1); lo.itens.forEach(function (it) { var z = reg.zonas[it.zona]; if (!z || it.p < z.p) reg.zonas[it.zona] = it; }); }
+      }
+      bordaT.push(reg);
     });
     var nPorAgua = L.aguas === 2 ? Math.ceil(lt.length / 2) : lt.length;
     var tercas = dimensionarBarra({ tipo: "terca", L: L.esp, s: faixaMax, gSup: gT, gPlano: gX, q: q, P: num(p.concentrada, 1.0), wPre: wPre, wSuc: wSuc, th: L.th, nLinhaTirante: nPorAgua }, aco);
@@ -188,6 +252,7 @@
       tercas.nLinhas = lt.length; tercas.comprimentoTotal = lt.length * L.Lt; tercas.pesoTotal = tercas.comprimentoTotal * tercas.massa;
       decisoes.push({ tema: "Terças", decisao: tercas.perfil + " biapoiadas entre pórticos (" + br(L.esp, 2) + " m), " + tercas.linhas + " linha(s) de correntes por vão", motivo: "o Ue mais leve do catálogo que passa na NBR 14762 (gravidade e sucção) e nas flechas; faixa de " + br(faixaMax, 2) + " m" });
     } else avisos.push("Terças: " + tercas.motivo + ". " + tercas.sugestao);
+    tercas.cpeMedio = registroBorda(p.vento, bordaT, wSucZona, wSuc, "terça", function (r) { return "x = " + br(r.x, 2) + " m"; }, decisoes);
     /* TRAVESSAS: laterais (vão = espaçamento dos pórticos) e oitões (vão = entre colunas de tapamento) */
     var travessas = {}, fe = par.fechamentos || {};
     function precisaTrav(f) { var t = String((fe[f] || {}).tipo || "telha").toLowerCase(); return /telha|misto/.test(t) && alturasFace(f).length > 0; }
@@ -201,27 +266,37 @@
     function faixaTrav(alturas, H) { var hs = [0].concat(alturas).concat([H]), m = 0; for (var i = 1; i < hs.length - 1; i++) m = Math.max(m, (hs[i + 1] - hs[i - 1]) / 2); return m || 2; }
     var lados = ["esquerda", "direita"].filter(precisaTrav);
     if (lados.length) {
-      var wpL = 0, wsL = 0, faixaL = 0, nAltL = 0;
+      var wpL = 0, wsL = 0, wsLz = 0, faixaL = 0, nAltL = 0, bordaL = [];
       lados.forEach(function (f) {
-        for (var k = 0; k < L.zs.length - 1; k++) { var w = ventoFaixa(p.vento, f, L.zs[k], L.zs[k + 1], 0, 0); wpL = Math.max(wpL, w.pre); wsL = Math.min(wsL, w.suc); }
+        for (var k = 0; k < L.zs.length - 1; k++) {
+          var w = ventoFaixa(p.vento, f, L.zs[k], L.zs[k + 1], 0, 0); wpL = Math.max(wpL, w.pre); wsLz = Math.min(wsLz, w.suc);
+          var lo = localFaixa(p.vento, f, L.zs[k], L.zs[k + 1], 0, 0, w.suc), sk = lo ? Math.min(w.suc, lo.w) : w.suc; wsL = Math.min(wsL, sk);
+          var reg = { f: f, vao: k + 1, vaos: lo ? [k + 1] : [], zonas: {}, sucZona: w.suc, suc: sk }; if (lo) reg.zonas[lo.itens[0].zona] = lo.itens[0]; bordaL.push(reg);
+        }
         faixaL = Math.max(faixaL, faixaTrav(alturasFace(f), L.H)); nAltL = Math.max(nAltL, alturasFace(f).length);
       });
       var tl = dimensionarBarra({ tipo: "travessa", L: L.esp, s: faixaL, gSup: gF, gPlano: 0, q: 0, wPre: wpL, wSuc: wsL, th: Math.PI / 2, nLinhaTirante: nAltL }, aco);
       if (tl.ok) { var nL = 0; lados.forEach(function (f) { nL += alturasFace(f).length; }); tl.nLinhas = nL; tl.comprimentoTotal = nL * L.Lt; tl.pesoTotal = tl.comprimentoTotal * tl.massa; tl.faces = lados; }
       else avisos.push("Travessas laterais: " + tl.motivo + ". " + tl.sugestao);
+      tl.cpeMedio = registroBorda(p.vento, bordaL, wsLz, wsL, "travessa lateral", function (r) { return "(" + r.f + ", vão " + r.vao + ")"; }, decisoes);
       travessas.lateral = tl;
     }
     var oits = ["frente", "fundo"].filter(precisaTrav);
     if (oits.length) {
-      var vaoMax = 0, wpO = 0, wsO = 0, faixaO = 0, nAltO = 0;
+      var vaoMax = 0, wpO = 0, wsO = 0, wsOz = 0, faixaO = 0, nAltO = 0, bordaO = [];
       oits.forEach(function (f) {
         var xs = [0].concat((f === "frente" ? L.tapF : L.tapB) || []).concat([L.vao]);   /* as colunas de tapamento DESTA face */
-        for (var i2 = 1; i2 < xs.length; i2++) { vaoMax = Math.max(vaoMax, xs[i2] - xs[i2 - 1]); var w = ventoFaixa(p.vento, f, xs[i2 - 1], xs[i2], 0, 0); wpO = Math.max(wpO, w.pre); wsO = Math.min(wsO, w.suc); }
+        for (var i2 = 1; i2 < xs.length; i2++) {
+          vaoMax = Math.max(vaoMax, xs[i2] - xs[i2 - 1]); var w = ventoFaixa(p.vento, f, xs[i2 - 1], xs[i2], 0, 0); wpO = Math.max(wpO, w.pre); wsOz = Math.min(wsOz, w.suc);
+          var lo = localFaixa(p.vento, f, xs[i2 - 1], xs[i2], 0, 0, w.suc), sk = lo ? Math.min(w.suc, lo.w) : w.suc; wsO = Math.min(wsO, sk);
+          var reg = { f: f, vao: i2, vaos: lo ? [i2] : [], zonas: {}, sucZona: w.suc, suc: sk }; if (lo) reg.zonas[lo.itens[0].zona] = lo.itens[0]; bordaO.push(reg);
+        }
         faixaO = Math.max(faixaO, faixaTrav(alturasFace(f), L.H)); nAltO = Math.max(nAltO, alturasFace(f).length);
       });
       var to = dimensionarBarra({ tipo: "travessa", L: vaoMax, s: faixaO, gSup: gF, gPlano: 0, q: 0, wPre: wpO, wSuc: wsO, th: Math.PI / 2, nLinhaTirante: nAltO }, aco);
       if (to.ok) { var nO = 0; oits.forEach(function (f) { nO += alturasFace(f).length; }); to.nLinhas = nO; to.comprimentoTotal = nO * L.vao; to.pesoTotal = to.comprimentoTotal * to.massa; to.faces = oits; }
       else avisos.push("Travessas dos oitões: " + to.motivo + ". " + to.sugestao);
+      to.cpeMedio = registroBorda(p.vento, bordaO, wsOz, wsO, "travessa do oitão", function (r) { return "(" + r.f + ", vão " + r.vao + ")"; }, decisoes);
       travessas.oitao = to;
     }
     ["lateral", "oitao"].forEach(function (k) {
@@ -231,7 +306,7 @@
     return { ok: !!(tercas && tercas.ok) && ["lateral", "oitao"].every(function (k) { return !travessas[k] || travessas[k].ok; }), tercas: tercas, travessas: travessas, pesoTotal: pesoTotal, avisos: avisos, decisoes: decisoes, aco: aco.id };
   }
 
-  var AcoSecundarias = { dimensionar: dimensionar, dimensionarBarra: dimensionarBarra, candidatos: candidatos, ventoFaixa: ventoFaixa, LIM: LIM, GAMA: GAMA };
+  var AcoSecundarias = { dimensionar: dimensionar, dimensionarBarra: dimensionarBarra, candidatos: candidatos, ventoFaixa: ventoFaixa, localFaixa: localFaixa, OPC: OPC, LIM: LIM, GAMA: GAMA };
   global.AcoSecundarias = AcoSecundarias;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoSecundarias;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

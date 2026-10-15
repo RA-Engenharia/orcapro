@@ -807,6 +807,16 @@
         (o.motivo == null || (typeof o.motivo === "string" && o.motivo.length <= 300)) && (o.em == null || (typeof o.em === "string" && o.em.length <= 40));
       return false;
     },
+    /* ELEVAR (js/bimelevar.js, 15/10/2026) — a FORMA da op, aqui pelo mesmo motivo dos vínculos (a subida
+       não some numa tela sem o motor): {op:'elevar', ids:[...], dy (m, ≠ 0, até 200), so?:'topo'} */
+    opElevarValida: function (o) {
+      function idOk(v) { return (typeof v === "string" && v.length > 0 && v.length <= 120) || (typeof v === "number" && isFinite(v)); }
+      if (!o || o.op !== "elevar") return false;
+      return Array.isArray(o.ids) && o.ids.length > 0 && o.ids.length <= 5000 && o.ids.every(idOk) &&
+        typeof o.dy === "number" && isFinite(o.dy) && Math.abs(o.dy) > 1e-9 && Math.abs(o.dy) <= 200 &&
+        (o.so == null || o.so === "topo") &&
+        Object.keys(o).every(function (k) { return k === "op" || k === "ids" || k === "dy" || k === "so"; });
+    },
     opParamValida: function (o) {
       function esc(v) { return v === null || typeof v === "string" || typeof v === "boolean" || (typeof v === "number" && isFinite(v)); }
       function mapa(m) { return !!m && typeof m === "object" && !Array.isArray(m) && Object.keys(m).length > 0 && Object.keys(m).every(function (k) { return esc(m[k]); }); }
@@ -1135,6 +1145,7 @@
         if (o.op === "unirGeometria" || o.op === "desunirGeometria" || o.op === "alternarUniao") return ["a", "b"].every(function (k) { return (typeof o[k] === "string" && o[k].length > 0) || fin(o[k]); }) && String(o.a) !== String(o.b);
         if (BimEdit.opAmbiente(o.op)) return BimEdit.opAmbienteValida(o);   /* P2-A */
         if (o.op === "vinculoPonta" || o.op === "vinculoDesatualizar") return BimEdit.opVinculoValida(o);   /* VÍNCULOS (js/bimvinculos.js) */
+        if (o.op === "elevar") return BimEdit.opElevarValida(o);   /* ELEVAR (js/bimelevar.js) */
         if (o.op === "forro") return BimEdit.opForroValida(o);   /* P2-B */
         if (o.op === "fases" || o.op === "grupo" || o.op === "opcoes") return BimEdit.opP10Valida(o);   /* P10 */
         if (/^(topossolido|subregiao|plataforma|divisa|implantacao|compTerreno|rotuloCurvas)$/.test(o.op)) return BimEdit.opTerrenoValida(o);   /* P11 */

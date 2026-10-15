@@ -1402,6 +1402,12 @@
       [2, 3, 4.5, 6, 8].forEach(function (dl) { cand.push({ x: C[0], y: C[1] - dl, al: "C", bx: [C[0] - wl / 2, C[1] - dl - 0.76 * hm, C[0] + wl / 2, C[1] - dl + 0.18 * hm] }); });
       [2, 3, 4.5, 6, 8].forEach(function (dl) { cand.push({ x: C[0], y: C[1] + dl + 0.76 * hm, al: "C", bx: [C[0] - wl / 2, C[1] + dl, C[0] + wl / 2, C[1] + dl + 0.94 * hm] }); });
       [2.5, 3.5, 5, 7, 9].forEach(function (dl) { cand.push({ x: C[0] - dl, y: C[1] + 0.37 * hm, al: "D", bx: [C[0] - dl - wl, C[1] - 0.39 * hm, C[0] - dl, C[1] + 0.55 * hm] }); });
+      /* F6 (15/10/2026): com UMA corrente no meio do vão (terça maior pelo cpe médio) a cruz em volta do centro não tem
+         lugar livre — procura em grade no vão do X: no meio de cada intervalo entre linhas verticais e entre terças */
+      var vs = xsVert.filter(function (xx) { return xx >= Math.min(PX(cv.a.z), PX(cv.c.z)) - 1e-6 && xx <= Math.max(PX(cv.a.z), PX(cv.c.z)) + 1e-6; }).sort(function (p, q) { return p - q; });
+      var hs = ysHor.filter(function (yy) { return yy >= Math.min(PY(cv.a.x), PY(cv.c.x)) - 1e-6 && yy <= Math.max(PY(cv.a.x), PY(cv.c.x)) + 1e-6; }).sort(function (p, q) { return p - q; }), grade = [];
+      for (var iv = 1; iv < vs.length; iv++) for (var ih = 1; ih < hs.length; ih++) [0.5, 0.3, 0.7].forEach(function (fv) { var gx = vs[iv - 1] + fv * (vs[iv] - vs[iv - 1]), gy = (hs[ih - 1] + hs[ih]) / 2; grade.push({ x: gx, y: gy + 0.37 * hm, al: "C", bx: [gx - wl / 2, gy - 0.39 * hm, gx + wl / 2, gy + 0.55 * hm], d: Math.abs(gx - C[0]) + Math.abs(gy - C[1]) }); });
+      grade.sort(function (p, q) { return p.d - q.d; }); cand = cand.concat(grade);
       var ok = cand.filter(function (q) { return caixaLivre(q.bx); })[0] || cand[0];
       D.texto(ok.x, ok.y, cv.marca, hm, { al: ok.al });
     });

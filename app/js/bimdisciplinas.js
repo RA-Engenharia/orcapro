@@ -84,7 +84,7 @@
     "niveis", "nivel-atual", "plano-trabalho", "editar-tipo", "combinar", "componente", "eixo",
     /* Modificar (js/bimprecisao.js FITA.modificar) */
     "mover-preciso", "copiar", "espelhar", "girar", "matriz", "snaps-editor", "alinhar", "deslocamento",
-    "aparar-canto", "aparar-varios", "dividir-elemento", "fixar", "desafixar", "criar-similar", "escala",
+    "aparar-canto", "aparar-varios", "dividir-elemento", "fixar", "desafixar", "criar-similar", "escala", "elevar",
     /* grupos, fases e opções (js/bimp10ui.js) */
     "demolir", "criar-grupo", "colar-niveis", "editar-grupo", "desagrupar",
     "fases", "filtro-fase", "opcoes-projeto", "selecionar-id", "localizar-substituir", "advertencias", "limpar-nao-usados", "vista-inicial",

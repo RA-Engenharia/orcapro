@@ -42,6 +42,8 @@
     { id: "met-lig-inteligente", rotulo: "Ligação\ninteligente", icone: "raio", grande: true, dica: "Clique no PILAR e, com Ctrl, na VIGA (ou viga e viga, um pilar sozinho para a base, a diagonal e o apoio) e chame: o sistema entende o encontro (mesa ou alma, topo, nó rígido ou rotulado no cálculo) e traz até 3 ligações dimensionadas pela NBR 8800, com o reforço que precisar. Aplicar cria as chapas, parafusos e soldas." },
     { id: "met-lig-catalogo", rotulo: "Catálogo de\nligações", icone: "livro", grande: true, dica: "Todas as tipologias de ligação por aplicação — cantoneiras, chapas, talas, chapa de extremidade, assento, mísula, emendas, bases, gussets, nós tubulares, consolo — com o desenho, a família, as verificações e as limitações." },
     { id: "met-lig-lote", rotulo: "Ligar todos\nos nós", icone: "grade", grande: true, dica: "Para as peças selecionadas (ou o modelo todo): em cada encontro viga × pilar, viga × viga e base, aplica a melhor ligação que passa e tem desenho automático. Um lote só — Ctrl+Z desfaz." },
+    { id: "met-lig-config", rotulo: "Configuração\ndas ligações", icone: "grade", grande: false, dica: "Configuração das ligações da obra (NBR 8800): meio padrão, classe e diâmetros de parafuso, atrito, eletrodo, folga, passo e borda, enrijecedor com ou sem recorte e a tipologia preferida por situação. A Ligação inteligente, o Ligar todos e as ligações automáticas obedecem." },
+    { id: "met-lig-tipos", rotulo: "Dimensionar\ntodas (Tipos)", icone: "grade", grande: false, dica: "Dimensiona todas as ligações dos encontros com os esforços de TODAS as combinações do cálculo, diz a combinação que governa e agrupa os nós iguais em Tipos (o Tipo leva o pior nó). Não muda o modelo: é o quadro-resumo." },
     { id: "met-lig-memorial", rotulo: "Memorial das\nligações", icone: "relatorio", grande: false, dica: "Cada ligação aplicada pela ligação inteligente, verificação por verificação (item da NBR 8800, fórmula, valores e razão), com os reforços e o que não foi verificado." }
   ];
 
@@ -87,6 +89,13 @@
   function gravarMat(t) { try { global.localStorage.setItem(CHAVE_MAT, JSON.stringify(t)); return true; } catch (e) { return false; } }
   function opMat() { var m = lerMat(), o = null; CAMPOS_MAT.forEach(function (k) { if (m[k] && m[k].id) { o = o || {}; o[k] = m[k]; } }); return o; }
   function textoMat() { var m = opMat(); if (!m) return ""; var nomes = { parafuso: "parafuso", chumbador: "chumbador", aco: "chapa" }; return CAMPOS_MAT.filter(function (k) { return m[k]; }).map(function (k) { return nomes[k] + " " + m[k].id; }).join(" · "); }
+  /* CONFIGURAÇÃO DAS LIGAÇÕES DA OBRA (F3b, 15/10/2026 — js/acoligconfig.js): guardada NESTE navegador, como a tabela e os
+     materiais (pendência: gravar no arquivo da obra). SEM configuração salva, a sugestão é a de sempre; a salva já foi validada. */
+  var CHAVE_CFG = "orcapro:metal:ligconfig:v1";
+  function CF() { return global.AcoLigConfig || null; }
+  function lerCfg() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_CFG) || "null"); return t && typeof t === "object" && !Array.isArray(t) ? t : null; } catch (e) { return null; } }
+  function gravarCfg(t) { try { if (t == null) global.localStorage.removeItem(CHAVE_CFG); else global.localStorage.setItem(CHAVE_CFG, JSON.stringify(t)); return true; } catch (e) { return false; } }
+  function opObra(base) { var c = lerCfg(), F = CF(); if (!c || !F) return base; return F.opSugerir(c, base); }
   var CUSTO = { 1: "baixo", 2: "médio", 3: "alto" };
   /* QUEM PODE SER APLICADA (revisão A1): só a opção que PASSA, sem bloqueio e com desenho; a chapa estendida que pede o
      pilar prolongado só pelo botão de prolongar. Devolve { ok, prolongar, motivo } */
@@ -102,6 +111,18 @@
   }
 
   function clone2(o) { var n = {}; Object.keys(o || {}).forEach(function (k) { n[k] = o[k]; }); return n; }
+  /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a ligação lançada com a viga só pelo peso próprio é PROVISÓRIA —
+     quem aplica a ligação no mesmo encontro (Ligação inteligente, Ligar todos os nós) a SUBSTITUI (as peças e os furos dela
+     saem no mesmo lote, DEPOIS da nova: a viga refeita pela nova ainda leva os furos velhos, que o apagar tira) */
+  /* AUTOMÁTICA = lançada com a viga (origem "lancar-viga"), em qualquer estado — a confirmada/ajustada pelo cálculo também: quem
+     aplica a ligação no encontro é o engenheiro, e a dele substitui a automática (sem isso a Ligação inteligente desenhava a 2ª
+     ligação no mesmo joelho e o Ligar todos pulava o nó — e2e das simulações) */
+  function provisoria(c) { var li = c && c.ligInfo; return !!(li && li.origem === "lancar-viga" && c.metal && c.metal.lig); }
+  function provisoriasEntre(cxs, ids) {
+    var out = []; ids = arr(ids).map(String);
+    arr(cxs).forEach(function (c) { if (!provisoria(c)) return; var pp = arr(c.ligInfo.pecas).map(String); if (ids.length >= 2 && ids.every(function (i) { return pp.indexOf(i) >= 0; }) && out.indexOf(c.metal.lig) < 0) out.push(String(c.metal.lig)); });
+    return out;
+  }
   /* M2 (1.2.145): os botões levam o índice da LISTA COMPLETA (todasOpcoes); os 3 cartões são as 3 primeiras coerentes */
   function idxDe(o) { var L = arr(U.sg && U.sg.todasOpcoes), i = L.indexOf(o); return i >= 0 ? i : arr(U.sg && U.sg.opcoes).indexOf(o); }
   function opDe(i) { var L = arr(U.sg && U.sg.todasOpcoes); return L[i] || (U.sg && arr(U.sg.opcoes)[i]) || null; }
@@ -264,7 +285,7 @@
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
     registrar: function (reg) {
       if (!previa() || !S() || !T() || !C2()) return false;
-      var self = this, h = { "met-lig-inteligente": function () { self.abrir(); }, "met-lig-catalogo": function () { self.catalogo(); }, "met-lig-lote": function () { self.lote(); }, "met-lig-memorial": function () { self.memorial(); } };
+      var self = this, h = { "met-lig-config": function () { self.configurar(); }, "met-lig-tipos": function () { self.tipos(); }, "met-lig-inteligente": function () { self.abrir(); }, "met-lig-catalogo": function () { self.catalogo(); }, "met-lig-lote": function () { self.lote(); }, "met-lig-memorial": function () { self.memorial(); } };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Ligação inteligente: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
       try {
         var D = global.DicaRica;
@@ -286,7 +307,7 @@
       if (!cxs.length) { var t = "Ligação inteligente: selecione as peças que se encontram — clique no PILAR e, com Ctrl, na VIGA (ou um pilar sozinho para a base)."; status(t); toast(t, "aviso", 8000); return null; }
       var ctx = S0.analisar(cxs, { resultado: resultadoCalc(), fundacoes: fundacoes() });
       if (!ctx.ok) { status("Ligação inteligente: " + ctx.motivo); toast(ctx.motivo, "aviso", 8000); return null; }
-      var sg = S0.sugerir(ctx, { preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela(), materiais: opMat() });
+      var sg = S0.sugerir(ctx, opObra({ preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela(), materiais: opMat() }));
       U.cxs = cxs; U.ctx = ctx; U.sg = sg;
       if (!sg.ok || !sg.opcoes.length) { toast("Ligação inteligente: nenhuma tipologia para este encontro (" + (REL[ctx.relacao] || ctx.relacao) + ").", "aviso", 8000); return sg; }
       UI.modal("Ligação inteligente — " + (REL[ctx.relacao] || ctx.relacao), painelHtml(ctx, sg), [{ texto: "Catálogo", onClick: function () { MetalLigSugUI.catalogo(apDe(ctx)); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
@@ -327,7 +348,73 @@
     },
     /* "tudo parafusado na obra" (sem solda de campo) vale também para Ligar todos os nós */
     execucao: function (v) { if (v !== undefined) U.execucao = v === "parafusada" ? "parafusada" : ""; return U.execucao || null; },
-    podeAplicar: podeAplicar, _cartao: function (o, i) { return cartao(o, i || 0); },
+    /* CONFIGURAÇÃO DA OBRA (F3b): configuracao() → { config (normalizada), salva, validacao }; configuracao(obj) valida e grava
+       (inválida NÃO grava: devolve os erros); configuracao(null) volta ao padrão (nada salvo) */
+    configuracao: function (novo) {
+      var F = CF(); if (!F) return null;
+      if (novo === null) gravarCfg(null);
+      else if (novo && typeof novo === "object") { var v = F.validar(novo); if (!v.ok) return { config: v.config, salva: false, validacao: v }; gravarCfg(v.config); }
+      var c = lerCfg(); return { config: F.normalizar(c), salva: !!c, validacao: F.validar(c || {}) };
+    },
+    configuracaoSalva: function () { return lerCfg(); },
+    /* o painel da configuração (um lugar só) */
+    configurar: function () {
+      var F = CF(), Tp = T(), Mt = global.AcoMateriais; if (!F || !Tp || !global.UI) return false;
+      css();
+      var c = F.normalizar(lerCfg()), di = Mt ? Mt.diametros("parafuso") : [];
+      function opt(v, txt, sel) { return '<option value="' + esc(v) + '"' + (sel ? " selected" : "") + ">" + esc(txt) + "</option>"; }
+      var classes = (Mt ? Mt.PARAFUSOS : []).map(function (p) { return p.id.split(" (")[0]; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
+      var h = '<div class="lsg" data-lsg="config" data-modal-largo><p class="lsg-nota">Vale para todas as ligações da obra (NBR 8800). Os padrões são os da norma; valor abaixo do mínimo é recusado.</p>' +
+        '<label>Meio padrão <select data-cfg="meio">' + Object.keys(F.MEIOS).map(function (k) { return opt(k, F.MEIOS[k], c.meio === k); }).join("") + "</select></label>" +
+        '<label>Classe do parafuso <select data-cfg="classe">' + classes.map(function (k) { return opt(k, k, c.parafuso.classe === k); }).join("") + "</select></label>" +
+        "<fieldset><legend>Diâmetros disponíveis</legend>" + di.map(function (x) { return '<label><input type="checkbox" data-cfg-d="' + esc(x.id) + '"' + (c.parafuso.diametros.indexOf(x.id) >= 0 ? " checked" : "") + "> " + esc(x.id) + "</label>"; }).join(" ") + "</fieldset>" +
+        '<label><input type="checkbox" data-cfg="atrito"' + (c.atrito ? " checked" : "") + "> Parafuso por atrito (o deslizamento não é verificado pelo sistema: a ligação fica bloqueada até a verificação manual)</label>" +
+        '<label>Superfície <select data-cfg="classeAtrito">' + Object.keys(F.ATRITO).map(function (k) { return opt(k, F.ATRITO[k].texto, c.classeAtrito === k); }).join("") + "</select></label>" +
+        '<label>Eletrodo <select data-cfg="eletrodo">' + (Mt ? Mt.ELETRODOS : []).map(function (e) { return opt(e.id, e.id + " (fw = " + e.fw + " MPa)", c.eletrodo === e.id); }).join("") + "</select></label>" +
+        '<label>Passo entre furos (× db; mínimo 2,7 — 6.3.9) <input type="number" step="0.1" min="2.7" data-cfg="espacamentoFator" value="' + c.espacamentoFator + '"></label>' +
+        '<label>Acréscimo sobre a borda mínima da Tabela 14 (mm) <input type="number" step="1" min="0" data-cfg="bordaAcrescimo" value="' + c.bordaAcrescimo + '"></label>' +
+        '<label>Folga de montagem viga → apoio (mm) <input type="number" step="0.1" min="10" max="30" data-cfg="folgaMontagem" value="' + c.folgaMontagem + '"></label>' +
+        '<label><input type="checkbox" data-cfg="enrijRecorte"' + (c.enrijRecorte ? " checked" : "") + "> Enrijecedor com recorte nos cantos (guardado; o desenho e o cálculo do enrijecedor ainda não mudam com ele)</label>" +
+        "<fieldset><legend>Tipologia preferida por situação</legend>" + Object.keys(F.SITUACOES).map(function (k) { return "<label>" + esc(F.SITUACOES[k]) + ' <select data-cfg-t="' + k + '">' + opt("", "a regra do encontro", !c.tipologia[k]) + Tp.porAplicacao(k).filter(function (t0) { return t0.calc && t0.familia !== "reforco"; }).map(function (t0) { return opt(t0.id, t0.nome, c.tipologia[k] === t0.id); }).join("") + "</select></label>"; }).join("") + "</fieldset>" +
+        '<p class="lsg-nota" data-lsg="cfg-erros"></p></div>';
+      function ler(raiz) {
+        function q(s) { return raiz.querySelector(s); }
+        var o = { meio: q("[data-cfg=meio]").value, parafuso: { classe: q("[data-cfg=classe]").value, diametros: [] }, atrito: q("[data-cfg=atrito]").checked, classeAtrito: q("[data-cfg=classeAtrito]").value, eletrodo: q("[data-cfg=eletrodo]").value,
+                  espacamentoFator: q("[data-cfg=espacamentoFator]").value, bordaAcrescimo: q("[data-cfg=bordaAcrescimo]").value, folgaMontagem: q("[data-cfg=folgaMontagem]").value, enrijRecorte: q("[data-cfg=enrijRecorte]").checked, tipologia: {} };
+        Array.prototype.forEach.call(raiz.querySelectorAll("[data-cfg-d]"), function (b) { if (b.checked) o.parafuso.diametros.push(b.getAttribute("data-cfg-d")); });
+        Array.prototype.forEach.call(raiz.querySelectorAll("[data-cfg-t]"), function (s) { if (s.value) o.tipologia[s.getAttribute("data-cfg-t")] = s.value; });
+        return o;
+      }
+      var self = this;
+      UI.modal("Configuração das ligações da obra", h, [
+        { texto: "Salvar", classe: "primary", onClick: function () { var raiz = document.querySelector("[data-lsg='config']"), r = self.configuracao(ler(raiz)), box = raiz.querySelector("[data-lsg='cfg-erros']"); if (!r.salva) { box.textContent = "Não salvo: " + r.validacao.erros.join(" "); return; } UI.fecharModal(); toast("Configuração das ligações salva." + (r.validacao.avisos.length ? " " + r.validacao.avisos.join(" ") : ""), "ok", 8000); } },
+        { texto: "Voltar ao padrão", classe: "ghost", onClick: function () { self.configuracao(null); UI.fecharModal(); toast("Configuração das ligações: de volta ao padrão.", "info", 5000); } },
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      return true;
+    },
+    /* DIMENSIONAR TODAS (F3b): os encontros da seleção (ou do modelo) com TODAS as combinações, agrupados em Tipos — não muda o modelo */
+    tipos: function () {
+      var S0 = S(), LL = global.AcoLigLote; if (!S0 || !LL) return null;
+      var sel = selCaixas(), base = sel.length ? sel : todasCaixas().filter(function (c) { return c.tipo === "metal" && c.metal && c.metal.kind === "perfil" && !c.metal.lig; });
+      var pares = this.nos(base, todasCaixas()), rc = resultadoCalc(), itens = [];
+      pares.forEach(function (pp) {
+        var rot = pp.map(function (c) { return c.id; }).join(" × ");
+        if (pp.pular) { itens.push({ no: rot, semOpcao: pp.pular }); return; }
+        var ctx = S0.analisar(pp, { resultado: rc, fundacoes: fundacoes() });
+        if (!ctx.ok) { itens.push({ no: rot, semOpcao: ctx.motivo }); return; }
+        itens.push(LL.itemDaSugestao(arr(ctx.ordem).join(" × ") || rot, S0.sugerir(ctx, opObra({ execucao: U.execucao || null, materiais: opMat() }))));
+      });
+      var d = LL.dimensionarTodas(itens); U.tipos = d;
+      if (global.UI) {
+        css();
+        UI.modal("Ligações — Tipos e combinação que governa", '<div class="lsg" data-lsg="tipos" data-modal-largo><p>' + itens.length + " encontro(s), " + d.tipos.length + " Tipo(s)" + (rc && rc.ok ? "" : " — SEM CÁLCULO DA ESTRUTURA: esforços estimados, tudo A CONFIRMAR") + ".</p>" + LL.quadroHtml(d.quadro) +
+          '<p class="lsg-nota">Cada Tipo é dimensionado com as combinações de todos os seus nós (o arranjo cobre o pior nó). "PASSA (ENVOLTÓRIA)": a tipologia refaz o arranjo por combinação, e a combinação que governa não é determinada.</p></div>', [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      }
+      return d;
+    },
+    podeAplicar: podeAplicar, _cartao: function (o, i) { return cartao(o, i || 0); }, provisoriasEntre: provisoriasEntre,
+    /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilares.js): o mesmo aplicar do lote, para o lançamento automático */
+    aplicarOpcao: aplicarOpcao,
     limparTabela: function () { return gravarTabela({}); },
     contexto: function () { return U.ctx; },
     aplicar: function (i, opA) {
@@ -339,8 +426,10 @@
       var por = {}; todasCaixas().forEach(function (c) { por[String(c.id)] = c; });
       var a = aplicarOpcao(o, ctx, por, M.novoId.bind(M), { prolongar: !!opA.prolongar });
       if (!a.ok) { toast("Aplicar: " + a.motivo, "aviso", 8000); return a; }
+      var prov = provisoriasEntre(todasCaixas(), ctx.ordem);
+      prov.forEach(function (lg) { a.lote.ops.push({ op: "metalApagarLig", lig: lg }); });
       if (!M.enviar(a.lote)) { toast("O editor recusou a ligação.", "erro"); return { ok: false, motivo: "editor recusou" }; }
-      U.ultimo = { lig: a.lig, tipologia: o.tipologia, n: a.n };
+      U.ultimo = { lig: a.lig, tipologia: o.tipologia, n: a.n, substituiu: prov };
       try { UI.fecharModal(); } catch (e) {}
       var av = arr(a.r.avisos);
       status(o.nome + " aplicada: " + a.r.resumo + "." + (a.aviso ? " " + a.aviso : "") + (av.length ? " " + av.length + " aviso(s) de furação." : "") + " Ctrl+Z desfaz.");
@@ -378,11 +467,25 @@
       arr(caixas || todasCaixas()).forEach(function (c) {
         var li = c && c.ligInfo; if (!li || !li.tipologia) return;
         var ent = clone(li.entrada) || {};
+        /* VIGAS ENTRE PILARES (15/10/2026): a ligação lançada sem esforço da análise fica A DIMENSIONAR — nunca "atende" */
+        var adz = li.aDimensionar ? "A DIMENSIONAR — " + li.aDimensionar : null;
+        /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): pré-dimensionada só pelo peso próprio — A CONFIRMAR NO CÁLCULO, nunca "atende"
+           (o dimensionamento com o esforço do PP passa quase sempre: é só a partida dos parafusos e da chapa) */
+        var acf = li.aConfirmar ? String(li.aConfirmar) : null;
+        if (acf) {
+          var rA = li.entrada ? C.verificar(li.tipologia, clone(li.entrada) || {}) : null;
+          rA = rA ? clone(rA) : { naoDimensionada: true, razao: 0, governante: "a confirmar no cálculo", resumo: li.resumo || "", verificacoes: [] };
+          rA.ok = false; rA.aConfirmar = acf; rA.governante = "A CONFIRMAR NO CÁLCULO (pré-dimensionada pelo peso próprio)";
+          out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × ") + " — A CONFIRMAR NO CÁLCULO", resultado: rA, info: li, aConfirmar: acf });
+          return;
+        }
+        if (adz && !li.entrada) { out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × ") + " — A DIMENSIONAR", resultado: { ok: false, naoDimensionada: true, razao: 0, governante: "a dimensionar", resumo: li.aDimensionar, verificacoes: [] }, info: li, aDimensionar: adz }); return; }
         var r = C.verificar(li.tipologia, ent), LF0 = global.AcoLigFundacao;
+        if (adz && r) { r = clone(r); r.ok = false; r.aDimensionar = adz; }
         if (li.fundacao && LF0 && r && r.dimensoes && r.dimensoes.chumbadores) r = LF0.verificar(r, li.fundacao, { suporte: ent.concreto && ent.concreto.suporte, esforcos: arr(ent.esforcos).map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.Vx, num(s.V, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; }) });
         /* VÍNCULOS (js/bimvinculos.js): um membro mudou de lugar ou de comprimento depois de a ligação ser dimensionada */
         var dz = c.desatualizado && c.desatualizado.motivo ? "DESATUALIZADA — " + c.desatualizado.motivo + (c.desatualizado.em ? " em " + String(c.desatualizado.em).slice(0, 10) : "") + ": recalcule a estrutura e refaça a ligação" : null;
-        out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × ") + (dz ? " — DESATUALIZADA" : ""), resultado: r, info: li, desatualizada: dz });
+        out.push({ id: String((c.metal && c.metal.lig) || c.id), titulo: (li.nome || li.tipologia) + " — peças " + arr(li.pecas).join(" × ") + (dz ? " — DESATUALIZADA" : "") + (adz ? " — A DIMENSIONAR" : ""), resultado: r, info: li, desatualizada: dz, aDimensionar: adz });
       });
       return out;
     },
@@ -404,9 +507,12 @@
           }
         }
         var r0 = novo ? novo.resultado : l.resultado, confere = !!novo && String(r0.resumo || "") === String(li.resumo || "");
+        /* LIGAÇÃO AO LANÇAR: a ligação A CONFIRMAR só deixa de ser "a confirmar" pelo js/metalligauto.js (aposCalculo), que confere o
+           arranjo DESENHADO — aqui ela sai como está: não aprovada, com o resultado do cálculo como referência */
+        if (l.aConfirmar) { r0 = clone(r0) || {}; r0.ok = false; r0.aConfirmar = l.aConfirmar; confere = false; }
         /* VÍNCULOS: refeita com o cálculo de agora, a comparação é a de agora; sem ele, a marca de desatualizada manda */
         var velha = !novo && l.desatualizada ? l.desatualizada : null;
-        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere && !velha, comCalculo: !!novo, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
+        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere && !velha, comCalculo: !!novo, aConfirmar: l.aConfirmar || null, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
                    desatualizada: velha, diferenca: velha || (novo && !confere ? "desenhada: " + (li.resumo || "—") + " · com os esforços deste cálculo: " + (r0.resumo || "—") : null) });
       });
       return out;
@@ -416,6 +522,9 @@
       return "<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><title>" + esc(titulo || "Memorial das ligações") + "</title><style>body{font:11pt/1.45 system-ui,sans-serif;color:#1d2733;max-width:190mm;margin:12mm auto;padding:0 8mm}h1{font-size:16pt}h3{font-size:12pt;margin-top:8mm;border-bottom:1px solid #ccd5de}h4{font-size:10pt;margin:4mm 0 1mm}.eq{font-family:ui-monospace,monospace;color:#2d6a9c}.nota{color:#5b6774;font-size:9pt}li{margin-bottom:.6mm}</style></head><body><h1>" + esc(titulo || "Memorial das ligações") + "</h1>" +
         /* VÍNCULOS: a ligação cujo membro mudou NÃO sai como válida — o aviso vem antes de tudo */
         (arr(lista).some(function (l) { return l && l.desatualizada; }) ? '<div style="border:2px solid #b45309;background:#fff7ed;padding:3mm 4mm;margin:4mm 0"><b>DESATUALIZADO — recalcular.</b> ' + arr(lista).filter(function (l) { return l && l.desatualizada; }).map(function (l) { return esc(l.titulo.replace(/ — DESATUALIZADA$/, "") + ": " + l.desatualizada); }).join("<br>") + "</div>" : "") +
+        /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): as A CONFIRMAR e o balanço com rótula (CRÍTICO) vêm antes de tudo */
+        (arr(lista).some(function (l) { return l && l.aConfirmar; }) ? '<div style="border:2px solid #b45309;background:#fff7ed;padding:3mm 4mm;margin:4mm 0"><b>A CONFIRMAR NO CÁLCULO — ' + arr(lista).filter(function (l) { return l && l.aConfirmar; }).length + " ligação(ões) pré-dimensionada(s) só pelo peso próprio da viga.</b> Não estão aprovadas: calcule a estrutura (Cálculo › Estrutura desenhada) para confirmar ou ajustar com os esforços da análise.</div>" : "") +
+        (function () { var LA = global.MetalLigAuto, cr = LA && LA.balancosCriticos ? LA.balancosCriticos(todasCaixas()) : []; return cr.length ? '<div style="border:2px solid #b91c1c;background:#fef2f2;padding:3mm 4mm;margin:4mm 0;color:#7f1d1d">' + cr.map(function (x) { return "<b>" + esc(x.texto) + "</b>"; }).join("<br>") + "</div>" : ""; })() +
         (sec ? sec.html : "<p>Nenhuma ligação aplicada pela ligação inteligente neste modelo.</p>" + (S0 && S0.escopoHtml ? S0.escopoHtml() : "")) + "</body></html>";
     },
     abrirHtml: function (html, nome) {
@@ -450,13 +559,24 @@
       var mbs = [];
       arr(caixas).forEach(function (c) { var mb = M.membro(c); if (mb && !(c.metal && c.metal.lig)) mbs.push({ c: c, mb: mb, vert: Math.abs(mb.X[1]) >= Math.cos(15 * Math.PI / 180) }); });
       var V = M.vet, pares = [], vistos = {}, ligados = {};
-      arr(todas || caixas).forEach(function (c) { if (c && c.metal && c.metal.lig && c.metal.soldadaEm) (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(c.metal.soldadaEm)] = 1; arr(c && c.metalFuros).forEach(function (f) { if (f.lig) (ligados[String(f.lig)] = ligados[String(f.lig)] || {})[String(c.id)] = 1; });
+      var provs = {}; arr(todas || caixas).forEach(function (c) { if (provisoria(c)) provs[String(c.metal.lig)] = 1; });
+      arr(todas || caixas).forEach(function (c) { if (c && c.metal && c.metal.lig && provs[String(c.metal.lig)]) return; if (c && c.metal && c.metal.lig && c.metal.soldadaEm) (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(c.metal.soldadaEm)] = 1; arr(c && c.metalFuros).forEach(function (f) { if (f.lig && !provs[String(f.lig)]) (ligados[String(f.lig)] = ligados[String(f.lig)] || {})[String(c.id)] = 1; });
         /* SIMULAÇÃO S2: as peças que a ligação escolhida liga (ligInfo) — a barra redonda não leva furo nem é soldada, e o lote a ligava de novo */
         if (c && c.metal && c.metal.lig && c.ligInfo) arr(c.ligInfo.pecas).forEach(function (id) { (ligados[String(c.metal.lig)] = ligados[String(c.metal.lig)] || {})[String(id)] = 1; }); });
       function jaLigados(a, b) { return Object.keys(ligados).some(function (k) { return ligados[k][a] && ligados[k][b]; }); }
+      /* LIGAÇÃO AO LANÇAR / VIGAS ENTRE PILARES (15/10/2026): a viga com RECUO na receita tem o sólido parado na face do pilar +
+         12,7 mm de folga — a ponta do sólido fica fora da seção do pilar e, no canto onde chegam duas vigas, o encontro virava
+         viga × viga (e2e da simulação espacial). O encontro dessas vigas é pela ponta da LINHA (no eixo do pilar), como no cálculo */
+      function pontasEncontro(A) {
+        var P0 = A.mb.P0, P1 = V.add(A.mb.P0, V.mul(A.mb.X, A.mb.L)), MCr = global.MetalCriar, li = null;
+        try { li = A.c.metal && A.c.metal.cria && A.c.metal.cria.recuo && MCr ? MCr.linhaAtual(A.c) : null; } catch (eL) { li = null; }
+        if (!li || !li.a || !li.b) return [P0, P1];
+        var aPerto = V.len(V.sub(li.a, P0)) <= V.len(V.sub(li.b, P0));
+        return aPerto ? [li.a, li.b] : [li.b, li.a];
+      }
       mbs.forEach(function (A) {
         if (A.vert) return;
-        [A.mb.P0, V.add(A.mb.P0, V.mul(A.mb.X, A.mb.L))].forEach(function (P) {
+        pontasEncontro(A).forEach(function (P) {
           var melhor = null, dm = Infinity, melhorP = null, dmP = Infinity, jaFeita = false;
           /* a PONTA já ligada (a peça recuada pela ligação fica até 60 cm fora do apoio: a mesma ponta não ganha outra) */
           mbs.forEach(function (B) {
@@ -529,11 +649,12 @@
         var ctx = S0.analisar(pp, { resultado: rc, fundacoes: fundacoes() }); if (!ctx.ok) { res.puladas.push({ pecas: pp.map(function (c) { return c.id; }), motivo: ctx.motivo }); return; }
         /* REVISÃO S5 N1: a escolha do lote é do motor (AcoLigSugere.escolherLote): nunca o químico nem reforço sozinho; na
            sapata do modelo, a placa verificada nela — e, se ela só reprova pela cota, aplicada com a proposta do ajuste */
-        var sg = S0.sugerir(ctx, { execucao: U.execucao || null, materiais: opMat() }), esc = S0.escolherLote ? S0.escolherLote(sg) : { opcao: sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0] || null }, o = esc.opcao;
+        var sg = S0.sugerir(ctx, opObra({ execucao: U.execucao || null, materiais: opMat() })), esc = S0.escolherLote ? S0.escolherLote(sg) : { opcao: sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0] || null }, o = esc.opcao;
         if (!o) { res.puladas.push({ pecas: ctx.ordem, motivo: esc.motivo || "nenhuma opção que passa com desenho automático" }); return; }
         var a = aplicarOpcao(o, ctx, por, M.novoId.bind(M));
         if (!a.ok) { res.puladas.push({ pecas: ctx.ordem, motivo: a.motivo }); return; }
-        ops = ops.concat(a.lote.ops); res.feitas.push({ pecas: ctx.ordem, tipologia: o.tipologia, resumo: a.r.resumo, pendente: esc.pendente || null });
+        var provL = provisoriasEntre(Object.keys(por).map(function (k) { return por[k]; }), ctx.ordem);
+        ops = ops.concat(a.lote.ops, provL.map(function (lg) { return { op: "metalApagarLig", lig: lg }; })); res.feitas.push({ pecas: ctx.ordem, tipologia: o.tipologia, resumo: a.r.resumo, pendente: esc.pendente || null, substituiu: provL.length ? provL : undefined });
         /* FRENTE S5 (14/10/2026): a base aplicada com o topo da sapata fora do graute (20–50 mm) traz a PROPOSTA do topo */
         var aj = (a.r && a.r.ajusteCota) || (o.resultado && o.resultado.ajusteCota);
         if (aj && !res.ajustes.some(function (x) { return x.fundacao === aj.fundacao; })) res.ajustes.push(aj);

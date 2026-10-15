@@ -402,6 +402,7 @@
     if (r.estabilidadeGlobal && !r.estabilidadeGlobal.ok) h += '<div class="ml-prob" data-ml="estabilidade"><p><b>' + esc(r.estabilidadeGlobal.texto) + '</b></p></div>';
     if (nvs.length) h += '<div class="ml-prob" data-ml="nao-verificado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h4 style="margin:0 0 6px">Não verificado</h4>' + nvs.map(function (x) { return "<p><b>" + esc(x.tema) + ":</b> " + esc(x.motivo) + "</p>"; }).join("") +
       (nvs.some(function (x) { return /Vento/.test(x.tema); }) ? '<button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="interna">A estrutura fica dentro de outra edificação (sem vento)</button> ' : "") + '<button class="ml-bt mini" data-ml-acao="passo" data-ml-v="1">Rever o envoltório</button></div>';
+    if (U.ligAuto && U.ligAuto.r === r && global.MetalLigAutoUI) { try { h += MetalLigAutoUI.quadroHtml(U.ligAuto); } catch (eQ) {} }
     var ajC = ajustesCota(); if (ajC.length) h += '<div class="ml-card" data-ml="ajuste-cota" style="border-color:var(--ml-aviso)"><h4>Ajuste de cota das fundações</h4><ul class="ml-l">' + ajC.map(function (x) { return '<li class="ml-aviso">' + esc(x.texto) + "</li>"; }).join("") + '</ul><button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="ajustar-topos">Ajustar o topo das fundações (' + ajC.length + ")</button></div>";
     if (r.trocas) h += '<div class="ml-card" data-ml="trocas" style="border-color:var(--ml-aco)"><b>' + r.trocas + " peça(s) com perfil novo</b> (o mais leve que passa): " + esc(Object.keys(r.pecas).filter(function (k) { return r.pecas[k].mudou; }).map(function (k) { return r.pecas[k].membro + " " + r.pecas[k].de + " → " + r.pecas[k].para; }).slice(0, 12).join("; ")) + (r.aplicado ? ' <span class="ml-chip ok">aplicado no modelo</span>' : ' — <button class="ml-bt mini pri" data-ml-acao="aplicar">Aplicar os perfis no modelo</button>') + "</div>";
     h += '<div class="ml-card"><h4>Barras (estado-limite último e deslocamentos)</h4><table class="ml-t" data-ml="barras"><thead><tr><th>Barra</th><th>Peça</th><th>Perfil</th><th>Razão</th><th></th><th>Governa</th><th>Flecha / desloc.</th></tr></thead><tbody>' +
@@ -446,6 +447,7 @@
     else if (/^esc\./.test(c)) { var es0 = e.escadas[k]; if (es0) es0[c.slice(4)] = v; }
     else if (/^vento\./.test(c)) e.vento[c.slice(6)] = v;
     else if (c === "otimizar") e.otimizar = v;
+    else if (c === "ligAutoModo") { if (global.MetalLigAutoUI) MetalLigAutoUI.definir("aposCalculo", v === "sugerir" ? "sugerir" : "ajustar"); return; }
     salvar();
     /* o fechamento escolhido vira peça no modelo (VEDAÇÃO, js/acovedacao.js) */
     if (c === "face.tipo" || c === "face.h" || c === "cob.tipo") { try { vedacaoNoModelo(); } catch (eV) { toast("Fechamento no modelo: " + (eV && eV.message ? eV.message : eV), "erro", 8000); } }
@@ -706,6 +708,11 @@
       var r;
       try { r = D.calcular(ent); } catch (e) { r = { ok: false, motivo: "Erro no cálculo: " + (e && e.message), problemas: [{ tipo: "erro", texto: "Erro no cálculo: " + (e && e.message), solucoes: [] }] }; }
       if (r) r._assin = assinaturaAgora();   /* VÍNCULOS: a geometria que este resultado verificou */
+      /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligautoui.js): as ligações "a confirmar" verificadas com os esforços da análise —
+         confirmadas, trocadas (um lote, Ctrl+Z) ou sugeridas; balanço com rótula = CRÍTICO; sugestão de travamento (FLT). A troca
+         não mexe na linha das barras (a assinatura não muda) e mantém a família do nó como o cálculo o tratou */
+      U.ligAuto = null;
+      if (r && r.ok && global.MetalLigAutoUI) { try { U.ligAuto = MetalLigAutoUI.aposCalculo(r); if (U.ligAuto) U.ligAuto.r = r; } catch (eLa) { U.ligAuto = null; toast("Ligações a confirmar: " + (eLa && eLa.message ? eLa.message : eLa), "erro", 8000); } }
       U.calculando = false; U.r = r; U.modo = "resultado"; render();
       status(r.ok ? "Estrutura desenhada: " + (r.situacao && r.situacao.id === "incompleto" ? "INCOMPLETA (não verificado: " + arr(r.naoVerificados).map(function (x) { return x.tema; }).join(", ") + ")" : r.aprovado ? "APROVADA" : "REPROVADA (" + r.falhas + " falha(s))") + " — " + fmt(r.peso, 0) + " kg de aço." : "Estrutura desenhada: " + (r.motivo || "não calculou"));
     }, 40);
@@ -800,6 +807,8 @@
     },
     calcular: function () { estado(); garantir(); return calcular(); },
     resultado: function () { return U.r; },
+    /* LIGAÇÃO AO LANÇAR: o que o último cálculo fez com as ligações "a confirmar" (a e2e lê) */
+    ligAuto: function () { return U.ligAuto || null; },
     /* VÍNCULOS: o resultado guardado é do modelo de antes? (o memorial das ligações e as e2e perguntam) */
     desatualizado: function () { return velho(); },
     estado: function () { return estado(); },

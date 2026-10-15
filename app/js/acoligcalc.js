@@ -59,7 +59,12 @@
   /* SIMULAÇÃO S1 (14/10/2026, js/acoligfundacao.js): o topo da fundação do modelo dá o A2/A1 de cada placa tentada */
   function LF() { return dep("AcoLigFundacao", "./acoligfundacao.js"); }
   /* distância mínima do centro do furo à borda (NBR 8800, Tabela 14 — a do desenho, js/metalnorma.js); sem o módulo, 1,25·d */
-  function bordaMin(d, tipo) { var N = Nor(); if (N && N.bordaMin) { var r = N.bordaMin(d, tipo || "laminada"); if (r && r.e) return r.e; } return Math.ceil(1.25 * d); }
+  /* CONFIGURAÇÃO DA OBRA (F3b, 15/10/2026 — js/acoligconfig.js): o js/acoligcalc2.js liga, SÓ durante o verificar(), o fator do
+     passo entre furos de uma linha (NBR 8800 6.3.9, mínimo 2,7 db) e o acréscimo sobre a borda mínima da Tabela 14; _config(o)
+     devolve o estado anterior (para restaurar no finally) */
+  var ESPF = 3, BACR = 0;
+  function _config(o) { var ant = { espacamentoFator: ESPF, bordaAcrescimo: BACR }; o = o || {}; ESPF = Math.max(2.7, num(o.espacamentoFator, 3)); BACR = Math.max(0, num(o.bordaAcrescimo, 0)); return ant; }
+  function bordaMin(d, tipo) { var N = Nor(); if (N && N.bordaMin) { var r = N.bordaMin(d, tipo || "laminada"); if (r && r.e) return r.e + BACR; } return Math.ceil(1.25 * d) + BACR; }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function sq(v) { return v * v; }
   function br(v, c) { if (v == null || !isFinite(v)) return "—"; c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
@@ -427,7 +432,7 @@
       [2, 3].forEach(function (n) {
         cats.forEach(function (ct) {
           if (melhor) return;
-          var d = pf.d, passoB = cima5(3 * d), bordaS = Math.max(25, cima5(1.75 * d)), La = (n - 1) * passoB + 2 * bordaS, h = cima5(0.55 * ct.a);
+          var d = pf.d, passoB = cima5(ESPF * d), bordaS = Math.max(25, cima5(1.75 * d + BACR)), La = (n - 1) * passoB + 2 * bordaS, h = cima5(0.55 * ct.a);
           var FvRd = parafusoCisal(d, fub, true), Fb = R / n, fino = tT < 4.75;
           var FcRd = fino ? esmagamento14762(d, tT, fuT) : pressaoContato(d, tT, fuT, bordaS - (d + 1.5) / 2);
           var Mleg = Rp * h / 1000, MRd = La * ct.t * ct.t / 4 * fy / g.a1 / 1e6;
@@ -524,7 +529,7 @@
       var NcRd = chi * Aef * fy / g.a1 / 1000, beta = E * A * cs * cs / Lm;
       [[1, 12], [1, 16], [2, 12], [2, 16]].forEach(function (q) {
         if (melhor) return;
-        var n = q[0], d = q[1], dh = furoPadrao(d), eB = cima5(bordaMin(d, "laminada")), sB = cima5(3 * d);
+        var n = q[0], d = q[1], dh = furoPadrao(d), eB = cima5(bordaMin(d, "laminada")), sB = cima5(ESPF * d);
         var Ae = (a - (dh + 2)) * t, NtRd = Math.min(A * fy / g.a1, Ae * fu / g.a2) / 1000;
         var FvRd = n * parafusoCisal(d, fub, true);
         var FcL = n * pressaoContato(d, t, fu, n > 1 ? Math.min(eB - dh / 2, sB - dh) : eB - dh / 2);
@@ -562,7 +567,7 @@
 
   var AcoLigCalc = { opcoes: OPC, placaBase: placaBase, chapaExtremidade: chapaExtremidade, clipTerca: clipTerca, contravento: contravento, maoFrancesa: maoFrancesa,
                      parafusoTracao: parafusoTracao, parafusoCisal: parafusoCisal, pressaoContato: pressaoContato, esmagamento14762: esmagamento14762,
-                     soldaFilete: soldaFilete, concreto: concreto, rasgamento: rasgamento, furoPadrao: furoPadrao, pernaMinima: pernaMinima, CHAPAS: CHAPAS, PARAF: PARAF, CHUMB: CHUMB };
+                     soldaFilete: soldaFilete, concreto: concreto, rasgamento: rasgamento, furoPadrao: furoPadrao, _config: _config, pernaMinima: pernaMinima, CHAPAS: CHAPAS, PARAF: PARAF, CHUMB: CHUMB };
   global.AcoLigCalc = AcoLigCalc;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoLigCalc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

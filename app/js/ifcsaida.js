@@ -933,7 +933,51 @@
           nAs++;
         });
       });
-      void nAb; void nAs;
+      /* SOLDAS E LIGAÇÕES (IFC4) — só no IFC de fabricação.
+       *  - cada solda de chapa (m.solda) vira um IfcFastener (tipo IfcFastenerType WELD) com a perna, a garganta, o
+       *    comprimento e o local (oficina/campo) como propriedades, ligado ao que ela solda por
+       *    IfcRelConnectsWithRealizingElements (RelatingElement = a peça-mãe, RelatedElement = a chapa, realizando = a solda);
+       *  - cada ligação parafusada (m.lig) com DOIS ou mais elementos de aço ligados — os furos da ligação nos perfis
+       *    (metalFuros) e a peça em que a chapa é soldada — vira IfcRelConnectsWithRealizingElements cujos elementos
+       *    realizadores são as chapas e os parafusos da ligação. Ligação com um elemento só (placa de base e chumbador no
+       *    concreto) fica apenas com a solda: a fundação não é um elemento de aço do modelo e não é inventada.
+       *  Garganta do filete = 0,707 × a perna (garganta efetiva, ABNT NBR 8800:2008, 6.2.2.2); a de topo só sai se o
+       *  modelo trouxe `garganta` na solda (penetração parcial ou total não se presume). */
+      var elDe = function (id) { return metalPorChave[String(id)] || todosEls.filter(function (e1) { return String(e1.chave) === String(id) && /^(IFCBEAM|IFCCOLUMN|IFCMEMBER|IFCPLATE)$/.test(e1.entidade); })[0] || null; };
+      var porLig = {}, nSol = 0, nLigF = 0;
+      function gLig(k) { return porLig[k] || (porLig[k] = { realiza: [], membros: [] }); }
+      function junta(lista, e) { if (e && lista.indexOf(e) < 0) lista.push(e); }
+      arr(st.caixas).forEach(function (c) {
+        if (!c || !BMt) return;
+        var el = elDe(c.id), m = c.tipo === "metal" && c.metal ? c.metal : null;
+        arr(BMt.furosDe(c)).forEach(function (f) { if (f && f.lig != null && el) junta(gLig(String(f.lig)).membros, el); });
+        if (!m || !el) return;
+        if (m.lig != null && (m.kind === "parafuso" || m.kind === "chapa")) junta(gLig(String(m.lig)).realiza, el);
+        var alvo = m.soldadaEm != null ? elDe(m.soldadaEm) : null;
+        if (m.kind === "chapa" && m.lig != null && alvo) junta(gLig(String(m.lig)).membros, alvo);
+        if (m.kind === "chapa" && m.solda && alvo) {
+          var sd = m.solda, topo = sd.tipo === "topo", nvS = niveis.filter(function (x) { return x.nome === el.nivel; })[0] || niveis[0];
+          var perna = num(sd.perna, 0), garg = topo ? (sd.garganta != null ? num(sd.garganta, 0) / 1000 : null) : r6(0.7071 * perna / 1000);
+          var nomeS = "Solda " + (topo ? "de topo" : "de filete") + (perna > 0 ? " " + perna + " mm" : "") + (sd.campo ? " (campo)" : " (oficina)");
+          var sol = peca("solda:" + c.id, "IFCFASTENER", nomeS, "Solda", placement(nvS.pl, [0, 0, 0]), null, [E("WELD")], nvS.elevacao, nvS, {});   /* IfcFastener (IFC4 ADD2): 9º atributo = PredefinedType */
+          tipoMEP("IFCFASTENER", topo ? "Solda de topo" : "Solda de filete", "WELD", sol);
+          pset(sol, "OrcaPRO_Solda", [["Tipo", "IFCLABEL", topo ? "Topo" : "Filete"], ["Perna", "IFCPOSITIVELENGTHMEASURE", perna > 0 ? perna / 1000 : null], ["Garganta", "IFCPOSITIVELENGTHMEASURE", garg],
+            ["Comprimento", "IFCPOSITIVELENGTHMEASURE", sd.comprimento != null && num(sd.comprimento, 0) > 0 ? num(sd.comprimento, 0) : null], ["Lados", "IFCLABEL", sd.lados || ""], ["Local", "IFCLABEL", sd.campo ? "Campo" : "Oficina"],
+            ["Ligacao", "IFCIDENTIFIER", m.lig != null ? String(m.lig) : ""], ["SoldaA", "IFCLABEL", el.nome], ["SoldaEm", "IFCLABEL", alvo.nome]]);
+          origemPset(sol, [["Modelador", "IFCLABEL", "Metálica — solda"]]);
+          sol.metal = "solda"; sol.massa = 0; sol.volume = 0;
+          w("IFCRELCONNECTSWITHREALIZINGELEMENTS", [G("solda-lig:" + c.id), OH, S(nomeS), "$", "$", ref(alvo.ent), ref(el.ent), L([ref(sol.ent)]), S("Solda")]);
+          nSol++;
+        }
+      });
+      Object.keys(porLig).sort().forEach(function (k) {
+        var g = porLig[k]; if (g.membros.length < 2 || !g.realiza.length) return;
+        g.membros.slice(1).forEach(function (m2, i) {
+          w("IFCRELCONNECTSWITHREALIZINGELEMENTS", [G("lig-par:" + k + ":" + i), OH, S("Ligação " + k), "$", "$", ref(g.membros[0].ent), ref(m2.ent), L(g.realiza.map(function (e4) { return ref(e4.ent); })), S("Ligação parafusada")]);
+          nLigF++;
+        });
+      });
+      void nAb; void nAs; void nSol; void nLigF;
     }
 
     /* ================= B2 — MODELADOR (js/bimarq.js) ================= */

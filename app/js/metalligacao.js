@@ -101,6 +101,11 @@
         papel: m.papel, aco: m.aco, lig: m.lig, soldadaEm: m.soldadaEm, nome: m.nome, ifc: c.ifc, solda: m.solda });
       if (nv.erro) return null;
       ["marca", "metalFuros"].forEach(function (k) { if (c[k] != null) nv[k] = clone(c[k]); });
+      /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilares.js): a viga com RECUO na receita tem a linha de eixo a eixo
+         dos pilares — a ligação muda só o recuo da ponta; a linha (nó do cálculo, vínculos, Propriedades) continua.
+         Sem recuo na receita: como sempre (a peça sai sem receita) */
+      var MCr = dep("MetalCriar", "./metalcriar.js");
+      if (m.cria && m.cria.recuo && MCr && MCr.reancorar) { var cr2 = MCr.reancorar(c, nv, qual, delta); if (cr2) { nv.metal.cria = cr2; if (m.calc) nv.metal.calc = clone(m.calc); } }
       nv.id = c.id;
       return comApos({ op: "criar", id: c.id, caixa: nv }, nv);
     }

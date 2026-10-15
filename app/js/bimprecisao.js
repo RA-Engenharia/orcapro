@@ -1204,7 +1204,10 @@
          tipo" (Arquitetura › Tipo, id `combinar`, js/bimembreveui.js), que arma a MESMA
          ferramenta "corresp-tipo". Dois botões fazendo a mesma coisa é o que a fita barra.
          O atalho MA continua (ATALHOS). */
-      { id: "escala", sub: "escala", rotulo: "Escala", icone: "expandir", dica: "Paredes e vigas: digite o fator na barra de opções, selecione e clique o ponto base — as pontas vão para base + fator × distância (atalho RE)." }
+      { id: "escala", sub: "escala", rotulo: "Escala", icone: "expandir", dica: "Paredes e vigas: digite o fator na barra de opções, selecione e clique o ponto base — as pontas vão para base + fator × distância (atalho RE)." },
+      /* ELEVAR (js/bimelevar.js + js/bimelevarui.js, 15/10/2026): um diálogo, não uma ferramenta de clique — o
+         js/bimelevarui.js registra o reg.elevar por cima do "armar" genérico */
+      { id: "elevar", sub: null, rotulo: "Elevar", icone: "elevar", dica: "Sobe ou desce o que está selecionado: X metros (negativo desce), a base ou o topo num nível com deslocamento, ou o topo da viga no topo do pilar em que ela apoia. As ligadas acompanham (Alt: só a seleção); um Ctrl+Z desfaz (atalho EL)." }
     ],
     /* P4 — unir geometria e juntas de parede (js/bimarq.js, frentes A e B) */
     geometria: [
@@ -1227,9 +1230,12 @@
   var ATALHOS = { MV: "mover", CO: "copiar", MM: "espelhar", RO: "girar", AR: "matriz", DI: "cota", WA: "parede",
                   /* P4: os do resto da aba Modificar */
                   AL: "alinhar", OF: "deslocar", TR: "aparar", SL: "dividir", PN: "fixar", UP: "desafixar", CS: "similar", MA: "corresp-tipo", RE: "escala", PT: "pintar" };
+  /* atalhos de duas letras que chamam um COMANDO da fita (diálogo), não uma ferramenta do editor:
+     BimShell.executar(id). ELEVAR: EL (livre entre os de cima) */
+  var ATALHOS_CMD = { EL: "elevar" };
 
   var BimPrecisao = {
-    TIPOS: TIPOS, CLASSE: CLASSE, ORDEM: ORDEM, EMPATE: EMPATE, ROTULO: ROTULO, GLIFO: GLIFO, FITA: FITA, ATALHOS: ATALHOS,
+    TIPOS: TIPOS, CLASSE: CLASSE, ORDEM: ORDEM, EMPATE: EMPATE, ROTULO: ROTULO, GLIFO: GLIFO, FITA: FITA, ATALHOS: ATALHOS, ATALHOS_CMD: ATALHOS_CMD,
     /* SNAPS COMPLETOS (14/10/2026) */
     GRUPOS: GRUPOS, PADRAO_TIPOS: PADRAO_TIPOS, tangentes: tangentes, quadrantes: quadrantes, centroide: centroide, circ3: circ3, meio2p: meio2p,
     naArco: naArco, direcoesPolares: direcoesPolares, geoDeLinhas: geoDeLinhas, dentroPoli: dentroPoli, CENTRO_SUB: { fundacao: 1, pilar: 1, "met-pilar": 1 },

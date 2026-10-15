@@ -11241,6 +11241,8 @@
         /* PAGINAÇÃO NO MODELO (js/bimpaginacaoui.js): "Paginar piso" no ambiente sob o
            cursor (planta ou 3D) e "Paginar revestimento" na parede / nas paredes selecionadas */
         try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.concat(BimPaginacaoUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (ePg) {}
+        /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilaresui.js): com 2+ pilares selecionados */
+        try { if (window.MetalVigasPilaresUI && MetalVigasPilaresUI.itensMenu) itNiv = itNiv.concat(MetalVigasPilaresUI.itensMenu({ uid: sob || uid })); } catch (eVp) {}
         var SI = window.BimSelInst, temSel = false;
         try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
         if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {

@@ -864,6 +864,10 @@
       if (p.tipo === "numero" && p.passo) i.step = p.passo;
       i.value = p.valor == null ? "" : p.valor;
       i.setAttribute("data-rv-p", p.id);
+      /* ELEVAR (js/bimelevarui.js): ‹vários› no campo vazio e a dica de como digitar */
+      if (p.placeholder) i.placeholder = p.placeholder;
+      if (p.title) i.title = p.title;
+      if (p.tipo !== "numero" && p.unidade === "m") i.setAttribute("inputmode", "decimal");
       /* devolve a cada alteração — é o que faz o modelo ser paramétrico em
          tempo real. `change` (não `input`) para não recalcular a cada tecla. */
       i.onchange = function () {

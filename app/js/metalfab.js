@@ -111,19 +111,19 @@
              dobras: pl.dobras, dobrada: { pts: pl.pts, t: pl.t, ri: pl.ri, K: pl.K, kModo: pl.kModo, fonteK: pl.fonteK, conferir: pl.conferir, rot: m.perfil.rot || "", Ld: Ld, abas: pl.abas, avisos: pl.avisos } };
   }
   function pecasFab(estado) {
-    var pecas = [], parafusos = [];
+    var pecas = [], parafusos = [], avisos = [];
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c) return;
       if (c.tipo === "metal" && c.metal) {
         var k = c.metal.kind;
         if (k === "chapa") pecas.push(chapaFab(c));
         else if (k === "perfil" && c.metal.perfil && c.metal.perfil.forma === "dobrada") { var cd = chapaDobradaFab(c); if (cd) pecas.push(cd); }
-        else if (k === "perfil") { var pf = perfilFab(c); if (pf) pecas.push(pf); }
+        else if (k === "perfil") { var pf = perfilFab(c); if (pf) pecas.push(pf); else avisos.push("peça " + c.id + " (" + txt(c.metal.papel) + "): perfil não reconhecido — ficou de fora da fabricação (sem marca, sem .nc1)"); }
         else if (k === "parafuso") parafusos.push({ id: c.id, papel: c.metal.papel, idP: c.metal.id, Lmm: c.metal.Lmm, classe: c.metal.classe, sistema: c.metal.sistema, arruelas: num(c.metal.arrCabeca, 0) + num(c.metal.arrPorca, 0), porcas: 1, massa: num(c.massa, 0), lig: c.metal.lig || "" });
         else if (k === "mecanica") pecas.push({ id: c.id, kind: "mec", papel: c.metal.papel, tipoMec: c.metal.tipoMec, D: mm(c.metal.D), d: mm(c.metal.d), L: mm(c.metal.L), aco: c.metal.aco, massa: num(c.massa, 0), area: num(c.area, 0), soldadaEm: c.metal.soldadaEm || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c) });
-      } else if (ehAcoArq(c)) { var pa = perfilFab(c); if (pa) pecas.push(pa); }
+      } else if (ehAcoArq(c)) { var pa = perfilFab(c); if (pa) pecas.push(pa); else avisos.push("peça " + c.id + " (" + (c.tipo === "pilar" ? "pilar" : "viga") + " de aço): perfil não reconhecido — ficou de fora da fabricação (sem marca, sem .nc1)"); }
     });
-    return { pecas: pecas, parafusos: parafusos };
+    return { pecas: pecas, parafusos: parafusos, avisos: avisos };
   }
 
   /* ======================================================= ASSINATURA
@@ -228,7 +228,7 @@
       g.conjuntos.forEach(function (k) { k.ids.forEach(function (id) { conjuntoDe[id] = g.marca; }); });
       conjuntos.push(g);
     });
-    return { grupos: lista, marcaDe: marcaDe, conjuntos: conjuntos, conjuntoDe: conjuntoDe, pecas: pf.pecas, parafusos: pf.parafusos };
+    return { grupos: lista, marcaDe: marcaDe, conjuntos: conjuntos, conjuntoDe: conjuntoDe, pecas: pf.pecas, parafusos: pf.parafusos, avisos: pf.avisos };
   }
   function opNumerar(estado) {
     var n = numerar(estado), marcas = {};
@@ -251,7 +251,7 @@
     if (p.kind === "chapa") {
       L.push(lin("PL" + r1(p.t) + "*" + Math.round(p.B))); L.push(lin("B"));
       [p.L, p.B, p.t, p.t, p.t, 0].forEach(function (v) { L.push(lin(f2(v))); });
-      L.push(lin(f2(7850 * p.t / 1000 * p.B / 1000))); L.push(lin(f2(2 * p.B / 1000)));
+      L.push(lin(f2(7850 * p.t / 1000 * p.B / 1000))); L.push(lin(f2(2 * (p.B + p.t) / 1000)));   /* kg/m = 7850 × t × B; m²/m = o perímetro da seção t × B */
       [0, 0, 0, 0].forEach(function (v) { L.push(lin(f2(v))); });
     } else {
       var d = p.dims, ct = p.cortes;
@@ -349,6 +349,53 @@
       });
     });
     return { ok: !erros.length, cabecalho: c, blocos: blocos, ordem: ordem, erros: erros };
+  }
+
+  /* ===== DSTV SEGURO: valida a peça, tira o furo inválido, relê o arquivo escrito e DEVOLVE AVISOS =====
+   * Nunca grava um ST que a máquina leria errado: peça sem código de perfil reconhecido, sem dimensão da seção,
+   * sem comprimento ou com contorno degenerado não gera .nc1 — gera um aviso com o motivo. Furo fora da peça
+   * ou sem diâmetro sai do BO (com aviso). Furo oblongo segue como VALOR DE PARTIDA (aviso em cada arquivo). */
+  var CODIGOS_PERFIL = { I: 1, U: 1, L: 1, M: 1, RO: 1, RU: 1, B: 1 };
+  function positivo(v) { return typeof v === "number" && isFinite(v) && v > 0; }
+  function dstvSeguro(p, info) {
+    info = info || {};
+    var marca = info.marca || p.marcaAtual || ("ID" + p.id), av = [], pre = "marca " + marca + ": ";
+    function falha(m) { av.push(pre + m + " — .nc1 NÃO gerado"); return { ok: false, texto: null, avisos: av, marca: marca }; }
+    if (!p || (p.kind !== "perfil" && p.kind !== "chapa")) return falha("peça sem forma de perfil ou chapa");
+    if (!positivo(p.L)) return falha("comprimento ausente ou inválido");
+    var box, q = {}; Object.keys(p).forEach(function (k) { q[k] = p[k]; });   /* cópia rasa: só os furos mudam */
+    if (p.kind === "perfil") {
+      var d = p.dims || {};
+      if (!CODIGOS_PERFIL[p.codigo]) return falha("perfil \"" + txt(p.nomePerfil) + "\" sem código DSTV reconhecido (I, U, L, M, RO, RU ou B)");
+      if (!txt(p.nomePerfil).trim()) return falha("perfil sem nome");
+      var obrig = p.codigo === "I" || p.codigo === "U" || p.codigo === "L" || p.codigo === "M" ? ["h", "b", "tf", "tw"] : (p.codigo === "RO" ? ["h", "tf"] : (p.codigo === "RU" ? ["h"] : ["h", "b"]));
+      var faltam = obrig.filter(function (k) { return !positivo(d[k]); });
+      if (faltam.length) return falha("perfil \"" + txt(p.nomePerfil) + "\" sem a dimensão da seção (" + faltam.join(", ") + ")");
+      if (!positivo(p.kgm)) return falha("perfil \"" + txt(p.nomePerfil) + "\" sem massa por metro");
+      box = { x0: -0.5, x1: p.L + 0.5, y0: -0.5, y1: Math.max(d.h || 0, d.b || 0) + 0.5 };
+    } else {
+      var C = arr(p.contorno);
+      if (C.length < 3 || semRepetidos(C).length < 3) return falha("contorno da chapa com menos de 3 pontos");
+      if (!positivo(p.t)) return falha("chapa sem espessura");
+      if (!positivo(p.B)) return falha("chapa sem largura");
+      var xs = C.map(function (r) { return r[0]; }), ys = C.map(function (r) { return r[1]; });
+      box = { x0: Math.min.apply(null, xs) - 0.5, x1: Math.max.apply(null, xs) + 0.5, y0: Math.min.apply(null, ys) - 0.5, y1: Math.max.apply(null, ys) + 0.5 };
+      for (var i = 0; i < C.length; i++) if (!isFinite(C[i][0]) || !isFinite(C[i][1])) return falha("contorno com coordenada inválida");
+    }
+    var validos = [];
+    arr(p.furos).forEach(function (f, i) {
+      var n = i + 1;
+      if (!positivo(f.d)) { av.push(pre + "furo " + n + " sem diâmetro — fora do BO"); return; }
+      if (!isFinite(f.x) || !isFinite(f.y)) { av.push(pre + "furo " + n + " sem posição — fora do BO"); return; }
+      if (f.x < box.x0 || f.x > box.x1 || (p.kind === "chapa" && (f.y < box.y0 || f.y > box.y1))) { av.push(pre + "furo " + n + " (x " + f2(f.x) + ", y " + f2(f.y) + ") fora da peça — fora do BO"); return; }
+      validos.push(f);
+    });
+    q.furos = validos;
+    if (validos.some(function (f) { return num(f.l, f.d) > num(f.d, 0) + 0.05; })) av.push(pre + "furo oblongo gravado em BO com \"l\" (valor de partida; conferir no pós-processador)");
+    var texto = dstv(q, info), lido = lerDstv(texto);
+    if (!lido.ok) return falha("o arquivo escrito não passou na releitura (" + lido.erros[0] + ")");
+    if (lido.cabecalho.codigo !== (p.kind === "chapa" ? "B" : p.codigo) || (lido.blocos.BO || []).length !== validos.length || (p.kind === "chapa" && (lido.blocos.IK || []).length !== arr(p.recortes).reduce(function (s, r) { return s + semRepetidos(r).length + 1; }, 0))) return falha("releitura divergente do que foi pedido");
+    return { ok: true, texto: texto, avisos: av, marca: marca };
   }
 
   /* ============================================================ DXF (corte) */
@@ -597,10 +644,14 @@
   /* =========================================== ARQUIVOS DA FÁBRICA (pacote) */
   function arquivos(estado, o) {
     o = o || {};
-    var n = numerar(estado), L = listas(estado, n), out = {}, chapasNest = {};
+    var n = numerar(estado), L = listas(estado, n), out = {}, chapasNest = {}, avisos = arr(n.avisos).slice();
     n.grupos.forEach(function (g) {
       var p = g.rep, qtd = g.ids.length;
-      if (p.kind === "perfil" || p.kind === "chapa") out["DSTV/" + g.marca + ".nc1"] = dstv(p, { marca: g.marca, qtd: qtd, pedido: o.pedido, desenho: o.desenho });
+      if (p.kind === "perfil" || p.kind === "chapa") {
+        var ds = dstvSeguro(p, { marca: g.marca, qtd: qtd, pedido: o.pedido, desenho: o.desenho });
+        avisos = avisos.concat(ds.avisos);
+        if (ds.ok) out["DSTV/" + g.marca + ".nc1"] = ds.texto;
+      }
       if (p.kind === "chapa") {
         out["DXF/" + g.marca + ".dxf"] = dxfChapa(p, g.marca);
         var k = "#" + br(p.t, 1).replace(",", "_") + "_" + ascii(p.aco).replace(/[^A-Za-z0-9]+/g, "-");
@@ -613,13 +664,13 @@
       out["DXF/nesting_" + k.replace("#", "chapa") + ".dxf"] = r.texto;
       resumoNest.push({ grupo: k, chapas: r.chapas, aproveitamento: r.aproveitamento, fora: r.fora, compra: r.compra });
     });
-    return { arquivos: out, numeracao: n, listas: L, nesting: resumoNest };
+    return { arquivos: out, numeracao: n, listas: L, nesting: resumoNest, avisos: avisos };
   }
 
   var BimMetalFab = {
     COD_DSTV: COD_DSTV, CAMPOS_ST: CAMPOS_ST, CAMADAS_DXF: CAMADAS_DXF,
     pecasFab: pecasFab, assinatura: assinatura, numerar: numerar, opNumerar: opNumerar,
-    dstv: dstv, lerDstv: lerDstv, contornosFaces: contornosFaces, dxfChapa: dxfChapa, nesting: nesting,
+    dstv: dstv, dstvSeguro: dstvSeguro, lerDstv: lerDstv, contornosFaces: contornosFaces, dxfChapa: dxfChapa, nesting: nesting,
     listas: listas, xlsx: xlsx, desenhoChapa: desenhoChapa, desenhoPerfil: desenhoPerfil, desenhoConjunto: desenhoConjunto, descricao: descricao,
     arquivos: arquivos, ascii: ascii, DxfDoc: DxfDoc, assinDobras: assinDobras
   };

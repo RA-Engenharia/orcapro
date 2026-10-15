@@ -65,6 +65,7 @@
         { id: "met-pilar", rotulo: "Pilar", icone: "pilar", grande: true, tipo: "alterna", dica: "Pilar de perfil do catálogo: escolha o perfil (busca por nome, série ou fabricante) e clique onde ele nasce — no 3D ou na planta. Encaixa no cruzamento dos eixos; base e topo pelos níveis (Propriedades)." },
         { id: "met-viga", rotulo: "Viga", icone: "estrutura", grande: true, tipo: "alterna", dica: "Viga de perfil: clique o início e o fim (encaixa no topo dos pilares, nas pontas, nos meios e nos eixos). O topo fica na linha clicada; digite o comprimento e Tab o ângulo." },
         { id: "met-diagonal", rotulo: "Diagonal", icone: "desLinha", grande: true, tipo: "alterna", dica: "Diagonal / contraventamento: clique as duas pontas — encaixa em pontas de barras em cotas diferentes (base de um pilar ao topo do outro). Com plano vertical, desenha no plano do pórtico." },
+        { id: "met-vigas-pilares", rotulo: "Vigas entre\npilares", icone: "grade", grande: true, dica: "Selecione os pilares (dois ou mais) e lance as vigas entre eles de uma vez: em X, em Y ou nos dois sentidos, cada viga de eixo a eixo, parada na face do pilar (mesa ou alma) com a ligação parafusada da Ligação inteligente. Prévia antes de aplicar; Ctrl+Z desfaz o lote. Mover o pilar estica a viga." },
         { id: "met-terca", rotulo: "Terça /\ntravessa", icone: "regua", grande: true, tipo: "alterna", dica: "Terça ou travessa (Ue, U, C…): clique o início e o fim; a base da terça fica na linha (apoia em cima da viga). Giro em Propriedades para acompanhar o telhado." },
         { id: "met-chapa-cliques", rotulo: "Chapa", icone: "desRetangulo", grande: true, tipo: "alterna", dica: "Chapa por dois cantos opostos: no plano de trabalho ou na face de uma peça (o 1º clique na face leva a chapa para ela). Espessura e lado em Propriedades." },
         { id: "met-chapa", rotulo: "Chapa\nparamétrica", icone: "quadrado", dica: "Chapa paramétrica por medidas: retângulo ou contorno, espessura, furos em grade (furo-padrão = parafuso + 1,5 mm, NBR 8800), recortes e chanfros. Vai para o DXF de corte e para o DSTV." },
@@ -174,6 +175,8 @@
       if (LSU && LSU.registrar) { try { LSU.registrar(reg); } catch (eL) { toast("Metálica (ligação inteligente): " + (eL && eL.message ? eL.message : eL), "erro", 8000); } }
       /* criar clicando e a referência (plano, eixos, cotas, níveis): js/metalcriarui.js */
       if (global.MetalFabUI && global.MetalFabUI.registrarDicas) { try { global.MetalFabUI.registrarDicas(); } catch (eD) {} }
+      /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilaresui.js) */
+      if (global.MetalVigasPilaresUI && global.MetalVigasPilaresUI.registrar) { try { global.MetalVigasPilaresUI.registrar(reg); } catch (eV) { toast("Metálica (vigas entre pilares): " + (eV && eV.message ? eV.message : eV), "erro", 8000); } }
       if (global.MetalCriarUI && global.MetalCriarUI.registrar) { try { global.MetalCriarUI.registrar(reg); } catch (eC) { toast("Metálica (criar clicando): " + (eC && eC.message ? eC.message : eC), "erro", 8000); } }
       /* a aba é NOVA: se a casca já estava montada, ela ressincroniza a barra de abas
          (BimShell._sincAbas — o mesmo mecanismo da troca de disciplina, que respeita o
@@ -567,13 +570,14 @@
       var st = this.estado(); if (!st) { toast("Abra o modelador primeiro.", "aviso"); return null; }
       var r = F().arquivos(st, { pedido: this.nomeObra().slice(0, 20) }), sel = {};
       Object.keys(r.arquivos).forEach(function (k) { if (qual === "dstv" ? /^DSTV\//.test(k) : /^DXF\//.test(k)) sel[k] = r.arquivos[k]; });
-      var n = Object.keys(sel).length;
-      if (!n) { toast(qual === "dstv" ? "Não há perfil nem chapa para o DSTV." : "Não há chapa para o DXF.", "aviso"); return null; }
-      this.ultimo = { tipo: qual, arquivos: sel, nesting: r.nesting };
+      var n = Object.keys(sel).length, av = qual === "dstv" ? (r.avisos || []) : [];
+      /* DSTV: peça que não passou na validação NÃO vira .nc1 — o aviso diz qual e por quê (nunca um ST inválido na máquina) */
+      if (!n) { toast(qual === "dstv" ? (av.length ? "Nenhum .nc1 gerado: " + av[0] + (av.length > 1 ? " (+" + (av.length - 1) + " aviso(s))" : "") : "Não há perfil nem chapa para o DSTV.") : "Não há chapa para o DXF.", "aviso", av.length ? 12000 : 5000); return null; }
+      this.ultimo = { tipo: qual, arquivos: sel, nesting: r.nesting, avisos: av };
       var z = this.zip(sel); if (!z) { toast("O gerador de .zip (js/bimbcf.js) não carregou.", "erro"); return null; }
       this.baixar(this.arqBase() + (qual === "dstv" ? "-dstv.zip" : "-dxf-chapas.zip"), z, "application/zip");
       var extra = qual === "dxf" && r.nesting.length ? " Nesting nas chapas comerciais (valores de partida, Fabricação › Nesting de chapas): " + r.nesting.map(function (x) { return x.grupo + " " + x.chapas + " chapa(s), " + br(x.aproveitamento, 1) + " %"; }).join("; ") + "." : "";
-      toast((qual === "dstv" ? n + " arquivo(s) DSTV NC1" : n + " DXF de corte") + " no .zip." + extra + " Confira o sentido dos ângulos e o cabeçalho de chapa no pós-processador da máquina.", "ok", 10000);
+      toast((qual === "dstv" ? n + " arquivo(s) DSTV NC1" : n + " DXF de corte") + " no .zip." + extra + " Confira o sentido dos ângulos e o cabeçalho de chapa no pós-processador da máquina." + (av.length ? " ATENÇÃO — " + av.length + " aviso(s): " + av.slice(0, 3).join("; ") + (av.length > 3 ? "; …" : "") + "." : ""), av.length ? "aviso" : "ok", av.length ? 15000 : 10000);
       return sel;
     },
     listas: function () {

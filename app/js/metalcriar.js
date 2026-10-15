@@ -201,20 +201,50 @@
     var ds = dimSecao(perfil); if (!ds) return { erro: "A seção do perfil " + (perfil.cat || perfil.forma) + " não fecha." };
     var e = eixosBarra(a, b, o.giro); if (!e) return { erro: "Pontos inválidos." };
     var jy = JUST[o.just] != null ? JUST[o.just] : JUST[F.just || "centro"], jz = LADO[o.lado] != null ? LADO[o.lado] : 0;
+    /* RECUO DE FABRICAÇÃO (15/10/2026, js/metalvigaspilares.js): a LINHA (a receita, o que o cálculo e os vínculos
+       leem) vai de eixo a eixo dos pilares; o SÓLIDO para na face do pilar menos a folga. recuo = { a, b } em metros
+       (positivo encurta, negativo estica a ponta além da linha — a viga contínua que cobre o pilar da ponta) */
+    var rec = recuoDe(o.recuo), a2 = a, Ls = L;
+    if (rec) { a2 = add(a, mul(e.X, rec.a)); Ls = L - rec.a - rec.b; if (!(Ls > 0.01)) return { erro: "O recuo das pontas (" + fmt(rec.a + rec.b, 3) + " m) não deixa peça: os pilares estão perto demais." }; if (Ls > 60) return { erro: "Peça com mais de 60 m: divida em trechos." }; }
     /* a linha clicada fica na face pedida: o eixo do perfil anda meia seção para dentro */
     var off = add(mul(e.Y, -jy * ds.alt / 2), mul(e.Z, -jz * ds.larg / 2));
-    var O = add(a, off), X = e.X;
+    var O = add(a2, off), X = e.X;
     /* ESPELHAR = a barra de trás para a frente com a mesma "altura": a seção vista do outro
        lado é a seção espelhada (U, L, Ue abrem para o outro lado) — vale para qualquer perfil */
-    if (o.espelhar) { O = add(O, mul(X, L)); X = mul(X, -1); }
-    var c = B.perfil({ origem: O, ex: X, ey: e.Y, perfil: perfil, L: L, papel: o.papel || F.papel, ifc: o.ifc || F.ifc, aco: o.aco || F.aco, nome: o.nome });
+    if (o.espelhar) { O = add(O, mul(X, Ls)); X = mul(X, -1); }
+    var c = B.perfil({ origem: O, ex: X, ey: e.Y, perfil: perfil, L: Ls, papel: o.papel || F.papel, ifc: o.ifc || F.ifc, aco: o.aco || F.aco, nome: o.nome });
     if (c.erro) return c;
     var vert = Math.abs(dot(e.X, UP)) > 0.999;
     var th = vert ? angPlano(e.Y) : angPlano(e.X);
     if (vert && Math.abs(e.Y[1]) > 0.999) th = 0;
     c = orientar(c, th);
-    c.metal.cria = criaDe(c, o.ferr || F.id, a, b, { giro: num(o.giro, 0), just: o.just || F.just || "centro", lado: o.lado || "centro", espelhar: !!o.espelhar, nivel: o.nivel || null });
+    /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a ponta marcada "Livre (balanço)" e a carga de serviço declarada do balanço */
+    var livre = o.livre && (o.livre.a || o.livre.b) ? { a: !!o.livre.a || undefined, b: !!o.livre.b || undefined } : null;
+    if (livre) { if (!livre.a) delete livre.a; if (!livre.b) delete livre.b; }
+    c.metal.cria = criaDe(c, o.ferr || F.id, a, b, { giro: num(o.giro, 0), just: o.just || F.just || "centro", lado: o.lado || "centro", espelhar: !!o.espelhar, nivel: o.nivel || null, recuo: rec, vp: o.vp ? clone(o.vp) : null,
+      livre: livre, servico: o.servico && typeof o.servico === "object" ? clone(o.servico) : null, balanco: o.balanco && typeof o.balanco === "object" ? clone(o.balanco) : null });
+    /* as pontas que o cálculo trata como rótula (a emenda sobre o pilar): metal.calc, lido pelo js/acomodelolivre.js */
+    if (o.vp && o.vp.calc) c.metal.calc = clone(o.vp.calc);
     return c;
+  }
+  function recuoDe(r) {
+    if (!r || typeof r !== "object") return null;
+    var o = { a: r6(num(r.a, 0)), b: r6(num(r.b, 0)) };
+    return Math.abs(o.a) > 1e-9 || Math.abs(o.b) > 1e-9 ? o : null;
+  }
+  /* a receita da peça c0 levada para a peça c1 (a MESMA linha), depois de a ligação mexer no comprimento do sólido:
+     `qual` = a ponta do sólido ("ini" | "fim") que andou `delta` para FORA (js/metalligacao.js ajustarPonta). O recuo
+     daquela ponta diminui `delta`; a linha (de eixo a eixo) não muda. null = sem receita */
+  function reancorar(c0, c1, qual, delta) {
+    var w = criaMundo(c0), B = M(); if (!w || !B || !c1 || !c1.metal) return null;
+    var q = B.quadro(c0), d = unit(sub(w.b, w.a)); if (!d) return null;
+    var tIni = dot(sub(q.O, w.a), d), Lw = len(sub(w.b, w.a));
+    var kIni = tIni <= Lw / 2 ? "a" : "b", k = qual === "fim" ? (kIni === "a" ? "b" : "a") : kIni;
+    var cr = clone(w.cr), rc = { a: num(cr.recuo && cr.recuo.a, 0), b: num(cr.recuo && cr.recuo.b, 0) };
+    rc[k] = r6(rc[k] - num(delta, 0)); cr.recuo = rc;
+    var C = [num(c1.cx, 0), num(c1.cy, 0), num(c1.cz, 0)], th = num(c1.rotY, 0);
+    cr.a = O3(rotY(sub(w.a, C), -th)); cr.b = O3(rotY(sub(w.b, C), -th));
+    return cr;
   }
   /* a receita: os pontos da linha clicada em coordenadas LOCAIS (relativas ao centro, sem o rotY) */
   function criaDe(c, ferr, a, b, par) {
@@ -278,7 +308,8 @@
    * giro é lido da seção atual — a peça refeita sem mudança é ela mesma. */
   function linhaAtual(c) {
     var B = M(), w = criaMundo(c);
-    if (w) return { a: w.a, b: w.b, giro: num(w.cr.giro, 0), just: w.cr.just || "centro", lado: w.cr.lado || "centro", espelhar: !!w.cr.espelhar, ferr: w.cr.ferr, nivel: w.cr.nivel || null };
+    if (w) return { a: w.a, b: w.b, giro: num(w.cr.giro, 0), just: w.cr.just || "centro", lado: w.cr.lado || "centro", espelhar: !!w.cr.espelhar, ferr: w.cr.ferr, nivel: w.cr.nivel || null, recuo: recuoDe(w.cr.recuo), vp: w.cr.vp || null,
+      livre: w.cr.livre || null, servico: w.cr.servico || null, balanco: w.cr.balanco || null };
     var q = B.quadro(c), L = num(c.metal.L, 0), a = q.O, b = add(q.O, mul(q.X, L));
     return { a: a, b: b, giro: giroDe(a, b, q.Y), just: "centro", lado: "centro", espelhar: false, ferr: null, nivel: null, legado: true };
   }
@@ -292,7 +323,9 @@
          elemento movido, e a outra exatamente onde estava. A direção é a mesma: giro, justificação e espelhar valem iguais */
       if (v3ok(mud.a) && v3ok(mud.b)) { a = V(mud.a); b = V(mud.b); }
       var dir = unit(sub(b, a)) || [1, 0, 0];
-      if (mud.comprimento != null) { var Ln = num(mud.comprimento, NaN); if (!(Ln > 0.01 && Ln <= 60)) return { erro: "Comprimento entre 1 cm e 60 m." }; b = add(a, mul(dir, Ln)); }
+      /* com recuo (viga entre pilares): o comprimento digitado é o da PEÇA — a linha cresce o recuo das duas pontas */
+      var recE = li.recuo ? li.recuo.a + li.recuo.b : 0;
+      if (mud.comprimento != null) { var Ln = num(mud.comprimento, NaN); if (!(Ln > 0.01 && Ln <= 60)) return { erro: "Comprimento entre 1 cm e 60 m." }; b = add(a, mul(dir, Ln + recE)); }
       var vert = Math.abs(dir[1]) > 0.999;
       if (mud.base != null && vert) { var yb = num(mud.base, NaN); if (!fin(yb)) return { erro: "Cota da base inválida." }; var lo = a[1] <= b[1] ? a : b; lo[1] = yb; }
       if (mud.topo != null && vert) { var yt = num(mud.topo, NaN); if (!fin(yt)) return { erro: "Cota do topo inválida." }; var hi = a[1] <= b[1] ? b : a; hi[1] = yt; }
@@ -302,7 +335,8 @@
       var cat = mud.cat != null ? perfilCat(mud.cat) : null;
       if (mud.cat != null && !cat) return { erro: "Perfil não encontrado no catálogo: " + mud.cat + "." };
       novo = barra(a, b, { ferr: li.ferr || (vert ? "pilar" : "viga"), cat: cat, perfil: cat ? null : m.perfil, giro: mud.giro != null ? num(mud.giro, 0) : li.giro,
-        just: mud.just || li.just, lado: mud.lado || li.lado, espelhar: mud.espelhar != null ? !!mud.espelhar : li.espelhar, papel: m.papel, ifc: c.ifc, aco: mud.aco || m.aco, nivel: mud.nivel !== undefined ? mud.nivel : li.nivel });
+        just: mud.just || li.just, lado: mud.lado || li.lado, espelhar: mud.espelhar != null ? !!mud.espelhar : li.espelhar, papel: m.papel, ifc: c.ifc, aco: mud.aco || m.aco, nivel: mud.nivel !== undefined ? mud.nivel : li.nivel,
+        recuo: li.recuo, vp: li.vp, livre: mud.livre !== undefined ? mud.livre : li.livre, servico: mud.servico !== undefined ? mud.servico : li.servico, balanco: li.balanco });
       if (novo.erro) return novo;
       if (li.legado) delete novo.metal.cria.ferr;
       /* furos e cortes que a peça já tinha (máquina) continuam a partir do início */
@@ -602,7 +636,7 @@
     FERRAMENTAS: FERRAMENTAS, JUST: JUST, LADO: LADO, CLASSE: CLASSE, ORDEM: ORDEM,
     catalogo: catalogo, buscarPerfis: buscarPerfis, perfilCat: perfilCat, desenhavel: desenhavel, dimSecao: dimSecao,
     eixosBarra: eixosBarra, giroDe: giroDe, orientar: orientar,
-    barra: barra, pilar: pilar, chapa: chapa, criaMundo: criaMundo, linhaAtual: linhaAtual, editar: editar, opAjustar: opAjustar,
+    barra: barra, pilar: pilar, chapa: chapa, criaMundo: criaMundo, linhaAtual: linhaAtual, editar: editar, opAjustar: opAjustar, reancorar: reancorar, recuoDe: recuoDe,
     pontosNotaveis: pontosNotaveis, cruzaSeg2: cruzaSeg2, escolher: escolher, snap3d: snap3d, pertoDoRaio: pertoDoRaio, combinar: combinar,
     pontoDigitado: pontoDigitado, medidaTraco: medidaTraco,
     lerEspacamentos: lerEspacamentos, gradeEixos: gradeEixos, cotasEixos: cotasEixos, letra: letra, fmt: fmt,

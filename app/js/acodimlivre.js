@@ -541,6 +541,18 @@
       if (r.ok) r.naoVerificados.forEach(function (x) { var t = "NÃO VERIFICADO — " + x.tema + ": " + x.motivo; if (arr(r.avisos).indexOf(t) < 0) r.avisos.unshift(t); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(t) < 0) r.naoAbrangidos.unshift(t); });
       r.situacao = Env().situacao(r, r.naoVerificados);
     }
+    /* REVISÃO F6 (15/10/2026, crítico do revisor): terças/travessas desenhadas nas faixas de borda/canto ficam SEM o cpe
+       médio (o vento da estrutura desenhada é global) — isso é NÃO VERIFICADO e a situação fica INCOMPLETO, nunca aprovado
+       (antes só saía no aviso e a estrutura passava como aprovada) */
+    var cmL = r.cargasResumo && r.cargasResumo.vento && arr(r.cargasResumo.vento.cpeMedioNaoAplicado);
+    if (cmL && cmL.length && Env()) {
+      var nvC = { tema: "Vento — cpe médio nas terças/travessas de borda (NBR 6123:2023 6.1.2/6.1.3)",
+                  motivo: cmL.length + " peça(s) nas faixas de borda/canto verificadas só com o cpe da zona, sem o cpe médio: " + cmL.map(function (q) { return q.peca + " (" + q.zona + ", cpe médio " + String(q.cpe).replace(".", ",") + ")"; }).join("; ") };
+      r.naoVerificados = arr(r.naoVerificados).slice();
+      if (!r.naoVerificados.some(function (q) { return q.tema === nvC.tema; })) r.naoVerificados.push(nvC);
+      if (r.ok) { var tC = "NÃO VERIFICADO — " + nvC.tema + ": " + nvC.motivo; r.avisos = arr(r.avisos); if (r.avisos.indexOf(tC) < 0) r.avisos.unshift(tC); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(tC) < 0) r.naoAbrangidos.unshift(tC); }
+      r.situacao = Env().situacao(r, r.naoVerificados);
+    }
     if (arr(lido.tipologias).length) r.tipologias = lido.tipologias.slice();
     if (r.ok) {
       /* REVISÃO S5 M2 (14/10/2026): o aço adotado para as peças da aba Estrutura (que não guarda a classe) é PREMISSA */

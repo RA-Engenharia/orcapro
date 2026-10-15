@@ -67,7 +67,9 @@
     function f(k) { return F[k] || {}; }
     return {
       pilar: { cat: f("pilar").perfil || "W250X32.7", giro: 0, just: "centro", lado: "centro", espelhar: false, aco: "ASTM A572 Gr.50", nivelBase: "", deslBase: 0, topo: "acima", deslTopo: 0, altura: 0 },
-      viga: { cat: f("viga").perfil || "W250X25.3", giro: 0, just: "topo", lado: "centro", espelhar: false, aco: "ASTM A572 Gr.50", ref: "acima", desl: 0, encadear: false },
+      viga: { cat: f("viga").perfil || "W250X25.3", giro: 0, just: "topo", lado: "centro", espelhar: false, aco: "ASTM A572 Gr.50", ref: "acima", desl: 0, encadear: false,
+              /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilares.js): a linha que atravessa pilares */
+              vpModo: "auto", vpTopo: "ferramenta", vpMax: 12, vpEmenda: "pilar" },
       diagonal: { cat: f("diagonal").perfil || "L51X51X4.8", giro: 0, just: "centro", lado: "centro", espelhar: false, aco: "ASTM A36", ref: "atual", desl: 0, encadear: false },
       terca: { cat: f("terca").perfil || "Ue 150 x 60 x 20 x 3,00", giro: 0, just: "base", lado: "centro", espelhar: false, aco: "ASTM A36", ref: "acima", desl: 0, encadear: false },
       chapa: { t: 0.0125, lado: "acima", aco: "ASTM A36", ref: "atual", desl: 0, naFace: true },
@@ -157,6 +159,12 @@
     if (ferr === "chapa") return M.chapa(pts[0], cur, plano, { t: c.t, lado: c.lado, aco: c.aco, nivel: infoNivelRef("chapa") });
     return M.barra(pts[0], cur, { ferr: ferr, cat: catDe(ferr), giro: c.giro, just: c.just, lado: c.lado, espelhar: c.espelhar, aco: c.aco, nivel: infoNivelRef(ferr) });
   }
+  /* VIGAS ENTRE PILARES: a linha da Viga que atravessa 2+ pilares (com pilar no miolo) → o plano (null = a viga de sempre) */
+  function planoVP(a, b) {
+    var MV = global.MetalVigasPilares, c = C().viga; if (!MV || !a || !b || !previa()) return null;
+    try { return MV.planoLinha(estado().caixas, a, b, { cat: catDe("viga"), modo: c.vpModo, topo: c.vpTopo, max: c.vpMax, emenda: c.vpEmenda }); } catch (e) { return null; }
+  }
+  var MODO_VP = { auto: "Dividir nos pilares", continua: "Contínua sobre os pilares", nao: "Não dividir" };
   function novoId() { var U = global.BimMetalUI; return U && U.novoId ? U.novoId() : "met-" + Date.now().toString(36) + "-" + Math.round(Math.random() * 1e6).toString(36); }
   function enviarLote(ops, pedido) {
     var b = B(); if (!b || !b.editarLote || !ops.length) return false;
@@ -288,6 +296,17 @@
         rs.push({ id: pre + "cotaLinha", rotulo: ferr === "viga" ? "Topo da viga na cota" : "Linha na cota", leitura: true, valor: sinal(cotaRef(ferr)) + " m" });
       }
       secoes.push({ nome: "Restrições", params: rs });
+      if (ferr === "viga") secoes.push({ nome: "Entre pilares", params: [
+        { id: pre + "vpModo", rotulo: "Linha que atravessa pilares", tipo: "lista", valor: c.vpModo, opcoes: Object.keys(MODO_VP).map(function (k) { return { id: k, rotulo: MODO_VP[k] }; }) },
+        { id: pre + "vpTopo", rotulo: "Topo da viga", tipo: "lista", valor: c.vpTopo, opcoes: [{ id: "ferramenta", rotulo: "Na cota da ferramenta" }, { id: "pilar", rotulo: "No topo do pilar" }] },
+        { id: pre + "vpMax", rotulo: "Comprimento máximo da barra", unidade: "m", tipo: "numero", passo: "0.5", valor: c.vpMax, motivo: "12 m = barra comercial do laminado; 6 m também é comum" },
+        { id: pre + "vpEmenda", rotulo: "Emenda (passou do máximo)", tipo: "lista", valor: c.vpEmenda, opcoes: [{ id: "pilar", rotulo: "Sobre o pilar (a viga deixa de ser contínua)" }, { id: "continuidade", rotulo: "De continuidade (0,2·L do apoio, talas)" }] }
+      ] });
+      /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligautoui.js): por OBRA */
+      var LAc = global.MetalLigAutoUI && global.MetalLigAutoUI.cfg ? global.MetalLigAutoUI.cfg() : null;
+      if (ferr === "viga" && LAc) secoes.push({ nome: "Ligações", params: [
+        { id: pre + "ligAuto", rotulo: "Ligações ao lançar", tipo: "lista", valor: LAc.aoLancar, opcoes: [{ id: "parafusada", rotulo: "Parafusada" }, { id: "soldada", rotulo: "Soldada" }, { id: "nao", rotulo: "Não colocar" }], motivo: "a viga que encosta num pilar ou noutra viga já sai com a ligação (mesa × alma), pré-dimensionada pelo peso próprio e A CONFIRMAR NO CÁLCULO — vale para esta obra" }
+      ] });
       var pl = planoFerr(ferr);
       secoes.push({ nome: "Plano de trabalho", params: [
         { id: pre + "plano", rotulo: "Plano", leitura: true, valor: (pl.definido ? pl.rotulo : "horizontal · " + pl.rotulo) },
@@ -314,6 +333,11 @@
       else if (k === "deslBase" || k === "deslTopo" || k === "desl") { var d = num(v, NaN); if (fin(d) && Math.abs(d) <= 200) c[k] = d; }
       else if (k === "altura") { var h = num(v, NaN); if (h > 0.05 && h <= 60) c.altura = h; }
       else if (k === "aco") c.aco = String(v);
+      else if (k === "vpModo") { if (MODO_VP[String(v)]) c.vpModo = String(v); }
+      else if (k === "vpTopo") c.vpTopo = v === "pilar" ? "pilar" : "ferramenta";
+      else if (k === "vpMax") { var mx = num(v, NaN); if (mx >= 1 && mx <= 60) c.vpMax = Math.round(mx * 100) / 100; }
+      else if (k === "vpEmenda") c.vpEmenda = v === "continuidade" ? "continuidade" : "pilar";
+      else if (k === "ligAuto") { if (global.MetalLigAutoUI) global.MetalLigAutoUI.definir("aoLancar", String(v)); }
       guardar();
       if (this._3d) this._3d.aoMudarCfg();
       this.pintarBarra();
@@ -354,11 +378,14 @@
       var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
       cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
       sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+      /* ELEVAR (js/bimelevarui.js): a mesma seção, com ‹vários› e o mesmo delta para todas (um Ctrl+Z) */
+      try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
       return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
         onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self.propsPeca(info, G); } };
     },
     _buscaLote: null,
     mudarLote: function (ids, pid, v) {
+      if (/^elev:/.test(String(pid)) && global.BimElevarUI) return global.BimElevarUI.mudarCampo(ids, pid, v).ok;   /* ELEVAR */
       var M = MC(), k = String(pid).replace(/^mcrl:/, ""), mud = {};
       if (!M) return false;
       if (k === "busca") { this._buscaLote = String(v || "").slice(0, 60); return true; }
@@ -387,7 +414,8 @@
       var m = c.metal, pre = "mcrp:", sec = [], ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
       var lig = (m.lig ? 1 : 0) + ((c.metalFuros || []).length ? 1 : 0) + (estado().caixas || []).filter(function (x) { return x.metal && String(x.metal.soldadaEm) === String(id); }).length;
       sec.push({ nome: "Identidade", params: [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "(sem marca — Fabricação › Numerar)"), ro("id", "Identificador", id)]
-        .concat(lig ? [ro("lig", "Ligações", "esta peça tem ligação: ao trocar perfil ou medida, as chapas e os furos da ligação NÃO acompanham — use Desfazer ligação e aplique de novo")] : []) });
+        .concat(lig ? [ro("lig", "Ligações", "esta peça tem ligação: ao trocar perfil ou medida, as chapas e os furos da ligação NÃO acompanham — use Desfazer ligação e aplique de novo")] : [])
+        .concat(MetalCriarUI._linhasVP(m, ro)) });
       if (m.kind === "perfil") {
         var li = M.linhaAtual(c), vert = Math.abs(li.b[1] - li.a[1]) > 0.999 * Math.sqrt(Math.pow(li.b[0] - li.a[0], 2) + Math.pow(li.b[1] - li.a[1], 2) + Math.pow(li.b[2] - li.a[2], 2));
         var busca = this._buscaPeca && this._buscaPeca.id === id ? this._buscaPeca.texto : "";
@@ -400,8 +428,12 @@
           { id: pre + "lado", rotulo: "Justificação lateral", tipo: "lista", valor: li.lado, opcoes: [{ id: "esquerda", rotulo: "Esquerda" }, { id: "centro", rotulo: "Centro" }, { id: "direita", rotulo: "Direita" }] },
           { id: pre + "espelhar", rotulo: "Espelhar a seção", tipo: "sim-nao", valor: !!li.espelhar }
         ] });
-        var cotas = [];
-        if (vert) {
+        var cotas = [], EUp = global.BimElevarUI, sEl = EUp && EUp.secao ? EUp.secao([id]) : null;
+        /* ELEVAR (js/bimelevarui.js, 15/10/2026): Elevação da base (a peça INTEIRA anda), Elevação do topo (no pilar
+           muda o comprimento; na horizontal leva a peça), Nível de referência e Deslocamento — com os vínculos.
+           Antes a "Cota da base" do pilar esticava o pilar e a viga só tinha a "Cota da linha". */
+        if (sEl) { if (!vert) cotas.push({ id: pre + "comprimento", rotulo: "Comprimento", unidade: "m", tipo: "numero", passo: "0.01", valor: Math.round(m.L * 1e4) / 1e4 }); cotas = cotas.concat(sEl.params); }
+        else if (vert) {
           var lo = li.a[1] <= li.b[1] ? li.a : li.b, hi = li.a[1] <= li.b[1] ? li.b : li.a;
           cotas.push({ id: pre + "base", rotulo: "Cota da base", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(lo[1] * 1e4) / 1e4 });
           cotas.push({ id: pre + "topo", rotulo: "Cota do topo", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(hi[1] * 1e4) / 1e4 });
@@ -419,6 +451,13 @@
           { id: pre + "y", rotulo: "Cota (Y)", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(li.a[1] * 1e4) / 1e4 },
           { id: pre + "z", rotulo: "Z", unidade: "m", tipo: "numero", passo: "0.05", valor: Math.round(li.a[2] * 1e4) / 1e4 }
         ] });
+        /* VIGA EM BALANÇO (15/10/2026, js/metalligauto.js): a ponta marcada "Livre (balanço)" → as 3 soluções */
+        if (!vert && global.MetalLigAutoUI) {
+          var lv = li.livre || {}, opsL = [{ id: "apoiada", rotulo: "Apoiada" }, { id: "livre", rotulo: "Livre (balanço)" }];
+          var pb = [{ id: pre + "livre:a", rotulo: "Ponta inicial", tipo: "lista", valor: lv.a ? "livre" : "apoiada", opcoes: opsL }, { id: pre + "livre:b", rotulo: "Ponta final", tipo: "lista", valor: lv.b ? "livre" : "apoiada", opcoes: opsL }];
+          if (lv.a || lv.b || (m.cria && m.cria.balanco)) pb.push({ id: pre + "balanco", rotulo: "Viga em balanço", tipo: "botao", rotuloBotao: "Soluções do balanço…", fn: function () { global.MetalLigAutoUI.balanco(id); } });
+          sec.push({ nome: "Pontas (balanço)", params: pb });
+        }
         /* VÍNCULOS (js/bimvinculos.js): "Desligar união" por ponta — a ponta solta não segue a peça em que está presa */
         sec.push({ nome: "Vínculos", params: [
           { id: pre + "vinc:a", rotulo: "Ponta inicial acompanha ao mover", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.a) },
@@ -452,9 +491,22 @@
         } };
     },
     _buscaPeca: null,
+    /* VIGAS ENTRE PILARES: de onde a viga saiu, a face de cada ponta, o recuo, a emenda e o que ficou A DIMENSIONAR */
+    _linhasVP: function (m, ro) {
+      var cr = m && m.cria, vp = cr && cr.vp; if (!vp) return [];
+      var out = [], rc = cr.recuo || {}, nomeP = { pilar: "na face do pilar", apoio: "apoiada no topo do pilar", "emenda-pilar": "emenda sobre o pilar", "emenda-continuidade": "emenda de continuidade" };
+      ["a", "b"].forEach(function (k) {
+        var tp = vp.pontas && vp.pontas[k], pil = vp.pilares && vp.pilares[k];
+        out.push(ro("vp" + k, k === "a" ? "Ponta inicial" : "Ponta final", (nomeP[tp] || tp || "—") + (pil ? " " + pil : "") + (vp.faces && vp.faces[k] ? " (" + vp.faces[k] + ")" : "") + (rc[k] ? " · recuo " + br(rc[k] * 1000, 1) + " mm do eixo" : "") + (vp.pend && vp.pend[k] ? " · " + vp.pend[k] : "")));
+      });
+      if (vp.calc && (vp.calc.ini === "rotulada" || vp.calc.fim === "rotulada")) out.push(ro("vpRot", "Cálculo", "nesta emenda a viga deixa de ser contínua: a ponta é rótula (biapoiada no pilar)"));
+      out.push(ro("vpNo", "Nó do cálculo", "no eixo do pilar (a linha vai de eixo a eixo; o sólido para na face)"));
+      return out;
+    },
     /* uma mudança nas Propriedades da peça → a peça refeita → op metalAjustar (um Ctrl+Z) */
     mudarPeca: function (id, pid, v) {
       var c = caixaDe(id), M = MC(); if (!c || !M) return false;
+      if (/^elev:/.test(String(pid)) && global.BimElevarUI) return global.BimElevarUI.mudarCampo([id], pid, v).ok;   /* ELEVAR */
       var k = String(pid).replace(/^mcrp:/, ""), mud = {};
       if (k === "busca") { this._buscaPeca = { id: id, texto: String(v || "").slice(0, 60) }; return true; }
       if (k === "vinc:a" || k === "vinc:b") {   /* VÍNCULOS: a op do motor, um Ctrl+Z */
@@ -462,6 +514,16 @@
         if (rv.erro) { status(rv.erro); return false; }
         if (!enviarLote([rv.op], "Vínculo da ponta")) { status("O editor recusou a mudança."); return false; }
         status((k === "vinc:a" ? "Ponta inicial" : "Ponta final") + (v ? " ligada: acompanha a peça em que está presa." : " desligada: não acompanha mais (Ctrl+Z desfaz)."));
+        return true;
+      }
+      if (k === "livre:a" || k === "livre:b") {   /* VIGA EM BALANÇO: a marca na receita; marcada livre → as soluções */
+        var lv0 = clone((M.linhaAtual(c) || {}).livre || {}) || {}, kk = k.slice(6), quer = String(v) === "livre";
+        if (quer) lv0[kk] = true; else delete lv0[kk];
+        var rl = M.editar(c, { livre: lv0.a || lv0.b ? lv0 : null });
+        if (rl.erro) { status(rl.erro); return false; }
+        if (!enviarLote([M.opAjustar(id, rl.caixa)], "Ponta " + (kk === "a" ? "inicial" : "final") + (quer ? " livre (balanço)" : " apoiada"))) { status("O editor recusou a mudança."); return false; }
+        status((kk === "a" ? "Ponta inicial" : "Ponta final") + (quer ? " marcada LIVRE (balanço)." : " apoiada.") + " Ctrl+Z desfaz.");
+        if (quer && global.MetalLigAutoUI) { try { global.MetalLigAutoUI.balanco(id, { ponta: kk }); } catch (eB) {} }
         return true;
       }
       if (k === "cat") mud.cat = v;
@@ -507,6 +569,18 @@
         '<option value="nivel"' + (pl.definido ? "" : " selected") + '>' + esc(pl.definido ? "Horizontal no nível" : "Horizontal · " + pl.rotulo) + "</option>" +
         (pl.definido ? '<option value="definido" selected>' + esc(pl.rotulo) + "</option>" : "") +
         '<option value="face">Face de uma peça…</option><option value="linha">Vertical por dois pontos…</option></select></label>';
+      if (ferr === "viga") {
+        /* VIGAS ENTRE PILARES (15/10/2026): puxada de fora a fora, a linha que atravessa 2+ pilares vira uma viga por vão */
+        var sel = function (k, ops, v) { return '<select data-mcr="' + k + '">' + ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === v ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select>"; };
+        h += '<label class="mcr-campo" title="A linha que atravessa 2 ou mais pilares (com pilar no meio dela): uma viga por vão, de eixo a eixo, parada na face de cada pilar com a ligação parafusada — ou contínua por cima deles">Pilares ' + sel("vpModo", Object.keys(MODO_VP).map(function (k) { return [k, MODO_VP[k]]; }), c.vpModo) + "</label>" +
+          '<label class="mcr-campo" title="Topo da viga entre pilares: na cota da ferramenta (nível + deslocamento) ou no topo do pilar">Topo ' + sel("vpTopo", [["ferramenta", "da ferramenta"], ["pilar", "do pilar"]], c.vpTopo) + "</label>" +
+          '<label class="mcr-campo" title="Comprimento máximo de uma barra (12 m é a barra comercial do laminado; 6 m também é comum). Passou: a viga é emendada">Máx. <input data-mcr="vpMax" list="mcr-vpmax" inputmode="decimal" autocomplete="off" value="' + esc(br(c.vpMax, 1)) + '" style="width:3.4em"> m<datalist id="mcr-vpmax"><option value="6,0"><option value="12,0"></datalist></label>' +
+          '<label class="mcr-campo" title="Onde vai a emenda quando a barra passa do máximo: sobre o pilar (a viga deixa de ser contínua ali) ou de continuidade a 0,2·L do apoio, com talas">Emenda ' + sel("vpEmenda", [["pilar", "sobre o pilar"], ["continuidade", "de continuidade"]], c.vpEmenda) + "</label>";
+      }
+      if (ferr === "viga" && global.MetalLigAutoUI && global.MetalLigAutoUI.cfg) {
+        var la0 = global.MetalLigAutoUI.cfg().aoLancar;
+        h += '<label class="mcr-campo" title="Ligações ao lançar (desta obra): a viga que encosta num pilar ou noutra viga já sai com a ligação, pré-dimensionada pelo peso próprio e A CONFIRMAR NO CÁLCULO">Ligações <select data-mcr="ligAuto">' + [["parafusada", "parafusada"], ["soldada", "soldada"], ["nao", "não colocar"]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === la0 ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>";
+      }
       if (ferr !== "pilar" && ferr !== "chapa") h += '<button type="button" class="bbo-liga" data-mcr="encadear" aria-pressed="' + (c.encadear ? "true" : "false") + '" title="Cada peça começa no fim da anterior (Esc encerra)"><span>Encadear</span></button>';
       h += '<button type="button" class="btn sm ghost mcr-bt" data-mcr="coord" title="Digitar X, cota e Z do próximo ponto">Coordenadas…</button>';
       b.innerHTML = h; b.style.display = "flex";
@@ -554,6 +628,7 @@
         if (k === "giro") { self.mudarFerramenta(ferr, "mcrf:giro", t.value); }
         if (k === "t") { self.mudarFerramenta(ferr, "mcrf:t", t.value); }
         if (k === "plano") { self.trocarPlano(t.value); }
+        if (k === "vpModo" || k === "vpTopo" || k === "vpMax" || k === "vpEmenda" || k === "ligAuto") { self.mudarFerramenta(ferr, "mcrf:" + k, t.value); }
         try { if (global.BimShell) global.BimShell.pintarProps(self.esquemaFerramenta(ferr)); } catch (eP) {}
       });
       document.addEventListener("pointerdown", function (e) { if (pop && !b.contains(e.target)) fecharPop(); }, true);
@@ -670,6 +745,18 @@
       }
     },
     _redesenhar: function () { if (this._3d) this._3d.redesenhar(); },
+    /* VIGAS ENTRE PILARES (15/10/2026): o plano (MetalVigasPilares.planoLinha) → as vigas e as ligações num lote (um Ctrl+Z) */
+    planoVP: planoVP,
+    lancarPlano: function (pv) {
+      var MV = global.MetalVigasPilares, c = C().viga; if (!MV || !pv) return { ok: false, motivo: "O motor das vigas entre pilares (js/metalvigaspilares.js) não carregou." };
+      var nivel = pv.modo === "dividir" && c.vpTopo !== "pilar" ? infoNivelRef("viga") : null, ex;
+      try { ex = MV.executar(estado().caixas, pv, { cat: catDe("viga"), nivel: nivel, aco: c.aco, novoId: novoId }); } catch (e) { return { ok: false, motivo: "Vigas entre pilares: " + (e && e.message ? e.message : e) }; }
+      this._ultimoVP = ex;
+      if (!ex.ops.length) return { ok: false, motivo: ex.resumo, ex: ex };
+      if (!enviarLote(ex.ops, (pv.modo === "continua" ? "Viga contínua sobre os pilares — " : "Vigas entre pilares — ") + ex.resumo)) return { ok: false, motivo: "O editor recusou as vigas.", ex: ex };
+      return { ok: true, ex: ex };
+    },
+    ultimoVP: function () { return this._ultimoVP || null; },
 
     /* ================================================== 3D
      * api: { THREE, S, edit, scene, canvas, camera(), host(), raio(cx, cy) → {origem, direcao},
@@ -683,6 +770,7 @@
       var grpPlano = new THREE.Group(); grpPlano.name = "metal-criar-plano"; api.scene.add(grpPlano);
       var grpNiveis = new THREE.Group(); grpNiveis.name = "metal-criar-niveis"; api.scene.add(grpNiveis);
       var grpCotas = new THREE.Group(); grpCotas.name = "metal-criar-cotas-eixos"; api.scene.add(grpCotas);
+      var grpVP = new THREE.Group(); grpVP.name = "metal-vigas-pilares-previa"; api.scene.add(grpVP);   /* VIGAS ENTRE PILARES: a prévia do diálogo */
       var sprites = [];
       if (api.S && api.S._tickExtra) api.S._tickExtra.push(function () { for (var i = 0; i < sprites.length; i++) if (sprites[i].parent) api.reescalar(sprites[i]); });
       function ferr() { return SUBS[edit.sub] || null; }
@@ -811,6 +899,19 @@
       function desenharPrevia(r) {
         limpar(grpPrev);
         var f = ferr(); if (!f || !r) return;
+        /* VIGAS ENTRE PILARES: a linha que atravessa 2+ pilares mostra as vigas por vão (ou a contínua com as emendas) */
+        var pv = f === "viga" && st.pts.length ? planoVP(st.pts[0], r.p) : null;
+        st.vp = pv ? { n: pv.pecas.length, modo: pv.modo, pend: pv.pendentes.length, emendas: pv.emendas.length, existentes: pv.existentes, texto: pv.pendentes.length ? pv.pendentes[0].texto : null } : null;
+        if (pv) {
+          var MV = global.MetalVigasPilares, cr0 = cor("--aco-claro", "#5b9bd5"), pos0 = [];
+          MV.previa(pv, { cat: catDe("viga") }).forEach(function (cv) { pos0 = pos0.concat(arame(cv)); });
+          var l0 = linhas(pos0, cr0, 0.95); if (l0) grpPrev.add(l0);
+          var a0 = st.pts[0], lb0 = linhas([a0[0], a0[1], a0[2], r.p[0], r.p[1], r.p[2]], cor("--verde", "#15803d"), 1, 0.2); if (lb0) grpPrev.add(lb0);
+          var pe = []; pv.emendas.forEach(function (e) { var q = e.P, k = 0.25; pe.push(q[0] - k, q[1] + k, q[2] - k, q[0] + k, q[1] - k, q[2] + k, q[0] - k, q[1] - k, q[2] + k, q[0] + k, q[1] + k, q[2] - k); });
+          var le = linhas(pe, cor("--vermelho", "#c62828"), 1); if (le) grpPrev.add(le);
+          st.prevErro = st.vp.texto;
+          return;
+        }
         var c = construir(f, st.pts, r.p, plano());
         var cr = cor("--aco-claro", "#5b9bd5");
         if (c && !c.erro) { var l = linhas(arame(c), cr, 0.95); if (l) grpPrev.add(l); }
@@ -826,7 +927,8 @@
         if (!st.pts.length || !r || f === "pilar") { if (!digitando()) caixa.style.display = "none"; return; }
         var M = MC(), md = M.medidaTraco(st.pts[0], r.p, r.plano), viv = caixa.querySelector('[data-mcr="vivo"]');
         if (f === "chapa") { var c = construir(f, st.pts, r.p, plano()); viv.textContent = c && !c.erro && c.metal.dim ? Math.round(c.metal.dim.L * 1000) + " × " + Math.round(c.metal.dim.B * 1000) + " mm" : "sem área: afaste o canto"; }
-        else viv.textContent = br(md.dist) + " m · " + br(md.graus, 1) + "°" + (Math.abs(r.p[1] - st.pts[0][1]) > 0.005 ? " · Δcota " + sinal(r.p[1] - st.pts[0][1]) : "");
+        else viv.textContent = br(md.dist) + " m · " + br(md.graus, 1) + "°" + (Math.abs(r.p[1] - st.pts[0][1]) > 0.005 ? " · Δcota " + sinal(r.p[1] - st.pts[0][1]) : "") +
+          (st.vp ? " · " + st.vp.n + (st.vp.modo === "continua" ? " viga(s) contínua(s)" : " viga(s) entre pilares") + (st.vp.emendas ? ", " + st.vp.emendas + " emenda(s)" : "") + (st.vp.pend ? " · " + st.vp.pend + " pendência(s)" : "") : "");
         caixa.querySelector('[data-mcr="l-comp"]').style.display = f === "chapa" ? "none" : "";
         caixa.querySelector('[data-mcr="l-ang"]').style.display = f === "chapa" ? "none" : "";
         caixa.style.display = "flex";
@@ -852,18 +954,37 @@
             p = [p[0] - nn[0] * dd, p[1] - nn[1] * dd, p[2] - nn[2] * dd]; st.faceBaixo = !!(df.horiz && nrm.y < 0);
           }
         }
+        if (f === "viga" && st.pts.length === 1) {
+          var pv = planoVP(st.pts[0], p);
+          if (pv) {
+            var rx = self.lancarPlano(pv);
+            if (!rx.ok) { var tt = rx.motivo || "nenhuma viga lançada"; api.hint(tt); status(tt); toast(tt, "aviso", 9000); return; }
+            var fimV = p.slice(); st.pts = []; st.facePlano = null; if (C().viga.encadear) st.pts = [fimV];
+            marcarP1(); limpar(grpPrev); caixaEsconder(); st.vp = null;
+            var tx = rx.ex.resumo + (rx.ex.pendentes.length ? " " + rx.ex.pendentes[0].texto : "") + " Ctrl+Z desfaz.";
+            api.hint(tx); status(tx); if (rx.ex.aDimensionar || rx.ex.pendentes.length) toast(tx, "aviso", 9000);
+            if (api.fechou) api.fechou();
+            return;
+          }
+        }
         if (f === "pilar" || st.pts.length + 1 >= M.FERRAMENTAS[f].cliques) {
           var c = construir(f, st.pts, p, plano());
           if (f === "chapa" && st.faceBaixo && c && !c.erro) { var cc = C().chapa; c = M.chapa(st.pts[0], p, plano(), { t: cc.t, lado: cc.lado === "acima" ? "abaixo" : cc.lado, aco: cc.aco, nivel: infoNivelRef("chapa") }); }
           st.faceBaixo = false;
           if (!c || c.erro) { api.hint((c && c.erro) || "Não deu para criar a peça."); status((c && c.erro) || ""); return; }
-          if (!enviarLote([{ op: "criar", id: novoId(), caixa: c }], ROT[f] + " " + descricao(c))) { api.hint("O editor recusou a peça."); return; }
+          /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a viga que encosta num pilar ou noutra viga já sai com a ligação
+             padrão (pré-dimensionada pelo peso próprio, A CONFIRMAR NO CÁLCULO) — no MESMO lote: um Ctrl+Z desfaz tudo */
+          var idN = novoId(), opsN = [{ op: "criar", id: idN, caixa: c }], la = null, LAU = global.MetalLigAutoUI;
+          if (f === "viga" && LAU && LAU.aoLancar) { try { c.id = idN; la = LAU.aoLancar(estado().caixas, c); if (la && la.ops && la.ops.length) opsN = la.ops; } catch (eLa) { la = null; status("Ligação ao lançar: " + (eLa && eLa.message ? eLa.message : eLa)); } }
+          if (!enviarLote(opsN, ROT[f] + " " + descricao(c) + (la && la.ligacoes.length ? " + " + la.ligacoes.length + " ligação(ões) a confirmar" : ""))) { api.hint("O editor recusou a peça."); return; }
           var fim = st.pts.length ? p : null;
           st.pts = []; st.facePlano = null;
           if (fim && C()[f] && C()[f].encadear) st.pts = [fim.slice()];
           marcarP1(); limpar(grpPrev); caixaEsconder();
           var txt = ROT[f] + " criad" + (f === "chapa" || f === "viga" || f === "diagonal" || f === "terca" ? "a" : "o") + ": " + descricao(c) + ". " + (st.pts.length ? "Continua do fim — clique o próximo ponto, ou Esc." : (f === "pilar" ? "Clique para outro, ou Esc." : "Clique o início da próxima, ou Esc.")) + " Ctrl+Z desfaz.";
+          if (la && (la.ligacoes.length || la.pendentes.length || la.balanco)) txt = txt.replace(/ Ctrl\+Z desfaz\.$/, "") + " " + la.resumo + " Ctrl+Z desfaz.";
           api.hint(txt); status(txt);
+          if (la && LAU && LAU.depoisDeLancar) { try { LAU.depoisDeLancar(la); } catch (eDl) {} }
           if (api.fechou) api.fechou();
           return;
         }
@@ -1016,11 +1137,20 @@
         pontos: function () { return st.pts.map(function (p) { return p.slice(); }); },
         ultimo: function () { return st.pts.length ? st.pts[st.pts.length - 1].slice() : (st.cur ? st.cur.slice() : null); },
         pontoDigitado: function (p) { if (!ativo()) return false; aceitar(p, null); return true; },
+        /* VIGAS ENTRE PILARES: a prévia do diálogo (peças em arame + as emendas); null limpa */
+        previaVP: function (caixas, emendas) {
+          limpar(grpVP); if (!caixas || !caixas.length) return 0;
+          var pos = []; caixas.forEach(function (cv) { pos = pos.concat(arame(cv)); });
+          var l = linhas(pos, cor("--verde", "#15803d"), 0.95); if (l) grpVP.add(l);
+          var pe = []; (emendas || []).forEach(function (e) { var q = e.P, k = 0.25; pe.push(q[0] - k, q[1] + k, q[2] - k, q[0] + k, q[1] - k, q[2] + k, q[0] - k, q[1] - k, q[2] + k, q[0] + k, q[1] + k, q[2] - k); });
+          var le = linhas(pe, cor("--vermelho", "#c62828"), 1); if (le) grpVP.add(le);
+          return grpVP.children.length;
+        },
         /* para o e2e e o suporte */
         estado: function () {
           return { ferramenta: ferr(), pts: st.pts.length, cur: st.cur, modo: st.modo, snap: st.sn ? st.sn.tipo : null, plano: plano().rotulo, horizontal: !!plano().horizontal, y: plano().y,
                    previa: grpPrev.children.length, gradePlano: grpPlano.children.length, niveis: grpNiveis.children.length, cotasEixos: grpCotas.children.filter(function (o) { return o.isSprite; }).length,
-                   caixa: caixa.style.display !== "none", erro: st.prevErro || null };
+                   caixa: caixa.style.display !== "none", erro: st.prevErro || null, vp: st.vp || null, previaVP: grpVP.children.length };
         },
         _resolver: function (cx, cy) { var r = resolver({ clientX: cx, clientY: cy }); return r ? { p: r.p, tipo: r.sn ? r.sn.tipo : null } : null; }
       };

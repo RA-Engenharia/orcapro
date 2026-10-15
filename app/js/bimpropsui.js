@@ -599,7 +599,10 @@
       /* SELECIONAR INSTÂNCIAS (14/10/2026): com várias peças o título diz quantas ("12 selecionados") */
       return { bp1: true, daPeca: true, uid: info.uid, semEditarTipo: true, lote: ids.length > 1 ? ids.length : 0, titulo: ids.length > 1 ? ids.length + " selecionados" : p0.nomeCategoria, icone: p0.categoria === "parede" ? "parede" : (p0.categoria === "pilar" ? "pilar" : (p0.categoria === "ambiente" ? "ambiente" : "quadrado")), secoes: [],
                render: function (corpo) { self.render(corpo); },
-               onMudar: function (pid, valor) { if (self._tela && typeof self._tela.aoMudarExtra === "function") self._tela.aoMudarExtra(pid, valor); } };
+               onMudar: function (pid, valor) {
+                 /* ELEVAR: a seção Elevação é do js/bimelevarui.js (as peças do filtro da paleta) */
+                 if (/^elev:/.test(String(pid)) && global.BimElevarUI) { var md0 = self._md, ids0 = md0 && md0.ids && md0.ids.length ? md0.ids : (self._tela ? self._tela.idsTodos : []); global.BimElevarUI.mudarCampo(ids0, pid, valor); self.aoMudarModelo(); return; }
+                 if (self._tela && typeof self._tela.aoMudarExtra === "function") self._tela.aoMudarExtra(pid, valor); } };
     },
     /* o modelo mudou (op nova, desfazer, refazer, níveis): a paleta na tela se refaz */
     aoMudarModelo: function () {
@@ -664,6 +667,9 @@
       var tb = el(doc, "table", "rv-params bp1-params"), rec = this._recolhidos();
       md.secoes.forEach(function (s) { tb.appendChild(self._grupo(doc, ctx, md, s, !!rec[s.grupo])); });
       /* as seções de fora do registro (orçamento, estilo, abertura…), só com uma peça */
+      /* ELEVAR (js/bimelevarui.js, 15/10/2026): Elevação da base/do topo (e o nível de referência) da peça que NÃO está
+         presa a nível — também com várias peças (‹vários›; mudar move todas pelo mesmo tanto, um Ctrl+Z) */
+      try { var EU = global.BimElevarUI, sEl = EU && EU.secaoPaleta ? EU.secaoPaleta(md.ids) : null; if (sEl) tb.appendChild(self._grupoExtra(doc, sEl, !!rec["extra:" + sEl.nome])); } catch (eEl) {}
       if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) {   /* P2-C: extras pode ser função (fresca a cada pintura) */ tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
       raiz.appendChild(tb);
       if (ctx.res.avisos && ctx.res.avisos.length) {

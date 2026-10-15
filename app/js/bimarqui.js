@@ -312,6 +312,7 @@
       if (global.BimEstrutUI) global.BimEstrutUI.registrar(reg, self);   /* P9 — GANCHO: Rampa, Escada em U, Treliça (js/bimestrutui.js) */
       if (global.BimP3UI) global.BimP3UI.registrar(reg, self);   /* P3: telhado, bordas, unir telhado e fundação (js/bimp3ui.js) */
       if (global.MarcenariaUI) global.MarcenariaUI.registrar(reg, self);   /* CARPINTARIA & MARCENARIA: aba da disciplina (js/marcenariaui.js) */
+      if (global.BimElevarUI) global.BimElevarUI.registrar(reg, self);   /* ELEVAR: Modificar › Elevar e o atalho EL (js/bimelevarui.js) — depois do laço da FITA, que armaria o genérico */
       function ferr(sub) {
         return function (e) {
           if (e && e.ligado === false) { var b = B(); if (b && b.editarArmar) b.editarArmar(null); status("Ferramenta desligada."); return true; }
