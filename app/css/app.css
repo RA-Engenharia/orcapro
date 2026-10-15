@@ -176,6 +176,7 @@
    * ganho de leitura; a fonte responde por menos de um quinto.
    * --------------------------------------------------------------- */
   --t-micro: 12px;   /* rótulo em caixa alta, legenda */
+  --t-mini:  11.5px; /* rótulo de ferramenta em área de trabalho densa (BIM): o menor tamanho de interface */
   --t-peq:   13.5px; /* apoio, meta, célula secundária */
   --t-base:  15px;   /* corpo, tabela, formulário */
   --t-med:   17px;   /* subtítulo, valor de indicador */

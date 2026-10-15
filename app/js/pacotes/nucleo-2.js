@@ -40912,9 +40912,20 @@ if (nomes.indexOf(nome) < 0) nomes.push(nome);
 });
 return nomes.join(", ");
 }
+function _brNorm(s) {
+var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+if (np > 1) {
+if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+}
+if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+return s;
+}
 function _numPreco(v) {
 if (typeof v === "number") return isFinite(v) ? v : 0;
-var n = parseFloat(String(v == null ? "" : v).replace(/\./g, "").replace(",", "."));
+var n = parseFloat(_brNorm(String(v == null ? "" : v).replace(/\s/g, "")));
 return isFinite(n) ? n : 0;
 }
 function _perdasDaColuna(antes, depois) {
@@ -67963,5 +67974,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=21dcabb038"},{"src":"js/bim-pacote.js?v=220f90a8d4","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=e18fd80047","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=02006cd8b2"},{"src":"js/bim-pacote.js?v=141cd5f76d","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

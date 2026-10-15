@@ -73,9 +73,15 @@
   function selecao() { var M = MU(); try { return M && M.selecao ? M.selecao() : []; } catch (e) { return []; } }
 
   /* ============================================================ LEITURA (prévia, sem calcular) */
+  /* PÓRTICOS M4: o pórtico da biblioteca (js/metalporticosui.js) preparado para o cálculo — as peças dele (caixa.portico) */
+  function idsPortico(e) {
+    if (!e || !e.portico) return null;
+    var ids = caixas().filter(function (c) { return c && String(c.portico || "") === String(e.portico); }).map(function (c) { return String(c.id); });
+    return ids.length ? ids : null;
+  }
   function lerModelo() {
     var M = ML(), e = estado(); if (!M) return null;
-    var ids = e.soSelecao ? selecao() : null;
+    var ids = e.soSelecao ? selecao() : idsPortico(e);
     U.lido = M.ler(caixas(), { ids: ids && ids.length ? ids : null, acoEstrutura: e.acoEstrutura || null });
     U.G = null; U.env = null;
     if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilar: e.ligacoes.vigaPilar, vigaViga: e.ligacoes.vigaViga, ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
@@ -83,7 +89,7 @@
     return U.lido;
   }
   function entrada() {
-    var e = estado(), ids = e.soSelecao ? selecao() : null;
+    var e = estado(), ids = e.soSelecao ? selecao() : idsPortico(e);
     var areas = e.areas.map(function (a) { var o = copia(a); o.g = num(a.g, 0); o.qInformado = num(a.qInformado, null); o.alturaEstoque = num(a.alturaEstoque, null); o.inclinacaoPct = num(a.inclinacaoPct, 3); if (!o.uso) delete o.uso; return o; });
     /* FRENTE S5: o vento sai do ENVOLTÓRIO (situação + fechamento de cada face lida da geometria — js/acoenvoltorio.js); aqui
        vão só o local e o terreno */
@@ -207,6 +213,13 @@
       (G ? '<span class="ml-chip">' + G.modelo.nos.length + " nós</span><span class=\"ml-chip\">" + G.modelo.apoios.length + " apoios</span>" : "") +
       (Object.keys(L.ligacoes).length ? '<span class="ml-chip ok">' + Object.keys(L.ligacoes).length + " ligação(ões) desenhada(s)</span>" : "") + "</div>" +
       '<label class="ml-lin" style="gap:6px;font-size:12.5px"><input type="checkbox" data-ml-campo="soSelecao"' + (e.soSelecao ? " checked" : "") + "> Calcular só as peças selecionadas no modelo (" + selecao().length + " selecionada(s))</label>";
+    /* PÓRTICOS M4: o pórtico da biblioteca preparado — o cálculo fica só nas peças dele; as outras barras de aço do modelo ficam
+       FORA, e a tela diz quantas (nada calado) */
+    var idsP = !e.soSelecao ? idsPortico(e) : null;
+    if (idsP) {
+      var outras = caixas().filter(function (c) { return c && idsP.indexOf(String(c.id)) < 0 && ((c.tipo === "metal" && c.metal && c.metal.kind === "perfil" && !c.metal.lig) || ((c.tipo === "pilar" || c.tipo === "viga") && c.material === "aco")); }).length;
+      h += '<p class="' + (outras ? "ml-aviso" : "ml-nota") + '" data-ml="portico">Calculando só as <b>' + idsP.length + " peças do pórtico paramétrico</b> da biblioteca" + (outras ? " — <b>" + outras + " outra(s) barra(s) de aço do modelo ficam fora</b>" : "") + '. <button class="ml-bt mini" data-ml-acao="todas-pecas">Calcular todas as barras do modelo</button></p>';
+    }
     if (!L.pecas.length) h += '<p class="ml-aviso">Nenhuma barra de aço desenhada' + (e.soSelecao ? " na seleção" : "") + ": use Metálica › Peças (Pilar, Viga, Diagonal, Terça).</p>";
     if (L.semPerfil.length) h += '<p class="ml-aviso">' + L.semPerfil.length + " peça(s) sem perfil do catálogo: " + esc(L.semPerfil.map(function (s) { return s.nome; }).join("; ")) + ' — escolha o perfil nas Propriedades. <button class="ml-bt mini" data-ml-acao="selecionar" data-ml-v="' + esc(L.semPerfil.map(function (s) { return s.id; }).join(",")) + '">Selecionar</button></p>';
     if (L.semAco.length) h += '<p class="ml-aviso">' + L.semAco.length + " peça(s) com aço desconhecido: " + esc(L.semAco.map(function (s) { return s.nome + " (" + s.aco + ")"; }).join("; ")) + "." + (L.semAco.some(function (q) { return q.estrutura; }) ? ' <button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="aco-estrutura">Usar ASTM A572 Gr.50 nas peças da aba Estrutura</button>' : "") + "</p>";
@@ -434,6 +447,8 @@
     else if (/^vento\./.test(c)) e.vento[c.slice(6)] = v;
     else if (c === "otimizar") e.otimizar = v;
     salvar();
+    /* o fechamento escolhido vira peça no modelo (VEDAÇÃO, js/acovedacao.js) */
+    if (c === "face.tipo" || c === "face.h" || c === "cob.tipo") { try { vedacaoNoModelo(); } catch (eV) { toast("Fechamento no modelo: " + (eV && eV.message ? eV.message : eV), "erro", 8000); } }
     if (rer) render(); else atualizarResumos();
   }
   function atualizarResumos() { PASSOS.forEach(function (p) { var el = doc.querySelector('[data-ml-resumo="' + p.n + '"]'); if (el) el.textContent = resumoPasso(p.n); }); }
@@ -482,6 +497,7 @@
     if (a === "apoio-desfazer") { desfazerApoios(); return; }
     if (a === "faces-abertas") { marcarFacesAbertas(); return; }
     if (a === "faces-escolher") { if (e.envoltorio) delete e.envoltorio.todasAbertas; salvar(); lerModelo(); render(); return; }
+    if (a === "todas-pecas") { e.portico = null; salvar(); lerModelo(); render(); return; }   /* PÓRTICOS M4 */
     if (a === "situacao") { e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); e.envoltorio.situacao = v === "interna" ? "interna" : "livre"; salvar(); render(); return; }
     if (a === "solucao") return solucao(v, el);
     if (a === "pranchas") return pranchas();
@@ -504,7 +520,7 @@
     var env0 = e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); env0.porChave = env0.porChave || {};
     var f = E.casarFechamentos(U.env, env0), n = 0;
     U.env.faces.forEach(function (fc) { if (f.semEscolha.indexOf(fc.id) >= 0) { env0.porChave[E.chaveFace(fc)] = { tipo: "aberta" }; n++; } });
-    salvar(); render(); toast(n ? n + " face(s) sem escolha marcada(s) como ABERTAS." : "Todas as faces já têm fechamento.", "ok", 5000);
+    salvar(); try { vedacaoNoModelo(); } catch (eV) {} render(); toast(n ? n + " face(s) sem escolha marcada(s) como ABERTAS." : "Todas as faces já têm fechamento.", "ok", 5000);
   }
   var BOTAO_SOL = { "engastar-bases": true, "ligacoes-rigidas": true, contraventar: "Gerar o contraventamento (X nos planos que se movem)", "contraventar-plano": "Gerar o X no plano do piso",
                     ligar: "Ligar as peças soltas (a ponta vai à peça mais perto)", base: "Apoiar os cantos numa parede/estrutura existente", "aco-estrutura": true, "vento-local": true, interna: true, "faces-abertas": true, "rever-envoltorio": true };
@@ -532,6 +548,38 @@
       vistos[a.fundacao] = true; o.push(a);
     });
     return o;
+  }
+  /* VEDAÇÃO DA ESTRUTURA DESENHADA (14/10/2026, js/acovedacao.js): o fechamento escolhido em cada face e a cobertura viram
+     as MESMAS peças do galpão (telha, alvenaria, painel; tipo "vedacao") — refeitas a cada escolha, num lote só (Ctrl+Z
+     desfaz) e só as desta tela (marca c.vedacaoDe = "livre"; as do galpão do assistente têm a marca do galpão). A face fica
+     por fora dos pilares dela (meia largura do pilar na normal) e a telha da cobertura sobre as vigas do topo (meia altura
+     da viga). O peso NÃO vai para o cálculo pelas peças: a cobertura entra pela área automática do envoltório, como antes. */
+  function vedacaoNoModelo() {
+    var M = MU(), E = EV(), VD = global.AcoVedacao; if (!M || !E || !VD || !M.enviar) return null;
+    lerModelo(); if (!U.G || !U.env) return null;
+    var e = estado(), fech = E.casarFechamentos(U.env, e.envoltorio || PADRAO.envoltorio), por = {}, alt = {};
+    caixas().forEach(function (c) { if (c && c.id != null) por[String(c.id)] = c; });
+    arr(U.lido && U.lido.pecas).forEach(function (p) { alt[String(p.id)] = num(p.alt, 0); });
+    var af = {};
+    U.env.faces.forEach(function (f) {
+      var mx = 0, nx = Math.abs(num(f.normal[0], 0)), nz = Math.abs(num(f.normal[1], 0));
+      arr(f.pilares).forEach(function (pid) { var c = por[String(pid)]; if (c) mx = Math.max(mx, (nx * num(c.comprimento, 0) + nz * num(c.espessura, 0)) / 2); });
+      af[f.id] = mx > 0 ? mx : 0.10;
+    });
+    var ap = 0; arr(U.env.cobertura && U.env.cobertura.vigas).forEach(function (pid) { ap = Math.max(ap, num(alt[String(pid)], 0) / 2); });
+    var r = VD.estrutura(U.env, fech, { membros: U.G.membros, afastamento: af, apoio: ap || 0.10 });
+    var velhas = caixas().filter(function (c) { return c && c.tipo === "vedacao" && c.vedacaoDe === "livre"; });
+    var ops = velhas.map(function (c) { return { op: "apagar", id: c.id }; }), erros = [];
+    arr(r.pecas).forEach(function (p) { var c = VD.caixa(p); if (c.erro) { erros.push(p.nome + ": " + c.erro); return; } c.vedacaoDe = "livre"; ops.push({ op: "criar", id: String(M.novoId()), caixa: c }); });
+    U.vedacao = { pecas: r.pecas.length - erros.length, quantidades: r.quantidades, avisos: arr(r.avisos).concat(erros) };
+    if (!ops.length) return U.vedacao;
+    if (!M.enviar({ op: "lote", id: String(M.novoId()), origem: "metal-calc-livre-vedacao", pedido: "Fechamento da estrutura desenhada (" + U.vedacao.pecas + " peças)", ops: ops })) { toast("O editor recusou as peças do fechamento.", "erro"); return U.vedacao; }
+    var Q = r.quantidades, tx = [];
+    if (Q.cobertura.area > 0) tx.push("cobertura " + fmt(Q.cobertura.area, 1) + " m²");
+    if (Q.fechamento.area > 0) tx.push("fechamento " + fmt(Q.fechamento.area, 1) + " m²");
+    if (Q.paredes.area > 0) tx.push("alvenaria " + fmt(Q.paredes.area, 1) + " m²");
+    status(U.vedacao.pecas ? "Fechamento no modelo: " + U.vedacao.pecas + " peça(s) — " + tx.join(", ") + ". Ctrl+Z desfaz." : "Fechamento no modelo: nenhuma face fechada nem cobertura — as peças anteriores saíram. Ctrl+Z desfaz.");
+    return U.vedacao;
   }
   function gerarContraventamento(soPlano) {
     var M = MU(), E = EV(), MC = global.MetalCriar; if (!M || !E || !MC) return;
@@ -733,6 +781,23 @@
   /* ============================================================ API */
   var MetalCalcLivreUI = {
     abrir: function (passo) { estado(); garantir(); U.modo = "passos"; if (passo) U.passo = Math.max(1, Math.min(3, +passo)); lerModelo(); render(); return true; },
+    /* PÓRTICOS M4 (14/10/2026, js/metalporticosui.js): a tipologia da biblioteca de pórticos manda o que ELA sabe — a base, as
+       áreas de cobertura por água (as terças que recebem), o piso do mezanino, as cargas da ponte rolante, o fechamento de cada
+       face do envoltório e as peças do pórtico (o cálculo fica só nelas) —, sem formulário. O local do vento e o terreno ficam
+       como o engenheiro deixou. Devolve o estado. */
+    preparar: function (d) {
+      var e = estado(); d = d || {};
+      if (d.apoios) e.apoios = copia(d.apoios);
+      if (d.ligacoes) e.ligacoes = copia(d.ligacoes);
+      if (d.areas) e.areas = copia(d.areas);
+      if (d.pontuais) e.pontuais = copia(d.pontuais);
+      if (d.envoltorio) { var ev = e.envoltorio || copia(PADRAO.envoltorio); ev.situacao = d.envoltorio.situacao || ev.situacao || "livre"; ev.porChave = copia(d.envoltorio.porChave || {}); ev.cobertura = copia(d.envoltorio.cobertura || { tipo: "sem" }); e.envoltorio = ev; }
+      if (d.vento) Object.keys(d.vento).forEach(function (k) { e.vento[k] = d.vento[k]; });
+      e.portico = d.portico ? String(d.portico) : null; e.soSelecao = false;
+      if (d.otimizar != null) e.otimizar = !!d.otimizar;
+      U.r = null; salvar();
+      return e;
+    },
     calcular: function () { estado(); garantir(); return calcular(); },
     resultado: function () { return U.r; },
     /* VÍNCULOS: o resultado guardado é do modelo de antes? (o memorial das ligações e as e2e perguntam) */
@@ -742,6 +807,8 @@
     tela: function () { return raiz() ? U.modo : null; },
     ultimas: function () { return { memorial: U.ultimoMemorial || null, cype: U.ultimoCype || null, ligacoes: U.ultimasLigacoes || null, html: U.ultimoHtml || null, pranchas: U.pranchas || null, dxf: U.ultimoDxf || null }; },
     envoltorio: function () { return U.env || null; },
+    /* refaz as peças do fechamento escolhido (VEDAÇÃO) — a tela chama sozinha ao escolher; a e2e e o console chamam por aqui */
+    vedacaoNoModelo: function () { estado(); return vedacaoNoModelo(); },
     pranchas: function () { estado(); garantir(); if (!U.r) { U.modo = "passos"; lerModelo(); render(); toast("Calcule primeiro: as pranchas saem do resultado.", "aviso"); return false; } pranchas(); return true; },
     abrirResultado: function () { estado(); garantir(); if (!U.r) { U.modo = "passos"; lerModelo(); render(); return false; } U.modo = "resultado"; render(); return true; },
     memorial: function () { estado(); garantir(); if (!U.r || !U.r.ok) { U.modo = "passos"; lerModelo(); render(); toast("Calcule primeiro: o memorial sai do resultado.", "aviso"); return false; } U.modo = "resultado"; render(); memorial(); return true; },

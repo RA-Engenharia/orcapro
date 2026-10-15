@@ -386,6 +386,10 @@
     var A = AP(), T = D.E.T, l = tp.l, res = l.resultado || {}, dm = res.dimensoes || {}, dz = res.desenho || {};
     /* a escala do detalhe: a maior das do padrão (1:5, 1:10, 1:15, 1:20, 1:25) em que a altura do desenho cabe em ~55 mm */
     var mB0 = porPeca[String(arr(l.info.pecas)[0])], hReal = tp.tp === "talas-mesa-paraf" ? (mB0 ? mB0.d * 1000 : 250) + 2 * num(dm.t, 10) + 20 : (tp.tp === "chapa-simples" ? Math.max(num(dm.altura, 100) + 60, mB0 ? mB0.d * 1000 : 250) + 20 : 200);
+    /* M2 (1.2.145): chapa estendida (4E, 4ES, 8ES), viga contínua sobre o pilar e cantoneiras de topo e assento — desenhadas */
+    if (/^chapa-ext-estendida(-enrij|-4es|-8)?$/.test(tp.tp)) hReal = num(dm.altura, 400) + 20;
+    else if (tp.tp === "viga-continua-cabeca") hReal = (mB0 ? mB0.d * 1000 : 300) + num(dm.t, 16) + 120;
+    else if (tp.tp === "cant-topo-assento-sr") { var LpA = null; try { LpA = global.PerfisAco ? global.PerfisAco.paraPerfil(dm.cat) : null; } catch (eA) { LpA = null; } hReal = (mB0 ? mB0.d * 1000 : 300) + 2 * (LpA ? LpA.b * 1000 : 150) + 20; }
     var eDet = escolher(A.PADRAO_ACO.escalas.detalhe, function (e) { return hReal / e <= 55; }), s = 1 / eDet;
     var titulo = nomeCurto(tp.tp).toUpperCase();
     var hT = A.tituloVista(D, x, y, titulo.length > 46 ? titulo.slice(0, 44) + "..." : titulo, "ESC 1:" + eDet, numero);
@@ -437,6 +441,54 @@
       D.solda(px0 + 2, y1, 135, { perna: String(num(dm.solda, 5)), lados: "ambos", ls: 7, lr: 12 });
       yFimDes = y1 + 14;
       notas = ["BARRA REDONDA Ø " + br(db, 1) + " mm COM ROSCA, ARRUELA BISELADA, PORCA E CONTRAPORCA", "CHAPA DE APOIO " + br(bb, 0) + " x " + A.espChapa(tt) + " mm SOLDADA (FILETE " + br(num(dm.solda, 5), 0) + " mm), ÂNGULO " + br(num(dm.alfa, 45), 0) + "°"];
+    } else if (/^chapa-ext-estendida(-enrij|-4es|-8)?$/.test(tp.tp) && num(dm.altura, 0) > 0 && mB0) {
+      /* elevação: a mesa do pilar (corte), a chapa de extremidade, as mesas da viga (penetração total), as linhas de parafusos do
+         cálculo e a nervura da extensão (4ES / 8ES) */
+      var dV3 = mB0.d * 1000, tf3 = mB0.tf * 1000, H3 = num(dm.altura, dV3), tp3 = num(dm.t, 16), ext3 = num(dm.ext, (H3 - dV3) / 2);
+      var zs3 = Array.isArray(dz.zs) && dz.zs.length ? dz.zs.map(function (z) { return z * 1000; }) : (function () { var pfi = Math.max(35, num(dm.d, 20) + 8), zo = dV3 / 2 + ext3 - num(dm.borda, 30), zi = dV3 / 2 - tf3 - pfi; return [zo, zi, -zi, -zo]; })();
+      var xs3 = xc + 10, ym3 = yy + 6 + H3 * s / 2, xb3 = xs3 + tp3 * s, xf3 = Math.min(x + w - 6, xb3 + 64);
+      D.ret(xs3 - 3, ym3 - H3 * s / 2 - 4, 3, H3 * s + 8, "MET-PERFIL-CORTE"); D.hachura(xs3 - 3, ym3 - H3 * s / 2 - 4, 3, H3 * s + 8, 0.8, "MET-HACHURA");
+      D.ret(xs3, ym3 - H3 * s / 2, tp3 * s, H3 * s, "MET-PERFIL");
+      D.ret(xb3, ym3 - dV3 * s / 2, xf3 - xb3, tf3 * s, "MET-SECUNDARIO"); D.ret(xb3, ym3 + dV3 * s / 2 - tf3 * s, xf3 - xb3, tf3 * s, "MET-SECUNDARIO");
+      D.linha(xb3, ym3 - dV3 * s / 2 + tf3 * s, xf3, ym3 - dV3 * s / 2 + tf3 * s, "MET-SECUNDARIO"); D.quebra(xf3, ym3 - dV3 * s / 2 - 2, xf3, ym3 + dV3 * s / 2 + 2);
+      zs3.forEach(function (z) { var yb = ym3 - z * s; D.linha(xs3 - 4.2, yb, xb3 + 1.2, yb, "MET-FINA"); });
+      if (dm.nervura && num(dm.nervura.h, 0) > 0) [-1, 1].forEach(function (sg) { var yf = ym3 - sg * dV3 * s / 2; D.poli([[xb3, yf], [xb3 + num(dm.nervura.L, 0) * s, yf], [xb3, yf - sg * num(dm.nervura.h, 0) * s]], "MET-PERFIL", true); });
+      D.cota(xb3, ym3 + H3 * s / 2, xb3, ym3 - H3 * s / 2, -5, String(Math.round(H3)), {});
+      D.solda(xb3, ym3 - dV3 * s / 2 + 1.5, 315, { perna: "", chanfro: true, lados: "ambos", cauda: "CJP", ls: 6, lr: 12 });
+      yFimDes = ym3 + H3 * s / 2 + 10;
+      notas = ["CHAPA " + br(num(dm.largura, 0), 0) + " x " + br(H3, 0) + " x " + A.espChapa(tp3) + " mm" + (dm.aco ? " (" + txt(dm.aco) + ")" : "") + ", MESAS EM PENETRAÇÃO TOTAL (CJP)",
+        num(dm.n, 8) + " PARAFUSOS " + txt(dm.parafuso) + " " + txt(dm.classe) + " - " + zs3.length + " LINHAS DE 2, GAGE " + br(num(dm.gage, 0), 0) + " mm" + (dm.nervura ? "; NERVURAS " + br(dm.nervura.h, 0) + " x " + br(dm.nervura.L, 0) + " x " + A.espChapa(dm.nervura.t) + " (CJP)" : "") + (dm.enrijecedores ? "; ENRIJECEDORES NO PILAR " + dm.enrijecedores.b + " x " + A.espChapa(dm.enrijecedores.t) : "")];
+    } else if (tp.tp === "viga-continua-cabeca" && num(dm.L, 0) > 0 && mB0) {
+      /* elevação ao longo da viga: a viga contínua, a chapa de cabeça, os parafusos, o pilar abaixo e os enrijecedores de apoio */
+      var dVc = mB0.d * 1000, tfc = mB0.tf * 1000, Lc0 = num(dm.L, 300), tpc = num(dm.t, 16), Lcol = num(dm.Lc, 200), enc = dm.enrijecedores || {};
+      var W0 = Math.min(w - 20, Lc0 * s + 50), xc0 = xc + 6, xm = xc0 + W0 / 2, yT = yy + 6, yB = yT + dVc * s;
+      D.ret(xc0, yT, W0, tfc * s, "MET-SECUNDARIO"); D.ret(xc0, yB - tfc * s, W0, tfc * s, "MET-SECUNDARIO"); D.quebra(xc0, yT - 2, xc0, yB + 2); D.quebra(xc0 + W0, yT - 2, xc0 + W0, yB + 2);
+      D.ret(xm - Lc0 * s / 2, yB, Lc0 * s, tpc * s, "MET-PERFIL");
+      D.ret(xm - Lcol * s / 2, yB + tpc * s, Lcol * s, 26, "MET-SECUNDARIO"); D.quebra(xm - Lcol * s / 2 - 2, yB + tpc * s + 26, xm + Lcol * s / 2 + 2, yB + tpc * s + 26);
+      [-1, 1].forEach(function (sg) { var xb0 = xm + sg * num(dm.xb, Lc0 / 2 - 40) * s; D.linha(xb0, yB - tfc * s - 1.2, xb0, yB + tpc * s + 1.2, "MET-FINA"); });
+      /* revisão 15/10/2026: os 2 pares de enrijecedores de apoio SOBRE AS MESAS do pilar (±x do cálculo); sem x (antigo): no eixo */
+      if (num(enc.t, 0) > 0) (num(enc.x, 0) > 0 ? [-num(enc.x, 0), num(enc.x, 0)] : [0]).forEach(function (dx) { D.ret(xm + dx * s - num(enc.t, 10) * s / 2, yT + tfc * s, num(enc.t, 10) * s, (dVc - 2 * tfc) * s, "MET-PERFIL"); });
+      D.cota(xm - Lc0 * s / 2, yB + tpc * s, xm + Lc0 * s / 2, yB + tpc * s, -6, String(Math.round(Lc0)), {});
+      D.solda(xm - Lcol * s / 2, yB + tpc * s + 1, 225, { perna: String(num(String(dm.soldaPilar || "").replace(/\D/g, ""), 5)), lados: "ambos", ls: 7, lr: 12 });
+      yFimDes = yB + tpc * s + 34;
+      notas = ["CHAPA DE CABEÇA " + br(Lc0, 0) + " x " + br(num(dm.B, 0), 0) + " x " + A.espChapa(tpc) + " mm NO TOPO DO PILAR (" + txt(dm.soldaPilar) + "); PONTA DO PILAR FACEADA (CONTATO PLENO)",
+        "4 PARAFUSOS " + txt(dm.parafuso) + " " + txt(dm.classe) + " NA MESA DE BAIXO DA VIGA; " + (num(enc.x, 0) > 0 ? "2 PARES DE ENRIJECEDORES DE APOIO SOBRE AS MESAS DO PILAR " : "PAR DE ENRIJECEDORES DE APOIO ") + num(enc.b, 0) + " x " + A.espChapa(num(enc.t, 9.5)) + " (" + txt(enc.solda) + ")"];
+    } else if (tp.tp === "cant-topo-assento-sr" && dm.cat && mB0) {
+      /* elevação: a mesa do pilar (corte), a viga, a cantoneira de topo e a de assento, os parafusos de cada aba */
+      var LpT = null; try { LpT = global.PerfisAco ? global.PerfisAco.paraPerfil(dm.cat) : null; } catch (eT) { LpT = null; }
+      var aT = LpT ? LpT.a * 1000 : 152, bT = LpT ? LpT.b * 1000 : 152, tT = LpT ? LpT.t * 1000 : 12.7, dVt = mB0.d * 1000, tft = mB0.tf * 1000;
+      var xs4 = xc + 10, yT4 = yy + 4 + bT * s, yB4 = yT4 + dVt * s, xf4 = Math.min(x + w - 6, xs4 + aT * s + 40);
+      D.ret(xs4 - 3, yy + 2, 3, (dVt + 2 * bT) * s + 4, "MET-PERFIL-CORTE"); D.hachura(xs4 - 3, yy + 2, 3, (dVt + 2 * bT) * s + 4, 0.8, "MET-HACHURA");
+      D.ret(xs4 + 12.7 * s, yT4, xf4 - xs4 - 12.7 * s, tft * s, "MET-SECUNDARIO"); D.ret(xs4 + 12.7 * s, yB4 - tft * s, xf4 - xs4 - 12.7 * s, tft * s, "MET-SECUNDARIO"); D.quebra(xf4, yT4 - 2, xf4, yB4 + 2);
+      D.poli([[xs4, yT4], [xs4 + aT * s, yT4], [xs4 + aT * s, yT4 - tT * s], [xs4 + tT * s, yT4 - tT * s], [xs4 + tT * s, yT4 - bT * s], [xs4, yT4 - bT * s]], "MET-PERFIL", true);
+      D.poli([[xs4, yB4], [xs4 + aT * s, yB4], [xs4 + aT * s, yB4 + tT * s], [xs4 + tT * s, yB4 + tT * s], [xs4 + tT * s, yB4 + bT * s], [xs4, yB4 + bT * s]], "MET-PERFIL", true);
+      var gh4 = num(dm.gh, 50), gv4 = num(dm.gv, 50), nh4 = Math.max(1, num(dm.linhasViga, 1)), ps4 = num(dz.passoViga, 0.06) * 1000;
+      for (var q4 = 0; q4 < nh4; q4++) { var xq = xs4 + (gh4 + q4 * ps4) * s; D.linha(xq, yT4 - tT * s - 1.2, xq, yT4 + tft * s + 1.2, "MET-FINA"); D.linha(xq, yB4 - tft * s - 1.2, xq, yB4 + tT * s + 1.2, "MET-FINA"); }
+      D.linha(xs4 - 4.2, yT4 - gv4 * s, xs4 + tT * s + 1.2, yT4 - gv4 * s, "MET-FINA"); D.linha(xs4 - 4.2, yB4 + gv4 * s, xs4 + tT * s + 1.2, yB4 + gv4 * s, "MET-FINA");
+      D.cota(xs4, yB4 + bT * s, xs4 + aT * s, yB4 + bT * s, -5, String(Math.round(aT)), {});
+      yFimDes = yB4 + bT * s + 10;
+      notas = ["CANTONEIRAS DE TOPO E DE ASSENTO " + txt(dm.cat) + " x " + br(num(dm.comprimento, 0), 0) + " mm (SEMIRRÍGIDA, BRAÇO z = " + br(num(dm.z, 0), 0) + " mm)",
+        2 * nh4 + " PARAFUSOS " + txt(dm.parafuso) + " " + txt(dm.classe) + " EM CADA MESA DA VIGA E " + num(dm.nAssentoPilar, 2) + " + 2 NO PILAR; RIGIDEZ NÃO CALCULADA"];
     } else {
       D.ret(xc, yy + 2, w - 16, 30, "MET-FINA");
       D.textos(xc + 2, yy + 4, [{ t: "DETALHE POR EXTENSO (o desenho 3D da ligação está no modelo):" }].concat(A.quebrar(txt(res.resumo || nomeTipologia(tp.tp)), T.nota, w - 22).map(function (q) { return { t: q }; })), T.nota, { wmax: w - 20 });

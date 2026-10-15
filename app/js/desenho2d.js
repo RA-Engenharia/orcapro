@@ -899,7 +899,8 @@
   function acimaPeca(o) {
     if (!o) return null;
     var h = casco(o.pts), ret = retMin(h); if (!ret) return null;
-    if (!acimaElegivel(o.t, ret.L, ret.W)) return null;
+    /* o.forcar: a peça declarou que entra (a telha da cobertura do galpão — a projeção da cobertura, js/acovedacao.js) */
+    if (o.forcar ? Math.max(ret.L, ret.W) < 0.05 : !acimaElegivel(o.t, ret.L, ret.W)) return null;
     var it = { u: String(o.u || ""), t: String(o.t || ""), eixo: { cx: n4(ret.cx), cy: n4(ret.cy), ux: n4(ret.ux), uy: n4(ret.uy), L: n4(ret.L), W: n4(ret.W) },
                fundo: Math.round((+o.fundo || 0) * 1000) / 1000, topo: Math.round((+o.topo || 0) * 1000) / 1000, marca: String(o.marca || "").slice(0, 24) };
     var aC = areaPol(h), aB = +o.areaBaixo || 0;

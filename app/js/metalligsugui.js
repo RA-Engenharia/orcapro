@@ -36,7 +36,7 @@
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   var FAM = { flexivel: "flexível", rigida: "rígida", semirrigida: "semirrígida", reforco: "reforço" };
-  var REL = { "viga-pilar": "viga → pilar", "viga-viga": "viga → viga", "emenda-viga": "emenda de viga", cumeeira: "cumeeira", "emenda-pilar": "emenda de pilar", base: "base de pilar", contraventamento: "contraventamento", "no-trelica": "nó de treliça", tubular: "nó tubular", terca: "terça → viga" };
+  var REL = { "viga-pilar": "viga → pilar", "viga-viga": "viga → viga", "emenda-viga": "emenda de viga", cumeeira: "cumeeira", "emenda-pilar": "emenda de pilar", base: "base de pilar", contraventamento: "contraventamento", "no-trelica": "nó de treliça", tubular: "nó tubular", terca: "terça → viga", "viga-sobre-pilar": "viga contínua sobre o pilar", consolo: "consolo" };
 
   var COMANDOS = [
     { id: "met-lig-inteligente", rotulo: "Ligação\ninteligente", icone: "raio", grande: true, dica: "Clique no PILAR e, com Ctrl, na VIGA (ou viga e viga, um pilar sozinho para a base, a diagonal e o apoio) e chame: o sistema entende o encontro (mesa ou alma, topo, nó rígido ou rotulado no cálculo) e traz até 3 ligações dimensionadas pela NBR 8800, com o reforço que precisar. Aplicar cria as chapas, parafusos e soldas." },
@@ -65,7 +65,10 @@
       ".lsg-op .acoes{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}.lsg-op .sem3d{font-size:11px;color:var(--texto-fraco)}" +
       ".lsg-cat{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;max-height:64vh;overflow:auto}" +
       ".lsg-cat .lsg-op h3{font-size:13px}.lsg-nota{font-size:11px;color:var(--texto-fraco);margin:0}" +
-      "@media (max-width:760px){.lsg-ops{grid-template-columns:1fr}}";
+      ".lsg-tab{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}.lsg-tab th{text-align:left;font-weight:600;color:var(--texto-fraco);border-bottom:1px solid var(--linha);padding:3px 6px}" +
+      ".lsg-tab td{border-top:1px solid var(--linha);padding:3px 6px;vertical-align:top}.lsg-tab tr.ok td.sit{color:var(--verde)}.lsg-tab tr.nok td.sit{color:var(--vermelho)}.lsg-tab tr.nd td.sit{color:var(--texto-fraco)}" +
+      ".lsg-tab button{min-height:26px}.lsg-fora li{margin-bottom:2px}.lsg-det:empty{display:none}" +
+      "@media (max-width:760px){.lsg-ops{grid-template-columns:1fr}.lsg-tab td:nth-child(3),.lsg-tab th:nth-child(3),.lsg-tab td:nth-child(5),.lsg-tab th:nth-child(5){display:none}}";
     document.head.appendChild(s);
   }
 
@@ -76,6 +79,14 @@
   var CHAVE_TAB = "orcapro:metal:ligpadrao:v1";
   function lerTabela() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_TAB) || "{}"); return t && typeof t === "object" ? t : {}; } catch (e) { return {}; } }
   function gravarTabela(t) { try { global.localStorage.setItem(CHAVE_TAB, JSON.stringify(t)); return true; } catch (e) { return false; } }
+  /* MATERIAIS escolhidos no Catálogo BR (frente M1, 1.2.145): classe do parafuso, aço do chumbador e aço da chapa da
+     ligação. Guardados NESTE navegador, como o padrão da tabela; sem escolha o motor usa os de sempre (ASTM A325,
+     ASTM F1554 Gr.36, ASTM A36). O painel mostra os que estão valendo. */
+  var CHAVE_MAT = "orcapro:metal:ligmateriais:v1", CAMPOS_MAT = ["parafuso", "chumbador", "aco"];
+  function lerMat() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_MAT) || "{}"); return t && typeof t === "object" && !Array.isArray(t) ? t : {}; } catch (e) { return {}; } }
+  function gravarMat(t) { try { global.localStorage.setItem(CHAVE_MAT, JSON.stringify(t)); return true; } catch (e) { return false; } }
+  function opMat() { var m = lerMat(), o = null; CAMPOS_MAT.forEach(function (k) { if (m[k] && m[k].id) { o = o || {}; o[k] = m[k]; } }); return o; }
+  function textoMat() { var m = opMat(); if (!m) return ""; var nomes = { parafuso: "parafuso", chumbador: "chumbador", aco: "chapa" }; return CAMPOS_MAT.filter(function (k) { return m[k]; }).map(function (k) { return nomes[k] + " " + m[k].id; }).join(" · "); }
   var CUSTO = { 1: "baixo", 2: "médio", 3: "alto" };
   /* QUEM PODE SER APLICADA (revisão A1): só a opção que PASSA, sem bloqueio e com desenho; a chapa estendida que pede o
      pilar prolongado só pelo botão de prolongar. Devolve { ok, prolongar, motivo } */
@@ -91,6 +102,18 @@
   }
 
   function clone2(o) { var n = {}; Object.keys(o || {}).forEach(function (k) { n[k] = o[k]; }); return n; }
+  /* M2 (1.2.145): os botões levam o índice da LISTA COMPLETA (todasOpcoes); os 3 cartões são as 3 primeiras coerentes */
+  function idxDe(o) { var L = arr(U.sg && U.sg.todasOpcoes), i = L.indexOf(o); return i >= 0 ? i : arr(U.sg && U.sg.opcoes).indexOf(o); }
+  function opDe(i) { var L = arr(U.sg && U.sg.todasOpcoes); return L[i] || (U.sg && arr(U.sg.opcoes)[i]) || null; }
+  function situacao(o) {
+    var r = o.resultado || {}, pa = podeAplicar(o), inc = o.avisos.some(function (a) { return /INCOER/.test(a); });
+    if (r.naoDimensionada) return { cl: "nd", t: "não dimensionada — " + String(r.governante || "").replace(/^não dimensionada: /, "") };
+    var pct = isFinite(num(r.razao, NaN)) ? br(num(r.razao, 0) * 100) + " %" : "—";
+    if (pa.ok) return { cl: "ok", t: "passa · " + pct + (inc ? " · incoerente com o cálculo" : "") };
+    if (pa.semDesenho) return { cl: "ok", t: "passa · " + pct + " (desenho no 3D não automático)" };
+    if (o.passa === false && !(o.bloqueio || o.bloqueioProlongar || arr(r.bloqueante).length)) return { cl: "nok", t: "não passa · " + pct + " — governa: " + (r.governante || "—") };
+    return { cl: "nok", t: "bloqueada — " + pa.motivo };
+  }
   function selCaixas() { var M = MU(); if (!M) return []; return M.caixas(M.selecao()); }
   function todasCaixas() { var M = MU(), st = M && M.estado ? M.estado() : null; return (st && st.caixas) || []; }
   function resultadoCalc() { try { var C = global.MetalCalcLivreUI; return C && C.resultado ? C.resultado() : null; } catch (e) { return null; } }
@@ -99,14 +122,15 @@
   function cartao(o, i) {
     var r = o.resultado || {}, bloq = o.bloqueio || o.bloqueioProlongar || arr(r.bloqueante)[0] || "", pa = podeAplicar(o), Tp = T(), svg = Tp ? Tp.svg(o.tipologia) : "", inc = o.avisos.some(function (a) { return /INCOER/.test(a); });
     var h = '<div class="lsg-op ' + (o.passa ? "ok" : "nok") + '" data-lsg-op="' + i + '" data-lsg-tip="' + esc(o.tipologia) + '">' +
-      '<h3><span class="n">' + (i + 1) + "º</span> " + esc(o.nome) + "</h3>" +
-      '<div class="lsg-chips"><span class="lsg-chip ' + (o.passa ? "ok" : "nok") + '" data-lsg="passa">' + (o.passa ? "passa" : "não passa") + " · " + br(num(r.razao, 0) * 100) + " %</span>" +
+      '<h3><span class="n">' + (i + 1) + "º</span> " + esc(o.nome) + "</h3>" +   /* i = a posição na lista completa */
+      '<div class="lsg-chips">' + (r.naoDimensionada ? '<span class="lsg-chip nok" data-lsg="passa">não dimensionada</span>' : '<span class="lsg-chip ' + (o.passa ? "ok" : "nok") + '" data-lsg="passa">' + (o.passa ? "passa" : "não passa") + " · " + br(num(r.razao, 0) * 100) + " %</span>") +
       '<span class="lsg-chip">' + esc(FAM[o.familia] || o.familia) + '</span><span class="lsg-chip">confiança ' + esc(o.confianca) + '</span>' +
       '<span class="lsg-chip" data-lsg="custo">custo ' + esc(CUSTO[o.custo.custo] || "—") + " · fabricação " + esc(CUSTO[o.custo.fabricacao] || "—") + " · montagem " + esc(CUSTO[o.custo.montagem] || "—") + "</span>" +
       (o.peso != null ? '<span class="lsg-chip" data-lsg="peso">≈ ' + esc(String(o.peso).replace(".", ",")) + " kg de aço</span>" : "") + '<span class="lsg-chip" title="' + esc(o.regra.texto) + '">regra ' + esc(o.regra.id) + "</span>" +
       (inc ? '<span class="lsg-chip nok">incoerente com o cálculo</span>' : "") + "</div>" +
       (svg ? '<div class="lsg-svg">' + svg + "</div>" : "") +
       "<p>" + esc(o.justificativa) + "</p>" +
+      (function () { var t0 = Tp && Tp.obter(o.tipologia), ft = t0 && t0.faces && U.ctx ? t0.faces[U.ctx.face] : null; return ft ? '<p data-lsg="face-txt"><b>' + (U.ctx.face === "alma" ? "Na alma" : "Na mesa") + ":</b> " + esc(String(ft).replace(/^Na (MESA|ALMA): /, "")) + "</p>" : ""; })() +
       '<p><b>Dimensionado:</b> ' + esc(r.resumo || r.motivo || "—") + "</p>" +
       (r.notaCorte ? '<p data-lsg="corte"><b>Corte:</b> ' + esc(r.notaCorte) + "</p>" : "") +
       (o.reforcos.length ? '<p data-lsg="reforco"><b>Reforço:</b> ' + esc(o.reforcos.join("; ")) + "</p>" : "") +
@@ -123,25 +147,38 @@
     var pecas = arr(ctx.pecas).map(function (p) { return esc(p.papel) + " " + esc(p.id) + " (" + esc(p.perfil && p.perfil.nome) + ")"; }).join(" · ");
     var no = ctx.no || {}, rel = REL[ctx.relacao] || ctx.relacao;
     var h = '<div class="lsg" data-lsg="painel" data-modal-largo data-lsg-relacao="' + esc(ctx.relacao) + '" data-lsg-face="' + esc(ctx.face) + '">' +
-      '<div class="lsg-topo"><span><b>Encontro:</b> ' + esc(rel) + (ctx.relacao === "viga-pilar" ? " — na <b data-lsg=\"face\">" + esc(ctx.face) + "</b> do pilar" + (ctx.topoPilar ? " (topo do pilar)" : "") : "") + "</span>" +
+      '<div class="lsg-topo"><span><b>Encontro:</b> ' + esc(rel) + (ctx.relacao === "viga-pilar" ? (ctx.face === "tubo" ? " — no <b data-lsg=\"face\">pilar tubular</b>" : " — na <b data-lsg=\"face\">" + esc(ctx.face) + "</b> do pilar") + (ctx.topoPilar ? " (topo do pilar)" : "") + (ctx.face === "alma" && ctx.cabeEntreMesas === false ? " — a viga NÃO cabe entre as mesas" : "") : "") + "</span>" +
       "<span><b>Nó:</b> " + esc(no.rigido === true ? "rígido" : no.rigido === false ? "rotulado" : "padrão (rotulado)") + " — " + esc(no.texto || "") + "</span>" +
       '<label>Preferência <select data-lsg="preferir"><option value=""' + (!U.preferir ? " selected" : "") + '>pelo cálculo</option><option value="rigida"' + (U.preferir === "rigida" ? " selected" : "") + '>rígida</option><option value="flexivel"' + (U.preferir === "flexivel" ? " selected" : "") + ">flexível</option></select></label>" +
       '<label>Na obra <select data-lsg="execucao"><option value=""' + (!U.execucao ? " selected" : "") + '>solda ou parafuso</option><option value="parafusada"' + (U.execucao === "parafusada" ? " selected" : "") + ">tudo parafusado</option></select></label></div>" +
       (ctx.fundacao ? '<p class="lsg-nota" data-lsg="fundacao">Fundação sob o pilar: ' + esc(ctx.fundacao.rotulo) + " " + esc(ctx.fundacao.id) + (ctx.fundacao.dimensoes ? " " + br(ctx.fundacao.dimensoes.B, 2) + " × " + br(ctx.fundacao.dimensoes.L, 2) + " × " + br(ctx.fundacao.dimensoes.h, 2) + " m" : "") + " · fck " + br(ctx.fundacao.fck, 0) + " MPa" + (ctx.fundacao.fckInformado ? "" : " (adotado — informe nas Propriedades da fundação)") + " — a ancoragem é verificada nela.</p>" : "") +
+      (textoMat() ? '<p class="lsg-nota" data-lsg="materiais">Materiais escolhidos no Catálogo BR: ' + esc(textoMat()) + '</p>' : '') +
       '<p class="lsg-nota">Peças: ' + pecas + ". Esforços: " + esc(ctx.origemEsforcos || "—") + "</p>";
     var av = arr(sg.avisos);
     if (av.length) h += '<ul class="lsg-av" data-lsg="avisos">' + av.map(function (a) { return "<li" + (/INCOER/.test(a) ? ' class="inc"' : "") + ">" + esc(a) + "</li>"; }).join("") + "</ul>";
     var E0 = sg.escopo;
     if (E0) h += '<details class="lsg-av" data-lsg="escopo"><summary><b>Escopo:</b> o que o sistema verificou e o que NÃO verificou (efeito alavanca e placa de base da NBR 8800:2024 pendentes do texto)</summary><p>' + esc(E0.verificado) + "</p><ul>" + E0.naoVerificado.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details>";
-    h += '<div class="lsg-ops">' + sg.opcoes.map(cartao).join("") + "</div>";
+    h += '<div class="lsg-ops">' + sg.opcoes.map(function (o) { return cartao(o, idxDe(o)); }).join("") + "</div>";
+    /* M2 (1.2.145): TODAS as tipologias que servem nesta geometria, ranqueadas, e as que ficaram de fora com o motivo */
+    var tod = arr(sg.todasOpcoes);
+    if (tod.length) {
+      h += '<details class="lsg-av" data-lsg="todas"' + (tod.length > sg.opcoes.length ? " open" : "") + '><summary><b>Todas as tipologias que servem neste encontro (' + tod.length + ")</b> — ranqueadas; as que não passam dizem por quê</summary>" +
+        (sg.criterio ? '<p class="lsg-nota" data-lsg="criterio">' + esc(sg.criterio) + "</p>" : "") +
+        '<table class="lsg-tab"><tr><th>#</th><th>Tipologia</th><th>Família</th><th>Situação</th><th>Regra</th><th></th></tr>' +
+        tod.map(function (o, k) { var st = situacao(o); return '<tr class="' + st.cl + '" data-lsg-lin="' + k + '" data-lsg-tip="' + esc(o.tipologia) + '"><td>' + (k + 1) + "</td><td>" + esc(o.nome) + "</td><td>" + esc(FAM[o.familia] || o.familia) + '</td><td class="sit">' + esc(st.t) + '</td><td title="' + esc(o.regra.texto) + '">' + esc(o.regra.id) + '</td><td><button class="btn ghost sm" data-lsg-ver="' + k + '">Ver</button></td></tr>'; }).join("") + "</table></details>";
+      h += '<div class="lsg-det" data-lsg="detalhe"></div>';
+    }
+    var fora = arr(sg.fora);
+    if (fora.length) h += '<details class="lsg-av" data-lsg="fora"><summary><b>Fora da lista (' + fora.length + ")</b> — não servem nesta geometria ou neste nó; o motivo de cada uma</summary><ul class=\"lsg-fora\">" + fora.map(function (f) { return '<li data-lsg-fora="' + esc(f.tipologia) + '"><b>' + esc(f.nome) + "</b>: " + esc(f.motivo) + "</li>"; }).join("") + "</ul></details>";
     h += '<p class="lsg-nota">' + esc(T() ? T().EDICAO.aviso : "") + " Regras usadas: " + sg.regras.map(function (r) { return esc(r.id); }).join(", ") + ' — passe o mouse na regra para ler. <a href="#" data-lsg="ver-catalogo">Ver todas as tipologias deste encontro</a>.</p></div>';
     return h;
   }
   function ligar(raiz) {
     if (!raiz) return;
     raiz.addEventListener("click", function (ev) {
-      var a = ev.target.closest ? ev.target.closest("[data-lsg-aplicar],[data-lsg-prolongar],[data-lsg-memorial],[data-lsg-padrao],[data-lsg='ver-catalogo']") : null; if (!a) return;
+      var a = ev.target.closest ? ev.target.closest("[data-lsg-aplicar],[data-lsg-prolongar],[data-lsg-memorial],[data-lsg-padrao],[data-lsg-ver],[data-lsg='ver-catalogo']") : null; if (!a) return;
       ev.preventDefault();
+      if (a.getAttribute("data-lsg-ver") != null) { var k = +a.getAttribute("data-lsg-ver"), o = opDe(k), det = raiz.querySelector("[data-lsg='detalhe']"); if (o && det) { det.innerHTML = cartao(o, k).replace('class="lsg-op ', 'data-lsg-det="' + k + '" class="lsg-op '); try { det.scrollIntoView({ block: "nearest" }); } catch (eS) {} } return; }
       if (a.getAttribute("data-lsg-aplicar") != null) MetalLigSugUI.aplicar(+a.getAttribute("data-lsg-aplicar"));
       else if (a.getAttribute("data-lsg-prolongar") != null) MetalLigSugUI.aplicar(+a.getAttribute("data-lsg-prolongar"), { prolongar: true });
       else if (a.getAttribute("data-lsg-memorial") != null) MetalLigSugUI.memorialOpcao(+a.getAttribute("data-lsg-memorial"));
@@ -155,7 +192,7 @@
   }
   function apDe(ctx) {
     if (!ctx) return "";
-    var m = { "viga-pilar": ctx.face === "alma" ? "viga-alma-pilar" : "viga-mesa-pilar", "viga-viga": "viga-viga", "emenda-viga": "emenda-viga", cumeeira: "emenda-viga", "emenda-pilar": "emenda-pilar", base: "base", contraventamento: "contraventamento", "no-trelica": "no-trelica", tubular: "tubular", terca: "terca" };
+    var m = { "viga-pilar": ctx.face === "tubo" ? "viga-pilar-tubo" : ctx.face === "alma" ? "viga-alma-pilar" : "viga-mesa-pilar", "viga-sobre-pilar": "viga-sobre-pilar", "viga-viga": "viga-viga", "emenda-viga": "emenda-viga", cumeeira: "emenda-viga", "emenda-pilar": "emenda-pilar", base: "base", contraventamento: "contraventamento", "no-trelica": "no-trelica", tubular: "tubular", terca: "terca" };
     return m[ctx.relacao] || "";
   }
 
@@ -199,14 +236,14 @@
       [xc + h, xc - h].forEach(function (x) {
         var tq = en.t || 0.0125; if (x < -0.05 || x > mp.L + 0.05) return;
         x = Math.max(tq / 2 + 0.002, Math.min(mp.L - tq / 2 - 0.002, x));   /* no topo do pilar o enrijecedor de cima encosta na ponta (vira a tampa entre as mesas) */
-        var re = BL.enrijecedor(pil, { x: x, t: tq, lig: lig });
+        var re = BL.enrijecedor(pil, { x: x, t: tq, lig: lig, aco: en.aco || undefined });
         if (re.ok) { var lo = BL.ops(re, novoId); if (lo) extras = extras.concat(lo.ops.filter(function (q) { return q.op === "criar"; })); }
       });
     });
     /* chapa de reforço da alma do pilar no painel do nó (altura da viga + 100 mm de cada lado) */
     arr(ap.reforcos).forEach(function (rf) {
       var pil = porId[String(rf.alvo)], an = alturaNoPilar(pil, porId[String(ctx.A)]); if (!an || !BL.reforcoAlma) return;
-      var rr = BL.reforcoAlma(pil, { x: an.xc, t: rf.t || 0.008, altura: an.mv.s.alt + 0.2, lig: lig });
+      var rr = BL.reforcoAlma(pil, { x: an.xc, t: rf.t || 0.008, altura: an.mv.s.alt + 0.2, lig: lig, aco: rf.aco || undefined });
       if (rr.ok) { var lo2 = BL.ops(rr, novoId); if (lo2) extras = extras.concat(lo2.ops.filter(function (q) { return q.op === "criar"; })); }
     });
     if (!lote.ops.length && !extras.length) return { ok: false, motivo: "Nada a desenhar para esta opção." };
@@ -249,7 +286,7 @@
       if (!cxs.length) { var t = "Ligação inteligente: selecione as peças que se encontram — clique no PILAR e, com Ctrl, na VIGA (ou um pilar sozinho para a base)."; status(t); toast(t, "aviso", 8000); return null; }
       var ctx = S0.analisar(cxs, { resultado: resultadoCalc(), fundacoes: fundacoes() });
       if (!ctx.ok) { status("Ligação inteligente: " + ctx.motivo); toast(ctx.motivo, "aviso", 8000); return null; }
-      var sg = S0.sugerir(ctx, { preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela() });
+      var sg = S0.sugerir(ctx, { preferir: U.preferir || null, execucao: U.execucao || null, tabela: lerTabela(), materiais: opMat() });
       U.cxs = cxs; U.ctx = ctx; U.sg = sg;
       if (!sg.ok || !sg.opcoes.length) { toast("Ligação inteligente: nenhuma tipologia para este encontro (" + (REL[ctx.relacao] || ctx.relacao) + ").", "aviso", 8000); return sg; }
       UI.modal("Ligação inteligente — " + (REL[ctx.relacao] || ctx.relacao), painelHtml(ctx, sg), [{ texto: "Catálogo", onClick: function () { MetalLigSugUI.catalogo(apDe(ctx)); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
@@ -260,7 +297,7 @@
     sugestao: function () { return U.sg; },
     /* a opção vira o padrão desta combinação de seções (R-TAB) e o painel se refaz */
     usarComoPadrao: function (i) {
-      var o = U.sg && U.sg.opcoes[i]; if (!o || !U.sg.chave) return false;
+      var o = opDe(i); if (!o || !U.sg.chave) return false;
       var t = lerTabela(); t[U.sg.chave] = o.tipologia;
       if (!gravarTabela(t)) { toast("Não deu para guardar o padrão neste navegador.", "aviso", 6000); return false; }
       toast(o.nome + ": padrão para " + U.sg.chave.split("|").join(" · ") + ".", "ok", 6000);
@@ -268,6 +305,26 @@
       return true;
     },
     tabela: function () { return lerTabela(); },
+    /* materiais(): os escolhidos; materiais({ parafuso: {id, fub} | null, chumbador: {id, fy, fu} | null, aco: {id, fy, fu} | null })
+       grava (null tira o campo); materiais(null) limpa tudo. Devolve o que ficou valendo. */
+    materiais: function (novo) {
+      if (novo === null) gravarMat({});
+      else if (novo && typeof novo === "object") {
+        var t = lerMat();
+        CAMPOS_MAT.forEach(function (k) {
+          if (!(k in novo)) return;
+          var m = novo[k];
+          if (m === null) { delete t[k]; return; }
+          if (!m || !m.id) return;
+          var o = { id: String(m.id).slice(0, 80) };
+          if (k === "parafuso") { if (!(Number(m.fub) > 0)) return; o.fub = Number(m.fub); }
+          else { if (!(Number(m.fy) > 0 && Number(m.fu) > 0)) return; o.fy = Number(m.fy); o.fu = Number(m.fu); }
+          t[k] = o;
+        });
+        gravarMat(t);
+      }
+      return opMat() || {};
+    },
     /* "tudo parafusado na obra" (sem solda de campo) vale também para Ligar todos os nós */
     execucao: function (v) { if (v !== undefined) U.execucao = v === "parafusada" ? "parafusada" : ""; return U.execucao || null; },
     podeAplicar: podeAplicar, _cartao: function (o, i) { return cartao(o, i || 0); },
@@ -275,7 +332,7 @@
     contexto: function () { return U.ctx; },
     aplicar: function (i, opA) {
       opA = opA || {};
-      var sg = U.sg, ctx = U.ctx, o = sg && sg.opcoes[i], M = MU(); if (!o || !M) return null;
+      var sg = U.sg, ctx = U.ctx, o = sg && opDe(i), M = MU(); if (!o || !M) return null;
       if (!o.aplicar) { toast("Esta tipologia ainda não tem desenho automático no 3D.", "aviso", 7000); return null; }
       var pod = podeAplicar(o);
       if (!(pod.ok || (opA.prolongar && pod.prolongar))) { toast("Não aplicável: " + pod.motivo + ".", "aviso", 8000); return null; }
@@ -299,9 +356,10 @@
       var opts = '<option value="">Todas as aplicações</option>' + Object.keys(Tp.APLICACOES).map(function (k) { return '<option value="' + k + '"' + (k === ap ? " selected" : "") + ">" + esc(Tp.APLICACOES[k]) + "</option>"; }).join("");
       function lista(a) {
         return (a ? Tp.porAplicacao(a) : Tp.TIPOS).map(function (t) {
-          return '<div class="lsg-op" data-lsg-cat="' + esc(t.id) + '"><h3>' + esc(t.nome) + '</h3><div class="lsg-chips"><span class="lsg-chip">' + esc(FAM[t.familia]) + '</span><span class="lsg-chip">' + esc(t.meio === "mista" ? "soldada + parafusada" : t.meio) + '</span><span class="lsg-chip">' + (t.geometria ? "desenho no 3D" : "só cálculo") + "</span></div>" +
+          return '<div class="lsg-op" data-lsg-cat="' + esc(t.id) + '"><h3>' + esc(t.nome) + '</h3><div class="lsg-chips"><span class="lsg-chip">' + esc(FAM[t.familia]) + '</span><span class="lsg-chip">' + esc(t.meio === "mista" ? "soldada + parafusada" : t.meio) + '</span><span class="lsg-chip' + (!t.calc ? ' nok' : '') + '">' + (!t.calc ? "não dimensionada" : t.geometria ? "desenho no 3D" : "só cálculo") + "</span></div>" +
             '<div class="lsg-svg">' + (Tp.svg(t.id) || "") + "</div><p>" + esc(t.dica) + "</p>" +
-            "<details><summary>Verificações e limitações</summary><ul>" + Tp.verificacoesDe(t.id).map(function (v) { return "<li>" + esc(v.texto) + " — " + esc(v.norma) + ", " + esc(v.item) + "</li>"; }).join("") + "</ul><ul class=\"con\">" + t.limitacoes.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details></div>";
+            "<details><summary>Verificações e limitações</summary><ul>" + Tp.verificacoesDe(t.id).map(function (v) { return "<li>" + esc(v.texto) + " — " + esc(v.norma) + ", " + esc(v.item) + "</li>"; }).join("") + "</ul><ul class=\"con\">" + t.limitacoes.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" +
+            (t.faces ? '<ul data-lsg="cat-faces">' + ["mesa", "alma"].map(function (f) { return "<li>" + esc(t.faces[f] || (f === "mesa" ? "Na MESA: não vale." : "Na ALMA: não vale.")) + "</li>"; }).join("") + "</ul>" : "") + "</details></div>";
         }).join("");
       }
       var h = '<div class="lsg" data-lsg="catalogo" data-modal-largo><div class="lsg-topo"><label>Aplicação <select data-lsg="cat-ap">' + opts + '</select></label><span class="lsg-nota" data-lsg="cat-n"></span></div><div class="lsg-cat" data-lsg="cat-lista">' + lista(ap) + '</div><p class="lsg-nota">' + esc(Tp.EDICAO.aviso) + " Os desenhos são esquemas didáticos, sem escala.</p></div>";
@@ -341,7 +399,7 @@
           if (ctx.ok && !ctx.estimativa) {
             /* REVISÃO M1 (14/10/2026): a ligação JÁ DESENHADA é refeita pela tipologia dela, sem o filtro da execução
                escolhida depois (antes, "tudo parafusado" tirava a soldada da lista e ela voltava com os esforços guardados) */
-            var sg = S0.sugerir(ctx, {}), o = arr(sg.todasOpcoes).filter(function (x) { return x.tipologia === li.tipologia; })[0];
+            var sg = S0.sugerir(ctx, { materiais: opMat() }), o = arr(sg.todasOpcoes).filter(function (x) { return x.tipologia === li.tipologia; })[0];
             if (o) novo = { resultado: o.resultado, passa: o.passa, origem: ctx.origemEsforcos, no: ctx.no };
           }
         }
@@ -368,7 +426,7 @@
       return false;
     },
     memorialOpcao: function (i) {
-      var o = U.sg && U.sg.opcoes[i]; if (!o) return null;
+      var o = opDe(i); if (!o) return null;
       var html = this.memorialHtml([{ id: o.tipologia, titulo: o.nome, resultado: o.resultado }], "Memorial — " + o.nome);
       this._ultimoMemorial = { n: 1, bytes: html.length };
       this.abrirHtml(html, "memorial-ligacao");
@@ -442,7 +500,7 @@
             if (!(dentro && !B.vert) && !colinear) return;
             var k2 = [A.c.id, B.c.id].sort().join("|") + "|pilar";
             if (vistos[k2] || jaLigados(String(A.c.id), String(B.c.id))) return; vistos[k2] = 1;
-            var par = [A.c, B.c]; if (dentro) par.pular = "pilar (" + A.c.id + ") com a ponta numa viga CONTÍNUA (" + B.c.id + "): chapa de topo do pilar / apoio da viga a detalhar — não há tipologia automática; o memorial lista o encontro sem ligação";
+            var par = [A.c, B.c]; if (dentro) par.pular = "pilar (" + A.c.id + ") com a ponta numa viga CONTÍNUA (" + B.c.id + "): a ligação é a CHAPA DE CABEÇA (viga contínua sobre o pilar): selecione o pilar e a viga e use a Ligação inteligente — o lote não a aplica sozinho; o memorial lista o encontro sem ligação";
             pares.push(par);
           });
         });
@@ -471,7 +529,7 @@
         var ctx = S0.analisar(pp, { resultado: rc, fundacoes: fundacoes() }); if (!ctx.ok) { res.puladas.push({ pecas: pp.map(function (c) { return c.id; }), motivo: ctx.motivo }); return; }
         /* REVISÃO S5 N1: a escolha do lote é do motor (AcoLigSugere.escolherLote): nunca o químico nem reforço sozinho; na
            sapata do modelo, a placa verificada nela — e, se ela só reprova pela cota, aplicada com a proposta do ajuste */
-        var sg = S0.sugerir(ctx, { execucao: U.execucao || null }), esc = S0.escolherLote ? S0.escolherLote(sg) : { opcao: sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0] || null }, o = esc.opcao;
+        var sg = S0.sugerir(ctx, { execucao: U.execucao || null, materiais: opMat() }), esc = S0.escolherLote ? S0.escolherLote(sg) : { opcao: sg.opcoes.filter(function (x) { return x.passa && x.aplicar && !x.avisos.some(function (a) { return /INCOER/.test(a); }); })[0] || null }, o = esc.opcao;
         if (!o) { res.puladas.push({ pecas: ctx.ordem, motivo: esc.motivo || "nenhuma opção que passa com desenho automático" }); return; }
         var a = aplicarOpcao(o, ctx, por, M.novoId.bind(M));
         if (!a.ok) { res.puladas.push({ pecas: ctx.ordem, motivo: a.motivo }); return; }

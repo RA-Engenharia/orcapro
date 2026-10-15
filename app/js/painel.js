@@ -64,10 +64,22 @@
     { id: "outros", nome: "Outros", aberto: false }
   ];
 
+  /* mesma regra do Util.parseNum (js/util.js): "1,5"→1.5 · "0.12"→0.12 · "1.5"→1.5 · "1.234,56"→1234.56 · "1.000"→1000 (milhar BR; zero à esquerda NÃO é milhar) */
+  function _brNorm(s) {
+    var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+    if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+    if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+    if (np > 1) {
+      if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+      i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+    }
+    if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+    return s;
+  }
   function num(v) {
     if (typeof v === "number") return isFinite(v) ? v : 0;
     if (v === null || v === undefined || v === "") return 0;
-    var s = String(v).replace(/\./g, "").replace(",", ".");
+    var s = _brNorm(String(v).replace(/\s/g, ""));
     var x = parseFloat(s);
     if (!isFinite(x)) { x = parseFloat(String(v)); }
     return isFinite(x) ? x : 0;

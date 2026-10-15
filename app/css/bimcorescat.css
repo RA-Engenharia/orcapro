@@ -19,18 +19,18 @@
   width: 236px; max-width: calc(100% - 20px); max-height: calc(100% - 20px); overflow: auto;
   background: var(--rv-painel-bg, #f0f0f0); color: var(--rv-painel-tx, #1a1a1a);
   border: 1px solid var(--rv-linha-forte, #b4b4b4); border-radius: 6px;
-  box-shadow: 0 4px 14px var(--rv-sombra, rgba(0,0,0,.18)); font-size: 12px; line-height: 1.25;
+  box-shadow: 0 4px 14px var(--rv-sombra, rgba(0,0,0,.18)); font-size: var(--t-micro); line-height: 1.25;
   opacity: .97; user-select: none;
 }
 /* lado a lado: cada vista é pequena, então a legenda encolhe (fonte e largura) e a dica sai — a pessoa ainda pode recolher */
-.bim-grade[data-modo="lado"] .cc-leg { top: 30px; width: 190px; font-size: 11px; }
-.bim-grade[data-modo="lado"] .cc-leg .cc-nm { font-size: 11px; min-height: 18px; }
+.bim-grade[data-modo="lado"] .cc-leg { top: 30px; width: 190px; font-size: var(--t-mini); }
+.bim-grade[data-modo="lado"] .cc-leg .cc-nm { font-size: var(--t-mini); min-height: 18px; }
 .bim-grade[data-modo="lado"] .cc-leg .cc-pe .cc-dica { display: none; }
 .bim-grade[data-modo="lado"] .cc-leg .cc-pe:not(:has(.cc-todas)) { display: none; }
 .cc-leg[data-cc-recolhida="1"] { width: auto; min-width: 150px; }
 .cc-cab { display: flex; align-items: center; gap: 2px; padding: 4px 4px 4px 9px; border-bottom: 1px solid var(--rv-linha, #d4d4d4); position: sticky; top: 0; background: inherit; }
 .cc-leg[data-cc-recolhida="1"] .cc-cab { border-bottom: 0; }
-.cc-tit { flex: 1 1 auto; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.cc-tit { flex: 1 1 auto; font-weight: var(--p-forte); font-size: var(--t-micro); white-space: nowrap; }
 .cc-bt {
   flex: 0 0 auto; width: 22px; height: 22px; display: inline-grid; place-items: center; padding: 0;
   border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer;
@@ -53,7 +53,7 @@
 .cc-n { flex: 0 0 auto; color: var(--rv-tx-fraco, #6a6a6a); font-variant-numeric: tabular-nums; }
 .cc-it[data-cc-oculta="1"] .cc-nome { text-decoration: line-through; opacity: .55; }
 .cc-it[data-cc-oculta="1"] .cc-cor { opacity: .35; }
-.cc-pe { padding: 3px 9px 6px; border-top: 1px solid var(--rv-linha, #d4d4d4); color: var(--rv-tx-fraco, #6a6a6a); font-size: 11px; }
+.cc-pe { padding: 3px 9px 6px; border-top: 1px solid var(--rv-linha, #d4d4d4); color: var(--rv-tx-fraco, #6a6a6a); font-size: var(--t-mini); }
 .cc-todas { width: 100%; padding: 3px 6px; border: 1px solid var(--rv-ativo-borda, #7aaddc); border-radius: 3px; background: var(--rv-ativo, #cce4f7); color: var(--rv-painel-tx, #1a1a1a); font: inherit; cursor: pointer; }
 .cc-vazio { padding: 8px 10px; color: var(--rv-tx-fraco, #6a6a6a); max-width: 220px; }
 

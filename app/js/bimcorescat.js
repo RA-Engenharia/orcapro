@@ -168,6 +168,11 @@
     var nome = norm(txt(d.nome) + " " + txt(d.familia)), tudo = (papel + " " + nome).replace(/^ +| +$/g, "");
     var gerada = !!(d.pronta || d.tanque || d.acessorio || d.acesso);
 
+    /* 0) VEDAÇÃO (14/10/2026, js/acovedacao.js): telha, fechamento, alvenaria e acessórios do galpão declaram a categoria
+       (coberturas | paredes) — antes de tudo: o papel "Telha de fechamento" cairia em terças pela palavra "fechamento"
+       e a chapa sem tipo do editor em ligações */
+    if (tipoEd === "vedacao") return d.vedCat === "paredes" ? "paredes" : "coberturas";
+
     /* 1) LIGAÇÕES — a peça é parafuso, solda ou chapa de ligação (e o flange que não é de bocal de tanque) */
     if (kind === "parafuso" || /^(MECHANICALFASTENER|FASTENER|DISCRETEACCESSORY)/.test(ifc)) return "ligacoes";
     if (papel && RX.ligacao.test(papel) && !(RX.pisoInd.test(papel) && !RX.naoPiso.test(papel))) return "ligacoes";
@@ -233,6 +238,7 @@
     if (c.tanque) d.tanque = c.tanque;
     if (m.acessorio) d.acessorio = m.acessorio;
     if (c.galpao) d.galpao = c.galpao;
+    if (c.tipo === "vedacao" && c.vedacao) d.vedCat = String(c.vedacao.categoria || "");
     if (extra && extra.famCat) d.famCat = extra.famCat;
     /* o tipo da peça pronta (escada, rack, skid…) mora só na 1ª peça (prontaInfo): o chamador passa o mapa */
     if (c.pronta && extra && extra.prontaTipos && extra.prontaTipos[c.pronta]) d.prontaTipo = extra.prontaTipos[c.pronta];

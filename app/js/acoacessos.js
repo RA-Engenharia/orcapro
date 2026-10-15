@@ -84,6 +84,11 @@
     npt011: { sigla: "NPT 011 (CBPMPR)", titulo: "Norma de Procedimento Técnico 011 — Saídas de emergência (Corpo de Bombeiros do Paraná; referência: IT-11/2019 do CBPMESP)", edicao: "2024 (versão jan/2024, vigência 06/03/2024)", fonte: "https://www.bombeiros.pr.gov.br/sites/bombeiros/arquivos_restritos/files/documento/2024-03/npt-011-saidas_de_emergencia_versao_jan_2024.pdf — a IT do estado da obra prevalece", lido: true },
     it11: { sigla: "IT-11 (CBPMESP)", titulo: "Instrução Técnica nº 11 — Saídas de emergência (Corpo de Bombeiros da PM do Estado de São Paulo; cada estado tem a sua)", edicao: "2019 (a citada pela NPT 011/2024; edição posterior não conferida)", fonte: "referência; pedir a IT do estado da obra", lido: false },
     iso14122: { sigla: "ABNT NBR ISO 14122-1 a -4", titulo: "Safety of machinery — Permanent means of access to machinery (o Anexo III da NR-12 cita as partes 2 e 3 de 2016 nas Figuras 2 e 4; referência complementar)", edicao: "2023 (adoção brasileira da ISO 14122:2016; os valores foram lidos nas fontes da ISO 2016)", fonte: "previews do editor (cdn.standards.iteh.ai) e BS EN ISO 14122 White Paper 2021 (BSI) — sem texto completo na biblioteca RA", lido: false },
+    /* M5 (14/10/2026, bibliotecário de normas): vigente a 2025 (jun/2025, cancela a 2016); sem texto na biblioteca RA — o vidro do
+       guarda-corpo NÃO é dimensionado (espessura e fixação pela norma e pelo fabricante) */
+    nbr7199: { sigla: "ABNT NBR 7199", titulo: "Vidros na construção civil — Projeto, execução e aplicações", edicao: "2025 (cancela a 2016 — catálogo e CBIC, 07/2025)", fonte: "sem texto na biblioteca RA (https://cbic.org.br/inovacao/2025/07/07/a-nova-abnt-nbr-7199-maior-seguranca-no-uso-de-vidros-na-construcao-civil/)", lido: false },
+    /* M5: o degrau em CHAPA DOBRADA (perfil formado a frio) — as expressões da largura efetiva do js/acodim14762.js (fontes secundárias) */
+    nbr14762: { sigla: "ABNT NBR 14762", titulo: "Dimensionamento de estruturas de aço constituídas por perfis formados a frio", edicao: "2010", fonte: "sem texto na biblioteca RA — as expressões do js/acodim14762.js (SANTOS, UFAL, notas de aula de perfis formados a frio, 2020)", lido: false },
     nbr7195: { sigla: "ABNT NBR 7195", titulo: "Cores para segurança", edicao: "2018", fonte: "referência (a NR-26 remete às normas técnicas oficiais)", lido: false }
   };
   function ref(id, item) { var n = NORMAS[id]; return (n ? n.sigla + (/^\d{4}/.test(n.edicao) ? ":" + n.edicao.slice(0, 4) : "") : id) + (item ? ", " + item : ""); }
@@ -94,6 +99,8 @@
     "nr12": { id: "nr12", rotulo: "Industrial — NR-12 (escada de 20° a 45°, item 12)", tipoEscada: "escada", norma: "nr12" },
     "nr12-ingreme": { id: "nr12-ingreme", rotulo: "Industrial íngreme — NR-12 (escada de degraus de 45° a 75°, item 11)", tipoEscada: "escada-ingreme", norma: "nr12" },
     "nbr9050": { id: "nbr9050", rotulo: "Rota acessível — NBR 9050:2020", tipoEscada: "escada", norma: "nbr9050" },
+    /* M5 (14/10/2026): guarda-corpo de EDIFICAÇÃO (fora do escopo da NR-12): altura ≥ 1,10 m; em uso PÚBLICO o vão-luz ≤ 0,11 m */
+    "nbr14718": { id: "nbr14718", rotulo: "Edificação — NBR 14718:2019 (guarda-corpo; uso público: vão-luz ≤ 0,11 m)", tipoEscada: "escada", norma: "nbr14718" },
     "emergencia": { id: "emergencia", rotulo: "Escada de emergência — IT do Corpo de Bombeiros (NPT 011/2024 do PR; IT-11/2019 de SP; NBR 9077:2025 não lida)", tipoEscada: "escada", norma: "npt011" }
   };
 
@@ -144,7 +151,7 @@
     { id: "nr35-5211f-spq", tipos: ["marinheiro"], perfis: ["nr12"], grandeza: "spq", max: 0, un: "", norma: "nr35", item: "Anexo III, 5.2.1.1 f) e 5.2.1.1.1", texto: "sistema de proteção contra quedas (SPQ) conforme o item 35.6, com a análise de risco específica (prazo da Portaria MTE 1.259/2026) — a gaiola sozinha não dispensa a análise", sev: "nc" },
     { id: "nr35-5211g-projeto", tipos: ["marinheiro"], perfis: ["nr12"], grandeza: "projetoHabilitado", max: 0, un: "", norma: "nr35", item: "Anexo III, 5.2.1.1 g)", texto: "projeto por profissional legalmente habilitado (dimensões, resistências, segurança nos acessos e o SPQ selecionado)", sev: "nc" },
     { id: "nr35-52122-descanso", tipos: ["marinheiro"], perfis: ["nr12"], grandeza: "descansoNaoLateral", max: 0, un: "", norma: "nr35", item: "Anexo III, 5.2.1.2 a 5.2.1.2.2", texto: "acima de 10 m, plataformas de descanso a no máximo 6 m, projetadas lateralmente ou basculantes", sev: "nc", quando: function (g) { return g.lances > 1; } },
-    { id: "iso-abertura-cancela", tipos: ["plataforma", "passarela"], perfis: ["nr12", "nr12-ingreme"], grandeza: "aberturaSemCancela", max: 0, un: "", norma: "iso14122", item: "parte 3, 7.1 (abertura de acesso no guarda-corpo)", texto: "abertura de acesso no guarda-corpo protegida (cancela de autofechamento ou o guarda-corpo da escada que chega)", sev: "rec", conferir: true },
+    { id: "iso-abertura-cancela", tipos: ["plataforma", "passarela", "guarda-corpo"], perfis: ["nr12", "nr12-ingreme"], grandeza: "aberturaSemCancela", max: 0, un: "", norma: "iso14122", item: "parte 3, 7.1 (abertura de acesso no guarda-corpo)", texto: "abertura de acesso no guarda-corpo protegida (cancela de autofechamento ou o guarda-corpo da escada que chega)", sev: "rec", conferir: true, quando: function (g) { return g.tipo !== "guarda-corpo" || !!g.abertura; } },
     { id: "nr12-12b-borda", tipos: ["escada"], perfis: ["nr12"], grandeza: "pInterno", min: 0.20, un: "m", norma: "nr12", item: "Anexo III, 12 b) (escada curva: conferido também junto da borda de dentro — premissa conservadora)", texto: "profundidade mínima de 0,20 m também junto da borda de dentro da escada curva", sev: "nc", quando: function (g) { return fin(g.pInterno); } },
     { id: "nr12-13c-gaiola", tipos: ["marinheiro"], perfis: ["nr12"], grandeza: "gaiolaFalta", max: 0, un: "", norma: "nr12", item: "Anexo III, 13 c)", texto: "gaiola de proteção obrigatória acima de 3,50 m de altura", sev: "nc" },
     { id: "nr12-13c-inicio", tipos: ["marinheiro"], perfis: ["nr12"], grandeza: "gaiolaInicio", max: 2.00, un: "m", norma: "nr12", item: "Anexo III, 13 c)", texto: "gaiola instalada a partir de 2,0 m do piso", sev: "nc", quando: function (g) { return !!(g.marinheiro && g.marinheiro.gaiola); } },
@@ -173,23 +180,26 @@
     { id: "nbr9050-corrimao-interm", tipos: ["escada", "rampa"], perfis: ["nbr9050"], grandeza: "corrimaoIntermFalta", max: 0, un: "", norma: "nbr9050", item: "6.9.4", texto: "largura acima de 2,40 m: corrimão intermediário (com 0,80 m livre no mínimo de cada lado — 6.9.4.1)", sev: "nc", conferir: true },
     { id: "nbr9050-patamar", tipos: ["escada"], perfis: ["nbr9050"], grandeza: "desnivelEntrePatamares", max: 3.20, un: "m", norma: "nbr9050", item: "6.8.7", texto: "patamar a cada 3,20 m de desnível no máximo e sempre que houver mudança de direção", sev: "nc", conferir: true },
     { id: "nbr9050-patamar-comp", tipos: ["escada", "rampa"], perfis: ["nbr9050"], grandeza: "patamarComprimento", min: 1.20, un: "m", norma: "nbr9050", item: "6.8.8 e 6.6.4", texto: "patamar com comprimento mínimo de 1,20 m (e a largura do lance)", sev: "nc", conferir: true, quando: function (g) { return g.lances > 1; } },
-    { id: "nbr9050-corrimao", tipos: ["escada", "rampa"], perfis: ["nbr9050"], grandeza: "corrimaoDuplo", max: 0, un: "", norma: "nbr9050", item: "6.9.2", texto: "corrimão dos dois lados, em duas alturas: 0,92 m e 0,70 m do piso (medidas da quina do degrau)", sev: "nc", conferir: true },
-    { id: "nbr9050-corrimao-parede", tipos: ["corrimao"], perfis: ["nbr9050"], grandeza: "corrimaoAlturas", max: 0, un: "", norma: "nbr9050", item: "6.9.2", texto: "corrimão em duas alturas: 0,92 m e 0,70 m", sev: "nc", conferir: true },
+    { id: "nbr9050-corrimao", tipos: ["escada", "rampa"], perfis: ["nbr9050"], grandeza: "corrimaoDuplo", max: 0, un: "", norma: "nbr9050", item: "6.9.3.2", texto: "corrimão dos dois lados, em duas alturas: 0,92 m e 0,70 m do piso (medidas da quina do degrau)", sev: "nc", conferir: true },
+    { id: "nbr9050-corrimao-parede", tipos: ["corrimao"], perfis: ["nbr9050"], grandeza: "corrimaoAlturas", max: 0, un: "", norma: "nbr9050", item: "6.9.3.2", texto: "corrimão em duas alturas: 0,92 m e 0,70 m", sev: "nc", conferir: true },
     { id: "npt011-folga", tipos: ["corrimao"], perfis: ["nbr9050", "emergencia"], grandeza: "folgaParede", min: 0.04, un: "m", norma: "npt011", item: "5.8.2.4", texto: "afastamento do corrimão à parede de no mínimo 40 mm (a NBR 9050 pede o mesmo — conferir)", sev: "nc" },
     { id: "npt011-corrimao-alt", tipos: ["corrimao"], perfis: ["emergencia"], grandeza: "corrimaoAltMax", min: 0.80, max: 0.92, un: "m", norma: "npt011", item: "5.8.2.1", texto: "corrimão a 0,80 m – 0,92 m do piso", sev: "nc" },
-    { id: "nbr9050-prolong", tipos: ["escada", "rampa", "corrimao"], perfis: ["nbr9050"], grandeza: "prolongamento", min: 0.30, un: "m", norma: "nbr9050", item: "6.9.2.2", texto: "corrimão prolongado no mínimo 0,30 m antes do início e depois do término", sev: "nc", conferir: true },
-    { id: "nbr9050-diam", tipos: ["escada", "rampa", "corrimao"], perfis: ["nbr9050"], grandeza: "corrimaoDiam", min: 0.030, max: 0.045, un: "m", norma: "nbr9050", item: "6.9.2.1", texto: "corrimão de seção circular com diâmetro de 30 mm a 45 mm", sev: "nc", conferir: true },
+    { id: "nbr9050-prolong", tipos: ["escada", "rampa", "corrimao"], perfis: ["nbr9050"], grandeza: "prolongamento", min: 0.30, un: "m", norma: "nbr9050", item: "6.9.3.2", texto: "corrimão prolongado no mínimo 0,30 m antes do início e depois do término", sev: "nc", conferir: true },
+    { id: "nbr9050-diam", tipos: ["escada", "rampa", "corrimao"], perfis: ["nbr9050"], grandeza: "corrimaoDiam", min: 0.030, max: 0.045, un: "m", norma: "nbr9050", item: "4.6.5", texto: "corrimão de seção circular com diâmetro de 30 mm a 45 mm", sev: "nc", conferir: true },
     { id: "nbr9050-rampa-i", tipos: ["rampa"], perfis: ["nbr9050"], grandeza: "inclinacaoPct", max: 8.33, un: "%", norma: "nbr9050", item: "6.6.2.1 (Tabela 4)", texto: "inclinação máxima de 8,33 % (1:12), com desnível máximo de 0,80 m por segmento entre 6,25 % e 8,33 %", sev: "nc", conferir: true },
     { id: "nbr9050-rampa-seg", tipos: ["rampa"], perfis: ["nbr9050"], grandeza: "desnivelSegmento", max: 1.50, un: "m", norma: "nbr9050", item: "6.6.2.1 (Tabela 4)", texto: "desnível máximo por segmento: 1,50 m (i ≤ 5 %), 1,00 m (5 % < i ≤ 6,25 %), 0,80 m (6,25 % < i ≤ 8,33 %)", sev: "nc", conferir: true, maxFn: function (g) { var i = num(ler(g, "inclinacaoPct"), 0); return i <= 5 ? 1.5 : (i <= 6.25 ? 1.0 : 0.8); } },
-    { id: "nbr14718-altura", tipos: ["escada", "rampa", "plataforma", "passarela", "guarda-corpo"], perfis: ["nbr9050"], grandeza: "guardaAltura", min: 1.10, un: "m", norma: "nbr14718", item: "altura de proteção (item a conferir)", texto: "guarda-corpo com altura mínima de 1,10 m do piso acabado onde houver lado livre (a edição 2008 pedia 1,00 m)", sev: "nc", conferir: true },
-    { id: "nbr14718-vao", tipos: ["escada", "rampa", "plataforma", "passarela", "guarda-corpo"], perfis: ["nbr9050"], grandeza: "vaoTravessas", max: 0.11, un: "m", norma: "nbr14718", item: "vão-luz entre perfis (item a conferir)", texto: "vão-luz de no máximo 0,11 m entre os elementos do guarda-corpo (uso com público/crianças) — com travessas horizontais escaláveis, fechar até 0,45 m", sev: "rec", conferir: true },
+    { id: "nbr14718-altura", tipos: ["escada", "rampa", "plataforma", "passarela", "guarda-corpo"], perfis: ["nbr9050", "nbr14718"], grandeza: "guardaAltura", min: 1.10, un: "m", norma: "nbr14718", item: "altura de proteção (item a conferir)", texto: "guarda-corpo com altura mínima de 1,10 m do piso acabado onde houver lado livre (a edição 2008 pedia 1,00 m)", sev: "nc", conferir: true },
+    { id: "nbr14718-vao", tipos: ["escada", "rampa", "plataforma", "passarela", "guarda-corpo"], perfis: ["nbr9050", "nbr14718"], grandeza: "vaoLuz", max: 0.11, un: "m", norma: "nbr14718", item: "vão-luz entre perfis (item a conferir)", texto: "vão-luz de no máximo 0,11 m entre os elementos do guarda-corpo (uso com público/crianças) — com travessas horizontais escaláveis, fechar até 0,45 m", sev: "rec", conferir: true, quando: function (g) { return !(g.guarda && g.guarda.publico); } },
+    /* M5 (14/10/2026): em USO PÚBLICO o vão-luz é OBRIGATÓRIO (o gabarito de 25 × 11 × 11 cm do ensaio não passa — Anexo C, fonte
+       secundária: USF e Sienge); o vão do piso à 1ª peça do guarda-corpo também conta */
+    { id: "nbr14718-vao-publico", tipos: ["escada", "rampa", "plataforma", "passarela", "guarda-corpo"], perfis: ["nbr9050", "nbr14718"], grandeza: "vaoLuz", max: 0.11, un: "m", norma: "nbr14718", item: "vão-luz (gabarito de 25 × 11 × 11 cm do ensaio — Anexo C)", texto: "uso público: nenhuma abertura do guarda-corpo (entre barras, entre a peça e o montante, e do piso à 1ª peça) maior que 0,11 m", sev: "nc", conferir: true, quando: function (g) { return !!(g.guarda && g.guarda.publico); } },
     /* ---------- IT do Corpo de Bombeiros (NPT 011/2024 lida; NBR 9077:2025 em vigor, não lida) — escada de emergência (referência: pedir a IT do estado) */
     { id: "npt011-espelho", tipos: ["escada"], perfis: ["emergencia"], grandeza: "e", min: 0.16, max: 0.18, un: "m", norma: "npt011", item: "5.7.3.1", texto: "altura do degrau de 0,16 m a 0,18 m (tolerância de 0,5 cm)", sev: "nc" },
     { id: "npt011-blondel", tipos: ["escada"], perfis: ["emergencia"], grandeza: "blondel", min: 0.63, max: 0.64, un: "m", norma: "npt011", item: "5.7.3.1 (Blondel)", texto: "0,63 m ≤ 2h + b ≤ 0,64 m", sev: "nc" },
     { id: "npt011-largura", tipos: ["escada"], perfis: ["emergencia"], grandeza: "largura", min: 1.20, un: "m", norma: "npt011", item: "5.4.2.1 (largura mínima 1,20 m; N = P/C, unidade de passagem 0,55 m — 5.4.1.2)", texto: "largura mínima de 1,20 m nas ocupações em geral (1,65 m em H-2 e H-3); a largura pela população é N = P/C × 0,55 m (informe a população)", sev: "nc", minFn: function (g) { return Math.max(1.20, num(g.larguraPopulacao, 0)); } },
     { id: "npt011-patamar", tipos: ["escada"], perfis: ["emergencia"], grandeza: "desnivelEntrePatamares", max: 3.70, un: "m", norma: "npt011", item: "5.7.3.2", texto: "lance com no máximo 3,70 m de altura entre patamares (e no mínimo 3 degraus)", sev: "nc" },
     { id: "npt011-guarda", tipos: ["escada"], perfis: ["emergencia"], grandeza: "guardaAltura", min: 1.05, un: "m", norma: "npt011", item: "5.8.1.2 e 5.8.1.3", texto: "guarda-corpo com no mínimo 1,05 m (1,30 m em escada aberta externa a mais de 12 m do solo)", sev: "nc", minFn: function (g) { return g.externaAlta ? 1.30 : 1.05; } },
-    { id: "npt011-esfera", tipos: ["escada"], perfis: ["emergencia"], grandeza: "vaoTravessas", max: 0.15, un: "m", norma: "npt011", item: "5.8.1.4 a)", texto: "guarda-corpo vazado: uma esfera de 0,15 m não passa por nenhuma abertura", sev: "nc" },
+    { id: "npt011-esfera", tipos: ["escada"], perfis: ["emergencia"], grandeza: "vaoLuz", max: 0.15, un: "m", norma: "npt011", item: "5.8.1.4 a)", texto: "guarda-corpo vazado: uma esfera de 0,15 m não passa por nenhuma abertura", sev: "nc" },
     { id: "npt011-corrimao", tipos: ["escada"], perfis: ["emergencia"], grandeza: "corrimaoLados", min: 2, un: "lado(s)", norma: "npt011", item: "5.8.2.1", texto: "corrimão dos dois lados, a 0,80 m – 0,92 m do piso", sev: "nc" },
     { id: "npt011-diam", tipos: ["escada", "corrimao"], perfis: ["emergencia"], grandeza: "corrimaoDiam", min: 0.038, max: 0.065, un: "m", norma: "npt011", item: "5.8.2.3", texto: "corrimão circular de 38 mm a 65 mm de diâmetro", sev: "nc" }
   ];
@@ -217,6 +227,9 @@
       case "rodape": return gd.rodape == null ? null : num(gd.rodape, 0);
       case "intermediaria": if (!gd.alturas) return null; var hs = arr(gd.alturas).filter(function (h) { return h < num(gd.altura, 1.1) - 0.05; }); if (!hs.length) return 0; return hs.reduce(function (a, b) { return Math.abs(b - 0.70) < Math.abs(a - 0.70) ? b : a; });
       case "espacMontantes": return fin(gd.espacMontantes) ? gd.espacMontantes : null;
+      /* M5 (14/10/2026): o vão-luz MEDIDO no preenchimento (barras, tela, chapa perfurada, vidro — js/metalguardas.js) e o vão do piso
+         à 1ª peça; sem preenchimento, o vão entre as travessas */
+      case "vaoLuz": if (fin(gd.vaoLuz)) return r4(Math.max(gd.vaoLuz, num(gd.vaoInferior, 0))); return ler(g, "vaoTravessas");
       case "vaoTravessas": if (!gd.alturas) return null; var hh = [num(gd.rodape, 0)].concat(arr(gd.alturas)).concat([num(gd.altura, 1.1)]).sort(function (a, b) { return a - b; }), mx = 0; for (var i = 1; i < hh.length; i++) mx = Math.max(mx, hh[i] - hh[i - 1]); return r4(mx);
       case "corrimaoDuplo": if (!co.alturas) return 1; var tem = function (h) { return arr(co.alturas).some(function (x) { return Math.abs(x - h) <= 0.011; }); }; return tem(0.92) && tem(0.70) && num(co.lados, 0) >= 2 ? 0 : 1;
       case "corrimaoLados": return fin(co.lados) ? co.lados : null;
@@ -277,6 +290,7 @@
     if (gr === "intermediaria") return "Travessão intermediário a 0,70 m do piso.";
     if (gr === "superiorPlano") return "Travessão superior em tubo redondo (sem superfície plana).";
     if (gr === "espacMontantes") return "Montantes a no máximo " + fmt(mx, "m") + ".";
+    if (gr === "vaoLuz") return "Feche o vão em no máximo " + fmt(mx, "m") + ": barras verticais com o vão livre menor, tela, chapa perfurada ou vidro — o vão do piso à 1ª peça também conta.";
     if (gr === "vaoTravessas") return "Mais travessas (ou tela/chapa) para o vão livre ficar em no máximo " + fmt(mx, "m") + ".";
     if (gr === "gaiolaFalta") return "Gaiola de proteção a partir de 2,00 m do piso, ultrapassando o piso superior em 1,10 m a 1,20 m.";
     if (gr === "lanceUnico" || (gr === "desnivelEntrePatamares" && g.tipo === "marinheiro")) return "Lances de no máximo 6,00 m com plataforma de descanso, eixos deslocados de 0,70 m.";
@@ -353,7 +367,7 @@
       var e = H / n; if (e > R.eMax + 1e-9 || e < R.eMin - 1e-9) continue;
       var lo = R.pMin, hi = R.pMax;
       if (R.angMax) lo = Math.max(lo, e / Math.tan(R.angMax * GRAU));
-      if (R.anguloMin) hi = Math.min(hi, e / Math.tan(R.anguloMin * GRAU));
+      if (R.anguloMin || op.anguloMin) hi = Math.min(hi, e / Math.tan(Math.max(num(R.anguloMin, 0), num(op.anguloMin, 0)) * GRAU));   /* M5: a escada de navio pede um ângulo mínimo maior */
       if (R.blondelObrig) { lo = Math.max(lo, R.fMin - 2 * e); hi = Math.min(hi, R.fMax - 2 * e); }
       lo = Math.ceil(lo * 200 - 1e-6) / 200; hi = Math.floor(hi * 200 + 1e-6) / 200;
       if (lo > hi + 1e-9) continue;
@@ -570,13 +584,16 @@
   /* ESPESSURA DO DEGRAU DE CHAPA: a menor chapa comercial que passa a flexão (2,5 kN, NBR 6120 nota t) E a flecha
      (1,5 kN, W/300 ≤ 6 mm, ISO 14122-3) com a largura W e o piso p da escada; nenhuma até 19 mm → { ok: false } (use grade) */
   var CHAPAS_DEGRAU = [0.00475, 0.00635, 0.008, 0.0095, 0.0125, 0.016, 0.019];
-  function espessuraDegrau(W, pp, tMin) {
-    for (var i = 0; i < CHAPAS_DEGRAU.length; i++) {
-      var t = CHAPAS_DEGRAU[i]; if (t < num(tMin, 0) - 1e-9) continue;
-      var r = degrau({ material: "chapa", t: t, vao: W, p: pp });
+  var CHAPAS_DOBRA = [0.00265, 0.003, 0.00375, 0.00475, 0.00635, 0.008];   /* M5: chapas finas comerciais para dobrar */
+  function espessuraDegrau(W, pp, tMin, op) {
+    op = op || {};
+    var lista = op.material === "dobrada" ? CHAPAS_DOBRA : CHAPAS_DEGRAU;
+    for (var i = 0; i < lista.length; i++) {
+      var t = lista[i]; if (t < num(tMin, 0) - 1e-9) continue;
+      var r = degrau({ material: op.material === "dobrada" ? "dobrada" : "chapa", t: t, aba: op.aba, vao: W, p: pp });
       if (r.verificacoes.length && r.verificacoes.every(function (v) { return v.ok; })) return { ok: true, t: t, verificacoes: r.verificacoes };
     }
-    return { ok: false, motivo: "nenhuma chapa até 19 mm passa a flexão e a flecha com " + br(W, 2) + " m de largura e piso de " + cm(pp) + " — use degrau em GRADE" };
+    return { ok: false, motivo: "nenhuma chapa até " + br(lista[lista.length - 1] * 1000, 0) + " mm passa a flexão e a flecha com " + br(W, 2) + " m de largura e piso de " + cm(pp) + " — use degrau em GRADE" + (op.material === "dobrada" ? " (ou enrijecedor sob o degrau dobrado)" : "") };
   }
   function degrau(sp) {
     var a = aco(sp.aco || "ASTM A36"), W = num(sp.vao, 1), pp = num(sp.p, 0.25), P = 2.5, q = num(sp.q, 2.5), out = { verificacoes: [], naoVerificados: [], avisos: [] }, g1 = ga1();
@@ -593,6 +610,7 @@
       out.avisos.push("Grade do degrau: confirmar na tabela de vão × carga do fabricante (a repartição da carga concentrada entre as barras é premissa)");
       return out;
     }
+    if (sp.material === "dobrada") return degrauDobrado(sp, a, W, pp, P, q, out);
     var tt = num(sp.t, 0.00635), Z = pp * 1000 * Math.pow(tt * 1000, 2) / 4, Wc = pp * 1000 * Math.pow(tt * 1000, 2) / 6, MRd2 = Math.min(Z, 1.5 * Wc) * a.fy / g1 / 1e6;
     var MP2 = GAMA.q * P * W / 4, Mq = (GAMA.q * q * pp + GAMA.g * 0.6 * pp) * W * W / 8, Md = Math.max(MP2, Mq);
     out.verificacoes.push({ nome: "Degrau em chapa — flexão", item: ref("nbr6120", "Tabela 10, nota t") + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular cheia: MRd = Z·fy/γa1 ≤ 1,5·W·fy/γa1)", passos: [
@@ -601,6 +619,44 @@
     var Ich = pp * 1000 * Math.pow(tt * 1000, 3) / 12, dch = 1.5 * 1000 * Math.pow(W * 1000, 3) / (48 * E_() * Ich), dlch = Math.min(W * 1000 / 300, 6);
     out.verificacoes.push({ nome: "Degrau em chapa — flecha", item: ref("iso14122", "parte 3, 4.2.1 (1,5 kN em 100 × 100 mm; flecha < W/300 e ≤ 6 mm)"), passos: [{ rotulo: "δ = P·W³/(48·E·I), I = p·t³/12 (chapa plana sem dobra)", formula: "", valor: br(dch, 1) + " mm ≤ " + br(dlch, 1) + " mm" }], resistencia: dlch, solicitante: dch, unidade: "mm", razao: dch / dlch, ok: dch <= dlch + 1e-9, els: true, conferir: true });
     if (Md > MRd2 || dch > dlch) out.avisos.push("Degrau em chapa plana não passa: use chapa mais grossa, degrau com dobra (bocel) ou cantoneira de reforço por baixo");
+    return out;
+  }
+  /* DEGRAU EM CHAPA DOBRADA (M5, 14/10/2026): a chapa do piso com a dobra da frente e a de trás para baixo (U invertido, raio interno = t),
+   * biapoiada nas longarinas no vão W. A chapa de cima fica COMPRIMIDA (elemento com as duas bordas apoiadas nas dobras: k = 4) → largura
+   * efetiva pela NBR 14762:2010, 9.2.2: λp = (b/t)/(0,95·√(k·E/σ)), bef = b·(1 − 0,22/λp)/λp ≤ b (σ = fy, a favor); a resistência pelo
+   * início do escoamento da seção efetiva (9.8.2.1, γ = 1,10). As dobras (abas) trabalham inteiras: só o pedaço de cima delas é comprimido.
+   * Cargas: 2,5 kN no meio do vão (NBR 6120:2019, Tabela 10, nota t) e a distribuída; flecha com 1,5 kN ≤ W/300 e 6 mm (ISO 14122-3). */
+  function degrauDobrado(sp, a, W, pp, P, q, out) {
+    var t = num(sp.t, 0.00475) * 1000, hl = num(sp.aba, 0.05) * 1000, Pm = pp * 1000, g1 = 1.10, E = E_(), fy = a.fy;
+    var bw = Pm - t, hm = hl - t / 2, b = Math.max(1, Pm - 2 * (t + t)), lam = (b / t) / (0.95 * Math.sqrt(4 * E / fy)), bef = lam <= 0.673 ? b : Math.min(b, b * (1 - 0.22 / lam) / lam);
+    function prop(bx) { var A = t * (bx + 2 * hm), yc = (2 * t * hm * hm / 2) / A, I = bx * Math.pow(t, 3) / 12 + bx * t * yc * yc + 2 * (t * Math.pow(hm, 3) / 12 + t * hm * Math.pow(hm / 2 - yc, 2)); return { A: A, yc: yc, I: I, Wc: I / (yc + t / 2), Wt: I / (hm - yc) }; }
+    var ef = prop(bw - (b - bef)), Wef = Math.min(ef.Wc, ef.Wt), MRd = Wef * fy / g1 / 1e6;
+    var MP = GAMA.q * P * W / 4, Mq = (GAMA.q * q * pp + GAMA.g * 0.6 * pp) * W * W / 8, Md = Math.max(MP, Mq);
+    out.verificacoes.push({ nome: "Degrau em chapa dobrada — flexão (seção efetiva)", item: ref("nbr6120", "Tabela 10, nota t") + "; " + ref("nbr14762", "9.2.2 (largura efetiva, k = 4) e 9.8.2.1 (escoamento da seção efetiva, γ = 1,10)"), passos: [
+      { rotulo: "Seção", formula: "U invertido: chapa de " + br(Pm, 0) + " mm com abas de " + br(hl, 0) + " mm, t = " + br(t, 2) + " mm", valor: "b (parte plana comprimida) = " + br(b, 1) + " mm" },
+      { rotulo: "Largura efetiva", formula: "λp = (b/t)/(0,95·√(k·E/fy)); bef = b·(1 − 0,22/λp)/λp", valor: "λp = " + br(lam, 3) + "; bef = " + br(bef, 1) + " mm" },
+      { rotulo: "Módulo efetivo", formula: "Wef = mín(I/yc, I/(h − yc))", valor: br(Wef / 1000, 2) + " cm³" },
+      { rotulo: "Cargas (a pior)", formula: "MP = 1,5·2,5·W/4; Mq = (1,5·q + 1,25·g)·p·W²/8", valor: "MP = " + br(MP, 3) + " kN·m; Mq = " + br(Mq, 3) + " kN·m" },
+      { rotulo: "Resistência", formula: "MRd = Wef·fy/1,10", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9, conferir: true });
+    /* REVISOR (14/10/2026, CRÍTICO): a CHAPA DE CIMA trabalhando SOZINHA entre as duas dobras — a carga concentrada da nota t
+       (2,5 kN) e a do ensaio (1,5 kN) em 100 × 100 mm, na posição mais desfavorável (no meio do vão entre as dobras). Faixa de
+       100 mm (a largura carregada, sem espalhar para os lados) biapoiada nas dobras (rótula) — as duas premissas a favor da segurança.
+       A flecha que a pessoa sente é a GLOBAL (a peça entre as longarinas) + a LOCAL (a chapa entre as dobras), com o mesmo limite
+       do degrau em grade e em chapa: mín(W/300; 6 mm) (ISO 14122-3, 4.2.1). */
+    var Lp = b, bs = 100, c = 100, PdL = GAMA.q * P, MdL = Lp > c ? PdL * (2 * Lp - c) / 8 / 1000 : PdL * Lp / 8 / 1000, MRdL = bs * t * t / 4 * fy / ga1() / 1e6;
+    out.verificacoes.push({ nome: "Degrau em chapa dobrada — flexão local da chapa entre as dobras", item: ref("nbr6120", "Tabela 10, nota t (2,5 kN na posição mais desfavorável)") + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção retangular cheia: MRd = Z·fy/γa1, Z = 1,5·W)", passos: [
+      { rotulo: "Faixa da chapa entre as dobras", formula: "vão = parte plana b; faixa de 100 mm (a largura carregada); biapoiada nas dobras", valor: "vão " + br(Lp, 1) + " mm; t = " + br(t, 2) + " mm" },
+      { rotulo: "Momento (2,5 kN em 100 mm no meio do vão)", formula: "MSd = 1,5·P·(2·b − c)/8", valor: br(MdL, 4) + " kN·m" },
+      { rotulo: "Resistência", formula: "MRd = (100·t²/4)·fy/γa1", valor: br(MRdL, 4) + " kN·m" }], resistencia: MRdL, solicitante: MdL, unidade: "kN·m", razao: MdL / MRdL, ok: MdL <= MRdL + 1e-9 });
+    var dch = 1.5 * 1000 * Math.pow(W * 1000, 3) / (48 * E * ef.I), dloc = 1.5 * 1000 * Math.pow(Lp, 3) / (48 * E * (bs * Math.pow(t, 3) / 12)), dtot = dch + dloc, dl = Math.min(W * 1000 / 300, 6);
+    out.verificacoes.push({ nome: "Degrau em chapa dobrada — flecha (global + local da chapa)", item: ref("iso14122", "parte 3, 4.2.1 (1,5 kN em 100 × 100 mm; flecha < W/300 e ≤ 6 mm)"), passos: [
+      { rotulo: "Global: a peça entre as longarinas", formula: "δg = P·W³/(48·E·Ief) (inércia da seção efetiva, a favor)", valor: br(dch, 2) + " mm" },
+      { rotulo: "Local: a chapa entre as dobras (faixa de 100 mm, biapoiada)", formula: "δl = P·b³/(48·E·(100·t³/12))", valor: br(dloc, 2) + " mm" },
+      { rotulo: "Total sob a carga", formula: "δ = δg + δl ≤ mín(W/300; 6 mm)", valor: br(dtot, 2) + " mm ≤ " + br(dl, 2) + " mm" }], resistencia: dl, solicitante: dtot, unidade: "mm", razao: dtot / dl, ok: dtot <= dl + 1e-9, els: true, conferir: true });
+    if (MdL > MRdL + 1e-9 || dtot > dl + 1e-9) out.avisos.push("Degrau em chapa dobrada: a chapa de cima não aguenta sozinha entre as dobras — chapa mais grossa, enrijecedor (nervura) por baixo ou degrau em grade");
+    out.avisos.push("Degrau em chapa dobrada: a flambagem distorcional e lateral da peça inteira não governam (vão curto, a chapa larga comprimida e as abas tracionadas — premissa)");
+    /* REVISOR (MÉDIO): a ligação das abas nas longarinas não é conta feita — fica NÃO VERIFICADA e segura o "aprovado" */
+    out.naoVerificados.push("não verificado: ligação das abas do degrau dobrado nas longarinas (parafusos ou solda nas abas) — detalhar e verificar (CRÍTICO)");
     return out;
   }
   /* VIGA biapoiada da plataforma/passarela (faixa de influência) */
@@ -638,9 +694,12 @@
     if (!s) { out.naoVerificados.push("não verificado: montante — perfil \"" + sp.perfil + "\" sem propriedades"); return out; }
     H = fg.altura || 1.1;
     var F = fg.f * esp, Fd = GAMA.q * F, Md = Fd * H, est = [];
+    /* M5 (14/10/2026): o CORRIMÃO SOBRE MONTANTES (sem guarda-corpo) não é barreira — o montante recebe a carga do corrimão: 900 N em
+       qualquer ponto (NPT 011:2024, 5.8.3.2, texto oficial lido) na altura do corrimão de cima */
+    if (sp.corrimaoSo) { H = num(sp.altura, 0.92); F = 0.9; Fd = GAMA.q * F; Md = Fd * H; fg = { f: 0.9, rotulo: "corrimão — 900 N em qualquer ponto", altura: H, ref: ref("npt011", "5.8.3.2 (corrimão: 900 N)") }; }
     for (var i = 0; i <= 6; i++) { var x = H * i / 6; est.push({ x: x, N: 0, Vy: Fd, Mz: Fd * (H - x), comb: "ELU" }); }
     var r = viaDim8800("Montante", s, a, H, est, { flambagem: { Lx: 2 * H, Ly: 2 * H, Lz: 2 * H }, travamentos: { mais: [], menos: [] }, papel: "viga", cb: 1 });
-    out.verificacoes.push({ nome: "Montante — força do guarda-corpo", item: fg.ref, passos: [{ rotulo: "Força horizontal (" + fg.rotulo + ")", formula: "F = f·s", valor: br(fg.f, 2) + " kN/m × " + m2(esp) + " = " + br(F, 2) + " kN a " + m2(H) }, { rotulo: "Momento na base", formula: "MSd = 1,5·F·h", valor: br(Md, 3) + " kN·m" }], razao: 0, ok: true, info: true });
+    out.verificacoes.push({ nome: sp.corrimaoSo ? "Montante — carga do corrimão" : "Montante — força do guarda-corpo", item: fg.ref, passos: [sp.corrimaoSo ? { rotulo: "Força horizontal (" + fg.rotulo + ")", formula: "F = 0,9 kN", valor: br(F, 2) + " kN a " + m2(H) } : { rotulo: "Força horizontal (" + fg.rotulo + ")", formula: "F = f·s", valor: br(fg.f, 2) + " kN/m × " + m2(esp) + " = " + br(F, 2) + " kN a " + m2(H) }, { rotulo: "Momento na base", formula: "MSd = 1,5·F·h", valor: br(Md, 3) + " kN·m" }], razao: 0, ok: true, info: true });
     if (r) { out.verificacoes = out.verificacoes.concat(resumir("Montante", r)); out.avisos = out.avisos.concat(arr(r.avisos)); }
     /* solda de filete em volta do tubo (circular) ou do retangular: linha */
     var M = Mat(), el = M && M.ELETRODOS ? M.ELETRODOS.filter(function (x) { return x.id === "E70XX"; })[0] : null, fw = el ? el.fw : 485, gw2 = M && M.GAMA ? M.GAMA.w2 : 1.35;
@@ -660,9 +719,9 @@
     /* TRAVESSÃO SUPERIOR e INTERMEDIÁRIA entre montantes: a mesma força f (kN/m) da Tabela 12, viga biapoiada de vão s */
     var sc = sp.corrimao ? secao(sp.corrimao) : null;
     if (sc && D88()) {
-      var Mt = GAMA.q * fg.f * esp * esp / 8, ft = D88().flexao(sc, aco(sp.aco), E_(), 77000, esp * 1000, 1, "x"), MRt = ft ? ft.MRd : 0;
-      ["travessão superior", "travessa intermediária"].forEach(function (nm) {
-        out.verificacoes.push({ nome: "Guarda-corpo — " + nm + " entre montantes", item: fg.ref + " (a mesma força distribuída); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento (vão entre montantes)", formula: "MSd = 1,5·f·s²/8", valor: br(Mt, 3) + " kN·m (f = " + br(fg.f, 2) + " kN/m, s = " + m2(esp) + ")" }, { rotulo: "Resistência (" + (sc.nome || sp.corrimao) + ")", formula: "MRd (Anexo G)", valor: br(MRt, 3) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 });
+      var Mt = sp.corrimaoSo ? GAMA.q * 0.9 * esp / 4 : GAMA.q * fg.f * esp * esp / 8, ft = D88().flexao(sc, aco(sp.aco), E_(), 77000, esp * 1000, 1, "x"), MRt = ft ? ft.MRd : 0;
+      (sp.corrimaoSo ? ["corrimão de cima (0,92 m)", "corrimão de baixo (0,70 m)"] : ["travessão superior", "travessa intermediária"]).forEach(function (nm) {
+        out.verificacoes.push({ nome: "Guarda-corpo — " + nm + " entre montantes", item: fg.ref + " (a mesma força distribuída); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento (vão entre montantes)", formula: sp.corrimaoSo ? "MSd = 1,5·0,9·s/4" : "MSd = 1,5·f·s²/8", valor: br(Mt, 3) + " kN·m (" + (sp.corrimaoSo ? "P = 0,9 kN" : "f = " + br(fg.f, 2) + " kN/m") + ", s = " + m2(esp) + ")" }, { rotulo: "Resistência (" + (sc.nome || sp.corrimao) + ")", formula: "MRd (Anexo G)", valor: br(MRt, 3) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 });
       });
     } else out.naoVerificados.push("não verificado: travessão superior e intermediária — perfil do corrimão não informado (CRÍTICO)");
     return out;
@@ -738,17 +797,63 @@
     if (rg) { var lam = h * 1000 / rg; out.verificacoes.push({ nome: "Pilarete do patamar — esbeltez KL/r", item: "NBR 8800:2008, 5.3.4.1 (KL/r ≤ 200)", passos: [{ rotulo: "KL/r", formula: "K = 1", valor: br(lam, 0) }], resistencia: 200, solicitante: lam, unidade: "", razao: lam / 200, ok: lam <= 200 + 1e-9 }); }
     return out;
   }
+  /* ============================================================ MODELOS DE GUARDA-CORPO (frente M5, 14/10/2026)
+   * PREENCHIMENTO entre os montantes: a NBR 6120:2019 (6.3) manda a barreira EM SI para a norma específica; a NBR 14718:2019 verifica o
+   * preenchimento por ENSAIO (impacto de corpo mole) — não é conta. A carga de CÁLCULO do preenchimento vem da NPT 011:2024 (CBPMPR),
+   * 5.8.3.1: "painéis e balaústres: 1.200 Pa na área bruta" (texto oficial lido). Barra vertical biapoiada nas travessas; tela pelo fio
+   * vertical na faixa da malha; chapa perfurada pela faixa de 1 m no menor vão, com a perda dos furos. */
+  var Q_PREENCH = 1.2, REF_PREENCH = ref("npt011", "5.8.3.1 (painéis e balaústres: 1.200 Pa na área bruta)");
+  function preenchimento_(sp) {
+    var a = aco(sp.aco || "ASTM A36"), g1 = ga1(), q = Q_PREENCH, h = num(sp.hFaixa, 0.9), esp = num(sp.espac, 1), out = { verificacoes: [], naoVerificados: [], avisos: [] };
+    if (sp.preenchimento === "vidro") return out;
+    if (sp.preenchimento === "barras") {
+      var d = num(sp.barraD, 0.016) * 1000, s = num(sp.passo, 0.11) * 1000, Md = GAMA.q * q * (s / 1000) * h * h / 8, Z = Math.pow(d, 3) / 6, Wb = Math.PI * Math.pow(d, 3) / 32, MRd = Math.min(Z, 1.5 * Wb) * a.fy / g1 / 1e6;
+      out.verificacoes.push({ nome: "Preenchimento — barra vertical (Ø " + br(d, 0) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 (seção circular cheia)", passos: [
+        { rotulo: "Carga na faixa da barra (passo s)", formula: "w = 1,2 kPa · s", valor: br(q * s / 1000, 3) + " kN/m (s = " + br(s, 0) + " mm)" }, { rotulo: "Momento (barra biapoiada nas travessas, vão h)", formula: "MSd = 1,5·w·h²/8", valor: br(Md, 4) + " kN·m (h = " + m2(h) + ")" },
+        { rotulo: "Resistência", formula: "Z = d³/6 ≤ 1,5·W", valor: "MRd = " + br(MRd, 4) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
+    } else if (sp.preenchimento === "tela") {
+      var df = num(sp.fio, 0.004) * 1000, af = (num(sp.malha, 0.05) + num(sp.fio, 0.004)) * 1000, Mf = GAMA.q * q * (af / 1000) * h * h / 8, MRf = Math.min(Math.pow(df, 3) / 6, 1.5 * Math.PI * Math.pow(df, 3) / 32) * 250 / g1 / 1e6;
+      out.verificacoes.push({ nome: "Preenchimento — tela (fio Ø " + br(df, 1) + " mm a cada " + br(af, 0) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 — fio vertical biapoiado nas travessas, sem a contribuição dos fios horizontais e com fy = 250 MPa (aço da tela não informado: a favor)", passos: [
+        { rotulo: "Momento no fio", formula: "MSd = 1,5·1,2 kPa·a·h²/8", valor: br(Mf, 5) + " kN·m (h = " + m2(h) + ")" }, { rotulo: "Resistência do fio", formula: "Z = d³/6", valor: br(MRf, 5) + " kN·m" }], resistencia: MRf, solicitante: Mf, unidade: "kN·m", razao: Mf / MRf, ok: Mf <= MRf + 1e-9 });
+      out.avisos.push("Tela do guarda-corpo: peso pela geometria do fio (valor de partida) — pedir a ficha do fabricante");
+    } else if (sp.preenchimento === "perfurada") {
+      var tp = num(sp.t, 0.003) * 1000, Lc = Math.min(h, Math.max(0.1, esp - 0.08)), ef = Math.max(0.2, 1 - num(sp.furoD, 0.008) / num(sp.furoPasso, 0.012)), Mp = GAMA.q * q * Lc * Lc / 8, MRp = 1000 * tp * tp / 4 * ef * a.fy / g1 / 1e6;
+      out.verificacoes.push({ nome: "Preenchimento — chapa perfurada (" + br(tp, 1) + " mm)", item: REF_PREENCH + "; NBR 8800:2024 (expressão da 2008), 5.4 — faixa de 1 m no menor vão, a seção líquida pela perda dos furos (1 − d/passo)", passos: [
+        { rotulo: "Momento (faixa de 1 m, vão " + m2(Lc) + ")", formula: "MSd = 1,5·1,2 kPa·L²/8", valor: br(Mp, 4) + " kN·m/m" }, { rotulo: "Resistência", formula: "MRd = (t²/4)·(1 − d/passo)·fy/γa1", valor: br(MRp, 4) + " kN·m/m (fator " + br(ef, 2) + ")" }], resistencia: MRp, solicitante: Mp, unidade: "kN·m/m", razao: Mp / MRp, ok: Mp <= MRp + 1e-9 });
+    }
+    /* as travessas do preenchimento levam a carga das barras/painéis até os montantes */
+    var sc = sp.corrimao ? secao(sp.corrimao) : null;
+    if (sc && D88()) { var wt = q * h / 2, Mt = GAMA.q * wt * esp * esp / 8, ft = D88().flexao(sc, aco(sp.aco), E_(), 77000, esp * 1000, 1, "x"), MRt = ft ? ft.MRd : 0;
+      out.verificacoes.push({ nome: "Preenchimento — travessa entre montantes", item: REF_PREENCH + " (metade da faixa em cada travessa); NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·(1,2·h/2)·s²/8", valor: br(Mt, 4) + " kN·m" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRt, 4) + " kN·m" }], resistencia: MRt, solicitante: Mt, unidade: "kN·m", razao: Mt / MRt, ok: Mt <= MRt + 1e-9 }); }
+    out.naoVerificados.push("não verificado: ensaio de impacto de corpo mole do preenchimento (NBR 14718:2019) — é ensaio de laboratório, não conta; pedir o laudo do fabricante");
+    return out;
+  }
+  /* VIDRO: sem o texto da ABNT NBR 7199:2025 e sem o ensaio da NBR 14718 o vidro NÃO é dimensionado — verificação crítica não feita */
+  function vidro_(sp) {
+    return { verificacoes: [], avisos: ["Vidro do guarda-corpo: laminado (a NPT 011:2024, 5.8.1.4 c, pede laminado ou aramado; a NBR 7199:2025 tirou o aramado dos vidros de segurança) — espessura, tipo (temperado laminado ou comum laminado) e fixação pelo fabricante"],
+      naoVerificados: ["não dimensionado: vidro laminado " + (sp.composicao || "") + " mm (" + (sp.fixacao === "perfil" ? "engastado no perfil de base" : "preso nos montantes por garras") + ") — espessura e fixação pela ABNT NBR 7199:2025 e ensaio da NBR 14718:2019; sem o texto das normas, não dimensionado (CRÍTICO)"].concat(sp.fixacao === "perfil" ? ["não verificado: o perfil de base engastado no piso e a sua fixação (CRÍTICO)"] : ["não verificado: as garras do vidro e o furo do pino (fabricante)"]) };
+  }
+  /* CANCELA: o quadro (travessa de cima) recebe a força da Tabela 12 entre a dobradiça e o batente */
+  function cancela_(sp) {
+    var sc = secao(sp.corrimao || "HSS48.3X3.7"), fg = forcaGuarda(sp.uso), L = num(sp.largura, 0.8), out = { verificacoes: [], naoVerificados: ["não verificado: dobradiças, mola de autofechamento e trinco da cancela — especificar pelo fabricante (o quadro foi verificado)"], avisos: [] };
+    if (!sc || !D88()) { out.naoVerificados.push("não verificado: quadro da cancela — perfil sem propriedades (CRÍTICO)"); return out; }
+    var Md = GAMA.q * fg.f * L * L / 8, f = D88().flexao(sc, aco(sp.aco), E_(), 77000, L * 1000, 1, "x"), MRd = f ? f.MRd : 0;
+    out.verificacoes.push({ nome: "Cancela — travessa de cima (vão da abertura)", item: fg.ref + "; NBR 8800:2024 (expressão da 2008), 5.4", passos: [{ rotulo: "Momento", formula: "MSd = 1,5·f·L²/8", valor: br(Md, 3) + " kN·m (f = " + br(fg.f, 2) + " kN/m, L = " + m2(L) + ")" }, { rotulo: "Resistência", formula: "MRd (Anexo G)", valor: br(MRd, 3) + " kN·m" }], resistencia: MRd, solicitante: Md, unidade: "kN·m", razao: Md / MRd, ok: Md <= MRd + 1e-9 });
+    return out;
+  }
   /* spec = { itens: [{ tipo: "longarina"|"degrau"|"viga"|"console"|"montante"|"piso"|"marinheiro"|"fixacao"|"pilarete", ... }], carga: {uso, q}, guarda: {uso} } */
   function dimensionar(spec) {
     spec = spec || {};
-    var vs = [], nv = [], av = [], crit = [], F = { longarina: longarina, degrau: degrau, viga: viga, console: console_, montante: montante, piso: piso, marinheiro: marinheiro, corrimao: corrimao, fixacao: fixacaoEscada, pilarete: pilaretePatamar, baseMontante: function (sp) { var E = EL(); if (!E || !E.baseMontante) return { verificacoes: [], naoVerificados: ["não verificado: base do montante — js/metalescadalinha.js não carregou (CRÍTICO)"], avisos: [] }; var r = E.baseMontante(sp); return { verificacoes: r.verificacoes, naoVerificados: r.naoVerificados, avisos: r.avisos }; } };
+    var vs = [], nv = [], av = [], crit = [], F = { longarina: longarina, degrau: degrau, viga: viga, console: console_, montante: montante, piso: piso, marinheiro: marinheiro, corrimao: corrimao, fixacao: fixacaoEscada, pilarete: pilaretePatamar,
+      preenchimento: preenchimento_, vidro: vidro_, cancela: cancela_, baseMontante: function (sp) { var E = EL(); if (!E || !E.baseMontante) return { verificacoes: [], naoVerificados: ["não verificado: base do montante — js/metalescadalinha.js não carregou (CRÍTICO)"], avisos: [] }; var r = E.baseMontante(sp); return { verificacoes: r.verificacoes, naoVerificados: r.naoVerificados, avisos: r.avisos }; } };
     arr(spec.itens).forEach(function (it) {
       var f = F[it.tipo]; if (!f) { nv.push("não verificado: " + it.tipo); return; }
       if (it.q === null) { crit.push("não verificado: " + it.tipo + " — sobrecarga não informada (CRÍTICO)"); return; }
       var r; try { r = f(it); } catch (e) { crit.push("não verificado: " + it.tipo + " — erro no cálculo (" + (e && e.message ? e.message : e) + ")"); return; }
       vs = vs.concat(r.verificacoes); nv = nv.concat(r.naoVerificados); av = av.concat(r.avisos);
-      /* item sem NENHUMA verificação calculada (perfil fora do catálogo, piso sem tabela…) = verificação crítica não feita */
-      if (!r.verificacoes.filter(function (v) { return !v.info; }).length) crit.push("não verificado: " + (it.nome || it.tipo) + " — nenhuma verificação calculada (CRÍTICO): " + (r.naoVerificados[0] || "sem dado"));
+      /* item sem NENHUMA verificação calculada (perfil fora do catálogo, piso sem tabela…) = verificação crítica não feita
+         (o VIDRO já diz "não dimensionado (CRÍTICO)" — não repete) */
+      if (it.tipo !== "vidro" && !(it.tipo === "preenchimento" && it.preenchimento === "vidro") && !r.verificacoes.filter(function (v) { return !v.info; }).length) crit.push("não verificado: " + (it.nome || it.tipo) + " — nenhuma verificação calculada (CRÍTICO): " + (r.naoVerificados[0] || "sem dado"));
       r.naoVerificados.forEach(function (t) { if (/CRÍTICO/.test(t)) crit.push(t); });
     });
     /* REVISÃO S6 rodada 3 (B3): o "(CRÍTICO)" da lista geral da peça também segura o "aprovado" (antes só o dos itens) */
@@ -791,19 +896,19 @@
       "<li>Coeficientes: " + t(GAMA.ref) + "; γa1 = " + br(ga1(), 2) + ".</li><li>As peças vêm do modelo (a mesma geometria do BIM e do quantitativo).</li></ul>";
     if (d.escolha) h += caixa("Escolha do meio de acesso: <b>" + t(d.escolha.tipo) + "</b> — " + t(d.escolha.motivo) + (d.escolha.angulo != null ? " (ângulo " + br(d.escolha.angulo, 1) + "°)" : ""));
     if (d.escopo) { secoes.push("escopo"); h += caixa("<b>Escopo desta verificação.</b> Verifica: " + t(arr(d.escopo.verifica).join("; ")) + ".<br><b>Não verifica:</b> " + t(arr(d.escopo.naoVerifica).join("; ")) + ".", true); }
-    secoes.push("normas"); h += "<h2>2. Normas e edições</h2>" + tab(["Norma", "Título", "Edição", "De onde veio o texto"], Object.keys(NORMAS).map(function (k) { var n = NORMAS[k]; return [t(n.sigla), t(n.titulo), t(n.edicao), t(n.fonte) + (n.lido ? "" : ' <span class="ph">(conferir no texto)</span>')]; }));
+    secoes.push("normas"); h += "<h2>2. Normas e edições</h2>" + tab(["Norma", "Título", "Edição"], Object.keys(NORMAS).map(function (k) { var n = NORMAS[k]; return [t(n.sigla), t(n.titulo), t(String(n.edicao).split(" (")[0])]; }));   /* M5: a origem do texto e o "conferir" ficam no arquivo interno */
     if (v && v.avisos) v.avisos.forEach(function (a) { h += caixa(t(a)); });
     secoes.push("conformidade"); h += "<h2>3. Conformidade item a item</h2>";
     if (v && v.ok) {
       h += "<p><b>" + t(v.resumo) + "</b></p>" + tab(["Requisito", "Norma / item", "Limite", "Projeto", "Situação", "Correção"], v.itens.map(function (i) {
-        return { cls: i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : "", c: [t(i.requisito) + (i.nota ? '<br><span class="muted">' + t(i.nota) + "</span>" : ""), t(i.norma) + (i.conferir ? ' <span class="ph">[conferir]</span>' : ""), t(i.limite), t(i.valorTexto), i.ok == null ? t(i.situacao) : (i.ok ? '<span class="ok">atende</span>' : '<span class="falha">' + t(i.situacao) + "</span>"), t(i.correcao || "")] };
+        return { cls: i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : "", c: [t(i.requisito) + (i.nota ? '<br><span class="muted">' + t(i.nota) + "</span>" : ""), t(i.norma), t(i.limite), t(i.valorTexto), i.ok == null ? t(i.situacao) : (i.ok ? '<span class="ok">atende</span>' : '<span class="falha">' + t(i.situacao) + "</span>"), t(i.correcao || "")] };
       }));
     } else h += caixa("Conformidade não avaliada.", true);
     secoes.push("verificacoes"); h += "<h2>4. Verificações estruturais</h2>";
     if (dm && dm.ok) {
       h += "<p><b>" + t(dm.resumo) + "</b></p>";
       dm.verificacoes.forEach(function (x) {
-        h += "<h3>" + ix(t(x.nome)) + (x.info ? "" : " — " + (x.ok ? '<span class="ok">atende</span>' : '<span class="falha">não atende</span>') + " (" + br(num(x.razao, 0) * 100, 0) + " %)") + "</h3><p class=\"muted\">" + ix(t(x.item)) + (x.conferir ? ' <span class="ph">[conferir]</span>' : "") + "</p>";
+        h += "<h3>" + ix(t(x.nome)) + (x.info ? "" : " — " + (x.ok ? '<span class="ok">atende</span>' : '<span class="falha">não atende</span>') + " (" + br(num(x.razao, 0) * 100, 0) + " %)") + "</h3><p class=\"muted\">" + ix(t(x.item)) + "</p>";
         h += tab(["Passo", "Fórmula", "Valor"], arr(x.passos).map(function (p) { return [ix(t(p.rotulo)), ix(t(p.formula || "")), ix(t(p.valor || ""))]; }));
       });
       if (dm.avisos.length) h += "<h3>Premissas e avisos do cálculo</h3><ul>" + dm.avisos.map(function (a) { return "<li>" + t(a) + "</li>"; }).join("") + "</ul>";
@@ -815,9 +920,11 @@
     if (arr(qt.pecas).length) h += tab(["Peça", "Qtd.", "Peso (kg)", "Área de pintura (m²)"], qt.pecas.map(function (p) { return [t(p.papel), String(p.n), br(p.massa, 1), br(p.area, 2)]; }).concat([["<b>Total</b>", "", "<b>" + br(num(qt.massa, 0), 1) + "</b>", "<b>" + br(num(qt.area, 0), 2) + "</b>"]]));
     else h += "<p>Sem peças.</p>";
     var co = cores(d.uso);
-    secoes.push("pintura"); h += "<h2>7. Cor de segurança e proteção contra corrosão</h2><ul><li>Cor: " + t(co.cor) + (co.munsell ? " (Munsell " + t(co.munsell) + ")" : "") + " — " + t(co.ref) + (co.conferir ? ' <span class="ph">[conferir]</span>' : "") + ".</li><li>Proteção: " + t(co.sistema) + " — " + t(co.sistemaRef) + ".</li><li class=\"muted\">Origem: " + t(co.origem) + ".</li></ul>";
-    var pend = arr(v && v.conferir).map(function (i) { return i.norma + ": " + i.requisito; });
-    secoes.push("pendencias"); h += "<h2>8. Pendências de conferência de norma</h2>" + (pend.length ? "<ul>" + pend.map(function (x) { return "<li>" + t(x) + "</li>"; }).join("") + "</ul>" : "<p>Nenhuma.</p>");
+    secoes.push("pintura"); h += "<h2>7. Cor de segurança e proteção contra corrosão</h2><ul><li>Cor: " + t(co.cor) + (co.munsell ? " (Munsell " + t(co.munsell) + ")" : "") + " — " + t(co.ref) + ".</li><li>Proteção: " + t(co.sistema) + " — " + t(co.sistemaRef) + ".</li><li class=\"muted\">Origem: " + t(co.origem) + ".</li></ul>";
+    /* M5 (regra da casa, 14/10/2026): sem o texto da norma o "conferir" fica só no arquivo interno (AcoAcessos.pendenciasNorma →
+       docs/metalica/ACESSOS.md); o memorial lista os requisitos aplicados com a norma e o item */
+    var apl = arr(v && v.itens).map(function (i) { return i.norma + " — " + i.requisito; }).filter(function (x, j, l) { return l.indexOf(x) === j; });
+    secoes.push("pendencias"); h += "<h2>8. Requisitos aplicados (norma e item)</h2>" + (apl.length ? "<ul>" + apl.map(function (x) { return "<li>" + t(x) + "</li>"; }).join("") + "</ul>" : "<p>Nenhum.</p>");
     if (v && !v.aprovado) av.push(v.naoConformes.length + " não conformidade(s) de norma");
     if (dm && !dm.aprovado) av.push(dm.falhas + " verificação(ões) estrutural(is) não passam");
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + t(titulo) + "</title><style>" + CSS + "</style></head><body>" + h + "</body></html>";
@@ -825,12 +932,14 @@
   }
   function caixa(h, alerta) { return '<div class="caixa' + (alerta ? " alerta" : "") + '">' + h + "</div>"; }
 
+  /* M5: a lista INTERNA do que veio de fonte secundária (o "conferir" — nunca na tela nem no memorial) */
+  function pendenciasNorma() { return REQ.filter(function (q) { return q.conferir; }).map(function (q) { return { id: q.id, norma: ref(q.norma, q.item), texto: q.texto, fonte: (NORMAS[q.norma] || {}).fonte || "" }; }); }
   var AcoAcessos = {
     NORMAS: NORMAS, PERFIS: PERFIS, REQ: REQ, REGRA_DEG: REGRA_DEG, USOS_GUARDA: USOS_GUARDA, USOS_PISO: USOS_PISO, GAMA: GAMA, FLECHA: FLECHA,
     ref: ref, requisitos: requisitos, ler: ler, verificar: verificar, degraus: degraus, escolher: escolher,
     forcaGuarda: forcaGuarda, sobrecarga: sobrecarga, pisoKgM2: pisoKgM2, cores: cores,
     dimensionar: dimensionar, corrimao: corrimao, espessuraDegrau: espessuraDegrau, CHAPAS_DEGRAU: CHAPAS_DEGRAU, longarina: longarina, degrau: degrau, viga: viga, console: console_, montante: montante, piso: piso, marinheiro: marinheiro,
-    memorial: memorial
+    memorial: memorial, pendenciasNorma: pendenciasNorma
   };
   global.AcoAcessos = AcoAcessos;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoAcessos;

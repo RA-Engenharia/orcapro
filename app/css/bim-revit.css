@@ -56,9 +56,9 @@
   border: 1px solid var(--rv-linha-forte);
   border-radius: 4px;
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--t-micro);
   /* a fonte é a de sistema, para não parecer "site" */
-  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  font-family: var(--fonte);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -95,7 +95,7 @@
   display: flex; align-items: center; gap: 8px;
   height: 30px; padding: 0 8px;
   background: var(--rv-titulo-bg); color: var(--rv-titulo-tx);
-  font-size: 12px; flex: 0 0 auto;
+  font-size: var(--t-micro); flex: 0 0 auto;
 }
 .rv-titulo-nome {
   flex: 1; text-align: center;
@@ -128,18 +128,18 @@
   padding: 6px 13px 7px; margin: 0;
   background: var(--rv-aba-bg); color: var(--rv-fita-tx);
   border: 0; border-bottom: 2px solid transparent;
-  font-size: 12.5px; font-family: inherit; white-space: nowrap;
+  font-size: var(--t-micro); font-family: inherit; white-space: nowrap;
   cursor: pointer;
 }
 .rv-aba:hover { background: var(--rv-hover); }
 .rv-aba[aria-selected="true"] {
   background: var(--rv-aba-ativa-bg);
   border-bottom-color: var(--rv-aba-ativa-linha);
-  font-weight: 600;
+  font-weight: var(--p-forte);
 }
 .rv-aba.rv-aba-arquivo {
   background: var(--rv-arquivo-bg); color: var(--rv-arquivo-tx);
-  font-weight: 600; margin-right: 4px;
+  font-weight: var(--p-forte); margin-right: 4px;
   border-radius: 3px 3px 0 0;
 }
 .rv-aba.rv-aba-arquivo:hover { filter: brightness(1.12); }
@@ -169,7 +169,7 @@
   flex: 1; padding: 2px 0 4px;
 }
 .rv-painel-nome {
-  text-align: center; font-size: 10.5px; color: var(--rv-tx-fraco);
+  text-align: center; font-size: var(--t-mini); color: var(--rv-tx-fraco);
   padding: 2px 0 4px; user-select: none;
 }
 
@@ -193,7 +193,7 @@
 .rv-cmd-ico { display: flex; align-items: center; justify-content: center; height: 26px; }
 .rv-cmd-ico svg { width: 24px; height: 24px; }
 .rv-cmd-rot {
-  font-size: 11px; line-height: 1.15; letter-spacing: -.1px;
+  font-size: var(--t-mini); line-height: 1.15; letter-spacing: -.1px;
   display: flex; flex-direction: column;
 }
 /* botão pequeno: ícone e rótulo lado a lado, três por coluna */
@@ -204,14 +204,14 @@
 }
 .rv-cmd.rv-cmd-sm .rv-cmd-ico { height: 16px; }
 .rv-cmd.rv-cmd-sm .rv-cmd-ico svg { width: 15px; height: 15px; }
-.rv-cmd.rv-cmd-sm .rv-cmd-rot { flex-direction: row; gap: 3px; font-size: 11.5px; }
+.rv-cmd.rv-cmd-sm .rv-cmd-rot { flex-direction: row; gap: 3px; font-size: var(--t-mini); }
 .rv-col { display: flex; flex-direction: column; gap: 1px; }
 /* seta de menu embaixo do botão */
-.rv-cmd-seta { font-size: 8px; line-height: 1; opacity: .65; margin-top: -1px; }
+.rv-cmd-seta { font-size: var(--t-mini); line-height: 1; opacity: .65; margin-top: -1px; }
 /* selo de recurso do plano pago */
 .rv-cmd-pro {
   position: absolute; top: 2px; right: 2px;
-  font-size: 8px; font-weight: 700; letter-spacing: .3px;
+  font-size: var(--t-mini); font-weight: var(--p-forte); letter-spacing: .3px;
   background: #f59e0b; color: #1a1a1a; border-radius: 2px; padding: 0 3px;
 }
 .rv-cmd { position: relative; }
@@ -234,7 +234,7 @@
 .rv-doca.rv-nav { flex: 1 1 auto; min-height: 90px; }
 .rv-doca-cab {
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; font-size: 12px; font-weight: 600;
+  padding: 5px 8px; font-size: var(--t-micro); font-weight: var(--p-forte);
   background: var(--rv-painel-cab); border-bottom: 1px solid var(--rv-linha);
   flex: 0 0 auto;
 }
@@ -242,7 +242,7 @@
   margin-left: auto; width: 18px; height: 18px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   background: transparent; border: 1px solid transparent; border-radius: 2px;
-  color: inherit; cursor: pointer; font-size: 12px; line-height: 1;
+  color: inherit; cursor: pointer; font-size: var(--t-micro); line-height: 1;
 }
 .rv-doca-cab .rv-x:hover { background: var(--rv-hover); border-color: var(--rv-linha-forte); }
 .rv-doca-corpo { flex: 1; overflow: auto; min-height: 0; }
@@ -263,31 +263,31 @@
 .rv-tipo-sel { flex: 1; min-width: 0; }
 /* sem box-sizing o padding e a borda somam por fora dos 100% e a seta do
    select monta em cima do texto — foi o que apareceu no print da tela */
-.rv-tipo-sel select { width: 100%; max-width: 100%; box-sizing: border-box; font-size: 11.5px; }
+.rv-tipo-sel select { width: 100%; max-width: 100%; box-sizing: border-box; font-size: var(--t-mini); }
 .rv-tipo-linha {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px; border-bottom: 1px solid var(--rv-linha);
-  font-size: 11.5px;
+  font-size: var(--t-mini);
 }
-.rv-tipo-linha b { flex: 1; font-weight: 600; }
+.rv-tipo-linha b { flex: 1; font-weight: var(--p-forte); }
 .rv-btn-tipo {
-  font-size: 11px; padding: 2px 8px;
+  font-size: var(--t-mini); padding: 2px 8px;
   background: var(--rv-painel-cab); color: inherit;
   border: 1px solid var(--rv-linha-forte); border-radius: 2px; cursor: pointer;
 }
 .rv-btn-tipo:hover { background: var(--rv-hover); }
 
 /* tabela de parâmetros */
-.rv-params { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.rv-params { width: 100%; border-collapse: collapse; font-size: var(--t-mini); }
 .rv-params th {
-  text-align: left; font-weight: 700; font-size: 11px;
+  text-align: left; font-weight: var(--p-forte); font-size: var(--t-mini);
   background: var(--rv-painel-cab); color: var(--rv-painel-tx);
   padding: 4px 8px; border-top: 1px solid var(--rv-linha);
   border-bottom: 1px solid var(--rv-linha);
   position: sticky; top: 0; z-index: 1;
   cursor: pointer; user-select: none;
 }
-.rv-params th .rv-seta { font-size: 8px; margin-right: 4px; display: inline-block; }
+.rv-params th .rv-seta { font-size: var(--t-mini); margin-right: 4px; display: inline-block; }
 .rv-params td { padding: 3px 8px; border-bottom: 1px solid var(--rv-linha); vertical-align: middle; }
 .rv-params tr:nth-child(even) td { background: var(--rv-tela-2); }
 .rv-params td.rv-p-nome { width: 47%; color: var(--rv-painel-tx); }
@@ -296,7 +296,7 @@
 .rv-params td.rv-p-val input[type="text"],
 .rv-params td.rv-p-val input[type="number"],
 .rv-params td.rv-p-val select {
-  width: 100%; max-width: 100%; box-sizing: border-box; font-size: 11.5px; padding: 1px 3px;
+  width: 100%; max-width: 100%; box-sizing: border-box; font-size: var(--t-mini); padding: 1px 3px;
   background: var(--rv-tela); color: var(--rv-painel-tx);
   border: 1px solid transparent; border-radius: 0;
   font-family: inherit;
@@ -306,12 +306,12 @@
   border-color: var(--rv-foco); outline: none;
 }
 .rv-params td.rv-p-val .rv-p-ro { color: var(--rv-tx-fraco); padding: 1px 3px; display: block; }
-.rv-p-motivo { font-size: 10.5px; color: var(--rv-tx-fraco); font-style: italic; }
+.rv-p-motivo { font-size: var(--t-mini); color: var(--rv-tx-fraco); font-style: italic; }
 /* Aviso de NORMA e pendência de DADO não podem parecer a mesma coisa: um diz
    que a parede está errada, o outro que falta informação para fechar a conta. */
-.rv-p-aviso { font-size: 11px; line-height: 1.45; padding: 7px 9px; border-left: 3px solid #b45309;
+.rv-p-aviso { font-size: var(--t-mini); line-height: 1.45; padding: 7px 9px; border-left: 3px solid #b45309;
   background: rgba(180, 83, 9, .10); color: var(--rv-tx); }
-.rv-p-pend { font-size: 10.5px; line-height: 1.45; padding: 6px 9px; border-left: 3px solid var(--rv-linha);
+.rv-p-pend { font-size: var(--t-mini); line-height: 1.45; padding: 6px 9px; border-left: 3px solid var(--rv-linha);
   color: var(--rv-tx-fraco); }
 .rv-props-pe {
   display: flex; align-items: center; gap: 6px;
@@ -327,12 +327,12 @@
   flex: 0 0 auto;
 }
 .rv-busca input {
-  flex: 1; font-size: 11.5px; padding: 2px 5px;
+  flex: 1; font-size: var(--t-mini); padding: 2px 5px;
   background: var(--rv-tela); color: var(--rv-painel-tx);
   border: 1px solid var(--rv-linha-forte); border-radius: 2px;
   font-family: inherit;
 }
-.rv-arv { list-style: none; margin: 0; padding: 2px 0; font-size: 11.5px; }
+.rv-arv { list-style: none; margin: 0; padding: 2px 0; font-size: var(--t-mini); }
 .rv-arv ul { list-style: none; margin: 0; padding-left: 13px; }
 .rv-no {
   display: flex; align-items: center; gap: 4px;
@@ -343,12 +343,12 @@
 .rv-no[aria-selected="true"] { background: var(--rv-sel); }
 .rv-no-exp {
   width: 12px; flex: 0 0 12px; text-align: center;
-  font-size: 9px; color: var(--rv-tx-fraco);
+  font-size: var(--t-mini); color: var(--rv-tx-fraco);
 }
 .rv-no-ico { width: 14px; flex: 0 0 14px; display: inline-flex; }
 .rv-no-ico svg { width: 13px; height: 13px; }
 .rv-no-tx { overflow: hidden; text-overflow: ellipsis; }
-.rv-no-n { color: var(--rv-tx-fraco); font-size: 10.5px; margin-left: 3px; }
+.rv-no-n { color: var(--rv-tx-fraco); font-size: var(--t-mini); margin-left: 3px; }
 
 /* ------------------------------------------------------- ÁREA DE DESENHO */
 .rv-area {
@@ -364,13 +364,13 @@
 }
 .rv-doc {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 3px 9px; font-size: 11.5px;
+  padding: 3px 9px; font-size: var(--t-mini);
   background: var(--rv-painel-cab); color: var(--rv-fita-tx);
   border: 1px solid var(--rv-linha); border-bottom: 0;
   border-radius: 3px 3px 0 0; cursor: pointer;
 }
-.rv-doc[aria-selected="true"] { background: var(--rv-tela); font-weight: 600; }
-.rv-doc .rv-x { font-size: 11px; opacity: .6; }
+.rv-doc[aria-selected="true"] { background: var(--rv-tela); font-weight: var(--p-forte); }
+.rv-doc .rv-x { font-size: var(--t-mini); opacity: .6; }
 .rv-doc .rv-x:hover { opacity: 1; }
 .rv-palco { flex: 1; position: relative; min-height: 0; }
 
@@ -380,7 +380,7 @@
   padding: 2px 6px; flex: 0 0 auto;
   background: var(--rv-painel-bg);
   border-top: 1px solid var(--rv-linha);
-  font-size: 11px; overflow-x: auto;
+  font-size: var(--t-mini); overflow-x: auto;
 }
 .rv-vistabar .rv-vb-rot { color: var(--rv-tx-fraco); margin-right: 6px; white-space: nowrap; }
 .rv-vb {
@@ -400,7 +400,7 @@
   padding: 3px 8px; flex: 0 0 auto;
   background: var(--rv-status-bg);
   border-top: 1px solid var(--rv-linha-forte);
-  font-size: 11.5px; color: var(--rv-painel-tx);
+  font-size: var(--t-mini); color: var(--rv-painel-tx);
 }
 .rv-status-sel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-status-dir { display: flex; align-items: center; gap: 10px; color: var(--rv-tx-fraco); white-space: nowrap; }
@@ -428,7 +428,7 @@
   .bim-revit[data-rv-fita="1"] .rv-fita { transform: none; }
   .rv-painel { border-right: 0; border-bottom: 1px solid var(--rv-linha); width: 100%; }
   .rv-painel-corpo { flex-wrap: wrap; }
-  .rv-titulo-nome { font-size: 11px; }
+  .rv-titulo-nome { font-size: var(--t-mini); }
 }
 
 /* tela cheia: abaixo de modal (z-50), busca (z-70) e toast */
@@ -467,7 +467,7 @@
   display: none; align-items: center; gap: 7px;
   padding: 7px 13px; border-radius: 9px; cursor: pointer;
   background: rgba(15, 39, 64, .92); color: #dbe8f5;
-  border: 1px solid #24435f; font-size: 12.5px; font-weight: 600;
+  border: 1px solid #24435f; font-size: var(--t-micro); font-weight: var(--p-forte);
 }
 .bim-revit[data-rv-foco="1"] .rv-foco-sair { display: inline-flex; }
 .rv-foco-sair:hover { background: rgba(15, 39, 64, 1); }
@@ -497,7 +497,7 @@
 
 /* A nota da peça deixa de ser só tooltip: vira linha visível abaixo do nome.
    Em tela grande fica discreta; no toque é a ÚNICA forma de ler. */
-.rv-nota-peca { display: block; font-size: 10.5px; line-height: 1.4; color: var(--rv-tx-fraco, #6a6a6a);
+.rv-nota-peca { display: block; font-size: var(--t-mini); line-height: 1.4; color: var(--rv-tx-fraco, #6a6a6a);
   margin-top: 2px; max-width: 46ch; }
 @media (min-width: 721px) { .rv-nota-peca { display: none; } }
 
@@ -510,7 +510,7 @@
 @media (max-width: 620px) {
   .pag-num td { display: block; width: auto !important; padding: 4px 8px !important; }
   .pag-num td:first-child { padding-bottom: 0 !important; }
-  .pag-num td:last-child { padding-top: 2px !important; font-weight: 600; }
+  .pag-num td:last-child { padding-top: 2px !important; font-weight: var(--p-forte); }
   .pag-num tr { display: block; border-bottom: 1px solid var(--linha); }
 }
 
@@ -540,7 +540,7 @@
   display: inline-flex; align-items: center;
   border: 1px solid rgba(255,255,255,.2); border-radius: 3px;
   background: transparent; color: var(--rv-titulo-tx);
-  font: inherit; font-size: 11.5px; white-space: nowrap; opacity: .92; cursor: pointer;
+  font: inherit; font-size: var(--t-mini); white-space: nowrap; opacity: .92; cursor: pointer;
 }
 .rv-qat .rv-tacao:hover { background: rgba(255,255,255,.14); opacity: 1; }
 .rv-qat .rv-tacao-pri { background: #1a6cb5; border-color: #1a6cb5; opacity: 1; }
@@ -558,7 +558,7 @@
   height: 26px; padding: 0 9px;
   border: 1px solid var(--rv-linha-forte); border-radius: 4px;
   background: var(--rv-fita-bg); color: var(--rv-fita-tx);
-  font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer;
+  font: inherit; font-size: var(--t-micro); white-space: nowrap; cursor: pointer;
 }
 .rv-rap:hover:not(:disabled) { background: var(--rv-hover); }
 .rv-rap[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
@@ -584,7 +584,7 @@
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px; border-radius: 999px;
   border: 1px solid var(--rv-ativo-borda, #7aaddc); background: var(--surface, #fff); color: var(--texto, #1a1a1a);
-  font-size: 12.5px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  font-size: var(--t-micro); font-weight: var(--p-forte); cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.25);
 }
 .bim-drawer-pill:hover { filter: brightness(.97); }
 
@@ -621,7 +621,7 @@
 .rv-sair {
   display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px 0 6px; margin-right: 4px;
   border: 1px solid rgba(255,255,255,.22); border-radius: 3px; background: rgba(255,255,255,.06);
-  color: var(--rv-titulo-tx); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  color: var(--rv-titulo-tx); font: inherit; font-size: var(--t-mini); font-weight: var(--p-forte); cursor: pointer;
 }
 .rv-sair:hover { background: rgba(255,255,255,.16); }
 .rv-sair svg { width: 13px; height: 13px; }
@@ -630,7 +630,7 @@
    padding e fundo branco) cortava o nome da obra na barra de 30px */
 .bim-revit .rv-titulo select.rv-obra {
   max-width: 340px; width: auto; height: 22px; min-height: 0; line-height: 18px; margin: 0;
-  padding: 1px 22px 1px 8px; font: inherit; font-size: 12px; font-weight: 600;
+  padding: 1px 22px 1px 8px; font: inherit; font-size: var(--t-micro); font-weight: var(--p-forte);
   color: var(--rv-titulo-tx); background-color: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
   border-radius: 3px; box-shadow: none; cursor: pointer;
 }
@@ -648,7 +648,7 @@
 .bim-revit .rv-docs, .bim-revit .rv-vistabar, .bim-revit .rv-status, .bim-revit .rv-direita { zoom: var(--rv-ui, 1); }
 
 /* lateral: seta de recolher, divisória Propriedades/Navegador, alça de largura, aba de volta */
-.rv-doca-cab .rv-recolher { margin-left: auto; font-size: 10px; }
+.rv-doca-cab .rv-recolher { margin-left: auto; font-size: var(--t-mini); }
 .rv-split-h { flex: 0 0 5px; cursor: row-resize; background: var(--rv-linha); border-top: 1px solid var(--rv-linha-forte); }
 .rv-split-h:hover, .rv-alca:hover { background: var(--rv-ativo-borda); }
 .rv-alca { flex: 0 0 5px; width: 5px; cursor: col-resize; background: var(--rv-linha); z-index: 3; }
@@ -660,8 +660,8 @@
   border: 0; border-right: 1px solid var(--rv-linha-forte); cursor: pointer; font: inherit;
 }
 .rv-lat-aba:hover { background: var(--rv-hover); }
-.rv-lat-aba-seta { font-size: 10px; }
-.rv-lat-aba-rot { writing-mode: vertical-rl; font-size: 11.5px; font-weight: 600; letter-spacing: .3px; }
+.rv-lat-aba-seta { font-size: var(--t-mini); }
+.rv-lat-aba-rot { writing-mode: vertical-rl; font-size: var(--t-mini); font-weight: var(--p-forte); letter-spacing: .3px; }
 .bim-revit[data-rv-lateral-off="1"] .rv-lat-aba { display: flex; }
 @media (max-width: 900px) { .rv-lat-aba, .rv-alca-lat { display: none !important; } }
 
@@ -682,7 +682,7 @@
 .rv-docs-bt {
   display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px;
   border: 1px solid var(--rv-linha-forte); border-radius: 3px; background: var(--rv-fita-bg); color: var(--rv-fita-tx);
-  font: inherit; font-size: 11px; cursor: pointer;
+  font: inherit; font-size: var(--t-mini); cursor: pointer;
 }
 .rv-docs-bt:hover { background: var(--rv-hover); }
 .rv-docs-bt[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
@@ -691,7 +691,7 @@
 .rv-menu-doc {
   position: fixed; z-index: 80; min-width: 220px; background: #fff; color: #1a1a1a;
   border: 1px solid #b4b4b4; box-shadow: 0 6px 18px rgba(0,0,0,.22); padding: 4px 0;
-  font: 12px "Segoe UI", system-ui, sans-serif;
+  font: var(--t-micro) var(--fonte);
 }
 .rv-menu-doc div { padding: 5px 14px; cursor: pointer; white-space: nowrap; }
 .rv-menu-doc div:hover { background: #d8e6f2; }
@@ -699,28 +699,28 @@
 .rv-menu-doc.bsi-menu { min-width: 250px; max-width: 340px; z-index: 120; }   /* acima dos recados (.toasts, 100): o recado da peça criada cobria o fim do menu */
 .rv-menu-doc.bsi-menu div { padding: 0; white-space: normal; }
 .rv-menu-doc.bsi-menu div:hover { background: transparent; }
-.bsi-menu .bsi-cab { padding: 4px 14px 6px !important; font-weight: 600; color: #1a1a1a; border-bottom: 1px solid #e2e2e2; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important; }
-.bsi-menu .bsi-fraco { font-weight: 400; color: #5b6b7c; }
+.bsi-menu .bsi-cab { padding: 4px 14px 6px !important; font-weight: var(--p-forte); color: #1a1a1a; border-bottom: 1px solid #e2e2e2; margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap !important; }
+.bsi-menu .bsi-fraco { font-weight: var(--p-normal); color: #5b6b7c; }
 .bsi-menu .bsi-item { position: relative; padding: 5px 14px !important; cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap !important; }
 .bsi-menu .bsi-item:hover, .bsi-menu .bsi-item.bsi-aberto { background: #d8e6f2 !important; }
 .bsi-menu .bsi-item.bsi-off { color: #9aa3ad; cursor: default; }
 .bsi-menu .bsi-item.bsi-off:hover { background: transparent !important; }
 .bsi-menu .bsi-seta { margin-left: auto; color: #5b6b7c; }
-.bsi-menu .bsi-tecla { margin-left: auto; padding-left: 16px; color: #7a8590; font-size: 11px; }
+.bsi-menu .bsi-tecla { margin-left: auto; padding-left: 16px; color: #7a8590; font-size: var(--t-mini); }
 .bsi-menu .bsi-sep { height: 1px; background: #e2e2e2; margin: 3px 0; }
 .bsi-menu .bsi-sub { display: none; position: absolute; left: 100%; top: -5px; width: 320px; background: #fff; color: #1a1a1a; border: 1px solid #b4b4b4; box-shadow: 0 6px 18px rgba(0,0,0,.22); padding: 6px 0 !important; cursor: default; }
 .bsi-menu.bsi-sub-esq .bsi-sub { left: auto; right: 100%; }
 .bsi-menu .bsi-item.bsi-aberto > .bsi-sub, .bsi-menu .bsi-temsub:hover > .bsi-sub { display: block; }
 .bsi-menu .bsi-crit { padding: 5px 12px !important; border-bottom: 1px solid #f0f0f0; }
 .bsi-menu .bsi-crit:last-of-type { border-bottom: 0; }
-.bsi-menu .bsi-crit-nome { font-weight: 600; margin-bottom: 4px !important; white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; }
+.bsi-menu .bsi-crit-nome { font-weight: var(--p-forte); margin-bottom: 4px !important; white-space: nowrap !important; overflow: hidden; text-overflow: ellipsis; }
 .bsi-menu .bsi-crit-bts { display: flex; gap: 6px; }
-.bsi-menu .bsi-bt { flex: 1; font: inherit; font-size: 11.5px; padding: 4px 6px; border: 1px solid #b4c3d2; background: #f4f8fb; color: #1a2b3c; border-radius: 4px; cursor: pointer; }
+.bsi-menu .bsi-bt { flex: 1; font: inherit; font-size: var(--t-mini); padding: 4px 6px; border: 1px solid #b4c3d2; background: #f4f8fb; color: #1a2b3c; border-radius: 4px; cursor: pointer; }
 .bsi-menu .bsi-bt:hover { background: #d8e6f2; border-color: #2d6a9c; }
 .bsi-menu .bsi-bt:focus-visible { outline: 2px solid #2d6a9c; outline-offset: 1px; }
 .bsi-menu .bsi-bt[disabled] { opacity: .5; cursor: default; }
-.bsi-menu .bsi-dica { padding: 4px 12px 0 !important; color: #7a8590; font-size: 11px; }
-.bp1-lote { margin: 0 0 6px; padding: 4px 8px; border-radius: 4px; background: var(--rv-hover, #e8f0f7); font-size: 11.5px; font-weight: 600; }
+.bsi-menu .bsi-dica { padding: 4px 12px 0 !important; color: #7a8590; font-size: var(--t-mini); }
+.bp1-lote { margin: 0 0 6px; padding: 4px 8px; border-radius: 4px; background: var(--rv-hover, #e8f0f7); font-size: var(--t-mini); font-weight: var(--p-forte); }
 
 /* as vistas no palco: uma por vez (abas) ou em grade (lado a lado) */
 .bim-grade { position: absolute; inset: 0; display: grid; gap: 3px; background: var(--rv-linha-forte); }
@@ -729,12 +729,12 @@
 .bim-grade[data-modo="lado"] > .bim-tela[data-ativa="1"] { box-shadow: inset 0 0 0 2px #1a6cb5; }
 .bim-tela-rot {
   display: none; position: absolute; left: 8px; bottom: 6px; z-index: 6; pointer-events: none;
-  font-size: 11px; font-weight: 600; color: #1a1a1a; background: rgba(255,255,255,.82); padding: 1px 7px; border-radius: 3px;
+  font-size: var(--t-mini); font-weight: var(--p-forte); color: #1a1a1a; background: rgba(255,255,255,.82); padding: 1px 7px; border-radius: 3px;
 }
 .bim-grade[data-modo="lado"] .bim-tela-rot { display: block; }
 .bim-tela-fora {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 8px;
-  color: var(--rv-tx-fraco); font-size: 12.5px; z-index: 5; background: var(--rv-tela-2);
+  color: var(--rv-tx-fraco); font-size: var(--t-micro); z-index: 5; background: var(--rv-tela-2);
 }
 
 /* ---------- VISTAS 2D: planta e corte em desenho técnico (js/bim2dui.js + js/desenho2d.js) ----------
@@ -752,8 +752,8 @@
 .d2-corte { stroke: var(--d2-tinta); stroke-linejoin: miter; }
 .d2-vista { stroke: var(--d2-fraco); fill: none; stroke-linecap: round; }
 .d2-cota line, .d2-eixo, .d2-nivel-l, .d2-tit-l { stroke: var(--d2-tinta); }
-.d2-cota-tx, .d2-nivel-tx, .d2-tit-tx, .d2-tit-esc, .d2-marca-tx { fill: var(--d2-tinta); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
-.d2-tit-tx, .d2-marca-tx { font-weight: 600; }
+.d2-cota-tx, .d2-nivel-tx, .d2-tit-tx, .d2-tit-esc, .d2-marca-tx { fill: var(--d2-tinta); font-family: var(--fonte); }
+.d2-tit-tx, .d2-marca-tx { font-weight: var(--p-forte); }
 .d2-cota-pt, .d2-marca-seta, .d2-nivel-tri { fill: var(--d2-tinta); }
 .d2-marca-circ { fill: var(--d2-papel); stroke: var(--d2-tinta); }
 .d2-marca { cursor: pointer; }
@@ -764,7 +764,7 @@
 .bim-grade > .bim-tela.bim-tela-2d { --d2-acima: #6b7480; }
 .bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-acima: #a3acb7; }
 .d2-acima-l { stroke: var(--d2-acima, #6b7480); fill: none; stroke-linecap: butt; }
-.d2-acima-tx { fill: var(--d2-acima, #6b7480); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+.d2-acima-tx { fill: var(--d2-acima, #6b7480); font-family: var(--fonte); }
 /* P6 (js/bimmodelovista.js): estilos de objeto RA — meio-tom, marcas de elevação e de chamada, região de recorte */
 .bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #9aa0a6; }
 .bim-revit[data-rv-tema="escuro"] .bim-grade > .bim-tela.bim-tela-2d { --d2-meiotom: #7c838b; }
@@ -778,7 +778,7 @@
 .d2-vazio { position: absolute; inset: 0; display: grid; place-items: center; color: var(--d2-fraco); font-size: var(--t-peq); padding: 20px; text-align: center; }
 /* vínculo CAD na planta: meio-tom, por baixo do modelo */
 .d2-cad-l { stroke: #9aa3ad; fill: none; stroke-linecap: round; }
-.d2-cad-tx { fill: #9aa3ad; font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
+.d2-cad-tx { fill: #9aa3ad; font-family: var(--fonte); }
 .bim-revit[data-rv-tema="escuro"] .d2-cad-l { stroke: #6f7780; }
 .bim-revit[data-rv-tema="escuro"] .d2-cad-tx { fill: #6f7780; }
 /* AMBIENTES na planta (P2-D, js/bimambienteui.js): identificador (nome; número · área),
@@ -792,8 +792,8 @@
   --d2-amb-7: #2f6a62; --d2-amb-8: #6a5843; --d2-amb-9: #3f4c7a; --d2-amb-10: #5c6a27; --d2-amb-11: #74493a; --d2-amb-12: #355f72; --d2-amb-av: #ff8a7a;
 }
 .d2-amb-cor { stroke: none; }
-.d2-amb-tx, .d2-amb-leg-tit, .d2-amb-leg-tx { fill: var(--d2-tinta); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; }
-.d2-amb-nome, .d2-amb-leg-tit { font-weight: 600; }
+.d2-amb-tx, .d2-amb-leg-tit, .d2-amb-leg-tx { fill: var(--d2-tinta); font-family: var(--fonte); }
+.d2-amb-nome, .d2-amb-leg-tit { font-weight: var(--p-forte); }
 .d2-amb-av { fill: var(--d2-amb-av); }
 .d2-amb-alvo { fill: transparent; stroke: none; cursor: pointer; }
 .d2-amb-tag:hover .d2-amb-alvo { fill: var(--d2-sel); fill-opacity: .08; }
@@ -808,49 +808,49 @@
 /* ---------- FAMÍLIAS PARAMÉTRICAS: biblioteca e editor (js/familiaui.js) ---------- */
 .fe-topo { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 .fe-busca { flex: 1 1 140px; min-width: 120px; height: 28px; padding: 0 8px; border: 1px solid var(--rv-linha); border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); }
-.fe-ajuda, .fe-dica { font-size: 11.5px; color: var(--rv-tx-fraco); margin: 6px 0; line-height: 1.45; }
-.fe-vazio { color: var(--rv-tx-fraco); font-size: 12.5px; text-align: center; padding: 18px 0; }
+.fe-ajuda, .fe-dica { font-size: var(--t-mini); color: var(--rv-tx-fraco); margin: 6px 0; line-height: 1.45; }
+.fe-vazio { color: var(--rv-tx-fraco); font-size: var(--t-micro); text-align: center; padding: 18px 0; }
 .fe-grupo { margin-bottom: 10px; }
-.fe-grupo-t { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--rv-tx-fraco); margin: 8px 0 4px; }
+.fe-grupo-t { font-size: var(--t-mini); font-weight: var(--p-forte); letter-spacing: .06em; text-transform: uppercase; color: var(--rv-tx-fraco); margin: 8px 0 4px; }
 .fe-card { border: 1px solid var(--rv-linha); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--rv-painel-bg); }
 .fe-card:hover { border-color: var(--rv-linha-forte); }
 .fe-card-l1 { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.fe-card-d { font-size: 11.5px; color: var(--rv-tx-fraco); margin: 2px 0 4px; }
+.fe-card-d { font-size: var(--t-mini); color: var(--rv-tx-fraco); margin: 2px 0 4px; }
 .fe-card-l2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
 .fe-card-l2 select { height: 26px; max-width: 170px; }
-.fe-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--rv-hover); color: var(--rv-painel-tx); white-space: nowrap; }
+.fe-badge { font-size: var(--t-mini); font-weight: var(--p-forte); padding: 1px 7px; border-radius: 99px; background: var(--rv-hover); color: var(--rv-painel-tx); white-space: nowrap; }
 .fe-b-ra { background: #1a6cb5; color: #fff; }
 .fe-b-importada { background: #7a5a12; color: #fff; }
 /* FAMIMPORT: família do mercado (js/familiaimportui.js) — miniatura à esquerda e o aviso de geometria pendente */
 .fe-card-imp { display: grid; grid-template-columns: 48px 1fr; column-gap: 8px; }
 .fe-card-imp > :not(.fe-mini) { grid-column: 2; }
-.fe-mini { grid-row: 1 / span 4; width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--rv-linha); background: var(--rv-tela-2); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--rv-tx-fraco); font-weight: 700; }
+.fe-mini { grid-row: 1 / span 4; width: 48px; height: 48px; border-radius: 6px; border: 1px solid var(--rv-linha); background: var(--rv-tela-2); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--rv-tx-fraco); font-weight: var(--p-forte); }
 .fe-mini img { width: 100%; height: 100%; object-fit: contain; image-rendering: auto; }
 .fe-b-pendente { background: #b45309; color: #fff; }
-.fe-ed label { display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; color: var(--rv-tx-fraco); }
-.fe-ed input, .fe-ed select, .fe-ed textarea { font-size: 12.5px; padding: 3px 6px; border: 1px solid var(--rv-linha); border-radius: 5px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); min-width: 0; }
-.fe-ed textarea { font-family: "IBM Plex Mono", Consolas, monospace; }
-.fe-form { font-family: "IBM Plex Mono", Consolas, monospace; }
+.fe-ed label { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-mini); color: var(--rv-tx-fraco); }
+.fe-ed input, .fe-ed select, .fe-ed textarea { font-size: var(--t-micro); padding: 3px 6px; border: 1px solid var(--rv-linha); border-radius: 5px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); min-width: 0; }
+.fe-ed textarea { font-family: var(--fonte-num); }
+.fe-form { font-family: var(--fonte-num); }
 .fe-prev { position: relative; border: 1px solid var(--rv-linha); border-radius: 8px; overflow: hidden; margin-bottom: 8px; background: var(--rv-tela-2); }
 .fe-canvas { display: block; width: 100%; height: 230px; touch-action: none; }
 .fe-prev-l { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 8px; border-top: 1px solid var(--rv-linha); background: var(--rv-painel-bg); }
 .fe-prev-l label { flex-direction: row; align-items: center; gap: 6px; }
 .fe-msgs { margin-bottom: 8px; }
-.fe-erro, .fe-ok, .fe-aviso { font-size: 12px; padding: 6px 9px; border-radius: 6px; margin-bottom: 4px; line-height: 1.4; }
+.fe-erro, .fe-ok, .fe-aviso { font-size: var(--t-micro); padding: 6px 9px; border-radius: 6px; margin-bottom: 4px; line-height: 1.4; }
 .fe-erro { background: #fde8e8; color: #8a1c1c; border: 1px solid #f3b4b4; }
 .fe-ok { background: #e6f5ea; color: #1c5e2e; border: 1px solid #b6dfc0; }
 .fe-aviso { background: #fff5dd; color: #6b4b00; border: 1px solid #f0d58a; }
 .fe-sec { border: 1px solid var(--rv-linha); border-radius: 8px; margin-bottom: 8px; background: var(--rv-painel-bg); }
-.fe-sec > summary { cursor: pointer; padding: 7px 10px; font-weight: 600; font-size: 12.5px; background: var(--rv-painel-cab); border-radius: 8px 8px 0 0; }
-.fe-sec > summary small { color: var(--rv-tx-fraco); font-weight: 400; margin-left: 4px; }
+.fe-sec > summary { cursor: pointer; padding: 7px 10px; font-weight: var(--p-forte); font-size: var(--t-micro); background: var(--rv-painel-cab); border-radius: 8px 8px 0 0; }
+.fe-sec > summary small { color: var(--rv-tx-fraco); font-weight: var(--p-normal); margin-left: 4px; }
 .fe-sec > :not(summary) { margin-left: 10px; margin-right: 10px; }
 .fe-sec > :last-child { margin-bottom: 10px; }
 .fe-grade2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; margin-top: 8px; }
 .fe-grade4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin-top: 6px; }
 .fe-larga { grid-column: 1 / -1; }
 .fe-tab-env { overflow-x: auto; margin: 8px 10px 6px; }
-.fe-tab { border-collapse: collapse; width: 100%; font-size: 12px; }
-.fe-tab th { text-align: left; font-weight: 600; font-size: 11px; color: var(--rv-tx-fraco); padding: 3px 4px; border-bottom: 1px solid var(--rv-linha); white-space: nowrap; }
+.fe-tab { border-collapse: collapse; width: 100%; font-size: var(--t-micro); }
+.fe-tab th { text-align: left; font-weight: var(--p-forte); font-size: var(--t-mini); color: var(--rv-tx-fraco); padding: 3px 4px; border-bottom: 1px solid var(--rv-linha); white-space: nowrap; }
 .fe-tab td { padding: 2px 3px; border-bottom: 1px solid var(--rv-linha); }
 .fe-tab input, .fe-tab select { width: 100%; min-width: 64px; }
 .fe-sol { border: 1px dashed var(--rv-linha-forte); border-radius: 7px; padding: 6px 8px; margin: 8px 10px 6px; }
@@ -864,14 +864,14 @@
 /* ESTILO VISUAL (prévia, 07/10/2026): o menu dos quatro estilos.
    Mora no <body> (como o menu das abas) e é claro sempre, como as outras janelas. */
 .rv-menu-estilo { min-width: 300px; padding: 4px 0 6px; }
-.rv-menu-estilo .rv-me-tit { padding: 6px 14px 4px; font-weight: 700; font-size: 11px; color: #5b6570; text-transform: uppercase; letter-spacing: .04em; cursor: default; }
+.rv-menu-estilo .rv-me-tit { padding: 6px 14px 4px; font-weight: var(--p-forte); font-size: var(--t-mini); color: #5b6570; text-transform: uppercase; letter-spacing: .04em; cursor: default; }
 .rv-menu-estilo .rv-me-tit:hover { background: transparent; }
 .rv-menu-estilo .rv-me-sep { height: 1px; margin: 4px 10px; padding: 0; background: #d6d6d6; cursor: default; }
 .rv-menu-estilo button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 5px 14px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .rv-menu-estilo button:hover, .rv-menu-estilo button:focus-visible { background: #d8e6f2; outline: none; }
 .rv-menu-estilo button[aria-checked="true"] { box-shadow: inset 3px 0 0 #1a6cb5; background: #eef4fa; }
 .rv-menu-estilo .rv-me-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.rv-menu-estilo .rv-me-txt small { color: #5b6570; font-size: 11px; white-space: normal; line-height: 1.3; }
+.rv-menu-estilo .rv-me-txt small { color: #5b6570; font-size: var(--t-mini); white-space: normal; line-height: 1.3; }
 /* a amostra de cada estilo: um cubinho desenhado só com CSS */
 .rv-me-amostra { flex: 0 0 26px; height: 26px; border: 1px solid #8a8f96; border-radius: 3px; }
 .rv-me-amostra[data-amostra="linha"] { background: #fff; box-shadow: inset 0 0 0 4px #fff, inset 0 0 0 5px #222; }
@@ -892,7 +892,7 @@
 .pv-papel [data-pv-vp] { cursor: move; }
 .pv-papel [data-pv-bloco][data-pv-sel] { outline: 0.6mm solid #1a6cb5; outline-offset: 0.6mm; }
 .rv-no[data-rv-arrasta] { cursor: grab; }
-.pv-dica { position: sticky; top: 0; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: 12px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+.pv-dica { position: sticky; top: 0; z-index: 2; margin: 0 auto 10px; max-width: 520px; padding: 6px 12px; border-radius: 6px; background: var(--rv-painel-bg); color: var(--rv-painel-tx); font-size: var(--t-micro); text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
 
 /* =====================================================================
  * DISCIPLINA DA MODELAGEM (09/10/2026, js/bimdisciplinas.js) — pedido do
@@ -924,12 +924,12 @@
   align-self: center; margin: 2px 6px 2px 0; padding: 3px 9px 3px 7px; min-height: 26px;
   background: var(--rv-tela); color: var(--rv-fita-tx);
   border: 1px solid var(--rv-linha-forte); border-left: 4px solid var(--rv-disc, #2d6a9c); border-radius: 4px;
-  font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer;
+  font-size: var(--t-micro); font-weight: var(--p-forte); white-space: nowrap; cursor: pointer;
 }
 .rv-disc-sel:hover { background: var(--rv-hover); }
 .rv-disc-sel:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: 1px; }
 .rv-disc-ponto { flex: 0 0 auto; width: 10px; height: 10px; border-radius: 50%; background: var(--rv-disc, #2d6a9c); box-shadow: 0 0 0 1px rgba(0,0,0,.18); }
-.rv-disc-seta { font-size: 10px; opacity: .7; }
+.rv-disc-seta { font-size: var(--t-mini); opacity: .7; }
 .rv-disc-menu {
   position: absolute; z-index: 60; min-width: 250px; padding: 4px 0;
   background: var(--rv-painel-bg); color: var(--rv-painel-tx);
@@ -943,7 +943,7 @@
   text-align: left; cursor: pointer;
 }
 .rv-disc-op:hover, .rv-disc-op:focus-visible { background: var(--rv-hover); outline: none; }
-.rv-disc-op[aria-checked="true"] { font-weight: 700; box-shadow: inset 3px 0 0 var(--rv-disc-acento, #2d6a9c); }
+.rv-disc-op[aria-checked="true"] { font-weight: var(--p-forte); box-shadow: inset 3px 0 0 var(--rv-disc-acento, #2d6a9c); }
 .rv-disc-op .rv-disc-ponto { width: 12px; height: 12px; }
 .rv-disc-op-nome { flex: 1; }
 .rv-disc-op[data-rv-disc-trancada] { color: var(--rv-tx-fraco); }
@@ -955,7 +955,7 @@
   position: absolute; left: 10px; bottom: 10px; z-index: 5;
   padding: 4px 11px; border-radius: 999px;
   background: var(--rv-disc, #2d6a9c); color: var(--rv-disc-texto, #fff);
-  font-size: 11.5px; font-weight: 700; letter-spacing: .01em; white-space: nowrap;
+  font-size: var(--t-mini); font-weight: var(--p-forte); letter-spacing: .01em; white-space: nowrap;
   box-shadow: 0 2px 8px rgba(0,0,0,.28);
   pointer-events: none; user-select: none;
 }
@@ -993,8 +993,8 @@ canvas[data-bim-nav][data-bim-pan] { cursor: grabbing !important; }
  * tools/e2e-bim-ferramentas.js reprova painel da fita sem ela ou com a cor
  * da primeira versão de volta.
  * ===================================================================== */
-.bim-flut { box-shadow: var(--sombra, 0 10px 28px -14px rgba(15,30,50,.25)); font-family: var(--fonte, inherit); line-height: 1.45; }
-.bim-flut b { font-weight: 600; }
+.bim-flut { box-shadow: var(--sombra, 0 10px 28px -14px rgba(15,30,50,.25)); font-family: var(--fonte); line-height: 1.45; }
+.bim-flut b { font-weight: var(--p-forte); }
 .bim-flut input[type="range"] { accent-color: var(--aco, #2d6a9c); }
 /* na casca o canto de baixo à esquerda é do selo da disciplina: os painéis de
    baixo sobem acima dele (antes o último botão do Plano de corte ficava atrás) */
@@ -1002,12 +1002,12 @@ canvas[data-bim-nav][data-bim-pan] { cursor: grabbing !important; }
 /* o carimbo da data do 4D também sobe acima do selo (os dois se cobriam) */
 .rv-palco .b4-hud { left: 10px; bottom: 46px; }
 /* o balão de dica (js/bim.js S._hint): pílula grafite do padrão, não o verde-limão da 1ª versão */
-.bim-dica { font-family: var(--fonte, inherit); letter-spacing: .005em; }
+.bim-dica { font-family: var(--fonte); letter-spacing: .005em; }
 
 /* AVISO DENTRO DAS TELAS DO BIM (Níveis, Conferência de alvenaria, Paginar, Elevação,
    Gerar de desenho): eram caixas com o hex escrito em linha (#dc262618, #f59e0b18…). O
    desenho é o do Modulo.aviso (faixa colorida à esquerda), pelos tokens — claro e escuro. */
-.bim-aviso { padding: 8px 10px; border-radius: var(--raio-sm, 8px); border: 1px solid var(--linha); border-left: 4px solid var(--aco); background: var(--card-bg); color: var(--texto); font-size: var(--t-peq, 12.5px); line-height: 1.5; }
+.bim-aviso { padding: 8px 10px; border-radius: var(--raio-sm, 8px); border: 1px solid var(--linha); border-left: 4px solid var(--aco); background: var(--card-bg); color: var(--texto); font-size: var(--t-peq); line-height: 1.5; }
 .bim-aviso-erro { border-left-color: var(--vermelho); }
 .bim-aviso-alerta { border-left-color: var(--amarelo); }
 .bim-aviso-info { border-left-color: var(--aco); }

@@ -348,6 +348,10 @@ function prepararDados(r) {
   /* combinações em que o autovalor não achou λ positivo (a estrutura não flamba sob elas até o |λ| examinado) */
   D.flambSem = arr(r.flambagem).filter(f => ehObj(f) && !(num(f.lambda, 0) > 0)).map(f => ({ combinacao: String(f.combinacao || ''), ate: num(f.semPositivoAte, null) }));
   D.aprovado = r.aprovado; D.falhas = num(r.falhas, 0);
+  /* PÓRTICOS M4 (14/10/2026): a SITUAÇÃO da estrutura desenhada (js/acoenvoltorio.js situacao): com verificação faltando
+     ("incompleto" — vento não verificado, mísula cônica, fadiga da ponte…) o selo NÃO diz "Aprovado" (a imagem vai para a capa
+     do memorial: o memorial do shed dizia INCOMPLETO no texto e "Aprovado" na foto) */
+  D.incompleto = !!(r.situacao && r.situacao.id === 'incompleto'); D.nNaoVerif = arr(r.naoVerificados).length;
   D.ok = true;
   return D;
 }
@@ -1683,10 +1687,10 @@ class Vista {
       topo.appendChild(modos);
       topo.appendChild(h('div', { class: 'mcv-esp' }));
       /* situação geral do cálculo */
-      const nf = D.falhas || 0, aprov = D.aprovado === true;
+      const nf = D.falhas || 0, aprov = D.aprovado === true, inc = aprov && D.incompleto;
       if (D.aprovado != null) {
-        topo.appendChild(h('div', { class: 'mcv-sit mcv-cx', title: aprov ? 'Todas as barras e limites de serviço passam' : nf + ' barra(s)/limite(s) não passam' },
-          iconeStatus(aprov ? STATUS[0] : STATUS[3]), aprov ? 'Aprovado' : 'Não aprovado', h('small', { text: aprov ? '' : (nf + (nf === 1 ? ' limite excedido' : ' limites excedidos')) })));
+        topo.appendChild(h('div', { class: 'mcv-sit mcv-cx', title: inc ? 'As barras passam, mas há verificação NÃO feita (' + D.nNaoVerif + ') — veja o resultado' : (aprov ? 'Todas as barras e limites de serviço passam' : nf + ' barra(s)/limite(s) não passam') },
+          iconeStatus(inc ? STATUS[2] : (aprov ? STATUS[0] : STATUS[3])), inc ? 'Incompleto' : (aprov ? 'Aprovado' : 'Não aprovado'), h('small', { text: inc ? 'não verificado: ' + D.nNaoVerif : (aprov ? '' : (nf + (nf === 1 ? ' limite excedido' : ' limites excedidos'))) })));
       }
       const acoes = h('div', { class: 'mcv-acoes mcv-cx' });
       acoes.appendChild(h('button', { class: 'mcv-bt', type: 'button', title: 'Enquadrar tudo (F)', 'aria-label': 'Enquadrar tudo', html: ICONE.enquadrar, onclick: () => this.enquadrar() }));
@@ -2566,11 +2570,11 @@ class Vista {
     ctx.textBaseline = 'alphabetic'; ctx.fillStyle = T.tinta; ctx.font = '600 ' + (19 * k) + 'px ' + fonte; ctx.fillText(tit, x0, y0 + 16 * k);
     ctx.fillStyle = T.tinta2; ctx.font = '400 ' + (13 * k) + 'px ' + fonte; ctx.fillText(sub, x0, y0 + 36 * k);
     if (D.aprovado != null && m === 'aproveitamento') {
-      const ok = D.aprovado === true, txt = ok ? 'Aprovado' : 'Não aprovado — ' + D.falhas + (D.falhas === 1 ? ' limite excedido' : ' limites excedidos');
+      const ok = D.aprovado === true, inc = ok && D.incompleto, txt = inc ? 'Incompleto — não verificado: ' + D.nNaoVerif : (ok ? 'Aprovado' : 'Não aprovado — ' + D.falhas + (D.falhas === 1 ? ' limite excedido' : ' limites excedidos'));
       ctx.font = '600 ' + (13 * k) + 'px ' + fonte; const w = ctx.measureText(txt).width + 34 * k, xx = W - 24 * k - w, yy = y0;
       ctx.fillStyle = T.painel; ctx.strokeStyle = 'rgba(15,39,64,.16)'; ctx.lineWidth = k; rr(ctx, xx, yy, w, 28 * k, 7 * k); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(xx + 15 * k, yy + 14 * k, 7 * k, 0, Math.PI * 2); ctx.fillStyle = ok ? STATUS[0].cor : STATUS[3].cor; ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.font = '700 ' + (9.5 * k) + 'px ' + fonte; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ok ? '✓' : '✕', xx + 15 * k, yy + 14.5 * k);
+      ctx.beginPath(); ctx.arc(xx + 15 * k, yy + 14 * k, 7 * k, 0, Math.PI * 2); ctx.fillStyle = inc ? STATUS[2].cor : (ok ? STATUS[0].cor : STATUS[3].cor); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.font = '700 ' + (9.5 * k) + 'px ' + fonte; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(inc ? '!' : (ok ? '✓' : '✕'), xx + 15 * k, yy + 14.5 * k);
       ctx.textAlign = 'left'; ctx.fillStyle = T.tinta; ctx.font = '600 ' + (13 * k) + 'px ' + fonte; ctx.fillText(txt, xx + 27 * k, yy + 14.5 * k);
     }
     /* legenda */

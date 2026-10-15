@@ -45,6 +45,21 @@
   ];
   var FONTE_PARAF = "NBR 8800:2008, Tabela A.3 (conferir na edição 2024)";
 
+  /* DIÂMETROS QUE O DIMENSIONAMENTO DAS LIGAÇÕES EXPERIMENTA — tabela ÚNICA (14/10/2026, frente M1 da 1.2.145).
+     Antes eram quatro cópias: js/acoligcalc.js (PARAF e CHUMB), js/acoligcalc2.js (PF, M16 a M24) e
+     js/acoligsugere.js (DIAS, os do chumbador). Mesmos valores e MESMA ORDEM (o motor indexa por posição: PARAF[3]).
+     d EXATO em mm (polegada × 25,4 = 15,875 no 5/8"): o desenho (js/metalnorma.js) arredonda para 2 casas e o
+     cálculo não pode arredondar junto. Cabeça, porca e arruela: js/metalnorma.js. */
+  var DIAMETROS = {
+    parafuso: [{ id: "M12", d: 12 }, { id: "M16", d: 16 }, { id: "M20", d: 20 }, { id: "M22", d: 22 }, { id: "M24", d: 24 }, { id: "M27", d: 27 }, { id: "M30", d: 30 }],
+    chumbador: [{ id: "5/8\"", d: 15.875 }, { id: "3/4\"", d: 19.05 }, { id: "7/8\"", d: 22.225 }, { id: "1\"", d: 25.4 }, { id: "1.1/8\"", d: 28.575 }, { id: "1.1/4\"", d: 31.75 }]
+  };
+  /* diametros("parafuso" | "chumbador") → cópia [{id, d}]; sem tipo: os dois, sem repetir id */
+  function diametros(tipo) {
+    var L = tipo ? (DIAMETROS[tipo] || []) : DIAMETROS.parafuso.concat(DIAMETROS.chumbador);
+    return L.map(function (x) { return { id: x.id, d: x.d }; });
+  }
+
   var CHUMBADORES = [
     { id: "ASTM F1554 Gr.36", fy: 250, fu: 400, nota: "chumbador mais usado em placa de base" },
     { id: "ASTM F1554 Gr.55", fy: 380, fu: 517 },
@@ -91,6 +106,7 @@
   var AcoMateriais = { ACOS: ACOS, CONST: CONST, PARAFUSOS: PARAFUSOS, FONTE_PARAF: FONTE_PARAF, CHUMBADORES: CHUMBADORES, FONTE_CHUMB: FONTE_CHUMB,
                        ELETRODOS: ELETRODOS, CONCRETOS: CONCRETOS, GAMA: GAMA, GAMA_ESPECIAL: GAMA_ESPECIAL, GAMA_EXCEPCIONAL: GAMA_EXCEPCIONAL, PADRAO: PADRAO,
                        aco: aco, parafuso: parafuso, chumbador: chumbador, eletrodo: eletrodo, listar: listar,
+                       DIAMETROS: DIAMETROS, diametros: diametros,
                        padrao: function (uso) { return aco(PADRAO[uso] || PADRAO.perfil); } };
   global.AcoMateriais = AcoMateriais;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoMateriais;

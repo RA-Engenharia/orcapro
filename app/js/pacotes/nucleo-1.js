@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.144",
+versao: "1.2.145",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -509,12 +509,23 @@ try {
 "use strict";
 var TETO = 9007199254740991;
 function ehNum(v) { return typeof v === "number" && isFinite(v); }
+function _brNorm(s) {
+var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+if (np > 1) {
+if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+}
+if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+return s;
+}
 function paraCentavos(v) {
 if (v == null || v === "") return 0;
 var n;
 if (ehNum(v)) n = v;
 else if (global.Util && global.Util.num) n = global.Util.num(v);
-else n = Number(String(v).replace(/\./g, "").replace(",", "."));
+else n = Number(_brNorm(String(v).replace(/\s/g, "")));
 if (!isFinite(n)) return 0;
 var neg = n < 0, abs = Math.abs(n);
 if (abs > TETO / 100) return neg ? -TETO : TETO;
@@ -2910,10 +2921,21 @@ var GRUPOS = [
 { id: "compras", nome: "Compras", aberto: false },
 { id: "outros", nome: "Outros", aberto: false }
 ];
+function _brNorm(s) {
+var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+if (np > 1) {
+if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+}
+if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+return s;
+}
 function num(v) {
 if (typeof v === "number") return isFinite(v) ? v : 0;
 if (v === null || v === undefined || v === "") return 0;
-var s = String(v).replace(/\./g, "").replace(",", ".");
+var s = _brNorm(String(v).replace(/\s/g, ""));
 var x = parseFloat(s);
 if (!isFinite(x)) { x = parseFloat(String(v)); }
 return isFinite(x) ? x : 0;
@@ -55569,9 +55591,20 @@ try {
 function arr(a) { return Array.isArray(a) ? a : []; }
 function txt(s) { return String(s == null ? "" : s).trim(); }
 function obj(o) { return (o && typeof o === "object" && !Array.isArray(o)) ? o : null; }
+function _brNorm(s) {
+var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+if (np > 1) {
+if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+}
+if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+return s;
+}
 function num(v) {
 if (typeof v === "number") return isFinite(v) ? v : 0;
-var n = parseFloat(String(v == null ? "" : v).replace(/\s/g, "").replace(/\./g, "").replace(",", "."));
+var n = parseFloat(_brNorm(String(v == null ? "" : v).replace(/\s/g, "")));
 return isFinite(n) ? n : 0;
 }
 function temCC() { return typeof CentroCusto !== "undefined" && CentroCusto ? CentroCusto : null; }

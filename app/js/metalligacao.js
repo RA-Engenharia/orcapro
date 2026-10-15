@@ -276,6 +276,8 @@
     if (nl === 1 || zona <= 0) bs.push(0); else for (var i = 0; i < nl; i++) bs.push(zona / 2 - i * zona / (nl - 1));
     if (nl > 1 && zona / (nl - 1) < 2.7 * c.db / 1000) res.avisos.push("Linhas de parafusos a " + r1(zona / (nl - 1) * 1000) + " mm — menos que 2,7 db; reduza o número de linhas");
     if (ext >= 2 * c.eP) { bs.unshift(d / 2 + ext - c.eP); bs.push(-(d / 2 + ext - c.eP)); }
+    /* M2 (1.2.145): as linhas do DIMENSIONAMENTO (8 parafusos por mesa: 2 fora e 2 dentro de cada mesa), do eixo da viga (m) */
+    if (Array.isArray(par.zs) && par.zs.length) bs = par.zs.map(function (z) { return num(z, 0); });
     var bolts = [], uvs = [];
     bs.forEach(function (b) {
       [-gage / 2, gage / 2].forEach(function (a) {
@@ -289,6 +291,18 @@
       solda: par.altura != null ? solda(pernaA, "ambos", 2 * H, false) : solda(pernaA, "contorno", 2 * (s.larg + s.alt), false), furos: uvs.map(function (q) { return { u: q[0], v: q[1], db: c.db, tipo: c.furo }; }) });
     if (ch.erro) return erro(ch.erro);
     res.pecas.push(ch);
+    /* M2 (1.2.145): NERVURA da extensão (4ES / 8ES) — triângulo no plano da alma, da mesa até a ponta da chapa, soldado na mesa e na
+       chapa; par.nervura = { h, L, t (m), ambas (as duas extensões) } */
+    if (par.nervura && !vigaVsViga && num(par.nervura.h, 0) > 0.01) {
+      var nh = num(par.nervura.h, 0), nL = num(par.nervura.L, nh * 1.732), nt = num(par.nervura.t, 0.01), chn = Math.min(0.015, nh / 4);
+      (par.nervura.ambas ? [1, -1] : [1]).forEach(function (sgn) {
+        var ub = V().mul(nrm, -1), vb = V().mul(Bl, sgn), tdir = V().unit(V().cross(ub, vb));
+        var base = V().add(E, V().mul(Bl, sgn * (s.alt / 2) / Math.cos(th))), Or = V().sub(base, V().mul(tdir, nt / 2));
+        var rb = M().chapa({ origem: Or, ex: ub, ey: vb, t: nt, contorno: [[chn, 0], [nL, 0], [0, nh], [0, chn]], papel: "Nervura da chapa de extremidade", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: viga.id,
+          solda: { tipo: "topo", perna: r1(nt * 1000), lados: "ambos", comprimento: r6(nL + nh), campo: false } });
+        if (!rb.erro) res.pecas.push(rb); else res.avisos.push("Nervura: " + rb.erro);
+      });
+    }
     if (vigaVsViga) {
       /* a outra viga leva a chapa espelhada, encostada nesta */
       var pt2 = pontaPerto(ma, E), th2 = num(ma.cortes[pt2.qual === "fim" ? "almaFim" : "almaIni"], 0) * Math.PI / 180, Bl2 = V().unit(V().add(ma.B, V().mul(ma.X, Math.tan(th2))));
@@ -771,9 +785,20 @@
     var c = comuns(par), res = novoRes("chapaSimples", par, [mb, ma]);
     var pt = pontaPerto(mb, ma), d = pt.sai, folga = num(par.folga, 0.0127), t = num(par.t, 0.0095), a = num(par.a, 0.075);
     var eB = Math.abs(V().dot(d, ma.B)), eA = Math.abs(V().dot(d, ma.A)), eixo = eB >= eA ? "b" : "a", ax = eixo === "b" ? ma.B : ma.A, sg = V().dot(ax, d) < 0 ? 1 : -1;
-    var fc = null; M().faces(ma.perfil).filter(function (f) { return f.n === eixo; }).forEach(function (f) { if (!fc || sg * f.meio > sg * fc.meio) fc = f; });
-    if (!fc) return erro("O apoio não tem face plana voltada para a viga.");
-    var Q = V().add(ma.Pref, V().mul(ax, fc.meio + sg * fc.t / 2)), sStar = V().dot(V().sub(Q, pt.P), ax) / V().dot(d, ax);
+    var fc = null, sStar, Dpass = 0, tw0 = num(mb.perfil.tw, 0.006);
+    if (ma.perfil && ma.perfil.forma === "tubo-circ") {
+      /* M2 (1.2.145): pilar TUBULAR circular — a chapa (no plano da alma da viga, afastada tw/2 + t/2 do eixo) encosta na superfície do
+         tubo a √(R² − e²) do eixo; a parede é a "face" (espessura t0) */
+      var R0 = num(ma.perfil.D, num(ma.perfil.d, 0.2)) / 2, t0 = num(ma.perfil.t, 0.006), eo = tw0 / 2 + t / 2, rel = V().sub(pt.P, ma.Pref); rel = V().sub(rel, V().mul(ma.X, V().dot(rel, ma.X)));
+      var dAx = -V().dot(rel, d) / Math.max(1e-9, V().dot(d, d)), rr = Math.sqrt(Math.max(R0 * R0 - eo * eo, 0));
+      sStar = dAx - rr; fc = { t: t0, meio: 0 }; Dpass = 2 * rr;
+    } else {
+      M().faces(ma.perfil).filter(function (f) { return f.n === eixo; }).forEach(function (f) { if (!fc || sg * f.meio > sg * fc.meio) fc = f; });
+      if (!fc) return erro("O apoio não tem face plana voltada para a viga.");
+      var Q = V().add(ma.Pref, V().mul(ax, fc.meio + sg * fc.t / 2)); sStar = V().dot(V().sub(Q, pt.P), ax) / V().dot(d, ax);
+      if (par.passante) Dpass = ma.perfil.forma === "tubo-ret" ? (eixo === "b" ? num(ma.perfil.h, ma.s.alt) : num(ma.perfil.b, ma.s.larg)) : 0;
+    }
+    if (par.passante && !(Dpass > 0)) return erro("Chapa passante: o apoio tem de ser um pilar TUBULAR.");
     var Pf = V().add(pt.P, V().mul(d, sStar));
     if (par.ajustar !== false) { var aj = ajustarPonta(mb, pt.qual, sStar - folga); if (aj) { mb = aplicarAjuste(res, mb, aj); res.avisos.push((mb.origem === "arq" ? "Viga " : "Barra ") + viga.id + ": a ponta " + (sStar - folga > 0 ? "estica " : "encurta ") + r1(Math.abs(sStar - folga) * 1000) + " mm (folga de " + r1(folga * 1000) + " mm até o apoio)"); } }
     var s = mb.s, tw = num(mb.perfil.tw, 0.006), tf = num(mb.perfil.tf, 0.01), r = num(mb.perfil.r, 0);
@@ -786,12 +811,15 @@
     var u = V().mul(d, -1), sv = V().dot(u, mb.X) > 0 ? 1 : -1, vv = V().mul(mb.B, sv);
     var O = V().sub(V().add(Pf, V().mul(mb.A, tw / 2)), V().mul(vv, Lp / 2));
     var bolts = [], uvs = [];
+    /* chapa PASSANTE: começa na parede do fundo (Dpass para dentro do apoio) — os furos ficam a Dpass + a da origem */
+    var du = par.passante ? Dpass : 0, Op = par.passante ? V().add(O, V().mul(d, Dpass)) : O;
     for (var i = 0; i < nl; i++) {
       var vq = Lp / 2 + (i - (nl - 1) / 2) * c.passo, Pp = V().add(V().add(V().add(O, V().mul(u, a)), V().mul(vv, vq)), V().mul(mb.A, t));
-      bolts.push({ P: Pp, D: V().mul(mb.A, -1), aperto: (par.dupla ? 2 * t : t) + tw }); uvs.push([a, vq]);
+      bolts.push({ P: Pp, D: V().mul(mb.A, -1), aperto: (par.dupla ? 2 * t : t) + tw }); uvs.push([a + du, vq]);
     }
-    var ch = M().chapa({ origem: O, ex: u, ey: vv, t: t, ret: { L: W, B: Lp }, papel: "Chapa simples", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: apoio.id,
-      solda: solda(pernaMin(t, fc.t), "ambos", Lp, false), furos: uvs.map(function (q) { return { u: q[0], v: q[1], db: c.db, tipo: c.furo }; }) });
+    var ch = M().chapa({ origem: Op, ex: u, ey: vv, t: t, ret: { L: W + du, B: Lp }, papel: "Chapa simples", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: apoio.id,
+      solda: solda(pernaMin(t, fc.t), "ambos", par.passante ? 2 * Lp : Lp, false), furos: uvs.map(function (q) { return { u: q[0], v: q[1], db: c.db, tipo: c.furo }; }) });
+    if (par.passante) res.avisos.push("Chapa passante: rasgos nas duas paredes do tubo (largura da chapa + 2 mm) e solda dos dois lados da chapa em cada parede — no desenho de fabricação");
     if (ch.erro) return erro(ch.erro);
     if (V().dot(V().cross(u, vv), mb.A) < 0) res.avisos.push("Chapa simples: conferir o lado da chapa");
     res.pecas.push(ch);
@@ -805,7 +833,7 @@
     }
     furosNosMembros(bolts, [mb], c, res);
     res.parafusos = boltCaixas(bolts, c, res.lig);
-    res.resumo = (par.dupla ? "Tala dupla (2 chapas) " : "Chapa simples ") + Math.round(W * 1000) + " × " + Math.round(Lp * 1000) + " × " + r1(t * 1000) + " mm soldada no apoio, " + nl + " parafusos " + c.id + " na alma (a = " + Math.round(a * 1000) + " mm, folga " + r1(folga * 1000) + " mm)";
+    res.resumo = (par.dupla ? "Tala dupla (2 chapas) " : par.passante ? "Chapa passante " : "Chapa simples ") + Math.round((W + du) * 1000) + " × " + Math.round(Lp * 1000) + " × " + r1(t * 1000) + " mm " + (par.passante ? "atravessando o tubo" : "soldada no apoio") + ", " + nl + " parafusos " + c.id + " na alma (a = " + Math.round(a * 1000) + " mm, folga " + r1(folga * 1000) + " mm)";
     return fechar(res, c);
   }
 
@@ -844,10 +872,12 @@
       var ta = an.Lp.t, X = an.X, nCol = Math.round(num(par.parafusos, 2)) >= 4 ? 4 : 2;
       gv = Math.max(cima5((ta + c.eP) * 1000) / 1000, cima5(0.55 * an.Lp.b * 1000) / 1000);
       gh = Math.max(cima5((folga + c.eS) * 1000) / 1000, cima5(0.5 * an.Lp.a * 1000) / 1000);
-      var gx = Math.min(gf, La - 2 * c.eP), linhasV = nCol === 4 ? [gv, gv + c.passo] : [gv];
+      if (par.gv != null) gv = num(par.gv, gv); if (par.gh != null) gh = num(par.gh, gh);
+      var gx = par.gx != null ? num(par.gx, 0) : Math.min(gf, La - 2 * c.eP), gxP = par.gxPilar != null ? num(par.gxPilar, gx) : gx, linhasV = nCol === 4 ? [gv, gv + c.passo] : [gv];
+      var nhV = Math.max(1, Math.round(num(par.linhasViga, 1))), psV = num(par.passoViga, c.passo), linhasH = []; for (var ih = 0; ih < nhV; ih++) linhasH.push(gh + ih * psV);
       if (nCol === 4 && gv + c.passo > an.Lp.b - c.eP + 1e-6) res.avisos.push("Assento: a 2ª linha de parafusos não cabe na aba vertical (" + Math.round(an.Lp.b * 1000) + " mm)");
-      linhasV.forEach(function (z) { [-gx / 2, gx / 2].forEach(function (x) { boltsCol.push({ P: V().add(V().add(V().add(cantoB, V().mul(dn, z)), V().mul(X, x)), V().mul(Y, ta)), D: d, aperto: ta + fc.t }); }); });
-      [-gx / 2, gx / 2].forEach(function (x) { boltsVig.push({ P: V().add(V().add(V().add(cantoB, V().mul(Y, gh)), V().mul(X, x)), V().mul(dn, ta)), D: up, aperto: ta + tf }); });
+      linhasV.forEach(function (z) { [-gxP / 2, gxP / 2].forEach(function (x) { boltsCol.push({ P: V().add(V().add(V().add(cantoB, V().mul(dn, z)), V().mul(X, x)), V().mul(Y, ta)), D: d, aperto: ta + fc.t }); }); });
+      linhasH.forEach(function (yh) { [-gx / 2, gx / 2].forEach(function (x) { boltsVig.push({ P: V().add(V().add(V().add(cantoB, V().mul(Y, yh)), V().mul(X, x)), V().mul(dn, ta)), D: up, aperto: ta + tf }); }); });
       pecas.push(an);
     } else {
       var X2 = V().cross(Y, dn), W = num(par.largura, 0.15), tp = num(par.t, 0.0125), ts = num(par.ts, 0.0125), hs = num(par.hs, Math.max(2 * W, 0.15));
@@ -865,13 +895,15 @@
       res.pecas.push(chA, chS);
     }
     /* cantoneira de topo (estabilidade): aba horizontal sobre a mesa de cima, aba vertical no apoio */
-    var top = cantoneira(par.catTopo || "L89X89X6.4", cantoT, up, La, "Cantoneira de topo");   /* L 89: a borda dos furos cabe (revisão A4: 26,2 < 27 na L 76) */
+    /* M2 (1.2.145): par.topoMomento — a cantoneira de topo da ligação SEMIRRÍGIDA (leva a tração do binário): o perfil, os gabaritos e
+       as linhas na mesa da viga do dimensionamento; papel próprio (o cálculo da estrutura a lê como nó rígido — js/acomodelolivre.js) */
+    var top = cantoneira(par.catTopo || "L89X89X6.4", cantoT, up, La, par.topoMomento ? "Cantoneira de topo (momento)" : "Cantoneira de topo");   /* L 89: a borda dos furos cabe (revisão A4: 26,2 < 27 na L 76) */
     if (top) {
-      var tt = top.Lp.t, Xt = top.X, gvt = Math.max(cima5((tt + c.eP) * 1000) / 1000, cima5(0.55 * top.Lp.b * 1000) / 1000), ght = Math.max(cima5((folga + c.eS) * 1000) / 1000, cima5(0.5 * top.Lp.a * 1000) / 1000), gxt = Math.min(gf, La - 2 * c.eP);
-      [-gxt / 2, gxt / 2].forEach(function (x) {
-        boltsCol.push({ P: V().add(V().add(V().add(cantoT, V().mul(up, gvt)), V().mul(Xt, x)), V().mul(Y, tt)), D: d, aperto: tt + fc.t });
-        boltsVig.push({ P: V().add(V().add(V().add(cantoT, V().mul(Y, ght)), V().mul(Xt, x)), V().mul(up, tt)), D: dn, aperto: tt + tf });
-      });
+      var tt = top.Lp.t, Xt = top.X, gvt = Math.max(cima5((tt + c.eP) * 1000) / 1000, cima5(0.55 * top.Lp.b * 1000) / 1000), ght = Math.max(cima5((folga + c.eS) * 1000) / 1000, cima5(0.5 * top.Lp.a * 1000) / 1000), gxt = Math.min(gf, La - 2 * c.eP), gxtV = gxt, linT = [ght];
+      if (par.topoMomento) { if (par.gv != null) gvt = num(par.gv, gvt); if (par.gh != null) ght = num(par.gh, ght); if (par.gxPilar != null) gxt = num(par.gxPilar, gxt); if (par.gx != null) gxtV = num(par.gx, gxtV);
+        linT = []; for (var it2 = 0; it2 < Math.max(1, Math.round(num(par.linhasViga, 1))); it2++) linT.push(ght + it2 * num(par.passoViga, c.passo)); }
+      [-gxt / 2, gxt / 2].forEach(function (x) { boltsCol.push({ P: V().add(V().add(V().add(cantoT, V().mul(up, gvt)), V().mul(Xt, x)), V().mul(Y, tt)), D: d, aperto: tt + fc.t }); });
+      linT.forEach(function (yh) { [-gxtV / 2, gxtV / 2].forEach(function (x) { boltsVig.push({ P: V().add(V().add(V().add(cantoT, V().mul(Y, yh)), V().mul(Xt, x)), V().mul(up, tt)), D: dn, aperto: tt + tf }); }); });
       pecas.push(top);
     }
     /* os furos das cantoneiras (os furos moram na peça) */
@@ -1049,6 +1081,54 @@
     return fechar(res, {});
   }
 
+  /* M2 (1.2.145) CHAPA DE CABEÇA: viga CONTÍNUA sobre o pilar. O topo do pilar desce/sobe até a chapa (que encosta na mesa de baixo
+   * da viga), 4 parafusos na mesa de baixo e os pares de enrijecedores de apoio na viga sobre as mesas do pilar (mesma ligação).
+   * par: { t (m), B (m, através da viga), L (m, ao longo da viga), parafuso, gx (m), xb (m, do eixo do pilar aos parafusos ao longo
+   *        da viga), enrij: { t (m), xs: [m, …] (do eixo do pilar) } | null, aco, ajustar } — ordem das peças: [viga, pilar] */
+  function chapaCabeca(viga, pilar, par) {
+    par = par || {};
+    var mv = M().membro(viga), mp = M().membro(pilar); if (!mv || !mp) return erro("Selecione a VIGA contínua e o PILAR que acaba sob ela — perfis de aço.");
+    if (Math.abs(V().dot(mp.X, [0, 1, 0])) < 0.9) return erro("Chapa de cabeça: o pilar tem de ser vertical.");
+    var c = comuns(par), res = novoRes("chapaCabeca", par, [mv, mp]), t = num(par.t, 0.016), UPv = [0, 1, 0];
+    var ps = pontas(mp), cima = ps[0].P[1] >= ps[1].P[1] ? ps[0] : ps[1], Pt = cima.P;
+    var up = V().dot(mv.B, UPv) >= 0 ? mv.B : V().mul(mv.B, -1), dn = V().mul(up, -1);
+    var tB = V().dot(V().sub(Pt, mv.Pref), mv.X), Pax = V().add(mv.Pref, V().mul(mv.X, tB));
+    if (tB < mv.xOff + 0.05 || tB > mv.xOff + mv.L - 0.05) return erro("O topo do pilar não fica sob a viga (a viga tem de passar sobre o pilar).");
+    var Pbase = V().add(Pax, V().mul(dn, mv.s.alt / 2)), Pc = V().add(Pbase, V().mul(dn, t));
+    var lateral = V().sub(Pt, Pax); lateral = V().sub(lateral, V().mul(mv.X, V().dot(lateral, mv.X))); lateral = V().sub(lateral, V().mul(UPv, V().dot(lateral, UPv)));
+    if (V().len(lateral) > 0.02) res.avisos.push("O eixo do pilar está a " + Math.round(V().len(lateral) * 1000) + " mm do plano da alma da viga — a chapa fica centrada na viga");
+    /* o topo do pilar encosta na chapa (ponta faceada) */
+    var delta = V().dot(V().sub(Pc, Pt), cima.sai);
+    if (par.ajustar !== false && Math.abs(delta) > 0.0005) {
+      var aj = ajustarPonta(mp, cima.qual, delta);
+      if (aj) { aplicarAjuste(res, mp, aj); res.avisos.push("Pilar " + pilar.id + ": o topo " + (delta > 0 ? "sobe " : "desce ") + r1(Math.abs(delta) * 1000) + " mm para encostar na chapa de cabeça"); }
+      else res.avisos.push("Ajuste o topo do pilar " + pilar.id + " em " + r1(delta * 1000) + " mm para encostar na chapa de cabeça (pilar que não é do modelador)");
+    }
+    var Lp = num(par.L, 0.3), Bp = num(par.B, Math.max(mv.s.larg, 0.15)), gx = num(par.gx, 0.09), xb = num(par.xb, Lp / 2 - 0.04);
+    var ex = mv.X, ey = V().unit(V().cross(up, ex)), O = V().sub(V().sub(Pc, V().mul(ex, Lp / 2)), V().mul(ey, Bp / 2)), tf = num(mv.perfil.tf, 0.01);
+    var bolts = [], uvs = [];
+    [-xb, xb].forEach(function (x) { [-gx / 2, gx / 2].forEach(function (y) {
+      var P = V().add(V().add(Pc, V().mul(ex, x)), V().mul(ey, y)); bolts.push({ P: P, D: up, aperto: t + tf }); uvs.push([Lp / 2 + x, Bp / 2 + y]);
+    }); });
+    var ch = M().chapa({ origem: O, ex: ex, ey: ey, t: t, ret: { L: Lp, B: Bp }, papel: "Chapa de cabeça", aco: par.aco || "ASTM A36", lig: res.lig, soldadaEm: pilar.id,
+      solda: solda(pernaMin(t, num(mp.perfil.tf, num(mp.perfil.t, t))), "contorno", 2 * (mp.s.alt + mp.s.larg), false), furos: uvs.map(function (q) { return { u: q[0], v: q[1], db: c.db, tipo: c.furo }; }) });
+    if (ch.erro) return erro(ch.erro);
+    res.pecas.push(ch);
+    furosNosMembros(bolts, [mv], c, res);
+    res.parafusos = boltCaixas(bolts, c, res.lig);
+    /* os pares de enrijecedores de apoio na viga, SOBRE AS MESAS DO PILAR (par.enrij.xs, m, do eixo do pilar ao longo da viga — o
+       cálculo dá ±(d − tf)/2); sem xs (chamada antiga): um par sobre o eixo do pilar */
+    if (par.enrij !== null && mv.perfil.forma === "I") {
+      var xsE = par.enrij && par.enrij.xs && par.enrij.xs.length ? par.enrij.xs : [0];
+      xsE.forEach(function (dx) {
+        var re = enrijecedor(viga, { x: tB - mv.xOff + num(dx, 0), t: num(par.enrij && par.enrij.t, 0.0095), lig: res.lig, aco: par.aco });
+        if (re.ok) re.pecas.forEach(function (q) { q.metal.papel = "Enrijecedor de apoio"; res.pecas.push(q); }); else res.avisos.push("Enrijecedores de apoio: " + re.motivo);
+      });
+    }
+    res.resumo = "Chapa de cabeça " + Math.round(Lp * 1000) + " × " + Math.round(Bp * 1000) + " × " + r1(t * 1000) + " mm no topo do pilar, " + bolts.length + " parafusos " + c.id + " na mesa de baixo da viga" + (par.enrij !== null ? (par.enrij && par.enrij.xs && par.enrij.xs.length > 1 ? " e " + par.enrij.xs.length + " pares de enrijecedores de apoio sobre as mesas do pilar" : " e par de enrijecedores de apoio") : "");
+    return fechar(res, c);
+  }
+
   /* PROLONGAR a ponta de cima de um pilar de aço (a chapa estendida pede): a op do lote e a caixa depois */
   function prolongar(pilar, delta) {
     var mb = M().membro(pilar); if (!mb) return null;
@@ -1086,7 +1166,8 @@
     soldadaDireta: { rotulo: "Viga soldada no pilar", pede: ["viga", "pilar"], fn: function (s, p) { return soldadaDireta(s[0], s[1], p); } },
     reforcoAlma: { rotulo: "Chapa de reforço da alma", pede: ["pilar"], fn: function (s, p) { return reforcoAlma(s[0], p); } },
     misula: { rotulo: "Mísula", pede: ["viga", "pilar"], fn: function (s, p) { return misula(s[0], s[1], p); } },
-    consolo: { rotulo: "Consolo", pede: ["pilar", "viga"], fn: function (s, p) { return consolo(s[0], s[1], p); } }
+    consolo: { rotulo: "Consolo", pede: ["pilar", "viga"], fn: function (s, p) { return consolo(s[0], s[1], p); } },
+    chapaCabeca: { rotulo: "Chapa de cabeça (viga contínua sobre o pilar)", pede: ["viga", "pilar"], fn: function (s, p) { return chapaCabeca(s[0], s[1], p); } }
   };
 
   var BimMetalLig = {

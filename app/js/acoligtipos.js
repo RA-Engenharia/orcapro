@@ -39,14 +39,16 @@
 
   /* O QUE O CÁLCULO DAS LIGAÇÕES VERIFICA E O QUE NÃO (vai na tela e no memorial — nunca "aprovado" com lacuna escondida) */
   var ESCOPO = {
-    verificado: "Parafusos (cisalhamento, tração, interação, pressão de contato e rasgamento entre furos e borda), colapso por rasgamento, chapas e cantoneiras (escoamento da área bruta e ruptura da líquida, flexão, flambagem de chapa comprimida), soldas de filete e de penetração (metal da solda e metal-base), forças localizadas no pilar (flexão local da mesa, escoamento local e enrugamento da alma → enrijecedores), painel da alma (→ chapa de reforço), seção recortada, placa de base (concreto, flexão, chumbadores, ancoragem), gusset (Whitmore), nós tubulares soldados (NBR 16239) e distâncias da Tabela 14 — pelas fórmulas da NBR 8800 citadas em cada passo.",
+    verificado: "Parafusos (cisalhamento, tração, interação, pressão de contato e rasgamento entre furos e borda), colapso por rasgamento, chapas e cantoneiras (escoamento da área bruta e ruptura da líquida, flexão, flambagem de chapa comprimida), soldas de filete e de penetração (metal da solda e metal-base), forças localizadas no pilar (flexão local da mesa, escoamento local e enrugamento da alma → enrijecedores), painel da alma (→ chapa de reforço), seção recortada, placa de base (concreto, flexão, chumbadores, ancoragem), gusset (Whitmore), nós tubulares soldados (NBR 16239) e distâncias da Tabela 14 — pelas fórmulas da NBR 8800 citadas em cada passo. Desde a 1.2.145: a mesa do pilar sob parafusos tracionados (T-stub da EN 1993-1-8, com a alavanca pelo Lb*), cantoneira de topo e assento semirrígida, chapa de extremidade de 8 parafusos por mesa e com nervura, a parede do pilar tubular (chapa simples e chapa passante — EN 1993-1-8, Tabela 7.2), a viga contínua sobre o pilar (enrijecedores de apoio — AISC 360-16, J10.8), as soldas dos enrijecedores e da chapa de reforço, a força axial do pilar no painel (AISC 360-16, J10.6) e a flambagem local da alma recortada (AISC Manual, Parte 9).",
     naoVerificado: [
       "EFEITO ALAVANCA (NBR 8800:2024) — PENDENTE DO TEXTO: chapas de extremidade dimensionadas SEM alavanca (chapa espessa, a favor do parafuso).",
       "Método novo de PLACA DE BASE da NBR 8800:2024 — PENDENTE DO TEXTO: usado o AISC Design Guide 1 (2ª ed.).",
       "Rigidez rotacional e classificação da ligação (rígida / semirrígida / flexível) — a família é a da tipologia; não calculada.",
       "Fadiga (ponte rolante, máquinas vibratórias) — NBR 8800, Anexo K.",
       "Cone de concreto, bloco/pedestal e armadura de fretagem — projeto de fundação.",
-      "Ligações fora do catálogo (perfis T e cantoneiras de mesa tracionados, viga mista, nós tubulares com sobreposição, geometria livre por elementos finitos)."
+      "Ligações fora do catálogo (perfis T de mesa tracionados, viga mista, nós tubulares com sobreposição, geometria livre por elementos finitos).",
+      "NÃO DIMENSIONADAS (no catálogo e na lista, sem Aplicar): chapa estendida larga com 4 parafusos por linha (8E-4W) e anel externo em pilar tubular.",
+      "Nervura da chapa estendida (4ES e 8ES): não contada a favor da chapa (a chapa sai mais grossa que pelo AISC Design Guide 4)."
     ]
   };
 
@@ -54,6 +56,8 @@
     "viga-mesa-pilar": "Viga na mesa do pilar",
     "viga-alma-pilar": "Viga na alma do pilar",
     "viga-viga": "Viga em viga (secundária na principal)",
+    "viga-pilar-tubo": "Viga em pilar tubular (circular ou retangular)",
+    "viga-sobre-pilar": "Viga contínua sobre o pilar (o pilar acaba sob a viga)",
     "emenda-viga": "Emenda de viga",
     "emenda-pilar": "Emenda de pilar",
     "emenda-barra": "Emenda de barra tracionada (cantoneira, U, chapa)",
@@ -100,7 +104,25 @@
     "shear-lag": { texto: "Área líquida efetiva da diagonal (Ct)", item: "5.2.5", norma: "NBR 8800:2008" },
     "tubo-no": { texto: "Nó soldado de perfis tubulares (plastificação da face do banzo, punção)", item: "NBR 16239:2013 (formulação do EN 1993-1-8:2005, cap. 7)", norma: "NBR 16239:2013" },
     "barra-redonda": { texto: "Barra redonda: fuste, rosca e chapa de apoio", item: "5.2 e 6.3.3.1", norma: "NBR 8800:2008" },
-    "chapa-fina": { texto: "Pressão de contato em chapa fina (perfil formado a frio)", item: "NBR 14762:2010 (ligações parafusadas)", norma: "NBR 14762:2010" }
+    "chapa-fina": { texto: "Pressão de contato em chapa fina (perfil formado a frio)", item: "NBR 14762:2010 (ligações parafusadas)", norma: "NBR 14762:2010" },
+    /* M2 (1.2.145) — o texto da NBR 8800:2024 não está na biblioteca: onde a 2008 não tem a fórmula, a referência é a reconhecida (EN / AISC) */
+    "tstub-pilar": { texto: "Mesa do pilar à flexão sob as linhas de parafusos tracionados (T-stub: linhas isoladas e em grupo, com alavanca pelo Lb*)", item: "Tabelas 6.2, 6.4 e 6.5", norma: "EN 1993-1-8:2005" },
+    "tstub-cant": { texto: "Cantoneira de topo: aba vertical à flexão e parafusos tracionados (T-stub, leff = 0,5·ba)", item: "6.2.4, 6.2.6.6 e Tabela 6.2", norma: "EN 1993-1-8:2005" },
+    "chapa-alav": { texto: "Chapa de extremidade sem efeito alavanca (as linhas do lado somadas na raiz da mesa)", item: "Parte 9 (t ≥ √(4·T·b'/(φ·p·Fu)), com fy)", norma: "AISC Steel Construction Manual, 15ª ed. (2017)" },
+    "nervura": { texto: "Nervura da extensão (espessura, esbeltez e comprimento)", item: "6.10", norma: "AISC 358-16 (2016) e AISC Design Guide 4, 2ª ed. (2003)" },
+    "solda-enrij": { texto: "Enrijecedores de continuidade: largura, espessura e soldas na mesa e na alma do pilar", item: "5.7.9 (a mesma regra da AISC 360-16, J10.8)", norma: "NBR 8800:2008" },
+    "painel-axial": { texto: "Painel da alma com a força axial do pilar (Pr > 0,4·Py) e a solda da chapa de reforço", item: "J10.6 a) e J10.9", norma: "AISC 360-16 (2016)" },
+    "tubo-parede": { texto: "Parede do tubo: plastificação pela chapa longitudinal (momento no plano)", item: "Tabela 7.2 (a mesma forma da AISC 360-16, Tabela K1.1)", norma: "EN 1993-1-8:2005 / NBR 16239:2013" },
+    "tubo-puncao": { texto: "Parede do tubo: punção pela chapa", item: "Tabelas 7.2 e 7.13", norma: "EN 1993-1-8:2005 / NBR 16239:2013" },
+    "tubo-cis": { texto: "Parede do tubo ao cisalhamento junto à solda", item: "6.5.5", norma: "NBR 8800:2008" },
+    "passante": { texto: "Chapa passante: reações nas duas paredes (equilíbrio), soldas e chapa dentro do tubo", item: "6.2.5 e 6.5.5 (Parte 10 do AISC Manual — chapa passante)", norma: "NBR 8800:2008" },
+    "enrij-apoio": { texto: "Enrijecedores de apoio na viga sobre o pilar (barra comprimida com 25·tw de alma, contato e solda)", item: "J7 e J10.8 (χ da NBR 8800:2024, 5.3)", norma: "AISC 360-16 (2016)" },
+    "alma-viga-local": { texto: "Alma da viga sob a força do pilar (escoamento local e enrugamento, longe da ponta)", item: "5.7.3 e 5.7.4", norma: "NBR 8800:2008" },
+    "cobertura": { texto: "A mesa da viga cobre a largura do pilar (dispersão a 45° na chapa de cabeça)", item: "6.2.6.2 (sp = 2·tp)", norma: "EN 1993-1-8:2005" },
+    "entre-mesas": { texto: "A viga e as peças da ligação cabem entre as mesas do pilar (ligação na alma)", item: "geometria — d − 2·tf − 2·r", norma: "NBR 8800:2008 (6.3 — montagem)" },
+    "recorte-flamb": { texto: "Flambagem local da alma recortada", item: "Parte 9 (14ª ed. f·k e 15ª ed. Fy·Q — a menor)", norma: "AISC Steel Construction Manual, 14ª ed. (2011) e 15ª ed. (2017)" },
+    "mesas-rec": { texto: "Seção da viga com as mesas recortadas à flexão no fim do recorte", item: "Parte 9 (escoamento da seção reduzida)", norma: "AISC Steel Construction Manual, 15ª ed. (2017)" },
+    "nao-dim": { texto: "NÃO DIMENSIONADA — sem fórmula amarrada a norma no motor", item: "—", norma: "NBR 8800:2024 (texto fora da biblioteca)" }
   };
 
   /* custos relativos: 1 = baixo, 2 = médio, 3 = alto */
@@ -165,11 +187,11 @@
         dica: "Assento com enrijecedor vertical: leva reação grande com a mesma montagem fácil.", desenho: { cena: "vp", el: "assentoEnrij" } }),
 
     /* ------------------------------------------------ viga → pilar: RÍGIDAS / SEMIRRÍGIDAS */
-    T({ id: "chapa-ext-estendida", nome: "Chapa de extremidade estendida", familia: "rigida", meio: "mista",
+    T({ id: "chapa-ext-estendida", nome: "Chapa de extremidade estendida — 4 parafusos por mesa (4E)", familia: "rigida", meio: "mista",
         aplicacoes: ["viga-mesa-pilar"], calc: "chapaExtendida", geometria: { macro: "chapaExtremidade", par: { usarExt: true } },
         parametros: [["t", "Espessura (mm)", "auto"], ["parafuso", "Parafuso", "auto (M16 a M30)"], ["ext", "Extensão além da mesa (mm)", "auto"]],
         limitacoes: ["Momento num sentido predominante (pórtico de galpão); a chapa estende do lado tracionado (os dois lados quando o momento inverte).", "Chapa dimensionada sem efeito alavanca (chapa espessa) — a NBR 8800:2024 mudou o método (conferir)."],
-        verificacoes: ["paraf-tra", "paraf-cis", "paraf-int", "pressao", "rasgamento", "chapa-flex", "solda-penetracao", "solda-filete", "mesa-local", "alma-escoamento", "alma-enrugamento", "painel", "bordas"], reforcos: ["enrijecedor de continuidade", "chapa de reforço da alma", "diagonal no painel"],
+        verificacoes: ["paraf-tra", "paraf-cis", "paraf-int", "pressao", "rasgamento", "chapa-flex", "solda-penetracao", "solda-filete", "mesa-local", "tstub-pilar", "alma-escoamento", "alma-enrugamento", "painel", "bordas"], reforcos: ["enrijecedor de continuidade", "chapa de reforço da alma", "diagonal no painel"],
         fabricacao: 2, montagem: 1, custo: 2, rotacao: "rígida",
         dica: "A ligação de momento parafusada mais usada em pórtico: tudo soldado na fábrica, só parafuso na obra.", desenho: { cena: "vp", el: "chapaEst" } }),
     T({ id: "chapa-ext-estendida-enrij", nome: "Chapa de extremidade estendida com enrijecedores no pilar", familia: "rigida", meio: "mista",
@@ -236,19 +258,86 @@
         fabricacao: 2, montagem: 1, custo: 1, rotacao: "—",
         dica: "Continuam a mesa da viga através do pilar: resolvem a flexão local da mesa e o escoamento da alma.", desenho: { cena: "vp", el: "enrij" } }),
 
+    /* ------------------------------------------------ M2 (1.2.145): viga × pilar — novas */
+    T({ id: "chapa-ext-estendida-4es", nome: "Chapa de extremidade estendida — 4 parafusos por mesa, com nervura (4ES)", familia: "rigida", meio: "mista",
+        aplicacoes: ["viga-mesa-pilar"], calc: "chapaExt4ES", geometria: { macro: "chapaExtremidade", par: { usarExt: true } },
+        parametros: [["t", "Espessura (mm)", "auto"], ["parafuso", "Parafuso", "auto (M16 a M30)"], ["nervura", "Nervura (altura × comprimento × espessura)", "auto"]],
+        limitacoes: ["Como a 4E, com uma nervura triangular no plano da alma sobre cada extensão (soldada na mesa e na chapa, penetração total).", "O cálculo da chapa NÃO conta a nervura (a favor): a chapa sai igual à da 4E."],
+        verificacoes: ["paraf-tra", "paraf-cis", "paraf-int", "pressao", "rasgamento", "chapa-flex", "nervura", "solda-penetracao", "solda-filete", "tstub-pilar", "mesa-local", "alma-escoamento", "alma-enrugamento", "painel", "bordas"], reforcos: ["enrijecedor de continuidade", "chapa de reforço da alma"],
+        fabricacao: 3, montagem: 1, custo: 2, rotacao: "rígida",
+        dica: "A 4E com nervura na extensão: a extensão deforma menos (ligação mais rígida); o cálculo da chapa não conta a nervura.", desenho: { cena: "vp", el: "chapaEst", nervura: true } }),
+    T({ id: "chapa-ext-estendida-8", nome: "Chapa de extremidade estendida — 8 parafusos por mesa, com nervura (8ES)", familia: "rigida", meio: "mista",
+        aplicacoes: ["viga-mesa-pilar"], calc: "chapaExt8", geometria: { macro: "chapaExtremidade", par: { usarExt: true, usarZs: true } },
+        parametros: [["t", "Espessura (mm)", "auto"], ["parafuso", "Parafuso", "auto (M16 a M30)"], ["pb", "Passo entre as linhas do grupo (mm)", "3·db"]],
+        limitacoes: ["4 linhas de 2 parafusos junto de CADA mesa (2 fora, na extensão com nervura, e 2 dentro): 16 parafusos; momento nos dois sentidos.", "Parafusos pela distribuição plástica M = 2·Ft·Σh (AISC Design Guide 4 / AISC 358-16, 6.8); a chapa sem alavanca, sem contar a nervura (a favor) — sai mais grossa que no Guia 4.", "A viga precisa de altura para 2 linhas dentro de cada mesa (d − 2·tf − 2·(pfi + pb) ≥ pb)."],
+        verificacoes: ["paraf-tra", "paraf-cis", "paraf-int", "pressao", "rasgamento", "chapa-alav", "nervura", "solda-penetracao", "solda-filete", "tstub-pilar", "mesa-local", "alma-escoamento", "alma-enrugamento", "solda-enrij", "painel", "painel-axial", "bordas"], reforcos: ["enrijecedor de continuidade", "chapa de reforço da alma"],
+        fabricacao: 3, montagem: 1, custo: 3, rotacao: "rígida",
+        dica: "Momento alto, parafusos no limite: o dobro de parafusos na mesa tracionada (8), com nervura na extensão.", desenho: { cena: "vp", el: "chapaEst8" } }),
+    T({ id: "chapa-ext-estendida-4w", nome: "Chapa de extremidade estendida larga — 4 parafusos por linha (8E-4W)", familia: "rigida", meio: "mista",
+        aplicacoes: ["viga-mesa-pilar"], calc: null, naoDimensionada: "a distribuição da tração entre os 4 parafusos de cada linha depende da rigidez da mesa da viga e da chapa — sem fórmula amarrada a norma no motor; dimensionar à parte", geometria: null,
+        parametros: [["g", "Gabaritos (interno e externo, mm)", "—"]],
+        limitacoes: ["NÃO DIMENSIONADA: sem fórmula amarrada a norma no motor para repartir a tração entre os 4 parafusos da linha — aparece no catálogo e na lista, sem Aplicar.", "Pede viga e pilar de mesa larga (4 parafusos lado a lado)."],
+        verificacoes: ["nao-dim"], reforcos: [],
+        fabricacao: 3, montagem: 1, custo: 3, rotacao: "rígida",
+        dica: "Quatro parafusos lado a lado em cada linha: usada em vigas de mesa larga com momento alto. Não dimensionada no sistema.", desenho: { cena: "vp", el: "chapaEst4w" } }),
+    T({ id: "cant-topo-assento-sr", nome: "Cantoneiras de topo e de assento (semirrígida)", familia: "semirrigida", meio: "parafusada",
+        aplicacoes: ["viga-mesa-pilar"], calc: "cantTopoAssento", geometria: { macro: "assento", par: { topoMomento: true } },
+        parametros: [["cat", "Cantoneira (topo e assento)", "auto (L 127 a L 203)"], ["parafuso", "Parafuso", "auto (M16 a M24)"], ["linhas", "Linhas na mesa da viga", "auto (1 a 3)"]],
+        limitacoes: ["A de topo leva a tração do binário (T = M/z), a de assento a compressão e a cortante; tudo parafusado.", "Rigidez rotacional NÃO calculada: o cálculo da estrutura trata o nó como rígido — confira a viga também como biapoiada.", "No topo do pilar, o pilar tem de continuar acima da viga (a aba da de topo sobe nele)."],
+        verificacoes: ["tstub-cant", "tstub-pilar", "paraf-cis", "pressao", "rasgamento", "chapa-tra", "bordas", "alma-escoamento", "alma-enrugamento", "chapa-flex", "mesa-local", "painel"], reforcos: ["enrijecedor de continuidade", "chapa de reforço da alma"],
+        fabricacao: 1, montagem: 1, custo: 1, rotacao: "semirrígida",
+        dica: "Duas cantoneiras parafusadas, uma em cima e outra embaixo da viga: transmitem parte do momento, montagem só com parafusos.", desenho: { cena: "vp", el: "topoAssento" } }),
+    T({ id: "chapa-simples-mesas-rec", nome: "Chapa simples na alma do pilar com as mesas da viga recortadas", familia: "flexivel", meio: "mista",
+        aplicacoes: ["viga-alma-pilar"], calc: "chapaSimplesMesasRec", geometria: { macro: "chapaSimples" },
+        parametros: [["b", "Largura das mesas recortadas (mm)", "d − 2·tf − 2·r − 10 do pilar"], ["c", "Comprimento do recorte (mm)", "até passar as mesas do pilar"]],
+        limitacoes: ["Quando a viga não cabe entre as mesas do pilar: as mesas da viga são recortadas na largura livre até passar a ponta das mesas do pilar.", "O recorte vai no desenho de fabricação (o 3D não recorta a mesa)."],
+        verificacoes: ["mesas-rec", "paraf-cis", "pressao", "bordas", "chapa-cis", "chapa-flex", "rasgamento", "solda-filete", "alma-viga-cis"], reforcos: [],
+        fabricacao: 2, montagem: 1, custo: 1, rotacao: "boa",
+        dica: "A viga mais larga que o vão entre as mesas do pilar: recortam-se as mesas e liga-se a alma com chapa simples.", desenho: { cena: "vp", el: "chapaSimples", mesasRec: true } }),
+
+    /* ------------------------------------------------ M2 (1.2.145): viga em pilar TUBULAR e viga contínua sobre o pilar */
+    T({ id: "chapa-simples-tubo", nome: "Chapa simples soldada no pilar tubular", familia: "flexivel", meio: "mista",
+        aplicacoes: ["viga-pilar-tubo"], calc: "chapaSimplesTubo", geometria: { macro: "chapaSimples", par: { tubo: true } },
+        parametros: [["t", "Espessura da chapa (mm)", "auto"], ["parafuso", "Parafuso", "auto"]],
+        limitacoes: ["Tubo CIRCULAR: a parede é verificada (plastificação pelo momento da chapa e punção — EN 1993-1-8, Tabela 7.2; cisalhamento junto à solda).", "Tubo RETANGULAR: a parede sob o momento da chapa não tem fórmula no motor — BLOQUEADA (use a chapa passante).", "Sem a força do pilar (sem cálculo): np = 0,6 adotado (a favor)."],
+        verificacoes: ["paraf-cis", "pressao", "chapa-cis", "rasgamento", "chapa-flex", "solda-filete", "tubo-parede", "tubo-puncao", "tubo-cis", "alma-viga-cis"], reforcos: ["chapa passante"],
+        fabricacao: 1, montagem: 1, custo: 1, rotacao: "boa",
+        dica: "Uma chapa soldada na parede do tubo e a viga aparafusada nela: a mais simples em pilar tubular circular.", desenho: { cena: "tubo-vp", el: "chapa" } }),
+    T({ id: "chapa-passante-tubo", nome: "Chapa passante no pilar tubular (atravessa o tubo)", familia: "flexivel", meio: "mista",
+        aplicacoes: ["viga-pilar-tubo"], calc: "chapaPassante", geometria: { macro: "chapaSimples", par: { passante: true } },
+        parametros: [["t", "Espessura da chapa (mm)", "auto"], ["parafuso", "Parafuso", "auto"]],
+        limitacoes: ["A chapa atravessa o tubo por rasgos nas duas paredes e é soldada nas duas: a parede recebe só forças ao longo da solda (equilíbrio da chapa sobre dois apoios).", "Vale para tubo circular e retangular; o rasgo é preenchido pela chapa soldada."],
+        verificacoes: ["paraf-cis", "pressao", "chapa-cis", "rasgamento", "chapa-flex", "passante", "solda-filete", "tubo-cis", "alma-viga-cis"], reforcos: [],
+        fabricacao: 2, montagem: 1, custo: 2, rotacao: "boa",
+        dica: "A chapa passa pelo tubo e é soldada nas duas paredes: tira o momento da parede (resolve o tubo retangular).", desenho: { cena: "tubo-vp", el: "passante" } }),
+    T({ id: "anel-tubo", nome: "Anel (colar) externo no pilar tubular — ligação de momento", familia: "rigida", meio: "soldada",
+        aplicacoes: ["viga-pilar-tubo"], calc: null, naoDimensionada: "anel (colar) externo em pilar tubular para ligação de momento: as fórmulas da largura e da espessura do anel (CIDECT, Design Guide 9; AISC Design Guide 24) não estão no motor — dimensionar à parte", geometria: null,
+        parametros: [["b", "Largura do anel (mm)", "—"], ["t", "Espessura (mm)", "—"]],
+        limitacoes: ["NÃO DIMENSIONADA: o anel externo (diafragma) leva as forças das mesas da viga em volta do tubo; as fórmulas não estão no motor — aparece no catálogo e na lista, sem Aplicar."],
+        verificacoes: ["nao-dim"], reforcos: [],
+        fabricacao: 3, montagem: 2, custo: 3, rotacao: "rígida",
+        dica: "Para engastar a viga num pilar tubular: um anel de chapa em volta do tubo na altura de cada mesa da viga. Não dimensionado no sistema.", desenho: { cena: "tubo-vp", el: "anel" } }),
+    T({ id: "viga-continua-cabeca", nome: "Viga contínua sobre o pilar — chapa de cabeça", familia: "flexivel", meio: "mista",
+        aplicacoes: ["viga-sobre-pilar"], calc: "vigaContinuaCabeca", geometria: { macro: "chapaCabeca" },
+        parametros: [["t", "Espessura da chapa de cabeça (mm)", "auto"], ["parafuso", "Parafuso", "auto (4)"], ["ts", "Enrijecedores de apoio (mm)", "auto"]],
+        limitacoes: ["O pilar acaba sob a viga, que passa contínua: chapa de cabeça soldada no topo do pilar (ponta FACEADA — a compressão passa por contato), 4 parafusos na mesa de baixo.", "Par de enrijecedores de apoio na viga sobre o pilar SEMPRE (dão também o vínculo de garfo da viga contínua).", "A mesa da viga tem de cobrir a largura do pilar (com a dispersão de 45° na chapa)."],
+        verificacoes: ["cobertura", "alma-viga-local", "enrij-apoio", "paraf-tra", "paraf-cis", "paraf-int", "pressao", "tstub-pilar", "solda-filete", "bordas"], reforcos: [],
+        fabricacao: 2, montagem: 1, custo: 1, rotacao: "rotulada",
+        dica: "A viga passa por cima do pilar: chapa de cabeça no pilar, 4 parafusos e enrijecedores de apoio na viga.", desenho: { cena: "cabeca", el: "cabeca" } }),
+
     /* ------------------------------------------------ viga → viga */
     T({ id: "viga-viga-recorte-cant", nome: "Viga em viga com recorte da mesa + cantoneira dupla", familia: "flexivel", meio: "parafusada",
         aplicacoes: ["viga-viga"], calc: "vigaRecortada", calcPar: { conector: "cantoneiraDupla" }, geometria: { macro: "cantoneiraDupla" },
         parametros: [["dc", "Altura do recorte (mm)", "auto (tf da principal + 15)"], ["c", "Comprimento do recorte (mm)", "auto"], ["cat", "Cantoneira", "L89X89X7.9"]],
-        limitacoes: ["Topo das vigas no mesmo nível: a mesa da secundária é recortada (marcar no desenho de fabricação — o 3D não recorta).", "Seção recortada: flexão local e rasgamento verificados; flambagem local da alma recortada só aviso quando c > 2·d."],
-        verificacoes: ["recorte", "rasgamento", "paraf-cis", "pressao", "chapa-cis", "bordas"], reforcos: ["enrijecedor da alma recortada"],
+        limitacoes: ["Topo das vigas no mesmo nível: a mesa da secundária é recortada (marcar no desenho de fabricação — o 3D não recorta).", "Seção recortada: flexão local, flambagem local da alma (AISC Manual, Parte 9) e rasgamento verificados; recorte fora de c ≤ 2·d e dc ≤ d/2: bloqueado."],
+        verificacoes: ["recorte", "recorte-flamb", "rasgamento", "paraf-cis", "pressao", "chapa-cis", "bordas"], reforcos: ["enrijecedor da alma recortada"],
         fabricacao: 2, montagem: 1, custo: 1, rotacao: "boa",
         dica: "Secundária no mesmo nível da principal: recorta-se a mesa e liga-se a alma por cantoneiras.", desenho: { cena: "vv", el: "cantDupla", recorte: true } }),
     T({ id: "viga-viga-recorte-chapa", nome: "Viga em viga com recorte + chapa simples", familia: "flexivel", meio: "mista",
         aplicacoes: ["viga-viga"], calc: "vigaRecortada", calcPar: { conector: "chapaSimples" }, geometria: { macro: "chapaSimples" },
         parametros: [["dc", "Altura do recorte (mm)", "auto"], ["t", "Espessura da chapa (mm)", "auto"]],
         limitacoes: ["Chapa soldada na alma da principal (fábrica); recorte da mesa marcado no desenho de fabricação."],
-        verificacoes: ["recorte", "rasgamento", "paraf-cis", "pressao", "chapa-cis", "chapa-flex", "solda-filete"], reforcos: [],
+        verificacoes: ["recorte", "recorte-flamb", "rasgamento", "paraf-cis", "pressao", "chapa-cis", "chapa-flex", "solda-filete"], reforcos: [],
         fabricacao: 1, montagem: 1, custo: 1, rotacao: "boa",
         dica: "A mais econômica para vigas de piso no mesmo nível.", desenho: { cena: "vv", el: "chapaSimples", recorte: true } }),
     T({ id: "viga-viga-chapa-topo", nome: "Viga em viga com chapa de topo curta (sem recorte)", familia: "flexivel", meio: "mista",
@@ -428,6 +517,31 @@
         fabricacao: 1, montagem: 1, custo: 1, rotacao: "articulada",
         dica: "Barra que pendura ou amarra: rosca, porca e chapa de apoio.", desenho: { cena: "tirante", el: "tirante" } })
   ];
+  /* M2 (1.2.145): EM QUAL FACE DO PILAR cada tipologia vale e o que MUDA (texto na tela e no catálogo; null = não vale) */
+  var NA_MESA_RIG = "Na MESA: a mesa do pilar sob os parafusos (T-stub, EN 1993-1-8 Tabela 6.4) ou sob a mesa soldada (5.7.2), o escoamento e o enrugamento da alma (5.7.3 e 5.7.4) → enrijecedores de continuidade; o painel da alma → chapa de reforço.";
+  var NA_ALMA_RIG = "Na ALMA: BLOQUEADA — o momento entra pela alma do pilar, que flete fora do plano (não verificado); gire o pilar para ligar na mesa.";
+  var FACES = {
+    "cant-dupla-paraf": { mesa: "Na MESA: parafusos na mesa do pilar (pressão de contato na mesa; borda dos furos na mesa).", alma: "Na ALMA: parafusos na alma (pressão de contato com tw do pilar); o par de cantoneiras (2·aba + tw) tem de caber entre as mesas, fora das raízes." },
+    "cant-dupla-sold-paraf": { mesa: "Na MESA: parafusos na mesa do pilar.", alma: "Na ALMA: parafusos na alma; o par de cantoneiras tem de caber entre as mesas." },
+    "cant-simples": { mesa: "Na MESA: parafusos na mesa do pilar.", alma: "Na ALMA: parafusos na alma; a cantoneira tem de caber entre as mesas." },
+    "chapa-simples": { mesa: "Na MESA: a chapa é soldada na mesa do pilar.", alma: "Na ALMA: a chapa é soldada na alma; a viga tem de caber entre as mesas (bf ≤ d − 2·tf − 10 mm) — senão, as mesas da viga recortadas." },
+    "chapa-dupla": { mesa: "Na MESA: as duas chapas soldadas na mesa.", alma: "Na ALMA: as duas chapas soldadas na alma; a viga tem de caber entre as mesas." },
+    "chapa-topo-curta": { mesa: "Na MESA: parafusos na mesa do pilar (borda dos furos na mesa).", alma: "Na ALMA: parafusos na alma; a chapa (largura) e a viga têm de caber entre as mesas." },
+    "cant-assento": { mesa: "Na MESA: o assento aparafusado na mesa.", alma: "Na ALMA: o assento aparafusado na alma; a cantoneira (comprimento) tem de caber entre as mesas." },
+    "cant-assento-enrij": { mesa: "Na MESA: chapa de assento e enrijecedor soldados na mesa.", alma: "Na ALMA: BLOQUEADA — a alma flete fora do plano sob o enrijecedor (não verificado)." },
+    "chapa-ext-estendida": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG }, "chapa-ext-estendida-enrij": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG },
+    "chapa-ext-estendida-4es": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG }, "chapa-ext-estendida-8": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG }, "chapa-ext-estendida-4w": { mesa: "Na MESA: não dimensionada.", alma: NA_ALMA_RIG },
+    "chapa-ext-ajustada": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG }, "chapa-ext-ajustada-enrij": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG },
+    "talas-mesa-paraf": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG }, "talas-mesa-sold": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG },
+    "soldada-direta": { mesa: NA_MESA_RIG + " Enrijecedores e chapa de reforço com as soldas verificadas (5.7.9; AISC 360-16 J10.8 e J10.9).", alma: NA_ALMA_RIG },
+    "misula": { mesa: NA_MESA_RIG, alma: NA_ALMA_RIG },
+    "reforco-alma-pilar": { mesa: "Na MESA (viga de momento na mesa): a chapa de reforço no painel da alma.", alma: null }, "enrijecedor-continuidade": { mesa: "Na MESA: enrijecedores na altura das mesas da viga.", alma: null },
+    "cant-topo-assento-sr": { mesa: "Na MESA: a mesa do pilar sob a cantoneira de topo (T-stub, EN 1993-1-8 Tabela 6.4), forças localizadas e painel.", alma: "Na ALMA: BLOQUEADA — a alma flete fora do plano (não verificado)." },
+    "chapa-simples-mesas-rec": { mesa: null, alma: "Na ALMA: a viga entra entre as mesas com as mesas recortadas na largura livre; a seção recortada é verificada à flexão." }
+  };
+  /* as que põem a viga (ou a peça) ENTRE as mesas do pilar quando ligadas na alma — se a viga não cabe, ficam bloqueadas na sugestão */
+  var ENTRE_MESAS = ["cant-dupla-paraf", "cant-dupla-sold-paraf", "cant-simples", "chapa-simples", "chapa-dupla", "chapa-topo-curta", "cant-assento", "cant-assento-enrij"];
+  TIPOS.forEach(function (t) { if (FACES[t.id]) t.faces = FACES[t.id]; if (ENTRE_MESAS.indexOf(t.id) >= 0) t.entreMesas = true; });
   var POR_ID = {}; TIPOS.forEach(function (t) { POR_ID[t.id] = t; });
 
   /* ================================================================ DESENHO (esquema didático, sem escala)
@@ -450,16 +564,20 @@
     var h = pilarMesa(60), xv = 124, y = 62, d = 76;
     if (o.el === "misula") { h += vigaDir(xv + 4, y, d) + pg([[xv + 4, y + d], [xv + 80, y + d], [xv + 4, y + d + 40]], DST, DSTL) + dst(xv - 6, y - 14, 10, d + 58) + bolts(xv - 1, y - 8, 2, 9) + bolts(xv - 1, y + d + 26, 2, 9); }
     else if (o.el === "chapaEst") { h += vigaDir(xv + 4, y, d) + dst(xv - 6, y - 22, 10, d + 44) + bolts(xv - 1, y - 14, 1, 0) + bolts(xv - 1, y + 14, 1, 0) + bolts(xv - 1, y + d - 14, 1, 0) + bolts(xv - 1, y + d + 14, 1, 0) + wd(xv + 4, y) + wd(xv + 4, y + d); }
+    else if (o.el === "chapaEst8") { h += vigaDir(xv + 4, y, d) + dst(xv - 6, y - 34, 10, d + 68) + bolts(xv - 1, y - 27, 2, 11) + bolts(xv - 1, y + 13, 2, 11) + bolts(xv - 1, y + d - 24, 2, 11) + bolts(xv - 1, y + d + 16, 2, 11) + pg([[xv + 4, y], [xv + 40, y], [xv + 4, y - 30]], DST, DSTL) + pg([[xv + 4, y + d], [xv + 40, y + d], [xv + 4, y + d + 30]], DST, DSTL) + tx(xv + 44, y - 18, "8 por mesa"); }
+    else if (o.el === "chapaEst4w") { h += vigaDir(xv + 4, y, d) + dst(xv - 6, y - 22, 10, d + 44) + bolts(xv - 1, y - 14, 1, 0) + bolts(xv - 1, y + 14, 1, 0) + bolts(xv - 1, y + d - 14, 1, 0) + bolts(xv - 1, y + d + 14, 1, 0) + tx(xv + 30, y - 10, "4 parafusos por linha") + tx(xv + 30, y + d + 20, "não dimensionada"); }
+    else if (o.el === "topoAssento") { h += vigaDir(130, y, d) + dst(118, y - 7, 44, 7) + dst(118, y - 47, 7, 40) + dst(118, y + d, 44, 7) + dst(118, y + d, 7, 40) + bolts(122, y - 30, 1, 0) + bolts(122, y + d + 26, 1, 0) + bolts(142, y - 4, 1, 0) + bolts(154, y - 4, 1, 0) + bolts(142, y + d + 4, 1, 0) + bolts(154, y + d + 4, 1, 0) + tx(172, y - 22, "T = M/z") + tx(172, y + d + 28, "C, V"); }
     else if (o.el === "chapaAjust") { h += vigaDir(xv + 4, y, d) + dst(xv - 6, y, 10, d) + bolts(xv - 1, y + 16, 2, 12) + bolts(xv - 1, y + d - 28, 2, 12); }
     else if (o.el === "soldada") { h += vigaDir(118, y, d) + wd(118, y + 7) + wd(118, y + d) + tx(150, y - 6, "penetração total"); }
     else if (o.el === "talas") { h += vigaDir(130, y, d) + dst(118, y - 8, 90, 8) + dst(118, y + d, 90, 8) + bolts(150, y - 4, 1, 0) + bolts(170, y - 4, 1, 0) + bolts(190, y - 4, 1, 0) + bolts(150, y + d + 4, 1, 0) + bolts(170, y + d + 4, 1, 0) + bolts(190, y + d + 4, 1, 0) + (o.solda ? wd(200, y - 8) : "") + dst(120, y + 22, 26, 32) + bolts(138, y + 30, 2, 16); }
     else if (o.el === "cantDupla" || o.el === "cantSimples") { h += vigaDir(130, y, d) + dst(118, y + 14, 30, d - 28) + bolts(124, y + 22, 3, 16) + bolts(140, y + 22, 3, 16) + (o.solda ? wd(146, y + 14) : ""); }
-    else if (o.el === "chapaSimples") { h += vigaDir(134, y, d) + dst(118, y + 12, 40, d - 24) + bolts(146, y + 20, 3, 18) + wd(118, y + 12) + (o.dupla ? rc(118, y + 8, 40, 4, "#f2c27a", DSTL) + tx(160, y + 6, "2 chapas") : ""); }
+    else if (o.el === "chapaSimples") { h += vigaDir(134, y, d) + dst(118, y + 12, 40, d - 24) + bolts(146, y + 20, 3, 18) + wd(118, y + 12) + (o.dupla ? rc(118, y + 8, 40, 4, "#f2c27a", DSTL) + tx(160, y + 6, "2 chapas") : "") + (o.mesasRec ? rc(134, y - 1, 40, 9, "#ffffff", AUX) + rc(134, y + d - 8, 40, 9, "#ffffff", AUX) + tx(178, y - 4, "mesas recortadas") : ""); }
     else if (o.el === "chapaTopoCurta") { h += vigaDir(128, y, d) + dst(118, y + 10, 10, d - 20) + bolts(123, y + 20, 3, 18) + wd(128, y + 10); }
     else if (o.el === "assento" || o.el === "assentoEnrij") { h += vigaDir(130, y, d) + dst(118, y + d, 40, 7) + dst(118, y + d, 7, 36) + bolts(122, y + d + 22, 1, 0) + dst(118, y - 7, 30, 7) + (o.el === "assentoEnrij" ? pg([[125, y + d + 7], [156, y + d + 7], [125, y + d + 44]], DST, DSTL) : ""); }
     else if (o.el === "doubler") { h += vigaDir(118, y, d) + dst(76, y - 10, 26, d + 20) + tx(89, y - 14, "reforço", "middle"); }
     else if (o.el === "enrij") { h += vigaDir(118, y, d) + dst(72, y, 34, 7) + dst(72, y + d - 7, 34, 7); }
     if (o.enrij && o.el !== "enrij") h += dst(72, y, 34, 7) + dst(72, y + d - 7, 34, 7);
+    if (o.nervura) h += pg([[xv + 4, y], [xv + 34, y], [xv + 4, y - 20]], DST, DSTL) + pg([[xv + 4, y + d], [xv + 34, y + d], [xv + 4, y + d + 20]], DST, DSTL) + tx(xv + 38, y - 12, "nervura");
     if (o.recorte) h += "";
     return h;
   }
@@ -520,7 +638,20 @@
   function cenaTerca(o) { return vigaDir(20, 110, 40) + dst(140, 74, 7, 36) + dst(140, 104, 34, 6) + rc(147, 60, 40, 50, "#dde4ec") + bolts(152, 82, 2, 12) + tx(196, 70, "terça"); }
   function cenaConsolo(o) { return pilarMesa(40) + dst(98, 80, 110, 8) + dst(98, 120, 80, 8) + pg([[98, 88], [208, 88], [178, 120], [98, 120]], "#f2c27a", DSTL) + rc(150, 50, 90, 30) + ln(195, 30, 195, 50, INK, 1.4) + pg([[189, 44], [201, 44], [195, 50]], INK, INK) + wd(98, 80) + wd(98, 128); }
   function cenaTirante(o) { return vigaDir(20, 20, 40) + dst(140, 60, 40, 8) + ln(160, 60, 160, 190, PAR, 3) + rc(152, 68, 16, 6, PAR, PAR) + rc(152, 75, 16, 5, PAR, PAR); }
-  var CENAS = { vp: cenaVP, vv: cenaVV, emenda: cenaEmenda, emendaPilar: cenaEmendaPilar, base: cenaBase, cv: cenaCV, trelica: cenaTrelica, tubo: cenaTubo, terca: cenaTerca, consolo: cenaConsolo, tirante: cenaTirante };
+  /* M2 (1.2.145): pilar TUBULAR em vista (corte do tubo à esquerda) e a viga contínua sobre o pilar */
+  function cenaTuboVP(o) {
+    var h = rc(40, 10, 70, 170, "#dde4ec") + ln(40, 10, 40, 180, ACOL, 2.4) + ln(110, 10, 110, 180, ACOL, 2.4) + ln(75, 10, 75, 180, AUX, 0.8, "4 3"), y = 62, d = 76;
+    if (o.el === "passante") h += vigaDir(140, y, d) + dst(40, y + 12, 140, d - 24) + bolts(166, y + 20, 3, 18) + ln(40, y + 12, 110, y + 12, DSTL, 1, "3 2") + wd(110, y + 12) + wd(40, y + 12) + tx(120, y - 6, "atravessa o tubo");
+    else if (o.el === "anel") h += vigaDir(130, y, d) + dst(20, y - 4, 110, 8) + dst(20, y + d - 4, 110, 8) + tx(140, y - 10, "anel em volta do tubo") + tx(140, y + d + 22, "não dimensionado");
+    else h += vigaDir(140, y, d) + dst(110, y + 12, 50, d - 24) + bolts(150, y + 20, 3, 18) + wd(110, y + 12) + tx(120, y - 6, "chapa soldada no tubo");
+    return h + tx(44, 194 - 10, "tubo");
+  }
+  function cenaCabeca(o) {
+    var h = rc(20, 40, 280, 8) + rc(20, 112, 280, 8) + rc(20, 48, 280, 64, "#dde4ec") + rc(132, 128, 12, 60) + rc(144, 128, 32, 60, "#dde4ec") + rc(176, 128, 12, 60);
+    h += dst(116, 120, 88, 8) + bolts(122, 116, 1, 0) + bolts(198, 116, 1, 0) + dst(134, 48, 6, 64) + dst(180, 48, 6, 64) + wd(132, 128) + wd(188, 128);
+    return h + tx(214, 60, "viga contínua") + tx(214, 140, "chapa de cabeça") + tx(196, 175, "pilar");
+  }
+  var CENAS = { "tubo-vp": cenaTuboVP, cabeca: cenaCabeca, vp: cenaVP, vv: cenaVV, emenda: cenaEmenda, emendaPilar: cenaEmendaPilar, base: cenaBase, cv: cenaCV, trelica: cenaTrelica, tubo: cenaTubo, terca: cenaTerca, consolo: cenaConsolo, tirante: cenaTirante };
   function desenho(id) {
     var t = POR_ID[id]; if (!t || !t.desenho) return null;
     var f = CENAS[t.desenho.cena]; if (!f) return null;
@@ -537,7 +668,10 @@
       var t = POR_ID[id]; if (!t) return [];
       return t.verificacoes.map(function (k) { var v = VERIF[k] || { texto: k, item: "?", norma: "?" }; return { id: k, texto: v.texto, item: v.item, norma: v.norma }; });
     },
-    svg: desenho
+    svg: desenho,
+    /* M2 (1.2.145): o que muda na face (mesa | alma) e as tipologias não dimensionadas */
+    faces: function (id) { var t = POR_ID[id]; return t && t.faces ? t.faces : null; },
+    naoDimensionadas: function () { return TIPOS.filter(function (t) { return !t.calc; }).map(function (t) { return t.id; }); }
   };
   global.AcoLigTipos = AcoLigTipos;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoLigTipos;

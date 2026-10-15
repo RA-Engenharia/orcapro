@@ -324,6 +324,8 @@
     /* ------------------------------------------------ o que está selecionado (a fonte é o BIM) */
     uids: function () { var b = B(); try { var s = b && b.selecao ? b.selecao() : null; return (s && s.uids) || []; } catch (e) { return []; } },
     selecionar: function (uids, modo) { var b = B(); if (!b || !b.selecionar) return []; return b.selecionar(uids || [], modo || "trocar") || []; },
+    /* M5 (14/10/2026): o clique numa peça de PEÇA PRONTA pega o componente inteiro (o Tab entra na peça) */
+    _comp: function (u) { try { var C = global.MetalComponenteUI; return C && C.expandir ? C.expandir(u) : [u]; } catch (e) { return [u]; } },
     /* alguma ferramenta da vista 2D armada (traçar corte, anotação, ambiente, modelar na planta, P6) */
     ferramenta2d: function () {
       try {
@@ -405,7 +407,7 @@
       }
       if (a === "peca-mover" && prc) {
         var ed = d.u.slice(5);
-        if (this.uids().indexOf(d.u) < 0) this.selecionar([d.u], "trocar");
+        if (this.uids().indexOf(d.u) < 0) this.selecionar(this._comp(d.u), "trocar");   /* M5: o componente inteiro */
         var sel = (prc.selecao ? prc.selecao() : []), est2 = this._estado(), R2 = Pr();
         if (!sel.length || !R2) return;
         var fixa = sel.filter(function (x) { return R2.fixado(est2, x); });
@@ -429,7 +431,7 @@
       var prc = this._precisao();
       if (!d.modo) {   /* CLIQUE */
         if (d.acao === "alca") { this.desenhar(id); return true; }
-        if (d.u) this.selecionar([d.u], d.ctrl ? "alternar" : "trocar");
+        if (d.u) this.selecionar(this._comp(d.u), d.ctrl ? "alternar" : "trocar");   /* M5: a peça de uma peça pronta é um componente (js/metalcomponenteui.js) */
         else if (!d.ctrl) this.selecionar([], "trocar");
         this.desenhar(id);
         return true;
@@ -451,7 +453,7 @@
     clique2d: function (id, ev, p) {
       if (!p) return false;
       var u = this.pecaEm(id, p);
-      this.selecionar(u ? [u] : [], "trocar");
+      this.selecionar(u ? this._comp(u) : [], "trocar");
       this.desenhar(id);
       return true;
     },

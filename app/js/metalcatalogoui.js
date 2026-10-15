@@ -17,6 +17,7 @@
   "use strict";
 
   function C() { return global.AcoCatalogoInd || null; }
+  function BR() { return global.MetalCatalogoBRUI && global.AcoCatalogoBR ? global.MetalCatalogoBRUI : null; }   /* a aba Catálogo BR (js/metalcatalogobrui.js, frente M1) */
   function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(",", ".")); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function obj(v) { return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
@@ -27,10 +28,13 @@
   function seguro(url) { return /^https?:\/\//i.test(String(url || "")) ? String(url) : ""; }
 
   var COMANDOS = [
+    { id: "met-catalogo-br", rotulo: "Catálogo\nBR", icone: "livro", grande: true,
+      dica: "Catálogo brasileiro da metálica, cada item com a fonte: perfis laminados, soldados, formados a frio, tubos e barras (com o aço de cada família), chapas, placas de base, chumbadores, parafusos e telhas. Busca por família, nome e propriedade; o perfil vai para o Criar, o parafuso e o chumbador para as ligações e a telha para a cobertura." },
     { id: "met-catalogo", rotulo: "Catálogo\nindustrial", icone: "livro", grande: true,
       dica: "Consulta de materiais industriais com a fonte de cada dado: aços (estruturais, tanques e vasos, inox, tubos), chapas, grade de piso, chumbadores, preparo de superfície, sistemas de pintura, galvanização e cores de segurança e de tubulação. Calcula o peso de chapa e o consumo de tinta." }
   ];
   var ABAS = [
+    { id: "br", rotulo: "Catálogo BR" },
     { id: "acos", rotulo: "Aços" },
     { id: "chapas", rotulo: "Chapas e pisos" },
     { id: "pintura", rotulo: "Pintura e proteção" },
@@ -483,6 +487,7 @@
 
   /* ------------------------------------------------------------ casca */
   function corpoAba() {
+    if (E.aba === "br") return BR() ? BR().corpo() : '<p class="cat-erro">O Catálogo BR não carregou (js/acocatalogobr.js).</p>';
     if (!C()) return semMotor();
     if (E.aba === "chapas") return abaChapas();
     if (E.aba === "pintura") return abaPintura();
@@ -492,7 +497,7 @@
   }
   function casca() {
     var K = C(), r = K ? K.resumo() : null;
-    return CSS + '<div class="cat-raiz" data-cat="raiz"><p class="cat-nota" data-cat="nota">Consulta técnica — <b>não é cálculo estrutural nem especificação de projeto</b>. Cada dado traz a fonte; o que não foi confirmado aparece como <span class="pill cat-conf">conferir</span>.' +
+    return CSS + '<div class="cat-raiz" data-cat="raiz"><p class="cat-nota" data-cat="nota"' + (E.aba === "br" ? ' style="display:none"' : "") + '>Consulta técnica — <b>não é cálculo estrutural nem especificação de projeto</b>. Cada dado traz a fonte; o que não foi confirmado aparece como <span class="pill cat-conf">conferir</span>.' +
       (r ? " Catálogo " + esc(r.versao) + " · " + r.acos + " aços · " + r.sistemas + " sistemas de pintura · " + r.pendencias + " pendência(s)." : "") + '</p>' +
       '<div class="tabs" data-cat="abas">' + ABAS.map(function (a) { return '<div class="tab' + (a.id === E.aba ? " ativa" : "") + '" data-cat-aba="' + a.id + '">' + esc(a.rotulo) + "</div>"; }).join("") + "</div>" +
       '<div data-cat="corpo">' + corpoAba() + "</div></div>";
@@ -502,6 +507,9 @@
     var r = raiz(); if (!r) return;
     var c = r.querySelector('[data-cat="corpo"]'); if (c) c.innerHTML = corpoAba();
     [].forEach.call(r.querySelectorAll("[data-cat-aba]"), function (t) { t.classList.toggle("ativa", t.getAttribute("data-cat-aba") === E.aba); });
+    /* o aviso do topo é do catálogo industrial (fala de "conferir" e de pendências): na aba Catálogo BR, que tem o próprio, ele some (frente M1) */
+    var nt = r.querySelector('[data-cat="nota"]'); if (nt) nt.style.display = E.aba === "br" ? "none" : "";
+    if (E.aba === "br" && BR()) BR().ligar();
   }
   function atribui(chave, valor) {
     var p = chave.split(".");
@@ -561,16 +569,18 @@
     registrar: function (reg) {
       if (!C()) return false;
       var self = this;
-      reg["met-catalogo"] = function () { try { self.abrir(); } catch (e) { toast("Catálogo industrial: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
+      reg["met-catalogo"] = function () { try { self.abrir(E.aba === "br" ? "acos" : null); } catch (e) { toast("Catálogo industrial: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
+      reg["met-catalogo-br"] = function () { try { self.abrir("br"); } catch (e) { toast("Catálogo BR: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
       return true;
     },
     abrir: function (aba) {
       if (!global.UI || !global.UI.modal) return false;
       if (aba) E.aba = aba;
-      global.UI.modal("Catálogo industrial — aços, chapas, proteção e cores", casca(), [{ texto: "Fechar", classe: "primary", onClick: function () { global.UI.fecharModal(); } }]);
+      global.UI.modal(E.aba === "br" ? "Catálogo BR — perfis, chapas, placas, chumbadores, parafusos e telhas" : "Catálogo industrial — aços, chapas, proteção e cores", casca(), [{ texto: "Fechar", classe: "primary", onClick: function () { global.UI.fecharModal(); } }]);
       if (global.UI.modalConsulta) global.UI.modalConsulta();
       var bg = global.document.getElementById("modal-bg"); if (bg) { var m = bg.querySelector(".modal"); if (m) m.className += " largo"; }
       ligar();
+      if (E.aba === "br" && BR()) BR().ligar();
       return true;
     },
     aba: function (id) { E.aba = id; pintarCorpo(); return E.aba; },

@@ -379,6 +379,8 @@
   <script src="js/metalpeca.js"></script>
   <script src="js/metalligacao.js"></script>
   <script src="js/metalgalpao.js"></script>
+  <!-- METÁLICA — VEDAÇÃO (14/10/2026): telhas da cobertura, fechamento lateral e dos oitões, alvenaria do misto, cumeeira, rufos, contra-rufos, arremates e calha como peças do modelo (tipo "vedacao"; área e peso pelo catálogo, sem entrar no cálculo nem na fabricação) — motor puro -->
+  <script src="js/acovedacao.js"></script>
   <script src="js/metalfab.js"></script>
   <!-- METÁLICA — FERRAMENTAS DE FABRICAÇÃO (13/10/2026): chapa dobrada e planificação (fator K), lista de corte com aproveitamento de barras e nesting de chapas, área de pintura e peso, folhas de fabricação no Padrão RA e o PDF vetorial delas — motores puros -->
   <script src="js/metalplanif.js"></script>
@@ -390,6 +392,8 @@
   <script src="js/metalcriar.js"></script>
   <!-- METÁLICA — PEÇAS PRONTAS (13/10/2026): treliça, escada, mezanino, viga de rolamento, rack e skid paramétricos (motor puro) -->
   <script src="js/metalprontas.js"></script>
+  <!-- METÁLICA › PÓRTICOS (14/10/2026, frente M4, js/metalporticos.js): biblioteca de pórticos industriais paramétricos — alma cheia, mísula, atirantado, treliçados, shed, multivão, ponte rolante, mezanino e coluna treliçada; gera o BIM e a entrada do cálculo (motor do galpão ou estrutura desenhada) -->
+  <script src="js/metalporticos.js"></script>
   <!-- METÁLICA › S10 (14/10/2026, js/metaldetalhe.js): ACABAMENTO DE FABRICAÇÃO do guarda-corpo — meia-esquadria nos cantos, terminais boleados, encontros sem atravessar, rodapé a topo, interferências e a folha de detalhe típico — motor puro (o guardaCorpo do js/metalprontas.js chama) -->
   <script src="js/metaldetalhe.js"></script>
   <!-- METÁLICA › T — TANQUES (14/10/2026): motor (API 650, vento NBR 6123, Zick, torre), geometria no BIM e memorial — motores puros -->
@@ -401,6 +405,10 @@
   <script src="js/metalacessos.js"></script>
   <!-- METÁLICA › S6 (14/10/2026, js/metalescadalinha.js): escada puxada por linha com a altura a vencer, abertura no piso de chegada e fixação dimensionada nas pontas — motor puro -->
   <script src="js/metalescadalinha.js"></script>
+  <!-- METÁLICA › M5 (14/10/2026): MODELOS PARAMÉTRICOS de guarda-corpo (preenchimento: barras, tela, chapa perfurada, vidro; cancela; corrimão duplo) e de escada (js/metalguardas.js), a GALERIA (js/metalmodelos.js) e o COMPONENTE único — seleção, Tab, alças, fixação por montante (js/metalcomponente.js) — motores puros -->
+  <script src="js/metalguardas.js"></script>
+  <script src="js/metalmodelos.js"></script>
+  <script src="js/metalcomponente.js"></script>
   <!-- METÁLICA › L — LIGAÇÕES (14/10/2026): catálogo de tipologias, dimensionamento das novas (NBR 8800) e a ligação inteligente (motores puros) -->
   <script src="js/acoligtipos.js"></script>
   <script src="js/acoligcalc2.js"></script>
@@ -579,6 +587,8 @@
   <script src="js/acomateriais.js"></script>
   <!-- METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026): aços, chapas, grade de piso, pintura, galvanização e cores, cada dado com a fonte (motor puro; dados gerados de dados-fonte/metalica/catalogo-industrial) -->
   <script src="js/acocatalogoind.js"></script>
+  <!-- METÁLICA › CATÁLOGO BR (frente M1, 1.2.145): perfis com o aço de cada família, chapas, placas, chumbadores, parafusos e telhas fabricados ou vendidos no Brasil, cada item com a fonte (motor puro; dados gerados de dados-fonte/metalica/catalogo-br) -->
+  <script src="js/acocatalogobr.js"></script>
   <script src="js/acosecao.js"></script>
   <script src="js/acofsm.js"></script>
   <script src="js/acodim14762.js"></script>
@@ -621,13 +631,19 @@
   <script src="js/metalcriarui.js"></script>
   <!-- METÁLICA — PEÇAS PRONTAS: a tela (diálogos com prévia, posicionar por clique no 3D e na planta, editar no lugar) — só com a prévia do modelador -->
   <script src="js/metalprontasui.js"></script>
+  <script src="js/metalporticosui.js"></script>
   <!-- METÁLICA › T — TANQUES: a tela (assistente com prévia, modelos prontos, posicionar por clique, editar no lugar, calcular e memorial) -->
   <script src="js/metaltanqueui.js"></script>
   <!-- METÁLICA › ACESSOS (14/10/2026, js/metalacessosui.js): grupo Acessos da fita — escolher o acesso, escada industrial, marinheiro, plataformas, passarela, guarda-corpo, piso, verificar acesso — só com a prévia do modelador -->
   <script src="js/metalacessosui.js"></script>
   <!-- METÁLICA › S6 (14/10/2026, js/metalescadalinhaui.js): o modo "puxar a linha" da escada (vermelho/verde), a abertura e a fixação automática -->
   <script src="js/metalescadalinhaui.js"></script>
+  <!-- METÁLICA › M5 (14/10/2026): a GALERIA de modelos (js/metalmodelosui.js) e o COMPONENTE (js/metalcomponenteui.js: clique seleciona tudo, Tab entra na peça, duplo clique edita, alças esticam e tudo se refaz, fixação automática por montante) — só com a prévia do modelador -->
+  <script src="js/metalmodelosui.js"></script>
+  <script src="js/metalcomponenteui.js"></script>
   <!-- METÁLICA › CATÁLOGO INDUSTRIAL: o painel de consulta (abas Aços, Chapas e pisos, Pintura e proteção, Cores) com a calculadora de peso de chapa e de consumo de tinta — só com a prévia do modelador -->
+  <!-- METÁLICA › CATÁLOGO BR: a aba "Catálogo BR" do painel (busca por família, nome e propriedade; filtro por aço e fabricante; a escolha vai para o criar, as ligações e a cobertura) -->
+  <script src="js/metalcatalogobrui.js"></script>
   <script src="js/metalcatalogoui.js"></script>
   <!-- METÁLICA › L — LIGAÇÃO INTELIGENTE: a tela (sugestões por clique no pilar e na viga, catálogo de ligações, memorial, ligar todos os nós) — só com a prévia do modelador -->
   <script src="js/metalligsugui.js"></script>

@@ -308,13 +308,21 @@
     /* REVISÃO S5 A5: vigas inclinadas chegando ao topo = cobertura inclinada, mesmo com a cumeeira horizontal no mesmo nível
        (antes: "nível 6,50 m" plano e o vento pela Tabela 6 de uma água num telhado de duas águas — r2 do revisor). O sentido
        de subida de cada viga em planta diz uma água (todas para o mesmo lado) ou duas águas (sentidos opostos). */
-    if (incTopo.length && (!topo || Math.max.apply(null, incTopo.map(function (m) { return Math.max(m.a[1], m.b[1]); })) >= topo.cota - 0.05)) {
+    /* PÓRTICOS M4 (14/10/2026): a tolerância é 5 cm + MEIA SEÇÃO da viga inclinada mais alta — a terça APOIADA em cima do banzo
+       ou da viga fica até meia seção acima da linha de cálculo dela (achado no teste: banzo TQ 100 a 5 %, terça 50,06 mm acima —
+       a cobertura saía "plana" e o vento pela Tabela 6 num telhado de duas águas) */
+    var meiaSec = incTopo.reduce(function (s, m) { var q = (m.secao && m.secao.mm) || {}; return Math.max(s, num(q.d, num(q.h, 0)) / 2000 / Math.max(0.2, Math.sqrt(1 - m.X[1] * m.X[1]))); }, 0);
+    if (incTopo.length && (!topo || Math.max.apply(null, incTopo.map(function (m) { return Math.max(m.a[1], m.b[1]); })) >= topo.cota - 0.05 - meiaSec)) {
       var ang = Math.max.apply(null, incTopo.map(function (m) { return Math.asin(Math.min(1, Math.abs(m.X[1]))) * 180 / Math.PI; }));
       var sobe = incTopo.map(function (m) { var lo = m.a[1] <= m.b[1] ? m.a : m.b, hi = lo === m.a ? m.b : m.a, dx = hi[0] - lo[0], dz = hi[2] - lo[2], L = hyp(dx, dz) || 1; return [dx / L, dz / L]; });
       var duas = sobe.some(function (u) { return sobe.some(function (w) { return u[0] * w[0] + u[1] * w[1] < -0.5; }); });
       var media = sobe.reduce(function (acc, u) { return [acc[0] + u[0], acc[1] + u[1]]; }, [0, 0]);
       var eixoSobe = Math.abs(media[0]) >= Math.abs(media[1]) ? (media[0] >= 0 ? "x+" : "x-") : (media[1] >= 0 ? "z+" : "z-");
       env.cobertura = { tipo: "inclinada", duasAguas: duas, sobe: duas ? null : eixoSobe, cota: r6(yTopo), inclinacaoGraus: r6(ang), inclinacaoPct: r6(Math.tan(ang * Math.PI / 180) * 100), vigas: incTopo.map(function (m) { return m.peca; }) };
+      /* PÓRTICOS M4 (14/10/2026): a FORMA do telhado pelas pontas das vigas inclinadas do topo — um plano só (uma água),
+         duas águas SIMÉTRICAS com a cumeeira no meio do vão e correndo em z, ou telhado múltiplo/irregular (shed, multivão
+         geminado, cumeeira fora do meio): é ela que decide se o vento tem tabela no motor (js/acovento.js: Tabelas 5 e 6) */
+      env.cobertura.forma = formaCobertura(incTopo, ct, env.caixa);
     } else if (topo) env.cobertura = { tipo: "plana", cota: topo.cota, inclinacaoGraus: 0, inclinacaoPct: 0, vigas: topo.vigas, nivel: topo.id };
     /* resumo em texto */
     var R = env.resumo;
@@ -329,6 +337,47 @@
     if (env.blocos > 1) R.push(env.blocos + " estruturas SEPARADAS na planta (blocos sem barra entre eles).");
     if (env.balanco) R.push("Balanço (beiral/marquise) até " + br(env.balanco.max, 2) + " m além da linha dos pilares: as faces são as da linha dos pilares.");
     return env;
+  }
+
+  /* ================================================================ FORMA DA COBERTURA (PÓRTICOS M4, 14/10/2026)
+   * ms = as vigas inclinadas do topo; ct = o contorno (anti-horário) — a caixa dele dá x0, x1 (os beirais) e z0, z1.
+   * As PONTAS das vigas (a linha de cálculo) têm de cair, a 5 cm, em:
+   *   uma água ............ y = c0 + c1·(x − x0)                         (um plano só, a água caindo ao longo de x)
+   *   duas águas .......... y = yE + i·mín(x − x0, x1 − x)               (cumeeira em x = (x0 + x1)/2, correndo em z)
+   * Fora disso: "assimetrica" (uma cumeeira fora do meio do vão), "multipla" (shed, multivão geminado, irregular) ou "z"
+   * (a água cai ao longo de z) — com o motivo do "não verificado" pronto (o motor não tem a tabela dessas formas). */
+  var TOL_COB = 0.05;
+  function ajusteLinear(pts, f) {
+    var n = pts.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    pts.forEach(function (p) { var u = f(p[0]); sx += u; sy += p[1]; sxx += u * u; sxy += u * p[1]; });
+    var den = n * sxx - sx * sx, c1 = Math.abs(den) > 1e-12 ? (n * sxy - sx * sy) / den : 0, c0 = (sy - c1 * sx) / n, res = 0;
+    pts.forEach(function (p) { res = Math.max(res, Math.abs(c0 + c1 * f(p[0]) - p[1])); });
+    return { c0: c0, c1: c1, res: res };
+  }
+  function formaCobertura(ms, ct, caixa) {
+    var P = arr(ct).length >= 3 ? ct : (caixa ? [[caixa.x0, caixa.z0], [caixa.x1, caixa.z0], [caixa.x1, caixa.z1], [caixa.x0, caixa.z1]] : []);
+    if (!ms.length || P.length < 3) return { tipo: "irregular", motivo: "a cobertura inclinada não tem contorno em planta para a NBR 6123" };
+    var x0 = Math.min.apply(null, P.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, P.map(function (q) { return q[0]; })), xc = (x0 + x1) / 2;
+    var foraX = ms.filter(function (m) { var hz = hyp(m.X[0], m.X[2]); return hz > 1e-6 && Math.abs(m.X[2]) / hz > 0.02; });
+    if (foraX.length) return { tipo: "z", motivo: "cobertura com água caindo ao longo de z (ou viga inclinada do topo fora da direção x em planta): o motor de vento aplica as Tabelas 5 e 6 com a água caindo ao longo de x — não verificado" };
+    /* as pontas E pontos ao longo de cada viga: só as pontas não distinguem a cumeeira fora do meio (as duas pontas da água
+       longa caem na superfície simétrica — achado no teste do controle negativo) */
+    var pts = []; ms.forEach(function (m) { [0, 0.25, 0.5, 0.75, 1].forEach(function (t) { pts.push([m.a[0] + (m.b[0] - m.a[0]) * t, m.a[1] + (m.b[1] - m.a[1]) * t]); }); });
+    var u1 = ajusteLinear(pts, function (x) { return x - x0; });
+    if (u1.res <= TOL_COB && Math.abs(u1.c1) > 0.005) return { tipo: "uma-agua", i: r6(Math.abs(u1.c1)), sobe: u1.c1 > 0 ? "x+" : "x-", x0: r6(x0), x1: r6(x1) };
+    var esq = pts.filter(function (p) { return p[0] < xc - TOL; }).length, dir = pts.filter(function (p) { return p[0] > xc + TOL; }).length;
+    var u2 = ajusteLinear(pts, function (x) { return Math.min(x - x0, x1 - x); });
+    if (esq && dir && u2.res <= TOL_COB && u2.c1 > 0.005) return { tipo: "duas-aguas", i: r6(u2.c1), yE: r6(u2.c0), xc: r6(xc), x0: r6(x0), x1: r6(x1),
+      inclinacaoGraus: r6(Math.atan(u2.c1) * 180 / Math.PI) };
+    /* uma cumeeira só, fora do meio do vão (duas águas assimétricas): dois planos que se encontram no ponto mais alto */
+    var top = pts.reduce(function (a, p) { return p[1] > a[1] ? p : a; }, pts[0]), xr = top[0];
+    var pe = pts.filter(function (p) { return p[0] <= xr + TOL; }), pd = pts.filter(function (p) { return p[0] >= xr - TOL; });
+    if (pe.length >= 2 && pd.length >= 2) {
+      var ae = ajusteLinear(pe, function (x) { return x; }), ad = ajusteLinear(pd, function (x) { return x; });
+      if (ae.res <= TOL_COB && ad.res <= TOL_COB && ae.c1 > 0.005 && ad.c1 < -0.005)
+        return { tipo: "assimetrica", motivo: "cobertura em DUAS ÁGUAS ASSIMÉTRICAS (cumeeira em x = " + br(xr, 2) + " m, fora do meio do vão " + br(xc, 2) + " m, ou inclinações diferentes): a Tabela 5 da NBR 6123 é de duas águas simétricas — o vento desta cobertura não foi verificado" };
+    }
+    return { tipo: "multipla", motivo: "cobertura que não é um plano só nem duas águas simétricas com a cumeeira no meio do vão — telhado MÚLTIPLO (shed/dente de serra, multivão geminado) ou irregular: os coeficientes de telhados múltiplos (NBR 6123, Tabelas 7 e 8) não estão no motor de vento — não verificado" };
   }
 
   /* ================================================================ FECHAMENTOS */
@@ -356,7 +405,7 @@
   function telhaInfo(id) {
     var F = Fch(); if (!F || !id) return null;
     var t = F.telha(id); if (!t) return null;
-    var p = F.peso(id) || {}, nm = F.nome(id) || [t.fabricante, t.modelo, t.espessura ? String(t.espessura).replace(".", ",") + " mm" : ""].filter(Boolean).join(" ") || id;
+    var p = F.peso(id) || {}, nm = F.nome(t) || [   /* PÓRTICOS M4: nome(t) recebe a TELHA, não o id — com o id saía a palavra "undefined" no texto da área de cobertura (e o memorial acusava texto indefinido) */t.fabricante, t.modelo, t.espessura ? String(t.espessura).replace(".", ",") + " mm" : ""].filter(Boolean).join(" ") || id;
     return { id: id, nome: nm, peso: num(p.valor, null), origem: p.origem || "", texto: p.texto || "", inclMin: num(t.inclMin, null), inclObs: t.inclObs || "" };
   }
   /* fech = { situacao: "livre"|"interna", faces: { faceId: { tipo, h, telha } }, cobertura: { tipo, telha } } */
@@ -398,11 +447,20 @@
     var cob = coberturaDe(fech.cobertura && fech.cobertura.tipo);
     /* REVISÃO S5 A5: a forma do telhado — o vento da estrutura desenhada só tem a cobertura de UMA água com a água caindo
        ao longo de x (a convenção do motor); duas águas ou água ao longo de z → não verificado */
-    var cb0 = env.cobertura, temCob = cob.id !== "sem" || cfg.coberturaArea, ladoAlto = null;
+    var cb0 = env.cobertura, temCob = cob.id !== "sem" || cfg.coberturaArea, ladoAlto = null, cobV = "uma-agua", fm = null;
     if (temCob && cb0 && cb0.tipo === "inclinada") {
-      if (cb0.duasAguas) return { ok: false, naoVerificado: "cobertura em DUAS ÁGUAS (" + br(cb0.inclinacaoGraus, 1) + "°): o vento da estrutura desenhada só aplica a cobertura de uma água (NBR 6123, Tabela 6) — a de duas águas (Tabela 5) não foi verificada; use o assistente de galpão ou calcule o vento da cobertura à parte" };
-      if (cb0.sobe === "x+") ladoAlto = "direita"; else if (cb0.sobe === "x-") ladoAlto = "esquerda";
-      else return { ok: false, naoVerificado: "cobertura de uma água com a água caindo ao longo de z: o motor de vento aplica a Tabela 6 com a água caindo ao longo de x — não verificado" };
+      /* PÓRTICOS M4 (14/10/2026): DUAS ÁGUAS SIMÉTRICAS (cumeeira no meio do vão, correndo em z — a forma da Tabela 5, a mesma
+         do galpão) calcula; assimétrica, telhado múltiplo (shed, multivão geminado) ou água ao longo de z continuam NÃO
+         VERIFICADO com o motivo (a REVISÃO S5 A5 travava todas as duas águas) */
+      fm = cb0.forma || {};
+      if (cb0.duasAguas || fm.tipo === "duas-aguas") {
+        if (fm.tipo !== "duas-aguas") return { ok: false, naoVerificado: fm.motivo || ("cobertura em DUAS ÁGUAS (" + br(cb0.inclinacaoGraus, 1) + "°) fora da forma da Tabela 5 da NBR 6123 — não verificado") };
+        cobV = "duas-aguas";
+      } else if (fm.tipo === "uma-agua" || !fm.tipo) {
+        if (cb0.sobe === "x+") ladoAlto = "direita"; else if (cb0.sobe === "x-") ladoAlto = "esquerda";
+        else return { ok: false, naoVerificado: "cobertura de uma água com a água caindo ao longo de z: o motor de vento aplica a Tabela 6 com a água caindo ao longo de x — não verificado" };
+      } else if (fm.tipo === "z") return { ok: false, naoVerificado: "cobertura de uma água com a água caindo ao longo de z: o motor de vento aplica a Tabela 6 com a água caindo ao longo de x — não verificado" };
+      else return { ok: false, naoVerificado: fm.motivo };
     }
     if (env.tipo === "plano") return { ok: false, naoVerificado: "pórtico/treliça num plano só, ao ar livre: o vento age nas próprias barras (NBR 6123, coeficientes de força de barras e reticulados) — o motor de vento do OrçaPRO não tem essas tabelas. Declare \"dentro de outra edificação\" se for o caso, ou calcule o vento nas barras à parte e lance como carga" };
     if (env.tipo !== "retangular" || !env.alinhado) return { ok: false, naoVerificado: "planta " + (env.tipo === "retangular" ? "retangular girada em relação aos eixos x e z do modelo" : "não retangular (" + env.faces.length + " lados)") + ": as tabelas de coeficientes de pressão do motor (NBR 6123, Tabelas 4, 5 e 6) são de planta retangular com as faces nos eixos — o vento desta forma não foi verificado" };
@@ -425,7 +483,19 @@
     });
     /* REVISÃO S5 C2: a mensagem NÃO sugere trocar para "aberta" (com a parede de verdade isso tira o vento dos pilares) */
     if (faltaPilar.length) return { ok: false, naoVerificado: "face(s) fechada(s) sem pilar na linha — o vento dela não tem caminho no modelo: " + faltaPilar.join("; ") + " (desenhe os pilares da face; o fechamento é o da obra)" };
-    return { ok: true, faces: faces, coberturaIsolada: abertas === 4, inclinacaoGraus: env.cobertura ? num(env.cobertura.inclinacaoGraus, 0) : 0, ladoAlto: ladoAlto };
+    /* duas águas: as condições da Tabela 5 (js/acovento.js cpeTelhado5) checadas AQUI, para sair "não verificado" com o motivo em
+       vez de o cálculo parar — comprimento a ≥ vão b (cumeeira ao longo do lado maior), h/b ≤ 6, θ ≤ 60° */
+    var hBeiral = null;
+    if (cobV === "duas-aguas") {
+      var xsC = arr(env.contorno).map(function (q) { return q[0]; }), zsC = arr(env.contorno).map(function (q) { return q[1]; });
+      var bV = Math.max.apply(null, xsC) - Math.min.apply(null, xsC), aV = Math.max.apply(null, zsC) - Math.min.apply(null, zsC);
+      hBeiral = r6(num(fm.yE, env.yTopo) - num(env.yBase, 0));
+      if (aV < bV - 1e-6) return { ok: false, naoVerificado: "cobertura em duas águas com o comprimento (" + br(aV, 2) + " m, ao longo da cumeeira) menor que o vão (" + br(bV, 2) + " m): a Tabela 5 da NBR 6123 pede a cumeeira ao longo do lado maior (a ≥ b) — não verificado; aumente o número de pórticos" };
+      if (!(hBeiral / bV <= 6)) return { ok: false, naoVerificado: "duas águas com h/b = " + br(hBeiral / bV, 2) + " > 6: fora da Tabela 5 da NBR 6123 — não verificado" };
+      if (!(num(fm.inclinacaoGraus, 0) <= 60)) return { ok: false, naoVerificado: "duas águas com θ = " + br(fm.inclinacaoGraus, 1) + "° > 60°: fora da Tabela 5 da NBR 6123 — não verificado" };
+    }
+    return { ok: true, faces: faces, coberturaIsolada: abertas === 4, inclinacaoGraus: cobV === "duas-aguas" ? num(fm.inclinacaoGraus, 0) : (env.cobertura ? num(env.cobertura.inclinacaoGraus, 0) : 0), ladoAlto: ladoAlto,
+             cobertura: cobV, hBeiral: hBeiral, forma: fm };
   }
 
   /* ================================================================ SITUAÇÃO (depois do cálculo)
@@ -535,13 +605,23 @@
     if (cob.id !== "sem") {
       if (!env.cobertura) nv.push({ tema: "Cobertura", motivo: "a cobertura de telha foi escolhida mas a estrutura não tem nível de topo com vigas para recebê-la" });
       else if (!cg.areas.some(function (a) { return a.cobertura; })) {
-        var area = null;
+        var area = null, aguas2 = null;
         if (env.cobertura.tipo === "plana") area = M.areasPorNivel(G0).filter(function (a) { return Math.abs(a.cota - env.cobertura.cota) <= 0.6; })[0] || null;
+        else if (env.cobertura.forma && env.cobertura.forma.tipo === "duas-aguas") {
+          /* PÓRTICOS M4: duas águas → UMA área por água, cada uma com a normal externa dela (o vento entra na normal) */
+          var fmA = env.cobertura.forma, thA = Math.atan(num(fmA.i, 0)), porX = {}; arr(G0.membros).forEach(function (m) { porX[m.peca] = (m.a[0] + m.b[0]) / 2; });
+          aguas2 = [["esquerda", [-Math.sin(thA), Math.cos(thA), 0], function (x) { return x < fmA.xc; }], ["direita", [Math.sin(thA), Math.cos(thA), 0], function (x) { return x > fmA.xc; }]].map(function (ag) {
+            var a2 = M.areaDasVigas(G0, env.cobertura.vigas.filter(function (id) { return porX[id] != null && ag[2](porX[id]); }), "Cobertura — água " + ag[0]);
+            if (a2) { a2.normal = ag[1].map(r6); a2.agua = ag[0]; }
+            return a2;
+          });
+          if (aguas2[0] && aguas2[1]) area = aguas2[0]; else aguas2 = null;
+        }
         else area = M.areaDasVigas(G0, env.cobertura.vigas, "Cobertura");
         tInfo = telhaInfo((fech.cobertura && fech.cobertura.telha) || telhaPadrao(cob.grupoTelha));
         if (!area) nv.push({ tema: "Cobertura", motivo: "não deu para formar a área da cobertura com as vigas do topo" });
-        else {
-          area.id = "cob-envoltorio"; area.nome = "Cobertura (" + (tInfo ? tInfo.nome : cob.nome) + ")"; area.cobertura = true; area.uso = "cobertura";
+        else (aguas2 || [area]).forEach(function (area, kA) {
+          area.id = "cob-envoltorio" + (kA ? "-" + (kA + 1) : ""); area.nome = "Cobertura" + (area.agua ? " — água " + area.agua : "") + " (" + (tInfo ? tInfo.nome : cob.nome) + ")"; area.cobertura = true; area.uso = "cobertura";
           /* a inclinação: a informada no envoltório; senão a do topo desenhado; topo PLANO (a telha cai sobre terças não
              desenhadas) → a inclinação mínima da telha do catálogo do fabricante, com a decisão no memorial */
           var incInf = num(fech.cobertura && fech.cobertura.inclinacaoPct, null), incGeo = num(env.cobertura.inclinacaoPct, 0), incTxt;
@@ -552,12 +632,16 @@
           area.direcao = "auto";
           area.g = tInfo && tInfo.peso != null ? tInfo.peso : 0; area.gCategoria = "G-industrializado";
           area.gTexto = tInfo ? tInfo.nome + " — " + (tInfo.texto || "catálogo") : "telha sem peso no catálogo";
-          if (!tInfo || tInfo.peso == null) nv.push({ tema: "Cobertura", motivo: "a telha escolhida não tem peso no catálogo — o peso da telha NÃO entrou" });
+          if ((!tInfo || tInfo.peso == null) && !kA) nv.push({ tema: "Cobertura", motivo: "a telha escolhida não tem peso no catálogo — o peso da telha NÃO entrou" });
           cg.areas.push(area);
-          dec.push({ tema: "Cobertura", decisao: "área de cobertura automática no topo (" + br(M.areaPoligono(area.poligono), 2) + " m²): " + area.gTexto + " (g = " + br(area.g, 4) + " kN/m²) + sobrecarga de cobertura (NBR 6120:2019, 6.4) com inclinação de " + br(area.inclinacaoPct, 1) + " % (" + incTxt + ")", motivo: "o engenheiro escolheu cobertura de telha no envoltório; as vigas do topo recebem a telha por faixas (terças não desenhadas não entram no modelo)" });
-        }
+          dec.push({ tema: "Cobertura", decisao: "área de cobertura automática no topo" + (area.agua ? ", água " + area.agua : "") + " (" + br(M.areaPoligono(area.poligono), 2) + " m²): " + area.gTexto + " (g = " + br(area.g, 4) + " kN/m²) + sobrecarga de cobertura (NBR 6120:2019, 6.4) com inclinação de " + br(area.inclinacaoPct, 1) + " % (" + incTxt + ")", motivo: "o engenheiro escolheu cobertura de telha no envoltório; as vigas do topo recebem a telha por faixas (terças não desenhadas não entram no modelo)" + (area.agua ? "; duas águas: o vento entra na normal de cada água" : "") });
+        });
       }
     }
+    /* PÓRTICOS M4: o que as peças da TIPOLOGIA declararam que o motor não verifica (a mísula cônica, a fadiga da viga de
+       rolamento…) entra nos "não verificados" — a situação fica "incompleto", nunca "aprovado" */
+    arr(lido.naoVerificados).forEach(function (x) { if (!nv.some(function (q) { return q.tema === x.tema && q.motivo === x.motivo; })) nv.push({ tema: x.tema, motivo: x.motivo }); });
+    if (arr(lido.tipologias).length) dec.push({ tema: "Tipologia", decisao: "pórtico paramétrico: " + lido.tipologias.join("; "), motivo: "estrutura gerada pela biblioteca de pórticos industriais (Metálica › Pórticos): as ligações e as bases declaradas pela tipologia valem quando a tela não escolhe outra e não há ligação desenhada" });
     var cfgV2 = {}; Object.keys(cfgV).forEach(function (k) { cfgV2[k] = cfgV[k]; }); cfgV2.coberturaArea = cg.areas.some(function (a) { return a.cobertura; });
     /* REVISÃO S5 A4: face sem fechamento escolhido → o cálculo para e pede a escolha */
     if (fech.situacao !== "interna" && fech.semEscolha.length) {
@@ -568,6 +652,13 @@
     var v = vento(env, fech, cfgV2);
     if (v.semVento) { cg.vento = null; dec.push({ tema: "Vento", decisao: "não considerado: estrutura dentro de outra edificação", motivo: "declarado pelo engenheiro no envoltório (NBR 6123 não se aplica a estrutura protegida do vento)" }); }
     else if (!v.ok) { cg.vento = null; nv.push({ tema: "Vento (NBR 6123)", motivo: v.naoVerificado }); }
+    /* REVISÃO M4 alto c (15/10/2026): duas águas com área de cobertura SEM a normal da água (desenhada à mão): a pressão sairia
+       vertical, sem a componente horizontal de cada água — não verificado (a cobertura de telha do envoltório faz uma área por
+       água, com a normal) */
+    else if (v.cobertura === "duas-aguas" && cg.areas.some(function (a) { return a && a.cobertura && !Array.isArray(a.normal); })) {
+      cg.vento = null;
+      nv.push({ tema: "Vento (NBR 6123)", motivo: "cobertura em DUAS ÁGUAS com área de cobertura sem a normal da água (marcada à mão): a pressão de cada água entraria vertical, sem a componente horizontal — não verificado; use a cobertura de telha do envoltório (uma área por água)" });
+    }
     else if (num(cfgV.v0, null) == null && (num(cfgV.lat, null) == null || num(cfgV.lon, null) == null)) {
       cg.vento = null;
       problemas.push({ tipo: "vento-local", texto: "Vento (NBR 6123): falta o LOCAL da obra para tirar o V0 do mapa de isopletas — escreva o endereço, cole o link do mapa ou as coordenadas (ou informe o V0); se a estrutura fica dentro de outra edificação, declare isso no envoltório.", solucoes: [{ id: "vento-local", texto: "Ir ao local do vento" }, { id: "interna", texto: "Dentro de outra edificação (sem vento)" }] });
@@ -575,6 +666,9 @@
     else {
       var vt = {}; Object.keys(cfgV).forEach(function (k) { vt[k] = cfgV[k]; });
       vt.faces = v.faces; vt.inclinacaoGraus = v.inclinacaoGraus; if (v.ladoAlto) vt.ladoAlto = v.ladoAlto;
+      /* PÓRTICOS M4: duas águas simétricas → a Tabela 5 do motor, com h = a altura do BEIRAL (não a do pilar mais alto: o
+         pilar central do multivão vai até a cumeeira) */
+      if (v.cobertura === "duas-aguas") { vt.cobertura = "duas-aguas"; if (v.hBeiral != null && v.hBeiral > 0) vt.h = v.hBeiral; vt.yBase = env.yBase; }
       /* REVISÃO S5 C2/A3: a caixa do vento é a do contorno do envoltório (os pilares), não a de todas as barras */
       if (env.contorno && env.contorno.length >= 3) { var xsC = env.contorno.map(function (q) { return q[0]; }), zsC = env.contorno.map(function (q) { return q[1]; }); vt.caixa = { x0: Math.min.apply(null, xsC), x1: Math.max.apply(null, xsC), z0: Math.min.apply(null, zsC), z1: Math.max.apply(null, zsC) }; }
       cg.vento = vt;

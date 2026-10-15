@@ -9,7 +9,7 @@
 .bp-digita {
   position: absolute; z-index: 7; display: none; align-items: center; gap: 8px;
   padding: 4px 8px; border: 1px solid var(--verde); border-radius: var(--raio-sm);
-  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); font-weight: 500;
+  background: var(--card-bg); color: var(--texto); font-size: var(--t-micro); font-weight: var(--p-medio);
   box-shadow: var(--sombra-sm); white-space: nowrap; pointer-events: auto;
 }
 .bp-digita label { display: inline-flex; align-items: center; gap: 4px; color: var(--texto-fraco); }
@@ -18,7 +18,7 @@
   background: var(--bg); color: var(--texto); font-size: var(--t-micro); font-variant-numeric: tabular-nums;
 }
 .bp-digita input:focus { outline: 2px solid var(--verde); outline-offset: 0; }
-.bp-vivo { color: var(--verde); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bp-vivo { color: var(--verde); font-weight: var(--p-forte); font-variant-numeric: tabular-nums; }
 
 /* barra de opções da ferramenta (a "Barra de opções") */
 .bp-opcoes {
@@ -43,18 +43,18 @@
 }
 .bp-snaps-tit { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .bp-snaps label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
-.bp-snaps-todos { font-weight: 600; border-bottom: 1px solid var(--linha); padding-bottom: 6px; margin-bottom: 4px; }
+.bp-snaps-todos { font-weight: var(--p-forte); border-bottom: 1px solid var(--linha); padding-bottom: 6px; margin-bottom: 4px; }
 .bp-snaps-grade input { width: 56px; padding: 1px 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm); background: var(--bg); color: var(--texto); font-size: var(--t-micro); }
 .bp-snaps-nota { margin-top: 6px; color: var(--texto-fraco); }
 .bp-glifo { display: inline-flex; width: 16px; height: 16px; }
-.bp-tecla { margin-left: auto; padding: 0 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm); color: var(--texto-fraco); font-weight: 500; }
+.bp-tecla { margin-left: auto; padding: 0 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm); color: var(--texto-fraco); font-weight: var(--p-medio); }
 
 /* cotas temporárias e alças, ancoradas no mundo (reposicionadas a cada quadro) */
 .bp-camada { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
 .bp-cota-tmp {
   position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer;
   padding: 0 6px; border: 1px solid var(--aco); border-radius: var(--raio-sm);
-  background: var(--bg); color: var(--aco); font-size: var(--t-micro); font-weight: 600; font-variant-numeric: tabular-nums;
+  background: var(--bg); color: var(--aco); font-size: var(--t-micro); font-weight: var(--p-forte); font-variant-numeric: tabular-nums;
 }
 .bp-cota-tmp:hover, .bp-cota-tmp:focus-visible { background: var(--aco); color: var(--bg); outline: none; }
 .bp-cota-tmp input { width: 64px; padding: 0 2px; border: 0; background: transparent; color: inherit; font-size: var(--t-micro); }

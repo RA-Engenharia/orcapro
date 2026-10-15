@@ -170,7 +170,7 @@
       if (tipo === "piso") { var pq = this.resolverPiso(par); return fase === "criar" ? this.refinarPiso(pq) : pq; }
       /* REVISÃO S6 (baixo): guarda-corpo "soldado" sobre LAJE de concreto não existe — vira chapa chumbada (dimensionada; a borda
          da laje fica crítica) com a espessura e o fck da laje desenhada */
-      if (tipo === "guardacorpo" && par && par.fixacao !== "chapa" && E()) {
+      if (tipo === "guardacorpo" && par && par.fixacao !== "chapa" && par.fixacao !== "auto" && !par.fixacoes && E()) {   /* M5: "auto" = por montante (js/metalcomponenteui.js) */
         var lj = E().elementoEm(els(), num(par.x0, 0), num(par.z0, 0), num(par.y0, 0), { tolH: 0.02, tolV: 0.06, tipos: ["laje"] });
         if (lj) { var qg = clone(par); qg.fixacao = "chapa"; qg.suporte = "concreto"; if (!(num(qg.concEsp, 0) > 0)) qg.concEsp = lj.esp; if (lj.fck && !(num(qg.concFck, 0) > 0)) qg.concFck = lj.fck; return qg; }
         var ac = E().elementoEm(els(), num(par.x0, 0), num(par.z0, 0), num(par.y0, 0), { tolH: 0.05, tolV: 0.10 });

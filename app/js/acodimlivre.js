@@ -132,7 +132,9 @@
    * não fazem de uma viga uma barra comprimida (critério do sistema, declarado nas decisões). */
   var REF_ESB_C = "NBR 8800:2008, 5.3.4.1 (na 2024, 5.3.7, é recomendação — o OrçaPRO adota como EXIGÊNCIA)";
   var REF_ESB_T = "NBR 8800:2008 e 2024, 5.2.8.1 (recomendação — o OrçaPRO adota como EXIGÊNCIA; barra redonda pré-tensionada isenta)";
-  function isentaEsbeltez(m) { return (m.secao && (m.secao.forma === "circ" || m.secao.forma === "cabo")) || m.papel === "tirante" || /cabo/i.test(String((m.secao && m.secao.nome) || "")); }
+  /* REVISÃO M4 C2 (15/10/2026): isenta PELA SEÇÃO (barra redonda e cabo), não pelo papel — o X de CANTONEIRA só à tração
+     (papel "tirante") escapava do L/r ≤ 300: L 51 × 51 × 3,2 com 8,5 m (L/r 540 a 850) saía aprovado */
+  function isentaEsbeltez(m) { return (m.secao && (m.secao.forma === "circ" || m.secao.forma === "cabo")) || /cabo/i.test(String((m.secao && m.secao.nome) || "")); }
   function esbeltezMembro(m) {
     var s = (m.secao && m.secao.mm) || {}, fl = m.flambagem || {}, A = num(s.A, 0); if (!(A > 0)) return null;
     var rx = num(s.rx, Math.sqrt(num(s.Ix, 0) / A)), ry = num(s.ry, Math.sqrt(num(s.Iy, 0) / A)), Lx = num(fl.Lx, m.L) * 1000, Ly = num(fl.Ly, m.L) * 1000;
@@ -152,8 +154,11 @@
       vs.push(q);
       if (q.razao > num(v.razao, 0)) { v.razao = q.razao; v.governante = nome; }
     }
-    if (Nc > lim || diag) add("Esbeltez da barra comprimida (L/r ≤ 200)", REF_ESB_C, 200, Nc);
-    if (Nt > lim || diag) add("Esbeltez da barra tracionada (L/r ≤ 300)", REF_ESB_T, 300, Nt);
+    /* barra SÓ DE TRAÇÃO (sai do modelo quando comprimida): só o L/r ≤ 300, sempre. ESCORA declarada (a do banzo de baixo e a
+       da coluna treliçada — REVISÃO M4 alto b): pode comprimir com qualquer força → L/r ≤ 200 sempre, sem o gatilho de 5 % */
+    var soTracao = m.papel === "tirante", escora = !!(m.calc && m.calc.escora);
+    if (!soTracao && (Nc > lim || diag || escora)) add("Esbeltez da barra comprimida (L/r ≤ 200)", REF_ESB_C, 200, Nc);
+    if (Nt > lim || diag || soTracao) add("Esbeltez da barra tracionada (L/r ≤ 300)", REF_ESB_T, 300, Nt);
     v.verificacoes = vs; v.ok = num(v.razao, 0) <= 1 + 1e-9; v.esbeltez = e.lam;
     return v;
   }
@@ -324,6 +329,13 @@
     if (!raras.length) { raras = els.filter(function (c) { return c.tipo === "ELS-qp"; }); if (raras.length) G.decisoes.push({ tema: "Deslocamentos", decisao: "flechas e deslocamentos com a combinação quase permanente", motivo: "só há ações permanentes: a combinação rara (NBR 8681) é ΣFg, igual à quase permanente" }); }
     var topos = {}; G.membros.forEach(function (m) { if (m.papelLivre === "pilar") topos[Math.round(Math.max(m.a[1], m.b[1]) * 10) / 10] = true; });
     var umPav = Object.keys(topos).length <= 1 && !G.membros.some(function (m) { return m.papelLivre === "pilar" && (m.pontas.ini.tipo === "continua" || m.pontas.fim.tipo === "continua") && G.membros.some(function (o) { return o !== m && o.papelLivre === "pilar" && o.nos.some(function (n) { return m.nos.indexOf(n) >= 0; }); }); });
+    /* PÓRTICOS M4 (14/10/2026): o GALPÃO de um pavimento declarado pela tipologia (js/metalporticos.js, metal.calc.umPavimento
+       em TODAS as peças): a coluna de tapamento do oitão, o pilar interno que vai à cumeeira e o pilar alto do shed têm topos em
+       alturas diferentes, e a regra acima os lia como prédio de vários pisos (h/500 em vez de H/300 — Tabela C.1: "galpões em
+       geral e edifícios de um pavimento") */
+    var empilhado = G.membros.some(function (m) { return m.papelLivre === "pilar" && (m.pontas.ini.tipo === "continua" || m.pontas.fim.tipo === "continua") && G.membros.some(function (o) { return o !== m && o.papelLivre === "pilar" && o.nos.some(function (n) { return m.nos.indexOf(n) >= 0; }); }); });
+    var declUm = !empilhado && arr(G.pecas).length > 0 && arr(G.pecas).every(function (p) { return p.calc && p.calc.umPavimento; });   /* pilar sobre pilar é prédio de pisos: a declaração não vale */
+    if (declUm && !umPav) { umPav = true; G.decisoes.push({ tema: "Deslocamentos", decisao: "topo dos pilares H/300 (galpão de um pavimento — declarado pela tipologia do pórtico paramétrico)", motivo: "NBR 8800:2008, Tabela C.1: galpões em geral e edifícios de um pavimento; os pilares de alturas diferentes (tapamento do oitão, pilar interno, shed) não são pisos" }); }
     var cobPecas = {}, suporta = {};
     arr(G.cobertura).forEach(function (id) { cobPecas[id] = true; });
     /* viga que SUPORTA pilar: o PÉ de um pilar (a ponta de baixo) cai no meio dela — L/500 (o pilar que só encosta por
@@ -522,6 +534,14 @@
     if (r.modelo) { delete r.modelo.lido; r.modelo.pecas = (r.modelo.pecas || []).map(function (p) { return { id: p.id, mid: p.mid, nome: p.nome, papel: p.papel, cat: p.cat }; }); }
     delete r._perfis;
     if (PE) Env().completarResultado(r, PE);
+    /* PÓRTICOS M4 (14/10/2026): sem envoltório, os "não verificados" declarados pelas peças da tipologia (js/metalporticos.js —
+       a mísula cônica, a fadiga da viga de rolamento…) valem do mesmo jeito: a situação fica "incompleto" */
+    else if (arr(lido.naoVerificados).length && Env()) {
+      r.naoVerificados = lido.naoVerificados.map(function (x) { return { tema: x.tema, motivo: x.motivo }; });
+      if (r.ok) r.naoVerificados.forEach(function (x) { var t = "NÃO VERIFICADO — " + x.tema + ": " + x.motivo; if (arr(r.avisos).indexOf(t) < 0) r.avisos.unshift(t); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(t) < 0) r.naoAbrangidos.unshift(t); });
+      r.situacao = Env().situacao(r, r.naoVerificados);
+    }
+    if (arr(lido.tipologias).length) r.tipologias = lido.tipologias.slice();
     if (r.ok) {
       /* REVISÃO S5 M2 (14/10/2026): o aço adotado para as peças da aba Estrutura (que não guarda a classe) é PREMISSA */
       if (entrada.acoEstrutura && lido.estrutura && lido.estrutura.adotado) r.decisoes.push({ tema: "Aço adotado (aba Estrutura)", decisao: "aço ADOTADO pelo engenheiro: " + entrada.acoEstrutura + " em " + lido.estrutura.adotado + " pilar(es)/viga(s) da aba Estrutura (a aba Estrutura não guarda a classe do aço)", motivo: "premissa: confirmar a classe do aço com o fornecedor/projeto antes de emitir" });

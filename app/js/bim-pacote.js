@@ -680,6 +680,7 @@ if (area.on) { if (area.pts.length >= 3) fecharArea(); return; }
 if (ang.on) return;
 if (S._aoClicarPeca) return;
 if (S._aoMarcarPonto) return;
+try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
 selecionarEm(e.clientX, e.clientY);
 });
 function selecionarEm(cx, cy) {
@@ -1287,7 +1288,7 @@ rr.domElement.addEventListener('pointerup', function (e) {
 var d = v._sel, SL = SLx(); v._sel = null;
 if (!d || e.button !== 0 || !SL || SL.mao() || SL.arrastou(d, { x: e.clientX, y: e.clientY }) || !semFerramenta3d()) return;
 var u = selecionarNaVista(v, e.clientX, e.clientY, true);
-if (u) selAplicar([u], (e.ctrlKey || e.metaKey) ? 'alternar' : 'trocar'); else if (!(e.ctrlKey || e.metaKey)) selAplicar([], 'trocar');
+if (u) selAplicar(S._compExp ? S._compExp(u) : [u], (e.ctrlKey || e.metaKey) ? 'alternar' : 'trocar'); else if (!(e.ctrlKey || e.metaKey)) selAplicar([], 'trocar');
 });
 redimVista(v);
 }
@@ -1803,7 +1804,7 @@ S._enquadrar = enquadrar;
 var hint = document.createElement('div');
 hint.setAttribute('data-bim', 'hint');
 hint.className = 'bim-dica';
-hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:var(--texto,#15181d);color:var(--surface,#fff);font-weight:500;font-size:12.5px;padding:7px 15px;border-radius:99px;box-shadow:var(--sombra,0 6px 16px rgba(0,0,0,.25));width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
+hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:var(--texto,#15181d);color:var(--surface,#fff);font-weight:var(--p-medio);font-size:var(--t-micro);padding:7px 15px;border-radius:99px;box-shadow:var(--sombra,0 6px 16px rgba(0,0,0,.25));width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
 host.appendChild(hint);
 S.hint = hint;
 S._hint = function (msg) {
@@ -4545,6 +4546,7 @@ if (o.onPick) { try { o.onPick(m0 ? propsDe(m0.userData.mid != null ? m0.userDat
 if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover; Delete apaga; Esc limpa.');
 else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
 try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
+try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}
 return novo;
 }
 S._selAplicar = selAplicar; S._selAtual = selAtual;
@@ -4568,9 +4570,11 @@ pav.manual = true;
 return n;
 };
 S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
+function compExp(u) { try { return window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { return [u]; } }
+S._compExp = compExp;
 function sel3Clique(e) {
 var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
-if (u) selAplicar([u], ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
+if (u) selAplicar(compExp(u), ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
 }
 S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
 function navBotoes(orb, e) {
@@ -4607,7 +4611,7 @@ if (!SL.arrastou({ x: s.x, y: s.y }, { x: e.clientX, y: e.clientY })) return;
 s.modo = 'nada';
 if (s.acao === 'janela') s.modo = 'janela';
 else if (s.acao === 'peca-mover') {
-if (selAtual().indexOf(s.u) < 0) selAplicar([s.u], 'trocar');
+if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');
 if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
 }
 try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
@@ -4915,9 +4919,9 @@ modelRoot.children.forEach(function (g) {
 if (!m.isMesh || !m.geometry || !m.userData || m.userData.expressID == null || !cadeiaVisivel(m)) return;
 if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
 bb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
-if (!(bb.min.y > h) || !(bb.min.y < topo - 0.005) || !Desenho2D.Acima.tipoPode(m.userData.tipo)) return;
+if (!(bb.min.y > h) || !(bb.min.y < topo - 0.005 || m.userData.acimaSempre) || !(Desenho2D.Acima.tipoPode(m.userData.tipo) || m.userData.acimaSempre)) return;
 var u = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
-if (!gr[u]) { gr[u] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; ord.push(u); }
+if (!gr[u]) { gr[u] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID, forcar: !!m.userData.acimaSempre }; ord.push(u); }
 gr[u].ms.push(m);
 });
 });
@@ -7038,7 +7042,7 @@ var cA = caixasA[gA.eid]; if (cA && cA.marca) marca = String(cA.marca);
 if (!tagsA) { tagsA = {}; (S.elementos || []).forEach(function (el) { if (el && el.uid && el.tag) tagsA[el.uid] = el.tag; }); }
 var tg = tagsA[uA]; if (tg && String(tg).length <= 12 && /[A-Za-z]/.test(String(tg))) marca = String(tg);
 }
-var itA = Desenho2D.Acima.peca({ u: uA, t: gA.t, pts: pts, segs: segs, areaBaixo: areaB, fundo: y0, topo: y1, marca: marca });
+var itA = Desenho2D.Acima.peca({ u: uA, t: gA.t, pts: pts, segs: segs, areaBaixo: areaB, fundo: y0, topo: y1, marca: marca, forcar: !!gA.forcar });
 if (itA) acima.push(itA);
 });
 return acima;
@@ -7188,9 +7192,9 @@ var sv = sFn(k8 & 1 ? bb.max.x : bb.min.x, k8 & 2 ? bb.max.y : bb.min.y, k8 & 4 
 if (sv >= 0) algumFica = true; else algumSai = true;
 }
 if (!algumFica) {
-if (acimaTopo != null && bb.min.y < acimaTopo - 0.005 && m.userData && m.userData.expressID != null && Desenho2D.Acima.tipoPode(m.userData.tipo)) {
+if (acimaTopo != null && m.userData && (bb.min.y < acimaTopo - 0.005 || m.userData.acimaSempre) && m.userData.expressID != null && (Desenho2D.Acima.tipoPode(m.userData.tipo) || m.userData.acimaSempre)) {
 var uA = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
-if (!acimaGr[uA]) { acimaGr[uA] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; acimaOrd.push(uA); }
+if (!acimaGr[uA]) { acimaGr[uA] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID, forcar: !!m.userData.acimaSempre }; acimaOrd.push(uA); }
 acimaGr[uA].ms.push(m);
 }
 return;
@@ -9097,7 +9101,7 @@ addMesh(m, c.id, c.ifc, mat);
 mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
 var areaL = vz ? vz.areaLiquida : c.area;
 mo.qto[c.id] = b2r ? b2r.qto : { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
-mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
+mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'vedacao' && c.vedacao ? String(c.vedacao.nome || c.vedacao.papel || 'Vedação') : c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
 mo.nEl++;
 });
 st.coberturas.forEach(function (cb) {
@@ -10049,7 +10053,21 @@ return m;
 }
 function b2Plano(a, b, z) { return [a, z, b]; }
 var metGeo = { mapa: {}, rodada: 1, feitas: 0, ligado: true };
-function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); }
+function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); if (e.juntas) e.juntas.dispose(); }
+var vedMats = {}, vedMatJ = null;
+function vedMat(v) {
+var k = (v && v.material === 'telha' ? 'telha:' + (v.textura || 'telha_metalica') : (v && v.material) || 'rufo');
+if (vedMats[k]) return vedMats[k];
+var COR = { 'telha:telha_metalica': [0.78, 0.81, 0.84], 'telha:telha_fibrocimento': [0.80, 0.80, 0.78], alvenaria: [0.74, 0.73, 0.70], concreto: [0.78, 0.78, 0.77], rufo: [0.70, 0.73, 0.76] }, c = COR[k] || COR.rufo;
+var mt = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), metalness: /telha:telha_metalica|rufo/.test(k) ? 0.35 : 0.02, roughness: /telha:telha_metalica|rufo/.test(k) ? 0.55 : 0.9, side: THREE.DoubleSide });
+mt.userData.corLin = mt.color.clone(); mt.userData.rgba = [c[0], c[1], c[2], 1];
+var slug = v && v.textura;
+if (slug && window.BimTextura && BimTextura.existe && BimTextura.existe(slug) && BimTextura.BIB && BimTextura.BIB[slug]) { mt.userData.tex = { slug: slug, escala: BimTextura.BIB[slug].m, asp: BimTextura.BIB[slug].asp || 1, fonte: 'vedacao', classe: '', material: slug }; mt.userData.corIfc = [c[0], c[1], c[2]]; }
+mt.userData.vedacao = k;
+vedMats[k] = mt;
+return mt;
+}
+function vedMatJunta() { if (!vedMatJ) vedMatJ = new THREE.LineBasicMaterial({ color: 0x5d6f82, transparent: true, opacity: 0.75 }); return vedMatJ; }
 S._metGeoVarrer = function () {
 var r = metGeo.rodada;
 Object.keys(metGeo.mapa).forEach(function (id) { var e = metGeo.mapa[id]; if (e.usado !== r) { metGeoDescartar(e); delete metGeo.mapa[id]; } });
@@ -10059,6 +10077,31 @@ S._metGeoEstado = function (ligar) { if (ligar != null) metGeo.ligado = !!ligar;
 S._b2Malhas = function (c, vz, mat, addMesh) {
 var A = window.BimArq; if (!A || !c || !c.b2) return null;
 var me = null;
+if (c.tipo === 'vedacao' && c.metal) {
+if (!window.BimMetal) return null;
+var vd = c.vedacao || {}, mV = vedMat(vd), tV = vd.desenho || c.ifc;
+var chV = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY, vd.modulo || 0]), enV = metGeo.mapa[c.id];
+if (!enV || enV.chave !== chV || !metGeo.ligado) {
+if (enV) metGeoDescartar(enV);
+enV = metGeo.mapa[c.id] = { chave: chV, geos: [] };
+BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gV = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gV.userData.metGeo = true; enV.geos.push(gV); metGeo.feitas++; } });
+var jV = window.AcoVedacao && AcoVedacao.juntas ? AcoVedacao.juntas(c) : [];
+if (jV.length) {
+var pJ = []; jV.forEach(function (s) { pJ.push(s[0], s[1], s[2], s[3], s[4], s[5]); });
+var gJ = new THREE.BufferGeometry(); gJ.setAttribute('position', new THREE.Float32BufferAttribute(pJ, 3)); gJ.userData.metGeo = true; enV.juntas = gJ;
+}
+}
+enV.usado = metGeo.rodada;
+enV.geos.forEach(function (gV, iV) {
+var mesh = new THREE.Mesh(gV, mV);
+if (vd.acimaSempre) mesh.userData.acimaSempre = true;
+mesh.userData.vedacao = vd.papel || 'vedacao';
+if (iV === 0 && enV.juntas) { var lsJ = new THREE.LineSegments(enV.juntas, vedMatJunta()); lsJ.raycast = function () {}; lsJ.userData.juntaTelha = true; mesh.add(lsJ); }
+addMesh(mesh, c.id, tV, mV);
+});
+var mdV = c.medidas || {};
+return { qto: { comprimento: vd.comprimento != null ? vd.comprimento : mdV.comprimento, area: vd.area != null ? vd.area : mdV.area, volume: mdV.volume, contagem: 1, massa: c.massa } };
+}
 if (c.tipo === 'metal' && c.metal) {
 if (!window.BimMetal) return null;
 var mM = b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');

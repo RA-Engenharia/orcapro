@@ -1223,6 +1223,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (ang.on) return; // no modo ângulo o clique é ponto — não seleção
     if (S._aoClicarPeca) return; // coletando peças (peso/içamento): o clique simples já juntou — ver `cliqueColetor`
     if (S._aoMarcarPonto) return; // marcando a posição do equipamento: o clique simples é o ponto
+    /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA (componente) abre o diálogo dela para editar no lugar (js/metalcomponenteui.js) */
+    try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
     selecionarEm(e.clientX, e.clientY);
   });
   /* a seleção de uma peça no ponto da tela — a do duplo-clique e, no modo
@@ -1941,7 +1943,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var d = v._sel, SL = SLx(); v._sel = null;
       if (!d || e.button !== 0 || !SL || SL.mao() || SL.arrastou(d, { x: e.clientX, y: e.clientY }) || !semFerramenta3d()) return;
       var u = selecionarNaVista(v, e.clientX, e.clientY, true);
-      if (u) selAplicar([u], (e.ctrlKey || e.metaKey) ? 'alternar' : 'trocar'); else if (!(e.ctrlKey || e.metaKey)) selAplicar([], 'trocar');
+      if (u) selAplicar(S._compExp ? S._compExp(u) : [u], (e.ctrlKey || e.metaKey) ? 'alternar' : 'trocar'); else if (!(e.ctrlKey || e.metaKey)) selAplicar([], 'trocar');   /* M5: componente */
     });
     redimVista(v);
   }
@@ -2614,7 +2616,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* ⚠ width:max-content: com left:50% e sem largura, o encolher-para-caber
      do navegador limita a caixa à METADE da tela. No celular (390 px) a dica
      da trena saía com 195 px e quatro linhas no meio do modelo. */
-  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:var(--texto,#15181d);color:var(--surface,#fff);font-weight:500;font-size:12.5px;padding:7px 15px;border-radius:99px;box-shadow:var(--sombra,0 6px 16px rgba(0,0,0,.25));width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
+  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:var(--texto,#15181d);color:var(--surface,#fff);font-weight:var(--p-medio);font-size:var(--t-micro);padding:7px 15px;border-radius:99px;box-shadow:var(--sombra,0 6px 16px rgba(0,0,0,.25));width:max-content;max-width:90%;box-sizing:border-box;text-align:center';
   host.appendChild(hint);
   S.hint = hint; // guardado p/ re-parentar no re-home (senão some ao revisitar a aba)
   /* ⚠ O BALÃO MOSTRAVA O CÓDIGO DO ÍCONE, NÃO O ÍCONE.
@@ -6161,6 +6163,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover; Delete apaga; Esc limpa.');
     else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
     try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
+    try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}   /* M5: as alças do componente */
     return novo;
   }
   S._selAplicar = selAplicar; S._selAtual = selAtual;
@@ -6187,9 +6190,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return n;
   };
   S._algoOculto = function () { var r = false; todasMalhas(function (m) { if (!r && m.userData.expressID != null && m.visible === false && !ehFuturo4d(m) && !ehRemovidoEd(m)) r = true; }); return r; };
+  /* M5 (14/10/2026, js/metalcomponenteui.js): a peça de uma PEÇA PRONTA é um COMPONENTE — o clique pega todas as peças dela (o Tab entra na peça) */
+  function compExp(u) { try { return window.MetalComponenteUI && MetalComponenteUI.expandir ? MetalComponenteUI.expandir(u) : [u]; } catch (_) { return [u]; } }
+  S._compExp = compExp;
   function sel3Clique(e) {
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
-    if (u) selAplicar([u], ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
+    if (u) selAplicar(compExp(u), ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
   }
   S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
   /* os botões da órbita: decididos na CAPTURA do pointerdown (no alvo ela roda antes do OrbitControls) */
@@ -6228,7 +6234,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       s.modo = 'nada';
       if (s.acao === 'janela') s.modo = 'janela';
       else if (s.acao === 'peca-mover') {
-        if (selAtual().indexOf(s.u) < 0) selAplicar([s.u], 'trocar');
+        if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');   /* M5: arrastar uma peça de peça pronta move o componente inteiro */
         if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
       }
       try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
@@ -6573,9 +6579,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (!m.isMesh || !m.geometry || !m.userData || m.userData.expressID == null || !cadeiaVisivel(m)) return;
         if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
         bb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
-        if (!(bb.min.y > h) || !(bb.min.y < topo - 0.005) || !Desenho2D.Acima.tipoPode(m.userData.tipo)) return;
+        if (!(bb.min.y > h) || !(bb.min.y < topo - 0.005 || m.userData.acimaSempre) || !(Desenho2D.Acima.tipoPode(m.userData.tipo) || m.userData.acimaSempre)) return;   /* VEDAÇÃO: a cobertura sempre */
         var u = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
-        if (!gr[u]) { gr[u] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; ord.push(u); }
+        if (!gr[u]) { gr[u] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID, forcar: !!m.userData.acimaSempre }; ord.push(u); }
         gr[u].ms.push(m);
       });
     });
@@ -9487,7 +9493,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         /* o Tag que o exportador enche com o número interno do elemento ("854583") não é marca: só com letra */
         var tg = tagsA[uA]; if (tg && String(tg).length <= 12 && /[A-Za-z]/.test(String(tg))) marca = String(tg);
       }
-      var itA = Desenho2D.Acima.peca({ u: uA, t: gA.t, pts: pts, segs: segs, areaBaixo: areaB, fundo: y0, topo: y1, marca: marca });
+      var itA = Desenho2D.Acima.peca({ u: uA, t: gA.t, pts: pts, segs: segs, areaBaixo: areaB, fundo: y0, topo: y1, marca: marca, forcar: !!gA.forcar });
       if (itA) acima.push(itA);
     });
     return acima;
@@ -9680,9 +9686,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
         if (!algumFica) {
           /* ACIMA DO CORTE: inteira acima do plano (o corte não a pega) e com o fundo abaixo do topo da faixa */
-          if (acimaTopo != null && bb.min.y < acimaTopo - 0.005 && m.userData && m.userData.expressID != null && Desenho2D.Acima.tipoPode(m.userData.tipo)) {
+          /* VEDAÇÃO (14/10/2026): a telha da cobertura (userData.acimaSempre) é a projeção da cobertura — entra mesmo acima do topo da faixa */
+          if (acimaTopo != null && m.userData && (bb.min.y < acimaTopo - 0.005 || m.userData.acimaSempre) && m.userData.expressID != null && (Desenho2D.Acima.tipoPode(m.userData.tipo) || m.userData.acimaSempre)) {
             var uA = (m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID;
-            if (!acimaGr[uA]) { acimaGr[uA] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID }; acimaOrd.push(uA); }
+            if (!acimaGr[uA]) { acimaGr[uA] = { ms: [], t: m.userData.tipo || '', mid: m.userData.mid, eid: m.userData.expressID, forcar: !!m.userData.acimaSempre }; acimaOrd.push(uA); }
             acimaGr[uA].ms.push(m);
           }
           return;
@@ -12055,7 +12062,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
         var areaL = vz ? vz.areaLiquida : c.area;
         mo.qto[c.id] = b2r ? b2r.qto : { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: areaL, volume: vz ? Math.round(areaL * c.espessura * 10000) / 10000 : c.volume, contagem: 1, areaVaos: vz ? vz.areaVaos : 0 };
-        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
+        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'vedacao' && c.vedacao ? String(c.vedacao.nome || c.vedacao.papel || 'Vedação') : c.tipo === 'metal' && window.BimMetal ? BimMetal.nome(c) + (c.marca ? ' [' + c.marca + ']' : '') : (NOMES_ED[c.tipo] || 'Elemento')) + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: c.tipo === 'viga' || c.tipo === 'pilar' || c.tipo === 'metal' ? 'estrutura' : 'arquitetura' });
         mo.nEl++;
       });
       st.coberturas.forEach(function (cb) {
@@ -13204,7 +13211,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* a geometria guardada das peças metálicas (ver S._b2Malhas) e a varredura do fim de cada editRebuild:
      a peça que não apareceu nesta rodada (apagada, mudada, desfeita) tem a malha descartada */
   var metGeo = { mapa: {}, rodada: 1, feitas: 0, ligado: true };
-  function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); }
+  function metGeoDescartar(e) { e.geos.forEach(function (g) { if (g.userData._arestas) g.userData._arestas.dispose(); g.dispose(); }); if (e.juntas) e.juntas.dispose(); }
+  /* VEDAÇÃO (14/10/2026, js/acovedacao.js): um material por tipo (telha metálica, de fibrocimento, alvenaria, painel de
+     concreto, rufo). A telha leva a textura da biblioteca (userData.tex): no estilo Realista a ONDA aparece — o mesmo
+     caminho dos outros materiais (a malha mesclada respeita a textura pela chave). As juntas (largura útil) são linhas. */
+  var vedMats = {}, vedMatJ = null;
+  function vedMat(v) {
+    var k = (v && v.material === 'telha' ? 'telha:' + (v.textura || 'telha_metalica') : (v && v.material) || 'rufo');
+    if (vedMats[k]) return vedMats[k];
+    var COR = { 'telha:telha_metalica': [0.78, 0.81, 0.84], 'telha:telha_fibrocimento': [0.80, 0.80, 0.78], alvenaria: [0.74, 0.73, 0.70], concreto: [0.78, 0.78, 0.77], rufo: [0.70, 0.73, 0.76] }, c = COR[k] || COR.rufo;
+    var mt = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), metalness: /telha:telha_metalica|rufo/.test(k) ? 0.35 : 0.02, roughness: /telha:telha_metalica|rufo/.test(k) ? 0.55 : 0.9, side: THREE.DoubleSide });
+    mt.userData.corLin = mt.color.clone(); mt.userData.rgba = [c[0], c[1], c[2], 1];
+    var slug = v && v.textura;
+    if (slug && window.BimTextura && BimTextura.existe && BimTextura.existe(slug) && BimTextura.BIB && BimTextura.BIB[slug]) { mt.userData.tex = { slug: slug, escala: BimTextura.BIB[slug].m, asp: BimTextura.BIB[slug].asp || 1, fonte: 'vedacao', classe: '', material: slug }; mt.userData.corIfc = [c[0], c[1], c[2]]; }
+    mt.userData.vedacao = k;
+    vedMats[k] = mt;
+    return mt;
+  }
+  function vedMatJunta() { if (!vedMatJ) vedMatJ = new THREE.LineBasicMaterial({ color: 0x5d6f82, transparent: true, opacity: 0.75 }); return vedMatJ; }
   S._metGeoVarrer = function () {
     var r = metGeo.rodada;
     Object.keys(metGeo.mapa).forEach(function (id) { var e = metGeo.mapa[id]; if (e.usado !== r) { metGeoDescartar(e); delete metGeo.mapa[id]; } });
@@ -13216,6 +13240,36 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._b2Malhas = function (c, vz, mat, addMesh) {
     var A = window.BimArq; if (!A || !c || !c.b2) return null;
     var me = null;
+    /* VEDAÇÃO (14/10/2026, js/acovedacao.js): telha, fechamento, alvenaria e acessórios do galpão — os sólidos da chapa
+       (BimMetal.solidos, guardados por peça como os da metálica), o material da vedação e as JUNTAS das telhas (a cada
+       largura útil do catálogo) como linhas FILHAS da peça: somem junto com ela (categoria, ocultar) e não pegam clique.
+       A malha entra na planta, no DXF e nos estilos com o TIPO DE DESENHO (c.vedacao.desenho: telhado ou parede); a
+       classe IFC de verdade (IfcCovering…) fica em c.ifc. A cobertura (acimaSempre) entra no tracejado acima do corte. */
+    if (c.tipo === 'vedacao' && c.metal) {
+      if (!window.BimMetal) return null;
+      var vd = c.vedacao || {}, mV = vedMat(vd), tV = vd.desenho || c.ifc;
+      var chV = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY, vd.modulo || 0]), enV = metGeo.mapa[c.id];
+      if (!enV || enV.chave !== chV || !metGeo.ligado) {
+        if (enV) metGeoDescartar(enV);
+        enV = metGeo.mapa[c.id] = { chave: chV, geos: [] };
+        BimMetal.solidos(c).forEach(function (sd) { if (sd.poli.length >= 3) { var gV = b2Geo(sd.poli, sd.furos, sd.z0, sd.z1, sd.ponto); gV.userData.metGeo = true; enV.geos.push(gV); metGeo.feitas++; } });
+        var jV = window.AcoVedacao && AcoVedacao.juntas ? AcoVedacao.juntas(c) : [];
+        if (jV.length) {
+          var pJ = []; jV.forEach(function (s) { pJ.push(s[0], s[1], s[2], s[3], s[4], s[5]); });
+          var gJ = new THREE.BufferGeometry(); gJ.setAttribute('position', new THREE.Float32BufferAttribute(pJ, 3)); gJ.userData.metGeo = true; enV.juntas = gJ;
+        }
+      }
+      enV.usado = metGeo.rodada;
+      enV.geos.forEach(function (gV, iV) {
+        var mesh = new THREE.Mesh(gV, mV);
+        if (vd.acimaSempre) mesh.userData.acimaSempre = true;
+        mesh.userData.vedacao = vd.papel || 'vedacao';
+        if (iV === 0 && enV.juntas) { var lsJ = new THREE.LineSegments(enV.juntas, vedMatJunta()); lsJ.raycast = function () {}; lsJ.userData.juntaTelha = true; mesh.add(lsJ); }
+        addMesh(mesh, c.id, tV, mV);
+      });
+      var mdV = c.medidas || {};
+      return { qto: { comprimento: vd.comprimento != null ? vd.comprimento : mdV.comprimento, area: vd.area != null ? vd.area : mdV.area, volume: mdV.volume, contagem: 1, massa: c.massa } };
+    }
     /* METÁLICA & MECÂNICA (js/metalpeca.js): chapa, perfil cortado, parafuso e peça mecânica — cada sólido é um contorno
        (com furos) extrudado pelo mapa da peça; o corte inclinado vem no mapa (as duas pontas). Desenho = corte = lista. */
     if (c.tipo === 'metal' && c.metal) {

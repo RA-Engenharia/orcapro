@@ -45,6 +45,8 @@
   /* ------------------------------------------------------------ fita: grupo Acessos */
   var COMANDOS = [
     { id: "met-ac-escolher", rotulo: "Escolher o\nacesso", icone: "alvo", grande: true, dica: "Desnível, espaço em planta e o uso → o meio de acesso pela norma (rampa, escada, escada de degraus, marinheiro; rota acessível; saída de emergência), com o motivo e o item — e o botão que abre o diálogo dele." },
+    /* M5 (14/10/2026, js/metalmodelosui.js): a GALERIA com os modelos paramétricos novos e os de antes, com a prévia e o selo da norma */
+    { id: "met-ac-galeria", rotulo: "Galeria de\nmodelos", icone: "camadas", grande: true, dica: "Guarda-corpos (industrial de 2 e 3 travessas, tela, chapa perfurada, barras verticais para uso público, tubular redondo e quadrado, vidro, cancela, corrimão duplo) e escadas (patamar intermediário, emergência, navio, degrau dobrado, xadrez ou grade, escada fixa com descanso) — com a prévia, a norma de cada um e o botão que abre o diálogo." },
     { id: "met-ac-escada", tipo: "escada", rotulo: "Escada\nindustrial", icone: "niveis", grande: true, dica: "Escada pela norma escolhida (NR-12 industrial, NBR 9050 acessível, saída de emergência): degrau calculado, patamares de descanso, guarda-corpo com intermediária e rodapé; conformidade e cálculo da longarina, do degrau e do montante ao vivo." },
     /* S6 (14/10/2026, js/metalescadalinhaui.js): a escada puxada por LINHA — vermelho "não chegou" até vencer a altura pela norma */
     { id: "met-ac-escada-linha", rotulo: "Escada\npor linha", icone: "desLinha", grande: true, dica: "Puxe a linha do topo (borda do piso de cima) para baixo, ou do pé para cima: enquanto o comprimento não vence a altura pela norma (NR-12: espelho 20–25 cm, piso ≥ espelho, patamar a cada 3,00 m) a prévia fica VERMELHA com quanto falta; ao caber, VERDE. Chegando num piso/laje, abre a passagem com guarda-corpo; a fixação (ancorada, parafusada, soldada ou apoiada com pés de apoio) já vem dimensionada." },
@@ -62,6 +64,7 @@
   var CMD_DE = {}; COMANDOS.forEach(function (c) { if (c.tipo) CMD_DE[c.tipo] = c.id; });
 
   /* ------------------------------------------------------------ campos dos tipos novos */
+  var TERMINAIS = [["", "Retorno ao montante (padrão)"], ["retorno", "Retorno ao montante (curva de 180°)"], ["curva", "Curva para baixo com tampão"], ["tampao", "Tampão no tubo"]];
   function camposDe() {
     var U = PU(), UG = U ? U.USO_GUARDA : [], UP = U ? U.USO_PISO : [];
     var piso = [["piso", "Piso", "sel", [["grade", "Grade eletrofundida"], ["xadrez", "Chapa xadrez"]]], ["gradeH", "Grade: altura da barra portante (m)", "num"], ["gradeT", "Grade: espessura da barra (m)", "num"], ["gradeA", "Grade: passo das barras (m)", "num"], ["tPiso", "Chapa xadrez: espessura (mm)", "mm"]];
@@ -70,7 +73,7 @@
       marinheiro: [["altura", "Altura a vencer (m)", "num"], ["largura", "Largura entre montantes (m)", "num"], ["espac", "Degraus a cada (m, máx.)", "num"], ["afast", "Afastamento da parede (m)", "num"],
         ["diamDegrau", "Degrau: diâmetro/lado (m)", "num"], ["secaoDegrau", "Seção do degrau", "sel", [["redonda", "Barra redonda serrilhada"], ["quadrada", "Barra quadrada"]]], ["antiderrapante", "Degrau antiderrapante (serrilhado/ranhura)", "check"],
         ["gaiola", "Gaiola", "sel", [["auto", "Automática (acima de 3,50 m)"], ["sim", "Sempre"], ["nao", "Sem gaiola"]]], ["gaiolaDiam", "Diâmetro da gaiola (m)", "num"], ["gaiolaInicio", "Gaiola a partir de (m do piso)", "num"], ["arcosEsp", "Arcos a cada (m)", "num"], ["gaiolaVert", "Barras verticais a cada (m, no arco)", "num"],
-        ["ultrapassa", "Montantes e gaiola passam do topo (m)", "num"], ["lanceMax", "Altura máx. por lance acima de 10 m (m)", "num"], ["deslocLances", "Deslocamento entre lances (m)", "num"], ["cancela", "Cancela de autofechamento no topo", "check"],
+        ["ultrapassa", "Montantes e gaiola passam do topo (m)", "num"], ["lanceMax", "Altura máx. por lance (m; NR-12 13 g: até 6,00 m entre descansos)", "num"], ["descansoSempre", "Plataforma de descanso também abaixo de 10 m", "check"], ["deslocLances", "Deslocamento entre lances (m)", "num"], ["cancela", "Cancela de autofechamento no topo", "check"],
         ["saida", "Saída no topo", "sel", [["frente", "Pela frente (piso de cima atrás da parede)"], ["esquerda", "Pela esquerda (plataforma de desembarque)"], ["direita", "Pela direita (plataforma de desembarque)"]]], ["desembarqueLarg", "Largura da plataforma de desembarque (m)", "num"],
         ["outrosImpossiveis", "Rampa/escada/plataforma tecnicamente impossíveis aqui (NR-12 1.3; NR-35 Anexo III 4.1.2.1)", "check"],
         ["spqDefinido", "SPQ definido pelo item 35.6 com análise de risco (NR-35 Anexo III 5.2.1.1 f)", "check"], ["projetoHabilitado", "Projeto por profissional legalmente habilitado (NR-35 Anexo III 5.2.1.1 g)", "check"]],
@@ -90,7 +93,14 @@
         ["duplo", "Duas alturas (0,92 e 0,70 m)", "check"], ["alturaSup", "Altura de cima (m)", "num"], ["alturaInf", "Altura de baixo (m)", "num"], ["folga", "Folga até a parede (m)", "num"], ["prolongamento", "Prolongamento nas pontas (m)", "num"],
         ["corrimao", "Tubo do corrimão", "cat", ["HSSC"]], ["espSuportes", "Suportes a cada (m)", "num"], ["suporteD", "Suporte: barra redonda Ø (m)", "num"]],
       guardacorpo: [["caminho", "Caminho livre — x z; x z… (m, relativo; os cliques preenchem)", "txt"], ["comprimento", "Comprimento (m) — sem caminho", "num"], ["retornoIni", "Retorno no começo (m; encontro em L)", "num"], ["retornoFim", "Retorno no fim (m)", "num"], ["ladoRetorno", "Lado dos retornos", "sel", [["esquerda", "À esquerda (do começo para o fim)"], ["direita", "À direita"]]],
-        ["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr9050", "NBR 9050 / NBR 14718 (edificação)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"],
+        ["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["auto", "Automática por montante (aço: soldado; concreto: chapa chumbada)"], ["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr14718", "NBR 14718 (edificação)"], ["nbr9050", "NBR 9050 / NBR 14718 (rota acessível)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"],
+        /* M5 (14/10/2026): os MODELOS — preenchimento, vidro, abertura com cancela, corrimão duplo e o acabamento das pontas */
+        ["preenchimento", "Preenchimento entre os montantes", "sel", [["travessas", "Travessas (industrial)"], ["barras", "Barras verticais"], ["tela", "Tela (malha soldada)"], ["perfurada", "Chapa perfurada"], ["vidro", "Vidro laminado"]]], ["publico", "Uso público (vão-luz ≤ 0,11 m — NBR 14718)", "check"],
+        ["vaoBarras", "Barras: vão livre máximo (m)", "num"], ["barraD", "Barras: diâmetro da barra redonda (m)", "num"], ["telaMalha", "Tela: malha (m)", "num"], ["telaFio", "Tela: fio (m)", "num"], ["tPainel", "Chapa perfurada: espessura (m)", "num"], ["furoD", "Chapa perfurada: furo Ø (m)", "num"], ["furoPasso", "Chapa perfurada: passo dos furos (m)", "num"],
+        ["vidroComp", "Vidro laminado (mm): 8+8, 10+10…", "txt"], ["vidroFix", "Fixação do vidro", "sel", [["montante", "Garras nos montantes"], ["perfil", "Perfil de base no piso (sem montantes)"]]],
+        ["abertura", "Abertura de acesso (m; 0 = sem)", "num"], ["aberturaPos", "Posição da abertura no comprimento (0 a 1)", "num"], ["cancela", "Cancela de autofechamento na abertura", "check"],
+        ["corrimaoDuplo", "Corrimão duplo a 0,92 e 0,70 m (NBR 9050)", "check"], ["soCorrimao", "Só o corrimão duplo sobre montantes (sem guarda-corpo)", "check"], ["prolongamento", "Corrimão: prolongamento nas pontas (m)", "num"],
+        ["terminalIni", "Acabamento da ponta do começo", "sel", TERMINAIS], ["terminalFim", "Acabamento da ponta do fim", "sel", TERMINAIS],
         /* S6 (14/10/2026): por RETÂNGULO, um lado pode ficar aberto para o acesso */
         ["ladoAberto", "Retângulo: lado aberto para o acesso", "sel", [["", "Nenhum (os 4 lados)"], ["frente", "Frente (Z mín.)"], ["direita", "Direita (X máx.)"], ["fundo", "Fundo (Z máx.)"], ["esquerda", "Esquerda (X mín.)"]]]].concat(guarda),
       rampa: [["norma", "Norma", "sel", [["nr12", "Industrial — NR-12 (até 20°)"], ["nbr9050", "Rota acessível — NBR 9050 (até 8,33 %)"]]], ["desnivel", "Desnível (m)", "num"], ["inclinacao", "Inclinação (%)", "num"], ["largura", "Largura útil (m)", "num"],
@@ -133,6 +143,7 @@
         reg[c.id] = function () {
           try {
             if (c.id === "met-ac-escolher") self.escolher();
+            else if (c.id === "met-ac-galeria") { if (global.MetalModelosUI && MetalModelosUI.pronto()) MetalModelosUI.abrir(); else toast("A galeria de modelos não carregou (js/metalmodelos.js).", "erro", 8000); }
             else if (c.id === "met-ac-verificar") self.verificar();
             else if (c.tipo === "escada") self.escada();
             else if (c.id === "met-ac-escada-linha") { if (global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.pronto()) MetalEscadaLinhaUI.abrir(); else toast("A escada por linha não carregou (js/metalescadalinha.js).", "erro", 8000); }
@@ -219,7 +230,7 @@
       if (v && v.ok) {
         h += '<h4 class="' + (v.aprovado ? "mac-ok" : "mac-falha") + '" data-mac="conf-res">Norma: ' + esc(v.resumo) + "</h4>" + v.avisos.map(function (a) { return '<p class="mac-av">' + esc(a) + "</p>"; }).join("");
         h += '<table class="mac-t"><thead><tr><th>Requisito</th><th>Norma / item</th><th>Limite</th><th>Projeto</th><th>Situação / correção</th></tr></thead><tbody>' + v.itens.map(function (i) {
-          return '<tr class="' + (i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : "") + '" data-mac-req="' + esc(i.id) + '"><td>' + esc(i.requisito) + "</td><td>" + esc(i.norma) + (i.conferir ? " <i>[conferir]</i>" : "") + "</td><td>" + esc(i.limite) + "</td><td>" + esc(i.valorTexto) + "</td><td>" + esc(i.situacao) + (i.correcao ? " — " + esc(i.correcao) : "") + "</td></tr>";
+          return '<tr class="' + (i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : "") + '" data-mac-req="' + esc(i.id) + '"><td>' + esc(i.requisito) + "</td><td>" + esc(i.norma) + "</td><td>" + esc(i.limite) + "</td><td>" + esc(i.valorTexto) + "</td><td>" + esc(i.situacao) + (i.correcao ? " — " + esc(i.correcao) : "") + "</td></tr>";
         }).join("") + "</tbody></table>";
       } else h += '<p class="mac-av">Sem regra de norma para este tipo (piso avulso): só o cálculo.</p>';
       if (dm && dm.ok) {

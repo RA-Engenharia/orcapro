@@ -2,7 +2,9 @@
  * metalgalpao.js — METÁLICA & MECÂNICA: ASSISTENTE DE GALPÃO (motor
  * PURO, ES5, sem DOM, Node-testável).
  *
- * Gera o MODELO de um galpão de aço de duas águas — pórticos de alma cheia
+ * Gera o MODELO de um galpão de aço de duas águas (ou de UMA água, alma cheia
+ * — `aguas: 1`, a água subindo para a DIREITA, a mesma convenção do cálculo:
+ * js/acomodelo.js yTelhado = H + i·x; PÓRTICOS M4, 14/10/2026) — pórticos de alma cheia
  * ou treliçados, terças, tirantes, contraventamentos de cobertura e de
  * parede nos vãos extremos e colunas de tapamento nos oitões — com os
  * perfis do CATÁLOGO escolhidos pelo usuário (js/perfisaco.js) e as
@@ -41,6 +43,7 @@
   var PADRAO = {
     vao: 12, comprimento: 18, espacamento: 6, peDireito: 6, inclinacao: 10, base: 0, x0: 0, z0: 0,
     tipo: "alma-cheia",            /* "alma-cheia" | "trelicado" */
+    aguas: 2,                      /* 2 = duas águas (cumeeira no meio); 1 = uma água subindo para x+ (só alma cheia) */
     pilar: "W250X32.7", viga: "W250X25.3", terca: "C150X12.2", contravento: "L51X51X4.8",
     tirante: 0.0125, tapamento: "W150X13", banzo: "L64X64X6.4", diagonal: "L51X51X4.8",
     alturaTrelica: 0.6, paineisTrelica: 0,          /* treliçado: altura na ponta; painéis por meia treliça (0 = automático) */
@@ -50,8 +53,30 @@
     linhasCorrentes: 1, travessaLateral: "", travessaOitao: "", alturasTravessas: null, alturasTravessasOitao: null, paredesComTravessa: null,
     xsTapamentos: null, contraventoBarra: 0, contraventosCalc: null, maosFrancesas: null, maoFrancesaPerfil: "L51X51X4.8",
     ligPlacaBase: null, ligPlacaBaseTap: null, ligJoelho: null, ligCumeeira: null, ligClip: null,
-    acoPerfil: "ASTM A572 Gr.50", acoTerca: "ASTM A36", acoBarra: "ASTM A36"
+    acoPerfil: "ASTM A572 Gr.50", acoTerca: "ASTM A36", acoBarra: "ASTM A36",
+    /* VEDAÇÃO (14/10/2026, js/acovedacao.js): { cobertura: { telhaId } | null, faces: { esquerda|direita|frente|fundo:
+       { tipo, alturaAlvenaria, telhaId, paredeId, bloco, aberturas } }, beiral, beiralOitao, calha } — null = só a estrutura.
+       doCalculo: o par veio do cálculo (parDoCalculo) — as travessas e os tapamentos são os dele, nunca os de partida. */
+    vedacao: null, doCalculo: false
   };
+  function Ved() { return dep("AcoVedacao", "./acovedacao.js"); }
+  function Mod() { return dep("AcoModelo", "./acomodelo.js"); }
+  /* as travessas e as colunas de tapamento de PARTIDA para o galpão da fita com fechamento: a MESMA regra do cálculo
+     (AcoModelo.layout: travessa a cada ≤ 2 m onde há telha; no misto, a primeira no topo da alvenaria; coluna de
+     tapamento a cada ≤ 6 m no oitão fechado). Sem o motor do cálculo, null (e o aviso diz). */
+  function partidaFechamento(p) {
+    var A = Mod(), V = Ved(), vd = p.vedacao; if (!A || !A.layout || !vd || !vd.faces) return null;
+    var fe = {};
+    ["esquerda", "direita", "frente", "fundo"].forEach(function (k) {
+      var f = vd.faces[k] || {}, t = V ? V.tipoFace(f) : String(f.tipo || "aberto");
+      fe[k] = { tipo: t, alturaAlvenaria: num(f.alturaAlvenaria, V ? V.PARTIDA.alturaAlvenaria : 3) };
+    });
+    var P = A.PADRAO || {};
+    try {
+      return A.layout({ geometria: { vao: p.vao, comprimento: p.comprimento, espacamento: p.espacamento, peDireito: p.peDireito, inclinacaoPct: p.inclinacao, aguas: p.aguas === 1 ? 1 : 2 }, cobertura: {}, fechamentos: fe,
+                        espTercaMax: num(P.espTercaMax, 2.5), espTravessaMax: num(P.espTravessaMax, 2), espTapamentoMax: num(P.espTapamentoMax, 6), comprimentoContraventado: num(P.comprimentoContraventado, 60) }, []);
+    } catch (e) { return null; }
+  }
 
   function perfilCat(nome) { var A = Aco(); return A ? A.paraPerfil(nome) : null; }
   function erro(t) { return { ok: false, motivo: t }; }
@@ -62,6 +87,7 @@
     if (!(p.espacamento >= 2 && p.espacamento <= 15)) return "Espaçamento dos pórticos entre 2 e 15 m.";
     if (!(p.peDireito >= 2.5 && p.peDireito <= 25)) return "Pé-direito entre 2,5 e 25 m.";
     if (!(p.inclinacao >= 2 && p.inclinacao <= 60)) return "Inclinação do telhado entre 2 % e 60 %.";
+    if (Number(p.aguas) === 1 && p.tipo === "trelicado") return "Treliçado de uma água: use a biblioteca de pórticos (Metálica › Pórticos industriais).";
     var faltam = ["pilar", "terca", p.tipo === "trelicado" ? "banzo" : "viga", p.tipo === "trelicado" ? "diagonal" : "pilar"].filter(function (k) { return !perfilCat(p[k]); });
     if (p.contraventos && !(num(p.contraventoBarra, 0) > 0) && !perfilCat(p.contravento)) faltam.push("contravento");
     if (p.travessaLateral && !perfilCat(p.travessaLateral)) faltam.push("travessaLateral");
@@ -78,6 +104,21 @@
     var p = {}; Object.keys(PADRAO).forEach(function (k) { p[k] = par && par[k] != null && par[k] !== "" ? par[k] : PADRAO[k]; });
     ["vao", "comprimento", "espacamento", "peDireito", "inclinacao", "base", "x0", "z0", "tirante", "alturaTrelica", "espTercas", "tChapa"].forEach(function (k) { p[k] = num(p[k], PADRAO[k]); });
     p.tapamentos = Math.max(0, Math.round(num(p.tapamentos, 0)));
+    p.aguas = num(p.aguas, 2) === 1 ? 1 : 2;
+    var uma = p.aguas === 1;
+    /* galpão da FITA com fechamento: sem travessas a telha lateral ficaria solta — as de partida (a regra do cálculo) */
+    var avisosPartida = [];
+    if (p.vedacao && p.vedacao.faces && !p.doCalculo && !p.travessaLateral && !p.travessaOitao) {
+      var Ly = partidaFechamento(p);
+      if (Ly) {
+        var tl = Ly.travE.length ? Ly.travE : Ly.travD, to = Ly.travF.length ? Ly.travF : Ly.travB;
+        if (tl.length) { p.travessaLateral = p.terca; p.alturasTravessas = tl.slice(); }
+        if (to.length) { p.travessaOitao = p.terca; p.alturasTravessasOitao = to.slice(); }
+        p.paredesComTravessa = { esquerda: Ly.travE.length > 0, direita: Ly.travD.length > 0, frente: Ly.travF.length > 0, fundo: Ly.travB.length > 0 };
+        if (!(p.tapamentos > 0) && !(Array.isArray(p.xsTapamentos) && p.xsTapamentos.length) && (Ly.tapF.length || Ly.tapB.length)) { p.xsTapamentos = (Ly.tapF.length ? Ly.tapF : Ly.tapB).slice(); p.tapamentos = p.xsTapamentos.length; }
+        if (tl.length || to.length) avisosPartida.push("Fechamento: travessas de partida (" + p.terca + ") a cada até " + r2(num((Mod().PADRAO || {}).espTravessaMax, 2)) + " m e colunas de tapamento a cada até " + r2(num((Mod().PADRAO || {}).espTapamentoMax, 6)) + " m nos oitões fechados — a mesma regra do cálculo; confira no projeto estrutural");
+      } else avisosPartida.push("Fechamento: o motor do cálculo (js/acomodelo.js) não carregou — sem as travessas de partida; a telha lateral ficou só nos pilares");
+    }
     var e = validar(p); if (e) return erro(e);
     if (typeof novoId !== "function") return erro("Sem gerador de id.");
     var nP = Math.max(2, Math.round(p.comprimento / p.espacamento) + 1), esp = p.comprimento / (nP - 1);
@@ -85,8 +126,8 @@
     var pc = perfilCat(p.pilar), pv = p.tipo === "trelicado" ? null : perfilCat(p.viga), pt = perfilCat(p.terca);
     var dC = M().faces(pc).length ? pc.d : 0.25, tP = p.tChapa;
     var B0 = p.base, X0 = p.x0, Z0 = p.z0, vao = p.vao, H = p.peDireito;
-    var yTopo = function (x) { var xm = Math.min(x, vao - x); return B0 + H + p.inclinacao / 100 * xm; };   /* a linha do telhado (topo das vigas), x a partir do eixo do pilar esquerdo */
-    var pecas = [], avisos = [], ops = [], ligs = [], cont = { pilares: 0, vigas: 0, tercas: 0, tirantes: 0, contraventos: 0, tapamentos: 0, banzos: 0, diagonais: 0 };
+    var yTopo = function (x) { var xm = uma ? x : Math.min(x, vao - x); return B0 + H + p.inclinacao / 100 * xm; };   /* a linha do telhado (topo das vigas), x a partir do eixo do pilar esquerdo; uma água: sobe para x+ */
+    var pecas = [], avisos = avisosPartida.slice(), ops = [], ligs = [], cont = { pilares: 0, vigas: 0, tercas: 0, tirantes: 0, contraventos: 0, tapamentos: 0, banzos: 0, diagonais: 0 };
     function nova(cx, rot) {
       if (!cx || cx.erro) { avisos.push((rot || "peça") + ": " + (cx ? cx.erro : "falhou")); return null; }
       cx.id = String(novoId()); pecas.push(cx); ops.push({ op: "criar", id: cx.id, caixa: cx }); return cx;
@@ -98,17 +139,17 @@
       var z = k * esp, P = { z: z, pilares: [], vigas: [], nos: [] };
       /* PILARES: alma no plano do pórtico (a altura da seção ao longo de X) */
       [0, 1].forEach(function (lado) {
-        var x = lado ? vao : 0, Lc = H + p.inclinacao / 100 * dC / 2;
+        var x = lado ? vao : 0, Lc = yTopo(lado ? vao - dC / 2 : dC / 2) - B0;   /* até a linha do telhado na face de DENTRO (duas águas: H + i·dC/2 nos dois) */
         var cx = nova(perfil({ origem: W(x, B0, z), ex: [0, 1, 0], ey: [1, 0, 0], perfil: pc, L: Lc, papel: "Pilar", ifc: "IFCCOLUMN", aco: p.acoPerfil, nome: "Pilar " + (lado ? "direito" : "esquerdo") + " — pórtico " + (k + 1) }), "pilar");
         if (cx) { P.pilares.push(cx); cont.pilares++; }
       });
       if (p.tipo !== "trelicado") {
         /* VIGAS DE COBERTURA (alma cheia): corte de prumo nas pontas; chapa de extremidade no pilar e de topo na cumeeira */
-        var dV = pv.d, x0 = dC / 2 + tP, x1 = vao / 2 - tP, Lv = (x1 - x0) / co, g = Math.atan(p.inclinacao / 100) * 180 / Math.PI;
-        [0, 1].forEach(function (lado) {
+        var dV = pv.d, x0 = dC / 2 + tP, x1 = (uma ? vao - dC / 2 : vao / 2) - tP, Lv = (x1 - x0) / co, g = Math.atan(p.inclinacao / 100) * 180 / Math.PI;
+        (uma ? [0] : [0, 1]).forEach(function (lado) {
           var sgx = lado ? -1 : 1, xs = lado ? vao - x0 : x0, ex = [sgx * co, si, 0], ey = [-sgx * si, co, 0];
           var org = W(xs, yTopo(x0) - dV / (2 * co), z);
-          var cx = nova(perfil({ origem: org, ex: ex, ey: ey, perfil: pv, L: Lv, cortes: { almaIni: g, almaFim: g }, papel: "Viga de cobertura", ifc: "IFCBEAM", aco: p.acoPerfil, nome: "Viga de cobertura " + (lado ? "direita" : "esquerda") + " — pórtico " + (k + 1) }), "viga");
+          var cx = nova(perfil({ origem: org, ex: ex, ey: ey, perfil: pv, L: Lv, cortes: { almaIni: g, almaFim: g }, papel: "Viga de cobertura", ifc: "IFCBEAM", aco: p.acoPerfil, nome: "Viga de cobertura " + (uma ? "(uma água)" : (lado ? "direita" : "esquerda")) + " — pórtico " + (k + 1) }), "viga");
           if (cx) { P.vigas.push(cx); cont.vigas++; }
         });
       } else trelica(p, P, k, z, nova, cont, avisos, W, yTopo, dC, th);
@@ -116,11 +157,11 @@
     }
 
     /* TERÇAS: por vão entre pórticos, no topo das vigas (a alma perpendicular ao telhado) */
-    var dT = pt.d || pt.bw || 0.15, Ls = (vao / 2) / co, nT = Math.max(2, Math.ceil((Ls - 0.3) / p.espTercas) + 1), tercas = [];   /* Ue formado a frio: a altura é bw */
-    var sPos = []; for (var j = 0; j < nT; j++) sPos.push(0.15 / co + (dC / 2) / co + j * ((Ls - 0.3 / co - (dC / 2) / co) / (nT - 1)));
+    var dT = pt.d || pt.bw || 0.15, Ls = (uma ? vao : vao / 2) / co, nT = Math.max(2, Math.ceil((Ls - 0.3) / p.espTercas) + 1), tercas = [];   /* Ue formado a frio: a altura é bw */
+    var sPos = []; for (var j = 0; j < nT; j++) sPos.push(0.15 / co + (dC / 2) / co + j * ((Ls - 0.3 / co - (uma ? 2 : 1) * (dC / 2) / co) / (nT - 1)));   /* uma água: a última fica a 15 cm da face do pilar da direita */
     for (var b = 0; b + 1 < nP; b++) {
       var linha = [];
-      [0, 1].forEach(function (lado) {
+      (uma ? [0] : [0, 1]).forEach(function (lado) {
         sPos.forEach(function (s, j) {
           var xh = s * co, x = lado ? vao - xh : xh, nRoof = lado ? [si, co, 0] : [-si, co, 0];
           var base = W(x, yTopo(xh), porticos[b].z + 0.005);
@@ -262,9 +303,9 @@
         var Pk = porticos[Math.max(0, Math.min(nP - 1, Math.round(num(mf.k, 0))))]; if (!Pk) return;
         var sz = mf.k >= nP - 1 ? -1 : 1, P1, P2;
         if (mf.tipo === "viga" && pv) {
-          var xm = num(mf.x, 0), xh = Math.min(xm, vao - xm), xsTer = sPos.map(function (s2) { return s2 * co; }), jb = 0;
+          var xm = num(mf.x, 0), xh = uma ? xm : Math.min(xm, vao - xm), xsTer = sPos.map(function (s2) { return s2 * co; }), jb = 0;
           xsTer.forEach(function (v2, j3) { if (Math.abs(v2 - xh) < Math.abs(xsTer[jb] - xh)) jb = j3; });
-          var xT = xm < vao / 2 ? xsTer[jb] : vao - xsTer[jb], yB = yTopo(xT) - pv.d / co + 0.012, yT2 = yTopo(xT) + 0.3 * dT * co, dz = yT2 - yB;
+          var xT = uma || xm < vao / 2 ? xsTer[jb] : vao - xsTer[jb], yB = yTopo(xT) - pv.d / co + 0.012, yT2 = yTopo(xT) + 0.3 * dT * co, dz = yT2 - yB;
           P1 = W(xT, yB, Pk.z); P2 = W(xT, yT2, Pk.z + sz * dz);
         } else if (mf.tipo === "pilar") {
           var ld = mf.lado ? 1 : 0, xIn = ld ? vao - dC / 2 + 0.012 : dC / 2 - 0.012, bwG = p.travessaLateral ? (perfilCat(p.travessaLateral).bw || 0.15) : 0.15;
@@ -275,6 +316,31 @@
         var cx = nova(perfil({ origem: P1, ex: u, ey: ey, perfil: pmf, L: V().len(dd), papel: "Mão-francesa", ifc: "IFCMEMBER", aco: "ASTM A36", nome: "Mão-francesa — " + (mf.tipo === "viga" ? "viga" : "pilar") + " do pórtico " + (num(mf.k, 0) + 1) }), "mão-francesa");
         if (cx) cont.maosFrancesas = (cont.maosFrancesas || 0) + 1;
       });
+    }
+
+    /* ========================================= VEDAÇÃO (14/10/2026, js/acovedacao.js)
+       telhas da cobertura sobre as terças, fechamento por fora das travessas (ou dos pilares), alvenaria do misto,
+       cumeeira, rufos, contra-rufos, arremates e calha — peças tipo "vedacao" com a marca do galpão (atualizar refaz;
+       não entram no cálculo nem na fabricação). Os afastamentos são os das peças acima. */
+    var vedacao = null;
+    if (p.vedacao) {
+      var VD = Ved();
+      if (!VD) avisos.push("Vedação: o motor das telhas (js/acovedacao.js) não carregou — o galpão saiu sem telhas");
+      else {
+        var temTL = p.travessaLateral && Array.isArray(p.alturasTravessas) && p.alturasTravessas.length, temTO = p.travessaOitao && Array.isArray(p.alturasTravessasOitao) && p.alturasTravessasOitao.length;
+        var bwL2 = temTL ? (perfilCat(p.travessaLateral).d || perfilCat(p.travessaLateral).bw || 0.15) : 0, bwO2 = temTO ? (perfilCat(p.travessaOitao).d || perfilCat(p.travessaOitao).bw || 0.15) : 0;
+        var ptpV = (p.tapamentos > 0 || (p.xsTapamentos && p.xsTapamentos.length)) ? perfilCat(p.tapamento) : null, foraO = Math.max(ptpV ? ptpV.d / 2 : 0, (pc.bf || 0.15) / 2);
+        var latOff = function (k) { return dC / 2 + (temTL && fac[k] !== false ? bwL2 : 0); }, oitOff = function (k) { return foraO + (temTO && fac[k] !== false ? bwO2 : 0); };
+        var vd = p.vedacao;
+        vedacao = VD.galpao({ vao: vao, comprimento: (nP - 1) * esp, peDireito: H, inclinacao: p.inclinacao, aguas: uma ? 1 : 2, base: B0, x0: X0, z0: Z0,
+          apoio: { telha: dT, lateral: { esquerda: latOff("esquerda"), direita: latOff("direita") }, oitao: { frente: oitOff("frente"), fundo: oitOff("fundo") } },
+          cobertura: vd.cobertura, faces: vd.faces, beiral: vd.beiral, beiralOitao: vd.beiralOitao, calha: !!vd.calha, partida: vd.partida });
+        if (!vedacao.ok) avisos.push("Vedação: " + vedacao.motivo);
+        else {
+          vedacao.pecas.forEach(function (pv) { var cxV = VD.caixa(pv); if (cxV.erro) { avisos.push("Vedação (" + pv.nome + "): " + cxV.erro); return; } if (nova(cxV, pv.nome)) cont.vedacao = (cont.vedacao || 0) + 1; });
+          vedacao.avisos.forEach(function (a) { avisos.push("Vedação: " + a); });
+        }
+      }
     }
 
     /* ========================================= LIGAÇÕES PADRÃO (lotes dentro do lote) */
@@ -308,6 +374,10 @@
           aplicar("chapaExtremidade", [P.vigas[0], P.pilares[0]], parJo);
           aplicar("chapaExtremidade", [P.vigas[1], P.pilares[1]], parJo);
           aplicar("chapaExtremidade", [P.vigas[0], P.vigas[1]], parCu);
+        } else if (uma && P.vigas.length === 1) {
+          /* uma água: a viga chega nos dois pilares (joelho nas duas pontas; não há cumeeira) */
+          aplicar("chapaExtremidade", [P.vigas[0], P.pilares[0]], parJo);
+          aplicar("chapaExtremidade", [P.vigas[0], P.pilares[1]], parJo);
         }
         P.nos.forEach(function (no) { aplicar("noTrelica", no.barras, { apoio: no.apoio || null, parafuso: p.parafusoTrelica, parafusos: 2 }); });
       });
@@ -341,11 +411,21 @@
       });
     }
     var avL = []; ligs.forEach(function (l) { l.avisos.forEach(function (a) { if (avL.indexOf(a) < 0) avL.push(a); }); });
-    var resumo = "Galpão " + r2(vao) + " × " + r2(p.comprimento) + " m (" + nP + " pórticos a cada " + r2(esp) + " m, pé-direito " + r2(H) + " m, telhado " + p.inclinacao + " %): " +
+    var resumo = "Galpão " + r2(vao) + " × " + r2(p.comprimento) + " m (" + nP + " pórticos a cada " + r2(esp) + " m, pé-direito " + r2(H) + " m, telhado " + (uma ? "de uma água, " : "") + p.inclinacao + " %): " +
       cont.pilares + " pilares, " + (p.tipo === "trelicado" ? cont.banzos + " banzos e " + cont.diagonais + " diagonais/montantes" : cont.vigas + " vigas") + ", " + cont.tercas + " terças, " + cont.tirantes + " tirantes, " + cont.contraventos + " contraventos" +
       (cont.tapamentos ? ", " + cont.tapamentos + " colunas de tapamento" : "") + (cont.travessas ? ", " + cont.travessas + " travessas" : "") + (cont.maosFrancesas ? ", " + cont.maosFrancesas + " mãos-francesas" : "") +
-      (p.ligacoes ? "; " + ligs.filter(function (l) { return l.ok; }).length + " ligações" : "") + ".";
-    return { ok: true, op: { op: "lote", id: String(novoId()), origem: "metal-galpao", ops: ops }, pecas: pecas, ligacoes: ligs, avisos: avisos, avisosLigacoes: avL, resumo: resumo, contagem: cont, par: p, porticos: nP, espacamento: esp };
+      (p.ligacoes ? "; " + ligs.filter(function (l) { return l.ok; }).length + " ligações" : "") +
+      (vedacao && vedacao.ok && cont.vedacao ? "; vedação: " + resumoVedacao(vedacao.quantidades) : "") + ".";
+    return { ok: true, op: { op: "lote", id: String(novoId()), origem: "metal-galpao", ops: ops }, pecas: pecas, ligacoes: ligs, avisos: avisos, avisosLigacoes: avL, resumo: resumo, contagem: cont, par: p, porticos: nP, espacamento: esp,
+             vedacao: vedacao && vedacao.ok ? vedacao.quantidades : null };
+  }
+  function resumoVedacao(Q) {
+    var f = function (v) { return String(Math.round(v * 10) / 10).replace(".", ","); }, t = [];
+    if (Q.cobertura.area > 0) t.push("cobertura " + f(Q.cobertura.area) + " m²" + (Q.cobertura.telhas ? " (" + Q.cobertura.telhas + " telhas)" : ""));
+    if (Q.fechamento.area > 0) t.push("fechamento " + f(Q.fechamento.area) + " m²");
+    if (Q.paredes.area > 0) t.push("alvenaria " + f(Q.paredes.area) + " m²");
+    var lin = Object.keys(Q.lineares); if (lin.length) t.push(lin.map(function (k) { return k.toLowerCase().replace(/ \(.*\)$/, "") + " " + f(Q.lineares[k]) + " m"; }).join(", "));
+    return t.join(", ");
   }
 
   /* TRELIÇA do pórtico treliçado: banzo superior na linha do telhado, banzo
@@ -438,7 +518,7 @@
     var desenho = function (k) { return lig[k] && lig[k].desenho ? lig[k].desenho : null; };
     return {
       vao: L.vao, comprimento: L.Lt, espacamento: L.esp, peDireito: L.H, inclinacao: Math.round(L.i * 100 * 1000) / 1000, base: num(op.base, 0), x0: num(op.x0, 0), z0: num(op.z0, 0),
-      tipo: "alma-cheia", pilar: gr.pilar && gr.pilar.perfil, viga: gr.viga && gr.viga.perfil, tapamento: gr.tapamento && gr.tapamento.perfil || PADRAO.tapamento,
+      tipo: "alma-cheia", aguas: L.aguas === 1 ? 1 : 2, pilar: gr.pilar && gr.pilar.perfil, viga: gr.viga && gr.viga.perfil, tapamento: gr.tapamento && gr.tapamento.perfil || PADRAO.tapamento,
       terca: r.tercas && r.tercas.ok ? r.tercas.perfil : PADRAO.terca, espTercas: L.sT, linhasCorrentes: r.tercas && r.tercas.ok ? Math.max(1, r.tercas.linhas) : 1,
       tirante: r.tercas && r.tercas.linhaTirante ? r.tercas.linhaTirante.d / 1000 : 0.0095,
       tapamentos: (L.tapF || []).length, xsTapamentos: (L.tapF || []).slice(),
@@ -449,8 +529,26 @@
       maosFrancesas: mfs, ligacoes: true,
       maoFrancesaPerfil: (function () { var lg = r.ligacoes || {}, m = lg.maoFrancesaViga || lg.maoFrancesaPilar; return m && m.dimensoes && m.dimensoes.perfil ? m.dimensoes.perfil : PADRAO.maoFrancesaPerfil; })(),
       ligPlacaBase: desenho("base"), ligPlacaBaseTap: desenho("baseTapamento"), ligJoelho: desenho("joelho"), ligCumeeira: desenho("cumeeira"), ligClip: desenho("clip"),
-      acoPerfil: (G.grupos.pilar && G.grupos.pilar.aco && G.grupos.pilar.aco.id) || PADRAO.acoPerfil, acoTerca: (r.tercas && r.tercas.aco) || PADRAO.acoTerca, acoBarra: PADRAO.acoBarra
+      acoPerfil: (G.grupos.pilar && G.grupos.pilar.aco && G.grupos.pilar.aco.id) || PADRAO.acoPerfil, acoTerca: (r.tercas && r.tercas.aco) || PADRAO.acoTerca, acoBarra: PADRAO.acoBarra,
+      vedacao: vedacaoDoCalculo(fe, op.vedacao), doCalculo: true
     };
+  }
+  /* a VEDAÇÃO do galpão calculado: as faces do contrato do cálculo (tipo, alturaAlvenaria, aberturas [{ s0, s1, altura }])
+     e as telhas/paredes que a tela escolheu (ov = { telhaCobertura, semCobertura, faces: { k: { telhaId, paredeId, bloco } },
+     beiral, beiralOitao, calha }); ov === false → só a estrutura */
+  function vedacaoDoCalculo(fe, ov) {
+    if (ov === false) return null;
+    ov = ov || {};
+    var faces = {};
+    ["esquerda", "direita", "frente", "fundo"].forEach(function (k) {
+      var f = fe[k] || {}, o = (ov.faces && ov.faces[k]) || {};
+      faces[k] = { tipo: f.tipo || "telha", alturaAlvenaria: f.alturaAlvenaria, telhaId: o.telhaId || "", paredeId: o.paredeId || "", bloco: o.bloco || "",
+                   aberturas: (Array.isArray(f.aberturas) ? f.aberturas : []).map(function (a) { return { s0: num(a.s0, 0), s1: num(a.s1, 0), altura: num(a.altura, 0), base: num(a.base, 0) }; }) };
+    });
+    var o2 = { cobertura: ov.semCobertura ? null : { telhaId: ov.telhaCobertura || "" }, faces: faces, calha: !!ov.calha };
+    if (ov.beiral != null) o2.beiral = num(ov.beiral, null);
+    if (ov.beiralOitao != null) o2.beiralOitao = num(ov.beiralOitao, null);
+    return o2;
   }
 
   var BimMetalGalpao = { PADRAO: PADRAO, gerar: gerar, parDoCalculo: parDoCalculo, validar: function (par) { var p = {}; Object.keys(PADRAO).forEach(function (k) { p[k] = par && par[k] != null ? par[k] : PADRAO[k]; }); return validar(p); } };

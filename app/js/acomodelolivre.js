@@ -170,9 +170,24 @@
     return "viga";
   }
   var PREF = { pilar: "P", viga: "V", terca: "T", diagonal: "D" };
+  var PAPEL_CALC = { pilar: 1, viga: 1, terca: 1, diagonal: 1 };
+  /* PÓRTICOS M4: I soldado por chapas (m na peça → mm no cálculo), na forma do AcoModelo.secaoDe */
+  function secaoSoldada(pf) {
+    var S = dep("AcoSecao", "./acosecao.js"); if (!S || !pf) return null;
+    var d = num(pf.d, 0) * 1000, bf = num(pf.bf, 0) * 1000, tw = num(pf.tw, 0) * 1000, tf = num(pf.tf, 0) * 1000;
+    var nome = String(pf.rotulo || pf.nome || ("PS " + Math.round(d) + " x " + Math.round(bf) + " x " + br(tw, 1) + " x " + br(tf, 1)));
+    var cat = { nome: nome, forma: "I", d: d, bf: bf, tw: tw, tf: tf, r: 0, soldado: true };
+    var p = S.dePerfil(cat, "I"); if (!p || !(p.A > 0)) return null;
+    cat.massa = p.massa;
+    return { nome: nome, mm: p, A: p.A * 1e-6, Iz: p.Ix * 1e-12, Iy: p.Iy * 1e-12, J: p.J * 1e-12, massa: p.massa, forma: "I", cat: cat, soldado: true };
+  }
   var NOME_PAPEL = { pilar: "pilar", viga: "viga", terca: "terça", diagonal: "diagonal" };
   function tipoLig(papeis) {
     if (papeis["Chapa de topo"] || papeis["Chapa de extremidade"] || papeis["Chapa de mesa (superior)"] || papeis["Mata-junta (mesa superior)"]) return "rigida";   /* + talas de mesa e viga soldada (METÁLICA › L) */
+    /* M2 (1.2.145): a cantoneira de topo da ligação SEMIRRÍGIDA é lida como nó rígido (o momento da ligação é o do cálculo; a rigidez não
+       é calculada — dito no memorial); a chapa de cabeça (viga contínua sobre o pilar) rotula o pilar */
+    if (papeis["Cantoneira de topo (momento)"]) return "rigida";
+    if (papeis["Chapa de cabeça"]) return "rotulada";
     if (papeis["Tala da alma"] || papeis["Tala da mesa"]) return "continua";
     /* METÁLICA › L (14/10/2026, js/acoligsugere.js): chapa simples, chapa de topo curta e assentos (flexíveis) também rotulam */
     if (papeis["Cantoneira de ligação"] || papeis["Clip de terça"] || papeis["Chapa gusset"] || papeis["Gusset de nó"] || papeis["Chapa simples"] || papeis["Chapa de topo curta"] || papeis["Cantoneira de assento"] || papeis["Chapa de assento"]) return "rotulada";
@@ -183,7 +198,7 @@
   function ler(caixas, op) {
     op = op || {};
     var C = Cat(), Mo = Mod(), Mt = Mat(), BM = Met(), MC = Cri();
-    var o = { ok: true, pecas: [], semPerfil: [], semAco: [], ignoradas: [], curtas: [], ligacoes: {}, avisos: [], estrutura: { aco: 0, outros: 0, semClasse: [], adotado: 0 } };
+    var o = { ok: true, pecas: [], semPerfil: [], semAco: [], ignoradas: [], curtas: [], ligacoes: {}, avisos: [], estrutura: { aco: 0, outros: 0, semClasse: [], adotado: 0 }, naoVerificados: [], tipologias: [] };
     if (!C || !Mo || !Mt || !BM || !MC) { o.ok = false; o.motivo = "Motores não carregados (perfisaco, acomodelo, acomateriais, metalpeca, metalcriar)."; return o; }
     var so = null; if (arr(op.ids).length) { so = {}; op.ids.forEach(function (id) { so[String(id)] = 1; }); }
     function lig(id) { return o.ligacoes[id] || (o.ligacoes[id] = { id: id, papeis: {}, membros: {}, pecas: [] }); }
@@ -199,6 +214,10 @@
       if (so && !so[id]) return;
       var nome = BM.nome(c), cat = m.perfil && m.perfil.cat, reg = cat ? C.obter(cat) : null;
       var sec = reg ? Mo.secaoDe(reg.nome) : null;
+      /* PÓRTICOS M4 (14/10/2026, js/metalporticos.js): perfil I SOLDADO por chapas declarado pela peça (o degrau da mísula):
+         d, bf, tw, tf explícitos → a seção pela geometria (js/acosecao.js perfilI, r = 0). Só com `soldadoCalc` — o perfil
+         paramétrico comum continua "sem perfil do catálogo" */
+      if (!reg && m.perfil && m.perfil.soldadoCalc) { var ss = secaoSoldada(m.perfil); if (ss) { sec = ss; reg = ss.cat; } }
       if (!sec || !sec.mm) { o.semPerfil.push({ id: id, nome: nome, perfil: cat || (m.perfil && m.perfil.forma) || "?", motivo: cat ? "perfil \"" + cat + "\" sem propriedades no catálogo" : "perfil paramétrico (sem nome do catálogo)" }); return; }
       var li = MC.linhaAtual(c), a = V(li.a), b = V(li.b), L = dist(a, b);
       if (!(L > 0.05)) { o.curtas.push({ id: id, nome: nome, L: L }); return; }
@@ -207,10 +226,17 @@
       var ds = BM.secao(m.perfil) || {}, alt = num(ds.alt, 0.2), larg = num(ds.larg, 0.1);
       var aco = Mt.aco(m.aco);
       if (!aco) { o.semAco.push({ id: id, nome: nome, aco: m.aco || "(vazio)" }); return; }
-      var papel = papelDe(m.papel, X, sec);
+      /* PÓRTICOS M4: a peça gerada pela tipologia declara o papel no cálculo (o montante da treliça é barra de nó
+         articulado, não pilar), as ligações das pontas e a base — `metal.calc` (ver montar: condicao/apoioDe) */
+      var calc = m.calc && typeof m.calc === "object" ? JSON.parse(JSON.stringify(m.calc)) : null;
+      var papel = calc && PAPEL_CALC[calc.papel] ? calc.papel : papelDe(m.papel, X, sec);
+      if (calc) {
+        arr(calc.naoVerificado).forEach(function (nv) { if (nv && nv.tema && !o.naoVerificados.some(function (q) { return q.tema === nv.tema && q.motivo === nv.motivo; })) o.naoVerificados.push({ tema: String(nv.tema), motivo: String(nv.motivo || "") }); });
+        if (calc.tipologia && o.tipologias.indexOf(String(calc.tipologia)) < 0) o.tipologias.push(String(calc.tipologia));
+      }
       o.pecas.push({ id: id, nome: nome, cat: reg.nome, sec: sec, reg: reg, aco: { id: aco.id, fy: aco.fy, fu: aco.fu }, papelBim: m.papel, papel: papel,
                      a: a, b: b, L: L, X: X, ey: ey, ez: cross(X, ey), alt: alt, larg: larg, h: Math.max(alt, larg),
-                     tracao: sec.forma === "circ" });
+                     tracao: sec.forma === "circ" || !!(calc && calc.tracao), calc: calc });   /* PÓRTICOS M4: o X de cantoneira da tipologia, só tração */
     });
     function lerEstrutura(c) {
       var id = String(c.id), pf = c.perfil || {}, est = o.estrutura;
@@ -461,7 +487,7 @@
     }
     var ligPadrao = { vigaPilar: op.vigaPilar === "rigida" ? "rigida" : "rotulada", vigaViga: op.vigaViga === "rigida" ? "rigida" : "rotulada" };
     var condPontas = {};   /* "ip:lado" → { tipo, motivo } */
-    var contagem = { rigida: 0, rotulada: 0, continua: 0, livre: 0, apoio: 0, desenhada: 0, emenda: 0 };
+    var contagem = { rigida: 0, rotulada: 0, continua: 0, livre: 0, apoio: 0, desenhada: 0, emenda: 0, tipologia: 0 };
     function condicao(ip, lado, noId) {
       var p = pecas[ip], chave = p.id + ":" + lado, o = papelNo(noId, ip), forc = (op.ligacoes || {})[chave], des = ligDesenhada(ip, noId);
       var nada = !o.ips.length;
@@ -473,6 +499,10 @@
          do nó ficava solta: "mecanismo no nó, rz" ao calcular de novo depois do "Ligar todos os nós" (e2e S5) */
       if (des && p.papel === "pilar" && des.tipo === "rotulada" && !o.vigaPassa) des = null;
       if (des) { contagem.desenhada++; return { tipo: des.tipo === "continua" ? "continua" : des.tipo, motivo: "ligação desenhada: " + NOME_LIG[des.tipo], lig: des.id }; }
+      /* PÓRTICOS M4 (14/10/2026): a ligação que a TIPOLOGIA do pórtico paramétrico declarou para esta ponta (joelho rígido
+         do pórtico de alma cheia, banzo da treliça rotulado no pilar…) — vale depois da escolha da tela e da ligação desenhada */
+      var tc = p.calc && (p.calc[lado] === "rigida" || p.calc[lado] === "rotulada" || p.calc[lado] === "continua") ? p.calc[lado] : null;
+      if (tc) { contagem.tipologia++; return { tipo: tc, motivo: "ligação " + (tc === "rigida" ? "rígida" : tc === "continua" ? "contínua" : "rotulada") + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") + " — detalhar a ligação para valer o que o cálculo considerou", tipologia: true }; }
       if (p.papel === "terca") return { tipo: "rotulada", motivo: "terça: apoiada (clip) — padrão" };
       if (p.papel === "pilar") {
         var outroPilar = o.ips.filter(function (q) { return pecas[q].papel === "pilar" && Math.abs(dot(pecas[q].X, p.X)) > 0.995; }).length;
@@ -509,7 +539,9 @@
       var abaixo = o.ips.some(function (q) { var pq = pecas[q], fora = dist(pq.a, esta) < dist(pq.b, esta) ? pq.b : pq.a; return fora[1] < esta[1] - 0.05; });
       if (abaixo) return null;
       if (esta[1] > minY + 0.05 && o.ips.some(function (q) { return pecas[q].papel !== "diagonal"; })) return null;
-      var tb = (op.bases || {})[p.id] || op.basePadrao || "rotulada";
+      /* PÓRTICOS M4: a base da tipologia (metal.calc.base) vale depois da escolha pilar a pilar da tela e antes do padrão */
+      var tbTip = p.calc && (p.calc.base === "engastada" || p.calc.base === "rotulada") ? p.calc.base : null;
+      var tb = (op.bases || {})[p.id] || tbTip || op.basePadrao || "rotulada";
       /* SIMULAÇÃO S1 (14/10/2026): a PLACA DE BASE desenhada pela Ligação inteligente manda, como a chapa de topo no nó —
          modelo e ligação ficam coerentes (base engastada no cálculo ⇔ placa engastada no modelo) */
       var pd = placaDesenhada(p.id);
@@ -517,7 +549,7 @@
         if (pd.tipo !== (tb === "engastada" ? "engastada" : "rotulada")) avisos.push("Pilar " + p.mid + " (" + p.nome + "): a base escolhida na tela é " + tb + ", mas a placa DESENHADA é " + pd.tipo + " (" + pd.tipologia + ") — o cálculo usa a placa desenhada.");
         return { tipo: pd.tipo, motivo: "placa de base desenhada: " + pd.tipo + " (" + pd.tipologia + ")", base: true, desenhada: true };
       }
-      return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (op.basePadrao ? "base escolhida para todos os pilares" : "base rotulada (padrão)"), base: true };
+      return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (tbTip ? "base " + tbTip + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") : (op.basePadrao ? "base escolhida para todos os pilares" : "base rotulada (padrão)")), base: true };
     }
     function placaDesenhada(pid) {
       var achou = null;
@@ -593,7 +625,7 @@
       else trav[cima] = tMesa.slice();
       var papelV = p.tracao ? "tirante" : (p.papel === "diagonal" ? "contravento" : (p.papel === "pilar" ? "pilar" : "viga"));
       var gk = p.papel + "|" + p.cat;
-      var m = { id: p.mid, peca: p.id, nome: p.nome, papel: papelV, papelLivre: p.papel, grupo: gk, segs: segs, nos: nosM, L: p.L, secao: p.sec, aco: p.aco, flambagem: fl, travamentos: trav,
+      var m = { id: p.mid, peca: p.id, nome: p.nome, papel: papelV, papelLivre: p.papel, grupo: gk, segs: segs, nos: nosM, L: p.L, secao: p.sec, aco: p.aco, flambagem: fl, travamentos: trav, calc: p.calc || null,
                 balanco: balanco, pontas: { ini: condI, fim: condF }, apoiosVao: lst.filter(function (q, k) { if (k === 0 || k === lst.length - 1) return condPontas[p.id + ":" + (k === 0 ? "ini" : "fim")].tipo !== "livre"; var o = papelNo(q.no, ip); return !!apoiosNo[q.no] || o.pilar > 0 || o.pilarPassa > 0; }).map(function (q) { return q.s; }),
                 ey: p.ey, X: p.X, a: p.a, b: p.b, frio: p.sec.forma === "frio" };
       if (balanco) m.cb = 1;
@@ -608,7 +640,7 @@
     if (contagem.continua) txt.push(contagem.continua + " contínua(s)");
     if (contagem.livre) txt.push(contagem.livre + " livre(s) (balanço)");
     if (contagem.apoio) txt.push(contagem.apoio + " em apoio");
-    decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
+    decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : "") + (contagem.tipologia ? (contagem.desenhada ? "; " : " — ") + contagem.tipologia + " pela tipologia do pórtico paramétrico" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
     if (contagem.emenda) avisos.push(contagem.emenda / 2 + " emenda(s) colinear(es) de viga sem ligação desenhada foram tratadas como CONTÍNUAS: detalhe a emenda (cobrejunta) para valer o que o cálculo considerou.");
     if (basesInfo.length) {
       var nEng = basesInfo.filter(function (b) { return b.tipo === "engastada"; }).length;
@@ -894,8 +926,11 @@
     var faces = {}, abertas = 0;
     ["frente", "fundo", "esquerda", "direita"].forEach(function (f) { var fc = (cfg.faces || {})[f] || {}; if (fc.fechada) faces[f] = { fechada: true, vedacao: fc.vedacao || "telha", aberturas: arr(fc.aberturas) }; else { faces[f] = { fechada: false }; abertas++; } });
     var inc = num(cfg.inclinacaoGraus, 0);
+    /* PÓRTICOS M4 (14/10/2026): duas águas SIMÉTRICAS (o envoltório conferiu a forma — js/acoenvoltorio.js formaCobertura) vão
+       à Tabela 5 do motor, com a cumeeira no meio do vão (b/2); o resto, como sempre, é uma água (Tabela 6) */
+    var duasV = cfg.cobertura === "duas-aguas";
     var ent = { local: { lat: cfg.lat, lon: cfg.lon, v0: cfg.v0, descricao: cfg.endereco }, s1: cfg.s1 || { tipo: "plano" }, categoria: cfg.categoria || "II", grupoS3: num(cfg.grupoS3, 2),
-                geometria: { a: a, b: b, h: h, hCumeeira: h + b * Math.tan(inc * Math.PI / 180), inclinacaoGraus: inc, cobertura: "uma-agua", ladoAlto: cfg.ladoAlto === "esquerda" ? "esquerda" : "direita", aberta: abertas === 4 }, faces: faces };
+                geometria: { a: a, b: b, h: h, hCumeeira: h + (duasV ? b / 2 : b) * Math.tan(inc * Math.PI / 180), inclinacaoGraus: inc, cobertura: duasV ? "duas-aguas" : "uma-agua", ladoAlto: duasV ? undefined : (cfg.ladoAlto === "esquerda" ? "esquerda" : "direita"), aberta: abertas === 4 }, faces: faces };
     var R = Vn.calcular(ent, { isopletas: Iso(), todasDirecoes: true });
     if (!R || !R.ok) return { ok: false, motivo: R && R.erros ? R.erros.join("; ") : "falha no cálculo do vento", resultado: R };
     var casos = [], cont = {};
@@ -903,7 +938,8 @@
     function noIntervalo(u, s0, s1) { return u >= s0 - 1e-6 && u <= s1 + 1e-6; }
     function pParede(c, face, s) { var P = c.pressao.paredes && c.pressao.paredes[face]; if (!P) return 0; for (var j = 0; j < P.length; j++) if (noIntervalo(s, P[j].s0, P[j].s1)) return num(P[j].p, 0); return 0; }
     function pCob(c, x, z) { var Lc = c.pressao.cobertura || []; for (var k = 0; k < Lc.length; k++) { var zz = Lc[k]; if (noIntervalo(x, zz.x0, zz.x1) && noIntervalo(z, zz.z0, zz.z1)) return (zz.p0 != null && zz.p1 != null && zz.x1 > zz.x0) ? zz.p0 + (zz.p1 - zz.p0) * (x - zz.x0) / (zz.x1 - zz.x0) : num(zz.p, 0); } return 0; }
-    return { ok: true, resultado: R, casos: casos, x0: x0, z0: z0, b: b, a: a, h: h, pParede: pParede, pCob: pCob, faces: faces, avisos: arr(R.avisos).map(function (x) { return "Vento: " + x; }) };
+    return { ok: true, resultado: R, casos: casos, x0: x0, z0: z0, b: b, a: a, h: h, pParede: pParede, pCob: pCob, faces: faces, cobertura: duasV ? "duas-aguas" : "uma-agua",
+             tg: duasV ? Math.tan(inc * Math.PI / 180) : 0, yBase: cfg.yBase != null && isFinite(+cfg.yBase) ? +cfg.yBase : null, avisos: arr(R.avisos).map(function (x) { return "Vento: " + x; }) };
   }
 
   /* ================================================================ CASOS DE CARGA
@@ -961,7 +997,11 @@
     arr(cfg.pontuais).forEach(function (pt, k) {
       if (!pt.no) { avisos.push("Carga pontual " + (k + 1) + ": a peça " + pt.peca + " não está no modelo — não entrou."); return; }
       var F = [num((pt.F || [])[0], 0), num((pt.F || [])[1], 0), num((pt.F || [])[2], 0), 0, 0, 0];
-      var c = pt.caso === "Q" ? (qCasos["pontual"] || (qCasos["pontual"] = (function () { nQ++; var cc = { id: nQ === 1 ? "Q" : "Q" + nQ, tipo: "Q", categoria: "Q-uso-b", nome: "Cargas variáveis pontuais (equipamentos)", cargas: [] }; casos.push(cc); return cc; })())) : casoG("G-geral");
+      /* PÓRTICOS M4 (ponte rolante): a carga pontual pode trazer o CASO dela — { id, nome, categoria, exclusivo } — para as
+         posições da ponte virarem casos variáveis próprios e EXCLUDENTES entre si (js/acocargas.js, `exclusivo`) */
+      var cd = pt.casoDef && pt.casoDef.id ? pt.casoDef : null;
+      var c = cd ? (qCasos["def:" + cd.id] || (qCasos["def:" + cd.id] = (function () { var cc = { id: String(cd.id), tipo: "Q", categoria: cd.categoria || "Q-uso-b", nome: String(cd.nome || cd.id), cargas: [] }; if (cd.exclusivo) cc.exclusivo = String(cd.exclusivo); casos.push(cc); return cc; })()))
+        : pt.caso === "Q" ? (qCasos["pontual"] || (qCasos["pontual"] = (function () { nQ++; var cc = { id: nQ === 1 ? "Q" : "Q" + nQ, tipo: "Q", categoria: "Q-uso-b", nome: "Cargas variáveis pontuais (equipamentos)", cargas: [] }; casos.push(cc); return cc; })())) : casoG("G-geral");
       c.cargas.push({ tipo: "no", no: pt.no, F: F });
       resumo.pontuais.push({ nome: pt.nome || "Carga " + (k + 1), peca: pt.peca, no: pt.no, s: pt.s, F: F.slice(0, 3), caso: c.id });
     });
@@ -992,24 +1032,51 @@
             if (!ps.length) { var tx = "Vento: a face " + face + " está fechada mas não tem pilar na linha — o vento dessa face não tem caminho no modelo e NÃO entrou."; if (avisos.indexOf(tx) < 0) avisos.push(tx); return; }
             var lin = []; ps.forEach(function (m) { var s = (m.a[sEixo] + m.b[sEixo]) / 2 - s0; if (!lin.some(function (q) { return Math.abs(q.s - s) < 0.05; })) lin.push({ s: s, ms: [m] }); else lin.filter(function (q) { return Math.abs(q.s - s) < 0.05; })[0].ms.push(m); });
             lin.sort(function (a, b) { return a.s - b.s; });
-            lin.forEach(function (li, k) {
-              var sa = k ? (lin[k - 1].s + li.s) / 2 : 0, sb = k < lin.length - 1 ? (li.s + lin[k + 1].s) / 2 : sTot, soma = 0;
-              for (var t = 0; t < 8; t++) soma += VL.pParede(vc.c, face, sa + (t + 0.5) / 8 * (sb - sa));
-              var w = soma / 8 * (sb - sa);
-              li.ms.forEach(function (m) {
-                var ytop = VL.h + Math.min(0, G.layout.mn[1]);
+            /* a carga w (kN/m) nos pilares da linha, da base até a cota yt */
+            function naColuna(ms, w, yt) {
+              ms.forEach(function (m) {
                 m.segs.forEach(function (sid) {
                   var B = mod.barras.filter(function (b) { return b.id === sid; })[0], yi = G.noInfo[B.i].P[1], yj = G.noInfo[B.j].P[1], lo = Math.min(yi, yj), hi = Math.max(yi, yj);
-                  if (lo >= ytop - 1e-6 || hi - lo < 1e-6) return;
-                  var fa = Math.max(0, Math.min(1, (Math.min(hi, ytop) - yi) / (yj - yi))), fb = Math.max(0, Math.min(1, (lo - yi) / (yj - yi)));
+                  if (lo >= yt - 1e-6 || hi - lo < 1e-6) return;
+                  var fa = Math.max(0, Math.min(1, (Math.min(hi, yt) - yi) / (yj - yi))), fb = Math.max(0, Math.min(1, (lo - yi) / (yj - yi)));
                   cW.push({ tipo: "barra", barra: sid, q: mul(fc[3], w), a: Math.min(fa, fb), b: Math.max(fa, fb) });
                 });
               });
+            }
+            /* REVISÃO M4 C1 (15/10/2026): duas águas — o OITÃO (frente/fundo) é a parede até o TELHADO, não até o beiral: o
+               triângulo acima do beiral levava 13 a 23 % da força da face embora (h = o do beiral, que a Tabela 5 pede, servia
+               de teto da carga). Cada faixa do pilar vai em 16 tiras: a tira leva p·ds da base até mín(altura da parede na tira,
+               topo do pilar); o que passa do topo do pilar (a parede acima dele, na ponta da faixa) vai como força no topo do
+               pilar — nada se perde: Σ = ∫ p(s)·h(s) ds. As laterais e a uma água ficam como sempre. */
+            var duasV2 = VL.cobertura === "duas-aguas", oitao = duasV2 && (face === "frente" || face === "fundo");
+            var yRef = duasV2 && VL.yBase != null ? VL.yBase : Math.min(0, G.layout.mn[1]);
+            lin.forEach(function (li, k) {
+              var sa = k ? (lin[k - 1].s + li.s) / 2 : 0, sb = k < lin.length - 1 ? (li.s + lin[k + 1].s) / 2 : sTot, soma = 0;
+              if (oitao) {
+                var topo = -Infinity, noTopo = null, nS = 16, ds = (sb - sa) / nS, exc = 0;
+                li.ms.forEach(function (m) { [[m.a[1], m.nos[0]], [m.b[1], m.nos[m.nos.length - 1]]].forEach(function (q) { if (q[0] > topo) { topo = q[0]; noTopo = q[1]; } }); });
+                for (var t3 = 0; t3 < nS; t3++) {
+                  var sm = sa + (t3 + 0.5) * ds, w3 = VL.pParede(vc.c, face, sm) * ds, hw = yRef + VL.h + VL.tg * Math.min(sm, sTot - sm);
+                  if (Math.abs(w3) < 1e-12) continue;
+                  naColuna(li.ms, w3, Math.min(hw, topo));
+                  if (hw > topo + 1e-6) exc += w3 * (hw - Math.max(topo, yRef));
+                }
+                if (Math.abs(exc) > 1e-9 && noTopo) { var Fx = mul(fc[3], exc); cW.push({ tipo: "no", no: noTopo, F: [Fx[0], Fx[1], Fx[2], 0, 0, 0], oitao: true }); }
+                return;
+              }
+              for (var t = 0; t < 8; t++) soma += VL.pParede(vc.c, face, sa + (t + 0.5) / 8 * (sb - sa));
+              var w = soma / 8 * (sb - sa);
+              naColuna(li.ms, w, duasV2 ? yRef + VL.h : VL.h + Math.min(0, G.layout.mn[1]));
             });
           });
           /* cobertura → vigas das áreas marcadas como cobertura (normal ≈ vertical: p > 0 empurra para baixo) */
           cobs.forEach(function (ar) {
-            var dW = distribuirArea(G, ar, [{ caso: vc.id, pressao: function (x, z) { return VL.pCob(vc.c, x - VL.x0, z - VL.z0); } }]);
+            /* PÓRTICOS M4 (14/10/2026): a área que declara a NORMAL externa da água (`ar.normal`, a das duas águas e a das
+               tipologias) recebe a pressão NA NORMAL, pela área da SUPERFÍCIE (a faixa é em planta: × 1/cos θ) — sem a normal,
+               como sempre foi: vertical, pela área em planta (a componente horizontal da água não entra) */
+            var nrmA = Array.isArray(ar.normal) ? unit(V(ar.normal)) : null; if (nrmA && nrmA[1] < 0) nrmA = mul(nrmA, -1);
+            var fN = nrmA ? 1 / Math.max(0.2, nrmA[1]) : 1;
+            var dW = distribuirArea(G, ar, [{ caso: vc.id, pressao: function (x, z) { return fN * VL.pCob(vc.c, x - VL.x0, z - VL.z0); }, direcao: nrmA ? mul(nrmA, -1) : undefined }]);
             arr(dW.cargas[vc.id]).forEach(function (q) { cW.push(q); });
           });
           if (!cobs.length) { var tx2 = "Vento: nenhuma área marcada como COBERTURA — a pressão na cobertura não entrou (marque a área do telhado)."; if (avisos.indexOf(tx2) < 0) avisos.push(tx2); }
@@ -1054,7 +1121,7 @@
           decisoes.push({ tema: "Vento — atrito", decisao: nAtrito + " caso(s) de vento com a força de ATRITO" + (t64 ? " (NBR 6123, 6.4: Cf = " + br(t64.cf, 2) + " × q, só no trecho de " + br(t64.inicio, 1) + " a " + br(t64.fim, 1) + " m na direção do vento — depois de 4h/4l1 da face de barlavento —, na cobertura e nas paredes paralelas fechadas, nos pilares delas)" : "") + (t825 ? " (NBR 6123, 8.2.5: cobertura isolada, 0,05·q por m² na cobertura toda)" : ""),
             motivo: t64 ? "F' = Cf·q·l1·(l2 − 4h) + Cf·q·2h·(l2 − 4h) — 6.4.2 e 6.4.3; a cobertura recebe a 1ª parcela pelas vigas da área de cobertura e as paredes a 2ª pelos pilares da face" : "cobertura isolada com vento paralelo à geratriz (8.2.5)" });
         }
-        decisoes.push({ tema: "Vento", decisao: VL.casos.length + " casos de vento da NBR 6123 na caixa " + br(VL.b, 2) + " × " + br(VL.a, 2) + " m, h = " + br(VL.h, 2) + " m", motivo: "paredes fechadas → pilares da face por faixa de influência; cobertura → vigas das áreas de cobertura por faixas (como o galpão: telha → terça → viga)" });
+        decisoes.push({ tema: "Vento", decisao: VL.casos.length + " casos de vento da NBR 6123 na caixa " + br(VL.b, 2) + " × " + br(VL.a, 2) + " m, h = " + br(VL.h, 2) + " m" + (VL.cobertura === "duas-aguas" ? "; cobertura em DUAS ÁGUAS (Tabela 5), a pressão de cada água na normal dela" : ""), motivo: "paredes fechadas → pilares da face por faixa de influência; cobertura → vigas das áreas de cobertura por faixas (como o galpão: telha → terça → viga)" });
       }
     }
     mod.casos = casos;

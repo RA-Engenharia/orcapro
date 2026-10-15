@@ -865,6 +865,33 @@
       el.volume = r6(num(c.volume, 0)); el.massa = num(c.massa, 0); el.metal = m.kind;
       metalPorChave[String(c.id)] = el;
     }
+    /* VEDAÇÃO (14/10/2026, js/acovedacao.js): telha da cobertura e cumeeira → IfcCovering ROOFING; telha do fechamento →
+       IfcCovering CLADDING; rufo, contra-rufo, pingadeira e arremate → IfcCovering MOLDING (como as bordas do telhado,
+       js/bimtelhado.js); calha → IfcPipeSegment GUTTER; alvenaria e painel → IfcWall. A geometria é a da chapa (os mesmos
+       sólidos do 3D); a massa é a do catálogo da telha/parede (c.massa), não a do aço do envelope desenhado. */
+    var COR_VED = { telha: 0xc7ced6, rufo: 0xb3bac2, alvenaria: 0xbdb9b2, concreto: 0xc7c7c4 };
+    function vedacaoPeca(c) {
+      if (!BMt) { avisos.push("vedação " + c.id + ": o motor de peças (js/metalpeca.js) não carregou — ficou de fora"); return; }
+      var v = c.vedacao || {}, sols = BMt.solidos(c);
+      if (!sols.length) { avisos.push("vedação " + c.id + " sem geometria — ficou de fora"); return; }
+      var yb = num(c.cy, 0) - num(c.altura, 0) / 2, nv = nivelDe(yb), itens = [], tipos = {};
+      var tl = v.telha || null, pr = v.parede || null, matN = tl && tl.nome ? "Telha " + tl.nome : (pr && pr.nome ? pr.nome : (v.material === "rufo" ? "Aço galvanizado (rufos e arremates)" : "Vedação"));
+      sols.forEach(function (sd) { var r = metalSolido(sd, nv, true); if (!r || !r.item) return; pintar(r.item, matN, COR_VED[v.material] != null ? COR_VED[v.material] : COR_VED.rufo); itens.push(r.item); tipos[r.tipo] = 1; });
+      if (!itens.length) { avisos.push("vedação " + c.id + ": o sólido não fechou — ficou de fora"); return; }
+      var tipoRep = Object.keys(tipos).length === 1 ? Object.keys(tipos)[0] : "SolidModel";
+      var ent = c.ifc === "IFCWALL" ? "IFCWALL" : (c.ifc === "IFCPIPESEGMENT" ? "IFCPIPESEGMENT" : "IFCCOVERING");
+      var pre = String(v.ifcTipo || "NOTDEFINED").toUpperCase().replace(/[^A-Z_]/g, "") || "NOTDEFINED";
+      var el = peca(c.id, ent, String(v.nome || v.papel || "Vedação"), String(v.papel || ""), placement(nv.pl, [0, 0, 0]), forma(itens, tipoRep), [E(pre)], yb, nv, { marca: c.marca || null });
+      ligarMaterial(el, matN);
+      pset(el, "OrcaPRO_Vedacao", [["Funcao", "IFCLABEL", v.papel], ["Face", "IFCLABEL", v.face], ["Telha", "IFCLABEL", tl && tl.nome], ["Parede", "IFCLABEL", pr && pr.nome],
+        ["PesoPorArea_kN_m2", "IFCREAL", tl ? tl.peso : (pr ? pr.peso : null)], ["FonteDoPeso", "IFCLABEL", tl ? [tl.textoPeso, tl.fonte].filter(Boolean).join(" — ") : (pr ? pr.fonte : null)],
+        ["LarguraUtil", "IFCPOSITIVELENGTHMEASURE", tl && tl.larguraUtil], ["NumeroDeTelhas", "IFCCOUNTMEASURE", v.nPecas], ["ComprimentoDaTelha", "IFCPOSITIVELENGTHMEASURE", v.comprimentoPeca],
+        ["Massa", "IFCMASSMEASURE", c.massa], ["MedidaDePartida", "IFCBOOLEAN", v.partida ? true : null]]);
+      var qn = ent === "IFCCOVERING" ? "Qto_CoveringBaseQuantities" : (ent === "IFCWALL" ? "Qto_WallBaseQuantities" : "Qto_PipeSegmentBaseQuantities");
+      qto(el, qn, [["NetArea", "A", v.area], ["Length", "L", v.comprimento], ["NetVolume", "V", c.volume], ["NetWeight", "W", c.massa]]);
+      origemPset(el, [["Modelador", "IFCLABEL", "Metálica — vedação"]]);
+      el.volume = r6(num(c.volume, 0)); el.massa = num(c.massa, 0); el.vedacao = v.papel || "";
+    }
     function BimNormaClasse(k) { var BN = dep("BimMetalNorma", "./metalnorma.js"); return BN && BN.CLASSES[k]; }
     function metalFinal() {
       if (!BMt) return;
@@ -913,6 +940,7 @@
     /* devolve true se a peça foi escrita (ou ficou de fora COM aviso); false = segue o caminho antigo da caixa */
     function b2Peca(c) {
       if (c.tipo === "metal" && c.metal) { metalPeca(c); return true; }   /* METÁLICA & MECÂNICA */
+      if (c.tipo === "vedacao" && c.metal) { vedacaoPeca(c); return true; }   /* VEDAÇÃO do galpão (js/acovedacao.js) */
       if (c.tipo === "parede" && c.b2) {
         if (!BA || !BA.pecasParede) { avisos.push("parede " + c.id + ": o motor da B2 (js/bimarq.js) não carregou — foi como caixa, sem a união dos cantos e o topo recortado"); return false; }
         paredeB2(c); return true;

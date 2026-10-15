@@ -45,7 +45,19 @@
   var doc = global.document;
 
   /* ================================================================ UTIL */
-  function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".")); return isFinite(n) ? n : d; }
+  /* mesma regra do Util.parseNum (js/util.js): "1,5"→1.5 · "0.12"→0.12 · "1.5"→1.5 · "1.234,56"→1234.56 · "1.000"→1000 (milhar BR; zero à esquerda NÃO é milhar) */
+  function _brNorm(s) {
+    var v = s.indexOf(",") > -1, np = (s.match(/\./g) || []).length, i;
+    if (v && np) return s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+    if (v) return (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+    if (np > 1) {
+      if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) return s.replace(/\./g, "");
+      i = s.lastIndexOf("."); return s.slice(0, i).replace(/\./g, "") + "." + s.slice(i + 1);
+    }
+    if (np === 1 && /^-?\d{1,3}\.\d{3}$/.test(s) && !/^-?0\./.test(s)) return s.replace(/\./g, "");
+    return s;
+  }
+  function num(v, d) { if (v == null || v === "") return d; var n = Number(_brNorm(String(v).replace(/\s/g, ""))); return isFinite(n) ? n : d; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
@@ -1709,8 +1721,9 @@
       bt("cype", "Exportar para o CYPE", "exportar", ok && !!global.AcoCype, global.AcoCype ? "Arquivo para o CYPE 3D com perfis, cargas e apoios" : "A exportação para o CYPE está em preparação (js/acocype.js)") +
       bt("cype-guia", "Como usar no CYPE 3D", "checklist", !!(global.AcoCype && AcoCype.comoUsarHTML), "Passo a passo no CYPE 3D com os números deste cálculo: abrir o IFC, perfis, vínculos, flambagem, cargas e conferir o resultado") +
       (function () {
-        var podeG = ok && !um && !!global.BimMetalUI && !!(global.BimMetalGalpao && BimMetalGalpao.parDoCalculo), gl = galpaoLigado();
-        if (um) return bt("gerar3d", "Gerar o modelo 3D", "estrutura", false, "O modelador gera hoje só galpão de duas águas");
+        /* PÓRTICOS M4 (14/10/2026): o js/metalgalpao.js desenha também o galpão de UMA água (alma cheia, subindo para a direita
+           como o cálculo) — o botão vale para os dois */
+        var podeG = ok && !!global.BimMetalUI && !!(global.BimMetalGalpao && BimMetalGalpao.parDoCalculo), gl = galpaoLigado();
         /* uma estrutura por cálculo: com o galpão no modelo, o cálculo só ATUALIZA esse (decisão do Rogério, 12/10/2026 —
            outro galpão é outro cálculo) */
         if (gl) return bt("gerar3d", "Atualizar o galpão no modelo", "estrutura", podeG, "Refaz no mesmo lugar as " + gl.n + " peças do galpão que este cálculo desenhou, com os perfis e ligações novos — não cria outro. As peças desenhadas à parte ficam. Ctrl+Z desfaz.");
@@ -1944,9 +1957,9 @@
   function gerarModelo3D() {
     var r = UIC.r, U = global.BimMetalUI, MG = global.BimMetalGalpao;
     if (!r || !r.ok || !U || !U.gerarGalpao || !MG || !MG.parDoCalculo) { toast("O modelador da metálica não carregou.", "erro"); return null; }
-    /* ⚠ o BimMetalGalpao desenha só duas águas: com uma água o 3D sairia diferente do cálculo
-       (o botão já vem desligado; esta guarda vale para quem chama pela API) */
-    if (umaAgua(r)) { toast("O modelador ainda desenha só galpão de duas águas — o modelo sairia diferente do cálculo. Use “Ver em 3D” para ver a estrutura calculada.", "aviso", 9000); return null; }
+    /* PÓRTICOS M4 (14/10/2026): o BimMetalGalpao desenha também UMA água (parDoCalculo leva `aguas`, a água sobe para a direita
+       como no cálculo) — a guarda que recusava uma água saiu; a de treliçado de uma água fica no validar do gerador */
+    if (umaAgua(r) && !(MG.PADRAO && MG.PADRAO.aguas != null)) { toast("O modelador desta versão desenha só galpão de duas águas — o modelo sairia diferente do cálculo. Use “Ver em 3D” para ver a estrutura calculada.", "aviso", 9000); return null; }
     /* o modelo sai IGUAL ao cálculo: o BimMetalGalpao.parDoCalculo traduz o resultado (perfis finais,
        terça Ue com as correntes, travessas nas alturas do cálculo, contraventamento nas mesmas
        barras da análise, tapamentos, mãos-francesas e as ligações com as medidas dimensionadas) */
@@ -1954,6 +1967,14 @@
     var alvo = galpaoLigado(), P = U.pontoPadrao ? U.pontoPadrao() : [0, 0, 0];
     var org = alvo && alvo.info && alvo.info.par ? { x0: num(alvo.info.par.x0, 0), z0: num(alvo.info.par.z0, 0), base: num(alvo.info.par.base, 0) }
             : { x0: num(P[0], 0), z0: num(P[2], 0), base: num(P[1], 0) };
+    /* VEDAÇÃO (14/10/2026, js/acovedacao.js): o galpão do cálculo vem com as telhas e o fechamento das faces que a pessoa
+       escolheu (passos 3 e 4) — telhas, alvenaria do misto, rufos e cumeeira como peças; o peso continua indo para as
+       cargas pelo par do cálculo (telhaPeso / fechamentoPeso), nunca pelas peças */
+    try {
+      var eV = UIC.est || {}, fV = {};
+      FACES.forEach(function (fc) { var x = (eV.fechamentos || {})[fc.id] || {}, pw = paredeDe(x); fV[fc.id] = { telhaId: x.telhaId || "", paredeId: pw ? pw.id : "", bloco: x.bloco || "" }; });
+      org.vedacao = { telhaCobertura: (eV.cobertura && eV.cobertura.telhaId) || "", faces: fV, calha: !!(eV.cobertura && eV.cobertura.calha) };
+    } catch (eVd) { org.vedacao = null; }
     var par = MG.parDoCalculo(r, org);
     if (!par) { toast("O modelador não reconheceu o resultado do cálculo.", "erro"); return null; }
     var res = U.gerarGalpao(par, { doCalculo: true, substituir: alvo ? alvo.id : null, calc: UIC.est });
@@ -2117,6 +2138,22 @@
     MODELOS: MODELOS, PADRAO: PADRAO, PASSOS: PASSOS,
     /* abre o assistente (no passo pedido) */
     abrir: function (passo) { conferirObra(); garantir(); UIC.modo = "assistente"; if (passo) UIC.passo = clamp(+passo, 1, PASSOS.length); render(); return true; },
+    /* PÓRTICOS M4 (14/10/2026, js/metalporticosui.js): a tipologia de alma cheia da biblioteca de pórticos manda a geometria,
+       a base, o fechamento das faces e o galpão que ela desenhou (galpaoId) — o resto do assistente (local, telha, perfis em
+       modo automático) fica como o engenheiro deixou. Devolve o estado. */
+    preparar: function (d) {
+      conferirObra(); d = d || {};
+      var e = MetalCalcUI.estado(), g = d.geometria || {};
+      ["vao", "comprimento", "espacamento", "peDireito", "inclinacaoPct"].forEach(function (k) { if (g[k] != null && isFinite(+g[k])) e.geometria[k] = +g[k]; });
+      if (g.aguas != null) e.geometria.aguas = +g.aguas === 1 ? 1 : 2;
+      if (g.base) e.geometria.base = g.base === "engastada" ? "engastada" : "rotulada";
+      if (d.fechamento) FACES.forEach(function (f) { var x = e.fechamentos[f.id] || face("telha"); x.tipo = d.fechamento === "aberto" ? "aberto" : "telha"; if (d.fechamento === "aberto") x.portoes = []; e.fechamentos[f.id] = x; });
+      if (d.contraventamento) e.contraventamento = d.contraventamento === "nenhum" ? "nenhum" : (d.contraventamento === "X-cantoneira" ? "X-cantoneira" : "auto");
+      if (d.galpaoId) e.galpaoId = String(d.galpaoId);
+      if (d.modelo !== undefined) e.modelo = d.modelo;
+      UIC.r = null; salvar(true);
+      return e;
+    },
     modelos: function () { conferirObra(); garantir(); UIC.modo = "modelos"; render(); return true; },
     normas: function () { conferirObra(); garantir(); UIC.modo = "normas"; render(); return true; },
     resultados: function () { conferirObra(); garantir(); UIC.modo = UIC.r ? "resultado" : "assistente"; if (!UIC.r) { UIC.passo = PASSOS.length; toast("Ainda não há cálculo nesta sessão: confira os dados e calcule.", "aviso", 5000); } render(); return !!UIC.r; },
@@ -2131,6 +2168,14 @@
     galpaoLigado: function () { return galpaoLigado(); },
     fechar: fechar,
     usarModelo: function (id) { conferirObra(); garantir(); return usarModelo(id); },
+    /* M1 (1.2.145): a telha escolhida no Catálogo BR vai para a COBERTURA do galpão (as faces "a mesma da cobertura"
+       seguem junto). Telha que não está no catálogo de fechamentos: recusa, sem mexer no estado. */
+    usarTelha: function (id) {
+      conferirObra(); var A = F(); if (!A || !A.obter(id)) return false;
+      var e = MetalCalcUI.estado(); e.cobertura.telhaId = String(id); salvar(true);
+      if (raiz()) { UIC.manterRolagem = true; render(); }
+      return true;
+    },
     /* para o teste e para outras telas */
     estado: function () { conferirObra(); if (!UIC.est) { var s = ler(); UIC.est = s ? mesclar(copia(PADRAO), s.estado) : estadoNovo(); } return UIC.est; },
     resultado: function () { return UIC.r; },

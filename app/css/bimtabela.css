@@ -14,8 +14,8 @@
 .p5t-rolagem { overflow: auto; max-width: 100%; }
 .p5t-tbl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .p5t-tbl th, .p5t-tbl td { padding: 6px 12px; border-bottom: 1px solid var(--rv-linha); color: var(--rv-painel-tx); white-space: nowrap; }
-.p5t-tbl th { position: sticky; top: 0; z-index: 1; background: var(--rv-painel-cab); font-size: var(--t-micro, 11px); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
-.p5t-un { text-transform: none; font-weight: 400; color: var(--rv-tx-fraco); }
+.p5t-tbl th { position: sticky; top: 0; z-index: 1; background: var(--rv-painel-cab); font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .5px; font-weight: var(--p-forte); }
+.p5t-un { text-transform: none; font-weight: var(--p-normal); color: var(--rv-tx-fraco); }
 .p5t-direita { text-align: right; }
 .p5t-centro { text-align: center; }
 .p5t-esquerda { text-align: left; }
@@ -23,10 +23,10 @@
 .p5t-item:hover td { background: var(--rv-hover); }
 .p5t-item:focus { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
 .p5t-sel td { background: var(--rv-sel); }
-.p5t-cab td { font-weight: 600; background: var(--rv-painel-cab); }
-.p5t-rod td, .p5t-total td { font-weight: 600; border-top: 1px solid var(--rv-linha-forte, var(--rv-linha)); }
+.p5t-cab td { font-weight: var(--p-forte); background: var(--rv-painel-cab); }
+.p5t-rod td, .p5t-total td { font-weight: var(--p-forte); border-top: 1px solid var(--rv-linha-forte, var(--rv-linha)); }
 .p5t-total td { background: var(--rv-painel-cab); }
-.p5t-tit { font-weight: 600; }
+.p5t-tit { font-weight: var(--p-forte); }
 
 /* ---------- o editor (Propriedades da tabela) ---------- */
 .p5t-editor .p5t-painel { padding-top: 12px; min-height: 280px; }
@@ -35,7 +35,7 @@
 .p5t-campos-bt { display: flex; flex-direction: column; gap: 6px; padding-top: 28px; }
 .p5t-linha { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .p5t-ord { border: 1px solid var(--rv-linha); border-radius: 6px; padding: 8px 10px; margin: 0 0 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-.p5t-ord legend { font-weight: 600; padding: 0 4px; }
+.p5t-ord legend { font-weight: var(--p-forte); padding: 0 4px; }
 .p5t-form { display: grid; gap: 10px; }
 .p5t-form label { display: grid; gap: 4px; }
 .p5t-calc { margin-top: 12px; }
@@ -46,7 +46,7 @@
 }
 
 /* ---------- identificadores na planta (desenho técnico) ---------- */
-.d2-ident-tx { fill: var(--d2-tinta); font-family: "IBM Plex Sans", "Segoe UI", Arial, sans-serif; font-weight: 600; }
+.d2-ident-tx { fill: var(--d2-tinta); font-family: var(--fonte); font-weight: var(--p-forte); }
 .d2-ident-moldura { fill: var(--d2-papel); stroke: var(--d2-tinta); }
 .d2-ident-alvo { fill: transparent; stroke: none; cursor: pointer; }
 .d2-ident:hover .d2-ident-alvo { fill: var(--d2-sel); fill-opacity: .1; }

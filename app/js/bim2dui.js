@@ -328,9 +328,11 @@
         arr = null; v.removeAttribute("data-d2-arrasta");
       }
       v.addEventListener("pointerup", solta); v.addEventListener("pointercancel", solta);
-      v.addEventListener("dblclick", function () {
+      v.addEventListener("dblclick", function (ev) {
         /* PLANTA: com a ferramenta de modelar armada o duplo clique é ponto, não "enquadrar" */
         if (global.BimPlantaModelar && global.BimPlantaModelar.ocupado && global.BimPlantaModelar.ocupado()) return;
+        /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA abre o diálogo dela (js/metalcomponenteui.js) */
+        try { var SLd = global.BimSelecao, Cd = global.MetalComponenteUI, ud = SLd && SLd.pecaEm && ev ? SLd.pecaEm(id, self._ptSvg(id, ev)) : null; if (ud && Cd && Cd.duplo && Cd.duplo(ud)) return; } catch (eD) {}
         self.ajustar(id);
       });
     },

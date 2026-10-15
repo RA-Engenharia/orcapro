@@ -97,11 +97,11 @@
   var MARINHEIRO = { rotulo: "Escada de marinheiro", cliques: 1, calcula: true, PADRAO: {
     altura: 6.0, largura: 0.45, espac: 0.30, afast: 0.18, diamDegrau: 0.025, secaoDegrau: "redonda", montB: 0.0635, montT: 0.0095,
     gaiola: "auto", gaiolaInicio: 2.0, gaiolaDiam: 0.70, gaiolaVert: 0.25, arcosEsp: 1.20, arcoB: 0.050, arcoT: 0.00635,
-    ultrapassa: 1.10, lanceMax: 6.0, deslocLances: 0.80, espFixacao: 2.0, cancela: true, antiderrapante: true, outrosImpossiveis: false, spqDefinido: false, projetoHabilitado: false, saida: "frente", desembarqueLarg: 0.80,
+    ultrapassa: 1.10, lanceMax: 6.0, descansoSempre: false, deslocLances: 0.80, espFixacao: 2.0, cancela: true, antiderrapante: true, outrosImpossiveis: false, spqDefinido: false, projetoHabilitado: false, saida: "frente", desembarqueLarg: 0.80,
     patamarProf: 0.80, montante: "HSS73X5.2", corrimao: "HSS48.3X3.7", espacGuarda: 1.0, usoGuarda: "industrial", piso: "grade", gradeH: 0.030, gradeT: 0.003, gradeA: 0.030, gradeB: 0.100, gradeS: 0.005,
     patamarPerfil: "C150X12.2", aco: "ASTM A36" },
     nums: ["altura", "largura", "espac", "afast", "diamDegrau", "montB", "montT", "gaiolaInicio", "gaiolaDiam", "gaiolaVert", "arcosEsp", "arcoB", "arcoT", "ultrapassa", "lanceMax", "deslocLances", "espFixacao", "patamarProf", "espacGuarda", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS"],
-    bools: ["cancela", "antiderrapante", "outrosImpossiveis", "spqDefinido", "projetoHabilitado"], perfis: ["montante", "corrimao", "patamarPerfil"],
+    bools: ["cancela", "antiderrapante", "outrosImpossiveis", "spqDefinido", "projetoHabilitado", "descansoSempre"], perfis: ["montante", "corrimao", "patamarPerfil"],
     validar: function (p) {
       if (!(p.altura >= 0.8 && p.altura <= 40)) return "Escada de marinheiro: altura entre 0,80 e 40 m.";
       if (!(p.largura >= 0.3 && p.largura <= 0.8)) return "Largura entre montantes de 0,30 a 0,80 m (a NR-12 pede 0,40 a 0,60 m).";
@@ -115,7 +115,9 @@
     gerar: function (p, K, novoId, ctx, H) {
       var W = p.largura, gid = String(novoId()), n0 = K.pecas.length, temGaiola = p.gaiola === "sim" || (p.gaiola === "auto" && p.altura > 3.5);
       /* NR-12, Anexo III, 13 f) e g): lance único até 10 m; acima, lances de no máximo 6 m (lanceMax) com plataforma de descanso */
-      var nL = p.altura <= 10 ? 1 : Math.max(2, Math.ceil(p.altura / p.lanceMax - 1e-9));
+      /* M5 (14/10/2026): ESCADA FIXA COM PLATAFORMA DE DESCANSO — o engenheiro pode pedir o descanso também abaixo de 10 m (lances de no
+         máximo lanceMax; a NR-12 13 g limita a 6,00 m entre duas plataformas quando há vários lances) */
+      var nL = p.altura <= 10 && !p.descansoSempre ? 1 : Math.max(2, Math.ceil(p.altura / p.lanceMax - 1e-9));
       var hL = p.altura / nL, espReal = 0, primeiro = 0, ok = 0;
       var R = p.gaiolaDiam / 2, uc = -Math.sqrt(Math.max(0, R * R - W * W / 4)), phs = Math.atan2(W / 2, -uc);
       var lances = [];
@@ -395,18 +397,37 @@
   var GUARDA = { rotulo: "Guarda-corpo", cliques: 2, modo: "polilinha", modos: ["polilinha", "retangulo"], calcula: true, PADRAO: {
     comprimento: 3, alturaGuarda: 1.10, intermediaria: 0.70, rodape: true, hRodape: 0.20, espac: 1.0, montante: "HSS73X5.2", corrimao: "HSS48.3X3.7",
     norma: "nr12", usoGuarda: "industrial", perna: 6, abastecimento: false, retornoIni: 0, retornoFim: 0, ladoRetorno: "esquerda", travessasExtra: 0, fixacao: "solda", caminho: "", aco: "ASTM A36",
-    Lx: 0, Lz: 0, ladoAberto: "", concEsp: 0, concFck: 0, suporte: "" },
-    nums: ["comprimento", "alturaGuarda", "intermediaria", "hRodape", "espac", "perna", "retornoIni", "retornoFim", "travessasExtra", "Lx", "Lz", "concEsp", "concFck"], bools: ["rodape", "abastecimento"], perfis: ["montante", "corrimao"],
-    validar: function (p) {
+    Lx: 0, Lz: 0, ladoAberto: "", concEsp: 0, concFck: 0, suporte: "",
+    /* MODELOS PARAMÉTRICOS (frente M5, 14/10/2026 — js/metalguardas.js; a galeria em js/metalmodelos.js): o PREENCHIMENTO entre os
+       montantes, o vidro, a abertura com cancela, o corrimão duplo da NBR 9050, o uso PÚBLICO (vão ≤ 0,11 m) e a fixação por montante.
+       O padrão (travessas, sem abertura, sem corrimão duplo, soldado) é o guarda-corpo de antes, peça a peça. */
+    modelo: "", preenchimento: "travessas", hInferior: 0, hSub: 0, vaoBarras: 0.10, barraD: 0.016, telaFio: 0.005, telaMalha: 0.05, tPainel: 0.003, furoD: 0.008, furoPasso: 0.012, folgaPainel: 0.02,
+    vidroComp: "8+8", vidroFix: "montante", juntaVidro: 0.015, perfilBase: "C75X6.1", corrimaoTopo: true, painelMax: 1.5,
+    abertura: 0, aberturaPos: 0.5, cancela: true, corrimaoDuplo: false, soCorrimao: false, prolongamento: 0.30, publico: false, terminalIni: "", terminalFim: "", fixacoes: "" },
+    nums: ["comprimento", "alturaGuarda", "intermediaria", "hRodape", "espac", "perna", "retornoIni", "retornoFim", "travessasExtra", "Lx", "Lz", "concEsp", "concFck",
+      "hInferior", "hSub", "vaoBarras", "barraD", "telaFio", "telaMalha", "tPainel", "furoD", "furoPasso", "folgaPainel", "juntaVidro", "painelMax", "abertura", "aberturaPos", "prolongamento"],
+    bools: ["rodape", "abastecimento", "corrimaoTopo", "cancela", "corrimaoDuplo", "soCorrimao", "publico"], perfis: ["montante", "corrimao"],
+    validar: function (p, H) {
       var cm0 = lerCaminho(p.caminho);
       if (cm0.length === 1 || (String(p.caminho || "").trim() && cm0.length < 2)) return "Guarda-corpo: o caminho precisa de 2 pontos ou mais (x z; x z…).";
       for (var ic = 1; ic < cm0.length; ic++) if (Math.hypot(cm0[ic][0] - cm0[ic - 1][0], cm0[ic][1] - cm0[ic - 1][1]) < 0.05) return "Guarda-corpo: dois pontos seguidos no mesmo lugar (trecho " + ic + ").";
       if (cm0.length < 2 && !(p.comprimento >= 0.3 && p.comprimento <= 100)) return "Guarda-corpo: comprimento de 0,30 a 100 m (clique o começo e o fim).";
       if (!(p.alturaGuarda >= 0.6 && p.alturaGuarda <= 1.6)) return "Altura do guarda-corpo de 0,60 a 1,60 m.";
       if (!(p.espac >= 0.3 && p.espac <= 3)) return "Espaçamento dos montantes de 0,30 a 3 m.";
+      var MG = dep("MetalGuardas", "./metalguardas.js"), tp = String(p.preenchimento || "travessas");
+      if (tp !== "travessas" && !MG) return "Preenchimento do guarda-corpo: o motor (js/metalguardas.js) não carregou.";
+      if (MG && !MG.TIPOS[tp]) return "Preenchimento do guarda-corpo: travessas, barras verticais, tela, chapa perfurada ou vidro.";
+      if (tp === "barras" && !(p.vaoBarras >= 0.04 && p.vaoBarras <= 0.30)) return "Barras verticais: vão livre entre as barras de 0,04 a 0,30 m.";
+      if (tp === "barras" && !(p.barraD >= 0.008 && p.barraD < 0.02)) return "Barras verticais: barra redonda de Ø 8 a 19 mm.";
+      if (tp === "tela" && !(p.telaMalha >= 0.01 && p.telaMalha <= 0.20 && p.telaFio >= 0.002 && p.telaFio <= 0.008)) return "Tela: malha de 10 a 200 mm e fio de 2 a 8 mm.";
+      if (tp === "perfurada" && !(p.tPainel >= 0.0015 && p.tPainel <= 0.008 && p.furoD > 0.002 && p.furoPasso > p.furoD)) return "Chapa perfurada: espessura de 1,5 a 8 mm e o passo maior que o furo.";
+      if (tp === "vidro") { var vt = MG.vidroEspessura(p.vidroComp); if (!vt || vt.n > 3 || vt.t < 0.006 || vt.t > 0.045) return "Vidro laminado: de 1 a 3 lâminas, \"8+8\" (mm), de 6 a 45 mm no total."; if (p.vidroFix === "perfil" && cm0.length >= 2) return "Vidro no perfil de base: por enquanto só em trecho reto (use o comprimento, sem caminho)."; }
+      if (p.abertura > 0 && !(p.abertura >= 0.5 && p.abertura <= 2)) return "Abertura (cancela): largura de 0,50 a 2,00 m.";
+      if (p.soCorrimao && !(p.prolongamento >= 0 && p.prolongamento <= 1)) return "Corrimão: prolongamento de 0 a 1 m.";
       return null;
     },
     gerar: function (p, K, novoId, ctx, H) {
+      var MG = dep("MetalGuardas", "./metalguardas.js");
       /* caminho: o trecho clicado e os RETORNOS nas pontas (encontro em L com outro guarda-corpo ou com a parede) */
       var sR = p.ladoRetorno === "direita" ? 1 : -1, cam = [], livre = lerCaminho(p.caminho);
       if (livre.length >= 2) cam = livre.map(function (q) { return [q[0], 0, q[1]]; });   /* POLILINHA LIVRE (cliques sucessivos): encontros e mudanças de direção */
@@ -415,31 +436,111 @@
         cam.push([0, 0, 0], [p.comprimento, 0, 0]);
         if (p.retornoFim > 0.05) cam.push([p.comprimento, 0, sR * p.retornoFim]);
       }
+      var tp = String(p.preenchimento || "travessas"), soC = !!p.soCorrimao, prol = soC ? Math.max(0, num(p.prolongamento, 0.30)) : 0;
+      /* CORRIMÃO DUPLO SOBRE MONTANTES (NBR 9050): o corrimão passa o prolongamento além do começo e do fim da linha clicada */
+      if (soC && prol > 0 && cam.length >= 2) {
+        var u0 = H.unit(H.sub(cam[0], cam[1])), u1 = H.unit(H.sub(cam[cam.length - 1], cam[cam.length - 2]));
+        if (u0) cam[0] = H.add(cam[0], H.mul(u0, prol)); if (u1) cam[cam.length - 1] = H.add(cam[cam.length - 1], H.mul(u1, prol));
+      }
       var Ltot = 0; for (var il = 1; il < cam.length; il++) Ltot += Math.hypot(cam[il][0] - cam[il - 1][0], cam[il][2] - cam[il - 1][2]);
-      var go = optGuarda(H, p, String(novoId())), nEx = Math.max(0, Math.min(4, Math.round(num(p.travessasExtra, 0)))), r0 = p.rodape === false ? 0 : num(p.hRodape, 0.2), hi = num(p.intermediaria, 0.7);
+      var gid0 = String(novoId()), go = optGuarda(H, p, gid0), nEx = Math.max(0, Math.min(4, Math.round(num(p.travessasExtra, 0)))), r0 = p.rodape === false ? 0 : num(p.hRodape, 0.2), hi = num(p.intermediaria, 0.7);
       for (var x = 1; x <= nEx; x++) go.alturas.push(r4(r0 + (hi - r0) * x / (nEx + 1)));
-      var n0 = K.pecas.length, n = H.guardaCorpo(K, cam, go);
+      var pcP = H.perfilDe(p.corrimao), rC = MG ? MG.raioDe(pcP) : 0.024, Hg = go.altura, hInf = 0, hSub = 0;
+      if (soC) { go.altura = 0.92; go.alturas = [0.92, 0.70]; go.corrimao2 = [0.70]; go.rodape = 0; }
+      else if (tp !== "travessas" && MG) {
+        /* as travessas do PREENCHIMENTO: a de baixo (perto do piso, ou logo acima do rodapé) e a de cima (10 cm abaixo do travessão) —
+           o preenchimento fica entre elas, no plano delas (a face interna dos montantes) */
+        hInf = num(p.hInferior, 0) > 0 ? num(p.hInferior, 0) : 0.05; if (go.rodape > 0) hInf = Math.max(hInf, go.rodape + rC + 0.005);
+        hSub = num(p.hSub, 0) > 0 ? num(p.hSub, 0) : r4(Hg - 0.10);
+        var interm = (tp === "tela" || tp === "perfurada") && p.norma === "nr12" && hi > 0 ? [hi] : [];
+        go.alturas = tp === "vidro" ? [Hg] : [Hg].concat(interm).concat([r4(hInf), hSub]).concat(go.alturas.filter(function (h) { return h !== Hg && h !== hi && interm.indexOf(h) < 0 && h > hInf + 0.05 && h < hSub - 0.05 && nEx > 0; }));
+        if (tp === "vidro") { go.rodape = 0; hInf = num(p.hInferior, 0) > 0 ? num(p.hInferior, 0) : 0.05; }
+        ["vaoBarras", "barraD", "telaFio", "telaMalha", "tPainel", "furoD", "furoPasso", "folgaPainel", "juntaVidro", "vidroComp"].forEach(function (k) { go[k] = p[k]; });
+        go.preenchimento = tp; go.hInferior = hInf; go.hSub = hSub;
+      }
+      if (p.corrimaoDuplo && !soC) { [0.92, 0.70].forEach(function (h) { if (go.alturas.indexOf(h) < 0) go.alturas.push(h); }); go.corrimao2 = [0.92, 0.70]; }
+      /* a ABERTURA com cancela (NR-12 / ABNT NBR ISO 14122-3): o caminho cortado; nas pontas da abertura o corrimão termina com tampão */
+      var partes = [cam], ab = null;
+      if (p.abertura > 0.3) {
+        ab = MG ? MG.dividirCaminho(cam, p.aberturaPos, p.abertura) : null;
+        if (!ab) return { erro: "Guarda-corpo: a abertura de " + brf(p.abertura) + " m não cabe num trecho (precisa de 0,15 m de guarda-corpo de cada lado)." };
+        partes = [ab.antes, ab.depois];
+      }
+      var n0 = K.pecas.length, n = 0, postsT = [];
+      K._preench = [];
+      if (tp === "vidro" && p.vidroFix === "perfil" && MG) {
+        var gv = H.clone(go); gv.vidroComp = p.vidroComp; gv.perfilBase = p.perfilBase; gv.corrimaoTopo = p.corrimaoTopo; gv.painelMax = p.painelMax; gv.juntaVidro = num(p.juntaVidro, 0.01);
+        n = MG.vidroEmPerfil(K, cam, gv, H).n;
+      } else partes.forEach(function (pt, ip) {
+        var Lp = 0; for (var q2 = 1; q2 < pt.length; q2++) Lp += H.len(H.sub(pt[q2], pt[q2 - 1]));
+        if (pt.length < 2 || Lp < 0.1) return;
+        var gp = H.clone(go); gp.gid = gid0 + (partes.length > 1 ? "-" + ip : "");
+        if (partes.length > 1) gp.terminal = ip === 0 ? { ini: p.terminalIni, fim: "tampao" } : { ini: "tampao", fim: p.terminalFim };
+        n += H.guardaCorpo(K, pt, gp);
+        if (MG) postsT = postsT.concat(MG.postsCaminho(pt, p.espac).posts);
+      });
       if (!n) return { erro: "Guarda-corpo: os perfis do montante ou do corrimão não fecharam." };
-      /* os montantes (as mesmas posições do guarda-corpo: pontas de cada trecho e a cada ≤ espac) */
-      var posts = [], fechado = cam.length > 3 && Math.hypot(cam[0][0] - cam[cam.length - 1][0], cam[0][2] - cam[cam.length - 1][2]) < 1e-3;
-      for (var i2 = 0; i2 + 1 < cam.length; i2++) { var a = cam[i2], b = cam[i2 + 1], Lt = Math.hypot(b[0] - a[0], b[2] - a[2]), nS = Math.max(1, Math.ceil(Lt / p.espac - 1e-9)); for (var k = 0; k <= nS; k++) { if (k === 0 && i2 > 0) continue; if (fechado && i2 === cam.length - 2 && k === nS) continue; posts.push([a[0] + (b[0] - a[0]) * k / nS, 0, a[2] + (b[2] - a[2]) * k / nS]); } }
+      if (!MG) { var fe0 = cam.length > 3 && Math.hypot(cam[0][0] - cam[cam.length - 1][0], cam[0][2] - cam[cam.length - 1][2]) < 1e-3; for (var i2 = 0; i2 + 1 < cam.length; i2++) { var a = cam[i2], b = cam[i2 + 1], Lt = Math.hypot(b[0] - a[0], b[2] - a[2]), nS = Math.max(1, Math.ceil(Lt / p.espac - 1e-9)); for (var k = 0; k <= nS; k++) { if (k === 0 && i2 > 0) continue; if (fe0 && i2 === cam.length - 2 && k === nS) continue; postsT.push([a[0] + (b[0] - a[0]) * k / nS, 0, a[2] + (b[2] - a[2]) * k / nS]); } } }
+      var nCanc = ab && p.cancela ? cancela(H, K, ab.a, ab.b, 0, p, gid0) : 0;
+      /* FIXAÇÃO POR MONTANTE (M5): o código de cada montante vem da tela (o apoio embaixo de cada um — js/metalcomponenteui.js):
+         s = SOLDADO no aço, c = CHAPA chumbada no concreto, n = sem apoio. Sem códigos: a fixação única do diálogo (solda | chapa). */
+      var cod = String(p.fixacoes || "").split(/[;,\s]+/).filter(function (s) { return /^[scn]$/.test(s); });
+      var fixDe = function (j) { return cod[j] || (p.fixacao === "chapa" ? "c" : "s"); };
+      var posts = postsT, nChapa = 0, semApoio = [];
+      posts.forEach(function (P, j) { var f = fixDe(j); if (f === "c") nChapa++; if (f === "n") semApoio.push(j + 1); });
       /* CHAPA CHUMBADA (frente S6, 14/10/2026): a placa e os chumbadores DIMENSIONADOS com a força da NBR 6120 (Tabela 12) —
          js/metalescadalinha.js baseMontante (placa engastada do js/acoligcalc.js); sem o motor, a chapa de partida de antes */
-      var ELb = dep("MetalEscadaLinha", "./metalescadalinha.js"), bm = p.fixacao === "chapa" && ELb && ELb.baseMontante ? ELb.baseMontante({ perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } }) : null;
-      if (p.fixacao === "chapa") posts.forEach(function (P, j) {
+      var ELb = dep("MetalEscadaLinha", "./metalescadalinha.js"), bm = nChapa && ELb && ELb.baseMontante ? ELb.baseMontante({ perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } }) : null;
+      posts.forEach(function (P, j) {
+        if (fixDe(j) !== "c") return;
         if (bm && bm.desenho && ELb.chapaFixacao) { ELb.chapaFixacao(K, K.F, P[0], P[2], 0, bm.desenho, "gc-base-" + (j + 1), "Chapa de base do montante " + (j + 1), 0, "Chapa de base do montante"); return; }
         K.chapa({ origem: [P[0] - 0.075, 0.0125, P[2] - 0.075], ex: [1, 0, 0], ey: [0, 0, 1], t: 0.0125, ret: { L: 0.15, B: 0.15 }, furos: [[0.02, 0.02], [0.13, 0.02], [0.02, 0.13], [0.13, 0.13]].map(function (f) { return { u: f[0], v: f[1], db: 12, tipo: "padrao" }; }), papel: "Chapa de base do montante", aco: "ASTM A36", lig: "gc-base", nome: "Chapa de base do montante " + (j + 1) }, "basesMontante");
       });
       for (var z2 = n0; z2 < K.pecas.length; z2++) if (K.pecas[z2].metal && !K.pecas[z2].metal.acessorio) K.pecas[z2].metal.acessorio = "guarda-corpo";
-      var nm = posts.length;
-      var acesso = { tipo: "guarda-corpo", perfil: p.norma === "nbr9050" ? "nbr9050" : "nr12", abastecimento: !!p.abastecimento, guarda: acessoGuarda(H, p, 1, 1) };
+      var nm = posts.length, est = (K._preench || [])[0] || null;
+      (K._preench || []).forEach(function (e2) { if (est && e2 !== est) { est.vaoLuz = Math.max(est.vaoLuz, e2.vaoLuz); est.pecas += e2.pecas; est.barras += e2.barras || 0; est.paineis += e2.paineis || 0; } });
+      var perfilN = soC ? "nbr9050" : (p.norma === "nbr9050" ? "nbr9050" : (p.norma === "nbr14718" ? "nbr14718" : "nr12"));
+      var gA = acessoGuarda(H, p, 1, 1);
+      gA.alturas = go.alturas.filter(function (h) { return h !== go.altura; });
+      if (soC || tp !== "travessas" || p.corrimaoDuplo) gA.altura = go.altura;
+      if (tp !== "travessas" && est) { gA.vaoLuz = est.vaoLuz; gA.vaoInferior = est.vaoInferior; gA.preenchimento = tp; }
+      gA.publico = !!p.publico;   /* o uso PÚBLICO é escolha do projeto (a NBR 14718 também vale no privativo) */
+      var acesso = { tipo: soC ? "corrimao" : "guarda-corpo", perfil: perfilN, abastecimento: !!p.abastecimento, guarda: gA, modelo: p.modelo || null };
+      if (ab) { acesso.aberturaSemCancela = !p.cancela; acesso.abertura = { largura: ab.largura, cancela: !!p.cancela }; }
+      if (soC || p.corrimaoDuplo) acesso.corrimao = { alturas: [0.92, 0.70], lados: 1, diametro: pcP && pcP.forma === "tubo-circ" ? pcP.D : null, prolongamento: prol, folga: 0.04 };
       var cont = K.cont;
-      return { resumo: "Guarda-corpo de " + brf(Ltot) + " m" + (livre.length >= 2 ? " em " + (cam.length - 1) + " trecho(s)" : "") + " a " + brf(p.alturaGuarda) + " m: " + nm + " montantes a ≤ " + brf(p.espac) + " m, " + (num(p.intermediaria, 0) > 0 ? "intermediária a " + brf(p.intermediaria) + " m, " : "") + (p.rodape ? "rodapé de " + brf(p.hRodape * 100, 0) + " cm, " : "sem rodapé, ") + (cont.guarda || 0) + " peças",
-        medidas: { montantes: nm, comprimento: r4(Ltot), trechos: cam.length - 1, acesso: acesso, dim: { itens: [{ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac, perna: p.perna }].concat(bm ? [{ tipo: "baseMontante", perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } }] : []), naoVerificados: ["não verificado: o elemento onde o guarda-corpo fixa (viga, laje, borda de chapa)"].concat(p.fixacao === "chapa" && !bm ? ["não verificado: chapa de base 150 × 150 × 12,5 mm e os 4 chumbadores Ø 12 mm (de partida — dimensionar na laje) (CRÍTICO)"] : []).concat(p.fixacao !== "chapa" && p.suporte === "concreto" ? ["não verificado: montante SOLDADO sobre CONCRETO não existe — use a fixação \"chapa de base chumbada\" (CRÍTICO)"] : []) } } };
+      /* o DIMENSIONAMENTO de cada modelo */
+      var itens = [], nvs = ["não verificado: o elemento onde o guarda-corpo fixa (viga, laje, borda de chapa)"], crit = [];
+      if (!(tp === "vidro" && p.vidroFix === "perfil")) itens.push({ tipo: "montante", perfil: p.montante, corrimao: p.corrimao, aco: p.aco, uso: p.usoGuarda, espac: p.espac, perna: p.perna, corrimaoSo: soC, altura: soC ? 0.92 : null });
+      if (bm) itens.push({ tipo: "baseMontante", perfil: p.montante, uso: p.usoGuarda, espac: p.espac, concreto: { esp: p.concEsp, fck: p.concFck } });
+      if (nChapa && !bm) nvs.push("não verificado: chapa de base 150 × 150 × 12,5 mm e os 4 chumbadores Ø 12 mm (de partida — dimensionar na laje) (CRÍTICO)");
+      if (!cod.length && p.fixacao !== "chapa" && p.suporte === "concreto") nvs.push("não verificado: montante SOLDADO sobre CONCRETO não existe — use a fixação \"chapa de base chumbada\" (CRÍTICO)");
+      if (semApoio.length) crit.push("não verificado: montante(s) " + semApoio.join(", ") + " sem apoio embaixo (nem viga de aço, nem laje) — desenhe o apoio ou mova o guarda-corpo (CRÍTICO)");
+      if (tp !== "travessas" && tp !== "vidro" && est) itens.push({ tipo: "preenchimento", preenchimento: tp, uso: p.usoGuarda, espac: p.espac, barraD: p.barraD, passo: r4(est.vaoLuz + num(p.barraD, 0.016)), hFaixa: r4(Math.max.apply(null, [0.1].concat((function () { var R = go.alturas.filter(function (h) { return h !== go.altura && (go.corrimao2 || []).indexOf(h) < 0; }).sort(function (x, y) { return x - y; }), o2 = []; for (var i3 = 1; i3 < R.length; i3++) o2.push(R[i3] - R[i3 - 1]); return o2; })()))), corrimao: p.corrimao, fio: p.telaFio, malha: p.telaMalha, t: p.tPainel, furoD: p.furoD, furoPasso: p.furoPasso, aco: p.aco });
+      if (tp === "vidro" && est && est.vidro) itens.push({ tipo: "vidro", composicao: est.vidro.composicao, t: est.vidro.t, fixacao: est.vidro.fixacao, uso: p.usoGuarda, espac: p.espac });
+      if (nCanc) itens.push({ tipo: "cancela", largura: ab.largura, corrimao: p.corrimao, uso: p.usoGuarda, aco: p.aco });
+      if (soC || p.corrimaoDuplo) itens.push({ tipo: "corrimao", perfil: p.corrimao, aco: p.aco, vao: p.espac, braco: 0.04 + 0.035, suporteD: 0.016 });
+      var fixTxt = cod.length ? " — fixação por montante: " + ["s", "c", "n"].map(function (f) { var q = cod.filter(function (x) { return x === f; }).length; return q ? q + (f === "s" ? " soldado(s) no aço" : (f === "c" ? " chumbado(s) no concreto" : " SEM APOIO")) : ""; }).filter(Boolean).join(", ") : "";
+      var preTxt = tp === "travessas" || !est ? "" : (tp === "barras" ? ", " + est.barras + " barras verticais Ø " + brf(p.barraD * 1000, 0) + " mm (vão livre ≤ " + brf(est.vaoLuz * 100, 1) + " cm)" : (tp === "vidro" ? ", vidro laminado " + est.vidro.composicao + " mm (" + (est.vidro.fixacao === "perfil" ? "no perfil de base" : "preso nos montantes") + ", " + est.paineis + " painéis)" : ", " + est.paineis + " painéis de " + (tp === "tela" ? "tela (malha " + brf(p.telaMalha * 1000, 0) + " mm)" : "chapa perfurada (furo Ø " + brf(p.furoD * 1000, 0) + " mm)")));
+      return { resumo: (soC ? "Corrimão duplo (0,92 e 0,70 m) de " : "Guarda-corpo de ") + brf(Ltot) + " m" + (livre.length >= 2 ? " em " + (cam.length - 1) + " trecho(s)" : "") + (soC ? " com prolongamento de " + brf(prol * 100, 0) + " cm" : " a " + brf(p.alturaGuarda) + " m") + ": " + nm + " montantes a ≤ " + brf(p.espac) + " m, " + (!soC && tp === "travessas" && num(p.intermediaria, 0) > 0 ? "intermediária a " + brf(p.intermediaria) + " m, " : "") + (soC ? "" : (go.rodape > 0 ? "rodapé de " + brf(p.hRodape * 100, 0) + " cm, " : "sem rodapé, ")) + (cont.guarda || 0) + " peças" + preTxt + (ab ? ", abertura de " + brf(ab.largura) + " m" + (p.cancela ? " com cancela de autofechamento" : " SEM cancela") : "") + (p.corrimaoDuplo && !soC ? ", corrimão duplo 0,92/0,70 m" : "") + fixTxt,
+        medidas: { montantes: nm, comprimento: r4(Ltot), trechos: cam.length - 1, caminho: cam.map(function (q) { return [r4(q[0]), r4(q[1]), r4(q[2])]; }), partes: partes.map(function (pt) { return pt.map(function (q) { return [r4(q[0]), r4(q[1]), r4(q[2])]; }); }), posts: posts.map(function (q) { return [r4(q[0]), r4(q[1]), r4(q[2])]; }), fixacoes: posts.map(function (q, j) { return fixDe(j); }), preenchimento: est, acesso: acesso, dim: { itens: itens, naoVerificados: nvs, criticos: crit } } };
     },
     dica: { titulo: "Guarda-corpo", oQueE: "Guarda-corpo avulso: montantes de tubo, corrimão sem superfície plana, travessa intermediária e rodapé, com a força horizontal da NBR 6120 verificada no montante e na solda da base.", ondeUsa: "Borda de laje, mezanino existente, fosso, plataforma de máquina, cobertura.", dica: "Clique o começo e o fim. NR-12: 1,10–1,20 m, intermediária a 0,70 m, rodapé de 0,20 m." },
     desenho: function (D) { var s = D.mem(20, 160, 300, 160, false, 4); for (var i = 0; i < 4; i++) s += D.mem(40 + i * 80, 160, 40 + i * 80, 50, false, 4); s += D.mem(30, 50, 290, 50, true, 5) + D.mem(30, 95, 290, 95, false, 3) + '<rect x="30" y="140" width="260" height="20" fill="' + D.DST + '" fill-opacity="0.5" stroke="' + D.DSTL + '"/>'; return s + D.tx(300, 45, "1,10", "end") + D.tx(300, 90, "0,70", "end") + D.tx(300, 135, "rodapé 0,20", "end"); }
   };
+  /* os MONTANTES do guarda-corpo no MUNDO (para a fixação por montante e as alças do componente — js/metalcomponente.js):
+     a mesma regra do gerador, sem gerar */
+  function postsGuarda(par) {
+    var M = MP(), MG = dep("MetalGuardas", "./metalguardas.js"); if (!M || !MG) return [];
+    var p = M.normalizar("guardacorpo", par), H = M.ajudantes(), F = H.quadroLocal([p.x0, p.y0, p.z0], p.giro), cam = [], livre = lerCaminho(p.caminho), sR = p.ladoRetorno === "direita" ? 1 : -1;
+    if (livre.length >= 2) cam = livre.map(function (q) { return [q[0], 0, q[1]]; });
+    else { if (p.retornoIni > 0.05) cam.push([0, 0, sR * p.retornoIni]); cam.push([0, 0, 0], [p.comprimento, 0, 0]); if (p.retornoFim > 0.05) cam.push([p.comprimento, 0, sR * p.retornoFim]); }
+    if (p.soCorrimao && p.prolongamento > 0 && cam.length >= 2) { var u0 = H.unit(H.sub(cam[0], cam[1])), u1 = H.unit(H.sub(cam[cam.length - 1], cam[cam.length - 2])); if (u0) cam[0] = H.add(cam[0], H.mul(u0, p.prolongamento)); if (u1) cam[cam.length - 1] = H.add(cam[cam.length - 1], H.mul(u1, p.prolongamento)); }
+    if (p.preenchimento === "vidro" && p.vidroFix === "perfil") return [];
+    var partes = [cam]; if (p.abertura > 0.3) { var ab = MG.dividirCaminho(cam, p.aberturaPos, p.abertura); if (ab) partes = [ab.antes, ab.depois]; }
+    var out = []; partes.forEach(function (pt) { MG.postsCaminho(pt, p.espac).posts.forEach(function (q) { out.push(F.W(q)); }); });
+    return out.map(function (q) { return [r4(q[0]), r4(q[1]), r4(q[2])]; });
+  }
 
   /* ================================================================ PISO INDUSTRIAL — retângulo (2 cantos) ou CONTORNO (cliques, Enter fecha)
    * frente S6 (14/10/2026): o piso ganha a ESTRUTURA DE SUPORTE dimensionada — vigas de borda no contorno e intermediárias no
@@ -949,7 +1050,7 @@
     plataforma: { verifica: ["largura (NR-12, 10) e guarda-corpo (NR-12, 7)", "vigas principal e secundária (NBR 8800)", "piso (tabela do fabricante quando a grade está no catálogo; barras portantes; chapa)", "montante do guarda-corpo (2,0 kN/m), a solda da base e o travessão superior e a intermediária (f·s²/8)", "pilares, vigas e contraventamento no Cálculo › Estrutura desenhada (Verificar acesso › Calcular a estrutura), com a força do guarda-corpo nas vigas de borda"], naoVerifica: ["ligações e placas de base (frente de Ligações)", "torção da viga de borda pelo braço de 1,1 m da força do guarda-corpo", "vibração (NBR 8800, Anexo L — sem texto conferido)", "altura livre"] },
     anelar: { verifica: ["largura e guarda-corpo (NR-12)", "console em balanço (sem contar a mão-francesa, a favor da segurança)", "viga de borda", "piso", "montante e a solda da base"], naoVerifica: ["ligação do console no costado e a parede do tanque (frente de Tanques)", "mão-francesa", "folga entre o costado e o piso acima de 15 cm"] },
     passarela: { verifica: ["largura e guarda-corpo (NR-12)", "vigas longitudinais e travessas (NBR 8800)", "piso", "montante (2,0 kN/m) e a solda da base", "a estrutura inteira no Cálculo › Estrutura desenhada (apoios nas pontas ou pilares com contraventamento), com a força do guarda-corpo"], naoVerifica: ["os apoios na estrutura existente (ligações — frente de Ligações)", "contraventamento horizontal do tabuleiro", "vibração (NBR 8800, Anexo L — sem texto conferido)", "passarela fora da edificação: NBR 7188"] },
-    guardacorpo: { verifica: ["alturas, intermediária, rodapé, travessão sem superfície plana, montantes (NR-12, 7; ISO 14122-3)", "montante, a solda da base e o travessão superior e a intermediária entre montantes (f·s²/8) com a força da NBR 6120, Tabela 12"], naoVerifica: ["o elemento onde fixa", "chapa de base e chumbadores", "ensaios de impacto da NBR 14718"] },
+    guardacorpo: { verifica: ["alturas, intermediária, rodapé, travessão sem superfície plana, montantes (NR-12, 7; ISO 14122-3)", "montante, a solda da base e o travessão superior e a intermediária entre montantes (f·s²/8) com a força da NBR 6120, Tabela 12", "edificação (NBR 14718): altura de 1,10 m e, no uso público, o vão-luz ≤ 0,11 m MEDIDO no preenchimento (o do piso também)", "preenchimento (barras verticais, tela, chapa perfurada) e as travessas dele com 1.200 Pa (NPT 011, 5.8.3.1); quadro da cancela (Tabela 12); corrimão sobre montantes com 900 N (NPT 011, 5.8.3.2)", "a fixação de cada montante pelo apoio embaixo (soldado no aço, chapa chumbada no concreto; sem apoio = crítico)"], naoVerifica: ["o elemento onde fixa", "ensaios de impacto da NBR 14718 (laudo do fabricante)", "vidro: espessura e fixação (NBR 7199:2025 e fabricante) — não dimensionado", "dobradiças, mola e trinco da cancela"] },
     corrimaoparede: { verifica: ["alturas, diâmetro, prolongamento (NBR 9050) e a folga da parede (NPT 011)", "corrimão entre suportes e o suporte em balanço com 900 N (NPT 011, 5.8.3.2)"], naoVerifica: ["chumbadores/buchas na parede", "a parede"] },
     rampa: { verifica: ["inclinação pela norma (NR-12: até 20°, peças transversais de 10° a 20°; NBR 9050: 8,33 % e desnível por segmento)", "largura, patamares, guarda-corpo e corrimão", "longarina entre apoios, travessa, piso e montante"], naoVerifica: ["pilaretes, ligações e chumbadores", "inclinação transversal e piso tátil (NBR 9050)", "guia de balizamento da NBR 9050 (altura a conferir)"] },
     helicoidal: { verifica: ["degrau pela norma na linha de percurso, largura, descanso a cada 3,00 m, guarda-corpo de fora (NR-12)", "longarina entre consoles, degrau, console em balanço, montante e solda"], naoVerifica: ["ligação console × costado e a parede do tanque", "torção da longarina curva", "largura do degrau junto do costado (fica menor que na linha de percurso — ver o aviso)"] },
@@ -1136,7 +1237,7 @@
     return { ok: a.ok && m.ok, anelar: a, marinheiro: m, avaliacao: { anelar: avaliar(a), marinheiro: avaliar(m) } };
   }
 
-  var MetalAcessos = { TIPOS: TIPOS, ORDEM: ORDEM, ESCOPO: ESCOPO, escopo: escopo, TEXTO_MOMENTO: TEXTO_MOMENTO, lerCaminho: lerCaminho, textoCaminho: textoCaminho, entradaCalculo: entradaCalculo, USO_LIVRE: USO_LIVRE, registrar: registrar, registrado: function () { return registrado; }, avaliar: avaliar, quantitativo: quantitativo, memorial: memorial,
+  var MetalAcessos = { TIPOS: TIPOS, ORDEM: ORDEM, ESCOPO: ESCOPO, escopo: escopo, TEXTO_MOMENTO: TEXTO_MOMENTO, lerCaminho: lerCaminho, textoCaminho: textoCaminho, postsGuarda: postsGuarda, entradaCalculo: entradaCalculo, USO_LIVRE: USO_LIVRE, registrar: registrar, registrado: function () { return registrado; }, avaliar: avaliar, quantitativo: quantitativo, memorial: memorial,
     emVoltaDoCilindro: emVoltaDoCilindro, marinheiroNoCilindro: marinheiroNoCilindro, escadaNoCilindro: escadaNoCilindro, conjuntoTanque: conjuntoTanque, mezPar: mezPar, pasPar: pasPar };
   global.MetalAcessos = MetalAcessos;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalAcessos;

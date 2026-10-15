@@ -47,7 +47,12 @@
   function modoPos(s) { return s ? (s.modo || modoDe(s.tipo)) : null; }
   var ROT_MODO = { retangulo: "Posicionar (2 cliques)", linha: "Posicionar (começo e fim)", polilinha: "Posicionar (cliques; Enter fecha)", contorno: "Contorno (cliques; Enter fecha)", ponto: "Posicionar no modelo" };
   /* a fixação "auto" da escada (e o resto que depende do modelo) resolvida antes de gerar */
-  function resolver(tipo, par, fase) { try { var R = global.MetalEscadaLinhaUI; if (R && R.resolverPar) return R.resolverPar(tipo, par, fase); } catch (e) {} return par; }
+  function resolver(tipo, par, fase) {
+    try { var R = global.MetalEscadaLinhaUI; if (R && R.resolverPar) par = R.resolverPar(tipo, par, fase); } catch (e) {}
+    /* M5 (14/10/2026, js/metalcomponenteui.js): a FIXAÇÃO AUTOMÁTICA POR MONTANTE do guarda-corpo (o apoio embaixo de cada um) — só ao criar */
+    try { var C = global.MetalComponenteUI; if (C && C.resolverPar && fase === "criar") par = C.resolverPar(tipo, par, fase); } catch (e2) {}
+    return par;
+  }
   function temCalculo(tipo, par) { var M = global.MetalProntas, T = M && M.TIPOS[tipo]; return !!(global.AcoAcessos && global.MetalAcessos && T && (T.calcula || (tipo === "escada" && par && par.norma))); }
   var CAMPOS_EXTRA = {};
   var GRANDEZA = { qInformado: "superficie", usoGuarda: "linear", usoPiso: "superficie" };   /* campos em kN… com seletor de unidade e listas da norma com a equivalência em kgf (js/unidadesui.js); o valor guardado continua em kN */
@@ -93,9 +98,12 @@
       ["virar", "Virada (L e U)", "sel", [["esquerda", "Para a esquerda"], ["direita", "Para a direita"]]], ["vao", "Poço entre os lances — U (m)", "num"],
       ["longarinaTipo", "Longarina", "sel", [["perfil", "Perfil U"], ["chapa", "Chapa"]]], ["longarina", "Perfil da longarina", "cat", ["C", "GERDAU-U", "UE"]],
       ["hLongarina", "Altura da longarina em chapa (m)", "num"], ["tLongarina", "Espessura da longarina em chapa (mm)", "mm"],
-      ["degrau", "Degrau", "sel", [["xadrez", "Chapa xadrez"], ["grade", "Grade (piso gradeado)"]]], ["tDegrau", "Espessura da chapa xadrez (mm)", "mm"], ["espelho", "Espelho (chapa)", "check"],
+      ["degrau", "Degrau", "sel", [["xadrez", "Chapa xadrez"], ["dobrada", "Chapa dobrada (bocel na frente e dobra atrás)"], ["grade", "Grade (piso gradeado)"]]], ["tDegrau", "Espessura da chapa xadrez (mm)", "mm"], ["abaDegrau", "Chapa dobrada: aba das dobras (m)", "num"], ["espelho", "Espelho (chapa)", "check"],
+      /* M5 (14/10/2026): os modelos — patamar intermediário, escada de navio e o preenchimento do guarda-corpo */
+      ["nPatamares", "Patamares intermediários — com patamares (0 = os da norma)", "int"], ["anguloMin", "Escada de navio: ângulo mínimo (°; 0 = o da norma)", "num"],
+      ["preenchimento", "Guarda-corpo: preenchimento", "sel", [["travessas", "Travessas"], ["barras", "Barras verticais (vão ≤ 11 cm)"]]], ["vaoBarras", "Barras: vão livre máximo (m)", "num"], ["publico", "Uso público (vão-luz ≤ 0,11 m)", "check"],
       ["guarda", "Guarda-corpo", "sel", [["dois", "Nos dois lados"], ["um", "Só do lado de fora"], ["nenhum", "Nenhum"]]], ["montante", "Montante do guarda-corpo", "cat", ["HSSC", "HSSR"]], ["corrimao", "Corrimão", "cat", ["HSSC", "HSSR"]],
-      ["raio", "Caracol: raio externo (m)", "num"], ["mastro", "Caracol: mastro", "cat", ["HSSC"]], ["raioLinha", "Caracol: raio da linha de percurso (m, conferir na norma)", "num"],
+      ["raio", "Caracol: raio externo (m)", "num"], ["mastro", "Caracol: mastro", "cat", ["HSSC"]], ["raioLinha", "Caracol: raio da linha de percurso (m)", "num"],
       ["sentido", "Caracol: sobe girando", "sel", [["anti-horario", "Anti-horário"], ["horario", "Horário"]]], giro];
     if (CAMPOS_EXTRA[tipo]) return CAMPOS_EXTRA[tipo].concat(tipo === "plataforma" || tipo === "piso" ? [] : [giro]);
     if (tipo === "mezanino") return [
@@ -297,7 +305,7 @@
         h += '<p class="mpr-conf-res ' + (v.aprovado ? "ok" : "falha") + '" data-mpr="conf-res">' + (v.aprovado ? "Norma — atende: " : (v.status === "incompleto" ? "Norma — INCOMPLETO: " : "Norma — NÃO ATENDE: ")) + esc(v.resumo) + "</p>";
         var lista = completo ? v.itens : v.naoConformes.concat(v.recomendacoes).slice(0, 5);
         if (!completo && v.incompletos && v.incompletos.length) lista = v.naoConformes.concat(v.incompletos).concat(v.recomendacoes).slice(0, 6);
-        if (lista.length) h += '<ul class="mpr-conf-lista">' + lista.map(function (i) { return '<li class="' + (i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : (i.ok ? "ok" : "")) + '" data-mpr-req="' + esc(i.id) + '"><b>' + esc(i.norma) + "</b> — " + esc(i.requisito) + ": " + esc(i.valorTexto) + " (" + esc(i.limite) + ")" + (i.correcao ? " → " + esc(i.correcao) : "") + (i.conferir ? " <i>[conferir]</i>" : "") + "</li>"; }).join("") + "</ul>";
+        if (lista.length) h += '<ul class="mpr-conf-lista">' + lista.map(function (i) { return '<li class="' + (i.ok === false ? (i.sev === "nc" ? "falha" : "rec") : (i.ok ? "ok" : "")) + '" data-mpr-req="' + esc(i.id) + '"><b>' + esc(i.norma) + "</b> — " + esc(i.requisito) + ": " + esc(i.valorTexto) + " (" + esc(i.limite) + ")" + (i.correcao ? " → " + esc(i.correcao) : "") + "</li>"; }).join("") + "</ul>";   /* M5: sem "[conferir]" na tela (a lista vai para o arquivo interno — AcoAcessos.pendenciasNorma) */
       }
       if (dm && dm.ok) h += '<p class="mpr-conf-res ' + (dm.aprovado ? "ok" : "falha") + '" data-mpr="dim-res">' + (dm.aprovado ? "Cálculo — passa: " : (dm.status === "incompleto" ? "Cálculo — INCOMPLETO: " : "Cálculo — NÃO PASSA: ")) + esc(dm.resumo) + "</p>";
       return h;
@@ -466,7 +474,7 @@
       M.identidade(r, gid, { tipo: tipo, par: r.par, em: new Date().toISOString() }, alvo);
       return r;
     },
-    colocar: function (tipo, par, ctx, alvo) {
+    colocar: function (tipo, par, ctx, alvo, op) {
       var M = MP(), self = this; if (!M) return null;
       if (alvo && alvo.info && alvo.info.par && tipo !== "rolamento") ["x0", "y0", "z0"].forEach(function (k) { if (par[k] == null) par[k] = alvo.info.par[k]; });
       par = resolver(tipo, par, "criar");
@@ -479,7 +487,7 @@
       this.ultimo = { tipo: tipo, resumo: r.resumo, prontaId: gid, atualizou: !!alvo, n: Object.keys(r.finais).length, avisos: r.avisos.concat(r.avisosLigacoes || []) };
       var t = (alvo ? "Atualizada no lugar — " : "") + r.resumo + " Ctrl+Z desfaz" + (alvo ? " (volta a anterior)." : ".");
       status(t); toast(t, "ok", 9000);
-      this.enquadrar(r);
+      if (!(op && op.semEnquadrar)) this.enquadrar(r);   /* M5: esticar pela alça não mexe na câmera */
       return r;
     },
     enquadrar: function (r) {

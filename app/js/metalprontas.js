@@ -110,7 +110,7 @@
    * "conferir na norma". */
   function alturasGuarda() {
     var E = Est(), n = E && E.NBR9050 && Array.isArray(E.NBR9050.corrimaos) ? E.NBR9050.corrimaos : null;
-    return { guarda: 1.10, corrimaos: n ? n.slice() : [0.92, 0.70], fonte: n ? "corrimão nas alturas da NBR 9050 (js/bimestrut.js) — conferir na norma" : "conferir na norma (NBR 9050 / NBR 9077)" };
+    return { guarda: 1.10, corrimaos: n ? n.slice() : [0.92, 0.70], fonte: "corrimão nas alturas da NBR 9050:2020, 6.9.3.2" };
   }
 
   /* ================================================================ TIPOS */
@@ -133,6 +133,9 @@
          fixação de cada ponta ("" = sem; soldada | parafusada | ancorada | apoiada; "auto" a tela resolve pelo modelo) */
       nDegrau: 0, pDegrau: 0, fixPe: "", fixTopo: "", concPeEsp: 0, concPeFck: 0, concTopoEsp: 0, concTopoFck: 0, supPeT: 0, supTopoT: 0, concPeBorda: 0, concTopoBorda: 0,
       sentidoLinha: "desce", alturaDoModelo: true, abrirPiso: true,
+      /* MODELOS (frente M5, 14/10/2026 — js/metalmodelos.js): o nº de patamares intermediários (0 = o da norma), o ângulo mínimo da
+         escada de navio, a aba do degrau em chapa dobrada e o PREENCHIMENTO do guarda-corpo (barras verticais na emergência/uso público) */
+      nPatamares: 0, anguloMin: 0, abaDegrau: 0.05, preenchimento: "travessas", vaoBarras: 0.10, barraD: 0.016, hInferior: 0, publico: false,
       aco: "ASTM A36", x0: 0, y0: 0, z0: 0, giro: 0 } },
     mezanino: { id: "mezanino", rotulo: "Mezanino / plataforma", cliques: 2, PADRAO: {
       Lx: 6, Lz: 4, vaosX: 2, vaosZ: 1, altura: 3.0, direcao: "x",
@@ -164,12 +167,12 @@
   };
   var ORDEM = ["trelica", "escada", "mezanino", "rolamento", "rack", "skid"];
   var NUMS = { trelica: ["vao", "altura", "alturaApoio", "paineis", "tGusset", "parafusos"],
-    escada: ["desnivel", "largura", "vao", "tLongarina", "hLongarina", "tDegrau", "tEspelho", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "raio", "raioLinha", "hRodape", "tRodape", "patamarComp", "lanceMax", "paredeLados", "patamarTopo", "nDegrau", "pDegrau", "concPeEsp", "concPeFck", "concTopoEsp", "concTopoFck", "supPeT", "supTopoT", "concPeBorda", "concTopoBorda"],
+    escada: ["desnivel", "largura", "vao", "tLongarina", "hLongarina", "tDegrau", "tEspelho", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "raio", "raioLinha", "hRodape", "tRodape", "patamarComp", "lanceMax", "paredeLados", "patamarTopo", "nDegrau", "pDegrau", "concPeEsp", "concPeFck", "concTopoEsp", "concTopoFck", "supPeT", "supTopoT", "concPeBorda", "concTopoBorda", "nPatamares", "anguloMin", "abaDegrau", "vaoBarras", "barraD", "hInferior"],
     mezanino: ["Lx", "Lz", "vaosX", "vaosZ", "altura", "espSec", "tPiso", "tDeck", "painelMax", "gradeH", "gradeT", "gradeA", "gradeB", "gradeS", "espac", "travessas", "hRodape", "tRodape", "intermediaria", "aberturaPos", "aberturaLarg"],
     rolamento: ["capacidade", "vaoPonte", "cotaTrilho", "excentricidade", "trilhoB", "trilhoH", "lado"],
     rack: ["porticos", "espacamento", "largura"],
     skid: ["comprimento", "largura", "folga", "espTravessas", "tChapa", "pontos", "entreFurosX", "entreFurosZ"] };
-  var BOOLS = { trelica: ["ligacoes"], escada: ["espelho", "rodape", "apoioBase", "alturaDoModelo", "abrirPiso"], mezanino: ["frente", "fundo", "esquerda", "direita", "contraventar", "placaBase", "rodape", "semPilares", "contraventoPlano"], rolamento: [], rack: ["longarinas", "placaBase"], skid: ["chapa"] };
+  var BOOLS = { trelica: ["ligacoes"], escada: ["espelho", "rodape", "apoioBase", "alturaDoModelo", "abrirPiso", "publico"], mezanino: ["frente", "fundo", "esquerda", "direita", "contraventar", "placaBase", "rodape", "semPilares", "contraventoPlano"], rolamento: [], rack: ["longarinas", "placaBase"], skid: ["chapa"] };
 
   function padrao(tipo) { var T = TIPOS[tipo]; return T ? clone(T.PADRAO) : null; }
   function bool(v) { return !(v === false || v === "false" || v === 0 || v === "0" || v === "nao" || v === "não"); }
@@ -217,6 +220,11 @@
       if (!(p.desnivel >= 0.5 && p.desnivel <= 8)) return "Desnível da escada entre 0,50 e 8 m.";
       if (!(p.largura >= 0.5 && p.largura <= 3)) return "Largura da escada entre 0,50 e 3 m.";
       if (p.forma === "caracol" && !(p.raio >= 0.5 && p.raio <= 2)) return "Caracol: raio externo entre 0,50 e 2 m.";
+      if (["xadrez", "grade", "dobrada"].indexOf(String(p.degrau || "xadrez")) < 0) return "Degrau: chapa xadrez, chapa dobrada ou grade.";
+      if (p.degrau === "dobrada" && p.forma === "caracol") return "Caracol: degrau em chapa xadrez ou grade (o degrau em setor não é dobrado).";
+      if (p.degrau === "dobrada" && !(p.abaDegrau >= 0.02 && p.abaDegrau <= 0.10)) return "Degrau em chapa dobrada: aba (dobra da frente e de trás) de 2 a 10 cm.";
+      if (p.nPatamares && !(p.forma === "patamares" && Math.round(p.nPatamares) >= 1 && Math.round(p.nPatamares) <= 6)) return "Patamares intermediários: de 1 a 6, na escada reta com patamares.";
+      if (p.anguloMin && !(p.norma === "nr12-ingreme" && p.anguloMin >= 45 && p.anguloMin <= 70)) return "Ângulo mínimo da escada de navio: de 45° a 70°, com a norma NR-12 íngreme (item 11).";
       var ks = ["montante", "corrimao"];
       if (p.forma === "caracol") ks.push("mastro"); else { if (p.longarinaTipo !== "chapa") ks.push("longarina"); if (p.forma !== "reta") ks.push("patamarPerfil", "pilarete"); }
       if (p.norma && p.forma !== "caracol") { var dg0 = Acs().degraus(p.desnivel, p.norma); if (!dg0.ok) return dg0.motivo; }
@@ -361,8 +369,11 @@
     /* GANCHO S10 (14/10/2026): o ACABAMENTO DE FABRICAÇÃO (meia-esquadria nos cantos, terminais boleados, encontros
        sem atravessar, rodapé a topo) mora no js/metaldetalhe.js; sem ele (ou desligado: MetalDetalhe.ligar(false), o
        controle negativo do teste) segue o gerador de antes, abaixo. */
-    var Dt = dep("MetalDetalhe", "./metaldetalhe.js");
-    if (Dt && Dt.ativo() && o.acabamento !== false) return Dt.guardaCorpo(K, pts, o, ajudantes());
+    var Dt = dep("MetalDetalhe", "./metaldetalhe.js"), nPre = K.pecas.length;
+    /* GANCHO M5 (14/10/2026, js/metalguardas.js): o PREENCHIMENTO entre os montantes (barras verticais, tela, chapa perfurada,
+       vidro) — acrescentado depois do guarda-corpo, no plano das travessas que ele criou; sem preenchimento não faz nada */
+    var MG = o.preenchimento && o.preenchimento !== "travessas" ? dep("MetalGuardas", "./metalguardas.js") : null;
+    if (Dt && Dt.ativo() && o.acabamento !== false) { var nDt = Dt.guardaCorpo(K, pts, o, ajudantes()); return nDt + (MG && nDt ? MG.preencher(K, pts, o, ajudantes(), nPre) : 0); }
     var lig = "gc-" + o.gid, pm = perfilDe(o.montante), pc = perfilDe(o.corrimao), Hg = o.altura, sgs = [];
     if (!pm || !pc || pts.length < 2) return 0;
     var n0 = K.pecas.length, posts = [], fechado = pts.length > 3 && len(sub(pts[0], pts[pts.length - 1])) < 1e-3;   /* contorno fechado (guarda-corpo por retângulo): sem montante repetido */
@@ -390,6 +401,7 @@
       K.chapa({ origem: s.a, ex: u, ey: ey, t: num(o.tRodape, 0.00475), ret: { L: Lr, B: o.rodape }, papel: "Rodapé", aco: o.aco || "ASTM A36", lig: lig, nome: "Rodapé — trecho " + (j + 1) }, "rodape");
     });
     for (var q = n0; q < K.pecas.length; q++) K.pecas[q].metal.acessorio = "guarda-corpo";
+    if (MG) MG.preencher(K, pts, o, ajudantes(), n0);
     return K.pecas.length - n0;
   }
 
@@ -493,22 +505,32 @@
     var W = p.largura, G = alturasGuarda(), gid = String(novoId()), AC = p.norma && p.forma !== "caracol" ? Acs() : null, dgN = null, calc;
     if (AC) {
       /* degrau pela NORMA do acesso (js/acoacessos.js, 14/10/2026): NR-12 (industrial), NBR 9050 (rota acessível), NBR 9077 (emergência) */
-      dgN = AC.degraus(p.desnivel, p.norma, p.nDegrau > 0 ? { n: p.nDegrau, p: p.pDegrau } : {}); if (!dgN.ok) return { erro: dgN.motivo };
+      var opD = p.nDegrau > 0 ? { n: p.nDegrau, p: p.pDegrau } : {}; if (p.anguloMin > 0) opD.anguloMin = p.anguloMin;   /* M5: a escada de navio fica de anguloMin a 75° */
+      dgN = AC.degraus(p.desnivel, p.norma, opD); if (!dgN.ok) return { erro: dgN.motivo };
       calc = { ok: true, n: dgN.n, e: dgN.e, p: dgN.p, blondel: dgN.blondel, regra: p.norma, avisos: [] };
     } else calc = A.escadaCalc(p.desnivel, { regra: p.regra === "blondel" ? "blondel" : "tipo", largura: p.forma === "caracol" ? null : W });
     if (!calc.ok) return { erro: calc.motivo };
     var n = calc.n, e = calc.e, pp = calc.p, al = Math.atan(e / pp), ca = Math.cos(al);
     calc.avisos.forEach(function (a) { K.avisos.push(a); });
-    var degXadrez = p.degrau !== "grade", tD = degXadrez ? num(p.tDegrau, 0.00635) : num(p.gradeH, 0.025), tAuto = null;
-    /* escada COM norma de acesso e degrau de chapa: a espessura sai da verificação (flexão e flecha), não do padrão */
+    var degXadrez = p.degrau !== "grade", dobrada = p.degrau === "dobrada", aba = num(p.abaDegrau, 0.05), tD = degXadrez ? num(p.tDegrau, dobrada ? 0.00475 : 0.00635) : num(p.gradeH, 0.025), tAuto = null;
+    /* escada COM norma de acesso e degrau de chapa: a espessura sai da verificação (flexão e flecha), não do padrão
+       (M5: o degrau em CHAPA DOBRADA pela seção efetiva da NBR 14762 — a dobra da frente e de trás trabalha) */
     if (dgN && degXadrez && Acs() && Acs().espessuraDegrau && p.tDegrauAuto !== false && p.forma !== "caracol") {
-      var esD = Acs().espessuraDegrau(W, pp);
-      if (esD.ok) { tAuto = esD.t; tD = esD.t; K.avisos.unshift("Degrau em chapa: " + br(tD * 1000, 2) + " mm escolhida para passar a flexão (2,5 kN) e a flecha (W/300) com " + br(W) + " m de largura"); }
+      var esD = Acs().espessuraDegrau(W, pp, null, dobrada ? { material: "dobrada", aba: aba } : null);
+      if (esD.ok) { tAuto = esD.t; tD = esD.t; K.avisos.unshift("Degrau em chapa" + (dobrada ? " dobrada (aba de " + br(aba * 100, 0) + " cm)" : "") + ": " + br(tD * 1000, 2) + " mm escolhida para passar a flexão (2,5 kN) e a flecha (W/300) com " + br(W) + " m de largura"); }
       else K.avisos.unshift("SUGESTÃO: degrau em GRADE — " + esD.motivo);
     }
+    var gDeg = !degXadrez ? gradeKgM2(p) * 9.81 / 1000 : (dobrada ? 78.5 * tD * (pp + 2 * aba) / pp : 78.5 * tD * 1.07);   /* peso do degrau por m² de piso */
     var longU = p.longarinaTipo !== "chapa", pl = longU ? perfilDe(p.longarina) : null;
     var dL = longU ? pl.d : num(p.hLongarina, 0.25), bL = longU ? pl.bf : num(p.tLongarina, 0.0125);
-    var alt = [G.guarda].concat(G.corrimaos), gOpt = function (gid2) { return { gid: gid2, montante: p.montante, corrimao: p.corrimao, altura: G.guarda, alturas: alt, corrimao2: G.corrimaos, espac: p.espac, aco: p.aco, rodape: p.rodape ? num(p.hRodape, 0.2) : 0, tRodape: p.tRodape }; };
+    var alt = [G.guarda].concat(G.corrimaos), gOpt = function (gid2) {
+      var o = { gid: gid2, montante: p.montante, corrimao: p.corrimao, altura: G.guarda, alturas: alt, corrimao2: G.corrimaos, espac: p.espac, aco: p.aco, rodape: p.rodape ? num(p.hRodape, 0.2) : 0, tRodape: p.tRodape };
+      /* M5: o PREENCHIMENTO do guarda-corpo da escada (barras verticais: a esfera de 0,15 m da NPT 011 e o vão de 0,11 m do uso público) */
+      if (p.preenchimento && p.preenchimento !== "travessas") {
+        var pcr0 = perfilDe(p.corrimao), rCr = pcr0 && pcr0.D ? pcr0.D / 2 : 0.024, hIn = num(p.hInferior, 0) > 0 ? num(p.hInferior, 0) : 0.05; if (o.rodape > 0) hIn = Math.max(hIn, o.rodape + rCr + 0.005);
+        o.alturas = [G.guarda, r4(G.guarda - 0.10), r4(hIn)].concat(G.corrimaos); o.preenchimento = p.preenchimento; o.vaoBarras = p.vaoBarras; o.barraD = p.barraD; o.hInferior = hIn;
+      }
+      return o; };
     var prolonga = p.norma === "nbr9050" ? 0.30 : 0, corrInterm = false;
     var lados = p.guarda === "nenhum" ? [] : (p.guarda === "um" ? [1] : [1, -1]);
     var nLance = 0, lancesReg = [], patReg = [];
@@ -519,13 +541,24 @@
       if (c) c.metal.papel = degXadrez ? (rot || "Degrau em chapa xadrez") : "Degrau em grade";
       return c;
     }
+    /* DEGRAU EM CHAPA DOBRADA (M5): a chapa com a dobra da frente (bocel) e a de trás para baixo — seção "dobrada" do js/metalpeca.js
+       (linha média + espessura + raio interno = t, o desenvolvimento pelo js/metalplanif.js), extrudada na largura da escada */
+    function degrauDobrado(F, u0, y, nome) {
+      var KK = K.F; K.F = F;
+      var pts = [[u0 + tD / 2, y - aba], [u0 + tD / 2, y - tD / 2], [u0 + pp - tD / 2, y - tD / 2], [u0 + pp - tD / 2, y - aba]];
+      /* a seção dobrada é desenhada CENTRADA na caixa dela (js/metalplanif.js): a origem vai no centro da caixa do degrau */
+      var c = K.perfil({ origem: [u0 + pp / 2, y - aba / 2, -W / 2], ex: [0, 0, 1], ey: [0, 1, 0], perfil: { forma: "dobrada", pts: pts, t: tD, ri: tD, tipo: "degrau" }, L: W, papel: "Degrau em chapa dobrada", ifc: "IFCMEMBER", aco: p.aco, nome: nome }, "degraus");
+      K.F = KK;
+      return c;
+    }
     /* UM LANCE no referencial F (u sobe, origem no pé do 1º espelho, no meio da largura; y0 = 0) */
     function lance(F, nR, guardaLados) {
       nLance++;
       var Fk = K.F; K.F = F;
       var uTop = (nR - 1) * pp;
       for (var k = 1; k < nR; k++) {
-        degrauChapa(F, { origem: [(k - 1) * pp, k * e, -W / 2], ex: [1, 0, 0], ey: [0, 0, 1], t: tD, ret: { L: pp, B: W }, papel: "Degrau", aco: p.aco, nome: "Degrau " + k + " — lance " + nLance });
+        if (dobrada) degrauDobrado(F, (k - 1) * pp, k * e, "Degrau " + k + " — lance " + nLance);
+        else degrauChapa(F, { origem: [(k - 1) * pp, k * e, -W / 2], ex: [1, 0, 0], ey: [0, 0, 1], t: tD, ret: { L: pp, B: W }, papel: "Degrau", aco: p.aco, nome: "Degrau " + k + " — lance " + nLance });
         if (p.espelho && k * e - tD - (k - 1) * e > 0.02) K.chapa({ origem: [(k - 1) * pp, (k - 1) * e, -W / 2], ex: [0, 1, 0], ey: [0, 0, 1], t: num(p.tEspelho, 0.003), ret: { L: e - tD, B: W }, papel: "Espelho", aco: p.aco, nome: "Espelho " + k + " — lance " + nLance }, "espelhos");
       }
       /* LONGARINAS: o topo na linha dos bocéis; corte horizontal no pé e de prumo no topo */
@@ -570,7 +603,7 @@
       [[u0, w0, u1, w0], [u1, w1, u0, w1], [u0, w1, u0, w0], [u1, w0, u1, w1]].forEach(function (s, i) {
         K.barra([s[0], yV, s[1]], [s[2], yV, s[3]], { ferr: "viga", cat: pq ? pq.cat : p.patamarPerfil, just: "topo", lado: "esquerda", papel: "Viga do patamar", aco: p.aco, nome: "Viga do patamar " + (i + 1) }, "patamar");
       });
-      var c = degrauChapa(K.F, { origem: [u0, y, w0], ex: [1, 0, 0], ey: [0, 0, 1], t: tD, ret: { L: u1 - u0, B: w1 - w0 }, papel: "Piso do patamar", aco: p.aco, nome: "Piso do patamar" }, "Piso do patamar em chapa xadrez");
+      var c = degrauChapa(K.F, { origem: [u0, y, w0], ex: [1, 0, 0], ey: [0, 0, 1], t: dobrada ? Math.max(tD, 0.00635) : tD, ret: { L: u1 - u0, B: w1 - w0 }, papel: "Piso do patamar", aco: p.aco, nome: "Piso do patamar" }, "Piso do patamar em chapa xadrez");
       if (c) c.metal.papel = degXadrez ? "Piso do patamar em chapa xadrez" : "Piso do patamar em grade";
       var yB = yV - (pq ? pq.d : 0.15);
       /* o pilarete vai até o TOPO DO AÇO (a linha das vigas do patamar, "topo"), como no mezanino: no cálculo da estrutura
@@ -587,6 +620,7 @@
          por lance da norma (NR-12 3,00 m; NBR 9050 3,20 m; NBR 9077 3,70 m — ou o digitado) */
       var hMax = p.lanceMax > 0 ? p.lanceMax : (p.norma === "nbr9050" ? 3.20 : (p.norma === "emergencia" ? 3.70 : 3.00));
       var nL = Math.max(1, Math.ceil(p.desnivel / hMax - 1e-9));
+      if (p.nPatamares > 0) nL = Math.max(nL, Math.round(p.nPatamares) + 1);   /* M5: RETA COM PATAMAR INTERMEDIÁRIO pedido (além do da norma) */
       while (nL < n && Math.ceil(n / nL) * e > hMax + 1e-9) nL++;
       var nBase = Math.floor(n / nL), resto = n % nL, Lp = p.patamarComp > 0 ? p.patamarComp : Math.max(W, p.norma === "nbr9050" ? 1.20 : (p.norma === "emergencia" ? 1.10 : 0.80));
       if (nBase < 2) return { erro: "Lances curtos demais (menos de 2 espelhos): aumente a altura máxima por lance ou use a escada reta." };
@@ -658,10 +692,10 @@
     if (ES && ES.desenhar && longU && (p.forma === "reta" || p.forma === "patamares") && (p.fixPe || p.fixTopo)) {
       /* "auto" sem o modelo (a tela resolve pelo que está embaixo/em cima): pé ancorada, topo apoiada */
       var pf = clone(p); if (pf.fixPe === "auto") pf.fixPe = "ancorada"; if (pf.fixTopo === "auto") pf.fixTopo = pf.fixPe === "apoiada" ? "ancorada" : "apoiada";
-      fixR = ES.desenhar(K, ajudantes(), { p: pf, lances: lancesReg, patamares: patReg, e: e, pp: pp, W: W, bL: bL, dL: dL, al: al, gid: gid, gPiso: degXadrez ? 78.5 * tD * 1.07 : gradeKgM2(p) * 9.81 / 1000, qPiso: Acs() ? Acs().sobrecarga(p.usoPiso).q : 2.5 });
+      fixR = ES.desenhar(K, ajudantes(), { p: pf, lances: lancesReg, patamares: patReg, e: e, pp: pp, W: W, bL: bL, dL: dL, al: al, gid: gid, gPiso: gDeg, qPiso: Acs() ? Acs().sobrecarga(p.usoPiso).q : 2.5 });
     }
     K.avisos.push("Guarda-corpo a " + br(G.guarda) + " m e corrimão a " + br(G.corrimaos[0]) + " e " + br(G.corrimaos[1]) + " m: " + G.fonte);
-    if (dgN) K.avisos.push("Degrau pela norma: " + dgN.ref + (dgN.conferir ? " (conferir no texto da norma)" : ""));
+    if (dgN) K.avisos.push("Degrau pela norma: " + dgN.ref);
     if (!degXadrez) K.avisos.push("Grade: " + br(gradeKgM2(p), 1) + " kg/m² pela geometria (barra portante " + cm(p.gradeH) + " × " + br(p.gradeT * 1000, 1) + " mm a cada " + cm(p.gradeA) + " cm) — valor de partida, conferir com o fabricante");
     K.avisos.push("Fixação dos degraus nas longarinas (cantoneira ou solda): a detalhar");
     var cont = K.cont, med = { tDegrauEscolhida: tAuto, n: n, e: e, p: pp, blondel: r4(2 * e + pp), dentroBlondel: 2 * e + pp >= 0.63 - 1e-9 && 2 * e + pp <= 0.64 + 1e-9, regra: calc.regra, angulo: info.angulo, voltas: info.voltas, guarda: G.guarda, corrimaos: G.corrimaos, lances: nLances };
@@ -669,13 +703,17 @@
     var pcr = perfilDe(p.corrimao), qPiso = Acs() ? Acs().sobrecarga(p.usoPiso).q : 2.5;
     med.acesso = { tipo: p.norma === "nr12-ingreme" ? "escada-ingreme" : "escada", perfil: p.norma || "nr12", forma: p.forma, desnivel: p.desnivel, largura: W, e: e, p: pp, n: n, lances: nLances,
       desnivelEntrePatamares: r4(hLanceMax), patamar: nLances > 1 ? { comprimento: patC, largura: patL } : null, alturaLivre: null,
-      guarda: { ladosLivres: Math.max(0, 2 - Math.round(num(p.paredeLados, 0))), ladosProtegidos: lados.length, altura: G.guarda, alturas: G.corrimaos.slice(), rodape: p.rodape ? num(p.hRodape, 0.2) : 0, espacMontantes: p.espac, superiorPlano: pcr ? pcr.forma !== "tubo-circ" : null },
+      guarda: { ladosLivres: Math.max(0, 2 - Math.round(num(p.paredeLados, 0))), ladosProtegidos: lados.length, altura: G.guarda, alturas: G.corrimaos.slice(), rodape: p.rodape ? num(p.hRodape, 0.2) : 0, espacMontantes: p.espac, superiorPlano: pcr ? pcr.forma !== "tubo-circ" : null, publico: !!p.publico },
       corrimao: { alturas: G.corrimaos.slice(), lados: lados.length, diametro: pcr && pcr.forma === "tubo-circ" ? pcr.D : null, prolongamento: prolonga, intermediario: corrInterm } };
+    /* M5: o vão-luz do preenchimento do guarda-corpo (o maior entre os lances e os patamares) */
+    var pre = arr(K._preench).filter(function (x) { return x && x.tipo && x.tipo !== "travessas"; });
+    if (pre.length) { med.acesso.guarda.vaoLuz = r4(Math.max.apply(null, pre.map(function (x) { return num(x.vaoLuz, 0); }))); med.acesso.guarda.vaoInferior = r4(Math.max.apply(null, pre.map(function (x) { return num(x.vaoInferior, 0); }))); med.acesso.guarda.preenchimento = pre[0].tipo; med.acesso.guarda.alturas = G.corrimaos.slice().concat([r4(G.guarda - 0.10)]); }
     var its = [], nvs = [];
     if (p.forma !== "caracol") {
-      if (longU) its.push({ tipo: "longarina", perfil: p.longarina, aco: p.aco, e: e, p: pp, Lh: (Math.ceil(n / Math.max(1, nLances)) - 1) * pp, largura: W, gPiso: degXadrez ? 78.5 * tD * 1.07 : gradeKgM2(p) * 9.81 / 1000, q: qPiso, qRef: "NBR 6120:2019, Tabela 10" });
+      if (longU) its.push({ tipo: "longarina", perfil: p.longarina, aco: p.aco, e: e, p: pp, Lh: (Math.ceil(n / Math.max(1, nLances)) - 1) * pp, largura: W, gPiso: gDeg, q: qPiso, qRef: "NBR 6120:2019, Tabela 10" });
       else nvs.push("não verificado: longarina em chapa (verificar a chapa como viga inclinada à parte)");
-      its.push({ tipo: "degrau", material: degXadrez ? "chapa" : "grade", aco: "ASTM A36", t: tD, vao: W, p: pp, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, q: qPiso });
+      its.push({ tipo: "degrau", material: dobrada ? "dobrada" : (degXadrez ? "chapa" : "grade"), aco: "ASTM A36", t: tD, aba: aba, vao: W, p: pp, gradeH: p.gradeH, gradeT: p.gradeT, gradeA: p.gradeA, q: qPiso });
+      if (pre.length) its.push({ tipo: "preenchimento", preenchimento: pre[0].tipo, uso: p.usoGuarda, espac: p.espac, barraD: p.barraD, passo: r4(med.acesso.guarda.vaoLuz + num(p.barraD, 0.016)), hFaixa: r4(G.guarda - 0.10 - 0.05), corrimao: p.corrimao, aco: p.aco });
       if (nLances > 1 && perfilDe(p.patamarPerfil)) its.push({ tipo: "viga", nome: "Viga do patamar", perfil: p.patamarPerfil, aco: p.aco, L: Math.max(patC, patL), faixa: Math.min(patC, patL) / 2, q: qPiso, gPiso: 0.6, travadaPeloPiso: true });
       /* REVISÃO S6 (Rogério, 14/10): o patamar de TOPO da escada por linha também tem a viga verificada (de baixo até a borda ele
          pode passar dos 0,80 m da norma — o vão que sobra entre a escada e o piso) */

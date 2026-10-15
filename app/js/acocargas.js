@@ -53,7 +53,10 @@
     "Q-uso-b":     { psi0: 0.7, psi1: 0.6, psi2: 0.4, nome: "uso e ocupação: locais com predominância de pesos e equipamentos fixos por longos períodos ou de elevadas concentrações de pessoas" },
     "Q-cobertura": { psi0: 0.8, psi1: 0.7, psi2: 0.6, nome: "bibliotecas, arquivos, depósitos, oficinas, garagens e SOBRECARGAS EM COBERTURAS" },
     "W":           { psi0: 0.6, psi1: 0.3, psi2: 0.0, nome: "pressão dinâmica do vento nas estruturas em geral" },
-    "Q-temperatura": { psi0: 0.6, psi1: 0.5, psi2: 0.3, nome: "variações uniformes de temperatura em relação à média anual local" }
+    "Q-temperatura": { psi0: 0.6, psi1: 0.5, psi2: 0.3, nome: "variações uniformes de temperatura em relação à média anual local" },
+    /* PÓRTICOS M4 (14/10/2026): a ponte rolante entra com ψ0 = ψ1 = ψ2 = 1,0 — SEM redução, a favor da segurança: a linha
+       das pontes rolantes da Tabela 2 não está transcrita no motor (nada inventado; conferir na NBR 8800 e trocar aqui) */
+    "Q-ponte":     { psi0: 1.0, psi1: 1.0, psi2: 1.0, nome: "ponte rolante — ψ0 = ψ1 = ψ2 = 1,0 adotados (sem redução, a favor da segurança; a linha da Tabela 2 para pontes rolantes não está transcrita no motor)" }
   };
   var NOCIONAL = 0.003;   /* 4.9.7.1.1: imperfeição geométrica inicial h/333 → forças horizontais de 0,3 % das cargas gravitacionais de cálculo */
 
@@ -80,7 +83,12 @@
 
   /* =================================================== COMBINAÇÕES
    * casos: [{ id, tipo: "G" | "Q" | "W", categoria: chave de GAMA_F / PSI (opcional), nome,
-   *           direcao: 0 | 90 | 180 | 270 (vento), nocionalDir: [x, y, z] (opcional) }]
+   *           direcao: 0 | 90 | 180 | 270 (vento), nocionalDir: [x, y, z] (opcional),
+   *           exclusivo: "grupo" (opcional, só Q) }]
+   * EXCLUDENTES (PÓRTICOS M4, 14/10/2026): os Q com o mesmo `exclusivo` são POSIÇÕES/SENTIDOS alternativos da mesma ação
+   *   (a ponte rolante num lado ou no outro, a frenagem para um lado ou para o outro): nunca entram juntos. Cada
+   *   combinação que levaria o grupo como secundário se repete com UM membro de cada vez; com o membro principal, os
+   *   outros do grupo ficam fora. Sem nenhum `exclusivo`, a saída é idêntica à de antes (mesmas combinações, mesma ordem).
    * op: { nocional: true, segundaOrdem: true, sobrecargaPrincipal: true }
    * Devolve [{ id, nome, tipo: "ELU" | "ELS-rara" | "ELS-frequente" | "ELS-qp", fatores: {caso: f}, descricao, nocional, segundaOrdem }] */
   function combinacoes(casos, op) {
@@ -100,16 +108,28 @@
       out.push(c);
     }
     function f2(v) { return br(v, 2); }
+    /* grupos excludentes: as escolhas (um membro de cada grupo que NÃO tem o principal) — sem grupos, [[]] */
+    var grupos = {}, gKeys = [];
+    Q.forEach(function (q) { if (q.exclusivo) { if (!grupos[q.exclusivo]) { grupos[q.exclusivo] = []; gKeys.push(q.exclusivo); } grupos[q.exclusivo].push(q); } });
+    var Qlivres = Q.filter(function (q) { return !q.exclusivo; });
+    function escolhas(principal) {
+      var out = [[]];
+      gKeys.forEach(function (g) { if (principal && principal.exclusivo === g) return; var nv = []; out.forEach(function (o) { grupos[g].forEach(function (m) { nv.push(o.concat([m])); }); }); out = nv; });
+      return out;
+    }
+    function rotEsc(esc) { return esc.length ? " [" + esc.map(function (q) { return q.id; }).join(", ") + "]" : ""; }
     /* ---- ELU ---- */
     var dirsGrav = op.nocionalDirecoes || [[1, 0, 0], [0, 0, 1]];
     /* 1) variável de uso/cobertura principal, sem vento — forças nocionais em cada direção */
     Q.forEach(function (q) {
       dirsGrav.forEach(function (dg, k) {
-        var fat = {}, d = [];
-        G.forEach(function (g) { fat[g.id] = gf(g, false); d.push(f2(gf(g, false)) + "·" + g.id); });
-        fat[q.id] = gq(q); d.push(f2(gq(q)) + "·" + q.id);
-        Q.forEach(function (q2) { if (q2 !== q) { fat[q2.id] = gq(q2) * psi(q2, "psi0"); d.push(f2(gq(q2) * psi(q2, "psi0")) + "·" + q2.id); } });
-        add(q.nome + " principal" + (dirsGrav.length > 1 ? " (nocional " + (dg[0] ? "X" : "Z") + ")" : ""), "ELU", fat, d.join(" + "), dg);
+        escolhas(q).forEach(function (esc) {
+          var fat = {}, d = [];
+          G.forEach(function (g) { fat[g.id] = gf(g, false); d.push(f2(gf(g, false)) + "·" + g.id); });
+          fat[q.id] = gq(q); d.push(f2(gq(q)) + "·" + q.id);
+          Qlivres.concat(esc).forEach(function (q2) { if (q2 !== q) { fat[q2.id] = gq(q2) * psi(q2, "psi0"); d.push(f2(gq(q2) * psi(q2, "psi0")) + "·" + q2.id); } });
+          add(q.nome + " principal" + (dirsGrav.length > 1 ? " (nocional " + (dg[0] ? "X" : "Z") + ")" : "") + rotEsc(esc), "ELU", fat, d.join(" + "), dg);
+        });
       });
     });
     if (!Q.length && G.length) dirsGrav.forEach(function (dg) { var fat = {}; G.forEach(function (g) { fat[g.id] = gf(g, false); }); add("Permanentes", "ELU", fat, G.map(function (g) { return f2(gf(g, false)) + "·" + g.id; }).join(" + "), dg); });
@@ -117,11 +137,13 @@
       var nd = dirW(w);
       /* 2) vento principal + sobrecarga secundária (ψ0) */
       if (Q.length) {
-        var fat = {}, d = [];
-        G.forEach(function (g) { fat[g.id] = gf(g, false); d.push(f2(gf(g, false)) + "·" + g.id); });
-        fat[w.id] = gq(w); d.push(f2(gq(w)) + "·" + w.id);
-        Q.forEach(function (q) { fat[q.id] = gq(q) * psi(q, "psi0"); d.push(f2(gq(q) * psi(q, "psi0")) + "·" + q.id); });
-        add(w.nome + " principal + sobrecarga", "ELU", fat, d.join(" + "), nd);
+        escolhas(null).forEach(function (esc) {
+          var fat = {}, d = [];
+          G.forEach(function (g) { fat[g.id] = gf(g, false); d.push(f2(gf(g, false)) + "·" + g.id); });
+          fat[w.id] = gq(w); d.push(f2(gq(w)) + "·" + w.id);
+          Qlivres.concat(esc).forEach(function (q) { fat[q.id] = gq(q) * psi(q, "psi0"); d.push(f2(gq(q) * psi(q, "psi0")) + "·" + q.id); });
+          add(w.nome + " principal + sobrecarga" + rotEsc(esc), "ELU", fat, d.join(" + "), nd);
+        });
         /* 3) sobrecarga principal + vento secundário (ψ0 = 0,6) */
         Q.forEach(function (q) {
           var fat3 = {}, d3 = [];
@@ -145,10 +167,10 @@
       outros.forEach(function (o) { var v = psi(o, kOutro); if (v) { fat[o.id] = v; d.push(br(v, 1) + "·" + o.id); } });
       add(nome, tipo, fat, d.join(" + "));
     }
-    Q.forEach(function (q) { els(q.nome + " (rara)", "ELS-rara", q, Q.filter(function (x) { return x !== q; }), "psi1"); });
-    W.forEach(function (w) { els(w.nome + " (rara)", "ELS-rara", w, Q, "psi1"); });
+    Q.forEach(function (q) { escolhas(q).forEach(function (esc) { els(q.nome + " (rara)" + rotEsc(esc), "ELS-rara", q, Qlivres.concat(esc).filter(function (x) { return x !== q; }), "psi1"); }); });
+    W.forEach(function (w) { escolhas(null).forEach(function (esc) { els(w.nome + " (rara)" + rotEsc(esc), "ELS-rara", w, Qlivres.concat(esc), "psi1"); }); });
     W.forEach(function (w) { var fat = {}; fat[w.id] = 1; add(w.nome + " — só o vento (deslocamento horizontal)", "ELS-rara", fat, w.id); });
-    if (G.length) els("Quase permanente", "ELS-qp", null, Q.concat(W), "psi2");
+    if (G.length) escolhas(null).forEach(function (esc) { els("Quase permanente" + rotEsc(esc), "ELS-qp", null, Qlivres.concat(esc).concat(W), "psi2"); });
     return out;
   }
 

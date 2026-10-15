@@ -121,7 +121,7 @@
   }
 
   /* ------------------------------------------------------------ números (padrão BR) */
-  /* "1.234,56" · "1234,56" · "19.61" · "2.000" (= 2000: grupo de 3 depois do ponto é milhar, como no BR) · "−3" */
+  /* "1.234,56" · "1234,56" · "19.61" · "2.000" (= 2000: grupo de 3 depois do ponto é milhar, como no BR; "0.125" = 0,125: zero à esquerda não é milhar) · "−3" */
   function lerNumero(texto) {
     var s = String(texto == null ? "" : texto).replace(/[\s ]/g, "").replace(/[−–]/g, "-");
     if (!/^[+-]?(\d[\d.,]*|[.,]\d+)$/.test(s)) return NaN;
@@ -136,7 +136,7 @@
       if (s.split(",").length !== 2) return NaN;
       n = Number(s.replace(",", "."));
     } else if (temP) {
-      if (/^\d{1,3}(\.\d{3})+$/.test(s)) n = Number(s.replace(/\./g, ""));
+      if (/^\d{1,3}(\.\d{3})+$/.test(s) && !/^0\./.test(s)) n = Number(s.replace(/\./g, ""));
       else if (s.split(".").length === 2) n = Number(s);
       else return NaN;
     } else n = Number(s);

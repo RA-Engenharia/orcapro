@@ -70,8 +70,10 @@
   var ED24 = "NBR 8800:2024", ED08 = "NBR 8800:2008", ED14762 = "NBR 14762:2010", DG1 = "AISC Design Guide 1 (2ª ed.)";
   var CHAPAS = [6.3, 8, 9.5, 12.5, 16, 19, 22.4, 25, 31.5, 37.5, 44.5, 50];                       /* espessuras comerciais (mm) */
   /* ids do catálogo do desenho (js/metalnorma.js) */
-  var PARAF = [{ id: "M12", d: 12 }, { id: "M16", d: 16 }, { id: "M20", d: 20 }, { id: "M22", d: 22 }, { id: "M24", d: 24 }, { id: "M27", d: 27 }, { id: "M30", d: 30 }];
-  var CHUMB = [{ id: "5/8\"", d: 15.875 }, { id: "3/4\"", d: 19.05 }, { id: "7/8\"", d: 22.225 }, { id: "1\"", d: 25.4 }, { id: "1.1/8\"", d: 28.575 }, { id: "1.1/4\"", d: 31.75 }];
+  /* os diâmetros que o motor experimenta: a tabela ÚNICA do js/acomateriais.js (DIAMETROS — os mesmos valores e a
+     mesma ordem de antes; PARAF[3] é o M22). Este arquivo carrega DEPOIS do acomateriais.js no index.html. */
+  function diam(tipo) { var M = Mat(); return M && M.diametros ? M.diametros(tipo) : []; }
+  var PARAF = diam("parafuso"), CHUMB = diam("chumbador");
   function Ab(d) { return Math.PI * d * d / 4; }
 
   /* ------------------------------------------------ resistências básicas (kN) */

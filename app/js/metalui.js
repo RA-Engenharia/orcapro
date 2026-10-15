@@ -128,6 +128,8 @@
       if (!previa() || !R || !M() || !L()) return false;
       /* PEÇAS PRONTAS (js/metalprontasui.js, 13/10/2026): o grupo entra logo depois do Galpão */
       var PP = global.MetalProntasUI && global.MetalProntas ? global.MetalProntasUI : null;
+      /* PÓRTICOS M4 (14/10/2026, js/metalporticosui.js): a biblioteca de pórticos industriais entra logo depois do Galpão */
+      var PO = global.MetalPorticosUI && global.MetalPorticos ? global.MetalPorticosUI : null;
       /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js): o grupo entra logo depois das Peças prontas */
       var TQ = global.MetalTanqueUI && global.MetalTanque && global.AcoTanque ? global.MetalTanqueUI : null;
       /* METÁLICA › ACESSOS (14/10/2026, js/metalacessosui.js): o grupo entra logo depois das Peças prontas — só se os motores carregaram */
@@ -137,11 +139,12 @@
       Object.keys(this.COMANDOS).forEach(function (pn) {
         if (pn === "Ligações" && LSU) R.acrescentar("metalica", "Metálica & Mecânica", "Ligação inteligente", LSU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         R.acrescentar("metalica", "Metálica & Mecânica", pn, self.COMANDOS[pn]);
+        if (pn === "Galpão" && PO) R.acrescentar("metalica", "Metálica & Mecânica", "Pórticos", PO.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && PP) R.acrescentar("metalica", "Metálica & Mecânica", "Peças prontas", PP.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && AU) R.acrescentar("metalica", "Metálica & Mecânica", "Acessos", AU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && TQ) R.acrescentar("metalica", "Metálica & Mecânica", "Tanques", TQ.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));   /* METÁLICA › T */
       });
-      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
+      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PO ? PO.ids() : []).concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
       /* METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026, js/metalcatalogoui.js): o grupo "Catálogo" entra depois da Fabricação; o painel é uma consulta (aços, chapas, pintura, cores) e não mexe no modelo */
       var CAT = global.MetalCatalogoUI && global.AcoCatalogoInd ? global.MetalCatalogoUI : null;
       if (CAT) {
@@ -163,6 +166,7 @@
       };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Metálica: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
       if (PP && PP.registrar) { try { PP.registrar(reg); } catch (eP) { toast("Metálica (peças prontas): " + (eP && eP.message ? eP.message : eP), "erro", 8000); } }
+      if (PO && PO.registrar) { try { PO.registrar(reg); } catch (eO) { toast("Metálica (pórticos): " + (eO && eO.message ? eO.message : eO), "erro", 8000); } }   /* PÓRTICOS M4 */
       /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js) */
       if (TQ && TQ.registrar) { try { TQ.registrar(reg); } catch (eT) { toast("Metálica (tanques): " + (eT && eT.message ? eT.message : eT), "erro", 8000); } }
       if (AU && AU.registrar) { try { AU.registrar(reg); } catch (eA) { toast("Metálica (acessos): " + (eA && eA.message ? eA.message : eA), "erro", 8000); } }   /* METÁLICA › ACESSOS (14/10/2026) */
@@ -428,7 +432,37 @@
         { id: "tapamentos", rotulo: "Colunas de tapamento por oitão", valor: G0.tapamentos, num: 1 }, { id: "tapamento", rotulo: "Perfil da coluna de tapamento", valor: G0.tapamento, lista: this.catalogo(), partida: 1 },
         { id: "contraventos", rotulo: "Contraventamentos nos vãos extremos", valor: G0.contraventos, tipo: "check" }, { id: "ligacoes", rotulo: "Aplicar as ligações padrão", valor: G0.ligacoes, tipo: "check" },
         { id: "x0", rotulo: "Origem X (m)", valor: br(P[0], 2), num: 1 }, { id: "z0", rotulo: "Origem Z (m)", valor: br(P[2], 2), num: 1 }, { id: "base", rotulo: "Cota da base (m)", valor: br(P[1], 2), num: 1 }
-      ], function (v) { self.gerarGalpao(v, alvo ? { substituir: alvo.id } : {}); }, "", alvo ? "Atualizar este galpão" : "Gerar galpão");
+      ].concat(this.camposVedacao(G0)), function (v) { self.gerarGalpao(v, alvo ? { substituir: alvo.id } : {}); }, "", alvo ? "Atualizar este galpão" : "Gerar galpão");
+    },
+    /* VEDAÇÃO na fita (14/10/2026, js/acovedacao.js): a telha da cobertura e o fechamento das laterais e dos oitões viram
+       PEÇAS do modelo — telhas, alvenaria do misto, cumeeira, rufos, contra-rufos, arremates e calha. As telhas e as
+       paredes são as do catálogo (js/acofechamentos.js); beiral, portão e medidas dos acessórios são de partida. */
+    FECH_FITA: [["aberto", "Aberto (só os pilares)"], ["telha", "Telha"], ["misto", "Alvenaria até h + telha acima"], ["alvenaria", "Alvenaria até o telhado"]],
+    camposVedacao: function (G0) {
+      var A = global.AcoFechamentos, V = global.AcoVedacao, lt = A && A.telhas ? A.telhas().map(function (t) { return [t.id, A.nome(t)]; }) : [];
+      if (!A || !V || !lt.length) return [];
+      var pd = V.PARTIDA, val = function (k, d) { return G0[k] != null ? G0[k] : d; };
+      return [
+        { id: "cobertura", rotulo: "Telha da cobertura", valor: val("cobertura", A.PADRAO_TELHA), opcoes: [["", "Sem telha (só a estrutura)"]].concat(lt) },
+        { id: "fechLateral", rotulo: "Fechamento das laterais", valor: val("fechLateral", "aberto"), opcoes: this.FECH_FITA },
+        { id: "fechOitao", rotulo: "Fechamento dos oitões", valor: val("fechOitao", "aberto"), opcoes: this.FECH_FITA },
+        { id: "alturaAlvenaria", rotulo: "Altura da alvenaria (m, no misto)", valor: br(val("alturaAlvenaria", pd.alturaAlvenaria), 2), num: 1, partida: 1 },
+        { id: "telhaFech", rotulo: "Telha do fechamento", valor: val("telhaFech", ""), opcoes: [["", "A mesma da cobertura"]].concat(lt) },
+        { id: "portaoL", rotulo: "Portão no oitão da frente — largura (m, 0 = sem)", valor: br(val("portaoL", 0), 2), num: 1 },
+        { id: "portaoA", rotulo: "Portão — altura (m)", valor: br(val("portaoA", 4.5), 2), num: 1 },
+        { id: "beiral", rotulo: "Beiral lateral (m)", valor: br(val("beiral", pd.beiral), 2), num: 1, partida: 1 },
+        { id: "beiralOitao", rotulo: "Beiral no oitão (m)", valor: br(val("beiralOitao", pd.beiralOitao), 2), num: 1, partida: 1 },
+        { id: "calha", rotulo: "Calha nos beirais", valor: !!val("calha", false), tipo: "check" }
+      ];
+    },
+    /* os campos da fita → o par.vedacao do js/metalgalpao.js */
+    vedacaoDaFita: function (v) {
+      var h = num(v.alturaAlvenaria, 3), tf = v.telhaFech || "", cob = v.cobertura ? { telhaId: String(v.cobertura) } : null;
+      function face(t) { return { tipo: t || "aberto", alturaAlvenaria: h, telhaId: tf, bloco: "vedacao-concreto", aberturas: [] }; }
+      var faces = { esquerda: face(v.fechLateral), direita: face(v.fechLateral), frente: face(v.fechOitao), fundo: face(v.fechOitao) };
+      var pl = num(v.portaoL, 0), pa = num(v.portaoA, 0), vao = num(v.vao, 12);
+      if (pl > 0 && pa > 0 && faces.frente.tipo !== "aberto") faces.frente.aberturas = [{ s0: Math.max(0, vao / 2 - pl / 2), s1: Math.min(vao, vao / 2 + pl / 2), altura: pa }];
+      return { cobertura: cob, faces: faces, beiral: num(v.beiral, null), beiralOitao: num(v.beiralOitao, null), calha: !!v.calha };
     },
     /* v = os campos do diálogo (tirante em MM) ou, com op.doCalculo, o par do
        BimMetalGalpao.parDoCalculo (já em METROS: o modelo do cálculo, com perfis,
@@ -464,6 +498,8 @@
       if (!op.doCalculo) {
         if (par.tirante != null) par.tirante = num(par.tirante, 0) / 1000;
         if (par.tirante === 0) par.tirantes = false;
+        /* a vedação da fita (os campos ficam no par: o "Editar galpão" reabre com eles) */
+        if (par.cobertura != null || par.fechLateral != null || par.fechOitao != null) par.vedacao = this.vedacaoDaFita(par);
       }
       var r = global.BimMetalGalpao.gerar(par, this.novoId.bind(this));
       if (!r.ok) { toast("Galpão: " + r.motivo, "aviso", 8000); return r; }
