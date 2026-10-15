@@ -328,9 +328,14 @@
     return { Rx: Rx, R0: R0, Mneg: Mneg, Mpos: Math.max(0, Mpos), c: c };
   }
   function solucaoBase(id, nome) { return { id: id, nome: nome, aplicavel: true, passa: false, aproveitamento: 0, verificacoes: [], precisa: [], naoVerificado: [], pecas: [], ligacoes: [], custo: { kg: 0, indice: 0, rel: null }, motivo: "" }; }
-  function fecharSol(s) {
+  function fecharSol(s, travavel) {
     s.aproveitamento = s.verificacoes.reduce(function (m, v) { return Math.max(m, isFinite(v.razao) ? v.razao : 99); }, 0);
-    s.passa = s.aplicavel && s.verificacoes.length > 0 && s.aproveitamento <= 1 + 1e-9 && s.ligacoes.every(function (l) { return l.ok; });
+    var semPilar = s.verificacoes.filter(function (v) { return !v.pilar; }), vp = s.verificacoes.filter(function (v) { return v.pilar; });
+    var restoOk = s.aplicavel && semPilar.length > 0 && semPilar.every(function (v) { return v.razao <= 1 + 1e-9; }) && s.ligacoes.every(function (l) { return l.ok; });
+    var pilarOk = vp.length > 0 && vp.every(function (v) { return v.razao <= 1 + 1e-9; });
+    s.passa = restoOk && pilarOk;
+    /* a conta conservadora do pilar reprova, mas o pilar recebe outras peças (pode estar travado): NÃO passa — "pilar a confirmar" */
+    s.pilarAConfirmar = restoOk && !pilarOk && !!travavel;
     s.custo.kg = Math.round(s.pecas.concat(s.ligacoes).reduce(function (t, p) { return t + num(p.kg, 0); }, 0) * 10) / 10;
     s.custo.indice = Math.round(s.pecas.concat(s.ligacoes).reduce(function (t, p) { return t + num(p.kg, 0) * (1 + FAB_PESO * (num(p.fab, 1) - 1)); }, 0) * 10) / 10;
     var gv = s.verificacoes.slice().sort(function (a, b) { return b.razao - a.razao; })[0];
@@ -338,6 +343,7 @@
     var lf = s.ligacoes.filter(function (l) { return !l.ok; })[0];
     if (!s.aplicavel) s.situacao = "não se aplica — " + s.motivo;
     else if (lf) s.situacao = "não passa — ligação " + lf.rotulo + ": " + (lf.motivo || "nenhuma tipologia passa");
+    else if (s.pilarAConfirmar) s.situacao = "a viga e as ligações passam; PILAR A CONFIRMAR NO CÁLCULO — a conta conservadora do pilar (em balanço, Le = 2·H) dá " + pct((vp.filter(function (v) { return v.razao > 1; })[0] || {}).razao) + " e ele recebe outras peças que podem travá-lo — " + TXT_AC;
     else s.situacao = (s.passa ? "passa no pré-dimensionamento" : "não passa") + " (" + pct(s.aproveitamento) + (gv ? ", governa " + gv.nome : "") + ") — " + TXT_AC;
     return s;
   }
@@ -365,6 +371,30 @@
     var mbV = BM().membro(c), yC = mbV.P0[1], yBot = yC - dV / 2, yTop = yC + dV / 2;
     var acoP = pil.metal ? pil.metal.aco : (pil.aco || "ASTM A572 Gr.50"), catP = pil.metal ? catDe(pil) : (pil.perfil && pil.perfil.cat), eixoP = fc.face === "alma" ? "y" : "x";
     var Hp = Q.y1 - Q.y0, MRdP = flexRd(catP, acoP, Hp, eixoP);
+    /* O PILAR NA PRÉ-CHECAGEM (revisão da 1.2.147: "pilar livre de 8 m: pré 0,26 × cálculo 2,38" — antes só M/MRd, sem a
+       compressão nem a flambagem): flexo-compressão com N = a cortante do balanço + o peso próprio do pilar, M do balanço
+       amplificado por B2 = 1/(1 − N/Ne) e o pilar EM BALANÇO (Le = 2·H nos dois eixos — a favor; NBR 8800, 5.3, 5.4, 5.5.1.2).
+       Pilar que recebe outras peças pode estar travado por elas: se a conta conservadora reprova, a opção fica "PILAR A
+       CONFIRMAR NO CÁLCULO" — nunca "passa" sem o pilar. */
+    var outrosP = arr(caixas).filter(function (x) {
+      if (!ehBarra(x) || String(x.id) === String(c.id) || String(x.id) === String(Q.id) || String(x.metal.balanco || "") === String(c.id)) return false;
+      var l2 = linha(x); if (!l2) return false;
+      return [l2.a, l2.b].some(function (P) { return Math.sqrt(Math.pow(P[0] - Q.x, 2) + Math.pow(P[2] - Q.z, 2)) <= Q.dim.h / 2 + 0.05 && P[1] >= Q.y0 - 0.05 && P[1] <= Q.y1 + 0.5; });
+    }).length;
+    var regP = catP && Cat() && Cat().obter ? Cat().obter(catP) : null, kgmPil = num(regP && regP.massa, 0);
+    function verifPilar(rot, Msd) {
+      var s = secCalc(catP), D = D88(), K = CONST();
+      if (!s || !D || !MRdP) return { nome: rot + " — pilar " + Q.id + " sem seção do catálogo: A CONFIRMAR NO CÁLCULO", Sd: 0, Rd: 0, unidade: "—", razao: Infinity, pilar: true, item: "NBR 8800, 5.5.1.2" };
+      var Le = 2 * Hp, NRd = null; try { NRd = D.compressao(s.mm, acoDe(acoP), K.E, K.G, { Lx: Le, Ly: Le, Lz: Le }, "pilar").NRd; } catch (eC) { NRd = null; }
+      var I = eixoP === "x" ? num(s.mm.Ix, 0) : num(s.mm.Iy, 0), Ne = I > 0 ? Math.PI * Math.PI * K.E * I / Math.pow(Le * 1000, 2) / 1000 : 0;
+      var Nsd = Vd + GAMA_G * (1 + ACRESC) * kgmPil * G_KN * Hp, B2 = Ne > Nsd ? 1 / (1 - Nsd / Ne) : Infinity, M2 = Msd * B2;
+      var rN = NRd > 0 ? Nsd / NRd : Infinity, rM = M2 / MRdP, r = rN >= 0.2 ? rN + 8 / 9 * rM : rN / 2 + rM;
+      /* e a ESBELTEZ da barra comprimida (NBR 8800, 5.3.4: Le/r ≤ 200) — é ela que dava o 2,38 do cálculo no pilar livre de 8 m */
+      var rmin = Math.min(num(s.mm.rx, Infinity), num(s.mm.ry, Infinity)), lam = rmin > 0 && isFinite(rmin) ? Le * 1000 / rmin : Infinity, rE = lam / 200;
+      if (rE > r) r = rE;
+      return { nome: rot + " — flexo-compressão e esbeltez do pilar " + Q.id + " (λ = Le/r = " + br(lam, 0) + " ≤ 200; N = " + br(Nsd, 1) + " kN, NRd = " + br(NRd, 1) + " kN com Le = 2·H = " + br(Le, 2) + " m; M = " + br(Msd, 1) + " kN·m × B2 = " + (isFinite(B2) ? br(B2, 2) : "∞") + "; MRd = " + br(MRdP, 1) + " kN·m — pilar em balanço, a favor)",
+        Sd: r, Rd: 1, unidade: "—", razao: isFinite(r) ? r : Infinity, pilar: true, item: "NBR 8800, 5.3, 5.3.4, 5.4 e 5.5.1.2", lambda: lam, N: Nsd, NRd: NRd, M: Msd, B2: B2, Le: Le };
+    }
     var cargas = { L: L, ppKgm: pp.kgm, w: pp.w, q: q, P: P, wd: wd, Pd: Pd, Vd: Vd, Md: Md, texto: "balanço de " + br(L, 2) + " m (do eixo do pilar à ponta); ELU: 1,25·(1 + " + br(ACRESC * 100, 0) + " %)·PP + 1,50·serviço = " + br(wd, 2) + " kN/m" + (Pd ? " + " + br(Pd, 1) + " kN na ponta" : "") + " → V = " + br(Vd, 1) + " kN, M = " + br(Md, 1) + " kN·m no pilar" + (!(q > 0) && !(P > 0) ? " — SEM carga de serviço declarada: só o peso próprio (declare a carga do balanço)" : "") };
     var meio = MEIOS[o.meio] && o.meio !== "nao" ? o.meio : "parafusada";
     var sols = [];
@@ -374,14 +404,15 @@
     var MRd1 = flexRd(cat, acoV, L, "x"), VRd1 = cortRd(cat, acoV);
     A.verificacoes.push(verif("Viga à flexão no engaste (FLT com Lb = " + br(L, 2) + " m, Cb = 1 — como o cálculo trata o balanço)", Md, MRd1, "kN·m", "NBR 8800, 5.4 e Anexo G"));
     A.verificacoes.push(verif("Viga ao cortante no engaste", Vd, VRd1, "kN", "NBR 8800, 5.4.3"));
-    if (MRdP) A.verificacoes.push(verif("Momento do engaste no pilar " + Q.id + " (" + (eixoP === "x" ? "eixo de maior inércia" : "eixo de MENOR inércia — a viga chega na alma") + "; Lb = " + br(Hp, 2) + " m, Cb = 1; todo o momento no pilar — a favor)", Md, MRdP, "kN·m", "NBR 8800, 5.4 e Anexo G"));
+    A.verificacoes.push(verifPilar("Engaste (" + (eixoP === "x" ? "eixo de maior inércia" : "eixo de MENOR inércia — a viga chega na alma") + ", todo o momento no pilar)", Md));
     var sA = sugerirCom([c, pil], { esforcos: [{ comb: "balanço ELU", V: Vd, M: Md, N: 0 }], origem: "BALANÇO (pré-dimensionamento): " + cargas.texto, preferir: "rigida", meio: meio, materiais: o.materiais, quer: ["viga-pilar"], so: RIGIDAS_ENGASTE });
     A.ligacoes.push(ligSol("viga × pilar (rígida)", sA, 0));
     A.precisa.push("ligação de momento na " + fc.face + " do pilar " + Q.id + ": " + (sA.ok ? sA.opcao.nome + " — " + ((sA.opcao.resultado || {}).resumo || "") : "nenhuma da biblioteca (4E/4ES/8ES, ajustada" + (meio === "parafusada" ? "" : ", soldada") + ") passa" + (sA.melhorQueNaoPassa ? " — a melhor: " + sA.melhorQueNaoPassa.nome + " (" + pct((sA.melhorQueNaoPassa.resultado || {}).razao) + ")" : "")));
     A.precisa.push("a mesa e a alma do pilar conferidas pela tipologia (enrijecedores de continuidade quando a mesa/alma não resistem)");
     if (fc.face === "alma") A.naoVerificado.push("momento entrando pela ALMA do pilar (flexão fora do plano da alma): girar o pilar é o melhor; a verificação da alma fora do plano não é automática");
+    if (sA.ok && Tip() && Tip().obter(sA.opcao.tipologia) && Tip().obter(sA.opcao.tipologia).familia === "semirrigida") A.naoVerificado.push("a " + sA.opcao.nome.toLowerCase() + " é SEMIRRÍGIDA (o pilar acaba no topo da viga: a estendida pediria o pilar prolongado): leva o momento, mas a rigidez à rotação não é calculada — o cálculo a trata como rígida; a rotação da ponta do balanço fica a confirmar");
     A.naoVerificado.push("flecha da ponta (ELS): conferida no cálculo da estrutura");
-    sols.push(fecharSol(A));
+    sols.push(fecharSol(A, outrosP > 0));
 
     /* (b) MÃO-FRANCESA a 45° do pilar (abaixo da viga) até a viga */
     var B = solucaoBase("mao-francesa", "Mão-francesa (diagonal a 45° do pilar à viga)");
@@ -402,7 +433,7 @@
       DIAG_MF.forEach(function (nome) { if (dg) return; var NR = compRd(nome, "ASTM A572 Gr.50", Ld); if (NR && Nd <= NR) dg = { nome: nome, NRd: NR }; });
       if (!dg) { var NR0 = compRd(DIAG_MF[DIAG_MF.length - 1], "ASTM A572 Gr.50", Ld); dg = { nome: DIAG_MF[DIAG_MF.length - 1], NRd: NR0 || 0 }; }
       vs.push(verif("Mão-francesa " + dg.nome + " à compressão (L = " + br(Ld, 2) + " m, K = 1)", Nd, dg.NRd, "kN", "NBR 8800, 5.3"));
-      if (MRdP) vs.push(verif("Pilar " + Q.id + " com o binário da mão-francesa (T·h = " + br(T, 1) + " kN × " + br(x, 2) + " m — limite superior)", T * x, MRdP, "kN·m", "NBR 8800, 5.4"));
+      vs.push(verifPilar("Binário da mão-francesa (T·h = " + br(T, 1) + " kN × " + br(x, 2) + " m — limite superior)", T * x));
       var ap0 = vs.reduce(function (m, v) { return Math.max(m, v.razao); }, 0);
       var regD = Cat() && Cat().obter ? Cat().obter(dg.nome) : null, kgD = num(regD && regD.massa, 20) * (Lline - rA - rB);
       var cand = { f: f, x: x, xa: xa, st: st, Nd: Nd, T: T, Ld: Ld, Lsol: Lline - rA - rB, rA: rA, rB: rB, dg: dg, vs: vs, ap: ap0, kg: kgD };
@@ -431,7 +462,7 @@
       if (m0.st.R0 < 0) B.naoVerificado.push("a ponta do pilar fica com reação para CIMA (R = " + br(m0.st.R0, 1) + " kN): a ligação viga × pilar trabalha arrancando");
       B.naoVerificado.push("flecha da ponta (ELS): conferida no cálculo da estrutura");
     }
-    sols.push(fecharSol(B));
+    sols.push(fecharSol(B, outrosP > 0));
 
     /* (c) TIRANTE para cima (se há estrutura acima: o pilar passa da viga) ou CONSOLO (mísula sob a viga) */
     var sobra = Q.y1 - yTop, Cc;
@@ -450,7 +481,7 @@
         DIAM_TIRANTE.forEach(function (dmm) { if (rod) return; var Ab = Math.PI * dmm * dmm / 4, FR = Math.min(Ab * A36.fy / GA1, 0.75 * Ab * A36.fu / GA2) / 1000; if (T <= FR) rod = { d: dmm, FRd: FR, Ab: Ab }; });
         if (!rod) { var dM = DIAM_TIRANTE[DIAM_TIRANTE.length - 1], AbM = Math.PI * dM * dM / 4; rod = { d: dM, FRd: Math.min(AbM * A36.fy / GA1, 0.75 * AbM * A36.fu / GA2) / 1000, Ab: AbM }; }
         vs.push(verif("Tirante Ø " + br(rod.d, 1) + " mm ASTM A36 à tração (mín(Ag·fy/γa1; 0,75·Ag·fu/γa2) na rosca)", T, rod.FRd, "kN", "NBR 8800, 5.2 e 6.3.3.1"));
-        if (MRdP) vs.push(verif("Pilar " + Q.id + " com o binário do tirante (Nc·h = " + br(Nc, 1) + " kN × " + br(ht, 2) + " m — limite superior)", Nc * ht, MRdP, "kN·m", "NBR 8800, 5.4"));
+        vs.push(verifPilar("Binário do tirante (Nc·h = " + br(Nc, 1) + " kN × " + br(ht, 2) + " m — limite superior)", Nc * ht));
         var ap0 = vs.reduce(function (m, v) { return Math.max(m, v.razao); }, 0), kg = 7850 * rod.Ab * 1e-6 * Lt;
         var cand = { f: f, x: x, xa: xa, th: th, st: st, T: T, Nc: Nc, Lt: Lt, rod: rod, vs: vs, ap: ap0, kg: kg };
         if (!melhorC || (cand.ap <= 1 && !(melhorC.ap <= 1)) || ((cand.ap <= 1) === (melhorC.ap <= 1) && cand.ap < melhorC.ap)) melhorC = cand;
@@ -478,27 +509,29 @@
       Cc = solucaoBase("consolo", "Consolo (mísula sob a viga, com chapa de extremidade no pilar)");
       Cc.verificacoes.push(verif("Viga à flexão no fim da mísula (a favor: o momento todo do engaste; FLT com Lb = " + br(L, 2) + " m)", Md, MRd1, "kN·m", "NBR 8800, 5.4 e Anexo G"));
       Cc.verificacoes.push(verif("Viga ao cortante", Vd, VRd1, "kN", "NBR 8800, 5.4.3"));
-      if (MRdP) Cc.verificacoes.push(verif("Momento do consolo no pilar " + Q.id, Md, MRdP, "kN·m", "NBR 8800, 5.4"));
+      Cc.verificacoes.push(verifPilar("Consolo (todo o momento no pilar)", Md));
       var sC = sugerirCom([c, pil], { esforcos: [{ comb: "balanço ELU", V: Vd, M: Md, N: 0 }], origem: "BALANÇO (pré-dimensionamento): " + cargas.texto, preferir: "rigida", meio: meio, materiais: o.materiais, quer: ["viga-pilar"], so: ["misula"] });
       Cc.ligacoes.push(ligSol("mísula + chapa de extremidade", sC, 0));
       Cc.precisa.push("sem estrutura acima da viga para um tirante: consolo (mísula soldada sob a viga, mais braço para os parafusos) — " + (sC.ok ? (sC.opcao.resultado || {}).resumo || sC.opcao.nome : "a mísula não passa: " + (sC.motivo || "")));
       Cc.naoVerificado.push("flecha da ponta (ELS): conferida no cálculo da estrutura");
     }
-    sols.push(fecharSol(Cc));
+    sols.push(fecharSol(Cc, outrosP > 0));
 
     /* ranking: passa primeiro → custo (índice) → aproveitamento; o custo relativo é contra a mais barata que passa (ou a mais barata) */
     sols.sort(function (a, b) {
-      var d0 = ((a.passa ? 0 : 1) - (b.passa ? 0 : 1)) || ((a.aplicavel ? 0 : 1) - (b.aplicavel ? 0 : 1)); if (d0) return d0;
-      return a.passa ? (a.custo.indice - b.custo.indice) || (a.aproveitamento - b.aproveitamento) : (a.aproveitamento - b.aproveitamento) || (a.custo.indice - b.custo.indice);
+      var nv = function (s) { return s.passa ? 0 : s.pilarAConfirmar ? 1 : 2; };
+      var d0 = (nv(a) - nv(b)) || ((a.aplicavel ? 0 : 1) - (b.aplicavel ? 0 : 1)); if (d0) return d0;
+      return nv(a) < 2 ? (a.custo.indice - b.custo.indice) || (a.aproveitamento - b.aproveitamento) : (a.aproveitamento - b.aproveitamento) || (a.custo.indice - b.custo.indice);
     });
     var refC = sols.filter(function (s) { return s.passa && s.custo.indice > 0; }).map(function (s) { return s.custo.indice; });
     if (!refC.length) refC = sols.filter(function (s) { return s.aplicavel && s.custo.indice > 0; }).map(function (s) { return s.custo.indice; });
     var cMin = refC.length ? Math.min.apply(null, refC) : 0;
     sols.forEach(function (s, i) { s.rank = i + 1; s.custo.rel = cMin > 0 && s.aplicavel ? Math.round(s.custo.indice / cMin * 100) / 100 : null; });
-    var melhor = sols.filter(function (s) { return s.passa; })[0] || null;
+    var melhor = sols.filter(function (s) { return s.passa; })[0] || sols.filter(function (s) { return s.pilarAConfirmar; })[0] || null;
     var out = { ok: true, viga: String(c.id), ponta: k, apoio: Q.id, face: fc.face, L: L, cargas: cargas, opcoes: sols, melhor: melhor ? melhor.id : null, critico: !melhor,
       criterio: "Ordem: passa no pré-dimensionamento (peso próprio + carga de serviço declarada, ELU) → custo (massa de aço × fabricação: cada degrau de fabricação soma " + br(FAB_PESO * 100, 0) + " % ao peso) → aproveitamento. Tudo fica " + TXT_AC + ".",
-      texto: melhor ? "Melhor: " + melhor.nome + " (" + pct(melhor.aproveitamento) + ", custo " + br(melhor.custo.indice, 1) + ")." : "CRÍTICO: nenhuma das soluções passa no balanço de " + br(L, 2) + " m — " + sols.map(function (s) { return s.nome + ": " + s.situacao; }).join("; ") + ". Troque o perfil da viga ou apoie a ponta." };
+      pilarAConfirmar: !!(melhor && melhor.pilarAConfirmar),
+      texto: melhor ? "Melhor: " + melhor.nome + (melhor.pilarAConfirmar ? " — " + melhor.situacao : " (" + pct(melhor.aproveitamento) + ", custo " + br(melhor.custo.indice, 1) + ").") : "CRÍTICO: nenhuma das soluções passa no balanço de " + br(L, 2) + " m — " + sols.map(function (s) { return s.nome + ": " + s.situacao; }).join("; ") + ". Troque o perfil da viga ou apoie a ponta." };
     return out;
   }
 

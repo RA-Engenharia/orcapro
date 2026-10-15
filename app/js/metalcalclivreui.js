@@ -84,7 +84,7 @@
     var ids = e.soSelecao ? selecao() : idsPortico(e);
     U.lido = M.ler(caixas(), { ids: ids && ids.length ? ids : null, acoEstrutura: e.acoEstrutura || null });
     U.G = null; U.env = null;
-    if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilar: e.ligacoes.vigaPilar, vigaViga: e.ligacoes.vigaViga, ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
+    if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilar: e.ligacoes.vigaPilar, vigaViga: e.ligacoes.vigaViga, rigidezLigacoes: e.ligacoes.rigidez === "sim", ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
     if (U.G && EV()) { try { U.env = EV().ler(U.G, { eixos: eixosModelo() }); } catch (er2) { U.env = null; } }
     return U.lido;
   }
@@ -235,7 +235,9 @@
       }).join("") + "</tbody></table>" : '<p class="ml-nota">Nenhuma base encontrada: a ponta de baixo do pilar que não encosta em nenhuma peça vira base.</p>') + "</div>";
     h += '<div class="ml-card"><h4>Ligações que NÃO foram desenhadas</h4><p class="ml-nota" style="margin-top:0">A ligação desenhada (chapa de extremidade → rígida; cantoneira dupla, clip, gusset → rotulada; cobrejunta → contínua) sempre manda.</p>' +
       '<div class="ml-lin"><span style="min-width:120px">Viga × pilar</span>' + seg("vigaPilar", e.ligacoes.vigaPilar, [["rotulada", "Rotulada"], ["rigida", "Rígida (pórtico)"]]) + "</div>" +
-      '<div class="ml-lin"><span style="min-width:120px">Viga × viga</span>' + seg("vigaViga", e.ligacoes.vigaViga, [["rotulada", "Rotulada"], ["rigida", "Rígida"]]) + "</div>" + pontasHtml(G, e) + "</div>";
+      '<div class="ml-lin"><span style="min-width:120px">Viga × viga</span>' + seg("vigaViga", e.ligacoes.vigaViga, [["rotulada", "Rotulada"], ["rigida", "Rígida"]]) + "</div>" +
+      /* frente D (15/10/2026): a ponta de viga com ligação RÍGIDA desenhada e rigidez calculada (4E, 4ES, soldada) entra como mola Sj,ini/η */
+      '<div class="ml-lin" title="Ligação de momento desenhada com rigidez calculada (método dos componentes, EN 1993-1-8): a ponta da viga vira mola rotacional Sj,ini/η (5.1.2). Sem rigidez válida, a ponta fica rígida e o motivo sai nas decisões."><span style="min-width:120px">Rigidez das ligações</span>' + seg("rigidezLig", e.ligacoes.rigidez === "sim" ? "sim" : "nao", [["nao", "Não considerar"], ["sim", "Considerar (mola Sj)"]]) + "</div>" + pontasHtml(G, e) + "</div>";
     return h;
   }
   /* SIMULAÇÃO S2 (14/10/2026): a ligação de CADA PONTA de viga (sem ligação desenhada) — o pórtico espacial tem joelhos
@@ -424,7 +426,7 @@
   function rodapeResultado() {
     var r = U.r, ok = r && r.ok;
     return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, pranchas (DXF/DWG), vista 3D e CYPE saem deste resultado." : "Resolva o problema e calcule de novo.") + '</span><button class="ml-bt" data-ml-acao="passo" data-ml-v="1">Dados</button>' +
-      (ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '<button class="ml-bt" data-ml-acao="cype">Para o CYPE 3D</button>' : "") +
+      (ok ? '<button class="ml-bt" data-ml-acao="ver3d">Ver em 3D</button><button class="ml-bt" data-ml-acao="memorial">Memorial</button><button class="ml-bt" data-ml-acao="memorial-docx">Memorial em Word (.docx)</button>' + (PL() ? '<button class="ml-bt" data-ml-acao="pranchas">Pranchas</button>' : "") + '<button class="ml-bt" data-ml-acao="cype">Para o CYPE 3D</button>' : "") +
       '<button class="ml-bt pri" data-ml-acao="calcular">Calcular de novo</button></footer>';
   }
 
@@ -462,6 +464,7 @@
     if (a === "resultado") { U.modo = U.r ? "resultado" : "passos"; render(); return; }
     if (a === "basePadrao") { e.apoios.basePadrao = v; salvar(); render(); return; }
     if (a === "vigaPilar" || a === "vigaViga") { e.ligacoes[a] = v; salvar(); render(); return; }
+    if (a === "rigidezLig") { e.ligacoes.rigidez = v === "sim" ? "sim" : "nao"; salvar(); render(); return; }
     if (a === "selecionar") { selecionarNoModelo(String(v || "").split(",").filter(Boolean)); return; }
     if (a === "area-niveis") {
       if (!U.G) lerModelo(); if (!U.G) { toast("Nenhuma estrutura lida para achar os níveis.", "aviso"); return; }
@@ -513,6 +516,7 @@
     if (a === "aplicar") return aplicar();
     if (a === "ver3d") return verEm3D();
     if (a === "memorial") return memorial();
+    if (a === "memorial-docx") return memorialDocx();
     if (a === "cype") return cype();
   }
   /* ============================================================ FRENTE S5: as SOLUÇÕES com botão (nada de botão que não faz nada) */
@@ -766,6 +770,7 @@
       U.ultimasLigacoes = ligs.map(function (l) { return { id: l.id, tipologia: l.info && l.info.tipologia, ok: !!(l.resultado && l.resultado.ok), razao: l.resultado && l.resultado.razao, confere: l.confere, comCalculo: l.comCalculo, fundacao: l.resultado && l.resultado.fundacao ? l.resultado.fundacao.id : null, ajusteCota: l.resultado && l.resultado.ajusteCota ? l.resultado.ajusteCota : null }; });
       var x = Mm.gerar(r, { ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
       if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html); } catch (eE) {}   /* S6 (14/10/2026): a fixação das escadas — js/metalescadalinhaui.js */
+      if (x && x.ok) try { x.html = secaoTiposLigacoes(x.html, ligs); } catch (eT) {}   /* relatório por Tipo das ligações dentro do memorial — js/acoliglote.js */
       if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) — js/unidadesmemorial.js */
       U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length, ids: x.secoes.map(function (q) { return q.id; }) } : null;
       U.ultimoHtml = x && x.ok ? x.html : null;
@@ -773,6 +778,34 @@
       if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
       else { baixar(nomeArq() + "-memorial-estrutura-metalica.html", x.html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); }
     });
+  }
+  /* RELATÓRIO POR TIPO DENTRO DO MEMORIAL: nós iguais viram um Tipo (js/acoliglote.js); a situação vem do motor, nunca é escrita aqui.
+     Pura: sem AcoLigLote ou sem ligação com esforços, devolve o html como veio. */
+  function secaoTiposLigacoes(html, ligs) {
+    var LL = global.AcoLigLote; html = String(html == null ? "" : html);
+    if (!LL || !LL.dimensionarTodas || !LL.relatorioHtml || !arr(ligs).length) return html;
+    var itens = [];
+    arr(ligs).forEach(function (l) {
+      var info = (l && l.info) || {}; if (!info.tipologia) return;
+      var no = String(l.titulo || l.id || ""), e = l.entrada || info.entrada;
+      /* revisão 1.2.148: a ligação A CONFIRMAR, A DIMENSIONAR ou DESATUALIZADA (na ligação, na info ou no resultado) nunca sai PASSA no Tipo */
+      var marca = l.aConfirmar || l.aDimensionar || l.desatualizada || info.aConfirmar || info.aDimensionar || (l.resultado && (l.resultado.aConfirmar || l.resultado.aDimensionar)) || null;
+      if (e && arr(e.esforcos).length) { var ec = copia(e); if (marca && !ec.aConfirmar) ec.aConfirmar = String(marca); itens.push({ no: no, tipologia: info.tipologia, nome: info.nome || info.tipologia, entrada: ec, relacao: info.relacao || "", face: info.face || e.face || "" }); }
+      else itens.push({ no: no, semOpcao: "sem esforços do cálculo" });
+    });
+    if (!itens.length) return html;
+    var corpo = '<section id="ligacoes-por-tipo"><h2>Ligações por Tipo</h2><p>Nós iguais (mesma tipologia, perfis, aços e componentes) formam um Tipo; cada Tipo é verificado no nó de maior esforço e vale para todos os nós dele. A situação de cada Tipo é a do motor de cálculo.</p>' + LL.relatorioHtml(LL.dimensionarTodas(itens)) + "</section>";
+    var i = html.lastIndexOf("</body>");
+    return i < 0 ? html + corpo : html.slice(0, i) + corpo + html.slice(i);
+  }
+  /* MEMORIAL EM WORD: o mesmo html do memorial (U.ultimoHtml) passado pelo js/docx.js */
+  function memorialDocx() {
+    if (!U.ultimoHtml) { toast("Gere o memorial primeiro.", "aviso"); return false; }
+    if (!global.Docx || !Docx.deHtml) { toast("O gerador de Word não carregou (js/docx.js).", "erro"); return false; }
+    var d; try { d = Docx.deHtml(U.ultimoHtml, { titulo: "Memorial — estrutura metálica" }); } catch (e) { toast("Memorial em Word: " + (e && e.message ? e.message : e), "erro", 9000); return false; }
+    U.ultimoDocx = { bytes: d && d.bytes ? d.bytes.length : 0 };
+    baixar(nomeArq() + "-memorial-estrutura-metalica.docx", d.bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    toast("Memorial baixado (.docx).", "ok", 6000); return true;
   }
   function cype() {
     var r = U.r, CY = global.AcoCype; if (!r || !r.ok || !CY) { toast("A exportação para o CYPE sai de um cálculo que fechou.", "aviso"); return; }
@@ -822,6 +855,9 @@
     abrirResultado: function () { estado(); garantir(); if (!U.r) { U.modo = "passos"; lerModelo(); render(); return false; } U.modo = "resultado"; render(); return true; },
     memorial: function () { estado(); garantir(); if (!U.r || !U.r.ok) { U.modo = "passos"; lerModelo(); render(); toast("Calcule primeiro: o memorial sai do resultado.", "aviso"); return false; } U.modo = "resultado"; render(); memorial(); return true; },
     cype: function () { estado(); garantir(); if (!U.r || !U.r.ok) { U.modo = "passos"; lerModelo(); render(); toast("Calcule primeiro: o pacote do CYPE sai do resultado.", "aviso"); return false; } U.modo = "resultado"; render(); cype(); return true; },
+    secaoTiposLigacoes: secaoTiposLigacoes,
+    memorialDocx: memorialDocx,
+    ultimoDocx: function () { return U.ultimoDocx || null; },
     entrada: entrada
   };
   global.MetalCalcLivreUI = MetalCalcLivreUI;

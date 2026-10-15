@@ -386,8 +386,12 @@
         if (c.metal.kind === "chapa" && B) {
           var q = B.quadro(c), C = arr(c.metal.contorno);
           var mid = [0, 0, 0];
-          C.forEach(function (p) { var w = add(add(q.O, mul(q.X, num(p.u, 0))), mul(q.Y, num(p.v, 0))); pts.push({ p: w, tipo: "fim", id: c.id }); mid = add(mid, w); });
-          if (C.length) pts.push({ p: mul(mid, 1 / C.length), tipo: "centro", id: c.id });
+          /* peça de LIGAÇÃO (metal.lig): o ponto vale, mas DEPOIS das pontas das barras (escolher). 15/10/2026: com a ligação
+             lançada junto da viga, o canto da chapa simples (a 110 mm da face do pilar) disputava com o topo do pilar e a viga
+             seguinte nascia no canto da chapa — fora do pilar, ligada viga × viga (e2e da simulação espacial, 2 de 4 nós) */
+          var lgC = c.metal.lig ? true : undefined;
+          C.forEach(function (p) { var w = add(add(q.O, mul(q.X, num(p.u, 0))), mul(q.Y, num(p.v, 0))); pts.push({ p: w, tipo: "fim", id: c.id, lig: lgC }); mid = add(mid, w); });
+          if (C.length) pts.push({ p: mul(mid, 1 / C.length), tipo: "centro", id: c.id, lig: lgC });
           return;
         }
         if (c.metal.kind !== "perfil") return;
@@ -404,8 +408,12 @@
         }
       }
       if (!mb || !(mb.L > 0)) return;
-      var a = mb.P0, b = add(mb.P0, mul(mb.X, mb.L));
-      pts.push({ p: a, tipo: "fim", id: c.id }, { p: b, tipo: "fim", id: c.id }, { p: mul(add(a, b), 0.5), tipo: "meio", id: c.id });
+      var a = mb.P0, b = add(mb.P0, mul(mb.X, mb.L)), lgP = c.metal && c.metal.lig ? true : undefined;
+      /* barra com RECUO na receita (vigas entre pilares, ligação ao lançar): o nó é a ponta da LINHA (no eixo do pilar), não a do
+         sólido parado na face — a do sólido levava a viga seguinte para fora do pilar */
+      var wR = c.metal && c.metal.cria && recuoDe(c.metal.cria.recuo) ? criaMundo(c) : null;
+      if (wR) { a = wR.a; b = wR.b; }
+      pts.push({ p: a, tipo: "fim", id: c.id, lig: lgP }, { p: b, tipo: "fim", id: c.id, lig: lgP }, { p: mul(add(a, b), 0.5), tipo: "meio", id: c.id, lig: lgP });
       linhas.push({ a: a, b: b, id: c.id, k: "barra" });
     });
     var ex = arr(estado && estado.eixos);
@@ -439,8 +447,10 @@
   var ORDEM = { fim: 0, intersecao: 1, meio: 2, centro: 3, perpendicular: 4, proximo: 7, grade: 8 };
   function escolher(cands, tol) {
     if (!cands || !cands.length) return null;
-    var mc = Infinity; cands.forEach(function (c) { if (CLASSE[c.tipo] < mc) mc = CLASSE[c.tipo]; });
-    var cl = cands.filter(function (c) { return CLASSE[c.tipo] === mc; }), dm = Infinity;
+    /* ponto de peça de ligação (c.lig): uma classe abaixo (as pontas das barras e dos pilares vêm antes) */
+    function cls(c) { return CLASSE[c.tipo] + (c.lig ? 1 : 0); }
+    var mc = Infinity; cands.forEach(function (c) { if (cls(c) < mc) mc = cls(c); });
+    var cl = cands.filter(function (c) { return cls(c) === mc; }), dm = Infinity;
     cl.forEach(function (c) { if (c.d < dm) dm = c.d; });
     var jan = 0.3 * num(tol, 14);
     var el = cl.filter(function (c) { return c.d <= dm + jan + 1e-9; });
@@ -464,7 +474,7 @@
       if (ex) Object.keys(ex).forEach(function (k) { c[k] = ex[k]; });
       cands.push(c);
     }
-    arr(geo.pontos).forEach(function (q) { tenta(q.p, q.tipo, { id: q.id, eixo: !!q.eixo }); });
+    arr(geo.pontos).forEach(function (q) { tenta(q.p, q.tipo, q.lig ? { id: q.id, eixo: !!q.eixo, lig: true } : { id: q.id, eixo: !!q.eixo }); });
     var ref = o.ref && v3ok(o.ref) ? o.ref : null;
     arr(geo.linhas).forEach(function (l) {
       var ab = sub(l.b, l.a), L2 = dot(ab, ab); if (L2 < 1e-12) return;

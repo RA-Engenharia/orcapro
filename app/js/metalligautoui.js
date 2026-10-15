@@ -119,9 +119,9 @@
   /* ------------------------------------------------------------ BALANÇO */
   function servicoDe(id) { var c = caixas().filter(function (x) { return String(x.id) === String(id); })[0], s = c && c.metal && c.metal.cria && c.metal.cria.servico; return s ? { q: num(s.q, 0), P: num(s.P, 0) } : { q: 0, P: 0 }; }
   function cartao(s, aplicada) {
-    var cl = !s.aplicavel ? "na" : s.passa ? "ok" : "nok";
+    var cl = !s.aplicavel ? "na" : s.passa ? "ok" : "nok", pac = !!s.pilarAConfirmar;
     return '<div class="mla-op ' + cl + (aplicada ? " aplicada" : "") + '" data-mla-sol="' + esc(s.id) + '"><h3>' + s.rank + "º " + esc(s.nome) + "</h3>" +
-      '<div class="mla-chips"><span class="mla-chip ' + (s.passa ? "ok" : "nok") + '" data-mla="sit">' + (s.aplicavel ? (s.passa ? "passa (pré-dim.)" : "não passa") + " · " + pct(s.aproveitamento) : "não se aplica") + "</span>" +
+      '<div class="mla-chips"><span class="mla-chip ' + (s.passa ? "ok" : "nok") + '" data-mla="sit">' + (s.aplicavel ? (s.passa ? "passa (pré-dim.)" : pac ? "pilar a confirmar no cálculo" : "não passa") + " · " + pct(s.aproveitamento) : "não se aplica") + "</span>" +
       (s.aplicavel ? '<span class="mla-chip" data-mla="custo">' + br(s.custo.kg, 1) + " kg de aço · índice " + br(s.custo.indice, 1) + (s.custo.rel != null ? " · custo relativo " + br(s.custo.rel, 2) : "") + "</span>" : "") +
       (aplicada ? '<span class="mla-chip ok" data-mla="aplicada">aplicada</span>' : "") + '<span class="mla-chip nok">' + esc(A().TXT_AC) + "</span></div>" +
       "<p>" + esc(s.situacao) + "</p>" +
@@ -129,7 +129,7 @@
       (s.verificacoes.length ? "<details><summary>Verificações (" + s.verificacoes.length + ")</summary><table>" + s.verificacoes.map(function (v) { return "<tr><td>" + esc(v.nome) + (v.item ? '<br><span class="mla-nota">' + esc(v.item) + "</span>" : "") + '</td><td style="text-align:right;white-space:nowrap;color:' + (v.razao <= 1 + 1e-9 ? "var(--verde)" : "var(--vermelho)") + '">' + pct(v.razao) + "</td></tr>"; }).join("") +
         s.ligacoes.map(function (l) { return "<tr><td>Ligação " + esc(l.rotulo) + ": " + esc(l.nome || l.motivo || "") + (l.resumo ? '<br><span class="mla-nota">' + esc(l.resumo) + "</span>" : "") + '</td><td style="text-align:right;color:' + (l.ok ? "var(--verde)" : "var(--vermelho)") + '">' + (l.ok ? pct(l.razao) : "não passa") + "</td></tr>"; }).join("") + "</table></details>" : "") +
       (s.naoVerificado.length ? '<ul class="mla-nota">' + s.naoVerificado.map(function (x) { return "<li>Não verificado aqui: " + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
-      '<div class="acoes">' + (s.aplicavel && s.passa ? '<button class="btn ' + (aplicada ? "ghost" : "primary") + ' sm" data-mla-aplicar="' + esc(s.id) + '">' + (aplicada ? "Aplicar de novo" : "Aplicar esta") + "</button>" : '<span class="mla-nota" data-mla="bloq">' + esc(!s.aplicavel ? s.motivo : "não passa no pré-dimensionamento: não aplicável") + "</span>") + "</div></div>";
+      '<div class="acoes">' + (s.aplicavel && (s.passa || pac) ? '<button class="btn ' + (aplicada ? "ghost" : "primary") + ' sm" data-mla-aplicar="' + esc(s.id) + '">' + (aplicada ? "Aplicar de novo" : "Aplicar esta") + "</button>" : '<span class="mla-nota" data-mla="bloq">' + esc(!s.aplicavel ? s.motivo : "não passa no pré-dimensionamento: não aplicável") + "</span>") + "</div></div>";
   }
   function painelHtml(bal, aplicada) {
     var sv = bal.cargas;

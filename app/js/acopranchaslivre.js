@@ -565,7 +565,12 @@
       if (d.ligs.some(function (l) { return !(l.resultado && l.resultado.ok); })) bloq.push("LIGAÇÃO QUE NÃO ATENDE");
       if (encInc.length) bloq.push("LIGAÇÃO INCOERENTE COM O CÁLCULO");
       /* REVISÃO S5 N1: verificação crítica NÃO feita (chumbador químico sem os dados do fabricante) */
-      if (d.ligs.some(function (l) { return l.resultado && arr(l.resultado.naoVerificadoCritico).length; })) bloq.push("LIGAÇÃO COM VERIFICAÇÃO NÃO FEITA (CHUMBADOR QUÍMICO: DADOS DO FABRICANTE)");
+      if (d.ligs.some(function (l) { return l.resultado && arr(l.resultado.naoVerificadoCritico).length; })) {
+        /* 1.2.148: o motivo de verdade (químico e/ou o fck da fundação da placa) */
+        var tNV = d.ligs.map(function (l) { return arr(l.resultado && l.resultado.naoVerificadoCritico).join(" "); }).join(" "), mNV = [];
+        if (/qu[íi]mico/i.test(tNV)) mNV.push("CHUMBADOR QUÍMICO: DADOS DO FABRICANTE"); if (/fck/i.test(tNV)) mNV.push("ANCORAGEM DO CHUMBADOR: FCK DA FUNDAÇÃO");
+        bloq.push("LIGAÇÃO COM VERIFICAÇÃO NÃO FEITA (" + (mNV.length ? mNV.join("; ") : "PENDÊNCIA CRÍTICA") + ")");
+      }
       /* a mesma régua do memorial: a ligação tem de ter sido refeita com os esforços DESTE cálculo e conferir com o desenhado */
       if (d.ligs.some(function (l) { return !l.comCalculo; })) bloq.push("LIGAÇÃO NÃO REFEITA COM ESTE CÁLCULO");
       else if (d.ligs.some(function (l) { return l.confere === false; })) bloq.push("LIGAÇÃO DESENHADA DIFERENTE DO DIMENSIONADO");

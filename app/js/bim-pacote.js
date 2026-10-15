@@ -516,7 +516,7 @@ host.appendChild(loading);
 if (!document.getElementById('bim-spin-style')) { var st = document.createElement('style'); st.id = 'bim-spin-style'; st.textContent = '@keyframes bimsp{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
 var scene = new THREE.Scene(); scene.background = null;
 var camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000); camera.position.set(20, 18, 22);
-var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
 try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
@@ -1259,7 +1259,7 @@ return rt.texture;
 }
 S.vistas = {}; var _vSeq = 0;
 function montarVista(v, cont) {
-var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
 rr.setPixelRatio(Math.min((cont.ownerDocument.defaultView || window).devicePixelRatio || 1, 2));
 rr.outputEncoding = renderer.outputEncoding;
 try { rr.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
@@ -9262,7 +9262,7 @@ S._famPreview = function (canvas, av) {
 if (!canvas || !av) return false;
 var pv = canvas._famPrev;
 if (!pv) {
-var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
 rnd.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 var sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9));
 var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(3, 5, 4); sc.add(dl);

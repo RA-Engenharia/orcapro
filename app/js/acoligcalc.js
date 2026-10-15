@@ -115,7 +115,9 @@
     var R1 = (0.60 * fu * Anv + cts * fu * Ant) / ga2 / 1000, R2 = (0.60 * fy * Agv + cts * fu * Ant) / ga2 / 1000;
     return { Rd: Math.min(R1, R2), Agv: Agv, Anv: Anv, Ant: Ant, R1: R1, R2: R2 };
   }
-  function bordaChumb(d) { return Math.max(40, cima5(1.75 * d)); }                   /* furo alargado na placa: borda folgada */
+  /* furo alargado na placa: borda folgada. 1.2.148: no mínimo 2·d do centro do chumbador à borda da placa (critério de
+     projeto, mais exigente que a Tabela 14 da NBR 8800 — o furo é alargado); antes 1,75·d, que dava 40 mm no 7/8" (< 2d) */
+  function bordaChumb(d) { return Math.max(40, cima5(1.75 * d), cima5(2 * d)); }
 
   function passo(rotulo, formula, valor, extra) { return { rotulo: rotulo, formula: formula || "", valor: valor, extra: extra || "" }; }
   function verif(nome, item, passos, res, sol, unid) { return { nome: nome, item: item, passos: passos, resistencia: res, solicitante: sol, unidade: unid == null ? "kN" : unid, razao: res > 0 ? sol / res : (sol > 0 ? Infinity : 0) }; }
@@ -171,7 +173,7 @@
     return melhor;
 
     function avaliar(ch, tp) {
-      var d = ch.d, e = bordaChumb(d), f = L / 2 - e;                                      /* braço do chumbador ao centro (mm) */
+      var d = ch.d, e = num(p.bordaChumbMm, 0) > 0 ? num(p.bordaChumbMm, 0) : bordaChumb(d), f = L / 2 - e;   /* 1.2.148: o engenheiro pode fixar a borda (mm) — e a verificação de 2·d reprova se ficar abaixo */                                      /* braço do chumbador ao centro (mm) */
       var A2A1x = suporte ? LF().a2a1(suporte, B, L).A2A1 : A2A1;                          /* com a fundação do modelo: A2/A1 desta placa */
       var A1 = B * L, sigRd = concreto(fck, A2A1x), qmax = sigRd * B;                       /* MPa; N/mm */
       var FtRd = parafusoTracao(d, fuC), FvRd = parafusoCisal(d, fuC, true);
@@ -260,8 +262,22 @@
       var fctd = 0.7 * 0.3 * Math.pow(fck, 2 / 3) / 1.4, fyd = fyC / 1.15, lb = Math.max(d / 4 * fyd / fctd, 25 * d);
       var razaoAs = Math.min(1, piorT / Math.max(1, Ab(d) * fyd)), lbNec = Math.max(0.7 * lb * razaoAs, 0.3 * lb, 10 * d, 100);
       var anc = Math.max(300, Math.ceil(lbNec / 50) * 50);
+      /* 1.2.148 — GEOMETRIA DOS CHUMBADORES e ADERÊNCIA (verificações à parte: não entram no aproveitamento — o arranjo já é
+         feito para atender; só REPROVAM se não atendem). Placa: chumbadores a ≥ 3·d entre si e ≥ 2·d da borda. */
+      var sB = nLado > 1 ? (B - 2 * e) / (nLado - 1) : Infinity, sL = L - 2 * e, sMin = Math.min(sB, sL), geo = [], pend = [];
+      geo.push(verif("Distância entre chumbadores (≥ 3·d)", ED08 + ", 6.3.9 (mínimo 2,7·db; adotado 3·db, o preferível) — furos dos chumbadores na placa",
+        [passo("Menor distância entre centros", "mín[(B − 2e)/(n − 1); L − 2e]", br(sMin, 0) + " mm"), passo("Mínima", "3·d", br(3 * d, 1) + " mm")], sMin, 3 * d, "mm"));
+      geo.push(verif("Distância do chumbador à borda da placa (≥ 2·d)", "critério de projeto 2·db, mais exigente que " + ED08 + ", 6.3.11 / Tabela 14 (o furo do chumbador na placa é alargado)",
+        [passo("Disponível", "e", br(e, 0) + " mm"), passo("Mínima", "2·d", br(2 * d, 1) + " mm")], e, 2 * d, "mm"));
+      var fckRef = !(p.concreto && p.concreto.fck != null && p.concreto.fck !== "") || !!(p.concreto && p.concreto.referencia);
+      if (!fckRef) geo.push(verif("Ancoragem por aderência do chumbador (gancho)", "ABNT NBR 6118:2023, 9.3.2.1 (fbd = η1·η2·η3·fctd, barra lisa η1 = 1,0) e 9.4.2.4/9.4.2.5 (lb = (φ/4)·fyd/fbd ≥ 25φ; lb,nec = α·lb·As,calc/As,ef ≥ máx(0,3·lb; 10φ; 100 mm), gancho α = 0,7)",
+        [passo("fctd", "0,7·0,3·fck^(2/3)/1,4", br(fctd, 3) + " MPa", "fck = " + br(fck, 0) + " MPa (da fundação)"), passo("lb", "(φ/4)·fyd/fbd ≥ 25φ", br(lb, 0) + " mm"),
+         passo("lb,nec", "0,7·lb·Ft,Sd/(Ab·fyd), ≥ mínimo", br(lbNec, 0) + " mm"), passo("Ancoragem adotada", "≥ 300 mm, múltiplo de 50", br(anc, 0) + " mm")], anc, lbNec, "mm"));
+      else pend.push("Ancoragem por aderência do chumbador: o fck do concreto da fundação não veio (sem fundação no modelo) — o comprimento de " + br(anc, 0) + " mm foi calculado com fck = " + br(fck, 0) + " MPa de REFERÊNCIA (ABNT NBR 6118:2023, 9.4.2.4); NÃO VERIFICADO até o fck do projeto de fundação.");
+      var geoOk = geo.every(function (v) { return isFinite(v.razao) && v.razao <= 1 + 1e-9; }), geoMal = geo.filter(function (v) { return !(isFinite(v.razao) && v.razao <= 1 + 1e-9); })[0];
+      geo.forEach(function (v) { v.geometrica = true; vs.push(v); });
       return {
-        ok: fe.ok, razao: fe.razao, governante: fe.governante, tipo: eng ? "engastada" : "rotulada",
+        ok: fe.ok && geoOk, razao: geoOk ? fe.razao : Math.max(fe.razao, geoMal.razao), governante: geoOk ? fe.governante : geoMal.nome, tipo: eng ? "engastada" : "rotulada", pendenciasPlaca: pend,
         dimensoes: { B: B, L: L, t: tp, chumbadores: { n: nCh, porLado: nLado, id: ch.id, d: d, borda: e, material: (p.chumbador && p.chumbador.id) || "ASTM F1554 Gr.36", ancoragem: anc, lb: Math.round(lb) }, solda: aW, soldaMesas: cjp ? "penetração total" : "filete " + aW + " mm" },
         desenho: { B: B / 1000, N: L / 1000, t: tp / 1000, nChumb: nCh, porLado: nLado, parafuso: ch.id, classe: "F1554-36", borda: e, ancoragem: anc / 1000, graute: 0.025, furo: "alargado" },
         resumo: "Placa " + br(B, 0) + " × " + br(L, 0) + " × " + br(tp, 1) + " mm (" + (eng ? "engastada" : "rotulada") + "); " + nCh + " chumbadores " + ch.id + " com gancho, ancoragem mínima " + br(anc, 0) + " mm; " + (cjp ? "mesas do pilar em penetração total e alma com filete " + aW + " mm" : "solda de filete " + aW + " mm em volta do pilar") + "; graute sem retração de 25 mm",
@@ -494,8 +510,12 @@
       verif("Chapa de apoio da porca à flexão (" + b + " × " + br(tc, 1) + " mm)", "balanço de " + e + " mm, t²·fy/4/γa1 na largura b", [passo("Momento", "N·e", br(N * e / 1000, 3) + " kN·m"), passo("Resistente", "", br(MRd, 3) + " kN·m")], MRd, N * e / 1000, "kN·m"),
       verif("Solda da chapa de apoio (filete " + aW + " mm, 2 × " + b + " mm)", ED08 + ", 6.2.5", [passo("", "", br(FwRd, 1) + " kN")], FwRd, N)
     ];
-    var fe = fecha(vs);
-    return { ok: fe.ok, razao: fe.razao, governante: fe.governante, tipo: "contravento", dimensoes: { d: d, chapa: { b: b, t: tc, e: e }, solda: aW, alfa: alfa || null },
+    var fe = fecha(vs), avG = [];
+    /* 1.2.148 — AVISO DE GEOMETRIA (não bloqueia: a orientação da chapa no apoio é do detalhe): a chapa quadrada b × b da porca,
+       soldada no perfil de apoio, mais larga que a mesa dele só cabe com a solda AO LONGO da peça */
+    var bfAp = num(p.apoio && p.apoio.bf, 0);
+    if (bfAp > 0 && b > bfAp + 1e-6) avG.push("AVISO DE GEOMETRIA (não verificado): a chapa de apoio da porca (" + b + " × " + b + " mm, pedida pelo Ø " + br(d, 1) + " mm e pelo ângulo da barra) é mais larga que a mesa do perfil de apoio (bf = " + br(bfAp, 0) + " mm) — perfil de apoio pequeno para o furo do tirante: a solda tem de correr ao longo da peça (não atravessando a mesa), ou use gusset / barra menor; conferir no detalhe");
+    return { ok: fe.ok, razao: fe.razao, governante: fe.governante, tipo: "contravento", avisosGeometria: avG, dimensoes: { d: d, chapa: { b: b, t: tc, e: e }, solda: aW, alfa: alfa || null },
              resumo: "Barra redonda Ø " + br(d, 1) + " mm com rosca, arruela biselada, porca e contraporca; chapa de apoio " + b + " × " + br(tc, 1) + " mm soldada (filete " + aW + " mm)",
              verificacoes: vs, sugestao: fe.ok ? null : "Diâmetro maior da barra ou cantoneira no lugar da barra redonda." };
   }

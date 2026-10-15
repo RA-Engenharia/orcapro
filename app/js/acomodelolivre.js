@@ -208,7 +208,7 @@
       if (c && (c.tipo === "pilar" || c.tipo === "viga") && !c.metal) { lerEstrutura(c); return; }
       if (!c || c.tipo !== "metal" || !c.metal) return;
       var m = c.metal, id = String(c.id);
-      if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia);
+      if (m.lig) { var L0 = lig(String(m.lig)); L0.papeis[m.papel] = true; L0.pecas.push(id); if (m.soldadaEm != null) L0.membros[String(m.soldadaEm)] = true; if (c.ligInfo && c.ligInfo.tipologia) L0.tipologia = String(c.ligInfo.tipologia); if (c.ligInfo && c.ligInfo.entrada && !L0.entrada) L0.entrada = c.ligInfo.entrada;
         /* LIGAÇÃO AO LANÇAR (15/10/2026, js/metalligauto.js): a ligação lançada só pelo peso próprio (A CONFIRMAR, origem
            "lancar-viga") é PROVISÓRIA — não manda no nó: vale a escolha da tela (rotulada/rígida) e o cálculo confirma ou troca
            a ligação depois. Ela mandando, o joelho marcado rígido virava rótula e o pórtico, mecanismo (e2e da simulação) */
@@ -585,8 +585,56 @@
         if (ap.base) { basesInfo.push({ no: noId, peca: p.id, mid: p.mid, tipo: ap.tipo, cota: (lado === "ini" ? p.a : p.b)[1] }); if ((lado === "ini" ? p.a : p.b)[1] > minY + 0.05) avisos.push("Pilar " + p.mid + " (" + p.nome + "): base na cota " + br((lado === "ini" ? p.a : p.b)[1], 2) + " m, acima do ponto mais baixo do modelo (" + br(minY, 2) + " m) — confira se ele nasce mesmo ali."); }
       });
     });
+    /* frente D: mola de uma ponta rígida desenhada — a rigidez é a do motor da ligação (js/acoligcalc2.js) com a entrada gravada na ligação;
+       sem entrada, sem rigidez válida ou classificada RÍGIDA → a ponta fica rígida (dito nas decisões) */
+    var cacheMola = {}, molasUsadas = [], molasRecusadas = [];
+    function molaPonta(cond, pc) {
+      if (!cond || cond.tipo !== "rigida" || !cond.lig) return null;
+      var id = String(cond.lig), ch = id + ":" + (pc && pc.id);
+      if (cacheMola[ch] === undefined) {
+        var L1 = (lido.ligacoes || {})[id], C2 = dep("AcoLigCalc2", "./acoligcalc2.js"), R = null, mot = null;
+        /* a ligação dimensionada com OUTRO perfil de viga (o modelo mudou depois) não dá a mola: fica rígida, desatualizada */
+        var mm = pc && pc.sec && pc.sec.mm, ev = L1 && L1.entrada && L1.entrada.viga;
+        /* revisão D: o PILAR e os AÇOS também (o otimizador que troca o pilar invalida a mola até recalcular a ligação) */
+        var pil = L1 ? pecas.filter(function (q) { return q.papel === "pilar" && arr(L1.membros).indexOf(q.id) >= 0; })[0] : null, mp = pil && pil.sec && pil.sec.mm, ea = L1 && L1.entrada && (L1.entrada.apoio || L1.entrada.pilar);
+        function difSec(a, b) { return !a || !b || !(num(a.d, 0) > 0) || Math.abs(num(a.d, 0) - num(b.d, 0)) > 1 || Math.abs(num(a.bf, 0) - num(b.bf, 0)) > 1 || Math.abs(num(a.tw, 0) - num(b.tw, 0)) > 0.5 || Math.abs(num(a.tf, 0) - num(b.tf, 0)) > 0.5; }
+        function fyEnt(o, d0) { return num(o && o.fy, d0); }
+        if (!L1 || !L1.tipologia || !L1.entrada) mot = "ligação sem tipologia/entrada dimensionada";
+        else if (!mm || difSec(ev, mm)) mot = "ligação DESATUALIZADA: a viga do modelo" + (mm ? " (d = " + br(num(mm.d, 0), 0) + " mm)" : "") + " não é a da ligação" + (ev ? " (d = " + br(num(ev.d, 0), 0) + " mm)" : "") + " — redimensionar";
+        else if (!mp || difSec(ea, mp)) mot = "ligação DESATUALIZADA: o pilar do modelo" + (mp ? " (d = " + br(num(mp.d, 0), 0) + "; tw = " + br(num(mp.tw, 0), 2) + "; tf = " + br(num(mp.tf, 0), 2) + " mm)" : " não foi achado e") + " não é o da ligação — redimensionar";
+        else if (Math.abs(fyEnt(L1.entrada.acoViga, 345) - num(pc.aco && pc.aco.fy, 0)) > 1 || Math.abs(fyEnt(L1.entrada.acoApoio || L1.entrada.acoPilar, 345) - num(pil.aco && pil.aco.fy, 0)) > 1) mot = "ligação DESATUALIZADA: o aço da viga ou do pilar no modelo não é o da ligação — redimensionar";
+        else if (!C2) mot = "motor das ligações indisponível";
+        else { try { R = C2.verificar(L1.tipologia, L1.entrada).rigidez; } catch (ex) { R = null; mot = "erro no cálculo da ligação"; } }
+        if (!mot && !(R && R.calculada)) mot = "rigidez não calculada" + (R && R.motivos && R.motivos[0] ? " (" + R.motivos[0] + ")" : "");
+        else if (!mot && !R.valida) mot = "rigidez não vale (" + (R.motivos[0] || "") + ")";
+        else if (!mot && R.classe === "rigida") mot = "classificada RÍGIDA (5.2.2.5): fica rígida";
+        /* revisão D: a 4ES calculada SEM a nervura é mais mole que a real — como mola tiraria momento da ligação e do pilar: fica rígida */
+        else if (!mot && R.tipo === "4ES") mot = "4ES: a rigidez calculada sem a nervura é menor que a real — fica rígida na análise até haver o cálculo próprio";
+        else if (!mot && !(isFinite(R.Sj_eta) && R.Sj_eta > 0)) mot = "Sj sem valor finito";
+        cacheMola[ch] = mot ? null : { Sj: R.Sj_eta, Sjini: R.Sjini, eta: R.eta, classe: R.classe };
+        if (mot) molasRecusadas.push((L1 && L1.tipologia ? L1.tipologia : "ligação " + id) + ": " + mot); else molasUsadas.push((L1.tipologia) + ": Sj,ini/η = " + br(R.Sjini, 0) + "/" + R.eta + " = " + br(R.Sj_eta, 0) + " kN·m/rad (" + R.classe + ")");
+      }
+      return cacheMola[ch];
+    }
     /* barras e membros */
-    var grp = {};
+    /* a peça x está ANCORADA além do nó `noExcl`? — busca pelas peças ligadas (sem passar por noExcl nem pela peça `ipExcl`)
+       até um nó com APOIO. Guardada por chave (modelos grandes) */
+    var _anc = {};
+    function ancorada(x, noExcl, ipExcl) {
+      var ch = x + "|" + noExcl + "|" + ipExcl; if (_anc[ch] != null) return _anc[ch];
+      var vistoP = {}, vistoN = {}, fila = [x], achou = false; vistoP[x] = 1; vistoP[ipExcl] = 1; vistoN[noExcl] = 1;
+      while (fila.length && !achou) {
+        var m0 = fila.shift();
+        arr(pontosPeca[m0]).forEach(function (pq) {
+          if (achou || vistoN[pq.no]) return; vistoN[pq.no] = 1;
+          if (apoiosNo[pq.no]) { achou = true; return; }
+          var I2 = noInfo[pq.no]; if (!I2) return;
+          I2.ends.map(function (e) { return e.ip; }).concat(I2.passa).forEach(function (y) { if (!vistoP[y]) { vistoP[y] = 1; fila.push(y); } });
+        });
+      }
+      _anc[ch] = achou; return achou;
+    }
+    var grp = {}, semTrav = [], travM = {};
     pecas.forEach(function (p, ip) {
       var pts = pontosPeca[ip].slice().sort(function (a, b) { return a.s - b.s; });
       var lst = []; pts.forEach(function (q) { if (lst.length && (lst[lst.length - 1].no === q.no || Math.abs(lst[lst.length - 1].s - q.s) < 1e-4)) { if (q.ponta) lst[lst.length - 1].ponta = q.ponta; return; } lst.push(q); });
@@ -603,19 +651,35 @@
         if (k + 2 === lst.length && condF.tipo === "rotulada") lib.j = { ry: true, rz: true };
         var bar = { id: bid, i: lst[k].no, j: lst[k + 1].no, secao: { A: p.sec.A, Iy: p.sec.Iy, Iz: p.sec.Iz, J: p.sec.J }, E: E, G: G, vy: p.ey.slice(), nElem: p.tracao ? 1 : (Lb > 3 ? 4 : 2), peca: p.id, membro: p.mid };
         if (lib.i || lib.j) bar.libera = lib;
+        /* frente D (15/10/2026): RIGIDEZ DAS LIGAÇÕES na análise — ponta de VIGA com ligação rígida desenhada e rigidez válida vira mola
+           rotacional em torno do eixo forte (rz local) com Sj = Sj,ini/η (EN 1993-1-8:2005, 5.1.2(4) e Tabela 5.2) */
+        if (op.rigidezLigacoes && p.papel === "viga") {
+          var mI = k === 0 ? molaPonta(condI, p) : null, mJ = k + 2 === lst.length ? molaPonta(condF, p) : null;
+          if (mI || mJ) { bar.mola = {}; if (mI) bar.mola.i = { rz: mI.Sj }; if (mJ) bar.mola.j = { rz: mJ.Sj }; }
+        }
         if (p.tracao) { bar.tracao = true; bar.papel = "contravento"; }
         barras.push(bar); segs.push(bid);
         if (!nosM.length) nosM.push(lst[k].no); nosM.push(lst[k + 1].no);
       }
       /* flambagem e travamentos: os pontos (ao longo da peça) travados em y e em z locais */
       var ty = [], tz = [], tMesa = [];
+      /* TRAVAMENTO (1.2.148, revisão da frente A — CONTRA A SEGURANÇA antes): a ponta do pilar contava como travada nos DOIS eixos
+         quando QUALQUER peça chegava nela — até uma viga em balanço, que não trava nada (pilar livre de 8 m com viga em balanço:
+         esbeltez 1,19 no cálculo, 2,38 na conta certa). Regra agora: (1) uma peça só trava se estiver ANCORADA além deste nó —
+         sem passar pelo nó nem pela própria peça, a cadeia de peças chega a um APOIO (outro pilar com base, contraventamento…);
+         viga em balanço / cadeia solta não trava; (2) no PILAR, trava só na DIREÇÃO da peça que chega (viga em X trava o
+         deslocamento em X, não em Z); o eixo sem travamento cai na regra da ponta livre (balanço: 2 × o trecho); (3) sem certeza,
+         não travado. Na VIGA, a ponta segue travada nos dois eixos quando chega nela uma peça ancorada (o pilar com base). */
+      var ehPilar = p.papel === "pilar";
       lst.forEach(function (q, k) {
         var I = noInfo[q.no], rY = false, rZ = false;
         if (apoiosNo[q.no]) { rY = true; rZ = true; }
         var outros = I.ends.map(function (e) { return e.ip; }).concat(I.passa).filter(function (x) { return x !== ip; });
-        outros.forEach(function (x) { var d = pecas[x].X; if (Math.abs(dot(d, p.ey)) > 0.5) rY = true; if (Math.abs(dot(d, p.ez)) > 0.5) rZ = true; });
-        if (k === 0 || k === lst.length - 1) { if (outros.length || apoiosNo[q.no]) { rY = true; rZ = true; } }
+        var anc = outros.filter(function (x) { return ancorada(x, q.no, ip); });
+        anc.forEach(function (x) { var d = pecas[x].X; if (Math.abs(dot(d, p.ey)) > 0.5) rY = true; if (Math.abs(dot(d, p.ez)) > 0.5) rZ = true; });
+        if ((k === 0 || k === lst.length - 1) && !ehPilar && anc.length) { rY = true; rZ = true; }
         if (rY) ty.push(q.s); if (rZ) tz.push(q.s);
+        if (ehPilar && (k === 0 || k === lst.length - 1) && outros.length && !apoiosNo[q.no] && (!rY || !rZ)) semTrav.push(p.mid + " (" + p.nome + ", " + (k === 0 ? "pé" : "topo") + (anc.length < outros.length ? ": " + (outros.length - anc.length) + " peça(s) que chega(m) sem apoio além do nó — balanço" : "") + (!rY && !rZ ? "; nenhum eixo travado" : "; um eixo sem peça ancorada na direção dele") + ")");
         if (rZ && k > 0 && k < lst.length - 1) tMesa.push(r6(q.s));
       });
       function Lfl(lista) {
@@ -637,10 +701,58 @@
                 balanco: balanco, pontas: { ini: condI, fim: condF }, apoiosVao: lst.filter(function (q, k) { if (k === 0 || k === lst.length - 1) return condPontas[p.id + ":" + (k === 0 ? "ini" : "fim")].tipo !== "livre"; var o = papelNo(q.no, ip); return !!apoiosNo[q.no] || o.pilar > 0 || o.pilarPassa > 0; }).map(function (q) { return q.s; }),
                 ey: p.ey, X: p.X, a: p.a, b: p.b, frio: p.sec.forma === "frio" };
       if (balanco) m.cb = 1;
-      membros.push(m);
+      membros.push(m); travM[ip] = { m: m, ty: ty, tz: tz };
       (grp[gk] = grp[gk] || { chave: gk, papel: p.papel, perfil: p.cat, membros: [], pecas: [] }).membros.push(m.id);
       grp[gk].pecas.push(p.id);
     });
+    /* EMENDA DE PILAR (1.2.148, revisor da frente A — CONTRA A SEGURANÇA antes): pilar contínuo em dois trechos (4 + 2 m) sem
+       nada que trave na emenda dava Le 8 e 4 m — cada trecho visto sozinho. O comprimento destravado ATRAVESSA a emenda (nó de
+       pilar sem peça que trave naquela direção) até o próximo ponto travado, nos dois eixos: os trechos colineares emendados
+       ponta a ponta viram uma CADEIA, os pontos travados de todos entram no eixo dela e cada trecho leva o maior intervalo
+       destravado que o atravessa (o da ponta livre, 2 ×) — no lugar da conta do trecho sozinho, que via a emenda como ponta livre. */
+    (function () {
+      var pontasDe = {}, porNo = {};
+      Object.keys(travM).forEach(function (k) {
+        var ip0 = +k; if (pecas[ip0].papel !== "pilar") return;
+        var ini = null, fim = null; pontosPeca[ip0].forEach(function (q) { if (q.ponta === "ini") ini = q.no; if (q.ponta === "fim") fim = q.no; });
+        pontasDe[ip0] = [ini, fim]; [ini, fim].forEach(function (no) { if (no != null) (porNo[no] = porNo[no] || []).push(ip0); });
+      });
+      var visto = {};
+      Object.keys(pontasDe).forEach(function (k) {
+        var ip0 = +k; if (visto[ip0]) return;
+        var cad = [], fila = [ip0]; visto[ip0] = 1;
+        while (fila.length) {
+          var a = fila.shift(); cad.push(a);
+          pontasDe[a].forEach(function (no) { arr(porNo[no]).forEach(function (b) { if (!visto[b] && Math.abs(dot(pecas[a].X, pecas[b].X)) > 0.995) { visto[b] = 1; fila.push(b); } }); });
+        }
+        if (cad.length < 2) return;
+        var U = pecas[cad[0]].X[1] >= 0 ? pecas[cad[0]].X : mul(pecas[cad[0]].X, -1), O = null;
+        cad.forEach(function (b) { [pecas[b].a, pecas[b].b].forEach(function (P) { var tt = dot(P, U); if (O == null || tt < O) O = tt; }); });
+        var seg = {}, Ltot = 0;
+        cad.forEach(function (b) { var pb = pecas[b], ta = dot(pb.a, U) - O, tb = dot(pb.b, U) - O; seg[b] = { o: Math.min(ta, tb), dir: tb >= ta ? 1 : -1, L: pb.L }; Ltot = Math.max(Ltot, Math.max(ta, tb)); });
+        function naCadeia(b, s) { var g = seg[b]; return g.dir > 0 ? g.o + s : g.o + (g.L - s); }
+        function intervalos(lista) {
+          var xs = lista.slice().sort(function (a, b) { return a - b; }), out = [];
+          var u = []; xs.forEach(function (x) { if (!u.length || Math.abs(x - u[u.length - 1]) > 1e-4) u.push(x); }); xs = u;
+          if (!xs.length) return [[0, Ltot, 2]];
+          if (xs[0] > 1e-6) out.push([0, xs[0], 2]);
+          for (var i = 1; i < xs.length; i++) out.push([xs[i - 1], xs[i], 1]);
+          if (xs[xs.length - 1] < Ltot - 1e-6) out.push([xs[xs.length - 1], Ltot, 2]);
+          return out;
+        }
+        ["ty", "tz"].forEach(function (eixo, ie) {
+          var pts = []; cad.forEach(function (b) { travM[b][eixo].forEach(function (s) { pts.push(naCadeia(b, s)); }); });
+          var iv = intervalos(pts);
+          cad.forEach(function (b) {
+            var g = seg[b], a0 = g.o, b0 = g.o + g.L, Le = 0;
+            iv.forEach(function (v) { if (Math.min(v[1], b0) - Math.max(v[0], a0) > 1e-6) Le = Math.max(Le, v[2] * (v[1] - v[0])); });
+            var fl0 = travM[b].m.flambagem, k = ie === 0 ? "Lx" : "Ly";
+            /* na cadeia o comprimento é o da CADEIA (a emenda não é ponta livre do trecho: o pilar continua) */
+            if (Le > 0 && Math.abs(Le - fl0[k]) > 1e-9) { fl0[k] = r6(Le); if (k === "Ly") fl0.Lz = fl0.Ly; travM[b].m.emenda = true; }
+          });
+        });
+      });
+    })();
     /* resumo das condições das pontas */
     var txt = [];
     if (contagem.rotulada) txt.push(contagem.rotulada + " ponta(s) rotulada(s)");
@@ -658,7 +770,8 @@
     }
     var nDiag = pecas.filter(function (p) { return p.papel === "diagonal"; }).length;
     if (nDiag) decisoes.push({ tema: "Diagonais", decisao: nDiag + " diagonal(is) articulada(s) nas pontas" + (pecas.some(function (p) { return p.tracao; }) ? "; as de barra redonda só trabalham à TRAÇÃO (saem do modelo quando comprimidas)" : ""), motivo: "barra de contraventamento ligada por gusset/olhal; barra redonda não resiste à compressão" });
-    decisoes.push({ tema: "Flambagem", decisao: "K = 1 entre os pontos travados de cada eixo (peça que chega na direção do eixo ou apoio); ponta livre = 2 × o trecho; FLT: a viga que chega trava a mesa de cima (pilar: as duas)", motivo: "análise de 2ª ordem com imperfeições (NBR 8800, 4.9.7): o comprimento de flambagem é o destravado; o engenheiro não configura" });
+    if (semTrav.length) decisoes.push({ tema: "Travamento dos pilares", decisao: semTrav.length + " ponta(s) de pilar com peça chegando mas SEM travamento em algum eixo — nesse eixo o pilar é tratado em balanço (2 × o trecho): " + semTrav.slice(0, 12).join("; ") + (semTrav.length > 12 ? "…" : ""), motivo: "uma peça só trava o pilar se estiver apoiada além do nó (cadeia até um apoio: outro pilar com base, contraventamento) e só na direção dela — viga em balanço não trava; sem certeza, não travado (a favor da segurança; 1.2.148)" });
+    decisoes.push({ tema: "Flambagem", decisao: "K = 1 entre os pontos travados de cada eixo (peça ANCORADA que chega na direção do eixo, ou apoio); ponta livre ou sem peça ancorada naquela direção = 2 × o trecho; FLT: a viga que chega trava a mesa de cima (pilar: as duas)", motivo: "análise de 2ª ordem com imperfeições (NBR 8800, 4.9.7): o comprimento de flambagem é o destravado; o engenheiro não configura" });
     var modelo = { nos: nos, barras: barras, apoios: apoios, casos: [] };
     var L = { livre: true };
     /* planos z constante com 2 ou mais barras (a vista 3D mostra os esforços por "pórtico" — aqui, o plano) */
@@ -667,6 +780,8 @@
     var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
     nos.forEach(function (q) { [q.x, q.y, q.z].forEach(function (v, k) { mn[k] = Math.min(mn[k], v); mx[k] = Math.max(mx[k], v); }); });
     L.mn = mn; L.mx = mx; L.vao = mx[0] - mn[0]; L.Lt = mx[2] - mn[2]; L.H = mx[1] - Math.min(0, mn[1]); L.aguas = null;
+    if (op.rigidezLigacoes) decisoes.push({ tema: "Rigidez das ligações", decisao: molasUsadas.length ? molasUsadas.length + " ligação(ões) de momento como mola rotacional na ponta da viga: " + molasUsadas.join("; ") : "nenhuma ponta de viga virou mola",
+      motivo: "EN 1993-1-8:2005, 5.1.2(4): Sj = Sj,ini/η (Tabela 5.2, η = 2) em torno do eixo forte; o eixo fraco e a torção ficam como estavam (rigidez não calculada)" + (molasRecusadas.length ? ". Ficaram RÍGIDAS: " + molasRecusadas.join("; ") : "") });
     var Gm = { ok: true, livre: true, modelo: modelo, membros: membros, grupos: grp, secoes: {}, layout: L, decisoes: decisoes, avisos: avisos, problemas: problemas,
                pecas: pecas, noInfo: noInfo, apoiosNo: apoiosNo, bases: basesInfo, condPontas: condPontas, par: op, linhasTerca: [], lido: lido };
     pecas.forEach(function (p) { Gm.secoes[p.mid] = p.sec; });
@@ -958,18 +1073,82 @@
   function tercasNaBorda(G, VL) {
     var lc = VL && VL.resultado && VL.resultado.zonas && VL.resultado.zonas.locais, out = [];
     if (!lc) return out;
+    /* 1.2.148 — cada terça/travessa nas faixas, com o PAPEL de cada fechamento que ela segura: travessa (parede), terça
+       (cobertura) ou as DUAS (a terça do beiral, na linha da parede e no topo dela: soma as duas cargas, a favor da segurança).
+       Por papel: a faixa de influência (metade da distância até a vizinha paralela; na parede, metade até a base, que apoia o
+       fechamento; borda livre da cobertura e topo da parede: até a borda), o cpe médio da faixa (já com q da classe A e o cpi
+       mais desfavorável) e o cpe da zona de cada caso escalado para a classe A (NBR 6123:2023, 6.1.3) — vale o PIOR. */
+    var R = VL.resultado, qA = num(R.qLocal, 0), terc = G.membros.filter(function (m) { return m.papelLivre === "terca"; });
+    var yRef = VL.yBase != null ? VL.yBase : Math.min(0, G.layout.mn[1]), cosT = 1 / Math.sqrt(1 + VL.tg * VL.tg), yBeiral = yRef + VL.h;
     function sob(a0, a1, b0, b1) { return Math.min(Math.max(a0, a1), b1) - Math.max(Math.min(a0, a1), b0) > 1e-6; }
-    G.membros.filter(function (m) { return m.papelLivre === "terca"; }).forEach(function (m) {
-      var xa = m.a[0] - VL.x0, xb = m.b[0] - VL.x0, za = m.a[2] - VL.z0, zb = m.b[2] - VL.z0, pior = null;
-      var faces = [["esquerda", 0, 0, za, zb], ["direita", 0, VL.b, za, zb], ["frente", 2, 0, xa, xb], ["fundo", 2, VL.a, xa, xb]];
-      var naFace = faces.filter(function (f) { var c0 = f[1] === 0 ? xa : za, c1 = f[1] === 0 ? xb : zb; return VL.faces[f[0]] && VL.faces[f[0]].fechada && Math.abs(c0 - f[2]) < 0.3 && Math.abs(c1 - f[2]) < 0.3; })[0];
-      if (naFace) arr((lc.paredes || {})[naFace[0]]).forEach(function (f) { if (isFinite(f.p) && sob(naFace[3], naFace[4], f.s0, f.s1) && (!pior || f.p < pior.p)) pior = { zona: "faixa de borda da parede " + naFace[0], cpe: f.cpe, p: f.p }; });
-      else arr(lc.cobertura).forEach(function (r) {
-        var xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
-        var toca = (xx1 - xx0 < 1e-6 ? xx0 >= r.x0 - 1e-6 && xx0 <= r.x1 + 1e-6 : sob(xx0, xx1, r.x0, r.x1)) && (zz1 - zz0 < 1e-6 ? zz0 >= r.z0 - 1e-6 && zz0 <= r.z1 + 1e-6 : sob(zz0, zz1, r.z0, r.z1));
-        if (isFinite(r.p) && toca && (!pior || r.p < pior.p)) pior = { zona: "cobertura, " + r.zona, cpe: r.cpe, p: r.p };
+    function eixoX(m) { return Math.abs(m.b[0] - m.a[0]) >= Math.abs(m.b[2] - m.a[2]); }
+    function naFaceDe(m) { var o = null; [["esquerda", 0, VL.x0], ["direita", 0, VL.x0 + VL.b], ["frente", 2, VL.z0], ["fundo", 2, VL.z0 + VL.a]].forEach(function (f) { if (!o && VL.faces[f[0]] && VL.faces[f[0]].fechada && Math.abs(m.a[f[1]] - f[2]) < 0.3 && Math.abs(m.b[f[1]] - f[2]) < 0.3) o = f[0]; }); return o; }
+    function noBeiral(m) { return Math.min(m.a[1], m.b[1]) >= yBeiral - 0.3; }
+    /* só segura a TELHA a peça que não tem outra terça/viga logo acima (mesma posição em planta): a escora do banzo de baixo,
+       o travamento abaixo do telhado etc. não são terças de cobertura */
+    var horiz = G.membros.filter(function (o) { return (o.papelLivre === "terca" || o.papelLivre === "viga") && Math.abs(o.a[1] - o.b[1]) < 0.5 + 0.2 * Math.max(Math.abs(o.b[0] - o.a[0]), Math.abs(o.b[2] - o.a[2])); });
+    function cobertoPorOutro(m) {
+      var ex = eixoX(m), ax = ex ? 0 : 2, pp = ex ? 2 : 0, c = (m.a[pp] + m.b[pp]) / 2, y = (m.a[1] + m.b[1]) / 2, a0 = Math.min(m.a[ax], m.b[ax]), a1 = Math.max(m.a[ax], m.b[ax]);
+      return horiz.some(function (o) {
+        if (o === m) return false;
+        var o0 = Math.min(o.a[ax], o.b[ax]), o1 = Math.max(o.a[ax], o.b[ax]), co0 = Math.min(o.a[pp], o.b[pp]) - 0.3, co1 = Math.max(o.a[pp], o.b[pp]) + 0.3;
+        if (Math.min(o1, a1) - Math.max(o0, a0) < 0.05 || c < co0 || c > co1) return false;
+        var f = Math.abs(o.b[pp] - o.a[pp]) > 1e-6 ? (c - o.a[pp]) / (o.b[pp] - o.a[pp]) : 0.5, yo = o.a[1] + Math.max(0, Math.min(1, f)) * (o.b[1] - o.a[1]);
+        return yo > y + 0.3;
       });
-      if (pior) out.push({ peca: String(m.peca), zona: pior.zona, cpe: pior.cpe, p: pior.p });
+    }
+    function sFace(face) { return face === "esquerda" || face === "direita" ? 2 : 0; }
+    function pZona(m, face) {
+      var pz = 0;
+      VL.casos.forEach(function (vc) {
+        var fq = qA > 0 && vc.c.q > 0 ? Math.max(1, qA / vc.c.q) : 1;
+        for (var k = 0; k < 5; k++) { var f = (k + 0.5) / 5, x = m.a[0] + f * (m.b[0] - m.a[0]) - VL.x0, z = m.a[2] + f * (m.b[2] - m.a[2]) - VL.z0;
+          var pv = face ? VL.pParede(vc.c, face, sFace(face) === 2 ? z : x) : VL.pCob(vc.c, x, z); if (pv * fq < pz) pz = pv * fq; }
+      });
+      return pz;
+    }
+    function faixaInf(m, face) {
+      var ex = eixoX(m), ax = ex ? 0 : 2, pp = face ? 1 : (ex ? 2 : 0), c = (m.a[pp] + m.b[pp]) / 2, a0 = Math.min(m.a[ax], m.b[ax]), a1 = Math.max(m.a[ax], m.b[ax]);
+      var lo = face ? yRef : (pp === 0 ? VL.x0 : VL.z0), hi = face ? yBeiral + (VL.tg || 0) * (sFace(face) === 0 ? VL.b / 2 : 0) : (pp === 0 ? VL.x0 + VL.b : VL.z0 + VL.a), dn = null, up = null;
+      terc.forEach(function (o) {
+        if (o === m || eixoX(o) !== ex) return;
+        if (face ? naFaceDe(o) !== face : (naFaceDe(o) && !noBeiral(o))) return;
+        if (Math.min(Math.max(o.a[ax], o.b[ax]), a1) - Math.max(Math.min(o.a[ax], o.b[ax]), a0) < 0.05) return;
+        var co = (o.a[pp] + o.b[pp]) / 2; if (Math.abs(co - c) < 0.05) return;
+        if (co < c && (dn === null || co > dn)) dn = co; if (co > c && (up === null || co < up)) up = co;
+      });
+      var sDn = dn === null ? (face ? (c - lo) / 2 : c - lo) : (c - dn) / 2, sUp = up === null ? hi - c : (up - c) / 2;
+      var s = Math.max(0, sDn) + Math.max(0, sUp); return face ? s : s / cosT;
+    }
+    terc.forEach(function (m) {
+      var xa = m.a[0] - VL.x0, xb = m.b[0] - VL.x0, za = m.a[2] - VL.z0, zb = m.b[2] - VL.z0, face = naFaceDe(m), papeis = [];
+      if (face) {
+        var sa = sFace(face) === 2 ? za : xa, sb = sFace(face) === 2 ? zb : xb, pw = null;
+        arr((lc.paredes || {})[face]).forEach(function (f) { if (isFinite(f.p) && sob(sa, sb, f.s0, f.s1) && (!pw || f.p < pw.p)) pw = { zona: "faixa de borda da parede " + face, cpe: f.cpe, p: f.p }; });
+        if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p });
+      }
+      if ((!face || noBeiral(m)) && !cobertoPorOutro(m)) {
+        var pr = null, xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
+        arr(lc.cobertura).forEach(function (r) {
+          var toca = (xx1 - xx0 < 1e-6 ? xx0 >= r.x0 - 1e-6 && xx0 <= r.x1 + 1e-6 : sob(xx0, xx1, r.x0, r.x1)) && (zz1 - zz0 < 1e-6 ? zz0 >= r.z0 - 1e-6 && zz0 <= r.z1 + 1e-6 : sob(zz0, zz1, r.z0, r.z1));
+          if (isFinite(r.p) && toca && (!pr || r.p < pr.p)) pr = { zona: "cobertura, " + r.zona, cpe: r.cpe, p: r.p };
+        });
+        if (pr) papeis.push({ tipo: "cobertura", face: null, zona: pr.zona, cpe: pr.cpe, p: pr.p });
+      }
+      if (!papeis.length) return;
+      var wL = 0;
+      papeis.forEach(function (q) { q.s = faixaInf(m, q.face); q.pZonaA = pZona(m, q.face); q.pUso = Math.min(q.p, q.pZonaA); q.governa = q.pUso < q.p - 1e-9 ? "zona (classe A)" : "cpe médio"; wL += Math.abs(q.pUso) * q.s; });
+      var pior = papeis.slice().sort(function (a, b) { return a.p - b.p; })[0];
+      /* vão: entre os APOIOS (nós onde passa ou termina viga/pilar, mais as pontas) — nó de diagonal não apoia */
+      var ipT = arr(G.pecas).map(function (pc) { return pc.id; }).indexOf(m.peca), nosM = arr(m.nos);
+      var apo = nosM.filter(function (id, k) {
+        if (k === 0 || k === nosM.length - 1) return true; var I = G.noInfo[id]; if (!I) return false;
+        return arr(I.ends).map(function (e) { return e.ip; }).concat(arr(I.passa)).some(function (ip) { if (ip === ipT || !G.pecas[ip]) return false; var pp = G.pecas[ip].papel; return pp === "viga" || pp === "pilar"; });
+      });
+      var Ls = 0; for (var k2 = 1; k2 < apo.length; k2++) { var P0 = G.noInfo[apo[k2 - 1]].P, P1 = G.noInfo[apo[k2]].P; Ls = Math.max(Ls, Math.sqrt(Math.pow(P1[0] - P0[0], 2) + Math.pow(P1[1] - P0[1], 2) + Math.pow(P1[2] - P0[2], 2))); }
+      out.push({ peca: String(m.peca), mid: m.id, zona: papeis.map(function (q) { return q.zona; }).join(" + "), cpe: pior.cpe, p: pior.p, papeis: papeis,
+                 wLinha: wL, pUso: Math.min.apply(null, papeis.map(function (q) { return q.pUso; })), s: papeis.reduce(function (a, q) { return a + q.s; }, 0),
+                 governa: papeis.map(function (q) { return q.governa; }).join(" + "), Ls: Ls > 0 ? Ls : m.L, continua: apo.length > 2 });
     });
     var vistos = {}; return out.filter(function (q) { if (vistos[q.peca]) return false; vistos[q.peca] = true; return true; });
   }

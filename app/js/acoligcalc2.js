@@ -799,7 +799,7 @@
   /* ================================================================ BASES */
   function baseEnt(p, tipo) {
     var e = ent(p);
-    return { tipo: tipo, dMinChumb: p.dMinChumb, pilar: e.apoio && e.apoio.d ? e.apoio : e.viga, aco: { fy: e.fy, fu: e.fu }, chumbador: p.chumbador || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: p.concreto || { fck: 25 },   /* dMinChumb: revisão A4 (js/acoligsugere.js) */
+    return { tipo: tipo, dMinChumb: p.dMinChumb, pilar: e.apoio && e.apoio.d ? e.apoio : e.viga, aco: { fy: e.fy, fu: e.fu }, chumbador: p.chumbador || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: p.concreto || { fck: 25, referencia: true },   /* 1.2.148: sem fundação o fck é de REFERÊNCIA (a aderência fica "não verificada") */   /* dMinChumb: revisão A4 (js/acoligsugere.js) */
              acoPilar: { fy: e.fyA }, eletrodo: { fw: e.fw },
              esforcos: e.esf.map(function (s) { return { comb: s.comb, N: num(s.N, 0), Vx: num(s.V, num(s.Vx, 0)), Vz: num(s.Vz, 0), M: num(s.M, 0) }; }) };
   }
@@ -992,8 +992,8 @@
 
   /* ================================================================ BARRA REDONDA (contravento / tirante) e CLIP: o motor existente */
   function barraRedonda(p) {
-    var e = ent(p), r = LC().contravento({ d: num(p.d, 16), N: Math.max(e.Nt, Math.abs(num(p.N, 0))), barra: p.barra || { fy: 250, fu: 400 }, chapa: { fy: e.fy }, eletrodo: { fw: e.fw }, alfa: num(p.alfa, 0) });
-    r.reforcos = []; r.naoVerificado = ["Barra frouxa à compressão (sai do modelo) — conferir o pré-tensionamento na montagem."]; r.notas = r.notas || []; return r;
+    var e = ent(p), r = LC().contravento({ d: num(p.d, 16), N: Math.max(e.Nt, Math.abs(num(p.N, 0))), barra: p.barra || { fy: 250, fu: 400 }, chapa: { fy: e.fy }, eletrodo: { fw: e.fw }, alfa: num(p.alfa, 0), apoio: p.apoio || null });
+    r.reforcos = []; r.naoVerificado = ["Barra frouxa à compressão (sai do modelo) — conferir o pré-tensionamento na montagem."].concat(arr(r.avisosGeometria)); r.notas = r.notas || []; return r;
   }
   function clipTerca(p) { var r = LC().clipTerca(p); r.reforcos = []; r.naoVerificado = []; r.notas = r.notas || []; return r; }
 
@@ -1607,6 +1607,14 @@
     }
     r.tipologia = tipId; r.nome = t.nome; r.familia = t.familia; r.edicao = T.EDICAO.aviso;
     r.reforcos = arr(r.reforcos); r.notas = arr(r.notas); r.naoVerificado = arr(r.naoVerificado);
+    /* 1.2.148 (revisão): a aderência sem o fck da fundação (js/acoligcalc.js) é pendência CRÍTICA — a placa fica A CONFIRMAR,
+       NUNCA aprovada (o comprimento de ancoragem sai do fck: 700 mm com o 25 de referência viram 1000 mm com fck 15); o
+       "Ligar todos os nós" não a escolhe (escolherLote barra naoVerificadoCritico), o memorial e as pranchas barram a emissão */
+    if (arr(r.pendenciasPlaca).length) {
+      r.naoVerificadoCritico = arr(r.naoVerificadoCritico).concat(r.pendenciasPlaca);
+      r.okVerificacoes = r.ok; r.ok = false; r.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador por aderência)";
+      r.governante = "A CONFIRMAR: ancoragem do chumbador sem o fck da fundação";
+    }
     r.bloqueante = arr(r.bloqueante);
     r.bloqueante.slice().reverse().forEach(function (b) { r.naoVerificado.unshift("NÃO VERIFICADO (a opção fica bloqueada, sem Aplicar): " + b + "."); });
     /* o que é crítico e não foi verificado REPROVA a opção (nunca "passa" com lacuna escondida) */
@@ -1736,7 +1744,18 @@
     var semAlav = []; [[fe1, "linha 1 na chapa"], [fc1, "linha 1 na mesa do pilar"], [fe2, "linha 2 na chapa"], [fc2, "linha 2 na mesa do pilar"]].forEach(function (q) { if (q[0].alav === false) semAlav.push(q[1]); });
     if (semAlav.length) P.push(passo("Rigidez sem alavanca", "Lb > Lb* em: " + semAlav.join("; "), "coeficientes com alavanca — conferir", "k4/k5 com 0,9 e k10 com 1,6 (Tabela 6.11, com alavanca): a ligação não é classificada rígida por esta rigidez"));
     P.push(passo("Relação entre os modos 1 e 3 da chapa (6.2.4)", "F,1,Rd/F,3,Rd por linha", br(rel.r1, 3) + "; " + br(rel.r2, 3), "> 1: o parafuso (modo 3, frágil) governa antes da chapa"));
-    return { calculada: true, metodo: "componentes", tipo: "4E", Sjini: S0, Mj: Mj, z: zeq, k: { k1: k1, k2: k2, keq: keq, linhas: rows }, F: [F1, F2], h: [h1, h2], rel: rel, motivos: mot, passos: P, eta: 2, psi: 2.7, beta: bt.b, semAlav: semAlav };
+    /* CAPACIDADE DE ROTAÇÃO (6.4.2): suficiente para análise plástica se (1) Mj,Rd governado pelo painel ao cisalhamento com dc/tw ≤ 69ε,
+       ou (2) governado pela mesa do pilar ou pela chapa à flexão (nunca pelo modo 3 — parafusos) E t ≤ 0,36·d·√(fub/fy) (eq. 6.32) na mesa
+       do pilar ou na chapa; (3) parafusos ao cisalhamento: insuficiente. A norma não dá φCd numérico para a chapa de extremidade. */
+    var govs = [gov1, gov2], lim632 = 0.36 * db * Math.sqrt(e.fub / fyp), lim632c = 0.36 * db * Math.sqrt(e.fub / fyc), rot;
+    var ehDuctil = function (q) { return /^(chapa à flexão|mesa do pilar à flexão|grupo 1\+2 na mesa)/.test(q) && !/modo 3/.test(q); };
+    var ductil = govs.every(ehDuctil), painelGov = govs.every(function (q) { return /painel da alma/.test(q); });
+    if (painelGov && esb <= 69 * eps) rot = { suficiente: true, item: "6.4.2(1)", texto: "Mj,Rd governado pelo painel da alma ao cisalhamento com dc/tw ≤ 69ε: capacidade de rotação suficiente para análise plástica" };
+    else if (ductil && (tp <= lim632 || tfc <= lim632c)) rot = { suficiente: true, item: "6.4.2(2)", texto: "Mj,Rd governado pela flexão da chapa/mesa do pilar e t ≤ 0,36·d·√(fub/fy) (" + (tp <= lim632 ? "chapa: " + br(tp, 1) + " ≤ " + br(lim632, 1) : "mesa do pilar: " + br(tfc, 1) + " ≤ " + br(lim632c, 1)) + " mm, eq. 6.32): suficiente para análise plástica" };
+    else rot = { suficiente: false, item: "6.4.2", texto: "capacidade de rotação NÃO garantida para análise plástica (" + (ductil ? "t > 0,36·d·√(fub/fy) na chapa (" + br(tp, 1) + " > " + br(lim632, 1) + " mm) e na mesa do pilar" : "Mj,Rd governado por " + govs.filter(function (q) { return !ehDuctil(q); })[0]) + ") — usar análise elástica" };
+    rot.phiCd = null;
+    P.push(passo("Capacidade de rotação (" + rot.item + ")", rot.suficiente ? "suficiente" : "não garantida", rot.texto, "a norma não dá φCd numérico para a chapa de extremidade"));
+    return { calculada: true, metodo: "componentes", tipo: "4E", rotacao: rot, Sjini: S0, Mj: Mj, z: zeq, k: { k1: k1, k2: k2, keq: keq, linhas: rows }, F: [F1, F2], h: [h1, h2], rel: rel, motivos: mot, passos: P, eta: 2, psi: 2.7, beta: bt.b, semAlav: semAlav };
   }
 
   /* ---- SOLDADA: viga soldada na mesa do pilar (Tabela 6.10: k1, k2, k3; z = h − tfb, Figura 6.15) */
@@ -1759,7 +1778,15 @@
     P.push(acw.passo, passo("Alma do pilar à tração; mesa do pilar (4.10)", "ω·beff,t,wc·twc·fy/γa1; (twc + 2s + 7k·tfc)·tfb·fy,b/γa1", br(Ftwc, 1) + "; " + br(Ffc, 1) + " kN", "k = " + br(kk, 3)));
     P.push(passo("Limites", "Vwp,Rd; Fc,fb,Rd = Mc,Rd/(h − tfb)", br(Vwp, 1) + "; " + br(Fcfb, 1) + " kN"));
     P.push(passo("Mj,Rd (6.2.7.2)", "z·mín(F)", br(Mj, 2) + " kN·m", "governa: " + gv[0]));
-    return { calculada: true, metodo: "componentes", tipo: "soldada", Sjini: S0, Mj: Mj, z: z, k: { k1: k1, k2: k2, k3: k3 }, F: [gv[1]], h: [z], motivos: mot, passos: P, eta: 2, psi: 2.7, beta: bt.b };
+    /* CAPACIDADE DE ROTAÇÃO (6.4.3): (2) soldada SEM enrijecedor → φCd ≥ 0,015 rad; (1) alma enrijecida à compressão e não à tração e Mj,Rd
+       não governado pelo painel → φCd = 0,025·hc/hb (eq. 6.33). Os enrijecedores de continuidade daqui vão nas DUAS mesas (compressão e
+       tração): nenhum dos dois casos — não verificada. Mj,Rd governado pelo painel com dc/tw ≤ 69ε: suficiente (6.4.2(1)). */
+    var rot;
+    if (/painel da alma/.test(gv[0]) && Sc.dwc / twc <= 69 * eps) rot = { suficiente: true, item: "6.4.2(1)", phiCd: null, texto: "Mj,Rd governado pelo painel da alma ao cisalhamento com dc/tw ≤ 69ε: suficiente para análise plástica" };
+    else if (!enr) rot = { suficiente: true, item: "6.4.3(2)", phiCd: 0.015, texto: "ligação soldada sem enrijecedor: φCd ≥ 0,015 rad" };
+    else rot = { suficiente: null, item: "6.4.3", phiCd: null, texto: "enrijecedores nas duas mesas: fora dos casos da 6.4.3 — capacidade de rotação NÃO verificada" };
+    P.push(passo("Capacidade de rotação (" + rot.item + ")", rot.phiCd ? "φCd" : "", rot.phiCd ? br(rot.phiCd * 1000, 0) + " mrad" : (rot.suficiente ? "suficiente" : "não verificada"), rot.texto));
+    return { calculada: true, metodo: "componentes", tipo: "soldada", rotacao: rot, Sjini: S0, Mj: Mj, z: z, k: { k1: k1, k2: k2, k3: k3 }, F: [gv[1]], h: [z], motivos: mot, passos: P, eta: 2, psi: 2.7, beta: bt.b };
   }
 
   /* CLASSIFICAÇÃO (EN 1993-1-8:2005, 5.2.2.5 pela rigidez; 5.2.3 pela resistência). op: { Lviga, Lpilar (mm), contraventado (pórtico em
@@ -1790,17 +1817,53 @@
   var NOME_CLASSE = { rigida: "RÍGIDA", semirrigida: "SEMIRRÍGIDA", flexivel: "FLEXÍVEL (nominalmente rotulada)" };
   var NOME_RESIST = { total: "resistência total", parcial: "resistência parcial", rotulada: "nominalmente rotulada pela resistência" };
 
+  /* CURVA MOMENTO-ROTAÇÃO de cálculo (EN 1993-1-8:2005, 6.3.1 e Figura 6.1): até 2/3·Mj,Rd reta com Sj,ini; de 2/3·Mj,Rd a Mj,Rd,
+     Sj = Sj,ini/μ com μ = (1,5·Mj,Ed/Mj,Rd)^ψ (eq. 6.28; ψ = 2,7 — Tabela 6.8, soldada e chapa de extremidade); patamar até φCd quando a 6.4
+     o dá. Rotação em mrad. Também a reta idealizada da análise (Sj,ini/η, 5.1.2(4) e Figura 5.2). */
+  function curvaMomentoRotacao(R) {
+    if (!(R && R.calculada && isFinite(R.Sjini) && R.Sjini > 0 && isFinite(R.Mj) && R.Mj > 0)) return null;
+    var pts = [[0, 0]], psi = num(R.psi, 2.7), M23 = 2 / 3 * R.Mj;
+    pts.push([M23 / R.Sjini * 1000, M23]);
+    for (var i = 1; i <= 12; i++) { var M = M23 + (R.Mj - M23) * i / 12, mu = Math.pow(1.5 * M / R.Mj, psi); pts.push([M * mu / R.Sjini * 1000, M]); }
+    var phiXd = pts[pts.length - 1][0], phiCd = R.rotacao && R.rotacao.phiCd ? R.rotacao.phiCd * 1000 : null;
+    if (phiCd && phiCd > phiXd) pts.push([phiCd, R.Mj]);
+    return { pontos: pts, phiXd: phiXd, phiCd: phiCd, M23: M23, ideal: [[0, 0], [R.Mj * num(R.eta, 2) / R.Sjini * 1000, R.Mj]] };
+  }
+  function curvaSvg(R) {
+    var c = curvaMomentoRotacao(R); if (!c) return "";
+    var W = 420, H = 230, ml = 52, mb = 34, mt = 12, mr = 14, xm = 0, ym = R.Mj * 1.1;
+    c.pontos.concat(c.ideal).forEach(function (q) { xm = Math.max(xm, q[0]); }); var xr = xm; xm *= 1.08;
+    function X(v) { return (ml + v / xm * (W - ml - mr)).toFixed(1); }
+    function Y(v) { return (H - mb - v / ym * (H - mb - mt)).toFixed(1); }
+    function pl(L) { return L.map(function (q) { return X(q[0]) + "," + Y(q[1]); }).join(" "); }
+    var yc = (H - mb + mt) / 2;
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Curva momento-rotação da ligação" style="font:10px sans-serif">' +
+      '<line x1="' + ml + '" y1="' + (H - mb) + '" x2="' + (W - mr) + '" y2="' + (H - mb) + '" stroke="#333"/>' +
+      '<line x1="' + ml + '" y1="' + mt + '" x2="' + ml + '" y2="' + (H - mb) + '" stroke="#333"/>' +
+      '<line x1="' + ml + '" y1="' + Y(R.Mj) + '" x2="' + (W - mr) + '" y2="' + Y(R.Mj) + '" stroke="#999" stroke-dasharray="3 3"/>' +
+      '<text x="' + (ml - 4) + '" y="' + Y(R.Mj) + '" text-anchor="end" dy="3">' + br(R.Mj, 1) + "</text>" +
+      '<text x="' + (ml - 4) + '" y="' + Y(c.M23) + '" text-anchor="end" dy="3">' + br(c.M23, 1) + "</text>" +
+      '<polyline fill="none" stroke="#999" stroke-dasharray="5 3" points="' + pl(c.ideal) + '"/>' +
+      '<polyline fill="none" stroke="#1d4ed8" stroke-width="2" points="' + pl(c.pontos) + '"/>' +
+      '<text x="' + X(xr) + '" y="' + (H - mb + 12) + '" text-anchor="end">' + br(xr, 1) + "</text>" +
+      '<text x="' + ((W + ml) / 2) + '" y="' + (H - 6) + '" text-anchor="middle">rotação φ (mrad)</text>' +
+      '<text x="12" y="' + yc + '" transform="rotate(-90 12 ' + yc + ')" text-anchor="middle">M (kN·m)</text></svg>' +
+      '<p class="nota">Curva de cálculo (6.3.1, Figura 6.1; ψ = ' + br(num(R.psi, 2.7), 1) + "): Sj,ini até 2/3·Mj,Rd, depois Sj,ini/μ até Mj,Rd (φXd = " + br(c.phiXd, 2) + " mrad)" + (c.phiCd ? "; patamar até φCd = " + br(c.phiCd, 0) + " mrad (" + R.rotacao.item + ")" : "; φCd não dado pela norma para esta ligação") + ". Tracejada: reta da análise Sj,ini/η (5.1.2(4)).</p>";
+  }
   /* anexa a rigidez ao resultado de verificar() — r.rigidez, uma linha nas notas e o aviso de que a análise não a usa */
   function anexarRigidez(r, entrada) {
     var e = ent(entrada), R;
-    if (r.tipo !== "chapaExtendida" && r.tipo !== "soldadaDireta") {
+    if (r.tipo !== "chapaExtendida" && r.tipo !== "soldadaDireta" && r.tipo !== "chapaExt4ES") {
       /* outra tipologia de MOMENTO (4ES, 8ES, mísula, talas…): a rigidez não é calculada — dito, nunca "rígida" calada */
       if (r.familia === "rigida" && r.verificacoes && !arr(r.naoVerificado).some(function (x) { return /Rigidez da ligação/.test(x); })) r.naoVerificado.push("Rigidez da ligação: não calculada para esta tipologia (o método dos componentes está só na 4E e na soldada) — o cálculo da estrutura a trata como rígida.");
       if (r.familia === "rigida") r.rigidez = semRigidez("tipologia fora do método implementado (só 4E e soldada)");
       return r;
     }
     if (e.face !== "mesa" || !(num(e.apoio.bf, 0) > 0 && num(e.apoio.tf, 0) > 0 && num(e.apoio.tw, 0) > 0 && num(e.apoio.d, 0) > 0) || ehTubo(e.apoio) || !(num(e.viga.d, 0) > 0 && num(e.viga.bf, 0) > 0)) R = semRigidez("viga na mesa de pilar de perfil I é o caso do método (Tabela 6.10)");
-    else R = r.tipo === "chapaExtendida" ? rigidez4E(e, r, entrada) : rigidezSoldada(e, r, entrada);
+    else R = r.tipo === "soldadaDireta" ? rigidezSoldada(e, r, entrada) : rigidez4E(e, r, entrada);
+    /* 4ES (frente D): a Tabela 6.6 não traz a extensão com NERVURA — calculada como a 4E sem a nervura (a nervura só acrescenta rigidez e
+       resistência: limite inferior de Sj,ini e de Mj,Rd), dito no memorial */
+    if (r.tipo === "chapaExt4ES" && R.calculada) { R.tipo = "4ES"; R.passos.unshift(passo("4ES: nervura da extensão NÃO contada", EN18 + ", Tabela 6.6 (sem caso de extensão com nervura)", "calculada como a 4E", "limite inferior de Sj,ini e de Mj,Rd")); }
     /* validade: N ≤ 5 % de Npl,Rd da viga (6.2.7.1(2), aplicada também à rigidez); nenhuma verificação faltando na ligação */
     if (R.calculada) {
       var Nmax = Math.max(e.Nt, e.Nc), Npl = secaoI(e.viga).A * e.fyV / gamas().a1 / 1000;
@@ -1808,6 +1871,12 @@
       if (Nmax > 0.05 * Npl) R.motivos.push("esforço normal na viga " + br(Nmax, 1) + " kN > 5 % de Npl,Rd = " + br(0.05 * Npl, 1) + " kN: fora da validade (6.2.7.1(2))");
       if (arr(r.bloqueante).length || arr(r.naoVerificado).length) R.motivos.push("a ligação tem verificação faltando (" + (arr(r.bloqueante)[0] || arr(r.naoVerificado)[0]) + ")");
       if (r.ok !== true) R.motivos.push("a ligação não passa nas verificações");
+      /* revisão D (15/10/2026): a curva de cálculo (6.3.1, Figura 6.1) e a reta Sj,ini/η da análise (5.1.2(4)) só valem até Mj,Rd — com
+         Mj,Ed > Mj,Rd o método dos componentes não aprova a ligação e a rigidez não vale (nem como mola) */
+      if (isFinite(R.Mj) && e.M > R.Mj + 1e-9) {
+        R.motivos.push("Mj,Ed = " + br(e.M, 1) + " kN·m > Mj,Rd = " + br(R.Mj, 1) + " kN·m (método dos componentes): a rigidez só vale até Mj,Rd (5.1.2(4) e Figura 6.1)");
+        r.naoVerificado.push("Momento resistente pelo método dos componentes (" + EN18 + ", 6.2.7.2): Mj,Rd = " + br(R.Mj, 1) + " kN·m < Mj,Ed = " + br(e.M, 1) + " kN·m — a ligação não passa por este modelo; a rigidez não vale e não entra na análise.");
+      }
       R.valida = !R.motivos.length;
       var C = classificarLigacao(R, e.viga, e.apoio, e.fyV, e.fyA, { Lviga: entrada.Lviga, Lpilar: entrada.Lpilar, contraventado: entrada.contraventado, KbKc: entrada.KbKc, topoPilar: !!entrada.topoPilar });
       if (R.valida && C.classe === "rigida" && arr(R.semAlav).length) { C.classe = "semirrigida"; C.motivos.push("rigidez com coeficiente com alavanca em linha sem alavanca (" + R.semAlav.join("; ") + ") — conferir: na dúvida, SEMIRRÍGIDA"); }
@@ -1818,8 +1887,8 @@
       var txt = "Rigidez da ligação (" + EN18 + ", método dos componentes): Sj,ini = " + br(R.Sjini, 0) + " kN·m/rad; Mj,Rd = " + br(R.Mj, 1) + " kN·m";
       if (!R.valida) txt += " — NÃO VALE (sem classificação): " + R.motivos.join("; ");
       else txt += " — " + (R.classe ? NOME_CLASSE[R.classe] : "rigidez NÃO classificada (" + C.motivos[0] + ")") + (C.limRig ? " (rígida ≥ " + br(C.limRig, 0) + "; flexível ≤ " + br(C.limFlex, 0) + " kN·m/rad, 5.2.2.5)" : "") + "; " + (NOME_RESIST[R.classeResist] || "resistência não classificada") + " (Mfull,Rd = " + br(C.Mfull, 1) + " kN·m, 5.2.3)" + (C.motivos.length ? "; " + C.motivos.join("; ") : "");
-      r.notas.push(txt + ". " + AVISO_ANALISE.charAt(0).toUpperCase() + AVISO_ANALISE.slice(1) + " (o cálculo da estrutura trata o nó como rígido).");
-      if (R.valida && R.classe !== "rigida") r.naoVerificado.push("A ligação é " + (R.classe ? NOME_CLASSE[R.classe] : "NÃO CLASSIFICADA pela rigidez") + " e o cálculo da estrutura a trata como RÍGIDA: deslocamentos e momentos do pórtico não conferem com a ligação real (" + AVISO_ANALISE + ").");
+      r.notas.push(txt + ". " + AVISO_ANALISE.charAt(0).toUpperCase() + AVISO_ANALISE.slice(1) + " (o cálculo da estrutura trata o nó como rígido, a não ser com \"Rigidez das ligações: Considerar (mola Sj)\" na estrutura desenhada — aí a ponta da viga entra como mola Sj,ini/η, 5.1.2(4)).");
+      if (R.valida && R.classe !== "rigida") r.naoVerificado.push("A ligação é " + (R.classe ? NOME_CLASSE[R.classe] : "NÃO CLASSIFICADA pela rigidez") + " e o cálculo da estrutura a trata como RÍGIDA: deslocamentos e momentos do pórtico não conferem com a ligação real (" + AVISO_ANALISE + "; na estrutura desenhada, ligue \"Rigidez das ligações: Considerar (mola Sj)\").");
     } else {
       R.aviso = AVISO_ANALISE;
       r.notas.push("Rigidez da ligação não calculada: " + R.motivos[0] + ".");
@@ -1843,7 +1912,7 @@
         "<li>Solicitante " + br(v.solicitante, 2) + " " + esc(v.unidade) + " / resistente " + br(v.resistencia, 2) + " " + esc(v.unidade) + " → razão <b>" + br(v.razao, 3) + "</b> " + (v.razao <= 1 + 1e-9 ? "(ok)" : "(NÃO PASSA)") + "</li></ul>";
     });
     /* F4: rigidez rotacional inicial e momento resistente (método dos componentes) */
-    if (r.rigidez && arr(r.rigidez.passos).length) h += "<h4>Rigidez rotacional inicial e momento resistente — " + EN18 + " (6.2.7, 6.3, 5.2.2 e 5.2.3)" + (r.rigidez.valida ? "" : " — NÃO VALE") + "</h4><ul>" + r.rigidez.passos.map(function (q) { return "<li>" + ix(esc(q.rotulo)) + (q.formula ? ' <span class="eq">' + ix(esc(q.formula)) + "</span>" : "") + (q.valor != null && q.valor !== "" ? " = <b>" + ix(esc(q.valor)) + "</b>" : "") + (q.extra ? ' <span class="nota">' + ix(esc(q.extra)) + "</span>" : "") + "</li>"; }).join("") + "<li><b>" + esc(r.rigidez.aviso) + "</b></li></ul>";
+    if (r.rigidez && arr(r.rigidez.passos).length) h += "<h4>Rigidez rotacional inicial e momento resistente — " + EN18 + " (6.2.7, 6.3, 5.2.2 e 5.2.3)" + (r.rigidez.valida ? "" : " — NÃO VALE") + "</h4><ul>" + r.rigidez.passos.map(function (q) { return "<li>" + ix(esc(q.rotulo)) + (q.formula ? ' <span class="eq">' + ix(esc(q.formula)) + "</span>" : "") + (q.valor != null && q.valor !== "" ? " = <b>" + ix(esc(q.valor)) + "</b>" : "") + (q.extra ? ' <span class="nota">' + ix(esc(q.extra)) + "</span>" : "") + "</li>"; }).join("") + "<li><b>" + esc(r.rigidez.aviso) + "</b></li></ul>" + curvaSvg(r.rigidez);
     if (r.reforcos.length) h += "<p><b>Reforços:</b> " + r.reforcos.map(esc).join("; ") + ".</p>";
     if (r.naoVerificado.length) h += "<p><b>Não verificado:</b></p><ul>" + r.naoVerificado.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
     if (r.notas.length) h += "<ul>" + r.notas.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
@@ -1854,7 +1923,7 @@
     cantoneiraDupla: cantoneiraDupla, cantoneiraSimples: cantoneiraSimples, chapaSimples: chapaSimples, chapaTopoCurta: chapaTopoCurta, cantoneiraAssento: cantoneiraAssento, chapaExtendida: chapaExtendida, chapaAjustada: chapaAjustada,
     talasMesa: talasMesa, soldadaDireta: soldadaDireta, misula: misula, vigaRecortada: vigaRecortada, emendaVigaTalas: emendaVigaTalas, emendaPilarTalas: emendaPilarTalas,
     placaBase: placaBase, placaBaseEnrijecida: placaBaseEnrijecida, barraCisalhamento: barraCisalhamento, gussetContravento: gussetContravento, noTubular: noTubular, consolo: consolo };
-  AcoLigCalc2.rigidez4E = rigidez4E; AcoLigCalc2.rigidezSoldada = rigidezSoldada; AcoLigCalc2.classificarLigacao = classificarLigacao; AcoLigCalc2.anexarRigidez = anexarRigidez; AcoLigCalc2.secaoI = secaoI; AcoLigCalc2.omega = omega; AcoLigCalc2.AVISO_ANALISE = AVISO_ANALISE;   /* F4 */
+  AcoLigCalc2.rigidez4E = rigidez4E; AcoLigCalc2.rigidezSoldada = rigidezSoldada; AcoLigCalc2.classificarLigacao = classificarLigacao; AcoLigCalc2.anexarRigidez = anexarRigidez; AcoLigCalc2.secaoI = secaoI; AcoLigCalc2.omega = omega; AcoLigCalc2.curvaMomentoRotacao = curvaMomentoRotacao; AcoLigCalc2.curvaSvg = curvaSvg; AcoLigCalc2.AVISO_ANALISE = AVISO_ANALISE;   /* F4 */
   global.AcoLigCalc2 = AcoLigCalc2;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoLigCalc2;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

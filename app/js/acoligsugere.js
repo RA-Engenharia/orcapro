@@ -364,7 +364,7 @@
        não se manda nVigasNo e a ligação usa β = 2, o seguro (revisão F4, 15/10/2026) */
     if (num(A.L, 0) > 0) e.Lviga = A.L * 1000; if (num(B.L, 0) > 0 && B.papel === "pilar") e.Lpilar = B.L * 1000;
     if (ctx.relacao === "viga-sobre-pilar") e.capDir = ctx.capDir;
-    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
+    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, referencia: !ctx.fundacao.fckInformado, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
     if (ctx.relacao === "emenda-barra" || ctx.relacao === "cruz") {
       var bb = A.perfil || {}; e.barra = bb.forma === "L" ? { forma: "L", b: bb.b, t: bb.t, A: bb.A, xc: bb.xc, fy: A.aco.fy, fu: A.aco.fu } : { forma: bb.forma === "U" ? "U" : "chapa", b: num(bb.d, num(bb.b, 100)), t: num(bb.tw, num(bb.t, 8)), A: bb.A, xc: num(bb.xc, 15), fy: A.aco.fy, fu: A.aco.fu };
     }
@@ -613,6 +613,9 @@
     o = L0.filter(function (x) { return serve(x) && x.passaComAjuste; })[0];
     if (o) return { opcao: o, pendente: "ajuste-cota", motivo: "aplicada com a proposta do topo da fundação (" + String(o.resultado.ajusteCota.texto || "").split("AJUSTE DE COTA: ")[1] + ")" };
     var q = L0.filter(function (x) { return x.passa && (x.tipologia === "base-chumbador-quimico" || arr(x.resultado && x.resultado.naoVerificadoCritico).length); })[0];
+    /* 1.2.148: a placa cujo aço passa mas fica A CONFIRMAR (sem o fck da fundação) — dizer o MOTIVO e o que fazer, não "nenhuma opção" */
+    var pc = q ? null : L0.filter(function (x) { var r = x.resultado || {}; return !x.passa && r.okVerificacoes && r.aConfirmar; })[0];
+    if (pc) return { opcao: null, pendente: null, motivo: "A CONFIRMAR — falta o " + pc.resultado.aConfirmar + ": o aço da " + pc.nome + " passa, mas a ancoragem não é verificada sem ele; informe o fck da fundação e ligue de novo" };
     return { opcao: null, pendente: null, motivo: q ? "só " + q.nome + " passaria, com verificação que depende do fabricante — escolha do engenheiro (Ligação inteligente)" : "nenhuma opção que passa com desenho automático" };
   }
   /* o peso da ligação: a macro do 3D rodada em ensaio (nada vai para o modelo) — chapas, cantoneiras e parafusos */

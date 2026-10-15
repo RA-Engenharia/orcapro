@@ -118,6 +118,42 @@
     return D.verificarBarra({ secao: m.secao.mm, aco: m.aco, estacoes: est, L: m.L, flambagem: m.flambagem, travamentos: m.travamentos, papel: m.papel, cb: m.cb });
   }
 
+  /* ================================================================ VERIFICAÇÃO LOCAL DO CPE MÉDIO (1.2.148)
+   * Terça/travessa desenhada numa faixa de borda/canto (NBR 6123:2023, 6.1.2): a peça é verificada à parte, pela MESMA
+   * verificação da barra (NBR 14762 ou 8800, com os travamentos dela), com w = 1,4·|p|·faixa na normal ao fechamento.
+   * Biapoiada em cada trecho entre apoios (os segmentos do modelo): M = w·L²/8 com os dois sinais (cobre o momento negativo
+   * da peça contínua, ≤ w·L²/8) e cortante 0,625·w·L quando contínua (0,5 se é um trecho só). Sem o peso próprio e a telha,
+   * que aliviam a sucção. Não entra na análise global. OPC.cpeMedioLocal = false só para o controle negativo dos testes. */
+  var OPC = { cpeMedioLocal: true, nGlobalLocal: true };
+  /* revisor (15/10, 1.2.148): a terça do vão do oitão é ESCORA do contraventamento da cobertura — o N da análise global entra
+     junto com o momento do cpe médio (o pior N de compressão e o de tração das combinações COM vento), pela mesma interação
+     da verificação da barra (NBR 8800 5.5.1.2 / NBR 14762). OPC.nGlobalLocal = false só para o controle negativo. */
+  function nVentoGlobal(est2, elu) {
+    var comW = {}; arr(elu).forEach(function (c) { if (Object.keys(c.fatores || {}).some(function (k) { return /^W/.test(k); })) comW[c.id] = 1; });
+    var Nc = 0, Nt = 0; arr(est2).forEach(function (e) { if (!comW[e.comb]) return; var N = num(e.N, 0); if (N < Nc) Nc = N; if (N > Nt) Nt = N; });
+    return { Nc: Nc, Nt: Nt };
+  }
+  function verificarLocalCpeMedio(m, v, q, est2, elu) {
+    if (!(q.pUso < 0)) return;
+    var Ls = q.Ls > 0 ? q.Ls : m.L;
+    var w = 1.4 * (q.wLinha != null ? q.wLinha : Math.abs(q.pUso) * q.s), kV = q.continua ? 1.25 : 1.0, est = [];
+    var NG = OPC.nGlobalLocal ? nVentoGlobal(est2, elu) : { Nc: 0, Nt: 0 }, Ns = [NG.Nc, NG.Nt].filter(function (N, i, a) { return a.indexOf(N) === i; });
+    Ns.forEach(function (N) { [1, -1].forEach(function (sg) { for (var i = 0; i <= 4; i++) { var x = Ls * i / 4; est.push({ comb: "Wlocal" + (sg > 0 ? "+" : "-") + "N" + br(N, 2), x: x, N: N, Mz: sg * w * x * (Ls - x) / 2, My: 0, Vy: sg * kV * w * (Ls / 2 - x), Vz: 0 }); } }); });
+    var vl = aplicarEsbeltez(verificarMembro(m, est, []), m, est);
+    q.local = { Ls: Ls, w: w, Nc: NG.Nc, Nt: NG.Nt, razao: num(vl.razao, Infinity), ok: !!vl.ok, governante: vl.governante };
+    var nome = "Vento local — cpe médio da faixa de borda (" + q.zona + ")";
+    v.verificacoes = arr(v.verificacoes).concat([{ nome: nome, item: "NBR 6123:2023, 6.1.2/6.1.3 + " + (vl.norma || vl.edicao || "verificação da barra"),
+      passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
+               { rotulo: "Carga na peça (1,4·W, sucção)", formula: "1,4 × Σ |p|·faixa = 1,4 × (" + arr(q.papeis).map(function (z) { return br(Math.abs(z.pUso), 3) + " × " + br(z.s, 2) + " m (" + z.tipo + ")"; }).join(" + ") + ")", valor: br(w, 3) + " kN/m" },
+               { rotulo: "Momento (trecho de " + br(Ls, 2) + " m)", formula: "w·L²/8 (os dois sentidos)", valor: br(w * Ls * Ls / 8, 3) + " kN·m" },
+               { rotulo: "Força axial da análise global (pior das combinações com vento), junto com o momento", formula: "Nc = " + br(NG.Nc, 2) + " kN; Nt = " + br(NG.Nt, 2) + " kN — interação da verificação da barra", valor: br(Math.min(NG.Nc, 0), 2) + " / " + br(Math.max(NG.Nt, 0), 2) + " kN" },
+               { rotulo: "Verificação da barra", formula: String(vl.governante || "—"), valor: br(q.local.razao, 3) }],
+      resistencia: 1, solicitante: q.local.razao, unidade: "", razao: q.local.razao }]);
+    if (q.local.razao > num(v.razao, 0)) { v.razao = q.local.razao; v.governante = nome + ": " + (vl.governante || ""); }
+    v.ok = num(v.razao, 0) <= 1 + 1e-9;
+    if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local da faixa de borda (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(q.local.razao, 3) + " — " + (vl.governante || "")]);
+  }
+
   /* ================================================================ LIMITES DE ESBELTEZ (EXIGÊNCIA)
    * Decisão do Rogério (14/10/2026, rodada 2 da simulação): L/r ≤ 200 na barra COMPRIMIDA e ≤ 300 na TRACIONADA são
    * EXIGÊNCIA no OrçaPRO — reprovam a barra e o "perfil mais leve" não pode furá-los. Na NBR 8800:2008 o limite da
@@ -171,7 +207,7 @@
     var M = ML(), C = Car(), A = Ana(), Dm = Dim();
     var ap = entrada.apoios || {}, lg = entrada.ligacoes || {}, cg = entrada.cargas || {};
     var pontos = arr(cg.pontuais); pontos.forEach(function (p) { p.no = null; });
-    var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, pontos: pontos });
+    var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: pontos });
     G.membros.forEach(function (m) { var p = lido.pecas.filter(function (x) { return x.id === m.peca; })[0]; if (p) m.reg = p.reg; });
     var base = { ok: false, modelo: G, decisoes: G.decisoes, avisos: G.avisos, tipo: "livre" };
     var est = M.estabilidade(G);
@@ -183,7 +219,7 @@
     if (mEsc.length) {
       var ids0 = {}; mEsc.forEach(function (m) { ids0[m.peca] = true; });
       var lido2 = {}; Object.keys(lido).forEach(function (k) { lido2[k] = lido[k]; }); lido2.pecas = lido.pecas.filter(function (q) { return !ids0[q.id]; });
-      var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, pontos: [] }) : null;
+      var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }) : null;
       var est2 = G2 ? M.estabilidade(G2) : { ok: true };
       if (!est2.ok && arr(est2.problemas).some(function (q) { return q.tipo === "mecanismo" || q.tipo === "sem-apoio"; })) escTrava = { membros: mEsc.map(function (m) { return m.id; }) };
     }
@@ -236,11 +272,16 @@
     var estabGlobal = { ok: classe !== "grande", razao: razaoDesl, classe: classe,
       texto: classe === "grande" ? "Estrutura de GRANDE deslocabilidade (Δ2/Δ1 = " + br(razaoDesl, 2) + " > 1,55): a NBR 8800 (4.10) exige análise rigorosa, fora do método deste cálculo — aumente a rigidez lateral (pilares maiores, bases engastadas, ligações rígidas ou contraventamento)." : null };
     if (classe === "grande") avisos.push(estabGlobal.texto);
+    /* 1.2.148 — cpe MÉDIO das faixas de borda/canto (NBR 6123:2023, 6.1.2/6.1.3) só na VERIFICAÇÃO LOCAL das terças e
+       travessas: a análise global (vigas, pilares, contraventamento) continua com o cpe da zona, como a norma manda */
+    var bordaLista = OPC.cpeMedioLocal && CG.resumo.vento ? arr(CG.resumo.vento.cpeMedioNaoAplicado) : [], bordaPorMid = {};
+    bordaLista.forEach(function (q) { if (q.mid && q.s > 0 && isFinite(q.pUso)) bordaPorMid[q.mid] = q; });
     /* verificação das barras */
     var resultadosM = {}, grupos = {}, falhas = estabGlobal.ok ? 0 : 1;
     G.membros.forEach(function (m) {
       var est2 = []; elu.forEach(function (c) { est2 = est2.concat(Dm.estacoesMembro(res, m, c.id)); });
       var v = aplicarEsbeltez(verificarMembro(m, est2, elu), m, est2);
+      if (bordaPorMid[m.id]) verificarLocalCpeMedio(m, v, bordaPorMid[m.id], est2, elu);
       resultadosM[m.id] = v;
       arr(v.avisos).forEach(function (a) { var t = m.id + " (" + m.secao.nome + "): " + a; if (avisos.indexOf(t) < 0) avisos.push(t); });
       var g = grupos[m.grupo] || (grupos[m.grupo] = { razao: 0, razaoELU: 0, membro: null, perfil: m.secao.nome, papel: m.papelLivre, membros: [] });
@@ -256,6 +297,15 @@
       escTrava.texto = "A estrutura só é estável por causa da ESCADA (" + escTrava.membros.join(", ") + "): sem as longarinas ela é MECANISMO — a escada está travando a estrutura. Contravente a estrutura (X na direção que falta) ou projete o pé e o topo da escada como travamento: N = " + br(nPe, 1) + " kN no pé e " + br(nTopo, 1) + " kN no topo (ELU).";
       falhas++; avisos.push(escTrava.texto);
       G.decisoes.push({ tema: "Escada como travamento", decisao: "REPROVA: a estrutura sem a escada é mecanismo", motivo: "a escada não é elemento de contraventamento previsto; o pé e o topo não foram dimensionados para N = " + br(nPe, 1) + " / " + br(nTopo, 1) + " kN" });
+    }
+    if (bordaLista.length && CG.resumo.vento) {
+      var feitas = bordaLista.filter(function (q) { return bordaPorMid[q.mid] && bordaPorMid[q.mid].local; });
+      CG.resumo.vento.cpeMedioVerificado = feitas;
+      CG.resumo.vento.cpeMedioNaoAplicado = bordaLista.filter(function (q) { return feitas.indexOf(q) < 0; });
+      if (!CG.resumo.vento.cpeMedioNaoAplicado.length) avisos = avisos.filter(function (x) { return !/cpe MÉDIO.*NÃO foi aplicado/.test(x); });
+      if (feitas.length) G.decisoes.push({ tema: "Vento — cpe médio nas terças/travessas de borda",
+        decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", cpe médio " + br(q.cpe, 2) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão " + br(L.Ls, 2) + " m; razão " + br(L.razao, 3) + ")"; }).join("; "),
+        motivo: "NBR 6123:2023, 6.1.2 e 6.1.3 (q da classe A, cpi mais desfavorável; o pior entre o cpe médio e o da zona). Peça biapoiada em cada trecho entre apoios (M = w·L²/8 nos dois sentidos; cortante 0,625·w·L se contínua), combinação 1,4·W na sucção SEM o peso próprio e a telha (aliviam — a favor da segurança). A estrutura principal (vigas, pilares, contraventamento) continua com o cpe da zona." });
     }
     /* tirantes (barra redonda): a barra que nunca traciona fica frouxa — informação */
     G.membros.filter(function (m) { return m.papel === "tirante"; }).forEach(function (m) {
@@ -596,7 +646,7 @@
     return { lote: { op: "lote", id: String(typeof novoId === "function" ? novoId() : "lote-" + Date.now()), origem: "metal-calc-livre", ops: ops }, n: ops.length, erros: erros };
   }
 
-  var AcoDimLivre = { aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
+  var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
   global.AcoDimLivre = AcoDimLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDimLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

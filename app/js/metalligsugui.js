@@ -43,6 +43,7 @@
     { id: "met-lig-catalogo", rotulo: "Catálogo de\nligações", icone: "livro", grande: true, dica: "Todas as tipologias de ligação por aplicação — cantoneiras, chapas, talas, chapa de extremidade, assento, mísula, emendas, bases, gussets, nós tubulares, consolo — com o desenho, a família, as verificações e as limitações." },
     { id: "met-lig-lote", rotulo: "Ligar todos\nos nós", icone: "grade", grande: true, dica: "Para as peças selecionadas (ou o modelo todo): em cada encontro viga × pilar, viga × viga e base, aplica a melhor ligação que passa e tem desenho automático. Um lote só — Ctrl+Z desfaz." },
     { id: "met-lig-config", rotulo: "Configuração\ndas ligações", icone: "grade", grande: false, dica: "Configuração das ligações da obra (NBR 8800): meio padrão, classe e diâmetros de parafuso, atrito, eletrodo, folga, passo e borda, enrijecedor com ou sem recorte e a tipologia preferida por situação. A Ligação inteligente, o Ligar todos e as ligações automáticas obedecem." },
+    { id: "met-lig-biblio", rotulo: "Biblioteca de\nligações", icone: "livro", grande: false, dica: "As ligações que você guardou nesta obra (tipologia e arranjo). Selecione os nós e aplique com 1 clique: o cálculo é refeito em cada nó com os esforços dele — o \"passa\" de onde ela foi salva nunca vem junto." },
     { id: "met-lig-tipos", rotulo: "Dimensionar\ntodas (Tipos)", icone: "grade", grande: false, dica: "Dimensiona todas as ligações dos encontros com os esforços de TODAS as combinações do cálculo, diz a combinação que governa e agrupa os nós iguais em Tipos (o Tipo leva o pior nó). Não muda o modelo: é o quadro-resumo." },
     { id: "met-lig-memorial", rotulo: "Memorial das\nligações", icone: "relatorio", grande: false, dica: "Cada ligação aplicada pela ligação inteligente, verificação por verificação (item da NBR 8800, fórmula, valores e razão), com os reforços e o que não foi verificado." }
   ];
@@ -93,8 +94,27 @@
      materiais (pendência: gravar no arquivo da obra). SEM configuração salva, a sugestão é a de sempre; a salva já foi validada. */
   var CHAVE_CFG = "orcapro:metal:ligconfig:v1";
   function CF() { return global.AcoLigConfig || null; }
-  function lerCfg() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_CFG) || "null"); return t && typeof t === "object" && !Array.isArray(t) ? t : null; } catch (e) { return null; } }
-  function gravarCfg(t) { try { if (t == null) global.localStorage.removeItem(CHAVE_CFG); else global.localStorage.setItem(CHAVE_CFG, JSON.stringify(t)); return true; } catch (e) { return false; } }
+  /* 1.2.148: a configuração MORA NA OBRA (op metalLigConfig do replay — js/acoligobra.js), o mesmo dado que sincroniza.
+     A do navegador (1.2.147) vira a da obra na primeira abertura sem configuração na obra; a cópia do navegador fica
+     guardada em CHAVE_CFG + ":migrada" (nunca apagada sem cópia). Sem o editor do BIM aberto: só leitura da local. */
+  function OBm() { return global.AcoLigObra || null; }
+  function lerLocalCfg() { try { var t = JSON.parse(global.localStorage.getItem(CHAVE_CFG) || "null"); return t && typeof t === "object" && !Array.isArray(t) ? t : null; } catch (e) { return null; } }
+  function estadoObra() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return st || null; } catch (e) { return null; } }
+  function migrarCfg() {
+    var st = estadoObra(), loc = lerLocalCfg(), O = OBm(), M = MU(); if (!st || !loc || !O || !M) return false;
+    var op = O.migracao(st, loc); if (!op) return false;
+    if (!M.enviar(op)) return false;
+    try { global.localStorage.setItem(CHAVE_CFG + ":migrada", JSON.stringify({ config: loc, em: new Date().toISOString() })); global.localStorage.removeItem(CHAVE_CFG); } catch (e) {}
+    status("Configuração das ligações: a deste navegador passou para a obra (vale em todos os aparelhos).");
+    return true;
+  }
+  function lerCfg() {
+    var st = estadoObra();
+    if (st && st.ligConfig !== undefined) return st.ligConfig || null;
+    if (st && migrarCfg()) { var st2 = estadoObra(); if (st2 && st2.ligConfig !== undefined) return st2.ligConfig || null; }
+    return lerLocalCfg();
+  }
+  function gravarCfg(t) { var O = OBm(), M = MU(); if (!O || !M) return false; var op = O.opConfig(t); if (!op || op.erro) return false; return !!M.enviar(op); }
   function opObra(base) { var c = lerCfg(), F = CF(); if (!c || !F) return base; return F.opSugerir(c, base); }
   var CUSTO = { 1: "baixo", 2: "médio", 3: "alto" };
   /* QUEM PODE SER APLICADA (revisão A1): só a opção que PASSA, sem bloqueio e com desenho; a chapa estendida que pede o
@@ -161,6 +181,7 @@
       "<details><summary>Verificações (" + arr(r.verificacoes).length + ")</summary><table>" + arr(r.verificacoes).map(function (v) { return "<tr><td>" + esc(v.nome) + '<br><span class="lsg-nota">' + esc(v.item) + '</span></td><td style="text-align:right;white-space:nowrap;color:' + (v.razao <= 1 + 1e-9 ? "var(--verde)" : "var(--vermelho)") + '">' + br(v.razao * 100) + " %</td></tr>"; }).join("") + "</table></details>" +
       '<div class="acoes">' + (pa.prolongar ? '<button class="btn primary sm" data-lsg-prolongar="' + i + '" title="' + esc(bloq) + '">Prolongar o pilar ' + o.aplicar.prolongar.mm + ' mm e aplicar</button>' : !pa.ok && !pa.semDesenho ? '<span class="sem3d" data-lsg="bloqueio">Não aplicável: ' + esc(pa.motivo) + '.</span>' : o.aplicar ? '<button class="btn primary sm" data-lsg-aplicar="' + i + '">Aplicar no modelo</button>' : '<span class="sem3d" data-lsg="sem3d">Desenho no 3D ainda não automático para esta tipologia — o dimensionamento vale e vai no memorial.</span>') +
       '<button class="btn ghost sm" data-lsg-memorial="' + i + '">Memorial</button>' +
+      (OBm() && o.resultado && o.resultado.dimensoes ? '<button class="btn ghost sm" data-lsg-biblio="' + i + '" title="Guarda esta ligação (tipologia e arranjo) na biblioteca da obra para reaplicar em outros nós — o cálculo é refeito em cada nó">Salvar na biblioteca</button>' : "") +
       (o.regra.id === "R-TAB" ? '<span class="sem3d">padrão guardado</span>' : '<button class="btn ghost sm" data-lsg-padrao="' + i + '" title="Nas próximas vezes, esta combinação de seções traz esta ligação primeiro (guardado neste navegador)">Usar como padrão</button>') + "</div></div>";
     return h;
   }
@@ -197,13 +218,14 @@
   function ligar(raiz) {
     if (!raiz) return;
     raiz.addEventListener("click", function (ev) {
-      var a = ev.target.closest ? ev.target.closest("[data-lsg-aplicar],[data-lsg-prolongar],[data-lsg-memorial],[data-lsg-padrao],[data-lsg-ver],[data-lsg='ver-catalogo']") : null; if (!a) return;
+      var a = ev.target.closest ? ev.target.closest("[data-lsg-aplicar],[data-lsg-prolongar],[data-lsg-memorial],[data-lsg-padrao],[data-lsg-biblio],[data-lsg-ver],[data-lsg='ver-catalogo']") : null; if (!a) return;
       ev.preventDefault();
       if (a.getAttribute("data-lsg-ver") != null) { var k = +a.getAttribute("data-lsg-ver"), o = opDe(k), det = raiz.querySelector("[data-lsg='detalhe']"); if (o && det) { det.innerHTML = cartao(o, k).replace('class="lsg-op ', 'data-lsg-det="' + k + '" class="lsg-op '); try { det.scrollIntoView({ block: "nearest" }); } catch (eS) {} } return; }
       if (a.getAttribute("data-lsg-aplicar") != null) MetalLigSugUI.aplicar(+a.getAttribute("data-lsg-aplicar"));
       else if (a.getAttribute("data-lsg-prolongar") != null) MetalLigSugUI.aplicar(+a.getAttribute("data-lsg-prolongar"), { prolongar: true });
       else if (a.getAttribute("data-lsg-memorial") != null) MetalLigSugUI.memorialOpcao(+a.getAttribute("data-lsg-memorial"));
       else if (a.getAttribute("data-lsg-padrao") != null) MetalLigSugUI.usarComoPadrao(+a.getAttribute("data-lsg-padrao"));
+      else if (a.getAttribute("data-lsg-biblio") != null) MetalLigSugUI.salvarNaBiblioteca(+a.getAttribute("data-lsg-biblio"));
       else MetalLigSugUI.catalogo(apDe(U.ctx));
     });
     var sel = raiz.querySelector("[data-lsg='preferir']");
@@ -285,7 +307,7 @@
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
     registrar: function (reg) {
       if (!previa() || !S() || !T() || !C2()) return false;
-      var self = this, h = { "met-lig-config": function () { self.configurar(); }, "met-lig-tipos": function () { self.tipos(); }, "met-lig-inteligente": function () { self.abrir(); }, "met-lig-catalogo": function () { self.catalogo(); }, "met-lig-lote": function () { self.lote(); }, "met-lig-memorial": function () { self.memorial(); } };
+      var self = this, h = { "met-lig-biblio": function () { self.biblioteca(); }, "met-lig-config": function () { self.configurar(); }, "met-lig-tipos": function () { self.tipos(); }, "met-lig-inteligente": function () { self.abrir(); }, "met-lig-catalogo": function () { self.catalogo(); }, "met-lig-lote": function () { self.lote(); }, "met-lig-memorial": function () { self.memorial(); } };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Ligação inteligente: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
       try {
         var D = global.DicaRica;
@@ -352,11 +374,63 @@
        (inválida NÃO grava: devolve os erros); configuracao(null) volta ao padrão (nada salvo) */
     configuracao: function (novo) {
       var F = CF(); if (!F) return null;
-      if (novo === null) gravarCfg(null);
-      else if (novo && typeof novo === "object") { var v = F.validar(novo); if (!v.ok) return { config: v.config, salva: false, validacao: v }; gravarCfg(v.config); }
+      var semObra = { erros: ["a configuração mora na obra: abra o modelo da obra (o editor do BIM) para gravar"], avisos: [], ok: false };
+      if (novo === null) { if (!gravarCfg(null)) return { config: F.normalizar(lerCfg()), salva: false, validacao: semObra }; }
+      else if (novo && typeof novo === "object") { var v = F.validar(novo); if (!v.ok) return { config: v.config, salva: false, validacao: v }; if (!gravarCfg(v.config)) return { config: v.config, salva: false, validacao: semObra }; }
       var c = lerCfg(); return { config: F.normalizar(c), salva: !!c, validacao: F.validar(c || {}) };
     },
     configuracaoSalva: function () { return lerCfg(); },
+    migrarConfiguracao: migrarCfg,
+    /* BIBLIOTECA (1.2.148): guardada na obra (op metalLigBiblio) */
+    bibliotecaItens: function () { var st = estadoObra(); return arr(st && st.ligBiblioteca); },
+    salvarNaBiblioteca: function (i, nome) {
+      var O = OBm(), M = MU(), o = opDe(i); if (!O || !M || !o) return null;
+      var nm = nome || (o.nome + " — " + [U.ctx && U.ctx.relacao, (U.ctx && U.ctx.pecas || []).map(function (p) { return p.perfil && p.perfil.nome; }).filter(Boolean).join(" × ")].filter(Boolean).join(" · "));
+      var x = O.itemDe(o, nm); if (!x.ok) { toast("Biblioteca: " + x.erro, "aviso", 7000); return x; }
+      var op = O.opSalvar(x.item); if (op.erro || !M.enviar(op)) { toast("Biblioteca: o editor recusou.", "erro"); return { ok: false }; }
+      toast("\"" + x.item.nome + "\" guardada na biblioteca da obra (o cálculo é refeito em cada nó onde for aplicada).", "ok", 7000);
+      return x;
+    },
+    apagarDaBiblioteca: function (id) { var O = OBm(), M = MU(); if (!O || !M) return false; return !!M.enviar(O.opApagar(id)); },
+    /* aplica o item nos encontros da SELEÇÃO: em cada um recalcula (AcoLigObra.reaplicar); só aplica o que passa, tem desenho e não tem bloqueio */
+    aplicarDaBiblioteca: function (id) {
+      var O = OBm(), S0 = S(), M = MU(); if (!O || !S0 || !M) return null;
+      var item = this.bibliotecaItens().filter(function (x) { return x.id === id; })[0]; if (!item) { toast("Item não está na biblioteca da obra.", "aviso"); return null; }
+      var sel = selCaixas(); if (!sel.length) { toast("Biblioteca: selecione as peças dos nós onde aplicar.", "aviso", 7000); return null; }
+      var pares = this.nos(sel, todasCaixas()), rc = resultadoCalc(), ops = [], res = { feitas: [], puladas: [] }, por = {};
+      todasCaixas().forEach(function (c) { por[String(c.id)] = c; });
+      pares.forEach(function (pp) {
+        var rot = pp.map(function (c) { return c.id; }).join(" × ");
+        if (pp.pular) { res.puladas.push({ no: rot, motivo: pp.pular }); return; }
+        var ctx = S0.analisar(pp, { resultado: rc, fundacoes: fundacoes() }); if (!ctx.ok) { res.puladas.push({ no: rot, motivo: ctx.motivo }); return; }
+        var ra = O.reaplicar(item, ctx, opObra({ materiais: opMat() }));
+        if (!ra.ok) { res.puladas.push({ no: rot, motivo: ra.motivo }); return; }
+        var pa = podeAplicar(ra.opcao);
+        if (!ra.passa || !pa.ok) { res.puladas.push({ no: rot, motivo: !ra.passa ? "NÃO PASSA com os esforços deste nó (" + (ra.opcao.resultado && ra.opcao.resultado.governante || "") + ")" : pa.motivo }); return; }
+        var a = aplicarOpcao(ra.opcao, ctx, por, M.novoId.bind(M)); if (!a.ok) { res.puladas.push({ no: rot, motivo: a.motivo }); return; }
+        ops = ops.concat(a.lote.ops); res.feitas.push({ no: rot, resumo: a.r.resumo, avisos: ra.opcao.avisos.slice(0, 2) });
+      });
+      if (ops.length && !M.enviar({ op: "lote", id: M.novoId(), origem: "metal-lig-biblio", ops: ops })) { toast("O editor recusou o lote.", "erro"); return null; }
+      var msg = "\"" + item.nome + "\": " + res.feitas.length + " nó(s) com a ligação recalculada" + (res.puladas.length ? "; " + res.puladas.length + " sem aplicar" : "") + ". Ctrl+Z desfaz.";
+      status(msg); toast(msg, res.feitas.length ? "ok" : "aviso", 8000);
+      if (res.puladas.length && global.UI) UI.modal("Biblioteca — " + item.nome, '<div class="lsg" data-lsg="biblio-res"><p>' + esc(msg) + "</p><ul>" + res.puladas.map(function (p) { return "<li>" + esc(p.no) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul></div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      U.ultimoBiblio = res; return res;
+    },
+    biblioteca: function () {
+      var self = this, L0 = this.bibliotecaItens(); if (!global.UI) return L0;
+      css();
+      var h = '<div class="lsg" data-lsg="biblioteca"><p class="lsg-nota">Guardadas nesta obra (sincroniza com a obra). Selecione os nós no modelo e aplique: em cada nó o cálculo é refeito com os esforços dele.</p>' +
+        (L0.length ? "<ul>" + L0.map(function (x) { return '<li data-lsg-bib="' + esc(x.id) + '"><b>' + esc(x.nome) + "</b> — " + esc((T() && T().obter(x.tipologia) || {}).nome || x.tipologia) + " · " + esc(Object.keys(x.arranjo || {}).map(function (k) { return k + " " + x.arranjo[k]; }).join(", ")) +
+          ' <button class="btn primary sm" data-lsg-bib-ap="' + esc(x.id) + '">Aplicar nos nós selecionados</button> <button class="btn ghost sm" data-lsg-bib-del="' + esc(x.id) + '">Apagar</button></li>'; }).join("") + "</ul>" : "<p>Nada guardado ainda: na Ligação inteligente, use \"Salvar na biblioteca\" no cartão da ligação.</p>") + "</div>";
+      UI.modal("Biblioteca de ligações da obra", h, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var raiz = document.querySelector("[data-lsg='biblioteca']");
+      if (raiz) raiz.addEventListener("click", function (ev) {
+        var b = ev.target.closest ? ev.target.closest("[data-lsg-bib-ap],[data-lsg-bib-del]") : null; if (!b) return;
+        if (b.getAttribute("data-lsg-bib-ap")) { UI.fecharModal(); self.aplicarDaBiblioteca(b.getAttribute("data-lsg-bib-ap")); }
+        else { self.apagarDaBiblioteca(b.getAttribute("data-lsg-bib-del")); UI.fecharModal(); self.biblioteca(); }
+      });
+      return L0;
+    },
     /* o painel da configuração (um lugar só) */
     configurar: function () {
       var F = CF(), Tp = T(), Mt = global.AcoMateriais; if (!F || !Tp || !global.UI) return false;
@@ -503,7 +577,7 @@
             /* REVISÃO M1 (14/10/2026): a ligação JÁ DESENHADA é refeita pela tipologia dela, sem o filtro da execução
                escolhida depois (antes, "tudo parafusado" tirava a soldada da lista e ela voltava com os esforços guardados) */
             var sg = S0.sugerir(ctx, { materiais: opMat() }), o = arr(sg.todasOpcoes).filter(function (x) { return x.tipologia === li.tipologia; })[0];
-            if (o) novo = { resultado: o.resultado, passa: o.passa, origem: ctx.origemEsforcos, no: ctx.no };
+            if (o) novo = { resultado: o.resultado, passa: o.passa, origem: ctx.origemEsforcos, no: ctx.no, entrada: o.entrada };
           }
         }
         var r0 = novo ? novo.resultado : l.resultado, confere = !!novo && String(r0.resumo || "") === String(li.resumo || "");
@@ -512,7 +586,12 @@
         if (l.aConfirmar) { r0 = clone(r0) || {}; r0.ok = false; r0.aConfirmar = l.aConfirmar; confere = false; }
         /* VÍNCULOS: refeita com o cálculo de agora, a comparação é a de agora; sem ele, a marca de desatualizada manda */
         var velha = !novo && l.desatualizada ? l.desatualizada : null;
-        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, confere: confere && !velha, comCalculo: !!novo, aConfirmar: l.aConfirmar || null, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
+        /* 1.2.148: a ENTRADA do dimensionamento (a do cálculo de agora, ou a guardada) para o relatório por Tipo — a confirmar e
+           desatualizada levam a marca na entrada (o Tipo sai A CONFIRMAR, nunca PASSA com esforço velho) */
+        var entT = clone(novo ? novo.entrada : li.entrada) || null;
+        /* revisão 1.2.148: a A DIMENSIONAR (vigas entre pilares) também — o arranjo do motor pode não ser o desenhado */
+        if (entT && (l.aConfirmar || l.aDimensionar || velha || !novo)) entT.aConfirmar = l.aConfirmar || l.aDimensionar || velha || ("esforços guardados na ligação" + (li.em ? " (" + li.em + ")" : "") + ", não os deste cálculo");
+        out.push({ id: l.id, titulo: l.titulo, resultado: r0, info: li, entrada: entT, confere: confere && !velha, comCalculo: !!novo, aConfirmar: l.aConfirmar || null, origem: novo ? novo.origem : "esforços guardados na ligação (" + (li.em || "") + ")",
                    desatualizada: velha, diferenca: velha || (novo && !confere ? "desenhada: " + (li.resumo || "—") + " · com os esforços deste cálculo: " + (r0.resumo || "—") : null) });
       });
       return out;

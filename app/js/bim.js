@@ -994,7 +994,8 @@ function montar(host, opts) {
   // ---- Three ----
   var scene = new THREE.Scene(); scene.background = null;
   var camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000); camera.position.set(20, 18, 22);
-  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  /* placa de vídeo DEDICADA: em notebook com duas placas o padrão do navegador pode escolher a integrada (15/10/2026) */
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   // qualidade de cor "de render": sRGB + tone mapping cinematográfico por padrão
   /* ⚠ `outputEncoding` é o que vale no r150 (ver "COR EM sRGB" no topo); o
@@ -1913,7 +1914,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S.vistas = {}; var _vSeq = 0;
   function montarVista(v, cont) {
-    var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    var rr = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     rr.setPixelRatio(Math.min((cont.ownerDocument.defaultView || window).devicePixelRatio || 1, 2));
     rr.outputEncoding = renderer.outputEncoding;   /* a MESMA saída da principal (ver "COR EM sRGB") */
     try { rr.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
@@ -12245,7 +12246,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!canvas || !av) return false;
     var pv = canvas._famPrev;
     if (!pv) {
-      var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
       rnd.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       var sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9));
       var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(3, 5, 4); sc.add(dl);

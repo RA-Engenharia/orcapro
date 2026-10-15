@@ -317,6 +317,8 @@
     todas.forEach(function (v) { if (v.razao > rz) { rz = v.razao; gov = v.nome; } });
     var out = {}; Object.keys(res).forEach(function (k) { out[k] = res[k]; });
     out.verificacoes = todas; out.razao = rz; out.governante = gov; out.ok = rz <= 1 + 1e-9 && res.ok !== false;
+    /* 1.2.148: a placa A CONFIRMAR (fck da fundação não informado — js/acoligcalc2.js) continua dizendo POR QUÊ não está aprovada */
+    if (res.aConfirmar && rz <= 1 + 1e-9) { out.governante = res.governante; out.aConfirmar = res.aConfirmar; out.okVerificacoes = true; }
     out.fundacao = { id: info.id, tipo: info.tipo, rotulo: info.rotulo, fck: fc, fckInformado: info.fckInformado, A2A1: ar.A2A1, altura: info.altura, cobrimento: cob, dimensoes: info.dimensoes, folgaPe: info.folgaPe, cotaTopo: info.cotaTopo, poligonoTopo: objsXZ(info.poligonoTopo) };
     out.notas = arr(res.notas).filter(function (x) { return !/arrancamento do cone de concreto/i.test(x); }).concat(notas, [(quim ? "Placa e graute verificados na " : "Ancoragem verificada na ") + info.rotulo.toLowerCase() + " " + info.id + " do modelo (fck " + br(fc, 0) + " MPa, h = " + br(hF, 0) + " mm, A2/A1 = " + br(ar.A2A1, 2) + "). A armadura, a punção e a flexão da fundação, a tensão no solo e as estacas são do projeto da fundação, com as reações do cálculo."]);
     out.naoVerificado = arr(res.naoVerificado).filter(function (x) { return !/^Cone de concreto/i.test(x); }).concat(["Fundação (" + info.rotulo.toLowerCase() + " " + info.id + "): armadura, punção, flexão, tensão no solo — projeto da fundação, com as reações deste memorial."]);

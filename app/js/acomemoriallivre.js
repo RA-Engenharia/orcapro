@@ -203,11 +203,15 @@
     /* REVISÃO S5 N1 (14/10/2026): ligação com verificação crítica NÃO feita (chumbador químico sem os dados do fabricante)
        não entra no "atendem" — antes a capa dizia "todas as verificações do cálculo atendem; as 12 ligações atendem" */
     var encNV = enc.filter(function (e) { return e.lig && e.lig.resultado && arr(e.lig.resultado.naoVerificadoCritico).length; });
+    /* 1.2.148: o MOTIVO de cada pendência crítica (antes todas eram "chumbador químico"; a placa sem o fck da fundação também é) */
+    function motivoNV(L0) { var t = L0.map(function (e) { return arr(e.lig.resultado.naoVerificadoCritico).join(" "); }).join(" "), m = [];
+      if (/qu[íi]mico/i.test(t)) m.push("chumbador químico: dados do fabricante"); if (/fck/i.test(t)) m.push("ancoragem do chumbador: fck da fundação");
+      return m.length ? m.join("; ") : "pendência crítica: ver a ligação"; }
     var ligOk = enc.length > 0 && !encSem.length && !encFalha.length && !encDif.length && !encInc.length && !encGuard.length && !encNV.length;
     var ligPend = (encSem.length ? encSem.length + " sem ligação; " : "") + (encGuard.length ? encGuard.length + " com os esforços guardados na ligação (NÃO refeita(s) com este cálculo — recalcule com a estrutura desenhada); " : "") +
       (encDif.length ? encDif.length + " desenhada(s) diferente(s) do que este cálculo dimensiona (reaplique); " : "") + (encFalha.length ? encFalha.length + " NÃO atende(m); " : "") + (encInc.length ? encInc.length + " incoerente(s) com o modelo; " : "") + (encNV.length ? encNV.length + " com verificação NÃO feita (" + encNV[0].lig.resultado.naoVerificadoCritico[0] + "); " : "");
     var sitLig = !enc.length || !ligsDim.length ? "" : (ligOk ? "; as " + enc.length + " ligações (nós e bases) atendem com os esforços deste cálculo" :
-      "; ligações: " + (enc.length - encSem.length) + " de " + enc.length + " desenhadas" + (encGuard.length ? ", " + encGuard.length + " NÃO refeita(s) com os esforços deste cálculo" : "") + (encFalha.length ? ", " + encFalha.length + " NÃO atende(m)" : "") + (encDif.length ? ", " + encDif.length + " desenhada(s) diferente(s) do dimensionado" : "") + (encInc.length ? ", " + encInc.length + " incoerente(s) com o modelo" : "") + (encNV.length ? ", " + encNV.length + " com verificação NÃO feita (chumbador químico: dados do fabricante) — não emitir" : ""));
+      "; ligações: " + (enc.length - encSem.length) + " de " + enc.length + " desenhadas" + (encGuard.length ? ", " + encGuard.length + " NÃO refeita(s) com os esforços deste cálculo" : "") + (encFalha.length ? ", " + encFalha.length + " NÃO atende(m)" : "") + (encDif.length ? ", " + encDif.length + " desenhada(s) diferente(s) do dimensionado" : "") + (encInc.length ? ", " + encInc.length + " incoerente(s) com o modelo" : "") + (encNV.length ? ", " + encNV.length + " com verificação NÃO feita (" + motivoNV(encNV) + ") — não emitir" : ""));
     /* FRENTE S5 (14/10/2026): com verificação crítica NÃO feita (vento fora das tabelas, face sem pilar…) a capa diz
        "INCOMPLETO" com o que faltou — nunca "atende" */
     var nvS = arr(r.naoVerificados), incompleto = r.situacao && r.situacao.id === "incompleto";
@@ -215,7 +219,7 @@
        cota pendente (antes: sem nenhuma ligação dimensionada a capa dizia "todas as verificações do cálculo atendem") */
     var ajPend = arr(ligsDim).some(function (l) { return l && l.resultado && l.resultado.ajusteCota; }), semLig = !ligsDim.length || !enc.length;
     if (!incompleto && r.aprovado && (semLig || ajPend)) sitLig = sitLig + (semLig ? "; ligações e placas de base NÃO dimensionadas" : "") + (ajPend ? "; AJUSTE DE COTA da fundação pendente" : "") + " — não emitir";
-    var situacao = incompleto ? '<span class="falha">INCOMPLETO — barras ' + (r.aprovado ? "atendem" : "não atendem") + "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) + esc(sitLig) + "</span>" : r.aprovado && ligOk && !semLig && !ajPend ? '<span class="ok">todas as verificações do cálculo atendem' + esc(sitLig) + "</span>" : (r.aprovado ? '<span class="falha">barras atendem' + esc(sitLig) + "</span>" : '<span class="falha">' + r.falhas + " verificação(ões) das barras não atende(m)" + esc(sitLig) + "</span>");
+    var situacao = incompleto ? '<span class="falha">INCOMPLETO — barras ' + (r.aprovado ? "atendem" : "não atendem") + "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) + esc(sitLig) + "</span>" : r.aprovado && ligOk && !semLig && !ajPend ? '<span class="ok">todas as verificações do cálculo atendem' + esc(sitLig) + "</span>" : (r.aprovado ? '<span class="falha">barras atendem' + esc(sitLig) + "</span>" : '<span class="falha">' + r.falhas + " verificação(ões) das barras não atende(m)" + (nvS.length ? "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) : "") + esc(sitLig) + "</span>");   /* 1.2.148: reprovado não esconde o que ficou sem verificar */
 
     /* 1. objeto */
     sec("objeto", "Objeto, escopo e premissas",

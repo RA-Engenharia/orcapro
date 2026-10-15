@@ -5,6 +5,8 @@
  * Método dos deslocamentos (rigidez direta) com barra de Euler-Bernoulli de
  * 12 graus de liberdade (3 deslocamentos + 3 rotações por nó):
  *   · rótulas nas pontas (condensação estática dos GL liberados);
+ *   · MOLA ROTACIONAL na ponta da barra (ligação semirrígida, `mola: { i: {ry, rz}, j: {…} }` em kN·m/rad): o GL da
+ *     barra vira interno, ligado ao nó pela mola, e é condensado — mola 0 = rótula, mola ∞ = engaste (F4/D, 15/10/2026);
  *   · cargas nos nós, cargas distribuídas (uniforme/trapezoidal, inteira ou
  *     em trecho, nos eixos globais ou locais, vertical "projetada" para a
  *     cobertura) e peso próprio — vetor de cargas nodais equivalentes pelas
@@ -107,6 +109,25 @@
       if (p) p[r] = 0;
     }
   }
+  /* MOLA ROTACIONAL de ponta (ligação semirrígida): o GL r da barra (θe) liga-se ao do nó (θn) pela mola s — energia s·(θn − θe)²/2.
+     Condensando θe: K*ij = Kij − Kir·Krj/(Krr + s) (i, j ≠ r); K*rj = s·Krj/(Krr + s); K*rr = s·Krr/(Krr + s); p*i = pi − Kir·pr/(Krr + s);
+     p*r = s·pr/(Krr + s). s = 0 dá a condensação da rótula; s → ∞ devolve K. Depois da condensação das rótulas (a ordem não muda o
+     resultado da condensação estática). molas = [{ r, s }] */
+  function condensarMolas(k, p, molas) {
+    for (var t = 0; t < molas.length; t++) {
+      var r = molas[t].r, sm = molas[t].s, kr = k[r].slice(), pr = p ? p[r] : 0, den = kr[r] + sm;
+      if (!(den > 1e-30)) continue;
+      for (var i = 0; i < 12; i++) {
+        if (i === r || kr[i] === 0) continue;
+        for (var j = 0; j < 12; j++) { if (j === r) continue; k[i][j] -= kr[i] * kr[j] / den; }
+        if (p) p[i] -= kr[i] * pr / den;
+      }
+      for (var z = 0; z < 12; z++) { if (z === r) continue; k[r][z] = sm * kr[z] / den; k[z][r] = k[r][z]; }
+      k[r][r] = sm * kr[r] / den; if (p) p[r] = sm * pr / den;
+    }
+  }
+  function condensarPonta(k, p, e) { condensar(k, p, e.lib); if (e.molas && e.molas.length) condensarMolas(k, p, e.molas); }
+  function temPonta(e) { return e.lib.length || (e.molas && e.molas.length); }
   /* sistema pequeno denso (pivotamento parcial); null se singular */
   function gauss(A0, b0) {
     var n = b0.length, A = A0.map(function (l) { return l.slice(); }), b = b0.slice();
@@ -376,7 +397,17 @@
         if (k === 0) { if (lib.i && lib.i.rx) rl.push(3); if (lib.i && lib.i.ry) rl.push(4); if (lib.i && lib.i.rz) rl.push(5); }
         if (k === nE - 1) { if (lib.j && lib.j.rx) rl.push(9); if (lib.j && lib.j.ry) rl.push(10); if (lib.j && lib.j.rz) rl.push(11); }
         if (B.tracao) rl = [3, 4, 5, 10, 11];   /* barra de tração: articulada nas duas pontas (a torção fica presa numa só) */
-        var el = { n: elems.length, barra: B, k: k, a: prev, b: nxt, L: L / nE, x0: L * k / nE, lib: rl };
+        /* molas rotacionais de ponta (kN·m/rad): ≤ 0 = rótula; não finita ou ≥ 1e15 = engaste (nada a fazer) */
+        var ml = [], mo = B.tracao ? {} : (b.mola || {});
+        [[k === 0, mo.i, 3], [k === nE - 1, mo.j, 9]].forEach(function (q) {
+          if (!q[0] || !q[1]) return;
+          [["rx", 0], ["ry", 1], ["rz", 2]].forEach(function (ax) {
+            var v = q[1][ax[0]]; if (v == null || v === "" || typeof v === "boolean") return; v = Number(v); var gl = q[2] + ax[1];
+            if (rl.indexOf(gl) >= 0) return;
+            if (v === v && v <= 0) rl.push(gl); else if (isFinite(v) && v < 1e15) ml.push({ r: gl, s: v });
+          });
+        });
+        var el = { n: elems.length, barra: B, k: k, a: prev, b: nxt, L: L / nE, x0: L * k / nE, lib: rl, molas: ml };
         elems.push(el); B.elems.push(el); prev = nxt;
       }
       barras.push(B);
@@ -480,7 +511,7 @@
       if (B.tracao && ativos && ativos[B.id] === false) {
         /* barra frouxa: sai da RIGIDEZ, mas o peso dela (e o que mais estiver nela) continua pendurado nos nós */
         var pf = (carga.porElem[e.n] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(), kf = rigidezLocal(B.E, B.G, B.A, B.Iy, B.Iz, B.J, e.L);
-        condensar(kf, pf, e.lib);
+        condensarPonta(kf, pf, e);
         var pgf = vetGlobal(B.lam, pf), gf = [];
         for (var cf = 0; cf < 6; cf++) gf.push(M.pos[e.a] * 6 + cf);
         for (var cf2 = 0; cf2 < 6; cf2++) gf.push(M.pos[e.b] * 6 + cf2);
@@ -491,8 +522,8 @@
       /* barra só de tração comprimida (a diagonal do X mantida ativa): sem rigidez geométrica — ela não resiste a compressão */
       if (Nel && Nel[e.n] && !(B.tracao && Nel[e.n] < 0)) { var kg = rigidezGeometrica(Nel[e.n], e.L, B.Iy + B.Iz, B.A, !!op.wagner); for (var i = 0; i < 12; i++) for (var j = 0; j < 12; j++) k[i][j] += kg[i][j]; }
       var p = (carga.porElem[e.n] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).slice();
-      var k0 = e.lib.length ? k.map(function (l) { return l.slice(); }) : null, p0 = e.lib.length ? p.slice() : null;
-      condensar(k, p, e.lib);
+      var k0 = temPonta(e) ? k.map(function (l) { return l.slice(); }) : null, p0 = temPonta(e) ? p.slice() : null;
+      condensarPonta(k, p, e);
       info[e.n] = { k: k, p: p, k0: k0, p0: p0, EIz: B.E * red * B.Iz, EIy: B.E * red * B.Iy, EA: B.E * red * B.A };
       var kg2 = kGlobal(B.lam, k), pg = vetGlobal(B.lam, p);
       var g = [];
@@ -524,12 +555,14 @@
     var dl = vetLocal(B.lam, g), f = [];
     for (var i = 0; i < 12; i++) { var s = -info.p[i]; for (var j = 0; j < 12; j++) s += info.k[i][j] * dl[j]; f.push(s); }
     /* rotação verdadeira da ponta ROTULADA (a do nó não vale para a barra): K_RR·d_R = p_R − K_RN·d_N, com a matriz antes da condensação */
-    if (info.k0 && e.lib.length) {
-      var R = e.lib, nR = R.length, Mx = [], rhs = [];
+    /* com MOLA: (K_RR + s)·θe = p_R − K_RN·d_N + s·θn (a rotação do nó entra pela mola; rótula = mola 0) */
+    if (info.k0 && temPonta(e)) {
+      var mol = {}; arr(e.molas).forEach(function (m) { mol[m.r] = m.s; });
+      var R = e.lib.concat(arr(e.molas).map(function (m) { return m.r; })), nR = R.length, Mx = [], rhs = [];
       for (var a = 0; a < nR; a++) {
-        Mx.push([]); var sr = info.p0[R[a]];
+        Mx.push([]); var sr = info.p0[R[a]] + (mol[R[a]] || 0) * dl[R[a]];
         for (var c = 0; c < 12; c++) if (R.indexOf(c) < 0) sr -= info.k0[R[a]][c] * dl[c];
-        for (var b2 = 0; b2 < nR; b2++) Mx[a].push(info.k0[R[a]][R[b2]]);
+        for (var b2 = 0; b2 < nR; b2++) Mx[a].push(info.k0[R[a]][R[b2]] + (a === b2 ? (mol[R[a]] || 0) : 0));
         rhs.push(sr);
       }
       var x = gauss(Mx, rhs);
@@ -640,7 +673,7 @@
            entra como carga nodal (o memorial achou o resíduo de 0,17–0,28 kN no ΣFy do caso G em 12/10/2026) */
         var Bf = e.barra; if (!(Bf.tracao && R.ativos && R.ativos[Bf.id] === false)) return;
         var pf = (R.carga.porElem[e.n] || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(), kf = rigidezLocal(Bf.E, Bf.G, Bf.A, Bf.Iy, Bf.Iz, Bf.J, e.L);
-        condensar(kf, pf, e.lib);
+        condensarPonta(kf, pf, e);
         var pgf = vetGlobal(Bf.lam, pf);
         [[e.a, 0], [e.b, 6]].forEach(function (par) { var a2 = forcaNo[par[0]] || (forcaNo[par[0]] = [0, 0, 0, 0, 0, 0]); for (var c2 = 0; c2 < 6; c2++) a2[c2] -= pgf[par[1] + c2]; });
         return;
@@ -787,7 +820,7 @@
       var k = rigidezLocal(B.E, B.G, B.A, B.Iy, B.Iz, B.J, e.L), p = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
       /* condensa a geométrica junto com a elástica e tira a elástica (a rótula vale para as duas) */
       var tot = k.map(function (l, i) { return l.map(function (v, j) { return v + kg[i][j]; }); });
-      if (e.lib.length) { var k2 = k.map(function (l) { return l.slice(); }); condensar(tot, p, e.lib); condensar(k2, null, e.lib); for (var i0 = 0; i0 < 12; i0++) for (var j0 = 0; j0 < 12; j0++) kg[i0][j0] = tot[i0][j0] - k2[i0][j0]; }
+      if (temPonta(e)) { var k2 = k.map(function (l) { return l.slice(); }); condensarPonta(tot, p, e); condensarPonta(k2, null, e); for (var i0 = 0; i0 < 12; i0++) for (var j0 = 0; j0 < 12; j0++) kg[i0][j0] = tot[i0][j0] - k2[i0][j0]; }
       var g2 = kGlobal(B.lam, kg), gl = [];
       for (var c = 0; c < 6; c++) gl.push(M.pos[e.a] * 6 + c);
       for (var c2 = 0; c2 < 6; c2++) gl.push(M.pos[e.b] * 6 + c2);
@@ -845,7 +878,7 @@
   }
 
   var AcoAnalise = { analisar: analisar, flambagem: flambagem, GAMMA_ACO: GAMMA_ACO,
-                     _int: { rigidezLocal: rigidezLocal, rigidezGeometrica: rigidezGeometrica, condensar: condensar, equivalentes: equivalentes, Banda: Banda, Perfil: Perfil, rcm: rcm } };
+                     _int: { rigidezLocal: rigidezLocal, rigidezGeometrica: rigidezGeometrica, condensar: condensar, condensarMolas: condensarMolas, equivalentes: equivalentes, Banda: Banda, Perfil: Perfil, rcm: rcm } };
   global.AcoAnalise = AcoAnalise;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoAnalise;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
