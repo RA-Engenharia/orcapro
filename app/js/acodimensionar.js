@@ -156,7 +156,9 @@
     var chumb = (Mt && Mt.chumbador("ASTM F1554 Gr.36")) || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 };
     var pA325 = (Mt && Mt.parafuso("ASTM A325", 20)) || { fub: 825 }, pA307 = (Mt && Mt.parafuso("ASTM A307", 12)) || { fub: 415 };
     var E70 = (Mt && Mt.eletrodo("E70XX")) || { id: "E70XX", fw: 485 };
-    var fund = par.fundacao || {}, conc = { fck: num(fund.fck, 25), A2_A1: num(fund.A2_A1, 1) };
+    /* revisão 1.2.149 (15/10/2026): o fck da fundação SEM escolha não é mais 25 "informado" — é de REFERÊNCIA e a placa fica
+       A CONFIRMAR (o mesmo da 1.2.148 na estrutura desenhada: a ancoragem do chumbador sai do fck) */
+    var fund = par.fundacao || {}, fckInf = num(fund.fck, null), conc = fckInf != null && fckInf > 0 ? { fck: fckInf, A2_A1: num(fund.A2_A1, 1) } : { fck: 25, referencia: true, A2_A1: num(fund.A2_A1, 1) };
     function sec(m) { var q = m.secao.mm; return { d: q.d, bf: q.bf, tw: q.tw, tf: q.tf, r: num(q.r, 0) }; }
     function base(pilares, tipo) {
       var esf = [];
@@ -169,6 +171,10 @@
       });
       if (!esf.length) return null;
       var o = Lg.placaBase({ tipo: tipo, pilar: sec(pilares[0]), aco: acoChapa, chumbador: chumb, concreto: conc, eletrodo: E70, esforcos: esf });
+      if (arr(o.pendenciasPlaca).length) {   /* sem o fck da fundação: A CONFIRMAR, nunca aprovada (js/acoligcalc2.js faz o mesmo) */
+        o.naoVerificadoCritico = arr(o.naoVerificadoCritico).concat(o.pendenciasPlaca); o.okVerificacoes = o.ok; o.ok = false;
+        o.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador por aderência)"; o.governante = "A CONFIRMAR: ancoragem do chumbador sem o fck da fundação";
+      }
       o.membros = pilares.map(function (m) { return m.id; });
       return o;
     }

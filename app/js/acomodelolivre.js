@@ -35,11 +35,14 @@
  *    "Terça" = terça (articulada); o resto = viga.
  *  · LIGAÇÕES: a desenhada manda (chapa de topo → rígida; cantoneira dupla,
  *    clip, gusset, nó de treliça → rotulada; cobrejunta → contínua); sem
- *    ligação desenhada: viga × pilar e viga × viga ROTULADAS (padrão, o
- *    usuário troca); viga que continua colinear sem nada no nó = contínua
- *    (emenda) — avisado.
+ *    ligação desenhada: viga × pilar POR DIREÇÃO da viga na planta (X e Y
+ *    do modelo — vigaPilarX/vigaPilarY; "auto" = rígida no plano do pórtico
+ *    identificado e rotulada na outra; sem plano identificado, rotulada) e
+ *    viga × viga ROTULADA (padrão, o usuário troca); viga que continua
+ *    colinear sem nada no nó = contínua (emenda) — avisado.
  *  · APOIOS: a ponta de baixo de pilar que não encosta em nada é BASE
- *    (rotulada por padrão; engastada por escolha, pilar a pilar). Outras
+ *    (ENGASTADA por padrão desde 15/10/2026 — pedido do Rogério: "em galpão
+ *    a maioria são engastados"; rotulada por escolha, pilar a pilar). Outras
  *    pontas livres viram apoio só se o usuário disser (parede, pilar de
  *    concreto…).
  *  · FLAMBAGEM (K = 1, análise de 2ª ordem com imperfeições — NBR 8800,
@@ -281,7 +284,8 @@
 
   /* ================================================================ MONTAR
    * op = { bases: {pecaId: "rotulada"|"engastada"}, basePadrao, apoios: {"pecaId:ini|fim": "fixo"|"movel"|"engaste"},
-   *        ligacoes: {"pecaId:ini|fim": "rigida"|"rotulada"}, vigaPilar ("rotulada"|"rigida"), vigaViga,
+   *        ligacoes: {"pecaId:ini|fim": "rigida"|"rotulada"}, vigaPilarX / vigaPilarY ("rotulada"|"rigida"|"auto": a viga × pilar
+   *        pela direção da viga na planta — X do mundo / Y da planta = Z do mundo), vigaPilar (chamadas antigas: vale para as duas), vigaViga,
    *        pontos: [{peca, s}] (cargas pontuais: o ponto vira nó), acrescimo }
    */
   function projSeg(P, a, X, L) { var t = dot(sub(P, a), X); var tc = Math.max(0, Math.min(L, t)); return { t: t, tc: tc, d: dist(P, add(a, mul(X, tc))) }; }
@@ -490,7 +494,68 @@
       });
       return achou;
     }
-    var ligPadrao = { vigaPilar: op.vigaPilar === "rigida" ? "rigida" : "rotulada", vigaViga: op.vigaViga === "rigida" ? "rigida" : "rotulada" };
+    /* #51 (15/10/2026, pedido do Rogério): a ligação viga × pilar SEM desenho POR DIREÇÃO da viga na planta (X = x do mundo; Y = Y
+       da planta = z do mundo; a viga até 15° do eixo segue o eixo; mais oblíqua que isso não tem direção clara e fica ROTULADA, salvo
+       quando X e Y têm a mesma escolha). "auto": o PLANO DO PÓRTICO identificado pela
+       geometria fica rígido e a outra direção rotulada (no galpão: rígida no plano do pórtico, rotulada na longitudinal — o X do
+       contraventamento segura); sem identificar com segurança, as duas rotuladas (como antes) e a decisão diz por quê.
+       Ordem: "Ponta a ponta" (op.ligacoes) > ligação desenhada > tipologia > esta escolha. vigaPilar único (estado/chamada antiga)
+       vale para as duas direções. */
+    function dirPlanta(X) { return Math.abs(X[0]) >= Math.abs(X[2]) ? "X" : "Y"; }
+    /* direção CLARA: até 15° do eixo (revisão 1.2.149 — antes 26,6°, a viga a 24° virava "X") */
+    var TAN15 = Math.tan(15 * Math.PI / 180);
+    function dirClara(X) { var ax = Math.abs(X[0]), az = Math.abs(X[2]); if (Math.max(ax, az) < 1e-6) return null; return Math.min(ax, az) <= TAN15 * Math.max(ax, az) + 1e-12 ? dirPlanta(X) : null; }
+    function angEixo(X) { var ax = Math.abs(X[0]), az = Math.abs(X[2]); return Math.atan2(Math.min(ax, az), Math.max(ax, az)) * 180 / Math.PI; }
+    /* o PÓRTICO: o plano vertical (z constante para a direção X; x constante para a Y) cujas vigas vão de pilar a pilar — juntas tocam
+       2 ou mais pilares diferentes (as duas águas tocam um pilar cada) */
+    function coordPlano(ip, d) { var p = pecas[ip]; return Math.round((d === "X" ? p.a[2] + p.b[2] : p.a[0] + p.b[0]) / 2 * 20) / 20; }
+    function pilaresDe(ip) { var s = {}; pontosPeca[ip].forEach(function (q) { var I = noInfo[q.no]; if (!I) return; I.ends.forEach(function (e) { if (e.ip !== ip && pecas[e.ip].papel === "pilar") s[e.ip] = 1; }); I.passa.forEach(function (x) { if (x !== ip && pecas[x].papel === "pilar") s[x] = 1; }); }); return s; }
+    function porticos(lista, d) { var pl = {}; lista.forEach(function (ip) { var c = coordPlano(ip, d), o = pl[c] || (pl[c] = {}); Object.keys(pilaresDe(ip)).forEach(function (k) { o[k] = 1; }); }); return Object.keys(pl).filter(function (c) { return Object.keys(pl[c]).length >= 2; }); }
+    function planoPortico() {
+      var vigas = []; pecas.forEach(function (p, ip) { if (p.papel === "viga" && !/^Longarina/i.test(String(p.papelBim || ""))) vigas.push(ip); });
+      if (!vigas.length) return { plano: null, motivo: "não há vigas no modelo" };
+      /* 1) cobertura INCLINADA (caimento de 1 % a 50 %) — revisão 1.2.149: UMA viga inclinada (marquise, rampa) não decide a estrutura;
+         vale a direção com 2 ou mais PÓRTICOS paralelos de vigas inclinadas (de pilar a pilar) OU em que as inclinadas são a MAIORIA
+         das vigas da direção (com pelo menos um pórtico); só uma direção pode atender */
+      var incl = vigas.filter(function (ip) { var s0 = Math.abs(pecas[ip].X[1]); return s0 >= 0.01 && s0 <= 0.5; }), notaIncl = "";
+      if (incl.length) {
+        var porD = { X: [], Y: [] }, todD = { X: 0, Y: 0 }, nObl = 0;
+        incl.forEach(function (ip) { var d = dirClara(pecas[ip].X); if (d) porD[d].push(ip); else nObl++; });
+        vigas.forEach(function (ip) { var d = dirClara(pecas[ip].X); if (d) todD[d]++; });
+        var atende = ["X", "Y"].filter(function (d) { var np = porticos(porD[d], d).length; return np >= 2 || (np >= 1 && porD[d].length > todD[d] / 2); });
+        if (atende.length === 2) return { plano: null, motivo: "pórticos de vigas inclinadas nas DUAS direções (telhado de várias águas) — não dá para saber o plano do pórtico" };
+        if (atende.length === 1) { var dc = atende[0], npc = porticos(porD[dc], dc).length; return { plano: dc, motivo: npc + " pórtico(s) de vigas de cobertura inclinadas na direção " + dc + " (" + porD[dc].length + " viga(s), de pilar a pilar): o caimento do telhado fica no plano do pórtico", criterio: "cobertura" }; }
+        notaIncl = incl.length + " viga(s) inclinada(s) que não formam pórticos repetidos (marquise, rampa ou peça isolada)" + (nObl ? ", " + nObl + " oblíqua(s)" : "") + " — não decidem; ";
+      }
+      /* 2) sem caimento: o MAIOR VÃO viga × pilar — só com 2 ou mais PÓRTICOS REPETIDOS (planos paralelos) com vão de pelo menos o dobro
+         do maior vão da outra direção */
+      var vao = { X: 0, Y: 0 }, vaoPl = { X: {}, Y: {} };
+      vigas.forEach(function (ip) {
+        var d = dirClara(pecas[ip].X); if (!d) return;
+        var pts = pontosPeca[ip].slice().sort(function (a, b) { return a.s - b.s; }), sPil = [], c = coordPlano(ip, d);
+        pts.forEach(function (q) { var o0 = papelNo(q.no, ip); if (o0.pilar || o0.pilarPassa) sPil.push(q.s); });
+        for (var k0 = 0; k0 + 1 < sPil.length; k0++) { var vk = sPil[k0 + 1] - sPil[k0]; vao[d] = Math.max(vao[d], vk); vaoPl[d][c] = Math.max(vaoPl[d][c] || 0, vk); }
+      });
+      if (!vao.X && !vao.Y) return { plano: null, motivo: notaIncl + "nenhuma viga entre dois pilares — não dá para saber o plano do pórtico" };
+      var dm = vao.X >= vao.Y ? "X" : "Y", dn = dm === "X" ? "Y" : "X", nRep = Object.keys(vaoPl[dm]).filter(function (c) { return vaoPl[dm][c] >= 2 * vao[dn] - 1e-9; }).length;
+      if (vao[dm] >= 2 * vao[dn] && nRep >= 2) return { plano: dm, motivo: notaIncl + nRep + " pórticos repetidos na direção " + dm + " com vão viga × pilar de " + br(vao[dm], 2) + " m" + (vao[dn] ? ", pelo menos o dobro do vão em " + dn + " (" + br(vao[dn], 2) + " m)" : ""), criterio: "vao" };
+      if (vao[dm] >= 2 * vao[dn]) return { plano: null, motivo: notaIncl + "vão maior na direção " + dm + " (" + br(vao[dm], 2) + " m) mas só " + nRep + " pórtico — sem pórticos repetidos não dá para saber o plano do pórtico" };
+      return { plano: null, motivo: notaIncl + "vãos viga × pilar parecidos nas duas direções (X " + br(vao.X, 2) + " m, Y " + br(vao.Y, 2) + " m) — não dá para saber o plano do pórtico" };
+    }
+    function ligVal(v) { return v === "rigida" || v === "rotulada" || v === "auto" ? v : null; }
+    var vpAnt = ligVal(op.vigaPilar), vpEsc = { X: ligVal(op.vigaPilarX) || vpAnt, Y: ligVal(op.vigaPilarY) || vpAnt };
+    var autoPl = vpEsc.X === "auto" || vpEsc.Y === "auto" ? planoPortico() : null;
+    function resolveDir(d) {
+      var v = vpEsc[d];
+      if (!v) return { tipo: "rotulada", origem: "padrao", txt: "rotulada (padrão)" };
+      if (v !== "auto") return { tipo: v, origem: "escolha", txt: (v === "rigida" ? "rígida" : "rotulada") + " (escolha)" };
+      if (autoPl.plano) return autoPl.plano === d ? { tipo: "rigida", origem: "auto", txt: "rígida (automático: plano do pórtico)" } : { tipo: "rotulada", origem: "auto", txt: "rotulada (automático: fora do plano do pórtico)" };
+      return { tipo: "rotulada", origem: "auto-sem-plano", txt: "rotulada (automático: plano do pórtico não identificado)" };
+    }
+    var ligDir = { X: resolveDir("X"), Y: resolveDir("Y"), auto: autoPl };
+    var ligPadrao = { vigaPilar: ligDir.X.tipo === ligDir.Y.tipo ? ligDir.X.tipo : "X " + ligDir.X.tipo + " / Y " + ligDir.Y.tipo, vigaPilarX: ligDir.X.tipo, vigaPilarY: ligDir.Y.tipo, vigaViga: op.vigaViga === "rigida" ? "rigida" : "rotulada" };
+    var contDir = { X: 0, Y: 0, obl: 0 }, angObl = 0;
+    var tipoObl = ligDir.X.tipo === ligDir.Y.tipo ? ligDir.X.tipo : "rotulada";
     var condPontas = {};   /* "ip:lado" → { tipo, motivo } */
     var contagem = { rigida: 0, rotulada: 0, continua: 0, livre: 0, apoio: 0, desenhada: 0, emenda: 0, tipologia: 0 };
     function condicao(ip, lado, noId) {
@@ -515,11 +580,20 @@
       if (p.papel === "pilar") {
         var outroPilar = o.ips.filter(function (q) { return pecas[q].papel === "pilar" && Math.abs(dot(pecas[q].X, p.X)) > 0.995; }).length;
         if (outroPilar) return { tipo: "continua", motivo: "pilar continua no de cima/baixo" };
-        if (o.vigaPassa) return { tipo: ligPadrao.vigaPilar, motivo: "pilar sob/sobre viga contínua — ligação " + (ligPadrao.vigaPilar === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
+        if (o.vigaPassa) {
+          var dsP = {}; noInfo[noId].passa.forEach(function (q) { if (q !== ip && (pecas[q].papel === "viga" || pecas[q].papel === "terca")) dsP[dirClara(pecas[q].X) || "obl"] = 1; });
+          var dks = Object.keys(dsP), tiposP = dks.map(function (d) { return d === "obl" ? tipoObl : ligDir[d].tipo; });
+          if (dks.length === 1 || tiposP.every(function (t) { return t === tiposP[0]; })) { var d1 = dks[0] || "X"; if (d1 === "obl") return { tipo: tipoObl, motivo: "pilar sob/sobre viga contínua OBLÍQUA na planta (sem direção clara) — ligação " + tipoObl }; return { tipo: ligDir[d1].tipo, motivo: "pilar sob/sobre viga contínua na direção " + dks.join(" e ") + " — ligação " + ligDir[d1].txt }; }
+          return { tipo: "rotulada", motivo: "pilar sob/sobre vigas contínuas nas direções X (" + ligDir.X.txt + ") e Y (" + ligDir.Y.txt + "): o topo do pilar fica ROTULADO (uma ligação só não é rígida numa direção e rotulada na outra) — use Ponta a ponta para mudar" };
+        }
         return { tipo: "continua", motivo: "o pilar recebe as vigas: a rótula, se houver, fica na ponta da viga" };
       }
       /* viga */
-      if (o.pilar || o.pilarPassa) return { tipo: ligPadrao.vigaPilar, motivo: "viga × pilar sem ligação desenhada — " + (ligPadrao.vigaPilar === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
+      if (o.pilar || o.pilarPassa) {
+        var dV = dirClara(p.X);
+        if (!dV) { contDir.obl++; angObl = Math.max(angObl, angEixo(p.X)); return { tipo: tipoObl, motivo: "viga × pilar sem ligação desenhada, viga OBLÍQUA na planta (" + br(angEixo(p.X), 1) + "° do eixo mais perto, mais que 15°): sem direção clara — " + (ligDir.X.tipo === ligDir.Y.tipo ? "X e Y com a mesma escolha: " + tipoObl : "ROTULADA"), direcao: null, obliqua: true }; }
+        contDir[dV]++; return { tipo: ligDir[dV].tipo, motivo: "viga × pilar sem ligação desenhada, viga na direção " + dV + " — " + ligDir[dV].txt, direcao: dV };
+      }
       if (o.vigaPassa) return { tipo: ligPadrao.vigaViga, motivo: "viga apoiada em viga sem ligação desenhada — " + (ligPadrao.vigaViga === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
       var vigasPonta = o.ips.filter(function (q) { return pecas[q].papel === "viga"; });
       if (vigasPonta.length === 1 && o.ips.length === 1 && Math.abs(dot(pecas[vigasPonta[0]].X, p.X)) > 0.996) { contagem.emenda++; return { tipo: "continua", motivo: "emenda colinear sem nada no nó: tratada como CONTÍNUA (detalhar a emenda)" }; }
@@ -549,7 +623,9 @@
       if (esta[1] > minY + 0.05 && o.ips.some(function (q) { return pecas[q].papel !== "diagonal"; })) return null;
       /* PÓRTICOS M4: a base da tipologia (metal.calc.base) vale depois da escolha pilar a pilar da tela e antes do padrão */
       var tbTip = p.calc && (p.calc.base === "engastada" || p.calc.base === "rotulada") ? p.calc.base : null;
-      var tb = (op.bases || {})[p.id] || tbTip || op.basePadrao || "rotulada";
+      /* #50 (15/10/2026): sem escolha, a base é ENGASTADA (pedido do Rogério: "em galpão a maioria são engastados") — a placa
+         engastada pede o fck da fundação (sem ele fica A CONFIRMAR: js/acoligcalc2.js) */
+      var tb = (op.bases || {})[p.id] || tbTip || op.basePadrao || "engastada";
       /* SIMULAÇÃO S1 (14/10/2026): a PLACA DE BASE desenhada pela Ligação inteligente manda, como a chapa de topo no nó —
          modelo e ligação ficam coerentes (base engastada no cálculo ⇔ placa engastada no modelo) */
       var pd = placaDesenhada(p.id);
@@ -557,7 +633,7 @@
         if (pd.tipo !== (tb === "engastada" ? "engastada" : "rotulada")) avisos.push("Pilar " + p.mid + " (" + p.nome + "): a base escolhida na tela é " + tb + ", mas a placa DESENHADA é " + pd.tipo + " (" + pd.tipologia + ") — o cálculo usa a placa desenhada.");
         return { tipo: pd.tipo, motivo: "placa de base desenhada: " + pd.tipo + " (" + pd.tipologia + ")", base: true, desenhada: true };
       }
-      return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (tbTip ? "base " + tbTip + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") : (op.basePadrao ? "base escolhida para todos os pilares" : "base rotulada (padrão)")), base: true };
+      return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (tbTip ? "base " + tbTip + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") : (op.basePadrao ? "base escolhida para todos os pilares" : "base engastada (padrão)")), base: true };
     }
     function placaDesenhada(pid) {
       var achou = null;
@@ -760,13 +836,16 @@
     if (contagem.continua) txt.push(contagem.continua + " contínua(s)");
     if (contagem.livre) txt.push(contagem.livre + " livre(s) (balanço)");
     if (contagem.apoio) txt.push(contagem.apoio + " em apoio");
-    decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : "") + (contagem.tipologia ? (contagem.desenhada ? "; " : " — ") + contagem.tipologia + " pela tipologia do pórtico paramétrico" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
+    decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : "") + (contagem.tipologia ? (contagem.desenhada ? "; " : " — ") + contagem.tipologia + " pela tipologia do pórtico paramétrico" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar na direção X " + ligDir.X.txt + ", na direção Y " + ligDir.Y.txt + "; viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
+    var AVISO_PADRAO = op.padraoNovo ? " — PADRÃO DESDE A 1.2.149: base engastada e viga × pilar automática — confira" : "";
+    if (contDir.X || contDir.Y || contDir.obl) decisoes.push({ tema: "Ligações viga × pilar por direção", decisao: "sem ligação desenhada: vigas na direção X " + ligDir.X.txt + " (" + contDir.X + " ponta(s)); vigas na direção Y " + ligDir.Y.txt + " (" + contDir.Y + " ponta(s))" + (contDir.obl ? "; vigas OBLÍQUAS na planta (mais de 15° do eixo, até " + br(angObl, 1) + "°): " + tipoObl + " (" + contDir.obl + " ponta(s)) — sem direção clara" : "") + AVISO_PADRAO,
+      motivo: (autoPl ? (autoPl.plano ? "plano do pórtico identificado na direção " + autoPl.plano + ": " + autoPl.motivo + " — no galpão a ligação é rígida no plano do pórtico e rotulada na longitudinal (o X do contraventamento segura)" : "automático: " + autoPl.motivo + "; as duas direções ficam rotuladas (escolha na tela se o pórtico for rígido)") : "escolha da tela por direção (X e Y da planta)") + "; a viga até 15° do eixo segue o eixo, a mais oblíqua não tem direção clara (rotulada, salvo X e Y iguais); \"Ponta a ponta\" e a ligação desenhada mandam sobre a direção" });
     var nProv = Object.keys(lido.ligacoes || {}).filter(function (k) { return lido.ligacoes[k].provisoria; }).length;
     if (nProv) decisoes.push({ tema: "Ligações a confirmar", decisao: nProv + " ligação(ões) lançada(s) com a viga, pré-dimensionada(s) só pelo peso próprio (A CONFIRMAR NO CÁLCULO): no nó delas vale a escolha da tela (viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + ")", motivo: "a ligação de partida não é decisão de projeto — depois do cálculo ela é confirmada ou trocada com os esforços da análise (coerente com o nó)" });
     if (contagem.emenda) avisos.push(contagem.emenda / 2 + " emenda(s) colinear(es) de viga sem ligação desenhada foram tratadas como CONTÍNUAS: detalhe a emenda (cobrejunta) para valer o que o cálculo considerou.");
     if (basesInfo.length) {
       var nEng = basesInfo.filter(function (b) { return b.tipo === "engastada"; }).length;
-      decisoes.push({ tema: "Apoios", decisao: basesInfo.length + " base(s) de pilar: " + (basesInfo.length - nEng) + " rotulada(s), " + nEng + " engastada(s)", motivo: "a ponta de baixo do pilar que não encosta em nenhuma peça é a base; a condição é a escolhida na tela (padrão rotulada: a fundação recebe só forças)" });
+      decisoes.push({ tema: "Apoios", decisao: basesInfo.length + " base(s) de pilar: " + (basesInfo.length - nEng) + " rotulada(s), " + nEng + " engastada(s)" + AVISO_PADRAO, motivo: "a ponta de baixo do pilar que não encosta em nenhuma peça é a base; a condição é a escolhida na tela (padrão engastada — em galpão a maioria das bases é engastada: a fundação recebe momento e a placa pede o fck da fundação; rotulada por escolha)" });
     }
     var nDiag = pecas.filter(function (p) { return p.papel === "diagonal"; }).length;
     if (nDiag) decisoes.push({ tema: "Diagonais", decisao: nDiag + " diagonal(is) articulada(s) nas pontas" + (pecas.some(function (p) { return p.tracao; }) ? "; as de barra redonda só trabalham à TRAÇÃO (saem do modelo quando comprimidas)" : ""), motivo: "barra de contraventamento ligada por gusset/olhal; barra redonda não resiste à compressão" });
@@ -783,7 +862,7 @@
     if (op.rigidezLigacoes) decisoes.push({ tema: "Rigidez das ligações", decisao: molasUsadas.length ? molasUsadas.length + " ligação(ões) de momento como mola rotacional na ponta da viga: " + molasUsadas.join("; ") : "nenhuma ponta de viga virou mola",
       motivo: "EN 1993-1-8:2005, 5.1.2(4): Sj = Sj,ini/η (Tabela 5.2, η = 2) em torno do eixo forte; o eixo fraco e a torção ficam como estavam (rigidez não calculada)" + (molasRecusadas.length ? ". Ficaram RÍGIDAS: " + molasRecusadas.join("; ") : "") });
     var Gm = { ok: true, livre: true, modelo: modelo, membros: membros, grupos: grp, secoes: {}, layout: L, decisoes: decisoes, avisos: avisos, problemas: problemas,
-               pecas: pecas, noInfo: noInfo, apoiosNo: apoiosNo, bases: basesInfo, condPontas: condPontas, par: op, linhasTerca: [], lido: lido };
+               pecas: pecas, noInfo: noInfo, apoiosNo: apoiosNo, bases: basesInfo, condPontas: condPontas, par: op, linhasTerca: [], lido: lido, ligDirecao: ligDir };
     pecas.forEach(function (p) { Gm.secoes[p.mid] = p.sec; });
     return Gm;
   }

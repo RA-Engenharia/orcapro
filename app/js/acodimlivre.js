@@ -50,6 +50,7 @@
   function Met() { return dep("BimMetal", "./metalpeca.js"); }
   function Cri() { return dep("MetalCriar", "./metalcriar.js"); }
   function Env() { return dep("AcoEnvoltorio", "./acoenvoltorio.js"); }   /* FRENTE S5 (14/10/2026): faces e fechamentos → vento */
+  function Res() { return dep("AcoResolverLivre", "./acoresolverlivre.js"); }   /* 15/10/2026: soluções do mecanismo (completar o X, trocar a barra redonda…) */
 
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
@@ -207,7 +208,7 @@
     var M = ML(), C = Car(), A = Ana(), Dm = Dim();
     var ap = entrada.apoios || {}, lg = entrada.ligacoes || {}, cg = entrada.cargas || {};
     var pontos = arr(cg.pontuais); pontos.forEach(function (p) { p.no = null; });
-    var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: pontos });
+    var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: pontos });
     G.membros.forEach(function (m) { var p = lido.pecas.filter(function (x) { return x.id === m.peca; })[0]; if (p) m.reg = p.reg; });
     var base = { ok: false, modelo: G, decisoes: G.decisoes, avisos: G.avisos, tipo: "livre" };
     var est = M.estabilidade(G);
@@ -219,7 +220,7 @@
     if (mEsc.length) {
       var ids0 = {}; mEsc.forEach(function (m) { ids0[m.peca] = true; });
       var lido2 = {}; Object.keys(lido).forEach(function (k) { lido2[k] = lido[k]; }); lido2.pecas = lido.pecas.filter(function (q) { return !ids0[q.id]; });
-      var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }) : null;
+      var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }) : null;
       var est2 = G2 ? M.estabilidade(G2) : { ok: true };
       if (!est2.ok && arr(est2.problemas).some(function (q) { return q.tipo === "mecanismo" || q.tipo === "sem-apoio"; })) escTrava = { membros: mEsc.map(function (m) { return m.id; }) };
     }
@@ -247,8 +248,15 @@
          do test-aco-livre: W 150 × 13,5 com depósito recebia o recado do piso) */
       var basesRot = arr(G.bases).filter(function (b) { return b.tipo !== "engastada"; }).length;
       if (mDiag) { var eD = esbeltezMembro(mDiag); tx += " Quem perde a rigidez é a diagonal " + mDiag.id + " (" + mDiag.secao.nome + (eD ? ", L/r = " + br(eD.lam, 0) : "") + "): ela flamba sob a compressão — use barra redonda (só tração, em X) ou um perfil mais robusto."; }
-      else if (/instável|mecanismo/i.test(res.motivo) && !horiz && vigasRot >= 3 && basesRot > 0) { tx += " Provável causa: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas."; solP.push({ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }); }
-      base.problemas = [{ tipo: "analise", texto: tx, solucoes: solP }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
+      /* 15/10/2026 (pedido do Rogério): o mecanismo da análise SEMPRE com soluções concretas e localizadas, cada uma com botão
+         (js/acoresolverlivre.js): completar o X da barra redonda sozinha, trocá-la por cantoneira/tubo, engastar as bases,
+         ligações rígidas — e o "Resolver" da tela testa cada uma numa cópia e propõe a mais leve que fecha */
+      var mecA = /instável|mecanismo/i.test(String(res.motivo || "")), SR = mecA && Res() ? Res().solucoesMecanismo(G, res.motivo) : null, semPar = SR ? SR.semPar : [];
+      if (semPar.length) tx += " Diagonal(is) de barra redonda SEM a do outro sentido: " + semPar.slice(0, 6).map(function (d) { return d.membro + " (" + d.plano + ")"; }).join("; ") + (semPar.length > 6 ? "…" : "") + ".";
+      if (mDiag) { /* recado da diagonal que flamba: acima */ }
+      else if (mecA && !semPar.length && !horiz && vigasRot >= 3 && basesRot > 0) { tx += " Provável causa: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas."; solP.push({ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }); }
+      if (SR) solP = SR.solucoes.concat(solP);
+      base.problemas = [{ tipo: "analise", texto: tx, solucoes: solP, no: SR ? SR.no : null, pecas: SR ? SR.pecas : [], mecanismo: mecA }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
     }
     /* deslocabilidade: Δ2/Δ1 por direção nos topos dos pilares (ou em todos os nós) */
     var pils = G.membros.filter(function (m) { return m.papelLivre === "pilar"; }), topos = pils.length ? pils.map(function (m) { return m.nos[m.nos.length - 1]; }) : G.modelo.nos.map(function (n) { return n.id; });

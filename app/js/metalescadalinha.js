@@ -472,6 +472,24 @@
   /* REVISÃO S6 (C1): razão NÃO FINITA (placa fora do concreto, chumbador além da borda: o js/acoligfundacao.js devolve ∞)
      é FALHA — convertida ANTES do clone (o JSON troca Infinity por null) e nunca lida como 0 */
   function razaoDe(v) { var r = v ? v.razao : null; if (typeof r === "number" && isFinite(r)) return r; return v && v.info ? 0 : 9.99; }
+  /* 1.2.149 (revisão de 15/10): o fck do concreto da base — INFORMADO (pelo usuário ou pela laje/fundação do modelo) ou só de
+     REFERÊNCIA (25 MPa adotado, ou um fck marcado como adotado). Com fck de referência a placa NÃO verifica a aderência
+     (js/acoligcalc.js → pendenciasPlaca) e a base fica A CONFIRMAR — a mesma régua da placa de base comum
+     (js/acoligcalc2.js, 1.2.148): antes a escada e o guarda-corpo adotavam 25 MPa e davam a ancoragem como VERIFICADA. */
+  var MOTIVO_FCK = "falta o fck do concreto da fundação: ancoragem do chumbador por aderência não verificada";
+  function fckBase(cc) {
+    cc = cc || {}; var f = num(cc.fck, 0);
+    return { fck: f > 0 ? f : 25, referencia: !(f > 0) || !!cc.referencia || cc.fckInformado === false };
+  }
+  /* a pendência crítica (o "(CRÍTICO)" segura o "aprovado" do js/acoacessos.js → INCOMPLETO, e o memorial lista o motivo) */
+  var MOTIVO_FCK_PRESSAO = "falta o fck do piso/fundação: pressão de contato não verificada";
+  function pendenciaFck(out, nome, pb, fc, onde, pressao) {
+    if (!fc.referencia && !arr(pb && pb.pendenciasPlaca).length) return false;
+    var anc = pb && pb.dimensoes && pb.dimensoes.chumbadores ? pb.dimensoes.chumbadores.ancoragem : null;
+    out.naoVerificados.push("A CONFIRMAR: " + nome + " — " + (pressao ? MOTIVO_FCK_PRESSAO + " (calculada com fck = " + br(fc.fck, 0) + " MPa de referência)" : MOTIVO_FCK + (anc ? " (os " + br(anc, 0) + " mm de ancoragem saíram com fck = " + br(fc.fck, 0) + " MPa de referência)" : "")) + "; informe o fck do concreto " + (onde || "do piso/laje") + " (CRÍTICO)");
+    out.aConfirmar = pressao ? "fck do concreto do piso/fundação (pressão de contato sob a chapa de apoio)" : "fck do concreto da fundação (ancoragem do chumbador por aderência)";
+    return true;
+  }
   function marcar(v, nome) { var rz = razaoDe(v), o = clone(v); o.razao = rz; if (!(typeof v.razao === "number" && isFinite(v.razao)) && !v.info) { o.naoFinita = true; o.nome = nome + " (razão não finita — fora do concreto/da borda: FALHA)"; } else o.nome = nome; o.ok = !!v.info || rz <= 1 + 1e-9; return o; }
   var ROT = { soldada: "SOLDADA", parafusada: "PARAFUSADA", ancorada: "ANCORADA", apoiada: "APOIADA", pes: "BASE DO PÉ DE APOIO" };
   /* a fixação padrão: concreto → ancorada; aço (viga/piso) → parafusada; nada no topo → apoiada (pés de apoio) */
@@ -635,15 +653,15 @@
       var Npe = V, Hpe = H, Nt = num(R.Nt, 0), Mpe = num(it.M, 0), pil = { d: Math.round(dPeg), bf: Math.round(bPeg), tw: num(lg.tw, 5), tf: num(lg.tf, 8) };
       if (modo === "pes") pil = { d: it.pes.s.b, bf: it.pes.s.b, tw: it.pes.s.t, tf: it.pes.s.t };
       if (it.pilar) pil = it.pilar;
-      var cc = it.concreto || {}, fck = num(cc.fck, 0) > 0 ? num(cc.fck, 25) : 25;
+      var cc = it.concreto || {}, fcB = fckBase(cc), fck = fcB.fck;
       /* REVISÃO S6 (M1): a compressão E a tração do binário do guarda-corpo; no topo, o momento da excentricidade da chapa */
       var esf = [{ comb: "ELU — compressão", N: -Npe, Vx: Hpe, Vz: 0, M: Mpe }]; if (Nt > 0) esf.push({ comb: "ELU — levantamento (binário do guarda-corpo, permanente γ = 1,0)", N: Nt, Vx: Hpe, Vz: 0, M: Mpe });
-      var pb = C.placaBase({ tipo: Mpe > 0 ? "engastada" : "rotulada", pilar: pil, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, A2_A1: 1 }, eletrodo: { fw: fw }, esforcos: esf });
+      var pb = C.placaBase({ tipo: Mpe > 0 ? "engastada" : "rotulada", pilar: pil, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, referencia: fcB.referencia, A2_A1: 1 }, eletrodo: { fw: fw }, esforcos: esf });
       out.verificacoes = out.verificacoes.concat(arr(pb.verificacoes).map(function (v) { return marcar(v, nome + " — " + v.nome); }));
-      if (num(cc.fck, 0) <= 0) out.avisos.push(nome + ": fck do concreto não informado — 25 MPa adotado (NBR 6118:2014, Tabela 7.1, C25 na classe II); confirme");
+      var semFck = pendenciaFck(out, nome, pb, fcB, it.ponta === "topo" ? "da laje de chegada" : "do piso/laje no pé");
       var Lfd = LF(), sup = suporteConcreto(cc, it.P, it.eixo, pb.dimensoes);
       if (Lfd && num(cc.esp, 0) > 0) {
-        var info = { id: cc.id || "piso", rotulo: cc.rotulo || "Piso de concreto", tipo: cc.tipo || "laje", cotaTopo: num(cc.topo, 0), altura: num(cc.esp, 0), poligonoTopo: sup.mundo || [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: num(cc.fck, 0) > 0, cobrimento: Lfd.COBRIMENTO };
+        var info = { id: cc.id || "piso", rotulo: cc.rotulo || "Piso de concreto", tipo: cc.tipo || "laje", cotaTopo: num(cc.topo, 0), altura: num(cc.esp, 0), poligonoTopo: sup.mundo || [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: !fcB.referencia, cobrimento: Lfd.COBRIMENTO };
         var rf = null; try { rf = Lfd.verificar(pb, info, { suporte: sup.local || [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]], esforcos: esf }); } catch (eF) { rf = null; }
         if (rf) {
           /* REVISÃO S6 (C2): sem o contorno do concreto (nem a distância à borda) só valem as verificações do MIOLO — a borda fica CRÍTICA */
@@ -668,7 +686,9 @@
       if (it.extensao) rs = rs.replace(/;\s*solda de filete [^;]*em volta do pilar/, "; chapa de extensão " + br(it.extensao.b, 0) + " × " + br(Math.min(num(it.extensao.t, pb.dimensoes.t), pb.dimensoes.t), 1) + " mm em junta de topo (penetração total) + chapa de ligação " + GUS.L + " × " + GUS.h + " × " + br(GUS.t, 1) + " mm na alma da longarina" + (out.gusset ? " (filetes " + out.gusset.a + " e " + out.gusset.a2 + " mm)" : "")).replace(/;\s*graute sem retração[^;]*/, "");
       else rs = rs.replace(/em volta do pilar/, modo === "pes" ? "em volta do pé de apoio" : "em volta da longarina");
       out.resumo = (modo === "pes" ? "base do pé de apoio: " : "ancorada: ") + rs;
-      out.placa = { ok: pb.ok, razao: pb.razao };
+      /* sem o fck: a placa fica A CONFIRMAR (o resultado do aço fica à parte em okVerificacoes) */
+      out.placa = semFck ? { ok: false, okVerificacoes: pb.ok, aConfirmar: out.aConfirmar, razao: pb.razao } : { ok: pb.ok, razao: pb.razao };
+      if (semFck) out.resumo += " — A CONFIRMAR: ancoragem do chumbador sem o fck da fundação";
       return out;
     }
     if (modo === "apoiada") {
@@ -681,13 +701,15 @@
         var base = fixacao({ ponta: "topo", modo: "pes", pes: pr, R: { V: Np, H: 0, Nt: num(R.Nt, 0), hip: "base do pé de apoio: compressão e o levantamento do binário do guarda-corpo" }, concreto: it.concreto, P: it.Pbase, eixo: it.eixo, longarina: lg, alfa: it.alfa });
         out.verificacoes = out.verificacoes.concat(base.verificacoes.filter(function (v) { return !v.info; }));
         out.naoVerificados = out.naoVerificados.concat(base.naoVerificados); out.avisos = out.avisos.concat(base.avisos);
+        if (base.aConfirmar) { out.aConfirmar = base.aConfirmar; out.placa = base.placa; }   /* 1.2.149: a base dos pés sem o fck */
         out.avisos.push(nome + ": os pés de apoio só travam com a escada FIXA no pé (soldada, parafusada ou ancorada)" + (hP > 1 ? " e com o X entre eles" : ""));
         out.desenho = { modo: modo, pes: { perfil: pr.perfil, h: hP, b: pr.s.b, x: hP > 1.0 }, base: base.desenho, chapaTopo: { B: Math.ceil((pr.s.b + 40) / 10) * 10, t: 9.5 } };
         out.resumo = "apoiada em 2 pés de apoio " + pr.perfil + " de " + m2(hP) + (hP > 1 ? " com X entre eles" : "") + "; " + base.resumo;
         return out;
       }
       /* pé APOIADO: chapa de apoio sobre o piso, sem chumbador (a horizontal vai para o topo) — pressão e flexão da chapa */
-      var cc2 = it.concreto || {}, fck2 = num(cc2.fck, 0) > 0 ? num(cc2.fck, 25) : 25, sig = C.concreto(fck2, 1), Bc = Math.ceil((bPeg + 100) / 10) * 10, Lc = Math.ceil((dPeg + 100) / 10) * 10, tc = null, ga1 = M && M.GAMA ? M.GAMA.a1 : 1.10;
+      /* 1.2.149 (revisão): sem o fck do piso a pressão de contato sai de REFERÊNCIA → A CONFIRMAR (antes: 25 MPa calado, aprovado) */
+      var cc2 = it.concreto || {}, fcA = fckBase(cc2), fck2 = fcA.fck, sig = C.concreto(fck2, 1), Bc = Math.ceil((bPeg + 100) / 10) * 10, Lc = Math.ceil((dPeg + 100) / 10) * 10, tc = null, ga1 = M && M.GAMA ? M.GAMA.a1 : 1.10;
       var sigSd = V * 1000 / (Bc * Lc), l = Math.max((Lc - 0.95 * dPeg) / 2, (Bc - 0.8 * bPeg) / 2), mSd = sigSd * l * l / 2;
       [9.5, 12.5, 16, 19].some(function (t) { if (t * t * aco.fy / 4 / ga1 >= mSd) { tc = t; return true; } return false; }); tc = tc || 19;
       out.verificacoes.push(verif(nome + " — pressão no piso sob a chapa de apoio", "NBR 8800:2024, 6.6 (σc,Rd = 0,85·fck/γc, A2/A1 = 1)", [passo("Chapa", "", br(Lc, 0) + " × " + br(Bc, 0) + " mm"), passo("σ", "V/(B·L)", br(sigSd, 2) + " MPa ≤ " + br(sig, 2) + " MPa")], sig, sigSd, "MPa"));
@@ -697,6 +719,11 @@
       out.avisos.push(nome + ": apoiada sem chumbador — a escada tem de ser FIXA no topo (a força horizontal vai toda para lá); o piso embaixo precisa resistir à pressão de contato");
       out.desenho = { modo: modo, chapa: { B: Bc, L: Lc, t: tc } };
       out.resumo = "apoiada: chapa de apoio " + br(Lc, 0) + " × " + br(Bc, 0) + " × " + br(tc, 1) + " mm (sem chumbador)";
+      if (pendenciaFck(out, nome, null, fcA, "do piso sob a chapa de apoio", true)) {
+        out.verificacoes.forEach(function (v) { if (/pressão no piso sob a chapa/.test(v.nome)) { v.nome += " (fck = " + br(fck2, 0) + " MPa de REFERÊNCIA — A CONFIRMAR)"; v.referencia = true; } });
+        out.placa = { ok: false, okVerificacoes: out.verificacoes.every(function (v) { return v.ok || v.info; }), aConfirmar: out.aConfirmar };
+        out.resumo += " — A CONFIRMAR: pressão de contato sem o fck do piso";
+      }
       return out;
     }
     out.naoVerificados.push("não verificado: " + nome + " — fixação desconhecida (" + modo + ") (CRÍTICO)");
@@ -715,18 +742,20 @@
     if (!C || !s) { out.naoVerificados.push("não verificado: base do montante — perfil ou js/acoligcalc.js ausente (CRÍTICO)"); return out; }
     var fg = A && A.forcaGuarda ? A.forcaGuarda(sp.uso || "industrial") : { f: 2.0, altura: 1.1, ref: "NBR 6120:2019, Tabela 12" }, esp = num(sp.espac, 1), h = fg.altura || 1.1;
     var Fd = 1.5 * fg.f * esp, Md = Fd * h, D = s.D || s.b || s.d || 60, t = s.t || s.tw || 4;
-    var aco = (M ? M.aco("ASTM A36") : null) || { fy: 250, fu: 400 }, cc = sp.concreto || {}, fck = num(cc.fck, 0) > 0 ? num(cc.fck, 25) : 25;
-    var pb = C.placaBase({ tipo: "engastada", pilar: { d: D, bf: D, tw: t, tf: t }, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, A2_A1: 1 }, esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] });
+    var aco = (M ? M.aco("ASTM A36") : null) || { fy: 250, fu: 400 }, cc = sp.concreto || {}, fcB = fckBase(cc), fck = fcB.fck;
+    var pb = C.placaBase({ tipo: "engastada", pilar: { d: D, bf: D, tw: t, tf: t }, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, referencia: fcB.referencia, A2_A1: 1 }, esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] });
     out.verificacoes.push({ nome: "Base do montante — esforços", item: fg.ref + "; γq = 1,50", passos: [passo("Força no topo", "F = 1,5·f·s", br(Fd, 2) + " kN (f = " + br(fg.f, 2) + " kN/m, s = " + m2(esp) + ")"), passo("Momento na base", "M = F·" + br(h, 2) + " m", br(Md, 3) + " kN·m")], razao: 0, ok: true, info: true });
     out.verificacoes = out.verificacoes.concat(arr(pb.verificacoes).map(function (v) { return marcar(v, "Base do montante — " + v.nome); }));
     if (num(cc.esp, 0) > 0 && LF()) {
-      var Lfd = LF(), info = { id: "laje", rotulo: "Laje", tipo: "laje", cotaTopo: 0, altura: num(cc.esp, 0), poligonoTopo: [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: num(cc.fck, 0) > 0, cobrimento: Lfd.COBRIMENTO };
+      var Lfd = LF(), info = { id: "laje", rotulo: "Laje", tipo: "laje", cotaTopo: 0, altura: num(cc.esp, 0), poligonoTopo: [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: !fcB.referencia, cobrimento: Lfd.COBRIMENTO };
       var rf = null; try { rf = Lfd.verificar(pb, info, { suporte: [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]], esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] }); } catch (e) { rf = null; }
       if (rf) out.verificacoes = out.verificacoes.concat(arr(rf.verificacoes).slice(arr(pb.verificacoes).length).filter(function (v) { return /cabe|cone|gancho/i.test(v.nome); }).map(function (v) { return marcar(v, "Base do montante — " + v.nome + " (laje de " + cm(num(cc.esp, 0)) + ", longe da borda)"); }));
     }
+    var semFckM = pendenciaFck(out, "Base do montante", pb, fcB, "da laje onde o montante é chumbado");
     out.naoVerificados.push("não verificado: chumbadores do montante junto da BORDA da laje (ruptura da borda e cone recortado — a distância à borda não é conhecida; detalhar com a laje) (CRÍTICO)");
     out.desenho = { modo: "ancorada", chapa: { B: pb.dimensoes.B, L: pb.dimensoes.L, t: pb.dimensoes.t }, chumbadores: pb.dimensoes.chumbadores, solda: pb.dimensoes.solda, graute: 0 };
-    out.resumo = "placa " + br(pb.dimensoes.L, 0) + " × " + br(pb.dimensoes.B, 0) + " × " + br(pb.dimensoes.t, 1) + " mm engastada, " + pb.dimensoes.chumbadores.n + " chumbadores " + pb.dimensoes.chumbadores.id;
+    out.resumo = "placa " + br(pb.dimensoes.L, 0) + " × " + br(pb.dimensoes.B, 0) + " × " + br(pb.dimensoes.t, 1) + " mm engastada, " + pb.dimensoes.chumbadores.n + " chumbadores " + pb.dimensoes.chumbadores.id + (semFckM ? " — A CONFIRMAR: ancoragem do chumbador sem o fck da fundação" : "");
+    out.placa = semFckM ? { ok: false, okVerificacoes: pb.ok, aConfirmar: out.aConfirmar, razao: pb.razao } : { ok: pb.ok, razao: pb.razao };
     return out;
   }
 

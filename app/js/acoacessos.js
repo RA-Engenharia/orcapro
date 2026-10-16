@@ -926,7 +926,9 @@
     var apl = arr(v && v.itens).map(function (i) { return i.norma + " — " + i.requisito; }).filter(function (x, j, l) { return l.indexOf(x) === j; });
     secoes.push("pendencias"); h += "<h2>8. Requisitos aplicados (norma e item)</h2>" + (apl.length ? "<ul>" + apl.map(function (x) { return "<li>" + t(x) + "</li>"; }).join("") + "</ul>" : "<p>Nenhum.</p>");
     if (v && !v.aprovado) av.push(v.naoConformes.length + " não conformidade(s) de norma");
-    if (dm && !dm.aprovado) av.push(dm.falhas + " verificação(ões) estrutural(is) não passam");
+    if (dm && !dm.aprovado && dm.falhas) av.push(dm.falhas + " verificação(ões) estrutural(is) não passam");
+    /* 1.2.149: INCOMPLETO (verificação crítica não feita — p.ex. a base sem o fck da fundação) também barra, com o motivo */
+    if (dm && !dm.aprovado && !dm.falhas && arr(dm.criticos).length) av.push("INCOMPLETO — " + dm.criticos.length + " verificação(ões) crítica(s) não feita(s): " + dm.criticos[0]);
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + t(titulo) + "</title><style>" + CSS + "</style></head><body>" + h + "</body></html>";
     return { ok: true, html: html, titulo: titulo, secoes: secoes, avisos: av };
   }

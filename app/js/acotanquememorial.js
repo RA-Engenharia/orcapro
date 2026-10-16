@@ -64,7 +64,7 @@
     function sec(id, titulo, corpo) { secs.push({ id: id, titulo: titulo, html: corpo }); }
     var nomeT = p.nome || TIPO[p.tipo], dims = p.tipo === "horizontal" ? "Ø " + un(g.D, 2, "m") + " × " + un(g.L, 2, "m") : "Ø " + un(g.D, 2, "m") + " × " + un(g.H, 2, "m") + (p.tipo === "elevado" ? " sobre torre de " + un(p.alturaTorre, 1, "m") : "");
     var esquema = MT && MT.esquema ? MT.esquema(r) : "";
-    var situacao = r.aprovado ? '<span class="ok">aprovado — todas as verificações feitas atendem</span>' : '<span class="falha">NÃO APROVADO — ' + (r.falhas + arr(r.problemas).length) + " pendência(s) de cálculo</span>";
+    var situacao = r.aprovado ? '<span class="ok">aprovado — todas as verificações feitas atendem</span>' : (r.situacaoTexto ? '<span class="falha">' + esc(r.situacaoTexto) + "</span>" : '<span class="falha">NÃO APROVADO — ' + (r.falhas + arr(r.problemas).length) + " pendência(s) de cálculo</span>");   /* 1.2.149 */
 
     /* 1. objeto */
     sec("objeto", "Objeto, escopo e premissas",

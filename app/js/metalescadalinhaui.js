@@ -374,17 +374,26 @@
         var its = (r.medidas.dim && r.medidas.dim.itens || []).filter(function (it) { return it.tipo === "fixacao" || it.tipo === "pilarete"; });
         its.forEach(function (it) {
           var d = A ? A.dimensionar({ itens: [it] }) : null; if (!d) return;
-          var calc = d.verificacoes.filter(function (v) { return !v.info; });
-          out.push({ escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: it.tipo === "fixacao" ? L.fixacao(it).resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
+          var calc = d.verificacoes.filter(function (v) { return !v.info; }), fxr = it.tipo === "fixacao" ? L.fixacao(it) : null;
+          out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
         });
       });
       return out;
     },
-    secaoMemorial: function (html) {
-      var fx = this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;
+    /* 1.2.149: o que barra a emissão do memorial geral — cada fixação de escada que não está aprovada, com o motivo
+       (A CONFIRMAR: o fck da fundação; INCOMPLETO: a 1ª verificação crítica não feita; NÃO atende) */
+    pendenciasMemorial: function (fx) {
+      return (Array.isArray(fx) ? fx : []).filter(function (f) { return f && f.status !== "aprovado"; }).map(function (f) {
+        var crit = (f.naoVerificados || []).filter(function (t) { return /CRÍTICO/.test(t); })[0];
+        var m = f.status === "reprovado" ? "NÃO atende" : (f.aConfirmar ? "A CONFIRMAR — informe o fck da fundação (" + f.aConfirmar + ")" : "INCOMPLETO" + (crit ? ": " + crit : ""));
+        return "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + "): " + m;
+      });
+    },
+    secaoMemorial: function (html, fxDado) {
+      var fx = Array.isArray(fxDado) ? fxDado : this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;
       var e = function (t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
       var rot = { pe: "pé", topo: "topo", patamar: "patamar" }, ROT = (E() && E().ROT) || {};
-      var linhas = fx.map(function (f) { return "<tr><td>" + e(f.escada) + " (" + br(f.desnivel) + " m)</td><td>" + e(rot[f.ponta] || f.ponta) + "</td><td>" + e(ROT[f.modo] || f.modo) + "</td><td>" + e(f.resumo) + "</td><td>" + (f.R ? br(f.R.V, 2) + " / " + br(f.R.H, 2) : "—") + "</td><td>" + br(f.razao, 2) + "</td><td>" + (f.status === "aprovado" ? '<span class="ok">atende</span>' : '<span class="falha">' + (f.status === "incompleto" ? "INCOMPLETO" : "NÃO atende") + "</span>") + "</td></tr>"; }).join("");
+      var linhas = fx.map(function (f) { return "<tr><td>" + e(f.escada) + " (" + br(f.desnivel) + " m)</td><td>" + e(rot[f.ponta] || f.ponta) + "</td><td>" + e(ROT[f.modo] || f.modo) + "</td><td>" + e(f.resumo) + "</td><td>" + (f.R ? br(f.R.V, 2) + " / " + br(f.R.H, 2) : "—") + "</td><td>" + br(f.razao, 2) + "</td><td>" + (f.status === "aprovado" ? '<span class="ok">atende</span>' : '<span class="falha">' + (f.status === "incompleto" ? "INCOMPLETO" + (f.aConfirmar ? " — A CONFIRMAR: informe o fck da fundação" : "") : "NÃO atende") + "</span>") + "</td></tr>"; }).join("");
       var det = fx.map(function (f) { return "<p><b>" + e(f.nome) + "</b> (" + e(f.escada) + ")</p><table class=\"t compacta\"><thead><tr><th>Verificação</th><th>Norma / item</th><th>Razão</th></tr></thead><tbody>" + f.verificacoes.map(function (v) { return "<tr><td>" + e(v.nome) + "</td><td>" + e(v.item) + "</td><td>" + br(v.razao, 2) + (v.ok === false ? ' <span class="falha">não passa</span>' : "") + "</td></tr>"; }).join("") + "</tbody></table>" + (f.naoVerificados.length ? "<ul>" + f.naoVerificados.map(function (t) { return "<li>" + e(t) + "</li>"; }).join("") + "</ul>" : ""); }).join("");
       var sec = '<section class="sec" id="sec-fixacao-escadas"><h2><span class="num">E</span>Fixação das escadas (pé, topo, pés de apoio e pilaretes dos patamares)</h2>' +
         "<p>A fixação de cada escada do modelo, dimensionada com os esforços DA PRÓPRIA ESCADA: peso próprio + sobrecarga de escadas (NBR 6120:2019, Tabela 10) e a força do guarda-corpo (Tabela 12), γ da NBR 8800, Tabela 1. Reações pela envoltória das duas hipóteses de apoio da longarina (pé fixo ou topo fixo); numa ponta APOIADA, V = W/2 e a horizontal vai toda para a outra ponta. A estrutura desenhada recebe a escada pelas longarinas (cartão Escadas).</p>" +

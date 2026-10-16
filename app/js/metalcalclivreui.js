@@ -37,6 +37,8 @@
   /* FRENTE S5 (14/10/2026): o envoltório (faces + fechamento → vento), as pranchas e o DXF da estrutura desenhada */
   function EV() { return global.AcoEnvoltorio; }
   function PL() { return global.AcoPranchasLivre; }
+  /* 15/10/2026: as soluções do mecanismo e o "Resolver" (js/acoresolverlivre.js) */
+  function RS() { return global.AcoResolverLivre; }
   /* FRENTE S5: o LOCAL da obra sem formulário — as coordenadas do cadastro da obra ou, sem elas, as que o assistente do
      galpão já achou para esta obra; o endereço/link/coordenadas digitados no envoltório mandam */
   function localObra() {
@@ -50,7 +52,10 @@
   function obra() { var g = global.Gestao, o = null; try { if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel); } catch (e) {} return o; }
   function chave() { return "orcapro:metal:livre:" + obraId(); }
 
-  var PADRAO = { apoios: { basePadrao: "rotulada", bases: {} }, ligacoes: { vigaPilar: "rotulada", vigaViga: "rotulada" }, areas: [], pontuais: [], escadas: [],
+  /* #50 (15/10/2026, pedido do Rogério): base ENGASTADA por padrão ("em galpão a maioria são engastados"), com o fck da fundação
+     (MPa) ao lado — sem ele a placa fica A CONFIRMAR (js/acoligcalc2.js). #51: viga × pilar POR DIREÇÃO da planta (X e Y);
+     "auto" = rígida no plano do pórtico que o motor identificar, rotulada na outra (js/acomodelolivre.js, planoPortico) */
+  var PADRAO = { apoios: { basePadrao: "engastada", bases: {}, fckFundacao: "" }, ligacoes: { vigaPilarX: "auto", vigaPilarY: "auto", vigaViga: "rotulada" }, areas: [], pontuais: [], escadas: [],
                  vento: { ativo: false, v0: "", lat: "", lon: "", local: "", endereco: "", fonte: "", categoria: "II", grupoS3: 2, faces: { frente: true, fundo: true, esquerda: true, direita: true } }, otimizar: false, soSelecao: false, acrescimo: 0.05,
                  envoltorio: { situacao: "livre", porChave: {}, cobertura: { tipo: "sem" } }, acoEstrutura: "" };
   var U = { est: null, obra: null, passo: 1, modo: "passos", r: null, lido: null, G: null, calculando: false, sel: [] };
@@ -59,8 +64,33 @@
   function salvar() { try { if (global.localStorage) localStorage.setItem(chave(), JSON.stringify(U.est)); } catch (e) {} }
   function estado() {
     if (U.obra !== obraId()) { U.obra = obraId(); U.est = null; U.r = null; }
-    if (!U.est) { var s = ler(), e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { e[k] = s[k]; }); U.est = e; }
+    if (!U.est) { var s = ler(), e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { e[k] = s[k]; }); U.est = migrar(e, s); }
     return U.est;
+  }
+  /* MIGRAÇÃO do estado salvo (#50/#51, 15/10/2026). O estado é gravado INTEIRO (salvar → JSON de U.est), então todo estado antigo
+     tem basePadrao gravado — não dá para saber se "rotulada" foi escolha ou o padrão antigo: o que está gravado MANTÉM; só o
+     estado sem o campo pega o padrão novo (engastada). Ligações: o vigaPilar único antigo vira as DUAS direções iguais a ele. */
+  var LIG_OK = { rigida: 1, rotulada: 1, auto: 1 };
+  var MSG_PADRAO = "Padrão desde a 1.2.149: base engastada e viga × pilar automática — confira.";
+  function padraoNovo(e) { return !!(e && ((e.apoios && e.apoios.padraoNovo) || (e.ligacoes && e.ligacoes.padraoNovo))); }
+  function migrar(e, salvo) {
+    /* o que veio GRAVADO (salvo = o estado lido; null = estado novo) decide se o padrão novo foi aplicado sem escolha */
+    var sa = salvo && salvo.apoios, sl = salvo && salvo.ligacoes;
+    var baseGravada = !!(sa && (sa.basePadrao === "rotulada" || sa.basePadrao === "engastada")), ligGravada = !!(sl && ((LIG_OK[sl.vigaPilarX] && LIG_OK[sl.vigaPilarY]) || sl.vigaPilar === "rigida" || sl.vigaPilar === "rotulada"));
+    var ap = e.apoios = e.apoios && typeof e.apoios === "object" ? e.apoios : copia(PADRAO.apoios);
+    /* revisão 1.2.149: o padrão novo aplicado sem escolha fica MARCADO (padraoNovo) até o engenheiro escolher — a decisão e o resumo dizem "confira" */
+    if (ap.basePadrao !== "rotulada" && ap.basePadrao !== "engastada") ap.basePadrao = PADRAO.apoios.basePadrao;
+    if (!baseGravada && ap.padraoNovo == null) ap.padraoNovo = true;
+    if (!ap.bases || typeof ap.bases !== "object") ap.bases = {};
+    if (ap.fckFundacao == null) ap.fckFundacao = "";
+    var lg = e.ligacoes = e.ligacoes && typeof e.ligacoes === "object" ? e.ligacoes : copia(PADRAO.ligacoes);
+    var vp = lg.vigaPilar === "rigida" || lg.vigaPilar === "rotulada" ? lg.vigaPilar : null;
+    if (!LIG_OK[lg.vigaPilarX]) lg.vigaPilarX = vp || PADRAO.ligacoes.vigaPilarX;
+    if (!LIG_OK[lg.vigaPilarY]) lg.vigaPilarY = vp || PADRAO.ligacoes.vigaPilarY;
+    if (!ligGravada && lg.padraoNovo == null) lg.padraoNovo = true;
+    delete lg.vigaPilar;
+    if (lg.vigaViga !== "rigida" && lg.vigaViga !== "rotulada") lg.vigaViga = "rotulada";
+    return e;
   }
   function caixas() { var M = MU(), st = M && M.estado ? M.estado() : null; return (st && st.caixas) || []; }
   /* VÍNCULOS (14/10/2026, js/bimvinculos.js): o resultado guarda a ASSINATURA da geometria (linhas das barras, fundações)
@@ -84,7 +114,7 @@
     var ids = e.soSelecao ? selecao() : idsPortico(e);
     U.lido = M.ler(caixas(), { ids: ids && ids.length ? ids : null, acoEstrutura: e.acoEstrutura || null });
     U.G = null; U.env = null;
-    if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilar: e.ligacoes.vigaPilar, vigaViga: e.ligacoes.vigaViga, rigidezLigacoes: e.ligacoes.rigidez === "sim", ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
+    if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilarX: e.ligacoes.vigaPilarX, vigaPilarY: e.ligacoes.vigaPilarY, padraoNovo: padraoNovo(e), vigaViga: e.ligacoes.vigaViga, rigidezLigacoes: e.ligacoes.rigidez === "sim", ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
     if (U.G && EV()) { try { U.env = EV().ler(U.G, { eixos: eixosModelo() }); } catch (er2) { U.env = null; } }
     return U.lido;
   }
@@ -228,17 +258,29 @@
     h += "</div>";
     h += envoltorioHtml() + apoiosHtml();
     var pil = G ? G.bases : [];
-    h += '<div class="ml-card"><h4>Bases dos pilares</h4><div class="ml-lin">' + seg("basePadrao", e.apoios.basePadrao, [["rotulada", "Todas rotuladas"], ["engastada", "Todas engastadas"]]) + '<span class="ml-nota">Rotulada: a fundação recebe só forças. Engastada: recebe momento (bloco maior, chumbadores fora das mesas).</span></div>' +
+    var fckV = e.apoios.fckFundacao, semFck = fckV == null || String(fckV).trim() === "" || !(num(String(fckV).replace(",", "."), 0) > 0);
+    var algumaEng = pil.some(function (b) { return b.tipo === "engastada"; }) || (!pil.length && e.apoios.basePadrao === "engastada");
+    h += '<div class="ml-card" data-ml="bases"><h4>Bases dos pilares</h4><div class="ml-lin">' + seg("basePadrao", e.apoios.basePadrao, [["engastada", "Todas engastadas"], ["rotulada", "Todas rotuladas"]]) + '<span class="ml-nota">Padrão: engastada (em galpão a maioria das bases é engastada). Engastada: a fundação recebe momento (bloco maior, chumbadores fora das mesas). Rotulada: recebe só forças.</span></div>' +
+      '<div class="ml-lin"><label class="ml-campo">fck da fundação (MPa)<input data-ml-campo="fckFundacao" value="' + esc(fckV == null ? "" : String(fckV)) + '" inputmode="decimal" placeholder="ex.: 25" style="width:7em"></label><span class="ml-nota">Os chumbadores da placa ancoram no concreto da fundação: sem o fck a ancoragem não é verificada e a placa fica A CONFIRMAR. O fck informado na fundação desenhada (Propriedades) manda sobre este; vale a partir do próximo cálculo.</span></div>' +
+      (semFck && algumaEng ? '<p class="ml-aviso" data-ml="sem-fck">Base engastada sem o fck da fundação: as placas de base ficam A CONFIRMAR até informar o fck.</p>' : "") +
       (pil.length ? '<table class="ml-t"><thead><tr><th>Pilar</th><th>Peça</th><th>Cota da base</th><th>Base</th></tr></thead><tbody>' + pil.map(function (b) {
         var val = e.apoios.bases[b.peca] || "";
         return "<tr><td>" + esc(b.mid) + "</td><td>" + esc((U.lido.pecas.filter(function (p) { return p.id === b.peca; })[0] || {}).nome || b.peca) + '</td><td class="n">' + fmt(b.cota, 2) + ' m</td><td><select data-ml-campo="base" data-ml-peca="' + esc(b.peca) + '"><option value=""' + (!val ? " selected" : "") + ">como todas (" + (e.apoios.basePadrao === "engastada" ? "engastada" : "rotulada") + ')</option><option value="rotulada"' + (val === "rotulada" ? " selected" : "") + '>rotulada</option><option value="engastada"' + (val === "engastada" ? " selected" : "") + ">engastada</option></select></td></tr>";
       }).join("") + "</tbody></table>" : '<p class="ml-nota">Nenhuma base encontrada: a ponta de baixo do pilar que não encosta em nenhuma peça vira base.</p>') + "</div>";
     h += '<div class="ml-card"><h4>Ligações que NÃO foram desenhadas</h4><p class="ml-nota" style="margin-top:0">A ligação desenhada (chapa de extremidade → rígida; cantoneira dupla, clip, gusset → rotulada; cobrejunta → contínua) sempre manda.</p>' +
-      '<div class="ml-lin"><span style="min-width:120px">Viga × pilar</span>' + seg("vigaPilar", e.ligacoes.vigaPilar, [["rotulada", "Rotulada"], ["rigida", "Rígida (pórtico)"]]) + "</div>" +
+      dirLigHtml(G, e) +
       '<div class="ml-lin"><span style="min-width:120px">Viga × viga</span>' + seg("vigaViga", e.ligacoes.vigaViga, [["rotulada", "Rotulada"], ["rigida", "Rígida"]]) + "</div>" +
       /* frente D (15/10/2026): a ponta de viga com ligação RÍGIDA desenhada e rigidez calculada (4E, 4ES, soldada) entra como mola Sj,ini/η */
       '<div class="ml-lin" title="Ligação de momento desenhada com rigidez calculada (método dos componentes, EN 1993-1-8): a ponta da viga vira mola rotacional Sj,ini/η (5.1.2). Sem rigidez válida, a ponta fica rígida e o motivo sai nas decisões."><span style="min-width:120px">Rigidez das ligações</span>' + seg("rigidezLig", e.ligacoes.rigidez === "sim" ? "sim" : "nao", [["nao", "Não considerar"], ["sim", "Considerar (mola Sj)"]]) + "</div>" + pontasHtml(G, e) + "</div>";
     return h;
+  }
+  /* #51 (15/10/2026): viga × pilar POR DIREÇÃO da planta — "Automático" mostra o que o motor decidiu agora (plano do pórtico) */
+  function dirLigHtml(G, e) {
+    var LD = G && G.ligDirecao, au = LD && LD.auto;
+    function lin(d) { var v = e.ligacoes["vigaPilar" + d]; return '<div class="ml-lin" data-ml="vp' + d + '"><span style="min-width:150px">Vigas na direção ' + d + '</span>' + seg("vigaPilar" + d, v, [["auto", "Automático"], ["rotulada", "Rotulada"], ["rigida", "Rígida (pórtico)"]]) + (LD && v === "auto" ? '<span class="ml-nota">agora: ' + esc(LD[d].txt) + "</span>" : "") + "</div>"; }
+    var nota = au ? (au.plano ? "Plano do pórtico identificado na direção " + au.plano + ": " + au.motivo + "." : "Não deu para identificar o plano do pórtico com segurança (" + au.motivo + "): no Automático as duas direções ficam rotuladas — escolha Rígida na direção do pórtico.") : "";
+    return '<p class="ml-nota" style="margin:6px 0 0"><b>Viga × pilar</b> — no galpão: rígida no plano do pórtico, rotulada na longitudinal (o X do contraventamento segura). X e Y são os eixos da planta; a viga oblíqua usa a direção dominante; Ponta a ponta e a ligação desenhada mandam sobre a direção.</p>' +
+      lin("X") + lin("Y") + (nota ? '<p class="ml-nota" data-ml="plano-portico">' + esc(nota) + "</p>" : "");
   }
   /* SIMULAÇÃO S2 (14/10/2026): a ligação de CADA PONTA de viga (sem ligação desenhada) — o pórtico espacial tem joelhos
      rígidos nos pórticos e as vigas de ligação rotuladas; só o padrão geral não dava para fazer isso pela tela */
@@ -374,18 +416,21 @@
     return '<h3>Calcular</h3><p class="ml-d">Combinações da NBR 8681, análise de 2ª ordem, verificação de todas as barras (NBR 8800 / NBR 14762), flechas (NBR 8800, Anexo C), reações e o memorial.</p>' +
       '<div class="ml-card"><label class="ml-lin" style="gap:6px"><input type="checkbox" data-ml-campo="otimizar"' + (e.otimizar ? " checked" : "") + "> <b>Achar o perfil mais leve</b> de cada grupo de peças iguais (mesmo papel e mesmo perfil) — o cálculo inteiro é refeito a cada troca</label>" +
       (gr.length ? '<table class="ml-t"><thead><tr><th>Grupo</th><th>Perfil</th><th>Peças</th></tr></thead><tbody>' + gr.map(function (k) { var g = G.grupos[k]; return "<tr><td>" + esc({ pilar: "Pilares", viga: "Vigas", terca: "Terças", diagonal: "Diagonais" }[g.papel] || g.papel) + "</td><td>" + esc(g.perfil) + '</td><td class="n">' + g.membros.length + "</td></tr>"; }).join("") + "</tbody></table>" : "") + "</div>" +
-      '<div class="ml-card"><h4>Resumo</h4><ul class="ml-l"><li>' + esc(resumoPasso(1)) + "</li><li>" + esc(resumoPasso(2)) + "</li><li>Ligações sem desenho: viga × pilar " + esc(e.ligacoes.vigaPilar) + ", viga × viga " + esc(e.ligacoes.vigaViga) + "</li></ul>" + (!e.areas.length && !e.pontuais.length ? '<p class="ml-aviso">Sem área nem carga pontual: só o peso próprio será calculado.</p>' : "") + "</div>";
+      '<div class="ml-card"><h4>Resumo</h4><ul class="ml-l"><li>' + esc(resumoPasso(1)) + "</li><li>" + esc(resumoPasso(2)) + "</li><li>Ligações sem desenho: viga × pilar X " + esc(e.ligacoes.vigaPilarX === "auto" ? "automático" : e.ligacoes.vigaPilarX) + " / Y " + esc(e.ligacoes.vigaPilarY === "auto" ? "automático" : e.ligacoes.vigaPilarY) + ", viga × viga " + esc(e.ligacoes.vigaViga) + "</li>" + (padraoNovo(e) ? '<li class="ml-aviso" data-ml="padrao-novo">' + esc(MSG_PADRAO) + "</li>" : "") + "</ul>" + (!e.areas.length && !e.pontuais.length ? '<p class="ml-aviso">Sem área nem carga pontual: só o peso próprio será calculado.</p>' : "") + "</div>";
   }
   /* ---------------------------------------------------------- resultado */
   function cor(r) { return r > 1 ? "var(--ml-erro)" : r > 0.9 ? "var(--ml-aviso)" : r > 0.7 ? "#d4a017" : "var(--ml-ok)"; }
   function barra(r) { return '<div class="ml-barra"><i style="width:' + Math.min(100, Math.round(r * 100)) + "%;background:" + cor(r) + '"></i></div>'; }
   function resultadoHtml(r) {
     if (!r) return '<p class="ml-nota">Ainda não há cálculo.</p>';
-    var h = "";
+    var h = (U.pilhaSol || []).length ? '<div class="ml-lin" data-ml="sol-desfazer" style="margin-bottom:8px"><span class="ml-nota">Última solução: ' + esc(U.pilhaSol[U.pilhaSol.length - 1].texto.split(" (")[0]) + '</span><button class="ml-bt mini" data-ml-acao="sol-desfazer">Desfazer a solução</button></div>' : "";
     if (!r.ok) {
       h += '<div class="ml-prob" data-ml="problemas"><h3 style="margin:0 0 6px">O cálculo não seguiu</h3>' + arr(r.problemas).map(function (p, kP) {
-        return '<p data-ml-prob="' + esc(p.tipo) + '"><b>' + esc(p.texto) + "</b></p>" + (arr(p.pecas).length ? '<button class="ml-bt mini" data-ml-acao="selecionar" data-ml-v="' + esc(p.pecas.join(",")) + '">Selecionar no modelo</button> ' : "") +
-          arr(p.solucoes).map(function (s) { var bt = BOTAO_SOL[s.id]; return bt ? '<button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="' + s.id + '" data-ml-p="' + kP + '">' + esc(bt === true ? s.texto : bt) + "</button> " : '<span class="ml-nota">· ' + esc(s.texto) + "</span> "; }).join("");
+        var nTest = arr(p.solucoes).filter(function (s) { return RS() && RS().TESTAVEIS[s.id]; }).length;
+        return '<p data-ml-prob="' + esc(p.tipo) + '"><b>' + esc(p.texto) + "</b></p>" + (arr(p.pecas).length ? '<button class="ml-bt mini" data-ml-acao="selecionar" data-ml-v="' + esc(p.pecas.join(",")) + '">Selecionar no modelo</button> <button class="ml-bt mini" data-ml-acao="mostrar3d" data-ml-p="' + kP + '">Mostrar no 3D</button> ' : "") +
+          (nTest >= 2 ? '<button class="ml-bt mini pri" data-ml-acao="resolver" data-ml-p="' + kP + '" title="Testa cada solução numa cópia do modelo (o cálculo inteiro refeito, nada gravado) e propõe a mais leve que fecha">Resolver (testar ' + nTest + " soluções)</button> " : "") +
+          arr(p.solucoes).map(function (s) { var bt = BOTAO_SOL[s.id]; return bt ? '<button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="' + s.id + '" data-ml-p="' + kP + '"' + (s.muda ? ' title="' + esc(s.texto + " — " + s.muda) + '"' : "") + ">" + esc(bt === true ? s.texto : bt) + "</button> " : '<span class="ml-nota">· ' + esc(s.texto) + "</span> "; }).join("") +
+          (U.resolver && U.resolver.r === r && U.resolver.kP === kP ? resolverHtml(U.resolver) : "");
       }).join("<hr style='border:0;border-top:1px solid var(--ml-linha)'>") + (!arr(r.problemas).length ? "<p>" + esc(r.motivo || "") + "</p>" : "") + "</div>";
       return h;
     }
@@ -397,6 +442,8 @@
       sit = "desatualizado";
       h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h3 style="margin:0 0 6px">DESATUALIZADO — recalcular</h3><p>O modelo mudou depois deste cálculo (peças movidas ou esticadas — inclusive as que acompanharam pelos vínculos — ou fundação deslocada). Os números abaixo são do modelo de antes e <b>não valem</b> para o de agora; memorial, pranchas, CYPE e a troca de perfis ficam bloqueados até recalcular.</p><button class="ml-bt pri" data-ml-acao="calcular">Recalcular</button></div>';
     }
+    var pr0 = r.parametros || {};
+    if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
     h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
       '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
       '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
@@ -434,6 +481,7 @@
   function campo(el) {
     var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : (global.UnidadesUI ? UnidadesUI.texto(el) : el.value), rer = false;
     if (c === "soSelecao") { e.soSelecao = v; rer = true; }
+    else if (c === "fckFundacao") { e.apoios.fckFundacao = String(v == null ? "" : v).trim(); rer = true; }
     else if (c === "base") { var p = el.getAttribute("data-ml-peca"); if (v) e.apoios.bases[p] = v; else delete e.apoios.bases[p]; }
     else if (c === "ponta") { var chv = el.getAttribute("data-ml-chave"); e.ligacoes.pontas = e.ligacoes.pontas || {}; if (v) e.ligacoes.pontas[chv] = v; else delete e.ligacoes.pontas[chv]; rer = true; }
     else if (/^area\./.test(c)) { var a = e.areas[k]; if (!a) return; var f = c.slice(5); a[f] = v; if (f === "uso" || f === "cobertura") rer = true; if (f === "qInformado" || f === "alturaEstoque" || f === "inclinacaoPct") rer = true; }
@@ -462,8 +510,8 @@
     if (a === "galpao") { fechar(); if (global.MetalCalcUI) MetalCalcUI.abrir(); return; }
     if (a === "passo") { U.modo = "passos"; U.passo = Math.max(1, Math.min(3, +v)); render(); return; }
     if (a === "resultado") { U.modo = U.r ? "resultado" : "passos"; render(); return; }
-    if (a === "basePadrao") { e.apoios.basePadrao = v; salvar(); render(); return; }
-    if (a === "vigaPilar" || a === "vigaViga") { e.ligacoes[a] = v; salvar(); render(); return; }
+    if (a === "basePadrao") { e.apoios.basePadrao = v; delete e.apoios.padraoNovo; salvar(); render(); return; }
+    if (a === "vigaPilarX" || a === "vigaPilarY" || a === "vigaViga") { e.ligacoes[a] = v; if (a !== "vigaViga") delete e.ligacoes.padraoNovo; salvar(); render(); return; }
     if (a === "rigidezLig") { e.ligacoes.rigidez = v === "sim" ? "sim" : "nao"; salvar(); render(); return; }
     if (a === "selecionar") { selecionarNoModelo(String(v || "").split(",").filter(Boolean)); return; }
     if (a === "area-niveis") {
@@ -505,6 +553,11 @@
     if (a === "todas-pecas") { e.portico = null; salvar(); lerModelo(); render(); return; }   /* PÓRTICOS M4 */
     if (a === "situacao") { e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); e.envoltorio.situacao = v === "interna" ? "interna" : "livre"; salvar(); render(); return; }
     if (a === "solucao") return solucao(v, el);
+    if (a === "mostrar3d") return mostrar3d(el);
+    if (a === "resolver") return resolverIniciar(el);
+    if (a === "resolver-cancelar") { if (U.resolver) U.resolver.cancelado = true; U.resolver = null; render(); return; }
+    if (a === "resolver-aplicar") { var RZ = U.resolver, sA = RZ && arr(RZ.solucoes).filter(function (s) { return s.id === v; })[0]; if (!sA) return; U.resolver = null; return aplicarSolucao(sA); }
+    if (a === "sol-desfazer") return desfazerSolucao();
     if (a === "pranchas") return pranchas();
     if (a === "pranchas-voltar") { U.modo = "pranchas"; render(); return; }
     if (a === "prancha-ver") { U.folha = +v || 0; U.modo = "folha"; render(); return; }
@@ -528,12 +581,17 @@
     U.env.faces.forEach(function (fc) { if (f.semEscolha.indexOf(fc.id) >= 0) { env0.porChave[E.chaveFace(fc)] = { tipo: "aberta" }; n++; } });
     salvar(); try { vedacaoNoModelo(); } catch (eV) {} render(); toast(n ? n + " face(s) sem escolha marcada(s) como ABERTAS." : "Todas as faces já têm fechamento.", "ok", 5000);
   }
-  var BOTAO_SOL = { "engastar-bases": true, "ligacoes-rigidas": true, contraventar: "Gerar o contraventamento (X nos planos que se movem)", "contraventar-plano": "Gerar o X no plano do piso",
+  var BOTAO_SOL = { "engastar-bases": true, "ligacoes-rigidas": true, "completar-x": "Completar o X (diagonal do outro sentido)", "completar-x-todos": "Completar o X em todos os planos", "trocar-diagonais": "Trocar a barra redonda por cantoneira/tubo", contraventar: "Gerar o contraventamento (X nos planos que se movem)", "contraventar-plano": "Gerar o X no plano do piso",
                     ligar: "Ligar as peças soltas (a ponta vai à peça mais perto)", base: "Apoiar os cantos numa parede/estrutura existente", "aco-estrutura": true, "vento-local": true, interna: true, "faces-abertas": true, "rever-envoltorio": true };
   function solucao(v, el) {
     var e = estado(), kP = el ? +el.getAttribute("data-ml-p") : -1, prob = U.r && arr(U.r.problemas)[kP];
-    if (v === "engastar-bases") { e.apoios.basePadrao = "engastada"; salvar(); return calcular(); }
-    if (v === "ligacoes-rigidas") { e.ligacoes.vigaPilar = "rigida"; salvar(); return calcular(); }
+    /* 15/10/2026: as soluções do mecanismo com dados (peças a criar/trocar, o que muda) vão pelo aplicador único — o mesmo do
+       "Resolver": peças por um lote do editor (Ctrl+Z), apoios/ligações com "Desfazer a solução" */
+    var sD = prob && arr(prob.solucoes).filter(function (s) { return s.id === v; })[0];
+    /* REVISÃO (15/10/2026): engastar/rígidas da ESTABILIDADE (sem dados) também pelo aplicador único — com "Desfazer a solução" */
+    if (sD && (sD.novas || sD.trocas || (RS() && RS().estadoDe(sD)))) return aplicarSolucao(sD);
+    if (v === "engastar-bases") { e.apoios.basePadrao = "engastada"; delete e.apoios.padraoNovo; salvar(); return calcular(); }
+    if (v === "ligacoes-rigidas") { e.ligacoes.vigaPilarX = "rigida"; e.ligacoes.vigaPilarY = "rigida"; delete e.ligacoes.padraoNovo; salvar(); return calcular(); }
     if (v === "aco-estrutura") { e.acoEstrutura = "ASTM A572 Gr.50"; salvar(); toast("Peças de aço da aba Estrutura: ASTM A572 Gr.50 (fy 345 MPa) — o padrão de pilar e viga da Metálica. Vai para as decisões do memorial.", "ok", 6000); if (U.modo === "passos") { lerModelo(); render(); return; } return calcular(); }
     if (v === "interna") { e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); e.envoltorio.situacao = "interna"; salvar(); return calcular(); }
     if (v === "vento-local") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var i = doc.querySelector('#ml-veu [data-ml-campo="vento.local"]'); if (i) { i.scrollIntoView({ block: "center" }); i.focus(); } }, 60); return; }
@@ -543,6 +601,92 @@
     if (v === "base") return apoiarCantos(prob ? arr(prob.pecas) : []);
     if (v === "faces-abertas") { marcarFacesAbertas(); return calcular(); }
     if (v === "rever-envoltorio") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var c = doc.querySelector('#ml-veu [data-ml="faces"]'); if (c) c.scrollIntoView({ block: "start" }); }, 60); return; }
+  }
+  /* ============================================================ 15/10/2026: RESOLVER O MECANISMO (js/acoresolverlivre.js)
+     Pedido do Rogério: "fala o problema e coloca o botão de corrigir o problema, mostrar no 3D". O Resolver refaz o cálculo
+     INTEIRO numa cópia para cada solução (uma por vez, a tela atualiza entre elas — o cálculo não roda em Worker), descarta
+     as que não fecham e PROPÕE a de menor acréscimo de aço (empate → menos mudança). Nada é aplicado sem o clique em
+     "Aplicar"; peças vão num lote do editor (Ctrl+Z) e apoios/ligações têm "Desfazer a solução". */
+  var LIM_RESOLVER = 45000;
+  function resolverIniciar(el) {
+    var R0 = RS(), D = DL(), r = U.r, kP = el ? +el.getAttribute("data-ml-p") : 0, prob = r && arr(r.problemas)[kP];
+    if (!R0 || !D || !prob) { toast("O Resolver não carregou (js/acoresolverlivre.js).", "erro"); return; }
+    if (barrarVelho()) return;
+    var sols = arr(prob.solucoes).filter(function (s) { return R0.TESTAVEIS[s.id]; });
+    if (!sols.length) { toast("Nenhuma solução deste problema tem teste automático.", "aviso"); return; }
+    var Z = U.resolver = { r: r, kP: kP, solucoes: sols, ent: entrada(), testes: [], i: 0, t0: Date.now(), rodando: true, cancelado: false };
+    render();
+    function passo() {
+      if (U.resolver !== Z || Z.cancelado) return;
+      if (Z.i >= sols.length) { var esc0 = R0.escolher(Z.testes); Z.proposta = esc0.proposta; Z.porque = esc0.porque; Z.rodando = false; render(); status(Z.proposta ? "Resolver: proposta pronta — confira e aplique (nada foi mudado)." : "Resolver: nenhuma solução fecha a análise."); return; }
+      var s = sols[Z.i];
+      if (Date.now() - Z.t0 > LIM_RESOLVER) Z.testes.push({ id: s.id, texto: s.texto, muda: s.muda, massa: s.massa, fecha: false, naoTestada: true, motivo: "não testada: passou do limite de " + Math.round(LIM_RESOLVER / 1000) + " s" });
+      else { try { Z.testes.push(R0.testar(Z.ent, s)); } catch (e) { Z.testes.push({ id: s.id, texto: s.texto, fecha: false, motivo: "erro: " + (e && e.message) }); } }
+      Z.i++; render(); setTimeout(passo, 30);
+    }
+    setTimeout(passo, 40);
+  }
+  function resolverHtml(Z) {
+    var h = '<div class="ml-card" data-ml="resolver" style="margin-top:10px;border-color:var(--ml-aco)"><h4 style="margin:0 0 6px">Resolver o problema</h4>';
+    if (Z.rodando) {
+      var s = Z.solucoes[Z.i];
+      h += '<p class="ml-nota" data-ml="resolver-progresso">Testando ' + Math.min(Z.i + 1, Z.solucoes.length) + " de " + Z.solucoes.length + (s ? ": " + esc(s.texto.split(":")[0]) : "") + "… (o cálculo inteiro numa cópia do modelo; nada é gravado)</p>" +
+        '<button class="ml-bt mini" data-ml-acao="resolver-cancelar">Cancelar</button></div>';
+      return h;
+    }
+    var P = Z.proposta ? arr(Z.solucoes).filter(function (x) { return x.id === Z.proposta; })[0] : null, tP = P ? Z.testes.filter(function (t) { return t.id === P.id; })[0] : null;
+    if (P) {
+      h += '<p data-ml="resolver-proposta"><b>Proposta: ' + esc(P.texto) + '</b></p><ul class="ml-l"><li>O que muda: ' + esc(P.muda || "") + "</li>" +
+        (arr(P.novas).length ? "<li>Peças criadas: " + P.novas.length + " (" + esc(P.novas[0].cat || "") + ")</li>" : "") +
+        (arr(P.trocas).length ? "<li>Peças trocadas: " + esc(P.trocas.map(function (t) { return t.membro + " " + t.de + " → " + t.para; }).join("; ")) + "</li>" : "") +
+        "<li>Aço a mais: " + fmt(tP ? tP.massa : P.massa, 1) + " kg (perfis)</li>" + (tP && tP.efeito ? '<li class="ml-aviso" data-ml="resolver-efeito">Efeito: ' + esc(tP.efeito) + "</li>" : "") +
+        (tP ? "<li>Recalculada: a análise fecha — " + (tP.aprovado ? "barras aprovadas" : (tP.falhas || 0) + " verificação(ões) ainda não atende(m) (ajuste os perfis depois)") + "</li>" : "") + "</ul>" +
+        '<p class="ml-nota">' + esc(Z.porque || "") + "</p>" +
+        '<div class="ml-lin"><button class="ml-bt pri" data-ml-acao="resolver-aplicar" data-ml-v="' + esc(P.id) + '">Aplicar</button> <button class="ml-bt" data-ml-acao="resolver-cancelar">Cancelar</button></div>';
+    } else h += '<p class="ml-aviso" data-ml="resolver-nenhuma"><b>Nenhuma solução automática fecha a análise.</b> ' + esc(Z.porque || "") + "</p>" + '<button class="ml-bt mini" data-ml-acao="resolver-cancelar">Fechar</button>';
+    h += '<table class="ml-t" data-ml="resolver-testes" style="margin-top:8px"><thead><tr><th>Solução testada</th><th>Análise</th><th>Aço a mais</th><th></th></tr></thead><tbody>' + Z.testes.map(function (t) {
+      return "<tr><td>" + esc(String(t.texto || t.id).split(" — ")[0].split(":")[0]) + (t.efeito ? '<br><span class="ml-nota">global — ' + esc(t.efeito) + "</span>" : "") + "</td><td>" + (t.fecha ? '<span style="color:var(--ml-ok)">fecha' + (t.aprovado ? ", aprovada" : ", " + (t.falhas || 0) + " falha(s)") + "</span>" : '<span class="ml-aviso">' + esc(t.naoTestada || t.inconsistente ? t.motivo : "não fecha") + "</span>") + '</td><td class="n">' + (t.fecha ? fmt(t.massa, 1) + " kg" : "—") + "</td><td>" +
+        (t.fecha && t.id !== Z.proposta ? '<button class="ml-bt mini" data-ml-acao="resolver-aplicar" data-ml-v="' + esc(t.id) + '">Aplicar esta</button>' : "") + "</td></tr>";
+    }).join("") + "</tbody></table></div>";
+    return h;
+  }
+  /* o aplicador ÚNICO das soluções com dados (o botão da solução e o "Aplicar" do Resolver) */
+  function aplicarSolucao(sol) {
+    var R0 = RS(), M = MU(), e = estado(); if (!R0 || !sol) return;
+    if (barrarVelho()) return;
+    var est = R0.estadoDe(sol);
+    if (est) {
+      U.pilhaSol = U.pilhaSol || []; U.pilhaSol.push({ apoios: copia(e.apoios), ligacoes: copia(e.ligacoes), texto: sol.texto });
+      if (est.basePadrao) { e.apoios.basePadrao = est.basePadrao; delete e.apoios.padraoNovo; }
+      if (est.vigaPilar) { delete e.ligacoes.padraoNovo; e.ligacoes.vigaPilar = est.vigaPilar; e.ligacoes.vigaPilarX = est.vigaPilar; e.ligacoes.vigaPilarY = est.vigaPilar; }   /* 1.2.149: X/Y mandam sobre o vigaPilar antigo (#51) */
+      salvar(); toast("Aplicado: " + (sol.muda || sol.texto) + " — \"Desfazer a solução\" no resultado volta como estava. Calculando…", "ok", 8000);
+      return calcular();
+    }
+    if (!M || !M.enviar) { toast("O editor do modelo não está aberto.", "erro"); return; }
+    var lt = R0.opsModelo(sol, caixas(), function () { return M.novoId(); });
+    if (!lt.lote) { toast("Nada a aplicar" + (lt.erros.length ? ": " + lt.erros.join("; ") : "."), "aviso", 8000); return; }
+    if (!M.enviar(lt.lote)) { toast("O editor recusou a solução.", "erro"); return; }
+    toast("Aplicado: " + (sol.muda || sol.texto) + (lt.erros.length ? " (não feito: " + lt.erros.join("; ") + ")" : "") + " — Ctrl+Z desfaz. Calculando…", "ok", 9000);
+    setTimeout(calcular, 300);
+  }
+  function desfazerSolucao() {
+    var e = estado(), p = U.pilhaSol || []; if (!p.length) return false;
+    var q = p.pop(); e.apoios = q.apoios; e.ligacoes = q.ligacoes; salvar(); toast("Desfeito: " + q.texto.split(" (")[0] + ".", "ok", 6000); calcular(); return true;
+  }
+  /* "Mostrar no 3D": seleciona as peças do problema (as do nó e as diagonais do plano) e enquadra; a janela do cálculo
+     fecha para o 3D aparecer — o resultado fica guardado (reabrir o cálculo volta a ele) */
+  function mostrar3d(el) {
+    var r = U.r, kP = el ? +el.getAttribute("data-ml-p") : 0, prob = r && arr(r.problemas)[kP]; if (!prob) return;
+    var ids = arr(prob.pecas).map(String);
+    arr(prob.solucoes).forEach(function (s) { arr(s.pecas).forEach(function (id) { if (ids.indexOf(String(id)) < 0) ids.push(String(id)); }); });
+    if (!ids.length) { toast("Este problema não aponta peças no modelo.", "aviso"); return; }
+    var uids = ids.map(function (id) { return "edit:" + id; }), feito = false;
+    try { if (global.BIM && BIM.selecionar) { BIM.selecionar(uids, "trocar"); feito = true; } } catch (e1) {}
+    var enq = false; try { if (global.BIM && BIM.enquadrarUids) enq = !!BIM.enquadrarUids(uids); } catch (e2) {}
+    U.ultimoMostrar = { ids: ids, no: prob.no || null, selecionou: feito, enquadrou: enq };
+    if (!feito && !enq) { toast("O 3D não está disponível aqui.", "aviso"); return; }
+    fechar();
+    toast(ids.length + " peça(s) do problema selecionada(s)" + (prob.no ? " (nó " + prob.no + ")" : "") + (enq ? " e enquadrada(s)" : "") + ". Reabra \"Calcular a estrutura desenhada\" para voltar ao resultado.", "ok", 8000);
   }
   function ajustesCota() {
     if (U.ajustesFeitos) return [];
@@ -768,8 +912,10 @@
       var ligs = []; try { if (global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo) ligs = MetalLigSugUI.ligacoesComCalculo(r); } catch (eL) { ligs = []; }
       U.ultimasLigacoesCompletas = ligs;
       U.ultimasLigacoes = ligs.map(function (l) { return { id: l.id, tipologia: l.info && l.info.tipologia, ok: !!(l.resultado && l.resultado.ok), razao: l.resultado && l.resultado.razao, confere: l.confere, comCalculo: l.comCalculo, fundacao: l.resultado && l.resultado.fundacao ? l.resultado.fundacao.id : null, ajusteCota: l.resultado && l.resultado.ajusteCota ? l.resultado.ajusteCota : null }; });
-      var x = Mm.gerar(r, { ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
-      if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html); } catch (eE) {}   /* S6 (14/10/2026): a fixação das escadas — js/metalescadalinhaui.js */
+      /* 1.2.149: a fixação das escadas calculada UMA vez — INCOMPLETA/A CONFIRMAR barra a emissão (situação + avisos) */
+      var fxE = null, pendE = []; try { if (global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.fixacoesDoModelo) { fxE = MetalEscadaLinhaUI.fixacoesDoModelo(); pendE = MetalEscadaLinhaUI.pendenciasMemorial ? MetalEscadaLinhaUI.pendenciasMemorial(fxE) : []; } } catch (eP) { fxE = null; pendE = []; }
+      var x = Mm.gerar(r, { pendenciasExternas: pendE, ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
+      if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html, fxE); } catch (eE) {}   /* S6 (14/10/2026): a fixação das escadas — js/metalescadalinhaui.js */
       if (x && x.ok) try { x.html = secaoTiposLigacoes(x.html, ligs); } catch (eT) {}   /* relatório por Tipo das ligações dentro do memorial — js/acoliglote.js */
       if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) — js/unidadesmemorial.js */
       U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length, ids: x.secoes.map(function (q) { return q.id; }) } : null;
@@ -829,6 +975,7 @@
       var e = estado(); d = d || {};
       if (d.apoios) e.apoios = copia(d.apoios);
       if (d.ligacoes) e.ligacoes = copia(d.ligacoes);
+      migrar(e, { apoios: d.apoios || e.apoios, ligacoes: d.ligacoes || e.ligacoes });   /* #50/#51: o vigaPilar único da tipologia vira as duas direções; apoios sem basePadrao pegam o padrão */
       if (d.areas) e.areas = copia(d.areas);
       if (d.pontuais) e.pontuais = copia(d.pontuais);
       if (d.envoltorio) { var ev = e.envoltorio || copia(PADRAO.envoltorio); ev.situacao = d.envoltorio.situacao || ev.situacao || "livre"; ev.porChave = copia(d.envoltorio.porChave || {}); ev.cobertura = copia(d.envoltorio.cobertura || { tipo: "sem" }); e.envoltorio = ev; }
@@ -858,7 +1005,14 @@
     secaoTiposLigacoes: secaoTiposLigacoes,
     memorialDocx: memorialDocx,
     ultimoDocx: function () { return U.ultimoDocx || null; },
-    entrada: entrada
+    /* 15/10/2026: o Resolver do mecanismo e o "Mostrar no 3D" (a e2e lê) */
+    resolverEstado: function () { var Z = U.resolver; return Z ? { rodando: Z.rodando, proposta: Z.proposta || null, porque: Z.porque || "", testes: Z.testes.slice() } : null; },
+    ultimoMostrar: function () { return U.ultimoMostrar || null; },
+    entrada: entrada,
+    /* #50/#51 (testes de Node): o padrão e a migração do estado salvo */
+    _padrao: function () { return copia(PADRAO); },
+    _msgPadrao: MSG_PADRAO, _padraoNovo: padraoNovo,
+    _migrar: function (s) { var e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { if (s[k] !== undefined) e[k] = copia(s[k]); }); return migrar(e, s); }
   };
   global.MetalCalcLivreUI = MetalCalcLivreUI;
   if (typeof module !== "undefined" && module.exports) module.exports = MetalCalcLivreUI;

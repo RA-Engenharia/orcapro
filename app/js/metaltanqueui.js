@@ -89,7 +89,7 @@
     if (tipo === "horizontal") g.push({ t: "Geometria", c: [["D", "Diâmetro (m)", "num"], ["L", "Comprimento do costado (m)", "num"], ["anguloSela", "Ângulo da sela", "sel", [["120", "120°"], ["150", "150°"]]], ["bSela", "Largura da sela (m)", "num"], ["alturaSela", "Altura livre sob o tanque (m)", "num"]] });
     else {
       var c = [["D", "Diâmetro (m)", "num"], ["H", "Altura do costado (m)", "num"], ["bordaLivre", "Borda livre (m)", "num"], ["hMorto", "Fundo morto até a saída (m)", "num"]];
-      if (tipo === "elevado") c.push(["alturaTorre", "Altura da torre até o fundo (m)", "num"], ["pilares", "Pilares da torre (o fundo da cuba é dimensionado para 4)", "sel", [["4", "4"]]]);
+      if (tipo === "elevado") c.push(["alturaTorre", "Altura da torre até o fundo (m)", "num"], ["pilares", "Pilares da torre (o fundo da cuba é dimensionado para 4)", "sel", [["4", "4"]]], ["fckFundacao", "fck do concreto dos blocos da torre (MPa; sem ele a ancoragem dos chumbadores fica A CONFIRMAR)", "num"]);
       g.push({ t: "Geometria", c: c });
       g.push({ t: "Teto", c: [["teto", "Teto", "sel", A ? opcoes(A.TETOS) : []], ["inclTeto", "Inclinação do teto (°)", "num"], ["raioDomo", "Raio do domo (× D)", "num"]] });
     }
@@ -98,7 +98,7 @@
       ["vento.categoria", "Terreno (categoria)", "sel", [["I", "I — mar, lago, campo aberto"], ["II", "II — campo com poucos obstáculos"], ["III", "III — sítios, subúrbio afastado"], ["IV", "IV — subúrbio, indústria"], ["V", "V — centro de cidade"]]],
       ["vento.grupoS3", "Uso (S3)", "sel", [["1", "1 — essencial (1,10)"], ["2", "2 — alta ocupação (1,00)"], ["3", "3 — industrial (0,95)"], ["5", "5 — temporário (0,83)"]]],
       ["vento.superficie", "Superfície", "sel", [["rugoso", "Com escada e anéis (Ca maior)"], ["liso", "Lisa"]]],
-      ["sismo.zona", "Zona sísmica (NBR 15421)", "sel", [["0", "0 — quase todo o Brasil"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]]].concat(tipo === "vertical" ? [["ancoragem", "Chumbadores", "sel", [["auto", "Quando precisar (o sistema decide)"], ["sempre", "Sempre"], ["nunca", "Nunca"]]]] : []) });
+      ["sismo.zona", "Zona sísmica (NBR 15421)", "sel", [["0", "0 — quase todo o Brasil"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]]].concat(tipo === "vertical" ? [["ancoragem", "Chumbadores", "sel", [["auto", "Quando precisar (o sistema decide)"], ["sempre", "Sempre"], ["nunca", "Nunca"]]], ["fckFundacao", "fck do concreto da fundação (MPa; com chumbadores, sem ele a ancoragem fica A CONFIRMAR)", "num"]] : []) });
     var ac = [["acessorios.escada", "Acesso", "sel", tipo === "horizontal" || tipo === "elevado" ? [["marinheiro", "Escada de marinheiro"], ["nenhuma", "Nenhum"]] : [["auto", "O sistema escolhe"], ["helicoidal", "Escada helicoidal"], ["marinheiro", "Escada de marinheiro"], ["nenhuma", "Nenhum"]]],
       ["acessorios.plataforma", "Plataforma de topo com guarda-corpo", "check"], ["acessorios.bocaVisitaTeto", "Boca de visita no teto", "check"], ["acessorios.indicadorNivel", "Indicador de nível", "check"]];
     if (tipo !== "horizontal") ac.push(["acessorios.guardaCorpoTeto", "Guarda-corpo no teto", "check"], ["acessorios.passarelaAnel", "Passarela em volta no topo (manutenção)", "check"]);
@@ -109,7 +109,7 @@
   }
   function pegar(o, k) { var ps = k.split("."), x = o; for (var i = 0; i < ps.length; i++) { if (x == null) return null; x = x[ps[i]]; } return x; }
   function por(o, k, v) { var ps = k.split("."), x = o; for (var i = 0; i < ps.length - 1; i++) { if (!x[ps[i]] || typeof x[ps[i]] !== "object") x[ps[i]] = {}; x = x[ps[i]]; } x[ps[ps.length - 1]] = v; }
-  var NUM_TXT = { G: 2, D: 2, H: 2, L: 2, bordaLivre: 2, hMorto: 2, alturaTorre: 2, inclTeto: 1, raioDomo: 2, CA: 1, CAfundo: 1, E: 2, larguraChapa: 2, bSela: 2, alturaSela: 2, "vento.lat": 5, "vento.lon": 5, "vento.v0": 0, x0: 3, y0: 3, z0: 3, giro: 0 };
+  var NUM_TXT = { G: 2, D: 2, H: 2, L: 2, bordaLivre: 2, hMorto: 2, alturaTorre: 2, fckFundacao: 0, inclTeto: 1, raioDomo: 2, CA: 1, CAfundo: 1, E: 2, larguraChapa: 2, bSela: 2, alturaSela: 2, "vento.lat": 5, "vento.lon": 5, "vento.v0": 0, x0: 3, y0: 3, z0: 3, giro: 0 };
 
   /* ------------------------------------------------------------ local da obra (o mesmo do cálculo do galpão) */
   function localObra() {

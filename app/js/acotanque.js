@@ -205,7 +205,7 @@
     vertical: { tipo: "vertical", nome: "", produto: "agua", G: null, D: 6, H: 7.32, bordaLivre: 0.30, hMorto: 0.30, CA: 1.5, CAfundo: 1.5, CAteto: 0,
       aco: "ASTM A36", larguraChapa: 2.44, comprimentoChapa: 6.0, teto: "conico-autoportante", inclTeto: 20, raioDomo: 1.0, Lr: 1.0, Pe: 0.25, isolamento: 0,
       vento: { v0: 35, lat: null, lon: null, categoria: "II", grupoS3: 3, s1: "plano", superficie: "rugoso" }, sismo: { zona: 0 },
-      ancoragem: "auto", acoChumbador: "ASTM F1554 Gr.36", fundacao: "anel",
+      ancoragem: "auto", acoChumbador: "ASTM F1554 Gr.36", fundacao: "anel", fckFundacao: 0,
       acessorios: { escada: "auto", larguraEscada: 0.80, plataforma: true, guardaCorpoTeto: true, bocaVisitaCostado: 1, bocaVisitaTeto: 1, indicadorNivel: true, bocais: "auto" },
       x0: 0, y0: 0, z0: 0, giro: 0 },
     horizontal: { tipo: "horizontal", nome: "", produto: "diesel", G: null, D: 2.5, L: 6.0, A: 0, anguloSela: 120, bSela: 0.25, alturaSela: 0.5, CA: 1.5, E: 0.85, pv: 0,
@@ -215,14 +215,14 @@
       x0: 0, y0: 0, z0: 0, giro: 0 },
     elevado: { tipo: "elevado", nome: "", produto: "agua-potavel", G: null, D: 4.0, H: 4.88, bordaLivre: 0.30, hMorto: 0.15, CA: 1.5, CAfundo: 1.5, CAteto: 0,
       aco: "ASTM A36", larguraChapa: 2.44, comprimentoChapa: 6.0, teto: "conico-autoportante", inclTeto: 20, raioDomo: 1.0, Lr: 1.0, Pe: 0.25, isolamento: 0,
-      alturaTorre: 15, pilares: 4, aberturaBase: 0, paineis: 0, pilar: "auto", contravento: "auto", vigaFundo: "auto",
+      alturaTorre: 15, pilares: 4, aberturaBase: 0, paineis: 0, pilar: "auto", contravento: "auto", vigaFundo: "auto", fckFundacao: 0,
       vento: { v0: 35, lat: null, lon: null, categoria: "II", grupoS3: 3, s1: "plano", superficie: "rugoso" }, sismo: { zona: 0 },
       acessorios: { escada: "marinheiro", plataforma: true, guardaCorpoTeto: true, bocaVisitaTeto: 1, indicadorNivel: true, bocais: "auto" },
       x0: 0, y0: 0, z0: 0, giro: 0 }
   };
   function padrao(tipo) { return clone(PADRAO[tipo] || PADRAO.vertical); }
   function mesclar(a, b) { Object.keys(b || {}).forEach(function (k) { var v = b[k]; if (v == null || v === "") return; if (v && typeof v === "object" && !Array.isArray(v) && a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) mesclar(a[k], v); else a[k] = clone(v); }); return a; }
-  var NUMS = ["G", "D", "H", "L", "A", "bordaLivre", "hMorto", "CA", "CAfundo", "CAteto", "larguraChapa", "comprimentoChapa", "inclTeto", "raioDomo", "Lr", "Pe", "isolamento", "anguloSela", "bSela", "alturaSela", "E", "pv", "alturaTorre", "pilares", "aberturaBase", "paineis", "x0", "y0", "z0", "giro"];
+  var NUMS = ["G", "D", "H", "L", "A", "bordaLivre", "hMorto", "CA", "CAfundo", "CAteto", "larguraChapa", "comprimentoChapa", "inclTeto", "raioDomo", "Lr", "Pe", "isolamento", "anguloSela", "bSela", "alturaSela", "E", "pv", "alturaTorre", "pilares", "aberturaBase", "paineis", "fckFundacao", "x0", "y0", "z0", "giro"];
   function normalizar(par) {
     var tipo = par && TIPOS[par.tipo] ? par.tipo : "vertical", p = mesclar(padrao(tipo), par || {});
     p.tipo = tipo;
@@ -639,6 +639,19 @@
       passo("Cisalhamento (se o atrito não vence)", desl ? "V = F/(n/2) por chumbador; (1,4·tB/Ft,Rd)² + (1,4·V/Fv,Rd)² ≤ 1, Ft,Rd = " + br(FtRd, 1) + " kN, Fv,Rd = " + br(FvRd, 1) + " kN" : "o atrito vence: sem cisalhamento nos chumbadores", desl ? br(Vb, 1) + " kN → " + br(razaoCisal, 3) : "—")
     ], resistencia: adm, solicitante: sig, unidade: "MPa", razao: Math.max(sig / adm, razaoCisal), ok: sig <= adm && razaoCisal <= 1 + 1e-9, conferir: true });
     R.naoVerificado.push("Cadeira de ancoragem no costado e tensão local no costado (API 650, 5.12.10; admissível 170 MPa no vento — Tabela 5-21a) e ancoragem do chumbador no concreto (projeto de fundação)");
+    /* 1.2.149 (revisão, CRÍTICO): a cadeira de ancoragem e a tensão local no costado (5.12.10) e a ancoragem do chumbador no
+       concreto NÃO são calculadas aqui — todo tanque ANCORADO fica INCOMPLETO (o fck não tira esta pendência); antes saía
+       "aprovado — todas as verificações feitas atendem" com elas só no "não verificado" */
+    R.incompleto = "cadeira de ancoragem (API 650, 5.12.10) e ancoragem no concreto pelo projeto de fundação";
+    R.problemas.push({ tipo: "ancoragem-tanque", critico: true, texto: "INCOMPLETO — " + R.incompleto + ": não calculadas aqui (" + n + " × " + esc.nome + ", tração " + br(tB, 1) + " kN" + (desl ? " e cortante " + br(Vb, 1) + " kN" : "") + " por chumbador).",
+      solucoes: [{ id: "cadeira", texto: "Detalhar e verificar a cadeira de ancoragem e a tensão local no costado (API 650, 5.12.10; admissível da Tabela 5-21a) com a tração por chumbador deste memorial" },
+                 { id: "fundacao", texto: "Dimensionar a ancoragem do chumbador no concreto no projeto de fundação com a tração e o cortante por chumbador deste memorial" }] });
+    /* 1.2.149 (revisão de 15/10): tanque ANCORADO sem o fck da base → a mesma pendência CRÍTICA da torre (fck-fundacao): não aprova */
+    if (!(num(p.fckFundacao, 0) > 0) || p.fckFundacaoReferencia) {
+      R.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador no concreto)";
+      R.problemas.push({ tipo: "fck-fundacao", critico: true, texto: "A CONFIRMAR: chumbadores do tanque — falta o fck do concreto da fundação: ancoragem do chumbador no concreto não verificada (" + n + " × " + esc.nome + ", tração " + br(tB, 1) + " kN por chumbador).",
+        solucoes: [{ id: "fck", texto: "Informe o fck do concreto da base do tanque (campo \"fck do concreto da fundação\") e detalhe a ancoragem no projeto de fundação" }] });
+    }
     return { n: n, dc: r3(dc), nome: esc.nome, d: esc.d, U: r2(U), tB: r2(tB), V: r2(Vb), razaoCisal: r3(razaoCisal), aco: p.acoChumbador, ancoragem: "cadeira de ancoragem no costado (API 650, 5.12.10 — detalhar)" };
   }
 
@@ -1139,10 +1152,21 @@
     var qp = P ? P.obter(pil) : null, qd = P ? P.obter(dg) : null;
     if (qp) {
       var od = qp.D || qp.d || 150, tw = qp.t || qp.tn || 6;
-      var pb = L.placaBase({ tipo: "rotulada", pilar: { d: od, bf: od, tw: tw, tf: tw }, aco: { fy: 250, fu: 400 }, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: 25 },
+      /* 1.2.149 (revisão de 15/10): o fck é o dos BLOCOS da torre (p.fckFundacao). Sem ele (ou só adotado) o 25 MPa é de
+         REFERÊNCIA: a aderência do chumbador NÃO é verificada e a base fica A CONFIRMAR — a régua da placa de base comum
+         (js/acoligcalc2.js, 1.2.148); antes o 25 entrava como dado e a ancoragem saía VERIFICADA */
+      var fckF = num(p.fckFundacao, 0), fckRef = !(fckF > 0) || !!p.fckFundacaoReferencia;
+      var pb = L.placaBase({ tipo: "rotulada", pilar: { d: od, bf: od, tw: tw, tf: tw }, aco: { fy: 250, fu: 400 }, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fckF > 0 ? fckF : 25, referencia: fckRef },
         esforcos: [{ comb: esf.combC || "ELU (compressão)", N: -esf.Nc, Vx: esf.V / Math.SQRT2, Vz: esf.V / Math.SQRT2 }].concat(esf.Nt > 0 ? [{ comb: esf.combT || "ELU (arrancamento)", N: esf.Nt, Vx: esf.V / Math.SQRT2, Vz: esf.V / Math.SQRT2 }] : []) });
       arr(pb.verificacoes).forEach(function (v) { R.verificacoes.push({ nome: "Torre — placa de base: " + v.nome, item: v.item + " (AcoLigCalc.placaBase; pilar tubular pela envoltória d = bf = Ø — conferir)", passos: v.passos, resistencia: v.resistencia, solicitante: v.solicitante, unidade: v.unidade, razao: v.razao, ok: v.razao <= 1 + 1e-9, conferir: true }); });
       out.placaBase = { ok: !!pb.ok, resumo: pb.resumo, dimensoes: pb.dimensoes, razao: pb.razao };
+      if (arr(pb.pendenciasPlaca).length) {
+        var ancT = pb.dimensoes && pb.dimensoes.chumbadores ? pb.dimensoes.chumbadores.ancoragem : null;
+        out.placaBase.okVerificacoes = out.placaBase.ok; out.placaBase.ok = false; out.placaBase.aConfirmar = R.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador por aderência)";
+        out.placaBase.pendencias = pb.pendenciasPlaca.slice();
+        R.problemas.push({ tipo: "fck-fundacao", critico: true, texto: "A CONFIRMAR: placa de base da torre — falta o fck do concreto da fundação: ancoragem do chumbador por aderência não verificada" + (ancT ? " (os " + br(ancT, 0) + " mm saíram com fck = 25 MPa de referência)" : "") + ".",
+          solucoes: [{ id: "fck", texto: "Informe o fck do concreto dos blocos da torre (campo \"fck do concreto dos blocos da torre\")" }] });
+      }
       if (!pb.ok) R.problemas.push({ tipo: "ligacao", texto: "Placa de base do pilar da torre não fechou: " + (pb.governante || ""), solucoes: [{ id: "placa", texto: pb.sugestao || "Aumentar a placa ou os chumbadores" }] });
       else R.decisoes.push({ tema: "Torre — placa de base", decisao: pb.resumo, motivo: "a menor placa e o menor chumbador que passam com a compressão, o arrancamento e o cortante da análise da torre" });
     }
@@ -1442,6 +1466,11 @@
     var rz = 0, gov = null, falhas = 0;
     R.verificacoes.forEach(function (v) { if (v.info) return; if (fin(v.razao) && v.razao > rz) { rz = v.razao; gov = v.nome; } if (!v.ok) falhas++; if (v.razao === Infinity) falhas += 0; });
     R.razao = r3(rz); R.governante = gov; R.falhas = falhas; R.aprovado = falhas === 0 && !R.problemas.length;
+    /* 1.2.149: o resultado do aço à parte (sem a pendência do fck) — a escolha da H/D econômica não depende do fck */
+    R.okVerificacoes = falhas === 0 && !R.problemas.filter(function (x) { return x.tipo !== "fck-fundacao" && x.tipo !== "ancoragem-tanque"; }).length;
+    /* a situação dita pelo motor (resumo, memorial e folha usam o mesmo texto): o aço atende, mas há o que NÃO foi feito */
+    var sitExt = []; if (R.incompleto) sitExt.push("INCOMPLETO — " + R.incompleto); if (R.aConfirmar) sitExt.push("A CONFIRMAR: falta o fck do concreto da fundação (ancoragem do chumbador não verificada); informe o fck do concreto da fundação");
+    R.situacaoTexto = !R.aprovado && R.okVerificacoes && sitExt.length ? "NÃO APROVADO — " + sitExt.join("; ") : null;
     /* normas usadas e pendências de conferência */
     var ns = ["api650", "nbr6123", "nbr15421", "nr12"];
     if (p.tipo !== "horizontal") ns.push("nbr7821");
@@ -1478,7 +1507,7 @@
   function resumo(R) {
     var q = R.quantitativo || {}, g = R.geometria || {}, p = R.par;
     var t = p.tipo === "horizontal" ? "Tanque horizontal Ø " + br(g.D, 2) + " × " + br(g.L, 2) + " m" : (p.tipo === "elevado" ? "Reservatório elevado Ø " + br(g.D, 2) + " × " + br(g.H, 2) + " m a " + br(p.alturaTorre, 1) + " m" : "Tanque Ø " + br(g.D, 2) + " × " + br(g.H, 2) + " m");
-    return t + " — " + br(q.volumeUtil, 1) + " m³ úteis (" + br(q.volumeNominal, 1) + " m³ nominais), " + (R.produto ? R.produto.nome.toLowerCase() : "") + "; " + br(q.pesos ? q.pesos.total : 0, 0) + " kg de aço" + (R.aprovado ? "; verificações atendem" : "; NÃO APROVADO — " + (R.falhas + R.problemas.length) + " pendência(s) de cálculo");
+    return t + " — " + br(q.volumeUtil, 1) + " m³ úteis (" + br(q.volumeNominal, 1) + " m³ nominais), " + (R.produto ? R.produto.nome.toLowerCase() : "") + "; " + br(q.pesos ? q.pesos.total : 0, 0) + " kg de aço" + (R.aprovado ? "; verificações atendem" : (R.situacaoTexto ? "; " + R.situacaoTexto : "; NÃO APROVADO — " + (R.falhas + R.problemas.length) + " pendência(s) de cálculo"));
   }
 
   /* ============================================================ DIMENSIONAR PELO VOLUME (relação H/D econômica)
@@ -1494,7 +1523,7 @@
       var hd = H / D; if (hd < 0.35 || hd > 2.0 || D > 61 || D < 1.0) continue;
       var q = clone(base); q.H = H; q.D = r2(D);
       var r = calcular(q); if (!r.ok) continue;
-      var m = r.quantitativo.pesoChapas, ok = r.aprovado;
+      var m = r.quantitativo.pesoChapas, ok = r.okVerificacoes;   /* 1.2.149: sem o fck a base fica A CONFIRMAR, mas a geometria é a mesma */
       alts.push({ aneis: n, H: H, D: q.D, HD: r3(hd), peso: m, pesoTotal: r.quantitativo.pesos.total, aprovado: ok, volumeUtil: r.quantitativo.volumeUtil, _q: q, _r: r });
     }
     /* o mais leve que atende; entre os que ficam a até 3 % dele, o de H/D mais perto de 1 (menos vento, acesso mais curto, base menor) */
@@ -1532,7 +1561,7 @@
     if (_cacheMod[id]) return clone(_cacheMod[id]);
     var o;
     if (m.par.tipo === "horizontal") { var r = calcular(m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: r.ok ? r.par : normalizar(m.par), resumo: r.ok ? r.resumo : r.motivo, justificativa: "Ø " + br(m.par.D, 2) + " × " + br(m.par.L, 2) + " m (L/D ≈ " + br(m.par.L / m.par.D, 1) + ": transporte rodoviário e selas a A ≤ R/2)", peso: r.ok ? r.quantitativo.pesos.total : 0, aprovado: r.ok && r.aprovado }; }
-    else { var d = dimensionar(m.volume, m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: d.ok ? d.par : normalizar(m.par), resumo: d.ok ? d.resultado.resumo : d.motivo, justificativa: d.ok ? d.justificativa : d.motivo, peso: d.ok ? d.resultado.quantitativo.pesos.total : 0, aprovado: d.ok && d.resultado.aprovado }; }
+    else { var d = dimensionar(m.volume, m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: d.ok ? d.par : normalizar(m.par), resumo: d.ok ? d.resultado.resumo : d.motivo, justificativa: d.ok ? d.justificativa : d.motivo, peso: d.ok ? d.resultado.quantitativo.pesos.total : 0, aprovado: d.ok && d.resultado.aprovado, okVerificacoes: d.ok && !!d.resultado.okVerificacoes, aConfirmar: d.ok ? d.resultado.aConfirmar || null : null }; }   /* 1.2.149: o elevado sai A CONFIRMAR até o fck dos blocos */
     o.par.nome = m.nome;
     _cacheMod[id] = o; return clone(o);
   }

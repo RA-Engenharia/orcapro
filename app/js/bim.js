@@ -297,7 +297,7 @@ function montar(host, opts) {
      * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
      * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
      * se re-penduram sozinhos em `posicionarNotaveis`. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.ctlMira, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
@@ -1723,6 +1723,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.vcubeEl = vcMain.el;
   if (visitante) vcMain.el.style.display = 'none';
   S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
+  /* CONTROLE DE VIDEOGAME (15/10/2026, js/bimcontrole.js): Xbox 360 com fio pela Gamepad API. O gancho entra no laço de quadro;
+     sem controle conectado ele volta na 1a linha (custo zero). Sai junto no desmontarMorto — sem listener vazando a cada remontagem. */
+  S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
+  try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
 
   /* =====================================================================
    * O CRISTAL ORÇAPRO (bim/cristal.js + js/bimabertura.js) — ESPEC-BIM-CUBO-LOGO.md
@@ -6175,6 +6179,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      direito), o que está visível NESTA vista (malha visível dentro do campo da câmera) e o ocultar
      temporário (a mesma visibilidade do painel Visibilidade: "Restaurar tudo"/"Mostrar todos" traz de volta) */
   S._uidEm = function (cx, cy) { var hit = raycastEm(cx, cy); return uidDeMalha(hit && hit.object); };
+  S._semFerramenta3d = semFerramenta3d;   /* CONTROLE: sem trena/área/ângulo/desenho armado */
+  S._caixaDeUids = function (uids) { var fica = {}, bx = new THREE.Box3(), bm = new THREE.Box3(); (uids || []).forEach(function (u) { fica[u] = 1; }); todasMalhas(function (m) { var u = uidDeMalha(m); if (!u || !fica[u] || !m.geometry) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); if (m.geometry.boundingBox) { bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); bx.union(bm); } }); return bx; };   /* CONTROLE: a caixa da seleção, para o Y enquadrar */
   S._uidsNaVista3d = function () {
     var fr = new THREE.Frustum(), mt = new THREE.Matrix4(), bx = new THREE.Box3(), out = {};
     camera.updateMatrixWorld(); mt.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); fr.setFromProjectionMatrix(mt);
@@ -16120,6 +16126,7 @@ function desmontarMorto() {
   try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
   try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
   try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}   /* SELECIONAR */
+  try { if (S._ctl) S._ctl.dispor(); } catch (_) {}   /* CONTROLE: gamepadconnected/disconnected + a mira */
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
   try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}

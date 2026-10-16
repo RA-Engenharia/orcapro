@@ -595,7 +595,7 @@
     var M = MLv(); if (!M || !entrada || !entrada.envoltorio) return null;
     var lido = M.ler(entrada.caixas, { ids: entrada.ids, acoEstrutura: entrada.acoEstrutura }); if (!lido.pecas.length || lido.semPerfil.length || lido.semAco.length) return null;
     var ap = entrada.apoios || {}, lg = entrada.ligacoes || {}, G0;
-    try { G0 = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }); } catch (e) { return null; }
+    try { G0 = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }); } catch (e) { return null; }
     var env = ler(G0, { eixos: entrada.envoltorio.eixos }), fech = casarFechamentos(env, entrada.envoltorio);
     var e2 = {}; Object.keys(entrada).forEach(function (k) { e2[k] = entrada[k]; });
     var cg = e2.cargas = copia(entrada.cargas || {}); cg.areas = arr(cg.areas); cg.pontuais = arr(cg.pontuais);

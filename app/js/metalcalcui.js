@@ -165,12 +165,15 @@
     cobertura: { telhaId: "isoeste-standard-tp40-0,50", extra: 0.10, empocamento: false, filtro: "" },
     perfis: { modo: "auto", familia: "GERDAU", pilar: "", viga: "", tapamento: "", partida: {} },
     acos: { perfil: "ASTM A572 Gr.50", frio: "NBR 6650 CF-26", barra: "ASTM A36" },
-    fundacao: { fck: 25, A2_A1: 1 },
+    fundacao: { fck: "", A2_A1: 1 },   /* revisão 1.2.149: o fck começa VAZIO ("— informe —"); sem ele a placa fica A CONFIRMAR */
     contraventamento: "auto", maoFrancesa: "auto"
   };
   /* MODELOS PRONTOS — o cliente escolhe e só ajusta */
   function modelo(id, nome, desc, tags, g, faces, extra) { return { id: id, nome: nome, desc: desc, tags: tags, geometria: g, fechamentos: faces, extra: extra || {} }; }
-  /* ⚠ (12/10/2026) Todo modelo pronto precisa SAIR APROVADO com o motor desta versão: um exemplo
+  /* ⚠ (1.2.149, revisão) As BARRAS de todo modelo pronto saem aprovadas; a PLACA DE BASE fica A CONFIRMAR até o
+     usuário informar o fck da fundação (o seletor começa vazio — fck "do exemplo" seria valor adotado e liberaria a
+     emissão sem o fck real; regra da 1.2.148).
+     ⚠ (12/10/2026) Todo modelo pronto precisa SAIR APROVADO com o motor desta versão: um exemplo
      reprovado na primeira tela tira a confiança no resto. Conferidos em Uberlândia (V0 = 34 m/s):
      · uma água 10 × 20 com base ROTULADA reprovava (deslocamento H/300 = 1,11): o otimizador
        alternava a rigidez entre pilar e viga a cada rodada e parava sem fechar. Engastada: 2,7 t;
@@ -355,7 +358,7 @@
       fechamentos: fechamentosMotor(est),
       contraventamento: est.contraventamento || "auto", maoFrancesa: est.maoFrancesa || "auto",
       cargas: { telhaPeso: ti.peso && ti.peso.valor != null ? ti.peso.valor : 0.06, permanenteExtra: num(est.cobertura.extra, 0.1) },
-      fundacao: { fck: num(est.fundacao && est.fundacao.fck, 25), A2_A1: num(est.fundacao && est.fundacao.A2_A1, 1) }
+      fundacao: { fck: num(est.fundacao && est.fundacao.fck, null), A2_A1: num(est.fundacao && est.fundacao.A2_A1, 1) }
     };
     if (pesoFech) par.cargas.fechamentoPeso = pesoFech;
     var ve = ventoEntrada(est); if (ve) par.vento = ve;
@@ -1253,7 +1256,7 @@
       '<b style="font-size:12.5px">Contraventamento</b><div class="mc-ops" style="margin:6px 0 12px">' + CONTRAVENTOS.map(function (c) { return '<button class="mc-op" data-mc-acao="contravento" data-mc-v="' + c.id + '" aria-pressed="' + (e.contraventamento === c.id) + '"' + (c.dica ? ' data-dica="' + c.dica + '"' : "") + "><b>" + esc(c.nome) + "</b><span>" + esc(c.desc) + "</span></button>"; }).join("") + "</div>" +
       '<b style="font-size:12.5px">Mãos-francesas</b> <button type="button" class="mc-i" data-dica="mao-francesa" aria-label="Mão-francesa">i</button><div style="margin-top:6px">' + seg("maofrancesa", e.maoFrancesa, MAOS.map(function (m) { return [m.id, m.nome]; })) + "</div></section>" +
       '<section class="mc-card"><h4>Fundação <button type="button" class="mc-i" data-dica="' + (e.geometria.base === "engastada" ? "placa-base-engastada" : "placa-base-rotulada") + '" aria-label="Placa de base">i</button></h4><p class="mc-exp">O concreto do bloco onde a placa de base apoia: entra na pressão sob a placa e na ancoragem dos chumbadores (as ligações saem calculadas).</p><div class="mc-campos">' +
-      seletor("fundacao.fck", "Concreto do bloco (fck)", [[20, "C20 — 20 MPa"], [25, "C25 — 25 MPa"], [30, "C30 — 30 MPa"], [35, "C35 — 35 MPa"], [40, "C40 — 40 MPa"]]) +
+      seletor("fundacao.fck", "Concreto do bloco (fck)", [["", "— informe —"], [20, "C20 — 20 MPa"], [25, "C25 — 25 MPa"], [30, "C30 — 30 MPa"], [35, "C35 — 35 MPa"], [40, "C40 — 40 MPa"]]) +
       campo("fundacao.A2_A1", "Relação de áreas A2/A1", "", { min: 1, max: 4, exp: "Bloco ÷ placa; 1 é o mais conservador" }) + "</div></section></aside></div>";
     return h;
   }
@@ -1600,7 +1603,7 @@
     /* ligações */
     var LL = arr(r.ligacoes && r.ligacoes.lista);
     if (LL.length) {
-      h += '<section class="mc-card" data-mc="ligacoes"><h4>Ligações <span class="mc-chip ' + (r.ligacoes.aprovado ? "ok" : "erro") + '">' + (r.ligacoes.aprovado ? "todas passam" : r.ligacoes.falhas + " não passa(m)") + '</span></h4><p class="mc-exp">Dimensionadas com os esforços de todas as combinações últimas (NBR 8800: parafusos, soldas, chapas, placa de base e chumbadores; concreto C' + fmt(num(r.parametros && r.parametros.fundacao && r.parametros.fundacao.fck, 25), 0) + ").</p><table class=\"mc-tab\"><thead><tr><th>Ligação</th><th>O que sai no detalhe</th><th>Aproveitamento</th><th>O que governa</th></tr></thead><tbody>" +
+      h += '<section class="mc-card" data-mc="ligacoes"><h4>Ligações <span class="mc-chip ' + (r.ligacoes.aprovado ? "ok" : "erro") + '">' + (r.ligacoes.aprovado ? "todas passam" : r.ligacoes.falhas + " não passa(m)") + '</span></h4><p class="mc-exp">Dimensionadas com os esforços de todas as combinações últimas (NBR 8800: parafusos, soldas, chapas, placa de base e chumbadores; ' + (num(r.parametros && r.parametros.fundacao && r.parametros.fundacao.fck, null) != null ? "concreto C" + fmt(num(r.parametros.fundacao.fck, 0), 0) : "fck da fundação NÃO informado: placas de base A CONFIRMAR") + ").</p><table class=\"mc-tab\"><thead><tr><th>Ligação</th><th>O que sai no detalhe</th><th>Aproveitamento</th><th>O que governa</th></tr></thead><tbody>" +
         LL.map(function (l) { var rz = num(l.razao, 0), cls = rz > 1 ? "erro" : (rz > 0.9 ? "aviso" : ""), dk = DICA_LIG[l.id];
           return '<tr data-mc="ligacao"' + (dk ? ' data-dica="' + dk + '" data-dica-lado="esquerda"' : "") + "><td><b>" + esc(l.nome) + "</b></td><td style=\"max-width:380px\">" + esc(l.resumo || "") + (l.sugestao ? '<br><span style="color:var(--mc-erro)">' + esc(l.sugestao) + "</span>" : "") + (l.decisao ? '<br><span class="mc-exp" style="margin:0">' + esc(l.decisao) + "</span>" : "") +
             '</td><td><div class="mc-ap"><div class="mc-barra ' + cls + '"><i style="width:' + Math.min(100, rz * 100).toFixed(1) + '%"></i></div><b>' + fmt(rz * 100, 0) + " %</b></div></td><td>" + esc(l.governante || "—") + "</td></tr>"; }).join("") + "</tbody></table></section>";

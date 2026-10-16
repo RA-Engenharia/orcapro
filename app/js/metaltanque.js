@@ -674,10 +674,13 @@
       if (r.torre && r.torre.ligacoes) { var lg = r.torre.ligacoes; col.titulo("TORRE"); col.tabela([{ t: "ITEM", w: 26, al: "E" }, { t: "ESPECIFICAÇÃO", w: 60, al: "E" }], [["Pilares", r.torre.pilares + " × " + r.torre.pilar], ["Diagonais", txtS(r.torre.diagonal)], ["Placa de base", lg.placaBase && lg.placaBase.dimensoes ? lg.placaBase.dimensoes.B + "×" + lg.placaBase.dimensoes.L + "×" + lg.placaBase.dimensoes.t + " mm, " + lg.placaBase.dimensoes.chumbadores.n + " chumb. " + lg.placaBase.dimensoes.chumbadores.id : "-"], ["Lig. diagonal", lg.diagonal ? lg.diagonal.parafusos + " × A325 " + lg.diagonal.d + ", gusset #" + br(lg.diagonal.gusset.t, 1) : "-"]], 6); }
       col.notas([r.resumo, "Cálculo: API 650 (costado, fundo, teto, aberturas 5.7), NBR 6123 (vento), NR-12 (acessos) - ver o memorial de cálculo.",
         "Juntas verticais do costado de topo com penetração total, defasadas no mínimo 5·t entre anéis (API 650, 5.1.5.2).", "Cotas em mm. Ângulos no sentido anti-horário a partir de 0° (planta).",
-        { t: arr(r.naoVerificado).length + " item(ns) não verificado(s) neste cálculo - ver o memorial [PENDENTE].", cor: AP.VERMELHO }]);
+        { t: arr(r.naoVerificado).length + " item(ns) não verificado(s) neste cálculo - ver o memorial [PENDENTE].", cor: AP.VERMELHO }].concat(r.incompleto ? [{ t: "INCOMPLETO: " + r.incompleto + " [PENDENTE].", cor: AP.VERMELHO }] : []).concat(r.aConfirmar ? [{ t: "A CONFIRMAR: ancoragem dos chumbadores " + (p.tipo === "elevado" ? "da torre" : "do tanque") + " sem o fck do concreto da fundação - informe o fck [PENDENTE].", cor: AP.VERMELHO }] : []));
       return { escala: esc0 ? "1:" + esc0 : "INDICADA" };
     } };
     var res = FD.montar([def], { codigo: op.codigo || "TQ-01", obra: op.obra || "", revisao: op.revisao || "R00", empresa: op.empresa, responsavel: op.responsavel, registro: op.registro, descricaoRevisao: "EMISSÃO INICIAL - TANQUE", logo: op.logo });
+    /* 1.2.149: a folha de um cálculo com a base A CONFIRMAR (sem o fck da fundação) avisa antes de emitir */
+    if (res && r.incompleto) res.avisos = arr(res.avisos).concat(["INCOMPLETO — " + r.incompleto + ": não calculadas neste cálculo — detalhe antes de emitir."]);   /* 1.2.149 */
+    if (res && r.aConfirmar) res.avisos = arr(res.avisos).concat(["A CONFIRMAR: " + (r.par && r.par.tipo === "elevado" ? "placa de base da torre" : "chumbadores do tanque") + " sem o fck do concreto da fundação (ancoragem do chumbador não verificada) — informe o fck da fundação antes de emitir."]);
     return res;
   }
   function txtS(v) { return v == null ? "" : String(v); }

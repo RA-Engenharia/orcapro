@@ -972,7 +972,7 @@
         if (dm.solda != null || dm.soldaMesa) lm.push(trw([td(t(x.nome)), td("solda"), td(dm.soldaMesa ? "mesas: " + t(dm.soldaMesa) + (dm.soldaAlma != null ? "; alma: filete " + br(num(dm.soldaAlma, NaN), 0) + " mm" : "") : "filete " + br(num(dm.solda, NaN), 0) + " mm")]));
       });
       var fund = obj(c.par.fundacao).fck != null ? obj(c.par.fundacao) : obj(c.parE.fundacao);
-      lm.push(trw([td("Placas de base"), td("concreto do bloco"), td(fin(num(fund.fck, NaN)) ? "fck = " + un(num(fund.fck, NaN), 0, "MPa") + " (informado)" : "fck adotado no cálculo da pressão sob a placa: passo σc,Rd da " + secao("dimensionamento") + "; o concreto do bloco deve ter, no mínimo, esse fck (premissa, " + S("avisos") + ".2)")]));
+      lm.push(trw([td("Placas de base"), td("concreto do bloco"), td(fin(num(fund.fck, NaN)) && num(fund.fck, 0) > 0 ? "fck = " + un(num(fund.fck, NaN), 0, "MPa") + " (informado)" : "fck da fundação NÃO informado: 25 MPa só de REFERÊNCIA — a ancoragem do chumbador não é verificada e as placas de base ficam A CONFIRMAR até o fck do projeto de fundação")]));
       h += "<p>Materiais adotados pelo cálculo das ligações (arranjos e passos na " + secao("dimensionamento") + "):</p>";
       h += d.tab("Materiais das ligações", ["Ligação", "Item", "Especificação"], lm, { classe: "compacta" });
       if (Mt) {

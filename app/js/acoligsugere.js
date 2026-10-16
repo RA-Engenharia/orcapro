@@ -254,10 +254,22 @@
     /* SIMULAÇÃO S1: a fundação sob o pé do pilar (base) — o topo dá o A2/A1, a altura e o fck dão a ancoragem */
     if (ctx.relacao === "base" && A && LF() && op.fundacoes) {
       var pe = A.mb.X[1] >= 0 ? A.mb.P0 : add(A.mb.P0, mul(A.mb.X, A.mb.L)), fs = LF().fundacaoSob(pe, op.fundacoes, {});
-      if (fs.ok) { ctx.fundacao = fs.fundacao; ctx.suporte = LF().suporteLocal(fs.fundacao, pe, [num(A.mb.B[0], 1), num(A.mb.B[2], 0)]); }
-      else { ctx.semFundacao = fs.motivo; avisos.push("Placa de base sem fundação no modelo (" + fs.motivo + "): fck 25 MPa e A2/A1 = 1 de padrão, e a ancoragem no concreto (cone, gancho, borda) NÃO é verificada — desenhe a sapata/bloco sob o pilar (BIM › Fundação)."); }
+      /* #50 (15/10/2026): o fck da fundação informado na tela "Bases dos pilares" do cálculo da estrutura desenhada (gravado em
+         apoios.fckFundacao e levado no resultado: resultado.parametros.apoios) vale para a fundação desenhada SEM fck e para a
+         placa sem fundação no modelo; o fck das Propriedades da fundação manda sobre ele */
+      var fckT = fckDaTela(op);
+      if (fs.ok) { ctx.fundacao = fs.fundacao; ctx.suporte = LF().suporteLocal(fs.fundacao, pe, [num(A.mb.B[0], 1), num(A.mb.B[2], 0)]);
+        if (!ctx.fundacao.fckInformado && fckT) { ctx.fundacao.fck = fckT; ctx.fundacao.fckInformado = true; ctx.fundacao.fckOrigem = "tela Bases dos pilares"; } }
+      else { ctx.semFundacao = fs.motivo; if (fckT) ctx.fckFundacao = fckT;
+        avisos.push("Placa de base sem fundação no modelo (" + fs.motivo + "): " + (fckT ? "fck " + br(fckT, 0) + " MPa da tela Bases dos pilares" : "fck 25 MPa") + " e A2/A1 = 1 de padrão, e a ancoragem no concreto (cone, gancho, borda) NÃO é verificada — desenhe a sapata/bloco sob o pilar (BIM › Fundação)."); }
     }
     return ctx;
+  }
+  /* #50: o fck (MPa) da tela "Bases dos pilares" — op.fckFundacao ou o do cálculo (resultado.parametros.apoios.fckFundacao); vazio → null */
+  function fckDaTela(op) {
+    var r = op && op.resultado, v = op && op.fckFundacao != null && op.fckFundacao !== "" ? op.fckFundacao : (r && r.parametros && r.parametros.apoios ? r.parametros.apoios.fckFundacao : null);
+    var n = v == null || v === "" ? null : Number(String(v).replace(",", "."));
+    return n != null && isFinite(n) && n > 0 ? n : null;
   }
   /* duas barras que se cruzam no meio (contraventamento em X): a menor distância entre os eixos cai dentro das duas */
   function cruzam(m1, m2) {
@@ -364,7 +376,7 @@
        não se manda nVigasNo e a ligação usa β = 2, o seguro (revisão F4, 15/10/2026) */
     if (num(A.L, 0) > 0) e.Lviga = A.L * 1000; if (num(B.L, 0) > 0 && B.papel === "pilar") e.Lpilar = B.L * 1000;
     if (ctx.relacao === "viga-sobre-pilar") e.capDir = ctx.capDir;
-    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, referencia: !ctx.fundacao.fckInformado, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
+    if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, referencia: !ctx.fundacao.fckInformado, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; else if (ctx.fckFundacao) e.concreto = { fck: ctx.fckFundacao, A2_A1: 1, origem: "tela Bases dos pilares" }; }
     if (ctx.relacao === "emenda-barra" || ctx.relacao === "cruz") {
       var bb = A.perfil || {}; e.barra = bb.forma === "L" ? { forma: "L", b: bb.b, t: bb.t, A: bb.A, xc: bb.xc, fy: A.aco.fy, fu: A.aco.fu } : { forma: bb.forma === "U" ? "U" : "chapa", b: num(bb.d, num(bb.b, 100)), t: num(bb.tw, num(bb.t, 8)), A: bb.A, xc: num(bb.xc, 15), fy: A.aco.fy, fu: A.aco.fu };
     }

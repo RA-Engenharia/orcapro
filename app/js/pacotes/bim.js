@@ -35681,7 +35681,7 @@ var PADRAO = {
 vertical: { tipo: "vertical", nome: "", produto: "agua", G: null, D: 6, H: 7.32, bordaLivre: 0.30, hMorto: 0.30, CA: 1.5, CAfundo: 1.5, CAteto: 0,
 aco: "ASTM A36", larguraChapa: 2.44, comprimentoChapa: 6.0, teto: "conico-autoportante", inclTeto: 20, raioDomo: 1.0, Lr: 1.0, Pe: 0.25, isolamento: 0,
 vento: { v0: 35, lat: null, lon: null, categoria: "II", grupoS3: 3, s1: "plano", superficie: "rugoso" }, sismo: { zona: 0 },
-ancoragem: "auto", acoChumbador: "ASTM F1554 Gr.36", fundacao: "anel",
+ancoragem: "auto", acoChumbador: "ASTM F1554 Gr.36", fundacao: "anel", fckFundacao: 0,
 acessorios: { escada: "auto", larguraEscada: 0.80, plataforma: true, guardaCorpoTeto: true, bocaVisitaCostado: 1, bocaVisitaTeto: 1, indicadorNivel: true, bocais: "auto" },
 x0: 0, y0: 0, z0: 0, giro: 0 },
 horizontal: { tipo: "horizontal", nome: "", produto: "diesel", G: null, D: 2.5, L: 6.0, A: 0, anguloSela: 120, bSela: 0.25, alturaSela: 0.5, CA: 1.5, E: 0.85, pv: 0,
@@ -35691,14 +35691,14 @@ acessorios: { escada: "marinheiro", plataforma: true, bocaVisitaTeto: 1, indicad
 x0: 0, y0: 0, z0: 0, giro: 0 },
 elevado: { tipo: "elevado", nome: "", produto: "agua-potavel", G: null, D: 4.0, H: 4.88, bordaLivre: 0.30, hMorto: 0.15, CA: 1.5, CAfundo: 1.5, CAteto: 0,
 aco: "ASTM A36", larguraChapa: 2.44, comprimentoChapa: 6.0, teto: "conico-autoportante", inclTeto: 20, raioDomo: 1.0, Lr: 1.0, Pe: 0.25, isolamento: 0,
-alturaTorre: 15, pilares: 4, aberturaBase: 0, paineis: 0, pilar: "auto", contravento: "auto", vigaFundo: "auto",
+alturaTorre: 15, pilares: 4, aberturaBase: 0, paineis: 0, pilar: "auto", contravento: "auto", vigaFundo: "auto", fckFundacao: 0,
 vento: { v0: 35, lat: null, lon: null, categoria: "II", grupoS3: 3, s1: "plano", superficie: "rugoso" }, sismo: { zona: 0 },
 acessorios: { escada: "marinheiro", plataforma: true, guardaCorpoTeto: true, bocaVisitaTeto: 1, indicadorNivel: true, bocais: "auto" },
 x0: 0, y0: 0, z0: 0, giro: 0 }
 };
 function padrao(tipo) { return clone(PADRAO[tipo] || PADRAO.vertical); }
 function mesclar(a, b) { Object.keys(b || {}).forEach(function (k) { var v = b[k]; if (v == null || v === "") return; if (v && typeof v === "object" && !Array.isArray(v) && a[k] && typeof a[k] === "object" && !Array.isArray(a[k])) mesclar(a[k], v); else a[k] = clone(v); }); return a; }
-var NUMS = ["G", "D", "H", "L", "A", "bordaLivre", "hMorto", "CA", "CAfundo", "CAteto", "larguraChapa", "comprimentoChapa", "inclTeto", "raioDomo", "Lr", "Pe", "isolamento", "anguloSela", "bSela", "alturaSela", "E", "pv", "alturaTorre", "pilares", "aberturaBase", "paineis", "x0", "y0", "z0", "giro"];
+var NUMS = ["G", "D", "H", "L", "A", "bordaLivre", "hMorto", "CA", "CAfundo", "CAteto", "larguraChapa", "comprimentoChapa", "inclTeto", "raioDomo", "Lr", "Pe", "isolamento", "anguloSela", "bSela", "alturaSela", "E", "pv", "alturaTorre", "pilares", "aberturaBase", "paineis", "fckFundacao", "x0", "y0", "z0", "giro"];
 function normalizar(par) {
 var tipo = par && TIPOS[par.tipo] ? par.tipo : "vertical", p = mesclar(padrao(tipo), par || {});
 p.tipo = tipo;
@@ -36075,6 +36075,15 @@ passo("Tensão na raiz", "σ = tB/Ar (Ar = " + esc.Ar + " mm²) ≤ 0,8·fy = " 
 passo("Cisalhamento (se o atrito não vence)", desl ? "V = F/(n/2) por chumbador; (1,4·tB/Ft,Rd)² + (1,4·V/Fv,Rd)² ≤ 1, Ft,Rd = " + br(FtRd, 1) + " kN, Fv,Rd = " + br(FvRd, 1) + " kN" : "o atrito vence: sem cisalhamento nos chumbadores", desl ? br(Vb, 1) + " kN → " + br(razaoCisal, 3) : "—")
 ], resistencia: adm, solicitante: sig, unidade: "MPa", razao: Math.max(sig / adm, razaoCisal), ok: sig <= adm && razaoCisal <= 1 + 1e-9, conferir: true });
 R.naoVerificado.push("Cadeira de ancoragem no costado e tensão local no costado (API 650, 5.12.10; admissível 170 MPa no vento — Tabela 5-21a) e ancoragem do chumbador no concreto (projeto de fundação)");
+R.incompleto = "cadeira de ancoragem (API 650, 5.12.10) e ancoragem no concreto pelo projeto de fundação";
+R.problemas.push({ tipo: "ancoragem-tanque", critico: true, texto: "INCOMPLETO — " + R.incompleto + ": não calculadas aqui (" + n + " × " + esc.nome + ", tração " + br(tB, 1) + " kN" + (desl ? " e cortante " + br(Vb, 1) + " kN" : "") + " por chumbador).",
+solucoes: [{ id: "cadeira", texto: "Detalhar e verificar a cadeira de ancoragem e a tensão local no costado (API 650, 5.12.10; admissível da Tabela 5-21a) com a tração por chumbador deste memorial" },
+{ id: "fundacao", texto: "Dimensionar a ancoragem do chumbador no concreto no projeto de fundação com a tração e o cortante por chumbador deste memorial" }] });
+if (!(num(p.fckFundacao, 0) > 0) || p.fckFundacaoReferencia) {
+R.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador no concreto)";
+R.problemas.push({ tipo: "fck-fundacao", critico: true, texto: "A CONFIRMAR: chumbadores do tanque — falta o fck do concreto da fundação: ancoragem do chumbador no concreto não verificada (" + n + " × " + esc.nome + ", tração " + br(tB, 1) + " kN por chumbador).",
+solucoes: [{ id: "fck", texto: "Informe o fck do concreto da base do tanque (campo \"fck do concreto da fundação\") e detalhe a ancoragem no projeto de fundação" }] });
+}
 return { n: n, dc: r3(dc), nome: esc.nome, d: esc.d, U: r2(U), tB: r2(tB), V: r2(Vb), razaoCisal: r3(razaoCisal), aco: p.acoChumbador, ancoragem: "cadeira de ancoragem no costado (API 650, 5.12.10 — detalhar)" };
 }
 function sismo(p, R) {
@@ -36514,10 +36523,18 @@ var L = dep("AcoLigCalc", "./acoligcalc.js"), P = Perf(), out = {}; if (!L || !L
 var qp = P ? P.obter(pil) : null, qd = P ? P.obter(dg) : null;
 if (qp) {
 var od = qp.D || qp.d || 150, tw = qp.t || qp.tn || 6;
-var pb = L.placaBase({ tipo: "rotulada", pilar: { d: od, bf: od, tw: tw, tf: tw }, aco: { fy: 250, fu: 400 }, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: 25 },
+var fckF = num(p.fckFundacao, 0), fckRef = !(fckF > 0) || !!p.fckFundacaoReferencia;
+var pb = L.placaBase({ tipo: "rotulada", pilar: { d: od, bf: od, tw: tw, tf: tw }, aco: { fy: 250, fu: 400 }, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fckF > 0 ? fckF : 25, referencia: fckRef },
 esforcos: [{ comb: esf.combC || "ELU (compressão)", N: -esf.Nc, Vx: esf.V / Math.SQRT2, Vz: esf.V / Math.SQRT2 }].concat(esf.Nt > 0 ? [{ comb: esf.combT || "ELU (arrancamento)", N: esf.Nt, Vx: esf.V / Math.SQRT2, Vz: esf.V / Math.SQRT2 }] : []) });
 arr(pb.verificacoes).forEach(function (v) { R.verificacoes.push({ nome: "Torre — placa de base: " + v.nome, item: v.item + " (AcoLigCalc.placaBase; pilar tubular pela envoltória d = bf = Ø — conferir)", passos: v.passos, resistencia: v.resistencia, solicitante: v.solicitante, unidade: v.unidade, razao: v.razao, ok: v.razao <= 1 + 1e-9, conferir: true }); });
 out.placaBase = { ok: !!pb.ok, resumo: pb.resumo, dimensoes: pb.dimensoes, razao: pb.razao };
+if (arr(pb.pendenciasPlaca).length) {
+var ancT = pb.dimensoes && pb.dimensoes.chumbadores ? pb.dimensoes.chumbadores.ancoragem : null;
+out.placaBase.okVerificacoes = out.placaBase.ok; out.placaBase.ok = false; out.placaBase.aConfirmar = R.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador por aderência)";
+out.placaBase.pendencias = pb.pendenciasPlaca.slice();
+R.problemas.push({ tipo: "fck-fundacao", critico: true, texto: "A CONFIRMAR: placa de base da torre — falta o fck do concreto da fundação: ancoragem do chumbador por aderência não verificada" + (ancT ? " (os " + br(ancT, 0) + " mm saíram com fck = 25 MPa de referência)" : "") + ".",
+solucoes: [{ id: "fck", texto: "Informe o fck do concreto dos blocos da torre (campo \"fck do concreto dos blocos da torre\")" }] });
+}
 if (!pb.ok) R.problemas.push({ tipo: "ligacao", texto: "Placa de base do pilar da torre não fechou: " + (pb.governante || ""), solucoes: [{ id: "placa", texto: pb.sugestao || "Aumentar a placa ou os chumbadores" }] });
 else R.decisoes.push({ tema: "Torre — placa de base", decisao: pb.resumo, motivo: "a menor placa e o menor chumbador que passam com a compressão, o arrancamento e o cortante da análise da torre" });
 }
@@ -36784,6 +36801,9 @@ R.naoVerificado.push("Ligações soldadas: procedimento de soldagem, ensaios nã
 var rz = 0, gov = null, falhas = 0;
 R.verificacoes.forEach(function (v) { if (v.info) return; if (fin(v.razao) && v.razao > rz) { rz = v.razao; gov = v.nome; } if (!v.ok) falhas++; if (v.razao === Infinity) falhas += 0; });
 R.razao = r3(rz); R.governante = gov; R.falhas = falhas; R.aprovado = falhas === 0 && !R.problemas.length;
+R.okVerificacoes = falhas === 0 && !R.problemas.filter(function (x) { return x.tipo !== "fck-fundacao" && x.tipo !== "ancoragem-tanque"; }).length;
+var sitExt = []; if (R.incompleto) sitExt.push("INCOMPLETO — " + R.incompleto); if (R.aConfirmar) sitExt.push("A CONFIRMAR: falta o fck do concreto da fundação (ancoragem do chumbador não verificada); informe o fck do concreto da fundação");
+R.situacaoTexto = !R.aprovado && R.okVerificacoes && sitExt.length ? "NÃO APROVADO — " + sitExt.join("; ") : null;
 var ns = ["api650", "nbr6123", "nbr15421", "nr12"];
 if (p.tipo !== "horizontal") ns.push("nbr7821");
 if (pr.agua) ns.push("awwaD100");
@@ -36817,7 +36837,7 @@ return R;
 function resumo(R) {
 var q = R.quantitativo || {}, g = R.geometria || {}, p = R.par;
 var t = p.tipo === "horizontal" ? "Tanque horizontal Ø " + br(g.D, 2) + " × " + br(g.L, 2) + " m" : (p.tipo === "elevado" ? "Reservatório elevado Ø " + br(g.D, 2) + " × " + br(g.H, 2) + " m a " + br(p.alturaTorre, 1) + " m" : "Tanque Ø " + br(g.D, 2) + " × " + br(g.H, 2) + " m");
-return t + " — " + br(q.volumeUtil, 1) + " m³ úteis (" + br(q.volumeNominal, 1) + " m³ nominais), " + (R.produto ? R.produto.nome.toLowerCase() : "") + "; " + br(q.pesos ? q.pesos.total : 0, 0) + " kg de aço" + (R.aprovado ? "; verificações atendem" : "; NÃO APROVADO — " + (R.falhas + R.problemas.length) + " pendência(s) de cálculo");
+return t + " — " + br(q.volumeUtil, 1) + " m³ úteis (" + br(q.volumeNominal, 1) + " m³ nominais), " + (R.produto ? R.produto.nome.toLowerCase() : "") + "; " + br(q.pesos ? q.pesos.total : 0, 0) + " kg de aço" + (R.aprovado ? "; verificações atendem" : (R.situacaoTexto ? "; " + R.situacaoTexto : "; NÃO APROVADO — " + (R.falhas + R.problemas.length) + " pendência(s) de cálculo"));
 }
 function dimensionar(volumeUtil, par) {
 var V = num(volumeUtil, 0); if (!(V >= 1 && V <= 100000)) return { ok: false, motivo: "Volume útil entre 1 e 100.000 m³." };
@@ -36829,7 +36849,7 @@ var D = Math.sqrt(4 * V / (PI * hl)); D = Math.ceil(D * 20 - 1e-9) / 20;
 var hd = H / D; if (hd < 0.35 || hd > 2.0 || D > 61 || D < 1.0) continue;
 var q = clone(base); q.H = H; q.D = r2(D);
 var r = calcular(q); if (!r.ok) continue;
-var m = r.quantitativo.pesoChapas, ok = r.aprovado;
+var m = r.quantitativo.pesoChapas, ok = r.okVerificacoes;
 alts.push({ aneis: n, H: H, D: q.D, HD: r3(hd), peso: m, pesoTotal: r.quantitativo.pesos.total, aprovado: ok, volumeUtil: r.quantitativo.volumeUtil, _q: q, _r: r });
 }
 var oks = alts.filter(function (x) { return x.aprovado; }), pMin = Infinity;
@@ -36864,7 +36884,7 @@ var m = MODELOS.filter(function (x) { return x.id === id; })[0]; if (!m) return 
 if (_cacheMod[id]) return clone(_cacheMod[id]);
 var o;
 if (m.par.tipo === "horizontal") { var r = calcular(m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: r.ok ? r.par : normalizar(m.par), resumo: r.ok ? r.resumo : r.motivo, justificativa: "Ø " + br(m.par.D, 2) + " × " + br(m.par.L, 2) + " m (L/D ≈ " + br(m.par.L / m.par.D, 1) + ": transporte rodoviário e selas a A ≤ R/2)", peso: r.ok ? r.quantitativo.pesos.total : 0, aprovado: r.ok && r.aprovado }; }
-else { var d = dimensionar(m.volume, m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: d.ok ? d.par : normalizar(m.par), resumo: d.ok ? d.resultado.resumo : d.motivo, justificativa: d.ok ? d.justificativa : d.motivo, peso: d.ok ? d.resultado.quantitativo.pesos.total : 0, aprovado: d.ok && d.resultado.aprovado }; }
+else { var d = dimensionar(m.volume, m.par); o = { id: m.id, nome: m.nome, volume: m.volume, par: d.ok ? d.par : normalizar(m.par), resumo: d.ok ? d.resultado.resumo : d.motivo, justificativa: d.ok ? d.justificativa : d.motivo, peso: d.ok ? d.resultado.quantitativo.pesos.total : 0, aprovado: d.ok && d.resultado.aprovado, okVerificacoes: d.ok && !!d.resultado.okVerificacoes, aConfirmar: d.ok ? d.resultado.aConfirmar || null : null }; }
 o.par.nome = m.nome;
 _cacheMod[id] = o; return clone(o);
 }
@@ -37453,10 +37473,12 @@ if (ab.length) { col.titulo("ABERTURAS"); col.tabela([{ t: "MARCA", w: 14 }, { t
 if (r.torre && r.torre.ligacoes) { var lg = r.torre.ligacoes; col.titulo("TORRE"); col.tabela([{ t: "ITEM", w: 26, al: "E" }, { t: "ESPECIFICAÇÃO", w: 60, al: "E" }], [["Pilares", r.torre.pilares + " × " + r.torre.pilar], ["Diagonais", txtS(r.torre.diagonal)], ["Placa de base", lg.placaBase && lg.placaBase.dimensoes ? lg.placaBase.dimensoes.B + "×" + lg.placaBase.dimensoes.L + "×" + lg.placaBase.dimensoes.t + " mm, " + lg.placaBase.dimensoes.chumbadores.n + " chumb. " + lg.placaBase.dimensoes.chumbadores.id : "-"], ["Lig. diagonal", lg.diagonal ? lg.diagonal.parafusos + " × A325 " + lg.diagonal.d + ", gusset #" + br(lg.diagonal.gusset.t, 1) : "-"]], 6); }
 col.notas([r.resumo, "Cálculo: API 650 (costado, fundo, teto, aberturas 5.7), NBR 6123 (vento), NR-12 (acessos) - ver o memorial de cálculo.",
 "Juntas verticais do costado de topo com penetração total, defasadas no mínimo 5·t entre anéis (API 650, 5.1.5.2).", "Cotas em mm. Ângulos no sentido anti-horário a partir de 0° (planta).",
-{ t: arr(r.naoVerificado).length + " item(ns) não verificado(s) neste cálculo - ver o memorial [PENDENTE].", cor: AP.VERMELHO }]);
+{ t: arr(r.naoVerificado).length + " item(ns) não verificado(s) neste cálculo - ver o memorial [PENDENTE].", cor: AP.VERMELHO }].concat(r.incompleto ? [{ t: "INCOMPLETO: " + r.incompleto + " [PENDENTE].", cor: AP.VERMELHO }] : []).concat(r.aConfirmar ? [{ t: "A CONFIRMAR: ancoragem dos chumbadores " + (p.tipo === "elevado" ? "da torre" : "do tanque") + " sem o fck do concreto da fundação - informe o fck [PENDENTE].", cor: AP.VERMELHO }] : []));
 return { escala: esc0 ? "1:" + esc0 : "INDICADA" };
 } };
 var res = FD.montar([def], { codigo: op.codigo || "TQ-01", obra: op.obra || "", revisao: op.revisao || "R00", empresa: op.empresa, responsavel: op.responsavel, registro: op.registro, descricaoRevisao: "EMISSÃO INICIAL - TANQUE", logo: op.logo });
+if (res && r.incompleto) res.avisos = arr(res.avisos).concat(["INCOMPLETO — " + r.incompleto + ": não calculadas neste cálculo — detalhe antes de emitir."]);
+if (res && r.aConfirmar) res.avisos = arr(res.avisos).concat(["A CONFIRMAR: " + (r.par && r.par.tipo === "elevado" ? "placa de base da torre" : "chumbadores do tanque") + " sem o fck do concreto da fundação (ancoragem do chumbador não verificada) — informe o fck da fundação antes de emitir."]);
 return res;
 }
 function txtS(v) { return v == null ? "" : String(v); }
@@ -37508,7 +37530,7 @@ function leg(t0) { nTab++; return "Tabela " + nTab + " — " + t0; }
 function sec(id, titulo, corpo) { secs.push({ id: id, titulo: titulo, html: corpo }); }
 var nomeT = p.nome || TIPO[p.tipo], dims = p.tipo === "horizontal" ? "Ø " + un(g.D, 2, "m") + " × " + un(g.L, 2, "m") : "Ø " + un(g.D, 2, "m") + " × " + un(g.H, 2, "m") + (p.tipo === "elevado" ? " sobre torre de " + un(p.alturaTorre, 1, "m") : "");
 var esquema = MT && MT.esquema ? MT.esquema(r) : "";
-var situacao = r.aprovado ? '<span class="ok">aprovado — todas as verificações feitas atendem</span>' : '<span class="falha">NÃO APROVADO — ' + (r.falhas + arr(r.problemas).length) + " pendência(s) de cálculo</span>";
+var situacao = r.aprovado ? '<span class="ok">aprovado — todas as verificações feitas atendem</span>' : (r.situacaoTexto ? '<span class="falha">' + esc(r.situacaoTexto) + "</span>" : '<span class="falha">NÃO APROVADO — ' + (r.falhas + arr(r.problemas).length) + " pendência(s) de cálculo</span>");
 sec("objeto", "Objeto, escopo e premissas",
 "<p>Este memorial apresenta o cálculo do " + esc(TIPO[p.tipo].toLowerCase()) + (p.nome ? " <b>" + esc(p.nome) + "</b>" : "") + " (" + esc(dims) + "), para armazenamento atmosférico de <b>" + esc(r.produto.nome.toLowerCase()) + "</b> (densidade relativa G = " + br(r.produto.G, 2) + "). " +
 (p.tipo === "horizontal" ? "O costado é dimensionado pela tensão circunferencial do líquido com o tanque cheio, os tampos planos pela flexão de placa e as selas pelo método de Zick; o vento pela NBR 6123 a partir do endereço da obra (tombamento transversal com o tanque vazio); as cargas por sela para a fundação; e os meios de acesso pela NR-12 (Anexo III).</p>"
@@ -38399,7 +38421,8 @@ secoes.push("pintura"); h += "<h2>7. Cor de segurança e proteção contra corro
 var apl = arr(v && v.itens).map(function (i) { return i.norma + " — " + i.requisito; }).filter(function (x, j, l) { return l.indexOf(x) === j; });
 secoes.push("pendencias"); h += "<h2>8. Requisitos aplicados (norma e item)</h2>" + (apl.length ? "<ul>" + apl.map(function (x) { return "<li>" + t(x) + "</li>"; }).join("") + "</ul>" : "<p>Nenhum.</p>");
 if (v && !v.aprovado) av.push(v.naoConformes.length + " não conformidade(s) de norma");
-if (dm && !dm.aprovado) av.push(dm.falhas + " verificação(ões) estrutural(is) não passam");
+if (dm && !dm.aprovado && dm.falhas) av.push(dm.falhas + " verificação(ões) estrutural(is) não passam");
+if (dm && !dm.aprovado && !dm.falhas && arr(dm.criticos).length) av.push("INCOMPLETO — " + dm.criticos.length + " verificação(ões) crítica(s) não feita(s): " + dm.criticos[0]);
 var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' + t(titulo) + "</title><style>" + CSS + "</style></head><body>" + h + "</body></html>";
 return { ok: true, html: html, titulo: titulo, secoes: secoes, avisos: av };
 }
@@ -39820,6 +39843,19 @@ return { ok: false, motivo: "nenhum pilarete de " + PES[0] + " a " + PES[PES.len
 function verif(nome, item, passos, res, sol, unid) { return { nome: nome, item: item, passos: passos, resistencia: res, solicitante: sol, unidade: unid == null ? "kN" : unid, razao: res > 0 ? sol / res : (sol > 0 ? Infinity : 0), ok: !(res > 0 ? sol / res > 1 + 1e-9 : sol > 0) }; }
 function passo(r, f, v) { return { rotulo: r, formula: f || "", valor: v }; }
 function razaoDe(v) { var r = v ? v.razao : null; if (typeof r === "number" && isFinite(r)) return r; return v && v.info ? 0 : 9.99; }
+var MOTIVO_FCK = "falta o fck do concreto da fundação: ancoragem do chumbador por aderência não verificada";
+function fckBase(cc) {
+cc = cc || {}; var f = num(cc.fck, 0);
+return { fck: f > 0 ? f : 25, referencia: !(f > 0) || !!cc.referencia || cc.fckInformado === false };
+}
+var MOTIVO_FCK_PRESSAO = "falta o fck do piso/fundação: pressão de contato não verificada";
+function pendenciaFck(out, nome, pb, fc, onde, pressao) {
+if (!fc.referencia && !arr(pb && pb.pendenciasPlaca).length) return false;
+var anc = pb && pb.dimensoes && pb.dimensoes.chumbadores ? pb.dimensoes.chumbadores.ancoragem : null;
+out.naoVerificados.push("A CONFIRMAR: " + nome + " — " + (pressao ? MOTIVO_FCK_PRESSAO + " (calculada com fck = " + br(fc.fck, 0) + " MPa de referência)" : MOTIVO_FCK + (anc ? " (os " + br(anc, 0) + " mm de ancoragem saíram com fck = " + br(fc.fck, 0) + " MPa de referência)" : "")) + "; informe o fck do concreto " + (onde || "do piso/laje") + " (CRÍTICO)");
+out.aConfirmar = pressao ? "fck do concreto do piso/fundação (pressão de contato sob a chapa de apoio)" : "fck do concreto da fundação (ancoragem do chumbador por aderência)";
+return true;
+}
 function marcar(v, nome) { var rz = razaoDe(v), o = clone(v); o.razao = rz; if (!(typeof v.razao === "number" && isFinite(v.razao)) && !v.info) { o.naoFinita = true; o.nome = nome + " (razão não finita — fora do concreto/da borda: FALHA)"; } else o.nome = nome; o.ok = !!v.info || rz <= 1 + 1e-9; return o; }
 var ROT = { soldada: "SOLDADA", parafusada: "PARAFUSADA", ancorada: "ANCORADA", apoiada: "APOIADA", pes: "BASE DO PÉ DE APOIO" };
 function fixacaoAuto(o) {
@@ -39952,14 +39988,14 @@ if (modo === "ancorada" || modo === "pes") {
 var Npe = V, Hpe = H, Nt = num(R.Nt, 0), Mpe = num(it.M, 0), pil = { d: Math.round(dPeg), bf: Math.round(bPeg), tw: num(lg.tw, 5), tf: num(lg.tf, 8) };
 if (modo === "pes") pil = { d: it.pes.s.b, bf: it.pes.s.b, tw: it.pes.s.t, tf: it.pes.s.t };
 if (it.pilar) pil = it.pilar;
-var cc = it.concreto || {}, fck = num(cc.fck, 0) > 0 ? num(cc.fck, 25) : 25;
+var cc = it.concreto || {}, fcB = fckBase(cc), fck = fcB.fck;
 var esf = [{ comb: "ELU — compressão", N: -Npe, Vx: Hpe, Vz: 0, M: Mpe }]; if (Nt > 0) esf.push({ comb: "ELU — levantamento (binário do guarda-corpo, permanente γ = 1,0)", N: Nt, Vx: Hpe, Vz: 0, M: Mpe });
-var pb = C.placaBase({ tipo: Mpe > 0 ? "engastada" : "rotulada", pilar: pil, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, A2_A1: 1 }, eletrodo: { fw: fw }, esforcos: esf });
+var pb = C.placaBase({ tipo: Mpe > 0 ? "engastada" : "rotulada", pilar: pil, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, referencia: fcB.referencia, A2_A1: 1 }, eletrodo: { fw: fw }, esforcos: esf });
 out.verificacoes = out.verificacoes.concat(arr(pb.verificacoes).map(function (v) { return marcar(v, nome + " — " + v.nome); }));
-if (num(cc.fck, 0) <= 0) out.avisos.push(nome + ": fck do concreto não informado — 25 MPa adotado (NBR 6118:2014, Tabela 7.1, C25 na classe II); confirme");
+var semFck = pendenciaFck(out, nome, pb, fcB, it.ponta === "topo" ? "da laje de chegada" : "do piso/laje no pé");
 var Lfd = LF(), sup = suporteConcreto(cc, it.P, it.eixo, pb.dimensoes);
 if (Lfd && num(cc.esp, 0) > 0) {
-var info = { id: cc.id || "piso", rotulo: cc.rotulo || "Piso de concreto", tipo: cc.tipo || "laje", cotaTopo: num(cc.topo, 0), altura: num(cc.esp, 0), poligonoTopo: sup.mundo || [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: num(cc.fck, 0) > 0, cobrimento: Lfd.COBRIMENTO };
+var info = { id: cc.id || "piso", rotulo: cc.rotulo || "Piso de concreto", tipo: cc.tipo || "laje", cotaTopo: num(cc.topo, 0), altura: num(cc.esp, 0), poligonoTopo: sup.mundo || [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: !fcB.referencia, cobrimento: Lfd.COBRIMENTO };
 var rf = null; try { rf = Lfd.verificar(pb, info, { suporte: sup.local || [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]], esforcos: esf }); } catch (eF) { rf = null; }
 if (rf) {
 var novos = arr(rf.verificacoes).slice(arr(pb.verificacoes).length).filter(function (v) { return sup.local || !/dentro do topo|Cobrimento lateral|borda/i.test(v.nome); }).map(function (v) { return marcar(v, nome + " — " + v.nome); });
@@ -39981,7 +40017,8 @@ var rs = String(pb.resumo || "");
 if (it.extensao) rs = rs.replace(/;\s*solda de filete [^;]*em volta do pilar/, "; chapa de extensão " + br(it.extensao.b, 0) + " × " + br(Math.min(num(it.extensao.t, pb.dimensoes.t), pb.dimensoes.t), 1) + " mm em junta de topo (penetração total) + chapa de ligação " + GUS.L + " × " + GUS.h + " × " + br(GUS.t, 1) + " mm na alma da longarina" + (out.gusset ? " (filetes " + out.gusset.a + " e " + out.gusset.a2 + " mm)" : "")).replace(/;\s*graute sem retração[^;]*/, "");
 else rs = rs.replace(/em volta do pilar/, modo === "pes" ? "em volta do pé de apoio" : "em volta da longarina");
 out.resumo = (modo === "pes" ? "base do pé de apoio: " : "ancorada: ") + rs;
-out.placa = { ok: pb.ok, razao: pb.razao };
+out.placa = semFck ? { ok: false, okVerificacoes: pb.ok, aConfirmar: out.aConfirmar, razao: pb.razao } : { ok: pb.ok, razao: pb.razao };
+if (semFck) out.resumo += " — A CONFIRMAR: ancoragem do chumbador sem o fck da fundação";
 return out;
 }
 if (modo === "apoiada") {
@@ -39993,12 +40030,13 @@ out.verificacoes = out.verificacoes.concat(pr.verificacoes.map(function (v) { re
 var base = fixacao({ ponta: "topo", modo: "pes", pes: pr, R: { V: Np, H: 0, Nt: num(R.Nt, 0), hip: "base do pé de apoio: compressão e o levantamento do binário do guarda-corpo" }, concreto: it.concreto, P: it.Pbase, eixo: it.eixo, longarina: lg, alfa: it.alfa });
 out.verificacoes = out.verificacoes.concat(base.verificacoes.filter(function (v) { return !v.info; }));
 out.naoVerificados = out.naoVerificados.concat(base.naoVerificados); out.avisos = out.avisos.concat(base.avisos);
+if (base.aConfirmar) { out.aConfirmar = base.aConfirmar; out.placa = base.placa; }
 out.avisos.push(nome + ": os pés de apoio só travam com a escada FIXA no pé (soldada, parafusada ou ancorada)" + (hP > 1 ? " e com o X entre eles" : ""));
 out.desenho = { modo: modo, pes: { perfil: pr.perfil, h: hP, b: pr.s.b, x: hP > 1.0 }, base: base.desenho, chapaTopo: { B: Math.ceil((pr.s.b + 40) / 10) * 10, t: 9.5 } };
 out.resumo = "apoiada em 2 pés de apoio " + pr.perfil + " de " + m2(hP) + (hP > 1 ? " com X entre eles" : "") + "; " + base.resumo;
 return out;
 }
-var cc2 = it.concreto || {}, fck2 = num(cc2.fck, 0) > 0 ? num(cc2.fck, 25) : 25, sig = C.concreto(fck2, 1), Bc = Math.ceil((bPeg + 100) / 10) * 10, Lc = Math.ceil((dPeg + 100) / 10) * 10, tc = null, ga1 = M && M.GAMA ? M.GAMA.a1 : 1.10;
+var cc2 = it.concreto || {}, fcA = fckBase(cc2), fck2 = fcA.fck, sig = C.concreto(fck2, 1), Bc = Math.ceil((bPeg + 100) / 10) * 10, Lc = Math.ceil((dPeg + 100) / 10) * 10, tc = null, ga1 = M && M.GAMA ? M.GAMA.a1 : 1.10;
 var sigSd = V * 1000 / (Bc * Lc), l = Math.max((Lc - 0.95 * dPeg) / 2, (Bc - 0.8 * bPeg) / 2), mSd = sigSd * l * l / 2;
 [9.5, 12.5, 16, 19].some(function (t) { if (t * t * aco.fy / 4 / ga1 >= mSd) { tc = t; return true; } return false; }); tc = tc || 19;
 out.verificacoes.push(verif(nome + " — pressão no piso sob a chapa de apoio", "NBR 8800:2024, 6.6 (σc,Rd = 0,85·fck/γc, A2/A1 = 1)", [passo("Chapa", "", br(Lc, 0) + " × " + br(Bc, 0) + " mm"), passo("σ", "V/(B·L)", br(sigSd, 2) + " MPa ≤ " + br(sig, 2) + " MPa")], sig, sigSd, "MPa"));
@@ -40007,6 +40045,11 @@ out.verificacoes.push(verif(nome + " — levantamento (binário do guarda-corpo 
 out.avisos.push(nome + ": apoiada sem chumbador — a escada tem de ser FIXA no topo (a força horizontal vai toda para lá); o piso embaixo precisa resistir à pressão de contato");
 out.desenho = { modo: modo, chapa: { B: Bc, L: Lc, t: tc } };
 out.resumo = "apoiada: chapa de apoio " + br(Lc, 0) + " × " + br(Bc, 0) + " × " + br(tc, 1) + " mm (sem chumbador)";
+if (pendenciaFck(out, nome, null, fcA, "do piso sob a chapa de apoio", true)) {
+out.verificacoes.forEach(function (v) { if (/pressão no piso sob a chapa/.test(v.nome)) { v.nome += " (fck = " + br(fck2, 0) + " MPa de REFERÊNCIA — A CONFIRMAR)"; v.referencia = true; } });
+out.placa = { ok: false, okVerificacoes: out.verificacoes.every(function (v) { return v.ok || v.info; }), aConfirmar: out.aConfirmar };
+out.resumo += " — A CONFIRMAR: pressão de contato sem o fck do piso";
+}
 return out;
 }
 out.naoVerificados.push("não verificado: " + nome + " — fixação desconhecida (" + modo + ") (CRÍTICO)");
@@ -40019,18 +40062,20 @@ var s = Cat0 && Cat0.completo ? Cat0.completo(sp.perfil) : null;
 if (!C || !s) { out.naoVerificados.push("não verificado: base do montante — perfil ou js/acoligcalc.js ausente (CRÍTICO)"); return out; }
 var fg = A && A.forcaGuarda ? A.forcaGuarda(sp.uso || "industrial") : { f: 2.0, altura: 1.1, ref: "NBR 6120:2019, Tabela 12" }, esp = num(sp.espac, 1), h = fg.altura || 1.1;
 var Fd = 1.5 * fg.f * esp, Md = Fd * h, D = s.D || s.b || s.d || 60, t = s.t || s.tw || 4;
-var aco = (M ? M.aco("ASTM A36") : null) || { fy: 250, fu: 400 }, cc = sp.concreto || {}, fck = num(cc.fck, 0) > 0 ? num(cc.fck, 25) : 25;
-var pb = C.placaBase({ tipo: "engastada", pilar: { d: D, bf: D, tw: t, tf: t }, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, A2_A1: 1 }, esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] });
+var aco = (M ? M.aco("ASTM A36") : null) || { fy: 250, fu: 400 }, cc = sp.concreto || {}, fcB = fckBase(cc), fck = fcB.fck;
+var pb = C.placaBase({ tipo: "engastada", pilar: { d: D, bf: D, tw: t, tf: t }, aco: aco, chumbador: { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 }, concreto: { fck: fck, referencia: fcB.referencia, A2_A1: 1 }, esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] });
 out.verificacoes.push({ nome: "Base do montante — esforços", item: fg.ref + "; γq = 1,50", passos: [passo("Força no topo", "F = 1,5·f·s", br(Fd, 2) + " kN (f = " + br(fg.f, 2) + " kN/m, s = " + m2(esp) + ")"), passo("Momento na base", "M = F·" + br(h, 2) + " m", br(Md, 3) + " kN·m")], razao: 0, ok: true, info: true });
 out.verificacoes = out.verificacoes.concat(arr(pb.verificacoes).map(function (v) { return marcar(v, "Base do montante — " + v.nome); }));
 if (num(cc.esp, 0) > 0 && LF()) {
-var Lfd = LF(), info = { id: "laje", rotulo: "Laje", tipo: "laje", cotaTopo: 0, altura: num(cc.esp, 0), poligonoTopo: [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: num(cc.fck, 0) > 0, cobrimento: Lfd.COBRIMENTO };
+var Lfd = LF(), info = { id: "laje", rotulo: "Laje", tipo: "laje", cotaTopo: 0, altura: num(cc.esp, 0), poligonoTopo: [[-5, -5], [5, -5], [5, 5], [-5, 5]], fck: fck, fckInformado: !fcB.referencia, cobrimento: Lfd.COBRIMENTO };
 var rf = null; try { rf = Lfd.verificar(pb, info, { suporte: [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]], esforcos: [{ comb: "ELU", N: 0, Vx: Fd, Vz: 0, M: Md }] }); } catch (e) { rf = null; }
 if (rf) out.verificacoes = out.verificacoes.concat(arr(rf.verificacoes).slice(arr(pb.verificacoes).length).filter(function (v) { return /cabe|cone|gancho/i.test(v.nome); }).map(function (v) { return marcar(v, "Base do montante — " + v.nome + " (laje de " + cm(num(cc.esp, 0)) + ", longe da borda)"); }));
 }
+var semFckM = pendenciaFck(out, "Base do montante", pb, fcB, "da laje onde o montante é chumbado");
 out.naoVerificados.push("não verificado: chumbadores do montante junto da BORDA da laje (ruptura da borda e cone recortado — a distância à borda não é conhecida; detalhar com a laje) (CRÍTICO)");
 out.desenho = { modo: "ancorada", chapa: { B: pb.dimensoes.B, L: pb.dimensoes.L, t: pb.dimensoes.t }, chumbadores: pb.dimensoes.chumbadores, solda: pb.dimensoes.solda, graute: 0 };
-out.resumo = "placa " + br(pb.dimensoes.L, 0) + " × " + br(pb.dimensoes.B, 0) + " × " + br(pb.dimensoes.t, 1) + " mm engastada, " + pb.dimensoes.chumbadores.n + " chumbadores " + pb.dimensoes.chumbadores.id;
+out.resumo = "placa " + br(pb.dimensoes.L, 0) + " × " + br(pb.dimensoes.B, 0) + " × " + br(pb.dimensoes.t, 1) + " mm engastada, " + pb.dimensoes.chumbadores.n + " chumbadores " + pb.dimensoes.chumbadores.id + (semFckM ? " — A CONFIRMAR: ancoragem do chumbador sem o fck da fundação" : "");
+out.placa = semFckM ? { ok: false, okVerificacoes: pb.ok, aConfirmar: out.aConfirmar, razao: pb.razao } : { ok: pb.ok, razao: pb.razao };
 return out;
 }
 function mm(v) { return v / 1000; }
@@ -43388,10 +43433,18 @@ esforcosDoCalculo(ctx, pecas, op.resultado, A, Bp);
 if (!ctx.esforcos || !ctx.esforcos.length) estimar(ctx, A, Bp);
 if (ctx.relacao === "base" && A && LF() && op.fundacoes) {
 var pe = A.mb.X[1] >= 0 ? A.mb.P0 : add(A.mb.P0, mul(A.mb.X, A.mb.L)), fs = LF().fundacaoSob(pe, op.fundacoes, {});
-if (fs.ok) { ctx.fundacao = fs.fundacao; ctx.suporte = LF().suporteLocal(fs.fundacao, pe, [num(A.mb.B[0], 1), num(A.mb.B[2], 0)]); }
-else { ctx.semFundacao = fs.motivo; avisos.push("Placa de base sem fundação no modelo (" + fs.motivo + "): fck 25 MPa e A2/A1 = 1 de padrão, e a ancoragem no concreto (cone, gancho, borda) NÃO é verificada — desenhe a sapata/bloco sob o pilar (BIM › Fundação)."); }
+var fckT = fckDaTela(op);
+if (fs.ok) { ctx.fundacao = fs.fundacao; ctx.suporte = LF().suporteLocal(fs.fundacao, pe, [num(A.mb.B[0], 1), num(A.mb.B[2], 0)]);
+if (!ctx.fundacao.fckInformado && fckT) { ctx.fundacao.fck = fckT; ctx.fundacao.fckInformado = true; ctx.fundacao.fckOrigem = "tela Bases dos pilares"; } }
+else { ctx.semFundacao = fs.motivo; if (fckT) ctx.fckFundacao = fckT;
+avisos.push("Placa de base sem fundação no modelo (" + fs.motivo + "): " + (fckT ? "fck " + br(fckT, 0) + " MPa da tela Bases dos pilares" : "fck 25 MPa") + " e A2/A1 = 1 de padrão, e a ancoragem no concreto (cone, gancho, borda) NÃO é verificada — desenhe a sapata/bloco sob o pilar (BIM › Fundação)."); }
 }
 return ctx;
+}
+function fckDaTela(op) {
+var r = op && op.resultado, v = op && op.fckFundacao != null && op.fckFundacao !== "" ? op.fckFundacao : (r && r.parametros && r.parametros.apoios ? r.parametros.apoios.fckFundacao : null);
+var n = v == null || v === "" ? null : Number(String(v).replace(",", "."));
+return n != null && isFinite(n) && n > 0 ? n : null;
 }
 function cruzam(m1, m2) {
 var w = sub(m1.P0, m2.P0), a = dot(m1.X, m1.X), b = dot(m1.X, m2.X), c = dot(m2.X, m2.X), d = dot(m1.X, w), e = dot(m2.X, w), D = a * c - b * b;
@@ -43485,7 +43538,7 @@ var A = pp[ctx.A] || {}, B = pp[ctx.B] || {}, e = { viga: A.perfil, apoio: B.per
 if (ctx.pilarN != null) { e.pilarN = ctx.pilarN; e.pilarM = ctx.pilarM; }
 if (num(A.L, 0) > 0) e.Lviga = A.L * 1000; if (num(B.L, 0) > 0 && B.papel === "pilar") e.Lpilar = B.L * 1000;
 if (ctx.relacao === "viga-sobre-pilar") e.capDir = ctx.capDir;
-if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, referencia: !ctx.fundacao.fckInformado, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; }
+if (ctx.relacao === "base") { e.apoio = A.perfil; e.acoApoio = A.aco; if (ctx.fundacao) e.concreto = { fck: ctx.fundacao.fck, referencia: !ctx.fundacao.fckInformado, A2_A1: 1, suporte: LF() ? LF().objsUW(ctx.suporte) : [] }; else if (ctx.fckFundacao) e.concreto = { fck: ctx.fckFundacao, A2_A1: 1, origem: "tela Bases dos pilares" }; }
 if (ctx.relacao === "emenda-barra" || ctx.relacao === "cruz") {
 var bb = A.perfil || {}; e.barra = bb.forma === "L" ? { forma: "L", b: bb.b, t: bb.t, A: bb.A, xc: bb.xc, fy: A.aco.fy, fu: A.aco.fu } : { forma: bb.forma === "U" ? "U" : "chapa", b: num(bb.d, num(bb.b, 100)), t: num(bb.tw, num(bb.t, 8)), A: bb.A, xc: num(bb.xc, 15), fy: A.aco.fy, fu: A.aco.fu };
 }
@@ -74293,7 +74346,7 @@ function arr(v) { return Array.isArray(v) ? v : []; }
 function br(v, c) { if (v == null || !isFinite(v)) return "—"; c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
 function r6(v) { return Math.round(v * 1e6) / 1e6; }
 var PADRAO = {
-geometria: { vao: 20, comprimento: 40, espacamento: 6, peDireito: 6, inclinacaoPct: 10, aguas: 2, base: "rotulada", tipoPortico: "alma-cheia" },
+geometria: { vao: 20, comprimento: 40, espacamento: 6, peDireito: 6, inclinacaoPct: 10, aguas: 2, base: "engastada", tipoPortico: "alma-cheia" },
 perfis: { pilar: "W 310 x 38,7 Gerdau", viga: "W 310 x 32,7 Gerdau", tapamento: "W 200 x 15,0 Gerdau", escora: "auto", terca: "auto", travessa: "auto", contravento: "auto" },
 acos: { perfil: "ASTM A572 Gr.50", frio: "NBR 6650 CF-26", barra: "ASTM A36" },
 cobertura: { telhaPeso: null, telhaVaoMax: null, telhaNome: "telha de aço trapezoidal", permanenteExtra: 0.10, empocamentoVerificado: false },
@@ -77071,7 +77124,7 @@ var acoBarra = (Mt && Mt.aco(Mt.PADRAO.barra)) || { id: "ASTM A36", fy: 250, fu:
 var chumb = (Mt && Mt.chumbador("ASTM F1554 Gr.36")) || { id: "ASTM F1554 Gr.36", fy: 250, fu: 400 };
 var pA325 = (Mt && Mt.parafuso("ASTM A325", 20)) || { fub: 825 }, pA307 = (Mt && Mt.parafuso("ASTM A307", 12)) || { fub: 415 };
 var E70 = (Mt && Mt.eletrodo("E70XX")) || { id: "E70XX", fw: 485 };
-var fund = par.fundacao || {}, conc = { fck: num(fund.fck, 25), A2_A1: num(fund.A2_A1, 1) };
+var fund = par.fundacao || {}, fckInf = num(fund.fck, null), conc = fckInf != null && fckInf > 0 ? { fck: fckInf, A2_A1: num(fund.A2_A1, 1) } : { fck: 25, referencia: true, A2_A1: num(fund.A2_A1, 1) };
 function sec(m) { var q = m.secao.mm; return { d: q.d, bf: q.bf, tw: q.tw, tf: q.tf, r: num(q.r, 0) }; }
 function base(pilares, tipo) {
 var esf = [];
@@ -77084,6 +77137,10 @@ var R = cb.reacoes[nb]; esf.push({ comb: c.id, no: nb, N: -R[1], Vx: R[0], Vz: R
 });
 if (!esf.length) return null;
 var o = Lg.placaBase({ tipo: tipo, pilar: sec(pilares[0]), aco: acoChapa, chumbador: chumb, concreto: conc, eletrodo: E70, esforcos: esf });
+if (arr(o.pendenciasPlaca).length) {
+o.naoVerificadoCritico = arr(o.naoVerificadoCritico).concat(o.pendenciasPlaca); o.okVerificacoes = o.ok; o.ok = false;
+o.aConfirmar = "fck do concreto da fundação (ancoragem do chumbador por aderência)"; o.governante = "A CONFIRMAR: ancoragem do chumbador sem o fck da fundação";
+}
 o.membros = pilares.map(function (m) { return m.id; });
 return o;
 }
@@ -77950,7 +78007,53 @@ if (!achou || L1.tipo === "rigida" || L1.tipo === "continua") achou = L1;
 });
 return achou;
 }
-var ligPadrao = { vigaPilar: op.vigaPilar === "rigida" ? "rigida" : "rotulada", vigaViga: op.vigaViga === "rigida" ? "rigida" : "rotulada" };
+function dirPlanta(X) { return Math.abs(X[0]) >= Math.abs(X[2]) ? "X" : "Y"; }
+var TAN15 = Math.tan(15 * Math.PI / 180);
+function dirClara(X) { var ax = Math.abs(X[0]), az = Math.abs(X[2]); if (Math.max(ax, az) < 1e-6) return null; return Math.min(ax, az) <= TAN15 * Math.max(ax, az) + 1e-12 ? dirPlanta(X) : null; }
+function angEixo(X) { var ax = Math.abs(X[0]), az = Math.abs(X[2]); return Math.atan2(Math.min(ax, az), Math.max(ax, az)) * 180 / Math.PI; }
+function coordPlano(ip, d) { var p = pecas[ip]; return Math.round((d === "X" ? p.a[2] + p.b[2] : p.a[0] + p.b[0]) / 2 * 20) / 20; }
+function pilaresDe(ip) { var s = {}; pontosPeca[ip].forEach(function (q) { var I = noInfo[q.no]; if (!I) return; I.ends.forEach(function (e) { if (e.ip !== ip && pecas[e.ip].papel === "pilar") s[e.ip] = 1; }); I.passa.forEach(function (x) { if (x !== ip && pecas[x].papel === "pilar") s[x] = 1; }); }); return s; }
+function porticos(lista, d) { var pl = {}; lista.forEach(function (ip) { var c = coordPlano(ip, d), o = pl[c] || (pl[c] = {}); Object.keys(pilaresDe(ip)).forEach(function (k) { o[k] = 1; }); }); return Object.keys(pl).filter(function (c) { return Object.keys(pl[c]).length >= 2; }); }
+function planoPortico() {
+var vigas = []; pecas.forEach(function (p, ip) { if (p.papel === "viga" && !/^Longarina/i.test(String(p.papelBim || ""))) vigas.push(ip); });
+if (!vigas.length) return { plano: null, motivo: "não há vigas no modelo" };
+var incl = vigas.filter(function (ip) { var s0 = Math.abs(pecas[ip].X[1]); return s0 >= 0.01 && s0 <= 0.5; }), notaIncl = "";
+if (incl.length) {
+var porD = { X: [], Y: [] }, todD = { X: 0, Y: 0 }, nObl = 0;
+incl.forEach(function (ip) { var d = dirClara(pecas[ip].X); if (d) porD[d].push(ip); else nObl++; });
+vigas.forEach(function (ip) { var d = dirClara(pecas[ip].X); if (d) todD[d]++; });
+var atende = ["X", "Y"].filter(function (d) { var np = porticos(porD[d], d).length; return np >= 2 || (np >= 1 && porD[d].length > todD[d] / 2); });
+if (atende.length === 2) return { plano: null, motivo: "pórticos de vigas inclinadas nas DUAS direções (telhado de várias águas) — não dá para saber o plano do pórtico" };
+if (atende.length === 1) { var dc = atende[0], npc = porticos(porD[dc], dc).length; return { plano: dc, motivo: npc + " pórtico(s) de vigas de cobertura inclinadas na direção " + dc + " (" + porD[dc].length + " viga(s), de pilar a pilar): o caimento do telhado fica no plano do pórtico", criterio: "cobertura" }; }
+notaIncl = incl.length + " viga(s) inclinada(s) que não formam pórticos repetidos (marquise, rampa ou peça isolada)" + (nObl ? ", " + nObl + " oblíqua(s)" : "") + " — não decidem; ";
+}
+var vao = { X: 0, Y: 0 }, vaoPl = { X: {}, Y: {} };
+vigas.forEach(function (ip) {
+var d = dirClara(pecas[ip].X); if (!d) return;
+var pts = pontosPeca[ip].slice().sort(function (a, b) { return a.s - b.s; }), sPil = [], c = coordPlano(ip, d);
+pts.forEach(function (q) { var o0 = papelNo(q.no, ip); if (o0.pilar || o0.pilarPassa) sPil.push(q.s); });
+for (var k0 = 0; k0 + 1 < sPil.length; k0++) { var vk = sPil[k0 + 1] - sPil[k0]; vao[d] = Math.max(vao[d], vk); vaoPl[d][c] = Math.max(vaoPl[d][c] || 0, vk); }
+});
+if (!vao.X && !vao.Y) return { plano: null, motivo: notaIncl + "nenhuma viga entre dois pilares — não dá para saber o plano do pórtico" };
+var dm = vao.X >= vao.Y ? "X" : "Y", dn = dm === "X" ? "Y" : "X", nRep = Object.keys(vaoPl[dm]).filter(function (c) { return vaoPl[dm][c] >= 2 * vao[dn] - 1e-9; }).length;
+if (vao[dm] >= 2 * vao[dn] && nRep >= 2) return { plano: dm, motivo: notaIncl + nRep + " pórticos repetidos na direção " + dm + " com vão viga × pilar de " + br(vao[dm], 2) + " m" + (vao[dn] ? ", pelo menos o dobro do vão em " + dn + " (" + br(vao[dn], 2) + " m)" : ""), criterio: "vao" };
+if (vao[dm] >= 2 * vao[dn]) return { plano: null, motivo: notaIncl + "vão maior na direção " + dm + " (" + br(vao[dm], 2) + " m) mas só " + nRep + " pórtico — sem pórticos repetidos não dá para saber o plano do pórtico" };
+return { plano: null, motivo: notaIncl + "vãos viga × pilar parecidos nas duas direções (X " + br(vao.X, 2) + " m, Y " + br(vao.Y, 2) + " m) — não dá para saber o plano do pórtico" };
+}
+function ligVal(v) { return v === "rigida" || v === "rotulada" || v === "auto" ? v : null; }
+var vpAnt = ligVal(op.vigaPilar), vpEsc = { X: ligVal(op.vigaPilarX) || vpAnt, Y: ligVal(op.vigaPilarY) || vpAnt };
+var autoPl = vpEsc.X === "auto" || vpEsc.Y === "auto" ? planoPortico() : null;
+function resolveDir(d) {
+var v = vpEsc[d];
+if (!v) return { tipo: "rotulada", origem: "padrao", txt: "rotulada (padrão)" };
+if (v !== "auto") return { tipo: v, origem: "escolha", txt: (v === "rigida" ? "rígida" : "rotulada") + " (escolha)" };
+if (autoPl.plano) return autoPl.plano === d ? { tipo: "rigida", origem: "auto", txt: "rígida (automático: plano do pórtico)" } : { tipo: "rotulada", origem: "auto", txt: "rotulada (automático: fora do plano do pórtico)" };
+return { tipo: "rotulada", origem: "auto-sem-plano", txt: "rotulada (automático: plano do pórtico não identificado)" };
+}
+var ligDir = { X: resolveDir("X"), Y: resolveDir("Y"), auto: autoPl };
+var ligPadrao = { vigaPilar: ligDir.X.tipo === ligDir.Y.tipo ? ligDir.X.tipo : "X " + ligDir.X.tipo + " / Y " + ligDir.Y.tipo, vigaPilarX: ligDir.X.tipo, vigaPilarY: ligDir.Y.tipo, vigaViga: op.vigaViga === "rigida" ? "rigida" : "rotulada" };
+var contDir = { X: 0, Y: 0, obl: 0 }, angObl = 0;
+var tipoObl = ligDir.X.tipo === ligDir.Y.tipo ? ligDir.X.tipo : "rotulada";
 var condPontas = {};
 var contagem = { rigida: 0, rotulada: 0, continua: 0, livre: 0, apoio: 0, desenhada: 0, emenda: 0, tipologia: 0 };
 function condicao(ip, lado, noId) {
@@ -77968,10 +78071,19 @@ if (p.papel === "terca") return { tipo: "rotulada", motivo: "terça: apoiada (cl
 if (p.papel === "pilar") {
 var outroPilar = o.ips.filter(function (q) { return pecas[q].papel === "pilar" && Math.abs(dot(pecas[q].X, p.X)) > 0.995; }).length;
 if (outroPilar) return { tipo: "continua", motivo: "pilar continua no de cima/baixo" };
-if (o.vigaPassa) return { tipo: ligPadrao.vigaPilar, motivo: "pilar sob/sobre viga contínua — ligação " + (ligPadrao.vigaPilar === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
+if (o.vigaPassa) {
+var dsP = {}; noInfo[noId].passa.forEach(function (q) { if (q !== ip && (pecas[q].papel === "viga" || pecas[q].papel === "terca")) dsP[dirClara(pecas[q].X) || "obl"] = 1; });
+var dks = Object.keys(dsP), tiposP = dks.map(function (d) { return d === "obl" ? tipoObl : ligDir[d].tipo; });
+if (dks.length === 1 || tiposP.every(function (t) { return t === tiposP[0]; })) { var d1 = dks[0] || "X"; if (d1 === "obl") return { tipo: tipoObl, motivo: "pilar sob/sobre viga contínua OBLÍQUA na planta (sem direção clara) — ligação " + tipoObl }; return { tipo: ligDir[d1].tipo, motivo: "pilar sob/sobre viga contínua na direção " + dks.join(" e ") + " — ligação " + ligDir[d1].txt }; }
+return { tipo: "rotulada", motivo: "pilar sob/sobre vigas contínuas nas direções X (" + ligDir.X.txt + ") e Y (" + ligDir.Y.txt + "): o topo do pilar fica ROTULADO (uma ligação só não é rígida numa direção e rotulada na outra) — use Ponta a ponta para mudar" };
+}
 return { tipo: "continua", motivo: "o pilar recebe as vigas: a rótula, se houver, fica na ponta da viga" };
 }
-if (o.pilar || o.pilarPassa) return { tipo: ligPadrao.vigaPilar, motivo: "viga × pilar sem ligação desenhada — " + (ligPadrao.vigaPilar === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
+if (o.pilar || o.pilarPassa) {
+var dV = dirClara(p.X);
+if (!dV) { contDir.obl++; angObl = Math.max(angObl, angEixo(p.X)); return { tipo: tipoObl, motivo: "viga × pilar sem ligação desenhada, viga OBLÍQUA na planta (" + br(angEixo(p.X), 1) + "° do eixo mais perto, mais que 15°): sem direção clara — " + (ligDir.X.tipo === ligDir.Y.tipo ? "X e Y com a mesma escolha: " + tipoObl : "ROTULADA"), direcao: null, obliqua: true }; }
+contDir[dV]++; return { tipo: ligDir[dV].tipo, motivo: "viga × pilar sem ligação desenhada, viga na direção " + dV + " — " + ligDir[dV].txt, direcao: dV };
+}
 if (o.vigaPassa) return { tipo: ligPadrao.vigaViga, motivo: "viga apoiada em viga sem ligação desenhada — " + (ligPadrao.vigaViga === "rigida" ? "rígida (escolha)" : "rotulada (padrão)") };
 var vigasPonta = o.ips.filter(function (q) { return pecas[q].papel === "viga"; });
 if (vigasPonta.length === 1 && o.ips.length === 1 && Math.abs(dot(pecas[vigasPonta[0]].X, p.X)) > 0.996) { contagem.emenda++; return { tipo: "continua", motivo: "emenda colinear sem nada no nó: tratada como CONTÍNUA (detalhar a emenda)" }; }
@@ -77994,13 +78106,13 @@ var abaixo = o.ips.some(function (q) { var pq = pecas[q], fora = dist(pq.a, esta
 if (abaixo) return null;
 if (esta[1] > minY + 0.05 && o.ips.some(function (q) { return pecas[q].papel !== "diagonal"; })) return null;
 var tbTip = p.calc && (p.calc.base === "engastada" || p.calc.base === "rotulada") ? p.calc.base : null;
-var tb = (op.bases || {})[p.id] || tbTip || op.basePadrao || "rotulada";
+var tb = (op.bases || {})[p.id] || tbTip || op.basePadrao || "engastada";
 var pd = placaDesenhada(p.id);
 if (pd) {
 if (pd.tipo !== (tb === "engastada" ? "engastada" : "rotulada")) avisos.push("Pilar " + p.mid + " (" + p.nome + "): a base escolhida na tela é " + tb + ", mas a placa DESENHADA é " + pd.tipo + " (" + pd.tipologia + ") — o cálculo usa a placa desenhada.");
 return { tipo: pd.tipo, motivo: "placa de base desenhada: " + pd.tipo + " (" + pd.tipologia + ")", base: true, desenhada: true };
 }
-return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (tbTip ? "base " + tbTip + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") : (op.basePadrao ? "base escolhida para todos os pilares" : "base rotulada (padrão)")), base: true };
+return { tipo: tb === "engastada" ? "engastada" : "rotulada", motivo: (op.bases || {})[p.id] ? "base escolhida no pilar" : (tbTip ? "base " + tbTip + " da tipologia" + (p.calc.tipologia ? " (" + p.calc.tipologia + ")" : "") : (op.basePadrao ? "base escolhida para todos os pilares" : "base engastada (padrão)")), base: true };
 }
 function placaDesenhada(pid) {
 var achou = null;
@@ -78178,13 +78290,16 @@ if (contagem.rigida) txt.push(contagem.rigida + " rígida(s)");
 if (contagem.continua) txt.push(contagem.continua + " contínua(s)");
 if (contagem.livre) txt.push(contagem.livre + " livre(s) (balanço)");
 if (contagem.apoio) txt.push(contagem.apoio + " em apoio");
-decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : "") + (contagem.tipologia ? (contagem.desenhada ? "; " : " — ") + contagem.tipologia + " pela tipologia do pórtico paramétrico" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
+decisoes.push({ tema: "Ligações", decisao: txt.join(", ") + (contagem.desenhada ? " — " + contagem.desenhada + " pela ligação desenhada no modelo" : "") + (contagem.tipologia ? (contagem.desenhada ? "; " : " — ") + contagem.tipologia + " pela tipologia do pórtico paramétrico" : ""), motivo: "a ligação desenhada manda; sem ela: viga × pilar na direção X " + ligDir.X.txt + ", na direção Y " + ligDir.Y.txt + "; viga × viga " + ligPadrao.vigaViga + " (padrão rotulada — troque na tela), diagonal articulada, terça apoiada" });
+var AVISO_PADRAO = op.padraoNovo ? " — PADRÃO DESDE A 1.2.149: base engastada e viga × pilar automática — confira" : "";
+if (contDir.X || contDir.Y || contDir.obl) decisoes.push({ tema: "Ligações viga × pilar por direção", decisao: "sem ligação desenhada: vigas na direção X " + ligDir.X.txt + " (" + contDir.X + " ponta(s)); vigas na direção Y " + ligDir.Y.txt + " (" + contDir.Y + " ponta(s))" + (contDir.obl ? "; vigas OBLÍQUAS na planta (mais de 15° do eixo, até " + br(angObl, 1) + "°): " + tipoObl + " (" + contDir.obl + " ponta(s)) — sem direção clara" : "") + AVISO_PADRAO,
+motivo: (autoPl ? (autoPl.plano ? "plano do pórtico identificado na direção " + autoPl.plano + ": " + autoPl.motivo + " — no galpão a ligação é rígida no plano do pórtico e rotulada na longitudinal (o X do contraventamento segura)" : "automático: " + autoPl.motivo + "; as duas direções ficam rotuladas (escolha na tela se o pórtico for rígido)") : "escolha da tela por direção (X e Y da planta)") + "; a viga até 15° do eixo segue o eixo, a mais oblíqua não tem direção clara (rotulada, salvo X e Y iguais); \"Ponta a ponta\" e a ligação desenhada mandam sobre a direção" });
 var nProv = Object.keys(lido.ligacoes || {}).filter(function (k) { return lido.ligacoes[k].provisoria; }).length;
 if (nProv) decisoes.push({ tema: "Ligações a confirmar", decisao: nProv + " ligação(ões) lançada(s) com a viga, pré-dimensionada(s) só pelo peso próprio (A CONFIRMAR NO CÁLCULO): no nó delas vale a escolha da tela (viga × pilar " + ligPadrao.vigaPilar + ", viga × viga " + ligPadrao.vigaViga + ")", motivo: "a ligação de partida não é decisão de projeto — depois do cálculo ela é confirmada ou trocada com os esforços da análise (coerente com o nó)" });
 if (contagem.emenda) avisos.push(contagem.emenda / 2 + " emenda(s) colinear(es) de viga sem ligação desenhada foram tratadas como CONTÍNUAS: detalhe a emenda (cobrejunta) para valer o que o cálculo considerou.");
 if (basesInfo.length) {
 var nEng = basesInfo.filter(function (b) { return b.tipo === "engastada"; }).length;
-decisoes.push({ tema: "Apoios", decisao: basesInfo.length + " base(s) de pilar: " + (basesInfo.length - nEng) + " rotulada(s), " + nEng + " engastada(s)", motivo: "a ponta de baixo do pilar que não encosta em nenhuma peça é a base; a condição é a escolhida na tela (padrão rotulada: a fundação recebe só forças)" });
+decisoes.push({ tema: "Apoios", decisao: basesInfo.length + " base(s) de pilar: " + (basesInfo.length - nEng) + " rotulada(s), " + nEng + " engastada(s)" + AVISO_PADRAO, motivo: "a ponta de baixo do pilar que não encosta em nenhuma peça é a base; a condição é a escolhida na tela (padrão engastada — em galpão a maioria das bases é engastada: a fundação recebe momento e a placa pede o fck da fundação; rotulada por escolha)" });
 }
 var nDiag = pecas.filter(function (p) { return p.papel === "diagonal"; }).length;
 if (nDiag) decisoes.push({ tema: "Diagonais", decisao: nDiag + " diagonal(is) articulada(s) nas pontas" + (pecas.some(function (p) { return p.tracao; }) ? "; as de barra redonda só trabalham à TRAÇÃO (saem do modelo quando comprimidas)" : ""), motivo: "barra de contraventamento ligada por gusset/olhal; barra redonda não resiste à compressão" });
@@ -78200,7 +78315,7 @@ L.mn = mn; L.mx = mx; L.vao = mx[0] - mn[0]; L.Lt = mx[2] - mn[2]; L.H = mx[1] -
 if (op.rigidezLigacoes) decisoes.push({ tema: "Rigidez das ligações", decisao: molasUsadas.length ? molasUsadas.length + " ligação(ões) de momento como mola rotacional na ponta da viga: " + molasUsadas.join("; ") : "nenhuma ponta de viga virou mola",
 motivo: "EN 1993-1-8:2005, 5.1.2(4): Sj = Sj,ini/η (Tabela 5.2, η = 2) em torno do eixo forte; o eixo fraco e a torção ficam como estavam (rigidez não calculada)" + (molasRecusadas.length ? ". Ficaram RÍGIDAS: " + molasRecusadas.join("; ") : "") });
 var Gm = { ok: true, livre: true, modelo: modelo, membros: membros, grupos: grp, secoes: {}, layout: L, decisoes: decisoes, avisos: avisos, problemas: problemas,
-pecas: pecas, noInfo: noInfo, apoiosNo: apoiosNo, bases: basesInfo, condPontas: condPontas, par: op, linhasTerca: [], lido: lido };
+pecas: pecas, noInfo: noInfo, apoiosNo: apoiosNo, bases: basesInfo, condPontas: condPontas, par: op, linhasTerca: [], lido: lido, ligDirecao: ligDir };
 pecas.forEach(function (p) { Gm.secoes[p.mid] = p.sec; });
 return Gm;
 }
@@ -78701,6 +78816,7 @@ function Mod() { return dep("AcoModelo", "./acomodelo.js"); }
 function Met() { return dep("BimMetal", "./metalpeca.js"); }
 function Cri() { return dep("MetalCriar", "./metalcriar.js"); }
 function Env() { return dep("AcoEnvoltorio", "./acoenvoltorio.js"); }
+function Res() { return dep("AcoResolverLivre", "./acoresolverlivre.js"); }
 function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
 function arr(v) { return Array.isArray(v) ? v : []; }
 function br(v, c) { if (v == null || !isFinite(v)) return "—"; c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
@@ -78818,7 +78934,7 @@ function rodada0(lido, entrada, op) {
 var M = ML(), C = Car(), A = Ana(), Dm = Dim();
 var ap = entrada.apoios || {}, lg = entrada.ligacoes || {}, cg = entrada.cargas || {};
 var pontos = arr(cg.pontuais); pontos.forEach(function (p) { p.no = null; });
-var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: pontos });
+var G = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: pontos });
 G.membros.forEach(function (m) { var p = lido.pecas.filter(function (x) { return x.id === m.peca; })[0]; if (p) m.reg = p.reg; });
 var base = { ok: false, modelo: G, decisoes: G.decisoes, avisos: G.avisos, tipo: "livre" };
 var est = M.estabilidade(G);
@@ -78827,7 +78943,7 @@ var escTrava = null, mEsc = G.membros.filter(function (m) { return /pé da escad
 if (mEsc.length) {
 var ids0 = {}; mEsc.forEach(function (m) { ids0[m.peca] = true; });
 var lido2 = {}; Object.keys(lido).forEach(function (k) { lido2[k] = lido[k]; }); lido2.pecas = lido.pecas.filter(function (q) { return !ids0[q.id]; });
-var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }) : null;
+var G2 = lido2.pecas.length ? M.montar(lido2, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }) : null;
 var est2 = G2 ? M.estabilidade(G2) : { ok: true };
 if (!est2.ok && arr(est2.problemas).some(function (q) { return q.tipo === "mecanismo" || q.tipo === "sem-apoio"; })) escTrava = { membros: mEsc.map(function (m) { return m.id; }) };
 }
@@ -78847,8 +78963,12 @@ var solP = [];
 var noRuim = (/nó ([^,\s]+)/.exec(String(res.motivo || "")) || [])[1] || "", mDiag = G.membros.filter(function (m) { return m.papelLivre === "diagonal" && noRuim.indexOf(m.id + "_") === 0; })[0];
 var basesRot = arr(G.bases).filter(function (b) { return b.tipo !== "engastada"; }).length;
 if (mDiag) { var eD = esbeltezMembro(mDiag); tx += " Quem perde a rigidez é a diagonal " + mDiag.id + " (" + mDiag.secao.nome + (eD ? ", L/r = " + br(eD.lam, 0) : "") + "): ela flamba sob a compressão — use barra redonda (só tração, em X) ou um perfil mais robusto."; }
-else if (/instável|mecanismo/i.test(res.motivo) && !horiz && vigasRot >= 3 && basesRot > 0) { tx += " Provável causa: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas."; solP.push({ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }); }
-base.problemas = [{ tipo: "analise", texto: tx, solucoes: solP }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
+var mecA = /instável|mecanismo/i.test(String(res.motivo || "")), SR = mecA && Res() ? Res().solucoesMecanismo(G, res.motivo) : null, semPar = SR ? SR.semPar : [];
+if (semPar.length) tx += " Diagonal(is) de barra redonda SEM a do outro sentido: " + semPar.slice(0, 6).map(function (d) { return d.membro + " (" + d.plano + ")"; }).join("; ") + (semPar.length > 6 ? "…" : "") + ".";
+if (mDiag) { }
+else if (mecA && !semPar.length && !horiz && vigasRot >= 3 && basesRot > 0) { tx += " Provável causa: as vigas do piso são ROTULADAS e não há contraventamento no PLANO do piso — o piso (chapa/steel deck) não entra como diafragma; os pilares internos ficam soltos no plano. Contravente o plano do piso (X horizontal; no mezanino ou na plataforma: 'Contraventamento no plano do piso') ou use ligações rígidas."; solP.push({ id: "contraventar-plano", texto: "Contraventar o plano do piso (X horizontal)" }); }
+if (SR) solP = SR.solucoes.concat(solP);
+base.problemas = [{ tipo: "analise", texto: tx, solucoes: solP, no: SR ? SR.no : null, pecas: SR ? SR.pecas : [], mecanismo: mecA }]; base.motivo = tx; base.casos = casos; base.combinacoes = combs; return base;
 }
 var pils = G.membros.filter(function (m) { return m.papelLivre === "pilar"; }), topos = pils.length ? pils.map(function (m) { return m.nos[m.nos.length - 1]; }) : G.modelo.nos.map(function (n) { return n.id; });
 var H = Math.max(1, G.layout.H), razaoDesl = 1, minDesl = H / 5000;
@@ -79185,6 +79305,235 @@ return { lote: { op: "lote", id: String(typeof novoId === "function" ? novoId() 
 var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
 global.AcoDimLivre = AcoDimLivre;
 if (typeof module !== "undefined" && module.exports) module.exports = AcoDimLivre;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/acoresolverlivre.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function Cat() { return dep("PerfisAco", "./perfisaco.js"); }
+function Mod() { return dep("AcoModelo", "./acomodelo.js"); }
+function Cri() { return dep("MetalCriar", "./metalcriar.js"); }
+function DL() { return dep("AcoDimLivre", "./acodimlivre.js"); }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function br(v, c) { if (v == null || !isFinite(v)) return "—"; c = c == null ? 2 : c; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function soma(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function mul(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
+function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function cruz(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function len(a) { return Math.sqrt(dot(a, a)); }
+function dist(a, b) { return len(sub(a, b)); }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function pt(p) { return [r6(p[0]), r6(p[1]), r6(p[2])]; }
+function distSeg(p, a, b) { var d = sub(b, a), L2 = dot(d, d); if (!(L2 > 0)) return dist(p, a); var t = Math.max(0, Math.min(1, dot(sub(p, a), d) / L2)); return dist(p, soma(a, mul(d, t))); }
+var TOL_NO = 0.03, TOL_PAR = 0.05, TOL_PLANO = 0.05, LAMBDA_COMP = 200;
+var SERIES_COMP = ["GERDAU-L", "AM-L", "VMB-TC", "VMB-TQ"];
+var TESTAVEIS = { "completar-x": 1, "completar-x-todos": 1, "trocar-diagonais": 1, "engastar-bases": 1, "ligacoes-rigidas": 1 };
+function naEstrutura(G, P) {
+var ks = Object.keys(G.noInfo || {});
+for (var i = 0; i < ks.length; i++) { var I = G.noInfo[ks[i]]; if (I && I.P && dist(I.P, P) <= TOL_NO) return true; }
+return arr(G.membros).some(function (m) { return m.papelLivre !== "diagonal" && m.a && m.b && distSeg(P, m.a, m.b) <= TOL_NO; });
+}
+function temDiagonal(G, C, D) {
+return arr(G.membros).some(function (m) { return m.papelLivre === "diagonal" && m.a && m.b && ((dist(m.a, C) <= TOL_PAR && dist(m.b, D) <= TOL_PAR) || (dist(m.a, D) <= TOL_PAR && dist(m.b, C) <= TOL_PAR)); });
+}
+function aresta(G, A, C) { return arr(G.membros).some(function (m) { return m.papelLivre !== "diagonal" && m.a && m.b && distSeg(A, m.a, m.b) <= TOL_NO && distSeg(C, m.a, m.b) <= TOL_NO; }); }
+function oposta(G, A, B) {
+var d = sub(B, A), ax = [0, 1, 2].filter(function (k) { return Math.abs(d[k]) > 0.02; });
+if (ax.length === 2) {
+var i = ax[0], C = A.slice(), D = B.slice(); C[i] = B[i]; D[i] = A[i];
+if (naEstrutura(G, C) && naEstrutura(G, D)) return { C: pt(C), D: pt(D) };
+return null;
+}
+if (ax.length !== 3) return null;
+var M0 = mul(soma(A, B), 0.5), R = dist(A, B) / 2, ks = Object.keys(G.noInfo || {}), melhor = null;
+ks.forEach(function (k) {
+var C = G.noInfo[k].P; if (!C || dist(C, A) <= TOL_NO || dist(C, B) <= TOL_NO || Math.abs(dist(C, M0) - R) > TOL_PAR) return;
+var D = sub(mul(M0, 2), C); if (!naEstrutura(G, D)) return;
+var nA = (aresta(G, A, C) ? 1 : 0) + (aresta(G, C, B) ? 1 : 0) + (aresta(G, B, D) ? 1 : 0) + (aresta(G, D, A) ? 1 : 0);
+if (nA >= 3 && (!melhor || nA > melhor.n)) melhor = { C: pt(C), D: pt(D), n: nA };
+});
+return melhor ? { C: melhor.C, D: melhor.D } : null;
+}
+function nomePlano(n, P) {
+var a = [Math.abs(n[0]), Math.abs(n[1]), Math.abs(n[2])];
+if (a[1] > 0.99) return "plano horizontal y = " + br(P[1], 2) + " m";
+if (a[0] > 0.99) return "plano x = " + br(P[0], 2) + " m";
+if (a[2] > 0.99) return "plano z = " + br(P[2], 2) + " m";
+return "plano inclinado por (" + br(P[0], 2) + "; " + br(P[1], 2) + "; " + br(P[2], 2) + ")";
+}
+function diagonaisSemPar(G) {
+var out = [];
+arr(G && G.membros).forEach(function (m) {
+if (m.papelLivre !== "diagonal" || m.papel !== "tirante" || !m.a || !m.b) return;
+var o = oposta(G, m.a, m.b); if (!o || temDiagonal(G, o.C, o.D)) return;
+var n = cruz(sub(m.b, m.a), sub(o.C, m.a)), Ln = len(n); if (!(Ln > 1e-9)) return;
+n = mul(n, 1 / Ln);
+out.push({ membro: m.id, peca: String(m.peca), perfil: m.secao && m.secao.nome, a: pt(m.a), b: pt(m.b), C: o.C, D: o.D, L: dist(o.C, o.D), normal: n, plano: nomePlano(n, m.a) });
+});
+return out;
+}
+function localDoNo(G, motivo) {
+var noM = (/nó ([^,\s)]+)/.exec(String(motivo || "")) || [])[1] || null, o = { no: noM, pontos: [], membros: [] };
+if (!noM || !G) return o;
+var I = G.noInfo && G.noInfo[noM];
+if (I && I.P) { o.pontos.push(I.P); o.membros = arr(G.membros).filter(function (m) { return arr(m.nos).indexOf(noM) >= 0; }); return o; }
+var seg = String(noM).split("#")[0], B = arr(G.modelo && G.modelo.barras).filter(function (b) { return b.id === seg; })[0];
+if (B) { [B.i, B.j].forEach(function (id) { var J = G.noInfo && G.noInfo[id]; if (J && J.P) o.pontos.push(J.P); }); }
+o.membros = arr(G.membros).filter(function (m) { return arr(m.segs).indexOf(seg) >= 0 || arr(m.nos).indexOf(seg) >= 0 || noM.indexOf(m.id + "_") === 0; });
+if (!o.pontos.length) o.membros.forEach(function (m) { if (m.a) o.pontos.push(m.a); if (m.b) o.pontos.push(m.b); });
+return o;
+}
+function noPlano(d, P) { return Math.abs(dot(d.normal, sub(P, d.a))) <= TOL_PLANO; }
+function perfilComprimido(Lmax) {
+var C = Cat(), Mo = Mod(), MC = Cri(), D = DL(); if (!C || !Mo || !D || !D.esbeltezMembro) return null;
+var melhor = null;
+SERIES_COMP.forEach(function (s) {
+C.listar(s).forEach(function (nome) {
+if (MC && MC.desenhavel && !MC.desenhavel(nome)) return;
+var reg = C.obter(nome), sec = reg ? Mo.secaoDe(reg.nome) : null; if (!reg || !sec || !(num(reg.massa, 0) > 0)) return;
+var e = D.esbeltezMembro({ secao: sec, L: Lmax, flambagem: { Lx: Lmax, Ly: Lmax } });
+if (!e || !isFinite(e.lam) || e.lam > LAMBDA_COMP) return;
+if (!melhor || reg.massa < melhor.massa - 1e-9) melhor = { nome: reg.nome, massa: num(reg.massa, 0), lam: e.lam, forma: reg.forma };
+});
+});
+return melhor;
+}
+function massaDe(nome) { var C = Cat(), c = C && C.obter(nome); return c ? num(c.massa, NaN) : NaN; }
+function solucoesMecanismo(G, motivo, op) {
+op = op || {};
+var sol = [], L = localDoNo(G, motivo), todas = diagonaisSemPar(G);
+var locais = todas.filter(function (d) { return L.pontos.some(function (P) { return noPlano(d, P); }); });
+if (!locais.length) locais = todas;
+function planos(ds) { var p = []; ds.forEach(function (d) { if (p.indexOf(d.plano) < 0) p.push(d.plano); }); return p; }
+function completar(ds, id, rot) {
+var novas = ds.map(function (d) { return { a: d.C, b: d.D, cat: d.perfil, de: d.peca, membro: d.membro, L: d.L }; });
+var kg = novas.reduce(function (t, q) { return t + q.L * massaDe(q.cat); }, 0);
+sol.push({ id: id, texto: "Completar o X" + rot + ": criar a diagonal do outro sentido (" + (ds[0].perfil || "o mesmo perfil") + ", pontas cruzadas) em " + ds.length + " painel(is) — " + planos(ds).join("; ") + ". Em cada combinação uma das duas fica tracionada e o plano fica travado.",
+muda: "cria " + novas.length + " diagonal(is): " + ds.map(function (d) { return "par de " + d.membro; }).join(", "), novas: novas, pecas: ds.map(function (d) { return d.peca; }), massa: kg, mudancas: novas.length });
+}
+if (locais.length) {
+completar(locais, "completar-x", locais.length < todas.length ? " no plano do problema" : "");
+if (locais.length < todas.length) completar(todas, "completar-x-todos", " em todos os planos com diagonal sozinha");
+var Lmax = locais.reduce(function (t, d) { return Math.max(t, dist(d.a, d.b)); }, 0), pc = perfilComprimido(Lmax);
+if (pc) {
+var kgT = locais.reduce(function (t, d) { var Ld = dist(d.a, d.b); return t + Ld * (pc.massa - num(massaDe(d.perfil), 0)); }, 0);
+sol.push({ id: "trocar-diagonais", texto: "Trocar a barra redonda das " + locais.length + " diagonal(is) sozinha(s) por " + pc.nome + " (" + (pc.forma === "L" ? "cantoneira" : "tubo") + ": trabalha à tração E à compressão; L/r = " + br(pc.lam, 0) + " ≤ 200) — o plano fica travado com uma diagonal só.",
+muda: "troca o perfil de " + locais.map(function (d) { return d.membro; }).join(", ") + ": " + (locais[0].perfil || "") + " → " + pc.nome, trocas: locais.map(function (d) { return { peca: d.peca, membro: d.membro, de: d.perfil, para: pc.nome }; }), pecas: locais.map(function (d) { return d.peca; }), massa: kgT, mudancas: locais.length });
+}
+}
+var basesRot = arr(G && G.bases).filter(function (b) { return b.tipo !== "engastada"; }).length;
+if (basesRot) sol.push({ id: "engastar-bases", texto: "Engastar as bases dos pilares (" + basesRot + " base(s) rotulada(s) passam a engastadas: a fundação passa a receber MOMENTO — informe o fck da fundação para a placa de base)", efeito: EFEITO["engastar-bases"], muda: basesRot + " base(s) rotulada(s) → engastada(s)", massa: 0, mudancas: basesRot, estado: { basePadrao: "engastada" } });
+var temRig = arr(G && G.membros).some(function (m) { return (m.pontas.ini || {}).tipo === "rigida" || (m.pontas.fim || {}).tipo === "rigida"; });
+var nVig = arr(G && G.membros).filter(function (m) { return m.papelLivre === "viga" && ((m.pontas.ini || {}).tipo === "rotulada" || (m.pontas.fim || {}).tipo === "rotulada"); }).length;
+if (!temRig && nVig && !op.semRigidas) sol.push({ id: "ligacoes-rigidas", texto: "Ligações viga × pilar RÍGIDAS (chapa de topo — pórtico): as vigas passam a travar os pilares pelo momento", efeito: EFEITO["ligacoes-rigidas"], muda: "ligações viga × pilar sem desenho: rotuladas → rígidas (" + nVig + " viga(s))", massa: 0, mudancas: nVig, estado: { vigaPilar: "rigida" } });
+return { solucoes: sol, no: L.no, pecas: L.membros.map(function (m) { return String(m.peca); }).concat(locais.map(function (d) { return d.peca; })).filter(function (x, i, a) { return a.indexOf(x) === i; }), semPar: todas };
+}
+var ESTADO_POR_ID = { "engastar-bases": { basePadrao: "engastada" }, "ligacoes-rigidas": { vigaPilar: "rigida" } };
+function estadoDe(sol) { return sol ? (sol.estado || (!sol.novas && !sol.trocas ? ESTADO_POR_ID[sol.id] : null) || null) : null; }
+function aplicarNaEntrada(entrada, sol) {
+var MC = Cri(), e = copia(entrada || {}); e.otimizar = false;
+if (!sol) return { erro: "Sem solução." };
+var est = estadoDe(sol);
+if (est) {
+e.apoios = e.apoios || {}; e.ligacoes = e.ligacoes || {};
+if (est.basePadrao) e.apoios.basePadrao = est.basePadrao;
+if (est.vigaPilar) { e.ligacoes.vigaPilar = est.vigaPilar; e.ligacoes.vigaPilarX = est.vigaPilar; e.ligacoes.vigaPilarY = est.vigaPilar; }
+return { entrada: e };
+}
+if (!arr(sol.novas).length && !arr(sol.trocas).length) return { erro: "a solução não diz o que mudar" };
+if (!MC) return { erro: "O motor das peças (js/metalcriar.js) não carregou." };
+var cx = arr(e.caixas), k = 0, erros = [];
+arr(sol.novas).forEach(function (q) {
+var c = MC.barra(q.a, q.b, { ferr: "diagonal", cat: q.cat });
+if (!c || c.erro) { erros.push((c && c.erro) || "diagonal não criada"); return; }
+c.id = "resolver-" + (++k); cx.push(c);
+if (arr(e.ids).length) e.ids.push(c.id);
+});
+arr(sol.trocas).forEach(function (t) {
+for (var i = 0; i < cx.length; i++) {
+if (String(cx[i].id) !== String(t.peca)) continue;
+var cat = MC.perfilCat(t.para), r = cat ? MC.editar(cx[i], { cat: cat }) : { erro: t.para + " não é desenhável" };
+if (!r || r.erro || !r.caixa) { erros.push((r && r.erro) || "troca recusada"); return; }
+var nc = r.caixa; nc.id = cx[i].id; cx[i] = nc; return;
+}
+erros.push("peça " + t.peca + " não está no modelo");
+});
+e.caixas = cx;
+return erros.length ? { erro: erros.join("; "), entrada: e } : { entrada: e };
+}
+function razoesRuins(r) {
+var o = [], fin = function (v) { return typeof v === "number" && isFinite(v); };
+Object.keys((r && r.membros) || {}).forEach(function (k) { var v = r.membros[k] || {}; if (!fin(v.razao) || arr(v.verificacoes).some(function (q) { return q && q.razao != null && !fin(q.razao); })) o.push(k); });
+arr(r && r.servico).forEach(function (sv) { if (sv && !fin(sv.razao) && o.indexOf(sv.membro) < 0) o.push(String(sv.membro)); });
+return o;
+}
+function testar(entrada, sol, op) {
+var D = DL(), t0 = Date.now(), kg = sol.massa != null ? num(sol.massa, NaN) : (estadoDe(sol) ? 0 : NaN);
+var o = { id: sol.id, texto: sol.texto, muda: sol.muda || sol.texto, massa: kg, mudancas: num(sol.mudancas, 1), fecha: false, local: !!LOCAIS[sol.id], efeito: sol.efeito || EFEITO[sol.id] || null };
+if (!TESTAVEIS[sol.id]) { o.motivo = "solução sem teste automático"; o.naoTestada = true; return o; }
+var ap = aplicarNaEntrada(entrada, sol);
+if (ap.erro) { o.motivo = "não deu para montar a solução: " + ap.erro; return o; }
+var r; try { r = D.calcular(ap.entrada, op && op.calc); } catch (e) { r = { ok: false, motivo: "erro no cálculo: " + (e && e.message) }; }
+o.tempoMs = Date.now() - t0;
+o.fecha = !!(r && r.ok === true && isFinite(num(r.peso, NaN)) && isFinite(kg));
+o.aprovado = !!(r && r.aprovado); o.falhas = r ? r.falhas : null; o.peso = r ? r.peso : null; o.situacao = r && r.situacao ? r.situacao.id : null;
+if (o.fecha) { var ruins = razoesRuins(r); if (ruins.length) { o.fecha = false; o.inconsistente = true; o.aprovado = false; o.motivo = "cálculo inconsistente — não use (razão sem número em " + ruins.slice(0, 4).join(", ") + (ruins.length > 4 ? "…" : "") + ")"; } }
+if (!o.fecha && !o.motivo) o.motivo = String((r && (r.motivo || (arr(r.problemas)[0] || {}).texto)) || "o cálculo não fechou").slice(0, 400);
+return o;
+}
+var LOCAIS = { "completar-x": 1, "completar-x-todos": 1, "trocar-diagonais": 1 }, ORDEM_GLOBAL = { "ligacoes-rigidas": 1, "engastar-bases": 2 };
+var EFEITO = { "engastar-bases": "a fundação passa a receber momento; informe o fck da fundação (sem ele a placa de base engastada fica A CONFIRMAR)",
+"ligacoes-rigidas": "os nós viga × pilar passam a transmitir momento (chapa de topo a detalhar); as bases não mudam" };
+function local(t) { return !!LOCAIS[t.id]; }
+function nomeSol(t) { return String(t.texto || t.id).split(" — ")[0].split(": ")[0].split(" (")[0]; }
+function escolher(testes) {
+var ok = arr(testes).filter(function (t) { return t.fecha; });
+if (!ok.length) {
+var feitos = arr(testes).filter(function (t) { return !t.naoTestada; });
+return { proposta: null, porque: !feitos.length ? "Nenhuma solução pôde ser testada." : "Nenhuma das " + feitos.length + " soluções testadas fecha a análise: " + feitos.map(function (t) { return nomeSol(t) + " — " + (t.motivo || "não fechou"); }).join(" | ") };
+}
+ok.sort(function (a, b) {
+var la = local(a), lb = local(b); if (la !== lb) return la ? -1 : 1;
+if (la) { var d = num(a.massa, 0) - num(b.massa, 0); if (Math.abs(d) > 0.05) return d; return num(a.mudancas, 0) - num(b.mudancas, 0); }
+return (ORDEM_GLOBAL[a.id] || 9) - (ORDEM_GLOBAL[b.id] || 9);
+});
+var p = ok[0], nLoc = ok.filter(local).length, seg = ok[1];
+var porque = local(p) ? "Solução LOCAL, onde está o problema: das " + nLoc + " locais que fecham, a de menor acréscimo de aço (" + br(num(p.massa, 0), 1) + " kg)." + (ok.length > nLoc ? " As globais que também fecham (" + ok.filter(function (t) { return !local(t); }).map(nomeSol).join("; ") + ") mexem na estrutura inteira ou na fundação — ficam como alternativa." : "")
+: "Nenhuma solução local fecha: proposta a global de menor impacto (" + (p.id === "ligacoes-rigidas" ? "ligações rígidas antes de engastar, que muda a fundação" : nomeSol(p)) + "). Efeito: " + (EFEITO[p.id] || p.muda || "") + ".";
+if (seg) porque += " A seguinte: " + nomeSol(seg) + (local(seg) ? " (" + br(num(seg.massa, 0), 1) + " kg)" : "") + ".";
+return { proposta: p.id, porque: porque, local: local(p), efeito: EFEITO[p.id] || null };
+}
+function resolver(entrada, solucoes, op) {
+op = op || {}; var lim = num(op.limiteMs, 30000), t0 = Date.now(), testes = [];
+arr(solucoes).forEach(function (s) {
+if (Date.now() - t0 > lim) { testes.push({ id: s.id, texto: s.texto, muda: s.muda, massa: s.massa, fecha: false, naoTestada: true, motivo: "não testada: passou do limite de tempo" }); return; }
+testes.push(testar(entrada, s, op));
+});
+var e = escolher(testes); e.testes = testes; e.tempoMs = Date.now() - t0;
+return e;
+}
+function opsModelo(sol, caixas, novoId) {
+var MC = Cri(); if (!MC || !sol) return { lote: null, n: 0, erros: ["motor das peças não carregou"] };
+var por = {}; arr(caixas).forEach(function (c) { if (c) por[String(c.id)] = c; });
+var ops = [], erros = [], nid = function () { return String(typeof novoId === "function" ? novoId() : "r" + Date.now() + Math.round(Math.random() * 1e6)); };
+arr(sol.novas).forEach(function (q) { var c = MC.barra(q.a, q.b, { ferr: "diagonal", cat: q.cat }); if (c && !c.erro) ops.push({ op: "criar", id: nid(), caixa: c }); else erros.push((c && c.erro) || "diagonal"); });
+arr(sol.trocas).forEach(function (t) {
+var c = por[String(t.peca)]; if (!c) { erros.push("peça " + t.peca + " não está mais no modelo"); return; }
+var cat = MC.perfilCat(t.para), r = cat ? MC.editar(c, { cat: cat }) : null;
+if (!r || r.erro || !r.caixa) { erros.push(t.membro + ": " + ((r && r.erro) || "perfil " + t.para + " não desenhável")); return; }
+ops.push(MC.opAjustar(String(t.peca), r.caixa));
+});
+if (!ops.length) return { lote: null, n: 0, erros: erros };
+return { lote: { op: "lote", id: nid(), origem: "metal-calc-livre-resolver", pedido: sol.texto, ops: ops }, n: ops.length, erros: erros };
+}
+var AcoResolverLivre = { diagonaisSemPar: diagonaisSemPar, localDoNo: localDoNo, solucoesMecanismo: solucoesMecanismo, perfilComprimido: perfilComprimido, aplicarNaEntrada: aplicarNaEntrada, testar: testar, escolher: escolher, resolver: resolver, opsModelo: opsModelo, estadoDe: estadoDe, EFEITO: EFEITO, LOCAIS: LOCAIS, TESTAVEIS: TESTAVEIS, LAMBDA_COMP: LAMBDA_COMP };
+global.AcoResolverLivre = AcoResolverLivre;
+if (typeof module !== "undefined" && module.exports) module.exports = AcoResolverLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/acoenvoltorio.js ==== */
@@ -79629,7 +79978,7 @@ function prepararEntrada(entrada) {
 var M = MLv(); if (!M || !entrada || !entrada.envoltorio) return null;
 var lido = M.ler(entrada.caixas, { ids: entrada.ids, acoEstrutura: entrada.acoEstrutura }); if (!lido.pecas.length || lido.semPerfil.length || lido.semAco.length) return null;
 var ap = entrada.apoios || {}, lg = entrada.ligacoes || {}, G0;
-try { G0 = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }); } catch (e) { return null; }
+try { G0 = M.montar(lido, { bases: ap.bases, basePadrao: ap.basePadrao, apoios: ap.extras, ligacoes: lg.pontas, vigaPilar: lg.vigaPilar, vigaPilarX: lg.vigaPilarX, vigaPilarY: lg.vigaPilarY, padraoNovo: !!(ap.padraoNovo || lg.padraoNovo), vigaViga: lg.vigaViga, rigidezLigacoes: lg.rigidez === "sim", pontos: [] }); } catch (e) { return null; }
 var env = ler(G0, { eixos: entrada.envoltorio.eixos }), fech = casarFechamentos(env, entrada.envoltorio);
 var e2 = {}; Object.keys(entrada).forEach(function (k) { e2[k] = entrada[k]; });
 var cg = e2.cargas = copia(entrada.cargas || {}); cg.areas = arr(cg.areas); cg.pontuais = arr(cg.pontuais);
@@ -80533,7 +80882,7 @@ if (ch.id) lm.push(trw([td(t(x.nome)), td("chumbadores"), td(esc(ch.n) + " × " 
 if (dm.solda != null || dm.soldaMesa) lm.push(trw([td(t(x.nome)), td("solda"), td(dm.soldaMesa ? "mesas: " + t(dm.soldaMesa) + (dm.soldaAlma != null ? "; alma: filete " + br(num(dm.soldaAlma, NaN), 0) + " mm" : "") : "filete " + br(num(dm.solda, NaN), 0) + " mm")]));
 });
 var fund = obj(c.par.fundacao).fck != null ? obj(c.par.fundacao) : obj(c.parE.fundacao);
-lm.push(trw([td("Placas de base"), td("concreto do bloco"), td(fin(num(fund.fck, NaN)) ? "fck = " + un(num(fund.fck, NaN), 0, "MPa") + " (informado)" : "fck adotado no cálculo da pressão sob a placa: passo σc,Rd da " + secao("dimensionamento") + "; o concreto do bloco deve ter, no mínimo, esse fck (premissa, " + S("avisos") + ".2)")]));
+lm.push(trw([td("Placas de base"), td("concreto do bloco"), td(fin(num(fund.fck, NaN)) && num(fund.fck, 0) > 0 ? "fck = " + un(num(fund.fck, NaN), 0, "MPa") + " (informado)" : "fck da fundação NÃO informado: 25 MPa só de REFERÊNCIA — a ancoragem do chumbador não é verificada e as placas de base ficam A CONFIRMAR até o fck do projeto de fundação")]));
 h += "<p>Materiais adotados pelo cálculo das ligações (arranjos e passos na " + secao("dimensionamento") + "):</p>";
 h += d.tab("Materiais das ligações", ["Ligação", "Item", "Especificação"], lm, { classe: "compacta" });
 if (Mt) {
@@ -81559,7 +81908,9 @@ var sitLig = !enc.length || !ligsDim.length ? "" : (ligOk ? "; as " + enc.length
 var nvS = arr(r.naoVerificados), incompleto = r.situacao && r.situacao.id === "incompleto";
 var ajPend = arr(ligsDim).some(function (l) { return l && l.resultado && l.resultado.ajusteCota; }), semLig = !ligsDim.length || !enc.length;
 if (!incompleto && r.aprovado && (semLig || ajPend)) sitLig = sitLig + (semLig ? "; ligações e placas de base NÃO dimensionadas" : "") + (ajPend ? "; AJUSTE DE COTA da fundação pendente" : "") + " — não emitir";
-var situacao = incompleto ? '<span class="falha">INCOMPLETO — barras ' + (r.aprovado ? "atendem" : "não atendem") + "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) + esc(sitLig) + "</span>" : r.aprovado && ligOk && !semLig && !ajPend ? '<span class="ok">todas as verificações do cálculo atendem' + esc(sitLig) + "</span>" : (r.aprovado ? '<span class="falha">barras atendem' + esc(sitLig) + "</span>" : '<span class="falha">' + r.falhas + " verificação(ões) das barras não atende(m)" + (nvS.length ? "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) : "") + esc(sitLig) + "</span>");
+var pendExt = arr(opcoes.pendenciasExternas).filter(function (x) { return x; }).map(String);
+if (pendExt.length) { sitLig = sitLig + "; " + pendExt.join("; ") + " — não emitir"; pendExt.forEach(function (a) { avisos.push(a); }); }
+var situacao = incompleto ? '<span class="falha">INCOMPLETO — barras ' + (r.aprovado ? "atendem" : "não atendem") + "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) + esc(sitLig) + "</span>" : r.aprovado && ligOk && !semLig && !ajPend && !pendExt.length ? '<span class="ok">todas as verificações do cálculo atendem' + esc(sitLig) + "</span>" : (r.aprovado ? '<span class="falha">barras atendem' + esc(sitLig) + "</span>" : '<span class="falha">' + r.falhas + " verificação(ões) das barras não atende(m)" + (nvS.length ? "; NÃO verificado: " + esc(nvS.map(function (x) { return x.tema + " (" + x.motivo + ")"; }).join("; ")) : "") + esc(sitLig) + "</span>");
 sec("objeto", "Objeto, escopo e premissas",
 "<p>Este memorial apresenta o cálculo da estrutura de aço <b>modelada no OrçaPRO</b> peça a peça (" + esc(descr) + "; " + esc(dims) + "), com as ações da NBR 6120:2019 lançadas por área e por ponto" + (r.vento ? ", e o vento da NBR 6123" : "") + ". A análise é de 2ª ordem (P-Δ e P-δ) com imperfeições, e cada barra é verificada pela NBR 8800 (perfis laminados, soldados, tubos e barras) ou pela NBR 14762 (formados a frio).</p>" +
 "<p>O modelo de cálculo é lido da geometria desenhada: as pontas que se tocam formam os nós, a peça que passa por um nó continua por ele, os apoios são as bases dos pilares e os pontos indicados pelo engenheiro; a condição de cada ligação vem da ligação desenhada ou, sem ela, do padrão informado na seção " + "4" + ". Unidades: kN, m, kN·m (tensões em MPa). Eixos: X e Z horizontais, Y vertical para cima; nos esforços, N > 0 é tração.</p>" +
@@ -87325,7 +87676,7 @@ fechamentos: { frente: face("telha", [{ largura: 4, altura: 4.5, dominante: true
 cobertura: { telhaId: "isoeste-standard-tp40-0,50", extra: 0.10, empocamento: false, filtro: "" },
 perfis: { modo: "auto", familia: "GERDAU", pilar: "", viga: "", tapamento: "", partida: {} },
 acos: { perfil: "ASTM A572 Gr.50", frio: "NBR 6650 CF-26", barra: "ASTM A36" },
-fundacao: { fck: 25, A2_A1: 1 },
+fundacao: { fck: "", A2_A1: 1 },
 contraventamento: "auto", maoFrancesa: "auto"
 };
 function modelo(id, nome, desc, tags, g, faces, extra) { return { id: id, nome: nome, desc: desc, tags: tags, geometria: g, fechamentos: faces, extra: extra || {} }; }
@@ -87481,7 +87832,7 @@ cobertura: { telhaVaoMax: ti.vm && ti.vm.vao ? ti.vm.vao : null, telhaNome: t ? 
 fechamentos: fechamentosMotor(est),
 contraventamento: est.contraventamento || "auto", maoFrancesa: est.maoFrancesa || "auto",
 cargas: { telhaPeso: ti.peso && ti.peso.valor != null ? ti.peso.valor : 0.06, permanenteExtra: num(est.cobertura.extra, 0.1) },
-fundacao: { fck: num(est.fundacao && est.fundacao.fck, 25), A2_A1: num(est.fundacao && est.fundacao.A2_A1, 1) }
+fundacao: { fck: num(est.fundacao && est.fundacao.fck, null), A2_A1: num(est.fundacao && est.fundacao.A2_A1, 1) }
 };
 if (pesoFech) par.cargas.fechamentoPeso = pesoFech;
 var ve = ventoEntrada(est); if (ve) par.vento = ve;
@@ -88325,7 +88676,7 @@ h += '</div></section><section class="mc-card"><h4>Estabilidade</h4><p class="mc
 '<b style="font-size:12.5px">Contraventamento</b><div class="mc-ops" style="margin:6px 0 12px">' + CONTRAVENTOS.map(function (c) { return '<button class="mc-op" data-mc-acao="contravento" data-mc-v="' + c.id + '" aria-pressed="' + (e.contraventamento === c.id) + '"' + (c.dica ? ' data-dica="' + c.dica + '"' : "") + "><b>" + esc(c.nome) + "</b><span>" + esc(c.desc) + "</span></button>"; }).join("") + "</div>" +
 '<b style="font-size:12.5px">Mãos-francesas</b> <button type="button" class="mc-i" data-dica="mao-francesa" aria-label="Mão-francesa">i</button><div style="margin-top:6px">' + seg("maofrancesa", e.maoFrancesa, MAOS.map(function (m) { return [m.id, m.nome]; })) + "</div></section>" +
 '<section class="mc-card"><h4>Fundação <button type="button" class="mc-i" data-dica="' + (e.geometria.base === "engastada" ? "placa-base-engastada" : "placa-base-rotulada") + '" aria-label="Placa de base">i</button></h4><p class="mc-exp">O concreto do bloco onde a placa de base apoia: entra na pressão sob a placa e na ancoragem dos chumbadores (as ligações saem calculadas).</p><div class="mc-campos">' +
-seletor("fundacao.fck", "Concreto do bloco (fck)", [[20, "C20 — 20 MPa"], [25, "C25 — 25 MPa"], [30, "C30 — 30 MPa"], [35, "C35 — 35 MPa"], [40, "C40 — 40 MPa"]]) +
+seletor("fundacao.fck", "Concreto do bloco (fck)", [["", "— informe —"], [20, "C20 — 20 MPa"], [25, "C25 — 25 MPa"], [30, "C30 — 30 MPa"], [35, "C35 — 35 MPa"], [40, "C40 — 40 MPa"]]) +
 campo("fundacao.A2_A1", "Relação de áreas A2/A1", "", { min: 1, max: 4, exp: "Bloco ÷ placa; 1 é o mais conservador" }) + "</div></section></aside></div>";
 return h;
 }
@@ -88645,7 +88996,7 @@ h += "</section>";
 h += alternativaHtml(r);
 var LL = arr(r.ligacoes && r.ligacoes.lista);
 if (LL.length) {
-h += '<section class="mc-card" data-mc="ligacoes"><h4>Ligações <span class="mc-chip ' + (r.ligacoes.aprovado ? "ok" : "erro") + '">' + (r.ligacoes.aprovado ? "todas passam" : r.ligacoes.falhas + " não passa(m)") + '</span></h4><p class="mc-exp">Dimensionadas com os esforços de todas as combinações últimas (NBR 8800: parafusos, soldas, chapas, placa de base e chumbadores; concreto C' + fmt(num(r.parametros && r.parametros.fundacao && r.parametros.fundacao.fck, 25), 0) + ").</p><table class=\"mc-tab\"><thead><tr><th>Ligação</th><th>O que sai no detalhe</th><th>Aproveitamento</th><th>O que governa</th></tr></thead><tbody>" +
+h += '<section class="mc-card" data-mc="ligacoes"><h4>Ligações <span class="mc-chip ' + (r.ligacoes.aprovado ? "ok" : "erro") + '">' + (r.ligacoes.aprovado ? "todas passam" : r.ligacoes.falhas + " não passa(m)") + '</span></h4><p class="mc-exp">Dimensionadas com os esforços de todas as combinações últimas (NBR 8800: parafusos, soldas, chapas, placa de base e chumbadores; ' + (num(r.parametros && r.parametros.fundacao && r.parametros.fundacao.fck, null) != null ? "concreto C" + fmt(num(r.parametros.fundacao.fck, 0), 0) : "fck da fundação NÃO informado: placas de base A CONFIRMAR") + ").</p><table class=\"mc-tab\"><thead><tr><th>Ligação</th><th>O que sai no detalhe</th><th>Aproveitamento</th><th>O que governa</th></tr></thead><tbody>" +
 LL.map(function (l) { var rz = num(l.razao, 0), cls = rz > 1 ? "erro" : (rz > 0.9 ? "aviso" : ""), dk = DICA_LIG[l.id];
 return '<tr data-mc="ligacao"' + (dk ? ' data-dica="' + dk + '" data-dica-lado="esquerda"' : "") + "><td><b>" + esc(l.nome) + "</b></td><td style=\"max-width:380px\">" + esc(l.resumo || "") + (l.sugestao ? '<br><span style="color:var(--mc-erro)">' + esc(l.sugestao) + "</span>" : "") + (l.decisao ? '<br><span class="mc-exp" style="margin:0">' + esc(l.decisao) + "</span>" : "") +
 '</td><td><div class="mc-ap"><div class="mc-barra ' + cls + '"><i style="width:' + Math.min(100, rz * 100).toFixed(1) + '%"></i></div><b>' + fmt(rz * 100, 0) + " %</b></div></td><td>" + esc(l.governante || "—") + "</td></tr>"; }).join("") + "</tbody></table></section>";
@@ -89194,6 +89545,7 @@ function DL() { return global.AcoDimLivre; }
 function MU() { return global.BimMetalUI; }
 function EV() { return global.AcoEnvoltorio; }
 function PL() { return global.AcoPranchasLivre; }
+function RS() { return global.AcoResolverLivre; }
 function localObra() {
 var o = obra();
 if (o && o.lat != null && o.lon != null && isFinite(+o.lat) && isFinite(+o.lon)) return { lat: +o.lat, lon: +o.lon, fonte: "cadastro da obra", endereco: String(o.local || o.endereco || o.cidade || "") };
@@ -89204,7 +89556,7 @@ function eixosModelo() { try { var st = global.BIM && BIM.editarEstado ? BIM.edi
 function obraId() { var g = global.Gestao; return String((g && g._bimSel) || "geral"); }
 function obra() { var g = global.Gestao, o = null; try { if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel); } catch (e) {} return o; }
 function chave() { return "orcapro:metal:livre:" + obraId(); }
-var PADRAO = { apoios: { basePadrao: "rotulada", bases: {} }, ligacoes: { vigaPilar: "rotulada", vigaViga: "rotulada" }, areas: [], pontuais: [], escadas: [],
+var PADRAO = { apoios: { basePadrao: "engastada", bases: {}, fckFundacao: "" }, ligacoes: { vigaPilarX: "auto", vigaPilarY: "auto", vigaViga: "rotulada" }, areas: [], pontuais: [], escadas: [],
 vento: { ativo: false, v0: "", lat: "", lon: "", local: "", endereco: "", fonte: "", categoria: "II", grupoS3: 2, faces: { frente: true, fundo: true, esquerda: true, direita: true } }, otimizar: false, soSelecao: false, acrescimo: 0.05,
 envoltorio: { situacao: "livre", porChave: {}, cobertura: { tipo: "sem" } }, acoEstrutura: "" };
 var U = { est: null, obra: null, passo: 1, modo: "passos", r: null, lido: null, G: null, calculando: false, sel: [] };
@@ -89212,8 +89564,28 @@ function ler() { try { var s = global.localStorage && localStorage.getItem(chave
 function salvar() { try { if (global.localStorage) localStorage.setItem(chave(), JSON.stringify(U.est)); } catch (e) {} }
 function estado() {
 if (U.obra !== obraId()) { U.obra = obraId(); U.est = null; U.r = null; }
-if (!U.est) { var s = ler(), e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { e[k] = s[k]; }); U.est = e; }
+if (!U.est) { var s = ler(), e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { e[k] = s[k]; }); U.est = migrar(e, s); }
 return U.est;
+}
+var LIG_OK = { rigida: 1, rotulada: 1, auto: 1 };
+var MSG_PADRAO = "Padrão desde a 1.2.149: base engastada e viga × pilar automática — confira.";
+function padraoNovo(e) { return !!(e && ((e.apoios && e.apoios.padraoNovo) || (e.ligacoes && e.ligacoes.padraoNovo))); }
+function migrar(e, salvo) {
+var sa = salvo && salvo.apoios, sl = salvo && salvo.ligacoes;
+var baseGravada = !!(sa && (sa.basePadrao === "rotulada" || sa.basePadrao === "engastada")), ligGravada = !!(sl && ((LIG_OK[sl.vigaPilarX] && LIG_OK[sl.vigaPilarY]) || sl.vigaPilar === "rigida" || sl.vigaPilar === "rotulada"));
+var ap = e.apoios = e.apoios && typeof e.apoios === "object" ? e.apoios : copia(PADRAO.apoios);
+if (ap.basePadrao !== "rotulada" && ap.basePadrao !== "engastada") ap.basePadrao = PADRAO.apoios.basePadrao;
+if (!baseGravada && ap.padraoNovo == null) ap.padraoNovo = true;
+if (!ap.bases || typeof ap.bases !== "object") ap.bases = {};
+if (ap.fckFundacao == null) ap.fckFundacao = "";
+var lg = e.ligacoes = e.ligacoes && typeof e.ligacoes === "object" ? e.ligacoes : copia(PADRAO.ligacoes);
+var vp = lg.vigaPilar === "rigida" || lg.vigaPilar === "rotulada" ? lg.vigaPilar : null;
+if (!LIG_OK[lg.vigaPilarX]) lg.vigaPilarX = vp || PADRAO.ligacoes.vigaPilarX;
+if (!LIG_OK[lg.vigaPilarY]) lg.vigaPilarY = vp || PADRAO.ligacoes.vigaPilarY;
+if (!ligGravada && lg.padraoNovo == null) lg.padraoNovo = true;
+delete lg.vigaPilar;
+if (lg.vigaViga !== "rigida" && lg.vigaViga !== "rotulada") lg.vigaViga = "rotulada";
+return e;
 }
 function caixas() { var M = MU(), st = M && M.estado ? M.estado() : null; return (st && st.caixas) || []; }
 function assinaturaAgora() { var BV = global.BimVinculos, M = MU(), st = null; try { st = M && M.estado ? M.estado() : null; } catch (e) { st = null; } return BV && BV.assinatura && st ? BV.assinatura(st) : null; }
@@ -89231,7 +89603,7 @@ var M = ML(), e = estado(); if (!M) return null;
 var ids = e.soSelecao ? selecao() : idsPortico(e);
 U.lido = M.ler(caixas(), { ids: ids && ids.length ? ids : null, acoEstrutura: e.acoEstrutura || null });
 U.G = null; U.env = null;
-if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilar: e.ligacoes.vigaPilar, vigaViga: e.ligacoes.vigaViga, rigidezLigacoes: e.ligacoes.rigidez === "sim", ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
+if (U.lido.pecas.length) { try { U.G = M.montar(U.lido, { basePadrao: e.apoios.basePadrao, bases: e.apoios.bases, vigaPilarX: e.ligacoes.vigaPilarX, vigaPilarY: e.ligacoes.vigaPilarY, padraoNovo: padraoNovo(e), vigaViga: e.ligacoes.vigaViga, rigidezLigacoes: e.ligacoes.rigidez === "sim", ligacoes: e.ligacoes.pontas || {} }); } catch (er) { U.G = null; } }
 if (U.G && EV()) { try { U.env = EV().ler(U.G, { eixos: eixosModelo() }); } catch (er2) { U.env = null; } }
 return U.lido;
 }
@@ -89362,16 +89734,27 @@ arr(L.avisos).forEach(function (a) { h += '<p class="ml-nota">' + esc(a) + "</p>
 h += "</div>";
 h += envoltorioHtml() + apoiosHtml();
 var pil = G ? G.bases : [];
-h += '<div class="ml-card"><h4>Bases dos pilares</h4><div class="ml-lin">' + seg("basePadrao", e.apoios.basePadrao, [["rotulada", "Todas rotuladas"], ["engastada", "Todas engastadas"]]) + '<span class="ml-nota">Rotulada: a fundação recebe só forças. Engastada: recebe momento (bloco maior, chumbadores fora das mesas).</span></div>' +
+var fckV = e.apoios.fckFundacao, semFck = fckV == null || String(fckV).trim() === "" || !(num(String(fckV).replace(",", "."), 0) > 0);
+var algumaEng = pil.some(function (b) { return b.tipo === "engastada"; }) || (!pil.length && e.apoios.basePadrao === "engastada");
+h += '<div class="ml-card" data-ml="bases"><h4>Bases dos pilares</h4><div class="ml-lin">' + seg("basePadrao", e.apoios.basePadrao, [["engastada", "Todas engastadas"], ["rotulada", "Todas rotuladas"]]) + '<span class="ml-nota">Padrão: engastada (em galpão a maioria das bases é engastada). Engastada: a fundação recebe momento (bloco maior, chumbadores fora das mesas). Rotulada: recebe só forças.</span></div>' +
+'<div class="ml-lin"><label class="ml-campo">fck da fundação (MPa)<input data-ml-campo="fckFundacao" value="' + esc(fckV == null ? "" : String(fckV)) + '" inputmode="decimal" placeholder="ex.: 25" style="width:7em"></label><span class="ml-nota">Os chumbadores da placa ancoram no concreto da fundação: sem o fck a ancoragem não é verificada e a placa fica A CONFIRMAR. O fck informado na fundação desenhada (Propriedades) manda sobre este; vale a partir do próximo cálculo.</span></div>' +
+(semFck && algumaEng ? '<p class="ml-aviso" data-ml="sem-fck">Base engastada sem o fck da fundação: as placas de base ficam A CONFIRMAR até informar o fck.</p>' : "") +
 (pil.length ? '<table class="ml-t"><thead><tr><th>Pilar</th><th>Peça</th><th>Cota da base</th><th>Base</th></tr></thead><tbody>' + pil.map(function (b) {
 var val = e.apoios.bases[b.peca] || "";
 return "<tr><td>" + esc(b.mid) + "</td><td>" + esc((U.lido.pecas.filter(function (p) { return p.id === b.peca; })[0] || {}).nome || b.peca) + '</td><td class="n">' + fmt(b.cota, 2) + ' m</td><td><select data-ml-campo="base" data-ml-peca="' + esc(b.peca) + '"><option value=""' + (!val ? " selected" : "") + ">como todas (" + (e.apoios.basePadrao === "engastada" ? "engastada" : "rotulada") + ')</option><option value="rotulada"' + (val === "rotulada" ? " selected" : "") + '>rotulada</option><option value="engastada"' + (val === "engastada" ? " selected" : "") + ">engastada</option></select></td></tr>";
 }).join("") + "</tbody></table>" : '<p class="ml-nota">Nenhuma base encontrada: a ponta de baixo do pilar que não encosta em nenhuma peça vira base.</p>') + "</div>";
 h += '<div class="ml-card"><h4>Ligações que NÃO foram desenhadas</h4><p class="ml-nota" style="margin-top:0">A ligação desenhada (chapa de extremidade → rígida; cantoneira dupla, clip, gusset → rotulada; cobrejunta → contínua) sempre manda.</p>' +
-'<div class="ml-lin"><span style="min-width:120px">Viga × pilar</span>' + seg("vigaPilar", e.ligacoes.vigaPilar, [["rotulada", "Rotulada"], ["rigida", "Rígida (pórtico)"]]) + "</div>" +
+dirLigHtml(G, e) +
 '<div class="ml-lin"><span style="min-width:120px">Viga × viga</span>' + seg("vigaViga", e.ligacoes.vigaViga, [["rotulada", "Rotulada"], ["rigida", "Rígida"]]) + "</div>" +
 '<div class="ml-lin" title="Ligação de momento desenhada com rigidez calculada (método dos componentes, EN 1993-1-8): a ponta da viga vira mola rotacional Sj,ini/η (5.1.2). Sem rigidez válida, a ponta fica rígida e o motivo sai nas decisões."><span style="min-width:120px">Rigidez das ligações</span>' + seg("rigidezLig", e.ligacoes.rigidez === "sim" ? "sim" : "nao", [["nao", "Não considerar"], ["sim", "Considerar (mola Sj)"]]) + "</div>" + pontasHtml(G, e) + "</div>";
 return h;
+}
+function dirLigHtml(G, e) {
+var LD = G && G.ligDirecao, au = LD && LD.auto;
+function lin(d) { var v = e.ligacoes["vigaPilar" + d]; return '<div class="ml-lin" data-ml="vp' + d + '"><span style="min-width:150px">Vigas na direção ' + d + '</span>' + seg("vigaPilar" + d, v, [["auto", "Automático"], ["rotulada", "Rotulada"], ["rigida", "Rígida (pórtico)"]]) + (LD && v === "auto" ? '<span class="ml-nota">agora: ' + esc(LD[d].txt) + "</span>" : "") + "</div>"; }
+var nota = au ? (au.plano ? "Plano do pórtico identificado na direção " + au.plano + ": " + au.motivo + "." : "Não deu para identificar o plano do pórtico com segurança (" + au.motivo + "): no Automático as duas direções ficam rotuladas — escolha Rígida na direção do pórtico.") : "";
+return '<p class="ml-nota" style="margin:6px 0 0"><b>Viga × pilar</b> — no galpão: rígida no plano do pórtico, rotulada na longitudinal (o X do contraventamento segura). X e Y são os eixos da planta; a viga oblíqua usa a direção dominante; Ponta a ponta e a ligação desenhada mandam sobre a direção.</p>' +
+lin("X") + lin("Y") + (nota ? '<p class="ml-nota" data-ml="plano-portico">' + esc(nota) + "</p>" : "");
 }
 function pontasHtml(G, e) {
 if (!G) return "";
@@ -89498,17 +89881,20 @@ var e = estado(), L = U.lido || lerModelo(), G = U.G, gr = G ? Object.keys(G.gru
 return '<h3>Calcular</h3><p class="ml-d">Combinações da NBR 8681, análise de 2ª ordem, verificação de todas as barras (NBR 8800 / NBR 14762), flechas (NBR 8800, Anexo C), reações e o memorial.</p>' +
 '<div class="ml-card"><label class="ml-lin" style="gap:6px"><input type="checkbox" data-ml-campo="otimizar"' + (e.otimizar ? " checked" : "") + "> <b>Achar o perfil mais leve</b> de cada grupo de peças iguais (mesmo papel e mesmo perfil) — o cálculo inteiro é refeito a cada troca</label>" +
 (gr.length ? '<table class="ml-t"><thead><tr><th>Grupo</th><th>Perfil</th><th>Peças</th></tr></thead><tbody>' + gr.map(function (k) { var g = G.grupos[k]; return "<tr><td>" + esc({ pilar: "Pilares", viga: "Vigas", terca: "Terças", diagonal: "Diagonais" }[g.papel] || g.papel) + "</td><td>" + esc(g.perfil) + '</td><td class="n">' + g.membros.length + "</td></tr>"; }).join("") + "</tbody></table>" : "") + "</div>" +
-'<div class="ml-card"><h4>Resumo</h4><ul class="ml-l"><li>' + esc(resumoPasso(1)) + "</li><li>" + esc(resumoPasso(2)) + "</li><li>Ligações sem desenho: viga × pilar " + esc(e.ligacoes.vigaPilar) + ", viga × viga " + esc(e.ligacoes.vigaViga) + "</li></ul>" + (!e.areas.length && !e.pontuais.length ? '<p class="ml-aviso">Sem área nem carga pontual: só o peso próprio será calculado.</p>' : "") + "</div>";
+'<div class="ml-card"><h4>Resumo</h4><ul class="ml-l"><li>' + esc(resumoPasso(1)) + "</li><li>" + esc(resumoPasso(2)) + "</li><li>Ligações sem desenho: viga × pilar X " + esc(e.ligacoes.vigaPilarX === "auto" ? "automático" : e.ligacoes.vigaPilarX) + " / Y " + esc(e.ligacoes.vigaPilarY === "auto" ? "automático" : e.ligacoes.vigaPilarY) + ", viga × viga " + esc(e.ligacoes.vigaViga) + "</li>" + (padraoNovo(e) ? '<li class="ml-aviso" data-ml="padrao-novo">' + esc(MSG_PADRAO) + "</li>" : "") + "</ul>" + (!e.areas.length && !e.pontuais.length ? '<p class="ml-aviso">Sem área nem carga pontual: só o peso próprio será calculado.</p>' : "") + "</div>";
 }
 function cor(r) { return r > 1 ? "var(--ml-erro)" : r > 0.9 ? "var(--ml-aviso)" : r > 0.7 ? "#d4a017" : "var(--ml-ok)"; }
 function barra(r) { return '<div class="ml-barra"><i style="width:' + Math.min(100, Math.round(r * 100)) + "%;background:" + cor(r) + '"></i></div>'; }
 function resultadoHtml(r) {
 if (!r) return '<p class="ml-nota">Ainda não há cálculo.</p>';
-var h = "";
+var h = (U.pilhaSol || []).length ? '<div class="ml-lin" data-ml="sol-desfazer" style="margin-bottom:8px"><span class="ml-nota">Última solução: ' + esc(U.pilhaSol[U.pilhaSol.length - 1].texto.split(" (")[0]) + '</span><button class="ml-bt mini" data-ml-acao="sol-desfazer">Desfazer a solução</button></div>' : "";
 if (!r.ok) {
 h += '<div class="ml-prob" data-ml="problemas"><h3 style="margin:0 0 6px">O cálculo não seguiu</h3>' + arr(r.problemas).map(function (p, kP) {
-return '<p data-ml-prob="' + esc(p.tipo) + '"><b>' + esc(p.texto) + "</b></p>" + (arr(p.pecas).length ? '<button class="ml-bt mini" data-ml-acao="selecionar" data-ml-v="' + esc(p.pecas.join(",")) + '">Selecionar no modelo</button> ' : "") +
-arr(p.solucoes).map(function (s) { var bt = BOTAO_SOL[s.id]; return bt ? '<button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="' + s.id + '" data-ml-p="' + kP + '">' + esc(bt === true ? s.texto : bt) + "</button> " : '<span class="ml-nota">· ' + esc(s.texto) + "</span> "; }).join("");
+var nTest = arr(p.solucoes).filter(function (s) { return RS() && RS().TESTAVEIS[s.id]; }).length;
+return '<p data-ml-prob="' + esc(p.tipo) + '"><b>' + esc(p.texto) + "</b></p>" + (arr(p.pecas).length ? '<button class="ml-bt mini" data-ml-acao="selecionar" data-ml-v="' + esc(p.pecas.join(",")) + '">Selecionar no modelo</button> <button class="ml-bt mini" data-ml-acao="mostrar3d" data-ml-p="' + kP + '">Mostrar no 3D</button> ' : "") +
+(nTest >= 2 ? '<button class="ml-bt mini pri" data-ml-acao="resolver" data-ml-p="' + kP + '" title="Testa cada solução numa cópia do modelo (o cálculo inteiro refeito, nada gravado) e propõe a mais leve que fecha">Resolver (testar ' + nTest + " soluções)</button> " : "") +
+arr(p.solucoes).map(function (s) { var bt = BOTAO_SOL[s.id]; return bt ? '<button class="ml-bt mini pri" data-ml-acao="solucao" data-ml-v="' + s.id + '" data-ml-p="' + kP + '"' + (s.muda ? ' title="' + esc(s.texto + " — " + s.muda) + '"' : "") + ">" + esc(bt === true ? s.texto : bt) + "</button> " : '<span class="ml-nota">· ' + esc(s.texto) + "</span> "; }).join("") +
+(U.resolver && U.resolver.r === r && U.resolver.kP === kP ? resolverHtml(U.resolver) : "");
 }).join("<hr style='border:0;border-top:1px solid var(--ml-linha)'>") + (!arr(r.problemas).length ? "<p>" + esc(r.motivo || "") + "</p>" : "") + "</div>";
 return h;
 }
@@ -89518,6 +89904,8 @@ if (velho()) {
 sit = "desatualizado";
 h += '<div class="ml-prob" data-ml="desatualizado" style="border-color:var(--ml-aviso);background:var(--ml-avbg)"><h3 style="margin:0 0 6px">DESATUALIZADO — recalcular</h3><p>O modelo mudou depois deste cálculo (peças movidas ou esticadas — inclusive as que acompanharam pelos vínculos — ou fundação deslocada). Os números abaixo são do modelo de antes e <b>não valem</b> para o de agora; memorial, pranchas, CYPE e a troca de perfis ficam bloqueados até recalcular.</p><button class="ml-bt pri" data-ml-acao="calcular">Recalcular</button></div>';
 }
+var pr0 = r.parametros || {};
+if (padraoNovo({ apoios: pr0.apoios, ligacoes: pr0.ligacoes })) h += '<p class="ml-aviso" data-ml="padrao-novo" style="margin:0 0 10px"><b>' + esc(MSG_PADRAO) + "</b> Escolha a base e a ligação viga × pilar em Dados para tirar este aviso.</p>";
 h += '<div class="ml-kpis"><div class="ml-kpi" data-ml-kpi="situacao"><small>Situação</small><b style="color:' + (sit === "aprovado" ? "var(--ml-ok)" : sit === "incompleto" ? "var(--ml-aviso)" : "var(--ml-erro)") + '">' + ({ aprovado: "Aprovado", reprovado: "Reprovado", incompleto: "Incompleto", desatualizado: "Desatualizado" }[sit] || "Reprovado") + '</b><span class="ml-nota">' + (sit === "desatualizado" ? "o modelo mudou depois deste cálculo — recalcule" : sit === "aprovado" ? "as verificações das barras atendem — emitir só com as ligações e as placas de base dimensionadas (o memorial e as pranchas dizem o que falta)" : sit === "incompleto" ? "barras atendem; NÃO verificado: " + esc(nvs.map(function (x) { return x.tema; }).join(", ")) : r.falhas + " verificação(ões) não atende(m)") + "</span></div>" +
 '<div class="ml-kpi" data-ml-kpi="peso"><small>Aço dos perfis</small><b>' + fmt(r.peso, 0) + ' kg</b><span class="ml-nota">' + (r.taxa ? fmt(r.taxa, 1) + " kg/m² da área carregada" : "") + "</span></div>" +
 '<div class="ml-kpi"><small>Flambagem global</small><b>' + (isFinite(lmin) ? "λcr " + fmt(lmin, 2) : "—") + '</b><span class="ml-nota">deslocabilidade ' + esc(r.deslocabilidade.classe) + " (Δ2/Δ1 " + fmt(r.deslocabilidade.razao, 2) + ")</span></div>" +
@@ -89553,6 +89941,7 @@ return '<footer class="ml-rod"><span class="ml-msg">' + (ok ? "Memorial, prancha
 function campo(el) {
 var e = estado(), c = el.getAttribute("data-ml-campo"), k = +el.getAttribute("data-ml-k"), v = el.type === "checkbox" ? el.checked : (global.UnidadesUI ? UnidadesUI.texto(el) : el.value), rer = false;
 if (c === "soSelecao") { e.soSelecao = v; rer = true; }
+else if (c === "fckFundacao") { e.apoios.fckFundacao = String(v == null ? "" : v).trim(); rer = true; }
 else if (c === "base") { var p = el.getAttribute("data-ml-peca"); if (v) e.apoios.bases[p] = v; else delete e.apoios.bases[p]; }
 else if (c === "ponta") { var chv = el.getAttribute("data-ml-chave"); e.ligacoes.pontas = e.ligacoes.pontas || {}; if (v) e.ligacoes.pontas[chv] = v; else delete e.ligacoes.pontas[chv]; rer = true; }
 else if (/^area\./.test(c)) { var a = e.areas[k]; if (!a) return; var f = c.slice(5); a[f] = v; if (f === "uso" || f === "cobertura") rer = true; if (f === "qInformado" || f === "alturaEstoque" || f === "inclinacaoPct") rer = true; }
@@ -89580,8 +89969,8 @@ if (a === "fechar") return fechar();
 if (a === "galpao") { fechar(); if (global.MetalCalcUI) MetalCalcUI.abrir(); return; }
 if (a === "passo") { U.modo = "passos"; U.passo = Math.max(1, Math.min(3, +v)); render(); return; }
 if (a === "resultado") { U.modo = U.r ? "resultado" : "passos"; render(); return; }
-if (a === "basePadrao") { e.apoios.basePadrao = v; salvar(); render(); return; }
-if (a === "vigaPilar" || a === "vigaViga") { e.ligacoes[a] = v; salvar(); render(); return; }
+if (a === "basePadrao") { e.apoios.basePadrao = v; delete e.apoios.padraoNovo; salvar(); render(); return; }
+if (a === "vigaPilarX" || a === "vigaPilarY" || a === "vigaViga") { e.ligacoes[a] = v; if (a !== "vigaViga") delete e.ligacoes.padraoNovo; salvar(); render(); return; }
 if (a === "rigidezLig") { e.ligacoes.rigidez = v === "sim" ? "sim" : "nao"; salvar(); render(); return; }
 if (a === "selecionar") { selecionarNoModelo(String(v || "").split(",").filter(Boolean)); return; }
 if (a === "area-niveis") {
@@ -89621,6 +90010,11 @@ if (a === "faces-escolher") { if (e.envoltorio) delete e.envoltorio.todasAbertas
 if (a === "todas-pecas") { e.portico = null; salvar(); lerModelo(); render(); return; }
 if (a === "situacao") { e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); e.envoltorio.situacao = v === "interna" ? "interna" : "livre"; salvar(); render(); return; }
 if (a === "solucao") return solucao(v, el);
+if (a === "mostrar3d") return mostrar3d(el);
+if (a === "resolver") return resolverIniciar(el);
+if (a === "resolver-cancelar") { if (U.resolver) U.resolver.cancelado = true; U.resolver = null; render(); return; }
+if (a === "resolver-aplicar") { var RZ = U.resolver, sA = RZ && arr(RZ.solucoes).filter(function (s) { return s.id === v; })[0]; if (!sA) return; U.resolver = null; return aplicarSolucao(sA); }
+if (a === "sol-desfazer") return desfazerSolucao();
 if (a === "pranchas") return pranchas();
 if (a === "pranchas-voltar") { U.modo = "pranchas"; render(); return; }
 if (a === "prancha-ver") { U.folha = +v || 0; U.modo = "folha"; render(); return; }
@@ -89642,12 +90036,14 @@ var f = E.casarFechamentos(U.env, env0), n = 0;
 U.env.faces.forEach(function (fc) { if (f.semEscolha.indexOf(fc.id) >= 0) { env0.porChave[E.chaveFace(fc)] = { tipo: "aberta" }; n++; } });
 salvar(); try { vedacaoNoModelo(); } catch (eV) {} render(); toast(n ? n + " face(s) sem escolha marcada(s) como ABERTAS." : "Todas as faces já têm fechamento.", "ok", 5000);
 }
-var BOTAO_SOL = { "engastar-bases": true, "ligacoes-rigidas": true, contraventar: "Gerar o contraventamento (X nos planos que se movem)", "contraventar-plano": "Gerar o X no plano do piso",
+var BOTAO_SOL = { "engastar-bases": true, "ligacoes-rigidas": true, "completar-x": "Completar o X (diagonal do outro sentido)", "completar-x-todos": "Completar o X em todos os planos", "trocar-diagonais": "Trocar a barra redonda por cantoneira/tubo", contraventar: "Gerar o contraventamento (X nos planos que se movem)", "contraventar-plano": "Gerar o X no plano do piso",
 ligar: "Ligar as peças soltas (a ponta vai à peça mais perto)", base: "Apoiar os cantos numa parede/estrutura existente", "aco-estrutura": true, "vento-local": true, interna: true, "faces-abertas": true, "rever-envoltorio": true };
 function solucao(v, el) {
 var e = estado(), kP = el ? +el.getAttribute("data-ml-p") : -1, prob = U.r && arr(U.r.problemas)[kP];
-if (v === "engastar-bases") { e.apoios.basePadrao = "engastada"; salvar(); return calcular(); }
-if (v === "ligacoes-rigidas") { e.ligacoes.vigaPilar = "rigida"; salvar(); return calcular(); }
+var sD = prob && arr(prob.solucoes).filter(function (s) { return s.id === v; })[0];
+if (sD && (sD.novas || sD.trocas || (RS() && RS().estadoDe(sD)))) return aplicarSolucao(sD);
+if (v === "engastar-bases") { e.apoios.basePadrao = "engastada"; delete e.apoios.padraoNovo; salvar(); return calcular(); }
+if (v === "ligacoes-rigidas") { e.ligacoes.vigaPilarX = "rigida"; e.ligacoes.vigaPilarY = "rigida"; delete e.ligacoes.padraoNovo; salvar(); return calcular(); }
 if (v === "aco-estrutura") { e.acoEstrutura = "ASTM A572 Gr.50"; salvar(); toast("Peças de aço da aba Estrutura: ASTM A572 Gr.50 (fy 345 MPa) — o padrão de pilar e viga da Metálica. Vai para as decisões do memorial.", "ok", 6000); if (U.modo === "passos") { lerModelo(); render(); return; } return calcular(); }
 if (v === "interna") { e.envoltorio = e.envoltorio || copia(PADRAO.envoltorio); e.envoltorio.situacao = "interna"; salvar(); return calcular(); }
 if (v === "vento-local") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var i = doc.querySelector('#ml-veu [data-ml-campo="vento.local"]'); if (i) { i.scrollIntoView({ block: "center" }); i.focus(); } }, 60); return; }
@@ -89657,6 +90053,84 @@ if (v === "ligar") return ligarSoltas(prob ? arr(prob.pecas) : []);
 if (v === "base") return apoiarCantos(prob ? arr(prob.pecas) : []);
 if (v === "faces-abertas") { marcarFacesAbertas(); return calcular(); }
 if (v === "rever-envoltorio") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var c = doc.querySelector('#ml-veu [data-ml="faces"]'); if (c) c.scrollIntoView({ block: "start" }); }, 60); return; }
+}
+var LIM_RESOLVER = 45000;
+function resolverIniciar(el) {
+var R0 = RS(), D = DL(), r = U.r, kP = el ? +el.getAttribute("data-ml-p") : 0, prob = r && arr(r.problemas)[kP];
+if (!R0 || !D || !prob) { toast("O Resolver não carregou (js/acoresolverlivre.js).", "erro"); return; }
+if (barrarVelho()) return;
+var sols = arr(prob.solucoes).filter(function (s) { return R0.TESTAVEIS[s.id]; });
+if (!sols.length) { toast("Nenhuma solução deste problema tem teste automático.", "aviso"); return; }
+var Z = U.resolver = { r: r, kP: kP, solucoes: sols, ent: entrada(), testes: [], i: 0, t0: Date.now(), rodando: true, cancelado: false };
+render();
+function passo() {
+if (U.resolver !== Z || Z.cancelado) return;
+if (Z.i >= sols.length) { var esc0 = R0.escolher(Z.testes); Z.proposta = esc0.proposta; Z.porque = esc0.porque; Z.rodando = false; render(); status(Z.proposta ? "Resolver: proposta pronta — confira e aplique (nada foi mudado)." : "Resolver: nenhuma solução fecha a análise."); return; }
+var s = sols[Z.i];
+if (Date.now() - Z.t0 > LIM_RESOLVER) Z.testes.push({ id: s.id, texto: s.texto, muda: s.muda, massa: s.massa, fecha: false, naoTestada: true, motivo: "não testada: passou do limite de " + Math.round(LIM_RESOLVER / 1000) + " s" });
+else { try { Z.testes.push(R0.testar(Z.ent, s)); } catch (e) { Z.testes.push({ id: s.id, texto: s.texto, fecha: false, motivo: "erro: " + (e && e.message) }); } }
+Z.i++; render(); setTimeout(passo, 30);
+}
+setTimeout(passo, 40);
+}
+function resolverHtml(Z) {
+var h = '<div class="ml-card" data-ml="resolver" style="margin-top:10px;border-color:var(--ml-aco)"><h4 style="margin:0 0 6px">Resolver o problema</h4>';
+if (Z.rodando) {
+var s = Z.solucoes[Z.i];
+h += '<p class="ml-nota" data-ml="resolver-progresso">Testando ' + Math.min(Z.i + 1, Z.solucoes.length) + " de " + Z.solucoes.length + (s ? ": " + esc(s.texto.split(":")[0]) : "") + "… (o cálculo inteiro numa cópia do modelo; nada é gravado)</p>" +
+'<button class="ml-bt mini" data-ml-acao="resolver-cancelar">Cancelar</button></div>';
+return h;
+}
+var P = Z.proposta ? arr(Z.solucoes).filter(function (x) { return x.id === Z.proposta; })[0] : null, tP = P ? Z.testes.filter(function (t) { return t.id === P.id; })[0] : null;
+if (P) {
+h += '<p data-ml="resolver-proposta"><b>Proposta: ' + esc(P.texto) + '</b></p><ul class="ml-l"><li>O que muda: ' + esc(P.muda || "") + "</li>" +
+(arr(P.novas).length ? "<li>Peças criadas: " + P.novas.length + " (" + esc(P.novas[0].cat || "") + ")</li>" : "") +
+(arr(P.trocas).length ? "<li>Peças trocadas: " + esc(P.trocas.map(function (t) { return t.membro + " " + t.de + " → " + t.para; }).join("; ")) + "</li>" : "") +
+"<li>Aço a mais: " + fmt(tP ? tP.massa : P.massa, 1) + " kg (perfis)</li>" + (tP && tP.efeito ? '<li class="ml-aviso" data-ml="resolver-efeito">Efeito: ' + esc(tP.efeito) + "</li>" : "") +
+(tP ? "<li>Recalculada: a análise fecha — " + (tP.aprovado ? "barras aprovadas" : (tP.falhas || 0) + " verificação(ões) ainda não atende(m) (ajuste os perfis depois)") + "</li>" : "") + "</ul>" +
+'<p class="ml-nota">' + esc(Z.porque || "") + "</p>" +
+'<div class="ml-lin"><button class="ml-bt pri" data-ml-acao="resolver-aplicar" data-ml-v="' + esc(P.id) + '">Aplicar</button> <button class="ml-bt" data-ml-acao="resolver-cancelar">Cancelar</button></div>';
+} else h += '<p class="ml-aviso" data-ml="resolver-nenhuma"><b>Nenhuma solução automática fecha a análise.</b> ' + esc(Z.porque || "") + "</p>" + '<button class="ml-bt mini" data-ml-acao="resolver-cancelar">Fechar</button>';
+h += '<table class="ml-t" data-ml="resolver-testes" style="margin-top:8px"><thead><tr><th>Solução testada</th><th>Análise</th><th>Aço a mais</th><th></th></tr></thead><tbody>' + Z.testes.map(function (t) {
+return "<tr><td>" + esc(String(t.texto || t.id).split(" — ")[0].split(":")[0]) + (t.efeito ? '<br><span class="ml-nota">global — ' + esc(t.efeito) + "</span>" : "") + "</td><td>" + (t.fecha ? '<span style="color:var(--ml-ok)">fecha' + (t.aprovado ? ", aprovada" : ", " + (t.falhas || 0) + " falha(s)") + "</span>" : '<span class="ml-aviso">' + esc(t.naoTestada || t.inconsistente ? t.motivo : "não fecha") + "</span>") + '</td><td class="n">' + (t.fecha ? fmt(t.massa, 1) + " kg" : "—") + "</td><td>" +
+(t.fecha && t.id !== Z.proposta ? '<button class="ml-bt mini" data-ml-acao="resolver-aplicar" data-ml-v="' + esc(t.id) + '">Aplicar esta</button>' : "") + "</td></tr>";
+}).join("") + "</tbody></table></div>";
+return h;
+}
+function aplicarSolucao(sol) {
+var R0 = RS(), M = MU(), e = estado(); if (!R0 || !sol) return;
+if (barrarVelho()) return;
+var est = R0.estadoDe(sol);
+if (est) {
+U.pilhaSol = U.pilhaSol || []; U.pilhaSol.push({ apoios: copia(e.apoios), ligacoes: copia(e.ligacoes), texto: sol.texto });
+if (est.basePadrao) { e.apoios.basePadrao = est.basePadrao; delete e.apoios.padraoNovo; }
+if (est.vigaPilar) { delete e.ligacoes.padraoNovo; e.ligacoes.vigaPilar = est.vigaPilar; e.ligacoes.vigaPilarX = est.vigaPilar; e.ligacoes.vigaPilarY = est.vigaPilar; }
+salvar(); toast("Aplicado: " + (sol.muda || sol.texto) + " — \"Desfazer a solução\" no resultado volta como estava. Calculando…", "ok", 8000);
+return calcular();
+}
+if (!M || !M.enviar) { toast("O editor do modelo não está aberto.", "erro"); return; }
+var lt = R0.opsModelo(sol, caixas(), function () { return M.novoId(); });
+if (!lt.lote) { toast("Nada a aplicar" + (lt.erros.length ? ": " + lt.erros.join("; ") : "."), "aviso", 8000); return; }
+if (!M.enviar(lt.lote)) { toast("O editor recusou a solução.", "erro"); return; }
+toast("Aplicado: " + (sol.muda || sol.texto) + (lt.erros.length ? " (não feito: " + lt.erros.join("; ") + ")" : "") + " — Ctrl+Z desfaz. Calculando…", "ok", 9000);
+setTimeout(calcular, 300);
+}
+function desfazerSolucao() {
+var e = estado(), p = U.pilhaSol || []; if (!p.length) return false;
+var q = p.pop(); e.apoios = q.apoios; e.ligacoes = q.ligacoes; salvar(); toast("Desfeito: " + q.texto.split(" (")[0] + ".", "ok", 6000); calcular(); return true;
+}
+function mostrar3d(el) {
+var r = U.r, kP = el ? +el.getAttribute("data-ml-p") : 0, prob = r && arr(r.problemas)[kP]; if (!prob) return;
+var ids = arr(prob.pecas).map(String);
+arr(prob.solucoes).forEach(function (s) { arr(s.pecas).forEach(function (id) { if (ids.indexOf(String(id)) < 0) ids.push(String(id)); }); });
+if (!ids.length) { toast("Este problema não aponta peças no modelo.", "aviso"); return; }
+var uids = ids.map(function (id) { return "edit:" + id; }), feito = false;
+try { if (global.BIM && BIM.selecionar) { BIM.selecionar(uids, "trocar"); feito = true; } } catch (e1) {}
+var enq = false; try { if (global.BIM && BIM.enquadrarUids) enq = !!BIM.enquadrarUids(uids); } catch (e2) {}
+U.ultimoMostrar = { ids: ids, no: prob.no || null, selecionou: feito, enquadrou: enq };
+if (!feito && !enq) { toast("O 3D não está disponível aqui.", "aviso"); return; }
+fechar();
+toast(ids.length + " peça(s) do problema selecionada(s)" + (prob.no ? " (nó " + prob.no + ")" : "") + (enq ? " e enquadrada(s)" : "") + ". Reabra \"Calcular a estrutura desenhada\" para voltar ao resultado.", "ok", 8000);
 }
 function ajustesCota() {
 if (U.ajustesFeitos) return [];
@@ -89865,8 +90339,9 @@ fotos(r).then(function (img) {
 var ligs = []; try { if (global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo) ligs = MetalLigSugUI.ligacoesComCalculo(r); } catch (eL) { ligs = []; }
 U.ultimasLigacoesCompletas = ligs;
 U.ultimasLigacoes = ligs.map(function (l) { return { id: l.id, tipologia: l.info && l.info.tipologia, ok: !!(l.resultado && l.resultado.ok), razao: l.resultado && l.resultado.razao, confere: l.confere, comCalculo: l.comCalculo, fundacao: l.resultado && l.resultado.fundacao ? l.resultado.fundacao.id : null, ajusteCota: l.resultado && l.resultado.ajusteCota ? l.resultado.ajusteCota : null }; });
-var x = Mm.gerar(r, { ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
-if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html); } catch (eE) {}
+var fxE = null, pendE = []; try { if (global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.fixacoesDoModelo) { fxE = MetalEscadaLinhaUI.fixacoesDoModelo(); pendE = MetalEscadaLinhaUI.pendenciasMemorial ? MetalEscadaLinhaUI.pendenciasMemorial(fxE) : []; } } catch (eP) { fxE = null; pendE = []; }
+var x = Mm.gerar(r, { pendenciasExternas: pendE, ligacoes: ligs, obra: { nome: o.nome, endereco: o.endereco, cidade: o.cidade, cliente: o.cliente }, empresa: { nome: emp.nome || emp.razaoSocial, cnpj: emp.cnpj, logoDataUrl: logo }, responsavel: { nome: emp.responsavel, titulo: emp.titulo, crea: emp.crea }, imagens: img, versao: global.CONFIG && CONFIG.versao });
+if (x && x.ok && global.MetalEscadaLinhaUI && MetalEscadaLinhaUI.secaoMemorial) try { x.html = MetalEscadaLinhaUI.secaoMemorial(x.html, fxE); } catch (eE) {}
 if (x && x.ok) try { x.html = secaoTiposLigacoes(x.html, ligs); } catch (eT) {}
 if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);
 U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length, ids: x.secoes.map(function (q) { return q.id; }) } : null;
@@ -89916,6 +90391,7 @@ preparar: function (d) {
 var e = estado(); d = d || {};
 if (d.apoios) e.apoios = copia(d.apoios);
 if (d.ligacoes) e.ligacoes = copia(d.ligacoes);
+migrar(e, { apoios: d.apoios || e.apoios, ligacoes: d.ligacoes || e.ligacoes });
 if (d.areas) e.areas = copia(d.areas);
 if (d.pontuais) e.pontuais = copia(d.pontuais);
 if (d.envoltorio) { var ev = e.envoltorio || copia(PADRAO.envoltorio); ev.situacao = d.envoltorio.situacao || ev.situacao || "livre"; ev.porChave = copia(d.envoltorio.porChave || {}); ev.cobertura = copia(d.envoltorio.cobertura || { tipo: "sem" }); e.envoltorio = ev; }
@@ -89942,7 +90418,12 @@ cype: function () { estado(); garantir(); if (!U.r || !U.r.ok) { U.modo = "passo
 secaoTiposLigacoes: secaoTiposLigacoes,
 memorialDocx: memorialDocx,
 ultimoDocx: function () { return U.ultimoDocx || null; },
-entrada: entrada
+resolverEstado: function () { var Z = U.resolver; return Z ? { rodando: Z.rodando, proposta: Z.proposta || null, porque: Z.porque || "", testes: Z.testes.slice() } : null; },
+ultimoMostrar: function () { return U.ultimoMostrar || null; },
+entrada: entrada,
+_padrao: function () { return copia(PADRAO); },
+_msgPadrao: MSG_PADRAO, _padraoNovo: padraoNovo,
+_migrar: function (s) { var e = copia(PADRAO); if (s) Object.keys(s).forEach(function (k) { if (s[k] !== undefined) e[k] = copia(s[k]); }); return migrar(e, s); }
 };
 global.MetalCalcLivreUI = MetalCalcLivreUI;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalCalcLivreUI;
@@ -92028,7 +92509,7 @@ if (tipo === "escada") return [
 ["rodape", "Rodapé (NR-12: 0,20 m)", "check"], ["paredeLados", "Lados encostados em parede (0, 1 ou 2)", "int"],
 ["usoGuarda", "Força no guarda-corpo (NBR 6120, Tabela 12)", "sel", USO_GUARDA], ["usoPiso", "Sobrecarga (NBR 6120, Tabela 10)", "sel", USO_PISO],
 ["fixPe", "Fixação no pé", "sel", FIXACOES], ["fixTopo", "Fixação no topo", "sel", FIXACOES],
-["concPeEsp", "Concreto no pé: espessura (m; 0 = do modelo)", "num"], ["concPeFck", "Concreto no pé: fck (MPa; 0 = do modelo)", "num"], ["concTopoEsp", "Concreto no topo: espessura (m; 0 = do modelo)", "num"],
+["concPeEsp", "Concreto no pé: espessura (m; 0 = do modelo)", "num"], ["concPeFck", "Concreto no pé: fck (MPa; 0 = do modelo — sem fck a ancoragem do chumbador fica A CONFIRMAR)", "num"], ["concTopoEsp", "Concreto no topo: espessura (m; 0 = do modelo)", "num"], ["concTopoFck", "Concreto no topo: fck (MPa; 0 = do modelo — sem fck a ancoragem fica A CONFIRMAR)", "num"],
 ["concPeBorda", "Concreto no pé: distância até a borda (m; 0 = do contorno da laje desenhada)", "num"], ["concTopoBorda", "Concreto no topo: distância até a borda (m; 0 = do contorno)", "num"],
 ["sentidoLinha", "Por linha: o 1º clique é", "sel", [["desce", "O TOPO (borda do piso de cima) — a escada desce"], ["sobe", "O PÉ — a escada sobe"]]], ["alturaDoModelo", "Por linha: ler a altura do piso/laje de chegada (senão o desnível acima)", "check"], ["abrirPiso", "Por linha: abrir o piso/laje de chegada (com guarda-corpo)", "check"],
 ["virar", "Virada (L e U)", "sel", [["esquerda", "Para a esquerda"], ["direita", "Para a direita"]]], ["vao", "Poço entre os lances — U (m)", "num"],
@@ -92797,7 +93278,7 @@ g.push({ t: "Tanque e produto", c: [["tipo", "Tipo", "sel", [["vertical", "Verti
 if (tipo === "horizontal") g.push({ t: "Geometria", c: [["D", "Diâmetro (m)", "num"], ["L", "Comprimento do costado (m)", "num"], ["anguloSela", "Ângulo da sela", "sel", [["120", "120°"], ["150", "150°"]]], ["bSela", "Largura da sela (m)", "num"], ["alturaSela", "Altura livre sob o tanque (m)", "num"]] });
 else {
 var c = [["D", "Diâmetro (m)", "num"], ["H", "Altura do costado (m)", "num"], ["bordaLivre", "Borda livre (m)", "num"], ["hMorto", "Fundo morto até a saída (m)", "num"]];
-if (tipo === "elevado") c.push(["alturaTorre", "Altura da torre até o fundo (m)", "num"], ["pilares", "Pilares da torre (o fundo da cuba é dimensionado para 4)", "sel", [["4", "4"]]]);
+if (tipo === "elevado") c.push(["alturaTorre", "Altura da torre até o fundo (m)", "num"], ["pilares", "Pilares da torre (o fundo da cuba é dimensionado para 4)", "sel", [["4", "4"]]], ["fckFundacao", "fck do concreto dos blocos da torre (MPa; sem ele a ancoragem dos chumbadores fica A CONFIRMAR)", "num"]);
 g.push({ t: "Geometria", c: c });
 g.push({ t: "Teto", c: [["teto", "Teto", "sel", A ? opcoes(A.TETOS) : []], ["inclTeto", "Inclinação do teto (°)", "num"], ["raioDomo", "Raio do domo (× D)", "num"]] });
 }
@@ -92806,7 +93287,7 @@ g.push({ t: "Local e vento (NBR 6123)", c: [["vento.lat", "Latitude (°)", "num"
 ["vento.categoria", "Terreno (categoria)", "sel", [["I", "I — mar, lago, campo aberto"], ["II", "II — campo com poucos obstáculos"], ["III", "III — sítios, subúrbio afastado"], ["IV", "IV — subúrbio, indústria"], ["V", "V — centro de cidade"]]],
 ["vento.grupoS3", "Uso (S3)", "sel", [["1", "1 — essencial (1,10)"], ["2", "2 — alta ocupação (1,00)"], ["3", "3 — industrial (0,95)"], ["5", "5 — temporário (0,83)"]]],
 ["vento.superficie", "Superfície", "sel", [["rugoso", "Com escada e anéis (Ca maior)"], ["liso", "Lisa"]]],
-["sismo.zona", "Zona sísmica (NBR 15421)", "sel", [["0", "0 — quase todo o Brasil"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]]].concat(tipo === "vertical" ? [["ancoragem", "Chumbadores", "sel", [["auto", "Quando precisar (o sistema decide)"], ["sempre", "Sempre"], ["nunca", "Nunca"]]]] : []) });
+["sismo.zona", "Zona sísmica (NBR 15421)", "sel", [["0", "0 — quase todo o Brasil"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"]]]].concat(tipo === "vertical" ? [["ancoragem", "Chumbadores", "sel", [["auto", "Quando precisar (o sistema decide)"], ["sempre", "Sempre"], ["nunca", "Nunca"]]], ["fckFundacao", "fck do concreto da fundação (MPa; com chumbadores, sem ele a ancoragem fica A CONFIRMAR)", "num"]] : []) });
 var ac = [["acessorios.escada", "Acesso", "sel", tipo === "horizontal" || tipo === "elevado" ? [["marinheiro", "Escada de marinheiro"], ["nenhuma", "Nenhum"]] : [["auto", "O sistema escolhe"], ["helicoidal", "Escada helicoidal"], ["marinheiro", "Escada de marinheiro"], ["nenhuma", "Nenhum"]]],
 ["acessorios.plataforma", "Plataforma de topo com guarda-corpo", "check"], ["acessorios.bocaVisitaTeto", "Boca de visita no teto", "check"], ["acessorios.indicadorNivel", "Indicador de nível", "check"]];
 if (tipo !== "horizontal") ac.push(["acessorios.guardaCorpoTeto", "Guarda-corpo no teto", "check"], ["acessorios.passarelaAnel", "Passarela em volta no topo (manutenção)", "check"]);
@@ -92817,7 +93298,7 @@ return g;
 }
 function pegar(o, k) { var ps = k.split("."), x = o; for (var i = 0; i < ps.length; i++) { if (x == null) return null; x = x[ps[i]]; } return x; }
 function por(o, k, v) { var ps = k.split("."), x = o; for (var i = 0; i < ps.length - 1; i++) { if (!x[ps[i]] || typeof x[ps[i]] !== "object") x[ps[i]] = {}; x = x[ps[i]]; } x[ps[ps.length - 1]] = v; }
-var NUM_TXT = { G: 2, D: 2, H: 2, L: 2, bordaLivre: 2, hMorto: 2, alturaTorre: 2, inclTeto: 1, raioDomo: 2, CA: 1, CAfundo: 1, E: 2, larguraChapa: 2, bSela: 2, alturaSela: 2, "vento.lat": 5, "vento.lon": 5, "vento.v0": 0, x0: 3, y0: 3, z0: 3, giro: 0 };
+var NUM_TXT = { G: 2, D: 2, H: 2, L: 2, bordaLivre: 2, hMorto: 2, alturaTorre: 2, fckFundacao: 0, inclTeto: 1, raioDomo: 2, CA: 1, CAfundo: 1, E: 2, larguraChapa: 2, bSela: 2, alturaSela: 2, "vento.lat": 5, "vento.lon": 5, "vento.v0": 0, x0: 3, y0: 3, z0: 3, giro: 0 };
 function localObra() {
 try {
 var g = global.Gestao, id = String((g && g._bimSel) || "geral"), s = JSON.parse(global.localStorage.getItem("orcapro:metal:calc:" + id) || "null");
@@ -93239,7 +93720,7 @@ corrimaoparede: [["comprimento", "Comprimento (m) — ou 2 cliques", "num"], ["l
 ["duplo", "Duas alturas (0,92 e 0,70 m)", "check"], ["alturaSup", "Altura de cima (m)", "num"], ["alturaInf", "Altura de baixo (m)", "num"], ["folga", "Folga até a parede (m)", "num"], ["prolongamento", "Prolongamento nas pontas (m)", "num"],
 ["corrimao", "Tubo do corrimão", "cat", ["HSSC"]], ["espSuportes", "Suportes a cada (m)", "num"], ["suporteD", "Suporte: barra redonda Ø (m)", "num"]],
 guardacorpo: [["caminho", "Caminho livre — x z; x z… (m, relativo; os cliques preenchem)", "txt"], ["comprimento", "Comprimento (m) — sem caminho", "num"], ["retornoIni", "Retorno no começo (m; encontro em L)", "num"], ["retornoFim", "Retorno no fim (m)", "num"], ["ladoRetorno", "Lado dos retornos", "sel", [["esquerda", "À esquerda (do começo para o fim)"], ["direita", "À direita"]]],
-["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["auto", "Automática por montante (aço: soldado; concreto: chapa chumbada)"], ["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr14718", "NBR 14718 (edificação)"], ["nbr9050", "NBR 9050 / NBR 14718 (rota acessível)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"],
+["travessasExtra", "Travessas a mais entre o rodapé e a intermediária", "int"], ["fixacao", "Fixação do montante", "sel", [["auto", "Automática por montante (aço: soldado; concreto: chapa chumbada)"], ["solda", "Soldado na estrutura"], ["chapa", "Chapa de base chumbada (laje)"]]], ["concEsp", "Laje da chapa chumbada: espessura (m; 0 = do modelo)", "num"], ["concFck", "Laje da chapa chumbada: fck (MPa; 0 = do modelo — sem fck a ancoragem do chumbador fica A CONFIRMAR)", "num"], ["alturaGuarda", "Altura do travessão superior (m)", "num"], ["norma", "Norma", "sel", [["nr12", "NR-12 (industrial)"], ["nbr14718", "NBR 14718 (edificação)"], ["nbr9050", "NBR 9050 / NBR 14718 (rota acessível)"]]], ["perna", "Solda da base: perna do filete (mm)", "num"], ["abastecimento", "Plataforma de abastecimento (1,00–1,10 m)", "check"],
 ["preenchimento", "Preenchimento entre os montantes", "sel", [["travessas", "Travessas (industrial)"], ["barras", "Barras verticais"], ["tela", "Tela (malha soldada)"], ["perfurada", "Chapa perfurada"], ["vidro", "Vidro laminado"]]], ["publico", "Uso público (vão-luz ≤ 0,11 m — NBR 14718)", "check"],
 ["vaoBarras", "Barras: vão livre máximo (m)", "num"], ["barraD", "Barras: diâmetro da barra redonda (m)", "num"], ["telaMalha", "Tela: malha (m)", "num"], ["telaFio", "Tela: fio (m)", "num"], ["tPainel", "Chapa perfurada: espessura (m)", "num"], ["furoD", "Chapa perfurada: furo Ø (m)", "num"], ["furoPasso", "Chapa perfurada: passo dos furos (m)", "num"],
 ["vidroComp", "Vidro laminado (mm): 8+8, 10+10…", "txt"], ["vidroFix", "Fixação do vidro", "sel", [["montante", "Garras nos montantes"], ["perfil", "Perfil de base no piso (sem montantes)"]]],
@@ -93735,17 +94216,24 @@ var k = 0, r = M.gerar("escada", M.parParaRefazer(pr), function () { return "mf"
 var its = (r.medidas.dim && r.medidas.dim.itens || []).filter(function (it) { return it.tipo === "fixacao" || it.tipo === "pilarete"; });
 its.forEach(function (it) {
 var d = A ? A.dimensionar({ itens: [it] }) : null; if (!d) return;
-var calc = d.verificacoes.filter(function (v) { return !v.info; });
-out.push({ escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: it.tipo === "fixacao" ? L.fixacao(it).resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
+var calc = d.verificacoes.filter(function (v) { return !v.info; }), fxr = it.tipo === "fixacao" ? L.fixacao(it) : null;
+out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
 });
 });
 return out;
 },
-secaoMemorial: function (html) {
-var fx = this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;
+pendenciasMemorial: function (fx) {
+return (Array.isArray(fx) ? fx : []).filter(function (f) { return f && f.status !== "aprovado"; }).map(function (f) {
+var crit = (f.naoVerificados || []).filter(function (t) { return /CRÍTICO/.test(t); })[0];
+var m = f.status === "reprovado" ? "NÃO atende" : (f.aConfirmar ? "A CONFIRMAR — informe o fck da fundação (" + f.aConfirmar + ")" : "INCOMPLETO" + (crit ? ": " + crit : ""));
+return "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + "): " + m;
+});
+},
+secaoMemorial: function (html, fxDado) {
+var fx = Array.isArray(fxDado) ? fxDado : this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;
 var e = function (t) { return String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); };
 var rot = { pe: "pé", topo: "topo", patamar: "patamar" }, ROT = (E() && E().ROT) || {};
-var linhas = fx.map(function (f) { return "<tr><td>" + e(f.escada) + " (" + br(f.desnivel) + " m)</td><td>" + e(rot[f.ponta] || f.ponta) + "</td><td>" + e(ROT[f.modo] || f.modo) + "</td><td>" + e(f.resumo) + "</td><td>" + (f.R ? br(f.R.V, 2) + " / " + br(f.R.H, 2) : "—") + "</td><td>" + br(f.razao, 2) + "</td><td>" + (f.status === "aprovado" ? '<span class="ok">atende</span>' : '<span class="falha">' + (f.status === "incompleto" ? "INCOMPLETO" : "NÃO atende") + "</span>") + "</td></tr>"; }).join("");
+var linhas = fx.map(function (f) { return "<tr><td>" + e(f.escada) + " (" + br(f.desnivel) + " m)</td><td>" + e(rot[f.ponta] || f.ponta) + "</td><td>" + e(ROT[f.modo] || f.modo) + "</td><td>" + e(f.resumo) + "</td><td>" + (f.R ? br(f.R.V, 2) + " / " + br(f.R.H, 2) : "—") + "</td><td>" + br(f.razao, 2) + "</td><td>" + (f.status === "aprovado" ? '<span class="ok">atende</span>' : '<span class="falha">' + (f.status === "incompleto" ? "INCOMPLETO" + (f.aConfirmar ? " — A CONFIRMAR: informe o fck da fundação" : "") : "NÃO atende") + "</span>") + "</td></tr>"; }).join("");
 var det = fx.map(function (f) { return "<p><b>" + e(f.nome) + "</b> (" + e(f.escada) + ")</p><table class=\"t compacta\"><thead><tr><th>Verificação</th><th>Norma / item</th><th>Razão</th></tr></thead><tbody>" + f.verificacoes.map(function (v) { return "<tr><td>" + e(v.nome) + "</td><td>" + e(v.item) + "</td><td>" + br(v.razao, 2) + (v.ok === false ? ' <span class="falha">não passa</span>' : "") + "</td></tr>"; }).join("") + "</tbody></table>" + (f.naoVerificados.length ? "<ul>" + f.naoVerificados.map(function (t) { return "<li>" + e(t) + "</li>"; }).join("") + "</ul>" : ""); }).join("");
 var sec = '<section class="sec" id="sec-fixacao-escadas"><h2><span class="num">E</span>Fixação das escadas (pé, topo, pés de apoio e pilaretes dos patamares)</h2>' +
 "<p>A fixação de cada escada do modelo, dimensionada com os esforços DA PRÓPRIA ESCADA: peso próprio + sobrecarga de escadas (NBR 6120:2019, Tabela 10) e a força do guarda-corpo (Tabela 12), γ da NBR 8800, Tabela 1. Reações pela envoltória das duas hipóteses de apoio da longarina (pé fixo ou topo fixo); numa ponta APOIADA, V = W/2 e a horizontal vai toda para a outra ponta. A estrutura desenhada recebe a escada pelas longarinas (cartão Escadas).</p>" +
@@ -110159,6 +110647,317 @@ estado: function () { var d = st.d; return { mao: st.mao, arrasto: d ? { id: d.i
 };
 global.BimSelecao = BimSelecao;
 if (typeof module !== "undefined" && module.exports) module.exports = BimSelecao;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcontrole.js ==== */
+try {
+(function (global) {
+"use strict";
+var ZONA_MORTA = 0.15;
+var ZONA_GATILHO = 0.05;
+var CURVA = 1.6;
+var VEL_PAN = 0.6;
+var VEL_PASSEIO = 0.3;
+var VEL_GIRO = 1.9;
+var VEL_ZOOM = 1.6;
+var INTERVALO_PASSEIO = 6;
+var ESCALA_MIN = 0.05;
+var MAPA = {
+0: "selecionar", 1: "voltar", 2: "isolar", 3: "enquadrar",
+4: "abaAnterior", 5: "abaProxima",
+8: "alternarModo", 9: "passeioAuto", 10: "caixaCorte", 11: "trena",
+12: "vistaTopo", 13: "vistaIso", 14: "vistaFrente", 15: "vistaLateral"
+};
+var VISTAS = { vistaTopo: [0, 1, 0], vistaIso: [1, 0.85, 1], vistaFrente: [0, 0, 1], vistaLateral: [1, 0, 0] };
+function num(v) { v = +v; return isFinite(v) ? v : 0; }
+function limitar(v, a, b) { return v < a ? a : (v > b ? b : v); }
+function eixo(v, zm, curva) {
+v = limitar(num(v), -1, 1); zm = zm == null ? ZONA_MORTA : zm; curva = curva == null ? CURVA : curva;
+var m = Math.abs(v); if (m <= zm) return 0;
+var r = Math.pow((m - zm) / (1 - zm), curva);
+return v < 0 ? -r : r;
+}
+function par(x, y, zm, curva) {
+x = limitar(num(x), -1, 1); y = limitar(num(y), -1, 1); zm = zm == null ? ZONA_MORTA : zm; curva = curva == null ? CURVA : curva;
+var mr = Math.sqrt(x * x + y * y), m = Math.min(1, mr);
+if (m <= zm) return { x: 0, y: 0 };
+var r = Math.pow((m - zm) / (1 - zm), curva), k = r / mr;
+return { x: x * k, y: y * k };
+}
+function gatilho(b) {
+var v = b == null ? 0 : (typeof b === "object" ? (b.value != null ? b.value : (b.pressed ? 1 : 0)) : b);
+return eixo(limitar(num(v), 0, 1), ZONA_GATILHO, 1.3);
+}
+function ehPadrao(gp) { return !!gp && gp.mapping === "standard"; }
+function lerEntrada(gp) {
+if (!ehPadrao(gp)) return { padrao: false };
+var ax = gp.axes || [], bt = gp.buttons || [], botoes = [], i;
+for (i = 0; i < 17; i++) { var b = bt[i]; botoes.push(!!(b && (b.pressed || (b.value != null && b.value > 0.5)))); }
+botoes[6] = false; botoes[7] = false;
+return {
+padrao: true,
+esq: par(ax[0], ax[1]), dir: par(ax[2], ax[3]),
+lt: gatilho(bt[6]), rt: gatilho(bt[7]),
+botoes: botoes
+};
+}
+function bordaDescida(antes, agora) {
+var out = []; if (!antes || !agora) return out;
+for (var i = 0; i < agora.length; i++) if (agora[i] && !antes[i]) out.push(i);
+return out;
+}
+function acoesDe(antes, agora) {
+return bordaDescida(antes, agora).map(function (i) { return MAPA[i]; }).filter(function (a) { return !!a; });
+}
+function escala(tam, dist) {
+tam = Math.max(num(tam), 0.5); dist = num(dist);
+if (!(dist > 0)) return tam;
+return Math.min(tam, Math.max(dist, tam * ESCALA_MIN));
+}
+function integrar(modo, e, dt, tam, dist) {
+dt = limitar(num(dt), 0, 0.1);
+var z = (e.rt || 0) - (e.lt || 0);
+if (modo === "passeio") {
+var v = Math.max(num(tam), 0.5) * VEL_PASSEIO * dt;
+return { frente: -e.esq.y * v, lado: e.esq.x * v, vert: z * v, yaw: -e.dir.x * VEL_GIRO * dt, pitch: -e.dir.y * VEL_GIRO * dt };
+}
+var s = escala(tam, dist) * VEL_PAN * dt;
+return { pan: [e.esq.x * s, -e.esq.y * s], az: -e.dir.x * VEL_GIRO * dt, pol: -e.dir.y * VEL_GIRO * dt, zoom: Math.exp(-z * VEL_ZOOM * dt) };
+}
+function parado(e) { return !e.esq.x && !e.esq.y && !e.dir.x && !e.dir.y && !e.lt && !e.rt; }
+function proximaAba(ids, ativa, passo) {
+if (!ids || !ids.length) return null;
+var i = ids.indexOf(ativa); if (i < 0) return ids[0];
+return ids[(i + (passo < 0 ? -1 : 1) + ids.length) % ids.length];
+}
+function passoPasseio(t, dt, intervalo) {
+intervalo = intervalo || INTERVALO_PASSEIO; t = num(t) + limitar(num(dt), 0, 0.1);
+if (t >= intervalo) return { t: t - intervalo, avancar: true };
+return { t: t, avancar: false };
+}
+function olharDe(dx, dy, dz) {
+var m = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+return { yaw: Math.atan2(-dx / m, -dz / m), pitch: Math.asin(limitar(dy / m, -1, 1)) };
+}
+function criar(S, THREE, env) {
+env = env || {};
+var win = env.win || (typeof window !== "undefined" ? window : null);
+var doc = env.doc || (typeof document !== "undefined" ? document : null);
+var nav = env.nav || (typeof navigator !== "undefined" ? navigator : null);
+var st = { on: false, padrao: true, indice: -1, id: "", antes: null, tour: { on: false, t: 0, i: 0, lista: [] }, ultimoUso: 0, tam: 1, tamT: -1e9, mira: null, avisouFora: false };
+var _v = THREE ? new THREE.Vector3() : null, _sph = THREE ? new THREE.Spherical() : null;
+function podeLer() { return !!(nav && typeof nav.getGamepads === "function"); }
+function lista() { try { return podeLer() ? (nav.getGamepads() || []) : []; } catch (e) { return []; } }
+function dica(m) { try { if (S && S._hint) S._hint(m); } catch (e) {} }
+function agora() { return (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now(); }
+function escolher(gp) {
+if (!gp) return;
+st.on = true; st.indice = gp.index; st.id = gp.id || ""; st.antes = null; st.padrao = ehPadrao(gp); st.ultimoUso = agora();
+}
+function aoConectar(ev) {
+var gp = ev && ev.gamepad; if (!gp) return;
+escolher(gp);
+dica(st.padrao ? "Controle conectado." : "Controle conectado, mas o mapeamento não é o padrão: não vou adivinhar os botões. Use um controle Xbox 360 com fio.");
+}
+function aoDesconectar(ev) {
+var gp = ev && ev.gamepad; if (gp && gp.index !== st.indice) return;
+var resto = lista().filter(function (g) { return !!g && g.connected !== false && !(gp && g.index === gp.index); });
+if (resto.length) { escolher(resto[0]); return; }
+pararPasseioAuto(true);
+st.on = false; st.indice = -1; st.antes = null;
+esconderMira();
+dica("Controle desconectado.");
+}
+if (win) { win.addEventListener("gamepadconnected", aoConectar); win.addEventListener("gamepaddisconnected", aoDesconectar); }
+(function () { var l = lista().filter(function (g) { return !!g && g.connected !== false; }); if (l.length) escolher(l[0]); })();
+function campoDeTexto() {
+var a = doc && doc.activeElement; if (!a) return false;
+return /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName || "") || !!a.isContentEditable;
+}
+function naTela() {
+var h = S.host; if (!h || !h.isConnected) return false;
+var raiz = h.closest ? (h.closest(".bim-revit") || h) : h;
+return !!(raiz && raiz.isConnected && raiz.getClientRects().length);
+}
+function modeloTam() {
+var t = agora(); if (t - st.tamT < 1500) return st.tam;
+try { var b = new THREE.Box3().setFromObject(S.modelRoot); if (!b.isEmpty()) st.tam = Math.max(b.getSize(_v).length(), 0.5); } catch (e) {}
+st.tamT = t; return st.tam;
+}
+function ferramentaAtiva() {
+var planta = !!((S.corteL && S.corteL.on) || (S.planta && S.planta.on));
+if (S._semFerramenta3d) return !S._semFerramenta3d() || planta;
+return !!((S.medir && S.medir.on) || (S.area && S.area.on) || (S.ang && S.ang.on) || (S.edit && S.edit.on && S.edit.sub) || planta);
+}
+function cameraLivre() {
+return !(S.trava && S.trava.on) && !S._principalOculta && !(S.planta && S.planta.on) && !(S.corteL && S.corteL.on) && !(S.lupa && S.lupa.on) && !(S.xr && S.xr.on);
+}
+function garantirMira() {
+if (st.mira && st.mira.parentNode === S.host) return st.mira;
+if (st.mira && st.mira.parentNode) st.mira.parentNode.removeChild(st.mira);
+if (!doc || !S.host) return null;
+var m = doc.createElement("div"); m.setAttribute("data-bim", "mira");
+m.style.cssText = "position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;z-index:6;pointer-events:none;display:none";
+m.innerHTML = '<svg viewBox="0 0 26 26" width="26" height="26" fill="none" stroke="#ffffff" stroke-width="1.6" style="filter:drop-shadow(0 0 2px rgba(0,0,0,.85))"><circle cx="13" cy="13" r="7"/><path d="M13 1v6M13 19v6M1 13h6M19 13h6"/></svg>';
+S.host.appendChild(m); st.mira = m; S.ctlMira = m;
+return m;
+}
+function mostrarMira() { var m = garantirMira(); if (m) m.style.display = "block"; }
+function esconderMira() { if (st.mira) st.mira.style.display = "none"; }
+function emPasseio() { return !!(S.fly && S.fly.on); }
+function entrarPasseio() {
+var d = S.camera.getWorldDirection(new THREE.Vector3()), o = olharDe(d.x, d.y, d.z);
+S.fly.yaw = o.yaw; S.fly.pitch = limitar(o.pitch, -1.5, 1.5);
+if (S._setVoo) S._setVoo(true);
+dica("Passeio: direcional esquerdo anda, direito olha, RT sobe e LT desce. BACK volta ao modelo.");
+}
+function sairPasseio() {
+var d = S.camera.getWorldDirection(new THREE.Vector3()), dist = Math.max(S.camera.position.distanceTo(S.orbit.target), modeloTam() * 0.25);
+if (S._setVoo) S._setVoo(false);
+S.orbit.target.copy(S.camera.position).addScaledVector(d, dist);
+S.camera.lookAt(S.orbit.target);
+}
+function esc() {
+if (!doc || !win || typeof win.KeyboardEvent !== "function") return;
+var alvo = doc.body || doc;
+["keydown", "keyup"].forEach(function (t) { alvo.dispatchEvent(new win.KeyboardEvent(t, { key: "Escape", code: "Escape", bubbles: true, cancelable: true })); });
+}
+function selecionarNaMira() {
+var r = S.renderer.domElement.getBoundingClientRect(), u = S._uidEm ? S._uidEm(r.left + r.width / 2, r.top + r.height / 2) : null;
+if (u) S._selAplicar(S._compExp ? S._compExp(u) : [u], "trocar");
+else { S._selAplicar([], "trocar"); dica("Nada na mira do centro."); }
+}
+function pararPasseioAuto(calado) {
+if (!st.tour.on) return;
+st.tour.on = false; st.tour.t = 0;
+if (!calado) dica("Passeio automático parado.");
+}
+function irVista(i) {
+var G = win && win.Gestao, v = st.tour.lista[i]; if (!G || !v || !G._bimVistaIr) return;
+try { G._bimVistaIr(v.id); } catch (e) {}
+dica("Apresentação " + (i + 1) + "/" + st.tour.lista.length + ": " + (v.nome || "vista"));
+}
+function passeioAuto() {
+if (st.tour.on) { pararPasseioAuto(); return; }
+var G = win && win.Gestao, l = [];
+try { l = (G && G._bimVistaDaObra && G._bimVistaDaObra()) || []; } catch (e) { l = []; }
+if (!l.length) { dica("Não há pontos de vista salvos nesta obra para apresentar."); return; }
+if (emPasseio()) sairPasseio();
+st.tour = { on: true, t: 0, i: 0, lista: l.slice() };
+dica("Apresentação automática: " + l.length + " vista(s), " + INTERVALO_PASSEIO + " s cada. START para parar.");
+irVista(0);
+}
+function trocarAba(passo) {
+var G = win && win.Gestao; if (!G || !G._bimVxEst) return;
+var e = G._bimVxEst(), ids = ["3d"].concat((e.lista || []).filter(function (v) { return !(v.janela && !v.janela.closed); }).map(function (v) { return v.id; }));
+if (ids.length < 2) { dica("Só há uma vista aberta."); return; }
+var alvo = proximaAba(ids, e.ativa, passo); if (alvo && G._bimVxAtivar) G._bimVxAtivar(alvo);
+}
+function agir(a) {
+if (a === "abaAnterior") { trocarAba(-1); return; }
+if (a === "abaProxima") { trocarAba(1); return; }
+if (a === "passeioAuto") { passeioAuto(); return; }
+if (S._principalOculta || (S.xr && S.xr.on)) return;
+if (a === "voltar") {
+if (st.tour.on) { pararPasseioAuto(); return; }
+if (emPasseio()) { sairPasseio(); return; }
+var ferr = ferramentaAtiva(), tinha = (S._selAtual ? S._selAtual() : []).length;
+esc();
+if (!tinha && !ferr && S._algoOculto && S._algoOculto() && win.BimSelInst && win.BimSelInst.mostrarTodos) win.BimSelInst.mostrarTodos();
+return;
+}
+if (a === "alternarModo") { if (emPasseio()) sairPasseio(); else entrarPasseio(); return; }
+if (a === "trena") { if (S._setMedir) S._setMedir(!(S.medir && S.medir.on)); return; }
+if (a === "caixaCorte") { if (S._caixaCorte && S._cxMain) S._caixaCorte(!S._cxMain.on); return; }
+if (emPasseio() || ferramentaAtiva()) return;
+if (a === "selecionar") { selecionarNaMira(); return; }
+if (a === "isolar") {
+var sel = S._selAtual ? S._selAtual() : [];
+if (!sel.length) { dica("Selecione uma peça (botão A) para isolar."); return; }
+if (win.BimSelInst && win.BimSelInst.isolar) win.BimSelInst.isolar(sel); else if (S._isolarSelecao) S._isolarSelecao();
+return;
+}
+if (a === "enquadrar") {
+var s2 = S._selAtual ? S._selAtual() : [], bx = s2.length && S._caixaDeUids ? S._caixaDeUids(s2) : null;
+if (bx && !bx.isEmpty() && S._enquadrarObj) S._enquadrarObj(bx, 1.6); else if (S._fit) S._fit();
+return;
+}
+if (VISTAS[a] && S._orientarMain) S._orientarMain(VISTAS[a]);
+}
+function mover(e, dt) {
+if (S._cancelTween) S._cancelTween();
+var cam = S.camera, orb = S.orbit;
+if (emPasseio()) {
+var f = S.fly, d = integrar("passeio", e, dt, modeloTam());
+f.yaw += d.yaw; f.pitch = limitar(f.pitch + d.pitch, -1.5, 1.5);
+var fw = cam.getWorldDirection(new THREE.Vector3()), dir = new THREE.Vector3(fw.x, 0, fw.z);
+if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1);
+dir.normalize();
+var right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+cam.position.addScaledVector(fw, d.frente).addScaledVector(right, d.lado);
+cam.position.y += d.vert;
+cam.quaternion.setFromEuler(new THREE.Euler(f.pitch, f.yaw, 0, "YXZ"));
+return;
+}
+var off = _v.copy(cam.position).sub(orb.target), dist = off.length(), g = integrar("orbita", e, dt, modeloTam(), dist);
+if (g.pan[0] || g.pan[1]) {
+var rt = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0), up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+var mv = rt.multiplyScalar(g.pan[0]).add(up.multiplyScalar(g.pan[1]));
+cam.position.add(mv); orb.target.add(mv);
+}
+if (g.az || g.pol || g.zoom !== 1) {
+off.copy(cam.position).sub(orb.target);
+_sph.setFromVector3(off);
+_sph.theta += g.az; _sph.phi = limitar(_sph.phi + g.pol, 0.01, Math.PI - 0.01);
+_sph.radius = limitar(_sph.radius * g.zoom, orb.minDistance > 0 ? orb.minDistance : 0.05, isFinite(orb.maxDistance) ? orb.maxDistance : 1e9);
+off.setFromSpherical(_sph);
+cam.position.copy(orb.target).add(off);
+cam.lookAt(orb.target);
+}
+}
+function tick(dt) {
+if (!st.on) return;
+if (!S || !S.alive || S._visitante) return;
+var gp = lista()[st.indice]; if (!gp) return;
+var e = lerEntrada(gp);
+if (!e.padrao) {
+if (!st.avisouFora) { st.avisouFora = true; dica("Controle com mapeamento fora do padrão: não vou adivinhar os botões."); }
+return;
+}
+st.avisouFora = false;
+var acoes = acoesDe(st.antes, e.botoes);
+st.antes = e.botoes;
+if (campoDeTexto() || !naTela()) return;
+var mexeu = !parado(e) || acoes.length;
+if (mexeu) { st.ultimoUso = agora(); mostrarMira(); }
+else if (st.mira && st.mira.style.display !== "none" && agora() - st.ultimoUso > 15000) esconderMira();
+acoes.forEach(function (a) { try { agir(a); } catch (er) { if (typeof console !== "undefined") console.warn("BimControle:", a, er); } });
+if (st.tour.on) {
+var p = passoPasseio(st.tour.t, dt); st.tour.t = p.t;
+if (p.avancar && st.tour.lista.length) { st.tour.i = (st.tour.i + 1) % st.tour.lista.length; irVista(st.tour.i); }
+}
+if (!parado(e) && cameraLivre()) mover(e, dt);
+}
+function dispor() {
+if (win) { win.removeEventListener("gamepadconnected", aoConectar); win.removeEventListener("gamepaddisconnected", aoDesconectar); }
+try { if (st.mira && st.mira.parentNode) st.mira.parentNode.removeChild(st.mira); } catch (e) {}
+st.mira = null; st.on = false; st.tour.on = false;
+}
+return {
+tick: tick, dispor: dispor,
+estado: function () { return { on: st.on, padrao: st.padrao, indice: st.indice, passeioAuto: st.tour.on, mira: !!(st.mira && st.mira.style.display !== "none") }; }
+};
+}
+var BimControle = {
+ZONA_MORTA: ZONA_MORTA, ZONA_GATILHO: ZONA_GATILHO, CURVA: CURVA, INTERVALO_PASSEIO: INTERVALO_PASSEIO,
+MAPA: MAPA, VISTAS: VISTAS,
+eixo: eixo, par: par, gatilho: gatilho, ehPadrao: ehPadrao, lerEntrada: lerEntrada,
+bordaDescida: bordaDescida, acoesDe: acoesDe, escala: escala, integrar: integrar, parado: parado,
+proximaAba: proximaAba, passoPasseio: passoPasseio, olharDe: olharDe,
+criar: criar
+};
+global.BimControle = BimControle;
+if (typeof module !== "undefined" && module.exports) module.exports = BimControle;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimvinculos.js ==== */

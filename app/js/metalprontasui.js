@@ -91,7 +91,7 @@
       ["usoGuarda", "Força no guarda-corpo (NBR 6120, Tabela 12)", "sel", USO_GUARDA], ["usoPiso", "Sobrecarga (NBR 6120, Tabela 10)", "sel", USO_PISO],
       /* FIXAÇÃO CONFIGURADA (frente S6, 14/10/2026 — js/metalescadalinha.js): cada ponta dimensionada com os esforços da escada */
       ["fixPe", "Fixação no pé", "sel", FIXACOES], ["fixTopo", "Fixação no topo", "sel", FIXACOES],
-      ["concPeEsp", "Concreto no pé: espessura (m; 0 = do modelo)", "num"], ["concPeFck", "Concreto no pé: fck (MPa; 0 = do modelo)", "num"], ["concTopoEsp", "Concreto no topo: espessura (m; 0 = do modelo)", "num"],
+      ["concPeEsp", "Concreto no pé: espessura (m; 0 = do modelo)", "num"], ["concPeFck", "Concreto no pé: fck (MPa; 0 = do modelo — sem fck a ancoragem do chumbador fica A CONFIRMAR)", "num"], ["concTopoEsp", "Concreto no topo: espessura (m; 0 = do modelo)", "num"], ["concTopoFck", "Concreto no topo: fck (MPa; 0 = do modelo — sem fck a ancoragem fica A CONFIRMAR)", "num"],
       ["concPeBorda", "Concreto no pé: distância até a borda (m; 0 = do contorno da laje desenhada)", "num"], ["concTopoBorda", "Concreto no topo: distância até a borda (m; 0 = do contorno)", "num"],
       /* ESCADA POR LINHA (frente S6): o 1º clique, a altura lida do modelo e a abertura no piso de chegada */
       ["sentidoLinha", "Por linha: o 1º clique é", "sel", [["desce", "O TOPO (borda do piso de cima) — a escada desce"], ["sobe", "O PÉ — a escada sobe"]]], ["alturaDoModelo", "Por linha: ler a altura do piso/laje de chegada (senão o desnível acima)", "check"], ["abrirPiso", "Por linha: abrir o piso/laje de chegada (com guarda-corpo)", "check"],

@@ -39,8 +39,10 @@
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
 
   /* ------------------------------------------------------------ PARÂMETROS */
+  /* #50 (15/10/2026, pedido do Rogério): base ENGASTADA por padrão ("em galpão a maioria são engastados") — a tela do galpão
+     (js/metalcalcui.js) já partia de engastada e grava a escolha; este padrão vale para quem chama o motor sem dizer a base */
   var PADRAO = {
-    geometria: { vao: 20, comprimento: 40, espacamento: 6, peDireito: 6, inclinacaoPct: 10, aguas: 2, base: "rotulada", tipoPortico: "alma-cheia" },
+    geometria: { vao: 20, comprimento: 40, espacamento: 6, peDireito: 6, inclinacaoPct: 10, aguas: 2, base: "engastada", tipoPortico: "alma-cheia" },
     perfis: { pilar: "W 310 x 38,7 Gerdau", viga: "W 310 x 32,7 Gerdau", tapamento: "W 200 x 15,0 Gerdau", escora: "auto", terca: "auto", travessa: "auto", contravento: "auto" },
     acos: { perfil: "ASTM A572 Gr.50", frio: "NBR 6650 CF-26", barra: "ASTM A36" },
     cobertura: { telhaPeso: null, telhaVaoMax: null, telhaNome: "telha de aço trapezoidal", permanenteExtra: 0.10, empocamentoVerificado: false },

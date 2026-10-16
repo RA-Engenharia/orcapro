@@ -100,7 +100,7 @@ S.opts = opts;
 host.innerHTML = '';
 host.style.position = 'relative';
 host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-[(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+[(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.ctlMira, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
 if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); }
 S.host = host;
 try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
@@ -1099,6 +1099,8 @@ menu: function (a) { menuDaVista(a, camera, orbit, function (p, t) { voarCam(p, 
 S.vcubeEl = vcMain.el;
 if (visitante) vcMain.el.style.display = 'none';
 S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
+S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
+try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
 var cris = { hist: ['cubo'], congelado: null, obj: null, estado: 'cubo', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
 try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
 function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
@@ -4552,6 +4554,8 @@ return novo;
 }
 S._selAplicar = selAplicar; S._selAtual = selAtual;
 S._uidEm = function (cx, cy) { var hit = raycastEm(cx, cy); return uidDeMalha(hit && hit.object); };
+S._semFerramenta3d = semFerramenta3d;
+S._caixaDeUids = function (uids) { var fica = {}, bx = new THREE.Box3(), bm = new THREE.Box3(); (uids || []).forEach(function (u) { fica[u] = 1; }); todasMalhas(function (m) { var u = uidDeMalha(m); if (!u || !fica[u] || !m.geometry) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); if (m.geometry.boundingBox) { bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); bx.union(bm); } }); return bx; };
 S._uidsNaVista3d = function () {
 var fr = new THREE.Frustum(), mt = new THREE.Matrix4(), bx = new THREE.Box3(), out = {};
 camera.updateMatrixWorld(); mt.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); fr.setFromProjectionMatrix(mt);
@@ -12210,6 +12214,7 @@ try { if (Reuniao.on) Reuniao.sair(); } catch (_) {}
 try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
 try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
 try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}
+try { if (S._ctl) S._ctl.dispor(); } catch (_) {}
 try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
 try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
 try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
