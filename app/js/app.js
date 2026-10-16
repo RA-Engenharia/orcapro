@@ -2336,7 +2336,7 @@
         return;
       }
       // ver insumos (composição explodida)
-      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem); return; }
+      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem, t.dataset.viBase); return; }
       // remover base extra — a PROPRIA guarda composições AUTORAIS (não há como
       // reimportar), então exige confirmação explícita antes de apagar
       if (t.dataset.baseRemover) {
@@ -13104,7 +13104,7 @@
     },
 
     // ---------- Ver composição → insumos (base analítica, por estado) ----------
-    verInsumos: function (codigo, refItem) {
+    verInsumos: function (codigo, refItem, fonteBase) {
       var self = this;
       var ufAtivo = self._baseUf || Sinapi.uf || null;
       /* CONTEXTO DE AJUSTE: coeficiente só é editável quando o modal foi aberto
@@ -13123,6 +13123,19 @@
       if (!codigo || !String(codigo).trim()) {
         UI.modal("ℹ️ Sem composição detalhada", '<p>Este item foi <b>lançado manualmente</b> (sem código SINAPI), então não há composição de insumos para detalhar. O valor usado é o que você digitou.</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
         return;
+      }
+      /* ===== BASE ESTADUAL (IOPES, SICRO, SEINFRA, ORSE, SETOP, SUDECAP, AGETOP) =====
+       * A base vem do clique (data-vi-base) ou do próprio item. Antes de
+       * 16/10/2026 tudo caía no analítico da SINAPI, que não tem esses códigos
+       * — ou pior, tem um código HOMÔNIMO de outra composição. */
+      var _fB = String(fonteBase || "").toUpperCase();
+      if (!_fB && UI._ajusteCtx && UI._ajusteCtx.item) {
+        var _itB = UI._ajusteCtx.item;
+        _fB = String(_itB.baseFonte || (Orcamento.ehSinapi(_itB.origem) ? "" : (_itB.origem || ""))).toUpperCase();
+      }
+      if (_fB && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(_fB)) {
+        UI._ajusteCtx = null;   // coeficiente do órgão: só leitura (a versão própria é o caminho para mudar)
+        return this._verInsumosBase(_fB, String(codigo));
       }
       // v1.1.123 — composição PRÓPRIA criada no app: detalhamento vem da própria
       // estrutura salva. NUNCA sombreia um código oficial: se o código existir na
@@ -13240,6 +13253,75 @@
         if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
         // Chegou aqui = local E ao vivo falharam (offline sem o arquivo no disco)
         UI.toast("Não foi possível carregar o detalhamento agora" + (ufAtivo ? " de " + ufAtivo : "") + ". Verifique a internet e tente de novo — o orçamento usa os preços corretos normalmente.", "erro");
+      });
+    },
+
+    /* ---------- Analítico de BASE ESTADUAL (js/analiticobases.js) ----------
+     * Mesmo modal da SINAPI (UI.renderInsumos), com os avisos que só a base
+     * estadual tem: detalhamento de outra competência, soma publicada que não
+     * fecha com o preço, órgão que não publica o detalhamento. */
+    _verInsumosBase: function (fonte, codigo) {
+      var self = this;
+      var rot = (Bases.META && Bases.META[fonte] && Bases.META[fonte].label) || fonte;
+      var base = AnaliticoBases.baseInstalada(fonte);
+      function semDetalhe(titulo, corpo) {
+        UI.modal(titulo, corpo + '<p class="muted" style="font-size:12.5px;margin:10px 0 0">O <b>preço do item continua correto</b> — vem da base ' +
+          Util.esc(rot) + ' instalada. Só o desdobramento em insumos é que não está disponível.</p>',
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      }
+      function abrir() {
+        var meta = AnaliticoBases.meta(fonte);
+        if (AnaliticoBases.regimeDiverge(meta, base)) {
+          semDetalhe("Detalhamento de outro regime", '<p style="margin:0 0 8px">A base ' + Util.esc(rot) + ' instalada é <b>' +
+            (base.desonerado ? "desonerada" : "não desonerada") + '</b> e o detalhamento disponível é do outro regime. Não vou abrir a composição com encargos diferentes dos da sua planilha.</p>');
+          return;
+        }
+        var a = AnaliticoBases.obter(fonte, codigo);
+        if (!a) {
+          semDetalhe("ℹ️ Sem composição detalhada", '<p style="margin:0 0 8px">O item <b>' + Util.esc(codigo) + '</b> não tem detalhamento no analítico da base <b>' +
+            Util.esc(rot) + '</b>. Acontece quando ele é um <b>insumo</b> (não se desdobra) ou quando o órgão não publicou a composição dele.</p>');
+          return;
+        }
+        var avisos = [];
+        var cc = AnaliticoBases.conferirCompetencia(meta, base);
+        if (!cc.mesmo) {
+          avisos.push('<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+            ' Detalhamento de <b>' + Util.esc(cc.mesAnalitico) + '</b>; a base ' + Util.esc(rot) + ' que precifica o orçamento é de <b>' + Util.esc(cc.mesBase) +
+            '</b>. Os coeficientes valem; os preços dos insumos são do mês do detalhamento.</div>');
+        }
+        if (meta && meta.compDiverge) {
+          avisos.push('<div class="muted mb" style="font-size:12px">O preço das composições da base ' + Util.esc(rot) + ' instalada vem da tabela de <b>' +
+            Util.esc(meta.rotuloComp) + '</b> (o rótulo da base diz ' + Util.esc(meta.mes) + '), e este detalhamento é dessa mesma tabela.</div>');
+        }
+        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Analítico do item — " + rot + " " + codigo,
+          UI.renderInsumos(a, (meta && meta.uf) || "", { fonte: fonte, rotulo: rot, competencia: meta && meta.rotuloComp, uf: meta && meta.uf, avisos: avisos }), [
+          { texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo), fonte); } },
+          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+        ]);
+        UI.modalConsulta();
+        var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+      }
+      if (!base) {
+        semDetalhe("Base " + rot + " não instalada", '<p style="margin:0 0 8px">Para abrir o detalhamento, instale a base <b>' + Util.esc(rot) + '</b> em Tabelas.</p>');
+        return;
+      }
+      var motivoSem = AnaliticoBases.semPublicacao(fonte);
+      if (motivoSem) {
+        semDetalhe("Detalhamento " + rot + " não publicado pelo órgão", '<p style="margin:0 0 8px">' + Util.esc(motivoSem) + '</p>' +
+          '<p style="margin:0 0 8px">Se você precisa abrir esta composição, crie a sua versão em <b>Minhas composições</b> com os coeficientes do caderno do órgão.</p>');
+        return;
+      }
+      if (AnaliticoBases.obter(fonte, codigo) || AnaliticoBases.meta(fonte)) { abrir(); return; }
+      if (self._insumosCarregando === fonte + "|" + codigo) return;   // duplo clique durante o carregamento
+      self._insumosCarregando = fonte + "|" + codigo;
+      UI.loading("Carregando o detalhamento da base " + rot + " (só na 1ª vez)…");
+      AnaliticoBases.carregar(fonte).then(function () {
+        self._insumosCarregando = null; UI.loadingFim(); abrir();
+      }).catch(function (e) {
+        self._insumosCarregando = null; UI.loadingFim();
+        try { console.warn("[analitico-bases]", fonte, e && e.message); } catch (eL) {}
+        semDetalhe("Detalhamento " + rot + " indisponível", '<p style="margin:0 0 8px">Não consegui o detalhamento (composição &rarr; insumos) da base <b>' + Util.esc(rot) +
+          '</b> agora: ele não veio no aplicativo e o servidor não respondeu. Verifique a internet e tente de novo.</p>');
       });
     },
 
@@ -13716,6 +13798,15 @@
         if (!item) { // sub-composição oficial fora do CSD da UF (mesma causa)
           var sub = Analitico.obter(String(codigo));
           if (sub) item = { codigo: String(sub.codigo), descricao: sub.descricao || "", unidade: sub.unidade || "", custoUnitario: Number(sub.custoUnitario) || 0, categoria: "", tipoItem: "composicao", fonte: "SINAPI" };
+        }
+      }
+      /* mesma causa na BASE ESTADUAL: o sintético do órgão às vezes só lista
+         composições, e o insumo existe apenas no analítico dela */
+      if (!item && fonte && !Orcamento.ehSinapi(fonte) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonte)) {
+        item = AnaliticoBases.insumo(fonte, String(codigo));
+        if (!item) {
+          var subB = AnaliticoBases.obter(fonte, String(codigo));
+          if (subB) item = { codigo: String(subB.codigo), descricao: subB.descricao || "", unidade: subB.unidade || "", custoUnitario: Number(subB.custoUnitario) || 0, categoria: "", tipoItem: "composicao", fonte: String(fonte).toUpperCase() };
         }
       }
       // sem preço na base? a cotação que o usuário já informou vale (mesma da planilha)
@@ -14826,12 +14917,16 @@
     },
     /* v1.1.124 — "quero ESTA composição, mas do meu jeito": clona a estrutura
      * oficial aberta no detalhamento p/ uma própria (coeficientes editáveis). */
-    criarVersaoPropria: function (codigo) {
+    criarVersaoPropria: function (codigo, fonteBase) {
       var self = this;
-      var ref = (typeof Analitico !== "undefined") ? Analitico.obter(String(codigo)) : null;
+      /* base estadual (16/10/2026): a referência vem do analítico DELA */
+      var fRef = String(fonteBase || "").toUpperCase();
+      var deBase = !!(fRef && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fRef));
+      var ref = deBase ? AnaliticoBases.obter(fRef, String(codigo))
+        : ((typeof Analitico !== "undefined") ? Analitico.obter(String(codigo)) : null);
       if (!ref) { UI.toast("Detalhamento de " + codigo + " não está carregado — abra o " + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Insumos primeiro.", "erro"); return; }
       this.criarComposicao(true);
-      var prop = ComposicaoPropria.daReferencia(ref, { resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); } });
+      var prop = ComposicaoPropria.daReferencia(ref, { fonte: deBase ? fRef : "SINAPI", resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); } });
       var c = this._cp.comp;
       c.descricao = String(ref.descricao || "");
       c.unidade = String(prop.unidade || "").toLowerCase();

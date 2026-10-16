@@ -1,6 +1,6 @@
 {
  "gerador": "tools/construir-pacotes-js.js",
- "fonte": "872112e1b61f8cddce3112038d0f2c38",
+ "fonte": "ff8f04ce306a49248165b084a74b14d7",
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",

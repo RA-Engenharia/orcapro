@@ -1823,6 +1823,7 @@
           }).join("");
         }
 
+        function temCodBase(x) { return !!(x && x.codigo && x.codigo !== "—"); }
         function linhaItem(it, posNoGrupo, tamGrupo, subId) {
           var ii = _idxDe[it.id];
           var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, numero: "" };
@@ -1834,6 +1835,10 @@
             var bp = Bases.obter("PROPRIA", it.codigo);
             return !!(bp && bp.insumos && bp.insumos.length);
           })();
+          /* base ESTADUAL com analítico (IOPES, SICRO, SEINFRA...): até 16/10/2026
+             o botão nem aparecia — o cliente do ES só conseguia abrir a SINAPI */
+          var ehBaseAna = !ehSinapi && !ehPropriaDet && temCodBase(it) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonte);
+          var attrBase = ehBaseAna ? ' data-vi-base="' + Util.esc(String(fonte).toUpperCase()) + '"' : '';
           var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
           var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : fonte;
           // número vem da FONTE ÚNICA (1.2 solto, 1.1.1 dentro de sub etapa)
@@ -1858,7 +1863,7 @@
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
-              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
+              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet || ehBaseAna ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
               /* regime como BADGE colorido (não texto cinza): desonerado salta
                  aos olhos, que é o item que muda o encargo. Onerado é o padrão
                  e não recebe selo, para não virar ruído em toda linha. */
@@ -1899,7 +1904,7 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
-              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
+              (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
               /* com quantidade pendente o botão do memorial vira o caminho
                  principal: é lá que a metragem nasce, então ele se destaca */
               '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
@@ -2139,14 +2144,18 @@
     },
 
     // ----- Modal: composição explodida em insumos (base analítica SINAPI) -----
-    renderInsumos: function (a, ufAtivo) {
+    /* `opts` (16/10/2026) = analítico de BASE ESTADUAL (js/analiticobases.js):
+       { fonte, rotulo, competencia, uf, avisos:[html] }. Sem `opts`, é a SINAPI
+       de sempre — nada abaixo muda para ela. */
+    renderInsumos: function (a, ufAtivo, opts) {
+      opts = opts || null;
       var catLabel = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
       function box(rotulo, valor, classe) {
         return '<div class="kpi"><div class="rotulo">' + rotulo + '</div>' +
           '<div class="num' + (classe ? " " + classe : "") + '">' + Util.fmtMoeda(valor) + '</div></div>';
       }
-      var anaUf = (typeof Analitico !== "undefined") ? Analitico.uf : null;
-      var aviso = (ufAtivo && anaUf && ufAtivo !== anaUf)
+      var anaUf = opts ? (opts.uf || null) : ((typeof Analitico !== "undefined") ? Analitico.uf : null);
+      var aviso = opts ? (opts.avisos || []).join("") : (ufAtivo && anaUf && ufAtivo !== anaUf)
         ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
         : '';
       var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
@@ -2202,7 +2211,7 @@
         }
         // sub-composição: código clicável abre o detalhamento DELA (drill-down)
         var celCod = sub
-          ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Abrir o analítico do item ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
+          ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '"' + (opts && opts.fonte ? ' data-vi-base="' + Util.esc(opts.fonte) + '"' : '') + ' title="Abrir o analítico do item ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
           : Util.esc(it.codigo);
         html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
           '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
@@ -2217,7 +2226,7 @@
               Util.esc(it.memoria) + '">' + Util.esc(String(it.memoria).replace(/\n/g, " · ").slice(0, 90)) + '</div>' : "") + '</td>' +
           '<td class="num">' + celUnit + '</td>' +
           '<td class="num">' + celTotal + '</td>' +
-          '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';
+          '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || Util.esc(it.categoria)) + '</span></td></tr>';
       });
       html += '</tbody></table>';
       if (pendentes > 0) {
@@ -2231,6 +2240,22 @@
       // afetado. O "oficial" vem do cabeçalho analítico e, quando este também
       // está zerado, do SINTÉTICO — que é o preço que o orçamento realmente usa.
       var oficialRef = Util.num(a.custoUnitario);
+      if (opts) {
+        /* BASE ESTADUAL: o órgão publica o detalhamento e o preço; quando a
+           soma publicada não fecha com o preço, a gente MOSTRA a diferença —
+           não ajusta coeficiente para "fechar" (seria inventar composição). */
+        if (a.confere === false && oficialRef > 0) {
+          html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin-top:8px">' +
+            '⚠ <b>A soma dos insumos publicada pelo órgão (' + Util.fmtMoeda(a.somaInsumos) + ') difere do preço oficial da composição (' +
+            Util.fmtMoeda(oficialRef) + ') em ' + Util.fmtMoeda(a.diferenca) + '.</b> Seu orçamento usa o preço oficial. ' +
+            'A diferença vem da própria publicação (arredondamento ou item que o órgão não detalha).</div>';
+        }
+        if (a.obs) html += '<p class="muted" style="font-size:12px;margin:6px 0 0">' + Util.esc(a.obs) + '</p>';
+        html += '<p class="muted mt" style="font-size:12px">Base analítica ' + Util.esc(opts.rotulo || opts.fonte || "") +
+          (opts.competencia ? ' ' + Util.esc(opts.competencia) : '') + (opts.uf ? ' / ' + Util.esc(opts.uf) : '') +
+          ' — composição → insumos com coeficientes, como o órgão publica. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço oficial da composição.</p>';
+        return html;
+      }
       if (!oficialRef && typeof Sinapi !== "undefined" && Sinapi.obter) {
         var _sRef = Sinapi.obter(a.codigo);
         if (_sRef) oficialRef = Util.num(_sRef.custoUnitario);

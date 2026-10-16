@@ -513,8 +513,12 @@
       insumos.forEach(function (i, idx) {
         var rot = "Insumo " + (idx + 1) + " (" + (i.codigo || "sem código") + ")";
         if (!i.codigo) { erros.push(rot + ": sem código."); return; }
-        if (vistos[i.codigo]) erros.push(rot + ": código repetido na composição.");
-        vistos[i.codigo] = 1;
+        /* repetido = mesmo código E mesma unidade. O SICRO usa o código do
+           material de novo na linha do transporte dele (t × tkm), e a cópia da
+           composição do órgão era barrada aqui (16/10/2026, revisor). */
+        var chaveRep = String(i.codigo) + "|" + String(i.unidade || "").toLowerCase().replace(/\s+/g, "");
+        if (vistos[chaveRep]) erros.push(rot + ": código repetido na composição.");
+        vistos[chaveRep] = 1;
         // o código TEM de existir na base real — nunca inventamos (a fonte do
         // insumo, quando conhecida, evita colisão de código entre bases)
         var real = ctx.resolve ? ctx.resolve(i.codigo, i.fonte) : null;
@@ -1078,10 +1082,33 @@
      * ativa quando o resolve achar, e rastreabilidade na observação. */
     daReferencia: function (ref, ctx) {
       ctx = ctx || {};
-      var insumos = (ref.insumos || []).map(function (i) {
-        // a referência é SINAPI → o resolve recebe a fonte para NUNCA precificar
-        // com item homônimo de outra base (colisão de código numérico)
-        var atual = ctx.resolve ? ctx.resolve(i.codigo, "SINAPI") : null;
+      /* a fonte da referência: SINAPI, ou a base estadual aberta no analítico
+         (IOPES, SICRO...) desde 16/10/2026 — o insumo do IOPES não pode ser
+         precificado pelo código homônimo da SINAPI */
+      var fonteRef = String(ctx.fonte || "SINAPI").toUpperCase();
+      var ehSinapiRef = fonteRef === "SINAPI" || fonteRef === "SINAPI_DES";
+      /* ⚠ BASE ESTADUAL: O PREÇO DA LINHA É O DA PRÓPRIA FICHA, nunca o do
+         código. Achado do revisor (16/10/2026): no IOPES o código de insumo
+         010808 ("Auxiliar de almoxarife", R$ 2.925,89) é também o de uma
+         composição de telhas (R$ 5,95), e reprecificar pelo código trocava um
+         pelo outro, calado. No SICRO/GOINFRA o custo horário do equipamento
+         e o FIC são DE CADA FICHA (dependem da utilização), então o mesmo
+         código tem preços diferentes, legitimamente. Na SINAPI o código é
+         único e a reprecificação pela base da UF continua. */
+      var semCusto = 0;
+      var linhas = (ref.insumos || []).filter(function (i) {
+        if (ehSinapiRef) return true;
+        /* linha que o órgão publica sem custo (momento de transporte zerado,
+           tempo fixo nulo) não pesa no preço e travaria a gravação ("sem
+           preço") — fica de fora e a observação diz quantas */
+        var vazia = !(Number(i.custoUnitario) > 0) && !(Number(i.custoTotal) > 0);
+        if (vazia) semCusto++;
+        return !vazia;
+      });
+      var insumos = linhas.map(function (i) {
+        // o resolve recebe a fonte para NUNCA precificar com item homônimo de
+        // outra base (colisão de código numérico)
+        var atual = (ctx.resolve && ehSinapiRef) ? ctx.resolve(i.codigo, fonteRef) : null;
         return {
           codigo: i.codigo,
           descricao: i.descricao,
@@ -1091,7 +1118,7 @@
           custoUnitario: (atual && Number(atual.custoUnitario) > 0) ? Number(atual.custoUnitario) : (Number(i.custoUnitario) || 0),
           categoria: i.categoria || i.tipoInsumo || "",
           tipo: i.tipo || "insumo",
-          fonte: "SINAPI"
+          fonte: fonteRef
         };
       });
       var temMO = insumos.some(function (i) { return catDe(i.categoria) === "MO"; });
@@ -1100,7 +1127,8 @@
         grupo: ref.grupo || "",
         maoDeObra: temMO,
         insumos: insumos,
-        observacao: "Estrutura baseada na composição " + ref.codigo + " — " + String(ref.descricao || "").slice(0, 90) + " (coeficientes oficiais; revise quantidades para o seu caso).",
+        observacao: "Estrutura baseada na composição " + (fonteRef !== "SINAPI" ? fonteRef + " " : "") + ref.codigo + " — " + String(ref.descricao || "").slice(0, 90) + " (coeficientes oficiais; revise quantidades para o seu caso)." +
+          (semCusto ? " " + semCusto + " linha(s) sem custo na publicação do órgão não foram copiadas." : ""),
         referenciaCodigo: ref.codigo
       };
     }

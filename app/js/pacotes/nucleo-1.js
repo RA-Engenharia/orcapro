@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.153",
+versao: "1.2.154",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -5338,6 +5338,7 @@ catId: opts.catId || (antiga ? antiga.catId : null) || null
 });
 EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; });
 EXTRA.push(b);
+try { if (typeof AnaliticoBases !== "undefined" && AnaliticoBases._limparCache) AnaliticoBases._limparCache(); } catch (eAB) {}
 return dados.length;
 },
 extras: function () { return EXTRA; },
@@ -5470,7 +5471,18 @@ carregarInclusa: function (arquivo, fonte, regiao, opts) {
 var self = this;
 opts = opts || {};
 return this._pegar(arquivo, opts).then(function (pacote) {
-if (regiao && pacote.dados) pacote.dados.forEach(function (it) { if (it.precos && it.precos[regiao] != null) it.custoUnitario = it.precos[regiao]; });
+if (regiao && pacote.dados) pacote.dados.forEach(function (it) {
+if (!it.precos || it.precos[regiao] == null) return;
+var antes = Number(it.custoUnitario) || 0, novo = Number(it.precos[regiao]) || 0;
+if (regiao === "comBDI") it.custoDireto = antes;
+it.custoUnitario = it.precos[regiao];
+var soma = (Number(it.custoMO) || 0) + (Number(it.custoMAT) || 0) + (Number(it.custoEQ) || 0);
+if (antes > 0 && soma > 0 && novo !== antes) {
+var f = novo / antes;
+var mo = Math.round((Number(it.custoMO) || 0) * f * 100) / 100, eq = Math.round((Number(it.custoEQ) || 0) * f * 100) / 100;
+it.custoMO = mo; it.custoEQ = eq; it.custoMAT = Math.round((novo - mo - eq) * 100) / 100;
+}
+});
 var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
 var grav = { ok: true };
 if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
@@ -9660,8 +9672,9 @@ var temMO = false, vistos = {};
 insumos.forEach(function (i, idx) {
 var rot = "Insumo " + (idx + 1) + " (" + (i.codigo || "sem código") + ")";
 if (!i.codigo) { erros.push(rot + ": sem código."); return; }
-if (vistos[i.codigo]) erros.push(rot + ": código repetido na composição.");
-vistos[i.codigo] = 1;
+var chaveRep = String(i.codigo) + "|" + String(i.unidade || "").toLowerCase().replace(/\s+/g, "");
+if (vistos[chaveRep]) erros.push(rot + ": código repetido na composição.");
+vistos[chaveRep] = 1;
 var real = ctx.resolve ? ctx.resolve(i.codigo, i.fonte) : null;
 if (ctx.resolve && !real) erros.push(rot + ": código não existe nas bases ativas — só entram insumos reais.");
 var coef = Number(i.coeficiente);
@@ -9966,8 +9979,17 @@ return this.rotaDe(ref, this.daReferencia(ref, ctx), ctx);
 },
 daReferencia: function (ref, ctx) {
 ctx = ctx || {};
-var insumos = (ref.insumos || []).map(function (i) {
-var atual = ctx.resolve ? ctx.resolve(i.codigo, "SINAPI") : null;
+var fonteRef = String(ctx.fonte || "SINAPI").toUpperCase();
+var ehSinapiRef = fonteRef === "SINAPI" || fonteRef === "SINAPI_DES";
+var semCusto = 0;
+var linhas = (ref.insumos || []).filter(function (i) {
+if (ehSinapiRef) return true;
+var vazia = !(Number(i.custoUnitario) > 0) && !(Number(i.custoTotal) > 0);
+if (vazia) semCusto++;
+return !vazia;
+});
+var insumos = linhas.map(function (i) {
+var atual = (ctx.resolve && ehSinapiRef) ? ctx.resolve(i.codigo, fonteRef) : null;
 return {
 codigo: i.codigo,
 descricao: i.descricao,
@@ -9977,7 +9999,7 @@ memoria: i.memoria || "",
 custoUnitario: (atual && Number(atual.custoUnitario) > 0) ? Number(atual.custoUnitario) : (Number(i.custoUnitario) || 0),
 categoria: i.categoria || i.tipoInsumo || "",
 tipo: i.tipo || "insumo",
-fonte: "SINAPI"
+fonte: fonteRef
 };
 });
 var temMO = insumos.some(function (i) { return catDe(i.categoria) === "MO"; });
@@ -9986,7 +10008,8 @@ unidade: ref.unidade || "",
 grupo: ref.grupo || "",
 maoDeObra: temMO,
 insumos: insumos,
-observacao: "Estrutura baseada na composição " + ref.codigo + " — " + String(ref.descricao || "").slice(0, 90) + " (coeficientes oficiais; revise quantidades para o seu caso).",
+observacao: "Estrutura baseada na composição " + (fonteRef !== "SINAPI" ? fonteRef + " " : "") + ref.codigo + " — " + String(ref.descricao || "").slice(0, 90) + " (coeficientes oficiais; revise quantidades para o seu caso)." +
+(semCusto ? " " + semCusto + " linha(s) sem custo na publicação do órgão não foram copiadas." : ""),
 referenciaCodigo: ref.codigo
 };
 }
@@ -13341,6 +13364,7 @@ var gg = _porSub[sx.id];
 return '<option value="' + sx.id + '">' + Util.esc((gg ? gg.numero + " " : "") + sx.nome) + '</option>';
 }).join("");
 }
+function temCodBase(x) { return !!(x && x.codigo && x.codigo !== "—"); }
 function linhaItem(it, posNoGrupo, tamGrupo, subId) {
 var ii = _idxDe[it.id];
 var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, numero: "" };
@@ -13350,6 +13374,8 @@ var ehPropriaDet = fonte === "PROPRIA" && (typeof Bases !== "undefined") && (fun
 var bp = Bases.obter("PROPRIA", it.codigo);
 return !!(bp && bp.insumos && bp.insumos.length);
 })();
+var ehBaseAna = !ehSinapi && !ehPropriaDet && temCodBase(it) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonte);
+var attrBase = ehBaseAna ? ' data-vi-base="' + Util.esc(String(fonte).toUpperCase()) + '"' : '';
 var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
 var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : fonte;
 var numItem = L.numero || Orcamento.itemNumero(ei, ii);
@@ -13360,7 +13386,7 @@ var recLinha = rec || recSub;
 var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + '" data-etapa-linhas="' + cadeia + '">' +
 '<td class="num-item"><b>' + numItem + '</b></td>' +
 '<td>' + (temCod
-? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
+? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet || ehBaseAna ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Clique para abrir o analítico do item (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
 + (it.desonerado === true ? '<br><span class="pill regime-des" title="SINAPI — encargos COM desoneração">desonerado</span>'
 : (fonte !== "SINAPI" && fonte !== "PROPRIO" && fonte !== "SINAPI_DES" ? '<br><span class="pill ' + pillCls + '" style="font-size:9px;padding:1px 6px">' + Util.esc(rotuloFonte) + '</span>' : ''))
 : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
@@ -13385,7 +13411,7 @@ UI._seloAjuste(e.id, it) +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
 (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
-(ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
+(ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
 '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
 (_licAv && Licitacao.itemTravado(orc, it)
 ? '<span class="pill" title="Item da planilha do órgão: não pode ser removido no modo licitação.">órgão</span>'
@@ -13554,14 +13580,15 @@ html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util
 }
 return html;
 },
-renderInsumos: function (a, ufAtivo) {
+renderInsumos: function (a, ufAtivo, opts) {
+opts = opts || null;
 var catLabel = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
 function box(rotulo, valor, classe) {
 return '<div class="kpi"><div class="rotulo">' + rotulo + '</div>' +
 '<div class="num' + (classe ? " " + classe : "") + '">' + Util.fmtMoeda(valor) + '</div></div>';
 }
-var anaUf = (typeof Analitico !== "undefined") ? Analitico.uf : null;
-var aviso = (ufAtivo && anaUf && ufAtivo !== anaUf)
+var anaUf = opts ? (opts.uf || null) : ((typeof Analitico !== "undefined") ? Analitico.uf : null);
+var aviso = opts ? (opts.avisos || []).join("") : (ufAtivo && anaUf && ufAtivo !== anaUf)
 ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
 : '';
 var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
@@ -13605,7 +13632,7 @@ celUnit = '<input class="preco-user pendente" data-preco-insumo="' + Util.esc(it
 celTotal = '<span class="txt-pendente">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' sem preço</span>';
 }
 var celCod = sub
-? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Abrir o analítico do item ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
+? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '"' + (opts && opts.fonte ? ' data-vi-base="' + Util.esc(opts.fonte) + '"' : '') + ' title="Abrir o analítico do item ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
 : Util.esc(it.codigo);
 html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
 '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
@@ -13617,7 +13644,7 @@ html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
 Util.esc(it.memoria) + '">' + Util.esc(String(it.memoria).replace(/\n/g, " · ").slice(0, 90)) + '</div>' : "") + '</td>' +
 '<td class="num">' + celUnit + '</td>' +
 '<td class="num">' + celTotal + '</td>' +
-'<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';
+'<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || Util.esc(it.categoria)) + '</span></td></tr>';
 });
 html += '</tbody></table>';
 if (pendentes > 0) {
@@ -13627,6 +13654,19 @@ html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rg
 'Orçamento com item zerado <b>não pode ser finalizado</b>.</div>';
 }
 var oficialRef = Util.num(a.custoUnitario);
+if (opts) {
+if (a.confere === false && oficialRef > 0) {
+html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin-top:8px">' +
+'⚠ <b>A soma dos insumos publicada pelo órgão (' + Util.fmtMoeda(a.somaInsumos) + ') difere do preço oficial da composição (' +
+Util.fmtMoeda(oficialRef) + ') em ' + Util.fmtMoeda(a.diferenca) + '.</b> Seu orçamento usa o preço oficial. ' +
+'A diferença vem da própria publicação (arredondamento ou item que o órgão não detalha).</div>';
+}
+if (a.obs) html += '<p class="muted" style="font-size:12px;margin:6px 0 0">' + Util.esc(a.obs) + '</p>';
+html += '<p class="muted mt" style="font-size:12px">Base analítica ' + Util.esc(opts.rotulo || opts.fonte || "") +
+(opts.competencia ? ' ' + Util.esc(opts.competencia) : '') + (opts.uf ? ' / ' + Util.esc(opts.uf) : '') +
+' — composição → insumos com coeficientes, como o órgão publica. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço oficial da composição.</p>';
+return html;
+}
 if (!oficialRef && typeof Sinapi !== "undefined" && Sinapi.obter) {
 var _sRef = Sinapi.obter(a.codigo);
 if (_sRef) oficialRef = Util.num(_sRef.custoUnitario);
@@ -18222,6 +18262,275 @@ resumo: function () { return { carregado: this.carregado, total: this._total, co
 };
 if (global) global.Analitico = Analitico;
 if (typeof module !== "undefined" && module.exports) module.exports = Analitico;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/analiticobases.js ==== */
+try {
+(function (global) {
+"use strict";
+var FORA = { SINAPI: 1, SINAPI_DES: 1, PROPRIA: 1, PROPRIO: 1, OUTRA: 1 };
+var SEM_PUBLICACAO = {
+SETOP: "A SETOP-MG só disponibiliza o detalhamento das composições de 2024 em diante dentro do SICOR, com login do órgão; a tabela pública de 2023 tem o analítico apenas em PDF. Por isso o OrçaPRO ainda não traz o desdobramento da SETOP."
+};
+function up(s) { return String(s == null ? "" : s).toUpperCase().trim(); }
+function normComp(c) {
+var s = String(c || "").trim(), m;
+if ((m = /^(\d{4})-(\d{1,2})/.exec(s))) return m[1] + "-" + ("0" + m[2]).slice(-2);
+if ((m = /^(\d{1,2})\/(\d{4})$/.exec(s))) return m[2] + "-" + ("0" + m[1]).slice(-2);
+return "";
+}
+function tolerancia(cu) { return Math.max(0.02, Math.abs(Number(cu) || 0) * 0.005); }
+function razoesRec(porCodigo, cod, memo, trilha) {
+cod = String(cod);
+if (memo[cod]) return memo[cod];
+var c = porCodigo[cod];
+if (!c) return null;
+if (trilha[cod]) return null;
+trilha[cod] = 1;
+var mo = 0, mat = 0, eq = 0;
+var ins = Array.isArray(c.insumos) ? c.insumos : [];
+for (var i = 0; i < ins.length; i++) {
+var it = ins[i], ct = Number(it.custoTotal) || 0;
+if (ct <= 0) continue;
+var rz = (String(it.tipo).toUpperCase() === "COMPOSICAO") ? razoesRec(porCodigo, it.codigo, memo, trilha) : null;
+if (rz) { mo += ct * rz.mo; mat += ct * rz.mat; eq += ct * rz.eq; }
+else if (it.categoria === "MO") mo += ct;
+else if (it.categoria === "EQ") eq += ct;
+else mat += ct;
+}
+delete trilha[cod];
+var t = mo + mat + eq;
+var r = t > 0 ? { mo: mo / t, mat: mat / t, eq: eq / t } : null;
+if (r) memo[cod] = r;
+return r;
+}
+var AnaliticoBases = {
+_cache: {},
+normComp: normComp,
+razoesRec: function (porCodigo, cod) { return razoesRec(porCodigo, cod, {}, {}); },
+suporta: function (fonte) {
+var f = up(fonte);
+if (!f || FORA[f]) return false;
+if (typeof BasesCat !== "undefined" && BasesCat.get) {
+var e = BasesCat.get(f);
+return !!(e && e.entrega);
+}
+return true;
+},
+semPublicacao: function (fonte) { return SEM_PUBLICACAO[up(fonte)] || null; },
+nomeAnalitico: function (arquivoSintetico) {
+var s = String(arquivoSintetico || "").replace(/\\/g, "/");
+var nome = s.split("/").pop();
+if (!nome || !/\.json$/i.test(nome)) return "";
+if (/-analitico\.json$/i.test(nome)) return nome;
+if (/-current\.json$/i.test(nome)) return nome.replace(/-current\.json$/i, "-analitico.json");
+return nome.replace(/\.json$/i, "-analitico.json");
+},
+baseInstalada: function (fonte) {
+var f = up(fonte);
+if (typeof Bases === "undefined" || !Bases.extras) return null;
+return Bases.extras().filter(function (b) { return b.fonte === f; })[0] || null;
+},
+urlsDe: function (fonte, opts) {
+opts = opts || {};
+var f = up(fonte), b = opts.base || this.baseInstalada(f);
+var r = null;
+try {
+if (typeof BasesCat !== "undefined" && BasesCat.resolver) {
+var ctx = null;
+try { if (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) ctx = { servidor: Atualizacao._ultimoStatus }; } catch (eC) {}
+r = BasesCat.resolver((b && b.catId) || f, (b && b.sel) || null, ctx);
+}
+} catch (eR) { r = null; }
+var nomes = [];
+function juntar(n) { if (n && nomes.indexOf(n) < 0) nomes.push(n); }
+if (r) { juntar(this.nomeAnalitico(r.arquivo)); juntar(this.nomeAnalitico(r.vps)); }
+if (opts.arquivo) juntar(this.nomeAnalitico(opts.arquivo));
+var srv = opts.servidor !== undefined ? opts.servidor
+: ((typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "");
+var out = [];
+nomes.forEach(function (n) { out.push("data/" + n); });
+if (srv) nomes.forEach(function (n) { out.push(srv + "/analitico/" + n); });
+return { nomes: nomes, alts: out, remap: (r && r.remap) || null };
+},
+indexar: function (pacote) {
+var dados = (pacote && Array.isArray(pacote.dados)) ? pacote.dados : [];
+var idx = {};
+for (var i = 0; i < dados.length; i++) {
+var it = dados[i];
+if (it && it.codigo != null) idx[String(it.codigo)] = it;
+}
+return idx;
+},
+_pegarUma: function (url) {
+var temDS = (typeof DecompressionStream !== "undefined") && (typeof Response !== "undefined");
+var puro = function () { return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }); };
+if (!temDS || /\.gz$/.test(url)) return puro();
+return fetch(url + ".gz").then(function (r) {
+if (!r.ok || !r.body) throw new Error("sem .gz");
+return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
+}).catch(puro);
+},
+carregar: function (fonte, opts) {
+var self = this;
+var u = this.urlsDe(fonte, opts);
+if (!u.alts.length) {
+var e0 = new Error("sem arquivo de analítico para " + up(fonte)); e0.semArquivo = true;
+return Promise.reject(e0);
+}
+var chave = u.nomes[0];
+var c = this._cache[chave];
+if (c && c.pacote) return Promise.resolve(c);
+if (c && c.promise) return c.promise;
+var pegar = (opts && opts.pegar) || function (url) { return self._pegarUma(url); };
+var baseInst = (opts && opts.base) || this.baseInstalada(fonte);
+var compBase = baseInst ? String(baseInst.competencia || "") : "";
+function mesmoMes(j) {
+if (!compBase) return true;
+var a = normComp(j.mes), b = normComp(compBase);
+return (a && b) ? a === b : String(j.mes || "") === compBase;
+}
+function valido(j) {
+if (!j || !Array.isArray(j.dados)) return "arquivo de analítico inválido";
+if (j.tabela && up(j.tabela) !== up(fonte) && !(up(fonte) === "AGETOP" && /GOINFRA|AGETOP/.test(up(j.tabela)))) {
+return "analítico de outra base: pedi " + up(fonte) + " e veio " + up(j.tabela);
+}
+return "";
+}
+var reserva = null, ultimoErro = null;
+function tentar(i) {
+if (i >= u.alts.length) {
+if (reserva) return Promise.resolve(reserva);
+return Promise.reject(ultimoErro || new Error("sem analítico"));
+}
+return Promise.resolve().then(function () { return pegar(u.alts[i]); }).then(function (j) {
+var erro = valido(j);
+if (erro) { ultimoErro = new Error(erro); return tentar(i + 1); }
+if (mesmoMes(j)) return j;
+if (!reserva) reserva = j;
+return tentar(i + 1);
+}, function (e) { ultimoErro = e; return tentar(i + 1); });
+}
+var ent = { nome: chave, remap: u.remap, pacote: null, porCodigo: {}, promise: null };
+ent.promise = tentar(0).then(function (j) {
+ent.pacote = j; ent.porCodigo = self.indexar(j); ent.promise = null;
+return ent;
+}).catch(function (e) {
+delete self._cache[chave];
+if (!e.semArquivo) { var e2 = new Error(e.message || String(e)); e2.semArquivo = true; e2.causa = e; throw e2; }
+throw e;
+});
+this._cache[chave] = ent;
+return ent.promise;
+},
+montar: function (ent, codigo, itemDaBase) {
+if (!ent || !ent.porCodigo) return null;
+var a = ent.porCodigo[String(codigo)];
+if (!a) return null;
+var remap = ent.remap;
+var ins = (Array.isArray(a.insumos) ? a.insumos : []).map(function (it) {
+var o = {}; for (var k in it) if (Object.prototype.hasOwnProperty.call(it, k)) o[k] = it[k];
+if (remap && it.precos && it.precos[remap] != null) {
+o.custoUnitario = Number(it.precos[remap]) || 0;
+o.custoTotal = Math.round((Number(o.coeficiente) || 0) * o.custoUnitario * 10000) / 10000;
+}
+return o;
+});
+var soma = 0, mo = 0, mat = 0, eq = 0;
+if (!ent.memo) ent.memo = {};
+ins.forEach(function (it) {
+var ct = Number(it.custoTotal) || 0;
+soma += ct;
+var rz = (String(it.tipo).toUpperCase() === "COMPOSICAO") ? razoesRec(ent.porCodigo, it.codigo, ent.memo, {}) : null;
+if (rz) {
+it.categoria = (rz.mo >= rz.mat && rz.mo >= rz.eq) ? "MO" : (rz.eq > rz.mat ? "EQ" : "MAT");
+mo += ct * rz.mo; mat += ct * rz.mat; eq += ct * rz.eq;
+}
+else if (it.categoria === "MO") mo += ct; else if (it.categoria === "EQ") eq += ct; else mat += ct;
+});
+var cDir = itemDaBase && Number(itemDaBase.custoDireto) > 0 ? Number(itemDaBase.custoDireto) : 0;
+var oficial = cDir || (itemDaBase && Number(itemDaBase.custoUnitario) > 0 ? Number(itemDaBase.custoUnitario) : (Number(a.custoUnitario) || 0));
+var notaBdi = cDir ? "Custo direto da composição. No orçamento este item usa o preço com BDI oficial do órgão: R$ " +
+(Number(itemDaBase.custoUnitario) || 0).toFixed(2).replace(".", ",") + "." : "";
+var t = mo + mat + eq;
+var dif = Math.round((soma - oficial) * 100) / 100;
+return {
+codigo: a.codigo, descricao: a.descricao || (itemDaBase && itemDaBase.descricao) || "",
+unidade: a.unidade || (itemDaBase && itemDaBase.unidade) || "", grupo: a.grupo || "",
+custoUnitario: oficial,
+custoMO: t > 0 ? Math.round(oficial * mo / t * 100) / 100 : (Number(a.custoMO) || 0),
+custoMAT: t > 0 ? Math.round(oficial * mat / t * 100) / 100 : (Number(a.custoMAT) || 0),
+custoEQ: t > 0 ? Math.round(oficial * eq / t * 100) / 100 : (Number(a.custoEQ) || 0),
+insumos: ins,
+somaInsumos: Math.round(soma * 100) / 100,
+diferenca: dif,
+confere: Math.abs(dif) <= tolerancia(oficial),
+obs: [notaBdi, a.obs || ""].filter(Boolean).join(" "),
+producaoEquipe: a.producaoEquipe, unidadeProducao: a.unidadeProducao
+};
+},
+obter: function (fonte, codigo) {
+var u = this.urlsDe(fonte);
+var ent = u.nomes.length ? this._cache[u.nomes[0]] : null;
+if (!ent || !ent.pacote) return null;
+if (ent.remap !== u.remap) { ent.remap = u.remap; ent.idxInsumos = null; }
+var item = (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter(up(fonte), String(codigo)) : null;
+return this.montar(ent, codigo, item);
+},
+meta: function (fonte) {
+var u = this.urlsDe(fonte);
+var ent = u.nomes.length ? this._cache[u.nomes[0]] : null;
+if (!ent || !ent.pacote) return null;
+var j = ent.pacote;
+var compC = normComp(j.competenciaComposicoes) || "";
+return { tabela: j.tabela || up(fonte), mes: normComp(j.mes) || String(j.mes || ""), uf: j.uf || "", desonerado: (j.desonerado === true || j.desonerado === false) ? j.desonerado : null,
+rotuloComp: compC || normComp(j.mes) || String(j.mes || ""),
+compDiverge: !!(compC && compC !== normComp(j.mes)),
+fonte: j.fonte || "", fonteUrl: j.fonteUrl || "", conferencia: j.conferencia || null, arquivo: ent.nome };
+},
+conferirCompetencia: function (metaAna, baseInst) {
+var ma = normComp(metaAna && metaAna.mes), mb = normComp(baseInst && baseInst.competencia);
+return { mesmo: !ma || !mb || ma === mb, mesAnalitico: ma, mesBase: mb };
+},
+regimeDiverge: function (metaAna, baseInst) {
+var ra = metaAna ? metaAna.desonerado : null, rb = baseInst ? baseInst.desonerado : null;
+return (ra === true || ra === false) && (rb === true || rb === false) && ra !== rb;
+},
+razoes: function (fonte, codigo) {
+var a = this.obter(fonte, codigo);
+if (!a) return null;
+var t = (a.custoMO || 0) + (a.custoMAT || 0) + (a.custoEQ || 0);
+if (t <= 0) return null;
+return { mo: a.custoMO / t, mat: a.custoMAT / t, eq: a.custoEQ / t };
+},
+insumo: function (fonte, codigo) {
+var u = this.urlsDe(fonte);
+var ent = u.nomes.length ? this._cache[u.nomes[0]] : null;
+if (!ent || !ent.pacote) return null;
+if (!ent.idxInsumos) {
+var idx = {};
+Object.keys(ent.porCodigo).forEach(function (cod) {
+var ins = ent.porCodigo[cod].insumos;
+if (!Array.isArray(ins)) return;
+for (var i = 0; i < ins.length; i++) {
+var it = ins[i];
+if (!it || it.codigo == null || String(it.tipo).toUpperCase() === "COMPOSICAO") continue;
+var c = String(it.codigo), at = idx[c];
+if (!at || (!(Number(at.custoUnitario) > 0) && Number(it.custoUnitario) > 0)) idx[c] = it;
+}
+});
+ent.idxInsumos = idx;
+}
+var x = ent.idxInsumos[String(codigo)];
+if (!x) return null;
+var preco = (ent.remap && x.precos && x.precos[ent.remap] != null) ? Number(x.precos[ent.remap]) : Number(x.custoUnitario);
+return { codigo: String(x.codigo), descricao: x.descricao || "", unidade: x.unidade || "",
+custoUnitario: preco || 0, categoria: x.categoria || "", tipoItem: "insumo", fonte: up(fonte) };
+},
+_limparCache: function () { this._cache = {}; }
+};
+if (global) global.AnaliticoBases = AnaliticoBases;
+if (typeof module !== "undefined" && module.exports) module.exports = AnaliticoBases;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/insumos.js ==== */

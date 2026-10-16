@@ -99,6 +99,9 @@
       });
       EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; });
       EXTRA.push(b);
+      /* base (re)instalada = mês novo possível: o detalhamento carregado
+         (js/analiticobases.js) é descartado e volta a ser escolhido pelo mês */
+      try { if (typeof AnaliticoBases !== "undefined" && AnaliticoBases._limparCache) AnaliticoBases._limparCache(); } catch (eAB) {}
       return dados.length;
     },
 
@@ -285,7 +288,24 @@
       opts = opts || {};
       return this._pegar(arquivo, opts).then(function (pacote) {
         // base regionalizada (ex.: SETOP): usa o preço da região escolhida
-        if (regiao && pacote.dados) pacote.dados.forEach(function (it) { if (it.precos && it.precos[regiao] != null) it.custoUnitario = it.precos[regiao]; });
+        /* ⚠ AS PARCELAS MO/MAT/EQ ACOMPANHAM O PREÇO (16/10/2026, revisor). Elas
+           estão no preço padrão do arquivo; trocar só o custoUnitario (região
+           da SETOP, "Com BDI oficial" da GOINFRA) deixava MO+MAT+EQ ≠ preço, e o
+           item "só mão de obra" cobrava a MO do custo direto num preço com BDI.
+           Escala proporcional; o custo direto fica guardado para o analítico,
+           que compara os insumos (sempre custo direto) com ele. */
+        if (regiao && pacote.dados) pacote.dados.forEach(function (it) {
+          if (!it.precos || it.precos[regiao] == null) return;
+          var antes = Number(it.custoUnitario) || 0, novo = Number(it.precos[regiao]) || 0;
+          if (regiao === "comBDI") it.custoDireto = antes;
+          it.custoUnitario = it.precos[regiao];
+          var soma = (Number(it.custoMO) || 0) + (Number(it.custoMAT) || 0) + (Number(it.custoEQ) || 0);
+          if (antes > 0 && soma > 0 && novo !== antes) {
+            var f = novo / antes;
+            var mo = Math.round((Number(it.custoMO) || 0) * f * 100) / 100, eq = Math.round((Number(it.custoEQ) || 0) * f * 100) / 100;
+            it.custoMO = mo; it.custoEQ = eq; it.custoMAT = Math.round((novo - mo - eq) * 100) / 100;
+          }
+        });
         var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
         var grav = { ok: true };
         if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
