@@ -682,7 +682,9 @@ if (ang.on) return;
 if (S._aoClicarPeca) return;
 if (S._aoMarcarPonto) return;
 try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
+var vazioD = false; try { vazioD = !visitante && !raycastEm(e.clientX, e.clientY); } catch (_) {}
 selecionarEm(e.clientX, e.clientY);
+if (vazioD && S._fit) S._fit();
 });
 function selecionarEm(cx, cy) {
 if (S._limparRaioX) S._limparRaioX();
@@ -1101,6 +1103,7 @@ if (visitante) vcMain.el.style.display = 'none';
 S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
 S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
 try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
+try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
 var cris = { hist: ['cubo'], congelado: null, obj: null, estado: 'cubo', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
 try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
 function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
@@ -4588,10 +4591,23 @@ var b = SL.botoesOrbita({ visitante: visitante, mao: SL.mao(), ctrl: e.ctrlKey, 
 orb.mouseButtons.LEFT = b.LEFT; orb.mouseButtons.MIDDLE = b.MIDDLE; orb.mouseButtons.RIGHT = b.RIGHT;
 }
 S._navBotoes = navBotoes;
+var _pivo = null;
+canvasEl.addEventListener('pointermove', function (e) {
+var p = _pivo; if (!p || e.pointerId !== p.id) return;
+var BMp = window.BimMouse; if (!BMp || !BMp.passouDoLimiar(p.x, p.y, e.clientX, e.clientY)) return;
+_pivo = null;
+var P = pontoSobCursor(p.x, p.y); if (!P) return;
+if (S._cancelTween) S._cancelTween();
+orbit.target.copy(P); S._ultimoPivo = { x: P.x, y: P.y, z: P.z };
+}, true);
+function soltarPivo() { _pivo = null; }
+canvasEl.addEventListener('pointerup', soltarPivo, true); canvasEl.addEventListener('pointercancel', soltarPivo, true);
 canvasEl.setAttribute('data-bim-nav', '1');
 canvasEl.addEventListener('pointerdown', function (e) {
 if (!S || !S.alive) return;
 navBotoes(orbit, e);
+_pivo = null;
+try { var BMp = window.BimMouse; if (BMp && !visitante && e.pointerType === 'mouse' && !fly.on && !planta.on && !S._principalOculta && BMp.vaiGirar(e.button, orbit.mouseButtons, e)) _pivo = { id: e.pointerId, x: e.clientX, y: e.clientY }; } catch (_) {}
 var SL = SLx();
 if (SL && e.pointerType !== 'touch' && (e.button === 1 || e.button === 2 || (e.button === 0 && SL.mao() && !visitante))) canvasEl.setAttribute('data-bim-pan', '1');
 }, true);
@@ -4711,15 +4727,42 @@ p = _rayZ.ray.intersectPlane(pl, q) ? q : null;
 _zMem = p ? { x: cx, y: cy, t: agora, p: p.clone() } : null;
 return p;
 }
+function pontoSobCursor(cx, cy) {
+var rc = canvasEl.getBoundingClientRect(); if (!rc.width || !rc.height) return null;
+_mZ.x = ((cx - rc.left) / rc.width) * 2 - 1; _mZ.y = -((cy - rc.top) / rc.height) * 2 + 1;
+_rayZ.layers.mask = ray.layers.mask; _rayZ.setFromCamera(_mZ, camera);
+var h = primeiroHit(_rayZ.intersectObjects(modelRoot.children, true));
+return h ? h.point.clone() : null;
+}
+S._pontoSobCursor = pontoSobCursor;
+var _tamMod = { v: 1, t: -1e9 };
+function tamModelo() {
+var t = performance.now(); if (t - _tamMod.t < 1500) return _tamMod.v;
+try { var bx = new THREE.Box3().setFromObject(modelRoot); if (!bx.isEmpty()) _tamMod.v = Math.max(bx.getSize(new THREE.Vector3()).length(), 0.5); } catch (_) {}
+_tamMod.t = t; return _tamMod.v;
+}
 canvasEl.addEventListener('wheel', function (e) {
 if (!S || S !== Sm || !S.alive || visitante || !orbit.enabled || orbit.enableZoom === false || fly.on || !e.deltaY) return;
-var P = pontoDoZoom(e.clientX, e.clientY); if (!P) return;
-var f = e.deltaY > 0 ? 1.12 : 1 / 1.12, nd = camera.position.distanceTo(orbit.target) * f;
-if (nd < orbit.minDistance || nd > orbit.maxDistance) return;
+var rcz = canvasEl.getBoundingClientRect(); if (!rcz.width || !rcz.height) return;
+_mZ.x = ((e.clientX - rcz.left) / rcz.width) * 2 - 1; _mZ.y = -((e.clientY - rcz.top) / rcz.height) * 2 + 1;
+_rayZ.layers.mask = ray.layers.mask; _rayZ.setFromCamera(_mZ, camera);
+var dirZ = _rayZ.ray.direction.clone();
+var P = pontoDoZoom(e.clientX, e.clientY);
+if (P && P.clone().sub(camera.position).dot(dirZ) <= 0) { _zMem = null; P = pontoDoZoom(e.clientX, e.clientY); if (P && P.clone().sub(camera.position).dot(dirZ) <= 0) P = null; }
+if (!P) P = camera.position.clone().addScaledVector(dirZ, Math.max(camera.position.distanceTo(orbit.target), 1e-3));
+var f = e.deltaY > 0 ? 1.12 : 1 / 1.12, BMz = window.BimMouse;
+var pz = BMz ? BMz.passoZoom({ dP: camera.position.distanceTo(P), dAlvo: camera.position.distanceTo(orbit.target), f: f, piso: BMz.pisoZoom(tamModelo()), minD: orbit.minDistance, maxD: orbit.maxDistance })
+: (function () { var nd0 = camera.position.distanceTo(orbit.target) * f; return (nd0 < orbit.minDistance || nd0 > orbit.maxDistance) ? { modo: 'nada' } : { modo: 'escala', g: f }; })();
+if (pz.modo === 'nada') return;
 e.preventDefault(); e.stopImmediatePropagation();
 if (S._cancelTween) S._cancelTween();
-camera.position.sub(P).multiplyScalar(f).add(P);
-orbit.target.sub(P).multiplyScalar(f).add(P);
+if (pz.modo === 'escala') {
+camera.position.sub(P).multiplyScalar(pz.g).add(P);
+orbit.target.sub(P).multiplyScalar(pz.g).add(P);
+} else {
+var uz = dirZ.multiplyScalar(pz.avanco);
+camera.position.add(uz); orbit.target.add(uz);
+}
 orbit.update();
 }, { capture: true, passive: false });
 var area = { on: false, pts: [], tmp: [] };
@@ -12215,6 +12258,7 @@ try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } c
 try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
 try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}
 try { if (S._ctl) S._ctl.dispor(); } catch (_) {}
+try { if (S._mouse) S._mouse.dispor(); } catch (_) {}
 try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
 try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
 try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
@@ -13110,6 +13154,8 @@ numeracao: function () { return (S && S._numeracao) ? S._numeracao() : null; },
 _testeTrena: function () { return S ? { S: S, THREE: THREE } : null; },
 _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; },
 _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; },
+_telaDe: function (x, y, z) { return (S && S._telaDe) ? S._telaDe(x, y, z) : null; },
+_mouseEstado: function (zerar) { if (!S) return null; var r = { ultimoPivo: S._ultimoPivo || null }; if (zerar) S._ultimoPivo = null; return r; },
 _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; },
 _selecionarPrimeiro: function () {
 if (!S) return null; var alvo = null;

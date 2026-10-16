@@ -1229,7 +1229,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._aoMarcarPonto) return; // marcando a posição do equipamento: o clique simples é o ponto
     /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA (componente) abre o diálogo dela para editar no lugar (js/metalcomponenteui.js) */
     try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
+    /* DUPLO CLIQUE NO VAZIO enquadra tudo (16/10/2026, #56); numa peça segue selecionando, como sempre */
+    var vazioD = false; try { vazioD = !visitante && !raycastEm(e.clientX, e.clientY); } catch (_) {}
     selecionarEm(e.clientX, e.clientY);
+    if (vazioD && S._fit) S._fit();
   });
   /* a seleção de uma peça no ponto da tela — a do duplo-clique e, no modo
      visitante, a do TOQUE simples (no celular o duplo-toque é zoom do
@@ -1727,6 +1730,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      sem controle conectado ele volta na 1a linha (custo zero). Sai junto no desmontarMorto — sem listener vazando a cada remontagem. */
   S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
   try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
+  /* MOUSE E TECLADO (16/10/2026, js/bimmouse.js, BACKLOG #56): teclas F/H/I/C/M/1-6 e botões laterais do mouse; usam a camada de ação do controle (S._ctl.agir) */
+  try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
 
   /* =====================================================================
    * O CRISTAL ORÇAPRO (bim/cristal.js + js/bimabertura.js) — ESPEC-BIM-CUBO-LOGO.md
@@ -6215,10 +6220,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     orb.mouseButtons.LEFT = b.LEFT; orb.mouseButtons.MIDDLE = b.MIDDLE; orb.mouseButtons.RIGHT = b.RIGHT;
   }
   S._navBotoes = navBotoes;
+  var _pivo = null;
+  /* ⚠ captura no próprio canvas roda ANTES do pointermove do OrbitControls (o de girar) — o alvo novo já vale no 1º quadro do giro.
+     Vazio (sem peça sob o cursor) = mantém o alvo de antes. A câmera não anda: ela passa a olhar o ponto (o ponto vai ao centro). */
+  canvasEl.addEventListener('pointermove', function (e) {
+    var p = _pivo; if (!p || e.pointerId !== p.id) return;
+    var BMp = window.BimMouse; if (!BMp || !BMp.passouDoLimiar(p.x, p.y, e.clientX, e.clientY)) return;
+    _pivo = null;
+    var P = pontoSobCursor(p.x, p.y); if (!P) return;
+    if (S._cancelTween) S._cancelTween();
+    orbit.target.copy(P); S._ultimoPivo = { x: P.x, y: P.y, z: P.z };
+  }, true);
+  function soltarPivo() { _pivo = null; }
+  canvasEl.addEventListener('pointerup', soltarPivo, true); canvasEl.addEventListener('pointercancel', soltarPivo, true);
   canvasEl.setAttribute('data-bim-nav', '1');
   canvasEl.addEventListener('pointerdown', function (e) {
     if (!S || !S.alive) return;
     navBotoes(orbit, e);
+    /* GIRAR EM TORNO DO PONTO SOB O CURSOR (16/10/2026, #56): se esta pressão vai girar, anota onde; o alvo troca no 1º movimento */
+    _pivo = null;
+    try { var BMp = window.BimMouse; if (BMp && !visitante && e.pointerType === 'mouse' && !fly.on && !planta.on && !S._principalOculta && BMp.vaiGirar(e.button, orbit.mouseButtons, e)) _pivo = { id: e.pointerId, x: e.clientX, y: e.clientY }; } catch (_) {}
     var SL = SLx();
     if (SL && e.pointerType !== 'touch' && (e.button === 1 || e.button === 2 || (e.button === 0 && SL.mao() && !visitante))) canvasEl.setAttribute('data-bim-pan', '1');   /* a mão aparece SÓ durante o mover */
   }, true);
@@ -6347,15 +6368,45 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     _zMem = p ? { x: cx, y: cy, t: agora, p: p.clone() } : null;
     return p;
   }
+  /* o ponto 3D da PEÇA sob o cursor (sem o plano de reserva do zoom): null = vazio */
+  function pontoSobCursor(cx, cy) {
+    var rc = canvasEl.getBoundingClientRect(); if (!rc.width || !rc.height) return null;
+    _mZ.x = ((cx - rc.left) / rc.width) * 2 - 1; _mZ.y = -((cy - rc.top) / rc.height) * 2 + 1;
+    _rayZ.layers.mask = ray.layers.mask; _rayZ.setFromCamera(_mZ, camera);
+    var h = primeiroHit(_rayZ.intersectObjects(modelRoot.children, true));
+    return h ? h.point.clone() : null;
+  }
+  S._pontoSobCursor = pontoSobCursor;
+  /* tamanho do modelo para o passo mínimo da roda (cache de 1,5 s: a caixa de um modelo grande custa) */
+  var _tamMod = { v: 1, t: -1e9 };
+  function tamModelo() {
+    var t = performance.now(); if (t - _tamMod.t < 1500) return _tamMod.v;
+    try { var bx = new THREE.Box3().setFromObject(modelRoot); if (!bx.isEmpty()) _tamMod.v = Math.max(bx.getSize(new THREE.Vector3()).length(), 0.5); } catch (_) {}
+    _tamMod.t = t; return _tamMod.v;
+  }
   canvasEl.addEventListener('wheel', function (e) {
     if (!S || S !== Sm || !S.alive || visitante || !orbit.enabled || orbit.enableZoom === false || fly.on || !e.deltaY) return;
-    var P = pontoDoZoom(e.clientX, e.clientY); if (!P) return;
-    var f = e.deltaY > 0 ? 1.12 : 1 / 1.12, nd = camera.position.distanceTo(orbit.target) * f;
-    if (nd < orbit.minDistance || nd > orbit.maxDistance) return;
+    var rcz = canvasEl.getBoundingClientRect(); if (!rcz.width || !rcz.height) return;
+    _mZ.x = ((e.clientX - rcz.left) / rcz.width) * 2 - 1; _mZ.y = -((e.clientY - rcz.top) / rcz.height) * 2 + 1;
+    _rayZ.layers.mask = ray.layers.mask; _rayZ.setFromCamera(_mZ, camera);
+    var dirZ = _rayZ.ray.direction.clone();   /* a direção do cursor: o avanço que atravessa anda POR ELA (não "para o ponto", que puxaria de volta depois de passar) */
+    var P = pontoDoZoom(e.clientX, e.clientY);
+    if (P && P.clone().sub(camera.position).dot(dirZ) <= 0) { _zMem = null; P = pontoDoZoom(e.clientX, e.clientY); if (P && P.clone().sub(camera.position).dot(dirZ) <= 0) P = null; }   /* já passou do ponto: acha o próximo à frente */
+    if (!P) P = camera.position.clone().addScaledVector(dirZ, Math.max(camera.position.distanceTo(orbit.target), 1e-3));   /* nada à frente: segue pelo raio do cursor */
+    var f = e.deltaY > 0 ? 1.12 : 1 / 1.12, BMz = window.BimMouse;
+    /* 16/10/2026 (#56): sem o módulo novo, o jeito de sempre; com ele, o passo mínimo ATRAVESSA o ponto/alvo em vez de travar */
+    var pz = BMz ? BMz.passoZoom({ dP: camera.position.distanceTo(P), dAlvo: camera.position.distanceTo(orbit.target), f: f, piso: BMz.pisoZoom(tamModelo()), minD: orbit.minDistance, maxD: orbit.maxDistance })
+      : (function () { var nd0 = camera.position.distanceTo(orbit.target) * f; return (nd0 < orbit.minDistance || nd0 > orbit.maxDistance) ? { modo: 'nada' } : { modo: 'escala', g: f }; })();
+    if (pz.modo === 'nada') return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (S._cancelTween) S._cancelTween();
-    camera.position.sub(P).multiplyScalar(f).add(P);
-    orbit.target.sub(P).multiplyScalar(f).add(P);
+    if (pz.modo === 'escala') {
+      camera.position.sub(P).multiplyScalar(pz.g).add(P);
+      orbit.target.sub(P).multiplyScalar(pz.g).add(P);
+    } else {
+      var uz = dirZ.multiplyScalar(pz.avanco);
+      camera.position.add(uz); orbit.target.add(uz);
+    }
     orbit.update();
   }, { capture: true, passive: false });
 
@@ -16127,6 +16178,7 @@ function desmontarMorto() {
   try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
   try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}   /* SELECIONAR */
   try { if (S._ctl) S._ctl.dispor(); } catch (_) {}   /* CONTROLE: gamepadconnected/disconnected + a mira */
+  try { if (S._mouse) S._mouse.dispor(); } catch (_) {}   /* MOUSE: teclas e botões laterais */
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
   try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
@@ -17323,6 +17375,8 @@ window.BIM = {
   _testeTrena: function () { return S ? { S: S, THREE: THREE } : null; }, // hook de teste (tools/e2e-bim-trena.js): o gabarito da trena precisa das peças, da câmera e das arestas
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
+  _telaDe: function (x, y, z) { return (S && S._telaDe) ? S._telaDe(x, y, z) : null; },   // gancho de teste: ponto do mundo → px do cliente
+  _mouseEstado: function (zerar) { if (!S) return null; var r = { ultimoPivo: S._ultimoPivo || null }; if (zerar) S._ultimoPivo = null; return r; },   // gancho de teste (#56): onde o último giro prendeu o alvo
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
   // ---- v1.1.89 render/navegação/raio-X: hooks de teste ----
   _selecionarPrimeiro: function () { // seleciona a 1ª malha real (imita o duplo-clique) p/ testar contorno/raio-X sem evento DOM

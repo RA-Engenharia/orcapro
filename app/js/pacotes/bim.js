@@ -111363,7 +111363,7 @@ var MAPA = {
 8: "alternarModo", 9: "passeioAuto", 10: "caixaCorte", 11: "trena",
 12: "vistaTopo", 13: "vistaIso", 14: "vistaFrente", 15: "vistaLateral"
 };
-var VISTAS = { vistaTopo: [0, 1, 0], vistaIso: [1, 0.85, 1], vistaFrente: [0, 0, 1], vistaLateral: [1, 0, 0] };
+var VISTAS = { vistaTopo: [0, 1, 0], vistaIso: [1, 0.85, 1], vistaFrente: [0, 0, 1], vistaLateral: [1, 0, 0], vistaTras: [0, 0, -1], vistaEsquerda: [-1, 0, 0] };
 function num(v) { v = +v; return isFinite(v) ? v : 0; }
 function limitar(v, a, b) { return v < a ? a : (v > b ? b : v); }
 function eixo(v, zm, curva) {
@@ -111617,6 +111617,12 @@ if (!sel.length) { dica("Selecione uma peça (botão A) para isolar."); return; 
 if (win.BimSelInst && win.BimSelInst.isolar) win.BimSelInst.isolar(sel); else if (S._isolarSelecao) S._isolarSelecao();
 return;
 }
+if (a === "ocultar") {
+var so = S._selAtual ? S._selAtual() : [];
+if (!so.length) { dica("Selecione uma peça para ocultar."); return; }
+if (win.BimSelInst && win.BimSelInst.ocultar) win.BimSelInst.ocultar(so); else if (S._ocultarSelecao) S._ocultarSelecao();
+return;
+}
 if (a === "enquadrar") {
 var s2 = S._selAtual ? S._selAtual() : [], bx = s2.length && S._caixaDeUids ? S._caixaDeUids(s2) : null;
 if (bx && !bx.isEmpty() && S._enquadrarObj) S._enquadrarObj(bx, 1.6); else if (S._fit) S._fit();
@@ -111696,6 +111702,7 @@ st.mira = null; st.chip = null; st.on = false; st.tour.on = false;
 }
 return {
 tick: tick, dispor: dispor,
+agir: agir,
 sensibilidade: function (v) { if (v != null) gravarSens(limitar(num(v) || 1, 0.1, 10)); return st.sens; },
 estado: function () { return { sens: st.sens, on: st.on, padrao: st.padrao, indice: st.indice, passeioAuto: st.tour.on, mira: !!(st.mira && st.mira.style.display !== "none") }; }
 };
@@ -111710,6 +111717,110 @@ criar: criar
 };
 global.BimControle = BimControle;
 if (typeof module !== "undefined" && module.exports) module.exports = BimControle;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimmouse.js ==== */
+try {
+(function (global) {
+"use strict";
+function num(v) { v = +v; return isFinite(v) ? v : 0; }
+var TECLAS = {
+f: "enquadrar", h: "ocultar", i: "isolar", c: "caixaCorte", m: "trena", p: "passeioAuto",
+"1": "vistaTopo", "2": "vistaFrente", "3": "vistaLateral", "4": "vistaTras", "5": "vistaEsquerda", "6": "vistaIso"
+};
+var GIRAR = 0, MOVER = 2;
+var LIMIAR_PIVO = 3;
+function campoDeTexto(el) {
+if (!el) return false;
+return /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || "") || !!el.isContentEditable;
+}
+function acaoDaTecla(ev, ctx) {
+ctx = ctx || {};
+if (!ev || ctx.campo || !ctx.naTela || ctx.voo || ctx.bloqueado) return null;
+if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.shiftKey || ev.repeat) return null;
+var k = String(ev.key == null ? "" : ev.key).toLowerCase();
+return Object.prototype.hasOwnProperty.call(TECLAS, k) ? TECLAS[k] : null;
+}
+function passoLateral(botao) { return botao === 3 ? -1 : (botao === 4 ? 1 : 0); }
+function vaiGirar(botao, mb, mods) {
+mb = mb || {}; mods = mods || {};
+var acao = botao === 0 ? mb.LEFT : (botao === 1 ? mb.MIDDLE : (botao === 2 ? mb.RIGHT : -1));
+var mod = !!(mods.ctrlKey || mods.metaKey || mods.shiftKey);
+if (acao === GIRAR) return !mod;
+if (acao === MOVER) return mod;
+return false;
+}
+function passouDoLimiar(x0, y0, x1, y1, lim) {
+var dx = num(x1) - num(x0), dy = num(y1) - num(y0), l = lim == null ? LIMIAR_PIVO : lim;
+return dx * dx + dy * dy > l * l;
+}
+function pisoZoom(tamModelo) { return Math.max(num(tamModelo) * 0.004, 0.01); }
+function passoZoom(o) {
+o = o || {};
+var dP = Math.max(num(o.dP), 0), dA = Math.max(num(o.dAlvo), 0), f = num(o.f) || 1, piso = Math.max(num(o.piso), 1e-6);
+var minD = num(o.minD) > 0 ? num(o.minD) : 0, maxD = (o.maxD == null || !isFinite(o.maxD)) ? 1e12 : num(o.maxD), entra = f < 1;
+var base = dP * Math.abs(1 - f);
+if (base >= piso) {
+var nd = dA * f;
+if (nd >= minD && nd <= maxD) return { modo: "escala", g: f };
+if (!entra) return { modo: "nada" };
+}
+return { modo: "avanca", avanco: (entra ? 1 : -1) * Math.max(base, piso) };
+}
+function instalar(S, env) {
+env = env || {};
+var win = env.win || (typeof window !== "undefined" ? window : null);
+var doc = env.doc || (typeof document !== "undefined" ? document : null);
+if (!win || !doc || !S) return { dispor: function () {} };
+if (win.__bimMouseDispor) { try { win.__bimMouseDispor(); } catch (e0) {} }
+function raizDoBim() { var h = S.host; return h && h.closest ? (h.closest(".bim-revit") || h) : h; }
+function naTela() { var r = raizDoBim(); return !!(r && r.isConnected && r.getClientRects().length); }
+function bloqueado() {
+if (doc.getElementById && doc.getElementById("modal-bg")) return true;
+try { if (win.BimSelInst && win.BimSelInst.menuAberto && win.BimSelInst.menuAberto()) return true; } catch (e) {}
+return false;
+}
+function agir(a) { try { if (S._ctl && S._ctl.agir) S._ctl.agir(a); } catch (er) { if (typeof console !== "undefined") console.warn("BimMouse:", a, er); } }
+function aoTecla(e) {
+if (!S.alive || S._visitante) return;
+var t = e.target || {};
+var a = acaoDaTecla(e, { campo: campoDeTexto(t) || campoDeTexto(doc.activeElement), naTela: naTela(), voo: !!(S.fly && S.fly.on), bloqueado: bloqueado() });
+if (!a) return;
+e.preventDefault();
+agir(a);
+}
+function sobreOBim(e) { var r = raizDoBim(), t = e.target; return !!(r && t && r.contains && r.contains(t) && naTela()); }
+function aoMouseDown(e) {
+var p = passoLateral(e.button); if (!p || !S.alive || S._visitante || !sobreOBim(e)) return;
+e.preventDefault();
+agir(p < 0 ? "abaAnterior" : "abaProxima");
+}
+function aoMouseUpAux(e) {
+if (!passoLateral(e.button) || !S.alive || S._visitante || !sobreOBim(e)) return;
+e.preventDefault();
+}
+win.addEventListener("keydown", aoTecla, true);
+win.addEventListener("mousedown", aoMouseDown, true);
+win.addEventListener("mouseup", aoMouseUpAux, true);
+win.addEventListener("auxclick", aoMouseUpAux, true);
+function dispor() {
+win.removeEventListener("keydown", aoTecla, true);
+win.removeEventListener("mousedown", aoMouseDown, true);
+win.removeEventListener("mouseup", aoMouseUpAux, true);
+win.removeEventListener("auxclick", aoMouseUpAux, true);
+if (win.__bimMouseDispor === dispor) win.__bimMouseDispor = null;
+}
+win.__bimMouseDispor = dispor;
+return { dispor: dispor };
+}
+var BimMouse = {
+TECLAS: TECLAS, LIMIAR_PIVO: LIMIAR_PIVO,
+campoDeTexto: campoDeTexto, acaoDaTecla: acaoDaTecla, passoLateral: passoLateral, vaiGirar: vaiGirar,
+passouDoLimiar: passouDoLimiar, pisoZoom: pisoZoom, passoZoom: passoZoom,
+instalar: instalar
+};
+global.BimMouse = BimMouse;
+if (typeof module !== "undefined" && module.exports) module.exports = BimMouse;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimvinculos.js ==== */

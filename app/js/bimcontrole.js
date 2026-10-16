@@ -55,7 +55,8 @@
     12: "vistaTopo", 13: "vistaIso", 14: "vistaFrente", 15: "vistaLateral"
   };
   /* de onde se olha (cena: Y é o alto) — mesmas normais do ViewCube */
-  var VISTAS = { vistaTopo: [0, 1, 0], vistaIso: [1, 0.85, 1], vistaFrente: [0, 0, 1], vistaLateral: [1, 0, 0] };
+  /* 16/10/2026: vistaTras/vistaEsquerda não têm botão no controle; entram pelas teclas 4/5 do mouse+teclado (js/bimmouse.js) */
+  var VISTAS = { vistaTopo: [0, 1, 0], vistaIso: [1, 0.85, 1], vistaFrente: [0, 0, 1], vistaLateral: [1, 0, 0], vistaTras: [0, 0, -1], vistaEsquerda: [-1, 0, 0] };
 
   function num(v) { v = +v; return isFinite(v) ? v : 0; }
   function limitar(v, a, b) { return v < a ? a : (v > b ? b : v); }
@@ -353,6 +354,12 @@
         if (win.BimSelInst && win.BimSelInst.isolar) win.BimSelInst.isolar(sel); else if (S._isolarSelecao) S._isolarSelecao();
         return;
       }
+      if (a === "ocultar") {   /* tecla H (js/bimmouse.js): não há botão do controle para ocultar */
+        var so = S._selAtual ? S._selAtual() : [];
+        if (!so.length) { dica("Selecione uma peça para ocultar."); return; }
+        if (win.BimSelInst && win.BimSelInst.ocultar) win.BimSelInst.ocultar(so); else if (S._ocultarSelecao) S._ocultarSelecao();
+        return;
+      }
       if (a === "enquadrar") {
         var s2 = S._selAtual ? S._selAtual() : [], bx = s2.length && S._caixaDeUids ? S._caixaDeUids(s2) : null;
         if (bx && !bx.isEmpty() && S._enquadrarObj) S._enquadrarObj(bx, 1.6); else if (S._fit) S._fit();
@@ -439,6 +446,7 @@
     }
     return {
       tick: tick, dispor: dispor,
+      agir: agir,   /* a mesma camada de ação do controle: as teclas e os botões laterais do mouse (js/bimmouse.js) chamam por aqui */
       sensibilidade: function (v) { if (v != null) gravarSens(limitar(num(v) || 1, 0.1, 10)); return st.sens; },
       estado: function () { return { sens: st.sens, on: st.on, padrao: st.padrao, indice: st.indice, passeioAuto: st.tour.on, mira: !!(st.mira && st.mira.style.display !== "none") }; }
     };
