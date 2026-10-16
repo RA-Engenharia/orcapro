@@ -110655,13 +110655,15 @@ try {
 "use strict";
 var ZONA_MORTA = 0.15;
 var ZONA_GATILHO = 0.05;
-var CURVA = 1.6;
+var CURVA = 2.0;
 var VEL_PAN = 0.6;
 var VEL_PASSEIO = 0.3;
 var VEL_GIRO = 1.9;
 var VEL_ZOOM = 1.6;
 var INTERVALO_PASSEIO = 6;
-var ESCALA_MIN = 0.05;
+var ESCALA_MIN = 0.03;
+var SUAVE = 0.10;
+var SENS_PASSOS = [0.25, 0.35, 0.5, 0.7, 1, 1.4, 2, 2.8, 4], SENS_CHAVE = "orcapro:bim:controle:sens";
 var MAPA = {
 0: "selecionar", 1: "voltar", 2: "isolar", 3: "enquadrar",
 4: "abaAnterior", 5: "abaProxima",
@@ -110686,7 +110688,7 @@ return { x: x * k, y: y * k };
 }
 function gatilho(b) {
 var v = b == null ? 0 : (typeof b === "object" ? (b.value != null ? b.value : (b.pressed ? 1 : 0)) : b);
-return eixo(limitar(num(v), 0, 1), ZONA_GATILHO, 1.3);
+return eixo(limitar(num(v), 0, 1), ZONA_GATILHO, 2.0);
 }
 function ehPadrao(gp) { return !!gp && gp.mapping === "standard"; }
 function lerEntrada(gp) {
@@ -110714,15 +110716,34 @@ tam = Math.max(num(tam), 0.5); dist = num(dist);
 if (!(dist > 0)) return tam;
 return Math.min(tam, Math.max(dist, tam * ESCALA_MIN));
 }
-function integrar(modo, e, dt, tam, dist) {
+function integrar(modo, e, dt, tam, dist, sens) {
 dt = limitar(num(dt), 0, 0.1);
-var z = (e.rt || 0) - (e.lt || 0);
+sens = limitar(num(sens) || 1, 0.1, 10);
+var z = (e.rt || 0) - (e.lt || 0), gir = VEL_GIRO * Math.sqrt(sens);
+var s0 = escala(tam, dist);
 if (modo === "passeio") {
-var v = Math.max(num(tam), 0.5) * VEL_PASSEIO * dt;
-return { frente: -e.esq.y * v, lado: e.esq.x * v, vert: z * v, yaw: -e.dir.x * VEL_GIRO * dt, pitch: -e.dir.y * VEL_GIRO * dt };
+var v = s0 * VEL_PASSEIO * 2 * sens * dt;
+return { frente: -e.esq.y * v, lado: e.esq.x * v, vert: z * v, yaw: -e.dir.x * gir * dt, pitch: -e.dir.y * gir * dt };
 }
-var s = escala(tam, dist) * VEL_PAN * dt;
-return { pan: [e.esq.x * s, -e.esq.y * s], az: -e.dir.x * VEL_GIRO * dt, pol: -e.dir.y * VEL_GIRO * dt, zoom: Math.exp(-z * VEL_ZOOM * dt) };
+var s = s0 * VEL_PAN * sens * dt, av = z * s0 * VEL_ZOOM * 0.6 * sens * dt, d = Math.max(num(dist), 1e-6);
+return { pan: [e.esq.x * s, -e.esq.y * s], az: -e.dir.x * gir * dt, pol: -e.dir.y * gir * dt, avanco: av, zoom: Math.max(d - av, 1e-6) / d };
+}
+function suavizar(ant, e, dt) {
+var k = 1 - Math.exp(-limitar(num(dt), 0, 0.1) / SUAVE);
+function f(a, b) { var v = num(a) + (num(b) - num(a)) * k; return Math.abs(v) < 2e-3 && !b ? 0 : v; }
+ant = ant || { esq: { x: 0, y: 0 }, dir: { x: 0, y: 0 }, lt: 0, rt: 0 };
+return { esq: { x: f(ant.esq.x, e.esq.x), y: f(ant.esq.y, e.esq.y) }, dir: { x: f(ant.dir.x, e.dir.x), y: f(ant.dir.y, e.dir.y) }, lt: f(ant.lt, e.lt), rt: f(ant.rt, e.rt) };
+}
+function mediaSuave(ant, e, dt) {
+dt = limitar(num(dt), 0, 0.1); if (!(dt > 0)) return suavizar(ant, e, dt);
+var k = 1 - Math.exp(-dt / SUAVE), c = k * SUAVE / dt;
+ant = ant || { esq: { x: 0, y: 0 }, dir: { x: 0, y: 0 }, lt: 0, rt: 0 };
+function m(a, b) { return num(b) + (num(a) - num(b)) * c; }
+return { esq: { x: m(ant.esq.x, e.esq.x), y: m(ant.esq.y, e.esq.y) }, dir: { x: m(ant.dir.x, e.dir.x), y: m(ant.dir.y, e.dir.y) }, lt: m(ant.lt, e.lt), rt: m(ant.rt, e.rt) };
+}
+function passoSens(atual, passo) {
+var i = 0, m = 1e9; SENS_PASSOS.forEach(function (v, k) { var d = Math.abs(v - atual); if (d < m) { m = d; i = k; } });
+return SENS_PASSOS[limitar(i + (passo < 0 ? -1 : 1), 0, SENS_PASSOS.length - 1)];
 }
 function parado(e) { return !e.esq.x && !e.esq.y && !e.dir.x && !e.dir.y && !e.lt && !e.rt; }
 function proximaAba(ids, ativa, passo) {
@@ -110744,7 +110765,7 @@ env = env || {};
 var win = env.win || (typeof window !== "undefined" ? window : null);
 var doc = env.doc || (typeof document !== "undefined" ? document : null);
 var nav = env.nav || (typeof navigator !== "undefined" ? navigator : null);
-var st = { on: false, padrao: true, indice: -1, id: "", antes: null, tour: { on: false, t: 0, i: 0, lista: [] }, ultimoUso: 0, tam: 1, tamT: -1e9, mira: null, avisouFora: false };
+var st = { on: false, padrao: true, indice: -1, id: "", antes: null, tour: { on: false, t: 0, i: 0, lista: [] }, ultimoUso: 0, tam: 1, tamT: -1e9, mira: null, avisouFora: false, sens: lerSens(), suave: null, distMira: 0, distT: -1e9, chip: null };
 var _v = THREE ? new THREE.Vector3() : null, _sph = THREE ? new THREE.Spherical() : null;
 function podeLer() { return !!(nav && typeof nav.getGamepads === "function"); }
 function lista() { try { return podeLer() ? (nav.getGamepads() || []) : []; } catch (e) { return []; } }
@@ -110792,6 +110813,32 @@ return !!((S.medir && S.medir.on) || (S.area && S.area.on) || (S.ang && S.ang.on
 function cameraLivre() {
 return !(S.trava && S.trava.on) && !S._principalOculta && !(S.planta && S.planta.on) && !(S.corteL && S.corteL.on) && !(S.lupa && S.lupa.on) && !(S.xr && S.xr.on);
 }
+function lerSens() { try { var v = +((win && win.localStorage && win.localStorage.getItem(SENS_CHAVE)) || 1); return v > 0 && isFinite(v) ? limitar(v, 0.1, 10) : 1; } catch (e) { return 1; } }
+function gravarSens(v) { st.sens = v; try { if (win && win.localStorage) win.localStorage.setItem(SENS_CHAVE, String(v)); } catch (e) {} pintarChip(); }
+function pintarChip() { if (st.chip && st.chip.querySelector) { var t = st.chip.querySelector("[data-ctl=sens]"); if (t) t.textContent = String(st.sens).replace(".", ",") + "×"; } }
+function garantirChip() {
+if (st.chip && st.chip.parentNode === S.host) return st.chip;
+if (st.chip && st.chip.parentNode) st.chip.parentNode.removeChild(st.chip);
+if (!doc || !S.host) return null;
+var c = doc.createElement("div"); c.setAttribute("data-bim", "controle-vel");
+c.style.cssText = "position:absolute;left:12px;bottom:12px;z-index:7;display:none;align-items:center;gap:6px;padding:4px 8px;border-radius:8px;background:rgba(15,23,42,.78);color:#fff;font:12px/1.2 inherit;user-select:none";
+c.innerHTML = '<span>Controle · velocidade</span><button type="button" data-ctl="menos" title="Mais devagar" style="min-width:26px;height:24px;border:0;border-radius:6px;cursor:pointer">−</button><b data-ctl="sens" style="min-width:34px;text-align:center"></b><button type="button" data-ctl="mais" title="Mais rápido" style="min-width:26px;height:24px;border:0;border-radius:6px;cursor:pointer">+</button>';
+if (c.addEventListener) c.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-ctl]") : null; if (!b) return; var a = b.getAttribute("data-ctl"); if (a === "menos" || a === "mais") { gravarSens(passoSens(st.sens, a === "menos" ? -1 : 1)); ev.stopPropagation(); } });
+S.host.appendChild(c); st.chip = c; pintarChip();
+return c;
+}
+var _rc = THREE ? new THREE.Raycaster() : null, _c0 = THREE ? new THREE.Vector2(0, 0) : null;
+function distanciaMira(fallback) {
+var t = agora(); if (t - st.distT < 120 && st.distMira > 0) return st.distMira;
+st.distT = t; var d = 0;
+try {
+_rc.setFromCamera(_c0, S.camera);
+var hs = _rc.intersectObjects(S.modelRoot ? S.modelRoot.children : [], true);
+for (var i = 0; i < hs.length; i++) { var o = hs[i].object, vis = true; while (o) { if (o.visible === false) { vis = false; break; } o = o.parent; } if (vis) { d = hs[i].distance; break; } }
+} catch (e) { d = 0; }
+st.distMira = d > 0 ? d : num(fallback);
+return st.distMira;
+}
 function garantirMira() {
 if (st.mira && st.mira.parentNode === S.host) return st.mira;
 if (st.mira && st.mira.parentNode) st.mira.parentNode.removeChild(st.mira);
@@ -110802,8 +110849,8 @@ m.innerHTML = '<svg viewBox="0 0 26 26" width="26" height="26" fill="none" strok
 S.host.appendChild(m); st.mira = m; S.ctlMira = m;
 return m;
 }
-function mostrarMira() { var m = garantirMira(); if (m) m.style.display = "block"; }
-function esconderMira() { if (st.mira) st.mira.style.display = "none"; }
+function mostrarMira() { var m = garantirMira(); if (m) m.style.display = "block"; var c = garantirChip(); if (c) c.style.display = "flex"; }
+function esconderMira() { if (st.mira) st.mira.style.display = "none"; if (st.chip) st.chip.style.display = "none"; }
 function emPasseio() { return !!(S.fly && S.fly.on); }
 function entrarPasseio() {
 var d = S.camera.getWorldDirection(new THREE.Vector3()), o = olharDe(d.x, d.y, d.z);
@@ -110888,7 +110935,7 @@ function mover(e, dt) {
 if (S._cancelTween) S._cancelTween();
 var cam = S.camera, orb = S.orbit;
 if (emPasseio()) {
-var f = S.fly, d = integrar("passeio", e, dt, modeloTam());
+var f = S.fly, d = integrar("passeio", e, dt, modeloTam(), distanciaMira(modeloTam() * 0.25), st.sens);
 f.yaw += d.yaw; f.pitch = limitar(f.pitch + d.pitch, -1.5, 1.5);
 var fw = cam.getWorldDirection(new THREE.Vector3()), dir = new THREE.Vector3(fw.x, 0, fw.z);
 if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1);
@@ -110899,19 +110946,27 @@ cam.position.y += d.vert;
 cam.quaternion.setFromEuler(new THREE.Euler(f.pitch, f.yaw, 0, "YXZ"));
 return;
 }
-var off = _v.copy(cam.position).sub(orb.target), dist = off.length(), g = integrar("orbita", e, dt, modeloTam(), dist);
+var off = _v.copy(cam.position).sub(orb.target), dist = off.length(), dm = distanciaMira(dist), g = integrar("orbita", e, dt, modeloTam(), dm, st.sens);
 if (g.pan[0] || g.pan[1]) {
 var rt = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0), up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
 var mv = rt.multiplyScalar(g.pan[0]).add(up.multiplyScalar(g.pan[1]));
 cam.position.add(mv); orb.target.add(mv);
 }
-if (g.az || g.pol || g.zoom !== 1) {
+if (g.az || g.pol) {
 off.copy(cam.position).sub(orb.target);
 _sph.setFromVector3(off);
 _sph.theta += g.az; _sph.phi = limitar(_sph.phi + g.pol, 0.01, Math.PI - 0.01);
-_sph.radius = limitar(_sph.radius * g.zoom, orb.minDistance > 0 ? orb.minDistance : 0.05, isFinite(orb.maxDistance) ? orb.maxDistance : 1e9);
 off.setFromSpherical(_sph);
 cam.position.copy(orb.target).add(off);
+cam.lookAt(orb.target);
+}
+if (g.avanco) {
+var fw = cam.getWorldDirection(new THREE.Vector3()), dAlvo = cam.position.distanceTo(orb.target);
+var minD = Math.max(orb.minDistance > 0 ? orb.minDistance : 0.05, modeloTam() * 0.01);
+var maxD = isFinite(orb.maxDistance) ? orb.maxDistance : 1e9;
+var av = g.avanco < 0 ? Math.max(g.avanco, dAlvo - maxD) : g.avanco;
+cam.position.addScaledVector(fw, av);
+if (av > 0 && dAlvo - av < minD) orb.target.addScaledVector(fw, minD - (dAlvo - av));
 cam.lookAt(orb.target);
 }
 }
@@ -110928,7 +110983,7 @@ st.avisouFora = false;
 var acoes = acoesDe(st.antes, e.botoes);
 st.antes = e.botoes;
 if (campoDeTexto() || !naTela()) return;
-var mexeu = !parado(e) || acoes.length;
+var mexeu = !parado(e) || acoes.length || (st.suave && !parado(st.suave));
 if (mexeu) { st.ultimoUso = agora(); mostrarMira(); }
 else if (st.mira && st.mira.style.display !== "none" && agora() - st.ultimoUso > 15000) esconderMira();
 acoes.forEach(function (a) { try { agir(a); } catch (er) { if (typeof console !== "undefined") console.warn("BimControle:", a, er); } });
@@ -110936,23 +110991,27 @@ if (st.tour.on) {
 var p = passoPasseio(st.tour.t, dt); st.tour.t = p.t;
 if (p.avancar && st.tour.lista.length) { st.tour.i = (st.tour.i + 1) % st.tour.lista.length; irVista(st.tour.i); }
 }
-if (!parado(e) && cameraLivre()) mover(e, dt);
+var ant = st.suave; st.suave = suavizar(ant, e, dt);
+var med = mediaSuave(ant, e, dt);
+if (!parado(st.suave) && cameraLivre()) mover(med, dt);
 }
 function dispor() {
 if (win) { win.removeEventListener("gamepadconnected", aoConectar); win.removeEventListener("gamepaddisconnected", aoDesconectar); }
 try { if (st.mira && st.mira.parentNode) st.mira.parentNode.removeChild(st.mira); } catch (e) {}
-st.mira = null; st.on = false; st.tour.on = false;
+try { if (st.chip && st.chip.parentNode) st.chip.parentNode.removeChild(st.chip); } catch (e2) {}
+st.mira = null; st.chip = null; st.on = false; st.tour.on = false;
 }
 return {
 tick: tick, dispor: dispor,
-estado: function () { return { on: st.on, padrao: st.padrao, indice: st.indice, passeioAuto: st.tour.on, mira: !!(st.mira && st.mira.style.display !== "none") }; }
+sensibilidade: function (v) { if (v != null) gravarSens(limitar(num(v) || 1, 0.1, 10)); return st.sens; },
+estado: function () { return { sens: st.sens, on: st.on, padrao: st.padrao, indice: st.indice, passeioAuto: st.tour.on, mira: !!(st.mira && st.mira.style.display !== "none") }; }
 };
 }
 var BimControle = {
 ZONA_MORTA: ZONA_MORTA, ZONA_GATILHO: ZONA_GATILHO, CURVA: CURVA, INTERVALO_PASSEIO: INTERVALO_PASSEIO,
 MAPA: MAPA, VISTAS: VISTAS,
 eixo: eixo, par: par, gatilho: gatilho, ehPadrao: ehPadrao, lerEntrada: lerEntrada,
-bordaDescida: bordaDescida, acoesDe: acoesDe, escala: escala, integrar: integrar, parado: parado,
+bordaDescida: bordaDescida, acoesDe: acoesDe, escala: escala, integrar: integrar, suavizar: suavizar, passoSens: passoSens, SENS_PASSOS: SENS_PASSOS, parado: parado,
 proximaAba: proximaAba, passoPasseio: passoPasseio, olharDe: olharDe,
 criar: criar
 };
