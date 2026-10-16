@@ -173,10 +173,21 @@
       tercas.push(linha);
     }
 
+    /* #49 e) diâmetros comerciais da barra redonda (m) — a diagonal de ancoragem: o menor ≥ d·√(1/(n·cos β)) e ≥ d */
+    function diametroAncoragem(d, n, cosB) {
+      var req = d / Math.sqrt(Math.max(1, n) * Math.max(cosB, 0.2)), L0 = [0.00635, 0.00953, 0.0127, 0.01588, 0.01905, 0.0254];
+      if (!(cosB > 0.2)) return d;
+      for (var i0 = 0; i0 < L0.length; i0++) if (L0[i0] >= req - 1e-6 && L0[i0] >= d - 1e-6) return L0[i0];
+      return Math.max(d, req);
+    }
+    var BR_CAT = [[0.00635, "BR 1/4\" (D 6,35 mm) Gerdau"], [0.00953, "BR 3/8\" (D 9,53 mm) Gerdau"], [0.0127, "BR 1/2\" (D 12,70 mm) Gerdau"], [0.01588, "BR 5/8\" (D 15,88 mm) Gerdau"], [0.01905, "BR 3/4\" (D 19,05 mm) Gerdau"], [0.0254, "BR 1\" (D 25,40 mm) Gerdau"]];
+    function barraCatalogo(d) { for (var i1 = 0; i1 < BR_CAT.length; i1++) if (BR_CAT[i1][0] >= d - 1e-6) { var pc0 = perfilCat(BR_CAT[i1][1]); if (pc0) return pc0; } return { forma: "circ", d: d }; }
     /* TIRANTES (corrente de terça): barra redonda no meio de cada vão, de terça a terça, furo na alma */
     var tirantes = [];
     if (p.tirantes && p.tirante > 0.005) {
-      var barra = { forma: "circ", d: p.tirante };
+      /* #49 e) a corrente é a BARRA REDONDA DO CATÁLOGO (a menor ≥ o diâmetro pedido) — o paramétrico {forma: circ} o cálculo da
+         estrutura desenhada recusa ("sem perfil do catálogo") e a linha não travava nada lá */
+      var barra = barraCatalogo(p.tirante);
       tercas.forEach(function (linha, b2) {
         [0, 1].forEach(function (lado) {
           var ts = linha.filter(function (t) { return t.lado === lado; }).sort(function (a, c) { return a.j - c.j; });
@@ -185,8 +196,28 @@
             for (var q = 1; q <= nC; q++) {
               var mA = M().membro(ts[i].cx), mB = M().membro(ts[i + 1].cx), zm = mA.L * q / (nC + 1);
               var PA = M().membroPonto(mA, zm, 0, 0), PB = M().membroPonto(mB, zm, 0, 0), dd = V().sub(PB, PA), Ld = V().len(dd), u = V().unit(dd), proj = 0.05;
-              var cx = nova(perfil({ origem: V().sub(PA, V().mul(u, proj)), ex: u, ey: [0, 0, 1], perfil: barra, L: Ld + 2 * proj, papel: "Tirante", ifc: "IFCMEMBER", aco: "SAE 1020", nome: "Corrente — vão " + (b2 + 1) }), "tirante");
+              var cx = nova(perfil({ origem: V().sub(PA, V().mul(u, proj)), ex: u, ey: [0, 0, 1], perfil: barra, L: Ld + 2 * proj, papel: "Tirante", ifc: "IFCMEMBER", aco: p.acoBarra || "ASTM A36", nome: "Corrente — vão " + (b2 + 1) }), "tirante");
               if (cx) { tirantes.push({ cx: cx, a: ts[i].cx, b: ts[i + 1].cx }); cont.tirantes++; }
+            }
+          }
+          /* #49 e) (16/10/2026) ANCORAGEM da linha, como se executa: corrente DIAGONAL do ponto da linha na terça logo abaixo da do
+             topo (cumeeira, ou lado alto na uma água) até a ponta da terça do topo NO PÓRTICO — leva a força da linha ao ponto
+             rígido. Sem ela o cálculo da estrutura desenhada não conta a linha no eixo fraco ("corrente sem ancoragem não trava").
+             Linha da metade do vão para o pórtico mais perto; a do meio, para os dois. Diâmetro: o comercial ≥ d·√(1/(n·cos β))
+             (a diagonal leva a força da linha / (n·cos β), a mesma regra do cálculo) e ≥ o da corrente. */
+          if (ts.length >= 2) {
+            var tTop = M().membro(ts[ts.length - 1].cx), tSeg = M().membro(ts[ts.length - 2].cx);
+            for (var q2 = 1; q2 <= nC; q2++) {
+              var zq = tSeg.L * q2 / (nC + 1), PS = M().membroPonto(tSeg, zq, 0, 0), alvos = [];
+              if (2 * q2 <= nC + 1) alvos.push(M().membroPonto(tTop, 0, 0, 0));
+              if (2 * q2 >= nC + 1) alvos.push(M().membroPonto(tTop, tTop.L, 0, 0));
+              alvos.forEach(function (PT) {
+                var dd2 = V().sub(PT, PS), Ld2 = V().len(dd2), u2 = V().unit(dd2), PL = M().membroPonto(tTop, zq, 0, 0), dl = V().unit(V().sub(PL, PS));
+                var cosB = Math.abs(V().dot ? V().dot(u2, dl) : (u2[0] * dl[0] + u2[1] * dl[1] + u2[2] * dl[2]));
+                var dA = diametroAncoragem(p.tirante, alvos.length, cosB);
+                var cxA = nova(perfil({ origem: PS, ex: u2, ey: [0, 1, 0], perfil: barraCatalogo(dA), L: Ld2, papel: "Tirante", ifc: "IFCMEMBER", aco: p.acoBarra || "ASTM A36", nome: "Corrente diagonal (ancoragem) — vão " + (b2 + 1) }), "tirante");
+                if (cxA) { tirantes.push({ cx: cxA, a: ts[ts.length - 2].cx, b: ts[ts.length - 1].cx, ancoragem: true }); cont.tirantes++; cont.ancoragens = (cont.ancoragens || 0) + 1; }
+              });
             }
           }
         });

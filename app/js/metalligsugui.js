@@ -158,6 +158,59 @@
   function selCaixas() { var M = MU(); if (!M) return []; return M.caixas(M.selecao()); }
   function todasCaixas() { var M = MU(), st = M && M.estado ? M.estado() : null; return (st && st.caixas) || []; }
   function resultadoCalc() { try { var C = global.MetalCalcLivreUI; return C && C.resultado ? C.resultado() : null; } catch (e) { return null; } }
+  /* ============================================================ BACKLOG #53 (16/10/2026): o nó que ficou sem ligação vira
+     o cartão único (js/problemacard.js) — o que é, "Corrigir: …" e "Mostrar no 3D". Antes era só uma linha "a × b: motivo"
+     e a pessoa não sabia o que fazer. Toda solução abaixo tem ação real; a que não tiver o módulo carregado nem vira botão. */
+  function PCm() { if (global.ProblemaCard) return global.ProblemaCard; try { return typeof require === "function" ? require("./problemacard.js") : null; } catch (e) { return null; } }
+  var SIT_SIMPLES = {
+    "BLOQUEADA": "O cálculo desta ligação parou numa verificação que o sistema não faz com este arranjo",
+    "NÃO PASSA": "A ligação não aguenta os esforços deste nó",
+    "A CONFIRMAR": "A ligação foi dimensionada, mas com dados que ainda não são os finais",
+    "SEM ESFORÇOS": "Não há esforços do cálculo para dimensionar esta ligação",
+    "ERRO": "O cálculo desta ligação falhou",
+    "SEM LIGAÇÃO": "O sistema não conseguiu ligar este encontro sozinho"
+  };
+  function solucoesLig(motivo, pecas) {
+    var m = String(motivo || ""), o = [];
+    if (/fck/i.test(m)) o.push({ id: "informar-fck", texto: "Informar o fck da fundação" });
+    if (/ESTIMAD|SEM CÁLCULO|sem esforços|sem cálculo|DESATUALIZ/i.test(m)) o.push({ id: "calcular", texto: "Calcular a estrutura desenhada" });
+    if (arr(pecas).length) o.push({ id: "lig-inteligente", texto: "Abrir a Ligação inteligente neste nó" });
+    return o;
+  }
+  /* lista = [{ pecas | no: "a × b", motivo, situacao, titulo }] */
+  function probsLig(lista) {
+    var P = PCm();
+    return arr(lista).map(function (x) {
+      var pc = arr(x.pecas).length ? arr(x.pecas).map(String) : (P ? P.pecasDoNo(x.no) : []), rot = x.titulo || ("Nó " + (pc.join(" × ") || x.no || "?"));
+      var sit = x.situacao || "SEM LIGAÇÃO";
+      return { tipo: "ligacao", gravidade: sit === "A CONFIRMAR" ? "aviso" : "erro", titulo: rot + " — " + (SIT_SIMPLES[sit] || sit), texto: x.motivo ? "Motivo: " + x.motivo : "", pecas: pc, solucoes: solucoesLig((x.motivo || "") + " " + sit, pc) };
+    });
+  }
+  function acoesLig(sol) {
+    if (sol.id === "lig-inteligente") return true;
+    if (sol.id === "informar-fck" || sol.id === "calcular") return !!(global.MetalCalcLivreUI && MetalCalcLivreUI.abrir);
+    return false;
+  }
+  function cartoesLig(probs) { var P = PCm(); return P && probs.length ? P.lista(probs, { acoes: acoesLig, attrs: 'data-lsg="problemas"' }) : ""; }
+  /* liga os cliques depois do UI.modal (o corpo do modal é a raiz) */
+  function ligarCartoesLig(sel, probs) {
+    var P = PCm(); if (!P || !global.document) return;
+    var raiz = document.querySelector(sel); if (!raiz) return;
+    P.ligar(raiz, {
+      corrigir: function (id, k) {
+        var pr = probs[+k]; if (!pr) return;
+        if (global.UI && UI.fecharModal) UI.fecharModal();
+        if (id === "lig-inteligente") { var mo = P.mostrarNo3D(pr.pecas); if (!mo.selecionou) { toast("Não deu para selecionar as peças " + pr.pecas.join(" × ") + " no 3D.", "aviso", 7000); return; } MetalLigSugUI.abrir(); return; }
+        if (id === "calcular") { MetalCalcLivreUI.abrir(3); toast("Calcule a estrutura desenhada: as ligações saem com os esforços do cálculo.", "info", 7000); return; }
+        if (id === "informar-fck") { if (MetalCalcLivreUI.irParaFck) MetalCalcLivreUI.irParaFck(); else MetalCalcLivreUI.abrir(1); return; }
+      },
+      mostrar: function (ids) {
+        if (global.UI && UI.fecharModal) UI.fecharModal();
+        var mo = P.mostrarNo3D(ids);
+        toast(mo.selecionou ? ids.length + " peça(s) do nó selecionada(s)" + (mo.enquadrou ? " e enquadrada(s)" : "") + "." : "O 3D não está disponível aqui.", mo.selecionou ? "ok" : "aviso", 6000);
+      }
+    });
+  }
 
   /* ------------------------------------------------------------ painel de sugestões */
   function cartao(o, i) {
@@ -413,7 +466,7 @@
       if (ops.length && !M.enviar({ op: "lote", id: M.novoId(), origem: "metal-lig-biblio", ops: ops })) { toast("O editor recusou o lote.", "erro"); return null; }
       var msg = "\"" + item.nome + "\": " + res.feitas.length + " nó(s) com a ligação recalculada" + (res.puladas.length ? "; " + res.puladas.length + " sem aplicar" : "") + ". Ctrl+Z desfaz.";
       status(msg); toast(msg, res.feitas.length ? "ok" : "aviso", 8000);
-      if (res.puladas.length && global.UI) UI.modal("Biblioteca — " + item.nome, '<div class="lsg" data-lsg="biblio-res"><p>' + esc(msg) + "</p><ul>" + res.puladas.map(function (p) { return "<li>" + esc(p.no) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul></div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      if (res.puladas.length && global.UI) { var prB = probsLig(res.puladas); UI.modal("Biblioteca — " + item.nome, '<div class="lsg" data-lsg="biblio-res"><p>' + esc(msg) + "</p>" + (cartoesLig(prB) || "<ul>" + res.puladas.map(function (p) { return "<li>" + esc(p.no) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul>") + "</div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]); ligarCartoesLig('[data-lsg="biblio-res"]', prB); }
       U.ultimoBiblio = res; return res;
     },
     biblioteca: function () {
@@ -479,13 +532,22 @@
         itens.push(LL.itemDaSugestao(arr(ctx.ordem).join(" × ") || rot, S0.sugerir(ctx, opObra({ execucao: U.execucao || null, materiais: opMat() }))));
       });
       var d = LL.dimensionarTodas(itens); U.tipos = d;
+      /* BACKLOG #53: os Tipos que não passam e os nós sem ligação, cada um com Corrigir e Mostrar no 3D */
+      var prT = probsLig(arr(d.tipos).filter(function (t) { return t && t.situacao && !/^PASSA/.test(t.situacao); }).map(function (t) {
+        var pc = []; arr(t.nos).forEach(function (no) { (PCm() ? PCm().pecasDoNo(no) : []).forEach(function (id) { if (pc.indexOf(id) < 0) pc.push(id); }); });
+        return { titulo: t.id + " (" + arr(t.nos).length + " nó(s): " + arr(t.nos).slice(0, 3).join("; ") + (arr(t.nos).length > 3 ? "…" : "") + ")", situacao: t.situacao, motivo: (t.calculo && t.calculo.motivo) || t.motivo || "", pecas: pc };
+      }).concat(arr(d.semLigacao).map(function (x) { return { no: x.no, situacao: "SEM LIGAÇÃO", motivo: x.motivo }; })));
+      U.tiposProblemas = prT;
       if (global.UI) {
         css();
         UI.modal("Ligações — Tipos e combinação que governa", '<div class="lsg" data-lsg="tipos" data-modal-largo><p>' + itens.length + " encontro(s), " + d.tipos.length + " Tipo(s)" + (rc && rc.ok ? "" : " — SEM CÁLCULO DA ESTRUTURA: esforços estimados, tudo A CONFIRMAR") + ".</p>" + LL.quadroHtml(d.quadro) +
-          '<p class="lsg-nota">Cada Tipo é dimensionado com as combinações de todos os seus nós (o arranjo cobre o pior nó). "PASSA (ENVOLTÓRIA)": a tipologia refaz o arranjo por combinação, e a combinação que governa não é determinada.</p></div>', [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          '<p class="lsg-nota">Cada Tipo é dimensionado com as combinações de todos os seus nós (o arranjo cobre o pior nó). "PASSA (ENVOLTÓRIA)": a tipologia refaz o arranjo por combinação, e a combinação que governa não é determinada.</p>' + (prT.length ? "<h4>O que falta resolver (" + prT.length + ")</h4>" + cartoesLig(prT) : "") + "</div>", [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        ligarCartoesLig('[data-lsg="tipos"]', prT);
       }
       return d;
     },
+    /* BACKLOG #53 (teste de Node): os cartões dos nós sem ligação */
+    _probsLig: probsLig, _acoesLig: acoesLig, _cartoesLig: cartoesLig, tiposProblemas: function () { return U.tiposProblemas || []; },
     podeAplicar: podeAplicar, _cartao: function (o, i) { return cartao(o, i || 0); }, provisoriasEntre: provisoriasEntre,
     /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilares.js): o mesmo aplicar do lote, para o lançamento automático */
     aplicarOpcao: aplicarOpcao,
@@ -743,12 +805,16 @@
       status("Ligar todos os nós: " + msg); toast(msg, res.feitas.length ? "ok" : "aviso", 8000);
       if (res.ajustes.length && global.UI) {
         var self0 = this;
-        UI.modal("Ligar todos os nós — ajuste de cota", '<div class="lsg" data-lsg="ajuste-cota"><p>' + esc(msg) + "</p>" + (res.puladas.length ? "<ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul>" : "") +
+        var prA = probsLig(res.puladas);
+        UI.modal("Ligar todos os nós — ajuste de cota", '<div class="lsg" data-lsg="ajuste-cota"><p>' + esc(msg) + "</p>" + (res.puladas.length ? cartoesLig(prA) || "<ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul>" : "") +
           "<p><b>" + res.ajustes.length + " fundação(ões) com o topo fora do graute do detalhe</b> (25 mm sob a placa; abaixo de 20 mm o graute não cabe e acima de 25 mm o chumbador perde ancoragem). O sistema propõe o topo em −(placa + 25 mm) abaixo do pé do pilar:</p><ul>" +
           res.ajustes.map(function (x) { return "<li>" + esc(x.texto) + "</li>"; }).join("") + '</ul><p class="lsg-nota">É ajuste de cota (o desenho da fundação), não da ligação. Um lote só — Ctrl+Z desfaz.</p></div>',
           [{ texto: "Ajustar o topo das fundações (" + res.ajustes.length + ")", classe: "primary", onClick: function () { UI.fecharModal(); self0.ajustarTopos(res.ajustes); } }, { texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        ligarCartoesLig('[data-lsg="ajuste-cota"]', prA);
       } else if (res.puladas.length && global.UI) {
-        UI.modal("Ligar todos os nós", '<div class="lsg" data-lsg="lote"><p>' + esc(msg) + "</p><ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul><p class=\"lsg-nota\">Os que ficaram: selecione as peças e use a Ligação inteligente.</p></div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        var prL = probsLig(res.puladas), cL = cartoesLig(prL);
+        UI.modal("Ligar todos os nós", '<div class="lsg" data-lsg="lote"><p>' + esc(msg) + "</p>" + (cL || "<ul>" + res.puladas.map(function (p) { return "<li>" + esc(arr(p.pecas).join(" × ")) + ": " + esc(p.motivo) + "</li>"; }).join("") + "</ul>") + "<p class=\"lsg-nota\">" + (cL ? "\"Corrigir: Abrir a Ligação inteligente neste nó\" seleciona as peças do nó e abre as opções dele." : "Os que ficaram: selecione as peças e use a Ligação inteligente.") + "</p></div>", [{ texto: "Ok", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        ligarCartoesLig('[data-lsg="lote"]', prL);
       }
       this._ultimoLote = res;
       return res;

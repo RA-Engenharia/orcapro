@@ -125,7 +125,8 @@
    * Biapoiada em cada trecho entre apoios (os segmentos do modelo): M = w·L²/8 com os dois sinais (cobre o momento negativo
    * da peça contínua, ≤ w·L²/8) e cortante 0,625·w·L quando contínua (0,5 se é um trecho só). Sem o peso próprio e a telha,
    * que aliviam a sucção. Não entra na análise global. OPC.cpeMedioLocal = false só para o controle negativo dos testes. */
-  var OPC = { cpeMedioLocal: true, nGlobalLocal: true };
+  var TOL_LIG = { rel: 0.02, abs: 0.05 };   /* #49 d: 2 % + 0,05 (kN·m ou kN, cada um na sua unidade) */
+  var OPC = { cpeMedioLocal: true, nGlobalLocal: true, eixosLocal: true, flechaLocal: true, ligDesatualizada: true };   /* false só nos controles negativos dos testes */
   /* revisor (15/10, 1.2.148): a terça do vão do oitão é ESCORA do contraventamento da cobertura — o N da análise global entra
      junto com o momento do cpe médio (o pior N de compressão e o de tração das combinações COM vento), pela mesma interação
      da verificação da barra (NBR 8800 5.5.1.2 / NBR 14762). OPC.nGlobalLocal = false só para o controle negativo. */
@@ -134,26 +135,84 @@
     var Nc = 0, Nt = 0; arr(est2).forEach(function (e) { if (!comW[e.comb]) return; var N = num(e.N, 0); if (N < Nc) Nc = N; if (N > Nt) Nt = N; });
     return { Nc: Nc, Nt: Nt };
   }
+  /* #49 a/b (16/10/2026) — EIXOS e FLECHA da verificação local (achados do revisor da 1.2.148):
+   * b) a carga de cada papel tem DIREÇÃO (q.papeis[].dir: a normal externa da parede ou da água — sucção puxa para fora) e é
+   *    decomposta nos eixos da peça: wy = w·(n·ey) (flexão no eixo FORTE, Mz) e wz = w·(n·ez) (eixo FRACO, My). Antes tudo ia
+   *    para o eixo forte: na terça do beiral (alma normal à água) a parede, horizontal, é quase toda eixo fraco. Os dois
+   *    sentidos em cada eixo (4 combinações de sinal — a favor da segurança; cobre o momento negativo da peça contínua). Sem
+   *    direção (entrada antiga) → a carga inteira nos DOIS eixos (a favor da segurança — declarado no passo).
+   * a) FLECHA local (ELS) com o mesmo cpe médio: NBR 8800:2008 Anexo C, Tabela C.1 (2024: Anexo B) — terças L/120 com só as
+   *    variáveis de sentido oposto ao permanente (sucção), travessas L/120 perpendicular ao fechamento, VALOR CARACTERÍSTICO
+   *    (1,0·W, sem o peso próprio, que alivia): δ = 5·wk·L⁴/(384·E·I) por eixo (biapoiada — a favor da segurança na contínua),
+   *    resultante √(δforte² + δfraco²) ≤ L/120; E = 200 000 MPa, inércia da seção bruta (a mesma da análise global). */
+  var E_ACO = 2.0e8;   /* kN/m² — E = 200 000 MPa */
+  function crossV(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+  function dotV(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+  function cargaEixos(m, q, fator) {
+    var ey = m.ey || [0, 1, 0], ez = crossV(m.X || [1, 0, 0], ey), wy = 0, wz = 0, semDir = false, pap = arr(q.papeis);
+    if (!pap.length) pap = [{ pUso: q.pUso, s: q.s, dir: null }];
+    if (OPC.eixosLocal === false) { var t0 = q.wLinha != null ? q.wLinha : Math.abs(num(q.pUso, 0)) * num(q.s, 0); return { wy: fator * t0, wz: 0, semDir: false }; }   /* só o controle negativo: o de antes (tudo no forte) */
+    pap.forEach(function (z) {
+      var w = fator * Math.abs(num(z.pUso, 0)) * num(z.s, 0), d = z.dir;
+      if (!d || d.length !== 3 || !isFinite(d[0] + d[1] + d[2])) { semDir = true; wy += w; wz += w; return; }
+      /* soma VETORIAL dos papéis (parede + cobertura no beiral: as duas sucções para fora) */
+      wy += w * dotV(d, ey); wz += w * dotV(d, ez);
+    });
+    return { wy: wy, wz: wz, semDir: semDir };
+  }
   function verificarLocalCpeMedio(m, v, q, est2, elu) {
     if (!(q.pUso < 0)) return;
     var Ls = q.Ls > 0 ? q.Ls : m.L;
+    /* #49 e) vão do EIXO FRACO: entre as linhas de corrente ANCORADAS do modelo (js/acomodelolivre.js tercasNaBorda); sem elas, o vão inteiro */
+    var Lz = q.Lz > 0 ? Math.min(q.Lz, Ls) : Ls;
     var w = 1.4 * (q.wLinha != null ? q.wLinha : Math.abs(q.pUso) * q.s), kV = q.continua ? 1.25 : 1.0, est = [];
+    var W = cargaEixos(m, q, 1.4), wy = Math.abs(W.wy), wz = Math.abs(W.wz);
     var NG = OPC.nGlobalLocal ? nVentoGlobal(est2, elu) : { Nc: 0, Nt: 0 }, Ns = [NG.Nc, NG.Nt].filter(function (N, i, a) { return a.indexOf(N) === i; });
-    Ns.forEach(function (N) { [1, -1].forEach(function (sg) { for (var i = 0; i <= 4; i++) { var x = Ls * i / 4; est.push({ comb: "Wlocal" + (sg > 0 ? "+" : "-") + "N" + br(N, 2), x: x, N: N, Mz: sg * w * x * (Ls - x) / 2, My: 0, Vy: sg * kV * w * (Ls / 2 - x), Vz: 0 }); } }); });
+    var sinais = wz > 1e-9 ? [[1, 1], [1, -1], [-1, 1], [-1, -1]] : [[1, 1], [-1, 1]];
+    /* o máximo do eixo fraco (no meio do trecho entre correntes) no MESMO ponto do máximo do forte — a favor da segurança */
+    var kVz = Lz < Ls - 1e-9 ? 1.25 : kV;
+    Ns.forEach(function (N) { sinais.forEach(function (sg) { for (var i = 0; i <= 4; i++) { var x = Ls * i / 4, xz = Lz * i / 4;
+      est.push({ comb: "Wlocal" + (sg[0] > 0 ? "+" : "-") + (sg[1] > 0 ? "+" : "-") + "N" + br(N, 2), x: x, N: N, Mz: sg[0] * wy * x * (Ls - x) / 2, My: sg[1] * wz * xz * (Lz - xz) / 2, Vy: sg[0] * kV * wy * (Ls / 2 - x), Vz: sg[1] * kVz * wz * (Lz / 2 - xz) }); } }); });
     var vl = aplicarEsbeltez(verificarMembro(m, est, []), m, est);
-    q.local = { Ls: Ls, w: w, Nc: NG.Nc, Nt: NG.Nt, razao: num(vl.razao, Infinity), ok: !!vl.ok, governante: vl.governante };
+    /* flecha (ELS) — valor característico */
+    var Wk = cargaEixos(m, q, 1.0), Iz = num(m.secao && m.secao.Iz, 0), Iy = num(m.secao && m.secao.Iy, 0);
+    var dy = Math.abs(Wk.wy) < 1e-12 ? 0 : (Iz > 0 ? 5 * Math.abs(Wk.wy) * Math.pow(Ls, 4) / (384 * E_ACO * Iz) : Infinity);
+    var dz = Math.abs(Wk.wz) < 1e-12 ? 0 : (Iy > 0 ? 5 * Math.abs(Wk.wz) * Math.pow(Lz, 4) / (384 * E_ACO * Iy) : Infinity);
+    /* cada eixo com o seu vão (Tabela C.1 dá o limite por direção): forte L/120 no vão entre apoios, fraco L/120 entre correntes */
+    var dl = Math.sqrt(dy * dy + dz * dz), limF = Ls / 120, limZ = Lz / 120, rzF = limF > 0 && isFinite(dy) ? dy / limF : Infinity, rzZ = dz === 0 ? 0 : (limZ > 0 && isFinite(dz) ? dz / limZ : Infinity);
+    var rzL = num(vl.razao, Infinity);
+    q.local = { Ls: Ls, Lz: Lz, w: w, wy: wy, wz: wz, semDir: W.semDir, Nc: NG.Nc, Nt: NG.Nt, razao: rzL, ok: !!vl.ok && isFinite(rzL), governante: vl.governante,
+                flecha: { valor: dl, dy: dy, dz: dz, limite: limF, limiteZ: limZ, razao: Math.max(rzF, rzZ), razaoY: rzF, razaoZ: rzZ, wky: Wk.wy, wkz: Wk.wz } };
+    var nAncL = num(q.correntesAncoradas, 0), nSoltas = arr(q.correntes).filter(function (c) { return !c.ancorada; }).length;
+    var origemZ = Lz < Ls - 1e-9 ? "entre as " + nAncL + " linha(s) de corrente ANCORADA(S) do modelo (" + arr(q.correntes).filter(function (c) { return c.ancorada; }).map(function (c) { return "s = " + br(c.s, 2) + " m, ancorada n" + (/^o /.test(String(c.onde)) ? "" : "o ") + String(c.onde || "ponto rígido"); }).join("; ") + ")"
+              : (nSoltas ? "o vão inteiro — " + nSoltas + " corrente(s) SEM ancoragem (a linha só vai de terça a terça, sem diagonal na cumeeira nem pórtico/contraventamento): corrente sem ancoragem não trava" : "o vão inteiro — nenhuma linha de corrente ligada à terça");
+    q.local.origemZ = origemZ;
     var nome = "Vento local — cpe médio da faixa de borda (" + q.zona + ")";
     v.verificacoes = arr(v.verificacoes).concat([{ nome: nome, item: "NBR 6123:2023, 6.1.2/6.1.3 + " + (vl.norma || vl.edicao || "verificação da barra"),
       passos: [{ rotulo: "Pressão (pior entre o cpe médio e o da zona, q da classe A)", formula: "cpe médio " + br(q.cpe, 2) + " → p = " + br(q.p, 3) + "; zona (classe A) " + br(q.pZonaA, 3), valor: br(q.pUso, 3) + " kN/m²" },
                { rotulo: "Carga na peça (1,4·W, sucção)", formula: "1,4 × Σ |p|·faixa = 1,4 × (" + arr(q.papeis).map(function (z) { return br(Math.abs(z.pUso), 3) + " × " + br(z.s, 2) + " m (" + z.tipo + ")"; }).join(" + ") + ")", valor: br(w, 3) + " kN/m" },
-               { rotulo: "Momento (trecho de " + br(Ls, 2) + " m)", formula: "w·L²/8 (os dois sentidos)", valor: br(w * Ls * Ls / 8, 3) + " kN·m" },
+               { rotulo: "Vão em cada eixo", formula: "forte: " + br(Ls, 2) + " m entre os apoios (viga/pilar); fraco: " + br(Lz, 2) + " m — " + origemZ, valor: br(Ls, 2) + " / " + br(Lz, 2) + " m" },
+               { rotulo: "Momento (forte no trecho de " + br(Ls, 2) + " m; fraco no de " + br(Lz, 2) + " m)", formula: "w·L²/8 em cada eixo, com o vão dele (os dois sentidos)", valor: br(wy * Ls * Ls / 8, 3) + " kN·m (forte) / " + br(wz * Lz * Lz / 8, 3) + " kN·m (fraco)" },
+               { rotulo: "Carga nos eixos da peça (normal da parede/da água × eixos da seção)", formula: W.semDir ? "sem a direção do fechamento: a carga inteira nos DOIS eixos (a favor da segurança)" : "wy = Σ w·(n·ey) no eixo forte; wz = Σ w·(n·ez) no eixo fraco — soma vetorial dos fechamentos (sucção para fora)", valor: br(wy, 3) + " / " + br(wz, 3) + " kN/m" },
                { rotulo: "Força axial da análise global (pior das combinações com vento), junto com o momento", formula: "Nc = " + br(NG.Nc, 2) + " kN; Nt = " + br(NG.Nt, 2) + " kN — interação da verificação da barra", valor: br(Math.min(NG.Nc, 0), 2) + " / " + br(Math.max(NG.Nt, 0), 2) + " kN" },
-               { rotulo: "Verificação da barra", formula: String(vl.governante || "—"), valor: br(q.local.razao, 3) }],
-      resistencia: 1, solicitante: q.local.razao, unidade: "", razao: q.local.razao }]);
-    if (q.local.razao > num(v.razao, 0)) { v.razao = q.local.razao; v.governante = nome + ": " + (vl.governante || ""); }
-    v.ok = num(v.razao, 0) <= 1 + 1e-9;
-    if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local da faixa de borda (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(q.local.razao, 3) + " — " + (vl.governante || "")]);
+               { rotulo: "Verificação da barra", formula: String(vl.governante || "—"), valor: br(rzL, 3) }],
+      resistencia: 1, solicitante: rzL, unidade: "", razao: rzL }]);
+    if (!(rzL <= num(v.razao, 0))) { v.razao = rzL; v.governante = nome + ": " + (vl.governante || ""); }
+    var rv = num(v.razao, Infinity); v.ok = isFinite(rv) && rv <= 1 + 1e-9;
+    if (!q.local.ok) v.avisos = arr(v.avisos).concat(["REPROVA no vento local da faixa de borda (" + q.zona + ", p = " + br(q.pUso, 3) + " kN/m², NBR 6123:2023 6.1.2): razão " + br(rzL, 3) + " — " + (vl.governante || "")]);
   }
+  /* a FLECHA local entra no ELS (r.servico) com a referência — mesma tabela, mesma reprovação da barra */
+  function servicoLocal(m, q) {
+    var F = q.local && q.local.flecha; if (!F) return [];
+    var soParede = arr(q.papeis).some(function (z) { return z.tipo === "parede"; }) && !arr(q.papeis).some(function (z) { return z.tipo === "cobertura"; });
+    var base = (soParede ? "travessa de fechamento: L/120 perpendicular ao fechamento" : "terça: L/120 (sucção — só a variável de sentido oposto ao permanente)") + " — cpe médio da faixa de borda (" + q.zona + "; NBR 6123:2023 6.1.2), valor característico, biapoiada";
+    var o = [{ membro: m.id, tipo: "ventoLocal", eixo: "forte", valor: F.dy, limite: F.limite, razao: F.razaoY, comb: "W característico (cpe médio local)", vao: [0, q.local.Ls],
+               texto: base + " — eixo FORTE no vão " + br(q.local.Ls, 2) + " m entre os apoios: δ = 5·wk·L⁴/(384·E·Ix) = " + br(F.dy * 1000, 1) + " mm; E = 200 000 MPa, seção bruta", ref: REF_C1 + "; NBR 6123:2023, 6.1.2/6.1.3" }];
+    if (F.dz > 0 || Math.abs(num(F.wkz, 0)) > 1e-12) o.push({ membro: m.id, tipo: "ventoLocal", eixo: "fraco", valor: F.dz, limite: F.limiteZ, razao: F.razaoZ, comb: "W característico (cpe médio local)", vao: [0, q.local.Lz],
+               texto: base + " — eixo FRACO no vão " + br(q.local.Lz, 2) + " m (" + (q.local.origemZ || "") + "): δ = 5·wk·L⁴/(384·E·Iy) = " + br(F.dz * 1000, 1) + " mm; E = 200 000 MPa, seção bruta", ref: REF_C1 + "; NBR 6123:2023, 6.1.2/6.1.3" });
+    return o;
+  }
+
 
   /* ================================================================ LIMITES DE ESBELTEZ (EXIGÊNCIA)
    * Decisão do Rogério (14/10/2026, rodada 2 da simulação): L/r ≤ 200 na barra COMPRIMIDA e ≤ 300 na TRACIONADA são
@@ -306,13 +365,50 @@
       falhas++; avisos.push(escTrava.texto);
       G.decisoes.push({ tema: "Escada como travamento", decisao: "REPROVA: a estrutura sem a escada é mecanismo", motivo: "a escada não é elemento de contraventamento previsto; o pé e o topo não foram dimensionados para N = " + br(nPe, 1) + " / " + br(nTopo, 1) + " kN" });
     }
+    /* #49 e) FORÇA NAS CORRENTES ancoradas: a reação do eixo fraco de cada terça verificada localmente (1,25·wz·Lz — o apoio
+       interno da viga contínua, o maior), ACUMULADA ao longo da linha (cada barra da linha leva a soma de todas as terças dela, a
+       favor da segurança), somada à tração da análise global (pior ELU). Barra redonda à tração: NBR 8800 5.2 (escoamento da
+       seção bruta, Ag·fy/γa1) e 6.3.3.1 (parte rosqueada: 0,75·Ab·fu/γa2). Terça de borda que reprova SEM corrente ancorada:
+       a solução "Adicionar linhas de corrente no beiral (terços do vão)" (a outra frente desenha o botão). */
+    var nCorr = {}, probsLocais = [];
+    Object.keys(bordaPorMid).forEach(function (mid) {
+      var q = bordaPorMid[mid]; if (!q.local) return;
+      var Lz = q.local.Lz, R = 1.25 * Math.abs(num(q.local.wz, 0)) * Lz;
+      /* a linha leva R inteira; a diagonal de ancoragem leva R / (nº de diagonais no nó · cos β) — β entre ela e a linha */
+      function soma(bm, N) { var o = nCorr[bm] || (nCorr[bm] = { N: 0, de: [] }); o.N += N; if (o.de.indexOf(q.peca) < 0) o.de.push(q.peca); }
+      if (Lz < q.local.Ls - 1e-9 && R > 0) arr(q.correntes).forEach(function (c) { if (!c.ancorada) return; arr(c.barrasTr || c.barras).forEach(function (bm) { soma(bm, R); });
+        arr(c.diagonais).forEach(function (d) { soma(d.mid, d.cos > 0.2 ? R / (Math.max(1, d.n) * d.cos) : Infinity); }); });
+      var vM = resultadosM[mid];
+      if (vM && !vM.ok && !num(q.correntesAncoradas, 0) && Math.abs(num(q.local.wz, 0)) > 1e-9) {
+        var sol = { id: "correntes-beiral", texto: "Adicionar linhas de corrente no beiral (terços do vão)", pecas: [q.peca] };
+        vM.solucoes = arr(vM.solucoes).concat([sol]);
+        probsLocais.push({ tipo: "vento-local", membro: mid, peca: q.peca, texto: mid + " (" + q.zona + "): reprova no vento local com o eixo fraco no vão inteiro (" + q.local.origemZ + ")", pecas: [q.peca], solucoes: [sol] });
+      }
+    });
+    Object.keys(nCorr).forEach(function (bm) {
+      var m = G.membros.filter(function (x) { return x.id === bm; })[0], v = resultadosM[bm]; if (!m || !v) return;
+      var Nt = 0; elu.forEach(function (c) { Dm.estacoesMembro(res, m, c.id).forEach(function (e) { if (num(e.N, 0) > Nt) Nt = num(e.N, 0); }); });
+      var sm = m.secao.mm || {}, Ag = num(sm.A, 0), fy = num(m.aco && m.aco.fy, 0), fu = num(m.aco && m.aco.fu, 0);
+      var Rd = Ag > 0 && fy > 0 && fu > 0 ? Math.min(Ag * fy / 1.10, 0.75 * Ag * fu / 1.35) / 1000 : 0, NEd = Nt + nCorr[bm].N, rz = Rd > 0 ? NEd / Rd : Infinity, eraOk = v.ok;
+      v.verificacoes = arr(v.verificacoes).concat([{ nome: "Corrente: tração com a reação do eixo fraco das terças (vento local)", item: "NBR 8800:2008 5.2 e 6.3.3.1 (conferir na 2024) + NBR 6123:2023 6.1.2",
+        passos: [{ rotulo: "Reações do eixo fraco acumuladas na linha", formula: "Σ 1,25·wz·Lz das terças " + nCorr[bm].de.join(", "), valor: br(nCorr[bm].N, 2) + " kN" },
+                 { rotulo: "Tração da análise global (pior ELU)", formula: "N", valor: br(Nt, 2) + " kN" },
+                 { rotulo: "Resistência (barra redonda rosqueada)", formula: "mín(Ag·fy/1,10; 0,75·Ag·fu/1,35) = mín(" + br(Ag, 0) + "·" + br(fy, 0) + "/1,10; 0,75·" + br(Ag, 0) + "·" + br(fu, 0) + "/1,35)", valor: br(Rd, 2) + " kN" }],
+        resistencia: Rd, solicitante: NEd, unidade: "kN", razao: rz }]);
+      if (!(rz <= num(v.razao, 0))) { v.razao = rz; v.governante = "Corrente: tração com a reação do eixo fraco das terças (vento local)"; }
+      var rv = num(v.razao, Infinity); v.ok = isFinite(rv) && rv <= 1 + 1e-9;
+      if (eraOk && !v.ok) falhas++;
+      var g = grupos[m.grupo]; if (g && rz > g.razao) { g.razao = rz; g.membro = m.id; }
+      if (g) g.razaoELU = Math.max(g.razaoELU, rz);
+      nCorr[bm].NEd = NEd; nCorr[bm].Rd = Rd; nCorr[bm].razao = rz;
+    });
     if (bordaLista.length && CG.resumo.vento) {
       var feitas = bordaLista.filter(function (q) { return bordaPorMid[q.mid] && bordaPorMid[q.mid].local; });
       CG.resumo.vento.cpeMedioVerificado = feitas;
       CG.resumo.vento.cpeMedioNaoAplicado = bordaLista.filter(function (q) { return feitas.indexOf(q) < 0; });
       if (!CG.resumo.vento.cpeMedioNaoAplicado.length) avisos = avisos.filter(function (x) { return !/cpe MÉDIO.*NÃO foi aplicado/.test(x); });
       if (feitas.length) G.decisoes.push({ tema: "Vento — cpe médio nas terças/travessas de borda",
-        decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", cpe médio " + br(q.cpe, 2) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão " + br(L.Ls, 2) + " m; razão " + br(L.razao, 3) + ")"; }).join("; "),
+        decisao: feitas.length + " peça(s) nas faixas de borda/canto verificadas LOCALMENTE com o cpe médio: " + feitas.map(function (q) { var L = q.local; return q.peca + " (" + q.zona + ", cpe médio " + br(q.cpe, 2) + "; p = " + br(q.pUso, 3) + " kN/m² [" + q.governa + "]; faixa " + br(q.s, 2) + " m; vão forte " + br(L.Ls, 2) + " m, fraco " + br(L.Lz, 2) + " m [" + L.origemZ + "]; razão " + br(L.razao, 3) + ")"; }).join("; "),
         motivo: "NBR 6123:2023, 6.1.2 e 6.1.3 (q da classe A, cpi mais desfavorável; o pior entre o cpe médio e o da zona). Peça biapoiada em cada trecho entre apoios (M = w·L²/8 nos dois sentidos; cortante 0,625·w·L se contínua), combinação 1,4·W na sucção SEM o peso próprio e a telha (aliviam — a favor da segurança). A estrutura principal (vigas, pilares, contraventamento) continua com o cpe da zona." });
     }
     /* tirantes (barra redonda): a barra que nunca traciona fica frouxa — informação */
@@ -321,7 +417,10 @@
       if (!trac) avisos.push(m.id + " (" + m.secao.nome + "): barra só de tração FROUXA em todas as combinações últimas — não trabalha (confira se o X está completo).");
     });
     /* ELS */
-    var servico = servicoDe(G, res, els), falhasELS = servico.filter(function (s) { return s.razao > 1; }).length;
+    var servico = servicoDe(G, res, els);
+    /* #49 a) a flecha local do cpe médio (terças/travessas de borda) — ELS com a mesma regra (∞/NaN reprova) */
+    if (OPC.flechaLocal) G.membros.forEach(function (m) { var q = bordaPorMid[m.id]; if (q && q.local) servicoLocal(m, q).forEach(function (sl) { servico.push(sl); }); });
+    var falhasELS = servico.filter(function (s) { return !(s.razao <= 1); }).length;
     servico.forEach(function (s) { var m = G.membros.filter(function (x) { return x.id === s.membro; })[0]; if (!m) return; var g = grupos[m.grupo]; if (g) { g.razaoELS = Math.max(g.razaoELS || 0, s.razao); if (s.razao > g.razao) { g.razao = s.razao; g.membro = m.id; g.governaELS = true; } } });
     falhas += falhasELS;
     /* reações */
@@ -356,7 +455,68 @@
         var lmin = Math.min.apply(null, flamb.map(function (f) { return f.lambda > 0 ? f.lambda : 1e9; }));
         if (lmin < 1e9) G.decisoes.push({ tema: "Flambagem global", decisao: "fator de carga crítica λcr = " + br(lmin, 2), motivo: "análise de autovalor da rigidez geométrica; com λcr > 10 os efeitos globais de 2ª ordem são pequenos" });
         if (lmin < 3) avisos.push("λcr = " + br(lmin, 2) + " < 3: estrutura muito flexível em 2ª ordem — aumentar a rigidez.");
+        /* REVISOR (16/10): λcr < 1 = a carga de cálculo passa da crítica de flambagem global — REPROVA (nunca só aviso) */
+        if (lmin < 1) { falhas++; avisos.push("REPROVA: λcr = " + br(lmin, 2) + " < 1 — a carga de cálculo passa da carga crítica de flambagem global (análise de autovalor): contraventar, engastar as bases ou aumentar os perfis."); }
       }
+    }
+    /* #49 d) (16/10/2026, revisor da 1.2.148) — Mj,Ed GRAVADO × ANÁLISE DE AGORA: a ligação desenhada guarda os esforços com que
+       foi dimensionada (entrada.esforcos, tirados da ponta da barra: M = √(Mz² + My²), V = √(Vy² + Vz²), N — js/acoligsugere.js);
+       se a análise de agora dá MAIS que isso na mesma ponta (o modelo, as cargas ou a rigidez mudaram depois), a ligação está
+       DESATUALIZADA: não vale como aprovada com o esforço velho (a mola Sj só vale até Mj,Rd, que era do esforço velho). A
+       situação vai a INCOMPLETO com a lista (nunca aprovado); redimensionar a ligação com este cálculo. Tolerância 2 % + 0,5 kN(·m). */
+    var ligDesat = [];
+    /* REVISOR (16/10, médio): (a) ligação SEM esforço gravado não passa calada — "esforços da ligação não gravados — redimensione
+       para conferir" e INCOMPLETO; (b) a ponta de PILAR também: viga contínua SOBRE o pilar (os esforços do topo do pilar) e a PLACA
+       DE BASE (os do pé) — como js/acoligsugere.js esforcosTopoPilar / base; a ligação viga × pilar é conferida pela viga que chega;
+       (c) tolerância só RELATIVA (2 %) + 0,05 na unidade de cada grandeza (kN·m com kN·m, kN com kN — nunca somadas) */
+    var ligVistas = {};
+    function confereLig(ligId, L1, m, lado, onde) {
+      var ch = ligId + "|" + m.id + "|" + lado; if (ligVistas[ch]) return; ligVistas[ch] = 1;
+      var nomeL = (L1 && L1.tipologia) || "ligação " + ligId, es = L1 && L1.entrada && arr(L1.entrada.esforcos);
+      if (!es || !es.length) { ligDesat.push({ lig: String(ligId), tipologia: (L1 && L1.tipologia) || null, peca: m.peca, membro: m.id, lado: lado, semEsforco: true, texto: nomeL + " (" + onde + " de " + m.id + "): esforços da ligação não gravados — redimensione para conferir" }); return; }
+      var g = { M: 0, V: 0, N: 0 }, a = { M: 0, V: 0, N: 0, comb: null }, viu = false;
+      es.forEach(function (q) { g.M = Math.max(g.M, Math.abs(num(q.M, 0))); g.V = Math.max(g.V, Math.abs(num(q.V, Math.sqrt(Math.pow(num(q.Vx, 0), 2) + Math.pow(num(q.Vz, 0), 2))))); g.N = Math.max(g.N, Math.abs(num(q.N, 0))); });
+      elu.forEach(function (cb) {
+        var e = Dm.estacoesMembro(res, m, cb.id); if (!e.length) return; viu = true;
+        var q = lado === "ini" ? e[0] : e[e.length - 1], M = Math.sqrt(Math.pow(num(q.Mz, 0), 2) + Math.pow(num(q.My, 0), 2)), V = Math.sqrt(Math.pow(num(q.Vy, 0), 2) + Math.pow(num(q.Vz, 0), 2)), N = Math.abs(num(q.N, 0));
+        if (M > a.M) { a.M = M; a.comb = cb.id; } a.V = Math.max(a.V, V); a.N = Math.max(a.N, N);
+      });
+      if (!viu) return;
+      function passa(at, gr) { return !(at <= gr * (1 + TOL_LIG.rel) + TOL_LIG.abs); }   /* cada grandeza na sua unidade; NaN/∞ conta como passou */
+      var o = [];
+      if (passa(a.M, g.M)) o.push("M " + br(g.M, 2) + " → " + br(a.M, 2) + " kN·m");
+      if (passa(a.V, g.V)) o.push("V " + br(g.V, 2) + " → " + br(a.V, 2) + " kN");
+      if (passa(a.N, g.N)) o.push("N " + br(g.N, 2) + " → " + br(a.N, 2) + " kN");
+      if (o.length) ligDesat.push({ lig: String(ligId), tipologia: L1.tipologia || null, peca: m.peca, membro: m.id, lado: lado, gravado: g, atual: a, texto: nomeL + " (" + onde + " de " + m.id + ", " + m.secao.nome + "): " + o.join("; ") });
+    }
+    if (OPC.ligDesatualizada) {
+      var LG = (G.lido && G.lido.ligacoes) || {};
+      Object.keys(G.condPontas || {}).forEach(function (k) {
+        var c = G.condPontas[k]; if (!c || !c.lig) return;
+        var i0 = k.lastIndexOf(":"), pid = k.slice(0, i0), lado = k.slice(i0 + 1), L1 = LG[String(c.lig)];
+        var m = G.membros.filter(function (x) { return String(x.peca) === pid; })[0]; if (!m) return;
+        if (m.papelLivre === "pilar") {
+          /* ponta de pilar: só a viga CONTÍNUA sobre ele (a viga passa no nó) é conferida pelo pilar; viga × pilar, pela viga */
+          var noP = lado === "ini" ? m.nos[0] : m.nos[m.nos.length - 1], IP = G.noInfo && G.noInfo[noP];
+          var passaViga = IP && arr(IP.passa).some(function (ip) { var pc = G.pecas[ip]; return pc && pc.papel !== "pilar"; });
+          if (passaViga) confereLig(c.lig, L1, m, lado, "topo do pilar, viga contínua sobre ele");
+          return;
+        }
+        confereLig(c.lig, L1, m, lado, "ponta " + lado);
+      });
+      /* placa de base desenhada: o pé do pilar */
+      Object.keys(LG).forEach(function (lid) {
+        var L1 = LG[lid]; if (!L1 || L1.tipo !== "base") return;
+        arr(L1.membros).forEach(function (pid) {
+          var m = G.membros.filter(function (x) { return String(x.peca) === String(pid) && x.papelLivre === "pilar"; })[0]; if (!m) return;
+          confereLig(lid, L1, m, m.a[1] <= m.b[1] ? "ini" : "fim", "placa de base, pé do pilar");
+        });
+      });
+    }
+    if (ligDesat.length) {
+      avisos.push("LIGAÇÃO DESATUALIZADA — " + ligDesat.length + " ligação(ões) dimensionada(s) com esforço MENOR que o desta análise (redimensione com este cálculo): " + ligDesat.map(function (q) { return q.texto; }).join(" · "));
+      G.decisoes.push({ tema: "Ligações × análise de agora", decisao: ligDesat.length + " ligação(ões) DESATUALIZADA(S) ou sem esforço gravado — A CONFIRMAR: " + ligDesat.map(function (q) { return q.texto; }).join("; "),
+        motivo: "os esforços gravados na ligação (com que ela foi dimensionada) são menores que os da análise de agora na mesma ponta (ELU, pior combinação; tolerância 2 % + 0,05 em cada grandeza; sem esforço gravado, redimensionar para conferir) — NBR 8800:2024 6.1 (as ligações resistem aos esforços de cálculo) e EN 1993-1-8:2005 5.1.2(4)/6.3.1 (a rigidez Sj só vale até Mj,Rd)" });
     }
     /* sugestão para quem não passa: o próximo da família que deve passar */
     Object.keys(resultadosM).forEach(function (id) {
@@ -373,7 +533,7 @@
       deslocabilidade: { razao: razaoDesl, classe: classe }, estabilidadeGlobal: estabGlobal, escadaTrava: escTrava, membros: resultadosM, grupos: grupos, contravento: null, servico: servico, reacoes: reacoes,
       peso: peso, pesoGrupos: pesoG, pesoTotal: peso, taxa: areaT > 0 ? peso / areaT : null, areaCarregada: areaT, cargasResumo: CG.resumo,
       vento: CG.resumo.vento ? CG.resumo.vento.resultado : null, ventoCasos: CG.resumo.vento ? CG.resumo.vento.casos : null,
-      decisoes: G.decisoes, avisos: avisos, flambagem: flamb, naoAbrangidos: NAO_ABRANGIDOS.slice()
+      decisoes: G.decisoes, avisos: avisos, flambagem: flamb, naoAbrangidos: NAO_ABRANGIDOS.slice(), ligacoesDesatualizadas: ligDesat, problemasLocais: probsLocais, correntesVentoLocal: nCorr
     };
   }
 
@@ -611,6 +771,14 @@
       if (r.ok) { var tC = "NÃO VERIFICADO — " + nvC.tema + ": " + nvC.motivo; r.avisos = arr(r.avisos); if (r.avisos.indexOf(tC) < 0) r.avisos.unshift(tC); if (r.naoAbrangidos && r.naoAbrangidos.indexOf(tC) < 0) r.naoAbrangidos.unshift(tC); }
       r.situacao = Env().situacao(r, r.naoVerificados);
     }
+    /* #49 d) ligação dimensionada com esforço menor que o desta análise: NÃO VERIFICADO → INCOMPLETO (nunca aprovado) */
+    var ldz = arr(r.ligacoesDesatualizadas);
+    if (ldz.length && Env()) {
+      var nvL = { tema: "Ligações desatualizadas (esforço gravado menor que o desta análise)", motivo: ldz.length + " ligação(ões) — redimensionar com este cálculo: " + ldz.map(function (q) { return q.texto; }).join("; ") };
+      r.naoVerificados = arr(r.naoVerificados).slice();
+      if (!r.naoVerificados.some(function (q) { return q.tema === nvL.tema; })) r.naoVerificados.push(nvL);
+      r.situacao = Env().situacao(r, r.naoVerificados);
+    }
     if (arr(lido.tipologias).length) r.tipologias = lido.tipologias.slice();
     if (r.ok) {
       /* REVISÃO S5 M2 (14/10/2026): o aço adotado para as peças da aba Estrutura (que não guarda a classe) é PREMISSA */
@@ -654,7 +822,7 @@
     return { lote: { op: "lote", id: String(typeof novoId === "function" ? novoId() : "lote-" + Date.now()), origem: "metal-calc-livre", ops: ops }, n: ops.length, erros: erros };
   }
 
-  var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
+  var AcoDimLivre = { OPC: OPC, _testes: { verificarLocalCpeMedio: verificarLocalCpeMedio, verificarMembro: verificarMembro, servicoLocal: servicoLocal, cargaEixos: cargaEixos }, aplicarEsbeltez: aplicarEsbeltez, esbeltezMembro: esbeltezMembro, calcular: calcular, opsAplicar: opsAplicar, LIMITES: LIMITES, NAO_ABRANGIDOS: NAO_ABRANGIDOS, familia: familia, verificarMembro: verificarMembro, REF_C1: REF_C1 };
   global.AcoDimLivre = AcoDimLivre;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoDimLivre;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

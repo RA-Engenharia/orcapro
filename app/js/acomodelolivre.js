@@ -326,6 +326,16 @@
     return sInf != null ? sInf : p.L / 2;
   }
   var avisosPontual = [];
+  /* #49 c) chave do travamento por conectividade — false só no controle negativo dos testes */
+  var OPC_TRAV = { pendular: true };
+  /* #49 e) chave das linhas de corrente no eixo fraco da verificação local — false só no controle negativo dos testes */
+  var OPC_COR = { correntes: true, sentido: true };
+  /* teste de mecanismo: tirante sem par fora e o fator do deslocamento (OPC_EST.semPar = false / fator = 100 só nos controles) */
+  /* fator 100 × a diagonal (o de antes): 0,1 × (pedido do revisor) marcou como mecanismo estruturas que fecham (o pilar livre de
+     8 m do test-metal-lig-auto [14], a mão-francesa do test-metal-mecanismo-resolver, as simulações do mezanino/pórtico); o
+     treliçado sem contraventamento volta a ser mecanismo só por tirar o tirante sem par (u ≈ 3,7·10⁹ contra 1 670) */
+  var OPC_EST = { semPar: true, fator: 100 };
+  function dot3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
   function montar(lido, op) {
     op = op || {};
     var Mt = Mat(), E = Mt ? Mt.CONST.E * 1000 : 2e8, G = Mt ? Mt.CONST.G * 1000 : 7.7e7;
@@ -696,12 +706,44 @@
     /* a peça x está ANCORADA além do nó `noExcl`? — busca pelas peças ligadas (sem passar por noExcl nem pela peça `ipExcl`)
        até um nó com APOIO. Guardada por chave (modelos grandes) */
     var _anc = {};
+    /* #49 c) (16/10/2026, revisor da 1.2.148) — TRAVAMENTO POR CONECTIVIDADE: chegar a um apoio não basta, a cadeia tem de
+       chegar por peça que SEGURA o deslocamento. O PILAR PENDULAR (base rotulada, topo rotulado: todas as peças que chegam no
+       topo rotuladas nele, ou o próprio topo rotulado; sem nó no meio) não leva força lateral do topo à base — a viga que vai
+       do pilar ao topo de um pendular solto não trava nada (antes: "ancorada" pela base do pendular → K = 1 num pilar que é
+       balanço). A cadeia continua pelas OUTRAS peças do topo do pendular (o X que chega nele, a viga ligada a pilar com base
+       engastada): é a cadeia até a peça que trava. OPC_TRAV.pendular = false só no controle negativo dos testes. */
+    var _pend = {};
+    function condSemContar(ip0, lado0, no0) {
+      var sc = JSON.stringify(contagem), sd = JSON.stringify(contDir), sa = angObl, t0;
+      try { t0 = condicao(ip0, lado0, no0).tipo; } finally {
+        var c1 = JSON.parse(sc), d1 = JSON.parse(sd); Object.keys(c1).forEach(function (k) { contagem[k] = c1[k]; }); Object.keys(d1).forEach(function (k) { contDir[k] = d1[k]; }); angObl = sa; }
+      return t0;
+    }
+    function basePendular(y) {
+      if (_pend[y] !== undefined) return _pend[y];
+      var py = pecas[y], r = null;
+      if (OPC_TRAV.pendular && py.papel === "pilar" && arr(pontosPeca[y]).length === 2) {
+        var pI = pontosPeca[y].filter(function (q) { return q.ponta === "ini"; })[0], pF = pontosPeca[y].filter(function (q) { return q.ponta === "fim"; })[0];
+        var bse = null, top = null;
+        [[pI, pF], [pF, pI]].forEach(function (par) { if (!bse && par[0] && par[1] && apoiosNo[par[0].no] && apoiosNo[par[0].no].peca === py.id && apoiosNo[par[0].no].base) { bse = par[0]; top = par[1]; } });
+        if (bse && !/engast/.test(String(apoiosNo[bse.no].tipo)) && !apoiosNo[top.no]) {
+          var IT = noInfo[top.no], outrosT = IT ? IT.ends.filter(function (e) { return e.ip !== y; }) : [];
+          if (IT && !IT.passa.length) {
+            var proprio = condSemContar(y, top.ponta, top.no);
+            var todasRot = outrosT.length > 0 && outrosT.every(function (e) { return condSemContar(e.ip, e.lado, top.no) === "rotulada"; });
+            if (proprio === "rotulada" || todasRot) r = bse.no;
+          }
+        }
+      }
+      _pend[y] = r; return r;
+    }
     function ancorada(x, noExcl, ipExcl) {
       var ch = x + "|" + noExcl + "|" + ipExcl; if (_anc[ch] != null) return _anc[ch];
       var vistoP = {}, vistoN = {}, fila = [x], achou = false; vistoP[x] = 1; vistoP[ipExcl] = 1; vistoN[noExcl] = 1;
       while (fila.length && !achou) {
-        var m0 = fila.shift();
+        var m0 = fila.shift(), bP = basePendular(m0);
         arr(pontosPeca[m0]).forEach(function (pq) {
+          if (bP != null && pq.no === bP) return;   /* o pendular não leva a cadeia à base dele (outra peça pode levar) */
           if (achou || vistoN[pq.no]) return; vistoN[pq.no] = 1;
           if (apoiosNo[pq.no]) { achou = true; return; }
           var I2 = noInfo[pq.no]; if (!I2) return;
@@ -849,7 +891,7 @@
     }
     var nDiag = pecas.filter(function (p) { return p.papel === "diagonal"; }).length;
     if (nDiag) decisoes.push({ tema: "Diagonais", decisao: nDiag + " diagonal(is) articulada(s) nas pontas" + (pecas.some(function (p) { return p.tracao; }) ? "; as de barra redonda só trabalham à TRAÇÃO (saem do modelo quando comprimidas)" : ""), motivo: "barra de contraventamento ligada por gusset/olhal; barra redonda não resiste à compressão" });
-    if (semTrav.length) decisoes.push({ tema: "Travamento dos pilares", decisao: semTrav.length + " ponta(s) de pilar com peça chegando mas SEM travamento em algum eixo — nesse eixo o pilar é tratado em balanço (2 × o trecho): " + semTrav.slice(0, 12).join("; ") + (semTrav.length > 12 ? "…" : ""), motivo: "uma peça só trava o pilar se estiver apoiada além do nó (cadeia até um apoio: outro pilar com base, contraventamento) e só na direção dela — viga em balanço não trava; sem certeza, não travado (a favor da segurança; 1.2.148)" });
+    if (semTrav.length) decisoes.push({ tema: "Travamento dos pilares", decisao: semTrav.length + " ponta(s) de pilar com peça chegando mas SEM travamento em algum eixo — nesse eixo o pilar é tratado em balanço (2 × o trecho): " + semTrav.slice(0, 12).join("; ") + (semTrav.length > 12 ? "…" : ""), motivo: "uma peça só trava o pilar se estiver apoiada além do nó (cadeia até um apoio: outro pilar com base, contraventamento) e só na direção dela — viga em balanço não trava; o pilar PENDULAR (base rotulada e topo rotulado) não leva a cadeia à base dele: só trava pelo que mais chega no topo dele (#49, 16/10/2026); sem certeza, não travado (a favor da segurança; 1.2.148)" });
     decisoes.push({ tema: "Flambagem", decisao: "K = 1 entre os pontos travados de cada eixo (peça ANCORADA que chega na direção do eixo, ou apoio); ponta livre ou sem peça ancorada naquela direção = 2 × o trecho; FLT: a viga que chega trava a mesa de cima (pilar: as duas)", motivo: "análise de 2ª ordem com imperfeições (NBR 8800, 4.9.7): o comprimento de flambagem é o destravado; o engenheiro não configura" });
     var modelo = { nos: nos, barras: barras, apoios: apoios, casos: [] };
     var L = { livre: true };
@@ -903,14 +945,30 @@
     });
     if (pro.length || !A) return { ok: !pro.length, problemas: pro };
     /* mecanismo */
-    var teste = { nos: mod.nos, apoios: mod.apoios, barras: mod.barras.map(function (b) { var c = {}; Object.keys(b).forEach(function (k) { c[k] = b[k]; }); delete c.tracao; if (b.tracao) c.libera = { i: { ry: true, rz: true }, j: { ry: true, rz: true } }; return c; }),
+    /* REVISOR (16/10, médio): o tirante SÓ DE TRAÇÃO SEM PAR do sistema de correntes (sem o X que o cruza: corrente, diagonal de ancoragem) não
+       entra no teste de mecanismo — ele não segura o movimento nos dois sentidos, e com ele a estrutura sem contraventamento
+       passava como "estável" pela flexão das terças. Par = outra barra só de tração que o CRUZA no meio (o X). */
+    var semPar = {};
+    (function () {
+      var tr = arr(G.pecas).filter(function (pc) { return pc && pc.tracao; });
+      tr.forEach(function (pc) {
+        var par = tr.some(function (q) { if (q === pc) return false; var ss = segSeg(pc, q); return !!ss && ss.d < 0.05 + 0.5 * Math.max(pc.h || 0, q.h || 0) && ss.s > 0.05 * pc.L && ss.s < 0.95 * pc.L && ss.t > 0.05 * q.L && ss.t < 0.95 * q.L; });
+        /* só o sistema de CORRENTES (a barra sem par ligada a uma TERÇA: corrente, diagonal de ancoragem) — a diagonal sozinha de
+           contraventamento fica no teste e segue o caminho do resolvedor (completar o X / trocar as diagonais) */
+        var mm = G.membros.filter(function (q) { return q.peca === pc.id; })[0], naTerca = !!mm && arr(mm.nos).some(function (n0) { var I0 = G.noInfo[n0]; return !!I0 && I0.ends.map(function (e) { return e.ip; }).concat(arr(I0.passa)).some(function (ip) { return G.pecas[ip] && G.pecas[ip].papel === "terca"; }); });
+        if (!par && naTerca) semPar[pc.id] = 1;
+      });
+    })();
+    var barrasT = OPC_EST.semPar ? mod.barras.filter(function (b) { return !(b.tracao && semPar[b.peca]); }) : mod.barras;
+    var teste = { nos: mod.nos, apoios: mod.apoios, barras: barrasT.map(function (b) { var c = {}; Object.keys(b).forEach(function (k) { c[k] = b[k]; }); delete c.tracao; if (b.tracao) c.libera = { i: { ry: true, rz: true }, j: { ry: true, rz: true } }; return c; }),
                   casos: [{ id: "T", cargas: mod.nos.map(function (n0) { return { tipo: "no", no: n0.id, F: [1, 1, 1, 0, 0, 0] }; }) }] };
     var r = A.analisar(teste, { combinacoes: [{ id: "T", fatores: { T: 1 } }], estacoes: 2 });
     var diag = len(sub(G.layout.mx, G.layout.mn)) || 1, onde = null, umax = 0;
     if (r.ok && r.combinacoes.T && r.combinacoes.T.ok) {
       Object.keys(r.combinacoes.T.desloc).forEach(function (id) { var u = r.combinacoes.T.desloc[id], h = Math.sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); if (h > umax) { umax = h; onde = id; } });
     }
-    var mec = !r.ok || umax > 100 * diag;
+    /* mecanismo: u > OPC_EST.fator × a diagonal do modelo sob 1 kN em cada nó (ver OPC_EST) */
+    var mec = !r.ok || umax > OPC_EST.fator * diag;
     if (mec) {
       var noM = onde || (/nó ([^,]+),/.exec(String(r.motivo || "")) || [])[1] || null, real = noM ? String(noM).split("#")[0] : null;
       var ms = real ? G.membros.filter(function (m) { return m.nos.indexOf(real) >= 0 || m.segs.some(function (s) { return String(noM).indexOf(s + "#") === 0; }); }) : [];
@@ -1143,7 +1201,7 @@
     function pParede(c, face, s) { var P = c.pressao.paredes && c.pressao.paredes[face]; if (!P) return 0; for (var j = 0; j < P.length; j++) if (noIntervalo(s, P[j].s0, P[j].s1)) return num(P[j].p, 0); return 0; }
     function pCob(c, x, z) { var Lc = c.pressao.cobertura || []; for (var k = 0; k < Lc.length; k++) { var zz = Lc[k]; if (noIntervalo(x, zz.x0, zz.x1) && noIntervalo(z, zz.z0, zz.z1)) return (zz.p0 != null && zz.p1 != null && zz.x1 > zz.x0) ? zz.p0 + (zz.p1 - zz.p0) * (x - zz.x0) / (zz.x1 - zz.x0) : num(zz.p, 0); } return 0; }
     return { ok: true, resultado: R, casos: casos, x0: x0, z0: z0, b: b, a: a, h: h, pParede: pParede, pCob: pCob, faces: faces, cobertura: duasV ? "duas-aguas" : "uma-agua",
-             tg: duasV ? Math.tan(inc * Math.PI / 180) : 0, yBase: cfg.yBase != null && isFinite(+cfg.yBase) ? +cfg.yBase : null, avisos: arr(R.avisos).map(function (x) { return "Vento: " + x; }) };
+             tg: duasV ? Math.tan(inc * Math.PI / 180) : 0, incGraus: inc, ladoAlto: duasV ? null : (cfg.ladoAlto === "esquerda" ? "esquerda" : "direita"), yBase: cfg.yBase != null && isFinite(+cfg.yBase) ? +cfg.yBase : null, avisos: arr(R.avisos).map(function (x) { return "Vento: " + x; }) };
   }
 
   /* terças/travessas (papel "terca") que tocam as faixas do cpe médio: cobertura (R.zonas.locais.cobertura, x e z da caixa)
@@ -1152,13 +1210,28 @@
   function tercasNaBorda(G, VL) {
     var lc = VL && VL.resultado && VL.resultado.zonas && VL.resultado.zonas.locais, out = [];
     if (!lc) return out;
+    var ipDeP = {}, nosPeca = {}; arr(G.pecas).forEach(function (pc, i) { ipDeP[pc.id] = i; }); G.membros.forEach(function (mm) { if (ipDeP[mm.peca] != null) nosPeca[ipDeP[mm.peca]] = arr(mm.nos); });
     /* 1.2.148 — cada terça/travessa nas faixas, com o PAPEL de cada fechamento que ela segura: travessa (parede), terça
        (cobertura) ou as DUAS (a terça do beiral, na linha da parede e no topo dela: soma as duas cargas, a favor da segurança).
        Por papel: a faixa de influência (metade da distância até a vizinha paralela; na parede, metade até a base, que apoia o
        fechamento; borda livre da cobertura e topo da parede: até a borda), o cpe médio da faixa (já com q da classe A e o cpi
        mais desfavorável) e o cpe da zona de cada caso escalado para a classe A (NBR 6123:2023, 6.1.3) — vale o PIOR. */
     var R = VL.resultado, qA = num(R.qLocal, 0), terc = G.membros.filter(function (m) { return m.papelLivre === "terca"; });
-    var yRef = VL.yBase != null ? VL.yBase : Math.min(0, G.layout.mn[1]), cosT = 1 / Math.sqrt(1 + VL.tg * VL.tg), yBeiral = yRef + VL.h;
+    /* #49 (16/10/2026) — a inclinação REAL da água: na de uma água VL.tg é 0 (o motor de vento usa a Tabela 6 sem ela), mas a
+       faixa ao longo da água e a NORMAL da cobertura dependem dela (antes a de uma água via a telha horizontal) */
+    var tgR = VL.cobertura === "duas-aguas" ? num(VL.tg, 0) : Math.tan(num(VL.incGraus, 0) * Math.PI / 180);
+    var yRef = VL.yBase != null ? VL.yBase : Math.min(0, G.layout.mn[1]), cosT = 1 / Math.sqrt(1 + tgR * tgR), sinT = tgR * cosT, yBeiral = yRef + VL.h;
+    /* #49 b) DIREÇÃO de cada papel, para a verificação local decompor a carga nos eixos da peça (antes tudo ia para o eixo
+       forte — a parede, horizontal, na terça do beiral de alma normal à água é quase toda EIXO FRACO): sucção = para FORA.
+       Parede: a normal externa da face. Cobertura: a normal externa da água (a cumeeira no meio do vão, NBR 6123:2023 Tabela 5;
+       uma água subindo para o lado alto, Tabela 6). */
+    function dirParede(face) { return face === "esquerda" ? [-1, 0, 0] : face === "direita" ? [1, 0, 0] : face === "frente" ? [0, 0, -1] : [0, 0, 1]; }
+    function dirCob(m) {
+      var xm = (m.a[0] + m.b[0]) / 2 - VL.x0, sx;
+      if (VL.cobertura === "duas-aguas") sx = xm <= VL.b / 2 ? -1 : 1;
+      else sx = VL.ladoAlto === "esquerda" ? 1 : -1;
+      return [sx * sinT, cosT, 0];
+    }
     function sob(a0, a1, b0, b1) { return Math.min(Math.max(a0, a1), b1) - Math.max(Math.min(a0, a1), b0) > 1e-6; }
     function eixoX(m) { return Math.abs(m.b[0] - m.a[0]) >= Math.abs(m.b[2] - m.a[2]); }
     function naFaceDe(m) { var o = null; [["esquerda", 0, VL.x0], ["direita", 0, VL.x0 + VL.b], ["frente", 2, VL.z0], ["fundo", 2, VL.z0 + VL.a]].forEach(function (f) { if (!o && VL.faces[f[0]] && VL.faces[f[0]].fechada && Math.abs(m.a[f[1]] - f[2]) < 0.3 && Math.abs(m.b[f[1]] - f[2]) < 0.3) o = f[0]; }); return o; }
@@ -1204,7 +1277,7 @@
       if (face) {
         var sa = sFace(face) === 2 ? za : xa, sb = sFace(face) === 2 ? zb : xb, pw = null;
         arr((lc.paredes || {})[face]).forEach(function (f) { if (isFinite(f.p) && sob(sa, sb, f.s0, f.s1) && (!pw || f.p < pw.p)) pw = { zona: "faixa de borda da parede " + face, cpe: f.cpe, p: f.p }; });
-        if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p });
+        if (pw) papeis.push({ tipo: "parede", face: face, zona: pw.zona, cpe: pw.cpe, p: pw.p, dir: dirParede(face) });
       }
       if ((!face || noBeiral(m)) && !cobertoPorOutro(m)) {
         var pr = null, xx0 = Math.min(xa, xb), xx1 = Math.max(xa, xb), zz0 = Math.min(za, zb), zz1 = Math.max(za, zb);
@@ -1212,7 +1285,7 @@
           var toca = (xx1 - xx0 < 1e-6 ? xx0 >= r.x0 - 1e-6 && xx0 <= r.x1 + 1e-6 : sob(xx0, xx1, r.x0, r.x1)) && (zz1 - zz0 < 1e-6 ? zz0 >= r.z0 - 1e-6 && zz0 <= r.z1 + 1e-6 : sob(zz0, zz1, r.z0, r.z1));
           if (isFinite(r.p) && toca && (!pr || r.p < pr.p)) pr = { zona: "cobertura, " + r.zona, cpe: r.cpe, p: r.p };
         });
-        if (pr) papeis.push({ tipo: "cobertura", face: null, zona: pr.zona, cpe: pr.cpe, p: pr.p });
+        if (pr) papeis.push({ tipo: "cobertura", face: null, zona: pr.zona, cpe: pr.cpe, p: pr.p, dir: dirCob(m) });
       }
       if (!papeis.length) return;
       var wL = 0;
@@ -1224,10 +1297,90 @@
         if (k === 0 || k === nosM.length - 1) return true; var I = G.noInfo[id]; if (!I) return false;
         return arr(I.ends).map(function (e) { return e.ip; }).concat(arr(I.passa)).some(function (ip) { if (ip === ipT || !G.pecas[ip]) return false; var pp = G.pecas[ip].papel; return pp === "viga" || pp === "pilar"; });
       });
+      /* #49 e) (16/10/2026, decisão da gerência) — EIXO FRACO travado pelas LINHAS DE CORRENTE do modelo: barra redonda/tirante
+         ligada à terça (no meio da alma, transversal a ela). Só conta a linha ANCORADA até um ponto rígido — seguindo só pelas
+         barras redondas a partir da terça, chegar a um nó com viga/pilar (o pórtico: a corrente diagonal da cumeeira) ou
+         contraventamento de perfil, ou a um apoio. Linha que só vai de terça a terça (até a cumeeira sem diagonal) não trava:
+         a força dela não tem para onde ir. Vão do eixo fraco = o maior trecho entre apoios e correntes ancoradas. */
+      function noEh(ip0) { var pc = G.pecas[ip0]; return pc && (pc.tracao || (pc.sec && pc.sec.forma === "circ")) && pc.papel !== "pilar"; }
+      function pecasNo(no0) { var I0 = G.noInfo[no0]; return I0 ? I0.ends.map(function (e) { return e.ip; }).concat(arr(I0.passa)) : []; }
+      /* a LINHA: as barras redondas transversais à terça (de terça a terça, ao longo da água) a partir do nó; a ANCORAGEM: um nó
+         da linha num ponto rígido (viga/pilar — o pórtico —, contraventamento de perfil, apoio) ou uma barra redonda vizinha à
+         linha (a corrente diagonal da cumeeira) que chega a um ponto rígido. Nada além de um salto: o X do telhado não ancora a
+         linha por tabela. */
+      /* REVISOR (16/10, ALTO — contra a segurança): (1) RÍGIDO é só apoio, pilar, contraventamento de perfil ou a viga que encosta
+         num pilar (a do pórtico) — a terça desenhada como "viga" entre vigas não é ponto rígido; (2) a LINHA para na cumeeira:
+         segue só pelas barras colineares (a da outra água tem outra direção) — cada água precisa da PRÓPRIA ancoragem; (3) a
+         corrente é só de TRAÇÃO: ela tem de puxar a terça CONTRA a carga do eixo fraco (sentido r = −sinal(F·ez)·ez); a ancoragem
+         conta só no sentido r e a diagonal só se estiver TRACIONADA nesse sentido (u·r > 0,2) — comprimida, a barra redonda sai
+         do modelo e não segura nada. OPC_COR.sentido = false só no controle negativo dos testes. */
+      function vigaDoPortico(ip0) { return (nosPeca[ip0] || []).some(function (n2) { return pecasNo(n2).some(function (ip2) { return ip2 !== ip0 && G.pecas[ip2] && G.pecas[ip2].papel === "pilar"; }); }); }
+      function rigido(nq) {
+        if (G.apoiosNo && G.apoiosNo[nq]) return "apoio";
+        var o = null; pecasNo(nq).forEach(function (ip0) { var pc = G.pecas[ip0]; if (o || !pc || noEh(ip0)) return;
+          if (pc.papel === "pilar") o = "o pilar (" + pc.mid + ")";
+          else if (pc.papel === "diagonal") o = "o contraventamento (" + pc.mid + ")";
+          else if (pc.papel === "viga" && vigaDoPortico(ip0)) o = "o pórtico (" + pc.mid + ")"; });
+        return o;
+      }
+      function posNo(n2) { return G.noInfo[n2] ? G.noInfo[n2].P : null; }
+      function linhaCorrente(no0, r) {
+        var visto = {}, fila = [no0], linha = [], linhaTr = [], nosL = [], anc = false, onde = null, diag = [], Xl = null, P0 = posNo(no0), sent = OPC_COR.sentido !== false;
+        function lado(P) { return !r || !P ? 1 : dot3([P[0] - P0[0], P[1] - P0[1], P[2] - P0[2]], r); }
+        visto[no0] = 1;
+        while (fila.length) {
+          var nq = fila.shift(); nosL.push(nq);
+          pecasNo(nq).forEach(function (ip0) {
+            var pc = G.pecas[ip0]; if (!noEh(ip0) || ip0 === ipT || Math.abs(dot3(pc.X, m.X)) >= 0.5) return;
+            if (Xl && sent && Math.abs(dot3(pc.X, Xl)) < 0.95) return;   /* outra direção: a linha da outra água (passou da cumeeira) */
+            if (linha.indexOf(pc.mid) < 0) {
+              linha.push(pc.mid); if (!Xl) Xl = pc.X;
+              var ns = nosPeca[ip0] || [], Pa = posNo(ns[0]), Pb = posNo(ns[ns.length - 1]);
+              if (!sent || !r || (Pa && Pb && lado([(Pa[0] + Pb[0]) / 2, (Pa[1] + Pb[1]) / 2, (Pa[2] + Pb[2]) / 2]) > 1e-6)) linhaTr.push(pc.mid);   /* só o trecho do lado da ancoragem leva a reação */
+            }
+            (nosPeca[ip0] || []).forEach(function (n2) { if (!visto[n2]) { visto[n2] = 1; fila.push(n2); } });
+          });
+        }
+        nosL.forEach(function (nq) {
+          var Pq = posNo(nq); if (sent && r && lado(Pq) < -1e-6) return;   /* atrás da terça: não segura no sentido da puxada */
+          if (nq !== no0) { var r0 = rigido(nq); if (r0) { anc = true; onde = onde || r0; } }
+          var aqui = [];
+          pecasNo(nq).forEach(function (ip0) {
+            var pc = G.pecas[ip0]; if (!noEh(ip0) || ip0 === ipT || linha.indexOf(pc.mid) >= 0) return;
+            var outro = (nosPeca[ip0] || []).filter(function (n2) { return n2 !== nq; }), r1 = null, n1 = null;
+            outro.forEach(function (n2) { if (!r1) { r1 = rigido(n2); n1 = n2; } });
+            if (!r1) return;
+            var P1 = posNo(n1), du = P1 && Pq ? [P1[0] - Pq[0], P1[1] - Pq[1], P1[2] - Pq[2]] : null, nu = du ? Math.sqrt(dot3(du, du)) : 0, u = nu > 0 ? [du[0] / nu, du[1] / nu, du[2] / nu] : null;
+            var cosR = u && r ? dot3(u, r) : (u && Xl ? Math.abs(dot3(u, Xl)) : 1);
+            if (sent && r && !(cosR > 0.2)) return;   /* comprimida no sentido da puxada: não trabalha */
+            aqui.push({ mid: pc.mid, cos: Math.abs(cosR), onde: r1 });
+          });
+          aqui.forEach(function (d) { anc = true; onde = onde || ("a corrente diagonal " + d.mid + " (tracionada) até " + d.onde); diag.push({ mid: d.mid, cos: d.cos, n: aqui.length }); });
+        });
+        return { ancorada: anc, onde: onde, barras: linha, barrasTr: linhaTr, diagonais: diag };
+      }
+      /* o sentido da reação do eixo fraco: a carga dos papéis (sucção para fora) na direção ez da peça; a corrente puxa contra ela */
+      var Fv = [0, 0, 0]; papeis.forEach(function (q) { var d = q.dir, w0 = Math.abs(num(q.pUso, 0)) * num(q.s, 0); if (d && d.length === 3) { Fv[0] += w0 * d[0]; Fv[1] += w0 * d[1]; Fv[2] += w0 * d[2]; } });
+      var eyM = m.ey || [0, 1, 0], ezM = [m.X[1] * eyM[2] - m.X[2] * eyM[1], m.X[2] * eyM[0] - m.X[0] * eyM[2], m.X[0] * eyM[1] - m.X[1] * eyM[0]], Fz = dot3(Fv, ezM);
+      var rPux = Math.abs(Fz) > 1e-9 ? [-Math.sign(Fz) * ezM[0], -Math.sign(Fz) * ezM[1], -Math.sign(Fz) * ezM[2]] : null;
+      var corr = [];
+      nosM.forEach(function (id, k) {
+        if (k === 0 || k === nosM.length - 1) return;
+        var liga = pecasNo(id).some(function (ip0) { var pc = G.pecas[ip0]; return ip0 !== ipT && noEh(ip0) && pc && Math.abs(dot3(pc.X, m.X)) < 0.5; });
+        if (!liga) return;
+        var P = G.noInfo[id].P, sP = dot3([P[0] - m.a[0], P[1] - m.a[1], P[2] - m.a[2]], m.X), ln = linhaCorrente(id, rPux);
+        corr.push({ no: id, s: sP, ancorada: ln.ancorada, onde: ln.onde, barras: ln.barras, barrasTr: ln.barrasTr, diagonais: ln.diagonais });
+      });
+      var ptsZ = apo.map(function (id) { var P = G.noInfo[id].P; return dot3([P[0] - m.a[0], P[1] - m.a[1], P[2] - m.a[2]], m.X); });
+      corr.forEach(function (c) { if (c.ancorada) ptsZ.push(c.s); });
+      ptsZ.sort(function (a, b) { return a - b; });
+      var Lz = 0; for (var kz = 1; kz < ptsZ.length; kz++) Lz = Math.max(Lz, ptsZ[kz] - ptsZ[kz - 1]);
+      var nAnc = corr.filter(function (c) { return c.ancorada; }).length;
       var Ls = 0; for (var k2 = 1; k2 < apo.length; k2++) { var P0 = G.noInfo[apo[k2 - 1]].P, P1 = G.noInfo[apo[k2]].P; Ls = Math.max(Ls, Math.sqrt(Math.pow(P1[0] - P0[0], 2) + Math.pow(P1[1] - P0[1], 2) + Math.pow(P1[2] - P0[2], 2))); }
       out.push({ peca: String(m.peca), mid: m.id, zona: papeis.map(function (q) { return q.zona; }).join(" + "), cpe: pior.cpe, p: pior.p, papeis: papeis,
                  wLinha: wL, pUso: Math.min.apply(null, papeis.map(function (q) { return q.pUso; })), s: papeis.reduce(function (a, q) { return a + q.s; }, 0),
-                 governa: papeis.map(function (q) { return q.governa; }).join(" + "), Ls: Ls > 0 ? Ls : m.L, continua: apo.length > 2 });
+                 governa: papeis.map(function (q) { return q.governa; }).join(" + "), Ls: Ls > 0 ? Ls : m.L, continua: apo.length > 2,
+                 Lz: OPC_COR.correntes && nAnc && Lz > 0 ? Math.min(Lz, Ls > 0 ? Ls : m.L) : (Ls > 0 ? Ls : m.L), correntes: corr, correntesAncoradas: OPC_COR.correntes ? nAnc : 0 });
     });
     var vistos = {}; return out.filter(function (q) { if (vistos[q.peca]) return false; vistos[q.peca] = true; return true; });
   }
@@ -1429,7 +1582,7 @@
     return { casos: casos, resumo: resumo };
   }
 
-  var AcoModeloLivre = { escadas: escadas, USOS: USOS, PERMANENTES: PERMANENTES, CAT_G: CAT_G, usoDe: usoDe, usoCarga: usoCarga, ler: ler, montar: montar, estabilidade: estabilidade, cargas: cargas,
+  var AcoModeloLivre = { OPC_TRAV: OPC_TRAV, OPC_COR: OPC_COR, OPC_EST: OPC_EST, escadas: escadas, USOS: USOS, PERMANENTES: PERMANENTES, CAT_G: CAT_G, usoDe: usoDe, usoCarga: usoCarga, ler: ler, montar: montar, estabilidade: estabilidade, cargas: cargas,
                          distribuirArea: distribuirArea, areasPorNivel: areasPorNivel, areaDasVigas: areaDasVigas, areaPoligono: areaPoligono, ventoLivre: ventoLivre, horizontal: horizontal,
                          TOL: TOL, _int: { segSeg: segSeg, projSeg: projSeg, casco: casco, cortesReta: cortesReta, papelDe: papelDe, tipoLig: tipoLig } };
   global.AcoModeloLivre = AcoModeloLivre;

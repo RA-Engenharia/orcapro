@@ -243,9 +243,12 @@
     var p = { soldada: 0, mista: 1, parafusada: 2 };
     return L0.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) { return ((a.x.passa ? 0 : 10) + (p[a.x.meio] != null ? p[a.x.meio] : 3)) - ((b.x.passa ? 0 : 10) + (p[b.x.meio] != null ? p[b.x.meio] : 3)) || a.i - b.i; }).map(function (z) { return z.x; });
   }
+  /* #57 (2) (16/10/2026): sem o resultado do cálculo, o fck da tela "Bases dos pilares" (apoios.fckFundacao) vale — antes a
+     placa analisada aqui ficava sem fck (A CONFIRMAR) mesmo com ele informado; com resultado, vale o do cálculo */
+  function fckDaTelaCalc() { try { var U0 = global.MetalCalcLivreUI; var v = U0 && U0.fckFundacao ? U0.fckFundacao() : null; var n = v == null || v === "" ? null : Number(String(v).replace(",", ".")); return n != null && isFinite(n) && n > 0 ? n : null; } catch (e) { return null; } }
   function sugerirCom(pecas, o) {
     var S = Sug(); if (!S) return { ok: false, motivo: "o motor da ligação inteligente (js/acoligsugere.js) não carregou" };
-    var ctx = S.analisar(pecas, { resultado: o.resultado || null, preferir: o.preferir, fundacoes: o.fundacoes || [] });
+    var ctx = S.analisar(pecas, { resultado: o.resultado || null, preferir: o.preferir, fundacoes: o.fundacoes || [], fckFundacao: o.resultado ? null : (o.fckFundacao != null ? o.fckFundacao : fckDaTelaCalc()) });
     if (!ctx.ok) return { ok: false, motivo: ctx.motivo };
     if (o.quer && o.quer.indexOf(ctx.relacao) < 0) return { ok: false, motivo: "a sugestão leu o encontro como \"" + ctx.relacao + "\"" + (ctx.relacao === "viga-sobre-pilar" ? " (a viga apoia no topo do pilar: chapa de cabeça pela Ligação inteligente)" : ""), ctx: ctx };
     if (o.esforcos) { ctx.esforcos = o.esforcos; ctx.estimativa = true; ctx.origemEsforcos = o.origem || "pré-dimensionamento"; }

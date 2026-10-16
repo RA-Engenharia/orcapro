@@ -391,6 +391,9 @@
    * caixas = o estado de agora; pl = planoLinha/planoGrade; o = { cat, novoId(), nivel (a viga acompanha o nível da
    * ferramenta), resultado (o último cálculo — esforços da análise), fundacoes, materiais } → { ok, ops (UM lote), vigas,
    * ligacoes, emendas, pendentes, avisos, resumo } */
+  /* #57 (2) (16/10/2026): sem o resultado do cálculo, o fck da tela "Bases dos pilares" (apoios.fckFundacao) vale — antes a
+     placa analisada aqui ficava sem fck (A CONFIRMAR) mesmo com ele informado; com resultado, vale o do cálculo */
+  function fckDaTelaCalc() { try { var U0 = global.MetalCalcLivreUI; var v = U0 && U0.fckFundacao ? U0.fckFundacao() : null; var n = v == null || v === "" ? null : Number(String(v).replace(",", ".")); return n != null && isFinite(n) && n > 0 ? n : null; } catch (e) { return null; } }
   function executar(caixas, pl, o) {
     o = o || {};
     var M = MC(), S0 = Sug(), L0 = BL(), U = LSU(), Bm = BM();
@@ -424,7 +427,7 @@
       var cx = pecas.map(function (id) { return porId[String(id)]; });
       if (cx.some(function (x) { return !x; })) return { ok: false, motivo: "peça fora do modelo" };
       var pref = tipo === "viga-pilar" ? "flexivel" : undefined;
-      var ctx = S0.analisar(cx, { resultado: o.resultado || null, fundacoes: o.fundacoes || [], preferir: pref });
+      var ctx = S0.analisar(cx, { resultado: o.resultado || null, fundacoes: o.fundacoes || [], preferir: pref, fckFundacao: o.resultado ? null : (o.fckFundacao != null ? o.fckFundacao : fckDaTelaCalc()) });
       if (!ctx.ok) return { ok: false, motivo: ctx.motivo };
       if (quer && quer.indexOf(ctx.relacao) < 0) return { ok: false, motivo: "a sugestão leu o encontro como \"" + ctx.relacao + "\", não " + quer.join(" / ") };
       var opS = { execucao: "parafusada", preferir: pref, materiais: o.materiais || null }, CFo = global.AcoLigConfig, UIc = global.MetalLigSugUI, cfgO = o.configObra !== undefined ? o.configObra : (UIc && UIc.configuracaoSalva ? UIc.configuracaoSalva() : null);

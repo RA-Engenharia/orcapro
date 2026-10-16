@@ -144,13 +144,32 @@
               "larguraColuna", "painelColuna"];
   var PADROES = { howe: "Howe", pratt: "Pratt", warren: "Warren" };
   function padrao(t) { var T = TIPOS[t]; return T ? clone(T.PADRAO) : null; }
+  /* #49 e) a regra, MEDIDA no cálculo (vento local do cpe médio, terça de beiral Ue 200 × 75 × 25 × 3,00 do padrão, atirantado
+     10 × 12 com 6 m entre pórticos, v0 35 m/s): 1 linha ancorada (Lz 3 m) → razão 1,149, REPROVA; 2 linhas nos terços (Lz 2 m)
+     → 0,69, passa. O trecho do eixo fraco entre correntes ancoradas fica até LIMITE_LZ_CORRENTE = 2,0 m: n = ⌈esp/2⌉ − 1 (até
+     4 m 1 linha, até 6 m 2, acima 3). O cálculo confere sempre (tools/test-metal-porticos-calculo.js); se a terça reprovar, ele
+     diz e traz a solução. */
+  var LIMITE_LZ_CORRENTE = 2.0;
+  var BITOLAS_BR = ["BR 1/4\" (D 6,35 mm) Gerdau", "BR 3/8\" (D 9,53 mm) Gerdau", "BR 1/2\" (D 12,70 mm) Gerdau", "BR 5/8\" (D 15,88 mm) Gerdau", "BR 3/4\" (D 19,05 mm) Gerdau", "BR 1\" (D 25,40 mm) Gerdau"];
+  function areaBR(nome) { var m0 = /D ([0-9]+,[0-9]+) mm/.exec(String(nome)); var d = m0 ? Number(m0[1].replace(",", ".")) : 0; return Math.PI * d * d / 4; }
+  function barraAncoragem(linha, n, cosB) {
+    var Areq = areaBR(linha) / (Math.max(1, n) * Math.max(cosB, 0.2)), C = MC();
+    if (!(cosB > 0.2)) return linha;
+    for (var i = 0; i < BITOLAS_BR.length; i++) { var b = BITOLAS_BR[i]; if (areaBR(b) >= Areq - 1e-9 && areaBR(b) >= areaBR(linha) && (!C || !C.perfilCat || C.perfilCat(b))) return b; }
+    return BITOLAS_BR[BITOLAS_BR.length - 1];
+  }
+  function linhasCorrentesPara(esp) { return Math.max(1, Math.min(3, Math.ceil(esp / LIMITE_LZ_CORRENTE - 1e-9) - 1)); }
   function normalizar(t, par) {
     var T = TIPOS[t]; if (!T) return null;
     var p = clone(T.PADRAO);
     Object.keys(par || {}).forEach(function (k) { if (par[k] != null && par[k] !== "") p[k] = clone(par[k]); });
     NUMS.forEach(function (k) { if (k in T.PADRAO || k in (par || {})) p[k] = num(p[k], num(T.PADRAO[k], 0)); });
     p.nPorticos = Math.max(2, Math.round(num(p.nPorticos, 5)));
-    p.correntes = Math.max(0, Math.min(3, Math.round(num(p.correntes, 1))));
+    /* #49 e) (16/10/2026): sem escolha, as linhas de corrente por vão saem pela regra do cálculo (js/acodimlivre.js, vento local:
+       o eixo fraco da terça vai de corrente ANCORADA a corrente ANCORADA, Lz = espaçamento/(n+1)) — LIMITE_LZ_CORRENTE */
+    var corAuto = !par || par.correntes == null || par.correntes === "";
+    p.correntes = corAuto ? linhasCorrentesPara(num(p.espacamento, 6)) : Math.max(0, Math.min(3, Math.round(num(p.correntes, 1))));
+    p.correntesAuto = corAuto;
     p.base = p.base === "engastada" ? "engastada" : "rotulada";
     p.fechamento = p.fechamento === "aberto" ? "aberto" : "fechado";
     p.contraventamento = /^(X-barra|X-cantoneira|nenhum)$/.test(String(p.contraventamento)) ? p.contraventamento : "X-barra";
@@ -557,7 +576,7 @@
     /* CORRENTES de terça (barra redonda, só tração): em cada vão, `correntes` linhas ao longo da água, de terça a terça, do
        beiral (ou da calha) à cumeeira — travam a terça no eixo fraco e na flambagem lateral (a terça da cumeeira, comum às duas
        águas, ancora as duas cadeias); a barra passa no meio da alma da terça */
-    var pt0 = perfilCat(p.terca), dT = pt0 ? (pt0.bw || pt0.d || pt0.h || 0.15) : 0.15, nCorr = 0;
+    var pt0 = perfilCat(p.terca), dT = pt0 ? (pt0.bw || pt0.d || pt0.h || 0.15) : 0.15, nCorr = 0, nAncC = 0, catsAnc = [];
     if (p.correntes > 0) zs.forEach(function (z, k) {
       if (k + 1 >= nP) return;
       Q.aguas.forEach(function (aq) {
@@ -569,9 +588,35 @@
           barra({ a: a, b: b, ferr: "diagonal", cat: p.barraCorrente, just: "centro", papel: "Corrente de terça", grupo: "corrente", aco: acoDe(p, p.barraCorrente), nome: "Corrente — vão " + (k + 1), calc: {} });
           nCorr++;
         }
+        /* #49 e) ANCORAGEM da linha (como se executa): corrente DIAGONAL da terça logo abaixo da cumeeira (ou do lado alto da
+           água) até a terça da cumeeira NO PÓRTICO — leva a força da linha ao ponto rígido. Sem ela a linha só vai de terça a terça
+           e o cálculo não a conta (js/acomodelolivre.js tercasNaBorda: "corrente sem ancoragem não trava"). Linha da metade do vão
+           para cada pórtico; a do meio (n ímpar) para os dois. */
+        if (ls.length >= 2) {
+          var iTop = 0; ls.forEach(function (tl, i2) { if (tl.y > ls[iTop].y + 1e-9) iTop = i2; });
+          if (iTop === 0 || iTop === ls.length - 1) {
+            var jTop = Q.tel.indexOf(ls[iTop]), qS = iTop === 0 ? 0 : ls.length - 2;
+            for (var c2 = 1; c2 <= p.correntes; c2++) {
+              var nS = "cr" + k + ":" + aq.agua + ":" + qS + ":" + c2 + (iTop === 0 ? "'" : ""), alvo = [];
+              if (2 * c2 <= p.correntes + 1) alvo.push("t" + k + ":" + jTop);
+              if (2 * c2 >= p.correntes + 1) alvo.push("t" + (k + 1) + ":" + jTop + "'");
+              alvo.forEach(function (nT) {
+                if (!nos[nS] || !nos[nT]) return;
+                /* a diagonal leva a força da linha / (nº de diagonais no nó · cos β) (a mesma regra do cálculo) — bitola: a menor barra
+                   do catálogo com A ≥ A_linha/(n·cos β), para trabalhar como a linha (área pelo diâmetro do nome do perfil) */
+                var PS = nos[nS], PT = nos[nT], dl = [ls[iTop].x - ls[qS === 0 && iTop === 0 ? 1 : ls.length - 2].x, ls[iTop].y - ls[qS === 0 && iTop === 0 ? 1 : ls.length - 2].y, 0], dd = [PT[0] - PS[0], PT[1] - PS[1], PT[2] - PS[2]];
+                var nl = Math.sqrt(dl[0] * dl[0] + dl[1] * dl[1]) || 1, nd = Math.sqrt(dd[0] * dd[0] + dd[1] * dd[1] + dd[2] * dd[2]) || 1, cosB = Math.abs((dl[0] * dd[0] + dl[1] * dd[1]) / (nl * nd));
+                var catA = barraAncoragem(p.barraCorrente, alvo.length, cosB);
+                barra({ a: nS, b: nT, ferr: "diagonal", cat: catA, just: "centro", papel: "Corrente de terça", grupo: "corrente", aco: acoDe(p, catA), nome: "Corrente diagonal (ancoragem) — vão " + (k + 1), calc: {} });
+                if (catA !== p.barraCorrente && catsAnc.indexOf(catA) < 0) catsAnc.push(catA);
+                nAncC++;
+              });
+            }
+          }
+        }
       });
     });
-    if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água — travam as terças no eixo fraco.");
+    if (nCorr) dec.push("Correntes de terça: " + p.correntes + " linha(s) por vão de barra redonda " + p.barraCorrente + " (só tração), encadeadas do beiral à cumeeira em cada água e ANCORADAS por corrente diagonal até a terça da cumeeira no pórtico (" + nAncC + " diagonais) — travam as terças no eixo fraco" + (catsAnc.length ? " — diagonal de ancoragem " + catsAnc.join(", ") + " (A ≥ A da corrente/(n·cos β): leva a força da linha / cos β)" : "") + (p.correntesAuto ? "; " + p.correntes + " linha(s) pela regra do cálculo: o trecho do eixo fraco entre correntes ancoradas até " + String(LIMITE_LZ_CORRENTE).replace(".", ",") + " m (vão " + String(esp).replace(".", ",") + " m / " + (p.correntes + 1) + ")" : " (escolha do engenheiro)") + ".");
     /* escoras do banzo de baixo (treliças) */
     zs.forEach(function (z, k) { if (k + 1 >= nP) return; Q.esc.forEach(function (es, j) { barra({ a: k + ":" + es.pt, b: (k + 1) + ":" + es.pt, ferr: "viga", cat: p.escora, just: "centro", papel: es.coluna ? "Escora da coluna" : "Escora do banzo inferior", grupo: "escora", aco: acoDe(p, p.escora), nome: "Escora " + (j + 1) + " — vão " + (k + 1), calc: { papel: "terca", ini: "rotulada", fim: "rotulada", escora: true } }); }); });   /* escora: L/r ≤ 200 sempre (js/acodimlivre.js aplicarEsbeltez) */
     /* ponte rolante: vigas de rolamento biapoiadas em cada vão, nos consoles */
@@ -803,6 +848,23 @@
     var k = 0, g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }); if (!g.ok) return g;
     var ent = entradaLivre(t, p, g, op), DL = DLv(); if (!DL) return { ok: false, motivo: "O cálculo da estrutura desenhada (js/acodimlivre.js) não carregou." };
     var r2 = DL.calcular(ent, op.calc || {});
+    /* REVISOR (16/10, médio): a BITOLA da corrente pela FORÇA calculada — se a corrente reprova pela reação do eixo fraco do vento
+       local (r.correntesVentoLocal), a linha sobe para a menor BR do catálogo com A ≥ A·razão·1,05 (a diagonal de ancoragem segue
+       pela regra A ≥ A_linha/(n·cos β)) e o modelo é gerado e calculado de novo (até 3 vezes) — declarado nas decisões */
+    var trocasCor = [];
+    for (var it = 0; it < 3 && r2 && r2.ok && p.correntes > 0 && par.barraCorrente == null; it++) {
+      var cvl = r2.correntesVentoLocal || {}, rzMax = 0;
+      Object.keys(cvl).forEach(function (bm) { if (isFinite(cvl[bm].razao) && cvl[bm].razao > rzMax) rzMax = cvl[bm].razao; });
+      if (!(rzMax > 1)) break;
+      var Areq = areaBR(p.barraCorrente) * rzMax * 1.05, nova = null;
+      for (var ib = 0; ib < BITOLAS_BR.length && !nova; ib++) if (areaBR(BITOLAS_BR[ib]) >= Areq && areaBR(BITOLAS_BR[ib]) > areaBR(p.barraCorrente)) nova = BITOLAS_BR[ib];
+      if (!nova) break;
+      trocasCor.push(p.barraCorrente + " → " + nova + " (razão " + String(Math.round(rzMax * 1000) / 1000).replace(".", ",") + ")");
+      p.barraCorrente = nova; k = 0;
+      g = gerar(t, p, op.novoId || function () { return "pt" + (++k); }); if (!g.ok) return g;
+      ent = entradaLivre(t, p, g, op); r2 = DL.calcular(ent, op.calc || {});
+    }
+    if (trocasCor.length && r2 && r2.ok) r2.decisoes = arr(r2.decisoes).concat([{ tema: "Correntes — bitola pela força do cálculo", decisao: "corrente de terça " + trocasCor.join("; "), motivo: "a reação do eixo fraco das terças (vento local do cpe médio, NBR 6123:2023 6.1.2) acumulada na linha passou da resistência da barra redonda (NBR 8800 5.2 e 6.3.3.1): a menor bitola do catálogo com área ≥ a necessária; a diagonal de ancoragem pela regra A ≥ A da linha/(n·cos β)" }]);
     var sit = r2 && r2.situacao ? r2.situacao.id : (r2 && r2.ok ? (r2.aprovado ? "aprovado" : "reprovado") : "nao-calculou");
     return { ok: !!(r2 && r2.ok), motor: "livre", tipo: t, r: r2, entrada: ent, gerado: g, situacao: sit, naoVerificados: arr(r2 && r2.naoVerificados) };
   }

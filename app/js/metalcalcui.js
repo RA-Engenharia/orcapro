@@ -1257,6 +1257,8 @@
       '<b style="font-size:12.5px">Mãos-francesas</b> <button type="button" class="mc-i" data-dica="mao-francesa" aria-label="Mão-francesa">i</button><div style="margin-top:6px">' + seg("maofrancesa", e.maoFrancesa, MAOS.map(function (m) { return [m.id, m.nome]; })) + "</div></section>" +
       '<section class="mc-card"><h4>Fundação <button type="button" class="mc-i" data-dica="' + (e.geometria.base === "engastada" ? "placa-base-engastada" : "placa-base-rotulada") + '" aria-label="Placa de base">i</button></h4><p class="mc-exp">O concreto do bloco onde a placa de base apoia: entra na pressão sob a placa e na ancoragem dos chumbadores (as ligações saem calculadas).</p><div class="mc-campos">' +
       seletor("fundacao.fck", "Concreto do bloco (fck)", [["", "— informe —"], [20, "C20 — 20 MPa"], [25, "C25 — 25 MPa"], [30, "C30 — 30 MPa"], [35, "C35 — 35 MPa"], [40, "C40 — 40 MPa"]]) +
+      /* #57 (3) (16/10/2026): sem fck a placa de base fica A CONFIRMAR — a tela CHAMA para informar (antes só o seletor vazio) */
+      (num(e.fundacao && e.fundacao.fck, 0) > 0 ? "" : '<p class="mc-exp" data-mc="fck-chamada" style="color:#b45309;font-weight:600;margin:6px 0">Informe o fck para liberar a placa de base — sem ele a placa fica A CONFIRMAR (não sai aprovada).</p>') +
       campo("fundacao.A2_A1", "Relação de áreas A2/A1", "", { min: 1, max: 4, exp: "Bloco ÷ placa; 1 é o mais conservador" }) + "</div></section></aside></div>";
     return h;
   }

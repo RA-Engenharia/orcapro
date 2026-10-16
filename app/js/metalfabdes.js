@@ -66,6 +66,9 @@
     var s = txt(nome), m = /^(W|HP|C|S|M)(\d+)X(\d+(?:\.\d+)?)$/i.exec(s);
     if (m) return m[1].toUpperCase() + " " + m[2] + " x " + br(+m[3], 1);
     var l = /^L(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$/i.exec(s); if (l) return "L " + l[1] + " x " + l[2] + " x " + l[3].replace(".", ",");
+    /* barra redonda do catálogo ("BR 1/2\" (D 12,70 mm) Gerdau"): bitola + diâmetro, sem o fabricante — o nome inteiro não cabe na
+       coluna DESCRIÇÃO e encostava no AÇO (#49 e: as correntes do galpão passaram a ser do catálogo) */
+    var rb = /^BR ([0-9./]+)"? \(D ([0-9]+,[0-9]+) mm\)/i.exec(s); if (rb) return "BR " + rb[1] + "\" Ø" + rb[2];
     return s;
   }
 
