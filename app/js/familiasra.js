@@ -287,7 +287,13 @@
         tipoMadeira("t5x16", 5, 16, TATAJUBA), tipoMadeira("t5x20", 5, 20, TATAJUBA), tipoMadeira("t7x20", 7, 20, TATAJUBA),
         tipoMadeira("t8x16", 8, 16, TATAJUBA), tipoMadeira("t10x12", 10, 12, TATAJUBA), tipoMadeira("t10x16", 10, 16, TATAJUBA),
         tipoMadeira("t12x16", 12, 16, TATAJUBA), tipoMadeira("t12x30", 12, 30, TATAJUBA), tipoMadeira("t15x16", 15, 16, TATAJUBA),
-        tipoMadeira("t15x30", 15, 30, TATAJUBA), tipoMadeira("t16x16", 16, 16, TATAJUBA), tipoMadeira("t21x21", 21, 21, TATAJUBA)
+        tipoMadeira("t15x30", 15, 30, TATAJUBA), tipoMadeira("t16x16", 16, 16, TATAJUBA), tipoMadeira("t21x21", 21, 21, TATAJUBA),
+        /* seções do madeira_quiosque.json (revisão de 12/10/2026) que o catálogo não tinha: o catálogo CONTÉM as do
+           Quiosque (e pode ter mais: t10x12). test-bim-b6 [6] confere que toda seção do Quiosque existe aqui. */
+        tipoMadeira("t10x15", 10, 15, TATAJUBA), tipoMadeira("t10x20", 10, 20, TATAJUBA), tipoMadeira("t10x8", 10, 8, TATAJUBA),
+        tipoMadeira("t16x20", 16, 20, TATAJUBA), tipoMadeira("t20x16", 20, 16, TATAJUBA),
+        tipoMadeira("t10x15p", 10, 15, PINUS), tipoMadeira("t10x5p", 10, 5, PINUS), tipoMadeira("t5x9p", 5, 9, PINUS),
+        tipoMadeira("t5x11p", 5, 11, PINUS), tipoMadeira("t5x12p", 5, 12, PINUS)
       ],
       solidos: [{ id: "c", nome: "Peça", forma: "caixa", x: "Comprimento/2", y: "Cota_base", z: "0", dx: "Comprimento", dy: "Altura", dz: "Base", material: "Material" }],
       quantitativo: { unidade: "m3", quantidade: "Volume", codigo: "", fonte: "", descricao: "Peça de madeira serrada (viga, barrote ou caibro)" }

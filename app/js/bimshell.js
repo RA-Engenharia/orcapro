@@ -797,6 +797,14 @@
         tbody.appendChild(trh);
 
         (sec.params || []).forEach(function (p) {
+          /* DESENHO (BACKLOG #61): uma linha inteira com o html pronto de quem a pediu (o desenho cotado da seção,
+             js/perfildesenho.js, que escapa todo texto) — sem nome à esquerda, o desenho precisa da largura toda */
+          if (p.tipo === "desenho") {
+            if (!p.html) return;
+            var trd = el("tr"), tdd = el("td", "rv-p-desenho");
+            tdd.colSpan = 2; tdd.innerHTML = p.html; trd.appendChild(tdd); tbody.appendChild(trd);
+            return;
+          }
           var tr = el("tr");
           if (p.leitura) tr.className = "rv-p-off";
           var td1 = el("td", "rv-p-nome", p.rotulo + (p.unidade ? " (" + p.unidade + ")" : ""));

@@ -54898,7 +54898,8 @@ var d = q.linhaV ? Math.abs(q.p[0] - p[0]) : Math.sqrt(Math.pow(q.p[0] - p[0], 2
 arr(q.segs).forEach(function (s) { var r = noSeg(p, s[0], s[1]); if (r.d < d) { d = r.d; pp = r.q; } });
 if (d > tol) return;
 var cl = q.linhaV ? CLASSE.proximo : (CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5);
-if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl, pp: pp };
+var da = q.linhaV ? d : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2));
+if (!best || cl < best.cl || (cl === best.cl && (d < best.d - 0.002 || (d <= best.d + 0.002 && da < best.da - 1e-9 && !q.linhaV && !best.q.linhaV)))) best = { q: q, d: d, cl: cl, pp: pp, da: da };
 });
 if (!best) return null;
 var r = clone(best.q.ref); if (best.q.linhaV) r.y = r6(p[1]);
@@ -56315,7 +56316,11 @@ tipoMadeira("t5x10", 5, 10, PINUS), tipoMadeira("t5x15", 5, 15, PINUS),
 tipoMadeira("t5x16", 5, 16, TATAJUBA), tipoMadeira("t5x20", 5, 20, TATAJUBA), tipoMadeira("t7x20", 7, 20, TATAJUBA),
 tipoMadeira("t8x16", 8, 16, TATAJUBA), tipoMadeira("t10x12", 10, 12, TATAJUBA), tipoMadeira("t10x16", 10, 16, TATAJUBA),
 tipoMadeira("t12x16", 12, 16, TATAJUBA), tipoMadeira("t12x30", 12, 30, TATAJUBA), tipoMadeira("t15x16", 15, 16, TATAJUBA),
-tipoMadeira("t15x30", 15, 30, TATAJUBA), tipoMadeira("t16x16", 16, 16, TATAJUBA), tipoMadeira("t21x21", 21, 21, TATAJUBA)
+tipoMadeira("t15x30", 15, 30, TATAJUBA), tipoMadeira("t16x16", 16, 16, TATAJUBA), tipoMadeira("t21x21", 21, 21, TATAJUBA),
+tipoMadeira("t10x15", 10, 15, TATAJUBA), tipoMadeira("t10x20", 10, 20, TATAJUBA), tipoMadeira("t10x8", 10, 8, TATAJUBA),
+tipoMadeira("t16x20", 16, 20, TATAJUBA), tipoMadeira("t20x16", 20, 16, TATAJUBA),
+tipoMadeira("t10x15p", 10, 15, PINUS), tipoMadeira("t10x5p", 10, 5, PINUS), tipoMadeira("t5x9p", 5, 9, PINUS),
+tipoMadeira("t5x11p", 5, 11, PINUS), tipoMadeira("t5x12p", 5, 12, PINUS)
 ],
 solidos: [{ id: "c", nome: "Peça", forma: "caixa", x: "Comprimento/2", y: "Cota_base", z: "0", dx: "Comprimento", dy: "Altura", dz: "Base", material: "Material" }],
 quantitativo: { unidade: "m3", quantidade: "Volume", codigo: "", fonte: "", descricao: "Peça de madeira serrada (viga, barrote ou caibro)" }
@@ -63643,7 +63648,7 @@ def(COMUM, [
 "p7-linha-detalhe", "p7-regiao", "p7-mascara", "p7-componente", "p7-legenda", "p7-nuvem", "p7-revisoes",
 "planta-2d", "corte-2d", "corte-tecnico", "clash", "planta", "corte", "quatro-d", "tarefas4d", "curva-s", "seis-d",
 "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
-"home", "orbita", "voo", "mesa", "imersivo", "ultra",
+"home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
 "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
 "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
 "render-ia", "galeria-ia", "render-fisico",
@@ -63992,7 +63997,8 @@ paineis: [
 { id: "voo", rotulo: "Modo de\nvoo", icone: "voo", grande: true, tipo: "alterna", requer: "modelo", dica: "Anda pelo modelo com o teclado, como num jogo." },
 { id: "mesa", rotulo: "Modo\nmesa", icone: "cadeado", grande: true, tipo: "alterna", requer: "modelo", dica: "Para o tablet ou a tela deitada na mesa: o 3D ocupa a tela, as ferramentas ficam numa barra ao lado e a câmera fica travada (encostar a mão não gira nem dá zoom)." },
 { id: "imersivo", rotulo: "Realidade\nvirtual", icone: "vr", grande: true, requer: "modelo", pro: true, dica: "Entra no modelo em escala 1:1, pelo celular ou visor." },
-{ id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." }
+{ id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." },
+{ id: "atalhos", rotulo: "Atalhos", icone: "teclado", dica: "Todos os atalhos do BIM: teclado, atalhos de duas letras, mouse, controle de Xbox e os botões novos das telas, com “Baixar PDF”. Também pela tecla ?." }
 ] },
 { nome: "Exibir", comandos: [
 { id: "visibilidade", rotulo: "Visibilidade", icone: "olho", grande: true, requer: "modelo", dica: "Isola, oculta e usa raio-X na seleção." },
@@ -64273,7 +64279,7 @@ Ribbon.LAYOUT_B1 = [
 { nome: "Peso", ids: ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio"] },
 { nome: "Plano de içamento", ids: ["icar-equipamento", "icar-posicao", "icar-pontos", "icar-vento", "icar-simular", "icar-plano"] }] },
 { id: "vista", rotulo: "Vista", paineis: [
-{ nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo"] },
+{ nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
 { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade"] },
 { nome: "Janelas", ids: ["nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit"] },
 { nome: "Render por IA", ids: ["render-ia", "galeria-ia"] }] },
@@ -65170,6 +65176,12 @@ th.onclick = function () { self._colapsar(th); };
 trh.appendChild(th);
 tbody.appendChild(trh);
 (sec.params || []).forEach(function (p) {
+if (p.tipo === "desenho") {
+if (!p.html) return;
+var trd = el("tr"), tdd = el("td", "rv-p-desenho");
+tdd.colSpan = 2; tdd.innerHTML = p.html; trd.appendChild(tdd); tbody.appendChild(trd);
+return;
+}
 var tr = el("tr");
 if (p.leitura) tr.className = "rv-p-off";
 var td1 = el("td", "rv-p-nome", p.rotulo + (p.unidade ? " (" + p.unidade + ")" : ""));
@@ -89439,7 +89451,10 @@ return '<tr data-mc="ligacao"' + (dk ? ' data-dica="' + dk + '" data-dica-lado="
 var probs = problemasDe(r);
 if (probs.length) {
 h += '<section class="mc-card"><h4>' + ico("alerta", 16) + " Problemas e soluções</h4>";
-probs.forEach(function (p) { h += '<div class="mc-prob" data-mc="problema"><h5>' + esc(p.titulo) + "</h5><p>" + esc(p.texto) + "</p>" + (p.botoes.length ? '<div class="mc-sols">' + p.botoes.join("") + "</div>" : "") + "</div>"; });
+probs.forEach(function (p) {
+var m3 = global.MetalCalcVista && p.modo3d ? '<button class="mc-bt" data-mc-acao="mostrar3d" data-mc-modo="' + esc(p.modo3d) + '"' + (p.foco ? ' data-mc-foco="' + esc(p.foco) + '"' : "") + ' title="Abre o resultado em 3D' + (p.foco ? " com a barra " + esc(p.foco) + " em destaque" : "") + '">Mostrar no 3D</button>' : "";
+h += '<div class="mc-prob" data-mc="problema"><h5>' + esc(p.titulo) + "</h5><p>" + esc(p.texto) + "</p>" + (p.botoes.length || m3 ? '<div class="mc-sols">' + m3 + p.botoes.join("") + "</div>" : "") + "</div>";
+});
 h += "</section>";
 }
 h += '<div class="mc-duas" style="align-items:start"><div>' + decisoesHtml(r) + "</div><div>" + servicoHtml(r) + reacoesHtml(r) + avisosHtml(r) + "</div></div>";
@@ -89482,18 +89497,18 @@ Object.keys(porGrupo).forEach(function (g) {
 var p = porGrupo[g], bts = [], mt = /Trocar (.+?) por (.+?) \(/.exec(p.sugestao || "");
 if (mt) bts.push('<button class="mc-bt pri" data-mc-acao="troca" data-mc-v="' + esc(g + "|" + mt[2]) + '">Calcular com ' + esc(mt[2]) + "</button>");
 bts.push('<button class="mc-bt" data-mc-acao="continuar">Mais rodadas de otimização</button>');
-o.push({ titulo: (GRUPOS[g] || g) + " — " + p.perfil + " com aproveitamento de " + fmt(p.razao * 100, 0) + " %", texto: (p.sugestao || "A barra não passa.") + (typeof p.gov === "string" ? " Governa: " + p.gov + "." : ""), botoes: bts });
+o.push({ titulo: (GRUPOS[g] || g) + " — " + p.perfil + " com aproveitamento de " + fmt(p.razao * 100, 0) + " %", texto: (p.sugestao || "A barra não passa.") + (typeof p.gov === "string" ? " Governa: " + p.gov + "." : ""), botoes: bts, foco: p.id, modo3d: "aproveitamento" });
 });
-secundarias(r).forEach(function (s) { if (s.x.ok === false) o.push({ titulo: s.nome + " — " + (s.x.perfil || "sem perfil") + " não passa", texto: (s.x.governante ? "Governa: " + s.x.governante + ". " : "") + (arr(s.x.alternativas).length ? "O catálogo tem alternativas: perfil mais alto ou mais espesso, ou mais linhas de correntes/tirantes." : "Nenhum Ue do catálogo resolve: aproxime os pórticos ou use perfil laminado."), botoes: ['<button class="mc-bt" data-mc-acao="passo-assistente" data-mc-v="2">Revisar o espaçamento dos pórticos</button>'] }); });
-arr(r.ligacoes && r.ligacoes.lista).forEach(function (l) { if (!l.ok) o.push({ titulo: l.nome + " — aproveitamento de " + fmt(num(l.razao, 0) * 100, 0) + " %", texto: (l.sugestao || "A ligação não passa.") + (l.governante ? " Governa: " + l.governante + "." : ""), botoes: [] }); });
+secundarias(r).forEach(function (s) { if (s.x.ok === false) o.push({ titulo: s.nome + " — " + (s.x.perfil || "sem perfil") + " não passa", texto: (s.x.governante ? "Governa: " + s.x.governante + ". " : "") + (arr(s.x.alternativas).length ? "O catálogo tem alternativas: perfil mais alto ou mais espesso, ou mais linhas de correntes/tirantes." : "Nenhum Ue do catálogo resolve: aproxime os pórticos ou use perfil laminado."), botoes: ['<button class="mc-bt" data-mc-acao="passo-assistente" data-mc-v="2">Revisar o espaçamento dos pórticos</button>'], modo3d: "aproveitamento" }); });
+arr(r.ligacoes && r.ligacoes.lista).forEach(function (l) { if (!l.ok) o.push({ titulo: l.nome + " — aproveitamento de " + fmt(num(l.razao, 0) * 100, 0) + " %", texto: (l.sugestao || "A ligação não passa.") + (l.governante ? " Governa: " + l.governante + "." : ""), botoes: [], modo3d: "aproveitamento" }); });
 var els = arr(r.servico).filter(function (s) { return s.razao > 1; }).sort(function (a, b) { return b.razao - a.razao; })[0];
 if (els) {
 var b2 = [];
 if (base !== "engastada") b2.push('<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>');
 b2.push('<button class="mc-bt" data-mc-acao="continuar">Mais rodadas de otimização</button>');
-o.push({ titulo: "Deslocamento acima do limite (" + (els.tipo === "viga" ? "flecha da viga" : "topo do pilar") + ")", texto: fmt(els.valor * 1000, 1) + " mm para o limite de " + fmt(els.limite * 1000, 1) + " mm (" + els.texto + ", " + els.ref + "). Mais rigidez resolve: base engastada ou perfis maiores.", botoes: b2 });
+o.push({ titulo: "Deslocamento acima do limite (" + (els.tipo === "viga" ? "flecha da viga" : "topo do pilar") + ")", texto: fmt(els.valor * 1000, 1) + " mm para o limite de " + fmt(els.limite * 1000, 1) + " mm (" + els.texto + ", " + els.ref + "). Mais rigidez resolve: base engastada ou perfis maiores.", botoes: b2, modo3d: "deformada" });
 }
-if (r.deslocabilidade && r.deslocabilidade.classe === "grande") o.push({ titulo: "Estrutura de grande deslocabilidade", texto: "Δ2/Δ1 = " + fmt(r.deslocabilidade.razao, 2) + ": a NBR 8800 pede análise rigorosa. Aumente a rigidez — base engastada ou perfis maiores.", botoes: base !== "engastada" ? ['<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>'] : [] });
+if (r.deslocabilidade && r.deslocabilidade.classe === "grande") o.push({ titulo: "Estrutura de grande deslocabilidade", texto: "Δ2/Δ1 = " + fmt(r.deslocabilidade.razao, 2) + ": a NBR 8800 pede análise rigorosa. Aumente a rigidez — base engastada ou perfis maiores.", botoes: base !== "engastada" ? ['<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>'] : [], modo3d: "flambagem" });
 return o;
 }
 var ICONE_TEMA = { "Pórticos": "P", "Terças": "T", "Telha e terças": "T", "Travessas de fechamento": "Tr", "Travessas dos oitões": "Tr", "Colunas de tapamento": "C", "Contraventamento": "X", "Contraventamento das paredes": "X", "Análise estrutural": "2ª", "Mãos-francesas": "MF", "Flambagem global": "λ", "Vento": "V", "Perfis de partida": "W", "Estabilidade": "!", "Travessas laterais": "Tr" };
@@ -89740,12 +89755,13 @@ else toastAcao(msg, "ok", 15000, "Ver como usar", function () { MetalCalcUI.como
 }
 var vistaCtl = null;
 function soltarVista() { if (vistaCtl && vistaCtl.destruir) { try { vistaCtl.destruir(); } catch (e) {} } vistaCtl = null; }
-function verEm3D() {
+function verEm3D(foco) {
 var r = UIC.r, V3 = global.MetalCalcVista; if (!r || !r.ok || !V3 || !V3.abrir) { toast("A vista 3D dos resultados não carregou.", "aviso"); return; }
 soltarVista();
 UIC.modo = "vista"; render();
 var box = doc.querySelector("[data-mc='vista3d']");
-try { vistaCtl = V3.abrir(box, r, { modo: "aproveitamento", tema: "auto" }); } catch (e) { toast("Vista 3D: " + e.message, "erro", 8000); UIC.modo = "resultado"; render(); }
+try { vistaCtl = V3.abrir(box, r, { modo: foco && foco.modo ? foco.modo : "aproveitamento", tema: "auto" }); } catch (e) { toast("Vista 3D: " + e.message, "erro", 8000); UIC.modo = "resultado"; render(); return; }
+if (foco && foco.id && vistaCtl && vistaCtl.selecionar) { try { vistaCtl.selecionar(foco.id, { enquadrar: true }); } catch (e2) {} }
 }
 function galpaoLigado() {
 var U = global.BimMetalUI; if (!U || !U.galpoes) return null;
@@ -89891,6 +89907,7 @@ case "troca": var pr = String(val || "").split("|"); if (pr.length === 2) { e.pe
 case "continuar": var gr = (UIC.r && UIC.r.grupos) || {}; e.perfis.partida = {}; ["pilar", "viga", "tapamento"].forEach(function (k) { if (gr[k] && gr[k].perfil) e.perfis.partida[k] = gr[k].perfil; }); salvar(true); calcular(); return;
 case "engastar": e.geometria.base = "engastada"; salvar(true); calcular(); return;
 case "vista3d": verEm3D(); return;
+case "mostrar3d": verEm3D({ id: el ? el.getAttribute("data-mc-foco") : "", modo: el ? el.getAttribute("data-mc-modo") : "" }); return;
 case "memorial": memorial(); return;
 case "pranchas": pranchas(); return;
 case "cype": cype(); return;
@@ -90664,6 +90681,9 @@ if (v === "ligar") return ligarSoltas(prob ? arr(prob.pecas) : []);
 if (v === "base") return apoiarCantos(prob ? arr(prob.pecas) : []);
 if (v === "faces-abertas") { marcarFacesAbertas(); return calcular(); }
 if (v === "informar-fck") { U.modo = "passos"; U.passo = 1; render(); if (PC()) PC().irPara('[data-ml-campo="fckFundacao"]', raiz()); return; }
+if (v === "lig-todos") { if (global.MetalLigSugUI && MetalLigSugUI.lote) MetalLigSugUI.lote(); return; }
+if (v === "lig-tipos") { if (global.MetalLigSugUI && MetalLigSugUI.tipos) MetalLigSugUI.tipos(); return; }
+if (v === "recalcular") { U.modo = "passos"; U.passo = 3; render(); return; }
 if (v === "rever-envoltorio") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var c = doc.querySelector('#ml-veu [data-ml="faces"]'); if (c) c.scrollIntoView({ block: "start" }); }, 60); return; }
 }
 var LIM_RESOLVER = 45000;
@@ -90864,10 +90884,34 @@ if (!x || !x.ok || !arr(x.folhas).length) { toast("Pranchas: " + ((x && arr(x.av
 U.pranchas = x; U.modo = "pranchas"; render();
 status("Pranchas da estrutura desenhada: " + x.folhas.length + " folhas.");
 }
+function solucoesAvisoPrancha(a) {
+a = String(a);
+if (/Nenhuma ligação dimensionada/.test(a)) return [{ id: "lig-todos", texto: "Ligar todos os nós (dimensiona as ligações do modelo)" }];
+if (/ligação\(ões\) que NÃO atende|Ligações: \d+ verificação/.test(a)) return [{ id: "lig-tipos", texto: "Ver as ligações que não atendem, por Tipo" }];
+if (/O cálculo não está aprovado|SEM vento|casos de vento/.test(a)) return [{ id: "recalcular", texto: "Voltar ao cálculo e refazê-lo" }];
+if (/Correntes de terça|Correntes das terças|Mãos-francesas|Sem perfil no resultado/.test(a)) return [{ id: "sem-acao", texto: "o diâmetro / perfil é definido no dimensionamento das peças secundárias; a folha sai com a pendência em vermelho" }];
+return [];
+}
+function avisosPranchasHtml(avisos) {
+var P = PC();
+if (!P) return '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos</h4><ul class="ml-l">' + avisos.map(function (a) { return '<li class="ml-aviso">' + esc(a) + "</li>"; }).join("") + "</ul></div>";
+function acoes(sol) {
+if (!sol) return false;
+if (sol.id === "lig-todos") return !!(global.MetalLigSugUI && MetalLigSugUI.lote);
+if (sol.id === "lig-tipos") return !!(global.MetalLigSugUI && MetalLigSugUI.tipos);
+return sol.id === "recalcular";
+}
+return '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos das pranchas</h4>' + avisos.map(function (a, i) {
+U.probExtra = U.probExtra || {};
+var p = { tipo: "prancha-aviso", gravidade: "aviso", titulo: String(a), texto: "", solucoes: solucoesAvisoPrancha(a) };
+U.probExtra["prancha" + i] = p;
+return P.html(p, { pre: "ml", indice: "x:prancha" + i, acoes: acoes, attrs: 'data-ml="prancha-aviso"' });
+}).join("") + "</div>";
+}
 function pranchasHtml() {
 var x = U.pranchas || { folhas: [], avisos: [] };
 var h = '<h3>Pranchas do projeto executivo — estrutura desenhada</h3><p class="ml-d">' + x.folhas.length + " folhas " + esc((x.folhas[0] || {}).formato || "A1") + " no Padrão RA (carimbo RA). Abra uma folha, imprima em PDF ou baixe os desenhos (SVG, DXF com as penas por camada; DWG pelo DXF).</p>";
-if (arr(x.avisos).length) h += '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos</h4><ul class="ml-l">' + x.avisos.map(function (a) { return '<li class="ml-aviso">' + esc(a) + "</li>"; }).join("") + "</ul></div>";
+if (arr(x.avisos).length) h += avisosPranchasHtml(x.avisos);
 h += '<div data-ml="pranchas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">' + x.folhas.map(function (f, i) {
 return '<div class="ml-card" style="margin:0;padding:8px" data-ml-folha="' + esc(f.id) + '"><div style="background:#fff;border:1px solid var(--ml-linha);border-radius:8px;overflow:hidden;cursor:zoom-in;aspect-ratio:841/594" data-ml-acao="prancha-ver" data-ml-v="' + i + '" title="Ver a folha grande">' + f.svg.replace("<svg ", '<svg style="width:100%;height:100%;display:block" ') + '</div><p style="margin:6px 2px 0"><b>' + esc(f.numero) + "</b> — " + esc(f.titulo) + '<br><span class="ml-nota">Escala ' + esc(f.escala || "indicada") + "</span></p></div>";
 }).join("") + "</div>";
@@ -90980,7 +91024,31 @@ U.ultimoHtml = x && x.ok ? x.html : null;
 if (!x || !x.ok) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return; }
 if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
 else { baixar(nomeArq() + "-memorial-estrutura-metalica.html", x.html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); }
+try { quadroEmissao(fxE, pendE, x); } catch (eQ) { if (global.console) global.console.error(eQ); }
 });
+}
+function quadroEmissao(fxE, pendE, x) {
+var P = PC(), EL = global.MetalEscadaLinhaUI; if (!P || !global.UI || !UI.modal || !x || !x.ok) return null;
+var probs = EL && EL.problemasFixacao ? EL.problemasFixacao(fxE) : [], jaDitos = arr(pendE).map(String);
+arr(x.avisos).filter(function (a) { return jaDitos.indexOf(String(a)) < 0; }).forEach(function (a) {
+var eq = /Equilíbrio do caso|Peso da lista/.test(a);
+probs.push({ tipo: "memorial-aviso", gravidade: "aviso", titulo: String(a), texto: "Divergência do memorial — não emita até resolver.",
+solucoes: [eq ? { id: "recalcular", texto: "Refazer o cálculo (passo 3)" } : { id: "sem-acao", texto: "o texto do motor ficou com valor indefinido: não emita e avise o suporte" }] });
+});
+if (!probs.length) return null;
+function acoes(sol) { return sol && sol.id === "recalcular" ? true : (EL && EL.acoesFixacao ? EL.acoesFixacao(sol) : false); }
+var bg = UI.modal("O que barra a emissão do memorial", P.lista(probs, { acoes: acoes, titulo: probs.length + " pendência(s) — o memorial saiu com o aviso \"não emitir\"", attrs: 'data-ml="emissao"' }), [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+P.ligar(bg, {
+corrigir: function (id, k) {
+var pr = probs[+k]; if (!pr) return;
+UI.fecharModal();
+if (id === "recalcular") { if (global.MetalCalcLivreUI) MetalCalcLivreUI.abrir(3); return; }
+if (EL && EL.corrigirFixacao) EL.corrigirFixacao(id, pr);
+},
+mostrar: function (ids) { UI.fecharModal(); var mo = P.mostrarNo3D(ids); toast(mo.selecionou ? ids.length + " peça(s) selecionada(s)" + (mo.enquadrou ? " e enquadrada(s)" : "") + "." : "O 3D não está disponível aqui.", mo.selecionou ? "ok" : "aviso", 6000); }
+});
+U.ultimaEmissao = probs;
+return probs;
 }
 function secaoTiposLigacoes(html, ligs) {
 var LL = global.AcoLigLote; html = String(html == null ? "" : html);
@@ -91041,6 +91109,8 @@ estado: function () { return estado(); },
 fechar: fechar,
 destacar: destacarJanela, voltarJanela: voltarJanela, janela: function () { return U.jd || null; },
 tela: function () { return raiz() ? U.modo : null; },
+_avisosPranchasHtml: function (a) { return avisosPranchasHtml(arr(a)); },
+_quadroEmissao: quadroEmissao,
 ultimas: function () { return { memorial: U.ultimoMemorial || null, cype: U.ultimoCype || null, ligacoes: U.ultimasLigacoes || null, html: U.ultimoHtml || null, pranchas: U.pranchas || null, dxf: U.ultimoDxf || null }; },
 envoltorio: function () { return U.env || null; },
 vedacaoNoModelo: function () { estado(); return vedacaoNoModelo(); },
@@ -92046,6 +92116,158 @@ global.BimMetalUI = BimMetalUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimMetalUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/perfildesenho.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global && global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function Aco() { return dep("PerfisAco", "./perfisaco.js"); }
+function Peca() { return dep("BimMetal", "./metalpeca.js"); }
+var INK = "#1d2733", ACO = "#c5d0dc", ACOL = "#4f6275", AUX = "#8a94a3", FUNDO = "#ffffff";
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function br(v, c) {
+if (!fin(v)) return "—";
+c = c == null ? 2 : c;
+var s = (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c);
+if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
+var p = s.split("."); p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+return p.join(",");
+}
+function r2(v) { return Math.round(v * 100) / 100; }
+function retangulo(b, h) { return [[-b / 2, -h / 2], [b / 2, -h / 2], [b / 2, h / 2], [-b / 2, h / 2]]; }
+function dados(nome) {
+var A = Aco(), B = Peca();
+if (!A) return { ok: false, motivo: "O catálogo de perfis (js/perfisaco.js) não carregou." };
+var o = nome ? A.obter(nome) : null; if (!o) return { ok: false, motivo: "Perfil fora do catálogo: " + (nome || "?") + "." };
+var p = A.paraPerfil(o.nome); if (!p) return { ok: false, motivo: "O perfil " + o.nome + " não tem seção desenhável." };
+var s = B && B.secao ? B.secao(p) : null, contorno = null, furos = [];
+if (s && s.ok && s.contorno && s.contorno.length >= 3) { contorno = s.contorno; furos = (s.furos || []).filter(function (f) { return Array.isArray(f) && f.length >= 3; }); }
+else if (p.forma === "ret" && p.b > 0 && p.h > 0) contorno = retangulo(p.b, p.h);
+else return { ok: false, motivo: (s && s.motivo) || "O motor da peça (js/metalpeca.js) não desenhou a seção de " + o.nome + "." };
+var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+contorno.forEach(function (q) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; });
+var cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+function C(q) { return [q[0] - cx, q[1] - cy]; }
+contorno = contorno.map(C); furos = furos.map(function (f) { return f.map(C); });
+var W = x1 - x0, H = y1 - y0, L = -W / 2, R = W / 2, T = H / 2, Bt = -H / 2;
+var cotas = [], esp = [], extra = [], f = p.forma;
+function ch(eixo, v, rot) { cotas.push({ eixo: eixo, de: eixo === "h" ? L : Bt, ate: eixo === "h" ? R : T, valor: v, rot: rot }); }
+if (f === "I" || f === "U") {
+ch("h", o.bf, "bf"); ch("v", o.d, "d");
+var tw = o.tw / 1000, tf = o.tf / 1000;
+var xw = f === "I" ? 0 : L + tw / 2;
+esp.push({ alvo: [xw, 0], valor: o.tw, rot: "tw" });
+esp.push({ alvo: [f === "I" ? W / 4 : (xw + R) / 2, T - tf / 2], valor: o.tf, rot: "tf" });
+if (fin(o.r) && o.r > 0) extra.push("r = " + br(o.r) + " mm");
+} else if (f === "frio") {
+ch("h", o.bf, "bf"); ch("v", o.bw, "bw");
+var t = o.t / 1000;
+esp.push({ alvo: [L + t / 2, 0], valor: o.t, rot: "t" });
+if (p.tipoFrio === "Ue" && fin(o.D)) cotas.push({ eixo: "v", de: T - o.D / 1000, ate: T, valor: o.D, rot: "D", direita: true });
+if (fin(o.ri) && o.ri > 0) extra.push("raio interno " + br(o.ri) + " mm");
+} else if (f === "L") {
+ch("h", o.b, "b"); ch("v", o.a, "a");
+esp.push({ alvo: [L + (o.t / 1000) / 2, 0], valor: o.t, rot: "t" });
+if (fin(o.r) && o.r > 0) extra.push("r = " + br(o.r) + " mm");
+} else if (f === "tubo-ret") {
+ch("h", o.b, "B"); ch("v", o.h, "H");
+esp.push({ alvo: [R - (o.t / 1000) / 2, 0], valor: o.t, rot: "t" });
+if (fin(o.ro) && o.ro > 0) extra.push("raio externo " + br(o.ro) + " mm");
+} else if (f === "tubo-circ") {
+ch("h", o.D, "D");
+esp.push({ alvo: [R - (o.t / 1000) / 2, 0], valor: o.t, rot: "t" });
+} else if (f === "circ") {
+ch("h", o.d, "Ø");
+} else if (f === "ret") {
+ch("h", o.b, "b"); ch("v", o.h, "h");
+}
+return { ok: true, nome: o.nome, forma: f, tipoFrio: p.tipoFrio || "", contorno: contorno, furos: furos, larg: W, alt: H, cotas: cotas, espessuras: esp, extra: extra };
+}
+var VW = 260, VH = 246, ME = 46, MT = 50, MD = 70, MB = 34;
+function svg(nome, op) {
+op = op || {};
+var d = dados(nome); if (!d.ok) return "";
+var aw = VW - ME - MD, ah = VH - MT - MB;
+var esc0 = Math.min(aw / Math.max(d.larg, 1e-6), ah / Math.max(d.alt, 1e-6));
+var ox = ME + aw / 2, oy = MT + ah / 2;
+function X(x) { return r2(ox + x * esc0); }
+function Y(y) { return r2(oy - y * esc0); }
+function caminho(pts) { return "M" + pts.map(function (q) { return X(q[0]) + " " + Y(q[1]); }).join("L") + "Z"; }
+var h = [], L = -d.larg / 2, R = d.larg / 2, T = d.alt / 2, B = -d.alt / 2;
+h.push('<rect x="0.5" y="0.5" width="' + (VW - 1) + '" height="' + (VH - 1) + '" rx="8" fill="' + FUNDO + '" stroke="#d9dee5"/>');
+if (op.titulo !== false) h.push('<text x="' + (VW / 2) + '" y="15" font-size="11" font-weight="600" font-family="sans-serif" fill="' + INK + '" text-anchor="middle">' + esc(d.nome) + "</text>");
+h.push('<line x1="' + X(0) + '" y1="' + (Y(T) - 6) + '" x2="' + X(0) + '" y2="' + (Y(B) + 6) + '" stroke="' + AUX + '" stroke-width="0.6" stroke-dasharray="6 2 1 2"/>');
+h.push('<line x1="' + (X(L) - 6) + '" y1="' + Y(0) + '" x2="' + (X(R) + 6) + '" y2="' + Y(0) + '" stroke="' + AUX + '" stroke-width="0.6" stroke-dasharray="6 2 1 2"/>');
+h.push('<path d="' + [caminho(d.contorno)].concat(d.furos.map(caminho)).join(" ") + '" fill="' + ACO + '" fill-rule="evenodd" stroke="' + ACOL + '" stroke-width="1.2" stroke-linejoin="round"/>');
+function tique(x, y) { return '<line x1="' + r2(x - 3) + '" y1="' + r2(y + 3) + '" x2="' + r2(x + 3) + '" y2="' + r2(y - 3) + '" stroke="' + INK + '" stroke-width="1.1"/>'; }
+function linha(x1, y1, x2, y2, w) { return '<line x1="' + r2(x1) + '" y1="' + r2(y1) + '" x2="' + r2(x2) + '" y2="' + r2(y2) + '" stroke="' + INK + '" stroke-width="' + (w || 0.7) + '"/>'; }
+function texto(x, y, s, ancora, giro) {
+return '<text x="' + r2(x) + '" y="' + r2(y) + '" font-size="10" font-family="sans-serif" fill="' + INK + '" text-anchor="' + (ancora || "middle") + '"' +
+(giro ? ' transform="rotate(' + giro + " " + r2(x) + " " + r2(y) + ')"' : "") + ">" + s + "</text>";
+}
+d.cotas.forEach(function (c) {
+var rot = esc(c.rot) + " " + esc(br(c.valor));
+if (c.eixo === "h") {
+var yc = Y(T) - 14, xa = X(c.de), xb = X(c.ate);
+h.push(linha(xa, Y(T) - 3, xa, yc - 4), linha(xb, Y(T) - 3, xb, yc - 4), linha(xa - 4, yc, xb + 4, yc), tique(xa, yc), tique(xb, yc), texto((xa + xb) / 2, yc - 4, rot));
+} else {
+var dir = !!c.direita, xs = dir ? X(R) : X(L), xc = dir ? xs + 12 : xs - 14, ya = Y(c.ate), yb = Y(c.de), sg = dir ? 1 : -1;
+h.push(linha(xs + 3 * sg, ya, xc + 4 * sg, ya), linha(xs + 3 * sg, yb, xc + 4 * sg, yb), linha(xc, ya - 4, xc, yb + 4), tique(xc, ya), tique(xc, yb),
+dir ? texto(xc + 4, (ya + yb) / 2 + 3, rot, "start") : texto(xc - 4, (ya + yb) / 2, rot, "middle", -90));
+}
+});
+var ocupado = [], xt = VW - MD + 12;
+d.espessuras.slice().sort(function (a, b) { return b.alvo[1] - a.alvo[1]; }).forEach(function (e) {
+var px = X(e.alvo[0]), py = Y(e.alvo[1]), ty = py;
+ocupado.forEach(function (u) { if (Math.abs(ty - u) < 13) ty = u + 13; });
+ocupado.push(ty);
+h.push('<circle cx="' + px + '" cy="' + py + '" r="1.8" fill="' + INK + '"/>', linha(px, py, xt - 3, ty, 0.6), texto(xt, ty + 3.5, esc(e.rot) + " " + esc(br(e.valor)), "start"));
+});
+var rod = ["medidas em mm"].concat(d.extra).join(" · ");
+h.push(texto(VW / 2, VH - 10, esc(rod)));
+var lw = Math.max(120, Math.round(op.largura || 240));
+return '<svg xmlns="http://www.w3.org/2000/svg" class="pfd-svg" viewBox="0 0 ' + VW + " " + VH + '" width="' + lw + '" height="' + Math.round(lw * VH / VW) + '" role="img" aria-label="' + esc("Seção cotada do perfil " + d.nome) + '"><title>' + esc("Seção do perfil " + d.nome) + "</title>" + h.join("") + "</svg>";
+}
+function fonteCurta(o) {
+var f = String(o.fonte || "").split(/ — | \(/)[0].trim();
+if (f.length > 70) f = f.slice(0, 68).replace(/\s+\S*$/, "") + "…";
+var fab = String(o.fabricante || "").trim();
+if (fab && f.toLowerCase().indexOf(fab.toLowerCase()) === 0) return f;
+return [fab, f].filter(Boolean).join(" — ");
+}
+function ficha(nome) {
+var A = Aco(), o = A && nome ? A.obter(nome) : null; if (!o) return null;
+return { nome: o.nome, massa: fin(o.massa) ? o.massa : null, A: fin(o.A) ? o.A / 100 : null, Ix: fin(o.Ix) ? o.Ix / 1e4 : null, Wx: fin(o.Wx) ? o.Wx / 1e3 : null, fonte: fonteCurta(o) };
+}
+function fichaHtml(nome) {
+var f = ficha(nome); if (!f) return "";
+function item(rot, v, un, c) { return v == null ? "" : '<span class="pfd-it"><b>' + rot + "</b> " + esc(br(v, c)) + " " + un + "</span>"; }
+return '<div class="pfd-ficha" data-pfd="ficha">' + item("massa", f.massa, "kg/m", 2) + item("A", f.A, "cm²", 2) + item("Ix", f.Ix, "cm⁴", f.Ix >= 100 ? 0 : 2) + item("Wx", f.Wx, "cm³", f.Wx >= 100 ? 0 : 2) +
+(f.fonte ? '<span class="pfd-fonte" title="Fonte dos valores">Fonte: ' + esc(f.fonte) + "</span>" : "") + "</div>";
+}
+function css() {
+if (typeof document === "undefined" || !document.head || document.getElementById("pfd-estilo")) return;
+var st = document.createElement("style"); st.id = "pfd-estilo";
+st.textContent = ".pfd-bloco{display:flex;flex-direction:column;gap:6px;align-items:stretch;width:100%;max-width:100%;box-sizing:border-box;white-space:normal}.pfd-svg{max-width:100%;height:auto;display:block}" +
+".pfd-ficha{display:flex;flex-wrap:wrap;gap:4px 10px;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:12px;line-height:1.35;color:var(--texto,#1d2733)}.pfd-ficha b{font-weight:600}" +
+".pfd-fonte{flex-basis:100%;font-size:11px;color:var(--texto-fraco,#5b6573)}";
+document.head.appendChild(st);
+}
+function blocoHtml(nome, op) {
+var s = svg(nome, op); if (!s) return "";
+css();
+return '<div class="pfd-bloco" data-pfd="bloco" data-pfd-nome="' + esc(nome) + '">' + s + fichaHtml(nome) + "</div>";
+}
+var PerfilDesenho = { dados: dados, svg: svg, ficha: ficha, fichaHtml: fichaHtml, blocoHtml: blocoHtml, _br: br };
+global.PerfilDesenho = PerfilDesenho;
+if (typeof module !== "undefined" && module.exports) module.exports = PerfilDesenho;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/metalcriarui.js ==== */
 try {
 (function (global) {
@@ -92242,6 +92464,8 @@ ps.push({ id: pre + "cat", rotulo: "Perfil", tipo: "lista", valor: atual || "", 
 var s = M && atual ? M.dimSecao(global.PerfisAco.paraPerfil(atual)) : null;
 ps.push({ id: pre + "info", rotulo: "Seção", leitura: true, valor: s ? Math.round(s.alt * 1000) + " × " + Math.round(s.larg * 1000) + " mm" + (info && fin(info.massa) ? " · " + br(info.massa, 1) + " kg/m" : "") : "—" });
 if (info && info.fabricante) ps.push({ id: pre + "fab", rotulo: "Fonte", leitura: true, valor: info.fabricante });
+var PD = global.PerfilDesenho, des = PD && info ? PD.blocoHtml(info.nome, { largura: 250 }) : "";
+if (des) ps.push({ id: pre + "desenho", rotulo: "Desenho da seção", tipo: "desenho", html: des });
 return { nome: "Perfil", params: ps };
 },
 _opcoesNivel: function (comAcima, comAltura) {
@@ -92560,18 +92784,27 @@ _montarBarra: function () {
 if (this._barra || typeof document === "undefined") return this._barra;
 var self = this, b = document.createElement("span");
 b.className = "mcr-barra"; b.setAttribute("data-mcr", "barra"); b.style.display = "none";
-var pop = null;
+var pop = null, semPop = false;
 function fecharPop() { if (pop && pop.parentNode) pop.parentNode.removeChild(pop); pop = null; }
 function abrirPop(inp) {
 var ferr = SUBS[self._sub]; if (!ferr || !MC()) return;
 var L = MC().buscarPerfis(inp.value, { limite: 30 });
 fecharPop();
 pop = document.createElement("div"); pop.className = "mcr-pop"; pop.setAttribute("role", "listbox"); pop.setAttribute("data-mcr", "pop");
-if (!L.length) pop.innerHTML = '<div class="mcr-pop-vazio">Nenhum perfil com "' + esc(inp.value) + '". Tente a série (W, U, L, Ue, tubo) ou o fabricante.</div>';
-else { var g = null; pop.innerHTML = L.map(function (it) { var cab = it.rotuloSerie !== g ? '<div class="mcr-pop-grupo">' + esc(it.rotuloSerie) + "</div>" : ""; g = it.rotuloSerie; return cab + '<button type="button" class="mcr-pop-item" role="option" data-mcr-cat="' + esc(it.nome) + '">' + esc(it.nome) + (it.massa ? '<span class="mcr-pop-kg">' + br(it.massa, 1) + " kg/m</span>" : "") + "</button>"; }).join(""); }
+var lis;
+if (!L.length) lis = '<div class="mcr-pop-vazio">Nenhum perfil com "' + esc(inp.value) + '". Tente a série (W, U, L, Ue, tubo) ou o fabricante.</div>';
+else { var g = null; lis = L.map(function (it) { var cab = it.rotuloSerie !== g ? '<div class="mcr-pop-grupo">' + esc(it.rotuloSerie) + "</div>" : ""; g = it.rotuloSerie; return cab + '<button type="button" class="mcr-pop-item" role="option" data-mcr-cat="' + esc(it.nome) + '">' + esc(it.nome) + (it.massa ? '<span class="mcr-pop-kg">' + br(it.massa, 1) + " kg/m</span>" : "") + "</button>"; }).join(""); }
+pop.innerHTML = '<div class="mcr-pop-lista">' + lis + '</div><div class="mcr-pop-sec" data-mcr="pop-sec" aria-live="polite"></div>';
 var r = inp.getBoundingClientRect(), rb = b.getBoundingClientRect();
 pop.style.left = Math.max(0, r.left - rb.left) + "px";
 b.appendChild(pop);
+var at = catDe(ferr), achou = at && pop.querySelector('[data-mcr-cat="' + (global.CSS && CSS.escape ? CSS.escape(at) : at.replace(/"/g, '\\"')) + '"]');
+verSecao(achou ? at : (L[0] && L[0].nome));
+}
+function verSecao(nome) {
+var box = pop && pop.querySelector('[data-mcr="pop-sec"]'), PD = global.PerfilDesenho; if (!box || !PD || !nome) return;
+if (box.getAttribute("data-pfd-nome") === nome) return;
+box.setAttribute("data-pfd-nome", nome); box.innerHTML = PD.blocoHtml(nome, { largura: 262 });
 }
 function escolher(nome) {
 var ferr = SUBS[self._sub]; if (!ferr) return;
@@ -92579,10 +92812,22 @@ self.mudarFerramenta(ferr, "mcrf:cat", nome); fecharPop();
 try { if (global.BimShell) global.BimShell.pintarProps(self.esquemaFerramenta(ferr)); } catch (e) {}
 }
 b.addEventListener("input", function (e) { if (e.target && e.target.getAttribute("data-mcr") === "perfil") abrirPop(e.target); });
-b.addEventListener("focusin", function (e) { if (e.target && e.target.getAttribute("data-mcr") === "perfil") { e.target.select(); abrirPop(e.target); } });
+b.addEventListener("focusin", function (e) {
+if (e.target && e.target.getAttribute("data-mcr") === "perfil") { if (semPop) { semPop = false; return; } e.target.select(); abrirPop(e.target); return; }
+if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-mcr-cat")) verSecao(e.target.getAttribute("data-mcr-cat"));
+});
+b.addEventListener("mouseover", function (e) { var it = e.target && e.target.closest ? e.target.closest("[data-mcr-cat]") : null; if (it) verSecao(it.getAttribute("data-mcr-cat")); });
 b.addEventListener("keydown", function (e) {
 e.stopPropagation();
-var t = e.target; if (!t || t.getAttribute("data-mcr") !== "perfil") return;
+var t = e.target;
+if (t && t.hasAttribute && t.hasAttribute("data-mcr-cat") && pop) {
+var its = Array.prototype.slice.call(pop.querySelectorAll("[data-mcr-cat]")), i = its.indexOf(t);
+if (e.key === "ArrowDown" && i < its.length - 1) { e.preventDefault(); its[i + 1].focus(); }
+else if (e.key === "ArrowUp") { e.preventDefault(); if (i > 0) its[i - 1].focus(); else { var cp = b.querySelector('[data-mcr="perfil"]'); if (cp) cp.focus(); } }
+else if (e.key === "Escape") { e.preventDefault(); var cp2 = b.querySelector('[data-mcr="perfil"]'); fecharPop(); if (cp2) { cp2.value = catDe(SUBS[self._sub]) || ""; semPop = true; cp2.focus(); } }
+return;
+}
+if (!t || t.getAttribute("data-mcr") !== "perfil") return;
 if (e.key === "Escape") { fecharPop(); t.value = catDe(SUBS[self._sub]) || ""; t.blur(); }
 if (e.key === "Enter") { var pr = pop && pop.querySelector("[data-mcr-cat]"); if (pr) { e.preventDefault(); escolher(pr.getAttribute("data-mcr-cat")); } }
 if (e.key === "ArrowDown" && pop) { var it = pop.querySelector("[data-mcr-cat]"); if (it) { e.preventDefault(); it.focus(); } }
@@ -93941,6 +94186,31 @@ var l = s && (s.local || (s.est && s.est.local)); if (l && isFinite(num(l.lat, N
 try { var o = global.Store && global.Auth && global.Gestao && global.Gestao._bimSel ? global.Store.obter(global.Auth.empresaId(), "obras", global.Gestao._bimSel) : null; if (o && isFinite(num(o.lat, NaN)) && isFinite(num(o.lon, NaN))) return { lat: num(o.lat), lon: num(o.lon), fonte: "endereço da obra" }; } catch (e2) {}
 return null;
 }
+function PCt() { return global.ProblemaCard || null; }
+function problemasTanque(probs, t) {
+return (probs || []).map(function (x) {
+return { tipo: x.tipo || "tanque", gravidade: x.critico ? "erro" : "aviso", titulo: x.texto, texto: "", pecas: t && t.pecas ? t.pecas.slice() : [],
+solucoes: (x.solucoes || []).map(function (s) { return { id: s.id, texto: s.texto }; }) };
+});
+}
+function acoesTanque(t, par) { return function (sol) { return sol && sol.id === "fck" && !!(par || t) ? "Informar o fck do concreto da fundação" : false; }; }
+function cartoesProblemas(probs, t) {
+var P = PCt(); if (!probs || !probs.length) return "";
+if (!P) return '<ul class="mtq-lst">' + probs.map(function (x) { return '<li class="mtq-falha">' + esc(x.texto) + " → " + (x.solucoes || []).map(function (s) { return esc(s.texto); }).join("; ") + "</li>"; }).join("") + "</ul>";
+return P.lista(problemasTanque(probs, t), { acoes: acoesTanque(t, true), attrs: 'data-mtq="problemas"' });
+}
+function ligarProblemas(bg, probs, t, par, self) {
+var P = PCt(); if (!P || !bg || !probs || !probs.length) return;
+P.ligar(bg, {
+corrigir: function (id, k) {
+if (id !== "fck") return;
+UI.fecharModal();
+self.dialogo(par, t ? { alvo: t } : {});
+P.irPara('[data-mtq-c="fckFundacao"]');
+},
+mostrar: function (ids) { UI.fecharModal(); var mo = P.mostrarNo3D(ids); toast(mo.selecionou ? "Tanque selecionado no 3D." : "O 3D não está disponível aqui.", mo.selecionou ? "ok" : "aviso", 5000); }
+});
+}
 var MetalTanqueUI = {
 SUB: SUB, COMANDOS: COMANDOS, CHAVE: CHAVE, _n: 0, ultimo: null, ultimoMemorial: null, ultimoResultado: null,
 ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
@@ -94131,13 +94401,14 @@ if (!r.ok) { toast("Tanque: " + r.motivo, "erro", 8000); return false; }
 var linhas = r.verificacoes.map(function (v) { return "<tr><td>" + esc(v.nome) + '<div class="mtq-inf">' + esc(v.item) + '</div></td><td class="n">' + (v.info ? "—" : br(v.razao, 3)) + "</td><td>" + (v.info ? '<span class="mtq-inf">informativo</span>' : (v.ok ? '<span class="mtq-ok">atende</span>' : '<span class="mtq-falha">não atende</span>')) + "</td></tr>"; }).join("");
 var q = r.quantitativo, fu = r.fundacao || {};
 var h = '<div data-mtq="resultado" style="max-height:66vh;overflow:auto">' + MT().esquema(r) + "<p>" + esc(r.resumo) + "</p>" +
-(r.problemas.length ? '<ul class="mtq-lst">' + r.problemas.map(function (x) { return '<li class="mtq-falha">' + esc(x.texto) + " → " + x.solucoes.map(function (s) { return esc(s.texto); }).join("; ") + "</li>"; }).join("") + "</ul>" : "") +
+cartoesProblemas(r.problemas, t) +
 '<h4>Verificações</h4><table class="mtq-tab"><thead><tr><th>Verificação</th><th>Razão</th><th>Situação</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
 "<h4>Decisões do sistema</h4><ul class=\"mtq-lst\" style=\"max-height:none\">" + r.decisoes.map(function (x) { return "<li><b>" + esc(x.tema) + ":</b> " + esc(x.decisao) + " — " + esc(x.motivo) + "</li>"; }).join("") + "</ul>" +
 "<h4>Cargas na fundação (características)</h4><p class=\"mtq-res\">" + (fu.G && fu.G.linha != null ? "Peso próprio " + br(fu.G.linha, 2) + " kN/m no anel; " : "") + (fu.L && fu.L.pressao != null ? "líquido " + br(fu.L.pressao, 1) + " kPa; teste " + br(fu.T.pressao, 1) + " kPa; " : "") + (fu.W ? "vento M = " + br(fu.W.M, 1) + " kN·m, V = " + br(fu.W.V, 1) + " kN" : "") + (fu.porPilar ? "; por pilar: " + br(fu.porPilar.compressao, 1) + " kN de compressão, " + br(fu.porPilar.tracao, 1) + " kN de tração" : "") + (fu.porSela ? "; por sela: " + br(fu.porSela.vertical, 1) + " kN" : "") + ".</p>" +
 "<h4>Quantitativo</h4><p class=\"mtq-res\">" + br(q.volumeUtil, 1) + " m³ úteis · " + br(q.pesos.total, 0) + " kg de aço · solda " + br(q.soldaTotal, 0) + " m · pintura interna " + br(q.pinturaInterna, 0) + " m² e externa " + br(q.pinturaExterna, 0) + " m²</p>" +
 "<h4>Não verificado</h4><ul class=\"mtq-lst\" style=\"max-height:none\">" + r.naoVerificado.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
-UI.modal("Cálculo do tanque", h, [{ texto: "Abrir memorial", classe: "primary", onClick: function () { self.memorial(r); } }, { texto: "Folha do tanque (PDF)", onClick: function () { self.folhaPdf(r); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+var bgR = UI.modal("Cálculo do tanque", h, [{ texto: "Abrir memorial", classe: "primary", onClick: function () { self.memorial(r); } }, { texto: "Folha do tanque (PDF)", onClick: function () { self.folhaPdf(r); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+ligarProblemas(bgR, r.problemas, t, par, self);
 return r;
 },
 folhaPdf: function (r) {
@@ -94851,7 +95122,7 @@ var its = (r.medidas.dim && r.medidas.dim.itens || []).filter(function (it) { re
 its.forEach(function (it) {
 var d = A ? A.dimensionar({ itens: [it] }) : null; if (!d) return;
 var calc = d.verificacoes.filter(function (v) { return !v.info; }), fxr = it.tipo === "fixacao" ? L.fixacao(it) : null;
-out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
+out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, pecas: (pr.pecas || []).slice(), desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
 });
 });
 return out;
@@ -94862,6 +95133,32 @@ var crit = (f.naoVerificados || []).filter(function (t) { return /CRÍTICO/.test
 var m = f.status === "reprovado" ? "NÃO atende" : (f.aConfirmar ? "A CONFIRMAR — informe o fck da fundação (" + f.aConfirmar + ")" : "INCOMPLETO" + (crit ? ": " + crit : ""));
 return "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + "): " + m;
 });
+},
+problemasFixacao: function (fx) {
+return (Array.isArray(fx) ? fx : []).filter(function (f) { return f && f.status !== "aprovado"; }).map(function (f) {
+var crit = (f.naoVerificados || []).filter(function (t) { return /CRÍTICO/.test(t); })[0], sols = [], reprov = f.status === "reprovado";
+if (reprov) sols.push({ id: "abrir-escada", texto: "Abrir a escada para trocar a fixação ou o perfil" });
+else if (f.aConfirmar) sols.push({ id: "informar-fck", texto: "Informar o fck da fundação" });
+else sols.push({ id: "sem-acao", texto: crit ? "refaça a verificação que falta: " + crit : "a verificação crítica da fixação não foi feita" });
+return { tipo: "escada-fixacao", gravidade: reprov ? "erro" : "aviso", titulo: "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + ")",
+texto: reprov ? "A fixação não atende (razão " + br(f.razao, 2) + ")." : (f.aConfirmar ? "A confirmar: falta o fck da fundação (" + f.aConfirmar + ")." : "Incompleta" + (crit ? ": " + crit : ".")),
+pecas: (f.pecas || []).slice(), escada: f.escada, solucoes: sols };
+});
+},
+acoesFixacao: function (sol) {
+if (!sol) return false;
+if (sol.id === "informar-fck") return !!(global.MetalCalcLivreUI && global.MetalCalcLivreUI.irParaFck);
+if (sol.id === "abrir-escada") return !!(PU() && PU().pronta && PU().dialogo);
+return false;
+},
+corrigirFixacao: function (id, prob) {
+if (id === "informar-fck" && global.MetalCalcLivreUI && global.MetalCalcLivreUI.irParaFck) return global.MetalCalcLivreUI.irParaFck();
+if (id === "abrir-escada" && PU() && prob) {
+var al = PU().pronta(prob.escada); if (!al) return false;
+if (global.ProblemaCard) global.ProblemaCard.mostrarNo3D(prob.pecas);
+return PU().dialogo(al.tipo, { alvo: al });
+}
+return false;
 },
 secaoMemorial: function (html, fxDado) {
 var fx = Array.isArray(fxDado) ? fxDado : this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;
@@ -95251,6 +95548,10 @@ var f = it.fonte || {};
 h += "<p><b>Fonte:</b> " + esc(limpar(f.titulo || f.texto || "")) + (f.edicao ? " — " + esc(limpar(f.edicao)) : "") + (f.pagina ? " — " + esc(limpar(/^p/i.test(String(f.pagina)) ? f.pagina : "p. " + f.pagina)) : "") + (f.acesso ? " — acesso em " + esc(dataBR(f.acesso)) : "") +
 (seguro(f.url) ? ' — <a href="' + esc(seguro(f.url)) + '" target="_blank" rel="noopener noreferrer">abrir</a>' : "") + "</p>";
 if (it.norma) h += "<p><b>Norma citada pela fonte:</b> " + esc(it.norma) + "</p>";
+if (it.tipo === "perfil" && global.PerfilDesenho) {
+var des = global.PerfilDesenho.svg(it.nome, { largura: 280 });
+if (des) h += '<div class="cbr-desenho" data-cbr="desenho">' + des + "</div>";
+}
 if (it.tipo === "perfil" && global.PerfisAco) {
 var o = global.PerfisAco.obter(it.nome) || {}, org = o.origem || {}, cols = Object.keys(org).filter(function (k) { return typeof o[k] === "number"; });
 if (cols.length) h += '<table class="tbl"><thead><tr><th>Grandeza</th><th class="n">Valor</th><th>Origem</th></tr></thead><tbody>' + cols.map(function (k) { return "<tr><td>" + esc(k) + '</td><td class="n">' + br(o[k], Math.abs(o[k]) >= 1000 ? 0 : 2) + "</td><td>" + (org[k] === "geometria" ? "calculado pela seção" : "tabela do fabricante") + "</td></tr>"; }).join("") + "</tbody></table>";
@@ -95996,7 +96297,7 @@ s.textContent = ".lsg{display:flex;flex-direction:column;gap:10px;font-size:13px
 ".lsg-cat .lsg-op h3{font-size:13px}.lsg-nota{font-size:11px;color:var(--texto-fraco);margin:0}" +
 ".lsg-tab{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}.lsg-tab th{text-align:left;font-weight:600;color:var(--texto-fraco);border-bottom:1px solid var(--linha);padding:3px 6px}" +
 ".lsg-tab td{border-top:1px solid var(--linha);padding:3px 6px;vertical-align:top}.lsg-tab tr.ok td.sit{color:var(--verde)}.lsg-tab tr.nok td.sit{color:var(--vermelho)}.lsg-tab tr.nd td.sit{color:var(--texto-fraco)}" +
-".lsg-tab button{min-height:26px}.lsg-fora li{margin-bottom:2px}.lsg-det:empty{display:none}" +
+".lsg-rodape{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;border-top:1px solid var(--linha);padding-top:10px}.lsg-tab button{min-height:26px}.lsg-fora li{margin-bottom:2px}.lsg-det:empty{display:none}" +
 "@media (max-width:760px){.lsg-ops{grid-template-columns:1fr}.lsg-tab td:nth-child(3),.lsg-tab th:nth-child(3),.lsg-tab td:nth-child(5),.lsg-tab th:nth-child(5){display:none}}";
 document.head.appendChild(s);
 }
@@ -96018,7 +96319,7 @@ function estadoObra() { try { var st = global.BIM && BIM.editarEstado ? BIM.edit
 function migrarCfg() {
 var st = estadoObra(), loc = lerLocalCfg(), O = OBm(), M = MU(); if (!st || !loc || !O || !M) return false;
 var op = O.migracao(st, loc); if (!op) return false;
-if (!M.enviar(op)) return false;
+if (!enviarObra(op, "metal-lig-config")) return false;
 try { global.localStorage.setItem(CHAVE_CFG + ":migrada", JSON.stringify({ config: loc, em: new Date().toISOString() })); global.localStorage.removeItem(CHAVE_CFG); } catch (e) {}
 status("Configuração das ligações: a deste navegador passou para a obra (vale em todos os aparelhos).");
 return true;
@@ -96029,7 +96330,8 @@ if (st && st.ligConfig !== undefined) return st.ligConfig || null;
 if (st && migrarCfg()) { var st2 = estadoObra(); if (st2 && st2.ligConfig !== undefined) return st2.ligConfig || null; }
 return lerLocalCfg();
 }
-function gravarCfg(t) { var O = OBm(), M = MU(); if (!O || !M) return false; var op = O.opConfig(t); if (!op || op.erro) return false; return !!M.enviar(op); }
+function enviarObra(op, origem) { var M = MU(); return !!(M && op && M.enviar({ op: "lote", id: M.novoId(), origem: origem || "metal-lig-obra", ops: [op] })); }
+function gravarCfg(t) { var O = OBm(), M = MU(); if (!O || !M) return false; var op = O.opConfig(t); if (!op || op.erro) return false; return enviarObra(op, "metal-lig-config"); }
 function opObra(base) { var c = lerCfg(), F = CF(); if (!c || !F) return base; return F.opSugerir(c, base); }
 var CUSTO = { 1: "baixo", 2: "médio", 3: "alto" };
 function podeAplicar(o) {
@@ -96317,11 +96619,11 @@ salvarNaBiblioteca: function (i, nome) {
 var O = OBm(), M = MU(), o = opDe(i); if (!O || !M || !o) return null;
 var nm = nome || (o.nome + " — " + [U.ctx && U.ctx.relacao, (U.ctx && U.ctx.pecas || []).map(function (p) { return p.perfil && p.perfil.nome; }).filter(Boolean).join(" × ")].filter(Boolean).join(" · "));
 var x = O.itemDe(o, nm); if (!x.ok) { toast("Biblioteca: " + x.erro, "aviso", 7000); return x; }
-var op = O.opSalvar(x.item); if (op.erro || !M.enviar(op)) { toast("Biblioteca: o editor recusou.", "erro"); return { ok: false }; }
+var op = O.opSalvar(x.item); if (op.erro || !enviarObra(op, "metal-lig-biblio")) { toast("Biblioteca: o editor recusou.", "erro"); return { ok: false }; }
 toast("\"" + x.item.nome + "\" guardada na biblioteca da obra (o cálculo é refeito em cada nó onde for aplicada).", "ok", 7000);
 return x;
 },
-apagarDaBiblioteca: function (id) { var O = OBm(), M = MU(); if (!O || !M) return false; return !!M.enviar(O.opApagar(id)); },
+apagarDaBiblioteca: function (id) { var O = OBm(), M = MU(); if (!O || !M) return false; return enviarObra(O.opApagar(id), "metal-lig-biblio"); },
 aplicarDaBiblioteca: function (id) {
 var O = OBm(), S0 = S(), M = MU(); if (!O || !S0 || !M) return null;
 var item = this.bibliotecaItens().filter(function (x) { return x.id === id; })[0]; if (!item) { toast("Item não está na biblioteca da obra.", "aviso"); return null; }
@@ -96366,7 +96668,7 @@ css();
 var c = F.normalizar(lerCfg()), di = Mt ? Mt.diametros("parafuso") : [];
 function opt(v, txt, sel) { return '<option value="' + esc(v) + '"' + (sel ? " selected" : "") + ">" + esc(txt) + "</option>"; }
 var classes = (Mt ? Mt.PARAFUSOS : []).map(function (p) { return p.id.split(" (")[0]; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
-var h = '<div class="lsg" data-lsg="config" data-modal-largo><p class="lsg-nota">Vale para todas as ligações da obra (NBR 8800). Os padrões são os da norma; valor abaixo do mínimo é recusado.</p>' +
+var h = '<div class="lsg" data-lsg="config"><p class="lsg-nota">Vale para todas as ligações da obra (NBR 8800). Os padrões são os da norma; valor abaixo do mínimo é recusado.</p>' +
 '<label>Meio padrão <select data-cfg="meio">' + Object.keys(F.MEIOS).map(function (k) { return opt(k, F.MEIOS[k], c.meio === k); }).join("") + "</select></label>" +
 '<label>Classe do parafuso <select data-cfg="classe">' + classes.map(function (k) { return opt(k, k, c.parafuso.classe === k); }).join("") + "</select></label>" +
 "<fieldset><legend>Diâmetros disponíveis</legend>" + di.map(function (x) { return '<label><input type="checkbox" data-cfg-d="' + esc(x.id) + '"' + (c.parafuso.diametros.indexOf(x.id) >= 0 ? " checked" : "") + "> " + esc(x.id) + "</label>"; }).join(" ") + "</fieldset>" +
@@ -96378,7 +96680,8 @@ var h = '<div class="lsg" data-lsg="config" data-modal-largo><p class="lsg-nota"
 '<label>Folga de montagem viga → apoio (mm) <input type="number" step="0.1" min="10" max="30" data-cfg="folgaMontagem" value="' + c.folgaMontagem + '"></label>' +
 '<label><input type="checkbox" data-cfg="enrijRecorte"' + (c.enrijRecorte ? " checked" : "") + "> Enrijecedor com recorte nos cantos (guardado; o desenho e o cálculo do enrijecedor ainda não mudam com ele)</label>" +
 "<fieldset><legend>Tipologia preferida por situação</legend>" + Object.keys(F.SITUACOES).map(function (k) { return "<label>" + esc(F.SITUACOES[k]) + ' <select data-cfg-t="' + k + '">' + opt("", "a regra do encontro", !c.tipologia[k]) + Tp.porAplicacao(k).filter(function (t0) { return t0.calc && t0.familia !== "reforco"; }).map(function (t0) { return opt(t0.id, t0.nome, c.tipologia[k] === t0.id); }).join("") + "</select></label>"; }).join("") + "</fieldset>" +
-'<p class="lsg-nota" data-lsg="cfg-erros"></p></div>';
+'<p class="lsg-nota" data-lsg="cfg-erros"></p>' +
+'<div class="lsg-rodape" data-lsg="cfg-acoes"><button type="button" class="btn primary" data-cfg-acao="salvar">Salvar</button><button type="button" class="btn ghost" data-cfg-acao="padrao">Voltar ao padrão</button><button type="button" class="btn ghost" data-cfg-acao="fechar">Fechar</button></div></div>';
 function ler(raiz) {
 function q(s) { return raiz.querySelector(s); }
 var o = { meio: q("[data-cfg=meio]").value, parafuso: { classe: q("[data-cfg=classe]").value, diametros: [] }, atrito: q("[data-cfg=atrito]").checked, classeAtrito: q("[data-cfg=classeAtrito]").value, eletrodo: q("[data-cfg=eletrodo]").value,
@@ -96387,11 +96690,45 @@ Array.prototype.forEach.call(raiz.querySelectorAll("[data-cfg-d]"), function (b)
 Array.prototype.forEach.call(raiz.querySelectorAll("[data-cfg-t]"), function (s) { if (s.value) o.tipologia[s.getAttribute("data-cfg-t")] = s.value; });
 return o;
 }
-var self = this;
-UI.modal("Configuração das ligações da obra", h, [
-{ texto: "Salvar", classe: "primary", onClick: function () { var raiz = document.querySelector("[data-lsg='config']"), r = self.configuracao(ler(raiz)), box = raiz.querySelector("[data-lsg='cfg-erros']"); if (!r.salva) { box.textContent = "Não salvo: " + r.validacao.erros.join(" "); return; } UI.fecharModal(); toast("Configuração das ligações salva." + (r.validacao.avisos.length ? " " + r.validacao.avisos.join(" ") : ""), "ok", 8000); } },
-{ texto: "Voltar ao padrão", classe: "ghost", onClick: function () { self.configuracao(null); UI.fecharModal(); toast("Configuração das ligações: de volta ao padrão.", "info", 5000); } },
-{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+var self = this, TIT = "Configuração das ligações da obra", el = document.createElement("div"), bg = null, jd = null;
+el.className = "lsg-config"; el.innerHTML = h;
+function montar() {
+bg = UI.modal(TIT, "", []);
+var mod = bg.querySelector(".modal"), cab = bg.querySelector("header"), fx = cab && cab.querySelector("[data-fechar]"), ft = bg.querySelector("#modal-footer"), corpo = bg.querySelector(".body");
+if (mod) mod.classList.add("largo");
+if (ft) ft.style.display = "none";
+if (cab && global.JanelaDestacavel) {
+var bt = document.createElement("button"); bt.type = "button"; bt.className = "btn ghost sm"; bt.setAttribute("data-cfg-acao", "janela"); bt.setAttribute("aria-label", "Abrir em outra janela");
+bt.title = "Abrir em outra janela — para o outro monitor; o 3D fica livre"; bt.textContent = "Abrir em outra janela";
+cab.insertBefore(bt, fx || null); bt.addEventListener("click", destacar);
+}
+if (corpo) corpo.appendChild(el);
+return bg;
+}
+function destacar() {
+var JD = global.JanelaDestacavel; if (!JD || jd) return;
+var j = JD.destacar(el, { titulo: TIT + " — OrçaPRO", nome: "orcapro-ligconfig", chaveArmazem: "orcapro:ligconfig:janela",
+css: ".jd-conteudo{background:var(--surface);color:var(--texto);padding:16px 18px}.lsg-config .lsg{max-width:980px}",
+aoVoltar: function () {
+jd = null;
+if (bg && bg.isConnected) bg.style.display = "";
+else montar();
+} });
+if (!j || !j.ok) return;
+jd = j; if (bg) bg.style.display = "none";
+}
+function encerrar() { if (jd) { var j = jd; jd = null; j.descartar(); } UI.fecharModal(); }
+el.addEventListener("click", function (ev) {
+var b = ev.target && ev.target.closest ? ev.target.closest("[data-cfg-acao]") : null; if (!b || !el.contains(b)) return;
+var a = b.getAttribute("data-cfg-acao");
+if (a === "salvar") {
+var r = self.configuracao(ler(el)), box = el.querySelector("[data-lsg='cfg-erros']");
+if (!r.salva) { box.textContent = "Não salvo: " + r.validacao.erros.join(" "); return; }
+encerrar(); toast("Configuração das ligações salva." + (r.validacao.avisos.length ? " " + r.validacao.avisos.join(" ") : ""), "ok", 8000);
+} else if (a === "padrao") { self.configuracao(null); encerrar(); toast("Configuração das ligações: de volta ao padrão.", "info", 5000); }
+else if (a === "fechar") encerrar();
+});
+montar();
 return true;
 },
 tipos: function () {
@@ -111821,6 +112158,166 @@ instalar: instalar
 };
 global.BimMouse = BimMouse;
 if (typeof module !== "undefined" && module.exports) module.exports = BimMouse;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimatalhos.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global && global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 6000); } catch (e) {} }
+var ROTULO = {
+enquadrar: "Enquadra a seleção (sem seleção, enquadra tudo)",
+ocultar: "Oculta a seleção",
+isolar: "Isola a seleção",
+caixaCorte: "Caixa de corte",
+trena: "Medir (trena)",
+passeioAuto: "Passeio automático pelas vistas salvas (de novo para parar)",
+vistaTopo: "Vista de topo",
+vistaFrente: "Vista de frente",
+vistaLateral: "Vista lateral direita",
+vistaTras: "Vista de trás",
+vistaEsquerda: "Vista lateral esquerda",
+vistaIso: "Vista isométrica",
+selecionar: "Seleciona o que está na mira do centro",
+voltar: "Limpa a seleção / volta",
+abaAnterior: "Ponto de vista anterior",
+abaProxima: "Próximo ponto de vista",
+alternarModo: "Alterna modelo ⇄ passeio"
+};
+var ROTULO_CMD = { parede: "Parede", "corresp-tipo": "Corresponder tipo", elevar: "Elevar a seleção (subir/descer, levar a um nível, alinhar ao topo do pilar)" };
+var BOTAO = { 0: "A", 1: "B", 2: "X", 3: "Y", 4: "LB", 5: "RB", 8: "BACK", 9: "START", 10: "L3 (aperta o direcional esquerdo)", 11: "R3 (aperta o direcional direito)",
+12: "Cruz ↑", 13: "Cruz ↓", 14: "Cruz ←", 15: "Cruz →" };
+function rotulo(acao) { return ROTULO[acao] || acao; }
+function rotuloFita(id) {
+var R = global.BimRibbon; if (!R || !R.comando) return "";
+try { var c = R.comando(id); return c && c.rotulo ? String(c.rotulo).replace(/\/\s*\n\s*/g, "/").replace(/\s*\n\s*/g, " ") : ""; } catch (e) { return ""; }
+}
+function tecla(k) { return String(k).length === 1 ? String(k).toUpperCase() : String(k); }
+function secoes() {
+var Mo = dep("BimMouse", "./bimmouse.js"), Ct = dep("BimControle", "./bimcontrole.js"), Pr = dep("BimPrecisao", "./bimprecisao.js");
+var out = [];
+var tl = [];
+if (Mo && Mo.TECLAS) Object.keys(Mo.TECLAS).sort(function (a, b) { var na = /^\d$/.test(a), nb = /^\d$/.test(b); return na !== nb ? (na ? 1 : -1) : (a < b ? -1 : a > b ? 1 : 0); })
+.forEach(function (k) { tl.push([tecla(k), rotulo(Mo.TECLAS[k])]); });
+tl.push(["G", "Grade do chão (liga/desliga)"]);
+tl.push(["Ctrl+Z / Ctrl+Y", "Desfazer / refazer (Ctrl+Shift+Z também refaz)"]);
+tl.push(["Enter", "Repete o último comando"]);
+tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
+tl.push(["Delete", "Apaga as peças selecionadas do editor"]);
+tl.push(["?", "Abre esta tela de atalhos"]);
+out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,
+nota: "As teclas de uma letra não funcionam com o cursor dentro de um campo de texto nem com um diálogo aberto." });
+var nomes = {};
+if (Pr && Pr.FITA) Object.keys(Pr.FITA).forEach(function (g) { (Pr.FITA[g] || []).forEach(function (c) { if (c && c.sub && !nomes[c.sub]) nomes[c.sub] = String(c.rotulo || "").replace(/\s*\n\s*/g, " "); }); });
+var dl = [];
+if (Pr && Pr.ATALHOS) Object.keys(Pr.ATALHOS).forEach(function (k) { var s = Pr.ATALHOS[k]; dl.push([k, nomes[s] || ROTULO_CMD[s] || rotuloFita(s) || s]); });
+if (Pr && Pr.ATALHOS_CMD) Object.keys(Pr.ATALHOS_CMD).forEach(function (k) { var s = Pr.ATALHOS_CMD[k]; dl.push([k, ROTULO_CMD[s] || nomes[s] || rotuloFita(s) || s]); });
+if (dl.length) out.push({ id: "duas-letras", titulo: "Atalhos de duas letras", cab: ["Teclas", "Comando"], linhas: dl,
+nota: "Digite as duas letras em seguida (até 1,2 s entre elas). Valem no modo de edição; EL vale também fora dele." });
+out.push({ id: "mouse", titulo: "Mouse no BIM", cab: ["Ação", "O que faz"], linhas: [
+["Shift + botão do meio", "Gira em volta do ponto sob o cursor"],
+["Botão do meio / direito", "Desloca a vista"],
+["Roda", "Aproxima/afasta na direção do cursor, sem travar perto da peça"],
+["Botões laterais do mouse", rotulo("abaAnterior") + " / " + rotulo("abaProxima").toLowerCase()],
+["Duplo clique no vazio", "Enquadra tudo"],
+["Clique esquerdo", "Seleciona"]
+] });
+var cl = [["Direcional esquerdo", "Desloca a vista · no passeio: anda"], ["Direcional direito", "Gira o modelo · no passeio: olha em volta"],
+["LT / RT", "Zoom (de leve devagar, com força rápido) · no passeio: desce / sobe"]];
+if (Ct && Ct.MAPA) Object.keys(Ct.MAPA).map(Number).sort(function (a, b) { return a - b; }).forEach(function (i) { cl.push([BOTAO[i] || "botão " + i, rotulo(Ct.MAPA[i])]); });
+out.push({ id: "controle", titulo: "Controle de Xbox 360 com fio", cab: ["Botão", "O que faz"], linhas: cl,
+nota: "Ligue no USB, abra o BIM e aperte qualquer botão (o navegador só vê o controle depois do primeiro botão). A velocidade fica no canto de baixo: “Controle · velocidade − 1× +” (0,25× a 4×)." });
+out.push({ id: "botoes", titulo: "Botões novos nas telas", cab: ["Onde", "Botão", "O que faz"], linhas: [
+["Calcular a estrutura desenhada", "Abrir em outra janela", "Leva o cálculo para o 2º monitor; os botões de lá agem no 3D principal; lembra o lugar"],
+["Configuração das ligações", "Abrir em outra janela", "A configuração da obra no 2º monitor; Salvar, Voltar ao padrão e Fechar valem nas duas janelas"],
+["Erro de mecanismo", "Resolver", "Testa as soluções e propõe a do lugar do problema; aplica só com clique, com Desfazer"],
+["Avisos de problema", "Corrigir: … · Mostrar no 3D", "Corrige o problema (ou leva ao campo certo) e mostra a peça no 3D"],
+["Ligações", "Ligar todos os nós", "Liga de uma vez as peças selecionadas; o que fica de fora diz o motivo"],
+["Metálica", "Lançar vigas entre pilares", "Vigas de pilar a pilar em X, Y ou nos dois, na face certa, com emendas a cada 12 m"],
+["Metálica", "Catálogo BR · Catálogo industrial", "Perfis, parafusos, chumbadores, chapas, telhas, aços e pintura, com a fonte"],
+["Criar peça (pilar, viga…)", "Campo Perfil", "Digite série ou fabricante (W200, Ue 150, tubo, Gerdau); ao lado da lista, o desenho cotado da seção sob o mouse ou as setas"],
+["Vista › Navegar", "Atalhos", "Esta tela (também pela tecla ?)"]
+] });
+return out;
+}
+var CSS = ".bat{font-size:13px;line-height:1.4;color:var(--texto,#1d2733)}.bat h3{margin:14px 0 6px;font-size:14px}.bat h3:first-child{margin-top:0}" +
+".bat table{width:100%;border-collapse:collapse;margin:0 0 4px}.bat th{text-align:left;font-weight:600;color:var(--texto-fraco,#5b6573);border-bottom:1px solid var(--linha,#d9dee5);padding:3px 8px}" +
+".bat td{border-top:1px solid var(--linha,#e5e9ee);padding:4px 8px;vertical-align:top}.bat td:first-child{white-space:nowrap;width:1%}" +
+".bat kbd{display:inline-block;min-width:1.4em;padding:0 5px;border:1px solid var(--linha,#c8ced6);border-bottom-width:2px;border-radius:4px;background:var(--surface-2,#f4f6f8);font:600 12px/1.6 ui-monospace,Consolas,monospace;text-align:center}" +
+".bat .bat-nota{font-size:12px;color:var(--texto-fraco,#5b6573);margin:2px 0 0}.bat-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px}";
+function kbd(t) { return String(t).split(/(\s*\/\s*|\s*·\s*|\s+\+\s+|\+)/).map(function (p) { return /^\s*[\/·+]\s*$|^\s*\+\s*$/.test(p) ? esc(p) : (p ? "<kbd>" + esc(p) + "</kbd>" : ""); }).join(""); }
+function tabela(s) {
+var comTecla = s.id === "teclado" || s.id === "duas-letras";
+return '<section data-bat="' + esc(s.id) + '"><h3>' + esc(s.titulo) + "</h3><table><thead><tr>" + s.cab.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+s.linhas.map(function (l) { return "<tr>" + l.map(function (c, i) { return "<td>" + (i === 0 && comTecla ? kbd(c) : esc(c)) + "</td>"; }).join("") + "</tr>"; }).join("") +
+"</tbody></table>" + (s.nota ? '<p class="bat-nota">' + esc(s.nota) + "</p>" : "") + "</section>";
+}
+function html(op) {
+op = op || {};
+var S = secoes(), larg = S.filter(function (s) { return s.id === "botoes"; }), resto = S.filter(function (s) { return s.id !== "botoes"; });
+var corpo = '<div class="bat" data-bat="raiz"><div class="bat-grade">' + resto.map(tabela).join("") + "</div>" + larg.map(tabela).join("") + "</div>";
+if (!op.imprimir) return "<style>" + CSS + "</style>" + corpo;
+var ver = global.CONFIG && global.CONFIG.versao ? String(global.CONFIG.versao) : "", hoje = new Date(), d = ("0" + hoje.getDate()).slice(-2) + "/" + ("0" + (hoje.getMonth() + 1)).slice(-2) + "/" + hoje.getFullYear();
+return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>OrçaPRO BIM — Atalhos e comandos</title><style>' + CSS +
+"body{margin:18mm 14mm;font-family:Segoe UI,Arial,sans-serif;color:#1d2733}h1{font-size:18px;margin:0 0 2px}.sub{font-size:12px;color:#5b6573;margin:0 0 12px}" +
+"@page{size:A4;margin:0}@media print{body{margin:12mm 10mm}section{break-inside:avoid}}</style></head><body><h1>OrçaPRO BIM — Atalhos e comandos</h1>" +
+'<p class="sub">RA Engenharia · gerado em ' + esc(d) + (ver ? " · versão " + esc(ver) : "") + "</p>" + corpo + "</body></html>";
+}
+function baixarPdf() {
+var w = null; try { w = global.open("", "_blank"); } catch (e) {}
+if (!w || !w.document) { toast("O navegador bloqueou a janela do PDF. Libere pop-ups para o OrçaPRO e tente de novo.", "aviso", 8000); return false; }
+w.document.open(); w.document.write(html({ imprimir: true })); w.document.close();
+try { w.focus(); setTimeout(function () { try { w.print(); } catch (e2) {} }, 300); } catch (e3) {}
+toast("Atalhos abertos em outra aba: escolha “Salvar como PDF” na impressão.", "ok", 7000);
+return true;
+}
+function abrir() {
+if (!global.UI || !global.UI.modal) return false;
+var bg = global.UI.modal("Atalhos do BIM", html(), [
+{ texto: "Baixar PDF", classe: "primary", onClick: function () { baixarPdf(); } },
+{ texto: "Fechar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } }]);
+try { var m = bg && bg.querySelector ? bg.querySelector(".modal") : null; if (m) m.classList.add("largo"); } catch (e) {}
+return true;
+}
+function campoDeTexto(el) { return !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || "") || !!el.isContentEditable); }
+function instalar(win, doc) {
+win = win || (typeof window !== "undefined" ? window : null); doc = doc || (typeof document !== "undefined" ? document : null);
+if (!win || !doc) return function () {};
+if (win.__bimAtalhosDispor) { try { win.__bimAtalhosDispor(); } catch (e0) {} }
+function naTela() { var r = doc.querySelector(".bim-revit"); return !!(r && r.isConnected && r.getClientRects().length); }
+function aoTecla(e) {
+if (e.key !== "?" || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
+if (campoDeTexto(e.target) || campoDeTexto(doc.activeElement) || doc.getElementById("modal-bg") || !naTela()) return;
+e.preventDefault(); e.stopPropagation(); abrir();
+}
+win.addEventListener("keydown", aoTecla, true);
+var dispor = function () { win.removeEventListener("keydown", aoTecla, true); if (win.__bimAtalhosDispor === dispor) win.__bimAtalhosDispor = null; };
+win.__bimAtalhosDispor = dispor;
+return dispor;
+}
+function semRotulo() {
+var Mo = dep("BimMouse", "./bimmouse.js"), Ct = dep("BimControle", "./bimcontrole.js"), Pr = dep("BimPrecisao", "./bimprecisao.js"), out = [], nomes = {};
+if (Mo && Mo.TECLAS) Object.keys(Mo.TECLAS).forEach(function (k) { if (!ROTULO[Mo.TECLAS[k]]) out.push("tecla " + k + " → " + Mo.TECLAS[k]); });
+if (Ct && Ct.MAPA) Object.keys(Ct.MAPA).forEach(function (i) { if (!ROTULO[Ct.MAPA[i]]) out.push("botão " + i + " → " + Ct.MAPA[i]); if (!BOTAO[i]) out.push("botão " + i + " sem nome"); });
+if (Pr && Pr.FITA) Object.keys(Pr.FITA).forEach(function (g) { (Pr.FITA[g] || []).forEach(function (c) { if (c && c.sub) nomes[c.sub] = 1; }); });
+if (Pr && Pr.ATALHOS) Object.keys(Pr.ATALHOS).forEach(function (k) { var x = Pr.ATALHOS[k]; if (!nomes[x] && !ROTULO_CMD[x] && !rotuloFita(x)) out.push(k + " → " + x); });
+if (Pr && Pr.ATALHOS_CMD) Object.keys(Pr.ATALHOS_CMD).forEach(function (k) { var x = Pr.ATALHOS_CMD[k]; if (!ROTULO_CMD[x] && !nomes[x] && !rotuloFita(x)) out.push(k + " → " + x); });
+return out;
+}
+var BimAtalhos = {
+ROTULO: ROTULO, ROTULO_CMD: ROTULO_CMD, BOTAO: BOTAO,
+secoes: secoes, semRotulo: semRotulo, html: html, abrir: abrir, baixarPdf: baixarPdf, instalar: instalar,
+registrar: function (reg) { reg["atalhos"] = function () { abrir(); return true; }; return true; }
+};
+global.BimAtalhos = BimAtalhos;
+if (typeof module !== "undefined" && module.exports) module.exports = BimAtalhos;
+if (typeof window !== "undefined" && typeof document !== "undefined") { try { instalar(window, document); } catch (eI) {} }
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimvinculos.js ==== */

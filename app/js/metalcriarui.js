@@ -252,6 +252,9 @@
       var s = M && atual ? M.dimSecao(global.PerfisAco.paraPerfil(atual)) : null;
       ps.push({ id: pre + "info", rotulo: "Seção", leitura: true, valor: s ? Math.round(s.alt * 1000) + " × " + Math.round(s.larg * 1000) + " mm" + (info && fin(info.massa) ? " · " + br(info.massa, 1) + " kg/m" : "") : "—" });
       if (info && info.fabricante) ps.push({ id: pre + "fab", rotulo: "Fonte", leitura: true, valor: info.fabricante });
+      /* BACKLOG #61: o desenho cotado da seção, com massa, A, Ix, Wx e a fonte (js/perfildesenho.js) */
+      var PD = global.PerfilDesenho, des = PD && info ? PD.blocoHtml(info.nome, { largura: 250 }) : "";
+      if (des) ps.push({ id: pre + "desenho", rotulo: "Desenho da seção", tipo: "desenho", html: des });
       return { nome: "Perfil", params: ps };
     },
     _opcoesNivel: function (comAcima, comAltura) {
@@ -589,18 +592,29 @@
       if (this._barra || typeof document === "undefined") return this._barra;
       var self = this, b = document.createElement("span");
       b.className = "mcr-barra"; b.setAttribute("data-mcr", "barra"); b.style.display = "none";
-      var pop = null;
+      var pop = null, semPop = false;   /* semPop: o Esc da lista devolve o foco ao campo SEM reabrir a lista */
       function fecharPop() { if (pop && pop.parentNode) pop.parentNode.removeChild(pop); pop = null; }
       function abrirPop(inp) {
         var ferr = SUBS[self._sub]; if (!ferr || !MC()) return;
         var L = MC().buscarPerfis(inp.value, { limite: 30 });
         fecharPop();
         pop = document.createElement("div"); pop.className = "mcr-pop"; pop.setAttribute("role", "listbox"); pop.setAttribute("data-mcr", "pop");
-        if (!L.length) pop.innerHTML = '<div class="mcr-pop-vazio">Nenhum perfil com "' + esc(inp.value) + '". Tente a série (W, U, L, Ue, tubo) ou o fabricante.</div>';
-        else { var g = null; pop.innerHTML = L.map(function (it) { var cab = it.rotuloSerie !== g ? '<div class="mcr-pop-grupo">' + esc(it.rotuloSerie) + "</div>" : ""; g = it.rotuloSerie; return cab + '<button type="button" class="mcr-pop-item" role="option" data-mcr-cat="' + esc(it.nome) + '">' + esc(it.nome) + (it.massa ? '<span class="mcr-pop-kg">' + br(it.massa, 1) + " kg/m</span>" : "") + "</button>"; }).join(""); }
+        var lis;
+        if (!L.length) lis = '<div class="mcr-pop-vazio">Nenhum perfil com "' + esc(inp.value) + '". Tente a série (W, U, L, Ue, tubo) ou o fabricante.</div>';
+        else { var g = null; lis = L.map(function (it) { var cab = it.rotuloSerie !== g ? '<div class="mcr-pop-grupo">' + esc(it.rotuloSerie) + "</div>" : ""; g = it.rotuloSerie; return cab + '<button type="button" class="mcr-pop-item" role="option" data-mcr-cat="' + esc(it.nome) + '">' + esc(it.nome) + (it.massa ? '<span class="mcr-pop-kg">' + br(it.massa, 1) + " kg/m</span>" : "") + "</button>"; }).join(""); }
+        pop.innerHTML = '<div class="mcr-pop-lista">' + lis + '</div><div class="mcr-pop-sec" data-mcr="pop-sec" aria-live="polite"></div>';
         var r = inp.getBoundingClientRect(), rb = b.getBoundingClientRect();
         pop.style.left = Math.max(0, r.left - rb.left) + "px";
         b.appendChild(pop);
+        /* abre mostrando o perfil atual da ferramenta (ou o 1º da lista) */
+        var at = catDe(ferr), achou = at && pop.querySelector('[data-mcr-cat="' + (global.CSS && CSS.escape ? CSS.escape(at) : at.replace(/"/g, '\\"')) + '"]');
+        verSecao(achou ? at : (L[0] && L[0].nome));
+      }
+      /* BACKLOG #61: o desenho cotado do item sob o mouse ou o teclado; o último desenhado não é redesenhado */
+      function verSecao(nome) {
+        var box = pop && pop.querySelector('[data-mcr="pop-sec"]'), PD = global.PerfilDesenho; if (!box || !PD || !nome) return;
+        if (box.getAttribute("data-pfd-nome") === nome) return;
+        box.setAttribute("data-pfd-nome", nome); box.innerHTML = PD.blocoHtml(nome, { largura: 262 });
       }
       function escolher(nome) {
         var ferr = SUBS[self._sub]; if (!ferr) return;
@@ -608,10 +622,23 @@
         try { if (global.BimShell) global.BimShell.pintarProps(self.esquemaFerramenta(ferr)); } catch (e) {}
       }
       b.addEventListener("input", function (e) { if (e.target && e.target.getAttribute("data-mcr") === "perfil") abrirPop(e.target); });
-      b.addEventListener("focusin", function (e) { if (e.target && e.target.getAttribute("data-mcr") === "perfil") { e.target.select(); abrirPop(e.target); } });
+      b.addEventListener("focusin", function (e) {
+        if (e.target && e.target.getAttribute("data-mcr") === "perfil") { if (semPop) { semPop = false; return; } e.target.select(); abrirPop(e.target); return; }
+        if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-mcr-cat")) verSecao(e.target.getAttribute("data-mcr-cat"));
+      });
+      b.addEventListener("mouseover", function (e) { var it = e.target && e.target.closest ? e.target.closest("[data-mcr-cat]") : null; if (it) verSecao(it.getAttribute("data-mcr-cat")); });
       b.addEventListener("keydown", function (e) {
         e.stopPropagation();
-        var t = e.target; if (!t || t.getAttribute("data-mcr") !== "perfil") return;
+        var t = e.target;
+        /* setas dentro da lista: o foco anda item a item (e o desenho vai junto, pelo focusin); Esc volta ao campo */
+        if (t && t.hasAttribute && t.hasAttribute("data-mcr-cat") && pop) {
+          var its = Array.prototype.slice.call(pop.querySelectorAll("[data-mcr-cat]")), i = its.indexOf(t);
+          if (e.key === "ArrowDown" && i < its.length - 1) { e.preventDefault(); its[i + 1].focus(); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); if (i > 0) its[i - 1].focus(); else { var cp = b.querySelector('[data-mcr="perfil"]'); if (cp) cp.focus(); } }
+          else if (e.key === "Escape") { e.preventDefault(); var cp2 = b.querySelector('[data-mcr="perfil"]'); fecharPop(); if (cp2) { cp2.value = catDe(SUBS[self._sub]) || ""; semPop = true; cp2.focus(); } }
+          return;
+        }
+        if (!t || t.getAttribute("data-mcr") !== "perfil") return;
         if (e.key === "Escape") { fecharPop(); t.value = catDe(SUBS[self._sub]) || ""; t.blur(); }
         if (e.key === "Enter") { var pr = pop && pop.querySelector("[data-mcr-cat]"); if (pr) { e.preventDefault(); escolher(pr.getAttribute("data-mcr-cat")); } }
         if (e.key === "ArrowDown" && pop) { var it = pop.querySelector("[data-mcr-cat]"); if (it) { e.preventDefault(); it.focus(); } }

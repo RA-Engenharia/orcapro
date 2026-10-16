@@ -91,6 +91,11 @@
     h += "<p><b>Fonte:</b> " + esc(limpar(f.titulo || f.texto || "")) + (f.edicao ? " — " + esc(limpar(f.edicao)) : "") + (f.pagina ? " — " + esc(limpar(/^p/i.test(String(f.pagina)) ? f.pagina : "p. " + f.pagina)) : "") + (f.acesso ? " — acesso em " + esc(dataBR(f.acesso)) : "") +
          (seguro(f.url) ? ' — <a href="' + esc(seguro(f.url)) + '" target="_blank" rel="noopener noreferrer">abrir</a>' : "") + "</p>";
     if (it.norma) h += "<p><b>Norma citada pela fonte:</b> " + esc(it.norma) + "</p>";
+    if (it.tipo === "perfil" && global.PerfilDesenho) {
+      /* BACKLOG #61: o desenho cotado da seção antes da tabela de grandezas (só se o catálogo de perfis desenha esta) */
+      var des = global.PerfilDesenho.svg(it.nome, { largura: 280 });
+      if (des) h += '<div class="cbr-desenho" data-cbr="desenho">' + des + "</div>";
+    }
     if (it.tipo === "perfil" && global.PerfisAco) {
       var o = global.PerfisAco.obter(it.nome) || {}, org = o.origem || {}, cols = Object.keys(org).filter(function (k) { return typeof o[k] === "number"; });
       if (cols.length) h += '<table class="tbl"><thead><tr><th>Grandeza</th><th class="n">Valor</th><th>Origem</th></tr></thead><tbody>' + cols.map(function (k) { return "<tr><td>" + esc(k) + '</td><td class="n">' + br(o[k], Math.abs(o[k]) >= 1000 ? 0 : 2) + "</td><td>" + (org[k] === "geometria" ? "calculado pela seção" : "tabela do fabricante") + "</td></tr>"; }).join("") + "</tbody></table>";

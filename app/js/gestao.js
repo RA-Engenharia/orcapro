@@ -10787,6 +10787,7 @@
       try { if (window.BimAmbienteUI) BimAmbienteUI.registrar(reg, self); } catch (eP2d) {}
       /* P7: Anotar › Cota, Texto, Detalhe e Revisão nas vistas 2D — js/bimanot2dui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimAnot2DUI) BimAnot2DUI.registrar(reg); } catch (eP7) {}
+      try { if (window.BimAtalhos) BimAtalhos.registrar(reg); } catch (eAt) {}   /* BACKLOG #63: Vista › Navegar › Atalhos (js/bimatalhos.js) */
       /* P5: Vista › Criar (Tabela/Quantidades, Levantamento de material) e Anotar › Identificador — js/bimtabelaui.js, js/bimanot.js */
       try { if (window.BimTabelaUI) BimTabelaUI.registrar(reg, self); if (window.BimAnot) BimAnot.registrar(reg, self); } catch (eP5) {}
       /* P6: Vista › Criar (elevação, forro, estrutural, chamada, desenho, duplicar) e › Gráficos (modelos, V/G,

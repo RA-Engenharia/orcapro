@@ -375,7 +375,7 @@
         its.forEach(function (it) {
           var d = A ? A.dimensionar({ itens: [it] }) : null; if (!d) return;
           var calc = d.verificacoes.filter(function (v) { return !v.info; }), fxr = it.tipo === "fixacao" ? L.fixacao(it) : null;
-          out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
+          out.push({ aConfirmar: fxr ? fxr.aConfirmar || null : null, escada: pr.id, pecas: (pr.pecas || []).slice(), desnivel: r.par.desnivel, ponta: it.tipo === "pilarete" ? "patamar" : it.ponta, modo: it.tipo === "pilarete" ? "pilarete" : it.modo, nome: it.nome || it.rotulo || (it.ponta === "topo" ? "Topo" : "Pé"), razao: d.razao, status: d.status, verificacoes: calc, naoVerificados: d.naoVerificados, R: it.R || null, resumo: fxr ? fxr.resumo : (it.perfil + " — N = " + br(it.N, 2) + " kN, h = " + br(it.h, 2) + " m") });
         });
       });
       return out;
@@ -388,6 +388,36 @@
         var m = f.status === "reprovado" ? "NÃO atende" : (f.aConfirmar ? "A CONFIRMAR — informe o fck da fundação (" + f.aConfirmar + ")" : "INCOMPLETO" + (crit ? ": " + crit : ""));
         return "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + "): " + m;
       });
+    },
+    /* BACKLOG #59/#53 — as mesmas pendências como CARTÕES de problema (js/problemacard.js): o que é, "Corrigir: …" só quando há ação
+       real (fck → vai ao campo; reprovada → abre a escada para trocar a fixação) e "Mostrar no 3D" nas peças da escada. INCOMPLETO sem
+       fck (a verificação crítica não feita) é texto: não há correção automática, e botão vazio é o defeito que o cartão impede. */
+    problemasFixacao: function (fx) {
+      return (Array.isArray(fx) ? fx : []).filter(function (f) { return f && f.status !== "aprovado"; }).map(function (f) {
+        var crit = (f.naoVerificados || []).filter(function (t) { return /CRÍTICO/.test(t); })[0], sols = [], reprov = f.status === "reprovado";
+        if (reprov) sols.push({ id: "abrir-escada", texto: "Abrir a escada para trocar a fixação ou o perfil" });
+        else if (f.aConfirmar) sols.push({ id: "informar-fck", texto: "Informar o fck da fundação" });
+        else sols.push({ id: "sem-acao", texto: crit ? "refaça a verificação que falta: " + crit : "a verificação crítica da fixação não foi feita" });
+        return { tipo: "escada-fixacao", gravidade: reprov ? "erro" : "aviso", titulo: "Fixação da escada " + f.escada + " (" + (f.nome || f.ponta) + ")",
+          texto: reprov ? "A fixação não atende (razão " + br(f.razao, 2) + ")." : (f.aConfirmar ? "A confirmar: falta o fck da fundação (" + f.aConfirmar + ")." : "Incompleta" + (crit ? ": " + crit : ".")),
+          pecas: (f.pecas || []).slice(), escada: f.escada, solucoes: sols };
+      });
+    },
+    acoesFixacao: function (sol) {
+      if (!sol) return false;
+      if (sol.id === "informar-fck") return !!(global.MetalCalcLivreUI && global.MetalCalcLivreUI.irParaFck);
+      if (sol.id === "abrir-escada") return !!(PU() && PU().pronta && PU().dialogo);
+      return false;
+    },
+    /* executa o "Corrigir" de um cartão de fixação (o chamador fecha o quadro antes) */
+    corrigirFixacao: function (id, prob) {
+      if (id === "informar-fck" && global.MetalCalcLivreUI && global.MetalCalcLivreUI.irParaFck) return global.MetalCalcLivreUI.irParaFck();
+      if (id === "abrir-escada" && PU() && prob) {
+        var al = PU().pronta(prob.escada); if (!al) return false;
+        if (global.ProblemaCard) global.ProblemaCard.mostrarNo3D(prob.pecas);
+        return PU().dialogo(al.tipo, { alvo: al });
+      }
+      return false;
     },
     secaoMemorial: function (html, fxDado) {
       var fx = Array.isArray(fxDado) ? fxDado : this.fixacoesDoModelo(); if (!fx.length || typeof html !== "string") return html;

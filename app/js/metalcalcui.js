@@ -1614,7 +1614,12 @@
     var probs = problemasDe(r);
     if (probs.length) {
       h += '<section class="mc-card"><h4>' + ico("alerta", 16) + " Problemas e soluções</h4>";
-      probs.forEach(function (p) { h += '<div class="mc-prob" data-mc="problema"><h5>' + esc(p.titulo) + "</h5><p>" + esc(p.texto) + "</p>" + (p.botoes.length ? '<div class="mc-sols">' + p.botoes.join("") + "</div>" : "") + "</div>"; });
+      /* BACKLOG #59/#53: todo problema do resultado tem "Mostrar no 3D" (a vista dos resultados: a barra que não passa em destaque,
+         ou a deformada / o modo de flambagem quando o problema é de deslocamento); a ação (Calcular com…) segue como estava */
+      probs.forEach(function (p) {
+        var m3 = global.MetalCalcVista && p.modo3d ? '<button class="mc-bt" data-mc-acao="mostrar3d" data-mc-modo="' + esc(p.modo3d) + '"' + (p.foco ? ' data-mc-foco="' + esc(p.foco) + '"' : "") + ' title="Abre o resultado em 3D' + (p.foco ? " com a barra " + esc(p.foco) + " em destaque" : "") + '">Mostrar no 3D</button>' : "";
+        h += '<div class="mc-prob" data-mc="problema"><h5>' + esc(p.titulo) + "</h5><p>" + esc(p.texto) + "</p>" + (p.botoes.length || m3 ? '<div class="mc-sols">' + m3 + p.botoes.join("") + "</div>" : "") + "</div>";
+      });
       h += "</section>";
     }
     h += '<div class="mc-duas" style="align-items:start"><div>' + decisoesHtml(r) + "</div><div>" + servicoHtml(r) + reacoesHtml(r) + avisosHtml(r) + "</div></div>";
@@ -1659,18 +1664,18 @@
       var p = porGrupo[g], bts = [], mt = /Trocar (.+?) por (.+?) \(/.exec(p.sugestao || "");
       if (mt) bts.push('<button class="mc-bt pri" data-mc-acao="troca" data-mc-v="' + esc(g + "|" + mt[2]) + '">Calcular com ' + esc(mt[2]) + "</button>");
       bts.push('<button class="mc-bt" data-mc-acao="continuar">Mais rodadas de otimização</button>');
-      o.push({ titulo: (GRUPOS[g] || g) + " — " + p.perfil + " com aproveitamento de " + fmt(p.razao * 100, 0) + " %", texto: (p.sugestao || "A barra não passa.") + (typeof p.gov === "string" ? " Governa: " + p.gov + "." : ""), botoes: bts });
+      o.push({ titulo: (GRUPOS[g] || g) + " — " + p.perfil + " com aproveitamento de " + fmt(p.razao * 100, 0) + " %", texto: (p.sugestao || "A barra não passa.") + (typeof p.gov === "string" ? " Governa: " + p.gov + "." : ""), botoes: bts, foco: p.id, modo3d: "aproveitamento" });
     });
-    secundarias(r).forEach(function (s) { if (s.x.ok === false) o.push({ titulo: s.nome + " — " + (s.x.perfil || "sem perfil") + " não passa", texto: (s.x.governante ? "Governa: " + s.x.governante + ". " : "") + (arr(s.x.alternativas).length ? "O catálogo tem alternativas: perfil mais alto ou mais espesso, ou mais linhas de correntes/tirantes." : "Nenhum Ue do catálogo resolve: aproxime os pórticos ou use perfil laminado."), botoes: ['<button class="mc-bt" data-mc-acao="passo-assistente" data-mc-v="2">Revisar o espaçamento dos pórticos</button>'] }); });
-    arr(r.ligacoes && r.ligacoes.lista).forEach(function (l) { if (!l.ok) o.push({ titulo: l.nome + " — aproveitamento de " + fmt(num(l.razao, 0) * 100, 0) + " %", texto: (l.sugestao || "A ligação não passa.") + (l.governante ? " Governa: " + l.governante + "." : ""), botoes: [] }); });
+    secundarias(r).forEach(function (s) { if (s.x.ok === false) o.push({ titulo: s.nome + " — " + (s.x.perfil || "sem perfil") + " não passa", texto: (s.x.governante ? "Governa: " + s.x.governante + ". " : "") + (arr(s.x.alternativas).length ? "O catálogo tem alternativas: perfil mais alto ou mais espesso, ou mais linhas de correntes/tirantes." : "Nenhum Ue do catálogo resolve: aproxime os pórticos ou use perfil laminado."), botoes: ['<button class="mc-bt" data-mc-acao="passo-assistente" data-mc-v="2">Revisar o espaçamento dos pórticos</button>'], modo3d: "aproveitamento" }); });
+    arr(r.ligacoes && r.ligacoes.lista).forEach(function (l) { if (!l.ok) o.push({ titulo: l.nome + " — aproveitamento de " + fmt(num(l.razao, 0) * 100, 0) + " %", texto: (l.sugestao || "A ligação não passa.") + (l.governante ? " Governa: " + l.governante + "." : ""), botoes: [], modo3d: "aproveitamento" }); });
     var els = arr(r.servico).filter(function (s) { return s.razao > 1; }).sort(function (a, b) { return b.razao - a.razao; })[0];
     if (els) {
       var b2 = [];
       if (base !== "engastada") b2.push('<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>');
       b2.push('<button class="mc-bt" data-mc-acao="continuar">Mais rodadas de otimização</button>');
-      o.push({ titulo: "Deslocamento acima do limite (" + (els.tipo === "viga" ? "flecha da viga" : "topo do pilar") + ")", texto: fmt(els.valor * 1000, 1) + " mm para o limite de " + fmt(els.limite * 1000, 1) + " mm (" + els.texto + ", " + els.ref + "). Mais rigidez resolve: base engastada ou perfis maiores.", botoes: b2 });
+      o.push({ titulo: "Deslocamento acima do limite (" + (els.tipo === "viga" ? "flecha da viga" : "topo do pilar") + ")", texto: fmt(els.valor * 1000, 1) + " mm para o limite de " + fmt(els.limite * 1000, 1) + " mm (" + els.texto + ", " + els.ref + "). Mais rigidez resolve: base engastada ou perfis maiores.", botoes: b2, modo3d: "deformada" });
     }
-    if (r.deslocabilidade && r.deslocabilidade.classe === "grande") o.push({ titulo: "Estrutura de grande deslocabilidade", texto: "Δ2/Δ1 = " + fmt(r.deslocabilidade.razao, 2) + ": a NBR 8800 pede análise rigorosa. Aumente a rigidez — base engastada ou perfis maiores.", botoes: base !== "engastada" ? ['<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>'] : [] });
+    if (r.deslocabilidade && r.deslocabilidade.classe === "grande") o.push({ titulo: "Estrutura de grande deslocabilidade", texto: "Δ2/Δ1 = " + fmt(r.deslocabilidade.razao, 2) + ": a NBR 8800 pede análise rigorosa. Aumente a rigidez — base engastada ou perfis maiores.", botoes: base !== "engastada" ? ['<button class="mc-bt pri" data-mc-acao="engastar">Calcular com a base engastada</button>'] : [], modo3d: "flambagem" });
     return o;
   }
   var ICONE_TEMA = { "Pórticos": "P", "Terças": "T", "Telha e terças": "T", "Travessas de fechamento": "Tr", "Travessas dos oitões": "Tr", "Colunas de tapamento": "C", "Contraventamento": "X", "Contraventamento das paredes": "X", "Análise estrutural": "2ª", "Mãos-francesas": "MF", "Flambagem global": "λ", "Vento": "V", "Perfis de partida": "W", "Estabilidade": "!", "Travessas laterais": "Tr" };
@@ -1943,12 +1948,14 @@
   }
   var vistaCtl = null;
   function soltarVista() { if (vistaCtl && vistaCtl.destruir) { try { vistaCtl.destruir(); } catch (e) {} } vistaCtl = null; }
-  function verEm3D() {
+  function verEm3D(foco) {
     var r = UIC.r, V3 = global.MetalCalcVista; if (!r || !r.ok || !V3 || !V3.abrir) { toast("A vista 3D dos resultados não carregou.", "aviso"); return; }
     soltarVista();
     UIC.modo = "vista"; render();
     var box = doc.querySelector("[data-mc='vista3d']");
-    try { vistaCtl = V3.abrir(box, r, { modo: "aproveitamento", tema: "auto" }); } catch (e) { toast("Vista 3D: " + e.message, "erro", 8000); UIC.modo = "resultado"; render(); }
+    try { vistaCtl = V3.abrir(box, r, { modo: foco && foco.modo ? foco.modo : "aproveitamento", tema: "auto" }); } catch (e) { toast("Vista 3D: " + e.message, "erro", 8000); UIC.modo = "resultado"; render(); return; }
+    /* "Mostrar no 3D" de um problema: a barra que não passa fica em destaque e enquadrada */
+    if (foco && foco.id && vistaCtl && vistaCtl.selecionar) { try { vistaCtl.selecionar(foco.id, { enquadrar: true }); } catch (e2) {} }
   }
   /* o galpão no BIM com os perfis FINAIS (o assistente de modelagem do js/metalgalpao.js) */
   /* o galpão que ESTE cálculo desenhou e que ainda está no modelo (o id fica nos dados da obra); sem o id, se o modelo
@@ -2119,6 +2126,7 @@
       case "continuar": var gr = (UIC.r && UIC.r.grupos) || {}; e.perfis.partida = {}; ["pilar", "viga", "tapamento"].forEach(function (k) { if (gr[k] && gr[k].perfil) e.perfis.partida[k] = gr[k].perfil; }); salvar(true); calcular(); return;
       case "engastar": e.geometria.base = "engastada"; salvar(true); calcular(); return;
       case "vista3d": verEm3D(); return;
+      case "mostrar3d": verEm3D({ id: el ? el.getAttribute("data-mc-foco") : "", modo: el ? el.getAttribute("data-mc-modo") : "" }); return;
       case "memorial": memorial(); return;
       case "pranchas": pranchas(); return;
       case "cype": cype(); return;

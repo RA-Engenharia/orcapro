@@ -652,6 +652,9 @@
     if (v === "base") return apoiarCantos(prob ? arr(prob.pecas) : []);
     if (v === "faces-abertas") { marcarFacesAbertas(); return calcular(); }
     if (v === "informar-fck") { U.modo = "passos"; U.passo = 1; render(); if (PC()) PC().irPara('[data-ml-campo="fckFundacao"]', raiz()); return; }
+    if (v === "lig-todos") { if (global.MetalLigSugUI && MetalLigSugUI.lote) MetalLigSugUI.lote(); return; }
+    if (v === "lig-tipos") { if (global.MetalLigSugUI && MetalLigSugUI.tipos) MetalLigSugUI.tipos(); return; }
+    if (v === "recalcular") { U.modo = "passos"; U.passo = 3; render(); return; }
     if (v === "rever-envoltorio") { U.modo = "passos"; U.passo = 1; render(); setTimeout(function () { var c = doc.querySelector('#ml-veu [data-ml="faces"]'); if (c) c.scrollIntoView({ block: "start" }); }, 60); return; }
   }
   /* ============================================================ 15/10/2026: RESOLVER O MECANISMO (js/acoresolverlivre.js)
@@ -876,10 +879,37 @@
     U.pranchas = x; U.modo = "pranchas"; render();
     status("Pranchas da estrutura desenhada: " + x.folhas.length + " folhas.");
   }
+  /* BACKLOG #59/#53 — os avisos das pranchas como CARTÕES: o que é, "Corrigir: …" só quando há ação real (ligar todos os nós, ver as
+     ligações que não atendem, refazer o cálculo) e o resto como texto ("Sem correção automática — …"). Os avisos de desenho (folha com
+     erro, valor inválido) não têm correção na tela: ficam como aviso simples. */
+  function solucoesAvisoPrancha(a) {
+    a = String(a);
+    if (/Nenhuma ligação dimensionada/.test(a)) return [{ id: "lig-todos", texto: "Ligar todos os nós (dimensiona as ligações do modelo)" }];
+    if (/ligação\(ões\) que NÃO atende|Ligações: \d+ verificação/.test(a)) return [{ id: "lig-tipos", texto: "Ver as ligações que não atendem, por Tipo" }];
+    if (/O cálculo não está aprovado|SEM vento|casos de vento/.test(a)) return [{ id: "recalcular", texto: "Voltar ao cálculo e refazê-lo" }];
+    if (/Correntes de terça|Correntes das terças|Mãos-francesas|Sem perfil no resultado/.test(a)) return [{ id: "sem-acao", texto: "o diâmetro / perfil é definido no dimensionamento das peças secundárias; a folha sai com a pendência em vermelho" }];
+    return [];
+  }
+  function avisosPranchasHtml(avisos) {
+    var P = PC();
+    if (!P) return '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos</h4><ul class="ml-l">' + avisos.map(function (a) { return '<li class="ml-aviso">' + esc(a) + "</li>"; }).join("") + "</ul></div>";
+    function acoes(sol) {
+      if (!sol) return false;
+      if (sol.id === "lig-todos") return !!(global.MetalLigSugUI && MetalLigSugUI.lote);
+      if (sol.id === "lig-tipos") return !!(global.MetalLigSugUI && MetalLigSugUI.tipos);
+      return sol.id === "recalcular";
+    }
+    return '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos das pranchas</h4>' + avisos.map(function (a, i) {
+      U.probExtra = U.probExtra || {};
+      var p = { tipo: "prancha-aviso", gravidade: "aviso", titulo: String(a), texto: "", solucoes: solucoesAvisoPrancha(a) };
+      U.probExtra["prancha" + i] = p;
+      return P.html(p, { pre: "ml", indice: "x:prancha" + i, acoes: acoes, attrs: 'data-ml="prancha-aviso"' });
+    }).join("") + "</div>";
+  }
   function pranchasHtml() {
     var x = U.pranchas || { folhas: [], avisos: [] };
     var h = '<h3>Pranchas do projeto executivo — estrutura desenhada</h3><p class="ml-d">' + x.folhas.length + " folhas " + esc((x.folhas[0] || {}).formato || "A1") + " no Padrão RA (carimbo RA). Abra uma folha, imprima em PDF ou baixe os desenhos (SVG, DXF com as penas por camada; DWG pelo DXF).</p>";
-    if (arr(x.avisos).length) h += '<div class="ml-card" data-ml="pranchas-avisos"><h4>Avisos</h4><ul class="ml-l">' + x.avisos.map(function (a) { return '<li class="ml-aviso">' + esc(a) + "</li>"; }).join("") + "</ul></div>";
+    if (arr(x.avisos).length) h += avisosPranchasHtml(x.avisos);
     h += '<div data-ml="pranchas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">' + x.folhas.map(function (f, i) {
       return '<div class="ml-card" style="margin:0;padding:8px" data-ml-folha="' + esc(f.id) + '"><div style="background:#fff;border:1px solid var(--ml-linha);border-radius:8px;overflow:hidden;cursor:zoom-in;aspect-ratio:841/594" data-ml-acao="prancha-ver" data-ml-v="' + i + '" title="Ver a folha grande">' + f.svg.replace("<svg ", '<svg style="width:100%;height:100%;display:block" ') + '</div><p style="margin:6px 2px 0"><b>' + esc(f.numero) + "</b> — " + esc(f.titulo) + '<br><span class="ml-nota">Escala ' + esc(f.escala || "indicada") + "</span></p></div>";
     }).join("") + "</div>";
@@ -998,7 +1028,34 @@
       if (!x || !x.ok) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return; }
       if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
       else { baixar(nomeArq() + "-memorial-estrutura-metalica.html", x.html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); }
+      try { quadroEmissao(fxE, pendE, x); } catch (eQ) { if (global.console) global.console.error(eQ); }
     });
+  }
+  /* BACKLOG #59/#53 — o que BARRA a emissão do memorial, repetido na tela como cartões (o documento continua trazendo o texto, que é o
+     lugar certo): cada fixação de escada pendente (fck → campo; reprovada → abrir a escada) e cada divergência do memorial. Só aparece
+     se há algo a resolver; solução sem ação vira texto. */
+  function quadroEmissao(fxE, pendE, x) {
+    var P = PC(), EL = global.MetalEscadaLinhaUI; if (!P || !global.UI || !UI.modal || !x || !x.ok) return null;
+    var probs = EL && EL.problemasFixacao ? EL.problemasFixacao(fxE) : [], jaDitos = arr(pendE).map(String);
+    arr(x.avisos).filter(function (a) { return jaDitos.indexOf(String(a)) < 0; }).forEach(function (a) {
+      var eq = /Equilíbrio do caso|Peso da lista/.test(a);
+      probs.push({ tipo: "memorial-aviso", gravidade: "aviso", titulo: String(a), texto: "Divergência do memorial — não emita até resolver.",
+        solucoes: [eq ? { id: "recalcular", texto: "Refazer o cálculo (passo 3)" } : { id: "sem-acao", texto: "o texto do motor ficou com valor indefinido: não emita e avise o suporte" }] });
+    });
+    if (!probs.length) return null;
+    function acoes(sol) { return sol && sol.id === "recalcular" ? true : (EL && EL.acoesFixacao ? EL.acoesFixacao(sol) : false); }
+    var bg = UI.modal("O que barra a emissão do memorial", P.lista(probs, { acoes: acoes, titulo: probs.length + " pendência(s) — o memorial saiu com o aviso \"não emitir\"", attrs: 'data-ml="emissao"' }), [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    P.ligar(bg, {
+      corrigir: function (id, k) {
+        var pr = probs[+k]; if (!pr) return;
+        UI.fecharModal();
+        if (id === "recalcular") { if (global.MetalCalcLivreUI) MetalCalcLivreUI.abrir(3); return; }
+        if (EL && EL.corrigirFixacao) EL.corrigirFixacao(id, pr);
+      },
+      mostrar: function (ids) { UI.fecharModal(); var mo = P.mostrarNo3D(ids); toast(mo.selecionou ? ids.length + " peça(s) selecionada(s)" + (mo.enquadrou ? " e enquadrada(s)" : "") + "." : "O 3D não está disponível aqui.", mo.selecionou ? "ok" : "aviso", 6000); }
+    });
+    U.ultimaEmissao = probs;
+    return probs;
   }
   /* RELATÓRIO POR TIPO DENTRO DO MEMORIAL: nós iguais viram um Tipo (js/acoliglote.js); a situação vem do motor, nunca é escrita aqui.
      Pura: sem AcoLigLote ou sem ligação com esforços, devolve o html como veio. */
@@ -1072,6 +1129,8 @@
     fechar: fechar,
     destacar: destacarJanela, voltarJanela: voltarJanela, janela: function () { return U.jd || null; },
     tela: function () { return raiz() ? U.modo : null; },
+    _avisosPranchasHtml: function (a) { return avisosPranchasHtml(arr(a)); },   /* só para os testes */
+    _quadroEmissao: quadroEmissao,
     ultimas: function () { return { memorial: U.ultimoMemorial || null, cype: U.ultimoCype || null, ligacoes: U.ultimasLigacoes || null, html: U.ultimoHtml || null, pranchas: U.pranchas || null, dxf: U.ultimoDxf || null }; },
     envoltorio: function () { return U.env || null; },
     /* refaz as peças do fechamento escolhido (VEDAÇÃO) — a tela chama sozinha ao escolher; a e2e e o console chamam por aqui */

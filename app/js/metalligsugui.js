@@ -70,7 +70,7 @@
       ".lsg-cat .lsg-op h3{font-size:13px}.lsg-nota{font-size:11px;color:var(--texto-fraco);margin:0}" +
       ".lsg-tab{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}.lsg-tab th{text-align:left;font-weight:600;color:var(--texto-fraco);border-bottom:1px solid var(--linha);padding:3px 6px}" +
       ".lsg-tab td{border-top:1px solid var(--linha);padding:3px 6px;vertical-align:top}.lsg-tab tr.ok td.sit{color:var(--verde)}.lsg-tab tr.nok td.sit{color:var(--vermelho)}.lsg-tab tr.nd td.sit{color:var(--texto-fraco)}" +
-      ".lsg-tab button{min-height:26px}.lsg-fora li{margin-bottom:2px}.lsg-det:empty{display:none}" +
+      ".lsg-rodape{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;border-top:1px solid var(--linha);padding-top:10px}.lsg-tab button{min-height:26px}.lsg-fora li{margin-bottom:2px}.lsg-det:empty{display:none}" +
       "@media (max-width:760px){.lsg-ops{grid-template-columns:1fr}.lsg-tab td:nth-child(3),.lsg-tab th:nth-child(3),.lsg-tab td:nth-child(5),.lsg-tab th:nth-child(5){display:none}}";
     document.head.appendChild(s);
   }
@@ -103,7 +103,7 @@
   function migrarCfg() {
     var st = estadoObra(), loc = lerLocalCfg(), O = OBm(), M = MU(); if (!st || !loc || !O || !M) return false;
     var op = O.migracao(st, loc); if (!op) return false;
-    if (!M.enviar(op)) return false;
+    if (!enviarObra(op, "metal-lig-config")) return false;
     try { global.localStorage.setItem(CHAVE_CFG + ":migrada", JSON.stringify({ config: loc, em: new Date().toISOString() })); global.localStorage.removeItem(CHAVE_CFG); } catch (e) {}
     status("Configuração das ligações: a deste navegador passou para a obra (vale em todos os aparelhos).");
     return true;
@@ -114,7 +114,11 @@
     if (st && migrarCfg()) { var st2 = estadoObra(); if (st2 && st2.ligConfig !== undefined) return st2.ligConfig || null; }
     return lerLocalCfg();
   }
-  function gravarCfg(t) { var O = OBm(), M = MU(); if (!O || !M) return false; var op = O.opConfig(t); if (!op || op.erro) return false; return !!M.enviar(op); }
+  /* ⚠ O EDITOR (BIM.b2Op) RECUSA uma op avulsa "metalLigConfig"/"metalLigBiblio" — só as do conjunto fixo dele passam. No lote
+     (BIM.editarLote) elas passam pelo sanear das extensões (js/acoligobra.js). Mandar avulsa fazia "Salvar" dizer "a configuração
+     mora na obra" mesmo com a obra aberta (achado no e2e da tela destacável, 16/10/2026). Sempre em lote de uma op. */
+  function enviarObra(op, origem) { var M = MU(); return !!(M && op && M.enviar({ op: "lote", id: M.novoId(), origem: origem || "metal-lig-obra", ops: [op] })); }
+  function gravarCfg(t) { var O = OBm(), M = MU(); if (!O || !M) return false; var op = O.opConfig(t); if (!op || op.erro) return false; return enviarObra(op, "metal-lig-config"); }
   function opObra(base) { var c = lerCfg(), F = CF(); if (!c || !F) return base; return F.opSugerir(c, base); }
   var CUSTO = { 1: "baixo", 2: "médio", 3: "alto" };
   /* QUEM PODE SER APLICADA (revisão A1): só a opção que PASSA, sem bloqueio e com desenho; a chapa estendida que pede o
@@ -440,11 +444,11 @@
       var O = OBm(), M = MU(), o = opDe(i); if (!O || !M || !o) return null;
       var nm = nome || (o.nome + " — " + [U.ctx && U.ctx.relacao, (U.ctx && U.ctx.pecas || []).map(function (p) { return p.perfil && p.perfil.nome; }).filter(Boolean).join(" × ")].filter(Boolean).join(" · "));
       var x = O.itemDe(o, nm); if (!x.ok) { toast("Biblioteca: " + x.erro, "aviso", 7000); return x; }
-      var op = O.opSalvar(x.item); if (op.erro || !M.enviar(op)) { toast("Biblioteca: o editor recusou.", "erro"); return { ok: false }; }
+      var op = O.opSalvar(x.item); if (op.erro || !enviarObra(op, "metal-lig-biblio")) { toast("Biblioteca: o editor recusou.", "erro"); return { ok: false }; }
       toast("\"" + x.item.nome + "\" guardada na biblioteca da obra (o cálculo é refeito em cada nó onde for aplicada).", "ok", 7000);
       return x;
     },
-    apagarDaBiblioteca: function (id) { var O = OBm(), M = MU(); if (!O || !M) return false; return !!M.enviar(O.opApagar(id)); },
+    apagarDaBiblioteca: function (id) { var O = OBm(), M = MU(); if (!O || !M) return false; return enviarObra(O.opApagar(id), "metal-lig-biblio"); },
     /* aplica o item nos encontros da SELEÇÃO: em cada um recalcula (AcoLigObra.reaplicar); só aplica o que passa, tem desenho e não tem bloqueio */
     aplicarDaBiblioteca: function (id) {
       var O = OBm(), S0 = S(), M = MU(); if (!O || !S0 || !M) return null;
@@ -491,7 +495,7 @@
       var c = F.normalizar(lerCfg()), di = Mt ? Mt.diametros("parafuso") : [];
       function opt(v, txt, sel) { return '<option value="' + esc(v) + '"' + (sel ? " selected" : "") + ">" + esc(txt) + "</option>"; }
       var classes = (Mt ? Mt.PARAFUSOS : []).map(function (p) { return p.id.split(" (")[0]; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
-      var h = '<div class="lsg" data-lsg="config" data-modal-largo><p class="lsg-nota">Vale para todas as ligações da obra (NBR 8800). Os padrões são os da norma; valor abaixo do mínimo é recusado.</p>' +
+      var h = '<div class="lsg" data-lsg="config"><p class="lsg-nota">Vale para todas as ligações da obra (NBR 8800). Os padrões são os da norma; valor abaixo do mínimo é recusado.</p>' +
         '<label>Meio padrão <select data-cfg="meio">' + Object.keys(F.MEIOS).map(function (k) { return opt(k, F.MEIOS[k], c.meio === k); }).join("") + "</select></label>" +
         '<label>Classe do parafuso <select data-cfg="classe">' + classes.map(function (k) { return opt(k, k, c.parafuso.classe === k); }).join("") + "</select></label>" +
         "<fieldset><legend>Diâmetros disponíveis</legend>" + di.map(function (x) { return '<label><input type="checkbox" data-cfg-d="' + esc(x.id) + '"' + (c.parafuso.diametros.indexOf(x.id) >= 0 ? " checked" : "") + "> " + esc(x.id) + "</label>"; }).join(" ") + "</fieldset>" +
@@ -503,7 +507,8 @@
         '<label>Folga de montagem viga → apoio (mm) <input type="number" step="0.1" min="10" max="30" data-cfg="folgaMontagem" value="' + c.folgaMontagem + '"></label>' +
         '<label><input type="checkbox" data-cfg="enrijRecorte"' + (c.enrijRecorte ? " checked" : "") + "> Enrijecedor com recorte nos cantos (guardado; o desenho e o cálculo do enrijecedor ainda não mudam com ele)</label>" +
         "<fieldset><legend>Tipologia preferida por situação</legend>" + Object.keys(F.SITUACOES).map(function (k) { return "<label>" + esc(F.SITUACOES[k]) + ' <select data-cfg-t="' + k + '">' + opt("", "a regra do encontro", !c.tipologia[k]) + Tp.porAplicacao(k).filter(function (t0) { return t0.calc && t0.familia !== "reforco"; }).map(function (t0) { return opt(t0.id, t0.nome, c.tipologia[k] === t0.id); }).join("") + "</select></label>"; }).join("") + "</fieldset>" +
-        '<p class="lsg-nota" data-lsg="cfg-erros"></p></div>';
+        '<p class="lsg-nota" data-lsg="cfg-erros"></p>' +
+        '<div class="lsg-rodape" data-lsg="cfg-acoes"><button type="button" class="btn primary" data-cfg-acao="salvar">Salvar</button><button type="button" class="btn ghost" data-cfg-acao="padrao">Voltar ao padrão</button><button type="button" class="btn ghost" data-cfg-acao="fechar">Fechar</button></div></div>';
       function ler(raiz) {
         function q(s) { return raiz.querySelector(s); }
         var o = { meio: q("[data-cfg=meio]").value, parafuso: { classe: q("[data-cfg=classe]").value, diametros: [] }, atrito: q("[data-cfg=atrito]").checked, classeAtrito: q("[data-cfg=classeAtrito]").value, eletrodo: q("[data-cfg=eletrodo]").value,
@@ -512,11 +517,48 @@
         Array.prototype.forEach.call(raiz.querySelectorAll("[data-cfg-t]"), function (s) { if (s.value) o.tipologia[s.getAttribute("data-cfg-t")] = s.value; });
         return o;
       }
-      var self = this;
-      UI.modal("Configuração das ligações da obra", h, [
-        { texto: "Salvar", classe: "primary", onClick: function () { var raiz = document.querySelector("[data-lsg='config']"), r = self.configuracao(ler(raiz)), box = raiz.querySelector("[data-lsg='cfg-erros']"); if (!r.salva) { box.textContent = "Não salvo: " + r.validacao.erros.join(" "); return; } UI.fecharModal(); toast("Configuração das ligações salva." + (r.validacao.avisos.length ? " " + r.validacao.avisos.join(" ") : ""), "ok", 8000); } },
-        { texto: "Voltar ao padrão", classe: "ghost", onClick: function () { self.configuracao(null); UI.fecharModal(); toast("Configuração das ligações: de volta ao padrão.", "info", 5000); } },
-        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var self = this, TIT = "Configuração das ligações da obra", el = document.createElement("div"), bg = null, jd = null;
+      el.className = "lsg-config"; el.innerHTML = h;
+      /* BACKLOG #59 (#54): a tela pode ir para OUTRA JANELA (o 3D fica livre no outro monitor). O conteúdo (`el`) é o MESMO nó
+         nas duas janelas: os ouvintes ficam nele (não no `document`), então valem onde ele estiver; as ações (Salvar, Voltar
+         ao padrão, Fechar) moraram para dentro dele pelo mesmo motivo — o rodapé do modal ficaria na janela principal. */
+      function montar() {
+        bg = UI.modal(TIT, "", []);
+        var mod = bg.querySelector(".modal"), cab = bg.querySelector("header"), fx = cab && cab.querySelector("[data-fechar]"), ft = bg.querySelector("#modal-footer"), corpo = bg.querySelector(".body");
+        if (mod) mod.classList.add("largo");
+        if (ft) ft.style.display = "none";
+        if (cab && global.JanelaDestacavel) {
+          var bt = document.createElement("button"); bt.type = "button"; bt.className = "btn ghost sm"; bt.setAttribute("data-cfg-acao", "janela"); bt.setAttribute("aria-label", "Abrir em outra janela");
+          bt.title = "Abrir em outra janela — para o outro monitor; o 3D fica livre"; bt.textContent = "Abrir em outra janela";
+          cab.insertBefore(bt, fx || null); bt.addEventListener("click", destacar);
+        }
+        if (corpo) corpo.appendChild(el);
+        return bg;
+      }
+      function destacar() {
+        var JD = global.JanelaDestacavel; if (!JD || jd) return;
+        var j = JD.destacar(el, { titulo: TIT + " — OrçaPRO", nome: "orcapro-ligconfig", chaveArmazem: "orcapro:ligconfig:janela",
+          css: ".jd-conteudo{background:var(--surface);color:var(--texto);padding:16px 18px}.lsg-config .lsg{max-width:980px}",
+          aoVoltar: function () {
+            jd = null;
+            if (bg && bg.isConnected) bg.style.display = "";
+            else montar();   /* outro quadro abriu enquanto a tela estava fora: recria o quadro e põe o conteúdo de volta */
+          } });
+        if (!j || !j.ok) return;   /* pop-up bloqueado: o aviso já saiu e a tela continua no quadro */
+        jd = j; if (bg) bg.style.display = "none";
+      }
+      function encerrar() { if (jd) { var j = jd; jd = null; j.descartar(); } UI.fecharModal(); }
+      el.addEventListener("click", function (ev) {
+        var b = ev.target && ev.target.closest ? ev.target.closest("[data-cfg-acao]") : null; if (!b || !el.contains(b)) return;
+        var a = b.getAttribute("data-cfg-acao");
+        if (a === "salvar") {
+          var r = self.configuracao(ler(el)), box = el.querySelector("[data-lsg='cfg-erros']");
+          if (!r.salva) { box.textContent = "Não salvo: " + r.validacao.erros.join(" "); return; }
+          encerrar(); toast("Configuração das ligações salva." + (r.validacao.avisos.length ? " " + r.validacao.avisos.join(" ") : ""), "ok", 8000);
+        } else if (a === "padrao") { self.configuracao(null); encerrar(); toast("Configuração das ligações: de volta ao padrão.", "info", 5000); }
+        else if (a === "fechar") encerrar();
+      });
+      montar();
       return true;
     },
     /* DIMENSIONAR TODAS (F3b): os encontros da seleção (ou do modelo) com TODAS as combinações, agrupados em Tipos — não muda o modelo */

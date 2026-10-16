@@ -19,10 +19,15 @@
 
 /* a lista da busca de perfil (abre embaixo do campo) */
 .mcr-pop {
-  position: absolute; top: calc(100% + 4px); z-index: 30; width: 300px; max-height: 340px; overflow: auto;
+  position: absolute; top: calc(100% + 4px); z-index: 30; display: flex; align-items: flex-start; gap: 6px;
   padding: 4px; border: 1px solid var(--linha); border-radius: var(--raio-sm);
   background: var(--card-bg); color: var(--texto); box-shadow: var(--sombra);
 }
+.mcr-pop-lista { width: 300px; max-height: 340px; overflow: auto; }
+/* BACKLOG #61: ao lado da lista, o desenho cotado do perfil sob o mouse ou o teclado (js/perfildesenho.js) */
+.mcr-pop-sec { width: 262px; flex: none; }
+.mcr-pop-sec:empty { display: none; }
+@media (max-width: 700px) { .mcr-pop-sec { display: none; } }
 .mcr-pop-grupo { padding: 6px 6px 2px; color: var(--texto-fraco); font-size: var(--t-micro); font-weight: 600; }
 .mcr-pop-item {
   display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 3px 6px; border: 0; border-radius: var(--raio-sm);

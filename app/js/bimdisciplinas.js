@@ -103,7 +103,7 @@
     /* Quantitativos e orçamento */
     "qto", "insumos-modelo", "quant-ilustrado", "peso-total", "orc-modelo", "eap", "rastrear", "req-bim",
     /* Vista: navegar, exibir, janelas, criar vistas, gráficos, render */
-    "home", "orbita", "voo", "mesa", "imersivo", "ultra",
+    "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
     "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
     "render-ia", "galeria-ia", "render-fisico",

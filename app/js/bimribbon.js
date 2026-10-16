@@ -225,7 +225,9 @@
           { id: "voo", rotulo: "Modo de\nvoo", icone: "voo", grande: true, tipo: "alterna", requer: "modelo", dica: "Anda pelo modelo com o teclado, como num jogo." },
           { id: "mesa", rotulo: "Modo\nmesa", icone: "cadeado", grande: true, tipo: "alterna", requer: "modelo", dica: "Para o tablet ou a tela deitada na mesa: o 3D ocupa a tela, as ferramentas ficam numa barra ao lado e a câmera fica travada (encostar a mão não gira nem dá zoom)." },
           { id: "imersivo", rotulo: "Realidade\nvirtual", icone: "vr", grande: true, requer: "modelo", pro: true, dica: "Entra no modelo em escala 1:1, pelo celular ou visor." },
-          { id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." }
+          { id: "ultra", rotulo: "Qualidade\nultra", icone: "estrela", tipo: "alterna", requer: "modelo", dica: "Nitidez máxima (usa mais a placa de vídeo)." },
+          /* BACKLOG #63 (js/bimatalhos.js): teclado, duas letras, mouse, controle e botões novos — gerado dos mapas de ações */
+          { id: "atalhos", rotulo: "Atalhos", icone: "teclado", dica: "Todos os atalhos do BIM: teclado, atalhos de duas letras, mouse, controle de Xbox e os botões novos das telas, com “Baixar PDF”. Também pela tecla ?." }
         ] },
         { nome: "Exibir", comandos: [
           { id: "visibilidade", rotulo: "Visibilidade", icone: "olho", grande: true, requer: "modelo", dica: "Isola, oculta e usa raio-X na seleção." },
@@ -579,7 +581,7 @@
       { nome: "Peso", ids: ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio"] },
       { nome: "Plano de içamento", ids: ["icar-equipamento", "icar-posicao", "icar-pontos", "icar-vento", "icar-simular", "icar-plano"] }] },
     { id: "vista", rotulo: "Vista", paineis: [
-      { nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo"] },
+      { nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
       { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "caixa-corte", "ortogonal", "grade"] },
       { nome: "Janelas", ids: ["nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit"] },
       { nome: "Render por IA", ids: ["render-ia", "galeria-ia"] }] },

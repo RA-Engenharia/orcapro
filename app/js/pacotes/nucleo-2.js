@@ -6689,6 +6689,7 @@ BimRibbon.setAtivo("pele-revit", !!(BimShell.pele && BimShell.pele()));
 try { if (window.BimArqUI) BimArqUI.registrar(reg, self); } catch (eB2) {}
 try { if (window.BimAmbienteUI) BimAmbienteUI.registrar(reg, self); } catch (eP2d) {}
 try { if (window.BimAnot2DUI) BimAnot2DUI.registrar(reg); } catch (eP7) {}
+try { if (window.BimAtalhos) BimAtalhos.registrar(reg); } catch (eAt) {}
 try { if (window.BimTabelaUI) BimTabelaUI.registrar(reg, self); if (window.BimAnot) BimAnot.registrar(reg, self); } catch (eP5) {}
 try { if (window.BimModeloVista) { this._d2Config(); BimModeloVista.registrar(reg, self); } } catch (eP6) {}
 try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
@@ -54199,7 +54200,21 @@ case "nuvem": this.abrirNuvem(); break;
 case "celular": this.abrirCelular(); break;
 case "backup-export": this.exportarBackup(); break;
 case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
-case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
+case "conta": {
+var _c = t.closest(".topbar-conta"); if (!_c) break;
+_c.classList.toggle("aberto");
+var _d = _c.querySelector(".conta-drop");
+if (_d) {
+_d.style.left = "";
+if (_c.classList.contains("aberto")) {
+var _x0 = _c.getBoundingClientRect().left, _vw = window.innerWidth || document.documentElement.clientWidth, _dx = 0;
+if (_x0 + _d.offsetWidth > _vw - 8) _dx = _vw - 8 - (_x0 + _d.offsetWidth);
+if (_x0 + _dx < 8) _dx = 8 - _x0;
+if (_dx) _d.style.left = Math.round(_dx) + "px";
+}
+}
+break;
+}
 case "instalar-app": this.instalarApp(); break;
 case "tabelas": this.abrirTabelas(); break;
 case "escanear-pasta": this.escanearPastaUI(); break;
@@ -67975,5 +67990,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=44ad87dfcc"},{"src":"js/bim-pacote.js?v=4ab9b09a55","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=4b10c94ed6"},{"src":"js/bim-pacote.js?v=4ab9b09a55","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -121,6 +121,34 @@
     return null;
   }
 
+  /* BACKLOG #59/#53 — os problemas do cálculo do tanque como CARTÕES (js/problemacard.js): o que é, "Corrigir: Informar o fck" (abre o
+     assistente do tanque e foca o campo) e "Mostrar no 3D" (as peças do tanque). As demais soluções são mudanças de projeto que o
+     assistente não aplica sozinho: ficam como texto ("Sem correção automática — …"), nunca botão que não faz nada. */
+  function PCt() { return global.ProblemaCard || null; }
+  function problemasTanque(probs, t) {
+    return (probs || []).map(function (x) {
+      return { tipo: x.tipo || "tanque", gravidade: x.critico ? "erro" : "aviso", titulo: x.texto, texto: "", pecas: t && t.pecas ? t.pecas.slice() : [],
+        solucoes: (x.solucoes || []).map(function (s) { return { id: s.id, texto: s.texto }; }) };
+    });
+  }
+  function acoesTanque(t, par) { return function (sol) { return sol && sol.id === "fck" && !!(par || t) ? "Informar o fck do concreto da fundação" : false; }; }
+  function cartoesProblemas(probs, t) {
+    var P = PCt(); if (!probs || !probs.length) return "";
+    if (!P) return '<ul class="mtq-lst">' + probs.map(function (x) { return '<li class="mtq-falha">' + esc(x.texto) + " → " + (x.solucoes || []).map(function (s) { return esc(s.texto); }).join("; ") + "</li>"; }).join("") + "</ul>";
+    return P.lista(problemasTanque(probs, t), { acoes: acoesTanque(t, true), attrs: 'data-mtq="problemas"' });
+  }
+  function ligarProblemas(bg, probs, t, par, self) {
+    var P = PCt(); if (!P || !bg || !probs || !probs.length) return;
+    P.ligar(bg, {
+      corrigir: function (id, k) {
+        if (id !== "fck") return;
+        UI.fecharModal();
+        self.dialogo(par, t ? { alvo: t } : {});
+        P.irPara('[data-mtq-c="fckFundacao"]');
+      },
+      mostrar: function (ids) { UI.fecharModal(); var mo = P.mostrarNo3D(ids); toast(mo.selecionou ? "Tanque selecionado no 3D." : "O 3D não está disponível aqui.", mo.selecionou ? "ok" : "aviso", 5000); }
+    });
+  }
   var MetalTanqueUI = {
     SUB: SUB, COMANDOS: COMANDOS, CHAVE: CHAVE, _n: 0, ultimo: null, ultimoMemorial: null, ultimoResultado: null,
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
@@ -320,13 +348,14 @@
       var linhas = r.verificacoes.map(function (v) { return "<tr><td>" + esc(v.nome) + '<div class="mtq-inf">' + esc(v.item) + '</div></td><td class="n">' + (v.info ? "—" : br(v.razao, 3)) + "</td><td>" + (v.info ? '<span class="mtq-inf">informativo</span>' : (v.ok ? '<span class="mtq-ok">atende</span>' : '<span class="mtq-falha">não atende</span>')) + "</td></tr>"; }).join("");
       var q = r.quantitativo, fu = r.fundacao || {};
       var h = '<div data-mtq="resultado" style="max-height:66vh;overflow:auto">' + MT().esquema(r) + "<p>" + esc(r.resumo) + "</p>" +
-        (r.problemas.length ? '<ul class="mtq-lst">' + r.problemas.map(function (x) { return '<li class="mtq-falha">' + esc(x.texto) + " → " + x.solucoes.map(function (s) { return esc(s.texto); }).join("; ") + "</li>"; }).join("") + "</ul>" : "") +
+        cartoesProblemas(r.problemas, t) +
         '<h4>Verificações</h4><table class="mtq-tab"><thead><tr><th>Verificação</th><th>Razão</th><th>Situação</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
         "<h4>Decisões do sistema</h4><ul class=\"mtq-lst\" style=\"max-height:none\">" + r.decisoes.map(function (x) { return "<li><b>" + esc(x.tema) + ":</b> " + esc(x.decisao) + " — " + esc(x.motivo) + "</li>"; }).join("") + "</ul>" +
         "<h4>Cargas na fundação (características)</h4><p class=\"mtq-res\">" + (fu.G && fu.G.linha != null ? "Peso próprio " + br(fu.G.linha, 2) + " kN/m no anel; " : "") + (fu.L && fu.L.pressao != null ? "líquido " + br(fu.L.pressao, 1) + " kPa; teste " + br(fu.T.pressao, 1) + " kPa; " : "") + (fu.W ? "vento M = " + br(fu.W.M, 1) + " kN·m, V = " + br(fu.W.V, 1) + " kN" : "") + (fu.porPilar ? "; por pilar: " + br(fu.porPilar.compressao, 1) + " kN de compressão, " + br(fu.porPilar.tracao, 1) + " kN de tração" : "") + (fu.porSela ? "; por sela: " + br(fu.porSela.vertical, 1) + " kN" : "") + ".</p>" +
         "<h4>Quantitativo</h4><p class=\"mtq-res\">" + br(q.volumeUtil, 1) + " m³ úteis · " + br(q.pesos.total, 0) + " kg de aço · solda " + br(q.soldaTotal, 0) + " m · pintura interna " + br(q.pinturaInterna, 0) + " m² e externa " + br(q.pinturaExterna, 0) + " m²</p>" +
         "<h4>Não verificado</h4><ul class=\"mtq-lst\" style=\"max-height:none\">" + r.naoVerificado.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
-      UI.modal("Cálculo do tanque", h, [{ texto: "Abrir memorial", classe: "primary", onClick: function () { self.memorial(r); } }, { texto: "Folha do tanque (PDF)", onClick: function () { self.folhaPdf(r); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var bgR = UI.modal("Cálculo do tanque", h, [{ texto: "Abrir memorial", classe: "primary", onClick: function () { self.memorial(r); } }, { texto: "Folha do tanque (PDF)", onClick: function () { self.folhaPdf(r); } }, { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      ligarProblemas(bgR, r.problemas, t, par, self);
       return r;
     },
     /* a FOLHA do tanque no Padrão RA (js/metaltanque.js folha → js/metalfabdes.js) em PDF */

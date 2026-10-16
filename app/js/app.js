@@ -2408,7 +2408,26 @@
         case "celular": this.abrirCelular(); break;
         case "backup-export": this.exportarBackup(); break;
         case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
-        case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
+        case "conta": {
+          var _c = t.closest(".topbar-conta"); if (!_c) break;
+          _c.classList.toggle("aberto");
+          /* ⚠ A 320px O CHIP NÃO DESCE PARA A ESQUERDA (x=179) e o menu, pendurado pela esquerda dele (css/app.css,
+             "O MENU DA CONTA SAÍA PELA BORDA"), vazava 18px pela direita com itens cortados (e2e-menu-conta, 16/10/2026).
+             Onde o chip fica depende do conteúdo da barra, então a conta é feita ao abrir: empurra o menu para dentro,
+             com 8px de respiro, sem soltá-lo do botão. Mede pela largura (offsetWidth), não pelo retângulo: a animação
+             de abertura (popin) escala o menu e o retângulo sairia menor. */
+          var _d = _c.querySelector(".conta-drop");
+          if (_d) {
+            _d.style.left = "";
+            if (_c.classList.contains("aberto")) {
+              var _x0 = _c.getBoundingClientRect().left, _vw = window.innerWidth || document.documentElement.clientWidth, _dx = 0;
+              if (_x0 + _d.offsetWidth > _vw - 8) _dx = _vw - 8 - (_x0 + _d.offsetWidth);
+              if (_x0 + _dx < 8) _dx = 8 - _x0;
+              if (_dx) _d.style.left = Math.round(_dx) + "px";
+            }
+          }
+          break;
+        }
         case "instalar-app": this.instalarApp(); break;
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;

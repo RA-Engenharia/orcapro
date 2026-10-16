@@ -838,7 +838,12 @@
       /* o EIXO no corte é uma linha vertical inteira: vale como LINHA (classe do "na linha"), não como ponto —
          senão a 7,5 cm do eixo a face da parede (que fica no eixo) nunca era pega (14/10/2026) */
       var cl = q.linhaV ? CLASSE.proximo : (CLASSE[q.tipo] != null ? CLASSE[q.tipo] : 5);
-      if (!best || cl < best.cl || (cl === best.cl && d < best.d - 1e-9)) best = { q: q, d: d, cl: cl, pp: pp };
+      /* EMPATE de traço (16/10/2026): no canto do peitoril com a ombreira do vão o clique cai a 0 do traço de DUAS
+         referências (a ombreira inteira passa pelo peitoril). A distância ao TRAÇO empatava e quem ganhava era o ruído de
+         float32 da coordenada do mouse (7ª casa) — a cota do peitoril virava a da ombreira, a +1,70 em vez de +1,10.
+         Dentro de 2 mm (uma fração de pixel) vale o ponto-âncora mais perto do clique (o peitoril, e não o meio da ombreira). */
+      var da = q.linhaV ? d : Math.sqrt(Math.pow(q.p[0] - p[0], 2) + Math.pow(q.p[1] - p[1], 2));
+      if (!best || cl < best.cl || (cl === best.cl && (d < best.d - 0.002 || (d <= best.d + 0.002 && da < best.da - 1e-9 && !q.linhaV && !best.q.linhaV)))) best = { q: q, d: d, cl: cl, pp: pp, da: da };
     });
     if (!best) return null;
     var r = clone(best.q.ref); if (best.q.linhaV) r.y = r6(p[1]);
