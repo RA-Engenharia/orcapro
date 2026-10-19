@@ -51933,6 +51933,33 @@ var cr = this._credLicenca(chave);
 return this.entrar(cr.email, cr.senha);
 },
 _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
+TETO_DOC: 1048576,
+_tamanhoFirestore: function (x) {
+var self = this;
+function utf8(t) { var n = 0, i, c; for (i = 0; i < t.length; i++) { c = t.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xd800 && c < 0xdc00) ? (i++, 4) : 3; } return n; }
+function tam(v) {
+if (v === null) return 1;
+var t = typeof v;
+if (t === "string") return utf8(v) + 1;
+if (t === "number") return 8;
+if (t === "boolean") return 1;
+if (t === "undefined" || t === "function") return 0;
+if (Array.isArray(v)) { var a = 0; for (var i = 0; i < v.length; i++) a += tam(v[i]); return a; }
+if (t === "object") { var m = 0; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k) && v[k] !== undefined) m += utf8(k) + 1 + tam(v[k]); return m; }
+return 8;
+}
+return tam(x) + 32;
+},
+_setDoc: function (ent, doc) {
+var t = 0;
+try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
+if (t > this.TETO_DOC + 4096) {
+var err = new Error("Document \"" + ent + "\" cannot be written because its size (" + t + " bytes) exceeds the maximum allowed size of " + this.TETO_DOC + " bytes. (conferido no aparelho, sem enviar)");
+err.code = "invalid-argument";
+return Promise.reject(err);
+}
+return this._doc(ent).set(doc);
+},
 _conflitosUltimoMerge: 0,
 _conflitosCrono: [],
 _conflitosCc: [],
@@ -52176,7 +52203,7 @@ var ck = empresaId + "|" + ent;
 if (carga && self._ultimoEnviado[ck] === carga) return true;
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[ck] = carga;
-return self._doc(ent).set({ v: subir, em: Date.now() }).then(function () { return true; });
+return self._setDoc(ent, { v: subir, em: Date.now() }).then(function () { return true; });
 }).catch(function (e) {
 falhou++;
 delete self._ultimoEnviado[empresaId + "|" + ent];
@@ -52332,7 +52359,7 @@ try { carga = JSON.stringify(vN); } catch (e) { carga = ""; }
 if (carga && self._ultimoEnviado[chave] === carga) return;
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[chave] = carga; marcou = true;
-self._doc(ent).set({ v: vN, em: Date.now() }).then(function () {
+self._setDoc(ent, { v: vN, em: Date.now() }).then(function () {
 self._marcarSync(empresaId, ent, v);
 }).catch(function (e) {
 delete self._ultimoEnviado[chave];

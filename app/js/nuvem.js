@@ -524,6 +524,45 @@
 
     _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
 
+    /* ⚠ O DOCUMENTO QUE A NUVEM VAI RECUSAR NÃO SAI DO APARELHO (19/10/2026). O Firestore recusa documento acima de
+       1 MiB — mas o SDK, antes de o servidor dizer não, serializa a carga, grava no cache local (persistência com
+       synchronizeTabs), aplica, recebe a recusa e desfaz. Com quatro listas do Rogério acima do teto (bim_edicoes
+       5,1 MB, bim_vistas 3,7 MB, bim_familias 1,7 MB, orcamentos 1,1 MB), cada salvamento repetia isso, a memória da
+       página chegava a 4 GB em ~10 min e o Edge derrubava a aba ("Out of Memory"): 16 quedas em 19/10, todas com
+       `v8-oom-stack ... firebase-firestore-compat.js` no registro do Edge. Na reprodução com a nuvem LENDO de verdade
+       e as gravações interceptadas, a memória ficou em ~100 MB por 14 min.
+       Aqui o tamanho é medido pela REGRA DO FIRESTORE (texto = bytes UTF-8 + 1, número 8, booleano/nulo 1, mapa =
+       nomes + valores, + 32 do documento) e, CLARAMENTE acima do teto, a escrita é recusada aqui com a MESMA
+       mensagem do servidor — o resultado para o dado é idêntico (não subiria de qualquer jeito; o estado() diz
+       "lista grande demais"), só que sem o SDK no meio. Na faixa de dúvida (até 4 KB acima) manda como sempre. */
+    TETO_DOC: 1048576,
+    _tamanhoFirestore: function (x) {
+      var self = this;
+      function utf8(t) { var n = 0, i, c; for (i = 0; i < t.length; i++) { c = t.charCodeAt(i); n += c < 0x80 ? 1 : c < 0x800 ? 2 : (c >= 0xd800 && c < 0xdc00) ? (i++, 4) : 3; } return n; }
+      function tam(v) {
+        if (v === null) return 1;
+        var t = typeof v;
+        if (t === "string") return utf8(v) + 1;
+        if (t === "number") return 8;
+        if (t === "boolean") return 1;
+        if (t === "undefined" || t === "function") return 0;
+        if (Array.isArray(v)) { var a = 0; for (var i = 0; i < v.length; i++) a += tam(v[i]); return a; }
+        if (t === "object") { var m = 0; for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k) && v[k] !== undefined) m += utf8(k) + 1 + tam(v[k]); return m; }
+        return 8;
+      }
+      return tam(x) + 32;
+    },
+    _setDoc: function (ent, doc) {
+      var t = 0;
+      try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
+      if (t > this.TETO_DOC + 4096) {
+        var err = new Error("Document \"" + ent + "\" cannot be written because its size (" + t + " bytes) exceeds the maximum allowed size of " + this.TETO_DOC + " bytes. (conferido no aparelho, sem enviar)");
+        err.code = "invalid-argument";
+        return Promise.reject(err);
+      }
+      return this._doc(ent).set(doc);
+    },
+
     // Une lista local + nuvem por id; o registro com atualizadoEm mais novo vence.
     // LOTE 3: edição concorrente (2 aparelhos) NÃO é mais sobrescrita calada —
     // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
@@ -1063,7 +1102,7 @@
              podia crescer por conflito até o teto do Firestore sem nenhum recado */
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
-          return self._doc(ent).set({ v: subir, em: Date.now() }).then(function () { return true; });
+          return self._setDoc(ent, { v: subir, em: Date.now() }).then(function () { return true; });
         }).catch(function (e) {
           /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
           falhou++;
@@ -1352,7 +1391,7 @@
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[chave] = carga; marcou = true;
-          self._doc(ent).set({ v: vN, em: Date.now() }).then(function () {
+          self._setDoc(ent, { v: vN, em: Date.now() }).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
           }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa
