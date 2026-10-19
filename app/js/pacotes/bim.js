@@ -459,6 +459,65 @@ var out = indiceNormal(ix), t = 0;
 for (var a in out.entradas) { if (Object.prototype.hasOwnProperty.call(out.entradas, a)) t += num(out.entradas[a].bytes); }
 return t;
 }
+var TETO_BYTES = 300 * 1024 * 1024;
+var ALVO_FRACAO = 0.8;
+function logar(o, msg, e) {
+try { if (o && o.log) o.log(msg, e); else if (typeof console !== "undefined" && console.warn) console.warn("[bimcache] " + msg, e && e.message ? e.message : e || ""); } catch (x) {}
+}
+function planoTeto(ix, opts) {
+opts = opts || {};
+var teto = num(opts.teto) > 0 ? num(opts.teto) : TETO_BYTES;
+var alvo = teto * (num(opts.alvoFracao) > 0 ? num(opts.alvoFracao) : ALVO_FRACAO);
+var norm = indiceNormal(ix), medido = indiceVazio(), a;
+for (a in norm.entradas) {
+if (Object.prototype.hasOwnProperty.call(norm.entradas, a) && norm.entradas[a].bytes > 0) medido.entradas[a] = norm.entradas[a];
+}
+var t = total(medido);
+if (t <= teto) return { excede: false, total: t, descartar: [], liberado: 0, nomes: [] };
+var p = lru(medido, { precisa: t - alvo, obraId: opts.obraId, protegidos: opts.protegidos });
+return { excede: true, total: t, descartar: p.descartar, liberado: p.liberado, nomes: p.nomes };
+}
+function aparar(idb, empresaId, opts) {
+opts = opts || {};
+var emp = txt(empresaId) || "default";
+var emUso = opts.emUso || {};
+var prot = {}, ps = opts.protegidos || [], i;
+for (i = 0; i < ps.length; i++) prot[txt(ps[i])] = 1;
+var res = { ok: false, apagados: [], orfasMantidas: 0, total: 0 };
+var ix = null;
+function apagar(a) {
+return Promise.resolve().then(function () { return idb.del(chave(emp, a)); }).then(function () {
+ix = remover(ix, [a]); res.apagados.push(a); return true;
+}, function (e) { logar(opts, "não consegui apagar " + a, e); return false; });
+}
+return Promise.resolve().then(function () {
+return Promise.all([idb.get(chaveIndice(emp)), idb.chaves(PREFIXO)]);
+}).then(function (r) {
+ix = reparar(indiceNormal(r[0]), r[1] || [], emp).indice;
+var seq = Promise.resolve();
+Object.keys(ix.entradas).forEach(function (a) {
+if (ix.entradas[a].bytes > 0) return;
+var obras = (emUso[a] || []).filter(Boolean);
+if (obras.length || prot[a]) {
+ix.entradas[a].obras = obras; res.orfasMantidas++;
+return;
+}
+seq = seq.then(function () { return apagar(a); });
+});
+return seq;
+}).then(function () {
+var pl = planoTeto(ix, { teto: opts.teto, alvoFracao: opts.alvoFracao, obraId: opts.obraId, protegidos: opts.protegidos });
+var seq = Promise.resolve();
+pl.descartar.forEach(function (a) { seq = seq.then(function () { return apagar(a); }); });
+return seq;
+}).then(function () {
+res.total = total(ix);
+return Promise.resolve().then(function () { return idb.set(chaveIndice(emp), ix); }).then(function () { res.ok = true; }, function (e) { logar(opts, "não consegui gravar o índice", e); });
+}).then(function () { return res; }, function (e) {
+logar(opts, "manutenção do cache falhou", e);
+return res;
+});
+}
 var BimCache = {
 V: V,
 PREFIXO: PREFIXO,
@@ -481,7 +540,11 @@ marcarUso: marcarUso,
 remover: remover,
 reparar: reparar,
 lru: lru,
-total: total
+total: total,
+TETO_BYTES: TETO_BYTES,
+ALVO_FRACAO: ALVO_FRACAO,
+planoTeto: planoTeto,
+aparar: aparar
 };
 global.BimCache = BimCache;
 if (typeof module !== "undefined" && module.exports) module.exports = BimCache;

@@ -3892,11 +3892,28 @@
          * que há o que comparar. */
         if (!Analitico.carregado || !Analitico.competencia || !Sinapi.competencia) return;
         if (this._normComp(Analitico.competencia) === this._normComp(Sinapi.competencia)) return;
+        /* ⚠ O DETALHAMENTO É O DO ORÇAMENTO ABERTO (19/10/2026). O `_analiticoDoOrc`/`_preloadAnalitico` carregam de
+           propósito o analítico da competência DO ORÇAMENTO (orc.competenciaSinapi) — e os preços dele estão GRAVADOS
+           nos itens, do mês em que entraram. Num orçamento de 03/2026 aberto com a base do app em 09/2026, preço e
+           detalhamento eram os dois de 03/2026, e este aviso dizia "os PREÇOS são de 09/2026" — alarme falso que o
+           Rogério viu e perguntou o que era. Agora, com o orçamento aberto na MESMA UF e competência do
+           detalhamento, sai uma informação (o mês do orçamento × a base do app, e que item novo vem da base); o
+           alerta continua para a divergência de verdade (sem orçamento, ou detalhamento de mês diferente do dele). */
+        var orcA = this.orcAtual || null;
+        var compOrcA = orcA ? this._normComp(orcA.competenciaSinapi || "") : "";
+        var ufOrcA = orcA ? String(orcA.uf || "").toUpperCase() : "";
+        var ufAnaA = String(Analitico.uf || this._baseUf || "").toUpperCase();
+        var doOrc = !!(compOrcA && compOrcA === this._normComp(Analitico.competencia) && (!ufOrcA || !ufAnaA || ufOrcA === ufAnaA));
+
         var chave = this._normComp(Sinapi.competencia) + "|" + this._normComp(Analitico.competencia) + "|" + (self._baseUf || "");
         if (self._avisoAnaliticoFeito === chave) return;   // uma vez por combinação
         self._avisoAnaliticoFeito = chave;
         if (typeof UI === "undefined" || !UI.toast) return;
         var fmt = function (c) { return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c; };
+        if (doOrc) {
+          UI.toast("Este orçamento está na SINAPI " + fmt(Analitico.competencia) + ": os preços dele e o detalhamento de insumos são desse mês. A base atual do app é " + fmt(Sinapi.competencia) + " — item novo que você lançar agora vem dela.", "ok");
+          return;
+        }
         UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
           " Atenção: os PREÇOS são da competência " + fmt(Sinapi.competencia) +
           ", mas o DETALHAMENTO de insumos instalado é de " + fmt(Analitico.competencia) +

@@ -15766,6 +15766,36 @@ return self._bimCacheEscrever(emp, obraId, m.reg, info);
 });
 });
 },
+_bimCacheAgendar: function (protegido, ms) {
+var self = this;
+if (!window.BimCache || !window.Idb || !BimCache.aparar) return;
+if (this._bimApararTimer) return;
+var emp = eid(), obraId = this._bimSel || "";
+this._bimApararTimer = setTimeout(function () {
+self._bimApararTimer = null;
+var emUso = {};
+try { (Store.listar(emp, "bim_modelos") || []).forEach(function (r) {
+var a = String(r.arquivoId || ""); if (!a) return;
+(emUso[a] = emUso[a] || []).push(String(r.obraId || ""));
+}); } catch (e0) {}
+var prot = protegido ? [protegido] : [];
+try { (BIM.modelos || []).forEach(function (m) { if (m.arquivoId) prot.push(m.arquivoId); }); } catch (e1) {}
+self._bimFila(function () {
+return Idb.pronto().then(function (ok) {
+if (!ok) return null;
+return BimCache.aparar(Idb, emp, { obraId: obraId, protegidos: prot, emUso: emUso });
+});
+}).then(function (r) {
+if (!r) return;
+self._bimApararApagados = (self._bimApararApagados || 0) + r.apagados.length;
+if (self._bimApararApagados) {
+try { console.info("[bimcache] teto: " + self._bimApararApagados + " entrada(s) antiga(s) liberada(s); guardado agora " + Math.round(r.total / 1048576) + " MB"); } catch (e2) {}
+UI.toast("Liberei " + self._bimApararApagados + " modelo(s) guardado(s) antigo(s) para manter o cache abaixo de " + Math.round(BimCache.TETO_BYTES / 1048576) + " MB. Se abrir um deles de novo, o arquivo é convertido outra vez.", "aviso");
+self._bimApararApagados = 0;
+}
+})["catch"](function () {});
+}, ms || 4000);
+},
 _bimCacheEscrever: function (emp, obraId, reg, info) {
 var self = this, bytes = BimCache.tamanho(reg), ix = null, jaTinha = 0;
 return Idb.get(BimCache.chaveIndice(emp)).then(function (bruto) {
@@ -15799,6 +15829,7 @@ ix = BimCache.registrar(ix, { arquivoId: reg.arquivoId, nome: reg.nome, bytes: b
 return Idb.set(BimCache.chaveIndice(emp), ix);
 }).then(function () {
 try { BIM.soltarColeta(info.mid); } catch (e5) {}
+self._bimCacheAgendar(reg.arquivoId);
 return { ok: true, motivo: "" };
 }, function () {
 return { ok: false, retentavel: true, motivo: "não consegui gravar (armazenamento cheio?)" };
@@ -15809,6 +15840,7 @@ _bimRestaurar: function () {
 var self = this, obraId = this._bimSel || "";
 if (!obraId || !window.BimFed || !window.BimCache || !window.Idb || !window.BIM) return;
 if (!BIM.abrirDoCache) return;
+if (!this._bimApararBoot) { this._bimApararBoot = 1; this._bimCacheAgendar("", 8000); }
 try { if ((BIM.modelos || []).some(function (m) { return m && !m.sintetico; })) return; } catch (e) { return; }
 if (this._bimRestaurando) return;
 var regs = this._bimFedCarregar();
@@ -55182,11 +55214,20 @@ try {
 if (typeof Analitico === "undefined" || typeof Sinapi === "undefined") return;
 if (!Analitico.carregado || !Analitico.competencia || !Sinapi.competencia) return;
 if (this._normComp(Analitico.competencia) === this._normComp(Sinapi.competencia)) return;
+var orcA = this.orcAtual || null;
+var compOrcA = orcA ? this._normComp(orcA.competenciaSinapi || "") : "";
+var ufOrcA = orcA ? String(orcA.uf || "").toUpperCase() : "";
+var ufAnaA = String(Analitico.uf || this._baseUf || "").toUpperCase();
+var doOrc = !!(compOrcA && compOrcA === this._normComp(Analitico.competencia) && (!ufOrcA || !ufAnaA || ufOrcA === ufAnaA));
 var chave = this._normComp(Sinapi.competencia) + "|" + this._normComp(Analitico.competencia) + "|" + (self._baseUf || "");
 if (self._avisoAnaliticoFeito === chave) return;
 self._avisoAnaliticoFeito = chave;
 if (typeof UI === "undefined" || !UI.toast) return;
 var fmt = function (c) { return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c; };
+if (doOrc) {
+UI.toast("Este orçamento está na SINAPI " + fmt(Analitico.competencia) + ": os preços dele e o detalhamento de insumos são desse mês. A base atual do app é " + fmt(Sinapi.competencia) + " — item novo que você lançar agora vem dela.", "ok");
+return;
+}
 UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
 " Atenção: os PREÇOS são da competência " + fmt(Sinapi.competencia) +
 ", mas o DETALHAMENTO de insumos instalado é de " + fmt(Analitico.competencia) +
@@ -67570,6 +67611,84 @@ try { if (typeof Revit !== "undefined" && Revit.exportarIA) Revit.exportarIA(); 
 });
 })(window);
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/memvigia.js ==== */
+try {
+(function (global) {
+"use strict";
+var CHAVE_RECARGA = "orcapro:memvigia:recarga";
+var V = {
+INTERVALO_MS: 20000,
+FRACAO_RECARREGAR: 0.62,
+ESPERA_RECARREGAR_MS: 6000,
+JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
+_t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0,
+medir: function () {
+var pm = global.performance && global.performance.memory;
+if (!pm || !pm.jsHeapSizeLimit) return null;
+return { usadoMB: Math.round(pm.usedJSHeapSize / 1048576), totalMB: Math.round(pm.totalJSHeapSize / 1048576), limiteMB: Math.round(pm.jsHeapSizeLimit / 1048576) };
+},
+contadores: function () {
+var c = {}, d = global.document;
+try { c.tela = global.App ? String(global.App.view || "") : ""; } catch (e) {}
+try { if (d) { c.dom = d.getElementsByTagName("*").length; c.canvas = d.getElementsByTagName("canvas").length; c.iframes = d.getElementsByTagName("iframe").length; } } catch (e) {}
+try { var B = global.BIM; if (B) { c.bimOps = B.editarOps ? B.editarOps().length : -1; c.bimModelos = (B.modelos || []).length; } } catch (e) {}
+try { var G = global.Gestao; if (G) { c.bimSel = String(G._bimSel || ""); c.bimElementos = (G._bimElementos || []).length; } } catch (e) {}
+try {
+var esp = global.Store && global.Store._d && global.Store._d.esp;
+if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
+} catch (e) {}
+try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; } } catch (e) {}
+try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
+try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
+return c;
+},
+enviar: function (a) {
+try {
+var loc = global.location;
+if (!loc || !/^(localhost|127\.0\.0\.1)$/.test(loc.hostname) || typeof global.fetch !== "function") return;
+global.fetch("/__diag/memoria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(a), keepalive: true })["catch"](function () {});
+} catch (e) {}
+},
+_lerRecarga: function () { try { return +(global.sessionStorage.getItem(CHAVE_RECARGA) || 0); } catch (e) { return 0; } },
+_gravarRecarga: function (t) { try { global.sessionStorage.setItem(CHAVE_RECARGA, String(t)); } catch (e) {} },
+agora: function () { return Date.now(); },
+tick: function () {
+var m = this.medir(); if (!m) return null;
+var a = { em: new Date(this.agora()).toISOString(), seq: ++this._seq, segDesdeAbrir: Math.round((this.agora() - this._inicio) / 1000), m: m, c: this.contadores() };
+try { a.versao = global.CONFIG && global.CONFIG.versao; } catch (e) {}
+var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0;
+if (fr >= this.FRACAO_RECARREGAR) a.alerta = this.proteger(m) || "alto";
+this.enviar(a);
+return a;
+},
+proteger: function (m) {
+if (this._recarregando) return "recarregando";
+var ult = this._lerRecarga(), t = this.agora();
+var toast = function (msg) { try { if (global.UI && global.UI.toast) global.UI.toast(msg, "aviso", 9000); } catch (e) {} };
+if (ult && t - ult < this.JANELA_ANTI_LACO_MS) {
+if (!this._avisouLaco) { this._avisouLaco = true; toast("A memória desta página está alta de novo (" + m.usadoMB + " MB). Salve o que estiver fazendo e recarregue (F5) quando puder."); }
+return "so-aviso";
+}
+this._recarregando = true;
+this._gravarRecarga(t);
+try { if (global.Gestao && global.Gestao._bimEdFlush) global.Gestao._bimEdFlush(); } catch (e) {}
+toast("A memória desta página chegou a " + m.usadoMB + " MB. O OrçaPRO vai salvar e recarregar em " + Math.round(this.ESPERA_RECARREGAR_MS / 1000) + " s para não cair. Seus dados ficam.");
+var self = this;
+(global.setTimeout || setTimeout)(function () { try { if (global.Gestao && global.Gestao._bimEdFlush) global.Gestao._bimEdFlush(); } catch (e) {} self.recarregar(); }, this.ESPERA_RECARREGAR_MS);
+return "recarregando";
+},
+recarregar: function () { try { global.location.reload(); } catch (e) {} },
+iniciar: function () {
+if (this._t || !this.medir()) return false;
+var self = this; this._inicio = this.agora();
+this._t = (global.setInterval || setInterval)(function () { try { self.tick(); } catch (e) {} }, this.INTERVALO_MS);
+return true;
+}
+};
+global.MemVigia = V;
+if (global.document && global.setTimeout) global.setTimeout(function () { V.iniciar(); }, 5000);
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/orcamentistaui.js ==== */
 try {
 (function (global) {
@@ -68126,5 +68245,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=7b49186902"},{"src":"js/bim-pacote.js?v=ecb4e8b2a2","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=729f3ed990"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=c75bcfaf49"},{"src":"js/bim-pacote.js?v=ecb4e8b2a2","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=729f3ed990"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

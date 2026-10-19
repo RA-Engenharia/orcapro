@@ -612,6 +612,117 @@
     return t;
   }
 
+  /* ---------------------------------------------------------------
+   * TETO — o cache tem tamanho máximo (19/10/2026)
+   *
+   * ⚠ O QUE FALTAVA. O descarte acima (`lru`) só era chamado quando o
+   * NAVEGADOR dizia que faltava espaço (`Idb.espaco`). Navegador com disco
+   * grande nunca diz isso, e o cache cresceu sem limite: no Edge do dono eram
+   * 835 MB em 790 chaves (as maiores com 100 a 260 MB), 450 MB só entre 14 e
+   * 19/10 — cada versão do arquivo (`<hash>-<sufixo>`) é uma chave, e ninguém
+   * apagava a antiga. Disco e memória pagavam por um dado que é só cache.
+   *
+   * O TETO É O LIMITE DESTE LADO, não do navegador: passou de TETO_BYTES, sai
+   * o menos usado até sobrar ALVO_FRACAO do teto (a folga evita apagar de novo
+   * na gravação seguinte). Apagar cache nunca perde dado de cliente: a entrada
+   * que sumir é reconvertida do IFC na próxima abertura (conferir() devolve
+   * "não há nada guardado" e o fluxo normal segue).
+   *
+   * ⚠ NUNCA APAGA a entrada recém-gravada nem as protegidas (modelos na cena,
+   * obra aberta) — mesma regra do `lru`, que este código reaproveita.
+   * ------------------------------------------------------------- */
+  var TETO_BYTES = 300 * 1024 * 1024;
+  var ALVO_FRACAO = 0.8;
+
+  function logar(o, msg, e) {
+    try { if (o && o.log) o.log(msg, e); else if (typeof console !== "undefined" && console.warn) console.warn("[bimcache] " + msg, e && e.message ? e.message : e || ""); } catch (x) {}
+  }
+
+  /* quem sai para o total voltar ao alvo — pura, sem I/O. Só olha entrada com
+     tamanho conhecido: a de tamanho 0 (órfã referenciada, nunca medida) não
+     libera nada e seria apagada às cegas. */
+  function planoTeto(ix, opts) {
+    opts = opts || {};
+    var teto = num(opts.teto) > 0 ? num(opts.teto) : TETO_BYTES;
+    var alvo = teto * (num(opts.alvoFracao) > 0 ? num(opts.alvoFracao) : ALVO_FRACAO);
+    var norm = indiceNormal(ix), medido = indiceVazio(), a;
+    for (a in norm.entradas) {
+      if (Object.prototype.hasOwnProperty.call(norm.entradas, a) && norm.entradas[a].bytes > 0) medido.entradas[a] = norm.entradas[a];
+    }
+    var t = total(medido);
+    if (t <= teto) return { excede: false, total: t, descartar: [], liberado: 0, nomes: [] };
+    var p = lru(medido, { precisa: t - alvo, obraId: opts.obraId, protegidos: opts.protegidos });
+    return { excede: true, total: t, descartar: p.descartar, liberado: p.liberado, nomes: p.nomes };
+  }
+
+  /* ---------------------------------------------------------------
+   * aparar — uma passada de manutenção, em segundo plano
+   *
+   * `idb` é injetado ({get,set,del,chaves} em promessas — o `Idb` do produto):
+   * assim a política inteira roda em Node, com banco falso.
+   *
+   *  1. concilia o índice com as chaves reais (reparar);
+   *  2. trata as ÓRFÃS (chave no banco que o índice não conhece) SEM LER NENHUMA:
+   *     ler para medir faz o structured clone síncrono de até 260 MB — trava a
+   *     tela e soma memória (já houve "Out of Memory" neste navegador).
+   *       - referenciada por alguma obra (`emUso`) ou protegida: não lê e não
+   *         apaga; entra no índice com bytes DESCONHECIDOS (0), fora do total e
+   *         fora do despejo (só passa a contar quando o modelo for regravado);
+   *       - ninguém a referencia: `del` direto, sem ler — é cache, o IFC
+   *         reconverte na próxima abertura;
+   *  3. aplica o teto (planoTeto).
+   *
+   * opts: { obraId, protegidos[], emUso:{arquivoId:[obraIds]}, teto,
+   *         alvoFracao, log }
+   * ⚠ Toda falha do banco é engolida com log — cache não derruba o app.
+   * Devolve sempre { ok, apagados[], orfasMantidas, total }.
+   * ------------------------------------------------------------- */
+  function aparar(idb, empresaId, opts) {
+    opts = opts || {};
+    var emp = txt(empresaId) || "default";
+    var emUso = opts.emUso || {};
+    var prot = {}, ps = opts.protegidos || [], i;
+    for (i = 0; i < ps.length; i++) prot[txt(ps[i])] = 1;
+    var res = { ok: false, apagados: [], orfasMantidas: 0, total: 0 };
+    var ix = null;
+
+    function apagar(a) {
+      return Promise.resolve().then(function () { return idb.del(chave(emp, a)); }).then(function () {
+        ix = remover(ix, [a]); res.apagados.push(a); return true;
+      }, function (e) { logar(opts, "não consegui apagar " + a, e); return false; });
+    }
+
+    return Promise.resolve().then(function () {
+      return Promise.all([idb.get(chaveIndice(emp)), idb.chaves(PREFIXO)]);
+    }).then(function (r) {
+      ix = reparar(indiceNormal(r[0]), r[1] || [], emp).indice;
+      /* 2. órfãs: nenhuma é lida. As que ninguém referencia são apagadas. */
+      var seq = Promise.resolve();
+      Object.keys(ix.entradas).forEach(function (a) {
+        if (ix.entradas[a].bytes > 0) return;                      /* conhecida */
+        var obras = (emUso[a] || []).filter(Boolean);
+        if (obras.length || prot[a]) {
+          ix.entradas[a].obras = obras; res.orfasMantidas++;       /* fica intocada */
+          return;
+        }
+        seq = seq.then(function () { return apagar(a); });
+      });
+      return seq;
+    }).then(function () {
+      /* 3. teto */
+      var pl = planoTeto(ix, { teto: opts.teto, alvoFracao: opts.alvoFracao, obraId: opts.obraId, protegidos: opts.protegidos });
+      var seq = Promise.resolve();
+      pl.descartar.forEach(function (a) { seq = seq.then(function () { return apagar(a); }); });
+      return seq;
+    }).then(function () {
+      res.total = total(ix);
+      return Promise.resolve().then(function () { return idb.set(chaveIndice(emp), ix); }).then(function () { res.ok = true; }, function (e) { logar(opts, "não consegui gravar o índice", e); });
+    }).then(function () { return res; }, function (e) {
+      logar(opts, "manutenção do cache falhou", e);
+      return res;
+    });
+  }
+
   var BimCache = {
     V: V,
     PREFIXO: PREFIXO,
@@ -634,7 +745,11 @@
     remover: remover,
     reparar: reparar,
     lru: lru,
-    total: total
+    total: total,
+    TETO_BYTES: TETO_BYTES,
+    ALVO_FRACAO: ALVO_FRACAO,
+    planoTeto: planoTeto,
+    aparar: aparar
   };
 
   global.BimCache = BimCache;

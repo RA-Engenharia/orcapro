@@ -21723,6 +21723,43 @@
       });
     },
 
+    /* TETO DO CACHE (19/10/2026). Passada de manutenção em segundo plano:
+       apaga a órfã sem obra (sem ler) e despeja o MENOS USADO até o total voltar a 80% do teto
+       (BimCache.TETO_BYTES). Roda DENTRO da fila do IndexedDB (nunca concorre
+       com a gravação do índice). NÃO LÊ entrada nenhuma (até 260 MB no clone
+       síncrono): órfã que nenhuma obra referencia é apagada direto. Cache
+       apagado só é reconvertido na próxima abertura — nada de dado do cliente. */
+    _bimCacheAgendar: function (protegido, ms) {
+      var self = this;
+      if (!window.BimCache || !window.Idb || !BimCache.aparar) return;
+      if (this._bimApararTimer) return;
+      var emp = eid(), obraId = this._bimSel || "";
+      this._bimApararTimer = setTimeout(function () {
+        self._bimApararTimer = null;
+        var emUso = {};
+        try { (Store.listar(emp, "bim_modelos") || []).forEach(function (r) {
+          var a = String(r.arquivoId || ""); if (!a) return;
+          (emUso[a] = emUso[a] || []).push(String(r.obraId || ""));
+        }); } catch (e0) {}
+        var prot = protegido ? [protegido] : [];
+        try { (BIM.modelos || []).forEach(function (m) { if (m.arquivoId) prot.push(m.arquivoId); }); } catch (e1) {}
+        self._bimFila(function () {
+          return Idb.pronto().then(function (ok) {
+            if (!ok) return null;
+            return BimCache.aparar(Idb, emp, { obraId: obraId, protegidos: prot, emUso: emUso });
+          });
+        }).then(function (r) {
+          if (!r) return;
+          self._bimApararApagados = (self._bimApararApagados || 0) + r.apagados.length;
+          if (self._bimApararApagados) {
+            try { console.info("[bimcache] teto: " + self._bimApararApagados + " entrada(s) antiga(s) liberada(s); guardado agora " + Math.round(r.total / 1048576) + " MB"); } catch (e2) {}
+            UI.toast("Liberei " + self._bimApararApagados + " modelo(s) guardado(s) antigo(s) para manter o cache abaixo de " + Math.round(BimCache.TETO_BYTES / 1048576) + " MB. Se abrir um deles de novo, o arquivo é convertido outra vez.", "aviso");
+            self._bimApararApagados = 0;
+          }
+        })["catch"](function () {});
+      }, ms || 4000);
+    },
+
     _bimCacheEscrever: function (emp, obraId, reg, info) {
       var self = this, bytes = BimCache.tamanho(reg), ix = null, jaTinha = 0;
       return Idb.get(BimCache.chaveIndice(emp)).then(function (bruto) {
@@ -21770,6 +21807,7 @@
           return Idb.set(BimCache.chaveIndice(emp), ix);
         }).then(function () {
           try { BIM.soltarColeta(info.mid); } catch (e5) {}   /* só agora: gravou */
+          self._bimCacheAgendar(reg.arquivoId);                /* teto: depois, sem bloquear */
           return { ok: true, motivo: "" };
         }, function () {
           /* ⚠ NÃO APAGAR O QUE JÁ ESTAVA LÁ. Um `put` que falha aborta a
@@ -21785,6 +21823,9 @@
       var self = this, obraId = this._bimSel || "";
       if (!obraId || !window.BimFed || !window.BimCache || !window.Idb || !window.BIM) return;
       if (!BIM.abrirDoCache) return;
+      /* teto do cache: uma passada por sessão ao abrir o BIM (adota o que ficou
+         sem índice e despeja o excesso), em segundo plano */
+      if (!this._bimApararBoot) { this._bimApararBoot = 1; this._bimCacheAgendar("", 8000); }
       /* só restaura sem IFC na cena: reentrar na aba com modelo aberto não pode
          duplicar o que já está lá. ⚠ O modelo do EDITOR (as paredes desenhadas,
          `sintetico`) não conta: ele não vem do banco do aparelho e não duplica —
