@@ -128,6 +128,17 @@
       o = { tipo: "prisma", origem: ponto(s.x, s.y, s.z), u: dirX(rot), v: dirMenosZ(rot),
             poly: [[r1(-s.dx * 500), r1(-s.dz * 500)], [r1(s.dx * 500), r1(-s.dz * 500)], [r1(s.dx * 500), r1(s.dz * 500)], [r1(-s.dx * 500), r1(s.dz * 500)]],
             e0: 0, e1: r1(s.dy * 1000) };
+    } else if (s.forma === "malha" && s.origemForma === "revolucao") {
+      /* revolução (js/familia.js): o .rfa leva o cilindro em pé que a envolve (aproximação; a malha fica no OrçaPRO) */
+      var rMax = 0, yMn = Infinity, yMx = -Infinity;
+      for (var iv = 0; iv + 2 < s.v.length; iv += 3) { rMax = Math.max(rMax, Math.sqrt(s.v[iv] * s.v[iv] + s.v[iv + 2] * s.v[iv + 2])); yMn = Math.min(yMn, s.v[iv + 1]); yMx = Math.max(yMx, s.v[iv + 1]); }
+      o = { tipo: "cilindro", base: ponto(s.x, s.y + yMn, s.z), eixo: [0, 0, 1], raio: r1(rMax * 1000), comp: r1((yMx - yMn) * 1000) };
+    } else if (s.forma === "malha" && s.origemForma === "gerada") {
+      /* forma GERADA (js/hidlouca.js, QUALIDADE VISUAL 3): o .rfa leva a CAIXA que envolve a parte (aproximação; a malha fica no OrçaPRO) */
+      var bx = [Infinity, Infinity, Infinity], bX = [-Infinity, -Infinity, -Infinity];
+      for (var ig = 0; ig + 2 < s.v.length; ig += 3) for (var kg = 0; kg < 3; kg++) { bx[kg] = Math.min(bx[kg], s.v[ig + kg]); bX[kg] = Math.max(bX[kg], s.v[ig + kg]); }
+      var cxg = s.x + (bx[0] + bX[0]) / 2, czg = s.z + (bx[2] + bX[2]) / 2, hxg = (bX[0] - bx[0]) * 500, hzg = (bX[2] - bx[2]) * 500;
+      o = { tipo: "prisma", origem: ponto(cxg, s.y + bx[1], czg), u: dirX(0), v: dirMenosZ(0), poly: [[r1(-hxg), r1(-hzg)], [r1(hxg), r1(-hzg)], [r1(hxg), r1(hzg)], [r1(-hxg), r1(hzg)]], e0: 0, e1: r1((bX[1] - bx[1]) * 1000) };
     } else if (s.forma === "cilindro") {
       /* js/familia.js: o cilindro não gira (rot só vale para caixa e extrusão) — eixo y em pé, x e z deitados, a partir da base */
       var eixo = s.eixo === "x" ? [1, 0, 0] : (s.eixo === "z" ? [0, -1, 0] : [0, 0, 1]);

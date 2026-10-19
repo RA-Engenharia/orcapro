@@ -151,6 +151,10 @@
   function cotasDe(d, est) {
     var e = normEstilo(est), cx = caixa(d), out = [];
     if (!cx || !e.cotas) return out;
+    /* ⚠ a cota automática mede o que foi CORTADO da construção (parede, pilar): o polígono da INSTALAÇÃO (tubo, conexão,
+       caixa — apresentação de prancha, js/biminstnivel.js) não entra, senão cada bolsa vira uma cota (17/10/2026) */
+    var ehInstC = function (c) { return !!(c && (c.inst || (c.k && String(c.k).indexOf("|inst:") >= 0))); };
+    if ((d.cortes || []).some(ehInstC)) { var d0 = d; d = {}; Object.keys(d0).forEach(function (kk) { d[kk] = d0[kk]; }); d.cortes = (d0.cortes || []).filter(function (c) { return !ehInstC(c); }); }
     var k = e.escala / 1000, passo = 7 * k, folga = 9 * k;   /* 7 mm do desenho à 1ª linha; 7 mm entre linhas */
     function cadeia(eixo, posicoes, base, sentido, fila, min, max) {
       var linha = base + sentido * (folga + passo * fila);
@@ -228,13 +232,27 @@
       ' transform="translate(' + n4(x) + " " + n4(y) + ")" + (rot ? " rotate(" + rot + ")" : "") + " scale(" + (Math.round(s * 1e7) / 1e7) + ')" class="' + cls + '">' + conteudo + "</text>";
   }
 
-  function svgCota(c, e, pena) {
+  function svgCota(c, e, pena, ocup) {
     var k = e.escala / 1000, h = e.textoCota * k, ext = 2 * k, gap = 1.5 * k, tk = 1.6 * k;
     var s = "", t = esc(fmtMedida(c.valor, e)), mid = (c.a + c.b) / 2, sent = c.linha >= c.base ? 1 : -1;
     /* COTAS (14/10/2026): o texto que não cabe entre as marcas (a laje de 0,12, o piso de 0,10) ficava em cima
        das marcas e do vizinho — sai para FORA, depois da maior ponta, e a linha de cota vai até ele */
-    var wT = String(fmtMedida(c.valor, e)).length * h * 0.56, fora = wT + h * 0.5 > Math.abs(c.b - c.a), hi = Math.max(c.a, c.b);
+    var wT = String(fmtMedida(c.valor, e)).length * h * 0.56, fora = wT + h * 0.5 > Math.abs(c.b - c.a), hi = Math.max(c.a, c.b), lo = Math.min(c.a, c.b);
     if (fora) mid = hi + ext + h * 0.4 + wT / 2;
+    /* COTAS (17/10/2026, banheiro de exemplo: "0,0207" e "0,0072"): DUAS cotas curtas vizinhas punham o número para fora
+       no MESMO lugar. A linha de cota guarda os trechos de texto já postos (ocup); o número que bate num deles vai para
+       o outro lado (antes da menor ponta) e, se ainda bater, anda para fora até achar lugar. */
+    var chaveL = c.eixo + "|" + Math.round(c.linha * 1e4), folgaT = h * 0.3;
+    if (ocup) {
+      var tomados = ocup[chaveL] || (ocup[chaveL] = []);
+      var bate = function (m) { return tomados.some(function (q) { return m - wT / 2 - folgaT < q[1] && m + wT / 2 + folgaT > q[0]; }); };
+      if (fora && bate(mid)) {
+        var antes = lo - ext - h * 0.4 - wT / 2;
+        if (!bate(antes)) mid = antes;
+        else { var tent = mid; for (var gi = 0; gi < 40 && bate(tent); gi++) tent += wT * 0.5 + folgaT; mid = tent; }
+      }
+      tomados.push([mid - wT / 2, mid + wT / 2]);
+    }
     function ln(x1, y1, x2, y2, w) { return '<line x1="' + n4(x1) + '" y1="' + n4(y1) + '" x2="' + n4(x2) + '" y2="' + n4(y2) + '" stroke-width="' + w + '" ' + NS + "/>"; }
     function marca(x, y, ang) {
       if (e.marcaCota === "ponto") return '<circle cx="' + n4(x) + '" cy="' + n4(y) + '" r="' + n4(0.7 * k) + '" class="d2-cota-pt"/>';
@@ -249,14 +267,14 @@
       var y = c.linha;
       s += ln(c.a, c.base + sent * gap, c.a, y + sent * ext, pena.cota) + ln(c.b, c.base + sent * gap, c.b, y + sent * ext, pena.cota);
       s += ln(c.a - (e.marcaCota === "obliquo" ? ext : 0), y, c.b + (e.marcaCota === "obliquo" ? ext : 0), y, pena.cota);
-      if (fora) s += ln(hi, y, mid + wT / 2, y, pena.cota);
+      if (fora) s += mid > hi ? ln(hi, y, mid + wT / 2, y, pena.cota) : ln(mid - wT / 2, y, lo, y, pena.cota);
       s += marca(c.a, y, Math.PI) + marca(c.b, y, 0);
       s += txt(mid, y - 0.8 * k, h, t, "d2-cota-tx", "middle");
     } else {
       var x = c.linha;
       s += ln(c.base + sent * gap, c.a, x + sent * ext, c.a, pena.cota) + ln(c.base + sent * gap, c.b, x + sent * ext, c.b, pena.cota);
       s += ln(x, c.a - (e.marcaCota === "obliquo" ? ext : 0), x, c.b + (e.marcaCota === "obliquo" ? ext : 0), pena.cota);
-      if (fora) s += ln(x, hi, x, mid + wT / 2, pena.cota);
+      if (fora) s += mid > hi ? ln(x, hi, x, mid + wT / 2, pena.cota) : ln(x, mid - wT / 2, x, lo, pena.cota);
       s += marca(x, c.a, -Math.PI / 2) + marca(x, c.b, Math.PI / 2);
       s += txt(x - 0.8 * k, mid, h, t, "d2-cota-tx", "middle", -90);
     }
@@ -415,6 +433,7 @@
     /* 2b) INSTALAÇÕES (B5, js/biminst.js planta): o eixo de cada trecho na cor do
        sistema (acima do corte, tracejado), prumadas, conexões e peças, e o
        rótulo (sistema, DN, inclinação). Pena da vista; a cor é o que separa. */
+    if (!p6 && d.instImagens) p.push(svgInstImagens(d.instImagens, d.instClip));   /* PARIDADE: a vista da cena (Alto) */
     if (d.inst) p.push(svgInst(d.inst, k, pena));
     if (A7) p.push(A7.svg(d.anotP7, e, pena, "fundo"));   /* P7: região preenchida e mascaramento, por cima do modelo */
     /* 3) anotação */
@@ -422,7 +441,17 @@
     if (d.tipo === "planta" && e.marcasCorte) (d.marcas || []).forEach(function (mc) { p.push(svgMarcaCorte(mc, e, pena)); });
     if (d.marcasP6 && d.marcasP6.length) p.push(p6Marcas(d.marcasP6, e, pena));   /* P6: elevação, chamada de detalhe, recorte */
     eixos.forEach(function (ex) { p.push(svgEixo(ex, cx, e, pena)); });
-    cotas.forEach(function (c) { p.push(svgCota(c, e, pena)); });
+    /* P8 (junção 18/10/2026): o lugar novo do número da cota curta só com a prévia ?previa=hidro (sem BimPrevia — Node,
+       testes — vale o novo); sem a prévia, o SVG do master (null = svgCota sem ocupação) */
+    var semPrevia = false; try { semPrevia = !!(global.BimPrevia && typeof global.BimPrevia.hidro === "function" && !global.BimPrevia.hidro()); } catch (eP8) { semPrevia = false; }
+    var ocupCota = semPrevia ? null : {};   /* os números já postos em cada linha de cota (cota curta não põe número em cima de outro) */
+    /* as compridas primeiro (o número delas fica dentro e ocupa o meio); as curtas procuram lugar depois */
+    /* JUNÇÃO 18/10/2026: o LUGAR do número é decidido nessa ordem, mas o SVG sai na ordem de sempre — a folha sem colisão
+       fica byte a byte igual à do master (tools/test-traco-tela.js) */
+    var svgCotas = new Array(cotas.length);
+    cotas.map(function (c, i) { return { c: c, i: i }; }).sort(function (x, y) { return Math.abs(y.c.b - y.c.a) - Math.abs(x.c.b - x.c.a) || x.i - y.i; })
+      .forEach(function (o) { svgCotas[o.i] = svgCota(o.c, e, pena, ocupCota); });
+    svgCotas.forEach(function (s) { p.push(s); });
     if (d.tipo === "planta" && e.cotas) (d.cotasModelo || []).forEach(function (c) { p.push(svgCotaAlinhada(c, e, pena)); });
     /* P2-D: identificador de ambiente (nome; número · área) e a legenda do esquema de cores */
     if (amb) p.push(svgAmbTags(amb, e, pena));
@@ -616,12 +645,31 @@
   }
 
   function corOk(c) { return /^#[0-9a-fA-F]{3,8}$/.test(String(c || "")) ? c : "#333333"; }
+  /* PARIDADE (18/10/2026): a planta ALTO das instalações é a vista ortográfica da própria cena 3D (js/biminstsombra.js):
+     uma imagem sombreada por elemento, na moldura do eixo dele (rotate), por baixo das arestas em vetor. O PDF/DXF
+     levam as arestas (vetor); a imagem é da tela e da folha impressa por imagem. */
+  function svgInstImagens(lista, clip) {
+    var s = "";
+    (lista || []).forEach(function (im) {
+      if (!im || !im.href) return;
+      s += '<image href="' + esc(im.href) + '" x="' + n4(im.x) + '" y="' + n4(im.y) + '" width="' + n4(im.w) + '" height="' + n4(im.h) + '" preserveAspectRatio="none"' +
+        (Math.abs(+im.ang || 0) > 1e-6 ? ' transform="rotate(' + n4(+im.ang) + ')"' : "") + (im.u ? ' data-d2-inst-img="' + esc(im.u) + '"' : "") + "/>";
+    });
+    if (!s) return "";
+    if (clip) {   /* o recorte da vista corta a imagem na borda (como corta o vetor) */
+      var cid = "d2ic" + (++svgInstImagens.n);
+      return '<defs><clipPath id="' + cid + '"><rect x="' + n4(clip[0]) + '" y="' + n4(clip[1]) + '" width="' + n4(clip[2] - clip[0]) + '" height="' + n4(clip[3] - clip[1]) + '"/></clipPath></defs>' +
+        '<g class="d2-inst-img" clip-path="url(#' + cid + ')">' + s + "</g>";
+    }
+    return '<g class="d2-inst-img">' + s + "</g>";
+  }
+  svgInstImagens.n = 0;
   function svgInst(ins, k, pena) {
     var s = '<g class="d2-inst">';
     (ins.linhas || []).forEach(function (l) {
       var q = l.seg || [];
-      s += '<line x1="' + n4(q[0]) + '" y1="' + n4(q[1]) + '" x2="' + n4(q[2]) + '" y2="' + n4(q[3]) + '" stroke="' + corOk(l.cor) + '" stroke-width="' + n4(pena.corte * 0.8) + '" ' + NS +
-        (l.tracejado ? tracoK([3, 1.5], k) : "") + ' data-d2-inst="' + esc(l.id) + '"/>';
+      s += '<line x1="' + n4(q[0]) + '" y1="' + n4(q[1]) + '" x2="' + n4(q[2]) + '" y2="' + n4(q[3]) + '" stroke="' + corOk(l.cor) + '" stroke-width="' + n4(l.chamada ? pena.vista * 0.7 : pena.corte * 0.8) + '" ' + NS +   /* linha de chamada de rótulo: fina */
+        (l.tracejado ? tracoK([3, 1.5], k) : "") + (l.chamada ? ' data-d2-chamada="1"' : "") + ' data-d2-inst="' + esc(l.id) + '"/>';   /* JUNÇÃO 18/10/2026: a chamada se distingue do traço de instalação */
     });
     (ins.simbolos || []).forEach(function (m) {
       var cor = corOk(m.cor), r = Math.max(+m.r || 0, 0.6 * k);
@@ -714,15 +762,28 @@
       if (c.fechado) gF[key] = (gF[key] || "") + caminho(c.pts, true, c.arcos); else gA[key] = (gA[key] || "") + caminho(c.pts, false, c.arcos);   /* CURVA: c.arcos */
     });
     var corpo = "";
-    Object.keys(gL).sort().forEach(function (key) {
+    function linhaP6(key) {
       var s = st(key); if (s.visivel === false || !gL[key]) return;
       var mm = p6PenaEf(penas, s.proj, e), tr = p6Traco(p6.padroes, s.padrao, e.escala), pdT = p6.padroes && p6.padroes[s.padrao];
       corpo += '<path d="' + gL[key] + '" class="d2-vista d2-p6-l" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + p6Px(mm, penas) + '" ' + NS +
         (tr ? tracoAttr(pdT.mm, tr) : "") + ' style="stroke:' + p6Cor(s) + '"/>';
-    });
-    var chC = {}; Object.keys(gF).concat(Object.keys(gA)).forEach(function (x) { chC[x] = 1; });
-    Object.keys(chC).sort().forEach(function (key) {
+    }
+    /* NÍVEL DE DETALHE (js/biminstnivel.js): a linha UNIFILAR das instalações (chave "|inst:") sai DEPOIS do corte —
+       o tubo embutido na parede aparece por cima da hachura, como na prancha hidrossanitária */
+    var ehInst = function (key) { return key.indexOf("|inst:") >= 0; };
+    Object.keys(gL).sort().forEach(function (key) { if (!ehInst(key)) linhaP6(key); });
+    var chC = {}, imgFeita = !(d.instImagens && d.instImagens.length); Object.keys(gF).concat(Object.keys(gA)).forEach(function (x) { chC[x] = 1; });
+    /* o corte da instalação depois do da arquitetura (o tubo embutido não some debaixo da hachura da parede) */
+    /* entre os de instalação, a ORDEM da apresentação vai depois de "|inst:" (p1 tubo, p2 conexão/caixa, p3 prumada) — o
+       branco da conexão cobre a ponta do tubo e a prumada fica por cima da junção */
+    var sufI = function (x) { var i = x.indexOf("|inst:"); return i >= 0 ? x.slice(i + 6) : x; };
+    Object.keys(chC).sort(function (a, b) { var ia = ehInst(a) ? 1 : 0, ib = ehInst(b) ? 1 : 0; if (ia !== ib) return ia - ib; var sa = sufI(a), sb = sufI(b); return sa < sb ? -1 : sa > sb ? 1 : (a < b ? -1 : a > b ? 1 : 0); }).forEach(function (key) {
+      if (!imgFeita && ehInst(key)) { imgFeita = true; corpo += svgInstImagens(d.instImagens, d.instClip); }   /* PARIDADE: a vista da cena por baixo do vetor */
       var s = st(key); if (s.visivel === false) return;
+      if (s.oculto) {   /* PARIDADE: a forma 2D antiga fica só como ALVO DO CLIQUE no Alto (a cena desenha) */
+        if (gF[key]) corpo += '<path d="' + gF[key] + '" fill="#000" fill-opacity="0" stroke="none" class="d2-p6-alvo" data-cat="' + esc(key) + '"/>';
+        return;
+      }
       var mm = p6PenaEf(penas, s.corte, e), w = p6Px(mm, penas), cor = p6Cor(s);
       var pr = (p6.preenchimentos || {})[s.preench], fill = "none";
       /* CORES POR CATEGORIA: o preenchimento da categoria (corCat) aparece também no nível de detalhe baixo — é o que a pessoa pediu para ver */
@@ -737,6 +798,8 @@
       if (gF[key]) corpo += '<path d="' + gF[key] + '" fill="' + fill + '" fill-rule="evenodd" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
       if (gA[key]) corpo += '<path d="' + gA[key] + '" fill="none" class="d2-corte d2-p6-c" data-cat="' + esc(key) + '" data-mm="' + mm + '" stroke-width="' + w + '" ' + NS + ' style="stroke:' + cor + '"/>';
     });
+    if (!imgFeita) { imgFeita = true; corpo += svgInstImagens(d.instImagens, d.instClip); }
+    Object.keys(gL).sort(function (a, b) { var sa = sufI(a), sb = sufI(b); return sa < sb ? -1 : sa > sb ? 1 : 0; }).forEach(function (key) { if (ehInst(key)) linhaP6(key); });
     return { defs: defs, corpo: '<g class="d2-p6">' + corpo + "</g>" };
   }
   /* marcas das vistas P6 na vista-mãe: ELEVAÇÃO (círculo + seta para onde se olha),

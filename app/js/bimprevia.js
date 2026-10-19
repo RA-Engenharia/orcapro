@@ -22,11 +22,18 @@
   "use strict";
   var CHAVE = "orcapro:tela:bim-modelador:v1";
   var OFF = "orcapro:tela:bim-modelador:off";
+  /* HIDROSSANITÁRIO e CLIMATIZAÇÃO: liberado para todos em 18/10/2026 pelo Rogério; preço depois.
+     (Antes, 17/10, só valia com a prévia `?previa=hidro`.) `BimPrevia.hidro()` é verdadeiro sempre que o modelador está ligado.
+     A única saída é `?previa=hidro-desligar`: grava a chave de desligado neste aparelho e o BIM volta a ficar como no master
+     (o grupo "hidro" do index.html nem é baixado); `?previa=hidro` apaga essa chave. */
+  var HIDRO_OFF = "orcapro:tela:bim-hidro:off";
   /* a URL é lida na CARGA: o App._previaDaUrl limpa o `?previa=` do endereço logo depois */
   try {
     var q = (global.location && global.location.search) || "";
     if (/[?&]previa=[^&]*modelador-desligar/i.test(q)) global.localStorage.setItem(OFF, "1");
     else if (/[?&]previa=[^&]*modelador(?!-desligar)/i.test(q)) global.localStorage.removeItem(OFF);
+    if (/[?&]previa=[^&]*hidro-desligar/i.test(q)) global.localStorage.setItem(HIDRO_OFF, "1");
+    else if (/[?&]previa=[^&]*hidro(?!-desligar)/i.test(q)) global.localStorage.removeItem(HIDRO_OFF);
   } catch (e) {}
   var BimPrevia = {
     CHAVE: CHAVE,
@@ -45,6 +52,13 @@
       if (!BimPrevia._aparelho()) return false;
       var M = BimPrevia._modela(); if (!M) return true;
       try { return !!M.status().liberado; } catch (e) { return true; }
+    },
+    HIDRO_OFF: HIDRO_OFF,
+    /* o hidrossanitário/climatização aparece? = modelador ligado E este aparelho não o desligou (`?previa=hidro-desligar`).
+       Armazenamento bloqueado: sem como ler a escolha, vale o padrão (aparece). */
+    hidro: function () {
+      if (!BimPrevia.modelador()) return false;
+      try { return global.localStorage.getItem(HIDRO_OFF) !== "1"; } catch (e) { return true; }
     },
     disciplina: function (id) {
       if (!BimPrevia._aparelho()) return false;

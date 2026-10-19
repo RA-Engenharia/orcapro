@@ -30,7 +30,7 @@
   var FamiliaUI = {
     _ctx: null, _el: null, _modo: "biblioteca", _edit: null, _busca: "", _tiposSel: {},
 
-    configurar: function (ctx) { this._ctx = ctx || {}; },
+    configurar: function (ctx) { this._ctx = ctx || {}; this._ixTarefa = null; },
     /* biblioteca inteira: RA + guardadas (as guardadas com o mesmo id ganham) */
     biblioteca: function () {
       var mapa = {}, out = [];
@@ -39,13 +39,42 @@
       (global.FamiliasOrc ? FamiliasOrc.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* CARPINTARIA & MARCENARIA (js/marcenaria.js): os módulos em chapa e a carpintaria — só com o modelador e a disciplina ligados */
       (global.FamiliasMarcenaria ? FamiliasMarcenaria.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
+      /* HIDROSSANITÁRIO/CLIMATIZAÇÃO (J4/J11): só com a prévia ?previa=hidro; o grupo "hidro" baixa sob demanda e a biblioteca se refaz quando chega */
+      var comHidro = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()), selfF = this;
+      if (comHidro && !global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro") && !this._hidroPedido) {
+        this._hidroPedido = true;
+        Carregar.grupo("hidro").then(function () { try { selfF._sincronizarVisor(); if (selfF._el && selfF._modo === "biblioteca") selfF.render(); } catch (e) {} }, function () { selfF._hidroPedido = false; });
+      }
+      /* HIDROSSANITÁRIO (js/hidfamilias.js): as famílias hid-* */
+      try { if (comHidro && global.HidFamilias) HidFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eH) {}
+      /* CLIMATIZAÇÃO (js/climfamilias.js, C1b): as famílias ra-clim-* geradas do catálogo, só com o modelador ligado */
+      try { if (comHidro && global.ClimFamilias) ClimFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eC) {}
+      /* TRATAMENTO (js/hidtanques.js): tanques, sumidouro e vala, só com o modelador ligado */
+      try { if (comHidro && global.HidTanques) HidTanques.familias().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eT) {}
+      /* PISCINA (js/hidpiscinafam.js): equipamentos e dispositivos de piscina com a medida do catálogo, só com o modelador ligado */
+      try { if (comHidro && global.HidPiscinaFam) HidPiscinaFam.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eP) {}
       var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
       minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
       Object.keys(mapa).forEach(function (k) { out.push(mapa[k]); });
       out.sort(function (a, b) { return String(a.categoria).localeCompare(String(b.categoria)) || String(a.nome).localeCompare(String(b.nome)); });
       return out;
     },
-    obter: function (id) { var l = this.biblioteca(); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; },
+    /* FLUIDEZ (17/10/2026): obter() é chamado dezenas de vezes por clique (a paleta de Propriedades pergunta a família,
+       a categoria e o nome de cada peça do modelo) e cada chamada montava a biblioteca INTEIRA (cópia profunda das listas
+       RA, orçáveis, marcenaria, hidro e a leitura das guardadas) — ~270 ms por clique no modelo médio. O índice vale até
+       o fim da tarefa atual (a próxima tarefa refaz) e cai ao guardar, excluir ou reconfigurar. Só leitura: quem edita
+       copia (editar() faz JSON.parse(JSON.stringify(f))). */
+    obter: function (id) {
+      var ix = this._ixTarefa;
+      if (!ix) {
+        ix = {}; var l = this.biblioteca();
+        for (var i = 0; i < l.length; i++) if (!Object.prototype.hasOwnProperty.call(ix, l[i].id)) ix[l[i].id] = l[i];
+        this._ixTarefa = ix; var self = this;
+        try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this._ixTarefa = null; }
+      }
+      return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
+    },
+    _esquecerIndice: function () { this._ixTarefa = null; },
     _sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca()); } catch (e) {} },
 
     montar: function (el) { this._el = el; this.render(); },
@@ -57,16 +86,37 @@
     /* --------------------------------------------------- BIBLIOTECA */
     _renderBiblioteca: function () {
       var self = this, L = this.biblioteca(), b = this._busca.toLowerCase(), cats = (F() && F().CATEGORIAS) || {};
+      /* FILTRO POR ORIGEM E POR "ENTRA NO CÁLCULO" (18/10/2026): Todas | OrçaPRO | Escritório + interruptor; selo em cada cartão */
+      var HBf = global.HidBiblioteca && global.HidBiblioteca.aplicarFiltro && global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro() ? global.HidBiblioteca : null, memorial = HBf ? HBf.memorialDoProjeto() : false, filtro = HBf ? HBf.lerFiltro(null, memorial) : null, infoF = {}, contF = null;
+      if (HBf) {
+        this._cssFiltro(HBf);
+        var vis0 = [];
+        L.forEach(function (f) {
+          if (b && (f.nome + " " + (cats[f.categoria] || "")).toLowerCase().indexOf(b) >= 0 || !b) {
+            var s = HBf.selos(f, self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id || "", { nativa: f._origem === "ra" });
+            infoF[f.id] = { id: f.id, origemFam: s.origem.id, calculo: s.calculo }; vis0.push(infoF[f.id]);
+          }
+        });
+        contF = HBf.contagens(vis0, filtro);
+      }
       var h = '<div class="fe-topo"><button class="btn sm primary" data-fe="nova">+ Nova família</button>' +
         /* FAMIMPORT: com a prévia do modelador, importa também o .rfa (e o .txt do catálogo de tipos) e o .zip com a pasta, vários de uma vez */
         (global.FamiliaImportUI && FamiliaImportUI.ativo() ? '<label class="btn sm" style="position:relative;overflow:hidden" title="Família do OrçaPRO (.opfam), convertida pelo plugin OrçaPRO for Revit (.opfam), do Revit direto (.rfa) ou uma pasta em .zip">Importar família<input type="file" multiple accept=".opfam,.rfa,.txt,.zip,application/json" data-fe="importar" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>'
           : '<label class="btn sm" style="position:relative;overflow:hidden">Importar .opfam<input type="file" accept=".opfam,application/json" data-fe="importar" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>') +
+        /* BIBLIOTECA DO ESCRITÓRIO (17/10/2026): a PASTA de .opfam que o plugin exporta do Revit do escritório (Tigre, DarivaBIM…).
+           Fica na biblioteca DA PESSOA (todas as obras dela) — nunca no produto: uso restrito ao licenciado */
+        (global.FamiliaImportUI && FamiliaImportUI.ativo() && global.HidBiblioteca ? '<label class="btn sm" style="position:relative;overflow:hidden" title="A pasta de famílias que o plugin OrçaPRO for Revit exportou do seu Revit (Integração › Exportar Famílias, ou a pasta OrcaPRO-Biblioteca-Escritorio). Uso restrito ao licenciado: as famílias ficam só na sua biblioteca.">Biblioteca do escritório<input type="file" multiple webkitdirectory accept=".opfam" data-fe="escritorio" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>' : "") +
         '<input class="fe-busca" data-fe="busca" placeholder="Buscar família" value="' + esc(this._busca) + '"></div>' +
+        (HBf ? HBf.htmlControles(filtro, contF, memorial) : "") +
         '<p class="fe-ajuda">Escolha o tipo e clique <b>Colocar</b>; depois clique no modelo. Porta e janela vão numa parede criada aqui e abrem o vão.</p>';
-      var grupos = {};
-      L.forEach(function (f) { if (b && (f.nome + " " + (cats[f.categoria] || "")).toLowerCase().indexOf(b) < 0) return; (grupos[f.categoria] = grupos[f.categoria] || []).push(f); });
+      var grupos = {}, ocultas = 0;
+      L.forEach(function (f) {
+        if (b && (f.nome + " " + (cats[f.categoria] || "")).toLowerCase().indexOf(b) < 0) return;
+        if (HBf && !HBf.aplicarFiltro([infoF[f.id]], filtro).length) { ocultas++; return; }
+        (grupos[f.categoria] = grupos[f.categoria] || []).push(f);
+      });
       var ks = Object.keys(grupos);
-      if (!ks.length) h += '<p class="fe-vazio">Nenhuma família encontrada.</p>';
+      if (!ks.length) h += '<p class="fe-vazio">Nenhuma família encontrada' + (ocultas ? " neste filtro (" + ocultas + " escondida(s): mude a origem ou desligue \"Só as que entram no cálculo\")" : "") + ".</p>";
       ks.forEach(function (c) {
         h += '<div class="fe-grupo"><div class="fe-grupo-t">' + esc(cats[c] || c) + "</div>";
         grupos[c].forEach(function (f) {
@@ -75,9 +125,10 @@
           /* FAMIMPORT: a família do mercado (js/familiamalha.js) — miniatura, categoria da família e o aviso de geometria pendente */
           var imp = f.geometria === "malha" && f.importada ? f.importada : null, pend = !!(imp && imp.geometriaPendente);
           h += '<div class="fe-card' + (imp ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : "") +
-            '<div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span>" + (pend ? '<span class="fe-badge fe-b-pendente" title="Veio do .rfa: tipos e parâmetros, sem a forma 3D">Geometria pendente</span>' : "") + "</div>" +
+            '<div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span>" + (HBf ? HBf.htmlSelos(infoF[f.id]) : "") + (pend ? '<span class="fe-badge fe-b-pendente" title="Veio do .rfa: tipos e parâmetros, sem a forma 3D">Geometria pendente</span>' : "") + "</div>" +
             (imp ? '<div class="fe-card-d">' + esc(imp.categoriaNome || "") + " · " + (f.tipos || []).length + " tipo(s) · " + (f.parametros || []).length + " parâmetro(s)" + (imp.triangulos ? " · " + imp.triangulos + " triângulos" : "") + "</div>" : "") +
             (f.descricao ? '<div class="fe-card-d">' + esc(f.descricao) + "</div>" : "") +
+            self._htmlEscritorio(f) +
             '<div class="fe-card-l2"><select data-fe="tipo" aria-label="Tipo">' + (f.tipos || []).map(function (t) { return '<option value="' + esc(t.id) + '"' + (t.id === tSel ? " selected" : "") + ">" + esc(t.nome) + "</option>"; }).join("") + "</select>" +
             '<button class="btn sm primary" data-fe="colocar">Colocar</button><button class="btn sm" data-fe="editar">' + (f._origem === "ra" ? "Ver / duplicar" : "Editar") + "</button>" +
             '<button class="btn sm" data-fe="exportar" title="Exportar como Família OrçaPRO (.opfam)">.opfam</button>' +
@@ -92,9 +143,14 @@
       this._el.innerHTML = '<div class="fe">' + h + "</div>";
       this._ligarBiblioteca();
     },
+    _cssFiltro: function (HB) {
+      try { var d = global.document; if (d && d.head && !d.getElementById("fil-css")) { var st = d.createElement("style"); st.id = "fil-css"; st.textContent = HB.cssFiltro(); d.head.appendChild(st); } } catch (e) {}
+    },
     _ligarBiblioteca: function () {
       var self = this, el = this._el;
       el.onclick = function (e) {
+        var ch = e.target.closest ? e.target.closest("[data-fil-origem]") : null;
+        if (ch && global.HidBiblioteca) { var HBo = global.HidBiblioteca; HBo.gravarFiltro(null, { origem: ch.getAttribute("data-fil-origem") }, HBo.memorialDoProjeto()); self.render(); return; }
         var b = e.target.closest ? e.target.closest("[data-fe]") : null; if (!b) return;
         var k = b.getAttribute("data-fe"), card = b.closest(".fe-card"), id = card ? card.getAttribute("data-fam") : null, f = id ? self.obter(id) : null;
         if (k === "nova") { self.editar(F().nova("Família nova", "generico"), true); }
@@ -108,7 +164,10 @@
       };
       el.onchange = function (e) {
         var t = e.target, k = t.getAttribute && t.getAttribute("data-fe");
+        if (t.hasAttribute && t.hasAttribute("data-fil-calc") && global.HidBiblioteca) { var HBc = global.HidBiblioteca; HBc.gravarFiltro(null, { soCalculo: !!t.checked }, HBc.memorialDoProjeto()); self.render(); return; }
         if (k === "tipo") { var card = t.closest(".fe-card"); if (card) self._tiposSel[card.getAttribute("data-fam")] = t.value; }
+        if (k === "mapear" && t.value) { var cm = t.closest(".fe-card"), fm = cm ? self.obter(cm.getAttribute("data-fam")) : null; if (fm) self.mapearEscritorio(fm, t.value); }
+        if (k === "escritorio" && t.files && t.files.length) { var fe = Array.prototype.slice.call(t.files); t.value = ""; self.importarEscritorio(fe); }
         if (k === "importar" && t.files && t.files[0]) {
           /* FAMIMPORT: vários arquivos, .rfa, .zip — pelo importador de famílias do mercado */
           if (global.FamiliaImportUI && FamiliaImportUI.ativo()) { var fs = Array.prototype.slice.call(t.files); t.value = ""; FamiliaImportUI.interceptar(fs, function (r) { toast("\"" + r[0].name + "\" não tem família (.opfam ou .rfa) dentro.", "aviso"); }).forEach(function (r) { toast("\"" + r.name + "\" não é família (.opfam, .rfa ou .zip).", "aviso"); }); }
@@ -116,6 +175,36 @@
         }
       };
       el.oninput = function (e) { if (e.target.getAttribute && e.target.getAttribute("data-fe") === "busca") { self._busca = e.target.value; var pos = e.target.selectionStart; self.render(); var i = el.querySelector('[data-fe="busca"]'); if (i) { i.focus(); try { i.setSelectionRange(pos, pos); } catch (x) {} } } };
+    },
+    /* ---------------------------------------- BIBLIOTECA DO ESCRITÓRIO (js/biminstbiblioteca.js) */
+    _htmlEscritorio: function (f) {
+      var HB = global.HidBiblioteca, imp = f && f.importada;
+      if (!HB || !imp || !imp.escritorio) return "";
+      var c = HB.classificar(f, null), M = HB.MOTORES[c.motor] || {}, pede = HB.precisaMapear(f);
+      var h = '<div class="fe-card-d fe-esc"><span class="fe-badge fe-b-escritorio" title="Família do escritório (uso restrito ao licenciado; não redistribuir)">Escritório</span> ' +
+        (pede ? '<b>' + (c.motor === "generica" ? "Peça genérica: não entra no cálculo." : "Reconhecida com dúvida (" + esc(M.rotulo) + ").") + "</b> O que ela é?" :
+                "Reconhecida: <b>" + esc(M.rotulo) + "</b>" + (c.por === "usuario" ? " (sua escolha)" : "") + (imp.escritorio.fabricante ? " · " + esc(imp.escritorio.fabricante) : ""));
+      if (pede || c.por === "usuario") h += ' <select data-fe="mapear" aria-label="Mapear para"><option value="">Mapear para…</option>' + Object.keys(HB.MOTORES).map(function (k) { return '<option value="' + esc(k) + '"' + (c.por === "usuario" && k === c.motor ? " selected" : "") + ">" + esc(HB.MOTORES[k].rotulo) + "</option>"; }).join("") + "</select>";
+      return h + "</div>";
+    },
+    mapearEscritorio: function (f, motor) {
+      var HB = global.HidBiblioteca; if (!HB || !HB.mapear(f, motor)) return false;
+      try { HB.preparar(f, { escritorio: true }); } catch (e) {}
+      this._salvar(f); this._sincronizarVisor(); this.render();
+      toast("\"" + f.nome + "\" agora é " + HB.MOTORES[motor].rotulo + " — vale em todas as obras.", "ok");
+      return true;
+    },
+    /* a pasta inteira (.opfam do plugin): vai para a biblioteca da obra E para a "minha" (todas as obras) */
+    importarEscritorio: function (arquivos) {
+      var self = this, lista = (arquivos || []).filter(function (f) { return /\.opfam$/i.test(f && f.name) && !/(^|[\\\/])_/.test(f.webkitRelativePath || ""); });   /* _dimensoes, _render: não são família */
+      if (!lista.length) { toast("Nenhum .opfam na pasta. Exporte pelo plugin OrçaPRO for Revit (Integração › Exportar Famílias).", "aviso"); return Promise.resolve(null); }
+      if (!global.FamiliaImportUI) return Promise.resolve(null);
+      return FamiliaImportUI.receber(lista, { escritorio: true, minha: true }).then(function (out) {
+        var HB = global.HidBiblioteca, r = HB ? HB.resumo((out && out.importadas) || []) : null;
+        if (r) toast("Biblioteca do escritório: " + r.total + " família(s), " + r.reconhecidas + " reconhecida(s)" + (r.genericas.length ? ", " + r.genericas.length + " genérica(s) — escolha o que cada uma é no cartão" : "") + ".", r.genericas.length ? "aviso" : "ok", 9000);
+        self.render();
+        return out;
+      });
     },
     colocar: function (f, tipoId) {
       this._sincronizarVisor();
@@ -155,6 +244,7 @@
     _salvar: function (fam) {
       if (!this._ctx || !this._ctx.salvar) { toast("Sem onde guardar a família.", "erro"); return false; }
       var ok = false; try { ok = !!this._ctx.salvar(fam); } catch (e) { ok = false; }
+      this._ixTarefa = null;
       if (!ok) { toast("Não consegui guardar a família (armazenamento cheio?).", "erro"); return false; }
       this._sincronizarVisor();
       return true;
@@ -164,7 +254,7 @@
       if (!(global.UI && UI.modal)) return;
       UI.modal("Excluir \"" + f.nome + "\"?", "<p>A família sai da biblioteca deste aparelho (e da nuvem). O que já foi colocado no modelo fica com um marcador até você trocar ou apagar.</p>", [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "Excluir família", classe: "danger", onClick: function () { UI.fecharModal(); try { self._ctx.excluir(f.id); } catch (e) {} self._sincronizarVisor(); self.render(); toast("Família excluída.", "ok"); } }
+        { texto: "Excluir família", classe: "danger", onClick: function () { UI.fecharModal(); try { self._ctx.excluir(f.id); } catch (e) {} self._ixTarefa = null; self._sincronizarVisor(); self.render(); toast("Família excluída.", "ok"); } }
       ]);
     },
 
@@ -223,16 +313,19 @@
         var campos = [["x", "X"], ["y", "Y (base)"], ["z", "Z"]];
         if (s.forma === "caixa") campos = campos.concat([["dx", "Largura (X)"], ["dy", "Altura (Y)"], ["dz", "Profund. (Z)"], ["rot", "Giro (°)"]]);
         else if (s.forma === "cilindro") campos = campos.concat([["raio", "Raio"], ["altura", "Comprimento"]]);
+        else if (s.forma === "revolucao") campos = campos.concat([["ex", "Escala oval X"], ["ez", "Escala oval Z"], ["rot", "Giro (°)"]]);
         else campos = campos.concat([["altura", "Espessura / altura"], ["rot", "Giro (°)"]]);
         h += '<div class="fe-sol" data-si="' + i + '"><div class="fe-sol-cab"><input data-fs="nome" value="' + esc(s.nome || "") + '" placeholder="nome"><select data-fs="forma">' + opt(Fm.FORMAS, s.forma) + "</select>" +
-          (s.forma === "cilindro" ? '<select data-fs="eixo"><option value="y"' + (s.eixo !== "x" && s.eixo !== "z" ? " selected" : "") + '>em pé (Y)</option><option value="x"' + (s.eixo === "x" ? " selected" : "") + '>deitado em X</option><option value="z"' + (s.eixo === "z" ? " selected" : "") + ">deitado em Z</option></select>" : "") +
+          (s.forma === "cilindro" || s.forma === "revolucao" ? '<select data-fs="eixo"><option value="y"' + (s.eixo !== "x" && s.eixo !== "z" ? " selected" : "") + '>em pé (Y)</option><option value="x"' + (s.eixo === "x" ? " selected" : "") + '>deitado em X</option><option value="z"' + (s.eixo === "z" ? " selected" : "") + ">deitado em Z</option></select>" : "") +
           (s.forma === "extrusao" ? '<select data-fs="plano"><option value="planta"' + (s.plano !== "frente" ? " selected" : "") + '>contorno em planta</option><option value="frente"' + (s.plano === "frente" ? " selected" : "") + ">contorno de frente</option></select>" : "") +
           '<button class="btn sm ghost" data-fe="rm-sol">✕</button></div><div class="fe-grade4">' +
           campos.map(function (c) { return '<label>' + c[1] + '<input class="fe-form" data-fs="' + c[0] + '" value="' + esc(s[c[0]] == null ? "" : s[c[0]]) + '"></label>'; }).join("") +
           '<label>Material<input data-fs="material" value="' + esc(s.material || "") + '" placeholder="nome ou parâmetro"></label><label>Visível se<input class="fe-form" data-fs="visivel" value="' + esc(s.visivel || "") + '" placeholder="sempre"></label></div>' +
+          (s.forma === "revolucao" ? '<label class="fe-larga">Perfil da revolução (um ponto por linha: raio ; altura — aceita fórmula; gira em volta do eixo)<textarea data-fs="perfil" rows="4">' + esc((s.perfil || []).map(function (q) { return q[0] + " ; " + q[1]; }).join("\n")) + "</textarea></label>" +
+            '<label>Segmentos do giro<input data-fs="segmentos" value="' + esc(s.segmentos == null ? "" : s.segmentos) + '" placeholder="padrão"></label><label>Fechar perfil<select data-fs="fechar"><option value=""' + (s.fechar !== "perfil" ? " selected" : "") + '>tampa no eixo</option><option value="perfil"' + (s.fechar === "perfil" ? " selected" : "") + ">anel oco (fecha sobre si)</option></select></label>" : "") +
           (s.forma === "extrusao" ? '<label class="fe-larga">Contorno (um ponto por linha: x ; z — aceita fórmula)<textarea data-fs="contorno" rows="4">' + esc((s.contorno || []).map(function (q) { return q[0] + " ; " + q[1]; }).join("\n")) + "</textarea></label>" : "") + "</div>";
       });
-      h += '<div class="fe-topo"><button class="btn sm" data-fe="add-caixa">+ Caixa</button><button class="btn sm" data-fe="add-cil">+ Cilindro</button><button class="btn sm" data-fe="add-ext">+ Extrusão</button></div>' +
+      h += '<div class="fe-topo"><button class="btn sm" data-fe="add-caixa">+ Caixa</button><button class="btn sm" data-fe="add-cil">+ Cilindro</button><button class="btn sm" data-fe="add-ext">+ Extrusão</button><button class="btn sm" data-fe="add-rev">+ Revolução</button></div>' +
         '<p class="fe-ajuda">Sistema da família: origem no piso; X ao longo da parede, Y para cima, Z para fora. Caixa: X, Y, Z = centro da base. Todo campo aceita número ou fórmula com os parâmetros.</p></details>';
       }
       if (f.hospedagem === "parede" && f.geometria !== "malha") {
@@ -270,6 +363,7 @@
         else if (k === "add-caixa") (f.solidos = f.solidos || []).push({ id: "s" + Date.now().toString(36), nome: "Caixa", forma: "caixa", x: "0", y: "0", z: "0", dx: "0.5", dy: "0.5", dz: "0.5", material: "Concreto" });
         else if (k === "add-cil") (f.solidos = f.solidos || []).push({ id: "s" + Date.now().toString(36), nome: "Cilindro", forma: "cilindro", eixo: "y", x: "0", y: "0", z: "0", raio: "0.1", altura: "1", material: "Metal" });
         else if (k === "add-ext") (f.solidos = f.solidos || []).push({ id: "s" + Date.now().toString(36), nome: "Extrusão", forma: "extrusao", plano: "planta", x: "0", y: "0", z: "0", altura: "0.1", contorno: [["0", "0"], ["1", "0"], ["1", "1"], ["0", "1"]], material: "Concreto" });
+        else if (k === "add-rev") (f.solidos = f.solidos || []).push({ id: "s" + Date.now().toString(36), nome: "Revolução", forma: "revolucao", eixo: "y", x: "0", y: "0", z: "0", perfil: [["0.1", "0"], ["0.1", "0.5"]], ex: "1", ez: "1", material: "Metal" });
         else if (k === "rm-sol") { f.solidos.splice(+b.closest(".fe-sol").getAttribute("data-si"), 1); }
         else if (k === "add-serv") { var ns = 1; while ((f.servicos || []).some(function (s) { return s.id === "servico" + ns; })) ns++; (f.servicos = f.servicos || []).push({ id: "servico" + ns, descricao: "Serviço " + ns, unidade: (f.quantitativo || {}).unidade || "un", quantidade: (f.quantitativo || {}).quantidade || "1", codigo: "" }); }
         else if (k === "rm-serv") { f.servicos.splice(+b.closest("tr").getAttribute("data-svi"), 1); if (!f.servicos.length) delete f.servicos; }
@@ -294,9 +388,11 @@
         } else if (t.hasAttribute("data-fs")) {
           var s = f.solidos[+t.closest(".fe-sol").getAttribute("data-si")], k3 = t.getAttribute("data-fs");
           if (k3 === "contorno") s.contorno = t.value.split(/\n+/).map(function (l) { return l.split(";").map(function (x) { return x.trim(); }); }).filter(function (q) { return q.length >= 2 && q[0] !== ""; }).map(function (q) { return [q[0], q[1]]; });
-          else if (t.value === "" && (k3 === "visivel" || k3 === "rot")) delete s[k3];
+          else if (k3 === "perfil") s.perfil = t.value.split(/\n+/).map(function (l) { return l.split(";").map(function (x) { return x.trim(); }); }).filter(function (q) { return q.length >= 2 && q[0] !== "" && q[1] !== ""; }).map(function (q) { return [q[0], q[1]]; });
+          else if (k3 === "segmentos") { var nseg = parseFloat(String(t.value).replace(",", ".")); if (t.value === "") delete s.segmentos; else s.segmentos = isFinite(nseg) ? nseg : t.value; }
+          else if (t.value === "" && (k3 === "visivel" || k3 === "rot" || k3 === "fechar")) delete s[k3];
           else s[k3] = t.value;
-          if (k3 === "forma" || k3 === "plano" || k3 === "eixo") reRender = true;
+          if (k3 === "forma" || k3 === "plano" || k3 === "eixo" || k3 === "fechar") reRender = true;
         } else if (t.hasAttribute("data-fa")) { f.abertura = f.abertura || {}; f.abertura[t.getAttribute("data-fa")] = t.value; }
         else if (t.hasAttribute("data-fq")) { f.quantitativo = f.quantitativo || {}; f.quantitativo[t.getAttribute("data-fq")] = t.value; }
         else if (t.hasAttribute("data-fsv")) { var sv = f.servicos[+t.closest("tr").getAttribute("data-svi")]; sv[t.getAttribute("data-fsv")] = t.getAttribute("data-fsv") === "codigo" ? t.value.trim() : t.value; }

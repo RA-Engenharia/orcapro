@@ -47,6 +47,17 @@
  *            conectores:[{x,y,z, dx,dy,dz, dominio:"tubo"|"duto"|"eletrico"|"eletroduto", sistema, diametro, largura, altura, fluxo}],
  *            caixa:{min:[x,y,z], max:[x,y,z]} }],
  *   materiais:[{nome, cor:"#rrggbb", transparencia, brilho, classe}], miniatura:"data:image/png;base64,…"|null, avisos:[] }
+ * ➕ 3.11.0 (BIBLIOTECA DO ESCRITÓRIO, 17/10/2026 — as famílias Tigre/DarivaBIM que o
+ *   escritório JÁ TEM, exportadas do Revit dele; NUNCA vão para o produto nem para o
+ *   git: os termos da Tigre/BIMobject e o DarivaBIM pago não permitem redistribuir):
+ *   tipos[].niveis = { baixo|medio: {malha, linhas2d:{planta}} | {igual:"alto"|"baixo"} }
+ *     (o "alto" é a malha principal = nível Fino do Revit; o Baixo da conexão é LINHA);
+ *   tipos[].unifilar = { parametro, valorExportado, baixo|medio|alto: {malha, linhas2d} };
+ *   tipos[].tamanhos = [{ dn (unidade de tamanho.unidade, mm), malha, linhas2d, baixo,
+ *     conectores, valores (as cotas daquele DN), caixa }];
+ *   tamanho = { parametro, unidade, tabela, coluna, valores } — o parâmetro de INSTÂNCIA
+ *     que comanda o DN (lookup). Trocar o valor dele na instância troca a GEOMETRIA e os
+ *     CONECTORES (o DN que a rede e o cálculo leem), não só o valor.
  * Metros, Z para cima, origem = ponto de inserção; família de parede: X ao
  * longo da parede, Y para fora da face. `faixas.inicio/contagem` contam
  * ÍNDICES (múltiplos de 3).
@@ -156,6 +167,16 @@
     if (/vent/.test(s)) return "ventilacao";
     if (/storm|pluvial|rain/.test(s)) return "pluvial";
     return SISTEMA_GENERICO;
+  }
+  /* conector genérico ("Fitting" do Revit) numa família que É de esgoto/pluvial pelo nome: o padrão
+     da instância segue a família (o joelho "ESG_Série Normal" nascer como água fria ligava errado) */
+  function sistemaPadraoDaFamilia(nome) {
+    var n = txt(nome).toLowerCase();
+    if (/pluvial|calha|condutor vertical|\bap\b/.test(n)) return "pluvial";
+    if (/ventila/.test(n)) return "ventilacao";
+    if (/esg|esgoto|sanit|s[eé]rie normal|s[eé]rie r\b|reforçad|sif[aã]o|sifonad|gordura|inspe[cç]|bacia|mict|ralo|jun[cç][aã]o|prolongador/.test(n)) return "esgoto";
+    if (/[aá]gua quente|\baq\b|cpvc|ppr/.test(n)) return "agua_quente";
+    return null;
   }
   function sistemaPorNome(nome) {
     var n = txt(nome).trim().toLowerCase();
@@ -283,9 +304,16 @@
     Object.keys(geo.tipos || {}).forEach(function (k) {
       var t = geo.tipos[k];
       o.tipos[k] = { v: arr(t.v).map(r4), f: arr(t.f).slice(), faixas: arr(t.faixas), planta: arr(t.planta).map(r4), elevacao: arr(t.elevacao).map(r4) };
+      if (t.suave) o.tipos[k].suave = true;
+      /* ➕ 3.11.0: níveis, unifilar, tamanhos (o leitor antigo ignora; este lê de volta igual) */
+      if (t.niveis) o.tipos[k].niveis = copiaBlocos(t.niveis);
+      if (t.unifilar) o.tipos[k].unifilar = copiaBlocos(t.unifilar);
+      if (t.tamanhos) o.tipos[k].tamanhos = t.tamanhos.map(function (q) { var c = copiaBloco(q); c.dn = q.dn; if (q.baixo) c.baixo = copiaBloco(q.baixo); return c; });
     });
     return JSON.stringify(o);
   }
+  function copiaBloco(b) { return b && b.igual ? { igual: b.igual } : { v: arr(b && b.v).map(r4), f: arr(b && b.f).slice(), faixas: arr(b && b.faixas), planta: arr(b && b.planta).map(r4) }; }
+  function copiaBlocos(o) { var c = {}; Object.keys(o || {}).forEach(function (k) { var b = o[k]; c[k] = b && typeof b === "object" ? copiaBloco(b) : b; }); return c; }
   function geometriaDeTexto(s) {
     var o; try { o = JSON.parse(txt(s)); } catch (e) { return { ok: false, erro: "a geometria da família está ilegível" }; }
     if (!o || o.formato !== FORMATO_GEO) return { ok: false, erro: "o arquivo não é a geometria de uma família importada" };
@@ -294,6 +322,46 @@
   }
   /* SHA-256 curto da geometria (identidade da ref) — o do js/opformato.js */
   function hashCurto(s) { var OF = dep("OpFormato", "./opformato.js"); return OF ? OF.sha256(s).slice(0, 12) : String(s.length); }
+
+  /* ------------------------------------------------ NORMAIS SUAVES (ângulo de quebra)
+   * Pedido da coordenação (17/10/2026), no lado a lado com o Revit: a caixa sifonada importada saía FACETADA
+   * (entradas octogonais, corpo em gomos, sombra dura). O arquivo repete o vértice por face do Revit; aqui os
+   * vértices na mesma posição (0,01 mm) se juntam e, em cada um, as faces se agrupam pelo ângulo das normais:
+   * até QUEBRA_GRAUS o grupo divide o vértice (curva lisa); acima, cada lado tem o seu (aresta viva). A malha sai
+   * INDEXADA e marcada `suave` — o js/bim.js então calcula a normal por vértice (sem achatar por triângulo).
+   * Só reindexa: posições, triângulos, faixas de material, volume e fechamento continuam os mesmos. */
+  var QUEBRA_GRAUS = 30;
+  function suavizar(v, f, graus) {
+    var cosQ = Math.cos((graus == null ? QUEBRA_GRAUS : graus) * Math.PI / 180), nv = v.length / 3, nt = f.length / 3, i, t, k;
+    var canon = new Array(nv), mapa = {}, pos = [];
+    for (i = 0; i < nv; i++) {
+      var key = Math.round(v[3 * i] * 1e5) + "," + Math.round(v[3 * i + 1] * 1e5) + "," + Math.round(v[3 * i + 2] * 1e5);
+      if (mapa[key] == null) { mapa[key] = pos.length / 3; pos.push(v[3 * i], v[3 * i + 1], v[3 * i + 2]); }
+      canon[i] = mapa[key];
+    }
+    var fn = new Array(nt), inc = [];
+    for (t = 0; t < nt; t++) {
+      var a = canon[f[3 * t]], b = canon[f[3 * t + 1]], c = canon[f[3 * t + 2]];
+      var ux = pos[3 * b] - pos[3 * a], uy = pos[3 * b + 1] - pos[3 * a + 1], uz = pos[3 * b + 2] - pos[3 * a + 2];
+      var wx = pos[3 * c] - pos[3 * a], wy = pos[3 * c + 1] - pos[3 * a + 1], wz = pos[3 * c + 2] - pos[3 * a + 2];
+      var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, L = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      fn[t] = [nx / L, ny / L, nz / L];
+      for (k = 0; k < 3; k++) { var cv = canon[f[3 * t + k]]; (inc[cv] = inc[cv] || []).push(t); }
+    }
+    var novoV = [], novoF = new Array(f.length), grupoDe = {};
+    for (var cvi = 0; cvi < inc.length; cvi++) {
+      var lst = inc[cvi]; if (!lst) continue;
+      var grupos = [];   /* {n: normal representante, id: índice novo} */
+      lst.forEach(function (tt) {
+        var n = fn[tt], g = null;
+        for (var q = 0; q < grupos.length; q++) { var r = grupos[q].n; if (r[0] * n[0] + r[1] * n[1] + r[2] * n[2] >= cosQ) { g = grupos[q]; break; } }
+        if (!g) { g = { n: n, id: novoV.length / 3 }; grupos.push(g); novoV.push(pos[3 * cvi], pos[3 * cvi + 1], pos[3 * cvi + 2]); }
+        grupoDe[tt + ":" + cvi] = g.id;
+      });
+    }
+    for (t = 0; t < nt; t++) for (k = 0; k < 3; k++) novoF[3 * t + k] = grupoDe[t + ":" + canon[f[3 * t + k]]];
+    return { v: novoV, f: novoF };
+  }
 
   /* ------------------------------------------------------- MALHA DO TIPO */
   function lerMalha(m, avisos, rot) {
@@ -323,7 +391,8 @@
       if (fx.length) avisos.push(rot + ": as faixas de material não cobrem a malha inteira — a peça vai num material só");
       fx = [{ material: fx.length ? fx[0].material : "Padrão", inicio: 0, contagem: f.length }];
     }
-    return { v: v, f: f, faixas: fx };
+    var sv = suavizar(v, f);
+    return { v: sv.v, f: sv.f, faixas: fx, suave: true };
   }
   function linhasPlanta(l, eixoY) {
     var a = arr(l), out = [], e = eixoY || 0;
@@ -331,6 +400,65 @@
       var x1 = num(a[i], NaN), y1 = num(a[i + 1], NaN), x2 = num(a[i + 2], NaN), y2 = num(a[i + 3], NaN);
       if (fin(x1) && fin(y1) && fin(x2) && fin(y2)) out.push(r6(x1), r6(-(y1 - e)), r6(x2), r6(-(y2 - e)));   /* (X, Y) → (x, z = −(Y − eixo da parede)) */
     }
+    return out;
+  }
+
+  /* conectores do contrato → pontos de ligação (eixos convertidos, DN em mm) */
+  function lerConectores(lista, eixoY, rot, avisos, cont) {
+    var conectores = [];
+    arr(lista).forEach(function (k, j) {
+      if (!k) return;
+      var sis = sistemaB5(k.dominio, k.sistema), d = num(k.diametro, 0), dn = 0;
+      if (d > 0) { dn = d > 2 ? Math.round(d) : Math.round(d * 1000); if (d > 2) avisos.push(rot + ", conector " + (j + 1) + ": diâmetro " + d + " lido como milímetro (o contrato é em metro)"); }
+      if (!sis) { avisos.push(rot + ", conector " + (j + 1) + ": domínio \"" + txt(k.dominio) + "\" não é ligação de tubo, duto ou eletroduto aqui — fica de fora"); return; }
+      if (sis === SISTEMA_GENERICO && cont) cont.n++;
+      var p = ponto(num(k.x, 0), num(k.y, 0) - (eixoY || 0), num(k.z, 0)), dd = ponto(num(k.dx, 0), num(k.dy, 0), num(k.dz, 0));
+      var c = { id: "c" + (j + 1), nome: ((sis !== SISTEMA_GENERICO && txt(k.sistemaRotulo)) || SISTEMAS_NOME[sis] || (sis === "eletrica" ? "Elétrica" : (sis === "ar" ? "Ar" : "Tubo"))) + " " + (j + 1), sistema: sis, sistemaRevit: txt(k.sistema), dominio: txt(k.dominio),
+                dn: dn, x: r6(p[0]), y: r6(p[1]), z: r6(p[2]), dx: r6(dd[0]), dy: r6(dd[1]), dz: r6(dd[2]) };
+      if (num(k.largura, 0) > 0) c.largura = r6(num(k.largura, 0));
+      if (num(k.altura, 0) > 0) c.altura = r6(num(k.altura, 0));
+      if (k.fluxo != null && k.fluxo !== "") c.fluxo = k.fluxo;
+      if (txt(k.forma)) c.forma = txt(k.forma);
+      if (txt(k.descricao)) c.descricao = txt(k.descricao);
+      conectores.push(c);
+    });
+    return conectores;
+  }
+  /* um bloco {malha, linhas2d} ou {igual: "alto"|"baixo"} → {v, f, faixas, planta} | {igual} | null */
+  var NIVEIS = ["baixo", "medio", "alto"];
+  function lerBloco(b, rot, avisos, eixoY0) {
+    if (!b || typeof b !== "object") return null;
+    if (b.igual) return NIVEIS.indexOf(txt(b.igual)) >= 0 ? { igual: txt(b.igual) } : null;
+    var m = lerMalha(b.malha, avisos, rot), pl = linhasPlanta(b.linhas2d && b.linhas2d.planta, eixoY0);
+    if (m && eixoY0) for (var iz = 2; iz < m.v.length; iz += 3) m.v[iz] = m.v[iz] + eixoY0;
+    if (!m && !pl.length) return { v: [], f: [], faixas: [], planta: [] };
+    return { v: m ? m.v : [], f: m ? m.f : [], faixas: m ? m.faixas : [], planta: pl };
+  }
+  function lerExtras(t, rot, avisos, eixoY0, eixoY) {
+    var out = { tem: false };
+    if (!t) return out;
+    if (t.niveis && typeof t.niveis === "object") {
+      var nv = {};
+      ["baixo", "medio"].forEach(function (k) { var b = lerBloco(t.niveis[k], rot + " (nível " + k + ")", avisos, eixoY0); if (b) nv[k] = b; });
+      if (Object.keys(nv).length) { out.niveis = nv; out.tem = true; }
+    }
+    if (t.unifilar && typeof t.unifilar === "object") {
+      var un = { valorExportado: t.unifilar.valorExportado === 0 ? 0 : 1, parametro: txt(t.unifilar.parametro) };
+      NIVEIS.forEach(function (k) { var b = lerBloco(t.unifilar[k], rot + " (unifilar " + k + ")", avisos, eixoY0); if (b) un[k] = b; });
+      out.unifilar = un; out.tem = true;
+    }
+    var tg = [], tl = [];
+    arr(t.tamanhos).forEach(function (q, i) {
+      if (!q || !fin(num(q.dn, NaN)) || q.erro) { if (q && q.erro) avisos.push(rot + ": tamanho " + txt(q.dn) + " não exportado (" + txt(q.erro) + ")"); return; }
+      var r2 = rot + " DN " + q.dn, b = lerBloco({ malha: q.malha, linhas2d: q.linhas2d }, r2, avisos, eixoY0) || { v: [], f: [], faixas: [], planta: [] };
+      b.dn = num(q.dn, 0);
+      var bb = lerBloco(q.baixo, r2 + " (baixo)", avisos, eixoY0); if (bb) b.baixo = bb;
+      tg.push(b);
+      var valores = {}; Object.keys(q.valores || {}).forEach(function (k) { if (fin(q.valores[k])) valores[k] = r6(q.valores[k]); });
+      var textos = {}; Object.keys(q.textos || {}).forEach(function (k) { if (txt(q.textos[k]).trim()) textos[k] = txt(q.textos[k]).trim().slice(0, 200); });
+      tl.push({ dn: b.dn, conectores: lerConectores(q.conectores, eixoY, r2, avisos, null), caixa: b.v.length ? caixaDeVertices(b.v) : null, valores: valores, textos: textos });
+    });
+    if (tg.length) { out.tamanhosGeo = tg; out.tamanhos = tl; out.tem = true; }
     return out;
   }
 
@@ -422,23 +550,10 @@
       var eixoY = hosp === "parede" && t && t.vao && fin(num(t.vao.eixoParedeY, NaN)) ? num(t.vao.eixoParedeY, 0) : 0;
       if (vao && t.vao && fin(num(t.vao.xMin, NaN)) && fin(num(t.vao.xMax, NaN))) { var cxv = (num(t.vao.xMin, 0) + num(t.vao.xMax, 0)) / 2; if (Math.abs(cxv) > 1e-6) vao.deslocX = r6(cxv); }
       else if (hosp === "parede" && corteVao && (ic.cat === "porta" || ic.cat === "janela")) avisos.push(rot + ": porta/janela sem o vão no arquivo — não abre a parede");
-      var conectores = [];
-      arr(t && t.conectores).forEach(function (k, j) {
-        if (!k) return;
-        var sis = sistemaB5(k.dominio, k.sistema), d = num(k.diametro, 0), dn = 0;
-        if (d > 0) { dn = d > 2 ? Math.round(d) : Math.round(d * 1000); if (d > 2) avisos.push(rot + ", conector " + (j + 1) + ": diâmetro " + d + " lido como milímetro (o contrato é em metro)"); }
-        if (!sis) { avisos.push(rot + ", conector " + (j + 1) + ": domínio \"" + txt(k.dominio) + "\" não é ligação de tubo, duto ou eletroduto aqui — fica de fora"); return; }
-        if (sis === SISTEMA_GENERICO) genericos++;
-        var p = ponto(num(k.x, 0), num(k.y, 0) - eixoY, num(k.z, 0)), dd = ponto(num(k.dx, 0), num(k.dy, 0), num(k.dz, 0));
-        var c = { id: "c" + (j + 1), nome: ((sis !== SISTEMA_GENERICO && txt(k.sistemaRotulo)) || SISTEMAS_NOME[sis] || (sis === "eletrica" ? "Elétrica" : (sis === "ar" ? "Ar" : "Tubo"))) + " " + (j + 1), sistema: sis, sistemaRevit: txt(k.sistema), dominio: txt(k.dominio),
-                  dn: dn, x: r6(p[0]), y: r6(p[1]), z: r6(p[2]), dx: r6(dd[0]), dy: r6(dd[1]), dz: r6(dd[2]) };
-        if (num(k.largura, 0) > 0) c.largura = r6(num(k.largura, 0));
-        if (num(k.altura, 0) > 0) c.altura = r6(num(k.altura, 0));
-        if (k.fluxo != null && k.fluxo !== "") c.fluxo = k.fluxo;
-        if (txt(k.forma)) c.forma = txt(k.forma);
-        if (txt(k.descricao)) c.descricao = txt(k.descricao);
-        conectores.push(c);
-      });
+      var cg = { n: 0 }, conectores = lerConectores(t && t.conectores, eixoY, rot, avisos, cg);
+      genericos += cg.n;
+      /* ➕ 3.11.0: níveis de detalhe, unifilar e um jogo de geometria por DN (tamanhos) */
+      var extra = lerExtras(t, rot, avisos, eixoY0, eixoY);
       /* VOLUME só de malha FECHADA (toda aresta em exatamente duas faces). Fechada e virada para dentro: as faces
          são desviradas aqui (o IfcFacetedBrep precisa da normal para fora). Aberta (superfície, como a lente de uma
          luminária): sem volume — dizer um número seria inventar. */
@@ -449,8 +564,12 @@
       var tipo = { id: id, nome: nomeT, valores: valores, vao: vao, conectores: conectores, caixa: caixa || { min: [-0.25, 0, -0.25], max: [0.25, 0.5, 0.25] },
                    volume: vol == null ? null : r6(Math.abs(vol)), triangulos: nTri, fechada: !!fechada };
       tipos.push(tipo);
-      if (malha || (t && t.linhas2d)) geo.tipos[id] = { v: malha ? malha.v : [], f: malha ? malha.f : [], faixas: malha ? malha.faixas : [],
+      if (malha || (t && t.linhas2d) || extra.tem) geo.tipos[id] = { suave: !!(malha && malha.suave), v: malha ? malha.v : [], f: malha ? malha.f : [], faixas: malha ? malha.faixas : [],
         planta: linhasPlanta(t && t.linhas2d && t.linhas2d.planta, eixoY0), elevacao: arr(t && t.linhas2d && t.linhas2d.elevacao).filter(fin) };
+      if (extra.niveis) geo.tipos[id].niveis = extra.niveis;
+      if (extra.unifilar) geo.tipos[id].unifilar = extra.unifilar;
+      if (extra.tamanhosGeo) { geo.tipos[id].tamanhos = extra.tamanhosGeo; tipo.tamanhos = extra.tamanhos; }
+      if (extra.unifilar) tipo.unifilar = true;
     });
     if (abertas) avisos.push(abertas + " tipo(s) com malha ABERTA (superfície, não sólido): o volume não é medido — a quantidade da peça vai em unidade");
     if (desviradas) avisos.push(desviradas + " tipo(s) com a malha virada para dentro: as faces foram desviradas (o volume e o IFC saem certos)");
@@ -484,10 +603,24 @@
       avisos.push("família baseada em face: entra na face \"" + fPad + "\"" + (fPad === "Teto" ? " a 2,50 m do nível" : (fPad === "Parede" ? " na altura do nível" : "")) + " — troque em Propriedades › Face hospedeira e Elevação de instalação");
     }
     if (genericos && !porNome.Sistema_da_tubulacao) {
-      var ps = { nome: "Sistema_da_tubulacao", rotulo: "Sistema da tubulação", tipoDado: "texto", escopo: "instancia", valor: SISTEMAS_NOME.agua_fria, grupo: "Hidráulica",
+      var sisPad = sistemaPadraoDaFamilia(F.nome) || "agua_fria";
+      var ps = { nome: "Sistema_da_tubulacao", rotulo: "Sistema da tubulação", tipoDado: "texto", escopo: "instancia", valor: SISTEMAS_NOME[sisPad], grupo: "Hidráulica",
                  opcoes: Object.keys(SISTEMAS_NOME).map(function (k) { return SISTEMAS_NOME[k]; }), importado: true, sintetico: true };
       parametros.push(ps); porNome[ps.nome] = ps;
-      avisos.push(genericos + " conector(es) de tubo sem sistema definido no Revit (conexão genérica): assumem Água fria — troque em Propriedades › Sistema da tubulação");
+      avisos.push(genericos + " conector(es) de tubo sem sistema definido no Revit (conexão genérica): assumem " + SISTEMAS_NOME[sisPad] +
+                  (sisPad === "agua_fria" ? "" : " (pelo nome da família)") + " — troque em Propriedades › Sistema da tubulação");
+    }
+    /* ➕ 3.11.0: o DN da instância (o parâmetro do lookup) e o unifilar */
+    var tamanhoFam = null;
+    if (o.tamanho && txt(o.tamanho.parametro) && mapaNome[txt(o.tamanho.parametro)] && tipos.some(function (t) { return arr(t.tamanhos).length; })) {
+      var pT = porNome[mapaNome[txt(o.tamanho.parametro)]];
+      tamanhoFam = { parametro: pT.nome, rotulo: pT.rotulo, unidade: txt(o.tamanho.unidade) || "mm", unidadeParametro: txt(pT.unidade) || "m",
+                     valores: arr(o.tamanho.valores).filter(fin), tabela: txt(o.tamanho.tabela) };
+      pT.opcoesDn = tamanhoFam.valores.slice();
+    }
+    if (tipos.some(function (t) { return t.unifilar; }) && !porNome.Representacao_unifilar) {
+      var pu = { nome: "Representacao_unifilar", rotulo: "Representação unifilar", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Gráficos", importado: true, sintetico: true };
+      parametros.push(pu); porNome[pu.nome] = pu;
     }
     /* valor PADRÃO de cada parâmetro = o do 1º tipo (o tipo dá o resto) */
     parametros.forEach(function (p) {
@@ -501,6 +634,7 @@
     var fam = montarFamilia({ nome: txt(F.nome).trim(), ost: ost, ic: ic, categoriaNome: txt(F.categoriaNome), hosp: hosp, hospOrig: hospOrig, corteVao: corteVao,
       parametros: parametros, tipos: tipos, materiais: materiais, origem: o.origem || {}, formato: "opfam", versao: 2, avisos: avisos, extras: extras, extrasFamilia: extrasFam, geometriaPendente: false,
       triangulos: totalTri, id: opts.id, face: faceInfo });
+    if (tamanhoFam) fam.importada.tamanho = tamanhoFam;
     geo.miniatura = mini;
     finalizarRef(fam, geo, mini);
     return { ok: true, erros: [], avisos: avisos, familia: fam, geometria: geo, meta: { origem: o.origem || {} } };
@@ -540,8 +674,15 @@
    * `saida` o que vem da malha do tipo. */
   function completar(fam, tipo, instancia, saida) {
     var imp = fam.importada || {}, ic = infoCategoria(imp.categoriaRevit), inst = instancia || {};
+    /* Biblioteca do escritório (js/biminstbiblioteca.js): o cálculo recebe só o famId — a família se apresenta a cada avaliação */
+    if (imp.escritorio) { var HB = dep("HidBiblioteca", "./biminstbiblioteca.js"); if (HB) HB.lembrar(fam); }
     var tf = tipo && tipo.vao !== undefined ? tipo : (arr(fam.tipos).filter(function (t) { return t.id === (tipo && tipo.id); })[0] || arr(fam.tipos)[0] || {});
     var g = geometria(imp.ref), gt = g && g.tipos ? g.tipos[tf.id] : null, avisos = [];
+    /* ➕ 3.11.0: a geometria do DN da instância, do nível de detalhe e da representação unifilar */
+    var esc = escolherGeometria(fam, tf, gt, saida.valores || {}, inst);
+    var tamSel = esc.tamanho;
+    if (esc.aviso) avisos.push(esc.aviso);
+    gt = esc.gt;
     /* peitoril da janela: o único parâmetro de medida que muda a forma de verdade (a peça só desce/sobe) */
     var dy = 0, abertura = null;
     if (fam.hospedagem === "parede" && tf.vao) {
@@ -567,10 +708,12 @@
     if (imp.face) dy += num(saida.valores && saida.valores.Elevacao_instalacao, 0);
     var T = face === "Parede" ? function (x, y, z) { return [x, -z, y]; } : (face === "Teto" ? function (x, y, z) { return [x, -y, -z]; } : null);
     var vF = gt ? (T ? verticesGirados(gt, face, T) : gt.v) : null;
+    var g0 = geometria(imp.ref), suaveG = !!(g0 && g0.tipos && g0.tipos[tf.id] && g0.tipos[tf.id].suave);
     if (gt && arr(gt.f).length) {
       gt.faixas.forEach(function (fx, i) {
         var f = gt.f.slice(fx.inicio, fx.inicio + fx.contagem), m = cores[fx.material] || {};
         solidos.push({ id: "m" + (i + 1), nome: fx.material, forma: "malha", v: vF, f: f, x: 0, y: r6(dy), z: r6(dzF), rot: 0, material: fx.material, cor: m.cor || "", transparencia: m.transparencia || 0,
+                       suave: suaveG,   /* normais por vértice com ângulo de quebra (suavizar) — o js/bim.js não achata */
                        /* com sinal: as partes de um sólido fechado somam o volume dele; malha aberta não tem volume (null, não 0) */
                        volume: fechadaT ? volumeMalha(vF, f) : null });
       });
@@ -589,7 +732,7 @@
     }
     /* conectores (pontos de ligação da B5): o genérico pega o sistema da instância */
     var sisInst = sistemaPorNome(saida.valores && saida.valores.Sistema_da_tubulacao) || "agua_fria";
-    var conectores = ic.conectores ? arr(tf.conectores).map(function (k) {
+    var conectores = ic.conectores ? arr(tamSel ? tamSel.conectores : tf.conectores).map(function (k) {
       var P = T ? T(k.x, k.y, k.z) : [k.x, k.y, k.z], Dd = T ? T(k.dx, k.dy, k.dz) : [k.dx, k.dy, k.dz];
       return { id: k.id, nome: k.nome, sistema: k.sistema === SISTEMA_GENERICO ? sisInst : k.sistema, dn: k.dn, x: r6(P[0]), y: r6(P[1] + dy), z: r6(P[2] + dzF), dx: r6(Dd[0]), dy: r6(Dd[1]), dz: r6(Dd[2]), largura: k.largura, altura: k.altura };
     }) : [];
@@ -625,10 +768,65 @@
     /* linhas de planta: na Parede a "planta" do arquivo é a vista de frente — não serve, a planta sai da malha; no Teto, espelha em z */
     saida.linhasPlanta = gt && arr(gt.planta).length && face !== "Parede" ? (dzF || face === "Teto" ? gt.planta.map(function (q, i) { return i % 2 ? r6((face === "Teto" ? -q : q) + dzF) : q; }) : gt.planta) : null;
     saida.luz = luz;
+    if (tamSel) saida.tamanho = { dn: tamSel.dn, valores: tamSel.valores || {} };
+    saida.nivelDetalhe = esc.nivel;
+    /* quantitativo da Biblioteca do escritório: a descrição do TIPO (fabricante + código), não só o nome da família */
+    if (tf.descricaoQto && saida.quantitativo) saida.quantitativo.descricao = tf.descricaoQto + (tamSel ? " DN " + tamSel.dn : "");
+    /* o código do fabricante, o SINAPI e a descrição DAQUELE DN (na família Tigre são fórmulas por DN e ângulo) */
+    if (tamSel && tamSel.textos && imp.escritorio && saida.quantitativo) {
+      var HBq = dep("HidBiblioteca", "./biminstbiblioteca.js"), dq = HBq && HBq.textosTamanho ? HBq.textosTamanho(fam, tamSel.textos) : null;
+      if (dq) {
+        if (dq.descricao) saida.quantitativo.descricao = dq.descricao + (dq.codigo ? " — " + [imp.escritorio.fabricante, "cód. " + dq.codigo].filter(Boolean).join(" ") : "");
+        /* o do TAMANHO manda (o do tipo foi lido no DN padrão da família); sem código neste DN = pendente, nunca o de outro DN */
+        saida.quantitativo.codigo = dq.sinapi || ""; saida.quantitativo.codigoOrigem = dq.sinapi ? "tipo" : "";
+        saida.quantitativo.fonte = dq.sinapi ? "SINAPI (parâmetro da família do escritório, DN " + tamSel.dn + ")" : "";
+      }
+    }
     saida.avisos = (saida.avisos || []).concat(avisos);
     saida.importada = { categoriaRevit: imp.categoriaRevit, mapaIfc: imp.mapaIfc || ic.mapa, geometriaPendente: !!imp.geometriaPendente || !(gt && arr(gt.f).length),
                         volume: volume == null ? null : r6(volume), formato: imp.formato, estrutural: !!imp.estrutural, pset: psetDaFamilia(fam, saida.valores) };
     return saida;
+  }
+  /* nível de detalhe GERAL (a vista diz; o js/bim.js chama definirNivel) — a instância pode forçar o dela
+     em Propriedades (Nivel_detalhe). "alto" = Fino do Revit (a malha principal) */
+  var NIVEL = { atual: "alto" };
+  function definirNivel(n) { var k = txt(n).toLowerCase(); k = { fino: "alto", fine: "alto", medio: "medio", "médio": "medio", medium: "medio", baixo: "baixo", coarse: "baixo", grosso: "baixo" }[k] || (NIVEIS.indexOf(k) >= 0 ? k : "alto"); NIVEL.atual = k; return k; }
+  function resolverNivel(base, nivel) {
+    /* o bloco do nível (seguindo "igual") ou null = o principal */
+    var b = base && base.niveis ? base.niveis[nivel] : null, n = 0;
+    while (b && b.igual && n++ < 3) b = b.igual === "alto" ? null : (base.niveis[b.igual] || null);
+    return b;
+  }
+  function escolherGeometria(fam, tf, gt, valores, inst) {
+    var imp = fam.importada || {}, out = { gt: gt, tamanho: null, nivel: "alto", aviso: null };
+    var nv = txt((inst && inst.Nivel_detalhe) || valores.Nivel_detalhe || NIVEL.atual).toLowerCase();
+    out.nivel = NIVEIS.indexOf(nv) >= 0 ? nv : "alto";
+    if (!gt) return out;
+    var base = gt, sel = null;
+    /* DN: o valor do parâmetro de instância (unidade do parâmetro, m no contrato) → o tamanho exportado mais perto (0,5 mm) */
+    if (imp.tamanho && arr(gt.tamanhos).length) {
+      var v = num(valores[imp.tamanho.parametro], NaN), fator = /^m$/i.test(imp.tamanho.unidadeParametro || "m") && /^mm|mil[ií]metro/i.test(imp.tamanho.unidade || "mm") ? 1000 : 1;
+      if (fin(v)) {
+        var alvo = v * fator, melhor = null;
+        gt.tamanhos.forEach(function (q, i) { if (Math.abs(q.dn - alvo) <= 0.5 && (!melhor || Math.abs(q.dn - alvo) < Math.abs(melhor.q.dn - alvo))) melhor = { q: q, i: i }; });
+        if (melhor) { base = melhor.q; sel = arr(tf.tamanhos)[melhor.i] || null; }
+        else out.aviso = "DN " + Math.round(alvo * 10) / 10 + " fora da tabela da família (" + gt.tamanhos.map(function (q) { return q.dn; }).join(", ") + "): a forma e os conectores ficam os do tipo";
+      }
+    }
+    out.tamanho = sel;
+    var bloco = null;
+    /* unifilar ligado: a representação de linha do nível (a família DarivaBIM tem o parâmetro); senão o nível normal */
+    var uniOn = valores.Representacao_unifilar === true;
+    if (uniOn && gt.unifilar) { bloco = gt.unifilar[out.nivel] || null; var n2 = 0; while (bloco && bloco.igual && n2++ < 3) bloco = gt.unifilar[bloco.igual] || null; }
+    if (!bloco && out.nivel !== "alto") bloco = base === gt ? resolverNivel(gt, out.nivel) : (out.nivel === "baixo" && base.baixo && !base.baixo.igual ? base.baixo : null);
+    /* o bloco do nível sem malha (no Baixo a conexão é só linha) mantém o 3D da principal e troca a planta */
+    var sai = { v: base.v, f: base.f, faixas: base.faixas, planta: base.planta, elevacao: gt.elevacao };
+    if (bloco) {
+      if (arr(bloco.f).length) { sai.v = bloco.v; sai.f = bloco.f; sai.faixas = bloco.faixas; }
+      if (arr(bloco.planta).length) sai.planta = bloco.planta;
+    }
+    out.gt = sai.v === gt.v && sai.planta === gt.planta ? gt : sai;
+    return out;
   }
   /* os vértices do tipo girados para a face escolhida (guardados na própria geometria em memória: girar 80 mil vértices a cada
      avaliação travaria a tela; o arquivo gravado não leva isto — geometriaParaTexto só copia v, f, faixas, planta, elevacao) */
@@ -899,7 +1097,8 @@
     completar: completar, psetDaFamilia: psetDaFamilia, infoCategoria: infoCategoria, sistemaB5: sistemaB5, sistemaPorNome: sistemaPorNome,
     nomeSeguro: nomeSeguro, tipoDado: tipoDado, grupoPt: grupoPt, ponto: ponto, volumeMalha: volumeMalha, caixaDeVertices: caixaDeVertices,
     registrarGeometria: registrarGeometria, geometria: geometria, esquecerGeometria: esquecerGeometria, geometriaParaTexto: geometriaParaTexto, geometriaDeTexto: geometriaDeTexto,
-    simplificar: simplificar, simplificarTipo: simplificarTipo, embutir: embutir, desembutir: desembutir, temListaEmLista: temListaEmLista
+    simplificar: simplificar, simplificarTipo: simplificarTipo, embutir: embutir, desembutir: desembutir, temListaEmLista: temListaEmLista,
+    suavizar: suavizar, QUEBRA_GRAUS: QUEBRA_GRAUS, definirNivel: definirNivel, nivelAtual: function () { return NIVEL.atual; }, escolherGeometria: escolherGeometria, sistemaPadraoDaFamilia: sistemaPadraoDaFamilia
   };
   global.FamiliaMalha = FamiliaMalha;
   if (typeof module !== "undefined" && module.exports) module.exports = FamiliaMalha;

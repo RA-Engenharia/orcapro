@@ -119,12 +119,26 @@
     }
     function agir(a) { try { if (S._ctl && S._ctl.agir) S._ctl.agir(a); } catch (er) { if (typeof console !== "undefined") console.warn("BimMouse:", a, er); } }
 
+    /* ATALHOS DE DUAS LETRAS (js/biminsttipos.js, js/bimprecisao.js): a tecla de uma letra que COMEÇA um atalho de duas
+       (p de PI, c de CO, m de MV…) espera a segunda — se ela fecha um atalho, a de uma letra não age (antes "PI" dava
+       passeio + isolar). Sem o módulo, igual a antes. */
+    var ultimaTecla = "", ultimaT = 0;
     function aoTecla(e) {
       if (!S.alive || S._visitante) return;
-      var t = e.target || {};
+      /* P8 (junção 18/10/2026): os atalhos de duas letras das instalações só com a prévia hidro — sem ela a tecla de uma
+         letra age na hora, como no master */
+      var t = e.target || {}, TP = (win.BimPrevia && win.BimPrevia.hidro && win.BimPrevia.hidro()) ? win.BimInstTipos : null, k = String(e.key == null ? "" : e.key).toUpperCase(), agora = Date.now();
+      var par = agora - ultimaT < 1200 ? ultimaTecla + k : "";
+      ultimaTecla = /^[A-Z]$/.test(k) ? k : ""; ultimaT = agora;
+      if (win.__bimTeclaUnica && TP && TP.ehAtalho && TP.ehAtalho(par)) { clearTimeout(win.__bimTeclaUnica); win.__bimTeclaUnica = null; return; }
       var a = acaoDaTecla(e, { campo: campoDeTexto(t) || campoDeTexto(doc.activeElement), naTela: naTela(), voo: !!(S.fly && S.fly.on), bloqueado: bloqueado() });
       if (!a) return;
       e.preventDefault();
+      if (TP && TP.prefixo && TP.prefixo(k)) {
+        if (win.__bimTeclaUnica) clearTimeout(win.__bimTeclaUnica);
+        win.__bimTeclaUnica = setTimeout(function () { win.__bimTeclaUnica = null; agir(a); }, TP.ESPERA_MS || 450);
+        return;
+      }
       agir(a);
     }
     /* botões laterais: age no mousedown; o navegador volta a página no mouseup/auxclick — barra os três, SÓ sobre o BIM */

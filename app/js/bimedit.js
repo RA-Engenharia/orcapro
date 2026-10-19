@@ -326,7 +326,7 @@
       var caixas = {}, ordem = [], anot = {}, ordemA = [], removidos = {}, invalidas = 0;
       var fams = {}, ordemF = [], cobs = {}, ordemC = [], vols = {}, ordemV = [];
       var eixos = {}, ordemE = [], ARQ = global.BimArq || null;   /* B2 (js/bimarq.js): eixos e o que se deriva */
-      var ctx = { caixas: caixas, ordem: ordem, fams: fams, ordemF: ordemF, cobs: cobs, ordemC: ordemC, anot: anot, ordemA: ordemA, vols: vols, ordemV: ordemV, eixos: eixos, ordemE: ordemE, ext: {}, niveis: NIV };   /* P10: os níveis (o desagrupar do js/bimgrupos.js põe a cópia no nível dela) */
+      var ctx = { caixas: caixas, ordem: ordem, fams: fams, ordemF: ordemF, cobs: cobs, ordemC: ordemC, anot: anot, ordemA: ordemA, vols: vols, ordemV: ordemV, eixos: eixos, ordemE: ordemE, ext: {}, niveis: NIV, _ops: ops };   /* P10: os níveis (o desagrupar do js/bimgrupos.js põe a cópia no nível dela); _ops: a lista achatada para as extensões (js/hidnivel.js lê as marcas da op) */
       var BI = instMotor(), inst = BI ? BI.novoEstado() : null;
       var BAm = depAmbiente();   /* P2-A */
       (ops || []).forEach(function (o) {
@@ -414,7 +414,12 @@
           if (cm0.b2 && ARQ) ARQ.transladar(cm0, cm0.cx - mx0, cm0.cz - mz0);
         } else if (o.op === "mover" && fams[o.id]) {
           var f0 = fams[o.id];
-          if (f0.host && caixas[f0.host.id]) f0.host.t = BimEdit.tNaParede(caixas[f0.host.id], { x: num(o.cx, 0), z: num(o.cz, 0) });
+          /* PORTAS E JANELAS (js/bimvaoarr.js, 18/10/2026): o arraste e a cota temporária gravam o host EXATO
+             ({ id, t }) — a boneca digitada fica exata e a abertura pode passar para a parede vizinha. Sem o
+             campo (ou parede que não existe), vale o de sempre: cx/cz projetado na parede atual. */
+          var hN = f0.host && o.host && o.host.id != null && caixas[o.host.id] && caixas[o.host.id].tipo === "parede" && isFinite(Number(o.host.t)) ? o.host : null;
+          if (hN) f0.host = { id: hN.id, t: Math.round(Number(hN.t) * 1e6) / 1e6 };
+          else if (f0.host && caixas[f0.host.id]) f0.host.t = BimEdit.tNaParede(caixas[f0.host.id], { x: num(o.cx, 0), z: num(o.cz, 0) });
           else { f0.x = r4(num(o.cx, f0.x)); f0.z = r4(num(o.cz, f0.z)); }
         } else if (o.op === "mover" && cobs[o.id]) {
           var c0 = cobs[o.id], mx = (c0.x0 + c0.x1) / 2, mz = (c0.z0 + c0.z1) / 2, dxm = num(o.cx, mx) - mx, dzm = num(o.cz, mz) - mz;

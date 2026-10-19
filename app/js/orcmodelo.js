@@ -687,6 +687,15 @@
     if (BI && BI.servicosOrc && estado && estado.instalacoes) BI.servicosOrc(estado, avaliarFam).forEach(function (s) {
       var l;
       if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, descricao: s.descricao, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "mapa"; }
+      else if (s.referenciaMercado && num(s.referenciaMercado.valor) > 0) {
+        /* HIDRO (pendências finais, 18/10/2026 — só com o js/hidprecomercado.js, da prévia hidro): sem SINAPI, a REFERÊNCIA DE
+           MERCADO — o maior preço público de varejo (regra RA: 100 % orçado, na incerteza o mais alto), com data e loja; nunca vira
+           código SINAPI ("REF-MERC:"), só fornecimento (material), e o aviso diz isso */
+        var rm = s.referenciaMercado, qm = r4(s.quantidade), vt = r2(num(rm.valor) * qm);
+        l = { codigo: "REF-MERC:" + rm.id, descricao: s.rotulo + " — " + rm.texto, unidade: (rm.unidade || "UN").toUpperCase(), unidadeQto: s.unidade, quantidade: qm, status: "ok", horas: [], servico: s.id,
+              unitario: r2(num(rm.valor)), custo: { mo: 0, mat: vt, eq: 0, total: vt }, codigoOrigem: "mercado", referenciaMercado: rm,
+              avisos: ["sem composição SINAPI (" + s.motivo + "): " + rm.texto + " — " + rm.criterio] };
+      }
       else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
       somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
     });
@@ -779,7 +788,13 @@
     opts = opts || {};
     var itens = [], fora = [];
     arr(modelo && modelo.porComposicao).forEach(function (g) {
-      if (g.status === "ok" && g.quantidade > 0) { var it = { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, quantidade: r4(g.quantidade), elementos: g.elementos.slice() }; if (g.bloco === "demolicao") it.bloco = "demolicao"; itens.push(it); }   /* P10: bloco */
+      if (g.status === "ok" && g.quantidade > 0) {
+        var it = { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, quantidade: r4(g.quantidade), elementos: g.elementos.slice() };
+        if (g.bloco === "demolicao") it.bloco = "demolicao";   /* P10: bloco */
+        /* hidro (pendências finais): a referência de mercado vai como item PRÓPRIO com o preço e a fonte "MERCADO" (não é SINAPI) */
+        if (/^REF-MERC:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MERCADO" };
+        itens.push(it);
+      }
       else fora.push({ codigo: g.codigo, descricao: g.descricao, status: g.status, quantidade: g.quantidade, motivo: (g.avisos || [])[0] || (g.status === "ok" ? "quantidade zero" : g.status), elementos: g.elementos.slice() });
     });
     return { nome: opts.nomeEtapa || "Modelo BIM (orçamento pelo modelo)", itens: itens, fora: fora };

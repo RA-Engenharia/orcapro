@@ -158,6 +158,12 @@
       var an = b2._anotar(d, bruto); an.linhasIfc = bruto.linhasIfc || [];
       var est = clone(b2.estilo(vistaId)); est.titulo = false;   /* o título é o do viewport */
       var exF = { titulo: "" };
+      /* NÍVEL DE DETALHE / P6: a folha sai com as PENAS e as cores das linhas da vista (a tubulação em linha única na cor
+         do sistema, como na tela) — sem isto a planta de instalações saía toda na mesma pena preta */
+      /* JUNÇÃO 18/10/2026: só com a prévia ?previa=hidro — a P6 na folha muda a pena de TODA a planta (parede, porta, viga
+         acima do corte); sem a prévia a folha sai como no master (e2e-bim-acima-corte, test-traco-tela) */
+      var comHidroF = false; try { comHidroF = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()); } catch (eH) {}
+      try { var M6 = b2._p6 ? b2._p6() : null; if (comHidroF && M6 && M6.extraSvg && bruto.p6Estilos) exF = M6.extraSvg(vistaId, bruto, exF) || exF; } catch (eP6) {}
       /* CORES POR CATEGORIA: a folha sai SEM as cores, a menos que a vista peça "imprimir com as cores" (js/bimcorescatui.js) */
       try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
       var res = D.svg(an, est, exF);
@@ -182,6 +188,8 @@
       a.folha.blocos.forEach(function (b) { if (b.tipo === "viewport") { var dz = self.desenho(b.vistaId); if (dz) rec.viewports[b.vistaId] = dz; } });
       try { rec.logo = global.Empresa && global.Empresa.logo ? global.Empresa.logo() : null; } catch (e) {}
       rec.empresa = this.empresaDados();   /* o carimbo lê nome, CNPJ, RT e registro do cadastro da conta */
+      /* as folhas PRONTAS geradas nesta sessão (ex.: "Gerar pranchas" do hidrossanitário): a imagem inteira da folha */
+      var ext = this._imagensExternas || {}; Object.keys(ext).forEach(function (k) { rec.imagens[k] = ext[k]; });
       return rec;
     },
     pintar: function (id) {
@@ -189,7 +197,7 @@
       if (!a) { t.el.innerHTML = '<div class="d2-vazio">Esta folha não existe mais nesta obra.</div>'; return false; }
       a = this._sincronizar(a);
       var P = a.geo.papel, html = UI2().folha(a.pr, a.folha, this.recursos(a, true), a.geo);
-      var dica = a.folha.blocos.length ? "" : '<div class="pv-dica">Arraste uma planta ou um corte do Navegador para a folha (ou Vista › Posicionar vista).</div>';
+      var dica = a.folha.blocos.length || a.folha.imagemInteira ? "" : '<div class="pv-dica">Arraste uma planta ou um corte do Navegador para a folha (ou Vista › Posicionar vista).</div>';
       t.el.innerHTML = dica + '<div class="pv-papel-wrap"><div class="pv-papel" style="width:' + P.w + 'mm;height:' + P.h + 'mm">' + html + "</div></div>";
       t.papel = t.el.querySelector(".pv-papel"); t.P = P;
       var sel = this._sel && this._sel.id === id ? this._sel.ix : -1;

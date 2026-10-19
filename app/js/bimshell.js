@@ -415,6 +415,7 @@
       b.setAttribute("aria-selected", a.id === r.abaAtiva() ? "true" : "false");
       b.onclick = function () {
         r.irPara(a.id);
+        try { if (global.BimInstUI && global.BimInstUI.aoTrocarAba) global.BimInstUI.aoTrocarAba(a.id); } catch (eVI) {}   /* VISTA INSTALAÇÕES liga/desliga com a aba */
         self._raiz.querySelectorAll("[data-rv-aba]").forEach(function (x) {
           x.setAttribute("aria-selected", x.getAttribute("data-rv-aba") === a.id ? "true" : "false");
         });
@@ -610,6 +611,8 @@
       if (!this._raiz || !r) return;
       var fita = this._raiz.querySelector(".rv-fita");
       if (!fita) return;
+      /* ORGANIZAÇÃO (js/bimfita.js): a aba Modificar acompanha a seleção e a barra de acesso rápido repinta */
+      try { if (global.BimFita && global.BimFita.antesDePintar) global.BimFita.antesDePintar(); } catch (eFx) {}
       this._sincAbas();
       this._pintarRapidos();
       var v = r.render();
@@ -1143,8 +1146,12 @@
        * Por que existem: a coluna de Propriedades + Navegador ocupa 268px
        * fixos no computador, e a fita ocupa a faixa de cima. Num notebook
        * sobra pouco para o 3D, e a tela fica cheia demais para trabalhar. */
+      /* NÍVEL DE DETALHE (js/biminstui.js): Baixo / Médio / Alto da vista ativa — logo depois do Estilo visual */
+      if (global.BimInstUI && global.BimInstUI.botaoNivel) { var bND = global.BimInstUI.botaoNivel(el, ico); if (bND) { var bEst = d.querySelector('[data-rv-vb="estilo"]'); d.insertBefore(bND, bEst ? bEst.nextSibling : null); } }
       /* CORES POR CATEGORIA (js/bimcorescatui.js): o interruptor da vista ativa, ao lado do Estilo */
       if (global.BimCoresCatUI && global.BimCoresCatUI.botaoBarra) { var bCC = global.BimCoresCatUI.botaoBarra(el, ico); if (bCC) d.appendChild(bCC); }
+      /* VISTA INSTALAÇÕES (js/biminstui.js): arquitetura translúcida para ver os tubos — liga sozinha na aba Instalações */
+      if (global.BimInstUI && global.BimInstUI.botaoBarra) { var bVI = global.BimInstUI.botaoBarra(el, ico); if (bVI) d.appendChild(bVI); }
       /* SELECIONAR (js/bimselecao.js, 09/10/2026): o esquerdo SELECIONA; a Mão é a ferramenta explícita
          de mover a vista com o esquerdo (o botão do meio move sempre). Estado da tela, como os de baixo. */
       var bMao = el("button", "rv-vb");

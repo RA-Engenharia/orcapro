@@ -70,6 +70,10 @@
   "use strict";
 
   function num(x) { var n = +x; return isFinite(n) ? n : 0; }
+  /* a IDENTIDADE da peça na faixa: o expressID numérico do IFC, ou o id em TEXTO das peças do editor ("ambbac-parede-es-1",
+     "rede1-ci1"). ⚠ Com num() todo id em texto virava 0: as peças do editor de uma mesma cor eram UMA peça só — bastava uma
+     delas oculta ou desenhada por si (a caixa de inspeção) para o esgoto enterrado inteiro sumir da tela (17/10/2026) */
+  function idE(x) { if (typeof x === "string" && x !== "" && !isFinite(+x)) return x; return num(x); }
 
   /* a chave do bucket: cor em 8 bits por canal + alfa com duas casas, e a
      TEXTURA quando a peça veste uma (materiais realistas, js/bimtextura.js).
@@ -143,7 +147,7 @@
          visibilidade e cor sem ter de procurar a peca a cada quadro. Motor puro
          nao pode conhecer THREE.Mesh; carregar a referencia sem abri-la nao
          quebra isso. */
-      b.membros.push({ e: num(it.e), g: String(it.g), m: it.m, ref: it.ref });
+      b.membros.push({ e: idE(it.e), g: String(it.g), m: it.m, ref: it.ref });
       b.nVert += g.pos.length / 3;
       b.nIdx += g.idx.length;
     }
@@ -265,14 +269,14 @@
     return null;
   }
   function faixaDoElemento(faixas, e) {
-    var alvo = num(e);
+    var alvo = idE(e);
     for (var i = 0; i < (faixas || []).length; i++) if (faixas[i].e === alvo) return faixas[i];
     return null;
   }
   /* um elemento pode ter mais de uma faixa no mesmo bucket (duas geometrias da
      mesma cor) — quem oculta e quem pinta precisa de TODAS */
   function faixasDoElemento(faixas, e) {
-    var alvo = num(e), out = [];
+    var alvo = idE(e), out = [];
     for (var i = 0; i < (faixas || []).length; i++) if (faixas[i].e === alvo) out.push(faixas[i]);
     return out;
   }

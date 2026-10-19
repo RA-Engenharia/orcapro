@@ -111,6 +111,18 @@
         e = pd ? D2().normEstilo(clone(pd)) : D2().estiloPadrao();
         var c = this._cache[id];
         if (c && c.dados) { var cx = D2().caixa(c.dados); if (cx) e.escala = D2().escalaQueCabe(cx.x1 - cx.x0, cx.y1 - cx.y0); }
+        /* PLANTA DE INSTALAÇÕES (paridade, 18/10/2026): a escala que cabe a casa inteira (1:100) deixava o rótulo de 1,8 mm de
+           papel ilegível no banheiro. Com instalação no modelo a planta nasce em 1:50, e em 1:25 quando a instalação inteira
+           cabe num ambiente pequeno (≤ 4 m) */
+        try {
+          var ehP8 = !(global.BimInstUI && global.BimInstUI._previaHidro && !global.BimInstUI._previaHidro());   /* P8: a escala da planta de instalações só com a prévia hidro */
+          var eI = ehP8 && /^d2p-/.test(id) && B() && B().editarEstado ? B().editarEstado() : null, trI = eI && eI.estado && eI.estado.instalacoes ? eI.estado.instalacoes.trechos : [];
+          if (trI && trI.length) {
+            var xs = [], zs = []; trI.forEach(function (t) { xs.push(t.p1.x, t.p2.x); zs.push(t.p1.z, t.p2.z); });
+            var lI = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, zs) - Math.min.apply(null, zs));
+            e.escala = Math.min(e.escala || 50, lI <= 4 ? 25 : 50);
+          }
+        } catch (eEsc) { /* sem instalação: fica a escala que cabe */ }
         this.estado().estilos[id] = e;
       }
       var en = D2().normEstilo(e), M6 = this._p6();
@@ -133,8 +145,92 @@
       if (this._p6()) this._p6Anotar(d, dados, out6);   /* P6: chave de estilo das arestas e as marcas das vistas novas */
       return out6;
     },
+    /* RÓTULOS DAS INSTALAÇÕES SEM SOBREPOSIÇÃO (regra das pranchas da RA): cada "ES Ø100 i=1%" vai para o lugar livre
+       ao longo do próprio trecho (js/biminstnivel.js rotular): nunca texto sobre texto, evitando cruzar tubo (peso alto)
+       e o resto do desenho (peso baixo). A posição volta no formato do js/desenho2d.js svgInst (translate − 0,6k, rotate). */
+    _rotulosInst: function (d, dados, ins, segRot, pecas) {
+      var NV = global.BimInstNivel; if (!NV || !NV.rotular || !ins || !ins.textos || !ins.textos.length) return;
+      var k = (this.estilo(d.id).escala || 50) / 1000, h = 1.8 * k;
+      var obst = [], L = dados.linhas || [], U = dados.linhasUd || [], I = dados.linhasIfc || [];
+      for (var i = 0; i < L.length; i++) {
+        var ehT = (U[i] && U[i].inst) || /^IFC(PIPE|FLOW|DUCT|CABLE|VALVE)/.test(String(I[i] || ""));
+        obst.push({ seg: L[i], peso: ehT ? 10 : 1 });
+      }
+      /* o tubo, a conexão e a caixa da apresentação de prancha são POLÍGONO (corte de instalação): as bordas deles também
+         são tubo para o rótulo (senão o "ES Ø100" caía em cima do tubo cheio) */
+      (dados.cortes || []).forEach(function (c) {
+        if (!c || !c.pts || !(c.inst || (c.k && String(c.k).indexOf("|inst:") >= 0))) return;
+        for (var j = 0; j < c.pts.length; j++) { var a2 = c.pts[j], b2 = c.pts[(j + 1) % c.pts.length]; obst.push({ seg: [a2[0], a2[1], b2[0], b2[1]], peso: 10 }); }
+      });
+      /* ⚠ RÓTULO SÓ DE TUBO DESENHADO NESTA VISTA (17/10/2026: "AF Ø20", "ES Ø75" órfãos, sem tubo, no rodapé da planta
+         recortada no desenho à mão): a camada de rótulos olha o pavimento inteiro; o desenho, só o recorte, a faixa, o
+         V/G e a disciplina da vista. Fica o rótulo cujo trecho tem traço no desenho (o uid na linha); sem o uid nas linhas
+         (vista sem a P6), vale a região de recorte. */
+      var desenhados = null, rec = dados.p6Recorte || null;
+      if (U.length) { desenhados = {}; U.forEach(function (u) { if (u && u.u) desenhados[String(u.u)] = 1; }); }
+      /* no Médio/Alto o tubo e a caixa são POLÍGONO preenchido (corte de instalação): o uid deles vem dos cortes */
+      (dados.cortes || []).forEach(function (c) { if (c && c.u) { if (!desenhados) desenhados = {}; desenhados[String(c.u)] = 1; } });
+      var vale = function (sr) {
+        if (!sr) return false;
+        if (desenhados) return !!desenhados["edit:" + sr.id];
+        if (!rec) return true;
+        var s = sr.seg, mx = (s[0] + s[2]) / 2, my = (s[1] + s[3]) / 2;
+        return mx >= Math.min(rec.x0, rec.x1) && mx <= Math.max(rec.x0, rec.x1) && my >= Math.min(rec.y0, rec.y1) && my <= Math.max(rec.y0, rec.y1);
+      };
+      var tx = [], resto = ins.textos.filter(function (t) { return t.legenda; });
+      ins.textos.forEach(function (t) {
+        if (t.legenda) return;
+        var sr = segRot[Math.round(t.x * 1000) + "|" + Math.round(t.y * 1000)] || null;
+        if (!vale(sr)) return;
+        /* trecho cortado pela região de recorte: o rótulo vai para o pedaço que APARECE (senão sai solto fora do desenho) */
+        var sg = sr.seg;
+        if (rec) {
+          var x0 = Math.min(rec.x0, rec.x1), x1 = Math.max(rec.x0, rec.x1), y0 = Math.min(rec.y0, rec.y1), y1 = Math.max(rec.y0, rec.y1);
+          var dx = sg[2] - sg[0], dy = sg[3] - sg[1], t0 = 0, t1 = 1, ok = true;
+          [[-dx, sg[0] - x0], [dx, x1 - sg[0]], [-dy, sg[1] - y0], [dy, y1 - sg[1]]].forEach(function (q) {
+            if (!ok) return; if (Math.abs(q[0]) < 1e-12) { if (q[1] < 0) ok = false; return; }
+            var r = q[1] / q[0]; if (q[0] < 0) { if (r > t0) t0 = r; } else if (r < t1) t1 = r;
+          });
+          if (!ok || t1 - t0 < 1e-6) return;
+          sg = [sg[0] + dx * t0, sg[1] + dy * t0, sg[0] + dx * t1, sg[1] + dy * t1];
+        }
+        tx.push({ t: t.t, x: (sg[0] + sg[2]) / 2, y: (sg[1] + sg[3]) / 2, rot: +t.rot || 0, cor: t.cor, seg: sg, id: sr.id });
+      });
+      /* CAIXA SIFONADA, RALO, CAIXA DE GORDURA/INSPEÇÃO: o rótulo VERMELHO com a sigla e o tamanho ("CS 150x185x75mm"), como
+         na planta de referência do Rogério — só da peça desenhada nesta vista */
+      var BIx0 = global.BimInst;
+      (pecas || []).forEach(function (pc) {
+        var tr = NV.rotuloPeca ? NV.rotuloPeca(pc) : null; if (!tr) return;
+        if (desenhados ? !desenhados["edit:" + pc.id] : (rec && !(pc.x >= Math.min(rec.x0, rec.x1) && pc.x <= Math.max(rec.x0, rec.x1) && pc.z >= Math.min(rec.y0, rec.y1) && pc.z <= Math.max(rec.y0, rec.y1)))) return;
+        var Pp = (BIx0 && BIx0.PECAS && BIx0.PECAS[pc.peca]) || {}, rP = Pp.forma === "caixa" ? (Pp.w || 0.1) / 2 : (Pp.r || 0.05);
+        tx.push({ t: tr, x: pc.x, y: pc.z, rot: 0, cor: "#c00000", seg: [pc.x, pc.z, pc.x, pc.z], raio: rP, id: pc.id, peca: true });   /* o rótulo vai AO LADO da peça (js/biminstnivel.js rotular) */
+      });
+      /* AVISO: inclinação ABAIXO DA MÍNIMA (esgoto: 2 % até DN 75, 1 % acima — BimInst.inclinacaoMinima, a mesma regra do
+         Verificar sistemas) não se esconde: o rótulo sai na cor de aviso. Mede a inclinação no próprio trecho do modelo
+         (|Δy| / comprimento em planta), não no texto — o "i=0,72%" do subcoletor DN 100 é aviso. */
+      var BIx = global.BimInst, trs = {};
+      try { var eT = B() && B().editarEstado ? B().editarEstado() : null; ((eT && eT.estado && eT.estado.instalacoes && eT.estado.instalacoes.trechos) || []).forEach(function (t) { trs[t.id] = t; }); } catch (eTr) {}
+      tx.forEach(function (t) {
+        var tr = trs[t.id], abaixo = false;
+        if (tr && BIx && BIx.inclinacaoMinima && BIx.SISTEMAS && BIx.SISTEMAS[tr.sistema] && BIx.SISTEMAS[tr.sistema].gravidade) {
+          var Lh = Math.sqrt((tr.p2.x - tr.p1.x) * (tr.p2.x - tr.p1.x) + (tr.p2.z - tr.p1.z) * (tr.p2.z - tr.p1.z));
+          /* a MESMA regra do aviso do trecho (BimInst.abaixoDaMinima): ≥ no arredondamento do rótulo — o "i=1,0%" nunca sai vermelho */
+          if (Lh > 1e-6) { var iT = Math.abs(tr.p2.y - tr.p1.y) / Lh * 100;
+            abaixo = BIx.abaixoDaMinima ? BIx.abaixoDaMinima(tr.sistema, tr.dn, iT) : iT < BIx.inclinacaoMinima(tr.sistema, tr.dn) - 1e-6; }
+        } else if (/(^|\s)i=0(,0+)?%/.test(t.t)) abaixo = true;
+        if (abaixo) { t.cor = "#c00000"; t.aviso = true; }
+      });
+      var pos = NV.rotular(tx, obst, { h: h, larg: 0.58 });
+      /* a LINHA DE CHAMADA do rótulo que foi para longe do que ele marca (traço fino na cor do rótulo) */
+      pos.forEach(function (p) { if (p && p.chamada) (ins.linhas = ins.linhas || []).push({ seg: p.chamada, cor: p.cor || "#000000", chamada: true, id: p.id }); });
+      ins.textos = pos.filter(Boolean).map(function (p) {
+        var a = (+p.rot || 0) * Math.PI / 180, cy = -0.35 * h;   /* o centro do texto no referencial dele (linha de base em 0) */
+        return { t: p.t, cor: p.cor, rot: p.rot, x: p.x + Math.sin(a) * cy, y: p.y - Math.cos(a) * cy + 0.6 * k, semLugar: p.semLugar, aviso: !!p.aviso, id: p.id };
+      }).concat(resto);
+    },
     _anotarBase: function (d, dados) {
       var self = this, out = { tipo: dados.tipo, cortes: dados.cortes, linhas: dados.linhas };
+      if (dados.instImagens) { out.instImagens = dados.instImagens; if (dados.instClip) out.instClip = dados.instClip; }   /* PARIDADE: a vista da cena das instalações (Alto) */
       if (dados.portas && dados.portas.length) out.portas = dados.portas;   /* PORTA: folha aberta + arco do giro (js/simboloporta.js) */
       /* ACIMA DO CORTE: a projeção tracejada e o rótulo (o modo do rótulo é da vista) */
       if (d.tipo === "planta" && dados.acima && dados.acima.length && this.acimaCfg(d.id).on) { out.acima = dados.acima; out.acimaRotulo = this.acimaCfg(d.id).rotulo; }
@@ -151,6 +247,21 @@
                  projeto hidrossanitário) e até 3 m acima do corte (forro/laje: tracejado) */
               out.inst = I5.planta(e5.estado, { yFundo: d.nivel.y - Math.max(d.abaixo, 0.8), yCorte: d.nivel.y + d.altura, yTopo: d.nivel.y + d.altura + 3, rede: I5.rede(e5.estado, b5.familiaAvaliar),
                 legenda: !!(global.BimInstUI && global.BimInstUI.legendaLigada && global.BimInstUI.legendaLigada()) });   /* P12: legenda de tubulação (ligável) */
+            /* NÍVEL DE DETALHE (js/biminstnivel.js): abaixo do Alto o tubo já vem no DESENHO, em linha única na pena e
+               cor do sistema, com os símbolos do nível (BIM.vista2d) — o traço grosso e as bolotas de conexão desta
+               camada sairiam por cima, em dobro. Ficam os rótulos (DN, i %) e a legenda. No Alto, a camada de sempre. */
+            /* 17/10/2026 (pedido do Rogério, "não sei o que são esses pontos"): as BOLINHAS cheias desta camada eram a marca
+               de cada conexão deduzida (BimInst.planta, tipo "conexao") e o traço colorido no meio do tubo duplo era o eixo
+               desta camada por cima do tubo cortado. Com o nível de detalhe, o desenho da instalação vem do BIM.vista2d em
+               TODOS os níveis — aqui ficam só os rótulos (DN, i %), postos sem sobreposição, e a legenda. */
+            var nd5 = dados.info && dados.info.nivelInst ? dados.info.nivelInst.usado : null;
+            if (out.inst && nd5) {
+              var segRot = {};
+              (out.inst.linhas || []).forEach(function (l) { if (!l.legenda && l.seg) segRot[Math.round((l.seg[0] + l.seg[2]) * 500) + "|" + Math.round((l.seg[1] + l.seg[3]) * 500)] = { seg: l.seg, id: l.id }; });
+              out.inst.linhas = (out.inst.linhas || []).filter(function (l) { return l.legenda; });
+              out.inst.simbolos = [];
+              try { this._rotulosInst(d, dados, out.inst, segRot, e5.estado.instalacoes.pecas); } catch (eRot) {}
+            }
           }
         } catch (eI5) {}
         out.marcas = this.estado().cortes.map(function (c) {
@@ -212,8 +323,13 @@
       if (!v) { v = document.createElement("div"); v.className = "d2-vista-tela"; tela.appendChild(v); }
       c.el = v;
       this._ligarInteracao(v, id);
+      /* FLUIDEZ: a vista que ficou escondida durante uma mudança do modelo (c.sujo) se refaz ao aparecer */
+      var sujo = !!c.sujo; c.sujo = false;
+      if (sujo && c.dados) { var vbS = c.vb ? clone(c.vb) : null, okS = this.redesenhar(id, true); if (okS && vbS) this._aplicarVb(id, vbS); return okS; }
       return this.redesenhar(id, !c.dados);
     },
+    /* FLUIDEZ: a vista está na tela (a aba dela na frente)? */
+    visivel: function (id) { var c = this._cache[id]; if (!c || !c.el) return false; try { return c.el.getClientRects().length > 0; } catch (e) { return true; } },
     desmontar: function (id) { if (/^d2t-/.test(String(id)) && global.BimTabelaUI) global.BimTabelaUI.desmontar(id); /* P5 */ delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
     /* refaz o SVG (e, com `recalcular`, extrai de novo do modelo) */
     redesenhar: function (id, recalcular) {
@@ -236,6 +352,7 @@
       if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
       try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) global.BimPlantaModelar.aposDesenhar(id); } catch (ePM) {}   /* PLANTA: o elástico volta por cima do desenho novo */
       try { if (global.BimSelecao && global.BimSelecao.aposDesenhar) global.BimSelecao.aposDesenhar(id); } catch (eSL) {}   /* SELECIONAR: o realce e as alças voltam por cima */
+      try { if (global.BimMarcaCorte && global.BimMarcaCorte.aposDesenhar) global.BimMarcaCorte.aposDesenhar(id); } catch (eMC) {}   /* MARCA DE CORTE selecionada: as alças voltam (js/bimmarcacorte.js) */
       return true;
     },
     _aplicarVb: function (id, vb) {
@@ -263,6 +380,8 @@
     _ligarInteracao: function (v, id) {
       if (v._d2Ligado) return; v._d2Ligado = true;
       var self = this, arr = null;
+      /* FLUIDEZ (17/10/2026): a vista marcada "suja" enquanto escondida (js/bimambienteui.js) se refaz quando aparece */
+      try { if (global.ResizeObserver) new global.ResizeObserver(function () { var c0 = self._cache[id]; if (c0 && c0.sujo && self.visivel(id)) { c0.sujo = false; self.atualizar(id); } }).observe(v); } catch (eRO) {}
       v.addEventListener("wheel", function (ev) {
         var c = self._cache[id]; if (!c || !c.vb) return;
         ev.preventDefault();

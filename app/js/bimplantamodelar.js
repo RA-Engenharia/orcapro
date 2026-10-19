@@ -458,6 +458,9 @@
     clique2d: function (id, ev, p) {
       if (!this.ativo() || !p || (ev && ev.button !== 0)) return false;
       var sub = this.ferramenta(); if (!sub) return false;
+      /* TUBO NO CORTE (17/10/2026, js/biminstui.js cliqueCorte): no corte e na elevação o tubo se desenha também —
+         subida, descida, inclinado e mudança de cota no plano do corte */
+      if (sub === "inst" && global.BimInstUI && global.BimInstUI.cliqueCorte && global.BimInstUI.cliqueCorte(id, ev, p)) return true;
       var d = this._def(id); if (!d) return false;   /* corte/elevação: a modelagem é na planta */
       /* as setas da porta: virar a folha da peça já colocada */
       var seta = ev && ev.target && ev.target.closest ? ev.target.closest("[data-pm-virar]") : null;
@@ -465,6 +468,9 @@
       this._nivelDaPlanta(d);
       st.id = id;
       var r = this._ponto(id, ev, p, sub);
+      /* TUBO: perto de um ponto de ligação (louça, caixa, tubo) vale o ponto CRU — o snap e a trava da planta o
+         levariam para longe do alvo; a ferramenta de tubo trava e agarra por conta própria (js/biminstui.js) */
+      if (sub === "inst" && r.raw && global.BimInstUI && global.BimInstUI.alvoEm && global.BimInstUI.alvoEm(r.raw)) r.p = r.raw;
       this._fecharDig();
       this._aplicarPonto(id, sub, r.p, r.raw, { shift: !!(ev && ev.shiftKey), ctrl: !!(ev && (ev.ctrlKey || ev.metaKey)) }, r.tol);
       st.cur = this._ponto(id, ev, p, sub); this._desenhar(id);
@@ -475,7 +481,8 @@
       var f = this.modoForma(sub);
       if (f) { this._formaPonto(sub, f, q, raw, id); this._desenhar(id); return; }
       var b = B(), pz = b && b.precisao ? b.precisao() : null;
-      if (pz && pz.ferramenta && pz.ferramenta() && pz.cliquePlanta) { pz.cliquePlanta(q, this._alvo(id, sub, raw), mods); this._status(); return; }
+      /* o ponto CRU e a tolerância da escala da planta vão junto: o Alinhar procura a LINHA perto do clique, não o ponto do snap */
+      if (pz && pz.ferramenta && pz.ferramenta() && pz.cliquePlanta) { mods.raw = raw; mods.tol = tol; pz.cliquePlanta(q, this._alvo(id, sub, raw), mods); this._status(); return; }
       var t = a.traco();
       /* clique no 1º ponto fecha o contorno (laje, forro, furo) — com a escala DA PLANTA */
       if (CONTORNO[sub] && t.pts.length >= 3 && dist(q, t.pts[0]) <= (tol || 0.1)) { a.fechar(); this._status(); return; }
@@ -490,6 +497,8 @@
     mover2d: function (id, ev, p) {
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c || !c.el) return;
       var sub = this.ativo() ? this.ferramenta() : null;
+      /* FLUIDEZ: TUBO NO CORTE — a prévia elástica do traço (js/biminstui.js moverCorte) */
+      if (sub === "inst" && !this._def(id) && global.BimInstUI && global.BimInstUI.moverCorte && global.BimInstUI.moverCorte(id, ev, p)) return;
       if (!sub || !this._def(id)) { if (c.el.hasAttribute("data-pm-ferr")) { c.el.removeAttribute("data-pm-ferr"); this._limparCamada(id); } return; }
       c.el.setAttribute("data-pm-ferr", sub);
       if (!p) return;

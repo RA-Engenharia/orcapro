@@ -16,6 +16,12 @@
 
 /* vista 2D: o ponto encaixado e o número da prévia (a tinta é a da vista: --d2-sel) */
 .a7-previa-snap { fill: none; stroke: var(--d2-sel, var(--aco)); stroke-width: 1.5; pointer-events: none; }
+/* a dica do encaixe (nome + valor): pequena, fonte normal, fora do ponto (16 px abaixo e à direita do cursor) */
+.a7-dica-encaixe {
+  position: fixed; z-index: 60; pointer-events: none; padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+  font: 400 11px/1.4 Arial, "IBM Plex Sans", "Segoe UI", sans-serif; letter-spacing: normal;
+  color: var(--texto, #1d2733); background: color-mix(in srgb, var(--card-bg, #fff) 88%, transparent); border: 1px solid var(--linha, #cfd6de);
+}
 .a7-previa-snap[data-tipo="livre"] { stroke-dasharray: 2 2; }
 .a7-previa-tx {
   fill: var(--d2-sel, var(--aco)); font-family: Arial, "IBM Plex Sans", "Segoe UI", sans-serif; font-weight: 700;

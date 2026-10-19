@@ -148,6 +148,8 @@
       }
       function so(m) { ed.leitura = true; ed.motivo = m; return ed; }
       if (def.leitura || !e) return so(def.fonte === "derivado" ? "Calculado pelo modelo." : "Somente leitura.");
+      /* TROCAR O DN: a LISTA dos DN comerciais que valem para o material de todas as peças selecionadas */
+      if (e === "instAlterar.dn") { var dnsL = BimPropsUI.dnsComuns(ctx, pecas); if (dnsL.length) { ed.tipo = "lista"; ed.opcoes = dnsL.map(function (d) { return { id: String(d), rotulo: String(d) }; }); } }
       var virtual = pecas.some(function (p) { var R = BPm() && BPm().REGISTRO[p.categoria]; return R && R.virtual; });
       if (virtual) return so("Lance e patamar seguem a escada: edite a escada.");
       if (e === "ajustarTipo.ids") return so("Troque o tipo no seletor do topo.");
@@ -241,6 +243,23 @@
       return out;
     },
 
+    /* os DN comerciais comuns aos materiais dos trechos (e dos trechos das conexões) selecionados */
+    dnsComuns: function (ctx, pecas) {
+      var BIi = global.BimInst; if (!BIi || !ctx || !ctx.estado || !ctx.estado.instalacoes) return [];
+      var porId = {}, R = null, comum = null;
+      arr(ctx.estado.instalacoes.trechos).forEach(function (t) { porId[t.id] = t; });
+      arr(pecas).forEach(function (p) {
+        var id = txt(p && p.id), mats = [];
+        if (porId[id]) mats.push(porId[id].material);
+        else {
+          if (!R) { try { R = BIi.rede(ctx.estado, ctx.deps && ctx.deps.avaliarFam); } catch (eR) { R = { conexoes: [] }; } }
+          var c = R.conexoes.filter(function (x) { return x.id === id; })[0];
+          if (c) arr(c.ramos).forEach(function (r) { if (porId[r]) mats.push(porId[r].material); });
+        }
+        mats.forEach(function (mt) { var M = BIi.MATERIAIS[mt], d = M && !M.secao ? arr(M.dns) : []; comum = comum == null ? d.slice() : comum.filter(function (x) { return d.indexOf(x) >= 0; }); });
+      });
+      return comum || [];
+    },
     /* ------------------------------------------------ a leitura do valor */
     lerValor: function (ed, def, bruto) {
       if (ed.tipo === "numero") {
@@ -373,9 +392,28 @@
       } else if (e === "instSistema.nome") {
         /* P12: o nome do sistema (js/biminst.js) — gravado no trecho; vale para o sistema inteiro dele */
         ids.forEach(function (id) { ops.push({ op: "instSistema", id: id, nome: txt(valor).trim() }); });
+      } else if ((m = /^instCota\.(p1|p2)$/.exec(e))) {
+        /* DESLOCAMENTO INICIAL/FINAL: a ponta muda de cota e as pontas ligadas nela vão junto (js/biminst.js moverCota) */
+        var BIc = global.BimInst, yv = Number(valor); if (!isFinite(yv)) return { ok: false, erro: "Cota inválida." };
+        if (!BIc || !BIc.moverCota) return { ok: false, erro: "Motor das instalações não carregado." };
+        for (var ic = 0; ic < ids.length; ic++) {
+          var rc = BIc.moverCota(ctx.estado, ids[ic], m[1], yv);
+          if (!rc.ok) return { ok: false, erro: rc.erro };
+          rc.ops.forEach(function (o) { ops.push(o); });
+        }
       } else if ((m = /^instAlterar\.(dn)$/.exec(e))) {
-        /* P12: o DN do trecho (fora da lista comercial = aviso e pendente na SINAPI, como na B5) */
+        /* TROCAR O DN EM UM CLIQUE (17/10/2026): tubo e/ou CONEXÃO; a conexão troca os trechos ligados nela, a redução
+           entra sozinha, a inclinação do esgoto segue o DN novo (a jusante desce se faltar) — js/biminst.js trocarDn.
+           DN fora da lista do material: não aplica. Tudo num lote: um Ctrl+Z desfaz. */
         var dnv = Number(valor); if (!(dnv > 0)) return { ok: false, erro: "DN inválido." };
+        var BIi = global.BimInst, avF = ctx.deps && ctx.deps.avaliarFam;
+        if (BIi && BIi.trocarDn && ctx.estado && ctx.estado.instalacoes) {
+          var td = BIi.trocarDn(ctx.estado, avF, ids, dnv);
+          if (!td.ok) return { ok: false, erro: td.erro };
+          td.ops.forEach(function (o) { ops.push(o); });
+          if (!ops.length) return { ok: false, erro: (td.avisos[0] || "Nada para mudar.") };
+          return { ok: true, ops: ops, avisos: td.avisos };
+        }
         ids.forEach(function (id) { ops.push({ op: "instAlterar", id: id, dn: dnv }); });
       } else if ((m = /^ajustar\.(estrut|rampa|guarda)\.(\w+)$/.exec(e))) {
         /* P9 — GANCHO: viga e pilar (justificação, deslocamentos, extensões, estilo de coluna —
@@ -547,6 +585,17 @@
     contextoTela: function () {
       var B = global.BIM, G = this._G, est = B && B.editarEstado ? B.editarEstado() : null;
       if (!est) return null;
+      /* FLUIDEZ (17/10/2026): o esquema e o desenho da paleta pediam o contexto (o registro resolvido do modelo INTEIRO,
+         ~20 ms no modelo médio) duas vezes por clique. Vale até o fim da tarefa e só para o MESMO estado do editor
+         (op, desfazer e níveis trocam o estado → contexto novo). */
+      var mc = this._ctxTarefa;
+      if (mc && mc.st === est.estado && mc.ops === est.ops) return mc.ctx;
+      var ctxN = this._contextoTelaNovo(B, G, est), selfC = this;
+      this._ctxTarefa = { st: est.estado, ops: est.ops, ctx: ctxN };
+      try { setTimeout(function () { selfC._ctxTarefa = null; }, 0); } catch (eT) { this._ctxTarefa = null; }
+      return ctxN;
+    },
+    _contextoTelaNovo: function (B, G, est) {
       try { if (G && G._famConfig) G._famConfig(); } catch (eF) {}
       var FU = global.FamiliaUI, A = Am(), AT = global.AlvTipos, RU = global.BimArqUI;
       function fam(id) { try { return FU && FU.obter ? FU.obter(id) : null; } catch (e) { return null; } }
@@ -578,6 +627,9 @@
       var ids = [String(id)];
       try {
         var pr = global.BIM && global.BIM.precisao ? global.BIM.precisao() : null, sel = pr && pr.selecao ? pr.selecao().map(String) : [];
+        /* FLUIDEZ (17/10/2026): tubos e peças de instalação moram na seleção do 3D (BIM.selecao), não na do desenho de
+           precisão — sem isto, vários tubos selecionados mostravam só o primeiro (sem ‹vários›) */
+        try { var su = global.BIM && global.BIM.selecao ? (global.BIM.selecao().uids || []) : []; su.forEach(function (u) { u = String(u); if (/^edit:/.test(u) && sel.indexOf(u.slice(5)) < 0) sel.push(u.slice(5)); }); } catch (eS) {}
         if (sel.length > 1 && sel.indexOf(String(id)) >= 0) ids = sel;
       } catch (e) {}
       return ids;
@@ -853,6 +905,7 @@
       var r = this.opsEdicao(ctx, md.ids, lin.def, v.valor);
       if (!r.ok) return r;
       if (!this.despachar(r.ops, lin.nome)) return { ok: false, erro: "O editor recusou a mudança." };
+      if (r.avisos && r.avisos.length) { this._status(lin.nome + ": mudou — " + r.avisos.join("; ")); return { ok: true, ops: r.ops, avisos: r.avisos }; }
       this._status(lin.nome + ": " + (lin.editor.tipoAfeta ? "o tipo mudou (todas as peças dele)." : (md.ids.length > 1 ? md.ids.length + " peças mudaram (um Ctrl+Z desfaz tudo)." : "mudou.")));
       return { ok: true, ops: r.ops };
     },

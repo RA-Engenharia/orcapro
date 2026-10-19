@@ -354,6 +354,7 @@
   <script src="js/planta3d.js"></script>
   <script src="js/bimvolume.js"></script>
   <script src="js/bimedit.js"></script>
+  <script src="js/biminstrede.js"></script>   <!-- PROJETO INTELIGENTE: a op hidRede (linha da rede de esgoto) no replay — no grupo bim para o sanear não descartar a linha -->
   <!-- B3: desenho de precisão do modelador (motor puro + tela; só com a prévia do modelador) -->
   <script src="js/bimprecisao.js"></script>
   <script src="js/bimprecisaoui.js"></script>
@@ -429,6 +430,8 @@
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
   <script src="js/familiamalha.js"></script>
+  <!-- BIBLIOTECA DO ESCRITÓRIO (17/10/2026): as famílias Tigre/DarivaBIM do escritório reconhecidas como peça do motor (puro; o cálculo do grupo hidro lê pelo famId). Era js/hidbiblioteca.js: renomeado para biminst* na junção de 18/10/2026 (J11) porque o BIM usa sem a prévia hidro — importar a família do escritório (lembrar no replay), os textos por DN e o botão da biblioteca; o grupo hidro sob demanda chegaria depois do replay e o famId ficaria sem registro -->
+  <script src="js/biminstbiblioteca.js"></script>
   <!-- P1-A: registro único de parâmetros (motor puro; aplica as ops ajustarTipo/marcar no replay do js/bimedit.js) -->
   <script src="js/bimparam.js"></script>
   <!-- P2-A: ambiente (o ambiente/sala; motor puro — contorno pelas paredes no replay do js/bimedit.js) -->
@@ -469,10 +472,98 @@
   <script src="js/orcmodelo.js"></script>
   <!-- B5: instalações do modelador (tabela SINAPI gerada por tools/gerar-biminst-sinapi.js + motor puro) -->
   <script src="js/biminstsinapi.js"></script>
+  <!-- PADRÃO DE APRESENTAÇÃO DE INSTALAÇÕES (17/10/2026): cor, pena e traço por sistema, filtros, modelos de vista e rótulos (dados GERADOS por tools/gerar-biminst-padrao.js) -->
+  <script src="js/biminstpadraodados.js"></script>
   <script src="js/biminst.js"></script>
+  <script src="js/biminstpiscina.js"></script>   <!-- PISCINA: a op hidPiscina e os sistemas de tubo da piscina no replay — no grupo bim para o sanear não descartar a piscina e os tubos -->
+  <!-- QUALIDADE VISUAL 1 (17/10/2026): geometria paramétrica de tubos, conexões, caixas e registros com as cotas da norma/ficha (cotas GERADAS por tools/gerar-hidgeo-dados.js + motor puro) -->
+  <script src="js/biminstgeodados.js"></script>
+  <script src="js/biminstprodutodados.js"></script>   <!-- PARIDADE (18/10/2026): a medida do PRODUTO das conexões de esgoto (GERADO por tools/gerar-hid-produto.js) -->
+  <script src="js/biminstgeo.js"></script>
+  <!-- NÍVEL DE DETALHE (17/10/2026): Baixo / Médio / Alto das instalações por vista — unifilar, símbolos e contornos (motor puro) -->
+  <script src="js/biminstnivel.js"></script>
+  <script src="js/biminstsombra.js"></script>
+  <script src="js/biminstpadrao.js"></script>
   <script src="js/opformato.js"></script>
   <script src="js/bimqto.js"></script>
   <script src="js/bimorc.js"></script>
+  </template>
+  <!-- HIDROSSANITÁRIO e CLIMATIZAÇÃO — grupo "hidro", SOB DEMANDA (J4/J11 da revisão da junção, 17/10/2026): só carrega com a prévia ?previa=hidro, ao abrir o painel Instalações ou a biblioteca de famílias (Carregar.grupo("hidro")). Abrir o BIM sem a prévia não baixa nada disto (~3,7 MB de JS, ~14 MB de heap). -->
+  <template data-grupo="hidro">
+  <!-- HIDROSSANITÁRIO (16/10/2026, docs/hidro/CONTRATO.md): tabelas de norma (GERADAS) + motores puros na ordem de dependência, depois o memorial, as planilhas, o isométrico e as pranchas; a tela é o js/hidcalcui.js (aba Instalações) -->
+  <script src="js/hidnormasdados.js"></script>
+  <script src="js/hidnormas.js"></script>
+  <script src="js/hidpecasdados.js"></script>   <!-- PEÇA COMPLETA: ficha técnica das peças (GERADO por tools/gerar-hid-pecas.js) -->
+  <script src="js/hidpecas.js"></script>
+  <script src="js/hidhidraulica.js"></script>
+  <script src="js/hidperda.js"></script>
+  <script src="js/hidprograma.js"></script>
+  <script src="js/hidgrafo.js"></script>
+  <script src="js/hidaf.js"></script>
+  <script src="js/hides.js"></script>
+  <script src="js/hidrota.js"></script>
+  <script src="js/hidcriterios.js"></script>   <!-- CRITÉRIO DE PROJETISTA: o auditor de todo o traçado (docs/hidro/CRITERIOS-DE-PROJETISTA.md) -->
+  <script src="js/hidligar.js"></script>
+  <script src="js/hidkitdados.js"></script>   <!-- PROJETO INTELIGENTE: alturas dos pontos (Tigre p.40) e kits por aparelho (GERADO por tools/gerar-hid-kits.js) -->
+  <script src="js/hidkit.js"></script>
+  <script src="js/hidambiente.js"></script>
+  <script src="js/hidimplantacao.js"></script>   <!-- PROJETO INTELIGENTE: caixas na ÁREA EXTERNA e a rede pelo recuo (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md) -->
+  <script src="js/hidnivel.js"></script>   <!-- PROJETO INTELIGENTE: nível automático de caixas, ralos e grelhas (piso acabado, IFC, terreno) -->
+  <script src="js/hidcidados.js"></script>   <!-- PENDÊNCIAS FINAIS: a caixa de inspeção de 0,60 m — composições SINAPI por tipo e profundidade (GERADO por tools/gerar-hid-ci.js) -->
+  <script src="js/hidcigeo.js"></script>   <!-- PROJETO INTELIGENTE: a caixa de inspeção (0,60 m de alvenaria/pré-moldada; o dispositivo de PVC Ø 300 da ficha como opção) -->
+  <script src="js/hidventgeo.js"></script>   <!-- PROJETO INTELIGENTE: o terminal de ventilação como o produto da ficha -->
+  <script src="js/hidprecomercadodados.js"></script>   <!-- PENDÊNCIAS FINAIS: preço de referência de mercado do que não tem SINAPI (GERADO por tools/gerar-hid-precos-mercado.js) -->
+  <script src="js/hidprecomercado.js"></script>
+  <script src="js/hidrede.js"></script>   <!-- PROJETO INTELIGENTE etapa 2: linha da rede, caixas de inspeção, viga baldrame -->
+  <script src="js/hidpredio.js"></script>   <!-- PROJETO INTELIGENTE etapa 3: replicar unidade (pavimento-tipo, espelho) e prumadas no shaft -->
+  <script src="js/hidbombas.js"></script>
+  <script src="js/hidpressaodados.js"></script>   <!-- PRESSURIZAÇÃO: pressurizadores do catálogo (curva, cotas, bocais, tensão; GERADO por tools/gerar-hidpressao.js) -->
+  <script src="js/hidpressao.js"></script>   <!-- PRESSURIZAÇÃO: seleção na curva, Corrigir (a)–(d), famílias e instalação (motor puro) -->
+  <script src="js/hidaq.js"></script>
+  <script src="js/hidap.js"></script>
+  <script src="js/hidinc.js"></script>
+  <script src="js/hiddimensionar.js"></script>
+  <script src="js/hidcatalogo.js"></script>
+  <script src="js/hidlouca.js"></script>   <!-- QUALIDADE VISUAL 3: geometria real das louças, metais e equipamentos (antes das famílias) -->
+  <script src="js/hidfamilias.js"></script>
+  <!-- TRATAMENTO e FLUIDOS INDUSTRIAIS (17/10/2026, docs/hidro/CONTRATO-TRATAMENTO.md e CONTRATO-INDUSTRIAL.md) -->
+  <script src="js/hidtrat.js"></script>
+  <script src="js/hidete.js"></script>
+  <script src="js/hideta.js"></script>
+  <script src="js/hidtanques.js"></script>
+  <script src="js/hidind.js"></script>
+  <!-- CLIMATIZAÇÃO (17/10/2026, docs/hidro/CONTRATO-CLIMA.md): motores puros na ordem de dependência, as famílias ra-clim-* e a tela (painel Climatização da aba Instalações) -->
+  <script src="js/climclima.js"></script>
+  <script src="js/climsolar.js"></script>
+  <script src="js/climcarga.js"></script>
+  <script src="js/climsistema.js"></script>
+  <script src="js/climequip.js"></script>
+  <script src="js/climrede.js"></script>
+  <script src="js/climlocal.js"></script>
+  <script src="js/climdimensionar.js"></script>
+  <script src="js/climfamilias.js"></script>
+  <script src="js/climmemorial.js"></script>
+  <script src="js/climcalcui.js"></script>
+  <script src="js/hidmemorial.js"></script>
+  <script src="js/hidplanilhas.js"></script>
+  <script src="js/hidisometrico.js"></script>
+  <script src="js/hidpranchas.js"></script>
+  <script src="js/hidpranchasui.js"></script>   <!-- GERAR PRANCHAS: a tela de configuração (um clique, memorizada por obra) -->
+  <script src="js/climpranchas.js"></script>
+  <script src="js/hidtemplates.js"></script>
+  <script src="js/hidmanual.js"></script>
+  <script src="js/hiddoclinks.js"></script>   <!-- GERAR DOCUMENTOS: links externos CONFERIDOS (GERADO por tools/hid-doc-links.js) -->
+  <script src="js/hiddocumentos.js"></script>   <!-- GERAR DOCUMENTOS: memorial único, descritivo e manual com links (motor puro) -->
+  <script src="js/hiddocumentosui.js"></script>   <!-- GERAR DOCUMENTOS: a tela (um clique) -->
+  <script src="js/hidkitui.js"></script>   <!-- PROJETO INTELIGENTE: kit ao posicionar, Ligar ambiente (fiação fina) -->
+  <script src="js/hidpiscinadados.js"></script>   <!-- PISCINA: catálogos de equipamentos de piscina com página (GERADO por tools/gerar-hid-piscina.js) -->
+  <script src="js/hidpiscina.js"></script>   <!-- PISCINA: reconhecer e dimensionar (NBR 10339 + fabricante) -->
+  <script src="js/hidpiscinafam.js"></script>   <!-- PISCINA: famílias com a volumetria do produto -->
+  <script src="js/hidpiscinarede.js"></script>   <!-- PISCINA: lançamento (dispositivos, casa de máquinas, tubos pelo A* do HidRota) -->
+  <script src="js/hidpiscinadoc.js"></script>   <!-- PISCINA: memorial, manual, planilha, quantitativo e pranchas -->
+  <script src="js/hidpiscinaui.js"></script>   <!-- PISCINA: o bloco do painel Instalações, a casa de máquinas associativa e os ganchos dos geradores -->
+  <script src="js/hidpressaoui.js"></script>   <!-- PRESSURIZAÇÃO: opções no cartão e aplicar o conjunto (fiação fina) -->
+  <script src="js/hidcalcui.js"></script>
   </template>
   <template data-grupo="nucleo">
   <script src="js/lastplanner.js"></script>
@@ -585,6 +676,12 @@
   <script src="js/familiaimportui.js"></script>
   <script src="js/orcmodeloui.js"></script>
   <script src="js/biminstui.js"></script>
+  <!-- SELETOR DE TIPOS em Propriedades + ATALHOS de duas letras das instalações (17/10/2026) -->
+  <script src="js/biminsttipos.js"></script>
+  <script src="js/biminstcon.js"></script>
+  <script src="js/biminstarr.js"></script>   <!-- ARRASTAR O TUBO com a rede acompanhando (18/10/2026) -->
+  <script src="js/bimvaoarr.js"></script>   <!-- PORTAS E JANELAS: arrastar na parede + cotas temporárias editáveis (18/10/2026) -->
+  <script src="js/bimalinharinst.js"></script>   <!-- ALINHAR (AL) nas instalações: tubo, caixa, louça; a rede acompanha (18/10/2026) -->
   <script src="js/bimforroui.js"></script>
   <script src="js/bimterrenoui.js"></script>
   <!-- P9: Rampa, Escada em U e Treliça na fita (só com a prévia do modelador) -->
@@ -707,6 +804,8 @@
   <!-- PRECISÃO na barra de baixo (14/10/2026): Snap (F3) e Orto (F8) — um estado só (js/bimbarraopcoes.js), para toda ferramenta de criar -->
   <script src="js/bimbarrasnaps.js"></script>
   <script src="js/bimplantamodelar.js"></script>
+  <!-- COLOCAÇÃO DE PEÇAS (18/10/2026): prévia translúcida antes do clique, inserir registro/conexão no tubo existente, Espaço gira -->
+  <script src="js/biminstcolocar.js"></script>
   <script src="js/bimselecao.js"></script>
   <!-- CONTROLE DE VIDEOGAME (15/10/2026): Xbox 360 com fio no BIM (Gamepad API) — a parte pura (zona morta, mapa de botões, integração por dt) e o gancho do laço de quadro -->
   <script src="js/bimcontrole.js"></script>
@@ -714,6 +813,8 @@
   <script src="js/bimmouse.js"></script>
   <!-- ATALHOS (16/10/2026, BACKLOG #63): tecla ? e Vista › Navegar › Atalhos — teclado, duas letras, mouse, controle e botões novos, gerado dos mapas (bimmouse, bimcontrole, bimprecisao); Baixar PDF -->
   <script src="js/bimatalhos.js"></script>
+  <script src="js/bimfita.js"></script>
+  <script src="js/bimmarcacorte.js"></script>
   <!-- VÍNCULOS (14/10/2026): mover ou esticar uma parede/barra leva junto o que está amarrado (canto L, T, emenda, nó da metálica, sapata, ligação desenhada); Alt segurado move só a peça — motor puro + a fiação da tela -->
   <script src="js/bimvinculos.js"></script>
   <script src="js/bimvinculosui.js"></script>
@@ -722,6 +823,8 @@
   <script src="js/bimelevarui.js"></script>
   <!-- SELECIONAR TODAS AS INSTÂNCIAS (14/10/2026): o clique direito na peça (3D, planta, corte) — mesmo tipo, descrição, peça pronta, categoria; nesta vista × no projeto; apagar/ocultar/isolar em lote -->
   <script src="js/bimselinst.js"></script>
+  <!-- SELEÇÃO POR JANELA → 3D DO AMBIENTE (item 8 do hidro, 18/10/2026): a janela que pega peças das instalações oferece a vista 3D recortada nelas — só com a prévia ?previa=hidro -->
+  <script src="js/biminstjanela.js"></script>
   <!-- P5: a tabela numa aba de vista, o editor (Propriedades da tabela) e o .xlsx — só com a prévia do modelador -->
   <script src="js/bimtabelaui.js"></script>
   <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->

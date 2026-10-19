@@ -282,8 +282,13 @@
      familias = a biblioteca do aparelho; Familia = js/familia.js */
   function catalogo(familias, Familia, max) {
     var out = [];
-    (Array.isArray(familias) ? familias : []).forEach(function (f) {
-      if (!f || !f.id || out.length >= (max || 60)) return;
+    /* O CORTE DE 60 NÃO PODE TIRAR A PORTA E A JANELA (19/10/2026): com o hidrossanitário liberado para todos a biblioteca passou
+       de 60 famílias, ordenadas por categoria — "janela" e "porta" caíam depois do corte e a IA recusava "ra-porta-giro" ("não
+       está na biblioteca deste aparelho"). As que hospedam em parede (porta, janela) vêm primeiro; o resto segue na ordem. */
+    var lista = (Array.isArray(familias) ? familias : []).filter(function (f) { return f && f.id; });
+    lista = lista.filter(function (f) { return f.hospedagem === "parede"; }).concat(lista.filter(function (f) { return f.hospedagem !== "parede"; }));
+    lista.forEach(function (f) {
+      if (out.length >= (max || 60)) return;
       var tipos = (Array.isArray(f.tipos) && f.tipos.length ? f.tipos : [{ id: "", nome: "Padrão" }]).slice(0, 8).map(function (t) {
         var o = { id: String(t.id), nome: limpaTexto(t.nome, 60) };
         if (f.hospedagem === "parede" && Familia) { try { var av = Familia.avaliar(f, t.id, {}); if (av && av.abertura) { o.largura = r4(av.abertura.largura); o.altura = r4(av.abertura.altura); o.peitoril = r4(av.abertura.peitoril); } } catch (e) {} }

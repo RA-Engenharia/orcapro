@@ -814,6 +814,9 @@
   function segmentoPerto(estado, p, tol, o) {
     o = o || {};
     var geo = geometria(estado, { avaliar: o.avaliar, excluir: o.excluir, eixos: true }), best = null, bd = num(tol, 0.3);
+    /* ALINHAR NAS INSTALAÇÕES (js/bimalinharinst.js, 18/10/2026): eixo do tubo, eixos da peça, do conector e da família */
+    var AI = global.BimAlinharInst;
+    if (AI && AI.linhas && o.inst !== false) { var foraI = {}; (o.excluir || []).forEach(function (x) { foraI[x] = 1; }); try { geo.segs = geo.segs.concat(AI.linhas(estado, o.avaliar).filter(function (s) { return !foraI[s.id]; })); } catch (eAI) {} }
     geo.segs.forEach(function (s) { if (o.id != null && s.id !== o.id) return; var d = distPontoSeg(p, s.a, s.b); if (d <= bd + 1e-12) { bd = d; best = s; } });
     return best ? { a: P(best.a.x, best.a.z), b: P(best.b.x, best.b.z), id: best.id, k: best.k, d: bd } : null;
   }
@@ -821,6 +824,17 @@
      (paralelas). Na ponta de parede/viga (a face da ponta), estica a ponta. */
   function opAlinhar(estado, ref, alvo) {
     if (!ref || !alvo || !ref.a || !ref.b || !alvo.a || !alvo.b) return { erro: "Alinhar: clique a linha de referência e depois a linha da peça." };
+    /* a PEÇA DE INSTALAÇÃO (tubo, caixa, ralo): anda pelo arraste das instalações, a rede acompanha (js/bimalinharinst.js) */
+    var AI = global.BimAlinharInst;
+    if (AI && AI.ehInst(estado, alvo.id)) {
+      if (ref.id != null && ref.id === alvo.id) return { erro: "Alinhar: a referência e a peça são a mesma." };
+      var dri = unit(ref.a, ref.b), dai = unit(alvo.a, alvo.b);
+      if (!dri || !dai) return { erro: "Linha de comprimento zero." };
+      if (Math.abs(dri.x * dai.z - dri.z * dai.x) > 1e-3) return { erro: "Alinhar: as duas linhas têm de ser paralelas." };
+      var nri = P(-dri.z, dri.x), di = dot(P(ref.a.x - alvo.a.x, ref.a.z - alvo.a.z), nri);
+      if (Math.abs(di) < 1e-5) return { erro: "Já está alinhado." };
+      return AI.alinhar(estado, alvo.id, P(nri.x * di, nri.z * di));
+    }
     var el = achar2(estado, alvo.id);
     if (!el || el.id == null || !tipoNoEstado(estado, alvo.id)) return { erro: "Alinhar: a segunda linha tem de ser de uma peça criada no OrçaPRO." };
     if (ref.id != null && ref.id === alvo.id) return { erro: "Alinhar: a referência e a peça são a mesma." };
@@ -836,7 +850,13 @@
       var al = alcas(el), mid = P((alvo.a.x + alvo.b.x) / 2, (alvo.a.z + alvo.b.z) / 2), k = dist(mid, al[0].p) <= dist(mid, al[1].p) ? 0 : 1, q = soma(al[k].p, v, 1);
       return { op: { op: "esticar", id: el.id, ponta: k === 0 ? "a" : "b", x: r4(q.x), z: r4(q.z) } };
     }
-    return opTransformar(estado, [el.id], { tipo: "mover", dx: r4(v.x), dz: r4(v.z) }, false);
+    var rT = opTransformar(estado, [el.id], { tipo: "mover", dx: r4(v.x), dz: r4(v.z) }, false);
+    /* a FAMÍLIA com tubos presos nos conectores (louça, caixa, equipamento): os tubos acompanham (js/bimalinharinst.js) */
+    if (AI && el.famId && rT && rT.op && !rT.erro) {
+      var info = AI.alinhar(estado, el.id, v, el);
+      if (info && info.familia) return AI.comFamilia(estado, rT.op, info);
+    }
+    return rT;
   }
   /* DESLOCAMENTO (offset): a parede/viga paralela a `distancia`, do lado do
      ponto `lado`; copia = a peça nova ("Copiar" vem marcado por padrão) */
@@ -1192,7 +1212,7 @@
       { id: "matriz", sub: "matriz", rotulo: "Matriz", icone: "grade", dica: "Repete a seleção em linha (passo entre itens) ou em volta de um centro (polar) — n itens (atalho AR)." },
       { id: "snaps-editor", sub: null, rotulo: "Snaps", icone: "ima", dica: "Ponto final, meio, interseção, perpendicular, extensão, centro, próximo e grade — liga e desliga cada um e o passo da grade (F3 liga e desliga todos)." },
       /* P4 — o resto da aba Modificar (js/bimprecisao.js, frente C) */
-      { id: "alinhar", sub: "alinhar", rotulo: "Alinhar", icone: "alvo", dica: "Clique a linha de REFERÊNCIA (face, eixo da parede, eixo da grade) e depois a linha da peça que vai encostar nela — a peça anda; na face da ponta, a parede estica (atalho AL)." },
+      { id: "alinhar", sub: "alinhar", rotulo: "Alinhar", icone: "alvo", dica: "Clique a linha de REFERÊNCIA (face, eixo da parede, eixo da grade, eixo do tubo, eixo ou face da peça, ponto de ligação) e depois a linha da peça que vai encostar nela — a peça anda; aparelho, caixa, ralo e tubo levam a rede junto (o traçado se refaz); na face da ponta, a parede estica. Vários seguidos; Esc sai; o cadeado mantém alinhado (atalho AL)." },
       { id: "deslocamento", sub: "deslocar", rotulo: "Deslocamento", icone: "camadas", dica: "Paralela a uma distância (offset): digite a distância na barra de opções e clique na parede/viga do lado para onde ela vai. Com \"Copiar\" nasce outra peça (atalho OF)." },
       { id: "aparar-canto", sub: "aparar", rotulo: "Aparar para\ncanto", icone: "quadrado", dica: "Aparar/estender para canto: clique as duas paredes (ou vigas) do lado que FICA — as duas vão até o encontro das linhas de localização e o canto fecha (atalho TR)." },
       { id: "aparar-varios", sub: "aparar-varios", rotulo: "Aparar/estender\nvários", icone: "lista", dica: "Clique a linha de referência e depois cada parede/viga que vai até ela (o lado clicado fica). Esc termina." },

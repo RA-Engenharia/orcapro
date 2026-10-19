@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.154",
+versao: "1.2.155",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -1180,10 +1180,13 @@ try {
 "use strict";
 var CHAVE = "orcapro:tela:bim-modelador:v1";
 var OFF = "orcapro:tela:bim-modelador:off";
+var HIDRO_OFF = "orcapro:tela:bim-hidro:off";
 try {
 var q = (global.location && global.location.search) || "";
 if (/[?&]previa=[^&]*modelador-desligar/i.test(q)) global.localStorage.setItem(OFF, "1");
 else if (/[?&]previa=[^&]*modelador(?!-desligar)/i.test(q)) global.localStorage.removeItem(OFF);
+if (/[?&]previa=[^&]*hidro-desligar/i.test(q)) global.localStorage.setItem(HIDRO_OFF, "1");
+else if (/[?&]previa=[^&]*hidro(?!-desligar)/i.test(q)) global.localStorage.removeItem(HIDRO_OFF);
 } catch (e) {}
 var BimPrevia = {
 CHAVE: CHAVE,
@@ -1200,6 +1203,11 @@ modelador: function () {
 if (!BimPrevia._aparelho()) return false;
 var M = BimPrevia._modela(); if (!M) return true;
 try { return !!M.status().liberado; } catch (e) { return true; }
+},
+HIDRO_OFF: HIDRO_OFF,
+hidro: function () {
+if (!BimPrevia.modelador()) return false;
+try { return global.localStorage.getItem(HIDRO_OFF) !== "1"; } catch (e) { return true; }
 },
 disciplina: function (id) {
 if (!BimPrevia._aparelho()) return false;
@@ -11835,6 +11843,7 @@ this.rels = [];
 this.avisos = [];
 this.idImg = 0;
 this.usaBullet = false; this.usaNumero = false;
+this.marcas = { nomes: {}, usados: {}, n: 0, pendentes: [] };
 }
 Gerador.prototype.rId = function () { return "rId" + (100 + this.rels.length); };
 function rPr(f) {
@@ -11843,6 +11852,7 @@ if (f.fonte) s += '<w:rFonts w:ascii="' + esc(f.fonte) + '" w:hAnsi="' + esc(f.f
 if (f.negrito) s += "<w:b/><w:bCs/>";
 if (f.italico) s += "<w:i/><w:iCs/>";
 if (f.caixaAlta) s += "<w:caps/>";
+if (f.sublinhado) s += '<w:u w:val="single"/>';
 if (f.cor) s += '<w:color w:val="' + f.cor + '"/>';
 if (f.tamanho) s += '<w:sz w:val="' + Math.round(f.tamanho * 2) + '"/><w:szCs w:val="' + Math.round(f.tamanho * 2) + '"/>';
 if (f.espaco) s += '<w:spacing w:val="' + f.espaco + '"/>';
@@ -11858,6 +11868,22 @@ if (partes[i]) out += "<w:r>" + rPr(f) + '<w:t xml:space="preserve">' + esc(part
 }
 return out;
 }
+Gerador.prototype.nomeMarca = function (id) {
+var M = this.marcas, k = String(id);
+if (M.nomes[k]) return M.nomes[k];
+var b = ("m" + k.replace(/[^A-Za-z0-9_]/g, "_")).slice(0, 36), n = b, i = 1;
+while (M.usados[n]) n = b + "_" + (i++);
+M.usados[n] = 1; M.nomes[k] = n;
+return n;
+};
+Gerador.prototype.marcador = function (id) {
+var M = this.marcas, w = ++M.n;
+return '<w:bookmarkStart w:id="' + w + '" w:name="' + this.nomeMarca(id) + '"/><w:bookmarkEnd w:id="' + w + '"/>';
+};
+Gerador.prototype.tomarMarcas = function () {
+var self = this, p = this.marcas.pendentes; this.marcas.pendentes = [];
+return p.map(function (id) { return self.marcador(id); }).join("");
+};
 function herda(f, extra) { var o = {}; for (var k in f) if (Object.prototype.hasOwnProperty.call(f, k)) o[k] = f[k]; for (var k2 in extra) if (Object.prototype.hasOwnProperty.call(extra, k2)) o[k2] = extra[k2]; return o; }
 function pPr(p) {
 var s = "";
@@ -11886,17 +11912,25 @@ var m = src.match(/^data:image\/(png|jpe?g|gif|webp);base64,([\s\S]+)$/i);
 if (!m) { if (src) this.avisos.push("imagem fora do formato embutido foi deixada de fora"); return ""; }
 var tipo = m[1].toLowerCase() === "jpg" ? "jpeg" : m[1].toLowerCase();
 if (tipo === "webp") { this.avisos.push("uma imagem WebP ficou de fora (o Word não a abre)"); return ""; }
-var dados = deBase64(m[2]);
+this.cacheImg = this.cacheImg || {};
+var ja = this.cacheImg[src], dados, dim, rid, nome;
+if (ja) { dados = null; dim = ja.dim; rid = ja.rid; nome = ja.nome; }
+else {
+dados = deBase64(m[2]);
 if (!dados.length) return "";
-var dim = dimensoes(dados, tipo);
+dim = dimensoes(dados, tipo);
+}
 var razao = (dim.w > 0 && dim.h > 0) ? dim.w / dim.h : 1.5;
 var w = maxW, h = w / razao;
 if (maxH && h > maxH) { h = maxH; w = h * razao; }
 this.idImg++;
-var rid = this.rId();
-var nome = "image" + this.idImg + "." + (tipo === "jpeg" ? "jpg" : tipo);
+if (!ja) {
+rid = this.rId();
+nome = "image" + this.idImg + "." + (tipo === "jpeg" ? "jpg" : tipo);
 this.media.push({ nome: nome, dados: dados, tipo: tipo });
 this.rels.push({ id: rid, tipo: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", alvo: "media/" + nome });
+this.cacheImg[src] = { rid: rid, nome: nome, dim: dim };
+}
 var cx = Math.round(w * EMU_TW), cy = Math.round(h * EMU_TW);
 var desenho = "<w:r><w:drawing><wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\"><wp:extent cx=\"" + cx + "\" cy=\"" + cy + "\"/>"
 + '<wp:docPr id="' + this.idImg + '" name="Imagem ' + this.idImg + '"/>'
@@ -11934,7 +11968,20 @@ var nB = Math.max(1, Math.round((w2 / 100) * 8)), bb = ""; for (var r = 0; r < n
 saida.runs += run(bb, herda(f, { cor: self.cores.destaque, tamanho: 7 }));
 return;
 }
-if (c.tag === "a") { self.inline(c, g, saida); return; }
+if (c.attrs && c.attrs.id && c.tag !== "#text") saida.runs += self.marcador(c.attrs.id);
+if (c.tag === "a") {
+var href = String((c.attrs && c.attrs.href) || "").trim();
+if (!href) { self.inline(c, g, saida); return; }
+var sub = { runs: "", imagens: saida.imagens }, gl = herda(g, { cor: "0563C1", sublinhado: true });
+self.inline(c, gl, sub);
+if (!sub.runs) return;
+if (href.charAt(0) === "#") { saida.runs += '<w:hyperlink w:anchor="' + self.nomeMarca(decodeEnt(href.slice(1))) + '" w:history="1">' + sub.runs + "</w:hyperlink>"; return; }
+if (/^(javascript|data|vbscript):/i.test(href)) { saida.runs += sub.runs; return; }
+var rid = self.rId();
+self.rels.push({ id: rid, tipo: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", alvo: decodeEnt(href), externo: true });
+saida.runs += '<w:hyperlink r:id="' + rid + '" w:history="1">' + sub.runs + "</w:hyperlink>";
+return;
+}
 self.inline(c, g, saida);
 });
 };
@@ -11946,6 +11993,7 @@ if (!no) return;
 if (no.tag === "#text") { var t = no.texto.replace(/\s+/g, " ").trim(); if (t) this.corpo.push(paragrafo({ alinha: ctx.alTxt, depois: 120 }, run(t, ctx.f))); return; }
 var tag = no.tag;
 if (temClasse(no, "tp-wm") || temClasse(no, "wm") || temClasse(no, "tp-orn") || temClasse(no, "tp-sombra") || temClasse(no, "no-print") || temClasse(no, "prop-toolbar")) return;
+if (no.attrs && no.attrs.id) this.marcas.pendentes.push(no.attrs.id);
 if (tag === "img") { this.corpo.push(this.imagemBloco(no, ctx)); return; }
 if (tag === "hr" || temClasse(no, "tp-rule")) { this.corpo.push(paragrafo({ bordaBaixo: { cor: ctx.corTitulo || this.cores.titulo, sz: 8 }, depois: 160, antes: 0 }, "")); return; }
 if (tag === "table") { this.tabela(no, ctx); return; }
@@ -11955,7 +12003,7 @@ if (temClasse(no, "tp-cc") || temClasse(no, "tp-full")) { this.capa(no, ctx); re
 var cab = /^h[1-6]$/.test(tag);
 if (cab || tag === "p" || tag === "figcaption" || tag === "li" || (!temBlocoDentro(no) && (no.filhos || []).length)) {
 var p = this.estiloParagrafo(no, ctx), f = this.estiloRun(no, ctx, cab);
-var saida = { runs: "", imagens: [] };
+var saida = { runs: this.tomarMarcas(), imagens: [] };
 this.inline(no, f, saida);
 saida.imagens.forEach(function (im) { self.corpo.push(self.imagemBloco(im, ctx)); });
 if (saida.runs) this.corpo.push(paragrafo(p, saida.runs));
@@ -12025,7 +12073,7 @@ var self = this;
 if (numerada) this.usaNumero = true; else this.usaBullet = true;
 (no.filhos || []).forEach(function (li) {
 if (li.tag !== "li") return;
-var saida = { runs: "", imagens: [] };
+var saida = { runs: self.tomarMarcas() + (li.attrs && li.attrs.id ? self.marcador(li.attrs.id) : ""), imagens: [] };
 self.inline(li, ctx.f, saida);
 self.corpo.push(paragrafo({ numId: numerada ? 2 : 1, alinha: ctx.alTxt, depois: 60 }, saida.runs));
 });
@@ -12104,7 +12152,7 @@ var xml = '<w:tbl><w:tblPr><w:tblW w:w="' + this.largura + '" w:type="dxa"/><w:t
 + '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>';
 larguras.forEach(function (w) { xml += '<w:gridCol w:w="' + w + '"/>'; });
 xml += "</w:tblGrid>";
-var tamanho = (temClasse(no, "tp-cr") || temClasse(no, "tp-gt") || temClasse(no, "tp-ana")) ? 9 : 10;
+var tamanho = (temClasse(no, "tp-cr") || temClasse(no, "tp-gt") || temClasse(no, "tp-ana")) ? 9 : (nCols >= 7 ? 7.5 : (nCols >= 5 ? 8.5 : 10));
 linhas.forEach(function (l) {
 var grupo = temClasse(l.tr, "tp-grupo"), rodape = l.pai === "tfoot";
 xml += "<w:tr>" + (l.pai === "thead" ? "<w:trPr><w:tblHeader/></w:trPr>" : "");
@@ -12117,15 +12165,20 @@ var th = c.tag === "th";
 var fill = th ? corB : (grupo ? "E5E7EB" : (rodape ? "EEF4FA" : ""));
 var f = herda(ctx.f, { tamanho: tamanho, negrito: th || grupo || rodape, cor: th ? "FFFFFF" : ctx.f.cor, caixaAlta: grupo });
 var alinha = (temClasse(c, "tp-num") || temClasse(c, "r") || numerica[col]) ? "right" : (temClasse(c, "tp-cr-c") || temClasse(c, "tp-gt-c") ? "center" : "left");
+if (col === 0 && l.tr.attrs && l.tr.attrs.id) self.marcas.pendentes.push(l.tr.attrs.id);
+if (c.attrs && c.attrs.id) self.marcas.pendentes.push(c.attrs.id);
 var saida = { runs: "", imagens: [] };
 if (temBlocoDentro(c)) {
-var g = new Gerador(self.op); g.cores = self.cores; g.fontes = self.fontes; g.media = self.media; g.rels = self.rels; g.idImg = self.idImg; g.avisos = self.avisos;
+var g = new Gerador(self.op); g.cores = self.cores; g.fontes = self.fontes; g.media = self.media; g.rels = self.rels; g.idImg = self.idImg; g.avisos = self.avisos; g.marcas = self.marcas; g.cacheImg = self.cacheImg = self.cacheImg || {};
 (c.filhos || []).forEach(function (fh) { g.bloco(fh, herda(ctx, { f: f, alTxt: alinha })); });
 self.idImg = g.idImg;
 saida.runs = g.corpo.join("");
 } else {
+saida.runs = self.tomarMarcas();
 self.inline(c, f, saida);
-saida.runs = paragrafo({ alinha: alinha, depois: 0 }, saida.runs);
+var imgsCel = saida.imagens.map(function (im) { return self.imagem(im, Math.max(300, w - 200), 1000, "center"); }).join("");
+saida.runs = (saida.runs || !imgsCel ? paragrafo({ alinha: alinha, depois: 0 }, saida.runs) : "") + imgsCel;
+if (!saida.runs) saida.runs = paragrafo({ depois: 0 }, "");
 }
 xml += '<w:tc><w:tcPr><w:tcW w:w="' + w + '" w:type="dxa"/>' + (sp > 1 ? '<w:gridSpan w:val="' + sp + '"/>' : "")
 + (fill ? '<w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/>' : "") + "<w:vAlign w:val=\"center\"/></w:tcPr>" + saida.runs + "</w:tc>";
@@ -12150,7 +12203,9 @@ achar(raiz);
 var ctx = { f: { fonte: this.fontes.texto, tamanho: 11, cor: this.cores.texto }, alTxt: undefined, alTit: undefined, corTitulo: this.cores.titulo, corTexto: this.cores.texto };
 if (!secoes.length) { (raiz.filhos || []).forEach(function (c) { self.bloco(c, ctx); }); return; }
 secoes.forEach(function (s, i) {
-if (i) self.corpo.push(QUEBRA);
+var segue = temClasse(s, "curta") || temClasse(s, "segue");
+if (segue) { } else if (i) self.corpo.push(QUEBRA);
+if (s.attrs && s.attrs.id) self.marcas.pendentes.push(s.attrs.id);
 var c2 = self.contexto(s, ctx);
 var cheia = temClasse(s, "tp-cheia") || temClasse(s, "capa");
 if (cheia && !(s.filhos || []).some(function (c) { return temClasse(c, "tp-full") || temClasse(c, "tp-cc"); })) {
@@ -12212,7 +12267,7 @@ function relsDoc(g) {
 var s = XMLH + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
 + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
 + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>';
-g.rels.forEach(function (r) { s += '<Relationship Id="' + r.id + '" Type="' + r.tipo + '" Target="' + esc(r.alvo) + '"/>'; });
+g.rels.forEach(function (r) { s += '<Relationship Id="' + r.id + '" Type="' + r.tipo + '" Target="' + esc(r.alvo) + '"' + (r.externo ? ' TargetMode="External"' : "") + "/>"; });
 return s + "</Relationships>";
 }
 function coreXml(op) {
@@ -12231,6 +12286,7 @@ Docx.deHtml = function (html, op) {
 op = op || {};
 var g = new Gerador(op);
 g.documento(Docx.arvore(html));
+if (g.marcas.pendentes.length) g.corpo.push(paragrafo({ depois: 0 }, g.tomarMarcas()));
 var corpo = g.corpo.join("");
 if (!corpo) corpo = paragrafo({}, run("(documento vazio)", g.fontes.texto ? { fonte: g.fontes.texto } : {}));
 var sectPr = '<w:sectPr><w:pgSz w:w="' + g.pg.w + '" w:h="' + g.pg.h + '"/><w:pgMar w:top="' + g.pg.mt + '" w:right="' + g.pg.mr + '" w:bottom="' + g.pg.mb + '" w:left="' + g.pg.ml + '" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr>';

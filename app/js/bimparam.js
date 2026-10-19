@@ -1060,8 +1060,9 @@
     tubo: {
       nome: "Tubulação", ifc: "IFCPIPESEGMENT", inventario: "tubo", familia: null, prefixo: null, comum: false, mep: true,
       defs: [
-        P(I, "Restrições", "Elevação central do início", "RBS_START_OFFSET_PARAM", "comprimento", { calc: "mepElevIni", casas: 3 }),
-        P(I, "Restrições", "Elevação central de término", "RBS_END_OFFSET_PARAM", "comprimento", { calc: "mepElevFim", casas: 3 }),
+        /* DESLOCAMENTO INICIAL/FINAL (17/10/2026): a cota de cada ponta se edita; as pontas ligadas nela vão junto */
+        P(I, "Restrições", "Elevação central do início", "RBS_START_OFFSET_PARAM", "comprimento", { calc: "mepElevIni", casas: 3, escrita: "instCota.p1", leitura: false }),
+        P(I, "Restrições", "Elevação central de término", "RBS_END_OFFSET_PARAM", "comprimento", { calc: "mepElevFim", casas: 3, escrita: "instCota.p2", leitura: false }),
         P(I, "Restrições", "Inclinação", "RBS_PIPE_SLOPE", "inclinacao", { calc: "mepInclinacao", casas: 2 }),
         P(I, "Mecânica", "Classificação do sistema", "RBS_SYSTEM_CLASSIFICATION_PARAM", "texto", { calc: "mepSistema" }),
         P(I, "Mecânica", "Tipo de sistema", "RBS_PIPING_SYSTEM_TYPE_PARAM", "texto", { calc: "mepTipoSistema" }),
@@ -1086,7 +1087,9 @@
         P(I, "Mecânica", "Nome do sistema", "RBS_SYSTEM_NAME_PARAM", "texto", { calc: "mepNomeSistema" }),
         P(I, "Mecânica", "Abreviatura do sistema", "RBS_DUCT_PIPE_SYSTEM_ABBREVIATION_PARAM", "texto", { calc: "mepAbrev" }),
         P(I, "Cotas", "Angle", "RA_MEP_ANGULO", "angulo", { calc: "mepAngulo", revit: { bip: null, nome: "Angle" } }),
-        P(I, "Cotas", "Nominal Diameter", "RA_MEP_DN_NOMINAL", "inteiro", { calc: "mepDn", un: "mm", revit: { bip: null, nome: "Nominal Diameter" } }),
+        /* TROCAR O DN EM UM CLIQUE (17/10/2026): a conexão se edita — troca os trechos ligados nela (js/biminst.js trocarDn).
+           Mesmo id do Diâmetro do tubo: na seleção de tubos E conexões ele aparece no "Comum" e troca tudo junto. */
+        P(I, "Cotas", "Diâmetro nominal", "RBS_PIPE_DIAMETER_PARAM", "inteiro", { calc: "mepDn", un: "mm", escrita: "instAlterar.dn", leitura: false, revit: { bip: null, nome: "Nominal Diameter" } }),
         P(I, "Cotas", "Tamanho", "RBS_CALCULATED_SIZE", "texto", { calc: "mepTamanho" }),
         P(I, "Dados de identidade", "Conexão", "RA_MEP_CONEXAO", "texto", { calc: "mepTipoConexao" }),
         P(I, "Dados de identidade", "Trechos", "RA_MEP_TRECHOS", "texto", { calc: "mepTrechos" }),

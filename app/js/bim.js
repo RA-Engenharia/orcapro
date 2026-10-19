@@ -1897,6 +1897,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return r;
   }
   S._caixaCorte = caixaCorteMain;
+  /* 3D DO AMBIENTE (hidrossanitário, 18/10/2026): a caixa de corte JUSTA num cômodo (min/max em m) e a câmera isométrica */
+  S._caixaCorteEm = function (min, max, iso) {
+    if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false);
+    var b = new THREE.Box3(_V3(+min[0], +min[1], +min[2]), _V3(+max[0], +max[1], +max[2])), r = cxMain.ligar(true, b);
+    if (S.opts && S.opts.onCaixaCorte) try { S.opts.onCaixaCorte(r); } catch (_) {}
+    if (r && iso) { var c = b.getCenter(_V3(0, 0, 0)), d = b.getSize(_V3(0, 0, 0)).length(); voarCam(_V3(c.x + d * iso[0], c.y + d * iso[1], c.z + d * iso[2]), c, 0.6); }
+    return r;
+  };
   S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
   /* grade do chão liga/desliga (fita Vista › Exibir › Grade, tecla G) — cara nova, 07/10/2026 */
   S._grade = function (on) { if (on != null) grid.visible = !!on; return grid.visible; };
@@ -3135,6 +3143,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (repetido) continue; // OBJETOS distintos (canto parede×viga×laje)
       _ultimosHits.push(hits[hh]);
     }
+    /* VISTA INSTALAÇÕES (QUALIDADE VISUAL 2): parede, piso e laje são FUNDO translúcido — o clique pega o tubo que se vê
+       através deles (antes o 1º clique pegava o piso por cima do esgoto e parecia preciso clicar de novo) */
+    if (S._vistaInstOn && S._vistaInstOn() && S._vistaInstFundo && _ultimosHits.length > 1) {
+      var frente = _ultimosHits.filter(function (h) { return !S._vistaInstFundo(h.object); });
+      if (frente.length) _ultimosHits = frente.concat(_ultimosHits.filter(function (h) { return S._vistaInstFundo(h.object); }));
+    }
     return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
@@ -3444,6 +3458,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return { x: p.x, y: p.y, z: p.z, sup: sup };
     });
   }
+  /* NÍVEL AUTOMÁTICO (js/hidnivel.js): o topo do IfcSlab/IfcCovering IMPORTADO sob o ponto (x, z do editor), raio de cima
+     para baixo a partir de yTopo — só as malhas do IFC (não as do editor), visíveis. → { y, tipo, uid } | null */
+  var _raioPisoIfc = new THREE.Raycaster();
+  S._pisoIfcEm = function (x, z, yTopo) {
+    if (!modelRoot) return null;
+    modelRoot.updateMatrixWorld(true);
+    var alvos = []; cadaMalha(function (m) { var u = m.userData || {}; if (m.isMesh && u.mid !== 'edit' && (u.tipo === 'IFCSLAB' || u.tipo === 'IFCCOVERING')) alvos.push(m); });
+    if (!alvos.length) return null;
+    var o = new THREE.Vector3(+x, +yTopo, +z).applyMatrix4(modelRoot.matrixWorld), dir = new THREE.Vector3(0, -1, 0).transformDirection(modelRoot.matrixWorld), inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert();
+    _raioPisoIfc.set(o, dir); _raioPisoIfc.far = 1e4; _raioPisoIfc.layers.mask = ray.layers.mask;   // a camada do clique (o agregado põe as peças na 1)
+    var hs = _raioPisoIfc.intersectObjects(alvos, false);
+    for (var i = 0; i < hs.length; i++) { if (!cadeiaVisivel(hs[i].object)) continue; var pl = hs[i].point.clone().applyMatrix4(inv), ud = hs[i].object.userData; return { y: pl.y, tipo: ud.tipo, uid: (ud.mid != null ? ud.mid : S.modelID) + ':' + ud.expressID }; }
+    return null;
+  };
   /* o equipamento na cena. c = { tipo, pos (centro de giro, motor), rumo_graus (eixo do caminhão),
        patolas:[long, lat], comp, larg, gancho (motor), pontos:[motor], cg, raio, alcanceMax, isolamento,
        alturaPe, pontaGancho, rotulo, rotulos:[{p, txt}] } */
@@ -4984,7 +5012,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     mo._agreg = { grupo: grupo, partes: partes, origem: origem, assinatura: null };
 
     /* as pecas saem da camera, mas continuam no raio e no bbox */
-    for (var q = 0; q < mo.grupo.children.length; q++) if (mo.grupo.children[q].isMesh) mo.grupo.children[q].layers.set(1);
+    /* ⚠ SÓ A PEÇA QUE ENTROU NO MESCLADO sai da câmera. A malha SEM ÍNDICE (família importada .opfam: faces planas,
+       toNonIndexed no famMalhas) fica fora do BimAgreg; com set(1) ela sumia da tela e continuava "visível" para o
+       código (17/10/2026: as conexões Tigre/DarivaBIM da Biblioteca do escritório no trecho de esgoto, invisíveis).
+       Fora do mesclado: camada 0 (desenha) + 1 (o raio a vê). */
+    var fundidos = {}; insts.forEach(function (x) { fundidos[x.g] = 1; });
+    for (var q = 0; q < mo.grupo.children.length; q++) { var cq = mo.grupo.children[q]; if (!cq.isMesh) continue; if (fundidos[cq.uuid]) cq.layers.set(1); else cq.layers.enable(1); }
     /* ⚠ o mesclado é REFEITO sozinho (o raio-X suspende e devolve): sem isto,
        a volta do raio-X traria os buckets sem textura com o modo ligado */
     if (TEXR.on) texVestirAgreg(mo._agreg);
@@ -5091,7 +5124,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      ASSADA nos vértices: mexer na malha de origem não move nada na tela. Fora
      do mesclado, a peça desenha por si — com a matriz dela — enquanto não
      estiver fechada; fechou, volta para o buffer (js/bimabrir.js). */
-  function _desenhaPorSi(m) { return !!(m && (_ehRealce(m.material) || (m.userData && m.userData._solta))); }
+  function _desenhaPorSi(m) { return !!(m && (_ehRealce(m.material) || (m.userData && (m.userData._solta || m.userData.famPremium)))); }   /* famPremium: louça/metal com material de verdade (QUALIDADE VISUAL 3) — o mesclado só tem cor por vértice */
 
   /* a peça está desenhada com um material que LEVA a textura? O dela mesmo
      (vestido no lugar) ou o clone da transparência do modelo (o clone copia o
@@ -6104,6 +6137,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* 🔍 com a lupa aberta o dedo move a MIRA, e mais nada acontece neste
        handler: nem preview de parede, nem o hover normal do snap. */
     if (S._lupaMover && S._lupaMover(e)) return;
+    if (S._colocar) S._colocar.mover(e);   /* COLOCAÇÃO (js/biminstcolocar.js): a peça translúcida segue o cursor antes do clique */
     if (S._p2d && S._p2d.mover(e)) return;   /* P2-D: o realce da região do Ambiente antes do clique (js/bimambienteui.js) */
     if (S._p3) S._p3.mover(e);   /* P3: a linha de prévia do telhado/fundação (js/bimp3ui.js) — os snaps seguem */
     if (S._cot && S._cot.mover(e)) return;   /* COTAS: a ferramenta de cota no 3D — encaixe, prévia elástica e o valor antes do clique (js/bimcotasui.js) */
@@ -6152,9 +6186,33 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._aoClicarPeca || S._aoMarcarPonto || S._aoTocar) return false;
     return !(fly.on || (xr && xr.on));
   }
+  /* FLUIDEZ (17/10/2026): A PEÇA DE INSTALAÇÃO SELECIONADA (tubo, conexão, caixa, acessório). O desenho de precisão
+     só guarda parede, família, cobertura, cota e anotação (BimPrecisao.tipoNoEstado): com o modelador, clicar num tubo
+     mostrava as Propriedades mas a seleção ficava VAZIA — sem realce no 3D nem na planta, e o Ctrl/Delete sem alvo.
+     Ela mora aqui: o realce é uma cópia da malha que JÁ existe (a mesma geometria, sem calcular arestas) com UM
+     material de realce criado uma vez (sem recompilar shader a cada clique); volta depois de cada reconstrução. */
+  var selInst = [], selInstGrp = new THREE.Group(), selInstMat = null, selInstLin = null;
+  selInstGrp.userData.marcador = true; scene.add(selInstGrp);
+  function ehInstUid(u) { try { return !!(window.BimInstUI && BimInstUI.ehInst && BimInstUI.ehInst(u)); } catch (_) { return false; } }
+  function realcarInst() {
+    while (selInstGrp.children.length) selInstGrp.remove(selInstGrp.children[0]);
+    var mo = edit.modelo; if (!selInst.length || !mo) return;
+    if (!selInstMat) { selInstMat = new THREE.MeshBasicMaterial({ color: 0x2effa0, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); selInstLin = new THREE.LineBasicMaterial({ color: 0x2effa0, depthTest: false, transparent: true, opacity: 0.95 }); }
+    var s = {}; selInst.forEach(function (u) { s[u.slice(5)] = 1; });
+    mo.grupo.children.forEach(function (m) {
+      var ud = m.userData || {}; if (!s[ud.expressID] || !m.geometry || ud.marcador) return;
+      var c = m.isLineSegments ? new THREE.LineSegments(m.geometry, selInstLin) : (m.isLine ? new THREE.Line(m.geometry, selInstLin) : (m.isMesh ? new THREE.Mesh(m.geometry, selInstMat) : null));
+      if (!c) return;
+      c.matrixAutoUpdate = false; c.matrix.copy(m.matrixWorld); c.renderOrder = 999; c.raycast = function () {}; c.userData.marcador = true; c.frustumCulled = m.frustumCulled;
+      selInstGrp.add(c);
+    });
+  }
+  S._selInstContar = function () { return selInstGrp.children.length; };   /* e2e: quantas malhas de realce */
+  S._selInstRefazer = function () { var vivos = selInst.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); }); selInst = vivos; realcarInst(); };
   function selAtual() {
     var r = [];
     try { if (S._prec && S._prec.api) S._prec.api.selecao().forEach(function (id) { r.push('edit:' + id); }); } catch (_) {}
+    selInst.forEach(function (u) { if (r.indexOf(u) < 0) r.push(u); });
     var u = S.selected ? uidDeMalha(S.selected) : null; if (u && r.indexOf(u) < 0) r.push(u);
     return r;
   }
@@ -6163,9 +6221,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
     novo = novo.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); });
     var mod = modeladorOn() && S._prec && S._prec.api;
-    var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u); }).map(function (u) { return u.slice(5); }) : [];
+    var insts = mod ? novo.filter(function (u) { return /^edit:/.test(u) && ehInstUid(u); }) : [];   /* FLUIDEZ: tubo/peça de instalação */
+    var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u) && insts.indexOf(u) < 0; }).map(function (u) { return u.slice(5); }) : [];
     var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
-    if (mod) { if (eds.length && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
+    selInst = insts; realcarInst();
+    if (mod) { if ((eds.length || insts.length) && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
     if (S._limparRaioX) S._limparRaioX();
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
     contornoSelecao(null);
@@ -6177,6 +6237,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
     try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
     try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}   /* M5: as alças do componente */
+    try { if (window.BimVaoArr && BimVaoArr.aoSelecionar) BimVaoArr.aoSelecionar(novo); } catch (_) {}   /* PORTAS E JANELAS (js/bimvaoarr.js): as cotas temporárias da abertura selecionada */
+    try { if (window.BimInstCon && BimInstCon.aoSelecionar) BimInstCon.aoSelecionar(novo); } catch (_) {}   /* CONECTORES À VISTA (js/biminstcon.js): o "+" de cada ponto livre da peça de instalação */
     return novo;
   }
   S._selAplicar = selAplicar; S._selAtual = selAtual;
@@ -6210,6 +6272,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._compExp = compExp;
   function sel3Clique(e) {
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
+    /* FLUIDEZ (rodada 3): no nível Baixo a caixa e o ralo são um CONTORNO fino e o tubo uma linha — o raio passava pelo
+       miolo do símbolo e não pegava nada. Sem peça sob o cursor, vale a instalação mais perto NA TELA (poucos px). */
+    if (!u && window.BimInstUI && BimInstUI.pickTela) { try { u = BimInstUI.pickTela(e.clientX, e.clientY) || null; if (u && !(S.meshPorUid && S.meshPorUid[u])) u = null; } catch (_) { u = null; } }
     if (u) selAplicar(compExp(u), ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
   }
   S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
@@ -6255,7 +6320,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var SL = SLx(); if (!SL || SL.mao() || !semFerramenta3d()) return;
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), mod = modeladorOn() && !!S._prec;
     var a = SL.acao({ botao: 0, vista: '3d', alvo: u ? 'peca' : 'vazio', editavel: !!(u && /^edit:/.test(u)), modelador: mod, ctrl: !!(e.ctrlKey || e.metaKey), shift: e.shiftKey });
-    sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType };
+    sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null };
   });
   canvasEl.addEventListener('pointermove', function (e) {
     var s = sel3; if (!s || e.pointerId !== s.id) return;
@@ -6264,6 +6329,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (!SL.arrastou({ x: s.x, y: s.y }, { x: e.clientX, y: e.clientY })) return;
       s.modo = 'nada';
       if (s.acao === 'janela') s.modo = 'janela';
+      else if (s.acao === 'peca-mover' && s.u && !s.ctrl && window.BimVaoArr && BimVaoArr.pode && BimVaoArr.pode(s.u)) {
+        /* PORTAS E JANELAS (js/bimvaoarr.js): a abertura desliza na parede (projetada no plano dela), com as cotas */
+        if (BimVaoArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y })) s.modo = 'vao';
+      }
+      else if ((s.acao === 'peca-mover' || s.acao === 'peca') && s.u && !s.ctrl && window.BimInstArr && BimInstArr.pode && BimInstArr.pode(s.u)) {
+        /* ARRASTAR O TUBO (js/biminstarr.js): tubo, conexão ou caixa das instalações — a rede acompanha */
+        if (BimInstArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y }, s.hp)) s.modo = 'inst';
+      }
       else if (s.acao === 'peca-mover') {
         if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');   /* M5: arrastar uma peça de peça pronta move o componente inteiro */
         if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
@@ -6271,6 +6344,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
     }
     if (s.modo === 'mover') S._prec.arrastoMover(e);
+    else if (s.modo === 'inst') BimInstArr.mover(e);
+    else if (s.modo === 'vao') BimVaoArr.mover(e);
     else if (s.modo === 'janela') selRetDesenhar(s, e);
   });
   function selRetDesenhar(s, e) {
@@ -6315,14 +6390,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try { canvasEl.releasePointerCapture(e.pointerId); } catch (_) {}
     if (!s.modo) { sel3Clique(e); return true; }
     if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(e); marcarFechamento(); return true; }
+    if (s.modo === 'inst') { if (window.BimInstArr) BimInstArr.soltar(e); marcarFechamento(); return true; }
+    if (s.modo === 'vao') { if (window.BimVaoArr) BimVaoArr.soltar(e); marcarFechamento(); return true; }
     if (s.modo === 'janela') {
       var ids = janela3d(s, e);
       selAplicar(ids, s.ctrl ? 'somar' : 'trocar');
+      try { if (window.BimInstJanela && BimInstJanela.aposJanela) BimInstJanela.aposJanela(ids, '3d'); } catch (eJ) {}   /* item 8: a oferta do 3D do ambiente (prévia hidro, js/biminstjanela.js) */
       S._hint(ids.length ? ids.length + ' peça(s) selecionada(s) pela janela (' + (SLx().modoJanela(s.x, e.clientX) === 'dentro' ? 'só o que está inteiro dentro' : 'o que a janela toca') + ').' : 'A janela não pegou nenhuma peça do modelo.');
     }
     return true;
   };
-  canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); sel3 = null; selRetTirar(); });
+  canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); });
   /* Esc limpa a seleção (e cancela o arrasto); Delete apaga a do editor. Na CAPTURA da JANELA: roda antes
      do Esc do desenho de precisão e do Esc de sempre (que fecharia o editor) — e só para a tecla quando a
      usou. Digitando num campo, ou com ferramenta armada, segue o caminho de sempre. */
@@ -6337,7 +6415,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return;
     var SL = SLx();
     if (k === 'Escape') {
-      if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
+      if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
       if (SL && SL.arrastando && SL.arrastando()) { SL.cancelar(); e.preventDefault(); e.stopPropagation(); return; }
       if (!semFerramenta3d() || (SL && SL.ferramenta2d && SL.ferramenta2d()) || (edit.on && edit.p1)) return;
       if (!selAtual().length) return;
@@ -8393,9 +8471,30 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
   // cache de arestas por geometria (espaço LOCAL); WeakMap → some junto com a geometria no GC
   var arestasCache = new WeakMap();
+  /* FLUIDEZ (17/10/2026): cada op refaz as malhas do editor (parede, louça) — a geometria é OUTRA, com o mesmo conteúdo,
+     e o 2D recalculava as arestas de todas a cada troca de DN (EdgesGeometry era ~170 ms do redesenho da planta). Agora,
+     além da geometria, as arestas se guardam pelo CONTEÚDO (os bits das posições e os índices): conteúdo igual = mesmas
+     arestas (são do espaço local da malha). No máximo 6000 conteúdos (os mais antigos saem). */
+  var arestasConteudo = new Map();
+  function chaveConteudo(geo) {
+    var pa = geo.attributes && geo.attributes.position; if (!pa || !pa.array || !pa.array.buffer) return null;
+    var a = pa.array, v = a.BYTES_PER_ELEMENT === 4 ? new Int32Array(a.buffer, a.byteOffset, a.length) : null; if (!v) return null;
+    var h1 = 0x811c9dc5, h2 = 0x9e3779b9, i, ix = geo.index ? geo.index.array : null;
+    for (i = 0; i < v.length; i++) { h1 = Math.imul(h1 ^ v[i], 0x01000193); h2 = Math.imul(h2 + v[i], 0x85ebca6b) ^ (h2 >>> 13); }
+    if (ix) for (i = 0; i < ix.length; i++) { h1 = Math.imul(h1 ^ ix[i], 0x01000193); h2 = Math.imul(h2 + ix[i], 0x85ebca6b) ^ (h2 >>> 13); }
+    return v.length + ":" + (ix ? ix.length : -1) + ":" + (h1 >>> 0).toString(36) + ":" + (h2 >>> 0).toString(36);
+  }
   function arestasDe(geo) {
     var c = arestasCache.get(geo);
-    if (!c) { try { var e = new THREE.EdgesGeometry(geo, 25); c = e.attributes.position.array.slice(); e.dispose(); } catch (_) { c = new Float32Array(0); } arestasCache.set(geo, c); }
+    if (!c) {
+      var k = null; try { k = chaveConteudo(geo); } catch (_) { k = null; }
+      c = k ? arestasConteudo.get(k) : null;
+      if (!c) {
+        try { var e = new THREE.EdgesGeometry(geo, 25); c = e.attributes.position.array.slice(); e.dispose(); } catch (_) { c = new Float32Array(0); }
+        if (k) { arestasConteudo.set(k, c); if (arestasConteudo.size > 6000) { var it = arestasConteudo.keys(); for (var n = 0; n < 1000; n++) arestasConteudo.delete(it.next().value); } }
+      }
+      arestasCache.set(geo, c);
+    }
     return c;
   }
   S._arestasDe = arestasDe; // reusado pelo corte técnico (linhas pretas do desenho)
@@ -9036,6 +9135,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // série de escalas padrão de arquitetura (denominadores que existem em escalímetro)
   var SERIE_ESC = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500];
   function gerarCorteTec(o) {
+    if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {ax,az,bx,bz, escala, tipo:'corte'|'fachada', prof, inv} — coords do MUNDO (metros)
     var box = new THREE.Box3().setFromObject(modelRoot);
     if (box.isEmpty()) return null;
@@ -9351,6 +9451,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
 
   function gerarPlantaTec(o) {
+    if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {y (altura do corte no MUNDO, metros), escala, cotas, prof, rotAlt}
     var box = new THREE.Box3().setFromObject(modelRoot);
     if (box.isEmpty()) return null;
@@ -9579,6 +9680,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    *   resultado é o mesmo com e sem a mescla. Tudo volta no finally.
    * ===================================================================== */
   function vista2d(def) {
+    if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     def = def || {};
     var box = new THREE.Box3().setFromObject(modelRoot);
@@ -9589,6 +9691,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        ao da planta); p6Ocultar(userData) = V/G da vista (sai do corte, das arestas e
        do passe de profundidade); p6Tag = cada contorno/aresta leva tipo e uid da peça */
     var p6Forro = def.tipo === 'forro', p6Oc = typeof def.p6Ocultar === 'function' ? def.p6Ocultar : null, p6Tag = !!def.p6Tag, linhasUd = [];
+    /* NÍVEL DE DETALHE das instalações nesta vista 2D (js/biminstnivel.js): def.nivelInst (o da vista, js/bimmodelovista.js)
+       ou o padrão do tipo (planta e corte = Médio). Abaixo do Alto, o tubo SÓLIDO e a linha do 3D saem do corte e entram
+       os segmentos unifilares em vetor (os mesmos símbolos do 3D), com a pena e a cor do sistema. ⚠ A vista 2D lê a
+       cena: se a cena 3D está num nível MAIS simples (ex.: Baixo), as peças sólidas não existem nela — a vista desenha
+       no nível da cena e diz isso em info.nivelInst (pedido × usado). */
+    var NVi = window.BimInstNivel, instVet = null;
+    /* P8 (junção 18/10/2026): o vetor do nível de detalhe só com a prévia hidro — sem ela a planta das instalações é a do master */
+    if (NVi && !p6Forro && !def._soInst && edit && edit.estado && edit.estado.instalacoes && window.BimInst && !(window.BimInstUI && BimInstUI._previaHidro && !BimInstUI._previaHidro())) {
+      var ndPed = NVi.norm(def.nivelInst, NVi.padraoVista(def.tipo === 'corte' ? 'corte' : 'planta'));
+      var ndCena = (window.BimInstUI && BimInstUI._nivelFeito) || 'alto';
+      var ndUsa = NVi.ORDEM[Math.min(NVi.ORDEM.indexOf(ndPed), NVi.ORDEM.indexOf(NVi.norm(ndCena, 'alto')))];
+      /* ⚠ em TODOS os níveis (o Alto também): a instalação não sai do passe da arquitetura — ela vem do passe só dela
+         (abaixo, sem a laje e o piso tampando o esgoto) e do vetor unifilar. A camada antiga de bolinhas por conexão
+         (js/bim2dui.js, BimInst.planta) sai junto: em 17/10/2026 o Rogério não sabia "o que são esses pontos". */
+      instVet = { pedido: ndPed, usado: ndUsa, linhas: 0, solidos: 0 };
+    }
     var dir, upv, O, plano, camPos, near = 0.4, far, sFn;
     if (p6Forro) {
       var hF = +def.yCorte, topoF = (def.yTopo != null) ? +def.yTopo : box.max.y + 0.01;
@@ -9712,6 +9830,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       (g.children || []).forEach(function (m) {
         if (!m.isMesh || !m.geometry || !cadeiaVisivel(m)) return;
         if (p6Oc && p6Oc(m.userData || {})) return;   /* P6: V/G */
+        if (instVet) {   /* NÍVEL: a instalação (tubo, conexão, peça, louça, a linha do 3D) vem do passe dela e do vetor (abaixo) */
+          var udI = m.userData || {};
+          if (udI.instUnif || udI.instPapel || udI.instFam) return;
+        }
         /* PORTA (js/simboloporta.js): na planta a porta vale pelo SÍMBOLO (folha aberta + arco) —
            a folha FECHADA da porta nativa sai do corte; a porta do IFC aberto é juntada por peça
            (uma porta tem várias malhas) e o símbolo sai do eixo dela, depois do laço */
@@ -9863,15 +9985,183 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       } catch (eU) { uniaoInfo = { erro: String(eU && eU.message || eU) }; }
     }
     cortes.forEach(function (c) { delete c._pid; });
+    /* NÍVEL DE DETALHE: os segmentos unifilares das instalações (tubo, símbolo, contorno) em vetor — ⚠ DEPOIS da união
+       de paredes: ela apaga as arestas que caem dentro do corte da parede, e o tubo EMBUTIDO mora justamente lá. Planta: do fundo
+       da vista até o topo (o nível de cima, ou 2 m acima do corte) — o barrilete e o ramal no alto da parede também
+       são da planta de instalações; corte: o que está na frente do plano, até a profundidade. */
+    if (instVet) {
+      try {
+        /* BAIXO: o unifilar com os símbolos. MÉDIO e ALTO: a APRESENTAÇÃO DE PRANCHA (js/biminstnivel.js formas) — tubo
+           preenchido na cor do sistema com contorno preto, conexão e caixa BRANCAS com contorno, prumada por cima; os
+           polígonos entram como corte de instalação (polysI) e as linhas pretas da bolsa, do anel e da grade, como aresta */
+        var Rr = BimInst.rede(edit.estado, famAval), segsI = [], polysI = [];
+        /* PARIDADE (18/10/2026, bancada contra a referência): no MÉDIO a planta/corte é LINHA ÚNICA com os símbolos das
+           conexões (a referência desenha o tubo em linha e a conexão em símbolo no Médio; o preenchimento é do Fino/Alto),
+           na cor de CONTORNO do sistema do padrão (esgoto preto, água fria azul) — o Baixo continua na cor do sistema */
+        if (instVet.usado === 'baixo' || instVet.usado === 'medio') segsI = NVi.unifilar(Rr, 'baixo', { escala: +def.escalaInst || NVi.ESCALA_PADRAO, corContorno: instVet.usado === 'medio' }).segs.slice();
+        /* MÉDIO: a CAIXA SIFONADA e o RALO saem como no Alto (contorno de planta e grelha, preenchidos e selecionáveis) — no
+           unifilar eram só um círculo fino e o clique na caixa "caía no papel" (e2e-hid-conectores, 18/10/2026) */
+        if (instVet.usado === 'medio') {
+          var HGm = window.HidGeo || null, Fmd = NVi.formas(Rr, 'alto', [dir.x, dir.y, dir.z], {
+            cotasCx: function (m, t, dn) { try { return HGm ? HGm.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
+            cotasTubo: function (m, dn) { try { return HGm ? HGm.cotasTubo(m, dn) : null; } catch (e) { return null; } } });
+          var pecaId = {}; Fmd.polys.forEach(function (pg) { if (pg.papel === 'caixa') { polysI.push(pg); pecaId[pg.id] = 1; } });
+          Fmd.segs.forEach(function (q) { if (q.papel === 'grade' && pecaId[q.id]) segsI.push(q); });
+          segsI = segsI.filter(function (q) { return !(q.papel === 'contorno' && pecaId[q.id]); });
+        }
+        else {
+          var HG = window.HidGeo || null;
+          var Fm = NVi.formas(Rr, instVet.usado, [dir.x, dir.y, dir.z], {
+            cotasCx: function (m, t, dn) { try { return HG ? HG.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
+            cotasTubo: function (m, dn) { try { return HG ? HG.cotasTubo(m, dn) : null; } catch (e) { return null; } }
+          });
+          /* PARIDADE (18/10/2026, alvo = a planta Fina da referência): no ALTO o desenho do tubo, da conexão e da peça é a
+             VISTA ORTOGRÁFICA DA PRÓPRIA CENA 3D (js/biminstsombra.js: raster sombreado + arestas em vetor, abaixo); as
+             formas desenhadas à mão ficam só como ALVO DO CLIQUE (invisíveis) e a marca da prumada continua por cima */
+          if (window.HidSombra && HidSombra.ligada !== false && def.instSombra !== false) {
+            instVet.sombra = { cor: (def.instCor || (window.BimInstUI && BimInstUI.modoCor)) === 'sistema' ? 'sistema' : 'neutro' };   /* a cor por sistema é o MODO DE VISTA (o mesmo do 3D); a prova é neutra */
+            Fm.segs.forEach(function (q) { if (q.papel === 'prumada') segsI.push(q); });
+            polysI = Fm.polys.map(function (pg) { if (pg.papel === 'prumada') return pg; var q = {}; Object.keys(pg).forEach(function (kq) { q[kq] = pg[kq]; }); q.oculto = true; return q; });
+          } else {
+            Fm.segs.forEach(function (q) { segsI.push(q); });
+            polysI = Fm.polys;
+          }
+        }
+        var sisDe = {};
+        ['trechos', 'conexoes', 'pecas', 'acessorios'].forEach(function (g) { (Rr[g] || []).forEach(function (x) { if (x && x.id != null && x.sistema) sisDe['edit:' + x.id] = x.sistema; }); });
+        /* O FILTRO DO SISTEMA ESCONDE A REDE INTEIRA (bancada 18/10/2026: na planta de esgoto as conexões e o registro da
+           água fria sobravam como quadradinhos — a conexão e o acessório deduzidos não são elementos do filtro): o que
+           tem sistema some quando um trecho do mesmo sistema está escondido pelo V/G da vista */
+        var trDoSis = {}; (Rr.trechos || []).forEach(function (tr) { if (tr && tr.sistema && !trDoSis[tr.sistema]) trDoSis[tr.sistema] = tr.id; });
+        var sisOculto = {}, ocultoSis = function (sis) {
+          if (!p6Oc || !sis || !trDoSis[sis]) return false;
+          if (sisOculto[sis] == null) sisOculto[sis] = !!p6Oc({ tipo: 'IFCPIPESEGMENT', mid: 'edit', expressID: trDoSis[sis] });
+          return sisOculto[sis];
+        };
+        if (instVet.usado === 'baixo') (edit.estado.familias || []).forEach(function (fi) {
+          var fam = famReg.lista[fi.famId], cls = fam ? NVi.classeDaCategoria(fam.categoria) : null; if (!cls) return;
+          var av = famAval(fi.famId, fi.tipoId, fi.inst); if (!av || !av.caixa) return;
+          NVi.contornoFamilia(av.caixa, fi, { id: fi.id, louca: cls === 'aparelho', ifc: FAM_IFC[fam.categoria] || 'IFCFLOWTERMINAL' }).forEach(function (q) { segsI.push(q); });
+        });
+        /* ⚠ +0,8 m abaixo do fundo da vista na planta: o esgoto e o pluvial correm sob o piso (no enchimento da laje
+           rebaixada) e SÃO da planta do pavimento — a mesma faixa da camada de instalações do js/bim2dui.js */
+        /* o topo: o nível de cima (ACIMA DO CORTE) quando ele está de fato acima (≥ 1,5 m do corte); senão 3 m acima do
+           corte — o barrilete e o ramal no forro são da planta do pavimento (a mesma faixa da camada do js/bim2dui.js) */
+        var topoI = (acimaTopo != null && acimaTopo >= +def.yCorte + 1.5) ? acimaTopo : +def.yCorte + 3.0;
+        var loI = planta ? (+def.yCorte - topoI) : 0, hiI = far - 0.5 + (planta ? 0.8 : 0);
+        instVet.faixa = planta ? [Math.round((+def.yCorte - hiI) * 1000) / 1000, Math.round(topoI * 1000) / 1000] : [0, Math.round(hiI * 1000) / 1000];
+        var fI = function (p) { return sFn(p[0], p[1], p[2]); };
+        segsI.forEach(function (q) {
+          if (p6Oc && (p6Oc({ tipo: q.ifc || 'IFCPIPESEGMENT', mid: 'edit', expressID: q.id }) || ocultoSis(q.sistema))) return;   /* V/G da vista vale para o vetor também */
+          var rc = NVi.recortar(q.a, q.b, fI, loI, hiI); if (!rc) return;
+          var x1 = telaX(rc[0][0], rc[0][1], rc[0][2]), y1 = telaY(rc[0][0], rc[0][1], rc[0][2]), x2 = telaX(rc[1][0], rc[1][1], rc[1][2]), y2 = telaY(rc[1][0], rc[1][1], rc[1][2]);
+          if (Math.abs(x2 - x1) + Math.abs(y2 - y1) < 1e-6) return;   /* o tubo vertical na planta: vale a marca da prumada */
+          linhas.push([x1, y1, x2, y2]); linhasIfc.push(q.ifc || 'IFCPIPESEGMENT'); instVet.linhas++;
+          if (p6Tag) { var es = NVi.estiloSeg(q); linhasUd.push({ t: q.ifc || 'IFCPIPESEGMENT', u: 'edit:' + q.id, inst: { k: es.k, pena: es.pena, cor: es.cor, padrao: es.padrao } }); }
+        });
+        /* os polígonos preenchidos (tubo, conexão, caixa, prumada): dentro da faixa pelo CENTRO; o preenchimento sólido
+           na cor da apresentação e o contorno preto fino (pena 2) */
+        polysI.forEach(function (pg) {
+          if (p6Oc && (p6Oc({ tipo: pg.ifc || 'IFCPIPESEGMENT', mid: 'edit', expressID: pg.id }) || ocultoSis(pg.sistema))) return;
+          var cxp = [0, 0, 0]; pg.pts.forEach(function (q) { cxp[0] += q[0] / pg.pts.length; cxp[1] += q[1] / pg.pts.length; cxp[2] += q[2] / pg.pts.length; });
+          var fc = fI(cxp); if (fc < loI - 1e-6 || fc > hiI + 1e-6) return;
+          var c2 = { pts: pg.pts.map(function (q) { return [telaX(q[0], q[1], q[2]), telaY(q[0], q[1], q[2])]; }), fechado: true,
+                     /* contorno na pena 4 (~0,2 mm a 1:50, como a referência; a pena 2 dava 0,11) e as faixas de luz do
+                        tubo sombreado sem contorno (o traço na cor da própria faixa) */
+                     inst: pg.oculto ? { k: 'p0alvo', pena: 1, cor: '#000000', padrao: 'continua', oculto: true }
+                       : { k: pg.k, pena: pg.semContorno ? 1 : 4, cor: pg.semContorno ? pg.preenchCor : '#000000', padrao: 'continua', preench: 'solido', corPreench: pg.preenchCor } };
+          if (p6Tag) { c2.t = pg.ifc || 'IFCPIPESEGMENT'; c2.u = 'edit:' + pg.id; }
+          cortes.push(c2); instVet.solidos++;
+        });
+        if (instVet.sombra) {
+          try {
+            var SB = window.HidSombra, elsS = {}, ordS = [], trPorId = {}, nm3 = new THREE.Matrix3(), vtmp = new THREE.Vector3();
+            (Rr.trechos || []).forEach(function (tq) { trPorId[tq.id] = tq; });
+            /* a cor do SISTEMA é a do preenchimento do tubo no padrão de apresentação (a mesma da forma do Alto) */
+            var corPre = {}; (Fm.polys || []).forEach(function (pg) { if (pg.papel === 'tubo' && pg.sistema && pg.preenchCor && !corPre[pg.sistema]) corPre[pg.sistema] = pg.preenchCor; });
+            var corSisS = function (sis) { try { var c = new THREE.Color(corPre[sis] || (BimInst.SISTEMAS[sis] || {}).cor || '#888888'); return [c.r, c.g, c.b]; } catch (e) { return null; } };
+            modelRoot.traverse(function (m) {
+              var ud = m.userData || {};
+              if (!m.isMesh || !m.geometry || !ud.instPapel || ud.instUnif || !cadeiaVisivel(m)) return;
+              if (['tubo', 'conexao', 'peca', 'acessorio'].indexOf(ud.instPapel) < 0) return;
+              var sisM = sisDe['edit:' + ud.expressID];
+              if (p6Oc && (p6Oc(ud) || ocultoSis(sisM))) return;
+              var geo = m.geometry, pa = geo.attributes.position, na = geo.attributes.normal; if (!pa) return;
+              var e16 = m.matrixWorld.elements, A = pa.array, nV = pa.count, pos = new Float64Array(nV * 3), nrm = na ? new Float64Array(nV * 3) : null;
+              nm3.getNormalMatrix(m.matrixWorld);
+              for (var iv = 0; iv < nV; iv++) {
+                var x = A[iv * 3], y = A[iv * 3 + 1], z = A[iv * 3 + 2];
+                pos[iv * 3] = e16[0] * x + e16[4] * y + e16[8] * z + e16[12]; pos[iv * 3 + 1] = e16[1] * x + e16[5] * y + e16[9] * z + e16[13]; pos[iv * 3 + 2] = e16[2] * x + e16[6] * y + e16[10] * z + e16[14];
+                if (nrm) { vtmp.set(na.array[iv * 3], na.array[iv * 3 + 1], na.array[iv * 3 + 2]).applyMatrix3(nm3).normalize(); nrm[iv * 3] = vtmp.x; nrm[iv * 3 + 1] = vtmp.y; nrm[iv * 3 + 2] = vtmp.z; }
+              }
+              var idx = geo.index ? geo.index.array : (function () { var q = []; for (var k3 = 0; k3 < nV; k3++) q.push(k3); return q; })();
+              var mc = m.material && m.material.color ? [m.material.color.r, m.material.color.g, m.material.color.b] : null;
+              var kE = String(ud.expressID != null ? ud.expressID : m.uuid);
+              if (!elsS[kE]) {
+                var tq = trPorId[ud.expressID], ex2 = tq ? [(tq.p2.x - tq.p1.x) * r.x + (tq.p2.y - tq.p1.y) * r.y + (tq.p2.z - tq.p1.z) * r.z, -((tq.p2.x - tq.p1.x) * upv.x + (tq.p2.y - tq.p1.y) * upv.y + (tq.p2.z - tq.p1.z) * upv.z)] : null;
+                elsS[kE] = { id: kE, papel: ud.instPapel, eixo2d: ex2, malhas: [], ifc: ud.tipo || '' }; ordS.push(kE);
+              }
+              var baseS = SB.corBase(ud.instPapel, mc, instVet.sombra.cor, corSisS(sisM));
+              elsS[kE].malhas.push({ pos: pos, nrm: nrm, idx: idx, base: baseS });
+              /* a chave do cache da HidSombra: a geometria (uuid — o cache de geometria do 3D a mantém), o lugar e a cor */
+              elsS[kE].chave = (elsS[kE].chave ? elsS[kE].chave + ";" : "") + geo.uuid + "@" + Array.prototype.map.call(e16, function (v) { return Math.round(v * 1e5); }).join(",") + "#" + baseS.map(function (v) { return Math.round(v * 255); }).join(",");
+            });
+            var rS = SB.renderizar(ordS.map(function (k4) { return elsS[k4]; }), { O: [O.x, O.y, O.z], r: [r.x, r.y, r.z], up: [upv.x, upv.y, upv.z], dir: [dir.x, dir.y, dir.z] },
+              { ppm: +def.instPpm || 1200, faixa: { f: fI, lo: loI, hi: hiI } });
+            instVet.imagens = rS.imagens.map(function (im) { return { x: im.x, y: im.y, w: im.w, h: im.h, ang: im.ang, href: SB.pngDe(im), u: 'edit:' + im.id, papel: im.papel }; }).filter(function (im) { return !!im.href; });
+            rS.arestas.forEach(function (ar) {
+              linhas.push(ar.seg.slice()); linhasIfc.push((elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT'); instVet.linhas++;
+              if (p6Tag) linhasUd.push({ t: (elsS[ar.id] || {}).ifc || 'IFCPIPESEGMENT', u: 'edit:' + ar.id, inst: ar.sil ? { k: 'p5silhueta', pena: 2, cor: '#1c1c1c', padrao: 'continua' } : { k: 'p5aresta', pena: 1, cor: '#1c1c1c', padrao: 'continua' } });   /* a silhueta na pena 2 (a referência tem 0,22 mm de papel), a dobra na 1 */
+            });
+            instVet.sombra.elementos = ordS.length; instVet.sombra.imagens = instVet.imagens.length; instVet.sombra.arestas = rS.arestas.length;
+          } catch (eS) { instVet.sombra.erro = String(eS && eS.message || eS); }
+        }
+        /* MÉDIO e ALTO: a FORMA da peça em planta (joelho com o raio e a bolsa, tê, junção, registro, caixa, louça; no Alto
+           também o tubo em linha dupla com o DE real) — um segundo passe SÓ com as instalações, para o piso e a laje não
+           tamparem o esgoto que corre sob eles. Na planta o corte do passe sobe ao topo da faixa: o barrilete e o ramal no
+           alto da parede entram em projeção. Traço fino (pena 3) na cor do sistema; a louça fica na pena da categoria. */
+        if (instVet.usado !== 'baixo') {
+          var defI = {}; Object.keys(def).forEach(function (kd) { defI[kd] = def[kd]; });
+          defI._soInst = true; defI.p6Tag = true; defI.acimaTopo = null;
+          if (planta) { defI.yCorte = topoI; defI.yFundo = (def.yFundo != null ? +def.yFundo : box.min.y) - 0.8; }
+          var usadoI = instVet.usado;
+          defI.p6Ocultar = function (ud) {
+            ud = ud || {};
+            if (!(ud.instPapel || ud.instFam) || ud.instUnif) return true;
+            /* o tubo e a conexão vêm em VETOR (unifilar no Médio, linha dupla no Alto, a forma da conexão nos dois): a
+               superfície lisa deles não dá aresta na extração e o esgoto sumia */
+            if (ud.instPapel === 'tubo' || ud.instPapel === 'conexao' || ud.instPapel === 'peca') return true;   /* tubo, conexão e caixa: vetor */
+            if (usadoI === 'medio' && ud.instPapel === 'acessorio') return true;   /* no Médio o registro é o SÍMBOLO do unifilar */
+            if (instVet.sombra && ud.instPapel === 'acessorio') return true;   /* PARIDADE: no Alto o registro vem da vista da cena (HidSombra) */
+            if (ud.instPapel === 'acessorio' && ocultoSis(sisDe['edit:' + ud.expressID])) return true;   /* o registro some com o sistema escondido */
+            void usadoI;
+            return p6Oc ? !!p6Oc(ud) : false;
+          };
+          var rI = vista2d(defI);
+          if (rI && rI.ok) {
+            /* o registro (peça do sistema) em contorno PRETO fino, como a conexão; a louça e o equipamento em MEIO-TOM, atrás
+               (chave "fundo": desenhada antes dos cortes — js/bimmodelovista.js classificar) */
+            var estS = function (u) { if (sisDe[u]) return { k: 'p4acess', pena: 2, cor: '#000000', padrao: 'continua' }; return { k: 'louca', fundo: true, meioTom: true, pena: 2 }; };
+            (rI.cortes || []).forEach(function (c) { var es2 = estS(c.u); if (es2) c.inst = es2; if (!p6Tag) { delete c.t; delete c.u; } cortes.push(c); instVet.solidos++; });
+            (rI.linhas || []).forEach(function (l, il) {
+              var ud2 = (rI.linhasUd || [])[il] || {}, es3 = estS(ud2.u);
+              linhas.push(l); linhasIfc.push((rI.linhasIfc || [])[il] || ''); instVet.solidos++;
+              if (p6Tag) linhasUd.push(es3 ? { t: ud2.t, u: ud2.u, inst: es3 } : ud2);
+            });
+          }
+        }
+      } catch (eI) { instVet.erro = String(eI && eI.message || eI); }
+    }
     var ms = Math.round(((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0));
     if (p6Forro) {   /* P6: o forro refletido foi visto de baixo — o X volta ao da planta (o forro "refletido") */
       cortes.forEach(function (c) { c.pts.forEach(function (q) { q[0] = -q[0]; }); });
       linhas.forEach(function (q) { q[0] = -q[0]; q[2] = -q[2]; });
     }
     return { ok: true, tipo: planta ? 'planta' : 'corte', cortes: cortes, linhas: linhas, linhasUd: p6Tag ? linhasUd : undefined, linhasIfc: linhasIfc, linhasFase: Object.keys(linhasFase).length ? linhasFase : undefined,
+      instImagens: instVet && instVet.imagens && instVet.imagens.length ? instVet.imagens : undefined,
       portas: portas.length ? portas : undefined,
       acima: acimaTopo != null ? acima : undefined, acimaTopo: acimaTopo != null ? acimaTopo : undefined,
-      info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10, uniao: uniaoInfo || undefined } };
+      info: { ms: ms, malhas: nMalhas, triCortados: nTri, arestas: nAr, amostras: amostras, px: [W, H], pxPorMetro: Math.round(ppm * 10) / 10, uniao: uniaoInfo || undefined, nivelInst: instVet || undefined } };
   }
   /* PORTA DO IFC ABERTO (js/simboloporta.js): o OperationType da ocorrência (IFC4) ou do tipo
      (IfcDoorType / IfcDoorStyle do IFC2x3, pelo IfcRelDefinesByType que o lerTipos já leu); sem a
@@ -11746,11 +12036,41 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return famReg.cache[k];
   }
   var famMats = {};
+  /* QUALIDADE VISUAL 3 (17/10/2026): materiais FÍSICOS das louças, metais e equipamentos (js/hidlouca.js).
+     Cor em sRGB DE VERDADE (new THREE.Color), não pela conta antiga de luz (luzNum clareava tudo: a louça
+     estourava em branco e o cromado parecia plástico). Louça = verniz (clearcoat do r150), cromado =
+     metal liso que reflete o ambiente PMREM, inox escovado = metal fosco. Só os nomes desta tabela mudam. */
+  var FAM_PBR = {
+    'louça branca': { cor: 0xf3f3f0, rug: 0.25, met: 0, cc: 0.5, ccr: 0.15 }, 'branco': { cor: 0xf0f0ee, rug: 0.32, met: 0, cc: 0.4, ccr: 0.18 },
+    'metal cromado': { cor: 0xe9ebef, rug: 0.06, met: 1 }, 'inox': { cor: 0xc6cacf, rug: 0.38, met: 1 }, 'aço inox': { cor: 0xc6cacf, rug: 0.38, met: 1 },
+    'latão': { cor: 0xc9a24a, rug: 0.28, met: 1 }, 'plástico': { cor: 0xd6d8da, rug: 0.45, met: 0 }, 'pvc': { cor: 0xece9e1, rug: 0.5, met: 0 },
+    'polietileno azul': { cor: 0x1d5fae, rug: 0.42, met: 0, cc: 0.25, ccr: 0.3 }, 'ferro fundido': { cor: 0x3a3d42, rug: 0.55, met: 0.5 },
+    'água': { cor: 0xc9dbe2, rug: 0.04, met: 0, cc: 1, ccr: 0.02 },
+    /* PRESSURIZAÇÃO (js/hidpressao.js, 18/10/2026): a cor de cada equipamento pela FOTO do catálogo — a mesma do ícone (tools/hid-icones.html) */
+    'equipamento preto': { cor: 0x26282b, rug: 0.5, met: 0.15 }, 'equipamento laranja': { cor: 0xf2692a, rug: 0.4, met: 0 }, 'equipamento verde': { cor: 0x8cc63f, rug: 0.4, met: 0 },
+    'equipamento bege': { cor: 0xebe2cb, rug: 0.35, met: 0, cc: 0.3, ccr: 0.25 },
+    /* PISCINA (js/hidpiscinafam.js, 18/10/2026): a cor da FOTO do catálogo (dados-fonte/hidro/piscina/volumetria-piscina.json);
+       op = opacidade da peça transparente (tampa do pré-filtro, lente do refletor, visor da seletora) */
+    'equipamento verde-água': { cor: 0x10757e, rug: 0.32, met: 0, cc: 0.35, ccr: 0.2 }, 'equipamento vermelho': { cor: 0xc0393b, rug: 0.4, met: 0 },
+    'equipamento azul': { cor: 0x2095ca, rug: 0.38, met: 0 }, 'equipamento cinza': { cor: 0x7c7f7a, rug: 0.5, met: 0 }, 'acrílico transparente': { cor: 0xdfe9ee, rug: 0.05, met: 0, op: 0.25 }
+  };
+  function famMatPBR(k, nome) {
+    var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
+    if (d.op) { o.transparent = true; o.opacity = d.op; o.depthWrite = false; }   /* PISCINA: peça transparente */
+    var m = d.cc ? new THREE.MeshPhysicalMaterial(Object.assign(o, { clearcoat: d.cc, clearcoatRoughness: d.ccr })) : new THREE.MeshStandardMaterial(o);
+    m.userData.famPBR = true;
+    estMarcarMat(m, String(nome || '').trim() || k);
+    return m;
+  }
   var FAM_CORES = { madeira: 0xb88a5a, 'alumínio': 0xc9ced6, aluminio: 0xc9ced6, vidro: 0x9fd3f0, concreto: 0xa9b0b8, granito: 0x4a4a4a,
-                    inox: 0xd0d4d8, 'louça branca': 0xf4f4f2, 'mdf branco': 0xf1f1ef, 'polietileno azul': 0x2c6fbf, metal: 0x8a8f96, 'aço': 0x8a8f96 };
+                    inox: 0xd0d4d8, 'louça branca': 0xf4f4f2, 'mdf branco': 0xf1f1ef, 'polietileno azul': 0x2c6fbf, metal: 0x8a8f96, 'aço': 0x8a8f96,
+                    /* HIDRO/CLIMA (geometria fiel das famílias): metais, PVC, polietileno, ferro fundido, equipamento */
+                    'metal cromado': 0xcfd3d8, 'aço inox': 0xd0d4d8, pvc: 0xe6e3d6, polietileno: 0x2c6fbf, 'ferro fundido': 0x3b3f45, branco: 0xf1f1ee, 'plástico': 0xdfe1e3,
+                    vermelho: 0xc62828, azul: 0x2c6fbf, preto: 0x24262a, 'cinza escuro': 0x5a5f66, 'cinza claro': 0xc9ccd0, latao: 0xb89b47, 'latão': 0xb89b47, brita: 0x9a9a96 };
   function famMat(nome) {
     var k = String(nome || '').toLowerCase().trim();
     if (famMats[k]) return famMats[k];
+    if (FAM_PBR[k]) return (famMats[k] = famMatPBR(k, nome));
     var cor = FAM_CORES[k];
     if (cor == null) { var h = 0; for (var i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; cor = k ? (0x808080 + (h & 0x3f3f3f)) : 0xc8ccd2; }
     var vidro = k.indexOf('vidro') >= 0;
@@ -11773,8 +12093,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (s.forma === 'caixa') { g = new THREE.BoxGeometry(s.dx, s.dy, s.dz); m = new THREE.Mesh(g); m.position.set(s.x, s.y + s.dy / 2, s.z); m.rotation.y = (s.rot || 0) * Math.PI / 180; }
         else if (s.forma === 'malha') {   /* FAMIMPORT (js/familiamalha.js): a malha do TIPO, uma por material; faces planas (sem índice) para a luz não "amolecer" a aresta */
           g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(s.v, 3)); g.setIndex(s.f);
-          if (s.f.length < 600000) g = g.toNonIndexed();
+          if (!s.suave && s.f.length < 600000) g = g.toNonIndexed();   /* revolução (js/familia.js): malha indexada, giro liso */
           g.computeVertexNormals(); m = new THREE.Mesh(g); m.position.set(s.x || 0, s.y || 0, s.z || 0);
+          if (s.origemForma === 'gerada') famLodRegistrar(m, s);   /* QUALIDADE VISUAL 3: louça/equipamento gerado — desenha por si e troca o detalhe pela distância */
           if (!matSobre && (s.cor || s.transparencia)) matProprio = famMatCor(s.material, s.cor, s.transparencia);
         }
         else if (s.forma === 'cilindro') {
@@ -11807,6 +12128,35 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (av.luz) out.forEach(function (mm, iM) { if (!iM) mm.userData.luz = { potencia: av.luz.potencia, fluxo: av.luz.fluxo, temperatura: av.luz.temperatura,
       posicao: [inst.x + av.luz.posicao[0] * Math.cos(inst.rotY || 0) + av.luz.posicao[2] * Math.sin(inst.rotY || 0), inst.y + av.luz.posicao[1], inst.z - av.luz.posicao[0] * Math.sin(inst.rotY || 0) + av.luz.posicao[2] * Math.cos(inst.rotY || 0)] }; });
     return out;
+  }
+  /* NÍVEL DE DETALHE (js/biminstnivel.js, 17/10/2026): a família de INSTALAÇÃO (louça, equipamento, acessório,
+     conexão, dispositivo) segue o nível da vista 3D (js/biminstui.js nivelCena): Baixo = o CONTORNO simplificado
+     (as arestas da caixa e, na louça, a elipse da bacia) em linha fina; Médio = o modelo, fixo no nível 1 do LOD
+     das louças (js/hidlouca.js); Alto = o detalhe pela distância (o de sempre). A peça é a MESMA (id, quantitativo);
+     só a malha muda. Marca instFam: a troca de nível (instNivelRefazer) refaz só estas. */
+  function famNivelDe(fam) {
+    var NV = window.BimInstNivel; if (!NV || !fam || !window.BimInstUI || !BimInstUI.nivelCena) return null;
+    if (BimInstUI._previaHidro && !BimInstUI._previaHidro()) return null;   /* P8: sem a prévia hidro, a louça do master */
+    var cls = NV.classeDaCategoria(fam.categoria); if (!cls) return null;
+    return { cls: cls, nivel: NV.norm(BimInstUI.nivelCena(), 'alto') };
+  }
+  function famMalhasNivel(av, fi, fam) {
+    var fn = famNivelDe(fam), NV = window.BimInstNivel;
+    if (fn && fn.nivel === 'baixo' && av.caixa && BimInstUI._malhaG && BimInstUI._matLinha) {
+      var segs = NV.contornoFamilia(av.caixa, fi, { id: fi.id, louca: fn.cls === 'aparelho' }), est = NV.estiloSeg({ papel: 'contorno' });
+      var ml = NV.malhaLinhas(segs, NV.raioPena(est.mm, NV.ESCALA_PADRAO));
+      if (ml.idx.length) {
+        var mc = BimInstUI._malhaG(THREE, ml, BimInstUI._matLinha(THREE, est.cor));
+        mc.userData.instUnif = true; mc.userData.instFam = true; mc.userData.instNivel = 'baixo';
+        return [mc];
+      }
+    }
+    var ms = famMalhas(av, fi);
+    if (fn) ms.forEach(function (m) {
+      m.userData.instFam = true; m.userData.instNivel = fn.nivel;
+      if (m.userData.famLod) { m.userData.famLodFixo = fn.nivel === 'medio' ? 1 : null; if (fn.nivel === 'medio') famLodNivel(m, 1); }
+    });
+    return ms;
   }
   /* PORTA (js/simboloporta.js) — a porta NATIVA (família do js/familia.js com categoria porta)
      ganha o SÍMBOLO DE ABERTURA da planta: a folha aberta a 90° e o arco do giro (giro simples,
@@ -11844,6 +12194,41 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return famMatsCor[k];
   }
   S._famDefinir = famDefinir; S._famAval = famAval;
+  /* NÍVEL DE DETALHE das formas geradas (js/hidlouca.js via js/familia.js: s.lod = [nível 1, nível 2]).
+     A malha é a MESMA (seleção, raio e propriedades seguem nela); só a geometria troca: perto (< 8 m) o
+     nível 0, até 25 m o 1, longe o 2. Planta, corte e desenho técnico (câmera ortográfica / planta ligada)
+     usam sempre o nível 0 — o desenho não pode sair com a louça facetada. */
+  var famLod = { lista: [], quadro: 0 };
+  function famLodRegistrar(m, s) {
+    var geos = [m.geometry];
+    (s.lod || []).forEach(function (l) {
+      if (!l || !l.f || !l.f.length) { geos.push(m.geometry); return; }
+      var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(l.v, 3)); g.setIndex(l.f); g.computeVertexNormals(); geos.push(g);
+    });
+    m.userData.famPremium = true; m.userData.famLod = geos; m.userData.famLodNivel = 0;
+    famLod.lista.push(m);
+  }
+  function famLodNivel(m, n) {
+    var gs = m.userData.famLod; if (!gs || m.userData.famLodNivel === n) return;
+    m.geometry = gs[Math.min(n, gs.length - 1)]; m.userData.famLodNivel = n;
+  }
+  var _famLodV = new THREE.Vector3();
+  S._famLodTudo0 = function () { famLod.lista.forEach(function (m) { famLodNivel(m, 0); }); };
+  S._tickExtra.push(function () {
+    if (++famLod.quadro % 15 || !famLod.lista.length) return;
+    var desenho = !S.camera.isPerspectiveCamera || (S.planta && S.planta.on) || (S.corteL && S.corteL.on);
+    famLod.lista = famLod.lista.filter(function (m) {
+      var vivo = false; for (var p = m.parent; p; p = p.parent) if (p === S.scene) { vivo = true; break; }
+      if (!vivo) { if (!m.parent) { (m.userData.famLod || []).forEach(function (g) { if (g !== m.geometry) try { g.dispose(); } catch (_) {} }); return false; } return true; }
+      if (desenho) { famLodNivel(m, 0); return true; }
+      if (m.userData.famLodFixo != null) { famLodNivel(m, m.userData.famLodFixo); return true; }   /* NÍVEL Médio: o LOD fixo da vista */
+      if (!m.geometry.boundingSphere) m.geometry.computeBoundingSphere();
+      _famLodV.copy(m.geometry.boundingSphere.center); m.localToWorld(_famLodV);
+      var d = _famLodV.distanceTo(S.camera.position);
+      famLodNivel(m, d < 8 ? 0 : (d < 25 ? 1 : 2));
+      return true;
+    });
+  });
   /* FAMIMPORT: as LUZES das luminárias importadas (potência, fluxo, temperatura de cor e o ponto, no mundo) — o dado à mão para o render */
   S._luzes = function () {
     var out = [];
@@ -11863,6 +12248,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   // ponto no PLANO DE TRABALHO (y = base) quando o raio não acha malha —
   // permite desenhar no vazio (terreno limpo) e ao lado do modelo
+  /* ARRASTAR O TUBO (js/biminstarr.js): o ponto do mundo sob o cursor no plano horizontal y (a cota do tubo pegado) */
+  S._pontoPlanoY = function (clientX, clientY, y) {
+    var rc = canvasEl.getBoundingClientRect(), m = new THREE.Vector2(((clientX - rc.left) / rc.width) * 2 - 1, -((clientY - rc.top) / rc.height) * 2 + 1), rr = new THREE.Raycaster(), alvo = new THREE.Vector3();
+    rr.setFromCamera(m, camera);
+    return rr.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -(+y || 0)), alvo) ? { x: alvo.x, y: alvo.y, z: alvo.z } : null;
+  };
   function editPontoPlano(clientX, clientY) {
     var rc = canvasEl.getBoundingClientRect();
     mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
@@ -12021,7 +12412,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var sn2 = hit2 ? aplicarSnap(hit2, raioToque(e)) : null;
     var pM = sn2 ? sn2.p.clone() : editPontoPlano(e.clientX, e.clientY);
     if (!pM) return;
-    editPreview(editAjustarPonto(pM, e), e.clientX, e.clientY);
+    var pA = editAjustarPonto(pM, e);
+    /* QUALIDADE VISUAL 2: no traçado de instalação a borracha mostra a direção TRAVADA (90°/45°) que o clique vai usar */
+    if (edit.sub === 'inst' && edit.p1 && pA && window.BimInstUI && BimInstUI.previaPonto) { var qI = BimInstUI.previaPonto({ x: edit.p1.x, z: edit.p1.z }, { x: pA.x, z: pA.z }, e); if (qI) { pA = pA.clone(); pA.x = qI.x; pA.z = qI.z; } }
+    editPreview(pA, e.clientX, e.clientY);
   };
   function editSt() {
     var el = editPanel.querySelector('[data-ed="st"]');
@@ -12069,7 +12463,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       desagregarModelo(edit.modelo);
       modelRoot.remove(edit.modelo.grupo);
       /* ⚠ a geometria GUARDADA da peça metálica (metGeo, abaixo) não se descarta: ela volta na cena nova */
-      edit.modelo.grupo.traverse(function (o) { if (o.geometry && !(o.geometry.userData && o.geometry.userData.metGeo)) o.geometry.dispose(); });
+      /* FLUIDEZ: a geometria do cache das instalações (instGeoCache, js/biminstui.js) volta na cena nova — quem descarta é o cache */
+      edit.modelo.grupo.traverse(function (o) { if (o.geometry && !(o.geometry.userData && (o.geometry.userData.metGeo || o.geometry.userData.instGeoCache))) o.geometry.dispose(); });
       edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
       var ix = S.modelos.indexOf(edit.modelo); if (ix >= 0) S.modelos.splice(ix, 1);
       edit.modelo = null;
@@ -12144,7 +12539,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       st.familias.forEach(function (fi) {
         var av = famAval(fi.famId, fi.tipoId, fi.inst), fam = famReg.lista[fi.famId];
         var ifc = fam ? (FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY') : 'IFCBUILDINGELEMENTPROXY';
-        var malhas = av && av.solidos && av.solidos.length ? famMalhas(av, fi) : [];
+        var malhas = av && av.solidos && av.solidos.length ? famMalhasNivel(av, fi, fam) : [];   /* NÍVEL DE DETALHE: louça/equipamento em contorno no Baixo */
         if (!malhas.length) {   /* família que não está na biblioteca deste aparelho: um marcador honesto, não some calado */
           var mx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), editMat('sel'));
           mx.position.set(fi.x, fi.y + 0.2, fi.z); malhas = [mx];
@@ -12204,10 +12599,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     (st.removidosIfcInfo || []).forEach(function (info) { S._remEd[editUidRemovido(info)] = 1; });
     if (st.removidosIfc.length) todasMalhas(function (m) { if (S._remEd[m.userData.mid + ':' + m.userData.expressID]) m.visible = false; });
     edit.removidosAntes = Object.keys(S._remEd);
+    editGanchos(st, tR);
+  }
+  /* o que vem DEPOIS de refazer o modelo do editor (a lista de elementos, o HUD e os ganchos de cada módulo) — o mesmo
+     para a reconstrução inteira e para a só das instalações (FLUIDEZ, 17/10/2026) */
+  function editGanchos(st, tR) {
     S.elementos = []; S.modelos.forEach(function (mo2) { S.elementos = S.elementos.concat(mo2.elementos); });
     over.style.display = (S.modelos.length || st.anotacoes.length || (st.eixos && st.eixos.length)) ? 'none' : 'flex'; // sintético/anotação/eixo também tira o "arraste um IFC"
     atualizarHud(); notifyModelos(); editSt();
     if (S._prec) S._prec.aposRebuild(st);   /* B3: seleção, cotas temporárias, alças e cotas permanentes */
+    try { if (window.BimVaoArr && BimVaoArr.aposRebuild) BimVaoArr.aposRebuild(); } catch (_) {}   /* PORTAS E JANELAS: as cotas da abertura acompanham a op/o desfazer */
+    if (S._selInstRefazer) S._selInstRefazer();   /* FLUIDEZ: o realce da peça de instalação selecionada volta na malha nova */
     if (S._p2d) S._p2d.aposRebuild(st);   /* P2-D: volume do ambiente no 3D, planta 2D e Navegador acompanham */
     if (S._mat) S._mat.aposRebuild(st, edit.modelo);   /* MATERIAIS: a cor e a transparência do material do projeto (js/bimmateriaisui.js) — antes da fase, que meio-tona por cima */
     if (S._p10) S._p10.aposRebuild(st, edit.modelo);   /* P10: gráficos de fase e opção visível (js/bimp10ui.js) */
@@ -12228,15 +12630,145 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     S._ultimoRebuild = { total: Math.round(tF - tR.t0), limpar: Math.round(tR.a - tR.t0), replay: Math.round(tR.b - tR.a), malhas: tR.c ? Math.round(tR.c - tR.b) : 0,
                          agregar: tR.d ? Math.round(tR.d - tR.c) : 0, ganchos: Math.round(tF - (tR.d || tR.b)) };
   }
+  /* FLUIDEZ — RECONSTRUÇÃO SÓ DAS INSTALAÇÕES (17/10/2026): a op que só mexe em tubo, peça, acessório ou sistema (e o
+     desfazer/refazer dela) refazia o modelo do editor INTEIRO — paredes, lajes, famílias, a agregação e as arestas do 2D
+     de tudo. Aqui sai e volta só o que é instalação (tubos, conexões, peças, acessórios, pontos e marcadores); paredes e
+     famílias ficam (mesmos objetos). Se o replay mostrar que algo além das instalações mudou, devolve false e quem
+     chamou faz a reconstrução inteira. */
+  function opSoInst(o) {
+    if (!o) return false;
+    if (o.op === 'lote') return Array.isArray(o.ops) && o.ops.length > 0 && o.ops.every(opSoInst);
+    return !!(window.BimInst && BimInst.ehOp && BimInst.ehOp(o.op));
+  }
+  function editRebuildInst() {
+    var mo = edit.modelo, st0 = edit.estado;
+    if (!mo || !st0 || S.modelos.indexOf(mo) < 0 || !window.BimInstUI || !BimInstUI.malhas) return false;
+    var tR = { t0: performance.now() };
+    tR.a = performance.now();
+    var st = BimEdit.aplicar(edit.ops);
+    tR.b = performance.now();
+    function ids(l) { return (l || []).map(function (x) { return x.id + '@' + (x.cx != null ? x.cx : x.x) + ',' + (x.cz != null ? x.cz : x.z); }).join('|'); }
+    if (ids(st.caixas) !== ids(st0.caixas) || ids(st.familias) !== ids(st0.familias) || ids(st.coberturas) !== ids(st0.coberturas) ||
+        (st.volumes || []).length !== (st0.volumes || []).length || (st.anotacoes || []).length !== (st0.anotacoes || []).length ||
+        (st.removidosIfc || []).length !== (st0.removidosIfc || []).length) return false;
+    editSoltarSel();
+    edit.estado = st;
+    desagregarModelo(mo);
+    var sai = mo.grupo.children.filter(function (m) { var u = m.userData || {}; return !u.instFam && !!(u.instPapel || u.instUnif || u.marcador || u.desconexao); }), saiIds = {};
+    sai.forEach(function (m) {
+      var u = m.userData, uid = 'edit:' + u.expressID;
+      if (!u.marcador) saiIds[u.expressID] = 1;
+      mo.grupo.remove(m);
+      if (S.meshPorUid[uid] === m) delete S.meshPorUid[uid];
+      if (m === S.selected) { S.selected = null; S.prevMat = null; if (S._contornoSelecao) S._contornoSelecao(null); }
+      mo.nTri -= (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      if (!(m.geometry.userData && (m.geometry.userData.metGeo || m.geometry.userData.instGeoCache))) try { m.geometry.dispose(); } catch (_) {}
+    });
+    mo.elementos = mo.elementos.filter(function (e) {
+      if (!saiIds[e.id]) return true;
+      if (mo.tipos[e.tipo]) { mo.tipos[e.tipo]--; if (!mo.tipos[e.tipo]) delete mo.tipos[e.tipo]; }
+      delete mo.qto[e.id]; mo.nEl--; return false;
+    });
+    var instEls = [];
+    try { if (st.instalacoes) instEls = BimInstUI.malhas(st, famAval, THREE); } catch (eIn) { instEls = []; }
+    var novos = {};
+    instEls.forEach(function (ie) {
+      ie.malhas.forEach(function (mi) {
+        var ifc = ie.ifc || 'IFCBUILDINGELEMENTPROXY';
+        mi.userData.expressID = ie.id; mi.userData.tipo = ifc; mi.userData.mid = 'edit'; mi.userData.matOrig = mi.material;
+        mo.grupo.add(mi);
+        if (!S.meshPorUid['edit:' + ie.id]) S.meshPorUid['edit:' + ie.id] = mi;
+        mo.nTri += (mi.geometry.index ? mi.geometry.index.count : mi.geometry.attributes.position.count) / 3;
+      });
+      if (ie.marcador) return;
+      mo.tipos[ie.ifc] = (mo.tipos[ie.ifc] || 0) + 1;
+      mo.qto[ie.id] = ie.qto; novos[ie.id] = 1;
+      mo.elementos.push({ id: ie.id, uid: 'edit:' + ie.id, mid: 'edit', arquivo: mo.nome, tipo: ie.ifc, nome: ie.nome, etapa: null, codOrc: ie.codigo || null, qto: ie.qto, disciplina: ie.disciplina });
+      mo.nEl++;
+    });
+    try {
+      modelRoot.updateMatrixWorld(true);
+      var elPorId = {}; mo.elementos.forEach(function (e2) { if (novos[e2.id] && !(e2.id in elPorId)) elPorId[e2.id] = e2; });
+      mo.grupo.children.forEach(function (m) {
+        var elx = elPorId[m.userData.expressID]; if (!elx) return;
+        var bb = new THREE.Box3().setFromObject(m); if (bb.isEmpty()) return;
+        if (elx.aabb) { bb.expandByPoint(new THREE.Vector3(elx.aabb.min[0], elx.aabb.min[1], elx.aabb.min[2])); bb.expandByPoint(new THREE.Vector3(elx.aabb.max[0], elx.aabb.max[1], elx.aabb.max[2])); }
+        elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] };
+      });
+    } catch (_) {}
+    recarimbarIdentidade(); tR.c = performance.now();
+    agregarModelo(mo);
+    tR.d = performance.now();
+    carimbarConsulta();
+    editGanchos(st, tR);
+    if (S._ultimoRebuild) S._ultimoRebuild.parcial = true;
+    return true;
+  }
+  S._opSoInst = opSoInst;
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
+  /* NÍVEL DE DETALHE (17/10/2026): trocar Baixo / Médio / Alto REFAZ SÓ AS MALHAS DAS INSTALAÇÕES — tubos,
+     conexões, peças, acessórios, pontos de água, marcadores e as famílias de instalação (instFam). Paredes, lajes,
+     IFC abertos, câmera e seleção ficam; não há replay das ops (o estado é o mesmo: o nível é da vista, não do
+     modelo). O modelo mesclado é desfeito e refeito em volta da troca. Devolve a medida (ms, triângulos). */
+  function instNivelRefazer() {
+    var mo = edit.modelo, st = edit.estado;
+    if (!mo || !st || !window.BimInstUI || !BimInstUI.malhas) return { ok: false, erro: 'sem modelo do editor' };
+    var t0 = performance.now(), removidas = 0, novas = 0;
+    desagregarModelo(mo);
+    var sai = mo.grupo.children.filter(function (m) { var u = m.userData || {}; return !!(u.instPapel || u.instUnif || u.instFam || u.marcador || u.desconexao); });
+    sai.forEach(function (m) {
+      var uid = 'edit:' + m.userData.expressID;
+      mo.grupo.remove(m); removidas++;
+      if (S.meshPorUid[uid] === m) delete S.meshPorUid[uid];
+      if (m === S.selected) { S.selected = null; S.prevMat = null; if (S._contornoSelecao) S._contornoSelecao(null); }
+      mo.nTri -= (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      (m.userData.famLod || [m.geometry]).forEach(function (g) { if (!(g.userData && (g.userData.metGeo || g.userData.instGeoCache))) try { g.dispose(); } catch (_) {} });
+    });
+    function addI(m, id, ifc) {
+      m.userData.expressID = id; m.userData.tipo = ifc; m.userData.mid = 'edit'; m.userData.matOrig = m.material;
+      mo.grupo.add(m); novas++;
+      if (!S.meshPorUid['edit:' + id]) S.meshPorUid['edit:' + id] = m;
+      mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+    }
+    var els = [];
+    try { els = BimInstUI.malhas(st, famAval, THREE); } catch (eIn) { els = []; }
+    els.forEach(function (ie) { ie.malhas.forEach(function (mi) { addI(mi, ie.id, ie.ifc || 'IFCBUILDINGELEMENTPROXY'); }); });
+    (st.familias || []).forEach(function (fi) {
+      var fam = famReg.lista[fi.famId]; if (!famNivelDe(fam)) return;
+      var av = famAval(fi.famId, fi.tipoId, fi.inst); if (!(av && av.solidos && av.solidos.length)) return;
+      var ifc = FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY';
+      famMalhasNivel(av, fi, fam).forEach(function (mf) { addI(mf, fi.id, ifc); });
+    });
+    modelRoot.updateMatrixWorld(true);
+    agregarModelo(mo);
+    if (window.BimSelInst && BimSelInst.aposRebuild) { try { BimSelInst.aposRebuild(); } catch (eSI) {} }   /* o que foi ocultado na vista continua oculto */
+    if (S._acima3d && planta.on) S._acima3d.agendar();
+    if (S._selInstRefazer) S._selInstRefazer();   /* FLUIDEZ: o realce da peça selecionada acompanha o nível */
+    var med = instMedir();
+    S._ultimoNivel = { ok: true, nivel: BimInstUI._nivelFeito, ms: Math.round(performance.now() - t0), removidas: removidas, novas: novas, tri: med.tri, malhas: med.malhas };
+    return S._ultimoNivel;
+  }
+  /* a medida das instalações na cena: malhas e triângulos (o e2e compara Baixo × Alto) */
+  function instMedir() {
+    var mo = edit.modelo, r = { malhas: 0, tri: 0, porPapel: {} };
+    if (!mo) return r;
+    mo.grupo.children.forEach(function (m) {
+      var u = m.userData || {}, p = u.instPapel || (u.instFam ? 'familia' : null); if (!p || !m.geometry) return;
+      var t = (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+      r.malhas++; r.tri += t; r.porPapel[p] = (r.porPapel[p] || 0) + t;
+    });
+    return r;
+  }
+  S._instNivelRefazer = instNivelRefazer; S._instMedir = instMedir;
   function editOp(o) {
     /* OrçaPRO Modela: a 1ª peça modelada começa o teste de 7 dias (js/modela.js; não faz nada se já começou ou se há direito) */
     try { if (window.Modela && Modela.iniciarTeste) Modela.iniciarTeste(); } catch (_m) {}
-    edit.ops.push(o); edit.redo = []; editRebuild();
+    edit.ops.push(o); edit.redo = [];
+    if (!(opSoInst(o) && editRebuildInst())) editRebuild();   /* FLUIDEZ: op só de instalação refaz só as instalações */
   }
   /* desfazer/refazer da edição (Ctrl+Z / Ctrl+Y e a barra de título) */
-  S._editDesfazer = function () { if (!edit.ops.length) return false; edit.redo.push(edit.ops.pop()); editTirarProv(); editRebuild(); return true; };
-  S._editRefazer = function () { if (!edit.redo.length) return false; edit.ops.push(edit.redo.pop()); editRebuild(); return true; };
+  S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit.ops.pop(); edit.redo.push(o); editTirarProv(); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
+  S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
   S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
   S._editOpExterna = function (o) { editOp(o); };
   /* B5 (js/biminstui.js): o que o traçado de instalações usa do editor — o
@@ -12289,6 +12821,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     scene.add(g); editPrevG = g;
     try { enquadrarObj(new THREE.Box3().setFromObject(g), 1.4); } catch (e) {}
     return { ok: true, malhas: g.children.length };
+  };
+  /* HIDROSSANITÁRIO (js/hidcalcui.js): prévia das instalações de uma opção de traçado — só o que as ops criam, azul translúcido, nada gravado */
+  var instPrevG = null;
+  S._editPreviaInst = function (ops) {
+    if (instPrevG) { scene.remove(instPrevG); instPrevG.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); instPrevG = null; }
+    if (!ops || !ops.length || !window.BimInstUI || !S.edit) return { ok: true, malhas: 0 };
+    var st = BimEdit.aplicar((S.edit.ops || []).concat(ops)), ids = {}, g = new THREE.Group(), n = 0, ult = BimInstUI._ultimaRede, cv = BimInstUI._corVerif;
+    ops.forEach(function (o) { if (o && o.id != null) ids[o.id] = 1; });
+    var mat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0b5d80, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide });
+    BimInstUI._corVerif = null;
+    try { BimInstUI.malhas(st, famAval, THREE).forEach(function (el) { if (!ids[el.id] || el.marcador) return; el.malhas.forEach(function (m) { m.material = mat; g.add(m); n++; }); }); } catch (eP) {}
+    BimInstUI._corVerif = cv; BimInstUI._ultimaRede = ult;
+    g.userData.previaInst = true; scene.add(g); instPrevG = g;
+    return { ok: true, malhas: n };
   };
   /* ponto do MUNDO → posição na tela (px do cliente). Só leitura: o e2e clica
      numa parede como o usuário clica, sem adivinhar pixel */
@@ -12432,7 +12978,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if (sub === 'familia') { editColocarFamilia(e, hit, p); return; }
     /* B5: tubo, eletroduto, duto e peças — o traçado mora no js/biminstui.js */
-    if (sub === 'inst') { if (window.BimInstUI) BimInstUI.clique(S._instCtx(), p ? (pForcado ? p : editAjustarPonto(p, e)) : null); return; }
+    if (sub === 'inst') { if (window.BimInstUI) BimInstUI.clique(S._instCtx(), p ? (pForcado ? p : editAjustarPonto(p, e)) : null, e); return; }   /* o evento vai junto: Alt = ângulo livre (QUALIDADE VISUAL 2) */
     if (VOL_SUBS[sub]) { volClique(e, hit, p); return; }   /* B4: volume livre */
     if (!p) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
     if ((sub === 'viga' || sub === 'cobertura') && edit.p1) {
@@ -12511,7 +13057,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       S._hint(fam.nome + ' colocada na parede (o vão já foi aberto e descontado). Clique em outra parede, ou Esc.');
     } else {
       if (!p) { S._hint('Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
-      editOp({ op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: Math.round(p.x * 1000) / 1000, y: edit.base, z: Math.round(p.z * 1000) / 1000, rotY: edit.famRot, inst: fsel.inst || {} });
+      var pzC = S._colocar ? S._colocar.pose(p) : null;   /* COLOCAÇÃO: a mesma pose da prévia (face da parede, piso acabado, giro) */
+      editOp({ op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: pzC ? pzC.x : Math.round(p.x * 1000) / 1000, y: pzC ? pzC.y : edit.base, z: pzC ? pzC.z : Math.round(p.z * 1000) / 1000, rotY: pzC ? pzC.rotY : edit.famRot, inst: fsel.inst || {} });
       S._hint(fam.nome + ' colocada. Barra de espaço gira 90°; clique para outra, ou Esc.');
     }
     marcarFechamento();
@@ -12524,6 +13071,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var famGhostMat = null;
   function editGhostLimpar() { if (edit.ghost) { scene.remove(edit.ghost); edit.ghost.geometry.dispose(); edit.ghost = null; } }
   function editGhostMover(e) {
+    if (S._colocar && S._colocar.familia()) { if (edit.ghost) edit.ghost.visible = false; return; }   /* COLOCAÇÃO: a malha real no lugar da caixa ciano */
     var fsel = edit.famSel, fam = fsel && famReg.lista[fsel.famId]; if (!fam) return;
     var av = famAval(fsel.famId, fsel.tipoId, fsel.inst || {}); if (!av || !av.caixa) return;
     var pos = null, rotY = edit.famRot;
@@ -12598,6 +13146,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   /* malha da receita → malhas do grupo do editor (o mesmo nível das paredes:
      seleção, raio-X, planta e quantitativo varrem esse grupo) */
+  /* água de piscina/espelho d'água: azul translúcido (normal) e mais transparente na vista Instalações */
+  var aguaMats = {};
+  function aguaMat(inst) {
+    var k = inst ? 'i' : 'n';
+    if (!aguaMats[k]) {
+      aguaMats[k] = new THREE.MeshPhysicalMaterial({ color: 0x2f8fc9, roughness: 0.05, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.03, transparent: true, opacity: inst ? 0.22 : 0.55, depthWrite: false, side: THREE.DoubleSide });
+      aguaMats[k].name = inst ? 'agua-instalacoes' : 'agua'; aguaMats[k].userData.agua = true;
+      estMarcarMat(aguaMats[k], 'Água');
+    }
+    return aguaMats[k];
+  }
+  S._aguaMat = aguaMat;
   function volDesenhar(st, mo, addMesh) {
     (st.volumes || []).forEach(function (v) {
       if (!v.malha) return;   /* pendente (CSG carregando) ou receita com erro: aparece quando sair */
@@ -12610,7 +13170,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals();
       var ix = new (m.f.length > 65535 ? Uint32Array : Uint16Array)(m.f.length); for (var j = 0; j < ix.length; j++) ix[j] = j;
       g.setIndex(new THREE.BufferAttribute(ix, 1));
-      var mat = famMat(v.material), ms = new THREE.Mesh(g, mat);
+      /* PISCINA (18/10/2026): o volume de ÁGUA aparece como água (azul translúcido) e o volume com nome de piscina é marcado:
+         na vista Instalações ele fica translúcido como a arquitetura, para os dispositivos e os tubos aparecerem sem trocar o material */
+      var ehAgua = /^[áa]gua$/i.test(String(v.material || '').trim()), ehPisc = /piscin|pool|\bspa\b|ofur/i.test(String(v.nome || ''));
+      var mat = ehAgua ? aguaMat(false) : famMat(v.material), ms = new THREE.Mesh(g, mat);
+      if (ehAgua) ms.userData.agua = true; else if (ehPisc) ms.userData.piscFundo = true;
       addMesh(ms, v.id, v.ifc, mat);
       mo.tipos[v.ifc] = (mo.tipos[v.ifc] || 0) + 1;
       var md = v.medidas || {};
@@ -13172,6 +13736,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     THREE: THREE, S: S, edit: edit, scene: scene,
     raio: function (cx, cy) { return S._raioDe(cx, cy); }, marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca, hint: function (t) { S._hint(t); },
     telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; }
+  }) : null;
+  /* COLOCAÇÃO DE PEÇAS (18/10/2026, js/biminstcolocar.js): a prévia translúcida da família/peça/acessório antes do
+     clique (parede, piso acabado, eixo do tubo), inserir no tubo existente e Espaço gira */
+  S._colocar = (window.BimInstColocar && BimInstColocar.montar3d) ? BimInstColocar.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, canvas: canvasEl, camera: function () { return camera; },
+    famAval: famAval, famMalhas: function (av, inst, mat) { return famMalhas(av, inst, mat); }, familia: function (id) { return famReg.lista[id] || null; },
+    planoPonto: editPontoPlano, hint: function (t) { S._hint(t); }
   }) : null;
   /* ======================================================================
    * B2 — MODELADOR (prévia `?previa=modelador`, js/bimprevia.js; motor puro
@@ -14979,6 +15550,59 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return true;
   }
   S._aplicar4DSim = aplicar4DSim; S._enquadrarUids = enquadrarUids;
+  /* CAIXA DE SELEÇÃO (BX, js/bimfita.js): a caixa das peças no mundo (m) — a mesma soma do enquadrarUids, sem mexer na câmera */
+  S._caixaUids = function (uids) {
+    if (!uids || !uids.length) return null;
+    var alvo = {}; uids.forEach(function (u) { alvo[u] = 1; });
+    var box = new THREE.Box3(), bm = new THREE.Box3(), achou = 0;
+    cadaMalha(function (m) {
+      if (m.userData.expressID == null || !alvo[m.userData.mid + ':' + m.userData.expressID] || !m.geometry || m.visible === false) return;
+      if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
+      if (!m.geometry.boundingBox) return;
+      bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); box.union(bm); achou++;
+    });
+    return achou && !box.isEmpty() ? { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z], malhas: achou } : null;
+  };
+  /* LINHAS OCULTAS (js/bimfita.js, P3 da junção 18/10/2026 — Vista › Gráficos, só com a prévia hidro): as arestas dos
+     elementos escolhidos, TRACEJADAS e desenhadas por cima de tudo (depthTest desligado) — o pedaço escondido atrás de
+     outro elemento aparece tracejado. As arestas são as mesmas do contorno da seleção (arestasDe, com cache); malha
+     densa (> 60 mil vértices) fica de fora, como no contorno. Nada vai para o modelo: "remover" tira, e é por uid. */
+  var ocultasGrp = new THREE.Group(), ocultasMat = null;
+  ocultasGrp.userData.marcador = true; scene.add(ocultasGrp);
+  S._linhasOcultas = function (uids, on) {
+    var alvo = null; if (uids && uids.length) { alvo = {}; uids.forEach(function (u) { alvo[u] = 1; }); }
+    if (!on) {
+      var tirados = {};
+      for (var i = ocultasGrp.children.length - 1; i >= 0; i--) {
+        var c = ocultasGrp.children[i], u0 = c.userData.uidOculta;
+        if (alvo && !alvo[u0]) continue;
+        tirados[u0] = 1; ocultasGrp.remove(c); try { c.geometry.dispose(); } catch (_) {}
+      }
+      return Object.keys(tirados).length;
+    }
+    if (!alvo) return 0;
+    S._linhasOcultas(uids, false);   /* idempotente: de novo no mesmo elemento não duplica */
+    if (!ocultasMat) ocultasMat = new THREE.LineDashedMaterial({ color: 0x1a6cb5, dashSize: 0.1, gapSize: 0.06, depthTest: false, transparent: true, opacity: 0.9 });
+    var feitos = {}, soma = 0;
+    ocultasGrp.children.forEach(function (c) { soma += c.geometry.attributes.position.count; });
+    S._linhasOcultasCortou = false;
+    cadaMalha(function (m) {
+      if (m.userData.expressID == null || !m.isMesh || !m.geometry || m.userData.marcador) return;
+      var u = m.userData.mid + ':' + m.userData.expressID; if (!alvo[u]) return;
+      var pa = m.geometry.attributes && m.geometry.attributes.position; if (!pa || pa.count > 60000) return;
+      var ar = arestasDe(m.geometry); if (!ar || !ar.length) return;
+      /* teto de 400 mil pontos tracejados (seleção enorme — "selecionar a categoria" — não trava a tela) */
+      if (soma + ar.length / 3 > 400000) { S._linhasOcultasCortou = true; return; }
+      soma += ar.length / 3;
+      var bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(ar, 3));
+      var ln = new THREE.LineSegments(bg, ocultasMat); ln.computeLineDistances();
+      ln.matrixAutoUpdate = false; ln.matrix.copy(m.matrixWorld); ln.renderOrder = 998; ln.raycast = function () {}; ln.frustumCulled = false;
+      ln.userData.marcador = true; ln.userData.uidOculta = u;
+      ocultasGrp.add(ln); feitos[u] = 1;
+    });
+    return Object.keys(feitos).length;
+  };
+  S._linhasOcultasEstado = function () { var u = {}; ocultasGrp.children.forEach(function (c) { u[c.userData.uidOculta] = 1; }); return { uids: Object.keys(u), linhas: ocultasGrp.children.length, cortou: !!S._linhasOcultasCortou }; };
 
   /* =====================================================================
    * B4 — LER E APLICAR UM PONTO DE VISTA
@@ -15328,6 +15952,33 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * ehRemovidoEd — a mesma composição de todo escritor de visibilidade).
    * ===================================================================== */
   var catCor = { on: false, ocultas: {}, porUid: {}, mats: {}, cx: null, esc: [], nOc: 0 };
+  /* ---------------------------------------------------------------
+   * VISTA INSTALAÇÕES (QUALIDADE VISUAL 2, 17/10/2026). Pedido: "a água fria na parede fica invisível (parede
+   * opaca)". Como a vista de disciplina hidráulica de um software BIM: parede, piso, laje, viga, pilar, cobertura,
+   * esquadria e mobília em cinza a 20 % (fundo), o resto (tubos, conexões, peças, louças) como é. É só GRÁFICO:
+   * entra pela aparência-base (matBase), então vale no modelo mesclado, na Planta e sobrevive a qualquer
+   * repintura; não mexe no modelo nem no orçamento. Liga/desliga: BIM.vistaInstalacoes(on). */
+  var instVista = { on: false, mats: {} };
+  /* + o TERRENO (topossólido/sub-região, IFCGEOGRAPHICELEMENT): opaco, ele escondia a rede enterrada (as caixas de inspeção
+     e o coletor sob o terreno — revisão do coordenador, 18/10/2026) */
+  var INST_FUNDO = /^IFC(WALL|SLAB|COVERING|ROOF|BEAM|COLUMN|FOOTING|PILE|STAIR|RAMP|RAILING|DOOR|WINDOW|MEMBER|PLATE|CURTAINWALL|FURNISHINGELEMENT|BUILDINGELEMENTPART|GEOGRAPHICELEMENT)/;
+  function instVistaFundo(m) { var t = m && m.userData ? String(m.userData.tipo || '').toUpperCase() : ''; return !!t && INST_FUNDO.test(t); }
+  function instVistaMat(alpha) {
+    var op = Math.round(Math.max(0.05, Math.min(1, 0.2 * (alpha == null ? 1 : alpha))) * 100) / 100, k = op.toFixed(2);
+    if (!instVista.mats[k]) { instVista.mats[k] = new THREE.MeshStandardMaterial({ color: 0xa4abb3, roughness: 0.9, metalness: 0, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide }); instVista.mats[k].name = 'vista-instalacoes'; }
+    return instVista.mats[k];
+  }
+  function setVistaInst(on) {
+    on = !!on; if (on === instVista.on) return instVista.on;
+    instVista.on = on;
+    S.modelos.forEach(function (mo) { refreshModelo(mo); });
+    if (S.selected) S.prevMat = matBase(S.selected);
+    try { window.dispatchEvent(new CustomEvent('bim:vista-instalacoes', { detail: { on: on } })); } catch (_) {}
+    return instVista.on;
+  }
+  S._setVistaInst = setVistaInst;
+  S._vistaInstOn = function () { return !!instVista.on; };
+  S._vistaInstFundo = instVistaFundo;
   function catMotor() { return (typeof window !== 'undefined' && window.BimCoresCat) ? window.BimCoresCat : null; }
   function catCaixas() {
     var est = S.edit && S.edit.estado; if (!est || !est.caixas) return null;
@@ -15472,6 +16123,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._reaplicarCoresCat = function () {
     catCor.porUid = {}; catCor.cx = null;
     if (catCor.on) { catRepintarBase(); catAplicarOcultas(); }
+    else if (instVista.on) S.modelos.forEach(function (mo) { refreshModelo(mo); });   /* VISTA INSTALAÇÕES: o modelo refeito também vira fundo */
     try { window.dispatchEvent(new CustomEvent('bim:modelos', { detail: { cores: catCor.on } })); } catch (_) {}
   };
 
@@ -15503,6 +16155,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         return corMat(_cp, _moP ? _moP.alpha : 1);
       }
     }
+    /* VISTA INSTALAÇÕES (QUALIDADE VISUAL 2): a arquitetura e a estrutura viram FUNDO cinza translúcido, os tubos,
+       conexões e louças ficam como são — a água dentro da parede e o esgoto sob o piso aparecem */
+    if (instVista.on && instVistaFundo(m)) { var _moV = modeloDe(m.userData.mid); return instVistaMat(_moV ? _moV.alpha : 1); }
+    /* PISCINA: a água fica mais transparente e o volume da piscina vira fundo translúcido na vista Instalações */
+    if (instVista.on && m.userData.agua && S._aguaMat) return S._aguaMat(true);
+    if (instVista.on && m.userData.piscFundo) { var _moP2 = modeloDe(m.userData.mid); return instVistaMat(_moP2 ? _moP2.alpha : 1); }
     /* CORES POR CATEGORIA: a pintura de conjunto (acima) e o 4D mandam; esta cor vence o material do IFC e a cor por sistema */
     if (catCor.on) { var _kc = catDeMalha(m); if (_kc) { var _moC = modeloDe(m.userData.mid); return catMat(_kc, _moC ? _moC.alpha : 1); } }
     // v1.1.96 — modo "colorir por sistema" ligado: a aparência-base vira a COR DO SISTEMA
@@ -16993,6 +17651,7 @@ window.BIM = {
   /* SELECIONAR TODAS AS INSTÂNCIAS (js/bimselinst.js): a peça sob o ponto da tela, o visível na vista 3D e o ocultar temporário */
   uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
   uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },
+  pisoIfcEm: function (x, z, yTopo) { return (S && S.alive && S._pisoIfcEm) ? S._pisoIfcEm(x, z, yTopo) : null; },   /* NÍVEL AUTOMÁTICO (js/hidnivel.js) */
   ocultarUids: function (uids) { return (S && S._ocultarUids) ? S._ocultarUids(uids || []) : 0; },
   algoOculto: function () { return !!(S && S._algoOculto && S._algoOculto()); },
   imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
@@ -17090,8 +17749,10 @@ window.BIM = {
   /* B3: o desenho de precisão (só com a prévia do modelador): snaps, seleção, estado — fita, e2e e suporte */
   precisao: function () { return (S && S._prec) ? S._prec.api : null; },
   /* B8 (modelagem por comando): a prévia é um grupo fantasma (nada gravado); o lote aplicado é UMA op na lista — desfaz de uma vez */
+  editarPreviaInst: function (ops) { return (S && S._editPreviaInst) ? S._editPreviaInst(ops) : { ok: false, malhas: 0 }; },
   editarPrevia: function (ops) { return (S && S._editPrevia) ? S._editPrevia(ops) : { ok: false, malhas: 0 }; },
   editarBase: function () { return S && S.edit && isFinite(S.edit.base) ? S.edit.base : 0; },
+  pontoPlanoY: function (clientX, clientY, y) { return (S && S._pontoPlanoY) ? S._pontoPlanoY(clientX, clientY, y) : null; },   // ARRASTAR O TUBO: cursor → plano y
   editarLote: function (lote) {
     if (!S || !S._editOpExterna || !lote || lote.op !== 'lote') return false;
     if (window.BimGrupos && BimGrupos.redirecionar && S.edit && S.edit.estado) lote = BimGrupos.redirecionar(lote, S.edit.estado);   /* P10: edição nas cópias de grupo */
@@ -17163,7 +17824,12 @@ window.BIM = {
   editarEstado: function () {
     if (!S || !S.edit) return null;
     var st = S.edit.estado || BimEdit.aplicar(S.edit.ops || []);
-    return { estado: st, qto: BimEdit.qto(st, S._famAval), ops: (S.edit.ops || []).length, refazer: (S.edit.redo || []).length };
+    /* FLUIDEZ (17/10/2026): o quantitativo do modelo inteiro (BimEdit.qto, ~60 ms no modelo médio) era calculado em
+       TODA chamada — e o clique, as Propriedades, a seleção e o kit chamam editarEstado() várias vezes só pelo estado.
+       Agora ele é calculado quando alguém LÊ .qto (mesmo valor, mesmo momento; nada fica guardado). */
+    var r = { estado: st, ops: (S.edit.ops || []).length, refazer: (S.edit.redo || []).length };
+    Object.defineProperty(r, 'qto', { enumerable: true, configurable: true, get: function () { var q = BimEdit.qto(st, S._famAval); Object.defineProperty(r, 'qto', { value: q, enumerable: true, writable: true, configurable: true }); return q; } });
+    return r;
   },
   instanciaInfo: function (id) {
     if (!S || !S.edit || !S.edit.estado) return null;
@@ -17181,6 +17847,9 @@ window.BIM = {
   instOp: function (o) { if (!S || !S._editOpExterna || !o || !o.op) return false; S._editOpExterna(o); return true; },
   /* P12 — GANCHO: refaz a cena do editor sem op nova (Mostrar desconexões liga/desliga as marcas) */
   editarReconstruir: function () { if (S && S._editReconstruir) { S._editReconstruir(); return true; } return false; },
+  /* NÍVEL DE DETALHE: refaz só as malhas das instalações no nível da vista 3D ativa (js/biminstui.js) e mede */
+  instNivelRefazer: function () { return (S && S._instNivelRefazer) ? S._instNivelRefazer() : { ok: false, erro: 'Visualizador não montado.' }; },
+  instMedir: function () { return (S && S._instMedir) ? S._instMedir() : { malhas: 0, tri: 0, porPapel: {} }; },
   _instCtx: function () { return (S && S._instCtx) ? S._instCtx() : null; },
   /* gancho de teste (só leitura): a cor (sRGB, hex) da malha de uma peça criada aqui */
   _corMalha: function (id) { var m = S && S.meshPorUid['edit:' + id]; return m && m.material && m.material.color ? m.material.color.getHexString() : null; },
@@ -17430,6 +18099,11 @@ window.BIM = {
   },
   /* ---- ambiente 3D (ViewCube, ortogonal, caixa de corte, vistas) ---- */
   caixaCorte: function (on) { return (S && S._caixaCorte) ? S._caixaCorte(!!on) : false; },
+  caixaUids: function (uids) { return (S && S._caixaUids) ? S._caixaUids(uids) : null; },
+  /* LINHAS OCULTAS (js/bimfita.js): liga (on) nas peças `uids` ou tira (sem uids: de todas); devolve quantas peças */
+  linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
+  linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
+  caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },
   /* MATERIAIS REALISTAS: a escolha da pessoa (guardada por aparelho); devolve
      uma Promise com o estado depois de as texturas chegarem */
   /* na prévia do estilo visual, o botão Materiais realistas é o atalho do Realista (ligado) e do Sombreado (desligado) */
@@ -17457,6 +18131,8 @@ window.BIM = {
   abrirFechar: function (uid, abrir) { return (S && S._abrirFechar) ? S._abrirFechar(uid, abrir) : null; },
   portas: function () { return (S && S._portas) ? S._portas() : []; },
   caixaCorteAtiva: function () { return !!(S && S._cxMain && S._cxMain.on); },
+  /* VISTA INSTALAÇÕES (QUALIDADE VISUAL 2): arquitetura e estrutura em cinza translúcido; sem argumento, só lê */
+  vistaInstalacoes: function (on) { if (!S || !S._setVistaInst) return false; return on === undefined ? S._vistaInstOn() : S._setVistaInst(on); },
   caixaCorteEstado: function () { return (S && S._cxMain) ? S._cxMain.estado() : null; },
   /* onde está, na tela, a seta da face k (0..5 = x−, x+, y−, y+, z−, z+) — usado pelas e2e para puxar a face */
   caixaCorteSetaNaTela: function (k) {

@@ -67,7 +67,13 @@
   function tecla(k) { return String(k).length === 1 ? String(k).toUpperCase() : String(k); }
 
   /* ---------------------------------------------------------- [PURA] */
-  function secoes() {
+  /* P8 (junção 18/10/2026): o que é da prévia `?previa=hidro` (atalhos das instalações, "Em desenvolvimento" da fita
+     organizada) só aparece com ela; op.hidro força (teste em Node) */
+  function hidro(op) {
+    if (op && op.hidro != null) return !!op.hidro;
+    try { return !!(global.BimPrevia && global.BimPrevia.hidro && global.BimPrevia.hidro()); } catch (e) { return false; }
+  }
+  function secoes(op) {
     var Mo = dep("BimMouse", "./bimmouse.js"), Ct = dep("BimControle", "./bimcontrole.js"), Pr = dep("BimPrecisao", "./bimprecisao.js");
     var out = [];
 
@@ -92,6 +98,9 @@
     if (Pr && Pr.ATALHOS_CMD) Object.keys(Pr.ATALHOS_CMD).forEach(function (k) { var s = Pr.ATALHOS_CMD[k]; dl.push([k, ROTULO_CMD[s] || nomes[s] || rotuloFita(s) || s]); });
     if (dl.length) out.push({ id: "duas-letras", titulo: "Atalhos de duas letras", cab: ["Teclas", "Comando"], linhas: dl,
       nota: "Digite as duas letras em seguida (até 1,2 s entre elas). Valem no modo de edição; EL vale também fora dele." });
+    /* INSTALAÇÕES (js/biminsttipos.js): os de duas letras do hidro (PI, PF, PA…), editáveis por usuário */
+    var TI = hidro(op) ? dep("BimInstTipos", "./biminsttipos.js") : null;
+    if (TI && TI.secaoAtalhos) out.push(TI.secaoAtalhos());
 
     /* MOUSE: gestos (o pivô e o zoom moram no js/bim.js; os botões laterais no js/bimmouse.js) */
     out.push({ id: "mouse", titulo: "Mouse no BIM", cab: ["Ação", "O que faz"], linhas: [
@@ -122,6 +131,12 @@
       ["Criar peça (pilar, viga…)", "Campo Perfil", "Digite série ou fabricante (W200, Ue 150, tubo, Gerdau); ao lado da lista, o desenho cotado da seção sob o mouse ou as setas"],
       ["Vista › Navegar", "Atalhos", "Esta tela (também pela tecla ?)"]
     ] });
+    /* EM DESENVOLVIMENTO (P3 da junção, 18/10/2026 — regra de 09/10: nenhum botão sem função): o que ainda não tem
+       botão, com o que já dá para fazer no lugar. A lista mora no js/bimfita.js (EM_DESENVOLVIMENTO). */
+    var Fi = hidro(op) ? dep("BimFita", "./bimfita.js") : null;
+    if (Fi && Fi.EM_DESENVOLVIMENTO && Fi.EM_DESENVOLVIMENTO.length) out.push({ id: "em-desenvolvimento", titulo: "Em desenvolvimento", cab: ["Ainda sem botão", "Hoje, faça assim"],
+      linhas: Fi.EM_DESENVOLVIMENTO.map(function (x) { return [x.nome, x.hoje]; }),
+      nota: "Estes ainda não estão na fita: entram quando estiverem prontos. Nenhum botão da fita fica sem função." });
     return out;
   }
 
@@ -133,7 +148,7 @@
     ".bat .bat-nota{font-size:12px;color:var(--texto-fraco,#5b6573);margin:2px 0 0}.bat-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:4px 22px}";
   function kbd(t) { return String(t).split(/(\s*\/\s*|\s*·\s*|\s+\+\s+|\+)/).map(function (p) { return /^\s*[\/·+]\s*$|^\s*\+\s*$/.test(p) ? esc(p) : (p ? "<kbd>" + esc(p) + "</kbd>" : ""); }).join(""); }
   function tabela(s) {
-    var comTecla = s.id === "teclado" || s.id === "duas-letras";
+    var comTecla = s.id === "teclado" || s.id === "duas-letras" || s.id === "inst";
     return '<section data-bat="' + esc(s.id) + '"><h3>' + esc(s.titulo) + "</h3><table><thead><tr>" + s.cab.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") + "</tr></thead><tbody>" +
       s.linhas.map(function (l) { return "<tr>" + l.map(function (c, i) { return "<td>" + (i === 0 && comTecla ? kbd(c) : esc(c)) + "</td>"; }).join("") + "</tr>"; }).join("") +
       "</tbody></table>" + (s.nota ? '<p class="bat-nota">' + esc(s.nota) + "</p>" : "") + "</section>";
@@ -162,8 +177,9 @@
   function abrir() {
     if (!global.UI || !global.UI.modal) return false;
     var bg = global.UI.modal("Atalhos do BIM", html(), [
-      { texto: "Baixar PDF", classe: "primary", onClick: function () { baixarPdf(); } },
-      { texto: "Fechar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } }]);
+      { texto: "Baixar PDF", classe: "primary", onClick: function () { baixarPdf(); } }].concat(hidro() && global.BimInstTipos && global.BimInstTipos.abrirAtalhos ? [
+      { texto: "Editar atalhos de instalações", classe: "ghost", onClick: function () { global.BimInstTipos.abrirAtalhos(); } }] : []).concat([
+      { texto: "Fechar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } }]));
     try { var m = bg && bg.querySelector ? bg.querySelector(".modal") : null; if (m) m.classList.add("largo"); } catch (e) {}
     return true;
   }

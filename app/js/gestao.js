@@ -10801,6 +10801,8 @@
       /* P12: Instalações › Acessórios e dispositivos (acessório de tubo, tomada/interruptor, luminária, quadro,
          eletrocalha) e Sistemas (verificar, desconexões, legenda, tabela) — js/biminstui.js (sem a prévia, sai na hora) */
       try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
+      /* TRAÇAR AUTOMATICAMENTE (18/10/2026): Instalações › Projeto inteligente, a aba Modificar | Aparelhos e o atalho TA — js/hidkitui.js (ANTES da fita organizada) */
+      try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
       /* EMBREVE (09/10/2026): Igualar tipo, Plano de trabalho e Graute e armadura saem do "em breve" — js/bimembreveui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
       /* RENDER (09/10/2026): Vista › Apresentação › Render — render físico (path tracing) a partir do modelo; js/bimrender.js (sem a prévia do modelador, sai na hora) */
@@ -10819,6 +10821,9 @@
       /* CORES POR CATEGORIA (14/10/2026): Vista › Gráficos › Cores por categoria + a legenda e o painel — js/bimcorescatui.js (a barra de baixo e as Propriedades da vista chamam o mesmo módulo) */
       try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
+      /* ORGANIZAÇÃO DA FITA (18/10/2026): aba Modificar (e a contextual), Vista na ordem de trabalho, barra de acesso
+         rápido e Caixa de seleção (BX) — js/bimfita.js. DEPOIS de todos os módulos acrescentarem à fita (ele MOVE comandos) */
+      try { if (window.BimFita) BimFita.registrar(reg, self); } catch (eFita) {}
       try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 
       BimCmd.registrar(reg);
@@ -11244,6 +11249,10 @@
         try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.concat(BimPaginacaoUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (ePg) {}
         /* VIGAS ENTRE PILARES (15/10/2026, js/metalvigaspilaresui.js): com 2+ pilares selecionados */
         try { if (window.MetalVigasPilaresUI && MetalVigasPilaresUI.itensMenu) itNiv = itNiv.concat(MetalVigasPilaresUI.itensMenu({ uid: sob || uid })); } catch (eVp) {}
+        /* JUNTAS NA PONTA (QV1, 17/10/2026, js/biminstui.js): luva / bolsa do próprio tubo / luva invertida */
+        try { if (window.BimInstUI && BimInstUI.itensMenu) itNiv = itNiv.concat(BimInstUI.itensMenu({ uid: sob || uid })); } catch (eIj) {}
+        /* TRAÇAR AUTOMATICAMENTE (18/10/2026, js/hidkitui.js): no ambiente (ou no aparelho) sob o cursor */
+        try { if (window.HidKitUI && HidKitUI.itensMenu) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
         var SI = window.BimSelInst, temSel = false;
         try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
         if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
@@ -12417,6 +12426,10 @@
             '<option value="vazio"' + (g.contorno === "vazio" ? " selected" : "") + ">Nada — desenho tudo</option></select></label>" +
           '<label>Largura (m)<input type="number" step="0.1" data-np="largura" value="' + g.largura + '" style="width:100%"></label>' +
           '<label>Comprimento (m)<input type="number" step="0.1" data-np="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
+          /* TEMPLATE (.optpl) já na criação: os templates RA e os do hidrossanitário por disciplina (18/10/2026).
+             JUNÇÃO 18/10/2026: só com a prévia ?previa=hidro — sem ela o diálogo é o do master (e2e-bim-inicio, 9 campos) */
+          ((window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
+            return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.template ? " selected" : "") + ">" + Util.esc(t.nome) + "</option>"; }).join("") + "</select></label>" : "") +
         "</div>" +
         '<div id="np-resumo" style="margin-top:12px"></div>';
 
@@ -12428,6 +12441,19 @@
       this._npResumo();
     },
 
+    /* os templates oferecidos no projeto novo e no "Templates RA": os da casa (js/templatesra.js) e, com o hidrossanitário
+       carregado, um por DISCIPLINA (js/hidtemplates.js: água fria, quente, esgoto, pluvial, incêndio, gás, clima, fluidos,
+       tratamento e o completo) */
+    _npTemplates: function () {
+      var l = [];
+      try { if (window.TemplatesRA) l = TemplatesRA.lista().map(function (t) { return { id: t.id, nome: t.nome, descricao: t.descricao }; }); } catch (e) {}
+      try { if (window.HidTemplates && HidTemplates.disciplinas) HidTemplates.disciplinas().forEach(function (t) { l.push({ id: t.id, nome: "RA — Hidrossanitário · " + t.nome, descricao: t.descricao, hid: true }); }); } catch (e2) {}
+      return l;
+    },
+    _npTemplateObter: function (id) {
+      try { if (/^disc-/.test(id) && window.HidTemplates) return HidTemplates.obter(id); } catch (e) {}
+      try { return window.TemplatesRA ? TemplatesRA.obter(id) : null; } catch (e2) { return null; }
+    },
     /* "Projeto <nome> — <obra>", enquanto a pessoa não escrever o nome dela */
     _npArquivoPadrao: function () {
       var g = this._npCfg;
@@ -12463,7 +12489,7 @@
           /* apagou o nome: volta a seguir nome e obra */
           g.arquivoManual = !!String(el.value).trim();
           if (!g.arquivoManual) self._npArquivoPadrao();
-        } else if (k === "nome" || k === "tipo" || k === "contorno") {
+        } else if (k === "nome" || k === "tipo" || k === "contorno" || k === "template") {
           g[k] = el.value;
           if (k === "nome") self._npArquivoPadrao();
         } else {
@@ -12631,6 +12657,7 @@
           : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
       }
       if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
+      if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
       UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
       try { this._bimCascaContexto(); } catch (e) {}
     },
@@ -14205,7 +14232,7 @@
     },
     /* B6: os templates RA prontos (js/templatesra.js) — usar aqui ou baixar o .optpl */
     _optplRA: function () {
-      var self = this, lista = TemplatesRA.lista();
+      var self = this, lista = this._npTemplates();
       UI.modal("Templates RA", '<div data-tpl="ra">' + lista.map(function (t) {
         return '<div class="tpl-ra" style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:10px;margin:0 0 8px"><b>' + Util.esc(t.nome) + '</b><p class="muted" style="margin:4px 0 8px;font-size:12.5px">' + Util.esc(t.descricao) + "</p>" +
           '<button class="btn sm primary" data-tpl-usar="' + Util.esc(t.id) + '">Usar nesta obra</button> <button class="btn sm" data-tpl-baixar="' + Util.esc(t.id) + '">Baixar .optpl</button></div>';
@@ -14213,8 +14240,8 @@
       var el = document.querySelector('[data-tpl="ra"]');
       if (el) el.onclick = function (e) {
         var u = e.target.closest ? e.target.closest("[data-tpl-usar]") : null, b = e.target.closest ? e.target.closest("[data-tpl-baixar]") : null;
-        if (u) { var t = TemplatesRA.obter(u.getAttribute("data-tpl-usar")); UI.fecharModal(); if (t) self._optplAplicar(t, t.familiasFaltando ? ["Família(s) fora da biblioteca: " + t.familiasFaltando.join(", ")] : []); }
-        else if (b) { var id = b.getAttribute("data-tpl-baixar"), txt = TemplatesRA.arquivo(id, self._opMeta()), t2 = TemplatesRA.obter(id); if (txt && t2) self._opBaixar(OpFormato.nomeSeguro(t2.nome) + OpFormato.EXT.template, txt, "application/json"); }
+        if (u) { var t = self._npTemplateObter(u.getAttribute("data-tpl-usar")); UI.fecharModal(); if (t) self._optplAplicar(t, t.familiasFaltando ? ["Família(s) fora da biblioteca: " + t.familiasFaltando.join(", ")] : []); }
+        else if (b) { var id = b.getAttribute("data-tpl-baixar"), hid = /^disc-/.test(id) && window.HidTemplates, txt = hid ? HidTemplates.paraOptpl(id, self._opMeta()) : TemplatesRA.arquivo(id, self._opMeta()), t2 = self._npTemplateObter(id); if (txt && t2) self._opBaixar(OpFormato.nomeSeguro(t2.nome) + OpFormato.EXT.template, txt, "application/json"); }
       };
     },
     _famSync: function () {
@@ -14461,6 +14488,9 @@
       var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
       try { (BIM.elementos || []).some(function (e) { if (e.uid === uid) { el = e; return true; } return false; }); } catch (e0) {}
       var fam = /^edit:f\d+$/.test(uid), fid = uid.slice(5);
+      /* FLUIDEZ (rodada 3): família colocada pelo kit, pela rota ou por cena colada tem id livre ("lav", "kbac-vd") —
+         sem isto a louça caía no ramo genérico (sem Ações nem a ficha hidráulica) */
+      if (!fam && /^edit:/.test(uid)) { try { fam = !!(window.BIM && BIM.instanciaInfo && BIM.instanciaInfo(fid)); } catch (eFi) {} }
       /* P12: instalação (trecho, conexão, acessório) — a paleta do registro e, embaixo, as seções da B5/P12
          (material, DN, aplicação, SINAPI, sistema, acessório no tubo, paralelos). Duto e ralo: a tela da B5. */
       if (window.BimInstUI && BimInstUI.ehInst(uid) && BimInstUI.extrasPaleta) {
@@ -14473,7 +14503,10 @@
          "Acabamentos" (js/orcmodeloui.js) com o botão Aplicar por ambiente. As seções
          são uma FUNÇÃO: a paleta refeita depois de uma op pede o bloco de novo (fresco). */
       if (window.OrcModeloUI && OrcModeloUI.ehAmbiente && OrcModeloUI.ehAmbiente(fid)) {
-        return BimPropsUI.esquema(info, this, { extras: function () { try { return OrcModeloUI.secoesAmbiente(fid); } catch (eA) { return []; } }, aoMudarExtra: function (pid, valor) {
+        return BimPropsUI.esquema(info, this, { extras: function () { var xs = []; try { xs = OrcModeloUI.secoesAmbiente(fid); } catch (eA) { xs = []; }
+          /* "3D do ambiente" e "Para a prancha" (js/hidpranchasui.js) quando o hidrossanitário está carregado */
+          try { if (window.HidPranchasUI && HidPranchasUI.secaoAmbiente) xs = xs.concat(HidPranchasUI.secaoAmbiente(fid)); } catch (eH) {}
+          return xs; }, aoMudarExtra: function (pid, valor) {
           if (String(pid).indexOf("acab:") === 0 || String(pid).indexOf("orc:") === 0) OrcModeloUI.mudar(uid, pid, valor);
           try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
         } });
@@ -14481,6 +14514,7 @@
       try {
         if (fam) {
           if (window.OrcModeloUI) extras = extras.concat(OrcModeloUI.secoesFamilia(fid));
+          if (window.BimInstUI && BimInstUI.secoesFamilia) extras = extras.concat(BimInstUI.secoesFamilia(fid));   /* FLUIDEZ: UHC e DN da ficha da louça */
           var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
           extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
             .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
@@ -14579,7 +14613,9 @@
             { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
             { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
             /* CORES POR CATEGORIA (js/bimcorescatui.js): o mesmo interruptor da barra de baixo */
-            { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+            { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ]
+              /* NÍVEL DE DETALHE (js/biminstui.js): Baixo / Médio / Alto desta vista 3D — o mesmo menu da barra de baixo */
+              .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
           { nome: "Extensões", params: [
             { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
         ].concat(
@@ -14594,6 +14630,7 @@
             if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
             if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
             if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
+            if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
             BimShell.pintarFita();
           } catch (e2) {}
           return self._bimPropsVista();
@@ -14667,6 +14704,8 @@
       this._bimVxLayout();
       /* S8: a regra do topo da viga é da vista na frente (planta estrutural × piso/3D) */
       try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
+      /* NÍVEL DE DETALHE: a cena 3D passa ao nível da aba 3D ativada; o botão da barra mostra o da vista ativa (2D ou 3D) */
+      try { if (window.BimInstUI && BimInstUI.aoAtivarVista) BimInstUI.aoAtivarVista(id); } catch (eND) {}
       /* vista 2D: não tem caixa de corte nem ortogonal — Propriedades mostra os parâmetros do desenho */
       if (v && (v.tipo === "2d" || v.tipo === "folha")) { try { BimShell.repintarVista(); } catch (e2d) {} return; }   /* P8: a folha também */
       /* a fita segue a vista ativa: caixa de corte e ortogonal são de cada vista */
@@ -15242,6 +15281,8 @@
     _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) { return v.id === id; })[0] || null; },
     _bimVistaIr: function (id) {
       var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
+      /* "3D — <ambiente>" (hidrossanitário): reabre com a caixa de corte do cômodo */
+      if (v.hid3d && window.HidPranchasUI && HidPranchasUI.reabrir3d) { HidPranchasUI.reabrir3d(v); return; }
       /* ⚠ NA CASCA DO BIM, O PONTO DE VISTA ABRE NUMA ABA DELE (Rogério,
          30/09/2026: "abrir um ponto de vista muda todas as janelas abertas…
          quero que abra uma nova e ela mantenha como foi criada"). A vista nova

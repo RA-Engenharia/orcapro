@@ -55,7 +55,7 @@
     centro: "Clique o CENTRO do giro.", ref: "Digite o ângulo e Enter — ou clique a direção de referência.", final: "Clique a direção final — ou digite o ângulo e Enter.",
     p1: "clique o 1º ponto.", p2: "Clique o 2º ponto — ou digite o comprimento (Tab: ângulo) e Enter.", pos: "Clique onde passa a linha da cota (Enter: 0,50 m ao lado).",
     /* P4 */
-    linhaRef: "Clique a LINHA DE REFERÊNCIA (face, eixo da parede, eixo da grade).", linhaAlvo: "Clique a linha da peça que vai encostar na referência.",
+    linhaRef: "Clique a LINHA DE REFERÊNCIA (face, eixo da parede, eixo da grade, eixo do tubo, eixo ou face da peça, ponto de ligação).", linhaAlvo: "Clique a linha da peça que vai encostar na referência (aparelho, caixa, ralo, tubo: o que está ligado acompanha). Esc sai.",
     alvoD: "Clique na parede ou viga, do lado para onde vai o deslocamento (a distância está na barra de opções).",
     pecaA: "Clique a 1ª parede (ou viga) no trecho que FICA.", pecaB: "Clique a 2ª no trecho que FICA — as duas vão até o canto.",
     alvoV: "Clique cada parede/viga que vai até a referência (o lado clicado fica). Esc termina.",
@@ -508,7 +508,11 @@
         if (!ativo() || pr.sel.length !== 1 || ferramenta()) return;
         pendurar();
         var id = pr.sel[0], st = estado();
+        /* PORTAS E JANELAS (js/bimvaoarr.js): a abertura hospedada tem as cotas dela (esquerda/direita até a face, peitoril) */
+        var vaoK = global.BimVaoArr && global.BimVaoArr.cuida ? global.BimVaoArr.cuida(st, id) : "";
+        if (vaoK === "vao" || vaoK === true) return;
         pr.cotasTmp = Pr().cotasTemporarias(st, id, { avaliar: api.avaliar });
+        /* PAREDE: no 3D a tela é esta (cotas de lado incluídas); as cotas editáveis de js/bimvaoarr.js aparecem só na planta e no corte */
         pr.cotasTmp.forEach(function (c, i) {
           var b = el("button", "bp-cota-tmp", esc(fmt(c.valor)));
           b.type = "button"; b.setAttribute("data-bp-cota", String(i)); b.setAttribute("data-k", c.k);
@@ -690,6 +694,24 @@
         if (!ficar) reiniciarPasso();
         return true;
       }
+      /* o passo de LINHA a partir de um ponto do mundo (planta, corte): o mesmo do 3D, sem o raio */
+      function passoLinhaEm(p, tol) {
+        var f = ferramenta(), st = estado(), q = pr.p4, t0 = tol > 0 ? tol : 0.12;
+        limparGrupo(grp); caixaEsconder();
+        if (!p) return true;
+        if (pr.passo === "linhaRef") {
+          var sr = Pr().segmentoPerto(st, p, t0, { avaliar: api.avaliar });
+          if (!sr) { hint("Não achei linha perto do clique: clique numa face, num eixo (parede, grade, tubo, peça) ou no ponto de ligação."); return true; }
+          q.ref = sr; pr.pts = [p]; irPara(f === "alinhar" ? "linhaAlvo" : "alvoV"); return true;
+        }
+        var sa = Pr().segmentoPerto(st, p, t0, { avaliar: api.avaliar, excluir: q.ref && q.ref.id != null ? [q.ref.id] : [] });
+        if (!sa || sa.id == null) { hint("Clique a linha de uma peça criada no OrçaPRO."); return true; }
+        var ref0 = q.ref;   /* o aplicarP4 recomeça a ferramenta (q.ref sai): o cadeado precisa da referência */
+        if (aplicarP4(Pr().opAlinhar(st, ref0, sa), "Alinhado")) oferecerCadeado(st, ref0, sa);
+        return true;
+      }
+      /* o CADEADO depois do Alinhar (js/bimalinharinst.js): manter alinhado quando a referência andar */
+      function oferecerCadeado(st, ref, alvo) { try { if (global.BimAlinharInst && global.BimAlinharInst.oferecerTrava) global.BimAlinharInst.oferecerTrava(st, ref, alvo); } catch (eC) { global.__cadeadoErro = String(eC && eC.stack || eC); } }
       function passoP4(e, hit) {
         var f = ferramenta(), st = estado(), passo = pr.passo, q = pr.p4;
         var sp = pontoSnap(e, hit), p = sp ? sp.p : null, id = idDoHit(), tol = sp ? Math.max(sp.tol, 0.08) : 0.3;
@@ -702,7 +724,9 @@
         if (passo === "linhaAlvo") {
           var sa = p && Pr().segmentoPerto(st, p, tol, { avaliar: api.avaliar, excluir: q.ref && q.ref.id != null ? [q.ref.id] : [] });
           if (!sa || sa.id == null) { hint("Clique a linha de uma peça criada no OrçaPRO."); return true; }
-          aplicarP4(Pr().opAlinhar(st, q.ref, sa), "Alinhado"); return true;
+          var refA = q.ref;
+          if (aplicarP4(Pr().opAlinhar(st, refA, sa), "Alinhado")) oferecerCadeado(st, refA, sa);
+          return true;
         }
         if (passo === "alvoV") {
           if (id == null || !p) { hint(DICA.alvoV); return true; }
@@ -984,6 +1008,9 @@
             if (!soma) proximo(); else hint(ROT_FERR[f] + ": " + pr.sel.length + " selecionado(s). Enter segue.");
             return true;
           }
+          /* ALINHAR / APARAR na PLANTA (18/10/2026, pedido do Rogério: "AL na planta, no corte e no 3D"): a LINHA mais perto do
+             clique (face, eixo de parede, grade, eixo do tubo, da peça, da louça, do conector — js/bimalinharinst.js) */
+          if (pr.passo === "linhaRef" || pr.passo === "linhaAlvo") return passoLinhaEm(mods.raw && isFinite(mods.raw.x) ? mods.raw : p, mods.tol);
           if (P4[pr.passo]) { hint(ROT_FERR[f] + ": esta etapa pega a face/linha da peça na vista 3D."); return true; }
           limparGrupo(grp); caixaEsconder(); passoComPonto(p);
           return true;
@@ -1031,17 +1058,19 @@
           var rv = (Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
           if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
           caixaMostrar(e, m.base, r.p);
+          try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(pr.sel.length === 1 ? pr.sel[0] : null, T.dx, T.dz); } catch (eVP) {}   /* PAREDE: as cotas ao vivo */
           return true;
         },
         arrastoSoltar: function (e) {
           var m = pr.mov; pr.mov = null;
+          try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {}
           camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder();
           if (!m) return null;
           var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
           if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
           return self.api.mover(dx, dz, e);
         },
-        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
+        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
         /* o modelo foi refeito (op nova, desfazer, refazer, reabrir) */
         aposRebuild: function (st) {
           pr.geo = null;

@@ -66,7 +66,12 @@
   var DICA_VINC = "Vínculos: ao mover ou esticar uma parede ou uma barra, o que está amarrado nela acompanha — as paredes do canto esticam, a viga segue o pilar, a sapata vem junto. Segure Alt durante o arraste para mover só a peça. Clique para ligar ou desligar.";
   var DICA_ORTO = "Orto: o traço anda só na horizontal/vertical e nos ângulos marcados (45°, 90°…). Vale para parede, viga, peça metálica, linha, cota, contorno de laje/telhado/fundação, guarda-corpo… F8 liga e desliga; Shift inverte enquanto está apertado (com o Orto apagado, é o orto temporário).";
 
+  var CHAVE_NOME = "orcapro:bim:snap-nome:v1";   /* "0" = sem a dica com o nome do encaixe (preferência do aparelho) */
   var BimBarraSnaps = {
+    /* a dica com o NOME do encaixe ao lado do cursor (js/bimanot2dui.js): ligada por padrão */
+    mostrarNome: function (on) {
+      try { if (on != null) global.localStorage.setItem(CHAVE_NOME, on ? "1" : "0"); return global.localStorage.getItem(CHAVE_NOME) !== "0"; } catch (e) { return on != null ? !!on : true; }
+    },
     _el: null, _menu: null, _pop: null, _ligado: false, _sairOuvinte: null,
 
     /* a barra de baixo da casca (ou null sem casca/sem modelador) */
@@ -147,6 +152,7 @@
           '<div class="bbs-pop-grupos">' + GR.map(function (g) {
             return '<div class="bbs-pop-grupo" data-bbs-grupo="' + esc(g.id) + '"><div class="bbs-pop-gtit">' + esc(g.rotulo) + "</div>" + g.tipos.filter(function (t) { return T.indexOf(t) >= 0; }).map(item).join("") + "</div>";
           }).join("") + "</div>" +
+          '<label class="bbs-pop-item"><input type="checkbox" data-bbs-nome="1"' + (BimBarraSnaps.mostrarNome() ? " checked" : "") + '> Mostrar nome do encaixe</label>' +
           '<label class="bbs-pop-item bbs-pop-passo">Passo da grade <input data-bbs-passo="1" inputmode="decimal" autocomplete="off" value="' + esc(fmt(p.passo)) + '"> m</label>' +
           '<div class="bbs-pop-nota">Quando dois concorrem: ponto (extremidade, interseção, meio, centro, quadrante, centro geométrico, inserção, nó) &gt; ponto construído (perpendicular, tangente, interseção aparente, cruzamento de guias) &gt; linha de construção (prolongamento, rastreamento, paralelo) &gt; sobre a peça &gt; grade. Rastreamento e paralelo: pare o cursor ~0,5 s num ponto ou numa linha para adquirir.</div>';
       } else {
@@ -181,6 +187,7 @@
       pop.addEventListener("change", function (e) {
         var t = e.target, B = BO(); if (!t || !B) return;
         if (t.hasAttribute("data-bbs-geral")) { B.precisaoMudar({ snap: !!t.checked }); self._avisar("snap"); return; }
+        if (t.hasAttribute("data-bbs-nome")) { self.mostrarNome(!!t.checked); status(t.checked ? "O nome do encaixe aparece numa dica ao lado do cursor (parado ~0,4 s)." : "Nome do encaixe desligado: só o símbolo no ponto."); return; }
         if (t.hasAttribute("data-bbs-orto")) { B.precisaoMudar({ orto: !!t.checked }); self._avisar("orto"); return; }
         var tp = t.getAttribute("data-bbs-tipo");
         if (tp) { var o = { tipos: {} }; o.tipos[tp] = !!t.checked; if (tp === "grade") o.grade = !!t.checked; B.precisaoMudar(o); status((ROT[tp] || tp) + (t.checked ? ": ligado." : ": desligado — não agarra mais.")); return; }

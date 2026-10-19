@@ -41,7 +41,7 @@
     /* FAMIMPORT (js/familiamalha.js): as conexões das famílias importadas de .rfa */
     conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"
   };
-  var FORMAS = { caixa: "Caixa", cilindro: "Cilindro", extrusao: "Extrusão de contorno" };
+  var FORMAS = { caixa: "Caixa", cilindro: "Cilindro", extrusao: "Extrusão de contorno", revolucao: "Revolução de perfil", gerada: "Forma gerada (louça/equipamento RA)" };
   var UNIDADES_QTO = { un: "unidade", m: "metro", m2: "m²", m3: "m³", kg: "kg" };
 
   function txt(v) { return v == null ? "" : String(v); }
@@ -223,6 +223,29 @@
         try { Object.keys(refs(analisar(String(s[c])))).forEach(function (r) { if (!nomes[r]) erros.push("sólido \"" + (s.nome || i + 1) + "\", " + c + ": usa \"" + r + "\", que não existe"); }); }
         catch (e) { erros.push("sólido \"" + (s.nome || i + 1) + "\", " + c + ": " + e.message); }
       });
+      if (s.forma === "revolucao") {
+        /* REVOLUÇÃO: perfil [[raio, altura]…] em FÓRMULA, girado em volta do eixo (y por padrão); sem nome de parâmetro inexistente */
+        var rotS = "sólido \"" + (s.nome || i + 1) + "\"";
+        if (arr(s.perfil).length < 2) erros.push(rotS + ": o perfil da revolução precisa de 2 pontos ou mais");
+        arr(s.perfil).forEach(function (q, iq) {
+          [0, 1].forEach(function (c) {
+            if (!q || q[c] == null || q[c] === "") { erros.push(rotS + ": ponto " + (iq + 1) + " do perfil incompleto"); return; }
+            try { Object.keys(refs(analisar(String(q[c])))).forEach(function (r) { if (!nomes[r]) erros.push(rotS + ", perfil: usa \"" + r + "\", que não existe"); }); }
+            catch (e) { erros.push(rotS + ", perfil: " + e.message); }
+          });
+        });
+        if (s.segmentos != null && !(s.segmentos >= SEG_MIN && s.segmentos <= SEG_MAX)) erros.push(rotS + ": segmentos da revolução entre " + SEG_MIN + " e " + SEG_MAX);
+      }
+      if (s.forma === "gerada") {
+        /* GERADA (js/hidlouca.js): o gerador de malha pelo nome + os parâmetros dele em FÓRMULA */
+        var rotG = "sólido \"" + (s.nome || i + 1) + "\"";
+        if (!txt(s.gerador)) erros.push(rotG + ": falta o nome do gerador da forma");
+        else { var GL = geradorLouca(); if (GL && !GL.existe(s.gerador)) erros.push(rotG + ": gerador \"" + s.gerador + "\" desconhecido"); }
+        Object.keys(s.p || {}).forEach(function (kp) {
+          try { Object.keys(refs(analisar(String(s.p[kp])))).forEach(function (r) { if (!nomes[r]) erros.push(rotG + ", " + kp + ": usa \"" + r + "\", que não existe"); }); }
+          catch (e) { erros.push(rotG + ", " + kp + ": " + e.message); }
+        });
+      }
       if (s.forma === "extrusao" && arr(s.contorno).length < 3) erros.push("sólido \"" + (s.nome || i + 1) + "\": o contorno precisa de 3 pontos ou mais");
     });
     /* FAMIMPORT: a família importada (malha) traz o vão POR TIPO (tipo.vao), não em fórmula */
@@ -253,6 +276,8 @@
     var base = ["x", "y", "z", "rot", "visivel"];
     if (s.forma === "caixa") return base.concat(["dx", "dy", "dz"]);
     if (s.forma === "cilindro") return base.concat(["raio", "altura"]);
+    if (s.forma === "revolucao") return base.concat(["ex", "ez"]);
+    if (s.forma === "gerada") return base;
     return base.concat(["altura"]);
   }
   /* ordem topológica dos parâmetros com fórmula; { ordem:[nomes], ciclo:[...]|null } */
@@ -274,6 +299,150 @@
     }
     Object.keys(ps).forEach(visita);
     return { ordem: ordem, ciclo: ciclo };
+  }
+
+  /* ------------------------------------------------------ REVOLUÇÃO
+   * Perfil [[raio, altura]…] (fórmulas) girado 360° em volta do eixo (y por padrão; "x" ou "z"
+   * deitam o sólido). ex/ez estiram a seção (oval: bacia, lavatório). O perfil que começa ou termina
+   * longe do eixo é FECHADO NO EIXO (tampa plana); `fechar: "perfil"` fecha o perfil sobre si mesmo
+   * (anel oco: assento, aro, grade). A malha sai INDEXADA, com os vértices repetidos em cada trecho do
+   * perfil: a aresta do perfil fica viva e o giro fica liso (`suave`: o 3D não "achata" as faces).
+   * Vira forma "malha" para o 3D, o IFC e o quantitativo (o mesmo caminho da família importada). */
+  var SEG_MIN = 8, SEG_MAX = 48, SEG_PAD = 24;
+  function malhaRevolucao(s, f, erros) {
+    var rotulo = "sólido \"" + (s.nome || s.id) + "\"";
+    var pts = arr(s.perfil).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; });
+    var seg = s.segmentos != null ? Math.round(s.segmentos) : SEG_PAD, ex = f(s.ex, 1), ez = f(s.ez, 1), eps = 1e-9;
+    if (!(ex > 0) || !(ez > 0)) { erros.push(rotulo + ": escala da revolução ≤ 0"); return null; }
+    var ni = -1; pts.forEach(function (q, iq) { if (ni < 0 && !(q[0] >= 0)) ni = iq; });
+    if (ni >= 0) { erros.push(rotulo + ": o ponto " + (ni + 1) + " do perfil está do lado NEGATIVO do eixo (raio " + pts[ni][0] + "); o raio é a distância ao eixo e não pode ser negativo"); return null; }
+    var ig = -1; pts.forEach(function (q, iq) { if (ig < 0 && iq > 0 && Math.abs(q[0] - pts[iq - 1][0]) <= eps && Math.abs(q[1] - pts[iq - 1][1]) <= eps) ig = iq; });
+    if (ig >= 0) { erros.push(rotulo + ": os pontos " + ig + " e " + (ig + 1) + " do perfil são iguais (segmento sem comprimento); apague um deles"); return null; }
+    if (s.fechar === "perfil") pts.push([pts[0][0], pts[0][1]]);
+    else {
+      if (pts[0][0] > eps) pts.unshift([0, pts[0][1]]);
+      if (pts[pts.length - 1][0] > eps) pts.push([0, pts[pts.length - 1][1]]);
+    }
+    /* auto-interseção do perfil (com o fechamento já posto): dois trechos que não são vizinhos não podem se tocar */
+    var nseg = pts.length - 1, fechado = s.fechar === "perfil";
+    function ori(p1, p2, p3) { var o = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0]); return Math.abs(o) <= eps ? 0 : (o > 0 ? 1 : -1); }
+    function noSeg(p1, p2, p3) { return Math.min(p1[0], p2[0]) - eps <= p3[0] && p3[0] <= Math.max(p1[0], p2[0]) + eps && Math.min(p1[1], p2[1]) - eps <= p3[1] && p3[1] <= Math.max(p1[1], p2[1]) + eps; }
+    function cruza(a1, a2, b1, b2) {
+      var o1 = ori(a1, a2, b1), o2 = ori(a1, a2, b2), o3 = ori(b1, b2, a1), o4 = ori(b1, b2, a2);
+      if (o1 !== o2 && o3 !== o4) return true;
+      return (o1 === 0 && noSeg(a1, a2, b1)) || (o2 === 0 && noSeg(a1, a2, b2)) || (o3 === 0 && noSeg(b1, b2, a1)) || (o4 === 0 && noSeg(b1, b2, a2));
+    }
+    for (var i1 = 0; i1 < nseg; i1++) for (var i2 = i1 + 2; i2 < nseg; i2++) {
+      if (fechado && i1 === 0 && i2 === nseg - 1) continue;     /* o último trecho encosta no primeiro */
+      if (cruza(pts[i1], pts[i1 + 1], pts[i2], pts[i2 + 1])) { erros.push(rotulo + ": o perfil se cruza (trecho " + (i1 + 1) + " com o trecho " + (i2 + 1) + "); o sólido sairia com volume errado"); return null; }
+    }
+    var eixo = s.eixo === "x" || s.eixo === "z" ? s.eixo : "y", v = [], fc = [], k, j;
+    function ponto(r, h, ang) {
+      var a = r * Math.cos(ang) * ex, b = r * Math.sin(ang) * ez;
+      if (eixo === "x") return [h, a, b];
+      if (eixo === "z") return [a, b, h];
+      return [a, h, b];
+    }
+    function ring(q) { for (var jj = 0; jj < seg; jj++) { var pp = ponto(q[0], q[1], 2 * Math.PI * jj / seg); v.push(pp[0], pp[1], pp[2]); } }
+    for (k = 0; k + 1 < pts.length; k++) {
+      var rA = pts[k][0], rB = pts[k + 1][0];
+      if (rA <= eps && rB <= eps) continue;
+      var A = v.length / 3, B = A + seg;
+      ring(pts[k]); ring(pts[k + 1]);
+      for (j = 0; j < seg; j++) {
+        var j2 = (j + 1) % seg, a0 = A + j, a1 = A + j2, b0 = B + j, b1 = B + j2;
+        if (rA > eps && rB > eps) fc.push(a0, b0, b1, a0, b1, a1);
+        else if (rA <= eps) fc.push(a0, b0, b1);
+        else fc.push(a0, b0, a1);
+      }
+    }
+    /* descarta triângulo de área zero (vértices coincidentes no eixo) */
+    var bom = [];
+    for (k = 0; k + 2 < fc.length; k += 3) {
+      var i0 = fc[k] * 3, i1 = fc[k + 1] * 3, i2 = fc[k + 2] * 3;
+      var ux = v[i1] - v[i0], uy = v[i1 + 1] - v[i0 + 1], uz = v[i1 + 2] - v[i0 + 2], wx = v[i2] - v[i0], wy = v[i2 + 1] - v[i0 + 1], wz = v[i2 + 2] - v[i0 + 2];
+      var cx = uy * wz - uz * wy, cy = uz * wx - ux * wz, cz = ux * wy - uy * wx;
+      if (cx * cx + cy * cy + cz * cz > 1e-24) bom.push(fc[k], fc[k + 1], fc[k + 2]);
+    }
+    fc = bom;
+    if (!fc.length) { erros.push(rotulo + ": o perfil não gera superfície"); return null; }
+    /* orientação para fora: o volume com sinal tem de dar positivo (teorema da divergência) */
+    var vv = 0, q, i0, i1, i2;
+    for (q = 0; q + 2 < fc.length; q += 3) {
+      i0 = fc[q] * 3; i1 = fc[q + 1] * 3; i2 = fc[q + 2] * 3;
+      vv += v[i0] * (v[i1 + 1] * v[i2 + 2] - v[i1 + 2] * v[i2 + 1]) - v[i0 + 1] * (v[i1] * v[i2 + 2] - v[i1 + 2] * v[i2]) + v[i0 + 2] * (v[i1] * v[i2 + 1] - v[i1 + 1] * v[i2]);
+    }
+    vv = vv / 6;
+    if (vv < 0) { for (k = 0; k + 2 < fc.length; k += 3) { var tmp = fc[k + 1]; fc[k + 1] = fc[k + 2]; fc[k + 2] = tmp; } vv = -vv; }
+    var rot = f(s.rot, 0) * Math.PI / 180;
+    if (rot) { var c = Math.cos(rot), sn = Math.sin(rot); for (k = 0; k + 2 < v.length; k += 3) { var vx = v[k], vz = v[k + 2]; v[k] = vx * c + vz * sn; v[k + 2] = -vx * sn + vz * c; } }
+    for (k = 0; k < v.length; k++) v[k] = Math.round(v[k] * 1e6) / 1e6;
+    return { forma: "malha", origemForma: "revolucao", suave: true, x: f(s.x, 0), y: f(s.y, 0), z: f(s.z, 0), rot: 0, v: v, f: fc, volume: vv };
+  }
+  /* ------------------------------------------------------ FORMA GERADA
+   * (QUALIDADE VISUAL 3, 17/10/2026) A louça/o equipamento com geometria real: o js/hidlouca.js gera as
+   * PARTES (bacia, assento, tampa, torneira, sifão…) a partir dos parâmetros do sólido (fórmulas). Aqui as
+   * partes se juntam POR MATERIAL (uma malha — uma chamada de desenho — por material) e levam os níveis de
+   * detalhe (lod: [nível 1, nível 2]) que o 3D troca pela distância. Parte "acessório" (metais, sifão) vai
+   * em malha própria, marcada, para a conferência da envolvente olhar só o corpo. Sem o gerador carregado
+   * (o grupo do hidro não baixou), a forma vira a CAIXA da envolvente `s.env` — nunca some calada. */
+  function geradorLouca() {
+    if (Familia.geradorForcado !== undefined) return Familia.geradorForcado;   /* gancho de teste: null = "o grupo do hidro não carregou" */
+    if (global.HidLouca) return global.HidLouca;
+    if (typeof require === "function") { try { return require("./hidlouca.js"); } catch (e) { return null; } }
+    return null;
+  }
+  function malhasGeradas(s, f, mat, erros) {
+    var rotulo = "sólido \"" + (s.nome || s.id) + "\"", G = geradorLouca(), P = {}, base = { x: f(s.x, 0), y: f(s.y, 0), z: f(s.z, 0) };
+    Object.keys(s.p || {}).forEach(function (k) { P[k] = f(s.p[k], 0); });
+    if (!G) {
+      var e = s.env || null;
+      if (!e) { erros.push(rotulo + ": o gerador de forma (js/hidlouca.js) não carregou"); return []; }
+      return [{ id: s.id, nome: s.nome || "", forma: "caixa", x: base.x + f(e.x, 0), y: base.y + f(e.y, 0), z: base.z + f(e.z, 0), rot: 0, dx: f(e.dx, 0.1), dy: f(e.dy, 0.1), dz: f(e.dz, 0.1), material: mat(s.material), cor: "" }];
+    }
+    var niveis = [], n;
+    for (n = 0; n < (G.NIVEIS || 1); n++) {
+      var r = G.gerar(s.gerador, P, { nivel: n });
+      if (!r.ok) { erros.push(rotulo + ": " + r.erros.join("; ")); return []; }
+      niveis.push(r.partes);
+    }
+    var rot = f(s.rot, 0) * Math.PI / 180, c = Math.cos(rot), sn = Math.sin(rot);
+    function grupos(partes) {
+      var gs = {}, ordem = [];
+      partes.forEach(function (p) {
+        var m = p.material === "@" ? mat(s.material) : p.material, k = m + (p.acessorio ? "|acessorio" : "");
+        if (!gs[k]) { gs[k] = { material: m, acessorio: !!p.acessorio, v: [], f: [], volume: 0, partes: [] }; ordem.push(k); }
+        var g = gs[k], i0 = g.v.length / 3, q;
+        for (q = 0; q + 2 < p.v.length; q += 3) {
+          var x = p.v[q], z = p.v[q + 2];
+          g.v.push(rot ? Math.round((x * c + z * sn) * 1e6) / 1e6 : x, p.v[q + 1], rot ? Math.round((-x * sn + z * c) * 1e6) / 1e6 : z);
+        }
+        for (q = 0; q < p.f.length; q++) g.f.push(p.f[q] + i0);
+        g.volume += p.volume; g.partes.push(p.id);
+        return g;
+      });
+      return { gs: gs, ordem: ordem };
+    }
+    var g0 = grupos(niveis[0]), gl = niveis.slice(1).map(grupos);
+    return g0.ordem.map(function (k) {
+      var g = g0.gs[k], o = { id: s.id + ":" + k, nome: (s.nome || "") + (g.acessorio ? " — acessórios" : ""), forma: "malha", origemForma: "gerada", gerador: s.gerador, suave: true,
+        x: base.x, y: base.y, z: base.z, rot: 0, v: g.v, f: g.f, volume: g.volume, material: g.material, cor: "", partes: g.partes };
+      if (g.acessorio) o.acessorio = true;
+      o.lod = gl.map(function (x) { var h = x.gs[k]; return h ? { v: h.v, f: h.f } : { v: [], f: [] }; });
+      return o;
+    });
+  }
+
+  /* triângulos que o 3D desenha para o resultado de avaliar() (caixa 12; cilindro 28 lados; malha pelos índices) */
+  function triangulos(av) {
+    var n = 0;
+    arr(av && av.solidos).forEach(function (s) {
+      if (s.forma === "caixa") n += 12;
+      else if (s.forma === "cilindro") n += 28 * 4;
+      else if (s.forma === "malha") n += s.f.length / 3;
+      else { var m = arr(s.contorno).length; n += Math.max(0, 2 * (m - 2)) + 2 * m; }
+    });
+    return n;
   }
 
   /* --------------------------------------------------------- AVALIAÇÃO
@@ -324,6 +493,8 @@
       var o = { id: s.id, nome: s.nome || "", forma: s.forma, x: f(s.x, 0), y: f(s.y, 0), z: f(s.z, 0), rot: f(s.rot, 0), material: mat(s.material), cor: s.cor || "" };
       if (s.forma === "caixa") { o.dx = f(s.dx, 0.1); o.dy = f(s.dy, 0.1); o.dz = f(s.dz, 0.1); }
       else if (s.forma === "cilindro") { o.raio = f(s.raio, 0.05); o.altura = f(s.altura, 1); o.eixo = s.eixo === "x" || s.eixo === "z" ? s.eixo : "y"; }
+      else if (s.forma === "revolucao") { var rv = malhaRevolucao(s, f, erros); if (!rv) return; rv.id = s.id; rv.nome = s.nome || ""; rv.material = mat(s.material); rv.cor = s.cor || ""; solidos.push(rv); return; }
+      else if (s.forma === "gerada") { malhasGeradas(s, f, mat, erros).forEach(function (mg) { solidos.push(mg); }); return; }
       else { o.altura = f(s.altura, 0.1); o.contorno = arr(s.contorno).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; }); o.plano = s.plano === "frente" ? "frente" : "planta"; }
       ["dx", "dy", "dz", "raio", "altura"].forEach(function (c) { if (o[c] != null && o[c] <= 0) erros.push("sólido \"" + (s.nome || s.id) + "\": " + c + " ficou ≤ 0 (" + o[c] + ")"); });
       solidos.push(o);
@@ -381,6 +552,8 @@
         if (s.eixo === "y") { p(s.x - s.raio, s.y, s.z - s.raio); p(s.x + s.raio, s.y + s.altura, s.z + s.raio); }
         else if (s.eixo === "x") { p(s.x, s.y - s.raio, s.z - s.raio); p(s.x + s.altura, s.y + s.raio, s.z + s.raio); }
         else { p(s.x - s.raio, s.y - s.raio, s.z); p(s.x + s.raio, s.y + s.raio, s.z + s.altura); }
+      } else if (s.forma === "malha") {
+        for (var im = 0; im + 2 < s.v.length; im += 3) p(s.x + s.v[im], s.y + s.v[im + 1], s.z + s.v[im + 2]);
       } else {
         s.contorno.forEach(function (q) {
           if (s.plano === "frente") { p(s.x + q[0], s.y + q[1], s.z); p(s.x + q[0], s.y + q[1], s.z + s.altura); }
@@ -413,7 +586,7 @@
     TIPOS_DADO: TIPOS_DADO, CATEGORIAS: CATEGORIAS, FORMAS: FORMAS, UNIDADES_QTO: UNIDADES_QTO,
     formula: formula, analisar: analisar, referencias: function (s) { return Object.keys(refs(analisar(s))); },
     validar: validar, ordemCalculo: ordemCalculo, avaliar: avaliar, nova: nova, clonar: clonar,
-    camposDoSolido: camposDoSolido, nomeValido: nomeValido
+    camposDoSolido: camposDoSolido, nomeValido: nomeValido, triangulos: triangulos
   };
   global.Familia = Familia;
   if (typeof module !== "undefined" && module.exports) module.exports = Familia;

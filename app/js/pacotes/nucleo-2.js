@@ -6695,6 +6695,7 @@ try { if (window.BimModeloVista) { this._d2Config(); BimModeloVista.registrar(re
 try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
 try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
 try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
+try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
 try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
 try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
 try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
@@ -6703,6 +6704,7 @@ try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
 try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
 try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
 try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
+try { if (window.BimFita) BimFita.registrar(reg, self); } catch (eFita) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
 BimCmd.registrar(reg);
 try { this._famSync(); } catch (eFs) {}
@@ -7057,6 +7059,8 @@ var info = uid ? self._nivAquiInfo(uid) : null;
 var itNiv = (info || extra.cotaClique != null) ? [{ id: "niv-aqui", rotulo: "Criar nível aqui…", fn: function () { self._nivAquiDialogo(info || { cotas: [] }, extra); } }] : [];
 try { if (window.BimPaginacaoUI && BimPaginacaoUI.itensMenu) itNiv = itNiv.concat(BimPaginacaoUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (ePg) {}
 try { if (window.MetalVigasPilaresUI && MetalVigasPilaresUI.itensMenu) itNiv = itNiv.concat(MetalVigasPilaresUI.itensMenu({ uid: sob || uid })); } catch (eVp) {}
+try { if (window.BimInstUI && BimInstUI.itensMenu) itNiv = itNiv.concat(BimInstUI.itensMenu({ uid: sob || uid })); } catch (eIj) {}
+try { if (window.HidKitUI && HidKitUI.itensMenu) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
 var SI = window.BimSelInst, temSel = false;
 try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
 if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
@@ -8017,6 +8021,8 @@ var h =
 '<option value="vazio"' + (g.contorno === "vazio" ? " selected" : "") + ">Nada — desenho tudo</option></select></label>" +
 '<label>Largura (m)<input type="number" step="0.1" data-np="largura" value="' + g.largura + '" style="width:100%"></label>' +
 '<label>Comprimento (m)<input type="number" step="0.1" data-np="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
+((window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
+return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.template ? " selected" : "") + ">" + Util.esc(t.nome) + "</option>"; }).join("") + "</select></label>" : "") +
 "</div>" +
 '<div id="np-resumo" style="margin-top:12px"></div>';
 UI.modal("Novo projeto", h, [
@@ -8025,6 +8031,16 @@ UI.modal("Novo projeto", h, [
 ]);
 this._npLigar();
 this._npResumo();
+},
+_npTemplates: function () {
+var l = [];
+try { if (window.TemplatesRA) l = TemplatesRA.lista().map(function (t) { return { id: t.id, nome: t.nome, descricao: t.descricao }; }); } catch (e) {}
+try { if (window.HidTemplates && HidTemplates.disciplinas) HidTemplates.disciplinas().forEach(function (t) { l.push({ id: t.id, nome: "RA — Hidrossanitário · " + t.nome, descricao: t.descricao, hid: true }); }); } catch (e2) {}
+return l;
+},
+_npTemplateObter: function (id) {
+try { if (/^disc-/.test(id) && window.HidTemplates) return HidTemplates.obter(id); } catch (e) {}
+try { return window.TemplatesRA ? TemplatesRA.obter(id) : null; } catch (e2) { return null; }
 },
 _npArquivoPadrao: function () {
 var g = this._npCfg;
@@ -8057,7 +8073,7 @@ self._npArquivoPadrao();
 g.arquivo = el.value;
 g.arquivoManual = !!String(el.value).trim();
 if (!g.arquivoManual) self._npArquivoPadrao();
-} else if (k === "nome" || k === "tipo" || k === "contorno") {
+} else if (k === "nome" || k === "tipo" || k === "contorno" || k === "template") {
 g[k] = el.value;
 if (k === "nome") self._npArquivoPadrao();
 } else {
@@ -8188,6 +8204,7 @@ BimShell.status(ops.length
 : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
 }
 if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
+if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
 UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
 try { this._bimCascaContexto(); } catch (e) {}
 },
@@ -9423,7 +9440,7 @@ UI.toast("Template aplicado" + (tpar ? " — parede ativa: " + tpar.nome : "") +
 ]);
 },
 _optplRA: function () {
-var self = this, lista = TemplatesRA.lista();
+var self = this, lista = this._npTemplates();
 UI.modal("Templates RA", '<div data-tpl="ra">' + lista.map(function (t) {
 return '<div class="tpl-ra" style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:10px;margin:0 0 8px"><b>' + Util.esc(t.nome) + '</b><p class="muted" style="margin:4px 0 8px;font-size:12.5px">' + Util.esc(t.descricao) + "</p>" +
 '<button class="btn sm primary" data-tpl-usar="' + Util.esc(t.id) + '">Usar nesta obra</button> <button class="btn sm" data-tpl-baixar="' + Util.esc(t.id) + '">Baixar .optpl</button></div>';
@@ -9431,8 +9448,8 @@ return '<div class="tpl-ra" style="border:1px solid var(--linha);border-radius:v
 var el = document.querySelector('[data-tpl="ra"]');
 if (el) el.onclick = function (e) {
 var u = e.target.closest ? e.target.closest("[data-tpl-usar]") : null, b = e.target.closest ? e.target.closest("[data-tpl-baixar]") : null;
-if (u) { var t = TemplatesRA.obter(u.getAttribute("data-tpl-usar")); UI.fecharModal(); if (t) self._optplAplicar(t, t.familiasFaltando ? ["Família(s) fora da biblioteca: " + t.familiasFaltando.join(", ")] : []); }
-else if (b) { var id = b.getAttribute("data-tpl-baixar"), txt = TemplatesRA.arquivo(id, self._opMeta()), t2 = TemplatesRA.obter(id); if (txt && t2) self._opBaixar(OpFormato.nomeSeguro(t2.nome) + OpFormato.EXT.template, txt, "application/json"); }
+if (u) { var t = self._npTemplateObter(u.getAttribute("data-tpl-usar")); UI.fecharModal(); if (t) self._optplAplicar(t, t.familiasFaltando ? ["Família(s) fora da biblioteca: " + t.familiasFaltando.join(", ")] : []); }
+else if (b) { var id = b.getAttribute("data-tpl-baixar"), hid = /^disc-/.test(id) && window.HidTemplates, txt = hid ? HidTemplates.paraOptpl(id, self._opMeta()) : TemplatesRA.arquivo(id, self._opMeta()), t2 = self._npTemplateObter(id); if (txt && t2) self._opBaixar(OpFormato.nomeSeguro(t2.nome) + OpFormato.EXT.template, txt, "application/json"); }
 };
 },
 _famSync: function () {
@@ -9650,6 +9667,7 @@ var self = this, uid = String(info.uid || ""), extras = [], el = null;
 var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
 try { (BIM.elementos || []).some(function (e) { if (e.uid === uid) { el = e; return true; } return false; }); } catch (e0) {}
 var fam = /^edit:f\d+$/.test(uid), fid = uid.slice(5);
+if (!fam && /^edit:/.test(uid)) { try { fam = !!(window.BIM && BIM.instanciaInfo && BIM.instanciaInfo(fid)); } catch (eFi) {} }
 if (window.BimInstUI && BimInstUI.ehInst(uid) && BimInstUI.extrasPaleta) {
 return BimPropsUI.esquema(info, this, { extras: function () { try { return BimInstUI.extrasPaleta(uid); } catch (eI) { return []; } }, aoMudarExtra: function (pid, valor) {
 BimInstUI.mudarExtra(uid, pid, valor);
@@ -9657,7 +9675,9 @@ try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 } });
 }
 if (window.OrcModeloUI && OrcModeloUI.ehAmbiente && OrcModeloUI.ehAmbiente(fid)) {
-return BimPropsUI.esquema(info, this, { extras: function () { try { return OrcModeloUI.secoesAmbiente(fid); } catch (eA) { return []; } }, aoMudarExtra: function (pid, valor) {
+return BimPropsUI.esquema(info, this, { extras: function () { var xs = []; try { xs = OrcModeloUI.secoesAmbiente(fid); } catch (eA) { xs = []; }
+try { if (window.HidPranchasUI && HidPranchasUI.secaoAmbiente) xs = xs.concat(HidPranchasUI.secaoAmbiente(fid)); } catch (eH) {}
+return xs; }, aoMudarExtra: function (pid, valor) {
 if (String(pid).indexOf("acab:") === 0 || String(pid).indexOf("orc:") === 0) OrcModeloUI.mudar(uid, pid, valor);
 try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 } });
@@ -9665,6 +9685,7 @@ try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 try {
 if (fam) {
 if (window.OrcModeloUI) extras = extras.concat(OrcModeloUI.secoesFamilia(fid));
+if (window.BimInstUI && BimInstUI.secoesFamilia) extras = extras.concat(BimInstUI.secoesFamilia(fid));
 var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
 extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
 .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
@@ -9751,7 +9772,8 @@ secoes: [
 { nome: "Gráficos", params: [
 { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
 { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
-{ id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] },
+{ id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ]
+.concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
 { nome: "Extensões", params: [
 { id: "vista-caixa", rotulo: "Caixa de corte", tipo: "sim-nao", valor: caixa, leitura: !temModelo, motivo: "Abra um modelo primeiro" } ] }
 ].concat(
@@ -9765,6 +9787,7 @@ try {
 if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
 if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
 if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
+if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
 BimShell.pintarFita();
 } catch (e2) {}
 return self._bimPropsVista();
@@ -9833,6 +9856,7 @@ if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} 
 st.ativa = id;
 this._bimVxLayout();
 try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
+try { if (window.BimInstUI && BimInstUI.aoAtivarVista) BimInstUI.aoAtivarVista(id); } catch (eND) {}
 if (v && (v.tipo === "2d" || v.tipo === "folha")) { try { BimShell.repintarVista(); } catch (e2d) {} return; }
 try {
 var b = window.BIM;
@@ -10262,6 +10286,7 @@ this._bimVistaRender();
 _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) { return v.id === id; })[0] || null; },
 _bimVistaIr: function (id) {
 var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
+if (v.hid3d && window.HidPranchasUI && HidPranchasUI.reabrir3d) { HidPranchasUI.reabrir3d(v); return; }
 if (this._bimModoRevit() && BIM.vistaNova && BIM.vistaTemEstado) { this._bimVxAbrirPonto(v); return; }
 var r = BIM.aplicarVista(v);
 if (!r.ok) { UI.toast("Não consegui aplicar esta vista: " + (r.erro || ""), "erro"); return; }
@@ -68073,5 +68098,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=4b10c94ed6"},{"src":"js/bim-pacote.js?v=4ab9b09a55","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=a15db34693"},{"src":"js/bim-pacote.js?v=ecb4e8b2a2","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=f0ae92859d","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=729f3ed990"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

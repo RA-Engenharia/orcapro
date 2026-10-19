@@ -434,13 +434,29 @@
     },
     _redesenharPlantas: function (recalcular) {
       var P = global.Bim2D; if (!P || !P.plantasAbertas) return;
-      P.plantasAbertas().forEach(function (k) { try { if (recalcular) P.atualizar(k); else P.redesenhar(k, false); } catch (e) {} });
+      /* FLUIDEZ (17/10/2026): o CORTE e as outras vistas 2D (elevação, chamada) também acompanham o modelo — a troca de
+         DN no corte não aparecia no corte até reabrir a vista */
+      var ids = P.plantasAbertas();
+      if (recalcular && P._cache) Object.keys(P._cache).forEach(function (k) { if (/^d2[cv]-/.test(k) && ids.indexOf(k) < 0) ids.push(k); });
+      ids.forEach(function (k) {
+        try {
+          /* FLUIDEZ (17/10/2026): a planta ESCONDIDA (outra aba de vista na frente) não se refaz agora — fica marcada e se
+             refaz ao aparecer (Bim2D.montar). Antes cada troca de DN no 3D extraía de novo todas as plantas abertas. */
+          var c = P._cache && P._cache[k];
+          if (recalcular && c && c.el && P.visivel && !P.visivel(k)) { c.sujo = true; return; }
+          if (recalcular) P.atualizar(k); else P.redesenhar(k, false);
+        } catch (e) {}
+      });
     },
-    /* o modelo mudou: as plantas abertas se refazem (mantendo o zoom) — juntando rajadas */
+    /* o modelo mudou: as plantas abertas se refazem (mantendo o zoom) — juntando rajadas. FLUIDEZ (17/10/2026): no
+       próximo quadro (as rajadas da mesma tarefa se juntam do mesmo jeito), não 120 ms depois — a planta acompanhava a
+       troca de parâmetro com atraso visível */
     _agendarPlantas: function () {
-      var self = this;
-      if (this._tPlanta) clearTimeout(this._tPlanta);
-      this._tPlanta = setTimeout(function () { self._tPlanta = 0; self._redesenharPlantas(true); }, 120);
+      var self = this, raf = global.requestAnimationFrame;
+      if (this._tPlanta) { if (this._tPlantaRaf && global.cancelAnimationFrame) global.cancelAnimationFrame(this._tPlanta); else clearTimeout(this._tPlanta); }
+      var fn = function () { self._tPlanta = 0; self._redesenharPlantas(true); };
+      if (typeof raf === "function" && global.document && !global.document.hidden) { this._tPlantaRaf = true; this._tPlanta = raf(fn); }
+      else { this._tPlantaRaf = false; this._tPlanta = setTimeout(fn, 0); }
     },
 
     /* ----------------------------------------------- seleção */

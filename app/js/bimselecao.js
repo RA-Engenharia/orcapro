@@ -207,45 +207,57 @@
     });
     return out;
   }
-  function pecaNoDesenho(dados, p, tol) {
-    if (!dados || !p) return null;
-    var CORTES = cortesDe(dados);
-    var best = null, bestA = Infinity;
+  /* FLUIDEZ (rodada 4, 17/10/2026) — TODOS os candidatos sob o ponto, em ordem: primeiro a CAMADA (nivel(u): 0 = peça —
+     caixa, ralo, conexão, acessório, louça, equipamento; 1 = tubo; 2 = o resto), depois o critério de sempre: o polígono
+     que contém o ponto (o de menor área), a linha mais perto (dentro de tol), a projeção acima do corte (linha, depois
+     área). Pedido do Rogério: clicar na caixa sifonada selecionava o TUBO que chega nela (o polígono do tubo é menor que
+     o da caixa) — como em qualquer software BIM, a peça vence o tubo quando se sobrepõem. Sem nivel(), tudo é camada 2
+     e a ordem é exatamente a de antes. Devolve [{u, chave}] sem repetir uid (fica a melhor chave de cada um). */
+  function candidatosNoDesenho(dados, p, tol, nivel) {
+    if (!dados || !p) return [];
+    var CORTES = cortesDe(dados), melhor = {};
     function area(pts) { var s = 0; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) s += (pts[j][0] + pts[i][0]) * (pts[j][1] - pts[i][1]); return Math.abs(s / 2); }
     function dSeg(q, a, b) {
       var dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 > 0 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2)) : 0;
       var x = a[0] + dx * t - q[0], y = a[1] + dy * t - q[1]; return Math.sqrt(x * x + y * y);
     }
-    CORTES.forEach(function (c) {
-      if (!c || !c.u || !c.pts || c.pts.length < 3 || c.fechado === false) return;
-      if (pontoEmPol(p, c.pts)) { var a = area(c.pts); if (a < bestA) { bestA = a; best = c.u; } }
-    });
-    if (best) return best;
+    function por(u, tipo, m) {
+      var cam = nivel ? nivel(u) : 2, k = [cam, tipo, m], o = melhor[u];
+      if (!o || k[0] < o[0] || (k[0] === o[0] && (k[1] < o[1] || (k[1] === o[1] && k[2] < o[2])))) melhor[u] = k;
+    }
     var dm = tol > 0 ? tol : 0.1;
     CORTES.forEach(function (c) {
       if (!c || !c.u || !c.pts) return;
+      if (c.pts.length >= 3 && c.fechado !== false && pontoEmPol(p, c.pts)) por(c.u, 0, area(c.pts));
       var n = c.pts.length;
-      for (var i = 0; i + 1 < n + (c.fechado !== false && n > 2 ? 1 : 0); i++) { var d = dSeg(p, c.pts[i], c.pts[(i + 1) % n]); if (d < dm) { dm = d; best = c.u; } }
+      for (var i = 0; i + 1 < n + (c.fechado !== false && n > 2 ? 1 : 0); i++) { var d = dSeg(p, c.pts[i], c.pts[(i + 1) % n]); if (d < dm) por(c.u, 1, d); }
     });
-    var L = dados.linhas || [], U = dados.linhasUd || [];
+    var L = dados.linhas || [], U = dados.linhasUd || [], caixa = {};
     for (var k = 0; k < L.length && k < U.length; k++) {
       var l = L[k], ud = U[k]; if (!l || !ud || !ud.u) continue;
-      var d2 = dSeg(p, [l[0], l[1]], [l[2], l[3]]); if (d2 < dm) { dm = d2; best = ud.u; }
+      var d2 = dSeg(p, [l[0], l[1]], [l[2], l[3]]); if (d2 < dm) por(ud.u, 1, d2);
+      /* a PEÇA desenhada só com linhas (o símbolo da caixa sifonada, do ralo, da louça na planta): o clique DENTRO dela
+         vale — a caixa que envolve as linhas dela conta como área (só peça: a caixa de uma parede ou de um IFC seria enorme) */
+      if (nivel && nivel(ud.u) === 0) {
+        var bx = caixa[ud.u] || (caixa[ud.u] = [Infinity, Infinity, -Infinity, -Infinity]);
+        bx[0] = Math.min(bx[0], l[0], l[2]); bx[1] = Math.min(bx[1], l[1], l[3]); bx[2] = Math.max(bx[2], l[0], l[2]); bx[3] = Math.max(bx[3], l[1], l[3]);
+      }
     }
-    /* ACIMA DO CORTE (js/desenho2d.js Acima): o tracejado da peça acima do plano — perto da linha
-       (junto com as outras), e por último o clique DENTRO da projeção (a viga sobre o cômodo) */
+    Object.keys(caixa).forEach(function (u) { var b = caixa[u]; if (p[0] >= b[0] - dm && p[0] <= b[2] + dm && p[1] >= b[1] - dm && p[1] <= b[3] + dm) por(u, 0, Math.max(1e-9, (b[2] - b[0]) * (b[3] - b[1]))); });
     var AC = dados.acima || [];
     AC.forEach(function (it) {
       if (!it || !it.u) return;
-      if (it.segs) it.segs.forEach(function (q) { var d3 = dSeg(p, [q[0], q[1]], [q[2], q[3]]); if (d3 < dm) { dm = d3; best = it.u; } });
-      else if (it.pts) for (var i = 0, n = it.pts.length; i < n; i++) { var d4 = dSeg(p, it.pts[i], it.pts[(i + 1) % n]); if (d4 < dm) { dm = d4; best = it.u; } }
+      if (it.segs) it.segs.forEach(function (q) { var d3 = dSeg(p, [q[0], q[1]], [q[2], q[3]]); if (d3 < dm) por(it.u, 1, d3); });
+      else if (it.pts) for (var i = 0, n = it.pts.length; i < n; i++) { var d4 = dSeg(p, it.pts[i], it.pts[(i + 1) % n]); if (d4 < dm) por(it.u, 1, d4); }
+      if (it.pts && it.pts.length >= 3 && pontoEmPol(p, it.pts)) por(it.u, 2, area(it.pts));
     });
-    if (best) return best;
-    AC.forEach(function (it) {
-      if (!it || !it.u || !it.pts || it.pts.length < 3) return;
-      if (pontoEmPol(p, it.pts)) { var a = area(it.pts); if (a < bestA) { bestA = a; best = it.u; } }
+    return Object.keys(melhor).map(function (u) { return { u: u, chave: melhor[u] }; }).sort(function (a, b) {
+      return a.chave[0] - b.chave[0] || a.chave[1] - b.chave[1] || a.chave[2] - b.chave[2];
     });
-    return best;
+  }
+  function pecaNoDesenho(dados, p, tol, nivel) {
+    var c = candidatosNoDesenho(dados, p, tol, nivel);
+    return c.length ? c[0].u : null;
   }
   /* as peças de um desenho 2D para a janela, agrupadas por uid */
   function pecasDoDesenho(dados, filtro) {
@@ -296,7 +308,7 @@
   var BimSelecao = {
     /* puro (testes) */
     acao: acao, botoesOrbita: botoesOrbita, arrastou: arrastou, modoJanela: modoJanela, janela: janela, pegaJanela: pegaJanela,
-    combinar: combinar, casco: casco, pecaDoCasco: pecaDoCasco, pontoArrasto: pontoArrasto, pecaNoDesenho: pecaNoDesenho, pecasDoDesenho: pecasDoDesenho, cortesDe: cortesDe,
+    combinar: combinar, casco: casco, pecaDoCasco: pecaDoCasco, pontoArrasto: pontoArrasto, pecaNoDesenho: pecaNoDesenho, candidatosNoDesenho: candidatosNoDesenho, pecasDoDesenho: pecasDoDesenho, cortesDe: cortesDe,
     segToca: segToca, LIMIAR: LIMIAR,
 
     /* ------------------------------------------------ a MÃO (ferramenta explícita) */
@@ -345,7 +357,59 @@
       var P2 = D2(), d = P2 && P2.def ? P2.def(id) : null;
       return !!(d && d.tipo === "planta" && d.p6 !== "forro" && d.p6base !== "forro");
     },
-    pecaEm: function (id, p) { var c = this._cache(id); return c && c.dados && p ? pecaNoDesenho(c.dados, p, 6 / this._escala(id)) : null; },
+    /* FLUIDEZ (rodada 4): a CAMADA de cada uid — peça de instalação e família 0, tubo 1, o resto 2 (um mapa por estado) */
+    _nivelUid: function () {
+      var est = this._estado(), U = global.BimInstUI, R = U ? U._ultimaRede : null, c = st.niv;
+      if (c && c.est === est && c.R === R) return c.fn;
+      var tubo = {}, peca = {};
+      if (est) {
+        var ins = est.instalacoes || {};
+        (ins.trechos || []).forEach(function (t) { tubo["edit:" + t.id] = 1; });
+        (ins.pecas || []).forEach(function (k) { peca["edit:" + k.id] = 1; });
+        (ins.acessorios || []).forEach(function (a) { peca["edit:" + a.id] = 1; });
+        (est.familias || []).forEach(function (f) { peca["edit:" + f.id] = 1; });
+      }
+      if (R && R.conexoes) R.conexoes.forEach(function (x) { peca["edit:" + x.id] = 1; });
+      var fn = function (u) { return peca[u] ? 0 : (tubo[u] ? 1 : 2); };
+      st.niv = { est: est, R: R, fn: fn };
+      return fn;
+    },
+    /* P8 (junção 18/10/2026): a camada (peça vence o tubo) e o Tab só com a prévia hidro — sem ela, o clique do master */
+    _hidro: function () { var U = global.BimInstUI; return !(U && U._previaHidro && !U._previaHidro()); },
+    candidatosEm: function (id, p) {
+      var c = this._cache(id), l = c && c.dados && p ? candidatosNoDesenho(c.dados, p, 6 / this._escala(id), this._hidro() ? this._nivelUid() : null).map(function (x) { return x.u; }) : [];
+      /* PORTAS E JANELAS (js/bimvaoarr.js): o clique no VÃO vazio da porta/janela na planta (entre as ombreiras) pega a
+         abertura — só quando nada mais foi pego, então o clique de sempre não muda */
+      if (!l.length && p && global.BimVaoArr && global.BimVaoArr.naPlanta && this._ehPlanta(id)) {
+        var D = D2(), df = D && D.def ? D.def(id) : null, yc = df && df.nivel && isFinite(df.nivel.y) ? df.nivel.y + (+df.altura || 1.2) : null;
+        var v = global.BimVaoArr.naPlanta(this._estado(), this._avaliar(), { x: p[0], z: p[1] }, yc); if (v) l = ["edit:" + v];
+      }
+      return l;
+    },
+    /* a peça sob o ponto: a 1ª candidata — ou a escolhida com Tab, enquanto o cursor não sai do lugar */
+    pecaEm: function (id, p) {
+      var t = st.tab;
+      if (t && t.id === id && p && Math.abs(p[0] - t.p[0]) + Math.abs(p[1] - t.p[1]) <= 3 / this._escala(id)) return t.lista[t.i] || null;
+      var l = this.candidatosEm(id, p); return l.length ? l[0] : null;
+    },
+    /* TAB: a próxima candidata sob o cursor (realce e barra de status); o clique pega a que está realçada */
+    alternar: function () {
+      var u0 = st.ult; if (!u0 || st.mao || this.ferramenta2d() || !this._hidro()) return false;
+      var t = st.tab && st.tab.id === u0.id && Math.abs(u0.p[0] - st.tab.p[0]) + Math.abs(u0.p[1] - st.tab.p[1]) <= 3 / this._escala(u0.id) ? st.tab : null;
+      if (!t) { var l = this.candidatosEm(u0.id, u0.p); if (l.length < 2) return false; t = st.tab = { id: u0.id, p: u0.p.slice(), lista: l, i: 0 }; }
+      t.i = (t.i + 1) % t.lista.length;
+      st.hover = t.lista[t.i]; st.hoverId = u0.id;
+      this.desenhar(u0.id); this._statusHover(t.lista[t.i], t.i, t.lista.length);
+      return true;
+    },
+    _nome: function (u) {
+      var nm = null; try { (B().elementos || []).some(function (e) { if (e.uid === u) { nm = e.nome; return true; } return false; }); } catch (e) {}
+      return nm || String(u).replace(/^edit:/, "");
+    },
+    _statusHover: function (u, i, n) {
+      if (!u || !this._hidro()) return;   /* P8: o recado do hover só com a prévia hidro */
+      status("Clique seleciona: " + this._nome(u) + (n > 1 ? " — Tab alterna (" + (i + 1) + " de " + n + ")" : ""));
+    },
     _estado: function () { var b = B(); try { var e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.estado : null; } catch (x) { return null; } },
     _precisao: function () { var b = B(); try { return b && b.precisao ? b.precisao() : null; } catch (e) { return null; } },
     _avaliar: function () { var b = B(); return b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null; },
@@ -357,8 +421,12 @@
       var c = this._cache(id); if (!c || !c.dados || !c.el) return false;
       var alcaEl = ev.target && ev.target.closest ? ev.target.closest("[data-sl-alca]") : null;
       var u = alcaEl ? null : this.pecaEm(id, p), mod = modelador(), planta = this._ehPlanta(id);
-      var editavel = !!(u && /^edit:/.test(u) && planta && mod && this._precisao());
-      var a = acao({ botao: 0, vista: "2d", alvo: alcaEl ? "alca" : (u ? "peca" : "vazio"), editavel: editavel, modelador: mod, ctrl: !!(ev.ctrlKey || ev.metaKey), shift: !!ev.shiftKey });
+      /* ARRASTAR O TUBO (js/biminstarr.js): tubo/conexão/caixa das instalações se arrasta na planta E no corte */
+      var inst = !!(u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(u));
+      /* PORTAS E JANELAS (js/bimvaoarr.js): a abertura hospedada se arrasta na planta E no corte/elevação */
+      var vao = !inst && !!(u && global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(u));
+      var editavel = inst || vao || !!(u && /^edit:/.test(u) && planta && mod && this._precisao());
+      var a = acao({ botao: 0, vista: "2d", alvo: alcaEl ? "alca" : (u ? "peca" : "vazio"), editavel: editavel, modelador: mod || inst, ctrl: !!(ev.ctrlKey || ev.metaKey), shift: !!ev.shiftKey });
       st.d = { id: id, x: ev.clientX, y: ev.clientY, p0: p, u: u, acao: a, ctrl: !!(ev.ctrlKey || ev.metaKey), planta: planta, modo: null,
                alca: alcaEl ? { k: alcaEl.getAttribute("data-sl-alca"), id: alcaEl.getAttribute("data-sl-id") } : null };
       if (st.d.alca && /^[0-9]+$/.test(st.d.alca.k)) st.d.alca.k = +st.d.alca.k;
@@ -374,6 +442,8 @@
         if (!arrastou({ x: d.x, y: d.y }, { x: ev.clientX, y: ev.clientY })) return true;
         this._comecar(d);
       }
+      if (d.modo === "inst") { if (global.BimInstArr) global.BimInstArr.mover(ev); return true; }
+      if (d.modo === "vao") { if (global.BimVaoArr) global.BimVaoArr.mover(ev); return true; }
       if (!p) return true;
       if (d.modo === "janela") d.j = janela([d.p0[0], d.p0[1]], [p[0], p[1]], modoJanela(d.x, ev.clientX));
       else if (d.modo === "mover" || d.modo === "alca") {
@@ -387,6 +457,7 @@
           else if (typeof d.alca.k === "string") opV = { op: "esticar", id: d.alca.id, ponta: d.alca.k, x: d.dest.x, z: d.dest.z };
           d.vinc = opV ? VU.previa(d.st, opV, ev) : null; tv = VU.textoPrevia(d.vinc, ev);
         } else d.vinc = null;
+        try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(d.modo === "mover" && d.sel && d.sel.length === 1 ? d.sel[0] : null, d.dest.x - d.base.x, d.dest.z - d.base.z); } catch (eVP) {}   /* PAREDE: as cotas ao vivo */
         status((d.modo === "mover" ? "Movendo: " : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
       }
       this.desenhar(id);
@@ -396,6 +467,14 @@
       var a = d.acao, prc = this._precisao();
       d.modo = "nada";
       if (a === "janela") { d.modo = "janela"; return; }
+      if (a === "peca-mover" && d.u && global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(d.u)) {
+        if (global.BimVaoArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y })) d.modo = "vao";
+        return;
+      }
+      if (a === "peca-mover" && d.u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(d.u)) {
+        if (global.BimInstArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y }, null)) d.modo = "inst";
+        return;
+      }
       if (a === "alca" && d.alca && d.planta && prc) {
         var est = this._estado(), R = Pr(), el = est && (est.caixas || []).filter(function (x) { return x.id === d.alca.id; })[0];
         var al = el && R ? R.alcas(el).filter(function (q) { return q.k === d.alca.k; })[0] : null;
@@ -426,7 +505,10 @@
     up2d: function (id, ev, p, cancelou) {
       var d = st.d; if (!d || d.id !== id) return false;
       st.d = null;
+      try { if (d.modo === "mover" && global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {}   /* PAREDE: fim das cotas ao vivo */
       var c = this._cache(id); try { if (c && c.el && ev) c.el.releasePointerCapture(ev.pointerId); } catch (e) {}
+      if (d.modo === "inst") { if (global.BimInstArr) { if (cancelou) global.BimInstArr.cancelar(); else global.BimInstArr.soltar(ev); } this.desenhar(id); return true; }
+      if (d.modo === "vao") { if (global.BimVaoArr) { if (cancelou) global.BimVaoArr.cancelar(); else global.BimVaoArr.soltar(ev); } this.desenhar(id); return true; }
       if (cancelou) { if (global.BimVinculosUI) global.BimVinculosUI.soltar(); this.desenhar(id); return true; }
       var prc = this._precisao();
       if (!d.modo) {   /* CLIQUE */
@@ -439,6 +521,7 @@
       if (d.modo === "janela" && d.j) {
         var ids = pegaJanela(d.j, pecasDoDesenho(c && c.dados, function (u) { return /^edit:/.test(u); }));
         this.selecionar(ids, d.ctrl ? "somar" : "trocar");
+        try { if (global.BimInstJanela && global.BimInstJanela.aposJanela) global.BimInstJanela.aposJanela(ids, "2d"); } catch (eJ) {}   /* item 8: a oferta do 3D do ambiente (prévia hidro, js/biminstjanela.js) */
         status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
       } else if (d.modo === "mover" && prc && d.dest && d.base) {
         var dx = r4(d.dest.x - d.base.x), dz = r4(d.dest.z - d.base.z);
@@ -457,14 +540,18 @@
       this.desenhar(id);
       return true;
     },
-    cancelar: function () { var d = st.d; if (!d) return false; st.d = null; if (global.BimVinculosUI) global.BimVinculosUI.soltar(); this.desenhar(d.id); status("Cancelado."); return true; },
+    cancelar: function () { var d = st.d; if (!d) return false; st.d = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (d.modo === "inst" && global.BimInstArr) global.BimInstArr.cancelar(); if (d.modo === "vao" && global.BimVaoArr) global.BimVaoArr.cancelar(); if (global.BimVinculosUI) global.BimVinculosUI.soltar(); this.desenhar(d.id); status("Cancelado."); return true; },
     arrastando: function () { return !!(st.d && st.d.modo); },
     _hover: function (id, ev, p) {
       if (st.mao || !p || (ev && ev.buttons)) return;
+      st.ult = { id: id, p: [p[0], p[1]] };   /* FLUIDEZ: o ponto do Tab */
+      if (st.tab && (st.tab.id !== id || Math.abs(p[0] - st.tab.p[0]) + Math.abs(p[1] - st.tab.p[1]) > 3 / this._escala(id))) st.tab = null;
       var agora = Date.now(); if (agora - st.tHover < 40) return; st.tHover = agora;
-      var u = this.ferramenta2d() ? null : this.pecaEm(id, p);
+      var u = null, lista = [];
+      if (!this.ferramenta2d()) { if (st.tab) u = st.tab.lista[st.tab.i]; else { lista = this.candidatosEm(id, p); u = lista[0] || null; } }
       if (u === st.hover && st.hoverId === id) return;
       st.hover = u; st.hoverId = id;
+      if (u && !st.tab) this._statusHover(u, 0, lista.length);
       this.desenhar(id);
     },
 
@@ -533,8 +620,23 @@
       }
     },
     /* estado para o e2e e o suporte (só leitura) */
-    estado: function () { var d = st.d; return { mao: st.mao, arrasto: d ? { id: d.id, modo: d.modo, acao: d.acao, u: d.u, dest: d.dest || null, base: d.base || null, janela: d.j || null, vinculos: d.vinc ? d.vinc.acompanharam.slice() : null } : null, hover: st.hover }; }
+    estado: function () { var d = st.d; return { mao: st.mao, arrasto: d ? { id: d.id, modo: d.modo, acao: d.acao, u: d.u, dest: d.dest || null, base: d.base || null, janela: d.j || null, vinculos: d.vinc ? d.vinc.acompanharam.slice() : null } : null, hover: st.hover,
+      tab: st.tab ? { i: st.tab.i, n: st.tab.lista.length, u: st.tab.lista[st.tab.i] } : null }; }
   };
+  /* FLUIDEZ (rodada 4): TAB com o cursor parado sobre a vista 2D alterna entre as peças sob ele (a outra ferramenta que usa
+     Tab — cota, ligação A → B, peça pronta — trata antes e marca o evento) */
+  try {
+    if (global.document && global.document.addEventListener) global.document.addEventListener("keydown", function (e) {
+      if (e.key !== "Tab" || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+      var t = e.target, tag = t && t.tagName ? String(t.tagName).toLowerCase() : "";
+      if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+      if (!st.ult) return;
+      var c = BimSelecao._cache(st.ult.id); if (!c || !c.el || !c.el.matches) return;
+      var sobre = false; try { sobre = c.el.matches(":hover"); } catch (eH) { sobre = false; }
+      if (!sobre) return;
+      if (BimSelecao.alternar()) { e.preventDefault(); e.stopPropagation(); }
+    });
+  } catch (eK) {}
 
   global.BimSelecao = BimSelecao;
   if (typeof module !== "undefined" && module.exports) module.exports = BimSelecao;

@@ -471,6 +471,15 @@
     if (sub === "pilar") {
       var U2 = AU(); if (U2 && U2.ativo && U2.ativo()) esp += campoNum("giroPilar", "Giro", String(+(U2.cfg() || {}).giroPilar || 0).replace(".", ","), "°", "Giro do pilar na planta", "3.4em");
     }
+    /* TUBO (17/10/2026): o DESLOCAMENTO (altura de trabalho do nível) e a INCLINAÇÃO à vista e editáveis durante o
+       desenho — mudar a altura no meio do traço sobe/desce na vertical no ponto atual (js/biminstui.js mudarAltura) */
+    if (sub === "inst") {
+      var IU = global.BimInstUI, ic = IU && IU.cfg, ISi = global.BimInst;
+      if (ic && ic.ferramenta !== "peca" && ic.ferramenta !== "acessorio") {
+        esp += campoNum("inst:cota", "Deslocamento", fmt(IU.alturaTrabalho ? IU.alturaTrabalho(false) : ic.cota), "m", "Altura de trabalho em relação ao nível (piso). Mudar no meio do traço sobe/desce na vertical no ponto atual.", "4em");
+        if (ISi && ISi.SISTEMAS[ic.sistema] && ISi.SISTEMAS[ic.sistema].gravidade) esp += campoNum("inst:incl", "Inclinação", fmt(ic.inclinacao), "%", "Inclinação do esgoto/pluvial (padrão: a mínima do DN pela norma)", "3.4em");
+      }
+    }
     if (sub === "anotar") esp += '<label class="bbo-campo">Texto <input data-bbo="texto" maxlength="200" style="width:14em" value="' + esc((this._texto || "")) + '"></label>';
     if (VOL[sub]) {
       var vp = null; try { vp = B() && B().volumeParametros ? B().volumeParametros({}) : null; } catch (eV) { vp = null; }
@@ -571,6 +580,7 @@
     if (k === "sup") { b2("b2f:rs:sup", valor); this.pintar(); return; }
     if (k === "alturaNC") { var h = num(valor, NaN); if (h >= 0.1 && h <= 30) b2("b2f:rs:alturaNaoConectada", h); this.pintar(); return; }
     if (k === "giroPilar") { b2("b2f:giroPilar", num(valor, 0)); return; }
+    if (k === "inst:cota" || k === "inst:incl") { var IU2 = global.BimInstUI, vv = num(valor, NaN); if (IU2 && IU2.mudarCfg && isFinite(vv)) { IU2.mudarCfg(k === "inst:cota" ? "i:cota" : "i:inclinacao", vv); IU2.pintarProps(); } this.pintar(); return; }
     if (k === "linhaLoc") { this.mudar(sub, "linhaLoc", valor); this._aplicar(sub, "linhaLoc"); return; }
     if (k === "desloc" || k === "raio" || k === "passo" || k === "lados") {
       var c = this.cfg(sub), v = k === "lados" ? Math.round(num(valor, c.lados)) : num(valor, c[k]);

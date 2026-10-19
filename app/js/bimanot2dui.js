@@ -384,6 +384,26 @@
        NOTÁVEIS das peças (ponta, meio, centro de furo, cruzamento de eixos, topo do aço) projetados na
        planta ou no corte; ponto ganha de linha numa janela de 30 % da tolerância. Tab alterna face/eixo. */
     _acharCota: function (st, p, tol, id, corte, filtro) {
+      /* TAB (18/10/2026): com o cursor parado, o Tab percorre os candidatos sob ele — vale o escolhido */
+      var tb = this._tabC; if (tb && tb.id === id && p && Math.abs(p[0] - tb.p[0]) + Math.abs(p[1] - tb.p[1]) <= tb.raio) return tb.lista[tb.i];
+      return this._acharCota0(st, p, tol, id, corte, filtro);
+    },
+    /* todos os candidatos sob o cursor (o 1º é o que o clique pegaria), sem repetir a mesma referência */
+    _listaCota: function (st, p, tol, id, corte, filtro) {
+      var M = A7(), BCm = global.BimCotas, out = [], vistos = {};
+      function add(o) { if (!o || !o.ref) return; var k = JSON.stringify(o.ref); if (vistos[k]) return; vistos[k] = 1; out.push(o); }
+      add(this._acharCota0(st, p, tol, id, corte, filtro));
+      var U = global.BimCotasUI, pref = U && U.cfg ? U.cfg().pref : "auto";
+      var h = corte || filtro === "topo" ? null : M.acharRef(st, p, tol, filtro, id, pref);
+      var ch = this._candCache, extra = [];
+      if (BCm && ch && ch.pts) ch.pts.forEach(function (q) { var m = BCm.maisPerto([q], p, tol); if (m) extra.push(m); });
+      var dz = filtro === "topo" || !BCm ? null : this._encaixeDesenho(st, p, tol, id, M.projDe ? M.projDe(id) : { tipo: "planta" }, false);
+      if (dz) extra.push(dz); if (h) extra.push(h);
+      extra.sort(function (a, b) { return ((a.cl != null ? a.cl : 3) - (b.cl != null ? b.cl : 3)) || (a.dist - b.dist); });
+      extra.forEach(add);
+      return out;
+    },
+    _acharCota0: function (st, p, tol, id, corte, filtro) {
       var M = A7(), BCm = global.BimCotas, U = global.BimCotasUI, pref = U && U.cfg ? U.cfg().pref : "auto";
       var h = corte || filtro === "topo" ? null : M.acharRef(st, p, tol, filtro, id, pref);
       if (!BCm) return h;
@@ -494,18 +514,62 @@
       if (f.def.k !== "cota" || !pS) { if (tx) tx.parentNode.removeChild(tx); if (mk) mk.parentNode.removeChild(mk); return; }
       var U = global.BimCotasUI, val = U && U.textoPrevia2d ? U.textoPrevia2d(st, id, f, hS ? hS.ref : { x: pS[0], y: pS[1] }) : "";
       var px = this._tol(id, 1);
-      if (!mk) { mk = document.createElementNS(NS, "circle"); mk.setAttribute("class", "a7-previa-snap"); mk.setAttribute("vector-effect", "non-scaling-stroke"); c.svg.appendChild(mk); }
-      mk.setAttribute("cx", pS[0]); mk.setAttribute("cy", pS[1]); mk.setAttribute("r", 5 * px); mk.setAttribute("data-tipo", hS ? (hS.tipo || hS.ref.r || "") : "livre");
-      if (!tx) { tx = document.createElementNS(NS, "text"); tx.setAttribute("class", "a7-previa-tx"); c.svg.appendChild(tx); }
-      tx.setAttribute("x", pS[0] + 9 * px); tx.setAttribute("y", pS[1] - 9 * px); tx.setAttribute("font-size", 13 * px);
-      tx.textContent = val || (hS ? hS.rotulo || "" : "");
+      /* PRECISÃO (18/10/2026, pedido do Rogério: "tem uma coisa na frente e não dá para cotar"): o encaixe é um
+         SÍMBOLO pequeno (9 px, só contorno) NO ponto — quadrado = extremidade/canto, triângulo = meio, X = interseção,
+         ⊥ = perpendicular, círculo = centro, losango = mais próximo/face/eixo. O texto em unidade de desenho (que saía
+         grande e com as letras espaçadas por cima do ponto) saiu: o nome e o valor vão numa dica pequena fora do ponto. */
+      if (tx) tx.parentNode.removeChild(tx);
+      var tipoM = hS ? BimAnot2DUI.formaEncaixe(hS) : null;
+      if (!tipoM) { if (mk) mk.parentNode.removeChild(mk); }
+      else {
+        if (!mk || mk.tagName.toLowerCase() !== "path") { if (mk) mk.parentNode.removeChild(mk); mk = document.createElementNS(NS, "path"); mk.setAttribute("class", "a7-previa-snap"); mk.setAttribute("vector-effect", "non-scaling-stroke"); c.svg.appendChild(mk); }
+        mk.setAttribute("d", BimAnot2DUI.caminhoEncaixe(tipoM, pS[0], pS[1], 4.5 * px)); mk.setAttribute("data-tipo", tipoM); mk.setAttribute("data-rotulo", hS.rotulo || "");
+      }
+      this._dica(val, hS ? (hS.rotulo || "") : "");
     },
+    /* a forma do marcador pelo tipo de encaixe (e pela referência, quando o tipo não vem) */
+    formaEncaixe: function (h) {
+      var t = h && h.tipo, r = h && h.ref ? h.ref.r : null;
+      if (t === "intersecao" || r === "cruz") return "x";
+      if (t === "perpendicular") return "perp";
+      if (t === "meio" || r === "meio") return "meio";
+      if (t === "centro" || r === "centro" || r === "furo") return "centro";
+      if (t === "fim" || /^(fim0|fim1|canto|vao0|vao1|topo|base|peitoril|verga)$/.test(String(r))) return "fim";
+      return "proximo";
+    },
+    caminhoEncaixe: function (k, x, y, s) {
+      function f(v) { return Math.round(v * 1e6) / 1e6; }
+      if (k === "fim") return "M" + f(x - s) + " " + f(y - s) + "H" + f(x + s) + "V" + f(y + s) + "H" + f(x - s) + "Z";
+      if (k === "meio") return "M" + f(x - s) + " " + f(y + s * 0.8) + "H" + f(x + s) + "L" + f(x) + " " + f(y - s) + "Z";
+      if (k === "x") return "M" + f(x - s) + " " + f(y - s) + "L" + f(x + s) + " " + f(y + s) + "M" + f(x - s) + " " + f(y + s) + "L" + f(x + s) + " " + f(y - s);
+      if (k === "perp") return "M" + f(x - s) + " " + f(y + s) + "H" + f(x + s) + "M" + f(x) + " " + f(y + s) + "V" + f(y - s);
+      if (k === "centro") return "M" + f(x - s) + " " + f(y) + "A" + f(s) + " " + f(s) + " 0 1 0 " + f(x + s) + " " + f(y) + "A" + f(s) + " " + f(s) + " 0 1 0 " + f(x - s) + " " + f(y);
+      return "M" + f(x) + " " + f(y - s) + "L" + f(x + s) + " " + f(y) + "L" + f(x) + " " + f(y + s) + "L" + f(x - s) + " " + f(y) + "Z";
+    },
+    /* a DICA do encaixe: pequena, fonte normal, 16 px abaixo e à direita do cursor. O valor da cota vai junto
+       (ao vivo); o NOME some ao mover e volta depois de ~400 ms parado. Snaps › "Mostrar nome do encaixe" desliga. */
+    _dica: function (val, nome) {
+      if (typeof document === "undefined") return;
+      var d = this._dicaEl, ev = this._ultEv, self = this;
+      if (!d) { d = this._dicaEl = document.createElement("div"); d.className = "a7-dica-encaixe"; d.setAttribute("role", "status"); d.style.display = "none"; document.body.appendChild(d); }
+      if (this._dicaT) { clearTimeout(this._dicaT); this._dicaT = null; }
+      var nomeOn = !(global.BimBarraSnaps && global.BimBarraSnaps.mostrarNome && !global.BimBarraSnaps.mostrarNome());
+      function mostrar(txt) { if (!txt || !ev) { d.style.display = "none"; return; } d.textContent = txt; d.style.left = (ev.x + 16) + "px"; d.style.top = (ev.y + 16) + "px"; d.style.display = "block"; }
+      mostrar(val || ""); d.setAttribute("data-valor", val || "");
+      d.setAttribute("data-nome", "");
+      if (nomeOn && nome) this._dicaT = setTimeout(function () { self._dicaT = null; d.setAttribute("data-nome", nome); mostrar((val ? val + " · " : "") + nome); }, 400);
+    },
+    _tirarDica: function () { if (this._dicaT) { clearTimeout(this._dicaT); this._dicaT = null; } if (this._dicaEl) this._dicaEl.style.display = "none"; },
     _limparPrevia: function () {
       var P = P2(); if (!P) return;
       Object.keys(P._cache || {}).forEach(function (k) { var c = P._cache[k]; if (!c || !c.svg) return; Array.prototype.forEach.call(c.svg.querySelectorAll(".a7-previa, .a7-previa-tx, .a7-previa-snap"), function (g) { g.parentNode.removeChild(g); }); });
+      this._tirarDica(); this._tabC = null;
     },
     mover2d: function (id, ev, p) {
       if (!this._f || !p) return;
+      if (ev) this._ultEv = { x: ev.clientX, y: ev.clientY };
+      this._ultP = { id: id, p: [p[0], p[1]] };
+      if (this._tabC && (this._tabC.id !== id || Math.abs(p[0] - this._tabC.p[0]) + Math.abs(p[1] - this._tabC.p[1]) > this._tabC.raio)) this._tabC = null;
       /* COTAS: a cota mostra o encaixe e o valor desde o 1º movimento (antes do 1º clique também) */
       if (this._f.refs.length || this._f.pts.length || this._f.def.k === "cota") this._previa(id, p);
     },
@@ -522,6 +586,16 @@
         }
         if (ev.key === "Enter" && self._f) { if (self.concluir()) { ev.stopPropagation(); ev.preventDefault(); } return; }
         /* COTAS: Tab alterna o encaixe (automático → eixo → face) */
+        if (ev.key === "Tab" && self._f && self._f.def.k === "cota" && self._ultP && !ev.shiftKey) {
+          /* TAB: o próximo candidato de encaixe sob o cursor (como no traçado); com um só, alterna face/eixo como antes */
+          var up = self._ultP, stT = self.estado(), corteT = /^d2c-/.test(up.id), tolT = self._tol(up.id), tb = self._tabC;
+          if (!tb) { var lt = self._listaCota(stT, up.p, tolT, up.id, corteT, self._f.def.cota === "elevacao" && !corteT ? "topo" : null); if (lt.length > 1) tb = self._tabC = { id: up.id, p: up.p.slice(), raio: self._tol(up.id, 3), lista: lt, i: 0 }; }
+          if (tb) {
+            tb.i = (tb.i + 1) % tb.lista.length; self._previa(up.id, up.p);
+            status("Encaixe " + (tb.i + 1) + " de " + tb.lista.length + ": " + (tb.lista[tb.i].rotulo || "ponto") + " (Tab: o próximo). " + self.dica());
+            ev.stopPropagation(); ev.preventDefault(); return;
+          }
+        }
         if (ev.key === "Tab" && self._f && self._f.def.k === "cota" && global.BimCotasUI && global.BimCotasUI.alternarPref) {
           var np = global.BimCotasUI.alternarPref(); self._candCache = null;
           status("Encaixe: " + np + ". " + self.dica()); ev.stopPropagation(); ev.preventDefault(); return;

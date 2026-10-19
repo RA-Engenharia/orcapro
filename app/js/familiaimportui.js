@@ -134,6 +134,9 @@
         if (!r) return null;
         var f = r.familia, g = r.geometria;
         f._origem = "importada";
+        /* BIBLIOTECA DO ESCRITÓRIO (js/biminstbiblioteca.js): família de instalação importada é reconhecida (tipo do motor,
+           fabricante, código, SINAPI que ela traz) para entrar na rede, no quantitativo e no cálculo */
+        try { if (global.HidBiblioteca && f.importada && (f.importada.conectores || (opts && opts.escritorio))) HidBiblioteca.preparar(f, { escritorio: !!(opts && opts.escritorio) }); } catch (eH) {}
         f._escopo = { obraId: obraAtual() || null };
         return self._guardarGeometria(f, g).then(function () {
           if (!global.FamiliaUI || !FamiliaUI._salvar(f)) return null;
@@ -171,6 +174,7 @@
     _guardarMinha: function (fam) {
       var u = usuario(); if (!u || !global.FamiliaUI || !FamiliaUI._ctx || !FamiliaUI._ctx.salvar) return false;
       var c = JSON.parse(JSON.stringify(fam)); c._escopo = { dono: u, registro: fam.id + "@u:" + u };
+      FamiliaUI._ixTarefa = null;   /* FLUIDEZ: o índice de obter() da tarefa cai (a família nova aparece na hora) */
       try { return !!FamiliaUI._ctx.salvar(c); } catch (e) { return false; }
     },
 

@@ -319,15 +319,26 @@
         var t = txt(ud.t), cat = cache[t] || (cache[t] = self.categoriaDe(t, estilos)), f = filtroDe && ud.u ? filtroDe(ud.u) : null;
         /* MATERIAIS (js/bimmateriais.js estiloCorte): o padrão de corte do material do projeto da peça */
         var mt = null; if (matDe && ud.u) { try { mt = matDe(ud.u); } catch (eM) { mt = null; } }
-        var k = cat + (f ? "|" + f : "") + (mt ? "|mat:" + mt.id : "");
+        /* NÍVEL DE DETALHE (js/biminstnivel.js): a linha UNIFILAR das instalações leva a pena, a cor e o tipo de linha do
+           SISTEMA (água fria azul 0,35; esgoto marrom 0,50; ventilação tracejada) — a convenção da prancha hidrossanitária.
+           O V/G da categoria continua mandando no visível e no meio-tom. */
+        var ins = ud.inst && ud.inst.k ? ud.inst : null;
+        /* apresentação de prancha: "fundo" (louça em meio-tom) sai ANTES dos cortes; o polígono preenchido leva preench/corPreench */
+        var k = cat + (f ? "|" + f : "") + (mt ? "|mat:" + mt.id : "") + (ins ? (ins.fundo ? "|fundo:" : "|inst:") + ins.k : "");
         if (!est[k]) {
           est[k] = self.estiloCategoria(cat, ef, estilos, f ? obj(ef.filtros)[f] : null);
           if (mt && mt.preench) { est[k].preench = mt.preench; if (mt.cor) est[k].corPreench = mt.cor; }
+          if (ins) {
+            if (ins.pena) est[k].proj = est[k].corte = ins.pena; if (ins.cor) est[k].cor = ins.cor; if (ins.padrao) est[k].padrao = ins.padrao;
+            if (ins.meioTom) est[k].meioTom = true;
+            if (ins.oculto) est[k].oculto = true;   /* PARIDADE: alvo de clique sem tinta (o Alto desenha pela vista da cena) */
+            if (ins.preench) { est[k].preench = ins.preench; if (ins.corPreench) est[k].corPreench = ins.corPreench; }
+          }
         }
         return k;
       }
-      arr(dados && dados.cortes).forEach(function (c) { c.k = chave({ t: c.t, u: c.u }); });
-      var lk = []; arr(dados && dados.linhas).forEach(function (l, i) { lk.push(chave(arr(dados.linhasUd)[i])); });
+      arr(dados && dados.cortes).forEach(function (c) { c.k = chave({ t: c.t, u: c.u, inst: c.inst }); });   /* NÍVEL: o corte da peça de instalação na cor do sistema */
+      var lk = [], lud = arr(dados && dados.linhasUd); arr(dados && dados.linhas).forEach(function (l, i) { var u = lud[i]; lk.push(chave(u ? { t: u.t, u: u.u, inst: u.inst } : null)); });
       if (dados) dados.linhasK = lk;
       arr(dados && dados.portas).forEach(function (p) { if (p) p.k = chave({ t: p.t || "IFCDOOR", u: p.u }); });   /* PORTA: o símbolo na pena da categoria Portas */
       if (!est._) est._ = this.estiloCategoria("OST_GenericModel", ef, estilos, null);
@@ -362,7 +373,7 @@
         if (!c.fechado) {
           for (var i = 0; i + 1 < pts.length; i++) {
             var r = BimModeloVista._clipSeg(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], x0, y0, x1, y1);
-            if (r) cortes.push({ pts: [[r[0], r[1]], [r[2], r[3]]], fechado: false, k: c.k, t: c.t, u: c.u });
+            if (r) cortes.push({ pts: [[r[0], r[1]], [r[2], r[3]]], fechado: false, k: c.k, t: c.t, u: c.u, inst: c.inst });
           }
           return;
         }
@@ -370,18 +381,27 @@
         if (poly.length < 3) return;
         var dentro = pts.every(function (q) { return q[0] >= x0 - E && q[0] <= x1 + E && q[1] >= y0 - E && q[1] <= y1 + E; });
         if (dentro) { cortes.push(c); return; }
-        cortes.push({ pts: poly, fechado: true, semContorno: true, k: c.k, t: c.t, u: c.u });
+        cortes.push({ pts: poly, fechado: true, semContorno: true, k: c.k, t: c.t, u: c.u, inst: c.inst });
         var tr = null;
         for (var j = 0; j < poly.length; j++) {
           var a = poly[j], b = poly[(j + 1) % poly.length];
-          if (naBorda(a, b)) { if (tr) { cortes.push({ pts: tr, fechado: false, k: c.k, t: c.t, u: c.u }); tr = null; } continue; }
+          if (naBorda(a, b)) { if (tr) { cortes.push({ pts: tr, fechado: false, k: c.k, t: c.t, u: c.u, inst: c.inst }); tr = null; } continue; }
           if (!tr) tr = [a.slice()];
           tr.push(b.slice());
         }
-        if (tr) cortes.push({ pts: tr, fechado: false, k: c.k, t: c.t, u: c.u });
+        if (tr) cortes.push({ pts: tr, fechado: false, k: c.k, t: c.t, u: c.u, inst: c.inst });
       });
       var out = {}; Object.keys(dados).forEach(function (k) { out[k] = dados[k]; });
       out.linhas = linhas; out.cortes = cortes;
+      /* PARIDADE: a vista da cena das instalações (imagens por elemento) — só as que tocam o recorte, cortadas na borda */
+      if (dados.instImagens) {
+        out.instImagens = arr(dados.instImagens).filter(function (im) {
+          var a = (+im.ang || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), bx = [Infinity, Infinity, -Infinity, -Infinity];
+          [[im.x, im.y], [im.x + im.w, im.y], [im.x, im.y + im.h], [im.x + im.w, im.y + im.h]].forEach(function (q) { var X = q[0] * ca - q[1] * sa, Y = q[0] * sa + q[1] * ca; bx[0] = Math.min(bx[0], X); bx[1] = Math.min(bx[1], Y); bx[2] = Math.max(bx[2], X); bx[3] = Math.max(bx[3], Y); });
+          return bx[2] >= x0 && bx[0] <= x1 && bx[3] >= y0 && bx[1] <= y1;
+        });
+        out.instClip = [x0, y0, x1, y1];
+      }
       /* ACIMA DO CORTE (js/desenho2d.js Acima): a projeção tracejada também fica só dentro do recorte */
       if (dados.acima) out.acima = arr(dados.acima).map(function (it) {
         if (!it) return null;
@@ -697,9 +717,12 @@
     },
     /* função de filtro (V/G por filtro): uid → id do conjunto que manda nele */
     _filtroDe: function (ef) {
-      var ids = Object.keys(obj(ef.filtros)); if (!ids.length || !this._conjuntos) return null;
+      var ids = Object.keys(obj(ef.filtros)); if (!ids.length || (!this._conjuntos && !global.BimInstPadrao)) return null;
       var mapa = {}, conj = [];
-      try { conj = arr(this._conjuntos()); } catch (e) { conj = []; }
+      try { conj = this._conjuntos ? arr(this._conjuntos()) : []; } catch (e) { conj = []; }
+      /* PADRÃO DE APRESENTAÇÃO DE INSTALAÇÕES (js/biminstpadrao.js): os filtros por sistema que os modelos de vista de
+         instalações citam são conjuntos de busca do padrão (regra = dado), somados aos da obra */
+      try { if (global.BimInstPadrao && global.BimInstPadrao.conjuntos) conj = conj.concat(global.BimInstPadrao.conjuntos()); } catch (eP) { /* sem padrão */ }
       var els = []; try { els = this._elementos ? arr(this._elementos()) : []; } catch (e2) { els = []; }
       var BS = global.BimSet;
       ids.forEach(function (fid) {
@@ -714,7 +737,8 @@
     defExtracao: function (id) {
       var v = this.estado().vistas[id] || this.vistaPadrao(/^d2c-/.test(txt(id)) ? "corte" : "planta");
       var ef = this.efetivo(v, this.estado()), D = this.dados();
-      return { p6Tag: true, p6Ocultar: this.ocultador(ef, D.estilos, this._filtroDe(ef)), p6Aramado: ef.estiloVisual === "aramado" };
+      /* nivelInst: o NÍVEL DE DETALHE da vista vale para as instalações (js/biminstnivel.js: Baixo/Médio = unifilar) */
+      return { p6Tag: true, p6Ocultar: this.ocultador(ef, D.estilos, this._filtroDe(ef)), p6Aramado: ef.estiloVisual === "aramado", nivelInst: ef.nivelDetalhe, escalaInst: ef.escala };
     },
     /* depois de extrair: classifica por categoria e aplica a região de recorte */
     posExtracao: function (id, r, recorteExtra) {
@@ -848,7 +872,14 @@
       function bloqueado(c) { if (!T[c]) return false; toast("Este parâmetro é controlado pelo modelo de vista “" + T[c] + "”. Tire o modelo (Modelo de vista: <Nenhum>) para mudar só nesta vista.", "aviso"); return true; }
       var m;
       if (pid === "escala") { if (bloqueado("escala")) return true; v.escala = Math.max(1, Math.round(num(valor, v.escala))); this.gravar(); this._redesenhar(id, false); return true; }
-      if (pid === "p6:nd") { if (bloqueado("nivelDetalhe")) return true; if (NIVEIS_DETALHE[valor]) v.nivelDetalhe = valor; this.gravar(); this._redesenhar(id, false); return true; }
+      /* NÍVEL DE DETALHE: muda a EXTRAÇÃO (as instalações saem em unifilar, js/biminstnivel.js) — refaz o desenho, não só o
+         traço; a folha que mostra esta vista desenha de novo (js/bimfolhaui.js guarda o desenho por vista) */
+      if (pid === "p6:nd") {
+        if (bloqueado("nivelDetalhe")) return true; if (NIVEIS_DETALHE[valor]) v.nivelDetalhe = valor; this.gravar(); this._redesenhar(id, true);
+        try { if (global.BimFolhaUI && global.BimFolhaUI._desenhos) delete global.BimFolhaUI._desenhos[id]; } catch (eF) {}
+        try { if (global.BimInstUI && global.BimInstUI._pintarBotaoNivel) global.BimInstUI._pintarBotaoNivel(); } catch (eB) {}
+        return true;
+      }
       if (pid === "p6:disc") { if (bloqueado("disciplina")) return true; if (DISCIPLINAS[valor]) v.disciplina = valor; this.gravar(); this._arvore(); return true; }
       if (pid === "p6:ev") { if (bloqueado("estiloVisual")) return true; if (ESTILOS_VISUAIS[valor]) v.estiloVisual = valor; this.gravar(); this._redesenhar(id, true); return true; }
       if (pid === "p6:modelo") {
