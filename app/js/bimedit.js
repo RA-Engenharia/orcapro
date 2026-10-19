@@ -1108,9 +1108,17 @@
           /* CURVA: a parede curva precisa do meio do arco (e de um arco que exista) */
           (c.arco == null || (!!c.arco.m && fin(c.arco.m.x) && fin(c.arco.m.z) && (!depCurva() || depCurva().validar(c).ok)));
       }
-      var BI = instMotor();
+      var BI = instMotor(), copiasVistas = {};
       return (Array.isArray(ops) ? ops : []).filter(function (o) {
         if (!o) return false;
+        /* CÓPIA REPETIDA (19/10/2026): a mesma matriz/cópia, com os MESMOS ids novos, uma segunda vez não faz nada
+           no replay (as peças já existem) — só custa. Um laço da junção sem projeto gravou 1.049 vezes o mesmo
+           bloco na área de teste do Rogério e ela travava ao abrir. Sai aqui, e a lista limpa é a que se grava. */
+        if (o.id == null && o.novos && (o.op === "matriz" || (o.op === "transformar" && o.copia))) {
+          var kc = JSON.stringify(o);
+          if (copiasVistas[kc]) return false;
+          copiasVistas[kc] = 1;
+        }
         if (o.op === "lote") return true;   /* já peneirado acima */
         if (BI && BI.ehOp(o.op)) return BI.opValida(o);   /* B5: tubo e peça */
         if (o.op === "criar") return o.id != null && caixaOk(o.caixa);

@@ -15008,6 +15008,9 @@
         this._b4Resetar();      // nem a data, a fonte e o filtro da simulação 4D
         if (!(opts && opts.semCena)) {
           var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
+          /* ⚠ o dono ANTES de montar: a montagem avisa o aoMudarCena, e com a cena "sem dono" ele juntava a
+             modelagem guardada de novo por cima da que entrava aqui (laço da área de teste, 19/10/2026) */
+          this._bimCenaObra = obraId || "geral";
           if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
         }
       } catch (eEd2) {}

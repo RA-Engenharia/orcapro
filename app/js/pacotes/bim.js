@@ -13185,9 +13185,14 @@ fin(c.espessura) && c.espessura > 0 &&
 fin(c.rotY) &&
 (c.arco == null || (!!c.arco.m && fin(c.arco.m.x) && fin(c.arco.m.z) && (!depCurva() || depCurva().validar(c).ok)));
 }
-var BI = instMotor();
+var BI = instMotor(), copiasVistas = {};
 return (Array.isArray(ops) ? ops : []).filter(function (o) {
 if (!o) return false;
+if (o.id == null && o.novos && (o.op === "matriz" || (o.op === "transformar" && o.copia))) {
+var kc = JSON.stringify(o);
+if (copiasVistas[kc]) return false;
+copiasVistas[kc] = 1;
+}
 if (o.op === "lote") return true;
 if (BI && BI.ehOp(o.op)) return BI.opValida(o);
 if (o.op === "criar") return o.id != null && caixaOk(o.caixa);
@@ -129340,8 +129345,9 @@ try { var ed = global.Store.obter(emp(), "bim_edicoes", chave); ops = (ed && ed.
 try {
 var vivas = (b && b.editarOps) ? b.editarOps() : [];
 if (b && b.editarAplicar && ops.length && JSON.stringify(vivas) !== JSON.stringify(ops)) {
-var ids = {}; ops.forEach(function (o) { if (o && o.id != null) ids[String(o.id)] = 1; });
-b.editarAplicar(ops.concat(vivas.filter(function (o) { return !o || o.id == null || !ids[String(o.id)]; })));
+var ja = {}; ops.forEach(function (o) { if (o) ja[o.id != null ? "#" + o.id : JSON.stringify(o)] = 1; });
+g._bimCenaObra = chave;
+b.editarAplicar(ops.concat(vivas.filter(function (o) { return !o || !ja[o.id != null ? "#" + o.id : JSON.stringify(o)]; })));
 }
 } catch (e2) {}
 g._bimCenaObra = chave;

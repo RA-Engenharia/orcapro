@@ -296,8 +296,13 @@
            cena inteira sumia (achado no gate da 1.2.132: 14 e2e do BIM com 0 peças depois de criar). A guardada
            entra primeiro; das vivas, só as que ela ainda não tem (mesmo id = a mesma op). */
         if (b && b.editarAplicar && ops.length && JSON.stringify(vivas) !== JSON.stringify(ops)) {
-          var ids = {}; ops.forEach(function (o) { if (o && o.id != null) ids[String(o.id)] = 1; });
-          b.editarAplicar(ops.concat(vivas.filter(function (o) { return !o || o.id == null || !ids[String(o.id)]; })));
+          /* ⚠ A MESMA OP SEM id (matriz, cópia — 19/10/2026): o "mesmo id" deixava passar TODA op sem id, e ela
+             entrava de novo a cada junção. E O DONO VEM ANTES DO editarAplicar: montar a cena avisa o aoMudarCena,
+             que chamava esta função de novo com a cena ainda "sem dono" — laço que somava as cópias sem fim
+             (a área de teste do Rogério chegou a 11.622 ops, 1.049 vezes o mesmo bloco, e travava ao abrir). */
+          var ja = {}; ops.forEach(function (o) { if (o) ja[o.id != null ? "#" + o.id : JSON.stringify(o)] = 1; });
+          g._bimCenaObra = chave;
+          b.editarAplicar(ops.concat(vivas.filter(function (o) { return !o || !ja[o.id != null ? "#" + o.id : JSON.stringify(o)]; })));
         }
       } catch (e2) {}
       g._bimCenaObra = chave;
