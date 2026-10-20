@@ -2488,6 +2488,16 @@
           acaoHtml: '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button>' });
       }
 
+      /* bases estaduais (IOPES, SICRO, ORSE…): arquivo pequeno, carrega
+         sozinho e redesenha esta aba quando chega (App._anaBasesGarantir) */
+      var pendEst = R.basesEstaduaisPendentes ? R.basesEstaduaisPendentes(linhas) : [];
+      if (pendEst.length) {
+        var orcId = orc.id;
+        App._anaBasesGarantir(pendEst, function () {
+          if (App.orcAtual && App.orcAtual.id === orcId && document.getElementById("ins-busca")) App.render();
+        });
+        R = App._insumosOrcResolver();
+      }
       var res = InsumosOrc.consolidar(linhas, R.obter, { motivoSem: R.motivoSem });
       var abc = InsumosOrc.resumoABC(res);
       var f = App._insumosOrcFiltro || { busca: "", cat: "TODAS" };

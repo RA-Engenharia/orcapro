@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.163",
+versao: "1.2.164",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -4687,6 +4687,23 @@ d = d || {};
 var sinapi = typeof d.sinapi === "function" ? d.sinapi : function () { return null; };
 var base = typeof d.base === "function" ? d.base : function () { return null; };
 var oficial = typeof d.oficial === "function" ? d.oficial : function () { return false; };
+var estadual = typeof d.estadual === "function" ? d.estadual : function () { return null; };
+var estEstado = typeof d.estadualEstado === "function" ? d.estadualEstado : function () { return "nao-suporta"; };
+function daEstadual(a, F) {
+return {
+codigo: texto(a.codigo), descricao: texto(a.descricao), unidade: texto(a.unidade),
+custoUnitario: num(a.custoUnitario), propria: false, fonte: F,
+insumos: (a.insumos || []).map(function (i) {
+return {
+codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
+coeficiente: num(i.coeficiente), custoUnitario: num(i.custoUnitario),
+categoria: categoria(i.categoria), tipoInsumo: texto(i.tipoInsumo),
+tipo: /composi/i.test(texto(i.tipo)) ? "COMPOSICAO" : "INSUMO",
+fonte: texto(i.fonte) || F
+};
+})
+};
+}
 function obter(cod, L) {
 cod = texto(cod);
 if (!cod) return null;
@@ -4702,14 +4719,34 @@ var bp2 = base("PROPRIA", cod);
 return (comInsumos(bp2) && !oficial(cod)) ? daBase(bp2, true) : null;
 }
 var x = base(F, cod);
-return comInsumos(x) ? daBase(x, false) : null;
+if (comInsumos(x)) return daBase(x, false);
+var ae = estadual(F, cod);
+return comInsumos(ae) ? daEstadual(ae, F) : null;
 }
 function motivoSem(cod, L) {
 var F = fonteDaLinha(L);
 if (!texto(cod)) return "item digitado à mão, sem código";
 if (F === "PROPRIA" || /^PROP-/i.test(texto(cod))) return "composição própria sem insumos, ou que não está mais na base própria";
 if (F === "SINAPI") return d.temAnalitico ? "fora do detalhamento SINAPI carregado" : "detalhamento SINAPI não carregado";
+switch (estEstado(F)) {
+case "carregado": return "código fora do detalhamento " + F + " publicado pelo órgão";
+case "carregando": return "carregando o detalhamento " + F + "…";
+case "pendente": return "detalhamento " + F + " ainda não carregado";
+case "falhou": return "não consegui baixar o detalhamento " + F + " — confira a internet e abra a aba de novo";
+case "sem-publicacao": return "o órgão da " + F + " não publica o detalhamento em arquivo aberto";
+}
 return "a base " + F + " não traz o detalhamento em insumos";
+}
+function basesEstaduaisPendentes(linhas) {
+var vistas = {}, out = [];
+(linhas || []).forEach(function (L) {
+if (!L || !texto(L.codigo)) return;
+var F = fonteDaLinha(L);
+if (F === "SINAPI" || F === "PROPRIA" || /^PROP-/i.test(texto(L.codigo)) || vistas[F]) return;
+vistas[F] = 1;
+if (estEstado(F) === "pendente") out.push(F);
+});
+return out;
 }
 function precisaAnalitico(linhas) {
 return (linhas || []).some(function (L) {
@@ -4718,7 +4755,8 @@ var F = fonteDaLinha(L);
 return F === "SINAPI" && !/^PROP-/i.test(texto(L.codigo));
 });
 }
-return { obter: obter, motivoSem: motivoSem, precisaAnalitico: precisaAnalitico };
+return { obter: obter, motivoSem: motivoSem, precisaAnalitico: precisaAnalitico,
+basesEstaduaisPendentes: basesEstaduaisPendentes, daEstadual: daEstadual };
 }
 var DIVERGE_PCT = 1, DIVERGE_MIN = 0.05;
 function consolidar(linhas, obter, opc) {
@@ -13873,6 +13911,14 @@ if (!temBase && R.precisaAnalitico(linhas)) {
 return M.vazio({ icone: "insumo", titulo: "Abrir o orçamento em insumos",
 texto: "Para listar o material da obra e montar a curva ABC, é preciso carregar a base analítica do estado — são cerca de 17 MB, e só na primeira vez.",
 acaoHtml: '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button>' });
+}
+var pendEst = R.basesEstaduaisPendentes ? R.basesEstaduaisPendentes(linhas) : [];
+if (pendEst.length) {
+var orcId = orc.id;
+App._anaBasesGarantir(pendEst, function () {
+if (App.orcAtual && App.orcAtual.id === orcId && document.getElementById("ins-busca")) App.render();
+});
+R = App._insumosOrcResolver();
 }
 var res = InsumosOrc.consolidar(linhas, R.obter, { motivoSem: R.motivoSem });
 var abc = InsumosOrc.resumoABC(res);

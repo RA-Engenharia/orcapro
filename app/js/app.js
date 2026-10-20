@@ -1725,12 +1725,58 @@
     _insumosOrcResolver: function () {
       var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado);
       var B = (typeof Bases !== "undefined" && Bases.obter) ? Bases : null;
+      var self = this;
       return InsumosOrc.resolvedor({
         temAnalitico: temAna,
         sinapi: function (c) { return temAna ? Analitico.obter(c) : null; },
         base: function (f, c) { return B ? B.obter(f, String(c)) : null; },
-        oficial: function (c) { return (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(c)) : false; }
+        oficial: function (c) { return (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(c)) : false; },
+        estadual: function (f, c) { return self._anaBasesEstado(f) === "carregado" ? AnaliticoBases.obter(f, String(c)) : null; },
+        estadualEstado: function (f) { return self._anaBasesEstado(f); }
       });
+    },
+
+    /* ===== ANALÍTICO DAS BASES ESTADUAIS NAS TELAS DE INSUMO =====
+     * Insumos & ABC e "Gerar requisições do orçamento" abrem o item IOPES,
+     * SICRO, ORSE… pelo arquivo da própria base (js/analiticobases.js), como
+     * o "Analítico do item" já fazia desde a 1.2.154.
+     * ⚠ CARREGA SOZINHO, AO CONTRÁRIO DO SINAPI. O SINAPI pede o clique porque
+     *   são ~17 MB; o arquivo estadual tem de 0,2 MB (IOPES) a 2,5 MB (ORSE), e
+     *   só as bases que o orçamento usa. Pedir um clique para isso deixava a
+     *   lista de compras com 3% de cobertura e cara de completa.
+     * ⚠ FALHA NÃO VIRA LAÇO: quem falhou fica "falhou" por 60 s (a tela diz
+     *   o motivo); depois volta a "pendente" e a próxima abertura tenta de novo. */
+    _anaBasesSt: null,
+    _anaBasesEstado: function (f) {
+      var F = String(f || "").toUpperCase().trim();
+      if (typeof AnaliticoBases === "undefined") return "nao-suporta";
+      if (AnaliticoBases.semPublicacao(F)) return "sem-publicacao";
+      if (!AnaliticoBases.suporta(F)) return "nao-suporta";
+      if (AnaliticoBases.meta(F)) return "carregado";
+      var st = (this._anaBasesSt || {})[F];
+      if (st && st.estado === "carregando") return "carregando";
+      if (st && st.estado === "falhou" && Date.now() - st.quando < 60000) return "falhou";
+      return "pendente";
+    },
+    /* carrega as bases pedidas; `depois` roda uma vez, quando todas acabam */
+    _anaBasesGarantir: function (fontes, depois) {
+      var self = this;
+      fontes = (fontes || []).filter(function (f) { return self._anaBasesEstado(f) === "pendente"; });
+      if (!fontes.length) return false;
+      this._anaBasesSt = this._anaBasesSt || {};
+      var faltam = fontes.length;
+      fontes.forEach(function (f) {
+        var F = String(f).toUpperCase().trim();
+        self._anaBasesSt[F] = { estado: "carregando", quando: Date.now() };
+        AnaliticoBases.carregar(F).then(function () {
+          delete self._anaBasesSt[F];
+        }, function () {
+          self._anaBasesSt[F] = { estado: "falhou", quando: Date.now() };
+        }).then(function () {
+          if (--faltam === 0 && typeof depois === "function") { try { depois(); } catch (e) {} }
+        });
+      });
+      return true;
     },
 
     /* O CSV sai do RECORTE que esta na tela, e o nome do arquivo diz qual —

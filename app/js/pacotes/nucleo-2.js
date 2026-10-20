@@ -25053,6 +25053,12 @@ return { obra: obra, orc: orc, orcs: orcs, requisicoes: listaTodas("requisicoes"
 _reqOrcResolver: function () {
 var temAna = (typeof Analitico !== "undefined" && Analitico.carregado);
 var B = (typeof Bases !== "undefined") ? Bases : null;
+var RI = (typeof App !== "undefined" && App._insumosOrcResolver && typeof InsumosOrc !== "undefined") ? App._insumosOrcResolver() : null;
+var est = function (F, cod) {
+if (!RI || App._anaBasesEstado(F) !== "carregado") return null;
+var a = AnaliticoBases.obter(F, cod);
+return (a && a.insumos && a.insumos.length) ? RI.daEstadual(a, F) : null;
+};
 return {
 composicao: function (cod, fonte) {
 cod = String(cod || "");
@@ -25069,19 +25075,25 @@ var ofi = (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(cod) 
 return (bp2 && bp2.insumos && bp2.insumos.length && !ofi) ? bp2 : null;
 }
 var x = B.obter(F, cod);
-return (x && x.insumos && x.insumos.length) ? x : null;
+return (x && x.insumos && x.insumos.length) ? x : est(F, cod);
 },
 insumo: function (cod, fonte) {
 if (!B) return null;
 var F = ReqOrcamento.normFonte(fonte);
 if (F === "PROPRIA" || /^PROP-/i.test(String(cod))) return B.obter("PROPRIA", String(cod));
-return B.obter(F, String(cod));
+var r = B.obter(F, String(cod));
+if (!r && F !== "SINAPI" && RI && App._anaBasesEstado(F) === "carregado") r = AnaliticoBases.insumo(F, String(cod));
+return r;
 },
 motivoSem: function (cod, fonte) {
 var F = ReqOrcamento.normFonte(fonte);
 if (F === "SINAPI") return temAna ? "composição fora do detalhamento SINAPI carregado" : "detalhamento SINAPI não carregado — use o botão \"Carregar o detalhamento\" acima";
 if (F === "PROPRIA") return "composição própria sem insumos, ou que não está mais na base própria";
-return "a base " + F + " não traz o detalhamento em insumos";
+return RI ? RI.motivoSem(cod, { baseFonte: F }) : "a base " + F + " não traz o detalhamento em insumos";
+},
+pendentes: function (orc) {
+if (!RI || typeof Orcamento === "undefined") return [];
+return RI.basesEstaduaisPendentes(Orcamento.linhas(orc));
 }
 };
 },
@@ -25109,6 +25121,10 @@ if (!d.obra) { box.innerHTML = html + '</div><div class="vazio card">A obra esco
 if (!d.orc) {
 box.innerHTML = html + '</div><div class="vazio card">O orçamento vinculado a esta obra não foi encontrado neste aparelho (apagado, ou ainda não sincronizou). Confira em Orçamentos e no cadastro da obra (campo "Vincular a um orçamento").</div>';
 return;
+}
+var pendEst = this._reqOrcResolver().pendentes(d.orc);
+if (pendEst.length && typeof App !== "undefined" && App._anaBasesGarantir) {
+App._anaBasesGarantir(pendEst, function () { if (self._reqOrcEstado === st) self._reqOrcDesenhar(); });
 }
 var plano = this._reqOrcPlano(d, st);
 var marcadas = this._reqOrcMarcadas(plano, st), selM = {};
@@ -54041,12 +54057,46 @@ UI.toast("Não consegui carregar a base analítica. Confira a internet ou baixe 
 _insumosOrcResolver: function () {
 var temAna = (typeof Analitico !== "undefined" && !!Analitico.carregado);
 var B = (typeof Bases !== "undefined" && Bases.obter) ? Bases : null;
+var self = this;
 return InsumosOrc.resolvedor({
 temAnalitico: temAna,
 sinapi: function (c) { return temAna ? Analitico.obter(c) : null; },
 base: function (f, c) { return B ? B.obter(f, String(c)) : null; },
-oficial: function (c) { return (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(c)) : false; }
+oficial: function (c) { return (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(c)) : false; },
+estadual: function (f, c) { return self._anaBasesEstado(f) === "carregado" ? AnaliticoBases.obter(f, String(c)) : null; },
+estadualEstado: function (f) { return self._anaBasesEstado(f); }
 });
+},
+_anaBasesSt: null,
+_anaBasesEstado: function (f) {
+var F = String(f || "").toUpperCase().trim();
+if (typeof AnaliticoBases === "undefined") return "nao-suporta";
+if (AnaliticoBases.semPublicacao(F)) return "sem-publicacao";
+if (!AnaliticoBases.suporta(F)) return "nao-suporta";
+if (AnaliticoBases.meta(F)) return "carregado";
+var st = (this._anaBasesSt || {})[F];
+if (st && st.estado === "carregando") return "carregando";
+if (st && st.estado === "falhou" && Date.now() - st.quando < 60000) return "falhou";
+return "pendente";
+},
+_anaBasesGarantir: function (fontes, depois) {
+var self = this;
+fontes = (fontes || []).filter(function (f) { return self._anaBasesEstado(f) === "pendente"; });
+if (!fontes.length) return false;
+this._anaBasesSt = this._anaBasesSt || {};
+var faltam = fontes.length;
+fontes.forEach(function (f) {
+var F = String(f).toUpperCase().trim();
+self._anaBasesSt[F] = { estado: "carregando", quando: Date.now() };
+AnaliticoBases.carregar(F).then(function () {
+delete self._anaBasesSt[F];
+}, function () {
+self._anaBasesSt[F] = { estado: "falhou", quando: Date.now() };
+}).then(function () {
+if (--faltam === 0 && typeof depois === "function") { try { depois(); } catch (e) {} }
+});
+});
+return true;
 },
 _insumosCsv: function () {
 if (typeof InsumosOrc === "undefined" || !this.orcAtual) return;

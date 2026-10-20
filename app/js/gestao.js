@@ -34679,9 +34679,19 @@
        do item (`App.verInsumos`): composição PRÓPRIA pela base própria; SINAPI
        pelo analítico carregado (a própria de código não oficial vale, como lá);
        outra base só se o item dela trouxer os insumos. */
+    /* ⚠ base estadual (IOPES, SICRO, ORSE…) abre pelo analítico DELA
+       (App._insumosOrcResolver → InsumosOrc.daEstadual, que carimba a fonte
+       em cada insumo para a sub-composição não cair no SINAPI). Até
+       20/10/2026 caía toda em "a base X não traz o detalhamento". */
     _reqOrcResolver: function () {
       var temAna = (typeof Analitico !== "undefined" && Analitico.carregado);
       var B = (typeof Bases !== "undefined") ? Bases : null;
+      var RI = (typeof App !== "undefined" && App._insumosOrcResolver && typeof InsumosOrc !== "undefined") ? App._insumosOrcResolver() : null;
+      var est = function (F, cod) {
+        if (!RI || App._anaBasesEstado(F) !== "carregado") return null;
+        var a = AnaliticoBases.obter(F, cod);
+        return (a && a.insumos && a.insumos.length) ? RI.daEstadual(a, F) : null;
+      };
       return {
         composicao: function (cod, fonte) {
           cod = String(cod || "");
@@ -34698,19 +34708,28 @@
             return (bp2 && bp2.insumos && bp2.insumos.length && !ofi) ? bp2 : null;
           }
           var x = B.obter(F, cod);
-          return (x && x.insumos && x.insumos.length) ? x : null;
+          return (x && x.insumos && x.insumos.length) ? x : est(F, cod);
         },
         insumo: function (cod, fonte) {
           if (!B) return null;
           var F = ReqOrcamento.normFonte(fonte);
           if (F === "PROPRIA" || /^PROP-/i.test(String(cod))) return B.obter("PROPRIA", String(cod));
-          return B.obter(F, String(cod));
+          /* o sintético estadual às vezes só lista composições: o preço do
+             insumo vem do analítico da base */
+          var r = B.obter(F, String(cod));
+          if (!r && F !== "SINAPI" && RI && App._anaBasesEstado(F) === "carregado") r = AnaliticoBases.insumo(F, String(cod));
+          return r;
         },
         motivoSem: function (cod, fonte) {
           var F = ReqOrcamento.normFonte(fonte);
           if (F === "SINAPI") return temAna ? "composição fora do detalhamento SINAPI carregado" : "detalhamento SINAPI não carregado — use o botão \"Carregar o detalhamento\" acima";
           if (F === "PROPRIA") return "composição própria sem insumos, ou que não está mais na base própria";
-          return "a base " + F + " não traz o detalhamento em insumos";
+          return RI ? RI.motivoSem(cod, { baseFonte: F }) : "a base " + F + " não traz o detalhamento em insumos";
+        },
+        /* bases estaduais do orçamento ainda não carregadas */
+        pendentes: function (orc) {
+          if (!RI || typeof Orcamento === "undefined") return [];
+          return RI.basesEstaduaisPendentes(Orcamento.linhas(orc));
         }
       };
     },
@@ -34739,6 +34758,12 @@
       if (!d.orc) {
         box.innerHTML = html + '</div><div class="vazio card">O orçamento vinculado a esta obra não foi encontrado neste aparelho (apagado, ou ainda não sincronizou). Confira em Orçamentos e no cadastro da obra (campo "Vincular a um orçamento").</div>';
         return;
+      }
+      /* analítico das bases estaduais do orçamento: pequeno, carrega sozinho
+         e redesenha (App._anaBasesGarantir) */
+      var pendEst = this._reqOrcResolver().pendentes(d.orc);
+      if (pendEst.length && typeof App !== "undefined" && App._anaBasesGarantir) {
+        App._anaBasesGarantir(pendEst, function () { if (self._reqOrcEstado === st) self._reqOrcDesenhar(); });
       }
       var plano = this._reqOrcPlano(d, st);
       var marcadas = this._reqOrcMarcadas(plano, st), selM = {};

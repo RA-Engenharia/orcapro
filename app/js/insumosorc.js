@@ -97,6 +97,18 @@
    *   d.base(fonte, cod)   -> registro de Bases | null
    *   d.oficial(cod)       -> true se o código existe no SINAPI ativo
    *   d.temAnalitico       -> o analítico está carregado
+   *   d.estadual(fonte, cod) -> composição do analítico da base estadual
+   *                           (AnaliticoBases) | null
+   *   d.estadualEstado(fonte) -> "carregado" | "carregando" | "falhou" |
+   *                           "sem-publicacao" | "pendente" | "nao-suporta"
+   *
+   * ⚠ O DEFEITO QUE O `estadual` FECHA (20/10/2026, cliente do ES). A 1.2.154
+   * trouxe o analítico do IOPES, SICRO, ORSE etc. para o "Analítico do item",
+   * mas esta tela só olhava o registro da base, que não traz insumo. O
+   * orçamento de um cliente com 25 itens IOPES saiu com cobertura de 3% e
+   * R$ 167 mil em "a base IOPES não traz o detalhamento em insumos" — com o
+   * detalhamento de todos eles no servidor. Agora a base estadual abre pelo
+   * arquivo DELA (nunca pelo SINAPI: código igual é composição diferente).
    * ------------------------------------------------------------------ */
   function comInsumos(r) { return !!(r && r.insumos && r.insumos.length); }
 
@@ -137,6 +149,28 @@
     var sinapi = typeof d.sinapi === "function" ? d.sinapi : function () { return null; };
     var base = typeof d.base === "function" ? d.base : function () { return null; };
     var oficial = typeof d.oficial === "function" ? d.oficial : function () { return false; };
+    var estadual = typeof d.estadual === "function" ? d.estadual : function () { return null; };
+    var estEstado = typeof d.estadualEstado === "function" ? d.estadualEstado : function () { return "nao-suporta"; };
+
+    /* composição do analítico estadual -> mesma forma do analítico SINAPI.
+       ⚠ Cada insumo leva a fonte da base: sem ela, quem abre a sub-composição
+       (a lista de compras) normaliza fonte vazia para SINAPI e abriria o
+       IOPES 010210 pelo SINAPI 010210. */
+    function daEstadual(a, F) {
+      return {
+        codigo: texto(a.codigo), descricao: texto(a.descricao), unidade: texto(a.unidade),
+        custoUnitario: num(a.custoUnitario), propria: false, fonte: F,
+        insumos: (a.insumos || []).map(function (i) {
+          return {
+            codigo: texto(i.codigo), descricao: texto(i.descricao), unidade: texto(i.unidade),
+            coeficiente: num(i.coeficiente), custoUnitario: num(i.custoUnitario),
+            categoria: categoria(i.categoria), tipoInsumo: texto(i.tipoInsumo),
+            tipo: /composi/i.test(texto(i.tipo)) ? "COMPOSICAO" : "INSUMO",
+            fonte: texto(i.fonte) || F
+          };
+        })
+      };
+    }
 
     function obter(cod, L) {
       cod = texto(cod);
@@ -153,7 +187,9 @@
         return (comInsumos(bp2) && !oficial(cod)) ? daBase(bp2, true) : null;
       }
       var x = base(F, cod);
-      return comInsumos(x) ? daBase(x, false) : null;
+      if (comInsumos(x)) return daBase(x, false);
+      var ae = estadual(F, cod);
+      return comInsumos(ae) ? daEstadual(ae, F) : null;
     }
 
     /* o motivo do balde, dito pela fonte do item: "sem composição na base"
@@ -163,7 +199,29 @@
       if (!texto(cod)) return "item digitado à mão, sem código";
       if (F === "PROPRIA" || /^PROP-/i.test(texto(cod))) return "composição própria sem insumos, ou que não está mais na base própria";
       if (F === "SINAPI") return d.temAnalitico ? "fora do detalhamento SINAPI carregado" : "detalhamento SINAPI não carregado";
+      switch (estEstado(F)) {
+        case "carregado": return "código fora do detalhamento " + F + " publicado pelo órgão";
+        case "carregando": return "carregando o detalhamento " + F + "…";
+        case "pendente": return "detalhamento " + F + " ainda não carregado";
+        case "falhou": return "não consegui baixar o detalhamento " + F + " — confira a internet e abra a aba de novo";
+        case "sem-publicacao": return "o órgão da " + F + " não publica o detalhamento em arquivo aberto";
+      }
       return "a base " + F + " não traz o detalhamento em insumos";
+    }
+
+    /* as bases estaduais que este orçamento usa e cujo analítico ainda não
+       foi pedido — quem desenha a tela manda carregar (são de 0,2 a 2,5 MB,
+       e só as que o orçamento usa) */
+    function basesEstaduaisPendentes(linhas) {
+      var vistas = {}, out = [];
+      (linhas || []).forEach(function (L) {
+        if (!L || !texto(L.codigo)) return;
+        var F = fonteDaLinha(L);
+        if (F === "SINAPI" || F === "PROPRIA" || /^PROP-/i.test(texto(L.codigo)) || vistas[F]) return;
+        vistas[F] = 1;
+        if (estEstado(F) === "pendente") out.push(F);
+      });
+      return out;
     }
 
     /* ⚠ só o SINAPI depende do analítico de 17 MB. Orçamento só de
@@ -177,7 +235,8 @@
       });
     }
 
-    return { obter: obter, motivoSem: motivoSem, precisaAnalitico: precisaAnalitico };
+    return { obter: obter, motivoSem: motivoSem, precisaAnalitico: precisaAnalitico,
+      basesEstaduaisPendentes: basesEstaduaisPendentes, daEstadual: daEstadual };
   }
 
   /* --------------------------------------------------------------------
