@@ -28,6 +28,13 @@
   var SS = 2;                   /* supersample por eixo */
   var ANG_DOBRA = 30;           /* graus: aresta de dobra da malha (friso, degrau da bolsa) */
   var ANG_DOBRA_PX = 38;        /* graus: dobra no raster (entre pixels vizinhos) */
+  /* ⚠ MEMÓRIA (19/10/2026, causa do "Out of Memory" do Rogério). Cada elemento rasteriza com Z/normais/cores em
+     Float32 do tamanho do quadro: a 24 milhões de pixels eram ~700 MB por elemento, e o CACHE guardava até 600
+     resultados COM o z-buffer (_Z) e os triângulos (_T) — e a chave leva a posição da câmera, então cada zoom/pan
+     enchia mais. A página chegava a 4 GB em ~2 min na planta Alto (perfil do navegador no uso real: 1.489 de 2.208
+     amostras em renderElemento). Agora: quadro de no máximo TETO_PX (pico ~170 MB) e o cache com teto em BYTES. */
+  var TETO_PX = 6e6;                       /* pixels por elemento, já com o supersample */
+  var TETO_CACHE_BYTES = 192 * 1048576;    /* o que o cache de elementos pode reter */
 
   function dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
   function sub(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
@@ -110,7 +117,7 @@
     T.forEach(function (q) { q.S.forEach(function (s) { if (s[0] < x0) x0 = s[0]; if (s[0] > x1) x1 = s[0]; if (s[1] < y0) y0 = s[1]; if (s[1] > y1) y1 = s[1]; }); });
     var marg = 2 / ppmE; x0 -= marg; y0 -= marg; x1 += marg; y1 += marg;
     var W = Math.max(2, Math.ceil((x1 - x0) * ppmE)) * SS, H = Math.max(2, Math.ceil((y1 - y0) * ppmE)) * SS;
-    if (W * H > 24e6) { var red = Math.sqrt(24e6 / (W * H)); W = Math.max(2, Math.floor(W * red)); H = Math.max(2, Math.floor(H * red)); ppm = Math.min(W / (x1 - x0), H / (y1 - y0)); }
+    if (W * H > TETO_PX) { var red = Math.sqrt(TETO_PX / (W * H)); W = Math.max(2, Math.floor(W * red)); H = Math.max(2, Math.floor(H * red)); ppm = Math.min(W / (x1 - x0), H / (y1 - y0)); }
     var Z = new Float32Array(W * H).fill(Infinity), NB = new Float32Array(W * H * 3), CB = new Float32Array(W * H * 3), SU = new Uint8Array(W * H);
     T.forEach(function (q) {
       var base = el.malhas[q.m].base || NEUTRO.peca;
@@ -234,7 +241,18 @@
     return segs;
   }
 
-  var CACHE = new Map(); CACHE.MAX = 600; CACHE.acertos = 0;
+  var CACHE = new Map(); CACHE.MAX = 600; CACHE.acertos = 0; CACHE.bytes = 0; CACHE.TETO = TETO_CACHE_BYTES;
+  function bytesDe(r) {
+    var b = 0;
+    try { if (r.rgba) b += r.rgba.byteLength; if (r._Z) b += r._Z.byteLength; if (r._A) b += r._A.byteLength; if (r._T) b += r._T.length * 9 * 8 * 3; } catch (e) {}
+    return b;
+  }
+  function guardar(k, r) {
+    r._bytes = bytesDe(r);
+    if (r._bytes > CACHE.TETO) return;   /* sozinho já passa do teto: não guarda */
+    CACHE.set(k, r); CACHE.bytes += r._bytes;
+    while ((CACHE.size > CACHE.MAX || CACHE.bytes > CACHE.TETO) && CACHE.size) { var k0 = CACHE.keys().next().value, r0 = CACHE.get(k0); CACHE["delete"](k0); CACHE.bytes -= (r0 && r0._bytes) || 0; }
+  }
   /* ------------------------------------------------------------- a vista inteira */
   /* elementos em qualquer ordem: o pintor desenha do mais fundo para o mais perto (a bolsa cobre a ponta do tubo, a
      conexão cobre o tubo, o tubo de cima cobre o de baixo); as arestas de cada um levam em conta os que vêm depois */
@@ -246,8 +264,8 @@
        não rasteriza de novo — só as arestas (que dependem dos vizinhos) são refeitas */
     elementos.forEach(function (el) {
       var k = el.chave ? el.chave + "|" + base : null, r = k ? CACHE.get(k) : null;
-      if (r) { CACHE.delete(k); CACHE.set(k, r); CACHE.acertos++; }
-      else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) { CACHE.set(k, r); if (CACHE.size > CACHE.MAX) CACHE.delete(CACHE.keys().next().value); } }
+      if (r) { CACHE["delete"](k); CACHE.set(k, r); CACHE.acertos++; }
+      else { try { r = renderElemento(el, B, o); } catch (e) { r = null; } if (r && k) guardar(k, r); }
       if (r) R.push(r);
     });
     R.sort(function (a, b) { return b._min - a._min; });
@@ -270,7 +288,7 @@
     } catch (e) { return null; }
   }
 
-  var API = { ligada: true, cache: CACHE, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
+  var API = { ligada: true, cache: CACHE, TETO_PX: TETO_PX, TETO_CACHE_BYTES: TETO_CACHE_BYTES, renderizar: renderizar, renderElemento: renderElemento, corBase: corBase, pngDe: pngDe, recortarTri: recortarTri, NEUTRO: NEUTRO, SS: SS };
   if (typeof module !== "undefined" && module.exports) module.exports = API;
   global.HidSombra = API;
 })(typeof window !== "undefined" ? window : globalThis);
