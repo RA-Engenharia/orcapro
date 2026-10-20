@@ -176,9 +176,13 @@
       if (!g.transl) rotacoes.push(id);
       ["p1", "p2"].forEach(function (k) { if (len(disp[k]) > 1e-6) MOV.push({ P0: cp(t[k]), disp: disp[k], sis: t.sistema }); });
       /* o ramal que chega no MEIO do tubo arrastado: o tê/junção anda junto */
+      /* ⚠ (frente A, 19/10/2026) e a TOMADA DA VENTILAÇÃO no meio do esgoto arrastado (a ponta "continua" que faz o tê): anda junto.
+         Antes ela ficava para trás, solta, e a marca "continua" escondia do verificador (tools/test-bim-alinhar-inst.js [4]) */
       TS.forEach(function (v) {
-        if (M[v.id] || v.sistema !== t.sistema) return;
-        ["p1", "p2"].forEach(function (k) { var s = interior(v[k], t.p1, t.p2, TOL); if (s != null) MOV.push({ P0: cp(v[k]), disp: add(mul(disp.p1, 1 - s), mul(disp.p2, s)), sis: t.sistema }); });
+        if (M[v.id]) return;
+        var tomada = t.sistema === "esgoto" && v.sistema === "ventilacao" && !!v.continua;
+        if (v.sistema !== t.sistema && !tomada) return;
+        ["p1", "p2"].forEach(function (k) { if (tomada && !(v.continua === "ambos" || v.continua === k)) return; var s = interior(v[k], t.p1, t.p2, TOL); if (s != null) MOV.push({ P0: cp(v[k]), disp: add(mul(disp.p1, 1 - s), mul(disp.p2, s)), sis: v.sistema }); });
       });
     });
     /* peças selecionadas (caixa) andam; os tubos ligados nelas acompanham */
@@ -224,7 +228,9 @@
         if (livreEm(v, f)) { g.p1 = add(v.p1, D); g.p2 = add(v.p2, D); g.mudou = true; g.transl = true; return; }
         /* fica de pé; a PERNA horizontal liga o pé dele à ponta que andou (no sentido do escoamento) */
         var a0 = cp(near), a1 = add(near, D), entra = k === "p2";   /* entra = o vertical CHEGA no nó (desce da louça) */
-        pontes.push({ id: idPonte(v.id), base: v, p1: entra ? a0 : a1, p2: entra ? a1 : a0, nova: true });
+        /* a TOMADA da ventilação que andou com o esgoto: a perna nova leva a marca (a ponta no esgoto continua sendo o tê) */
+        var tomP = v.sistema === "ventilacao" && v.continua && (v.continua === "ambos" || v.continua === k) ? (entra ? "p2" : "p1") : null;
+        pontes.push({ id: idPonte(v.id), base: v, p1: entra ? a0 : a1, p2: entra ? a1 : a0, nova: true, tomada: tomP });
         avisos.push("o tubo vertical " + v.id + " ficou de pé: ganhou uma perna horizontal de " + fmt(Dh) + " m (joelhos novos)");
         return;
       }
@@ -367,6 +373,7 @@
     pontes.forEach(function (p) {
       var b = p.base, o = { op: "trecho", id: p.id, sistema: b.sistema, material: b.material, dn: b.dn, p1: r4p(p.p1), p2: r4p(p.p2) };
       ["pn", "classe", "serie", "iso"].forEach(function (k) { if (b[k] != null && b[k] !== "") o[k] = b[k]; });
+      if (p.tomada) { o.continua = p.tomada; if (b.tomada) o.tomada = b.tomada; }
       ops.push(o); var n = I.normTrecho(o); if (n) tNovos.push(n);
     });
     var pNovos = PS.map(function (p) {

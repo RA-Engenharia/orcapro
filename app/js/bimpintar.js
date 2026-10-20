@@ -40,6 +40,7 @@
   function txt(v) { return v == null ? "" : String(v); }
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
+  function AV() { return global.BimAcabVis || (typeof require === "function" ? (function () { try { return require("./bimacabvis.js"); } catch (e) { return null; } })() : null); }
   function A() { return global.BimArq || (typeof require === "function" ? (function () { try { return require("./bimarq.js"); } catch (e) { return null; } })() : null); }
 
   /* materiais de acabamento da RA (nome + cor do desenho). O usuário pode
@@ -54,13 +55,21 @@
     { id: "reboco", rotulo: "Reboco aparente", cor: "#c2baa9" },
     { id: "verniz", rotulo: "Verniz / stain", cor: "#a26f3d" }
   ];
+  /* ACABAMENTO VISUAL (19/10/2026, js/bimacabvis.js): a paleta de fachada e de interior (grafite, off-white, concreto aparente,
+     ripado, cimentício, pedra, porcelanato amadeirado, tijolinho, metal preto). Cada um tem NOME fixo, cor sRGB e a textura da
+     biblioteca que o Realista veste — o mesmo `pintar`, sem um segundo jeito de pôr material na parede. */
+  (function () {
+    var V = AV(); if (!V) return;
+    V.CATALOGO.forEach(function (e) { if (e.grupo === "fachada" || e.grupo === "metal") MATERIAIS.push({ id: e.id, rotulo: e.rotulo, cor: e.cor }); });
+  })();
   var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"] };
   var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior" };
   var OPS = ["pintar", "removerPintura", "dividirFace"];
   var MAX_CORTES = 8;
 
   function corDe(material) {
-    var s = txt(material).toLowerCase();
+    var s = txt(material).toLowerCase(), V = AV(), ac = V ? V.porNome(material) : null;
+    if (ac) return ac.cor;
     for (var i = 0; i < MATERIAIS.length; i++) if (MATERIAIS[i].rotulo.toLowerCase() === s || MATERIAIS[i].id === s) return MATERIAIS[i].cor;
     var h = 0; for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) % 360;   /* outro nome: uma cor estável pelo nome */
     return "hsl(" + h + ", 35%, 70%)";

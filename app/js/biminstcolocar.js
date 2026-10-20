@@ -155,6 +155,51 @@
     var d = un3(a.dir), f0 = Math.abs(d.y) > 0.9 ? { x: 0, y: 0, z: 1 } : ladoBase(d), f = girarEm(f0, d, g * Math.PI / 180);
     return [r4(f.x), r4(f.y), r4(f.z)];
   }
+  /* FRENTE B (19/10/2026, D-01): o inverso de frenteAcessorio — o GIRO (graus, em torno do eixo `dir` do tubo, no mesmo sentido
+     do girarEm) que leva a frente padrão do registro até `frente` (a direção para DENTRO do cômodo que ele serve: pedido do
+     Rogério, "sempre para o sentido onde está o ambiente"). 0 = a frente padrão já serve. `frente` paralela ao eixo → 0. */
+  function giroPara(dir, frente) {
+    if (!dir || !frente) return 0;
+    var d = un3(dir), f0 = Math.abs(d.y) > 0.9 ? { x: 0, y: 0, z: 1 } : ladoBase(d), fr = { x: num(frente.x, 0), y: num(frente.y, 0), z: num(frente.z, 0) };
+    var k = dot3(fr, d), fp = { x: fr.x - d.x * k, y: fr.y - d.y * k, z: fr.z - d.z * k };
+    if (Math.sqrt(dot3(fp, fp)) < 1e-6) return 0;
+    fp = un3(fp);
+    var g = Math.atan2(dot3(d, cross3(f0, fp)), dot3(f0, fp)) * 180 / Math.PI, gr = Math.round(((g % 360) + 360) % 360 * 100) / 100;   /* 0,01° basta */
+    return gr >= 360 - 1e-9 ? 0 : gr;
+  }
+
+  /* FRENTE B (19/10/2026, D-01): para que lado da parede fica o CÔMODO do ponto `p` embutido nela — a normal (planta) da parede que o
+     contém, virada para o ambiente delimitado com aparelho sanitário (sonda a SONDA_COMODO da face); sem ambiente, o lado do aparelho
+     sanitário mais perto. null = o ponto não está numa parede (tubo aparente: fica a frente padrão). */
+  var SONDA_COMODO = 0.40;   // m: sonda à frente da face da parede (a mesma do auditor do TA)
+  function dentroPol(p, pol) { var c = false; for (var i = 0, j = pol.length - 1; i < pol.length; j = i++) { var a = pol[i], b = pol[j]; if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x)) c = !c; } return c; }
+  /* ⚠ REVISÃO ADVERSARIAL (20/10/2026): só PONTO DE ÁGUA diz qual cômodo o registro serve. Com "toda família hid-" contavam o
+     ralo, as caixas (inspeção, gordura, sifonada), o extintor, o sprinkler e o hidrante: o registro do banheiro virava para o
+     corredor do extintor, para a área de serviço do ralo e para o quintal da caixa de inspeção. Família importada (fora do
+     catálogo hid-/ra-) vale pelo conector de água da própria família avaliada. */
+  var PONTO_AGUA = /^hid-(bacia|lavatorio|cuba|chuveiro|pia|tanque-lavar|mictorio|torneira|misturador|ducha|valvula-descarga|caixa-descarga|bebedouro)|^ra-(bacia|lavatorio|chuveiro|tanque)/;
+  function pontoDeAgua(f, famAval) {
+    var id = String(f && f.famId);
+    if (/registro|porta|janela/.test(id)) return false;
+    if (PONTO_AGUA.test(id)) return true;
+    if (/^hid-|^ra-/.test(id) || typeof famAval !== "function") return false;
+    try { var av = famAval(f.famId, f.tipoId, f.inst || {}); return arr(av && av.conectores).some(function (c) { return c && (c.sistema === "agua_fria" || c.sistema === "agua_quente"); }); } catch (e) { return false; }
+  }
+  function ladoComodo(estado, p, famAval) {
+    var w = null;
+    paredes(estado).forEach(function (c) {
+      var E = eixoParede(c), dx = p.x - c.cx, dz = p.z - c.cz, uu = dx * E.a.x + dz * E.a.z, ww = dx * E.n.x + dz * E.n.z;
+      if (Math.abs(uu) > c.comprimento / 2 + 1e-6 || Math.abs(ww) > num(c.espessura, 0) / 2 + 1e-6) return;
+      if (!w || Math.abs(ww) < w.ww) w = { c: c, E: E, ww: Math.abs(ww) };
+    });
+    if (!w) return null;
+    var san = arr(estado.familias).filter(function (f) { return pontoDeAgua(f, famAval); });
+    var ambs = arr(estado.ambientes).filter(function (A) { return A && A.calc && arr(A.calc.contorno).length >= 3 && san.some(function (f) { return dentroPol(f, A.calc.contorno); }); });
+    var off = num(w.c.espessura, 0) / 2 + SONDA_COMODO, lados = [1, -1].map(function (sg) { var q = { x: p.x + w.E.n.x * sg * off, z: p.z + w.E.n.z * sg * off }; return { sg: sg, amb: ambs.some(function (A) { return dentroPol(q, A.calc.contorno); }) }; });
+    var sg = lados[0].amb !== lados[1].amb ? (lados[0].amb ? 1 : -1) : 0;
+    if (!sg) { var best = null; san.forEach(function (f) { var d = Math.hypot(f.x - p.x, f.z - p.z), v = (f.x - p.x) * w.E.n.x + (f.z - p.z) * w.E.n.z; if (Math.abs(v) > 1e-6 && (!best || d < best.d)) best = { d: d, s: v > 0 ? 1 : -1 }; }); sg = best ? best.s : 0; }
+    return sg ? { x: w.E.n.x * sg, y: 0, z: w.E.n.z * sg } : null;
+  }
 
   /* INSERIR NO TUBO: a op (ou o lote) que põe o acessório/conexão `cfg.famId` no ponto do trecho mais perto de alvo.q.
      cfg: { famId, tipoId, giro (graus, em torno do eixo), dnNovo (redução), dnRamal, ramal (m), cursor {x,y,z} (o lado do ramal) } */
@@ -194,6 +239,9 @@
       s = Math.max(folga, Math.min(Lt - folga, s));
       var q = ponto(s);
       var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
+      /* FRENTE B (19/10/2026, D-01): o REGISTRO posto à mão num tubo embutido nasce com o volante para o lado do cômodo (o giro do
+         Espaço soma por cima). Pedido do Rogério: "sempre para o sentido onde está o ambiente" (critério RA, R-C9). */
+      if (/registro/.test(String(chave))) { var fC = ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
       if (giro) op.giro = giro;
       return { ok: true, oQue: k, nome: A.nome, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,
                previa: { centro: q, dir: u, comprimento: Lff, dn: t.dn, material: t.material, sistema: t.sistema, acessorio: chave, variante: tipo, giro: giro } };
@@ -725,7 +773,7 @@
   var BimInstColocar = {
     VERSAO: 1, GEO: GEO, CONEXOES: CONEXOES, ORDEM_INLINE: ORDEM_INLINE,
     oQue: oQue, nomeInline: nomeInline, tuboSob: tuboSob, encaixeGrade: encaixeGrade, inserir: inserir, girar: girar, poseFamilia: poseFamilia, cotaParede: cotaParede,
-    paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, idsUsados: idsUsados, novoId: novoId,
+    paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, giroPara: giroPara, ladoComodo: ladoComodo, idsUsados: idsUsados, novoId: novoId,
     montar3d: T.montar3d, tela: T
   };
   global.BimInstColocar = BimInstColocar;

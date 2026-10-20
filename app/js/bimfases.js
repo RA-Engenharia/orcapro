@@ -145,6 +145,12 @@
     arr(estado && estado.coberturas).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "cobertura", categoria: "cobertura", el: c }); });
     arr(estado && estado.forros).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "forro", categoria: "forro", el: c }); });
     arr(estado && estado.volumes).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "volume", categoria: "volume", el: c }); });
+    /* ⚠ P3: telhado, borda (calha/rufo) e fundação também têm fase — a op marcar já os alcança (bimparam alvo()),
+       mas sem eles aqui o filtro de fase da vista ignorava o telhado: na reforma da casa caixote (20/10/2026)
+       o telhado NOVO aparecia na vista "Existente" e o telhado a demolir não saía tracejado. */
+    arr(estado && estado.telhados).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "telhado", categoria: "cobertura", el: c }); });
+    arr(estado && estado.bordas).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "borda", categoria: "cobertura", el: c }); });
+    arr(estado && estado.fundacoes).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "fundacao", categoria: "fundacao", el: c }); });
     arr(estado && estado.familias).forEach(function (c) {
       if (!c || c.id == null) return;
       var k = catFam ? catFam(c.famId) : null;

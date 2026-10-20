@@ -37,6 +37,8 @@
     /* F1 (orçamento pelo modelo): as famílias orçáveis de alvenaria, laje e piso */
     parede: "Parede", laje: "Laje", piso: "Piso",
     /* P12: instalações (acessório de tubo e dispositivos com conector) — nomes das categorias em PT-BR (convenção de mercado) */
+    /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js, familiasmobcoz.js, familiaspais.js) */
+    cozinha: "Cozinha", banho: "Banho", lazer: "Lazer e área gourmet", paisagismo: "Paisagismo",
     acessorio_tubo: "Acessórios do tubo", dispositivo_eletrico: "Dispositivos elétricos", luminaria: "Luminárias", equipamento_eletrico: "Equipamento elétrico",
     /* FAMIMPORT (js/familiamalha.js): as conexões das famílias importadas de .rfa */
     conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"
@@ -532,6 +534,11 @@
     if (fam.geometria === "marcenaria") {
       var MC = global.Marcenaria || (typeof require === "function" ? (function () { try { return require("./marcenaria.js"); } catch (eR) { return null; } })() : null);
       if (MC) MC.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marcenaria (js/marcenaria.js) não carregou"); }
+    }
+    /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js): a malha sai do gerador da família (js/mobgeo.js), por material */
+    if (fam.geometria === "mob") {
+      var FMb = global.FamiliasMob || (typeof require === "function" ? (function () { try { return require("./familiasmob.js"); } catch (eR) { return null; } })() : null);
+      if (FMb) FMb.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador de mobiliário (js/familiasmob.js) não carregou"); }
     }
     return saida;
   }

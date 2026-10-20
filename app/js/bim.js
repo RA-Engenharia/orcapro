@@ -5356,7 +5356,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function texVestir(mat) {
     var t = mat && mat.userData && mat.userData.tex; if (!t) return false;
-    return texVestirMat(mat, t, t.slug ? texMotor().tinta(mat.userData.corIfc, t.slug) : null);
+    var acE = mat.userData.acabEnt;   /* acabamento visual: tinta própria (sem o piso 0,2 do `tinta` — ver js/bimacabvis.js) */
+    return texVestirMat(mat, t, t.slug ? (acE && window.BimAcabVis ? window.BimAcabVis.tinta(acE, texMotor().BIB) : texMotor().tinta(mat.userData.corIfc, t.slug)) : null);
   }
   /* coordenadas de textura de uma PEÇA, na pose FECHADA (porta aberta não
      arrasta a textura para outro lugar) */
@@ -5423,6 +5424,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       Object.keys(mo.matCache || {}).forEach(function (k) { por(mo.matCache[k]); });
       mo.grupo.children.forEach(function (m) { if (m.isMesh) por(m.userData && m.userData.matOrig); });
     });
+    Object.keys(acabMats).forEach(function (k) { por(acabMats[k]); });   /* acabamento visual (películas de face e de piso) */
     return out;
   }
   function texMateriais() {
@@ -5447,6 +5449,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (t && t.slug) texUvPeca(m, t);
       });
     });
+    acabSoltos = acabSoltos.filter(function (m) { return m.parent; });
+    acabSoltos.forEach(function (m) { var t = m.material && m.material.userData && m.material.userData.tex; if (t && t.slug) texUvPeca(m, t); });
     var tUv = (typeof performance !== 'undefined') ? performance.now() - t0 : 0;
     var pbr = TEXR.nivel !== 'textura';
     return Promise.all(Object.keys(slugs).map(function (s) { return texCarregar(s, pbr); })).then(function () {
@@ -5656,6 +5660,57 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * gravado no ponto de vista (`estilo.visual`).
    * ===================================================================== */
   var EST = { modo: 'sombreado', fixo: false, ar: {}, luz: null, real: null, mat: null, ultimo: null };
+
+  /* =====================================================================
+   * ACABAMENTO VISUAL (19/10/2026) — o material de FACE de parede (op `pintar`), o piso de ambiente e o piso externo
+   * (volume) aparecem no 3D em todos os estilos: cor sRGB no Sombreado, textura da biblioteca no Textura/Realista.
+   * O catálogo (nome → cor, textura) é o js/bimacabvis.js; aqui ficam só os materiais e a fiação com o estilo.
+   * As películas (js/bimprecisaoui.js) são malhas SOLTAS na cena (não são peças do modelo): `acabSoltos` guarda quais,
+   * para vestir a textura (UV pela mesma função da peça), pôr a sombra e seguir a visibilidade da peça de baixo.
+   * ⚠ ANTES era MeshBasicMaterial: cor chapada, sem luz e sem textura — o modelo saía todo branco/cinza.
+   * ===================================================================== */
+  var acabMats = {}, acabSoltos = [];
+  function acabEnt(nome) { return window.BimAcabVis ? window.BimAcabVis.porNome(nome) : null; }
+  function acabTex(ent) {
+    var B = texMotor(); if (!ent || !ent.slug || !B || !B.existe(ent.slug)) return null;
+    return { slug: ent.slug, escala: B.BIB[ent.slug].m, asp: B.BIB[ent.slug].asp || 1, fonte: 'acabamento', classe: '', material: ent.rotulo, termo: ent.id };
+  }
+  /* sobre = película sobre uma face (polygonOffset: ganha do plano da peça que está 3 mm atrás) */
+  function acabMat(ent, sobre) {
+    var k = ent.id + (sobre ? '|p' : '');
+    if (acabMats[k]) return acabMats[k];
+    var c = window.BimAcabVis.rgb(ent.cor);
+    var mt = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(c[0], c[1], c[2], THREE.SRGBColorSpace), metalness: ent.met || 0, roughness: ent.rug == null ? 0.8 : ent.rug, side: THREE.DoubleSide });
+    if (ent.op) { mt.transparent = true; mt.opacity = ent.op; mt.depthWrite = false; }
+    if (sobre) { mt.polygonOffset = true; mt.polygonOffsetFactor = -2; mt.polygonOffsetUnits = -40; }   /* 3 mm de folga não basta a 10 m (profundidade de 24 bits): a película brigava com a parede e o bloco aparecia por baixo, em riscos */
+    mt.userData.corLin = mt.color.clone(); mt.userData.acab = ent.id; mt.userData.acabEnt = ent;
+    acabMats[k] = mt;
+    estMarcarMat(mt, ent.rotulo);
+    return mt;
+  }
+  function acabRegistrar(mesh) {
+    acabSoltos = acabSoltos.filter(function (m) { return m.parent; });
+    acabSoltos.push(mesh);
+    mesh.receiveShadow = !!dir.castShadow; mesh.castShadow = false;
+    var mt = mesh.material, t = mt && mt.userData && mt.userData.tex;
+    if (!TEXR.on || !t || !t.slug) return;
+    texUvPeca(mesh, t);
+    if (!mt.map) texCarregar(t.slug, TEXR.nivel !== 'textura').then(function () { if (TEXR.on && S && S.alive) texVestir(mt); });
+  }
+  /* o acabamento do CORPO da parede pintada: o da face externa (região 0) ou, faltando, o da primeira face pintada que o catálogo conhece */
+  function acabBaseParede(c) {
+    var ks = Object.keys(c.pinturas || {}).sort(function (a, b) { return a === 'fora|0' ? -1 : (b === 'fora|0' ? 1 : (a < b ? -1 : 1)); });
+    for (var i = 0; i < ks.length; i++) { var ent = acabEnt(c.pinturas[ks[i]] && c.pinturas[ks[i]].material); if (ent && ent.grupo !== 'agua') return acabMat(ent, false); }
+    return null;
+  }
+  S._acabMat = acabMat; S._acabRegistrar = acabRegistrar;
+  S._tickExtra.push(function () {
+    if (!acabSoltos.length) return;
+    for (var i = 0; i < acabSoltos.length; i++) {
+      var m = acabSoltos[i], id = m.userData && m.userData.p4Pintura, base = id != null ? S.meshPorUid['edit:' + id] : null;
+      if (base) m.visible = base.visible !== false && !!base.parent;
+    }
+  });
   function estPrevia() { try { return document.documentElement.getAttribute('data-visual') === 'nova'; } catch (_) { return false; } }
   function estPlano(m) { var B = texMotor(); return B ? B.planoEstilo(m) : { estilo: 'sombreado', nome: 'Sombreado', texturas: false }; }
   function estTrocas() { try { return (window.BimEstilo && window.BimEstilo.trocasAtuais) ? (window.BimEstilo.trocasAtuais() || {}) : {}; } catch (_) { return {}; } }
@@ -5794,6 +5849,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     EST.ar = {};
   }
   /* ---- realista: sombra da luz principal, enquadrada no modelo ---- */
+  /* AJUSTE DA LUZ DO REALISTA (19/10/2026): a luz padrão (ambiente forte + sol alto e de trás) deixava a fachada sem contraste e a sombra
+     sumia. `BIM.estiloLuz({ az, el, sol, hemi, fill, env, expo })` põe o sol a `az` graus (0 = vem da frente, +Z; 90 = vem de +X) e `el`
+     graus de altura, e baixa o ambiente (hemisfério, preenchimento, reflexo do ambiente) para a sombra aparecer. Sem chamar, nada muda.
+     Vale só no Realista (sair dele devolve a luz de antes). */
+  function estLuzAplicar() {
+    var a = EST.luzAj, R = EST.real; if (!a || !R) return false;
+    if (!R.luzOrig) { var x0 = 1; try { x0 = renderer.toneMappingExposure; } catch (_) {} R.luzOrig = { h: hemi.intensity, f: fill.intensity, x: x0 }; }
+    if (a.hemi != null) hemi.intensity = +a.hemi;
+    if (a.fill != null) fill.intensity = +a.fill;
+    if (a.sol != null) dir.intensity = +a.sol;
+    if (a.expo != null) { try { renderer.toneMappingExposure = +a.expo; } catch (_) {} }
+    if (a.az != null && a.el != null && R.c) {
+      var az = +a.az * Math.PI / 180, el = +a.el * Math.PI / 180, rr = R.r;
+      dir.position.set(R.c.x + rr * Math.cos(el) * Math.sin(az), R.c.y + rr * Math.sin(el), R.c.z + rr * Math.cos(el) * Math.cos(az));
+    }
+    if (a.env != null && TEXR.env !== +a.env) { TEXR.env = +a.env; if (TEXR.on) texAplicar(true, TEXR.motivo); }
+    return true;
+  }
+  S._estLuz = function (o) { EST.luzAj = o && typeof o === 'object' ? o : null; return estLuzAplicar(); };
   function estRealista(on) {
     if (on) {
       if (EST.real) { ligarSombras(true); return; }   /* modelo novo: as malhas dele entram na sombra */
@@ -5810,12 +5884,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           dir.target.position.copy(c); if (!dir.target.parent) scene.add(dir.target);
           dir.position.set(c.x + r * 0.6, c.y + r * 1.0, c.z + r * 0.4);
           sc.left = -r; sc.right = r; sc.top = r; sc.bottom = -r; sc.far = r * 4; sc.updateProjectionMatrix();
+          EST.real.c = c.clone(); EST.real.r = r;
         }
       } catch (_) {}
       EST.real.sombra = ligarSombras(true);
       dir.intensity = 1.15;
+      estLuzAplicar();
     } else if (EST.real) {
       var s = EST.real; EST.real = null;
+      if (s.luzOrig) { hemi.intensity = s.luzOrig.h; fill.intensity = s.luzOrig.f; try { renderer.toneMappingExposure = s.luzOrig.x; } catch (_) {} }
       if (!s.cast) ligarSombras(false);
       dir.intensity = s.di; dir.position.copy(s.dp); dir.target.position.copy(s.tp);
       if (!s.alvoNaCena && dir.target.parent) dir.target.parent.remove(dir.target);
@@ -5861,6 +5938,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!p.sombras) estRealista(false);
     /* 2) a textura: o mesmo motor dos Materiais realistas, no nível do modo */
     TEXR.nivel = p.pbr ? 'realista' : 'textura'; TEXR.env = p.env;
+    if (p.sombras && EST.luzAj && EST.luzAj.env != null) TEXR.env = +EST.luzAj.env;   /* ajuste de luz do Realista (estLuzAplicar) */
     var querTex = p.texturas && texFrota();
     var pr = texAplicar(querTex, o.motivo || ('estilo ' + p.nome));
     /* 3) entra */
@@ -5893,7 +5971,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var B = texMotor(); if (!B) return false;
     if (!mat.userData.corLin) mat.userData.corLin = mat.color.clone();
     mat.userData.nomeMaterial = nome;
-    var tex = estPrevia() ? texDe([{ n: nome }], mat.transparent ? mat.opacity : 1) : null;
+    /* ACABAMENTO VISUAL (js/bimacabvis.js): o nome EXATO do catálogo manda — a textura é a do catálogo, não a do dicionário por palavra */
+    var acEnt = estPrevia() ? acabEnt(nome) : null;
+    var tex = acEnt ? acabTex(acEnt) : (estPrevia() ? texDe([{ n: nome }], mat.transparent ? mat.opacity : 1) : null);
     var kN = tex ? B.chave(tex) : '', kV = mat.userData.tex ? B.chave(mat.userData.tex) : '';
     if (kN === kV) return false;
     if (mat.map || mat.userData._fis) texDespirMat(mat);   /* vestido com a textura velha: despe antes de trocar */
@@ -9766,6 +9846,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderer.clippingPlanes = [plano]; renderer.localClippingEnabled = false; renderer.toneMapping = THREE.NoToneMapping;
       scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
       if (p6Oc) modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && p6Oc(o.userData || {})) { escondidos.push(o); o.visible = false; } });   /* P6: V/G */
+      /* PISCINA (js/familiaspiscina.js): a água é translúcida — não tampa o desenho do que está debaixo dela (degraus, banco) */
+      modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && o.userData && o.userData.sem2d) { escondidos.push(o); o.visible = false; } });
       scene.overrideMaterial = mat;
       renderer.autoClear = true;
       renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear();
@@ -9830,6 +9912,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       (g.children || []).forEach(function (m) {
         if (!m.isMesh || !m.geometry || !cadeiaVisivel(m)) return;
         if (p6Oc && p6Oc(m.userData || {})) return;   /* P6: V/G */
+        if (m.userData && m.userData.sem2d) return;   /* PISCINA: a superfície da água não entra no desenho */
         if (instVet) {   /* NÍVEL: a instalação (tubo, conexão, peça, louça, a linha do 3D) vem do passe dela e do vetor (abaixo) */
           var udI = m.userData || {};
           if (udI.instUnif || udI.instPapel || udI.instFam) return;
@@ -9843,6 +9926,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           else if (m.userData.mid !== 'edit' && !m.userData.fimpSem2d && /^IFCDOOR(STANDARDCASE)?$/.test(String(m.userData.tipo || '').toUpperCase())) {
             var kPI = m.userData.mid + ':' + m.userData.expressID; (portasIfc[kPI] = portasIfc[kPI] || []).push(m);
           }
+        }
+        /* MOBILIÁRIO E PAISAGISMO: na planta a copa da árvore, a estrela da palmeira e a hachura da forração valem pelo SÍMBOLO da família
+           (famMalhas → mobPlanta, no mundo); a malha inteira dessas famílias sai do corte e das arestas. No corte e no forro, a malha. */
+        if (planta && !p6Forro && m.userData.mobSem2d) {
+          var mp = m.userData.mobPlanta, mfy = m.userData.mobFaixaY || [-Infinity, Infinity];
+          if (mp && mfy[1] >= fundo - 1e-6 && mfy[0] <= h + 1e-6) {
+            var udMb = p6Tag ? { t: m.userData.tipo || '', u: m.userData.expressID != null ? ((m.userData.mid != null ? m.userData.mid : S.modelID) + ':' + m.userData.expressID) : '' } : null;
+            for (var iMb = 0; iMb + 3 < mp.length; iMb += 4) {
+              linhas.push([telaX(mp[iMb], h, mp[iMb + 1]), telaY(mp[iMb], h, mp[iMb + 1]), telaX(mp[iMb + 2], h, mp[iMb + 3]), telaY(mp[iMb + 2], h, mp[iMb + 3])]);
+              linhasIfc.push(m.userData.tipo || ''); if (udMb) linhasUd.push(udMb);
+            }
+          }
+          return;
         }
         /* FAMIMPORT (js/familiamalha.js): família importada com LINHAS DE PLANTA (giro da porta, folha da
            janela) — na planta valem elas, não o corte da malha; no corte e no forro, a malha */
@@ -11164,6 +11260,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (on && tri > 1800000) return false; // modelo pesado: sombra travaria — segue sem
     dir.castShadow = !!on;
     todasMalhas(function (m) { if (m.geometry) { m.castShadow = !!on; m.receiveShadow = !!on; } });
+    acabSoltos.forEach(function (m) { m.receiveShadow = !!on; });   /* películas de acabamento: recebem a sombra, não a projetam */
     /* ⚠ a malha MESCLADA é o que a câmera desenha (as peças acima estão na camada do clique): sem ela, a sombra do imersivo
        não aparecia desde a agregação — achado no modo foto do içamento (02/10/2026) */
     S.modelos.forEach(function (mo) { if (mo._agreg && mo._agreg.grupo) mo._agreg.grupo.traverse(function (m) { if (m.isMesh) { m.castShadow = !!on; m.receiveShadow = !!on; } }); });
@@ -12046,13 +12143,34 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     'latão': { cor: 0xc9a24a, rug: 0.28, met: 1 }, 'plástico': { cor: 0xd6d8da, rug: 0.45, met: 0 }, 'pvc': { cor: 0xece9e1, rug: 0.5, met: 0 },
     'polietileno azul': { cor: 0x1d5fae, rug: 0.42, met: 0, cc: 0.25, ccr: 0.3 }, 'ferro fundido': { cor: 0x3a3d42, rug: 0.55, met: 0.5 },
     'água': { cor: 0xc9dbe2, rug: 0.04, met: 0, cc: 1, ccr: 0.02 },
+    /* PISCINA DE FIBRA (js/familiaspiscina.js, 19/10/2026): casco azul de fibra, bordinha branca, água translúcida sobre o casco */
+    'fibra azul': { cor: 0x2f86c4, rug: 0.3, met: 0, cc: 0.6, ccr: 0.12 }, 'borda da piscina': { cor: 0xf1f0ea, rug: 0.4, met: 0, cc: 0.3, ccr: 0.2 },
+    'vidro temperado': { cor: 0x8fcfdc, rug: 0.04, met: 0, op: 0.42 },
+    'água da piscina': { cor: 0x55c3e6, rug: 0.03, met: 0, cc: 1, ccr: 0.02, op: 0.5 },
     /* PRESSURIZAÇÃO (js/hidpressao.js, 18/10/2026): a cor de cada equipamento pela FOTO do catálogo — a mesma do ícone (tools/hid-icones.html) */
     'equipamento preto': { cor: 0x26282b, rug: 0.5, met: 0.15 }, 'equipamento laranja': { cor: 0xf2692a, rug: 0.4, met: 0 }, 'equipamento verde': { cor: 0x8cc63f, rug: 0.4, met: 0 },
     'equipamento bege': { cor: 0xebe2cb, rug: 0.35, met: 0, cc: 0.3, ccr: 0.25 },
     /* PISCINA (js/hidpiscinafam.js, 18/10/2026): a cor da FOTO do catálogo (dados-fonte/hidro/piscina/volumetria-piscina.json);
        op = opacidade da peça transparente (tampa do pré-filtro, lente do refletor, visor da seletora) */
     'equipamento verde-água': { cor: 0x10757e, rug: 0.32, met: 0, cc: 0.35, ccr: 0.2 }, 'equipamento vermelho': { cor: 0xc0393b, rug: 0.4, met: 0 },
-    'equipamento azul': { cor: 0x2095ca, rug: 0.38, met: 0 }, 'equipamento cinza': { cor: 0x7c7f7a, rug: 0.5, met: 0 }, 'acrílico transparente': { cor: 0xdfe9ee, rug: 0.05, met: 0, op: 0.25 }
+    'equipamento azul': { cor: 0x2095ca, rug: 0.38, met: 0 }, 'equipamento cinza': { cor: 0x7c7f7a, rug: 0.5, met: 0 }, 'acrílico transparente': { cor: 0xdfe9ee, rug: 0.05, met: 0, op: 0.25 },
+    /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js, familiasmobcoz.js, familiaspais.js, 19/10/2026): madeira, tecido, pedra, laca, metal preto, vidro,
+       folhagem — cor sRGB de verdade (THREE.Color), verniz na pedra polida e na laca, tecido fosco */
+    'madeira nogueira': { cor: 0x6b4a32, rug: 0.55, met: 0, cc: 0.15, ccr: 0.4 }, 'madeira clara': { cor: 0xb58a55, rug: 0.6, met: 0 }, 'madeira escura': { cor: 0x3b2a20, rug: 0.55, met: 0, cc: 0.15, ccr: 0.4 },
+    'madeira deck': { cor: 0x6a3d25, rug: 0.7, met: 0 }, 'madeira freijo': { cor: 0xa27240, rug: 0.55, met: 0, cc: 0.12, ccr: 0.4 },
+    'laca branca': { cor: 0xf2f2ef, rug: 0.3, met: 0, cc: 0.4, ccr: 0.25 }, 'laca grafite': { cor: 0x3a3d40, rug: 0.38, met: 0, cc: 0.4, ccr: 0.25 },
+    'metal preto': { cor: 0x1f2023, rug: 0.45, met: 0.6 }, 'marmore branco': { cor: 0xece9e4, rug: 0.12, met: 0, cc: 0.6, ccr: 0.1 }, 'quartzo branco': { cor: 0xe9e8e4, rug: 0.2, met: 0, cc: 0.45, ccr: 0.15 },
+    'granito preto': { cor: 0x1d1e20, rug: 0.2, met: 0, cc: 0.5, ccr: 0.12 }, 'vidro fume': { cor: 0x4a5560, rug: 0.05, met: 0, op: 0.45 }, 'espelho': { cor: 0xc9d3d8, rug: 0.03, met: 1 },
+    'tela preta': { cor: 0x0b0c0e, rug: 0.08, met: 0, cc: 1, ccr: 0.05 }, 'couro caramelo': { cor: 0x9a5f34, rug: 0.5, met: 0, cc: 0.1, ccr: 0.5 }, 'colchao': { cor: 0xe9e5dc, rug: 0.95, met: 0 },
+    'roupa de cama': { cor: 0xe2ded4, rug: 0.92, met: 0 }, 'manta cinza': { cor: 0x9a9a98, rug: 0.95, met: 0 }, 'cimento queimado': { cor: 0x9b9a96, rug: 0.85, met: 0 },
+    'tijolo refratario': { cor: 0xc79a6a, rug: 0.9, met: 0 }, 'pedra cinza': { cor: 0x8a8d8f, rug: 0.9, met: 0 }, 'acrilico branco': { cor: 0xf7f7f5, rug: 0.15, met: 0, cc: 0.6, ccr: 0.1 },
+    'borracha preta': { cor: 0x1a1a1a, rug: 0.8, met: 0 }, 'linho natural': { cor: 0xcdbfa6, rug: 0.95, met: 0 }, 'tecido cinza': { cor: 0x777a7e, rug: 0.95, met: 0 },
+    'tecido bege': { cor: 0xb09b7e, rug: 0.95, met: 0 }, 'tecido grafite': { cor: 0x35383c, rug: 0.95, met: 0 }, 'tecido verde': { cor: 0x5a7058, rug: 0.95, met: 0 },
+    'tecido terracota': { cor: 0xb4603f, rug: 0.95, met: 0 }, 'tecido azul': { cor: 0x4a6a8a, rug: 0.95, met: 0 }, 'terra': { cor: 0x5a4332, rug: 0.98, met: 0 },
+    'ceramica terracota': { cor: 0xb5623c, rug: 0.7, met: 0 }, 'tronco palmeira': { cor: 0x6a5238, rug: 0.95, met: 0 }, 'casca de arvore': { cor: 0x7b6a5a, rug: 0.95, met: 0 },
+    'folha verde escura': { cor: 0x2f5a2e, rug: 0.6, met: 0 }, 'folha verde': { cor: 0x4a7f35, rug: 0.6, met: 0 }, 'folha verde clara': { cor: 0x7fae4a, rug: 0.6, met: 0 }, 'folha variegada': { cor: 0x6f9a48, rug: 0.55, met: 0 },
+    'flor amarela': { cor: 0xf2c53a, rug: 0.6, met: 0 }, 'flor rosa': { cor: 0xe58aa6, rug: 0.6, met: 0 }, 'flor lilas': { cor: 0xb48ad2, rug: 0.6, met: 0 }, 'flor azul': { cor: 0x6f7fd8, rug: 0.6, met: 0 }, 'flor branca': { cor: 0xf4f2ee, rug: 0.6, met: 0 },
+    'grama esmeralda': { cor: 0x3f7d2b, rug: 0.95, met: 0 }, 'grama amendoim': { cor: 0x5f9b35, rug: 0.95, met: 0 }, 'seixo': { cor: 0xd8d0c0, rug: 0.7, met: 0 }
   };
   function famMatPBR(k, nome) {
     var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
@@ -12066,11 +12184,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                     inox: 0xd0d4d8, 'louça branca': 0xf4f4f2, 'mdf branco': 0xf1f1ef, 'polietileno azul': 0x2c6fbf, metal: 0x8a8f96, 'aço': 0x8a8f96,
                     /* HIDRO/CLIMA (geometria fiel das famílias): metais, PVC, polietileno, ferro fundido, equipamento */
                     'metal cromado': 0xcfd3d8, 'aço inox': 0xd0d4d8, pvc: 0xe6e3d6, polietileno: 0x2c6fbf, 'ferro fundido': 0x3b3f45, branco: 0xf1f1ee, 'plástico': 0xdfe1e3,
-                    vermelho: 0xc62828, azul: 0x2c6fbf, preto: 0x24262a, 'cinza escuro': 0x5a5f66, 'cinza claro': 0xc9ccd0, latao: 0xb89b47, 'latão': 0xb89b47, brita: 0x9a9a96 };
+                    vermelho: 0xc62828, azul: 0x2c6fbf, preto: 0x24262a, 'cinza escuro': 0x5a5f66, 'cinza claro': 0xc9ccd0, latao: 0xb89b47, 'latão': 0xb89b47, brita: 0x9a9a96,
+                    /* PELE DE VIDRO (js/familiaspiscina.js): cor do perfil de alumínio */
+                    'alumínio branco': 0xf2f2ef, 'alumínio preto': 0x2a2c2f, 'alumínio bronze': 0x6e5a48 };
   function famMat(nome) {
     var k = String(nome || '').toLowerCase().trim();
     if (famMats[k]) return famMats[k];
     if (FAM_PBR[k]) return (famMats[k] = famMatPBR(k, nome));
+    var acE = acabEnt(nome);   /* piso externo / peça com o NOME do catálogo de acabamento (js/bimacabvis.js): cor sRGB e textura dele */
+    if (acE) return (famMats[k] = acabMat(acE, false));
     var cor = FAM_CORES[k];
     if (cor == null) { var h = 0; for (var i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0; cor = k ? (0x808080 + (h & 0x3f3f3f)) : 0xc8ccd2; }
     var vidro = k.indexOf('vidro') >= 0;
@@ -12079,7 +12201,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     estMarcarMat(famMats[k], String(nome || '').trim() || k);   /* o nome do material do sólido vai ao dicionário (estilo visual) */
     return famMats[k];
   }
-  var FAM_IFC = { porta: 'IFCDOOR', janela: 'IFCWINDOW', pilar: 'IFCCOLUMN', viga: 'IFCBEAM', mobiliario: 'IFCFURNISHINGELEMENT',
+  var FAM_IFC = { porta: 'IFCDOOR', janela: 'IFCWINDOW', pilar: 'IFCCOLUMN', viga: 'IFCBEAM', mobiliario: 'IFCFURNISHINGELEMENT', cozinha: 'IFCFURNISHINGELEMENT', banho: 'IFCFURNISHINGELEMENT', lazer: 'IFCFURNISHINGELEMENT',  /* paisagismo: proxy (IFC2X3 não tem vegetação) */
                   loucas: 'IFCSANITARYTERMINAL', equipamento: 'IFCFLOWSTORAGEDEVICE', estrutural: 'IFCMEMBER', generico: 'IFCBUILDINGELEMENTPROXY',
                   parede: 'IFCWALL', laje: 'IFCSLAB', piso: 'IFCCOVERING',  /* F1: famílias orçáveis (js/familiasorc.js) */
                   acessorio_tubo: 'IFCVALVE', dispositivo_eletrico: 'IFCOUTLET', luminaria: 'IFCLIGHTFIXTURE', equipamento_eletrico: 'IFCELECTRICDISTRIBUTIONBOARD',  /* P12 — GANCHO: famílias MEP */
@@ -12115,6 +12237,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       m.material = matSobre || matProprio || famMat(s.material);
       m.updateMatrix(); m.applyMatrix4(M);
       if (s.id != null) m.userData.famSolido = s.id;   /* PORTA: a planta reconhece o sólido da folha (js/simboloporta.js) */
+      if (/^água da piscina$/i.test(String(s.material || ''))) m.userData.sem2d = true;   /* PISCINA: translúcida, fora do desenho 2D */
       out.push(m);
     });
     /* FAMIMPORT: a planta usa as LINHAS DE PLANTA da família (giro da porta, folha da janela) no lugar da malha —
@@ -12124,6 +12247,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       for (var iL = 0; iL + 3 < lp.length; iL += 4) w.push(inst.x + lp[iL] * cR + lp[iL + 1] * sR, inst.z - lp[iL] * sR + lp[iL + 1] * cR, inst.x + lp[iL + 2] * cR + lp[iL + 3] * sR, inst.z - lp[iL + 2] * sR + lp[iL + 3] * cR);
       var yF = av.caixa ? [inst.y + av.caixa.y0, inst.y + av.caixa.y1] : [inst.y, inst.y + 2];
       out.forEach(function (mm, iM) { mm.userData.fimpSem2d = true; if (!iM) { mm.userData.fimpPlanta = w; mm.userData.fimpFaixaY = yF; } });
+    }
+    /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js): a família devolve o SÍMBOLO DE PLANTA (copa da árvore, estrela da palmeira, hachura da forração);
+       a planta desenha o símbolo no lugar do emaranhado de arestas da malha (vista2d, `mobSem2d`). Mundo = giro da instância sobre o plano (x, z). */
+    if (av.simboloPlanta && out.length && window.FamiliasMob && window.FamiliasMob.linhasPlanta) {
+      try {
+        var lpm = window.FamiliasMob.linhasPlanta(av.simboloPlanta), cM = Math.cos(inst.rotY || 0), sM = Math.sin(inst.rotY || 0), wM = [];
+        for (var iQ = 0; iQ + 3 < lpm.length; iQ += 4) wM.push(inst.x + lpm[iQ] * cM + lpm[iQ + 1] * sM, inst.z - lpm[iQ] * sM + lpm[iQ + 1] * cM, inst.x + lpm[iQ + 2] * cM + lpm[iQ + 3] * sM, inst.z - lpm[iQ + 2] * sM + lpm[iQ + 3] * cM);
+        var yM = av.caixa ? [inst.y + av.caixa.y0, inst.y + av.caixa.y1] : [inst.y, inst.y + 1];
+        out.forEach(function (mm, iM) { mm.userData.mobSem2d = true; if (!iM) { mm.userData.mobPlanta = wM; mm.userData.mobFaixaY = yM; } });
+      } catch (eMob) { /* sem símbolo: a planta usa a malha */ }
     }
     if (av.luz) out.forEach(function (mm, iM) { if (!iM) mm.userData.luz = { potencia: av.luz.potencia, fluxo: av.luz.fluxo, temperatura: av.luz.temperatura,
       posicao: [inst.x + av.luz.posicao[0] * Math.cos(inst.rotY || 0) + av.luz.posicao[2] * Math.sin(inst.rotY || 0), inst.y + av.luz.posicao[1], inst.z - av.luz.posicao[0] * Math.sin(inst.rotY || 0) + av.luz.posicao[2] * Math.cos(inst.rotY || 0)] }; });
@@ -12194,6 +12327,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return famMatsCor[k];
   }
   S._famDefinir = famDefinir; S._famAval = famAval;
+  /* MOBILIÁRIO/PAISAGISMO: o nome de material tem cor definida na tabela (e não a cor-hash de reserva)? — para o teste ver se faltou registrar */
+  S._famCorDefinida = function (nome) { var k = String(nome || '').toLowerCase().trim(); return !!(FAM_PBR[k] || FAM_CORES[k] != null); };
   /* NÍVEL DE DETALHE das formas geradas (js/hidlouca.js via js/familia.js: s.lod = [nível 1, nível 2]).
      A malha é a MESMA (seleção, raio e propriedades seguem nela); só a geometria troca: perto (< 8 m) o
      nível 0, até 25 m o 1, longe o 2. Planta, corte e desenho técnico (câmera ortográfica / planta ligada)
@@ -12500,6 +12635,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
       st.caixas.forEach(function (c) {
         var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
+        /* ACABAMENTO VISUAL: a parede com material pintado em alguma face leva esse acabamento no corpo também (topo, pontas e batentes dos vãos):
+           sem isto o bloco (terracota, no Realista) aparecia na ponta da parede e na lateral das janelas, em volta da película */
+        if (c.tipo === 'parede' && c.pinturas && estPrevia()) { var amB = acabBaseParede(c); if (amB) mat = amB; }
         /* B2: parede unida/recortada, laje por contorno, perfil, escada e guarda-corpo têm desenho próprio */
         var b2r = (c.b2 && S._b2Malhas) ? S._b2Malhas(c, vz, mat, addMesh) : null;
         if (b2r) { /* já desenhado */ } else if (vz) {
@@ -13633,6 +13771,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     armar: function (sub) { if (!edit.on) setEdit(true); if (edit.sub !== sub) setEditSub(sub); },
     desarmar: function () { if (edit.sub) setEditSub(edit.sub); },
     rotulo: labelSprite, reescalar: rescaleObj, avaliar: famAval, matSel: function () { return editMat('sel'); },
+    acabMat: acabMat, acabRegistrar: acabRegistrar,
     fechou: marcarFechamento, hint: function (t) { S._hint(t); }
   }) : null;
   /* P2-D — GANCHOS (ambientes na tela, js/bimambienteui.js; 09/10/2026): o comando
@@ -13812,7 +13951,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!p2bMatForro) p2bMatForro = new THREE.MeshStandardMaterial({ color: 0xf1eee6, metalness: 0, roughness: .95, side: THREE.DoubleSide });
     (st.forros || []).forEach(function (f) {
       if (!f || !f.ok || !f.contorno || f.contorno.length < 3) return;
-      var C = f.contorno.map(function (p) { return [p.x, p.z]; }), Fu = (f.furos || []).map(function (q) { return q.pts.map(function (p) { return [p.x, p.z]; }); });
+      /* SANCA (js/bimforrodrywall.js): a chapa central é só a de dentro do recuo; a faixa do perímetro sobe na sanca (desenho em js/bimcoberturaui.js) */
+      var C = (f.sancaInterno && f.sancaInterno.length > 2 ? f.sancaInterno : f.contorno).map(function (p) { return [p.x, p.z]; }), Fu = f.sancaInterno && f.sancaInterno.length > 2 ? [] : (f.furos || []).map(function (q) { return q.pts.map(function (p) { return [p.x, p.z]; }); });
       var g = b2Geo(C, Fu, 0, f.espessura, function (a, b, z) { return [a, BF.cotaEm(f, a, b) + z, b]; });
       addMesh(new THREE.Mesh(g, p2bMatForro), f.id, 'IFCCOVERING', p2bMatForro);
       mo.tipos.IFCCOVERING = (mo.tipos.IFCCOVERING || 0) + 1;
@@ -17854,6 +17994,7 @@ window.BIM = {
   /* gancho de teste (só leitura): a cor (sRGB, hex) da malha de uma peça criada aqui */
   _corMalha: function (id) { var m = S && S.meshPorUid['edit:' + id]; return m && m.material && m.material.color ? m.material.color.getHexString() : null; },
   /* a família avaliada como o viewer a vê (o mesmo cache do desenho) — para o orçamento do modelo */
+  _corMaterialFam: function (nome) { return (S && S._famCorDefinida) ? S._famCorDefinida(nome) : false; },
   familiaAvaliar: function (famId, tipoId, inst) { return (S && S._famAval) ? S._famAval(famId, tipoId, inst) : null; },
   /* FAMIMPORT: as luzes das luminárias importadas (js/familiamalha.js) — [{id, potencia, fluxo, temperatura, posicao}] */
   luzesDoModelo: function () { return (S && S._luzes) ? S._luzes() : []; },
@@ -18117,6 +18258,7 @@ window.BIM = {
   },
   /* ESTILO VISUAL (prévia ?previa=visual): 'linha' | 'sombreado' | 'textura' | 'realista' */
   estiloVisual: function (modo) { return (S && S._estiloVisual) ? S._estiloVisual(modo) : Promise.resolve(null); },
+  estiloLuz: function (o) { return (S && S._estLuz) ? S._estLuz(o) : false; },
   estiloVisualEstado: function () { return (S && S._estEstado) ? S._estEstado() : null; },
   /* refaz a textura de cada peça depois de uma TROCA gravada (BimEstilo.trocar) */
   estiloRedecidir: function () { return (S && S._estRedecidir) ? S._estRedecidir() : 0; },

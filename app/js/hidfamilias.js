@@ -346,8 +346,12 @@
       I("Altura_acionamento", 0, DECADADO(D_VALV, "alturaDoAcionamentoDaValvula_mm"), "Altura do acionamento sobre o piso (dica de instalação Hydra, pág. 31)"),
       DN("DN_agua", function (it) { var c = arr(it.conectores)[0]; return c && typeof c.dn === "number" ? { v: c.dn, origem: "catalogo" } : null; }, "DN da entrada")
     ],
-    solidos: [{ id: "corpo", nome: "Volume envolvente", forma: "caixa", x: "0", y: "0", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
-    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" }], material: "Metal"
+    solidos: [{ id: "corpo", nome: "Volume envolvente", forma: "caixa", x: "0", y: "-Altura*0.4", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
+    /* ⚠ a SAÍDA (descarga para a bacia) é um conector de verdade (frente A, 19/10/2026 — D-02 do diagnóstico): sem ele a
+       descida do kit começava no ar, abaixo da válvula, marcada "continua" para o verificador não acusar a ponta solta.
+       Posição no volume envolvente esquemático (AV_ESQ): abaixo da entrada, no mesmo prumo */
+    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" },
+                 { id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.4", z: "0" }], material: "Metal"   /* hid:ok geometria do volume esquemático */
   });
   ESPECS.push({
     id: "hid-caixa-descarga-embutida", nome: "Caixa de descarga embutida", categoria: "equipamento", sistemas: ["agua_fria"], tipos: ["caixa_descarga_embutida"], volume: true,
@@ -666,9 +670,12 @@
   GEO_FAM["hid-registro-pressao"] = geoRegistro("pressao");
   GEO_FAM["hid-registro-esfera"] = geoRegistro("esfera");
   GEO_FAM["hid-valvula-descarga"] = function () {
-    return [cxs("placa", "Acabamento na parede", "0", "0", "0.005", "Largura", "Altura", "0.01", CROMO),
-      cil("botao", "Botão", "z", "0", "Altura/2", "0.01", "Largura*0.28", "0.015", CROMO),
-      cil("tubo", "Tubo de ligação", "z", "0", "0", "0.01", "0.016", "Profundidade - 0.01", CROMO)];
+    /* a placa desce o vão da SAÍDA (conector "descarga" a Altura*0.4 abaixo da entrada — D-02, 19/10/2026): os dois tubos ficam
+       dentro do volume envolvente (tools/test-hid-geometria.js) */
+    return [cxs("placa", "Acabamento na parede", "0", "-Altura*0.4", "0.005", "Largura", "Altura", "0.01", CROMO),
+      cil("botao", "Botão", "z", "0", "Altura*0.1", "0.01", "Largura*0.28", "0.015", CROMO),
+      cil("tubo", "Tubo de ligação", "z", "0", "0", "0.01", "0.016", "Profundidade - 0.01", CROMO),
+      cil("tubo-saida", "Tubo de saída (descarga)", "z", "0", "-Altura*0.4", "0.01", "0.016", "Profundidade - 0.01", CROMO)];
   };
   GEO_FAM["hid-caixa-descarga-embutida"] = function () {
     return [cxs("corpo", "Caixa embutida", "0", "0", "-Espessura*0.075", "Largura", "Altura", "Espessura*0.85", "Branco"),
@@ -802,7 +809,7 @@
       x: [X("Na_parede", "simnao", true, "Instalação", "Embutido na parede: castelo, canopla e volante para fora da parede (+Z); não = volante para cima")] },
     "hid-registro-esfera": { g: "registro", p: { C: "Comprimento", H: "Altura", P: "Profundidade", tipo: "2", parede: "Na_parede" }, env: ["0", "-Profundidade/2", "0", "Comprimento", "Altura", "Profundidade"],
       x: [X("Na_parede", "simnao", false, "Instalação", "Alavanca para fora da parede (+Z); não = alavanca para cima")] },
-    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade" }, env: ["0", "0", "0", "Largura", "Altura", "Profundidade"], x: [] },
+    "hid-valvula-descarga": { g: "valvula_descarga", p: { W: "Largura", H: "Altura", P: "Profundidade" }, env: ["0", "-Altura*0.4", "0", "Largura", "Altura", "Profundidade"], x: [] },   /* a base desce até a saída (conector descarga, D-02) */
     "hid-caixa-descarga-embutida": { g: "caixa_descarga_embutida", p: { W: "Largura", H: "Altura", E: "Espessura" }, env: ["0", "0", "-Espessura/2", "Largura", "Altura", "Espessura"], x: [] },
     "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"], x: [] },
     "hid-ralo": { g: "ralo", p: { D: "min(Largura; Profundidade)", H: "Altura", quadrado: "Grelha_quadrada" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],

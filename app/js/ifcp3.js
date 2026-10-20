@@ -68,7 +68,7 @@
         if (!t || t.id == null) return;
         if (!t.ok) { A.avisos.push("telhado " + t.id + ": " + (arr(t.avisos)[0] || "não fechou") + " — ficou de fora do IFC"); return; }
         var nv = A.nivelDaPeca(t, num(t.cotaApoio, 0)), plT = A.placement(nv.pl, [0, 0, 0]);
-        var tp = t.tipoTelhado || {}, esp = num(t.espessura, 0), cam = arr(tp.camadas), matN = String((cam[0] && (cam[0].material || cam[0].rotulo)) || "Telha cerâmica");
+        var tp = t.tipoTelhado || {}, esp = num(t.espessuraTipo != null ? t.espessuraTipo : t.espessura, 0), cam = arr(tp.camadas), matN = String((cam[0] && (cam[0].material || cam[0].rotulo)) || "Telha cerâmica");
         var tipoRef = String(tp.rotulo || "Telhado");
         var er = A.peca(t.id, "IFCROOF", "Telhado " + t.id, tipoRef, plT, null, [A.E(tipoTelhado(t))], num(t.cotaApoio, 0), nv, { mapa: "telhado" });
         A.ligarMaterial(er, matN);

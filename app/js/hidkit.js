@@ -254,6 +254,12 @@
       instancia: function (y, parte) { var o = { op: "instancia", id: fi.id, y: r4(y) }; ops.push(marca(o, parte)); return o; }
     };
   }
+  /* FRENTE B (19/10/2026, D-01): o giro do registro posto no trecho `t` (eixo = p1→p2 dele, o mesmo do BimInst) para a frente
+     apontar para `frente` (para dentro do cômodo); 0 sem o BimInstColocar */
+  function giroDentro(t, frente) {
+    var C = dep("BimInstColocar", "./biminstcolocar.js"); if (!C || !C.giroPara || !t) return 0;
+    return C.giroPara({ x: t.p2.x - t.p1.x, y: t.p2.y - t.p1.y, z: t.p2.z - t.p1.z }, frente);
+  }
   /* assinatura da pose: o que, mudando, refaz o kit */
   function assinatura(fi, y) { return [fi.famId, fi.tipoId, r4(num(fi.x, 0)), r4(y != null ? y : num(fi.y, 0)), r4(num(fi.z, 0)), r4(num(fi.rotY, 0))].join("|"); }
 
@@ -262,9 +268,10 @@
   function esperaAgua(K, suf, ponto, n, e, yRamal, dn) {
     if (!n) return null;
     var A = eixo(ponto, n, e);
-    K.trecho(suf + "-t", "agua_fria", "pvc_soldavel", dn, ponto, A, "espera");
-    if (Math.abs(yRamal - ponto.y) > geo(null, "margemNo")) return K.trecho(suf + "-v", "agua_fria", "pvc_soldavel", dn, A, eixo(ponto, n, e, yRamal), "espera", { continua: "p2" });
-    return null;
+    /* FRENTE B (19/10/2026, D-04): no sentido da água — da cota do ramal (a ponta aberta, p1) ao eixo embutido e dele ao ponto */
+    var v = Math.abs(yRamal - ponto.y) > geo(null, "margemNo") ? K.trecho(suf + "-v", "agua_fria", "pvc_soldavel", dn, eixo(ponto, n, e, yRamal), A, "espera", { continua: "p1" }) : null;
+    K.trecho(suf + "-t", "agua_fria", "pvc_soldavel", dn, A, ponto, "espera");
+    return v;
   }
   /* ESPERA DE ESGOTO: saída de piso desce até o ramal sob o piso; saída de parede vai ao eixo embutido e desce. Provisória. */
   function esperaEsgoto(K, suf, ponto, n, e, piso, dn) {
@@ -349,10 +356,18 @@
             var sobe = K.trecho("vd-ramal", "agua_fria", "pvc_soldavel", de, { x: Av.x, y: yTop, z: Av.z }, Av, "valvula", { continua: "p1" });
             if (aRG.ok && piso + aRG.valor > yv + geo(par, "margemNo") && piso + aRG.valor < yTop - geo(par, "margemNo")) K.acessorio("vd-rg", "ra-registro-gaveta", "acabamento", sobe, { x: Av.x, y: r4(piso + aRG.valor), z: Av.z }, "valvula");
             else if (aRG.ok) aviso("registro de gaveta da válvula não coube entre a válvula (" + f2(yv) + " m) e a espera (" + f2(yTop) + " m): ponha à mão");
-            /* descida (DESCARGA, depois da válvula) até o ponto do tubo de ligação da bacia */
-            var yDesc = r4(yv - geo(par, "folgaValvula")), Ab = eixo(ponto, nV, eV);
+            /* descida (DESCARGA, depois da válvula) até o ponto do tubo de ligação da bacia.
+               ⚠ NASCE NA SAÍDA DA VÁLVULA (frente A, 19/10/2026 — D-02): o conector "descarga" da família é o começo — um toco
+               sai dele para o eixo da parede (espelho do toco da entrada) e a descida segue embutida. Antes a descida começava
+               no ar, 8 cm abaixo da válvula, marcada "continua": o verificador não acusava e o ponto da bacia ficava numa rede
+               de água isolada. Sem o conector (família antiga) a ponta fica SOLTA e o verificador acusa — nunca "continua". */
+            var csV = conectores(avaliarFam, { id: vop.id, famId: vop.famId, tipoId: vop.tipoId, inst: {}, x: vop.x, y: vop.y, z: vop.z, rotY: vop.rotY });
+            var saiV = porCid(csV, "descarga");
+            var yDesc = r4(saiV ? saiV.y : yv - geo(par, "folgaValvula")), Ab = eixo(ponto, nV, eV);
             if (yDesc > ponto.y + geo(par, "margemNo")) {
-              K.trecho("vd-desc", "agua_fria", "pvc_soldavel", de, { x: Ab.x, y: yDesc, z: Ab.z }, Ab, "descida", { continua: "p1" });
+              var Ad = { x: Ab.x, y: yDesc, z: Ab.z };
+              if (saiV && d2(saiV, Ad) > EPS) K.trecho("vd-dtoco", "agua_fria", "pvc_soldavel", de, { x: saiV.x, y: yDesc, z: saiV.z }, Ad, "descida");
+              K.trecho("vd-desc", "agua_fria", "pvc_soldavel", de, Ad, Ab, "descida");
               K.trecho("vd-desct", "agua_fria", "pvc_soldavel", de, Ab, { x: ponto.x, y: ponto.y, z: ponto.z }, "descida");
             }
             out.materiais.push({ item: "Válvula de descarga " + txt(tv.nome), fonte: bit ? bit.fonte : "" });
@@ -387,9 +402,12 @@
         var dnC = dnAgua(ctx, "chuveiro", pc, out.pendencias);
         K.trecho("ch-toco", "agua_fria", "pvc_soldavel", dnC, Ac, pc, "chuveiro");
         var desce = K.trecho("ch-sobe", "agua_fria", "pvc_soldavel", dnC, { x: Ac.x, y: yBase, z: Ac.z }, Ac, "chuveiro");
+        /* o volante do RP sai para DENTRO do box pelo passo do fim do gerar (FRENTE B, 19/10/2026, D-01): antes o 3D usava a frente
+           padrão (+Z do mundo) e o volante saía ao longo da parede — o Rogério girava à mão (giro 90) */
         K.acessorio("ch-rp", "ra-registro-pressao", "acabamento", desce, { x: Ac.x, y: yRP, z: Ac.z }, "chuveiro");
         var Lt = geo(par, "lateralChuveiro"), E = { x: r4(Ac.x + tg.x * Lt), y: yBase, z: r4(Ac.z + tg.z * Lt) };
-        K.trecho("ch-espera", "agua_fria", "pvc_soldavel", dnC, { x: Ac.x, y: yBase, z: Ac.z }, E, "chuveiro", { continua: "p2" });
+        /* FRENTE B (19/10/2026, D-04): desenhado no sentido da água — p1 = a espera (por onde o ramal chega), p2 = o pé da subida */
+        K.trecho("ch-espera", "agua_fria", "pvc_soldavel", dnC, E, { x: Ac.x, y: yBase, z: Ac.z }, "chuveiro", { continua: "p1" });
         out.esperaChuveiro = E;
         decide("kit.chuveiro.altura", "Ponto a " + f2(aCH.valor) + " m (" + aCH.fonte.doc.split(",")[0] + ", p." + aCH.fonte.pagina + ").");
         decide("kit.chuveiro.registro", "Registro de pressão a " + f2(aRP.valor) + " m; espera lateral a " + f2(Lt) + " m.");
@@ -474,6 +492,13 @@
     arr(K0.pendencias).forEach(function (pp) { pend(pp, pp === "mictorio.tipo_descarga" ? "mictório: informe o tipo de descarga (válvula, caixa ou automática) — a NBR 8160 dá UHC e DN diferentes" : pp); });
     ctx.pendencias().forEach(function (p) { pend(p.chave, p.motivo); });
     ctx.normas().forEach(function (f) { out.fontes.push(f); });
+    /* FRENTE B (19/10/2026, D-01): todo registro do kit que ainda não tem giro (o RG da válvula, os de jardim/tanque que vierem)
+       sai com o volante para DENTRO do cômodo — contra a normal que entra na parede do aparelho (critério RA, R-C9) */
+    K.ops.forEach(function (o) {
+      if (o.op !== "acessorio" || o.giro || !/registro/.test(txt(o.famId))) return;
+      var tr = K.ops.filter(function (x) { return x.op === "trecho" && x.id === o.trecho; })[0], g = tr && n ? giroDentro(tr, { x: -n.x, y: 0, z: -n.z }) : 0;
+      if (g) o.giro = g;
+    });
     out.ops = K.ops;
     out.ok = !!K.ops.length;
     out.piso = piso; out.pisoOrigem = P.origem;

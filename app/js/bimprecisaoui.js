@@ -156,13 +156,14 @@
       var cotasGrp = new THREE.Group(); cotasGrp.name = "precisao-cotas"; api.scene.add(cotasGrp);
       var selGrp = new THREE.Group(); selGrp.name = "precisao-selecao"; api.scene.add(selGrp);
       var pintGrp = new THREE.Group(); pintGrp.name = "p4-pinturas"; api.scene.add(pintGrp);   /* P4: o material pintado nas faces */
+      var pisoGrp = new THREE.Group(); pisoGrp.name = "acab-pisos"; api.scene.add(pisoGrp);   /* ACABAMENTO VISUAL: o piso de cada ambiente (acabPiso) */
       var matSelLinha = new THREE.LineBasicMaterial({ color: 0x2effa0, depthTest: false, transparent: true, opacity: 0.95 });
       var matLinha = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false, transparent: true, opacity: 0.95 });
       var matGuia = new THREE.LineDashedMaterial({ color: 0xd99a1e, depthTest: false, dashSize: 0.15, gapSize: 0.1, transparent: true, opacity: 0.9 });
       var matFant = new THREE.LineBasicMaterial({ color: 0x3fb5e5, depthTest: false, transparent: true, opacity: 0.95 });
       var matCota = new THREE.LineBasicMaterial({ color: 0x1f6fb2, depthTest: false });
       var matTmp = new THREE.LineDashedMaterial({ color: 0x1f6fb2, depthTest: false, dashSize: 0.1, gapSize: 0.06, transparent: true, opacity: 0.85 });
-      function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry && !(o.geometry.userData && o.geometry.userData._guardada)) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } }); }
+      function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry && !(o.geometry.userData && o.geometry.userData._guardada)) o.geometry.dispose(); if (o.material && o.material.map && !(o.material.userData && o.material.userData.acab)) { o.material.map.dispose(); o.material.dispose(); } }); }   /* o material de acabamento é compartilhado (cache do viewer): não se descarta aqui */
       function segs(lista, mat, y) {
         if (!lista.length) return null;
         var pts = []; lista.forEach(function (s) { pts.push(V3(s[0], y), V3(s[1], y)); });
@@ -803,6 +804,30 @@
         }
         return false;
       }
+      /* o material de UM acabamento no 3D: o do catálogo (js/bimacabvis.js: cor sRGB + textura da biblioteca) ou, para um nome
+         que o catálogo não conhece, a cor que o js/bimpintar.js dá — sempre com luz (antes: MeshBasicMaterial, cor chapada) */
+      function materialAcab(nome, cor, sobre) {
+        var AV = global.BimAcabVis, ent = AV ? AV.porNome(nome) : null;
+        if (!ent) { var hex = "#" + new THREE.Color(cor).getHexString(); ent = { id: "cor:" + hex, rotulo: String(nome || "Pintura"), cor: hex, slug: "", rug: 0.85, met: 0 }; }
+        return api.acabMat ? api.acabMat(ent, sobre) : new THREE.MeshStandardMaterial({ color: new THREE.Color(cor), side: THREE.DoubleSide, polygonOffset: sobre, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      }
+      /* o piso de cada ambiente: película horizontal no contorno calculado (com os furos), no material do acabPiso */
+      function desenharPisos(st) {
+        limparGrupo(pisoGrp);
+        var AV = global.BimAcabVis; if (!previa() || !AV) return;
+        (st.ambientes || []).forEach(function (a) {
+          var c = a && a.calc, ent = AV.resolver(a && a.acabPiso, "piso");
+          if (!c || !ent || !c.contorno || c.contorno.length < 3) return;
+          var sh = new THREE.Shape(c.contorno.map(function (q) { return new THREE.Vector2(q.x, q.z); }));
+          (c.furos || []).forEach(function (F) { if (F && F.length > 2) sh.holes.push(new THREE.Path(F.map(function (q) { return new THREE.Vector2(q.x, q.z); }))); });
+          var g = new THREE.ShapeGeometry(sh), ps = g.attributes.position, y = (+c.base || 0) + 0.004;
+          for (var i = 0; i < ps.count; i++) ps.setXYZ(i, ps.getX(i), y, ps.getY(i));
+          g.computeVertexNormals(); g.computeBoundingSphere();
+          var m = new THREE.Mesh(g, materialAcab(ent.rotulo, ent.cor, true)); m.renderOrder = 1; m.userData = { acabPiso: a.id }; m.raycast = function () {};
+          pisoGrp.add(m);
+          if (api.acabRegistrar) api.acabRegistrar(m);
+        });
+      }
       /* o material pintado no 3D: uma película 3 mm fora da face, com os vãos furados */
       function desenharPinturas(st) {
         limparGrupo(pintGrp);
@@ -812,7 +837,7 @@
         cxs.forEach(function (c) {
           BP.regioes(c, vz[c.id] ? vz[c.id].aceitos : null).forEach(function (r) {
             var d = BP.desenhoRegiao(c, r.face, r.regiao, vz[c.id] ? vz[c.id].aceitos : null); if (!d) return;
-            var mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(r.cor), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+            var mat = materialAcab(r.material, r.cor, true);
             var g = null;
             if (d.laje) {
               var C = c.contorno ? c.contorno.map(function (q) { return [q.x, q.z]; }) : (function () { var f = global.BimArq.frameDe(c); return [[-f.L / 2, -f.t / 2], [f.L / 2, -f.t / 2], [f.L / 2, f.t / 2], [-f.L / 2, f.t / 2]].map(function (q) { return global.BimArq.aMundo(f, q[0], q[1]); }); })();
@@ -826,9 +851,10 @@
               g = new THREE.ShapeGeometry(sh2);
               var ps = g.attributes.position; for (var j = 0; j < ps.count; j++) { var u = ps.getX(j), yy = ps.getY(j), w3 = global.BimArq.aMundo(d.frame, u, d.w); ps.setXYZ(j, w3[0], yy, w3[1]); }
             }
-            g.computeBoundingSphere();
+            g.computeVertexNormals(); g.computeBoundingSphere();
             var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: c.id, face: r.face, regiao: r.regiao }; m.raycast = function () {};
             pintGrp.add(m);
+            if (api.acabRegistrar) api.acabRegistrar(m);
           });
         });
       }
@@ -1078,6 +1104,7 @@
           pr.sel = pr.sel.filter(function (id) { return !!Pr().tipoNoEstado(st, id); });
           realcar(); desenharCotas(st); montarTemporarias(); pintarOpcoes();
           try { desenharPinturas(st); } catch (eP) {}   /* P4 */
+          try { desenharPisos(st); } catch (eAP) {}   /* acabamento visual do piso */
           if (pr.sel.length !== n0) { try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eSL) {} }
         },
         aoSub: function (sub) {

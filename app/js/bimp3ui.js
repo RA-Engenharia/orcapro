@@ -23,6 +23,7 @@
 (function (global) {
   "use strict";
   function TM() { return global.BimTelhado || null; }
+  function ESM() { return global.BimTelhadoEstrut || null; }
   function FM() { return global.BimFundacao || null; }
   function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
   function arr(v) { return Array.isArray(v) ? v : []; }
@@ -33,7 +34,7 @@
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 
   var cfg = {
-    telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null },
+    telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null, modelo: "auto", beiralMexido: false },
     fundacao: { tipoFundacao: "sapata", largura: 1.2, comprimento: 1.2, altura: 0.4, alturaBase: null, larguraTopo: null, comprimentoTopo: null,
                 nEstacas: 2, diametro: 0.3, comprimentoEstaca: 6, espacamento: 0.9, deslocTopo: 0, taxaAco: null, fck: null, lastro: 0.05, folga: 0, terreno: 0, radierModo: "retangulo" },
     borda: { tipoBorda: "calha" }
@@ -62,6 +63,15 @@
       R.acrescentar("arquitetura", "Arquitetura", "Telhado", [
         { id: "telhado-borda", rotulo: "Bordas do\ntelhado", icone: "regua", grande: true, tipo: "alterna",
           dica: "Calha, rufo, testeira e intradorso (forro do beiral): escolha em Propriedades e clique perto da aresta do telhado. O comprimento (inclinado na empena) e a área vão para o quantitativo." },
+        { id: "telhado-modelo", rotulo: "Telhado\ncompleto", icone: "estrutura", grande: true, tipo: "menu",
+          dica: "Modelo do telhado: madeiramento (tesoura, terça, caibro, ripa) ou estrutura metálica (terça Ue) e TODAS as telhas modeladas, derivados do telhado — muda a inclinação, muda tudo. Pregos, parafusos e fixação da telha no Quantitativo da cobertura. Vale para os telhados do modelo e para os próximos (Propriedades da ferramenta Telhado › Modelo).",
+          itens: [{ id: "tel-mod-auto", rotulo: "Automático pela telha", icone: "telhado" }, { id: "tel-mod-mad-tesoura", rotulo: "Madeira — tesoura + terça + caibro + ripa", icone: "estrutura" },
+                  { id: "tel-mod-mad-terca", rotulo: "Madeira — terça + caibro + ripa (paredes/pontaletes)", icone: "estrutura" }, { id: "tel-mod-mad-terca-direta", rotulo: "Madeira — terça (fibrocimento/termoacústica)", icone: "estrutura" },
+                  { id: "tel-mod-mad-tesoura-terca", rotulo: "Madeira — tesoura + terça (fibrocimento/termoacústica)", icone: "estrutura" },
+                  { id: "tel-mod-mad-onduline", rotulo: "Madeira — ripas a 46 cm (Onduline)", icone: "estrutura" }, { id: "tel-mod-mad-shingle", rotulo: "Madeira — OSB + subcobertura (shingle)", icone: "estrutura" },
+                  { id: "tel-mod-aco-trapezoidal", rotulo: "Metálica — terça Ue + trapezoidal", icone: "estrutura" }, { id: "tel-mod-aco-sanduiche", rotulo: "Metálica — terça Ue + sanduíche", icone: "estrutura" },
+                  { id: "tel-mod-aco-viga", rotulo: "Metálica — terça Ue + viga W com pilar na cumeeira (baixa inclinação)", icone: "estrutura" },
+                  { id: "tel-mod-nenhum", rotulo: "Sem estrutura (só o telhado)", icone: "telhado" }] },
         { id: "telhado-unir", rotulo: "Unir\ntelhado", icone: "mais", grande: true, tipo: "alterna",
           dica: "Unir/desunir telhado: clique o telhado que ENTRA e depois o telhado em que ele encosta — a parte que fica por baixo sai e o rincão do encontro é medido. Clicar de novo o mesmo par desune." }
       ]);
@@ -74,6 +84,25 @@
       }
       reg.cobertura = armar("telhado"); reg.fundacao = armar("fundacao");
       reg["telhado-borda"] = armar("telhado-borda"); reg["telhado-unir"] = armar("telhado-unir");
+      /* T1: o modelo do telhado (os que existem + os próximos) — um lote, um Ctrl+Z */
+      var self = BimP3UI;
+      reg["telhado-modelo"] = function () { return true; };
+      ["auto", "nenhum", "mad-tesoura", "mad-terca", "mad-terca-direta", "mad-tesoura-terca", "mad-onduline", "mad-shingle", "aco-trapezoidal", "aco-sanduiche", "aco-viga"].forEach(function (mid) {
+        reg["tel-mod-" + mid] = function () {
+          cfg.telhado.modelo = mid;
+          var B = global.BIM, E = global.BimEdit, st = null;
+          try { st = B && B.editarOps && E ? E.aplicar(B.editarOps()) : null; } catch (eS) { st = null; }
+          var ops = self.opsModelo(st, mid === "nenhum" ? null : mid), rot = mid === "auto" ? "automático pela telha" : self.rotuloModelo(mid === "nenhum" ? null : mid);
+          if (ops.length && B && B.editarLote && B.editarLote({ op: "lote", id: "tel-mod-" + mid, origem: "modelo-telhado", ops: ops })) {
+            var av2 = [];
+            try { var st2 = E.aplicar(B.editarOps()); arr(st2 && st2.telhados).forEach(function (t) { if (t && t.pacote) arr(t.pacote.avisos).forEach(function (a) { av2.push("Telhado " + t.id + ": " + a); }); }); } catch (eA) { av2 = []; }
+            status("Modelo do telhado: " + rot + " (" + ops.length + " telhado(s)). Quantitativo em Cobertura completa › Quantitativo da cobertura." + (av2.length ? " AVISOS: " + av2.join(" | ") : ""));
+          }
+          else status("Próximos telhados nascem com o modelo: " + rot + ".");
+          return true;
+        };
+      });
+      if (global.BimCoberturaUI) global.BimCoberturaUI.registrar(reg, arqui, opts);   /* COBERTURA COMPLETA: estrutura, platibanda, calha, sanca… (js/bimcoberturaui.js) */
       return true;
     },
 
@@ -90,8 +119,11 @@
           { id: "b2f:te:tipoId", rotulo: "Tipo", tipo: "lista", valor: t.id, opcoes: T.TIPOS.map(function (x) { return { id: x.id, rotulo: x.rotulo }; }) },
           { id: "b2f:te:modo", rotulo: "Desenho", tipo: "lista", valor: c.modo, opcoes: [{ id: "retangulo", rotulo: "Retângulo — dois cantos" }, { id: "contorno", rotulo: "Perímetro — clique os cantos" }, { id: "extrusao", rotulo: "Extrusão — base e comprimento" }] },
           { id: "b2f:te:aguas", rotulo: "Águas (retângulo)", tipo: "lista", valor: String(c.aguas), opcoes: [{ id: "4", rotulo: "4 águas" }, { id: "2", rotulo: "2 águas (cumeeira no lado maior)" }, { id: "1", rotulo: "1 água (cai para a 1ª aresta)" }] },
+          { id: "b2f:te:modelo", rotulo: "Modelo (estrutura e telhas)", tipo: "lista", valor: c.modelo || "nenhum", opcoes: self.opcoesModelo() },
+          ro("b2f:te:modeloEf", "Modelo que sai", self.rotuloModelo(self.modeloEf(c))),
           { id: "b2f:te:inclinacao", rotulo: "Inclinação", unidade: "%", tipo: "numero", passo: "1", valor: c.inclinacao },
-          { id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.beiral },
+          ro("b2f:te:incMin", "Inclinação mínima do fabricante", (function () { var tl = T.telha(c.tipoId); return tl && fin(tl.inclinacaoMinPct) ? n2(tl.inclinacaoMinPct, 1) + " %" + (c.inclinacao < tl.inclinacaoMinPct - 1e-9 ? " — ABAIXO DO MÍNIMO" : "") : (tl ? "não verificada (valor de partida)" : "— (tipo sem catálogo)"); })()),
+          { id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: self.beiralEf(c) },
           { id: "b2f:te:deslocBase", rotulo: "Deslocamento da base do nível (vazio = pé-direito)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.deslocBase == null ? "" : c.deslocBase },
           ro("b2f:te:esp", "Espessura (soma das camadas)", n2(t.espessura * 1000, 0) + " mm")
         ] });
@@ -130,14 +162,54 @@
       if (k === "nivel" && arqui && arqui.mudarFerramenta) return arqui.mudarFerramenta(sub, pid, valor);
       var m = /^(te|fu|bo):(\w+)$/.exec(k); if (!m) return this.esquema(sub, arqui);
       var alvo = m[1] === "te" ? cfg.telhado : (m[1] === "fu" ? cfg.fundacao : cfg.borda), c = m[2];
-      if (c === "tipoId") { if (T && T.tipo(valor).id === String(valor)) alvo.tipoId = String(valor); }
+      if (c === "tipoId") {
+        if (T && T.tipo(valor).id === String(valor)) {
+          alvo.tipoId = String(valor);
+          /* T1: ao escolher a telha, a inclinação vai para a MÍNIMA do fabricante (o usuário pode subir; abaixo dela, aviso) */
+          if (m[1] === "te" && T.inclinacaoPadrao) { var im = T.inclinacaoPadrao(valor); if (fin(im)) alvo.inclinacao = im; }
+        }
+      }
+      else if (c === "modelo") { var ME = ESM(); alvo.modelo = valor === "auto" || valor === "nenhum" || (ME && ME.MODELOS && ME.MODELOS[valor]) ? String(valor) : alvo.modelo; }
       else if (c === "modo") alvo.modo = valor === "contorno" || valor === "extrusao" ? valor : "retangulo";
       else if (c === "aguas") alvo.aguas = valor === "1" || valor === 1 ? 1 : (valor === "2" || valor === 2 ? 2 : 4);
       else if (c === "tipoFundacao") { if (ROT_FUND[valor]) alvo.tipoFundacao = valor; }
       else if (c === "radierModo") alvo.radierModo = valor === "contorno" ? "contorno" : "retangulo";
       else if (c === "tipoBorda") { if (T && T.BORDAS[valor]) alvo.tipoBorda = valor; }
-      else if (temCampo(alvo, c)) alvo[c] = valor === "" || valor == null ? null : num(valor, alvo[c]);
+      else if (temCampo(alvo, c)) { alvo[c] = valor === "" || valor == null ? null : num(valor, alvo[c]); if (m[1] === "te" && c === "beiral") alvo.beiralMexido = valor !== "" && valor != null; }
       return this.esquema(sub, arqui);
+    },
+
+    /* ---------------------------------------- T1: o MODELO do telhado (js/bimtelhadoestrut.js MODELOS) */
+    opcoesModelo: function () {
+      var ME = ESM(), out = [{ id: "auto", rotulo: "Automático pela telha" }, { id: "nenhum", rotulo: "Sem estrutura (só o telhado)" }];
+      if (ME && ME.MODELOS) Object.keys(ME.MODELOS).forEach(function (k) { out.push({ id: k, rotulo: ME.MODELOS[k].rotulo }); });
+      return out;
+    },
+    /* o modelo que a ferramenta usa: "auto" = o sugerido para a telha de CATÁLOGO (tipo sem catálogo = sem estrutura, como antes) */
+    modeloEf: function (c) {
+      var ME = ESM(), T = TM(); c = c || cfg.telhado;
+      if (!ME || !ME.MODELOS || !c.modelo || c.modelo === "nenhum") return null;
+      if (c.modelo === "auto") return T && T.telha(c.tipoId) ? ME.modeloSugerido(c.tipoId) : null;
+      return ME.MODELOS[c.modelo] ? c.modelo : null;
+    },
+    /* o beiral PADRÃO nasce dentro do balanço máximo da telha do catálogo (o padrão do app, ou o máximo da telha, o menor); o
+       beiral que o usuário digitou vale como está — e aí o aviso de balanço continua */
+    beiralEf: function (c) {
+      c = c || cfg.telhado; var T = TM(), tl = T && T.telha ? T.telha(c.tipoId) : null, b = num(c.beiral, 0.5);
+      if (c.beiralMexido) return b;
+      var bm = tl && tl.balanco && tl.balanco.semCalha && fin(tl.balanco.semCalha.max) ? tl.balanco.semCalha.max : null;
+      return bm != null && bm < b ? bm : b;
+    },
+    rotuloModelo: function (id) { var ME = ESM(); return id && ME && ME.MODELOS[id] ? ME.MODELOS[id].rotulo : "sem estrutura (só o telhado)"; },
+    /* trocar o modelo dos telhados que existem (um lote: um Ctrl+Z desfaz) — null = sem estrutura */
+    opsModelo: function (estado, modelo) {
+      var ME = ESM(), ops = [];
+      arr(estado && estado.telhados).forEach(function (t) {
+        if (!t || t.modo === "extrusao") return;
+        var m = modelo === "auto" ? (ME ? ME.modeloSugerido(t.tipoId, t, estado) : null) : (modelo && ME && ME.MODELOS[modelo] ? modelo : null);
+        ops.push({ op: "telhado", id: t.id, modelo: m });
+      });
+      return ops;
     },
 
     /* --------------------------------------------- as ops (puras, testáveis) */
@@ -151,7 +223,8 @@
        nivel = {id, elevacao, peDireito} | null; base = a cota do plano de trabalho */
     opTelhado: function (estado, dados, nivel, base) {
       var T = TM(); if (!T) return { ok: false, motivo: "O motor do telhado (js/bimtelhado.js) não carregou." };
-      var c = cfg.telhado, d = { inclinacao: c.inclinacao, beiral: c.beiral, tipoId: c.tipoId };
+      var c = cfg.telhado, d = { inclinacao: c.inclinacao, beiral: this.beiralEf(c), tipoId: c.tipoId }, mEf = this.modeloEf(c);
+      if (mEf && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = mEf;   /* T1: o telhado nasce com o modelo (estrutura + telhas derivadas) */
       d.deslocBase = c.deslocBase != null ? c.deslocBase : (nivel && +nivel.peDireito > 0 ? +nivel.peDireito : 2.8);
       if (nivel && nivel.id != null) { d.nivelId = String(nivel.id); d.base = +nivel.elevacao || 0; } else d.base = +base || 0;
       if (dados.contorno) d.contorno = dados.contorno;
@@ -173,8 +246,17 @@
       if (!op) return { ok: false, motivo: "Telhado inválido: confira o contorno e as Propriedades." };
       var t = T.calcular(op, nivel ? [{ id: nivel.id, elevacao: +nivel.elevacao || 0 }] : []);
       if (!t.ok) return { ok: false, motivo: (t.avisos || []).join(" ") || "Não deu para montar o telhado." };
+      /* o AUTOMÁTICO na metálica olha o telhado: tesoura triangular baixa demais → viga W (o que nasce pelo padrão nasce válido) */
+      var MEa = ESM(); if (op.modelo && c.modelo === "auto" && MEa && MEa.modeloSugerido) op.modelo = MEa.modeloSugerido(c.tipoId, t, estado);
+      var abaixo = (t.avisos || []).filter(function (a) { return /abaixo do mínimo/i.test(a); })[0];
+      /* T1 (revisor): os avisos do MODELO (tesoura baixa, pontalete sem apoio, "fase 2: meias-tesouras de espigão") já no resumo
+         do comando — o pacote sai do mesmo motor do replay, sobre o estado de agora (paredes e lajes) */
+      var avM = [], MEm = ESM();
+      if (op.modelo && MEm && MEm.modelar) { try { var t2 = JSON.parse(JSON.stringify(t)); t2.modelo = op.modelo; var pkM = MEm.modelar(t2, estado, {}); avM = pkM ? arr(pkM.avisos) : []; } catch (eM) { avM = []; } }
       return { ok: true, op: op, telhado: t, resumo: "Telhado (" + t.tipoTelhado.rotulo + "): " + t.nAguas + " água" + (t.nAguas > 1 ? "s" : "") + ", " + n2(t.area) + " m² inclinados (" + n2(t.areaProjecao) + " m² em projeção)" +
-        (t.cumeeira > 0 ? ", cumeeira " + n2(t.cumeeira) + " m" : "") + (t.espigao > 0 ? ", espigões " + n2(t.espigao) + " m" : "") + (t.rincao > 0 ? ", rincões " + n2(t.rincao) + " m" : "") + "." };
+        (t.cumeeira > 0 ? ", cumeeira " + n2(t.cumeeira) + " m" : "") + (t.espigao > 0 ? ", espigões " + n2(t.espigao) + " m" : "") + (t.rincao > 0 ? ", rincões " + n2(t.rincao) + " m" : "") + "." +
+        (op.modelo ? " Modelo: " + this.rotuloModelo(op.modelo) + " (estrutura, telhas e fixação no quantitativo da cobertura)." : "") + (abaixo ? " ATENÇÃO: " + abaixo : "") +
+        (avM.length ? " AVISOS DO MODELO: " + avM.join(" | ") : ""), avisosModelo: avM };
     },
     opFundacao: function (estado, dados, nivel, base) {
       var F = FM(); if (!F) return { ok: false, motivo: "O motor da fundação (js/bimfundacao.js) não carregou." };
@@ -277,7 +359,7 @@
         return r && r.travado ? { x: r.p.x, z: r.p.z } : q;
       }
       var m3d = {
-        contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length; },
+        contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length + arr(st && st.platibandas).length + arr(st && st.calhasEmbutidas).length + arr(st && st.condutores).length + arr(st && st.sancas).length; },
         dica: function (sub) {
           if (sub === "telhado") { var m = cfg.telhado.modo; return m === "contorno" ? "Telhado por perímetro: clique os cantos (pela linha da parede); feche no primeiro ponto ou com Enter. O beiral sai para fora." : (m === "extrusao" ? "Telhado por extrusão: clique o início e o fim da base e depois até onde ele vai." : "Telhado: clique dois cantos OPOSTOS (pela linha da parede, sem o beiral)."); }
           if (sub === "fundacao") { var tf = cfg.fundacao.tipoFundacao; return tf === "baldrame" ? "Baldrame: clique o início e o fim." : (tf === "radier" ? (cfg.fundacao.radierModo === "contorno" ? "Radier: clique os cantos; feche no primeiro ponto ou com Enter." : "Radier: clique dois cantos opostos.") : ROT_FUND[tf] + ": clique o centro."); }
@@ -342,7 +424,18 @@
     _mat: function (THREE, k) {
       var M = this._mats || (this._mats = {});
       if (M[k]) return M[k];
-      var cores = { ceramica: 0xa65a3a, fibrocimento: 0xb9bcbe, metalica: 0x8f9aa6, concreto: 0xa9b0b8, chapa: 0x8a8f96, intradorso: 0xe8e2d4 };
+      var cores = { ceramica: 0xa65a3a, fibrocimento: 0xb9bcbe, metalica: 0x8f9aa6, concreto: 0xa9b0b8, chapa: 0x8a8f96, intradorso: 0xe8e2d4, isolante: 0xf3efe2, reboco: 0xe4e0d8, pvc: 0xeceae4,
+                    madeiraEstr: 0x9c6b3f, concretoTelha: 0x7d5a4a };   /* T1: madeira da estrutura do telhado e telha de concreto */
+      if (k === "madeira") {
+        /* a face de baixo "efeito madeira" da telha sanduíche: a COR da madeira (a malha mesclada do 3D pinta por cor) e, com a
+           biblioteca de texturas carregada, o slug do forro lambri — com "Materiais realistas" ligado vira veio de madeira de verdade */
+        var BTx = global.BimTextura, slug = "forro_madeira_lambri", lib = BTx && BTx.BIB && BTx.BIB[slug], rgb = lib && lib.media ? lib.media : [0.63, 0.44, 0.28];
+        var mw = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace), metalness: 0.05, roughness: 0.65, side: THREE.DoubleSide });
+        mw.userData.corLin = mw.color.clone(); mw.userData.rgba = [rgb[0], rgb[1], rgb[2], 1];
+        if (lib) { mw.userData.tex = { slug: slug, escala: lib.m, asp: lib.asp || 1, fonte: "telha", classe: "", material: slug }; mw.userData.corIfc = [rgb[0], rgb[1], rgb[2]]; }
+        M[k] = mw;
+        return M[k];
+      }
       M[k] = new THREE.MeshStandardMaterial({ color: cores[k] || 0xa9b0b8, metalness: k === "chapa" || k === "metalica" ? 0.4 : 0.03, roughness: 0.85, side: THREE.DoubleSide });
       return M[k];
     },
@@ -374,12 +467,38 @@
       }
       arr(st.telhados).forEach(function (t) {
         if (!t || !t.ok) return;
+        /* T1 — TELHADO PARAMÉTRICO: com o pacote (modelo), a estrutura e as telhas MODELADAS no lugar da placa do telhado.
+           Malha mesclada: uma por material da estrutura e uma por água (por cima e por baixo) — js/bimtelhadoestrut.js geometria */
+        var ESg = ESM();
+        if (t.pacote && t.pacote.ok && ESg && ESg.geometria) {
+          var G = null; try { G = ESg.geometria(t); } catch (eG) { G = null; }
+          if (G && G.grupos.length) {
+            var tlx = TM().telha(t.tipoId), fam = tlx ? tlx.familia : "";
+            G.grupos.forEach(function (g) {
+              var mk = g.material === "madeira" ? "madeiraEstr" : (g.material === "aco" ? "chapa" : (g.material === "telha-madeira" ? "madeira" : (fam === "fibrocimento" ? "fibrocimento" : (fam === "metalica" || fam === "sanduiche" ? "metalica" : (fam === "concreto" ? "concretoTelha" : "ceramica")))));
+              var mt = self._mat(THREE, mk);
+              addMesh(new THREE.Mesh(self._geo(THREE, g.pos), mt), t.id, "IFCROOF", mt);
+            });
+            reg(t.id, "IFCROOF", "Telhado " + (t.tipoTelhado ? t.tipoTelhado.rotulo : "") + " — " + t.nAguas + " água(s), " + t.pacote.rotulo + " (sintético " + t.id + ")", { area: t.area, areaProjecao: t.areaProjecao, volume: t.volume, comprimento: t.cumeeira, contagem: 1 });
+            return;
+          }
+        }
         var cam = t.tipoTelhado && t.tipoTelhado.camadas && t.tipoTelhado.camadas[0], mn = String(cam && cam.material || "").toLowerCase();
         var mat = self._mat(THREE, /fibro/.test(mn) ? "fibrocimento" : (/aço|aco|metal|eps/.test(mn) ? "metalica" : "ceramica")), esp = +t.espessura || 0.08;
+        var camadas = t.tipoTelhado && arr(t.tipoTelhado.camadas).length > 1 ? t.tipoTelhado.camadas : null;
         arr(t.aguasCalc).forEach(function (ag) {
           ag.pecas.forEach(function (pc) {
             var Q = pc.pts.map(function (q) { return [q.x, q.z]; }), Y = pc.pts.map(function (q) { return q.y; }), dy = esp * ag.fator;
-            addMesh(new THREE.Mesh(self._prisma(THREE, Q, function (i) { return Y[i]; }, function (i) { return Y[i] + dy; }), mat), t.id, "IFCROOF", mat);
+            if (!camadas) { addMesh(new THREE.Mesh(self._prisma(THREE, Q, function (i) { return Y[i]; }, function (i) { return Y[i] + dy; }), mat), t.id, "IFCROOF", mat); return; }
+            /* tipo com camadas (sanduíche): cada camada é um prisma, DE CIMA PARA BAIXO; a de baixo "efeito madeira" leva a textura */
+            var topo = dy, k;
+            for (k = 0; k < camadas.length; k++) {
+              var e = (+camadas[k].e || 0) * ag.fator, mk = String(camadas[k].material || "").toLowerCase(), tk = topo, bk = topo - e, km;
+              km = /madeira/.test(mk) ? "madeira" : (/eps|pir|isol/.test(mk) ? "isolante" : (/aço|aco|metal/.test(mk) ? "metalica" : "ceramica"));
+              var mk3 = self._mat(THREE, km), geo = self._prisma(THREE, Q, function (i) { return Y[i] + bk; }, function (i) { return Y[i] + tk; });
+              addMesh(new THREE.Mesh(geo, mk3), t.id, "IFCROOF", mk3);
+              topo = bk;
+            }
           });
         });
         reg(t.id, "IFCROOF", "Telhado " + (t.tipoTelhado ? t.tipoTelhado.rotulo : "") + " — " + t.nAguas + " água(s) (sintético " + t.id + ")", { area: t.area, areaProjecao: t.areaProjecao, volume: t.volume, comprimento: t.cumeeira, contagem: 1 });
@@ -427,6 +546,8 @@
         });
         reg(f.id, f.ifc, (f.rotuloTipo || "Fundação") + " (sintética " + f.id + ")", { volume: f.volume, area: f.areaBase, comprimento: f.comprimentoPeca || f.comprimentoEstacas || 0, contagem: 1 }, "estrutura");
       });
+      /* COBERTURA COMPLETA (js/bimcoberturaui.js): platibanda, rufos, calha embutida, condutores e sanca */
+      if (global.BimCoberturaUI && global.BimCoberturaUI.desenhar) global.BimCoberturaUI.desenhar(THREE, st, mo, addMesh, self, reg);
     }
   };
   function temCampo(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }

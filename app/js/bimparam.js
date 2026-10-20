@@ -347,6 +347,10 @@
     teCotaCumeeira: function (x) { return fin(el(x).cotaCumeeira) ? el(x).cotaCumeeira : null; },
     teCotaApoio: function (x) { return fin(el(x).cotaApoio) ? el(x).cotaApoio : null; },
     teUnir: function (x) { return el(x).unir != null ? txt(el(x).unir) : null; },
+    /* TELHADO PARAMÉTRICO (T1, js/bimtelhadoestrut.js): o modelo da estrutura e os AVISOS dele, à vista nas Propriedades
+       (o "fase 2: meias-tesouras de espigão", pontalete sem apoio, tesoura metálica baixa…) */
+    teModelo: function (x) { var pk = el(x).pacote; return pk && pk.rotulo ? txt(pk.rotulo) : (el(x).modelo ? txt(el(x).modelo) : "sem estrutura (só o telhado)"); },
+    teAvisosModelo: function (x) { var pk = el(x).pacote; return pk && arr(pk.avisos).length ? arr(pk.avisos).join(" | ") : null; },
     teAreaRemovida: function (x) { return fin(el(x).areaRemovidaUniao) ? el(x).areaRemovidaUniao : null; },
     teEspessura: function (x) { var t = el(x).tipoTelhado; return t && fin(t.espessura) ? t.espessura : null; },
     teEstrutura: function (x) { var t = el(x).tipoTelhado; return t ? arr(t.camadas).map(function (k) { return txt(k.rotulo) + " " + mm(num(k.e, 0)) + " mm"; }).join(" + ") : null; },
@@ -967,6 +971,8 @@
         P(I, "Construção", "Beiral (projeção na parede)", "RA_TELHADO_BEIRAL", "comprimento", { calc: "teBeiral", escrita: "telhado.beiral", leitura: false, faixa: FAIXA.coberturaBeiral, ifc: Q("OrcaPRO_Telhado", "Beiral") }),
         P(I, "Construção", "Modo", "RA_TELHADO_MODO", "texto", { calc: "teModo" }),
         P(I, "Construção", "Unido ao telhado", "RA_TELHADO_UNIR", "texto", { calc: "teUnir", escrita: "telhado.unir", leitura: false, ifc: Q("OrcaPRO_Telhado", "UnidoA") }),
+        P(I, "Construção", "Modelo (estrutura e telhas)", "RA_TELHADO_MODELO", "texto", { calc: "teModelo", filtro: false }),
+        P(I, "Construção", "Avisos do modelo", "RA_TELHADO_AVISOS_MODELO", "texto", { calc: "teAvisosModelo", filtro: false }),
         P(I, "Cotas", "Inclinação", "ROOF_SLOPE", "inclinacao", { calc: "teInclinacao", escrita: "telhado.inclinacao", leitura: false, faixa: FAIXA.coberturaInclinacao, ifc: Q("OrcaPRO_Telhado", "Inclinacao") }),
         P(I, "Cotas", "Inclinação por aresta (%)", "RA_TELHADO_INCLINACOES", "texto", { calc: "teInclinacoes", escrita: "telhado.inclinacoes", leitura: false, filtro: false, ifc: Q("OrcaPRO_Telhado", "InclinacaoPorAresta") }),
         P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "teArea", ifc: Q("Qto_RoofBaseQuantities", "NetArea"), orc: O("area") }),

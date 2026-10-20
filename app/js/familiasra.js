@@ -592,6 +592,8 @@
         { id: "pq18e", nome: "Plafon quadrado LED 18 W, de embutir", valores: {} },
         { id: "pq24s", nome: "Plafon quadrado LED 24 W, de sobrepor", valores: { Instalacao: "sobrepor", Potencia_W: "24", Lado: 0.30, Fluxo_lm: 1920 } },
         { id: "pc12s", nome: "Plafon circular LED 12/13 W, de sobrepor", valores: { Modelo: "plafon_circular", Instalacao: "sobrepor", Potencia_W: "12/13", Lado: 0.17, Fluxo_lm: 960 } },
+        /* COBERTURA COMPLETA (forro de drywall): o plafon circular de EMBUTIR — a SINAPI 06/2026 só orça o de sobrepor (103782): este tipo sai "orçar à parte" */
+        { id: "pc12e", nome: "Plafon circular LED 12/13 W, de embutir", valores: { Modelo: "plafon_circular", Instalacao: "embutir", Potencia_W: "12/13", Lado: 0.17, Fluxo_lm: 960 } },
         { id: "spote", nome: "Spot PAR20, de embutir", valores: { Modelo: "spot_par20", Potencia_W: "-", Lado: 0.10, Fluxo_lm: 500, Temperatura_K: 3000, Tipo_luz: "spot", Angulo_facho: 36 } },
         { id: "p60e", nome: "Painel LED 60 × 60, de embutir", valores: { Modelo: "painel_60x60", Potencia_W: "-", Lado: 0.60, Fluxo_lm: 3200 } }
       ],
@@ -624,7 +626,24 @@
     }
   );
 
+  /* ARQUITETURA DE PISCINA E PELE DE VIDRO (19/10/2026, js/familiaspiscina.js): piscina de fibra de mercado, casa de máquinas e
+     pele de vidro recolhível — o gerador devolve as famílias já no formato (previa "modelador", como as demais desta lista) */
+  (function () {
+    var FP = global.FamiliasPiscina || null;
+    if (!FP && typeof require === "function") { try { FP = require("./familiaspiscina.js"); } catch (eFP) { FP = null; } }
+    if (FP && FP.lista) FP.lista().forEach(function (f) { LISTA.push(f); });
+  })();
+
   var FamiliasRA = {
+    /* registrar(lista): outros arquivos da biblioteca RA (js/familiasmob.js, js/familiasmobcoz.js, js/familiaspais.js) somam as famílias deles
+       a esta lista — assim biblioteca, render, vistas e templates acham tudo por lista()/obter(). Idempotente: o mesmo id substitui. */
+    registrar: function (fams) {
+      (fams || []).forEach(function (f) {
+        if (!f || !f.id) return;
+        for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === f.id) { LISTA[i] = f; return; }
+        LISTA.push(f);
+      });
+    },
     lista: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas); }))); },
     obter: function (id, todas) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id && visivel(LISTA[i], todas)) return JSON.parse(JSON.stringify(LISTA[i])); return null; }
   };

@@ -67,6 +67,7 @@
     folgaTampaCaixa: 0.10,   // hid:ok o tubo entra na caixa de inspeção com o topo da bolsa a isto abaixo da laje da tampa (o mesmo do js/hidrede.js)
     afastQuedaCaixa: 0.30,   // hid:ok a descida do ramal que chega alto fica a isto fora da parede da caixa (nunca em cima dela)
     degrauMinimoCaixa: 0.02, // hid:ok menor degrau que se faz antes da caixa: o ramal já nasce na cota de controle (js/hidrota.js, topoEntrada); sobra menor que isto (a peça rasa da rede manda) não vira joelho
+    paredeAtrasMax: 0.60,    // hid:ok procura da parede atrás de um ponto de parede (raio pela normal do conector), a partir da face da louça
     margemVent: 0.10,        // hid:ok o ponto da ventilação fica a esta folga ANTES da distância máxima (m)
     caixasAvaliadas: 3,      // hid:ok quantos pontos de caixa sifonada são TRAÇADOS de verdade para escolher (o melhor custo do HidRota vence)
     distCandidatos: 0.30,    // hid:ok entre dois pontos avaliados (senão seriam o mesmo traçado)
@@ -123,6 +124,8 @@
     });
     return out;
   }
+  var INF_AMB = 1e9, EPS_AMB = 1e-9;   // hid:ok infinito numérico e tolerância de ponto flutuante
+  function fcmAmb(v) { return String(Math.round(v * 100)); }   // hid:ok metro → centímetro (texto)
   function geo(par, k) {
     if (par && par[k] != null && isFinite(Number(par[k]))) return Number(par[k]);
     if (GEO_AMB[k] != null) return GEO_AMB[k];
@@ -406,7 +409,29 @@
     /* 2) aparelhos do HidRota: conectores reais, menos o que o kit resolve (válvula = ramal exclusivo; chuveiro = espera lateral) */
     var kitOps = vivas(opsLimpo).filter(function (o) { return o.kit != null && ids.indexOf(String(o.kit)) >= 0; });
     var aparelhos = [], tipos = {}, baciaEs = null, recept = [], esperaCh = {};
-    kitOps.forEach(function (o) { if (o.kitParte === "chuveiro" && /-ch-espera$/.test(txt(o.id))) esperaCh[o.kit] = o.p2; });
+    /* ⚠ PONTO DE PAREDE LONGE DA PAREDE (20/10/2026, e2e-hid-tracar): a normal `parede` do conector supõe a louça ENCOSTADA (o
+       fundo dela = a face da parede). A bacia posta a 30 cm da parede deixa o eixo "embutido" no ar, atrás dela: o ramal sai da
+       parede e chega aparente por cima/atrás da louça (na planta, o ø20 sobre a bacia). O traçado não muda (embutir o ponto
+       longe pede outra espera e outro registro); o AVISO diz quanto e o que fazer — nunca o tubo aparente calado. */
+    function pontoLonge(c, f) {
+      var n = c.parede, nx = num(n.x, 0), nz = num(n.z, 0), Ln = Math.sqrt(nx * nx + nz * nz); if (!(Ln > EPS_AMB)) return;
+      nx /= Ln; nz /= Ln;
+      var d0 = Math.max(0, num(n.d, 0)), melhor = null;
+      arr(paredes).forEach(function (w) {
+        var wx = w.p2.x - w.p1.x, wz = w.p2.z - w.p1.z, Lw = Math.sqrt(wx * wx + wz * wz); if (!(Lw > EPS_AMB)) return;
+        var base = num(w.base, -INF_AMB), topo = base + num(w.altura, INF_AMB); if (c.y < base - B.TOL || c.y > topo + B.TOL) return;
+        var den = nx * (-wz) + nz * wx; if (Math.abs(den) < EPS_AMB) return;   /* raio paralelo à parede */
+        var qx = w.p1.x - c.x, qz = w.p1.z - c.z, t = (qx * (-wz) + qz * wx) / den, sL = (nx * qz - nz * qx) / den;
+        if (sL < -EPS_AMB || sL > 1 + EPS_AMB || t < -B.TOL) return;   /* o raio passa fora do vão da parede, ou ela está à frente */
+        var face = Math.max(0, t - num(w.espessura, 0) / 2 / (Math.abs(den) / Lw));
+        if (melhor == null || face < melhor) melhor = face;
+      });
+      var gap = melhor == null ? null : melhor - d0;
+      if (gap != null && gap <= B.FACE_TOL) return;
+      aviso("o ponto de água de " + f.id + (gap != null && gap <= geo(par, "paredeAtrasMax") ? " está a " + fcmAmb(gap) + " cm da face da parede" : " não encosta em parede") +
+            ": o ramal sai da parede e chega aparente atrás/por cima da louça — encoste o aparelho na parede (ou embuta o ponto à mão) e trace de novo", [String(f.id)], { tipo: "mover", ids: [String(f.id)] });
+    }
+    kitOps.forEach(function (o) { if (o.kitParte === "chuveiro" && /-ch-espera$/.test(txt(o.id))) esperaCh[o.kit] = o.continua === "p2" ? o.p2 : o.p1; });   /* a ponta aberta (p1 desde a FRENTE B, 19/10/2026: sentido da água) */
     M.fams.forEach(function (f) {
       var tipo = K.tipoDaFamilia(f.famId, f.tipoId); tipos[f.id] = tipo;
       var cs = K._int.conectores(avaliarFam, f).filter(function (c) { return c.sistema === "esgoto" || c.sistema === "agua_fria"; });
@@ -414,6 +439,7 @@
       cs.forEach(function (c) {
         if (c.sistema === "agua_fria" && tipo === "bacia_valvula") return;   /* ramal exclusivo da válvula (kit) */
         if (c.sistema === "agua_fria" && tipo === "chuveiro" && esperaCh[f.id]) { var E = esperaCh[f.id]; con.push({ id: "af", sistema: "agua_fria", dn: c.dn, x: E.x, y: E.y, z: E.z }); return; }
+        if (c.sistema === "agua_fria" && c.parede) pontoLonge(c, f);
         con.push({ id: c.cid || c.sistema, sistema: c.sistema, dn: c.dn, x: c.x, y: c.y, z: c.z, parede: c.parede || null });
         if (c.sistema === "esgoto" && (tipo === "bacia_valvula" || tipo === "bacia_caixa_acoplada") && !baciaEs) baciaEs = { x: c.x, y: c.y, z: c.z, id: f.id };
         /* quem descarrega na caixa sifonada: a regra do traçado (HidRota.PARA_CAIXA) — o tanque tem sifão próprio e vai ao ramal */
@@ -556,7 +582,9 @@
       if (ciUser.converter) { ciUser.converter.forEach(function (o) { novas.push(o); }); }
       movidas.forEach(function (o) { novas.push(o); }); movidas = [];
       obst.familias = arr(obst.familias).filter(function (v) { return String(v.id) !== ciUser.id; });   /* a família vai virar a peça: não é obstáculo */
-      destinos.esgoto = { tipo: "ponto", id: ciUser.id, conector: { x: ciUser.x, y: piso, z: ciUser.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true, entradaMax: entradaMaxCaixa(ciUser.y, ciUser.tipoCaixa, ciUser.tampa) };
+      destinos.esgoto = { tipo: "ponto", id: ciUser.id, conector: { x: ciUser.x, y: piso, z: ciUser.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true, entradaMax: entradaMaxCaixa(ciUser.y, ciUser.tipoCaixa, ciUser.tampa),
+        /* a profundidade da caixa dele: o motor avisa quando o tubo chega abaixo do fundo (caixa rasa) — js/hidrota.js, cota pelo fluxo */
+        topo: ciUser.y, fundo: isFinite(num(ciUser.prof, NaN)) ? r4(num(ciUser.y, 0) - num(ciUser.prof, 0)) : null };
       decide("amb.caixa_inspecao", "O ramal do ambiente vai até a caixa de inspeção " + ciUser.id + " que já está no modelo.");
       out.caixaInspecaoUsuario = ciUser.id;
     } else if (terreo) {
@@ -825,13 +853,17 @@
           novas.forEach(function (o) { if (o.op !== "trecho" || o.sistema !== w.s) return; ["p1", "p2"].forEach(function (k) { if (d2(o[k], w.p) <= B.TOL && (w.s !== "agua_fria" || Math.abs(o[k].y - w.p.y) <= B.TOL)) o.continua = o.continua && o.continua !== k ? "ambos" : k; }); });
         });
         op.pendencias.forEach(function (p) { if (p.chave !== "rota.coluna_ventilacao") pend(p.chave, p.motivo || p.texto, p.elementos, p.acao); });
+        /* (revisão frente A, 20/10/2026) os avisos da COTA PELO FLUXO do traçado (a partida abaixo do cobrimento mínimo; a queda antes
+           da caixa) chegam ao usuário — antes só as pendências passavam e o "avisa quantos cm" ficava calado no Traçar automaticamente */
+        arr(op.problemas).forEach(function (a) { if (a && a.chave === "rota.cota_fluxo") aviso(a.texto, a.elementos, a.acao); });
         if (juntar && esperaAF) {
           /* o topo da espera do banheiro deixa de ser a ponta (vira tê no meio do barrilete curto) */
           novas.forEach(function (o) { if (o.op === "trecho" && o.sistema === "agua_fria" && o.continua) ["p1", "p2"].forEach(function (k) { if (d3(o[k], esperaAF) <= B.TOL) { o.continua = o.continua === "ambos" ? (k === "p1" ? "p2" : "p1") : (o.continua === k ? "" : o.continua); if (!o.continua) delete o.continua; } }); });
           /* da prumada da válvula, PASSANDO pelo topo da espera do banheiro (tê), até a espera única logo depois */
           var dj = d2(juntar.de, esperaAF) || 1, uj = { x: (esperaAF.x - juntar.de.x) / dj, z: (esperaAF.z - juntar.de.z) / dj };
           var fimB = { x: r4(esperaAF.x + uj.x * geo(par, "lateralEntradaAF")), y: esperaAF.y, z: r4(esperaAF.z + uj.z * geo(par, "lateralEntradaAF")) };
-          novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: juntar.de, p2: fimB, continua: "p2", amb: ambId, ambParte: "espera_agua" });
+          /* FRENTE B (19/10/2026, D-04): no sentido da água — da espera única (p1, a ponta aberta) para a prumada da válvula (p2) */
+          novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimB, p2: juntar.de, continua: "p1", amb: ambId, ambParte: "espera_agua" });
           decide("amb.agua", "A prumada da válvula e a do banheiro se juntam sob a laje num ponto de espera único em (" + f2(fimB.x) + "; " + f2(fimB.z) + ").");
         }
         /* a PROFUNDIDADE da caixa de inspeção do usuário: o tubo mais fundo que chega nela + folga (a peça é refeita no lote) */
@@ -1085,16 +1117,21 @@
         cands.forEach(function (c) { var b = subida(c, raio(dnV), function (qq) { return r4(yTopoV - (Math.abs(qq.x - CV.x) + Math.abs(qq.z - CV.z)) * ac); }, ateColuna(coluna)); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         if (!melhor) { pend("amb.ventilacao", "sem caminho livre do ramal de " + desc[0].ref + " até a coluna de ventilação " + CV.id + " — ponha à mão", ids, { tipo: "ajustar", ids: [CV.id] }); return; }
         yJunta = melhor.extra.fim.y;
-        var cT = ctx.consulta("es.declividades_minimas", { regra: "Ramal de ventilação liga-se à coluna acima do nível de transbordamento dos aparelhos" }, "valor", "ventilação: ligação à coluna acima do transbordamento");
-        var RECEP = { bacia_valvula: 1, bacia_caixa_acoplada: 1, lavatorio: 1, pia_cozinha: 1, tanque: 1, mictorio: 1, bebedouro: 1 }, idsR = {};
-        M.fams.forEach(function (f) { if (RECEP[tipos[f.id]]) idsR[String(f.id)] = 1; });
-        var topoAp = null; arr(B.volumesFamilias(estado, avaliarFam)).forEach(function (v) { if (idsR[String(v.id)] && (topoAp == null || v.y1 > topoAp)) topoAp = v.y1; });
-        if (!cT.ok) pend("es.declividades_minimas", "altura mínima da ligação do ramal de ventilação acima do transbordamento sem tabela", ids);
-        else if (topoAp != null) { minTransb = r4(topoAp + num(cT.valor, 0)); if (yJunta < minTransb - EPS) pend("amb.ventilacao.transbordamento", "a ligação na coluna de ventilação ficou a " + f2(yJunta) + " m, abaixo do topo do aparelho mais alto + " + f2(num(cT.valor, 0)) + " m (" + f2(minTransb) + " m)", ids, { tipo: "ajustar", ids: [CV.id] }); }
       } else {
         cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         if (!melhor) { pend("amb.ventilacao", "nenhuma parede perto do ramal de " + desc[0].ref + " para subir a ventilação embutida no eixo", ids); return; }
+        /* sem coluna de ventilação (o térreo com terminal próprio): o ponto em que este ramal deixa de ser ramal é o topo dele */
+        yJunta = melhor.top.y;
       }
+      /* ⚠ TRANSBORDAMENTO (NBR 8160 4.3.14 c e 4.3.16 b; R-B6 do PADROES-PROJETO-RA — frente A, 19/10/2026, D-07): antes de se ligar a
+         outro ventilador (a coluna) — ou, sem coluna, antes de virar o tubo que vai ao terminal — o ramal eleva-se acima do topo do
+         aparelho mais alto + o mínimo da tabela. Antes a conferência só rodava com a coluna existente: no térreo ficava sem conferir */
+      var cT = ctx.consulta("es.declividades_minimas", { regra: "Ramal de ventilação liga-se à coluna acima do nível de transbordamento dos aparelhos" }, "valor", "ventilação: ligação à coluna acima do transbordamento");
+      var RECEP = { bacia_valvula: 1, bacia_caixa_acoplada: 1, lavatorio: 1, pia_cozinha: 1, tanque: 1, mictorio: 1, bebedouro: 1 }, idsR = {};
+      M.fams.forEach(function (f) { if (RECEP[tipos[f.id]]) idsR[String(f.id)] = 1; });
+      var topoAp = null; arr(B.volumesFamilias(estado, avaliarFam)).forEach(function (v) { if (idsR[String(v.id)] && (topoAp == null || v.y1 > topoAp)) topoAp = v.y1; });
+      if (!cT.ok) pend("es.declividades_minimas", "altura mínima da ligação do ramal de ventilação acima do transbordamento sem tabela", ids);
+      else if (topoAp != null) { minTransb = r4(topoAp + num(cT.valor, 0)); if (yJunta < minTransb - EPS) pend("amb.ventilacao.transbordamento", (CV ? "a ligação na coluna de ventilação" : "o topo da ventilação (sem coluna, até o terminal)") + " ficou a " + f2(yJunta) + " m, abaixo do topo do aparelho mais alto + " + f2(num(cT.valor, 0)) + " m (" + f2(minTransb) + " m)", ids, CV ? { tipo: "ajustar", ids: [CV.id] } : { tipo: "parametro", campo: "alturaSaidaVentilacao", sugerido: r4(minTransb - piso) }); }
       /* a TOMADA: tê 90° (a derivação sobe do eixo) — a ponta que entra no ramal de esgoto é a junção esgoto × ventilação:
          "continua" diz que ela segue na peça de junção (o tê entra no nó do esgoto: js/biminst.js) */
       function emitir(b, dn, parte, dnUlt) {
@@ -1104,7 +1141,9 @@
           if (i > 0 && d3(a, sg.b) <= geo(par, "margemNo") / 2 && i < b.segs.length - 1) { ini = a; return; }
           ini = null;
           vt = { op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: i === b.segs.length - 1 && dnUlt ? dnUlt : dn, p1: { x: r4(a.x), y: r4(a.y), z: r4(a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: parte };
-          if (i === 0) vt.continua = "p1";
+          /* a tomada diz EM QUAL tubo de esgoto ela liga (js/biminst.js só faz o tê nele — D-07: antes qualquer esgoto que
+             encostasse na ponta "continua" virava tê) */
+          if (i === 0) { vt.continua = "p1"; if (b.c && b.c.trecho != null) vt.tomada = String(b.c.trecho); }
           novas.push(vt);
         });
         return vt;
@@ -1163,7 +1202,7 @@
         var dn100 = NR.regraVent("ventilador_predio_terreo_dn", "ventilação: ventilador primário da edificação (4.3.11/4.3.12)");
         var temV100 = dn100 != null && novas.concat(arr(estado.instalacoes && estado.instalacoes.trechos)).some(function (t) { return (t.op == null || t.op === "trecho") && t.sistema === "ventilacao" && num(t.dn, 0) >= dn100; });
         if (dn100 != null && !temV100) pend("es8160.ventilador_primario", "NBR 8160 4.3.11/4.3.12: a edificação precisa de pelo menos um tubo ventilador primário DN " + dn100 + " (ligado à caixa de inspeção, ao coletor, ao subcoletor ou ao ramal de uma bacia e prolongado acima da cobertura) — a ventilação deste ambiente é o ramal DN " + dnV + " da Tabela 8 e não o substitui: definir com o RT", ids);
-        out.ventilacao = { dn: dnV, dnRamal: dnV, dnColuna: dnCol, tabela2: tab2, comprimento: r4(Ltot), contato: melhor.c.P, tomada: { x: melhor.c.P.x, y: melhor.c.P.y, z: melhor.c.P.z, trecho: melhor.c.trecho, s: r4(melhor.c.s), sMin: fatorDn != null && desc[0].dn ? r4(fatorDn * desc[0].dn / 1000) : null, limite: desc[0].limite, desconector: desc[0].ref },
+        out.ventilacao = { dn: dnV, dnRamal: dnV, dnColuna: dnCol, tabela2: tab2, comprimento: r4(Ltot), minTransbordamento: minTransb, contato: melhor.c.P, tomada: { x: melhor.c.P.x, y: melhor.c.P.y, z: melhor.c.P.z, trecho: melhor.c.trecho, s: r4(melhor.c.s), sMin: fatorDn != null && desc[0].dn ? r4(fatorDn * desc[0].dn / 1000) : null, limite: desc[0].limite, desconector: desc[0].ref },
                            coluna: coluna.id, parede: melhor.w ? melhor.w.id : null, topo: r4(coluna.p2.y), alturaSaida: hSaida, topoOrigem: "altura de saída da ventilação (" + f2(hSaida) + " m do piso, parâmetro)", terminal: idTerm, desconectores: melhor.c.dists, ramais: [], rasgos: rasg };
       }
       /* RAMAL DE VENTILAÇÃO para o desconector que ficou longe do ponto ventilado: sobe na parede perto dele e corre

@@ -277,6 +277,8 @@
   /* ================================================================ TRECHO */
   var TOL = 0.02;            /* 2 cm: pontas mais perto que isto são o MESMO nó */
   var FACE_TOL = 0.01;       /* 1 cm: ponto de ligação a menos disto da face de trás do aparelho é ponto de PAREDE */
+  var SOBE_TOMADA = 0.7;     /* bim:geo a ventilação sai do esgoto PARA CIMA (componente vertical da direção ≥ cos 45°) */
+  var EPS_FLUXO = 1e-4;      /* bim:geo diferença de inclinação que já diz quem desce (m/m) */
   var TOL_CONECTOR = 0.03;   /* ponto de ligação de aparelho */
 
   function pt(p) { return p && isFinite(Number(p.x)) && isFinite(Number(p.y)) && isFinite(Number(p.z)) ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null; }
@@ -337,6 +339,11 @@
     /* QUALIDADE VISUAL 2: a ponta que CONTINUA fora do que está modelado (a prumada que segue para o pavimento de
        cima/baixo, o ramal que sai para a rede pública) — declarada pelo projetista, não é ponta solta */
     if (o.continua === "p1" || o.continua === "p2" || o.continua === "ambos") t.continua = o.continua;
+    /* CONECTIVIDADE (frente A, 19/10/2026): a tomada da ventilação diz em QUAL tubo de esgoto ela liga (o tê só nele); as esperas de
+       projeto do prédio e da piscina ficam marcadas (a R-E2 as permite: viram pendência no motor delas) */
+    if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
+    if (t.continua && o.predio != null && o.predio !== "") t.predio = txt(o.predio).slice(0, 120);
+    if (t.continua && o.piscLinha != null && o.piscLinha !== "") t.piscLinha = txt(o.piscLinha).slice(0, 120);
     /* QUALIDADE VISUAL 1 (juntas, 17/10/2026): como esta ponta do tubo encontra a PONTA de uma conexão de esgoto —
        "luva" (padrão: luva de verdade, no quantitativo), "bolsa" (a bolsa do próprio tubo) ou "invertida" (luva contra
        o fluxo: aviso com o motivo). Ausente = luva. juntaIni vale para p1, juntaFim para p2. */
@@ -813,6 +820,17 @@
       var cosb = Math.abs(dot(rc.dir, ra.dir)), beta = grau(cosb);   /* 0..90 */
       var gravidade = sistema === "esgoto" || sistema === "pluvial" || sistema === "ventilacao";
       var ehJuncao = gravidade && beta >= 25 && beta <= 65;
+      /* ⚠ JUNÇÃO SÓ A FAVOR DO FLUXO (frente A, 19/10/2026 — D-06 do diagnóstico): antes o |cos| fazia a derivação a 135°
+         (entrando CONTRA o escoamento) virar "junção 45°" calada. Jusante da linha principal: a que DESCE do nó (geometria);
+         em nível, a que COMEÇA no nó (p1 → p2 é o sentido do escoamento). O esgoto da derivação chega no nó no sentido −rc.dir:
+         a favor do fluxo, ele aponta para a jusante (cos > 0) */
+      if (ehJuncao && (sistema === "esgoto" || sistema === "pluvial")) {
+        var dyR = ra.dir.y - rb.dir.y, jusR = Math.abs(dyR) > EPS_FLUXO ? (dyR < 0 ? ra : rb) : (ra.jus && !rb.jus ? ra : (rb.jus && !ra.jus ? rb : null));
+        if (jusR && !rc.jus && dot(rc.dir, jusR.dir) > 0) {
+          avisos.push("derivação de " + SISTEMAS[sistema].nome.toLowerCase() + " (trecho " + rc.trecho + ") entra CONTRA o fluxo da linha principal (a " + Math.round(180 - grau(Math.abs(dot(rc.dir, jusR.dir)))) + "° do escoamento): a junção de 45° só liga a favor do fluxo (NBR 8160) — refaça a ligação no sentido do escoamento; nenhuma conexão foi deduzida");
+          return out;
+        }
+      }
       if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
       var dnB = rc.dn;
       if (dnB > dnRun + 0.5) { cx(ehJuncao ? "juncao" : "te", dnB); cx("reducao", dnB, dnRun); }
@@ -863,7 +881,7 @@
       no.pontas.forEach(function (i) {
         var pa = pontas[i], s = pa.t.sistema;
         (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical,
-                                             lado: pa.lado, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
+                                             lado: pa.lado, jus: pa.lado === 0, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
                                              pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim });
       });
       /* ponta caindo no MEIO de outro trecho do mesmo sistema: ele passa pelo nó (dois ramos) */
@@ -872,8 +890,8 @@
         if (porSis[t.sistema].some(function (r) { return r.trecho === t.id; })) return;
         var d = noInterior(P, t.p1, t.p2);
         if (d != null && d <= TOL) {
-          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true });
-          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true });
+          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: true });
+          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: false });
         }
       });
       /* a ventilação que SAI DO MEIO de um ramal de esgoto, marcada "continua" (o tê da ventilação do ambiente,
@@ -881,10 +899,21 @@
          aparece no 3D e no quantitativo (antes a ponta só "continuava" e o tê não era contado) */
       if (porSis.ventilacao && porSis.ventilacao.length === 1 && Object.keys(porSis).length === 1) {
         var rv0 = porSis.ventilacao[0], tv0 = porIdT[rv0.trecho];
-        var tes0 = tv0 && (tv0.continua === "ambos" || tv0.continua === (rv0.lado === 0 ? "p1" : "p2")) ? trechos.filter(function (t) { if (t.sistema !== "esgoto") return false; var d = noInterior(P, t.p1, t.p2); return d != null && d <= TOL; })[0] : null;
+        var cand0 = tv0 && (tv0.continua === "ambos" || tv0.continua === (rv0.lado === 0 ? "p1" : "p2")) ? trechos.filter(function (t) { if (t.sistema !== "esgoto") return false; var d = noInterior(P, t.p1, t.p2); return d != null && d <= TOL; }) : [];
+        /* ⚠ (frente A, 19/10/2026 — D-07 a): o tê só nasce no tubo de esgoto da TOMADA (o motor do ambiente grava qual é) ou, sem
+           essa marca (tomada à mão, modelo antigo), num esgoto DEITADO com a ventilação SAINDO PARA CIMA dele (NBR 8160 4.3.16 b:
+           acima do eixo). Antes, a ponta "continua" de ventilação que encostasse em QUALQUER esgoto (o tubo de queda, a descida de
+           um aparelho, com a ventilação descendo) virava tê — as "conexões para baixo e para cima" vistas ao vivo */
+        /* ⚠ (revisão adversarial, 20/10/2026) a tomada marcada nunca vira tê com a ventilação DESCENDO do esgoto: antes a marca bastava e a
+           ventilação editada para baixo continuava tê — a "conexão para baixo" que a regra proíbe. Deitada vale: é a perna que o
+           arrastar cria no pé da ventilação que ficou de pé (js/biminstarr.js, tools/test-bim-alinhar-inst.js) */
+        var tes0 = tv0 && tv0.tomada && rv0.dir.y > -EPS_FLUXO ? cand0.filter(function (t) { return String(t.id) === String(tv0.tomada); })[0] || null : null;
+        /* no tubo de queda (vertical) a coluna de ventilação liga subindo em aclive (NBR 8160 4.3.14 b — js/hidpredio.js); no esgoto
+           deitado, só saindo PARA CIMA (acima do eixo). Ventilação que DESCE até o esgoto nunca é tomada */
+        if (!tes0 && rv0.dir.y > EPS_FLUXO) tes0 = cand0.filter(function (t) { var dh = Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.z - t.p1.z, 2)); return Math.abs(t.p2.y - t.p1.y) >= dh || rv0.dir.y >= SOBE_TOMADA; })[0] || null;
         if (tes0) {
-          porSis.esgoto = [{ trecho: tes0.id, dir: unit(tes0.p1, tes0.p2), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true },
-                           { trecho: tes0.id, dir: unit(tes0.p2, tes0.p1), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true }, rv0];
+          porSis.esgoto = [{ trecho: tes0.id, dir: unit(tes0.p1, tes0.p2), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true, jus: true },
+                           { trecho: tes0.id, dir: unit(tes0.p2, tes0.p1), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true, jus: false }, rv0];
           delete porSis.ventilacao;
         }
       }
@@ -1508,10 +1537,73 @@
    * "Verificar sistemas" + "Mostrar desconexões", para obra pequena:
    * cada item com o tipo, a gravidade, o texto, o ponto e as peças. */
   var TIPOS_VERIF = { ponta: "Ponta solta", conector: "Ponto de ligação sem tubo", misturado: "Sistemas misturados", inclinacao: "Inclinação", bitola: "Medida fora da tabela", rede: "Traçado", acessorio: "Acessório" };
+  /* ================================================ CONECTIVIDADE: "nenhuma peça desconectada" (frente A, 19/10/2026)
+   * Pedido do Rogério: a marca "continua" (espera) NÃO pode esconder ponta solta. Antes, toda ponta marcada "continua" saía
+   * do verificador — e a descida da válvula de descarga começava no ar, abaixo da válvula, sem ninguém acusar (D-02 do
+   * docs/hidro/DIAGNOSTICO-2026-10-19.md). Regra R-E2 (docs/hidro/PADROES-PROJETO-RA.md): extremidade aberta SÓ em
+   *   · ventilação: a ponta de CIMA de um trecho que sobe (o terminal acima da cobertura);
+   *   · esgoto/pluvial: a ponta de JUSANTE (a mais baixa) — o lançamento na rede pública/fossa ou a espera para a rede;
+   *   · água: a ponta de CIMA de um trecho que sobe (a espera do barrilete/coluna de alimentação);
+   *   · as esperas de projeto do prédio (js/hidpredio.js) e da piscina (js/hidpiscinarede.js), que já viram pendência lá.
+   * Qualquer outra ponta "continua" é ponta SOLTA. E a espera que fica a menos de PERTO_ESPERA de outra ponta ou de um ponto
+   * de aparelho do MESMO sistema também é solta: é tubo que devia encostar e não encosta (o caso da válvula). */
+  var PERTO_ESPERA = 0.15;   /* bim:geo distância em que uma "espera" é, na verdade, um tubo que não encostou */
+  var ALINHADO_ESPERA = 0.9;   /* bim:geo o ponto fica no PROLONGAMENTO do tubo (cos ≥ 0,9): é o tubo que devia chegar até ele */
+  var SIS_CONECT = { esgoto: 1, pluvial: 1, ventilacao: 1, agua_fria: 1, agua_quente: 1 };
+  function esperaPermitida(t, ponta, R) {
+    if (!t || !SIS_CONECT[t.sistema]) return "fora do hidrossanitário";
+    var p = t[ponta], q = t[ponta === "p1" ? "p2" : "p1"]; if (!p || !q) return null;
+    var dy = p.y - q.y, dh = Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z)), sobe = dy > dh;
+    /* tubo que devia encostar: outra ponta ou ponto de aparelho livre do mesmo sistema logo ali, no PROLONGAMENTO do tubo
+       (a outra ponta do PRÓPRIO trecho — o nó dele — não conta) */
+    function enc(e) { var de = dist(e, p); if (de > PERTO_ESPERA || dist(e, q) <= TOL) return false; if (de <= TOL) return true; var u = unit(q, p), w = unit(p, e); return u.x * w.x + u.y * w.y + u.z * w.z >= ALINHADO_ESPERA; }
+    var perto = R && (arr(R.trechos).some(function (o) { return o.id !== t.id && o.sistema === t.sistema && (enc(o.p1) || enc(o.p2)); }) ||
+      arr(R.conectoresLivres).some(function (c) { return c.sistema === t.sistema && enc(c); }));
+    if (perto) return null;
+    if (t.predio || t.piscLinha) return "espera de projeto (" + (t.predio ? "prédio" : "piscina") + ")";
+    /* ⚠ (revisão adversarial, 20/10/2026) a ponta "continua" de ventilação ENCOSTADA no meio de um esgoto é a tomada que NÃO virou tê
+       (a ventilação desce dele, ou sai deitada): é desconexão, nunca terminal — antes a ventilação que descia do esgoto tinha a ponta
+       de cima no esgoto e passava como "terminal", e o cartão dizia "Pronto" */
+    if (t.sistema === "ventilacao" && R && arr(R.trechos).some(function (o) { if (o.sistema !== "esgoto" || !o.p1 || !o.p2) return false; var d = noInterior(p, o.p1, o.p2); return d != null && d <= TOL; })) return null;
+    if (t.sistema === "ventilacao") return sobe ? "terminal da ventilação" : null;
+    if (t.sistema === "esgoto" || t.sistema === "pluvial") return dy < -EPS_ESPERA || (Math.abs(dy) <= EPS_ESPERA && ponta === "p2") ? "espera de jusante (lançamento)" : null;
+    /* água: a alimentação vem de cima (barrilete/coluna) — a espera é o ponto MAIS ALTO da rede ligada a ela (o barrilete curto
+       sob a laje é deitado), ou a ÚNICA ponta aberta da rede (a espera do kit por onde o ramal vai chegar: a lateral do
+       chuveiro). Rede com duas pontas abertas: a que não é a de cima está solta */
+    var topo = R && R._topoAgua ? R._topoAgua(t) : null, nAb = R && R._abertas ? R._abertas(t) : 0;
+    if (topo == null) return sobe ? "espera de alimentação (barrilete/coluna)" : null;
+    return p.y >= topo - EPS_ESPERA ? "espera de alimentação (barrilete/coluna)" : (nAb === 1 ? "espera de alimentação do kit (o ramal chega por ela)" : null);
+  }
+  var EPS_ESPERA = 1e-4;   /* bim:geo cota igual (m) */
+  /* as pontas soltas da rede, com as "continua" que não são espera permitida — { soltas[], esperas[] } */
+  function conectividade(estado, avaliarFam, R0) {
+    var R = R0 || rede(estado, avaliarFam), Rbase = R, porId = {}, soltas = [], esperas = [];
+    arr(R.trechos).forEach(function (t) { porId[t.id] = t; });
+    /* as redes ligadas (mesmo sistema): nós da rede + o que passa por dentro de acessório/família (registro, válvula) */
+    var pai = {};
+    function acha(x) { while (pai[x] != null && pai[x] !== x) x = pai[x]; return x; }
+    function une(a, b) { if (!porId[a] || !porId[b] || porId[a].sistema !== porId[b].sistema) return; var ra = acha(a), rb = acha(b); if (ra !== rb) pai[ra] = rb; }
+    arr(R.trechos).forEach(function (t) { pai[t.id] = t.id; });
+    arr(R.nosRamos).forEach(function (l) { for (var i = 1; i < l.length; i++) une(l[0], l[i]); });
+    var porFam = {}; arr(R.ligacoes).forEach(function (l) { if (l.famInst == null) return; var k = l.famInst + "|" + (porId[l.trecho] || {}).sistema; if (porFam[k]) une(porFam[k], l.trecho); else porFam[k] = l.trecho; });
+    var topo = {};
+    arr(R.trechos).forEach(function (t) { var r = acha(t.id), y = Math.max(t.p1.y, t.p2.y); if (topo[r] == null || y > topo[r]) topo[r] = y; });
+    var abertas = {}; arr(R.pontasLivres).concat(arr(R.continuacoes)).forEach(function (c) { if (!porId[c.trecho]) return; var r = acha(c.trecho); abertas[r] = (abertas[r] || 0) + 1; });
+    R = Object.create(R); R._topoAgua = function (t) { return topo[acha(t.id)]; }; R._abertas = function (t) { return abertas[acha(t.id)] || 0; };
+    R.pontasLivres.forEach(function (p) { var t = porId[p.trecho]; soltas.push({ trecho: p.trecho, sistema: t ? t.sistema : null, x: p.x, y: p.y, z: p.z, motivo: "ponta solta" }); });
+    arr(R.continuacoes).forEach(function (c) {
+      var t = porId[c.trecho], m = esperaPermitida(t, c.ponta, R);
+      if (m) esperas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: m });
+      else soltas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: "ponta marcada \"continua\" que não é espera permitida (só terminal de ventilação, lançamento do esgoto e espera de alimentação)", continua: true });
+    });
+    return { soltas: soltas, esperas: esperas, rede: Rbase };
+  }
+
   function verificar(estado, avaliarFam) {
     var R = rede(estado, avaliarFam), S = sistemas(estado, avaliarFam, R), itens = [];
     function add(tipo, grav, texto, p, ids) { itens.push({ tipo: tipo, rotuloTipo: TIPOS_VERIF[tipo], gravidade: grav, texto: texto, x: p ? r4(p.x) : null, y: p ? r4(p.y) : null, z: p ? r4(p.z) : null, ids: ids || [] }); }
-    R.pontasLivres.forEach(function (p) { var c = S.de(p.trecho); add("ponta", "aviso", "ponta solta do trecho " + p.trecho + (c ? " (" + c.codigo + " — " + c.nome + ")" : ""), p, [p.trecho]); });
+    /* ⚠ ponta solta é ERRO (frente A, 19/10/2026): a "continua" que não é espera permitida entra aqui também (conectividade) */
+    conectividade(estado, avaliarFam, R).soltas.forEach(function (p) { var c = S.de(p.trecho); add("ponta", "erro", "ponta solta do trecho " + p.trecho + (c ? " (" + c.codigo + " — " + c.nome + ")" : "") + (p.continua ? " — marcada \"continua\", mas não é espera permitida" : ""), p, [p.trecho]); });
     R.conectoresLivres.forEach(function (k) { add("conector", "aviso", (k.origem === "acessorio" ? k.nome.toLowerCase() + " " + k.famInst : "ponto \"" + k.nome + "\" de " + k.famInst) + " sem tubo (" + SISTEMAS[k.sistema].nome.toLowerCase() + ")", k, [k.famInst]); });
     R.avisos.forEach(function (a) { var mist = /sistemas diferentes|terminando em|no ponto de/.test(a.texto); add(mist ? "misturado" : "rede", mist ? "erro" : "aviso", a.texto, a, []); });
     R.trechos.forEach(function (t) {
@@ -1723,7 +1815,7 @@
     /* pendências finais (18/10/2026): peça em linha (união / tê de inspeção), o tipo do registro pelo lugar, referência de mercado */
     PECAS_LINHA: PECAS_LINHA, pecaLinhaExiste: pecaLinhaExiste, embutidoNaParede: embutidoNaParede, varianteAuto: varianteAuto, refMercado: refMercado, itemPeca: itemPeca, itemConexao: itemConexao,
     pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
-    sistemas: sistemas, verificar: verificar, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
+    sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
     /* ops que este motor recebe do BimEdit */
     ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema"; }
   };

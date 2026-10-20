@@ -141,7 +141,10 @@
   }
 
   /* ================================================ RECONHECER */
-  var NOME_PISCINA = /piscin|pool|spa\b|ofur/i;
+  /* ⚠ revisor 19/10/2026: era /spa\b/ — o \b do JS só conhece letra ASCII, então "Espaço gourmet" (Esp-a-ç) casava como "spa"
+     e, com a piscina no "Traçar automaticamente", uma parede "do Espaço gourmet" virava piscina com casa de máquinas.
+     Agora "spa" só como palavra inteira (sem letra, acentuada ou não, antes nem depois) */
+  var NOME_PISCINA = /piscin|pool|(^|[^a-zà-ÿ])spa(?![a-zà-ÿ])|ofur/i;
   function prismaHorizontal(receita) {
     var V = BV(); if (!V || !V.prismaDe) return null;
     var pr = null; try { pr = V.prismaDe(receita); } catch (e) { pr = null; }
@@ -425,7 +428,12 @@
         /* alcance = comprimento da mangueira do fabricante; uma aspiração por "círculo" do alcance sobre o eixo maior */
         nAsp = Math.max(1, Math.ceil(g.eixo.comprimento / (2 * num(alc.valor, 1)) - EPS));
         decide("pisc.aspiracao", "Aspirações: " + nAsp + " — o alcance de cada uma é a mangueira de " + f1(num(alc.valor, 0)) + " m (" + fonteTxt("pisc.fab.mangueira_aspiracao") + "); a distribuição confere o ponto mais longe.");
-      } else { nAsp = 1; R.pendencias.push({ chave: "pisc.fab.mangueira_aspiracao", motivo: "sem o comprimento de mangueira do aspirador (fabricante): 1 aspiração lançada; confira se o aspirador alcança todo o tanque (NBR 10339 5.4.4.12.3 c)" }); }
+      } else {
+        /* sem o comprimento de mangueira na ficha: 1 aspiração e a mangueira ESPECIFICADA pelo alcance que o tanque exige
+           (o lançamento mede do dispositivo ao ponto mais longe + a profundidade: js/hidpiscinarede.js, pisc.aspiracao.alcance) */
+        nAsp = 1; R.aspiracaoPorAlcance = true;
+        decide("pisc.aspiracao", "Aspirações: 1 — o fabricante não publica o comprimento da mangueira; a mangueira do aspirador fica ESPECIFICADA pelo alcance que o tanque exige (do dispositivo ao ponto mais longe, mais a profundidade), para alcançar todas as partes do tanque (NBR 10339 5.4.4.12.3 c).");
+      }
     }
     R.dispositivos = { retornos: ret.n, coadeiras: nCo, ralosFundo: nDr, aspiracoes: nAsp, distanciaRalos: dDr, succao: succ };
     /* os PRODUTOS dos dispositivos: o menor do catálogo cuja vazão máxima atende (tipo de construção: alvenaria por padrão) */
@@ -433,6 +441,20 @@
       var cons = par.construcao || "alvenaria", fr0 = param(ctx, "pisc.coadeira", "fracao_vazao_tubulacao_min", "coadeiras") || 1;
       var qS = Q * fr0, qF = Q * geo(par, "ramoDrenoTotal"), qR = ret.n ? Q / ret.n : null;
       R.equipamentos.coadeira = escolherDisp("skimmer", qS, cons, null, "Coadeira", "pisc.coadeira", R, verif);
+      /* COADEIRAS PELA VAZÃO (docs/hidro/PADROES-PROJETO-RA.md R-D12): a quantidade pela ÁREA da norma pode dar menos coadeiras
+         do que a vazão exige — n = máx(pela área; ⌈vazão das coadeiras / vazão máxima do produto⌉). Com mais de uma, cada
+         produto leva a sua parte */
+      var coE = R.equipamentos.coadeira, vmCo = coE ? num(coE.norm.vazao_max_m3h, 0) : 0;
+      if (nCo && vmCo > 0 && qS > vmCo + EPS) {
+        var nCoV = Math.ceil(qS / vmCo - EPS);
+        if (nCoV > nCo) {
+          mem("Coadeiras pela vazão", "n = ⌈" + f2(qS) + " / " + f2(vmCo) + "⌉ (vazão das coadeiras / vazão máxima do produto)", nCoV, "un", coE.fonte);
+          decide("pisc.coadeiras.vazao", "Coadeiras: " + nCoV + " — pela área seriam " + nCo + ", mas a vazão das coadeiras (" + f2(qS) + " m³/h) passa da vazão máxima do produto (" + f2(vmCo) + " m³/h): vale o MAIOR.");
+          nCo = nCoV; R.dispositivos.coadeiras = nCo;
+          R.verificacoes = R.verificacoes.filter(function (x) { return x.id !== "pisc.disp.skimmer"; });
+          R.equipamentos.coadeira = escolherDisp("skimmer", qS / nCo, cons, null, "Coadeira (" + nCo + " em paralelo: a vazão dividida)", "pisc.coadeira", R, verif);
+        }
+      }
       if (nDr) R.equipamentos.ralo = escolherDisp("ralo_fundo", qF, cons, /aprisionamento/i, "Ralo de fundo (um obstruído: a vazão toda do fundo)", "pisc.ralo_fundo", R, verif);
       R.equipamentos.aspiracao = escolherDisp("aspiracao", Q, cons, null, "Dispositivo de aspiração (o aspirador puxa a vazão toda)", "pisc.bocal_aspiracao", R, verif);
       if (qR) R.equipamentos.retorno = escolherDisp("retorno", qR, cons, null, "Dispositivo de retorno (Q / n)", "pisc.bocal_retorno", R, verif);
@@ -545,6 +567,7 @@
       if (pf == null) { pf = pLimpo; R.pendencias.push({ chave: "pisc.filtro.perda_sujo", motivo: "perda de carga do filtro SUJO (na iminência da lavagem) não publicada pelo fabricante: usada a perda inicial máxima da NBR 10339 (" + f1(pLimpo) + " mca) — a bomba fica PENDENTE de conferência (5.4.4.1.4 e)" }); }
       var parE = copia(par); parE.dnSuccao = parE.dnSuccao || (R.linhas.succaoGeral || {}).dn; parE.dnRecalque = parE.dnRecalque || (R.linhas.recalque || {}).dn;
       R.estimativa = estimativaAmt(ctx, g, parE, Q, pf, tAg);
+      if (R.estimativa.seletoraModelada) { var sm = R.estimativa.seletoraModelada; decide("pisc.seletora.perda", "Perda da válvula seletora (não publicada pelo fabricante): modelada como 2 tês de saída lateral + 2 joelhos de 90° no DN " + sm.dn + " (Leq = " + f2(sm.Leq) + " m, h = " + f2(sm.hf) + " mca), somada à altura manométrica — critério conservador do projetista; com o valor da ficha do modelo comprado, informe perdaSeletora_mca."); }
       R.amt = R.estimativa.amt;
       var bomba = escolherBomba(ctx, Q, R.estimativa, filtro, txMax, par, "bomba de recirculação");
       /* ⚠ FILTRO × BOMBA JUNTOS: o ponto de operação tem de cair entre Q e taxa_máx × área — com o menor filtro a janela pode ser
@@ -619,6 +642,8 @@
     ctx.pendencias().forEach(function (p) { R.pendencias.push({ chave: p.chave, motivo: p.motivo }); });
     /* uma pendência por chave (a explicada pelo motor vence a genérica "tabela não carregada") */
     var vistas = {}; R.pendencias = R.pendencias.filter(function (p) { var k = String(p.chave).split("[")[0]; if (vistas[k]) return false; vistas[k] = 1; return true; });
+    /* a mangueira do aspirador ESPECIFICADA pelo alcance (o lançamento mede): a falta da regra do fabricante deixa de ser pendência */
+    if (R.aspiracaoPorAlcance) R.pendencias = R.pendencias.filter(function (p) { return String(p.chave).split("[")[0] !== "pisc.fab.mangueira_aspiracao"; });
     R.normas = ctx.normas();
     R.ok = Q != null;
     R.status = R.verificacoes.some(function (v) { return v.status === "nao_atende"; }) ? "nao_atende" : (R.pendencias.length || R.verificacoes.some(function (v) { return v.status === "pendente"; }) ? "pendente" : "atende");
@@ -656,13 +681,22 @@
     /* saída no bocal: carga cinética na velocidade mínima da norma (o bocal "joga" a água a ≥ 3 m/s) */
     var vNoz = param(ctx, "pisc.bocal_retorno", "velocidade_saida_min", "retornos"), hBocal = vNoz != null && H ? H.cargaCinetica(vNoz) : 0;
     var hSel = num(par.perdaSeletora_mca, null), hAq = num(par.perdaAquecedor_mca, null);
-    if (hSel == null) { hSel = 0; ctx.pendencia("pisc.seletora.perda", "perda de carga da válvula seletora não publicada (o filtro é medido sem ela: NBR 10339 5.4.4.4.2 NOTA 1) — não somada", "altura manométrica"); }
+    var selModelada = null;
+    if (hSel == null) {
+      /* ⚠ a perda da SELETORA não é publicada (o filtro é medido sem ela: NBR 10339 5.4.4.4.2 NOTA 1). Antes ficava 0 e uma
+         pendência (lado INSEGURO: a bomba saía menor). Critério CONSERVADOR do projetista: o caminho da água dentro da válvula
+         (entra, desce ao filtro, volta, sai) = 2 tês de saída lateral + 2 joelhos de 90° no DN do recalque, com o Leq da tabela
+         de conexões (af.comprimento_equivalente_conexoes). O valor da ficha do modelo comprado entra em perdaSeletora_mca. */
+      var pSel = perdaLinha(ctx, Q, dnR, 0, { te90_saida_lado: 2, joelho_90: 2 }, tAg, "perda da válvula seletora (modelada)");
+      if (pSel.ok) { hSel = pSel.hf; selModelada = { Leq: pSel.Leq, hf: pSel.hf, dn: dnR }; }
+      else { hSel = 0; ctx.pendencia("pisc.seletora.perda", "perda de carga da válvula seletora não publicada (o filtro é medido sem ela: NBR 10339 5.4.4.4.2 NOTA 1) e sem Leq para modelá-la — não somada", "altura manométrica"); }
+    }
     var yCm = num(par.yBomba, null), yAg = g.yAgua;
     /* desnível estático: o circuito é FECHADO (sai e volta à piscina) — só o que fica acima do nível da água (aquecimento solar no telhado) entra */
     var hEst = num(par.hEstatico, 0);
     var amt = hs + hr + num(perdaFiltro, 0) + hSel + num(hAq, 0) + hBocal + hEst;
     amt = amt * (1 + geo(par, "margemAmt"));
-    return { amt: r4(amt), hs: r4(hs), hr: r4(hr), filtro: num(perdaFiltro, 0), seletora: hSel, aquecedor: num(hAq, 0), bocal: r4(hBocal), estatica: hEst, detalhe: det, Ls: Ls, Lr: Lr, dnS: dnS, dnR: dnR, yBomba: yCm, yAgua: yAg, K: Q > 0 ? (amt - hEst) / (Q * Q) : 0 };
+    return { amt: r4(amt), hs: r4(hs), hr: r4(hr), filtro: num(perdaFiltro, 0), seletora: hSel, seletoraModelada: selModelada, aquecedor: num(hAq, 0), bocal: r4(hBocal), estatica: hEst, detalhe: det, Ls: Ls, Lr: Lr, dnS: dnS, dnR: dnR, yBomba: yCm, yAgua: yAg, K: Q > 0 ? (amt - hEst) / (Q * Q) : 0 };
   }
   function estimativaHidro(ctx, g, par, hidro, tAg) {
     var lin = arr(par.linhasHidro), hs = 0, hr = 0, det = [];

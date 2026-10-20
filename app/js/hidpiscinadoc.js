@@ -30,7 +30,7 @@
   function fx(v, c) { if (v == null || !isFinite(v)) return "—"; var m = Math.pow(10, c); return (Math.round(v * m) / m).toFixed(c).replace(".", ","); }   // hid:ok casas decimais (base 10)
   function f2(v) { return fx(v, 2); }
   function f1(v) { return fx(v, 1); }
-  var NOME_SIS = { pisc_succao: "Sucção", pisc_retorno: "Retorno", pisc_hidro: "Hidromassagem", pisc_aquec: "Aquecimento", pisc_dreno: "Dreno e descarte" };
+  var NOME_SIS = { pisc_succao: "Sucção", pisc_retorno: "Retorno", pisc_hidro: "Hidromassagem", pisc_aquec: "Aquecimento", pisc_dreno: "Dreno e descarte", pisc_reposicao: "Reposição de água potável", pluvial: "Saída do descarte (pluvial)", esgoto: "Saída do descarte (esgoto)" };
   var STATUS = { atende: "atende", nao_atende: "NÃO ATENDE", pendente: "pendente" };
   function hoje() { var d = new Date(); return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear(); }   // hid:ok formatação de data
 
@@ -177,7 +177,7 @@
         add("Aquecimento", nome + (prod ? " — " + prod : ""), sin.unidade, aSin ? Math.ceil(area / aSin - 1e-9) : g.n, sin, txt(g.f.inst && g.f.inst.Fonte), "composição por placa de " + (aSin ? f2(aSin) : "—") + " m² 'ou área equivalente': quantidade = área de coletor do cálculo ÷ área da composição");   // hid:ok tolerância de arredondamento
         return;
       }
-      add(/bomba|filtro|casa|quadro/.test(g.f.famId) ? "Equipamentos e casa de máquinas" : "Dispositivos do tanque", nome + (prod ? " — " + prod : ""), "un", g.n, sin, txt(g.f.inst && g.f.inst.Fonte), sin ? "" : "sem composição SINAPI deste produto — cotação do fornecedor");
+      add(/bomba|filtro|casa|quadro|caixa-descarte|poco/.test(g.f.famId) ? "Equipamentos e casa de máquinas" : "Dispositivos do tanque", nome + (prod ? " — " + prod : ""), "un", g.n, sin, txt(g.f.inst && g.f.inst.Fonte), sin ? "" : "sem composição SINAPI deste produto — cotação do fornecedor");
     });
     var q = null; try { q = B && B.qto ? B.qto(estado, avaliarFam) : null; } catch (e) { q = null; out.avisos.push("quantitativo do modelo: " + e.message); }
     var Lvala = 0;
@@ -190,6 +190,11 @@
         add("Conexões", c.nome + " PVC soldável DN " + c.dn + (c.dn2 ? " × " + c.dn2 : "") + " — " + (NOME_SIS[c.sistema] || c.sistema), "un", c.n, c.sinapi && c.sinapi.status === "ok" ? { codigo: c.sinapi.codigo, descricao: c.sinapi.descricao } : null, "modelo (BimInst)", c.sinapi && c.sinapi.status !== "ok" ? c.sinapi.motivo : "");
       });
     }
+    /* a ESPERA da saída da caixa receptora do descarte (rede pluvial ou de esgoto, frente C 19/10/2026): tubo da rede, não de PVC soldável */
+    arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) {
+      if (!pid || String(t.id) !== pid + "-saida-descarte") return;
+      add("Tubulação", "Tubo DN " + t.dn + " — saída da caixa receptora do descarte (espera para a rede " + (t.sistema === "esgoto" ? "de esgoto" : "pluvial") + ")", "m", Math.round(num(t.comprimento, 0) * 100) / 100, null, "modelo (BimInst)", "liga na rede da obra; composição SINAPI pela rede escolhida");   // hid:ok 2 casas
+    });
     /* VALA: os tubos enterrados (fora da casa de máquinas) — largura × profundidade de DESENHO, declaradas */
     var GV = { largura: 0.40, profundidade: 0.60 };   // hid:ok vala de referência (40 × 60 cm): critério do projetista; o volume real é da execução
     var enterr = 0; arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) { if (/^pisc_/.test(t.sistema) && Math.max(t.p1.y, t.p2.y) < num(rede.geometria && rede.geometria.yBorda, 0) && Math.abs(t.p1.y - t.p2.y) < 1e-6) enterr += num(t.comprimento, 0); });   // hid:ok tolerância
@@ -229,7 +234,7 @@
   /* ======================================================= PRANCHAS (formato do js/hidpranchas.js) */
   /* hid:geometria-inicio — DIAGRAMAÇÃO da prancha: mm de papel, escalas candidatas, tamanhos de letra e símbolo. Nenhuma norma. */
   var K = { formato: "A1", escalas: [20, 25, 50, 75, 100, 125, 150, 200], margem: 12, hTitulo: 5, hTexto: 2.5, hRot: 2.0, hTab: 2.2, rDisp: 1.4, tabLin: 4.2,
-            cores: { pisc_succao: "#00838F", pisc_retorno: "#29B6F6", pisc_hidro: "#7E57C2", pisc_aquec: "#EF6C00", pisc_dreno: "#8D6E63" }, pena: 0.35, penaFina: 0.18, isoAng: 30 };
+            cores: { pisc_succao: "#00838F", pisc_retorno: "#29B6F6", pisc_hidro: "#7E57C2", pisc_aquec: "#EF6C00", pisc_dreno: "#8D6E63", pisc_reposicao: "#1565C0" }, pena: 0.35, penaFina: 0.18, isoAng: 30 };
   var SIGLA_DISP = { coadeira: "CO", aspiracao: "AS", retorno: "RE", ralo: "RF", hidro: "HI", succao_hidro: "SH", refletor: "IL" };
   function estiloP() {
     var H = HPR(), A = AP(), E = H && H.estilo ? H.estilo() : (A ? A.estilo() : null); if (!E) return null;
@@ -493,7 +498,18 @@
     return { ok: m.ok && u.ok, memorial: m.ok ? "<section data-piscina=\"memorial\" style=\"page-break-before:always\">" + corpo(m.html) + "</section>" : "", manual: u.ok ? "<section data-piscina=\"manual\" style=\"page-break-before:always\">" + corpo(u.html) + "</section>" : "" };
   }
 
-  var HidPiscinaDoc = { VERSAO: 1, memorial: memorial, manual: manual, quantitativo: quantitativo, planilha: planilha, pranchas: pranchas, secoes: secoes, K: K };
+  /* PROJETO EM UM CLIQUE (frente C, 19/10/2026): memorial + lista de material + pranchas num documento só — o "Traçar
+     automaticamente" e o botão "Projeto da piscina em um clique" abrem este (a planilha .xlsx segue no botão dela) */
+  function pacote(estado, avaliarFam, rede, info, opcoes) {
+    var m = memorial(rede, info); if (!m.ok) return { ok: false, motivo: m.motivo };
+    var I = info || {}, o = opcoes || {}, q = quantitativo(estado, avaliarFam, rede), pr = null;
+    try { pr = pranchas(estado, rede, { obra: o.obra || (I.obra || {}).nome, responsavel: o.responsavel || (I.responsavel || {}).nome, registro: o.registro || (I.responsavel || {}).crea, empresa: o.empresa || (I.empresa || {}).nome }); } catch (e) { pr = { ok: false, avisos: [String(e && e.message || e)] }; }
+    var lista = "<h2>Lista de material</h2>" + tabela(["Grupo", "Descrição", "Un.", "Qtd.", "SINAPI", "Situação"], q.linhas.map(function (l) { return [l.grupo, l.descricao, l.unidade, l.quantidade, l.codigo, l.status]; }), [3]);   // hid:ok índice da coluna numérica
+    var folhas = pr && pr.ok ? pr.folhas.map(function (f) { return "<div style=\"margin:8px 0\">" + f.svg + "</div>"; }).join("") : "<p class=\"pend\">Pranchas não geradas: " + esc(arr(pr && pr.avisos).join("; ")) + "</p>";
+    var html = m.html.replace(/<\/body>/i, "<div style=\"page-break-before:always\">" + lista + "</div><div style=\"page-break-before:always\"><h2>Pranchas</h2>" + folhas + "</div></body>");
+    return { ok: true, titulo: "Projeto da piscina — memorial, lista de material e pranchas", html: html, memorial: m, quantitativo: q, pranchas: pr };
+  }
+  var HidPiscinaDoc = { VERSAO: 1, memorial: memorial, manual: manual, quantitativo: quantitativo, planilha: planilha, pranchas: pranchas, secoes: secoes, pacote: pacote, K: K };
   global.HidPiscinaDoc = HidPiscinaDoc;
   if (typeof module !== "undefined" && module.exports) module.exports = HidPiscinaDoc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

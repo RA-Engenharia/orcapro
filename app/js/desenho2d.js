@@ -46,12 +46,26 @@
   var ESCALAS = [20, 25, 50, 75, 100, 125, 200];
   /* P2-D (js/bimambienteui.js): "Esquema de cores" da vista */
   var ESQUEMAS = { nenhum: "Nenhum", nome: "Por nome", departamento: "Por departamento" };
+  /* CONVENÇÃO DE REFORMA (19/10/2026): opção de ESTILO da vista; o padrão das outras plantas não muda.
+     Cores e traços são os da convenção brasileira de projeto de reforma/ampliação (prefeitura):
+       A CONSTRUIR  — vermelho, com hachura (e preenchimento claro);
+       A DEMOLIR    — amarelo, tracejado;
+       EXISTENTE A MANTER — preto / cinza.
+     As pranchas de arquitetura (js/arqpranchas.js) usam esta MESMA tabela; o teste confere. */
+  var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente" };
+  var CONV_REFORMA = {
+    novo:      { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
+    demolido:  { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
+    existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+  };
 
   function estiloPadrao() {
     return { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo",
              textoCota: 2.5, unidade: "m", casas: 2, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true,
              /* P2-D: ambientes na planta — identificador (nome; número · área) e esquema de cores */
-             identAmbiente: true, esquemaCores: "nenhum" };
+             identAmbiente: true, esquemaCores: "nenhum",
+             /* CONVENÇÃO DE REFORMA (19/10/2026): "reforma" = a construir em vermelho com hachura, a demolir em amarelo tracejado, existente em preto/cinza + legenda */
+             convencao: "padrao" };
   }
   function normEstilo(e) {
     var p = estiloPadrao(), o = {};
@@ -67,6 +81,11 @@
     o.cotas = !!o.cotas; o.cotaParcial = !!o.cotaParcial; o.niveis = !!o.niveis; o.marcasCorte = !!o.marcasCorte; o.titulo = !!o.titulo;
     o.identAmbiente = o.identAmbiente !== false && o.identAmbiente !== "false";
     if (!ESQUEMAS[o.esquemaCores]) o.esquemaCores = "nenhum";
+    if (!CONVENCOES[o.convencao]) o.convencao = "padrao";
+    /* ⚠ o padrão NÃO é gravado: estilo salvo antes da convenção (templates .optpl, vistas por obra) tem de
+       normalizar igual a antes — com o campo sempre presente, os templates RA deixaram de bater consigo mesmos
+       (test-bim-b6 [8], 20/10/2026). Quem lê usa `e.convencao === "reforma"` / `e.convencao || "padrao"`. */
+    if (o.convencao === "padrao") delete o.convencao;
     return o;
   }
 
@@ -347,7 +366,8 @@
     var cx = caixa(d) || { x0: 0, y0: 0, x1: 1, y1: 1 };
     var cotas = cotasDe(d, e);
     var m = 32 * k;   /* margem de papel para cotas, níveis e marcas */
-    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: (cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) };
+    var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
+    var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
     /* vínculo CAD (DWG/DXF): fica FORA da caixa das cotas (cota mede o modelo),
        mas o papel cresce para ele caber inteiro */
     var cad = d.cad || [], cadPath = "", cadTx = "";
@@ -397,7 +417,9 @@
     p.push('<svg xmlns="http://www.w3.org/2000/svg" class="d2-svg" data-d2-tipo="' + esc(d.tipo) + '" viewBox="' + n4(vb.x) + " " + n4(vb.y) + " " + n4(vb.w) + " " + n4(vb.h) + '" preserveAspectRatio="xMidYMid meet"' + (p6 ? ' data-d2-p6="1"' : "") + ">");
     p.push("<defs>" +
       '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
-      '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' + (p6 ? p6.defs : "") + "</defs>");
+      '<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
+      (conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+      (p6 ? p6.defs : "") + "</defs>");
     p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
     /* 0) vínculo CAD — por baixo de tudo, em meio-tom */
     if (cadPath) p.push('<g class="d2-cad"><path d="' + cadPath + '" class="d2-cad-l" stroke-width="' + n4(pena.vista * 0.8) + '" ' + NS + "/>" + cadTx + "</g>");
@@ -422,12 +444,22 @@
       if (c.fase) { var q = fase[c.fase] || (fase[c.fase] = { f: "", a: "" }); if (c.fechado) q.f += caminho(c.pts, true); else q.a += caminho(c.pts, false); return; }   /* P10 */
       if (c.fechado) fechados += caminho(c.pts, true, c.arcos); else abertos += caminho(c.pts, false, c.arcos);   /* CURVA: c.arcos */
     });
-    if (fechados) p.push('<path d="' + fechados + '" fill="' + fill + '" fill-rule="evenodd" class="d2-corte" stroke-width="' + pena.corte + '" ' + NS + "/>");
-    if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte" stroke-width="' + pena.corte + '" ' + NS + "/>");
+    /* CONVENÇÃO DE REFORMA: o que não tem fase marcada é a CONSTRUIR (a fase de agora) — vermelho com hachura; style inline vence a classe */
+    var stN = conv ? ' style="stroke:' + conv.novo.cor + '"' : "";
+    if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+    if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+    }
+    /* CONVENÇÃO DE REFORMA com os estilos de objeto (P6): o que é a construir é repintado em vermelho com hachura por cima do corpo */
+    if (conv && p6) {
+      var fN = "", aN = "";
+      (d.cortes || []).forEach(function (c) { if (c.fase) return; if (c.fechado) fN += caminho(c.pts, true, c.arcos); else aN += caminho(c.pts, false, c.arcos); });
+      if (fN) p.push('<path d="' + fN + '" fill="url(#d2-hach-n)" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
+      if (aN) p.push('<path d="' + aN + '" fill="none" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
     }
     /* 2a) P10 (js/bimfases.js): GRÁFICOS DE FASE — o existente em meio-tom (cinza, preenchimento claro),
        o demolido TRACEJADO e sem preenchimento, o temporário em traço-ponto */
-    p.push(svgFases(fase, d.linhasFase, pena, k));
+    p.push(svgFases(fase, d.linhasFase, pena, k, conv));
+    if (conv) p.push(svgLegendaReforma(conv, vb, k, pena));
     /* 2a') PORTA (js/simboloporta.js): a folha aberta a 90° (pena média) e o arco do giro (pena fina) */
     if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
     /* 2b) INSTALAÇÕES (B5, js/biminst.js planta): o eixo de cada trecho na cor do
@@ -488,19 +520,37 @@
     if (g.tr != null) return g.tr;
     return ' stroke-dasharray="' + g.px + '" data-traco="' + g.mm.map(function (v) { return n4(v * (k > 0 ? k : 0.05)); }).join(" ") + '"';
   }
-  function svgFases(cortesF, linhasF, pena, k) {
+  function svgFases(cortesF, linhasF, pena, k, conv) {
     var s = "";
+    /* convenção de reforma: existente preto/cinza, demolido amarelo TRACEJADO (1,5 / 1 mm de papel), temporário igual ao demolido */
+    function gDe(st) {
+      if (!conv) return FASE_SVG[st] || FASE_SVG.existente;
+      var c = conv[st === "temporario" ? "demolido" : st] || conv.existente;
+      return c.tracejado ? { cor: c.cor, fill: c.fill, px: "6 4", mm: c.tracejado } : { cor: c.cor, fill: c.fill, tr: "" };
+    }
     Object.keys(linhasF || {}).forEach(function (st) {
-      var g = FASE_SVG[st] || FASE_SVG.existente, l = "";
+      var g = gDe(st), l = "";
       (linhasF[st] || []).forEach(function (q) { l += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
-      if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
+      if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + (conv ? ' style="stroke:' + g.cor + '"' : "") + trFase(g, k) + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
     });
     Object.keys(cortesF || {}).forEach(function (st) {
-      var g = FASE_SVG[st] || FASE_SVG.existente, q = cortesF[st];
-      if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
-      if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+      var g = gDe(st), q = cortesF[st], sty = conv ? ' style="stroke:' + g.cor + '"' : "";
+      if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + sty + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+      if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + sty + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
     });
     return s;
+  }
+  /* LEGENDA AUTOMÁTICA da convenção (embaixo do desenho, em mm de papel na escala da vista) */
+  function svgLegendaReforma(conv, vb, k, pena) {
+    var x0 = vb.x + 4 * k, y0 = vb.y + vb.h - 19 * k, g = '<g class="d2-legenda-reforma" data-d2-conv="reforma">';
+    g += txt(x0, y0, 2.6 * k, "LEGENDA", "d2-leg-tit");
+    [["novo", "A CONSTRUIR"], ["demolido", "A DEMOLIR"], ["existente", "EXISTENTE A MANTER"]].forEach(function (it, i) {
+      var c = conv[it[0]], y = y0 + 3 * k + i * 5.4 * k, w = 14 * k, h = 3.6 * k;
+      g += '<rect x="' + n4(x0) + '" y="' + n4(y) + '" width="' + n4(w) + '" height="' + n4(h) + '" fill="' + (it[0] === "novo" ? "url(#d2-hach-n)" : c.fill) + '" stroke="' + c.cor + '" style="stroke:' + c.cor + '"' +
+        (c.tracejado ? tracoK(c.tracejado, k) : "") + ' stroke-width="' + pena.vista + '" ' + NS + ' data-d2-conv-item="' + it[0] + '"/>';
+      g += txt(x0 + w + 3 * k, y + h * 0.75, 2.4 * k, esc(it[1]), "d2-leg-tx");
+    });
+    return g + "</g>";
   }
 
   /* ---------------------------------------------------- PORTAS
@@ -1009,7 +1059,7 @@
 
   var Desenho2D = {
     FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tracoPx, tracoAttr: tracoAttr, tracoK: tracoK,
-    PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
+    PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
     estiloPadrao: estiloPadrao, normEstilo: normEstilo,
     fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
     caixa: caixa, cotas: cotasDe, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,

@@ -358,6 +358,8 @@
   <!-- B3: desenho de precisão do modelador (motor puro + tela; só com a prévia do modelador) -->
   <script src="js/bimprecisao.js"></script>
   <script src="js/bimprecisaoui.js"></script>
+  <!-- ACABAMENTO VISUAL (19/10/2026): catálogo de cor e textura por nome de acabamento (fachada e pisos); lido pelo js/bimpintar.js e pelo js/bim.js -->
+  <script src="js/bimacabvis.js"></script>
   <!-- P4: pintar e dividir face (motor puro; aplica as ops pintar/removerPintura/dividirFace no replay do js/bimedit.js) -->
   <script src="js/bimpintar.js"></script>
   <!-- EMBREVE (09/10/2026): plano de trabalho e graute/armadura da alvenaria estrutural (motores puros; o graute é extensão do replay do js/bimedit.js) e a tela dos três comandos que saíram do "em breve" -->
@@ -442,6 +444,10 @@
   <script src="js/bimterreno.js"></script>
   <!-- P3: telhado (+ bordas) e fundação (motores puros; aplicam as ops telhado/borda/fundacao no replay do js/bimedit.js) e o escritor IFC deles -->
   <script src="js/bimtelhado.js"></script>
+  <!-- COBERTURA COMPLETA (frente cob): platibanda, rufos, calha embutida, condutores e NBR 10844; estrutura do telhado (metálica e de madeira); forro de drywall, sanca e luminárias (motores puros; registram as ops no replay do js/bimedit.js) -->
+  <script src="js/bimcobertura.js"></script>
+  <script src="js/bimtelhadoestrut.js"></script>
+  <script src="js/bimforrodrywall.js"></script>
   <script src="js/bimfundacao.js"></script>
   <script src="js/ifcp3.js"></script>
   <!-- P2-C: acabamento por ambiente (motor puro: piso, rodapé sem as portas, parede por face sem os vãos, teto) -->
@@ -458,7 +464,13 @@
   <script src="js/bimgrupos.js"></script>
   <script src="js/bimopcoes.js"></script>
   <script src="js/bimgerenciar.js"></script>
+  <script src="js/familiaspiscina.js"></script>   <!-- piscina de fibra, casa de máquinas e pele de vidro recolhível (lidas pelo familiasra.js) -->
   <script src="js/familiasra.js"></script>
+  <!-- MOBILIÁRIO E PAISAGISMO (19/10/2026): ferramentas de geometria, biblioteca de mobiliário, cozinha/banho/lazer e paisagismo (famílias de geometria "mob") -->
+  <script src="js/mobgeo.js"></script>
+  <script src="js/familiasmob.js"></script>
+  <script src="js/familiasmobcoz.js"></script>
+  <script src="js/familiaspais.js"></script>
   <!-- CARPINTARIA & MARCENARIA (09/10/2026): módulos em chapa, plano de corte, arquivos para a empresa de corte (motores puros) -->
   <script src="js/marcenaria.js"></script>
   <script src="js/marcenariasaida.js"></script>
@@ -765,6 +777,8 @@
   <script src="js/metalvigaspilaresui.js"></script>
   <!-- LIGAÇÃO AO LANÇAR: a tela (configuração por obra, pergunta e painel do balanço, quadro das ligações ajustadas pelo cálculo) -->
   <script src="js/metalligautoui.js"></script>
+  <!-- COBERTURA COMPLETA: a fita (Cobertura completa, Forro completo) e o 3D da platibanda, calha, condutores e sanca -->
+  <script src="js/bimcoberturaui.js"></script>
   <script src="js/bimp3ui.js"></script>
   <!-- CARPINTARIA & MARCENARIA: a tela (aba da disciplina; só com o modelador) -->
   <script src="js/marcenariaui.js"></script>
@@ -831,6 +845,15 @@
   <script src="js/bimdxf.js"></script>
   <script src="js/blocokdxf.js"></script>
   <script src="js/bimfolhaui.js"></script>
+  <script src="js/arqgeo.js"></script>   <!-- PRANCHAS DE ARQUITETURA (reforma/ampliação): geometria plana (união exata de áreas) -->
+  <script src="js/arqmodelo.js"></script>   <!-- … o modelo lido: paredes, lajes, ambientes, vãos, telhado, forro, terreno, por fase -->
+  <script src="js/arqindices.js"></script>   <!-- … índices urbanísticos: ocupação, permeabilidade, aproveitamento × limites do município -->
+  <script src="js/arqdesenho.js"></script>   <!-- … primitivas de desenho e a conferência de sobreposição -->
+  <script src="js/arqplantas.js"></script>   <!-- … situação, plantas, cobertura, forro, paginação, humanizada -->
+  <script src="js/arqcortes.js"></script>   <!-- … cortes e fachadas -->
+  <script src="js/arqquadros.js"></script>   <!-- … quadros de áreas, índices, recuos, esquadrias, acabamentos -->
+  <script src="js/arqpranchas.js"></script>   <!-- … o gerador da série ARQ-01…11 (PDF/DXF) -->
+  <script src="js/arqpranchasui.js"></script>   <!-- … a tela "Gerar pranchas de arquitetura" -->
   <!-- P10: fases, grupos, opções de projeto e utilidades na tela (fita, diálogos, gráficos de fase no 3D) — só com a prévia do modelador -->
   <script src="js/bimp10ui.js"></script>
   <script src="js/iafamilia.js"></script>

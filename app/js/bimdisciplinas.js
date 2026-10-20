@@ -131,6 +131,16 @@
     "p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp"
   ]);
   def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
+  /* COBERTURA COMPLETA e TELHADO PARAMÉTRICO (Casa 487 + noite de 19→20/10/2026): o telhado é civil; a estrutura dele é
+     também da madeira (marcenaria) e da metálica; a calha/descida também da hidráulica (pluvial); a luminária do forro,
+     da elétrica */
+  def(["civil", "estrutura", "marcenaria", "metalica"], ["cob-estrutura", "cob-estr-auto", "cob-estr-aco", "cob-estr-madeira", "cob-estr-verificar",
+    "cob-forro-estrutura", "telhado-modelo", "tel-mod-auto", "tel-mod-mad-tesoura", "tel-mod-mad-terca", "tel-mod-mad-terca-direta",
+    "tel-mod-mad-onduline", "tel-mod-mad-shingle", "tel-mod-aco-trapezoidal", "tel-mod-aco-sanduiche", "tel-mod-nenhum",
+    "tel-mod-aco-viga", "tel-mod-mad-tesoura-terca"]);
+  def("civil", ["cob-telha", "cob-platibanda", "cob-sanca", "cob-quant"]);
+  def(["civil", "hidraulica"], ["cob-calha", "cob-calha-calc", "cob-pluvial"]);
+  def(["civil", "eletrica"], ["cob-luminarias"]);
   def(["civil", "metalica"], ["guarda-corpo"]);
   /* furo na laje: shaft de tubo e de eletroduto também */
   def(["civil", "estrutura", "hidraulica", "eletrica"], ["furo-laje"]);

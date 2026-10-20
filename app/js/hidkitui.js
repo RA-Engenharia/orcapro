@@ -406,7 +406,12 @@
       var K = dep("HidKit"), A = dep("HidAmbiente"), BE = dep("BimEdit"), BIi = dep("BimInst"), c = U._ctx();
       if (!K || !A || !BE || !BIi || !c) return { ok: false, erro: "Os motores do projeto inteligente não carregaram (HidKit, HidAmbiente, BimEdit)." };
       var uids = opcoes.uids != null ? opcoes.uids : (c.b.selecao ? arr(c.b.selecao().uids) : []);
-      var esc0 = U.escopo(c, uids); if (esc0.erro) return { ok: false, erro: esc0.erro, escopo: esc0 };
+      var esc0 = U.escopo(c, uids), pisc = U._piscinas(c, uids);
+      /* PISCINA NO MESMO CLIQUE (frente C, 19/10/2026 — pedido do Rogério: "a piscina também tem que gerar o projeto num
+         clique"): a piscina do modelo (a op hidPiscina, ou o volume "Piscina" ainda não reconhecido) entra no plano. Só com
+         piscina, o "Nenhum aparelho sanitário" não barra mais: o plano é o da piscina */
+      if (esc0.erro && !pisc.length) return { ok: false, erro: esc0.erro, escopo: esc0 };
+      if (esc0.erro) esc0 = { tipo: "piscina", aparelhos: [], ambientes: [], erro: null };
       var est = c.estado, porId = {}; arr(est.familias).forEach(function (f) { porId[String(f.id)] = f; });
       var par = U.parametros(); if (opcoes.opcaoRota != null) par.opcaoRota = opcoes.opcaoRota;
       var avisos = [], pendencias = [], ops = [];
@@ -435,7 +440,7 @@
       /* (b0) A REDE EXTERNA pelo padrão (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md — correção do Rogério, 18/10/2026: "caixas de
          passagem, de inspeção, tudo é feito do lado de fora"): sem linha da rede e sem caixa de inspeção do usuário, o eixo do
          coletor sai pelo recuo, paralelo às paredes externas, até a frente — e a rede liga caixa a caixa (js/hidrede.js) */
-      var HIm = dep("HidImplantacao"), rAuto = HIm && HIm.redeProposta ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame }) : null;
+      var HIm = dep("HidImplantacao"), rAuto = HIm && HIm.redeProposta && esc0.aparelhos.length ? HIm.redeProposta(est2, esc0.aparelhos.map(function (id) { return porId[id]; }).filter(Boolean), { raio: ((BIi.PECAS || {}).caixa_inspecao || {}).r || 0, parametros: par, baldrame: U.modoBaldrame }) : null;
       if (rAuto && rAuto.op) {
         ops.push(rAuto.op); todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
         avisos.push({ texto: "Rede externa proposta: " + rAuto.motivo + ". As caixas de inspeção ficam na área externa e a rede liga caixa a caixa até a saída.", elementos: [rAuto.op.id] });
@@ -455,6 +460,18 @@
       var velhas = ambs.some(function (R) { return R.caixaInspecaoUsuario; }) ? arr(est2.hidRedes).filter(function (r) { return /^rede-auto/.test(String(r.id)); }) : [];
       if (velhas.length) {
         velhas.forEach(function (r) { ops.push({ op: "apagar", id: r.id }); });
+        /* ⚠ (frente A, 19/10/2026) o RAMAL da rede proposta que ia da espera do ambiente até a caixa que agora recebe o ambiente
+           direto (rede-auto-r1, -r1v…) ficava no modelo: tubo duplicado ao lado do novo, com a ponta da espera SOLTA (o novo ramal
+           já não passa nela). Sai no mesmo lote — a saída da caixa para a rua (-saida) e as caixas ficam */
+        var tiraR = {}, cisU = {}; ambs.forEach(function (R) { if (R.caixaInspecaoUsuario) cisU[String(R.caixaInspecaoUsuario)] = 1; });
+        var pcsU = arr(est2.instalacoes && est2.instalacoes.pecas).filter(function (k) { return cisU[String(k.id)]; }), capCI = num0(((BIi.PECAS || {}).caixa_inspecao || {}).captura) || 0.3;   // hid:ok captura de reserva da caixa de inspeção (m)
+        arr(est2.instalacoes && est2.instalacoes.trechos).forEach(function (t) {
+          if (t.sistema !== "esgoto" || !/^rede-auto.*-r\d+[a-z]?$/.test(String(t.id))) return;
+          if (pcsU.some(function (k) { return Math.hypot(t.p2.x - k.x, t.p2.z - k.z) <= capCI; })) { ops.push({ op: "apagar", id: t.id }); tiraR[String(t.id)] = 1; }
+        });
+        /* ⚠ (revisão adversarial, 20/10/2026) e a DESCIDA na espera desse ramal (o id dele + "v", js/hidrede.js — baldrame por baixo ou a
+           caixa funda): ficava no modelo, órfã, com as duas pontas soltas, e o cartão do Traçar não dizia Pronto */
+        arr(est2.instalacoes && est2.instalacoes.trechos).forEach(function (t) { var idT = String(t.id); if (t.sistema === "esgoto" && !tiraR[idT] && /v$/.test(idT) && tiraR[idT.slice(0, -1)]) ops.push({ op: "apagar", id: idT }); });
         todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
         avisos.push({ texto: "O esgoto foi para a caixa de inspeção que você pôs: tirei a linha da rede proposta antes (" + velhas.map(function (r) { return r.id; }).join(", ") + ").", elementos: velhas.map(function (r) { return r.id; }) });
       }
@@ -462,6 +479,23 @@
       var redes = [], espera = ambs.some(function (R) { return R.decisoes.some(function (d) { return d.id === "amb.espera_esgoto"; }); });
       if (arr(est2.hidRedes).length && ambs.some(function (R) { return R.ops.length; })) { var RR = U._redes(c.ops, est2, c.avaliarFam, ops); RR.ops.forEach(function (o) { ops.push(o); }); redes = RR.resultados; }
       else if (espera) avisos.push({ texto: "Sem linha da rede: o esgoto ficou em ESPERA fora da obra. Desenhe a linha da rede para levar até a caixa de inspeção (Tubo de esgoto no sentido da saída → \"Usar o traço selecionado como linha da rede\").", elementos: [], acao: "rede" });
+      /* (e) FRENTE B (19/10/2026, D-04): a espera de água de um kit ANTIGO (antes de 19/10) estava desenhada contra a água — a ponta
+         aberta em p2. No mesmo lote ela é redesenhada no sentido do fluxo (p1 = ponta aberta), com as marcas do kit (não refaz o kit
+         nem perde o que a pessoa ajustou nele). Trecho já dividido por acessório fica como está. */
+      if (ops.length) {
+        var ultOp = {}, comAc = {};
+        K.achatar(c.ops.concat(ops)).forEach(function (o) { if (!o || o.id == null) return; ultOp[o.id] = o; if (o.op === "acessorio" && o.trecho != null) comAc[o.trecho] = 1; });
+        Object.keys(ultOp).forEach(function (id) {
+          var o = ultOp[id];
+          if (o.op !== "trecho" || o.sistema !== "agua_fria" || o.kit == null || esc0.aparelhos.indexOf(String(o.kit)) < 0 || o.continua !== "p2" || comAc[id]) return;
+          if (o.kitParte !== "chuveiro" && o.kitParte !== "espera") return;
+          var n = JSON.parse(JSON.stringify(o)), q = n.p1; n.p1 = n.p2; n.p2 = q; n.continua = "p1"; ops.push(n);
+        });
+      }
+      /* (f) a PISCINA: o lançamento completo do js/hidpiscinarede.js (casa de máquinas, dispositivos, sucção, retorno, descarte
+         na caixa receptora, drenagem da casa, reposição com descarga livre) no MESMO lote — depois da casa, para a vala
+         desviar dos tubos já traçados */
+      var piscinas = U._lancarPiscinas(c, pisc, ops, avisos, pendencias);
       if (!ops.length) return { ok: false, erro: ambs.length && pendencias.length ? "Não consegui traçar: " + pendencias.map(function (p) { return p.texto; }).slice(0, 3).join(" · ") : "Nada a traçar: os aparelhos selecionados já estão ligados.", escopo: esc0, pendencias: pendencias, avisos: avisos };   // hid:ok até 3 motivos na mensagem
       var resumo = U._resumo(c, ops);
       /* ⚠ 0 tubo = NADA foi ligado (ao vivo, 18/10/2026: o cartão dizia "Tudo ligado" com 0 tubo): a prévia não abre como
@@ -477,7 +511,48 @@
       var HCr = global.HidCriterios, crit = null;
       if (HCr) { try { crit = HCr.auditar(HCr.doEstado(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])), c.avaliarFam, { escopo: resumo.ids })); } catch (eC) { crit = null; } }
       ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (!/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto)) avisos.push({ texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }); }); });
-      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, opsNaProposta: c.ops.length };
+      resumo.piscinas = piscinas.length;
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: c.ops.length };
+    },
+    /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);
+       com seleção, só a selecionada (a op, a casa de máquinas dela ou o volume) */
+    _piscinas: function (c, uids) {
+      var HP = dep("HidPiscina"), HPR = dep("HidPiscinaRede"), est = c.estado, out = []; if (!HP || !HPR) return out;
+      var ids = arr(uids).map(function (u) { return String(u).replace(/^edit:/, ""); }), todos = !ids.length;
+      var UI = dep("HidPiscinaUI"), par = UI && UI.params ? JSON.parse(JSON.stringify(UI.params)) : null;
+      arr(est.hidPiscinas).forEach(function (p) {
+        if (todos || ids.indexOf(String(p.id)) >= 0 || ids.indexOf(String(p.id) + "-cm") >= 0 || (p.ref && ids.indexOf(String(p.ref.id)) >= 0)) out.push({ id: String(p.id), op: par ? { op: "hidPiscina", id: p.id, params: par } : null, nova: false });
+      });
+      var rec = null; try { rec = HP.reconhecer(est, { elementosIfc: UI && UI._elementosIfc ? UI._elementosIfc() : [] }); } catch (e) { rec = null; }
+      var n = arr(est.hidPiscinas).length;
+      arr(rec && rec.candidatos).forEach(function (cd) {
+        if (!cd || !cd.ref || !(todos || ids.indexOf(String(cd.ref.id)) >= 0)) return;
+        /* ⚠ revisor 19/10/2026: só o VOLUME com nome de piscina (confiança alta) entra sozinho no clique — recorte, IFC e
+           parede/laje com "piscina" no nome (ex.: "Parede da piscina") pedem a confirmação no bloco Piscina; senão o TA da casa
+           lançava uma piscina na planta de uma parede */
+        if (cd.origem !== "volume" || cd.confianca !== "alta") return;
+        if (arr(est.hidPiscinas).some(function (p) { return p.ref && String(p.ref.id) === String(cd.ref.id); })) return;
+        var pid = "pisc" + (++n);
+        out.push({ id: pid, op: { op: "hidPiscina", id: pid, nome: cd.nome || "Piscina", ref: cd.ref, params: par || {} }, nova: true });
+      });
+      return out;
+    },
+    /* lança cada piscina sobre o plano (puro: devolve o que entra no lote) */
+    _lancarPiscinas: function (c, pisc, ops, avisos, pendencias) {
+      var HPR = dep("HidPiscinaRede"), BE = dep("BimEdit"), out = []; if (!HPR || !BE) return out;
+      pisc.forEach(function (p) {
+        var antes = p.op ? [p.op] : [], todosP = c.ops.concat([{ op: "lote", id: "previa", ops: ops.concat(antes) }]), R = null;
+        try { R = HPR.gerar({ estado: BE.aplicar(todosP), avaliarFam: c.avaliarFam, ops: todosP, piscina: p.id }); } catch (e) { R = { ok: false, pendencias: [{ motivo: "erro no lançamento: " + (e && e.message ? e.message : e) }] }; }
+        if (!R || !R.ok) { pendencias.push({ texto: "Piscina " + p.id + ": " + ((arr(R && R.pendencias)[0] || {}).motivo || "não foi possível lançar"), elementos: [p.id] }); return; }
+        antes.forEach(function (o) { ops.push(o); });
+        R.ops.forEach(function (o) { ops.push(o); });
+        var o1 = R.ops.filter(function (o) { return o.op === "familia" && /-cm$/.test(o.id); })[0];
+        if (o1) o1.piscInfo = { id: p.id, cm: { x: o1.x, z: o1.z }, status: R.dim && R.dim.status, avisos: R.avisos.length, pendencias: R.pendencias.length };
+        arr(R.avisos).forEach(function (a) { avisos.push({ texto: "Piscina " + p.id + ": " + a.texto, elementos: [p.id + "-cm"] }); });
+        arr(R.pendencias).forEach(function (q) { pendencias.push({ texto: "Piscina " + p.id + ": " + (q.motivo || q.texto), elementos: [p.id] }); });
+        out.push({ id: p.id, nova: p.nova, rede: R, cm: o1 ? { x: o1.x, z: o1.z } : null });
+      });
+      return out;
     },
     /* a pendência do motor em palavra de obra (o que falta e onde mexer) */
     _textoPend: function (p) {
@@ -500,8 +575,17 @@
         var antes = {}; BIi.verificar(c.estado, c.avaliarFam).itens.forEach(function (i) { if (i.tipo === "ponta") antes[i.texto] = (antes[i.texto] || 0) + 1; });
         BIi.verificar(fim, c.avaliarFam).itens.forEach(function (i) { if (i.tipo !== "ponta") return; if (antes[i.texto]) { antes[i.texto]--; return; } pontas.push(i.texto); });
       } catch (e2) {}
+      /* NENHUMA PEÇA DESCONECTADA (frente A, 19/10/2026): as pontas soltas novas pelo verificador de conectividade (a "continua"
+         que não é espera permitida também é solta) — o cartão só diz "Pronto" com zero, e cada uma tem Mostrar no 3D */
+      var soltas = [];
+      try {
+        if (BIi.conectividade) {
+          var jaAntes = {}; BIi.conectividade(c.estado, c.avaliarFam).soltas.forEach(function (q) { jaAntes[q.trecho + "|" + (q.ponta || "") + "|" + q.x + "|" + q.z] = 1; });
+          BIi.conectividade(fim, c.avaliarFam).soltas.forEach(function (q) { if (!jaAntes[q.trecho + "|" + (q.ponta || "") + "|" + q.x + "|" + q.z]) soltas.push(q); });
+        }
+      } catch (e3) { soltas = []; }
       var pecas = arr(fim.instalacoes && fim.instalacoes.pecas).filter(function (k) { return ids[String(k.id)]; }).map(function (k) { return k.peca; });
-      return { tubos: trs.length, metros: Math.round(metros * 100) / 100, conexoes: nC, dns: dns, pecas: pecas, pontasNovas: pontas, ids: Object.keys(ids) };   // hid:ok arredondamento a cm
+      return { tubos: trs.length, metros: Math.round(metros * 100) / 100, conexoes: nC, dns: dns, pecas: pecas, pontasNovas: pontas, soltas: soltas, ids: Object.keys(ids) };   // hid:ok arredondamento a cm
     },
     /* ---------------- a tela da prévia: card flutuante + prévia translúcida no 3D/planta; Tab alterna; Enter aplica; Esc cancela */
     tracarAuto: function (opcoes) {
@@ -542,6 +626,9 @@
       var ok = U._gravar(c, P.ops, "hidtracar");
       U._plano = null;
       U.ultimo = { ok: ok, resumo: { kits: P.kits, removidos: [], ambientes: P.ambientes, redes: P.redes }, quando: new Date().getTime(), tracado: P.resumo, criterios: P.criterios || null };
+      /* a PISCINA no mesmo clique: o bloco Piscina passa a mostrar este lançamento (sem relançar: a casa de máquinas fica
+         "aceita" onde o plano pôs) e o documento único (memorial + lista de material + pranchas) abre junto */
+      if (ok && arr(P.piscinas).length) { try { var PU = dep("HidPiscinaUI"); if (PU && PU.aposTracar) PU.aposTracar(P.piscinas); } catch (eP) {} }
       /* CRITÉRIO DE PROJETISTA depois do traçado: o painel Instalações já traz a lista do modelo inteiro (Mostrar no 3D / Corrigir) */
       try { var BUi = global.BimInstUI, c3 = U._ctx(); if (ok && BUi && BUi.criterios && c3) BUi._crit = BUi.criterios(c3.estado, c3.avaliarFam); } catch (eCr) {}
       status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
@@ -566,6 +653,15 @@
       try { if (b && b.selecionar) b.selecionar(uids); } catch (e1) {}
       try { if (b && b.enquadrarUids) b.enquadrarUids(uids); } catch (e2) {}
       status(a.titulo + ": " + a.texto);
+      return true;
+    },
+    /* Mostrar no 3D a ponta solta da prévia (componente de problema, js/problemacard.js, quando carregado) */
+    soltaMostrar: function (i) {
+      var P = U._plano, q = P && P.resumo && arr(P.resumo.soltas)[i], b = global.BIM, PC = global.ProblemaCard; if (!q) return false;
+      var feito = false;
+      try { if (PC && PC.mostrarNo3D) { PC.mostrarNo3D([q.trecho]); feito = true; } } catch (e0) {}
+      if (!feito) { var uids = ["edit:" + q.trecho]; try { if (b && b.selecionar) b.selecionar(uids); } catch (e1) {} try { if (b && b.enquadrarUids) b.enquadrarUids(uids); } catch (e2) {} }
+      status("Ponta solta: " + q.trecho + (q.continua ? " (marcada como espera, mas não é espera permitida)" : ""));
       return true;
     },
     cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; return true; },
@@ -607,7 +703,10 @@
       h += '<ul class="hidtr-dn">' + Object.keys(R.dns).map(function (k) { return "<li>" + esc(NOMES[k] || k) + ": DN " + R.dns[k].join(", ") + "</li>"; }).join("") + "</ul>";
       if (R.reaproveitadas.length) h += '<p class="hidtr-ok" data-hid-tr-reaproveita>Aproveitado do que você já pôs: ' + R.reaproveitadas.map(function (x) { return esc(x.id) + " (" + esc(x.papel) + ")"; }).join("; ") + ".</p>";
       if (R.caixasNovas.length) h += '<p class="muted">Caixa sifonada nova: ' + esc(R.caixasNovas.join(", ")) + ".</p>";
-      h += '<p class="' + (R.pontasNovas.length ? "hidtr-erro" : "hidtr-ok") + '" data-hid-tr-pontas="' + R.pontasNovas.length + '">' + (R.pontasNovas.length ? R.pontasNovas.length + " ponta(s) solta(s) — veja os avisos." : "Tudo ligado: nenhuma ponta solta.") + "</p>";
+      /* "Pronto" SÓ com zero pontas soltas (verificador de conectividade); senão a lista de onde estão, com Mostrar no 3D */
+      var nS = Math.max(R.pontasNovas.length, arr(R.soltas).length);
+      h += '<p class="' + (nS ? "hidtr-erro" : "hidtr-ok") + '" data-hid-tr-pontas="' + nS + '">' + (nS ? nS + " ponta(s) solta(s) — o traçado NÃO está pronto:" : "Pronto: nenhuma ponta solta.") + "</p>";
+      if (arr(R.soltas).length) h += '<ul class="hidtr-soltas" data-hid-tr-soltas>' + R.soltas.slice(0, U.MAX_AVISOS * 2).map(function (q, i) { return '<li class="hid-pend">' + esc(q.trecho + " (" + (NOMES[q.sistema] || q.sistema || "") + ") em " + [q.x, q.y, q.z].map(function (v) { return String(Math.round(num0(v) * 100) / 100).replace(".", ","); }).join("; ") + (q.continua ? " — marcada como espera, mas não é espera permitida" : "")) + ' <button type="button" class="btn sm ghost" data-hid-tr="solta-ver" data-n="' + i + '">Mostrar no 3D</button></li>'; }).join("") + "</ul>";   // hid:ok arredondamento a cm
       /* a nota do critério de projetista e os apontamentos (proibido primeiro), com Mostrar */
       if (P.criterios) {
         var Q = P.criterios, rotG = { dura: "PROIBIDO", alerta: "Alerta", sugestao: "Sugestão" };
@@ -636,7 +735,8 @@
           var b = ev.target && ev.target.closest ? ev.target.closest("[data-hid-tr]") : null; if (!b) return;
           var a = b.getAttribute("data-hid-tr");
           if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
-          else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
+          else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n")));
+          else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
         });
         d.body.appendChild(el);
         if (!d.getElementById("hid-tracar-css")) {

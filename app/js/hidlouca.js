@@ -796,9 +796,11 @@
   /* ---------- válvula de descarga: corpo no interior da parede, acabamento e botão ---------- */
   function geoValvula(P, q) {
     var W = P.W, H = P.H, Pp = P.P, partes = [], cp = parte("corpo", "Corpo (dentro da parede)", LATAO), ac = parte("acabamento", "Acabamento e botão", CROMO);
-    torno(cp.m, [[0.028, 0], [0.028, H * 0.9], [0.02, H]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 1, 0] });
+    /* o corpo desce 0,4 H abaixo da entrada: a SAÍDA para a bacia (conector "descarga", js/hidfamilias.js — D-02, 19/10/2026) fica
+       na base do volume, com a mesma altura total H */
+    torno(cp.m, [[0.028, -H * 0.4], [0.028, H * 0.5], [0.02, H * 0.6]], q.n, { c: [0, 0, -Pp * 0.55], eixo: [0, 1, 0] });
     torno(cp.m, [[0.012, 0], [0.012, Pp * 0.55]], q.n, { c: [0, 0.02, -Pp * 0.55], eixo: [0, 0, 1] });
-    var yc = H * 0.6;
+    var yc = H * 0.2;
     caixaRz(ac.m, { x0: -W / 2, x1: W / 2, y0: yc - H * 0.3, y1: yc + H * 0.3, z0: 0, z1: 0.008, r: 0.003, rad: W * 0.22 }, q);
     torno(ac.m, [[W * 0.24, 0], [W * 0.24, 0.006], [W * 0.22, 0.012], [W * 0.15, 0.016], [0, 0.017]], q.N, { c: [0, yc, 0.008], eixo: [0, 0, 1] });
     partes.push(cp, ac);

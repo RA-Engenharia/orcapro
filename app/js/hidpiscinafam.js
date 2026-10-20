@@ -69,7 +69,12 @@
     skimmer: { Largura: 0.30, Profundidade: 0.45, Altura: 0.55, Boca: 0.15, Tampa: 0.20, DN: 50 },
     ralo: { Grelha: 0.22, Altura_total: 0.15, Altura_corpo: 0.12, DN: 50 },
     quadro: [0.40, 0.15, 0.50], bombaCalor: [0.95, 0.40, 0.65], coletor: [3.0, 0.5, 0.03], emergencia: [0.12, 0.10, 1.20], acionador: [0.06, 0.06, 0.03],
-    flangeAsp: 0.14, flangeSuccHidro: 0.20, flangeHidro: 0.11, flangeRef: 0.17, corpoRef: 0.12
+    flangeAsp: 0.14, flangeSuccHidro: 0.20, flangeHidro: 0.11, flangeRef: 0.17, corpoRef: 0.12,
+    /* PROJETO EM UM CLIQUE (frente C, 19/10/2026): caixa receptora do descarte, poço de drenagem da casa de máquinas e ponto
+       de reposição — medidas de DESENHO (o lançamento põe a separação livre da norma na instância) */
+    caixaDescarte: { Largura: 0.50, Profundidade: 0.40, Altura: 0.40, Livre: 0.35, Afast: 0.075, DN: 50, DN_saida: 100 },
+    poco: { Lado: 0.30, Profundidade: 0.35, Saida: 0.40, DN: 32 },
+    reposicao: { Altura: 0.25, Alcance: 0.50, DN: 25 }
   };
   var ALETAS_MAX = 16;
   var SEG = { liso: 24, grande: 32, aleta: 8, cesto: 16 };   /* segmentos das revoluções (malha) */
@@ -292,7 +297,7 @@
       cil("haste", "Haste", "y", "0", d + " * 0.7", "0", d + " * 0.15", d + " * 0.25", "PVC"),
       cil("volante", "Volante", "y", "0", d + " * 0.95", "0", d + " * 0.85", d + " * 0.22", "PVC")
     ];
-    return fam("hid-pisc-registro", "Registro de esfera (piscina)", "acessorio_tubo", ["pisc_succao", "pisc_retorno", "pisc_hidro", "pisc_aquec", "pisc_dreno"], ps, sol, [], "Registro de esfera de PVC soldável", "Registro de esfera de PVC soldável com volante (um por linha no barrilete): regra da RA — registro de PVC em tubo plástico.");
+    return fam("hid-pisc-registro", "Registro de esfera (piscina)", "acessorio_tubo", ["pisc_succao", "pisc_retorno", "pisc_hidro", "pisc_aquec", "pisc_dreno", "pisc_reposicao"], ps, sol, [], "Registro de esfera de PVC soldável", "Registro de esfera de PVC soldável com volante (um por linha no barrilete): regra da RA — registro de PVC em tubo plástico.");
   }
   /* tê de DERIVAÇÃO do aquecimento (com registro de esfera de PVC na saída lateral) */
   function derivacao() {
@@ -330,6 +335,78 @@
     return f;
   }
 
+  /* CAIXA RECEPTORA DO DESCARTE com DESCARGA LIVRE (NBR 10339 5.4.4.14 a: separação vertical livre entre o tubo de descarte
+     e o nível de transbordamento do esgotamento): origem = centro do TOPO da caixa (y = 0 = transbordamento, no terreno);
+     as chegadas (descarte do filtro e recalque do poço de drenagem) terminam ABERTAS a "Livre" acima do topo, sobre a grelha;
+     a saída sai por baixo, para a rede pluvial ou de esgoto (uma família por destino: o conector tem o sistema fixo).
+     ⚠ Os números dentro das fórmulas são espessura de parede e folgas de DESENHO, não norma. */
+  function caixaDescarte(sisSaida, sufixo, nomeDest) {
+    var R = RES.caixaDescarte;
+    var ps = [P("Largura", "comprimento", "instancia", R.Largura, GEO, "Largura interna da caixa"), P("Profundidade", "comprimento", "instancia", R.Profundidade, GEO, "Profundidade (em planta)"),
+              P("Altura", "comprimento", "instancia", R.Altura, GEO, "Altura da caixa (do topo ao fundo)"),
+              P("Livre", "comprimento", "instancia", R.Livre, GEO, "Separação livre: da boca das chegadas ao topo da caixa (nível de transbordamento)"),
+              P("Afast_chegada", "comprimento", "instancia", R.Afast, GEO, "Meia distância entre as duas chegadas"),
+              P("DN", "numero", "instancia", R.DN, "Hidráulica", "DN das chegadas (mm)"), P("DN_saida", "numero", "instancia", R.DN_saida, "Hidráulica", "DN da saída (mm)"), M("Mat_corpo", "Concreto", "Caixa")];
+    var sol = [
+      cx("fundo", "Fundo da caixa", "0", "-Altura - 0.05", "0", "Largura + 0.1", "0.05", "Profundidade + 0.1", "Mat_corpo"),
+      cx("pa", "Parede", "-(Largura + 0.05) / 2", "-Altura", "0", "0.05", "Altura", "Profundidade + 0.1", "Mat_corpo"),
+      cx("pb", "Parede", "(Largura + 0.05) / 2", "-Altura", "0", "0.05", "Altura", "Profundidade + 0.1", "Mat_corpo"),
+      cx("pc", "Parede", "0", "-Altura", "-(Profundidade + 0.05) / 2", "Largura", "Altura", "0.05", "Mat_corpo"),
+      cx("pd", "Parede", "0", "-Altura", "(Profundidade + 0.05) / 2", "Largura", "Altura", "0.05", "Mat_corpo"),
+      cx("grelha", "Grelha (recebe a descarga livre)", "0", "-0.02", "0", "Largura", "0.02", "Profundidade", "Metal"),
+      cil("bica-a", "Boca da chegada do descarte (aberta)", "y", "Afast_chegada", "Livre", "0", "DN / 2000 + 0.006", "0.04", "PVC"),
+      cil("bica-b", "Boca da chegada da drenagem (aberta)", "y", "-Afast_chegada", "Livre", "0", "DN / 2000 + 0.006", "0.04", "PVC")
+    ];
+    var con = [
+      { id: "chegada", nome: "Chegada do descarte do filtro (descarga livre)", sistema: "pisc_dreno", dn: "DN", x: "Afast_chegada", y: "Livre", z: "0" },
+      { id: "chegada_dreno", nome: "Chegada da drenagem da casa de máquinas (descarga livre)", sistema: "pisc_dreno", dn: "DN", x: "-Afast_chegada", y: "Livre", z: "0" },
+      { id: "saida", nome: "Saída para a rede " + nomeDest, sistema: sisSaida, dn: "DN_saida", x: "0", y: "-Altura + DN_saida / 2000 + 0.05", z: "Profundidade / 2" }
+    ];
+    return fam("hid-pisc-caixa-descarte" + sufixo, "Caixa receptora do descarte da piscina (descarga livre, rede " + nomeDest + ")", "equipamento", ["pisc_dreno", sisSaida], ps, sol, con,
+      "Caixa receptora de alvenaria/concreto com grelha (descarte do filtro e drenagem da casa de máquinas)",
+      "Caixa receptora do descarte do filtro (lavagem e esvaziamento) e da drenagem da casa de máquinas: as chegadas terminam ABERTAS acima do topo (descarga livre, NBR 10339 5.4.4.14 a) e a saída vai à rede " + nomeDest + ".");
+  }
+  /* POÇO DE DRENAGEM da casa de máquinas (NBR 10339 5.2.2: proteção contra inundação e dreno quando abaixo do solo): grelha
+     no piso, poço embaixo com bomba submersível de drenagem (boia) e o recalque com válvula de retenção. Origem = centro da
+     grelha no PISO (y = 0). */
+  function pocoDrenagem() {
+    var R = RES.poco;
+    var ps = [P("Lado", "comprimento", "instancia", R.Lado, GEO, "Lado do poço (grelha)"), P("Profundidade", "comprimento", "instancia", R.Profundidade, GEO, "Profundidade do poço abaixo do piso"),
+              P("Saida", "comprimento", "instancia", R.Saida, GEO, "Altura da saída do recalque acima do piso"), P("DN", "numero", "instancia", R.DN, "Hidráulica", "DN do recalque (mm)"),
+              M("Mat_corpo", "Concreto", "Poço")];
+    var sol = [
+      cx("poco", "Poço de drenagem", "0", "-Profundidade", "0", "Lado + 0.08", "Profundidade", "Lado + 0.08", "Mat_corpo"),
+      cx("grelha", "Grelha do piso", "0", "-0.01", "0", "Lado", "0.012", "Lado", "Metal"),
+      cil("bomba", "Bomba submersível de drenagem (com boia)", "y", "0", "-Profundidade + 0.01", "0", "Lado * 0.3", "Profundidade * 0.7", "Equipamento preto"),
+      cil("recalque", "Recalque da bomba de drenagem", "y", "0", "-Profundidade * 0.3", "0", "DN / 2000 + 0.003", "Saida + Profundidade * 0.3", "PVC"),
+      cil("retencao", "Válvula de retenção", "y", "0", "Saida * 0.45", "0", "DN / 2000 + 0.012", "DN / 1000 * 2", "PVC")
+    ];
+    var con = [{ id: "recalque", nome: "Recalque da drenagem", sistema: "pisc_dreno", dn: "DN", x: "0", y: "Saida", z: "0" }];
+    return fam("hid-pisc-poco-drenagem", "Poço de drenagem da casa de máquinas (bomba submersível)", "equipamento", ["pisc_dreno"], ps, sol, con,
+      "Poço de drenagem com grelha, bomba submersível com boia e válvula de retenção",
+      "Drenagem do piso da casa de máquinas: grelha, poço com bomba submersível automática (boia) e recalque com válvula de retenção até a caixa receptora (descarga livre).");
+  }
+  /* PONTO DE REPOSIÇÃO de água potável (bica com registro) na borda: a água da rede cai LIVRE no tanque, com a boca acima
+     do nível de transbordamento (NBR 10818 4.2.2). Origem = base no deck (y = 0); Z aponta para DENTRO da piscina. */
+  function reposicao() {
+    var R = RES.reposicao;
+    var ps = [P("Altura", "comprimento", "instancia", R.Altura, GEO, "Altura da boca acima do deck (a separação livre da norma + folga)"),
+              P("Alcance", "comprimento", "instancia", R.Alcance, GEO, "Da base à boca (passa sobre a borda)"), P("DN", "numero", "instancia", R.DN, "Hidráulica", "DN da ligação (mm)"),
+              M("Mat_corpo", "Inox", "Bica")];
+    var r = "(DN / 2000 + 0.004)";
+    var sol = [
+      cil("coluna", "Coluna da bica", "y", "0", "0", "0", r, "Altura + 0.06", "Mat_corpo"),
+      cil("braco", "Braço da bica", "z", "0", "Altura + 0.06", "0", r, "Alcance", "Mat_corpo"),
+      cil("boca", "Boca (descarga livre)", "y", "0", "Altura", "Alcance", r, "0.06", "Mat_corpo"),
+      cil("registro", "Registro de esfera", "y", "0", "0.08", "0", r + " * 1.8", "DN / 1000 * 2", "Mat_corpo"),
+      cil("volante", "Volante", "x", "0", "0.08 + DN / 1000", "0", "DN / 1000 * 0.6", "DN / 1000 * 1.5", "Mat_corpo")
+    ];
+    var con = [{ id: "entrada", nome: "Entrada da água potável", sistema: "pisc_reposicao", dn: "DN", x: "0", y: "0", z: "0" }];
+    return fam("hid-pisc-reposicao", "Ponto de reposição de água (bica de descarga livre)", "equipamento", ["pisc_reposicao"], ps, sol, con,
+      "Bica de reposição com registro (descarga livre acima da borda)",
+      "Reposição de água potável da piscina: bica na borda com registro, a boca acima do nível de transbordamento (separação livre — NBR 10818 4.2.2), sem ligação direta da rede potável com a água do tanque.");
+  }
+
   var CACHE = null;
   function todas() {
     if (CACHE) return CACHE;
@@ -339,6 +416,7 @@
       bomba("hid-pisc-bomba-hidro", "Motobomba da hidromassagem", "pisc_hidro", false),
       bomba("hid-pisc-bomba-aquec", "Motobomba do aquecimento solar", "pisc_aquec", true),
       casa(), skimmer(), ralo(), registro(), derivacao(),
+      caixaDescarte("pluvial", "", "pluvial"), caixaDescarte("esgoto", "-esgoto", "de esgoto"), pocoDrenagem(), reposicao(),
       dispositivo("hid-pisc-retorno", "Dispositivo de retorno", "pisc_retorno", { bico: true, desc: "Bocal de retorno com bico direcional (regula a vazão)." }),
       dispositivo("hid-pisc-aspiracao", "Dispositivo de aspiração", "pisc_succao", { tampa: true, flange: RES.flangeAsp, desc: "Dispositivo de aspiração com tampa de fechamento automático (NBR 10339 5.4.4.12.3 d)." }),
       dispositivo("hid-pisc-succao-hidro", "Sucção de parede da hidro (grelha antiaprisionamento)", "pisc_hidro", { flange: RES.flangeSuccHidro, grade: true, desc: "Sucção de parede da hidromassagem com grelha antiaprisionamento (em par, interligada)." }),

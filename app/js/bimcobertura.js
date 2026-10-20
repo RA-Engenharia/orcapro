@@ -1,0 +1,1220 @@
+/* =====================================================================
+ * bimcobertura.js — COBERTURA COMPLETA: PLATIBANDA, RUFO DE CAPA, CONTRA-RUFO,
+ * CALHA EMBUTIDA, CONDUTORES (descidas), seção da calha pela NBR 10844 e o
+ * QUANTITATIVO de tudo que está em cima da laje. Motor PURO (ES5, Node).
+ *
+ * Pedido do engenheiro (19/10/2026): "se tem telhado, quero que seja TUDO que
+ * tem no telhado" — residência estilo caixote: platibanda em volta, calha
+ * embutida atrás dela, rufo de capa no topo, contra-rufo no encontro com a
+ * telha e as descidas. O telhado, as bordas de beiral (calha de beiral,
+ * rufo, testeira) e o catálogo de telhas estão no js/bimtelhado.js; a
+ * estrutura (terças, vigas) no js/bimtelhadoestrut.js; o forro, a sanca e as
+ * luminárias no js/bimforrodrywall.js.
+ *
+ * AS OPS (validadas no BimEdit.sanear pela extensão registrada no fim):
+ *   {op:"platibanda", id, telhado, arestas?:[k…]|null (índices do contorno; padrão todas),
+ *    espessura?:m (0,15), altura?:m acima do ponto MAIS ALTO do telhado (0,30),
+ *    topo?:cota absoluta, base?:cota (padrão: a cota de apoio do telhado),
+ *    rufoCapa?:bool (true), contraRufo?:bool (true), abaRufo?:m de cada lado (0,04), folgaCalha?:m (0,02)}
+ *   {op:"calha", id, telhado, arestas:[k…], largura?:m (0,30), altura?:m (0,12), declividadePct?:% (0,5),
+ *    laminaMm?:mm, folga?:m — CALHA EMBUTIDA: fica FORA da aresta do telhado, atrás da platibanda
+ *    (a calha de BEIRAL é a op `borda` calha do js/bimtelhado.js; as duas entram na lista de calhas)}
+ *   {op:"condutor", id, calha:id da calha embutida OU da borda calha, pos?:0..1 ao longo da calha (0,5), dn?:mm,
+ *    trecho?:id do trecho "pluvial" do js/biminst.js que É o tubo desta descida (T2: o hidro desenha e quantifica o tubo)}
+ *   {op:"rufo", id, telhado, material?:"galv24"|"galv26"|"aluminio", corteRufo?:m, corteContra?:m, folga?:m — T2: rufo e
+ *    contrarrufo em TODO encontro do contorno com parede mais alta que a telha, achado pela geometria a cada replay}
+ *   T2 — gerarPluvial(ops, cfg): o LOTE "tel-calha-lote" que gera e dimensiona pela NBR 10844 (calha de beiral, seção da calha,
+ *    descidas, trechos pluviais do hidro, rufo de encontro) com a cidade do endereço da obra. A ponta de baixo de cada descida
+ *    fica como ESPERA PLUVIAL no piso: o condutor horizontal e a caixa de areia são do projeto hidrossanitário (o js/biminst.js
+ *    não foi alterado; os trechos são ops "trecho" comuns dele).
+ *   apagar com o id de qualquer uma também passa aqui. Sem lista dentro de lista (a nuvem recusa).
+ *
+ * O ESTADO (só quando há op dessas — o estado das ops antigas fica igual):
+ *   platibandas, calhasEmbutidas, condutores, rufosEncontro — ver calcularPlatibanda / calcularCalha / calcularCondutor / calcularRufo.
+ *
+ * REGRAS (escritas porque dão o número):
+ *   · A platibanda fica FORA do contorno do telhado (o contorno é a face de dentro dela) e sobe da `base` até o
+ *     topo; a aresta que tem calha embutida afasta a platibanda da largura da calha + folga.
+ *   · O rufo de capa tem corte = espessura + 2 × aba, escolhido entre os cortes que a SINAPI tem (chapim: só 33 cm);
+ *     o que não cabe fica "orçar à parte" — nunca um código parecido.
+ *   · A calha de chapa tem desenvolvimento = largura + 2 × altura, escolhido entre os da SINAPI (33, 50, 100 cm).
+ *   · A seção da calha pela NBR 10844 NÃO é reescrita aqui: dimensionarCalhas() monta a entrada do js/hidap.js
+ *     (HidAP.calcular, tabelas do HidNormas) — cidade fora da Tabela 5 da norma = PENDENTE, nunca um padrão.
+ *   · Valor sem fonte (altura da platibanda, aba do rufo, folga) é PARÂMETRO ADOTADO e aparece como tal.
+ *
+ * Teste: o teste da cobertura completa, em tools/ (unidade) e a e2e da mesma frente; T2: node tools/test-telhado-t2-pluvial.js.
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+
+  function dep(nome, arq) {
+    if (global[nome]) return global[nome];
+    if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+    return null;
+  }
+  function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+  function fin(v) { return typeof v === "number" && isFinite(v); }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function txt(v) { return v == null ? "" : String(v); }
+  function r4(v) { return Math.round(v * 10000) / 10000; }
+  function r6(v) { return Math.round(v * 1e6) / 1e6; }
+  function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+  function temChave(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+  function obj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+  function idOk(v) { return (typeof v === "string" && v.length > 0 && v.length <= 120) || fin(v); }
+  function virg(v, c) { return (Math.round(v * Math.pow(10, c == null ? 2 : c)) / Math.pow(10, c == null ? 2 : c)).toFixed(c == null ? 2 : c).replace(".", ","); }
+  function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
+
+  /* ------------------------------------------------------------ SINAPI
+     Códigos da base do sistema (data/sinapi-MG-analitico.json e sinapi-MG-2026-06.json, 06/2026): o
+     o teste da cobertura completa (tools/) confere CADA um contra a base — código que sair dela reprova o teste.
+     Sem código aqui = "orçar à parte". `aprox`: a composição é a mais próxima, não a exata. */
+  var SINAPI = {
+    base: "SINAPI 06/2026 (MG)",
+    telhaFibroAte10: { cod: "94210", un: "M2", desc: "TELHAMENTO COM TELHA ONDULADA DE FIBROCIMENTO E = 6 MM, COM RECOBRIMENTO LATERAL DE 1 1/4 DE ONDA PARA TELHADO COM INCLINAÇÃO MÁXIMA DE 10°" },
+    telhaFibroAcima10: { cod: "94207", un: "M2", desc: "TELHAMENTO COM TELHA ONDULADA DE FIBROCIMENTO E = 6 MM, COM RECOBRIMENTO LATERAL DE 1/4 DE ONDA PARA TELHADO COM INCLINAÇÃO MAIOR QUE 10°" },
+    telhaSanduiche: { cod: "94216", un: "M2", aprox: true, desc: "TELHAMENTO COM TELHA METÁLICA TERMOACÚSTICA E = 30 MM, COM ATÉ 2 ÁGUAS, INCLUSO IÇAMENTO", obs: "composição de telha termoacústica 30 mm: o acréscimo da face inferior efeito madeira fica à parte" },
+    cumeeiraFibro: { cod: "94223", un: "M", desc: "CUMEEIRA PARA TELHA DE FIBROCIMENTO ONDULADA E = 6 MM, INCLUSO ACESSÓRIOS DE FIXAÇÃO E IÇAMENTO" },
+    tramaAcoTercas: { cod: "104314", un: "KG", desc: "TRAMA DE AÇO COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA, INCLUSO TRANSPORTE VERTICAL (EM KG). EXCLUSIVE PINTURA" },
+    tramaMadeiraTercas: { cod: "92543", un: "M2", desc: "TRAMA DE MADEIRA COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA, INCLUSO TRANSPORTE VERTICAL" },
+    pontaletesMadeira: { cod: "100382", un: "M2", desc: "FABRICAÇÃO E INSTALAÇÃO DE PONTALETES DE MADEIRA NÃO APARELHADA PARA TELHADOS COM ATÉ 2 ÁGUAS E COM TELHA ONDULADA DE FIBROCIMENTO, ALUMÍNIO OU PLÁSTICA EM EDIFÍCIO RESIDENCIAL TÉRREO/SOBRADO, INCLUSO TRANSPORTE VERTICAL" },
+    chapim33: { cod: "101979", un: "M", desc: "CHAPIM (RUFO CAPA) EM AÇO GALVANIZADO, CORTE 33" },
+    rufo25: { cod: "94231", un: "M", desc: "RUFO EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, CORTE DE 25 CM, INCLUSO TRANSPORTE VERTICAL" },
+    rufo33: { cod: "100327", un: "M", desc: "RUFO EXTERNO/INTERNO EM CHAPA DE AÇO GALVANIZADO NÚMERO 26, CORTE DE 33 CM, INCLUSO IÇAMENTO" },
+    calha33: { cod: "94227", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 33 CM, INCLUSO TRANSPORTE VERTICAL" },
+    calha50: { cod: "94228", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 50 CM, INCLUSO TRANSPORTE VERTICAL" },
+    calha100: { cod: "94229", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 100 CM, INCLUSO TRANSPORTE VERTICAL" },
+    calhaPvc125: { cod: "100434", un: "M", desc: "CALHA DE BEIRAL, SEMICIRCULAR DE PVC, DIAMETRO 125 MM, INCLUINDO CABECEIRAS, EMENDAS, BOCAIS, SUPORTES E VEDAÇÕES, EXCLUINDO CONDUTORES, INCLUSO TRANSPORTE VERTICAL" }
+  };
+  var CORTES_CAPA = [{ corte: 0.33, ref: "chapim33" }];
+  var CORTES_RUFO = [{ corte: 0.25, ref: "rufo25" }, { corte: 0.33, ref: "rufo33" }];
+  var DESENV_CALHA = [{ dev: 0.33, ref: "calha33" }, { dev: 0.50, ref: "calha50" }, { dev: 1.00, ref: "calha100" }];
+  function sin(ref) { var s = SINAPI[ref]; return s ? { codigo: s.cod, un: s.un, descricao: s.desc, base: SINAPI.base, aproximado: !!s.aprox, obs: s.obs || null } : null; }
+  function escolher(tab, necessario, campo) {
+    for (var i = 0; i < tab.length; i++) if (tab[i][campo] >= necessario - 1e-9) return tab[i];
+    return null;
+  }
+
+  var LIM = { esp: [0.05, 1], altura: [0, 5], topo: [-100, 10000], aba: [0, 0.3], folga: [0, 0.5], calhaLarg: [0.05, 1.5], calhaAlt: [0.03, 0.6], decl: [0, 10], lamina: [10, 500], dn: [40, 400], vertices: 200 };
+  var PADRAO = { espessura: 0.15, altura: 0.30, aba: 0.04, folga: 0.02, calhaLargura: 0.30, calhaAltura: 0.12, declividadePct: 0.5, dn: 100, corteContraRufo: 0.25 };
+
+  /* ------------------------------------------------------------ geometria plana */
+  function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+  function areaQ(Q) { var s = 0; for (var i = 0, n = Q.length; i < n; i++) { var a = Q[i], b = Q[(i + 1) % n]; s += a.x * b.z - b.x * a.z; } return Math.abs(s) / 2; }
+  function pt(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
+
+  /* o contorno da parede (anti-horário) de um telhado calculado + o mapa orig → k */
+  function contornoDe(t) {
+    var P = arr(t.arestasCalc).map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), porOrig = {};
+    arr(t.arestasCalc).forEach(function (e, k) { porOrig[e.orig] = k; });
+    return { P: P, porOrig: porOrig };
+  }
+  /* os k das arestas pedidas (null/[] = todas); as que não existem viram aviso */
+  function selecionar(t, origs, avisos) {
+    var C = contornoDe(t), n = C.P.length, sel = [];
+    for (var k = 0; k < n; k++) sel.push(false);
+    if (!arr(origs).length) { for (var i = 0; i < n; i++) sel[i] = true; return { sel: sel, C: C }; }
+    arr(origs).forEach(function (o) {
+      var k = C.porOrig[Number(o)];
+      if (k == null) { avisos.push("A aresta " + (Number(o) + 1) + " não existe no telhado."); return; }
+      sel[k] = true;
+    });
+    return { sel: sel, C: C };
+  }
+  /* faixa entre a aresta e a aresta deslocada: quadriláteros por aresta, com esquadria nos cantos (BimTelhado.deslocar) */
+  function faixas(P, sel, dIn, dOut) {
+    var T = BT(); if (!T || !T.deslocar) return null;
+    var n = P.length, di = [], dof = [];
+    for (var k = 0; k < n; k++) { di.push(sel[k] ? dIn[k] : 0); dof.push(sel[k] ? dOut[k] : 0); }
+    var I = dIn.every(function (v, k) { return !sel[k] || Math.abs(v) < 1e-12; }) ? P.map(function (p) { return [p[0], p[1]]; }) : T.deslocar(P, di);
+    var O = T.deslocar(P, dof);
+    if (!I || !O) return null;
+    var out = [];
+    for (var j = 0; j < n; j++) {
+      if (!sel[j]) continue;
+      var a = I[j], b = I[(j + 1) % n], c = O[(j + 1) % n], d = O[j];
+      out.push({ k: j, a: pt(a), b: pt(b), quad: [pt(a), pt(b), pt(c), pt(d)] });
+    }
+    return out;
+  }
+
+  /* ============================================================ PLATIBANDA */
+  function calhasEmbDoTelhado(ctxCob, id) {
+    var out = [];
+    arr(ctxCob && ctxCob.ordCalha).forEach(function (cid) { var c = ctxCob.calha[cid]; if (c && String(c.telhado) === String(id)) out.push(c); });
+    return out;
+  }
+  function calcularPlatibanda(f, telhados, ctxCob) {
+    var p = clone(f), avisos = [], t = telhados[String(f.telhado)];
+    p.tipo = "platibanda"; p.ifc = "IFCWALL"; p.ok = false; p.segs = []; p.comprimento = 0; p.area = 0; p.areaFaces = 0; p.volume = 0;
+    p.espessuraEf = fin(Number(f.espessura)) ? Number(f.espessura) : PADRAO.espessura;
+    p.abaRufoEf = fin(Number(f.abaRufo)) ? Number(f.abaRufo) : PADRAO.aba;
+    p.rufoCapaAtivo = f.rufoCapa !== false; p.contraRufoAtivo = f.contraRufo !== false;
+    if (!t) { avisos.push("O telhado desta platibanda não existe mais."); p.avisos = avisos; return p; }
+    if (!t.ok || t.modo !== "perimetro") { avisos.push("A platibanda segue o contorno do telhado por perímetro que fechou."); p.avisos = avisos; return p; }
+    var S = selecionar(t, f.arestas, avisos), P = S.C.P, n = P.length;
+    var folga = fin(Number(f.folgaCalha)) ? Number(f.folgaCalha) : PADRAO.folga, dIn = [], dOut = [], afast = [], k, ch = calhasEmbDoTelhado(ctxCob, f.telhado);
+    for (k = 0; k < n; k++) {
+      var a = 0;
+      ch.forEach(function (c) { arr(c.arestas).forEach(function (o) { if (S.C.porOrig[Number(o)] === k) a = Math.max(a, (fin(Number(c.largura)) ? Number(c.largura) : PADRAO.calhaLargura) + folga); }); });
+      afast.push(a); dIn.push(a); dOut.push(a + p.espessuraEf);
+    }
+    var F = faixas(P, S.sel, dIn, dOut);
+    if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a platibanda."); p.avisos = avisos; return p; }
+    var base = fin(Number(f.base)) ? Number(f.base) : num(t.cotaApoio, 0);
+    var topo = fin(Number(f.topo)) ? Number(f.topo) : num(t.cotaCumeeira, base) + num(t.espessura, 0) + (fin(Number(f.altura)) ? Number(f.altura) : PADRAO.altura);
+    if (!(topo > base + 0.01)) { avisos.push("O topo da platibanda (" + virg(topo) + " m) não fica acima da base (" + virg(base) + " m)."); p.avisos = avisos; return p; }
+    var H = topo - base, L = 0, vol = 0, quadsA = 0;
+    F.forEach(function (s) {
+      var Lm = (distP(s.a, s.b) + distP(s.quad[3], s.quad[2])) / 2;
+      s.orig = t.arestasCalc[s.k].orig; s.afastamento = r4(afast[s.k]); s.comprimento = r6(distP(s.a, s.b)); s.comprimentoMeio = r6(Lm);
+      L += s.comprimento; vol += areaQ(s.quad) * H; quadsA += areaQ(s.quad);
+    });
+    p.segs = F; p.base = r6(base); p.topo = r6(topo); p.altura = r6(H); p.comprimento = r6(L);
+    p.area = r4(L * H); p.areaFaces = r4(2 * L * H); p.volume = r4(vol); p.areaTopo = r4(quadsA);
+    /* RUFO DE CAPA: no topo, corte = espessura + 2 × aba */
+    var necC = p.espessuraEf + 2 * p.abaRufoEf, LC = 0;
+    F.forEach(function (s) { LC += s.comprimentoMeio; });
+    var cc = escolher(CORTES_CAPA, necC, "corte");
+    p.rufoCapa = p.rufoCapaAtivo ? { comprimento: r4(LC), corteNecessarioM: r4(necC), corteM: cc ? cc.corte : null, sinapi: cc ? sin(cc.ref) : null,
+                                      obs: cc ? "corte " + Math.round(cc.corte * 100) + " cm (necessário " + Math.round(necC * 100) + " cm)" : "nenhum corte de chapim na SINAPI cobre " + Math.round(necC * 100) + " cm: orçar à parte" } : null;
+    /* CONTRA-RUFO: no encontro com a telha, na face de dentro (a aresta com calha embutida leva o seu próprio, na face de dentro da platibanda) */
+    var LK = 0; F.forEach(function (s) { LK += s.comprimento; });
+    var ck = escolher(CORTES_RUFO, PADRAO.corteContraRufo, "corte");
+    p.contraRufo = p.contraRufoAtivo ? { comprimento: r4(LK), corteM: ck ? ck.corte : null, corteAdotado: true, sinapi: ck ? sin(ck.ref) : null,
+                                          obs: "corte " + Math.round(PADRAO.corteContraRufo * 100) + " cm ADOTADO (a conferir no detalhe do encontro com a telha)" } : null;
+    p.ok = true;
+    if (avisos.length) p.avisos = avisos;
+    return p;
+  }
+
+  /* ============================================================ CALHA EMBUTIDA */
+  function desenvolvimentoCalha(largura, altura) { return r4(largura + 2 * altura); }
+  function calcularCalha(f, telhados) {
+    var c = clone(f), avisos = [], t = telhados[String(f.telhado)];
+    c.tipo = "calha"; c.tipoCalha = "embutida"; c.ifc = "IFCPIPESEGMENT"; c.ifcPre = "GUTTER"; c.ok = false; c.segs = []; c.comprimento = 0;
+    c.larguraEf = fin(Number(f.largura)) ? Number(f.largura) : PADRAO.calhaLargura;
+    c.alturaEf = fin(Number(f.altura)) ? Number(f.altura) : PADRAO.calhaAltura;
+    c.declividadeEf = fin(Number(f.declividadePct)) ? Number(f.declividadePct) : PADRAO.declividadePct;
+    if (!t) { avisos.push("O telhado desta calha não existe mais."); c.avisos = avisos; return c; }
+    if (!t.ok || t.modo !== "perimetro") { avisos.push("A calha embutida segue o contorno do telhado por perímetro que fechou."); c.avisos = avisos; return c; }
+    var S = selecionar(t, f.arestas, avisos), P = S.C.P, n = P.length, k;
+    for (k = 0; k < n; k++) {
+      if (!S.sel[k]) continue;
+      var e = t.arestasCalc[k];
+      if (!e.define) { avisos.push("A aresta " + (e.orig + 1) + " não define inclinação (é oitão): a calha vai no beiral, onde a água sai."); S.sel[k] = false; }
+    }
+    var dOut = []; for (k = 0; k < n; k++) dOut.push(c.larguraEf);
+    var F = faixas(P, S.sel, P.map(function () { return 0; }), dOut);
+    if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a calha."); c.avisos = avisos; return c; }
+    var L = 0;
+    F.forEach(function (s) {
+      var e = t.arestasCalc[s.k];
+      s.orig = e.orig; s.comprimento = r6(distP(s.a, s.b));
+      /* a linha do MEIO da calha (onde a descida fica) */
+      s.ma = { x: r6((s.quad[0].x + s.quad[3].x) / 2), z: r6((s.quad[0].z + s.quad[3].z) / 2) }; s.mb = { x: r6((s.quad[1].x + s.quad[2].x) / 2), z: r6((s.quad[1].z + s.quad[2].z) / 2) };
+      /* a borda da calha fica logo abaixo da face de baixo do telhado na linha do beiral */
+      s.yBorda = r6(num(e.alturaBeiral, num(t.cotaApoio, 0)) - 0.02);
+      s.yFundo = r6(s.yBorda - c.alturaEf);
+      L += s.comprimento;
+    });
+    c.segs = F; c.comprimento = r6(L);
+    c.desenvolvimento = desenvolvimentoCalha(c.larguraEf, c.alturaEf);
+    var dv = escolher(DESENV_CALHA, c.desenvolvimento, "dev");
+    c.sinapi = dv ? sin(dv.ref) : null;
+    c.obsSinapi = dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(c.desenvolvimento * 100) + " cm)" : "nenhum desenvolvimento de calha de chapa na SINAPI cobre " + Math.round(c.desenvolvimento * 100) + " cm: orçar à parte";
+    c.queda = r4(L * c.declividadeEf / 100);
+    c.ok = true;
+    if (avisos.length) c.avisos = avisos;
+    return c;
+  }
+
+  /* a lista ÚNICA de calhas do estado: as embutidas (op calha) e as de beiral (op borda calha do js/bimtelhado.js) */
+  function listarCalhas(estado) {
+    var out = [];
+    arr(estado && estado.calhasEmbutidas).forEach(function (c) {
+      if (!c || !c.ok) return;
+      out.push({ id: c.id, tipo: "embutida", telhado: c.telhado, arestas: arr(c.arestas).slice(), comprimento: c.comprimento, largura: c.larguraEf, altura: c.alturaEf,
+                 declividadePct: c.declividadeEf, laminaMm: c.laminaMm != null && fin(Number(c.laminaMm)) ? Number(c.laminaMm) : null,
+                 segs: c.segs.map(function (s) { return { a: s.ma || s.a, b: s.mb || s.b, orig: s.orig, y: s.yFundo }; }), fonte: c });
+    });
+    arr(estado && estado.bordas).forEach(function (b) {
+      if (!b || !b.ok || b.tipoBorda !== "calha") return;
+      out.push({ id: b.id, tipo: "beiral", telhado: b.telhado, arestas: arr(b.arestas).slice(), comprimento: b.comprimento, largura: b.larguraEf, altura: b.alturaEf,
+                 declividadePct: null, laminaMm: null, segs: arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z }, orig: s.aresta, y: s.a.y }; }), fonte: b });
+    });
+    return out;
+  }
+
+  /* ============================================================ CONDUTOR (descida) */
+  function pontoNaCalha(cal, pos) {
+    var segs = cal.segs, tot = 0, i;
+    segs.forEach(function (s) { tot += distP(s.a, s.b); });
+    if (!(tot > 0)) return null;
+    var alvo = Math.max(0, Math.min(1, pos)) * tot, ac = 0;
+    for (i = 0; i < segs.length; i++) {
+      var s = segs[i], L = distP(s.a, s.b);
+      if (ac + L >= alvo - 1e-9 || i === segs.length - 1) {
+        var u = L > 0 ? Math.max(0, Math.min(1, (alvo - ac) / L)) : 0;
+        return { x: r6(s.a.x + (s.b.x - s.a.x) * u), z: r6(s.a.z + (s.b.z - s.a.z) * u), y: num(s.y, 0), seg: i, dist: r6(alvo), total: r6(tot) };
+      }
+      ac += L;
+    }
+    return null;
+  }
+  function calcularCondutor(f, calhas, nivelBase) {
+    var c = clone(f), avisos = [];
+    c.tipo = "condutor"; c.ifc = "IFCPIPESEGMENT"; c.ifcPre = "RAINWATER"; c.ok = false;
+    var cal = null; calhas.forEach(function (x) { if (String(x.id) === String(f.calha)) cal = x; });
+    c.dnEf = fin(Number(f.dn)) ? Number(f.dn) : null;
+    c.dnDesenho = c.dnEf || PADRAO.dn;
+    c.posEf = fin(Number(f.pos)) ? Math.max(0, Math.min(1, Number(f.pos))) : 0.5;
+    if (!cal) { avisos.push("A calha deste condutor não existe mais."); c.avisos = avisos; return c; }
+    var q = pontoNaCalha(cal, c.posEf);
+    if (!q) { avisos.push("A calha não tem comprimento."); c.avisos = avisos; return c; }
+    c.x = q.x; c.z = q.z; c.yTopo = r6(q.y); c.yBase = r6(nivelBase);
+    c.alturaM = r4(Math.max(0, c.yTopo - c.yBase));
+    c.distanciaDoInicio = q.dist; c.comprimentoCalha = q.total;
+    c.distanciaDaPonta = r4(Math.min(q.dist, q.total - q.dist));
+    c.telhado = cal.telhado;
+    if (c.dnEf == null) avisos.push("DN do condutor a dimensionar (NBR 10844: o ábaco do condutor vertical não está digitalizado — conferir pelo cálculo pluvial).");
+    c.ok = true;
+    if (avisos.length) c.avisos = avisos;
+    return c;
+  }
+  /* as ops de condutor para as calhas que ainda não têm nenhum: `n` por calha, igualmente espaçados (padrão 1, no meio) */
+  function opsCondutores(estado, opc) {
+    opc = opc || {}; var n = Math.max(1, Math.round(num(opc.porCalha, 1))), tem = {}, out = [], seq = 0;
+    arr(estado && estado.condutores).forEach(function (c) { tem[String(c.calha)] = true; });
+    listarCalhas(estado).forEach(function (cal) {
+      if (tem[String(cal.id)]) return;
+      for (var i = 0; i < n; i++) out.push({ op: "condutor", id: "cd-" + cal.id + "-" + (++seq), calha: cal.id, pos: r4((i + 0.5) / n) });
+    });
+    return out;
+  }
+
+  /* a base sugerida para a platibanda: o menor topo das paredes que correm junto ao contorno do telhado (a platibanda
+     continua a parede); sem parede perto, a cota de apoio do telhado. Nunca acima da cota de apoio. */
+  function baseSugerida(estado, telhadoId) {
+    var t = null; arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(telhadoId)) t = x; });
+    if (!t || !t.ok) return null;
+    var C = contornoDe(t), P = C.P, n = P.length, menor = null;
+    arr(estado.caixas).forEach(function (c) {
+      if (!c || c.tipo !== "parede") return;
+      var topo = num(c.cy, 0) + num(c.altura, 0) / 2, th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), L = num(c.comprimento, 0), cx = num(c.cx, 0), cz = num(c.cz, 0);
+      for (var i = 0; i < n; i++) {
+        var A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], Le = Math.sqrt(ex * ex + ez * ez); if (!(Le > 1e-6)) continue;
+        ex /= Le; ez /= Le;
+        if (Math.abs(ux * ez - uz * ex) > 0.05) continue;                                   /* paralela à aresta */
+        if (Math.abs((cx - A[0]) * -ez + (cz - A[1]) * ex) > 0.6) continue;                 /* a menos de 60 cm dela */
+        var along = (cx - A[0]) * ex + (cz - A[1]) * ez;
+        if (along < -L / 2 || along > Le + L / 2) continue;
+        if (menor == null || topo < menor) menor = topo;
+        break;
+      }
+    });
+    var apoio = num(t.cotaApoio, 0);
+    return menor == null ? r6(apoio) : r6(Math.min(menor, apoio));
+  }
+
+  /* ============================================================ O QUE A PLANTA PRECISA */
+  function resumoDoTelhado(estado, id) {
+    var o = { calhas: [], rufos: [], platibandas: [], condutores: [] }, sid = String(id);
+    listarCalhas(estado).forEach(function (c) {
+      if (String(c.telhado) !== sid) return;
+      o.calhas.push({ id: c.id, tipo: c.tipo, aresta: c.arestas.slice(), comprimento: r4(num(c.comprimento, 0)), segs: c.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }),
+                      secao: { largura: c.largura, altura: c.altura }, declividadePct: c.declividadePct });
+    });
+    arr(estado && estado.platibandas).forEach(function (p) {
+      if (!p || !p.ok || String(p.telhado) !== sid) return;
+      o.platibandas.push({ id: p.id, espessura: p.espessuraEf, base: p.base, topo: p.topo, comprimento: p.comprimento, afastamento: p.segs.reduce(function (m, s) { return Math.max(m, s.afastamento || 0); }, 0),
+                           segs: p.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+      var meio = p.segs.map(function (s) { return { a: { x: s.quad[3].x, z: s.quad[3].z }, b: { x: s.quad[2].x, z: s.quad[2].z } }; });
+      if (p.rufoCapa) o.rufos.push({ id: p.id + "-capa", tipo: "capa", comprimento: p.rufoCapa.comprimento, corteM: p.rufoCapa.corteM, segs: meio });
+      if (p.contraRufo) o.rufos.push({ id: p.id + "-contra", tipo: "contra-rufo", comprimento: p.contraRufo.comprimento, corteM: p.contraRufo.corteM,
+                                        segs: p.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+    });
+    arr(estado && estado.rufosEncontro).forEach(function (r) {
+      if (!r || !r.ok || String(r.telhado) !== sid) return;
+      r.encontros.forEach(function (e, i) {
+        o.rufos.push({ id: r.id + "-" + i, tipo: e.rufo ? "rufo e contrarrufo" : "contrarrufo", comprimento: e.comprimento, corteM: r.corteRufoEf, segs: e.segs.map(function (s) { return { a: { x: s.fa.x, z: s.fa.z }, b: { x: s.fb.x, z: s.fb.z } }; }) });
+      });
+    });
+    arr(estado && estado.bordas).forEach(function (b) {
+      if (!b || !b.ok || String(b.telhado) !== sid || (b.tipoBorda !== "rufo" && b.tipoBorda !== "testeira")) return;
+      o.rufos.push({ id: b.id, tipo: b.tipoBorda, comprimento: r4(num(b.comprimento, 0)), corteM: null, segs: arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+    });
+    arr(estado && estado.condutores).forEach(function (c) {
+      if (!c || !c.ok || String(c.telhado) !== sid) return;
+      o.condutores.push({ id: c.id, calha: c.calha, x: c.x, z: c.z, dn: c.dnEf, alturaM: c.alturaM });
+    });
+    return o;
+  }
+
+  /* ============================================================ NBR 10844 (reaproveita o js/hidap.js) */
+  /* A área de contribuição de cada água pelo caso (b) da Tabela da NBR 10844 (telhado de uma água): A = (a + h/2)·b,
+     a = projeção horizontal da inclinação, b = comprimento ao longo do beiral, h = a·i. A água que escorre para a
+     calha é a da aresta dela (calhas embutidas e de beiral); telhado com uma só calha leva todas as águas. */
+  function aguasDaCalha(estado, cal) {
+    var t = null; arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(cal.telhado)) t = x; });
+    if (!t || !t.ok) return [];
+    var origs = {}; cal.arestas.forEach(function (o) { origs[Number(o)] = true; });
+    var out = [], todas = arr(t.aguasCalc);
+    todas.forEach(function (ag) {
+      if (!(num(ag.inclinacao, 0) > 0)) return;
+      var e = ag.aresta >= 0 ? arr(t.arestasCalc)[ag.aresta] : null;
+      if (e && origs[e.orig]) out.push(ag);
+    });
+    return out;
+  }
+  function areaCasoB(ag) {
+    var pl = ag.plano || {}, s = Math.sqrt((pl.bx || 0) * (pl.bx || 0) + (pl.bz || 0) * (pl.bz || 0));
+    if (!(s > 1e-9)) return null;
+    var ux = pl.bx / s, uz = pl.bz / s, lo = Infinity, hi = -Infinity, tl = Infinity, th = -Infinity;
+    arr(ag.pecas).forEach(function (pc) { arr(pc.pts).forEach(function (q) {
+      var u = q.x * ux + q.z * uz, w = -q.x * uz + q.z * ux;
+      if (u < lo) lo = u; if (u > hi) hi = u; if (w < tl) tl = w; if (w > th) th = w;
+    }); });
+    var b = th - tl; if (!(b > 0)) return null;
+    var a = num(ag.areaProjecao, 0) / b;
+    return { a: r4(a), b: r4(b), h: r4(a * s) };
+  }
+  /* cfg = { cidade, situacao ("cobertura" padrão), periodoRetorno_anos, intensidade_mm_h + fonteIntensidade, postoReferencia + postoConfirmado,
+             laminaMm (padrão: metade da altura da calha), material ("chapa_metalica"), calhas:{ idDaCalha:{ declividadePct, laminaMm } } }
+     → { ok, status, intensidade, calhas:[…do HidAP], verificacoes, avisos, premissas, pendencias } */
+  function entradaPluvial(estado, cfg) {
+    cfg = cfg || {};
+    var cals = listarCalhas(estado), areas = [], calhas = [], premissas = [], i = 0;
+    cals.forEach(function (cal) {
+      var ags = aguasDaCalha(estado, cal);
+      if (!ags.length) return;
+      var ids = [];
+      ags.forEach(function (ag) {
+        var c = areaCasoB(ag); if (!c) return;
+        var aid = "A" + (++i); ids.push(aid);
+        areas.push({ id: aid, caso: "b", a: c.a, h: c.h, b: c.b, destino: { calha: String(cal.id) } });
+      });
+      if (!ids.length) return;
+      var propria = cfg.calhas && cfg.calhas[String(cal.id)] || {};
+      var altMm = Math.round(cal.altura * 1000), larMm = Math.round(cal.largura * 1000);
+      var lam = fin(Number(propria.laminaMm)) ? Number(propria.laminaMm) : (fin(Number(cfg.laminaMm)) ? Number(cfg.laminaMm) : (cal.laminaMm != null ? cal.laminaMm : altMm / 2));
+      var decl = fin(Number(propria.declividadePct)) ? Number(propria.declividadePct) : (cal.declividadePct != null ? cal.declividadePct : PADRAO.declividadePct);
+      var cond = arr(estado.condutores).filter(function (c) { return c.ok && String(c.calha) === String(cal.id); });
+      var saidas = cond.length ? cond.map(function (c) { return { curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, c.distanciaDaPonta)), areaInfluencia_m2: null }; })
+                               : [{ curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, cal.comprimento / 2)) }];
+      if (!cond.length) premissas.push("calha " + cal.id + ": sem condutor lançado — uma saída no meio, a distância da curva = metade do comprimento");
+      calhas.push({ id: String(cal.id), secao: "retangular", base_mm: larMm, altura_mm: altMm, lamina_mm: lam, declividade_pct: decl, material: cfg.material || "chapa_metalica", saidas: saidas });
+      if (!(fin(Number(propria.laminaMm)) || fin(Number(cfg.laminaMm)) || cal.laminaMm != null)) premissas.push("calha " + cal.id + ": lâmina d'água = metade da altura (" + virg(lam, 0) + " mm) — premissa da RA, como na calha semicircular da tabela; a fonte lida não traz borda livre para a retangular");
+    });
+    var p = { areas: areas, calhas: calhas };
+    ["cidade", "situacao", "periodoRetorno_anos", "intensidade_mm_h", "fonteIntensidade", "postoReferencia", "postoConfirmado", "intensidadeSimplificada"].forEach(function (k) { if (cfg[k] != null) p[k] = cfg[k]; });
+    if (p.periodoRetorno_anos == null && !p.situacao) p.situacao = "cobertura";
+    return { pluvial: p, premissas: premissas };
+  }
+  function dimensionarCalhas(estado, cfg) {
+    var AP = dep("HidAP", "./hidap.js"), NR = dep("HidNormas", "./hidnormas.js");
+    if (!AP || !NR) return { ok: false, motivo: "O cálculo pluvial (js/hidap.js e js/hidnormas.js) não carregou." };
+    var ent = entradaPluvial(estado, cfg);
+    if (!ent.pluvial.calhas.length) return { ok: false, motivo: "Nenhuma calha com água de telhado ligada: lance a calha (embutida ou de beiral) em uma aresta que define inclinação." };
+    var ctx = NR.contexto(), r;
+    try { r = AP.calcular({ pluvial: ent.pluvial }, ctx, { trechos: [] }); } catch (e) { return { ok: false, motivo: "O cálculo pluvial falhou: " + e.message }; }
+    return { ok: true, status: r.status, intensidade: r.intensidade, calhas: r.calhas, areas: r.areas, verificacoes: r.verificacoes, avisos: r.avisos,
+             premissas: ent.premissas.concat(arr(r.premissas).map(function (x) { return x.item + ": " + x.valor; })), pendencias: ctx.pendencias ? ctx.pendencias() : [], entrada: ent.pluvial };
+  }
+  /* a MENOR seção da lista (por área) que passa na capacidade da NBR 10844 para a calha `id` */
+  var SECOES_CANDIDATAS = [[100, 80], [150, 80], [150, 100], [200, 100], [200, 120], [250, 120], [300, 120], [300, 150], [400, 150], [500, 200]];
+  function secaoMinimaCalha(estado, id, cfg) {
+    var alvo = null; listarCalhas(estado).forEach(function (c) { if (String(c.id) === String(id)) alvo = c; });
+    if (!alvo) return { ok: false, motivo: "Calha não encontrada." };
+    for (var i = 0; i < SECOES_CANDIDATAS.length; i++) {
+      var e2 = clone({ calhasEmbutidas: estado.calhasEmbutidas, bordas: estado.bordas, telhados: estado.telhados, condutores: estado.condutores });
+      var Lb = SECOES_CANDIDATAS[i][0] / 1000, Ab = SECOES_CANDIDATAS[i][1] / 1000;
+      arr(e2.calhasEmbutidas).forEach(function (c) { if (String(c.id) === String(id)) { c.larguraEf = Lb; c.alturaEf = Ab; c.laminaMm = null; } });
+      arr(e2.bordas).forEach(function (b) { if (String(b.id) === String(id)) { b.larguraEf = Lb; b.alturaEf = Ab; } });
+      var r = dimensionarCalhas(e2, cfg);
+      if (!r.ok) return r;
+      var ch = r.calhas.filter(function (x) { return String(x.id) === String(id); })[0];
+      if (!ch || ch.capacidade_l_min == null || ch.vazaoProjeto_l_min == null) return { ok: true, pendente: true, motivo: "Sem vazão ou capacidade (cidade fora da tabela, intensidade sem fonte ou calha sem condutor): ver pendências.", resultado: r };
+      if (ch.vazaoProjeto_l_min <= ch.capacidade_l_min) return { ok: true, baseMm: SECOES_CANDIDATAS[i][0], alturaMm: SECOES_CANDIDATAS[i][1], capacidade_l_min: ch.capacidade_l_min, vazaoProjeto_l_min: ch.vazaoProjeto_l_min, resultado: r };
+    }
+    return { ok: true, nenhuma: true, motivo: "Nenhuma das seções candidatas (até 500 × 200 mm) passa: aumente a declividade ou ponha mais condutores.", resultado: null };
+  }
+
+  /* ============================================================ QUANTITATIVO */
+  function item(grupo, nome, un, qtd, sinapi, obs, extra) {
+    var o = { grupo: grupo, item: nome, un: un, qtd: r4(qtd), sinapi: sinapi || null, orcarAParte: !sinapi, obs: obs || null };
+    if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+    return o;
+  }
+  function quantitativo(estado, opc) {
+    opc = opc || {}; var itens = [], avisos = [], T = BT();
+    arr(estado && estado.telhados).forEach(function (t) {
+      if (!t || !t.ok) return;
+      var tel = T && T.telha ? T.telha(t.tipoId) : null, nome = "Telhamento — " + txt(t.tipoTelhado && t.tipoTelhado.rotulo);
+      if (tel && tel.familia === "fibrocimento") {
+        var a10 = 0, aa = 0;
+        arr(t.aguasCalc).forEach(function (ag) { if (T.pctGraus(num(ag.inclinacao, 0)) <= 10 + 1e-9) a10 += ag.area; else aa += ag.area; });
+        if (a10 > 0) itens.push(item("Cobertura", nome + " (até 10°, recobrimento 1 1/4 de onda)", "m²", a10, sin("telhaFibroAte10"), null, { telhado: t.id }));
+        if (aa > 0) itens.push(item("Cobertura", nome + " (acima de 10°, recobrimento 1/4 de onda)", "m²", aa, sin("telhaFibroAcima10"), null, { telhado: t.id }));
+        if (num(t.cumeeira, 0) > 0) itens.push(item("Cobertura", "Cumeeira da telha de fibrocimento", "m", t.cumeeira, sin("cumeeiraFibro"), null, { telhado: t.id }));
+      } else if (tel && tel.familia === "sanduiche") {
+        itens.push(item("Cobertura", nome, "m²", t.area, sin("telhaSanduiche"), "composição aproximada (telha termoacústica 30 mm); face inferior efeito madeira e peso da telha: " + (tel.faceInferior ? tel.faceInferior.fonte : "não verificado"), { telhado: t.id }));
+        if (num(t.cumeeira, 0) > 0) itens.push(item("Cobertura", "Cumeeira da telha sanduíche", "m", t.cumeeira, null, "cumeeira de telha sanduíche: sem composição na base", { telhado: t.id }));
+      } else itens.push(item("Cobertura", nome, "m²", t.area, null, "tipo sem composição SINAPI mapeada", { telhado: t.id }));
+      if (num(t.espigao, 0) > 0) itens.push(item("Cobertura", "Espigão", "m", t.espigao, null, "sem composição na base", { telhado: t.id }));
+      if (num(t.rincao, 0) > 0) itens.push(item("Cobertura", "Rincão", "m", t.rincao, null, "sem composição na base", { telhado: t.id }));
+      if (tel) arr(t.avisos).forEach(function (a) { avisos.push("Telhado " + t.id + ": " + a); });
+    });
+    arr(estado && estado.platibandas).forEach(function (p) {
+      if (!p || !p.ok) return;
+      itens.push(item("Platibanda", "Platibanda de alvenaria, e = " + virg(p.espessuraEf * 100, 0) + " cm", "m²", p.area, null, "altura " + virg(p.altura) + " m, " + virg(p.comprimento) + " m de comprimento, " + virg(p.volume, 3) + " m³; a alvenaria e o revestimento das duas faces (" + virg(p.areaFaces) + " m²) saem da composição de parede da obra", { platibanda: p.id }));
+      if (p.rufoCapa) itens.push(item("Platibanda", "Rufo de capa (chapim) — " + p.rufoCapa.obs, "m", p.rufoCapa.comprimento, p.rufoCapa.sinapi, null, { platibanda: p.id }));
+      if (p.contraRufo) itens.push(item("Platibanda", "Contra-rufo — " + p.contraRufo.obs, "m", p.contraRufo.comprimento, p.contraRufo.sinapi, null, { platibanda: p.id }));
+    });
+    arr(estado && estado.calhasEmbutidas).forEach(function (c) {
+      if (!c || !c.ok) return;
+      itens.push(item("Calha e descidas", "Calha embutida de chapa galvanizada — " + c.obsSinapi, "m", c.comprimento, c.sinapi, "seção " + virg(c.larguraEf * 100, 0) + " × " + virg(c.alturaEf * 100, 0) + " cm, declividade " + virg(c.declividadeEf, 2) + "%", { calha: c.id }));
+    });
+    arr(estado && estado.bordas).forEach(function (b) {
+      if (!b || !b.ok) return;
+      if (b.tipoBorda === "calha") {
+        var pvc = opc.calhaBeiral === "pvc", dev = desenvolvimentoCalha(b.larguraEf, b.alturaEf), dv = escolher(DESENV_CALHA, dev, "dev");
+        if (pvc) itens.push(item("Calha e descidas", "Calha de beiral semicircular de PVC DN 125 (inclui cabeceiras, emendas, bocais e suportes)", "m", b.comprimento, sin("calhaPvc125"), "calha de beiral: seção a confirmar pelo cálculo pluvial", { calha: b.id }));
+        else itens.push(item("Calha e descidas", "Calha de beiral de chapa galvanizada — " + (dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(dev * 100) + " cm)" : "desenvolvimento " + Math.round(dev * 100) + " cm sem composição"), "m", b.comprimento, dv ? sin(dv.ref) : null, null, { calha: b.id }));
+      } else if (b.tipoBorda === "rufo" || b.tipoBorda === "testeira" || b.tipoBorda === "intradorso") {
+        var rot = { rufo: "Rufo de beiral/empena", testeira: "Testeira", intradorso: "Intradorso (forro do beiral)" }[b.tipoBorda];
+        itens.push(item("Cobertura", rot, b.tipoBorda === "intradorso" ? "m²" : "m", b.tipoBorda === "intradorso" ? b.area : b.comprimento, null, "corte/composição não definidos no tipo de borda: orçar à parte", { borda: b.id }));
+      }
+    });
+    arr(estado && estado.rufosEncontro).forEach(function (r) {
+      if (!r || !r.ok || !r.encontros.length) return;
+      var ob = PADRAO_RUFO.obs + "; " + r.obsChapa, inc = "incluso na composição SINAPI do rufo (só conferência, não somar; quantidade por metro: valor de partida — conferir)";
+      if (r.comprimentoRufo > 0) itens.push(item("Cobertura", "Rufo de encontro com parede — " + r.chapa + ", corte " + virg(r.corteRufoEf * 100, 0) + " cm", "m", r.comprimentoRufo, r.sinapiRufo, ob, { rufo: r.id }));
+      itens.push(item("Cobertura", "Contrarrufo embutido na parede — " + r.chapa + ", corte " + virg(r.corteContraEf * 100, 0) + " cm", "m", r.comprimentoContra, r.sinapiContra, ob, { rufo: r.id }));
+      itens.push(item("Cobertura", "Chapa do rufo e do contrarrufo (massa, com " + PADRAO_RUFO.perdaPct + "% de perda por corte)", "kg", r.kgRufo + r.kgContra, null, "conferência de compra: " + virg(r.kgPorMRufo, 3) + " kg/m (rufo) e " + virg(r.kgPorMContra, 3) + " kg/m (contrarrufo); " + r.obsChapa, { rufo: r.id, somar: false }));
+      var fx = r.sinapiRufo ? inc : "fixação: " + PADRAO_RUFO.obs;
+      itens.push(item("Cobertura", "Fixação do contrarrufo — parafuso + bucha S-8 na alvenaria", "un", r.fixacao.parafusoBucha, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+      itens.push(item("Cobertura", "Rebite de repuxo Ø3,2 × 8 mm (emendas)", "un", r.fixacao.rebites, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+      itens.push(item("Cobertura", "Selante PU — cordão no encontro com a parede", "m", r.fixacao.selanteM, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+    });
+    arr(estado && estado.condutores).forEach(function (c) {
+      if (!c || !c.ok) return;
+      if (c.noHidro) { itens.push(item("Calha e descidas", "Condutor vertical (descida) PVC série R DN " + c.dnEf + " — no sistema pluvial do hidro", "m", c.alturaM, null, "o tubo é o trecho " + c.trecho + " do sistema pluvial (quantitativo do hidrossanitário): aqui só conferência, não somar", { condutor: c.id, somar: false, orcarAParte: false })); return; }
+      itens.push(item("Calha e descidas", "Condutor vertical (descida) de PVC série R, DN " + (c.dnEf != null ? c.dnEf : "a dimensionar"), "m", c.alturaM, null,
+                      c.dnEf != null ? "ver a composição pluvial do cálculo hidrossanitário (tubo|pvc_serie_r|pluvial:prumada|" + c.dnEf + ")" : "DN pendente do cálculo pluvial", { condutor: c.id }));
+    });
+    var Es = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); if (Es && Es.quantitativo) { var qe = Es.quantitativo(estado, opc); qe.itens.forEach(function (x) { itens.push(x); }); qe.avisos.forEach(function (x) { avisos.push(x); }); }
+    var Fd = dep("BimForroDrywall", "./bimforrodrywall.js"); if (Fd && Fd.quantitativo) { var qf = Fd.quantitativo(estado, opc); qf.itens.forEach(function (x) { itens.push(x); }); qf.avisos.forEach(function (x) { avisos.push(x); }); }
+    var totais = {};
+    itens.forEach(function (x) { var k = x.item + "|" + x.un; totais[x.grupo] = (totais[x.grupo] || 0) + 1; void k; });
+    return { itens: itens, avisos: avisos, base: SINAPI.base, contagemPorGrupo: totais,
+             comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length };
+  }
+
+  /* ============================================================ T2 (20/10/2026): RUFO E CONTRARRUFO NO ENCONTRO COM PAREDE MAIS ALTA
+     Pedido do dono: "gerar rufo, contrarrufo, calha, tudo dimensionado de acordo com a NBR 10844, de acordo com a área de
+     contribuição e os parâmetros do endereço da obra".
+     O ENCONTRO sai da GEOMETRIA: aresta do contorno do telhado com uma parede paralela encostada nela (o corpo da parede toca a
+     linha do contorno) cujo topo fica ACIMA da face de cima da telha (oitão que passa do telhado, meia-água encostada numa parede
+     mais alta, platibanda feita com parede). O trecho é medido onde a parede passa da telha — a parede de "anexar topo" não conta
+     (ela para no telhado). A aresta coberta pela op platibanda fica com o contra-rufo DELA (não conta duas vezes).
+     Rufo = chapa dobrada (aba sobre a telha + aba na parede); contrarrufo = chapa embutida na parede, cobrindo a aba do rufo.
+     ⚠ SEM FONTE (docs/telhado/PADROES-TELHADO.md §5.1, pesquisa de 20/10/2026): dobras e desenvolvimento do rufo e do contrarrufo,
+       espessura da chapa nº 24/26 (as fontes divergem) e a quantidade de fixação por metro — tudo em PADRAO_RUFO é VALOR DE
+       PARTIDA — CONFERIR e sai escrito assim no quantitativo e no memorial. COM fonte: a composição SINAPI 94231 (rufo nº 24, corte
+       25 cm: rebite de repuxo Ø3,2 × 8 mm, prego inox 18 × 27 na madeira, parafuso + bucha S-8 na alvenaria, cordão de selante PU
+       em todo o encontro, perda de 5% por corte — SINAPI Caderno Telhamento 06/2026, p. 64–65). */
+  var PADRAO_RUFO = {
+    corteRufo: 0.25, corteContra: 0.25, abaTelha: 0.10, abaParede: 0.15, contraDe: 0.10, contraAte: 0.22, folga: 0.05,
+    parafusoPorM: 2, rebitePorM: 2, selantePorM: 1, perdaPct: 5,
+    obs: "valor de partida — conferir (dobras, desenvolvimento e fixação por metro sem fonte técnica: docs/telhado/PADROES-TELHADO.md §5.1)"
+  };
+  /* a chapa: a massa é física (corte × espessura × densidade); a ESPESSURA da bitola é valor de partida (fontes divergem) */
+  var CHAPAS = {
+    galv24: { rotulo: "chapa de aço galvanizado nº 24", espessuraMm: 0.64, densidade: 7850, sinapi: { 0.25: "rufo25" },
+              obsEsp: "espessura 0,64 mm de partida (fontes: 0,60–0,64 mm) — conferir com o fornecedor" },
+    galv26: { rotulo: "chapa de aço galvanizado nº 26", espessuraMm: 0.50, densidade: 7850, sinapi: { 0.33: "rufo33" },
+              obsEsp: "espessura ≈ 0,50 mm (DER-ES 0903, fonte secundária) — conferir com o fornecedor" },
+    aluminio: { rotulo: "chapa de alumínio", espessuraMm: 0.50, densidade: 2700, sinapi: {},
+                obsEsp: "espessura 0,50 mm de partida (sem fonte) — conferir com o fornecedor" }
+  };
+  function chapaDe(m) { return CHAPAS[m] ? m : "galv24"; }
+  function sinRufo(mat, corte) { var c = CHAPAS[chapaDe(mat)], k = Object.keys(c.sinapi).filter(function (x) { return Math.abs(Number(x) - corte) < 1e-6; })[0]; return k ? sin(c.sinapi[k]) : null; }
+  function kgPorM(mat, corte) { var c = CHAPAS[chapaDe(mat)]; return corte * c.espessuraMm / 1000 * c.densidade * (1 + PADRAO_RUFO.perdaPct / 100); }
+
+  function dentroP(x, z, pts) {
+    var d = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var a = pts[i], b = pts[j];
+      if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) d = !d;
+    }
+    return d;
+  }
+  /* a face de CIMA da telha no ponto (a face de baixo do plano + a espessura na vertical) — null fora do telhado */
+  function topoTelhaEm(t, x, z) {
+    var best = null;
+    arr(t && t.aguasCalc).forEach(function (ag) {
+      var pl = ag.plano || {};
+      arr(ag.pecas).forEach(function (pc) {
+        if (!dentroP(x, z, arr(pc.pts))) return;
+        var y = num(pl.a, 0) + num(pl.bx, 0) * x + num(pl.bz, 0) * z;
+        if (best == null || y < best.y) best = { y: y, fator: num(ag.fator, 1) };
+      });
+    });
+    return best ? best.y + num(t.espessura, 0) * best.fator : null;
+  }
+  function sinalArea(P) { var s = 0; for (var i = 0, n = P.length; i < n; i++) { var a = P[i], b = P[(i + 1) % n]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+  /* os encontros de UM telhado: [{k, orig, define, parede, segs:[{a,b,fa,fb,yA,yB}], comprimento, yParede, nIn:{x,z}}] */
+  function encontrosDoTelhado(estado, t, opc) {
+    opc = opc || {};
+    var out = [];
+    if (!t || !t.ok || t.modo !== "perimetro") return out;
+    var C = contornoDe(t), P = C.P, n = P.length, sg = sinalArea(P) >= 0 ? 1 : -1, folga = fin(Number(opc.folga)) ? Number(opc.folga) : PADRAO_RUFO.folga;
+    var daPlat = {};
+    arr(estado && estado.platibandas).forEach(function (p) { if (p && p.ok && String(p.telhado) === String(t.id)) arr(p.segs).forEach(function (s) { daPlat[s.k] = true; }); });
+    var paredes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.anexarTopo && fin(Number(c.comprimento)) && fin(Number(c.altura)); });
+    for (var k = 0; k < n; k++) {
+      if (daPlat[k]) continue;
+      var A = P[k], B = P[(k + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], Le = Math.sqrt(ex * ex + ez * ez);
+      if (!(Le > 0.05)) continue;
+      ex /= Le; ez /= Le;
+      var nIn = { x: -ez * sg, z: ex * sg }, nOut = { x: -nIn.x, z: -nIn.z }, e = t.arestasCalc[k];
+      paredes.forEach(function (c) {
+        var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), L = num(c.comprimento, 0), esp = num(c.espessura, 0.15), cx = num(c.cx, 0), cz = num(c.cz, 0);
+        if (Math.abs(ux * ez - uz * ex) > 0.05) return;                                   /* paralela à aresta */
+        var d = (cx - A[0]) * nOut.x + (cz - A[1]) * nOut.z;                              /* o eixo da parede, para fora (+) */
+        if (d < -esp / 2 - 0.02 || d > esp / 2 + 0.10) return;                           /* o corpo da parede toca a linha do contorno */
+        var al = (cx - A[0]) * ex + (cz - A[1]) * ez, s0 = Math.max(0, al - L / 2), s1 = Math.min(Le, al + L / 2);
+        if (!(s1 - s0 > 0.05)) return;
+        var yW = num(c.cy, 0) + num(c.altura, 0) / 2, off = d - esp / 2;                 /* a face da parede do lado do telhado */
+        var M = Math.max(40, Math.ceil((s1 - s0) / 0.02)), fs = [], ys = [], i;
+        for (i = 0; i <= M; i++) {
+          var s = s0 + (s1 - s0) * i / M, sc = Math.max(0.005, Math.min(Le - 0.005, s));
+          var y = topoTelhaEm(t, A[0] + ex * sc + nIn.x * 0.03, A[1] + ez * sc + nIn.z * 0.03);
+          ys.push(y); fs.push(y == null ? null : yW - (y + folga));
+        }
+        /* os trechos onde a parede passa da telha (cruzamento interpolado entre as amostras) */
+        var segs = [], ini = null, yIni = null;
+        function sDe(i) { return s0 + (s1 - s0) * i / M; }
+        function fecha(sA, yA, sB, yB) {
+          if (!(sB - sA > 0.02)) return;
+          function P2(s, o) { return { x: r6(A[0] + ex * s + nOut.x * o), z: r6(A[1] + ez * s + nOut.z * o) }; }
+          segs.push({ s0: r4(sA), s1: r4(sB), a: P2(sA, 0), b: P2(sB, 0), fa: P2(sA, off), fb: P2(sB, off), yA: r6(yA), yB: r6(yB) });
+        }
+        for (i = 0; i <= M; i++) {
+          var f = fs[i];
+          if (f != null && f > 0) { if (ini == null) {
+              if (i > 0 && fs[i - 1] != null) { var u = fs[i - 1] / (fs[i - 1] - f); ini = sDe(i - 1) + (sDe(i) - sDe(i - 1)) * u; yIni = ys[i - 1] + (ys[i] - ys[i - 1]) * u; }
+              else { ini = sDe(i); yIni = ys[i]; } }
+          } else if (ini != null) {
+            var sF = sDe(i - 1), yF = ys[i - 1];
+            if (f != null) { var u2 = fs[i - 1] / (fs[i - 1] - f); sF = sDe(i - 1) + (sDe(i) - sDe(i - 1)) * u2; yF = ys[i - 1] + (ys[i] - ys[i - 1]) * u2; }
+            fecha(ini, yIni, sF, yF); ini = null;
+          }
+        }
+        if (ini != null) fecha(ini, yIni, sDe(M), ys[M]);
+        if (!segs.length) return;
+        var Lt = 0; segs.forEach(function (s) { Lt += s.s1 - s.s0; });
+        out.push({ k: k, orig: e.orig, define: !!e.define, parede: c.id, yParede: r6(yW), afastamento: r4(off), nIn: { x: r6(nIn.x), z: r6(nIn.z) }, segs: segs, comprimento: r4(Lt) });
+      });
+    }
+    return out;
+  }
+  function calcularRufo(f, telhados, estado) {
+    var r = clone(f), avisos = [], t = telhados[String(f.telhado)];
+    r.tipo = "rufoEncontro"; r.ifc = "IFCCOVERING"; r.ifcPre = "FLASHING"; r.ok = false; r.encontros = []; r.comprimentoRufo = 0; r.comprimentoContra = 0;
+    r.materialEf = chapaDe(f.material); r.chapa = CHAPAS[r.materialEf].rotulo; r.obsChapa = CHAPAS[r.materialEf].obsEsp;
+    r.corteRufoEf = fin(Number(f.corteRufo)) ? Number(f.corteRufo) : PADRAO_RUFO.corteRufo;
+    r.corteContraEf = fin(Number(f.corteContra)) ? Number(f.corteContra) : PADRAO_RUFO.corteContra;
+    if (!t) { avisos.push("O telhado deste rufo não existe mais."); r.avisos = avisos; return r; }
+    if (!t.ok || t.modo !== "perimetro") { avisos.push("O rufo de encontro segue o contorno do telhado por perímetro que fechou."); r.avisos = avisos; return r; }
+    var emb = {}; arr(estado && estado.calhasEmbutidas).forEach(function (c) { if (c && c.ok && String(c.telhado) === String(t.id)) arr(c.arestas).forEach(function (o) { emb[Number(o)] = true; }); });
+    var LR = 0, LC = 0;
+    encontrosDoTelhado(estado, t, { folga: f.folga }).forEach(function (en) {
+      en.rufo = !(en.define && emb[en.orig]);                 /* no beiral com calha embutida a calha recebe a água: só o contrarrufo */
+      en.contra = true;
+      if (en.define && !emb[en.orig]) avisos.push("A aresta " + (en.orig + 1) + " é beiral (a água sai por ela) e encosta na parede " + en.parede + ", mais alta que a telha: precisa de calha embutida (Cobertura completa › Calha embutida) — o rufo sozinho não leva a água.");
+      if (en.rufo) LR += en.comprimento; LC += en.comprimento;
+      r.encontros.push(en);
+    });
+    r.comprimentoRufo = r4(LR); r.comprimentoContra = r4(LC);
+    r.kgPorMRufo = r4(kgPorM(r.materialEf, r.corteRufoEf)); r.kgPorMContra = r4(kgPorM(r.materialEf, r.corteContraEf));
+    r.kgRufo = r4(LR * r.kgPorMRufo); r.kgContra = r4(LC * r.kgPorMContra);
+    r.fixacao = { parafusoBucha: Math.ceil(LC * PADRAO_RUFO.parafusoPorM), rebites: Math.ceil((LR + LC) * PADRAO_RUFO.rebitePorM), selanteM: r4((LR + LC) * PADRAO_RUFO.selantePorM) };
+    r.sinapiRufo = sinRufo(r.materialEf, r.corteRufoEf); r.sinapiContra = sinRufo(r.materialEf, r.corteContraEf);
+    r.ok = true;
+    if (!r.encontros.length) avisos.push("Nenhuma parede mais alta que a telha encosta no contorno deste telhado: sem rufo de encontro.");
+    if (avisos.length) r.avisos = avisos;
+    return r;
+  }
+
+  /* ============================================================ T2: INTENSIDADE PELA CIDADE DA OBRA (NBR 10844, Tabela 5)
+     A cidade vem da OBRA (Store 'obras': cidade/uf quando houver, senão o texto do local/endereço) e, sem ela, do CLIENTE da obra.
+     Na tabela → o valor do posto para o período de retorno (coberturas: pela tabela de situações). FORA da tabela → o MAIOR valor
+     da tabela para o mesmo período (a favor da segurança) + AVISO com os postos vizinhos sugeridos (nota a) — nunca valor inventado. */
+  function semAcento(s) { s = txt(s); try { if (s.normalize) s = s.normalize("NFD"); } catch (e) {} return s.replace(/[̀-ͯ]/g, "").toLowerCase(); }
+  function palavras(s) { return " " + semAcento(s).replace(/[^a-z0-9]+/g, " ").trim() + " "; }
+  function NRm() { return dep("HidNormas", "./hidnormas.js"); }
+  function localidades() { var NR = NRm(), vis = {}, out = []; if (!NR) return out; arr(NR.linhas("ap.intensidade.localidade", null)).forEach(function (l) { if (!vis[l.localidade]) { vis[l.localidade] = 1; out.push(l.localidade); } }); return out; }
+  /* o posto da Tabela 5 citado num texto livre ("Rua X, 10, Centro, Belo Horizonte - MG") — o nome mais comprido que casa */
+  /* REVISÃO 20/10/2026 — o posto é a CIDADE do endereço, não qualquer nome de cidade escrito nele. O defeito: "Rua Ouro Preto, 100,
+     Uberlândia - MG" achava Ouro Preto/MG (211 mm/h) em vez de "fora da tabela" (o maior, 246 mm/h + aviso); "Rua Sete Lagoas, 10,
+     Betim - MG" dava 182 mm/h — 26 % a menos, sem aviso. Regra: o nome do posto tem de FECHAR o texto (descontados UF, nome do
+     estado, CEP, "Brasil" e números no fim). Cidade com vários postos (Rio de Janeiro, São Paulo): o do bairro citado; sem bairro,
+     o de MAIOR intensidade para o período (a favor da segurança). */
+  var UFS = { ac: 1, al: 1, ap: 1, am: 1, ba: 1, ce: 1, df: 1, es: 1, go: 1, ma: 1, mt: 1, ms: 1, mg: 1, pa: 1, pb: 1, pr: 1, pe: 1, pi: 1, rj: 1, rn: 1, rs: 1, ro: 1, rr: 1, sc: 1, sp: 1, se: 1, to: 1 };
+  var ESTADOS = ["acre", "alagoas", "amapa", "amazonas", "bahia", "ceara", "distrito federal", "espirito santo", "goias", "maranhao", "mato grosso do sul", "mato grosso", "minas gerais", "para", "paraiba",
+                 "parana", "pernambuco", "piaui", "rio de janeiro", "rio grande do norte", "rio grande do sul", "rondonia", "roraima", "santa catarina", "sao paulo", "sergipe", "tocantins", "brasil"];
+  function fimDoEndereco(W, comEstado) {
+    var tk = W.trim().split(" ").filter(Boolean), mudou = true;
+    while (mudou && tk.length) {
+      mudou = false;
+      var u = tk[tk.length - 1];
+      if (UFS[u] || u === "cep" || /^\d+$/.test(u)) { tk.pop(); mudou = true; continue; }
+      for (var e = 0; comEstado && e < ESTADOS.length; e++) {
+        var es = ESTADOS[e].split(" ");
+        if (tk.length > es.length && tk.slice(tk.length - es.length).join(" ") === ESTADOS[e]) { tk.splice(tk.length - es.length, es.length); mudou = true; break; }
+      }
+    }
+    return " " + tk.join(" ") + " ";
+  }
+  function postoInfo(texto, T) {
+    var W = palavras(texto), Wfs = [fimDoEndereco(W, false), fimDoEndereco(W, true)], cands = [];
+    if (!W.trim()) return { loc: null, varios: [] };
+    var exato = localidades().filter(function (loc) { return String(loc).trim() === String(texto).trim(); })[0];
+    if (exato) return { loc: exato, varios: [] };   /* o nome do posto como está na tabela (o que a tela devolve) */
+    localidades().forEach(function (loc) {
+      var m = String(loc).match(/^([^/(]*)(?:\/([^(]*))?(?:\((.*)\))?/) || [], nome = palavras(m[1] || loc), uf = m[2] && m[2].trim() ? palavras(m[2]) : null, bairro = m[3] ? palavras(m[3]) : null;
+      if (!nome.trim() || !Wfs.some(function (Wf) { return Wf.length >= nome.length && Wf.slice(Wf.length - nome.length) === nome; })) return;   /* o posto FECHA o texto (com ou sem o nome do estado no fim) */
+      var ufs = W.match(/ (ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to)(?= )/g);
+      if (uf && ufs && ufs.length && ufs.map(function (x) { return x + " "; }).indexOf(uf) < 0) return;
+      cands.push({ loc: loc, n: nome.length + (bairro && W.indexOf(bairro) >= 0 ? 1000 : 0), nome: nome });
+    });
+    if (!cands.length) return { loc: null, varios: [] };
+    var nMax = Math.max.apply(null, cands.map(function (c) { return c.n; })), top = cands.filter(function (c) { return c.n === nMax; });
+    if (top.length === 1) return { loc: top[0].loc, varios: [] };
+    /* mesma cidade, vários postos, nenhum bairro citado: o de maior intensidade para o período */
+    var NR = NRm(), Tq = T != null ? T : 5;
+    function iDe(loc) { var l = NR ? arr(NR.linhas("ap.intensidade.localidade", { localidade: loc, periodo_anos: Tq })).filter(function (x) { return fin(Number(x.intensidade_mm_h)); })[0] : null; return l ? Number(l.intensidade_mm_h) : -1; }
+    top.sort(function (a, b) { return iDe(b.loc) - iDe(a.loc); });
+    return { loc: top[0].loc, varios: top.map(function (c) { return c.loc; }) };
+  }
+  function postoNoTexto(texto, T) { return postoInfo(texto, T).loc; }
+  function cidadeDaObra(obra, cliente) {
+    obra = obra || {}; cliente = cliente || {};
+    var cands = [];
+    if (txt(obra.cidade).trim()) cands.push({ t: txt(obra.cidade) + (obra.uf ? "/" + obra.uf : ""), o: "obra (cidade/UF)" });
+    ["local", "endereco", "enderecoEntrega"].forEach(function (k) { if (txt(obra[k]).trim()) cands.push({ t: txt(obra[k]), o: "obra (" + k + ")" }); });
+    /* REVISÃO 20/10/2026: o CLIENTE só quando a obra não tem endereço nenhum. Antes, obra fora da Tabela 5 (Uberlândia) com
+       cliente morando em Belo Horizonte saía com os 227 mm/h de BH — a chuva do lugar errado, sem aviso. */
+    if (!cands.length) {
+      if (txt(cliente.cidade).trim()) cands.push({ t: txt(cliente.cidade) + (cliente.uf ? "/" + cliente.uf : ""), o: "cliente (cidade/UF)" });
+      if (txt(cliente.endereco).trim()) cands.push({ t: txt(cliente.endereco), o: "cliente (endereço)" });
+    }
+    for (var i = 0; i < cands.length; i++) { var p = postoInfo(cands[i].t); if (p.loc) return { cidade: p.loc, naTabela: true, texto: cands[i].t, origem: cands[i].o, varios: p.varios }; }
+    return cands.length ? { cidade: cands[0].t, naTabela: false, texto: cands[0].t, origem: cands[0].o } : { cidade: null, naTabela: false, texto: "", origem: null };
+  }
+  function periodoCobertura(situacao) {
+    var NR = NRm(); if (!NR) return null;
+    var c = NR.consulta("ap.periodo_retorno.situacao", { situacao: situacao || "cobertura" }, "anos");
+    return c.ok ? num(c.valor, null) : null;
+  }
+  function intensidadeNBR(cidadeTexto, T) {
+    var NR = NRm(), r = { valor_mm_h: null, periodo_anos: T, localidade: null, origem: null, aviso: null, texto: "", fonte: null };
+    if (!NR || T == null) { r.aviso = "Período de retorno ou tabela de intensidades indisponível."; return r; }
+    var ls = arr(NR.linhas("ap.intensidade.localidade", { periodo_anos: T })).filter(function (l) { return fin(Number(l.intensidade_mm_h)); });
+    r.fonte = NR.fonte("ap.intensidade.localidade");
+    var pinf = cidadeTexto ? postoInfo(cidadeTexto, T) : { loc: null, varios: [] }, posto = pinf.loc, lin = posto ? ls.filter(function (l) { return l.localidade === posto; })[0] : null;
+    if (lin) {
+      r.valor_mm_h = Number(lin.intensidade_mm_h); r.localidade = posto; r.origem = "tabela";
+      r.texto = "I = " + r.valor_mm_h + " mm/h — NBR 10844 Tabela 5, " + posto + ", T = " + T + " anos" + (lin.periodo_observado_anos ? " (período observado " + lin.periodo_observado_anos + " anos, nota b)" : "");
+      if (pinf.varios.length > 1) r.aviso = "A cidade tem " + pinf.varios.length + " postos na Tabela 5 (" + pinf.varios.join("; ") + ") e o endereço não cita o bairro: adotado o de MAIOR intensidade para T = " + T + " anos (" + posto + ", " + r.valor_mm_h + " mm/h). Escreva o posto se for outro.";
+      return r;
+    }
+    var mx = ls.reduce(function (m, l) { return !m || Number(l.intensidade_mm_h) > Number(m.intensidade_mm_h) ? l : m; }, null);
+    if (!mx) { r.aviso = "A Tabela 5 não tem intensidade para T = " + T + " anos."; return r; }
+    var viz = [];
+    try { var v = cidadeTexto ? NR.linhas("ap.postos_vizinhos", null).filter(function (x) { return palavras(cidadeTexto).indexOf(palavras(String(x.localidade).split("/")[0])) >= 0; })[0] : null; if (v) viz = [v.posto1, v.posto2].filter(Boolean); } catch (e) {}
+    r.valor_mm_h = Number(mx.intensidade_mm_h); r.localidade = mx.localidade; r.origem = "maior_da_tabela";
+    r.texto = "I = " + r.valor_mm_h + " mm/h — o MAIOR valor da Tabela 5 da NBR 10844 para T = " + T + " anos (" + mx.localidade + "), adotado a favor da segurança";
+    r.aviso = (posto ? "O posto " + posto + " da Tabela 5 não tem intensidade para T = " + T + " anos" : cidadeTexto ? "A cidade da obra (" + cidadeTexto + ") não está na Tabela 5 da NBR 10844" : "A obra não tem cidade/endereço cadastrado") +
+              ": adotado o MAIOR valor da tabela para T = " + T + " anos (" + r.valor_mm_h + " mm/h, " + mx.localidade + "). Confirme o posto de clima semelhante (nota a da tabela)" +
+              (viz.length ? " — sugeridos: " + viz.join(", ") : "") + " ou informe a intensidade com a fonte.";
+    return r;
+  }
+
+  /* ============================================================ T2: CALHAS, DESCIDAS E CONDUTORES PELA NBR 10844 — o LOTE
+     gerarPluvial(opsBase, cfg) → { ok, lote:{op:"lote", id:"tel-calha-lote", ops}, intensidade, calhas:[…], rufos:[…], memorial:[texto],
+                                   avisos, premissas, pendencias, verificacao (o js/hidap.js refeito com o lote aplicado) }
+     cfg = { cidade?|obra?+cliente?, situacao? ("cobertura"), periodoRetorno_anos?, intensidade_mm_h?+fonteIntensidade?, calhaBeiral?:bool,
+             material? ("galv24"|"galv26"|"aluminio"), rufos?:bool (true), ligarHidro?:bool (true), declividadePct?, descidasMin? (2), telhado? }
+     IDEMPOTENTE: ids fixos com o prefixo "tel-calha-"/"tel-rufo-" (calha de beiral "tel-calha-b-<telhado>", descida
+     "tel-calha-<calha>-cd<n>", tubo pluvial do hidro "tel-calha-ap-<calha>-<n>", rufo "tel-rufo-<telhado>"); rodar de novo
+     devolve as mesmas ops; o que sobrou de uma rodada anterior (descida a mais) sai por "apagar".
+     ÁREA: caso (b) da tabela da norma, A = (a + h/2)·b, sobre a PROJEÇÃO DA ÁGUA COM O BEIRAL (as águas do js/bimtelhado.js são
+     cortadas no contorno do beiral) — h = a·i. Q = I·A/60 (L/min). CALHA: retangular de chapa, Manning (js/hidap.js), n do
+     material e lâmina = metade da altura (premissa da RA, como antes), declividade mínima da norma. DESCIDAS: nas extremidades
+     (divisor de águas entre elas), mais descidas no meio do maior vão até a calha passar. CONDUTOR: a tabela DN × vazão de
+     Botelho & Ribeiro Jr. (fonte SECUNDÁRIA — o ábaco da Figura 3 não está digitalizado) e o diâmetro interno mínimo da norma.
+     Ligação com o hidro: cada descida vira um trecho "pluvial" vertical do js/biminst.js (op trecho, sem mexer no biminst); a
+     ponta de baixo fica como ESPERA PLUVIAL no piso (o condutor horizontal / caixa de areia é do projeto hidrossanitário). */
+  var PREFIXO = "tel-calha-";
+  /* REVISÃO 20/10/2026 — a ÁREA DE CADA DESCIDA pela GEOMETRIA da água, não pela fração do comprimento da calha.
+     O defeito que isto corrige: a divisão "Q da calha × fração do comprimento" supõe a mesma área por metro de calha. No telhado
+     de 4 águas o trapézio do lado comprido tem a profundidade cheia no meio e o triângulo da ponta vai a zero; na quina
+     reentrante (casa em L) o rincão despeja as duas águas vizinhas na quina. Casa em L 20 × 20 (alas de 8 m), 30 %, BH: a descida
+     da quina reentrante saía com 49,7 m² (188 L/min → DN 100, que leva 226,8 L/min); pela geometria são ~83 m² (≈ 314 L/min →
+     DN 100 estoura). Telhado de 4 águas 20 × 60: descida no meio do lado comprido com 138,5 m² (524 L/min → DN 150) contra
+     186,5 m² (706 L/min > 691,8 L/min do DN 150). Regra física: cada ponto da água escorre no sentido da maior declividade até
+     a borda da água; se a borda é o beiral, cai ali; se é um rincão, corre por ele até a ponta de baixo (a quina). A posição na
+     calha vai para a descida mais próxima ao longo dela (o divisor de águas fica no meio do vão, a mesma regra de antes).
+     A área de cada água continua a do caso (b) da norma; a geometria só reparte. */
+  function sNaLinha(segs, p) {
+    var best = null, ac = 0;
+    segs.forEach(function (sg) {
+      var dx = sg.b.x - sg.a.x, dz = sg.b.z - sg.a.z, L2 = dx * dx + dz * dz, L = Math.sqrt(L2);
+      var u = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - sg.a.x) * dx + (p.z - sg.a.z) * dz) / L2)) : 0;
+      var qx = sg.a.x + dx * u, qz = sg.a.z + dz * u, d = Math.sqrt((p.x - qx) * (p.x - qx) + (p.z - qz) * (p.z - qz));
+      if (!best || d < best.d - 1e-9) best = { s: ac + L * u, d: d };
+      ac += L;
+    });
+    return best;
+  }
+  /* cada amostra da água (pesos iguais, grade alinhada com a declividade: colunas de largura hw na horizontal da água) vira o
+     trecho [s0, s1] da calha onde ela cai — a coluna cai num pedaço do beiral; a que sai por rincão cai num ponto (s0 = s1).
+     null quando não dá para amostrar (o chamador volta para a fração do comprimento). */
+  function destinosDaAgua(ag, segsT) {
+    var pl = ag.plano || {}, bx = num(pl.bx, 0), bz = num(pl.bz, 0), g = Math.sqrt(bx * bx + bz * bz), out = [];
+    if (!(g > 1e-9) || !segsT.length) return null;
+    var dx = -bx / g, dz = -bz / g, px = -dz, pz = dx, mapa = {};     /* d = morro abaixo; p = na horizontal da água */
+    function poe(a, b) { var k = a.toFixed(4) + "|" + b.toFixed(4); if (mapa[k]) mapa[k][2]++; else { mapa[k] = [a, b, 1]; out.push(mapa[k]); } }   /* amostras iguais somam peso */
+    function yEm(q) { return num(pl.a, 0) + bx * q.x + bz * q.z; }
+    arr(ag.pecas).forEach(function (pc) {
+      var pts = arr(pc.pts), n = pts.length, i, u0 = Infinity, u1 = -Infinity, w0 = Infinity, w1 = -Infinity;
+      if (n < 3) return;
+      for (i = 0; i < n; i++) { var uq = pts[i].x * dx + pts[i].z * dz, wq = pts[i].x * px + pts[i].z * pz; u0 = Math.min(u0, uq); u1 = Math.max(u1, uq); w0 = Math.min(w0, wq); w1 = Math.max(w1, wq); }
+      if (!(u1 - u0 > 1e-6) || !(w1 - w0 > 1e-6)) return;
+      var NW = 240, NU = 40, hw = (w1 - w0) / NW, hu = (u1 - u0) / NU, iu, iw;
+      for (iw = 0; iw < NW; iw++) for (iu = 0; iu < NU; iu++) {
+        var w = w0 + (iw + 0.5) * hw, u = u0 + (iu + 0.5) * hu, x = u * dx + w * px, z = u * dz + w * pz;
+        if (!dentroP(x, z, pts)) continue;
+        var tMin = Infinity, eI = -1;
+        for (i = 0; i < n; i++) {
+          var a = pts[i], b = pts[(i + 1) % n], ex = b.x - a.x, ez = b.z - a.z, den = dx * ez - dz * ex;
+          if (Math.abs(den) < 1e-12) continue;
+          var wx = a.x - x, wz = a.z - z, tt = (wx * ez - wz * ex) / den, uu = (wx * dz - wz * dx) / den;
+          if (tt > 1e-9 && uu >= -1e-9 && uu <= 1 + 1e-9 && tt < tMin) { tMin = tt; eI = i; }
+        }
+        if (eI < 0) continue;
+        var X = { x: x + dx * tMin, z: z + dz * tMin }, q = sNaLinha(segsT, X);
+        if (q && q.d > 0.6) { var pa = pts[eI], pb = pts[(eI + 1) % n]; q = sNaLinha(segsT, yEm(pa) <= yEm(pb) ? pa : pb); if (q) poe(q.s, q.s); continue; }   /* rincão: corre até a ponta de baixo */
+        if (!q) continue;
+        var qa = sNaLinha(segsT, { x: X.x - px * hw / 2, z: X.z - pz * hw / 2 }), qb = sNaLinha(segsT, { x: X.x + px * hw / 2, z: X.z + pz * hw / 2 });
+        var sa = qa ? qa.s : q.s, sb = qb ? qb.s : q.s;
+        if (Math.abs(sb - sa) > hw * 2) poe(q.s, q.s); else poe(Math.min(sa, sb), Math.max(sa, sb));   /* coluna que cruza uma quina: no ponto */
+      }
+    });
+    return out.length ? out : null;
+  }
+  function gerarPluvial(opsBase, cfg) {
+    cfg = cfg || {};
+    var BE = dep("BimEdit", "./bimedit.js"), AP = dep("HidAP", "./hidap.js"), NR = NRm(), BI = dep("BimInst", "./biminst.js");
+    if (!BE || !AP || !NR) return { ok: false, motivo: "Os motores (js/bimedit.js, js/hidap.js, js/hidnormas.js) não carregaram." };
+    var base = arr(opsBase), avisos = [], premissas = [], memorial = [], pendencias = [], ops = [];
+    function est(extra) { return BE.aplicar(BE.sanear(base.concat(extra || []))); }
+    /* a mesma op (op + id) entra UMA vez no lote: os campos da segunda se juntam à primeira */
+    function poe(o) {
+      if (o.op !== "apagar") for (var i = 0; i < ops.length; i++) if (ops[i].op === o.op && String(ops[i].id) === String(o.id)) { Object.keys(o).forEach(function (k) { ops[i][k] = o[k]; }); return; }
+      ops.push(o);
+    }
+    function existe(st, id) {
+      var achou = false;
+      ["calhasEmbutidas", "bordas", "condutores", "platibandas", "rufosEncontro", "telhados"].forEach(function (k) { arr(st[k]).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; }); });
+      arr(st.instalacoes && st.instalacoes.trechos).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; });
+      return achou;
+    }
+    var st0 = est();
+    var tels = arr(st0.telhados).filter(function (t) { return t && t.ok && t.modo === "perimetro" && (cfg.telhado == null || String(t.id) === String(cfg.telhado)); });
+    if (!tels.length) return { ok: false, motivo: "Nenhum telhado por perímetro no modelo (Arquitetura › Telhado)." };
+    var mat = chapaDe(cfg.material);
+
+    /* 1) intensidade pela cidade da obra */
+    var T = fin(Number(cfg.periodoRetorno_anos)) ? Number(cfg.periodoRetorno_anos) : periodoCobertura(cfg.situacao);
+    var cid = cfg.cidade ? { cidade: cfg.cidade, texto: cfg.cidade, origem: "informada" } : cidadeDaObra(cfg.obra, cfg.cliente), I;
+    if (fin(Number(cfg.intensidade_mm_h)) && txt(cfg.fonteIntensidade).trim()) I = { valor_mm_h: Number(cfg.intensidade_mm_h), periodo_anos: T, origem: "informada", texto: "I = " + Number(cfg.intensidade_mm_h) + " mm/h — informada pelo projetista: " + cfg.fonteIntensidade };
+    else I = intensidadeNBR(cid.cidade, T);
+    if (I.aviso) avisos.push(I.aviso);
+    var cObra = cidadeDaObra(cfg.obra, cfg.cliente);
+    if (!I.aviso && I.origem === "tabela" && arr(cObra.varios).length > 1 && cObra.cidade === I.localidade)
+      avisos.push("A cidade da obra tem " + cObra.varios.length + " postos na Tabela 5 (" + cObra.varios.join("; ") + ") e o endereço não cita o bairro: adotado o de MAIOR intensidade para T = " + T + " anos (" + I.localidade + ", " + I.valor_mm_h + " mm/h). Escreva o posto se for outro.");
+    if (I.valor_mm_h == null) return { ok: false, motivo: I.aviso || "Sem intensidade pluviométrica.", avisos: avisos };
+    memorial.push("Intensidade pluviométrica: " + I.texto + (cid.origem && I.origem !== "informada" ? " (cidade lida de: " + cid.origem + (cid.texto ? " — \"" + cid.texto + "\"" : "") + ")" : "") + ".");
+    memorial.push("Período de retorno T = " + T + " anos (coberturas, NBR 10844 item 5.1.2); duração da chuva 5 min (item 5.1.3).");
+    /* REVISÃO 20/10/2026 — a CALHA EMBUTIDA (atrás da platibanda) extravasa para dentro da edificação: é o caso c) do item 5.1.2
+       (T = 25 anos, "coberturas e áreas onde empoçamento ou extravasamento não possa ser tolerado"). Com T = 5 a conta ficava abaixo:
+       Sete Lagoas/MG 182 × 281 mm/h (−35 %), Barbacena/MG 222 × 265. A calha de beiral transborda para fora: segue T = 5.
+       Período informado pelo projetista (cfg.periodoRetorno_anos) ou intensidade informada valem para todas. */
+    var T25 = periodoCobertura("sem_extravasamento"), I25 = null;
+    if (!fin(Number(cfg.periodoRetorno_anos)) && I.origem !== "informada" && T25 != null && T25 !== T) {
+      I25 = intensidadeNBR(cid.cidade, T25);
+      if (I25.valor_mm_h == null) I25 = null;
+    }
+
+    /* 2) calha de beiral pedida: nas arestas que definem inclinação e ainda não têm calha */
+    if (cfg.calhaBeiral) tels.forEach(function (t) {
+      var tem = {}, id = PREFIXO + "b-" + t.id;
+      listarCalhas(st0).forEach(function (c) { if (String(c.telhado) === String(t.id) && String(c.id) !== id) c.arestas.forEach(function (o) { tem[Number(o)] = true; }); });
+      var ks = arr(t.arestasCalc).filter(function (e) { return e.define && !tem[e.orig]; }).map(function (e) { return e.orig; });
+      if (ks.length) poe({ op: "borda", id: id, telhado: String(t.id), tipoBorda: "calha", arestas: ks });
+    });
+    var st1 = est(ops);
+    var cals = listarCalhas(st1).filter(function (c) { return tels.some(function (t) { return String(t.id) === String(c.telhado); }); });
+    if (!cals.length) return { ok: false, motivo: "Nenhuma calha: marque \"calha de beiral\" ou lance a calha embutida da platibanda.", avisos: avisos };
+
+    var nC = NR.consulta("ap.manning.n", { material: "chapa_metalica" }, "n"), dMin = NR.consulta("ap.calha.declividade_minima", null, "valor"), diMin = NR.consulta("ap.condutor_vertical.di_minimo_mm", null, "valor");
+    var capV = arr(NR.linhas("ap.condutor_vertical.capacidade", null)).slice().sort(function (a, b) { return a.dn - b.dn; });
+    var dnsMat = BI && BI.MATERIAIS && BI.MATERIAIS.pvc_serie_r ? arr(BI.MATERIAIS.pvc_serie_r.dns) : [];
+    var decl = fin(Number(cfg.declividadePct)) ? Number(cfg.declividadePct) : (dMin.ok ? num(dMin.valor, null) : null);
+    if (decl == null) return { ok: false, motivo: "Sem a declividade mínima da calha (tabela da norma)." };
+    if (dMin.ok && decl < num(dMin.valor, 0)) avisos.push("Declividade da calha " + virg(decl) + "% abaixo do mínimo de " + virg(num(dMin.valor, 0)) + "% da NBR 10844 (item 5.5.2).");
+    premissas.push("lâmina d'água da calha retangular = metade da altura (premissa da RA: a norma não traz borda livre para a retangular)");
+    premissas.push("descidas nas extremidades da calha (divisor de águas entre elas); calha com menos de 2 m: uma descida — parâmetro adotado");
+    premissas.push("vazão de cada descida = I × a área de influência dela / 60: cada ponto da água escorre no sentido da maior declividade até o beiral (ou pelo rincão até a quina) e vai para a descida mais próxima ao longo da calha (divisor no meio do vão); a área de cada água é a do caso (b); calha que dá a volta (telhado de 4 águas): descidas nas quinas, com o coeficiente da Tabela 1 (canto reto)");
+    premissas.push("condutor vertical pela tabela DN × vazão de Botelho & Ribeiro Jr. (fonte SECUNDÁRIA, via UFSM): o ábaco da Figura 3 da NBR 10844 não está digitalizado — conferir no ábaco");
+
+    var resCal = [], manLig = {}, descMin = Math.max(1, Math.round(num(cfg.descidasMin, 2)));
+    function idDesc(calId, j, i) { var b = String(calId).indexOf(PREFIXO) === 0 ? String(calId) : PREFIXO + calId; return b + "-cd" + (j + 1) + (i != null ? "-" + (i + 1) : ""); }
+    var avisou25 = false;
+    cals.forEach(function (cal) {
+      var t = tels.filter(function (x) { return String(x.id) === String(cal.telhado); })[0];
+      var Ic = cal.tipo === "embutida" && I25 ? I25 : I;
+      if (Ic === I25 && !avisou25) {
+        avisou25 = true;
+        premissas.push("calha embutida (platibanda): T = " + T25 + " anos — o extravasamento cai dentro da edificação (NBR 10844 item 5.1.2 c); " + I25.texto);
+        if (I25.aviso) avisos.push("Calha embutida (T = " + T25 + " anos): " + I25.aviso);
+      }
+      /* a calha em TRECHOS CONTÍNUOS (a de beiral em duas arestas opostas são duas linhas): cada trecho tem as suas águas e descidas */
+      var segs = cal.segs, cad = [], k;
+      for (k = 0; k < segs.length; k++) {
+        var s = segs[k], Ls = distP(s.a, s.b), ult = cad[cad.length - 1];
+        if (!ult || distP(segs[k - 1].b, s.a) > 0.05) { ult = { ini: 0, L: 0, quinas: [], origs: {}, fechada: false, segs: [] }; cad.push(ult); ult.offset = cad.length > 1 ? cad[cad.length - 2].offset + cad[cad.length - 2].L : 0; }
+        else {
+          var p = segs[k - 1], ux = p.b.x - p.a.x, uz = p.b.z - p.a.z, vx = s.b.x - s.a.x, vz = s.b.z - s.a.z, lu = Math.sqrt(ux * ux + uz * uz), lv = Math.sqrt(vx * vx + vz * vz);
+          if (lu > 1e-6 && lv > 1e-6 && Math.abs((ux * vz - uz * vx) / (lu * lv)) > 0.17) ult.quinas.push(ult.L);
+        }
+        ult.L += Ls; ult.segs.push(s); if (s.orig != null) ult.origs[Number(s.orig)] = true;
+        ult.ultimo = s; if (ult.primeiro == null) ult.primeiro = s;
+      }
+      cad.forEach(function (c) { if (c.primeiro !== c.ultimo && distP(c.ultimo.b, c.primeiro.a) < 0.05) { c.fechada = true; c.quinas.push(0); } });
+      /* as águas de cada trecho (caso b, com o beiral) */
+      var ags = aguasDaCalha(st1, cal), Ltot0 = 0;
+      segs.forEach(function (s) { Ltot0 += distP(s.a, s.b); });
+      /* REVISÃO 20/10/2026: a descida lançada À MÃO (id sem o prefixo tel-calha-) é trabalho do usuário — antes ia embora por
+         "apagar" a cada rodada. Agora fica onde está, entra na conta como posição fixa (só o DN é o do cálculo) e o motor só
+         acrescenta descida se a calha não passar com elas. */
+      var manuais = arr(st0.condutores).filter(function (m) { return m && m.ok && String(m.calha) === String(cal.id) && String(m.id).indexOf(PREFIXO) !== 0; }), usadas = {};
+      if (manuais.length) avisos.push("Calha " + cal.id + ": " + manuais.length + " descida(s) lançada(s) à mão (" + manuais.map(function (m) { return m.id; }).join(", ") + ") ficaram onde estão e entraram na conta (o DN é o do cálculo); para o arranjo automático, apague-as e rode de novo.");
+      cad.forEach(function (c) {
+        c.areas = []; c.A = 0; c.amostras = []; c.fixos = [];
+        manuais.forEach(function (m) {
+          var sm = num(m.posEf, 0.5) * Ltot0 - c.offset;
+          if (usadas[m.id] || sm < -1e-6 || sm > c.L + 1e-6) return;
+          usadas[m.id] = 1; c.fixos.push({ id: m.id, s: Math.max(0, Math.min(c.L, sm)) });
+        });
+        ags.forEach(function (ag) {
+          var e = arr(t.arestasCalc)[ag.aresta]; if (!e || !c.origs[e.orig]) return;
+          var ar = areaCasoB(ag); if (!ar) return;
+          var A = (ar.a + ar.h / 2) * ar.b;
+          c.areas.push({ aresta: e.orig, a: ar.a, b: ar.b, h: ar.h, i: num(ag.inclinacao, 0), A: r4(A), beiral: num(t.beiralEf, 0) }); c.A += A;
+          c.amostras.push({ A: A, ss: destinosDaAgua(ag, c.segs) });
+        });
+        c.Q = Ic.valor_mm_h * c.A / 60;
+        var fp = Math.min(0.15, c.L / 4);
+        c.pos = c.fixos.length ? c.fixos.map(function (f) { return f.s; }) : c.fechada ? c.quinas.slice() : (c.L < 2 || descMin === 1 ? [fp] : [fp, c.L - fp]);
+        c.pos.sort(function (a, b) { return a - b; });
+      });
+      cad = cad.filter(function (c) { return c.areas.length && c.L > 0.1; });
+      if (!cad.length) { avisos.push("Calha " + cal.id + ": nenhuma água inclinada escorre para ela."); return; }
+      function influencia(c) {
+        var P = c.pos, L = c.L;
+        /* pela geometria (ver destinosDaAgua); só cai na fração do comprimento se alguma água não deu para amostrar */
+        if (c.A > 0 && c.amostras.length && c.amostras.every(function (am) { return am.ss; })) {
+          var f = P.map(function () { return 0; }), nP = P.length;
+          /* o vão de cada descida: do meio do vão anterior ao meio do seguinte (na calha que dá a volta, circular) */
+          var lim = P.map(function (p, i) {
+            if (c.fechada) { if (nP === 1) return [p - L / 2, p + L / 2]; return [p - ((p - P[(i - 1 + nP) % nP] + L) % L) / 2, p + ((P[(i + 1) % nP] - p + L) % L) / 2]; }
+            return [i === 0 ? -Infinity : (P[i - 1] + p) / 2, i === nP - 1 ? Infinity : (p + P[i + 1]) / 2];
+          });
+          function perto(s) { var bi = 0, bd = Infinity; P.forEach(function (p, i) { var d = Math.abs(s - p); if (c.fechada) d = Math.min(d, L - d); if (d < bd - 1e-9) { bd = d; bi = i; } }); return bi; }
+          c.amostras.forEach(function (am) {
+            var cnt = P.map(function () { return 0; }), pesoT = 0;
+            am.ss.forEach(function (ab) {
+              var a = ab[0], b = ab[1], pw = ab[2], larg = b - a, fr = P.map(function () { return 0; }), tot = 0;
+              if (larg > 1e-9) lim.forEach(function (lm, i) {
+                (c.fechada ? [-L, 0, L] : [0]).forEach(function (sh) { var o = Math.min(b, lm[1] + sh) - Math.max(a, lm[0] + sh); if (o > 0) { fr[i] += o / larg; tot += o / larg; } });
+              });
+              pesoT += pw;
+              if (tot > 1e-9) fr.forEach(function (x, i) { cnt[i] += pw * x / tot; }); else cnt[perto((a + b) / 2)] += pw;
+            });
+            cnt.forEach(function (k, i) { f[i] += am.A * k / pesoT; });
+          });
+          return f.map(function (x) { return x / c.A; });
+        }
+        return P.map(function (s, i) {
+          if (c.fechada) { if (P.length === 1) return 1; var ant = P[(i - 1 + P.length) % P.length], pro = P[(i + 1) % P.length]; return (((s - ant + L) % L) + ((pro - s + L) % L)) / 2 / L; }
+          var ini = i === 0 ? 0 : (P[i - 1] + s) / 2, fim2 = i === P.length - 1 ? L : (s + P[i + 1]) / 2; return (fim2 - ini) / L;
+        });
+      }
+      function distQuina(c, s) { var m = null; c.quinas.forEach(function (q) { var d = Math.abs(s - q); if (c.fechada) d = Math.min(d, c.L - d); if (m == null || d < m) m = d; }); return m; }
+      function dnPara(qLmin) {
+        return capV.filter(function (x) { return num(x.vazao_ls, -1) * 60 >= qLmin - 1e-9 && (!diMin.ok || num(x.dn, 0) >= num(diMin.valor, 0)) && (!dnsMat.length || dnsMat.indexOf(num(x.dn, 0)) >= 0); })[0] || null;
+      }
+      function maisUma(c) {
+        var P = c.pos.slice(), gi = -1, gv = -1;
+        for (var j = 0; j < P.length; j++) { var nx = j + 1 < P.length ? P[j + 1] : (c.fechada ? P[0] + c.L : null); if (nx == null) continue; if (nx - P[j] > gv) { gv = nx - P[j]; gi = j; } }
+        P.push(gi < 0 ? c.L / 2 : (P[gi] + gv / 2) % c.L);
+        c.pos = P.sort(function (a, b) { return a - b; });
+      }
+      var achou = null, tent = 0;
+      while (!achou && tent++ < 16) {
+        var falhaDN = false;
+        cad.forEach(function (c) {
+          var inf = influencia(c);
+          c.sds = c.pos.map(function (s, i) { var d = distQuina(c, s), o = { s: s, q: c.Q * inf[i], areaInfluencia_m2: r4(c.A * inf[i]), curva: null, distanciaCurva_m: null }; if (d != null && d <= 4) { o.curva = "canto_reto"; o.distanciaCurva_m = r4(Math.max(0.01, d)); } o.dn = dnPara(o.q); if (!o.dn) falhaDN = true; return o; });
+        });
+        var pior = null;
+        if (!falhaDN) {
+          for (var c2 = 0; c2 < SECOES_CANDIDATAS.length && !achou; c2++) {
+            var bMm = SECOES_CANDIDATAS[c2][0], aMm = SECOES_CANDIDATAS[c2][1], ia = 0, ent = { situacao: "cobertura", intensidade_mm_h: Ic.valor_mm_h, fonteIntensidade: Ic.texto, areas: [], calhas: [] };
+            cad.forEach(function (c, j) {
+              var cid = String(cal.id) + (cad.length > 1 ? "#" + (j + 1) : "");
+              c.areas.forEach(function (x) { ent.areas.push({ id: "A" + (++ia), caso: "b", a: x.a, h: x.h, b: x.b, destino: { calha: cid } }); });
+              ent.calhas.push({ id: cid, secao: "retangular", base_mm: bMm, altura_mm: aMm, lamina_mm: aMm / 2, declividade_pct: decl, material: "chapa_metalica",
+                                saidas: c.sds.map(function (o) { var x = { areaInfluencia_m2: o.areaInfluencia_m2 }; if (o.curva) { x.curva = o.curva; x.distanciaCurva_m = o.distanciaCurva_m; } return x; }) });
+            });
+            var ctx = NR.contexto(), rr = null;
+            try { rr = AP.calcular({ pluvial: ent }, ctx, { trechos: [] }); } catch (eA) { rr = null; }
+            var chs = rr ? arr(rr.calhas) : [], passa = chs.length === cad.length && chs.every(function (ch) { return ch.capacidade_l_min != null && ch.vazaoProjeto_l_min != null && ch.vazaoProjeto_l_min <= ch.capacidade_l_min; });
+            if (passa) achou = { bMm: bMm, aMm: aMm, hid: chs, qAP: rr.areas.reduce(function (s3, a3) { return s3 + num(a3.vazao_l_min, 0); }, 0), pend: ctx.pendencias(), ap: rr };
+            else if (c2 === SECOES_CANDIDATAS.length - 1 && chs.length) pior = chs;
+          }
+        }
+        if (!achou) {
+          /* mais uma descida no trecho que reprovou (ou no que tem o condutor estourado) */
+          cad.forEach(function (c, j) {
+            var ruim = c.sds.some(function (o) { return !o.dn; }) || (pior && pior[j] && !(pior[j].vazaoProjeto_l_min <= pior[j].capacidade_l_min));
+            if (ruim) maisUma(c);
+          });
+        }
+      }
+      if (!achou) { avisos.push("Calha " + cal.id + ": nenhuma seção até 500 × 200 mm passa com até 16 descidas — aumente a declividade ou divida a calha."); return; }
+      /* as ops: a seção (op calha embutida ou op borda de beiral) e as descidas com id fixo */
+      var lg = achou.bMm / 1000, al = achou.aMm / 1000, Ltot = 0;
+      segs.forEach(function (s) { Ltot += distP(s.a, s.b); });
+      if (cal.tipo === "embutida") poe({ op: "calha", id: cal.id, largura: lg, altura: al, declividadePct: decl });
+      else poe({ op: "borda", id: cal.id, largura: lg, altura: al });
+      var idsNovos = {}, descidas = [], A = 0, Q = 0, Qp = 0, cap = null, areasT = [];
+      cad.forEach(function (c) { c.fixos.forEach(function (f) { f.usado = false; }); });
+      cad.forEach(function (c, j) {
+        A += c.A; Q += c.Q; areasT = areasT.concat(c.areas);
+        var h = achou.hid[j];
+        if (h.vazaoProjeto_l_min > Qp) { Qp = h.vazaoProjeto_l_min; cap = h.capacidade_l_min; }
+        var kAuto = 0;
+        c.sds.forEach(function (o, i) {
+          var fx = c.fixos.filter(function (f) { return !f.usado && Math.abs(f.s - o.s) < 1e-6; })[0], id;
+          if (fx) { fx.usado = true; id = fx.id; manLig[id] = 1; poe({ op: "condutor", id: id, dn: num(o.dn.dn, 100) }); }   /* a da mão: só o DN */
+          else {
+            id = idDesc(cal.id, j, cad.length > 1 || c.sds.length > 1 ? kAuto : null); kAuto++; idsNovos[id] = 1;
+            poe({ op: "condutor", id: id, calha: String(cal.id), pos: r4(Math.max(0, Math.min(1, (c.offset + o.s) / Ltot))), dn: num(o.dn.dn, 100) });
+          }
+          descidas.push({ id: id, manual: !!fx, trecho: j + 1, pos: r4((c.offset + o.s) / Ltot), dist_m: r4(o.s), vazao_l_min: r4(o.q), area_m2: o.areaInfluencia_m2, coef: num(h.saidas && h.saidas[i] && h.saidas[i].coef, 1), dn: num(o.dn.dn, null), capDN_l_s: num(o.dn.vazao_ls, null) });
+        });
+      });
+      arr(st0.condutores).forEach(function (c) { if (c && String(c.calha) === String(cal.id) && String(c.id).indexOf(PREFIXO) === 0 && !idsNovos[c.id]) poe({ op: "apagar", id: c.id }); });
+      var dev = desenvolvimentoCalha(lg, al), dv = escolher(DESENV_CALHA, dev, "dev"), maiorVao = 0;
+      cad.forEach(function (c) { var P = c.pos; for (var q = 0; q + 1 < P.length; q++) maiorVao = Math.max(maiorVao, (P[q + 1] - P[q]) / 2); if (P.length === 1) maiorVao = Math.max(maiorVao, c.L); });
+      resCal.push({ id: cal.id, tipo: cal.tipo, telhado: cal.telhado, trechos: cad.length, areas: areasT, area_m2: r4(A), intensidade_mm_h: Ic.valor_mm_h, periodo_anos: Ic.periodo_anos, vazao_l_min: r4(Q), comprimento: r4(Ltot),
+                    largura_mm: achou.bMm, altura_mm: achou.aMm, lamina_mm: achou.aMm / 2, declividade_pct: decl, n: nC.ok ? num(nC.valor, null) : null,
+                    capacidade_l_min: r4(cap), vazaoProjeto_l_min: r4(Qp), vazaoHidAP_l_min: r4(achou.qAP), hidap: achou.hid,
+                    desenvolvimento: dev, sinapi: dv ? sin(dv.ref) : null, queda_m: r4(maiorVao * decl / 100), descidas: descidas, pendencias: achou.pend });
+    });
+    if (!resCal.length) return { ok: false, motivo: "Nenhuma calha dimensionada.", avisos: avisos };
+
+    /* 3) rufo e contrarrufo de encontro (só onde há encontro) */
+    var resRuf = [];
+    if (cfg.rufos !== false) tels.forEach(function (t) {
+      var id = "tel-rufo-" + t.id, en = encontrosDoTelhado(st0, t, {});
+      if (en.length) poe({ op: "rufo", id: id, telhado: String(t.id), material: mat });
+      else if (existe(st0, id)) poe({ op: "apagar", id: id });
+    });
+
+    /* 4) o hidro: cada descida vira um trecho pluvial vertical (espera no piso) */
+    var st2 = est(ops), ligar = cfg.ligarHidro !== false && !!BI;
+    if (ligar) {
+      var porCal = {};
+      arr(st2.condutores).forEach(function (c) {
+        var ehT = c && String(c.id).indexOf(PREFIXO) === 0;
+        if (!c || !c.ok || (!ehT && !manLig[c.id])) return;
+        var tid = PREFIXO + "ap-" + (ehT ? String(c.id).slice(PREFIXO.length) : "m-" + c.id);
+        porCal[tid] = 1;
+        if (!(c.alturaM > 0.05)) return;
+        poe({ op: "trecho", id: tid, sistema: "pluvial", material: "pvc_serie_r", dn: c.dnEf || PADRAO.dn, p1: { x: c.x, y: r4(c.yTopo), z: c.z }, p2: { x: c.x, y: r4(c.yBase), z: c.z } });
+        poe({ op: "condutor", id: c.id, trecho: tid });
+      });
+      arr(st0.instalacoes && st0.instalacoes.trechos).forEach(function (x) { if (x && String(x.id).indexOf(PREFIXO + "ap-") === 0 && !porCal[x.id]) poe({ op: "apagar", id: x.id }); });
+    }
+    var st3 = est(ops);
+    arr(st3.rufosEncontro).forEach(function (r) { if (r && r.ok) { resRuf.push(r); arr(r.avisos).forEach(function (a) { avisos.push("Rufo " + r.id + ": " + a); }); } });
+
+    /* 5) o memorial (a conta escrita, com a fonte) */
+    resCal.forEach(function (c) {
+      memorial.push("CALHA " + c.id + " (" + (c.tipo === "embutida" ? "embutida, atrás da platibanda" : "de beiral") + ", " + virg(c.comprimento) + " m" + (c.trechos > 1 ? " em " + c.trechos + " trechos" : "") + "):");
+      c.areas.forEach(function (a) {
+        memorial.push("  · água da aresta " + (a.aresta + 1) + " — NBR 10844, área de contribuição caso (b) superfície inclinada: A = (a + h/2)·b, com a = " + virg(a.a) + " m (projeção horizontal da água COM o beiral de " + virg(a.beiral) +
+                      " m), h = a·i = " + virg(a.a) + " × " + virg(a.i, 1) + "% = " + virg(a.h, 3) + " m, b = " + virg(a.b) + " m → A = (" + virg(a.a) + " + " + virg(a.h / 2, 3) + ") × " + virg(a.b) + " = " + virg(a.A) + " m²");
+      });
+      if (c.periodo_anos !== T) memorial.push("  · período de retorno T = " + c.periodo_anos + " anos (extravasamento não tolerado, item 5.1.2 c): " + (c.periodo_anos === T25 && I25 ? I25.texto : "I = " + c.intensidade_mm_h + " mm/h"));
+      memorial.push("  · vazão de projeto (item 5.3.1): Q = I·A/60 = " + c.intensidade_mm_h + " × " + virg(c.area_m2) + " / 60 = " + virg(c.vazao_l_min) + " L/min");
+      memorial.push("  · " + c.descidas.length + " descida(s): " + c.descidas.map(function (d) { return "a " + virg(d.dist_m) + " m do início (" + virg(d.area_m2) + " m², " + virg(d.vazao_l_min) + " L/min)"; }).join("; ") +
+                    "; Q de projeto na saída (maior saída × coeficiente da Tabela 1 quando há quina a menos de 4 m) = " + virg(c.vazaoProjeto_l_min) + " L/min");
+      memorial.push("  · seção retangular " + c.largura_mm + " × " + c.altura_mm + " mm, lâmina " + c.lamina_mm + " mm, n = " + virg(c.n, 3) + " (chapa metálica, Tabela 2), i = " + virg(c.declividade_pct) + "% (mínimo do item 5.5.2): capacidade por Manning-Strickler (item 5.5.7) = " +
+                    virg(c.capacidade_l_min) + " L/min ≥ " + virg(c.vazaoProjeto_l_min) + " L/min → ATENDE; queda " + virg(c.queda_m * 100, 1) + " cm até a descida");
+      memorial.push("  · desenvolvimento " + virg(c.desenvolvimento) + " m → " + (c.sinapi ? "SINAPI " + c.sinapi.codigo + " (" + c.sinapi.descricao + ")" : "sem composição SINAPI: orçar à parte"));
+      memorial.push("  · condutores verticais: " + c.descidas.map(function (d) { return "DN " + d.dn + " (" + virg(d.vazao_l_min / 60, 3) + " L/s ≤ " + virg(d.capDN_l_s, 2) + " L/s)"; }).join("; ") +
+                    " — tabela de Botelho & Ribeiro Jr. (fonte secundária; o ábaco da Figura 3 da norma não está digitalizado: conferir); diâmetro interno mínimo " + (diMin.ok ? diMin.valor : "—") + " mm (item 5.6.3)" + (ligar ? "; tubo PVC série R no sistema pluvial do hidro, ponta de baixo = espera pluvial no piso" : ""));
+      arr(c.pendencias).forEach(function (p) { if (!/abacos|ábaco/i.test(String(p.chave) + " " + p.motivo)) pendencias.push(p); });
+    });
+    resRuf.forEach(function (r) {
+      if (!r.encontros.length) return;
+      memorial.push("RUFO E CONTRARRUFO " + r.id + " (" + r.chapa + "): " + r.encontros.map(function (e) { return "aresta " + (e.orig + 1) + " × parede " + e.parede + " (" + virg(e.comprimento) + " m)"; }).join("; ") +
+                    " — rufo " + virg(r.comprimentoRufo) + " m (corte " + virg(r.corteRufoEf * 100, 0) + " cm, " + virg(r.kgRufo, 1) + " kg), contrarrufo " + virg(r.comprimentoContra) + " m (corte " + virg(r.corteContraEf * 100, 0) + " cm, " + virg(r.kgContra, 1) + " kg); cortes, dobras e fixação: " + PADRAO_RUFO.obs + "; " + r.obsChapa + ".");
+    });
+    /* a conferência: o cálculo pluvial do hidro (js/hidap.js) refeito sobre o estado com o lote aplicado */
+    var verificacao = resCal.map(function (c) { return { calha: c.id, vazao_l_min: c.vazaoHidAP_l_min, calhas: c.hidap }; });
+    return { ok: true, lote: { op: "lote", id: PREFIXO + "lote", origem: "telhado-nbr10844", ops: ops }, ops: ops, intensidade: I, cidade: cid, periodo_anos: T,
+             calhas: resCal, rufos: resRuf, memorial: memorial, avisos: avisos, premissas: premissas, pendencias: pendencias, verificacao: verificacao, estado: st3 };
+  }
+
+  /* ============================================================ A OP NO REPLAY */
+  function idsDoCob(ctx) { return ctx.cob || (ctx.cob = { plat: {}, ordPlat: [], calha: {}, ordCalha: [], cond: {}, ordCond: [], rufo: {}, ordRufo: [] }); }
+  function faixa(o, k, a, b) { return o[k] === undefined || o[k] === null || (fin(o[k]) && o[k] >= a && o[k] <= b); }
+  function arestasOk(v) { return v === undefined || v === null || (Array.isArray(v) && v.length <= LIM.vertices && v.every(function (k) { return fin(k) && k >= 0 && Math.round(k) === k; })); }
+  function validaPlatibanda(o) {
+    if (!idOk(o.id)) return false;
+    if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+    if (!faixa(o, "espessura", LIM.esp[0], LIM.esp[1]) || !faixa(o, "altura", LIM.altura[0], LIM.altura[1]) || !faixa(o, "topo", LIM.topo[0], LIM.topo[1]) || !faixa(o, "base", LIM.topo[0], LIM.topo[1]) ||
+        !faixa(o, "abaRufo", LIM.aba[0], LIM.aba[1]) || !faixa(o, "folgaCalha", LIM.folga[0], LIM.folga[1])) return false;
+    if (!arestasOk(o.arestas)) return false;
+    if (o.rufoCapa != null && typeof o.rufoCapa !== "boolean") return false;
+    if (o.contraRufo != null && typeof o.contraRufo !== "boolean") return false;
+    return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].some(function (k) { return o[k] !== undefined; });
+  }
+  function validaCalha(o) {
+    if (!idOk(o.id)) return false;
+    if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+    if (!faixa(o, "largura", LIM.calhaLarg[0], LIM.calhaLarg[1]) || !faixa(o, "altura", LIM.calhaAlt[0], LIM.calhaAlt[1]) || !faixa(o, "declividadePct", LIM.decl[0], LIM.decl[1]) || !faixa(o, "laminaMm", LIM.lamina[0], LIM.lamina[1])) return false;
+    if (o.arestas !== undefined && o.arestas !== null && !(arestasOk(o.arestas) && o.arestas.length >= 1)) return false;
+    return ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"].some(function (k) { return o[k] !== undefined; });
+  }
+  function validaCondutor(o) {
+    if (!idOk(o.id)) return false;
+    if (o.calha !== undefined && !idOk(o.calha)) return false;
+    if (!faixa(o, "pos", 0, 1) || !faixa(o, "dn", LIM.dn[0], LIM.dn[1])) return false;
+    if (o.trecho !== undefined && o.trecho !== null && !idOk(o.trecho)) return false;
+    return ["calha", "pos", "dn", "trecho"].some(function (k) { return o[k] !== undefined; });
+  }
+  /* T2: {op:"rufo", id, telhado, material?:"galv24"|"galv26"|"aluminio", corteRufo?:m, corteContra?:m, folga?:m} */
+  function validaRufo(o) {
+    if (!idOk(o.id)) return false;
+    if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+    if (o.material !== undefined && o.material !== null && !CHAPAS[o.material]) return false;
+    if (!faixa(o, "corteRufo", 0.1, 1) || !faixa(o, "corteContra", 0.1, 1) || !faixa(o, "folga", 0, 0.5)) return false;
+    return ["telhado", "material", "corteRufo", "corteContra", "folga"].some(function (k) { return o[k] !== undefined; });
+  }
+  function valida(o) {
+    if (!o) return undefined;
+    if (o.op === "platibanda") return validaPlatibanda(o);
+    if (o.op === "calha") return validaCalha(o);
+    if (o.op === "condutor") return validaCondutor(o);
+    if (o.op === "rufo") return validaRufo(o);
+    return undefined;
+  }
+  var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"],
+                 calha: ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"],
+                 cond: ["calha", "pos", "dn", "trecho"], rufo: ["telhado", "material", "corteRufo", "corteContra", "folga"] };
+  function aplicarOp(o, ctx) {
+    if (!o || !ctx) return false;
+    var C = idsDoCob(ctx), id = o.id, quem = o.op === "platibanda" ? "plat" : o.op === "calha" ? "calha" : o.op === "condutor" ? "cond" : o.op === "rufo" ? "rufo" : null;
+    var ordem = { plat: "ordPlat", calha: "ordCalha", cond: "ordCond", rufo: "ordRufo" };
+    if (quem) {
+      if (valida(o) !== true) return false;
+      var M = C[quem], novo = !M[id];
+      if (novo) {
+        if (quem !== "cond" && o.telhado === undefined) return false;
+        if (quem === "calha" && !arr(o.arestas).length) return false;
+        if (quem === "cond" && o.calha === undefined) return false;
+        M[id] = { id: id }; C[ordem[quem]].push(id);
+      }
+      CAMPOS[quem].forEach(function (k) { if (!temChave(o, k)) return; if (o[k] === null) delete M[id][k]; else M[id][k] = clone(o[k]); });
+      return true;
+    }
+    if (o.op === "apagar") {
+      var achou = false;
+      ["plat", "calha", "cond", "rufo"].forEach(function (q) { if (C[q][id]) { delete C[q][id]; C[ordem[q]].splice(C[ordem[q]].indexOf(id), 1); achou = true; } });
+      return achou;
+    }
+    return false;
+  }
+  function fim(ctx, saida, NIV) {
+    var C = ctx && ctx.cob; if (!C || !saida) return;
+    if (!C.ordPlat.length && !C.ordCalha.length && !C.ordCond.length && !(C.ordRufo && C.ordRufo.length)) return;
+    var tel = {}; arr(saida.telhados).forEach(function (t) { tel[String(t.id)] = t; });
+    if (C.ordCalha.length) saida.calhasEmbutidas = C.ordCalha.map(function (id) { return calcularCalha(C.calha[id], tel); });
+    if (C.ordPlat.length) saida.platibandas = C.ordPlat.map(function (id) { return calcularPlatibanda(C.plat[id], tel, C); });
+    if (C.ordCond.length) {
+      var piso = Infinity; arr(NIV).forEach(function (n) { var e = num(n && n.elevacao, NaN); if (fin(e) && e < piso) piso = e; });
+      var cals = listarCalhas(saida);
+      saida.condutores = C.ordCond.map(function (id) {
+        var f = C.cond[id], cal = null; cals.forEach(function (x) { if (String(x.id) === String(f.calha)) cal = x; });
+        var t = cal ? tel[String(cal.telhado)] : null, base = isFinite(piso) ? piso : num(t && t.elevNivel, 0);
+        return calcularCondutor(f, cals, base);
+      });
+      /* T2: a descida com o tubo no sistema pluvial do hidro (js/biminst.js) — o tubo é dele (desenho e quantitativo) */
+      var trs = {}; arr(saida.instalacoes && saida.instalacoes.trechos).forEach(function (x) { if (x && x.id != null) trs[String(x.id)] = 1; });
+      saida.condutores.forEach(function (c) { if (c.trecho != null) c.noHidro = !!trs[String(c.trecho)]; });
+    }
+    if (C.ordRufo && C.ordRufo.length) saida.rufosEncontro = C.ordRufo.map(function (id) { return calcularRufo(C.rufo[id], tel, saida); });
+  }
+  function registrar(BE) {
+    if (!BE || typeof BE.estender !== "function") return false;
+    return BE.estender({ nome: "cobertura-completa", aplicar: aplicarOp, valida: valida, fim: fim });
+  }
+
+  var BimCobertura = {
+    PADRAO: PADRAO, SINAPI: SINAPI, LIM: LIM, SECOES_CANDIDATAS: SECOES_CANDIDATAS,
+    calcularPlatibanda: calcularPlatibanda, calcularCalha: calcularCalha, calcularCondutor: calcularCondutor,
+    listarCalhas: listarCalhas, resumoDoTelhado: resumoDoTelhado, opsCondutores: opsCondutores, baseSugerida: baseSugerida,
+    desenvolvimentoCalha: desenvolvimentoCalha, entradaPluvial: entradaPluvial, dimensionarCalhas: dimensionarCalhas, secaoMinimaCalha: secaoMinimaCalha,
+    quantitativo: quantitativo, sin: sin,
+    PADRAO_RUFO: PADRAO_RUFO, CHAPAS: CHAPAS, PREFIXO: PREFIXO, encontrosDoTelhado: encontrosDoTelhado, calcularRufo: calcularRufo, topoTelhaEm: topoTelhaEm,
+    cidadeDaObra: cidadeDaObra, postoNoTexto: postoNoTexto, intensidadeNBR: intensidadeNBR, periodoCobertura: periodoCobertura, gerarPluvial: gerarPluvial, kgPorM: kgPorM, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
+    opPlatibanda: function (id, d) {
+      d = d || {}; var o = { op: "platibanda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado };
+      ["arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      return validaPlatibanda(o) ? o : null;
+    },
+    opCalha: function (id, d) {
+      d = d || {}; var o = { op: "calha", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, arestas: arr(d.arestas).map(Number) };
+      ["largura", "altura", "declividadePct", "laminaMm"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      return validaCalha(o) ? o : null;
+    },
+    opCondutor: function (id, d) {
+      d = d || {}; var o = { op: "condutor", id: id, calha: d.calha != null ? String(d.calha) : d.calha };
+      ["pos", "dn"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      return validaCondutor(o) ? o : null;
+    }
+  };
+  registrar(dep("BimEdit", "./bimedit.js"));
+  global.BimCobertura = BimCobertura;
+  if (typeof module !== "undefined" && module.exports) module.exports = BimCobertura;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -14480,13 +14480,14 @@ var grp = new THREE.Group(); grp.name = "precisao-aux"; grp.renderOrder = 997; a
 var cotasGrp = new THREE.Group(); cotasGrp.name = "precisao-cotas"; api.scene.add(cotasGrp);
 var selGrp = new THREE.Group(); selGrp.name = "precisao-selecao"; api.scene.add(selGrp);
 var pintGrp = new THREE.Group(); pintGrp.name = "p4-pinturas"; api.scene.add(pintGrp);
+var pisoGrp = new THREE.Group(); pisoGrp.name = "acab-pisos"; api.scene.add(pisoGrp);
 var matSelLinha = new THREE.LineBasicMaterial({ color: 0x2effa0, depthTest: false, transparent: true, opacity: 0.95 });
 var matLinha = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false, transparent: true, opacity: 0.95 });
 var matGuia = new THREE.LineDashedMaterial({ color: 0xd99a1e, depthTest: false, dashSize: 0.15, gapSize: 0.1, transparent: true, opacity: 0.9 });
 var matFant = new THREE.LineBasicMaterial({ color: 0x3fb5e5, depthTest: false, transparent: true, opacity: 0.95 });
 var matCota = new THREE.LineBasicMaterial({ color: 0x1f6fb2, depthTest: false });
 var matTmp = new THREE.LineDashedMaterial({ color: 0x1f6fb2, depthTest: false, dashSize: 0.1, gapSize: 0.06, transparent: true, opacity: 0.85 });
-function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry && !(o.geometry.userData && o.geometry.userData._guardada)) o.geometry.dispose(); if (o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); } }); }
+function limparGrupo(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry && !(o.geometry.userData && o.geometry.userData._guardada)) o.geometry.dispose(); if (o.material && o.material.map && !(o.material.userData && o.material.userData.acab)) { o.material.map.dispose(); o.material.dispose(); } }); }
 function segs(lista, mat, y) {
 if (!lista.length) return null;
 var pts = []; lista.forEach(function (s) { pts.push(V3(s[0], y), V3(s[1], y)); });
@@ -15061,6 +15062,27 @@ return true;
 }
 return false;
 }
+function materialAcab(nome, cor, sobre) {
+var AV = global.BimAcabVis, ent = AV ? AV.porNome(nome) : null;
+if (!ent) { var hex = "#" + new THREE.Color(cor).getHexString(); ent = { id: "cor:" + hex, rotulo: String(nome || "Pintura"), cor: hex, slug: "", rug: 0.85, met: 0 }; }
+return api.acabMat ? api.acabMat(ent, sobre) : new THREE.MeshStandardMaterial({ color: new THREE.Color(cor), side: THREE.DoubleSide, polygonOffset: sobre, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+}
+function desenharPisos(st) {
+limparGrupo(pisoGrp);
+var AV = global.BimAcabVis; if (!previa() || !AV) return;
+(st.ambientes || []).forEach(function (a) {
+var c = a && a.calc, ent = AV.resolver(a && a.acabPiso, "piso");
+if (!c || !ent || !c.contorno || c.contorno.length < 3) return;
+var sh = new THREE.Shape(c.contorno.map(function (q) { return new THREE.Vector2(q.x, q.z); }));
+(c.furos || []).forEach(function (F) { if (F && F.length > 2) sh.holes.push(new THREE.Path(F.map(function (q) { return new THREE.Vector2(q.x, q.z); }))); });
+var g = new THREE.ShapeGeometry(sh), ps = g.attributes.position, y = (+c.base || 0) + 0.004;
+for (var i = 0; i < ps.count; i++) ps.setXYZ(i, ps.getX(i), y, ps.getY(i));
+g.computeVertexNormals(); g.computeBoundingSphere();
+var m = new THREE.Mesh(g, materialAcab(ent.rotulo, ent.cor, true)); m.renderOrder = 1; m.userData = { acabPiso: a.id }; m.raycast = function () {};
+pisoGrp.add(m);
+if (api.acabRegistrar) api.acabRegistrar(m);
+});
+}
 function desenharPinturas(st) {
 limparGrupo(pintGrp);
 var BP = Pt(); if (!previa() || !BP || !global.BimArq) return;
@@ -15069,7 +15091,7 @@ var vz = {}; try { vz = global.BimEdit.vaosDasParedes(st, api.avaliar) || {}; } 
 cxs.forEach(function (c) {
 BP.regioes(c, vz[c.id] ? vz[c.id].aceitos : null).forEach(function (r) {
 var d = BP.desenhoRegiao(c, r.face, r.regiao, vz[c.id] ? vz[c.id].aceitos : null); if (!d) return;
-var mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(r.cor), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+var mat = materialAcab(r.material, r.cor, true);
 var g = null;
 if (d.laje) {
 var C = c.contorno ? c.contorno.map(function (q) { return [q.x, q.z]; }) : (function () { var f = global.BimArq.frameDe(c); return [[-f.L / 2, -f.t / 2], [f.L / 2, -f.t / 2], [f.L / 2, f.t / 2], [-f.L / 2, f.t / 2]].map(function (q) { return global.BimArq.aMundo(f, q[0], q[1]); }); })();
@@ -15083,9 +15105,10 @@ d.furos.forEach(function (F) { sh2.holes.push(new THREE.Path(F.map(function (q) 
 g = new THREE.ShapeGeometry(sh2);
 var ps = g.attributes.position; for (var j = 0; j < ps.count; j++) { var u = ps.getX(j), yy = ps.getY(j), w3 = global.BimArq.aMundo(d.frame, u, d.w); ps.setXYZ(j, w3[0], yy, w3[1]); }
 }
-g.computeBoundingSphere();
+g.computeVertexNormals(); g.computeBoundingSphere();
 var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: c.id, face: r.face, regiao: r.regiao }; m.raycast = function () {};
 pintGrp.add(m);
+if (api.acabRegistrar) api.acabRegistrar(m);
 });
 });
 }
@@ -15299,6 +15322,7 @@ var n0 = pr.sel.length;
 pr.sel = pr.sel.filter(function (id) { return !!Pr().tipoNoEstado(st, id); });
 realcar(); desenharCotas(st); montarTemporarias(); pintarOpcoes();
 try { desenharPinturas(st); } catch (eP) {}
+try { desenharPisos(st); } catch (eAP) {}
 if (pr.sel.length !== n0) { try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eSL) {} }
 },
 aoSub: function (sub) {
@@ -15381,6 +15405,106 @@ global.BimPrecisaoUI = BimPrecisaoUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimPrecisaoUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimacabvis.js ==== */
+try {
+(function (global) {
+"use strict";
+var ACENTOS = { "á": "a", "à": "a", "â": "a", "ã": "a", "ä": "a", "é": "e", "ê": "e", "è": "e", "ë": "e", "í": "i", "ì": "i", "î": "i", "ï": "i",
+"ó": "o", "ò": "o", "ô": "o", "õ": "o", "ö": "o", "ú": "u", "ù": "u", "û": "u", "ü": "u", "ç": "c", "ñ": "n" };
+function normalizar(s) {
+return String(s == null ? "" : s).toLowerCase().replace(/[áàâãäéêèëíìîïóòôõöúùûüçñ]/g, function (c) { return ACENTOS[c] || c; })
+.replace(/[_\-\/]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function rgb(hex) {
+var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+if (!m) return [0.5, 0.5, 0.5];
+var n = parseInt(m[1], 16);
+return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+var CATALOGO = [
+{ id: "ac-textura-grafite", rotulo: "Textura grafite", grupo: "fachada", cor: "#3b3e42", slug: "pintura_lisa", rug: 0.9, met: 0 },
+{ id: "ac-cimenticio-grafite", rotulo: "Cimentício grafite (concreto polido)", grupo: "fachada", cor: "#45484c", slug: "concreto_liso_claro", rug: 0.8, met: 0 },
+{ id: "ac-textura-offwhite", rotulo: "Textura off-white", grupo: "fachada", cor: "#e7e2d6", slug: "pintura_lisa", rug: 0.95, met: 0 },
+{ id: "ac-pintura-branca", rotulo: "Pintura branca", grupo: "fachada", cor: "#f3f2ee", slug: "reboco_rustico_offwhite", rug: 0.85, met: 0 },
+{ id: "ac-pintura-branco-gelo", rotulo: "Pintura branco gelo", grupo: "fachada", cor: "#ebe8e0", slug: "reboco_rustico_offwhite", rug: 0.9, met: 0 },
+{ id: "ac-concreto-aparente", rotulo: "Concreto aparente (fôrma)", grupo: "fachada", cor: "#a09f9b", slug: "concreto_aparente_formas", rug: 0.9, met: 0 },
+{ id: "ac-ripado-cumaru", rotulo: "Ripado de madeira (cumaru)", grupo: "fachada", cor: "#9c6a3c", slug: "madeira_angelim_pedra", rug: 0.6, met: 0 },
+{ id: "ac-ripado-freijo", rotulo: "Ripado de madeira (freijó)", grupo: "fachada", cor: "#c4a073", slug: "madeira_clara_freijo", rug: 0.6, met: 0 },
+{ id: "ac-cimenticio", rotulo: "Revestimento cimentício (concreto liso)", grupo: "fachada", cor: "#b9b7b1", slug: "concreto_liso_claro", rug: 0.8, met: 0 },
+{ id: "ac-pedra-sao-tome", rotulo: "Pedra São Tomé", grupo: "fachada", cor: "#d8b283", slug: "pedra_sao_tome", rug: 0.85, met: 0 },
+{ id: "ac-pedra-moledo", rotulo: "Pedra moledo", grupo: "fachada", cor: "#d2c9a7", slug: "pedra_moledo_clara", rug: 0.9, met: 0 },
+{ id: "ac-porcelanato-amadeirado", rotulo: "Porcelanato amadeirado", grupo: "fachada", cor: "#b58a55", slug: "piso_laminado_claro", rug: 0.5, met: 0 },
+{ id: "ac-tijolinho", rotulo: "Tijolinho aparente", grupo: "fachada", cor: "#b86b43", slug: "tijolinho_laranja", rug: 0.9, met: 0 },
+{ id: "ac-metal-preto", rotulo: "Metal preto fosco", grupo: "metal", cor: "#1f2123", slug: "", rug: 0.45, met: 0.5 },
+{ id: "ac-azulejo-branco", rotulo: "Revestimento cerâmico branco", grupo: "fachada", cor: "#f1f1ee", slug: "azulejo_porcelanato_bwc", rug: 0.3, met: 0 },
+{ id: "ac-grama", rotulo: "Grama", grupo: "piso", cor: "#5e8f2e", slug: "grama", rug: 0.95, met: 0 },
+{ id: "ac-deck-cumaru", rotulo: "Deck de madeira (cumaru)", grupo: "piso", cor: "#8d6a43", slug: "madeira_deck", rug: 0.7, met: 0 },
+{ id: "ac-porcelanato-areia", rotulo: "Porcelanato areia 90x90", grupo: "piso", cor: "#d9ccb1", slug: "porcelanato_acetinado_claro", rug: 0.45, met: 0 },
+{ id: "ac-porcelanato-externo", rotulo: "Porcelanato externo antiderrapante", grupo: "piso", cor: "#bfb39c", slug: "porcelanato_antiderrapante_externo", rug: 0.75, met: 0 },
+{ id: "ac-porcelanato-branco", rotulo: "Porcelanato branco 60x60", grupo: "piso", cor: "#e9e8e3", slug: "porcelanato_branco_60", rug: 0.4, met: 0 },
+{ id: "ac-concregrama", rotulo: "Concregrama (piso drenante)", grupo: "piso", cor: "#7a8a52", slug: "piso_permeavel", rug: 0.9, met: 0 },
+{ id: "ac-seixo", rotulo: "Seixo rolado", grupo: "piso", cor: "#d3cdbf", slug: "cascalho", rug: 0.95, met: 0 },
+{ id: "ac-concreto-desempenado", rotulo: "Concreto desempenado", grupo: "piso", cor: "#a9a59d", slug: "concreto_natural_greige", rug: 0.9, met: 0 },
+{ id: "ac-terra", rotulo: "Terra", grupo: "piso", cor: "#7a6143", slug: "terra", rug: 1, met: 0 },
+{ id: "ac-borda-atermica", rotulo: "Borda atérmica de concreto claro", grupo: "piso", cor: "#e4e0d5", slug: "concreto_liso_claro", rug: 0.8, met: 0 },
+{ id: "ac-face-madeirada", rotulo: "Face inferior madeirada", grupo: "madeira", cor: "#b98f5f", slug: "madeira_clara_freijo", rug: 0.6, met: 0 },
+{ id: "ac-casco-fibra", rotulo: "Casco de plástico reforçado (fibra) azul-claro", grupo: "agua", cor: "#5db7e4", slug: "", rug: 0.3, met: 0 },
+{ id: "ac-agua-piscina", rotulo: "Água da piscina (turquesa)", grupo: "agua", cor: "#35c2d6", slug: "", rug: 0.03, met: 0, op: 0.55 }
+];
+var POR_ID = {}, POR_NOME = {};
+CATALOGO.forEach(function (e) { POR_ID[e.id] = e; POR_NOME[normalizar(e.rotulo)] = e; });
+function porNome(texto) {
+var t = normalizar(texto); if (!t) return null;
+return POR_NOME[t] || POR_ID[String(texto).trim()] || null;
+}
+var REGRAS_PISO = [
+[/deck|cumaru/, "ac-deck-cumaru"],
+[/concregrama|drenante|intertravad|permeavel/, "ac-concregrama"],
+[/seixo|pedrisco|brita/, "ac-seixo"],
+[/concreto desempenado|desempenado|passeio/, "ac-concreto-desempenado"],
+[/grama|gramado|forracao/, "ac-grama"],
+[/sao tome|pedra/, "ac-pedra-sao-tome"],
+[/externo|antiderrapante/, "ac-porcelanato-externo"],
+[/porcelanato.{0,40}(branco|60x60|60x120)|60x60|60x120/, "ac-porcelanato-branco"],
+[/porcelanato|ceramic|piso/, "ac-porcelanato-areia"],
+[/terra|solo/, "ac-terra"]
+];
+var REGRAS_PAREDE = [
+[/grafite/, "ac-textura-grafite"],
+[/concreto aparente/, "ac-concreto-aparente"],
+[/ripad|cumaru/, "ac-ripado-cumaru"],
+[/freijo/, "ac-ripado-freijo"],
+[/cimenticio/, "ac-cimenticio"],
+[/sao tome/, "ac-pedra-sao-tome"],
+[/moledo|pedra/, "ac-pedra-moledo"],
+[/amadeirad/, "ac-porcelanato-amadeirado"],
+[/tijolinho|tijolo aparente/, "ac-tijolinho"],
+[/preto fosco|metal/, "ac-metal-preto"],
+[/azulejo|revestimento ceramic|porcelanato/, "ac-azulejo-branco"],
+[/off ?white|textura/, "ac-textura-offwhite"],
+[/branco gelo|pintura|reboco|gesso/, "ac-pintura-branco-gelo"],
+[/branc/, "ac-pintura-branca"]
+];
+function resolver(texto, grupo) {
+var ex = porNome(texto); if (ex) return ex;
+var t = normalizar(texto); if (!t || t === "-") return null;
+var R = grupo === "piso" ? REGRAS_PISO : REGRAS_PAREDE;
+for (var i = 0; i < R.length; i++) if (R[i][0].test(t)) return POR_ID[R[i][1]];
+return null;
+}
+function lin(c) { c = c < 0 ? 0 : (c > 1 ? 1 : c); return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function tinta(ent, BIB) {
+var b = ent && BIB && ent.slug ? BIB[ent.slug] : null;
+if (!b || b.natural) return [1, 1, 1];
+var c = rgb(ent.cor), out = [];
+for (var i = 0; i < 3; i++) { var f = lin(c[i]) / Math.max(lin(b.media[i]), 0.002); out.push(f < 0.02 ? 0.02 : (f > 6 ? 6 : f)); }
+return out;
+}
+var BimAcabVis = { tinta: tinta, CATALOGO: CATALOGO, porNome: porNome, resolver: resolver, rgb: rgb, normalizar: normalizar, REGRAS_PISO: REGRAS_PISO, REGRAS_PAREDE: REGRAS_PAREDE };
+global.BimAcabVis = BimAcabVis;
+if (typeof module !== "undefined" && module.exports) module.exports = BimAcabVis;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimpintar.js ==== */
 try {
 (function (global) {
@@ -15391,6 +15515,7 @@ function arr(v) { return Array.isArray(v) ? v : []; }
 function txt(v) { return v == null ? "" : String(v); }
 function r4(v) { return Math.round(v * 10000) / 10000; }
 function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function AV() { return global.BimAcabVis || (typeof require === "function" ? (function () { try { return require("./bimacabvis.js"); } catch (e) { return null; } })() : null); }
 function A() { return global.BimArq || (typeof require === "function" ? (function () { try { return require("./bimarq.js"); } catch (e) { return null; } })() : null); }
 var MATERIAIS = [
 { id: "pintura-acrilica", rotulo: "Pintura acrílica", cor: "#e4ddcc" },
@@ -15402,12 +15527,17 @@ var MATERIAIS = [
 { id: "reboco", rotulo: "Reboco aparente", cor: "#c2baa9" },
 { id: "verniz", rotulo: "Verniz / stain", cor: "#a26f3d" }
 ];
+(function () {
+var V = AV(); if (!V) return;
+V.CATALOGO.forEach(function (e) { if (e.grupo === "fachada" || e.grupo === "metal") MATERIAIS.push({ id: e.id, rotulo: e.rotulo, cor: e.cor }); });
+})();
 var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"] };
 var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior" };
 var OPS = ["pintar", "removerPintura", "dividirFace"];
 var MAX_CORTES = 8;
 function corDe(material) {
-var s = txt(material).toLowerCase();
+var s = txt(material).toLowerCase(), V = AV(), ac = V ? V.porNome(material) : null;
+if (ac) return ac.cor;
 for (var i = 0; i < MATERIAIS.length; i++) if (MATERIAIS[i].rotulo.toLowerCase() === s || MATERIAIS[i].id === s) return MATERIAIS[i].cor;
 var h = 0; for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) % 360;
 return "hsl(" + h + ", 35%, 70%)";
@@ -45389,6 +45519,7 @@ var CATEGORIAS = {
 porta: "Porta", janela: "Janela", pilar: "Pilar", viga: "Viga", mobiliario: "Mobiliário",
 equipamento: "Equipamento", loucas: "Louças e metais", estrutural: "Estrutural", generico: "Genérico",
 parede: "Parede", laje: "Laje", piso: "Piso",
+cozinha: "Cozinha", banho: "Banho", lazer: "Lazer e área gourmet", paisagismo: "Paisagismo",
 acessorio_tubo: "Acessórios do tubo", dispositivo_eletrico: "Dispositivos elétricos", luminaria: "Luminárias", equipamento_eletrico: "Equipamento elétrico",
 conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"
 };
@@ -45834,6 +45965,10 @@ if (FM) FM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.err
 if (fam.geometria === "marcenaria") {
 var MC = global.Marcenaria || (typeof require === "function" ? (function () { try { return require("./marcenaria.js"); } catch (eR) { return null; } })() : null);
 if (MC) MC.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marcenaria (js/marcenaria.js) não carregou"); }
+}
+if (fam.geometria === "mob") {
+var FMb = global.FamiliasMob || (typeof require === "function" ? (function () { try { return require("./familiasmob.js"); } catch (eR) { return null; } })() : null);
+if (FMb) FMb.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador de mobiliário (js/familiasmob.js) não carregou"); }
 }
 return saida;
 }
@@ -47540,6 +47675,8 @@ teAguas: function (x) { return fin(el(x).nAguas) ? el(x).nAguas : null; },
 teCotaCumeeira: function (x) { return fin(el(x).cotaCumeeira) ? el(x).cotaCumeeira : null; },
 teCotaApoio: function (x) { return fin(el(x).cotaApoio) ? el(x).cotaApoio : null; },
 teUnir: function (x) { return el(x).unir != null ? txt(el(x).unir) : null; },
+teModelo: function (x) { var pk = el(x).pacote; return pk && pk.rotulo ? txt(pk.rotulo) : (el(x).modelo ? txt(el(x).modelo) : "sem estrutura (só o telhado)"); },
+teAvisosModelo: function (x) { var pk = el(x).pacote; return pk && arr(pk.avisos).length ? arr(pk.avisos).join(" | ") : null; },
 teAreaRemovida: function (x) { return fin(el(x).areaRemovidaUniao) ? el(x).areaRemovidaUniao : null; },
 teEspessura: function (x) { var t = el(x).tipoTelhado; return t && fin(t.espessura) ? t.espessura : null; },
 teEstrutura: function (x) { var t = el(x).tipoTelhado; return t ? arr(t.camadas).map(function (k) { return txt(k.rotulo) + " " + mm(num(k.e, 0)) + " mm"; }).join(" + ") : null; },
@@ -48064,6 +48201,8 @@ P(I, "Construção", "Corte de caibro", "ROOF_EAVE_CUT_PARAM", "texto", { calc: 
 P(I, "Construção", "Beiral (projeção na parede)", "RA_TELHADO_BEIRAL", "comprimento", { calc: "teBeiral", escrita: "telhado.beiral", leitura: false, faixa: FAIXA.coberturaBeiral, ifc: Q("OrcaPRO_Telhado", "Beiral") }),
 P(I, "Construção", "Modo", "RA_TELHADO_MODO", "texto", { calc: "teModo" }),
 P(I, "Construção", "Unido ao telhado", "RA_TELHADO_UNIR", "texto", { calc: "teUnir", escrita: "telhado.unir", leitura: false, ifc: Q("OrcaPRO_Telhado", "UnidoA") }),
+P(I, "Construção", "Modelo (estrutura e telhas)", "RA_TELHADO_MODELO", "texto", { calc: "teModelo", filtro: false }),
+P(I, "Construção", "Avisos do modelo", "RA_TELHADO_AVISOS_MODELO", "texto", { calc: "teAvisosModelo", filtro: false }),
 P(I, "Cotas", "Inclinação", "ROOF_SLOPE", "inclinacao", { calc: "teInclinacao", escrita: "telhado.inclinacao", leitura: false, faixa: FAIXA.coberturaInclinacao, ifc: Q("OrcaPRO_Telhado", "Inclinacao") }),
 P(I, "Cotas", "Inclinação por aresta (%)", "RA_TELHADO_INCLINACOES", "texto", { calc: "teInclinacoes", escrita: "telhado.inclinacoes", leitura: false, filtro: false, ifc: Q("OrcaPRO_Telhado", "InclinacaoPorAresta") }),
 P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "teArea", ifc: Q("Qto_RoofBaseQuantities", "NetArea"), orc: O("area") }),
@@ -49718,7 +49857,10 @@ var TIPOS = [
 { id: "gesso-12_5", rotulo: "Forro de gesso 12,5 mm",
 camadas: [{ rotulo: "Placa de gesso acartonado", material: "Gesso acartonado", e: 0.0125 }] },
 { id: "pvc-8", rotulo: "Forro de PVC 8 mm",
-camadas: [{ rotulo: "Régua de PVC", material: "PVC", e: 0.008 }] }
+camadas: [{ rotulo: "Régua de PVC", material: "PVC", e: 0.008 }] },
+{ id: "drywall-12_5-madeira", rotulo: "Forro de drywall 12,5 mm sobre estrutura de madeira, pintado",
+estrutura: "madeira", acabamento: "pintura látex acrílica sobre fundo selador",
+camadas: [{ rotulo: "Chapa de gesso acartonado ST 12,5 mm", material: "Gesso acartonado", e: 0.0125 }] }
 ];
 var DESLOC_PADRAO = 2.6;
 var LIM = { desloc: 200, inclinacao: 60, camada: 0.5, espessura: 0.6, camadas: 12 };
@@ -49730,7 +49872,10 @@ var cam = arr(t.camadas).filter(function (k) { return k && fin(Number(k.e)) && N
 if (!cam.length) return null;
 var esp = cam.reduce(function (s, k) { return s + k.e; }, 0);
 if (!(esp > 0 && esp <= LIM.espessura)) return null;
-return { id: txt(t.id).slice(0, 60) || "custom", rotulo: txt(t.rotulo).slice(0, 80) || "Forro", camadas: cam, espessura: r6(esp) };
+var o = { id: txt(t.id).slice(0, 60) || "custom", rotulo: txt(t.rotulo).slice(0, 80) || "Forro", camadas: cam, espessura: r6(esp) };
+if (t.estrutura) o.estrutura = txt(t.estrutura).slice(0, 40);
+if (t.acabamento) o.acabamento = txt(t.acabamento).slice(0, 80);
+return o;
 }
 function tipoCatalogo(id) {
 for (var i = 0; i < TIPOS.length; i++) if (TIPOS[i].id === String(id)) return normTipo(TIPOS[i]);
@@ -50940,8 +51085,195 @@ function obj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
 var TIPOS = [
 { id: "generico-8", rotulo: "Telhado genérico 8 cm", camadas: [{ rotulo: "Telhamento", material: "Telha cerâmica", e: 0.08 }] },
 { id: "fibrocimento-6", rotulo: "Telha de fibrocimento 6 mm", camadas: [{ rotulo: "Telha de fibrocimento", material: "Fibrocimento", e: 0.006 }] },
-{ id: "termoacustica-30", rotulo: "Telha termoacústica 30 mm", camadas: [{ rotulo: "Telha termoacústica", material: "Aço e EPS", e: 0.03 }] }
+{ id: "termoacustica-30", rotulo: "Telha termoacústica 30 mm", camadas: [{ rotulo: "Telha termoacústica", material: "Aço e EPS", e: 0.03 }] },
+{ id: "sanduiche-tp40-eps30-madeira", rotulo: "Telha sanduíche trapezoidal TP40, EPS 30 mm, face inferior efeito madeira",
+camadas: [{ rotulo: "Chapa de aço superior pré-pintada (trapézio TP40)", material: "Aço galvalume pré-pintado", e: 0.00043 },
+{ rotulo: "Núcleo isolante EPS 30 mm", material: "EPS", e: 0.03 },
+{ rotulo: "Chapa inferior com acabamento efeito madeira", material: "Aço com acabamento efeito madeira", e: 0.00043 }] },
+{ id: "sanduiche-tp40-pir30-madeira", rotulo: "Telha sanduíche trapezoidal, PIR 30 mm, face inferior efeito madeira",
+camadas: [{ rotulo: "Chapa de aço superior pré-pintada (trapézio)", material: "Aço galvalume pré-pintado", e: 0.00043 },
+{ rotulo: "Núcleo isolante PIR 30 mm", material: "PIR", e: 0.03 },
+{ rotulo: "Chapa inferior com acabamento efeito madeira", material: "Aço com acabamento efeito madeira", e: 0.00043 }] }
 ];
+var F_BRASILIT = "Brasilit — Catálogo Técnico Ondulada (PDF público: aecweb.com.br/cls/catalogos/brasilit/ondulada.pdf)";
+var F_BRASTELHA = "Brastelha — ficha do produto TP-40 EPS (brastelha.ind.br/produto/brastelha-tp-40-eps)";
+var F_KINGSPAN = "Kingspan Isoeste — Isotelha Trapezoidal, Guia Rápido de Instalação v02 de 02/10/2025 (downloads.kingspan-isoeste.com.br)";
+var TELHAS = {
+"fibrocimento-6": {
+familia: "fibrocimento", fabricante: "Brasilit", produto: "Telha Ondulada de fibrocimento 6 mm (sem amianto)",
+pesoKgM2: 18, pesoFonte: F_BRASILIT + ", p. 2: peso para cálculo de 6 mm = 18 kg/m² (inclui absorção de água, recobrimento e fixações)",
+inclinacaoMinGraus: 5, inclinacaoMinPct: 8.7, inclinacaoRecomendadaGraus: 15,
+inclinacaoFonte: F_BRASILIT + ", p. 5: a partir de 5° (8,7%) para 6 e 8 mm; abaixo de 10° cuidados especiais; mais recomendada 15° (27%)",
+larguraTotal: 1.10, larguraUtil: { "1/4 de onda": 1.05, "1 1/4 de onda": 0.87 }, larguraFonte: F_BRASILIT + ", p. 3 (largura total 1100; útil 1050 ou 870 conforme o recobrimento lateral)",
+comprimentos: [1.22, 1.53, 1.83, 2.13, 2.44, 3.05, 3.66], comprimentosFonte: F_BRASILIT + ", p. 2 (6 mm, largura 1,10 m: de 1,22 a 3,66 m; a p. 4 traz também 0,91 m)",
+pesoUnidadeKg: { "1.22": 16.3, "1.53": 20.4, "1.83": 24.4, "2.13": 28.4, "2.44": 32.5, "3.05": 40.7, "3.66": 48.8 },
+vaoMaxEntreApoios: 1.69, vaoFonte: F_BRASILIT + ", p. 4: vão livre máximo de 6 mm = 1,69 m, medido entre os eixos dos apoios",
+apoiosPorComprimento: { "0.91": 2, "1.22": 2, "1.53": 2, "1.83": 2, "2.13": 3, "2.44": 3, "3.05": 3, "3.66": 3 },
+apoiosFonte: F_BRASILIT + ", p. 4 (nº de apoios por telha de 6 mm; 3,05 e 3,66 m também fixadas nos apoios intermediários)",
+balanco: { semCalha: { min: 0.25, max: 0.40 }, comCalha: { min: 0.10, max: 0.25 } }, balancoFonte: F_BRASILIT + ", p. 4 (beiral sem calha 25–40 cm; com calha 10–25 cm)",
+apoioLarguraMinMm: 40, apoioFonte: F_BRASILIT + ", p. 5: apoio de madeira, metal ou concreto com largura mínima de 40 mm, acompanhando o caimento",
+recobrimento: [
+{ deGraus: 5, ateGraus: 10, lateral: "1 1/4 de onda, ou 1/4 de onda com cordão de vedação", longitudinalMm: 250, longitudinalComCordaoMm: 140, rampaMaxM: 14 },
+{ deGraus: 10, ateGraus: 15, lateral: "1/4 de onda", longitudinalMm: 200, longitudinalComCordaoMm: 140, rampaMaxM: null },
+{ deGraus: 15, ateGraus: 75, lateral: "1/4 de onda", longitudinalMm: 140, longitudinalComCordaoMm: null, rampaMaxM: null }
+],
+recobrimentoFonte: F_BRASILIT + ", p. 5, tabela Inclinação e Recobrimento (rampa máxima de 14 m só na faixa de 5° a 10°; nas outras, consultar o fabricante)",
+cumeeiraSinapi: "94223", orcSinapi: { ateGraus10: "94210", acimaGraus10: "94207" }
+},
+"sanduiche-tp40-eps30-madeira": {
+familia: "sanduiche", fabricante: "Brastelha (referência de catálogo do trapézio TP40 com EPS)", produto: "Telha sanduíche TP40, aço pré-pintado, núcleo EPS 30 mm",
+nucleo: "EPS", nucleoMm: 30, larguraUtil: 0.98, larguraFonte: F_BRASTELHA,
+pesoKgM2: null, pesoFonte: "não verificado: nenhuma ficha consultada traz o peso por m² (pedir ao fabricante)",
+inclinacaoMinPct: 7, inclinacaoFonte: F_BRASTELHA + ": inclinação mínima 7%",
+vaoMaxPorAco: { "0.43": 1.40, "0.50": 1.50, "0.65": 1.80 }, acoMm: 0.43, vaoMaxEntreApoios: 1.40,
+vaoFonte: F_BRASTELHA + ": vão máximo entre terças (cobertura) 1400 mm com aço de 0,43 mm, 1500 mm com 0,50 mm, 1800 mm com 0,65 mm — a ficha ressalva que o vão depende de dimensionamento estrutural",
+comprimentoMaxM: 12, comprimentoMinM: 2, comprimentoFonte: F_BRASTELHA + ": comprimento sob medida, de 2 a 12 m",
+balanco: null, balancoFonte: "não verificado (a ficha não traz o balanço máximo do beiral)",
+faceInferior: { acabamento: "efeito madeira", textura: "madeira", verificado: false, fonte: "não verificado: nenhum catálogo consultado traz face inferior com acabamento amadeirado — confirmar com o fabricante (pedido do projeto)" },
+orcSinapi: { aproximado: "94216" }
+},
+"sanduiche-tp40-pir30-madeira": {
+familia: "sanduiche", fabricante: "Kingspan Isoeste (Isotelha Trapezoidal PIR)", produto: "Telha sanduíche trapezoidal, aço pré-pintado, núcleo PIR 30 mm",
+nucleo: "PIR", nucleoMm: 30, larguraUtil: 1.00, larguraFonte: "AECweb, ficha da Isotelha Trapezoidal PIR (aecweb.com.br/produto/isotelha-trapezoidal-pir/32149): largura útil 1000 mm; espessuras 20, 30, 50 mm (70 e 100 sob consulta)",
+pesoKgM2: null, pesoFonte: "não verificado: o peso por m² da Isotelha Trapezoidal PIR não consta dos documentos consultados",
+inclinacaoMinPct: 6, inclinacaoFonte: F_KINGSPAN + ", p. 1: inclinação mínima recomendada 6%",
+comprimentoMaxAguaM: 20, comprimentoFonte: F_KINGSPAN + ", p. 1: comprimento máximo de água 20 m",
+vaoMaxEntreApoios: null, vaoFonte: "não verificado: o guia traz distâncias (2,35 / 3,45 / 4,55 / 5,65 m) sem legenda no texto — pedir a tabela de vãos por carga ao fabricante",
+balanco: null, balancoFonte: "não verificado",
+faceInferior: { acabamento: "efeito madeira", textura: "madeira", verificado: false, fonte: "não verificado: o guia da Kingspan Isoeste cita acabamento interno em filme de alumínio branco ou aço galvalume pré-pintado, não madeira — confirmar com o fabricante" },
+orcSinapi: { aproximado: "94216" }
+}
+};
+var F_CAT = "data/telhado-catalogo.json (catálogo RA de 20/10/2026)";
+var F_ETERNIT = "Eternit — Catálogo Técnico Fibrocimento 2020/21, p. 34–41";
+var F_TEGULA = "Tegula — Como instalar Telhas de Concreto Tegula (guia do fabricante: Peso e medidas; Sugestão de madeiramento; Normas para Projeto)";
+var F_TOPTELHA = "Toptelha — ficha da Romana Eurotop (fabricante)";
+var F_VOGEL = "Cláudio Vogel — ficha da Capa e Canal (fonte SECUNDÁRIA: republicação em portal)";
+var F_FAULIM = "Faulim — ficha da Portuguesa impermeabilizada (fonte SECUNDÁRIA: AECweb)";
+var F_KTP40 = "Kingspan Isoeste — Manual de Instalação Telha Standard TP-40, versão 09 (09/02/2024) e tabela de vãos";
+var F_KPIR = "Kingspan Isoeste — Catálogo de Produtos, PDF p. 12 (impressa 22–23), Isotelha Trapezoidal PIR AP";
+var F_SINAPI_TEL = "CAIXA — SINAPI Caderno Técnico Telhamento para Cobertura (06/2026)";
+var NOVAS = [
+{ id: "fc-eternit-ondulada-6mm", rotulo: "Fibrocimento ondulada 6 mm (Eternit)", camadas: [{ rotulo: "Telha ondulada de fibrocimento 6 mm", material: "Fibrocimento", e: 0.006 }],
+telha: { familia: "fibrocimento", forma: "ondulada", fabricante: "Eternit", produto: "Telha ondulada de fibrocimento 6 mm",
+pesoKgM2: 18, pesoFonte: F_ETERNIT, inclinacaoMinPct: 9, inclinacaoFonte: F_ETERNIT + ": mínimo 5° (9%); melhor aproveitamento 15° (27%)",
+vaoMaxEntreApoios: 1.69, vaoFonte: F_ETERNIT + ": vão máximo entre apoios 1,69 m", larguraUtilM: 1.05, larguraFonte: F_ETERNIT,
+comprimentos: [1.22, 1.53, 1.83, 2.13, 2.44, 3.05, 3.66], comprimentosFonte: F_ETERNIT,
+recobLongPorGraus: [{ ate: 10, m: 0.25 }, { ate: 15, m: 0.20 }, { ate: 90, m: 0.14 }], recobFonte: F_ETERNIT + " (25 cm de 5° a 10°, 20 cm de 10° a 15°, 14 cm acima)",
+balanco: { semCalha: { min: 0.25, max: 0.40 }, comCalha: { min: 0.10, max: 0.25 } }, balancoFonte: F_ETERNIT + " p. 36",
+perfil: { passo: 0.177, altura: 0.057, esp: 0.006, fonte: F_ETERNIT },
+fixacao: { texto: "parafuso rosca soberba Ø8 mm galvanizado com arruela e conjunto de vedação (apoio de madeira) ou gancho com rosca Ø8 mm (apoio metálico); 2ª e 5ª crista", porTelhaPorApoio: 2,
+fonte: F_ETERNIT + " (2 por telha por apoio nas telhas de periferia; o gerador aplica a todas — na dúvida, o mais alto)" },
+orcSinapi: { ateGraus10: "94210", acimaGraus10: "94207" } } },
+{ id: "fc-eternit-ondulada-8mm", rotulo: "Fibrocimento ondulada 8 mm (Eternit)", camadas: [{ rotulo: "Telha ondulada de fibrocimento 8 mm", material: "Fibrocimento", e: 0.008 }],
+telha: { familia: "fibrocimento", forma: "ondulada", fabricante: "Eternit", produto: "Telha ondulada de fibrocimento 8 mm",
+pesoKgM2: 24, pesoFonte: F_ETERNIT, inclinacaoMinPct: 9, inclinacaoFonte: F_ETERNIT + ": mínimo 5° (9%)",
+vaoMaxEntreApoios: 1.99, vaoFonte: F_ETERNIT + ": vão máximo entre apoios 1,99 m", larguraUtilM: 1.05, larguraFonte: F_ETERNIT,
+comprimentos: [1.22, 1.53, 1.83, 2.13, 2.44, 3.05, 3.66], comprimentosFonte: F_ETERNIT,
+recobLongPorGraus: [{ ate: 10, m: 0.25 }, { ate: 15, m: 0.20 }, { ate: 90, m: 0.14 }], recobFonte: F_ETERNIT,
+balanco: { semCalha: { min: 0.25, max: 0.40 }, comCalha: { min: 0.10, max: 0.25 } }, balancoFonte: F_ETERNIT + " p. 36",
+perfil: { passo: 0.177, altura: 0.059, esp: 0.008, fonte: F_ETERNIT },
+fixacao: { texto: "parafuso rosca soberba Ø8 mm galvanizado com vedação, ou gancho com rosca Ø8 mm; 2ª e 5ª crista", porTelhaPorApoio: 2, fonte: F_ETERNIT } } },
+{ id: "cer-romana-eurotop-toptelha", rotulo: "Cerâmica romana Eurotop (Toptelha)", camadas: [{ rotulo: "Telha cerâmica romana", material: "Telha cerâmica", e: 0.015 }],
+telha: { familia: "ceramica", forma: "romana", fabricante: "Toptelha", produto: "Telha cerâmica Romana Eurotop",
+pesoKgM2: null, pesoFonte: "não verificado (" + F_CAT + ": a ficha não traz kg/m²)", inclinacaoMinPct: 30, inclinacaoFonte: F_TOPTELHA + ": inclinação mínima 30%",
+vaoMaxEntreApoios: null, vaoFonte: "não se aplica (telha sobre ripas)", pecasM2: 13.4, comprimentoPeca: 0.445,
+galga: { m: 0.382, fonte: F_TOPTELHA + ": galga máxima 38,2 cm (o gerador usa a máxima)" }, larguraUtilM: null,
+perfil: { passo: 0.215, altura: 0.06, esp: 0.015, partida: true, fonte: "valor de partida — conferir: a ficha não traz o perfil (só o desenho no 3D)" },
+fixacao: { texto: "pré-furo traseiro; amarração com arame de cobre/galvanizado ou prego, conforme a ficha", porTelhaPorApoio: null, fonte: F_TOPTELHA, partida: true } } },
+{ id: "cer-portuguesa-faulim", rotulo: "Cerâmica portuguesa (Faulim)", camadas: [{ rotulo: "Telha cerâmica portuguesa", material: "Telha cerâmica", e: 0.015 }],
+telha: { familia: "ceramica", forma: "romana", fabricante: "Faulim", produto: "Telha cerâmica Portuguesa impermeabilizada",
+pesoKgM2: null, pesoFonte: "não verificado", inclinacaoMinPct: null, inclinacaoFonte: "não verificado: a ficha da Faulim não traz a inclinação mínima — valor de partida 30% (inclinação de aferição do SINAPI, não é o mínimo do fabricante)",
+inclinacaoPartidaPct: 30, vaoMaxEntreApoios: null, vaoFonte: "não se aplica (telha sobre ripas)", pecasM2: 16, comprimentoPeca: null,
+galga: { m: 0.33, minima: true, fonte: F_FAULIM + ": galga mínima 33 cm (o gerador põe as ripas NA galga a partir do beiral; a fiada da cumeeira é a ajustada)" },
+perfil: { passo: 0.205, altura: 0.06, esp: 0.015, partida: true, fonte: "valor de partida — conferir: a ficha não traz o perfil" },
+fixacao: { texto: "sem dado de fixação na ficha", porTelhaPorApoio: null, fonte: F_FAULIM, partida: true } } },
+{ id: "cer-capa-canal-vogel", rotulo: "Cerâmica capa e canal (Cláudio Vogel)", camadas: [{ rotulo: "Telha cerâmica capa e canal", material: "Telha cerâmica", e: 0.015 }],
+telha: { familia: "ceramica", forma: "capa-canal", fabricante: "Cláudio Vogel", produto: "Telha cerâmica Capa e Canal (colonial)",
+pesoKgM2: null, pesoFonte: "não verificado", inclinacaoMinPct: 36, inclinacaoFonte: F_VOGEL + ": inclinação mínima 36%",
+vaoMaxEntreApoios: null, vaoFonte: "não se aplica (telha sobre ripas)", pecasM2: 21, comprimentoPeca: 0.505,
+galga: { m: 0.405, partida: true, fonte: "DERIVADO pela RA — conferir: comprimento 50,5 cm (" + F_VOGEL + ") − recobrimento mínimo de 10 cm (" + F_SINAPI_TEL + ", p. 23)" },
+perfil: { passo: 0.24, altura: 0.08, esp: 0.015, partida: true, fonte: "valor de partida — conferir: a ficha não traz o perfil" },
+fixacao: { texto: "beirais sem forro: primeiras fiadas amarradas às ripas com arame recozido galvanizado (" + F_SINAPI_TEL + ", p. 23)", porTelhaPorApoio: null, fonte: F_SINAPI_TEL, partida: true } } },
+{ id: "con-tradicao-tegula", rotulo: "Concreto Tradição (Tegula)", camadas: [{ rotulo: "Telha de concreto", material: "Telha de concreto", e: 0.015 }],
+telha: { familia: "concreto", forma: "romana", fabricante: "Tegula (Eternit)", produto: "Telha de concreto Tegula — perfil Tradição",
+pesoKgM2: 48, pesoFonte: F_TEGULA + ": peso seco 48 kg/m² (molhado 53)", inclinacaoMinPct: 30, inclinacaoFonte: F_TEGULA + ": mínimo 30% até pano de 7 m (32% até 8 m, 36% até 9 m, 38% até 10 m, 42% até 11 m, 50% até 14 m)",
+rampaPorInclinacao: [{ pct: 30, ateM: 7 }, { pct: 32, ateM: 8 }, { pct: 36, ateM: 9 }, { pct: 38, ateM: 10 }, { pct: 42, ateM: 11 }, { pct: 50, ateM: 14 }],
+vaoMaxEntreApoios: null, vaoFonte: "não se aplica (telha sobre ripas)", pecasM2: 10.4, comprimentoPeca: 0.42, larguraUtilM: 0.30,
+galga: { m: 0.32, fonte: F_TEGULA + ": galga até 32 cm (nunca maior)" }, tercaMaxM: 1.5, tercaFonte: F_TEGULA + ": terças no máximo a 1,50 m", caibroM: 0.55, caibroFonte: F_TEGULA + ": caibros 5×6 a cada 50–60 cm",
+perfil: { passo: 0.30, altura: 0.035, esp: 0.015, partida: true, fonte: "largura útil 30 cm (" + F_TEGULA + "); altura do perfil: valor de partida — conferir" },
+fixacao: { texto: "amarrar todas as telhas acima de 96% (fio de cobre ou arame galvanizado nº 18 pelo pré-furo); em região de vento/litoral, fixar as telhas do beiral sem forro", porTelhaPorApoio: null, fonte: F_TEGULA, partida: true } } },
+{ id: "kingspan-isoeste-tp40", rotulo: "Metálica trapezoidal TP-40 0,43 mm (Kingspan Isoeste)", camadas: [{ rotulo: "Telha de aço trapezoidal TP-40", material: "Aço galvalume pré-pintado", e: 0.00043 }],
+telha: { familia: "metalica", forma: "trapezoidal", fabricante: "Kingspan Isoeste", produto: "Telha metálica trapezoidal TP-40, aço 0,43 mm",
+pesoKgM2: 4.13, pesoFonte: F_KTP40, inclinacaoMinPct: 8, inclinacaoFonte: F_KTP40 + ": inclinação mínima 8%",
+vaoMaxEntreApoios: 2.2, vaoFonte: F_KTP40 + ": 0,43 mm, 3 apoios, cobertura L/120 — 2,20 m admite 94 kgf/m² (2,40 m só 78). A CARGA de 80 kgf/m² que escolhe a linha é VALOR DE PARTIDA — conferir com a carga do projeto (vento NBR 6123)",
+vaoPartida: true, larguraUtilM: 0.98, larguraFonte: F_KTP40, comprimentoMaxM: 12, comprimentoFonte: F_KTP40 + " (sob medida)",
+balanco: { semCalha: { min: 0, max: 0.20 }, comCalha: { min: 0, max: 0.20 } }, balancoFonte: F_KTP40 + ": beiral máximo 200 mm",
+recobLongM: 0.20, recobFonte: "valor de partida — conferir (transpasse não lido no manual)",
+perfil: { passo: 0.196, altura: 0.036, crista: 0.032, esp: 0.00043, fonte: F_KTP40 + " (passo 196, crista 32, altura 36 mm)" },
+fixacao: { texto: "parafuso autobrocante PB12-14×3/4\" P3 com arruela vedante, na onda baixa; costura PB1/4-14×7/8\" a cada 500 mm na onda alta", porTelhaPorApoio: 3, costuraM: 0.5, fonte: F_KTP40 } } },
+{ id: "kingspan-isotelha-trapezoidal-pir-ap", rotulo: "Sanduíche trapezoidal PIR 30 mm (Kingspan Isotelha)", camadas: [
+{ rotulo: "Chapa de aço superior pré-pintada (trapézio)", material: "Aço galvalume pré-pintado", e: 0.0005 },
+{ rotulo: "Núcleo isolante PIR AP 30 mm", material: "PIR", e: 0.03 },
+{ rotulo: "Chapa inferior de aço 0,43 mm", material: "Aço galvalume pré-pintado", e: 0.00043 }],
+telha: { familia: "sanduiche", forma: "trapezoidal", fabricante: "Kingspan Isoeste", produto: "Isotelha Trapezoidal PIR AP 30 mm, aço/aço 0,50/0,43",
+nucleoMm: 30, pesoKgM2: 9.69, pesoFonte: F_KPIR + ": 9,69 kg/m² (aço/aço 0,50/0,43, núcleo 30 mm)", inclinacaoMinPct: 6, inclinacaoFonte: F_KPIR + ": inclinação mínima recomendada 6% (água até 20 m)",
+comprimentoMaxAguaM: 20, comprimentoMaxM: 12, comprimentoFonte: F_KPIR + ": peça de 2,5 a 12 m; água até 20 m",
+vaoMaxEntreApoios: 2.6, vaoFonte: F_KPIR + ": núcleo 30 mm, 3 ou mais apoios, 80 kgf/m², flecha L/180 — 2,60 m (valor impresso)",
+larguraUtilM: 1.0, larguraFonte: F_KPIR, balanco: { semCalha: { min: 0, max: 0.30 }, comCalha: { min: 0, max: 0.30 } }, balancoFonte: F_KPIR + ": balanço longitudinal 30 cm",
+recobLongM: 0.25, recobFonte: F_KPIR + ": transpasse padrão 250 mm",
+perfil: { passo: 0.25, altura: 0.03, crista: 0.04, esp: 0.0005, partida: true, fonte: "valor de partida — conferir: as cotas do trapézio não têm legenda no catálogo" },
+fixacao: { texto: "parafuso autobrocante PB12-1/4-14 (120 mm para núcleo 30) com arruela vedante, no alto do trapézio; transpasse: 2 parafusos de costura", porTelhaPorApoio: 2, fonte: F_KPIR } } }
+];
+var F_OND = "Onduline — Ficha Técnica Onduline Clássica (19/09/2023) e Filipeta telhas grandes (03/2025)";
+var F_SHG = "Brasilit — Guia Técnico de Montagem Telha Shingle XT25 AR (catálogo 09/2010, p. 3–6; cópia no AECweb) e página do produto no AECweb (fonte SECUNDÁRIA para pacote, peso e inclinação)";
+NOVAS.push(
+{ id: "eco-onduline-classica", rotulo: "Ecológica Onduline Clássica 2,00 × 0,95 m", camadas: [{ rotulo: "Telha ecológica fibroasfáltica (celulose e betume) 3 mm", material: "Fibra vegetal e betume", e: 0.003 }],
+telha: { familia: "ecologica", forma: "ondulada", fabricante: "Onduline", produto: "Telha ecológica Onduline Clássica 2,00 × 0,95 m",
+pesoKgM2: 3.4, pesoFonte: F_OND + ": 3,4 kg/m² (a filipeta de 2025 diz 3,2)", inclinacaoMinPct: 18, inclinacaoFonte: F_OND + ": inclinação mínima 10° (18%)",
+vaoMaxEntreApoios: 0.46, vaoFonte: F_OND + ": distância entre apoios (centro a centro) 46 cm, 5 apoios por telha de 2,00 m",
+galga: { m: 0.46, fonte: F_OND + ": apoios (ripas) a 46 cm de centro a centro" },
+ripaSecao: { b: 0.05, h: 0.025, rot: "Ripa 2,5×5 cm (apoio da Onduline)", fonte: F_OND + ": largura mínima dos apoios 5,0 × 2,5 cm" },
+larguraUtilM: 0.855, larguraFonte: "DERIVADO pela RA — conferir: largura 0,95 m − recobrimento lateral de 1 onda (95 mm) (" + F_OND + ")",
+comprimentos: [2.0], comprimentosFonte: F_OND, recobLongM: 0.16, recobFonte: F_OND + ": recobrimento longitudinal 16 cm",
+perfil: { passo: 0.095, altura: 0.038, esp: 0.003, fonte: F_OND + " (10 ondas, passo 95 mm, altura 38 mm)" },
+fixacao: { texto: "kit de fixadores Onduline (Prego Fácil ou parafuso Speedfix com arruela), sempre na onda alta", porTelha: 18, fonte: F_OND + ": 18 fixadores por telha" } } },
+{ id: "shg-brasilit-xt25", rotulo: "Shingle XT25 AR (Brasilit / CertainTeed)", camadas: [{ rotulo: "Telha shingle laminada (asfalto e fibra de vidro)", material: "Shingle asfáltico", e: 0.005 }],
+telha: { familia: "shingle", forma: "plana", fabricante: "Brasilit (Saint-Gobain) / CertainTeed", produto: "Telha shingle XT25 AR",
+pesoKgM2: 11, pesoFonte: F_SHG + ": 34,1 kg por pacote de 3,1 m² (11 kg/m²)", inclinacaoMinPct: 16, inclinacaoFonte: F_SHG + ": inclinação superior a 16% (9,5°); abaixo de 33% (18,5°), método para baixa inclinação",
+baixaInclinacaoPct: 33, vaoMaxEntreApoios: null, vaoFonte: "não se aplica (telha sobre base contínua de OSB/compensado)",
+pecasM2: 8.71, pecasFonte: "DERIVADO: 27 telhas por pacote ÷ 3,1 m² (" + F_SHG + ")", comprimentoPeca: 0.915,
+galga: { m: 0.125, fonte: F_SHG + ": deixe expostos 12,5 cm de shingle (a fiada)" },
+perfil: { passo: 0.915, altura: 0, esp: 0.005, partida: true, fonte: "espessura: VALOR DE PARTIDA — conferir (o guia não traz a espessura)" },
+base: { osb: true, texto: "base contínua de OSB ou compensado, com junta de dilatação de 3 a 8 mm", espessuraM: 0.0111, espessuraPartida: true, fonte: F_SHG },
+subcobertura: { texto: "subcobertura Felt Paper (asfalto com microporos), sobreposição 150 mm vertical / 50 mm horizontal; manta autoadesiva na água-furtada", fonte: F_SHG },
+fixacao: { texto: "prego 18 × 25 mm anticorrosão na linha de pregação", porTelha: 4, fonte: F_SHG + ": 4 pregos por telha (inclinação baixa e padrão)" } } }
+);
+NOVAS.forEach(function (n) {
+TIPOS.push({ id: n.id, rotulo: n.rotulo, camadas: n.camadas });
+n.telha.fonteCatalogo = F_CAT + " — id " + n.id;
+TELHAS[n.id] = n.telha;
+});
+TELHAS["fibrocimento-6"].forma = "ondulada";
+TELHAS["fibrocimento-6"].perfil = { passo: 0.177, altura: 0.051, esp: 0.006, partida: true, fonte: "valor de partida — conferir: perfil da ondulada 6 mm (o catálogo Brasilit consultado não traz passo/altura da onda)" };
+TELHAS["fibrocimento-6"].fixacao = { texto: "parafuso/gancho com arruela e vedação; cumeeira e telhas de beiral: 2 fixações por apoio (cristas 2 e 5)", porTelhaPorApoio: 2, fonte: F_CAT + " — id fib-brasilit-ondulada-6mm" };
+["sanduiche-tp40-eps30-madeira", "sanduiche-tp40-pir30-madeira"].forEach(function (k) {
+TELHAS[k].forma = "trapezoidal";
+TELHAS[k].perfil = { passo: 0.196, altura: 0.036, crista: 0.032, esp: 0.00043, partida: true, fonte: "valor de partida — conferir: perfil do trapézio TP-40 (" + F_KTP40 + ")" };
+TELHAS[k].fixacao = { texto: "parafuso autobrocante com arruela vedante, no alto do trapézio", porTelhaPorApoio: null, partida: true, fonte: "não verificado: a ficha não traz a fixação — o gerador conta 2 por telha por terça (valor de partida, conferir)" };
+});
+function inclinacaoPadrao(id) {
+var t = telhaDe(id); if (!t) return null;
+if (fin(t.inclinacaoMinPct)) return t.inclinacaoMinPct;
+return fin(t.inclinacaoPartidaPct) ? t.inclinacaoPartidaPct : null;
+}
+function telhaDe(id) { return temChave(TELHAS, String(id)) ? TELHAS[String(id)] : null; }
+function recobrimentoPara(id, graus) {
+var t = telhaDe(id); if (!t || !t.recobrimento || !fin(graus)) return null;
+for (var i = 0; i < t.recobrimento.length; i++) { var r = t.recobrimento[i]; if (graus >= r.deGraus - 1e-9 && graus < r.ateGraus - 1e-9) return clone(r); }
+return null;
+}
+function pctGraus(p) { return Math.atan(p / 100) * 180 / Math.PI; }
 var LIM = { inclinacao: [1, 300], beiral: [0, 3], desloc: [-200, 200], vertices: 200, camada: 0.5, espessura: 0.5, camadas: 12, perfil: 100 };
 var INCL_PADRAO = 30;
 var BORDAS = {
@@ -51415,7 +51747,7 @@ break;
 });
 return out;
 }
-function calcularPerimetro(f, H0, avisos) {
+function calcularPerimetro(f, H0, avisos, extra) {
 var inclP = fin(Number(f.inclinacao)) && f.inclinacao !== null ? Number(f.inclinacao) : INCL_PADRAO;
 var cont = arr(f.contorno).map(function (q) { return { x: q.x, z: q.z, d: q.d, i: q.i }; });
 var lis = f.inclinacoes != null ? inclinacoesTexto(f.inclinacoes) : [];
@@ -51423,9 +51755,12 @@ lis.forEach(function (e, k) { if (!e || !cont[k]) return; cont[k].d = e.d !== fa
 var pc = prepararContorno(cont, inclP);
 if (!pc.ok) { avisos.push(pc.motivo); return null; }
 var b = Math.max(0, Math.min(LIM.beiral[1], num(f.beiral, 0)));
+var sb = extra && extra.semBeiral, ds = pc.arestas.map(function (a) { return sb && (sb === true || sb[a.orig]) ? 0 : b; });
+var algumB = ds.some(function (v) { return v > 0; });
 var P = pc.pts, n = P.length, Pb = b > 0 ? deslocar(P, P.map(function () { return b; })) : P.slice();
+if (sb) Pb = algumB ? deslocar(P, ds) : P.slice();
 if (!Pb) { avisos.push("Beiral grande demais para este contorno (uma aresta some): diminua o beiral."); return null; }
-var ar = pc.arestas.map(function (a) { var s = a.d ? a.i / 100 : 0; return { d: a.d, s: s, ha: a.d ? H0 - b * s : Infinity, i: a.d ? a.i : null, orig: a.orig }; });
+var ar = pc.arestas.map(function (a, k) { var s = a.d ? a.i / 100 : 0, b = ds[k]; return { d: a.d, s: s, ha: a.d ? H0 - b * s : Infinity, i: a.d ? a.i : null, orig: a.orig }; });
 var aguas = [], arestas = [];
 var sk = esqueleto(Pb, ar);
 if (sk.plano) {
@@ -51443,9 +51778,12 @@ if (areaSinal(Q) < 0) Q.reverse();
 aguas.push(aguaDe(k, planoAresta(sk.linhas[k], ar[k].s, ar[k].ha), [Q], ar[k].s));
 }
 }
-for (var e = 0; e < n; e++) arestas.push({ k: e, orig: ar[e].orig, define: ar[e].d, inclinacao: ar[e].i, alturaBeiral: ar[e].d ? r6(ar[e].ha) : null,
+for (var e = 0; e < n; e++) {
+arestas.push({ k: e, orig: ar[e].orig, define: ar[e].d, inclinacao: ar[e].i, alturaBeiral: ar[e].d ? r6(ar[e].ha) : null,
 parede: { a: { x: r6(P[e][0]), z: r6(P[e][1]) }, b: { x: r6(P[(e + 1) % n][0]), z: r6(P[(e + 1) % n][1]) } },
 beiral: { a: { x: r6(Pb[e][0]), z: r6(Pb[e][1]) }, b: { x: r6(Pb[(e + 1) % n][0]), z: r6(Pb[(e + 1) % n][1]) } } });
+if (f.modelo) arestas[arestas.length - 1].beiralM = ds[e];
+}
 return { aguas: aguas, arestas: arestas, P: P, Pb: Pb, beiral: b, nArestas: n };
 }
 function calcularExtrusao(f, H0, avisos) {
@@ -51467,7 +51805,7 @@ var ag = aguaDe(i, plano, [Q], Math.abs(s)); ag.inclinacao = r6(Math.abs(s) * 10
 if (!aguas.length) { avisos.push("O perfil da extrusão não tem trecho inclinado nem plano (só vertical)."); return null; }
 return { aguas: aguas, arestas: [], P: null, Pb: null, beiral: 0, nArestas: 0 };
 }
-function calcular(fonte, niveis) {
+function calcular(fonte, niveis, extra) {
 var f = clone(fonte), avisos = [];
 f.tipo = "telhado"; f.ifc = "IFCROOF";
 var M = mapaNiveis(niveis), elev;
@@ -51481,7 +51819,7 @@ var t = tipoDe(fonte);
 f.tipoTelhado = t; f.tipoId = t.id; f.espessura = t.espessura;
 f.elevNivel = r6(elev); f.deslocBaseEf = r6(desl); f.cotaApoio = r6(elev + desl);
 f.modo = f.modo === "extrusao" ? "extrusao" : "perimetro";
-var g = f.modo === "extrusao" ? calcularExtrusao(f, f.cotaApoio, avisos) : calcularPerimetro(f, f.cotaApoio, avisos);
+var g = f.modo === "extrusao" ? calcularExtrusao(f, f.cotaApoio, avisos) : calcularPerimetro(f, f.cotaApoio, avisos, extra);
 zerar(f);
 if (!g) { f.ok = false; f.avisos = avisos; return f; }
 f.ok = true;
@@ -51490,8 +51828,39 @@ f.arestasCalc = g.arestas;
 f.beiralEf = g.beiral;
 f.beirais = g.Pb ? g.Pb.map(function (q) { return { x: r6(q[0]), z: r6(q[1]) }; }) : null;
 medir(f, g.Pb);
+avisosDaTelha(f).forEach(function (a) { avisos.push(a); });
 if (avisos.length) f.avisos = avisos; else delete f.avisos;
 return f;
+}
+function comprimentoDaAgua(ag) {
+var pl = ag.plano || {}, s = Math.sqrt((pl.bx || 0) * (pl.bx || 0) + (pl.bz || 0) * (pl.bz || 0));
+if (!(s > 1e-9)) return 0;
+var ux = pl.bx / s, uz = pl.bz / s, lo = Infinity, hi = -Infinity;
+arr(ag.pecas).forEach(function (pc) { arr(pc.pts).forEach(function (q) { var u = q.x * ux + q.z * uz; if (u < lo) lo = u; if (u > hi) hi = u; }); });
+return hi > lo ? (hi - lo) * Math.sqrt(1 + s * s) : 0;
+}
+function avisosDaTelha(f) {
+var out = [], tel = f && f.ok ? telhaDe(f.tipoId) : null;
+if (!tel) return out;
+function nomeAgua(ag) {
+var e = ag.aresta >= 0 ? arr(f.arestasCalc)[ag.aresta] : null;
+return e ? "a água da aresta " + (e.orig + 1) : "a água";
+}
+arr(f.aguasCalc).forEach(function (ag) {
+var pct = num(ag.inclinacao, 0);
+if (!(pct > 0)) return;
+var gr = pctGraus(pct), L = comprimentoDaAgua(ag);
+if (fin(tel.inclinacaoMinPct) && pct < tel.inclinacaoMinPct - 1e-6)
+out.push("Inclinação de " + String(r4(pct)).replace(".", ",") + "% em " + nomeAgua(ag) + ": abaixo do mínimo de " + String(tel.inclinacaoMinPct).replace(".", ",") + "% da " + tel.produto + " (" + tel.inclinacaoFonte + ").");
+var rc = recobrimentoPara(f.tipoId, gr);
+if (rc && rc.rampaMaxM && L > rc.rampaMaxM + 1e-6)
+out.push("Rampa de " + String(r4(L)).replace(".", ",") + " m em " + nomeAgua(ag) + ": passa de " + rc.rampaMaxM + " m, o máximo da faixa de " + rc.deGraus + "° a " + rc.ateGraus + "° (" + tel.recobrimentoFonte + ").");
+if (fin(tel.comprimentoMaxAguaM) && L > tel.comprimentoMaxAguaM + 1e-6)
+out.push("Comprimento de água de " + String(r4(L)).replace(".", ",") + " m em " + nomeAgua(ag) + ": passa de " + tel.comprimentoMaxAguaM + " m (" + tel.comprimentoFonte + ").");
+if (fin(tel.comprimentoMaxM) && L > tel.comprimentoMaxM + 1e-6)
+out.push("A água de " + String(r4(L)).replace(".", ",") + " m em " + nomeAgua(ag) + " passa do comprimento máximo da telha (" + tel.comprimentoMaxM + " m): pede emenda com recobrimento (" + tel.comprimentoFonte + ").");
+});
+return out;
 }
 function zerar(f) {
 f.area = 0; f.areaProjecao = 0; f.volume = 0; f.cumeeira = 0; f.espigao = 0; f.rincao = 0; f.comprimentoBeiral = 0; f.comprimentoEmpena = 0;
@@ -51656,6 +52025,8 @@ if (o.defineInclinacao === undefined && o.inclinacaoAresta === undefined) return
 algum = true;
 } else if (o.defineInclinacao !== undefined || o.inclinacaoAresta !== undefined) return false;
 if (o.inclinacoes !== undefined) { if (o.inclinacoes !== null && !(typeof o.inclinacoes === "string" && o.inclinacoes.length <= 2000)) return false; algum = true; }
+if (o.modelo !== undefined) { if (o.modelo !== null && !(typeof o.modelo === "string" && /^[a-z0-9-]{1,40}$/.test(o.modelo))) return false; algum = true; }
+if (o.anexarParedes !== undefined) { if (o.anexarParedes !== null && typeof o.anexarParedes !== "boolean") return false; algum = true; }
 return algum;
 }
 function opBordaValida(o) {
@@ -51674,12 +52045,24 @@ algum = true;
 }
 return algum;
 }
-var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes"];
+var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes"];
 var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura"];
 function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
+var MEDIDAS_PACOTE = ["ripas", "caibros", "tercas", "pontaletes", "madeiraM3", "acoKg", "telhasUn", "pregosKg", "fixacoesUn", "tesourasUn"];
+(function () {
+var BE = global.BimEdit; if (!BE || !BE.MEDIDAS_ORC) return;
+var un = { ripas: "m", caibros: "m", tercas: "m", pontaletes: "m", madeiraM3: "m3", acoKg: "kg", telhasUn: "un", pregosKg: "kg", fixacoesUn: "un", tesourasUn: "un" };
+var rot = { ripas: "ripas do telhado (m)", caibros: "caibros do telhado (m)", tercas: "terças do telhado (m)", pontaletes: "pontaletes do telhado (m)", madeiraM3: "madeira da estrutura do telhado (m³)",
+acoKg: "aço da estrutura do telhado (kg)", telhasUn: "telhas (peças)", pregosKg: "pregos do madeiramento (kg)", fixacoesUn: "fixações e parafusos (un)", tesourasUn: "tesouras (un)" };
+MEDIDAS_PACOTE.forEach(function (k) {
+if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, k)) BE.MEDIDAS_ORC[k] = un[k];
+if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, k)) BE.MEDIDAS_ROTULO[k] = rot[k];
+});
+})();
 var BimTelhado = {
-TIPOS: TIPOS, LIM: LIM, BORDAS: BORDAS, INCL_PADRAO: INCL_PADRAO, CAMPOS: CAMPOS,
+TIPOS: TIPOS, MEDIDAS_PACOTE: MEDIDAS_PACOTE, TELHAS: TELHAS, LIM: LIM, BORDAS: BORDAS, INCL_PADRAO: INCL_PADRAO, CAMPOS: CAMPOS,
 tipo: function (id) { return tipoCatalogo(id) || normTipo(TIPOS[0]); },
+telha: telhaDe, inclinacaoPadrao: inclinacaoPadrao, recobrimento: recobrimentoPara, dentro: dentro, pctGraus: pctGraus, avisosDaTelha: avisosDaTelha, comprimentoDaAgua: comprimentoDaAgua,
 normTipo: normTipo,
 prepararContorno: prepararContorno,
 deslocar: deslocar,
@@ -51717,6 +52100,9 @@ if (!def) q.d = false; else delete q.d;
 o.contorno = C;
 }
 if (fin(Number(d.inclinacao)) && d.inclinacao !== null) o.inclinacao = r6(Number(d.inclinacao));
+else if (d.tipoId != null && fin(inclinacaoPadrao(d.tipoId))) o.inclinacao = r6(inclinacaoPadrao(d.tipoId));
+if (d.modelo != null) o.modelo = String(d.modelo);
+if (d.anexarParedes === false) o.anexarParedes = false;
 if (fin(Number(d.beiral)) && d.beiral !== null) o.beiral = r6(Number(d.beiral));
 if (d.nivelId != null) o.nivelId = String(d.nivelId);
 if (fin(Number(d.base)) && d.base !== null) o.base = r6(Number(d.base));
@@ -51792,7 +52178,15 @@ fim: function (ctx, saida, niveis) {
 if (!ctx || !saida) return saida;
 var porId = {};
 if (ctx.telhados) {
-saida.telhados = arr(ctx.ordemTe).map(function (id) { var t = calcular(ctx.telhados[id], niveis); porId[String(id)] = t; return t; });
+var semB = {};
+var CB = ctx.cob; if (CB && CB.plat) arr(CB.ordPlat).forEach(function (pid) {
+var pq = CB.plat[pid]; if (!pq || pq.telhado == null) return;
+var k = String(pq.telhado);
+if (!Array.isArray(pq.arestas) || !pq.arestas.length) { semB[k] = true; return; }
+if (semB[k] === true) return;
+var m = semB[k] || (semB[k] = {}); pq.arestas.forEach(function (o) { m[Number(o)] = true; });
+});
+saida.telhados = arr(ctx.ordemTe).map(function (id) { var t = calcular(ctx.telhados[id], niveis, semB[String(id)] && ctx.telhados[id] && ctx.telhados[id].modelo ? { semBeiral: semB[String(id)] } : null); porId[String(id)] = t; return t; });
 var orig = {}; saida.telhados.forEach(function (t) { orig[String(t.id)] = { ok: t.ok, aguasCalc: t.aguasCalc }; });
 saida.telhados.forEach(function (t) {
 if (t.unir == null) return;
@@ -51802,6 +52196,24 @@ if (!t.ok || !B.ok) return;
 var r = unir(t, B);
 t.unidoA = String(t.unir); t.areaRemovidaUniao = r6(r.removida); t.rincaoUniao = r6(r.rincao);
 medir(t, t.beirais ? t.beirais.map(function (q) { return [q.x, q.z]; }) : null);
+});
+}
+if (saida.telhados && saida.telhados.some(function (t) { return t && t.ok && t.modelo; })) {
+var ES = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
+if (ES && ES.modelar) saida.telhados.forEach(function (t) {
+if (!t || !t.ok || !t.modelo) return;
+var pk = null;
+try { pk = ES.modelar(t, saida, { ctxCob: ctx.cob }); } catch (eM) { pk = { ok: false, avisos: ["O gerador do telhado falhou: " + (eM && eM.message)] }; }
+if (!pk) return;
+t.pacote = pk;
+if (pk.ok) {
+t.espessuraTipo = t.espessura; t.espessura = pk.espessura;
+if (t.anexarParedes !== false && arr(pk.paredes).length) {
+var ids = {}; pk.paredes.forEach(function (id) { ids[String(id)] = 1; });
+arr(saida.caixas).forEach(function (c) { if (c && c.tipo === "parede" && ids[String(c.id)] && !c.anexarTopo) { c.anexarTopo = true; c.anexarTopoAuto = String(t.id); } });
+}
+}
+arr(pk.avisos).forEach(function (a) { (t.avisos = t.avisos || []).push(a); });
 });
 }
 if (ctx.bordas) saida.bordas = arr(ctx.ordemBo).map(function (id) { return calcularBorda(ctx.bordas[id], porId); });
@@ -51814,6 +52226,7 @@ if (el.tipo === "borda") { m.un = 1; m.comprimento = R(num(el.comprimento, 0)); 
 m.un = 1; m.area = R(num(el.area, 0)); m.areaBruta = m.area; m.areaProjecao = R(num(el.areaProjecao, 0)); m.volume = R(num(el.volume, 0));
 m.comprimento = R(num(el.cumeeira, 0));
 m.espigao = R(num(el.espigao, 0)); m.rincao = R(num(el.rincao, 0)); m.beiral = R(num(el.comprimentoBeiral, 0)); m.empena = R(num(el.comprimentoEmpena, 0));
+if (el.pacote && el.pacote.ok && el.pacote.medidas) MEDIDAS_PACOTE.forEach(function (k) { m[k] = R(num(el.pacote.medidas[k], 0)); });
 return m;
 },
 superficies: function (t) {
@@ -51841,12 +52254,2737 @@ var com = arr(estado && estado.telhados).filter(function (t) { return t && t.tip
 if (com) return { op: "telhado", id: id, tipoTelhado: { id: com.tipoTelhado.id, rotulo: com.tipoTelhado.rotulo, camadas: clone(com.tipoTelhado.camadas) } };
 return null;
 },
+resumoPlanta: function (estado) {
+var C = dep("BimCobertura", "./bimcobertura.js");
+return arr(estado && estado.telhados).map(function (t) {
+var o = { id: t.id, ok: !!t.ok, nome: txt(t.tipoTelhado && t.tipoTelhado.rotulo), avisos: arr(t.avisos).slice() };
+o.tipoTelhado = t.tipoTelhado ? { id: t.tipoTelhado.id, rotulo: t.tipoTelhado.rotulo, espessura: t.espessura } : null;
+var tel = telhaDe(t.tipoId);
+o.telha = tel ? { fabricante: tel.fabricante, produto: tel.produto, inclinacaoMinPct: tel.inclinacaoMinPct, vaoMaxEntreApoios: tel.vaoMaxEntreApoios, fonteVao: tel.vaoFonte } : null;
+o.contorno = arr(t.arestasCalc).map(function (e) { return { x: e.parede.a.x, z: e.parede.a.z }; });
+o.beiral = t.beirais ? t.beirais.map(function (q) { return { x: q.x, z: q.z }; }) : null;
+o.beiralEf = t.beiralEf; o.cotaApoio = t.cotaApoio; o.cotaCumeeira = t.cotaCumeeira;
+o.areaProjecao = r4(num(t.areaProjecao, 0)); o.area = r4(num(t.area, 0));
+o.linhas = { cumeeira: r4(num(t.cumeeira, 0)), espigao: r4(num(t.espigao, 0)), rincao: r4(num(t.rincao, 0)) };
+o.inclinacoes = arr(t.arestasCalc).map(function (e) {
+var pct = e.define ? num(e.inclinacao, 0) : null;
+return { aresta: e.orig, define: !!e.define, pct: pct, graus: pct == null ? null : r4(pctGraus(pct)), texto: pct == null ? "oitão (sem inclinação)" : "i = " + pct.toFixed(1).replace(".", ",") + " %" };
+});
+o.aguas = arr(t.aguasCalc).map(function (ag) {
+var pl = ag.plano || {}, s = Math.sqrt((pl.bx || 0) * (pl.bx || 0) + (pl.bz || 0) * (pl.bz || 0)), sx = 0, sz = 0, A = 0, cx = 0, cz = 0, lo = Infinity, hi = -Infinity;
+arr(ag.pecas).forEach(function (pc) {
+var Q = arr(pc.pts).map(function (q) { return [q.x, q.z]; }), a = Math.abs(areaSinal(Q));
+Q.forEach(function (q) { cx += q[0] * a / Math.max(Q.length, 1); cz += q[1] * a / Math.max(Q.length, 1); });
+A += a;
+});
+if (A > 0) { cx /= A; cz /= A; } else { cx = num(t.cx, 0); cz = num(t.cz, 0); }
+if (s > 1e-9) { sx = -pl.bx / s; sz = -pl.bz / s; }
+arr(ag.pecas).forEach(function (pc) { arr(pc.pts).forEach(function (q) { var u = q.x * sx + q.z * sz; if (u < lo) lo = u; if (u > hi) hi = u; }); });
+var ext = isFinite(lo) ? hi - lo : 0, cmp = Math.max(0.5, Math.min(1.5, ext * 0.3)), pct = num(ag.inclinacao, 0);
+return { aresta: ag.aresta, pct: pct, graus: r4(pctGraus(pct)), area: r4(ag.area), areaProjecao: r4(ag.areaProjecao), centro: { x: r4(cx), z: r4(cz) },
+seta: s > 1e-9 ? { de: { x: r4(cx - sx * cmp / 2), z: r4(cz - sz * cmp / 2) }, para: { x: r4(cx + sx * cmp / 2), z: r4(cz + sz * cmp / 2) }, sentido: { x: r4(sx), z: r4(sz) } } : null,
+texto: s > 1e-9 ? "i = " + pct.toFixed(1).replace(".", ",") + " %" : "plano" };
+});
+o.calhas = []; o.rufos = []; o.platibandas = []; o.condutores = [];
+if (C && C.resumoDoTelhado) { var rc = C.resumoDoTelhado(estado, t.id); o.calhas = rc.calhas; o.rufos = rc.rufos; o.platibandas = rc.platibandas; o.condutores = rc.condutores; }
+return o;
+});
+},
 textoInclinacoes: function (t) {
 return arr(t && t.contorno).map(function (q) { return q && q.d === false ? "-" : String(fin(Number(q && q.i)) && q.i !== null ? Number(q.i) : num(t.inclinacao, INCL_PADRAO)).replace(".", ","); }).join(";");
 }
 };
 global.BimTelhado = BimTelhado;
 if (typeof module !== "undefined" && module.exports) module.exports = BimTelhado;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcobertura.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function temChave(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+function obj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
+function idOk(v) { return (typeof v === "string" && v.length > 0 && v.length <= 120) || fin(v); }
+function virg(v, c) { return (Math.round(v * Math.pow(10, c == null ? 2 : c)) / Math.pow(10, c == null ? 2 : c)).toFixed(c == null ? 2 : c).replace(".", ","); }
+function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
+var SINAPI = {
+base: "SINAPI 06/2026 (MG)",
+telhaFibroAte10: { cod: "94210", un: "M2", desc: "TELHAMENTO COM TELHA ONDULADA DE FIBROCIMENTO E = 6 MM, COM RECOBRIMENTO LATERAL DE 1 1/4 DE ONDA PARA TELHADO COM INCLINAÇÃO MÁXIMA DE 10°" },
+telhaFibroAcima10: { cod: "94207", un: "M2", desc: "TELHAMENTO COM TELHA ONDULADA DE FIBROCIMENTO E = 6 MM, COM RECOBRIMENTO LATERAL DE 1/4 DE ONDA PARA TELHADO COM INCLINAÇÃO MAIOR QUE 10°" },
+telhaSanduiche: { cod: "94216", un: "M2", aprox: true, desc: "TELHAMENTO COM TELHA METÁLICA TERMOACÚSTICA E = 30 MM, COM ATÉ 2 ÁGUAS, INCLUSO IÇAMENTO", obs: "composição de telha termoacústica 30 mm: o acréscimo da face inferior efeito madeira fica à parte" },
+cumeeiraFibro: { cod: "94223", un: "M", desc: "CUMEEIRA PARA TELHA DE FIBROCIMENTO ONDULADA E = 6 MM, INCLUSO ACESSÓRIOS DE FIXAÇÃO E IÇAMENTO" },
+tramaAcoTercas: { cod: "104314", un: "KG", desc: "TRAMA DE AÇO COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA, INCLUSO TRANSPORTE VERTICAL (EM KG). EXCLUSIVE PINTURA" },
+tramaMadeiraTercas: { cod: "92543", un: "M2", desc: "TRAMA DE MADEIRA COMPOSTA POR TERÇAS PARA TELHADOS DE ATÉ 2 ÁGUAS PARA TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA, INCLUSO TRANSPORTE VERTICAL" },
+pontaletesMadeira: { cod: "100382", un: "M2", desc: "FABRICAÇÃO E INSTALAÇÃO DE PONTALETES DE MADEIRA NÃO APARELHADA PARA TELHADOS COM ATÉ 2 ÁGUAS E COM TELHA ONDULADA DE FIBROCIMENTO, ALUMÍNIO OU PLÁSTICA EM EDIFÍCIO RESIDENCIAL TÉRREO/SOBRADO, INCLUSO TRANSPORTE VERTICAL" },
+chapim33: { cod: "101979", un: "M", desc: "CHAPIM (RUFO CAPA) EM AÇO GALVANIZADO, CORTE 33" },
+rufo25: { cod: "94231", un: "M", desc: "RUFO EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, CORTE DE 25 CM, INCLUSO TRANSPORTE VERTICAL" },
+rufo33: { cod: "100327", un: "M", desc: "RUFO EXTERNO/INTERNO EM CHAPA DE AÇO GALVANIZADO NÚMERO 26, CORTE DE 33 CM, INCLUSO IÇAMENTO" },
+calha33: { cod: "94227", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 33 CM, INCLUSO TRANSPORTE VERTICAL" },
+calha50: { cod: "94228", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 50 CM, INCLUSO TRANSPORTE VERTICAL" },
+calha100: { cod: "94229", un: "M", desc: "CALHA EM CHAPA DE AÇO GALVANIZADO NÚMERO 24, DESENVOLVIMENTO DE 100 CM, INCLUSO TRANSPORTE VERTICAL" },
+calhaPvc125: { cod: "100434", un: "M", desc: "CALHA DE BEIRAL, SEMICIRCULAR DE PVC, DIAMETRO 125 MM, INCLUINDO CABECEIRAS, EMENDAS, BOCAIS, SUPORTES E VEDAÇÕES, EXCLUINDO CONDUTORES, INCLUSO TRANSPORTE VERTICAL" }
+};
+var CORTES_CAPA = [{ corte: 0.33, ref: "chapim33" }];
+var CORTES_RUFO = [{ corte: 0.25, ref: "rufo25" }, { corte: 0.33, ref: "rufo33" }];
+var DESENV_CALHA = [{ dev: 0.33, ref: "calha33" }, { dev: 0.50, ref: "calha50" }, { dev: 1.00, ref: "calha100" }];
+function sin(ref) { var s = SINAPI[ref]; return s ? { codigo: s.cod, un: s.un, descricao: s.desc, base: SINAPI.base, aproximado: !!s.aprox, obs: s.obs || null } : null; }
+function escolher(tab, necessario, campo) {
+for (var i = 0; i < tab.length; i++) if (tab[i][campo] >= necessario - 1e-9) return tab[i];
+return null;
+}
+var LIM = { esp: [0.05, 1], altura: [0, 5], topo: [-100, 10000], aba: [0, 0.3], folga: [0, 0.5], calhaLarg: [0.05, 1.5], calhaAlt: [0.03, 0.6], decl: [0, 10], lamina: [10, 500], dn: [40, 400], vertices: 200 };
+var PADRAO = { espessura: 0.15, altura: 0.30, aba: 0.04, folga: 0.02, calhaLargura: 0.30, calhaAltura: 0.12, declividadePct: 0.5, dn: 100, corteContraRufo: 0.25 };
+function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+function areaQ(Q) { var s = 0; for (var i = 0, n = Q.length; i < n; i++) { var a = Q[i], b = Q[(i + 1) % n]; s += a.x * b.z - b.x * a.z; } return Math.abs(s) / 2; }
+function pt(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
+function contornoDe(t) {
+var P = arr(t.arestasCalc).map(function (e) { return [e.parede.a.x, e.parede.a.z]; }), porOrig = {};
+arr(t.arestasCalc).forEach(function (e, k) { porOrig[e.orig] = k; });
+return { P: P, porOrig: porOrig };
+}
+function selecionar(t, origs, avisos) {
+var C = contornoDe(t), n = C.P.length, sel = [];
+for (var k = 0; k < n; k++) sel.push(false);
+if (!arr(origs).length) { for (var i = 0; i < n; i++) sel[i] = true; return { sel: sel, C: C }; }
+arr(origs).forEach(function (o) {
+var k = C.porOrig[Number(o)];
+if (k == null) { avisos.push("A aresta " + (Number(o) + 1) + " não existe no telhado."); return; }
+sel[k] = true;
+});
+return { sel: sel, C: C };
+}
+function faixas(P, sel, dIn, dOut) {
+var T = BT(); if (!T || !T.deslocar) return null;
+var n = P.length, di = [], dof = [];
+for (var k = 0; k < n; k++) { di.push(sel[k] ? dIn[k] : 0); dof.push(sel[k] ? dOut[k] : 0); }
+var I = dIn.every(function (v, k) { return !sel[k] || Math.abs(v) < 1e-12; }) ? P.map(function (p) { return [p[0], p[1]]; }) : T.deslocar(P, di);
+var O = T.deslocar(P, dof);
+if (!I || !O) return null;
+var out = [];
+for (var j = 0; j < n; j++) {
+if (!sel[j]) continue;
+var a = I[j], b = I[(j + 1) % n], c = O[(j + 1) % n], d = O[j];
+out.push({ k: j, a: pt(a), b: pt(b), quad: [pt(a), pt(b), pt(c), pt(d)] });
+}
+return out;
+}
+function calhasEmbDoTelhado(ctxCob, id) {
+var out = [];
+arr(ctxCob && ctxCob.ordCalha).forEach(function (cid) { var c = ctxCob.calha[cid]; if (c && String(c.telhado) === String(id)) out.push(c); });
+return out;
+}
+function calcularPlatibanda(f, telhados, ctxCob) {
+var p = clone(f), avisos = [], t = telhados[String(f.telhado)];
+p.tipo = "platibanda"; p.ifc = "IFCWALL"; p.ok = false; p.segs = []; p.comprimento = 0; p.area = 0; p.areaFaces = 0; p.volume = 0;
+p.espessuraEf = fin(Number(f.espessura)) ? Number(f.espessura) : PADRAO.espessura;
+p.abaRufoEf = fin(Number(f.abaRufo)) ? Number(f.abaRufo) : PADRAO.aba;
+p.rufoCapaAtivo = f.rufoCapa !== false; p.contraRufoAtivo = f.contraRufo !== false;
+if (!t) { avisos.push("O telhado desta platibanda não existe mais."); p.avisos = avisos; return p; }
+if (!t.ok || t.modo !== "perimetro") { avisos.push("A platibanda segue o contorno do telhado por perímetro que fechou."); p.avisos = avisos; return p; }
+var S = selecionar(t, f.arestas, avisos), P = S.C.P, n = P.length;
+var folga = fin(Number(f.folgaCalha)) ? Number(f.folgaCalha) : PADRAO.folga, dIn = [], dOut = [], afast = [], k, ch = calhasEmbDoTelhado(ctxCob, f.telhado);
+for (k = 0; k < n; k++) {
+var a = 0;
+ch.forEach(function (c) { arr(c.arestas).forEach(function (o) { if (S.C.porOrig[Number(o)] === k) a = Math.max(a, (fin(Number(c.largura)) ? Number(c.largura) : PADRAO.calhaLargura) + folga); }); });
+afast.push(a); dIn.push(a); dOut.push(a + p.espessuraEf);
+}
+var F = faixas(P, S.sel, dIn, dOut);
+if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a platibanda."); p.avisos = avisos; return p; }
+var base = fin(Number(f.base)) ? Number(f.base) : num(t.cotaApoio, 0);
+var topo = fin(Number(f.topo)) ? Number(f.topo) : num(t.cotaCumeeira, base) + num(t.espessura, 0) + (fin(Number(f.altura)) ? Number(f.altura) : PADRAO.altura);
+if (!(topo > base + 0.01)) { avisos.push("O topo da platibanda (" + virg(topo) + " m) não fica acima da base (" + virg(base) + " m)."); p.avisos = avisos; return p; }
+var H = topo - base, L = 0, vol = 0, quadsA = 0;
+F.forEach(function (s) {
+var Lm = (distP(s.a, s.b) + distP(s.quad[3], s.quad[2])) / 2;
+s.orig = t.arestasCalc[s.k].orig; s.afastamento = r4(afast[s.k]); s.comprimento = r6(distP(s.a, s.b)); s.comprimentoMeio = r6(Lm);
+L += s.comprimento; vol += areaQ(s.quad) * H; quadsA += areaQ(s.quad);
+});
+p.segs = F; p.base = r6(base); p.topo = r6(topo); p.altura = r6(H); p.comprimento = r6(L);
+p.area = r4(L * H); p.areaFaces = r4(2 * L * H); p.volume = r4(vol); p.areaTopo = r4(quadsA);
+var necC = p.espessuraEf + 2 * p.abaRufoEf, LC = 0;
+F.forEach(function (s) { LC += s.comprimentoMeio; });
+var cc = escolher(CORTES_CAPA, necC, "corte");
+p.rufoCapa = p.rufoCapaAtivo ? { comprimento: r4(LC), corteNecessarioM: r4(necC), corteM: cc ? cc.corte : null, sinapi: cc ? sin(cc.ref) : null,
+obs: cc ? "corte " + Math.round(cc.corte * 100) + " cm (necessário " + Math.round(necC * 100) + " cm)" : "nenhum corte de chapim na SINAPI cobre " + Math.round(necC * 100) + " cm: orçar à parte" } : null;
+var LK = 0; F.forEach(function (s) { LK += s.comprimento; });
+var ck = escolher(CORTES_RUFO, PADRAO.corteContraRufo, "corte");
+p.contraRufo = p.contraRufoAtivo ? { comprimento: r4(LK), corteM: ck ? ck.corte : null, corteAdotado: true, sinapi: ck ? sin(ck.ref) : null,
+obs: "corte " + Math.round(PADRAO.corteContraRufo * 100) + " cm ADOTADO (a conferir no detalhe do encontro com a telha)" } : null;
+p.ok = true;
+if (avisos.length) p.avisos = avisos;
+return p;
+}
+function desenvolvimentoCalha(largura, altura) { return r4(largura + 2 * altura); }
+function calcularCalha(f, telhados) {
+var c = clone(f), avisos = [], t = telhados[String(f.telhado)];
+c.tipo = "calha"; c.tipoCalha = "embutida"; c.ifc = "IFCPIPESEGMENT"; c.ifcPre = "GUTTER"; c.ok = false; c.segs = []; c.comprimento = 0;
+c.larguraEf = fin(Number(f.largura)) ? Number(f.largura) : PADRAO.calhaLargura;
+c.alturaEf = fin(Number(f.altura)) ? Number(f.altura) : PADRAO.calhaAltura;
+c.declividadeEf = fin(Number(f.declividadePct)) ? Number(f.declividadePct) : PADRAO.declividadePct;
+if (!t) { avisos.push("O telhado desta calha não existe mais."); c.avisos = avisos; return c; }
+if (!t.ok || t.modo !== "perimetro") { avisos.push("A calha embutida segue o contorno do telhado por perímetro que fechou."); c.avisos = avisos; return c; }
+var S = selecionar(t, f.arestas, avisos), P = S.C.P, n = P.length, k;
+for (k = 0; k < n; k++) {
+if (!S.sel[k]) continue;
+var e = t.arestasCalc[k];
+if (!e.define) { avisos.push("A aresta " + (e.orig + 1) + " não define inclinação (é oitão): a calha vai no beiral, onde a água sai."); S.sel[k] = false; }
+}
+var dOut = []; for (k = 0; k < n; k++) dOut.push(c.larguraEf);
+var F = faixas(P, S.sel, P.map(function () { return 0; }), dOut);
+if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a calha."); c.avisos = avisos; return c; }
+var L = 0;
+F.forEach(function (s) {
+var e = t.arestasCalc[s.k];
+s.orig = e.orig; s.comprimento = r6(distP(s.a, s.b));
+s.ma = { x: r6((s.quad[0].x + s.quad[3].x) / 2), z: r6((s.quad[0].z + s.quad[3].z) / 2) }; s.mb = { x: r6((s.quad[1].x + s.quad[2].x) / 2), z: r6((s.quad[1].z + s.quad[2].z) / 2) };
+s.yBorda = r6(num(e.alturaBeiral, num(t.cotaApoio, 0)) - 0.02);
+s.yFundo = r6(s.yBorda - c.alturaEf);
+L += s.comprimento;
+});
+c.segs = F; c.comprimento = r6(L);
+c.desenvolvimento = desenvolvimentoCalha(c.larguraEf, c.alturaEf);
+var dv = escolher(DESENV_CALHA, c.desenvolvimento, "dev");
+c.sinapi = dv ? sin(dv.ref) : null;
+c.obsSinapi = dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(c.desenvolvimento * 100) + " cm)" : "nenhum desenvolvimento de calha de chapa na SINAPI cobre " + Math.round(c.desenvolvimento * 100) + " cm: orçar à parte";
+c.queda = r4(L * c.declividadeEf / 100);
+c.ok = true;
+if (avisos.length) c.avisos = avisos;
+return c;
+}
+function listarCalhas(estado) {
+var out = [];
+arr(estado && estado.calhasEmbutidas).forEach(function (c) {
+if (!c || !c.ok) return;
+out.push({ id: c.id, tipo: "embutida", telhado: c.telhado, arestas: arr(c.arestas).slice(), comprimento: c.comprimento, largura: c.larguraEf, altura: c.alturaEf,
+declividadePct: c.declividadeEf, laminaMm: c.laminaMm != null && fin(Number(c.laminaMm)) ? Number(c.laminaMm) : null,
+segs: c.segs.map(function (s) { return { a: s.ma || s.a, b: s.mb || s.b, orig: s.orig, y: s.yFundo }; }), fonte: c });
+});
+arr(estado && estado.bordas).forEach(function (b) {
+if (!b || !b.ok || b.tipoBorda !== "calha") return;
+out.push({ id: b.id, tipo: "beiral", telhado: b.telhado, arestas: arr(b.arestas).slice(), comprimento: b.comprimento, largura: b.larguraEf, altura: b.alturaEf,
+declividadePct: null, laminaMm: null, segs: arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z }, orig: s.aresta, y: s.a.y }; }), fonte: b });
+});
+return out;
+}
+function pontoNaCalha(cal, pos) {
+var segs = cal.segs, tot = 0, i;
+segs.forEach(function (s) { tot += distP(s.a, s.b); });
+if (!(tot > 0)) return null;
+var alvo = Math.max(0, Math.min(1, pos)) * tot, ac = 0;
+for (i = 0; i < segs.length; i++) {
+var s = segs[i], L = distP(s.a, s.b);
+if (ac + L >= alvo - 1e-9 || i === segs.length - 1) {
+var u = L > 0 ? Math.max(0, Math.min(1, (alvo - ac) / L)) : 0;
+return { x: r6(s.a.x + (s.b.x - s.a.x) * u), z: r6(s.a.z + (s.b.z - s.a.z) * u), y: num(s.y, 0), seg: i, dist: r6(alvo), total: r6(tot) };
+}
+ac += L;
+}
+return null;
+}
+function calcularCondutor(f, calhas, nivelBase) {
+var c = clone(f), avisos = [];
+c.tipo = "condutor"; c.ifc = "IFCPIPESEGMENT"; c.ifcPre = "RAINWATER"; c.ok = false;
+var cal = null; calhas.forEach(function (x) { if (String(x.id) === String(f.calha)) cal = x; });
+c.dnEf = fin(Number(f.dn)) ? Number(f.dn) : null;
+c.dnDesenho = c.dnEf || PADRAO.dn;
+c.posEf = fin(Number(f.pos)) ? Math.max(0, Math.min(1, Number(f.pos))) : 0.5;
+if (!cal) { avisos.push("A calha deste condutor não existe mais."); c.avisos = avisos; return c; }
+var q = pontoNaCalha(cal, c.posEf);
+if (!q) { avisos.push("A calha não tem comprimento."); c.avisos = avisos; return c; }
+c.x = q.x; c.z = q.z; c.yTopo = r6(q.y); c.yBase = r6(nivelBase);
+c.alturaM = r4(Math.max(0, c.yTopo - c.yBase));
+c.distanciaDoInicio = q.dist; c.comprimentoCalha = q.total;
+c.distanciaDaPonta = r4(Math.min(q.dist, q.total - q.dist));
+c.telhado = cal.telhado;
+if (c.dnEf == null) avisos.push("DN do condutor a dimensionar (NBR 10844: o ábaco do condutor vertical não está digitalizado — conferir pelo cálculo pluvial).");
+c.ok = true;
+if (avisos.length) c.avisos = avisos;
+return c;
+}
+function opsCondutores(estado, opc) {
+opc = opc || {}; var n = Math.max(1, Math.round(num(opc.porCalha, 1))), tem = {}, out = [], seq = 0;
+arr(estado && estado.condutores).forEach(function (c) { tem[String(c.calha)] = true; });
+listarCalhas(estado).forEach(function (cal) {
+if (tem[String(cal.id)]) return;
+for (var i = 0; i < n; i++) out.push({ op: "condutor", id: "cd-" + cal.id + "-" + (++seq), calha: cal.id, pos: r4((i + 0.5) / n) });
+});
+return out;
+}
+function baseSugerida(estado, telhadoId) {
+var t = null; arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(telhadoId)) t = x; });
+if (!t || !t.ok) return null;
+var C = contornoDe(t), P = C.P, n = P.length, menor = null;
+arr(estado.caixas).forEach(function (c) {
+if (!c || c.tipo !== "parede") return;
+var topo = num(c.cy, 0) + num(c.altura, 0) / 2, th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), L = num(c.comprimento, 0), cx = num(c.cx, 0), cz = num(c.cz, 0);
+for (var i = 0; i < n; i++) {
+var A = P[i], B = P[(i + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], Le = Math.sqrt(ex * ex + ez * ez); if (!(Le > 1e-6)) continue;
+ex /= Le; ez /= Le;
+if (Math.abs(ux * ez - uz * ex) > 0.05) continue;
+if (Math.abs((cx - A[0]) * -ez + (cz - A[1]) * ex) > 0.6) continue;
+var along = (cx - A[0]) * ex + (cz - A[1]) * ez;
+if (along < -L / 2 || along > Le + L / 2) continue;
+if (menor == null || topo < menor) menor = topo;
+break;
+}
+});
+var apoio = num(t.cotaApoio, 0);
+return menor == null ? r6(apoio) : r6(Math.min(menor, apoio));
+}
+function resumoDoTelhado(estado, id) {
+var o = { calhas: [], rufos: [], platibandas: [], condutores: [] }, sid = String(id);
+listarCalhas(estado).forEach(function (c) {
+if (String(c.telhado) !== sid) return;
+o.calhas.push({ id: c.id, tipo: c.tipo, aresta: c.arestas.slice(), comprimento: r4(num(c.comprimento, 0)), segs: c.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }),
+secao: { largura: c.largura, altura: c.altura }, declividadePct: c.declividadePct });
+});
+arr(estado && estado.platibandas).forEach(function (p) {
+if (!p || !p.ok || String(p.telhado) !== sid) return;
+o.platibandas.push({ id: p.id, espessura: p.espessuraEf, base: p.base, topo: p.topo, comprimento: p.comprimento, afastamento: p.segs.reduce(function (m, s) { return Math.max(m, s.afastamento || 0); }, 0),
+segs: p.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+var meio = p.segs.map(function (s) { return { a: { x: s.quad[3].x, z: s.quad[3].z }, b: { x: s.quad[2].x, z: s.quad[2].z } }; });
+if (p.rufoCapa) o.rufos.push({ id: p.id + "-capa", tipo: "capa", comprimento: p.rufoCapa.comprimento, corteM: p.rufoCapa.corteM, segs: meio });
+if (p.contraRufo) o.rufos.push({ id: p.id + "-contra", tipo: "contra-rufo", comprimento: p.contraRufo.comprimento, corteM: p.contraRufo.corteM,
+segs: p.segs.map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+});
+arr(estado && estado.rufosEncontro).forEach(function (r) {
+if (!r || !r.ok || String(r.telhado) !== sid) return;
+r.encontros.forEach(function (e, i) {
+o.rufos.push({ id: r.id + "-" + i, tipo: e.rufo ? "rufo e contrarrufo" : "contrarrufo", comprimento: e.comprimento, corteM: r.corteRufoEf, segs: e.segs.map(function (s) { return { a: { x: s.fa.x, z: s.fa.z }, b: { x: s.fb.x, z: s.fb.z } }; }) });
+});
+});
+arr(estado && estado.bordas).forEach(function (b) {
+if (!b || !b.ok || String(b.telhado) !== sid || (b.tipoBorda !== "rufo" && b.tipoBorda !== "testeira")) return;
+o.rufos.push({ id: b.id, tipo: b.tipoBorda, comprimento: r4(num(b.comprimento, 0)), corteM: null, segs: arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z } }; }) });
+});
+arr(estado && estado.condutores).forEach(function (c) {
+if (!c || !c.ok || String(c.telhado) !== sid) return;
+o.condutores.push({ id: c.id, calha: c.calha, x: c.x, z: c.z, dn: c.dnEf, alturaM: c.alturaM });
+});
+return o;
+}
+function aguasDaCalha(estado, cal) {
+var t = null; arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(cal.telhado)) t = x; });
+if (!t || !t.ok) return [];
+var origs = {}; cal.arestas.forEach(function (o) { origs[Number(o)] = true; });
+var out = [], todas = arr(t.aguasCalc);
+todas.forEach(function (ag) {
+if (!(num(ag.inclinacao, 0) > 0)) return;
+var e = ag.aresta >= 0 ? arr(t.arestasCalc)[ag.aresta] : null;
+if (e && origs[e.orig]) out.push(ag);
+});
+return out;
+}
+function areaCasoB(ag) {
+var pl = ag.plano || {}, s = Math.sqrt((pl.bx || 0) * (pl.bx || 0) + (pl.bz || 0) * (pl.bz || 0));
+if (!(s > 1e-9)) return null;
+var ux = pl.bx / s, uz = pl.bz / s, lo = Infinity, hi = -Infinity, tl = Infinity, th = -Infinity;
+arr(ag.pecas).forEach(function (pc) { arr(pc.pts).forEach(function (q) {
+var u = q.x * ux + q.z * uz, w = -q.x * uz + q.z * ux;
+if (u < lo) lo = u; if (u > hi) hi = u; if (w < tl) tl = w; if (w > th) th = w;
+}); });
+var b = th - tl; if (!(b > 0)) return null;
+var a = num(ag.areaProjecao, 0) / b;
+return { a: r4(a), b: r4(b), h: r4(a * s) };
+}
+function entradaPluvial(estado, cfg) {
+cfg = cfg || {};
+var cals = listarCalhas(estado), areas = [], calhas = [], premissas = [], i = 0;
+cals.forEach(function (cal) {
+var ags = aguasDaCalha(estado, cal);
+if (!ags.length) return;
+var ids = [];
+ags.forEach(function (ag) {
+var c = areaCasoB(ag); if (!c) return;
+var aid = "A" + (++i); ids.push(aid);
+areas.push({ id: aid, caso: "b", a: c.a, h: c.h, b: c.b, destino: { calha: String(cal.id) } });
+});
+if (!ids.length) return;
+var propria = cfg.calhas && cfg.calhas[String(cal.id)] || {};
+var altMm = Math.round(cal.altura * 1000), larMm = Math.round(cal.largura * 1000);
+var lam = fin(Number(propria.laminaMm)) ? Number(propria.laminaMm) : (fin(Number(cfg.laminaMm)) ? Number(cfg.laminaMm) : (cal.laminaMm != null ? cal.laminaMm : altMm / 2));
+var decl = fin(Number(propria.declividadePct)) ? Number(propria.declividadePct) : (cal.declividadePct != null ? cal.declividadePct : PADRAO.declividadePct);
+var cond = arr(estado.condutores).filter(function (c) { return c.ok && String(c.calha) === String(cal.id); });
+var saidas = cond.length ? cond.map(function (c) { return { curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, c.distanciaDaPonta)), areaInfluencia_m2: null }; })
+: [{ curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, cal.comprimento / 2)) }];
+if (!cond.length) premissas.push("calha " + cal.id + ": sem condutor lançado — uma saída no meio, a distância da curva = metade do comprimento");
+calhas.push({ id: String(cal.id), secao: "retangular", base_mm: larMm, altura_mm: altMm, lamina_mm: lam, declividade_pct: decl, material: cfg.material || "chapa_metalica", saidas: saidas });
+if (!(fin(Number(propria.laminaMm)) || fin(Number(cfg.laminaMm)) || cal.laminaMm != null)) premissas.push("calha " + cal.id + ": lâmina d'água = metade da altura (" + virg(lam, 0) + " mm) — premissa da RA, como na calha semicircular da tabela; a fonte lida não traz borda livre para a retangular");
+});
+var p = { areas: areas, calhas: calhas };
+["cidade", "situacao", "periodoRetorno_anos", "intensidade_mm_h", "fonteIntensidade", "postoReferencia", "postoConfirmado", "intensidadeSimplificada"].forEach(function (k) { if (cfg[k] != null) p[k] = cfg[k]; });
+if (p.periodoRetorno_anos == null && !p.situacao) p.situacao = "cobertura";
+return { pluvial: p, premissas: premissas };
+}
+function dimensionarCalhas(estado, cfg) {
+var AP = dep("HidAP", "./hidap.js"), NR = dep("HidNormas", "./hidnormas.js");
+if (!AP || !NR) return { ok: false, motivo: "O cálculo pluvial (js/hidap.js e js/hidnormas.js) não carregou." };
+var ent = entradaPluvial(estado, cfg);
+if (!ent.pluvial.calhas.length) return { ok: false, motivo: "Nenhuma calha com água de telhado ligada: lance a calha (embutida ou de beiral) em uma aresta que define inclinação." };
+var ctx = NR.contexto(), r;
+try { r = AP.calcular({ pluvial: ent.pluvial }, ctx, { trechos: [] }); } catch (e) { return { ok: false, motivo: "O cálculo pluvial falhou: " + e.message }; }
+return { ok: true, status: r.status, intensidade: r.intensidade, calhas: r.calhas, areas: r.areas, verificacoes: r.verificacoes, avisos: r.avisos,
+premissas: ent.premissas.concat(arr(r.premissas).map(function (x) { return x.item + ": " + x.valor; })), pendencias: ctx.pendencias ? ctx.pendencias() : [], entrada: ent.pluvial };
+}
+var SECOES_CANDIDATAS = [[100, 80], [150, 80], [150, 100], [200, 100], [200, 120], [250, 120], [300, 120], [300, 150], [400, 150], [500, 200]];
+function secaoMinimaCalha(estado, id, cfg) {
+var alvo = null; listarCalhas(estado).forEach(function (c) { if (String(c.id) === String(id)) alvo = c; });
+if (!alvo) return { ok: false, motivo: "Calha não encontrada." };
+for (var i = 0; i < SECOES_CANDIDATAS.length; i++) {
+var e2 = clone({ calhasEmbutidas: estado.calhasEmbutidas, bordas: estado.bordas, telhados: estado.telhados, condutores: estado.condutores });
+var Lb = SECOES_CANDIDATAS[i][0] / 1000, Ab = SECOES_CANDIDATAS[i][1] / 1000;
+arr(e2.calhasEmbutidas).forEach(function (c) { if (String(c.id) === String(id)) { c.larguraEf = Lb; c.alturaEf = Ab; c.laminaMm = null; } });
+arr(e2.bordas).forEach(function (b) { if (String(b.id) === String(id)) { b.larguraEf = Lb; b.alturaEf = Ab; } });
+var r = dimensionarCalhas(e2, cfg);
+if (!r.ok) return r;
+var ch = r.calhas.filter(function (x) { return String(x.id) === String(id); })[0];
+if (!ch || ch.capacidade_l_min == null || ch.vazaoProjeto_l_min == null) return { ok: true, pendente: true, motivo: "Sem vazão ou capacidade (cidade fora da tabela, intensidade sem fonte ou calha sem condutor): ver pendências.", resultado: r };
+if (ch.vazaoProjeto_l_min <= ch.capacidade_l_min) return { ok: true, baseMm: SECOES_CANDIDATAS[i][0], alturaMm: SECOES_CANDIDATAS[i][1], capacidade_l_min: ch.capacidade_l_min, vazaoProjeto_l_min: ch.vazaoProjeto_l_min, resultado: r };
+}
+return { ok: true, nenhuma: true, motivo: "Nenhuma das seções candidatas (até 500 × 200 mm) passa: aumente a declividade ou ponha mais condutores.", resultado: null };
+}
+function item(grupo, nome, un, qtd, sinapi, obs, extra) {
+var o = { grupo: grupo, item: nome, un: un, qtd: r4(qtd), sinapi: sinapi || null, orcarAParte: !sinapi, obs: obs || null };
+if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+return o;
+}
+function quantitativo(estado, opc) {
+opc = opc || {}; var itens = [], avisos = [], T = BT();
+arr(estado && estado.telhados).forEach(function (t) {
+if (!t || !t.ok) return;
+var tel = T && T.telha ? T.telha(t.tipoId) : null, nome = "Telhamento — " + txt(t.tipoTelhado && t.tipoTelhado.rotulo);
+if (tel && tel.familia === "fibrocimento") {
+var a10 = 0, aa = 0;
+arr(t.aguasCalc).forEach(function (ag) { if (T.pctGraus(num(ag.inclinacao, 0)) <= 10 + 1e-9) a10 += ag.area; else aa += ag.area; });
+if (a10 > 0) itens.push(item("Cobertura", nome + " (até 10°, recobrimento 1 1/4 de onda)", "m²", a10, sin("telhaFibroAte10"), null, { telhado: t.id }));
+if (aa > 0) itens.push(item("Cobertura", nome + " (acima de 10°, recobrimento 1/4 de onda)", "m²", aa, sin("telhaFibroAcima10"), null, { telhado: t.id }));
+if (num(t.cumeeira, 0) > 0) itens.push(item("Cobertura", "Cumeeira da telha de fibrocimento", "m", t.cumeeira, sin("cumeeiraFibro"), null, { telhado: t.id }));
+} else if (tel && tel.familia === "sanduiche") {
+itens.push(item("Cobertura", nome, "m²", t.area, sin("telhaSanduiche"), "composição aproximada (telha termoacústica 30 mm); face inferior efeito madeira e peso da telha: " + (tel.faceInferior ? tel.faceInferior.fonte : "não verificado"), { telhado: t.id }));
+if (num(t.cumeeira, 0) > 0) itens.push(item("Cobertura", "Cumeeira da telha sanduíche", "m", t.cumeeira, null, "cumeeira de telha sanduíche: sem composição na base", { telhado: t.id }));
+} else itens.push(item("Cobertura", nome, "m²", t.area, null, "tipo sem composição SINAPI mapeada", { telhado: t.id }));
+if (num(t.espigao, 0) > 0) itens.push(item("Cobertura", "Espigão", "m", t.espigao, null, "sem composição na base", { telhado: t.id }));
+if (num(t.rincao, 0) > 0) itens.push(item("Cobertura", "Rincão", "m", t.rincao, null, "sem composição na base", { telhado: t.id }));
+if (tel) arr(t.avisos).forEach(function (a) { avisos.push("Telhado " + t.id + ": " + a); });
+});
+arr(estado && estado.platibandas).forEach(function (p) {
+if (!p || !p.ok) return;
+itens.push(item("Platibanda", "Platibanda de alvenaria, e = " + virg(p.espessuraEf * 100, 0) + " cm", "m²", p.area, null, "altura " + virg(p.altura) + " m, " + virg(p.comprimento) + " m de comprimento, " + virg(p.volume, 3) + " m³; a alvenaria e o revestimento das duas faces (" + virg(p.areaFaces) + " m²) saem da composição de parede da obra", { platibanda: p.id }));
+if (p.rufoCapa) itens.push(item("Platibanda", "Rufo de capa (chapim) — " + p.rufoCapa.obs, "m", p.rufoCapa.comprimento, p.rufoCapa.sinapi, null, { platibanda: p.id }));
+if (p.contraRufo) itens.push(item("Platibanda", "Contra-rufo — " + p.contraRufo.obs, "m", p.contraRufo.comprimento, p.contraRufo.sinapi, null, { platibanda: p.id }));
+});
+arr(estado && estado.calhasEmbutidas).forEach(function (c) {
+if (!c || !c.ok) return;
+itens.push(item("Calha e descidas", "Calha embutida de chapa galvanizada — " + c.obsSinapi, "m", c.comprimento, c.sinapi, "seção " + virg(c.larguraEf * 100, 0) + " × " + virg(c.alturaEf * 100, 0) + " cm, declividade " + virg(c.declividadeEf, 2) + "%", { calha: c.id }));
+});
+arr(estado && estado.bordas).forEach(function (b) {
+if (!b || !b.ok) return;
+if (b.tipoBorda === "calha") {
+var pvc = opc.calhaBeiral === "pvc", dev = desenvolvimentoCalha(b.larguraEf, b.alturaEf), dv = escolher(DESENV_CALHA, dev, "dev");
+if (pvc) itens.push(item("Calha e descidas", "Calha de beiral semicircular de PVC DN 125 (inclui cabeceiras, emendas, bocais e suportes)", "m", b.comprimento, sin("calhaPvc125"), "calha de beiral: seção a confirmar pelo cálculo pluvial", { calha: b.id }));
+else itens.push(item("Calha e descidas", "Calha de beiral de chapa galvanizada — " + (dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(dev * 100) + " cm)" : "desenvolvimento " + Math.round(dev * 100) + " cm sem composição"), "m", b.comprimento, dv ? sin(dv.ref) : null, null, { calha: b.id }));
+} else if (b.tipoBorda === "rufo" || b.tipoBorda === "testeira" || b.tipoBorda === "intradorso") {
+var rot = { rufo: "Rufo de beiral/empena", testeira: "Testeira", intradorso: "Intradorso (forro do beiral)" }[b.tipoBorda];
+itens.push(item("Cobertura", rot, b.tipoBorda === "intradorso" ? "m²" : "m", b.tipoBorda === "intradorso" ? b.area : b.comprimento, null, "corte/composição não definidos no tipo de borda: orçar à parte", { borda: b.id }));
+}
+});
+arr(estado && estado.rufosEncontro).forEach(function (r) {
+if (!r || !r.ok || !r.encontros.length) return;
+var ob = PADRAO_RUFO.obs + "; " + r.obsChapa, inc = "incluso na composição SINAPI do rufo (só conferência, não somar; quantidade por metro: valor de partida — conferir)";
+if (r.comprimentoRufo > 0) itens.push(item("Cobertura", "Rufo de encontro com parede — " + r.chapa + ", corte " + virg(r.corteRufoEf * 100, 0) + " cm", "m", r.comprimentoRufo, r.sinapiRufo, ob, { rufo: r.id }));
+itens.push(item("Cobertura", "Contrarrufo embutido na parede — " + r.chapa + ", corte " + virg(r.corteContraEf * 100, 0) + " cm", "m", r.comprimentoContra, r.sinapiContra, ob, { rufo: r.id }));
+itens.push(item("Cobertura", "Chapa do rufo e do contrarrufo (massa, com " + PADRAO_RUFO.perdaPct + "% de perda por corte)", "kg", r.kgRufo + r.kgContra, null, "conferência de compra: " + virg(r.kgPorMRufo, 3) + " kg/m (rufo) e " + virg(r.kgPorMContra, 3) + " kg/m (contrarrufo); " + r.obsChapa, { rufo: r.id, somar: false }));
+var fx = r.sinapiRufo ? inc : "fixação: " + PADRAO_RUFO.obs;
+itens.push(item("Cobertura", "Fixação do contrarrufo — parafuso + bucha S-8 na alvenaria", "un", r.fixacao.parafusoBucha, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+itens.push(item("Cobertura", "Rebite de repuxo Ø3,2 × 8 mm (emendas)", "un", r.fixacao.rebites, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+itens.push(item("Cobertura", "Selante PU — cordão no encontro com a parede", "m", r.fixacao.selanteM, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+});
+arr(estado && estado.condutores).forEach(function (c) {
+if (!c || !c.ok) return;
+if (c.noHidro) { itens.push(item("Calha e descidas", "Condutor vertical (descida) PVC série R DN " + c.dnEf + " — no sistema pluvial do hidro", "m", c.alturaM, null, "o tubo é o trecho " + c.trecho + " do sistema pluvial (quantitativo do hidrossanitário): aqui só conferência, não somar", { condutor: c.id, somar: false, orcarAParte: false })); return; }
+itens.push(item("Calha e descidas", "Condutor vertical (descida) de PVC série R, DN " + (c.dnEf != null ? c.dnEf : "a dimensionar"), "m", c.alturaM, null,
+c.dnEf != null ? "ver a composição pluvial do cálculo hidrossanitário (tubo|pvc_serie_r|pluvial:prumada|" + c.dnEf + ")" : "DN pendente do cálculo pluvial", { condutor: c.id }));
+});
+var Es = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); if (Es && Es.quantitativo) { var qe = Es.quantitativo(estado, opc); qe.itens.forEach(function (x) { itens.push(x); }); qe.avisos.forEach(function (x) { avisos.push(x); }); }
+var Fd = dep("BimForroDrywall", "./bimforrodrywall.js"); if (Fd && Fd.quantitativo) { var qf = Fd.quantitativo(estado, opc); qf.itens.forEach(function (x) { itens.push(x); }); qf.avisos.forEach(function (x) { avisos.push(x); }); }
+var totais = {};
+itens.forEach(function (x) { var k = x.item + "|" + x.un; totais[x.grupo] = (totais[x.grupo] || 0) + 1; void k; });
+return { itens: itens, avisos: avisos, base: SINAPI.base, contagemPorGrupo: totais,
+comCodigo: itens.filter(function (x) { return !!x.sinapi; }).length, aParte: itens.filter(function (x) { return x.orcarAParte; }).length };
+}
+var PADRAO_RUFO = {
+corteRufo: 0.25, corteContra: 0.25, abaTelha: 0.10, abaParede: 0.15, contraDe: 0.10, contraAte: 0.22, folga: 0.05,
+parafusoPorM: 2, rebitePorM: 2, selantePorM: 1, perdaPct: 5,
+obs: "valor de partida — conferir (dobras, desenvolvimento e fixação por metro sem fonte técnica: docs/telhado/PADROES-TELHADO.md §5.1)"
+};
+var CHAPAS = {
+galv24: { rotulo: "chapa de aço galvanizado nº 24", espessuraMm: 0.64, densidade: 7850, sinapi: { 0.25: "rufo25" },
+obsEsp: "espessura 0,64 mm de partida (fontes: 0,60–0,64 mm) — conferir com o fornecedor" },
+galv26: { rotulo: "chapa de aço galvanizado nº 26", espessuraMm: 0.50, densidade: 7850, sinapi: { 0.33: "rufo33" },
+obsEsp: "espessura ≈ 0,50 mm (DER-ES 0903, fonte secundária) — conferir com o fornecedor" },
+aluminio: { rotulo: "chapa de alumínio", espessuraMm: 0.50, densidade: 2700, sinapi: {},
+obsEsp: "espessura 0,50 mm de partida (sem fonte) — conferir com o fornecedor" }
+};
+function chapaDe(m) { return CHAPAS[m] ? m : "galv24"; }
+function sinRufo(mat, corte) { var c = CHAPAS[chapaDe(mat)], k = Object.keys(c.sinapi).filter(function (x) { return Math.abs(Number(x) - corte) < 1e-6; })[0]; return k ? sin(c.sinapi[k]) : null; }
+function kgPorM(mat, corte) { var c = CHAPAS[chapaDe(mat)]; return corte * c.espessuraMm / 1000 * c.densidade * (1 + PADRAO_RUFO.perdaPct / 100); }
+function dentroP(x, z, pts) {
+var d = false;
+for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+var a = pts[i], b = pts[j];
+if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) d = !d;
+}
+return d;
+}
+function topoTelhaEm(t, x, z) {
+var best = null;
+arr(t && t.aguasCalc).forEach(function (ag) {
+var pl = ag.plano || {};
+arr(ag.pecas).forEach(function (pc) {
+if (!dentroP(x, z, arr(pc.pts))) return;
+var y = num(pl.a, 0) + num(pl.bx, 0) * x + num(pl.bz, 0) * z;
+if (best == null || y < best.y) best = { y: y, fator: num(ag.fator, 1) };
+});
+});
+return best ? best.y + num(t.espessura, 0) * best.fator : null;
+}
+function sinalArea(P) { var s = 0; for (var i = 0, n = P.length; i < n; i++) { var a = P[i], b = P[(i + 1) % n]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+function encontrosDoTelhado(estado, t, opc) {
+opc = opc || {};
+var out = [];
+if (!t || !t.ok || t.modo !== "perimetro") return out;
+var C = contornoDe(t), P = C.P, n = P.length, sg = sinalArea(P) >= 0 ? 1 : -1, folga = fin(Number(opc.folga)) ? Number(opc.folga) : PADRAO_RUFO.folga;
+var daPlat = {};
+arr(estado && estado.platibandas).forEach(function (p) { if (p && p.ok && String(p.telhado) === String(t.id)) arr(p.segs).forEach(function (s) { daPlat[s.k] = true; }); });
+var paredes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.anexarTopo && fin(Number(c.comprimento)) && fin(Number(c.altura)); });
+for (var k = 0; k < n; k++) {
+if (daPlat[k]) continue;
+var A = P[k], B = P[(k + 1) % n], ex = B[0] - A[0], ez = B[1] - A[1], Le = Math.sqrt(ex * ex + ez * ez);
+if (!(Le > 0.05)) continue;
+ex /= Le; ez /= Le;
+var nIn = { x: -ez * sg, z: ex * sg }, nOut = { x: -nIn.x, z: -nIn.z }, e = t.arestasCalc[k];
+paredes.forEach(function (c) {
+var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), L = num(c.comprimento, 0), esp = num(c.espessura, 0.15), cx = num(c.cx, 0), cz = num(c.cz, 0);
+if (Math.abs(ux * ez - uz * ex) > 0.05) return;
+var d = (cx - A[0]) * nOut.x + (cz - A[1]) * nOut.z;
+if (d < -esp / 2 - 0.02 || d > esp / 2 + 0.10) return;
+var al = (cx - A[0]) * ex + (cz - A[1]) * ez, s0 = Math.max(0, al - L / 2), s1 = Math.min(Le, al + L / 2);
+if (!(s1 - s0 > 0.05)) return;
+var yW = num(c.cy, 0) + num(c.altura, 0) / 2, off = d - esp / 2;
+var M = Math.max(40, Math.ceil((s1 - s0) / 0.02)), fs = [], ys = [], i;
+for (i = 0; i <= M; i++) {
+var s = s0 + (s1 - s0) * i / M, sc = Math.max(0.005, Math.min(Le - 0.005, s));
+var y = topoTelhaEm(t, A[0] + ex * sc + nIn.x * 0.03, A[1] + ez * sc + nIn.z * 0.03);
+ys.push(y); fs.push(y == null ? null : yW - (y + folga));
+}
+var segs = [], ini = null, yIni = null;
+function sDe(i) { return s0 + (s1 - s0) * i / M; }
+function fecha(sA, yA, sB, yB) {
+if (!(sB - sA > 0.02)) return;
+function P2(s, o) { return { x: r6(A[0] + ex * s + nOut.x * o), z: r6(A[1] + ez * s + nOut.z * o) }; }
+segs.push({ s0: r4(sA), s1: r4(sB), a: P2(sA, 0), b: P2(sB, 0), fa: P2(sA, off), fb: P2(sB, off), yA: r6(yA), yB: r6(yB) });
+}
+for (i = 0; i <= M; i++) {
+var f = fs[i];
+if (f != null && f > 0) { if (ini == null) {
+if (i > 0 && fs[i - 1] != null) { var u = fs[i - 1] / (fs[i - 1] - f); ini = sDe(i - 1) + (sDe(i) - sDe(i - 1)) * u; yIni = ys[i - 1] + (ys[i] - ys[i - 1]) * u; }
+else { ini = sDe(i); yIni = ys[i]; } }
+} else if (ini != null) {
+var sF = sDe(i - 1), yF = ys[i - 1];
+if (f != null) { var u2 = fs[i - 1] / (fs[i - 1] - f); sF = sDe(i - 1) + (sDe(i) - sDe(i - 1)) * u2; yF = ys[i - 1] + (ys[i] - ys[i - 1]) * u2; }
+fecha(ini, yIni, sF, yF); ini = null;
+}
+}
+if (ini != null) fecha(ini, yIni, sDe(M), ys[M]);
+if (!segs.length) return;
+var Lt = 0; segs.forEach(function (s) { Lt += s.s1 - s.s0; });
+out.push({ k: k, orig: e.orig, define: !!e.define, parede: c.id, yParede: r6(yW), afastamento: r4(off), nIn: { x: r6(nIn.x), z: r6(nIn.z) }, segs: segs, comprimento: r4(Lt) });
+});
+}
+return out;
+}
+function calcularRufo(f, telhados, estado) {
+var r = clone(f), avisos = [], t = telhados[String(f.telhado)];
+r.tipo = "rufoEncontro"; r.ifc = "IFCCOVERING"; r.ifcPre = "FLASHING"; r.ok = false; r.encontros = []; r.comprimentoRufo = 0; r.comprimentoContra = 0;
+r.materialEf = chapaDe(f.material); r.chapa = CHAPAS[r.materialEf].rotulo; r.obsChapa = CHAPAS[r.materialEf].obsEsp;
+r.corteRufoEf = fin(Number(f.corteRufo)) ? Number(f.corteRufo) : PADRAO_RUFO.corteRufo;
+r.corteContraEf = fin(Number(f.corteContra)) ? Number(f.corteContra) : PADRAO_RUFO.corteContra;
+if (!t) { avisos.push("O telhado deste rufo não existe mais."); r.avisos = avisos; return r; }
+if (!t.ok || t.modo !== "perimetro") { avisos.push("O rufo de encontro segue o contorno do telhado por perímetro que fechou."); r.avisos = avisos; return r; }
+var emb = {}; arr(estado && estado.calhasEmbutidas).forEach(function (c) { if (c && c.ok && String(c.telhado) === String(t.id)) arr(c.arestas).forEach(function (o) { emb[Number(o)] = true; }); });
+var LR = 0, LC = 0;
+encontrosDoTelhado(estado, t, { folga: f.folga }).forEach(function (en) {
+en.rufo = !(en.define && emb[en.orig]);
+en.contra = true;
+if (en.define && !emb[en.orig]) avisos.push("A aresta " + (en.orig + 1) + " é beiral (a água sai por ela) e encosta na parede " + en.parede + ", mais alta que a telha: precisa de calha embutida (Cobertura completa › Calha embutida) — o rufo sozinho não leva a água.");
+if (en.rufo) LR += en.comprimento; LC += en.comprimento;
+r.encontros.push(en);
+});
+r.comprimentoRufo = r4(LR); r.comprimentoContra = r4(LC);
+r.kgPorMRufo = r4(kgPorM(r.materialEf, r.corteRufoEf)); r.kgPorMContra = r4(kgPorM(r.materialEf, r.corteContraEf));
+r.kgRufo = r4(LR * r.kgPorMRufo); r.kgContra = r4(LC * r.kgPorMContra);
+r.fixacao = { parafusoBucha: Math.ceil(LC * PADRAO_RUFO.parafusoPorM), rebites: Math.ceil((LR + LC) * PADRAO_RUFO.rebitePorM), selanteM: r4((LR + LC) * PADRAO_RUFO.selantePorM) };
+r.sinapiRufo = sinRufo(r.materialEf, r.corteRufoEf); r.sinapiContra = sinRufo(r.materialEf, r.corteContraEf);
+r.ok = true;
+if (!r.encontros.length) avisos.push("Nenhuma parede mais alta que a telha encosta no contorno deste telhado: sem rufo de encontro.");
+if (avisos.length) r.avisos = avisos;
+return r;
+}
+function semAcento(s) { s = txt(s); try { if (s.normalize) s = s.normalize("NFD"); } catch (e) {} return s.replace(/[̀-ͯ]/g, "").toLowerCase(); }
+function palavras(s) { return " " + semAcento(s).replace(/[^a-z0-9]+/g, " ").trim() + " "; }
+function NRm() { return dep("HidNormas", "./hidnormas.js"); }
+function localidades() { var NR = NRm(), vis = {}, out = []; if (!NR) return out; arr(NR.linhas("ap.intensidade.localidade", null)).forEach(function (l) { if (!vis[l.localidade]) { vis[l.localidade] = 1; out.push(l.localidade); } }); return out; }
+var UFS = { ac: 1, al: 1, ap: 1, am: 1, ba: 1, ce: 1, df: 1, es: 1, go: 1, ma: 1, mt: 1, ms: 1, mg: 1, pa: 1, pb: 1, pr: 1, pe: 1, pi: 1, rj: 1, rn: 1, rs: 1, ro: 1, rr: 1, sc: 1, sp: 1, se: 1, to: 1 };
+var ESTADOS = ["acre", "alagoas", "amapa", "amazonas", "bahia", "ceara", "distrito federal", "espirito santo", "goias", "maranhao", "mato grosso do sul", "mato grosso", "minas gerais", "para", "paraiba",
+"parana", "pernambuco", "piaui", "rio de janeiro", "rio grande do norte", "rio grande do sul", "rondonia", "roraima", "santa catarina", "sao paulo", "sergipe", "tocantins", "brasil"];
+function fimDoEndereco(W, comEstado) {
+var tk = W.trim().split(" ").filter(Boolean), mudou = true;
+while (mudou && tk.length) {
+mudou = false;
+var u = tk[tk.length - 1];
+if (UFS[u] || u === "cep" || /^\d+$/.test(u)) { tk.pop(); mudou = true; continue; }
+for (var e = 0; comEstado && e < ESTADOS.length; e++) {
+var es = ESTADOS[e].split(" ");
+if (tk.length > es.length && tk.slice(tk.length - es.length).join(" ") === ESTADOS[e]) { tk.splice(tk.length - es.length, es.length); mudou = true; break; }
+}
+}
+return " " + tk.join(" ") + " ";
+}
+function postoInfo(texto, T) {
+var W = palavras(texto), Wfs = [fimDoEndereco(W, false), fimDoEndereco(W, true)], cands = [];
+if (!W.trim()) return { loc: null, varios: [] };
+var exato = localidades().filter(function (loc) { return String(loc).trim() === String(texto).trim(); })[0];
+if (exato) return { loc: exato, varios: [] };
+localidades().forEach(function (loc) {
+var m = String(loc).match(/^([^/(]*)(?:\/([^(]*))?(?:\((.*)\))?/) || [], nome = palavras(m[1] || loc), uf = m[2] && m[2].trim() ? palavras(m[2]) : null, bairro = m[3] ? palavras(m[3]) : null;
+if (!nome.trim() || !Wfs.some(function (Wf) { return Wf.length >= nome.length && Wf.slice(Wf.length - nome.length) === nome; })) return;
+var ufs = W.match(/ (ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to)(?= )/g);
+if (uf && ufs && ufs.length && ufs.map(function (x) { return x + " "; }).indexOf(uf) < 0) return;
+cands.push({ loc: loc, n: nome.length + (bairro && W.indexOf(bairro) >= 0 ? 1000 : 0), nome: nome });
+});
+if (!cands.length) return { loc: null, varios: [] };
+var nMax = Math.max.apply(null, cands.map(function (c) { return c.n; })), top = cands.filter(function (c) { return c.n === nMax; });
+if (top.length === 1) return { loc: top[0].loc, varios: [] };
+var NR = NRm(), Tq = T != null ? T : 5;
+function iDe(loc) { var l = NR ? arr(NR.linhas("ap.intensidade.localidade", { localidade: loc, periodo_anos: Tq })).filter(function (x) { return fin(Number(x.intensidade_mm_h)); })[0] : null; return l ? Number(l.intensidade_mm_h) : -1; }
+top.sort(function (a, b) { return iDe(b.loc) - iDe(a.loc); });
+return { loc: top[0].loc, varios: top.map(function (c) { return c.loc; }) };
+}
+function postoNoTexto(texto, T) { return postoInfo(texto, T).loc; }
+function cidadeDaObra(obra, cliente) {
+obra = obra || {}; cliente = cliente || {};
+var cands = [];
+if (txt(obra.cidade).trim()) cands.push({ t: txt(obra.cidade) + (obra.uf ? "/" + obra.uf : ""), o: "obra (cidade/UF)" });
+["local", "endereco", "enderecoEntrega"].forEach(function (k) { if (txt(obra[k]).trim()) cands.push({ t: txt(obra[k]), o: "obra (" + k + ")" }); });
+if (!cands.length) {
+if (txt(cliente.cidade).trim()) cands.push({ t: txt(cliente.cidade) + (cliente.uf ? "/" + cliente.uf : ""), o: "cliente (cidade/UF)" });
+if (txt(cliente.endereco).trim()) cands.push({ t: txt(cliente.endereco), o: "cliente (endereço)" });
+}
+for (var i = 0; i < cands.length; i++) { var p = postoInfo(cands[i].t); if (p.loc) return { cidade: p.loc, naTabela: true, texto: cands[i].t, origem: cands[i].o, varios: p.varios }; }
+return cands.length ? { cidade: cands[0].t, naTabela: false, texto: cands[0].t, origem: cands[0].o } : { cidade: null, naTabela: false, texto: "", origem: null };
+}
+function periodoCobertura(situacao) {
+var NR = NRm(); if (!NR) return null;
+var c = NR.consulta("ap.periodo_retorno.situacao", { situacao: situacao || "cobertura" }, "anos");
+return c.ok ? num(c.valor, null) : null;
+}
+function intensidadeNBR(cidadeTexto, T) {
+var NR = NRm(), r = { valor_mm_h: null, periodo_anos: T, localidade: null, origem: null, aviso: null, texto: "", fonte: null };
+if (!NR || T == null) { r.aviso = "Período de retorno ou tabela de intensidades indisponível."; return r; }
+var ls = arr(NR.linhas("ap.intensidade.localidade", { periodo_anos: T })).filter(function (l) { return fin(Number(l.intensidade_mm_h)); });
+r.fonte = NR.fonte("ap.intensidade.localidade");
+var pinf = cidadeTexto ? postoInfo(cidadeTexto, T) : { loc: null, varios: [] }, posto = pinf.loc, lin = posto ? ls.filter(function (l) { return l.localidade === posto; })[0] : null;
+if (lin) {
+r.valor_mm_h = Number(lin.intensidade_mm_h); r.localidade = posto; r.origem = "tabela";
+r.texto = "I = " + r.valor_mm_h + " mm/h — NBR 10844 Tabela 5, " + posto + ", T = " + T + " anos" + (lin.periodo_observado_anos ? " (período observado " + lin.periodo_observado_anos + " anos, nota b)" : "");
+if (pinf.varios.length > 1) r.aviso = "A cidade tem " + pinf.varios.length + " postos na Tabela 5 (" + pinf.varios.join("; ") + ") e o endereço não cita o bairro: adotado o de MAIOR intensidade para T = " + T + " anos (" + posto + ", " + r.valor_mm_h + " mm/h). Escreva o posto se for outro.";
+return r;
+}
+var mx = ls.reduce(function (m, l) { return !m || Number(l.intensidade_mm_h) > Number(m.intensidade_mm_h) ? l : m; }, null);
+if (!mx) { r.aviso = "A Tabela 5 não tem intensidade para T = " + T + " anos."; return r; }
+var viz = [];
+try { var v = cidadeTexto ? NR.linhas("ap.postos_vizinhos", null).filter(function (x) { return palavras(cidadeTexto).indexOf(palavras(String(x.localidade).split("/")[0])) >= 0; })[0] : null; if (v) viz = [v.posto1, v.posto2].filter(Boolean); } catch (e) {}
+r.valor_mm_h = Number(mx.intensidade_mm_h); r.localidade = mx.localidade; r.origem = "maior_da_tabela";
+r.texto = "I = " + r.valor_mm_h + " mm/h — o MAIOR valor da Tabela 5 da NBR 10844 para T = " + T + " anos (" + mx.localidade + "), adotado a favor da segurança";
+r.aviso = (posto ? "O posto " + posto + " da Tabela 5 não tem intensidade para T = " + T + " anos" : cidadeTexto ? "A cidade da obra (" + cidadeTexto + ") não está na Tabela 5 da NBR 10844" : "A obra não tem cidade/endereço cadastrado") +
+": adotado o MAIOR valor da tabela para T = " + T + " anos (" + r.valor_mm_h + " mm/h, " + mx.localidade + "). Confirme o posto de clima semelhante (nota a da tabela)" +
+(viz.length ? " — sugeridos: " + viz.join(", ") : "") + " ou informe a intensidade com a fonte.";
+return r;
+}
+var PREFIXO = "tel-calha-";
+function sNaLinha(segs, p) {
+var best = null, ac = 0;
+segs.forEach(function (sg) {
+var dx = sg.b.x - sg.a.x, dz = sg.b.z - sg.a.z, L2 = dx * dx + dz * dz, L = Math.sqrt(L2);
+var u = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - sg.a.x) * dx + (p.z - sg.a.z) * dz) / L2)) : 0;
+var qx = sg.a.x + dx * u, qz = sg.a.z + dz * u, d = Math.sqrt((p.x - qx) * (p.x - qx) + (p.z - qz) * (p.z - qz));
+if (!best || d < best.d - 1e-9) best = { s: ac + L * u, d: d };
+ac += L;
+});
+return best;
+}
+function destinosDaAgua(ag, segsT) {
+var pl = ag.plano || {}, bx = num(pl.bx, 0), bz = num(pl.bz, 0), g = Math.sqrt(bx * bx + bz * bz), out = [];
+if (!(g > 1e-9) || !segsT.length) return null;
+var dx = -bx / g, dz = -bz / g, px = -dz, pz = dx, mapa = {};
+function poe(a, b) { var k = a.toFixed(4) + "|" + b.toFixed(4); if (mapa[k]) mapa[k][2]++; else { mapa[k] = [a, b, 1]; out.push(mapa[k]); } }
+function yEm(q) { return num(pl.a, 0) + bx * q.x + bz * q.z; }
+arr(ag.pecas).forEach(function (pc) {
+var pts = arr(pc.pts), n = pts.length, i, u0 = Infinity, u1 = -Infinity, w0 = Infinity, w1 = -Infinity;
+if (n < 3) return;
+for (i = 0; i < n; i++) { var uq = pts[i].x * dx + pts[i].z * dz, wq = pts[i].x * px + pts[i].z * pz; u0 = Math.min(u0, uq); u1 = Math.max(u1, uq); w0 = Math.min(w0, wq); w1 = Math.max(w1, wq); }
+if (!(u1 - u0 > 1e-6) || !(w1 - w0 > 1e-6)) return;
+var NW = 240, NU = 40, hw = (w1 - w0) / NW, hu = (u1 - u0) / NU, iu, iw;
+for (iw = 0; iw < NW; iw++) for (iu = 0; iu < NU; iu++) {
+var w = w0 + (iw + 0.5) * hw, u = u0 + (iu + 0.5) * hu, x = u * dx + w * px, z = u * dz + w * pz;
+if (!dentroP(x, z, pts)) continue;
+var tMin = Infinity, eI = -1;
+for (i = 0; i < n; i++) {
+var a = pts[i], b = pts[(i + 1) % n], ex = b.x - a.x, ez = b.z - a.z, den = dx * ez - dz * ex;
+if (Math.abs(den) < 1e-12) continue;
+var wx = a.x - x, wz = a.z - z, tt = (wx * ez - wz * ex) / den, uu = (wx * dz - wz * dx) / den;
+if (tt > 1e-9 && uu >= -1e-9 && uu <= 1 + 1e-9 && tt < tMin) { tMin = tt; eI = i; }
+}
+if (eI < 0) continue;
+var X = { x: x + dx * tMin, z: z + dz * tMin }, q = sNaLinha(segsT, X);
+if (q && q.d > 0.6) { var pa = pts[eI], pb = pts[(eI + 1) % n]; q = sNaLinha(segsT, yEm(pa) <= yEm(pb) ? pa : pb); if (q) poe(q.s, q.s); continue; }
+if (!q) continue;
+var qa = sNaLinha(segsT, { x: X.x - px * hw / 2, z: X.z - pz * hw / 2 }), qb = sNaLinha(segsT, { x: X.x + px * hw / 2, z: X.z + pz * hw / 2 });
+var sa = qa ? qa.s : q.s, sb = qb ? qb.s : q.s;
+if (Math.abs(sb - sa) > hw * 2) poe(q.s, q.s); else poe(Math.min(sa, sb), Math.max(sa, sb));
+}
+});
+return out.length ? out : null;
+}
+function gerarPluvial(opsBase, cfg) {
+cfg = cfg || {};
+var BE = dep("BimEdit", "./bimedit.js"), AP = dep("HidAP", "./hidap.js"), NR = NRm(), BI = dep("BimInst", "./biminst.js");
+if (!BE || !AP || !NR) return { ok: false, motivo: "Os motores (js/bimedit.js, js/hidap.js, js/hidnormas.js) não carregaram." };
+var base = arr(opsBase), avisos = [], premissas = [], memorial = [], pendencias = [], ops = [];
+function est(extra) { return BE.aplicar(BE.sanear(base.concat(extra || []))); }
+function poe(o) {
+if (o.op !== "apagar") for (var i = 0; i < ops.length; i++) if (ops[i].op === o.op && String(ops[i].id) === String(o.id)) { Object.keys(o).forEach(function (k) { ops[i][k] = o[k]; }); return; }
+ops.push(o);
+}
+function existe(st, id) {
+var achou = false;
+["calhasEmbutidas", "bordas", "condutores", "platibandas", "rufosEncontro", "telhados"].forEach(function (k) { arr(st[k]).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; }); });
+arr(st.instalacoes && st.instalacoes.trechos).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; });
+return achou;
+}
+var st0 = est();
+var tels = arr(st0.telhados).filter(function (t) { return t && t.ok && t.modo === "perimetro" && (cfg.telhado == null || String(t.id) === String(cfg.telhado)); });
+if (!tels.length) return { ok: false, motivo: "Nenhum telhado por perímetro no modelo (Arquitetura › Telhado)." };
+var mat = chapaDe(cfg.material);
+var T = fin(Number(cfg.periodoRetorno_anos)) ? Number(cfg.periodoRetorno_anos) : periodoCobertura(cfg.situacao);
+var cid = cfg.cidade ? { cidade: cfg.cidade, texto: cfg.cidade, origem: "informada" } : cidadeDaObra(cfg.obra, cfg.cliente), I;
+if (fin(Number(cfg.intensidade_mm_h)) && txt(cfg.fonteIntensidade).trim()) I = { valor_mm_h: Number(cfg.intensidade_mm_h), periodo_anos: T, origem: "informada", texto: "I = " + Number(cfg.intensidade_mm_h) + " mm/h — informada pelo projetista: " + cfg.fonteIntensidade };
+else I = intensidadeNBR(cid.cidade, T);
+if (I.aviso) avisos.push(I.aviso);
+var cObra = cidadeDaObra(cfg.obra, cfg.cliente);
+if (!I.aviso && I.origem === "tabela" && arr(cObra.varios).length > 1 && cObra.cidade === I.localidade)
+avisos.push("A cidade da obra tem " + cObra.varios.length + " postos na Tabela 5 (" + cObra.varios.join("; ") + ") e o endereço não cita o bairro: adotado o de MAIOR intensidade para T = " + T + " anos (" + I.localidade + ", " + I.valor_mm_h + " mm/h). Escreva o posto se for outro.");
+if (I.valor_mm_h == null) return { ok: false, motivo: I.aviso || "Sem intensidade pluviométrica.", avisos: avisos };
+memorial.push("Intensidade pluviométrica: " + I.texto + (cid.origem && I.origem !== "informada" ? " (cidade lida de: " + cid.origem + (cid.texto ? " — \"" + cid.texto + "\"" : "") + ")" : "") + ".");
+memorial.push("Período de retorno T = " + T + " anos (coberturas, NBR 10844 item 5.1.2); duração da chuva 5 min (item 5.1.3).");
+var T25 = periodoCobertura("sem_extravasamento"), I25 = null;
+if (!fin(Number(cfg.periodoRetorno_anos)) && I.origem !== "informada" && T25 != null && T25 !== T) {
+I25 = intensidadeNBR(cid.cidade, T25);
+if (I25.valor_mm_h == null) I25 = null;
+}
+if (cfg.calhaBeiral) tels.forEach(function (t) {
+var tem = {}, id = PREFIXO + "b-" + t.id;
+listarCalhas(st0).forEach(function (c) { if (String(c.telhado) === String(t.id) && String(c.id) !== id) c.arestas.forEach(function (o) { tem[Number(o)] = true; }); });
+var ks = arr(t.arestasCalc).filter(function (e) { return e.define && !tem[e.orig]; }).map(function (e) { return e.orig; });
+if (ks.length) poe({ op: "borda", id: id, telhado: String(t.id), tipoBorda: "calha", arestas: ks });
+});
+var st1 = est(ops);
+var cals = listarCalhas(st1).filter(function (c) { return tels.some(function (t) { return String(t.id) === String(c.telhado); }); });
+if (!cals.length) return { ok: false, motivo: "Nenhuma calha: marque \"calha de beiral\" ou lance a calha embutida da platibanda.", avisos: avisos };
+var nC = NR.consulta("ap.manning.n", { material: "chapa_metalica" }, "n"), dMin = NR.consulta("ap.calha.declividade_minima", null, "valor"), diMin = NR.consulta("ap.condutor_vertical.di_minimo_mm", null, "valor");
+var capV = arr(NR.linhas("ap.condutor_vertical.capacidade", null)).slice().sort(function (a, b) { return a.dn - b.dn; });
+var dnsMat = BI && BI.MATERIAIS && BI.MATERIAIS.pvc_serie_r ? arr(BI.MATERIAIS.pvc_serie_r.dns) : [];
+var decl = fin(Number(cfg.declividadePct)) ? Number(cfg.declividadePct) : (dMin.ok ? num(dMin.valor, null) : null);
+if (decl == null) return { ok: false, motivo: "Sem a declividade mínima da calha (tabela da norma)." };
+if (dMin.ok && decl < num(dMin.valor, 0)) avisos.push("Declividade da calha " + virg(decl) + "% abaixo do mínimo de " + virg(num(dMin.valor, 0)) + "% da NBR 10844 (item 5.5.2).");
+premissas.push("lâmina d'água da calha retangular = metade da altura (premissa da RA: a norma não traz borda livre para a retangular)");
+premissas.push("descidas nas extremidades da calha (divisor de águas entre elas); calha com menos de 2 m: uma descida — parâmetro adotado");
+premissas.push("vazão de cada descida = I × a área de influência dela / 60: cada ponto da água escorre no sentido da maior declividade até o beiral (ou pelo rincão até a quina) e vai para a descida mais próxima ao longo da calha (divisor no meio do vão); a área de cada água é a do caso (b); calha que dá a volta (telhado de 4 águas): descidas nas quinas, com o coeficiente da Tabela 1 (canto reto)");
+premissas.push("condutor vertical pela tabela DN × vazão de Botelho & Ribeiro Jr. (fonte SECUNDÁRIA, via UFSM): o ábaco da Figura 3 da NBR 10844 não está digitalizado — conferir no ábaco");
+var resCal = [], manLig = {}, descMin = Math.max(1, Math.round(num(cfg.descidasMin, 2)));
+function idDesc(calId, j, i) { var b = String(calId).indexOf(PREFIXO) === 0 ? String(calId) : PREFIXO + calId; return b + "-cd" + (j + 1) + (i != null ? "-" + (i + 1) : ""); }
+var avisou25 = false;
+cals.forEach(function (cal) {
+var t = tels.filter(function (x) { return String(x.id) === String(cal.telhado); })[0];
+var Ic = cal.tipo === "embutida" && I25 ? I25 : I;
+if (Ic === I25 && !avisou25) {
+avisou25 = true;
+premissas.push("calha embutida (platibanda): T = " + T25 + " anos — o extravasamento cai dentro da edificação (NBR 10844 item 5.1.2 c); " + I25.texto);
+if (I25.aviso) avisos.push("Calha embutida (T = " + T25 + " anos): " + I25.aviso);
+}
+var segs = cal.segs, cad = [], k;
+for (k = 0; k < segs.length; k++) {
+var s = segs[k], Ls = distP(s.a, s.b), ult = cad[cad.length - 1];
+if (!ult || distP(segs[k - 1].b, s.a) > 0.05) { ult = { ini: 0, L: 0, quinas: [], origs: {}, fechada: false, segs: [] }; cad.push(ult); ult.offset = cad.length > 1 ? cad[cad.length - 2].offset + cad[cad.length - 2].L : 0; }
+else {
+var p = segs[k - 1], ux = p.b.x - p.a.x, uz = p.b.z - p.a.z, vx = s.b.x - s.a.x, vz = s.b.z - s.a.z, lu = Math.sqrt(ux * ux + uz * uz), lv = Math.sqrt(vx * vx + vz * vz);
+if (lu > 1e-6 && lv > 1e-6 && Math.abs((ux * vz - uz * vx) / (lu * lv)) > 0.17) ult.quinas.push(ult.L);
+}
+ult.L += Ls; ult.segs.push(s); if (s.orig != null) ult.origs[Number(s.orig)] = true;
+ult.ultimo = s; if (ult.primeiro == null) ult.primeiro = s;
+}
+cad.forEach(function (c) { if (c.primeiro !== c.ultimo && distP(c.ultimo.b, c.primeiro.a) < 0.05) { c.fechada = true; c.quinas.push(0); } });
+var ags = aguasDaCalha(st1, cal), Ltot0 = 0;
+segs.forEach(function (s) { Ltot0 += distP(s.a, s.b); });
+var manuais = arr(st0.condutores).filter(function (m) { return m && m.ok && String(m.calha) === String(cal.id) && String(m.id).indexOf(PREFIXO) !== 0; }), usadas = {};
+if (manuais.length) avisos.push("Calha " + cal.id + ": " + manuais.length + " descida(s) lançada(s) à mão (" + manuais.map(function (m) { return m.id; }).join(", ") + ") ficaram onde estão e entraram na conta (o DN é o do cálculo); para o arranjo automático, apague-as e rode de novo.");
+cad.forEach(function (c) {
+c.areas = []; c.A = 0; c.amostras = []; c.fixos = [];
+manuais.forEach(function (m) {
+var sm = num(m.posEf, 0.5) * Ltot0 - c.offset;
+if (usadas[m.id] || sm < -1e-6 || sm > c.L + 1e-6) return;
+usadas[m.id] = 1; c.fixos.push({ id: m.id, s: Math.max(0, Math.min(c.L, sm)) });
+});
+ags.forEach(function (ag) {
+var e = arr(t.arestasCalc)[ag.aresta]; if (!e || !c.origs[e.orig]) return;
+var ar = areaCasoB(ag); if (!ar) return;
+var A = (ar.a + ar.h / 2) * ar.b;
+c.areas.push({ aresta: e.orig, a: ar.a, b: ar.b, h: ar.h, i: num(ag.inclinacao, 0), A: r4(A), beiral: num(t.beiralEf, 0) }); c.A += A;
+c.amostras.push({ A: A, ss: destinosDaAgua(ag, c.segs) });
+});
+c.Q = Ic.valor_mm_h * c.A / 60;
+var fp = Math.min(0.15, c.L / 4);
+c.pos = c.fixos.length ? c.fixos.map(function (f) { return f.s; }) : c.fechada ? c.quinas.slice() : (c.L < 2 || descMin === 1 ? [fp] : [fp, c.L - fp]);
+c.pos.sort(function (a, b) { return a - b; });
+});
+cad = cad.filter(function (c) { return c.areas.length && c.L > 0.1; });
+if (!cad.length) { avisos.push("Calha " + cal.id + ": nenhuma água inclinada escorre para ela."); return; }
+function influencia(c) {
+var P = c.pos, L = c.L;
+if (c.A > 0 && c.amostras.length && c.amostras.every(function (am) { return am.ss; })) {
+var f = P.map(function () { return 0; }), nP = P.length;
+var lim = P.map(function (p, i) {
+if (c.fechada) { if (nP === 1) return [p - L / 2, p + L / 2]; return [p - ((p - P[(i - 1 + nP) % nP] + L) % L) / 2, p + ((P[(i + 1) % nP] - p + L) % L) / 2]; }
+return [i === 0 ? -Infinity : (P[i - 1] + p) / 2, i === nP - 1 ? Infinity : (p + P[i + 1]) / 2];
+});
+function perto(s) { var bi = 0, bd = Infinity; P.forEach(function (p, i) { var d = Math.abs(s - p); if (c.fechada) d = Math.min(d, L - d); if (d < bd - 1e-9) { bd = d; bi = i; } }); return bi; }
+c.amostras.forEach(function (am) {
+var cnt = P.map(function () { return 0; }), pesoT = 0;
+am.ss.forEach(function (ab) {
+var a = ab[0], b = ab[1], pw = ab[2], larg = b - a, fr = P.map(function () { return 0; }), tot = 0;
+if (larg > 1e-9) lim.forEach(function (lm, i) {
+(c.fechada ? [-L, 0, L] : [0]).forEach(function (sh) { var o = Math.min(b, lm[1] + sh) - Math.max(a, lm[0] + sh); if (o > 0) { fr[i] += o / larg; tot += o / larg; } });
+});
+pesoT += pw;
+if (tot > 1e-9) fr.forEach(function (x, i) { cnt[i] += pw * x / tot; }); else cnt[perto((a + b) / 2)] += pw;
+});
+cnt.forEach(function (k, i) { f[i] += am.A * k / pesoT; });
+});
+return f.map(function (x) { return x / c.A; });
+}
+return P.map(function (s, i) {
+if (c.fechada) { if (P.length === 1) return 1; var ant = P[(i - 1 + P.length) % P.length], pro = P[(i + 1) % P.length]; return (((s - ant + L) % L) + ((pro - s + L) % L)) / 2 / L; }
+var ini = i === 0 ? 0 : (P[i - 1] + s) / 2, fim2 = i === P.length - 1 ? L : (s + P[i + 1]) / 2; return (fim2 - ini) / L;
+});
+}
+function distQuina(c, s) { var m = null; c.quinas.forEach(function (q) { var d = Math.abs(s - q); if (c.fechada) d = Math.min(d, c.L - d); if (m == null || d < m) m = d; }); return m; }
+function dnPara(qLmin) {
+return capV.filter(function (x) { return num(x.vazao_ls, -1) * 60 >= qLmin - 1e-9 && (!diMin.ok || num(x.dn, 0) >= num(diMin.valor, 0)) && (!dnsMat.length || dnsMat.indexOf(num(x.dn, 0)) >= 0); })[0] || null;
+}
+function maisUma(c) {
+var P = c.pos.slice(), gi = -1, gv = -1;
+for (var j = 0; j < P.length; j++) { var nx = j + 1 < P.length ? P[j + 1] : (c.fechada ? P[0] + c.L : null); if (nx == null) continue; if (nx - P[j] > gv) { gv = nx - P[j]; gi = j; } }
+P.push(gi < 0 ? c.L / 2 : (P[gi] + gv / 2) % c.L);
+c.pos = P.sort(function (a, b) { return a - b; });
+}
+var achou = null, tent = 0;
+while (!achou && tent++ < 16) {
+var falhaDN = false;
+cad.forEach(function (c) {
+var inf = influencia(c);
+c.sds = c.pos.map(function (s, i) { var d = distQuina(c, s), o = { s: s, q: c.Q * inf[i], areaInfluencia_m2: r4(c.A * inf[i]), curva: null, distanciaCurva_m: null }; if (d != null && d <= 4) { o.curva = "canto_reto"; o.distanciaCurva_m = r4(Math.max(0.01, d)); } o.dn = dnPara(o.q); if (!o.dn) falhaDN = true; return o; });
+});
+var pior = null;
+if (!falhaDN) {
+for (var c2 = 0; c2 < SECOES_CANDIDATAS.length && !achou; c2++) {
+var bMm = SECOES_CANDIDATAS[c2][0], aMm = SECOES_CANDIDATAS[c2][1], ia = 0, ent = { situacao: "cobertura", intensidade_mm_h: Ic.valor_mm_h, fonteIntensidade: Ic.texto, areas: [], calhas: [] };
+cad.forEach(function (c, j) {
+var cid = String(cal.id) + (cad.length > 1 ? "#" + (j + 1) : "");
+c.areas.forEach(function (x) { ent.areas.push({ id: "A" + (++ia), caso: "b", a: x.a, h: x.h, b: x.b, destino: { calha: cid } }); });
+ent.calhas.push({ id: cid, secao: "retangular", base_mm: bMm, altura_mm: aMm, lamina_mm: aMm / 2, declividade_pct: decl, material: "chapa_metalica",
+saidas: c.sds.map(function (o) { var x = { areaInfluencia_m2: o.areaInfluencia_m2 }; if (o.curva) { x.curva = o.curva; x.distanciaCurva_m = o.distanciaCurva_m; } return x; }) });
+});
+var ctx = NR.contexto(), rr = null;
+try { rr = AP.calcular({ pluvial: ent }, ctx, { trechos: [] }); } catch (eA) { rr = null; }
+var chs = rr ? arr(rr.calhas) : [], passa = chs.length === cad.length && chs.every(function (ch) { return ch.capacidade_l_min != null && ch.vazaoProjeto_l_min != null && ch.vazaoProjeto_l_min <= ch.capacidade_l_min; });
+if (passa) achou = { bMm: bMm, aMm: aMm, hid: chs, qAP: rr.areas.reduce(function (s3, a3) { return s3 + num(a3.vazao_l_min, 0); }, 0), pend: ctx.pendencias(), ap: rr };
+else if (c2 === SECOES_CANDIDATAS.length - 1 && chs.length) pior = chs;
+}
+}
+if (!achou) {
+cad.forEach(function (c, j) {
+var ruim = c.sds.some(function (o) { return !o.dn; }) || (pior && pior[j] && !(pior[j].vazaoProjeto_l_min <= pior[j].capacidade_l_min));
+if (ruim) maisUma(c);
+});
+}
+}
+if (!achou) { avisos.push("Calha " + cal.id + ": nenhuma seção até 500 × 200 mm passa com até 16 descidas — aumente a declividade ou divida a calha."); return; }
+var lg = achou.bMm / 1000, al = achou.aMm / 1000, Ltot = 0;
+segs.forEach(function (s) { Ltot += distP(s.a, s.b); });
+if (cal.tipo === "embutida") poe({ op: "calha", id: cal.id, largura: lg, altura: al, declividadePct: decl });
+else poe({ op: "borda", id: cal.id, largura: lg, altura: al });
+var idsNovos = {}, descidas = [], A = 0, Q = 0, Qp = 0, cap = null, areasT = [];
+cad.forEach(function (c) { c.fixos.forEach(function (f) { f.usado = false; }); });
+cad.forEach(function (c, j) {
+A += c.A; Q += c.Q; areasT = areasT.concat(c.areas);
+var h = achou.hid[j];
+if (h.vazaoProjeto_l_min > Qp) { Qp = h.vazaoProjeto_l_min; cap = h.capacidade_l_min; }
+var kAuto = 0;
+c.sds.forEach(function (o, i) {
+var fx = c.fixos.filter(function (f) { return !f.usado && Math.abs(f.s - o.s) < 1e-6; })[0], id;
+if (fx) { fx.usado = true; id = fx.id; manLig[id] = 1; poe({ op: "condutor", id: id, dn: num(o.dn.dn, 100) }); }
+else {
+id = idDesc(cal.id, j, cad.length > 1 || c.sds.length > 1 ? kAuto : null); kAuto++; idsNovos[id] = 1;
+poe({ op: "condutor", id: id, calha: String(cal.id), pos: r4(Math.max(0, Math.min(1, (c.offset + o.s) / Ltot))), dn: num(o.dn.dn, 100) });
+}
+descidas.push({ id: id, manual: !!fx, trecho: j + 1, pos: r4((c.offset + o.s) / Ltot), dist_m: r4(o.s), vazao_l_min: r4(o.q), area_m2: o.areaInfluencia_m2, coef: num(h.saidas && h.saidas[i] && h.saidas[i].coef, 1), dn: num(o.dn.dn, null), capDN_l_s: num(o.dn.vazao_ls, null) });
+});
+});
+arr(st0.condutores).forEach(function (c) { if (c && String(c.calha) === String(cal.id) && String(c.id).indexOf(PREFIXO) === 0 && !idsNovos[c.id]) poe({ op: "apagar", id: c.id }); });
+var dev = desenvolvimentoCalha(lg, al), dv = escolher(DESENV_CALHA, dev, "dev"), maiorVao = 0;
+cad.forEach(function (c) { var P = c.pos; for (var q = 0; q + 1 < P.length; q++) maiorVao = Math.max(maiorVao, (P[q + 1] - P[q]) / 2); if (P.length === 1) maiorVao = Math.max(maiorVao, c.L); });
+resCal.push({ id: cal.id, tipo: cal.tipo, telhado: cal.telhado, trechos: cad.length, areas: areasT, area_m2: r4(A), intensidade_mm_h: Ic.valor_mm_h, periodo_anos: Ic.periodo_anos, vazao_l_min: r4(Q), comprimento: r4(Ltot),
+largura_mm: achou.bMm, altura_mm: achou.aMm, lamina_mm: achou.aMm / 2, declividade_pct: decl, n: nC.ok ? num(nC.valor, null) : null,
+capacidade_l_min: r4(cap), vazaoProjeto_l_min: r4(Qp), vazaoHidAP_l_min: r4(achou.qAP), hidap: achou.hid,
+desenvolvimento: dev, sinapi: dv ? sin(dv.ref) : null, queda_m: r4(maiorVao * decl / 100), descidas: descidas, pendencias: achou.pend });
+});
+if (!resCal.length) return { ok: false, motivo: "Nenhuma calha dimensionada.", avisos: avisos };
+var resRuf = [];
+if (cfg.rufos !== false) tels.forEach(function (t) {
+var id = "tel-rufo-" + t.id, en = encontrosDoTelhado(st0, t, {});
+if (en.length) poe({ op: "rufo", id: id, telhado: String(t.id), material: mat });
+else if (existe(st0, id)) poe({ op: "apagar", id: id });
+});
+var st2 = est(ops), ligar = cfg.ligarHidro !== false && !!BI;
+if (ligar) {
+var porCal = {};
+arr(st2.condutores).forEach(function (c) {
+var ehT = c && String(c.id).indexOf(PREFIXO) === 0;
+if (!c || !c.ok || (!ehT && !manLig[c.id])) return;
+var tid = PREFIXO + "ap-" + (ehT ? String(c.id).slice(PREFIXO.length) : "m-" + c.id);
+porCal[tid] = 1;
+if (!(c.alturaM > 0.05)) return;
+poe({ op: "trecho", id: tid, sistema: "pluvial", material: "pvc_serie_r", dn: c.dnEf || PADRAO.dn, p1: { x: c.x, y: r4(c.yTopo), z: c.z }, p2: { x: c.x, y: r4(c.yBase), z: c.z } });
+poe({ op: "condutor", id: c.id, trecho: tid });
+});
+arr(st0.instalacoes && st0.instalacoes.trechos).forEach(function (x) { if (x && String(x.id).indexOf(PREFIXO + "ap-") === 0 && !porCal[x.id]) poe({ op: "apagar", id: x.id }); });
+}
+var st3 = est(ops);
+arr(st3.rufosEncontro).forEach(function (r) { if (r && r.ok) { resRuf.push(r); arr(r.avisos).forEach(function (a) { avisos.push("Rufo " + r.id + ": " + a); }); } });
+resCal.forEach(function (c) {
+memorial.push("CALHA " + c.id + " (" + (c.tipo === "embutida" ? "embutida, atrás da platibanda" : "de beiral") + ", " + virg(c.comprimento) + " m" + (c.trechos > 1 ? " em " + c.trechos + " trechos" : "") + "):");
+c.areas.forEach(function (a) {
+memorial.push("  · água da aresta " + (a.aresta + 1) + " — NBR 10844, área de contribuição caso (b) superfície inclinada: A = (a + h/2)·b, com a = " + virg(a.a) + " m (projeção horizontal da água COM o beiral de " + virg(a.beiral) +
+" m), h = a·i = " + virg(a.a) + " × " + virg(a.i, 1) + "% = " + virg(a.h, 3) + " m, b = " + virg(a.b) + " m → A = (" + virg(a.a) + " + " + virg(a.h / 2, 3) + ") × " + virg(a.b) + " = " + virg(a.A) + " m²");
+});
+if (c.periodo_anos !== T) memorial.push("  · período de retorno T = " + c.periodo_anos + " anos (extravasamento não tolerado, item 5.1.2 c): " + (c.periodo_anos === T25 && I25 ? I25.texto : "I = " + c.intensidade_mm_h + " mm/h"));
+memorial.push("  · vazão de projeto (item 5.3.1): Q = I·A/60 = " + c.intensidade_mm_h + " × " + virg(c.area_m2) + " / 60 = " + virg(c.vazao_l_min) + " L/min");
+memorial.push("  · " + c.descidas.length + " descida(s): " + c.descidas.map(function (d) { return "a " + virg(d.dist_m) + " m do início (" + virg(d.area_m2) + " m², " + virg(d.vazao_l_min) + " L/min)"; }).join("; ") +
+"; Q de projeto na saída (maior saída × coeficiente da Tabela 1 quando há quina a menos de 4 m) = " + virg(c.vazaoProjeto_l_min) + " L/min");
+memorial.push("  · seção retangular " + c.largura_mm + " × " + c.altura_mm + " mm, lâmina " + c.lamina_mm + " mm, n = " + virg(c.n, 3) + " (chapa metálica, Tabela 2), i = " + virg(c.declividade_pct) + "% (mínimo do item 5.5.2): capacidade por Manning-Strickler (item 5.5.7) = " +
+virg(c.capacidade_l_min) + " L/min ≥ " + virg(c.vazaoProjeto_l_min) + " L/min → ATENDE; queda " + virg(c.queda_m * 100, 1) + " cm até a descida");
+memorial.push("  · desenvolvimento " + virg(c.desenvolvimento) + " m → " + (c.sinapi ? "SINAPI " + c.sinapi.codigo + " (" + c.sinapi.descricao + ")" : "sem composição SINAPI: orçar à parte"));
+memorial.push("  · condutores verticais: " + c.descidas.map(function (d) { return "DN " + d.dn + " (" + virg(d.vazao_l_min / 60, 3) + " L/s ≤ " + virg(d.capDN_l_s, 2) + " L/s)"; }).join("; ") +
+" — tabela de Botelho & Ribeiro Jr. (fonte secundária; o ábaco da Figura 3 da norma não está digitalizado: conferir); diâmetro interno mínimo " + (diMin.ok ? diMin.valor : "—") + " mm (item 5.6.3)" + (ligar ? "; tubo PVC série R no sistema pluvial do hidro, ponta de baixo = espera pluvial no piso" : ""));
+arr(c.pendencias).forEach(function (p) { if (!/abacos|ábaco/i.test(String(p.chave) + " " + p.motivo)) pendencias.push(p); });
+});
+resRuf.forEach(function (r) {
+if (!r.encontros.length) return;
+memorial.push("RUFO E CONTRARRUFO " + r.id + " (" + r.chapa + "): " + r.encontros.map(function (e) { return "aresta " + (e.orig + 1) + " × parede " + e.parede + " (" + virg(e.comprimento) + " m)"; }).join("; ") +
+" — rufo " + virg(r.comprimentoRufo) + " m (corte " + virg(r.corteRufoEf * 100, 0) + " cm, " + virg(r.kgRufo, 1) + " kg), contrarrufo " + virg(r.comprimentoContra) + " m (corte " + virg(r.corteContraEf * 100, 0) + " cm, " + virg(r.kgContra, 1) + " kg); cortes, dobras e fixação: " + PADRAO_RUFO.obs + "; " + r.obsChapa + ".");
+});
+var verificacao = resCal.map(function (c) { return { calha: c.id, vazao_l_min: c.vazaoHidAP_l_min, calhas: c.hidap }; });
+return { ok: true, lote: { op: "lote", id: PREFIXO + "lote", origem: "telhado-nbr10844", ops: ops }, ops: ops, intensidade: I, cidade: cid, periodo_anos: T,
+calhas: resCal, rufos: resRuf, memorial: memorial, avisos: avisos, premissas: premissas, pendencias: pendencias, verificacao: verificacao, estado: st3 };
+}
+function idsDoCob(ctx) { return ctx.cob || (ctx.cob = { plat: {}, ordPlat: [], calha: {}, ordCalha: [], cond: {}, ordCond: [], rufo: {}, ordRufo: [] }); }
+function faixa(o, k, a, b) { return o[k] === undefined || o[k] === null || (fin(o[k]) && o[k] >= a && o[k] <= b); }
+function arestasOk(v) { return v === undefined || v === null || (Array.isArray(v) && v.length <= LIM.vertices && v.every(function (k) { return fin(k) && k >= 0 && Math.round(k) === k; })); }
+function validaPlatibanda(o) {
+if (!idOk(o.id)) return false;
+if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+if (!faixa(o, "espessura", LIM.esp[0], LIM.esp[1]) || !faixa(o, "altura", LIM.altura[0], LIM.altura[1]) || !faixa(o, "topo", LIM.topo[0], LIM.topo[1]) || !faixa(o, "base", LIM.topo[0], LIM.topo[1]) ||
+!faixa(o, "abaRufo", LIM.aba[0], LIM.aba[1]) || !faixa(o, "folgaCalha", LIM.folga[0], LIM.folga[1])) return false;
+if (!arestasOk(o.arestas)) return false;
+if (o.rufoCapa != null && typeof o.rufoCapa !== "boolean") return false;
+if (o.contraRufo != null && typeof o.contraRufo !== "boolean") return false;
+return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].some(function (k) { return o[k] !== undefined; });
+}
+function validaCalha(o) {
+if (!idOk(o.id)) return false;
+if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+if (!faixa(o, "largura", LIM.calhaLarg[0], LIM.calhaLarg[1]) || !faixa(o, "altura", LIM.calhaAlt[0], LIM.calhaAlt[1]) || !faixa(o, "declividadePct", LIM.decl[0], LIM.decl[1]) || !faixa(o, "laminaMm", LIM.lamina[0], LIM.lamina[1])) return false;
+if (o.arestas !== undefined && o.arestas !== null && !(arestasOk(o.arestas) && o.arestas.length >= 1)) return false;
+return ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"].some(function (k) { return o[k] !== undefined; });
+}
+function validaCondutor(o) {
+if (!idOk(o.id)) return false;
+if (o.calha !== undefined && !idOk(o.calha)) return false;
+if (!faixa(o, "pos", 0, 1) || !faixa(o, "dn", LIM.dn[0], LIM.dn[1])) return false;
+if (o.trecho !== undefined && o.trecho !== null && !idOk(o.trecho)) return false;
+return ["calha", "pos", "dn", "trecho"].some(function (k) { return o[k] !== undefined; });
+}
+function validaRufo(o) {
+if (!idOk(o.id)) return false;
+if (o.telhado !== undefined && !idOk(o.telhado)) return false;
+if (o.material !== undefined && o.material !== null && !CHAPAS[o.material]) return false;
+if (!faixa(o, "corteRufo", 0.1, 1) || !faixa(o, "corteContra", 0.1, 1) || !faixa(o, "folga", 0, 0.5)) return false;
+return ["telhado", "material", "corteRufo", "corteContra", "folga"].some(function (k) { return o[k] !== undefined; });
+}
+function valida(o) {
+if (!o) return undefined;
+if (o.op === "platibanda") return validaPlatibanda(o);
+if (o.op === "calha") return validaCalha(o);
+if (o.op === "condutor") return validaCondutor(o);
+if (o.op === "rufo") return validaRufo(o);
+return undefined;
+}
+var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"],
+calha: ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"],
+cond: ["calha", "pos", "dn", "trecho"], rufo: ["telhado", "material", "corteRufo", "corteContra", "folga"] };
+function aplicarOp(o, ctx) {
+if (!o || !ctx) return false;
+var C = idsDoCob(ctx), id = o.id, quem = o.op === "platibanda" ? "plat" : o.op === "calha" ? "calha" : o.op === "condutor" ? "cond" : o.op === "rufo" ? "rufo" : null;
+var ordem = { plat: "ordPlat", calha: "ordCalha", cond: "ordCond", rufo: "ordRufo" };
+if (quem) {
+if (valida(o) !== true) return false;
+var M = C[quem], novo = !M[id];
+if (novo) {
+if (quem !== "cond" && o.telhado === undefined) return false;
+if (quem === "calha" && !arr(o.arestas).length) return false;
+if (quem === "cond" && o.calha === undefined) return false;
+M[id] = { id: id }; C[ordem[quem]].push(id);
+}
+CAMPOS[quem].forEach(function (k) { if (!temChave(o, k)) return; if (o[k] === null) delete M[id][k]; else M[id][k] = clone(o[k]); });
+return true;
+}
+if (o.op === "apagar") {
+var achou = false;
+["plat", "calha", "cond", "rufo"].forEach(function (q) { if (C[q][id]) { delete C[q][id]; C[ordem[q]].splice(C[ordem[q]].indexOf(id), 1); achou = true; } });
+return achou;
+}
+return false;
+}
+function fim(ctx, saida, NIV) {
+var C = ctx && ctx.cob; if (!C || !saida) return;
+if (!C.ordPlat.length && !C.ordCalha.length && !C.ordCond.length && !(C.ordRufo && C.ordRufo.length)) return;
+var tel = {}; arr(saida.telhados).forEach(function (t) { tel[String(t.id)] = t; });
+if (C.ordCalha.length) saida.calhasEmbutidas = C.ordCalha.map(function (id) { return calcularCalha(C.calha[id], tel); });
+if (C.ordPlat.length) saida.platibandas = C.ordPlat.map(function (id) { return calcularPlatibanda(C.plat[id], tel, C); });
+if (C.ordCond.length) {
+var piso = Infinity; arr(NIV).forEach(function (n) { var e = num(n && n.elevacao, NaN); if (fin(e) && e < piso) piso = e; });
+var cals = listarCalhas(saida);
+saida.condutores = C.ordCond.map(function (id) {
+var f = C.cond[id], cal = null; cals.forEach(function (x) { if (String(x.id) === String(f.calha)) cal = x; });
+var t = cal ? tel[String(cal.telhado)] : null, base = isFinite(piso) ? piso : num(t && t.elevNivel, 0);
+return calcularCondutor(f, cals, base);
+});
+var trs = {}; arr(saida.instalacoes && saida.instalacoes.trechos).forEach(function (x) { if (x && x.id != null) trs[String(x.id)] = 1; });
+saida.condutores.forEach(function (c) { if (c.trecho != null) c.noHidro = !!trs[String(c.trecho)]; });
+}
+if (C.ordRufo && C.ordRufo.length) saida.rufosEncontro = C.ordRufo.map(function (id) { return calcularRufo(C.rufo[id], tel, saida); });
+}
+function registrar(BE) {
+if (!BE || typeof BE.estender !== "function") return false;
+return BE.estender({ nome: "cobertura-completa", aplicar: aplicarOp, valida: valida, fim: fim });
+}
+var BimCobertura = {
+PADRAO: PADRAO, SINAPI: SINAPI, LIM: LIM, SECOES_CANDIDATAS: SECOES_CANDIDATAS,
+calcularPlatibanda: calcularPlatibanda, calcularCalha: calcularCalha, calcularCondutor: calcularCondutor,
+listarCalhas: listarCalhas, resumoDoTelhado: resumoDoTelhado, opsCondutores: opsCondutores, baseSugerida: baseSugerida,
+desenvolvimentoCalha: desenvolvimentoCalha, entradaPluvial: entradaPluvial, dimensionarCalhas: dimensionarCalhas, secaoMinimaCalha: secaoMinimaCalha,
+quantitativo: quantitativo, sin: sin,
+PADRAO_RUFO: PADRAO_RUFO, CHAPAS: CHAPAS, PREFIXO: PREFIXO, encontrosDoTelhado: encontrosDoTelhado, calcularRufo: calcularRufo, topoTelhaEm: topoTelhaEm,
+cidadeDaObra: cidadeDaObra, postoNoTexto: postoNoTexto, intensidadeNBR: intensidadeNBR, periodoCobertura: periodoCobertura, gerarPluvial: gerarPluvial, kgPorM: kgPorM, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
+opPlatibanda: function (id, d) {
+d = d || {}; var o = { op: "platibanda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado };
+["arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+return validaPlatibanda(o) ? o : null;
+},
+opCalha: function (id, d) {
+d = d || {}; var o = { op: "calha", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, arestas: arr(d.arestas).map(Number) };
+["largura", "altura", "declividadePct", "laminaMm"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+return validaCalha(o) ? o : null;
+},
+opCondutor: function (id, d) {
+d = d || {}; var o = { op: "condutor", id: id, calha: d.calha != null ? String(d.calha) : d.calha };
+["pos", "dn"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+return validaCondutor(o) ? o : null;
+}
+};
+registrar(dep("BimEdit", "./bimedit.js"));
+global.BimCobertura = BimCobertura;
+if (typeof module !== "undefined" && module.exports) module.exports = BimCobertura;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimtelhadoestrut.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function virg(v, c) { return (Math.round(v * Math.pow(10, c == null ? 2 : c)) / Math.pow(10, c == null ? 2 : c)).toFixed(c == null ? 2 : c).replace(".", ","); }
+function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
+function MC() { return dep("MetalCriar", "./metalcriar.js"); }
+function PA() { return dep("PerfisAco", "./perfisaco.js"); }
+function BA() { return dep("BimArq", "./bimarq.js"); }
+function BC() { return dep("BimCobertura", "./bimcobertura.js"); }
+var FONTE_MADEIRA = "Nibra — Catálogo MWF p. 5–10 (madeira serrada, medidas brutas, lidas em cm) e Catálogo Pro p. 5 (sarrafo 5×5)";
+var SECOES_MADEIRA = [
+{ id: "5x5", b: 0.05, h: 0.05 }, { id: "5x10", b: 0.05, h: 0.10 }, { id: "5x15", b: 0.05, h: 0.15 }, { id: "5x30", b: 0.05, h: 0.30 },
+{ id: "6x12", b: 0.06, h: 0.12 }, { id: "8x8", b: 0.08, h: 0.08 }, { id: "8x16", b: 0.08, h: 0.16 }, { id: "10x20", b: 0.10, h: 0.20 },
+{ id: "15x15", b: 0.15, h: 0.15 }, { id: "20x20", b: 0.20, h: 0.20 }
+];
+function secaoMadeira(id) { for (var i = 0; i < SECOES_MADEIRA.length; i++) if (SECOES_MADEIRA[i].id === String(id)) return SECOES_MADEIRA[i]; return null; }
+var PADRAO = {
+aco: { perfilTerca: "Ue 150 x 60 x 20 x 3,00", perfilViga: "W250X25.3", perfilPilar: "W200X15", vaoTerca: 3.5 },
+madeira: { secaoTerca: "6x12", secaoViga: "8x16", secaoPontalete: "8x8", vaoTerca: 2.5, espPontalete: 2.0 },
+balancoBeiralComCalha: 0.20, balancoBeiralSemCalha: 0.30, balancoBeiralSemDado: 0.25, balancoAlto: 0.10,
+ext: 0.10, insetViga: 0.10, tolApoio: 0.10, distPonta: 0.75, alcanceApoio: 0.7, calcoMax: 0.05
+};
+function pl(p) { return [p.x, p.z]; }
+function dist2(a, b) { var dx = a[0] - b[0], dz = a[1] - b[1]; return Math.sqrt(dx * dx + dz * dz); }
+function cordasU(Q, u, d, td) {
+var ts = [], n = Q.length, i;
+for (i = 0; i < n; i++) {
+var A = Q[i], B = Q[(i + 1) % n], ua = d[0] * A[0] + d[1] * A[1], ub = d[0] * B[0] + d[1] * B[1];
+if ((ua < u) === (ub < u)) continue;
+var k = (u - ua) / (ub - ua), x = A[0] + k * (B[0] - A[0]), z = A[1] + k * (B[1] - A[1]);
+ts.push(td[0] * x + td[1] * z);
+}
+ts.sort(function (a, b) { return a - b; });
+var out = []; for (i = 0; i + 1 < ts.length; i += 2) if (ts[i + 1] - ts[i] > 1e-6) out.push([ts[i], ts[i + 1]]);
+return out;
+}
+function cordasT(Q, t, d, td) {
+var us = [], n = Q.length, i;
+for (i = 0; i < n; i++) {
+var A = Q[i], B = Q[(i + 1) % n], ta = td[0] * A[0] + td[1] * A[1], tb = td[0] * B[0] + td[1] * B[1];
+if ((ta < t) === (tb < t)) continue;
+var k = (t - ta) / (tb - ta), x = A[0] + k * (B[0] - A[0]), z = A[1] + k * (B[1] - A[1]);
+us.push(d[0] * x + d[1] * z);
+}
+us.sort(function (a, b) { return a - b; });
+var out = []; for (i = 0; i + 1 < us.length; i += 2) if (us[i + 1] - us[i] > 1e-6) out.push([us[i], us[i + 1]]);
+return out;
+}
+function deUT(u, t, d, td) { return [u * d[0] + t * td[0], u * d[1] + t * td[1]]; }
+function paredesDe(estado) {
+var out = [];
+arr(estado && estado.caixas).forEach(function (c) {
+if (!c || c.tipo !== "parede") return;
+var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th);
+out.push({ id: c.id, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: ux, uz: uz, L: num(c.comprimento, 0), e: num(c.espessura, 0.15), topo: num(c.cy, 0) + num(c.altura, 0) / 2, base: num(c.cy, 0) - num(c.altura, 0) / 2 });
+});
+return out;
+}
+function trechoNaParede(A, B, w, tol) {
+var dx = B[0] - A[0], dz = B[1] - A[1], Ls = Math.sqrt(dx * dx + dz * dz); if (!(Ls > 1e-9)) return null;
+function loc(p) { var rx = p[0] - w.cx, rz = p[1] - w.cz; return [rx * w.ux + rz * w.uz, -rx * w.uz + rz * w.ux]; }
+var a = loc(A), b = loc(B), lo = 0, hi = 1, i, lim = [w.L / 2 + tol, w.e / 2 + tol];
+for (i = 0; i < 2; i++) {
+var p0 = a[i], dp = b[i] - a[i];
+if (Math.abs(dp) < 1e-12) { if (Math.abs(p0) > lim[i]) return null; continue; }
+var t1 = (-lim[i] - p0) / dp, t2 = (lim[i] - p0) / dp, ta = Math.min(t1, t2), tb = Math.max(t1, t2);
+lo = Math.max(lo, ta); hi = Math.min(hi, tb);
+if (lo > hi) return null;
+}
+return [lo * Ls, hi * Ls];
+}
+function alturaPerfilAco(cat) {
+var A = PA(), o = A && A.obter ? A.obter(cat) : null; if (!o) return null;
+var mm = o.forma === "frio" ? o.bw : (o.d != null ? o.d : (o.h != null ? o.h : null));
+return mm != null ? mm / 1000 : null;
+}
+function massaPerfilAco(cat) { var A = PA(), o = A && A.obter ? A.obter(cat) : null; return o && fin(o.massa) ? o.massa : null; }
+function gerar(estado, telhadoId, opc) {
+opc = opc || {};
+var T = BT(), t = null;
+arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(telhadoId)) t = x; });
+if (!T) return { ok: false, motivo: "O motor do telhado (js/bimtelhado.js) não carregou." };
+if (!t) return { ok: false, motivo: "Telhado não encontrado: " + telhadoId };
+if (!t.ok) return { ok: false, motivo: "O telhado não fechou (ver os avisos dele): sem estrutura." };
+if (t.modo !== "perimetro") return { ok: false, motivo: "A estrutura automática é do telhado por perímetro." };
+if (t.modelo && !opc.mesmoComModelo) return { ok: false, motivo: "Este telhado já tem a estrutura do modelo \"" + (MODELOS[t.modelo] ? MODELOS[t.modelo].rotulo : t.modelo) + "\" (Arquitetura › Telhado › Telhado completo). Para usar esta estrutura avulsa, escolha \"Sem estrutura\" no modelo antes." };
+var tel = T.telha(t.tipoId), avisos = [], premissas = [];
+var mat = opc.material === "aco" || opc.material === "madeira" ? opc.material : (tel && tel.familia === "sanduiche" ? "aco" : "madeira");
+var vao = fin(Number(opc.vaoTelha)) ? Number(opc.vaoTelha) : (tel ? tel.vaoMaxEntreApoios : null);
+if (tel && tel.vaoMaxPorAco && fin(Number(opc.acoMm))) { var vk = tel.vaoMaxPorAco[Number(opc.acoMm).toFixed(2)]; if (fin(vk)) vao = vk; }
+if (!fin(vao) || !(vao > 0.2)) return { ok: false, motivo: "O vão máximo entre apoios desta telha NÃO está verificado (" + (tel ? tel.vaoFonte : "tipo sem dados de catálogo") + "). Informe `vaoTelha` com a fonte do fabricante." };
+if (tel) premissas.push("vão máximo da telha " + virg(vao) + " m — " + (tel.vaoFonte || "informado"));
+else premissas.push("vão máximo da telha " + virg(vao) + " m — informado pelo projetista (tipo sem dados de catálogo)");
+var P = PADRAO[mat], vaoTerca = fin(Number(opc.vaoTerca)) ? Number(opc.vaoTerca) : P.vaoTerca;
+premissas.push("vão entre as linhas de apoio das terças " + virg(vaoTerca) + " m — " + (fin(Number(opc.vaoTerca)) ? "informado" : "ADOTADO (pré-dimensionamento), a confirmar no cálculo"));
+var bal = fin(Number(opc.balanco)) ? Number(opc.balanco) : null, balNota;
+if (bal == null) {
+if (tel && tel.balanco) { bal = opc.comCalha === false ? PADRAO.balancoBeiralSemCalha : PADRAO.balancoBeiralComCalha; balNota = "dentro da faixa " + (opc.comCalha === false ? "sem calha 25–40 cm" : "com calha 10–25 cm") + " (" + tel.balancoFonte + ")"; }
+else { bal = PADRAO.balancoBeiralSemDado; balNota = "ADOTADO — o balanço máximo do beiral desta telha não está verificado"; }
+} else balNota = "informado";
+premissas.push("balanço da telha além da 1ª terça (beiral) " + virg(bal) + " m — " + balNota);
+var balAlto = fin(Number(opc.balancoAlto)) ? Number(opc.balancoAlto) : PADRAO.balancoAlto;
+var ext = fin(Number(opc.ext)) ? Number(opc.ext) : PADRAO.ext, inset = fin(Number(opc.insetViga)) ? Number(opc.insetViga) : PADRAO.insetViga;
+var Ma = mat === "aco" ? MC() : BA();
+if (!Ma) return { ok: false, motivo: mat === "aco" ? "O motor da Metálica (js/metalcriar.js) não carregou." : "O motor da estrutura (js/bimarq.js) não carregou." };
+var perfT, perfV, perfP, hT, hV, secT, secV, secP;
+if (mat === "aco") {
+perfT = opc.perfilTerca || P.perfilTerca; perfV = opc.perfilViga || P.perfilViga; perfP = opc.perfilPilar || P.perfilPilar;
+hT = alturaPerfilAco(perfT); hV = alturaPerfilAco(perfV);
+if (!(hT > 0)) return { ok: false, motivo: "Perfil da terça fora do catálogo: " + perfT };
+if (!(hV > 0)) return { ok: false, motivo: "Perfil da viga fora do catálogo: " + perfV };
+if (!(alturaPerfilAco(perfP) > 0)) return { ok: false, motivo: "Perfil do pilar fora do catálogo: " + perfP };
+premissas.push("perfis ADOTADOS (pré-dimensionado — confirmar no cálculo): terça " + perfT + ", viga principal " + perfV + ", pilar " + perfP);
+} else {
+secT = opc.secaoTerca && opc.secaoTerca.b ? opc.secaoTerca : secaoMadeira(opc.secaoTerca || P.secaoTerca);
+secV = opc.secaoViga && opc.secaoViga.b ? opc.secaoViga : secaoMadeira(opc.secaoViga || P.secaoViga);
+secP = opc.secaoPontalete && opc.secaoPontalete.b ? opc.secaoPontalete : secaoMadeira(opc.secaoPontalete || P.secaoPontalete);
+if (!secT || !secV || !secP) return { ok: false, motivo: "Seção de madeira fora do catálogo (" + FONTE_MADEIRA + ")." };
+hT = secT.h; hV = secV.h;
+premissas.push("seções ADOTADAS do catálogo " + FONTE_MADEIRA + ": terça " + secT.b * 100 + "×" + secT.h * 100 + " cm, viga " + secV.b * 100 + "×" + secV.h * 100 + " cm, pontalete " + secP.b * 100 + "×" + secP.h * 100 + " cm — pré-dimensionado, a confirmar no módulo Madeira");
+}
+var paredes = paredesDe(estado), nivelBase = num(t.elevNivel, 0);
+var seq = 0, idPref = "tec-" + t.id + "-", pecas = [], apoios = [], nPil = 0;
+function novoId() { return idPref + (++seq); }
+function marca(c, papel, extra) { c.cob = { telhado: String(t.id), papel: papel, material: mat }; if (extra) Object.keys(extra).forEach(function (k) { c.cob[k] = extra[k]; }); return c; }
+var comp = { terca: 0, viga: 0, pilar: 0 };
+function criarBarraAco(a, b, ferr, cat, just, giro, papel, extra) {
+var c = Ma.barra(a, b, { ferr: ferr, cat: cat, just: just, giro: giro || 0, nivel: t.nivelId != null ? { id: t.nivelId } : null });
+if (c.erro) { avisos.push("Peça " + papel + ": " + c.erro); return null; }
+c.id = novoId(); marca(c, papel, extra);
+return c;
+}
+function criarPilarAco(x, z, y0, y1, cat, extra) {
+var c = Ma.pilar([x, y0, z], { base: y0, topo: y1, cat: cat });
+if (c.erro) { avisos.push("Pilar: " + c.erro); return null; }
+c.id = novoId(); marca(c, "pilar", extra);
+return c;
+}
+var A9 = BA();
+function criarBarraMadeira(a, b, sec, papel, justCentro, extra) {
+var c = A9.vigaPerfil([a[0], a[2]], [b[0], b[2]], { perfil: { forma: "ret", b: sec.b, h: sec.h }, material: "madeira", topo: a[1], nivelId: t.nivelId != null ? t.nivelId : null });
+if (!c) { avisos.push("Peça " + papel + " fora do alcance do motor (comprimento ou seção)."); return null; }
+if (justCentro) { c.justZ = "centro"; }
+if (Math.abs(b[1] - a[1]) > 1e-6) { c.dFim = r6(b[1] - a[1]); c.justZ = "centro"; }
+A9.recalcPeca(c);
+c.id = novoId(); marca(c, papel, extra); c.nome = papel === "terca" ? "Terça de madeira" : "Viga de apoio de madeira";
+return c;
+}
+function criarPontalete(x, z, y0, y1, sec, extra) {
+var c = A9.pilarPerfil([x, z], { perfil: { forma: "ret", b: sec.b, h: sec.h }, material: "madeira", base: y0, altura: y1 - y0, nivelId: t.nivelId != null ? t.nivelId : null });
+if (!c) { avisos.push("Pontalete fora do alcance do motor."); return null; }
+c.id = novoId(); marca(c, "pontalete", extra); c.nome = "Pontalete de madeira";
+return c;
+}
+var nAguas = 0, naoRet = false;
+arr(t.aguasCalc).forEach(function (ag) {
+var plano = ag.plano || {}, s = Math.sqrt((plano.bx || 0) * (plano.bx || 0) + (plano.bz || 0) * (plano.bz || 0));
+if (!(s > 1e-6)) { avisos.push("Água plana: a estrutura automática pede inclinação (os planos horizontais não têm sentido de terça)."); return; }
+var d = [plano.bx / s, plano.bz / s], td = [-d[1], d[0]], f = Math.sqrt(1 + s * s);
+arr(ag.pecas).forEach(function (pc) {
+var Q = arr(pc.pts).map(pl); if (Q.length < 3) return;
+nAguas++;
+var umin = Infinity, umax = -Infinity, tmin = Infinity, tmax = -Infinity;
+Q.forEach(function (q) { var u = d[0] * q[0] + d[1] * q[1], tt = td[0] * q[0] + td[1] * q[1]; if (u < umin) umin = u; if (u > umax) umax = u; if (tt < tmin) tmin = tt; if (tt > tmax) tmax = tt; });
+if (Q.length !== 4) naoRet = true;
+var yPl = function (u) { return plano.a + s * u; };
+var yViga = function (u) { return yPl(u) - hT * (mat === "aco" ? f : 1); };
+var vV = hV * (mat === "aco" ? f : 1);
+var u0 = umin + bal / f, u1 = umax - balAlto / f;
+if (!(u1 - u0 > 0.2)) { avisos.push("Água curta demais para terças (" + virg((umax - umin) * f) + " m de rampa)."); return; }
+var nInt = Math.max(1, Math.ceil((u1 - u0) * f / vao - 1e-9)), us = [], i;
+for (i = 0; i <= nInt; i++) us.push(u0 + (u1 - u0) * i / nInt);
+var espTerca = (u1 - u0) * f / nInt;
+var tl0 = tmin + inset, tl1 = tmax - inset, linhas = [tl0, tl1];
+paredes.forEach(function (w) {
+if (Math.abs(w.ux * d[1] - w.uz * d[0]) > 0.05) return;
+var tw = td[0] * w.cx + td[1] * w.cz, uw = d[0] * w.cx + d[1] * w.cz;
+if (tw <= tl0 + 0.4 || tw >= tl1 - 0.4) return;
+if (uw + w.L / 2 < u0 || uw - w.L / 2 > u1) return;
+linhas.push(tw);
+});
+linhas.sort(function (a, b) { return a - b; });
+[0, linhas.length - 1].forEach(function (ix) {
+var melhor = null;
+paredes.forEach(function (w) {
+if (Math.abs(w.ux * d[1] - w.uz * d[0]) > 0.05) return;
+var tw = td[0] * w.cx + td[1] * w.cz, uw = d[0] * w.cx + d[1] * w.cz;
+if (uw + w.L / 2 < u0 || uw - w.L / 2 > u1) return;
+var dd = Math.abs(tw - linhas[ix]); if (dd <= 0.5 && (!melhor || dd < melhor.dd)) melhor = { tw: tw, dd: dd };
+});
+if (melhor) linhas[ix] = melhor.tw;
+});
+linhas.sort(function (a, b) { return a - b; });
+var lin = [linhas[0]], semParede = 0;
+for (i = 1; i < linhas.length; i++) { if (linhas[i] - lin[lin.length - 1] > 0.3) lin.push(linhas[i]); else lin[lin.length - 1] = (lin[lin.length - 1] + linhas[i]) / 2; }
+var com = [lin[0]];
+for (i = 1; i < lin.length; i++) {
+var gap = lin[i] - lin[i - 1], nn = Math.max(1, Math.ceil(gap / vaoTerca - 1e-9));
+for (var j = 1; j < nn; j++) { com.push(lin[i - 1] + gap * j / nn); semParede++; }
+com.push(lin[i]);
+}
+if (semParede) avisos.push(semParede + " linha(s) de apoio a mais (vão entre paredes maior que " + virg(vaoTerca) + " m): vigas principais apoiadas só nas pontas — confirmar no cálculo.");
+var vigas = [];
+com.forEach(function (tj, jj) {
+var ch = cordasT(Q, Math.max(tmin + 1e-3, Math.min(tmax - 1e-3, tj)), d, td); if (!ch.length) return;
+var ua = Math.max(u0 - ext, ch[0][0]), ub = Math.min(u1 + ext, ch[ch.length - 1][1]);
+function alcancar(uEnd, sinal) {
+var p0 = deUT(uEnd, tj, d, td), p1 = deUT(uEnd + sinal * PADRAO.alcanceApoio, tj, d, td), melhor = null;
+paredes.forEach(function (w) {
+var tr = trechoNaParede(p0, p1, w, PADRAO.tolApoio); if (!tr) return;
+if (!melhor || tr[0] < melhor[0]) melhor = tr;
+});
+return melhor ? uEnd + sinal * (melhor[0] + melhor[1]) / 2 : uEnd;
+}
+ua = alcancar(ua, -1); ub = alcancar(ub, 1);
+if (!(ub - ua > 0.3)) return;
+var pA = deUT(ua, tj, d, td), pB = deUT(ub, tj, d, td), yA = yViga(ua), yB = yViga(ub), c;
+if (mat === "aco") c = criarBarraAco([pA[0], yA, pA[1]], [pB[0], yB, pB[1]], "viga", perfV, "topo", 0, "viga-principal", { linha: jj });
+else {
+var yAc = yA - hV / 2, yBc = yB - hV / 2;
+c = criarBarraMadeira([pA[0], yAc, pA[1]], [pB[0], yBc, pB[1]], secV, "viga-principal", true, { linha: jj });
+}
+if (!c) return;
+comp.viga += dist2(pA, pB) * f;
+var V = { c: c, pA: pA, pB: pB, yA: yA, yB: yB, ua: ua, ub: ub, tj: tj, ap: [] };
+vigas.push(V); pecas.push(c);
+});
+vigas.forEach(function (V) {
+var Ls = dist2(V.pA, V.pB), cv = Ls > 0 ? 1 / Ls : 0;
+function yBot(sm) { var tt = sm * cv; return (V.yA + (V.yB - V.yA) * tt) - vV; }
+var cruz = [];
+paredes.forEach(function (w) {
+var tr = trechoNaParede(V.pA, V.pB, w, PADRAO.tolApoio); if (!tr) return;
+cruz.push({ w: w, s0: Math.max(0, tr[0]), s1: Math.min(Ls, tr[1]) });
+});
+function eficazEm(cx, s) { return cx.w.topo >= yBot(s) - PADRAO.calcoMax; }
+function eficaz(cx) { return eficazEm(cx, cx.s0) && eficazEm(cx, cx.s1); }
+[0, 1].forEach(function (fim) {
+var sEnd = fim === 0 ? 0 : Ls;
+function dentroDaPonta(cx) { return fim === 0 ? cx.s0 <= PADRAO.distPonta : cx.s1 >= Ls - PADRAO.distPonta; }
+function sNaPonta(cx) { return Math.max(cx.s0, Math.min(cx.s1, sEnd)); }
+var efP = cruz.filter(function (cx) { return dentroDaPonta(cx) && eficazEm(cx, sNaPonta(cx)); }), perto = efP.length > 0;
+var rotulo = fim === 0 ? "ini" : "fim";
+if (perto) {
+var wEf = efP[0];
+var emb = wEf.w.topo - yBot(sNaPonta(wEf));
+V.ap.push({ fim: rotulo, tipo: "parede", parede: wEf.w.id, topo: r4(wEf.w.topo), embutidaM: r4(Math.max(0, emb)) });
+apoios.push({ viga: V.c.id, fim: rotulo, tipo: "parede", parede: wEf.w.id, topoParede: r4(wEf.w.topo), embutidaM: r4(Math.max(0, emb)), obs: emb > 0.02 ? "viga embutida " + virg(emb * 100, 0) + " cm na parede (chumbar/bolsa)" : (emb < -0.005 ? "calço de " + virg(-emb * 100, 0) + " cm entre o topo da parede e a viga" : "apoio sobre o topo da parede") });
+return;
+}
+var p = fim === 0 ? V.pA : V.pB, yb = fim === 0 ? V.yA : V.yB;
+var baixo = cruz.filter(function (cx) { return fim === 0 ? cx.s0 <= PADRAO.distPonta : cx.s1 >= Ls - PADRAO.distPonta; })[0];
+var yBase = baixo ? baixo.w.topo : nivelBase, yFundo = yb - vV;
+if (!(yFundo - yBase > 0.05)) { apoios.push({ viga: V.c.id, fim: rotulo, tipo: "sem-apoio", obs: "ponta da viga sem parede e sem altura para pilar (" + virg(yFundo - yBase, 2) + " m)" }); return; }
+var pc;
+if (mat === "aco") pc = criarPilarAco(p[0], p[1], yBase, yb, perfP, { viga: V.c.id });
+else pc = criarPontalete(p[0], p[1], yBase, yFundo, secP, { viga: V.c.id });
+if (pc) {
+pecas.push(pc); comp.pilar += yb - yBase; nPil++;
+V.ap.push({ fim: rotulo, tipo: mat === "aco" ? "pilar" : "pontalete", pilar: pc.id, base: r4(yBase) });
+apoios.push({ viga: V.c.id, fim: rotulo, tipo: mat === "aco" ? "pilar" : "pontalete", pilar: pc.id, base: r4(yBase), baseEm: baixo ? "topo da parede " + baixo.w.id : "nível", obs: baixo ? (mat === "aco" ? "pilar" : "pontalete") + " sobre a parede (a parede fica abaixo da viga)" : "sem parede sob a ponta: até o nível" });
+}
+});
+cruz.forEach(function (cx) {
+if (eficaz(cx)) return;
+var esp = mat === "aco" ? 3.0 : (fin(Number(opc.espPontalete)) ? Number(opc.espPontalete) : P.espPontalete);
+var a0 = cx.s0, a1 = cx.s1, nP = Math.max(1, Math.ceil((a1 - a0) / esp - 1e-9)), kk;
+for (kk = 0; kk <= nP; kk++) {
+var sP = a0 + (a1 - a0) * kk / nP;
+if (sP < PADRAO.distPonta && V.ap.some(function (q) { return q.fim === "ini" && q.tipo !== "parede"; })) continue;
+if (sP > Ls - PADRAO.distPonta && V.ap.some(function (q) { return q.fim === "fim" && q.tipo !== "parede"; })) continue;
+var tt = sP * cv, xP = V.pA[0] + (V.pB[0] - V.pA[0]) * tt, zP = V.pA[1] + (V.pB[1] - V.pA[1]) * tt, ybT = V.yA + (V.yB - V.yA) * tt, yFd = ybT - vV;
+if (!(yFd - cx.w.topo > 0.05)) continue;
+var pc2 = mat === "aco" ? criarPilarAco(xP, zP, cx.w.topo, ybT, perfP, { viga: V.c.id, intermediario: true }) : criarPontalete(xP, zP, cx.w.topo, yFd, secP, { viga: V.c.id, intermediario: true });
+if (pc2) { pecas.push(pc2); comp.pilar += ybT - cx.w.topo; nPil++; apoios.push({ viga: V.c.id, fim: "meio", tipo: mat === "aco" ? "pilar" : "pontalete", pilar: pc2.id, base: r4(cx.w.topo), baseEm: "topo da parede " + cx.w.id, obs: "a parede fica abaixo da viga: " + (mat === "aco" ? "pilar" : "pontalete") + " intermediário" }); }
+}
+});
+V.c.cob.apoios = V.ap.map(function (q) { return { fim: q.fim, tipo: q.tipo }; });
+});
+us.forEach(function (u, iu) {
+cordasU(Q, u, d, td).forEach(function (ct) {
+var pA = deUT(u, Math.min(ct[0], com[0]), d, td), pB = deUT(u, Math.max(ct[1], com[com.length - 1]), d, td), yb = yViga(u), c;
+if (dist2(pA, pB) < 0.3) return;
+if (mat === "aco") {
+var Y = [-s * d[0] / f, 1 / f, -s * d[1] / f], giro = Ma.giroDe ? Ma.giroDe([pA[0], yb, pA[1]], [pB[0], yb, pB[1]], Y) : 0;
+c = criarBarraAco([pA[0], yb, pA[1]], [pB[0], yb, pB[1]], "terca", perfT, "base", giro, "terca", { fileira: iu });
+} else c = criarBarraMadeira([pA[0], yb, pA[1]], [pB[0], yb, pB[1]], secT, "terca", false, { fileira: iu });
+if (c) { pecas.push(c); comp.terca += dist2(pA, pB); }
+});
+});
+premissas.push("água " + (ag.aresta >= 0 ? (arr(t.arestasCalc)[ag.aresta] ? arr(t.arestasCalc)[ag.aresta].orig + 1 : "") : "") + ": " + (nInt + 1) + " fileira(s) de terça a " + virg(espTerca) + " m (máx. " + virg(vao) + " m), " + com.length + " linha(s) de apoio");
+});
+});
+if (!pecas.length) return { ok: false, motivo: "Nenhuma peça gerada" + (avisos.length ? ": " + avisos[0] : "."), avisos: avisos };
+if (naoRet) avisos.push("Água que não é retângulo: as terças ficam entre as bordas dela, mas confira os apoios nas pontas (a estrutura automática é pensada para água retangular).");
+if (nAguas > 1) avisos.push("Telhado de " + nAguas + " águas: cada água leva a sua estrutura; cumeeira, espigões e rincões pedem tesouras/peças próprias — conferir.");
+avisos.push("Estrutura PRÉ-DIMENSIONADA — confirmar no cálculo (" + (mat === "aco" ? "Metálica › cálculo da estrutura desenhada" : "módulo Madeira") + ").");
+var apagar = estruturaDoTelhado(estado, t.id).map(function (c) { return { op: "apagar", id: c.id }; });
+var lote = { op: "lote", id: "tec-" + t.id, origem: "estrutura-telhado", ops: apagar.concat(pecas.map(function (c) { return { op: "criar", id: c.id, caixa: mat === "aco" ? c : A9.paraOp(c) }; })) };
+var res = { ok: true, material: mat, telhado: t.id, lote: lote, ops: [lote], pecas: pecas, apoios: apoios, premissas: premissas, avisos: avisos };
+res.resumo = resumoDePecas(pecas, mat);
+res.resumo.vaoTelha = vao; res.resumo.fileirasPorAgua = null; res.resumo.nPilares = nPil;
+return res;
+}
+function resumoDePecas(pecas, mat) {
+var r = { n: pecas.length, terca: { n: 0, m: 0, kg: 0, m3: 0 }, viga: { n: 0, m: 0, kg: 0, m3: 0 }, pilar: { n: 0, m: 0, kg: 0, m3: 0 }, kgTotal: 0, m3Total: 0 };
+pecas.forEach(function (c) {
+var pp = c.cob && c.cob.papel, papel = pp === "terca" ? "terca" : (pp === "viga-principal" || /^forro-/.test(txt(pp)) ? "viga" : "pilar"), g = r[papel];
+var L = mat === "aco" ? num(c.metal && c.metal.L, 0) : num(c.comprimento, 0);
+if (papel === "pilar" && mat !== "aco") L = num(c.altura, 0);
+g.n++; g.m += L;
+if (mat === "aco") { var kgm = massaPerfilAco(c.metal && c.metal.perfil && c.metal.perfil.cat); if (kgm != null) { g.kg += kgm * L; r.kgTotal += kgm * L; } }
+else { g.m3 += num(c.volume, 0); r.m3Total += num(c.volume, 0); }
+});
+["terca", "viga", "pilar"].forEach(function (k) { r[k].m = r4(r[k].m); r[k].kg = r4(r[k].kg); r[k].m3 = r6(r[k].m3); });
+r.kgTotal = r4(r.kgTotal); r.m3Total = r6(r.m3Total);
+return r;
+}
+function opLote(res) { return res && res.ok ? res.lote : null; }
+function opsSubstituir(ops, res) {
+var lote = opLote(res); if (!lote) return arr(ops).slice();
+var out = [], pos = -1;
+arr(ops).forEach(function (o) { if (o && o.op === "lote" && o.id === lote.id) { if (pos < 0) pos = out.length; return; } out.push(o); });
+if (pos < 0) pos = out.length;
+out.splice(pos, 0, lote);
+return out;
+}
+function estruturaDoTelhado(estado, id) {
+return arr(estado && estado.caixas).filter(function (c) { return c && c.cob && String(c.cob.telhado) === String(id); });
+}
+function quantitativo(estado, opc) {
+var itens = [], avisos = [], C = BC();
+var porTel = {};
+arr(estado && estado.caixas).forEach(function (c) { if (c && c.cob && c.cob.telhado != null) (porTel[c.cob.telhado] = porTel[c.cob.telhado] || []).push(c); });
+Object.keys(porTel).forEach(function (id) {
+var ps = porTel[id], mat = ps[0].cob.material, t = null;
+arr(estado.telhados).forEach(function (x) { if (String(x.id) === String(id)) t = x; });
+var r = resumoDePecas(ps, mat), sin = function (k) { return C ? C.sin(k) : null; };
+function it(nome, un, q, s, obs) { itens.push({ grupo: "Estrutura do telhado", item: nome, un: un, qtd: r4(q), sinapi: s || null, orcarAParte: !s, obs: obs || null, telhado: id }); }
+if (mat === "aco") {
+it("Terças de aço (" + r.terca.n + " peças, " + virg(r.terca.m) + " m)", "kg", r.terca.kg, sin("tramaAcoTercas"), "composição SINAPI por kg de terça; pré-dimensionado — confirmar no cálculo");
+it("Vigas principais de aço (" + r.viga.n + " peças, " + virg(r.viga.m) + " m)", "kg", r.viga.kg, null, "estrutura metálica principal: sem composição na base do sistema");
+if (r.pilar.n) it("Pilares de aço (" + r.pilar.n + " peças, " + virg(r.pilar.m) + " m)", "kg", r.pilar.kg, null, "idem");
+} else {
+var area = t ? num(t.area, 0) : 0;
+it("Trama de madeira de terças (" + r.terca.n + " peças, " + virg(r.terca.m) + " m, " + virg(r.terca.m3, 3) + " m³)", "m²", area, sin("tramaMadeiraTercas"), "composição SINAPI por m² de telhado (confirmar se cobre as vigas de apoio); pré-dimensionado");
+it("Vigas de apoio de madeira (" + r.viga.n + " peças, " + virg(r.viga.m) + " m)", "m³", r.viga.m3, null, "volume pela seção do catálogo (medidas brutas); orçar à parte");
+if (r.pilar.n) it("Pontaletes de madeira (" + r.pilar.n + " peças, " + virg(r.pilar.m) + " m)", "m²", area, sin("pontaletesMadeira"), "composição SINAPI por m² de telhado até 2 águas (edifício residencial térreo/sobrado); " + virg(r.pilar.m3, 3) + " m³ de pontaletes");
+}
+});
+var qm = quantitativoModelos(estado); qm.itens.forEach(function (x) { itens.push(x); }); qm.avisos.forEach(function (x) { avisos.push(x); });
+return { itens: itens, avisos: avisos };
+}
+function entradaCalculo(estado, telhadoId, opc) {
+opc = opc || {}; var T = BT(), t = null, avisos = [];
+arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(telhadoId)) t = x; });
+var caixas = estruturaDoTelhado(estado, telhadoId).filter(function (c) { return c.tipo === "metal"; });
+if (!t || !caixas.length) return { ok: false, motivo: "Sem peças de aço desta estrutura no estado." };
+var tel = T ? T.telha(t.tipoId) : null, extras = {};
+caixas.forEach(function (c) {
+if (!c.cob || c.cob.papel !== "viga-principal") return;
+var ap = arr(c.cob.apoios), ini = ap.filter(function (q) { return q.fim === "ini"; })[0], fim = ap.filter(function (q) { return q.fim === "fim"; })[0];
+if (ini && ini.tipo === "parede") extras[c.id + ":ini"] = "fixo";
+if (fim && fim.tipo === "parede") extras[c.id + ":fim"] = "movel";
+});
+var g = tel && fin(tel.pesoKgM2) ? tel.pesoKgM2 * 9.80665 / 1000 : null;
+if (g == null) avisos.push("Peso da telha NÃO verificado (" + (tel ? tel.pesoFonte : "tipo sem dados") + "): a carga permanente da telha NÃO entrou no cálculo — informe `pesoTelhaKgM2`.");
+if (fin(Number(opc.pesoTelhaKgM2))) g = Number(opc.pesoTelhaKgM2) * 9.80665 / 1000;
+var areas = [];
+arr(t.aguasCalc).forEach(function (ag, i) {
+arr(ag.pecas).forEach(function (pc, j) {
+var area = { id: "agua" + i + "_" + j, nome: "Cobertura — água " + (i + 1), poligono: arr(pc.pts).map(function (q) { return [q.x, q.z]; }), uso: "cobertura", cobertura: true, inclinacaoPct: num(ag.inclinacao, 3) };
+if (g != null) { area.g = g; area.gCategoria = "G-industrializado"; area.gTexto = "telha " + (tel ? tel.produto : "informada"); }
+areas.push(area);
+});
+});
+return { ok: true, avisos: avisos, entrada: { caixas: caixas, apoios: { basePadrao: "rotulada", extras: extras }, cargas: { areas: areas } } };
+}
+function verificarAco(estado, telhadoId, opc) {
+var DL = dep("AcoDimLivre", "./acodimlivre.js");
+if (!DL) return { ok: false, motivo: "O cálculo da estrutura de aço desenhada (js/acodimlivre.js) não carregou." };
+var e = entradaCalculo(estado, telhadoId, opc); if (!e.ok) return e;
+var r;
+try { r = DL.calcular(e.entrada); } catch (x) { return { ok: false, motivo: "O cálculo falhou: " + x.message, avisos: e.avisos }; }
+return { ok: !!(r && r.ok), motivo: r && r.motivo, resultado: r, avisos: e.avisos, entrada: e.entrada };
+}
+var F_TRAMA = "CAIXA — SINAPI, Caderno Técnico Estrutura e Trama para Cobertura (aferido 10/2025)";
+var SEC = {
+ripa: { b: 0.05, h: 0.015, rot: "Ripa 1,5×5 cm", fonte: F_TRAMA + ", p. 36" },
+caibro: { b: 0.05, h: 0.06, rot: "Caibro 5×6 cm", fonte: F_TRAMA + ", p. 35–36" },
+terca: { b: 0.06, h: 0.12, rot: "Terça 6×12 cm", fonte: F_TRAMA + ", p. 35–40" },
+linha: { b: 0.06, h: 0.12, rot: "Linha (tirante) 6×12 cm", fonte: F_TRAMA + ", Anexos 01–10" },
+perna: { b: 0.06, h: 0.12, rot: "Perna 6×12 cm", fonte: F_TRAMA + ", Anexos 01–05 (vãos de 3 a 7 m)" },
+perna16: { b: 0.06, h: 0.16, rot: "Perna 6×16 cm", fonte: F_TRAMA + ", Anexos 06–10 (vãos de 8 a 12 m)" },
+escora: { b: 0.06, h: 0.08, rot: "Escora 6×8 cm", fonte: F_TRAMA + ", Anexos 02–10" },
+pendural: { b: 0.06, h: 0.12, rot: "Pendural 6×12 cm", fonte: F_TRAMA + " (sem rótulo no desenho; o SINAPI conta na viga 6×12)", partida: true },
+montante: { b: 0.05, h: 0.05, rot: "Montante 2 × sarrafo 2,5×5 cm", fonte: F_TRAMA + ", Anexos 05–10 (vãos de 7 a 12 m)" },
+pontalete: { b: 0.08, h: 0.08, rot: "Pontalete 8×8 cm", fonte: FONTE_MADEIRA, partida: true },
+espigao: { b: 0.06, h: 0.16, rot: "Espigão/rincão 6×16 cm", fonte: null, partida: true },
+testeira: { b: 0.025, h: 0.20, rot: "Testeira tábua 2,5×20 cm", fonte: null, partida: true }
+};
+var ESPAC = {
+caibro: { m: 0.55, fonte: F_TRAMA + ", p. 35 (eixo dos caibros 0,55 m)" },
+terca: { m: 2.0, fonte: F_TRAMA + ", p. 35 (eixo das terças 1,5 a 2,0 m; o gerador usa até 2,0)" },
+apoio: { m: 3.2, fonte: F_TRAMA + ", p. 35 (eixo das tesouras/pontaletes 2,4 a 3,2 m; o gerador usa até 3,2)" },
+apoioAco: { m: 6.0, fonte: null, partida: true }
+};
+var TESOURAS_SINAPI = {
+fonte: F_TRAMA + ", p. 45–94 e Anexos 01–10 (tabela de peças por tesoura); data/telhado-madeiramento.json",
+cer: [[3, "92545", 0.825, 0, 7, 0, 0, 0], [4, "92546", 1.1, 0, 9.5, 0, 2.5, 0], [5, "92547", 1.375, 0, 11.5, 0, 3, 0], [6, "92548", 1.65, 0, 14, 0, 3.5, 0], [7, "92549", 1.925, 0, 16, 0, 6, 3.5],
+[8, "92550", 2.4, 4, 10, 9, 6, 4], [9, "92551", 2.7, 4, 11, 10, 7, 4.5], [10, "92552", 3.0, 4, 12.5, 11, 8, 5], [11, "92553", 3.575, 4, 13.5, 12, 10, 10], [12, "92554", 3.9, 4, 14.5, 13, 11.5, 11]],
+ond: [[3, "92555", 0.675, 0, 7, 0, 0, 0], [4, "92556", 0.9, 0, 9, 0, 2, 0], [5, "92557", 1.125, 0, 11, 0, 2.5, 0], [6, "92558", 1.35, 0, 13.5, 0, 3.5, 0], [7, "92559", 1.575, 0, 16, 0, 5, 2.5],
+[8, "92560", 2.0, 4, 9, 9, 6, 2.5], [9, "92561", 2.25, 4, 10.5, 10, 6.5, 2.5], [10, "92562", 2.5, 4, 11.5, 11, 7, 3], [11, "92563", 3.575, 4, 12.5, 12, 9, 6], [12, "92564", 3.9, 4, 13.5, 13, 10, 6]]
+};
+var PREGOS = {
+ripaCaibro: { prego: "prego 15×15 (1 1/4 × 13) com cabeça", kgM2: 0.07 },
+caibroTerca: { prego: "prego 19×36 (3 1/4 × 9) com cabeça, a ~45°", kgM2: 0.05 },
+tercaApoio: { prego: "prego 22×48 (4 1/4 × 5) com cabeça, a ~45°", kgM2: 0.03 },
+fonte: F_TRAMA + ", p. 35–36 (consumo em kg/m²)"
+};
+var PERFIS_TEL = { terca: "Ue 150 x 60 x 20 x 3,00", banzo: "Ue 150 x 60 x 20 x 3,00", diagonal: "Ue 100 x 50 x 17 x 2,28" };
+var MODELOS = {
+"mad-tesoura": { rotulo: "Madeira — tesoura + terça + caibro + ripa", mat: "madeira", tesoura: true, caibro: true, ripa: true, familias: ["ceramica", "concreto"],
+dica: "Tesouras Howe do SINAPI a cada ≤ 3,2 m, terças sobre as pernas, caibros a 0,55 m, ripas pela galga da telha." },
+"mad-terca": { rotulo: "Madeira — terça + caibro + ripa (terças nas paredes/oitões/pontaletes)", mat: "madeira", tesoura: false, caibro: true, ripa: true, familias: ["ceramica", "concreto"],
+dica: "Terças apoiadas nas paredes e oitões (que sobem até o telhado) e em pontaletes onde não há parede." },
+"mad-terca-direta": { rotulo: "Madeira — terça (fibrocimento/termoacústica direto na terça)", mat: "madeira", tesoura: false, caibro: false, ripa: false, familias: ["fibrocimento", "sanduiche", "metalica"],
+dica: "A telha apoia direto nas terças, espaçadas pelo vão máximo do fabricante." },
+"aco-trapezoidal": { rotulo: "Metálica — terça Ue + telha trapezoidal", mat: "aco", tesoura: true, caibro: false, ripa: false, familias: ["metalica"],
+dica: "Terças Ue pelo vão máximo da telha; tesoura metálica (banzos Ue) onde não há parede/oitão." },
+"mad-tesoura-terca": { rotulo: "Madeira — tesoura + terça (fibrocimento/termoacústica direto na terça)", mat: "madeira", tesoura: true, caibro: false, ripa: false, familias: ["fibrocimento", "sanduiche", "metalica"],
+dica: "Tesouras a cada ≤ 3,2 m e terças pelo vão máximo da telha, que apoia direto nelas." },
+"mad-onduline": { rotulo: "Madeira — tesoura + terça + caibro + ripa a 46 cm (Onduline)", mat: "madeira", tesoura: true, caibro: true, ripa: true, familias: ["ecologica"],
+dica: "Telha ecológica Onduline sobre ripas 2,5×5 a cada 46 cm (o apoio do fabricante), caibros, terças e tesouras." },
+"mad-shingle": { rotulo: "Madeira — tesoura + terça + caibro + OSB + subcobertura (shingle)", mat: "madeira", tesoura: true, caibro: true, ripa: false, osb: true, familias: ["shingle"],
+dica: "Shingle sobre base contínua de OSB e subcobertura (Felt Paper), sobre caibros, terças e tesouras." },
+"aco-viga": { rotulo: "Metálica — terça Ue + viga W (alma cheia) com pilar na cumeeira (baixa inclinação)", mat: "aco", tesoura: true, viga: true, caibro: false, ripa: false, familias: ["metalica", "sanduiche"],
+dica: "Para a inclinação mínima da telha metálica: vigas W inclinadas sob as terças, apoiadas nas paredes e em pilares na cumeeira." },
+"aco-sanduiche": { rotulo: "Metálica — terça Ue + telha termoacústica (sanduíche)", mat: "aco", tesoura: true, caibro: false, ripa: false, familias: ["sanduiche"],
+dica: "Terças Ue pelo vão máximo da telha sanduíche; tesoura metálica onde não há parede/oitão." }
+};
+function tesouraBaixa(t) {
+if (!t || !t.ok) return null;
+var ags = aguasInclinadas(t); if (!ags.length) return null;
+var ag0 = ags.slice().sort(function (a, b) { return num(b.area, 0) - num(a.area, 0); })[0], d = sistemaDe(ag0).d, lo = Infinity, hi = -Infinity;
+arr(t.arestasCalc).forEach(function (e) { var u = d[0] * e.parede.a.x + d[1] * e.parede.a.z; if (u < lo) lo = u; if (u > hi) hi = u; });
+var vao = hi - lo, h = num(t.cotaCumeeira, 0) - num(t.cotaApoio, 0);
+return vao > 0 && h < vao / 12 - 1e-6 ? { h: h, vao: vao, min: vao / 12 } : null;
+}
+function modeloSugerido(tipoId, t, estado) {
+var m0 = modeloSugerido0(tipoId, t);
+if (t && t.ok && estado && MODELOS[m0] && !MODELOS[m0].tesoura) {
+var tt = JSON.parse(JSON.stringify(t)); tt.modelo = m0;
+var pk = null; try { pk = modelar(tt, estado, {}); } catch (e) { pk = null; }
+if (pk && pk.ok && arr(pk.avisos).some(function (a) { return /NÃO gerado|SEM apoio/.test(a); })) return MODELOS[m0].caibro ? "mad-tesoura" : "mad-tesoura-terca";
+}
+return m0;
+}
+function modeloSugerido0(tipoId, t) {
+var T = BT(), tel = T ? T.telha(tipoId) : null, f = tel ? tel.familia : null;
+if (f === "ceramica" || f === "concreto") return "mad-tesoura";
+if ((f === "sanduiche" || f === "metalica") && t && tesouraBaixa(t)) return "aco-viga";
+if (f === "sanduiche") return "aco-sanduiche";
+if (f === "metalica") return "aco-trapezoidal";
+if (f === "fibrocimento") return "mad-terca-direta";
+if (f === "ecologica") return "mad-onduline";
+if (f === "shingle") return "mad-shingle";
+return "mad-tesoura";
+}
+var TETO_TRI_AGUA = 40000;
+function v3(x, y, z) { return [x, y, z]; }
+function s3(a, b) { return [a[0] - b[0], a[1] - b[1], a[2] - b[2]]; }
+function ad3(a, b, k) { k = k == null ? 1 : k; return [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k]; }
+function cr3(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
+function dt3(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+function ln3(a) { return Math.sqrt(dt3(a, a)); }
+function nz3(a) { var l = ln3(a); return l > 1e-12 ? [a[0] / l, a[1] / l, a[2] / l] : [0, 1, 0]; }
+function rr(a) { return [r4(a[0]), r4(a[1]), r4(a[2])]; }
+function secaoPts(pc) {
+var b = pc.w, h = pc.h;
+if (pc.forma === "ue" && pc.dims) {
+var t = pc.dims.t, D = pc.dims.D, x0 = -b / 2, x1 = b / 2;
+return [[x0, 0], [x1, 0], [x1, D], [x1 - t, D], [x1 - t, t], [x0 + t, t], [x0 + t, h - t], [x1 - t, h - t], [x1 - t, h - D], [x1, h - D], [x1, h], [x0, h]];
+}
+if (pc.forma === "w" && pc.dims) {
+var tf = pc.dims.tf, tw = pc.dims.tw;
+return [[-b / 2, 0], [b / 2, 0], [b / 2, tf], [tw / 2, tf], [tw / 2, h - tf], [b / 2, h - tf], [b / 2, h], [-b / 2, h], [-b / 2, h - tf], [-tw / 2, h - tf], [-tw / 2, tf], [-b / 2, tf]];
+}
+return [[-b / 2, 0], [b / 2, 0], [b / 2, h], [-b / 2, h]];
+}
+function extrudar(pos, pc) {
+var a = pc.a, b = pc.b, ax = nz3(s3(b, a)), up = pc.up || [0, 1, 0];
+if (Math.abs(dt3(ax, up)) > 0.999) up = Math.abs(ax[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+var w = nz3(cr3(ax, up)), v = nz3(cr3(w, ax)), S = secaoPts(pc), n = S.length, nt = 0;
+function P(base, q) { return ad3(ad3(base, w, q[0]), v, q[1]); }
+var A = S.map(function (q) { return P(a, q); }), B = S.map(function (q) { return P(b, q); });
+function tri(p, q, r) { pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]); nt++; }
+for (var i = 0; i < n; i++) { var j = (i + 1) % n; tri(A[i], A[j], B[j]); tri(A[i], B[j], B[i]); }
+var T = BT(), tris = n === 4 ? [[S[0], S[1], S[2]], [S[0], S[2], S[3]]] : (T ? T.triangular(S) : []);
+tris.forEach(function (tr) { tri(P(a, tr[0]), P(a, tr[2]), P(a, tr[1])); tri(P(b, tr[0]), P(b, tr[1]), P(b, tr[2])); });
+return nt;
+}
+function larguraUtilDe(tel) {
+if (!tel) return null;
+if (fin(tel.larguraUtilM)) return tel.larguraUtilM;
+if (fin(tel.larguraUtil)) return tel.larguraUtil;
+if (tel.larguraUtil && typeof tel.larguraUtil === "object") { var k = Object.keys(tel.larguraUtil); if (k.length) return Number(tel.larguraUtil[k[0]]); }
+return null;
+}
+function recobLong(tel, graus) {
+if (!tel) return 0.14;
+if (arr(tel.recobLongPorGraus).length) { for (var i = 0; i < tel.recobLongPorGraus.length; i++) if (graus < tel.recobLongPorGraus[i].ate) return tel.recobLongPorGraus[i].m; return tel.recobLongPorGraus[tel.recobLongPorGraus.length - 1].m; }
+if (arr(tel.recobrimento).length) { for (var j = 0; j < tel.recobrimento.length; j++) { var r = tel.recobrimento[j]; if (graus >= r.deGraus - 1e-9 && graus < r.ateGraus) return r.longitudinalMm / 1000; } return tel.recobrimento[tel.recobrimento.length - 1].longitudinalMm / 1000; }
+if (fin(tel.recobLongM)) return tel.recobLongM;
+return 0.10;
+}
+function perfilFn(tel) {
+var pf = (tel && tel.perfil) || { passo: 0.2, altura: 0.04, esp: 0.01 }, p = pf.passo, A = pf.altura, forma = tel && tel.forma || "ondulada";
+if (forma === "trapezoidal") {
+var c = fin(pf.crista) ? pf.crista : p * 0.2, sl = Math.min(A * 0.8, (p - c) / 3), fundo = p - c - 2 * sl;
+return function (t) { var x = ((t % p) + p) % p; if (x < fundo) return 0; x -= fundo; if (x < sl) return A * x / sl; x -= sl; if (x < c) return A; x -= c; return A * (1 - x / sl); };
+}
+if (forma === "romana") return function (t) { var x = ((t % p) + p) % p / p; return x < 0.55 ? 0.15 * A * Math.sin(Math.PI * x / 0.55) : A * Math.sin(Math.PI * (x - 0.55) / 0.45); };
+if (forma === "capa-canal") return function (t) { var x = ((t % p) + p) % p / p; return x < 0.5 ? A * 0.45 * (1 - Math.sin(Math.PI * x / 0.5)) : A * (0.45 + 0.55 * Math.sin(Math.PI * (x - 0.5) / 0.5)); };
+if (forma === "plana") return function () { return 0; };
+return function (t) { return A / 2 * (1 - Math.cos(2 * Math.PI * t / p)); };
+}
+function amostrasPorPasso(tel) { var f = tel && tel.forma; return f === "trapezoidal" ? 4 : (f === "plana" ? 1 : 8); }
+function pontosTrap(tel, t0, t1) {
+var pf = tel.perfil, p = pf.passo, A = pf.altura, c = fin(pf.crista) ? pf.crista : p * 0.2, sl = Math.min(A * 0.8, (p - c) / 3), fundo = p - c - 2 * sl;
+var qs = [0, fundo, fundo + sl, fundo + sl + c], out = [], k0 = Math.floor(t0 / p) - 1, k1 = Math.ceil(t1 / p) + 1;
+for (var k = k0; k <= k1; k++) qs.forEach(function (q) { var x = k * p + q; if (x > t0 && x < t1) out.push(x); });
+return out;
+}
+function aguasInclinadas(t) {
+return arr(t.aguasCalc).filter(function (ag) { var p = ag.plano || {}; return Math.sqrt((p.bx || 0) * (p.bx || 0) + (p.bz || 0) * (p.bz || 0)) > 1e-6; });
+}
+function sistemaDe(ag) {
+var p = ag.plano, s = Math.sqrt(p.bx * p.bx + p.bz * p.bz), d = [p.bx / s, p.bz / s];
+return { s: s, d: d, td: [-d[1], d[0]], f: Math.sqrt(1 + s * s), y: function (x, z) { return p.a + p.bx * x + p.bz * z; },
+n: nz3([-p.bx, 1, -p.bz]) };
+}
+function topoPlatibanda(t, ctxCob, espPacote) {
+var C = ctxCob, menor = null, BCo = BC(), alt = BCo && BCo.PADRAO && fin(BCo.PADRAO.altura) ? BCo.PADRAO.altura : null;
+if (!C || !C.plat) return null;
+arr(C.ordPlat).forEach(function (pid) {
+var p = C.plat[pid]; if (!p || String(p.telhado) !== String(t.id)) return;
+var topo = fin(Number(p.topo)) ? Number(p.topo) : (alt != null || fin(Number(p.altura)) ? num(t.cotaCumeeira, 0) + espPacote + (fin(Number(p.altura)) ? Number(p.altura) : alt) : null);
+if (topo != null && (menor == null || topo < menor)) menor = topo;
+});
+return menor;
+}
+function modelar(t, estado, opc) {
+opc = opc || {};
+var T = BT(), M = MODELOS[t && t.modelo];
+instalarAjuste();
+if (!T || !t || !t.ok) return null;
+if (!M) return { ok: false, avisos: ["Modelo de telhado desconhecido: " + txt(t.modelo) + "."] };
+if (t.modo !== "perimetro") return { ok: false, avisos: ["O modelo com estrutura é do telhado por perímetro (o de extrusão fica só com o telhado)."] };
+var tel = T.telha(t.tipoId), avisos = [], prem = [], pecas = [], H0 = num(t.cotaApoio, 0), mat = M.mat;
+var ags = aguasInclinadas(t);
+if (!ags.length) return { ok: false, avisos: ["Telhado plano: o modelo com estrutura pede inclinação."] };
+if (!tel) avisos.push("O tipo \"" + txt(t.tipoTelhado && t.tipoTelhado.rotulo) + "\" não tem dados de catálogo: galga, vão e fixação saem como VALOR DE PARTIDA — conferir. Escolha uma telha de catálogo.");
+if (tel && M.familias.indexOf(tel.familia) < 0) avisos.push("O modelo \"" + M.rotulo + "\" não é o usual para telha de " + tel.familia + " (sugerido: " + MODELOS[modeloSugerido(t.tipoId)].rotulo + ").");
+prem.push("Modelo: " + M.rotulo + " — PRÉ-DIMENSIONADO, confirmar no cálculo (" + (mat === "aco" ? "Metálica" : "módulo Madeira, NBR 7190") + ").");
+function usar(chave, sec) { prem.push(sec.rot + " — " + (sec.partida ? "VALOR DE PARTIDA — conferir" + (sec.fonte ? " (" + sec.fonte + ")" : "") : sec.fonte)); return sec; }
+function perfAco(nome) {
+var A = PA(), o = A && A.obter ? A.obter(nome) : null; if (!o) return null;
+return o.forma === "frio" ? { forma: "ue", w: o.bf / 1000, h: o.bw / 1000, dims: { t: o.t / 1000, D: (o.D || 0) / 1000 }, massa: o.massa, nome: nome }
+: { forma: "w", w: o.bf / 1000, h: o.d / 1000, dims: { tf: o.tf / 1000, tw: o.tw / 1000 }, massa: o.massa, nome: nome };
+}
+var sT, sC = null, sR = null, sTes = null;
+if (mat === "aco") {
+sT = perfAco(PERFIS_TEL.terca); sTes = perfAco(PERFIS_TEL.banzo); var sDg = perfAco(PERFIS_TEL.diagonal);
+if (!sT || !sTes || !sDg) return { ok: false, avisos: ["Perfil de aço fora do catálogo (js/perfisaco.js)."] };
+prem.push("Perfis ADOTADOS — VALOR DE PARTIDA, conferir no cálculo: terça " + PERFIS_TEL.terca + ", banzos da tesoura " + PERFIS_TEL.banzo + ", montantes/diagonais " + PERFIS_TEL.diagonal + " (catálogo " + (PA() && PA().FONTE ? "js/perfisaco.js" : "de perfis") + ")");
+} else {
+sT = usar("terca", SEC.terca); if (M.caibro) sC = usar("caibro", SEC.caibro);
+if (M.ripa) sR = usar("ripa", tel && tel.ripaSecao ? tel.ripaSecao : SEC.ripa);
+}
+var ag0 = ags.slice().sort(function (a, b) { return num(b.area, 0) - num(a.area, 0); })[0], S0 = sistemaDe(ag0), f0 = S0.f;
+var P = arr(t.arestasCalc).map(function (e) { return [e.parede.a.x, e.parede.a.z]; });
+var d0 = S0.d, td0 = S0.td;
+var tmin = Infinity, tmax = -Infinity;
+P.forEach(function (q) { var tt = td0[0] * q[0] + td0[1] * q[1]; if (tt < tmin) tmin = tt; if (tt > tmax) tmax = tt; });
+var paredes = paredesDe(estado), Tlen = tmax - tmin;
+var espApoio = mat === "aco" ? ESPAC.apoioAco : ESPAC.apoio;
+prem.push("Eixo das " + (M.tesoura ? "tesouras" : "linhas de apoio (paredes/pontaletes)") + " ≤ " + virg(espApoio.m) + " m — " + (espApoio.partida ? "VALOR DE PARTIDA — conferir" : espApoio.fonte));
+function distSegP(q, a, b) { var dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz, k = L2 > 0 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / L2)) : 0; return dist2(q, [a[0] + k * dx, a[1] + k * dz]); }
+function interno(q) { if (!T.dentro(q, P)) return false; for (var i = 0; i < P.length; i++) if (distSegP(q, P[i], P[(i + 1) % P.length]) < 0.05) return false; return true; }
+var vertsInt = [];
+arr(t.linhas).forEach(function (ln) { [ln.a, ln.b].forEach(function (q) { var p2 = [q.x, q.z]; if (interno(p2) && !vertsInt.some(function (v) { return dist2(v, p2) < 0.02; })) vertsInt.push(p2); }); });
+var grupos = [];
+ags.forEach(function (ag) {
+var Sg = sistemaDe(ag), g = grupos.filter(function (G) { return Math.abs(G.d[0] * Sg.d[0] + G.d[1] * Sg.d[1]) > 0.99; })[0];
+if (!g) { g = { d: ag === ag0 ? d0 : Sg.d, td: ag === ag0 ? td0 : Sg.td, aguas: [], principal: false }; grupos.push(g); }
+if (ag === ag0) { g.d = d0; g.td = td0; g.principal = true; }
+g.aguas.push(ag);
+});
+grupos.sort(function (a, b) { return (b.principal ? 1 : 0) - (a.principal ? 1 : 0); });
+grupos.forEach(function (G) {
+var a0 = Infinity, a1 = -Infinity;
+P.forEach(function (q) { var tt = G.td[0] * q[0] + G.td[1] * q[1]; if (tt < a0) a0 = tt; if (tt > a1) a1 = tt; });
+var req = [a0, a1]; vertsInt.forEach(function (v) { var tt = G.td[0] * v[0] + G.td[1] * v[1]; if (tt > a0 + 0.05 && tt < a1 - 0.05) req.push(tt); });
+req.sort(function (x, y) { return x - y; });
+var rq = []; req.forEach(function (v) { if (!rq.length || v - rq[rq.length - 1] > 0.05) rq.push(v); });
+G.tmin = a0; G.tmax = a1; G.linhas = [{ t: rq[0], ponta: true }];
+for (var i = 1; i < rq.length; i++) {
+var gap = rq[i] - rq[i - 1], nn = Math.max(1, Math.ceil(gap / espApoio.m - 1e-9));
+for (var j = 1; j <= nn; j++) G.linhas.push({ t: rq[i - 1] + gap * j / nn, ponta: i === rq.length - 1 && j === nn });
+}
+});
+var linhas = grupos[0].linhas;
+function paredeNaLinha(tj, G) {
+var melhor = null, dG = G ? G.d : d0, tdG = G ? G.td : td0;
+paredes.forEach(function (w) {
+if (Math.abs(w.ux * dG[1] - w.uz * dG[0]) > 0.05) return;
+var tw = tdG[0] * w.cx + tdG[1] * w.cz, dd = Math.abs(tw - tj);
+if (lajeSobre(w)) return;
+if (dd <= Math.max(0.35, w.e) && w.topo > H0 - 0.6 && w.base < H0 && (!melhor || dd < melhor.dd)) melhor = { w: w, tw: tw, dd: dd };
+});
+return melhor;
+}
+function trechosParede(tw, G) {
+var out = [];
+paredes.forEach(function (w) {
+if (Math.abs(w.ux * G.d[1] - w.uz * G.d[0]) > 0.05 || lajeSobre(w) || !(w.topo > H0 - 0.6 && w.base < H0)) return;
+if (Math.abs(G.td[0] * w.cx + G.td[1] * w.cz - tw) > Math.max(0.10, w.e / 2 + 0.02)) return;
+var sc = G.d[0] * w.cx + G.d[1] * w.cz; out.push([sc - w.L / 2 - 0.08, sc + w.L / 2 + 0.08]);
+});
+return out;
+}
+var anexar = {};
+var suportes = [];
+arr(estado && estado.caixas).forEach(function (c) {
+if (!c || (c.tipo !== "laje" && c.tipo !== "viga" && c.tipo !== "parede")) return;
+var topo = num(c.cy, 0) + num(c.altura, 0) / 2; if (!(topo <= H0 + 0.05 && topo >= H0 - 1.5)) return;
+var th = num(c.rotY, 0), sp = { tipo: c.tipo, id: c.id, topo: topo, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: Math.cos(th), uz: -Math.sin(th), hx: num(c.comprimento, 0) / 2, hz: num(c.espessura, 0) / 2 };
+if (c.tipo === "laje" && arr(c.contorno).length >= 3) sp.poli = c.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; });
+suportes.push(sp);
+});
+function apoioEm(x, z) {
+var melhor = null;
+suportes.forEach(function (sp) {
+var dentroS;
+if (sp.poli) dentroS = T.dentro([x, z], sp.poli);
+else { var rx = x - sp.cx, rz = z - sp.cz, lx = rx * sp.ux + rz * sp.uz, lz = -rx * sp.uz + rz * sp.ux; dentroS = Math.abs(lx) <= sp.hx + 0.02 && Math.abs(lz) <= sp.hz + 0.02; }
+if (dentroS && (!melhor || sp.topo > melhor.topo + 1e-6 || (Math.abs(sp.topo - melhor.topo) <= 1e-6 && sp.tipo === "laje"))) melhor = sp;
+});
+return melhor;
+}
+function dentroSup(sp, x, z) {
+if (sp.poli) return T.dentro([x, z], sp.poli);
+var rx = x - sp.cx, rz = z - sp.cz, lx = rx * sp.ux + rz * sp.uz, lz = -rx * sp.uz + rz * sp.ux;
+return Math.abs(lx) <= sp.hx + 0.02 && Math.abs(lz) <= sp.hz + 0.02;
+}
+function lajeSobre(w) { return suportes.some(function (sp) { return sp.tipo === "laje" && sp.topo >= w.topo - 0.02 && dentroSup(sp, w.cx, w.cz); }); }
+var semApoio = 0;
+function pontalete(x, z, yTopo, extra) {
+var sp = apoioEm(x, z);
+if (!sp) { semApoio++; return null; }
+if (yTopo - sp.topo < 0.12) return true;
+var ex = { apoio: sp.tipo, apoioId: sp.id }; Object.keys(extra || {}).forEach(function (k) { ex[k] = extra[k]; });
+return pc("pontalete", [x, sp.topo, z], [x, yTopo, z], H3, SEC.pontalete, ex);
+}
+function yEm(x, z) { var y = T.alturaEm(t, x, z); return y == null ? null : y; }
+var hTesV = M.tesoura ? (mat === "aco" ? sTes.h : (Tlen >= 0 ? SEC.perna.h : 0)) : 0;
+var vaoTes = 0;
+grupos.forEach(function (G) { G.linhas.forEach(function (L) { cordasT(P, Math.min(G.tmax - 1e-6, Math.max(G.tmin + 1e-6, L.t)), G.d, G.td).forEach(function (c) { vaoTes = Math.max(vaoTes, c[1] - c[0]); }); }); });
+var sViga = M.viga ? perfAco(PADRAO.aco.perfilViga) : null, sPilar = M.viga ? perfAco(PADRAO.aco.perfilPilar) : null;
+if (M.viga && (!sViga || !sPilar)) return { ok: false, avisos: ["Perfil da viga/pilar fora do catálogo (js/perfisaco.js)."] };
+if (M.tesoura && mat === "madeira" && tel) {
+var m00 = modeloSugerido0(t.tipoId, t);
+if (MODELOS[m00] && !MODELOS[m00].tesoura && !suportes.some(function (sp) { return sp.tipo !== "parede"; }))
+avisos.push("Modelo com tesoura no lugar de \"" + MODELOS[m00].rotulo + "\": embaixo deste telhado não há laje nem viga para os pontaletes — a tesoura vence o vão apoiada só nas paredes.");
+}
+if (M.viga) {
+prem.push("Viga W " + PADRAO.aco.perfilViga + " e pilar " + PADRAO.aco.perfilPilar + " ADOTADOS — VALOR DE PARTIDA, confirmar no cálculo da Metálica");
+var tb0 = tesouraBaixa(t);
+if (tb0) avisos.push("Viga W de alma cheia no lugar da tesoura: com " + virg(num(t.aguasCalc[0] && t.aguasCalc[0].inclinacao, 0), 1) + " % a tesoura triangular teria " + virg(tb0.h * 100, 0) + " cm de altura no vão de " + virg(tb0.vao) + " m (mínimo vão/12 = " + virg(tb0.min * 100, 0) + " cm) — as vigas apoiam nas paredes e em pilares na cumeeira.");
+}
+var sPerna = M.viga ? sViga : (mat === "aco" ? sTes : (vaoTes >= 8 - 1e-6 ? SEC.perna16 : SEC.perna));
+if (M.tesoura) {
+hTesV = sPerna.h;
+if (mat !== "aco") { usar("perna", sPerna); usar("linha", SEC.linha); usar("pendural", SEC.pendural); if (vaoTes >= 4 - 1e-6) usar("escora", SEC.escora); if (vaoTes >= 7 - 1e-6) usar("montante", SEC.montante); }
+}
+var baseT = hTesV * f0;
+var baseC = baseT + sT.h * f0;
+var baseR = baseC + (sC ? sC.h * f0 : 0);
+var baseTel = baseR + (sR ? sR.h * f0 : 0);
+if (!sC) baseTel = baseC;
+var eOSB = 0, placas = [];
+if (M.osb) {
+var bOsb = tel && tel.base && tel.base.osb ? tel.base : { espessuraM: 0.0111, espessuraPartida: true, fonte: null, texto: "base contínua de OSB" };
+eOSB = bOsb.espessuraM;
+prem.push("Base de OSB e = " + virg(eOSB * 1000, 1) + " mm — " + (bOsb.espessuraPartida ? "VALOR DE PARTIDA — conferir (o catálogo da telha pede " + bOsb.texto + ", sem a espessura)" : bOsb.fonte));
+baseTel = baseR + eOSB * f0;
+}
+var pfT = tel && tel.perfil ? tel.perfil : { passo: 0.2, altura: 0.04, esp: 0.01, partida: true };
+var espTel = (pfT.altura + (tel && tel.familia === "sanduiche" ? num(tel.nucleoMm, 30) / 1000 : pfT.esp)) * f0;
+var espPacote = r4(baseTel + espTel + 0.04);
+function pc(papel, a, b, up, sec, extra) {
+var o = { p: papel, a: rr(a), b: rr(b), up: rr(up), w: sec.w != null ? sec.w : sec.b, h: sec.h, forma: sec.forma || "ret", mat: sec.forma === "ue" || sec.forma === "w" ? "aco" : "madeira" };
+if (sec.dims) o.dims = sec.dims;
+if (sec.nome) o.perfil = sec.nome;
+o.L = r4(ln3(s3(b, a)));
+if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+pecas.push(o); return o;
+}
+var UPV = [0, 1, 0], H3 = [d0[0], 0, d0[1]];
+function upNoPlano(ax) { var Y = [0, 1, 0], a = nz3(ax); return nz3(s3(Y, [a[0] * a[1], a[1] * a[1], a[2] * a[1]])); }
+var apoios = [];
+var nTes = 0, tesVaos = [];
+grupos.forEach(function (G) { G.linhas.forEach(function (L) {
+var pw = paredeNaLinha(L.t, G), tj = L.t, tipo, tmin = G.tmin;
+if (M.tesoura) {
+if (L.ponta && pw) { tipo = "parede"; tj = pw.tw; } else tipo = "tesoura";
+} else {
+if (pw) { tipo = "parede"; tj = pw.tw; } else tipo = mat === "aco" ? "tesoura" : "pontalete";
+}
+if (L.ponta && tipo !== "parede") tj = L.t + (tj <= tmin + 1e-9 ? 1 : -1) * 0.5 * (sPerna.w || sPerna.b || 0.06);
+if (pw && tipo === "parede") anexar[String(pw.w.id)] = 1;
+apoios.push({ t: tj, tipo: tipo, parede: pw ? pw.w.id : null, ponta: L.ponta, G: G, int: tipo === "tesoura" ? [] : (tipo === "parede" ? trechosParede(tj, G) : [[-Infinity, Infinity]]) });
+}); });
+var tesBaixa = null, nMeias = 0, semCorda = 0;
+function sistemaDe0(ag) { var p = ag.plano || {}, s = Math.sqrt((p.bx || 0) * (p.bx || 0) + (p.bz || 0) * (p.bz || 0)); return s > 1e-6 ? { d: [p.bx / s, p.bz / s] } : null; }
+apoios.forEach(function (Ap) {
+var soPernas = Ap.tipo === "parede" && M.tesoura;
+if (Ap.tipo !== "tesoura" && !soPernas) return;
+var G = Ap.G, dG = G.d, tdG = G.td;
+var tq = Math.min(G.tmax - 1e-6, Math.max(G.tmin + 1e-6, Ap.t));
+cordasT(P, tq, dG, tdG).forEach(function (ch) {
+var c0 = ch[0], c1 = ch[1]; if (!(c1 - c0 > 0.6)) return;
+function pt2(s) { return [dG[0] * s + tdG[0] * Ap.t, dG[1] * s + tdG[1] * Ap.t]; }
+var qs = [c0, c1];
+arr(t.aguasCalc).forEach(function (ag) { arr(ag.pecas).forEach(function (pq) {
+var Q = pq.pts; for (var i = 0; i < Q.length; i++) {
+var A = [Q[i].x, Q[i].z], B = [Q[(i + 1) % Q.length].x, Q[(i + 1) % Q.length].z];
+var ta = tdG[0] * A[0] + tdG[1] * A[1] - Ap.t, tb = tdG[0] * B[0] + tdG[1] * B[1] - Ap.t;
+if ((ta < 0) === (tb < 0) || Math.abs(ta - tb) < 1e-12) continue;
+var kk = ta / (ta - tb), X = [A[0] + kk * (B[0] - A[0]), A[1] + kk * (B[1] - A[1])], sx = dG[0] * X[0] + dG[1] * X[1];
+if (sx > c0 + 0.02 && sx < c1 - 0.02) qs.push(sx);
+}
+}); });
+qs.sort(function (a, b) { return a - b; });
+var Qall = []; qs.forEach(function (s) { if (!Qall.length || s - Qall[Qall.length - 1] > 0.02) Qall.push(s); });
+function noGrupo(sm) { var pm = pt2(sm); return G.aguas.some(function (ag) { return arr(ag.pecas).some(function (pq) { return T.dentro(pm, pq.pts.map(function (q) { return [q.x, q.z]; })); }); }); }
+var trechos = [], cur = null;
+for (var i8 = 0; i8 + 1 < Qall.length; i8++) {
+var dentroG = noGrupo((Qall[i8] + Qall[i8 + 1]) / 2);
+if (dentroG) { if (!cur) { cur = [i8, i8 + 1]; trechos.push(cur); } else cur[1] = i8 + 1; } else cur = null;
+}
+trechos.forEach(function (tr) {
+var Qs = Qall.slice(tr[0], tr[1] + 1), s0 = Qs[0], s1 = Qs[Qs.length - 1];
+var aParede = Math.abs(s0 - c0) < 0.03, bParede = Math.abs(s1 - c1) < 0.03, inteira = aParede && bParede;
+if (!aParede && !bParede) { semCorda++; return; }
+if (s1 - s0 < 0.3) return;
+var Y = Qs.map(function (s) { var p = pt2(s), y = yEm(p[0], p[1]); return y == null ? H0 : y; });
+var S2 = [Qs[0]], Y2 = [Y[0]];
+for (var i2 = 1; i2 < Qs.length - 1; i2++) {
+var sl1 = (Y[i2] - Y2[Y2.length - 1]) / (Qs[i2] - S2[S2.length - 1]), sl2 = (Y[i2 + 1] - Y[i2]) / (Qs[i2 + 1] - Qs[i2]);
+if (Math.abs(sl1 - sl2) > 1e-4) { S2.push(Qs[i2]); Y2.push(Y[i2]); }
+}
+S2.push(Qs[Qs.length - 1]); Y2.push(Y[Y.length - 1]);
+Ap.int.push([s0 - 0.05, s1 + 0.05]);
+var meia = !inteira && !soPernas;
+if (meia) nMeias++;
+if (!soPernas && inteira) {
+nTes++; tesVaos.push(s1 - s0);
+if (mat === "aco" && !M.viga) {
+var hPico = Math.max.apply(null, Y2) - H0, hMin = (s1 - s0) / 12;
+if (hPico < hMin - 1e-6 && (!tesBaixa || hPico / (s1 - s0) < tesBaixa.h / tesBaixa.v)) tesBaixa = { h: hPico, v: s1 - s0, min: hMin };
+}
+}
+var idT = soPernas ? "oitao-" + r4(Ap.t) : (meia ? "mt" + nMeias : "tes" + nTes), secL = mat === "aco" ? sTes : SEC.linha, secPd = mat === "aco" ? sDg : SEC.pendural, secE = mat === "aco" ? sDg : SEC.escora, secM = mat === "aco" ? sDg : SEC.montante;
+function P3(s, y) { var p = pt2(s); return [p[0], y, p[1]]; }
+var hL = secL.h, yL = H0;
+var papP = M.viga ? "viga-aco" : (mat === "aco" ? "banzo" : "perna");
+if (!soPernas && !M.viga) pc(mat === "aco" ? "banzo-inferior" : "linha", P3(s0, yL), P3(s1, yL), UPV, secL, { tesoura: idT });
+for (var j = 0; j + 1 < S2.length; j++) {
+var A3 = P3(S2[j], Y2[j]), B3 = P3(S2[j + 1], Y2[j + 1]);
+if (Math.abs(Y2[j + 1] - Y2[j]) < 1e-6) pc(papP, A3, B3, UPV, sPerna, { tesoura: idT });
+else pc(papP, A3, B3, upNoPlano(s3(B3, A3)), sPerna, { tesoura: idT });
+}
+if (M.viga && !soPernas) {
+for (var m3 = 0; m3 < S2.length; m3++) {
+var pt3 = m3 === 0 || m3 === S2.length - 1;
+if (pt3 && !(meia && ((m3 === 0 && !aParede) || (m3 === S2.length - 1 && !bParede)))) continue;
+if (!pt3 && !(Y2[m3] > Y2[m3 - 1] - 1e-6 && Y2[m3] > Y2[m3 + 1] - 1e-6)) continue;
+var q3 = pt2(S2[m3]), sp3 = apoioEm(q3[0], q3[1]), yb3 = sp3 ? sp3.topo : num(t.elevNivel, 0);
+if (Y2[m3] - yb3 > 0.1) pc("pilar-aco", [q3[0], yb3, q3[1]], [q3[0], Y2[m3], q3[1]], [dG[0], 0, dG[1]], sPilar, { tesoura: idT, apoio: sp3 ? sp3.tipo : "nivel" });
+}
+}
+var Hx = [dG[0], 0, dG[1]];
+for (var m2 = 0; !soPernas && !M.viga && m2 < S2.length; m2++) {
+var ponta = m2 === 0 || m2 === S2.length - 1;
+if (ponta && !(meia && ((m2 === 0 && !aParede) || (m2 === S2.length - 1 && !bParede)))) continue;
+if (!ponta && !(Y2[m2] > Y2[m2 - 1] - 1e-6 && Y2[m2] > Y2[m2 + 1] - 1e-6)) continue;
+var sp = S2[m2], yp = Y2[m2];
+if (yp - (yL + hL) < 0.08) continue;
+pc(mat === "aco" ? "pendural-aco" : "pendural", P3(sp, yL + hL), P3(sp, yp), Hx, secPd, { tesoura: idT });
+[-1, 1].forEach(function (lado) {
+if ((lado < 0 && !aParede) || (lado > 0 && !bParede)) return;
+var se = lado < 0 ? S2[0] : S2[S2.length - 1], mm = Math.abs(sp - se);
+if (mm < 2 - 1e-6) return;
+var sm = sp + (se - sp) * 0.5, pm = pt2(sm), ym = yEm(pm[0], pm[1]); if (ym == null) return;
+pc(mat === "aco" ? "diag" : "escora", P3(sp, yL + hL), P3(sm, ym), upNoPlano(s3(P3(sm, ym), P3(sp, yL + hL))), secE, { tesoura: idT });
+if (mm >= 3.5 - 1e-6 && ym - (yL + hL) > 0.08) pc(mat === "aco" ? "montante-aco" : "montante", P3(sm, yL + hL), P3(sm, ym), Hx, secM, { tesoura: idT });
+});
+}
+});
+});
+});
+var diagonais = [], nDiag = 0;
+if (M.tesoura) arr(t.linhas).forEach(function (ln) {
+if (ln.tipo !== "espigao" && ln.tipo !== "rincao") return;
+var A = [ln.a.x, ln.a.z], B = [ln.b.x, ln.b.z], dx = B[0] - A[0], dz = B[1] - A[1], Ld = Math.sqrt(dx * dx + dz * dz); if (!(Ld > 0.3)) return;
+var ux = dx / Ld, uz = dz / Ld, ks = [0, Ld];
+for (var i = 0; i < P.length; i++) {
+var C = P[i], D = P[(i + 1) % P.length], ex = D[0] - C[0], ez = D[1] - C[1], den = ux * ez - uz * ex; if (Math.abs(den) < 1e-12) continue;
+var wx = C[0] - A[0], wz = C[1] - A[1], tt = (wx * ez - wz * ex) / den, ss = (wx * uz - wz * ux) / den;
+if (ss >= -1e-9 && ss <= 1 + 1e-9 && tt > 0 && tt < Ld) ks.push(tt);
+}
+ks.sort(function (a, b) { return a - b; });
+for (var j = 0; j + 1 < ks.length; j++) {
+var ka = ks[j], kb = ks[j + 1]; if (kb - ka < 0.6) continue;
+var mid = [A[0] + ux * (ka + kb) / 2, A[1] + uz * (ka + kb) / 2]; if (!T.dentro(mid, P)) continue;
+var pa = [A[0] + ux * ka, A[1] + uz * ka], pb = [A[0] + ux * kb, A[1] + uz * kb], ya = yEm(pa[0], pa[1]), yb = yEm(pb[0], pb[1]);
+if (ya == null || yb == null) continue;
+if (ya > yb) { var tp = pa; pa = pb; pb = tp; var ty = ya; ya = yb; yb = ty; }
+nDiag++;
+var idD = (ln.tipo === "espigao" ? "esp" : "rin") + nDiag, secLd = mat === "aco" ? sTes : SEC.linha, hLd = secLd.h;
+var Hd = [pb[0] - pa[0], 0, pb[1] - pa[1]]; Hd = nz3(Hd);
+var A3d = [pa[0], ya, pa[1]], B3d = [pb[0], yb, pb[1]];
+if (M.viga) {
+pc("viga-aco", A3d, B3d, upNoPlano(s3(B3d, A3d)), sPerna, { tesoura: idD });
+if (interno(pb)) { var spd = apoioEm(pb[0], pb[1]), ybd = spd ? spd.topo : num(t.elevNivel, 0); if (yb - ybd > 0.1) pc("pilar-aco", [pb[0], ybd, pb[1]], B3d, Hd, sPilar, { tesoura: idD, apoio: spd ? spd.tipo : "nivel" }); }
+diagonais.push({ a: pa, b: pb, tipo: ln.tipo });
+continue;
+}
+pc(mat === "aco" ? "banzo-inferior" : "linha", [pa[0], H0, pa[1]], [pb[0], H0, pb[1]], UPV, secLd, { tesoura: idD });
+pc(mat === "aco" ? "banzo" : "perna", A3d, B3d, upNoPlano(s3(B3d, A3d)), sPerna, { tesoura: idD });
+if (yb - (H0 + hLd) > 0.08 && interno(pb)) pc(mat === "aco" ? "pendural-aco" : "pendural", [pb[0], H0 + hLd, pb[1]], B3d, Hd, mat === "aco" ? sDg : SEC.pendural, { tesoura: idD });
+var Lh = dist2(pa, pb);
+if (Lh >= 2 - 1e-6) {
+var pmd = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], ymd = yEm(pmd[0], pmd[1]);
+if (ymd != null) {
+pc(mat === "aco" ? "diag" : "escora", [pb[0], H0 + hLd, pb[1]], [pmd[0], ymd, pmd[1]], upNoPlano(s3([pmd[0], ymd, pmd[1]], [pb[0], H0 + hLd, pb[1]])), mat === "aco" ? sDg : SEC.escora, { tesoura: idD });
+if (Lh >= 3.5 - 1e-6 && ymd - (H0 + hLd) > 0.08) pc(mat === "aco" ? "montante-aco" : "montante", [pmd[0], H0 + hLd, pmd[1]], [pmd[0], ymd, pmd[1]], Hd, mat === "aco" ? sDg : SEC.montante, { tesoura: idD });
+}
+}
+diagonais.push({ a: pa, b: pb, tipo: ln.tipo });
+}
+});
+if (M.tesoura && !nTes && !apoios.some(function (a) { return a.tipo === "parede"; })) avisos.push("Nenhuma tesoura coube neste contorno: confira o telhado.");
+if (tesBaixa) avisos.push("Tesoura metálica BAIXA: " + virg(tesBaixa.h * 100, 0) + " cm de altura num vão de " + virg(tesBaixa.v) + " m — abaixo da altura mínima recomendada de " + virg(tesBaixa.min * 100, 0) +
+" cm (vão/12, VALOR DE PARTIDA: proporção usual de projeto, confirmar no cálculo da Metálica). Suba a inclinação para ≥ " + virg(Math.ceil(2 * tesBaixa.min / tesBaixa.v * 1000) / 10, 1) + " % ou use treliça de banzos paralelos/viga de alma cheia.");
+if (semCorda) avisos.push(semCorda + " trecho(s) de linha de tesoura sem parede em nenhuma das pontas (contorno em U fechado, pátio): não gerados — confira o apoio das terças ali.");
+var vaoTel = tel && fin(tel.vaoMaxEntreApoios) ? tel.vaoMaxEntreApoios : null, espT, fonteEspT;
+if (!M.caibro) {
+espT = vaoTel != null ? vaoTel : 1.5;
+fonteEspT = vaoTel != null ? "vão máximo da telha " + virg(vaoTel) + " m — " + tel.vaoFonte + (tel.vaoPartida ? " (VALOR DE PARTIDA na carga — conferir)" : "") : "VALOR DE PARTIDA 1,50 m — conferir: a telha não tem vão máximo verificado";
+} else if (tel && fin(tel.tercaMaxM)) { espT = tel.tercaMaxM; fonteEspT = tel.tercaFonte; }
+else { espT = ESPAC.terca.m; fonteEspT = ESPAC.terca.fonte; }
+prem.push("Terças a ≤ " + virg(espT) + " m no plano do telhado — " + fonteEspT);
+var espCb = tel && fin(tel.caibroM) ? tel.caibroM : ESPAC.caibro.m;
+if (sC) prem.push("Caibros a ≤ " + virg(espCb) + " m — " + (tel && fin(tel.caibroM) ? tel.caibroFonte : ESPAC.caibro.fonte));
+var galga = tel && tel.galga && fin(tel.galga.m) ? tel.galga.m : null;
+var galgaMinima = !!(tel && tel.galga && tel.galga.minima && galga != null);
+if (sR) {
+if (galga == null) { galga = 0.32; prem.push("Galga das ripas 0,32 m — VALOR DE PARTIDA — conferir (eixo de aferição do SINAPI, p. 36; o real é a galga do fabricante da telha)"); }
+else prem.push("Galga das ripas " + virg(galga, 3) + " m — " + (tel.galga.partida ? "VALOR DE PARTIDA — conferir: " : "") + tel.galga.fonte);
+}
+var nCruzRC = 0, nCruzCT = 0, nCruzTA = 0, compRipaPorAgua = [];
+var aguasInfo = [];
+ags.forEach(function (ag, ia) {
+var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f, e = ag.aresta >= 0 ? arr(t.arestasCalc)[ag.aresta] : null;
+arr(ag.pecas).forEach(function (pq) {
+var Q = pq.pts.map(function (q) { return [q.x, q.z]; }); if (Q.length < 3) return;
+var umin = Infinity, umax = -Infinity, tmn = Infinity, tmx = -Infinity;
+Q.forEach(function (q) { var u = d[0] * q[0] + d[1] * q[1], tt = td[0] * q[0] + td[1] * q[1]; if (u < umin) umin = u; if (u > umax) umax = u; if (tt < tmn) tmn = tt; if (tt > tmx) tmx = tt; });
+var uW = e ? d[0] * e.parede.a.x + d[1] * e.parede.a.z : umin;
+if (!(uW > umin - 1e-6)) uW = umin;
+var up = S.n;
+function P3u(u, tt, base) { var x = d[0] * u + td[0] * tt, z = d[1] * u + td[1] * tt; return [x, S.y(x, z) + base, z]; }
+var uPmax = -Infinity; P.forEach(function (q) { var uq = d[0] * q[0] + d[1] * q[1]; if (uq > uPmax) uPmax = uq; });
+var wT = sT.w != null ? sT.w : sT.b, ua = uW + wT / 2 / f, ub = Math.min(umax, uPmax) - (wT / 2 + 0.03) / f, tercas = [];
+if (ub - ua > 0.05) {
+var nI = Math.max(1, Math.ceil((ub - ua) * f / espT - 1e-9));
+for (var i = 0; i <= nI; i++) tercas.push(ua + (ub - ua) * i / nI);
+} else tercas.push((uW + umax) / 2);
+var tercaSegs = [];
+tercas.forEach(function (u, iu) {
+cordasU(Q, u, d, td).forEach(function (c) {
+if (c[1] - c[0] < 0.2) return;
+var a = P3u(u, c[0], baseT), b = P3u(u, c[1], baseT);
+var o = mat === "aco" ? pc("terca", a, b, up, sT, { agua: ia, fileira: iu }) : pc("terca", a, b, up, sT, { agua: ia, fileira: iu });
+tercaSegs.push({ u: u, t0: c[0], t1: c[1], o: o });
+});
+});
+if (false) tercaSegs.forEach(function (ts) {
+var Lt = ts.t1 - ts.t0, nP = Math.max(1, Math.ceil(Lt / espApoio.m - 1e-9));
+for (var kp = 1; kp < nP || (nP === 1 && kp === 1); kp++) {
+var tp0 = nP === 1 ? (ts.t0 + ts.t1) / 2 : ts.t0 + Lt * kp / nP, top = P3u(ts.u, tp0, baseT);
+if (top[1] - H0 < 0.12) break;
+var naParede = paredes.some(function (w) { return w.topo > H0 - 0.6 && w.base < H0 && trechoNaParede([top[0] - 0.01, top[2]], [top[0] + 0.01, top[2]], w, 0.05); });
+if (!naParede) pontalete(top[0], top[2], top[1], { agua: ia });
+nCruzTA++; ts.o.nAp = (ts.o.nAp || 0) + 1;
+if (nP === 1) break;
+}
+});
+tercaSegs.forEach(function (ts) {
+ts.o.sup = [];
+apoios.forEach(function (Ap) {
+var Gt = Ap.G.td; if (Math.abs(td[0] * Gt[0] + td[1] * Gt[1]) < 0.99) return;
+var tL = td[0] * (Gt[0] * Ap.t) + td[1] * (Gt[1] * Ap.t);
+if (tL < ts.t0 - 1e-6 || tL > ts.t1 + 1e-6) return;
+var top = P3u(ts.u, tL, baseT), x = top[0], z = top[2], yb = top[1] - 0.0, sL = Ap.G.d[0] * x + Ap.G.d[1] * z;
+if (!Ap.int.some(function (iv) { return sL >= iv[0] && sL <= iv[1]; })) {
+if (Ap.tipo !== "parede" || M.tesoura || mat === "aco" || !pontalete(x, z, yb, { agua: ia })) return;
+}
+else if (Ap.tipo === "pontalete" && !pontalete(x, z, yb, { agua: ia })) return;
+nCruzTA++; ts.o.nAp = (ts.o.nAp || 0) + 1; ts.o.sup.push([x, z]);
+});
+ts.o.tA = ts.t0; ts.o.tB = ts.t1; ts.o.aguaS = { d: d, td: td };
+});
+var nCb = 0, compRipa = 0;
+if (sC) {
+var nC = Math.max(1, Math.ceil((tmx - tmn - sC.b) / espCb - 1e-9));
+for (var ic = 0; ic <= nC; ic++) {
+var tc = tmn + sC.b / 2 + (tmx - tmn - sC.b) * ic / nC;
+cordasT(Q, tc, d, td).forEach(function (c) {
+if (c[1] - c[0] < 0.15) return;
+pc("caibro", P3u(c[0], tc, baseC), P3u(c[1] - 0.01 / f, tc, baseC), up, SEC.caibro, { agua: ia });
+nCb++;
+tercaSegs.forEach(function (ts) { if (ts.u >= c[0] - 1e-6 && ts.u <= c[1] + 1e-6 && tc >= ts.t0 - 1e-6 && tc <= ts.t1 + 1e-6) nCruzCT++; });
+});
+}
+if (e && e.define && num(e.beiralM, 0) > 0) {
+var ub0 = umin, cA = cordasU(Q, ub0 + 1e-4, d, td)[0];
+if (cA) {
+var yT = baseC + SEC.caibro.h * f;
+var a3 = P3u(ub0, cA[0], yT), b3 = P3u(ub0, cA[1], yT);
+var dn = [-d[0] * SEC.testeira.b / 2, -d[1] * SEC.testeira.b / 2];
+pc("testeira", [a3[0] + dn[0], a3[1] - SEC.testeira.h / 2, a3[2] + dn[1]], [b3[0] + dn[0], b3[1] - SEC.testeira.h / 2, b3[2] + dn[1]], [d[0], 0, d[1]], { b: SEC.testeira.h, h: SEC.testeira.b }, { agua: ia });
+}
+}
+}
+if (sR) {
+var r0 = umin + 0.03 / f, r1 = umax - (sR.b / 2 + 0.02) / f, nR = Math.max(1, Math.ceil((r1 - r0) * f / galga - 1e-9));
+var urs = [];
+if (galgaMinima) {
+for (var ug = r0; ug < r1 - 1e-6; ug += galga / f) urs.push(ug);
+if ((r1 - urs[urs.length - 1]) * f < 0.06 && urs.length > 1) urs[urs.length - 1] = r1; else urs.push(r1);
+}
+else for (var ir = 0; ir <= nR; ir++) urs.push(r0 + (r1 - r0) * ir / nR);
+urs.forEach(function (ur) {
+cordasU(Q, ur, d, td).forEach(function (c) {
+if (c[1] - c[0] < 0.1) return;
+pc("ripa", P3u(ur, c[0], baseR), P3u(ur, c[1], baseR), up, sR, { agua: ia });
+compRipa += c[1] - c[0];
+nCruzRC += Math.max(1, Math.round((c[1] - c[0]) / espCb) + 1);
+});
+});
+}
+if (M.osb) placas.push({ agua: ia, pts: Q.map(function (q) { return [r4(q[0]), r4(q[1])]; }), base: r4(baseR), e: eOSB });
+compRipaPorAgua.push(compRipa);
+aguasInfo.push({ agua: ia, umin: umin, umax: umax, uW: uW, tmin: tmn, tmax: tmx, rampa: (umax - umin) * f, nCaibros: nCb, nTercas: tercas.length });
+});
+});
+(function dedupe() {
+var ter = pecas.filter(function (o) { return o.p === "terca"; }), fora = [];
+function dir(o) { var v = s3(o.b, o.a), l = ln3(v); return [v[0] / l, v[1] / l, v[2] / l]; }
+for (var i = 0; i < ter.length; i++) {
+var A = ter[i]; if (fora.indexOf(A) >= 0) continue;
+for (var j = i + 1; j < ter.length; j++) {
+var B = ter[j]; if (fora.indexOf(B) >= 0) continue;
+var da = dir(A), db = dir(B), cs = dt3(da, db); if (Math.abs(cs) < 0.999) continue;
+var Ba = cs > 0 ? B.a : B.b, Bb = cs > 0 ? B.b : B.a;
+var w = s3(Ba, A.a), ta = dt3(w, da), pr = ad3(A.a, da, ta), off = s3(Ba, pr);
+var dPl = Math.sqrt(off[0] * off[0] + off[2] * off[2]), dY = Math.abs(off[1]);
+var tb = dt3(s3(Bb, A.a), da), lo = Math.max(0, Math.min(ta, tb)), hi = Math.min(A.L, Math.max(ta, tb));
+if (dPl > 0.30 || dY > 0.15 || hi - lo < 0.3) continue;
+var meio = [off[0] / 2, off[1] / 2, off[2] / 2], t0 = Math.min(0, ta, tb), t1 = Math.max(A.L, ta, tb);
+A.a = rr(ad3(ad3(A.a, da, t0), meio)); A.b = rr(ad3(ad3(A.a, da, 0), da, t1 - t0)); A.L = r4(t1 - t0);
+A.up = rr(nz3(ad3(A.up, B.up))); A.nAp = Math.max(A.nAp || 0, B.nAp || 0); A.cumeeira = true;
+if (A.sup || B.sup) A.sup = arr(A.sup).concat(arr(B.sup));
+fora.push(B);
+}
+}
+var ver = pecas.filter(function (o) { return /^(pendural|montante)/.test(o.p); });
+for (var v1 = 0; v1 < ver.length; v1++) {
+var V1 = ver[v1]; if (fora.indexOf(V1) >= 0) continue;
+for (var v2 = v1 + 1; v2 < ver.length; v2++) {
+var V2 = ver[v2]; if (fora.indexOf(V2) >= 0) continue;
+if (Math.sqrt(Math.pow(V1.a[0] - V2.a[0], 2) + Math.pow(V1.a[2] - V2.a[2], 2)) > 0.12) continue;
+var yb1 = Math.min(V1.a[1], V2.a[1]), yt1 = Math.max(V1.b[1], V2.b[1]);
+if (V2.tesoura && /^tes/.test(V2.tesoura) && !/^tes/.test(String(V1.tesoura))) { V1.tesoura = V2.tesoura; V1.p = V2.p; }
+V1.a = rr([V1.a[0], yb1, V1.a[2]]); V1.b = rr([V1.a[0], yt1, V1.a[2]]); V1.L = r4(yt1 - yb1);
+fora.push(V2);
+}
+}
+var pon = pecas.filter(function (o) { return o.p === "pontalete"; });
+for (var k = 0; k < pon.length; k++) {
+var P1 = pon[k]; if (fora.indexOf(P1) >= 0) continue;
+for (var q = k + 1; q < pon.length; q++) {
+var P2 = pon[q]; if (fora.indexOf(P2) >= 0) continue;
+if (Math.sqrt(Math.pow(P1.a[0] - P2.a[0], 2) + Math.pow(P1.a[2] - P2.a[2], 2)) > 0.30) continue;
+var mx = (P1.a[0] + P2.a[0]) / 2, mz = (P1.a[2] + P2.a[2]) / 2, yb0 = Math.max(P1.a[1], P2.a[1]), yt0 = (P1.b[1] + P2.b[1]) / 2;
+P1.a = rr([mx, yb0, mz]); P1.b = rr([mx, yt0, mz]); P1.L = r4(yt0 - yb0);
+fora.push(P2);
+}
+}
+if (fora.length) for (var r = pecas.length - 1; r >= 0; r--) if (fora.indexOf(pecas[r]) >= 0) pecas.splice(r, 1);
+nCruzTA = 0; pecas.forEach(function (o) { if (o.p === "terca") { nCruzTA += o.nAp || 0; delete o.nAp; } });
+})();
+arr(t.linhas).forEach(function (ln) {
+if (ln.tipo !== "espigao" && ln.tipo !== "rincao") return;
+var a = [ln.a.x, ln.a.y + baseT, ln.a.z], b = [ln.b.x, ln.b.y + baseT, ln.b.z];
+if (ln3(s3(b, a)) < 0.3) return;
+pc(ln.tipo, a, b, upNoPlano(s3(b, a)), mat === "aco" ? sT : SEC.espigao, {});
+});
+if (mat !== "aco" && arr(t.linhas).some(function (l) { return l.tipo === "espigao" || l.tipo === "rincao"; })) usar("espigao", SEC.espigao);
+if (!M.tesoura) pecas.filter(function (o) { return o.p === "espigao" || o.p === "rincao"; }).forEach(function (o) {
+var Lp = dist2([o.a[0], o.a[2]], [o.b[0], o.b[2]]), nP = Math.max(1, Math.ceil(Lp / espApoio.m - 1e-9));
+for (var k5 = 1; k5 <= nP; k5++) {
+var f5 = nP === 1 ? 0.5 : k5 / nP; if (nP > 1 && k5 === nP) break;
+var x5 = o.a[0] + (o.b[0] - o.a[0]) * f5, z5 = o.a[2] + (o.b[2] - o.a[2]) * f5, y5 = o.a[1] + (o.b[1] - o.a[1]) * f5;
+pontalete(x5, z5, y5, { linha: o.p });
+}
+});
+var linhasDiag = arr(t.linhas).filter(function (l) { return l.tipo === "espigao" || l.tipo === "rincao"; }).map(function (l) { return [[l.a.x, l.a.z], [l.b.x, l.b.z]]; });
+var balMax = Math.max(0.70, arr(t.arestasCalc).reduce(function (m, e) { return Math.max(m, num(e.beiralM, num(t.beiralEf, 0))); }, 0) + 0.10);
+var tercasSemApoio = 0, piorVao = 0;
+pecas.forEach(function (o) {
+if (o.p !== "terca" || !o.sup) return;
+var pA = [o.a[0], o.a[2]], pB = [o.b[0], o.b[2]], S = o.aguaS, sup = o.sup.map(function (q) { return S.td[0] * q[0] + S.td[1] * q[1]; });
+function pontaApoiada(q) {
+if (linhasDiag.some(function (sg) { return distSegP(q, sg[0], sg[1]) < 0.15; })) return true;
+return paredes.some(function (w) { return w.topo > H0 - 0.6 && w.base < H0 && !lajeSobre(w) && trechoNaParede([q[0] - 0.01, q[1]], [q[0] + 0.01, q[1]], w, 0.08); });
+}
+var tA = S.td[0] * pA[0] + S.td[1] * pA[1], tB = S.td[0] * pB[0] + S.td[1] * pB[1], lo = Math.min(tA, tB), hi = Math.max(tA, tB);
+if (pontaApoiada(pA)) sup.push(tA); if (pontaApoiada(pB)) sup.push(tB);
+sup.sort(function (a, b) { return a - b; });
+var ok = sup.length >= (hi - lo > 0.8 ? 2 : 1);
+if (ok) {
+if (sup[0] - lo > balMax + 1e-6 || hi - sup[sup.length - 1] > balMax + 1e-6) ok = false;
+for (var i = 1; i < sup.length; i++) { var gp = sup[i] - sup[i - 1]; if (gp > piorVao) piorVao = gp; if (gp > espApoio.m + 0.35) ok = false; }
+}
+if (!ok) { tercasSemApoio++; o.semApoio = true }
+delete o.sup; delete o.tA; delete o.tB; delete o.aguaS;
+});
+if (semApoio) avisos.push(semApoio + " pontalete(s) NÃO gerado(s): não há laje, viga nem parede embaixo (cota de apoio " + virg(H0) + " m). Lance a laje/forro estrutural sob o telhado (ou use o modelo com tesoura) — essas terças estão sem esse apoio.");
+if (tercasSemApoio) avisos.push(tercasSemApoio + " terça(s) SEM apoio a cada ≤ " + virg(espApoio.m) + " m (ou com balanço na ponta maior que o beiral + 10 cm): confira e lance o apoio delas.");
+paredes.forEach(function (w) {
+if (w.base >= H0 - 1e-6 || w.topo < H0 - 0.6) return;
+var dentroP = T.dentro ? T.dentro([w.cx, w.cz], P) : true;
+var pertoOitao = arr(t.arestasCalc).some(function (e) {
+if (e.define) return false;
+var a = [e.parede.a.x, e.parede.a.z], b = [e.parede.b.x, e.parede.b.z], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0)) return false;
+var par = Math.abs((dx / L) * w.uz - (dz / L) * w.ux) < 0.05, dl = Math.abs(((w.cx - a[0]) * dz - (w.cz - a[1]) * dx) / L);
+return par && dl <= Math.max(0.35, w.e);
+});
+if (pertoOitao || (!M.tesoura && dentroP)) anexar[String(w.id)] = 1;
+});
+var maxY = -Infinity; pecas.forEach(function (o) { maxY = Math.max(maxY, o.a[1] + o.h, o.b[1] + o.h); });
+var topoTelha = num(t.cotaCumeeira, H0) + espPacote; maxY = Math.max(maxY, topoTelha);
+var tp = topoPlatibanda(t, opc.ctxCob, espPacote);
+if (tp != null && maxY > tp + 1e-6) avisos.push("A cobertura (estrutura + telha) chega a " + virg(maxY) + " m e passa do topo da platibanda (" + virg(tp) + " m): suba a platibanda ou diminua a inclinação — o telhado embutido não pode aparecer.");
+var Q = quantDoPacote(t, M, tel, pecas, { nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT });
+arr(Q.avisos).forEach(function (a) { avisos.push(a); });
+var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; });
+var med = { ripas: 0, caibros: 0, tercas: 0, madeiraM3: 0, acoKg: 0, telhasUn: 0, pregosKg: 0, fixacoesUn: 0, tesourasUn: nTes, pontaletes: 0 };
+pecas.forEach(function (o) {
+if (o.p === "ripa") med.ripas += o.L; else if (o.p === "caibro") med.caibros += o.L; else if (o.p === "terca") med.tercas += o.L; else if (o.p === "pontalete") med.pontaletes += o.L;
+if (o.mat === "madeira" && !(o.tesoura && Q.tesComp && Q.tesComp[o.tesoura])) med.madeiraM3 += o.L * o.w * o.h;
+});
+Q.itens.forEach(function (q) {
+if (q.informativo) return;
+if (q.grupo === "Estrutura do telhado (aço)" && q.un === "kg") med.acoKg += q.qtd;
+else if (q.grupo === "Telhas" && q.un === "un") med.telhasUn += q.qtd;
+else if (q.grupo === "Fixação" && q.un === "kg") med.pregosKg += q.qtd;
+else if (q.grupo === "Fixação" && q.un === "un") med.fixacoesUn += q.qtd;
+});
+Object.keys(med).forEach(function (k) { med[k] = r4(med[k]); });
+return { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
+paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
+espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo,
+quantitativo: Q.itens, premissas: prem, avisos: avisos };
+}
+var D_TEL = function (tipo, aguas, fim) { return "TELHAMENTO COM TELHA " + tipo + ", COM " + aguas + " ÁGUAS, INCLUSO " + (fim || "TRANSPORTE VERTICAL") + ". AF_06/2026"; };
+var TELHAMENTO_SINAPI = {
+"cer-romana-eurotop-toptelha": { ate2: ["94442", D_TEL("CERÂMICA DE ENCAIXE, TIPO ROMANA", "ATÉ 2")], mais2: ["94443", D_TEL("CERÂMICA DE ENCAIXE, TIPO ROMANA", "MAIS DE 2")], inclui: ["telha"], insumo: "7175 telha cerâmica tipo romana/americana/portuguesa/francesa, 41 cm" },
+"cer-portuguesa-faulim": { ate2: ["94195", D_TEL("CERÂMICA DE ENCAIXE, TIPO PORTUGUESA", "ATÉ 2")], mais2: ["94198", D_TEL("CERÂMICA DE ENCAIXE, TIPO PORTUGUESA", "MAIS DE 2")], inclui: ["telha"], insumo: "7175 telha cerâmica tipo romana/americana/portuguesa/francesa, 41 cm" },
+"cer-capa-canal-vogel": { ate2: ["94201", D_TEL("CERÂMICA CAPA-CANAL, TIPO COLONIAL", "ATÉ 2")], mais2: ["94204", D_TEL("CERÂMICA CAPA-CANAL, TIPO COLONIAL", "MAIS DE 2")], inclui: ["telha"], insumo: "7173 telha cerâmica colonial/canal/plan/paulista, 44 a 50 cm" },
+"con-tradicao-tegula": { ate2: ["94189", D_TEL("DE CONCRETO DE ENCAIXE", "ATÉ 2")], mais2: ["94192", D_TEL("DE CONCRETO DE ENCAIXE", "MAIS DE 2")], inclui: ["telha"], aproximado: true, insumo: "40741 telha de concreto tipo clássica, 42 cm, 10 telhas/m² (a Tegula Tradição é aproximada por ela)" },
+"kingspan-isoeste-tp40": { ate2: ["94213", D_TEL("DE AÇO/ALUMÍNIO E = 0,5 MM", "ATÉ 2", "IÇAMENTO")], mais2: null, inclui: ["telha", "fixacao"], aproximado: true, insumo: "7243 telha trapezoidal de aço zincado 0,50 mm, altura ≈ 40 mm + 11029 haste com gancho (a TP-40 0,43 mm pré-pintada é aproximada por ela)" }
+};
+function composicaoTelhamento(tel, t) {
+var C = BC(), S = C && C.SINAPI; if (!tel) return null;
+if (S && tel.familia === "fibrocimento" && S.telhaFibroAte10 && S.telhaFibroAcima10) return { codigo: S.telhaFibroAte10.cod + "/" + S.telhaFibroAcima10.cod, origem: "cobertura", inclui: ["telha", "fixacao"], insumo: "7194 telha ondulada de fibrocimento 6 mm + 4302 parafuso + 1607 arruelas" };
+if (S && tel.familia === "sanduiche" && S.telhaSanduiche) return { codigo: S.telhaSanduiche.cod + (S.telhaSanduiche.aprox ? " (aproximada)" : ""), origem: "cobertura", inclui: ["telha", "fixacao"], insumo: "40740 telha termoacústica galvalume com PU 30 mm + 11029 haste com gancho" };
+var id = null; Object.keys(TELHAMENTO_SINAPI).forEach(function (k) { if (telhaDeId(k) === tel) id = k; });
+var m = id ? TELHAMENTO_SINAPI[id] : null; if (!m) return null;
+var mais = t && num(t.nAguas, 2) > 2, esc = mais && m.mais2 ? m.mais2 : m.ate2;
+return { codigo: esc[0], descricao: esc[1], aproximado: !!m.aproximado || (mais && !m.mais2), origem: "t1", inclui: m.inclui, insumo: m.insumo,
+obs: (mais && !m.mais2 ? "a base só tem a composição até 2 águas: aproximada. " : "") + "insumos conferidos na base SINAPI 06/2026 MG: " + m.insumo };
+}
+function telhaDeId(id) { var T = BT(); return T ? T.telha(id) : null; }
+function ajustarQuantCobertura(r, estado) {
+if (!r || !arr(r.itens).length) return r;
+arr(estado && estado.telhados).forEach(function (t) {
+if (!t || !t.pacote || !t.pacote.ok) return;
+var tel = telhaDeId(t.tipoId), comp = composicaoTelhamento(tel, t);
+r.itens.forEach(function (it) {
+if (String(it.telhado) !== String(t.id) || it.modelo || it.grupo !== "Cobertura" || !/^Telhamento/.test(txt(it.item))) return;
+if (comp && comp.origem === "t1" && !it.sinapi) {
+it.sinapi = { codigo: comp.codigo, un: "M2", descricao: comp.descricao, base: "SINAPI 06/2026 (MG)", aproximado: !!comp.aproximado, obs: comp.obs };
+it.orcarAParte = false; it.obs = "composição SINAPI " + comp.codigo + " (inclui a telha: " + comp.insumo + ")" + (comp.aproximado ? " — APROXIMADA" : "");
+} else if (!comp) {
+it.item = "Assentamento da telha (mão de obra) — " + txt(t.tipoTelhado && t.tipoTelhado.rotulo);
+it.servicoMO = true; it.obs = "SERVIÇO (mão de obra): sem composição SINAPI que inclua esta telha — a telha (material) vai em \"Telhas — peças\"; nunca os dois como material";
+}
+});
+});
+if (r.itens) { r.comCodigo = r.itens.filter(function (x) { return !!x.sinapi; }).length; r.aParte = r.itens.filter(function (x) { return x.orcarAParte; }).length; }
+return r;
+}
+function instalarAjuste() {
+var C = BC(); if (!C || !C.quantitativo || C.quantitativo._t1) return;
+var orig = C.quantitativo, nova = function (estado, opc) { return ajustarQuantCobertura(orig.call(this, estado, opc), estado); };
+nova._t1 = true; C.quantitativo = nova;
+}
+function quantDoPacote(t, M, tel, pecas, x) {
+var itens = [], avisos = [], AP = num(t.areaProjecao, 0), A = num(t.area, 0), mat = M.mat;
+function it(grupo, item, un, qtd, obs, partida, extra) {
+var o = { grupo: grupo, item: item, un: un, qtd: r4(qtd), obs: obs || null, partida: !!partida };
+if (extra && extra.informativo) { o.informativo = true; o.inclusoEm = extra.inclusoEm || null; }
+if (extra && extra.sinapi) o.sinapi = extra.sinapi;
+itens.push(o);
+}
+var cer = !tel || tel.familia === "ceramica" || tel.familia === "concreto" || tel.familia === "shingle", tabT = cer ? TESOURAS_SINAPI.cer : TESOURAS_SINAPI.ond, tesComp = {};
+if (M.tesoura && mat !== "aco") x.tesVaos.forEach(function (v, i) {
+for (var j = 0; j < tabT.length; j++) if (tabT[j][0] >= v - 1e-6) { tesComp["tes" + (i + 1)] = tabT[j]; break; }
+});
+var por = {};
+pecas.forEach(function (o) {
+var inf = !!(o.tesoura && tesComp[o.tesoura]);
+var k = o.p + "|" + (o.perfil || (o.w + "x" + o.h)) + (inf ? "|det" : ""), g = por[k] || (por[k] = { p: o.p, n: 0, m: 0, m3: 0, kg: 0, perfil: o.perfil, w: o.w, h: o.h, mat: o.mat, inf: inf });
+g.n++; g.m += o.L; g.m3 += o.L * o.w * o.h;
+});
+var cods0 = {}; Object.keys(tesComp).forEach(function (id) { cods0[tesComp[id][1]] = 1; });
+var inclTes = "composição SINAPI de tesoura " + Object.keys(cods0).join(", ");
+var ROT = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante", terca: "Terça", caibro: "Caibro", ripa: "Ripa", pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira",
+"banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura" };
+var SECP = { linha: SEC.linha, perna: null, pendural: SEC.pendural, escora: SEC.escora, montante: SEC.montante, terca: SEC.terca, caibro: SEC.caibro, ripa: SEC.ripa, pontalete: SEC.pontalete, espigao: SEC.espigao, rincao: SEC.espigao, testeira: SEC.testeira };
+Object.keys(por).forEach(function (k) {
+var g = por[k], rot = ROT[g.p] || g.p;
+if (g.mat === "aco" || g.perfil) {
+var A9 = PA(), o = A9 && A9.obter ? A9.obter(g.perfil) : null, kg = o && fin(o.massa) ? o.massa * g.m : null;
+it("Estrutura do telhado (aço)", rot + " " + (g.perfil || "") + " — " + g.n + " peça(s), " + virg(g.m) + " m", "kg", kg == null ? 0 : kg, "perfil ADOTADO (valor de partida) — confirmar no cálculo da Metálica", true);
+} else {
+var sp = g.p === "perna" ? (g.h >= 0.16 ? SEC.perna16 : SEC.perna) : SECP[g.p], part = !sp || !!sp.partida;
+if (g.inf) it("Madeiramento", rot + " da tesoura " + virg(g.w * 100, 1).replace(",0", "") + "×" + virg(g.h * 100, 1).replace(",0", "") + " cm — " + g.n + " peça(s)", "m", g.m, "lista de corte; " + virg(g.m3, 3) + " m³ (" + (sp && sp.fonte ? sp.fonte : "seção VALOR DE PARTIDA") + ")", false, { informativo: true, inclusoEm: inclTes });
+else it("Madeiramento", rot + " " + virg(g.w * 100, 1).replace(",0", "") + "×" + virg(g.h * 100, 1).replace(",0", "") + " cm — " + g.n + " peça(s)", "m", g.m, (sp && sp.fonte ? sp.fonte : "seção VALOR DE PARTIDA — conferir") + "; " + virg(g.m3, 3) + " m³", part);
+}
+});
+if (M.tesoura && mat !== "aco" && x.nTes) {
+var kgP = 0, paraf = 0, comp = {}, nCom = 0;
+x.tesVaos.forEach(function (v, i) {
+var lin = tesComp["tes" + (i + 1)];
+if (!lin) { avisos.push("Tesoura de " + virg(v) + " m passa dos 12 m do SINAPI: sem composição — as peças dela entram avulsas e as ligações a dimensionar."); return; }
+kgP += lin[2]; paraf += lin[3]; nCom++; (comp[lin[1]] = comp[lin[1]] || { n: 0, vao: lin[0] }).n++;
+});
+Object.keys(comp).forEach(function (c) {
+var v = comp[c].vao, desc = "FABRICAÇÃO E INSTALAÇÃO DE TESOURA INTEIRA EM MADEIRA NÃO APARELHADA, VÃO DE " + v + " M, PARA " + (cer ? "TELHA CERÂMICA OU DE CONCRETO" : "TELHA ONDULADA DE FIBROCIMENTO, METÁLICA, PLÁSTICA OU TERMOACÚSTICA") + ", INCLUSO IÇAMENTO. AF_10/2025";
+it("Estrutura do telhado", "Tesoura inteira de madeira não aparelhada, vão de " + v + " m (Howe) — " + comp[c].n + " un", "un", comp[c].n, "composição SINAPI " + c + " (vão de referência imediatamente maior — " + TESOURAS_SINAPI.fonte + "); PRÉ-DIMENSIONADO",
+false, { sinapi: { codigo: c, un: "UN", descricao: desc, base: "SINAPI 06/2026 (MG)", aproximado: false, obs: null } });
+});
+if (nCom) {
+var det = { informativo: true, inclusoEm: inclTes };
+it("Fixação", "Prego 18×30 (2 3/4 × 10) com cabeça — nós das tesouras", "kg", kgP, TESOURAS_SINAPI.fonte, false, det);
+if (paraf) it("Fixação", "Parafuso francês M12×150 com porca e arruela — tesouras de 8 a 12 m", "un", paraf, TESOURAS_SINAPI.fonte, false, det);
+it("Fixação", "Estribo em chapa de ferro fundido 2\"×3/16\"×35 cm com parafuso — nó central da tesoura", "un", nCom, TESOURAS_SINAPI.fonte, false, det);
+it("Madeiramento", "Tábua 2,5×20 cm (cobre-juntas dos nós de apoio e cumeeira)", "m", 3 * nCom, TESOURAS_SINAPI.fonte + " (3,0 m por tesoura)", false, det);
+}
+}
+if (M.tesoura && (x.nMeias || x.nDiag)) {
+var Lmt = 0; pecas.forEach(function (o) { if (o.tesoura && /^(mt|esp|rin)/.test(o.tesoura)) Lmt += o.L; });
+it("Estrutura do telhado", "Meias-tesouras " + x.nMeias + " un e tesouras de canto (espigão/rincão) " + x.nDiag + " un — peça a peça", "un", x.nMeias + x.nDiag, "sem composição SINAPI própria (o SINAPI só traz a tesoura inteira): a madeira delas está no Madeiramento", false, { informativo: true, inclusoEm: "peças do Madeiramento (peça a peça)" });
+if (mat !== "aco") {
+var ref = tabT[5] || tabT[tabT.length - 1], taxa = ref[2] / (ref[4] + ref[5] + ref[6] + ref[7]);
+it("Fixação", "Prego 18×30 (2 3/4 × 10) com cabeça — nós das meias-tesouras e tesouras de canto (" + virg(Lmt) + " m de peça)", "kg", taxa * Lmt,
+"taxa da tesoura SINAPI " + ref[1] + " (" + virg(ref[2], 3) + " kg ÷ " + virg(ref[4] + ref[5] + ref[6] + ref[7], 1) + " m de madeira) aplicada aos metros das meias-tesouras — VALOR DE PARTIDA, conferir", true);
+} else it("Fixação", "Ligações parafusadas dos nós das meias-tesouras e de canto", "un", x.nMeias + x.nDiag, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
+}
+if (M.tesoura && mat === "aco" && x.nTes) it("Fixação", "Ligações parafusadas dos nós da tesoura metálica", "un", x.nTes, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
+if (mat !== "aco") {
+if (M.ripa) it("Fixação", PREGOS.ripaCaibro.prego + " — ripa × caibro (" + x.nCruzRC + " cruzamentos)", "kg", PREGOS.ripaCaibro.kgM2 * AP, PREGOS.fonte + "; quantidade de pregos por cruzamento: SEM FONTE (o kg do SINAPI manda)");
+if (M.caibro) it("Fixação", PREGOS.caibroTerca.prego + " — caibro × terça (" + x.nCruzCT + " cruzamentos)", "kg", PREGOS.caibroTerca.kgM2 * AP, PREGOS.fonte);
+it("Fixação", PREGOS.tercaApoio.prego + " — terça × apoio (" + x.nCruzTA + " apoios)", "kg", PREGOS.tercaApoio.kgM2 * AP, PREGOS.fonte);
+} else it("Fixação", "Ligação terça Ue × apoio (cantoneira/clipe parafusado) — " + x.nCruzTA + " apoios", "un", x.nCruzTA, "peça e parafusos por ligação: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo", true);
+var compTel = composicaoTelhamento(tel, t), detTel = compTel ? { informativo: true, inclusoEm: "telhamento — composição SINAPI " + compTel.codigo } : null;
+var detFix = compTel && compTel.inclui.indexOf("fixacao") >= 0 ? detTel : null;
+var nTel = null, obsTel = null, partTel = false, lu = larguraUtilDe(tel);
+if (tel && fin(tel.pecasM2)) { nTel = tel.pecasM2 * A; obsTel = virg(tel.pecasM2, 1) + " peças/m² × " + virg(A) + " m² inclinados (" + (tel.galga && tel.galga.fonte ? "" : "") + (tel.fonteCatalogo || "") + "; sem perdas)"; }
+else if (lu) {
+nTel = 0;
+x.aguasInfo.forEach(function (ai) {
+var col = Math.ceil((ai.tmax - ai.tmin) / lu - 1e-9), rec = recobLong(tel, Math.atan(num(t.aguasCalc[ai.agua] && t.aguasCalc[ai.agua].inclinacao, 0) / 100) * 180 / Math.PI);
+var Lmax = arr(tel.comprimentos).length ? Math.max.apply(null, tel.comprimentos) : num(tel.comprimentoMaxM, 12), lin = ai.rampa <= Lmax ? 1 : Math.ceil((ai.rampa - rec) / (Lmax - rec) - 1e-9);
+nTel += col * lin;
+});
+obsTel = "colunas pela largura útil " + virg(lu) + " m × fileiras pelo comprimento da peça (" + (tel.larguraFonte || tel.fonteCatalogo || "catálogo") + ")";
+} else { partTel = true; obsTel = "telha sem rendimento/largura útil no catálogo — VALOR DE PARTIDA, conferir"; }
+if (nTel != null) it("Telhas", (tel ? tel.produto : "Telha") + " — peças", "un", Math.ceil(nTel - 1e-9), obsTel, partTel, detTel);
+if (M.osb) {
+var bo = tel && tel.base ? tel.base : {}, sub = tel && tel.subcobertura ? tel.subcobertura : null;
+it("Madeiramento", "Base contínua de OSB e = " + virg(num(bo.espessuraM, 0.0111) * 1000, 1) + " mm (sobre os caibros)", "m²", A, (bo.texto || "base de OSB") + " (" + (bo.fonte || "catálogo") + "); espessura: VALOR DE PARTIDA — conferir", true);
+it("Madeiramento", "Chapas de OSB 1,22 × 2,44 m", "un", Math.ceil(A / (1.22 * 2.44) - 1e-9), "formato da chapa: VALOR DE PARTIDA — conferir com o fornecedor (sem perdas)", true, { informativo: true, inclusoEm: "Base contínua de OSB (m²), na linha acima" });
+it("Fixação", "Fixação da OSB nos caibros (prego anelado/parafuso)", "m²", A, "quantidade por chapa: SEM FONTE no catálogo da telha — VALOR DE PARTIDA, conferir com o fabricante da OSB", true);
+if (sub) it("Telhas", "Subcobertura: " + sub.texto, "m²", A, sub.fonte + "; sobreposições sem perdas calculadas — conferir", true);
+}
+var baixaJa = false;
+if (tel && fin(tel.baixaInclinacaoPct)) arr(t.aguasCalc).forEach(function (ag) { var pq = num(ag.inclinacao, 0); if (!baixaJa && pq > 0 && pq < tel.baixaInclinacaoPct - 1e-6 && pq >= num(tel.inclinacaoMinPct, 0) - 1e-6 && (baixaJa = true)) avisos.push("Inclinação " + virg(pq, 1) + "% abaixo de " + tel.baixaInclinacaoPct + "%: a " + tel.produto + " vai pelo MÉTODO PARA BAIXA INCLINAÇÃO (subcobertura sobreposta) — " + tel.inclinacaoFonte + "."); });
+if (tel && tel.fixacao) {
+var fx = tel.fixacao, nAp = 0;
+if (fin(fx.porTelha) && nTel != null) {
+it("Fixação", "Fixação da telha: " + fx.texto, "un", Math.ceil(nTel - 1e-9) * fx.porTelha, fx.porTelha + " por telha × " + Math.ceil(nTel - 1e-9) + " telhas (" + fx.fonte + ")", !!fx.partida || partTel, detFix);
+} else if (fin(fx.porTelhaPorApoio) && !M.ripa) {
+x.aguasInfo.forEach(function (ai) { var col = lu ? Math.ceil((ai.tmax - ai.tmin) / lu - 1e-9) : 0, nT = ai.nTercas > 0 ? ai.nTercas : Math.max(2, Math.ceil(ai.rampa / x.espT - 1e-9) + 1); nAp += col * nT; });
+it("Fixação", "Fixação da telha: " + fx.texto, "un", nAp * fx.porTelhaPorApoio, fx.porTelhaPorApoio + " por telha por apoio (" + fx.fonte + ")", !!fx.partida, detFix);
+if (fin(fx.costuraM)) { var cost = 0; x.aguasInfo.forEach(function (ai) { var col = lu ? Math.ceil((ai.tmax - ai.tmin) / lu - 1e-9) : 0; cost += Math.max(0, col - 1) * Math.ceil(ai.rampa / fx.costuraM); }); it("Fixação", "Parafuso de costura nas emendas laterais (a cada " + virg(fx.costuraM) + " m)", "un", cost, fx.fonte, false, detFix); }
+} else if (!fin(fx.porTelhaPorApoio) && !M.ripa) {
+x.aguasInfo.forEach(function (ai) { var col = lu ? Math.ceil((ai.tmax - ai.tmin) / lu - 1e-9) : 0, nT = ai.nTercas > 0 ? ai.nTercas : Math.max(2, Math.ceil(ai.rampa / x.espT - 1e-9) + 1); nAp += col * nT; });
+it("Fixação", "Fixação da telha: " + fx.texto, "un", nAp * 2, "2 por telha por apoio — VALOR DE PARTIDA, conferir (" + fx.fonte + ")", true, detFix);
+} else {
+var beir = 0; arr(t.arestasCalc).forEach(function (e) { if (e.define) beir += num(e.comprimento, 0); });
+it("Fixação", "Fixação/amarração das telhas: " + fx.texto, "m", beir, "metros de beiral (1ª fiada); quantidade por telha: " + (fx.partida ? "SEM FONTE — VALOR DE PARTIDA, conferir" : "ver catálogo") + " (" + fx.fonte + ")", true, detFix);
+}
+}
+if (tel && fin(tel.inclinacaoMinPct)) {
+arr(t.aguasCalc).forEach(function (ag) { if (num(ag.inclinacao, 0) > 0 && num(ag.inclinacao, 0) < tel.inclinacaoMinPct - 1e-6) avisos.push("Inclinação " + virg(ag.inclinacao, 1) + "% abaixo da mínima de " + virg(tel.inclinacaoMinPct, 1) + "% do fabricante (" + tel.inclinacaoFonte + ")."); });
+}
+if (tel && tel.balanco && !M.caibro) {
+var bm = arr(t.arestasCalc).reduce(function (m, e) { return Math.max(m, num(e.beiralM, 0)); }, 0), mx = tel.balanco.semCalha ? tel.balanco.semCalha.max : null;
+if (mx != null && bm > mx + 1e-6) avisos.push("Beiral de " + virg(bm) + " m passa do balanço máximo da telha (" + virg(mx) + " m, " + tel.balancoFonte + "): diminua o beiral.");
+}
+return { itens: itens, avisos: avisos, tesComp: tesComp };
+}
+var CACHE_GEO = [];
+function geometria(t, opc) {
+opc = opc || {};
+var pk = t && t.pacote, T = BT(); if (!pk || !pk.ok || !T) return { grupos: [], nTri: 0 };
+var chave = null;
+try { chave = JSON.stringify([t.tipoId, t.modelo, opc.teto || 0, t.aguasCalc, t.linhas, pk.camadas, pk.pecas]); } catch (eK) { chave = null; }
+if (chave) for (var ci = 0; ci < CACHE_GEO.length; ci++) if (CACHE_GEO[ci].k === chave) return CACHE_GEO[ci].g;
+var g0 = geometriaCalc(t, opc, pk, T);
+if (chave) { CACHE_GEO.unshift({ k: chave, g: g0 }); if (CACHE_GEO.length > 6) CACHE_GEO.length = 6; }
+return g0;
+}
+function geometriaCalc(t, opc, pk, T) {
+var grupos = [], porMat = {}, nTot = 0, teto = fin(opc.teto) ? opc.teto : TETO_TRI_AGUA;
+arr(pk.pecas).forEach(function (o) {
+var g = porMat[o.mat] || (porMat[o.mat] = { chave: "estr-" + o.mat, material: o.mat, pos: [], nTri: 0 });
+g.nTri += extrudar(g.pos, o);
+});
+arr(pk.placas).forEach(function (pl) {
+var ag = arr(t.aguasCalc).filter(function (x, i) { return true; }), g = porMat.madeira || (porMat.madeira = { chave: "estr-madeira", material: "madeira", pos: [], nTri: 0 });
+var Q = pl.pts, f2 = 1, yB = function (q) { return T.alturaEm(t, q[0], q[1]); };
+var sl = aguasInclinadas(t)[pl.agua]; if (sl) { var Sx = sistemaDe(sl); f2 = Sx.f; yB = function (q) { return Sx.y(q[0], q[1]); }; }
+var tris = T.triangular(Q), e = pl.e * f2;
+function V(q, top) { var y = yB(q); return [q[0], (y == null ? 0 : y) + pl.base + (top ? e : 0), q[1]]; }
+function tri(p, q, r) { g.pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]); g.nTri++; }
+tris.forEach(function (tr) { tri(V(tr[0], 1), V(tr[1], 1), V(tr[2], 1)); tri(V(tr[0], 0), V(tr[2], 0), V(tr[1], 0)); });
+for (var i = 0; i < Q.length; i++) { var a = Q[i], b = Q[(i + 1) % Q.length]; tri(V(a, 0), V(b, 0), V(b, 1)); tri(V(a, 0), V(b, 1), V(a, 1)); }
+void ag;
+});
+Object.keys(porMat).forEach(function (k) { grupos.push(porMat[k]); nTot += porMat[k].nTri; });
+var tel = T.telha(t.tipoId), pf = tel && tel.perfil ? tel.perfil : { passo: 0.2, altura: 0.04, esp: 0.01 }, h = perfilFn(tel);
+var sand = tel && tel.familia === "sanduiche", nucleo = sand ? num(tel.nucleoMm, 30) / 1000 : 0;
+var faceMad = arr(t.tipoTelhado && t.tipoTelhado.camadas).some(function (c) { return /madeira/i.test(c.material || ""); });
+aguasInclinadas(t).forEach(function (ag, ia) {
+var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f;
+arr(ag.pecas).forEach(function (pq) {
+var Q = pq.pts.map(function (q) { return [q.x, q.z]; }); if (Q.length < 3) return;
+var umin = Infinity, umax = -Infinity, tmn = Infinity, tmx = -Infinity;
+Q.forEach(function (q) { var u = d[0] * q[0] + d[1] * q[1], tt = td[0] * q[0] + td[1] * q[1]; if (u < umin) umin = u; if (u > umax) umax = u; if (tt < tmn) tmn = tt; if (tt > tmx) tmx = tt; });
+var Lp = tel && fin(tel.galga && tel.galga.m) ? tel.galga.m : (tel && fin(tel.comprimentoPeca) ? tel.comprimentoPeca - 0.1 : null), rampa = (umax - umin) * f;
+if (!Lp) { var cm = arr(tel && tel.comprimentos).length ? Math.max.apply(null, tel.comprimentos) : num(tel && tel.comprimentoMaxM, 12); Lp = rampa <= cm ? rampa : cm - recobLong(tel, 10); }
+var nRow = Math.max(1, Math.ceil(rampa / Lp - 1e-9));
+var porPasso = amostrasPorPasso(tel), nCol = function (pp) { return Math.ceil((tmx - tmn) / pf.passo * pp) + 2; };
+var est = function (pp, nr) { return nr * nCol(pp) * 4; };
+var minPP = tel && tel.forma === "plana" ? 1 : 4;
+while (est(porPasso, nRow) > teto && porPasso > minPP) porPasso--;
+var junta = 1; while (est(porPasso, Math.ceil(nRow / junta)) > teto && junta < nRow) junta++;
+nRow = Math.ceil(nRow / junta);
+var gT = { chave: "telha-" + ia, material: "telha", agua: ia, pos: [], nTri: 0 }, gB = { chave: "telha-baixo-" + ia, material: faceMad ? "telha-madeira" : "telha", agua: ia, pos: [], nTri: 0 };
+var base = pk.camadas.telha, esp = pf.esp, lift = (esp + 0.004) * (tel && /ceramica|concreto/.test(tel.familia) ? 3 : 1);
+function tri(g, p, q, r) { g.pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]); g.nTri++; }
+function P3(u, tt, dy) { var x = d[0] * u + td[0] * tt, z = d[1] * u + td[1] * tt; return [x, S.y(x, z) + base + dy, z]; }
+var ts = [tmn];
+if (tel && tel.forma === "trapezoidal" && pf.passo) pontosTrap(tel, tmn, tmx).forEach(function (q) { ts.push(q); });
+else { var dtc = pf.passo / porPasso, k0 = Math.ceil(tmn / dtc + 1e-9); for (var kk = k0; kk * dtc < tmx - 1e-9; kk++) ts.push(kk * dtc); }
+ts.push(tmx);
+var faixaU = ts.map(function (tt, i) {
+var t2 = i === 0 ? tt + 1e-4 : (i === ts.length - 1 ? tt - 1e-4 : tt), cc = cordasT(Q, t2, d, td);
+return cc.length ? [cc[0][0], cc[cc.length - 1][1]] : null;
+});
+for (var r = 0; r < nRow; r++) {
+var ua = umin + (umax - umin) * r / nRow, ub = umin + (umax - umin) * (r + 1) / nRow;
+var ubx = r + 1 < nRow ? ub + Math.min(0.1, (ub - ua) * 0.25) : ub;
+var liftA = r > 0 ? lift : 0;
+var sobe = function (u) { return liftA * (ubx - u) / Math.max(1e-9, ubx - ua); };
+var topo = function (u, tt) { return P3(u, tt, sobe(u) + (sand ? nucleo : 0) + h(tt) * f + esp * f); };
+var fundo = sand ? function (u, tt) { return P3(u, tt, sobe(u)); } : function (u, tt) { return P3(u, tt, sobe(u) + h(tt) * f); };
+for (var c = 0; c + 1 < ts.length; c++) {
+var F0 = faixaU[c], F1 = faixaU[c + 1];
+if (!F0 && !F1) continue; if (!F0) F0 = F1; if (!F1) F1 = F0;
+var t0 = ts[c], t1 = ts[c + 1], l0 = Math.max(ua, F0[0]), h0 = Math.min(ubx, F0[1]), l1 = Math.max(ua, F1[0]), h1 = Math.min(ubx, F1[1]);
+var e0 = h0 > l0 + 1e-6, e1 = h1 > l1 + 1e-6;
+if (!e0 && !e1) continue;
+if (!e0) { l0 = h0 = Math.max(ua, Math.min(ubx, h0 < l0 ? (F0[1] < ua ? ua : ubx) : l0)); }
+if (!e1) { l1 = h1 = Math.max(ua, Math.min(ubx, h1 < l1 ? (F1[1] < ua ? ua : ubx) : l1)); }
+var A0 = topo(l0, t0), A1 = topo(h0, t0), B0 = topo(l1, t1), B1 = topo(h1, t1);
+tri(gT, A0, B0, B1); tri(gT, A0, B1, A1);
+var C0 = fundo(l0, t0), C1 = fundo(h0, t0), D0 = fundo(l1, t1), D1 = fundo(h1, t1);
+tri(gB, C0, D1, D0); tri(gB, C0, C1, D1);
+}
+}
+if (gT.nTri) { grupos.push(gT); nTot += gT.nTri; }
+if (gB.nTri) { grupos.push(gB); nTot += gB.nTri; }
+});
+});
+var gC = { chave: "cumeeira", material: "telha", cumeeira: true, pos: [], nTri: 0 };
+var hTop = pk.camadas.telha + (pf.altura + (sand ? nucleo : pf.esp)) * 1.02;
+arr(t.linhas).forEach(function (ln) {
+if (ln.tipo !== "cumeeira" && ln.tipo !== "espigao") return;
+var a = [ln.a.x, ln.a.y + hTop, ln.a.z], b = [ln.b.x, ln.b.y + hTop, ln.b.z], dx = b[0] - a[0], dz = b[2] - a[2], L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.1)) return;
+var nx = -dz / L * 0.16, nz = dx / L * 0.16, cai = 0.16 * 0.35, sobe = 0.03;
+var a0 = [a[0] + nx, a[1] - cai, a[2] + nz], a1 = [a[0], a[1] + sobe, a[2]], a2 = [a[0] - nx, a[1] - cai, a[2] - nz];
+var b0 = [b[0] + nx, b[1] - cai, b[2] + nz], b1 = [b[0], b[1] + sobe, b[2]], b2 = [b[0] - nx, b[1] - cai, b[2] - nz];
+[[a0, a1, b1, b0], [a1, a2, b2, b1]].forEach(function (q) { gC.pos.push(q[0][0], q[0][1], q[0][2], q[1][0], q[1][1], q[1][2], q[2][0], q[2][1], q[2][2], q[0][0], q[0][1], q[0][2], q[2][0], q[2][1], q[2][2], q[3][0], q[3][1], q[3][2]); gC.nTri += 2; });
+});
+if (gC.nTri) { grupos.push(gC); nTot += gC.nTri; }
+return { grupos: grupos, nTri: nTot, teto: teto };
+}
+function quantitativoModelos(estado) {
+var itens = [], avisos = [];
+arr(estado && estado.telhados).forEach(function (t) {
+if (!t || !t.pacote || !t.pacote.ok) return;
+arr(t.pacote.quantitativo).forEach(function (q) {
+if (q.informativo) itens.push({ grupo: "Detalhamento (incluso na composição)", item: q.item, un: q.un, qtd: q.qtd, sinapi: null, orcarAParte: false, informativo: true, inclusoEm: q.inclusoEm,
+obs: "DETALHAMENTO — incluso em " + q.inclusoEm + ": não soma no orçamento. " + (q.obs || ""), telhado: t.id, partida: q.partida, modelo: t.modelo });
+else itens.push({ grupo: q.grupo, item: q.item, un: q.un, qtd: q.qtd, sinapi: q.sinapi || null, orcarAParte: !q.sinapi, obs: (q.partida ? "VALOR DE PARTIDA — conferir. " : "") + (q.obs || ""), telhado: t.id, partida: q.partida, modelo: t.modelo });
+});
+var Tq = BT(); if (!(Tq && Tq.telha(t.tipoId))) arr(t.pacote.avisos).forEach(function (a) { avisos.push("Telhado " + t.id + ": " + a); });
+});
+return { itens: itens, avisos: avisos };
+}
+instalarAjuste();
+var BimTelhadoEstrut = {
+PADRAO: PADRAO, SECOES_MADEIRA: SECOES_MADEIRA, FONTE_MADEIRA: FONTE_MADEIRA, secaoMadeira: secaoMadeira,
+gerar: gerar, opLote: opLote, opsSubstituir: opsSubstituir, estruturaDoTelhado: estruturaDoTelhado, quantitativo: quantitativo,
+entradaCalculo: entradaCalculo, verificarAco: verificarAco, resumoDePecas: resumoDePecas,
+alturaPerfilAco: alturaPerfilAco, cordasU: cordasU, cordasT: cordasT, trechoNaParede: trechoNaParede, paredesDe: paredesDe,
+MODELOS: MODELOS, SEC: SEC, ESPAC: ESPAC, TESOURAS_SINAPI: TESOURAS_SINAPI, PREGOS: PREGOS, PERFIS_TEL: PERFIS_TEL, TETO_TRI_AGUA: TETO_TRI_AGUA,
+TELHAMENTO_SINAPI: TELHAMENTO_SINAPI, composicaoTelhamento: composicaoTelhamento, ajustarQuantCobertura: ajustarQuantCobertura,
+modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
+};
+global.BimTelhadoEstrut = BimTelhadoEstrut;
+if (typeof module !== "undefined" && module.exports) module.exports = BimTelhadoEstrut;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimforrodrywall.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function temChave(o, k) { return !!o && Object.prototype.hasOwnProperty.call(o, k); }
+function virg(v, c) { return (Math.round(v * Math.pow(10, c == null ? 2 : c)) / Math.pow(10, c == null ? 2 : c)).toFixed(c == null ? 2 : c).replace(".", ","); }
+function idOk(v) { return (typeof v === "string" && v.length > 0 && v.length <= 120) || fin(v); }
+function BT() { return dep("BimTelhado", "./bimtelhado.js"); }
+function ES() { return dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"); }
+function BA() { return dep("BimArq", "./bimarq.js"); }
+var TIPO_ID = "drywall-12_5-madeira";
+var CHAPA = { espMm: 12.5, largura: 1.20, comprimento: 2.40, fonte: "SINAPI 06/2026, insumo 39413: chapa de gesso acartonado standard (ST), 12,5 mm, 1200 × 2400 mm" };
+var PADRAO = { recuo: 0.20, profundidade: 0.12, espSarrafo: 0.40, espBarrote: 1.20, secaoSarrafo: "5x5", secaoBarrote: "5x10", margemParede: 0.05,
+espLuminarias: 1.20, margemLuminarias: 0.40, tipoLuminaria: "spote" };
+var LIM = { recuo: [0.05, 1.5], profundidade: [0.03, 0.8] };
+var SINAPI = {
+base: "SINAPI 06/2026 (MG)",
+forroDrywall: { cod: "96110", un: "M2", aprox: true, desc: "FORRO EM DRYWALL PARA AMBIENTES RESIDENCIAIS, INCLUSIVE ESTRUTURA UNIDIRECIONAL DE FIXAÇÃO", obs: "a composição traz estrutura de aço (canaleta e pendural): com estrutura de madeira só a chapa, os parafusos e o tratamento das juntas valem — a estrutura de madeira vai à parte" },
+sancaGesso: { cod: "99054", un: "M2", aprox: true, desc: "ACABAMENTOS PARA FORRO (SANCA DE GESSO, MONTADA NA OBRA)", obs: "sanca de gesso montada na obra: a de drywall com luz indireta é parecida, não igual" },
+fundoSelador: { cod: "88484", un: "M2", desc: "FUNDO SELADOR ACRÍLICO, APLICAÇÃO MANUAL EM TETO, UMA DEMÃO" },
+pinturaTeto: { cod: "104640", un: "M2", desc: "PINTURA LÁTEX ACRÍLICA STANDARD, APLICAÇÃO MANUAL EM TETO, DUAS DEMÃOS" }
+};
+function sin(ref) { var s = SINAPI[ref]; return s ? { codigo: s.cod, un: s.un, descricao: s.desc, base: SINAPI.base, aproximado: !!s.aprox, obs: s.obs || null } : null; }
+var LUM_CHAVE = { pq18e: "luminaria|plafon_quadrada|embutir|18", spote: "luminaria|spot_par20|embutir|-", p60e: "luminaria|painel_60x60|embutir|-", pq24s: "luminaria|plafon_quadrada|sobrepor|24", pc12s: "luminaria|plafon_circular|sobrepor|12/13" };
+function sinLuminaria(tipoId) {
+var T = dep("BimInstSinapi", "./biminstsinapi.js"), k = LUM_CHAVE[String(tipoId)], l = T && k && T.chaves ? T.chaves[k] : null;
+return l && l.length ? { codigo: l[0][0], un: l[0][1], descricao: l[0][2], base: "SINAPI 06/2026 (MG)", aproximado: false, obs: null } : null;
+}
+function ptA(p) { return [Number(p.x), Number(p.z)]; }
+function areaS(P) { var s = 0; for (var i = 0, n = P.length; i < n; i++) { var a = P[i], b = P[(i + 1) % n]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+function perim(P) { var s = 0; for (var i = 0, n = P.length; i < n; i++) { var a = P[i], b = P[(i + 1) % n]; s += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])); } return s; }
+function obj(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
+function dentro(p, P) {
+var c = false, n = P.length;
+for (var i = 0, j = n - 1; i < n; j = i++) { var a = P[i], b = P[j]; if (((a[1] > p[1]) !== (b[1] > p[1])) && (p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0])) c = !c; }
+return c;
+}
+function distSeg(p, a, b) {
+var dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz, t = L2 > 0 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2)) : 0;
+var x = a[0] + t * dx - p[0], z = a[1] + t * dz - p[1]; return Math.sqrt(x * x + z * z);
+}
+function distBorda(p, P) { var m = Infinity; for (var i = 0, n = P.length; i < n; i++) m = Math.min(m, distSeg(p, P[i], P[(i + 1) % n])); return m; }
+function ccw(P) { return areaS(P) >= 0 ? P.slice() : P.slice().reverse(); }
+function calcularSanca(f, forros) {
+var s = clone(f), avisos = [], fo = forros[String(f.forro)];
+s.tipo = "sanca"; s.ok = false;
+s.recuoEf = fin(Number(f.recuo)) ? Number(f.recuo) : PADRAO.recuo;
+s.profundidadeEf = fin(Number(f.profundidade)) ? Number(f.profundidade) : PADRAO.profundidade;
+s.luzEf = f.luz !== false;
+if (!fo) { avisos.push("O forro desta sanca não existe mais."); s.avisos = avisos; return s; }
+if (!fo.ok || arr(fo.contorno).length < 3) { avisos.push("O forro não fechou (ver os avisos dele): sem sanca."); s.avisos = avisos; return s; }
+var T = BT(); if (!T || !T.deslocar) { avisos.push("O motor de deslocamento (js/bimtelhado.js) não carregou."); s.avisos = avisos; return s; }
+var P = ccw(arr(fo.contorno).map(ptA));
+if (arr(fo.contorno).some(function (p) { return p && p.m; })) avisos.push("O contorno do forro tem arco: a sanca segue só os pontos dele.");
+var I = T.deslocar(P, P.map(function () { return -s.recuoEf; }));
+if (!I || I.length < 3 || !(areaS(I) > 0.05)) { avisos.push("Recuo de " + virg(s.recuoEf) + " m grande demais para este forro: diminua o recuo."); s.avisos = avisos; return s; }
+s.interno = I.map(obj); s.contorno = P.map(obj);
+s.comprimento = r4(perim(I));
+s.areaTotal = r4(areaS(P)); s.areaCentral = r4(areaS(I)); s.areaFaixa = r4(areaS(P) - areaS(I));
+s.areaTesteira = r4(s.comprimento * s.profundidadeEf);
+s.areaDesenvolvida = r4(s.areaFaixa + s.areaTesteira);
+s.fitaLedM = s.luzEf ? s.comprimento : 0;
+s.cota = r6(num(fo.cota, 0)); s.cotaFaixa = r6(s.cota + s.profundidadeEf);
+s.espessura = r6(num(fo.espessura, 0.0125));
+s.ok = true;
+if (avisos.length) s.avisos = avisos;
+return s;
+}
+function validaSanca(o) {
+if (!idOk(o.id)) return false;
+if (o.forro !== undefined && !idOk(o.forro)) return false;
+if (o.recuo !== undefined && o.recuo !== null && !(fin(o.recuo) && o.recuo >= LIM.recuo[0] && o.recuo <= LIM.recuo[1])) return false;
+if (o.profundidade !== undefined && o.profundidade !== null && !(fin(o.profundidade) && o.profundidade >= LIM.profundidade[0] && o.profundidade <= LIM.profundidade[1])) return false;
+if (o.luz !== undefined && o.luz !== null && typeof o.luz !== "boolean") return false;
+return o.forro !== undefined || o.recuo !== undefined || o.profundidade !== undefined || o.luz !== undefined;
+}
+function valida(o) { return o && o.op === "sanca" ? validaSanca(o) : undefined; }
+function aplicarOp(o, ctx) {
+if (!o || !ctx) return false;
+var C = ctx.sanca || (ctx.sanca = { m: {}, ord: [] });
+if (o.op === "sanca") {
+if (valida(o) !== true) return false;
+var novo = !C.m[o.id];
+if (novo) { if (o.forro === undefined) return false; C.m[o.id] = { id: o.id }; C.ord.push(o.id); }
+["forro", "recuo", "profundidade", "luz"].forEach(function (k) { if (!temChave(o, k)) return; if (o[k] === null) delete C.m[o.id][k]; else C.m[o.id][k] = o[k]; });
+return true;
+}
+if (o.op === "apagar" && C.m[o.id]) { delete C.m[o.id]; C.ord.splice(C.ord.indexOf(o.id), 1); return true; }
+return false;
+}
+function fim(ctx, saida) {
+var C = ctx && ctx.sanca; if (!C || !C.ord.length || !saida) return;
+var fo = {}; arr(saida.forros).forEach(function (f) { fo[String(f.id)] = f; });
+saida.sancas = C.ord.map(function (id) { return calcularSanca(C.m[id], fo); });
+saida.sancas.forEach(function (s) { if (s.ok && fo[String(s.forro)]) fo[String(s.forro)].sancaInterno = s.interno.map(function (p) { return { x: p.x, z: p.z }; }); });
+}
+function registrar(BE) {
+if (!BE || typeof BE.estender !== "function") return false;
+return BE.estender({ nome: "forro-drywall-sanca", aplicar: aplicarOp, valida: valida, fim: fim });
+}
+function achaForro(estado, id) { var r = null; arr(estado && estado.forros).forEach(function (f) { if (String(f.id) === String(id)) r = f; }); return r; }
+function achaSanca(estado, forroId) { var r = null; arr(estado && estado.sancas).forEach(function (s) { if (s.ok && String(s.forro) === String(forroId)) r = s; }); return r; }
+function secao(id) { var E = ES(); return E && E.secaoMadeira ? E.secaoMadeira(id) : null; }
+function opsEstruturaForro(estado, forroId, opc) {
+opc = opc || {}; var f = achaForro(estado, forroId), A = BA(), E = ES(), avisos = [], premissas = [];
+if (!f) return { ok: false, motivo: "Forro não encontrado: " + forroId };
+if (!f.ok) return { ok: false, motivo: "O forro não fechou: sem estrutura." };
+if (!A || !E) return { ok: false, motivo: "Motores da estrutura (js/bimarq.js, js/bimtelhadoestrut.js) não carregaram." };
+var esp = fin(Number(opc.espacamento)) ? Number(opc.espacamento) : PADRAO.espSarrafo;
+var espB = fin(Number(opc.espBarrote)) ? Number(opc.espBarrote) : PADRAO.espBarrote;
+var sS = secao(opc.secaoSarrafo || PADRAO.secaoSarrafo), sB = secao(opc.secaoBarrote || PADRAO.secaoBarrote);
+if (!sS || !sB) return { ok: false, motivo: "Seção fora do catálogo (" + E.FONTE_MADEIRA + ")." };
+premissas.push("espaçamento entre sarrafos " + virg(esp) + " m — " + (fin(Number(opc.espacamento)) ? "informado" : "ADOTADO, NÃO VERIFICADO: o manual do fabricante da chapa não foi achado em fonte pública (Knauf/Placo bloqueiam o acesso); conferir antes de comprar"));
+premissas.push("barrotes a cada " + virg(espB) + " m (ADOTADO) e seções do catálogo " + E.FONTE_MADEIRA + ": sarrafo " + sS.b * 100 + "×" + sS.h * 100 + " cm, barrote " + sB.b * 100 + "×" + sB.h * 100 + " cm");
+var sa = achaSanca(estado, forroId), Pext = ccw(arr(f.contorno).map(ptA)), Pc = sa ? sa.interno.map(ptA) : Pext;
+var y0 = num(f.cota, 0) + num(f.espessura, 0.0125);
+var seq = 0, pecas = [], idP = "tef-" + f.id + "-";
+var bx = Pc.map(function (p) { return p[0]; }), bz = Pc.map(function (p) { return p[1]; }), larg = Math.max.apply(null, bx) - Math.min.apply(null, bx), prof = Math.max.apply(null, bz) - Math.min.apply(null, bz);
+var alongX = opc.dir === "x" ? true : (opc.dir === "z" ? false : larg <= prof);
+var d = alongX ? [0, 1] : [1, 0], td = [-d[1], d[0]];
+function nova(a, b, sec, topo, papel) {
+var c = A.vigaPerfil([a[0], a[1]], [b[0], b[1]], { perfil: { forma: "ret", b: sec.b, h: sec.h }, material: "madeira", topo: topo });
+if (!c) return null;
+c.id = idP + (++seq); c.nome = papel === "forro-sarrafo" ? "Sarrafo do forro" : (papel === "forro-barrote" ? "Barrote do forro" : "Sarrafo da faixa da sanca");
+c.cob = { forro: String(f.id), papel: papel, material: "madeira" };
+pecas.push(c); return c;
+}
+function linhas(P, espac, sec, topo, papel, dd, tdd) {
+var umin = Infinity, umax = -Infinity;
+P.forEach(function (q) { var u = dd[0] * q[0] + dd[1] * q[1]; if (u < umin) umin = u; if (u > umax) umax = u; });
+var ini = umin + PADRAO.margemParede, fimU = umax - PADRAO.margemParede, n = fimU > ini ? Math.max(1, Math.ceil((fimU - ini) / espac - 1e-9)) : 0, i, cnt = 0, longas = 0;
+for (i = 0; i <= n; i++) {
+var u = n === 0 ? (umin + umax) / 2 : ini + (fimU - ini) * i / n;
+E.cordasU(P, u, dd, tdd).forEach(function (ch) {
+var a = [u * dd[0] + (ch[0] + PADRAO.margemParede) * tdd[0], u * dd[1] + (ch[0] + PADRAO.margemParede) * tdd[1]], b = [u * dd[0] + (ch[1] - PADRAO.margemParede) * tdd[0], u * dd[1] + (ch[1] - PADRAO.margemParede) * tdd[1]];
+if (Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1])) < 0.2) return;
+if (Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1])) > 6) longas++;
+if (nova(a, b, sec, topo, papel)) cnt++;
+});
+}
+if (longas) avisos.push(longas + " peça(s) de " + papel.replace("forro-", "") + " passam de 6 m (maior comprimento do catálogo): emendar.");
+return cnt;
+}
+var nS = linhas(Pc, esp, sS, y0 + sS.h, "forro-sarrafo", d, td);
+var nB = linhas(Pc, espB, sB, y0 + sS.h + sB.h, "forro-barrote", td, [-td[1], td[0]]);
+var nF = 0;
+if (sa) {
+var yF = sa.cotaFaixa + num(f.espessura, 0.0125);
+for (var i = 0; i < Pext.length; i++) {
+var a = Pext[i], b = Pext[(i + 1) % Pext.length], L = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+if (L < 0.3) continue;
+var ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L, ent = -uz, enz = ux;
+var m = PADRAO.margemParede + sS.b / 2;
+if (nova([a[0] + ent * m, a[1] + enz * m], [b[0] + ent * m, b[1] + enz * m], sS, yF + sS.h, "forro-faixa")) nF++;
+}
+}
+if (!pecas.length) return { ok: false, motivo: "Nenhuma peça gerada para o forro." };
+var apagar = arr(estado.caixas).filter(function (c) { return c && c.cob && String(c.cob.forro) === String(f.id); }).map(function (c) { return { op: "apagar", id: c.id }; });
+var lote = { op: "lote", id: "tef-" + f.id, origem: "estrutura-forro", ops: apagar.concat(pecas.map(function (c) { return { op: "criar", id: c.id, caixa: A.paraOp(c) }; })) };
+var res = { ok: true, forro: f.id, lote: lote, ops: [lote], pecas: pecas, premissas: premissas, avisos: avisos, resumo: { sarrafos: nS, barrotes: nB, faixa: nF, espacamento: esp } };
+res.resumo.total = E.resumoDePecas(pecas, "madeira");
+return res;
+}
+function opsLuminarias(estado, forroId, opc) {
+opc = opc || {}; var f = achaForro(estado, forroId), avisos = [], premissas = [];
+if (!f) return { ok: false, motivo: "Forro não encontrado: " + forroId };
+if (!f.ok) return { ok: false, motivo: "O forro não fechou: sem luminárias." };
+var tipoId = opc.tipoId || PADRAO.tipoLuminaria, esp = fin(Number(opc.espacamento)) ? Number(opc.espacamento) : PADRAO.espLuminarias, mg = fin(Number(opc.margem)) ? Number(opc.margem) : PADRAO.margemLuminarias;
+var sa = achaSanca(estado, forroId), P = sa ? sa.interno.map(ptA) : ccw(arr(f.contorno).map(ptA)), Fu = arr(f.furos).map(function (q) { return arr(q.pts).map(ptA); });
+premissas.push("espaçamento da grade " + virg(esp) + " m, a " + virg(mg) + " m das bordas — " + (fin(Number(opc.espacamento)) ? "informado" : "ADOTADO (a conferir no projeto luminotécnico; as frentes de elétrica definem os pontos)"));
+var xs = P.map(function (p) { return p[0]; }), zs = P.map(function (p) { return p[1]; });
+var x0 = Math.min.apply(null, xs) + mg, x1 = Math.max.apply(null, xs) - mg, z0 = Math.min.apply(null, zs) + mg, z1 = Math.max.apply(null, zs) - mg;
+if (!(x1 >= x0) || !(z1 >= z0)) return { ok: false, motivo: "O forro é pequeno demais para a margem de " + virg(mg) + " m." };
+var nx = Math.max(1, Math.round((x1 - x0) / esp) + 1), nz = Math.max(1, Math.round((z1 - z0) / esp) + 1), ops = [], piso = num(f.cota, 0) - num(f.deslocNivel, 0), k = 0, i, j;
+for (i = 0; i < nx; i++) for (j = 0; j < nz; j++) {
+var x = nx === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * i / (nx - 1), z = nz === 1 ? (z0 + z1) / 2 : z0 + (z1 - z0) * j / (nz - 1), p = [x, z];
+if (!dentro(p, P) || distBorda(p, P) < mg - 1e-3) continue;
+if (Fu.some(function (h) { return dentro(p, h); })) continue;
+var inst = { Altura_montagem: r4(num(f.deslocNivel, 2.6)) };
+if (opc.circuito) inst.Circuito = String(opc.circuito);
+ops.push({ op: "familia", id: "lum-" + f.id + "-" + (++k), famId: "ra-luminaria", tipoId: tipoId, x: r4(x), y: r4(piso), z: r4(z), rotY: 0, inst: inst });
+}
+if (!ops.length) return { ok: false, motivo: "Nenhum ponto coube dentro do forro com a margem de " + virg(mg) + " m." };
+var pref = "lum-" + f.id + "-", apagarL = arr(estado.familias).filter(function (q) { return q && String(q.id).indexOf(pref) === 0; }).map(function (q) { return { op: "apagar", id: q.id }; });
+var lote = { op: "lote", id: "tlu-" + f.id, origem: "luminarias-forro", ops: apagarL.concat(ops) };
+return { ok: true, forro: f.id, lote: lote, ops: [lote], n: ops.length, tipoId: tipoId, premissas: premissas, avisos: avisos };
+}
+function opsSubstituir(ops, res) {
+if (!res || !res.ok) return arr(ops).slice();
+var lote = res.lote, out = [], pos = -1;
+arr(ops).forEach(function (o) { if (o && o.op === "lote" && o.id === lote.id) { if (pos < 0) pos = out.length; return; } out.push(o); });
+if (pos < 0) pos = out.length;
+out.splice(pos, 0, lote);
+return out;
+}
+function item(nome, un, qtd, s, obs, extra) {
+var o = { grupo: "Forro", item: nome, un: un, qtd: r4(qtd), sinapi: s || null, orcarAParte: !s, obs: obs || null };
+if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+return o;
+}
+function quantitativo(estado) {
+var itens = [], avisos = [];
+arr(estado && estado.forros).forEach(function (f) {
+if (!f || !f.ok || !f.tipoForro || String(f.tipoForro.id).indexOf("drywall") !== 0) return;
+var sa = achaSanca(estado, f.id), faixa = sa ? sa.areaFaixa : 0, tst = sa ? sa.areaTesteira : 0, ex = { forro: f.id };
+itens.push(item("Forro de drywall 12,5 mm (chapa, parafusos e tratamento das juntas) — sem a faixa da sanca", "m²", num(f.area, 0) - faixa, sin("forroDrywall"), SINAPI.forroDrywall.obs, ex));
+if (sa) {
+itens.push(item("Sanca de drywall com luz indireta (faixa superior + testeira: " + virg(sa.areaFaixa) + " + " + virg(sa.areaTesteira) + " m²; recuo " + virg(sa.recuoEf) + " m, profundidade " + virg(sa.profundidadeEf) + " m)", "m²", sa.areaDesenvolvida, sin("sancaGesso"), SINAPI.sancaGesso.obs, ex));
+itens.push(item("Sanca — extensão (comprimento da linha da testeira)", "m", sa.comprimento, null, "para a fita de LED e a conferência; a composição de sanca é por m²", ex));
+if (sa.fitaLedM > 0) itens.push(item("Fita de LED da sanca (luz indireta) e fonte", "m", sa.fitaLedM, null, "sem composição na base: orçar à parte", ex));
+}
+itens.push(item("Fundo selador acrílico no forro (uma demão)", "m²", num(f.area, 0) + tst, sin("fundoSelador"), null, ex));
+itens.push(item("Pintura látex acrílica no forro (duas demãos)", "m²", num(f.area, 0) + tst, sin("pinturaTeto"), null, ex));
+var ps = arr(estado.caixas).filter(function (c) { return c && c.cob && String(c.cob.forro) === String(f.id); });
+if (ps.length) {
+var m = 0, v = 0; ps.forEach(function (c) { m += num(c.comprimento, 0); v += num(c.volume, 0); });
+itens.push(item("Estrutura de madeira do forro (" + ps.length + " peças, " + virg(m) + " m)", "m³", v, null, "sarrafos e barrotes do catálogo do fornecedor (medidas brutas); espaçamento NÃO verificado no manual do fabricante da chapa", ex));
+} else avisos.push("Forro " + f.id + ": sem estrutura de madeira lançada — a estrutura do forro NÃO está no quantitativo.");
+var lum = {};
+arr(estado.familias).forEach(function (q) {
+if (!q || q.famId !== "ra-luminaria") return;
+var P = ccw(arr(f.contorno).map(ptA));
+if (!dentro([q.x, q.z], P)) return;
+var alt = num(q.y, 0) + num(q.inst && q.inst.Altura_montagem, 0);
+if (Math.abs(alt - num(f.cota, 0)) > 0.06) return;
+lum[q.tipoId] = (lum[q.tipoId] || 0) + 1;
+});
+Object.keys(lum).forEach(function (t) {
+var s = sinLuminaria(t);
+itens.push(item("Luminária embutida no forro (família ra-luminaria, tipo " + t + ")", "un", lum[t], s, s ? null : "tipo sem composição SINAPI na tabela das instalações: orçar à parte", ex));
+});
+});
+return { itens: itens, avisos: avisos };
+}
+var BimForroDrywall = {
+TIPO_ID: TIPO_ID, CHAPA: CHAPA, PADRAO: PADRAO, LIM: LIM, SINAPI: SINAPI, sin: sin, sinLuminaria: sinLuminaria,
+calcularSanca: calcularSanca, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
+opsEstruturaForro: opsEstruturaForro, opsLuminarias: opsLuminarias, opsSubstituir: opsSubstituir, quantitativo: quantitativo,
+opSanca: function (id, d) {
+d = d || {}; var o = { op: "sanca", id: id, forro: d.forro != null ? String(d.forro) : d.forro };
+["recuo", "profundidade", "luz"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+return validaSanca(o) ? o : null;
+}
+};
+registrar(dep("BimEdit", "./bimedit.js"));
+global.BimForroDrywall = BimForroDrywall;
+if (typeof module !== "undefined" && module.exports) module.exports = BimForroDrywall;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimfundacao.js ==== */
@@ -52152,7 +55290,7 @@ arr(st.telhados).forEach(function (t) {
 if (!t || t.id == null) return;
 if (!t.ok) { A.avisos.push("telhado " + t.id + ": " + (arr(t.avisos)[0] || "não fechou") + " — ficou de fora do IFC"); return; }
 var nv = A.nivelDaPeca(t, num(t.cotaApoio, 0)), plT = A.placement(nv.pl, [0, 0, 0]);
-var tp = t.tipoTelhado || {}, esp = num(t.espessura, 0), cam = arr(tp.camadas), matN = String((cam[0] && (cam[0].material || cam[0].rotulo)) || "Telha cerâmica");
+var tp = t.tipoTelhado || {}, esp = num(t.espessuraTipo != null ? t.espessuraTipo : t.espessura, 0), cam = arr(tp.camadas), matN = String((cam[0] && (cam[0].material || cam[0].rotulo)) || "Telha cerâmica");
 var tipoRef = String(tp.rotulo || "Telhado");
 var er = A.peca(t.id, "IFCROOF", "Telhado " + t.id, tipoRef, plT, null, [A.E(tipoTelhado(t))], num(t.cotaApoio, 0), nv, { mapa: "telhado" });
 A.ligarMaterial(er, matN);
@@ -56106,6 +59244,9 @@ arr(estado && estado.caixas).forEach(function (c) { if (c && c.id != null) out.p
 arr(estado && estado.coberturas).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "cobertura", categoria: "cobertura", el: c }); });
 arr(estado && estado.forros).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "forro", categoria: "forro", el: c }); });
 arr(estado && estado.volumes).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "volume", categoria: "volume", el: c }); });
+arr(estado && estado.telhados).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "telhado", categoria: "cobertura", el: c }); });
+arr(estado && estado.bordas).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "borda", categoria: "cobertura", el: c }); });
+arr(estado && estado.fundacoes).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "fundacao", categoria: "fundacao", el: c }); });
 arr(estado && estado.familias).forEach(function (c) {
 if (!c || c.id == null) return;
 var k = catFam ? catFam(c.famId) : null;
@@ -56942,6 +60083,344 @@ global.BimGerenciar = BimGerenciar;
 if (typeof module !== "undefined" && module.exports) module.exports = BimGerenciar;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/familiaspiscina.js ==== */
+try {
+(function (global) {
+"use strict";
+var G_DIM = "Dimensões", G_PRD = "Produto", G_INST = "Instalação", G_QTD = "Quantidades", G_MAT = "Materiais", G_CONF = "Conferir";
+function P(nome, tipoDado, escopo, valor, grupo, descricao) { return { nome: nome, tipoDado: tipoDado, escopo: escopo, valor: valor, grupo: grupo, descricao: descricao || "" }; }
+function F(nome, tipoDado, formula, grupo, descricao) { return { nome: nome, tipoDado: tipoDado, escopo: "instancia", formula: formula, grupo: grupo, descricao: descricao || "" }; }
+function cx(id, nome, x, y, z, dx, dy, dz, material, extra) {
+var o = { id: id, nome: nome, forma: "caixa", x: x, y: y, z: z, dx: dx, dy: dy, dz: dz, material: material };
+Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+return o;
+}
+function cil(id, nome, eixo, x, y, z, raio, altura, material, extra) {
+var o = { id: id, nome: nome, forma: "cilindro", eixo: eixo, x: x, y: y, z: z, raio: raio, altura: altura, material: material };
+Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+return o;
+}
+function S(id, descricao, unidade, quantidade) { return { id: id, descricao: descricao + " — orçar à parte (sem composição SINAPI vinculada)", unidade: unidade, quantidade: quantidade, codigo: "" }; }
+var MAX_DEGRAUS = 4, MAX_JATOS = 6;
+var AVISO_PREMISSA = "Premissa RA (não vem do catálogo): ";
+var MODELOS = [
+{ id: "splash-cancun-3", nome: "Splash Cancún 3 m (3,00 x 1,80 x 0,80) — banco com hidromassagem", fab: "Splash", modelo: "Cancún 3 m", C: 3.00, L: 1.80, P: 0.80,
+banco: true, degraus: true, hidro: "de série (banco com hidromassagem)", jatos: 4, fonte: "https://www.splashpiscinas.com/piscinas/cancun (19/10/2026)",
+conferir: "Nº de jatos não informado pelo fabricante (4 = premissa RA); volume em litros não informado; folga de escavação do fabricante não publicada; degraus/banco em desenho esquemático." },
+{ id: "splash-cancun-4", nome: "Splash Cancún 4 m (4,00 x 2,00 x 1,20) — banco com hidromassagem", fab: "Splash", modelo: "Cancún 4 m", C: 4.00, L: 2.00, P: 1.20,
+banco: true, degraus: true, hidro: "de série (banco com hidromassagem)", jatos: 4, fonte: "https://www.splashpiscinas.com/piscinas/cancun (19/10/2026)",
+conferir: "Nº de jatos não informado (4 = premissa RA); volume não informado; folga do fabricante não publicada." },
+{ id: "splash-bonaire-3", nome: "Splash Bonaire 3 m (3,00 x 2,00 x 0,90) — sem banco", fab: "Splash", modelo: "Bonaire 3 m", C: 3.00, L: 2.00, P: 0.90,
+banco: false, degraus: true, hidro: "não nesta medida (a linha tem banco com hidromassagem; o 3 m é \"sem banco\")", jatos: 0, fonte: "https://www.splashpiscinas.com/piscinas/bonaire (19/10/2026)",
+conferir: "Hidromassagem não informada para o 3 m; escada em desenho esquemático; volume não informado." },
+{ id: "splash-tradicional-350-100", nome: "Splash Tradicional 3,50 x 1,80 x 1,00", fab: "Splash", modelo: "Tradicional 3,50 (prof. 1,00)", C: 3.50, L: 1.80, P: 1.00,
+banco: false, degraus: true, hidro: "opcional (kit de hidromassagem para piscina de fibra — confirmar com o fabricante)", jatos: 0, fonte: "https://www.splashpiscinas.com/piscinas/tradicional (19/10/2026)",
+conferir: "Banco, degraus e hidromassagem não informados na página (degraus em desenho esquemático); volume não informado." },
+{ id: "splash-tradicional-350-140", nome: "Splash Tradicional 3,50 x 1,80 x 1,40 (lançamento)", fab: "Splash", modelo: "Tradicional 3,50 (prof. 1,40)", C: 3.50, L: 1.80, P: 1.40,
+banco: false, degraus: true, hidro: "opcional (kit de hidromassagem — confirmar com o fabricante)", jatos: 0, fonte: "https://www.splashpiscinas.com/piscinas/tradicional (19/10/2026)",
+conferir: "Banco, degraus e hidromassagem não informados (degraus em desenho esquemático); volume não informado." },
+{ id: "tibum-parati", nome: "Tibum Parati 3,45 x 2,45 x 0,90", fab: "Tibum", modelo: "Parati", C: 3.45, L: 2.45, P: 0.90,
+banco: false, degraus: true, hidro: "não informado", jatos: 0, fonte: "https://www.tibumpiscinas.com.br/ (19/10/2026)",
+conferir: "Escada informada; banco, hidromassagem, litros e preço não informados." },
+{ id: "tibum-taiti", nome: "Tibum Taiti 3,80 x 2,38 x 1,10 — banco para hidromassagem", fab: "Tibum", modelo: "Taiti", C: 3.80, L: 2.38, P: 1.10,
+banco: true, degraus: true, hidro: "banco para hidromassagem (nº de jatos não informado)", jatos: 4, fonte: "https://www.tibumpiscinas.com.br/ (19/10/2026)",
+conferir: "Nº de jatos não informado (4 = premissa RA); litros e preço não informados; formato oval no catálogo — aqui retangular equivalente." },
+{ id: "jcn-florenza-350", nome: "Florenza 3,50 x 2,00 x 0,80 (revenda JCN)", fab: "JCN (revenda)", modelo: "Florenza 3,50", C: 3.50, L: 2.00, P: 0.80,
+banco: false, degraus: true, hidro: "\"opção de adicionar mais bicos\"", jatos: 0, fonte: "https://www.jcnpiscinas.com.br/piscinasfibra/piscina-3-50-metros-florenza-fibra (19/10/2026)",
+conferir: "Fabricante do casco não informado pela revenda; banco/escada/litros não informados." }
+];
+function famPiscina() {
+var params = [
+P("Fabricante", "texto", "tipo", "", G_PRD, "Fabricante do modelo (catálogo público)"),
+P("Modelo_catalogo", "texto", "tipo", "", G_PRD, "Nome do modelo no catálogo"),
+P("Fonte", "texto", "tipo", "", G_PRD, "Endereço e data da consulta"),
+P("Conferir", "texto", "tipo", "", G_CONF, "O que a fonte NÃO traz ou é premissa do desenho — conferir com o fabricante antes de usar em projeto executivo"),
+P("Hidromassagem", "texto", "tipo", "não informado", G_PRD, "Hidromassagem: de série, opcional (kit) ou não informado"),
+P("Volume_fabricante_L", "numero", "tipo", 0, G_PRD, "Litros da ficha do fabricante (0 = não informado → estimativa pelo fator de forma)"),
+P("Comprimento", "comprimento", "tipo", 3.00, G_DIM, "Comprimento externo do casco (medida de catálogo)"),
+P("Largura", "comprimento", "tipo", 1.80, G_DIM, "Largura externa do casco (medida de catálogo)"),
+P("Profundidade", "comprimento", "tipo", 0.80, G_DIM, "Profundidade total do casco (medida de catálogo; o catálogo não diz se há fundo inclinado)"),
+P("Banco", "simnao", "tipo", true, G_DIM, "Tem banco na extremidade do comprimento"),
+P("Degraus", "simnao", "tipo", true, G_DIM, "Tem escada interna de degraus"),
+P("N_degraus", "inteiro", "tipo", 3, G_DIM, AVISO_PREMISSA + "nº de degraus (1 a " + MAX_DEGRAUS + ")"),
+P("N_jatos", "inteiro", "instancia", 0, G_DIM, "Jatos de hidromassagem visíveis no banco (0 a " + MAX_JATOS + "). Nº do fabricante não é publicado: o valor dos tipos com hidro de série é premissa RA"),
+P("Espessura_casco", "comprimento", "tipo", 0.02, G_DIM, AVISO_PREMISSA + "espessura de DESENHO do casco; a do fabricante não é publicada e não vale para cálculo"),
+P("Borda_larg", "comprimento", "tipo", 0.10, G_DIM, AVISO_PREMISSA + "largura da bordinha/capa além da parede do casco"),
+P("Borda_esp", "comprimento", "tipo", 0.04, G_DIM, AVISO_PREMISSA + "espessura da bordinha/capa"),
+P("Banco_prof", "comprimento", "tipo", 0.45, G_DIM, AVISO_PREMISSA + "extensão do banco ao longo do comprimento"),
+P("Esc_larg", "comprimento", "tipo", 0.60, G_DIM, AVISO_PREMISSA + "largura da faixa da escada interna"),
+P("Prof_degrau", "comprimento", "tipo", 0.30, G_DIM, AVISO_PREMISSA + "piso (profundidade) de cada degrau"),
+P("Fator_forma", "numero", "tipo", 0.70, G_QTD, AVISO_PREMISSA + "relação entre o volume de água e a caixa externa C x L x P (a ficha do fabricante, quando vier, substitui). Referência de ordem de grandeza: modelos de outro fabricante com litros publicados dão 0,77 e 0,92"),
+P("Nivel_agua_abaixo", "comprimento", "instancia", 0.10, G_DIM, AVISO_PREMISSA + "distância da superfície da água até o topo da borda"),
+P("Com_agua", "simnao", "instancia", true, G_DIM, "Desenhar a superfície/volume da água (translúcido)"),
+P("Mostrar_calcada", "simnao", "instancia", false, G_DIM, "Desenhar a calçada em volta (por padrão o deck é modelado à parte)"),
+P("Folga_escavacao", "comprimento", "instancia", 0.20, G_INST, "Folga da cava por lado — Fibralagos, Manual de Instalação: ~20 cm além das paredes. O manual do modelo escolhido manda"),
+P("Talude", "numero", "instancia", 0, G_INST, "Inclinação da parede da cava (H por V). 0 = parede vertical; o solo define (sondagem)"),
+P("Lastro_esp", "comprimento", "instancia", 0.10, G_INST, "Base/lastro sob o casco — Fibralagos: concreto liso e nivelado de 5 a 10 cm (Bramarfi: areia 5 a 7 cm)"),
+P("Calcada_larg", "comprimento", "instancia", 0.60, G_INST, AVISO_PREMISSA + "largura da calçada/deck em volta da borda"),
+P("Disp_C", "comprimento", "instancia", 0, G_INST, "Comprimento livre do terreno para a cava (0 = não conferir)"),
+P("Disp_L", "comprimento", "instancia", 0, G_INST, "Largura livre do terreno para a cava (0 = não conferir)"),
+P("Material_casco", "material", "tipo", "Fibra azul", G_MAT, "Cor do casco"),
+P("Material_borda", "material", "tipo", "Borda da piscina", G_MAT, "Bordinha/capa"),
+P("Material_agua", "material", "tipo", "Água da piscina", G_MAT, "Água"),
+F("Larg_interna", "comprimento", "Largura - 2*Espessura_casco", G_DIM, "Largura interna"),
+F("Comp_interno", "comprimento", "Comprimento - 2*Espessura_casco", G_DIM, "Comprimento interno"),
+F("Banco_alt", "comprimento", "min(0.45; Profundidade*0.55)", G_DIM, "Profundidade do assento do banco abaixo do topo (proporção de desenho)"),
+F("Alt_degrau", "comprimento", "min(0.30; Profundidade*0.85/max(1; N_degraus))", G_DIM, "Altura de cada degrau (proporção de desenho)"),
+F("Banco_len_z", "comprimento", "Larg_interna - se(Degraus; Esc_larg; 0)", G_DIM, "Extensão do banco na largura (o resto é a faixa da escada)"),
+F("Banco_cen_z", "comprimento", "Larg_interna/2 - Banco_len_z/2", G_DIM, "Centro do banco na largura"),
+F("Jato_passo", "comprimento", "min(0.30; Banco_len_z/(max(N_jatos; 1) + 1))", G_DIM, "Espaçamento entre jatos"),
+F("Jato_y", "comprimento", "0 - Banco_alt + 0.28", G_DIM, "Altura dos jatos (acima do assento, abaixo da água)"),
+F("Cabe_na_area", "simnao", "(Disp_C <= 0 ou Comprimento + 2*Folga_escavacao <= Disp_C + 0.001) e (Disp_L <= 0 ou Largura + 2*Folga_escavacao <= Disp_L + 0.001)", G_INST, "A cava (casco + folga) cabe na área livre informada"),
+F("Vao_cava_C", "comprimento", "Comprimento + 2*Folga_escavacao", G_QTD, "Comprimento da cava no fundo"),
+F("Vao_cava_L", "comprimento", "Largura + 2*Folga_escavacao", G_QTD, "Largura da cava no fundo"),
+F("Prof_escavacao", "comprimento", "Profundidade + Lastro_esp", G_QTD, "Profundidade da cava (casco + lastro)"),
+F("Area_base_cava", "area", "Vao_cava_C*Vao_cava_L", G_QTD, "Área do fundo da cava"),
+F("Area_topo_cava", "area", "(Vao_cava_C + 2*Talude*Prof_escavacao)*(Vao_cava_L + 2*Talude*Prof_escavacao)", G_QTD, "Área da boca da cava (com talude)"),
+F("Vol_escavacao", "volume", "Prof_escavacao/3*(Area_base_cava + Area_topo_cava + raiz(Area_base_cava*Area_topo_cava))", G_QTD, "Volume escavado (tronco de pirâmide; sem talude = prisma)"),
+F("Vol_lastro", "volume", "Area_base_cava*Lastro_esp", G_QTD, "Lastro/berço sob o casco"),
+F("Vol_casco_externo", "volume", "Comprimento*Largura*Profundidade", G_QTD, "Volume externo do casco (caixa C x L x P)"),
+F("Vol_reaterro", "volume", "max(0; Vol_escavacao - Vol_lastro - Vol_casco_externo)", G_QTD, "Reaterro entre o casco e a cava (farofa areia:cimento 7:1 — Fibralagos)"),
+F("Area_calcada", "area", "(Comprimento + 2*(Borda_larg + Calcada_larg))*(Largura + 2*(Borda_larg + Calcada_larg)) - (Comprimento + 2*Borda_larg)*(Largura + 2*Borda_larg)", G_QTD, "Calçada em volta da borda (m²)"),
+F("Volume_agua_L", "numero", "se(Volume_fabricante_L > 0; Volume_fabricante_L; Comprimento*Largura*Profundidade*Fator_forma*1000)", G_QTD, "Litros: ficha do fabricante, ou ESTIMATIVA pelo fator de forma"),
+F("Volume_agua_m3", "volume", "Volume_agua_L/1000", G_QTD, "Volume de água em m³")
+];
+var sol = [];
+sol.push(cx("fundo", "Fundo do casco", "0", "0 - Profundidade", "0", "Comprimento", "Espessura_casco", "Largura", "Material_casco"));
+sol.push(cx("p-z-", "Parede lateral (−Z)", "0", "0 - Profundidade", "0 - (Largura - Espessura_casco)/2", "Comprimento", "Profundidade - Borda_esp", "Espessura_casco", "Material_casco"));
+sol.push(cx("p-z+", "Parede lateral (+Z)", "0", "0 - Profundidade", "(Largura - Espessura_casco)/2", "Comprimento", "Profundidade - Borda_esp", "Espessura_casco", "Material_casco"));
+sol.push(cx("p-x-", "Parede de topo (−X)", "0 - (Comprimento - Espessura_casco)/2", "0 - Profundidade", "0", "Espessura_casco", "Profundidade - Borda_esp", "Larg_interna", "Material_casco"));
+sol.push(cx("p-x+", "Parede de topo (+X)", "(Comprimento - Espessura_casco)/2", "0 - Profundidade", "0", "Espessura_casco", "Profundidade - Borda_esp", "Larg_interna", "Material_casco"));
+sol.push(cx("bo-z-", "Borda (−Z)", "0", "0 - Borda_esp", "0 - (Largura/2 + (Borda_larg - Espessura_casco)/2)", "Comprimento + 2*Borda_larg", "Borda_esp", "Borda_larg + Espessura_casco", "Material_borda"));
+sol.push(cx("bo-z+", "Borda (+Z)", "0", "0 - Borda_esp", "Largura/2 + (Borda_larg - Espessura_casco)/2", "Comprimento + 2*Borda_larg", "Borda_esp", "Borda_larg + Espessura_casco", "Material_borda"));
+sol.push(cx("bo-x-", "Borda (−X)", "0 - (Comprimento/2 + (Borda_larg - Espessura_casco)/2)", "0 - Borda_esp", "0", "Borda_larg + Espessura_casco", "Borda_esp", "Larg_interna", "Material_borda"));
+sol.push(cx("bo-x+", "Borda (+X)", "Comprimento/2 + (Borda_larg - Espessura_casco)/2", "0 - Borda_esp", "0", "Borda_larg + Espessura_casco", "Borda_esp", "Larg_interna", "Material_borda"));
+sol.push(cx("banco", "Banco", "0 - Comp_interno/2 + Banco_prof/2", "0 - Profundidade + Espessura_casco", "Banco_cen_z", "Banco_prof", "Profundidade - Espessura_casco - Banco_alt", "Banco_len_z", "Material_casco", { visivel: "Banco" }));
+var k;
+for (k = 1; k <= MAX_DEGRAUS; k++) {
+sol.push(cx("degrau" + k, "Degrau " + k, "0 - Comp_interno/2 + (" + k + " - 0.5)*Prof_degrau", "0 - Profundidade + Espessura_casco", "0 - Larg_interna/2 + Esc_larg/2",
+"Prof_degrau", "Profundidade - Espessura_casco - " + k + "*Alt_degrau", "Esc_larg", "Material_casco", { visivel: "Degraus e N_degraus >= " + k }));
+}
+for (k = 1; k <= MAX_JATOS; k++) {
+sol.push(cil("jato" + k, "Jato " + k, "x", "0 - Comp_interno/2", "Jato_y", "Banco_cen_z + (" + k + " - 1 - (N_jatos - 1)/2)*Jato_passo", "0.03", "0.02", "Metal cromado", { visivel: "N_jatos >= " + k }));
+}
+sol.push(cx("agua", "Água", "0", "0 - Profundidade + Espessura_casco", "0", "Comp_interno", "Profundidade - Espessura_casco - Nivel_agua_abaixo", "Larg_interna", "Material_agua", { visivel: "Com_agua" }));
+sol.push(cx("cal-z-", "Calçada (−Z)", "0", "0 - 0.04", "0 - (Largura/2 + Borda_larg + Calcada_larg/2)", "Comprimento + 2*(Borda_larg + Calcada_larg)", "0.04", "Calcada_larg", "Concreto", { visivel: "Mostrar_calcada" }));
+sol.push(cx("cal-z+", "Calçada (+Z)", "0", "0 - 0.04", "Largura/2 + Borda_larg + Calcada_larg/2", "Comprimento + 2*(Borda_larg + Calcada_larg)", "0.04", "Calcada_larg", "Concreto", { visivel: "Mostrar_calcada" }));
+sol.push(cx("cal-x-", "Calçada (−X)", "0 - (Comprimento/2 + Borda_larg + Calcada_larg/2)", "0 - 0.04", "0", "Calcada_larg", "0.04", "Largura + 2*Borda_larg", "Concreto", { visivel: "Mostrar_calcada" }));
+sol.push(cx("cal-x+", "Calçada (+X)", "Comprimento/2 + Borda_larg + Calcada_larg/2", "0 - 0.04", "0", "Calcada_larg", "0.04", "Largura + 2*Borda_larg", "Concreto", { visivel: "Mostrar_calcada" }));
+return {
+id: "ra-piscina-fibra", nome: "Piscina de fibra (casco de mercado)", categoria: "generico", hospedagem: "livre", previa: "modelador",
+descricao: "Piscina de fibra residencial com os modelos de catálogo como TIPOS (dimensões externas com fonte). Casco com bordinha, banco, degraus, jatos de hidromassagem e água. " +
+"Origem no centro, no nível do piso acabado; o casco desce. Quantitativo: escavação (folga e talude), lastro, reaterro, calçada e volume de água. " +
+"Hidráulica da piscina é outra frente. Candidatos de orçamento na base (NÃO vinculados): escavação manual de vala 93358, reaterro manual 104737, lastro de concreto magro 96620 — o casco e a hidromassagem são \"orçar à parte\".",
+parametros: params,
+tipos: MODELOS.map(function (m) {
+return { id: m.id, nome: m.nome, valores: {
+Fabricante: m.fab, Modelo_catalogo: m.modelo, Fonte: m.fonte, Conferir: m.conferir, Hidromassagem: m.hidro,
+Comprimento: m.C, Largura: m.L, Profundidade: m.P, Banco: m.banco, Degraus: m.degraus, N_jatos: m.jatos } };
+}),
+solidos: sol,
+servicos: [
+S("escavacao", "Escavação da cava da piscina (com folga e talude)", "m3", "Vol_escavacao"),
+S("lastro", "Lastro/berço sob o casco da piscina", "m3", "Vol_lastro"),
+S("reaterro", "Reaterro entre casco e cava (areia:cimento 7:1)", "m3", "Vol_reaterro"),
+S("calcada", "Calçada/borda em volta da piscina", "m2", "Area_calcada"),
+S("agua", "Volume de água (primeiro enchimento)", "m3", "Volume_agua_m3")
+],
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Casco de piscina de fibra (fornecimento e instalação — orçar à parte)" }
+};
+}
+var CONJUNTOS = [
+{ id: "fm30", nome: "Filtro FM 30 + bomba BMCP 25 (+ hidromassagem BHPC 50)", filtro: "FM 30", fD: 0.325, fH: 0.77, bA: 0.24, bB: 0.14, bC: 0.18, vazao: 3.5, cv: "1/4",
+conferir: "Diâmetro/altura do filtro e envelope da bomba lidos das tabelas/desenhos do catálogo (sem legenda em texto): conferir no desenho da página. BHPC: potência 1/2 cv (BHPC 50)." },
+{ id: "fm36", nome: "Filtro FM 36 + bomba BMCP 33 (+ hidromassagem BHPC 75)", filtro: "FM 36", fD: 0.380, fH: 0.82, bA: 0.24, bB: 0.14, bC: 0.18, vazao: 5.0, cv: "1/3",
+conferir: "Idem: tabela dimensional FM 36 (A=820, B=380 mm) e desenho único da BMCP; BHPC 75 = 3/4 cv." }
+];
+function famCasaMaquinas() {
+var params = [
+P("Filtro", "texto", "tipo", "FM 30", G_PRD, "Filtro de areia (Sodramar, Catálogo Técnico Filtros e Bombas REV007 de 04/08/2026, p. 08-09)"),
+P("Vazao_filtro_m3h", "numero", "tipo", 3.5, G_PRD, "Vazão de filtragem do filtro (catálogo)"),
+P("Bomba_cv", "texto", "tipo", "1/4", G_PRD, "Bomba de filtração correspondente (catálogo)"),
+P("Conferir", "texto", "tipo", "", G_CONF, "O que é leitura de desenho/premissa — conferir"),
+P("Filtro_D", "comprimento", "tipo", 0.325, G_DIM, "Diâmetro do filtro (tabela dimensional, coluna B)"),
+P("Filtro_H", "comprimento", "tipo", 0.77, G_DIM, "Altura do filtro com a válvula (tabela dimensional, coluna A)"),
+P("Bomba_A", "comprimento", "tipo", 0.24, G_DIM, "Bomba de filtração BMCP: comprimento (p. 21, desenho)"),
+P("Bomba_B", "comprimento", "tipo", 0.14, G_DIM, "Bomba de filtração: largura"),
+P("Bomba_C", "comprimento", "tipo", 0.18, G_DIM, "Bomba de filtração: altura"),
+P("Com_hidro", "simnao", "instancia", true, G_DIM, "Tem bomba de hidromassagem na casa de máquinas"),
+P("Hidro_A", "comprimento", "tipo", 0.358, G_DIM, "Bomba de hidromassagem BHPC: comprimento (p. 35, A)"),
+P("Hidro_B", "comprimento", "tipo", 0.15, G_DIM, "BHPC: largura (B)"),
+P("Hidro_C", "comprimento", "tipo", 0.185, G_DIM, "BHPC: altura (C)"),
+P("Folga_servico", "comprimento", "instancia", 0.15, G_DIM, AVISO_PREMISSA + "espaço livre entre equipamentos e paredes para manutenção"),
+P("Folga_topo", "comprimento", "instancia", 0.20, G_DIM, AVISO_PREMISSA + "folga acima do filtro (retrolavagem e válvula)"),
+P("Esp_parede", "comprimento", "instancia", 0.14, G_DIM, AVISO_PREMISSA + "parede de alvenaria de bloco 14 cm (reboco por dentro e por fora não incluído)"),
+P("Esp_fundo", "comprimento", "instancia", 0.10, G_DIM, AVISO_PREMISSA + "laje de fundo"),
+P("Esp_tampa", "comprimento", "instancia", 0.08, G_DIM, AVISO_PREMISSA + "tampa de concreto removível"),
+P("Acima_do_piso", "comprimento", "instancia", 0, G_DIM, "Quanto a tampa fica ACIMA do piso (0 = totalmente enterrada; > 0 = semienterrada)"),
+P("Tampa_aberta", "simnao", "instancia", false, G_DIM, "Tampa retirada: mostra os equipamentos"),
+P("Folga_escavacao", "comprimento", "instancia", 0.30, G_INST, AVISO_PREMISSA + "folga de escavação por lado para executar a alvenaria"),
+P("Material_parede", "material", "tipo", "Concreto", G_MAT, "Parede"),
+P("Material_tampa", "material", "tipo", "Aço", G_MAT, "Tampa"),
+F("N_itens", "inteiro", "2 + se(Com_hidro; 1; 0)", G_DIM, "Itens em fila: filtro, bomba e (opcional) bomba de hidromassagem"),
+F("Interno_C", "comprimento", "Filtro_D + Bomba_A + se(Com_hidro; Hidro_A; 0) + (N_itens + 1)*Folga_servico", G_DIM, "Comprimento interno"),
+F("Interno_L", "comprimento", "max(Filtro_D; Bomba_B; se(Com_hidro; Hidro_B; 0)) + 2*Folga_servico", G_DIM, "Largura interna"),
+F("Interno_H", "comprimento", "Filtro_H + Folga_topo", G_DIM, "Altura interna livre"),
+F("Ext_C", "comprimento", "Interno_C + 2*Esp_parede", G_DIM, "Comprimento externo"),
+F("Ext_L", "comprimento", "Interno_L + 2*Esp_parede", G_DIM, "Largura externa"),
+F("Ext_H", "comprimento", "Interno_H + Esp_fundo + Esp_tampa", G_DIM, "Altura externa total"),
+F("Y_fundo", "comprimento", "Acima_do_piso - Ext_H", G_DIM, "Cota da face de baixo (a tampa fica em Acima_do_piso)"),
+F("Vol_escavacao", "volume", "(Ext_C + 2*Folga_escavacao)*(Ext_L + 2*Folga_escavacao)*max(0; Ext_H - Acima_do_piso)", G_QTD, "Escavação (prisma; sem talude)"),
+F("Area_alvenaria", "area", "2*(Interno_C + Interno_L + 2*Esp_parede)*Interno_H", G_QTD, "Alvenaria (face média x altura interna)"),
+F("Vol_concreto", "volume", "Ext_C*Ext_L*(Esp_fundo + Esp_tampa)", G_QTD, "Laje de fundo + tampa")
+];
+var sol = [];
+sol.push(cx("fundo", "Laje de fundo", "0", "Y_fundo", "0", "Ext_C", "Esp_fundo", "Ext_L", "Material_parede"));
+sol.push(cx("p-z-", "Parede (−Z)", "0", "Y_fundo + Esp_fundo", "0 - (Ext_L - Esp_parede)/2", "Ext_C", "Interno_H", "Esp_parede", "Material_parede"));
+sol.push(cx("p-z+", "Parede (+Z)", "0", "Y_fundo + Esp_fundo", "(Ext_L - Esp_parede)/2", "Ext_C", "Interno_H", "Esp_parede", "Material_parede"));
+sol.push(cx("p-x-", "Parede (−X)", "0 - (Ext_C - Esp_parede)/2", "Y_fundo + Esp_fundo", "0", "Esp_parede", "Interno_H", "Interno_L", "Material_parede"));
+sol.push(cx("p-x+", "Parede (+X)", "(Ext_C - Esp_parede)/2", "Y_fundo + Esp_fundo", "0", "Esp_parede", "Interno_H", "Interno_L", "Material_parede"));
+sol.push(cx("tampa", "Tampa", "0", "Acima_do_piso - Esp_tampa", "0", "Ext_C", "Esp_tampa", "Ext_L", "Material_tampa", { visivel: "nao(Tampa_aberta)" }));
+var base = "Y_fundo + Esp_fundo";
+var xFiltro = "0 - Interno_C/2 + Folga_servico + Filtro_D/2";
+var xBomba = "0 - Interno_C/2 + 2*Folga_servico + Filtro_D + Bomba_A/2";
+var xHidro = "0 - Interno_C/2 + 3*Folga_servico + Filtro_D + Bomba_A + Hidro_A/2";
+sol.push(cil("filtro", "Filtro de areia " + "(catálogo)", "y", xFiltro, base, "0", "Filtro_D/2", "Filtro_H", "Equipamento azul", { visivel: "Tampa_aberta" }));
+sol.push(cx("bomba", "Motobomba de filtração", xBomba, base, "0", "Bomba_A", "Bomba_C", "Bomba_B", "Equipamento preto", { visivel: "Tampa_aberta" }));
+sol.push(cx("bomba-hidro", "Motobomba de hidromassagem", xHidro, base, "0", "Hidro_A", "Hidro_C", "Hidro_B", "Equipamento preto", { visivel: "Tampa_aberta e Com_hidro" }));
+return {
+id: "ra-casa-maquinas-piscina", nome: "Casa de máquinas da piscina (enterrada/semienterrada)", categoria: "generico", hospedagem: "livre", previa: "modelador",
+descricao: "Abrigo de alvenaria/concreto com tampa, dimensionado pelo filtro e pelas bombas do catálogo Sodramar (REV007 de 04/08/2026): " +
+"interno = equipamentos em fila + folga de serviço. Só volume e arquitetura; tubulação e hidráulica são outra frente. Origem no centro, no piso; desce. " +
+"Folgas e espessuras são premissa RA (parâmetros). Orçamento: orçar à parte.",
+parametros: params,
+tipos: CONJUNTOS.map(function (c) {
+return { id: c.id, nome: c.nome, valores: { Filtro: c.filtro, Vazao_filtro_m3h: c.vazao, Bomba_cv: c.cv, Conferir: c.conferir, Filtro_D: c.fD, Filtro_H: c.fH,
+Bomba_A: c.bA, Bomba_B: c.bB, Bomba_C: c.bC } };
+}),
+solidos: sol,
+servicos: [
+S("escavacao", "Escavação da casa de máquinas", "m3", "Vol_escavacao"),
+S("alvenaria", "Alvenaria das paredes da casa de máquinas", "m2", "Area_alvenaria"),
+S("concreto", "Laje de fundo e tampa da casa de máquinas", "m3", "Vol_concreto"),
+S("filtro", "Filtro de areia (catálogo)", "un", "1"),
+S("bomba", "Motobomba de filtração (catálogo)", "un", "1"),
+S("bomba_hidro", "Motobomba de hidromassagem (catálogo)", "un", "se(Com_hidro; 1; 0)")
+],
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Casa de máquinas da piscina (orçar à parte)" }
+};
+}
+var MAX_FOLHAS = 20;
+var SISTEMAS = [
+{ id: "zamia-8", nome: "Vidro 8 mm — folha até 800 mm, altura até 2,50 m (SeeGlass ONE, Zamia)", esp: 0.008, larg: 0.80, hMax8: 2.5, hMax10: 3.0, nMax: 0,
+conferir: "Altura máx. 2500 mm (8 mm) / 3000 mm (10 mm) e painel até 800 mm: Zamia. Seção dos perfis e passo de empilhamento: o site não traz — usado o da Acristalia (28 mm) como premissa." },
+{ id: "zamia-10", nome: "Vidro 10 mm — folha até 800 mm, altura até 3,00 m (SeeGlass ONE, Zamia)", esp: 0.010, larg: 0.80, hMax8: 2.5, hMax10: 3.0, nMax: 0,
+conferir: "Idem Zamia 8 mm." },
+{ id: "wikna-10", nome: "Vidro 10 mm — folha até 700 mm, altura até 3,00 m, até 20 folhas (Wiknaplast)", esp: 0.010, larg: 0.70, hMax8: 3.0, hMax10: 3.0, nMax: 20,
+conferir: "Painel até 700 mm, altura até 3000 mm, 8 ou 10 mm, até 20 painéis: Wiknaplast. Perfis e passo de empilhamento: não informados — premissa Acristalia." },
+{ id: "acristalia-8", nome: "Vidro 8 mm — folha até 700 mm, altura até 2,00 m (Basic Pro, Acristalia)", esp: 0.008, larg: 0.70, hMax8: 2.0, hMax10: 2.0, nMax: 0,
+conferir: "Folha até 700 x 2000 mm, peso máx. 35 kg/folha, zona de armazenagem D = 28 x N + 17,5 mm (ficha p. 7). Seções dos trilhos: desenho p. 8 sem legenda — premissa RA." }
+];
+function famVidro(id, nome, hospedada) {
+var params = [
+P("Sistema", "texto", "tipo", "", G_PRD, "Sistema de envidraçamento de catálogo"),
+P("Conferir", "texto", "tipo", "", G_CONF, "O que o catálogo não traz ou é premissa — conferir"),
+P("Vao", "comprimento", "instancia", 3.00, G_DIM, "Largura do vão entre apoios (a pele de vidro fecha o vão inteiro)"),
+P("Altura", "comprimento", "instancia", 2.50, G_DIM, "Altura do piso até a face de baixo da viga/trilho superior"),
+P("Espessura_vidro", "comprimento", "tipo", 0.008, G_DIM, "Espessura do vidro temperado (8 ou 10 mm)"),
+P("Larg_max_folha", "comprimento", "tipo", 0.80, G_DIM, "Largura máxima de folha do sistema (catálogo do fabricante)"),
+P("Altura_max_8", "comprimento", "tipo", 2.5, G_DIM, "Altura máxima com vidro de 8 mm (catálogo)"),
+P("Altura_max_10", "comprimento", "tipo", 3.0, G_DIM, "Altura máxima com vidro de 10 mm (catálogo)"),
+P("N_folhas_max", "inteiro", "tipo", 0, G_DIM, "Nº máximo de folhas do sistema (0 = sem limite informado)"),
+P("Passo_pilha", "comprimento", "tipo", 0.028, G_DIM, "Passo entre folhas empilhadas — Acristalia Basic Pro: zona de armazenagem D = 28 x N + 17,5 mm (única fonte; premissa nos demais sistemas)"),
+P("Const_pilha", "comprimento", "tipo", 0.0175, G_DIM, "Constante da zona de armazenagem (17,5 mm — Acristalia)"),
+P("Embutido", "simnao", "tipo", true, G_DIM, "Trilho inferior embutido no piso (vão térreo livre)"),
+P("Trilho_inf_alt", "comprimento", "tipo", 0.035, G_DIM, "Altura do trilho inferior (Acristalia p. 8, leitura do desenho sem legenda: a conferir)"),
+P("Trilho_sup_alt", "comprimento", "tipo", 0.0505, G_DIM, "Altura do trilho superior (Acristalia p. 8, leitura do desenho: a conferir)"),
+P("Trilho_larg", "comprimento", "tipo", 0.05, G_DIM, AVISO_PREMISSA + "largura (profundidade) dos trilhos"),
+P("Junta", "comprimento", "tipo", 0.005, G_DIM, AVISO_PREMISSA + "junta/escova entre folhas fechadas"),
+P("Folga_inf", "comprimento", "tipo", 0.012, G_DIM, AVISO_PREMISSA + "folga entre o fundo do vidro e o trilho"),
+P("Encaixe_sup", "comprimento", "tipo", 0.02, G_DIM, AVISO_PREMISSA + "quanto o vidro entra no trilho superior"),
+P("Perfil_folha_alt", "comprimento", "tipo", 0.03, G_DIM, AVISO_PREMISSA + "altura dos perfis de topo e de base da folha"),
+P("Folga_lateral", "comprimento", "tipo", 0.02, G_DIM, AVISO_PREMISSA + "folga entre o apoio e a pilha de folhas recolhidas"),
+P("Pilha_a_direita", "simnao", "instancia", true, G_DIM, "Lado do empilhamento: verdadeiro = +X (direita de quem olha de dentro), falso = −X"),
+P("Pilha_para_fora", "simnao", "instancia", true, G_DIM, "A pilha de folhas recolhidas fica do lado +Z (fora) ou −Z (dentro)"),
+P("Aberto", "simnao", "instancia", false, G_DIM, "Posição para o 3D: aberto (todas as folhas empilhadas)"),
+P("Abertura", "numero", "instancia", 0, G_DIM, "Fração aberta de 0 (fechado) a 1 (aberto), quando 'Aberto' está desligado"),
+P("Cor_perfil", "material", "instancia", "Alumínio", G_MAT, "Cor do perfil: Alumínio, Alumínio branco, Alumínio preto ou Alumínio bronze"),
+P("Material_vidro", "material", "tipo", "Vidro temperado", G_MAT, "Vidro"),
+P("Simbolo_planta", "simnao", "instancia", true, G_DIM, "Desenha na planta a posição FECHADA (traço) e a seta do empilhamento"),
+F("N_folhas", "inteiro", "max(1; teto(Vao/Larg_max_folha - 0.0001))", G_DIM, "Nº de folhas = vão / largura máxima de folha, arredondado para cima"),
+F("Folha_larg", "comprimento", "(Vao - (N_folhas - 1)*Junta)/N_folhas", G_DIM, "Largura de cada folha"),
+F("Folha_alt", "comprimento", "Altura - Trilho_sup_alt + Encaixe_sup - Folga_inf", G_DIM, "Altura do vidro"),
+F("Altura_ok", "simnao", "Altura <= se(Espessura_vidro >= 0.0095; Altura_max_10; Altura_max_8) + 0.0001", G_DIM, "A altura respeita o limite do sistema para a espessura do vidro"),
+F("Folhas_ok", "simnao", "N_folhas <= " + MAX_FOLHAS + " e (N_folhas_max <= 0 ou N_folhas <= N_folhas_max)", G_DIM, "O nº de folhas respeita o limite do sistema"),
+F("Zona_pilha", "comprimento", "Passo_pilha*N_folhas + Const_pilha", G_DIM, "Comprimento ocupado pela pilha de folhas recolhidas (a vão livre = Vao − isto)"),
+F("Vao_livre_aberto", "comprimento", "Vao - Zona_pilha - Folga_lateral", G_DIM, "Vão livre com tudo aberto"),
+F("Sinal_lado", "inteiro", "se(Pilha_a_direita; 1; -1)", G_DIM, "+1 = pilha em +X"),
+F("Sinal_fora", "inteiro", "se(Pilha_para_fora; 1; -1)", G_DIM, "+1 = pilha em +Z"),
+F("Fracao", "numero", "se(Aberto; 1; min(1; max(0; Abertura)))", G_DIM, "Fração aberta efetiva"),
+F("Giro", "angulo", "90*Fracao", G_DIM, "Giro das folhas em planta (0 fechada, 90 recolhida perpendicular ao trilho)"),
+F("Area_vidro", "area", "N_folhas*Folha_larg*Folha_alt", G_QTD, "Área de vidro (m²)"),
+F("Trilho_inf_m", "comprimento", "Vao", G_QTD, "Trilho inferior (m)"),
+F("Trilho_sup_m", "comprimento", "Vao", G_QTD, "Trilho superior (m)")
+];
+if (hospedada) params.push(P("Espessura_parede", "comprimento", "instancia", 0.15, "Hospedeiro", "Vem da parede onde a pele de vidro é colocada"));
+var sol = [];
+var yTrilhoInf = "se(Embutido; 0 - Trilho_inf_alt; 0)";
+sol.push(cx("tri", "Trilho inferior", "0", yTrilhoInf, "0", "Vao", "Trilho_inf_alt", "Trilho_larg", "Cor_perfil"));
+sol.push(cx("trs", "Trilho superior", "0", "Altura - Trilho_sup_alt", "0", "Vao", "Trilho_sup_alt", "Trilho_larg", "Cor_perfil"));
+var i;
+for (i = 1; i <= MAX_FOLHAS; i++) {
+var vis = { visivel: "N_folhas >= " + i };
+var piv = "((1 - Fracao)*Sinal_lado*(Vao/2 - (" + i + " - 1)*(Folha_larg + Junta)) + Fracao*Sinal_lado*(Vao/2 - Folga_lateral - (" + i + " - 1)*Passo_pilha))";
+var xc = piv + " - Sinal_lado*(Folha_larg/2)*cos(Giro)";
+var zc = "Sinal_fora*(Folha_larg/2)*sen(Giro)";
+var rot = "Giro*Sinal_fora*Sinal_lado";
+sol.push(cx("f" + i, "Folha " + i + " (vidro)", xc, "Folga_inf + Perfil_folha_alt", zc, "Folha_larg", "Folha_alt - 2*Perfil_folha_alt", "Espessura_vidro", "Material_vidro", { rot: rot, visivel: vis.visivel }));
+sol.push(cx("fb" + i, "Folha " + i + " — perfil de base", xc, "Folga_inf", zc, "Folha_larg", "Perfil_folha_alt", "Espessura_vidro + 0.012", "Cor_perfil", { rot: rot, visivel: vis.visivel }));
+sol.push(cx("ft" + i, "Folha " + i + " — perfil de topo", xc, "Folga_inf + Folha_alt - Perfil_folha_alt", zc, "Folha_larg", "Perfil_folha_alt", "Espessura_vidro + 0.012", "Cor_perfil", { rot: rot, visivel: vis.visivel }));
+}
+sol.push(cx("sp-fechada", "Posição fechada (símbolo de planta)", "0", "0.002", "0", "Vao", "0.002", "0.004", "Cinza claro", { visivel: "Simbolo_planta e Fracao > 0.01" }));
+sol.push(cx("sp-pilha", "Onde a pilha recolhida fica (símbolo de planta)", "Sinal_lado*(Vao/2 - Folga_lateral - Zona_pilha/2 + Passo_pilha/2)", "0.002", "Sinal_fora*(Folha_larg/2)", "Zona_pilha", "0.002", "Folha_larg", "Cinza claro", { visivel: "Simbolo_planta e Fracao < 0.99" }));
+sol.push({ id: "sp-seta", nome: "Seta do empilhamento (símbolo de planta)", forma: "extrusao", plano: "planta", x: "0", y: "0.004", z: "Sinal_fora*(Folha_larg + 0.25)",
+altura: "0.002", contorno: [["Sinal_lado*(Vao/2 - 0.55)", "0 - 0.05"], ["Sinal_lado*(Vao/2 - 0.55)", "0.05"], ["Sinal_lado*(Vao/2 - 0.20)", "0"]], material: "Cinza escuro", visivel: "Simbolo_planta" });
+return {
+id: id, nome: nome, categoria: "janela", hospedagem: hospedada ? "parede" : "livre", previa: "modelador",
+descricao: "Pele de vidro recolhível (folhas de vidro temperado de " + "8 ou 10 mm) que correm num trilho inferior embutido no piso e num trilho superior fixo na viga, e se recolhem EMPILHADAS de um lado (perpendiculares ao trilho), " +
+"abrindo o vão inteiro. Nº de folhas = vão / largura máxima de folha do sistema (catálogo). " + (hospedada ? "HOSPEDADA: abre o vão na parede." : "LIVRE: entre dois pilares/apoios (sem vão de parede).") +
+" Origem no meio do vão, no piso, no eixo do trilho. Seções de trilho e passo de empilhamento: ver 'Conferir' do tipo. Orçamento: orçar à parte (não é vidro em perfil U).",
+parametros: params,
+tipos: SISTEMAS.map(function (s) {
+return { id: s.id, nome: s.nome, valores: { Sistema: s.nome, Conferir: s.conferir, Espessura_vidro: s.esp, Larg_max_folha: s.larg, Altura_max_8: s.hMax8, Altura_max_10: s.hMax10, N_folhas_max: s.nMax } };
+}),
+abertura: hospedada ? { largura: "Vao", altura: "Altura", peitoril: "0" } : undefined,
+solidos: sol,
+servicos: [
+S("vidro", "Vidro temperado das folhas", "m2", "Area_vidro"),
+S("trilho_inf", "Trilho inferior embutido", "m", "Trilho_inf_m"),
+S("trilho_sup", "Trilho superior", "m", "Trilho_sup_m"),
+S("folhas", "Folhas (perfis, roldanas e ferragens do sistema)", "un", "N_folhas")
+],
+quantitativo: { unidade: "m2", quantidade: "Area_vidro", codigo: "", fonte: "", descricao: "Pele de vidro recolhível (orçar à parte)" }
+};
+}
+function montar() {
+var l = [famPiscina(), famCasaMaquinas(), famVidro("ra-vidro-retratil", "Pele de vidro recolhível (em abertura de parede)", true),
+famVidro("ra-vidro-retratil-livre", "Pele de vidro recolhível (livre entre pilares)", false)];
+l.forEach(function (f) { if (f.abertura === undefined) delete f.abertura; });
+return l;
+}
+var CACHE = null;
+var FamiliasPiscina = {
+MODELOS: MODELOS, CONJUNTOS: CONJUNTOS, SISTEMAS: SISTEMAS, MAX_FOLHAS: MAX_FOLHAS,
+lista: function () { if (!CACHE) CACHE = montar(); return JSON.parse(JSON.stringify(CACHE)); },
+obter: function (id) { var l = this.lista(); for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i]; return null; }
+};
+global.FamiliasPiscina = FamiliasPiscina;
+if (typeof module !== "undefined" && module.exports) module.exports = FamiliasPiscina;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/familiasra.js ==== */
 try {
 (function (global) {
@@ -57470,6 +60949,7 @@ tipos: [
 { id: "pq18e", nome: "Plafon quadrado LED 18 W, de embutir", valores: {} },
 { id: "pq24s", nome: "Plafon quadrado LED 24 W, de sobrepor", valores: { Instalacao: "sobrepor", Potencia_W: "24", Lado: 0.30, Fluxo_lm: 1920 } },
 { id: "pc12s", nome: "Plafon circular LED 12/13 W, de sobrepor", valores: { Modelo: "plafon_circular", Instalacao: "sobrepor", Potencia_W: "12/13", Lado: 0.17, Fluxo_lm: 960 } },
+{ id: "pc12e", nome: "Plafon circular LED 12/13 W, de embutir", valores: { Modelo: "plafon_circular", Instalacao: "embutir", Potencia_W: "12/13", Lado: 0.17, Fluxo_lm: 960 } },
 { id: "spote", nome: "Spot PAR20, de embutir", valores: { Modelo: "spot_par20", Potencia_W: "-", Lado: 0.10, Fluxo_lm: 500, Temperatura_K: 3000, Tipo_luz: "spot", Angulo_facho: 36 } },
 { id: "p60e", nome: "Painel LED 60 × 60, de embutir", valores: { Modelo: "painel_60x60", Potencia_W: "-", Lado: 0.60, Fluxo_lm: 3200 } }
 ],
@@ -57501,12 +60981,1523 @@ conectores: [{ id: "el", nome: "Eletroduto (entrada)", sistema: "eletrica", dn: 
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Quadro de distribuição" }
 }
 );
+(function () {
+var FP = global.FamiliasPiscina || null;
+if (!FP && typeof require === "function") { try { FP = require("./familiaspiscina.js"); } catch (eFP) { FP = null; } }
+if (FP && FP.lista) FP.lista().forEach(function (f) { LISTA.push(f); });
+})();
 var FamiliasRA = {
+registrar: function (fams) {
+(fams || []).forEach(function (f) {
+if (!f || !f.id) return;
+for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === f.id) { LISTA[i] = f; return; }
+LISTA.push(f);
+});
+},
 lista: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas); }))); },
 obter: function (id, todas) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id && visivel(LISTA[i], todas)) return JSON.parse(JSON.stringify(LISTA[i])); return null; }
 };
 global.FamiliasRA = FamiliasRA;
 if (typeof module !== "undefined" && module.exports) module.exports = FamiliasRA;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/mobgeo.js ==== */
+try {
+(function (global) {
+"use strict";
+var TAU = Math.PI * 2, RAD = Math.PI / 180;
+function num(v, d) { return typeof v === "number" && isFinite(v) ? v : d; }
+function cl(x, a, b) { return x < a ? a : (x > b ? b : x); }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function ident() { return { r: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] }; }
+function mulR(a, b) {
+var o = [], i, j, k, s;
+for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (k = 0; k < 3; k++) s += a[i * 3 + k] * b[k * 3 + j]; o.push(s); }
+return o;
+}
+function comp(A, B) {
+var R = mulR(A.r, B.r), t = [0, 0, 0], i;
+for (i = 0; i < 3; i++) t[i] = A.r[i * 3] * B.t[0] + A.r[i * 3 + 1] * B.t[1] + A.r[i * 3 + 2] * B.t[2] + A.t[i];
+return { r: R, t: t };
+}
+function rotX(g) { var c = Math.cos(g * RAD), s = Math.sin(g * RAD); return [1, 0, 0, 0, c, -s, 0, s, c]; }
+function rotY(g) { var c = Math.cos(g * RAD), s = Math.sin(g * RAD); return [c, 0, s, 0, 1, 0, -s, 0, c]; }
+function rotZ(g) { var c = Math.cos(g * RAD), s = Math.sin(g * RAD); return [c, -s, 0, s, c, 0, 0, 0, 1]; }
+function local(x, y, z, o) {
+o = o || {};
+var R = mulR(rotY(num(o.rotY, 0)), mulR(rotX(num(o.rotX, 0)), rotZ(num(o.rotZ, 0))));
+return { r: R, t: [x, y, z] };
+}
+function sorteio(semente) {
+var a = (semente | 0) || 1;
+function u() { a = (a + 0x6D2B79F5) | 0; var t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+u.entre = function (lo, hi) { return lo + (hi - lo) * u(); };
+return u;
+}
+function Cena() {
+this.M = ident(); this.pilha = []; this.grupos = {}; this.ordem = []; this.tri = 0; this.env = null;
+}
+var P = Cena.prototype;
+P.empilhar = function (x, y, z, giroY) { this.pilha.push(this.M); this.M = comp(this.M, local(num(x, 0), num(y, 0), num(z, 0), { rotY: num(giroY, 0) })); return this; };
+P.desempilhar = function () { if (this.pilha.length) this.M = this.pilha.pop(); return this; };
+P.grupo = function (x, y, z, giroY, fn) { this.empilhar(x, y, z, giroY); try { fn(this); } finally { this.desempilhar(); } return this; };
+P._add = function (mat, v, f, o) {
+if (!v.length || !f.length) return;
+o = o || {};
+var L = comp(this.M, local(num(o.x, 0), num(o.y, 0), num(o.z, 0), o)), R = L.r, t = L.t, w = new Array(v.length), i;
+for (i = 0; i + 2 < v.length; i += 3) {
+var x = v[i], y = v[i + 1], z = v[i + 2];
+w[i] = R[0] * x + R[1] * y + R[2] * z + t[0];
+w[i + 1] = R[3] * x + R[4] * y + R[5] * z + t[1];
+w[i + 2] = R[6] * x + R[7] * y + R[8] * z + t[2];
+}
+var vol = 0, a, b, c;
+for (i = 0; i + 2 < f.length; i += 3) {
+a = f[i] * 3; b = f[i + 1] * 3; c = f[i + 2] * 3;
+vol += w[a] * (w[b + 1] * w[c + 2] - w[b + 2] * w[c + 1]) - w[a + 1] * (w[b] * w[c + 2] - w[b + 2] * w[c]) + w[a + 2] * (w[b] * w[c + 1] - w[b + 1] * w[c]);
+}
+vol /= 6;
+var ff = f;
+if (o.aberta) vol = num(o.volume, 0);
+else if (vol < 0) { ff = f.slice(); for (i = 0; i + 2 < ff.length; i += 3) { var tmp = ff[i + 1]; ff[i + 1] = ff[i + 2]; ff[i + 2] = tmp; } vol = -vol; }
+var chave = String(mat || "");
+var g = this.grupos[chave];
+if (!g) { g = this.grupos[chave] = { material: chave, v: [], f: [], volume: 0 }; this.ordem.push(chave); }
+var base = g.v.length / 3;
+for (i = 0; i < w.length; i++) g.v.push(r6(w[i]));
+for (i = 0; i < ff.length; i++) g.f.push(ff[i] + base);
+g.volume += vol; this.tri += ff.length / 3;
+var bx = this.env || (this.env = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity });
+for (i = 0; i + 2 < w.length; i += 3) {
+if (w[i] < bx.x0) bx.x0 = w[i]; if (w[i] > bx.x1) bx.x1 = w[i];
+if (w[i + 1] < bx.y0) bx.y0 = w[i + 1]; if (w[i + 1] > bx.y1) bx.y1 = w[i + 1];
+if (w[i + 2] < bx.z0) bx.z0 = w[i + 2]; if (w[i + 2] > bx.z1) bx.z1 = w[i + 2];
+}
+};
+function malhaCaixa(dx, dy, dz) {
+var hx = dx / 2, hz = dz / 2, v = [], f = [];
+function face(a, b, c, d) { var i = v.length / 3; v.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]); f.push(i, i + 1, i + 2, i, i + 2, i + 3); }
+face([-hx, dy, hz], [hx, dy, hz], [hx, dy, -hz], [-hx, dy, -hz]);
+face([-hx, 0, -hz], [hx, 0, -hz], [hx, 0, hz], [-hx, 0, hz]);
+face([-hx, 0, hz], [hx, 0, hz], [hx, dy, hz], [-hx, dy, hz]);
+face([hx, 0, -hz], [-hx, 0, -hz], [-hx, dy, -hz], [hx, dy, -hz]);
+face([hx, 0, hz], [hx, 0, -hz], [hx, dy, -hz], [hx, dy, hz]);
+face([-hx, 0, -hz], [-hx, 0, hz], [-hx, dy, hz], [-hx, dy, -hz]);
+return { v: v, f: f };
+}
+P.caixa = function (mat, x, y, z, dx, dy, dz, o) {
+dx = Math.max(1e-4, num(dx, 0.1)); dy = Math.max(1e-4, num(dy, 0.1)); dz = Math.max(1e-4, num(dz, 0.1));
+var m = malhaCaixa(dx, dy, dz); o = o || {};
+this._add(mat, m.v, m.f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+P.tronco = function (mat, x, y, z, dx0, dz0, dx1, dz1, dy, o) {
+var a = dx0 / 2, b = dz0 / 2, c = dx1 / 2, d = dz1 / 2, v = [], f = [];
+function face(p, q, r, s) { var i = v.length / 3; v.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2], s[0], s[1], s[2]); f.push(i, i + 1, i + 2, i, i + 2, i + 3); }
+face([-c, dy, d], [c, dy, d], [c, dy, -d], [-c, dy, -d]); face([-a, 0, -b], [a, 0, -b], [a, 0, b], [-a, 0, b]);
+face([-a, 0, b], [a, 0, b], [c, dy, d], [-c, dy, d]); face([a, 0, -b], [-a, 0, -b], [-c, dy, -d], [c, dy, -d]);
+face([a, 0, b], [a, 0, -b], [c, dy, -d], [c, dy, d]); face([-a, 0, -b], [-a, 0, b], [-c, dy, d], [-c, dy, -d]);
+o = o || {};
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+function malhaCaixaR(dx, dy, dz, r, k) {
+var h = [dx / 2, dy / 2, dz / 2], rr = Math.max(1e-4, Math.min(r, Math.min(h[0], h[1], h[2]) - 1e-4)), ih = [h[0] - rr, h[1] - rr, h[2] - rr];
+var v = [], f = [], mapa = {};
+function ticks(a) {
+var t = [], j;
+for (j = 0; j <= k; j++) t.push(-h[a] + rr * j / k);
+for (j = k; j >= 0; j--) t.push(h[a] - rr * j / k);
+return t;
+}
+var T = [ticks(0), ticks(1), ticks(2)];
+function pt(p) {
+var q = [cl(p[0], -ih[0], ih[0]), cl(p[1], -ih[1], ih[1]), cl(p[2], -ih[2], ih[2])], d = [p[0] - q[0], p[1] - q[1], p[2] - q[2]], n = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+return n > 1e-9 ? [q[0] + d[0] / n * rr, q[1] + d[1] / n * rr, q[2] + d[2] / n * rr] : q;
+}
+function idx(p) {
+var kk = Math.round(p[0] * 1e5) + "," + Math.round(p[1] * 1e5) + "," + Math.round(p[2] * 1e5);
+if (mapa[kk] == null) { mapa[kk] = v.length / 3; v.push(p[0], p[1] + dy / 2, p[2]); }
+return mapa[kk];
+}
+var a, s, i, j;
+for (a = 0; a < 3; a++) for (s = -1; s <= 1; s += 2) {
+var b = (a + 1) % 3, c = (a + 2) % 3, Tb = T[b], Tc = T[c], G = [];
+for (i = 0; i < Tb.length; i++) { G.push([]); for (j = 0; j < Tc.length; j++) { var p = [0, 0, 0]; p[a] = s * h[a]; p[b] = Tb[i]; p[c] = Tc[j]; G[i].push(idx(pt(p))); } }
+for (i = 0; i + 1 < Tb.length; i++) for (j = 0; j + 1 < Tc.length; j++) {
+var q0 = G[i][j], q1 = G[i + 1][j], q2 = G[i + 1][j + 1], q3 = G[i][j + 1];
+if (q0 === q1 || q1 === q2 || q2 === q3 || q3 === q0) continue;
+if (s > 0) f.push(q0, q1, q2, q0, q2, q3); else f.push(q0, q2, q1, q0, q3, q2);
+}
+}
+return { v: v, f: f };
+}
+P.caixaR = function (mat, x, y, z, dx, dy, dz, raio, o) {
+o = o || {};
+var m = malhaCaixaR(Math.max(1e-3, dx), Math.max(1e-3, dy), Math.max(1e-3, dz), Math.max(1e-4, num(raio, 0.01)), o.k || 1);
+this._add(mat, m.v, m.f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+function malhaCil(r, h, r2, seg, semTampa, centro) {
+var v = [], f = [], j, y0 = centro ? -h / 2 : 0;
+for (j = 0; j < seg; j++) { var a = TAU * j / seg; v.push(Math.cos(a) * r, y0, Math.sin(a) * r); }
+for (j = 0; j < seg; j++) { var a2 = TAU * j / seg; v.push(Math.cos(a2) * r2, y0 + h, Math.sin(a2) * r2); }
+for (j = 0; j < seg; j++) { var j2 = (j + 1) % seg; f.push(j, seg + j, seg + j2, j, seg + j2, j2); }
+if (!semTampa) {
+var cb = v.length / 3; v.push(0, y0, 0);
+for (j = 0; j < seg; j++) { var a3 = TAU * j / seg; v.push(Math.cos(a3) * r, y0, Math.sin(a3) * r); }
+for (j = 0; j < seg; j++) f.push(cb, cb + 1 + j, cb + 1 + (j + 1) % seg);
+var ct = v.length / 3; v.push(0, y0 + h, 0);
+for (j = 0; j < seg; j++) { var a4 = TAU * j / seg; v.push(Math.cos(a4) * r2, y0 + h, Math.sin(a4) * r2); }
+for (j = 0; j < seg; j++) f.push(ct, ct + 1 + (j + 1) % seg, ct + 1 + j);
+}
+return { v: v, f: f };
+}
+P.cil = function (mat, x, y, z, r, h, o) {
+o = o || {};
+var r1 = Math.max(1e-4, num(r, 0.05)), r2 = o.r2 == null ? r1 : Math.max(0, o.r2), seg = cl(Math.round(o.seg || 18), 6, 48);
+var m = malhaCil(r1, Math.max(1e-4, num(h, 0.1)), r2, seg, !!o.semTampa, !!o.centro);
+this._add(mat, m.v, m.f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+P.cilH = function (mat, x, y, z, r, comp, eixo, o) {
+o = o || {};
+var oo = { seg: o.seg, r2: o.r2, semTampa: o.semTampa, centro: true };
+if (eixo === "z") oo.rotX = 90; else oo.rotZ = 90;
+return this.cil(mat, x, y, z, r, comp, oo);
+};
+P.elipsoide = function (mat, x, y, z, rx, ry, rz, o) {
+o = o || {};
+var seg = cl(Math.round(o.seg || 14), 6, 40), an = cl(Math.round(o.aneis || Math.max(4, Math.round(seg / 2))), 3, 24), v = [], f = [], i, j;
+var corte = o.meia ? Math.PI / 2 : Math.PI;
+v.push(0, ry, 0);
+for (i = 1; i < an; i++) {
+var th = corte * i / an, sy = Math.cos(th), sr = Math.sin(th);
+for (j = 0; j < seg; j++) { var ph = TAU * j / seg; v.push(Math.cos(ph) * sr * rx, sy * ry, Math.sin(ph) * sr * rz); }
+}
+var polo = -1;
+if (!o.meia) { polo = v.length / 3; v.push(0, -ry, 0); }
+for (j = 0; j < seg; j++) f.push(0, 1 + (j + 1) % seg, 1 + j);
+for (i = 0; i + 1 < an - 1; i++) for (j = 0; j < seg; j++) {
+var a = 1 + i * seg + j, b = 1 + i * seg + (j + 1) % seg, c = 1 + (i + 1) * seg + j, d = 1 + (i + 1) * seg + (j + 1) % seg;
+f.push(a, b, d, a, d, c);
+}
+var ult = 1 + (an - 2) * seg;
+if (!o.meia) { for (j = 0; j < seg; j++) f.push(polo, ult + j, ult + (j + 1) % seg); }
+else {
+var ce = v.length / 3; v.push(0, 0, 0);
+var eq0 = v.length / 3;
+for (j = 0; j < seg; j++) { var ph2 = TAU * j / seg; v.push(Math.cos(ph2) * rx, 0, Math.sin(ph2) * rz); }
+for (j = 0; j < seg; j++) f.push(ce, eq0 + j, eq0 + (j + 1) % seg);
+for (j = 0; j < seg; j++) { var j2 = (j + 1) % seg; f.push(ult + j, ult + j2, eq0 + j2, ult + j, eq0 + j2, eq0 + j); }
+}
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+P.torno = function (mat, x, y, z, perfil, o) {
+o = o || {};
+var pts = arr(perfil).map(function (q) { return [Math.max(0, num(q[0], 0)), num(q[1], 0)]; });
+if (pts.length < 2) return this;
+var seg = cl(Math.round(o.seg || 20), 6, 48), ex = num(o.ex, 1), ez = num(o.ez, 1), v = [], f = [], n = pts.length, j, i;
+function ang(i0) {
+var a = pts[i0 - 1], b = pts[i0], c = pts[i0 + 1], u = [b[0] - a[0], b[1] - a[1]], w = [c[0] - b[0], c[1] - b[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lw = Math.sqrt(w[0] * w[0] + w[1] * w[1]);
+if (lu < 1e-9 || lw < 1e-9) return 0;
+return Math.acos(cl((u[0] * w[0] + u[1] * w[1]) / (lu * lw), -1, 1)) / RAD;
+}
+var aneis = [];
+function anel(q) { var i0 = v.length / 3; for (var jj = 0; jj < seg; jj++) { var a = TAU * jj / seg; v.push(Math.cos(a) * q[0] * ex, q[1], Math.sin(a) * q[0] * ez); } return i0; }
+var prox = null;
+for (i = 0; i + 1 < n; i++) {
+var ini = (prox != null && i > 0 && ang(i) <= 38) ? prox : anel(pts[i]);
+var fim = anel(pts[i + 1]);
+aneis.push([ini, fim, pts[i][0], pts[i + 1][0]]);
+prox = fim;
+}
+aneis.forEach(function (t) {
+var A = t[0], B = t[1], rA = t[2], rB = t[3];
+for (var jj = 0; jj < seg; jj++) {
+var j2 = (jj + 1) % seg;
+if (rA > 1e-9 && rB > 1e-9) f.push(A + jj, B + jj, B + j2, A + jj, B + j2, A + j2);
+else if (rA <= 1e-9) f.push(A + jj, B + jj, B + j2);
+else f.push(A + jj, B + jj, A + j2);
+}
+});
+if (!o.aberto) {
+[[0, true], [n - 1, false]].forEach(function (pq) {
+var q = pts[pq[0]]; if (q[0] <= 1e-9) return;
+var c = v.length / 3; v.push(0, q[1], 0); var a0 = anel(q);
+for (var jj = 0; jj < seg; jj++) { var j2 = (jj + 1) % seg; if (pq[1]) f.push(c, a0 + jj, a0 + j2); else f.push(c, a0 + j2, a0 + jj); }
+});
+}
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+function areaSinal(c) { var s = 0, n = c.length, i; for (i = 0; i < n; i++) { var a = c[i], b = c[(i + 1) % n]; s += a[0] * b[1] - b[0] * a[1]; } return s / 2; }
+function orelha(c) {
+var idx = [], n = c.length, i, guarda = 0;
+for (i = 0; i < n; i++) idx.push(i);
+var s = areaSinal(c) >= 0 ? 1 : -1, tris = [];
+function dentro(p, a, b, d) {
+var d1 = (p[0] - b[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (p[1] - b[1]);
+var d2 = (p[0] - d[0]) * (b[1] - d[1]) - (b[0] - d[0]) * (p[1] - d[1]);
+var d3 = (p[0] - a[0]) * (d[1] - a[1]) - (d[0] - a[0]) * (p[1] - a[1]);
+return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+while (idx.length > 3 && guarda++ < 5000) {
+var cortou = false;
+for (i = 0; i < idx.length; i++) {
+var i0 = idx[(i + idx.length - 1) % idx.length], i1 = idx[i], i2 = idx[(i + 1) % idx.length], a = c[i0], b = c[i1], d = c[i2];
+var cruz = ((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0])) * s;
+if (cruz <= 1e-12) continue;
+var ok = true;
+for (var q = 0; q < idx.length; q++) { var iq = idx[q]; if (iq === i0 || iq === i1 || iq === i2) continue; if (dentro(c[iq], a, b, d)) { ok = false; break; } }
+if (!ok) continue;
+tris.push([i0, i1, i2]); idx.splice(i, 1); cortou = true; break;
+}
+if (!cortou) break;
+}
+if (idx.length === 3) tris.push([idx[0], idx[1], idx[2]]);
+return tris;
+}
+function tri(v, f, i0, i1, i2, w) {
+var a = i0 * 3, b = i1 * 3, c = i2 * 3;
+var ux = v[b] - v[a], uy = v[b + 1] - v[a + 1], uz = v[b + 2] - v[a + 2], vx = v[c] - v[a], vy = v[c + 1] - v[a + 1], vz = v[c + 2] - v[a + 2];
+var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+if (nx * w[0] + ny * w[1] + nz * w[2] >= 0) f.push(i0, i1, i2); else f.push(i0, i2, i1);
+}
+P.prisma = function (mat, x, y, z, contorno, h, o) {
+o = o || {};
+var c = arr(contorno).map(function (q) { return [num(q[0], 0), num(q[1], 0)]; });
+if (c.length < 3) return this;
+var v = [], f = [], n = c.length, i, hh = Math.max(1e-4, num(h, 0.1));
+var tris = orelha(c);
+var b0 = v.length / 3; for (i = 0; i < n; i++) v.push(c[i][0], hh, c[i][1]);
+tris.forEach(function (t) { tri(v, f, b0 + t[0], b0 + t[1], b0 + t[2], [0, 1, 0]); });
+var b1 = v.length / 3; for (i = 0; i < n; i++) v.push(c[i][0], 0, c[i][1]);
+tris.forEach(function (t) { tri(v, f, b1 + t[0], b1 + t[1], b1 + t[2], [0, -1, 0]); });
+var sg = areaSinal(c) >= 0 ? 1 : -1;
+for (i = 0; i < n; i++) {
+var a = c[i], b = c[(i + 1) % n], k = v.length / 3, mx = (b[1] - a[1]) * sg, mz = -(b[0] - a[0]) * sg;
+v.push(a[0], 0, a[1], b[0], 0, b[1], b[0], hh, b[1], a[0], hh, a[1]);
+tri(v, f, k, k + 1, k + 2, [mx, 0, mz]); tri(v, f, k, k + 2, k + 3, [mx, 0, mz]);
+}
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+function contornoRR(larg, prof, raio, n) {
+var hx = larg / 2, hz = prof / 2, r = cl(raio, 0, Math.min(hx, hz) - 1e-5), out = [], c, j;
+n = Math.max(1, n || 4);
+if (r < 1e-4) return [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+var cs = [[hx - r, hz - r, 0], [-hx + r, hz - r, 90], [-hx + r, -hz + r, 180], [hx - r, -hz + r, 270]];
+for (c = 0; c < 4; c++) for (j = 0; j <= n; j++) { var a = (cs[c][2] + 90 * j / n) * RAD; out.push([cs[c][0] + Math.cos(a) * r, cs[c][1] + Math.sin(a) * r]); }
+return out;
+}
+function contornoElipse(rx, rz, seg) { var out = [], j; seg = Math.max(8, seg || 24); for (j = 0; j < seg; j++) { var a = TAU * j / seg; out.push([Math.cos(a) * rx, Math.sin(a) * rz]); } return out; }
+P.bandeja = function (mat, matDentro, x, y, z, ext, inte, h, fundo, o) {
+o = o || {};
+var E = arr(ext), I = arr(inte), n = E.length;
+if (n < 3 || I.length !== n) return this;
+var hh = Math.max(1e-3, num(h, 0.5)), fd = cl(num(fundo, 0.05), 1e-3, hh - 1e-3);
+var cen = E.reduce(function (a, q) { return [a[0] + q[0] / n, a[1] + q[1] / n]; }, [0, 0]);
+function dobra(A, i0) {
+var a = A[(i0 + n - 1) % n], b = A[i0], c = A[(i0 + 1) % n], u = [b[0] - a[0], b[1] - a[1]], w = [c[0] - b[0], c[1] - b[1]], lu = Math.sqrt(u[0] * u[0] + u[1] * u[1]), lw = Math.sqrt(w[0] * w[0] + w[1] * w[1]);
+if (lu < 1e-9 || lw < 1e-9) return 0;
+return Math.acos(cl((u[0] * w[0] + u[1] * w[1]) / (lu * lw), -1, 1)) / RAD;
+}
+function faixa(A, yA, yB, para) {
+var v = [], f = [], mapa = {}, i;
+function vert(i0, seg, nivel) {
+var lisa = dobra(A, i0) <= 38, k = (lisa ? "p" + i0 : "p" + i0 + "s" + seg) + "n" + nivel;
+if (mapa[k] == null) { mapa[k] = v.length / 3; v.push(A[i0][0], nivel ? yB : yA, A[i0][1]); }
+return mapa[k];
+}
+for (i = 0; i < n; i++) {
+var j = (i + 1) % n, a0 = vert(i, i, 0), a1 = vert(j, i, 0), b0 = vert(i, i, 1), b1 = vert(j, i, 1);
+var mx = ((A[i][0] + A[j][0]) / 2 - cen[0]) * para, mz = ((A[i][1] + A[j][1]) / 2 - cen[1]) * para;
+tri(v, f, a0, a1, b1, [mx, 0, mz]); tri(v, f, a0, b1, b0, [mx, 0, mz]);
+}
+return { v: v, f: f };
+}
+var volB = Math.abs(areaSinal(E)) * hh - Math.abs(areaSinal(I)) * (hh - fd);
+var L = { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ, aberta: true, volume: volB }, k;
+k = faixa(E, 0, hh, +1); this._add(mat, k.v, k.f, L); L = { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ, aberta: true, volume: 0 };
+k = faixa(I, fd, hh, -1); this._add(matDentro || mat, k.v, k.f, L);
+var v = [], f = [], i;
+for (i = 0; i < n; i++) v.push(E[i][0], hh, E[i][1]);
+for (i = 0; i < n; i++) v.push(I[i][0], hh, I[i][1]);
+for (i = 0; i < n; i++) { var j = (i + 1) % n; tri(v, f, i, j, n + j, [0, 1, 0]); tri(v, f, i, n + j, n + i, [0, 1, 0]); }
+this._add(mat, v, f, L);
+function tampa(C, yy, cima, m2, self) {
+var vv = [], ff = [], q, c0 = C.reduce(function (a, p) { return [a[0] + p[0] / n, a[1] + p[1] / n]; }, [0, 0]);
+vv.push(c0[0], yy, c0[1]); for (q = 0; q < n; q++) vv.push(C[q][0], yy, C[q][1]);
+for (q = 0; q < n; q++) tri(vv, ff, 0, 1 + q, 1 + (q + 1) % n, [0, cima ? 1 : -1, 0]);
+self._add(m2, vv, ff, L);
+}
+tampa(I, fd, true, matDentro || mat, this);
+tampa(E, 0, false, mat, this);
+return this;
+};
+P.lamina = function (mat, x, y, z, compr, larg, o) {
+o = o || {};
+var nSeg = cl(Math.round(o.seg || 8), 3, 40), esp = Math.max(0.0008, num(o.esp, 0.003)), ang0 = num(o.inclina, 30) * RAD, curva = num(o.curva, 60) * RAD;
+var perfil = o.perfil && o.perfil.length > 1 ? o.perfil : null, i;
+var dl = compr / nSeg, py = 0, pz = 0, eixo = [];
+for (i = 0; i <= nSeg; i++) {
+var a = ang0 - curva * Math.pow(i / nSeg, 1.3);
+eixo.push([py, pz, a]);
+var am = ang0 - curva * Math.pow((i + 0.5) / nSeg, 1.3);
+py += Math.sin(am) * dl; pz += Math.cos(am) * dl;
+}
+function w(t) {
+if (perfil) { var q = t * (perfil.length - 1), k = Math.min(perfil.length - 2, Math.floor(q)), u = q - k; return larg * (perfil[k] * (1 - u) + perfil[k + 1] * u) / 2; }
+return larg / 2 * (0.12 + 0.88 * Math.sin(Math.PI * Math.pow(Math.max(t, 0.0001), 0.7)));
+}
+var v = [], f = [];
+for (i = 0; i <= nSeg; i++) {
+var ww = Math.max(0.0006, w(i / nSeg)), E = eixo[i], dy = Math.cos(E[2]) * esp / 2, dz = -Math.sin(E[2]) * esp / 2;
+v.push(-ww, E[0] + dy, E[1] + dz, ww, E[0] + dy, E[1] + dz, ww, E[0] - dy, E[1] - dz, -ww, E[0] - dy, E[1] - dz);
+}
+function quad(a0, b0, c0, d0, w3) { tri(v, f, a0, b0, c0, w3); tri(v, f, a0, c0, d0, w3); }
+for (i = 0; i < nSeg; i++) {
+var A = i * 4, B = (i + 1) * 4;
+quad(A, A + 1, B + 1, B, [0, 1, 0]); quad(A + 3, B + 3, B + 2, A + 2, [0, -1, 0]);
+quad(A + 1, A + 2, B + 2, B + 1, [1, 0, 0]); quad(A, B, B + 3, A + 3, [-1, 0, 0]);
+}
+tri(v, f, 0, 3, 2, [0, 0, -1]); tri(v, f, 0, 2, 1, [0, 0, -1]);
+var U = nSeg * 4; tri(v, f, U, U + 1, U + 2, [0, 0, 1]); tri(v, f, U, U + 2, U + 3, [0, 0, 1]);
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+P.pedra = function (mat, x, y, z, rx, ry, rz, o) {
+o = o || {};
+var rnd = sorteio(o.semente || 7), seg = cl(Math.round(o.seg || 9), 6, 16), an = cl(Math.round(o.aneis || 5), 3, 10), v = [], f = [], i, j;
+v.push(0, ry * (0.9 + rnd() * 0.2), 0);
+for (i = 1; i < an; i++) {
+var th = Math.PI * i / an, sy = Math.cos(th), sr = Math.sin(th);
+for (j = 0; j < seg; j++) { var ph = TAU * j / seg, k = 0.86 + rnd() * 0.28; v.push(Math.cos(ph) * sr * rx * k, sy * ry, Math.sin(ph) * sr * rz * k); }
+}
+var polo = v.length / 3; v.push(0, -ry * 0.8, 0);
+for (j = 0; j < seg; j++) f.push(0, 1 + (j + 1) % seg, 1 + j);
+for (i = 0; i + 1 < an - 1; i++) for (j = 0; j < seg; j++) { var a = 1 + i * seg + j, b = 1 + i * seg + (j + 1) % seg, c = 1 + (i + 1) * seg + j, d = 1 + (i + 1) * seg + (j + 1) % seg; f.push(a, b, d, a, d, c); }
+var ult = 1 + (an - 2) * seg;
+for (j = 0; j < seg; j++) f.push(polo, ult + j, ult + (j + 1) % seg);
+this._add(mat, v, f, { x: x, y: y, z: z, rotX: o.rotX, rotY: o.rotY, rotZ: o.rotZ }); return this;
+};
+P.solidos = function (prefixo) {
+var self = this;
+return this.ordem.map(function (k, i) {
+var g = self.grupos[k];
+return { id: (prefixo || "m") + i, nome: g.material || "peça", forma: "malha", origemForma: "mob", suave: true, x: 0, y: 0, z: 0, rot: 0, v: g.v, f: g.f, volume: r6(g.volume), material: g.material, cor: "" };
+});
+};
+P.triangulos = function () { return this.tri; };
+function cena() { return new Cena(); }
+function miniatura(solidos, tam, corDe) {
+var D = global.document;
+if (!D || !D.createElement) return "";
+var cv; try { cv = D.createElement("canvas"); } catch (e) { return ""; }
+tam = tam || 96; cv.width = tam; cv.height = tam;
+var cx = cv.getContext && cv.getContext("2d"); if (!cx) return "";
+var ca = Math.cos(35 * RAD), sa = Math.sin(35 * RAD), cb = Math.cos(30 * RAD), sb = Math.sin(30 * RAD);
+var tris = [], mn = [Infinity, Infinity], mx = [-Infinity, -Infinity];
+function proj(x, y, z) { var X = x * ca + z * sa, Z = -x * sa + z * ca, Y = y * cb - Z * sb, D2 = y * sb + Z * cb; return [X, -Y, D2]; }
+var tot = 0; solidos.forEach(function (s) { tot += s.f.length / 3; });
+var passo = Math.max(1, Math.ceil(tot / 6000));
+solidos.forEach(function (s) {
+var c = corDe ? corDe(s.material) : "#999999", hx = /^#?([0-9a-f]{6})$/i.exec(c), rgb = hx ? [parseInt(hx[1].substr(0, 2), 16), parseInt(hx[1].substr(2, 2), 16), parseInt(hx[1].substr(4, 2), 16)] : [150, 150, 150];
+var P3 = []; for (var i = 0; i + 2 < s.v.length; i += 3) P3.push(proj(s.v[i], s.v[i + 1], s.v[i + 2]));
+for (var t = 0; t + 2 < s.f.length; t += 3 * passo) {
+var a = P3[s.f[t]], b = P3[s.f[t + 1]], d = P3[s.f[t + 2]];
+var ux = b[0] - a[0], uy = b[1] - a[1], wx = d[0] - a[0], wy = d[1] - a[1];
+var A2 = ux * wy - uy * wx;
+var o0 = s.f[t] * 3, o1 = s.f[t + 1] * 3, o2 = s.f[t + 2] * 3;
+var e1 = [s.v[o1] - s.v[o0], s.v[o1 + 1] - s.v[o0 + 1], s.v[o1 + 2] - s.v[o0 + 2]], e2 = [s.v[o2] - s.v[o0], s.v[o2 + 1] - s.v[o0 + 1], s.v[o2 + 2] - s.v[o0 + 2]];
+var nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0], nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+var luz = cl(0.45 + 0.55 * ((nx * -0.35 + ny * 0.8 + nz * 0.5) / nl), 0.25, 1.05);
+tris.push({ p: [a, b, d], z: (a[2] + b[2] + d[2]) / 3, k: luz, rgb: rgb });
+[a, b, d].forEach(function (q) { if (q[0] < mn[0]) mn[0] = q[0]; if (q[0] > mx[0]) mx[0] = q[0]; if (q[1] < mn[1]) mn[1] = q[1]; if (q[1] > mx[1]) mx[1] = q[1]; });
+}
+});
+if (!tris.length) return "";
+tris.sort(function (p, q) { return q.z - p.z; });
+var sc = (tam - 10) / Math.max(mx[0] - mn[0], mx[1] - mn[1], 1e-6), ox = (tam - (mx[0] - mn[0]) * sc) / 2 - mn[0] * sc, oy = (tam - (mx[1] - mn[1]) * sc) / 2 - mn[1] * sc;
+cx.clearRect(0, 0, tam, tam);
+tris.forEach(function (t) {
+cx.beginPath(); cx.moveTo(t.p[0][0] * sc + ox, t.p[0][1] * sc + oy); cx.lineTo(t.p[1][0] * sc + ox, t.p[1][1] * sc + oy); cx.lineTo(t.p[2][0] * sc + ox, t.p[2][1] * sc + oy); cx.closePath();
+var col = "rgb(" + Math.round(cl(t.rgb[0] * t.k, 0, 255)) + "," + Math.round(cl(t.rgb[1] * t.k, 0, 255)) + "," + Math.round(cl(t.rgb[2] * t.k, 0, 255)) + ")";
+cx.fillStyle = col; cx.strokeStyle = col; cx.lineWidth = 0.6; cx.fill(); cx.stroke();
+});
+try { return cv.toDataURL("image/png"); } catch (e2) { return ""; }
+}
+var Mob = {
+cena: cena, sorteio: sorteio, contornoRR: contornoRR, contornoElipse: contornoElipse, miniatura: miniatura, num: num, cl: cl,
+malhaCaixaR: malhaCaixaR, malhaCaixa: malhaCaixa, areaSinal: areaSinal, orelha: orelha
+};
+global.Mob = Mob;
+if (typeof module !== "undefined" && module.exports) module.exports = Mob;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/familiasmob.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var Mob = dep("Mob", "mobgeo.js");
+function num(v, d) { return typeof v === "number" && isFinite(v) ? v : d; }
+function clamp(x, a, b) { return x < a ? a : (x > b ? b : x); }
+var MAT = {
+NOZ: "madeira nogueira", CLARA: "madeira clara", ESC: "madeira escura", DECK: "madeira deck", FREIJO: "madeira freijo",
+LACA: "laca branca", GRAFITE: "laca grafite", PRETO: "metal preto", INOX: "inox", CROMO: "metal cromado", LATAO: "latão",
+MARMORE: "marmore branco", QUARTZO: "quartzo branco", GRANITO: "granito preto", VIDRO: "vidro", ESPELHO: "espelho", FUME: "vidro fume",
+LOUCA: "louça branca", TELA: "tela preta", COURO: "couro caramelo", COLCHAO: "colchao", ROUPA: "roupa de cama", MANTA: "manta cinza",
+CONCRETO: "cimento queimado", TIJOLO: "tijolo refratario", PEDRA: "pedra cinza", ACRILICO: "acrilico branco", BORRACHA: "borracha preta",
+PALHA: "palha natural", LINHO: "linho natural", TERRA: "terra", CERAMICA: "ceramica terracota"
+};
+var TECIDOS = ["tecido cinza", "tecido bege", "tecido grafite", "tecido verde", "tecido terracota", "tecido azul", "linho natural", "couro caramelo"];
+var LISTA = [], GER = {}, SIMB = {};
+function P(nome, tipoDado, valor, grupo, descricao, escopo) {
+var o = { nome: nome, tipoDado: tipoDado, escopo: escopo || "tipo", valor: valor, grupo: grupo || "Dimensões" };
+if (descricao) o.descricao = descricao;
+return o;
+}
+function T(id, nome, valores, fonte) { var t = { id: id, nome: nome, valores: valores || {} }; if (fonte) t.fonte = fonte; return t; }
+var USUAL = "Medida usual de mercado — conferir o modelo comprado.";
+var ORIGEM_ENC = " Origem: no piso, no meio da largura, com o FUNDO em Z = 0 (encostar na parede) e a frente em +Z.";
+var ORIGEM_CEN = " Origem: no piso, no centro da peça.";
+var APARTE = " Mobiliário não tem composição SINAPI: orçar à parte (quantitativo em unidade).";
+function def(o) {
+var fam = {
+id: o.id, previa: "modelador", nome: o.nome, categoria: o.categoria || "mobiliario", hospedagem: "livre", geometria: "mob", mob: o.id, disciplina: "mobiliario",
+descricao: o.descricao + (o.semOrigem ? "" : (o.centro ? ORIGEM_CEN : ORIGEM_ENC)) + APARTE,
+parametros: o.parametros, tipos: o.tipos,
+quantitativo: { unidade: o.unidade || "un", quantidade: o.quantidade || "1", codigo: "", fonte: "", descricao: (o.quantDesc || o.nome) + " (orçar à parte)" }
+};
+if (o.fonteGeral) fam.fonteMedidas = o.fonteGeral;
+LISTA.push(fam); GER[o.id] = o.gerar; if (o.simbolo) SIMB[o.id] = o.simbolo;
+return fam;
+}
+var H = {};
+H.porta = function (c, mat, x, y, z, w, h, esp, estilo) {
+if (estilo === "friso" && w > 0.2 && h > 0.2) {
+var f = Math.min(0.06, w / 5), mi = esp * 0.55;
+c.caixa(mat, x, y, z, w, h, mi);
+c.caixa(mat, x, y, z + mi * 0.0, w, f, esp); c.caixa(mat, x, y + h - f, z, w, f, esp);
+c.caixa(mat, x - w / 2 + f / 2, y + f, z, f, h - 2 * f, esp); c.caixa(mat, x + w / 2 - f / 2, y + f, z, f, h - 2 * f, esp);
+} else c.caixaR(mat, x, y, z, w, h, esp, Math.min(0.006, esp / 2.5), { k: 1 });
+};
+H.puxador = function (c, x, y, z, comp, vertical, mat) {
+mat = mat || MAT.PRETO;
+if (vertical) { c.cil(mat, x, y - comp / 2, z + 0.03, 0.008, comp, { seg: 8 }); c.cil(mat, x, y - comp / 2 + 0.03, z, 0.005, 0.03, { seg: 6, rotX: 90, centro: true }); c.cil(mat, x, y + comp / 2 - 0.03, z, 0.005, 0.03, { seg: 6, rotX: 90, centro: true }); }
+else { c.cilH(mat, x, y, z + 0.03, 0.008, comp, "x", { seg: 8 }); c.cilH(mat, x - comp / 2 + 0.03, y, z + 0.015, 0.005, 0.03, "z", { seg: 6 }); c.cilH(mat, x + comp / 2 - 0.03, y, z + 0.015, 0.005, 0.03, "z", { seg: 6 }); }
+};
+H.cava = function (c, x, y, z, comp, mat) { c.caixa(mat || MAT.PRETO, x, y, z, comp, 0.012, 0.012); };
+H.pe = function (c, mat, x, z, alt, topo, base, giroX, giroZ) { c.tronco(mat, x, 0, z, base, base, topo, topo, alt, { rotX: giroX, rotZ: giroZ }); };
+H.almofada = function (c, mat, x, y, z, lado, giroY, inclina) { c.caixaR(mat, x, y, z, lado, lado, lado * 0.28, lado * 0.12, { k: 2, rotY: giroY || 0, rotX: inclina == null ? -12 : inclina }); };
+H.cadeiraJantar = function (c, tec, madeira) {
+var L = 0.46, hA = 0.46;
+[[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) { c.tronco(madeira, s[0] * (L / 2 - 0.03), 0, s[1] * (L / 2 - 0.03), 0.045, 0.045, 0.03, 0.03, hA - 0.07, { rotX: s[1] * -4, rotZ: s[0] * 4 }); });
+c.caixaR(madeira, 0, hA - 0.07, 0, L, 0.035, L, 0.008, { k: 1 });
+c.caixaR(tec, 0, hA - 0.035, 0.005, L - 0.02, 0.06, L - 0.02, 0.025);
+c.caixaR(madeira, -L / 2 + 0.03, hA - 0.035, -L / 2 + 0.03, 0.04, 0.46, 0.035, 0.008, { k: 1, rotX: 8 });
+c.caixaR(madeira, L / 2 - 0.03, hA - 0.035, -L / 2 + 0.03, 0.04, 0.46, 0.035, 0.008, { k: 1, rotX: 8 });
+c.caixaR(tec, 0, hA + 0.14, -L / 2 + 0.05, L - 0.06, 0.30, 0.05, 0.02, { rotX: 8 });
+};
+H.MAT = MAT; H.TECIDOS = TECIDOS; H.P = P; H.T = T; H.def = def; H.USUAL = USUAL; H.clamp = clamp; H.num = num;
+var P_TEC = function (padrao) { return P("Tecido", "material", padrao || "tecido cinza", "Materiais", "Revestimento do estofado: " + TECIDOS.join(", ") + "."); };
+function gerarSofa(c, v, emL) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, hs = v.Altura_assento, br = v.Braco, n = Math.max(1, Math.round(v.Lugares)), tec = v.Tecido, madeira = v.Pe;
+var peH = 0.13, cushT = 0.17, cushY = hs - cushT + 0.01, ha = hs + 0.17;
+var Wc = emL ? clamp(v.Largura_chaise, 0.7, W - 2 * br - 0.5) : 0, Lc = emL ? Math.max(v.Comprimento_chaise, D + 0.2) : D;
+var lado = String(v.Lado_chaise).toLowerCase() === "esquerda" ? -1 : 1;
+var ptsPe = [[-W / 2 + 0.1, 0.1], [W / 2 - 0.1, 0.1], [-W / 2 + 0.1, D - 0.1], [W / 2 - 0.1, D - 0.1]];
+if (emL) { ptsPe.push([lado * (W / 2 - 0.1), Lc - 0.1]); ptsPe.push([lado * (W / 2 - Wc + 0.1), Lc - 0.1]); }
+ptsPe.forEach(function (p) { c.tronco(madeira, p[0], 0, p[1], 0.05, 0.05, 0.036, 0.036, peH + 0.01, { rotX: 0 }); });
+c.caixaR(tec, 0, peH, D / 2, W, cushY - peH, D, 0.03, { k: 1 });
+if (emL) c.caixaR(tec, lado * (W / 2 - Wc / 2), peH, (D + Lc) / 2 - 0.0, Wc, cushY - peH, Lc - D + 0.02, 0.03, { k: 1 });
+[-1, 1].forEach(function (s) {
+var comprim = (emL && s === lado) ? Lc : D;
+c.caixaR(tec, s * (W / 2 - br / 2), peH, comprim / 2, br, ha - peH, comprim, Math.min(0.05, br / 3));
+});
+var wi = W - 2 * br;
+c.caixaR(tec, 0, cushY, 0.095, wi, Ht - 0.1 - cushY, 0.19, 0.04, { k: 1 });
+var wn = wi / n;
+for (var i = 0; i < n; i++) {
+var xi = -wi / 2 + wn * (i + 0.5);
+c.caixaR(tec, xi, cushY + cushT - 0.02, 0.28, wn - 0.012, Ht - 0.04 - (cushY + cushT - 0.02), 0.17, 0.06, { rotX: -9 });
+c.caixaR(tec, xi, cushY, 0.19 + (D - 0.19) / 2, wn - 0.012, cushT, D - 0.19 - 0.015, 0.055);
+}
+if (emL) {
+var xc = lado * (W / 2 - br - Wc / 2 + br / 2);
+c.caixaR(tec, lado * (W / 2 - Wc / 2 - br / 2 + 0.005), cushY, D + (Lc - D) / 2 + 0.005, Wc - br - 0.012, cushT, Lc - D + 0.02, 0.055);
+}
+var na = Math.max(0, Math.round(v.Almofadas)), cor = v.Cor_almofada;
+for (var k = 0; k < na; k++) {
+var sg = (k % 2 === 0) ? -1 : 1, off = Math.floor(k / 2) * 0.19;
+H.almofada(c, cor, sg * (wi / 2 - 0.27 - off), hs + 0.02, 0.36 + (k % 3) * 0.02, 0.42, sg * -14, -14);
+}
+}
+var PAR_SOFA = function (L) {
+return [P("Largura", "comprimento", L, "Dimensões", "Largura total, com os braços. " + USUAL), P("Profundidade", "comprimento", 0.95, "Dimensões", USUAL), P("Altura", "comprimento", 0.88, "Dimensões", "Até o topo do encosto. " + USUAL),
+P("Altura_assento", "comprimento", 0.45, "Dimensões", "Do piso ao topo da almofada do assento. " + USUAL), P("Braco", "comprimento", 0.16, "Dimensões", "Largura de cada braço"),
+P("Lugares", "inteiro", 3, "Dimensões", "Almofadas de assento e encosto"), P("Almofadas", "inteiro", 2, "Construção", "Almofadas de decoração (0 a 4)"),
+P_TEC("tecido cinza"), P("Cor_almofada", "material", "tecido terracota", "Materiais"), P("Pe", "material", "madeira escura", "Materiais", "Material dos pés")];
+};
+def({
+id: "ra-mob-sofa-reto", nome: "Sofá reto 2 a 4 lugares", descricao: "Sofá estofado com estrutura baixa, braços, almofadas de assento e encosto inclinado, almofadas de decoração e pés cônicos.",
+parametros: PAR_SOFA(2.10),
+tipos: [T("s2", "2 lugares — 1,60 m", { Largura: 1.60, Lugares: 2, Almofadas: 2 }), T("s3", "3 lugares — 2,10 m", {}), T("s3g", "3 lugares — 2,30 m", { Largura: 2.30 }), T("s4", "4 lugares — 2,60 m", { Largura: 2.60, Lugares: 4, Almofadas: 4 })],
+gerar: function (c, v) { gerarSofa(c, v, false); }
+});
+def({
+id: "ra-mob-sofa-l", nome: "Sofá em L com chaise", descricao: "Sofá com chaise comprida em uma das pontas. O lado e o tamanho da chaise são parâmetros.",
+parametros: PAR_SOFA(2.80).concat([P("Largura_chaise", "comprimento", 1.00, "Dimensões", "Largura da chaise"), P("Comprimento_chaise", "comprimento", 1.60, "Dimensões", "Profundidade total até a ponta da chaise"), P("Lado_chaise", "texto", "direita", "Construção", "direita ou esquerda (vista de frente)", "instancia")]),
+tipos: [T("l260", "Chaise à direita — 2,60 m", { Largura: 2.60, Lugares: 3 }), T("l280", "Chaise à direita — 2,80 m", { Lugares: 3 }), T("l320", "Chaise à direita — 3,20 m", { Largura: 3.20, Lugares: 4, Almofadas: 4 }), T("l280e", "Chaise à esquerda — 2,80 m", { Lado_chaise: "esquerda" })],
+gerar: function (c, v) { gerarSofa(c, v, true); }
+});
+def({
+id: "ra-mob-poltrona", centro: true, nome: "Poltrona", descricao: "Poltrona estofada com braços, assento e encosto de almofada e pés de madeira abertos.",
+parametros: [P("Largura", "comprimento", 0.80, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.85, "Dimensões", USUAL), P("Altura", "comprimento", 0.85, "Dimensões", USUAL), P("Altura_assento", "comprimento", 0.43, "Dimensões"), P_TEC("tecido bege"), P("Pe", "material", "madeira nogueira", "Materiais")],
+tipos: [T("p80", "80 × 85 cm", {}), T("p70", "70 × 75 cm (compacta)", { Largura: 0.70, Profundidade: 0.75, Altura: 0.82 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, hs = v.Altura_assento, tec = v.Tecido, mp = v.Pe, br = 0.14;
+[[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) { c.cil(mp, s[0] * (W / 2 - 0.1), 0, s[1] * (D / 2 - 0.1), 0.028, 0.2, { r2: 0.02, rotX: s[1] * 7, rotZ: -s[0] * 7, seg: 10 }); });
+c.caixaR(tec, 0, 0.17, 0, W, hs - 0.17 - 0.12, D, 0.04, { k: 1 });
+c.caixaR(tec, 0, hs - 0.14, 0.04, W - 2 * br, 0.15, D - 0.14, 0.06);
+[-1, 1].forEach(function (s) { c.caixaR(tec, s * (W / 2 - br / 2), 0.17, 0, br, hs + 0.13 - 0.17, D, 0.05); });
+c.caixaR(tec, 0, hs - 0.05, -D / 2 + 0.1, W - 2 * br + 0.02, Ht - hs + 0.03, 0.2, 0.07, { rotX: -12 });
+}
+});
+def({
+id: "ra-mob-mesa-centro", centro: true, nome: "Mesa de centro", descricao: "Mesa baixa com tampo de espessura real e estrutura em metal ou madeira. Formato redondo, oval ou retangular.",
+parametros: [P("Formato", "texto", "retangular", "Dimensões", "retangular, redonda ou oval"), P("Largura", "comprimento", 1.00, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.40, "Dimensões"), P("Espessura_tampo", "comprimento", 0.03, "Dimensões"),
+P("Tampo", "material", "marmore branco", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais")],
+tipos: [T("r100", "Retangular 1,00 × 0,60", {}), T("r120", "Retangular 1,20 × 0,70 (marmore)", { Largura: 1.20, Profundidade: 0.70, Altura: 0.38 }), T("o90", "Redonda Ø 0,90", { Formato: "redonda", Largura: 0.90, Profundidade: 0.90, Altura: 0.38, Estrutura: "madeira escura", Tampo: "madeira nogueira" }), T("ov", "Oval 1,10 × 0,70", { Formato: "oval", Largura: 1.10, Profundidade: 0.70, Altura: 0.38 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Hh = v.Altura, e = v.Espessura_tampo, f = String(v.Formato).toLowerCase();
+if (f === "redonda" || f === "oval") {
+var ct = Mob.contornoElipse(W / 2, D / 2, 40);
+c.prisma(v.Tampo, 0, Hh - e, 0, ct, e);
+c.torno(v.Estrutura, 0, 0, 0, [[0.16, 0], [0.16, 0.012], [0.06, 0.03], [0.05, Hh - e - 0.02], [0.2, Hh - e]], { seg: 20, ez: D / W });
+} else {
+c.caixaR(v.Tampo, 0, Hh - e, 0, W, e, D, 0.006, { k: 1 });
+[-1, 1].forEach(function (s) { [-1, 1].forEach(function (t) { c.caixa(v.Estrutura, s * (W / 2 - 0.06), 0, t * (D / 2 - 0.06), 0.025, Hh - e, 0.025); }); });
+c.caixa(v.Estrutura, 0, Hh - e - 0.03, D / 2 - 0.06, W - 0.1, 0.025, 0.025); c.caixa(v.Estrutura, 0, Hh - e - 0.03, -D / 2 + 0.06, W - 0.1, 0.025, 0.025);
+c.caixa(v.Estrutura, W / 2 - 0.06, Hh - e - 0.03, 0, 0.025, 0.025, D - 0.1); c.caixa(v.Estrutura, -W / 2 + 0.06, Hh - e - 0.03, 0, 0.025, 0.025, D - 0.1);
+}
+}
+});
+def({
+id: "ra-mob-rack-tv", nome: "Rack com painel e TV", descricao: "Rack suspenso com portas e nicho, painel de fundo com ripas e TV. A TV tem as proporções 16:9 da polegada escolhida (largura = 0,8719 × diagonal; altura = 0,4905 × diagonal).",
+parametros: [P("Comprimento", "comprimento", 1.80, "Dimensões", "Comprimento do rack. " + USUAL), P("Profundidade", "comprimento", 0.40, "Dimensões"), P("Altura_rack", "comprimento", 0.40, "Dimensões"), P("Altura_pe", "comprimento", 0.20, "Dimensões", "Vão livre sob o rack (suspenso)"),
+P("TV_polegadas", "inteiro", 55, "TV", "Diagonal da tela, em polegadas"), P("Altura_centro_tv", "comprimento", 1.10, "TV", "Do piso ao centro da tela", "instancia"),
+P("Painel_largura", "comprimento", 2.40, "Painel"), P("Painel_altura", "comprimento", 2.40, "Painel", "Do piso ao topo do painel"), P("Painel_ripado", "simnao", true, "Painel"),
+P("Rack", "material", "madeira nogueira", "Materiais"), P("Painel", "material", "madeira freijo", "Materiais")],
+tipos: [T("r180", "Rack 1,80 + TV 55\"", {}), T("r220", "Rack 2,20 + TV 65\"", { Comprimento: 2.20, TV_polegadas: 65, Painel_largura: 2.80 }), T("r260", "Rack 2,60 + TV 75\"", { Comprimento: 2.60, TV_polegadas: 75, Painel_largura: 3.20 }), T("r150", "Rack 1,50 + TV 50\"", { Comprimento: 1.50, TV_polegadas: 50, Painel_largura: 2.00 })],
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, h = v.Altura_rack, y0 = v.Altura_pe, pw = v.Painel_largura, ph = v.Painel_altura;
+var dg = v.TV_polegadas * 0.0254, tw = dg * 0.8719, th = dg * 0.4905, yc = v.Altura_centro_tv;
+c.caixa(v.Painel, 0, 0, 0.0125, pw, ph, 0.025);
+if (v.Painel_ripado) { var nr = Math.floor(pw / 0.075); for (var i = 0; i < nr; i++) c.caixa(v.Painel, -pw / 2 + 0.0375 + i * 0.075 + (pw - nr * 0.075) / 2, 0.0, 0.025 + 0.0125, 0.04, ph, 0.025); }
+else c.caixa(MAT.LACA, 0, 0, 0.03, pw, ph, 0.006);
+var zc = 0.05 + D / 2;
+c.caixaR(v.Rack, 0, y0, zc, L, h, D, 0.006, { k: 1 });
+var nm = Math.max(2, Math.round(L / 0.6)), wm = L / nm;
+for (var m = 0; m < nm; m++) {
+var xm = -L / 2 + wm * (m + 0.5);
+if (m === 1 && nm >= 3) { c.caixa(MAT.GRAFITE, xm, y0 + 0.02, 0.05 + 0.02, wm - 0.03, h - 0.04, D - 0.04); continue; }
+H.porta(c, v.Rack, xm, y0 + 0.01, 0.05 + D, wm - 0.012, h - 0.02, 0.018, "liso"); H.cava(c, xm, y0 + h - 0.045, 0.05 + D + 0.018, 0.12);
+}
+c.caixa(MAT.PRETO, 0, y0 - 0.02, zc, L - 0.08, 0.02, D - 0.1);
+var tz = 0.05 + 0.02;
+c.caixaR(MAT.PRETO, 0, yc - th / 2, tz + 0.01, tw, th, 0.04, 0.008, { k: 1 });
+c.caixa(MAT.TELA, 0, yc - th / 2 + 0.01, tz + 0.0305, tw - 0.02, th - 0.02, 0.003);
+}
+});
+def({
+id: "ra-mob-aparador", nome: "Aparador", descricao: "Aparador baixo com portas de friso, gavetas e pés cônicos.",
+parametros: [P("Comprimento", "comprimento", 1.60, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.45, "Dimensões"), P("Altura", "comprimento", 0.80, "Dimensões"), P("Altura_pe", "comprimento", 0.15, "Dimensões"),
+P("Corpo", "material", "madeira nogueira", "Materiais"), P("Tampo", "material", "marmore branco", "Materiais")],
+tipos: [T("a160", "1,60 m", {}), T("a120", "1,20 m", { Comprimento: 1.20 }), T("a200", "2,00 m", { Comprimento: 2.00 })],
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, Ht = v.Altura, y0 = v.Altura_pe, e = 0.025;
+[[-1, 0.08], [1, 0.08], [-1, D - 0.08], [1, D - 0.08]].forEach(function (s) { c.tronco(MAT.PRETO, s[0] * (L / 2 - 0.1), 0, s[1], 0.04, 0.04, 0.028, 0.028, y0, { rotZ: 0 }); });
+c.caixaR(v.Corpo, 0, y0, D / 2, L - 0.02, Ht - y0 - e, D - 0.02, 0.005, { k: 1 });
+c.caixaR(v.Tampo, 0, Ht - e, D / 2, L, e, D, 0.004, { k: 1 });
+var nm = Math.max(2, Math.round(L / 0.55)), wm = (L - 0.04) / nm;
+for (var m = 0; m < nm; m++) { var xm = -(L - 0.04) / 2 + wm * (m + 0.5); H.porta(c, v.Corpo, xm, y0 + 0.02, D, wm - 0.008, Ht - y0 - e - 0.04, 0.02, "friso"); H.puxador(c, xm + (m % 2 ? -1 : 1) * (wm / 2 - 0.05), y0 + (Ht - y0) * 0.55, D + 0.02, 0.1, true); }
+}
+});
+def({
+id: "ra-mob-tapete", centro: true, nome: "Tapete", descricao: "Tapete retangular ou redondo com bordas e miolo em tons diferentes (dá a leitura de tapete na planta humanizada).",
+parametros: [P("Formato", "texto", "retangular", "Dimensões", "retangular ou redondo"), P("Largura", "comprimento", 2.00, "Dimensões"), P("Profundidade", "comprimento", 3.00, "Dimensões"), P("Espessura", "comprimento", 0.012, "Dimensões"), P("Miolo", "material", "tecido bege", "Materiais"), P("Borda", "material", "tecido grafite", "Materiais")],
+tipos: [T("t2030", "2,00 × 3,00 m", {}), T("t1520", "1,50 × 2,00 m", { Largura: 1.50, Profundidade: 2.00 }), T("t2535", "2,50 × 3,50 m", { Largura: 2.50, Profundidade: 3.50 }), T("tr20", "Redondo Ø 2,00 m", { Formato: "redondo", Largura: 2.00, Profundidade: 2.00 })],
+unidade: "m2", quantidade: "Largura * Profundidade",
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, e = v.Espessura, b = Math.min(0.06, Math.min(W, D) / 8);
+if (String(v.Formato).toLowerCase() === "redondo") { c.prisma(v.Borda, 0, 0, 0, Mob.contornoElipse(W / 2, D / 2, 40), e); c.prisma(v.Miolo, 0, 0.0005, 0, Mob.contornoElipse(W / 2 - b, D / 2 - b, 40), e + 0.001); }
+else { c.caixaR(v.Borda, 0, 0, 0, W, e, D, 0.004, { k: 1 }); c.caixa(v.Miolo, 0, 0.0005, 0, W - 2 * b, e + 0.001, D - 2 * b); }
+}
+});
+def({
+id: "ra-mob-mesa-jantar", centro: true, nome: "Mesa de jantar com cadeiras (4, 6 ou 8 lugares)", descricao: "Mesa com tampo de madeira, pés cônicos e as cadeiras estofadas em volta (4: duas por lado; 6: duas por lado e uma em cada cabeceira; 8: três por lado e uma em cada cabeceira). O comprimento da mesa é do tipo.",
+parametros: [P("Comprimento", "comprimento", 1.80, "Dimensões", USUAL), P("Largura", "comprimento", 0.90, "Dimensões"), P("Altura", "comprimento", 0.75, "Dimensões", "Altura usual de mesa de refeição"), P("Lugares", "inteiro", 6, "Construção", "4, 6 ou 8"),
+P("Tampo", "material", "madeira nogueira", "Materiais"), P("Tecido", "material", "tecido bege", "Materiais", "Estofado das cadeiras"), P("Pe", "material", "madeira escura", "Materiais")],
+tipos: [T("j4", "4 lugares — 1,40 × 0,90", { Comprimento: 1.40, Lugares: 4 }), T("j6", "6 lugares — 1,80 × 0,90", {}), T("j8", "8 lugares — 2,40 × 1,00", { Comprimento: 2.40, Largura: 1.00, Lugares: 8 })],
+gerar: function (c, v) {
+var L = v.Comprimento, W = v.Largura, Ht = v.Altura, e = 0.04, lug = Math.round(v.Lugares);
+c.caixaR(v.Tampo, 0, Ht - e, 0, L, e, W, 0.012);
+c.caixa(v.Pe, 0, Ht - e - 0.06, 0, L - 0.5, 0.06, 0.07);
+[-1, 1].forEach(function (s) { [-1, 1].forEach(function (t) { c.tronco(v.Pe, s * (L / 2 - 0.2), 0, t * (W / 2 - 0.12), 0.075, 0.075, 0.05, 0.05, Ht - e - 0.0); }); });
+var porLado = lug >= 8 ? 3 : 2, ends = lug >= 6;
+for (var i = 0; i < porLado; i++) {
+var x = (-0.5 + (i + 0.5) / porLado) * (L - 0.35);
+c.grupo(x, 0, -W / 2 - 0.02, 0, function (k) { H.cadeiraJantar(k, v.Tecido, v.Pe); });
+c.grupo(x, 0, W / 2 + 0.02, 180, function (k) { H.cadeiraJantar(k, v.Tecido, v.Pe); });
+}
+if (ends) { c.grupo(-L / 2 - 0.02, 0, 0, 90, function (k) { H.cadeiraJantar(k, v.Tecido, v.Pe); }); c.grupo(L / 2 + 0.02, 0, 0, -90, function (k) { H.cadeiraJantar(k, v.Tecido, v.Pe); }); }
+}
+});
+def({
+id: "ra-mob-banqueta", centro: true, nome: "Banqueta alta", descricao: "Banqueta de ilha com assento estofado, travessa para os pés e pernas de metal.",
+parametros: [P("Altura_assento", "comprimento", 0.65, "Dimensões", "Balcão de 0,90 m: assento a 0,65 m. " + USUAL), P("Diametro", "comprimento", 0.36, "Dimensões"), P("Tecido", "material", "couro caramelo", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais")],
+tipos: [T("b65", "Assento a 0,65 m (balcão 0,90)", {}), T("b75", "Assento a 0,75 m (balcão 1,05)", { Altura_assento: 0.75 }), T("b45", "Assento a 0,45 m (mesa)", { Altura_assento: 0.45 })],
+gerar: function (c, v) { H.banqueta(c, v.Altura_assento, v.Diametro, v.Tecido, v.Estrutura); }
+});
+H.banqueta = function (c, hs, d, tec, es) {
+var r = d / 2;
+[0, 90, 180, 270].forEach(function (g) { var a = g * Math.PI / 180; c.cil(es, Math.cos(a) * (r - 0.04), 0, Math.sin(a) * (r - 0.04), 0.014, hs - 0.05, { r2: 0.011, rotZ: -Math.cos(a) * 5, rotX: Math.sin(a) * 5, seg: 8 }); });
+c.torno(es, 0, hs * 0.32, 0, [[r - 0.03, 0], [r - 0.03, 0.015], [r - 0.045, 0.015], [r - 0.045, 0]], { seg: 24 });
+c.cil(es, 0, hs - 0.06, 0, r - 0.02, 0.02, { seg: 24 });
+c.torno(tec, 0, hs - 0.05, 0, [[0, 0], [r, 0.0], [r, 0.04], [r - 0.02, 0.05], [0, 0.055]], { seg: 28 });
+};
+var FONTE_COLCHAO = "Medidas usuais de colchão no mercado brasileiro (solteiro 88×188, casal 138×188, queen 158×198, king 193×203 cm) — conferir o fabricante do colchão comprado; não verificado em catálogo único.";
+def({
+id: "ra-mob-cama", nome: "Cama com cabeceira e colchão", descricao: "Base box baú, colchão, roupa de cama (lençol, edredom dobrado no pé e travesseiros) e cabeceira estofada. Solteiro, casal, queen e king.",
+parametros: [P("Largura_colchao", "comprimento", 1.58, "Dimensões", "Largura do colchão. " + FONTE_COLCHAO), P("Comprimento_colchao", "comprimento", 1.98, "Dimensões"), P("Altura_base", "comprimento", 0.30, "Dimensões", "Altura da base box (do piso ao topo)"), P("Altura_colchao", "comprimento", 0.26, "Dimensões"),
+P("Altura_cabeceira", "comprimento", 1.10, "Dimensões", "Do piso ao topo da cabeceira"), P("Travesseiros", "inteiro", 2, "Construção"),
+P("Base", "material", "tecido grafite", "Materiais"), P("Cabeceira", "material", "tecido bege", "Materiais"), P("Roupa", "material", "roupa de cama", "Materiais"), P("Edredom", "material", "manta cinza", "Materiais")],
+tipos: [T("sol", "Solteiro 0,88 × 1,88", { Largura_colchao: 0.88, Comprimento_colchao: 1.88, Travesseiros: 1, Altura_cabeceira: 1.00 }, FONTE_COLCHAO), T("cas", "Casal 1,38 × 1,88", { Largura_colchao: 1.38, Comprimento_colchao: 1.88 }, FONTE_COLCHAO), T("que", "Queen 1,58 × 1,98", {}, FONTE_COLCHAO), T("kin", "King 1,93 × 2,03", { Largura_colchao: 1.93, Comprimento_colchao: 2.03, Travesseiros: 4 }, FONTE_COLCHAO)],
+gerar: function (c, v) {
+var W = v.Largura_colchao, L = v.Comprimento_colchao, hb = v.Altura_base, hc = v.Altura_colchao, hh = v.Altura_cabeceira, zc = 0.10 + L / 2 + 0.01;
+var Wb = W + 0.06, topo = hb + hc;
+c.caixaR(v.Cabeceira, 0, 0.0, 0.05, Wb + 0.16, hh, 0.10, 0.04, { k: 2 });
+c.caixaR(v.Base, 0, 0.08, zc + 0.02, Wb, hb - 0.08, L + 0.06, 0.025);
+[[-1, 0.1], [1, 0.1], [-1, L], [1, L]].forEach(function (s) { c.cil(MAT.PRETO, s[0] * (Wb / 2 - 0.06), 0, s[1] + 0.1, 0.03, 0.08, { r2: 0.022, seg: 10 }); });
+c.caixaR(MAT.COLCHAO, 0, hb, zc, W, hc, L, 0.06);
+c.caixaR(v.Roupa, 0, hb + hc - 0.03, zc, W + 0.02, 0.045, L - 0.01, 0.02);
+var ze = L * 0.64 + 0.04, zce = zc + L / 2 + 0.03 - ze / 2;
+c.caixaR(v.Edredom, 0, hb + hc - 0.005, zce, W + 0.05, 0.07, ze, 0.035);
+[-1, 1].forEach(function (s) { c.caixaR(v.Edredom, s * (W / 2 + 0.035), hb + 0.06, zce, 0.045, hc - 0.05, ze, 0.02); });
+c.caixaR(v.Edredom, 0, hb + hc + 0.05, zc + L / 2 - 0.2, W + 0.03, 0.08, 0.34, 0.04);
+var nt = Math.round(v.Travesseiros);
+for (var i = 0; i < nt; i++) {
+var col = nt === 1 ? 0 : (i % 2 ? 1 : -1), linha = Math.floor(i / 2), larg = nt === 1 ? 0.6 : (W - 0.1) / (nt > 2 ? 2 : nt) - 0.05;
+c.caixaR(v.Roupa, nt === 1 ? 0 : col * (W / 4), topo - 0.01, 0.10 + 0.34 + linha * 0.0 + (nt > 2 && i >= 2 ? 0.28 : 0), Math.min(0.7, larg), 0.14, 0.38, 0.06, { rotX: -7 });
+}
+}
+});
+def({
+id: "ra-mob-criado", nome: "Criado-mudo", descricao: "Criado-mudo com duas gavetas, puxador cava e pés cônicos.",
+parametros: [P("Largura", "comprimento", 0.50, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.40, "Dimensões"), P("Altura", "comprimento", 0.50, "Dimensões", "Em geral na altura do colchão. " + USUAL), P("Altura_pe", "comprimento", 0.15, "Dimensões"), P("Corpo", "material", "madeira nogueira", "Materiais")],
+tipos: [T("c50", "50 × 40 × 50", {}), T("c40", "40 × 35 × 45", { Largura: 0.40, Profundidade: 0.35, Altura: 0.45 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, y0 = v.Altura_pe, h = Ht - y0;
+[[-1, 0.06], [1, 0.06], [-1, D - 0.06], [1, D - 0.06]].forEach(function (s) { c.tronco(MAT.PRETO, s[0] * (W / 2 - 0.05), 0, s[1], 0.035, 0.035, 0.025, 0.025, y0); });
+c.caixaR(v.Corpo, 0, y0, D / 2 - 0.01, W, h, D - 0.02, 0.006, { k: 1 });
+var hg = (h - 0.06) / 2;
+[0, 1].forEach(function (i) { var yg = y0 + 0.02 + i * (hg + 0.015); H.porta(c, v.Corpo, 0, yg, D - 0.02, W - 0.03, hg, 0.02, "liso"); H.cava(c, 0, yg + hg - 0.03, D, W * 0.5); });
+}
+});
+def({
+id: "ra-mob-guarda-roupa", nome: "Guarda-roupa (portas de correr ou de abrir)", descricao: "Armário de quarto até o teto baixo com portas de correr em trilho ou de abrir com friso, bagageiro, rodapé recuado e puxadores.",
+parametros: [P("Largura", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 2.50, "Dimensões"), P("Altura_bagageiro", "comprimento", 0.45, "Dimensões", "0 = sem bagageiro"), P("Tipo_porta", "texto", "correr", "Construção", "correr ou abrir", "instancia"), P("Portas", "inteiro", 3, "Construção", "Folhas de porta (por faixa)"),
+P("Corpo", "material", "madeira clara", "Materiais"), P("Frente", "material", "madeira freijo", "Materiais"), P("Espelho", "simnao", true, "Construção", "Uma folha com espelho")],
+tipos: [T("g240c", "2,40 m — 3 portas de correr", {}), T("g300c", "3,00 m — 4 portas de correr", { Largura: 3.00, Portas: 4 }), T("g180a", "1,80 m — 4 portas de abrir", { Largura: 1.80, Portas: 4, Tipo_porta: "abrir", Altura: 2.40 }), T("g240a", "2,40 m — 6 portas de abrir", { Tipo_porta: "abrir", Portas: 6 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, rod = 0.08, esp = 0.018, nP = Math.max(2, Math.round(v.Portas)), correr = String(v.Tipo_porta).toLowerCase() === "correr", bag = v.Altura_bagageiro;
+c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.04, W - 0.06, rod, D - 0.1);
+c.caixa(v.Corpo, 0, rod, D / 2, W, Ht - rod, D - 0.02);
+var hp = Ht - rod - bag - 0.03, zf = D - 0.02;
+if (correr) {
+var wf = (W + 0.08 * (nP - 1)) / nP;
+for (var i = 0; i < nP; i++) {
+var x = -W / 2 + wf / 2 + i * (W - wf) / (nP - 1), z = zf + 0.012 + (i % 2) * 0.026;
+var mat = (v.Espelho && i === nP - 1) ? MAT.ESPELHO : v.Frente;
+c.caixaR(mat, x, rod + 0.02, z, wf, hp - 0.02, esp, 0.004, { k: 1 });
+H.cava(c, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.5, z + esp / 2 + 0.006, 0.01);
+c.caixa(MAT.PRETO, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.45, z + esp / 2 + 0.003, 0.012, 0.3, 0.008);
+}
+c.caixa(MAT.PRETO, 0, rod + hp - 0.005, zf + 0.02, W, 0.02, 0.07);
+} else {
+var wp = W / nP;
+for (var j = 0; j < nP; j++) {
+var xj = -W / 2 + wp * (j + 0.5), m2 = (v.Espelho && j === nP - 1) ? MAT.ESPELHO : v.Frente;
+if (m2 === MAT.ESPELHO) c.caixa(m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, 0.012); else H.porta(c, m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, esp, "friso");
+H.puxador(c, xj + (j % 2 ? 1 : -1) * (wp / 2 - 0.05), rod + hp * 0.5, zf + esp, 0.2, true);
+}
+}
+if (bag > 0.05) { var nb = Math.max(2, Math.round(W / 0.6)), wb = W / nb; for (var b = 0; b < nb; b++) { var xb = -W / 2 + wb * (b + 0.5); H.porta(c, v.Frente, xb, Ht - bag, zf, wb - 0.006, bag - 0.01, esp, "liso"); H.cava(c, xb, Ht - bag + 0.03, zf + esp, 0.1); } }
+}
+});
+def({
+id: "ra-mob-closet", nome: "Módulo de closet aberto (cabideiro e prateleiras)", descricao: "Módulo de closet sem portas: cabideiro de tubo, prateleiras, gaveteiro inferior e fundo. Vários módulos lado a lado formam o closet.",
+parametros: [P("Largura", "comprimento", 1.20, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.55, "Dimensões"), P("Altura", "comprimento", 2.40, "Dimensões"), P("Prateleiras", "inteiro", 4, "Construção"), P("Gavetas", "inteiro", 2, "Construção"), P("Cabideiro_altura", "comprimento", 1.75, "Construção", "Do piso ao eixo do tubo"),
+P("Corpo", "material", "madeira clara", "Materiais"), P("Gaveta", "material", "madeira freijo", "Materiais"), P("Tubo", "material", "inox", "Materiais")],
+tipos: [T("c120", "1,20 m", {}), T("c90", "0,90 m", { Largura: 0.90 }), T("c60", "0,60 m", { Largura: 0.60, Prateleiras: 5, Gavetas: 0 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, e = 0.018, ng = Math.round(v.Gavetas), np = Math.round(v.Prateleiras), rod = 0.07;
+c.caixa(v.Corpo, -W / 2 + e / 2, 0, D / 2, e, Ht, D); c.caixa(v.Corpo, W / 2 - e / 2, 0, D / 2, e, Ht, D);
+c.caixa(v.Corpo, 0, 0, 0.005, W, Ht, 0.01);
+c.caixa(v.Corpo, 0, Ht - e, D / 2, W - 2 * e, e, D); c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.03, W - 2 * e, rod, D - 0.06); c.caixa(v.Corpo, 0, rod, D / 2, W - 2 * e, e, D);
+var hg = 0.16, y = rod + e;
+for (var g = 0; g < ng; g++) { H.porta(c, v.Gaveta, 0, y, D - 0.01, W - 2 * e - 0.01, hg - 0.01, 0.02, "liso"); H.cava(c, 0, y + hg - 0.035, D + 0.01, 0.15); y += hg; }
+c.cilH(v.Tubo, 0, v.Cabideiro_altura, D / 2, 0.015, W - 2 * e, "x", { seg: 10 });
+for (var p = 0; p < np; p++) { var yp = Ht - e - 0.30 - p * 0.30; if (yp > v.Cabideiro_altura + 0.05) c.caixa(v.Corpo, 0, yp, D / 2, W - 2 * e, e, D - 0.02); }
+if (ng > 0) c.caixa(v.Corpo, 0, Math.max(rod + e + ng * hg + 0.30, 1.0), D / 2, W - 2 * e, e, D - 0.02);
+}
+});
+H.cadeiraEscritorio = function (c, tec) {
+var hA = 0.47;
+for (var i = 0; i < 5; i++) { var a = i * 72 * Math.PI / 180; c.caixaR(MAT.PRETO, Math.cos(a) * 0.14, 0.05, Math.sin(a) * 0.14, 0.30, 0.025, 0.045, 0.01, { k: 1, rotY: -i * 72 }); c.cil(MAT.PRETO, Math.cos(a) * 0.27, 0.0, Math.sin(a) * 0.27, 0.025, 0.045, { seg: 8 }); }
+c.cil(MAT.CROMO, 0, 0.06, 0, 0.025, hA - 0.12, { seg: 10 });
+c.caixaR(tec, 0, hA - 0.07, 0, 0.50, 0.08, 0.48, 0.03);
+c.caixaR(tec, 0, hA + 0.01, -0.22, 0.46, 0.52, 0.07, 0.03, { rotX: -6 });
+[-1, 1].forEach(function (s) { c.caixaR(MAT.PRETO, s * 0.27, hA + 0.08, -0.02, 0.04, 0.03, 0.26, 0.012, { k: 1 }); c.caixa(MAT.PRETO, s * 0.27, hA - 0.04, -0.02, 0.025, 0.12, 0.025); });
+};
+def({
+id: "ra-mob-escrivaninha", nome: "Escrivaninha com cadeira", descricao: "Mesa de trabalho com tampo de madeira, painéis laterais, gaveteiro suspenso e cadeira de escritório giratória com base estrela. A cadeira fica a 0,25 m da borda.",
+parametros: [P("Largura", "comprimento", 1.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.75, "Dimensões", "Altura usual de mesa de trabalho"), P("Com_cadeira", "simnao", true, "Construção"), P("Tampo", "material", "madeira nogueira", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais"), P("Tecido", "material", "tecido grafite", "Materiais", "Estofado da cadeira")],
+tipos: [T("e140", "1,40 × 0,60", {}), T("e120", "1,20 × 0,60", { Largura: 1.20 }), T("e160", "1,60 × 0,70", { Largura: 1.60, Profundidade: 0.70 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, e = 0.03;
+c.caixaR(v.Tampo, 0, Ht - e, D / 2, W, e, D, 0.005, { k: 1 });
+c.caixa(v.Estrutura, -W / 2 + 0.03, 0, D / 2, 0.03, Ht - e, D - 0.08); c.caixa(v.Estrutura, W / 2 - 0.03, 0, D / 2, 0.03, Ht - e, D - 0.08);
+c.caixa(v.Estrutura, 0, Ht - e - 0.25, 0.05, W - 0.1, 0.20, 0.015);
+var gx = W / 2 - 0.30; c.caixaR(MAT.CLARA, gx, Ht - e - 0.42, D / 2, 0.40, 0.40, D - 0.12, 0.005, { k: 1 });
+[0, 1].forEach(function (i) { H.porta(c, MAT.FREIJO, gx, Ht - e - 0.41 + i * 0.19, D - 0.06 + 0.01, 0.38, 0.18, 0.016, "liso"); H.cava(c, gx, Ht - e - 0.41 + i * 0.19 + 0.14, D - 0.06 + 0.026, 0.14); });
+if (v.Com_cadeira) c.grupo(-0.15, 0, D + 0.28, 180, function (k) { H.cadeiraEscritorio(k, v.Tecido); });
+}
+});
+function completar(fam, tipo, inst, saida) {
+var g = GER[fam.mob || fam.id];
+if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de mobiliário \"" + (fam.mob || fam.id) + "\" não carregou"]); return saida; }
+var c = Mob.cena(), v = saida.valores || {};
+try { g(c, v); } catch (e) { saida.ok = false; saida.erros = (saida.erros || []).concat(["mobiliário \"" + fam.nome + "\": " + e.message]); return saida; }
+saida.solidos = c.solidos(fam.id.replace(/^ra-/, "") + ":");
+saida.caixa = c.env ? { x0: c.env.x0, y0: c.env.y0, z0: c.env.z0, x1: c.env.x1, y1: c.env.y1, z1: c.env.z1 } : null;
+saida.mob = { triangulos: c.triangulos(), pecas: saida.solidos.length };
+if (SIMB[fam.id]) { try { saida.simboloPlanta = SIMB[fam.id](v); } catch (eS) { } }
+return saida;
+}
+function clonar(o) { return JSON.parse(JSON.stringify(o)); }
+function registrarNoRA() {
+var RA = global.FamiliasRA || dep("FamiliasRA", "familiasra.js");
+if (RA && RA.registrar) RA.registrar(clonar(LISTA));
+}
+var CORES = { "madeira nogueira": "#6b4a32", "madeira clara": "#b58a55", "madeira escura": "#3b2a20", "madeira deck": "#6a3d25", "madeira freijo": "#a27240", "laca branca": "#f2f2ef", "laca grafite": "#3a3d40",
+"metal preto": "#1f2023", "inox": "#d0d4d8", "metal cromado": "#cfd3d8", "latão": "#b89b47", "marmore branco": "#ece9e4", "quartzo branco": "#e9e8e4", "granito preto": "#1d1e20", "vidro": "#9fd3f0", "espelho": "#c9d3d8", "vidro fume": "#4a5560",
+"louça branca": "#f4f4f2", "tela preta": "#0b0c0e", "couro caramelo": "#9a5f34", "colchao": "#e9e5dc", "roupa de cama": "#e2ded4", "manta cinza": "#9a9a98", "cimento queimado": "#9b9a96", "tijolo refratario": "#c79a6a",
+"pedra cinza": "#8a8d8f", "acrilico branco": "#f7f7f5", "borracha preta": "#1a1a1a", "linho natural": "#cdbfa6", "terra": "#5a4332", "ceramica terracota": "#b5623c", "tecido cinza": "#777a7e", "tecido bege": "#b09b7e",
+"tecido grafite": "#35383c", "tecido verde": "#5a7058", "tecido terracota": "#b4603f", "tecido azul": "#4a6a8a", "tronco palmeira": "#6a5238", "casca de arvore": "#7b6a5a", "folha verde escura": "#2f5a2e", "folha verde": "#4a7f35",
+"folha verde clara": "#7fae4a", "folha variegada": "#6f9a48", "flor amarela": "#f2c53a", "flor rosa": "#e58aa6", "flor lilas": "#b48ad2", "flor azul": "#6f7fd8", "flor branca": "#f4f2ee", "grama esmeralda": "#3f7d2b", "grama amendoim": "#5f9b35", "seixo": "#d8d0c0" };
+var _mini = {};
+function miniatura(famId, tipoId) {
+var f = null, i, F = global.Familia;
+for (i = 0; i < LISTA.length; i++) if (LISTA[i].id === famId) f = LISTA[i];
+if (!f || !F || !Mob || !global.document) return "";
+var tp = tipoId || (f.tipos[0] || {}).id, k = famId + "|" + tp;
+if (_mini[k] != null) return _mini[k];
+var av = F.avaliar(f, tp, {});
+_mini[k] = av && av.ok ? Mob.miniatura(av.solidos, 96, function (m) { return CORES[String(m).toLowerCase()] || "#9a9a9a"; }) : "";
+return _mini[k];
+}
+function linhasPlanta(sim) {
+var out = [], i, j;
+function seg(a, b, c, d) { out.push(a, b, c, d); }
+function poli(pts) { for (var k = 0; k + 1 < pts.length; k++) seg(pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]); }
+((sim && sim.copa) || []).forEach(function (cp) {
+var r = cp.r, est = cp.estilo || "arvore", n, pts = [];
+if (est === "palmeira") {
+n = clamp(Math.round(r * 9), 8, 18);
+for (i = 0; i < n; i++) {
+var a = Math.PI * 2 * i / n, ca = Math.cos(a), sa = Math.sin(a);
+seg(cp.x + ca * r * 0.12, cp.z + sa * r * 0.12, cp.x + ca * r, cp.z + sa * r);
+var bx = cp.x + ca * r * 0.62, bz = cp.z + sa * r * 0.62;
+seg(bx, bz, bx + Math.cos(a + 0.55) * r * 0.3, bz + Math.sin(a + 0.55) * r * 0.3); seg(bx, bz, bx + Math.cos(a - 0.55) * r * 0.3, bz + Math.sin(a - 0.55) * r * 0.3);
+}
+return;
+}
+n = est === "arbusto" ? clamp(Math.round(r * 22), 12, 36) : clamp(Math.round(r * 9), 10, 22);
+var amp = est === "arbusto" ? 0.07 : 0.1, N = n * 5;
+for (i = 0; i <= N; i++) { var t = Math.PI * 2 * i / N, rr = r * (1 + amp * Math.cos(t * n)) * 0.96; pts.push([cp.x + Math.cos(t) * rr, cp.z + Math.sin(t) * rr]); }
+poli(pts);
+if (est === "arvore") { var p2 = []; for (i = 0; i <= 24; i++) { var t2 = Math.PI * 2 * i / 24; p2.push([cp.x + Math.cos(t2) * r * 0.55, cp.z + Math.sin(t2) * r * 0.55]); } poli(p2); }
+});
+((sim && sim.tronco) || []).forEach(function (tr) {
+var p = []; for (i = 0; i <= 14; i++) { var t = Math.PI * 2 * i / 14; p.push([tr.x + Math.cos(t) * tr.r, tr.z + Math.sin(t) * tr.r]); }
+poli(p); seg(tr.x - tr.r * 1.7, tr.z, tr.x + tr.r * 1.7, tr.z); seg(tr.x, tr.z - tr.r * 1.7, tr.x, tr.z + tr.r * 1.7);
+});
+var f = sim && sim.faixa;
+if (f) {
+var a2 = f.larg / 2, b2 = f.prof / 2, x0 = f.x - a2, x1 = f.x + a2, z0 = f.z - b2, z1 = f.z + b2;
+poli([[x0, z0], [x1, z0], [x1, z1], [x0, z1], [x0, z0]]);
+if (f.trama) {
+var st = f.passo || 0.28;
+for (var c0 = -(a2 + b2) + st / 2; c0 < a2 + b2; c0 += st) { var xa = Math.max(-a2, c0 - b2), xb = Math.min(a2, c0 + b2); if (xb - xa > 0.02) seg(f.x + xa, f.z + c0 - xa, f.x + xb, f.z + c0 - xb); }
+if (f.trama === "cruzada") for (var c1 = -(a2 + b2) + st / 2; c1 < a2 + b2; c1 += st) { var xc = Math.max(-a2, -c1 - b2), xd = Math.min(a2, -c1 + b2); if (xd - xc > 0.02) seg(f.x + xc, f.z + c1 + xc, f.x + xd, f.z + c1 + xd); }
+}
+if (f.pontos) {
+var rnd = Mob.sorteio(5), np = clamp(Math.round(f.larg * f.prof * 18), 10, 140);
+for (j = 0; j < np; j++) { var qx = f.x + rnd.entre(-a2 + 0.04, a2 - 0.04), qz = f.z + rnd.entre(-b2 + 0.04, b2 - 0.04), q = 0.025; seg(qx - q, qz, qx, qz - q); seg(qx, qz - q, qx + q, qz); seg(qx + q, qz, qx, qz + q); seg(qx, qz + q, qx - q, qz); }
+}
+}
+return out;
+}
+var FamiliasMob = {
+linhasPlanta: linhasPlanta,
+miniatura: miniatura, CORES: CORES,
+lista: function () { return clonar(LISTA); }, obter: function (id) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id) return clonar(LISTA[i]); return null; },
+completar: completar, gerador: function (id) { return GER[id] || null; }, def: def, H: H, MAT: MAT, P: P, T: T, registrar: registrarNoRA, TECIDOS: TECIDOS,
+ids: function () { return LISTA.map(function (f) { return f.id; }); }
+};
+global.FamiliasMob = FamiliasMob;
+registrarNoRA();
+if (typeof module !== "undefined" && module.exports) module.exports = FamiliasMob;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/familiasmobcoz.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var Mob = dep("Mob", "mobgeo.js"), FM = dep("FamiliasMob", "familiasmob.js");
+if (!Mob || !FM) return;
+var H = FM.H, MAT = FM.MAT, P = FM.P, T = FM.T, def = FM.def, USUAL = H.USUAL, clamp = H.clamp;
+var FONTE_BANHEIRA = "Fichas de anúncio em www.madeiramadeira.com.br (Astra Capri Luxo 150×80×43 e 170×80×43; Confortare Luxo 180×90×55; Prima Maggiore 180×120×44) e Ouro Fino Cristal Duo 170×110×40 — consultadas em 19/10/2026; a altura é a externa. Conferir o modelo comprado.";
+var FONTE_GELADEIRA = "Brastemp BRE57AK 443 L: 72,5 × 184 × 70,1 cm (largura × altura × profundidade), fichas em www.buscape.com.br e www.zoom.com.br, 19/10/2026; BRE57FK 447 L: 70 × 184,5 × 75,5 cm. Conferir o manual do modelo comprado.";
+var FONTE_LAVA = "Brastemp BNO11AS/BNO11AB (lava e seca 11 kg): 60 × 85 × 64 cm, www.brastemp.com.br, 19/10/2026; LG CV3011BC4A: 60 × 85 × 56 cm. Conferir o manual do modelo comprado.";
+var FONTE_CHURRAS = "Begnami churrasqueiras lisas (AECweb, produto 47694): altura 2,20 m, profundidade 50 cm, boca de 51 cm, larguras 55/65/76/85 cm; coifa Largrill 100 × 60 × 70 cm (AECweb 18073); consulta de 19/10/2026. Conferir o catálogo do fabricante.";
+function tampoFuros(c, mat, L, D, e, y, zc, furos) {
+var fs = (furos || []).slice().sort(function (a, b) { return a.x - b.x; }), cur = -L / 2, z0 = zc - D / 2, z1 = zc + D / 2;
+fs.forEach(function (f) {
+var xa = f.x - f.larg / 2, xb = f.x + f.larg / 2;
+if (xa - cur > 1e-4) c.caixa(mat, (cur + xa) / 2, y, zc, xa - cur, e, D);
+var zf0 = f.z - f.prof / 2, zf1 = f.z + f.prof / 2;
+if (zf0 - z0 > 1e-4) c.caixa(mat, f.x, y, (z0 + zf0) / 2, f.larg, e, zf0 - z0);
+if (z1 - zf1 > 1e-4) c.caixa(mat, f.x, y, (zf1 + z1) / 2, f.larg, e, z1 - zf1);
+cur = xb;
+});
+if (L / 2 - cur > 1e-4) c.caixa(mat, (cur + L / 2) / 2, y, zc, L / 2 - cur, e, D);
+}
+function cuba(c, x, z, yTopo, lar, pro) {
+var prof = 0.20, ext = Mob.contornoRR(lar, pro, 0.03, 4), int = Mob.contornoRR(lar - 0.03, pro - 0.03, 0.02, 4);
+c.bandeja(MAT.INOX, MAT.INOX, x, yTopo - prof, z, ext, int, prof, 0.01);
+var zt = z - pro / 2 - 0.05;
+c.cil(MAT.CROMO, x, yTopo, zt, 0.022, 0.03, { seg: 12 });
+c.cil(MAT.CROMO, x, yTopo + 0.03, zt, 0.014, 0.30, { seg: 10 });
+c.torno(MAT.CROMO, x, yTopo + 0.31, zt, [[0.014, 0], [0.016, 0.012], [0.014, 0.025]], { seg: 10 });
+c.cilH(MAT.CROMO, x, yTopo + 0.325, zt + 0.095, 0.012, 0.19, "z", { seg: 10 });
+c.cil(MAT.CROMO, x, yTopo + 0.25, zt + 0.19, 0.014, 0.08, { seg: 10 });
+c.cil(MAT.CROMO, x + 0.045, yTopo + 0.03, zt, 0.008, 0.07, { seg: 8, rotZ: -30 });
+}
+function cooktop(c, x, z, yTopo, lar, pro, bocas) {
+c.caixaR(MAT.TELA, x, yTopo - 0.002, z, lar, 0.006, pro, 0.003, { k: 1 });
+var pos = bocas === 5 ? [[-0.2, -0.13, 0.085], [0.2, -0.13, 0.07], [-0.2, 0.13, 0.07], [0.2, 0.13, 0.085], [0, 0, 0.055]] : [[-0.14, -0.1, 0.085], [0.14, -0.1, 0.07], [-0.14, 0.12, 0.07], [0.14, 0.12, 0.085]];
+pos.forEach(function (p) {
+c.torno(MAT.GRAFITE, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2], 0], [p[2], 0.003], [p[2] - 0.006, 0.003], [p[2] - 0.006, 0]], { seg: 24, aberto: false });
+c.torno(MAT.PRETO, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2] * 0.45, 0], [p[2] * 0.45, 0.006], [0, 0.006]], { seg: 16 });
+});
+for (var i = 0; i < 4; i++) c.cil(MAT.PRETO, x - 0.18 + i * 0.12, yTopo - 0.002, z + pro / 2 - 0.01, 0.014, 0.006, { seg: 10 });
+}
+function corpoInferior(c, L, D, Ht, e, mat, padrao, z0, miolo) {
+var rod = 0.10, hc = Ht - e - rod, nm = Math.max(1, Math.round(L / 0.6)), wm = L / nm;
+c.caixa(MAT.PRETO, 0, 0, z0 + D / 2 - 0.03, L - 0.04, rod, D - 0.08);
+c.caixa(miolo || mat, 0, rod, z0 + D / 2 - 0.01, L, hc, D - 0.02);
+for (var i = 0; i < nm; i++) {
+var x = -L / 2 + wm * (i + 0.5), gav = padrao === "gavetas" || (padrao === "misto" && i % 3 === 1), zf = z0 + D - 0.02;
+if (gav) {
+var hs = [0.19, 0.27, hc - 0.19 - 0.27 - 0.03], y = rod + 0.01;
+hs.forEach(function (h) { H.porta(c, mat, x, y, zf, wm - 0.008, h, 0.019, "liso"); H.cava(c, x, y + h - 0.035, zf + 0.019, wm * 0.6); y += h + 0.008; });
+} else if (wm > 0.75) {
+[-1, 1].forEach(function (s) { H.porta(c, mat, x + s * (wm - 0.008) / 4, rod + 0.01, zf, (wm - 0.012) / 2, hc - 0.02, 0.019, "liso"); H.cava(c, x + s * 0.02, rod + hc - 0.05, zf + 0.019, 0.01); });
+} else { H.porta(c, mat, x, rod + 0.01, zf, wm - 0.008, hc - 0.02, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.05), rod + hc - 0.05, zf + 0.019, 0.01); }
+}
+}
+var P_COZ = function (L) {
+return [P("Comprimento", "comprimento", L, "Dimensões", "Comprimento da bancada (marcenaria sob medida, módulos de ~0,60 m). " + USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões", USUAL), P("Altura", "comprimento", 0.90, "Dimensões", "Do piso ao topo do tampo. " + USUAL),
+P("Espessura_tampo", "comprimento", 0.03, "Dimensões"), P("Padrao", "texto", "misto", "Construção", "portas, gavetas ou misto (um gaveteiro a cada 3 módulos)"),
+P("Com_cuba", "simnao", true, "Construção"), P("Com_cooktop", "simnao", false, "Construção"), P("Corpo", "material", "laca grafite", "Materiais", "Frentes dos armários"), P("Tampo", "material", "quartzo branco", "Materiais", "quartzo branco, granito preto ou marmore branco")];
+};
+def({
+id: "ra-coz-inferior", categoria: "cozinha", nome: "Armário inferior de cozinha (por comprimento)", descricao: "Bancada de cozinha de marcenaria: rodapé recuado, módulos com portas e gaveteiros, tampo de pedra com cuba de inox e torneira e cooktop embutidos (opcionais). O comprimento é o parâmetro; o número de módulos sai dele.",
+parametros: P_COZ(2.40), unidade: "m", quantidade: "Comprimento", quantDesc: "Armário inferior de cozinha em marcenaria",
+tipos: [T("i120", "1,20 m", { Comprimento: 1.20 }), T("i180", "1,80 m com cuba", { Comprimento: 1.80 }), T("i240", "2,40 m com cuba", {}), T("i300", "3,00 m com cuba e cooktop", { Comprimento: 3.00, Com_cooktop: true }), T("i360", "3,60 m com cuba e cooktop", { Comprimento: 3.60, Com_cooktop: true })],
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, Ht = v.Altura, e = v.Espessura_tampo, furos = [], over = 0.02;
+corpoInferior(c, L, D - over, Ht, e, v.Corpo, v.Padrao, 0);
+var xc = v.Com_cooktop ? -L / 2 + Math.min(0.55, L * 0.3) : 0, xk = L / 2 - Math.min(0.55, L * 0.25);
+var nc = v.Com_cuba && L >= 1.0, nk = v.Com_cooktop && L >= 1.8;
+if (nc) { var xcu = nk ? -L / 2 + Math.min(0.6, L * 0.28) : -L / 2 + Math.max(0.45, L * 0.3); furos.push({ x: xcu, larg: 0.54, prof: 0.42, z: D / 2 + 0.01 }); }
+if (nk) furos.push({ x: xk, larg: 0.56, prof: 0.49, z: D / 2 });
+tampoFuros(c, v.Tampo, L, D, e, Ht - e, D / 2, furos);
+c.caixa(v.Tampo, 0, Ht - e - 0.05, 0.005, L, 0.15 + 0.05, 0.01);
+if (nc) cuba(c, furos[0].x, furos[0].z, Ht, 0.50, 0.40);
+if (nk) cooktop(c, xk, D / 2, Ht, 0.55, 0.47, 4);
+}
+});
+def({
+id: "ra-coz-superior", categoria: "cozinha", nome: "Armário superior de cozinha (por comprimento)", descricao: "Armário aéreo de cozinha com portas de giro e cava, fundo e prateleira. Cota de base e altura são parâmetros (a base usual fica 0,50 a 0,60 m acima do tampo).",
+parametros: [P("Comprimento", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.35, "Dimensões", USUAL), P("Altura", "comprimento", 0.70, "Dimensões"), P("Cota_base", "comprimento", 1.45, "Restrições", "Do piso à base do armário", "instancia"), P("Corpo", "material", "laca grafite", "Materiais")],
+unidade: "m", quantidade: "Comprimento", quantDesc: "Armário superior de cozinha em marcenaria",
+tipos: [T("s120", "1,20 m", { Comprimento: 1.20 }), T("s180", "1,80 m", { Comprimento: 1.80 }), T("s240", "2,40 m", {}), T("s300", "3,00 m", { Comprimento: 3.00 })],
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, Ht = v.Altura, y0 = v.Cota_base, nm = Math.max(1, Math.round(L / 0.6)), wm = L / nm;
+c.caixa(v.Corpo, 0, y0, D / 2 - 0.01, L, Ht, D - 0.02);
+for (var i = 0; i < nm; i++) {
+var x = -L / 2 + wm * (i + 0.5);
+H.porta(c, v.Corpo, x, y0 + 0.004, D - 0.02, wm - 0.006, Ht - 0.008, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.02), y0 + 0.03, D, 0.012);
+}
+}
+});
+def({
+id: "ra-coz-torre-quente", categoria: "cozinha", nome: "Torre quente (forno e micro-ondas)", descricao: "Coluna de marcenaria com gaveteiro, forno elétrico de embutir 60 cm, micro-ondas de embutir e bagageiro. Forno e micro-ondas são nichos com vidro preto e puxador.",
+parametros: [P("Largura", "comprimento", 0.62, "Dimensões", "Vão de 60 cm do forno de embutir + paredes. " + USUAL), P("Profundidade", "comprimento", 0.62, "Dimensões"), P("Altura", "comprimento", 2.40, "Dimensões"), P("Cota_forno", "comprimento", 0.80, "Construção", "Do piso à base do forno"), P("Com_micro", "simnao", true, "Construção"), P("Corpo", "material", "laca grafite", "Materiais")],
+tipos: [T("tq", "Forno 60 cm + micro-ondas", {}), T("tqf", "Só forno 60 cm", { Com_micro: false })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, yf = v.Cota_forno, rod = 0.10, zf = D - 0.02;
+c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.03, W - 0.04, rod, D - 0.08); c.caixa(v.Corpo, 0, rod, D / 2 - 0.01, W, Ht - rod, D - 0.02);
+var h = yf - rod - 0.012; H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso");
+c.caixaR(MAT.INOX, 0, yf, zf - 0.02, 0.595, 0.595, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.45, 0.004); c.cilH(MAT.INOX, 0, yf + 0.52, zf + 0.04, 0.009, 0.45, "x", { seg: 8 }); c.caixa(MAT.PRETO, 0, yf + 0.555, zf + 0.0005, 0.3, 0.025, 0.004);
+var yt = yf + 0.595 + 0.012;
+if (v.Com_micro) { c.caixaR(MAT.INOX, 0, yt, zf - 0.02, 0.595, 0.38, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, -0.06, yt + 0.035, zf + 0.0005, 0.37, 0.31, 0.004); c.caixa(MAT.PRETO, 0.21, yt + 0.1, zf + 0.0005, 0.08, 0.17, 0.004); c.cilH(MAT.INOX, 0.255, yt + 0.19, zf + 0.04, 0.007, 0.2, "y", { seg: 8, rotX: 0 }); yt += 0.38 + 0.012; }
+var hb = Ht - yt - 0.01; if (hb > 0.2) { H.porta(c, v.Corpo, 0, yt, zf, W - 0.012, hb, 0.019, "liso"); H.cava(c, 0, yt + 0.03, zf + 0.019, 0.15); }
+}
+});
+def({
+id: "ra-coz-nicho-geladeira", categoria: "cozinha", nome: "Nicho de geladeira com bagageiro", descricao: "Nicho de marcenaria para geladeira: painéis laterais, travessa e bagageiro com portas. A geladeira é uma família à parte (a abertura livre já considera folga de ventilação).",
+parametros: [P("Vao_largura", "comprimento", 0.78, "Dimensões", "Largura livre do nicho: geladeira de ~0,72 m + 3 cm de folga por lado. " + USUAL), P("Vao_altura", "comprimento", 1.90, "Dimensões", "Altura livre"), P("Altura", "comprimento", 2.40, "Dimensões", "Altura total"), P("Profundidade", "comprimento", 0.75, "Dimensões"), P("Esp", "comprimento", 0.03, "Dimensões", "Espessura dos painéis laterais"), P("Corpo", "material", "laca grafite", "Materiais")],
+tipos: [T("n78", "Vão 0,78 (geladeira inverse)", {}), T("n94", "Vão 0,94 (side by side)", { Vao_largura: 0.94 }), T("n72", "Vão 0,72 (geladeira compacta)", { Vao_largura: 0.72 })],
+gerar: function (c, v) {
+var W = v.Vao_largura, Ht = v.Altura, hv = v.Vao_altura, D = v.Profundidade, e = v.Esp, mat = v.Corpo;
+[-1, 1].forEach(function (s) { c.caixa(mat, s * (W / 2 + e / 2), 0, D / 2, e, Ht, D); });
+c.caixa(mat, 0, hv, D / 2, W, Ht - hv, D - 0.03); c.caixa(mat, 0, 0, 0.005, W, hv, 0.01);
+var nb = 2, wb = (W + 2 * e) / nb, hb = Ht - hv - 0.02;
+for (var i = 0; i < nb; i++) { var x = -(W + 2 * e) / 2 + wb * (i + 0.5); H.porta(c, mat, x, hv + 0.01, D - 0.015, wb - 0.006, hb, 0.019, "liso"); H.cava(c, x + (i ? -1 : 1) * 0.04, hv + 0.04, D + 0.004, 0.012); }
+}
+});
+def({
+id: "ra-coz-ilha", centro: true, categoria: "cozinha", nome: "Ilha de cozinha com cuba, cooktop e banquetas", descricao: "Ilha de marcenaria com tampo de pedra, balanço para banquetas, painéis laterais, cuba de inox e cooktop embutidos (opcionais) e as banquetas na borda do balanço. A face de trabalho fica em −Z; o balanço, em +Z.",
+parametros: [P("Comprimento", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 1.10, "Dimensões", "Corpo + balanço. " + USUAL), P("Balanco", "comprimento", 0.35, "Dimensões", "Balanço do tampo para as banquetas (apoio mínimo de ~0,30 m para os joelhos)"), P("Altura", "comprimento", 0.90, "Dimensões"), P("Espessura_tampo", "comprimento", 0.04, "Dimensões"),
+P("Com_cuba", "simnao", true, "Construção"), P("Com_cooktop", "simnao", true, "Construção"), P("Banquetas", "inteiro", 3, "Construção"), P("Altura_banqueta", "comprimento", 0.65, "Dimensões"),
+P("Corpo", "material", "madeira freijo", "Materiais"), P("Tampo", "material", "quartzo branco", "Materiais"), P("Tecido", "material", "couro caramelo", "Materiais", "Assento das banquetas")],
+tipos: [T("i200", "2,00 m, 2 banquetas", { Comprimento: 2.00, Banquetas: 2 }), T("i240", "2,40 m, 3 banquetas", {}), T("i300", "3,00 m, 4 banquetas", { Comprimento: 3.00, Banquetas: 4 }), T("i240n", "2,40 m, sem cooktop", { Com_cooktop: false })],
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, B = v.Balanco, Ht = v.Altura, e = v.Espessura_tampo, Dc = D - B, z0 = -D / 2, furos = [];
+var zc = z0 + Dc / 2 + 0.0;
+corpoInferior(c, L - 0.06, Dc - 0.02, Ht, e, v.Corpo, "misto", z0 + 0.01, MAT.GRAFITE);
+[-1, 1].forEach(function (s) { c.caixa(v.Corpo, s * (L / 2 - 0.015), 0.1, z0 + D / 2, 0.03, Ht - e - 0.1, D); });
+c.caixa(v.Corpo, 0, 0.1, z0 + Dc, L - 0.06, Ht - e - 0.1, 0.02);
+var nk = v.Com_cooktop && L >= 1.8, nc = v.Com_cuba && L >= 1.4;
+if (nc) furos.push({ x: nk ? -L / 4 : -L / 6, larg: 0.54, prof: 0.42, z: z0 + Dc / 2 });
+if (nk) furos.push({ x: L / 4, larg: 0.56, prof: 0.49, z: z0 + Dc / 2 });
+tampoFuros(c, v.Tampo, L, D, e, Ht - e, z0 + D / 2, furos);
+if (nc) cuba(c, furos[0].x, furos[0].z, Ht, 0.50, 0.40);
+if (nk) cooktop(c, L / 4, z0 + Dc / 2, Ht, 0.55, 0.47, 4);
+var nb = Math.round(v.Banquetas), pas = 0.62;
+for (var i = 0; i < nb; i++) { var xb = (i - (nb - 1) / 2) * pas; c.grupo(xb, 0, D / 2 + 0.12, 0, function (k) { H.banqueta(k, v.Altura_banqueta, 0.36, v.Tecido, MAT.PRETO); }); }
+}
+});
+def({
+id: "ra-coz-geladeira", categoria: "cozinha", nome: "Geladeira", descricao: "Geladeira de cozinha com portas, puxadores e rodapé: freezer embaixo (duplex invertida), duas portas lado a lado (side by side) ou french door. Os tipos 'inverse' trazem medidas de ficha de catálogo (ver fonte).",
+parametros: [P("Largura", "comprimento", 0.725, "Dimensões", "Medida de ficha de catálogo (ver fonte do tipo)"), P("Altura", "comprimento", 1.84, "Dimensões"), P("Profundidade", "comprimento", 0.701, "Dimensões", "Sem a folga de ventilação (~5 cm atrás e 3 cm nas laterais)"),
+P("Modelo", "texto", "inverse", "Construção", "inverse, duplex, sidebyside ou frenchdoor"), P("Acabamento", "material", "inox", "Materiais")],
+tipos: [T("inv", "Frost free inverse 443 L (BRE57AK) — 72,5 × 184 × 70,1", {}, FONTE_GELADEIRA), T("inv2", "Frost free inverse 447 L (BRE57FK) — 70 × 184,5 × 75,5", { Largura: 0.70, Altura: 1.845, Profundidade: 0.755 }, FONTE_GELADEIRA),
+T("sbs", "Side by side ~0,91 × 1,79 × 0,74 (medida usual; não verificada em ficha)", { Modelo: "sidebyside", Largura: 0.91, Altura: 1.79, Profundidade: 0.74 }), T("frn", "French door ~0,91 × 1,79 × 0,74 (medida usual; não verificada em ficha)", { Modelo: "frenchdoor", Largura: 0.91, Altura: 1.79, Profundidade: 0.74 }), T("dup", "Duplex ~0,70 × 1,75 × 0,70 (medida usual; não verificada em ficha)", { Modelo: "duplex", Largura: 0.70, Altura: 1.75, Profundidade: 0.70 })],
+gerar: function (c, v) {
+var W = v.Largura, Ht = v.Altura, D = v.Profundidade, m = String(v.Modelo).toLowerCase(), ac = v.Acabamento, pe = 0.04, zf = D - 0.03;
+c.caixa(MAT.PRETO, 0, 0, D / 2, W - 0.06, pe, D - 0.1);
+c.caixaR(MAT.GRAFITE, 0, pe, D / 2 - 0.01, W, Ht - pe, D - 0.02, 0.01);
+if (m === "sidebyside" || m === "frenchdoor") {
+var wL = m === "sidebyside" ? W * 0.45 : W * 0.5, hTop = m === "sidebyside" ? Ht - pe - 0.02 : (Ht - pe) * 0.66, yTop = m === "sidebyside" ? pe + 0.01 : Ht - hTop - 0.01;
+[-1, 1].forEach(function (s) { var x = s * (wL / 2 + 0.004), w = m === "sidebyside" ? (s < 0 ? wL : W - wL - 0.012) : wL - 0.008; var xx = m === "sidebyside" ? (s < 0 ? -W / 2 + wL / 2 + 0.005 : W / 2 - (W - wL - 0.012) / 2 - 0.005) : x; c.caixaR(ac, xx, yTop, zf, w, hTop, 0.03, 0.01); c.cil(MAT.PRETO, xx + s * (w / 2 - 0.035) * (m === "sidebyside" ? -1 : 1), yTop + hTop * 0.35, zf + 0.04, 0.012, hTop * 0.38, { seg: 8 }); });
+if (m === "frenchdoor") { c.caixaR(ac, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, 0.03, 0.01); c.caixa(MAT.PRETO, 0, pe + 0.01 + (Ht - pe - hTop - 0.03) * 0.8, zf + 0.03, W * 0.6, 0.02, 0.012); }
+} else {
+var inv = m === "inverse", hF = (Ht - pe) * (inv ? 0.30 : 0.28), hR = Ht - pe - hF - 0.03;
+var yR = inv ? pe + 0.01 + hF + 0.008 : pe + 0.01, yF = inv ? pe + 0.01 : pe + 0.01 + hR + 0.008;
+c.caixaR(ac, 0, yR, zf, W - 0.012, hR, 0.03, 0.01); c.caixaR(ac, 0, yF, zf, W - 0.012, hF - 0.008, 0.03, 0.01);
+c.cil(MAT.PRETO, -W / 2 + 0.06, yR + hR * 0.35, zf + 0.04, 0.012, hR * 0.45, { seg: 8 }); c.cilH(MAT.PRETO, 0, yF + hF - 0.05, zf + 0.04, 0.011, W * 0.75, "x", { seg: 8 });
+c.caixa(MAT.PRETO, W / 2 - 0.09, yR + hR - 0.04, zf + 0.0305, 0.09, 0.03, 0.002);
+}
+}
+});
+def({
+id: "ra-coz-lavadora", categoria: "cozinha", nome: "Máquina de lavar roupas", descricao: "Lavadora frontal (porta circular com vidro e painel) ou de carga superior (tampa e painel de comandos). Os tipos frontais trazem medidas de ficha de catálogo.",
+parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou superior"), P("Largura", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.85, "Dimensões"), P("Profundidade", "comprimento", 0.64, "Dimensões"), P("Corpo", "material", "laca branca", "Materiais")],
+tipos: [T("f11", "Lava e seca frontal 11 kg — 60 × 85 × 64", {}, FONTE_LAVA), T("f11lg", "Lava e seca frontal 11 kg — 60 × 85 × 56", { Profundidade: 0.56 }, FONTE_LAVA), T("sup", "Carga superior 13 kg (~0,66 × 1,06 × 0,69; medida usual, não verificada em ficha)", { Modelo: "superior", Largura: 0.66, Altura: 1.06, Profundidade: 0.69 })],
+gerar: function (c, v) {
+var W = v.Largura, Ht = v.Altura, D = v.Profundidade, fr = String(v.Modelo).toLowerCase() !== "superior";
+c.caixaR(v.Corpo, 0, 0.015, D / 2, W, Ht - 0.015, D, 0.012);
+[-1, 1].forEach(function (s) { c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, D - 0.05, 0.025, 0.015, { seg: 8 }); c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, 0.05, 0.025, 0.015, { seg: 8 }); });
+if (fr) {
+var yc = Ht * 0.44, r = Math.min(0.24, W * 0.4);
+c.torno(MAT.CROMO, 0, yc, D, [[r + 0.035, -0.012], [r + 0.035, 0.0], [r + 0.012, 0.03], [r, 0.03]], { seg: 32, rotX: 90 });
+c.torno(MAT.FUME, 0, yc, D + 0.005, [[r, 0.0], [r * 0.93, 0.03], [r * 0.7, 0.045], [0, 0.05]], { seg: 32, rotX: 90 });
+c.caixa(MAT.GRAFITE, 0, Ht - 0.115, D + 0.001, W - 0.04, 0.09, 0.004);
+c.cil(MAT.CROMO, W / 2 - 0.08, Ht - 0.07, D + 0.003, 0.025, 0.014, { seg: 16, rotX: 90 });
+c.caixa(MAT.TELA, -0.05, Ht - 0.088, D + 0.0035, 0.2, 0.045, 0.002);
+} else {
+c.caixaR(MAT.GRAFITE, 0, Ht - 0.02, D / 2, W - 0.02, 0.02, D - 0.02, 0.008, { k: 1 });
+c.caixaR(MAT.FUME, 0, Ht, D * 0.45, W * 0.62, 0.012, D * 0.55, 0.01, { k: 1 });
+c.caixaR(MAT.GRAFITE, 0, Ht - 0.06, 0.04, W - 0.02, 0.14, 0.08, 0.012, { k: 1 }); c.caixa(MAT.TELA, 0, Ht - 0.03, 0.082, W * 0.6, 0.05, 0.003);
+}
+}
+});
+def({
+id: "ra-banho-bancada", categoria: "banho", nome: "Bancada de banheiro com cuba de apoio, gabinete e espelho", descricao: "Gabinete suspenso com gavetas e portas, tampo de pedra, cuba de apoio oval, torneira alta de mesa e espelho com moldura de luz embutida. Comprimento é o parâmetro.",
+parametros: [P("Comprimento", "comprimento", 1.20, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.50, "Dimensões", USUAL), P("Altura_tampo", "comprimento", 0.85, "Dimensões", "Do piso ao topo do tampo"), P("Altura_pe", "comprimento", 0.25, "Dimensões", "Vão do gabinete suspenso"), P("Espessura_tampo", "comprimento", 0.03, "Dimensões"),
+P("Cubas", "inteiro", 1, "Construção", "1 ou 2 cubas de apoio"), P("Com_espelho", "simnao", true, "Construção"), P("Altura_espelho", "comprimento", 0.90, "Dimensões"), P("Base_espelho", "comprimento", 1.20, "Restrições", "Do piso à base do espelho", "instancia"),
+P("Corpo", "material", "madeira nogueira", "Materiais"), P("Tampo", "material", "marmore branco", "Materiais"), P("Cuba", "material", "louça branca", "Materiais")],
+tipos: [T("b80", "0,80 m, 1 cuba", { Comprimento: 0.80 }), T("b120", "1,20 m, 1 cuba", {}), T("b160", "1,60 m, 2 cubas", { Comprimento: 1.60, Cubas: 2 }), T("b200", "2,00 m, 2 cubas", { Comprimento: 2.00, Cubas: 2 })],
+unidade: "m", quantidade: "Comprimento", quantDesc: "Bancada de banheiro com gabinete",
+gerar: function (c, v) {
+var L = v.Comprimento, D = v.Profundidade, Ht = v.Altura_tampo, y0 = v.Altura_pe, e = v.Espessura_tampo, nc = Math.max(1, Math.round(v.Cubas)), hc = Ht - e - y0;
+c.caixa(MAT.PRETO, 0, y0 - 0.008, D / 2 - 0.02, L - 0.04, 0.008, D - 0.08);
+c.caixa(v.Corpo, 0, y0, D / 2 - 0.01, L - 0.01, hc, D - 0.02);
+var nm = Math.max(2, Math.round(L / 0.45)), wm = (L - 0.01) / nm;
+for (var i = 0; i < nm; i++) { var x = -(L - 0.01) / 2 + wm * (i + 0.5); if (i % 2 === 0 && nm > 2) { [0, 1].forEach(function (g) { var hh = (hc - 0.02) / 2 - 0.004; H.porta(c, v.Corpo, x, y0 + 0.008 + g * (hh + 0.008), D - 0.02, wm - 0.008, hh, 0.019, "liso"); H.cava(c, x, y0 + 0.008 + g * (hh + 0.008) + hh - 0.03, D, wm * 0.5); }); } else { H.porta(c, v.Corpo, x, y0 + 0.008, D - 0.02, wm - 0.008, hc - 0.016, 0.019, "liso"); H.cava(c, x, y0 + hc - 0.04, D, 0.01); } }
+c.caixaR(v.Tampo, 0, Ht - e, D / 2, L, e, D, 0.004, { k: 1 }); c.caixa(v.Tampo, 0, Ht, 0.01, L, 0.1, 0.02);
+for (var k = 0; k < nc; k++) {
+var xk = nc === 1 ? 0 : (k - 0.5) * (L / 2);
+c.torno(v.Cuba, xk, Ht, D * 0.55, [[0.10, 0], [0.18, 0.025], [0.205, 0.08], [0.2, 0.12], [0.185, 0.12], [0.18, 0.09], [0.1, 0.03]], { seg: 28, ex: 1.15, ez: 0.95 });
+c.cil(MAT.CROMO, xk, Ht, 0.14, 0.02, 0.03, { seg: 10 }); c.cil(MAT.CROMO, xk, Ht + 0.03, 0.14, 0.012, 0.22, { seg: 10 }); c.cilH(MAT.CROMO, xk, Ht + 0.245, 0.14 + 0.07, 0.011, 0.14, "z", { seg: 10 });
+}
+if (v.Com_espelho) {
+var ha = v.Altura_espelho, yb = v.Base_espelho, we = L - 0.1;
+c.caixa(MAT.ESPELHO, 0, yb, 0.03, we, ha, 0.008); c.caixa(MAT.ACRILICO, 0, yb - 0.012, 0.04, we, 0.012, 0.03); c.caixa(MAT.PRETO, 0, yb + ha, 0.03, we + 0.03, 0.012, 0.02);
+c.caixa(MAT.PRETO, -we / 2 - 0.015, yb - 0.012, 0.03, 0.015, ha + 0.024, 0.02); c.caixa(MAT.PRETO, we / 2 + 0.015, yb - 0.012, 0.03, 0.015, ha + 0.024, 0.02);
+}
+}
+});
+def({
+id: "ra-banho-hidromassagem", centro: true, categoria: "banho", nome: "Banheira de hidromassagem", descricao: "Banheira de acrílico retangular com aro, cuba rebaixada, jatos aparentes (principais e minijatos), ralo, ladrão e misturador de deck. Medidas dos tipos são de fichas de catálogo (ver fonte); o aro da cuba e a profundidade interna não são cotas de ficha (padrão da RA, a conferir). Os pontos de água e esgoto (hidráulica) entram na fase do hidrossanitário.",
+parametros: [P("Comprimento", "comprimento", 1.70, "Dimensões", "Comprimento externo (ficha de catálogo, ver fonte do tipo)"), P("Largura", "comprimento", 0.80, "Dimensões", "Largura externa"), P("Altura", "comprimento", 0.43, "Dimensões", "Altura externa, do piso à borda"), P("Aro", "comprimento", 0.08, "Dimensões", "Largura da borda — padrão RA, a conferir no modelo"), P("Profundidade_cuba", "comprimento", 0.33, "Dimensões", "Da borda ao fundo interno — padrão RA, a conferir no modelo"),
+P("Jatos", "inteiro", 1, "Hidromassagem", "Jatos principais"), P("Minijatos", "inteiro", 2, "Hidromassagem"), P("Com_misturador", "simnao", true, "Construção"), P("Material", "material", "acrilico branco", "Materiais")],
+tipos: [T("c150", "Retangular 1,50 × 0,80 × 0,43 — 1 jato + 2 minijatos (Capri Luxo)", { Comprimento: 1.50 }, FONTE_BANHEIRA), T("c170", "Retangular 1,70 × 0,80 × 0,43 — 1 jato + 2 minijatos (Capri Luxo)", {}, FONTE_BANHEIRA),
+T("c180", "Retangular 1,80 × 0,90 × 0,55 — 3 jatos (Confortare Luxo)", { Comprimento: 1.80, Largura: 0.90, Altura: 0.55, Jatos: 3, Minijatos: 0, Profundidade_cuba: 0.43 }, FONTE_BANHEIRA),
+T("c180d", "Retangular 1,80 × 1,20 × 0,44 — 6 jatos (Prima Maggiore)", { Comprimento: 1.80, Largura: 1.20, Altura: 0.44, Jatos: 6, Minijatos: 0, Profundidade_cuba: 0.34 }, FONTE_BANHEIRA),
+T("c170d", "Retangular 1,70 × 1,10 × 0,40 — 6 jatos (Cristal Duo)", { Comprimento: 1.70, Largura: 1.10, Altura: 0.40, Jatos: 6, Minijatos: 0, Profundidade_cuba: 0.31 }, FONTE_BANHEIRA)],
+gerar: function (c, v) {
+var L = v.Comprimento, W = v.Largura, Ht = v.Altura, ar = v.Aro, pc = v.Profundidade_cuba, fd = Ht - pc, mat = v.Material;
+var ext = Mob.contornoRR(L, W, 0.14, 5), int = Mob.contornoRR(L - 2 * ar, W - 2 * ar, 0.18, 5);
+c.bandeja(mat, mat, 0, 0, 0, ext, int, Ht, Math.max(0.03, fd));
+var nJ = Math.round(v.Jatos), nM = Math.round(v.Minijatos), yj = Math.max(fd + 0.14, Ht - 0.2), zi = W / 2 - ar - 0.002, xi = L / 2 - ar - 0.002;
+function jato(x, y, z, rot, r) { c.torno(MAT.CROMO, x, y, z, [[r, 0], [r, 0.006], [r * 0.55, 0.008], [r * 0.3, 0.003], [0, 0.003]], { seg: 18, rotX: rot[0], rotZ: rot[1], rotY: rot[2] || 0 }); }
+for (var i = 0; i < nJ; i++) { var xj = nJ === 1 ? -L * 0.12 : -L / 2 + ar + 0.35 + (L - 2 * ar - 0.7) * i / (nJ - 1); jato(xj, yj, -zi, [90, 0], 0.04); if (nJ > 3 || W > 1.0) jato(xj, yj, zi, [-90, 0], 0.04); }
+for (var m = 0; m < nM; m++) jato(-xi, yj + 0.02, (m - (nM - 1) / 2) * 0.16, [0, 90], 0.025);
+c.torno(MAT.CROMO, xi - 0.12, Math.max(0.03, fd), 0, [[0.035, 0], [0.04, 0.004], [0.035, 0.008]], { seg: 20 });
+c.torno(MAT.CROMO, -xi + 0.05, Ht - 0.12, -zi, [[0.03, 0], [0.034, 0.004], [0.03, 0.008]], { seg: 16, rotX: 90 });
+if (v.Com_misturador) {
+var xm = L / 2 - ar / 2 - 0.01;
+c.cil(MAT.CROMO, xm, Ht, -W / 2 + ar / 2 + 0.02, 0.025, 0.04, { seg: 12 }); c.cil(MAT.CROMO, xm, Ht + 0.04, -W / 2 + ar / 2 + 0.02, 0.013, 0.2, { seg: 10 });
+c.cilH(MAT.CROMO, xm - 0.07, Ht + 0.225, -W / 2 + ar / 2 + 0.02, 0.011, 0.16, "x", { seg: 10 });
+c.cil(MAT.CROMO, xm + 0.045, Ht + 0.04, -W / 2 + ar / 2 + 0.02, 0.01, 0.06, { seg: 8 });
+}
+}
+});
+def({
+id: "ra-banho-box", categoria: "banho", nome: "Box de vidro (frontal ou de canto)", descricao: "Box de vidro temperado com perfis metálicos, porta de correr ou de abrir e puxador. 'frontal' fecha o vão entre duas paredes; 'canto' faz o L em volta do ralo. A peça é encostada: o fundo do box é a parede em Z = 0 e, no canto, a parede lateral em X = −Largura/2.",
+parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou canto", "instancia"), P("Largura", "comprimento", 1.00, "Dimensões", "Frontal: vão entre paredes. Canto: lado do box. " + USUAL), P("Profundidade", "comprimento", 0.90, "Dimensões", "Distância da parede de fundo ao vidro da frente (largura do chuveiro)"), P("Altura", "comprimento", 1.90, "Dimensões", USUAL),
+P("Porta", "texto", "correr", "Construção", "correr ou abrir"), P("Esp_vidro", "comprimento", 0.008, "Dimensões", "Vidro temperado de 8 mm — usual"), P("Vidro", "material", "vidro", "Materiais", "vidro (incolor) ou vidro fume"), P("Perfil", "material", "metal preto", "Materiais")],
+tipos: [T("f100", "Frontal 1,00 m, correr", {}), T("f120", "Frontal 1,20 m, correr", { Largura: 1.20 }), T("f80a", "Frontal 0,80 m, abrir", { Largura: 0.80, Porta: "abrir" }), T("c90", "De canto 0,90 × 0,90, correr", { Modelo: "canto", Largura: 0.90, Profundidade: 0.90 }), T("c120", "De canto 1,20 × 0,90, abrir", { Modelo: "canto", Largura: 1.20, Profundidade: 0.90, Porta: "abrir" })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, e = v.Esp_vidro, canto = String(v.Modelo).toLowerCase() === "canto", correr = String(v.Porta).toLowerCase() === "correr", p = 0.02;
+var zf = D;
+function painel(x, z, larg, alt, y, eixo) {
+if (eixo === "x") c.caixa(v.Vidro, x, y, z, larg, alt, e); else c.caixa(v.Vidro, x, y, z, e, alt, larg);
+}
+var yb = 0.01;
+if (canto) {
+c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + 0.0, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2, 0, D / 2, p, 0.02, D);
+c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
+painel(W / 2, D / 2, D, Ht - yb, yb, "z");
+if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); painel(W / 4 - 0.01, zf + 0.02, W / 2, Ht - yb, yb, "x"); c.cilH(MAT.INOX, -0.05, Ht * 0.52, zf + 0.04, 0.008, 0.3, "y", { seg: 8, rotX: 0 }); }
+else { painel(-W * 0.18, zf, W * 0.64, Ht - yb, yb, "x"); painel(W * 0.34, zf, W * 0.32, Ht - yb, yb, "x"); c.cil(MAT.INOX, W * 0.08, Ht * 0.45, zf + 0.03, 0.009, 0.4, { seg: 8 }); [0.2, 0.55, 0.9].forEach(function (f) { c.cil(v.Perfil, -W * 0.5 + 0.02, Ht * f, zf + 0.005, 0.014, 0.05, { seg: 8, rotX: 90, centro: true }); }); }
+} else {
+c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + p / 2, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2 - p / 2, 0, D / 2, p, 0.02, D);
+c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
+if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); painel(W / 4 - 0.01, zf + 0.02, W / 2 + 0.02, Ht - yb, yb, "x"); c.cil(MAT.INOX, W / 4 - 0.12, Ht * 0.5, zf + 0.045, 0.008, 0.45, { seg: 8 }); }
+else { painel(-W / 2 + (W * 0.65) / 2 + 0.02, zf, W * 0.65, Ht - yb, yb, "x"); painel(W / 2 - (W * 0.25) / 2 - 0.02, zf, W * 0.25, Ht - yb, yb, "x"); c.cilH(MAT.INOX, 0.0, Ht * 0.5, zf + 0.04, 0.008, 0.3, "y", { seg: 8 }); }
+}
+}
+});
+function chamine(c, mat, xc, y0, zc, w0, d0, w1, d1, h, hDuto, wDuto) {
+c.tronco(mat, xc, y0, zc, w0, d0, wDuto, wDuto, h);
+c.caixa(mat, xc, y0 + h, zc, wDuto, hDuto, wDuto);
+}
+def({
+id: "ra-lazer-churrasqueira-premoldada", categoria: "lazer", nome: "Churrasqueira pré-moldada com coifa", descricao: "Churrasqueira pré-moldada de concreto revestido: base, boca com grelha e braseiro, bancada de apoio ao lado (opcional), coifa de 3 águas e chaminé até a altura total. Largura e boca por tipo: ver fonte do catálogo.",
+parametros: [P("Largura", "comprimento", 0.85, "Dimensões", "Largura externa (catálogo, ver fonte do tipo)"), P("Profundidade", "comprimento", 0.50, "Dimensões", "Profundidade externa (catálogo)"), P("Altura_total", "comprimento", 2.20, "Dimensões", "Do piso ao topo da chaminé (catálogo)"), P("Altura_boca", "comprimento", 0.51, "Dimensões", "Altura da boca (catálogo)"), P("Cota_braseiro", "comprimento", 0.70, "Dimensões", "Do piso ao fundo do braseiro — padrão RA, a conferir"), P("Duto_lado", "comprimento", 0.30, "Dimensões", "Lado da chaminé — padrão RA, a conferir"),
+P("Revestimento", "material", "pedra cinza", "Materiais"), P("Refratario", "material", "tijolo refratario", "Materiais")],
+tipos: [T("p55", "Largura 55 cm", { Largura: 0.55 }, FONTE_CHURRAS), T("p65", "Largura 65 cm", { Largura: 0.65 }, FONTE_CHURRAS), T("p76", "Largura 76 cm", { Largura: 0.76 }, FONTE_CHURRAS), T("p85", "Largura 85 cm", {}, FONTE_CHURRAS)],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura_total, hb = v.Altura_boca, yb = v.Cota_braseiro, dl = v.Duto_lado, rv = v.Revestimento, rf = v.Refratario, pil = 0.10;
+c.caixa(rv, 0, 0, D / 2, W, yb, D);
+c.caixa(rf, 0, yb, D / 2 - 0.02, W - 2 * pil, 0.05, D - 0.1);
+[-1, 1].forEach(function (s) { c.caixa(rv, s * (W / 2 - pil / 2), yb, D / 2, pil, hb + 0.2, D); });
+c.caixa(rv, 0, yb + hb, D / 2, W, 0.2, D); c.caixa(rf, 0, yb + 0.05, 0.03, W - 2 * pil, hb - 0.05, 0.05);
+for (var i = 0; i < 9; i++) c.cilH(MAT.PRETO, -((W - 2 * pil) / 2 - 0.03) + i * (W - 2 * pil - 0.06) / 8, yb + 0.16, D / 2, 0.005, D - 0.14, "z", { seg: 6 });
+c.cilH(MAT.PRETO, 0, yb + 0.16, D - 0.09, 0.006, W - 2 * pil, "x", { seg: 6 });
+var yc = yb + hb + 0.2;
+chamine(c, rv, 0, yc, D / 2, W, D, dl, dl, Math.min(0.4, Ht - yc - 0.2), Math.max(0.1, Ht - yc - Math.min(0.4, Ht - yc - 0.2)), dl);
+}
+});
+def({
+id: "ra-lazer-churrasqueira-alvenaria", categoria: "lazer", nome: "Churrasqueira de alvenaria revestida com bancada e coifa", descricao: "Bloco de churrasqueira em alvenaria revestida de pedra, boca larga com grelha, braseiro, bancadas de apoio nas duas laterais com tampo de pedra e nicho de lenha, coifa de inox e chaminé.",
+parametros: [P("Largura", "comprimento", 2.20, "Dimensões", "Largura total do bloco com as bancadas. " + USUAL), P("Profundidade", "comprimento", 0.70, "Dimensões", USUAL), P("Boca", "comprimento", 0.90, "Dimensões", "Largura da boca"), P("Altura_boca", "comprimento", 0.55, "Dimensões"), P("Altura_bancada", "comprimento", 0.90, "Dimensões"), P("Altura_total", "comprimento", 3.00, "Dimensões", "Até o topo da chaminé (passar a cobertura)"),
+P("Revestimento", "material", "pedra cinza", "Materiais"), P("Tampo", "material", "granito preto", "Materiais"), P("Refratario", "material", "tijolo refratario", "Materiais"), P("Coifa", "material", "inox", "Materiais")],
+tipos: [T("a220", "Bloco 2,20 m, boca 0,90", {}), T("a280", "Bloco 2,80 m, boca 1,10", { Largura: 2.80, Boca: 1.10 }), T("a180", "Bloco 1,80 m, boca 0,70", { Largura: 1.80, Boca: 0.70 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, B = v.Boca, hb = v.Altura_boca, hbk = v.Altura_bancada, Ht = v.Altura_total, rv = v.Revestimento, rf = v.Refratario, yb = 0.80;
+c.caixa(rv, 0, 0, D / 2, B + 0.2, yb, D);
+c.caixa(rf, 0, yb, D / 2 - 0.05, B, 0.05, D - 0.15);
+c.caixa(rf, 0, yb, 0.05, B, hb + 0.2, 0.08);
+[-1, 1].forEach(function (s) { c.caixa(rf, s * (B / 2 - 0.04), yb, D / 2 - 0.05, 0.08, hb, D - 0.15); });
+c.caixa(rv, 0, yb + hb, D / 2, B + 0.2, 0.25, D);
+var nG = Math.round(B / 0.08); for (var i = 0; i <= nG; i++) c.cilH(MAT.PRETO, -B / 2 + 0.04 + i * (B - 0.08) / nG, yb + 0.2, D / 2 - 0.05, 0.005, D - 0.2, "z", { seg: 6 });
+var lw = (W - (B + 0.2)) / 2;
+[-1, 1].forEach(function (s) {
+var xc = s * (B / 2 + 0.1 + lw / 2);
+c.caixa(rv, xc, 0, D / 2, lw, hbk - 0.03, D); c.caixaR(v.Tampo, xc, hbk - 0.03, D / 2, lw + (s > 0 ? 0 : 0), 0.03, D + 0.04, 0.004, { k: 1 });
+c.caixa(MAT.GRAFITE, xc, 0.1, D - 0.0, lw * 0.7, hbk - 0.35, 0.02);
+});
+var yc = yb + hb + 0.25, hh = 0.55;
+chamine(c, v.Coifa, 0, yc, D / 2, B + 0.2, D, 0.4, 0.4, hh, Math.max(0.2, Ht - yc - hh), 0.4);
+}
+});
+def({
+id: "ra-lazer-mesa-gourmet", centro: true, categoria: "lazer", nome: "Mesa gourmet com bancos", descricao: "Mesa de madeira maciça com pés em X de metal e dois bancos corridos nas laterais (opcionais).",
+parametros: [P("Comprimento", "comprimento", 2.20, "Dimensões", USUAL), P("Largura", "comprimento", 0.85, "Dimensões", USUAL), P("Altura", "comprimento", 0.75, "Dimensões"), P("Bancos", "simnao", true, "Construção"), P("Altura_banco", "comprimento", 0.45, "Dimensões"), P("Tampo", "material", "madeira deck", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais")],
+tipos: [T("m180", "1,80 × 0,85 (6 lugares com bancos)", { Comprimento: 1.80 }), T("m220", "2,20 × 0,85 (8 lugares com bancos)", {}), T("m260", "2,60 × 0,90 (10 lugares com bancos)", { Comprimento: 2.60, Largura: 0.90 })],
+gerar: function (c, v) {
+var L = v.Comprimento, W = v.Largura, Ht = v.Altura, hb = v.Altura_banco;
+c.caixaR(v.Tampo, 0, Ht - 0.05, 0, L, 0.05, W, 0.006, { k: 1 });
+for (var i = 0; i < 7; i++) c.caixa(MAT.PRETO, 0, Ht - 0.052, -W / 2 + 0.05 + i * (W - 0.1) / 6, L - 0.04, 0.003, 0.004);
+[-1, 1].forEach(function (s) {
+var xx = s * (L / 2 - 0.3);
+[-1, 1].forEach(function (r) { c.caixa(v.Estrutura, xx, 0, 0, 0.05, Ht - 0.05, 0.05, { rotZ: r * 14 }); });
+c.caixa(v.Estrutura, xx, Ht - 0.07, 0, 0.05, 0.03, W - 0.1);
+c.caixa(v.Estrutura, xx, 0, 0, 0.06, 0.02, W - 0.15);
+});
+if (v.Bancos) [-1, 1].forEach(function (sz) {
+var zb = sz * (W / 2 + 0.22);
+c.caixaR(v.Tampo, 0, hb - 0.045, zb, L - 0.1, 0.045, 0.34, 0.005, { k: 1 });
+[-1, 1].forEach(function (s) { c.caixa(v.Estrutura, s * (L / 2 - 0.35), 0, zb, 0.04, hb - 0.045, 0.3); });
+});
+}
+});
+def({
+id: "ra-lazer-espreguicadeira", centro: true, categoria: "lazer", nome: "Espreguiçadeira", descricao: "Espreguiçadeira com estrutura de alumínio, colchonete em três módulos (encosto reclinável, assento e apoio dos pés) e rodinhas. O ângulo do encosto é parâmetro.",
+parametros: [P("Comprimento", "comprimento", 1.95, "Dimensões", USUAL), P("Largura", "comprimento", 0.62, "Dimensões"), P("Altura_assento", "comprimento", 0.32, "Dimensões"), P("Angulo_encosto", "angulo", 30, "Construção", "Inclinação do encosto sobre o plano do assento, em graus", "instancia"), P("Estrutura", "material", "metal preto", "Materiais"), P("Colchonete", "material", "tecido bege", "Materiais")],
+tipos: [T("e195", "1,95 × 0,62", {}), T("e200l", "2,00 × 0,70 (larga)", { Comprimento: 2.00, Largura: 0.70 }), T("e195p", "Encosto reto 60°", { Angulo_encosto: 60 })],
+gerar: function (c, v) {
+var L = v.Comprimento, W = v.Largura, hs = v.Altura_assento, a = v.Angulo_encosto, es = v.Estrutura, tec = v.Colchonete, Le = L * 0.38, Lp = L * 0.27, La = L - Le - Lp, z0 = -L / 2;
+[-1, 1].forEach(function (s) {
+c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le + La / 2, 0.035, 0.035, La + 0.1);
+c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le + La + Lp / 2 + 0.02, 0.035, 0.035, Lp, { rotX: -12 });
+c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le / 2, 0.035, 0.035, Le + 0.04, { rotX: -a });
+c.cil(es, s * (W / 2 - 0.02), 0, z0 + Le + 0.05, 0.02, hs - 0.04, { seg: 8 }); c.cil(es, s * (W / 2 - 0.02), 0, z0 + Le + La - 0.05, 0.02, hs - 0.04, { seg: 8 });
+c.cil(MAT.BORRACHA, s * (W / 2 - 0.02), 0, z0 + Le + La - 0.05, 0.04, 0.04, { seg: 12, rotZ: 90, centro: true });
+});
+c.caixaR(tec, 0, hs - 0.015, z0 + Le + La / 2, W - 0.02, 0.07, La, 0.03);
+c.caixaR(tec, 0, hs - 0.015, z0 + Le + La + Lp / 2 + 0.02, W - 0.02, 0.07, Lp, 0.03, { rotX: -12 });
+c.caixaR(tec, 0, hs - 0.015, z0 + Le / 2, W - 0.02, 0.07, Le, 0.03, { rotX: -a });
+}
+});
+def({
+id: "ra-lazer-guarda-sol", centro: true, categoria: "lazer", nome: "Guarda-sol com base", descricao: "Guarda-sol octogonal de mastro central com varetas e base de concreto.",
+parametros: [P("Diametro", "comprimento", 2.70, "Dimensões", USUAL), P("Altura", "comprimento", 2.50, "Dimensões", "Do piso ao topo"), P("Cota_beiral", "comprimento", 2.05, "Dimensões", "Do piso à borda da cobertura (passagem livre)"), P("Lona", "material", "tecido bege", "Materiais"), P("Mastro", "material", "madeira escura", "Materiais")],
+tipos: [T("g27", "Ø 2,70 m", {}), T("g30", "Ø 3,00 m", { Diametro: 3.00, Altura: 2.60 }), T("g20", "Ø 2,00 m", { Diametro: 2.00, Altura: 2.30, Cota_beiral: 1.95 })],
+gerar: function (c, v) {
+var R = v.Diametro / 2, Ht = v.Altura, yb = v.Cota_beiral;
+c.cil(MAT.CONCRETO, 0, 0, 0, 0.26, 0.07, { seg: 20 }); c.cil(MAT.CONCRETO, 0, 0.07, 0, 0.11, 0.04, { r2: 0.05, seg: 14 });
+c.cil(v.Mastro, 0, 0.1, 0, 0.026, Ht - 0.1, { seg: 12 });
+c.torno(v.Lona, 0, 0, 0, [[R, yb], [R * 0.74, yb + (Ht - yb) * 0.55], [R * 0.25, Ht - 0.06], [0.04, Ht - 0.02], [0, Ht + 0.02]], { seg: 8, aberto: true });
+c.torno(v.Lona, 0, 0, 0, [[R - 0.01, yb - 0.002], [R * 0.74, yb + (Ht - yb) * 0.55 - 0.012], [R * 0.25, Ht - 0.07], [0.03, Ht - 0.04]], { seg: 8, aberto: true, rotY: 0 });
+c.cil(MAT.PRETO, 0, Ht + 0.02, 0, 0.012, 0.05, { seg: 8 });
+}
+});
+FM.registrar();
+if (typeof module !== "undefined" && module.exports) module.exports = FM;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/familiaspais.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require("./" + arq); } catch (e) { return null; } }
+return null;
+}
+var Mob = dep("Mob", "mobgeo.js"), FM = dep("FamiliasMob", "familiasmob.js");
+if (!Mob || !FM) return;
+var P = FM.P, T = FM.T, def = FM.def, MAT = FM.MAT, clamp = FM.H.clamp;
+var PORTE = "Porte usual de paisagismo residencial — conferir a muda comprada.";
+var M = { TRONCO: "tronco palmeira", CASCA: "casca de arvore", F1: "folha verde escura", F2: "folha verde", F3: "folha verde clara", VAR: "folha variegada",
+AMARELA: "flor amarela", ROSA: "flor rosa", LILAS: "flor lilas", AZUL: "flor azul", BRANCA: "flor branca", GRAMA1: "grama esmeralda", GRAMA2: "grama amendoim", SEIXO: "seixo", PEDRA: "pedra cinza", TERRA: "terra", VASO: "ceramica terracota" };
+Object.keys(M).forEach(function (k) { MAT[k] = M[k]; });
+var DESC_ORIGEM = " Origem: no piso, no centro da base (o tronco ou a touceira).";
+function pdef(o) {
+o.centro = true; o.categoria = "paisagismo"; o.semOrigem = false;
+var f = def(o); f.descricao = f.descricao.replace(/ Origem: no piso, no centro da peça\./, DESC_ORIGEM);
+return f;
+}
+function leque(c, mat, x, y, z, n, compr, larg, inclMin, inclMax, curvaMin, curvaMax, rnd, opt) {
+opt = opt || {};
+for (var i = 0; i < n; i++) {
+var yaw = 360 * i / n + rnd.entre(-12, 12), incl = rnd.entre(inclMin, inclMax), cv = rnd.entre(curvaMin, curvaMax), cp = compr * rnd.entre(0.82, 1.08);
+c.lamina(mat, x, y, z, cp, larg, { rotY: yaw, inclina: incl, curva: cv, seg: opt.seg || 7, perfil: opt.perfil, esp: opt.esp || 0.004 });
+}
+}
+var SERRA = [0.35, 0.8, 0.5, 0.9, 0.55, 0.85, 0.5, 0.75, 0.4, 0.55, 0.25, 0.1];
+function copa(c, mats, cx, cy, cz, rx, ry, rz, n, rnd, seg) {
+for (var i = 0; i < n; i++) {
+var a = rnd() * Math.PI * 2, b = Math.acos(1 - 2 * rnd()), r = Math.pow(rnd(), 0.5), px = Math.sin(b) * Math.cos(a) * r * rx * 0.72, py = Math.cos(b) * r * ry * 0.72, pz = Math.sin(b) * Math.sin(a) * r * rz * 0.72;
+var s = rnd.entre(0.26, 0.42), mat = mats[Math.floor(rnd() * mats.length) % mats.length];
+c.elipsoide(mat, cx + px, cy + py, cz + pz, rx * s, ry * s * 0.8, rz * s, { seg: seg || 12, aneis: 6 });
+}
+}
+function flores(c, mat, cx, cy, cz, rx, ry, rz, n, rnd, raio) {
+for (var i = 0; i < n; i++) {
+var a = rnd() * Math.PI * 2, b = Math.acos(rnd() * 0.9), r = 0.82 + rnd() * 0.2;
+c.elipsoide(mat, cx + Math.sin(b) * Math.cos(a) * rx * r, cy + Math.cos(b) * ry * r * 0.9, cz + Math.sin(b) * Math.sin(a) * rz * r, raio, raio * 0.8, raio, { seg: 6, aneis: 3 });
+}
+}
+function hastes(c, mat, n, raio, alt, abre, rnd, topos) {
+for (var i = 0; i < n; i++) {
+var a = rnd() * 360, d = rnd.entre(0.2, 1) * abre, h = alt * rnd.entre(0.78, 1.0), inc = Math.atan2(d, h) * 180 / Math.PI * 0.55;
+var bx = Math.cos(a * Math.PI / 180) * d * 0.25, bz = Math.sin(a * Math.PI / 180) * d * 0.25;
+c.cil(mat, bx, 0, bz, raio, h, { r2: raio * 0.8, seg: 7, rotZ: -Math.cos(a * Math.PI / 180) * inc, rotX: Math.sin(a * Math.PI / 180) * inc });
+topos.push([bx + Math.cos(a * Math.PI / 180) * h * Math.sin(inc * Math.PI / 180), h * Math.cos(inc * Math.PI / 180), bz + Math.sin(a * Math.PI / 180) * h * Math.sin(inc * Math.PI / 180)]);
+}
+}
+pdef({
+id: "ra-pais-palmeira-rafia", nome: "Palmeira-ráfia (Rhapis excelsa)", descricao: "Touceira de hastes finas e fibrosas, cada uma com um leque de folhas largas e recortadas. Vaso de jardim ou canteiro; tolera meia-sombra.",
+parametros: [P("Altura", "comprimento", 2.20, "Porte", "Altura da touceira. " + PORTE), P("Hastes", "inteiro", 8, "Porte", "Número de hastes"), P("Diametro_copa", "comprimento", 1.40, "Porte"), P("Semente", "inteiro", 11, "Construção", "Muda o sorteio de posições; a mesma semente dá a mesma planta", "instancia")],
+tipos: [T("r15", "Muda 1,50 m", { Altura: 1.50, Hastes: 5, Diametro_copa: 1.00 }), T("r22", "Touceira 2,20 m", {}), T("r30", "Touceira 3,00 m", { Altura: 3.00, Hastes: 11, Diametro_copa: 1.80 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), tops = [], n = Math.max(2, Math.round(v.Hastes)), ab = v.Diametro_copa / 2;
+hastes(c, MAT.TRONCO, n, 0.014, v.Altura * 0.82, ab, rnd, tops);
+tops.forEach(function (t) { leque(c, MAT.F1, t[0], t[1], t[2], 7, v.Altura * 0.24, 0.07, 18, 55, 18, 45, rnd, { seg: 5 }); c.elipsoide(MAT.F1, t[0], t[1] + 0.02, t[2], 0.05, 0.035, 0.05, { seg: 6, aneis: 3 }); });
+c.torno(MAT.TERRA, 0, 0, 0, [[ab * 0.75, 0], [ab * 0.75, 0.03], [ab * 0.6, 0.04], [0, 0.04]], { seg: 20 });
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
+});
+pdef({
+id: "ra-pais-areca", nome: "Areca-bambu (Dypsis lutescens)", descricao: "Touceira alta de hastes anelares amareladas com folhas pinadas arqueadas. Pleno sol ou meia-sombra; comum em divisa e canteiro.",
+parametros: [P("Altura", "comprimento", 3.50, "Porte", PORTE), P("Hastes", "inteiro", 11, "Porte"), P("Diametro_copa", "comprimento", 2.40, "Porte"), P("Semente", "inteiro", 5, "Construção", "", "instancia")],
+tipos: [T("a20", "Muda 2,00 m", { Altura: 2.00, Hastes: 7, Diametro_copa: 1.60 }), T("a35", "Touceira 3,50 m", {}), T("a50", "Touceira 5,00 m", { Altura: 5.00, Hastes: 15, Diametro_copa: 3.20 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), n = Math.max(3, Math.round(v.Hastes)), H = v.Altura, ab = v.Diametro_copa / 2;
+for (var i = 0; i < n; i++) {
+var a = (i / n) * 360 + rnd.entre(-15, 15), h = H * rnd.entre(0.55, 1.0), d = ab * 0.25 * rnd.entre(0.3, 1), inc = rnd.entre(2, 9), ar = a * Math.PI / 180;
+c.cil(MAT.F3, Math.cos(ar) * d * 0.4, 0, Math.sin(ar) * d * 0.4, 0.022, h, { r2: 0.016, seg: 7, rotZ: -Math.cos(ar) * inc, rotX: Math.sin(ar) * inc });
+var tx = Math.cos(ar) * d * 0.4 + Math.cos(ar) * h * Math.sin(inc * Math.PI / 180), tz = Math.sin(ar) * d * 0.4 + Math.sin(ar) * h * Math.sin(inc * Math.PI / 180);
+leque(c, MAT.F2, tx, h * Math.cos(inc * Math.PI / 180) - 0.05, tz, 5, H * 0.38, 0.22, 25, 55, 55, 85, rnd, { perfil: SERRA, seg: 8, esp: 0.004 });
+}
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
+});
+pdef({
+id: "ra-pais-fenix", nome: "Palmeira-fênix (Phoenix roebelenii)", descricao: "Palmeira-anã de estipe único com bases de folha em losango e copa esférica de folhas pinadas arqueadas. Pleno sol; ideal para entrada e canteiro.",
+parametros: [P("Altura", "comprimento", 2.60, "Porte", "Altura total até o ápice da copa. " + PORTE), P("Diametro_copa", "comprimento", 2.20, "Porte"), P("Folhas", "inteiro", 26, "Porte"), P("Semente", "inteiro", 3, "Construção", "", "instancia")],
+tipos: [T("f18", "Muda 1,80 m", { Altura: 1.80, Diametro_copa: 1.60, Folhas: 18 }), T("f26", "Adulta 2,60 m", {}), T("f35", "Adulta 3,50 m", { Altura: 3.50, Diametro_copa: 2.80, Folhas: 34 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), H = v.Altura, ht = H * 0.62, R = v.Diametro_copa / 2, perf = [[0.11, 0]], y = 0;
+while (y < ht) { y += 0.07; perf.push([0.088 + (rnd() < 0.5 ? 0.012 : 0.0), y]); }
+perf.push([0.13, ht + 0.02]); perf.push([0.04, ht + 0.1]);
+c.torno(MAT.TRONCO, 0, 0, 0, perf, { seg: 12 });
+leque(c, MAT.F1, 0, ht + 0.02, 0, Math.max(8, Math.round(v.Folhas)), R * 1.05, 0.30, 12, 62, 38, 85, rnd, { perfil: SERRA, seg: 9, esp: 0.004 });
+leque(c, MAT.F2, 0, ht + 0.08, 0, 6, R * 0.8, 0.22, 68, 82, 10, 35, rnd, { perfil: SERRA, seg: 7 });
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [{ x: 0, z: 0, r: 0.1 }] }; }
+});
+function arvore(c, v, matFolha, matFlor, nFloresBase) {
+var rnd = Mob.sorteio(v.Semente), H = v.Altura, R = v.Diametro_copa / 2, ht = v.Altura_tronco, dt = v.Diametro_tronco / 2;
+c.torno(MAT.CASCA, 0, 0, 0, [[dt * 1.35, 0], [dt * 1.1, 0.12], [dt, ht * 0.6], [dt * 0.8, ht]], { seg: 10 });
+var nb = Math.max(2, Math.round(v.Galhos));
+for (var i = 0; i < nb; i++) {
+var a = (i / nb) * Math.PI * 2 + rnd.entre(-0.3, 0.3), inc = rnd.entre(18, 34), lb = (H - ht) * 0.7;
+c.cil(MAT.CASCA, Math.cos(a) * dt * 0.3, ht - 0.05, Math.sin(a) * dt * 0.3, dt * 0.55, lb, { r2: dt * 0.22, seg: 6, rotZ: -Math.cos(a) * inc, rotX: Math.sin(a) * inc });
+}
+var cy = ht + (H - ht) * 0.55;
+copa(c, matFolha, 0, cy, 0, R, (H - ht) * 0.5, R, Math.round(v.Densidade * 1.6), rnd, 12);
+if (v.Florada) flores(c, matFlor, 0, cy, 0, R * 0.95, (H - ht) * 0.46, R * 0.95, nFloresBase, rnd, 0.05);
+}
+var PAR_ARV = function (H, D, ht) {
+return [P("Altura", "comprimento", H, "Porte", PORTE), P("Diametro_copa", "comprimento", D, "Porte"), P("Altura_tronco", "comprimento", ht, "Porte", "Do solo à primeira bifurcação"), P("Diametro_tronco", "comprimento", 0.12, "Porte"),
+P("Galhos", "inteiro", 3, "Porte"), P("Densidade", "inteiro", 14, "Construção", "Massas de folhagem (mais = copa mais cheia e mais pesada)"), P("Florada", "simnao", true, "Construção", "Mostra a florada da estação"), P("Semente", "inteiro", 7, "Construção", "", "instancia")];
+};
+pdef({
+id: "ra-pais-reseda", nome: "Resedá (Lagerstroemia indica)", descricao: "Árvore pequena de copa arredondada e tronco liso, com florada rosa-lilás no verão. Boa para calçada e jardim residencial.",
+parametros: PAR_ARV(4.50, 3.20, 1.40),
+tipos: [T("r30", "Muda 3,00 m", { Altura: 3.00, Diametro_copa: 2.00, Altura_tronco: 1.10, Densidade: 10 }), T("r45", "Adulta 4,50 m", {}), T("r60", "Adulta 6,00 m", { Altura: 6.00, Diametro_copa: 4.20, Altura_tronco: 1.80, Diametro_tronco: 0.18, Densidade: 18 })],
+gerar: function (c, v) { arvore(c, v, [MAT.F2, MAT.F1, MAT.F2, MAT.F3], MAT.LILAS, 34); },
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
+});
+pdef({
+id: "ra-pais-ipe-jardim", nome: "Ipê-de-jardim (Tecoma stans)", descricao: "Árvore pequena de várias hastes e folhagem verde-clara com cachos de flores amarelas. Pleno sol; muito usada em jardim residencial.",
+parametros: PAR_ARV(4.00, 2.80, 1.00),
+tipos: [T("i25", "Muda 2,50 m", { Altura: 2.50, Diametro_copa: 1.60, Altura_tronco: 0.70, Densidade: 9 }), T("i40", "Adulta 4,00 m", {}), T("i50", "Adulta 5,00 m", { Altura: 5.00, Diametro_copa: 3.60, Altura_tronco: 1.30, Densidade: 16 })],
+gerar: function (c, v) { arvore(c, v, [MAT.F3, MAT.F2, MAT.F3], MAT.AMARELA, 40); },
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
+});
+pdef({
+id: "ra-pais-moreia", nome: "Moreia (Dietes bicolor)", descricao: "Touceira de folhas em lâmina eretas, verde-acinzentadas, com flores amarelo-claras. Pleno sol; rústica, comum em canteiros de entrada.",
+parametros: [P("Altura", "comprimento", 0.80, "Porte", PORTE), P("Diametro", "comprimento", 0.70, "Porte"), P("Folhas", "inteiro", 22, "Porte"), P("Florada", "simnao", true, "Construção"), P("Semente", "inteiro", 2, "Construção", "", "instancia")],
+tipos: [T("m60", "Touceira 0,60 m", { Altura: 0.60, Diametro: 0.50, Folhas: 16 }), T("m80", "Touceira 0,80 m", {}), T("m100", "Touceira 1,00 m", { Altura: 1.00, Diametro: 0.90, Folhas: 30 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), n = Math.max(5, Math.round(v.Folhas)), H = v.Altura, R = v.Diametro / 2;
+for (var i = 0; i < n; i++) {
+var yaw = 360 * i / n + rnd.entre(-18, 18), d = rnd.entre(0.02, R * 0.35);
+c.lamina(MAT.F2, Math.cos(yaw * Math.PI / 180) * d, 0, Math.sin(yaw * Math.PI / 180) * d, H * rnd.entre(0.8, 1.15), 0.028, { rotY: yaw, inclina: rnd.entre(68, 84), curva: rnd.entre(20, 52), seg: 5, esp: 0.003, perfil: [0.9, 1, 0.9, 0.7, 0.45, 0.2] });
+}
+if (v.Florada) for (var j = 0; j < 4; j++) { var a = rnd() * 6.28, d2 = rnd() * R * 0.5; c.cil(MAT.F2, Math.cos(a) * d2, 0, Math.sin(a) * d2, 0.004, H * 1.1, { seg: 5 }); c.elipsoide(MAT.AMARELA, Math.cos(a) * d2, H * 1.1, Math.sin(a) * d2, 0.035, 0.012, 0.035, { seg: 7, aneis: 3 }); }
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
+});
+pdef({
+id: "ra-pais-agapanto", nome: "Agapanto (Agapanthus africanus)", descricao: "Touceira de folhas em fita arqueadas e hastes florais altas com umbelas azul-violeta. Meia-sombra ou sol; clássico de borda de canteiro.",
+parametros: [P("Altura", "comprimento", 0.50, "Porte", "Altura das folhas. " + PORTE), P("Altura_flor", "comprimento", 0.90, "Porte", "Altura das hastes florais"), P("Diametro", "comprimento", 0.60, "Porte"), P("Folhas", "inteiro", 16, "Porte"), P("Hastes_florais", "inteiro", 5, "Porte"), P("Semente", "inteiro", 4, "Construção", "", "instancia")],
+tipos: [T("g1", "Touceira média", {}), T("g2", "Touceira pequena", { Altura: 0.35, Altura_flor: 0.65, Diametro: 0.40, Folhas: 10, Hastes_florais: 3 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), n = Math.round(v.Folhas), R = v.Diametro / 2;
+for (var i = 0; i < n; i++) c.lamina(MAT.F1, 0, 0, 0, v.Altura * rnd.entre(1.0, 1.5), 0.035, { rotY: 360 * i / n + rnd.entre(-14, 14), inclina: rnd.entre(48, 72), curva: rnd.entre(55, 90), seg: 6, esp: 0.003, perfil: [0.8, 1, 1, 0.9, 0.7, 0.3] });
+for (var j = 0; j < Math.round(v.Hastes_florais); j++) {
+var a = rnd() * 6.28, d = rnd.entre(0, R * 0.55), hx = Math.cos(a) * d, hz = Math.sin(a) * d, hh = v.Altura_flor * rnd.entre(0.85, 1.0);
+c.cil(MAT.F2, hx, 0, hz, 0.005, hh, { r2: 0.0035, seg: 5 });
+c.elipsoide(MAT.AZUL, hx, hh + 0.04, hz, 0.075, 0.06, 0.075, { seg: 9, aneis: 5 });
+}
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
+});
+pdef({
+id: "ra-pais-clusia", nome: "Clúsia (Clusia fluminensis) — cerca viva", descricao: "Cerca viva densa de folhas grossas e verde-escuras, em trecho por comprimento. Usada para fechar divisa e dar privacidade; poda a 1,50 a 2,50 m.",
+parametros: [P("Comprimento", "comprimento", 2.00, "Porte", "Comprimento do trecho de cerca viva"), P("Altura", "comprimento", 2.00, "Porte", PORTE), P("Largura", "comprimento", 0.80, "Porte", "Espessura da cerca"), P("Semente", "inteiro", 9, "Construção", "", "instancia")],
+tipos: [T("c15", "Cerca 1,50 m de altura", { Altura: 1.50, Largura: 0.70 }), T("c20", "Cerca 2,00 m de altura", {}), T("c25", "Cerca 2,50 m de altura", { Altura: 2.50, Largura: 0.90 })],
+unidade: "m", quantidade: "Comprimento", quantDesc: "Cerca viva de clúsia",
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), L = v.Comprimento, H = v.Altura, W = v.Largura;
+c.caixaR(MAT.F1, 0, 0.25, 0, L, H - 0.3, W * 0.7, Math.min(0.18, W / 4), { k: 1 });
+var n = Math.max(10, Math.round(L / 0.09 * (H / 0.9)));
+for (var i = 0; i < n; i++) {
+var face = rnd(), x = rnd.entre(-L / 2, L / 2), r = rnd.entre(0.1, 0.17), y, z;
+if (face < 0.4) { y = rnd.entre(0.35, H - 0.1); z = W * 0.4; } else if (face < 0.8) { y = rnd.entre(0.35, H - 0.1); z = -W * 0.4; } else { y = H - 0.08; z = rnd.entre(-W * 0.35, W * 0.35); }
+c.elipsoide(i % 3 === 0 ? MAT.F2 : MAT.F1, x, y, z, r, r * 0.8, r, { seg: 8, aneis: 4 });
+}
+c.caixa(MAT.TERRA, 0, 0, 0, L + 0.1, 0.04, W + 0.1);
+},
+simbolo: function (v) { return { faixa: { x: 0, z: 0, larg: v.Comprimento, prof: v.Largura * 0.9, trama: "cruzada", passo: 0.2 } }; }
+});
+function forracao(c, v, matBase, matTufo, folhaPlana) {
+var rnd = Mob.sorteio(v.Semente), W = v.Largura, D = v.Profundidade, e = v.Espessura;
+c.caixaR(MAT.TERRA, 0, 0, 0, W, 0.02, D, 0.004, { k: 1 });
+c.caixaR(matBase, 0, 0.02, 0, W - 0.004, e, D - 0.004, Math.min(0.012, e), { k: 1 });
+var area = W * D, n = clamp(Math.round(area * (folhaPlana ? 12 : 14)), 12, 160);
+for (var i = 0; i < n; i++) {
+var x = rnd.entre(-W / 2 + 0.05, W / 2 - 0.05), z = rnd.entre(-D / 2 + 0.05, D / 2 - 0.05);
+if (folhaPlana) c.elipsoide(i % 6 === 0 ? MAT.F3 : matTufo, x, 0.02 + e + 0.006, z, 0.05, 0.008, 0.045, { seg: 6, aneis: 3, rotY: rnd() * 180 });
+else c.cil(matTufo, x, 0.02 + e - 0.004, z, 0.03, 0.07, { r2: 0.002, seg: 4, semTampa: true, rotX: rnd.entre(-12, 12), rotZ: rnd.entre(-12, 12) });
+}
+return rnd;
+}
+var PAR_FORR = function () { return [P("Largura", "comprimento", 2.00, "Dimensões", "Largura do canteiro/gramado"), P("Profundidade", "comprimento", 3.00, "Dimensões"), P("Espessura", "comprimento", 0.04, "Dimensões", "Altura da folhagem sobre o solo"), P("Semente", "inteiro", 1, "Construção", "", "instancia")]; };
+pdef({
+id: "ra-pais-grama-esmeralda", nome: "Grama esmeralda (Zoysia japonica) — piso", descricao: "Gramado em placas (piso verde-médio fino): retângulo por largura × profundidade, com tufos sobre o solo. Quantitativo em m².",
+parametros: PAR_FORR(), unidade: "m2", quantidade: "Largura * Profundidade", quantDesc: "Grama esmeralda em placas",
+tipos: [T("g23", "2 × 3 m", {}), T("g44", "4 × 4 m", { Largura: 4, Profundidade: 4 }), T("g1", "1 × 1 m", { Largura: 1, Profundidade: 1 })],
+gerar: function (c, v) { forracao(c, v, MAT.GRAMA1, MAT.GRAMA1, false); },
+simbolo: function (v) { return { faixa: { x: 0, z: 0, larg: v.Largura, prof: v.Profundidade, trama: true } }; }
+});
+pdef({
+id: "ra-pais-grama-amendoim", nome: "Grama-amendoim (Arachis repens) — forração", descricao: "Forração rasteira de folhas arredondadas com florzinha amarela, para canteiro de sol ou meia-sombra. Quantitativo em m².",
+parametros: PAR_FORR().concat([P("Florada", "simnao", true, "Construção")]), unidade: "m2", quantidade: "Largura * Profundidade", quantDesc: "Forração de grama-amendoim",
+tipos: [T("a23", "2 × 3 m", {}), T("a11", "1 × 1 m", { Largura: 1, Profundidade: 1 }), T("a05", "0,5 × 3 m (borda)", { Largura: 0.5, Profundidade: 3 })],
+gerar: function (c, v) { var rnd = forracao(c, v, MAT.GRAMA2, MAT.F2, true); if (v.Florada) for (var i = 0; i < Math.max(4, Math.round(v.Largura * v.Profundidade * 5)); i++) c.elipsoide(MAT.AMARELA, rnd.entre(-v.Largura / 2 + 0.05, v.Largura / 2 - 0.05), 0.02 + v.Espessura + 0.01, rnd.entre(-v.Profundidade / 2 + 0.05, v.Profundidade / 2 - 0.05), 0.012, 0.008, 0.012, { seg: 5, aneis: 3 }); },
+simbolo: function (v) { return { faixa: { x: 0, z: 0, larg: v.Largura, prof: v.Profundidade, trama: "cruzada" } }; }
+});
+pdef({
+id: "ra-pais-vaso", nome: "Vaso cerâmico com planta", descricao: "Vaso de cerâmica de boca larga com terra e planta: folhagem larga ('folhagem') ou folhas eretas em espada ('espada'). Para varanda, entrada e área gourmet.",
+parametros: [P("Diametro", "comprimento", 0.40, "Dimensões", "Diâmetro da boca. " + PORTE), P("Altura_vaso", "comprimento", 0.42, "Dimensões"), P("Planta", "texto", "folhagem", "Construção", "folhagem ou espada"), P("Altura_planta", "comprimento", 0.70, "Dimensões", "Acima da boca do vaso"), P("Material", "material", "ceramica terracota", "Materiais", "ceramica terracota, louça branca ou cimento queimado"), P("Semente", "inteiro", 6, "Construção", "", "instancia")],
+tipos: [T("v40", "Vaso Ø 40, folhagem", {}), T("v30", "Vaso Ø 30, espada", { Diametro: 0.30, Altura_vaso: 0.32, Planta: "espada", Altura_planta: 0.65 }), T("v60", "Vaso Ø 60, folhagem", { Diametro: 0.60, Altura_vaso: 0.60, Altura_planta: 1.10 }), T("v40b", "Vaso Ø 40 branco, espada", { Planta: "espada", Material: "louça branca", Altura_planta: 0.80 })],
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), r = v.Diametro / 2, h = v.Altura_vaso, esp = String(v.Planta).toLowerCase() === "espada";
+c.torno(v.Material, 0, 0, 0, [[r * 0.55, 0], [r * 0.7, 0.01], [r * 0.9, h * 0.5], [r, h * 0.92], [r * 1.04, h], [r * 0.96, h], [r * 0.92, h * 0.9]], { seg: 28 });
+c.torno(MAT.TERRA, 0, h * 0.86, 0, [[r * 0.92, 0], [r * 0.9, h * 0.1], [0, h * 0.1]], { seg: 24 });
+var n = esp ? 14 : 12;
+for (var i = 0; i < n; i++) {
+var yaw = 360 * i / n + rnd.entre(-14, 14);
+if (esp) c.lamina(MAT.VAR, 0, h * 0.94, 0, v.Altura_planta * rnd.entre(0.7, 1.05), 0.07, { rotY: yaw, inclina: rnd.entre(74, 86), curva: rnd.entre(2, 12), seg: 5, perfil: [0.7, 1, 1, 0.9, 0.6, 0.15], esp: 0.006 });
+else c.lamina(MAT.F2, 0, h * 0.94, 0, v.Altura_planta * rnd.entre(0.6, 0.95), 0.16, { rotY: yaw, inclina: rnd.entre(40, 66), curva: rnd.entre(35, 70), seg: 5, esp: 0.004 });
+}
+},
+simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2 }], tronco: [] }; }
+});
+pdef({
+id: "ra-pais-pedras", nome: "Pedras e seixos", descricao: "Leito de seixos rolados (modo 'seixo') ou pedras grandes isoladas (modo 'pedra') sobre a área indicada. Posições sorteadas pela semente, sem sobreposição vertical.",
+parametros: [P("Modo", "texto", "seixo", "Construção", "seixo ou pedra"), P("Largura", "comprimento", 1.50, "Dimensões"), P("Profundidade", "comprimento", 1.00, "Dimensões"), P("Quantidade_pedras", "inteiro", 3, "Construção", "Só no modo pedra"), P("Pedra", "material", "pedra cinza", "Materiais", "pedra cinza ou seixo"), P("Semente", "inteiro", 8, "Construção", "", "instancia")],
+tipos: [T("s", "Leito de seixos 1,50 × 1,00", {}), T("s2", "Leito de seixos 3,00 × 0,60 (faixa)", { Largura: 3.00, Profundidade: 0.60 }), T("p3", "3 pedras grandes", { Modo: "pedra", Largura: 1.60, Profundidade: 1.20 })],
+unidade: "m2", quantidade: "Largura * Profundidade", quantDesc: "Leito de pedras ou seixos",
+gerar: function (c, v) {
+var rnd = Mob.sorteio(v.Semente), W = v.Largura, D = v.Profundidade, pedra = String(v.Modo).toLowerCase() === "pedra", i;
+if (pedra) { var n = Math.max(1, Math.round(v.Quantidade_pedras)); for (i = 0; i < n; i++) { var r = rnd.entre(0.18, 0.34); c.pedra(v.Pedra, rnd.entre(-W / 2 + r, W / 2 - r), r * 0.45, rnd.entre(-D / 2 + r, D / 2 - r), r, r * 0.7, r * rnd.entre(0.75, 1.0), { semente: 3 + i, seg: 10, aneis: 5, rotY: rnd() * 180 }); } }
+else {
+c.caixaR(MAT.TERRA, 0, 0, 0, W, 0.025, D, 0.005, { k: 1 });
+var nn = clamp(Math.round(W * D * 70), 30, 150);
+for (i = 0; i < nn; i++) { var rs = rnd.entre(0.025, 0.05); c.pedra(i % 5 === 0 ? MAT.PEDRA : MAT.SEIXO, rnd.entre(-W / 2 + rs, W / 2 - rs), 0.02 + rs * 0.35, rnd.entre(-D / 2 + rs, D / 2 - rs), rs, rs * 0.55, rs * rnd.entre(0.7, 1), { semente: 11 + i, seg: 6, aneis: 3, rotY: rnd() * 180 }); }
+}
+},
+simbolo: function (v) { return String(v.Modo).toLowerCase() === "pedra" ? null : { faixa: { x: 0, z: 0, larg: v.Largura, prof: v.Profundidade, pontos: true } }; }
+});
+pdef({
+id: "ra-pais-deck", nome: "Deck de madeira (piso)", descricao: "Deck de tábuas com junta, sobre barrotes de apoio. Tábua de 14 cm × 2,1 cm e junta de 7 mm são o padrão da RA, a conferir com a madeireira. Quantitativo em m² de deck.",
+parametros: [P("Largura", "comprimento", 3.00, "Dimensões", "Ao longo de X"), P("Profundidade", "comprimento", 4.00, "Dimensões", "Ao longo de Z"), P("Altura", "comprimento", 0.15, "Dimensões", "Do piso/solo ao topo do deck", "instancia"), P("Largura_tabua", "comprimento", 0.14, "Dimensões", "Padrão RA, a conferir"), P("Espessura_tabua", "comprimento", 0.021, "Dimensões", "Padrão RA, a conferir"), P("Junta", "comprimento", 0.007, "Dimensões", "Padrão RA, a conferir"),
+P("Sentido", "texto", "z", "Construção", "Sentido das tábuas: x ou z"), P("Madeira", "material", "madeira deck", "Materiais")],
+tipos: [T("d34", "3 × 4 m", {}), T("d22", "2 × 2 m", { Largura: 2, Profundidade: 2 }), T("d46", "4 × 6 m", { Largura: 4, Profundidade: 6 })],
+unidade: "m2", quantidade: "Largura * Profundidade", quantDesc: "Deck de madeira",
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Hd = v.Altura, e = v.Espessura_tabua, lt = v.Largura_tabua, j = v.Junta, ex = String(v.Sentido).toLowerCase() === "x";
+var vao = ex ? D : W, ll = ex ? W : D, n = Math.max(1, Math.min(160, Math.floor((vao + j) / (lt + j))));
+var yb = Hd - e, bar = 0.05, nb = Math.max(2, Math.ceil(ll / 0.5) + 1);
+for (var i = 0; i < nb; i++) {
+var t = -ll / 2 + bar / 2 + (ll - bar) * i / (nb - 1);
+if (ex) c.caixa(v.Madeira, t, Math.max(0, yb - bar), 0, bar, bar, D - 0.04); else c.caixa(v.Madeira, 0, Math.max(0, yb - bar), t, W - 0.04, bar, bar);
+}
+var tot = n * lt + (n - 1) * j;
+for (var k = 0; k < n; k++) {
+var p = -tot / 2 + lt / 2 + k * (lt + j);
+if (ex) c.caixa(v.Madeira, 0, yb, p, W, e, lt); else c.caixa(v.Madeira, p, yb, 0, lt, e, D);
+}
+}
+});
+pdef({
+id: "ra-pais-pergolado", nome: "Pergolado de madeira (vigas e ripas)", descricao: "Pergolado de pilares, duas vigas principais e ripas transversais. Seções e espaçamento são padrão da RA (a verificar no cálculo estrutural da madeira); para lista de corte use a carpintaria do módulo de marcenaria.",
+parametros: [P("Largura", "comprimento", 4.00, "Dimensões", "Ao longo de X"), P("Profundidade", "comprimento", 3.00, "Dimensões", "Ao longo de Z"), P("Altura", "comprimento", 2.60, "Dimensões", "Do piso ao topo das ripas"), P("Pilares", "inteiro", 4, "Construção", "4 ou 6"), P("Pilar_lado", "comprimento", 0.15, "Dimensões", "Padrão RA, a conferir"),
+P("Viga_b", "comprimento", 0.06, "Dimensões", "Padrão RA, a conferir"), P("Viga_h", "comprimento", 0.20, "Dimensões", "Padrão RA, a conferir"), P("Ripa_b", "comprimento", 0.05, "Dimensões", "Padrão RA, a conferir"), P("Ripa_h", "comprimento", 0.10, "Dimensões", "Padrão RA, a conferir"), P("Espacamento_ripas", "comprimento", 0.30, "Dimensões", "Entre eixos das ripas"),
+P("Balanco", "comprimento", 0.30, "Dimensões", "Balanço das vigas e ripas além dos pilares"), P("Madeira", "material", "madeira escura", "Materiais")],
+tipos: [T("g43", "4 × 3 m, 4 pilares", {}), T("g63", "6 × 3 m, 6 pilares", { Largura: 6, Pilares: 6 }), T("g33", "3 × 3 m, 4 pilares", { Largura: 3 })],
+gerar: function (c, v) {
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, pl = v.Pilar_lado, vb = v.Viga_b, vh = v.Viga_h, rb = v.Ripa_b, rh = v.Ripa_h, bal = v.Balanco, mat = v.Madeira;
+var xs = Math.round(v.Pilares) >= 6 ? [-W / 2, 0, W / 2] : [-W / 2, W / 2], yViga = Ht - rh - vh;
+xs.forEach(function (x) { [-D / 2, D / 2].forEach(function (z) { c.caixa(mat, x, 0, z, pl, yViga, pl); }); });
+[-D / 2, D / 2].forEach(function (z) { c.caixa(mat, 0, yViga, z, W + 2 * bal, vh, vb); });
+var nr = Math.max(2, Math.floor((W + 2 * bal) / v.Espacamento_ripas) + 1);
+for (var i = 0; i < nr; i++) c.caixa(mat, -W / 2 - bal + rb / 2 + (W + 2 * bal - rb) * i / (nr - 1), Ht - rh, 0, rb, rh, D + 2 * bal);
+}
+});
+FM.registrar();
+if (typeof module !== "undefined" && module.exports) module.exports = FM;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/marcenaria.js ==== */
@@ -61268,6 +66259,8 @@ return NOMES_CONEXAO[tipo] || tipo;
 }
 var TOL = 0.02;
 var FACE_TOL = 0.01;
+var SOBE_TOMADA = 0.7;
+var EPS_FLUXO = 1e-4;
 var TOL_CONECTOR = 0.03;
 function pt(p) { return p && isFinite(Number(p.x)) && isFinite(Number(p.y)) && isFinite(Number(p.z)) ? { x: Number(p.x), y: Number(p.y), z: Number(p.z) } : null; }
 function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
@@ -61318,6 +66311,9 @@ if (M.isos && !M.secao) t.iso = M.isos.indexOf(txt(o.iso)) >= 0 ? txt(o.iso) : M
 if (o.serie != null && o.serie !== "") t.serie = txt(o.serie);
 if (o.linha === "liquido" || o.linha === "succao") t.linha = o.linha;
 if (o.continua === "p1" || o.continua === "p2" || o.continua === "ambos") t.continua = o.continua;
+if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
+if (t.continua && o.predio != null && o.predio !== "") t.predio = txt(o.predio).slice(0, 120);
+if (t.continua && o.piscLinha != null && o.piscLinha !== "") t.piscLinha = txt(o.piscLinha).slice(0, 120);
 if (JUNTAS[o.juntaIni]) t.juntaIni = o.juntaIni;
 if (o.excentrica === "inferior" || o.excentrica === "superior") t.excentrica = o.excentrica;
 if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
@@ -61708,6 +66704,13 @@ if (Math.abs(ra.dn - rb.dn) >= 0.5) cx("reducao", dnRun, Math.min(ra.dn, rb.dn))
 var cosb = Math.abs(dot(rc.dir, ra.dir)), beta = grau(cosb);
 var gravidade = sistema === "esgoto" || sistema === "pluvial" || sistema === "ventilacao";
 var ehJuncao = gravidade && beta >= 25 && beta <= 65;
+if (ehJuncao && (sistema === "esgoto" || sistema === "pluvial")) {
+var dyR = ra.dir.y - rb.dir.y, jusR = Math.abs(dyR) > EPS_FLUXO ? (dyR < 0 ? ra : rb) : (ra.jus && !rb.jus ? ra : (rb.jus && !ra.jus ? rb : null));
+if (jusR && !rc.jus && dot(rc.dir, jusR.dir) > 0) {
+avisos.push("derivação de " + SISTEMAS[sistema].nome.toLowerCase() + " (trecho " + rc.trecho + ") entra CONTRA o fluxo da linha principal (a " + Math.round(180 - grau(Math.abs(dot(rc.dir, jusR.dir)))) + "° do escoamento): a junção de 45° só liga a favor do fluxo (NBR 8160) — refaça a ligação no sentido do escoamento; nenhuma conexão foi deduzida");
+return out;
+}
+}
 if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
 var dnB = rc.dn;
 if (dnB > dnRun + 0.5) { cx(ehJuncao ? "juncao" : "te", dnB); cx("reducao", dnB, dnRun); }
@@ -61753,7 +66756,7 @@ var porSis = {};
 no.pontas.forEach(function (i) {
 var pa = pontas[i], s = pa.t.sistema;
 (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical,
-lado: pa.lado, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
+lado: pa.lado, jus: pa.lado === 0, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
 pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim });
 });
 trechos.forEach(function (t) {
@@ -61761,16 +66764,18 @@ if (!porSis[t.sistema]) return;
 if (porSis[t.sistema].some(function (r) { return r.trecho === t.id; })) return;
 var d = noInterior(P, t.p1, t.p2);
 if (d != null && d <= TOL) {
-porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true });
-porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true });
+porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: true });
+porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: false });
 }
 });
 if (porSis.ventilacao && porSis.ventilacao.length === 1 && Object.keys(porSis).length === 1) {
 var rv0 = porSis.ventilacao[0], tv0 = porIdT[rv0.trecho];
-var tes0 = tv0 && (tv0.continua === "ambos" || tv0.continua === (rv0.lado === 0 ? "p1" : "p2")) ? trechos.filter(function (t) { if (t.sistema !== "esgoto") return false; var d = noInterior(P, t.p1, t.p2); return d != null && d <= TOL; })[0] : null;
+var cand0 = tv0 && (tv0.continua === "ambos" || tv0.continua === (rv0.lado === 0 ? "p1" : "p2")) ? trechos.filter(function (t) { if (t.sistema !== "esgoto") return false; var d = noInterior(P, t.p1, t.p2); return d != null && d <= TOL; }) : [];
+var tes0 = tv0 && tv0.tomada && rv0.dir.y > -EPS_FLUXO ? cand0.filter(function (t) { return String(t.id) === String(tv0.tomada); })[0] || null : null;
+if (!tes0 && rv0.dir.y > EPS_FLUXO) tes0 = cand0.filter(function (t) { var dh = Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.z - t.p1.z, 2)); return Math.abs(t.p2.y - t.p1.y) >= dh || rv0.dir.y >= SOBE_TOMADA; })[0] || null;
 if (tes0) {
-porSis.esgoto = [{ trecho: tes0.id, dir: unit(tes0.p1, tes0.p2), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true },
-{ trecho: tes0.id, dir: unit(tes0.p2, tes0.p1), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true }, rv0];
+porSis.esgoto = [{ trecho: tes0.id, dir: unit(tes0.p1, tes0.p2), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true, jus: true },
+{ trecho: tes0.id, dir: unit(tes0.p2, tes0.p1), dn: tes0.dn || 0, material: tes0.material, aplicacao: tes0.aplicacao, vertical: tes0.vertical, passante: true, jus: false }, rv0];
 delete porSis.ventilacao;
 }
 }
@@ -62257,10 +67262,51 @@ R.ligacoes.forEach(function (lg) { if (lg.tipo === "peca" && porTrecho[lg.trecho
 return { lista: lista, porTrecho: porTrecho, de: function (id) { return porTrecho[id] || null; } };
 }
 var TIPOS_VERIF = { ponta: "Ponta solta", conector: "Ponto de ligação sem tubo", misturado: "Sistemas misturados", inclinacao: "Inclinação", bitola: "Medida fora da tabela", rede: "Traçado", acessorio: "Acessório" };
+var PERTO_ESPERA = 0.15;
+var ALINHADO_ESPERA = 0.9;
+var SIS_CONECT = { esgoto: 1, pluvial: 1, ventilacao: 1, agua_fria: 1, agua_quente: 1 };
+function esperaPermitida(t, ponta, R) {
+if (!t || !SIS_CONECT[t.sistema]) return "fora do hidrossanitário";
+var p = t[ponta], q = t[ponta === "p1" ? "p2" : "p1"]; if (!p || !q) return null;
+var dy = p.y - q.y, dh = Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z)), sobe = dy > dh;
+function enc(e) { var de = dist(e, p); if (de > PERTO_ESPERA || dist(e, q) <= TOL) return false; if (de <= TOL) return true; var u = unit(q, p), w = unit(p, e); return u.x * w.x + u.y * w.y + u.z * w.z >= ALINHADO_ESPERA; }
+var perto = R && (arr(R.trechos).some(function (o) { return o.id !== t.id && o.sistema === t.sistema && (enc(o.p1) || enc(o.p2)); }) ||
+arr(R.conectoresLivres).some(function (c) { return c.sistema === t.sistema && enc(c); }));
+if (perto) return null;
+if (t.predio || t.piscLinha) return "espera de projeto (" + (t.predio ? "prédio" : "piscina") + ")";
+if (t.sistema === "ventilacao" && R && arr(R.trechos).some(function (o) { if (o.sistema !== "esgoto" || !o.p1 || !o.p2) return false; var d = noInterior(p, o.p1, o.p2); return d != null && d <= TOL; })) return null;
+if (t.sistema === "ventilacao") return sobe ? "terminal da ventilação" : null;
+if (t.sistema === "esgoto" || t.sistema === "pluvial") return dy < -EPS_ESPERA || (Math.abs(dy) <= EPS_ESPERA && ponta === "p2") ? "espera de jusante (lançamento)" : null;
+var topo = R && R._topoAgua ? R._topoAgua(t) : null, nAb = R && R._abertas ? R._abertas(t) : 0;
+if (topo == null) return sobe ? "espera de alimentação (barrilete/coluna)" : null;
+return p.y >= topo - EPS_ESPERA ? "espera de alimentação (barrilete/coluna)" : (nAb === 1 ? "espera de alimentação do kit (o ramal chega por ela)" : null);
+}
+var EPS_ESPERA = 1e-4;
+function conectividade(estado, avaliarFam, R0) {
+var R = R0 || rede(estado, avaliarFam), Rbase = R, porId = {}, soltas = [], esperas = [];
+arr(R.trechos).forEach(function (t) { porId[t.id] = t; });
+var pai = {};
+function acha(x) { while (pai[x] != null && pai[x] !== x) x = pai[x]; return x; }
+function une(a, b) { if (!porId[a] || !porId[b] || porId[a].sistema !== porId[b].sistema) return; var ra = acha(a), rb = acha(b); if (ra !== rb) pai[ra] = rb; }
+arr(R.trechos).forEach(function (t) { pai[t.id] = t.id; });
+arr(R.nosRamos).forEach(function (l) { for (var i = 1; i < l.length; i++) une(l[0], l[i]); });
+var porFam = {}; arr(R.ligacoes).forEach(function (l) { if (l.famInst == null) return; var k = l.famInst + "|" + (porId[l.trecho] || {}).sistema; if (porFam[k]) une(porFam[k], l.trecho); else porFam[k] = l.trecho; });
+var topo = {};
+arr(R.trechos).forEach(function (t) { var r = acha(t.id), y = Math.max(t.p1.y, t.p2.y); if (topo[r] == null || y > topo[r]) topo[r] = y; });
+var abertas = {}; arr(R.pontasLivres).concat(arr(R.continuacoes)).forEach(function (c) { if (!porId[c.trecho]) return; var r = acha(c.trecho); abertas[r] = (abertas[r] || 0) + 1; });
+R = Object.create(R); R._topoAgua = function (t) { return topo[acha(t.id)]; }; R._abertas = function (t) { return abertas[acha(t.id)] || 0; };
+R.pontasLivres.forEach(function (p) { var t = porId[p.trecho]; soltas.push({ trecho: p.trecho, sistema: t ? t.sistema : null, x: p.x, y: p.y, z: p.z, motivo: "ponta solta" }); });
+arr(R.continuacoes).forEach(function (c) {
+var t = porId[c.trecho], m = esperaPermitida(t, c.ponta, R);
+if (m) esperas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: m });
+else soltas.push({ trecho: c.trecho, sistema: t ? t.sistema : null, ponta: c.ponta, x: c.x, y: c.y, z: c.z, motivo: "ponta marcada \"continua\" que não é espera permitida (só terminal de ventilação, lançamento do esgoto e espera de alimentação)", continua: true });
+});
+return { soltas: soltas, esperas: esperas, rede: Rbase };
+}
 function verificar(estado, avaliarFam) {
 var R = rede(estado, avaliarFam), S = sistemas(estado, avaliarFam, R), itens = [];
 function add(tipo, grav, texto, p, ids) { itens.push({ tipo: tipo, rotuloTipo: TIPOS_VERIF[tipo], gravidade: grav, texto: texto, x: p ? r4(p.x) : null, y: p ? r4(p.y) : null, z: p ? r4(p.z) : null, ids: ids || [] }); }
-R.pontasLivres.forEach(function (p) { var c = S.de(p.trecho); add("ponta", "aviso", "ponta solta do trecho " + p.trecho + (c ? " (" + c.codigo + " — " + c.nome + ")" : ""), p, [p.trecho]); });
+conectividade(estado, avaliarFam, R).soltas.forEach(function (p) { var c = S.de(p.trecho); add("ponta", "erro", "ponta solta do trecho " + p.trecho + (c ? " (" + c.codigo + " — " + c.nome + ")" : "") + (p.continua ? " — marcada \"continua\", mas não é espera permitida" : ""), p, [p.trecho]); });
 R.conectoresLivres.forEach(function (k) { add("conector", "aviso", (k.origem === "acessorio" ? k.nome.toLowerCase() + " " + k.famInst : "ponto \"" + k.nome + "\" de " + k.famInst) + " sem tubo (" + SISTEMAS[k.sistema].nome.toLowerCase() + ")", k, [k.famInst]); });
 R.avisos.forEach(function (a) { var mist = /sistemas diferentes|terminando em|no ponto de/.test(a.texto); add(mist ? "misturado" : "rede", mist ? "erro" : "aviso", a.texto, a, []); });
 R.trechos.forEach(function (t) {
@@ -62453,7 +67499,7 @@ ACESSORIO_MIN: ACESSORIO_MIN, ACESSORIO_MAX: ACESSORIO_MAX, ACESSORIO_PADRAO: AC
 normAcessorio: normAcessorio, itemAcessorio: itemAcessorio, itemDispositivo: itemDispositivo, familiaMep: familiaMep, dispositivosDo: dispositivosDo,
 PECAS_LINHA: PECAS_LINHA, pecaLinhaExiste: pecaLinhaExiste, embutidoNaParede: embutidoNaParede, varianteAuto: varianteAuto, refMercado: refMercado, itemPeca: itemPeca, itemConexao: itemConexao,
 pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
-sistemas: sistemas, verificar: verificar, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
+sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
 ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema"; }
 };
 global.BimInst = BimInst;
@@ -62473,7 +67519,8 @@ pisc_succao: { nome: "Piscina — sucção", abrev: "PS", cor: "#00838F", grupo:
 pisc_retorno: { nome: "Piscina — retorno", abrev: "PR", cor: "#29B6F6", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
 pisc_hidro: { nome: "Piscina — hidromassagem", abrev: "PH", cor: "#7E57C2", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
 pisc_aquec: { nome: "Piscina — aquecimento", abrev: "PA", cor: "#EF6C00", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
-pisc_dreno: { nome: "Piscina — dreno e descarte", abrev: "PD", cor: "#8D6E63", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true }
+pisc_dreno: { nome: "Piscina — dreno e descarte", abrev: "PD", cor: "#8D6E63", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
+pisc_reposicao: { nome: "Piscina — reposição de água potável", abrev: "PW", cor: "#1565C0", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true }
 };
 function registrarSistemas() {
 var BI = global.BimInst || (typeof require === "function" ? (function () { try { return require("./biminst.js"); } catch (e) { return null; } })() : null);
@@ -67129,6 +72176,13 @@ def("civil", [
 "p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp"
 ]);
 def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
+def(["civil", "estrutura", "marcenaria", "metalica"], ["cob-estrutura", "cob-estr-auto", "cob-estr-aco", "cob-estr-madeira", "cob-estr-verificar",
+"cob-forro-estrutura", "telhado-modelo", "tel-mod-auto", "tel-mod-mad-tesoura", "tel-mod-mad-terca", "tel-mod-mad-terca-direta",
+"tel-mod-mad-onduline", "tel-mod-mad-shingle", "tel-mod-aco-trapezoidal", "tel-mod-aco-sanduiche", "tel-mod-nenhum",
+"tel-mod-aco-viga", "tel-mod-mad-tesoura-terca"]);
+def("civil", ["cob-telha", "cob-platibanda", "cob-sanca", "cob-quant"]);
+def(["civil", "hidraulica"], ["cob-calha", "cob-calha-calc", "cob-pluvial"]);
+def(["civil", "eletrica"], ["cob-luminarias"]);
 def(["civil", "metalica"], ["guarda-corpo"]);
 def(["civil", "estrutura", "hidraulica", "eletrica"], ["furo-laje"]);
 def("estrutura", ["fundacao", "estrutural", "sondagem"]);
@@ -69460,10 +74514,17 @@ var MARCAS_COTA = { obliquo: "Traço oblíquo", seta: "Seta", ponto: "Ponto" };
 var UNIDADES = { m: "metros (3,45)", cm: "centímetros (345)", mm: "milímetros (3450)" };
 var ESCALAS = [20, 25, 50, 75, 100, 125, 200];
 var ESQUEMAS = { nenhum: "Nenhum", nome: "Por nome", departamento: "Por departamento" };
+var CONVENCOES = { padrao: "Padrão (sem convenção de reforma)", reforma: "Reforma: construir, demolir, existente" };
+var CONV_REFORMA = {
+novo: { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
+demolido: { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
+existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+};
 function estiloPadrao() {
 return { escala: 50, pena: "media", preenchimento: "hachura", cotas: true, marcaCota: "obliquo",
 textoCota: 2.5, unidade: "m", casas: 2, cotaParcial: true, niveis: true, marcasCorte: true, titulo: true,
-identAmbiente: true, esquemaCores: "nenhum" };
+identAmbiente: true, esquemaCores: "nenhum",
+convencao: "padrao" };
 }
 function normEstilo(e) {
 var p = estiloPadrao(), o = {};
@@ -69479,6 +74540,8 @@ if (isNaN(o.casas)) o.casas = 2;
 o.cotas = !!o.cotas; o.cotaParcial = !!o.cotaParcial; o.niveis = !!o.niveis; o.marcasCorte = !!o.marcasCorte; o.titulo = !!o.titulo;
 o.identAmbiente = o.identAmbiente !== false && o.identAmbiente !== "false";
 if (!ESQUEMAS[o.esquemaCores]) o.esquemaCores = "nenhum";
+if (!CONVENCOES[o.convencao]) o.convencao = "padrao";
+if (o.convencao === "padrao") delete o.convencao;
 return o;
 }
 function fmtNum(v, casas) {
@@ -69697,7 +74760,8 @@ var e = normEstilo(est), pena = PENAS[e.pena], k = e.escala / 1000;
 var cx = caixa(d) || { x0: 0, y0: 0, x1: 1, y1: 1 };
 var cotas = cotasDe(d, e);
 var m = 32 * k;
-var vb = { x: cx.x0 - m, y: cx.y0 - m, w: (cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) };
+var conv = e.convencao === "reforma" ? CONV_REFORMA : null;
+var vb = { x: cx.x0 - m, y: cx.y0 - m, w: Math.max((cx.x1 - cx.x0) + 2 * m + (d.tipo === "corte" && e.niveis ? 75 * k : 0), conv ? 118 * k : 0), h: (cx.y1 - cx.y0) + 2 * m + (e.titulo ? 10 * k : 0) + (conv ? 22 * k : 0) };
 var cad = d.cad || [], cadPath = "", cadTx = "";
 if (cad.length) {
 var q = { x0: vb.x, y0: vb.y, x1: vb.x + vb.w, y1: vb.y + vb.h };
@@ -69739,7 +74803,9 @@ var p6 = extra && extra.p6 ? p6Corpo(d, e, extra.p6) : null;
 p.push('<svg xmlns="http://www.w3.org/2000/svg" class="d2-svg" data-d2-tipo="' + esc(d.tipo) + '" viewBox="' + n4(vb.x) + " " + n4(vb.y) + " " + n4(vb.w) + " " + n4(vb.h) + '" preserveAspectRatio="xMidYMid meet"' + (p6 ? ' data-d2-p6="1"' : "") + ">");
 p.push("<defs>" +
 '<pattern id="d2-hach" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)">' +
-'<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' + (p6 ? p6.defs : "") + "</defs>");
+'<line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="#1a1a1a" stroke-width="' + n4(0.18 * k) + '"/></pattern>' +
+(conv ? '<pattern id="d2-hach-n" patternUnits="userSpaceOnUse" width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" patternTransform="rotate(45)"><rect width="' + n4(1.6 * k) + '" height="' + n4(1.6 * k) + '" fill="' + conv.novo.fill + '"/><line x1="0" y1="0" x2="0" y2="' + n4(1.6 * k) + '" stroke="' + conv.novo.hachura + '" stroke-width="' + n4(0.22 * k) + '"/></pattern>' : "") +
+(p6 ? p6.defs : "") + "</defs>");
 p.push('<rect x="' + n4(vb.x) + '" y="' + n4(vb.y) + '" width="' + n4(vb.w) + '" height="' + n4(vb.h) + '" class="d2-papel"/>');
 if (cadPath) p.push('<g class="d2-cad"><path d="' + cadPath + '" class="d2-cad-l" stroke-width="' + n4(pena.vista * 0.8) + '" ' + NS + "/>" + cadTx + "</g>");
 if (amb) p.push(svgAmbCores(amb));
@@ -69755,10 +74821,18 @@ var fechados = "", abertos = "", fase = {};
 if (c.fase) { var q = fase[c.fase] || (fase[c.fase] = { f: "", a: "" }); if (c.fechado) q.f += caminho(c.pts, true); else q.a += caminho(c.pts, false); return; }
 if (c.fechado) fechados += caminho(c.pts, true, c.arcos); else abertos += caminho(c.pts, false, c.arcos);
 });
-if (fechados) p.push('<path d="' + fechados + '" fill="' + fill + '" fill-rule="evenodd" class="d2-corte" stroke-width="' + pena.corte + '" ' + NS + "/>");
-if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte" stroke-width="' + pena.corte + '" ' + NS + "/>");
+var stN = conv ? ' style="stroke:' + conv.novo.cor + '"' : "";
+if (fechados) p.push('<path d="' + fechados + '" fill="' + (conv ? "url(#d2-hach-n)" : fill) + '" fill-rule="evenodd" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
+if (abertos) p.push('<path d="' + abertos + '" fill="none" class="d2-corte' + (conv ? " d2-corte-novo" : "") + '"' + stN + ' stroke-width="' + pena.corte + '" ' + NS + "/>");
 }
-p.push(svgFases(fase, d.linhasFase, pena, k));
+if (conv && p6) {
+var fN = "", aN = "";
+(d.cortes || []).forEach(function (c) { if (c.fase) return; if (c.fechado) fN += caminho(c.pts, true, c.arcos); else aN += caminho(c.pts, false, c.arcos); });
+if (fN) p.push('<path d="' + fN + '" fill="url(#d2-hach-n)" fill-rule="evenodd" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
+if (aN) p.push('<path d="' + aN + '" fill="none" class="d2-corte d2-corte-novo" style="stroke:' + conv.novo.cor + '" stroke-width="' + pena.corte + '" ' + NS + "/>");
+}
+p.push(svgFases(fase, d.linhasFase, pena, k, conv));
+if (conv) p.push(svgLegendaReforma(conv, vb, k, pena));
 if (d.portas && d.portas.length) p.push(svgPortas(d.portas, e, pena, extra && extra.p6 ? extra.p6 : null));
 if (!p6 && d.instImagens) p.push(svgInstImagens(d.instImagens, d.instClip));
 if (d.inst) p.push(svgInst(d.inst, k, pena));
@@ -69799,19 +74873,35 @@ function trFase(g, k) {
 if (g.tr != null) return g.tr;
 return ' stroke-dasharray="' + g.px + '" data-traco="' + g.mm.map(function (v) { return n4(v * (k > 0 ? k : 0.05)); }).join(" ") + '"';
 }
-function svgFases(cortesF, linhasF, pena, k) {
+function svgFases(cortesF, linhasF, pena, k, conv) {
 var s = "";
+function gDe(st) {
+if (!conv) return FASE_SVG[st] || FASE_SVG.existente;
+var c = conv[st === "temporario" ? "demolido" : st] || conv.existente;
+return c.tracejado ? { cor: c.cor, fill: c.fill, px: "6 4", mm: c.tracejado } : { cor: c.cor, fill: c.fill, tr: "" };
+}
 Object.keys(linhasF || {}).forEach(function (st) {
-var g = FASE_SVG[st] || FASE_SVG.existente, l = "";
+var g = gDe(st), l = "";
 (linhasF[st] || []).forEach(function (q) { l += "M" + n4(q[0]) + " " + n4(q[1]) + "L" + n4(q[2]) + " " + n4(q[3]); });
-if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
+if (l) s += '<path d="' + l + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + (conv ? ' style="stroke:' + g.cor + '"' : "") + trFase(g, k) + ' stroke-width="' + pena.vista + '" ' + NS + "/>";
 });
 Object.keys(cortesF || {}).forEach(function (st) {
-var g = FASE_SVG[st] || FASE_SVG.existente, q = cortesF[st];
-if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
-if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+var g = gDe(st), q = cortesF[st], sty = conv ? ' style="stroke:' + g.cor + '"' : "";
+if (q.f) s += '<path d="' + q.f + '" fill="' + g.fill + '" fill-rule="evenodd" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + sty + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
+if (q.a) s += '<path d="' + q.a + '" fill="none" class="d2-fase d2-fase-' + st + '" stroke="' + g.cor + '"' + sty + trFase(g, k) + ' stroke-width="' + pena.corte + '" ' + NS + "/>";
 });
 return s;
+}
+function svgLegendaReforma(conv, vb, k, pena) {
+var x0 = vb.x + 4 * k, y0 = vb.y + vb.h - 19 * k, g = '<g class="d2-legenda-reforma" data-d2-conv="reforma">';
+g += txt(x0, y0, 2.6 * k, "LEGENDA", "d2-leg-tit");
+[["novo", "A CONSTRUIR"], ["demolido", "A DEMOLIR"], ["existente", "EXISTENTE A MANTER"]].forEach(function (it, i) {
+var c = conv[it[0]], y = y0 + 3 * k + i * 5.4 * k, w = 14 * k, h = 3.6 * k;
+g += '<rect x="' + n4(x0) + '" y="' + n4(y) + '" width="' + n4(w) + '" height="' + n4(h) + '" fill="' + (it[0] === "novo" ? "url(#d2-hach-n)" : c.fill) + '" stroke="' + c.cor + '" style="stroke:' + c.cor + '"' +
+(c.tracejado ? tracoK(c.tracejado, k) : "") + ' stroke-width="' + pena.vista + '" ' + NS + ' data-d2-conv-item="' + it[0] + '"/>';
+g += txt(x0 + w + 3 * k, y + h * 0.75, 2.4 * k, esc(it[1]), "d2-leg-tx");
+});
+return g + "</g>";
 }
 function pontosPorta(sp) {
 var o = [];
@@ -70213,7 +75303,7 @@ var Acima = { TIPOS: ACIMA_TIPOS, MODOS: ACIMA_MODOS, ROTULOS: ACIMA_ROTULOS, TR
 cfg: acimaCfg, topo: acimaTopo, classificar: acimaClassificar, elegivel: acimaElegivel, tipoPode: acimaTipoPode, casco: casco, area: areaPol, retMin: retMin, peca: acimaPeca, texto: acimaTexto, svg: svgAcima };
 var Desenho2D = {
 FASE_SVG: FASE_SVG, Acima: Acima, TRACO_PX_POR_MM: TRACO_PX_POR_MM, tracoPx: tracoPx, tracoAttr: tracoAttr, tracoK: tracoK,
-PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
+PENAS: PENAS, FATOR_PENA: FATOR_PENA, fatorPena: fatorPena, CONVENCOES: CONVENCOES, CONV_REFORMA: CONV_REFORMA, PREENCHIMENTOS: PREENCHIMENTOS, MARCAS_COTA: MARCAS_COTA, UNIDADES: UNIDADES, ESCALAS: ESCALAS, ESQUEMAS: ESQUEMAS,
 estiloPadrao: estiloPadrao, normEstilo: normEstilo,
 fmtNum: fmtNum, fmtMedida: fmtMedida, fmtCota: fmtCota, agrupar: agrupar,
 caixa: caixa, cotas: cotasDe, svg: svg, pontosPorta: pontosPorta, arcoPorta: arcoPorta, proximaLetra: proximaLetra, escalaQueCabe: escalaQueCabe, cotaAlinhada: svgCotaAlinhada,
@@ -70731,6 +75821,7 @@ var secoes = [
 { id: "pena", rotulo: "Espessura das linhas", tipo: "lista", valor: e.pena, opcoes: op(D.PENAS) },
 { id: "preenchimento", rotulo: "Preenchimento do corte", tipo: "lista", valor: e.preenchimento, opcoes: op(D.PREENCHIMENTOS) },
 { id: "titulo", rotulo: "Título da vista", tipo: "sim-nao", valor: e.titulo },
+{ id: "convencao", rotulo: "Convenção de reforma", tipo: "lista", valor: e.convencao || "padrao", opcoes: op(D.CONVENCOES) },
 { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
 ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte }]
 : [{ id: "niveis", rotulo: "Níveis", tipo: "sim-nao", valor: e.niveis }]) },
@@ -72372,7 +77463,8 @@ grupos[c].forEach(function (f) {
 var tSel = self._tiposSel[f.id] || ((f.tipos || [])[0] || {}).id || "";
 var orig = f._origem === "ra" ? "RA" : (f._origem === "importada" ? "Importada" : "Minha");
 var imp = f.geometria === "malha" && f.importada ? f.importada : null, pend = !!(imp && imp.geometriaPendente);
-h += '<div class="fe-card' + (imp ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : "") +
+var mob = !imp && f.geometria === "mob";
+h += '<div class="fe-card' + (imp || mob ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : (mob ? '<div class="fe-mini"><img alt="" data-fe="mini" data-mini="' + esc(f.id) + '"></div>' : "")) +
 '<div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span>" + (HBf ? HBf.htmlSelos(infoF[f.id]) : "") + (pend ? '<span class="fe-badge fe-b-pendente" title="Veio do .rfa: tipos e parâmetros, sem a forma 3D">Geometria pendente</span>' : "") + "</div>" +
 (imp ? '<div class="fe-card-d">' + esc(imp.categoriaNome || "") + " · " + (f.tipos || []).length + " tipo(s) · " + (f.parametros || []).length + " parâmetro(s)" + (imp.triangulos ? " · " + imp.triangulos + " triângulos" : "") + "</div>" : "") +
 (f.descricao ? '<div class="fe-card-d">' + esc(f.descricao) + "</div>" : "") +
@@ -72389,6 +77481,19 @@ h += "</div>";
 });
 this._el.innerHTML = '<div class="fe">' + h + "</div>";
 this._ligarBiblioteca();
+this._miniaturas();
+},
+_miniaturas: function () {
+var el = this._el, FM = global.FamiliasMob; if (!el || !FM || !FM.miniatura) return;
+var imgs = Array.prototype.slice.call(el.querySelectorAll("img[data-mini]")), self = this;
+(function lote() {
+var n = 0;
+while (imgs.length && n < 3) {
+var im = imgs.shift(); n++;
+try { var id = im.getAttribute("data-mini"), tp = self._tiposSel[id] || ""; var src = FM.miniatura(id, tp); if (src) im.src = src; } catch (e) {}
+}
+if (imgs.length) setTimeout(lote, 0);
+})();
 },
 _cssFiltro: function (HB) {
 try { var d = global.document; if (d && d.head && !d.getElementById("fil-css")) { var st = d.createElement("style"); st.id = "fil-css"; st.textContent = HB.cssFiltro(); d.head.appendChild(st); } } catch (e) {}
@@ -76136,8 +81241,10 @@ g.p1 = add(t.p1, disp.p1); g.p2 = add(t.p2, disp.p2); g.mudou = true; g.transl =
 if (!g.transl) rotacoes.push(id);
 ["p1", "p2"].forEach(function (k) { if (len(disp[k]) > 1e-6) MOV.push({ P0: cp(t[k]), disp: disp[k], sis: t.sistema }); });
 TS.forEach(function (v) {
-if (M[v.id] || v.sistema !== t.sistema) return;
-["p1", "p2"].forEach(function (k) { var s = interior(v[k], t.p1, t.p2, TOL); if (s != null) MOV.push({ P0: cp(v[k]), disp: add(mul(disp.p1, 1 - s), mul(disp.p2, s)), sis: t.sistema }); });
+if (M[v.id]) return;
+var tomada = t.sistema === "esgoto" && v.sistema === "ventilacao" && !!v.continua;
+if (v.sistema !== t.sistema && !tomada) return;
+["p1", "p2"].forEach(function (k) { if (tomada && !(v.continua === "ambos" || v.continua === k)) return; var s = interior(v[k], t.p1, t.p2, TOL); if (s != null) MOV.push({ P0: cp(v[k]), disp: add(mul(disp.p1, 1 - s), mul(disp.p2, s)), sis: v.sistema }); });
 });
 });
 Object.keys(MP).forEach(function (pid) {
@@ -76179,7 +81286,8 @@ g[k] = { x: near.x, y: ny, z: near.z }; g.mudou = true; return;
 }
 if (livreEm(v, f)) { g.p1 = add(v.p1, D); g.p2 = add(v.p2, D); g.mudou = true; g.transl = true; return; }
 var a0 = cp(near), a1 = add(near, D), entra = k === "p2";
-pontes.push({ id: idPonte(v.id), base: v, p1: entra ? a0 : a1, p2: entra ? a1 : a0, nova: true });
+var tomP = v.sistema === "ventilacao" && v.continua && (v.continua === "ambos" || v.continua === k) ? (entra ? "p2" : "p1") : null;
+pontes.push({ id: idPonte(v.id), base: v, p1: entra ? a0 : a1, p2: entra ? a1 : a0, nova: true, tomada: tomP });
 avisos.push("o tubo vertical " + v.id + " ficou de pé: ganhou uma perna horizontal de " + fmt(Dh) + " m (joelhos novos)");
 return;
 }
@@ -76312,6 +81420,7 @@ else tNovos.push(t);
 pontes.forEach(function (p) {
 var b = p.base, o = { op: "trecho", id: p.id, sistema: b.sistema, material: b.material, dn: b.dn, p1: r4p(p.p1), p2: r4p(p.p2) };
 ["pn", "classe", "serie", "iso"].forEach(function (k) { if (b[k] != null && b[k] !== "") o[k] = b[k]; });
+if (p.tomada) { o.continua = p.tomada; if (b.tomada) o.tomada = b.tomada; }
 ops.push(o); var n = I.normTrecho(o); if (n) tNovos.push(n);
 });
 var pNovos = PS.map(function (p) {
@@ -104602,11 +109711,362 @@ global.MetalLigAutoUI = MetalLigAutoUI;
 if (typeof module !== "undefined" && module.exports) module.exports = MetalLigAutoUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcoberturaui.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function virg(v, c) { var x = Number(v); return isFinite(x) ? x.toFixed(c == null ? 2 : c).replace(".", ",") : "—"; }
+function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function TM() { return global.BimTelhado || null; }
+function BC() { return global.BimCobertura || null; }
+function ES() { return global.BimTelhadoEstrut || null; }
+function FD() { return global.BimForroDrywall || null; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function estado() {
+var B = global.BIM, E = global.BimEdit;
+if (!B || !B.editarOps || !E) return null;
+try { return E.aplicar(B.editarOps()); } catch (e) { return null; }
+}
+function aplicar(lote) {
+var B = global.BIM;
+if (!B || !B.editarLote) { status("O editor 3D não está aberto."); return false; }
+return !!B.editarLote(lote);
+}
+function janela(titulo, html) {
+if (typeof document === "undefined") return null;
+var velho = document.getElementById("cob-modal"); if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
+var ov = document.createElement("div"); ov.id = "cob-modal";
+ov.setAttribute("style", "position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:16px");
+ov.innerHTML = '<div role="dialog" aria-label="' + esc(titulo) + '" style="background:var(--surface,#fff);color:var(--text,#16202a);max-width:920px;width:100%;max-height:86vh;overflow:auto;border-radius:10px;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.35);font:13px/1.45 system-ui,sans-serif">' +
+'<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px"><strong style="font-size:15px">' + esc(titulo) + '</strong><button type="button" data-cob-fechar class="btn sm">Fechar</button></div>' + html + '</div>';
+ov.addEventListener("click", function (e) { if (e.target === ov || (e.target && e.target.hasAttribute && e.target.hasAttribute("data-cob-fechar"))) { if (ov.parentNode) ov.parentNode.removeChild(ov); } });
+document.body.appendChild(ov);
+return ov;
+}
+function lista(titulo, itens) {
+itens = arr(itens); if (!itens.length) return "";
+return '<h4 style="margin:10px 0 4px">' + esc(titulo) + '</h4><ul style="margin:0 0 0 18px;padding:0">' + itens.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+}
+function paraCadaTelhado(fn) {
+var st = estado(), ts = arr(st && st.telhados).filter(function (t) { return t && t.ok; });
+if (!ts.length) { status("Lance um telhado (Arquitetura › Telhado) antes."); return; }
+ts.forEach(function (t) { fn(t, st); });
+}
+function estrutura(material) {
+paraCadaTelhado(function (t, st) {
+var E = ES(); if (!E) { status("O motor da estrutura do telhado não carregou."); return; }
+var res = E.gerar(st, t.id, material ? { material: material } : {});
+if (!res.ok) { janela("Estrutura do telhado " + t.id, '<p>' + esc(res.motivo) + "</p>"); status(res.motivo); return; }
+if (!aplicar(res.lote)) { status("Não consegui aplicar a estrutura."); return; }
+var r = res.resumo, tx = res.material === "aco" ? virg(r.kgTotal, 0) + " kg de aço" : virg(r.m3Total, 3) + " m³ de madeira";
+status("Estrutura do telhado " + t.id + " (" + (res.material === "aco" ? "metálica" : "de madeira") + "): " + r.n + " peças, " + tx + " — PRÉ-DIMENSIONADO, confirmar no cálculo.");
+janela("Estrutura do telhado " + t.id + " — " + (res.material === "aco" ? "metálica" : "de madeira"),
+'<p><b>' + r.n + '</b> peças (terças ' + r.terca.n + ', vigas principais ' + r.viga.n + ', ' + (res.material === "aco" ? "pilares " : "pontaletes ") + r.pilar.n + '); ' + tx + '. <b>Pré-dimensionado — confirmar no cálculo.</b></p>' +
+lista("Premissas", res.premissas) + lista("Avisos", res.avisos) +
+lista("Apoios das vigas", arr(res.apoios).map(function (a) { return a.viga + " (" + a.fim + "): " + a.tipo + (a.obs ? " — " + a.obs : ""); })));
+});
+}
+function verificar() {
+paraCadaTelhado(function (t, st) {
+var E = ES(); if (!E) return;
+var v = E.verificarAco(st, t.id, {});
+if (!v.ok) { janela("Cálculo da estrutura de aço — telhado " + t.id, "<p>" + esc(v.motivo || "o cálculo não fechou") + "</p>" + lista("Avisos", v.avisos)); status("Cálculo da estrutura: " + (v.motivo || "não fechou")); return; }
+var r = v.resultado || {}, apr = r.aprovado === true ? "APROVADA" : "NÃO aprovada";
+janela("Cálculo da estrutura de aço — telhado " + t.id,
+"<p>O módulo Metálica calculou a estrutura desenhada (NBR 8800 / NBR 14762): <b>" + apr + "</b>" + (r.pesoTotal != null ? ", peso " + virg(r.pesoTotal, 0) + " kg" : "") + ".</p>" +
+lista("O que o cálculo NÃO verificou", arr(r.naoAbrangidos).map(function (x) { return x && (x.tema ? x.tema + ": " + (x.motivo || "") : x); })) + lista("Avisos do cálculo", arr(r.avisos).slice(0, 12)) + lista("Avisos", v.avisos));
+status("Cálculo da estrutura de aço do telhado " + t.id + ": " + apr + ".");
+});
+}
+function trocarTipo(tipoId) {
+var st = estado(), ts = arr(st && st.telhados);
+if (!ts.length) { try { if (global.BimP3UI) global.BimP3UI.mudar("telhado", "b2f:te:tipoId", tipoId, null); } catch (e) {} status("Próximos telhados nascem com o tipo escolhido."); return; }
+var T = TM(), ops = ts.map(function (t) { return T.opTrocarTipo(st, t.id, tipoId); }).filter(Boolean);
+if (ops.length && aplicar({ op: "lote", id: "tt-" + tipoId, origem: "tipo-telha", ops: ops })) status("Tipo de telha trocado: " + T.tipo(tipoId).rotulo + ".");
+}
+function platibanda() {
+paraCadaTelhado(function (t, st) {
+var C = BC(), ja = arr(st.platibandas).filter(function (p) { return String(p.telhado) === String(t.id); })[0];
+if (ja) { aplicar({ op: "lote", id: "pl-x-" + t.id, origem: "platibanda", ops: [{ op: "apagar", id: ja.id }] }); status("Platibanda removida."); return; }
+var d = { telhado: t.id }, b = C.baseSugerida(st, t.id); if (b != null) d.base = b;
+var op = C.opPlatibanda("plat-" + t.id, d); if (!op) { status("Platibanda inválida."); return; }
+if (aplicar({ op: "lote", id: "pl-" + t.id, origem: "platibanda", ops: [op] })) status("Platibanda com rufo de capa e contra-rufo no telhado " + t.id + ". Clique de novo para tirar.");
+});
+}
+function calha() {
+paraCadaTelhado(function (t, st) {
+var C = BC(), ja = arr(st.calhasEmbutidas).filter(function (c) { return String(c.telhado) === String(t.id); })[0];
+if (ja) { var ap = [{ op: "apagar", id: ja.id }]; arr(st.condutores).forEach(function (c) { if (String(c.calha) === String(ja.id)) ap.push({ op: "apagar", id: c.id }); }); aplicar({ op: "lote", id: "cal-x-" + t.id, origem: "calha", ops: ap }); status("Calha embutida removida."); return; }
+var origs = arr(t.arestasCalc).filter(function (e) { return e.define; }).map(function (e) { return e.orig; });
+if (!origs.length) { status("O telhado não tem aresta com beiral (todas são oitão)."); return; }
+var op = C.opCalha("cal-" + t.id, { telhado: t.id, arestas: origs }); if (!op) { status("Calha inválida."); return; }
+var E = global.BimEdit, st2 = E.aplicar(global.BIM.editarOps().concat([op])), cds = C.opsCondutores(st2, {});
+if (aplicar({ op: "lote", id: "cal-" + t.id, origem: "calha", ops: [op].concat(cds) })) status("Calha embutida (" + virg(0.30) + " × " + virg(0.12) + " m) e " + cds.length + " descida(s) no telhado " + t.id + ". Confira a seção em \"Calha pela NBR 10844\".");
+});
+}
+function calhaCalculo() {
+var st = estado(), C = BC();
+if (!st || !C || !C.listarCalhas(st).length) { status("Lance uma calha (embutida ou de beiral) antes."); return; }
+var ov = janela("Calha pela NBR 10844", '<p>A seção sai do cálculo pluvial do módulo Hidrossanitário (<code>js/hidap.js</code>). A <b>intensidade</b> é da Tabela 5 da norma pela cidade; cidade fora da tabela fica PENDENTE (nada é adotado calado) — ou informe a intensidade <b>com a fonte</b>.</p>' +
+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:8px 0">' +
+'<label>Cidade (como na Tabela 5)<input id="cob-cid" class="inp" placeholder="ex.: Barbacena/MG" style="width:100%"></label>' +
+'<label>Intensidade informada (mm/h)<input id="cob-int" class="inp" style="width:100%"></label>' +
+'<label>Fonte da intensidade<input id="cob-fon" class="inp" placeholder="IDF, posto, estudo…" style="width:100%"></label></div>' +
+'<button type="button" class="btn" id="cob-calc">Calcular</button><div id="cob-res" style="margin-top:10px"></div>');
+if (!ov) return;
+ov.querySelector("#cob-calc").addEventListener("click", function () {
+var cfg = {}, cid = ov.querySelector("#cob-cid").value.trim(), it = parseFloat(String(ov.querySelector("#cob-int").value).replace(",", ".")), fo = ov.querySelector("#cob-fon").value.trim();
+if (cid) cfg.cidade = cid; if (isFinite(it)) { cfg.intensidade_mm_h = it; cfg.fonteIntensidade = fo; }
+var r = C.dimensionarCalhas(estado(), cfg), out = ov.querySelector("#cob-res");
+if (!r.ok) { out.innerHTML = "<p>" + esc(r.motivo) + "</p>"; return; }
+var linhas = arr(r.calhas).map(function (c) { return "<tr><td>" + esc(c.id) + "</td><td>" + (c.vazao_l_min == null ? "—" : virg(c.vazao_l_min, 1)) + "</td><td>" + (c.vazaoProjeto_l_min == null ? "—" : virg(c.vazaoProjeto_l_min, 1)) + "</td><td>" + (c.capacidade_l_min == null ? "—" : virg(c.capacidade_l_min, 1)) + "</td><td>" + esc(c.status) + "</td></tr>"; }).join("");
+out.innerHTML = "<p><b>Situação: " + esc(r.status) + "</b>" + (r.intensidade && r.intensidade.valor_mm_h != null ? " — intensidade " + virg(r.intensidade.valor_mm_h, 0) + " mm/h" : " — intensidade PENDENTE") + "</p>" +
+'<table style="border-collapse:collapse;width:100%"><thead><tr><th align="left">Calha</th><th align="left">Q (L/min)</th><th align="left">Q de projeto</th><th align="left">Capacidade</th><th align="left">Situação</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
+lista("Pendências", arr(r.pendencias).map(function (p) { return p.motivo || p.chave; })) + lista("Premissas", r.premissas);
+});
+}
+function obraECliente() {
+var o = null, c = null;
+try {
+var G = global.Gestao, S = global.Store, A = global.Auth;
+if (G && G._bimSel && S && A) { o = S.obter(A.empresaId(), "obras", G._bimSel) || null; if (o && o.clienteId) c = S.obter(A.empresaId(), "clientes", o.clienteId) || null; }
+} catch (e) { }
+return { obra: o, cliente: c };
+}
+function pluvial() {
+var st = estado(), C = BC();
+if (!st || !C || !C.gerarPluvial) { status("O motor da cobertura não carregou."); return; }
+if (!arr(st.telhados).some(function (t) { return t && t.ok; })) { status("Lance um telhado (Arquitetura › Telhado) antes."); return; }
+var oc = obraECliente(), cid = C.cidadeDaObra(oc.obra, oc.cliente), temCalha = C.listarCalhas(st).length > 0;
+var ov = janela("Rufos, calhas e descidas — NBR 10844", '<p>Gera o <b>rufo e o contrarrufo</b> onde o telhado encosta em parede mais alta que a telha, a <b>calha</b> (embutida existente e, se marcar, a de beiral) e as <b>descidas</b>, dimensionadas pela NBR 10844: área de contribuição com a inclinação e o beiral, intensidade pela cidade da obra (Tabela 5), seção por Manning e condutor pela tabela. Rodar de novo refaz no lugar (um Ctrl+Z desfaz); descida lançada à mão fica onde está e entra na conta.</p>' +
+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:8px 0">' +
+'<label>Cidade da obra' + (cid.origem ? ' <span style="opacity:.7">(lida de: ' + esc(cid.origem) + ')</span>' : ' <span style="opacity:.7">(a obra não tem endereço)</span>') + '<input id="cob-pl-cid" class="inp" style="width:100%" value="' + esc(cid.cidade || "") + '" placeholder="ex.: Belo Horizonte/MG"></label>' +
+'<label>Chapa do rufo<select id="cob-pl-mat" class="inp" style="width:100%"><option value="galv24">Aço galvanizado nº 24</option><option value="galv26">Aço galvanizado nº 26</option><option value="aluminio">Alumínio</option></select></label>' +
+'<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="cob-pl-beiral"' + (temCalha ? "" : " checked") + '> Calha de beiral nas arestas sem calha</label>' +
+'<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="cob-pl-hidro" checked> Descidas no sistema pluvial do hidro</label></div>' +
+'<button type="button" class="btn" id="cob-pl-gerar">Gerar</button><div id="cob-pl-res" style="margin-top:10px"></div>');
+if (!ov) return;
+ov.querySelector("#cob-pl-gerar").addEventListener("click", function () {
+var B = global.BIM, out = ov.querySelector("#cob-pl-res");
+var cfg = { obra: oc.obra, cliente: oc.cliente, material: ov.querySelector("#cob-pl-mat").value, calhaBeiral: !!ov.querySelector("#cob-pl-beiral").checked, ligarHidro: !!ov.querySelector("#cob-pl-hidro").checked };
+var cv = ov.querySelector("#cob-pl-cid").value.trim(); if (cv) cfg.cidade = cv;
+var r; try { r = C.gerarPluvial(B && B.editarOps ? B.editarOps() : [], cfg); } catch (e) { r = { ok: false, motivo: "O cálculo falhou: " + e.message }; }
+if (!r.ok) { out.innerHTML = "<p><b>" + esc(r.motivo) + "</b></p>" + lista("Avisos", r.avisos); status(r.motivo); return; }
+if (!aplicar(r.lote)) { out.innerHTML = "<p>Não consegui aplicar o lote no modelo.</p>"; return; }
+var nd = 0; r.calhas.forEach(function (c) { nd += c.descidas.length; });
+out.innerHTML = '<p><b>' + r.calhas.length + ' calha(s), ' + nd + ' descida(s)' + (r.rufos.length ? ", rufo/contrarrufo em " + r.rufos.reduce(function (s, x) { return s + x.encontros.length; }, 0) + " encontro(s)" : "") + '.</b> ' + esc(r.intensidade.texto) + '.</p>' +
+lista("Avisos", r.avisos) + '<h4 style="margin:10px 0 4px">Memorial (a conta e a fonte)</h4><div style="white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;background:var(--surface-2,#f4f4f2);padding:8px;border-radius:6px">' + esc(r.memorial.join("\n")) + "</div>" +
+lista("Premissas", r.premissas) + lista("Pendências", arr(r.pendencias).map(function (p) { return p.motivo || p.chave; }));
+status("Cobertura pela NBR 10844: " + r.calhas.length + " calha(s), " + nd + " descida(s)" + (r.avisos.length ? " — ver avisos" : "") + ".");
+});
+}
+function sanca() {
+var st = estado(), fs = arr(st && st.forros).filter(function (f) { return f && f.ok; }), F = FD();
+if (!fs.length) { status("Lance um forro antes (Arquitetura › Forro)."); return; }
+var ops = [];
+fs.forEach(function (f) {
+var ja = arr(st.sancas).filter(function (s) { return String(s.forro) === String(f.id); })[0];
+ops.push(ja ? { op: "apagar", id: ja.id } : F.opSanca("san-" + f.id, { forro: f.id }));
+});
+ops = ops.filter(Boolean);
+if (ops.length && aplicar({ op: "lote", id: "san-" + Date.now(), origem: "sanca", ops: ops })) status("Sanca com luz indireta alternada (recuo " + virg(F.PADRAO.recuo) + " m, profundidade " + virg(F.PADRAO.profundidade) + " m — parâmetros adotados).");
+}
+function porForro(fn, rotulo) {
+var st = estado(), fs = arr(st && st.forros).filter(function (f) { return f && f.ok; });
+if (!fs.length) { status("Lance um forro antes (Arquitetura › Forro)."); return; }
+fs.forEach(function (f) { fn(f, st); });
+void rotulo;
+}
+function estruturaForro() {
+porForro(function (f, st) {
+var F = FD(), res = F.opsEstruturaForro(st, f.id, {});
+if (!res.ok) { status(res.motivo); return; }
+if (aplicar(res.lote)) {
+status("Estrutura de madeira do forro " + f.id + ": " + res.pecas.length + " peças (espaçamento " + virg(res.resumo.espacamento) + " m ADOTADO — não verificado no manual do fabricante).");
+janela("Estrutura de madeira do forro " + f.id, "<p><b>" + res.pecas.length + "</b> peças: " + res.resumo.sarrafos + " sarrafos, " + res.resumo.barrotes + " barrotes, " + res.resumo.faixa + " da faixa da sanca.</p>" + lista("Premissas", res.premissas) + lista("Avisos", res.avisos));
+}
+});
+}
+function luminarias() {
+porForro(function (f, st) {
+var res = FD().opsLuminarias(st, f.id, {});
+if (!res.ok) { status(res.motivo); return; }
+if (aplicar(res.lote)) status(res.n + " luminária(s) embutida(s) no forro " + f.id + " (grade de " + virg(FD().PADRAO.espLuminarias) + " m, adotada).");
+});
+}
+function quantitativo() {
+var st = estado(), C = BC(); if (!st || !C) return;
+var q = C.quantitativo(st, {});
+if (!q.itens.length) { status("Nada de cobertura ou forro no modelo ainda."); return; }
+var linhas = q.itens.map(function (i) {
+return "<tr><td>" + esc(i.grupo) + "</td><td>" + esc(i.item) + "</td><td>" + esc(i.un) + "</td><td align=\"right\">" + virg(i.qtd, 2) + "</td><td>" + (i.sinapi ? esc(i.sinapi.codigo) + (i.sinapi.aproximado ? " (aprox.)" : "") : "<i>orçar à parte</i>") + "</td><td>" + (i.somar === false ? "<i>conferência, não somar</i> — " : "") + esc(i.obs || "") + "</td></tr>";
+}).join("");
+janela("Quantitativo da cobertura e do forro", '<p>' + q.comCodigo + ' item(ns) com composição SINAPI (' + esc(q.base) + '); ' + q.aParte + ' a orçar à parte. Código só quando existe na base do sistema.</p>' +
+'<table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr><th align="left">Grupo</th><th align="left">Item</th><th align="left">Un</th><th align="right">Qtd</th><th align="left">SINAPI</th><th align="left">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>" + lista("Avisos", q.avisos));
+}
+var BimCoberturaUI = {
+ativo: previa,
+janela: janela, estado: estado,
+acoes: { estrutura: estrutura, verificar: verificar, trocarTipo: trocarTipo, platibanda: platibanda, calha: calha, calhaCalculo: calhaCalculo, pluvial: pluvial, sanca: sanca, estruturaForro: estruturaForro, luminarias: luminarias, quantitativo: quantitativo },
+registrar: function (reg, arqui, opts) {
+var pv = opts && opts.previa != null ? !!opts.previa : previa();
+var R = global.BimRibbon, T = TM();
+if (!pv || !R || !T || !BC() || !reg) return false;
+var tipos = T.TIPOS.map(function (x) { return { id: "cob-tt-" + x.id, rotulo: x.rotulo, icone: "telhado" }; });
+R.acrescentar("arquitetura", "Arquitetura", "Cobertura completa", [
+{ id: "cob-estrutura", rotulo: "Estrutura do\ntelhado", icone: "estrutura", grande: true, tipo: "menu",
+dica: "Gera (ou refaz) a estrutura do telhado pelo vão máximo da telha: terças, vigas principais e apoios nas paredes. Metálica (Ue + W) ou de madeira (seções do catálogo). PRÉ-DIMENSIONADO — confirmar no cálculo.",
+itens: [{ id: "cob-estr-auto", rotulo: "Pelo tipo da telha (sanduíche = aço, fibrocimento = madeira)", icone: "estrutura" }, { id: "cob-estr-aco", rotulo: "Metálica (terça Ue, viga W)", icone: "estrutura" },
+{ id: "cob-estr-madeira", rotulo: "De madeira (terça, viga, pontalete)", icone: "estrutura" }, { id: "cob-estr-verificar", rotulo: "Verificar no cálculo da estrutura de aço", icone: "calculadora" }] },
+{ id: "cob-telha", rotulo: "Tipo de\ntelha", icone: "telhado", grande: true, tipo: "menu", dica: "Troca o tipo de telha do telhado (sanduíche trapezoidal EPS/PIR com face inferior efeito madeira, fibrocimento 6 mm…). Os dados de catálogo trazem a fonte.", itens: tipos },
+{ id: "cob-platibanda", rotulo: "Platibanda\ne rufos", icone: "parede", grande: true, dica: "Platibanda em volta do telhado com rufo de capa no topo e contra-rufo no encontro com a telha. Clique de novo para tirar." },
+{ id: "cob-calha", rotulo: "Calha embutida\ne descidas", icone: "regua", grande: true, dica: "Calha embutida atrás da platibanda (na aresta do beiral) e uma descida por calha. Clique de novo para tirar." },
+{ id: "cob-calha-calc", rotulo: "Calha pela\nNBR 10844", icone: "calculadora", grande: true, dica: "Vazão e capacidade da calha pela NBR 10844 (cálculo pluvial do módulo Hidrossanitário). Cidade fora da Tabela 5 fica pendente." },
+{ id: "cob-pluvial", rotulo: "Rufos, calhas\ne descidas", icone: "regua", grande: true, dica: "Gera e dimensiona pela NBR 10844: rufo e contrarrufo onde o telhado encosta em parede mais alta, calha (embutida e de beiral), descidas e condutores pela cidade do endereço da obra. Rodar de novo refaz no lugar." }
+]);
+R.acrescentar("arquitetura", "Arquitetura", "Forro completo", [
+{ id: "cob-sanca", rotulo: "Sanca com\nluz indireta", icone: "camadas", grande: true, dica: "Rebaixo perimetral no forro (recuo e profundidade configuráveis) com fita de LED escondida. Clique de novo para tirar." },
+{ id: "cob-forro-estrutura", rotulo: "Estrutura\ndo forro", icone: "estrutura", grande: true, dica: "Sarrafos e barrotes de madeira do forro de drywall. O espaçamento é ADOTADO: confira o manual do fabricante da chapa." },
+{ id: "cob-luminarias", rotulo: "Luminárias\nembutidas", icone: "mais", grande: true, dica: "Grade de spots embutidos no forro (família ra-luminaria)." },
+{ id: "cob-quant", rotulo: "Quantitativo da\ncobertura", icone: "calculadora", grande: true, dica: "Telha, estrutura, platibanda, rufos, calha, descidas, forro, sanca e luminárias — com SINAPI só onde existe na base." }
+]);
+reg["cob-estrutura"] = function () { return true; };
+reg["cob-estr-auto"] = function () { estrutura(null); return true; };
+reg["cob-estr-aco"] = function () { estrutura("aco"); return true; };
+reg["cob-estr-madeira"] = function () { estrutura("madeira"); return true; };
+reg["cob-estr-verificar"] = function () { verificar(); return true; };
+T.TIPOS.forEach(function (x) { reg["cob-tt-" + x.id] = function () { trocarTipo(x.id); return true; }; });
+reg["cob-telha"] = function () { return true; };
+reg["cob-platibanda"] = function () { platibanda(); return true; };
+reg["cob-calha"] = function () { calha(); return true; };
+reg["cob-calha-calc"] = function () { calhaCalculo(); return true; };
+reg["cob-pluvial"] = function () { pluvial(); return true; };
+reg["cob-sanca"] = function () { sanca(); return true; };
+reg["cob-forro-estrutura"] = function () { estruturaForro(); return true; };
+reg["cob-luminarias"] = function () { luminarias(); return true; };
+reg["cob-quant"] = function () { quantitativo(); return true; };
+return true;
+},
+_mat: {},
+_m: function (THREE, k) {
+var M = this._mat; if (M[k]) return M[k];
+var cfg = { reboco: { c: 0xe4e0d8, m: 0.02, r: 0.9 }, capa: { c: 0x9aa5ad, m: 0.55, r: 0.45 }, calha: { c: 0xa9b3ba, m: 0.5, r: 0.5 }, pvc: { c: 0xeceae4, m: 0.0, r: 0.6 },
+forro: { c: 0xf1eee6, m: 0, r: 0.95 }, led: { c: 0xfff1c9, m: 0, r: 0.4, e: 0xffe3a0 } }[k] || { c: 0xcccccc, m: 0, r: 0.8 };
+var o = { color: cfg.c, metalness: cfg.m, roughness: cfg.r, side: THREE.DoubleSide };
+if (cfg.e) { o.emissive = new THREE.Color(cfg.e); o.emissiveIntensity = 1.2; }
+M[k] = new THREE.MeshStandardMaterial(o);
+return M[k];
+},
+desenhar: function (THREE, st, mo, addMesh, P3, reg) {
+var self = this, V = function (a) { return new THREE.Vector2(a[0], a[1]); };
+function ccw(Q) { return THREE.ShapeUtils.area(Q.map(V)) < 0 ? Q.slice().reverse() : Q; }
+function quad2(q) { return q.map(function (p) { return [p.x, p.z]; }); }
+function prisma(Q, y0, y1) { return P3._prisma(THREE, ccw(Q), function () { return y0; }, function () { return y1; }); }
+function parede(a, b, y0, y1) { return P3._faces(THREE, [[[a.x, y0, a.z], [b.x, y0, b.z], [b.x, y1, b.z], [a.x, y1, a.z]]]); }
+function nomeEl(id, ifc, nome, qto) {
+mo.tipos[ifc] = (mo.tipos[ifc] || 0) + 1; mo.qto[id] = qto;
+mo.elementos.push({ id: id, uid: "edit:" + id, mid: "edit", arquivo: mo.nome, tipo: ifc, nome: nome, etapa: null, codOrc: null, qto: qto, disciplina: "arquitetura" });
+mo.nEl++;
+}
+void reg;
+arr(st.platibandas).forEach(function (p) {
+if (!p || !p.ok) return;
+var m = self._m(THREE, "reboco"), mc = self._m(THREE, "capa"), n = 0;
+p.segs.forEach(function (s) {
+addMesh(new THREE.Mesh(prisma(quad2(s.quad), p.base, p.topo), m), p.id, p.ifc, m); n++;
+if (p.rufoCapa) {
+var q = s.quad, ux = q[3].x - q[0].x, uz = q[3].z - q[0].z, L = Math.sqrt(ux * ux + uz * uz) || 1; ux /= L; uz /= L;
+var ab = p.abaRufoEf, Q = [[q[0].x - ux * ab, q[0].z - uz * ab], [q[1].x - ux * ab, q[1].z - uz * ab], [q[2].x + ux * ab, q[2].z + uz * ab], [q[3].x + ux * ab, q[3].z + uz * ab]];
+addMesh(new THREE.Mesh(prisma(Q, p.topo, p.topo + 0.004), mc), p.id, p.ifc, mc);
+}
+if (p.contraRufo) {
+var T = global.BimTelhado, tel = arr(st.telhados).filter(function (t) { return String(t.id) === String(p.telhado); })[0];
+var q2 = s.quad, nx = q2[0].x - q2[3].x, nz = q2[0].z - q2[3].z, Ln = Math.sqrt(nx * nx + nz * nz) || 1; nx /= Ln; nz /= Ln;
+function yEm(pt0) { var y = T && tel ? T.alturaEm(tel, pt0.x + nx * 0.05, pt0.z + nz * 0.05) : null; return (y == null ? (tel ? tel.cotaApoio : p.base) : y) + (tel ? +tel.espessura || 0 : 0); }
+var ya = yEm(s.a), yb = yEm(s.b);
+addMesh(new THREE.Mesh(P3._faces(THREE, [[[s.a.x, ya, s.a.z], [s.b.x, yb, s.b.z], [s.b.x, yb + 0.12, s.b.z], [s.a.x, ya + 0.12, s.a.z]]]), mc), p.id, p.ifc, mc);
+}
+});
+if (n) nomeEl(p.id, p.ifc, "Platibanda (sintético " + p.id + ")", { comprimento: p.comprimento, area: p.area, volume: p.volume, contagem: 1 });
+});
+arr(st.calhasEmbutidas).forEach(function (c) {
+if (!c || !c.ok) return;
+var m = self._m(THREE, "calha"), n = 0;
+c.segs.forEach(function (s) {
+var q = s.quad, a0 = q[0], b0 = q[1], b1 = q[2], a1 = q[3];
+addMesh(new THREE.Mesh(prisma(quad2(q), s.yFundo, s.yFundo + 0.004), m), c.id, c.ifc, m);
+addMesh(new THREE.Mesh(parede(a0, b0, s.yFundo, s.yBorda), m), c.id, c.ifc, m);
+addMesh(new THREE.Mesh(parede(a1, b1, s.yFundo, s.yBorda), m), c.id, c.ifc, m);
+addMesh(new THREE.Mesh(parede(a0, a1, s.yFundo, s.yBorda), m), c.id, c.ifc, m);
+addMesh(new THREE.Mesh(parede(b0, b1, s.yFundo, s.yBorda), m), c.id, c.ifc, m); n++;
+});
+if (n) nomeEl(c.id, c.ifc, "Calha embutida (sintético " + c.id + ")", { comprimento: c.comprimento, area: c.comprimento * c.desenvolvimento, contagem: 1 });
+});
+function chapa(Q, nx, ny, nz, e) {
+var T2 = Q.map(function (p) { return [p[0] + nx * e, p[1] + ny * e, p[2] + nz * e]; });
+return P3._faces(THREE, [Q, T2, [Q[0], Q[1], T2[1], T2[0]], [Q[1], Q[2], T2[2], T2[1]], [Q[2], Q[3], T2[3], T2[2]], [Q[3], Q[0], T2[0], T2[3]]]);
+}
+arr(st.rufosEncontro).forEach(function (r) {
+if (!r || !r.ok || !r.encontros.length) return;
+var m = self._m(THREE, "capa"), Cb = BC(), PR = Cb ? Cb.PADRAO_RUFO : { abaTelha: 0.1, abaParede: 0.15, contraDe: 0.1, contraAte: 0.22 }, n = 0;
+var tel = arr(st.telhados).filter(function (t) { return String(t.id) === String(r.telhado); })[0];
+r.encontros.forEach(function (e) {
+var nI = e.nIn, ab = PR.abaTelha;
+e.segs.forEach(function (s) {
+var fa = s.fa, fb = s.fb, ia = { x: fa.x + nI.x * ab, z: fa.z + nI.z * ab }, ib = { x: fb.x + nI.x * ab, z: fb.z + nI.z * ab };
+function yT(p, y0) { var y = Cb && tel ? Cb.topoTelhaEm(tel, p.x, p.z) : null; return (y == null ? y0 : y) + 0.002; }
+function off(p, d) { return { x: p.x + nI.x * d, z: p.z + nI.z * d }; }
+if (e.rufo) {
+addMesh(new THREE.Mesh(chapa([[fa.x, s.yA + 0.002, fa.z], [fb.x, s.yB + 0.002, fb.z], [ib.x, yT(ib, s.yB), ib.z], [ia.x, yT(ia, s.yA), ia.z]], 0, 1, 0, 0.004), m), r.id, r.ifc, m);
+var a4 = off(fa, 0.004), b4 = off(fb, 0.004);
+addMesh(new THREE.Mesh(chapa([[a4.x, s.yA, a4.z], [b4.x, s.yB, b4.z], [b4.x, s.yB + PR.abaParede, b4.z], [a4.x, s.yA + PR.abaParede, a4.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
+}
+var a9 = off(fa, 0.009), b9 = off(fb, 0.009);
+addMesh(new THREE.Mesh(chapa([[a9.x, s.yA + PR.contraDe, a9.z], [b9.x, s.yB + PR.contraDe, b9.z], [b9.x, s.yB + PR.contraAte, b9.z], [a9.x, s.yA + PR.contraAte, a9.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
+n++;
+});
+});
+if (n) nomeEl(r.id, r.ifc, "Rufo e contrarrufo de encontro (sintético " + r.id + ")", { comprimento: r.comprimentoContra, peso: r.kgRufo + r.kgContra, contagem: 1 });
+});
+arr(st.condutores).forEach(function (c) {
+if (!c || !c.ok || !(c.alturaM > 0.05) || c.noHidro) return;
+var m = self._m(THREE, "pvc"), r = (c.dnDesenho || 100) / 2000;
+var cil = new THREE.Mesh(new THREE.CylinderGeometry(r, r, c.alturaM, 20), m);
+cil.position.set(c.x, c.yBase + c.alturaM / 2, c.z); addMesh(cil, c.id, c.ifc, m);
+nomeEl(c.id, c.ifc, "Condutor vertical pluvial (sintético " + c.id + ")", { comprimento: c.alturaM, contagem: 1 });
+});
+arr(st.sancas).forEach(function (s) {
+if (!s || !s.ok) return;
+var m = self._m(THREE, "forro"), led = self._m(THREE, "led"), I = s.interno, K = s.contorno, e = s.espessura || 0.0125, i, n = I.length;
+for (i = 0; i < n; i++) { addMesh(new THREE.Mesh(parede(I[i], I[(i + 1) % n], s.cota, s.cotaFaixa + e), m), s.id, "IFCCOVERING", m); }
+var O = ccw(K.map(function (p) { return [p.x, p.z]; })), H = ccw(I.map(function (p) { return [p.x, p.z]; })).reverse(), pos = [], tris;
+try { tris = THREE.ShapeUtils.triangulateShape(O.map(V), [H.map(V)]); } catch (er) { tris = []; }
+var todos = O.concat(H);
+tris.forEach(function (t) { t.forEach(function (k) { pos.push(todos[k][0], s.cotaFaixa, todos[k][1]); }); });
+if (pos.length) addMesh(new THREE.Mesh(P3._geo(THREE, pos), m), s.id, "IFCCOVERING", m);
+if (s.luzEf) for (i = 0; i < n; i++) {
+var a = I[i], b = I[(i + 1) % n], dx = b.x - a.x, dz = b.z - a.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.05)) continue;
+var nxx = -dz / L, nzz = dx / L, off = 0.035;
+var cx = (a.x + b.x) / 2 - nxx * off, cz = (a.z + b.z) / 2 - nzz * off, bx = new THREE.Mesh(new THREE.BoxGeometry(L, 0.012, 0.02), led);
+bx.position.set(cx, s.cotaFaixa - 0.015, cz); bx.rotation.y = -Math.atan2(dz, dx); addMesh(bx, s.id, "IFCLIGHTFIXTURE", led);
+}
+nomeEl(s.id, "IFCCOVERING", "Sanca (sintético " + s.id + ")", { comprimento: s.comprimento, area: s.areaDesenvolvida, contagem: 1 });
+});
+}
+};
+global.BimCoberturaUI = BimCoberturaUI;
+if (typeof module !== "undefined" && module.exports) module.exports = BimCoberturaUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimp3ui.js ==== */
 try {
 (function (global) {
 "use strict";
 function TM() { return global.BimTelhado || null; }
+function ESM() { return global.BimTelhadoEstrut || null; }
 function FM() { return global.BimFundacao || null; }
 function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
 function arr(v) { return Array.isArray(v) ? v : []; }
@@ -104616,7 +110076,7 @@ function n2(v, c) { var x = Number(v); return isFinite(x) ? x.toFixed(c == null 
 function ro(id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; }
 function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
 var cfg = {
-telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null },
+telhado: { modo: "retangulo", aguas: 4, inclinacao: 30, beiral: 0.5, tipoId: "generico-8", deslocBase: null, comprimentoExtrusao: null, modelo: "auto", beiralMexido: false },
 fundacao: { tipoFundacao: "sapata", largura: 1.2, comprimento: 1.2, altura: 0.4, alturaBase: null, larguraTopo: null, comprimentoTopo: null,
 nEstacas: 2, diametro: 0.3, comprimentoEstaca: 6, espacamento: 0.9, deslocTopo: 0, taxaAco: null, fck: null, lastro: 0.05, folga: 0, terreno: 0, radierModo: "retangulo" },
 borda: { tipoBorda: "calha" }
@@ -104639,6 +110099,15 @@ if (!pv || !R || !TM() || !FM() || !reg) return false;
 R.acrescentar("arquitetura", "Arquitetura", "Telhado", [
 { id: "telhado-borda", rotulo: "Bordas do\ntelhado", icone: "regua", grande: true, tipo: "alterna",
 dica: "Calha, rufo, testeira e intradorso (forro do beiral): escolha em Propriedades e clique perto da aresta do telhado. O comprimento (inclinado na empena) e a área vão para o quantitativo." },
+{ id: "telhado-modelo", rotulo: "Telhado\ncompleto", icone: "estrutura", grande: true, tipo: "menu",
+dica: "Modelo do telhado: madeiramento (tesoura, terça, caibro, ripa) ou estrutura metálica (terça Ue) e TODAS as telhas modeladas, derivados do telhado — muda a inclinação, muda tudo. Pregos, parafusos e fixação da telha no Quantitativo da cobertura. Vale para os telhados do modelo e para os próximos (Propriedades da ferramenta Telhado › Modelo).",
+itens: [{ id: "tel-mod-auto", rotulo: "Automático pela telha", icone: "telhado" }, { id: "tel-mod-mad-tesoura", rotulo: "Madeira — tesoura + terça + caibro + ripa", icone: "estrutura" },
+{ id: "tel-mod-mad-terca", rotulo: "Madeira — terça + caibro + ripa (paredes/pontaletes)", icone: "estrutura" }, { id: "tel-mod-mad-terca-direta", rotulo: "Madeira — terça (fibrocimento/termoacústica)", icone: "estrutura" },
+{ id: "tel-mod-mad-tesoura-terca", rotulo: "Madeira — tesoura + terça (fibrocimento/termoacústica)", icone: "estrutura" },
+{ id: "tel-mod-mad-onduline", rotulo: "Madeira — ripas a 46 cm (Onduline)", icone: "estrutura" }, { id: "tel-mod-mad-shingle", rotulo: "Madeira — OSB + subcobertura (shingle)", icone: "estrutura" },
+{ id: "tel-mod-aco-trapezoidal", rotulo: "Metálica — terça Ue + trapezoidal", icone: "estrutura" }, { id: "tel-mod-aco-sanduiche", rotulo: "Metálica — terça Ue + sanduíche", icone: "estrutura" },
+{ id: "tel-mod-aco-viga", rotulo: "Metálica — terça Ue + viga W com pilar na cumeeira (baixa inclinação)", icone: "estrutura" },
+{ id: "tel-mod-nenhum", rotulo: "Sem estrutura (só o telhado)", icone: "telhado" }] },
 { id: "telhado-unir", rotulo: "Unir\ntelhado", icone: "mais", grande: true, tipo: "alterna",
 dica: "Unir/desunir telhado: clique o telhado que ENTRA e depois o telhado em que ele encosta — a parte que fica por baixo sai e o rincão do encontro é medido. Clicar de novo o mesmo par desune." }
 ]);
@@ -104651,6 +110120,24 @@ return arqui && arqui.armar ? arqui.armar(sub) : false;
 }
 reg.cobertura = armar("telhado"); reg.fundacao = armar("fundacao");
 reg["telhado-borda"] = armar("telhado-borda"); reg["telhado-unir"] = armar("telhado-unir");
+var self = BimP3UI;
+reg["telhado-modelo"] = function () { return true; };
+["auto", "nenhum", "mad-tesoura", "mad-terca", "mad-terca-direta", "mad-tesoura-terca", "mad-onduline", "mad-shingle", "aco-trapezoidal", "aco-sanduiche", "aco-viga"].forEach(function (mid) {
+reg["tel-mod-" + mid] = function () {
+cfg.telhado.modelo = mid;
+var B = global.BIM, E = global.BimEdit, st = null;
+try { st = B && B.editarOps && E ? E.aplicar(B.editarOps()) : null; } catch (eS) { st = null; }
+var ops = self.opsModelo(st, mid === "nenhum" ? null : mid), rot = mid === "auto" ? "automático pela telha" : self.rotuloModelo(mid === "nenhum" ? null : mid);
+if (ops.length && B && B.editarLote && B.editarLote({ op: "lote", id: "tel-mod-" + mid, origem: "modelo-telhado", ops: ops })) {
+var av2 = [];
+try { var st2 = E.aplicar(B.editarOps()); arr(st2 && st2.telhados).forEach(function (t) { if (t && t.pacote) arr(t.pacote.avisos).forEach(function (a) { av2.push("Telhado " + t.id + ": " + a); }); }); } catch (eA) { av2 = []; }
+status("Modelo do telhado: " + rot + " (" + ops.length + " telhado(s)). Quantitativo em Cobertura completa › Quantitativo da cobertura." + (av2.length ? " AVISOS: " + av2.join(" | ") : ""));
+}
+else status("Próximos telhados nascem com o modelo: " + rot + ".");
+return true;
+};
+});
+if (global.BimCoberturaUI) global.BimCoberturaUI.registrar(reg, arqui, opts);
 return true;
 },
 esquema: function (sub, arqui) {
@@ -104665,8 +110152,11 @@ secs.push({ nome: "Telhado", params: [
 { id: "b2f:te:tipoId", rotulo: "Tipo", tipo: "lista", valor: t.id, opcoes: T.TIPOS.map(function (x) { return { id: x.id, rotulo: x.rotulo }; }) },
 { id: "b2f:te:modo", rotulo: "Desenho", tipo: "lista", valor: c.modo, opcoes: [{ id: "retangulo", rotulo: "Retângulo — dois cantos" }, { id: "contorno", rotulo: "Perímetro — clique os cantos" }, { id: "extrusao", rotulo: "Extrusão — base e comprimento" }] },
 { id: "b2f:te:aguas", rotulo: "Águas (retângulo)", tipo: "lista", valor: String(c.aguas), opcoes: [{ id: "4", rotulo: "4 águas" }, { id: "2", rotulo: "2 águas (cumeeira no lado maior)" }, { id: "1", rotulo: "1 água (cai para a 1ª aresta)" }] },
+{ id: "b2f:te:modelo", rotulo: "Modelo (estrutura e telhas)", tipo: "lista", valor: c.modelo || "nenhum", opcoes: self.opcoesModelo() },
+ro("b2f:te:modeloEf", "Modelo que sai", self.rotuloModelo(self.modeloEf(c))),
 { id: "b2f:te:inclinacao", rotulo: "Inclinação", unidade: "%", tipo: "numero", passo: "1", valor: c.inclinacao },
-{ id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.beiral },
+ro("b2f:te:incMin", "Inclinação mínima do fabricante", (function () { var tl = T.telha(c.tipoId); return tl && fin(tl.inclinacaoMinPct) ? n2(tl.inclinacaoMinPct, 1) + " %" + (c.inclinacao < tl.inclinacaoMinPct - 1e-9 ? " — ABAIXO DO MÍNIMO" : "") : (tl ? "não verificada (valor de partida)" : "— (tipo sem catálogo)"); })()),
+{ id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: self.beiralEf(c) },
 { id: "b2f:te:deslocBase", rotulo: "Deslocamento da base do nível (vazio = pé-direito)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.deslocBase == null ? "" : c.deslocBase },
 ro("b2f:te:esp", "Espessura (soma das camadas)", n2(t.espessura * 1000, 0) + " mm")
 ] });
@@ -104705,14 +110195,47 @@ var k = String(pid).replace(/^b2f:/, ""), T = TM();
 if (k === "nivel" && arqui && arqui.mudarFerramenta) return arqui.mudarFerramenta(sub, pid, valor);
 var m = /^(te|fu|bo):(\w+)$/.exec(k); if (!m) return this.esquema(sub, arqui);
 var alvo = m[1] === "te" ? cfg.telhado : (m[1] === "fu" ? cfg.fundacao : cfg.borda), c = m[2];
-if (c === "tipoId") { if (T && T.tipo(valor).id === String(valor)) alvo.tipoId = String(valor); }
+if (c === "tipoId") {
+if (T && T.tipo(valor).id === String(valor)) {
+alvo.tipoId = String(valor);
+if (m[1] === "te" && T.inclinacaoPadrao) { var im = T.inclinacaoPadrao(valor); if (fin(im)) alvo.inclinacao = im; }
+}
+}
+else if (c === "modelo") { var ME = ESM(); alvo.modelo = valor === "auto" || valor === "nenhum" || (ME && ME.MODELOS && ME.MODELOS[valor]) ? String(valor) : alvo.modelo; }
 else if (c === "modo") alvo.modo = valor === "contorno" || valor === "extrusao" ? valor : "retangulo";
 else if (c === "aguas") alvo.aguas = valor === "1" || valor === 1 ? 1 : (valor === "2" || valor === 2 ? 2 : 4);
 else if (c === "tipoFundacao") { if (ROT_FUND[valor]) alvo.tipoFundacao = valor; }
 else if (c === "radierModo") alvo.radierModo = valor === "contorno" ? "contorno" : "retangulo";
 else if (c === "tipoBorda") { if (T && T.BORDAS[valor]) alvo.tipoBorda = valor; }
-else if (temCampo(alvo, c)) alvo[c] = valor === "" || valor == null ? null : num(valor, alvo[c]);
+else if (temCampo(alvo, c)) { alvo[c] = valor === "" || valor == null ? null : num(valor, alvo[c]); if (m[1] === "te" && c === "beiral") alvo.beiralMexido = valor !== "" && valor != null; }
 return this.esquema(sub, arqui);
+},
+opcoesModelo: function () {
+var ME = ESM(), out = [{ id: "auto", rotulo: "Automático pela telha" }, { id: "nenhum", rotulo: "Sem estrutura (só o telhado)" }];
+if (ME && ME.MODELOS) Object.keys(ME.MODELOS).forEach(function (k) { out.push({ id: k, rotulo: ME.MODELOS[k].rotulo }); });
+return out;
+},
+modeloEf: function (c) {
+var ME = ESM(), T = TM(); c = c || cfg.telhado;
+if (!ME || !ME.MODELOS || !c.modelo || c.modelo === "nenhum") return null;
+if (c.modelo === "auto") return T && T.telha(c.tipoId) ? ME.modeloSugerido(c.tipoId) : null;
+return ME.MODELOS[c.modelo] ? c.modelo : null;
+},
+beiralEf: function (c) {
+c = c || cfg.telhado; var T = TM(), tl = T && T.telha ? T.telha(c.tipoId) : null, b = num(c.beiral, 0.5);
+if (c.beiralMexido) return b;
+var bm = tl && tl.balanco && tl.balanco.semCalha && fin(tl.balanco.semCalha.max) ? tl.balanco.semCalha.max : null;
+return bm != null && bm < b ? bm : b;
+},
+rotuloModelo: function (id) { var ME = ESM(); return id && ME && ME.MODELOS[id] ? ME.MODELOS[id].rotulo : "sem estrutura (só o telhado)"; },
+opsModelo: function (estado, modelo) {
+var ME = ESM(), ops = [];
+arr(estado && estado.telhados).forEach(function (t) {
+if (!t || t.modo === "extrusao") return;
+var m = modelo === "auto" ? (ME ? ME.modeloSugerido(t.tipoId, t, estado) : null) : (modelo && ME && ME.MODELOS[modelo] ? modelo : null);
+ops.push({ op: "telhado", id: t.id, modelo: m });
+});
+return ops;
 },
 novoId: function (estado, pre) {
 var usados = {};
@@ -104722,7 +110245,8 @@ return pre + n;
 },
 opTelhado: function (estado, dados, nivel, base) {
 var T = TM(); if (!T) return { ok: false, motivo: "O motor do telhado (js/bimtelhado.js) não carregou." };
-var c = cfg.telhado, d = { inclinacao: c.inclinacao, beiral: c.beiral, tipoId: c.tipoId };
+var c = cfg.telhado, d = { inclinacao: c.inclinacao, beiral: this.beiralEf(c), tipoId: c.tipoId }, mEf = this.modeloEf(c);
+if (mEf && !(dados.p1 && dados.p2 && dados.p3)) d.modelo = mEf;
 d.deslocBase = c.deslocBase != null ? c.deslocBase : (nivel && +nivel.peDireito > 0 ? +nivel.peDireito : 2.8);
 if (nivel && nivel.id != null) { d.nivelId = String(nivel.id); d.base = +nivel.elevacao || 0; } else d.base = +base || 0;
 if (dados.contorno) d.contorno = dados.contorno;
@@ -104743,8 +110267,14 @@ var id = this.novoId(estado, "te"), op = T.op(id, d);
 if (!op) return { ok: false, motivo: "Telhado inválido: confira o contorno e as Propriedades." };
 var t = T.calcular(op, nivel ? [{ id: nivel.id, elevacao: +nivel.elevacao || 0 }] : []);
 if (!t.ok) return { ok: false, motivo: (t.avisos || []).join(" ") || "Não deu para montar o telhado." };
+var MEa = ESM(); if (op.modelo && c.modelo === "auto" && MEa && MEa.modeloSugerido) op.modelo = MEa.modeloSugerido(c.tipoId, t, estado);
+var abaixo = (t.avisos || []).filter(function (a) { return /abaixo do mínimo/i.test(a); })[0];
+var avM = [], MEm = ESM();
+if (op.modelo && MEm && MEm.modelar) { try { var t2 = JSON.parse(JSON.stringify(t)); t2.modelo = op.modelo; var pkM = MEm.modelar(t2, estado, {}); avM = pkM ? arr(pkM.avisos) : []; } catch (eM) { avM = []; } }
 return { ok: true, op: op, telhado: t, resumo: "Telhado (" + t.tipoTelhado.rotulo + "): " + t.nAguas + " água" + (t.nAguas > 1 ? "s" : "") + ", " + n2(t.area) + " m² inclinados (" + n2(t.areaProjecao) + " m² em projeção)" +
-(t.cumeeira > 0 ? ", cumeeira " + n2(t.cumeeira) + " m" : "") + (t.espigao > 0 ? ", espigões " + n2(t.espigao) + " m" : "") + (t.rincao > 0 ? ", rincões " + n2(t.rincao) + " m" : "") + "." };
+(t.cumeeira > 0 ? ", cumeeira " + n2(t.cumeeira) + " m" : "") + (t.espigao > 0 ? ", espigões " + n2(t.espigao) + " m" : "") + (t.rincao > 0 ? ", rincões " + n2(t.rincao) + " m" : "") + "." +
+(op.modelo ? " Modelo: " + this.rotuloModelo(op.modelo) + " (estrutura, telhas e fixação no quantitativo da cobertura)." : "") + (abaixo ? " ATENÇÃO: " + abaixo : "") +
+(avM.length ? " AVISOS DO MODELO: " + avM.join(" | ") : ""), avisosModelo: avM };
 },
 opFundacao: function (estado, dados, nivel, base) {
 var F = FM(); if (!F) return { ok: false, motivo: "O motor da fundação (js/bimfundacao.js) não carregou." };
@@ -104840,7 +110370,7 @@ var r = Bo.travar(base, q, { shift: !!(e && e.shiftKey), tipoSnap: tipo });
 return r && r.travado ? { x: r.p.x, z: r.p.z } : q;
 }
 var m3d = {
-contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length; },
+contar: function (st) { return arr(st && st.telhados).length + arr(st && st.bordas).length + arr(st && st.fundacoes).length + arr(st && st.platibandas).length + arr(st && st.calhasEmbutidas).length + arr(st && st.condutores).length + arr(st && st.sancas).length; },
 dica: function (sub) {
 if (sub === "telhado") { var m = cfg.telhado.modo; return m === "contorno" ? "Telhado por perímetro: clique os cantos (pela linha da parede); feche no primeiro ponto ou com Enter. O beiral sai para fora." : (m === "extrusao" ? "Telhado por extrusão: clique o início e o fim da base e depois até onde ele vai." : "Telhado: clique dois cantos OPOSTOS (pela linha da parede, sem o beiral)."); }
 if (sub === "fundacao") { var tf = cfg.fundacao.tipoFundacao; return tf === "baldrame" ? "Baldrame: clique o início e o fim." : (tf === "radier" ? (cfg.fundacao.radierModo === "contorno" ? "Radier: clique os cantos; feche no primeiro ponto ou com Enter." : "Radier: clique dois cantos opostos.") : ROT_FUND[tf] + ": clique o centro."); }
@@ -104901,7 +110431,16 @@ _mats: null,
 _mat: function (THREE, k) {
 var M = this._mats || (this._mats = {});
 if (M[k]) return M[k];
-var cores = { ceramica: 0xa65a3a, fibrocimento: 0xb9bcbe, metalica: 0x8f9aa6, concreto: 0xa9b0b8, chapa: 0x8a8f96, intradorso: 0xe8e2d4 };
+var cores = { ceramica: 0xa65a3a, fibrocimento: 0xb9bcbe, metalica: 0x8f9aa6, concreto: 0xa9b0b8, chapa: 0x8a8f96, intradorso: 0xe8e2d4, isolante: 0xf3efe2, reboco: 0xe4e0d8, pvc: 0xeceae4,
+madeiraEstr: 0x9c6b3f, concretoTelha: 0x7d5a4a };
+if (k === "madeira") {
+var BTx = global.BimTextura, slug = "forro_madeira_lambri", lib = BTx && BTx.BIB && BTx.BIB[slug], rgb = lib && lib.media ? lib.media : [0.63, 0.44, 0.28];
+var mw = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace), metalness: 0.05, roughness: 0.65, side: THREE.DoubleSide });
+mw.userData.corLin = mw.color.clone(); mw.userData.rgba = [rgb[0], rgb[1], rgb[2], 1];
+if (lib) { mw.userData.tex = { slug: slug, escala: lib.m, asp: lib.asp || 1, fonte: "telha", classe: "", material: slug }; mw.userData.corIfc = [rgb[0], rgb[1], rgb[2]]; }
+M[k] = mw;
+return M[k];
+}
 M[k] = new THREE.MeshStandardMaterial({ color: cores[k] || 0xa9b0b8, metalness: k === "chapa" || k === "metalica" ? 0.4 : 0.03, roughness: 0.85, side: THREE.DoubleSide });
 return M[k];
 },
@@ -104932,12 +110471,35 @@ mo.nEl++;
 }
 arr(st.telhados).forEach(function (t) {
 if (!t || !t.ok) return;
+var ESg = ESM();
+if (t.pacote && t.pacote.ok && ESg && ESg.geometria) {
+var G = null; try { G = ESg.geometria(t); } catch (eG) { G = null; }
+if (G && G.grupos.length) {
+var tlx = TM().telha(t.tipoId), fam = tlx ? tlx.familia : "";
+G.grupos.forEach(function (g) {
+var mk = g.material === "madeira" ? "madeiraEstr" : (g.material === "aco" ? "chapa" : (g.material === "telha-madeira" ? "madeira" : (fam === "fibrocimento" ? "fibrocimento" : (fam === "metalica" || fam === "sanduiche" ? "metalica" : (fam === "concreto" ? "concretoTelha" : "ceramica")))));
+var mt = self._mat(THREE, mk);
+addMesh(new THREE.Mesh(self._geo(THREE, g.pos), mt), t.id, "IFCROOF", mt);
+});
+reg(t.id, "IFCROOF", "Telhado " + (t.tipoTelhado ? t.tipoTelhado.rotulo : "") + " — " + t.nAguas + " água(s), " + t.pacote.rotulo + " (sintético " + t.id + ")", { area: t.area, areaProjecao: t.areaProjecao, volume: t.volume, comprimento: t.cumeeira, contagem: 1 });
+return;
+}
+}
 var cam = t.tipoTelhado && t.tipoTelhado.camadas && t.tipoTelhado.camadas[0], mn = String(cam && cam.material || "").toLowerCase();
 var mat = self._mat(THREE, /fibro/.test(mn) ? "fibrocimento" : (/aço|aco|metal|eps/.test(mn) ? "metalica" : "ceramica")), esp = +t.espessura || 0.08;
+var camadas = t.tipoTelhado && arr(t.tipoTelhado.camadas).length > 1 ? t.tipoTelhado.camadas : null;
 arr(t.aguasCalc).forEach(function (ag) {
 ag.pecas.forEach(function (pc) {
 var Q = pc.pts.map(function (q) { return [q.x, q.z]; }), Y = pc.pts.map(function (q) { return q.y; }), dy = esp * ag.fator;
-addMesh(new THREE.Mesh(self._prisma(THREE, Q, function (i) { return Y[i]; }, function (i) { return Y[i] + dy; }), mat), t.id, "IFCROOF", mat);
+if (!camadas) { addMesh(new THREE.Mesh(self._prisma(THREE, Q, function (i) { return Y[i]; }, function (i) { return Y[i] + dy; }), mat), t.id, "IFCROOF", mat); return; }
+var topo = dy, k;
+for (k = 0; k < camadas.length; k++) {
+var e = (+camadas[k].e || 0) * ag.fator, mk = String(camadas[k].material || "").toLowerCase(), tk = topo, bk = topo - e, km;
+km = /madeira/.test(mk) ? "madeira" : (/eps|pir|isol/.test(mk) ? "isolante" : (/aço|aco|metal/.test(mk) ? "metalica" : "ceramica"));
+var mk3 = self._mat(THREE, km), geo = self._prisma(THREE, Q, function (i) { return Y[i] + bk; }, function (i) { return Y[i] + tk; });
+addMesh(new THREE.Mesh(geo, mk3), t.id, "IFCROOF", mk3);
+topo = bk;
+}
 });
 });
 reg(t.id, "IFCROOF", "Telhado " + (t.tipoTelhado ? t.tipoTelhado.rotulo : "") + " — " + t.nAguas + " água(s) (sintético " + t.id + ")", { area: t.area, areaProjecao: t.areaProjecao, volume: t.volume, comprimento: t.cumeeira, contagem: 1 });
@@ -104985,6 +110547,7 @@ c2.position.set(e.x, y0 - L / 2, e.z); addMesh(c2, f.id, f.ifc, mat);
 });
 reg(f.id, f.ifc, (f.rotuloTipo || "Fundação") + " (sintética " + f.id + ")", { volume: f.volume, area: f.areaBase, comprimento: f.comprimentoPeca || f.comprimentoEstacas || 0, contagem: 1 }, "estrutura");
 });
+if (global.BimCoberturaUI && global.BimCoberturaUI.desenhar) global.BimCoberturaUI.desenhar(THREE, st, mo, addMesh, self, reg);
 }
 };
 function temCampo(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
@@ -118741,6 +124304,40 @@ var g = num(a && a.giro, 0); if (!a || !a.dir || Math.abs(g % 360) < 1e-6) retur
 var d = un3(a.dir), f0 = Math.abs(d.y) > 0.9 ? { x: 0, y: 0, z: 1 } : ladoBase(d), f = girarEm(f0, d, g * Math.PI / 180);
 return [r4(f.x), r4(f.y), r4(f.z)];
 }
+function giroPara(dir, frente) {
+if (!dir || !frente) return 0;
+var d = un3(dir), f0 = Math.abs(d.y) > 0.9 ? { x: 0, y: 0, z: 1 } : ladoBase(d), fr = { x: num(frente.x, 0), y: num(frente.y, 0), z: num(frente.z, 0) };
+var k = dot3(fr, d), fp = { x: fr.x - d.x * k, y: fr.y - d.y * k, z: fr.z - d.z * k };
+if (Math.sqrt(dot3(fp, fp)) < 1e-6) return 0;
+fp = un3(fp);
+var g = Math.atan2(dot3(d, cross3(f0, fp)), dot3(f0, fp)) * 180 / Math.PI, gr = Math.round(((g % 360) + 360) % 360 * 100) / 100;
+return gr >= 360 - 1e-9 ? 0 : gr;
+}
+var SONDA_COMODO = 0.40;
+function dentroPol(p, pol) { var c = false; for (var i = 0, j = pol.length - 1; i < pol.length; j = i++) { var a = pol[i], b = pol[j]; if (((a.z > p.z) !== (b.z > p.z)) && (p.x < (b.x - a.x) * (p.z - a.z) / (b.z - a.z) + a.x)) c = !c; } return c; }
+var PONTO_AGUA = /^hid-(bacia|lavatorio|cuba|chuveiro|pia|tanque-lavar|mictorio|torneira|misturador|ducha|valvula-descarga|caixa-descarga|bebedouro)|^ra-(bacia|lavatorio|chuveiro|tanque)/;
+function pontoDeAgua(f, famAval) {
+var id = String(f && f.famId);
+if (/registro|porta|janela/.test(id)) return false;
+if (PONTO_AGUA.test(id)) return true;
+if (/^hid-|^ra-/.test(id) || typeof famAval !== "function") return false;
+try { var av = famAval(f.famId, f.tipoId, f.inst || {}); return arr(av && av.conectores).some(function (c) { return c && (c.sistema === "agua_fria" || c.sistema === "agua_quente"); }); } catch (e) { return false; }
+}
+function ladoComodo(estado, p, famAval) {
+var w = null;
+paredes(estado).forEach(function (c) {
+var E = eixoParede(c), dx = p.x - c.cx, dz = p.z - c.cz, uu = dx * E.a.x + dz * E.a.z, ww = dx * E.n.x + dz * E.n.z;
+if (Math.abs(uu) > c.comprimento / 2 + 1e-6 || Math.abs(ww) > num(c.espessura, 0) / 2 + 1e-6) return;
+if (!w || Math.abs(ww) < w.ww) w = { c: c, E: E, ww: Math.abs(ww) };
+});
+if (!w) return null;
+var san = arr(estado.familias).filter(function (f) { return pontoDeAgua(f, famAval); });
+var ambs = arr(estado.ambientes).filter(function (A) { return A && A.calc && arr(A.calc.contorno).length >= 3 && san.some(function (f) { return dentroPol(f, A.calc.contorno); }); });
+var off = num(w.c.espessura, 0) / 2 + SONDA_COMODO, lados = [1, -1].map(function (sg) { var q = { x: p.x + w.E.n.x * sg * off, z: p.z + w.E.n.z * sg * off }; return { sg: sg, amb: ambs.some(function (A) { return dentroPol(q, A.calc.contorno); }) }; });
+var sg = lados[0].amb !== lados[1].amb ? (lados[0].amb ? 1 : -1) : 0;
+if (!sg) { var best = null; san.forEach(function (f) { var d = Math.hypot(f.x - p.x, f.z - p.z), v = (f.x - p.x) * w.E.n.x + (f.z - p.z) * w.E.n.z; if (Math.abs(v) > 1e-6 && (!best || d < best.d)) best = { d: d, s: v > 0 ? 1 : -1 }; }); sg = best ? best.s : 0; }
+return sg ? { x: w.E.n.x * sg, y: 0, z: w.E.n.z * sg } : null;
+}
 function inserir(estado, famAval, ops, alvo, cfg) {
 var I = BI(); cfg = cfg || {};
 function falha(m) { return { ok: false, motivo: m }; }
@@ -118774,6 +124371,7 @@ if (Lt < 2 * folga) return falha("O trecho " + t.id + " (" + fmt(Lt, 3) + " m) �
 s = Math.max(folga, Math.min(Lt - folga, s));
 var q = ponto(s);
 var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
+if (/registro/.test(String(chave))) { var fC = ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
 if (giro) op.giro = giro;
 return { ok: true, oQue: k, nome: A.nome, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,
 previa: { centro: q, dir: u, comprimento: Lff, dn: t.dn, material: t.material, sistema: t.sistema, acessorio: chave, variante: tipo, giro: giro } };
@@ -119249,7 +124847,7 @@ PM.mover2d = function (id, ev, p) { var r = m2.apply(this, arguments); try { if 
 var BimInstColocar = {
 VERSAO: 1, GEO: GEO, CONEXOES: CONEXOES, ORDEM_INLINE: ORDEM_INLINE,
 oQue: oQue, nomeInline: nomeInline, tuboSob: tuboSob, encaixeGrade: encaixeGrade, inserir: inserir, girar: girar, poseFamilia: poseFamilia, cotaParede: cotaParede,
-paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, idsUsados: idsUsados, novoId: novoId,
+paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, giroPara: giroPara, ladoComodo: ladoComodo, idsUsados: idsUsados, novoId: novoId,
 montar3d: T.montar3d, tela: T
 };
 global.BimInstColocar = BimInstColocar;
@@ -125318,6 +130916,7 @@ return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-s
 }).join("") : '<p style="font-size:13px">Nenhuma folha ainda. <b>Gerar pranchas</b> monta o jogo do modelo aberto — plantas, cortes e elevações — com o carimbo do escritório.</p>');
 global.UI.modal("Pranchas do projeto", h, [
 { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } },
+{ texto: "Pranchas de arquitetura", onClick: function () { global.UI.fecharModal(); if (global.ArqPranchasUI) global.ArqPranchasUI.abrir(); } },
 { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
 { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },
 { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
@@ -125336,6 +130935,7 @@ filhos.push({ id: "fl:" + id, rotulo: self.nomeFolha(pr, f) + (regs.length > 1 ?
 });
 });
 filhos.unshift({ id: "fl:gerar", rotulo: "Gerar pranchas…", icone: "prancha", fn: function () { self.abrirGerar(); } });
+if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
 filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
 return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
 },
@@ -125374,6 +130974,2267 @@ TIPO_ARRASTE: TIPO_ARRASTE
 };
 global.BimFolhaUI = BimFolhaUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimFolhaUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqgeo.js ==== */
+try {
+(function (global) {
+"use strict";
+var EPS = 1e-9;
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function areaSinal(P) {
+var s = 0, n = P.length;
+for (var i = 0, j = n - 1; i < n; j = i++) s += (P[j][0] + P[i][0]) * (P[j][1] - P[i][1]);
+return s / 2;
+}
+function areaPol(P) { return Math.abs(areaSinal(P)); }
+function perimetro(P) {
+var s = 0;
+for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; s += Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])); }
+return s;
+}
+function bbox(P) {
+var x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+arr(P).forEach(function (p) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; });
+return x0 === Infinity ? null : [x0, z0, x1, z1];
+}
+function centroide(P) {
+var a2 = 0, cx = 0, cz = 0;
+for (var i = 0, j = P.length - 1; i < P.length; j = i++) {
+var f = P[j][0] * P[i][1] - P[i][0] * P[j][1];
+a2 += f; cx += (P[j][0] + P[i][0]) * f; cz += (P[j][1] + P[i][1]) * f;
+}
+if (Math.abs(a2) < EPS) { var b = bbox(P); return b ? [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] : [0, 0]; }
+return [cx / (3 * a2), cz / (3 * a2)];
+}
+function retCaixa(cx, cz, comp, larg, rotY) {
+var c = Math.cos(rotY || 0), s = Math.sin(rotY || 0), hu = comp / 2, hv = larg / 2, out = [];
+[[-hu, -hv], [hu, -hv], [hu, hv], [-hu, hv]].forEach(function (q) {
+out.push([cx + q[0] * c + q[1] * s, cz - q[0] * s + q[1] * c]);
+});
+return out;
+}
+function pontoEmPol(p, P) {
+var dentro = false;
+for (var i = 0, j = P.length - 1; i < P.length; j = i++) {
+var xi = P[i][0], zi = P[i][1], xj = P[j][0], zj = P[j][1];
+if ((zi > p[1]) !== (zj > p[1]) && p[0] < (xj - xi) * (p[1] - zi) / (zj - zi) + xi) dentro = !dentro;
+}
+return dentro;
+}
+function distPontoSeg(p, a, b) {
+var dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz, t = L2 > EPS ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / L2 : 0;
+t = Math.max(0, Math.min(1, t));
+var qx = a[0] + t * dx, qz = a[1] + t * dz;
+return Math.sqrt((p[0] - qx) * (p[0] - qx) + (p[1] - qz) * (p[1] - qz));
+}
+function interSegSeg(a, b, c, d) {
+var r0 = b[0] - a[0], r1 = b[1] - a[1], s0 = d[0] - c[0], s1 = d[1] - c[1], den = r0 * s1 - r1 * s0;
+if (Math.abs(den) < EPS) return null;
+var t = ((c[0] - a[0]) * s1 - (c[1] - a[1]) * s0) / den, u = ((c[0] - a[0]) * r1 - (c[1] - a[1]) * r0) / den;
+if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+return [a[0] + t * r0, a[1] + t * r1, t, u];
+}
+function distPolSeg(P, a, b) {
+var m = Infinity, i, q;
+for (i = 0; i < P.length; i++) {
+var p1 = P[i], p2 = P[(i + 1) % P.length];
+if (interSegSeg(p1, p2, a, b)) return 0;
+q = distPontoSeg(p1, a, b); if (q < m) m = q;
+q = distPontoSeg(a, p1, p2); if (q < m) m = q;
+q = distPontoSeg(b, p1, p2); if (q < m) m = q;
+}
+return m;
+}
+function recortarSeg(a, b, P) {
+var ts = [0, 1], i;
+for (i = 0; i < P.length; i++) { var x = interSegSeg(a, b, P[i], P[(i + 1) % P.length]); if (x) ts.push(x[2]); }
+ts.sort(function (p, q) { return p - q; });
+var out = [];
+for (i = 0; i + 1 < ts.length; i++) {
+if (ts[i + 1] - ts[i] < 1e-9) continue;
+var tm = (ts[i] + ts[i + 1]) / 2;
+if (pontoEmPol([a[0] + tm * (b[0] - a[0]), a[1] + tm * (b[1] - a[1])], P)) {
+if (out.length && Math.abs(out[out.length - 1][1] - ts[i]) < 1e-9) out[out.length - 1][1] = ts[i + 1]; else out.push([ts[i], ts[i + 1]]);
+}
+}
+return out;
+}
+function uniaoArea(lista) {
+var polys = arr(lista).filter(function (P) { return P && P.length >= 3; });
+if (!polys.length) return 0;
+var edges = [], xs = [];
+polys.forEach(function (P, ip) {
+for (var i = 0; i < P.length; i++) {
+var a = P[i], b = P[(i + 1) % P.length];
+xs.push(a[0]);
+if (Math.abs(b[0] - a[0]) < EPS) continue;
+edges.push(a[0] < b[0] ? { p: ip, x0: a[0], z0: a[1], x1: b[0], z1: b[1] } : { p: ip, x0: b[0], z0: b[1], x1: a[0], z1: a[1] });
+}
+});
+var i, j;
+for (i = 0; i < edges.length; i++) for (j = i + 1; j < edges.length; j++) {
+var e = edges[i], f = edges[j];
+if (e.x1 <= f.x0 + EPS || f.x1 <= e.x0 + EPS) continue;
+var x = interSegSeg([e.x0, e.z0], [e.x1, e.z1], [f.x0, f.z0], [f.x1, f.z1]);
+if (x) xs.push(x[0]);
+}
+xs.sort(function (p, q) { return p - q; });
+var area = 0;
+for (var k = 0; k + 1 < xs.length; k++) {
+var xa = xs[k], xb = xs[k + 1];
+if (xb - xa < 1e-9) continue;
+var xm = (xa + xb) / 2, porPol = {};
+edges.forEach(function (ed) {
+if (ed.x0 < xm && ed.x1 > xm) {
+var z = ed.z0 + (ed.z1 - ed.z0) * (xm - ed.x0) / (ed.x1 - ed.x0);
+(porPol[ed.p] = porPol[ed.p] || []).push(z);
+}
+});
+var iv = [];
+Object.keys(porPol).forEach(function (p) {
+var zs = porPol[p].sort(function (q, r) { return q - r; });
+for (var m = 0; m + 1 < zs.length; m += 2) iv.push([zs[m], zs[m + 1]]);
+});
+iv.sort(function (p, q) { return p[0] - q[0]; });
+var tot = 0, fim = -Infinity;
+iv.forEach(function (v) {
+if (v[1] <= fim) return;
+tot += v[1] - Math.max(v[0], fim); fim = v[1];
+});
+area += tot * (xb - xa);
+}
+return area;
+}
+function intersecaoArea(A, B) {
+return Math.max(0, uniaoArea(A) + uniaoArea(B) - uniaoArea(arr(A).concat(arr(B))));
+}
+function diferencaArea(A, B) {
+return Math.max(0, uniaoArea(A) - intersecaoArea(A, B));
+}
+function hachuraLinhas(P, passo, ang) {
+var b = bbox(P); if (!b || !(passo > 0)) return [];
+var a = (ang == null ? 45 : ang) * Math.PI / 180, dx = Math.cos(a), dz = -Math.sin(a), nx = -dz, nz = dx;
+var cs = P.map(function (p) { return p[0] * nx + p[1] * nz; }), c0 = Math.min.apply(null, cs), c1 = Math.max.apply(null, cs), out = [];
+var tmax = Math.sqrt((b[2] - b[0]) * (b[2] - b[0]) + (b[3] - b[1]) * (b[3] - b[1])) + 1;
+var ctr = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+for (var c = Math.ceil(c0 / passo) * passo; c <= c1 + 1e-9; c += passo) {
+var cc = ctr[0] * nx + ctr[1] * nz, p0 = [ctr[0] + (c - cc) * nx, ctr[1] + (c - cc) * nz];
+var A = [p0[0] - dx * tmax, p0[1] - dz * tmax], B = [p0[0] + dx * tmax, p0[1] + dz * tmax];
+recortarSeg(A, B, P).forEach(function (t) {
+out.push([A[0] + (B[0] - A[0]) * t[0], A[1] + (B[1] - A[1]) * t[0], A[0] + (B[0] - A[0]) * t[1], A[1] + (B[1] - A[1]) * t[1]]);
+});
+}
+return out;
+}
+var ArqGeo = {
+EPS: EPS, fin: fin, areaSinal: areaSinal, areaPol: areaPol, perimetro: perimetro, bbox: bbox, centroide: centroide, retCaixa: retCaixa,
+pontoEmPol: pontoEmPol, distPontoSeg: distPontoSeg, interSegSeg: interSegSeg, distPolSeg: distPolSeg, recortarSeg: recortarSeg,
+uniaoArea: uniaoArea, intersecaoArea: intersecaoArea, diferencaArea: diferencaArea, hachuraLinhas: hachuraLinhas
+};
+global.ArqGeo = ArqGeo;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqGeo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqmodelo.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
+function BF() { return dep("BimFases", "./bimfases.js"); }
+function FR() { return dep("FamiliasRA", "./familiasra.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+var FASES_PADRAO = ["Existente", "Construção nova"];
+var TOL_PAV = 0.3, TOL_TERREO = 0.3;
+var DIM_PADRAO = { porta: { largura: 0.8, altura: 2.1, peitoril: 0 }, janela: { largura: 1.2, altura: 1.0, peitoril: 1.1 } };
+function categoriaFam(famId) {
+var f = null, reg = FR();
+try { f = reg && reg.obter ? reg.obter(famId) : null; } catch (e) { f = null; }
+var c = f && f.categoria ? txt(f.categoria) : "";
+if (c) return c;
+var id = txt(famId).toLowerCase();
+if (/porta/.test(id)) return "porta";
+if (/janela/.test(id)) return "janela";
+if (/luminaria|lumin/.test(id)) return "luminaria";
+return "generico";
+}
+function nomeFam(famId, av) {
+var f = null, reg = FR();
+try { f = reg && reg.obter ? reg.obter(famId) : null; } catch (e) { f = null; }
+return f && f.nome ? txt(f.nome) : (av && av.nome ? txt(av.nome) : txt(famId));
+}
+function ehMuro(c) {
+if (c && c.muro === true) return true;
+return /muro/i.test([c && c.tipoParede, c && c.nome, c && c.marca, c && c.comentarios, c && c.categoria].map(txt).join(" "));
+}
+function statusFn(est, op) {
+var B = BF(), lista = B ? B.lista(est) : FASES_PADRAO.slice(), fase = txt(op && op.fase).trim();
+if (!fase || lista.indexOf(fase) < 0) fase = B ? B.faseNova(lista) : lista[lista.length - 1];
+var faseado = B ? B.faseado(est) : false;
+return { lista: lista, fase: fase, faseado: faseado, de: function (el) { return B ? B.statusDe(el, fase, lista) : "novo"; } };
+}
+function pegadaFamilia(av, f) {
+var G = GEO(), u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+arr(av && av.solidos).forEach(function (s) {
+var a, b, c, d;
+if (s.forma === "caixa") { a = num(s.x, 0) - num(s.dx, 0) / 2; b = num(s.x, 0) + num(s.dx, 0) / 2; c = num(s.z, 0) - num(s.dz, 0) / 2; d = num(s.z, 0) + num(s.dz, 0) / 2; }
+else if (s.forma === "cilindro" && s.eixo === "y") { a = num(s.x, 0) - num(s.raio, 0); b = num(s.x, 0) + num(s.raio, 0); c = num(s.z, 0) - num(s.raio, 0); d = num(s.z, 0) + num(s.raio, 0); }
+else if (s.forma === "cilindro") { var h = num(s.altura, 0) / 2, r = num(s.raio, 0); if (s.eixo === "x") { a = num(s.x, 0) - h; b = num(s.x, 0) + h; c = num(s.z, 0) - r; d = num(s.z, 0) + r; } else { a = num(s.x, 0) - r; b = num(s.x, 0) + r; c = num(s.z, 0) - h; d = num(s.z, 0) + h; } }
+else return;
+if (a < u0) u0 = a; if (b > u1) u1 = b; if (c < v0) v0 = c; if (d > v1) v1 = d;
+});
+if (u0 === Infinity) return null;
+var cs = Math.cos(num(f.rotY, 0)), sn = Math.sin(num(f.rotY, 0)), fx = num(f.x, 0), fz = num(f.z, 0);
+return [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(function (q) { return [r4(fx + q[0] * cs + q[1] * sn), r4(fz - q[0] * sn + q[1] * cs)]; });
+}
+function agruparBases(valores, tol) {
+var v = valores.slice().sort(function (a, b) { return a - b; }), out = [], g = [];
+v.forEach(function (x) { if (g.length && x - g[g.length - 1] > tol) { out.push(g.reduce(function (s, q) { return s + q; }, 0) / g.length); g = []; } g.push(x); });
+if (g.length) out.push(g.reduce(function (s, q) { return s + q; }, 0) / g.length);
+return out;
+}
+function pavDe(pavs, cota) {
+var k = 0;
+for (var i = 0; i < pavs.length; i++) if (cota >= pavs[i].cota - TOL_PAV) k = i;
+return k;
+}
+function extrair(modelo, opcoes) {
+var G = GEO(), est = (modelo && modelo.estado) || {}, aval = modelo && modelo.avaliarFam, op = opcoes || {}, avisos = [];
+var S = statusFn(est, op), out = { lista: S.lista, fase: S.fase, faseado: S.faseado, avisos: avisos };
+var VIVOS = { novo: 1, existente: 1, demolido: 1 };
+if (!S.faseado) avisos.push("O modelo não tem fases (existente / demolir / construir): tudo sai como A CONSTRUIR. Marque a fase das peças para a convenção de reforma.");
+out.paredes = []; out.pilares = []; out.lajes = [];
+arr(est.caixas).forEach(function (c) {
+if (!c || c.id == null) return;
+var st = S.de(c); if (!VIVOS[st]) return;
+var base = num(c.cy, 0) - num(c.altura, 0) / 2;
+if (c.tipo === "parede" && num(c.comprimento, 0) > 0 && num(c.espessura, 0) > 0) {
+if (c.arco || c.curva) avisos.push("Parede " + c.id + " é curva: desenhada pela corda.");
+out.paredes.push({ id: String(c.id), pts: G.retCaixa(num(c.cx, 0), num(c.cz, 0), c.comprimento, c.espessura, num(c.rotY, 0)), cx: num(c.cx, 0), cz: num(c.cz, 0), comprimento: c.comprimento, espessura: c.espessura,
+rotY: num(c.rotY, 0), base: r4(base), topo: r4(base + num(c.altura, 0)), altura: num(c.altura, 0), status: st, muro: ehMuro(c), marca: txt(c.marca), tipoParede: txt(c.tipoParede) });
+} else if (c.tipo === "pilar") {
+out.pilares.push({ id: String(c.id), pts: G.retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0.2), num(c.espessura, 0.2), num(c.rotY, 0)), base: r4(base), topo: r4(base + num(c.altura, 0)), status: st });
+} else if (c.tipo === "laje") {
+var pts = arr(c.contorno).length >= 3 ? c.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }) : G.retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0), num(c.espessura, 0), 0);
+out.lajes.push({ id: String(c.id), pts: pts, area: G.areaPol(pts), topo: r4(num(c.cy, 0) + num(c.altura, 0) / 2), espessura: num(c.altura, 0), status: st });
+}
+});
+var pavs = arr(op.pavimentos).filter(function (p) { return p && isFinite(+p.cota); }).map(function (p) { return { nome: txt(p.nome) || "Pavimento", cota: +p.cota }; });
+if (!pavs.length) {
+var bases = agruparBases(out.paredes.filter(function (w) { return !w.muro; }).map(function (w) { return w.base; }), TOL_PAV);
+if (!bases.length) bases = [0];
+pavs = bases.map(function (b, i) { return { nome: i === 0 ? "Térreo" : "Pavimento " + (i + 1), cota: r4(b) }; });
+}
+pavs.sort(function (a, b) { return a.cota - b.cota; });
+out.pavimentos = pavs;
+out.paredes.forEach(function (w) { w.pav = pavDe(pavs, w.base); });
+out.pilares.forEach(function (w) { w.pav = pavDe(pavs, w.base); });
+var basesPav = pavs.map(function (p) { return p.cota; });
+out.lajes.forEach(function (l) {
+var piso = l.topo <= TOL_TERREO + 1e-9 || basesPav.some(function (b) { return Math.abs(l.topo - b) <= TOL_PAV; });
+l.piso = piso; l.pav = pavDe(pavs, l.topo);
+});
+out.ambientes = [];
+arr(est.ambientes).forEach(function (a) {
+var c = a && a.calc;
+if (!c || c.estado !== "delimitado" || arr(c.contorno).length < 3) return;
+var pts = c.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), cen = G.centroide(pts), base = num(c.base, 0), st = null;
+if (a.faseCriada || a.faseDemolida) st = S.de(a);
+if (!st) {
+out.lajes.forEach(function (l) { if (!st && l.piso && Math.abs(l.topo - base) <= 0.35 && G.pontoEmPol(cen, l.pts)) st = l.status; });
+}
+if (!st) st = S.de(a);
+if (!VIVOS[st]) return;
+var forroCota = null;
+arr(est.forros).forEach(function (f) { if (f && f.ambienteId === a.id && isFinite(+f.cota)) forroCota = +f.cota; });
+var pe = forroCota != null ? forroCota - base : num(c.altura, num(c.topo, base) - base);
+out.ambientes.push({ id: String(a.id), nome: txt(a.nome) || "Ambiente", numero: txt(a.numero || c.numeroAuto), pts: pts, area: num(c.area, G.areaPol(pts)), perimetro: num(c.perimetro, G.perimetro(pts)), cx: cen[0], cz: cen[1],
+base: base, pe: r4(pe), piso: txt(a.acabPiso), parede: txt(a.acabParede), forro: txt(a.acabForro), rodape: txt(a.acabBase), params: a.params || {}, status: st, pav: pavDe(pavs, base), bbox: G.bbox(pts) });
+});
+out.vaos = []; out.moveis = []; out.luminarias = [];
+var parPorId = {}; out.paredes.forEach(function (w) { parPorId[w.id] = w; });
+arr(est.familias).forEach(function (f) {
+if (!f || f.id == null) return;
+var st = S.de(f); if (!VIVOS[st]) return;
+var cat = categoriaFam(f.famId), av = null;
+try { av = typeof aval === "function" ? aval(f.famId, f.tipoId, f.inst) : null; } catch (e) { av = null; }
+if (f.host && (cat === "porta" || cat === "janela")) {
+var par = parPorId[String(f.host.id)];
+if (!par) { avisos.push("Vão " + f.id + ": a parede " + f.host.id + " não está na fase de agora."); return; }
+var ab = av && av.abertura, dp = DIM_PADRAO[cat], padrao = !(ab && ab.largura > 0);
+var larg = padrao ? dp.largura : ab.largura, alt = padrao ? dp.altura : ab.altura, peit = padrao ? dp.peitoril : num(ab.peitoril, 0);
+if (padrao) avisos.push("Vão " + f.id + " (" + f.famId + "): sem dimensão avaliada, usei " + larg + " x " + alt + " m (conferir).");
+var ins = f.inst || {}, ab2 = ins.Abre_para_fora === true || ins.Abre_para_fora === "true";
+out.vaos.push({ id: String(f.id), tipo: cat, famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), parede: String(f.host.id), x: num(f.x, 0), z: num(f.z, 0), rotY: num(f.rotY, par.rotY),
+largura: r4(larg), altura: r4(alt), peitoril: r4(peit), dimPadrao: padrao, abreFora: ab2, status: st, pav: par.pav, material: txt(ins.Material_folha || ins.Material_marco || ""), marca: txt(f.marca) });
+return;
+}
+var pts = pegadaFamilia(av, f);
+if (cat === "luminaria") { out.luminarias.push({ id: String(f.id), x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), nome: txt(f.famId), status: st, pav: pavDe(pavs, num(f.y, 0)) }); return; }
+if (cat === "pilar" || cat === "viga" || cat === "dispositivo_eletrico" || cat === "equipamento_eletrico") return;
+if (!pts) return;
+out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
+solidos: arr(av && av.solidos).slice(0, 40).map(function (s) { return { forma: s.forma, x: s.x, y: s.y, z: s.z, dx: s.dx, dy: s.dy, dz: s.dz, raio: s.raio, altura: s.altura, eixo: s.eixo, material: s.material, cor: s.cor }; }) });
+});
+var cods = { porta: [], janela: [] }, quad = {};
+out.vaos.forEach(function (v) {
+var chave = [v.famId, v.tipoId, v.largura, v.altura, v.peitoril].join("|"), L = cods[v.tipo];
+if (L.indexOf(chave) < 0) L.push(chave);
+v.cod = (v.tipo === "porta" ? "P" : "J") + (L.indexOf(chave) + 1);
+var q = quad[v.cod] || (quad[v.cod] = { cod: v.cod, tipo: v.tipo, famId: v.famId, nome: v.nome, largura: v.largura, altura: v.altura, peitoril: v.peitoril, material: v.material, dimPadrao: v.dimPadrao, qtd: { novo: 0, existente: 0, demolido: 0 }, ids: [] });
+q.qtd[v.status] = (q.qtd[v.status] || 0) + 1; q.ids.push(v.id);
+});
+out.esquadrias = Object.keys(quad).sort(function (a, b) { return a.charAt(0) === b.charAt(0) ? num(a.slice(1), 0) - num(b.slice(1), 0) : (a.charAt(0) < b.charAt(0) ? 1 : -1); }).map(function (k) { return quad[k]; });
+out.telhados = arr(est.telhados).filter(function (t) { return t && t.ok !== false && arr(t.contorno).length >= 3; }).map(function (t) {
+var st = S.de(t); if (!VIVOS[st]) return null;
+return { id: String(t.id), pts: t.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), beiral: num(t.beiral, 0), inclinacao: num(t.inclinacao, 0), area: num(t.area, 0), areaProjecao: num(t.areaProjecao, 0), cumeeira: num(t.cumeeira, 0),
+pBeiral: (function () { var P = arr(t.arestasCalc).map(function (a) { return a && a.beiral && a.beiral.a ? [num(a.beiral.a.x, 0), num(a.beiral.a.z, 0)] : null; }); return P.length >= 3 && P.every(function (q) { return !!q; }) ? P : null; })(),
+espigao: num(t.espigao, 0), rincao: num(t.rincao, 0), nAguas: num(t.nAguas, 0), cotaCumeeira: num(t.cotaCumeeira, 0), cotaApoio: num(t.cotaApoio, 0), tipo: txt(t.tipoTelhado && t.tipoTelhado.rotulo), aguas: arr(t.aguasCalc), arestas: arr(t.arestasCalc), status: st };
+}).filter(function (t) { return !!t; });
+out.bordas = arr(est.bordas);
+out.forros = arr(est.forros).filter(function (f) { return f && f.ok !== false && arr(f.contorno).length >= 3; }).map(function (f) {
+var st = S.de(f); if (!VIVOS[st]) return null;
+return { id: String(f.id), pts: f.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), cota: num(f.cota, 0), tipo: txt(f.tipoForro && f.tipoForro.rotulo), tipoId: txt(f.tipoId), area: num(f.area, 0), ambienteId: txt(f.ambienteId), inclinacao: num(f.inclinacao, 0), sanca: f.sanca || null, status: st };
+}).filter(function (f) { return !!f; });
+var T = est.terreno || {}, dv = arr(T.divisas).filter(function (d) { return d && d.ok !== false && arr(d.contorno).length >= 3; })[0] || null;
+out.terreno = {
+divisa: dv ? { id: String(dv.id), nome: txt(dv.nome), pts: dv.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), area: num(dv.area, 0), perimetro: num(dv.perimetro, 0), segmentos: arr(dv.segmentos) } : null,
+subregioes: arr(T.subregioes).filter(function (s) { return s && arr(s.contorno).length >= 3; }).map(function (s) { return { id: String(s.id), nome: txt(s.nome), material: txt(s.material), pts: s.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }) }; }),
+componentes: arr(T.componentes).map(function (c) { return { id: String(c.id), tipo: txt(c.tipoComp), rotulo: txt(c.rotulo), x: num(c.x, 0), z: num(c.z, 0), altura: num(c.alturaEf || c.altura, 0) }; }),
+norte: T.implantacao && isFinite(+T.implantacao.anguloNorte) ? +T.implantacao.anguloNorte : 0
+};
+var xs = [], zs = [];
+function add(P) { arr(P).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); }
+out.paredes.forEach(function (w) { if (!w.muro) add(w.pts); }); out.lajes.forEach(function (l) { add(l.pts); }); out.telhados.forEach(function (t) { add(t.pts); });
+out.caixa = xs.length ? [Math.min.apply(null, xs), Math.min.apply(null, zs), Math.max.apply(null, xs), Math.max.apply(null, zs)] : [0, 0, 1, 1];
+return out;
+}
+var ArqModelo = { extrair: extrair, categoriaFam: categoriaFam, ehMuro: ehMuro, pegadaFamilia: pegadaFamilia, DIM_PADRAO: DIM_PADRAO, TOL_PAV: TOL_PAV, TOL_TERREO: TOL_TERREO };
+global.ArqModelo = ArqModelo;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqModelo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqindices.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function r2(v) { return Math.round(v * 100) / 100; }
+var MUNICIPIOS = {
+uberlandia: { nome: "Uberlândia/MG — LC 812/2026 (exemplo)", ocupacaoMax: 60, permeavelMin: 20, aproveitamentoMax: null, conferir: true,
+fonte: "Valores de exemplo informados pela RA (taxa de ocupação ≤ 60 %, permeabilidade ≥ 20 %); a lei não foi lida aqui: CONFERIR NA LEI e no zoneamento do lote." }
+};
+var LIMITES_VAZIOS = { nome: "", ocupacaoMax: null, permeavelMin: null, aproveitamentoMax: null, conferir: false, fonte: "Informe os limites do município e do zoneamento do lote." };
+var PERMEAVEL_RE = /(grama|gramado|jardim|canteiro|terra|perme|drenante|vegeta|horta|pomar|solo)/i;
+var DECK_VAZADO_RE = /(deck\s*vazado|vazado)/i;
+var MATERIAL_PERM = /(grama|gramado|jardim|canteiro|terra|solo|vegeta|brita drenante|seixo)/i;
+function limitesDe(chave) {
+if (chave && typeof chave === "object") {
+return { nome: txt(chave.nome), ocupacaoMax: num(chave.ocupacaoMax, null), permeavelMin: num(chave.permeavelMin, null), aproveitamentoMax: num(chave.aproveitamentoMax, null), conferir: !!chave.conferir, fonte: txt(chave.fonte) };
+}
+var m = MUNICIPIOS[txt(chave).toLowerCase()];
+return m ? limitesDe(m) : limitesDe(LIMITES_VAZIOS);
+}
+function paraPts(c) { return arr(c).map(function (q) { return Array.isArray(q) ? [+q[0], +q[1]] : [+q.x, +q.z]; }); }
+function areaMenos(G, A, L, B) {
+var uA = G.uniaoArea(A), uL = G.uniaoArea(L), uB = G.uniaoArea(B);
+var AL = uA + uL - G.uniaoArea(A.concat(L)), AB = uA + uB - G.uniaoArea(A.concat(B)), LB = uL + uB - G.uniaoArea(L.concat(B));
+var tri = G.uniaoArea(A.concat(L, B)) - uA - uL - uB + AL + AB + LB;
+return Math.max(0, AL - tri);
+}
+function nomeLado(i, lados) { return lados.nomes[i] || ("divisa " + (i + 1)); }
+function classificarLados(pts, frente) {
+var n = pts.length, med = [], nomes = [], i;
+for (i = 0; i < n; i++) { var a = pts[i], b = pts[(i + 1) % n]; med.push((a[1] + b[1]) / 2); }
+var f = isFinite(frente) && frente >= 0 && frente < n ? frente : med.indexOf(Math.max.apply(null, med));
+var fa = pts[f], fb = pts[(f + 1) % n], fx = fb[0] - fa[0], fz = fb[1] - fa[1], fL = Math.sqrt(fx * fx + fz * fz) || 1, fundo = -1, dm = -1;
+for (i = 0; i < n; i++) {
+if (i === f) continue;
+var a2 = pts[i], b2 = pts[(i + 1) % n], dx = b2[0] - a2[0], dz = b2[1] - a2[1], L = Math.sqrt(dx * dx + dz * dz) || 1;
+var par = Math.abs((dx * fx + dz * fz) / (L * fL));
+var dist = Math.abs(((a2[0] + b2[0]) / 2 - fa[0]) * (-fz / fL) + ((a2[1] + b2[1]) / 2 - fa[1]) * (fx / fL));
+if (par > 0.9 && dist > dm) { dm = dist; fundo = i; }
+}
+for (i = 0; i < n; i++) nomes.push(i === f ? "frente" : (i === fundo ? "fundos" : "lateral"));
+var cont = { esq: 0, dir: 0 };
+for (i = 0; i < n; i++) if (nomes[i] === "lateral") {
+var a3 = pts[i], b3 = pts[(i + 1) % n], mx = (a3[0] + b3[0]) / 2, cx = 0, k;
+for (k = 0; k < n; k++) cx += pts[k][0]; cx /= n;
+nomes[i] = mx < cx ? "lateral esquerda" : "lateral direita";
+}
+return { frente: f, fundos: fundo, nomes: nomes };
+}
+function calcular(dados, opcoes) {
+var G = GEO(), op = opcoes || {}, d = dados || {}, avisos = [];
+var lim = limitesDe(op.limites || {}), T = d.terreno || {}, dv = T.divisa;
+var lote = null, fonte = "";
+if (arr(op.contornoLote).length >= 3) { lote = paraPts(op.contornoLote); fonte = "contorno informado"; }
+else if (dv && arr(dv.pts).length >= 3) { lote = dv.pts; fonte = "divisa do terreno (" + (dv.nome || dv.id) + ")"; }
+var areaLote = lote ? G.areaPol(lote) : null;
+if (num(op.areaTerreno, 0) > 0) { areaLote = +op.areaTerreno; fonte = lote ? fonte + "; área informada" : "área informada"; }
+if (!(areaLote > 0)) avisos.push("Sem a divisa do lote (op divisa do terreno) nem a área do terreno: as taxas e os recuos não são calculados. Informe o contorno do lote.");
+function st(s) { return function (x) { return x.status === s; }; }
+function pegadas(filtro, comLajeTodas) {
+var L = [];
+arr(d.paredes).filter(function (w) { return !w.muro; }).filter(filtro).forEach(function (w) { L.push({ pts: w.pts, pav: w.pav }); });
+arr(d.pilares).filter(filtro).forEach(function (w) { L.push({ pts: w.pts, pav: w.pav }); });
+arr(d.lajes).filter(filtro).forEach(function (l) { if (l.piso || comLajeTodas) L.push({ pts: l.pts, pav: l.pav }); });
+arr(d.ambientes).filter(filtro).filter(function (a) { return !ambPerm(a); }).forEach(function (a) { L.push({ pts: a.pts, pav: a.pav }); });
+return L;
+}
+function ambPerm(a) {
+var par = a.params || {};
+if (par.permeavel === true || par.permeavel === "true" || par.permeavel === 1 || par.permeavel === "1") return true;
+return PERMEAVEL_RE.test(txt(a.piso)) || PERMEAVEL_RE.test(txt(a.nome)) || DECK_VAZADO_RE.test(txt(a.piso));
+}
+var nPav = Math.max(1, arr(d.pavimentos).length);
+function areaPorPav(lista) {
+var tot = 0, por = [];
+for (var p = 0; p < nPav; p++) {
+var a = G.uniaoArea(lista.filter(function (x) { return (x.pav || 0) === p; }).map(function (x) { return x.pts; }));
+por.push(a); tot += a;
+}
+return { total: tot, por: por };
+}
+var existente = pegadas(st("existente")), demolir = pegadas(st("demolido")), construir = pegadas(st("novo"));
+var aEx = areaPorPav(existente), aDe = areaPorPav(demolir), aCo = areaPorPav(construir), aTo = areaPorPav(existente.concat(construir));
+var areas = { existente: r2(aEx.total), demolir: r2(aDe.total), construir: r2(aCo.total), total: r2(aTo.total) };
+var porPavimento = [];
+for (var p = 0; p < nPav; p++) porPavimento.push({ pav: p, nome: (arr(d.pavimentos)[p] || {}).nome || "Térreo", existente: r2(aEx.por[p]), demolir: r2(aDe.por[p]), construir: r2(aCo.por[p]), total: r2(aTo.por[p]) });
+function projecao(filtro, comTelhado) {
+var L = pegadas(filtro, true).map(function (x) { return x.pts; });
+if (comTelhado) arr(d.telhados).filter(filtro).forEach(function (t) { L.push(op.beiralNaProjecao && t.pBeiral ? t.pBeiral : t.pts); });
+return L;
+}
+var final = function (x) { return x.status === "existente" || x.status === "novo"; };
+var antes = function (x) { return x.status === "existente" || x.status === "demolido"; };
+var projF = projecao(final, true), projA = projecao(antes, true), projE = projecao(st("existente"), true);
+var aProjF = G.uniaoArea(projF), aProjA = G.uniaoArea(projA), aProjE = G.uniaoArea(projE);
+var fora = lote ? Math.max(0, aProjF - (aProjF + G.uniaoArea([lote]) - G.uniaoArea(projF.concat([lote])))) : 0;
+if (fora > 0.005) avisos.push("Parte da edificação (" + r2(fora).toString().replace(".", ",") + " m²) está FORA da divisa do lote: confira o contorno do lote e as paredes.");
+if (op.beiralNaProjecao !== true && arr(d.telhados).some(function (t) { return t.beiral > 0; })) avisos.push("A projeção usa o contorno do telhado SEM o beiral; se a lei do município conta o beiral, ligue 'beiralNaProjecao'.");
+var regioes = [];
+arr(T.subregioes).forEach(function (s) {
+if (MATERIAL_PERM.test(txt(s.material)) || PERMEAVEL_RE.test(txt(s.nome))) regioes.push({ rotulo: s.nome || ("Sub-região " + s.id) + " (" + (s.material || "?") + ")", pts: s.pts, fator: 1, origem: "terreno" });
+});
+arr(d.ambientes).forEach(function (a) {
+if (!ambPerm(a)) return;
+var deck = DECK_VAZADO_RE.test(txt(a.piso));
+regioes.push({ rotulo: a.nome + (a.piso ? " (" + a.piso + ")" : ""), pts: a.pts, fator: deck ? num(op.fatores && op.fatores.deckVazado, 1) : 1, origem: "ambiente", deck: deck });
+});
+arr(op.permeaveis).forEach(function (r) {
+var pts = arr(r.pts).length ? paraPts(r.pts) : null;
+if (!pts && r.ambienteId != null) arr(d.ambientes).forEach(function (a) { if (a.id === String(r.ambienteId)) pts = a.pts; });
+if (!pts && r.subregiaoId != null) arr(T.subregioes).forEach(function (s) { if (s.id === String(r.subregiaoId)) pts = s.pts; });
+if (pts && pts.length >= 3) regioes.push({ rotulo: txt(r.rotulo) || "Região permeável", pts: pts, fator: num(r.fator, 1), origem: "informada" });
+});
+if (regioes.some(function (r) { return r.deck; })) avisos.push("Deck vazado contado como permeável com fator " + String(num(op.fatores && op.fatores.deckVazado, 1)).replace(".", ",") + ": conferir na lei do município.");
+var permArea = 0, permReg = [];
+regioes.forEach(function (r) {
+var a = lote ? areaMenos(G, [r.pts], [lote], projF) : 0;
+permReg.push({ rotulo: r.rotulo, area: r2(a), fator: r.fator, origem: r.origem, util: r2(a * r.fator) });
+permArea += a * r.fator;
+});
+if (regioes.length > 1) {
+var soma = 0; regioes.forEach(function (r) { soma += G.areaPol(r.pts); });
+if (soma - G.uniaoArea(regioes.map(function (r) { return r.pts; })) > 0.01) avisos.push("Há regiões permeáveis que se sobrepõem: a área permeável pode estar contada em dobro.");
+}
+var out = { ok: true, terreno: { area: areaLote != null ? r2(areaLote) : null, fonte: fonte, contorno: lote }, areas: areas, porPavimento: porPavimento,
+projecao: { existente: r2(aProjE), antes: r2(aProjA), depois: r2(aProjF), foraDoLote: r2(fora) }, permeavel: { area: r2(permArea), regioes: permReg },
+limites: lim, avisos: avisos, ocupacaoPct: null, permeavelPct: null, aproveitamento: null, antes: { ocupacaoPct: null, aproveitamento: null }, recuos: [], verificacao: [] };
+if (areaLote > 0) {
+out.ocupacaoPct = r2(aProjF / areaLote * 100); out.permeavelPct = r2(permArea / areaLote * 100); out.aproveitamento = r2(aTo.total / areaLote);
+out.antes = { ocupacaoPct: r2(aProjA / areaLote * 100), aproveitamento: r2((aEx.total + aDe.total) / areaLote) };
+}
+if (lote) {
+var ed = pegadas(final, true).map(function (x) { return x.pts; }), tel = arr(d.telhados).filter(final).map(function (t) { return t.pBeiral || t.pts; });
+var cls = classificarLados(lote, op.frente), n = lote.length;
+for (var i = 0; i < n; i++) {
+var a = lote[i], b = lote[(i + 1) % n], dxl = b[0] - a[0], dzl = b[1] - a[1], m = Infinity, mt = Infinity;
+ed.forEach(function (P) { var q = G.distPolSeg(P, a, b); if (q < m) m = q; });
+tel.forEach(function (P) { var q = G.distPolSeg(P, a, b); if (q < mt) mt = q; });
+out.recuos.push({ lado: i, nome: cls.nomes[i], de: a, para: b, comprimento: r2(Math.sqrt(dxl * dxl + dzl * dzl)), recuo: m === Infinity ? null : r2(m), recuoCobertura: mt === Infinity ? null : r2(mt) });
+}
+out.ladoFrente = cls.frente; out.ladoFundos = cls.fundos;
+}
+function ver(indice, rotulo, valor, limite, op2, un) {
+var v = { indice: indice, rotulo: rotulo, valor: valor, limite: limite, op: op2, un: un, atende: null, texto: "" };
+if (limite == null) { v.texto = "informe o limite"; }
+else if (valor == null) { v.texto = "sem cálculo"; }
+else { v.atende = op2 === "<=" ? valor <= limite + 1e-9 : valor >= limite - 1e-9; v.texto = v.atende ? "ATENDE" : "NÃO ATENDE"; }
+return v;
+}
+out.verificacao.push(ver("ocupacao", "Taxa de ocupação", out.ocupacaoPct, lim.ocupacaoMax, "<=", "%"));
+out.verificacao.push(ver("permeavel", "Taxa de permeabilidade", out.permeavelPct, lim.permeavelMin, ">=", "%"));
+out.verificacao.push(ver("aproveitamento", "Coeficiente de aproveitamento", out.aproveitamento, lim.aproveitamentoMax, "<=", ""));
+if (!lim.ocupacaoMax && !lim.permeavelMin && !lim.aproveitamentoMax) avisos.push("Limites do município não informados: os índices saem sem a comparação ATENDE / NÃO ATENDE.");
+if (lim.conferir) avisos.push("Limites de EXEMPLO (" + (lim.nome || "município") + "): conferir na lei e no zoneamento do lote antes de protocolar.");
+return out;
+}
+var ArqIndices = { calcular: calcular, limitesDe: limitesDe, MUNICIPIOS: MUNICIPIOS, LIMITES_VAZIOS: LIMITES_VAZIOS, classificarLados: classificarLados, PERMEAVEL_RE: PERMEAVEL_RE, _areaMenos: areaMenos };
+global.ArqIndices = ArqIndices;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqIndices;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqdesenho.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
+function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
+function D2() { return dep("Desenho2D", "./desenho2d.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function n(v) { return (typeof v === "number" && isFinite(v)) ? String(Math.round(v * 1000) / 1000) : "NaN"; }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function hip(x, y) { return Math.sqrt(x * x + y * y); }
+var CONV_RESERVA = {
+novo: { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
+demolido: { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
+existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+};
+function conv() { var d = D2(); return (d && d.CONV_REFORMA) || CONV_RESERVA; }
+var K = {
+pena: { corte: 0.5, vista: 0.25, fina: 0.18, cota: 0.13, hachura: 0.09, divisa: 0.35, tabela: 0.25, titulo: 0.35, moldura: 0.5, telhado: 0.25, cumeeira: 0.5 },
+hLetra: { rotulo: 2.8, rotuloMenor: 2.2, vao: 2.2, nota: 2.5 },
+passoHachura: 1.6, offCota1: 11, offCota2: 20, margemCotas: 28,
+cinzaLouca: "#7a7a7a", cinzaMovel: "#8c8c8c", pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
+tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: "3 1.5"
+};
+function estilo(padrao) {
+var A = AP(), E = A.estilo(padrao), C = conv();
+function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || "#000" }; }
+cam("ARQ-PAREDE", K.pena.corte, "#000"); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, C.existente.cor);
+cam("ARQ-PAREDE-NOVO", K.pena.corte, C.novo.cor); cam("ARQ-PAREDE-DEMOLIDO", 0.35, C.demolido.cor, C.demolido.tracejado.join(" "));
+cam("ARQ-VAO", K.pena.vista, "#000"); cam("ARQ-VAO-EXISTENTE", K.pena.vista, C.existente.cor); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, C.demolido.cor, C.demolido.tracejado.join(" "));
+cam("ARQ-ARCO", K.pena.cota, "#444"); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, C.demolido.cor, C.demolido.tracejado.join(" "));
+cam("ARQ-MOVEL", K.pena.fina, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.fina, K.cinzaLouca);
+cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.hachura); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
+cam("ARQ-DIVISA", K.pena.divisa, "#000", K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, "#000", K.tracoEixo); cam("ARQ-OCULTA", K.pena.fina, "#555", K.tracoOculta);
+cam("ARQ-TELHADO", K.pena.telhado, "#000"); cam("ARQ-CUMEEIRA", K.pena.cumeeira, "#000"); cam("ARQ-ESPIGAO", 0.35, "#000"); cam("ARQ-BEIRAL", K.pena.fina, "#000", K.tracoOculta);
+cam("ARQ-CORTE", 0.35, "#000", K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, "#000"); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a");
+cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.cota, "#000"); cam("ARQ-SIMBOLO", K.pena.fina, "#000");
+cam("ARQ-FORRO", 0.35, "#000"); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.fina, "#000"); cam("ARQ-SANCA", K.pena.fina, "#444", K.tracoOculta);
+cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, "#000"); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
+cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, "#000"); cam("ARQ-MOLDURA", K.pena.moldura, "#000");
+E.camadas["MET-MOLDURA"] = E.camadas["ARQ-MOLDURA"]; E.camadas["MET-TABELA"] = E.camadas["ARQ-TABELA"];
+return E;
+}
+var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO)/;
+function novo(E, depurar) {
+var A = AP(), caixas = depurar === false ? null : [], D = new A.Desenho(E, caixas);
+D.sgc = []; D._cam = null; D.K = K; D.fundoCam = {};
+var oLinha = D.linha, oTraco = D.traco, oEst = D.estilo;
+D.traco = function (lista, fechado) {
+var n0 = this.sg.length; oTraco.call(this, lista, fechado);
+for (var i = n0; i < this.sg.length; i++) this.sgc[i] = this._cam || "ARQ-SIMBOLO";
+};
+D.linha = function (x1, y1, x2, y2, cam, extra) {
+var n0 = this.sg.length; this._cam = cam; oLinha.call(this, x1, y1, x2, y2, cam, extra); this._cam = null;
+for (var i = n0; i < this.sg.length; i++) this.sgc[i] = cam || "ARQ-SIMBOLO";
+};
+[["poli", 1], ["ret", 4], ["circ", 3], ["cheio", -1]].forEach(function (par) {
+var o = D[par[0]];
+D[par[0]] = function () {
+var cam = par[1] >= 0 ? arguments[par[1]] : "ARQ-SIMBOLO"; this._cam = cam;
+var r = o.apply(this, arguments); this._cam = null; return r;
+};
+});
+D.estilo = function (cam, extra) { return oEst.call(this, cam, extra) + ' data-cam="' + esc(cam || "") + '"'; };
+["livre", "livreQ"].forEach(function (nome) {
+var o = D[nome];
+D[nome] = function () {
+if (this._obstN !== this.sg.length) {
+var keep = [], i; for (i = 0; i < this.sg.length; i++) if (!CAM_SEM_OBSTACULO.test(this.sgc[i] || "")) keep.push(this.sg[i]);
+this._obst = keep; this._obstN = this.sg.length;
+}
+var todos = this.sg; this.sg = this._obst;
+try { return o.apply(this, arguments); } finally { this.sg = todos; }
+};
+});
+return D;
+}
+function atr(D, cam, fator) {
+var c = D.E.camadas[cam] || D.E.camadas["ARQ-SIMBOLO"] || {};
+return ' stroke="' + (c.cor || "#000") + '" stroke-width="' + n((c.mm || 0.18) * (fator || 1)) + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : "") + ' stroke-linejoin="miter" data-cam="' + esc(cam) + '"';
+}
+function pts(L) { return L.map(function (p) { return n(p[0]) + "," + n(p[1]); }).join(" "); }
+function fundoPol(D, L, fill, cam) { D.add('<polygon points="' + pts(L) + '" fill="' + fill + '" stroke="none"' + (cam ? ' data-cam="' + esc(cam) + '"' : "") + "/>"); }
+function mapa(caixa, ox, oy, k) {
+var x0 = caixa[0], z0 = caixa[1];
+return {
+k: k, ox: ox, oy: oy, caixa: caixa,
+P: function (x, z) { return [ox + (x - x0) * k, oy + (z - z0) * k]; },
+Pp: function (p) { return [ox + (p[0] - x0) * k, oy + (p[1] - z0) * k]; },
+L: function (m) { return m * k; },
+larg: (caixa[2] - caixa[0]) * k, alt: (caixa[3] - caixa[1]) * k
+};
+}
+function polyPapel(M, ptsM) { return ptsM.map(function (p) { return M.Pp(p); }); }
+function br(v, c) {
+if (v == null || !isFinite(v)) return "-";
+return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ",");
+}
+function cm1(vm) { var v = Math.round(vm * 1000) / 10; return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : br(v, 1); }
+function nivelTxt(z) { return (z > 0.0005 ? "+" : (z < -0.0005 ? "-" : "±")) + br(Math.abs(z), 2); }
+function largTexto(s, h) { return AP().largTexto(s, h); }
+function rotuloBloco(D, pref, linhas, area, o) {
+o = o || {};
+var hs = o.alturas || [], hLin = o.h || 2.4, entre = 1.3, tent = [];
+var jogos = arr(o.jogos).length ? o.jogos : [linhas];
+for (var j = 0; j < jogos.length; j++) {
+var L = jogos[j].filter(function (x) { return !!(x && (x.t || typeof x === "string")); }).map(function (x) { return typeof x === "string" ? { t: x } : x; });
+if (!L.length) continue;
+[1, 0.9, 0.8].forEach(function (f) {
+var h = hLin * f, w = 0; L.forEach(function (x) { w = Math.max(w, largTexto(x.t, x.h ? x.h * f : h)); });
+var H = L.length * h * entre + 0.6;
+var c = D.procura([pref[0], pref[1]], w + 1.2, H, area, { folga: 0.5, passo: 0.8 });
+if (c && !tent.length) tent = [c, L, h, H];
+});
+if (tent.length) break;
+}
+if (!tent.length) return null;
+var c2 = tent[0], L2 = tent[1], h2 = tent[2], H2 = tent[3], y = c2[1] - H2 / 2 + 0.3;
+if (o.fundo) {
+var wb = 0; L2.forEach(function (x) { wb = Math.max(wb, largTexto(x.t, x.h ? x.h * (h2 / hLin) : h2)); });
+D.add('<rect x="' + n(c2[0] - wb / 2 - 0.8) + '" y="' + n(c2[1] - H2 / 2) + '" width="' + n(wb + 1.6) + '" height="' + n(H2) + '" fill="#fff" stroke="none" data-cam="ARQ-HUM"/>');
+}
+L2.forEach(function (x) {
+var hh = x.h ? x.h * (h2 / hLin) : h2;
+D.texto(c2[0], y + hh * 0.76 + 0.1, x.t, hh, { al: "C", cor: x.cor, peso: x.peso });
+y += h2 * entre;
+});
+return c2;
+}
+function ordemFase(s) { return s === "existente" ? 0 : (s === "demolido" ? 1 : 2); }
+function estiloParede(modo, status) {
+var C = conv();
+if (modo === "demolir") {
+if (status === "novo") return { cam: "ARQ-PAREDE-NOVO", fill: C.novo.fill, hach: "ARQ-HACHURA-NOVO", fator: 2 };
+if (status === "demolido") return { cam: "ARQ-PAREDE-DEMOLIDO", fill: C.demolido.fill, hach: null, fator: 2 };
+return { cam: "ARQ-PAREDE-EXISTENTE", fill: C.existente.fill, hach: null, fator: 2 };
+}
+if (modo === "fantasma") return { cam: "ARQ-CONTEXTO", fill: "#ececec", hach: null, fator: 1 };
+if (modo === "humanizada") return { cam: "ARQ-HUM", fill: "#3a3a3a", hach: null, fator: 1 };
+return { cam: "ARQ-PAREDE", fill: K.pocheEscuro, hach: null, fator: 2 };
+}
+function paredesPlanta(D, M, paredes, modo) {
+var grupos = {};
+paredes.forEach(function (w) { (grupos[w.status] = grupos[w.status] || []).push(w); });
+Object.keys(grupos).sort(function (a, b) { return ordemFase(a) - ordemFase(b); }).forEach(function (st) {
+var es = estiloParede(modo, st), G = GEO(), L = grupos[st];
+L.forEach(function (w) {
+var P = polyPapel(M, w.pts);
+D._cam = es.cam; D.traco(P, true); D._cam = null;
+D.add('<polygon points="' + pts(P) + '" fill="' + es.fill + '"' + atr(D, es.cam, es.fator) + ' data-w="' + esc(w.id) + '"/>');
+});
+if (es.fator > 1) L.forEach(function (w) { fundoPol(D, polyPapel(M, w.pts), es.fill); });
+if (es.hach) L.forEach(function (w) {
+var P = polyPapel(M, w.pts);
+G.hachuraLinhas(P, K.passoHachura, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], es.hach); });
+});
+});
+}
+function pilaresPlanta(D, M, pilares, modo) {
+var C = conv();
+pilares.forEach(function (p) {
+var P = polyPapel(M, p.pts), cam = modo === "demolir" ? (p.status === "novo" ? "ARQ-PAREDE-NOVO" : (p.status === "demolido" ? "ARQ-PAREDE-DEMOLIDO" : "ARQ-PAREDE-EXISTENTE")) : "ARQ-PAREDE";
+var fill = modo === "demolir" ? (p.status === "novo" ? C.novo.fill : (p.status === "demolido" ? C.demolido.fill : C.existente.fill)) : K.pocheEscuro;
+D._cam = cam; D.traco(P, true); D._cam = null;
+D.add('<polygon points="' + pts(P) + '" fill="' + fill + '"' + atr(D, cam, 1) + "/>");
+});
+}
+function camVao(modo, status, base) {
+if (modo !== "demolir") return base;
+return base + (status === "novo" ? "-NOVO" : (status === "demolido" ? "-DEMOLIDO" : "-EXISTENTE"));
+}
+function vaosPlanta(D, M, vaos, paredesPorId, modo) {
+vaos.forEach(function (v) {
+var w = paredesPorId[v.parede]; if (!w) return;
+var th = num(v.rotY, w.rotY), cs = Math.cos(th), sn = Math.sin(th), u = [cs, -sn], nv = [sn, cs], h = v.largura / 2, e2 = w.espessura / 2 + 0.003;
+function Q(a, b) { return M.P(v.x + u[0] * a + nv[0] * b, v.z + u[1] * a + nv[1] * b); }
+var gap = [Q(-h, -e2), Q(h, -e2), Q(h, e2), Q(-h, e2)];
+fundoPol(D, gap, "#fff");
+var camB = camVao(modo, v.status, "ARQ-VAO"), camA = v.status === "novo" && modo === "demolir" ? "ARQ-ARCO-NOVO" : (v.status === "demolido" && modo === "demolir" ? "ARQ-ARCO-DEMOLIDO" : "ARQ-ARCO");
+D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camB); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camB);
+var corre = /correr/i.test(v.famId);
+if (v.tipo === "janela") {
+[-e2 / 3, e2 / 3].forEach(function (b) { var a1 = Q(-h, b), a2 = Q(h, b); D.linha(a1[0], a1[1], a2[0], a2[1], camB); });
+var m1 = Q(-h, -e2), m2 = Q(h, -e2); D.linha(m1[0], m1[1], m2[0], m2[1], camB); var m3 = Q(-h, e2), m4 = Q(h, e2); D.linha(m3[0], m3[1], m4[0], m4[1], camB);
+} else if (corre) {
+var q1 = Q(-h, -e2 / 3), q2 = Q(0, -e2 / 3), q3 = Q(0, e2 / 3), q4 = Q(h, e2 / 3);
+D.linha(q1[0], q1[1], q2[0], q2[1], camB); D.linha(q3[0], q3[1], q4[0], q4[1], camB);
+var s1 = Q(-h, e2), s2 = Q(h, e2); D.linha(s1[0], s1[1], s2[0], s2[1], camB);
+} else {
+var lado = v.abreFora ? -1 : 1, H = Q(-h, 0), tip = Q(-h, lado * v.largura), fim = Q(h, 0);
+D.linha(H[0], H[1], tip[0], tip[1], camB);
+var arc = [];
+for (var i = 0; i <= 14; i++) { var t = i / 14 * Math.PI / 2, pa = Q(-h + v.largura * Math.sin(t), lado * v.largura * Math.cos(t)); arc.push(pa); }
+D.poli(arc, camA, false);
+void fim;
+}
+});
+}
+function moveisPlanta(D, M, moveis, o) {
+o = o || {};
+moveis.forEach(function (m) {
+var cam = m.categoria === "loucas" ? "ARQ-LOUCA" : "ARQ-MOVEL", cs = Math.cos(m.rotY), sn = Math.sin(m.rotY);
+function W(u, v) { return M.P(m.x + u * cs + v * sn, m.z - u * sn + v * cs); }
+var nSol = 0;
+arr(m.solidos).forEach(function (s) {
+if (s.forma === "caixa" && s.dx > 0 && s.dz > 0 && (s.y == null || s.y < 1.2)) {
+var a = [W(s.x - s.dx / 2, s.z - s.dz / 2), W(s.x + s.dx / 2, s.z - s.dz / 2), W(s.x + s.dx / 2, s.z + s.dz / 2), W(s.x - s.dx / 2, s.z + s.dz / 2)];
+if (o.cheio) fundoPol(D, a, o.cheio(m, s) || "#eee");
+D.poli(a, cam, true); nSol++;
+} else if (s.forma === "cilindro" && s.eixo === "y") {
+var c = W(s.x, s.z); if (o.cheio) D.add('<circle cx="' + n(c[0]) + '" cy="' + n(c[1]) + '" r="' + n(s.raio * M.k) + '" fill="' + (o.cheio(m, s) || "#eee") + '" stroke="none"/>');
+D.circ(c[0], c[1], s.raio * M.k, cam); nSol++;
+}
+});
+if (!nSol) D.poli(polyPapel(M, m.pts), cam, true);
+});
+}
+function unicos(vs, tol) {
+var v = vs.slice().sort(function (a, b) { return a - b; }), out = [];
+v.forEach(function (x) { if (!out.length || x - out[out.length - 1] > tol) out.push(x); });
+return out;
+}
+function ortogonal(w) { var a = Math.abs(Math.sin(w.rotY)); return a < 0.02 || a > 0.98; }
+function podar(P, k) {
+var out = [P[0]], min = 2.6 / k;
+for (var i = 1; i < P.length; i++) { if (P[i] - out[out.length - 1] >= min || i === P.length - 1) { if (P[i] - out[out.length - 1] < min && out.length > 1) out.pop(); out.push(P[i]); } }
+return out;
+}
+function cotasExternas(D, M, paredes, vaos, o) {
+o = o || {};
+var G = GEO(), W = paredes.filter(ortogonal); if (!W.length) return 0;
+var xs = [], zs = [];
+W.forEach(function (w) { w.pts.forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
+var bx0 = Math.min.apply(null, xs), bx1 = Math.max.apply(null, xs), bz0 = Math.min.apply(null, zs), bz1 = Math.max.apply(null, zs), tol = 0.04, qtd = 0;
+function horiz(w) { return Math.abs(Math.sin(w.rotY)) < 0.02; }
+var lados = [
+{ id: "topo", eixo: "x", z: bz0, dir: 1 }, { id: "base", eixo: "x", z: bz1, dir: -1 },
+{ id: "esq", eixo: "z", x: bx0, dir: -1 }, { id: "dir", eixo: "z", x: bx1, dir: 1 }
+];
+lados.forEach(function (ld) {
+var P = [], tot;
+if (ld.eixo === "x") {
+W.forEach(function (w) {
+var b = G.bbox(w.pts);
+if (horiz(w)) { if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) < tol) P.push(b[0], b[2]); }
+else if ((ld.id === "topo" && b[1] <= ld.z + tol) || (ld.id === "base" && b[3] >= ld.z - tol)) P.push(b[0], b[2]);
+});
+arr(vaos).forEach(function (v) {
+var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || !horiz(w)) return;
+var b = G.bbox(w.pts); if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) > tol) return;
+P.push(v.x - v.largura / 2, v.x + v.largura / 2);
+});
+P = unicos(P, tol); if (P.length < 2) return;
+P = podar(P, M.k); tot = [P[0], P[P.length - 1]];
+var pp = P.map(function (x) { return M.P(x, ld.z); }), vals = [];
+for (var i = 0; i + 1 < P.length; i++) vals.push(cm1(P[i + 1] - P[i]));
+D.cadeia(pp, ld.dir * K.offCota1, vals, { offs: [ld.dir * (K.offCota1 + 7)], desde: pp.map(function () { return 0.6; }) }); qtd++;
+D.cota(M.P(tot[0], ld.z)[0], M.P(tot[0], ld.z)[1], M.P(tot[1], ld.z)[0], M.P(tot[1], ld.z)[1], ld.dir * K.offCota2, cm1(tot[1] - tot[0]), { desde: [0.6, 0.6] }); qtd++;
+} else {
+W.forEach(function (w) {
+var b = G.bbox(w.pts);
+if (!horiz(w)) { if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) < tol) P.push(b[1], b[3]); }
+else if ((ld.id === "esq" && b[0] <= ld.x + tol) || (ld.id === "dir" && b[2] >= ld.x - tol)) P.push(b[1], b[3]);
+});
+arr(vaos).forEach(function (v) {
+var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || horiz(w)) return;
+var b = G.bbox(w.pts); if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) > tol) return;
+P.push(v.z - v.largura / 2, v.z + v.largura / 2);
+});
+P = unicos(P, tol); if (P.length < 2) return;
+P = podar(P, M.k); P.reverse();
+tot = [P[0], P[P.length - 1]];
+var qq = P.map(function (z) { return M.P(ld.x, z); }), vs = [], sgn = ld.id === "esq" ? 1 : -1;
+for (var j = 0; j + 1 < P.length; j++) vs.push(cm1(P[j] - P[j + 1]));
+D.cadeia(qq, sgn * K.offCota1, vs, { offs: [sgn * (K.offCota1 + 7)], desde: qq.map(function () { return 0.6; }) }); qtd++;
+D.cota(M.P(ld.x, tot[0])[0], M.P(ld.x, tot[0])[1], M.P(ld.x, tot[1])[0], M.P(ld.x, tot[1])[1], sgn * K.offCota2, cm1(tot[0] - tot[1]), { desde: [0.6, 0.6] }); qtd++;
+}
+});
+return qtd;
+}
+function cotasInternas(D, M, ambientes) {
+var G = GEO(), q = 0;
+ambientes.forEach(function (a) {
+var b = a.bbox || G.bbox(a.pts); if (!b) return;
+var P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]), w = b[2] - b[0], d = b[3] - b[1];
+var retangular = Math.abs(G.areaPol(a.pts) - w * d) < 0.05;
+if (!retangular) return;
+var poss = [P1[1] - 3.2, P1[1] - 6.5, P0[1] + 3.2, P0[1] + 6.5];
+for (var i = 0; i < poss.length; i++) {
+if (D.livre([P0[0] + 0.5, poss[i] - 3, P1[0] - 0.5, poss[i] + 1], 0.2)) { D.cota(P0[0], poss[i], P1[0], poss[i], 0, cm1(w), { desde: [false, false], semExt: true }); q++; break; }
+}
+var possx = [P0[0] + 3.2, P0[0] + 6.5, P1[0] - 3.2, P1[0] - 6.5];
+for (var j = 0; j < possx.length; j++) {
+if (D.livre([possx[j] - 3, P0[1] + 0.5, possx[j] + 1, P1[1] - 0.5], 0.2)) { D.cota(possx[j], P1[1], possx[j], P0[1], 0, cm1(d), { desde: [false, false], semExt: true }); q++; break; }
+}
+});
+return q;
+}
+function rotulosAmbientes(D, M, ambientes, o) {
+o = o || {};
+var semLugar = [];
+ambientes.forEach(function (a) {
+var c = M.P(a.cx, a.cz), b = a.bbox || GEO().bbox(a.pts), P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]);
+var area = [P0[0] + 0.5, P0[1] + 0.5, P1[0] - 0.5, P1[1] - 0.5];
+var nome = { t: txt(a.nome).toUpperCase(), h: 2.8, peso: 0.05 }, ar = { t: "A = " + br(a.area, 2) + " m²" }, piso = { t: "Piso: " + a.piso }, pe = { t: "PD = " + br(a.pe, 2) + " m" };
+var jogos = [];
+if (o.completo) jogos.push([nome, ar, a.piso ? piso : null, pe]);
+jogos.push([nome, ar], [nome]);
+var cc = rotuloBloco(D, c, null, area, { jogos: jogos.map(function (j) { return j.filter(function (x) { return !!x; }); }), h: 2.4 });
+if (!cc) semLugar.push(a.nome);
+});
+return semLugar;
+}
+function etiquetasVaos(D, M, vaos, paredesPorId) {
+var h = K.hLetra.vao, semLugar = [];
+vaos.forEach(function (v) {
+var w = paredesPorId[v.parede]; if (!w) return;
+var th = num(v.rotY, w.rotY), nv = [Math.sin(th), Math.cos(th)], d = w.espessura / 2 + (h * 0.9 + 1.3) / M.k, wt = largTexto(v.cod, h);
+var cands = [1, -1, 2, -2].map(function (s) { return M.P(v.x + nv[0] * d * (Math.abs(s) === 2 ? 1.9 : 1) * (s > 0 ? 1 : -1), v.z + nv[1] * d * (Math.abs(s) === 2 ? 1.9 : 1) * (s > 0 ? 1 : -1)); });
+var ok = false;
+for (var i = 0; i < cands.length && !ok; i++) {
+var c = cands[i];
+if (D.livre([c[0] - wt / 2, c[1] - h * 0.5, c[0] + wt / 2, c[1] + h * 0.5], 0.25)) { D.texto(c[0], c[1], v.cod, h, { al: "C", meio: true }); ok = true; }
+}
+if (!ok) semLugar.push(v.cod);
+});
+return semLugar;
+}
+function norte(D, cx, cy, anguloNorte, r) {
+r = r || 7;
+var a = (anguloNorte || 0) * Math.PI / 180, ux = -Math.sin(a), uy = -Math.cos(a), nx = -uy, ny = ux;
+D.circ(cx, cy, r, "ARQ-SIMBOLO");
+D.cheio([[cx + ux * r * 1.35, cy + uy * r * 1.35], [cx + nx * r * 0.38, cy + ny * r * 0.38], [cx - nx * r * 0.38, cy - ny * r * 0.38]], "#000");
+D.linha(cx - ux * r, cy - uy * r, cx + ux * r * 0.2, cy + uy * r * 0.2, "ARQ-SIMBOLO");
+D.texto(cx + ux * r * 1.35 + ux * 1.0, cy + uy * r * 1.35 + uy * 1.0 + (uy < -0.5 ? -0.8 : 0.9), "N", 3.4, { al: "C", meio: true });
+}
+function escalaGrafica(D, x, y, k, metros) {
+var seg = metros / 5, h = 1.6;
+for (var i = 0; i < 5; i++) {
+var x0 = x + i * seg * k;
+D.ret(x0, y, seg * k, h, "ARQ-SIMBOLO");
+if (i % 2 === 0) D.add('<rect x="' + n(x0) + '" y="' + n(y) + '" width="' + n(seg * k) + '" height="' + n(h) + '" fill="#000" stroke="none"/>');
+D.texto(x0, y - 0.9, br(i * seg, seg % 1 ? 1 : 0), 2.1, { al: "C" });
+}
+D.texto(x + metros * k, y - 0.9, br(metros, 0) + " m", 2.1, { al: "C" });
+}
+function marcaCorte(D, a, b, letra, olhar) {
+var dx = b[0] - a[0], dy = b[1] - a[1], L = hip(dx, dy), ux = dx / L, uy = dy / L, nx = -uy * olhar, ny = ux * olhar;
+D.linha(a[0], a[1], b[0], b[1], "ARQ-CORTE");
+[a, b].forEach(function (p, i) {
+D.linha(p[0], p[1], p[0] + nx * 6, p[1] + ny * 6, "ARQ-PAREDE");
+D.seta(p[0] + nx * 6, p[1] + ny * 6, -nx, -ny, 2.0);
+var h = 3.4, w = largTexto(letra, h), ok = false, ds = [10, 13.5, 17, 21];
+for (var k = 0; k < ds.length && !ok; k++) {
+var cx = p[0] + nx * ds[k], cy = p[1] + ny * ds[k] + 1.1, bx = [cx - w / 2 - 0.4, cy - h * 0.8, cx + w / 2 + 0.4, cy + h * 0.2];
+if (D.livre(bx, 0.3)) { D.texto(cx, cy, letra, h, { al: "C" }); ok = true; }
+}
+if (!ok) D.texto(p[0] + nx * 10, p[1] + ny * 10 + 1.1, letra, h, { al: "C" });
+void i;
+});
+}
+function escolherLinhaCorte(D, M, ct, ext) {
+var cands = arr(ct.cands).length ? ct.cands : [ct.coord], pick = cands[0];
+for (var i = 0; i < cands.length; i++) {
+var c0 = cands[i], a = ct.eixo === "x" ? M.P(ct.u0 - ext, c0) : M.P(c0, ct.u0 - ext), b = ct.eixo === "x" ? M.P(ct.u1 + ext, c0) : M.P(c0, ct.u1 + ext);
+var ux = (b[0] - a[0]), uy = (b[1] - a[1]), L = hip(ux, uy), nx = uy / L, ny = -ux / L;
+if (!D.cortaTexto(a[0], a[1], b[0], b[1]) && !D.cortaTexto(a[0], a[1], a[0] + nx * 22, a[1] + ny * 22) && !D.cortaTexto(b[0], b[1], b[0] + nx * 22, b[1] + ny * 22)) { pick = c0; break; }
+}
+return pick;
+}
+function colunaNotas(D, g, blocos) {
+var col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, yMax = car.y - 3, yMin = col.y + 4, T = D.E.T, A = AP();
+var tent = [T.nota, T.nota * 0.92, T.nota * 0.84, T.nota * 0.76, T.nota * 0.68].filter(function (hh) { return hh >= T.minimo - 1e-9; }), esc0 = null, coube = true;
+if (tent[tent.length - 1] > T.minimo + 1e-9) tent.push(T.minimo);
+function itemTxt(it) { return (it && typeof it === "object") ? it.t : it; }
+function medir(h, hq) {
+var tot = 0;
+blocos.forEach(function (b) {
+tot += hq * 0.76 + hq * 0.55 + 1.5;
+if (b.legenda) tot += b.legenda.length * (Math.max(h, 3.2) * 1.5);
+arr(b.itens).forEach(function (it, i) {
+var pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
+tot += A.quebrar(itemTxt(it), h, wmax - rec).length * h * 1.42 + 0.7;
+});
+tot += 3.5;
+});
+return tot;
+}
+for (var i = 0; i < tent.length; i++) { var hq = Math.min(T.quadro, tent[i] * 3); if (medir(tent[i], hq) <= yMax - yMin) { esc0 = [tent[i], hq]; break; } }
+if (!esc0) { esc0 = [tent[tent.length - 1], Math.min(T.quadro, tent[tent.length - 1] * 3)]; coube = false; }
+var h = esc0[0], hq0 = esc0[1], y = yMax - medir(h, hq0);
+D.linha(col.x, col.y, col.x, car.y, "ARQ-MOLDURA");
+blocos.forEach(function (b) {
+D.texto(x0, y + hq0 * 0.76, b.titulo, hq0, { peso: 0.28 });
+y += hq0 * 0.76 + hq0 * 0.55 + 1.5;
+arr(b.legenda).forEach(function (l) {
+var hh = Math.max(h, 3.2) * 1.5, sw = 9, sh = Math.min(3.6, hh - 0.8), ys = y + (hh - sh) / 2;
+if (l.fill) D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="' + l.fill + '" stroke="none"/>');
+if (l.hachura) GEO().hachuraLinhas([[x0, ys], [x0 + sw, ys], [x0 + sw, ys + sh], [x0, ys + sh]], 1.2, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA-NOVO"); });
+if (l.cam) { D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="none"' + atr(D, l.cam, 1.4) + "/>"); }
+D.texto(x0 + sw + 2.2, ys + sh / 2, l.t, h, { meio: true });
+y += hh;
+});
+arr(b.itens).forEach(function (it, i) {
+var o = (it && typeof it === "object") ? it : { t: txt(it) }, pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
+var ls = A.quebrar(o.t, h, wmax - rec);
+D.texto(x0, y + h * 0.76, pre, h, { cor: o.cor });
+ls.forEach(function (s) { D.texto(x0 + rec, y + h * 0.76, s, h, { cor: o.cor }); y += h * 1.42; });
+y += 0.7;
+});
+y += 3.5;
+});
+return coube;
+}
+function quadCorta(G, sg, q) {
+var a = [sg[0], sg[1]], b = [sg[2], sg[3]];
+if (G.pontoEmPol(a, q) || G.pontoEmPol(b, q)) return true;
+for (var i = 0; i < 4; i++) if (G.interSegSeg(a, b, q[i], q[(i + 1) % 4])) return true;
+return false;
+}
+function bb(q) { var xs = q.map(function (p) { return p[0]; }), ys = q.map(function (p) { return p[1]; }); return [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)]; }
+function encolher(q, f) {
+var c = [(q[0][0] + q[1][0] + q[2][0] + q[3][0]) / 4, (q[0][1] + q[1][1] + q[2][1] + q[3][1]) / 4];
+return q.map(function (p) { var dx = p[0] - c[0], dy = p[1] - c[1], L = hip(dx, dy) || 1; return [p[0] - dx / L * f, p[1] - dy / L * f]; });
+}
+function conferir(D, janela, ignorar) {
+var G = GEO(), A = AP(), out = { textoTexto: [], textoLinha: [], foraJanela: [], n: { textos: arr(D.caixas).length, segmentos: D.sg.length } };
+var cx = arr(D.caixas), ig = ignorar || null;
+out.textoTexto = A.sobreposicoes(cx, 0.15).map(function (p) { return p[0] + " × " + p[1]; });
+var obst = [];
+D.sg.forEach(function (s, i) { var cam = D.sgc[i] || "ARQ-SIMBOLO"; if (!CAM_SEM_OBSTACULO.test(cam)) obst.push({ s: s, cam: cam }); });
+cx.forEach(function (t) {
+var q = encolher(t.p, 0.12), b = bb(q);
+for (var i = 0; i < obst.length; i++) {
+var o = obst[i], s = o.s;
+if (Math.max(s[0], s[2]) < b[0] || Math.min(s[0], s[2]) > b[2] || Math.max(s[1], s[3]) < b[1] || Math.min(s[1], s[3]) > b[3]) continue;
+if (quadCorta(G, s, q)) { if (!ig || !ig(t, o)) { out.textoLinha.push(t.s + " × " + o.cam); (out.detalhe = out.detalhe || []).push({ t: t.s, cam: o.cam, seg: o.s, box: b }); } break; }
+}
+if (janela && (b[0] < janela[0] - 0.01 || b[1] < janela[1] - 0.01 || b[2] > janela[2] + 0.01 || b[3] > janela[3] + 0.01)) out.foraJanela.push(t.s);
+});
+out.total = out.textoTexto.length + out.textoLinha.length + out.foraJanela.length;
+return out;
+}
+var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cm1: cm1, nivelTxt: nivelTxt, esc: esc, n: n,
+rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
+rotulosAmbientes: rotulosAmbientes, etiquetasVaos: etiquetasVaos, norte: norte, escalaGrafica: escalaGrafica, marcaCorte: marcaCorte, escolherLinhaCorte: escolherLinhaCorte, colunaNotas: colunaNotas, conferir: conferir,
+estiloParede: estiloParede, conv: conv, CONV_RESERVA: CONV_RESERVA, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
+global.ArqDesenho = ArqDesenho;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqDesenho;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqplantas.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
+function G() { return dep("ArqGeo", "./arqgeo.js"); }
+function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function hip(x, y) { return Math.sqrt(x * x + y * y); }
+var FASES_MODO = { existente: { existente: 1, demolido: 1 }, demolir: { existente: 1, demolido: 1, novo: 1 }, layout: { existente: 1, novo: 1 }, fantasma: { existente: 1, novo: 1 }, humanizada: { existente: 1, novo: 1 } };
+function listas(c, modo, pav) {
+var d = c.dados, F = FASES_MODO[modo] || FASES_MODO.layout;
+function ok(x) { return F[x.status] && (pav == null || x.pav === pav); }
+var base = modo === "existente" ? c.antes : c.depois;
+return {
+paredes: arr(d.paredes).filter(function (w) { return ok(w) && !w.muro; }), pilares: arr(d.pilares).filter(ok),
+vaos: arr(d.vaos).filter(ok), moveis: arr(d.moveis).filter(ok), lajes: arr(d.lajes).filter(ok), luminarias: arr(d.luminarias).filter(ok),
+ambientes: arr((base || d).ambientes).filter(function (a) { return pav == null || a.pav === pav; }), muros: arr(d.paredes).filter(function (w) { return ok(w) && w.muro; })
+};
+}
+function porId(L) { var m = {}; L.forEach(function (w) { m[w.id] = w; }); return m; }
+function titulo(c, x, y, tit, escala) { return AP().tituloVista(c.D, x, y, tit, escala); }
+function planta(c, o) {
+var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), modo = o.modo, Lc = listas(c, modo, o.pav);
+var hT = titulo(c, A.x + 4, A.y + 2, o.titulo, "ESC 1:" + pl.escala), semLugar = [];
+d.paredesPlanta(D, M, Lc.paredes, modo === "layout" ? "layout" : modo);
+d.pilaresPlanta(D, M, Lc.pilares, modo);
+if (modo === "layout") d.moveisPlanta(D, M, Lc.moveis);
+d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), modo);
+var nCotas = 0;
+if (o.cotas !== false) nCotas = d.cotasExternas(D, M, Lc.paredes, Lc.vaos.filter(function (v) { return v.status !== "demolido" || modo !== "layout"; }), {});
+if (o.cotasInt) nCotas += d.cotasInternas(D, M, Lc.ambientes);
+if (o.cortes && c.cortes) {
+c.cortes.forEach(function (ct) {
+var ext = 27 / pl.k;
+ct.coord = d.escolherLinhaCorte(D, M, ct, ext);
+var a = ct.eixo === "x" ? M.P(ct.u0 - ext, ct.coord) : M.P(ct.coord, ct.u0 - ext), b = ct.eixo === "x" ? M.P(ct.u1 + ext, ct.coord) : M.P(ct.coord, ct.u1 + ext);
+d.marcaCorte(D, a, b, ct.letra, -1);
+});
+}
+semLugar = semLugar.concat(d.etiquetasVaos(D, M, Lc.vaos, porId(Lc.paredes)));
+semLugar = semLugar.concat(d.rotulosAmbientes(D, M, Lc.ambientes, { completo: !!o.completo }));
+var yb = M.oy + M.alt + d.K.margemCotas + 4;
+d.escalaGrafica(D, A.x + 6, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
+d.norte(D, A.x + 82, yb + 2, c.dados.terreno.norte, 7);
+if (semLugar.length) c.avisos.push("Folha " + o.titulo + ": sem lugar livre para " + semLugar.join(", ") + ".");
+return { escala: "1:" + pl.escala, M: M, cotas: nCotas, semLugar: semLugar, y: yb, hTitulo: hT };
+}
+function resumoGancho(t) {
+var BT = dep("BimTelhado", "./bimtelhado.js"), r = null;
+if (!BT || typeof BT.resumoPlanta !== "function") return null;
+try { r = BT.resumoPlanta(t.orig || t); } catch (e) { r = null; }
+if (!r || !arr(r.aguas).length) return null;
+return r;
+}
+function pontoChave(p) { return Math.round(p[0] * 100) + "," + Math.round(p[1] * 100); }
+function desenharTelhado(D, M, t, o) {
+o = o || {};
+var g = G(), cumeeiras = [], hips = [], aguas = [], R = resumoGancho(t);
+if (R) {
+aguas = R.aguas.map(function (a) { return { pts: a.pts, pct: a.pct, seta: a.seta }; });
+cumeeiras = arr(R.cumeeiras); hips = arr(R.espigoes).concat(arr(R.rincoes));
+} else {
+var arestas = {};
+arr(t.aguas).forEach(function (ag) {
+arr(ag.pecas).forEach(function (pc) {
+var P = arr(pc.pts); if (P.length < 3) return;
+var poli = P.map(function (q) { return [q.x, q.z]; }), ys = P.map(function (q) { return q.y; });
+var pl = ag.plano || {}, gx = num(pl.bx, 0), gz = num(pl.bz, 0), L = hip(gx, gz) || 1;
+var cen = g.centroide(poli);
+aguas.push({ pts: poli, pct: Math.round(num(ag.inclinacao, 0) * 10) / 10, seta: { de: cen, dir: [-gx / L, -gz / L] }, pcts: num(pl.s, 0) * 100 });
+for (var i = 0; i < P.length; i++) {
+var a = P[i], b = P[(i + 1) % P.length], ch = pontoChave([a.x, a.z]) + "|" + pontoChave([b.x, b.z]), inv = pontoChave([b.x, b.z]) + "|" + pontoChave([a.x, a.z]);
+if (arestas[inv]) { arestas[inv].n++; } else arestas[ch] = { a: a, b: b, n: 1 };
+}
+void ys;
+});
+});
+var yMax = -Infinity; Object.keys(arestas).forEach(function (k) { yMax = Math.max(yMax, arestas[k].a.y, arestas[k].b.y); });
+Object.keys(arestas).forEach(function (k) {
+var e = arestas[k]; if (e.n < 2) return;
+var topo = Math.abs(e.a.y - yMax) < 0.01 && Math.abs(e.b.y - yMax) < 0.01, plano = Math.abs(e.a.y - e.b.y) < 0.01;
+if (topo || plano) cumeeiras.push([e.a.x, e.a.z, e.b.x, e.b.z]); else hips.push([e.a.x, e.a.z, e.b.x, e.b.z]);
+});
+}
+aguas.forEach(function (a) { D.poli(a.pts.map(function (p) { return M.Pp(p); }), "ARQ-TELHADO", true); });
+var beiral = (R && arr(R.beiral).length >= 3 ? R.beiral : t.pBeiral);
+if (beiral && o.beiral !== false) D.poli(beiral.map(function (p) { return M.Pp(p); }), "ARQ-BEIRAL", true);
+cumeeiras.forEach(function (s) { var a = M.P(s[0], s[1]), b = M.P(s[2], s[3]); D.linha(a[0], a[1], b[0], b[1], "ARQ-CUMEEIRA"); });
+hips.forEach(function (s) { var a = M.P(s[0], s[1]), b = M.P(s[2], s[3]); D.linha(a[0], a[1], b[0], b[1], "ARQ-ESPIGAO"); });
+return { aguas: aguas, cumeeiras: cumeeiras, hips: hips };
+}
+function setasCaimento(D, M, aguas) {
+var g = G(), semLugar = 0;
+aguas.forEach(function (a) {
+var polyP = a.pts.map(function (p) { return M.Pp(p); });
+if (g.areaPol(polyP) < 25) return;
+var de, para;
+if (a.seta && a.seta.dir) { de = M.Pp(a.seta.de); para = [de[0] + a.seta.dir[0] * 7, de[1] + a.seta.dir[1] * 7]; }
+else if (a.seta && a.seta.para) { de = M.Pp(a.seta.de); para = M.Pp(a.seta.para); }
+else return;
+var k = 1, cx = de[0], cy = de[1], ux = para[0] - de[0], uy = para[1] - de[1];
+while (k > 0.3 && !(g.pontoEmPol([cx - ux * k / 2, cy - uy * k / 2], polyP) && g.pontoEmPol([cx + ux * k / 2, cy + uy * k / 2], polyP))) k -= 0.1;
+var p0 = [cx - ux * k / 2, cy - uy * k / 2], p1 = [cx + ux * k / 2, cy + uy * k / 2], L = hip(ux, uy) * k || 1;
+D.linha(p0[0], p0[1], p1[0], p1[1], "ARQ-TELHADO");
+D.seta(p1[0], p1[1], -ux / hip(ux, uy), -uy / hip(ux, uy), 2.0);
+var tx = (a.pcts != null ? a.pcts : a.pct), s = Math.round(tx) + " %";
+var nx = -uy / hip(ux, uy), ny = ux / hip(ux, uy), cands = [[1, 0], [-1, 0], [1, 1.6], [-1, 1.6]].map(function (q) { var f = q[0] * (3.4 + 1.3 * q[1]); return [(p0[0] + p1[0]) / 2 + nx * f, (p0[1] + p1[1]) / 2 + ny * f]; }), ok = false;
+for (var i = 0; i < cands.length && !ok; i++) {
+var w = AP().largTexto(s, 2.3);
+if (D.livre([cands[i][0] - w / 2, cands[i][1] - 1.7, cands[i][0] + w / 2, cands[i][1] + 0.6], 0.2)) { D.texto(cands[i][0], cands[i][1], s, 2.3, { al: "C" }); ok = true; }
+}
+if (!ok) semLugar++;
+void L;
+});
+return semLugar;
+}
+function cobertura(c) {
+var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", null), g = G();
+titulo(c, A.x + 4, A.y + 2, "PLANTA DE COBERTURA", "ESC 1:" + pl.escala);
+d.paredesPlanta(D, M, Lc.paredes, "fantasma");
+var Tl = arr(c.dados.telhados).filter(function (t) { return t.status !== "demolido"; }), res = [], sem = 0;
+Tl.forEach(function (t) { var r = desenharTelhado(D, M, t, {}); res.push(r); sem += setasCaimento(D, M, r.aguas); });
+var xs = [], zs = [];
+Tl.forEach(function (t) { (t.pBeiral || t.pts).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
+if (xs.length) {
+var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
+D.cota(M.P(x0, z0)[0], M.P(x0, z0)[1], M.P(x1, z0)[0], M.P(x1, z0)[1], d.K.offCota1, d.cm1(x1 - x0), { desde: [0.6, 0.6] });
+D.cota(M.P(x0, z1)[0], M.P(x0, z1)[1], M.P(x0, z0)[0], M.P(x0, z0)[1], d.K.offCota1, d.cm1(z1 - z0), { desde: [0.6, 0.6] });
+Tl.forEach(function (t) {
+if (!(t.beiral > 0) || !t.pBeiral) return;
+var b = g.bbox(t.pts), bb = g.bbox(t.pBeiral);
+if (Math.abs((b[0] - bb[0]) - t.beiral) < 0.01) D.cota(M.P(bb[0], (z0 + z1) / 2)[0], M.P(bb[0], (z0 + z1) / 2)[1], M.P(b[0], (z0 + z1) / 2)[0], M.P(b[0], (z0 + z1) / 2)[1], -d.K.offCota1 * 0.5, d.cm1(t.beiral), { desde: [false, false], semExt: true });
+});
+var yy = M.P(x1, z0)[1] - 4;
+Tl.forEach(function (t, i) {
+var s = "CUMEEIRA " + d.nivelTxt(t.cotaCumeeira) + " m";
+D.texto(M.P(x1, z0)[0] + 6, yy + i * 4.4, s, 2.5);
+});
+}
+var yb = M.oy + M.alt + d.K.margemCotas + 4;
+d.escalaGrafica(D, A.x + 6, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
+d.norte(D, A.x + 82, yb + 2, c.dados.terreno.norte, 7);
+if (!Tl.length) { D.texto(A.x + 10, A.y + 30, "SEM TELHADO NO MODELO: modele o telhado (op telhado) para esta folha.", 3.2, { cor: "#c00000" }); c.avisos.push("ARQ-05: o modelo não tem telhado."); }
+if (sem) c.avisos.push("ARQ-05: " + sem + " seta(s) de caimento sem lugar livre para o %.");
+return { escala: "1:" + pl.escala, telhados: Tl, M: M };
+}
+function forro(c) {
+var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", 0), g = G(), cH = c.depois;
+titulo(c, A.x + 4, A.y + 2, "PLANTA DE FORRO", "ESC 1:" + pl.escala);
+d.paredesPlanta(D, M, Lc.paredes, "fantasma");
+d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "fantasma");
+var Fs = arr(cH.forros).filter(function (f) { return f.status !== "demolido"; }), ambPorId = {};
+arr(cH.ambientes).forEach(function (a) { ambPorId[a.id] = a; });
+Fs.forEach(function (f) {
+var P = f.pts.map(function (p) { return M.Pp(p); });
+D.poli(P, "ARQ-FORRO", true);
+var amb = ambPorId[f.ambienteId], sanca = /sanca/i.test(f.tipo) || /sanca/i.test(txt(amb && amb.forro)) || !!f.sanca;
+if (sanca) {
+var b = g.bbox(P), r = 0.15 * pl.k;
+if (b[2] - b[0] > 2 * r + 2 && b[3] - b[1] > 2 * r + 2) D.poli([[b[0] + r, b[1] + r], [b[2] - r, b[1] + r], [b[2] - r, b[3] - r], [b[0] + r, b[3] - r]], "ARQ-SANCA", true);
+}
+});
+arr(c.dados.luminarias).forEach(function (l) {
+if (l.status === "demolido") return;
+var p = M.P(l.x, l.z);
+D.circ(p[0], p[1], 1.6, "ARQ-LUMINARIA"); D.linha(p[0] - 2.4, p[1], p[0] + 2.4, p[1], "ARQ-LUMINARIA"); D.linha(p[0], p[1] - 2.4, p[0], p[1] + 2.4, "ARQ-LUMINARIA");
+});
+var sem = [];
+Fs.forEach(function (f) {
+var amb = ambPorId[f.ambienteId], b = g.bbox(f.pts), P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]), cen = M.Pp(g.centroide(f.pts));
+var tipo = txt(f.tipo || "FORRO").toUpperCase(), niv = "NÍVEL " + d.nivelTxt(f.cota) + " m";
+var jogos = [[{ t: txt(amb ? amb.nome : "").toUpperCase(), h: 2.8 }, { t: tipo }, { t: niv }, { t: d.br(f.area, 2) + " m²" }], [{ t: tipo }, { t: niv }], [{ t: niv }]];
+if (!d.rotuloBloco(D, cen, null, [P0[0] + 0.5, P0[1] + 0.5, P1[0] - 0.5, P1[1] - 0.5], { jogos: jogos })) sem.push(txt(amb ? amb.nome : f.id));
+});
+var yb = M.oy + M.alt + d.K.margemCotas + 4;
+d.escalaGrafica(D, A.x + 6, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
+d.norte(D, A.x + 82, yb + 2, c.dados.terreno.norte, 7);
+if (!Fs.length) { D.texto(A.x + 10, A.y + 30, "SEM FORRO NO MODELO: modele o forro (op forro) para esta folha.", 3.2, { cor: "#c00000" }); c.avisos.push("ARQ-06: o modelo não tem forro."); }
+if (sem.length) c.avisos.push("ARQ-06: sem lugar livre para o rótulo de " + sem.join(", ") + ".");
+return { escala: "1:" + pl.escala, forros: Fs, M: M };
+}
+function paginacaoAmbiente(est, a) {
+var BP = dep("BimPaginacao", "./bimpaginacao.js"); if (!BP) return null;
+try {
+var ap = null; try { ap = BP.pisoAplicado(est, a, {}); } catch (e0) { ap = null; }
+if (ap && ap.estado === "ok" && ap.res) return { res: ap.res, numeros: ap.numeros, rotulo: ap.rotulo, junta: ap.reg && ap.reg.j, origem: "receita gravada" };
+var geo = BP.geometriaPiso(est, a, {}); if (!geo.ok) return null;
+var prm = BP.paramsPadrao("piso"), op = BP.opcoesPiso(geo, prm);
+if (!op || !op.ok) return null;
+var o1 = op.opcoes.filter(function (x) { return x.id === op.melhor; })[0] || op.opcoes[0];
+return o1 ? { res: o1.res, numeros: o1.numeros, rotulo: BP.rotuloPeca(prm.L, prm.C), junta: prm.j, origem: "automática (" + o1.rotulo + ")" } : null;
+} catch (e) { return null; }
+}
+function paginacao(c) {
+var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", 0), est = c.estadoDepois, sem = [], linhas = [];
+titulo(c, A.x + 4, A.y + 2, "PAGINAÇÃO DE PISO", "ESC 1:" + pl.escala);
+d.paredesPlanta(D, M, Lc.paredes, "fantasma");
+d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "fantasma");
+arr(est && est.ambientes).forEach(function (a) {
+var am = arr(c.depois.ambientes).filter(function (x) { return x.id === String(a.id); })[0]; if (!am || am.pav !== 0) return;
+if (PERM_RE.test(txt(am.piso) + " " + txt(am.nome))) return;
+var pg = paginacaoAmbiente(est, a);
+if (!pg || !pg.res) { sem.push(am.nome); return; }
+arr(pg.res.pecas).forEach(function (p) {
+if (!p.poli || p.poli.length < 3) return;
+var P = p.poli.map(function (q) { return M.Pp(q); });
+var cm = p.inteira ? "ARQ-PISO" : "ARQ-PISO-RECORTE";
+D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, cm, 1) + "/>");
+});
+var n = pg.numeros || {};
+linhas.push({ amb: am, pg: pg, n: n });
+});
+linhas.forEach(function (L) {
+var am = L.amb, b = am.bbox, P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]);
+var js = [[{ t: txt(am.nome).toUpperCase(), h: 2.8 }, { t: "Piso " + L.pg.rotulo }, { t: (L.n.pecas || "?") + " pç / " + d.br(L.n.m2Compra, 2) + " m²" }], [{ t: txt(am.nome).toUpperCase(), h: 2.6 }, { t: L.pg.rotulo }], [{ t: txt(am.nome).toUpperCase(), h: 2.4 }]];
+var cc = d.rotuloBloco(D, M.P(am.cx, am.cz), null, [P0[0] + 0.5, P0[1] + 0.5, P1[0] - 0.5, P1[1] - 0.5], { jogos: js, fundo: true });
+if (!cc) sem.push(am.nome);
+});
+var yb = M.oy + M.alt + d.K.margemCotas + 4;
+d.escalaGrafica(D, A.x + 6, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
+d.norte(D, A.x + 82, yb + 2, c.dados.terreno.norte, 7);
+if (!linhas.length) { D.texto(A.x + 10, A.y + 30, "SEM AMBIENTE PAGINÁVEL NO MODELO.", 3.2, { cor: "#c00000" }); c.avisos.push("ARQ-09: nenhum ambiente delimitado para paginar."); }
+if (sem.length) c.avisos.push("ARQ-09: sem paginação / sem lugar para o rótulo: " + sem.join(", ") + ".");
+return { escala: "1:" + pl.escala, linhas: linhas, M: M };
+}
+var PERM_RE = /(grama|gramado|jardim|canteiro|terra|perme|drenante|vegeta|horta|pomar|solo)/i;
+function dentroDe(P, pt) { return G().pontoEmPol(pt, P); }
+function situacao(c) {
+var D = c.D, d = DS(), A = c.A, g = G(), idx = c.idx, T = c.dados.terreno, lote = idx.terreno.contorno || (T.divisa && T.divisa.pts) || null, sem = [];
+var wQuadro = Math.min(176, Math.max(140, A.w * 0.34)), wDes = A.w - wQuadro - 8;
+titulo(c, A.x + 4, A.y + 2, "SITUAÇÃO E IMPLANTAÇÃO", "ESC 1:" + c.escalaSit);
+if (!lote) {
+D.texto(A.x + 10, A.y + 30, "SEM DIVISA DO LOTE NO MODELO: modele a divisa (linha de propriedade) ou informe o contorno do lote.", 3.2, { cor: "#c00000" });
+c.avisos.push("ARQ-01: sem a divisa do lote — a folha sai sem a implantação.");
+} else {
+var bl = g.bbox(lote), k = 1000 / c.escalaSit, ox = A.x + 4 + 26, oy = A.y + 16 + 26;
+var M = d.mapa(bl, ox, oy, k), P = lote.map(function (p) { return M.Pp(p); });
+arr(T.subregioes).forEach(function (s) {
+if (!d_permeavel(s)) return;
+var Q = s.pts.map(function (p) { return M.Pp(p); });
+g.hachuraLinhas(Q, 2.2, 45).forEach(function (sg) { D.linha(sg[0], sg[1], sg[2], sg[3], "ARQ-HACHURA-PERM"); });
+D.poli(Q, "ARQ-HACHURA-PERM", true);
+});
+D.poli(P, "ARQ-DIVISA", true);
+var Lc = listas(c, "fantasma", null);
+Lc.paredes.forEach(function (w) { D.poli(w.pts.map(function (p) { return M.Pp(p); }), "ARQ-OCULTA", true); });
+arr(c.dados.telhados).forEach(function (t) { var r = desenharTelhado(D, M, t, {}); setasCaimento(D, M, r.aguas); });
+Lc.muros.forEach(function (w) { D.poli(w.pts.map(function (p) { return M.Pp(p); }), "ARQ-MURO", true); });
+arr(T.componentes).forEach(function (cp) { var p = M.P(cp.x, cp.z), r = Math.max(1.4, Math.min(5, cp.altura * 0.25 * k)); D.circ(p[0], p[1], r, "ARQ-HACHURA-PERM"); D.ponto(p[0], p[1], 0.35, "#3c7a2a"); });
+var n = lote.length;
+for (var i = 0; i < n; i++) {
+var a = lote[i], b = lote[(i + 1) % n], pa = M.Pp(a), pb = M.Pp(b), L = hip(b[0] - a[0], b[1] - a[1]), ux = (pb[0] - pa[0]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1), uy = (pb[1] - pa[1]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1);
+var mid = [(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], dentro = g.pontoEmPol([(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], P);
+D.cota(pa[0], pa[1], pb[0], pb[1], dentro ? -9 : 9, d.br(L, 2), { desde: [1.0, 1.0] });
+void mid;
+}
+var edif = []; Lc.paredes.concat(Lc.pilares).forEach(function (w) { edif.push(w.pts); }); arr(Lc.lajes).forEach(function (l) { edif.push(l.pts); });
+(idx.recuos || []).forEach(function (r) {
+if (r.recuo == null) return;
+var best = null, bd = Infinity;
+edif.forEach(function (Pg) { Pg.forEach(function (q) { var dq = g.distPontoSeg(q, r.de, r.para); if (dq < bd) { bd = dq; best = q; } }); });
+if (!best) return;
+var ex = r.para[0] - r.de[0], ez = r.para[1] - r.de[1], L = hip(ex, ez) || 1, t = ((best[0] - r.de[0]) * ex + (best[1] - r.de[1]) * ez) / (L * L), foot = [r.de[0] + ex * t, r.de[1] + ez * t];
+var p0 = M.Pp(best), p1 = M.Pp(foot), Lp = hip(p1[0] - p0[0], p1[1] - p0[1]);
+if (Lp < 9) { sem.push("recuo " + r.nome); return; }
+recuoCota(D, p0, p1, d.br(r.recuo, 2));
+r._p = [p0, p1];
+});
+var fi = idx.ladoFrente; if (fi != null && fi >= 0) {
+var fa = M.Pp(lote[fi]), fb = M.Pp(lote[(fi + 1) % n]), fx = fb[0] - fa[0], fy = fb[1] - fa[1], fL = hip(fx, fy) || 1, nx = fy / fL, ny = -fx / fL;
+var cen = M.Pp(g.centroide(lote)), lado = ((fa[0] + fb[0]) / 2 + nx - cen[0]) * nx + ((fa[1] + fb[1]) / 2 + ny - cen[1]) * ny > 0 ? 1 : -1;
+nx *= lado; ny *= lado;
+var a1 = [fa[0] + nx * 22, fa[1] + ny * 22], b1 = [fb[0] + nx * 22, fb[1] + ny * 22], a2 = [fa[0] + nx * 44, fa[1] + ny * 44], b2 = [fb[0] + nx * 44, fb[1] + ny * 44];
+var ex1 = (fx / fL) * 16, ey1 = (fy / fL) * 16;
+D.linha(a1[0] - ex1, a1[1] - ey1, b1[0] + ex1, b1[1] + ey1, "ARQ-CONTEXTO"); D.linha(a2[0] - ex1, a2[1] - ey1, b2[0] + ex1, b2[1] + ey1, "ARQ-CONTEXTO");
+var rua = txt(c.op.rua).trim(), mc = [(a1[0] + b2[0]) / 2 - (fx / fL) * 0, (a1[1] + b2[1]) / 2];
+var ang = Math.atan2(fy, fx) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+D.texto(mc[0] - (rua ? 0 : 0), mc[1] + 0.4, rua ? "RUA " + rua.toUpperCase() : "RUA [INFORME O NOME DA RUA]", 3.2, { al: "C", rot: ang, cor: rua ? null : "#c00000", meio: true });
+}
+d.norte(D, A.x + wDes - 12, A.y + 30, T.norte, 7);
+d.escalaGrafica(D, A.x + 8, M.oy + M.alt + 40, k, k * 10 >= 14 ? 10 : 20);
+c._sitM = M; c._sitDes = { wDes: wDes };
+}
+return { escala: "1:" + c.escalaSit, semLugar: sem };
+}
+function recuoCota(D, p0, p1, valor) {
+var L = hip(p1[0] - p0[0], p1[1] - p0[1]), ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L, h = 2.5, w = AP().largTexto(valor, h);
+D.linha(p0[0], p0[1], p1[0], p1[1], "MET-COTA"); D.tique(p0[0], p0[1], ux, uy); D.tique(p1[0], p1[1], ux, uy);
+var horiz = Math.abs(uy) < 0.2, ts = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, -0.5, 1.5], ok = false;
+for (var i = 0; i < ts.length && !ok; i++) {
+var x = p0[0] + (p1[0] - p0[0]) * ts[i], y = p0[1] + (p1[1] - p0[1]) * ts[i];
+[1, -1].forEach(function (sg) {
+if (ok) return;
+var bx = horiz ? [x - w / 2, y + (sg > 0 ? -h - 0.8 : 0.8), x + w / 2, y + (sg > 0 ? -0.8 : h + 0.8)] : [x + (sg > 0 ? -h - 0.8 : 0.8), y - w / 2, x + (sg > 0 ? -0.8 : h + 0.8), y + w / 2];
+if (!D.livre(bx, 0.25)) return;
+if (horiz) D.texto(x, y + (sg > 0 ? -1.0 : h + 0.6), valor, h, { al: "C" });
+else D.texto(x + (sg > 0 ? -1.0 : h + 0.6), y, valor, h, { al: "C", rot: -90 });
+ok = true;
+});
+}
+if (!ok) { var xm = (p0[0] + p1[0]) / 2, ym = (p0[1] + p1[1]) / 2; D.texto(xm, ym - 1, valor, h, { al: "C", rot: horiz ? 0 : -90 }); }
+}
+function d_permeavel(s) { return /(grama|gramado|jardim|canteiro|terra|solo|vegeta|seixo)/i.test(txt(s.material)) || /(grama|jardim|canteiro)/i.test(txt(s.nome)); }
+var PALETA = { madeira: "#c8a070", ceramica: "#e6dfd0", grama: "#9ccc7a", agua: "#6ec3ea", pedra: "#cfcfcf", padrao: "#efe9de", azulejo: "#d9e6ee", deck: "#b98a5a" };
+function corPiso(t) {
+t = txt(t);
+if (/deck/i.test(t)) return PALETA.deck;
+if (/madeira|laminado|assoalho|tauari|ip[êe]|parquet/i.test(t)) return PALETA.madeira;
+if (/grama|gramado|jardim|canteiro|vegeta|terra/i.test(t)) return PALETA.grama;
+if (/piscina|[áa]gua|espelho/i.test(t)) return PALETA.agua;
+if (/concreto|cimento|queimado|pedra|cal[çc]ada|granito|ard[óo]sia/i.test(t)) return PALETA.pedra;
+if (/porcelanato|cer[âa]mica|piso|retificado/i.test(t)) return PALETA.ceramica;
+return PALETA.padrao;
+}
+function corMovel(m, s) {
+var mat = txt(s && s.material) + " " + txt(m.nome) + " " + txt(m.famId);
+if (/vidro/i.test(mat)) return "#cfe8f3";
+if (/granito|pedra|m[áa]rmore|bancada/i.test(mat)) return m.categoria === "mobiliario" && /bancada/i.test(mat) ? "#8a8a8a" : "#9a9a9a";
+if (/madeira|marcenaria|mdf|carvalho|nogueira/i.test(mat)) return "#a9825a";
+if (/inox|metal|cromado|alum[ií]nio/i.test(mat)) return "#c4c9ce";
+if (/lou[çc]a|branco|bacia|lavat/i.test(mat) || m.categoria === "loucas") return "#fafafa";
+if (/sof[áa]|estofado|tecido/i.test(mat)) return "#8e9aa8";
+return "#b9a58c";
+}
+function texturaPiso(D, g, P, tx, k) {
+var pc = /(\d+)\s*[x×]\s*(\d+)/i.exec(tx), L = pc ? +pc[1] / 100 : 0.6, C = pc ? +pc[2] / 100 : 0.6;
+function linhas(passo, ang, cam) { if (!(passo > 1.2)) return; g.hachuraLinhas(P, passo, ang).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], cam); }); }
+if (/deck/i.test(tx)) { linhas(0.1 * k, 0, "ARQ-HUM-MADEIRA"); return; }
+if (/madeira|laminado|assoalho|parquet|tauari|ip[êe]/i.test(tx)) { linhas(0.16 * k, 0, "ARQ-HUM-MADEIRA"); return; }
+if (/piscina|[áa]gua|espelho/i.test(tx)) { linhas(0.5 * k, 35, "ARQ-HUM-AGUA"); return; }
+if (/grama|gramado|jardim|canteiro|vegeta|terra|concreto|cimento|pedra/i.test(tx)) return;
+if (/porcelanato|cer[âa]mica|piso|retificado/i.test(tx)) { linhas(L * k, 0, "ARQ-HUM-PISO"); linhas(C * k, 90, "ARQ-HUM-PISO"); }
+}
+function planoHumanizado(c) {
+var g = G(), cx = c.plano.caixa, e = 3, bx = [cx[0] - e, cx[1] - e, cx[2] + e, cx[3] + e], L = c.dados.terreno && c.dados.terreno.divisa ? g.bbox(c.dados.terreno.divisa.pts) : null;
+if (L) bx = [Math.max(bx[0], L[0]), Math.max(bx[1], L[1]), Math.min(bx[2], L[2]), Math.min(bx[3], L[3])];
+var a = c.A, esc = [50, 75, 100, 125, 150, 200, 250];
+for (var i = 0; i < esc.length; i++) { var k = 1000 / esc[i]; if ((bx[2] - bx[0]) * k + 16 <= a.w && (bx[3] - bx[1]) * k + 40 <= a.h) return { k: k, escala: esc[i], caixa: bx }; }
+return { k: 1000 / 250, escala: 250, caixa: bx };
+}
+function humanizada(c) {
+var D = c.D, d = DS(), A = c.A, g = G(), T = c.dados.terreno, pl = planoHumanizado(c);
+var M = d.mapa(pl.caixa, A.x + 4 + 6, A.y + 16 + 6, pl.k), Lc = listas(c, "humanizada", 0);
+titulo(c, A.x + 4, A.y + 2, "PLANTA HUMANIZADA", "ESC 1:" + pl.escala);
+if (T.divisa) {
+var bl = g.bbox(T.divisa.pts);
+void bl;
+}
+var gramaFundo = M.alt > 0 ? [[M.ox - 12, M.oy - 12], [M.ox + M.larg + 12, M.oy - 12], [M.ox + M.larg + 12, M.oy + M.alt + 12], [M.ox - 12, M.oy + M.alt + 12]] : null;
+if (gramaFundo) d.fundoPol(D, gramaFundo, "#e9f2dc", "ARQ-HUM");
+arr(T.subregioes).forEach(function (s) {
+var P = s.pts.map(function (p) { return M.Pp(p); });
+var xs = P.map(function (p) { return p[0]; }), ys = P.map(function (p) { return p[1]; });
+if (Math.max.apply(null, xs) < gramaFundo[0][0] || Math.min.apply(null, xs) > gramaFundo[1][0] || Math.max.apply(null, ys) < gramaFundo[0][1] || Math.min.apply(null, ys) > gramaFundo[2][1]) return;
+var cl = Math.max(gramaFundo[0][0], Math.min.apply(null, xs)), cr = Math.min(gramaFundo[1][0], Math.max.apply(null, xs)), ct = Math.max(gramaFundo[0][1], Math.min.apply(null, ys)), cb = Math.min(gramaFundo[2][1], Math.max.apply(null, ys));
+d.fundoPol(D, [[cl, ct], [cr, ct], [cr, cb], [cl, cb]], corPiso(s.material + " " + s.nome), "ARQ-HUM");
+texturaPiso(D, g, [[cl, ct], [cr, ct], [cr, cb], [cl, cb]], s.material + " " + s.nome, pl.k);
+});
+Lc.ambientes.forEach(function (a) { var P = a.pts.map(function (p) { return M.Pp(p); }), tx = a.piso + " " + a.nome; d.fundoPol(D, P, corPiso(tx), "ARQ-HUM"); texturaPiso(D, g, P, tx, pl.k); });
+Lc.lajes.forEach(function (l) {
+if (Lc.ambientes.some(function (a) { return g.pontoEmPol([a.cx, a.cz], l.pts); })) return;
+d.fundoPol(D, l.pts.map(function (p) { return M.Pp(p); }), "#e4dcc9", "ARQ-HUM");
+});
+Lc.paredes.forEach(function (w) { d.fundoPol(D, w.pts.map(function (p) { var q = M.Pp(p); return [q[0] + 1.0, q[1] + 1.0]; }), "#a8a8a8", "ARQ-HUM"); });
+d.paredesPlanta(D, M, Lc.paredes, "humanizada");
+d.pilaresPlanta(D, M, Lc.pilares, "humanizada");
+d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "humanizada");
+Lc.moveis.forEach(function (m) {
+var P = m.pts.map(function (p) { return M.Pp(p); });
+d.fundoPol(D, P.map(function (q) { return [q[0] + 0.7, q[1] + 0.7]; }), "#b9b9b9", "ARQ-HUM");
+});
+d.moveisPlanta(D, M, Lc.moveis, { cheio: corMovel });
+arr(T.componentes).forEach(function (cp) {
+var p = M.P(cp.x, cp.z), r = Math.max(1.6, Math.min(8, Math.max(cp.altura, 1) * 0.28 * pl.k));
+if (p[0] < gramaFundo[0][0] || p[0] > gramaFundo[1][0] || p[1] < gramaFundo[0][1] || p[1] > gramaFundo[2][1]) return;
+D.add('<circle cx="' + d.n(p[0] + 0.9) + '" cy="' + d.n(p[1] + 0.9) + '" r="' + d.n(r) + '" fill="#b7c9a3" stroke="none" data-cam="ARQ-HUM"/>');
+D.add('<circle cx="' + d.n(p[0]) + '" cy="' + d.n(p[1]) + '" r="' + d.n(r) + '" fill="#6aa84f" stroke="#3f7a2c" stroke-width="0.18" data-cam="ARQ-HUM"/>');
+D.add('<circle cx="' + d.n(p[0] - r * 0.25) + '" cy="' + d.n(p[1] - r * 0.25) + '" r="' + d.n(r * 0.55) + '" fill="#86bf67" stroke="none" data-cam="ARQ-HUM"/>');
+D.ponto(p[0], p[1], 0.35, "#5b3a1e");
+});
+var sem = d.rotulosAmbientes(D, M, Lc.ambientes, { completo: false });
+if (sem.length) c.avisos.push("Humanizada: sem lugar livre para o nome de " + sem.join(", ") + ".");
+var yb = M.oy + M.alt + 14;
+d.norte(D, A.x + 20, yb + 2, T.norte, 7);
+d.escalaGrafica(D, A.x + 50, yb + 4, pl.k, pl.k * 5 >= 12 ? 5 : 10);
+return { escala: "1:" + pl.escala, M: M };
+}
+var ArqPlantas = { planta: planta, situacao: situacao, cobertura: cobertura, forro: forro, paginacao: paginacao, humanizada: humanizada, desenharTelhado: desenharTelhado, setasCaimento: setasCaimento,
+listas: listas, corPiso: corPiso, PALETA: PALETA, FASES_MODO: FASES_MODO, porId: porId };
+global.ArqPlantas = ArqPlantas;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqPlantas;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqcortes.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
+function G() { return dep("ArqGeo", "./arqgeo.js"); }
+function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function hip(x, y) { return Math.sqrt(x * x + y * y); }
+var VIVO = { existente: 1, novo: 1 };
+function escolherCortes(dados, depois) {
+var g = G(), cx = dados.caixa, A = (depois || dados).ambientes || [], V = dados.vaos || [], cand;
+function pontua(eixo, coord) {
+var s = 0;
+A.forEach(function (a) { var b = a.bbox; if (!b) return; if (eixo === "x" ? (coord > b[1] + 0.2 && coord < b[3] - 0.2) : (coord > b[0] + 0.2 && coord < b[2] - 0.2)) s += 1; });
+V.forEach(function (v) { if (!VIVO[v.status]) return; if (Math.abs((eixo === "x" ? v.z : v.x) - coord) < v.largura / 2 - 0.05) s += 0.5; });
+A.forEach(function (a) { var b = a.bbox; if (!b) return; var cc = eixo === "x" ? a.cz : a.cx; if (Math.abs(cc - coord) < 0.7) s -= 0.6; });
+if (Math.abs(coord - (eixo === "x" ? (cx[1] + cx[3]) / 2 : (cx[0] + cx[2]) / 2)) < 0.8) s -= 0.7;
+(dados.moveis || []).forEach(function (m) { var b = g.bbox(m.pts); if (b && (eixo === "x" ? (coord > b[1] && coord < b[3]) : (coord > b[0] && coord < b[2]))) s -= 0.4; });
+return s;
+}
+function candidatos(eixo, lo, hi) {
+var passo = 0.05, c0 = lo + 0.3, c1 = hi - 0.3, cm = (lo + hi) / 2, L = [];
+for (var v = c0; v <= c1 + 1e-9; v += passo) L.push({ v: Math.round(v * 100) / 100, s: pontua(eixo, v) - Math.abs(v - cm) * 0.08 });
+if (!L.length) L.push({ v: cm, s: 0 });
+L.sort(function (a, b) { return b.s - a.s; });
+return L.slice(0, 80).map(function (q) { return q.v; });
+}
+var cA = candidatos("x", cx[1], cx[3]), cB = candidatos("z", cx[0], cx[2]);
+return [
+{ letra: "A", eixo: "x", coord: cA[0], cands: cA, u0: cx[0], u1: cx[2] },
+{ letra: "B", eixo: "z", coord: cB[0], cands: cB, u0: cx[1], u1: cx[3] }
+];
+}
+function interv(ct, poly) {
+var g = G(), a, b, uA = ct.u0 - 1, uB = ct.u1 + 1;
+if (ct.eixo === "x") { a = [uA, ct.coord]; b = [uB, ct.coord]; } else { a = [ct.coord, uA]; b = [ct.coord, uB]; }
+return g.recortarSeg(a, b, poly).map(function (t) { return [uA + t[0] * (uB - uA), uA + t[1] * (uB - uA)]; }).filter(function (v) { return v[1] - v[0] > 0.004; });
+}
+function caixaVao(v, w) {
+var th = num(v.rotY, w.rotY), cs = Math.cos(th), sn = Math.sin(th), h = v.largura / 2, e2 = w.espessura / 2;
+function Q(a, b) { return [v.x + cs * a + sn * b, v.z - sn * a + cs * b]; }
+return [Q(-h, -e2), Q(h, -e2), Q(h, e2), Q(-h, e2)];
+}
+function modeloCorte(c, ct) {
+var d = c.dados, out = { paredes: [], lajes: [], telhado: [], forros: [], ambientes: [], niveis: {}, yMax: 0, yMin: 0 };
+var parPorId = {}; d.paredes.forEach(function (w) { parPorId[w.id] = w; });
+d.paredes.filter(function (w) { return VIVO[w.status]; }).forEach(function (w) {
+interv(ct, w.pts).forEach(function (iv) {
+var p = { u0: iv[0], u1: iv[1], yb: w.base, yt: w.topo, status: w.status, id: w.id, muro: w.muro, aberturas: [] };
+d.vaos.filter(function (v) { return VIVO[v.status] && v.parede === w.id; }).forEach(function (v) {
+interv(ct, caixaVao(v, w)).forEach(function (jv) {
+var u0 = Math.max(jv[0], iv[0]), u1 = Math.min(jv[1], iv[1]); if (u1 - u0 < 0.02) return;
+p.aberturas.push({ u0: u0, u1: u1, y0: w.base + v.peitoril, y1: w.base + v.peitoril + v.altura, tipo: v.tipo, cod: v.cod });
+});
+});
+out.paredes.push(p); out.yMax = Math.max(out.yMax, w.topo); out.yMin = Math.min(out.yMin, w.base);
+});
+});
+d.lajes.filter(function (l) { return VIVO[l.status]; }).forEach(function (l) {
+interv(ct, l.pts).forEach(function (iv) { out.lajes.push({ u0: iv[0], u1: iv[1], y0: l.topo - l.espessura, y1: l.topo, status: l.status, piso: l.piso }); out.yMin = Math.min(out.yMin, l.topo - l.espessura); });
+});
+arr(d.telhados).filter(function (t) { return VIVO[t.status]; }).forEach(function (t) {
+var esp = num(t.orig && t.orig.espessura, 0.08);
+arr(t.aguas).forEach(function (ag) {
+var pl = ag.plano || {};
+arr(ag.pecas).forEach(function (pc) {
+var poli = arr(pc.pts).map(function (q) { return [q.x, q.z]; }); if (poli.length < 3) return;
+interv(ct, poli).forEach(function (iv) {
+function Y(u) { var x = ct.eixo === "x" ? u : ct.coord, z = ct.eixo === "x" ? ct.coord : u; return num(pl.a, 0) + num(pl.bx, 0) * x + num(pl.bz, 0) * z; }
+var ya = Y(iv[0]), yb = Y(iv[1]), cosT = 1 / Math.sqrt(1 + Math.pow(num(pl.s, 0), 2));
+out.telhado.push({ u0: iv[0], u1: iv[1], ya: ya, yb: yb, esp: esp / cosT, status: t.status });
+out.yMax = Math.max(out.yMax, ya, yb); out.yMin = Math.min(out.yMin, Math.min(ya, yb) - esp);
+});
+});
+});
+});
+arr((c.depois || d).forros).filter(function (f) { return VIVO[f.status]; }).forEach(function (f) { interv(ct, f.pts).forEach(function (iv) { out.forros.push({ u0: iv[0], u1: iv[1], y: f.cota, tipo: f.tipo }); }); });
+arr((c.depois || d).ambientes).forEach(function (a) {
+interv(ct, a.pts).forEach(function (iv) { out.ambientes.push({ u0: iv[0], u1: iv[1], nome: a.nome, base: a.base, pe: a.pe }); });
+});
+return out;
+}
+function desenharCorte(c, ct, mc, X, Yb, k) {
+var D = c.D, d = DS(), g = G(), C = d.conv();
+function U(u) { return X + (u - ct.u0) * k; }
+function Y(y) { return Yb - (y - mc.yMin) * k; }
+function R(u0, y0, u1, y1) { return [[U(u0), Y(y1)], [U(u1), Y(y1)], [U(u1), Y(y0)], [U(u0), Y(y0)]]; }
+var cam = { novo: "ARQ-PAREDE-NOVO", existente: "ARQ-PAREDE-EXISTENTE" }, fill = { novo: C.novo.fill, existente: C.existente.fill };
+var uL = ct.u0 - 0.9, uR = ct.u1 + 0.9;
+D.linha(U(uL), Y(0), U(uR), Y(0), "ARQ-TERRENO");
+for (var xx = U(uL); xx < U(uR); xx += 2.2) D.linha(xx, Y(0), xx - 1.6, Y(0) + 1.6, "ARQ-HACHURA");
+function poche(P, st) {
+d.fundoPol(D, P, fill[st] || "#bdbdbd");
+D._cam = cam[st]; D.traco(P, true); D._cam = null;
+D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, cam[st] || "ARQ-PAREDE", 1) + "/>");
+if (st === "novo") g.hachuraLinhas(P, 1.6, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA-NOVO"); });
+}
+mc.lajes.forEach(function (l) { poche(R(l.u0, l.y0, l.u1, l.y1), l.status); });
+mc.paredes.forEach(function (p) {
+poche(R(p.u0, p.yb, p.u1, p.yt), p.status);
+p.aberturas.forEach(function (a) {
+var P = R(a.u0, a.y0, a.u1, a.y1);
+d.fundoPol(D, P, "#fff");
+D.linha(P[0][0], P[0][1], P[1][0], P[1][1], "ARQ-VAO"); D.linha(P[3][0], P[3][1], P[2][0], P[2][1], "ARQ-VAO");
+if (a.tipo === "janela") { var ym = (Y(a.y0) + Y(a.y1)) / 2; D.linha(P[0][0], ym, P[1][0], ym, "ARQ-ARCO"); }
+});
+});
+mc.telhado.forEach(function (t) {
+var P = [[U(t.u0), Y(t.ya)], [U(t.u1), Y(t.yb)], [U(t.u1), Y(t.yb - t.esp)], [U(t.u0), Y(t.ya - t.esp)]];
+d.fundoPol(D, P, "#d8c2a6");
+D.linha(P[0][0], P[0][1], P[1][0], P[1][1], "ARQ-TELHADO"); D.linha(P[3][0], P[3][1], P[2][0], P[2][1], "ARQ-FINA");
+D.linha(P[0][0], P[0][1], P[3][0], P[3][1], "ARQ-FINA"); D.linha(P[1][0], P[1][1], P[2][0], P[2][1], "ARQ-FINA");
+});
+mc.forros.forEach(function (f) { D.linha(U(f.u0), Y(f.y), U(f.u1), Y(f.y), "ARQ-FORRO-DET"); D.linha(U(f.u0), Y(f.y) - 0.5, U(f.u1), Y(f.y) - 0.5, "ARQ-FORRO-DET"); });
+return { U: U, Y: Y };
+}
+function cotasCorte(c, ct, mc, F, k) {
+var D = c.D, d = DS(), ys = [0], X0 = F.U(ct.u0) - 16;
+mc.forros.forEach(function (f) { ys.push(f.y); });
+mc.paredes.forEach(function (p) { if (!p.muro) ys.push(p.yt); });
+mc.telhado.forEach(function (t) { ys.push(Math.max(t.ya, t.yb)); });
+var vs = ys.sort(function (a, b) { return a - b; }).filter(function (y, i, A) { return i === 0 || y - A[i - 1] > 0.02; });
+if (vs.length >= 2) {
+var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
+D.cota(X0 - 8, F.Y(vs[0]), X0 - 8, F.Y(vs[vs.length - 1]), 0, d.cm1(vs[vs.length - 1] - vs[0]), { desde: [false, false], semExt: true });
+}
+var us = [ct.u0]; mc.paredes.forEach(function (p) { us.push(p.u0, p.u1); }); us.push(ct.u1);
+us = us.sort(function (a, b) { return a - b; }).filter(function (u, i, A) { return i === 0 || u - A[i - 1] > 0.02; });
+if (us.length >= 2) {
+var yL = F.Y(mc.yMin) + 11, Q = us.map(function (u) { return [F.U(u), yL]; }), vv = []; for (var j = 0; j + 1 < us.length; j++) vv.push(d.cm1(us[j + 1] - us[j]));
+D.cadeia(Q, 0, vv, { offs: [-4.5], desde: Q.map(function () { return false; }), semExt: true });
+}
+}
+function colocarNiveis(D, xr, lista, F) {
+var cols = [[]], d = DS();
+lista.sort(function (a, b) { return b.y - a.y; });
+lista.forEach(function (n) {
+var yy = F.Y(n.y), k = 0;
+while (k < 4) { cols[k] = cols[k] || []; if (!cols[k].some(function (v) { return Math.abs(v - yy) < 5.6; })) break; k++; }
+cols[k] = cols[k] || []; cols[k].push(yy); D.nivel(xr + k * 40, yy, n.t, 1);
+});
+void d;
+}
+function niveisCorte(c, ct, mc, F) {
+var D = c.D, d = DS(), xr = F.U(ct.u1) + 16, lista = [{ y: 0, t: "±0,00" }];
+var topo = Math.max.apply(null, [0].concat(mc.paredes.filter(function (p) { return !p.muro; }).map(function (p) { return p.yt; })));
+var cum = Math.max.apply(null, [-9].concat(mc.telhado.map(function (t) { return Math.max(t.ya, t.yb); })));
+var fv = {}; mc.forros.forEach(function (f) { if (!fv[f.y]) { fv[f.y] = 1; lista.push({ y: f.y, t: d.nivelTxt(f.y) + " forro" }); } });
+if (topo > 0.1) lista.push({ y: topo, t: d.nivelTxt(topo) + " topo da parede" });
+if (cum > -9) lista.push({ y: cum, t: d.nivelTxt(cum) + " cumeeira" });
+colocarNiveis(D, xr, lista, F);
+}
+function rotulosCorte(c, ct, mc, F, k) {
+var D = c.D, d = DS(), sem = [];
+mc.ambientes.forEach(function (a) {
+var yb = a.base + 0.15, yt = a.base + Math.max(a.pe, 2.2), P0 = [F.U(a.u0) + 1.2, F.Y(yt)], P1 = [F.U(a.u1) - 1.2, F.Y(yb)];
+if (P1[0] - P0[0] < 6) return;
+var cen = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2];
+var jogos = [[{ t: txt(a.nome).toUpperCase(), h: 2.8 }, { t: "PD = " + d.br(a.pe, 2) + " m" }], [{ t: txt(a.nome).toUpperCase(), h: 2.4 }]];
+if (!d.rotuloBloco(D, cen, null, [P0[0], P0[1], P1[0], P1[1]], { jogos: jogos })) sem.push(a.nome);
+});
+return sem;
+}
+function escolherEscala(larguras, alturas, area, escalas, extra) {
+extra = extra || {};
+for (var i = 0; i < escalas.length; i++) {
+var k = 1000 / escalas[i], lado = 0, empilhado = 0, maxH = 0, maxW = 0;
+for (var j = 0; j < larguras.length; j++) { lado += larguras[j] * k + (extra.fx || 0); empilhado += alturas[j] * k + (extra.fy || 0); maxH = Math.max(maxH, alturas[j] * k + (extra.fy || 0)); maxW = Math.max(maxW, larguras[j] * k + (extra.fx || 0)); }
+if (lado <= area.w && maxH <= area.h) return { escala: escalas[i], k: k, modo: "lado" };
+if (empilhado <= area.h && maxW <= area.w) return { escala: escalas[i], k: k, modo: "pilha" };
+}
+var u = escalas[escalas.length - 1]; return { escala: u, k: 1000 / u, modo: "pilha", estourou: true };
+}
+function cortes(c) {
+var D = c.D, d = DS(), A = c.A, cts = c.cortes, mcs = cts.map(function (ct) { return modeloCorte(c, ct); });
+var ws = cts.map(function (ct) { return ct.u1 - ct.u0 + 1.8; }), hs = mcs.map(function (m) { return (m.yMax - m.yMin) + 0.1; });
+var ex = { fx: 24 + 36 + 40, fy: 14 + 6 + 20 };
+var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, [50, 75, 100, 125, 150, 200], ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
+mcs.forEach(function (mc, i) {
+var ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
+AP().tituloVista(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala);
+var X = x + 24 + 0.9 * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;
+var Fi = desenharCorte(c, ct, mc, X, Yb, k);
+cotasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
+sem = sem.concat(rotulosCorte(c, ct, mc, Fi, k));
+if (el.modo === "lado") x += wm; else y += hm;
+});
+if (el.estourou) c.avisos.push("ARQ-07: os cortes não cabem em 1:" + el.escala + " nesta folha: aumente o formato.");
+if (sem.length) c.avisos.push("ARQ-07: sem lugar livre para o rótulo de " + sem.join(", ") + ".");
+return { escala: "1:" + el.escala, modelos: mcs };
+}
+function vetoresVista(idx) {
+var f = [0, 1];
+if (idx && idx.ladoFrente != null && idx.recuos && idx.recuos[idx.ladoFrente]) {
+var r = idx.recuos[idx.ladoFrente], ex = r.para[0] - r.de[0], ez = r.para[1] - r.de[1], L = hip(ex, ez) || 1, nx = ez / L, nz = -ex / L, cen = idx.terreno && idx.terreno.contorno ? G().centroide(idx.terreno.contorno) : [0, 0];
+var mx = (r.de[0] + r.para[0]) / 2, mz = (r.de[1] + r.para[1]) / 2;
+if ((mx + nx - cen[0]) * nx + (mz + nz - cen[1]) * nz < 0) { nx = -nx; nz = -nz; }
+f = [Math.abs(nx) > 0.9 ? Math.round(nx) : (Math.abs(nz) > 0.9 ? 0 : nx), Math.abs(nz) > 0.9 ? Math.round(nz) : (Math.abs(nx) > 0.9 ? 0 : nz)];
+}
+var rt = [f[1], -f[0]];
+return [
+{ nome: "FACHADA FRONTAL", v: f }, { nome: "FACHADA LATERAL DIREITA", v: rt }, { nome: "FACHADA POSTERIOR", v: [-f[0], -f[1]] }, { nome: "FACHADA LATERAL ESQUERDA", v: [-rt[0], -rt[1]] }
+];
+}
+function modeloFachada(c, vv) {
+var d = c.dados, g = G(), v = vv.v, r = [v[1], -v[0]], items = [], uMin = Infinity, uMax = -Infinity, yMax = 0, yMin = 0;
+function proj(p) { return p[0] * r[0] + p[1] * r[1]; }
+function prof(p) { return p[0] * v[0] + p[1] * v[1]; }
+var pars = d.paredes.filter(function (w) { return VIVO[w.status]; });
+pars.forEach(function (w) {
+var us = w.pts.map(proj), u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), cen = g.centroide(w.pts);
+items.push({ tipo: w.muro ? "muro" : "parede", u0: u0, u1: u1, yb: w.base, yt: w.topo, prof: prof(cen), status: w.status, id: w.id, w: w });
+uMin = Math.min(uMin, u0); uMax = Math.max(uMax, u1); yMax = Math.max(yMax, w.topo); yMin = Math.min(yMin, w.base);
+});
+arr(d.telhados).filter(function (t) { return VIVO[t.status]; }).forEach(function (t) {
+arr(t.aguas).forEach(function (ag) {
+arr(ag.pecas).forEach(function (pc) {
+var P3 = arr(pc.pts); if (P3.length < 3) return;
+var us = P3.map(function (q) { return proj([q.x, q.z]); }), cx = 0, cz = 0; P3.forEach(function (q) { cx += q.x / P3.length; cz += q.z / P3.length; });
+items.push({ tipo: "agua", poli: P3.map(function (q) { return [proj([q.x, q.z]), q.y]; }), prof: prof([cx, cz]), status: t.status });
+us.forEach(function (u) { uMin = Math.min(uMin, u); uMax = Math.max(uMax, u); }); P3.forEach(function (q) { yMax = Math.max(yMax, q.y); yMin = Math.min(yMin, q.y); });
+});
+});
+});
+var ordem = items.slice().sort(function (a, b) { return a.prof - b.prof; });
+var vaos = d.vaos.filter(function (q) { return VIVO[q.status]; });
+return { items: ordem, vaos: vaos, uMin: uMin, uMax: uMax, yMax: yMax, yMin: yMin, r: r, v: v, proj: proj, prof: prof };
+}
+function desenharFachada(c, vv, mf, X, Yb, k) {
+var D = c.D, d = DS(), g = G();
+function U(u) { return X + (u - mf.uMin) * k; }
+function Y(y) { return Yb - (y - mf.yMin) * k; }
+D.linha(U(mf.uMin - 0.9), Y(0), U(mf.uMax + 0.9), Y(0), "ARQ-TERRENO");
+for (var xx = U(mf.uMin - 0.9); xx < U(mf.uMax + 0.9); xx += 2.2) D.linha(xx, Y(0), xx - 1.6, Y(0) + 1.6, "ARQ-HACHURA");
+var nPar = 0;
+mf.items.filter(function (it) { return it.tipo !== "agua"; }).forEach(function (it) {
+var P = [[U(it.u0), Y(it.yt)], [U(it.u1), Y(it.yt)], [U(it.u1), Y(it.yb)], [U(it.u0), Y(it.yb)]];
+d.fundoPol(D, P, it.tipo === "muro" ? "#ececec" : (it.status === "novo" ? "#fbefef" : "#f1f1f1"));
+D._cam = it.tipo === "muro" ? "ARQ-MURO" : "ARQ-PAREDE-" + (it.status === "novo" ? "NOVO" : "EXISTENTE"); D.traco(P, true); D._cam = null;
+D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, it.tipo === "muro" ? "ARQ-MURO" : "ARQ-VAO", 1) + "/>");
+nPar++;
+if (it.tipo === "parede" && (it.u1 - it.u0) > 0.35) {
+mf.vaos.filter(function (q) { return q.parede === it.id; }).forEach(function (q) {
+var h = q.largura / 2, u = mf.proj([q.x, q.z]), y0 = it.yb + q.peitoril, y1 = y0 + q.altura, Q = [[U(u - h), Y(y1)], [U(u + h), Y(y1)], [U(u + h), Y(y0)], [U(u - h), Y(y0)]];
+d.fundoPol(D, Q, q.tipo === "janela" ? "#dcecf5" : "#e8d9c4");
+D._cam = "ARQ-VAO"; D.traco(Q, true); D._cam = null; D.add('<polygon points="' + d.pts(Q) + '" fill="none"' + d.atr(D, "ARQ-VAO", 1) + "/>");
+if (q.tipo === "janela") { D.linha(U(u), Y(y1), U(u), Y(y0), "ARQ-ARCO"); D.linha(U(u - h), (Y(y0) + Y(y1)) / 2, U(u + h), (Y(y0) + Y(y1)) / 2, "ARQ-ARCO"); }
+});
+}
+});
+mf.items.filter(function (it) { return it.tipo === "agua"; }).forEach(function (it) {
+var P = it.poli.map(function (q) { return [U(q[0]), Y(q[1])]; });
+if (g.areaPol(P) < 0.2) { D.linha(P[0][0], P[0][1], P[P.length - 1][0], P[P.length - 1][1], "ARQ-TELHADO"); return; }
+d.fundoPol(D, P, "#d8c2a6"); D._cam = "ARQ-TELHADO"; D.traco(P, true); D._cam = null; D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, "ARQ-TELHADO", 1) + "/>");
+g.hachuraLinhas(P, 4, 0).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA"); });
+});
+void nPar;
+return { U: U, Y: Y };
+}
+function cotasFachada(c, vv, mf, F, k) {
+var D = c.D, d = DS(), X0 = F.U(mf.uMin) - 14, ys = [0], topoPar = 0, cum = 0;
+mf.items.forEach(function (it) { if (it.tipo === "parede") topoPar = Math.max(topoPar, it.yt); if (it.tipo === "agua") it.poli.forEach(function (q) { cum = Math.max(cum, q[1]); }); });
+if (topoPar > 0.05) ys.push(topoPar); if (cum > topoPar + 0.05) ys.push(cum);
+var vs = ys.sort(function (a, b) { return a - b; });
+if (vs.length >= 2) {
+var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
+}
+var xr = F.U(mf.uMax) + 14, niv = [{ y: 0, t: "±0,00" }]; if (topoPar > 0.05) niv.push({ y: topoPar, t: d.nivelTxt(topoPar) }); if (cum > topoPar + 0.05) niv.push({ y: cum, t: d.nivelTxt(cum) + " cumeeira" });
+colocarNiveis(D, xr, niv, F);
+var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cm1(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });
+}
+function fachadas(c) {
+var D = c.D, A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
+var ws = mfs.map(function (m) { return m.uMax - m.uMin + 1.8; }), hs = mfs.map(function (m) { return m.yMax - m.yMin + 0.3; });
+var cel = { w: A.w / 2 - 4, h: A.h / 2 - 2 }, ex = { fx: 14 + 30, fy: 14 + 18 };
+var esc = [50, 75, 100, 125, 150, 200], k = 0.005, ch = null;
+for (var i = 0; i < esc.length && !ch; i++) {
+var kk = 1000 / esc[i], ok = true;
+for (var j = 0; j < mfs.length; j++) if (ws[j] * kk + ex.fx > cel.w || hs[j] * kk + ex.fy > cel.h) ok = false;
+if (ok) { ch = esc[i]; k = kk; }
+}
+if (!ch) { ch = 200; k = 5; c.avisos.push("ARQ-08: as fachadas não cabem em 1:200 nesta folha: aumente o formato."); }
+mfs.forEach(function (mf, i) {
+var col = i % 2, lin = Math.floor(i / 2), cx0 = A.x + 4 + col * (A.w / 2), cy0 = A.y + 2 + lin * (A.h / 2);
+AP().tituloVista(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch);
+var X = cx0 + 14 + 0.9 * k, Yb = cy0 + 14 + (mf.yMax - mf.yMin) * k + 4;
+var F = desenharFachada(c, vvs[i], mf, X, Yb, k);
+cotasFachada(c, vvs[i], mf, F, k);
+});
+return { escala: "1:" + ch };
+}
+var ArqCortes = { escolherCortes: escolherCortes, cortes: cortes, fachadas: fachadas, escolherEscala: escolherEscala, modeloCorte: modeloCorte, vetoresVista: vetoresVista };
+global.ArqCortes = ArqCortes;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqCortes;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqquadros.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+var VERMELHO = "#c00000";
+function br(v, c) { if (v == null || !isFinite(v)) return "-"; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+function cols(def, w) {
+var tot = 0; def.forEach(function (c) { tot += c.f; });
+return def.map(function (c) { return { t: c.t, w: c.f / tot * w, al: c.al }; });
+}
+function tabela(D, x, y, w, titulo, def, linhas, o) {
+o = o || {};
+var T = D.E.T, hT = 0;
+if (titulo) { D.texto(x, y + T.tabelaCab * 0.8, titulo, T.tabelaCab, { peso: 0.2 }); hT = T.tabelaCab * 1.5 + 1.2; }
+var r = D.tabela(x, y + hT, cols(def, w), linhas, { fs: o.fs || T.tabela, fsc: o.fsc || T.tabelaCab * 0.85 });
+return { w: r.w, h: r.h + hT };
+}
+function c2(v) { return br(v, 2); }
+function quadroAreas(D, x, y, w, idx) {
+var a = idx.areas, t = idx.terreno, p = idx.projecao;
+var L = [
+["ÁREA DO TERRENO", t.area != null ? c2(t.area) : { t: "informe", cor: VERMELHO }],
+["CONSTRUÍDA EXISTENTE (A MANTER)", c2(a.existente)], ["A DEMOLIR", c2(a.demolir)], ["A CONSTRUIR (AMPLIAÇÃO / REFORMA)", c2(a.construir)],
+{ total: [{ t: "ÁREA CONSTRUÍDA TOTAL", cor: null }, c2(a.total)] },
+["PROJEÇÃO DA EDIFICAÇÃO (APÓS A OBRA)", c2(p.depois)], ["PROJEÇÃO DA EDIFICAÇÃO (SITUAÇÃO EXISTENTE)", c2(p.antes)],
+["ÁREA PERMEÁVEL (DESCOBERTA)", c2(idx.permeavel.area)]
+];
+return tabela(D, x, y, w, "QUADRO DE ÁREAS (m²)", [{ t: "DISCRIMINAÇÃO", f: 4.2, al: "E" }, { t: "ÁREA m²", f: 1.2, al: "D" }], L);
+}
+function quadroIndices(D, x, y, w, idx) {
+var L = idx.verificacao.map(function (v) {
+var val = v.valor == null ? "-" : (v.un === "%" ? c2(v.valor) + " %" : c2(v.valor));
+var lim = v.limite == null ? { t: "informe", cor: VERMELHO } : ((v.op === "<=" ? "≤ " : "≥ ") + c2(v.limite) + (v.un === "%" ? " %" : ""));
+var sit = v.atende === true ? "ATENDE" : (v.atende === false ? { t: "NÃO ATENDE", cor: VERMELHO } : { t: "-", cor: null });
+return [v.rotulo, val, lim, sit];
+});
+var extra = idx.antes && idx.antes.ocupacaoPct != null ? [["Ocupação antes da obra (existente)", c2(idx.antes.ocupacaoPct) + " %", "", ""]] : [];
+return tabela(D, x, y, w, "ÍNDICES URBANÍSTICOS", [{ t: "ÍNDICE", f: 3.4, al: "E" }, { t: "PROJETO", f: 1.5, al: "D" }, { t: "LIMITE", f: 1.5, al: "D" }, { t: "SITUAÇÃO", f: 1.8, al: "C" }], L.concat(extra));
+}
+function quadroRecuos(D, x, y, w, idx) {
+var L = arr(idx.recuos).map(function (r) {
+return [txt(r.nome).toUpperCase(), c2(r.comprimento), r.recuo == null ? "-" : c2(r.recuo), r.recuoCobertura == null ? "-" : c2(r.recuoCobertura)];
+});
+if (!L.length) L = [[{ t: "sem divisa no modelo", cor: VERMELHO }, "", "", ""]];
+return tabela(D, x, y, w, "RECUOS (m)", [{ t: "DIVISA", f: 2.6, al: "E" }, { t: "TESTADA", f: 1.4, al: "D" }, { t: "EDIFICAÇÃO", f: 1.6, al: "D" }, { t: "COBERTURA", f: 1.6, al: "D" }], L);
+}
+function quadroEsquadrias(D, x, y, w, esq) {
+var L = arr(esq).map(function (q) {
+var tot = (q.qtd.novo || 0) + (q.qtd.existente || 0);
+var obs = q.dimPadrao ? { t: "conferir medida", cor: VERMELHO } : "";
+return [q.cod, q.tipo === "porta" ? "Porta" : "Janela", txt(q.nome), String(Math.round(q.largura * 100)), String(Math.round(q.altura * 100)), String(Math.round(q.peitoril * 100)),
+txt(q.material) || { t: "informe", cor: VERMELHO }, String(q.qtd.existente || 0), String(q.qtd.novo || 0), String(q.qtd.demolido || 0), String(tot), obs];
+});
+if (!L.length) L = [[{ t: "sem portas nem janelas no modelo", cor: VERMELHO }, "", "", "", "", "", "", "", "", "", "", ""]];
+return tabela(D, x, y, w, "QUADRO DE ESQUADRIAS", [{ t: "COD", f: 1 }, { t: "TIPO", f: 1.5 }, { t: "DESCRIÇÃO", f: 4.4, al: "E" }, { t: ["LARG", "(cm)"], f: 1.2 }, { t: ["ALT", "(cm)"], f: 1.2 }, { t: ["PEIT", "(cm)"], f: 1.2 },
+{ t: "MATERIAL", f: 2.4, al: "E" }, { t: ["EXIST.", "MANTER"], f: 1.4 }, { t: ["A", "CONSTR."], f: 1.4 }, { t: ["A", "DEMOL."], f: 1.4 }, { t: ["QTD", "FINAL"], f: 1.2 }, { t: "OBS", f: 2.2, al: "E" }], L);
+}
+function quadroAcabamentos(D, x, y, w, ambs) {
+var L = arr(ambs).map(function (a) {
+function v(s) { return s ? s : { t: "informe", cor: VERMELHO }; }
+return [txt(a.numero), txt(a.nome).toUpperCase(), c2(a.area), v(a.piso), v(a.rodape), v(a.parede), v(a.forro), c2(a.pe)];
+});
+if (!L.length) L = [[{ t: "sem ambiente no modelo", cor: VERMELHO }, "", "", "", "", "", "", ""]];
+return tabela(D, x, y, w, "QUADRO DE ACABAMENTOS POR AMBIENTE", [{ t: "Nº", f: 0.8 }, { t: "AMBIENTE", f: 2.6, al: "E" }, { t: ["ÁREA", "(m²)"], f: 1.2 }, { t: "PISO", f: 3.2, al: "E" }, { t: "RODAPÉ", f: 2, al: "E" },
+{ t: "PAREDES", f: 3.2, al: "E" }, { t: "FORRO", f: 3.2, al: "E" }, { t: ["PÉ-DIREITO", "(m)"], f: 1.5 }], L);
+}
+function quadroForros(D, x, y, w, forros, ambs, nLum) {
+var por = {}; arr(ambs).forEach(function (a) { por[a.id] = a; });
+var L = arr(forros).map(function (f) { var a = por[f.ambienteId]; return [txt(a ? a.nome : f.id).toUpperCase(), txt(f.tipo) || { t: "informe", cor: VERMELHO }, (f.cota > 0 ? "+" : "") + c2(f.cota), c2(f.area)]; });
+L.push({ total: [{ t: "LUMINÁRIAS (símbolo no desenho)", cor: null }, "", "", String(nLum)] });
+return tabela(D, x, y, w, "QUADRO DE FORROS", [{ t: "AMBIENTE", f: 2.6, al: "E" }, { t: "TIPO", f: 3.4, al: "E" }, { t: "NÍVEL (m)", f: 1.4 }, { t: ["ÁREA", "(m²)"], f: 1.2 }], L);
+}
+var ArqQuadros = { quadroAreas: quadroAreas, quadroIndices: quadroIndices, quadroRecuos: quadroRecuos, quadroEsquadrias: quadroEsquadrias, quadroAcabamentos: quadroAcabamentos, quadroForros: quadroForros, tabela: tabela };
+global.ArqQuadros = ArqQuadros;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqQuadros;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqpranchas.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function PR() { return dep("Prancha", "./prancha.js"); }
+function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
+function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
+function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
+function IX() { return dep("ArqIndices", "./arqindices.js"); }
+function PL() { return dep("ArqPlantas", "./arqplantas.js"); }
+function CT() { return dep("ArqCortes", "./arqcortes.js"); }
+function QD() { return dep("ArqQuadros", "./arqquadros.js"); }
+function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
+function FS() { return dep("BimFases", "./bimfases.js"); }
+function BE() { return dep("BimEdit", "./bimedit.js"); }
+function PDF() { return dep("SvgPdf", "./svgpdf.js"); }
+function DXF() { return dep("BimDxf", "./bimdxf.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
+function n(v) { return (typeof v === "number" && isFinite(v)) ? String(Math.round(v * 1000) / 1000) : "NaN"; }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function dois(k) { return ("0" + k).slice(-2); }
+function hoje() { var dt = new Date(); return dois(dt.getDate()) + "/" + dois(dt.getMonth() + 1) + "/" + dt.getFullYear(); }
+var FONTE = "RomanS, ISOCPEUR, Arial, Helvetica, sans-serif";
+var VERMELHO = "#c00000";
+var CONJUNTOS = ["situacao", "existente", "demolir", "layout", "cobertura", "forro", "cortes", "fachadas", "piso", "quadros", "humanizada"];
+var ROTULO_CONJUNTO = { situacao: "Situação e implantação (índices, recuos, norte)", existente: "Planta existente (cotada)", demolir: "Planta de demolir / construir (convenção de reforma)",
+layout: "Planta proposta / layout (cotas, ambientes, esquadrias)", cobertura: "Planta de cobertura", forro: "Planta de forro", cortes: "Cortes AA e BB", fachadas: "Fachadas",
+piso: "Paginação de piso", quadros: "Quadros: esquadrias, acabamentos e lista de folhas", humanizada: "Planta humanizada (apresentação ao cliente)" };
+var TITULO = { situacao: "SITUAÇÃO E IMPLANTAÇÃO", existente: "PLANTA EXISTENTE", demolir: "PLANTA DE DEMOLIR E CONSTRUIR", layout: "PLANTA BAIXA PROPOSTA - LAYOUT", cobertura: "PLANTA DE COBERTURA",
+forro: "PLANTA DE FORRO", cortes: "CORTES AA E BB", fachadas: "FACHADAS", piso: "PAGINAÇÃO DE PISO", quadros: "QUADRO DE ESQUADRIAS E ACABAMENTOS", humanizada: "PLANTA HUMANIZADA" };
+var FORMATOS_OK = ["AUTO", "A0", "A1", "A2", "A3"];
+function configPadrao() {
+var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
+return { formato: "AUTO", escala: "auto", prefixo: "ARQ", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO", conjuntos: cj,
+municipio: "", limites: { nome: "", ocupacaoMax: null, permeavelMin: null, aproveitamentoMax: null, conferir: false }, rua: "", cotasInternas: true, beiralNaProjecao: false, fatores: { deckVazado: 1 } };
+}
+function normalizarConfig(c) {
+var p = configPadrao(), o = c || {}, r = {};
+r.formato = FORMATOS_OK.indexOf(txt(o.formato).toUpperCase()) >= 0 ? txt(o.formato).toUpperCase() : p.formato;
+r.escala = o.escala === "auto" || o.escala == null ? "auto" : (isFinite(+o.escala) && +o.escala > 0 ? +o.escala : "auto");
+r.prefixo = (txt(o.prefixo).trim() || p.prefixo).toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 12) || p.prefixo;
+r.revisao = (txt(o.revisao).trim() || p.revisao).toUpperCase();
+r.descricaoRevisao = txt(o.descricaoRevisao).trim() || p.descricaoRevisao;
+r.conjuntos = {}; CONJUNTOS.forEach(function (k) { r.conjuntos[k] = !o.conjuntos || o.conjuntos[k] !== false; });
+r.municipio = txt(o.municipio).trim();
+var L = o.limites && typeof o.limites === "object" ? o.limites : {};
+r.limites = { nome: txt(L.nome), ocupacaoMax: L.ocupacaoMax != null && L.ocupacaoMax !== "" && isFinite(+L.ocupacaoMax) ? +L.ocupacaoMax : null, permeavelMin: L.permeavelMin != null && L.permeavelMin !== "" && isFinite(+L.permeavelMin) ? +L.permeavelMin : null,
+aproveitamentoMax: L.aproveitamentoMax != null && L.aproveitamentoMax !== "" && isFinite(+L.aproveitamentoMax) ? +L.aproveitamentoMax : null, conferir: !!L.conferir };
+r.rua = txt(o.rua).trim(); r.cotasInternas = o.cotasInternas !== false; r.beiralNaProjecao = !!o.beiralNaProjecao;
+r.fatores = { deckVazado: o.fatores && isFinite(+o.fatores.deckVazado) ? +o.fatores.deckVazado : 1 };
+return r;
+}
+function idsPorStatus(estado, dados) {
+var B = FS(), out = { novo: {}, demolido: {} };
+if (!B) return out;
+var lista = B.lista(estado), fase = dados.fase;
+B.pecas(estado, { categoriaFam: MD().categoriaFam }).forEach(function (p) {
+var st = B.statusDe(p.el, fase, lista); if (st === "novo") out.novo[p.id] = 1; else if (st === "demolido") out.demolido[p.id] = 1;
+});
+arr(estado.telhados).concat(arr(estado.forros)).forEach(function (t) { if (t && t.id != null) { var st = B.statusDe(t, fase, lista); if (st === "novo") out.novo[String(t.id)] = 1; else if (st === "demolido") out.demolido[String(t.id)] = 1; } });
+return out;
+}
+function estadoSem(modelo, fora, opcoes) {
+var E = BE(); if (!E || !arr(modelo.ops).length) return null;
+var ops = arr(modelo.ops).filter(function (o) {
+if (!o) return false;
+if (o.id != null && fora[String(o.id)] && o.op !== "ambiente" && o.op !== "ajustarAmbiente") return false;
+if (o.host && o.host.id != null && fora[String(o.host.id)]) return false;
+return true;
+});
+try { return E.aplicar(ops, opcoes); } catch (e) { return null; }
+}
+function situacoes(modelo, dados, op, avisos) {
+var Md = MD(), ids = idsPorStatus(modelo.estado, dados), antes = null, depois = null, estDepois = modelo.estado;
+if (Object.keys(ids.demolido).length || Object.keys(ids.novo).length) {
+var eD = estadoSem(modelo, ids.demolido), eA = estadoSem(modelo, ids.novo);
+if (eD) { depois = Md.extrair({ estado: eD, avaliarFam: modelo.avaliarFam }, op); estDepois = eD; }
+if (eA) antes = Md.extrair({ estado: eA, avaliarFam: modelo.avaliarFam }, op);
+if (!eD || !eA) avisos.push("Sem a lista de operações do modelo (ops): os ambientes das plantas existente e proposta saem do modelo inteiro, sem refazer o contorno pelas paredes que ficam.");
+}
+return { antes: antes || dados, depois: depois || dados, estadoDepois: estDepois };
+}
+var ESC_PLANTA = [50, 75, 100, 125, 150];
+function caixaPlano(dados) {
+var g = GEO(), xs = [], zs = [];
+function add(P) { arr(P).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); }
+dados.paredes.forEach(function (w) { if (!w.muro) add(w.pts); }); dados.pilares.forEach(function (w) { add(w.pts); }); dados.lajes.forEach(function (l) { add(l.pts); });
+dados.telhados.forEach(function (t) { add(t.pBeiral || t.pts); });
+if (!xs.length) return dados.caixa;
+void g;
+return [Math.min.apply(null, xs), Math.min.apply(null, zs), Math.max.apply(null, xs), Math.max.apply(null, zs)];
+}
+function cabePlanta(geo, cx, esc) {
+var d = DS(), k = 1000 / esc, a = geo.area, mg = d.K.margemCotas;
+return (cx[2] - cx[0]) * k + 2 * mg + 12 <= a.w && (cx[3] - cx[1]) * k + 2 * mg + 16 + 34 <= a.h;
+}
+function cabeFachadas(geo, dados, esc) {
+var k = 1000 / esc, a = geo.area, w = dados.caixa[2] - dados.caixa[0] + 1.8, h = 0;
+dados.paredes.forEach(function (x) { h = Math.max(h, x.topo); }); dados.telhados.forEach(function (t) { h = Math.max(h, t.cotaCumeeira); });
+return w * k + 44 <= a.w / 2 - 4 && (h + 0.3) * k + 32 <= a.h / 2 - 2;
+}
+function escolherFormatoEscala(dados, cfg, avisos) {
+var P = PR(), cx = caixaPlano(dados), fmts = cfg.formato === "AUTO" ? ["A2", "A1", "A0"] : [cfg.formato], escs = cfg.escala === "auto" ? ESC_PLANTA : [cfg.escala];
+var melhor = null;
+for (var ie = 0; ie < escs.length && !melhor; ie++) for (var i = 0; i < fmts.length && !melhor; i++) {
+var geo = P.geometria(fmts[i], "paisagem", "RA");
+if (cabePlanta(geo, cx, escs[ie]) && (cfg.formato !== "AUTO" || cabeFachadas(geo, dados, Math.max(escs[ie], 75)))) melhor = { formato: fmts[i], escala: escs[ie], caixa: cx };
+}
+if (!melhor) {
+var f = fmts[fmts.length - 1], e = escs[escs.length - 1];
+melhor = { formato: f, escala: e, caixa: cx, estourou: true };
+avisos.push("A planta não cabe em " + f + " nem em 1:" + e + ": use a folha maior ou reduza a escala (a planta sai cortada pela moldura).");
+} else if (cfg.formato === "AUTO" && cfg.escala === "auto" && melhor.escala !== 50) avisos.push("A planta saiu em 1:" + melhor.escala + " (1:50 não cabe em " + melhor.formato + "): use A0 para 1:50.");
+return melhor;
+}
+function escolherEscalaSituacao(idx, geo) {
+var l = idx.terreno && idx.terreno.contorno ? GEO().bbox(idx.terreno.contorno) : null, a = geo.area, wQ = Math.min(176, Math.max(140, a.w * 0.34)), esc = [100, 125, 150, 200, 250, 300, 400, 500, 750, 1000];
+if (!l) return 200;
+for (var i = 0; i < esc.length; i++) { var k = 1000 / esc[i]; if ((l[2] - l[0]) * k + 70 <= a.w - wQ - 10 && (l[3] - l[1]) * k + 100 <= a.h) return esc[i]; }
+return esc[esc.length - 1];
+}
+function legendaFases() {
+var C = DS().conv();
+return [{ t: "A CONSTRUIR", fill: C.novo.fill, hachura: true, cam: "ARQ-PAREDE-NOVO" }, { t: "A DEMOLIR (tracejado)", fill: C.demolido.fill, cam: "ARQ-PAREDE-DEMOLIDO" }, { t: "EXISTENTE A MANTER", fill: C.existente.fill, cam: "ARQ-PAREDE-EXISTENTE" }];
+}
+var NOTAS_GERAIS = [
+"Cotas em centímetros; níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
+"Prevalecem as cotas sobre o desenho. Conferir no local todas as medidas existentes antes de executar.",
+"Representação conforme a NBR 6492 (projetos de arquitetura); simbologia da RA Engenharia."
+];
+function blocosNotas(c, def) {
+var B = [];
+if (def.tipo === "demolir") B.push({ titulo: "LEGENDA", legenda: legendaFases(), itens: [] });
+if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas: ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ").", "AA e BB: planos de corte (folha " + c.numeroDe("cortes") + ")."] });
+if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."] });
+if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
+if (def.tipo === "piso") B.push({ titulo: "LEGENDA", itens: ["Linha cheia: peça inteira. Linha vermelha: peça cortada.", "Quantidade com reserva de 10 % (receita da paginação do ambiente)."] });
+if (def.tipo === "situacao") B.push({ titulo: "LEGENDA", itens: ["Linha traço-ponto: divisa do lote.", "Hachura verde: área permeável (solo natural).", "Cobertura vista de cima, edificação tracejada por baixo."] });
+if (def.tipo === "humanizada") B.push({ titulo: "APRESENTAÇÃO", itens: ["Planta ilustrativa para apresentação ao cliente; não substitui as pranchas executivas."] });
+B.push({ titulo: "NOTAS GERAIS", numerar: true, itens: NOTAS_GERAIS });
+var pend = arr(c.avisosFolha[def.id]).concat(def.tipo === "situacao" ? arr(c.idx.avisos) : []);
+if (pend.length) B.push({ titulo: "PENDÊNCIAS", itens: pend.slice(0, 8).map(function (t) { return { t: t, cor: VERMELHO }; }) });
+return B;
+}
+function montarFolha(c, def, D, res, pr, fl, rotulo, geo, E) {
+var F = DS().novo(E, false), W = geo.papel.w, H = geo.papel.h, M = geo.moldura, A = AP();
+F.ret(M.x, M.y, M.w, M.h, "ARQ-MOLDURA");
+var coube = DS().colunaNotas(F, geo, blocosNotas(c, def));
+if (!coube) c.avisos.push(def.numero + ": as notas não cabem na coluna com a letra mínima do padrão: conferir.");
+A.carimbo(F, pr, fl, geo, c.empObj, c.op.logo || null, rotulo + "/" + dois(c.total));
+var numero = c.prefixo + "-" + rotulo;
+return '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(H) + 'mm" viewBox="0 0 ' + n(W) + " " + n(H) + '" font-family="' + FONTE + '" data-folha="' + def.id + '" data-numero="' + esc(numero) + '">' +
+"<title>" + esc(numero + " - " + def.titulo + " - " + c.rev) + "</title>" + '<rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '" fill="#fff"/>' +
+'<g data-corpo="1">' + D.svg() + '</g><g data-folha-moldura="1">' + F.svg() + "</g></svg>";
+}
+function gerar(modelo, opcoes) {
+var cfg = normalizarConfig(opcoes), op = opcoes || {}, avisos = [], P = PR(), Md = MD();
+if (!modelo || !modelo.estado) return { ok: false, folhas: [], avisos: ["Modelo vazio: não há o que apresentar."] };
+if (!P || !P.carimboRA || !AP() || !DS() || !Md || !IX() || !PL() || !CT() || !QD()) return { ok: false, folhas: [], avisos: ["Os motores das pranchas de arquitetura não carregaram (js/arq*.js, js/prancha.js, js/acopranchas.js)."] };
+var dados = Md.extrair(modelo, { pavimentos: op.pavimentos, fase: op.fase });
+dados.avisos.forEach(function (a) { avisos.push(a); });
+if (!dados.paredes.length) return { ok: false, folhas: [], avisos: avisos.concat(["O modelo não tem paredes na fase de agora: não há planta para gerar."]) };
+var sit = situacoes(modelo, dados, { pavimentos: op.pavimentos, fase: op.fase }, avisos);
+var dadosIx = {}; Object.keys(dados).forEach(function (k) { dadosIx[k] = dados[k]; });
+dadosIx.ambientes = arr(sit.depois.ambientes).concat(arr(sit.antes.ambientes).filter(function (a) { return a.status === "demolido"; }));
+var lim = IX().limitesDe(cfg.limites && (cfg.limites.ocupacaoMax != null || cfg.limites.permeavelMin != null || cfg.limites.aproveitamentoMax != null) ? cfg.limites : (cfg.municipio || {}));
+var idx = IX().calcular(dadosIx, { limites: lim, contornoLote: op.contornoLote, areaTerreno: op.areaTerreno, permeaveis: op.permeaveis, fatores: cfg.fatores, beiralNaProjecao: cfg.beiralNaProjecao, frente: op.frente });
+idx.avisos.forEach(function (a) { avisos.push(a); });
+var fe = escolherFormatoEscala(dados, cfg, avisos), geo = P.geometria(fe.formato, "paisagem", "RA");
+var E = DS().estilo(op.padrao);
+var codigo = cfg.prefixo, rev = cfg.revisao, data = txt(op.data).trim() || hoje();
+var emp = op.empresa, empObj = emp && typeof emp === "object" ? emp : null;
+var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo }, cfg: cfg, avisos: avisos, avisosFolha: {},
+plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
+var defs = [], pavs = dados.pavimentos, cj = cfg.conjuntos;
+function add(tipo, pav) {
+var multi = pavs.length > 1 && pav != null, id = tipo + (multi ? "-p" + (pav + 1) : "");
+defs.push({ id: id, tipo: tipo, pav: pav, titulo: TITULO[tipo] + (multi ? " - " + txt(pavs[pav].nome).toUpperCase() : "") });
+}
+CONJUNTOS.forEach(function (tipo) {
+if (!cj[tipo]) return;
+if (tipo === "existente" || tipo === "demolir" || tipo === "layout" || tipo === "forro" || tipo === "piso" || tipo === "humanizada") { for (var i = 0; i < pavs.length; i++) add(tipo, i); }
+else add(tipo, null);
+});
+if (!defs.length) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhuma folha marcada para gerar."]) };
+defs.forEach(function (d, i) { d.rotulo = dois(i + 1); d.numero = codigo + "-" + d.rotulo; });
+c.total = defs.length;
+c.numeroDe = function (tipo) { for (var i = 0; i < defs.length; i++) if (defs[i].tipo === tipo) return codigo + "-" + defs[i].rotulo; return "(não gerada)"; };
+var Pl = PL(), Ct = CT(), Qd = QD(), feitas = {}, ordemDes = defs.filter(function (d) { return d.tipo !== "quadros"; }).concat(defs.filter(function (d) { return d.tipo === "quadros"; }));
+ordemDes.forEach(function (def) {
+var D = DS().novo(E, op.depurar === false ? false : true), res = {}, cc = c;
+cc.D = D; cc.def = def; cc.avisos = avisos;
+var nAv = avisos.length;
+try {
+if (def.tipo === "situacao") res = desenharSituacao(cc, def);
+else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
+else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
+else if (def.tipo === "layout") res = desenharLayout(cc, def);
+else if (def.tipo === "cobertura") res = Pl.cobertura(cc);
+else if (def.tipo === "forro") res = desenharForro(cc, def);
+else if (def.tipo === "cortes") res = Ct.cortes(cc);
+else if (def.tipo === "fachadas") res = Ct.fachadas(cc);
+else if (def.tipo === "piso") res = Pl.paginacao(cc);
+else if (def.tipo === "quadros") res = desenharQuadros(cc, def, defs, feitas);
+else if (def.tipo === "humanizada") res = Pl.humanizada(cc);
+} catch (e) {
+avisos.push("Folha " + def.numero + " (" + def.titulo + "): " + (e && e.message ? e.message : String(e)));
+D.texto(cc.A.x + 10, cc.A.y + 20, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: VERMELHO });
+}
+c.avisosFolha[def.id] = avisos.slice(nAv).filter(function (a) { return a.indexOf(def.numero) === 0 || /^ARQ-\d\d|^Folha|^ARQ-/.test(a) || a.indexOf("Humanizada") === 0; });
+feitas[def.id] = { D: D, escala: (res && res.escala) || "INDICADA", res: res };
+});
+var emp0 = empObj ? "" : txt(emp), revNum = rev.replace(/^R/i, "") || "00";
+var pr = P.normalizar({ id: "arqpranchas", nome: "Arquitetura - projeto executivo", formato: fe.formato, orientacao: "paisagem", origem: "arquitetura",
+carimbo: { modelo: "RA", empresa: emp0, responsavel: txt(op.responsavel), registro: txt(op.registro), titulo: txt(op.tituloProfissional), obra: txt(op.obra), proprietario: txt(op.proprietario),
+contratante: txt(op.contratante), local: txt(op.local), codigo: codigo, data: data, revisoes: [[revNum, cfg.descricaoRevisao, data]] },
+folhas: defs.map(function (d, i) { return { id: d.id, n: i + 1, conteudo: d.titulo, escala: feitas[d.id].escala, numero: codigo + " " + rev }; }) });
+var verificacao = { total: 0, textoTexto: 0, textoLinha: 0, foraJanela: 0, porFolha: [] };
+var A = geo.area, janela = [A.x - 1, A.y - 1, A.x + A.w + 1, A.y + A.h + 1];
+var folhas = defs.map(function (def, i) {
+var f = feitas[def.id], conf = DS().conferir(f.D, janela);
+verificacao.textoTexto += conf.textoTexto.length; verificacao.textoLinha += conf.textoLinha.length; verificacao.foraJanela += conf.foraJanela.length; verificacao.total += conf.total;
+verificacao.porFolha.push({ numero: def.numero, textoTexto: conf.textoTexto, textoLinha: conf.textoLinha, foraJanela: conf.foraJanela });
+var svg = montarFolha(c, def, f.D, f.res, pr, pr.folhas[i], def.rotulo, geo, E);
+var o = { id: def.id, tipo: def.tipo, rotulo: def.rotulo, numero: def.numero, titulo: def.titulo, formato: fe.formato, escala: f.escala, svg: svg };
+if (op.depurar) o.caixasTexto = f.D.caixas;
+return o;
+});
+folhas.forEach(function (f) { if (/NaN|undefined/.test(f.svg)) avisos.push("Folha " + f.numero + ": há valor inválido (NaN/undefined) no desenho."); });
+var lista = folhas.map(function (f) { return { numero: f.numero, titulo: f.titulo, formato: f.formato, escala: f.escala }; });
+return { ok: true, folhas: folhas, formato: fe.formato, escalaPlanta: fe.escala, indices: idx, lista: lista, avisos: avisos, verificacao: verificacao, prefixo: codigo, revisao: rev };
+}
+function desenharSituacao(c, def) {
+var Pl = PL(), Qd = QD(), D = c.D, A = c.A, r = Pl.situacao(c);
+var wQ = Math.min(176, Math.max(140, A.w * 0.34)), x = A.x + A.w - wQ - 2, y = A.y + 14;
+var t1 = Qd.quadroAreas(D, x, y, wQ - 2, c.idx); y += t1.h + 8;
+var t2 = Qd.quadroIndices(D, x, y, wQ - 2, c.idx); y += t2.h + 6;
+var C = c.idx.limites;
+if (C && C.conferir) { var ls = AP().quebrar("Limites de EXEMPLO (" + txt(C.nome) + "): CONFERIR NA LEI e no zoneamento do lote.", D.E.T.nota * 0.9, wQ - 4); ls.forEach(function (s) { D.texto(x, y + D.E.T.nota * 0.8, s, D.E.T.nota * 0.9, { cor: VERMELHO }); y += D.E.T.nota * 1.4; }); y += 3; }
+else if (!(C && (C.ocupacaoMax != null || C.permeavelMin != null || C.aproveitamentoMax != null))) { D.texto(x, y + D.E.T.nota * 0.8, "Limites do município: informe (taxa de ocupação, permeabilidade).", D.E.T.nota * 0.9, { cor: VERMELHO }); y += D.E.T.nota * 1.6 + 3; }
+var t3 = Qd.quadroRecuos(D, x, y, wQ - 2, c.idx);
+return r;
+}
+function desenharLayout(c, def) {
+var Pl = PL(), Qd = QD(), D = c.D, A = c.A, pl = c.plano;
+var r = Pl.planta(c, { modo: "layout", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: true, cortes: true });
+var yT = r.y + 14, esq = arr(c.dados.esquadrias).length, hl = Math.max(4.4, D.E.T.tabela * 1.85), hT = (esq + 1) * hl + D.E.T.tabelaCab * 2 + 4;
+if (esq && yT + hT <= A.y + A.h - 2 && A.w > 200) Qd.quadroEsquadrias(D, A.x + 140, yT - 8, Math.min(A.w - 144, 330), c.dados.esquadrias);
+else if (esq) c.avisos.push(def.numero + ": o quadro de esquadrias não coube sob a planta; está na folha " + c.numeroDe("quadros") + ".");
+void pl;
+return r;
+}
+function desenharForro(c, def) {
+var Pl = PL(), Qd = QD(), D = c.D, A = c.A, r = Pl.forro(c);
+var yT = r.M.oy + r.M.alt + DS().K.margemCotas + 12, ambs = arr(c.depois.ambientes), n = r.forros.length, hl = Math.max(4.4, D.E.T.tabela * 1.85);
+if (yT + (n + 2) * hl + 14 <= A.y + A.h - 2) Qd.quadroForros(D, A.x + 130, yT - 8, Math.min(A.w - 134, 220), r.forros, ambs, arr(c.dados.luminarias).filter(function (l) { return l.status !== "demolido"; }).length);
+return r;
+}
+function desenharQuadros(c, def, defs, feitas) {
+var Qd = QD(), D = c.D, A = c.A, T = D.E.T, y = A.y + 4, w = A.w - 8;
+AP().tituloVista(D, A.x + 4, A.y + 2, def.titulo, "SEM ESCALA"); y += 14;
+var t1 = Qd.quadroEsquadrias(D, A.x + 4, y, w, c.dados.esquadrias); y += t1.h + 10;
+var t2 = Qd.quadroAcabamentos(D, A.x + 4, y, w, c.depois.ambientes); y += t2.h + 10;
+var linhas = defs.map(function (d) { return [d.numero, d.titulo, c.formatoNome, (feitas[d.id] && feitas[d.id].escala) || "SEM ESCALA"]; });
+var cols = [{ t: "FOLHA", f: 1.2, al: "E" }, { t: "TÍTULO", f: 6, al: "E" }, { t: "FORMATO", f: 1.2 }, { t: "ESCALA", f: 1.2 }];
+Qd.tabela(D, A.x + 4, y, Math.min(w, 300), "LISTA DE FOLHAS", cols, linhas);
+void T;
+return { escala: "SEM ESCALA" };
+}
+var ACI = [[1, "#ff0000"], [2, "#ffff00"], [3, "#00ff00"], [4, "#00ffff"], [5, "#0000ff"], [6, "#ff00ff"], [7, "#000000"], [8, "#808080"], [9, "#c0c0c0"], [30, "#ff7f00"]];
+function aciDe(hex) {
+var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(txt(hex)); if (!m) return 7;
+var r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16), best = 7, bd = Infinity;
+ACI.forEach(function (a) { var q = /^#(..)(..)(..)$/.exec(a[1]), d = Math.pow(r - parseInt(q[1], 16), 2) + Math.pow(g - parseInt(q[2], 16), 2) + Math.pow(b - parseInt(q[3], 16), 2); if (d < bd) { bd = d; best = a[0]; } });
+return best;
+}
+function atributos(s) { var o = {}, re = /([\w:-]+)="([^"]*)"/g, m; while ((m = re.exec(s))) o[m[1]] = m[2]; return o; }
+function desesc(s) { return txt(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&amp;/g, "&"); }
+var CAM_MET = { "MET-COTA": "ARQ-COTA", "MET-FINA": "ARQ-FINA", "MET-TABELA": "ARQ-TABELA", "MET-TITULO": "ARQ-TITULO", "MET-HACHURA": "ARQ-HACHURA", "MET-EIXO": "ARQ-EIXO" };
+function paraDxf(r) {
+var X = DXF(); if (!X || !r || !r.ok || !r.folhas.length) return null;
+var doc = X.novoDoc({ unidade: "mm" }), E = DS().estilo(), gap = 50;
+doc.escala = 1;
+function camada(cam, folha, a) {
+var nome = CAM_MET[cam] || txt(cam), cm = E.camadas[txt(cam)] || {}, st = a.stroke && a.stroke !== "none" ? a.stroke : a.fill;
+if (folha) nome = /MOLDURA/.test(nome) ? "FOLHA-MOLDURA" : "FOLHA-CARIMBO";
+else if (!/^ARQ-/.test(nome)) nome = "ARQ-SIMBOLO";
+doc.especificar(nome, cm.mm || +a["stroke-width"] || 0.18, (a["stroke-dasharray"] || cm.dash) ? "TRACEJADO" : null, aciDe(cm.cor || st || "#000"));
+return doc.camada(nome);
+}
+var x0 = 0;
+r.folhas.forEach(function (f) {
+var vb = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(f.svg) || [], W = +vb[1] || 0, Hp = +vb[2] || 0, corte = f.svg.indexOf('<g data-folha-moldura="1">');
+function Pp(x, y) { return [x0 + (+x), Hp - (+y)]; }
+var re = /<(line|polygon|polyline|rect|circle|text)\b([^>]*?)(\/?)>([^<]*)/g, m;
+while ((m = re.exec(f.svg))) {
+var tag = m[1], a = atributos(m[2]), fill = a.fill, st = a.stroke && a.stroke !== "none" ? a.stroke : null, folha = corte >= 0 && m.index > corte, cam = a["data-cam"];
+if (tag === "line" && st) { var p1 = Pp(a.x1, a.y1), p2 = Pp(a.x2, a.y2); doc.linha(camada(cam, folha, a), p1[0], p1[1], p2[0], p2[1]); }
+else if (tag === "polygon" || tag === "polyline") {
+var pts = txt(a.points).trim().split(/\s+/).map(function (q) { var v = q.split(","); return Pp(v[0], v[1]); });
+if (tag === "polygon" && fill && fill !== "none" && pts.length > 2 && !/^#f+$/i.test(fill)) doc.hachura(doc.camada((folha ? "FOLHA" : "ARQ-FUNDO") + "-CHEIO", 0.13, null, aciDe(fill)), [pts], 1, true);
+if (st) doc.poli(camada(cam, folha, a), pts, tag === "polygon");
+} else if (tag === "rect") {
+var x = +a.x, y = +a.y, w = +a.width, h = +a.height, q4 = [Pp(x, y), Pp(x + w, y), Pp(x + w, y + h), Pp(x, y + h)];
+if (st) doc.poli(camada(cam, folha, a), q4, true);
+else if (fill && fill !== "none" && !/^#f+$/i.test(fill)) doc.hachura(doc.camada((folha ? "FOLHA" : "ARQ-FUNDO") + "-CHEIO", 0.13, null, aciDe(fill)), [q4], 1, true);
+} else if (tag === "circle") {
+var pc = Pp(a.cx, a.cy); if (st) doc.circulo(camada(cam, folha, a), pc[0], pc[1], +a.r);
+} else if (tag === "text" && m[3] !== "/") {
+var s = desesc(m[4]); if (!s.trim()) continue;
+var pt = Pp(a.x, a.y), rt = /rotate\(([-\d.eE]+)/.exec(a.transform || ""), al = a["text-anchor"], fs = +a["font-size"], ang = rt ? -(+rt[1]) : 0;
+var red = a.fill && a.fill !== "#000" && a.fill !== "none";
+var cT = doc.camada(folha ? (red ? "FOLHA-TEXTO-PEND" : "FOLHA-TEXTO") : (red ? "ARQ-TEXTO-PEND" : "ARQ-TEXTO"), 0.18, null, red ? aciDe(a.fill) : 7);
+if (al === "end") { var wl = AP().largTexto(s, fs), ra = ang * Math.PI / 180; pt = [pt[0] - wl * Math.cos(ra), pt[1] - wl * Math.sin(ra)]; }
+doc.texto(cT, pt[0], pt[1], fs * 0.7, s, ang, al === "middle");
+}
+}
+x0 += W + gap;
+});
+return X.escrever(doc);
+}
+function exportar(r, formato) {
+if (!r || !r.ok) return null;
+if (formato === "svg") return r.folhas.map(function (f) { return { nome: f.numero + " " + f.titulo + ".svg", svg: f.svg }; });
+if (formato === "pdf") { var S = PDF(); return S ? S.pdf(r.folhas.map(function (f) { return f.svg; }), { titulo: "Projeto de arquitetura" }) : null; }
+if (formato === "dxf") return paraDxf(r);
+return null;
+}
+var ArqPranchas = { VERSAO: 1, gerar: gerar, exportar: exportar, configPadrao: configPadrao, normalizarConfig: normalizarConfig, paraDxf: paraDxf, CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, FORMATOS: FORMATOS_OK,
+_int: { situacoes: situacoes, estadoSem: estadoSem, idsPorStatus: idsPorStatus, escolherFormatoEscala: escolherFormatoEscala, caixaPlano: caixaPlano, blocosNotas: blocosNotas } };
+global.ArqPranchas = ArqPranchas;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchas;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqpranchasui.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function AQ() { return dep("ArqPranchas", "./arqpranchas.js"); }
+function IX() { return dep("ArqIndices", "./arqindices.js"); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+var CHAVE = "orcapro:arq:pranchas:";
+var ULTIMO = { r: null, ctx: null };
+function chave(obraKey) { return CHAVE + (txt(obraKey) || "geral"); }
+function lerMemoria(obraKey, ls) {
+var L = ls || (global.localStorage || null), v = null;
+try { v = L ? JSON.parse(L.getItem(chave(obraKey)) || "null") : null; } catch (e) { v = null; }
+return AQ().normalizarConfig(v || {});
+}
+function gravarMemoria(obraKey, cfg, ls) {
+var L = ls || (global.localStorage || null);
+try { if (L) L.setItem(chave(obraKey), JSON.stringify(AQ().normalizarConfig(cfg))); return true; } catch (e) { return false; }
+}
+function opcoesDe(ctx, cfg) {
+var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = AQ().normalizarConfig(cfg);
+var o = { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
+municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
+empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
+obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
+if (ctx && ctx.contornoLote) o.contornoLote = ctx.contornoLote;
+return o;
+}
+function registroFolhas(r, existente, obraId) {
+var folhas = r.folhas.map(function (f, i) { return { id: "arq-" + f.id, n: i + 1, conteudo: f.numero + " - " + f.titulo, escala: f.escala, blocos: [], imagemInteira: "arqsvg:" + f.id }; });
+var reg = { nome: "Pranchas de arquitetura", origem: "arq", formato: r.folhas[0] ? r.folhas[0].formato : "A1", orientacao: "paisagem", carimbo: { modelo: "RA" }, folhas: folhas };
+if (existente && existente.id) { reg.id = existente.id; reg.criadoEm = existente.criadoEm; }
+reg.obraId = txt(obraId);
+return reg;
+}
+function dataUrlSvg(svg) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg); }
+function marcado(v) { return v ? " checked" : ""; }
+function html(ctx, cfg) {
+var A = AQ(), em = ctx.empresa || {}, ob = ctx.obra || {}, L = cfg.limites || {}, mun = IX().MUNICIPIOS;
+var h = '<div data-arq="tela" data-modal-largo="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
+h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Folha e escala</b></legend>' +
+'<label>Folha <select data-arq="formato">' + A.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (a menor que cabe)" : f) + "</option>"; }).join("") + "</select></label><br>" +
+'<label>Escala da planta <select data-arq="escala">' + ["auto", "50", "75", "100"].map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (1:50 se couber)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
+'<label><input type="checkbox" data-arq="cotasint"' + marcado(cfg.cotasInternas) + "> Cotas internas dos ambientes</label></fieldset>";
+h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Numeração e revisão</b></legend>' +
+'<label>Prefixo <input data-arq="prefixo" value="' + esc(cfg.prefixo) + '" size="6"></label> <span class="muted">→ ' + esc(cfg.prefixo) + "-01, " + esc(cfg.prefixo) + "-02…</span><br>" +
+'<label>Revisão <input data-arq="revisao" value="' + esc(cfg.revisao) + '" size="4"></label><br>' +
+'<label>Descrição <input data-arq="descrev" value="' + esc(cfg.descricaoRevisao) + '" style="width:100%"></label></fieldset>';
+h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Índices urbanísticos</b></legend>' +
+'<label>Limites do município <select data-arq="municipio"><option value="">(informe os limites)</option>' +
+Object.keys(mun).map(function (k) { return '<option value="' + k + '"' + (cfg.municipio === k ? " selected" : "") + ">" + esc(mun[k].nome) + "</option>"; }).join("") + "</select></label><br>" +
+'<span class="muted" style="font-size:12px">O exemplo traz ocupação ≤ 60 % e permeabilidade ≥ 20 %: <b>conferir na lei</b> e no zoneamento do lote.</span><br>' +
+'<label>Ocupação máx. (%) <input data-arq="ocup" value="' + esc(L.ocupacaoMax == null ? "" : L.ocupacaoMax) + '" size="5"></label> ' +
+'<label>Permeável mín. (%) <input data-arq="perm" value="' + esc(L.permeavelMin == null ? "" : L.permeavelMin) + '" size="5"></label><br>' +
+'<label>Aproveitamento máx. <input data-arq="ca" value="' + esc(L.aproveitamentoMax == null ? "" : L.aproveitamentoMax) + '" size="5"></label><br>' +
+'<label><input type="checkbox" data-arq="beiral"' + marcado(cfg.beiralNaProjecao) + "> Contar o beiral na projeção (ocupação)</label><br>" +
+'<label>Nome da rua <input data-arq="rua" value="' + esc(cfg.rua) + '" style="width:100%" placeholder="vazio = marcado em vermelho"></label></fieldset>';
+h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>O que gerar</b></legend>' +
+A.CONJUNTOS.map(function (k) { return '<label style="display:block"><input type="checkbox" data-arq-cj="' + k + '"' + marcado(cfg.conjuntos[k] !== false) + "> " + esc(A.ROTULO_CONJUNTO[k]) + "</label>"; }).join("") + "</fieldset>";
+h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Carimbo e saída</b></legend>' +
+'<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "(sem obra selecionada)") + "</div>" +
+'<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label>' +
+'<label style="display:block"><input type="checkbox" data-arq-out="abas" checked> Abrir nas abas de folha do BIM</label></fieldset>';
+return h + '</div><div data-arq="msg" class="muted" style="margin-top:8px;font-size:12.5px"></div>';
+}
+function configDaTela(raiz, base) {
+var c = clone(base), q = function (s) { return raiz.querySelector(s); }, qa = function (s) { return Array.prototype.slice.call(raiz.querySelectorAll(s)); };
+function v(k) { var e = q('[data-arq="' + k + '"]'); return e ? e.value : null; }
+if (v("formato") != null) c.formato = v("formato");
+if (v("escala") != null) c.escala = v("escala") === "auto" ? "auto" : +v("escala");
+if (v("prefixo") != null) c.prefixo = v("prefixo");
+if (v("revisao") != null) c.revisao = v("revisao");
+if (v("descrev") != null) c.descricaoRevisao = v("descrev");
+if (v("municipio") != null) c.municipio = v("municipio");
+if (v("rua") != null) c.rua = v("rua");
+var cb = q('[data-arq="cotasint"]'); if (cb) c.cotasInternas = !!cb.checked;
+var bb = q('[data-arq="beiral"]'); if (bb) c.beiralNaProjecao = !!bb.checked;
+var l = { nome: "", ocupacaoMax: v("ocup"), permeavelMin: v("perm"), aproveitamentoMax: v("ca"), conferir: false };
+["ocupacaoMax", "permeavelMin", "aproveitamentoMax"].forEach(function (k) { l[k] = l[k] == null || String(l[k]).trim() === "" ? null : +String(l[k]).replace(",", "."); });
+c.limites = l;
+c.conjuntos = c.conjuntos || {}; qa("[data-arq-cj]").forEach(function (e) { c.conjuntos[e.getAttribute("data-arq-cj")] = !!e.checked; });
+return AQ().normalizarConfig(c);
+}
+function baixar(nome, dados, mime) {
+var d = global.document; if (!d) return false;
+try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
+}
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) { } }
+function gerar(ctx, cfg, saida) {
+var A = AQ(); saida = saida || { pdf: true, dxf: true, abas: true };
+if (!A) return { ok: false, avisos: ["js/arqpranchas.js não carregou."] };
+if (!ctx || !ctx.modelo || !ctx.modelo.estado) return { ok: false, avisos: ["Abra o modelo da obra no BIM: sem modelo não há o que apresentar."] };
+var c = A.normalizarConfig(cfg), r = A.gerar(ctx.modelo, opcoesDe(ctx, c));
+ULTIMO.r = r; ULTIMO.ctx = ctx;
+if (!r || !r.ok) return r || { ok: false, avisos: [] };
+gravarMemoria(ctx.obraKey, c);
+var nome = (r.prefixo || "ARQ") + "-" + (r.revisao || "R00") + " projeto de arquitetura";
+r.arquivos = [];
+if (saida.pdf) { var pdf = A.exportar(r, "pdf"); if (pdf && baixar(nome + ".pdf", pdf, "application/pdf")) r.arquivos.push(nome + ".pdf"); }
+if (saida.dxf) { var dxf = A.exportar(r, "dxf"); if (dxf && baixar(nome + ".dxf", dxf, "application/dxf")) r.arquivos.push(nome + ".dxf"); }
+if (saida.abas) r.abas = abrirNasAbas(r, ctx);
+return r;
+}
+function abrirNasAbas(r, ctx) {
+var BF = global.BimFolhaUI; if (!BF || !BF.salvarRegistro || !global.Store) return null;
+var regs = []; try { regs = arr(BF.registros()); } catch (e) { regs = []; }
+var exist = regs.filter(function (x) { return x && x.origem === "arq" && String(x.obraId || "") === String((ctx && ctx.obraId) || ""); })[0] || null;
+var salvo = BF.salvarRegistro(registroFolhas(r, exist, ctx && ctx.obraId != null ? ctx.obraId : (ctx && ctx.obraKey)));
+if (!salvo) return null;
+BF._imagensExternas = BF._imagensExternas || {};
+r.folhas.forEach(function (f) { BF._imagensExternas["arqsvg:" + f.id] = dataUrlSvg(f.svg); });
+var id = BF.idFolha(salvo.id, "arq-" + r.folhas[0].id);
+try { if (BF.ativo && BF.ativo()) BF.abrir(id); } catch (e) { }
+return { registro: salvo.id, primeira: id, folhas: r.folhas.length };
+}
+function ctxAtual() {
+var B = global.BIM, st = null; try { st = B && B.editarEstado ? B.editarEstado() : null; } catch (e) { st = null; }
+var em = {}, ob = {}, logo = null, G = global.Gestao, pavs = [];
+try { if (global.Empresa && global.Empresa.dados) em = global.Empresa.dados() || {}; if (global.Empresa && global.Empresa.logo) logo = global.Empresa.logo(); } catch (e1) { }
+try { if (G && G._bimSel && global.Store && global.Auth) ob = global.Store.obter(global.Auth.empresaId(), "obras", G._bimSel) || {}; } catch (e2) { }
+try { arr(global.BimEdit && global.BimEdit.niveisAtuais ? global.BimEdit.niveisAtuais() : []).forEach(function (n) { if (n && isFinite(n.elevacao) && !/terreno|funda|sondag|cobertura|telhado/i.test(n.nome || "")) pavs.push({ nome: n.nome || "Nível", cota: n.elevacao }); }); } catch (e3) { }
+return { modelo: st ? { estado: st.estado, ops: (B.editarOps ? B.editarOps() : null), avaliarFam: function (f, t, i) { return B.familiaAvaliar(f, t, i); } } : null, pavimentos: pavs, empresa: em, obra: ob, logo: logo,
+obraKey: String((G && G._bimSel) || "geral"), obraId: String((G && G._bimSel) || "") };
+}
+function abrir(ctx) {
+var U = global.UI; if (!U || !U.modal) return false;
+ctx = ctx || ctxAtual();
+if (!ctx.modelo) { toast("Abra o modelo da obra no BIM antes de gerar as pranchas de arquitetura.", "aviso"); return false; }
+var cfg = lerMemoria(ctx.obraKey);
+U.modal("Gerar pranchas de arquitetura — reforma e ampliação", html(ctx, cfg), [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { U.fecharModal(); } },
+{ texto: "Padrão", onClick: function () { gravarMemoria(ctx.obraKey, AQ().configPadrao()); U.fecharModal(); abrir(ctx); } },
+{ texto: "Gerar pranchas", classe: "primary", onClick: function () {
+var raiz = global.document.querySelector('[data-arq="tela"]').parentNode, c = configDaTela(raiz, cfg), msg = raiz.querySelector('[data-arq="msg"]');
+var sa = {}; Array.prototype.forEach.call(raiz.querySelectorAll("[data-arq-out]"), function (e) { sa[e.getAttribute("data-arq-out")] = !!e.checked; });
+var r = null; try { r = gerar(ctx, c, sa); } catch (e) { r = { ok: false, avisos: [e && e.message ? e.message : String(e)] }; }
+if (!r || !r.ok) { if (msg) msg.textContent = "Não gerou: " + arr(r && r.avisos).join(" "); return; }
+U.fecharModal();
+var v = r.verificacao || {};
+toast(r.folhas.length + " folha(s) de arquitetura · sobreposição: texto×texto " + v.textoTexto + ", texto×linha " + v.textoLinha + ", fora da moldura " + v.foraJanela + (arr(r.avisos).length ? " · " + r.avisos.length + " aviso(s)" : ""), v.total ? "aviso" : "ok");
+} }
+]);
+return true;
+}
+var ArqPranchasUI = { abrir: abrir, gerar: gerar, ultimo: function () { return ULTIMO; },
+_int: { chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
+global.ArqPranchasUI = ArqPranchasUI;
+if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimp10ui.js ==== */

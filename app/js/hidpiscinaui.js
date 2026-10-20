@@ -26,7 +26,7 @@
   function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
   var LS = "orcapro:hidpiscina:params";
   /* parâmetros de partida (o usuário troca no bloco; ficam por navegador) — critério de tela, não norma */
-  var PADRAO = { uso: "residencial_privativa", construcao: "alvenaria", succao: "dois_drenos", cmNivel: "afogada",
+  var PADRAO = { uso: "residencial_privativa", construcao: "alvenaria", succao: "dois_drenos", cmNivel: "afogada", descarte: "pluvial",
                  hidro: { ativo: false, bocais: 6 }, aquecimento: { tipo: "nenhum", clima: "medio" }, iluminacao: { ativo: true }, tratamento: "clorador" };   // hid:ok padrão da tela
   function lerParams() { try { var p = JSON.parse(localStorage.getItem(LS) || "null"); return p && typeof p === "object" ? p : JSON.parse(JSON.stringify(PADRAO)); } catch (e) { return JSON.parse(JSON.stringify(PADRAO)); } }
 
@@ -94,6 +94,34 @@
       var op = { op: "hidPiscina", id: p.id, params: JSON.parse(JSON.stringify(U.params)) };
       Object.keys(extra || {}).forEach(function (k) { op[k] = extra[k]; });
       return U._lancar(c, [op], p.id, false, "hidpisc");
+    },
+    /* PROJETO DA PISCINA EM UM CLIQUE (frente C, 19/10/2026): reconhece (o volume "Piscina" vira a op), lança tudo (casa de
+       máquinas, dispositivos, sucção, retorno, descarte na caixa receptora, drenagem, reposição) e abre o documento único
+       (memorial + lista de material + pranchas) */
+    umClique: function () {
+      var c = U._ctx(); if (!c) return null;
+      var r = arr(c.estado.hidPiscinas).length ? U.relancar(null) : (U.reconhecer().candidatos.length ? U.usarCandidato(0) : null);
+      if (!r) { U.ultimo = { ok: false, erro: "Nenhuma piscina no modelo: modele o volume da piscina (nome \"Piscina\") e clique de novo." }; U._redesenhar(); return U.ultimo; }
+      if (r.ok) U.documentos();
+      return r;
+    },
+    /* o documento único da piscina (memorial + lista de material + pranchas) */
+    documentos: function () {
+      var D = dep("HidPiscinaDoc"), R = U._rede(), c = U._ctx(); if (!D || !R || !c || !D.pacote) return null;
+      var g = D.pacote(c.estado, c.avaliarFam, R, U._info());
+      if (g && g.ok) { U.docHtml = g.html; U.ultimoPacote = g; U._abrir(g.html); status("Projeto da piscina: memorial, lista de material e pranchas abertos numa aba."); }
+      return g;
+    },
+    /* depois do "Traçar automaticamente" com a piscina no lote: este bloco mostra o lançamento, a casa de máquinas fica aceita
+       onde o plano pôs (não relança sozinho) e o documento único abre junto */
+    aposTracar: function (lista) {
+      var ult = null;
+      arr(lista).forEach(function (p) { if (!p || !p.rede) return; ult = p; U._aceito[p.id] = p.cm || null; });
+      if (!ult) return null;
+      var c = U._ctx(); if (c) { U._len = c.ops.length; U._lote = null; }
+      U.ultimo = { ok: true, rede: ult.rede, quando: new Date().getTime() };
+      U._redesenhar();
+      return U.documentos();
     },
     /* Corrigir de um aviso: mover a casa para o melhor lugar, ou trocar um parâmetro */
     corrigir: function (i, j) {
@@ -193,7 +221,8 @@
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">' +
         lab("Uso (NBR 10339)", sel("uso", p.uso, [["residencial_privativa", "Residencial privativa"], ["residencial_coletiva", "Residencial coletiva"], ["coletiva", "Coletiva (clube, escola)"], ["publica", "Pública"], ["hospedaria", "Hospedaria (hotel)"], ["terapeutica", "Terapêutica"]])) +
         lab("Sucção segura", sel("succao", p.succao, [["dois_drenos", "2 ralos de fundo interligados"], ["coadeiras", "Só coadeiras (mín. 2)"], ["grelha_nao_bloqueavel", "1 ralo com grelha não bloqueável"], ["tanque_intermediario", "Tanque intermediário"]])) +
-        lab("Casa de máquinas", sel("cmNivel", p.cmNivel, [["afogada", "Enterrada (bomba afogada)"], ["superficie", "Na superfície"]])) + "</div>";
+        lab("Casa de máquinas", sel("cmNivel", p.cmNivel, [["afogada", "Enterrada (bomba afogada)"], ["superficie", "Na superfície"]])) +
+        lab("Descarte do filtro e drenagem", sel("descarte", p.descarte || "pluvial", [["pluvial", "Rede pluvial (padrão)"], ["esgoto", "Rede de esgoto (se a prefeitura pedir)"]])) + "</div>";
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">' +
         lab("Hidromassagem", '<span><input type="checkbox" data-hid-campo="pisc:hidro.ativo"' + (p.hidro && p.hidro.ativo ? " checked" : "") + '> com <input class="inp" style="width:56px" data-hid-campo="pisc:hidro.bocais" value="' + esc(p.hidro ? p.hidro.bocais : "") + '"> bocais</span>') +
         lab("Aquecimento", sel("aquecimento.tipo", p.aquecimento ? p.aquecimento.tipo : "nenhum", [["nenhum", "Sem aquecimento"], ["solar", "Solar (placas)"], ["bomba_calor", "Bomba de calor"]])) +
@@ -203,7 +232,8 @@
         lab("Vento predominante vem de (graus, opcional)", '<input class="inp" data-hid-campo="pisc:vento" value="' + esc(p.vento == null ? "" : p.vento) + '">') +
         lab("Altitude do local (m)", '<input class="inp" data-hid-campo="pisc:altitude_m" value="' + esc(p.altitude_m == null ? "" : p.altitude_m) + '">') +
         lab("Temp. média anual (°C, solar)", '<input class="inp" data-hid-campo="pisc:aquecimento.tMediaAnual" value="' + esc(p.aquecimento && p.aquecimento.tMediaAnual != null ? p.aquecimento.tMediaAnual : "") + '">') + "</div>";
-      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">' + (rec.piscinas.length ? '<button class="btn sm primary" data-hid="pisc-lancar">Lançar / refazer o projeto da piscina</button>' : "") +
+      h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0">' + (rec.piscinas.length || rec.candidatos.length ? '<button class="btn sm primary" data-hid="pisc-um-clique" title="Reconhece a piscina, lança casa de máquinas, dispositivos, sucção, retorno, descarte, drenagem e reposição e abre memorial, lista de material e pranchas">Projeto da piscina em um clique</button>' : "") +
+        (rec.piscinas.length ? '<button class="btn sm" data-hid="pisc-lancar">Lançar / refazer o projeto da piscina</button><button class="btn sm ghost" data-hid="pisc-documentos">Documentos (memorial + lista + pranchas)</button>' : "") +
         '<button class="btn sm ghost" data-hid="pisc-memorial"' + (rec.piscinas.length ? "" : " disabled") + '>Memorial</button><button class="btn sm ghost" data-hid="pisc-manual"' + (rec.piscinas.length ? "" : " disabled") + '>Manual de operação</button>' +
         '<button class="btn sm ghost" data-hid="pisc-planilha"' + (rec.piscinas.length ? "" : " disabled") + '>Planilha (.xlsx)</button><button class="btn sm ghost" data-hid="pisc-pranchas"' + (rec.piscinas.length ? "" : " disabled") + ">Pranchas</button></div>";
       if (u) {
@@ -227,6 +257,8 @@
     clique: function (a, el) {
       if (a === "pisc-usar") { U.usarCandidato(el && el.getAttribute("data-i")); return true; }
       if (a === "pisc-lancar") { U.relancar(null); return true; }
+      if (a === "pisc-um-clique") { U.umClique(); return true; }
+      if (a === "pisc-documentos") { U.documentos(); return true; }
       if (a === "pisc-corrigir") { U.corrigir(el && el.getAttribute("data-i"), el && el.getAttribute("data-j")); return true; }
       if (a === "pisc-memorial") { U.documento("memorial"); return true; }
       if (a === "pisc-manual") { U.documento("manual"); return true; }

@@ -453,9 +453,27 @@
 
     /* ---------- LOUÇA/EQUIPAMENTO: tubo por dentro do volume da família (o ponto da própria peça vale) */
     var Bi = BI();
+    /* ⚠ METAIS DENTRO DO ENVELOPE (20/10/2026, e2e-hid-tracar): o envelope da pia/do tanque inclui a torneira, que é OUTRA família
+       (kit) com o ponto de água na face da parede. O tubo que chega embutido nesse ponto "atravessava a pia" (nota 40, PROIBIDO)
+       — o motor já tira esse envelope da busca (js/hidambiente.js, semVolume) e libera o ponto da torneira. Aqui vale o mesmo: o
+       ponto de ligação de um aparelho que está DENTRO do volume (ou na face dele) conta como ponto desse volume — só a ponta que
+       chega nele recua o raio; o resto do tubo continua conferido (um tubo que entra no corpo da pia continua PROIBIDO). */
+    var todosPts = []; aparelhos.forEach(function (a) { arr(a.pontos).forEach(function (q) { todosPts.push({ x: num(q.x, 0), y: num(q.y, 0), z: num(q.z, 0) }); }); });
+    function pontoNoVolume(v, q, tol) { var o = { cx: num(v.cx, 0), cz: num(v.cz, 0), ux: num(v.ux, 1), uz: num(v.uz, 0) }, l = local(o, q.x, q.z); return Math.abs(l.u) <= num(v.hl, 0) + tol && Math.abs(l.v) <= num(v.hw, 0) + tol && q.y >= num(v.y0, -INF) - tol && q.y <= num(v.y1, INF) + tol; }
+    /* ⚠ ACESSÓRIO DE LINHA (categoria "acessorio_tubo": a válvula de descarga embutida, 20/10/2026): o tubo do mesmo sistema
+       que termina DENTRO do corpo dele é a ligação em linha (a entrada por cima, a saída por baixo), não travessia — o kit da
+       válvula dava 4 PROIBIDO em todo banheiro. Tubo de outro sistema, ou que passa direto sem terminar nele, continua PROIBIDO. */
+    var HF = dep("HidFamilias", "./hidfamilias.js"), Hr = HR();
+    function deLinha(v) { var f = HF && HF.porId ? HF.porId(v.famId) : null; return !!(f && f.categoria === "acessorio_tubo"); }
+    function sistemasDe(id) { var o = {}; arr(pontosDe[String(id)]).forEach(function (q) { if (q && q.sistema) o[q.sistema] = 1; }); return o; }
     if (Bi && Bi.tuboEmVolume) arr(O.familias).forEach(function (v) {
-      var pts = arr(pontosDe[String(v.id)]);
-      T.forEach(function (t) { var sim = false; try { sim = Bi.tuboEmVolume(v, t.p1, t.p2, t.r, pts, G.tolNo / 5); } catch (e) {} if (sim) add("interferencia.louca", [t.id], ptEm(t.p1, t.p2, 1 / 2), "O tubo de " + quem(t) + " passa por dentro de " + (v.famId || "família") + " " + v.id + ".", { obstaculo: v.id }); });   // hid:ok casca de 2 mm
+      var proprios = arr(pontosDe[String(v.id)]), pts = proprios.concat(todosPts.filter(function (q) { return pontoNoVolume(v, q, G.tolNo); }));
+      var linha = deLinha(v), sisV = linha ? sistemasDe(v.id) : null;
+      T.forEach(function (t) {
+        /* a LIGAÇÃO DO PRÓPRIO APARELHO (a descida atrás da coluna do lavatório, o toco curto): a regra do motor (HidRota) */
+        if (Hr && Hr.ligacaoDoProprioAparelho && proprios.length) { var lig = false; try { lig = Hr.ligacaoDoProprioAparelho(v, t, proprios, t.r, G.tolNo / 5); } catch (eL) {} if (lig) return; }   // hid:ok casca de 2 mm
+        if (linha && sisV[t.sistema] && (pontoNoVolume(v, t.p1, G.tolNo) || pontoNoVolume(v, t.p2, G.tolNo))) return;
+        var sim = false; try { sim = Bi.tuboEmVolume(v, t.p1, t.p2, t.r, pts, G.tolNo / 5); } catch (e) {} if (sim) add("interferencia.louca", [t.id], ptEm(t.p1, t.p2, 1 / 2), "O tubo de " + quem(t) + " passa por dentro de " + (v.famId || "família") + " " + v.id + ".", { obstaculo: v.id }); });   // hid:ok casca de 2 mm
     });
 
     /* ---------- INTERFERÊNCIAS entre sistemas */

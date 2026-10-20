@@ -73,6 +73,18 @@
     espacoDisp: 0.50,        // hid:ok entre dispositivos na mesma parede
     bordaAcionador: 0.30,    // hid:ok acionador pneumático a esta distância da borda
  trechoDerivacao: 0.45,  // hid:ok trecho do retorno que recebe as duas derivações do aquecimento
+    /* PROJETO EM UM CLIQUE (frente C, 19/10/2026) — critério do projetista, declarado no memorial */
+    folgaLivre: 0.05,        // hid:ok folga somada à separação livre da norma (a boca fica ACIMA do mínimo, nunca no limite)
+    afastDescarte: 0.50,     // hid:ok do lado de fora da parede do fundo ao pé da subida do descarte (o toco que já existia)
+    folgaCaixa: 0.15,        // hid:ok da subida do descarte à face da caixa receptora
+    saidaCaixa: 1.0,         // hid:ok comprimento da espera da saída da caixa receptora (até a rede pluvial/esgoto da obra)
+    dnSaidaCaixa: 100,       // hid:ok DN da saída da caixa receptora (o menor tubo de rede enterrada; conferir com a prefeitura)
+    recuoPoco: 0.15,         // hid:ok do centro do poço de drenagem às paredes (o canto do ralo desenhado na casa de máquinas)
+    folgaTetoDreno: 0.10,    // hid:ok o recalque da drenagem corre logo abaixo da laje da casa de máquinas
+    foraDreno: 0.30,         // hid:ok o recalque da drenagem corre do lado de fora da parede do fundo, a este afastamento
+    dnDrenagem: 32,          // hid:ok DN do recalque da bomba submersível de drenagem (bocal comum; conferir na ficha — A_conferir)
+    dnReposicao: 25,         // hid:ok DN da reposição (ponto de água fria comum; a reposição é por registro, vazão pequena)
+    afastEspera: 0.30,       // hid:ok da parede lateral da casa de máquinas à espera da água potável da obra
     custoLaje: 3,            // hid:ok peso de passar sob a obra (a vala prefere o jardim)
     custoCurva: 0.3,         // hid:ok peso de cada curva (menos joelhos)
     custoCruzar: 6,          // hid:ok peso de cruzar um tubo de outra camada
@@ -128,9 +140,26 @@
     if (su === "dois_drenos" && dmin != null) v("pisc.drenos.distancia", "Distância entre os drenos de fundo (centro a centro)", dR != null ? f2(dR) : "—", "≥ " + f2(dmin), "m", dR != null ? dR >= dmin - TOL_POS : false, H.fonteTxt("pisc.succao_seguranca"));
     /* SEPARAÇÕES VERTICAIS: o descarte no esgoto e o abastecimento potável descarregam LIVRES acima do transbordamento */
     var sE = P("pisc.esgoto_separacao", "minimo_m", "descarte"), fE = P("pisc.esgoto_separacao", "fator_diametro", "descarte");
-    if (sE != null && fE != null) v("pisc.separacao.esgoto", "Descarte do filtro: separação livre até o transbordamento da caixa receptora", "na obra", "≥ " + f2(Math.max(sE, fE * c.deR / 1000)) + " (máx(" + fE + " × D; " + f2(sE) + "))", "m", null, H.fonteTxt("pisc.esgoto_separacao"), "a caixa receptora não está no modelo: conferir na execução (pendência pisc.descarte.destino)");
+    if (sE != null && fE != null) {
+      var mE = Math.max(sE, fE * c.deR / 1000), cx0 = c.caixa;
+      v("pisc.separacao.esgoto", "Descarte do filtro e drenagem: separação livre até o transbordamento da caixa receptora", cx0 ? f2(cx0.livre) : "na obra", "≥ " + f2(mE) + " (máx(" + fE + " × D; " + f2(sE) + "))", "m", cx0 ? cx0.livre >= mE - TOL_POS : null, H.fonteTxt("pisc.esgoto_separacao"),
+        cx0 ? "chegadas abertas acima do topo da caixa receptora (" + cx0.id + "), saída para a rede " + (cx0.destino === "esgoto" ? "de esgoto" : "pluvial") : "a caixa receptora não está no modelo: conferir na execução");
+    }
     var sA = P("pisc.abastecimento_separacao", "minimo_m", "abastecimento"), fA = P("pisc.abastecimento_separacao", "fator_diametro", "abastecimento");
-    if (sA != null && fA != null) v("pisc.separacao.abastecimento", "Abastecimento pela rede potável: separação livre até o transbordamento", "na obra", "≥ máx(" + fA + " × D; " + f2(sA) + ")", "m", null, H.fonteTxt("pisc.abastecimento_separacao"), "o ponto de reposição de água não é lançado pelo OrçaPRO: executar com a descarga livre");
+    if (sA != null && fA != null) {
+      var rp = c.repos, mA = rp ? Math.max(sA, fA * rp.dn / 1000) : null;
+      v("pisc.separacao.abastecimento", "Reposição pela rede potável: separação livre até o transbordamento (a borda)", rp ? f2(rp.livre) : "na obra", rp ? "≥ " + f2(mA) + " (máx(" + fA + " × D; " + f2(sA) + "))" : "≥ máx(" + fA + " × D; " + f2(sA) + ")", "m", rp ? rp.livre >= mA - TOL_POS : null, H.fonteTxt("pisc.abastecimento_separacao"),
+        rp ? "bica de reposição " + rp.id + " com a boca acima da borda" : "o ponto de reposição não foi lançado: executar com a descarga livre");
+    }
+    /* PONTO ALTO na recirculação: a NBR 10339 não fixa declividade (não achei fonte) — critério conservador da RA: tubo em
+       nível na vala, e nenhum ponto da SUCÇÃO fora da casa de máquinas acima do nível da água (a linha fica sempre afogada:
+       o ar não para nela e a bomba não perde a escorva) */
+    if (c.tubos) {
+      var fora = c.tubos.filter(function (t) { return t.sis === "pisc_succao" || (t.sis === "pisc_hidro" && /hidroS/.test(t.linha)); });
+      var alto = -Infinity, nAlto = 0;
+      fora.forEach(function (t) { [t.a, t.b].forEach(function (q) { if (c.naCasa && c.naCasa(q)) return; if (c.dispCon && c.dispCon[r4(q.x) + "|" + r4(q.y) + "|" + r4(q.z)]) return; alto = Math.max(alto, q.y); if (q.y > c.yA + TOL_POS) nAlto++; }); });
+      if (fora.length) v("pisc.succao.ponto_alto", "Sucção sem ponto alto acima do nível da água (fora da casa de máquinas)", f2(c.yA - alto), "≥ 0 (abaixo do nível)", "m", !nAlto, "critério conservador da RA (a NBR 10339 não fixa a declividade da recirculação)", "tubos em nível na vala, abaixo da saída das coadeiras; a declividade de execução, se houver, sempre caindo para a casa de máquinas");
+    }
     /* ACESSÓRIOS por tipologia: medidor de vazão, visor de lavagem, bomba reserva */
     var ex = c.dim.exigencias || {};
     v("pisc.medidor_vazao", "Medidor de vazão no retorno", ex.medidorVazao ? "exigido" : "não exigido", ex.medidorVazao ? "instalar" : "—", "", ex.medidorVazao ? null : true, H.fonteTxt("pisc.acessorios_obrigatorios") + "; " + H.fonteTxt("pisc.tipologia_coluna"), ex.medidorVazao ? "lançar o medidor no retorno, depois do filtro" : "a NOTA de 5.4.4.15 dispensa nas residenciais privativas e coletivas");
@@ -178,6 +207,7 @@
       var n = b && b.norm || {}, base = { Comprimento: mm(n.comprimento_mm) || mm(n.largura_mm && n.profundidade_mm ? Math.max(n.largura_mm, n.profundidade_mm) : null), Largura: mm(n.largura_mm), Altura: mm(n.altura_mm) };
       Object.keys(base).forEach(function (k) { if (!base[k]) delete base[k]; });
       var ip = instProduto(famId, b ? prodTxt(b) : "", base), i = ip.inst, pv = padraoFam(famId);
+      if (famId === "hid-pisc-bomba") { if (dnLS) i.DN_succao = dnLS; if (dnLR) i.DN_recalque = dnLR; }   /* idem: os bocais com o DN gravado */
       var o = { C: num(i.Comprimento, num(pv.Comprimento, 0)), L: num(i.Largura, num(pv.Largura, 0)), H: num(i.Altura, num(pv.Altura, 0)), inst: i, famId: famId };
       if (!ip.achou && (!base.Comprimento || !base.Largura || !base.Altura)) { conf.push("medidas da " + (b ? prodTxt(b) : "motobomba") + " (o catálogo não imprime C×L×A): padrão da família"); o.reserva = true; i.A_conferir = true; }
       else if (ip.falta && ip.falta.length) conf.push("forma da " + prodTxt(b) + ": " + ip.falta.join(", ") + " pela proporção do desenho (a ficha não imprime)");
@@ -187,6 +217,10 @@
     }
     var Fb = {}; if (fil && fil.norm && mm(fil.norm.diametro_mm)) Fb.Diametro = mm(fil.norm.diametro_mm); if (fil && fil.norm && mm(fil.norm.altura_mm)) Fb.Altura = mm(fil.norm.altura_mm);
     var ipF = instProduto("hid-pisc-filtro", fil ? fil.fabricante + " " + fil.codigo : "", Fb), FI = ipF.inst, pvF = padraoFam("hid-pisc-filtro");
+    /* ⚠ o DN da instância muda a posição das bocas (comprimento da bolsa/união): os conectores são lidos com o DN que o
+       lançamento VAI gravar — antes, com o DN 40 da piscina coletiva, o tubo parava 3 cm antes da boca do filtro (ponta solta) */
+    var dnLS = (dim.linhas && dim.linhas.succaoGeral || {}).dn, dnLR = (dim.linhas && dim.linhas.recalque || {}).dn;
+    if (dnLR) FI.DN = dnLR;
     var F = { D: num(FI.Diametro, num(pvF.Diametro, 0)), H: num(FI.Altura, num(pvF.Altura, 0)), inst: FI };
     if (!ipF.achou && (!Fb.Diametro || !Fb.Altura)) { conf.push("medidas do filtro: padrão da família"); F.reserva = true; FI.A_conferir = true; }
     F.ce = conDaFamilia(aval, "hid-pisc-filtro", FI, "entrada") || { x: -F.D / 2, y: F.H * 0.8, z: 0 };   // hid:ok só sem a família carregada
@@ -239,8 +273,44 @@
     var o = H.obstaculosDoBim(estado, avaliarFam), P = H._int.parametros({});
     return H._int.normObstaculos(o, P);
   }
-  /* o MELHOR lugar: de frente para cada lado do tanque (¼, ½, ¾), fora de obra e de obstáculo; menor (distância ao tanque + 0,3 × à casa) */
-  function melhorCasa(g, estado, avaliarFam, par, casa) {
+  /* PLANTA DA CAIXA RECEPTORA, do descarte e da drenagem por fora (frame local da casa de máquinas). Uma conta só: o lugar da
+     casa de máquinas (melhorCasa) e o lançamento usam a MESMA. ⚠ revisor 19/10/2026: a caixa ia sempre atrás da parede do
+     fundo sem olhar o que havia ali — com a casa de máquinas entre a piscina e a obra (o lugar preferido), a caixa caía na
+     parede da casa e a espera da saída entrava 1 m na obra. Agora a faixa (zona) é conferida antes de lançar. */
+  function planoCaixa(casa, par, aval, dim0) {
+    var destDesc = par.descarte === "esgoto" ? "esgoto" : "pluvial", famCx = destDesc === "esgoto" ? "hid-pisc-caixa-descarte-esgoto" : "hid-pisc-caixa-descarte";
+    var deR = (dim0.linhas && dim0.linhas.recalque || {}).dn || 50;   // hid:ok reserva sem cálculo (a mesma do lançamento)
+    var sepD = dim0.dreno && dim0.dreno.separacao_m, livreDesc = sepD != null ? r4(sepD + geo(par, "folgaLivre")) : null, dnSai = geo(par, "dnSaidaCaixa"), dnDr = geo(par, "dnDrenagem");
+    var instCx = { DN: deR, DN_saida: dnSai }; if (livreDesc != null) instCx.Livre = livreDesc;
+    var cChg = conDaFamilia(aval, famCx, instCx, "chegada"), cChgD = conDaFamilia(aval, famCx, instCx, "chegada_dreno"), cSai = conDaFamilia(aval, famCx, instCx, "saida");
+    var instPoco = { DN: dnDr, A_conferir: true }, cPoco = conDaFamilia(aval, "hid-pisc-poco-drenagem", instPoco, "recalque");
+    var P = { destDesc: destDesc, famCx: famCx, sepD: sepD, livreDesc: livreDesc, dnSai: dnSai, dnDr: dnDr, instCx: instCx, instPoco: instPoco, cChg: cChg, cChgD: cChgD, cSai: cSai, cPoco: cPoco, ok: false };
+    if (livreDesc == null || !cChg || !cChgD || !cSai || !cPoco) return P;
+    var f0 = HPF() && HPF().porId(famCx), pv = {}; arr(f0 && f0.parametros).forEach(function (p) { pv[p.nome] = p.valor; });
+    P.zDesc = casa.zFundo + geo(par, "espCasa") + geo(par, "afastDescarte"); P.xc = casa.x.filtro - cChg.x; P.zc = P.zDesc + geo(par, "folgaCaixa") + cSai.z + geo(par, "espCasa");
+    P.zFora = casa.zFundo + geo(par, "espCasa") + geo(par, "foraDreno"); P.xp = casa.C / 2 - geo(par, "recuoPoco"); P.zp = casa.L / 2 - geo(par, "recuoPoco"); P.xDr = P.xc + cChgD.x;
+    var mx = num(pv.Largura, 0) / 2 + geo(par, "espCasa"), mz = num(pv.Profundidade, 0) / 2 + geo(par, "espCasa");   /* a caixa com as paredes */
+    P.zona = { x0: Math.min(P.xc - mx, P.xDr, casa.x.filtro, P.xp), x1: Math.max(P.xc + mx, P.xDr, casa.x.filtro, P.xp), z0: casa.zFundo + geo(par, "espCasa"), z1: Math.max(P.zc + mz, P.zc + cSai.z + geo(par, "saidaCaixa")) };
+    P.ok = true;
+    return P;
+  }
+  /* a zona da caixa (frame local) no lugar cm: null = livre; senão o que ela invade (a obra, um obstáculo, o tanque) */
+  function zonaBate(g, obs, cm, zona, par) {
+    if (!zona) return null;
+    var PASSO_Z = 0.1, ext = geo(par, "paredePiscina");   // hid:ok amostragem da faixa a cada 10 cm
+    for (var lx = zona.x0; lx <= zona.x1 + EPS; lx += PASSO_Z) for (var lz = zona.z0; lz <= zona.z1 + EPS; lz += PASSO_Z) {
+      var q = paraMundo(cm, Math.min(lx, zona.x1), Math.min(lz, zona.z1));
+      if (HP().dentro(g.contorno, q) || distPoligono(g.contorno, q) < ext) return "o tanque";
+      for (var i = 0; i < obs.lista.length; i++) { var b = obs.lista[i]; if (b.tipo !== "familia" && dentroRet(b, q.x, q.z, 0)) return "a obra (" + (b.tipo || "obstáculo") + ")"; }
+      if (arr(obs.lajes).some(function (L) { return q.x > L.x0 && q.x < L.x1 && q.z > L.z0 && q.z < L.z1; })) return "a obra (sob a laje)";
+    }
+    return null;
+  }
+  /* o MELHOR lugar: de frente para cada lado do tanque (¼, ½, ¾), fora de obra e de obstáculo; menor (distância ao tanque + 0,3 × à casa).
+     Com a zona da caixa receptora: só vale o lugar onde a caixa, a drenagem por fora e a espera da saída também cabem (se
+     nenhum couber, o melhor sem ela — e o lançamento deixa a pendência) */
+  function melhorCasa(g, estado, avaliarFam, par, casa, zona) {
+    if (zona) { var m1 = melhorCasa(g, estado, avaliarFam, par, casa, null); if (!m1) return null; var obsZ = obstaculos(estado, avaliarFam), oks = m1.todos.filter(function (c) { return !zonaBate(g, obsZ, c, zona, par); }); return oks[0] || m1; }
     var obs = obstaculos(estado, avaliarFam), out = [], paredes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede"; });
     var meia = casa.L / 2 + geo(par, "espCasa"), afast = geo(par, "paredePiscina") + geo(par, "afastCasa") + meia;
     var FRACS = [0.5, 0.25, 0.75];   // hid:ok posições candidatas ao longo de cada lado
@@ -259,6 +329,7 @@
       });
     });
     out.sort(function (a, b) { return a.custo - b.custo; });
+    if (out[0]) out[0].todos = out;
     return out[0] || null;
   }
 
@@ -376,11 +447,12 @@
 
     /* 2) CASA DE MÁQUINAS */
     var casa = montarCasa(dim0, par, g, e.avaliarFam), cm;
+    var PC = planoCaixa(casa, par, e.avaliarFam, dim0), zonaCx = PC.ok ? PC.zona : null;   /* a caixa receptora entra na escolha do lugar */
     if (opE.cm && isFinite(num(opE.cm.x, NaN))) {
       cm = { x: num(opE.cm.x, 0), z: num(opE.cm.z, 0) }; cm.rotY = orientar(g, cm); cm.origem = "usuario";
       decide("pisc.cm.lugar", "Casa de máquinas onde o projetista pôs (" + f2(cm.x) + "; " + f2(cm.z) + "), de frente para o lado mais próximo do tanque.");
     } else {
-      var mc = melhorCasa(g, estado, e.avaliarFam, par, casa);
+      var mc = melhorCasa(g, estado, e.avaliarFam, par, casa, zonaCx);
       if (!mc) { pend("pisc.cm.lugar", "não achei lugar livre para a casa de máquinas em volta do tanque (obra ou obstáculo em todos os lados): arraste-a para o lugar", { tipo: "moverCM" }); return out; }
       cm = { x: mc.x, z: mc.z, rotY: mc.rotY, origem: "melhor" };
       decide("pisc.cm.lugar", "Casa de máquinas no MELHOR lugar: de frente para o lado " + (mc.lado + 1) + " do tanque, " + f2(geo(par, "afastCasa")) + " m afastada da parede, fora da obra e dos obstáculos, o mais perto da piscina e da casa (critério do projetista). Arraste para mudar: os tubos se refazem.");
@@ -434,6 +506,19 @@
       return esc;
     }
     function rotDisp(l) { return Math.atan2(-l.n.x, -l.n.z); }   /* +Z local = para DENTRO do tanque */
+    /* n posições: primeiro na parede preferida e o RESTO nas outras (as vizinhas da preferida primeiro). ⚠ revisor 19/10/2026:
+       com a parede preferida curta (piscina pequena de frente para o lado menor) a aspiração e os refletores sumiam SEM
+       pendência — o slotsNoLado devolve menos e ninguém punha o resto noutra parede. O que não couber em parede nenhuma vira
+       pendência (nunca some calado) */
+    function slotsEmParedes(lPref, n, inicio, fim, oque) {
+      var out = [], resto = num(n, 0); if (!(resto > 0)) return out;
+      var mP = { x: (lPref.a.x + lPref.b.x) / 2, z: (lPref.a.z + lPref.b.z) / 2 };
+      var ordem = [lPref].concat(lados.filter(function (l) { return l !== lPref; }).sort(function (a, b) { return distSeg(mP, a.a, a.b) - distSeg(mP, b.a, b.b); }));
+      ordem.forEach(function (l) { if (resto <= 0) return; slotsNoLado(l, resto, inicio, fim).forEach(function (s0) { out.push({ l: l, s: s0 }); resto--; }); });
+      if (resto > 0) pend("pisc.disp.espaco", oque + ": " + resto + " de " + n + " sem lugar nas paredes do tanque (espaço mínimo entre dispositivos) — libere parede ou reduza a quantidade");
+      else if (out.some(function (o) { return o.l !== lPref; })) decide("pisc.disp.espaco." + oque, oque + ": a parede preferida não comporta todos; " + out.filter(function (o) { return o.l !== lPref; }).length + " na parede vizinha.");
+      return out;
+    }
     var disps = [], famInst = {};
     function dispositivo(tipo, famId, l, s, y, sistema, inst, extra) {
       var p = { x: l.a.x + l.dir.x * s, z: l.a.z + l.dir.z * s };
@@ -465,16 +550,16 @@
     var pAsp = fAsp.min != null && fAsp.max != null ? (fAsp.min + fAsp.max) / 2 : (fabAsp ? (num(fabAsp.min_m, 0) + num(fabAsp.max_m, 0)) / 2 : null);
     if (pRet == null) pend("pisc.bocal_retorno", "sem a profundidade mínima do retorno: retornos não lançados");
     /* coadeiras */
-    slotsNoLado(ladoCo, num(D.coadeiras, 0), 0.1, 0.9).forEach(function (s) {   // hid:ok faixa útil da parede (10 % a 90 %)
+    slotsEmParedes(ladoCo, num(D.coadeiras, 0), 0.1, 0.9, "Coadeiras").forEach(function (o) { var s = o.s;   // hid:ok faixa útil da parede (10 % a 90 %)
       var n = itSk && itSk.norm || {}, inst = { Produto: prodTxt(itSk), Fonte: itSk ? HP().fonteItem(itSk) : "" };
       ["Largura:largura_mm", "Profundidade:profundidade_mm", "Altura:altura_mm", "Boca:boca_mm"].forEach(function (kv) { var a = kv.split(":"), v = mm(n[a[1]]); if (v) inst[a[0]] = v; else inst.A_conferir = true; });
       var de = deDaConexao(n.conexao_pol); if (de) inst.DN = de;
-      dispositivo("coadeira", "hid-pisc-skimmer", ladoCo, s, yA, "pisc_succao", inst);
+      dispositivo("coadeira", "hid-pisc-skimmer", o.l, s, yA, "pisc_succao", inst);
     });
     /* aspirações (no lado das coadeiras, nos espaços livres) */
-    slotsNoLado(ladoCo, num(D.aspiracoes, 0), 0.2, 0.8).forEach(function (s) { if (pAsp != null) dispositivo("aspiracao", "hid-pisc-aspiracao", ladoCo, s, yA - pAsp, "pisc_succao", instDisp(itAsp)); });   // hid:ok faixa útil
+    if (pAsp != null) slotsEmParedes(ladoCo, num(D.aspiracoes, 0), 0.2, 0.8, "Aspirações").forEach(function (o) { dispositivo("aspiracao", "hid-pisc-aspiracao", o.l, o.s, yA - pAsp, "pisc_succao", instDisp(itAsp)); });   // hid:ok faixa útil
     /* retornos na parede oposta */
-    if (pRet != null) slotsNoLado(ladoRet, num(D.retornos, 0), 0, 1).forEach(function (s) { dispositivo("retorno", "hid-pisc-retorno", ladoRet, s, yA - pRet, "pisc_retorno", instDisp(itRet)); });
+    if (pRet != null) slotsEmParedes(ladoRet, num(D.retornos, 0), 0, 1, "Retornos").forEach(function (o) { dispositivo("retorno", "hid-pisc-retorno", o.l, o.s, yA - pRet, "pisc_retorno", instDisp(itRet)); });
     if (pRet != null) decide("pisc.retorno.altura", "Retornos a " + f2(pRet) + " m abaixo do nível da água (NBR 10339: ≥ " + f2(fRet.min) + " m" + (fabRet ? "; fabricante: " + f2(fabRet.min_m) + " a " + f2(fabRet.max_m) + " m — meio da faixa" : "") + "); aspiração a " + (pAsp != null ? f2(pAsp) : "—") + " m (faixa da norma: " + f2(fAsp.min) + " a " + f2(fAsp.max) + " m — meio da faixa).");
     /* ralos de fundo: no ponto mais fundo, a ≥ distância mínima, transversais ao eixo (ou ao longo, se não couber) */
     var ralos = [];
@@ -486,6 +571,26 @@
         if (E.largura - 2 * geo(par, "recuoRalo") >= dmin) pts = [{ s: sF, t: tm - dmin / 2 }, { s: sF, t: tm + dmin / 2 }];
         else { var sF2 = g.fundoInvertido ? sF + dmin : sF - dmin; pts = [{ s: sF, t: tm }, { s: sF2, t: tm }]; }
       } else pts = [{ s: sF, t: tm }];
+      /* ⚠ revisor 19/10/2026: a conta acima é pela CAIXA ENVOLVENTE do tanque — numa forma livre (em L) o 2º ralo caía FORA do
+         tanque, sem aviso (a sucção ficava com um ralo só: risco de aprisionamento). Ponto fora do tanque ou colado na parede →
+         procura, a partir da ponta funda, o primeiro par (ou o ponto) que caiba DENTRO, na mesma distância mínima; não achou →
+         pendência e os ralos não são lançados (a verificação da sucção segura reprova) */
+      var margR = geo(par, "espacoDisp") / 2;   /* a grelha inteira dentro, longe da parede (meio espaço entre dispositivos) */
+      var cabe = function (q) { var p0 = { x: q.s * E.u.x + q.t * E.v.x, z: q.s * E.u.z + q.t * E.v.z }; return HP().dentro(g.contorno, p0) && distPoligono(g.contorno, p0) >= margR - EPS; };
+      if (!pts.every(cabe)) {
+        var achou = null, dirS = g.fundoInvertido ? 1 : -1, nS = Math.ceil(E.comprimento / PS), nT = Math.ceil(E.largura / PS);
+        for (var iS = 0; iS <= nS && !achou; iS++) {
+          var sC = sF + dirS * iS * PS, tsC = [];
+          for (var iT = 0; iT <= nT; iT++) tsC.push(E.t0 + iT * PS);
+          tsC.sort(function (a, b) { return Math.abs(a - tm) - Math.abs(b - tm); });
+          for (var k = 0; k < tsC.length && !achou; k++) {
+            var tC = tsC[k], cands = num(D.ralosFundo, 0) >= 2 ? [[{ s: sC, t: tC - dmin / 2 }, { s: sC, t: tC + dmin / 2 }], [{ s: sC, t: tC }, { s: sC + dirS * dmin, t: tC }]] : [[{ s: sC, t: tC }]];
+            for (var c0 = 0; c0 < cands.length; c0++) if (cands[c0].every(cabe)) { achou = cands[c0]; break; }
+          }
+        }
+        if (achou) { pts = achou; decide("pisc.ralos.forma", "Forma do tanque fora do retângulo: os ralos de fundo foram postos DENTRO do tanque, o mais perto da ponta funda, a pelo menos " + f2(margR) + " m das paredes e na distância mínima entre eles."); }
+        else { pts = []; pend("pisc.ralos.lugar", "não coube " + (num(D.ralosFundo, 0) >= 2 ? "o par de ralos de fundo (distância mínima " + f2(dmin) + " m)" : "o ralo de fundo") + " dentro do tanque: ralos NÃO lançados — escolha outra sucção segura ou desenhe o contorno"); }
+      }
       pts.forEach(function (q) {
         var p = snapPt({ x: q.s * E.u.x + q.t * E.v.x, z: q.s * E.u.z + q.t * E.v.z }), yF = yA - g.prof(p), n = itRalo && itRalo.norm || {};
         var inst = { Produto: prodTxt(itRalo), Fonte: itRalo ? HP().fonteItem(itRalo) : "" }, gr = mm(n.grelha_mm || n.diametro_mm); if (gr) inst.Grelha = gr; else inst.A_conferir = true;
@@ -522,9 +627,24 @@
     /* refletores */
     var ilu = par.iluminacao || {}, nRef = ilu.ativo ? Math.max(1, Math.round(num(ilu.n, Math.ceil(g.area / 20)))) : 0;   // hid:ok sem n informado: 1 a cada 20 m² (critério do projetista, declarado)
     if (nRef) {
-      slotsNoLado(ladoCm, nRef, 0.15, 0.85).forEach(function (s) { var it = itRef, inst = instDisp(it, 0.12); dispositivo("refletor", "hid-pisc-refletor", ladoCm, s, yA - geo(par, "profRefletor"), null, inst); });   // hid:ok faixa útil; corpo do nicho
+      slotsEmParedes(ladoCm, nRef, 0.15, 0.85, "Refletores").forEach(function (o) { var it = itRef, inst = instDisp(it, 0.12); dispositivo("refletor", "hid-pisc-refletor", o.l, o.s, yA - geo(par, "profRefletor"), null, inst); });   // hid:ok faixa útil; corpo do nicho
       decide("pisc.refletores", nRef + " refletor(es) LED na parede de frente para a casa de máquinas (a luz vai para longe de quem olha da casa), a " + f2(geo(par, "profRefletor")) + " m abaixo do nível da água" + (ilu.n == null ? " — quantidade pelo critério 1 a cada 20 m² (informe a do luminotécnico)" : "") + "; alimentação em extrabaixa tensão pelo quadro (NBR 5410, projeto elétrico).");
     }
+
+    /* REPOSIÇÃO DE ÁGUA POTÁVEL: a bica de descarga livre no deck, na parede de frente para a casa de máquinas (a espera da
+       água da obra fica ao lado da casa); a boca fica ACIMA do nível de transbordamento (a borda) pela separação livre da
+       NBR 10818 4.2.2 + a folga — a rede potável nunca encosta na água do tanque */
+    var dnRep = geo(par, "dnReposicao"), sAb = HP()._int.param(ctxF, "pisc.abastecimento_separacao", "minimo_m", "reposição"), fAb = HP()._int.param(ctxF, "pisc.abastecimento_separacao", "fator_diametro", "reposição");
+    var livreRep = sAb != null && fAb != null ? r4(Math.max(sAb, fAb * dnRep / 1000) + geo(par, "folgaLivre")) : null, repo = null;
+    if (livreRep != null) {
+      [ladoCm].concat(lados.filter(function (l) { return l !== ladoCm; })).some(function (l) {
+        var s = slotsNoLado(l, 1, 0.05, 0.95); if (!s.length) return false;   // hid:ok faixa útil da parede
+        var p = { x: l.a.x + l.dir.x * s[0], z: l.a.z + l.dir.z * s[0] }, base = snapPt(add(p, l.n, ep + geo(par, "afastTubo")));
+        repo = { lado: l.i, base: base, rotY: r4(rotDisp(l)), alcance: r4(d2(base, p) + geo(par, "afastTubo") / 2), livre: livreRep };
+        return true;
+      });
+    }
+    if (!repo) pend("pisc.reposicao", livreRep == null ? "sem a separação livre do abastecimento (NBR 10818 4.2.2) na base de normas: reposição não lançada" : "não há espaço livre nas paredes do tanque para a bica de reposição: libere um trecho de borda");
 
     /* 4) EQUIPAMENTOS NA CASA (frame local → mundo) e os pontos de ligação */
     var yBs = r4(yPiso + eixoB), yR = r4(yPiso + casa.F.ce.y);   /* bocas da seletora: o conector da família (cota A da ficha) */
@@ -557,6 +677,7 @@
        cruzam (o A* desvia), e de camadas diferentes podem se cruzar sem bater (12 cm na vertical). Com a hidro na camada do
        retorno, a linha do retorno fechava a passagem até a parede da hidro e a hidro ficava sem caminho (casa a leste). */
     decide("pisc.vala", "Tubos enterrados em vala em volta do tanque: sucção a " + f2(g.yBorda - yS) + " m abaixo do deck (abaixo da saída das coadeiras: sucção sem ponto alto); retorno, hidro e aquecimento em camadas " + f2(geo(par, "camadaRetorno")) + " m acima uma da outra (camadas diferentes nunca se cruzam na mesma cota; a linha que encontra a passagem fechada desce uma camada e cruza por baixo). Traçado ortogonal (A* do HidRota) desviando do tanque, da casa de máquinas, de vigas/pilares e dos outros tubos.");
+    decide("pisc.caimento", "Declividade da recirculação: a NBR 10339:2018 não fixa declividade para a tubulação de recirculação (os 0,5 % de 5.5.1.1 b são da drenagem das áreas circundantes e não valem aqui; não achei outra fonte). Critério CONSERVADOR adotado: tubos da vala EM NÍVEL, sem ponto alto — a sucção fica toda abaixo do nível da água e abaixo da saída das coadeiras (afogada: o ar não se acumula e a bomba não perde a escorva), conferido no lançamento (pisc.succao.ponto_alto); se a execução der declividade, sempre caindo para a casa de máquinas, nunca formando sifão invertido. O descarte e o recalque da drenagem são pressurizados (bomba) e terminam em descarga livre.");
     var tubos = [], nT = 0, alias = {}, MIN_T = 0.03;   // hid:ok trecho mais curto que isto (acima da tolerância de nó de 2 cm do biminst) vira o mesmo nó
     function kp(p) { return r4(p.x) + "|" + r4(p.y) + "|" + r4(p.z); }
     function ali(p) { var q = alias[kp(p)]; return q ? { x: q.x, y: q.y, z: q.z } : p; }
@@ -597,7 +718,13 @@
         var yM = Math.min(cons[0].y, cons[1].y);
         cons.forEach(function (c) { var u = { x: (m.x - c.r.x) / (d2(m, c.r) || 1), z: (m.z - c.r.z) / (d2(m, c.r) || 1) }; c.r.rotY = r4(Math.atan2(-u.z, u.x)); var cx = add(c.r, u, c.off); sub.push({ de: { x: cx.x, y: c.y, z: cx.z }, ate: { x: m.x, y: yM, z: m.z } }); });   // hid:ok saída da família (42 % da grelha + 8 cm)
         m.y = yM;
-      } else { var c0 = cons[0]; m = { x: c0.r.x, y: c0.y, z: c0.r.z }; }
+      } else {
+        /* UM ralo (grelha não bloqueável, opção d): a saída da família aponta para a parede mais próxima e a linha nasce NO
+           conector (⚠ revisor 19/10/2026: nascia no centro do ralo — ponta solta e o ralo sem tubo) */
+        var c0 = cons[0], l0 = lados.slice().sort(function (a, b) { return distSeg(c0.r, a.a, a.b) - distSeg(c0.r, b.a, b.b); })[0];
+        c0.r.rotY = r4(Math.atan2(-l0.n.z, l0.n.x));
+        var cx0 = add(c0.r, l0.n, c0.off); m = { x: r4(cx0.x), y: c0.y, z: r4(cx0.z) };
+      }
       /* do tê à parede mais próxima (perpendicular), por baixo do fundo */
       var lp = lados.slice().sort(function (a, b) { return distSeg(m, a.a, a.b) - distSeg(m, b.a, b.b); })[0], dl = distSeg(m, lp.a, lp.b), pe = add(m, lp.n, dl + ep + geo(par, "afastTubo"));
       sub.push({ de: { x: m.x, y: m.y, z: m.z }, ate: { x: pe.x, y: m.y, z: pe.z } });
@@ -627,8 +754,41 @@
     ch(slotMundo(xRet), "R"); if (xHR != null) ch(slotMundo(xHR), "H");
     var aqP = par.aquecimento || {}, planoA = aqP.tipo === "solar" || aqP.tipo === "bomba_calor" ? planoAquec(cm, casa, g, estado, par, dim0, snapPt) : null;
     if (planoA) [planoA.fora, planoA.off, planoA.pRiser, planoA.pR2].forEach(function (p) { if (p) ch(p, "A"); });
+    /* REPOSIÇÃO: a espera da água potável da obra ao lado da casa de máquinas (a lateral mais perto da obra) e o pé da bica
+       — chaves da grade, numa camada própria (W) entre o retorno e a hidro */
+    var espRep = null, yW = r4(yRv + geo(par, "camadaRetorno") / 2);   // hid:ok meia camada: entre o retorno e a hidro
+    if (repo) {
+      var latX = casa.C / 2 + geo(par, "espCasa") + geo(par, "afastEspera"), paredesO = arr(estado.caixas).filter(function (c) { return c && c.tipo === "parede"; });
+      var candE = [latX, -latX].map(function (xl, i) { var q = snapPt(paraMundo(cm, xl, 0)); q.d = paredesO.length ? Math.min.apply(null, paredesO.map(function (w) { return d2(q, { x: w.cx, z: w.cz }); })) : i; return q; });
+      candE.sort(function (a, b) { return a.d - b.d; });
+      espRep = { x: candE[0].x, z: candE[0].z };
+      ch(espRep, "W"); ch(repo.base, "W");
+    }
+    /* DESCARTE E DRENAGEM: a CAIXA RECEPTORA (descarga livre) fora da parede do fundo, na frente do toco do descarte; o
+       recalque do POÇO DE DRENAGEM (canto do fundo da casa) sai pelo fundo e corre por fora até a outra chegada da caixa.
+       A peça manda: as chegadas e a saída são os conectores da família. Destino = par.descarte ("pluvial", o padrão, ou
+       "esgoto" — o que a prefeitura pedir) */
+    var destDesc = PC.destDesc, famCx = PC.famCx, sepD = PC.sepD, livreDesc = PC.livreDesc, dnSai = PC.dnSai, dnDr = PC.dnDr, instCx = PC.instCx, instPoco = PC.instPoco;
+    var bateCx = PC.ok ? zonaBate(g, obs, cm, PC.zona, par) : null;
+    var DD = null;
+    if (PC.ok && !bateCx) {
+      var yTopo = r4(g.yBorda), yDt = r4(yPiso + casa.H - geo(par, "folgaTetoDreno"));
+      var sis0 = BI() && BI().SISTEMAS && BI().SISTEMAS[destDesc], iMin = BI() && BI().inclinacaoMinima ? num(BI().inclinacaoMinima(destDesc, dnSai), 0) : 0;   /* em % (BimInst) */
+      DD = { xc: PC.xc, zc: PC.zc, zDesc: PC.zDesc, yTopo: yTopo, yDt: yDt, zFora: PC.zFora, xp: PC.xp, zp: PC.zp, xDr: PC.xDr, cChg: PC.cChg, cChgD: PC.cChgD, cSai: PC.cSai, cPoco: PC.cPoco, iMin: iMin, material: sis0 ? sis0.material : null };
+    } else if (bateCx) {
+      var sugCx = melhorCasa(g, estado, e.avaliarFam, par, casa, zonaCx);
+      pend("pisc.descarte.destino", "a caixa receptora do descarte (com a drenagem da casa de máquinas e a espera da saída) não cabe atrás da casa de máquinas: invadiria " + bateCx + ". Descarte e drenagem ficaram em ESPERA — arraste a casa de máquinas para um lugar com espaço atrás, ou ligue na rede pluvial ou de esgoto com descarga LIVRE (NBR 10339 5.4.4.14 a)", { tipo: "moverCM", sugestao: sugCx });
+      aviso("Caixa receptora do descarte não lançada: atrás da casa de máquinas ela invadiria " + bateCx + ". Mova a casa de máquinas para um lugar com espaço atrás.", { tipo: "moverCM", sugestao: sugCx });
+    } else pend("pisc.descarte.destino", "a caixa receptora do descarte não pôde ser montada (sem a separação livre da norma ou sem a família): ligar o descarte e a drenagem na rede pluvial ou de esgoto com descarga LIVRE (NBR 10339 5.4.4.14 a)", { tipo: "destino", sistema: "pisc_dreno" });
     var V = new Vala(g, cm, casa, obs, par, chaves); V.montar(chaves);
     chaves.forEach(function (p, i) { V.reserva[V.chave(p)] = camadaDe[i]; });
+    if (DD) {
+      /* ninguém cruza a drenagem por fora, a caixa e a espera da saída */
+      var bl = function (x1, z1, x2, z2) { V.bloquear(paraMundo(cm, x1, z1), paraMundo(cm, x2, z2)); };
+      bl(DD.xp, DD.zFora, DD.xDr, DD.zFora); bl(DD.xDr, DD.zFora, DD.xDr, DD.zDesc);
+      [-1, 0, 1].forEach(function (k) { var dz = k * DD.cSai.z * 0.75; bl(DD.xc - DD.cSai.z - geo(par, "passo"), DD.zc + dz, DD.xc + DD.cSai.z + geo(par, "passo"), DD.zc + dz); });   // hid:ok três faixas cobrem a planta da caixa
+      bl(DD.xc, DD.zc + DD.cSai.z, DD.xc, DD.zc + DD.cSai.z + geo(par, "saidaCaixa"));
+    }
     /* os tocos que atravessam a parede do FUNDO da casa (descarte e aquecimento) — o A* das outras linhas não passa por eles */
     var zIn = casa.zFundo, zOut = casa.zFundo + geo(par, "espCasa") + 0.7;   // hid:ok até 10 cm além da ponta do toco (60 cm)
     var xsToco = [casa.x.filtro].concat(planoA ? [paraLocal(cm, planoA.fora.x, planoA.fora.z).x, paraLocal(cm, planoA.off.x, planoA.off.z).x] : []);
@@ -747,14 +907,52 @@
       cadeia(hidDisp, "pisc_hidro", dRH, (dim0.linhas.hidroRamal || {}).dn || dRH, slH, yHd, "H", "Hidromassagem", pid + "-hidroR");
     }
     /* DESCARTE: seletora → atravessa a parede do fundo → espera fora (pendência do destino) */
-    var desc = paraMundo(cm, casa.x.filtro + casa.F.cd.x, casa.zEq + casa.F.cd.z), dFundo = paraMundo(cm, casa.x.filtro, casa.zFundo + geo(par, "espCasa") + 0.5);   // hid:ok 0,5 m fora da parede do fundo
-    tubo("pisc_dreno", deR, { x: desc.x, y: yR, z: desc.z }, { x: dFundo.x, y: yR, z: dFundo.z }, "descarte", pid + "-descarte", "p2");
-    var sep = dim0.dreno && dim0.dreno.separacao_m;
-    pend("pisc.descarte.destino", "descarte do filtro (lavagem e esvaziamento): ligar a espera na rede pluvial ou de esgoto conforme a prefeitura, com descarga LIVRE de no mínimo " + f2(sep) + " m acima do nível de transbordamento da caixa receptora (NBR 10339 5.4.4.14 a) e visor de lavagem no tubo (5.4.4.16)", { tipo: "destino", sistema: "pisc_dreno" });
-    pend("pisc.casa.drenagem", "ralo do piso da casa de máquinas (enterrada): ligar ao pluvial por gravidade ou bomba de drenagem (NBR 10339 5.2.2 b)");
+    var desc = paraMundo(cm, casa.x.filtro + casa.F.cd.x, casa.zEq + casa.F.cd.z), dFundo = paraMundo(cm, casa.x.filtro, casa.zFundo + geo(par, "espCasa") + geo(par, "afastDescarte"));
+    var sep = dim0.dreno && dim0.dreno.separacao_m, caixaD = null;
+    if (!DD) tubo("pisc_dreno", deR, { x: desc.x, y: yR, z: desc.z }, { x: dFundo.x, y: yR, z: dFundo.z }, "descarte", pid + "-descarte", "p2");
+    else {
+      /* a seletora (lavar/drenar) EMPURRA a água: o descarte sobe da vala até acima da caixa e termina ABERTO a "Livre" do topo */
+      var lxD = function (xl, zl, y) { var q = paraMundo(cm, xl, zl); return { x: q.x, y: y, z: q.z }; };
+      var pC = paraMundo(cm, DD.xc, DD.zc), yCh = r4(DD.yTopo + DD.cChg.y);
+      marca({ op: "familia", id: pid + "-caixa-descarte", famId: famCx, tipoId: "t-padrao", x: pC.x, y: DD.yTopo, z: pC.z, rotY: r4(cm.rotY), inst: instCx }, "descarte");
+      tubo("pisc_dreno", deR, { x: desc.x, y: yR, z: desc.z }, { x: dFundo.x, y: yR, z: dFundo.z }, "descarte", pid + "-descarte");
+      tubo("pisc_dreno", deR, { x: dFundo.x, y: yR, z: dFundo.z }, { x: dFundo.x, y: yCh, z: dFundo.z }, "descarte", pid + "-descarte");
+      tubo("pisc_dreno", deR, { x: dFundo.x, y: yCh, z: dFundo.z }, lxD(casa.x.filtro, DD.zc, yCh), "descarte", pid + "-descarte");
+      /* o POÇO DE DRENAGEM no canto do fundo (o ralo desenhado na casa) → sobe até logo abaixo da laje → sai pelo fundo → corre
+         por fora → sobe acima da caixa → chegada aberta */
+      var pP = paraMundo(cm, DD.xp, DD.zp), yRecP = r4(yPiso + DD.cPoco.y);
+      marca({ op: "familia", id: pid + "-poco-drenagem", famId: "hid-pisc-poco-drenagem", tipoId: "t-padrao", x: pP.x, y: yPiso, z: pP.z, rotY: r4(cm.rotY), inst: instPoco }, "drenagem");
+      poli("pisc_dreno", dnDr, [lxD(DD.xp, DD.zp, yRecP), lxD(DD.xp, DD.zp, DD.yDt), lxD(DD.xp, DD.zFora, DD.yDt), lxD(DD.xDr, DD.zFora, DD.yDt), lxD(DD.xDr, DD.zDesc, DD.yDt), lxD(DD.xDr, DD.zDesc, yCh), lxD(DD.xDr, DD.zc, yCh)], "drenagem", pid + "-drenagem");
+      /* a SAÍDA da caixa: espera na rede escolhida, descendo pela declividade mínima da norma (BimInst/HidNormas) */
+      var yS0 = r4(DD.yTopo + DD.cSai.y), Ls = geo(par, "saidaCaixa"), pS0 = paraMundo(cm, DD.xc, DD.zc + DD.cSai.z), pS1 = paraMundo(cm, DD.xc, DD.zc + DD.cSai.z + Ls);
+      var tS = marca({ op: "trecho", id: pid + "-saida-descarte", sistema: destDesc, dn: dnSai, p1: { x: pS0.x, y: yS0, z: pS0.z }, p2: { x: pS1.x, y: r4(yS0 - DD.iMin / 100 * Ls), z: pS1.z }, continua: "p2" }, "tubo");
+      if (DD.material) tS.material = DD.material;
+      caixaD = { id: pid + "-caixa-descarte", destino: destDesc, livre: DD.cChg.y, livreMin: sep, x: pC.x, z: pC.z, yTopo: DD.yTopo };
+      decide("pisc.descarte.destino", "Descarte do filtro (lavagem e esvaziamento, pela seletora) e drenagem da casa de máquinas numa CAIXA RECEPTORA fora da parede do fundo: as duas chegadas terminam ABERTAS " + f2(DD.cChg.y) + " m acima do topo da caixa (mínimo " + f2(sep) + " m = máx(2 × D; 0,30) — NBR 10339 5.4.4.14 a) e a caixa sai para a rede " + (destDesc === "esgoto" ? "de ESGOTO" : "PLUVIAL") + " (padrão: pluvial; troque em 'Descarte do filtro' conforme a prefeitura). Visor de lavagem na saída da seletora (5.4.4.16). A espera da saída (DN " + dnSai + " — CRITÉRIO DO PROJETISTA: o menor tubo de rede enterrada; confira com a prefeitura — na declividade mínima da norma) liga na rede da obra.");
+      decide("pisc.casa.drenagem", "Drenagem da casa de máquinas: poço com grelha no canto do fundo, bomba submersível automática (boia) e válvula de retenção; o recalque (DN " + dnDr + " — CRITÉRIO DO PROJETISTA: bocal comum de bomba submersível; confira na ficha da bomba escolhida) corre sob a laje, sai pelo fundo e descarrega LIVRE na caixa receptora (NBR 10339 5.2.2: proteção contra inundação e dreno quando abaixo do solo).");
+    }
     /* AQUECIMENTO: derivação com by-pass no retorno (o fabricante do filtro pede o aquecedor FORA da linha do filtro) */
     var aqInfo = null;
-    if (comAq) aqInfo = executarAquec(planoA, cm, g, par, xr, yR, yAq, tubo, poli, rotear, marca, decide, pend, pid, casa, yPiso);
+    if (comAq) aqInfo = executarAquec(planoA, cm, g, par, xr, yR, yAq, tubo, poli, rotear, marca, decide, pend, pid, casa, yPiso, function (f, i, k) { return conDaFamilia(e.avaliarFam, f, i, k); });
+    /* REPOSIÇÃO: espera da água potável da obra (ao lado da casa de máquinas) → registro → vala (camada W) → sobe na bica */
+    var reposInfo = null;
+    if (repo && espRep) {
+      var cRep = conDaFamilia(e.avaliarFam, "hid-pisc-reposicao", { Altura: repo.livre, Alcance: repo.alcance, DN: dnRep }, "entrada") || { x: 0, y: 0, z: 0 };
+      marca({ op: "familia", id: pid + "-reposicao", famId: "hid-pisc-reposicao", tipoId: "t-padrao", x: repo.base.x, y: r4(g.yBorda), z: repo.base.z, rotY: repo.rotY, inst: { Altura: repo.livre, Alcance: repo.alcance, DN: dnRep } }, "dispositivo");
+      var camW = rotear(espRep, repo.base, yW, "W", "Reposição");
+      poli("pisc_reposicao", dnRep, camW, "reposição", pid + "-reposicao");
+      tubo("pisc_reposicao", dnRep, { x: repo.base.x, y: yW, z: repo.base.z }, { x: repo.base.x, y: r4(g.yBorda + cRep.y), z: repo.base.z }, "reposição", pid + "-reposicao");
+      /* a 1ª ponta é a ESPERA (continua na rede de água fria da obra); a aplicação SINAPI sai pelo DN (ramal) */
+      var trRep = novas.filter(function (o) { return o.op === "trecho" && o.sistema === "pisc_reposicao"; });
+      trRep.forEach(function (o) { delete o.aplicacao; });
+      if (trRep.length) {
+        trRep[0].continua = "p1";
+        var a0 = trRep[0].p1, b0 = trRep[0].p2, mR0 = { x: r4((a0.x + b0.x) / 2), y: a0.y, z: r4((a0.z + b0.z) / 2) };
+        marca({ op: "familia", id: pid + "-reposicao-reg", famId: "hid-pisc-registro", tipoId: "t-padrao", x: mR0.x, y: mR0.y, z: mR0.z, rotY: r4(Math.atan2(-(b0.z - a0.z), b0.x - a0.x)), inst: { DN: dnRep, Sistema: "pisc_reposicao" } }, "registro");
+      }
+      reposInfo = { id: pid + "-reposicao", livre: repo.livre, dn: dnRep, espera: { x: espRep.x, y: yW, z: espRep.z } };
+      decide("pisc.reposicao", "Reposição de água potável por uma BICA na borda (lado " + (repo.lado + 1) + "), com registro: a boca fica " + f2(repo.livre) + " m acima da borda (nível de transbordamento) — mínimo máx(2 × D; " + f2(sAb) + ") da NBR 10818 4.2.2 + " + f2(geo(par, "folgaLivre")) + " m de folga: a rede potável nunca encosta na água do tanque. A linha (DN " + dnRep + " — CRITÉRIO DO PROJETISTA: ponto de água fria comum, a reposição é por registro e de vazão pequena — PVC soldável) nasce na ESPERA ao lado da casa de máquinas, com registro, e liga no ramal de água fria da obra (a reposição é manual, fora do pico: fora da vazão de pico do prédio).");
+    }
 
     /* 6) CONFERÊNCIA com os comprimentos e as conexões REAIS */
     var porLinha = {};
@@ -782,9 +980,10 @@
       var q = sis === "pisc_hidro" ? (dim0.hidro && dim0.hidro.Q_m3h) : (k === pid + "-barrilete" ? Qp : (/coadeira/.test(k) ? Qp * 0.8 : Qp));   // hid:ok fração da coadeira (a mesma do dimensionamento)
       var dn = ls.reduce(function (m, t) { return Math.max(m, t.dn); }, 0);
       if (sis === "pisc_aquec") q = dim0.aquecimento && dim0.aquecimento.solar ? dim0.aquecimento.solar.Q_m3h : null;
-      if (sis === "pisc_dreno") q = dim0.dreno ? dim0.dreno.Q_m3h : null;
+      if (sis === "pisc_dreno") q = k === pid + "-drenagem" ? null : (dim0.dreno ? dim0.dreno.Q_m3h : null);
+      if (sis === "pisc_reposicao") q = null;   /* reposição: por registro, sem vazão de projeto (fora da recirculação) */
       out.linhas.push({ id: k, sistema: sis, conjunto: cj, Q: r4(q || 0), dn: dn, L: r4(L), trechos: ls.length, pecas: pecasDe(ls) });
-      if (sis !== "pisc_hidro" && sis !== "pisc_aquec" && sis !== "pisc_dreno") linhasReais.push({ papel: k, conjunto: cj, Q: q || Qp, dn: dn, L: L, pecas: pecasDe(ls) });
+      if (sis !== "pisc_hidro" && sis !== "pisc_aquec" && sis !== "pisc_dreno" && sis !== "pisc_reposicao") linhasReais.push({ papel: k, conjunto: cj, Q: q || Qp, dn: dn, L: L, pecas: pecasDe(ls) });
     });
     var par2 = copia(par); par2.linhasReais = linhasReais; par2.yBomba = yBs;
     par2.linhasHidro = out.linhas.filter(function (l) { return l.sistema === "pisc_hidro"; }).map(function (l) { return { papel: l.id, conjunto: l.conjunto, Q: l.Q, dn: l.dn, L: l.L, pecas: l.pecas }; });
@@ -814,11 +1013,11 @@
     dim.decisoes.forEach(function (x) { out.decisoes.push(x); });
     dim.pendencias.forEach(function (x) { if (!out.pendencias.some(function (p) { return p.chave === x.chave; })) out.pendencias.push(x); });
     dim.verificacoes.forEach(function (x) { out.verificacoes.push(x); });
-    if (falhas.length) aviso("Traçado sem caminho livre para: " + falhas.join(", ") + " — ficou em L direto (pode cruzar obstáculo). Arraste a casa de máquinas para um lugar mais aberto.", { tipo: "moverCM", sugestao: melhorCasa(g, estado, e.avaliarFam, par, casa) });
+    if (falhas.length) aviso("Traçado sem caminho livre para: " + falhas.join(", ") + " — ficou em L direto (pode cruzar obstáculo). Arraste a casa de máquinas para um lugar mais aberto.", { tipo: "moverCM", sugestao: melhorCasa(g, estado, e.avaliarFam, par, casa, zonaCx) });
     /* NÃO ATENDE com a casa onde está → Corrigir */
     var ruim = dim.verificacoes.filter(function (v) { return v.status === "nao_atende" && /^pisc\.(npsh|autoescorva|bomba)/.test(v.id); });
     if (ruim.length) {
-      var mc2 = melhorCasa(g, estado, e.avaliarFam, par, casa);
+      var mc2 = melhorCasa(g, estado, e.avaliarFam, par, casa, zonaCx);
       ruim.forEach(function (v) {
         var acs = [];
         if (mc2 && cm.origem === "usuario") acs.push({ tipo: "moverCM", x: mc2.x, z: mc2.z, texto: "Voltar a casa de máquinas para o melhor lugar" });
@@ -828,18 +1027,29 @@
       });
     }
     if (!dim.equipamentos.bomba) {
-      var mc3 = cm.origem === "usuario" ? melhorCasa(g, estado, e.avaliarFam, par, casa) : null, acs3 = [];
+      var mc3 = cm.origem === "usuario" ? melhorCasa(g, estado, e.avaliarFam, par, casa, zonaCx) : null, acs3 = [];
       if (nivel === "superficie") acs3.push({ tipo: "param", campo: "cmNivel", valor: "afogada", texto: "Enterrar a casa (bomba afogada)" });
       if (mc3) acs3.push({ tipo: "moverCM", x: mc3.x, z: mc3.z, texto: "Voltar a casa de máquinas para o melhor lugar" });
       aviso("Com a casa de máquinas nesta posição nenhuma motobomba do catálogo atende: " + f2(Qp) + " m³/h a " + f2(dim.estimativa && dim.estimativa.amt) + " mca" + (nivel === "superficie" ? ", com a bomba " + f2(yBs - g.yAgua) + " m ACIMA do nível da água (autoescorva do fabricante)" : "") + " — NÃO ATENDE.", acs3[0] || null);
       out.avisos[out.avisos.length - 1].acoes = acs3;
     }
     /* ---- VERIFICAÇÕES DO QUE FOI LANÇADO (NBR 10339 / NBR 10818), cada uma com aviso e Corrigir quando NÃO ATENDE ---- */
-    verificarLancado(out, { disps: disps, ralos: ralos, D: dim0.dispositivos, dim: dim, yA: yA, g: g, deR: deR, ctx: ctxF });
+    var dispCon = {}; disps.forEach(function (d) { var sd = d.tipo === "ralo" ? null : saidaDisp(d); if (sd) dispCon[r4(sd.con.x) + "|" + r4(sd.con.y) + "|" + r4(sd.con.z)] = 1; });
+    var retCm = ret(cm.x, cm.z, Math.cos(cm.rotY), -Math.sin(cm.rotY), casa.C / 2 + geo(par, "espCasa") + geo(par, "passo"), casa.L / 2 + geo(par, "espCasa") + geo(par, "passo"));
+    verificarLancado(out, { disps: disps, ralos: ralos, D: dim0.dispositivos, dim: dim, yA: yA, g: g, deR: deR, ctx: ctxF, caixa: caixaD, repos: reposInfo, tubos: tubos, dispCon: dispCon, naCasa: function (q) { return dentroRet(retCm, q.x, q.z, 0); } });
+    /* ALCANCE DO ASPIRADOR: sem o comprimento da mangueira na ficha, a mangueira fica ESPECIFICADA pela geometria lançada —
+       do dispositivo ao ponto mais longe do contorno + a profundidade máxima, arredondado para cima ao meio metro */
+    if (dim.aspiracaoPorAlcance || dim0.aspiracaoPorAlcance) disps.filter(function (d) { return d.tipo === "aspiracao"; }).forEach(function (d) {
+      var dm = 0; g.contorno.forEach(function (q) { dm = Math.max(dm, d2(d, q)); });
+      var Lm = Math.ceil((dm + num(g.profFunda, 0)) * 2) / 2;
+      out.verificacoes.push({ id: "pisc.aspiracao.alcance", nome: "Alcance do aspirador (" + d.id + "): mangueira especificada", valor: f2(Lm), limite: "≥ " + f2(dm + num(g.profFunda, 0)) + " (ponto mais longe + profundidade)", unidade: "m", ok: true, status: "atende", fonte: HP().fonteTxt("pisc.bocal_aspiracao"), obs: "especificação de compra: mangueira do aspirador com no mínimo " + f2(Lm) + " m" });
+      decide("pisc.aspiracao.mangueira", "Mangueira do aspirador ESPECIFICADA com no mínimo " + f2(Lm) + " m: do dispositivo de aspiração " + d.id + " ao ponto mais longe do tanque (" + f2(dm) + " m) mais a profundidade máxima (" + f2(num(g.profFunda, 0)) + " m) — o aspirador alcança todas as partes do tanque (NBR 10339 5.4.4.12.3 c).");
+    });
     avisarNaoAtende(out, dim, par);
     out.dispositivos = disps.map(function (d) { return { id: d.id, tipo: d.tipo, x: d.x, y: d.y, z: d.z, lado: d.lado }; });
     out.vala = { ySuccao: yS, yRetorno: yRv, yHidro: yHd, yAquecimento: yAq };
     out.aquecimento = aqInfo;
+    out.caixaDescarte = caixaD; out.reposicao = reposInfo;
     out.cm = cm;
     out.ops = limpar.concat(novas);
     out.ok = true;
@@ -896,15 +1106,28 @@
     return P;
   }
   /* 2ª fase: as famílias e os tubos */
-  function executarAquec(P, cm, g, par, xr, yR, yRv, tubo, poli, rotear, marca, decide, pend, pid, casa, yPiso) {
+  function executarAquec(P, cm, g, par, xr, yR, yRv, tubo, poli, rotear, marca, decide, pend, pid, casa, yPiso, conF) {
     var dn = P.dn, out = { tipo: P.tipo };
     var pIda = P.T1, pVol = P.T2;
     if (P.tipo === "bomba_calor") {
       marca({ op: "familia", id: pid + "-bomba-calor", famId: "hid-pisc-bomba-calor", tipoId: "t-padrao", x: P.pBC.x, y: g.yBorda, z: P.pBC.z, rotY: r4(cm.rotY), inst: { Largura: P.W, Profundidade: P.Pr, Altura: P.H, DN: dn, Produto: P.bc ? P.bc.fabricante + " " + P.bc.codigo : "", Fonte: P.bc ? P.bc.fonte : "", A_conferir: !P.bc } }, "equipamento");
-      tubo("pisc_aquec", dn, pIda, { x: P.fora.x, y: pIda.y, z: P.fora.z }, "aquecimento", pid + "-aquecIda", "p2");
-      tubo("pisc_aquec", dn, pVol, { x: P.off.x, y: pVol.y, z: P.off.z }, "aquecimento", pid + "-aquecVolta", "p2");
+      /* as esperas de ida e volta LIGADAS aos bocais da família (frente C, 19/10/2026: antes ficavam soltas, com pendência):
+         sobem do toco, vão até a frente da bomba de calor e entram nos bocais da face −X (o conector da família manda) */
+      var instBC = { Largura: P.W, Profundidade: P.Pr, Altura: P.H, DN: dn };
+      var cE = conF ? conF("hid-pisc-bomba-calor", instBC, "entrada") : null, cS = conF ? conF("hid-pisc-bomba-calor", instBC, "saida") : null;
+      if (cE && cS) {
+        var lB = paraLocal(cm, P.pBC.x, P.pBC.z), lF = paraLocal(cm, P.fora.x, P.fora.z), lO = paraLocal(cm, P.off.x, P.off.z);
+        var lw = function (xl, zl, y) { var q = paraMundo(cm, xl, zl); return { x: q.x, y: r4(y), z: q.z }; };
+        var yE = g.yBorda + cE.y, yS2 = g.yBorda + cS.y, xE = lB.x + cE.x, zE = lB.z + cE.z;
+        poli("pisc_aquec", dn, [pIda, { x: P.fora.x, y: pIda.y, z: P.fora.z }, lw(lF.x, lF.z, yE), lw(lF.x, zE, yE), lw(xE, zE, yE)], "aquecimento", pid + "-aquecIda");
+        poli("pisc_aquec", dn, [lw(lB.x + cS.x, lB.z + cS.z, yS2), lw(lO.x, lB.z + cS.z, yS2), lw(lO.x, lO.z, yS2), { x: P.off.x, y: pVol.y, z: P.off.z }, pVol], "aquecimento", pid + "-aquecVolta");
+        decide("pisc.aquec.bc.ligacao", "Ida e volta ligadas aos bocais da bomba de calor na posição da família de reserva (o catálogo não dá a cota dos bocais): confira no modelo comprado e ajuste o último trecho.");
+      } else {
+        tubo("pisc_aquec", dn, pIda, { x: P.fora.x, y: pIda.y, z: P.fora.z }, "aquecimento", pid + "-aquecIda", "p2");
+        tubo("pisc_aquec", dn, pVol, { x: P.off.x, y: pVol.y, z: P.off.z }, "aquecimento", pid + "-aquecVolta", "p2");
+        pend("pisc.aquec.bc.ligacao", "ligar as esperas de ida e volta à bomba de calor conforme a posição dos bocais do modelo escolhido (o catálogo não dá a cota dos bocais)");
+      }
       decide("pisc.aquec.bc", "Bomba de calor ao lado da casa de máquinas (ao ar livre), em DERIVAÇÃO do retorno com by-pass e registros: o fabricante do filtro pede o aquecedor fora da linha do filtro (manual Sodramar FM, PDF p.19).");
-      pend("pisc.aquec.bc.ligacao", "ligar as esperas de ida e volta à bomba de calor conforme a posição dos bocais do modelo escolhido (o catálogo não dá a cota dos bocais)");
       return out;
     }
     if (!P.nPl) pend("pisc.solar.placas", "número de placas coletoras não calculado (sem a regra do fabricante): lançada 1 placa de referência");

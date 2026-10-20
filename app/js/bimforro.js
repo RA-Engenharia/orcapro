@@ -94,7 +94,12 @@
     { id: "gesso-12_5", rotulo: "Forro de gesso 12,5 mm",
       camadas: [{ rotulo: "Placa de gesso acartonado", material: "Gesso acartonado", e: 0.0125 }] },
     { id: "pvc-8", rotulo: "Forro de PVC 8 mm",
-      camadas: [{ rotulo: "Régua de PVC", material: "PVC", e: 0.008 }] }
+      camadas: [{ rotulo: "Régua de PVC", material: "PVC", e: 0.008 }] },
+    /* COBERTURA COMPLETA (frente "cob", js/bimforrodrywall.js): drywall sobre estrutura de madeira, pintado.
+       `estrutura` e `acabamento` são texto livre que o tipo carrega para o quantitativo e a ficha. */
+    { id: "drywall-12_5-madeira", rotulo: "Forro de drywall 12,5 mm sobre estrutura de madeira, pintado",
+      estrutura: "madeira", acabamento: "pintura látex acrílica sobre fundo selador",
+      camadas: [{ rotulo: "Chapa de gesso acartonado ST 12,5 mm", material: "Gesso acartonado", e: 0.0125 }] }
   ];
   /* CEILING_HEIGHTABOVELEVEL_PARAM do inventário (template padrão): 2600 mm */
   var DESLOC_PADRAO = 2.6;
@@ -110,7 +115,10 @@
     if (!cam.length) return null;
     var esp = cam.reduce(function (s, k) { return s + k.e; }, 0);
     if (!(esp > 0 && esp <= LIM.espessura)) return null;
-    return { id: txt(t.id).slice(0, 60) || "custom", rotulo: txt(t.rotulo).slice(0, 80) || "Forro", camadas: cam, espessura: r6(esp) };
+    var o = { id: txt(t.id).slice(0, 60) || "custom", rotulo: txt(t.rotulo).slice(0, 80) || "Forro", camadas: cam, espessura: r6(esp) };
+    if (t.estrutura) o.estrutura = txt(t.estrutura).slice(0, 40);
+    if (t.acabamento) o.acabamento = txt(t.acabamento).slice(0, 80);
+    return o;
   }
   function tipoCatalogo(id) {
     for (var i = 0; i < TIPOS.length; i++) if (TIPOS[i].id === String(id)) return normTipo(TIPOS[i]);

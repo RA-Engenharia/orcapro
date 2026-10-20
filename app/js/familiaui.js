@@ -124,7 +124,9 @@
           var orig = f._origem === "ra" ? "RA" : (f._origem === "importada" ? "Importada" : "Minha");
           /* FAMIMPORT: a família do mercado (js/familiamalha.js) — miniatura, categoria da família e o aviso de geometria pendente */
           var imp = f.geometria === "malha" && f.importada ? f.importada : null, pend = !!(imp && imp.geometriaPendente);
-          h += '<div class="fe-card' + (imp ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : "") +
+          /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js): a miniatura é desenhada da própria geometria (pintor em canvas), depois do render (_miniaturas) */
+          var mob = !imp && f.geometria === "mob";
+          h += '<div class="fe-card' + (imp || mob ? " fe-card-imp" : "") + '" data-fam="' + esc(f.id) + '">' + (imp ? '<div class="fe-mini">' + (f.miniatura ? '<img alt="" data-fe="mini" src="' + esc(f.miniatura) + '">' : '<span aria-hidden="true">' + esc((imp.categoriaNome || "").slice(0, 1)) + "</span>") + "</div>" : (mob ? '<div class="fe-mini"><img alt="" data-fe="mini" data-mini="' + esc(f.id) + '"></div>' : "")) +
             '<div class="fe-card-l1"><b>' + esc(f.nome) + '</b><span class="fe-badge fe-b-' + esc(f._origem || "minha") + '">' + orig + "</span>" + (HBf ? HBf.htmlSelos(infoF[f.id]) : "") + (pend ? '<span class="fe-badge fe-b-pendente" title="Veio do .rfa: tipos e parâmetros, sem a forma 3D">Geometria pendente</span>' : "") + "</div>" +
             (imp ? '<div class="fe-card-d">' + esc(imp.categoriaNome || "") + " · " + (f.tipos || []).length + " tipo(s) · " + (f.parametros || []).length + " parâmetro(s)" + (imp.triangulos ? " · " + imp.triangulos + " triângulos" : "") + "</div>" : "") +
             (f.descricao ? '<div class="fe-card-d">' + esc(f.descricao) + "</div>" : "") +
@@ -142,6 +144,20 @@
       });
       this._el.innerHTML = '<div class="fe">' + h + "</div>";
       this._ligarBiblioteca();
+      this._miniaturas();
+    },
+    /* desenha, aos poucos (3 por vez, para não travar a tela), a miniatura das famílias de mobiliário/paisagismo; o tipo é o escolhido no cartão */
+    _miniaturas: function () {
+      var el = this._el, FM = global.FamiliasMob; if (!el || !FM || !FM.miniatura) return;
+      var imgs = Array.prototype.slice.call(el.querySelectorAll("img[data-mini]")), self = this;
+      (function lote() {
+        var n = 0;
+        while (imgs.length && n < 3) {
+          var im = imgs.shift(); n++;
+          try { var id = im.getAttribute("data-mini"), tp = self._tiposSel[id] || ""; var src = FM.miniatura(id, tp); if (src) im.src = src; } catch (e) {}
+        }
+        if (imgs.length) setTimeout(lote, 0);
+      })();
     },
     _cssFiltro: function (HB) {
       try { var d = global.document; if (d && d.head && !d.getElementById("fil-css")) { var st = d.createElement("style"); st.id = "fil-css"; st.textContent = HB.cssFiltro(); d.head.appendChild(st); } } catch (e) {}

@@ -621,6 +621,8 @@
           { id: "pena", rotulo: "Espessura das linhas", tipo: "lista", valor: e.pena, opcoes: op(D.PENAS) },
           { id: "preenchimento", rotulo: "Preenchimento do corte", tipo: "lista", valor: e.preenchimento, opcoes: op(D.PREENCHIMENTOS) },
           { id: "titulo", rotulo: "Título da vista", tipo: "sim-nao", valor: e.titulo },
+          /* CONVENÇÃO DE REFORMA (19/10/2026): a construir em vermelho com hachura, a demolir em amarelo tracejado, existente em preto/cinza, com legenda */
+          { id: "convencao", rotulo: "Convenção de reforma", tipo: "lista", valor: e.convencao || "padrao", opcoes: op(D.CONVENCOES) },
           /* padrão de detalhamento da empresa (js/padraodet.js): cota, unidade, texto e escala de uma vez */
           { id: "padraodet", rotulo: "Padrão da empresa", tipo: "botao", rotuloBotao: "Aplicar Padrão de detalhamento", fn: function () { self.aplicarPadraoDet(id); } }
         ].concat(d.tipo === "planta" ? [{ id: "marcasCorte", rotulo: "Marcas de corte", tipo: "sim-nao", valor: e.marcasCorte }]

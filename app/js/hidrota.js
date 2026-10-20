@@ -89,6 +89,9 @@
      resolve — a tela liga "Mostrar no 3D" e "Corrigir" sem interpretar o texto */
   function prob(texto, elementos, acao) { var o = { texto: texto, elementos: arr(elementos).filter(function (e) { return e != null; }) }; if (acao) o.acao = acao; return o; }
   function falha(texto, elementos, acao) { var o = prob(texto, elementos, acao); o.erro = texto; return o; }
+  /* aviso da COTA PELO FLUXO (a partida mais funda que o cobrimento mínimo; a queda antes da caixa): marcado para o
+     js/hidambiente.js repassar ao usuário — os avisos do traçado não chegam ao Traçar automaticamente (revisão frente A, 20/10/2026) */
+  function probFluxo(texto, elementos, acao) { var o = prob(texto, elementos, acao); o.chave = "rota.cota_fluxo"; return o; }
   function pend(chave, motivo, elementos, acao) { var o = prob(motivo, elementos, acao); o.chave = chave; o.motivo = motivo; return o; }
   var pend0 = pend;   /* o propor tem um "pend" local (a lista); este é o construtor */
   /* coordenada no TEXTO sempre no mundo: a busca roda em coordenadas locais (ver propor) */
@@ -324,7 +327,9 @@
     return { tipo: tipo, vertical: vertical, x: r4(x), z: r4(z), y: isFinite(y) ? r4(y) : null,
              yBase: num(d.yBase, -INF), yTopo: num(d.yTopo, INF), existente: d.existente !== false, id: d.id != null ? String(d.id) : null,
              ventilado: d.ventilado != null ? !!d.ventilado : (sistema === "esgoto" && vertical), conector: !!d.conector, sistema: sistema, chave: sistema + "@" + r4(x) + "," + r4(z),
-             cotaLivre: !!d.cotaLivre, entradaMax: d.entradaMax && typeof d.entradaMax === "object" ? d.entradaMax : null };
+             cotaLivre: !!d.cotaLivre, entradaMax: d.entradaMax && typeof d.entradaMax === "object" ? d.entradaMax : null,
+             /* a caixa com profundidade definida (a posta pelo usuário): topo (tampa) e fundo, para o aviso de caixa rasa */
+             fundo: d.fundo != null && isFinite(Number(d.fundo)) ? Number(d.fundo) : null, topo: d.topo != null && isFinite(Number(d.topo)) ? Number(d.topo) : null };
   }
 
   /* ============================================= OBSTÁCULOS (formato da entrada)
@@ -530,6 +535,9 @@
         var i = Math.max(bi, tab == null ? 0 : tab, P.declividade);   // rota:declividade
         return (cacheDecl[dn] = { i: i, tab: tab, bi: bi, fonte: N ? N.fonte("es.declividade_minima") : null });
       },
+      /* a declividade MÁXIMA do esgoto (NBR 8160 4.2.5.2, es8160.declividade_maxima) — o teto do último trecho que ajusta a
+         chegada na caixa (cota pelo fluxo, frente A 19/10/2026); sem a tabela = null (pendência, o traçado não ajusta) */
+      declMax: function (uso) { var ls = linhasDe("es8160.declividade_maxima", uso); var v = ls && ls[0] ? num(ls[0].valor, null) : null; return v != null && v > 0 ? v : null; },
       esAparelho: function (ap, col, uso) { var c = ctx.consulta("es.aparelhos", { aparelho: ap }, col, uso); return c.ok ? num(c.valor, null) : null; },
       esAparelhoSemPend: function (ap, col) { var c = N ? N.consulta("es.aparelhos", { aparelho: ap }, col) : { ok: false }; return c.ok ? num(c.valor, null) : null; },
       uhcPorDn: function (dn, uso) { var c = ctx.consulta("es.uhc_por_dn", { dn: dn }, "uhc", uso); return c.ok ? num(c.valor, null) : null; },
@@ -634,6 +642,14 @@
         var vert = d2(T.a, T.b) < EPS, yLo = vert ? Math.min(T.a.y, T.b.y) : T.a.y + (T.b.y - T.a.y) * pr.t, yHi = vert ? Math.max(T.a.y, T.b.y) : yLo;
         var gap = yHi < o.b0 ? o.b0 - yHi : (yLo > o.b1 ? yLo - o.b1 : 0);
         if (gap - r - T.r < c - FOLGA_LIMITE) return false;
+      }
+      /* ⚠ FRENTE B (19/10/2026, D-03): no corredor a rota passava POR CIMA da própria árvore — na suíte da CASA o ramal do
+         lavatório correu pelo nó da espera de alimentação e a água chegava aos pontos sem passar pelo registro (ciclo).
+         Tubo dentro de tubo da mesma árvore nunca: só se chega nela pelo alvo (a junção), que não passa por aqui. */
+      if (corredor && o.sistema === "agua_fria" && !o.corredorSolto) {
+        for (var s0 = 0; s0 < segsArv.length; s0++) if (ptSeg2(p, segsArv[s0].a, segsArv[s0].b).d < r + o.rArv - FOLGA_LIMITE) return false;
+        if (o.raiz && o.arvore && o.arvore.raiz != null && d2(p, o.raiz) < r + o.rArv - FOLGA_LIMITE) return false;
+        return true;
       }
       if (corredor) return true;
       for (var s = 0; s < segsArv.length; s++) if (ptSeg2(p, segsArv[s].a, segsArv[s].b).d < r + o.rArv + P.folga - FOLGA_LIMITE) return false;
@@ -795,7 +811,7 @@
         while (v >= 0 && d2(G.pt(v), p) <= alc + EPS) { corredor[v] = 1; v = G.viz(v, d); }
       }
     });
-    var ctxR = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: o.modo, sistema: arv.sistema, arvore: arv, ignorar: ign, ini: ini, alvos: alvos, raiz: o.raizPlanta, corredor: corredor, dePt: { x: o.de.x, z: o.de.z } });
+    var ctxR = contextoRota(W, G, { b0: o.b0, b1: o.b1, r: o.r, rArv: o.rArv, modo: o.modo, sistema: arv.sistema, arvore: arv, ignorar: ign, ini: ini, alvos: alvos, raiz: o.raizPlanta, corredor: corredor, dePt: { x: o.de.x, z: o.de.z }, corredorSolto: !!o.corredorSolto });
     /* ⚠ ESGOTO: se a junção de 45° não cabe naquele ponto, o ponto sai da lista e a
        busca recomeça — antes ficava um tê de 90° no horizontal com um aviso, e o
        teste mostrou que quase sempre havia outro ponto da árvore onde a de 45° cabia.
@@ -984,12 +1000,17 @@
       if (R > hi + EPS || R < lo - EPS) return falha("a cota do destino (" + f2(R) + " m) não fecha com a declividade mínima: " + (R > hi ? "o ponto mais alto pede a raiz até " + f2(hi) + " m (" + motivoHi + ")" : "falta altura: raiz no mínimo " + f2(lo) + " m (" + motivoLo + ")"), [raizD.id || pt3(raizD.x, raizD.y, raizD.z)], { tipo: "moverDestino", sistema: "esgoto", id: raizD.id, y: R > hi ? chao4(hi) : teto4(lo) });
     } else {
       R = chao4(hi);
-      /* ⚠ COTA DE CONTROLE (19/10/2026, correção do Rogério no TA: o ramal saía ALTO, rente ao piso, e um joelho baixava o tubo
-         perto da caixa): a caixa de destino manda na profundidade. A cota é calculada de JUSANTE para MONTANTE — a entrada da
-         caixa (topo do tubo a `folgaTampaCaixa` abaixo da tampa, pela parede) é a cota da raiz e dela sobe cada trecho com a
-         declividade do DN (NBR 8160, es.declividades_minimas). Toda a árvore já nasce nessa profundidade: o aparelho desce logo
-         (trecho vertical curto na saída dele) e o horizontal segue em declividade constante até a caixa, sem degrau. Escavar
-         mais fundo é aceitável; o que não se aceita é o fundo da faixa (laje) — aí o fundo da faixa manda (lo). */
+      /* ⚠ COTA PELO FLUXO (frente A, 19/10/2026 — D-05; decisão do Rogério, que substitui a "cota de controle" da manhã):
+         o aparelho/desconector MAIS A MONTANTE manda na cota de partida — R = chao4(hi) é a raiz mais alta em que nenhum nó passa
+         do teto dele (o ponto do aparelho com a descida mínima, o topo da faixa sob o piso: o cobrimento mínimo), e cada trecho a
+         jusante DESCE com a declividade mínima do DN (NBR 8160, es.declividade_minima). Na caixa de destino (entradaMax: a entrada
+         pela parede, abaixo da tampa) o ÚLTIMO trecho ajusta a declividade dentro de [mínima, máxima] (es8160.declividade_maxima)
+         para entrar na cota dela. Se o último trecho na máxima não basta, o resto da árvore desce o que falta (partida mais funda,
+         declividade constante, sem degrau) COM AVISO de quanto a caixa teria de subir; se nem assim (o fundo da faixa ou da caixa
+         sifonada não deixa), sobra a QUEDA antes da caixa (tubo de queda, R-A4 do PADROES-PROJETO-RA) também avisada. E a caixa
+         rasa demais (fundo acima do tubo) é avisada com a profundidade necessária. Nunca degrau calado.
+         Antes (manhã de 19/10) a árvore INTEIRA descia até a entrada da caixa: a partida dependia da caixa, não do fluxo. */
+      var Rbase = null, ajusteFluxo = null;
       if (raizD.entradaMax) {
         var dnRz = Math.max.apply(null, [0].concat(arv.nos[arv.raiz].entram.map(function (aid) { return arv.arestas[aid].dn; })));
         /* entradaMax = { DN: cota MÁXIMA do eixo do tubo na entrada da caixa } (a caixa sabe a laje, a folga e a bolsa); o DN que não
@@ -997,8 +1018,29 @@
         var dnsT = Object.keys(raizD.entradaMax).map(Number).sort(function (x, y) { return x - y; }), dnT = dnsT.filter(function (d) { return d >= dnRz - EPS; })[0];
         if (dnT == null) dnT = dnsT[dnsT.length - 1];
         var capCI = dnT != null ? chao4(num(raizD.entradaMax[dnT], INF)) : INF;
-        if (capCI < R) R = capCI < lo - EPS && lo <= R + EPS ? teto4(lo) : capCI;
-        if (capCI < INF) arv.cotaControle = { cota: R, caixa: raizD.id };
+        var iMax = capCI < R ? NRM.declMax("traçado: declividade máxima do esgoto (chegada na caixa)") : null;
+        if (capCI < R && iMax == null) {
+          /* sem a declividade máxima na tabela não há como ajustar o fim: a árvore desce inteira (o jeito antigo), com pendência */
+          saida.pendencias.push(pend("es8160.declividade_maxima", "declividade máxima do esgoto sem tabela: o ramal desceu inteiro até a entrada da caixa " + (raizD.id || "") + " em vez de ajustar só o fim", [raizD.id || pt3(raizD.x, null, raizD.z)], { tipo: "dimensionar" }));
+          R = capCI < lo - EPS && lo <= R + EPS ? teto4(lo) : capCI;
+        } else if (capCI < R) {
+          var Rnat = R, entR = arv.nos[arv.raiz].entram;
+          function iUlt(a) { return Math.max(iMax, a.decl.i); }
+          function Lde(a) { return d2(arv.nos[a.de], arv.nos[a.para]); }
+          /* até onde a raiz desce com o último trecho na máxima, sem mexer no resto */
+          var Rfim = -INF; entR.forEach(function (aid) { var a = arv.arestas[aid], yDe = teto4(Rnat + a.decl.i / 100 * Lde(a)); Rfim = Math.max(Rfim, teto4(yDe - iUlt(a) / 100 * Lde(a))); });
+          var desce = Math.max(0, Rfim - capCI);
+          Rbase = r4(Rnat - desce);
+          if (Rbase < lo - EPS) Rbase = teto4(lo);   /* o fundo da faixa / da caixa sifonada não deixa a partida descer mais */
+          var Rr = capCI; entR.forEach(function (aid) { var a = arv.arestas[aid], yDe = teto4(Rbase + a.decl.i / 100 * Lde(a)); Rr = Math.max(Rr, teto4(yDe - iUlt(a) / 100 * Lde(a))); });
+          R = Rr; ajusteFluxo = { Rnat: Rnat, iMax: iMax };
+          var onde = [raizD.id || pt3(raizD.x, null, raizD.z)], acaoCx = { tipo: "ajustar", ids: raizD.id ? [raizD.id] : [] };
+          if (Rnat - Rbase > EPS) avisos.push(probFluxo("para entrar na caixa " + (raizD.id || "de destino") + " (entrada pela parede a " + f2(capCI) + " m) com o último trecho na declividade máxima (" + iMax + " %), o esgoto do " + F.nome + " partiu " + fcm(Rnat - Rbase) + " cm abaixo do cobrimento mínimo, em declividade constante: para partir no mínimo, a caixa teria de estar " + fcm(Rnat - Rbase) + " cm mais alta (ou mais longe)", onde, acaoCx));
+          if (R > capCI + EPS) avisos.push(probFluxo("o esgoto do " + F.nome + " chega na caixa " + (raizD.id || "de destino") + " a " + f2(R) + " m e a entrada pela parede dela fica em " + f2(capCI) + " m: QUEDA de " + fcm(R - capCI) + " cm antes da caixa (tubo de queda) — o " + (motivoLo || "fundo do " + F.nome) + " não deixa a partida descer mais. Para chegar sem queda, a caixa teria de estar " + fcm(R - capCI) + " cm mais alta", onde, acaoCx));
+        }
+        /* a caixa RASA: o fundo dela acima do fundo do tubo que chega (R-A6: o tubo chega ao fundo, na canaleta) */
+        if (raizD.fundo != null && R - raio(dnRz) < raizD.fundo - EPS) avisos.push(prob("a caixa " + (raizD.id || "de destino") + " é rasa para o esgoto do " + F.nome + ": o tubo chega com o fundo a " + f2(R - raio(dnRz)) + " m e o fundo da caixa está a " + f2(raizD.fundo) + " m — profundidade necessária de pelo menos " + f2(num(raizD.topo, 0) - (R - raio(dnRz))) + " m", [raizD.id || pt3(raizD.x, null, raizD.z)], { tipo: "ajustar", ids: raizD.id ? [raizD.id] : [], profundidade: r4(num(raizD.topo, 0) - (R - raio(dnRz))) }));
+        if (capCI < INF) arv.cotaControle = { cota: R, caixa: raizD.id, partida: Rbase != null ? Rbase : R, natural: ajusteFluxo ? ajusteFluxo.Rnat : R };
       }
       /* ⚠ duas entradas no mesmo TQ e na mesma cota = nó de 4 trechos (cruzeta, sem SINAPI):
          a do ambiente seguinte desce o espaçamento */
@@ -1006,9 +1048,10 @@
       for (var guard = 0; guard < usadas.length + 1; guard++) {
         var choque = usadas.filter(function (u) { return Math.abs(u - R) < P.espacamentoEntradas - EPS; });   // rota:espacamento
         if (!choque.length) break;
-        R = chao4(Math.min.apply(null, choque) - P.espacamentoEntradas);
+        var R0e = R; R = chao4(Math.min.apply(null, choque) - P.espacamentoEntradas);
+        if (Rbase != null) Rbase = r4(Rbase - (R0e - R));   /* a árvore acompanha a entrada que desceu o espaçamento */
       }
-      if (R < lo - EPS) {
+      if ((Rbase != null ? Rbase : R) < lo - EPS) {
         /* a solução é o número: quanto a faixa precisa crescer para a declividade caber */
         /* ⚠ só sugere aumentar a faixa quando é o FUNDO da faixa que manda — quando quem manda
            é o fundo da caixa sifonada, mais forro não resolve (o teste reaplica a sugestão) */
@@ -1024,8 +1067,11 @@
       (W.entradas[raizD.chave] = usadas).push(R);
     }
     /* cotas com arredondamento PARA CIMA a montante (declividade nunca abaixo da mínima) */
-    var Y = {}; Y[arv.raiz] = R;
+    var Y = {}; Y[arv.raiz] = Rbase != null ? Rbase : R;
     ordem.forEach(function (nid) { arv.nos[nid].entram.forEach(function (aid) { var a = arv.arestas[aid]; Y[a.de] = teto4(Y[a.para] + a.decl.i / 100 * d2(arv.nos[a.de], arv.nos[a.para])); }); });
+    /* COTA PELO FLUXO: o resto da árvore na declividade mínima a partir da partida; o último trecho desce até a entrada da caixa */
+    Y[arv.raiz] = R;
+    if (ajusteFluxo) arv.ajusteFluxo = { natural: ajusteFluxo.Rnat, partida: Rbase, raiz: R, declMax: ajusteFluxo.iMax };
     arv.Y = Y; arv.faixa = F; arv.destino = raizD; arv.caixaAlvo = caixaAlvo;
     return { arv: arv, avisos: avisos };
   }
@@ -1172,8 +1218,15 @@
     var proibirPerto = [];
     for (var i = 0; i < fila.length; i++) {
       var f = fila[i], ign = {}; ign[f.ref] = 1; ign[raizD.id || "destino-af"] = 1;
-      var rota = rotear(W, G, arv, { de: f, b0: cota - raio(f.dn), b1: cota + raio(f.dn), r: raio(f.dn), rArv: rMax, modo: C.modo, ignorar: ign, curva: P.pesos.conexao,
-                                     folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto });
+      var oRota = { de: f, b0: cota - raio(f.dn), b1: cota + raio(f.dn), r: raio(f.dn), rArv: rMax, modo: C.modo, ignorar: ign, curva: P.pesos.conexao,
+                    folgaJuncao: P.margemNo, juncao45: false, chanfrar: false, raiz: usadaRaiz ? null : raizD, raizPlanta: raizD, aceitaCaixa: true, proibirPerto: proibirPerto };
+      var rota = rotear(W, G, arv, oRota);
+      /* FRENTE B (19/10/2026, D-03): sem caminho que não encoste na própria rede, a rota antiga (corredor solto) com AVISO — um ponto
+         que pode ficar fora do registro é melhor que o ambiente sem água; o aviso diz onde conferir */
+      if (rota.erro && usadaRaiz) {
+        oRota.corredorSolto = true; var rota2 = rotear(W, G, arv, oRota);
+        if (!rota2.erro) { rota = rota2; saida.avisos.push(prob("água fria de " + f.ref + ": o único caminho encosta no próprio ramal — confira se o ponto passa pelo registro do ambiente", [f.ap.id, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) })); }
+      }
       if (rota.erro) {
         /* parede sem parede: a estratégia não existe neste modelo — a saída é outra estratégia */
         var semParede = C.modo === "parede" && !W.O.lista.some(function (ob) { return ob.tipo === "parede"; });
@@ -1202,6 +1255,24 @@
     arv.arestas.forEach(function (a) { a.dn = comercial(mat, maxDn(a.de)); });
     arv.cota = cota; arv.destino = raizD; arv.faixa = C;
     return { arv: arv, avisos: avisos };
+  }
+
+  /* FRENTE B (19/10/2026, D-01): para onde o volante do registro do ambiente aponta — perpendicular à parede onde ele está
+     embutido, para o LADO DO CÔMODO (o lado dos pontos do próprio ambiente: o ponto mais perto do registro manda). Critério
+     de projeto da RA (PADROES-PROJETO-RA R-C9: nenhuma norma diz o lado; o pedido do Rogério é "para dentro do banheiro").
+     null = sem parede (aparente) ou sem ponto: fica a frente padrão do 3D. */
+  function frenteRegistro(W, g, p, y) {
+    var ws = W.O.lista.filter(function (ob) { return ob.tipo === "parede" && dentro(ob, p.x, p.z, EPS) && (y == null || (y >= ob.y0 - EPS && y <= ob.y1 + EPS)); });
+    if (!ws.length) return null;
+    ws.sort(function (a, b) { return Math.abs(local(a, p.x, p.z).v) - Math.abs(local(b, p.x, p.z).v); });
+    var w = ws[0], melhor = null;
+    arr(g.aparelhos).forEach(function (a) { arr(a.conectores).forEach(function (c) {
+      var q = c.ponta || c, v = local(w, q.x, q.z).v, d = d2(q, p);
+      if (Math.abs(v) <= EPS) return;
+      if (!melhor || d < melhor.d - EPS) melhor = { d: d, s: v > 0 ? 1 : -1 };
+    }); });
+    if (!melhor) return null;
+    return { x: -w.uz * melhor.s, y: 0, z: w.ux * melhor.s };
   }
 
   /* ===================================================== OPS de uma estratégia */
@@ -1452,7 +1523,7 @@
         if (dA.vertical && !dA.existente) saida.avisos.push(prob("coluna de água fria " + (dA.id || "") + " não existe no modelo: o ramal sai dela — modele a coluna", [pt3(dA.x, null, dA.z)], { tipo: "modelar", sistema: "agua_fria", elemento: "coluna" }));
         /* ⚠ registro de gaveta no INÍCIO do ramal do ambiente (isola o banheiro sem fechar a coluna) */
         var regT = at.registro ? trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria" && Math.abs(t.p1.y - t.p2.y) < EPS && ptSeg2(at.registro, t.p1, t.p2).d < EPS; })[0] : null;
-        if (regT) regT.registro = { x: at.registro.x, y: cota, z: at.registro.z, comprimento: B.ACESSORIO_PADRAO };
+        if (regT) regT.registro = { x: at.registro.x, y: cota, z: at.registro.z, comprimento: B.ACESSORIO_PADRAO, frente: frenteRegistro(W, g, at.registro, cota) };
         else saida.avisos.push(prob("registro de gaveta do ambiente " + g.id + " não coube no tronco do ramal: ponha à mão", [pt3(dA.x, cota, dA.z)], { tipo: "parametro", campo: "distanciaRegistro", sugerido: r4(B.ACESSORIO_PADRAO / 2 + P.margemNo) }));
         saida.justificativa.push("água fria (" + at.faixa.nome + "): ramal na cota " + f2(cota) + " m a partir de " + (dA.id || dA.tipo) + ", " + at.arestas.length + " trechos, descida/subida a cada ponto; registro de gaveta no início do ramal; DN do trecho = maior sub-ramal a jusante (rode o dimensionamento e aplique)");
         trechos.slice(iniGrupo).filter(function (t) { return t.sistema === "agua_fria"; }).forEach(function (t) { W.tubos.push({ a: t.p1, b: t.p2, r: raio(t.dn), sistema: "agua_fria", grupo: g.id, ref: "af" }); });
@@ -1472,7 +1543,11 @@
       /* PENDÊNCIAS FINAIS (18/10/2026): o registro do RAMAL do ambiente é EMBUTIDO na parede — base de latão com acabamento
          cromado (a SINAPI do latão com acabamento; o 3D mostra a base + o acabamento), pela regra do BimInst.varianteAuto */
       var BIr = dep("BimInst", "./biminst.js"), tipoRg = BIr && BIr.varianteAuto ? BIr.varianteAuto("registro_gaveta", { sistema: t.sistema, material: t.material, aplicacao: "ramal" }) : "acabamento";
-      saida.ops.push({ op: "acessorio", id: id, famId: REGISTRO_FAM, tipoId: tipoRg, trecho: t.id, novoId: t.id + "b", x: t.registro.x, y: t.registro.y, z: t.registro.z, comprimento: t.registro.comprimento });
+      var opRg = { op: "acessorio", id: id, famId: REGISTRO_FAM, tipoId: tipoRg, trecho: t.id, novoId: t.id + "b", x: t.registro.x, y: t.registro.y, z: t.registro.z, comprimento: t.registro.comprimento };
+      /* FRENTE B (19/10/2026, D-01): o volante para DENTRO do ambiente que o registro isola (o eixo do acessório = p1→p2 do trecho) */
+      var BIC = dep("BimInstColocar", "./biminstcolocar.js"), gRg = t.registro.frente && BIC && BIC.giroPara ? BIC.giroPara({ x: t.p2.x - t.p1.x, y: t.p2.y - t.p1.y, z: t.p2.z - t.p1.z }, t.registro.frente) : 0;
+      if (gRg) opRg.giro = gRg;
+      saida.ops.push(opRg);
     });
     /* -------- interferências 3D entre sistemas (água × esgoto/ventilação) */
     for (var i = 0; i < trechos.length; i++) for (var j = i + 1; j < trechos.length; j++) {
@@ -1796,6 +1871,7 @@
     VERSAO: 1, GEO: GEO, PESOS: PESOS, ESTRATEGIAS: ESTRATEGIAS, ORDEM: ORDEM,
     BACIA: BACIA, RECEPTOR: RECEPTOR, PARA_CAIXA: PARA_CAIXA, SIFAO_PROPRIO: SIFAO_PROPRIO,
     propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, entradaDoModelo: entradaDoModelo,
+    ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
     _int: { aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };
   global.HidRota = HidRota;

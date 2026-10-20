@@ -27,7 +27,11 @@
     pisc_retorno: { nome: "Piscina — retorno", abrev: "PR", cor: "#29B6F6", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
     pisc_hidro:   { nome: "Piscina — hidromassagem", abrev: "PH", cor: "#7E57C2", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
     pisc_aquec:   { nome: "Piscina — aquecimento", abrev: "PA", cor: "#EF6C00", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
-    pisc_dreno:   { nome: "Piscina — dreno e descarte", abrev: "PD", cor: "#8D6E63", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true }
+    pisc_dreno:   { nome: "Piscina — dreno e descarte", abrev: "PD", cor: "#8D6E63", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true },
+    /* REPOSIÇÃO (frente C, 19/10/2026): a água potável que repõe o tanque, da espera da rede da obra até a bica de descarga
+       livre. Sistema PRÓPRIO pelo mesmo motivo dos outros: fora do cálculo de pico de água fria do prédio (a reposição é
+       manual, por registro, fora do horário de pico) — o projetista de água fria soma o ponto se quiser */
+    pisc_reposicao: { nome: "Piscina — reposição de água potável", abrev: "PW", cor: "#1565C0", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel"], material: "pvc_soldavel", piscina: true }
   };
   function registrarSistemas() {
     var BI = global.BimInst || (typeof require === "function" ? (function () { try { return require("./biminst.js"); } catch (e) { return null; } })() : null);

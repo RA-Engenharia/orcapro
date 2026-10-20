@@ -704,6 +704,7 @@
         }).join("") : '<p style="font-size:13px">Nenhuma folha ainda. <b>Gerar pranchas</b> monta o jogo do modelo aberto — plantas, cortes e elevações — com o carimbo do escritório.</p>');
       global.UI.modal("Pranchas do projeto", h, [
         { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } },
+        { texto: "Pranchas de arquitetura", onClick: function () { global.UI.fecharModal(); if (global.ArqPranchasUI) global.ArqPranchasUI.abrir(); } },
         { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
         { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },
         { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
@@ -725,6 +726,7 @@
       });
       /* as ações ficam À VISTA no nó (o dono não achava onde ficam as pranchas) */
       filhos.unshift({ id: "fl:gerar", rotulo: "Gerar pranchas…", icone: "prancha", fn: function () { self.abrirGerar(); } });
+      if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
       filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
       return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
     },
