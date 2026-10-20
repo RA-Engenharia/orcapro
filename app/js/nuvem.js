@@ -563,6 +563,217 @@
       return this._doc(ent).set(doc);
     },
 
+    /* ⚠ A LISTA GRANDE VAI EM PARTES (19/10/2026, 1.2.158). O teto de 1 MiB é por DOCUMENTO, e a entidade inteira
+       morava num documento só: bim_edicoes (5,1 MB), bim_vistas (3,7 MB), bim_familias (1,7 MB) e orcamentos (1,1 MB)
+       do Rogério tinham parado de subir — em silêncio para os outros aparelhos (desde a 1.2.157 o aparelho nem tenta;
+       antes tentava e o SDK estourava a memória da página). Agora, acima de TETO_UM_DOC, a lista sobe em partes de
+       até TETO_PARTE, numa GRAVAÇÃO ATÔMICA (WriteBatch: as partes da revisão nova, o documento principal apontando
+       para ela e a remoção das partes da revisão anterior — ou tudo entra, ou nada).
+       O documento principal fica { v: [], partes: n, rev, em }: o `v` VAZIO é de propósito para o aparelho de versão
+       antiga, que só lê `v` — o _merge é UNIÃO por id (o que a nuvem não tem não é apagado do aparelho; só lápide
+       apaga), então ele não perde nada e não apaga nada; só deixa de receber o que está nas partes até atualizar.
+       Quem lê (_valorDoSnap) junta as partes da `rev` do principal; parte faltando (o principal mudou no meio) →
+       lê de novo uma vez; ainda faltando → falha registrada, nada aplicado (nunca aplica lista pela metade). */
+    /* ⚠ REVISÃO ADVERSARIAL (19/10/2026) — cinco furos do primeiro desenho, cada um reproduzido no
+       tools/test-nuvem-partes.js [8]–[12] (que reprova sem a correção):
+       (a) TETO_UM_DOC era 900 KB: a lista de 900 KB a 1 MiB, que SINCRONIZAVA num documento só, passou a ir em
+           partes — e o aparelho de versão antiga, que só lê `v`, deixou de recebê-la (perdia sincronização que
+           tinha). Agora só vai em partes o que o servidor RECUSARIA num documento só (1 MiB menos 8 KB de folga para
+           o nome do documento, que o _tamanhoFirestore não conta) — para o aparelho antigo, nada que funcionava parou.
+       (b) registro sozinho acima de TETO_PARTE travava a lista inteira (lista de 2 MB com uma família de 800 KB
+           nunca subia, nem em partes). Agora ele vai SOZINHO numa parte, até TETO_PARTE_SOLO.
+       (c) toda gravação de TODA entidade lia o principal antes (a guarda do atalho exigia `db.batch` ausente, e no
+           app ele sempre existe): uma leitura de rede por escrita, nas 30 e tantas entidades — a cota é o que já
+           derrubou a sincronização de cliente. A leitura só acontece quando a entidade está ou esteve em partes.
+       (d) a leitura do principal antes do commit é assíncrona: duas gravações seguidas da MESMA entidade podiam
+           chegar ao servidor fora de ordem (a 1ª com leitura lenta commitava DEPOIS da 2ª) e a nuvem ficava com a
+           lista VELHA. Agora as gravações de cada entidade entram numa FILA: a próxima só começa depois de a
+           anterior CHAMAR o commit (não espera a confirmação do servidor — offline ela só vem com a rede, e a fila
+           de escrita do SDK já preserva a ordem do que foi chamado).
+       (e) partes órfãs para sempre: o aparelho esquecia a revisão lembrada assim que via o principal num documento
+           só (o aparelho antigo grava assim a cada abertura) ou a revisão de outro aparelho (duas gravações juntas).
+           Agora ele lembra TODAS as revisões que viu (por conta e entidade, até REVS_MAX) e apaga todas no próximo
+           commit da entidade; apagar documento que não existe é inofensivo no Firestore. */
+    TETO_UM_DOC: 1048576 - 8 * 1024,
+    TETO_PARTE: 700 * 1024,
+    TETO_PARTE_SOLO: 1048576 - 16 * 1024,
+    TETO_LOTE: 9 * 1024 * 1024,
+    REVS_MAX: 8,
+    _revNuvem: {},
+    _seqSnap: {},
+    _filaEsc: {},
+    _chaveRev: function (ent) { return String(this.uid || "") + "|" + ent; },
+    /* ⚠ AS REVISÕES LEMBRADAS SOBREVIVEM A FECHAR O APP (revisão adversarial 2, 19/10/2026 — test-nuvem-partes
+       [16]). Viviam só na memória: o aparelho novo gravava R1 e fechava; o antigo gravava { v } por cima do
+       principal; o novo reabria, via o documento só, reenviava R2 — e as partes de R1 (5 MB no bim_edicoes)
+       ficavam na nuvem para sempre, porque mais ninguém sabia que existiam. A chave tem três trechos depois de
+       "orcapro:" de propósito: o RE_CHAVE_ENT do store.js não a confunde com entidade de empresa. */
+    CHAVE_REVS: "orcapro:nuvem:revs:partes",
+    _revsCarregadas: false,
+    _carregarRevs: function () {
+      if (this._revsCarregadas) return;
+      this._revsCarregadas = true;
+      try {
+        var o = JSON.parse(global.localStorage.getItem(this.CHAVE_REVS) || "null");
+        if (!o || typeof o !== "object") return;
+        for (var k in o) {
+          if (!Object.prototype.hasOwnProperty.call(o, k) || !o[k] || typeof o[k] !== "object") continue;
+          var m = this._revNuvem[k] || (this._revNuvem[k] = {});
+          for (var r in o[k]) if (Object.prototype.hasOwnProperty.call(o[k], r) && !Object.prototype.hasOwnProperty.call(m, r) && +o[k][r] > 0) m[r] = +o[k][r];
+        }
+      } catch (e) {}
+    },
+    _guardarRevs: function () {
+      try {
+        var o = {}, self = this, tem = false;
+        Object.keys(this._revNuvem).forEach(function (k) { var m = self._revNuvem[k]; if (m && Object.keys(m).length) { o[k] = m; tem = true; } });
+        if (tem) global.localStorage.setItem(this.CHAVE_REVS, JSON.stringify(o));
+        else global.localStorage.removeItem(this.CHAVE_REVS);
+      } catch (e) {}
+    },
+    /* as revisões em partes que este aparelho sabe que existem (ou existiram) na nuvem: { rev: n } */
+    _revsDe: function (ent) {
+      this._carregarRevs();
+      var m = this._revNuvem[this._chaveRev(ent)];
+      return m && Object.keys(m).length ? m : null;
+    },
+    _lembrarRev: function (ent, rev, n) {
+      this._carregarRevs();
+      var k = this._chaveRev(ent), m = this._revNuvem[k] || (this._revNuvem[k] = {});
+      if (m[rev] === n) return;   // já lembrada: nem regrava o localStorage (o ouvinte passa aqui a cada snapshot)
+      if (!Object.prototype.hasOwnProperty.call(m, rev)) {
+        var ks = Object.keys(m);
+        if (ks.length >= this.REVS_MAX) delete m[ks[0]];   // teto: a mais antiga sai da lista (no pior caso, órfã)
+      }
+      m[rev] = n;
+      this._guardarRevs();
+    },
+    _refParte: function (ent, rev, i) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent + "~p~" + rev + "~" + i); },
+    /* fatia a lista em partes de até TETO_PARTE (pela regra do Firestore); o registro maior que isso vai sozinho
+       numa parte (até TETO_PARTE_SOLO); null = algum registro passa até disso (não caberia nem num documento só) */
+    _fatiar: function (lista) {
+      var self = this, partes = [], atual = [], tam = 0, ok = true;
+      lista.forEach(function (o) {
+        var t = self._tamanhoFirestore(o);
+        if (t > self.TETO_PARTE_SOLO) { ok = false; return; }
+        if (atual.length && tam + t > self.TETO_PARTE) { partes.push(atual); atual = []; tam = 0; }
+        atual.push(o); tam += t;
+      });
+      if (!ok) return null;
+      if (atual.length || !partes.length) partes.push(atual);
+      return partes;
+    },
+    /* grava a entidade: num documento só (como sempre) ou em partes, atômico — sempre na FILA da entidade (ver (d)).
+       Devolve a promessa da confirmação do servidor, como o _setDoc. */
+    /* ⚠ E A GRAVAÇÃO EM PARTES ESPERA A CONFIRMAÇÃO DA ANTERIOR, JUNTANDO AS QUE CHEGAM NO MEIO (revisão
+       adversarial, 19/10/2026 — test-nuvem-partes [14]). Cada gravação em partes leva a lista INTEIRA (5 MB no
+       bim_edicoes), e o SDK guarda cada commit na memória e no banco do aparelho até o servidor confirmar. Offline,
+       ou com a subida mais lenta que o ritmo de salvamento, os commits se empilhavam sem limite — é o mesmo
+       "Out of Memory" da 1.2.157 voltando por outro caminho. Agora, enquanto uma gravação em partes da entidade não
+       foi confirmada, as seguintes viram UMA só, com a lista mais nova (cada uma é a entidade inteira, então só a
+       última importa); quem chamou recebe a promessa dessa. Fechou o app com uma esperando: o dado está no aparelho
+       e o próximo sincronizar sobe. A gravação num documento só continua sem esperar confirmação (como sempre). */
+    _escreverEnt: function (ent, vN) {
+      var self = this, k = this._chaveRev(ent);
+      var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve(), espera: null, ativos: 0 });
+      if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
+      /* fila parada e entidade que nunca esteve em partes: o caminho de SEMPRE, na hora (sem leitura, sem esperar
+         a vez) — inclusive o SDK lançando na hora (lista dentro de lista) cai no `catch` síncrono do push, como antes
+         (prova: tools/test-nuvem-push-falha.js, CN do catch vazio) */
+      if (!fila.ativos && !this._revsDe(ent)) {
+        var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
+        if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) return this._setDoc(ent, { v: vN, em: Date.now() });
+      }
+      var item = { vN: vN, juntadas: 0 };
+      fila.ativos++;
+      var vez = fila.corrente.then(function () {
+        if (fila.espera === item) fila.espera = null;
+        return self._escreverEntVez(ent, item.vN);
+      });
+      item.promessa = vez.then(function (r) { return r.p; });
+      fila.espera = item;
+      /* a próxima começa quando esta CHAMOU o commit (documento só) ou quando o servidor CONFIRMOU (em partes) */
+      fila.corrente = vez.then(function (r) { return r.esperar; }).then(function () { fila.ativos--; }, function () { fila.ativos--; });
+      return item.promessa;
+    },
+    /* ⚠ A REVISÃO A APAGAR É A QUE ESTÁ NA NUVEM AGORA E TODAS AS QUE ESTE APARELHO JÁ VIU: outro aparelho pode ter
+       gravado no meio (o sincronizar dele, o ouvinte atrasado). Por isso lê o principal logo antes (do cache, se
+       offline) e apaga a revisão dele E as lembradas. Resolve com { p: promessa do commit } assim que o commit é
+       CHAMADO — é o que libera a fila. */
+    _escreverEntVez: function (ent, vN) {
+      var self = this, em = Date.now(), doc = { v: vN, em: em };
+      var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
+      var temBatch = !!this.db && typeof this.db.batch === "function";
+      var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
+      /* (c): entidade que nunca esteve em partes neste aparelho → o caminho de sempre, sem leitura antes */
+      if (!emPartes && (!this._revsDe(ent) || !temBatch)) return Promise.resolve({ p: this._setDoc(ent, doc) });
+      var lerAtual = this._doc(ent).get().then(function (s0) {
+        var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
+        return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
+      })["catch"](function () { return null; });
+      return lerAtual.then(function (naNuvem) {
+        if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+        var lembradas = self._revsDe(ent) || {};
+        var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
+        var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0; k < r.n; k++) b["delete"](self._refParte(ent, r.rev, k)); }); };
+        var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
+        var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
+        if (!emPartes) {
+          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) return { p: self._setDoc(ent, doc) };
+          /* voltou a caber num documento: o principal sem `partes` e as partes antigas apagadas, juntos */
+          var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
+          return { p: b1.commit().then(esquecer) };
+        }
+        var partes = self._fatiar(vN);
+        if (!partes || t > self.TETO_LOTE || partes.length + nApagar > 450) {
+          var err = new Error("Document \"" + ent + "\" cannot be written because its size (" + t + " bytes) exceeds the maximum allowed size even split in parts (conferido no aparelho, sem enviar)");
+          err.code = "invalid-argument";
+          throw err;
+        }
+        var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), b = self.db.batch();
+        partes.forEach(function (pv, i) { b.set(self._refParte(ent, rev, i), { v: pv, i: i, n: partes.length, rev: rev, em: em }); });
+        b.set(self._doc(ent), { v: [], partes: partes.length, rev: rev, em: em });
+        apagarAntigas(b);
+        /* já agora, antes da confirmação: a gravação seguinte na fila tem de apagar esta se a substituir */
+        self._lembrarRev(ent, rev, partes.length);
+        var pB = b.commit().then(esquecer);
+        return { p: pB, esperar: pB };
+      });
+    },
+    /* o valor da entidade a partir do documento principal: { existe, v, partes }. Em partes, junta as da `rev` dele.
+       ⚠ (e): ver o principal num documento só NÃO faz esquecer as revisões lembradas — as partes delas podem ter
+       ficado na nuvem (o aparelho antigo grava assim), e só quem lembra apaga. */
+    _valorDoSnap: function (ent, snap, jaTentou) {
+      var self = this;
+      if (!snap || !snap.exists) return Promise.resolve({ existe: false });
+      var d = snap.data() || {}, n = +d.partes || 0;
+      if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
+      self._lembrarRev(ent, d.rev, n);
+      var pedidos = [];
+      for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i).get());
+      return Promise.all(pedidos).then(function (ps) {
+        var falta = ps.some(function (p, k) { var x = p && p.exists ? p.data() : null; return !x || x.rev !== d.rev || +x.i !== k || !Array.isArray(x.v); });
+        if (falta) {
+          if (jaTentou) { var e = new Error("a lista \"" + ent + "\" na nuvem está em partes e alguma não chegou (rev " + d.rev + ")"); e.code = "partes-incompletas"; throw e; }
+          return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+        }
+        var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
+        return { existe: true, v: v, partes: n };
+      });
+    },
+    /* ⚠ O APARELHO ANTIGO APAGA O PONTEIRO (revisão adversarial, 19/10/2026 — test-nuvem-partes [11]). Ele lê `v`
+       vazio, une com o que tem (às vezes nada: instalação nova) e grava { v: <o que tem> } POR CIMA do principal em
+       partes, a cada abertura. Ninguém perde dado no aparelho (união), mas a NUVEM fica sem a lista: o aparelho novo
+       que já tem tudo não reenvia (o "nada mudou" compara com o que ELE mandou) e quem instala de novo recebe só o
+       que o antigo tinha. Quem tem a lista que precisa de partes e vê o principal num documento só, reenvia. */
+    _nuvemSemMinhasPartes: function (ent, r, listaN, tamJson) {
+      if (!r || !r.existe || r.partes || ent === "prefs" || ent === "conta" || !Array.isArray(listaN)) return false;
+      /* filtro barato: pela regra do Firestore o tamanho nunca passa de 4x o JSON (o pior caso é número de um dígito numa lista: "0," = 2 caracteres, 8 bytes) */
+      if (typeof tamJson === "number" && tamJson < this.TETO_UM_DOC / 4) return false;
+      var t = 0; try { t = this._tamanhoFirestore({ v: listaN, em: 0 }); } catch (e) { return false; }
+      return t > this.TETO_UM_DOC;
+    },
+
     // Une lista local + nuvem por id; o registro com atualizadoEm mais novo vence.
     // LOTE 3: edição concorrente (2 aparelhos) NÃO é mais sobrescrita calada —
     // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
@@ -1055,8 +1266,8 @@
            Prova: tools/test-nuvem-push-falha.js, bloco [1b] (CN: sem o
            tamanho no catch → reprova). */
         var cargaU = null;
-        return self._doc(ent).get().then(function (snap) {
-          var cloud = snap.exists ? daNuvem(ent, snap.data().v) : null;
+        return self._doc(ent).get().then(function (snap) { return self._valorDoSnap(ent, snap); }).then(function (rc) {
+          var cloud = rc.existe ? daNuvem(ent, rc.v) : null;
           var local = lerEnt(empresaId, ent);
           /* ⚠ ver `naoCarregadaLocal`: nem merge, nem marca, nem subida */
           if (naoCarregadaLocal(empresaId, ent)) {
@@ -1096,13 +1307,25 @@
              `em: Date.now()` fazia o outro aparelho reagir a uma escrita que
              não trazia dado nenhum — o começo do laço. */
           var ck = empresaId + "|" + ent;
-          if (carga && self._ultimoEnviado[ck] === carga) return true;
+          /* ⚠ ...a não ser que a nuvem esteja num documento só e a lista daqui precise de partes: alguém (o aparelho
+             antigo) gravou por cima do principal — ver `_nuvemSemMinhasPartes` */
+          if (carga && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length)) return true;
+          /* ⚠ E A NUVEM EM PARTES JÁ IGUAL AO QUE SUBIRIA: não sobe (revisão adversarial 2, 19/10/2026 —
+             test-nuvem-partes [15]). O `_ultimoEnviado` vive só na memória: a cada abertura do app, cada lista grande
+             subia INTEIRA de novo (5 MB do bim_edicoes, ~11 MB nas quatro), e cada subida fazia todo aparelho que escuta
+             baixar todas as partes outra vez — tráfego e leituras por abertura, sem dado novo nenhum. Só para o
+             principal em partes: as entidades de um documento só seguem exatamente como sempre. */
+          if (carga && rc.partes > 0) {
+            var cargaNuvem = null;
+            try { cargaNuvem = JSON.stringify(rc.v); } catch (eC) { cargaNuvem = null; }
+            if (cargaNuvem === carga) { self._ultimoEnviado[ck] = carga; return true; }
+          }
           /* ⚠ o MESMO aviso de tamanho do push (revisão 3, lente sync): o que
              o merge grava e sobe aqui nunca passava por ele — o documento
              podia crescer por conflito até o teto do Firestore sem nenhum recado */
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
-          return self._setDoc(ent, { v: subir, em: Date.now() }).then(function () { return true; });
+          return self._escreverEnt(ent, subir).then(function () { return true; });
         }).catch(function (e) {
           /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
           falhou++;
@@ -1218,15 +1441,20 @@
         self._marcarSync(empresaId, ent2, valor);
       };
       var comLapides = function (fn) {
-        return self._doc("_lapides").get().then(function (s) {
-          if (s.exists) deFora("_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), s.data().v, "_lapides", empresaId));
+        return self._doc("_lapides").get().then(function (s) { return self._valorDoSnap("_lapides", s); }).then(function (rl) {
+          if (rl.existe) deFora("_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), rl.v, "_lapides", empresaId));
         }).catch(function () {}).then(fn);
       };
       ENTIDADES.forEach(function (ent) {
         var un = self._doc(ent).onSnapshot(function (snap) {
           if (!snap.exists) return;
           if (snap.metadata && snap.metadata.hasPendingWrites) return; // ignora o eco do próprio write
-          var cloud = daNuvem(ent, snap.data().v);
+          /* EM PARTES (1.2.158): o valor vem de _valorDoSnap (junta as partes da `rev` do principal). Enquanto junta,
+             pode chegar um snapshot mais novo: o mais velho é descartado (nunca aplica por cima do mais novo). */
+          var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
+          self._valorDoSnap(ent, snap).then(function (rs) {
+          if (seqS !== self._seqSnap[ent] || !rs.existe) return;
+          var cloud = daNuvem(ent, rs.v);
           var aplicar = function () {
             var local = lerEnt(empresaId, ent);
             if (ilegivelLocal(empresaId, ent)) return;   // ⚠ ver `ilegivelLocal`
@@ -1236,11 +1464,20 @@
                gravar aqui acionaria o patch e reabriria o caminho do laço */
             var a = "", b = "";
             try { a = JSON.stringify(local); b = JSON.stringify(merged); } catch (e) { a = "x"; b = "y"; }
-            if (a === b) return;
+            /* ⚠ a nuvem num documento só e a lista daqui precisando de partes: o aparelho antigo gravou por cima do
+               principal — reenvia (ver `_nuvemSemMinhasPartes`). Não é pingue-pongue: o antigo, ao ver o principal
+               em partes, lê `v` vazio, une e não muda nada; só regrava na próxima abertura dele. */
+            var repor = function () {
+              var vRep = merged; try { vRep = paraNuvem(ent, merged); } catch (eR) {}
+              if (self._nuvemSemMinhasPartes(ent, rs, vRep, b.length)) { delete self._ultimoEnviado[empresaId + "|" + ent]; self.push(empresaId, ent); }
+            };
+            if (a === b) { repor(); return; }
             deFora(ent, merged);
             if (typeof onChange === "function") onChange(ent);
+            repor();
           };
           if (ent === "_lapides") aplicar(); else comLapides(aplicar);
+          })["catch"](function (eS) { self._registrarFalha(ent, eS); });
         }, function (err) {
           /* handler de erro VAZIO era o que escondia a parada: o SDK encerra o
              listener de vez em permission-denied e em resource-exhausted, e o
@@ -1391,7 +1628,7 @@
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[chave] = carga; marcou = true;
-          self._setDoc(ent, { v: vN, em: Date.now() }).then(function () {
+          self._escreverEnt(ent, vN).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
           }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa

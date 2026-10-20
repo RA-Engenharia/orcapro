@@ -349,6 +349,7 @@
     /* PENDÊNCIAS FINAIS: a peça em linha na ponta (união / tê de inspeção), só no grupo de sistema que a usa */
     ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; });
     camposObra(o, t);   /* FLUIDEZ: comentários e fase da instância */
+    if (s.grupo === "esgoto" && (o.redeParte === "coletor" || o.redeParte === "saida")) t.redeParte = o.redeParte;   /* o coletor e a saída da rede externa (js/hidrede.js): o HidES os trata como coletor mesmo sem tubo de queda */
     var apls = APLICACOES[s.grupo] || {};
     t.aplicacaoAuto = !(o.aplicacao && apls[o.aplicacao]);
     t.aplicacao = t.aplicacaoAuto ? aplicacaoAuto(o.sistema, g.vertical) : o.aplicacao;

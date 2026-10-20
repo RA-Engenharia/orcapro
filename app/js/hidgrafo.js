@@ -164,7 +164,7 @@
         var pa = k === 0 ? t.p1 : pontoEm(t, meio[k - 1].t), pb = k + 1 === seq.length - 1 ? t.p2 : pontoEm(t, meio[k].t);
         var e = { id: eid, trecho: t.id, parte: seq.length > 2 ? k + 1 : null, tipo: "tubo", a: na.id, b: nb.id, sistema: t.sistema,
                   material: t.material, dn: t.dn, pa: pa, pb: pb, comprimento: dist(pa, pb), desnivel: pa.y - pb.y, vertical: t.vertical,
-                  inclinacao: t.inclinacao, aplicacao: t.aplicacao, dir: unit(pa, pb) };
+                  inclinacao: t.inclinacao, aplicacao: t.aplicacao, redeParte: t.redeParte || null, dir: unit(pa, pb) };
         ARESTAS[eid] = e; ordemA.push(eid); partes[t.id].push(eid);
         na.arestas.push(eid); nb.arestas.push(eid);
       }

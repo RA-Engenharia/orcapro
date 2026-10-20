@@ -734,7 +734,7 @@
              coletor/subcoletor ENTERRADO (4.2.5.5: enterrada, caixa de inspeção ou PV). Ligado a subcoletor/coletor: erro com o Corrigir
              que troca pela caixa de alvenaria de 0,60 m (a escolha é do projetista; nada é trocado em silêncio) */
           var corrigeCx = { texto: "trocar por caixa de inspeção de alvenaria de 0,60 m (a composição SINAPI sai da profundidade)", ops: [{ op: "instAlterar", id: pc.id, tipoCaixa: "alvenaria", tampa: "concreto" }] };
-          var noColetor = ent[id].concat(sai[id]).some(function (x) { return E[x] && E[x].classe === "subcoletor"; }) || !ent[id].concat(sai[id]).some(function (x) { return E[x] && /^ramal/.test(E[x].classe || ""); });
+          var noColetor = ent[id].concat(sai[id]).some(function (x) { return E[x] && (E[x].classe === "subcoletor" || (E[x].e && (E[x].e.redeParte === "coletor" || E[x].e.redeParte === "saida"))); }) ||   /* o coletor e a saída da rede (js/hidrede.js) são coletor mesmo sem tubo de queda no modelo */ !ent[id].concat(sai[id]).some(function (x) { return E[x] && /^ramal/.test(E[x].classe || ""); });
           if (pc.dispositivo && noColetor) aviso(out.avisos, "erro", "inspeção " + pc.id + " é o DISPOSITIVO de PVC Ø " + f2(num(pc.diametro_m, 0)) + " m no coletor/subcoletor enterrado: a NBR 8160 (4.2.5.5 e 5.1.5.3) pede caixa de inspeção (ou poço de visita) — o dispositivo só vale fora dele", [pc.id], corrigeCx);
           /* POÇO DE VISITA (decisão da coordenação, 18/10/2026, noite): acima da profundidade máxima da caixa, a inspeção JÁ É o PV
              (js/hidcigeo.js) — confere a NBR 8160 5.1.5.3 (p.19) do PV: Ø do balão, Ø da chaminé e altura do balão */

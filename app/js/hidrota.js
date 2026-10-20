@@ -31,6 +31,9 @@
  *     cima com a declividade mínima de cada DN = a MAIOR entre a tabela
  *     (HidNormas es.declividade_minima) e a regra do modelador
  *     (BimInst.inclinacaoMinima) — o traço nunca nasce com aviso.
+ *     COTA DE CONTROLE (19/10/2026): quando o destino é uma caixa de inspeção (destino.entradaMax), a entrada dela manda na
+ *     profundidade — a raiz parte dali e a rede sobe com a declividade; o aparelho desce logo na saída e o horizontal chega na
+ *     caixa em linha reta, sem degrau (tools/test-hid-esgoto-cota.js). Degrau curto entre duas retas vira diagonal de 45°.
  *  3. VENTILAÇÃO: desconector mais longe do ponto ventilado que a distância
  *     da tabela (es.ventilacao.distancia_maxima) ganha um ramal de ventilação
  *     que sai do ramal dele, sobe e corre até a coluna.
@@ -321,7 +324,7 @@
     return { tipo: tipo, vertical: vertical, x: r4(x), z: r4(z), y: isFinite(y) ? r4(y) : null,
              yBase: num(d.yBase, -INF), yTopo: num(d.yTopo, INF), existente: d.existente !== false, id: d.id != null ? String(d.id) : null,
              ventilado: d.ventilado != null ? !!d.ventilado : (sistema === "esgoto" && vertical), conector: !!d.conector, sistema: sistema, chave: sistema + "@" + r4(x) + "," + r4(z),
-             cotaLivre: !!d.cotaLivre };
+             cotaLivre: !!d.cotaLivre, entradaMax: d.entradaMax && typeof d.entradaMax === "object" ? d.entradaMax : null };
   }
 
   /* ============================================= OBSTÁCULOS (formato da entrada)
@@ -452,7 +455,7 @@
   // constantes do ALGORITMO (não são norma): as direções da grade ortogonal, o estado "sem direção"
   // do ponto de partida, as tentativas de encolher um desvio, os pontos mínimos para haver canto e
   // quantos pontos de junção se descartam antes de aceitar um tê de 90° (com aviso)
-  var NDIR = 4, SEM_DIR = 4, TENTATIVAS = 3, PONTOS_CANTO = 3, MAX_VOLTAS = 20;   // hid:ok
+  var NDIR = 4, SEM_DIR = 4, TENTATIVAS = 3, PONTOS_CANTO = 3, PONTOS_DEGRAU = 4, MAX_DEGRAUS = 200, MAX_VOLTAS = 20;   // hid:ok
   Grade.prototype.viz = function (k, d) {
     var i = k % this.nx + DI[d], j = Math.floor(k / this.nx) + DJ[d];
     return i < 0 || j < 0 || i >= this.nx || j >= this.nz ? -1 : i + j * this.nx;
@@ -693,8 +696,40 @@
      (NBR 8160 pede, no horizontal, peças até 45°; o biminst acusa o joelho
      de 90°). Perna = parametros.chanfro, encolhida até caber; se nada cabe,
      o canto fica e a validação do biminst o mostra (nunca escondido). */
+  /* ⚠ DEGRAU CURTO (19/10/2026): duas linhas da grade a poucos centímetros uma da outra (o ponto do aparelho e o da caixa
+     sifonada, 8 cm fora de prumo) davam um degrau reto-lateral-reto com a perna do meio menor que o chanfro: nenhuma das duas
+     curvas de 90° cabia em 45° e o joelho ficava. O degrau vira UMA diagonal de 45° (m × m) entre as duas retas, com duas curvas
+     de 45° — o mesmo desvio, sem joelho de 90° no horizontal. A diagonal passa pela mesma conferência de folga (segLivre). */
+  function degrausCurtos(pts, P, segLivre) {
+    var i = 0, guard = 0, ult = PONTOS_DEGRAU - 1;
+    while (i + ult < pts.length && guard++ < MAX_DEGRAUS) {
+      var p0 = pts[i], p1 = pts[i + 1], p2 = pts[i + 2], p3 = pts[i + ult], u1 = un2(p0, p1), u2 = un2(p1, p2), u3 = un2(p2, p3);
+      var m = d2(p1, p2), L1 = d2(p0, p1), L3 = d2(p2, p3);
+      if (Math.abs(u1.x * u2.x + u1.z * u2.z) > EPS || Math.abs(u1.x * u3.x + u1.z * u3.z - 1) > EPS || !(m < 2 * P.chanfro - EPS) || m * Math.SQRT2 < P.margemNo - EPS) { i++; continue; }
+      var cand = [m / 2, Math.min(m, L1), Math.max(0, m - L3)], feito = false;
+      for (var k = 0; k < cand.length && !feito; k++) {
+        var t = r4(cand[k]), r1 = L1 - t, r3 = L3 - (m - t);
+        if (t < -EPS || t > m + EPS || r1 < -EPS || r3 < -EPS) continue;
+        if ((r1 > EPS && r1 < P.margemNo / 2 - EPS) || (r3 > EPS && r3 < P.margemNo / 2 - EPS)) continue;
+        var A = { x: r4(p1.x - u1.x * t), z: r4(p1.z - u1.z * t) }, B = { x: r4(p2.x + u1.x * (m - t)), z: r4(p2.z + u1.z * (m - t)) }, dg = un2(A, B);
+        /* ⚠ (revisão 19/10/2026) a diagonal que COME a reta de fora (A em p0 ou B em p3) faz o canto com o trecho vizinho: só
+           vale se esse canto também for de até 45°. Sem isto, o "calombo" (desce, anda 2 cm, volta) virava giro de 135° sem
+           aviso, e a reta curta que leva à junção de 45° sumia — o ramal entrava no coletor a 90° (tê no horizontal) */
+        if (i > 0 && d2(A, p0) <= EPS) { var u0 = un2(pts[i - 1], p0); if (u0.x * dg.x + u0.z * dg.z < Math.SQRT1_2 - EPS) continue; }
+        if (i + ult < pts.length - 1 && d2(B, p3) <= EPS) { var u4 = un2(p3, pts[i + ult + 1]); if (dg.x * u4.x + dg.z * u4.z < Math.SQRT1_2 - EPS) continue; }
+        if (!segLivre(A, B)) continue;
+        var novo = [];
+        if (d2(A, p0) > EPS) novo.push(A); else pts[i] = A;
+        if (d2(B, p3) > EPS) novo.push(B); else pts[i + ult] = B;
+        pts.splice.apply(pts, [i + 1, 2].concat(novo)); feito = true;
+      }
+      if (!feito) i++;
+    }
+    return pts;
+  }
   function chanfrar(pts, P, segLivre, avisos, falhos) {
     if (pts.length < PONTOS_CANTO) return pts;
+    pts = degrausCurtos(pts.slice(), P, segLivre);
     var out = [pts[0]];
     for (var i = 1; i < pts.length - 1; i++) {
       var a = out[out.length - 1], c = pts[i], b = pts[i + 1], u1 = un2(a, c), u2 = un2(c, b);
@@ -949,6 +984,22 @@
       if (R > hi + EPS || R < lo - EPS) return falha("a cota do destino (" + f2(R) + " m) não fecha com a declividade mínima: " + (R > hi ? "o ponto mais alto pede a raiz até " + f2(hi) + " m (" + motivoHi + ")" : "falta altura: raiz no mínimo " + f2(lo) + " m (" + motivoLo + ")"), [raizD.id || pt3(raizD.x, raizD.y, raizD.z)], { tipo: "moverDestino", sistema: "esgoto", id: raizD.id, y: R > hi ? chao4(hi) : teto4(lo) });
     } else {
       R = chao4(hi);
+      /* ⚠ COTA DE CONTROLE (19/10/2026, correção do Rogério no TA: o ramal saía ALTO, rente ao piso, e um joelho baixava o tubo
+         perto da caixa): a caixa de destino manda na profundidade. A cota é calculada de JUSANTE para MONTANTE — a entrada da
+         caixa (topo do tubo a `folgaTampaCaixa` abaixo da tampa, pela parede) é a cota da raiz e dela sobe cada trecho com a
+         declividade do DN (NBR 8160, es.declividades_minimas). Toda a árvore já nasce nessa profundidade: o aparelho desce logo
+         (trecho vertical curto na saída dele) e o horizontal segue em declividade constante até a caixa, sem degrau. Escavar
+         mais fundo é aceitável; o que não se aceita é o fundo da faixa (laje) — aí o fundo da faixa manda (lo). */
+      if (raizD.entradaMax) {
+        var dnRz = Math.max.apply(null, [0].concat(arv.nos[arv.raiz].entram.map(function (aid) { return arv.arestas[aid].dn; })));
+        /* entradaMax = { DN: cota MÁXIMA do eixo do tubo na entrada da caixa } (a caixa sabe a laje, a folga e a bolsa); o DN que não
+           consta usa o MENOR DN da tabela acima dele (entrada mais funda) — o mais fundo é o mais seguro */
+        var dnsT = Object.keys(raizD.entradaMax).map(Number).sort(function (x, y) { return x - y; }), dnT = dnsT.filter(function (d) { return d >= dnRz - EPS; })[0];
+        if (dnT == null) dnT = dnsT[dnsT.length - 1];
+        var capCI = dnT != null ? chao4(num(raizD.entradaMax[dnT], INF)) : INF;
+        if (capCI < R) R = capCI < lo - EPS && lo <= R + EPS ? teto4(lo) : capCI;
+        if (capCI < INF) arv.cotaControle = { cota: R, caixa: raizD.id };
+      }
       /* ⚠ duas entradas no mesmo TQ e na mesma cota = nó de 4 trechos (cruzeta, sem SINAPI):
          a do ambiente seguinte desce o espaçamento */
       var usadas = W.entradas[raizD.chave] || [];
@@ -1283,7 +1334,7 @@
                          p1: { x: dRaiz.x, y: r4(Math.max.apply(null, ys) + P.margemNo * 2), z: dRaiz.z }, p2: { x: dRaiz.x, y: r4(Math.min.apply(null, ys) - P.margemNo * 2), z: dRaiz.z }, tq: true });
           saida.avisos.push(prob("tubo de queda gerado entre as entradas do ambiente: prolongue até o subcoletor e acima da cobertura (ventilação primária)", [pt3(dRaiz.x, null, dRaiz.z)], { tipo: "modelar", sistema: "esgoto", elemento: "tubo_queda" }));
         }
-        saida.justificativa.push("esgoto (" + arv.faixa.nome + "): " + arv.arestas.length + " trechos até " + (dRaiz.id || dRaiz.tipo) + " na cota " + f2(Y[arv.raiz]) + " m; " +
+        saida.justificativa.push("esgoto (" + arv.faixa.nome + "): " + arv.arestas.length + " trechos até " + (dRaiz.id || dRaiz.tipo) + " na cota " + f2(Y[arv.raiz]) + " m" + (arv.cotaControle ? " (cota de controle: entrada de " + (arv.cotaControle.caixa || "caixa") + ", " + fcm(g.piso - Y[arv.raiz]) + " cm abaixo do piso; os ramais já nascem nessa profundidade e sobem em declividade constante, sem degrau perto da caixa)" : "") + "; " +
           uniq(arv.arestas.map(function (a) { return "DN " + a.dn + " a " + f2(a.decl.i) + "%" + (a.decl.tab == null ? " (regra do modelador — tabela pendente)" : ""); })).join(", "));
         /* a ventilação sai DEPOIS da água fria do grupo: a subida desvia do ramal de água (antes ela
            nascia na parede onde o ramal tinha de passar e a água do chuveiro ficava sem caminho) */

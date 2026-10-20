@@ -51992,6 +51992,147 @@ return Promise.reject(err);
 }
 return this._doc(ent).set(doc);
 },
+TETO_UM_DOC: 1048576 - 8 * 1024,
+TETO_PARTE: 700 * 1024,
+TETO_PARTE_SOLO: 1048576 - 16 * 1024,
+TETO_LOTE: 9 * 1024 * 1024,
+REVS_MAX: 8,
+_revNuvem: {},
+_seqSnap: {},
+_filaEsc: {},
+_chaveRev: function (ent) { return String(this.uid || "") + "|" + ent; },
+CHAVE_REVS: "orcapro:nuvem:revs:partes",
+_revsCarregadas: false,
+_carregarRevs: function () {
+if (this._revsCarregadas) return;
+this._revsCarregadas = true;
+try {
+var o = JSON.parse(global.localStorage.getItem(this.CHAVE_REVS) || "null");
+if (!o || typeof o !== "object") return;
+for (var k in o) {
+if (!Object.prototype.hasOwnProperty.call(o, k) || !o[k] || typeof o[k] !== "object") continue;
+var m = this._revNuvem[k] || (this._revNuvem[k] = {});
+for (var r in o[k]) if (Object.prototype.hasOwnProperty.call(o[k], r) && !Object.prototype.hasOwnProperty.call(m, r) && +o[k][r] > 0) m[r] = +o[k][r];
+}
+} catch (e) {}
+},
+_guardarRevs: function () {
+try {
+var o = {}, self = this, tem = false;
+Object.keys(this._revNuvem).forEach(function (k) { var m = self._revNuvem[k]; if (m && Object.keys(m).length) { o[k] = m; tem = true; } });
+if (tem) global.localStorage.setItem(this.CHAVE_REVS, JSON.stringify(o));
+else global.localStorage.removeItem(this.CHAVE_REVS);
+} catch (e) {}
+},
+_revsDe: function (ent) {
+this._carregarRevs();
+var m = this._revNuvem[this._chaveRev(ent)];
+return m && Object.keys(m).length ? m : null;
+},
+_lembrarRev: function (ent, rev, n) {
+this._carregarRevs();
+var k = this._chaveRev(ent), m = this._revNuvem[k] || (this._revNuvem[k] = {});
+if (m[rev] === n) return;
+if (!Object.prototype.hasOwnProperty.call(m, rev)) {
+var ks = Object.keys(m);
+if (ks.length >= this.REVS_MAX) delete m[ks[0]];
+}
+m[rev] = n;
+this._guardarRevs();
+},
+_refParte: function (ent, rev, i) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent + "~p~" + rev + "~" + i); },
+_fatiar: function (lista) {
+var self = this, partes = [], atual = [], tam = 0, ok = true;
+lista.forEach(function (o) {
+var t = self._tamanhoFirestore(o);
+if (t > self.TETO_PARTE_SOLO) { ok = false; return; }
+if (atual.length && tam + t > self.TETO_PARTE) { partes.push(atual); atual = []; tam = 0; }
+atual.push(o); tam += t;
+});
+if (!ok) return null;
+if (atual.length || !partes.length) partes.push(atual);
+return partes;
+},
+_escreverEnt: function (ent, vN) {
+var self = this, k = this._chaveRev(ent);
+var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve(), espera: null, ativos: 0 });
+if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
+if (!fila.ativos && !this._revsDe(ent)) {
+var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
+if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) return this._setDoc(ent, { v: vN, em: Date.now() });
+}
+var item = { vN: vN, juntadas: 0 };
+fila.ativos++;
+var vez = fila.corrente.then(function () {
+if (fila.espera === item) fila.espera = null;
+return self._escreverEntVez(ent, item.vN);
+});
+item.promessa = vez.then(function (r) { return r.p; });
+fila.espera = item;
+fila.corrente = vez.then(function (r) { return r.esperar; }).then(function () { fila.ativos--; }, function () { fila.ativos--; });
+return item.promessa;
+},
+_escreverEntVez: function (ent, vN) {
+var self = this, em = Date.now(), doc = { v: vN, em: em };
+var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
+var temBatch = !!this.db && typeof this.db.batch === "function";
+var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
+if (!emPartes && (!this._revsDe(ent) || !temBatch)) return Promise.resolve({ p: this._setDoc(ent, doc) });
+var lerAtual = this._doc(ent).get().then(function (s0) {
+var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
+return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
+})["catch"](function () { return null; });
+return lerAtual.then(function (naNuvem) {
+if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+var lembradas = self._revsDe(ent) || {};
+var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
+var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0; k < r.n; k++) b["delete"](self._refParte(ent, r.rev, k)); }); };
+var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
+var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
+if (!emPartes) {
+if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) return { p: self._setDoc(ent, doc) };
+var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
+return { p: b1.commit().then(esquecer) };
+}
+var partes = self._fatiar(vN);
+if (!partes || t > self.TETO_LOTE || partes.length + nApagar > 450) {
+var err = new Error("Document \"" + ent + "\" cannot be written because its size (" + t + " bytes) exceeds the maximum allowed size even split in parts (conferido no aparelho, sem enviar)");
+err.code = "invalid-argument";
+throw err;
+}
+var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), b = self.db.batch();
+partes.forEach(function (pv, i) { b.set(self._refParte(ent, rev, i), { v: pv, i: i, n: partes.length, rev: rev, em: em }); });
+b.set(self._doc(ent), { v: [], partes: partes.length, rev: rev, em: em });
+apagarAntigas(b);
+self._lembrarRev(ent, rev, partes.length);
+var pB = b.commit().then(esquecer);
+return { p: pB, esperar: pB };
+});
+},
+_valorDoSnap: function (ent, snap, jaTentou) {
+var self = this;
+if (!snap || !snap.exists) return Promise.resolve({ existe: false });
+var d = snap.data() || {}, n = +d.partes || 0;
+if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
+self._lembrarRev(ent, d.rev, n);
+var pedidos = [];
+for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i).get());
+return Promise.all(pedidos).then(function (ps) {
+var falta = ps.some(function (p, k) { var x = p && p.exists ? p.data() : null; return !x || x.rev !== d.rev || +x.i !== k || !Array.isArray(x.v); });
+if (falta) {
+if (jaTentou) { var e = new Error("a lista \"" + ent + "\" na nuvem está em partes e alguma não chegou (rev " + d.rev + ")"); e.code = "partes-incompletas"; throw e; }
+return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+}
+var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
+return { existe: true, v: v, partes: n };
+});
+},
+_nuvemSemMinhasPartes: function (ent, r, listaN, tamJson) {
+if (!r || !r.existe || r.partes || ent === "prefs" || ent === "conta" || !Array.isArray(listaN)) return false;
+if (typeof tamJson === "number" && tamJson < this.TETO_UM_DOC / 4) return false;
+var t = 0; try { t = this._tamanhoFirestore({ v: listaN, em: 0 }); } catch (e) { return false; }
+return t > this.TETO_UM_DOC;
+},
 _conflitosUltimoMerge: 0,
 _conflitosCrono: [],
 _conflitosCc: [],
@@ -52207,8 +52348,8 @@ var falhou = 0, tentadas = 0;
 var uma = function (ent) {
 tentadas++;
 var cargaU = null;
-return self._doc(ent).get().then(function (snap) {
-var cloud = snap.exists ? daNuvem(ent, snap.data().v) : null;
+return self._doc(ent).get().then(function (snap) { return self._valorDoSnap(ent, snap); }).then(function (rc) {
+var cloud = rc.existe ? daNuvem(ent, rc.v) : null;
 var local = lerEnt(empresaId, ent);
 if (naoCarregadaLocal(empresaId, ent)) {
 falhou++;
@@ -52232,10 +52373,15 @@ var carga = "";
 try { carga = JSON.stringify(subir); } catch (e) { carga = ""; }
 cargaU = carga;
 var ck = empresaId + "|" + ent;
-if (carga && self._ultimoEnviado[ck] === carga) return true;
+if (carga && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length)) return true;
+if (carga && rc.partes > 0) {
+var cargaNuvem = null;
+try { cargaNuvem = JSON.stringify(rc.v); } catch (eC) { cargaNuvem = null; }
+if (cargaNuvem === carga) { self._ultimoEnviado[ck] = carga; return true; }
+}
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[ck] = carga;
-return self._setDoc(ent, { v: subir, em: Date.now() }).then(function () { return true; });
+return self._escreverEnt(ent, subir).then(function () { return true; });
 }).catch(function (e) {
 falhou++;
 delete self._ultimoEnviado[empresaId + "|" + ent];
@@ -52300,15 +52446,18 @@ finally { self._aplicandoDaNuvem = false; }
 self._marcarSync(empresaId, ent2, valor);
 };
 var comLapides = function (fn) {
-return self._doc("_lapides").get().then(function (s) {
-if (s.exists) deFora("_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), s.data().v, "_lapides", empresaId));
+return self._doc("_lapides").get().then(function (s) { return self._valorDoSnap("_lapides", s); }).then(function (rl) {
+if (rl.existe) deFora("_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), rl.v, "_lapides", empresaId));
 }).catch(function () {}).then(fn);
 };
 ENTIDADES.forEach(function (ent) {
 var un = self._doc(ent).onSnapshot(function (snap) {
 if (!snap.exists) return;
 if (snap.metadata && snap.metadata.hasPendingWrites) return;
-var cloud = daNuvem(ent, snap.data().v);
+var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
+self._valorDoSnap(ent, snap).then(function (rs) {
+if (seqS !== self._seqSnap[ent] || !rs.existe) return;
+var cloud = daNuvem(ent, rs.v);
 var aplicar = function () {
 var local = lerEnt(empresaId, ent);
 if (ilegivelLocal(empresaId, ent)) return;
@@ -52316,11 +52465,17 @@ if (naoCarregadaLocal(empresaId, ent)) return;
 var merged = self._merge(local, cloud, ent, empresaId);
 var a = "", b = "";
 try { a = JSON.stringify(local); b = JSON.stringify(merged); } catch (e) { a = "x"; b = "y"; }
-if (a === b) return;
+var repor = function () {
+var vRep = merged; try { vRep = paraNuvem(ent, merged); } catch (eR) {}
+if (self._nuvemSemMinhasPartes(ent, rs, vRep, b.length)) { delete self._ultimoEnviado[empresaId + "|" + ent]; self.push(empresaId, ent); }
+};
+if (a === b) { repor(); return; }
 deFora(ent, merged);
 if (typeof onChange === "function") onChange(ent);
+repor();
 };
 if (ent === "_lapides") aplicar(); else comLapides(aplicar);
+})["catch"](function (eS) { self._registrarFalha(ent, eS); });
 }, function (err) {
 self._registrarFalha(ent, err);
 });
@@ -52391,7 +52546,7 @@ try { carga = JSON.stringify(vN); } catch (e) { carga = ""; }
 if (carga && self._ultimoEnviado[chave] === carga) return;
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[chave] = carga; marcou = true;
-self._setDoc(ent, { v: vN, em: Date.now() }).then(function () {
+self._escreverEnt(ent, vN).then(function () {
 self._marcarSync(empresaId, ent, v);
 }).catch(function (e) {
 delete self._ultimoEnviado[chave];
@@ -67618,10 +67773,11 @@ try {
 var CHAVE_RECARGA = "orcapro:memvigia:recarga";
 var V = {
 INTERVALO_MS: 20000,
-FRACAO_RECARREGAR: 0.62,
-ESPERA_RECARREGAR_MS: 6000,
+FRACAO_RECARREGAR: 0.45,
+ESPERA_RECARREGAR_MS: 2500,
+SALTO_PERFIL_MB: 400,
 JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-_t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0,
+_t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 medir: function () {
 var pm = global.performance && global.performance.memory;
 if (!pm || !pm.jsHeapSizeLimit) return null;
@@ -67649,6 +67805,40 @@ if (!loc || !/^(localhost|127\.0\.0\.1)$/.test(loc.hostname) || typeof global.fe
 global.fetch("/__diag/memoria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(a), keepalive: true })["catch"](function () {});
 } catch (e) {}
 },
+_iniciarPerfil: function () {
+var P = global.Profiler, self = this;
+if (typeof P !== "function" || this._perfil) return false;
+try {
+this._perfil = new P({ sampleInterval: 50, maxBufferSize: 12000 });
+if (this._perfil.addEventListener) this._perfil.addEventListener("samplebufferfull", function () { var pf = self._perfil; self._perfil = null; try { pf.stop()["catch"](function () {}); } catch (e) {} self._iniciarPerfil(); });
+return true;
+} catch (e) { this._perfil = null; return false; }
+},
+resumirRastro: function (tr) {
+var fr = (tr && tr.frames) || [], st = (tr && tr.stacks) || [], sa = (tr && tr.samples) || [], rs = (tr && tr.resources) || [];
+var nome = function (i) { var f = fr[i] || {}; var r = f.resourceId != null ? String(rs[f.resourceId] || "").replace(/^.*\/\/[^/]+\//, "").replace(/\?.*$/, "") : ""; return (f.name || "(anônima)") + (r ? " " + r + ":" + (f.line || 0) : ""); };
+var proprio = {}, total = {}, n = 0;
+sa.forEach(function (x) {
+if (x.stackId == null) return; n++;
+var s0 = st[x.stackId]; if (!s0) return;
+var top = nome(s0.frameId); proprio[top] = (proprio[top] || 0) + 1;
+var visto = {}, s1 = s0, g = 0;
+while (s1 && g++ < 200) { var k = nome(s1.frameId); if (!visto[k]) { visto[k] = 1; total[k] = (total[k] || 0) + 1; } s1 = s1.parentId != null ? st[s1.parentId] : null; }
+});
+var topo = function (o) { return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 25); };
+return { amostras: n, proprio: topo(proprio), total: topo(total) };
+},
+_mandarPerfil: function (motivo, m) {
+var self = this, pf = this._perfil;
+if (!pf || this._perfisEnviados >= 3) return;
+this._perfil = null; this._perfisEnviados++;
+try {
+pf.stop().then(function (tr) {
+self.enviar({ tipo: "perfil", em: new Date(self.agora()).toISOString(), motivo: motivo, m: m, c: self.contadores(), r: self.resumirRastro(tr), versao: global.CONFIG && global.CONFIG.versao });
+self._iniciarPerfil();
+})["catch"](function () { self._iniciarPerfil(); });
+} catch (e) { this._iniciarPerfil(); }
+},
 _lerRecarga: function () { try { return +(global.sessionStorage.getItem(CHAVE_RECARGA) || 0); } catch (e) { return 0; } },
 _gravarRecarga: function (t) { try { global.sessionStorage.setItem(CHAVE_RECARGA, String(t)); } catch (e) {} },
 agora: function () { return Date.now(); },
@@ -67656,7 +67846,9 @@ tick: function () {
 var m = this.medir(); if (!m) return null;
 var a = { em: new Date(this.agora()).toISOString(), seq: ++this._seq, segDesdeAbrir: Math.round((this.agora() - this._inicio) / 1000), m: m, c: this.contadores() };
 try { a.versao = global.CONFIG && global.CONFIG.versao; } catch (e) {}
-var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0;
+var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
+this._ultimoUsado = m.usadoMB;
+if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
 if (fr >= this.FRACAO_RECARREGAR) a.alerta = this.proteger(m) || "alto";
 this.enviar(a);
 return a;
@@ -67680,7 +67872,7 @@ return "recarregando";
 recarregar: function () { try { global.location.reload(); } catch (e) {} },
 iniciar: function () {
 if (this._t || !this.medir()) return false;
-var self = this; this._inicio = this.agora();
+var self = this; this._inicio = this.agora(); this._iniciarPerfil();
 this._t = (global.setInterval || setInterval)(function () { try { self.tick(); } catch (e) {} }, this.INTERVALO_MS);
 return true;
 }
@@ -68245,5 +68437,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=c75bcfaf49"},{"src":"js/bim-pacote.js?v=ecb4e8b2a2","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=729f3ed990"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=bada0b81ea"},{"src":"js/bim-pacote.js?v=ecb4e8b2a2","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=b62305b902"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

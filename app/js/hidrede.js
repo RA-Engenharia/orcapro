@@ -151,6 +151,20 @@
   }
 
   /* ======================================================= GERAR */
+  /* ⚠ COTA DE CONTROLE (19/10/2026): a cota MÁXIMA do eixo do tubo de DN `dn` que entra na caixa de inspeção cuja tampa está em `yT`
+     (pela parede, abaixo da laje da tampa com folga — ou dentro do corpo do dispositivo de PVC). É a cota de entrada que o esgoto do
+     ambiente (js/hidrota.js) usa como raiz para chegar na espera já na profundidade da caixa, sem descida na espera. `L0` = a linha
+     (tipoCaixa/tampa), opcional. Sem ficha de geometria → Infinity (sem limite). */
+  function yMaxEntrada(par, dn, yT, L0) {
+    par = par || {}; L0 = L0 || {};
+    var CIr = dep("HidCI", "./hidcigeo.js"), fcr = CIr && CIr.ficha ? CIr.ficha() : null, GGr = dep("HidGeo", "./biminstgeo.js");
+    var tipoCx = CIr && CIr.TIPOS && CIr.TIPOS[par.tipoCaixa || L0.tipoCaixa] ? (par.tipoCaixa || L0.tipoCaixa) : "alvenaria", tampaCx = (par.tampa || L0.tampa) === "ferro" ? "ferro" : "concreto", ehPvc = tipoCx === "pvc300";
+    var escCx = !ehPvc && CIr && CIr.escolher ? CIr.escolher(tipoCx, 0, tampaCx) : null, lajeCx = escCx && escCx.desenho ? num(escCx.desenho.tampa_m, 0) : 0;
+    if (!GGr) return Infinity;
+    if (!ehPvc) return yT - lajeCx - geo(par, "folgaTampa") - GGr.cotasConexao("pvc_esgoto", "luva", dn).od * 0.0005;   // hid:ok mm → m (meia bolsa)
+    if (!fcr) return Infinity;
+    return yT - (fcr.corpo.alt + fcr.tampa.alt) * 0.001 + (fcr.corpo.alt - CIr.FORMA.colarinho) * 0.001 - GGr.cotasConexao("pvc_esgoto", "luva", dn).od * 0.0005;   // hid:ok mm → m
+  }
   function gerar(e) {
     e = e || {};
     var estado0 = e.estado || {}, ops0 = arr(e.ops), par = e.parametros || {}, B = BI();
@@ -237,14 +251,7 @@
        de passar abaixo da laje da tampa (a espessura de desenho da composição) */
     var tipoCx = CIr && CIr.TIPOS && CIr.TIPOS[par.tipoCaixa || L0.tipoCaixa] ? (par.tipoCaixa || L0.tipoCaixa) : "alvenaria", tampaCx = (par.tampa || L0.tampa) === "ferro" ? "ferro" : "concreto", ehPvc = tipoCx === "pvc300";
     var escCx = !ehPvc && CIr && CIr.escolher ? CIr.escolher(tipoCx, 0, tampaCx) : null, lajeCx = escCx && escCx.desenho ? num(escCx.desenho.tampa_m, 0) : 0;
-    function yMaxCaixa(dn, yT) {
-      if (!GGr) return Infinity;
-      /* ⚠ o tubo entra pela PAREDE da caixa, abaixo da laje da tampa com folga (impl-07: a bolsa/joelho do ramal do banheiro
-         ficava rente à tampa, na borda de cima da caixa) */
-      if (!ehPvc) return yT - lajeCx - geo(par, "folgaTampa") - GGr.cotasConexao("pvc_esgoto", "luva", dn).od * 0.0005;   // hid:ok mm → m (meia bolsa)
-      if (!fcr) return Infinity;
-      return yT - (fcr.corpo.alt + fcr.tampa.alt) * 0.001 + (fcr.corpo.alt - CIr.FORMA.colarinho) * 0.001 - GGr.cotasConexao("pvc_esgoto", "luva", dn).od * 0.0005;   // hid:ok mm → m
-    }
+    function yMaxCaixa(dn, yT) { return yMaxEntrada(par, dn, yT, L0); }
     cx.forEach(function (c, ci) {
       c.id = redeId + "-ci" + (ci + 1);
       c.esperas.forEach(function (w) {
@@ -361,7 +368,7 @@
     return out;
   }
 
-  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { linha: linha, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
+  var HidRede = { VERSAO: 1, GEO_REDE: GEO_REDE, gerar: gerar, yMaxEntrada: yMaxEntrada, baldrames: baldrames, cruzamentos: cruzamentos, terrenoDe: terrenoDe, _int: { linha: linha, projetar: projetar, esperasDe: esperasDe, vivas: vivas } };
   global.HidRede = HidRede;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRede;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

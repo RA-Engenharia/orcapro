@@ -61324,6 +61324,7 @@ if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
 if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
 ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; });
 camposObra(o, t);
+if (s.grupo === "esgoto" && (o.redeParte === "coletor" || o.redeParte === "saida")) t.redeParte = o.redeParte;
 var apls = APLICACOES[s.grupo] || {};
 t.aplicacaoAuto = !(o.aplicacao && apls[o.aplicacao]);
 t.aplicacao = t.aplicacaoAuto ? aplicacaoAuto(o.sistema, g.vertical) : o.aplicacao;

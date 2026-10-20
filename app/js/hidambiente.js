@@ -66,6 +66,7 @@
     recuoEspera: 0.30,       // hid:ok ponto de espera do esgoto fora da obra: recuo da face externa (m) — perto da parede: a descida até a caixa da rede fica longe da tampa dela
     folgaTampaCaixa: 0.10,   // hid:ok o tubo entra na caixa de inspeção com o topo da bolsa a isto abaixo da laje da tampa (o mesmo do js/hidrede.js)
     afastQuedaCaixa: 0.30,   // hid:ok a descida do ramal que chega alto fica a isto fora da parede da caixa (nunca em cima dela)
+    degrauMinimoCaixa: 0.02, // hid:ok menor degrau que se faz antes da caixa: o ramal já nasce na cota de controle (js/hidrota.js, topoEntrada); sobra menor que isto (a peça rasa da rede manda) não vira joelho
     margemVent: 0.10,        // hid:ok o ponto da ventilação fica a esta folga ANTES da distância máxima (m)
     caixasAvaliadas: 3,      // hid:ok quantos pontos de caixa sifonada são TRAÇADOS de verdade para escolher (o melhor custo do HidRota vence)
     distCandidatos: 0.30,    // hid:ok entre dois pontos avaliados (senão seriam o mesmo traçado)
@@ -487,6 +488,30 @@
       dispositivosFamilia(est).forEach(function (q) { if (String(q.id) !== String(menos)) o.push({ x: num(q.f.x, 0), z: num(q.f.z, 0), r: num((B.PECAS[q.tipo] || {}).r, 0.15) }); });   // hid:ok raio padrão de caixa sem peça equivalente
       return o;
     }
+    /* ⚠ COTA DE CONTROLE do esgoto (19/10/2026): o tubo que entra na caixa de inspeção pela parede tem o topo a `folgaTampaCaixa`
+       abaixo da laje da tampa (y da caixa − tampa − folga). O motor (js/hidrota.js, destino.entradaMax(dn)) parte DESSA cota e sobe
+       com a declividade do DN: o ramal inteiro já nasce na profundidade da caixa — nada de degrau nem joelho perto dela. */
+    function entradaMaxCaixa(y, tipoCaixa, tampa) {
+      var CIt = dep("HidCI", "./hidcigeo.js"), et = CIt && CIt.escolher ? CIt.escolher(tipoCaixa || "alvenaria", 0, tampa || "concreto") : null;
+      var topo = r4(num(y, 0) - num((et && et.desenho ? et.desenho : {}).tampa_m, 0) - geo(par, "folgaTampaCaixa"));
+      var tab = {}; B.MATERIAIS.pvc_esgoto.dns.forEach(function (dn) { tab[dn] = r4(topo - raio(dn)); });
+      return tab;
+    }
+    /* idem para a espera: a 1ª caixa que a rede (js/hidrede.js) põe lá — a entrada dela, por DN (o tipo e a tampa vêm dos parâmetros
+       e da linha da rede mais perto, como no HidRede.gerar).
+       ⚠ (revisão 19/10/2026) a TAMPA dessa caixa não fica no piso do ambiente: a rede a põe no nível do ponto (js/hidnivel.js —
+       calçada, terreno; referência = HidRede.terrenoDe). Com a entrada calculada no piso, o terreno 5 cm abaixo dele já fazia a
+       rede descer 4 cm na espera (o degrau que a cota de controle tira) — tools/test-hid-esgoto-cota.js [E] */
+    function entradaMaxRede(pE, piso) {
+      var LRx = dep("HidRede", "./hidrede.js"), HNx = dep("HidNivel", "./hidnivel.js"), tab = {}, L0 = null, dL = Infinity;
+      if (!LRx || !LRx.yMaxEntrada) return null;
+      if (LRx._int) arr(estado.hidRedes).forEach(function (r) { var q = LRx._int.projetar(LRx._int.linha(arr(r.pontos)), pE); if (q && q.d < dL) { dL = q.d; L0 = r; } });
+      var parT = copia(par); if (L0 && L0.cotaTerreno != null) parT.cotaTerreno = L0.cotaTerreno;
+      var Tr = LRx.terrenoDe ? LRx.terrenoDe(estado, parT) : null, yT = piso;
+      if (Tr && HNx && HNx.em) { var Nv = HNx.em(estado, pE, Tr.y, par); if (Nv && isFinite(Nv.y)) yT = Nv.y; }
+      B.MATERIAIS.pvc_esgoto.dns.forEach(function (dn) { var y = LRx.yMaxEntrada(par, dn, yT, L0 || {}); if (isFinite(y)) tab[dn] = r4(y); });
+      return Object.keys(tab).length ? tab : null;
+    }
     /* a caixa de inspeção do usuário (peça do traçado ou família: hid-caixa-inspecao, Tigre/Amanco do escritório) mais perto */
     function caixaInspecaoDoUsuario(est, p) {
       var Pci = B.PECAS.caixa_inspecao, R0 = geo(par, "raioCaixaGordura"), cands = [];
@@ -531,13 +556,15 @@
       if (ciUser.converter) { ciUser.converter.forEach(function (o) { novas.push(o); }); }
       movidas.forEach(function (o) { novas.push(o); }); movidas = [];
       obst.familias = arr(obst.familias).filter(function (v) { return String(v.id) !== ciUser.id; });   /* a família vai virar a peça: não é obstáculo */
-      destinos.esgoto = { tipo: "ponto", id: ciUser.id, conector: { x: ciUser.x, y: piso, z: ciUser.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true };
+      destinos.esgoto = { tipo: "ponto", id: ciUser.id, conector: { x: ciUser.x, y: piso, z: ciUser.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true, entradaMax: entradaMaxCaixa(ciUser.y, ciUser.tipoCaixa, ciUser.tampa) };
       decide("amb.caixa_inspecao", "O ramal do ambiente vai até a caixa de inspeção " + ciUser.id + " que já está no modelo.");
       out.caixaInspecaoUsuario = ciUser.id;
     } else if (terreo) {
       var pE = esperaFora(paredes, ancora, par, estado.hidRedes, estado);
       if (!pE) { pend("amb.espera_esgoto", "sem paredes no modelo para achar o lado de fora do ambiente: informe o destino do esgoto", ids, { tipo: "destino", sistema: "esgoto" }); }
-      else { esperaEs = { x: pE.x, y: piso, z: pE.z }; destinos.esgoto = { tipo: "ponto", id: ambId + "-esp-es", conector: { x: pE.x, y: piso, z: pE.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true }; }
+      else { esperaEs = { x: pE.x, y: piso, z: pE.z }; destinos.esgoto = { tipo: "ponto", id: ambId + "-esp-es", conector: { x: pE.x, y: piso, z: pE.z, dn: B.MATERIAIS.pvc_esgoto.dn }, cotaLivre: true,
+          /* a espera é onde a rede (js/hidrede.js) põe a 1ª caixa de inspeção: o ramal já chega na cota de entrada dela, sem a descida na espera */
+          entradaMax: entradaMaxRede(pE, piso) }; }
     } else pend("amb.tubo_queda", "ambiente fora do térreo sem tubo de queda perto: ponha o TQ no shaft (ou use Replicar unidade, que alinha as prumadas)", ids, { tipo: "modelar", sistema: "esgoto", elemento: "tubo_queda" });
     /* a COLUNA DE VENTILAÇÃO do prédio (vertical de ventilação que passa pelo teto deste pavimento, fora do eixo de um TQ): o
        ventilador do ambiente vai até ela sob o teto, em vez de subir sozinho até a cobertura — inclusive no térreo do prédio */
@@ -820,7 +847,7 @@
           novas.slice().forEach(function (o) {
             if (o.op !== "trecho" || o.sistema !== "esgoto" || d2(o.p2, ci) > B.PECAS.caixa_inspecao.captura) return;
             var rO = raio(num(o.dn, 0)), yMaxE = r4(num(ci.y, 0) - lajeA - geo(par, "folgaTampaCaixa") - rO), Lh = d2(o.p1, o.p2);
-            if (o.p2.y <= yMaxE + EPS || !(Lh > EPS) || Math.abs(o.p2.y - o.p1.y) > Lh) return;
+            if (o.p2.y <= yMaxE + geo(par, "degrauMinimoCaixa") || !(Lh > EPS) || Math.abs(o.p2.y - o.p1.y) > Lh) return;
             var u = { x: (o.p2.x - o.p1.x) / Lh, z: (o.p2.z - o.p1.z) / Lh }, dQ = Math.min(Lh, meioA + geo(par, "afastQuedaCaixa")), iQ = B.declMinDn("esgoto", num(o.dn, 0)) / 100;
             var Q = { x: r4(o.p2.x - u.x * dQ), z: r4(o.p2.z - u.z * dQ) }, yQ = r4(o.p1.y + (o.p2.y - o.p1.y) * (Lh - dQ) / Lh), yQ2 = chao4(Math.min(yQ, yMaxE + iQ * dQ)), fim = { x: o.p2.x, y: chao4(yQ2 - iQ * dQ), z: o.p2.z }, cont = o.continua;
             if (dQ < Lh - geo(par, "margemNo")) { o.p2 = { x: Q.x, y: yQ, z: Q.z }; delete o.continua; novas.push({ op: "trecho", id: o.id + "-q", sistema: "esgoto", material: o.material, dn: o.dn, p1: { x: Q.x, y: yQ, z: Q.z }, p2: { x: Q.x, y: yQ2, z: Q.z }, amb: ambId, ambParte: o.ambParte }); }

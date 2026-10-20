@@ -21,10 +21,11 @@
   var CHAVE_RECARGA = "orcapro:memvigia:recarga";
   var V = {
     INTERVALO_MS: 20000,
-    FRACAO_RECARREGAR: 0.62,
-    ESPERA_RECARREGAR_MS: 6000,
+    FRACAO_RECARREGAR: 0.45,
+    ESPERA_RECARREGAR_MS: 2500,
+    SALTO_PERFIL_MB: 400,
     JANELA_ANTI_LACO_MS: 10 * 60 * 1000,
-    _t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0,
+    _t: null, _seq: 0, _recarregando: false, _avisouLaco: false, _inicio: 0, _perfil: null, _ultimoUsado: 0, _perfisEnviados: 0,
 
     medir: function () {
       var pm = global.performance && global.performance.memory;
@@ -54,6 +55,46 @@
         global.fetch("/__diag/memoria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(a), keepalive: true })["catch"](function () {});
       } catch (e) {}
     },
+    /* ⚠ O PICO É SÍNCRONO (medido em 19/10/2026 21:19→21:21 no uso real): 506 MB → 2,97 GB em <100 s, sem mudar
+       tela, operações nem DOM, e o intervalo de 20 s não rodou nesse meio (a página estava ocupada) — por isso a
+       recarga de 6 s não chegou a tempo e a página caiu. O Profiler do navegador (precisa do cabeçalho
+       `Document-Policy: js-profiling`, que o server/static.js manda no HTML) amostra a pilha o tempo todo; no
+       primeiro tick depois do salto, ele é parado e as funções que mais apareceram vão para o diag/. */
+    _iniciarPerfil: function () {
+      var P = global.Profiler, self = this;
+      if (typeof P !== "function" || this._perfil) return false;
+      try {
+        this._perfil = new P({ sampleInterval: 50, maxBufferSize: 12000 });
+        if (this._perfil.addEventListener) this._perfil.addEventListener("samplebufferfull", function () { var pf = self._perfil; self._perfil = null; try { pf.stop()["catch"](function () {}); } catch (e) {} self._iniciarPerfil(); });
+        return true;
+      } catch (e) { this._perfil = null; return false; }
+    },
+    /* resume um rastro do Profiler: as funções no topo da pilha (próprio) e em qualquer ponto dela (total) */
+    resumirRastro: function (tr) {
+      var fr = (tr && tr.frames) || [], st = (tr && tr.stacks) || [], sa = (tr && tr.samples) || [], rs = (tr && tr.resources) || [];
+      var nome = function (i) { var f = fr[i] || {}; var r = f.resourceId != null ? String(rs[f.resourceId] || "").replace(/^.*\/\/[^/]+\//, "").replace(/\?.*$/, "") : ""; return (f.name || "(anônima)") + (r ? " " + r + ":" + (f.line || 0) : ""); };
+      var proprio = {}, total = {}, n = 0;
+      sa.forEach(function (x) {
+        if (x.stackId == null) return; n++;
+        var s0 = st[x.stackId]; if (!s0) return;
+        var top = nome(s0.frameId); proprio[top] = (proprio[top] || 0) + 1;
+        var visto = {}, s1 = s0, g = 0;
+        while (s1 && g++ < 200) { var k = nome(s1.frameId); if (!visto[k]) { visto[k] = 1; total[k] = (total[k] || 0) + 1; } s1 = s1.parentId != null ? st[s1.parentId] : null; }
+      });
+      var topo = function (o) { return Object.keys(o).map(function (k) { return [k, o[k]]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 25); };
+      return { amostras: n, proprio: topo(proprio), total: topo(total) };
+    },
+    _mandarPerfil: function (motivo, m) {
+      var self = this, pf = this._perfil;
+      if (!pf || this._perfisEnviados >= 3) return;
+      this._perfil = null; this._perfisEnviados++;
+      try {
+        pf.stop().then(function (tr) {
+          self.enviar({ tipo: "perfil", em: new Date(self.agora()).toISOString(), motivo: motivo, m: m, c: self.contadores(), r: self.resumirRastro(tr), versao: global.CONFIG && global.CONFIG.versao });
+          self._iniciarPerfil();
+        })["catch"](function () { self._iniciarPerfil(); });
+      } catch (e) { this._iniciarPerfil(); }
+    },
     _lerRecarga: function () { try { return +(global.sessionStorage.getItem(CHAVE_RECARGA) || 0); } catch (e) { return 0; } },
     _gravarRecarga: function (t) { try { global.sessionStorage.setItem(CHAVE_RECARGA, String(t)); } catch (e) {} },
     agora: function () { return Date.now(); },
@@ -61,7 +102,9 @@
       var m = this.medir(); if (!m) return null;
       var a = { em: new Date(this.agora()).toISOString(), seq: ++this._seq, segDesdeAbrir: Math.round((this.agora() - this._inicio) / 1000), m: m, c: this.contadores() };
       try { a.versao = global.CONFIG && global.CONFIG.versao; } catch (e) {}
-      var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0;
+      var fr = m.limiteMB ? m.usadoMB / m.limiteMB : 0, salto = this._ultimoUsado ? m.usadoMB - this._ultimoUsado : 0;
+      this._ultimoUsado = m.usadoMB;
+      if (salto >= this.SALTO_PERFIL_MB || fr >= this.FRACAO_RECARREGAR) this._mandarPerfil(salto >= this.SALTO_PERFIL_MB ? "salto de " + salto + " MB" : "memória alta", m);
       if (fr >= this.FRACAO_RECARREGAR) a.alerta = this.proteger(m) || "alto";
       this.enviar(a);
       return a;
@@ -86,7 +129,7 @@
     recarregar: function () { try { global.location.reload(); } catch (e) {} },
     iniciar: function () {
       if (this._t || !this.medir()) return false;
-      var self = this; this._inicio = this.agora();
+      var self = this; this._inicio = this.agora(); this._iniciarPerfil();
       this._t = (global.setInterval || setInterval)(function () { try { self.tick(); } catch (e) {} }, this.INTERVALO_MS);
       return true;
     }
