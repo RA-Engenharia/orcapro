@@ -369,7 +369,7 @@
           if (ordemF.indexOf(o.id) < 0) ordemF.push(o.id);
         } else if (o.op === "instancia" && fams[o.id]) {
           /* troca de tipo / parâmetros de instância / giro — o resto fica */
-          if (o.tipoId != null) fams[o.id].tipoId = String(o.tipoId);
+          if (o.tipoId != null) { if (String(o.tipoId) !== fams[o.id].tipoId) delete fams[o.id].tipoNomeado; fams[o.id].tipoId = String(o.tipoId); }
           if (o.inst) Object.keys(o.inst).forEach(function (k) { fams[o.id].inst[k] = o.inst[k]; });
           if (o.rotY != null) fams[o.id].rotY = num(o.rotY, fams[o.id].rotY);
           if (o.y != null) fams[o.id].y = num(o.y, fams[o.id].y);
@@ -1149,7 +1149,7 @@
         if (o.op === "renomear") return o.id != null && typeof o.nome === "string" && o.nome.trim().length > 0;
         if (o.op === "furo") return o.id != null && Array.isArray(o.furo) && o.furo.length >= 3 && o.furo.every(function (p) { return !!p && fin(p.x) && fin(p.z); });
         if (o.op === "ajustar") return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) && Object.keys(o.campos).length > 0 &&
-          Object.keys(o.campos).every(function (k) { return ["anexarTopo", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes",
+          Object.keys(o.campos).every(function (k) { return ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes",
             "linhaLoc", "virar", "uniao", "estrut", "rampa"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
           /* P1-B: restrições por nível — um objeto (nível = texto/null, medida = número/null) */
           (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes)));

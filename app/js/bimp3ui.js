@@ -914,8 +914,9 @@
             var tlx = TM().telha(t.tipoId), fam = tlx ? tlx.familia : "";
             G.grupos.forEach(function (g) {
               var mk = g.material === "madeira" ? "madeiraEstr" : (g.material === "aco" ? "chapa" : (g.material === "telha-madeira" ? "madeira" : (g.material === "telha-nucleo" ? "nucleo-" + String(g.nucleo || "EPS").toLowerCase() : (fam === "fibrocimento" ? "fibrocimento" : (fam === "metalica" || fam === "sanduiche" ? "metalica" : (fam === "concreto" ? "concretoTelha" : "ceramica"))))));
-              var mt = self._mat(THREE, mk);
-              addMesh(new THREE.Mesh(self._geo(THREE, g.pos), mt), t.id, "IFCROOF", mt);
+              var mt = self._mat(THREE, mk), me = new THREE.Mesh(self._geo(THREE, g.pos), mt);
+              me.userData.telhadoGrupo = g.chave;   /* T5: o clique sabe se caiu na estrutura ou na telha (BimTelhadoPecaUI) */
+              addMesh(me, t.id, "IFCROOF", mt);
             });
             reg(t.id, "IFCROOF", "Telhado " + (t.tipoTelhado ? t.tipoTelhado.rotulo : "") + " — " + t.nAguas + " água(s), " + t.pacote.rotulo + " (sintético " + t.id + ")", { area: t.area, areaProjecao: t.areaProjecao, volume: t.volume, comprimento: t.cumeeira, contagem: 1 });
             return;
@@ -992,4 +993,176 @@
 
   global.BimP3UI = BimP3UI;
   if (typeof module !== "undefined" && module.exports) module.exports = BimP3UI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+/* =====================================================================
+ * BimTelhadoPecaUI — T5 (20/10/2026): EDITAR UMA PEÇA DA ESTRUTURA DO TELHADO
+ * O pedido do dono (Casa 487, print_22/23): "não consigo excluir nem editar uma viga/terça — a seleção pega o
+ * telhado inteiro". A estrutura é DERIVADA (js/bimtelhadoestrut.js modelar): no 3D ela é uma malha MESCLADA por
+ * material, então quem é a peça sai do ponto clicado (BimTelhadoEstrut.pecaMaisPerto).
+ *   · 1º clique no telhado = o CONJUNTO (como sempre); CLIQUE DE NOVO no mesmo telhado (ou Tab) = a PEÇA sob o
+ *     cursor (a terça/caibro/ripa/tesoura/viga/pilar mais perto do ponto) — realçada em verde no 3D;
+ *   · com a peça: Delete apaga só ela; Propriedades trocam o perfil/seção, deslocam e esticam; "Voltar ao
+ *     automático" desfaz a edição; Tab ou Esc voltam ao conjunto;
+ *   · cada edição é UMA op `telhado` com `sobrepor` (um Ctrl+Z desfaz), guardada na op e refeita a cada mudança
+ *     do telhado (o id da peça é pela função e posição — muda a inclinação, a edição continua).
+ *   · nas Propriedades do telhado: "Peças editadas" (as removidas não têm onde clicar) e os problemas com Corrigir.
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+  function ES() { return global.BimTelhadoEstrut || null; }
+  function B() { return global.BIM || null; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function n2(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+  function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+  /* sub = { tid, pid }; ultimo = { tid, p:[x,y,z] }; sel = a última seleção do 3D (o telhado não entra na seleção do desenho
+     de precisão, que é só de caixas: a seleção vem do gancho do selAplicar) */
+  var st = { sub: null, ultimo: null, app: null, info: null, sel: [] };
+
+  function estado() { var b = B(), e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.estado : null; }
+  function telhado(tid) { var s = estado(); return s ? arr(s.telhados).filter(function (t) { return t && String(t.id) === String(tid); })[0] || null : null; }
+  function comPacote(tid) { var t = telhado(tid); return t && t.pacote && t.pacote.ok ? t : null; }
+  function tidDe(uid) { var m = /^edit:(.+)$/.exec(String(uid || "")); return m ? m[1] : null; }
+  function peca(t, pid) { return t && t.pacote ? arr(t.pacote.pecas).filter(function (o) { return o.id === pid; })[0] || null : null; }
+  function realcar() {
+    var b = B(); if (!b || !b.realceTelhadoPeca) return;
+    var t = st.sub ? comPacote(st.sub.tid) : null, o = t ? peca(t, st.sub.pid) : null;
+    if (st.sub && !o) st.sub = null;
+    try { b.realceTelhadoPeca(o && ES() ? ES().malhaPeca(o) : null); } catch (e) {}
+  }
+  function repintar() {
+    if (!st.app || !st.info || !global.BimShell) return;
+    try { global.BimShell.pintarProps(st.app._bimPropsPeca(st.info)); } catch (e) {}
+  }
+  /* a peça mais perto do ponto; o clique só aceita a que está a ≤ 60 cm (longe = o telhado inteiro); o Tab pega a mais perto */
+  function escolher(tid, P, semLimite) {
+    var t = comPacote(tid), E = ES(); if (!t || !E || !P) return null;
+    var r = E.pecaMaisPerto(t, P); if (!r || (!semLimite && r.d > 0.6)) return null;
+    st.sub = { tid: String(tid), pid: r.id };
+    return r.peca;
+  }
+  function textoPeca(o) { return ES().rotuloPeca(o) + " " + (o.perfil || (n2(o.w * 100, 0) + "×" + n2(o.h * 100, 0) + " cm")) + ", " + n2(o.L) + " m"; }
+
+  var BimTelhadoPecaUI = {
+    estado: function () { return { sub: st.sub ? { tid: st.sub.tid, pid: st.sub.pid } : null, ultimo: st.ultimo, sel: st.sel.slice() }; },
+    /* o clique no 3D (gancho no js/bim.js sel3Clique, ANTES da seleção): hits = os objetos sob o cursor */
+    clique: function (uid, hits, selAtual) {
+      var tid = tidDe(uid), t = tid ? comPacote(tid) : null;
+      if (!t) { st.sub = null; st.ultimo = null; realcar(); return false; }
+      /* o ponto: o da malha da ESTRUTURA deste telhado (a telha por cima não esconde a terça), senão o 1º do telhado */
+      var hs = arr(hits).filter(function (h) { return h && h.object && h.object.userData && String(h.object.userData.expressID) === String(tid); });
+      var hE = hs.filter(function (h) { return /^estr-/.test(String(h.object.userData.telhadoGrupo || "")); })[0] || hs[0];
+      var P = hE ? [hE.point.x, hE.point.y, hE.point.z] : null;
+      var sa = arr(selAtual).length ? arr(selAtual) : st.sel, jaSel = sa.length === 1 && sa[0] === uid;
+      st.ultimo = P ? { tid: String(tid), p: P } : null;
+      if (jaSel && P) {
+        var o = escolher(tid, P);
+        if (o) { realcar(); setTimeout(function () { status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Propriedades trocam o perfil, deslocam e esticam; Tab ou Esc voltam ao telhado inteiro."); }, 0); return true; }
+      }
+      st.sub = null; realcar();
+      setTimeout(function () { status("Telhado inteiro selecionado. Clique de novo numa peça da estrutura (ou Tab) para editar só ela."); }, 0);
+      return false;
+    },
+    /* a seleção mudou (gancho no selAplicar): outra coisa selecionada → sai da peça */
+    aoSelecionar: function (uids) {
+      st.sel = arr(uids).slice();
+      if (!st.sub) return;
+      if (!(arr(uids).length === 1 && uids[0] === "edit:" + st.sub.tid)) { st.sub = null; realcar(); }
+    },
+    /* Tab: alterna conjunto ↔ peça (a do último clique); Esc: volta ao conjunto; Delete: apaga a peça */
+    tecla: function (e) {
+      var k = e.key; if (k !== "Tab" && k !== "Escape" && k !== "Delete" && k !== "Del") return false;
+      if (e.ctrlKey || e.metaKey || e.altKey) return false;
+      var tg = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tg.tagName || "") || tg.isContentEditable) return false;
+      if (global.document && global.document.getElementById("modal-bg")) return false;
+      var sel = st.sel;
+      if (k === "Tab") {
+        if (!(sel.length === 1 && st.ultimo && sel[0] === "edit:" + st.ultimo.tid && comPacote(st.ultimo.tid))) return false;
+        if (st.sub) { st.sub = null; status("Telhado inteiro selecionado (Tab entra na peça)."); }
+        else { var o = escolher(st.ultimo.tid, st.ultimo.p, true); if (!o) return false; status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Tab volta ao telhado inteiro."); }
+        e.preventDefault(); e.stopImmediatePropagation(); realcar(); repintar(); return true;
+      }
+      if (!st.sub || !(sel.length === 1 && sel[0] === "edit:" + st.sub.tid)) return false;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (k === "Escape") { st.sub = null; realcar(); repintar(); status("Telhado inteiro selecionado."); return true; }
+      this.apagar();
+      return true;
+    },
+    /* a op da edição (um Ctrl+Z por edição) */
+    editar: function (tid, pid, campos) {
+      var b = B(), E = ES(); if (!b || !b.b2Op || !E) return false;
+      var ok = b.b2Op(E.opPeca(tid, pid, campos));
+      if (!ok) status("O editor recusou a edição da peça.");
+      return ok;
+    },
+    apagar: function () {
+      if (!st.sub) return false;
+      var t = comPacote(st.sub.tid), o = peca(t, st.sub.pid), sub = st.sub;
+      if (!o) return false;
+      if (!this.editar(sub.tid, sub.pid, { removida: true })) return false;
+      st.sub = null; realcar();
+      var t2 = comPacote(sub.tid), pr = t2 ? arr(t2.pacote.problemas).filter(function (p) { return p.peca === sub.pid; })[0] : null;
+      status(ES().rotuloPeca(o) + " apagada (só ela; Ctrl+Z desfaz)." + (pr ? " Atenção: " + pr.texto : "") + " Para trazer de volta: Propriedades do telhado › Peças editadas.");
+      repintar();
+      return true;
+    },
+    /* --------------------------------------------- Propriedades da PEÇA (gancho no _bimPropsPeca do js/gestao.js) */
+    props: function (info, app) {
+      if (info && /^edit:/.test(String(info.uid || ""))) { st.app = app; st.info = info; }
+      if (!st.sub || !info || info.uid !== "edit:" + st.sub.tid) return null;
+      var self = this, sub = st.sub, t = comPacote(sub.tid), o = peca(t, sub.pid), E = ES();
+      if (!o || !E) { st.sub = null; realcar(); return null; }
+      var ro = function (id, rot, v) { return { id: id, rotulo: rot, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+      var s = (t.sobrepor || {})[o.id] || {}, ops = E.opcoesSecao(o), aco = o.mat === "aco";
+      var atual = aco ? o.perfil : (o.secao || null), autoTxt = o.auto ? (o.auto.perfil || (n2(o.auto.w * 100, 0) + "×" + n2(o.auto.h * 100, 0) + " cm")) : (o.perfil || (n2(o.w * 100, 0) + "×" + n2(o.h * 100, 0) + " cm"));
+      var opc = [{ id: "", rotulo: "Automático (" + autoTxt + ")" }].concat(ops);
+      var dl = s.desloc || {}, ex = s.ext || {};
+      var massa = null; try { var PA = global.PerfisAco, inf = aco && PA ? PA.obter(o.perfil) : null; massa = inf && isFinite(inf.massa) ? inf.massa * o.L : null; } catch (eM) {}
+      var secoes = [
+        { nome: "Peça do telhado", params: [
+          ro("tpe:rot", "Peça", E.rotuloPeca(o)), ro("tpe:id", "Identificador", o.id), ro("tpe:tel", "Telhado", String(sub.tid) + " — " + (t.pacote.rotulo || "")),
+          ro("tpe:mat", "Material", aco ? "Aço" : "Madeira"),
+          ro("tpe:ed", "Edição", o.editada && o.editada.length ? "editada (" + o.editada.join(", ") + ") — sobrevive às mudanças do telhado" : "automática (segue o telhado)") ] },
+        { nome: "Editar a peça", params: [
+          { id: "tpe:secao", rotulo: aco ? "Perfil" : "Seção", tipo: "lista", valor: s.perfil || s.secao || "", opcoes: opc },
+          { id: "tpe:dx", rotulo: "Deslocar em X", unidade: "cm", tipo: "numero", passo: "1", valor: Math.round((dl.x || 0) * 1000) / 10 },
+          { id: "tpe:dy", rotulo: "Deslocar em Y (altura)", unidade: "cm", tipo: "numero", passo: "1", valor: Math.round((dl.y || 0) * 1000) / 10 },
+          { id: "tpe:dz", rotulo: "Deslocar em Z", unidade: "cm", tipo: "numero", passo: "1", valor: Math.round((dl.z || 0) * 1000) / 10 },
+          { id: "tpe:ea", rotulo: "Esticar no início", unidade: "cm", tipo: "numero", passo: "1", valor: Math.round((ex.a || 0) * 1000) / 10 },
+          { id: "tpe:eb", rotulo: "Esticar no fim", unidade: "cm", tipo: "numero", passo: "1", valor: Math.round((ex.b || 0) * 1000) / 10 },
+          { id: "tpe:apagar", rotulo: "Apagar só esta peça", tipo: "botao", rotuloBotao: "Apagar peça (Delete)", fn: function () { self.apagar(); } } ]
+          .concat(o.editada && o.editada.length ? [{ id: "tpe:auto", rotulo: "Voltar ao automático", tipo: "botao", rotuloBotao: "Voltar ao automático", fn: function () { self.editar(sub.tid, sub.pid, null); realcar(); repintar(); } }] : [])
+          .concat([{ id: "tpe:conj", rotulo: "Telhado inteiro", tipo: "botao", rotuloBotao: "Voltar ao conjunto (Tab)", fn: function () { st.sub = null; realcar(); repintar(); } }]) },
+        { nome: "Quantidades", params: [ ro("tpe:L", "Comprimento", n2(o.L) + " m"), aco ? ro("tpe:kg", "Massa", massa == null ? "—" : n2(massa, 1) + " kg") : ro("tpe:m3", "Volume", n2(o.L * o.w * o.h, 4) + " m³") ] }
+      ];
+      return {
+        daPeca: true, uid: info.uid, semEditarTipo: true, titulo: E.rotuloPeca(o) + " — telhado " + sub.tid, icone: "quadrado", secoes: secoes,
+        onMudar: function (pid, valor) {
+          var k = String(pid), c = null, v = parseFloat(String(valor).replace(",", "."));
+          if (k === "tpe:secao") { c = {}; c[aco ? "perfil" : "secao"] = valor ? String(valor) : null; }
+          else if (/^tpe:d[xyz]$/.test(k) && isFinite(v)) { var d = { x: dl.x || 0, y: dl.y || 0, z: dl.z || 0 }; d[k.slice(5)] = v / 100; c = { desloc: d.x || d.y || d.z ? d : null }; }
+          else if (/^tpe:e[ab]$/.test(k) && isFinite(v)) { var x2 = { a: ex.a || 0, b: ex.b || 0 }; x2[k.slice(5)] = v / 100; c = { ext: x2.a || x2.b ? x2 : null }; }
+          if (c) { self.editar(sub.tid, sub.pid, c); realcar(); }
+          return app._bimPropsPeca(info);
+        }
+      };
+    },
+    /* --------------------------------------------- Propriedades do TELHADO: as peças editadas e os problemas */
+    secoesTelhado: function (info) {
+      var tid = tidDe(info && info.uid), t = tid ? comPacote(tid) : null, self = this; if (!t || (st.sub && st.sub.tid === tid)) return [];
+      var pk = t.pacote, ps = [], E = ES();
+      arr(pk.problemas).forEach(function (p, i) {
+        ps.push({ id: "tpe:pb" + i, rotulo: "Problema", leitura: true, valor: p.texto });
+        if (p.corrigir) ps.push({ id: "tpe:pc" + i, rotulo: "Corrigir", tipo: "botao", rotuloBotao: p.corrigir.texto, fn: function () { self.editar(tid, p.peca, null); repintar(); } });
+      });
+      arr(pk.removidas).forEach(function (r, i) { ps.push({ id: "tpe:rm" + i, rotulo: r.rotulo + " " + r.id + " (removida)", tipo: "botao", rotuloBotao: "Voltar ao automático", fn: function () { self.editar(tid, r.id, null); repintar(); } }); });
+      arr(pk.pecas).filter(function (o) { return o.editada && o.editada.length; }).forEach(function (o, i) {
+        ps.push({ id: "tpe:ed" + i, rotulo: E.rotuloPeca(o) + " " + o.id + " (" + o.editada.join(", ") + ")", tipo: "botao", rotuloBotao: "Voltar ao automático", fn: function () { self.editar(tid, o.id, null); repintar(); } });
+      });
+      if (arr(pk.sobreporOrfas).length) ps.push({ id: "tpe:orf", rotulo: arr(pk.sobreporOrfas).length + " edição(ões) sem a peça", tipo: "botao", rotuloBotao: "Limpar", fn: function () { var m = {}; pk.sobreporOrfas.forEach(function (k) { m[k] = null; }); var b = B(); if (b && b.b2Op) b.b2Op({ op: "telhado", id: tid, sobrepor: m }); repintar(); } });
+      if (!ps.length) ps.push({ id: "tpe:dica", rotulo: "Editar uma peça", leitura: true, valor: "clique de novo no telhado (ou Tab) para pegar a terça, viga, caibro, ripa ou tesoura sob o cursor" });
+      return [{ nome: "Peças da estrutura", params: ps }];
+    }
+  };
+  if (typeof global.addEventListener === "function") global.addEventListener("keydown", function (e) { try { BimTelhadoPecaUI.tecla(e); } catch (eT) {} }, true);
+  global.BimTelhadoPecaUI = BimTelhadoPecaUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

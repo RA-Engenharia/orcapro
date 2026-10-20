@@ -345,6 +345,14 @@
       this._api = api;
       var grpC = new T3.Group(); grpC.name = "p11-curvas"; api.scene.add(grpC);
       var grpP = new T3.Group(); grpP.name = "p11-previa"; api.scene.add(grpP);
+      /* DIVISA NO 3D (R03): uma LINHA FINA rente ao chão (2 cm de altura, 3 cm de largura, tracejada), num grupo à parte; some nos estilos Realista e na Apresentação
+         (a fita vermelha de 35 cm que havia atravessava a garagem e o portão). A planta 2D e os índices não mudam: leem o estado, não esta malha. */
+      var grpD = new T3.Group(); grpD.name = "p11-divisa-linha"; api.scene.add(grpD);
+      try { if (api.S && api.S._tickExtra) api.S._tickExtra.push(function () {
+        var real = false; try { var es = global.BIM && global.BIM.estiloVisualEstado && global.BIM.estiloVisualEstado(); real = !!(es && (es.modo === "realista" || es.realista)); } catch (e0) {}
+        var apr = !!(global.BimApresentacaoUI && global.BimApresentacaoUI.ativa);
+        var ver = !(real || apr); if (grpD.visible !== ver) grpD.visible = ver;
+      }); } catch (e1) { /* sem tick: a linha fica sempre visível */ }
       var mats = {};
       function mat(k, cor) {
         var ch = k + (cor != null ? ":" + cor : "");
@@ -363,6 +371,20 @@
           ponto: function () { return new T3.MeshBasicMaterial({ color: 0xd97706, depthTest: false }); }
         };
         mats[ch] = F[k](); return mats[ch];
+      }
+      /* a linha fina da divisa: faixa horizontal de 3 cm a 2 cm do chão, em tracos de 0,30 m com vão de 0,15 m */
+      function linhaDivisa(P, yb) {
+        var pos = [], idx = [], n = 0, W = 0.015, TR = 0.30, VAO = 0.15;
+        for (var i = 0; i < P.length; i++) {
+          var a = P[i], b = P[(i + 1) % P.length], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.01)) continue;
+          var ux = dx / L, uz = dz / L, nx = -uz * W, nz = ux * W;
+          for (var s0 = 0; s0 < L; s0 += TR + VAO) {
+            var s1 = Math.min(L, s0 + TR), p0 = [a[0] + ux * s0, a[1] + uz * s0], p1 = [a[0] + ux * s1, a[1] + uz * s1], y0 = yb(p0) + 0.02, y1 = yb(p1) + 0.02;
+            pos.push(p0[0] + nx, y0, p0[1] + nz, p1[0] + nx, y1, p1[1] + nz, p1[0] - nx, y1, p1[1] - nz, p0[0] - nx, y0, p0[1] - nz);
+            idx.push(n, n + 1, n + 2, n, n + 2, n + 3); n += 4;
+          }
+        }
+        return n ? geo(pos, idx) : null;
       }
       function limpar(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry) o.geometry.dispose(); }); }
       function semRaio(o) { o.raycast = function () {}; return o; }
@@ -446,8 +468,7 @@
             var P = dv.contorno.map(function (q) { return [q.x, q.z]; }), S0 = null;
             for (var i = 0; i < tr.topos.length && !S0; i++) { var Si = T.superficieDe(st, tr.topos[i].id); if (Si && Si.ok) S0 = Si; }
             var yb = function (q) { var y = S0 ? T.cota(S0, q[0], q[1]) : null; return y == null ? 0 : y; };
-            var g = saia(P, function (q) { return yb(q) + 0.02; }, function (q) { return yb(q) + 0.35; }, 1.0); if (!g) return;
-            var m = mat("divisa"); addMesh(new T3.Mesh(g, m), dv.id, "IFCBUILDINGELEMENTPROXY", m);
+            self._divisas = self._divisas || {}; self._divisas[dv.id] = { P: P, yb: yb };   /* a linha fina é desenhada em aposRebuild (grupo à parte) */
             registrar(dv.id, "IFCBUILDINGELEMENTPROXY", "Linha de divisa " + n2(dv.area) + " m² (" + dv.id + ")", { area: dv.area, comprimento: dv.perimetro, contagem: 1 });
           });
           tr.componentes.forEach(function (c) {
@@ -465,6 +486,11 @@
         },
         /* depois do refazer: as CURVAS DE NÍVEL em linha (sobreposição) */
         aposRebuild: function (st) {
+          limpar(grpD);
+          var DV = self._divisas || {}; self._divisas = {};
+          Object.keys(DV).forEach(function (id) {
+            var g = linhaDivisa(DV[id].P, DV[id].yb); if (g) { var mD = new T3.Mesh(g, new T3.MeshBasicMaterial({ color: 0xc0392b, side: T3.DoubleSide })); mD.raycast = function () {}; mD.userData.linhaDivisa = id; grpD.add(mD); }
+          });
           limpar(grpC);
           var tr = st && st.terreno, T = M(); if (!tr || !T) return;
           tr.topos.forEach(function (t) {

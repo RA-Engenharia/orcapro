@@ -9639,6 +9639,7 @@ lins[i].style.display = (!q || t.indexOf(q) >= 0) ? "" : "none";
 _bimPropsPeca: function (info) {
 if (!info) return null;
 if (window.MetalCriarUI && MetalCriarUI.ehPecaMetal && MetalCriarUI.ehPecaMetal(info.uid)) { var pmt = MetalCriarUI.propsPeca(info, this); if (pmt) return pmt; }
+if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.props) { var ptp = BimTelhadoPecaUI.props(info, this); if (ptp) return ptp; }
 if (window.BimPropsUI && BimPropsUI.ativo()) { var pp = this._bimPropsPaleta(info); if (pp) return pp; }
 if (info.uid && /^edit:f\d+$/.test(info.uid)) { var pf = this._famPropsInstancia(info.uid.slice(5)); if (pf) return pf; }
 if (window.BimInstUI && BimInstUI.ehInst(info.uid)) { var pin = BimInstUI.props(info.uid); if (pin) return pin; }
@@ -9656,7 +9657,7 @@ ro("peca-gid", "GlobalId", info.globalId) ].concat(el && el.disciplinaPeca ? [ro
 { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
 .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
 { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
-].concat(window.BimArqUI ? BimArqUI.secoesProps(info) : []).concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
+].concat(window.BimArqUI ? BimArqUI.secoesProps(info) : []).concat(window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado ? BimTelhadoPecaUI.secoesTelhado(info) : []).concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
 { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
 { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
 ]);
@@ -9702,6 +9703,7 @@ extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Famí
 .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
 } else {
 if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
+if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado) extras = extras.concat(BimTelhadoPecaUI.secoesTelhado(info));
 extras = extras.concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []);
 }
 } catch (eX) {}
@@ -68512,5 +68514,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=f5c99134ff"},{"src":"js/bim-pacote.js?v=6baf515a28","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=28024ac9e4"},{"src":"js/bim-pacote.js?v=21fa9d2f0f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

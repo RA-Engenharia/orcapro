@@ -35,7 +35,10 @@
     correr:      { mov: "translacao", nome: "Folha de correr",      dir: null },
     gaveta:      { mov: "translacao", nome: "Gaveta",               dir: null },
     /* COMPOSTO: gira em torno do eixo E desliza o vetor, juntos (a folha da pele de vidro recolhível: gira 90° e vai até a pilha) */
-    recolher:    { mov: "composto",   nome: "Folha que recolhe",    dir: [0, 1, 0] }
+    recolher:    { mov: "composto",   nome: "Folha que recolhe",    dir: [0, 1, 0] },
+    /* ENROLAR (portão de enrolar / persiana): as lâminas SOBEM e somem dentro da caixa do rolo. Sem lâmina a lâmina: o conjunto é comprimido na vertical contra o
+       topo do vão (eixo = ponto na cota onde fica a caixa do rolo; `minimo` = fração de altura que sobra enrolada, padrão 0,03) */
+    enrolar:     { mov: "enrolar",    nome: "Portão de enrolar",    dir: null }
   };
   var TOL_EIXO = 0.03;   /* m: folga da caixa da peça para o ponto do eixo (a dobradiça fica na borda) */
 
@@ -80,6 +83,12 @@
         if (erros.length) return { ok: false, parte: null, erros: erros };
         p.curso = cc; p.vetor = [r6(vv[0] * cc), r6(vv[1] * cc), r6(vv[2] * cc)];
       }
+    } else if (T.mov === "enrolar") {
+      var pe = vet3(d.eixo), mi = num(d.minimo, 0.03);
+      if (!pe) erros.push("parte \"" + id + "\": falta o ponto da caixa do rolo (eixo: a cota Y dele é onde as lâminas se recolhem)");
+      if (!(mi > 0 && mi < 1)) erros.push("parte \"" + id + "\": fração enrolada (minimo) fora de 0 a 1");
+      if (erros.length) return { ok: false, parte: null, erros: erros };
+      p.eixoPonto = pe; p.minimo = mi;
     } else {
       var v = unit(vet3(d.vetor) || [0, 0, 0]), cu = num(d.curso, NaN);
       if (!v) erros.push("parte \"" + id + "\": o vetor do movimento é nulo");
@@ -112,6 +121,8 @@
           if (e[0] < caixa.x0 - TOL_EIXO || e[0] > caixa.x1 + TOL_EIXO || e[1] < caixa.y0 - TOL_EIXO || e[1] > caixa.y1 + TOL_EIXO || e[2] < caixa.z0 - TOL_EIXO || e[2] > caixa.z1 + TOL_EIXO)
             erros.push("parte \"" + p.id + "\": o eixo (" + e.map(r6).join("; ") + ") está fora da caixa da peça");
         }
+      } else if (p.movimento === "enrolar") {
+        if (!p.eixoPonto || !(p.minimo > 0 && p.minimo < 1)) erros.push("parte \"" + p.id + "\": portão de enrolar sem a caixa do rolo ou com fração inválida");
       } else if (p.movimento === "translacao") {
         if (!(p.curso > 0)) erros.push("parte \"" + p.id + "\": curso ≤ 0");
       } else erros.push("parte \"" + p.id + "\": movimento desconhecido");
@@ -128,6 +139,7 @@
     var k = Math.max(0, Math.min(1, +t || 0)), m = ident();
     if (p && p.janela && !(opc && opc.sinc)) k = Math.max(0, Math.min(1, (k - p.janela[0]) / (p.janela[1] - p.janela[0])));
     if (!p || k === 0) return m;
+    if (p.movimento === "enrolar") { var sc = 1 - k * (1 - p.minimo); m[5] = sc; m[13] = p.eixoPonto[1] * (1 - sc); return m; }   /* y' = yTopo + (y − yTopo)·sc: o portão se recolhe contra a caixa do rolo */
     if (p.movimento === "translacao") { m[12] = p.vetor[0] * k; m[13] = p.vetor[1] * k; m[14] = p.vetor[2] * k; return m; }
     if (p.movimento !== "rotacao" && p.movimento !== "composto") return m;
     var a = p.eixoDir, o = p.eixoPonto, th = p.angulo * RAD * k, c = Math.cos(th), s = Math.sin(th), C = 1 - c, x = a[0], y = a[1], z = a[2];

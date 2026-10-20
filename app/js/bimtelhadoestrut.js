@@ -121,7 +121,8 @@
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || c.tipo !== "parede") return;
       var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th);
-      out.push({ id: c.id, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: ux, uz: uz, L: num(c.comprimento, 0), e: num(c.espessura, 0.15), topo: num(c.cy, 0) + num(c.altura, 0) / 2, base: num(c.cy, 0) - num(c.altura, 0) / 2 });
+      out.push({ id: c.id, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: ux, uz: uz, L: num(c.comprimento, 0), e: num(c.espessura, 0.15), topo: num(c.cy, 0) + num(c.altura, 0) / 2, base: num(c.cy, 0) - num(c.altura, 0) / 2,
+               modo: c.anexarTelhado === "sim" || c.anexarTelhado === "nao" ? c.anexarTelhado : "auto" });   /* T5: "Anexar ao telhado" da parede */
     });
     return out;
   }
@@ -793,6 +794,193 @@
     return menor;
   }
 
+  /* T5: o plano do telhado ao longo do EIXO da parede (21 amostras); fora do telhado no eixo, meia espessura para dentro */
+  function planoNaParede(T, t, w) {
+    var ys = [], nA = 20, nx = -w.uz, nzz = w.ux, o2 = w.e / 2 + 0.02;
+    for (var k = 0; k <= nA; k++) {
+      var u = -w.L / 2 + w.L * k / nA, x = w.cx + w.ux * u, z = w.cz + w.uz * u, y = T.alturaEm(t, x, z);
+      if (y == null) { var y1 = T.alturaEm(t, x + nx * o2, z + nzz * o2), y2 = T.alturaEm(t, x - nx * o2, z - nzz * o2); y = y1 == null ? y2 : (y2 == null ? y1 : Math.max(y1, y2)); }
+      if (y != null) ys.push(y);
+    }
+    return ys;
+  }
+
+  /* ======================================================================
+   * T5 (20/10/2026) — EDITAR UMA PEÇA DA ESTRUTURA DERIVADA
+   * O pedido do dono (Casa 487): "não consigo excluir nem editar uma viga/terça — a seleção pega o telhado inteiro".
+   * A estrutura é DERIVADA da op `telhado` (refeita a cada replay); a edição de uma peça é uma SOBREPOSIÇÃO guardada
+   * na própria op: t.sobrepor = { <id da peça>: { removida: true } | { perfil: "<perfil de aço>" } | { secao: "<seção
+   * de madeira>" } | { desloc: {x,y,z} } | { ext: {a, b} } } (m). O id é ESTÁVEL pela FUNÇÃO e pela POSIÇÃO na
+   * malha — papel, água, fileira, tesoura, lado e a ordem dentro desse grupo ("terca.a0.f2#0") —, não pela
+   * coordenada: muda a inclinação, a terça da fileira 2 continua a "terca.a0.f2#0" e a edição continua valendo.
+   * Peça removida não vai para o 3D, o quantitativo, as medidas do orçamento nem o IFC (todos leem pk.pecas);
+   * perfil/seção trocados contam o novo. Peça removida que deixa a telha (ou a peça de cima) sem apoio vira
+   * problema com Corrigir ("Voltar ao automático" = tirar a sobreposição).
+   * ====================================================================== */
+  var ROTULO_PECA = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo)", terca: "Terça", caibro: "Caibro", ripa: "Ripa",
+    pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira", "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal",
+    "pilar-aco": "Pilar", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura" };
+  function rotuloPeca(o) { return o ? (ROTULO_PECA[o.p] || String(o.p)) : ""; }
+  function chaveId(o) { return o.p + (o.agua != null ? ".a" + o.agua : "") + (o.fileira != null ? ".f" + o.fileira : "") + (o.tesoura ? "." + o.tesoura : "") + (o.lado != null ? ".l" + o.lado : ""); }
+  /* REVISOR T5 (20/10/2026): o id leva o CONTEXTO em que a ordem vale — o total do grupo, o modelo, o nº de águas, o nº de
+     tesouras (peça de tesoura) e o nº de fileiras da água (terça). Sem isso, mudar o tamanho/o tipo/o modelo fazia a edição
+     cair numa peça ERRADA (4 águas: o caibro.a1#8 ia de x 3,9 para 8,4; 14 m: a linha.tes2 ia da parede de x 5 para x 8,4).
+     Mudou o contexto → a edição fica órfã COM aviso (nunca aplica em outra peça). */
+  function idsPecas(pecas, ctx) {
+    var cont = {}, tot = {}, tesK = {}, fil = {};
+    function tk(o) { return String(o.tesoura).replace(/[0-9.-]+$/, ""); }
+    pecas.forEach(function (o) {
+      var k = chaveId(o); tot[k] = (tot[k] || 0) + 1;
+      if (o.tesoura) (tesK[tk(o)] = tesK[tk(o)] || {})[o.tesoura] = 1;
+      if (o.p === "terca" && o.agua != null) (fil[o.agua] = fil[o.agua] || {})[String(o.fileira)] = 1;
+    });
+    pecas.forEach(function (o) {
+      var k = chaveId(o), n0 = cont[k] || 0; cont[k] = n0 + 1;
+      var id = k + "#" + n0;
+      if (ctx != null) {
+        id += ":" + tot[k] + "|" + ctx;
+        if (o.tesoura) id += ".t" + Object.keys(tesK[tk(o)]).length;
+        if (o.p === "terca" && o.agua != null) id += ".f" + Object.keys(fil[o.agua]).length;
+      }
+      o.id = id;
+    });
+    return pecas;
+  }
+  var ID_PECA_RE = /^[A-Za-z0-9_.:#|+-]{1,90}$/;
+  /* a forma da sobreposição (o sanear da op): só campos conhecidos, cada um com a sua regra; null = apagar o campo */
+  function sobreposicaoValida(s) {
+    if (s === null) return true;
+    if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+    var ks = Object.keys(s); if (!ks.length) return false;
+    return ks.every(function (k) {
+      var v = s[k]; if (v === null) return true;
+      if (k === "removida") return v === true || v === false;
+      if (k === "perfil" || k === "secao") return typeof v === "string" && v.length > 0 && v.length <= 60;
+      if (k === "desloc") return !!v && typeof v === "object" && ["x", "y", "z"].every(function (c) { return v[c] == null || (fin(v[c]) && Math.abs(v[c]) <= 20); });
+      if (k === "ext") return !!v && typeof v === "object" && ["a", "b"].every(function (c) { return v[c] == null || (fin(v[c]) && v[c] >= -20 && v[c] <= 20); });
+      return false;
+    });
+  }
+  function sobreporValido(m) {
+    if (m === null) return true;
+    if (!m || typeof m !== "object" || Array.isArray(m)) return false;
+    var ks = Object.keys(m); if (!ks.length || ks.length > 2000) return false;
+    return ks.every(function (k) { return ID_PECA_RE.test(k) && sobreposicaoValida(m[k]); });
+  }
+  /* aplica o remendo da op sobre o mapa guardado (null apaga a entrada; campo null apaga o campo; entrada vazia some) */
+  function mesclarSobrepor(atual, remendo) {
+    if (remendo === null) return null;
+    var out = atual && typeof atual === "object" ? clone(atual) : {};
+    Object.keys(remendo || {}).forEach(function (k) {
+      var v = remendo[k];
+      if (v === null) { delete out[k]; return; }
+      var e = out[k] || {};
+      Object.keys(v).forEach(function (c) { if (v[c] === null || v[c] === false) delete e[c]; else e[c] = clone(v[c]); });
+      if (e.removida) e = { removida: true };   /* removida apaga as outras edições (nada para mover numa peça que não existe) */
+      if (Object.keys(e).length) out[k] = e; else delete out[k];
+    });
+    return Object.keys(out).length ? out : null;
+  }
+  function aplicarSobreposicoes(t, pecas, x) {
+    idsPecas(pecas, String(t && t.modelo || "") + "." + arr(x.ags).length + "a");
+    var sob = t && t.sobrepor && typeof t.sobrepor === "object" ? t.sobrepor : null, out = { pecas: pecas, removidas: [], editadas: [], problemas: [], orfas: [], avisos: [] };
+    if (!sob) return out;
+    var achou = {}, rem = [];
+    out.pecas = pecas.filter(function (o) {
+      var s = sob[o.id]; if (!s || typeof s !== "object") return true;
+      achou[o.id] = 1;
+      if (s.removida) { rem.push(o); return false; }
+      var auto = { perfil: o.perfil || null, w: o.w, h: o.h, a: o.a.slice(), b: o.b.slice(), L: o.L }, mud = [];
+      if (s.perfil && o.mat === "aco") {
+        var sp = x.perfAco(s.perfil);
+        if (sp) { o.perfil = sp.nome; o.w = sp.w; o.h = sp.h; o.forma = sp.forma; o.dims = sp.dims; mud.push("perfil"); }
+        else out.avisos.push(rotuloPeca(o) + " " + o.id + ": o perfil \"" + s.perfil + "\" não está no catálogo (js/perfisaco.js) — ficou o automático.");
+      } else if (s.secao && o.mat === "madeira") {
+        var sm = secaoMadeira(s.secao);
+        if (sm) { o.w = sm.b; o.h = sm.h; o.forma = "ret"; delete o.dims; delete o.perfil; o.secao = sm.id; mud.push("secao"); }
+        else out.avisos.push(rotuloPeca(o) + " " + o.id + ": a seção \"" + s.secao + "\" não está no catálogo de madeira — ficou o automático.");
+      }
+      if (s.desloc) { var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)]; o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
+      if (s.ext && (num(s.ext.a, 0) || num(s.ext.b, 0))) {
+        var ax = nz3(s3(o.b, o.a)), ea = num(s.ext.a, 0), eb = num(s.ext.b, 0), L0 = ln3(s3(o.b, o.a));
+        if (L0 + ea + eb > 0.05) { o.a = rr(ad3(o.a, ax, -ea)); o.b = rr(ad3(o.b, ax, eb)); mud.push("ext"); }
+      }
+      o.L = r4(ln3(s3(o.b, o.a)));
+      if (mud.length) { o.editada = mud; o.auto = auto; out.editadas.push(o.id); }
+      return true;
+    });
+    out.orfas = Object.keys(sob).filter(function (k) { return !achou[k]; });
+    if (out.orfas.length) out.avisos.push(out.orfas.length + " edição(ões) de peça sem a peça: o telhado mudou e ela não existe mais (Propriedades do telhado › Peças editadas › Voltar ao automático limpa).");
+    /* a peça removida deixa alguém sem apoio? terça: o vão entre as vizinhas da mesma água passa do máximo (ou ela era a da
+       ponta); caibro: o vão das ripas; ripa: a fiada de telha; tesoura, viga, pilar, pontalete: a terça de cima perde o apoio */
+    function sist(ia) { var ag = x.ags && x.ags[ia]; return ag ? sistemaDe(ag) : null; }
+    function mid(o) { return [(o.a[0] + o.b[0]) / 2, (o.a[2] + o.b[2]) / 2]; }
+    function vaoVizinhas(o, eixoU) {
+      var S = sist(o.agua); if (!S) return null;
+      var dir = eixoU ? S.d : S.td, ort = eixoU ? S.td : S.d, m0 = mid(o), c0 = dir[0] * m0[0] + dir[1] * m0[1];
+      var r0 = [ort[0] * o.a[0] + ort[1] * o.a[2], ort[0] * o.b[0] + ort[1] * o.b[2]].sort(function (p, q) { return p - q; });
+      var abaixo = null, acima = null;
+      out.pecas.forEach(function (q) {
+        if (q.p !== o.p || q.agua !== o.agua) return;
+        var r = [ort[0] * q.a[0] + ort[1] * q.a[2], ort[0] * q.b[0] + ort[1] * q.b[2]].sort(function (p, z) { return p - z; });
+        if (Math.min(r[1], r0[1]) - Math.max(r[0], r0[0]) < 0.05) return;
+        var mq = mid(q), c = dir[0] * mq[0] + dir[1] * mq[1];
+        if (c < c0 - 1e-6 && (abaixo == null || c > abaixo)) abaixo = c;
+        if (c > c0 + 1e-6 && (acima == null || c < acima)) acima = c;
+      });
+      return { ponta: abaixo == null || acima == null, vao: abaixo != null && acima != null ? (acima - abaixo) * (eixoU ? S.f : 1) : null };
+    }
+    rem.forEach(function (o) {
+      var perde = null, M = x.M || {};
+      if (o.p === "ripa") perde = "a fiada de telha dessa ripa fica sem apoio";
+      else if (o.p === "terca" || o.p === "caibro") {
+        var eU = o.p === "terca", lim = eU ? x.espT : x.espCb, v = vaoVizinhas(o, eU), quem = eU ? (M.caibro ? "os caibros" : "as telhas") : "as ripas";
+        if (!v || v.ponta) perde = quem + " da ponta ficam sem apoio (era a " + (eU ? "terça" : "peça") + " da borda)";
+        else if (lim != null && v.vao > lim + 0.01) perde = quem + " ficam com " + virg(v.vao) + " m entre apoios — passa do máximo de " + virg(lim) + " m";
+      } else if (o.p !== "testeira") perde = "a peça que ela apoiava (terça ou estrutura de cima) perde esse apoio";
+      out.removidas.push({ id: o.id, p: o.p, tesoura: o.tesoura || null, rotulo: rotuloPeca(o), L: o.L, perfil: o.perfil || null, w: o.w, h: o.h, a: o.a, b: o.b, semApoio: !!perde });
+      if (perde) {
+        var tx = rotuloPeca(o) + " " + o.id + " removida: " + perde + ". Confira o apoio ou volte a peça ao automático.";
+        out.avisos.push(tx);
+        out.problemas.push({ texto: tx, peca: o.id, gravidade: "alta", corrigir: { texto: "Voltar a peça ao automático", acao: { tipo: "telhadoPecaAutomatico", telhado: String(t.id), peca: o.id } } });
+      }
+    });
+    return out;
+  }
+  /* a peça (do pacote) mais perto de um ponto 3D — o clique no 3D cai na malha mesclada; quem é a peça sai daqui.
+     A seção vai da face de baixo (no eixo a→b) até h, no sentido "up": o centro é o eixo + up·h/2. */
+  function pecaMaisPerto(t, P, opc) {
+    var pk = t && t.pacote; if (!pk || !pk.ok || !P) return null;
+    var melhor = null, filtro = opc && opc.p ? opc.p : null;
+    arr(pk.pecas).forEach(function (o) {
+      if (filtro && o.p !== filtro) return;
+      var ax = s3(o.b, o.a), L2 = dt3(ax, ax); if (!(L2 > 1e-12)) return;
+      var up = o.up || [0, 1, 0], a = nz3(ax);
+      if (Math.abs(dt3(a, up)) > 0.999) up = Math.abs(a[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+      var w = nz3(cr3(a, up)), v = nz3(cr3(w, a)), A = ad3(o.a, v, o.h / 2);
+      var k = Math.max(0, Math.min(1, dt3(s3(P, A), ax) / L2)), Q = ad3(A, ax, k), dd = ln3(s3(P, Q)) - Math.max(o.w, o.h) / 2;
+      if (!melhor || dd < melhor.d) melhor = { d: dd, peca: o };
+    });
+    return melhor ? { id: melhor.peca.id, d: r4(Math.max(0, melhor.d)), peca: melhor.peca } : null;
+  }
+  /* os triângulos de UMA peça (o realce da peça escolhida no 3D) */
+  function malhaPeca(o) { var pos = []; if (o) extrudar(pos, o); return pos; }
+  /* as seções que a peça pode trocar: madeira = o catálogo de madeira; aço = a mesma série do perfil automático */
+  function opcoesSecao(o) {
+    if (!o) return [];
+    if (o.mat === "aco") {
+      var A = PA(), nm = o.auto && o.auto.perfil ? o.auto.perfil : o.perfil, inf = A && A.obter && nm ? A.obter(nm) : null;
+      var l = inf && A.listar ? A.listar(inf.serie) : [];
+      return l.map(function (n) { return { id: n, rotulo: n }; });
+    }
+    return SECOES_MADEIRA.map(function (s) { return { id: s.id, rotulo: virg(s.b * 100, 0) + "×" + virg(s.h * 100, 0) + " cm" }; });
+  }
+  /* a op que edita uma peça: { op:"telhado", id, sobrepor:{ <peca>: campos } } (campos null = voltar ao automático) */
+  function opPeca(telhadoId, pecaId, campos) {
+    var m = {}; m[String(pecaId)] = campos === null ? null : campos;
+    return { op: "telhado", id: String(telhadoId), sobrepor: m };
+  }
+
   function modelar(t, estado, opc) {
     opc = opc || {};
     var T = BT(), M = MODELOS[t && t.modelo];
@@ -1014,6 +1202,18 @@
         pc("montante", [x, yPe, z], [x, topoDe(k), z], Hx, sm, { tesoura: idT, montante: idT + ":m" + nMont, lado: k });
       });
     }
+    /* T5 (20/10/2026) — QUE PAREDE ANEXA O TOPO AO TELHADO. O defeito (Casa 487, print_24): o telhado da garagem encostado
+       no caixote (paredes mais altas) rebaixou a lateral do caixote até o plano da telha — a parede só encostava no oitão.
+       Regra: só anexa a parede que está SOB a projeção do telhado (o plano existe no eixo dela, ou meia espessura para
+       dentro — o oitão sem beiral) e cujo topo NÃO passa por cima do telhado: topo > o plano mais alto ao longo dela + o
+       pacote (estrutura + telha) = a parede sobe acima da telha em todo o comprimento (caixote, platibanda, oitão mais
+       alto) — essa nunca é rebaixada; no máximo o telhado para nela (rufo e contrarrufo do js/bimcobertura.js). O
+       interruptor da parede ("Anexar ao telhado": Automático/Sim/Não) manda: Não = nunca; Sim = o js/bimarq.js anexa. */
+    function anexaOk(w) {
+      if (w.modo === "nao") return false;
+      var ys = planoNaParede(T, t, w);
+      return ys.length > 0 && !(w.topo > Math.max.apply(null, ys) + Math.max(0.10, espPacote));
+    }
     /* ---- 1) as linhas de apoio: tesoura, parede ou pontalete */
     var apoios = [];   /* { t, tipo:"tesoura"|"parede"|"pontalete", parede? } */
     var nTes = 0, tesVaos = [];
@@ -1027,7 +1227,7 @@
       }
       /* ponta sem parede: a tesoura/pontalete entra um pouco (meia seção) para ficar sob o telhado */
       if (L.ponta && tipo !== "parede") tj = L.t + (tj <= tmin + 1e-9 ? 1 : -1) * 0.5 * (sPerna.w || sPerna.b || 0.06);
-      if (pw && tipo === "parede") anexar[String(pw.w.id)] = 1;
+      if (pw && tipo === "parede" && anexaOk(pw.w)) anexar[String(pw.w.id)] = 1;   /* T5: a parede que passa por cima apoia (terça chumbada), não é rebaixada */
       /* int = os trechos (em s, ao longo de G.d) em que a linha tem estrutura de verdade — a terça só conta apoio ali */
       apoios.push({ t: tj, tipo: tipo, parede: pw ? pw.w.id : null, ponta: L.ponta, G: G, int: tipo === "tesoura" ? [] : (tipo === "parede" ? trechosParede(tj, G) : [[-Infinity, Infinity]]) });
     }); });
@@ -1427,8 +1627,12 @@
         var par = Math.abs((dx / L) * w.uz - (dz / L) * w.ux) < 0.05, dl = Math.abs(((w.cx - a[0]) * dz - (w.cz - a[1]) * dx) / L);
         return par && dl <= Math.max(0.35, w.e);
       });
-      if (pertoOitao || (!M.tesoura && dentroP)) anexar[String(w.id)] = 1;
+      if ((pertoOitao || (!M.tesoura && dentroP)) && anexaOk(w)) anexar[String(w.id)] = 1;
     });
+    /* ---- 5b) T5 (20/10/2026): ids ESTÁVEIS das peças e as EDIÇÕES DE PEÇA (t.sobrepor) */
+    var ed = aplicarSobreposicoes(t, pecas, { perfAco: perfAco, ags: ags, espT: espT, espCb: sC ? espCb : null, M: M });
+    pecas = ed.pecas;
+    ed.avisos.forEach(function (a) { avisos.push(a); });
     /* ---- 6) a platibanda: nada passa do topo dela */
     var maxY = -Infinity; pecas.forEach(function (o) { maxY = Math.max(maxY, o.a[1] + o.h, o.b[1] + o.h); });
     var camAg = ags.map(function (ag) { var c = camadasDe(sistemaDe(ag).f); return { tercas: r4(c.tercas), caibros: r4(c.caibros), ripas: r4(c.ripas), telha: r4(c.telha) }; });
@@ -1437,16 +1641,17 @@
     var tp = topoPlatibanda(t, opc.ctxCob, espPacote);
     if (tp != null && maxY > tp + 1e-6) avisos.push("A cobertura (estrutura + telha) chega a " + virg(maxY) + " m e passa do topo da platibanda (" + virg(tp) + " m): suba a platibanda ou diminua a inclinação — o telhado embutido não pode aparecer.");
     /* ---- 7) quantitativo (lista de material) */
-    var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT });
+    var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT, removidas: ed.removidas });
     arr(Q.avisos).forEach(function (a) { avisos.push(a); });
     var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; });
     /* as MEDIDAS do orçamento do modelo (BimTelhado.medidas → servicos do telhado no Orçamento do modelo) */
-    var med = { ripas: 0, caibros: 0, tercas: 0, madeiraM3: 0, acoKg: 0, telhasUn: 0, pregosKg: 0, fixacoesUn: 0, tesourasUn: nTes, pontaletes: 0 };
+    var med = { ripas: 0, caibros: 0, tercas: 0, madeiraM3: 0, acoKg: 0, telhasUn: 0, pregosKg: 0, fixacoesUn: 0, tesourasUn: nTes - num(Q.tesApagadas, 0), pontaletes: 0 };
     pecas.forEach(function (o) {
       if (o.p === "ripa") med.ripas += o.L; else if (o.p === "caibro") med.caibros += o.L; else if (o.p === "terca") med.tercas += o.L; else if (o.p === "pontalete") med.pontaletes += o.L;
       /* a madeira da tesoura que vai pela composição SINAPI NÃO entra (já está na composição) */
       if (o.mat === "madeira" && !(o.tesoura && Q.tesComp && Q.tesComp[o.tesoura])) med.madeiraM3 += o.L * o.w * o.h;
     });
+    med.madeiraM3 += num(Q.excessoM3, 0);   /* REVISOR T5: a seção a mais nas peças editadas das tesouras da composição */
     Q.itens.forEach(function (q) {
       if (q.informativo) return;   /* detalhamento de composição: não vira medida de orçamento */
       if (q.grupo === "Estrutura do telhado (aço)" && q.un === "kg") med.acoKg += q.qtd;
@@ -1458,7 +1663,8 @@
     return { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
              paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, camadasAgua: camAg, telhaEsp: r4(espTel / f0), espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
              espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo,
-             quantitativo: Q.itens, premissas: prem, avisos: avisos };
+             quantitativo: Q.itens, premissas: prem, avisos: avisos,
+             removidas: ed.removidas, editadas: ed.editadas, problemas: ed.problemas, sobreporOrfas: ed.orfas };
   }
 
   /* o código da composição de TELHAMENTO que o BimCobertura.quantitativo usa para esta telha (null = sem composição) —
@@ -1535,7 +1741,12 @@
     /* a shingle (11 kg/m² + a OSB) não é nenhuma das duas famílias do SINAPI: vai pela de cerâmica/concreto, a mais pesada
        (regra RA: na incerteza, o preço mais alto) */
     var cer = !tel || tel.familia === "ceramica" || tel.familia === "concreto" || tel.familia === "shingle", tabT = cer ? TESOURAS_SINAPI.cer : TESOURAS_SINAPI.ond, tesComp = {};
+    /* REVISOR T5: a tesoura com TODAS as peças apagadas (edição de peça) não existe mais — sai da composição (era cobrada
+       inteira); a com parte apagada continua pela composição inteira (regra RA: na incerteza, o preço mais alto) */
+    var tesViva = {}; pecas.forEach(function (o) { if (o.tesoura) tesViva[o.tesoura] = 1; });
+    var tesApagada = {}; arr(x.removidas).forEach(function (r) { if (r && r.tesoura && !tesViva[r.tesoura]) tesApagada[r.tesoura] = 1; });
     if (M.tesoura && mat !== "aco") x.tesVaos.forEach(function (v, i) {
+      if (tesApagada["tes" + (i + 1)]) return;
       for (var j = 0; j < tabT.length; j++) if (tabT[j][0] >= v - 1e-6) { tesComp["tes" + (i + 1)] = tabT[j]; break; }
     });
     /* a ligação da trama pela norma: a bitola que cumpre (ou, se nenhuma do catálogo cumpre, a do SINAPI com o porquê) */
@@ -1582,6 +1793,7 @@
          cobre-juntas e mão de obra: UM item com código; as peças e as ligações dela são só detalhamento (não somam) */
       var kgP = 0, paraf = 0, comp = {}, nCom = 0;
       x.tesVaos.forEach(function (v, i) {
+        if (tesApagada["tes" + (i + 1)]) return;   /* REVISOR T5: apagada inteira — nada a cobrar */
         var lin = tesComp["tes" + (i + 1)];
         if (!lin) { avisos.push("Tesoura de " + virg(v) + " m passa dos 12 m do SINAPI: sem composição — as peças dela entram avulsas e as ligações a dimensionar."); return; }
         kgP += lin[2]; paraf += lin[3]; nCom++; (comp[lin[1]] = comp[lin[1]] || { n: 0, vao: lin[0] }).n++;
@@ -1689,7 +1901,16 @@
       var bm = arr(t.arestasCalc).reduce(function (m, e) { return Math.max(m, num(e.beiralM, 0)); }, 0), mx = tel.balanco.semCalha ? tel.balanco.semCalha.max : null;
       if (mx != null && bm > mx + 1e-6) avisos.push("Beiral de " + virg(bm) + " m passa do balanço máximo da telha (" + virg(mx) + " m, " + tel.balancoFonte + "): diminua o beiral.");
     }
-    return { itens: itens, avisos: avisos, tesComp: tesComp };
+    /* REVISOR T5: peça de tesoura da COMPOSIÇÃO com a seção trocada para MAIOR — a composição é da tesoura de referência:
+       a madeira a mais (L × (seção nova − automática)) vai à parte, uma vez; seção menor não desconta (o preço mais alto) */
+    var exM3 = 0, exM = 0, exN = 0;
+    pecas.forEach(function (o) {
+      if (!(o.tesoura && tesComp[o.tesoura] && o.auto && o.mat === "madeira" && o.editada && o.editada.indexOf("secao") >= 0)) return;
+      var d = o.L * (o.w * o.h - num(o.auto.w, 0) * num(o.auto.h, 0)); if (d > 1e-9) { exM3 += d; exM += o.L; exN++; }
+    });
+    if (exN) it("Madeiramento", "Acréscimo de seção nas peças editadas das tesouras da composição — " + exN + " peça(s), " + virg(exM) + " m", "m3", exM3,
+      "a composição SINAPI é da tesoura de referência: aqui só a madeira A MAIS das peças com a seção trocada (seção nova − automática)", true);
+    return { itens: itens, avisos: avisos, tesComp: tesComp, tesApagadas: Object.keys(tesApagada).length, excessoM3: exM3 };
   }
 
   /* ============================================================ GEOMETRIA (para o 3D) */
@@ -1937,7 +2158,10 @@
     PREGOS_CAT: PREGOS_CAT, NBR_PREGO: NBR_PREGO, verificarPrego: verificarPrego, escolherPrego: escolherPrego, nosDasTesouras: nosDasTesouras,
     MODELOS: MODELOS, SEC: SEC, ESPAC: ESPAC, TESOURAS_SINAPI: TESOURAS_SINAPI, PREGOS: PREGOS, PERFIS_TEL: PERFIS_TEL, TETO_TRI_AGUA: TETO_TRI_AGUA,
     TELHAMENTO_SINAPI: TELHAMENTO_SINAPI, composicaoTelhamento: composicaoTelhamento, ajustarQuantCobertura: ajustarQuantCobertura,
-    modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
+    modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria,
+    /* T5: editar uma peça da estrutura derivada */
+    ROTULO_PECA: ROTULO_PECA, rotuloPeca: rotuloPeca, sobreporValido: sobreporValido, mesclarSobrepor: mesclarSobrepor, pecaMaisPerto: pecaMaisPerto, malhaPeca: malhaPeca,
+    opcoesSecao: opcoesSecao, opPeca: opPeca, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
   };
   global.BimTelhadoEstrut = BimTelhadoEstrut;
   if (typeof module !== "undefined" && module.exports) module.exports = BimTelhadoEstrut;

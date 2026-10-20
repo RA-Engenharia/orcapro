@@ -1597,6 +1597,7 @@
   function tipoIdDe(c, cat, av) {
     if (!c) return null;
     if (c._mep) return txt(c._mep.tipoId);   /* P12 */
+    if (c.famId != null && c.tipoNomeado != null) return String(c.tipoNomeado);   /* TIPOS: tipo da obra (duplicado ou editado) sobre o tipo da família */
     if (cat === "porta" || cat === "janela" || cat === "generico" || cat === "dispositivo_eletrico" || cat === "luminaria" || cat === "equipamento_eletrico") return String(c.famId) + "|" + (av && av.tipo ? av.tipo.id : txt(c.tipoId));   /* P12: + famílias MEP */
     if (c.tipoNomeado != null) return String(c.tipoNomeado);
     if (cat === "parede") return c.tipoParede && c.tipoParede.id ? String(c.tipoParede.id) : "auto:e" + cm(num(c.espessura, 0));
@@ -1800,7 +1801,7 @@
         id: "FAM:" + p.nome, nome: imp && p.rotulo ? String(p.rotulo) : String(p.nome).replace(/_/g, " "), grupo: txt(p.grupo) || "Outros", lado: p.escopo === "tipo" ? "tipo" : "instancia",
         dado: dado, un: imp && dado === "numero" && p.unidade ? String(p.unidade) : DADOS[dado].un, leitura: leit, fonte: "familia", campo: p.nome, calc: null, faixa: null, padrao: null, opcoes: lista ? p.opcoes.slice() : null, casas: null,
         ifc: null, orc: null, tabela: true, filtro: true, identificador: false,
-        escrita: leit ? null : (p.escopo === "tipo" ? "família (tipo)" : "instancia.inst." + p.nome), revit: null
+        escrita: leit ? null : (p.escopo === "tipo" ? "ajustarTipo.valores.fam:" + p.nome : "instancia.inst." + p.nome), revit: null
       });
     });
   }
@@ -2144,7 +2145,7 @@
         /* P10 — Limpar não utilizados: o tipo do projeto sai (só o que não tem instância; com instância, recusa) */
         if (o.apagar === true) {
           if (!mapa[tid]) return false;
-          var emUso = ["caixas", "fams", "cobs", "vols", "forros"].some(function (k) { var m0 = ctx[k] || {}; return Object.keys(m0).some(function (q) { return m0[q] && m0[q].tipoNomeado === tid && catDoAlvo(m0[q]) === cat; }); });
+          var emUso = ["caixas", "fams", "cobs", "vols", "forros"].some(function (k) { var m0 = ctx[k] || {}; return Object.keys(m0).some(function (q) { return m0[q] && m0[q].tipoNomeado === tid && (catDoAlvo(m0[q]) === cat || m0[q].famId != null); }); });
           if (emUso) return false;
           delete mapa[tid]; Pm.ordem[cat] = ord.filter(function (q) { return q !== tid; });
           return true;
@@ -2156,7 +2157,7 @@
           var v = o.valores[k];
           if (v === null) delete t.valores[k]; else t.valores[k] = typeof v === "string" ? v.slice(0, 300) : v;
         });
-        arr(o.ids).forEach(function (id) { var c = alvo(ctx, id); if (c && catDoAlvo(c) === cat) c.tipoNomeado = tid; });
+        arr(o.ids).forEach(function (id) { var c = alvo(ctx, id); if (c && (catDoAlvo(c) === cat || (c.famId != null && ctx.fams && ctx.fams[id] === c))) c.tipoNomeado = tid; });
         return true;
       }
       if (o.op === "marcar") {
@@ -2188,6 +2189,16 @@
         var cat = catDoAlvo(c); if (!cat || !Pm.tipos[cat]) return;
         var t = Pm.tipos[cat][tipoIdDe(c, cat, null)];
         if (t) aplicarTipo(c, cat, t);
+      });
+      /* TIPOS: o que a obra deu ao tipo de uma FAMÍLIA ("fam:Nome") vai em inst.$tipo de cada instância dele — o avaliador (js/familia.js) aplica */
+      arr(saida.familias).forEach(function (f) {
+        if (!f || f.tipoNomeado == null) return;
+        var tv = null;
+        Object.keys(Pm.tipos).forEach(function (cat) {
+          var t = Pm.tipos[cat][String(f.tipoNomeado)]; if (!t || !t.valores) return;
+          Object.keys(t.valores).forEach(function (k) { if (k.indexOf("fam:") === 0 && t.valores[k] !== null) { tv = tv || {}; tv[k.slice(4)] = t.valores[k]; } });
+        });
+        if (tv) { f.inst = f.inst || {}; f.inst.$tipo = tv; }
       });
       saida.projeto = { tipos: tipos };
     }

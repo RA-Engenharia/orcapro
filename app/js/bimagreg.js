@@ -298,7 +298,7 @@
     var p = 0;
     for (var i = 0; i < faixas.length; i++) {
       var f = faixas[i];
-      if (fora[f.e]) continue;
+      if (fora[f.e] || fora["#" + i]) continue;   /* "#i": só ESTA faixa (a malha solta de uma porta) — o elemento de várias malhas não some inteiro */
       var ini = f.iniTri * 3, fim = ini + f.nTri * 3;
       for (var q = ini; q < fim; q++) out[p++] = idxCompleto[q];
     }

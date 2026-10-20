@@ -955,6 +955,55 @@
 
   /* o telhado DERIVADO (a fonte não muda). Inválido sai com ok:false e o
      motivo em avisos (aparece na tela; nunca some calado). */
+  /* REVISOR T5 (20/10/2026) — BEIRAL CONTRA PAREDE MAIS ALTA. O defeito (Casa 487): o telhado da garagem encostado no
+     caixote levava o beiral de 1 m também na aresta do caixote — o beiral entrava 1 m DENTRO do caixote e a área do
+     telhado (telhamento, estrutura, orçamento) contava esse pedaço. Regra: a aresta do contorno com parede MAIS ALTA
+     encostada ao longo dela (paralela, a até meia espessura + 10 cm da aresta, cobrindo ≥ 90 % do comprimento; topo acima
+     do plano do telhado ao longo da aresta + o pacote, base abaixo dele) fica SEM beiral; o encontro vai para rufo e
+     contrarrufo. Parede com "Anexar ao telhado: Sim" ou anexar topo marcado à mão é rebaixada até o telhado: não conta.
+     Só no telhado com `modelo` (o projeto antigo sai igual). Devolve os índices das arestas (orig do contorno). */
+  function arestasContraParede(t, caixas) {
+    var C = arr(t && t.contorno), n = C.length, out = [];
+    if (n < 3 || !t.ok) return out;
+    var esp = Math.max(0.10, num(t.espessura, 0));
+    function alt(x, z) {
+      var y = null;
+      arr(t.aguasCalc).forEach(function (ag) { arr(ag.pecas).forEach(function (pc) {
+        if (dentro([x, z], arr(pc.pts).map(function (q) { return [q.x, q.z]; }))) { var v = yPlano(ag.plano, x, z); if (y == null || v > y) y = v; }
+      }); });
+      return y;
+    }
+    var ws = arr(caixas).filter(function (c) { return c && c.tipo === "parede" && !c.arco && c.anexarTelhado !== "sim" && !(c.anexarTopo && !c.anexarTopoAuto); });
+    if (!ws.length) return out;
+    for (var k = 0; k < n; k++) {
+      var a = C[k], b = C[(k + 1) % n], dx = num(b.x, 0) - num(a.x, 0), dz = num(b.z, 0) - num(a.z, 0), L = Math.sqrt(dx * dx + dz * dz);
+      if (!(L > 0.3)) continue;
+      var ex = dx / L, ez = dz / L, ivs = [];
+      ws.forEach(function (c) {
+        var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), Lw = num(c.comprimento, 0), e = num(c.espessura, 0.15);
+        if (Math.abs(ex * uz - ez * ux) > 0.05) return;
+        var cx = num(c.cx, 0), cz = num(c.cz, 0);
+        if (Math.abs((cx - a.x) * ez - (cz - a.z) * ex) > e / 2 + 0.10) return;
+        var s0 = (cx - ux * Lw / 2 - a.x) * ex + (cz - uz * Lw / 2 - a.z) * ez, s1 = (cx + ux * Lw / 2 - a.x) * ex + (cz + uz * Lw / 2 - a.z) * ez;
+        var lo = Math.max(0, Math.min(s0, s1)), hi = Math.min(L, Math.max(s0, s1));
+        if (hi - lo < 0.05) return;
+        var ymax = null;
+        for (var j = 0; j <= 10; j++) {
+          var sx = lo + (hi - lo) * j / 10, px = a.x + ex * sx, pz = a.z + ez * sx;
+          [0.05, -0.05].forEach(function (o) { var y = alt(px - ez * o, pz + ex * o); if (y != null && (ymax == null || y > ymax)) ymax = y; });
+        }
+        var topo = num(c.cy, 0) + num(c.altura, 0) / 2, base = num(c.cy, 0) - num(c.altura, 0) / 2;
+        if (ymax != null && topo > ymax + esp && base < ymax) ivs.push([lo, hi]);
+      });
+      if (!ivs.length) continue;
+      ivs.sort(function (p, q) { return p[0] - q[0]; });
+      var cob = 0, c0 = ivs[0][0], c1 = ivs[0][1];
+      ivs.slice(1).forEach(function (iv) { if (iv[0] <= c1) c1 = Math.max(c1, iv[1]); else { cob += c1 - c0; c0 = iv[0]; c1 = iv[1]; } });
+      cob += c1 - c0;
+      if (cob >= 0.9 * L) out.push(k);
+    }
+    return out;
+  }
   function calcular(fonte, niveis, extra) {
     var f = clone(fonte), avisos = [];
     f.tipo = "telhado"; f.ifc = "IFCROOF";
@@ -1194,6 +1243,12 @@
     /* TELHADO PARAMÉTRICO (T1): o MODELO da estrutura (js/bimtelhadoestrut.js MODELOS) e se as paredes de baixo anexam o topo */
     if (o.modelo !== undefined) { if (o.modelo !== null && !(typeof o.modelo === "string" && /^[a-z0-9-]{1,40}$/.test(o.modelo))) return false; algum = true; }
     if (o.anexarParedes !== undefined) { if (o.anexarParedes !== null && typeof o.anexarParedes !== "boolean") return false; algum = true; }
+    /* T5 (20/10/2026): a EDIÇÃO DE PEÇA da estrutura derivada — um remendo { <id da peça>: campos | null } (js/bimtelhadoestrut.js) */
+    if (o.sobrepor !== undefined) {
+      var ESv = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js");
+      if (!(ESv && ESv.sobreporValido ? ESv.sobreporValido(o.sobrepor) : o.sobrepor === null)) return false;
+      algum = true;
+    }
     return algum;
   }
   function opBordaValida(o) {
@@ -1313,6 +1368,11 @@
         CAMPOS.forEach(function (k) { if (!temChave(o, k)) return; if (o[k] === null) delete t[k]; else t[k] = clone(o[k]); });
         if (temChave(o, "tipoId") && o.tipoId != null && !temChave(o, "tipoTelhado")) delete t.tipoTelhado;
         if (temChave(o, "contorno") && o.contorno) delete t.inclinacoes;
+        /* T5: o remendo das edições de peça MESCLA no que já está guardado (cada edição é uma op: um Ctrl+Z desfaz só ela) */
+        if (temChave(o, "sobrepor")) {
+          var ESm = dep("BimTelhadoEstrut", "./bimtelhadoestrut.js"), novoS = ESm && ESm.mesclarSobrepor ? ESm.mesclarSobrepor(t.sobrepor, o.sobrepor) : null;
+          if (novoS) t.sobrepor = novoS; else delete t.sobrepor;
+        }
         if (temChave(o, "aresta")) {
           var q = arr(t.contorno)[o.aresta];
           if (!q) return false;
@@ -1372,7 +1432,24 @@
           if (semB[k] === true) return;
           var m = semB[k] || (semB[k] = {}); pq.arestas.forEach(function (o) { m[Number(o)] = true; });
         });
-        saida.telhados = arr(ctx.ordemTe).map(function (id) { var t = calcular(ctx.telhados[id], niveis, semB[String(id)] && ctx.telhados[id] && ctx.telhados[id].modelo ? { semBeiral: semB[String(id)] } : null); porId[String(id)] = t; return t; });
+        saida.telhados = arr(ctx.ordemTe).map(function (id) {
+          var fonte = ctx.telhados[id], sb0 = semB[String(id)] && fonte && fonte.modelo ? semB[String(id)] : null;
+          var t = calcular(fonte, niveis, sb0 ? { semBeiral: sb0 } : null);
+          /* REVISOR T5: a aresta encostada em parede MAIS ALTA (caixote) fica sem beiral — só no telhado com modelo */
+          if (t && t.ok && fonte && fonte.modelo && sb0 !== true && num(t.beiralEf, 0) > 0) {
+            var cp = arestasContraParede(t, saida.caixas);
+            if (cp.length) {
+              var m2 = {}; if (sb0) Object.keys(sb0).forEach(function (q) { m2[q] = true; }); cp.forEach(function (q) { m2[q] = true; });
+              var t2 = calcular(fonte, niveis, { semBeiral: m2 });
+              if (t2 && t2.ok) {
+                t2.semBeiralParede = cp.slice();
+                (t2.avisos = t2.avisos || []).push("Sem beiral na(s) aresta(s) " + cp.map(function (q) { return q + 1; }).join(", ") + ": encostada(s) em parede mais alta que o telhado (o telhado para na parede; rufo e contrarrufo).");
+                t = t2;
+              }
+            }
+          }
+          porId[String(id)] = t; return t;
+        });
         /* UNIR depois de todos prontos (o B que corta é o B sem recorte: a ordem não muda nada) */
         var orig = {}; saida.telhados.forEach(function (t) { orig[String(t.id)] = { ok: t.ok, aguasCalc: t.aguasCalc }; });
         saida.telhados.forEach(function (t) {
@@ -1400,7 +1477,7 @@
             t.espessuraTipo = t.espessura; t.espessura = pk.espessura;
             if (t.anexarParedes !== false && arr(pk.paredes).length) {
               var ids = {}; pk.paredes.forEach(function (id) { ids[String(id)] = 1; });
-              arr(saida.caixas).forEach(function (c) { if (c && c.tipo === "parede" && ids[String(c.id)] && !c.anexarTopo) { c.anexarTopo = true; c.anexarTopoAuto = String(t.id); } });
+              arr(saida.caixas).forEach(function (c) { if (c && c.tipo === "parede" && ids[String(c.id)] && !c.anexarTopo && c.anexarTelhado !== "nao") { c.anexarTopo = true; c.anexarTopoAuto = String(t.id); } });
             }
           }
           arr(pk.avisos).forEach(function (a) { (t.avisos = t.avisos || []).push(a); });
@@ -1432,7 +1509,8 @@
         ag.pecas.forEach(function (pc) {
           var Q = pc.pts.map(function (q) { return [q.x, q.z]; }), pl = ag.plano;
           if (Q.length < 3) return;
-          out.push({ id: t.id, bordas: Q.map(function (q, k) { return [q, Q[(k + 1) % Q.length]]; }), dobras: [],
+          /* T5: telhado = true (a parede que passa por cima dele não é rebaixada — js/bimarq.js topoParede); esp = o pacote */
+          out.push({ id: t.id, telhado: true, esp: num(t.espessura, 0), bordas: Q.map(function (q, k) { return [q, Q[(k + 1) % Q.length]]; }), dobras: [],
                      cobre: function (x, z, tol) { var p = [x, z]; tol = tol || 0; return dentro(p, Q) || Q.some(function (q, k) { return distSeg(p, q, Q[(k + 1) % Q.length]) <= tol + 1e-7; }); },
                      y: function (x, z) { return yPlano(pl, x, z); } });
         });

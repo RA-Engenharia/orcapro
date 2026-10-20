@@ -740,6 +740,15 @@ ln.matrixAutoUpdate = false; ln.matrix.copy(mesh.matrixWorld); ln.renderOrder = 
 scene.add(ln); _selLn = ln;
 }
 S._contornoSelecao = contornoSelecao;
+var _telPeca = null, _telPecaMat = null;
+S._telPecaRealce = function (pos) {
+if (_telPeca) { scene.remove(_telPeca); if (_telPeca.geometry) _telPeca.geometry.dispose(); _telPeca = null; }
+if (!pos || !pos.length) return false;
+if (!_telPecaMat) _telPecaMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+var m = new THREE.Mesh(g, _telPecaMat); m.renderOrder = 1001; m.raycast = function () {};
+scene.add(m); _telPeca = m; return true;
+};
 var _V3 = function (x, y, z) { return new THREE.Vector3(x, y, z); };
 var VC_FACES = {
 frontal: { rot: 'FRONTAL', n: _V3(0, 0, 1), u: _V3(1, 0, 0), v: _V3(0, 1, 0) },
@@ -1420,7 +1429,7 @@ var cores = (c && c.cores && c.cores.length === parte.cores.length) ? c.cores : 
 for (var f = 0; f < fx.length; f++) {
 var faixa = fx[f], ref = faixa.ref;
 if (!ref) { ocultos[faixa.e] = 1; continue; }
-if (!existeNaVista(ref, est) || _desenhaPorSi(ref)) { ocultos[faixa.e] = 1; continue; }
+if (!existeNaVista(ref, est) || _desenhaPorSi(ref)) { ocultos["#" + f] = 1; continue; }
 var cor = corNaVista(ref, est); nPecas++;
 if (cor[3] < 1) algumT = true;
 var ini = faixa.iniVert * 4, fim = ini + faixa.nVert * 4;
@@ -3778,13 +3787,13 @@ for (var f = 0; f < fx.length; f++) {
 var faixa = fx[f], ref = faixa.ref;
 if (!ref) continue;
 if (_desenhaPorSi(ref)) {
-ocultos[faixa.e] = 1;
+ocultos["#" + f] = 1;
 ref.layers.set(1); if (ref.visible !== false) ref.layers.enable(0);
 continue;
 }
 ref.layers.set(1);
 var oculta = ref.visible === false;
-if (oculta) ocultos[faixa.e] = 1;
+if (oculta) ocultos["#" + f] = 1;
 var c = _corDoMaterial(ref.material);
 if (!oculta && c[3] < 1) algumTransp = true;
 if (!oculta) { nVis++; if (_comTextura(ref)) nComTex++; }
@@ -4729,6 +4738,7 @@ if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma de
 else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
 try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
 try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}
+try { if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.aoSelecionar) BimTelhadoPecaUI.aoSelecionar(novo); } catch (_) {}
 try { if (window.BimVaoArr && BimVaoArr.aoSelecionar) BimVaoArr.aoSelecionar(novo); } catch (_) {}
 try { if (window.BimInstCon && BimInstCon.aoSelecionar) BimInstCon.aoSelecionar(novo); } catch (_) {}
 return novo;
@@ -4761,6 +4771,7 @@ S._compExp = compExp;
 function sel3Clique(e) {
 var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), ctrl = !!(e.ctrlKey || e.metaKey);
 if (!u && window.BimInstUI && BimInstUI.pickTela) { try { u = BimInstUI.pickTela(e.clientX, e.clientY) || null; if (u && !(S.meshPorUid && S.meshPorUid[u])) u = null; } catch (_) { u = null; } }
+if (u && !ctrl && window.BimTelhadoPecaUI && BimTelhadoPecaUI.clique) { try { BimTelhadoPecaUI.clique(u, _ultimosHits.slice(), selAtual()); } catch (_) {} }
 if (u) selAplicar(compExp(u), ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
 }
 S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
@@ -13724,6 +13735,7 @@ return S._paramProjeto || null;
 editarB2: function (cfg) { return (S && S._b2Config) ? S._b2Config(cfg) : null; },
 planta2d: function () { return (S && S._planta2d) ? S._planta2d : null; },
 b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
+realceTelhadoPeca: function (pos) { return (S && S._telPecaRealce) ? S._telPecaRealce(pos) : false; },
 b2Op: function (o) {
 if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'desidentificar'].indexOf(o.op) >= 0) { if (!BimEdit.sanear([o]).length) return false; S._editOpExterna(o); return true; }
 if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);

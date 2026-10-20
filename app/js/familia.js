@@ -578,6 +578,9 @@
     Object.keys(ps).forEach(function (k) {
       var p = ps[k], val = p.valor;
       var tv = lerChave(tipo.valores, p.nome); if (tv !== undefined) val = tv;
+      /* TIPO DO PROJETO (js/bimparam.js, ajustarTipo "fam:Nome"): o replay grava em inst.$tipo os valores que a obra deu ao TIPO;
+         valem para todas as instâncias dele e ficam entre o valor do tipo da família e o da instância (a família da biblioteca não muda) */
+      if (p.escopo !== "instancia" && !p.formula && inst.$tipo) { var tp = lerChave(inst.$tipo, p.nome); if (tp !== undefined) val = tp; }
       if (p.escopo === "instancia") { var iv = lerChave(inst, p.nome); if (iv !== undefined) val = iv; }
       env[k] = converter(p, val);
     });

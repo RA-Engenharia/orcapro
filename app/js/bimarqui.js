@@ -529,6 +529,9 @@
         ps.push({ id: "b2:tipoParede", rotulo: "Tipo", tipo: "lista", valor: c.tipoParede ? c.tipoParede.id : "", opcoes: [{ id: "", rotulo: c.tipoParede ? c.tipoParede.rotulo : "Genérica (sem tipo)" }].concat(global.AlvTipos ? global.AlvTipos.listar().map(function (t) { return { id: t.id, rotulo: t.rotulo }; }) : []) });
         ps.push(ro("b2:esp", "Espessura", n2(c.espessura * 100, 1) + " cm"));
         ps.push({ id: "b2:anexarTopo", rotulo: "Anexar topo", tipo: "sim-nao", valor: !!c.anexarTopo });
+        /* T5: o telhado corta/sobe esta parede? Automático = só a que está sob ele e não passa por cima (caixote, platibanda) */
+        ps.push({ id: "b2:anexarTelhado", rotulo: "Anexar ao telhado", tipo: "lista", valor: c.anexarTelhado === "sim" || c.anexarTelhado === "nao" ? c.anexarTelhado : "auto",
+                  opcoes: [{ id: "auto", rotulo: "Automático" }, { id: "sim", rotulo: "Sim" }, { id: "nao", rotulo: "Não" }] });
         ps.push({ id: "b2:unir", rotulo: "Unir nos cantos", tipo: "sim-nao", valor: c.unir !== false });
         /* VÍNCULOS (js/bimvinculos.js): "Desligar união" por ponta — a ponta solta não puxa nem é puxada ao mover */
         ps.push({ id: "b2:vinc:a", rotulo: "Vínculo na ponta inicial (acompanha ao mover)", tipo: "sim-nao", valor: !(c.vinculoSolto && c.vinculoSolto.a) });
@@ -594,7 +597,7 @@
        canto, furo, forma da escada…), numa seção "Modelador (OrçaPRO)". */
     secoesExtrasPaleta: function (info) {
       if (global.BimTerrenoUI) { var t11 = global.BimTerrenoUI.secoesPaleta(info); if (t11) return t11; }   /* P11: plataforma (orçamento), divisa (rumos), terreno (curvas) */
-      var IDS = { "b2:anexarTopo": 1, "b2:unir": 1, "b2:vinc:a": 1, "b2:vinc:b": 1, "b2:inverterFaces": 1, "b2:juntaCanto": 1, "b2:juntas": 1, "b2:furo": 1, "b2:av": 1,
+      var IDS = { "b2:anexarTopo": 1, "b2:anexarTelhado": 1, "b2:unir": 1, "b2:vinc:a": 1, "b2:vinc:b": 1, "b2:inverterFaces": 1, "b2:juntaCanto": 1, "b2:juntas": 1, "b2:furo": 1, "b2:av": 1,
                   "b2:esc:forma": 1, "b2:esc:giro": 1, "b2:esc:calc": 1, "b2:esc:gc": 1, "b2:esc:av": 1, "b2:gc:q": 1 };
       var ps = [];
       this.secoesProps(info).forEach(function (s) {
@@ -615,6 +618,7 @@
         return rv.op && B().editarLote ? B().editarLote({ op: "lote", id: "vp" + Date.now().toString(36), origem: "vinculos", pedido: "Vínculo da ponta", ops: [rv.op] }) : false;
       }
       if (k === "anexarTopo" || k === "unir" || k === "inverterFaces") { campos = {}; campos[k] = !!valor; }
+      else if (k === "anexarTelhado") campos = { anexarTelhado: valor === "sim" || valor === "nao" ? valor : null };   /* T5 */
       else if (k === "juntaCanto") campos = { juntaCanto: valor === "esquadria" ? "esquadria" : "topo" };
       else if (k === "tipoParede" && global.AlvTipos && global.AlvTipos.TIPOS[valor]) campos = { tipoParede: A().tipoParede(global.AlvTipos.tipo(valor)) };
       else if (k === "tipoLaje") { var tl = A().TIPOS_LAJE.filter(function (t) { return t.id === valor; })[0]; if (tl) campos = { tipoLaje: tl }; }

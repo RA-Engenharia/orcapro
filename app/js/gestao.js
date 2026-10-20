@@ -14454,6 +14454,8 @@
       /* METÁLICA (js/metalcriarui.js): perfil e chapa criados aqui — perfil, giro, justificação,
          comprimento, cotas, posição e aço editáveis (op metalAjustar, um Ctrl+Z por mudança) */
       if (window.MetalCriarUI && MetalCriarUI.ehPecaMetal && MetalCriarUI.ehPecaMetal(info.uid)) { var pmt = MetalCriarUI.propsPeca(info, this); if (pmt) return pmt; }
+      /* T5 (js/bimp3ui.js BimTelhadoPecaUI): a PEÇA da estrutura do telhado (2º clique ou Tab) — apagar, perfil, deslocar, esticar */
+      if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.props) { var ptp = BimTelhadoPecaUI.props(info, this); if (ptp) return ptp; }
       /* P1-C — paleta de Propriedades (js/bimpropsui.js), só
          na prévia do modelador: peça criada aqui (caixa, cobertura, família)
          pede tudo ao registro de parâmetros. Instalação e IFC importado: as de antes. */
@@ -14476,7 +14478,7 @@
         { nome: "Obra", params: [ ro("peca-etapa", "Etapa", info.etapa), ro("peca-fase", "Fase", info.fase) ]
           .concat(el && el.detalhe ? [{ id: "peca-det", rotulo: "Detalhe", tipo: "botao", rotuloBotao: "Detalhe " + el.detalhe, fn: function () { self._pecaDetalhe(el.detalhe); } }] : []) },
         { nome: "Quantidades", params: [ ro("peca-comp", "Comprimento", num(q.comprimento, "m")), ro("peca-area", "Área", num(q.area, "m²")), ro("peca-vol", "Volume", num(q.volume, "m³")) ] }
-      ].concat(window.BimArqUI ? BimArqUI.secoesProps(info) : []).concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
+      ].concat(window.BimArqUI ? BimArqUI.secoesProps(info) : []).concat(window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado ? BimTelhadoPecaUI.secoesTelhado(info) : []).concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []).concat([
         { nome: "Dados", params: [ { id: "peca-ifc", rotulo: "Parâmetros do IFC", tipo: "botao", rotuloBotao: "Ver todos", fn: function () { self._bimVerProps(info); } },
           { id: "peca-familia-salvar", rotulo: "Banco de famílias", tipo: "botao", rotuloBotao: "Salvar família", fn: function () { self._bimSalvarFamilia(info); } } ] }
       ]);
@@ -14532,6 +14534,7 @@
             .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
         } else {
           if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
+          if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado) extras = extras.concat(BimTelhadoPecaUI.secoesTelhado(info));   /* T5: peças editadas do telhado */
           extras = extras.concat(this._pesoSecaoProps(el, ro)).concat(this._abrSecaoProps(info, ro)).concat(this._orcSecaoProps(info)).concat(window.BimEstilo ? BimEstilo.secaoProps(info) : []);
         }
       } catch (eX) {}

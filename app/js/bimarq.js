@@ -1281,7 +1281,7 @@
       return o;
     },
     /* a op `ajustar` — só campos conhecidos, cada um com a sua regra */
-    CAMPOS_AJUSTE: ["anexarTopo", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
+    CAMPOS_AJUSTE: ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes", "linhaLoc", "virar", "uniao", "estrut", "rampa"],   /* P4: linhaLoc, virar, uniao; P9: estrut, rampa */
     ajustar: function (c, campos) {
       if (!c || !campos || typeof campos !== "object") return false;
       var mudou = false;
@@ -1292,6 +1292,11 @@
         if (Object.keys(rn).length) { gravarRestr(c, rn); mudou = true; }
       }
       ["anexarTopo", "unir", "inverterFaces"].forEach(function (k) { if (campos[k] != null && c.tipo === "parede") { c[k] = !!campos[k]; mudou = true; } });
+      /* T5: "Anexar ao telhado" — "sim" | "nao" | null (= automático) */
+      if (campos.anexarTelhado !== undefined && c.tipo === "parede") {
+        if (campos.anexarTelhado === "sim" || campos.anexarTelhado === "nao") c.anexarTelhado = campos.anexarTelhado; else delete c.anexarTelhado;
+        mudou = true;
+      }
       if (campos.juntaCanto != null && c.tipo === "parede") {
         if (campos.juntaCanto === "esquadria") c.juntaCanto = "esquadria"; else delete c.juntaCanto;
         mudou = true;
@@ -1606,9 +1611,31 @@
       if (BT3 && BT3.superficies) arr(estado && estado.telhados).forEach(function (t) { BT3.superficies(t).forEach(function (s) { out.push(s); }); });
       return out;
     },
+    /* T5 (20/10/2026): as superfícies de TELHADO que valem para esta parede. A parede que PASSA POR CIMA do telhado (topo
+       acima do plano mais alto ao longo dela + o pacote: caixote, platibanda, oitão mais alto) não é rebaixada por ele —
+       com ou sem "anexar topo" automático (Casa 487: o telhado da garagem encostado no caixote abria a lateral do caixote).
+       "Anexar ao telhado: Não" tira todos os telhados; "Sim" anexa (para cima ou para baixo); anexar topo MARCADO À MÃO
+       segue como sempre (a pessoa pediu). Laje não muda (a parede para sob a laje). */
+    supsTelhado: function (c, sups) {
+      var modo = c && c.anexarTelhado, manual = !!(c && c.anexarTopo && !c.anexarTopoAuto);
+      if (modo === "sim" || (manual && modo !== "nao")) return sups;
+      var f = frameDe(c), proprio = f.y1, d = [f.co, -f.si];
+      return arr(sups).filter(function (s) {
+        if (!s || !s.telhado) return true;
+        if (modo === "nao") return false;
+        var ymax = -Infinity, n = 0;
+        for (var k = 0; k <= 20; k++) {
+          var u = -f.L / 2 + f.L * k / 20, x = f.cx + u * d[0], z = f.cz + u * d[1];
+          if (!s.cobre(x, z, f.t / 2)) continue;
+          var y = s.y(x, z); n++; if (y > ymax) ymax = y;
+        }
+        return !(n > 0 && proprio > ymax + Math.max(0.10, num(s.esp, 0)));
+      });
+    },
     topoParede: function (c, sups) {
+      sups = this.supsTelhado(c, sups);
       if (c.arco && Curva()) return Curva().topo(c, sups);   /* CURVA: trechos do arco */
-      var f = frameDe(c), base = f.y0, proprio = f.y1, anexar = !!c.anexarTopo;
+      var f = frameDe(c), base = f.y0, proprio = f.y1, anexar = !!c.anexarTopo || c.anexarTelhado === "sim";
       var U0 = -f.L / 2 - 2 * f.t - 0.5, U1 = f.L / 2 + 2 * f.t + 0.5, C = [f.cx, f.cz], d = [f.co, -f.si];
       function P(u) { return [C[0] + u * d[0], C[1] + u * d[1]]; }
       var bps = [U0, U1];

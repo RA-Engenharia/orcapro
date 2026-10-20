@@ -703,7 +703,8 @@
       var ids = (fam.solidos || []).map(function (s) { return String(s.id); }).sort().join(",");
       for (var i = 0; i < LISTA.length; i++) {
         var b = LISTA[i];
-        if (!b.partesMoveis || b.categoria !== fam.categoria || b.id === fam.id || b.hospedagem !== fam.hospedagem) continue;
+        /* a cópia de obra pode ter o MESMO id da biblioteca (a pele de vidro gravada no .opbim): ela herda da família de mesmo id, que tem as partes */
+        if (!b.partesMoveis || b.categoria !== fam.categoria || b.hospedagem !== fam.hospedagem) continue;
         if ((b.solidos || []).map(function (s) { return String(s.id); }).sort().join(",") === ids) return JSON.parse(JSON.stringify({ partesMoveis: b.partesMoveis, parametros: b.parametros }));
       }
       return null;

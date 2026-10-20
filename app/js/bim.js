@@ -1297,6 +1297,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     scene.add(ln); _selLn = ln;
   }
   S._contornoSelecao = contornoSelecao;
+  /* T5: o REALCE da peça escolhida da estrutura do telhado (triângulos soltos do BimTelhadoEstrut.malhaPeca; null tira).
+     Por cima de tudo (a telha não esconde a terça) e fora do raio (não atrapalha o próximo clique). */
+  var _telPeca = null, _telPecaMat = null;
+  S._telPecaRealce = function (pos) {
+    if (_telPeca) { scene.remove(_telPeca); if (_telPeca.geometry) _telPeca.geometry.dispose(); _telPeca = null; }
+    if (!pos || !pos.length) return false;
+    if (!_telPecaMat) _telPecaMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+    var g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    var m = new THREE.Mesh(g, _telPecaMat); m.renderOrder = 1001; m.raycast = function () {};
+    scene.add(m); _telPeca = m; return true;
+  };
 
   /* =====================================================================
    * AMBIENTE DE PROGRAMA DE PROJETO NO 3D (30/09/2026) — pedido do Rogério: interface
@@ -2114,7 +2125,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (!ref) { ocultos[faixa.e] = 1; continue; }
           /* a peça em destaque (seleção, 4D, conflito) é desenhada por ela
              mesma — fora do índice da vista, como no da principal */
-          if (!existeNaVista(ref, est) || _desenhaPorSi(ref)) { ocultos[faixa.e] = 1; continue; }
+          if (!existeNaVista(ref, est) || _desenhaPorSi(ref)) { ocultos["#" + f] = 1; continue; }
           var cor = corNaVista(ref, est); nPecas++;
           if (cor[3] < 1) algumT = true;
           var ini = faixa.iniVert * 4, fim = ini + faixa.nVert * 4;
@@ -5144,8 +5155,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var faixa = fx[f], ref = faixa.ref;
         if (!ref) continue;
         if (_desenhaPorSi(ref)) {
-          /* sai do mesclado e volta a ser desenhada por si */
-          ocultos[faixa.e] = 1;
+          /* sai do mesclado e volta a ser desenhada por si.
+             ⚠ SÓ ESTA FAIXA ("#f"), NÃO O ELEMENTO: o móvel/a porta é UM elemento de várias malhas; esconder `faixa.e` tirava do mesclado
+             todas as malhas do elemento no mesmo material, e só a parte aberta voltava a ser desenhada — o resto do armário sumia
+             (1.2.162, defeito achado ao abrir o .opbim da obra) */
+          ocultos["#" + f] = 1;
           /* ⚠ AS DUAS CAMADAS, não só a 0: a 0 é a que a câmera desenha, a 1 é
              a que o raio do clique olha. Só na 0, a peça SELECIONADA (ou em
              andamento no 4D, ou em conflito) sumia para o clique e para a trena:
@@ -5155,7 +5169,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
         ref.layers.set(1);
         var oculta = ref.visible === false;
-        if (oculta) ocultos[faixa.e] = 1;
+        if (oculta) ocultos["#" + f] = 1;
         var c = _corDoMaterial(ref.material);
         if (!oculta && c[3] < 1) algumTransp = true;
         if (!oculta) { nVis++; if (_comTextura(ref)) nComTex++; }
@@ -6402,6 +6416,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
     try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
     try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}   /* M5: as alças do componente */
+    try { if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.aoSelecionar) BimTelhadoPecaUI.aoSelecionar(novo); } catch (_) {}   /* T5: a peça do telhado sai junto com a seleção */
     try { if (window.BimVaoArr && BimVaoArr.aoSelecionar) BimVaoArr.aoSelecionar(novo); } catch (_) {}   /* PORTAS E JANELAS (js/bimvaoarr.js): as cotas temporárias da abertura selecionada */
     try { if (window.BimInstCon && BimInstCon.aoSelecionar) BimInstCon.aoSelecionar(novo); } catch (_) {}   /* CONECTORES À VISTA (js/biminstcon.js): o "+" de cada ponto livre da peça de instalação */
     return novo;
@@ -6440,6 +6455,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* FLUIDEZ (rodada 3): no nível Baixo a caixa e o ralo são um CONTORNO fino e o tubo uma linha — o raio passava pelo
        miolo do símbolo e não pegava nada. Sem peça sob o cursor, vale a instalação mais perto NA TELA (poucos px). */
     if (!u && window.BimInstUI && BimInstUI.pickTela) { try { u = BimInstUI.pickTela(e.clientX, e.clientY) || null; if (u && !(S.meshPorUid && S.meshPorUid[u])) u = null; } catch (_) { u = null; } }
+    /* T5 (js/bimp3ui.js BimTelhadoPecaUI): telhado com estrutura — clicar de novo no telhado já selecionado pega a PEÇA sob o cursor */
+    if (u && !ctrl && window.BimTelhadoPecaUI && BimTelhadoPecaUI.clique) { try { BimTelhadoPecaUI.clique(u, _ultimosHits.slice(), selAtual()); } catch (_) {} }
     if (u) selAplicar(compExp(u), ctrl ? 'alternar' : 'trocar'); else if (!ctrl) selAplicar([], 'trocar');
   }
   S._sel3Clique = function (e) { if (!S || !S.alive || visitante) return false; sel3Clique(e); return true; };
@@ -18041,6 +18058,7 @@ window.BIM = {
   planta2d: function () { return (S && S._planta2d) ? S._planta2d : null; },
   /* fecha o contorno/caminho em andamento (o mesmo que o Enter) */
   b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
+  realceTelhadoPeca: function (pos) { return (S && S._telPecaRealce) ? S._telPecaRealce(pos) : false; },   /* T5 */
   /* uma operação do modelador vinda da tela (Propriedades): ajustar, renomear,
      apagar, mover — vira op como as outras (desfaz/refaz).
      P1-C: e as do registro de parâmetros (js/bimparam.js, js/bimpropsui.js):

@@ -134,7 +134,15 @@
       else if (def.dado === "lista" || def.dado === "fase") { ed.tipo = "lista"; ed.opcoes = arr(def.opcoes).map(function (o) { return { id: String(o), rotulo: String(o) }; }); }
       /* P10 (js/bimfases.js): as fases do PROJETO (op fases), não só as do template */
       if (def.dado === "fase" && global.BimFases && global.BimFases.opcoesProps && ctx && ctx.estado) ed.opcoes = global.BimFases.opcoesProps(ctx.estado, def.id);
-      else if (def.dado === "material") {
+      else if (def.dado === "material" && def.fonte === "familia") {
+        /* TIPOS: material de parâmetro de FAMÍLIA = os nomes que o 3D conhece (mobiliário/paisagismo) + o valor de hoje */
+        ed.tipo = "lista"; var vistos = {}, FM = global.FamiliasMob, nomes = [];
+        if (FM && FM.MAT) Object.keys(FM.MAT).forEach(function (k) { nomes.push(FM.MAT[k]); });
+        if (FM && FM.TECIDOS) nomes = nomes.concat(FM.TECIDOS);
+        var atual = arr(pecas)[0] && arr(pecas)[0].porId && arr(pecas)[0].porId[def.id] ? txt(arr(pecas)[0].porId[def.id].valor) : "";
+        if (atual) nomes.unshift(atual);
+        ed.opcoes = nomes.filter(function (n) { if (!n || vistos[n]) return false; vistos[n] = 1; return true; }).map(function (n) { return { id: n, rotulo: n }; });
+      } else if (def.dado === "material") {
         var A = Am(); ed.tipo = "lista";
         ed.opcoes = A ? Object.keys(A.MATERIAIS).map(function (k) { return { id: k, rotulo: A.MATERIAIS[k].rotulo }; }) : [];
       } else if (def.dado === "materialProjeto") {
@@ -164,6 +172,8 @@
         ed.tipo = "numero"; return ed;
       }
       if (/^ajustarTipo\.valores\./.test(e) && lado === "instancia") ed.tipoAfeta = true;
+      /* TIPOS: número de parâmetro de família nunca negativo (o zero é barrado pelo avaliador em opTipo, onde a família não aceita) */
+      if (def.fonte === "familia" && ed.tipo === "numero" && !ed.faixa && def.dado !== "angulo") ed.faixa = { min: 0, max: null };
       var mr = /^ajustar\.restricoes\.(\w+)$/.exec(e) || (/^ajustar\.escada\.(desnivel|base)$/.test(e) && pecas.every(function (p) { return presa(elDe(ctx.estado, p.id)); }) ? [0, /desnivel$/.test(e) ? "alturaNaoConectada" : "deslocBase"] : null);
       if (mr) {
         var campo = mr[1];
@@ -269,6 +279,7 @@
         var fx = ed.faixa;
         if (fx && ((fx.min != null && r.valor < fx.min - 1e-9) || (fx.max != null && r.valor > fx.max + 1e-9))) {
           var cas = def.dado === "comprimento" ? 2 : 2;
+          if (fx.max == null) return { ok: false, erro: "Valor inválido: não pode ser menor que " + br(fx.min, cas) + (def.un ? " " + def.un : "") + "." };
           return { ok: false, erro: "Fora da faixa: de " + br(fx.min, cas) + " a " + br(fx.max, cas) + (def.un ? " " + def.un : "") + "." };
         }
         return r;
@@ -522,13 +533,31 @@
       var t = arr(BP.tipos(ctx.estado, cat, ctx.deps)).filter(function (q) { return String(q.id) === String(tipoId); })[0];
       if (!t || !t.instancias.length) return null;
       var rep = ctx.res.porId[t.instancias[0]]; if (!rep) return null;
+      var elRep = elDe(ctx.estado, rep.id), famDef = null; try { famDef = elRep && elRep.famId != null && ctx.deps && typeof ctx.deps.familia === "function" ? ctx.deps.familia(elRep.famId) : null; } catch (eFd) { famDef = null; }
+      function pFam(nome) { var k = txt(nome).toLowerCase(), r = null; arr(famDef && famDef.parametros).forEach(function (p) { if (p && txt(p.nome).toLowerCase() === k) r = p; }); return r; }
+      /* TIPOS: Largura/Altura/Profundidade/Espessura das Cotas = o parâmetro de mesmo nome da família (editável no tipo, ou fórmula); sem ele, a linha some */
+      var COTA = { famLargura: "Largura", famAltura: "Altura", famProfundidade: "Profundidade", famEspessuraFolha: "Espessura_folha" };
       var secoes = BP.secoes(rep, { lado: "tipo" }).map(function (s) {
-        return { grupo: s.grupo, linhas: s.itens.map(function (it) {
-          var ed = BimPropsUI.editor(ctx, it.def, [rep], { lado: "tipo" });
-          return { id: it.def.id, nome: it.def.nome, def: it.def, dado: it.def.dado, un: it.def.un || "", valor: it.valor, bruto: it.valor, texto: it.texto, editor: ed };
-        }) };
-      });
+        var linhas = [];
+        s.itens.forEach(function (it) {
+          var d = it.def, pf = null;
+          if (famDef && d.calc && COTA[d.calc] && /^família \(tipo\)$/.test(txt(d.escrita))) {
+            pf = pFam(COTA[d.calc]);
+            if (!pf || it.valor == null || it.valor === "") return;
+            var d2 = {}; Object.keys(d).forEach(function (k) { d2[k] = d[k]; });
+            d2.escrita = pf.formula || pf.escopo === "instancia" ? null : "ajustarTipo.valores.fam:" + pf.nome; d2.leitura = !d2.escrita; d2.fonte = "familia"; d2.dado = d.dado;
+            d = d2;
+          }
+          var ed = BimPropsUI.editor(ctx, d, [rep], { lado: "tipo" });
+          if (ed.leitura && d.fonte === "familia" && /^FAM:/.test(txt(d.id))) { var pq = pFam(d.id.slice(4)); if (pq && pq.formula) ed.motivo = "Calculado pela fórmula: " + pq.formula; }
+          else if (ed.leitura && pf && pf.formula) ed.motivo = "Calculado pela fórmula: " + pf.formula;
+          linhas.push({ id: it.def.id, nome: it.def.nome, def: d, dado: d.dado, un: d.un || "", valor: it.valor, bruto: it.valor, texto: it.texto, editor: ed });
+        });
+        return { grupo: s.grupo, linhas: linhas };
+      }).filter(function (s) { return s.linhas.length; });
       return { cat: cat, tipoId: String(t.id), nome: t.nome, projeto: !!t.projeto, n: t.instancias.length, instancias: t.instancias.slice(), secoes: secoes, rep: rep.id,
+               /* TIPOS: tipo de família ainda da biblioteca (não é cópia da obra): editar pede duplicar */
+               biblioteca: !t.projeto && !!famDef,
                familia: rep.porId.ELEM_FAMILY_PARAM ? rep.porId.ELEM_FAMILY_PARAM.valor : "" };
     },
     /* as mudanças do diálogo ({defId: valor lido}) → UMA op ajustarTipo */
@@ -553,7 +582,31 @@
       if (perfil) Object.keys(perfil).forEach(function (q) { valores[q] = perfil[q]; });
       if (!Object.keys(valores).length && !nome) return { ok: false, erro: "Nada mudou." };
       var r = BP.editarTipo(ctx.estado, mt.cat, mt.tipoId, valores, nome || null, ctx.deps);
+      if (r.ok) { var ev = BimPropsUI.conferirFamilia(ctx, mt, valores); if (ev) return { ok: false, erro: ev }; }
       return r.ok ? { ok: true, op: r.op, instancias: r.instancias } : { ok: false, erro: r.motivo };
+    },
+    /* TIPOS: família com valor novo no tipo — avalia a peça representante com os valores; se a família não aceita (medida ≤ 0, erro de fórmula), recusa com o motivo */
+    conferirFamilia: function (ctx, mt, valores) {
+      var ks = Object.keys(valores || {}).filter(function (k) { return k.indexOf("fam:") === 0; });
+      if (!ks.length || !ctx.deps || typeof ctx.deps.avaliarFam !== "function") return null;
+      var c = elDe(ctx.estado, mt.rep); if (!c || c.famId == null) return null;
+      var inst = clone(c.inst || {}), tv = clone(inst.$tipo || {});
+      ks.forEach(function (k) { tv[k.slice(4)] = valores[k]; });
+      inst.$tipo = tv;
+      /* zero só onde a família usa zero (tipo ou padrão) ou onde o nome diz que é folga/recuo/pé: o resto é medida de peça */
+      var famD = typeof ctx.deps.familia === "function" ? ctx.deps.familia(c.famId) : null, rec = null;
+      ks.forEach(function (k) {
+        var nome = k.slice(4), v = Number(valores[k]);
+        if (rec || typeof valores[k] !== "number" || !(v <= 0)) return;
+        var pf = null; arr(famD && famD.parametros).forEach(function (p) { if (p && txt(p.nome).toLowerCase() === nome.toLowerCase()) pf = p; });
+        if (!pf || (pf.tipoDado !== "comprimento" && pf.tipoDado !== "numero" && pf.tipoDado !== "inteiro")) return;
+        var temZero = pf.valor === 0 || arr(famD.tipos).some(function (t) { var q = t && t.valores ? t.valores[pf.nome] : undefined; return q === 0; });
+        if (!temZero && !/(^|_)(pe|peitoril|base|folga|desloc\w*|recuo|offset|piso|inclinacao)($|_)/i.test(nome)) rec = "\"" + nome.replace(/_/g, " ") + "\" não pode ser zero nem negativo: é medida da peça.";
+      });
+      if (rec) return "A família não aceita esse valor: " + rec;
+      var av = null; try { av = ctx.deps.avaliarFam(c.famId, c.tipoId, inst); } catch (e) { return "A família recusou o valor: " + (e && e.message); }
+      if (av && av.ok === false) return "A família não aceita esse valor: " + txt(arr(av.erros)[0] || "medida inválida") + ".";
+      return null;
     },
     /* "Duplicar…": tipo novo com os valores deste; as peças selecionadas passam para ele */
     opDuplicar: function (ctx, mt, nome, ids) {
@@ -981,7 +1034,7 @@
       var mt = this.modeloTipo(ctx, cat, tipoId); if (!mt) { this._status("Tipo não encontrado."); return false; }
       var doc = raizS.ownerDocument || document, velho = raizS.querySelector(".bp1-dlg-fundo");
       if (velho) velho.parentNode.removeChild(velho);
-      var volta = doc.activeElement, mud = {};
+      var volta = doc.activeElement, mud = {}, fecharAposNome = false;
       var fundo = el(doc, "div", "bp1-dlg-fundo"), dlg = el(doc, "div", "bp1-dlg");
       dlg.setAttribute("role", "dialog"); dlg.setAttribute("aria-modal", "true"); dlg.setAttribute("aria-labelledby", "bp1-dlg-tit"); dlg.setAttribute("data-bp1", "dialogo-tipo");
       fundo.appendChild(dlg); raizS.appendChild(fundo);
@@ -1045,6 +1098,23 @@
           var ae = doc.activeElement; if (ae && dlg.contains(ae) && ae.onchange && ae.getAttribute("data-bp1-tp")) ae.onchange();
           if (dlg.querySelector("[aria-invalid=true]")) { mostrarErro("Corrija o valor marcado."); return false; }
           if (!Object.keys(mud).length) return true;
+          /* TIPOS: tipo de família da biblioteca não se edita no lugar: duplica para a obra (uma op só, um Ctrl+Z) e edita a cópia */
+          if (mt.biblioteca) {
+            pedirNome("Esta família é da biblioteca. Duplicar o tipo para editar? Nome do tipo novo:", mt.nome + " (obra)", function (nm) {
+              var cB = self.contextoTela(), n2 = txt(nm).trim();
+              if (!n2) return { ok: false, erro: "Dê um nome ao tipo novo." };
+              if (arr(BPm().tipos(cB.estado, mt.cat, cB.deps)).some(function (t) { return txt(t.nome).toLowerCase() === n2.toLowerCase(); })) return { ok: false, erro: "Já existe um tipo \"" + n2 + "\" nesta categoria." };
+              var rB = self.opTipo(cB, mt, mud, n2);
+              if (!rB.ok) return rB;
+              if (!self.despachar([rB.op], "Duplicar e editar tipo")) return { ok: false, erro: "O editor recusou a mudança." };
+              self._status("Tipo " + n2 + " criado na obra: " + mt.n + (mt.n === 1 ? " peça passou" : " peças passaram") + " a ele.");
+              var ntB = self.modeloTipo(self.contextoTela(), mt.cat, rB.op.tipoId); if (ntB) mt = ntB;
+              mud = {};
+              if (fecharAposNome) fechar();
+              return { ok: true };
+            });
+            return false;
+          }
           var c2 = self.contextoTela(), r = self.opTipo(c2, mt, mud);
           if (!r.ok) { mostrarErro(r.erro); return false; }
           if (!self.despachar([r.op], "Editar tipo")) { mostrarErro("O editor recusou a mudança."); return false; }
@@ -1083,8 +1153,8 @@
             return { ok: true };
           });
         };
-        ok.onclick = function () { if (aplicar()) fechar(); };
-        ap.onclick = function () { if (aplicar()) pintar(); };
+        ok.onclick = function () { fecharAposNome = true; if (aplicar()) fechar(); };
+        ap.onclick = function () { fecharAposNome = false; if (aplicar()) pintar(); };
         cn.onclick = fechar;
       }
       dlg.onkeydown = function (ev) {
