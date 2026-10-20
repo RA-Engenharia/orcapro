@@ -259,6 +259,13 @@
           D.circ(c[0], c[1], s.raio * M.k, cam); nSol++;
         }
       });
+      if (!nSol && m.simbolo && (arr(m.simbolo.copa).length || m.simbolo.faixa)) {
+        /* planta de paisagismo: o símbolo de copa (círculos de projeção) ou a faixa de forração no lugar da caixa que envolve a peça inteira */
+        arr(m.simbolo.copa).forEach(function (cp) { var q = W(cp.x, cp.z); D.circ(q[0], q[1], Math.max(0.8, cp.r * M.k), cam); });
+        arr(m.simbolo.tronco).forEach(function (tr) { var q = W(tr.x, tr.z); D.circ(q[0], q[1], Math.max(0.3, tr.r * M.k), cam); });
+        if (m.simbolo.faixa) { var fa = m.simbolo.faixa, hw = (fa.larg || 1) / 2, hp = (fa.prof || 1) / 2; D.poli([W(fa.x - hw, fa.z - hp), W(fa.x + hw, fa.z - hp), W(fa.x + hw, fa.z + hp), W(fa.x - hw, fa.z + hp)], cam, true); }
+        nSol++;
+      }
       if (!nSol) D.poli(polyPapel(M, m.pts), cam, true);
     });
   }

@@ -326,10 +326,12 @@
       }
       arr(st.rufosEncontro).forEach(function (r) {
         if (!r || !r.ok || !r.encontros.length) return;
-        var m = self._m(THREE, "capa"), Cb = BC(), PR = Cb ? Cb.PADRAO_RUFO : { abaTelha: 0.1, abaParede: 0.15, contraDe: 0.1, contraAte: 0.22 }, n = 0;
+        var m = self._m(THREE, "capa"), Cb = BC(), PR = { abaTelha: 0.1, abaParede: 0.15, contraDe: 0.1, contraAte: 0.22 }, n = 0;
         var tel = arr(st.telhados).filter(function (t) { return String(t.id) === String(r.telhado); })[0];
         r.encontros.forEach(function (e) {
-          var nI = e.nIn, ab = PR.abaTelha;
+          /* as dobras do encontro (motor: fonte por posição ou valor de partida); projeto salvo antes do PLUVIAL 2 cai no padrão */
+          var dbr = e.dobras || {}, ab = fin(dbr.abaTelha) ? dbr.abaTelha : PR.abaTelha, ap = fin(dbr.abaParede) ? dbr.abaParede : PR.abaParede,
+              cDe = fin(e.contraDe) ? e.contraDe : PR.contraDe, cAte = fin(e.contraAte) ? e.contraAte : PR.contraAte, nI = e.nIn;
           e.segs.forEach(function (s) {
             var fa = s.fa, fb = s.fb, ia = { x: fa.x + nI.x * ab, z: fa.z + nI.z * ab }, ib = { x: fb.x + nI.x * ab, z: fb.z + nI.z * ab };
             function yT(p, y0) { var y = Cb && tel ? Cb.topoTelhaEm(tel, p.x, p.z) : null; return (y == null ? y0 : y) + 0.002; }
@@ -338,11 +340,11 @@
               /* a aba sobre a telha e a aba encostada na parede */
               addMesh(new THREE.Mesh(chapa([[fa.x, s.yA + 0.002, fa.z], [fb.x, s.yB + 0.002, fb.z], [ib.x, yT(ib, s.yB), ib.z], [ia.x, yT(ia, s.yA), ia.z]], 0, 1, 0, 0.004), m), r.id, r.ifc, m);
               var a4 = off(fa, 0.004), b4 = off(fb, 0.004);
-              addMesh(new THREE.Mesh(chapa([[a4.x, s.yA, a4.z], [b4.x, s.yB, b4.z], [b4.x, s.yB + PR.abaParede, b4.z], [a4.x, s.yA + PR.abaParede, a4.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
+              addMesh(new THREE.Mesh(chapa([[a4.x, s.yA, a4.z], [b4.x, s.yB, b4.z], [b4.x, s.yB + ap, b4.z], [a4.x, s.yA + ap, a4.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
             }
             /* o contrarrufo: embutido na parede, cobre a aba do rufo */
             var a9 = off(fa, 0.009), b9 = off(fb, 0.009);
-            addMesh(new THREE.Mesh(chapa([[a9.x, s.yA + PR.contraDe, a9.z], [b9.x, s.yB + PR.contraDe, b9.z], [b9.x, s.yB + PR.contraAte, b9.z], [a9.x, s.yA + PR.contraAte, a9.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
+            addMesh(new THREE.Mesh(chapa([[a9.x, s.yA + cDe, a9.z], [b9.x, s.yB + cDe, b9.z], [b9.x, s.yB + cAte, b9.z], [a9.x, s.yA + cAte, a9.z]], nI.x, 0, nI.z, 0.004), m), r.id, r.ifc, m);
             n++;
           });
         });

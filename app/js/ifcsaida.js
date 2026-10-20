@@ -434,7 +434,14 @@
                     importa: "IfcFooting → OST_StructuralFoundation pela tabela do importador (revit-ifc, IFCCategoryUtil.cs)" },
     estaca:       { ifc: "IFCPILE", tipo: "BORED", revit: "Fundações estruturais", linha: "Fundações estruturais\t\tIfcSlab\tBASESLAB", abrirIfc: "Fundações estruturais", abrirIfcOst: "OST_StructuralFoundation",
                     importa: "IfcPile → OST_StructuralFoundation pela tabela do importador (revit-ifc, IFCCategoryUtil.cs)" },
-    radier:       { ifc: "IFCSLAB", tipo: "BASESLAB", revit: "Fundações estruturais", linha: "Fundações estruturais\t\tIfcSlab\tBASESLAB", abrirIfc: "Fundações estruturais", abrirIfcOst: "OST_StructuralFoundation" }
+    radier:       { ifc: "IFCSLAB", tipo: "BASESLAB", revit: "Fundações estruturais", linha: "Fundações estruturais\t\tIfcSlab\tBASESLAB", abrirIfc: "Fundações estruturais", abrirIfcOst: "OST_StructuralFoundation" },
+    /* T3 (20/10/2026): as PEÇAS do telhado paramétrico (js/ifcp3.js escreverPacote), partes do IfcRoof. A categoria em que
+       o importador põe cada uma NÃO foi conferida no IFCCategoryUtil.cs: sem abrirIfc (pendente de ida e volta no Revit) */
+    membroTelhado: { ifc: "IFCMEMBER", revit: "Telhados", parte: "telhado" },
+    vigaTelhado:   { ifc: "IFCBEAM", tipo: "BEAM", revit: "Telhados", parte: "telhado" },
+    pilarTelhado:  { ifc: "IFCCOLUMN", tipo: "COLUMN", revit: "Telhados", parte: "telhado" },
+    telhaTelhado:  { ifc: "IFCCOVERING", tipo: "ROOFING", revit: "Telhados", parte: "telhado" },
+    placaTelhado:  { ifc: "IFCPLATE", tipo: "SHEET", revit: "Telhados", parte: "telhado" }
   });
   /* a entidade de cada chave do editor (família, volume livre) → a chave do mapa */
   var MAPA_DA_ENTIDADE = { IFCWALL: "parede", IFCSLAB: "laje", IFCCOLUMN: "pilar", IFCBEAM: "viga", IFCROOF: "cobertura", IFCDOOR: "porta", IFCWINDOW: "janela", IFCBUILDINGELEMENTPROXY: "generico",

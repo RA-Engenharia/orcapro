@@ -426,7 +426,8 @@
                '<button type="button" class="bsi-bt" data-bsi-sel="' + c.k + ':projeto" title="O projeto inteiro">No projeto <b>' + c.nProjeto + "</b></button></div></div>";
         });
         h += '<div class="bsi-dica">Ctrl + clique soma à seleção.</div></div></div>';
-        var ed = alvo.editavel, mod = modelador(), nIfc = !ed;
+        var ed = alvo.editavel, mod = modelador(), nIfc = !ed, invs = {};
+        try { if (alvosN === 1 && /^edit:/.test(String(alvo.uid)) && global.BimVaoArr && global.BimVaoArr.acoes) global.BimVaoArr.acoes(String(alvo.uid).slice(5)).forEach(function (q) { invs[q.id] = 1; }); } catch (eIv) {}
         var acoes = [
           { a: "apagar", r: "Apagar", n: alvosN, tecla: "Delete", off: nIfc },
           { a: "ocultar", r: "Ocultar na vista", n: alvosN },
@@ -439,6 +440,8 @@
           { a: "elevar", r: "Elevar…", tecla: "EL", n: alvosN, off: !(ed && mod && global.BimElevarUI) },   /* ELEVAR (js/bimelevarui.js) */
           { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
           { a: "trocar-tipo", r: "Trocar tipo/perfil…", off: !ed },
+          { a: "inv-fora", r: "Inverter dentro/fora", tecla: "Espaço", off: !(invs.fora) },   /* PORTAS E JANELAS (js/vaoinverter.js) */
+          { a: "inv-mao", r: "Espelhar (mão)", tecla: "⇧ Espaço", off: !(invs.mao) },
           { a: "lista", r: "Lista da seleção" }
         ];
         h += '<div class="bsi-sep"></div>';
@@ -491,6 +494,7 @@
       if (a === "elevar") return this.comando("elevar");
       if (a === "props") return this.propriedades();
       if (a === "trocar-tipo") return this.trocarTipo();
+      if ((a === "inv-fora" || a === "inv-mao") && uidAlvo && global.BimVaoArr && global.BimVaoArr.inverter) return global.BimVaoArr.inverter(a === "inv-fora" ? "fora" : "mao", String(uidAlvo).replace(/^edit:/, ""));
       if (a === "lista") return this.lista(alvos);
       return null;
     },

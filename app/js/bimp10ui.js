@@ -31,9 +31,10 @@
   function lerVista() {
     var v = null; try { v = JSON.parse(global.localStorage.getItem(CHAVE_VISTA) || "null"); } catch (e) { v = null; }
     v = v && typeof v === "object" ? v : {};
-    return { fase: v.fase || null, filtro: v.filtro || "tudo", escolha: v.escolha && typeof v.escolha === "object" ? v.escolha : {} };
+    return { fase: v.fase || null, filtro: v.filtro || "tudo", modo: v.modo && v.modo !== "livre" ? v.modo : null, realce: !!v.realce, escolha: v.escolha && typeof v.escolha === "object" ? v.escolha : {} };
   }
-  function gravarVista(v) { try { global.localStorage.setItem(CHAVE_VISTA, JSON.stringify(v)); } catch (e) {} }
+  /* o modo "livre" (a apresentação da reforma está no ar: nada some pelo filtro) nunca fica gravado */
+  function gravarVista(v) { try { global.localStorage.setItem(CHAVE_VISTA, JSON.stringify(v.modo === "livre" ? { fase: v.fase, filtro: v.filtro, modo: null, realce: false, escolha: v.escolha } : v)); } catch (e) {} }
 
   var BimP10UI = {
     ativo: previa,
@@ -279,12 +280,44 @@
       var v = this.vista();
       if (o && o.fase !== undefined) v.fase = o.fase;
       if (o && o.filtro) v.filtro = global.BimFases ? global.BimFases.filtro(o.filtro).id : o.filtro;
+      if (o && (o.fase !== undefined || o.filtro || o.modo !== undefined || o.realce !== undefined)) {
+        /* ANTES / OBRA / DEPOIS (js/bimapresentacao.js): o modo é só o NOME da combinação fase + filtro (+ realce da obra);
+           quem muda a fase ou o filtro por outro caminho (Fases, Filtro de fase, Propriedades) volta ao que a combinação disser */
+        v.realce = o.realce !== undefined ? !!o.realce : false;
+        v.modo = o.modo !== undefined ? o.modo : null;
+        var AP = global.BimApresentacao, st0 = this.estado();
+        if (v.modo == null && AP && st0) v.modo = AP.modoDaVista(st0, this.fase(st0), v.filtro, v.realce);
+      }
       if (o && o.escolha) Object.keys(o.escolha).forEach(function (k) { v.escolha[k] = o.escolha[k]; });
       gravarVista(v);
       if (this._3d) this._3d.refazer();
+      this._replantar();
       try { if (global.BimShell && global.BimShell.repintarVista) global.BimShell.repintarVista(); } catch (e) {}
+      try { if (typeof global.dispatchEvent === "function" && typeof global.CustomEvent === "function") global.dispatchEvent(new global.CustomEvent("bim:p10-vista", { detail: { modo: v.modo, fase: this.fase(), filtro: v.filtro } })); } catch (eE) {}
       return v;
     },
+    /* a planta 2D é cortada da cena: com a fase trocada, as plantas abertas se refazem (a que está escondida refaz ao aparecer) */
+    _replantar: function () {
+      var B2 = global.Bim2D; if (!B2 || !B2.plantasAbertas) return 0;
+      var n = 0;
+      try {
+        B2.plantasAbertas().forEach(function (k) {
+          var c = B2._cache && B2._cache[k]; if (!c) return;
+          if (B2.visivel(k)) { var vb = c.vb ? JSON.parse(JSON.stringify(c.vb)) : null; if (B2.redesenhar(k, true) && vb && B2._aplicarVb) B2._aplicarVb(k, vb); n++; }
+          else c.sujo = true;
+        });
+      } catch (e) {}
+      return n;
+    },
+    /* ANTES / OBRA / DEPOIS / COMPARAR de um clique — pelo BimFases (a mesma fase e o mesmo filtro das Propriedades da vista) */
+    definirModo: function (modo) {
+      var AP = global.BimApresentacao, st = this.estado();
+      if (!AP || !st || !AP.temFases(st)) return null;
+      var m = AP.modoVista(st, modo); if (!m) return null;
+      return this.definirVista({ fase: m.fase, filtro: m.filtro, realce: m.realce, modo: m.modo });
+    },
+    modo: function () { return this.vista().modo || null; },
+
     /* "Fase" e "Filtro da fase" nas Propriedades da vista 3D (js/gestao.js _bimPropsVista, gancho P10) */
     propsVista: function (ret) {
       var BF = global.BimFases; if (!previa() || !BF || !ret || !Array.isArray(ret.secoes)) return ret;
@@ -485,40 +518,61 @@
       grp.name = "p10-fases"; api.scene.add(grp);
       function limpar() { grp.children.slice().forEach(function (o) { grp.remove(o); if (o.geometry) o.geometry.dispose(); }); }
       function mat(orig, g) {
-        var k = orig.uuid + "|" + (g.meioTom ? "m" : "") + "|" + g.opacidade;
+        var k = orig.uuid + "|" + (g.meioTom ? "m" : "") + "|" + g.opacidade + "|" + (g.tinta || "");
         if (cache[k]) return cache[k];
         var c = orig.clone();
         if (g.meioTom && c.color) c.color.lerp(new THREE.Color(1, 1, 1), 0.55);
+        /* OBRA (realce): o que SAI vira vermelho translúcido; o que ENTRA ganha um tom verde e um brilho leve.
+           ⚠ O VERMELHO VAI NO EMISSIVE, não só na cor: no estilo Realista/Textura o js/bim.js "veste" o material (texVestirMat) e REESCREVE a cor
+           (branca, para a textura aparecer) — inclusive na cópia daqui, que herda o userData.tex. A cor tingida das paredes de tijolo aparente se perdia
+           (51 de 84 malhas vermelhas no e2e); o emissive ninguém mexe. */
+        if (g.tinta === "demolir") { if (c.color) c.color.lerp(new THREE.Color(0xe53935), 0.7); if (c.emissive) { c.emissive.setHex(0xd32f2f); c.emissiveIntensity = 0.75; } }
+        if (g.tinta === "novo") { if (c.color) c.color.lerp(new THREE.Color(0x1faa5c), 0.4); if (c.emissive) { c.emissive.setHex(0x16a34a); c.emissiveIntensity = 0.32; } }
         if (g.opacidade < 1) { c.transparent = true; c.opacity = g.opacidade; c.depthWrite = false; }
         return (cache[k] = c);
       }
       var linhaMat = {
         tracejada: new THREE.LineDashedMaterial({ color: 0x404040, dashSize: 0.18, gapSize: 0.12, transparent: true, opacity: 0.95 }),
-        "traco-ponto": new THREE.LineDashedMaterial({ color: 0x404040, dashSize: 0.3, gapSize: 0.08, transparent: true, opacity: 0.9 })
+        "traco-ponto": new THREE.LineDashedMaterial({ color: 0x404040, dashSize: 0.3, gapSize: 0.08, transparent: true, opacity: 0.9 }),
+        "tracejada-obra": new THREE.LineDashedMaterial({ color: 0xb71c1c, dashSize: 0.2, gapSize: 0.1, transparent: true, opacity: 1 })
       };
       function aplicar(st, mo) {
         ult.st = st; ult.mo = mo; limpar();
         if (!mo || !mo.grupo) return { n: 0 };
-        var BF = global.BimFases, BO = global.BimOpcoes, v = self.vista();
+        var BF = global.BimFases, BO = global.BimOpcoes, AP = global.BimApresentacao, v = self.vista();
         var temFase = !!(BF && st && BF.faseado(st)), temOpc = !!(BO && st && st.opcoes && arr(st.opcoes.conjuntos).length);
-        var gm = temFase ? BF.graficosModelo(st, self.fase(st), v.filtro, self.deps()) : null;
+        /* COMPARAR (a cortina, js/bimapresentacaoui.js): nenhuma peça some aqui — cada uma leva as marcas { a, d } (existe no antes? no depois?)
+           e a cortina desenha a cena duas vezes; o que não existe em nenhum dos lados é que fica escondido */
+        var cmp = !!(temFase && AP && v.modo === "comparar"), lad = cmp ? AP.lados(st, self.deps()) : null;
+        /* calha e condutor (js/bimcobertura.js) não têm fase própria: valem como o telhado a que pertencem */
+        var her = temFase && AP && AP.herdeiros ? AP.herdeiros(st) : {};
+        var realce = !!(v.realce && v.modo === "obra");
+        var livre = v.modo === "livre";
+        var gm = temFase && !cmp && !livre ? BF.graficosModelo(st, self.fase(st), v.filtro, self.deps()) : null;
         var porId = {};
         if (temOpc) ["caixas", "coberturas", "familias", "volumes", "forros"].forEach(function (k) { arr(st[k]).forEach(function (x) { if (x && x.id != null) porId[String(x.id)] = x; }); });
-        var n = { ocultas: 0, meioTom: 0, tracejadas: 0 };
+        var n = { ocultas: 0, meioTom: 0, tracejadas: 0, realcadas: 0 };
         try { if (mo.grupo.parent) mo.grupo.parent.updateMatrixWorld(true); } catch (eU) {}
         mo.grupo.children.forEach(function (m) {
           if (!m.isMesh) return;
           if (m.userData._p10orig) { m.material = m.userData._p10orig; delete m.userData._p10orig; }
           if (m.userData._p10oculta) { m.visible = true; delete m.userData._p10oculta; }   /* só a que ESTE módulo escondeu volta */
-          delete m.userData._fase;
-          var id = String(m.userData.expressID), g = gm ? gm.porId[id] : null;
+          delete m.userData._fase; delete m.userData._p10lado;
+          var id = String(m.userData.expressID), g = gm ? (gm.porId[id] || (her[id] ? AP.daMae(gm.porId, her, id) : null)) : null;
           var visOpc = !temOpc || !porId[id] || BO.visivel(porId[id], st, v.escolha);
-          if (!visOpc || (g && !g.visivel)) { if (m.visible !== false) { m.visible = false; m.userData._p10oculta = true; } n.ocultas++; return; }
-          if (!g || (!g.meioTom && g.opacidade >= 1 && g.linha === "continua")) return;
+          var ld = lad ? lad.porId[id] : null;
+          if (!visOpc || (g && !g.visivel) || (ld && !ld.a && !ld.d)) { if (m.visible !== false) { m.visible = false; m.userData._p10oculta = true; } n.ocultas++; return; }
+          if (ld) { m.userData._p10lado = ld; return; }
+          if (g && realce && g.visivel) {
+            if (g.status === "demolido") g = { visivel: true, status: g.status, meioTom: false, linha: "tracejada-obra", opacidade: 0.6, tinta: "demolir" };
+            else if (g.status === "novo") g = { visivel: true, status: g.status, meioTom: false, linha: "continua", opacidade: 1, tinta: "novo" };
+          }
+          if (!g || (!g.meioTom && g.opacidade >= 1 && g.linha === "continua" && !g.tinta)) return;
           m.userData._p10orig = m.material;
           m.material = mat(m.material, g);
           m.userData._fase = g.status;
           if (g.meioTom) n.meioTom++;
+          if (g.tinta) n.realcadas++;
           if (linhaMat[g.linha] && m.geometry) {
             var ls = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 25), linhaMat[g.linha]);
             ls.applyMatrix4(m.matrixWorld); ls.computeLineDistances(); ls.userData.p10 = id; ls.renderOrder = 3;
@@ -529,7 +583,12 @@
         return n;
       }
       var ctl = {
-        aposRebuild: function (st, mo) { try { return aplicar(st, mo); } catch (e) { return null; } },
+        aposRebuild: function (st, mo) {
+          var r = null;
+          try { r = aplicar(st, mo); } catch (e) { r = null; }
+          try { if (global.BimApresentacaoUI && global.BimApresentacaoUI.aoRebuild) global.BimApresentacaoUI.aoRebuild(); } catch (e2) {}
+          return r;
+        },
         refazer: function () { return ult.mo ? ctl.aposRebuild(ult.st, ult.mo) : null; },
         info: function () { return self._ult3d || null; },
         grupo: grp

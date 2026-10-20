@@ -93,6 +93,16 @@
       "arquivo": "telhado-chuva-nbr10844.json",
       "usadoPor": "docs/telhado/PADROES-TELHADO.md (fonte dos valores embutidos no código)",
       "motivo": "cópia de conferência da Tabela 5 da NBR 10844; o app usa dados-fonte/hidro/normas/nbr10844.json via HidNormas"
+    },
+    {
+      "arquivo": "telhado-condutor-nbr10844.json",
+      "usadoPor": "tools/gerar-telhado-cobertura-dados.js (gera o bloco telhado-dados de js/bimcobertura.js)",
+      "motivo": "ábaco da Figura 3 da NBR 10844 digitalizado (condutor vertical); o app usa os valores já embutidos em js/bimcobertura.js"
+    },
+    {
+      "arquivo": "telhado-rufos.json",
+      "usadoPor": "tools/gerar-telhado-cobertura-dados.js (gera o bloco telhado-dados de js/bimcobertura.js)",
+      "motivo": "chapas, dobras e cortes dos rufos e contrarrufos com fonte; o app usa os valores já embutidos em js/bimcobertura.js"
     }
   ]
 }

@@ -281,6 +281,7 @@
        motores puros lidos pelo js/bim.js -->
   <script src="js/bimtextura.js"></script>
   <script src="js/bimabrir.js"></script>
+  <script src="js/bimabrirui.js"></script>   <!-- portas, portões e gavetas que abrem no clique do 3D (modo Abrir portas, Alt+clique, passeio) e o freio do passeio -->
   <script src="js/bimtrenamapa.js"></script>
   <script src="js/bimset.js"></script>
   <script src="js/bimvista.js"></script>
@@ -428,6 +429,8 @@
   <script src="js/metalvigaspilares.js"></script>
   <!-- LIGAÇÃO AO LANÇAR (15/10/2026, BACKLOG #43): a viga que encosta num pilar ou noutra viga já sai com a ligação (pré-dimensionada pelo peso próprio, A CONFIRMAR NO CÁLCULO); viga em balanço com 3 soluções; o cálculo confirma ou troca — motor puro -->
   <script src="js/metalligauto.js"></script>
+  <script src="js/partesmoveis.js"></script>   <!-- porta, folha e gaveta que abrem: o movimento da parte móvel da família (motor puro) -->
+  <script src="js/bimgrupomovel.js"></script>   <!-- grupo móvel: o portão feito de volumes soltos abre como porta (op movel; extensão do replay do js/bimedit.js) -->
   <script src="js/familia.js"></script>
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
@@ -461,6 +464,7 @@
   <script src="js/bimcotas.js"></script>
   <!-- P10: fases (existente / demolido / novo), grupos, opções de projeto e utilidades de Gerenciar (motores puros; as ops entram no replay do js/bimedit.js por extensão) -->
   <script src="js/bimfases.js"></script>
+  <script src="js/bimapresentacao.js"></script>   <!-- … antes/obra/depois e a linha do tempo da apresentação da reforma (motor puro) -->
   <script src="js/bimgrupos.js"></script>
   <script src="js/bimopcoes.js"></script>
   <script src="js/bimgerenciar.js"></script>
@@ -471,6 +475,7 @@
   <script src="js/familiasmob.js"></script>
   <script src="js/familiasmobcoz.js"></script>
   <script src="js/familiaspais.js"></script>
+  <script src="js/familiaschurras.js"></script>
   <!-- CARPINTARIA & MARCENARIA (09/10/2026): módulos em chapa, plano de corte, arquivos para a empresa de corte (motores puros) -->
   <script src="js/marcenaria.js"></script>
   <script src="js/marcenariasaida.js"></script>
@@ -692,6 +697,7 @@
   <script src="js/biminsttipos.js"></script>
   <script src="js/biminstcon.js"></script>
   <script src="js/biminstarr.js"></script>   <!-- ARRASTAR O TUBO com a rede acompanhando (18/10/2026) -->
+  <script src="js/vaoinverter.js"></script>   <!-- PORTAS E JANELAS: inverter dentro/fora e espelhar a mão (20/10/2026) -->
   <script src="js/bimvaoarr.js"></script>   <!-- PORTAS E JANELAS: arrastar na parede + cotas temporárias editáveis (18/10/2026) -->
   <script src="js/bimalinharinst.js"></script>   <!-- ALINHAR (AL) nas instalações: tubo, caixa, louça; a rede acompanha (18/10/2026) -->
   <script src="js/bimforroui.js"></script>
@@ -856,6 +862,7 @@
   <script src="js/arqpranchasui.js"></script>   <!-- … a tela "Gerar pranchas de arquitetura" -->
   <!-- P10: fases, grupos, opções de projeto e utilidades na tela (fita, diálogos, gráficos de fase no 3D) — só com a prévia do modelador -->
   <script src="js/bimp10ui.js"></script>
+  <script src="js/bimapresentacaoui.js"></script>   <!-- … o controle Antes · Obra · Depois · Comparar, a apresentação da reforma e o vídeo -->
   <script src="js/iafamilia.js"></script>
   <script src="js/iarender.js"></script>
   <!-- RENDER (09/10/2026): render físico a partir do modelo — números em js/rendermat.js, tela em js/bimrender.js; o motor (js/bimrendermotor.js) só carrega quando o render abre -->

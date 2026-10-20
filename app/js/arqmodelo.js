@@ -87,6 +87,9 @@
       else return;
       if (a < u0) u0 = a; if (b > u1) u1 = b; if (c < v0) v0 = c; if (d > v1) v1 = d;
     });
+    /* família de MALHA (mobiliário, cozinha, banho, paisagismo: js/familiasmob*.js, familiaspais.js) não tem sólido caixa/cilindro: a pegada é a
+       caixa local da própria família (av.caixa: x0..x1 largura, z0..z1 profundidade). Sem isto o móvel não entrava na planta de layout nem na humanizada. */
+    if (u0 === Infinity && av && av.caixa && isFinite(av.caixa.x0) && isFinite(av.caixa.x1) && isFinite(av.caixa.z0) && isFinite(av.caixa.z1)) { u0 = av.caixa.x0; u1 = av.caixa.x1; v0 = av.caixa.z0; v1 = av.caixa.z1; }
     if (u0 === Infinity) return null;
     var cs = Math.cos(num(f.rotY, 0)), sn = Math.sin(num(f.rotY, 0)), fx = num(f.x, 0), fz = num(f.z, 0);
     return [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(function (q) { return [r4(fx + q[0] * cs + q[1] * sn), r4(fz - q[0] * sn + q[1] * cs)]; });
@@ -188,7 +191,8 @@
       if (cat === "luminaria") { out.luminarias.push({ id: String(f.id), x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), nome: txt(f.famId), status: st, pav: pavDe(pavs, num(f.y, 0)) }); return; }
       if (cat === "pilar" || cat === "viga" || cat === "dispositivo_eletrico" || cat === "equipamento_eletrico") return;
       if (!pts) return;
-      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
+      var matsM = []; arr(av && av.solidos).forEach(function (so) { var mm = txt(so && so.material); if (mm && matsM.indexOf(mm) < 0 && matsM.length < 8) matsM.push(mm); });
+      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
         solidos: arr(av && av.solidos).slice(0, 40).map(function (s) { return { forma: s.forma, x: s.x, y: s.y, z: s.z, dx: s.dx, dy: s.dy, dz: s.dz, raio: s.raio, altura: s.altura, eixo: s.eixo, material: s.material, cor: s.cor }; }) });
     });
     /* marcas P1, P2… J1, J2…: um código por TIPO de vão (família + tipo + tamanho), na ordem em que aparecem */

@@ -81,10 +81,20 @@
       var x = -L / 2 + wm * (i + 0.5), gav = padrao === "gavetas" || (padrao === "misto" && i % 3 === 1), zf = z0 + D - 0.02;
       if (gav) {
         var hs = [0.19, 0.27, hc - 0.19 - 0.27 - 0.03], y = rod + 0.01;
-        hs.forEach(function (h) { H.porta(c, mat, x, y, zf, wm - 0.008, h, 0.019, "liso"); H.cava(c, x, y + h - 0.035, zf + 0.019, wm * 0.6); y += h + 0.008; });
+        hs.forEach(function (h, ig) {
+          var yg = y;   // cada gaveta sai para a frente (70% do fundo dela) com o corpo atrás da frente
+          H.gaveta(c, "m" + (i + 1) + "gaveta" + (ig + 1), (D - 0.10) * 0.7, function () { H.porta(c, mat, x, yg, zf, wm - 0.008, h, 0.019, "liso"); H.cava(c, x, yg + h - 0.035, zf + 0.019, wm * 0.6); H.gavetaCaixa(c, MAT.CLARA, x, yg, zf, wm - 0.008, h, D - 0.10); });
+          y += h + 0.008;
+        });
       } else if (wm > 0.75) {
-        [-1, 1].forEach(function (s) { H.porta(c, mat, x + s * (wm - 0.008) / 4, rod + 0.01, zf, (wm - 0.012) / 2, hc - 0.02, 0.019, "liso"); H.cava(c, x + s * 0.02, rod + hc - 0.05, zf + 0.019, 0.01); });
-      } else { H.porta(c, mat, x, rod + 0.01, zf, wm - 0.008, hc - 0.02, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.05), rod + hc - 0.05, zf + 0.019, 0.01); }
+        [-1, 1].forEach(function (s) {
+          var xd = x + s * (wm - 0.008) / 4, wd = (wm - 0.012) / 2;   // duas folhas: dobradiça na borda de fora
+          H.giro(c, "m" + (i + 1) + "porta" + (s < 0 ? "e" : "d"), xd + s * wd / 2, rod + hc / 2, zf + 0.0095, s, function () { H.porta(c, mat, xd, rod + 0.01, zf, wd, hc - 0.02, 0.019, "liso"); H.cava(c, x + s * 0.02, rod + hc - 0.05, zf + 0.019, 0.01); });
+        });
+      } else {
+        var ladoI = i % 2 ? -1 : 1, wdI = wm - 0.008;   // a dobradiça fica do lado oposto ao puxador
+        H.giro(c, "m" + (i + 1) + "porta", x + ladoI * wdI / 2, rod + hc / 2, zf + 0.0095, ladoI, function () { H.porta(c, mat, x, rod + 0.01, zf, wdI, hc - 0.02, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.05), rod + hc - 0.05, zf + 0.019, 0.01); });
+      }
     }
   }
   var P_COZ = function (L) {
@@ -93,7 +103,7 @@
       P("Com_cuba", "simnao", true, "Construção"), P("Com_cooktop", "simnao", false, "Construção"), P("Corpo", "material", "laca grafite", "Materiais", "Frentes dos armários"), P("Tampo", "material", "quartzo branco", "Materiais", "quartzo branco, granito preto ou marmore branco")];
   };
   def({
-    id: "ra-coz-inferior", categoria: "cozinha", nome: "Armário inferior de cozinha (por comprimento)", descricao: "Bancada de cozinha de marcenaria: rodapé recuado, módulos com portas e gaveteiros, tampo de pedra com cuba de inox e torneira e cooktop embutidos (opcionais). O comprimento é o parâmetro; o número de módulos sai dele.",
+    id: "ra-coz-inferior", moveis: true, categoria: "cozinha", nome: "Armário inferior de cozinha (por comprimento)", descricao: "Bancada de cozinha de marcenaria: rodapé recuado, módulos com portas e gaveteiros, tampo de pedra com cuba de inox e torneira e cooktop embutidos (opcionais). O comprimento é o parâmetro; o número de módulos sai dele.",
     parametros: P_COZ(2.40), unidade: "m", quantidade: "Comprimento", quantDesc: "Armário inferior de cozinha em marcenaria",
     tipos: [T("i120", "1,20 m", { Comprimento: 1.20 }), T("i180", "1,80 m com cuba", { Comprimento: 1.80 }), T("i240", "2,40 m com cuba", {}), T("i300", "3,00 m com cuba e cooktop", { Comprimento: 3.00, Com_cooktop: true }), T("i360", "3,60 m com cuba e cooktop", { Comprimento: 3.60, Com_cooktop: true })],
     gerar: function (c, v) {
@@ -110,7 +120,7 @@
     }
   });
   def({
-    id: "ra-coz-superior", categoria: "cozinha", nome: "Armário superior de cozinha (por comprimento)", descricao: "Armário aéreo de cozinha com portas de giro e cava, fundo e prateleira. Cota de base e altura são parâmetros (a base usual fica 0,50 a 0,60 m acima do tampo).",
+    id: "ra-coz-superior", moveis: true, categoria: "cozinha", nome: "Armário superior de cozinha (por comprimento)", descricao: "Armário aéreo de cozinha com portas de giro e cava, fundo e prateleira. Cota de base e altura são parâmetros (a base usual fica 0,50 a 0,60 m acima do tampo).",
     parametros: [P("Comprimento", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.35, "Dimensões", USUAL), P("Altura", "comprimento", 0.70, "Dimensões"), P("Cota_base", "comprimento", 1.45, "Restrições", "Do piso à base do armário", "instancia"), P("Corpo", "material", "laca grafite", "Materiais")],
     unidade: "m", quantidade: "Comprimento", quantDesc: "Armário superior de cozinha em marcenaria",
     tipos: [T("s120", "1,20 m", { Comprimento: 1.20 }), T("s180", "1,80 m", { Comprimento: 1.80 }), T("s240", "2,40 m", {}), T("s300", "3,00 m", { Comprimento: 3.00 })],
@@ -119,27 +129,30 @@
       c.caixa(v.Corpo, 0, y0, D / 2 - 0.01, L, Ht, D - 0.02);
       for (var i = 0; i < nm; i++) {
         var x = -L / 2 + wm * (i + 0.5);
-        H.porta(c, v.Corpo, x, y0 + 0.004, D - 0.02, wm - 0.006, Ht - 0.008, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.02), y0 + 0.03, D, 0.012);
+        var ladoS = i % 2 ? -1 : 1, wdS = wm - 0.006;   // a dobradiça fica do lado oposto à cava
+        H.giro(c, "porta" + (i + 1), x + ladoS * wdS / 2, y0 + Ht / 2, D - 0.02 + 0.0095, ladoS, function () { H.porta(c, v.Corpo, x, y0 + 0.004, D - 0.02, wdS, Ht - 0.008, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.02), y0 + 0.03, D, 0.012); });
       }
     }
   });
   def({
-    id: "ra-coz-torre-quente", categoria: "cozinha", nome: "Torre quente (forno e micro-ondas)", descricao: "Coluna de marcenaria com gaveteiro, forno elétrico de embutir 60 cm, micro-ondas de embutir e bagageiro. Forno e micro-ondas são nichos com vidro preto e puxador.",
+    id: "ra-coz-torre-quente", moveis: true, categoria: "cozinha", nome: "Torre quente (forno e micro-ondas)", descricao: "Coluna de marcenaria com gaveteiro, forno elétrico de embutir 60 cm, micro-ondas de embutir e bagageiro. Forno e micro-ondas são nichos com vidro preto e puxador.",
     parametros: [P("Largura", "comprimento", 0.62, "Dimensões", "Vão de 60 cm do forno de embutir + paredes. " + USUAL), P("Profundidade", "comprimento", 0.62, "Dimensões"), P("Altura", "comprimento", 2.40, "Dimensões"), P("Cota_forno", "comprimento", 0.80, "Construção", "Do piso à base do forno"), P("Com_micro", "simnao", true, "Construção"), P("Corpo", "material", "laca grafite", "Materiais")],
     tipos: [T("tq", "Forno 60 cm + micro-ondas", {}), T("tqf", "Só forno 60 cm", { Com_micro: false })],
     gerar: function (c, v) {
       var W = v.Largura, D = v.Profundidade, Ht = v.Altura, yf = v.Cota_forno, rod = 0.10, zf = D - 0.02;
       c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.03, W - 0.04, rod, D - 0.08); c.caixa(v.Corpo, 0, rod, D / 2 - 0.01, W, Ht - rod, D - 0.02);
-      var h = yf - rod - 0.012; H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso");
+      var h = yf - rod - 0.012, pG = (D - 0.10);
+      H.gaveta(c, "gaveta1", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006, zf, W - 0.012, h * 0.45, pG); });
+      H.gaveta(c, "gaveta2", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso"); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, pG); });
       // forno
       c.caixaR(MAT.INOX, 0, yf, zf - 0.02, 0.595, 0.595, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.45, 0.004); c.cilH(MAT.INOX, 0, yf + 0.52, zf + 0.04, 0.009, 0.45, "x", { seg: 8 }); c.caixa(MAT.PRETO, 0, yf + 0.555, zf + 0.0005, 0.3, 0.025, 0.004);
       var yt = yf + 0.595 + 0.012;
       if (v.Com_micro) { c.caixaR(MAT.INOX, 0, yt, zf - 0.02, 0.595, 0.38, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, -0.06, yt + 0.035, zf + 0.0005, 0.37, 0.31, 0.004); c.caixa(MAT.PRETO, 0.21, yt + 0.1, zf + 0.0005, 0.08, 0.17, 0.004); c.cilH(MAT.INOX, 0.255, yt + 0.19, zf + 0.04, 0.007, 0.2, "y", { seg: 8, rotX: 0 }); yt += 0.38 + 0.012; }
-      var hb = Ht - yt - 0.01; if (hb > 0.2) { H.porta(c, v.Corpo, 0, yt, zf, W - 0.012, hb, 0.019, "liso"); H.cava(c, 0, yt + 0.03, zf + 0.019, 0.15); }
+      var hb = Ht - yt - 0.01; if (hb > 0.2) { H.giro(c, "bagageiro", -(W - 0.012) / 2, yt + hb / 2, zf + 0.0095, -1, function () { H.porta(c, v.Corpo, 0, yt, zf, W - 0.012, hb, 0.019, "liso"); H.cava(c, 0, yt + 0.03, zf + 0.019, 0.15); }); }
     }
   });
   def({
-    id: "ra-coz-nicho-geladeira", categoria: "cozinha", nome: "Nicho de geladeira com bagageiro", descricao: "Nicho de marcenaria para geladeira: painéis laterais, travessa e bagageiro com portas. A geladeira é uma família à parte (a abertura livre já considera folga de ventilação).",
+    id: "ra-coz-nicho-geladeira", moveis: true, categoria: "cozinha", nome: "Nicho de geladeira com bagageiro", descricao: "Nicho de marcenaria para geladeira: painéis laterais, travessa e bagageiro com portas. A geladeira é uma família à parte (a abertura livre já considera folga de ventilação).",
     parametros: [P("Vao_largura", "comprimento", 0.78, "Dimensões", "Largura livre do nicho: geladeira de ~0,72 m + 3 cm de folga por lado. " + USUAL), P("Vao_altura", "comprimento", 1.90, "Dimensões", "Altura livre"), P("Altura", "comprimento", 2.40, "Dimensões", "Altura total"), P("Profundidade", "comprimento", 0.75, "Dimensões"), P("Esp", "comprimento", 0.03, "Dimensões", "Espessura dos painéis laterais"), P("Corpo", "material", "laca grafite", "Materiais")],
     tipos: [T("n78", "Vão 0,78 (geladeira inverse)", {}), T("n94", "Vão 0,94 (side by side)", { Vao_largura: 0.94 }), T("n72", "Vão 0,72 (geladeira compacta)", { Vao_largura: 0.72 })],
     gerar: function (c, v) {
@@ -147,12 +160,15 @@
       [-1, 1].forEach(function (s) { c.caixa(mat, s * (W / 2 + e / 2), 0, D / 2, e, Ht, D); });
       c.caixa(mat, 0, hv, D / 2, W, Ht - hv, D - 0.03); c.caixa(mat, 0, 0, 0.005, W, hv, 0.01);
       var nb = 2, wb = (W + 2 * e) / nb, hb = Ht - hv - 0.02;
-      for (var i = 0; i < nb; i++) { var x = -(W + 2 * e) / 2 + wb * (i + 0.5); H.porta(c, mat, x, hv + 0.01, D - 0.015, wb - 0.006, hb, 0.019, "liso"); H.cava(c, x + (i ? -1 : 1) * 0.04, hv + 0.04, D + 0.004, 0.012); }
+      for (var i = 0; i < nb; i++) {
+        var x = -(W + 2 * e) / 2 + wb * (i + 0.5), wdN = wb - 0.006, ladoN = i ? 1 : -1;   // dobradiça na borda de fora, cava junto ao centro
+        H.giro(c, "bagageiro" + (i + 1), x + ladoN * wdN / 2, hv + 0.01 + hb / 2, D - 0.015 + 0.0095, ladoN, function () { H.porta(c, mat, x, hv + 0.01, D - 0.015, wdN, hb, 0.019, "liso"); H.cava(c, x + (i ? -1 : 1) * 0.04, hv + 0.04, D + 0.004, 0.012); });
+      }
     }
   });
   /* ---- ilha ---- */
   def({
-    id: "ra-coz-ilha", centro: true, categoria: "cozinha", nome: "Ilha de cozinha com cuba, cooktop e banquetas", descricao: "Ilha de marcenaria com tampo de pedra, balanço para banquetas, painéis laterais, cuba de inox e cooktop embutidos (opcionais) e as banquetas na borda do balanço. A face de trabalho fica em −Z; o balanço, em +Z.",
+    id: "ra-coz-ilha", moveis: true, centro: true, categoria: "cozinha", nome: "Ilha de cozinha com cuba, cooktop e banquetas", descricao: "Ilha de marcenaria com tampo de pedra, balanço para banquetas, painéis laterais, cuba de inox e cooktop embutidos (opcionais) e as banquetas na borda do balanço. A face de trabalho fica em −Z; o balanço, em +Z.",
     parametros: [P("Comprimento", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 1.10, "Dimensões", "Corpo + balanço. " + USUAL), P("Balanco", "comprimento", 0.35, "Dimensões", "Balanço do tampo para as banquetas (apoio mínimo de ~0,30 m para os joelhos)"), P("Altura", "comprimento", 0.90, "Dimensões"), P("Espessura_tampo", "comprimento", 0.04, "Dimensões"),
       P("Com_cuba", "simnao", true, "Construção"), P("Com_cooktop", "simnao", true, "Construção"), P("Banquetas", "inteiro", 3, "Construção"), P("Altura_banqueta", "comprimento", 0.65, "Dimensões"),
       P("Corpo", "material", "madeira freijo", "Materiais"), P("Tampo", "material", "quartzo branco", "Materiais"), P("Tecido", "material", "couro caramelo", "Materiais", "Assento das banquetas")],
@@ -175,7 +191,7 @@
   });
   /* ---- geladeira ---- */
   def({
-    id: "ra-coz-geladeira", categoria: "cozinha", nome: "Geladeira", descricao: "Geladeira de cozinha com portas, puxadores e rodapé: freezer embaixo (duplex invertida), duas portas lado a lado (side by side) ou french door. Os tipos 'inverse' trazem medidas de ficha de catálogo (ver fonte).",
+    id: "ra-coz-geladeira", moveis: true, categoria: "cozinha", nome: "Geladeira", descricao: "Geladeira de cozinha com portas, puxadores e rodapé: freezer embaixo (duplex invertida), duas portas lado a lado (side by side) ou french door. Os tipos 'inverse' trazem medidas de ficha de catálogo (ver fonte).",
     parametros: [P("Largura", "comprimento", 0.725, "Dimensões", "Medida de ficha de catálogo (ver fonte do tipo)"), P("Altura", "comprimento", 1.84, "Dimensões"), P("Profundidade", "comprimento", 0.701, "Dimensões", "Sem a folga de ventilação (~5 cm atrás e 3 cm nas laterais)"),
       P("Modelo", "texto", "inverse", "Construção", "inverse, duplex, sidebyside ou frenchdoor"), P("Acabamento", "material", "inox", "Materiais")],
     tipos: [T("inv", "Frost free inverse 443 L (BRE57AK) — 72,5 × 184 × 70,1", {}, FONTE_GELADEIRA), T("inv2", "Frost free inverse 447 L (BRE57FK) — 70 × 184,5 × 75,5", { Largura: 0.70, Altura: 1.845, Profundidade: 0.755 }, FONTE_GELADEIRA),
@@ -186,21 +202,31 @@
       c.caixaR(MAT.GRAFITE, 0, pe, D / 2 - 0.01, W, Ht - pe, D - 0.02, 0.01);
       if (m === "sidebyside" || m === "frenchdoor") {
         var wL = m === "sidebyside" ? W * 0.45 : W * 0.5, hTop = m === "sidebyside" ? Ht - pe - 0.02 : (Ht - pe) * 0.66, yTop = m === "sidebyside" ? pe + 0.01 : Ht - hTop - 0.01;
-        [-1, 1].forEach(function (s) { var x = s * (wL / 2 + 0.004), w = m === "sidebyside" ? (s < 0 ? wL : W - wL - 0.012) : wL - 0.008; var xx = m === "sidebyside" ? (s < 0 ? -W / 2 + wL / 2 + 0.005 : W / 2 - (W - wL - 0.012) / 2 - 0.005) : x; c.caixaR(ac, xx, yTop, zf, w, hTop, 0.03, 0.01); c.cil(MAT.PRETO, xx + s * (w / 2 - 0.035) * (m === "sidebyside" ? -1 : 1), yTop + hTop * 0.35, zf + 0.04, 0.012, hTop * 0.38, { seg: 8 }); });
-        if (m === "frenchdoor") { c.caixaR(ac, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, 0.03, 0.01); c.caixa(MAT.PRETO, 0, pe + 0.01 + (Ht - pe - hTop - 0.03) * 0.8, zf + 0.03, W * 0.6, 0.02, 0.012); }
+        [-1, 1].forEach(function (s) {
+          var x = s * (wL / 2 + 0.004), w = m === "sidebyside" ? (s < 0 ? wL : W - wL - 0.012) : wL - 0.008; var xx = m === "sidebyside" ? (s < 0 ? -W / 2 + wL / 2 + 0.005 : W / 2 - (W - wL - 0.012) / 2 - 0.005) : x;
+          /* a porta gira pela borda de FORA (o puxador fica junto ao meio) */
+          H.giro(c, "porta" + (s < 0 ? "e" : "d"), xx + s * w / 2, yTop + hTop / 2, zf + 0.015, s, function () { c.caixaR(ac, xx, yTop, zf, w, hTop, 0.03, 0.01); c.cil(MAT.PRETO, xx + s * (w / 2 - 0.035) * (m === "sidebyside" ? -1 : 1), yTop + hTop * 0.35, zf + 0.04, 0.012, hTop * 0.38, { seg: 8 }); }, 110);
+        });
+        if (m === "frenchdoor") { H.gaveta(c, "freezer", (D - 0.12) * 0.6, function () { c.caixaR(ac, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, 0.03, 0.01); c.caixa(MAT.PRETO, 0, pe + 0.01 + (Ht - pe - hTop - 0.03) * 0.8, zf + 0.03, W * 0.6, 0.02, 0.012); H.gavetaCaixa(c, MAT.LACA, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, D - 0.12); }); }
       } else {
         var inv = m === "inverse", hF = (Ht - pe) * (inv ? 0.30 : 0.28), hR = Ht - pe - hF - 0.03;
         var yR = inv ? pe + 0.01 + hF + 0.008 : pe + 0.01, yF = inv ? pe + 0.01 : pe + 0.01 + hR + 0.008;
         // inverse: refrigerador em cima / freezer embaixo (gaveta); duplex: freezer em cima
-        c.caixaR(ac, 0, yR, zf, W - 0.012, hR, 0.03, 0.01); c.caixaR(ac, 0, yF, zf, W - 0.012, hF - 0.008, 0.03, 0.01);
-        c.cil(MAT.PRETO, -W / 2 + 0.06, yR + hR * 0.35, zf + 0.04, 0.012, hR * 0.45, { seg: 8 }); c.cilH(MAT.PRETO, 0, yF + hF - 0.05, zf + 0.04, 0.011, W * 0.75, "x", { seg: 8 });
-        c.caixa(MAT.PRETO, W / 2 - 0.09, yR + hR - 0.04, zf + 0.0305, 0.09, 0.03, 0.002);
+        /* refrigerador: porta de giro, dobradiça à direita (o puxador fica à esquerda); freezer: gaveta (inverse) ou porta (duplex) */
+        H.giro(c, "porta", W / 2 - 0.006, yR + hR / 2, zf + 0.015, 1, function () {
+          c.caixaR(ac, 0, yR, zf, W - 0.012, hR, 0.03, 0.01);
+          c.cil(MAT.PRETO, -W / 2 + 0.06, yR + hR * 0.35, zf + 0.04, 0.012, hR * 0.45, { seg: 8 });
+          c.caixa(MAT.PRETO, W / 2 - 0.09, yR + hR - 0.04, zf + 0.0305, 0.09, 0.03, 0.002);
+        }, 110);
+        var frente = function () { c.caixaR(ac, 0, yF, zf, W - 0.012, hF - 0.008, 0.03, 0.01); c.cilH(MAT.PRETO, 0, yF + hF - 0.05, zf + 0.04, 0.011, W * 0.75, "x", { seg: 8 }); };
+        if (inv) H.gaveta(c, "freezer", (D - 0.12) * 0.6, function () { frente(); H.gavetaCaixa(c, MAT.LACA, 0, yF, zf, W - 0.012, hF - 0.008, D - 0.12); });
+        else H.giro(c, "freezer", W / 2 - 0.006, yF + hF / 2, zf + 0.015, 1, frente, 110);
       }
     }
   });
   /* ---- máquina de lavar ---- */
   def({
-    id: "ra-coz-lavadora", categoria: "cozinha", nome: "Máquina de lavar roupas", descricao: "Lavadora frontal (porta circular com vidro e painel) ou de carga superior (tampa e painel de comandos). Os tipos frontais trazem medidas de ficha de catálogo.",
+    id: "ra-coz-lavadora", moveis: true, categoria: "cozinha", nome: "Máquina de lavar roupas", descricao: "Lavadora frontal (porta circular com vidro e painel) ou de carga superior (tampa e painel de comandos). Os tipos frontais trazem medidas de ficha de catálogo.",
     parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou superior"), P("Largura", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.85, "Dimensões"), P("Profundidade", "comprimento", 0.64, "Dimensões"), P("Corpo", "material", "laca branca", "Materiais")],
     tipos: [T("f11", "Lava e seca frontal 11 kg — 60 × 85 × 64", {}, FONTE_LAVA), T("f11lg", "Lava e seca frontal 11 kg — 60 × 85 × 56", { Profundidade: 0.56 }, FONTE_LAVA), T("sup", "Carga superior 13 kg (~0,66 × 1,06 × 0,69; medida usual, não verificada em ficha)", { Modelo: "superior", Largura: 0.66, Altura: 1.06, Profundidade: 0.69 })],
     gerar: function (c, v) {
@@ -209,14 +235,18 @@
       [-1, 1].forEach(function (s) { c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, D - 0.05, 0.025, 0.015, { seg: 8 }); c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, 0.05, 0.025, 0.015, { seg: 8 }); });
       if (fr) {
         var yc = Ht * 0.44, r = Math.min(0.24, W * 0.4);
-        c.torno(MAT.CROMO, 0, yc, D, [[r + 0.035, -0.012], [r + 0.035, 0.0], [r + 0.012, 0.03], [r, 0.03]], { seg: 32, rotX: 90 });
-        c.torno(MAT.FUME, 0, yc, D + 0.005, [[r, 0.0], [r * 0.93, 0.03], [r * 0.7, 0.045], [0, 0.05]], { seg: 32, rotX: 90 });
+        /* a porta redonda gira pela borda da esquerda (o eixo vertical passa pelo aro) e abre 110° para a frente */
+        H.giro(c, "porta", -(r + 0.035), yc, D, -1, function () {
+          c.torno(MAT.CROMO, 0, yc, D, [[r + 0.035, -0.012], [r + 0.035, 0.0], [r + 0.012, 0.03], [r, 0.03]], { seg: 32, rotX: 90 });
+          c.torno(MAT.FUME, 0, yc, D + 0.005, [[r, 0.0], [r * 0.93, 0.03], [r * 0.7, 0.045], [0, 0.05]], { seg: 32, rotX: 90 });
+        }, 110);
         c.caixa(MAT.GRAFITE, 0, Ht - 0.115, D + 0.001, W - 0.04, 0.09, 0.004);
         c.cil(MAT.CROMO, W / 2 - 0.08, Ht - 0.07, D + 0.003, 0.025, 0.014, { seg: 16, rotX: 90 });
         c.caixa(MAT.TELA, -0.05, Ht - 0.088, D + 0.0035, 0.2, 0.045, 0.002);
       } else {
         c.caixaR(MAT.GRAFITE, 0, Ht - 0.02, D / 2, W - 0.02, 0.02, D - 0.02, 0.008, { k: 1 });
-        c.caixaR(MAT.FUME, 0, Ht, D * 0.45, W * 0.62, 0.012, D * 0.55, 0.01, { k: 1 });
+        /* a tampa levanta pela borda de trás (eixo em X); sentido −1 = a frente sobe */
+        c.parte("tampa", { tipo: "basculante", eixo: [0, Ht + 0.006, D * 0.45 - D * 0.275], angulo: 100, sentido: -1 }, function () { c.caixaR(MAT.FUME, 0, Ht, D * 0.45, W * 0.62, 0.012, D * 0.55, 0.01, { k: 1 }); });
         c.caixaR(MAT.GRAFITE, 0, Ht - 0.06, 0.04, W - 0.02, 0.14, 0.08, 0.012, { k: 1 }); c.caixa(MAT.TELA, 0, Ht - 0.03, 0.082, W * 0.6, 0.05, 0.003);
       }
     }
@@ -224,7 +254,7 @@
 
   /* ================================================================ BANHO */
   def({
-    id: "ra-banho-bancada", categoria: "banho", nome: "Bancada de banheiro com cuba de apoio, gabinete e espelho", descricao: "Gabinete suspenso com gavetas e portas, tampo de pedra, cuba de apoio oval, torneira alta de mesa e espelho com moldura de luz embutida. Comprimento é o parâmetro.",
+    id: "ra-banho-bancada", moveis: true, categoria: "banho", nome: "Bancada de banheiro com cuba de apoio, gabinete e espelho", descricao: "Gabinete suspenso com gavetas e portas, tampo de pedra, cuba de apoio oval, torneira alta de mesa e espelho com moldura de luz embutida. Comprimento é o parâmetro.",
     parametros: [P("Comprimento", "comprimento", 1.20, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.50, "Dimensões", USUAL), P("Altura_tampo", "comprimento", 0.85, "Dimensões", "Do piso ao topo do tampo"), P("Altura_pe", "comprimento", 0.25, "Dimensões", "Vão do gabinete suspenso"), P("Espessura_tampo", "comprimento", 0.03, "Dimensões"),
       P("Cubas", "inteiro", 1, "Construção", "1 ou 2 cubas de apoio"), P("Com_espelho", "simnao", true, "Construção"), P("Altura_espelho", "comprimento", 0.90, "Dimensões"), P("Base_espelho", "comprimento", 1.20, "Restrições", "Do piso à base do espelho", "instancia"),
       P("Corpo", "material", "madeira nogueira", "Materiais"), P("Tampo", "material", "marmore branco", "Materiais"), P("Cuba", "material", "louça branca", "Materiais")],
@@ -235,7 +265,18 @@
       c.caixa(MAT.PRETO, 0, y0 - 0.008, D / 2 - 0.02, L - 0.04, 0.008, D - 0.08);
       c.caixa(v.Corpo, 0, y0, D / 2 - 0.01, L - 0.01, hc, D - 0.02);
       var nm = Math.max(2, Math.round(L / 0.45)), wm = (L - 0.01) / nm;
-      for (var i = 0; i < nm; i++) { var x = -(L - 0.01) / 2 + wm * (i + 0.5); if (i % 2 === 0 && nm > 2) { [0, 1].forEach(function (g) { var hh = (hc - 0.02) / 2 - 0.004; H.porta(c, v.Corpo, x, y0 + 0.008 + g * (hh + 0.008), D - 0.02, wm - 0.008, hh, 0.019, "liso"); H.cava(c, x, y0 + 0.008 + g * (hh + 0.008) + hh - 0.03, D, wm * 0.5); }); } else { H.porta(c, v.Corpo, x, y0 + 0.008, D - 0.02, wm - 0.008, hc - 0.016, 0.019, "liso"); H.cava(c, x, y0 + hc - 0.04, D, 0.01); } }
+      for (var i = 0; i < nm; i++) {
+        var x = -(L - 0.01) / 2 + wm * (i + 0.5);
+        if (i % 2 === 0 && nm > 2) {
+          [0, 1].forEach(function (g) {
+            var hh = (hc - 0.02) / 2 - 0.004, yg = y0 + 0.008 + g * (hh + 0.008);
+            H.gaveta(c, "m" + (i + 1) + "gaveta" + (g + 1), (D - 0.10) * 0.7, function () { H.porta(c, v.Corpo, x, yg, D - 0.02, wm - 0.008, hh, 0.019, "liso"); H.cava(c, x, yg + hh - 0.03, D, wm * 0.5); H.gavetaCaixa(c, MAT.CLARA, x, yg, D - 0.02, wm - 0.008, hh, D - 0.10); });
+          });
+        } else {
+          var ladoB = nm > 2 ? (Math.floor(i / 2) % 2 ? -1 : 1) : (i === 0 ? -1 : 1), wdB = wm - 0.008;
+          H.giro(c, "m" + (i + 1) + "porta", x + ladoB * wdB / 2, y0 + hc / 2, D - 0.02 + 0.0095, ladoB, function () { H.porta(c, v.Corpo, x, y0 + 0.008, D - 0.02, wdB, hc - 0.016, 0.019, "liso"); H.cava(c, x, y0 + hc - 0.04, D, 0.01); });
+        }
+      }
       c.caixaR(v.Tampo, 0, Ht - e, D / 2, L, e, D, 0.004, { k: 1 }); c.caixa(v.Tampo, 0, Ht, 0.01, L, 0.1, 0.02);
       for (var k = 0; k < nc; k++) {
         var xk = nc === 1 ? 0 : (k - 0.5) * (L / 2);
@@ -280,7 +321,7 @@
   });
   /* ---- box ---- */
   def({
-    id: "ra-banho-box", categoria: "banho", nome: "Box de vidro (frontal ou de canto)", descricao: "Box de vidro temperado com perfis metálicos, porta de correr ou de abrir e puxador. 'frontal' fecha o vão entre duas paredes; 'canto' faz o L em volta do ralo. A peça é encostada: o fundo do box é a parede em Z = 0 e, no canto, a parede lateral em X = −Largura/2.",
+    id: "ra-banho-box", moveis: true, categoria: "banho", nome: "Box de vidro (frontal ou de canto)", descricao: "Box de vidro temperado com perfis metálicos, porta de correr ou de abrir e puxador. 'frontal' fecha o vão entre duas paredes; 'canto' faz o L em volta do ralo. A peça é encostada: o fundo do box é a parede em Z = 0 e, no canto, a parede lateral em X = −Largura/2.",
     parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou canto", "instancia"), P("Largura", "comprimento", 1.00, "Dimensões", "Frontal: vão entre paredes. Canto: lado do box. " + USUAL), P("Profundidade", "comprimento", 0.90, "Dimensões", "Distância da parede de fundo ao vidro da frente (largura do chuveiro)"), P("Altura", "comprimento", 1.90, "Dimensões", USUAL),
       P("Porta", "texto", "correr", "Construção", "correr ou abrir"), P("Esp_vidro", "comprimento", 0.008, "Dimensões", "Vidro temperado de 8 mm — usual"), P("Vidro", "material", "vidro", "Materiais", "vidro (incolor) ou vidro fume"), P("Perfil", "material", "metal preto", "Materiais")],
     tipos: [T("f100", "Frontal 1,00 m, correr", {}), T("f120", "Frontal 1,20 m, correr", { Largura: 1.20 }), T("f80a", "Frontal 0,80 m, abrir", { Largura: 0.80, Porta: "abrir" }), T("c90", "De canto 0,90 × 0,90, correr", { Modelo: "canto", Largura: 0.90, Profundidade: 0.90 }), T("c120", "De canto 1,20 × 0,90, abrir", { Modelo: "canto", Largura: 1.20, Profundidade: 0.90, Porta: "abrir" })],
@@ -296,13 +337,13 @@
         c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + 0.0, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2, 0, D / 2, p, 0.02, D);
         c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
         painel(W / 2, D / 2, D, Ht - yb, yb, "z");          // lateral fixa
-        if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); painel(W / 4 - 0.01, zf + 0.02, W / 2, Ht - yb, yb, "x"); c.cilH(MAT.INOX, -0.05, Ht * 0.52, zf + 0.04, 0.008, 0.3, "y", { seg: 8, rotX: 0 }); }
-        else { painel(-W * 0.18, zf, W * 0.64, Ht - yb, yb, "x"); painel(W * 0.34, zf, W * 0.32, Ht - yb, yb, "x"); c.cil(MAT.INOX, W * 0.08, Ht * 0.45, zf + 0.03, 0.009, 0.4, { seg: 8 }); [0.2, 0.55, 0.9].forEach(function (f) { c.cil(v.Perfil, -W * 0.5 + 0.02, Ht * f, zf + 0.005, 0.014, 0.05, { seg: 8, rotX: 90, centro: true }); }); }
+        if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); H.correr(c, "porta", -(W / 2 - 0.01), function () { painel(W / 4 - 0.01, zf + 0.02, W / 2, Ht - yb, yb, "x"); c.cilH(MAT.INOX, -0.05, Ht * 0.52, zf + 0.04, 0.008, 0.3, "y", { seg: 8, rotX: 0 }); }); }
+        else { painel(W * 0.34, zf, W * 0.32, Ht - yb, yb, "x"); H.giro(c, "porta", -W * 0.5, Ht / 2, zf, -1, function () { painel(-W * 0.18, zf, W * 0.64, Ht - yb, yb, "x"); c.cil(MAT.INOX, W * 0.08, Ht * 0.45, zf + 0.03, 0.009, 0.4, { seg: 8 }); [0.2, 0.55, 0.9].forEach(function (f) { c.cil(v.Perfil, -W * 0.5 + 0.02, Ht * f, zf + 0.005, 0.014, 0.05, { seg: 8, rotX: 90, centro: true }); }); }, 95); }
       } else {
         c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + p / 2, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2 - p / 2, 0, D / 2, p, 0.02, D);
         c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
-        if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); painel(W / 4 - 0.01, zf + 0.02, W / 2 + 0.02, Ht - yb, yb, "x"); c.cil(MAT.INOX, W / 4 - 0.12, Ht * 0.5, zf + 0.045, 0.008, 0.45, { seg: 8 }); }
-        else { painel(-W / 2 + (W * 0.65) / 2 + 0.02, zf, W * 0.65, Ht - yb, yb, "x"); painel(W / 2 - (W * 0.25) / 2 - 0.02, zf, W * 0.25, Ht - yb, yb, "x"); c.cilH(MAT.INOX, 0.0, Ht * 0.5, zf + 0.04, 0.008, 0.3, "y", { seg: 8 }); }
+        if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); H.correr(c, "porta", -(W / 2 - 0.01), function () { painel(W / 4 - 0.01, zf + 0.02, W / 2 + 0.02, Ht - yb, yb, "x"); c.cil(MAT.INOX, W / 4 - 0.12, Ht * 0.5, zf + 0.045, 0.008, 0.45, { seg: 8 }); }); }
+        else { painel(W / 2 - (W * 0.25) / 2 - 0.02, zf, W * 0.25, Ht - yb, yb, "x"); H.giro(c, "porta", -W / 2 + 0.02, Ht / 2, zf, -1, function () { painel(-W / 2 + (W * 0.65) / 2 + 0.02, zf, W * 0.65, Ht - yb, yb, "x"); c.cilH(MAT.INOX, 0.0, Ht * 0.5, zf + 0.04, 0.008, 0.3, "y", { seg: 8 }); }, 95); }
       }
     }
   });

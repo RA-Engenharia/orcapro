@@ -451,6 +451,11 @@
     function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
     function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
     function modelador() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
+    /* as setas (SVG, giram com a parede): ⇅ atravessa a parede (dentro/fora), ⇄ corre ao longo dela (mão) */
+    var ICONE = {
+      fora: '<svg xmlns="' + NS + '" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M6 17V3M3 6l3-3 3 3M14 3v14M11 14l3 3 3-3"/></svg>',
+      mao: '<svg xmlns="' + NS + '" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"><path d="M3 6h14M14 3l3 3-3 3M17 14H3M6 11l-3 3 3 3"/></svg>'
+    };
     var UI = {
       _id: null, _a: null, _el: null, _laco: null, _cc: null, _idP: null, _ccP: null, _arrP: null,
       /* a referência de cada lado da cota de PAREDE (n+ / n−): face (vão livre), núcleo ou eixo — gravada no aparelho */
@@ -572,6 +577,15 @@
           g.linhas.push([M(tp - 0.08, off, cc.base), M(tp + 0.08, off, cc.base), "chamada"]);
           g.rotulos.push({ lado: "peitoril", p: M(tp, off, (cc.base + y0) / 2), valor: I.peitoril });
         }
+        /* SETAS DE INVERTER (js/vaoinverter.js): ⇅ dentro/fora na face da parede, ⇄ mão ao longo do vão — onde as cotas não passam */
+        g.setas = [];
+        if (!previa) {
+          var tc = (cc.x0 + cc.x1) / 2;
+          /* ⇅ junto à ombreira direita (não cobre o corpo da porta, que se clica e se arrasta); ⇄ no meio, fora da linha das cotas */
+          if (tipo === "planta") { g.setas.push({ id: "fora", p: M(cc.x1 + 0.22, -(e2 + 0.20), yc) }); g.setas.push({ id: "mao", p: M(tc, e2 + 0.35, yc) }); }
+          else { g.setas.push({ id: "fora", p: M(cc.x1 + 0.22, off, y0 + 0.30) }); g.setas.push({ id: "mao", p: M(tc, off, y1 + 0.16) }); }
+          g.eixo = { a: M(0, 0, yc), b: M(1, 0, yc) };
+        }
         if (previa) g.vao = tipo === "planta" ? [M(cc.x0, -e2, yc), M(cc.x1, -e2, yc), M(cc.x1, e2, yc), M(cc.x0, e2, yc)] : [M(cc.x0, off, y0), M(cc.x1, off, y0), M(cc.x1, off, y1), M(cc.x0, off, y1)];
         return g;
       },
@@ -586,7 +600,7 @@
       },
       desenhar: function () {
         var el = this._camada(), cc = this._ccAtual(), ehP = !!(cc && cc.lados), E0 = ehP ? this._est() : null;
-        Array.prototype.slice.call(el.querySelectorAll("[data-vao-cota],[data-vao-alca],[data-vao-perm]")).forEach(function (b) { if (!b.querySelector("input")) b.parentNode.removeChild(b); });
+        Array.prototype.slice.call(el.querySelectorAll("[data-vao-cota],[data-vao-alca],[data-vao-perm],[data-vao-inv]")).forEach(function (b) { if (!b.querySelector("input")) b.parentNode.removeChild(b); });
         if (!cc) { el.querySelector("svg").innerHTML = ""; el.style.display = "none"; this._pararLaco(); return; }
         el.style.display = "";
         var self = this, arrastando = !!this._a;
@@ -602,6 +616,14 @@
           var a = document.createElement("button"); a.type = "button"; a.setAttribute("data-vao-alca", lado);
           a.style.cssText = "position:fixed;transform:translate(-50%,-50%);pointer-events:" + (arrastando ? "none" : "auto") + ";width:16px;height:16px;padding:0;border-radius:50%;border:2px solid var(--aco,#2d6a9c);background:var(--card-bg,#fff);color:var(--aco,#2d6a9c);font:700 9px/12px sans-serif;cursor:pointer;display:none";
           el.appendChild(a);
+        });
+        if (!ehP && !arrastando) this.acoes().forEach(function (ac) {
+          var b = document.createElement("button"); b.type = "button"; b.tabIndex = -1; b.setAttribute("data-vao-inv", ac.id); b.setAttribute("data-valor", ac.valor ? "1" : "0");
+          b.style.cssText = "position:fixed;transform:translate(-50%,-50%);pointer-events:auto;width:26px;height:26px;padding:0;border-radius:50%;border:2px solid var(--aco,#2d6a9c);background:var(--card-bg,#fff);color:var(--aco,#2d6a9c);cursor:pointer;display:none;box-shadow:0 1px 4px rgba(0,0,0,.25);line-height:0";
+          b.title = ac.rotulo + " — " + ac.dica + " (" + (ac.id === "fora" ? "espaço" : "Shift+espaço") + "; Ctrl+Z desfaz)";
+          b.setAttribute("aria-label", ac.rotulo);
+          b.innerHTML = ICONE[ac.id];
+          el.appendChild(b);
         });
         if (ehP && !arrastando) this._perms(E0).forEach(function (q) {
           var k = q.id + "|" + q.i; if (el.querySelector('[data-vao-perm="' + k.replace(/"/g, "") + '"] input')) return;
@@ -678,6 +700,17 @@
           b.setAttribute("aria-label", b.title);
         }, this);
         Array.prototype.forEach.call(el.querySelectorAll("[data-vao-alca]"), function (b) { if (!va[b.getAttribute("data-vao-alca")]) b.style.display = "none"; });
+        /* SETAS DE INVERTER: giram com a parede na tela (⇄ fica ao longo dela, ⇅ atravessa) */
+        var vi = {}, angW = 0;
+        if (g.eixo) { var e1 = pj.f(g.eixo.a), e2q = pj.f(g.eixo.b); if (e1 && e2q) { angW = Math.atan2(e2q.y - e1.y, e2q.x - e1.x) * 180 / Math.PI; if (angW > 90) angW -= 180; if (angW <= -90) angW += 180; } }
+        (g.setas || []).forEach(function (s) {
+          var b = el.querySelector('[data-vao-inv="' + s.id + '"]'); if (!b) return; vi[s.id] = 1;
+          var q = pj.f(s.p);
+          if (!dentro(q) || this._a) { b.style.display = "none"; return; }
+          b.style.left = q.x + "px"; b.style.top = q.y + "px"; b.style.display = "";
+          var sv2 = b.firstChild; if (sv2 && sv2.style) sv2.style.transform = "rotate(" + angW.toFixed(1) + "deg)";
+        }, this);
+        Array.prototype.forEach.call(el.querySelectorAll("[data-vao-inv]"), function (b) { if (!vi[b.getAttribute("data-vao-inv")]) b.style.display = "none"; });
         /* COTA PERMANENTE: um botão por cima do número dela (clicar e digitar move a parede selecionada) */
         Array.prototype.forEach.call(el.querySelectorAll("[data-vao-perm]"), function (b) {
           if (b.querySelector("input")) return;
@@ -706,6 +739,7 @@
       /* ---------------- clicar no número / na alça */
       _ligarEventos: function (el) {
         var self = this;
+        if (!this._tkInv) { this._tkInv = function (e) { self._teclaInverter(e); }; document.addEventListener("keydown", this._tkInv, true); }
         el.addEventListener("pointerdown", function (e) { if (e.target && e.target.closest && e.target.closest("button")) e.stopPropagation(); });
         /* a roda passa por cima dos botões das cotas: o zoom da vista é de quem está por baixo */
         el.addEventListener("wheel", function (e) {
@@ -730,6 +764,8 @@
             status("Cota " + (ehPar ? "da parede" : lado === "esq" ? "esquerda" : "direita") + ": medida até a " + ROT_MODO[prox] + ".");
             return;
           }
+          var iv = e.target.closest ? e.target.closest("[data-vao-inv]") : null;
+          if (iv) { e.preventDefault(); e.stopPropagation(); self.inverter(iv.getAttribute("data-vao-inv")); return; }
           var b = e.target.closest ? e.target.closest("[data-vao-cota],[data-vao-perm]") : null;
           if (!b || b.querySelector("input")) return;
           e.preventDefault(); e.stopPropagation();
@@ -803,6 +839,36 @@
         status("Vão agora é " + fmt(v) + " m: a parede andou " + fmt(Math.abs(r.desl)) + " m" + (feito.acompanharam && feito.acompanharam.length ? "; " + feito.acompanharam.length + " parede(s) ligada(s) acompanharam" : "") + " (Ctrl+Z desfaz).");
         this.atualizar();
         return r;
+      },
+      /* ---------------- INVERTER / ESPELHAR (js/vaoinverter.js): as setas, a barra de espaço, as Propriedades e o menu do botão direito */
+      /* as inversões que a abertura selecionada aceita: [{ id: "fora"|"mao", param, valor, rotulo, dica }] */
+      acoes: function (idArg) {
+        var id = idArg != null ? idArg : this._id, VI = global.VaoInverter, E = id != null ? this._est() : null; if (!VI || !E) return [];
+        var f = acharFam(E, id); if (!f || !f.host) return [];
+        var av = this._aval()(f.famId, f.tipoId, f.inst), fam = null;
+        try { fam = (global.FamiliaUI && global.FamiliaUI.obter ? global.FamiliaUI.obter(f.famId) : null) || (global.FamiliasRA ? global.FamiliasRA.obter(f.famId, true) : null); } catch (e) {}
+        return fam && av ? VI.acoes(fam, av, f.inst) : [];
+      },
+      /* grava a inversão (UMA op de instância: Ctrl+Z desfaz) e redesenha na hora */
+      inverter: function (qual, idArg) {
+        var id = idArg != null ? idArg : this._id, b = B(), VI = global.VaoInverter; if (id == null || !b || !VI) return { ok: false, erro: "Nada selecionado." };
+        var ac = this.acoes(id).filter(function (x) { return x.id === qual; })[0];
+        if (!ac) { status(qual === "mao" ? "Esta peça não tem mão (espelhar)." : "Esta peça não tem lado (dentro/fora)."); return { ok: false, erro: "Sem esta ação." }; }
+        var o = VI.op(id, ac);
+        if (!b.instanciaAlterar(id, { inst: o.inst })) { status("Não foi possível gravar."); return { ok: false, erro: "Não gravou." }; }
+        status(qual === "fora" ? "Invertido: agora " + (o.inst.Abre_para_fora ? "para fora" : "para dentro") + " (Ctrl+Z desfaz)." : "Espelhado: dobradiça à " + (o.inst.Mao_direita ? "direita" : "esquerda") + " (Ctrl+Z desfaz).");
+        this.atualizar();
+        return { ok: true, op: o };
+      },
+      _teclaInverter: function (e) {
+        if (!this._id || this._a || e.ctrlKey || e.metaKey || e.altKey) return false;
+        if (!(e.key === " " || e.code === "Space")) return false;
+        var t = e.target, tg = t && t.tagName ? String(t.tagName).toLowerCase() : "";
+        if (tg === "input" || tg === "textarea" || tg === "select" || (t && t.isContentEditable)) return false;
+        if (this._ferramentaArmada()) return false;
+        var qual = e.shiftKey ? "mao" : "fora";
+        if (!this.acoes().some(function (x) { return x.id === qual; })) return false;
+        e.preventDefault(); e.stopPropagation(); this.inverter(qual); return true;
       },
       /* ---------------- o arraste (3D: o gancho do js/bim.js; planta/corte: o do js/bimselecao.js) */
       /* o ponto do MUNDO sob o cursor: 3D = o raio no PLANO DA PAREDE; planta = (x, z); corte = o plano do corte */

@@ -67,6 +67,7 @@
   /* ------------------------------------------------------------ CENA */
   function Cena() {
     this.M = ident(); this.pilha = []; this.grupos = {}; this.ordem = []; this.tri = 0; this.env = null;
+    this.parteAtual = ""; this.partes = []; this.errosPartes = [];
   }
   var P = Cena.prototype;
 
@@ -74,6 +75,25 @@
   P.desempilhar = function () { if (this.pilha.length) this.M = this.pilha.pop(); return this; };
   /* grupo(x, y, z, giroY, fn): desenha `fn` com a origem movida; é como se faz a cadeira que se repete em volta da mesa */
   P.grupo = function (x, y, z, giroY, fn) { this.empilhar(x, y, z, giroY); try { fn(this); } finally { this.desempilhar(); } return this; };
+
+  /* PARTE MÓVEL (porta, folha, gaveta): tudo o que `fn` desenha vira malha SEPARADA (uma por material), marcada com o
+     id da parte, para o 3D mover só ela. `def` é o movimento em coordenadas LOCAIS DA PEÇA (as da raiz, como se
+     desenha — fora de grupo/empilhar): { tipo: giro|pivotante|basculante|correr|gaveta, eixo:[x,y,z], dir?, angulo?,
+     sentido?, vetor?, curso? } (js/partesmoveis.js). O volume, o quantitativo e a caixa da peça NÃO mudam com a parte. */
+  P.parte = function (id, def, fn) {
+    var PM = global.PartesMoveis || (typeof require === "function" ? (function () { try { return require("./partesmoveis.js"); } catch (e) { return null; } })() : null);
+    if (!PM) { this.errosPartes.push("o motor de partes móveis (js/partesmoveis.js) não carregou"); fn(this); return this; }
+    var d = {}; Object.keys(def || {}).forEach(function (k) { d[k] = def[k]; });
+    d.id = id;
+    var ja = this.partes.filter(function (p) { return p.id === id; })[0], antes = this.parteAtual;
+    if (!ja) {
+      var r = PM.normalizar(d);
+      if (!r.ok) this.errosPartes = this.errosPartes.concat(r.erros); else this.partes.push(r.parte);
+    }
+    this.parteAtual = String(id);
+    try { fn(this); } finally { this.parteAtual = antes; }
+    return this;
+  };
 
   /* junta uma primitiva (vértices e índices LOCAIS) ao grupo do material */
   P._add = function (mat, v, f, o) {
@@ -95,9 +115,9 @@
     var ff = f;
     if (o.aberta) vol = num(o.volume, 0);   /* peça aberta (parte de um sólido maior): sem ajuste de sentido; o volume vem de quem chama */
     else if (vol < 0) { ff = f.slice(); for (i = 0; i + 2 < ff.length; i += 3) { var tmp = ff[i + 1]; ff[i + 1] = ff[i + 2]; ff[i + 2] = tmp; } vol = -vol; }
-    var chave = String(mat || "");
+    var chave = String(mat || "") + (this.parteAtual ? "|@" + this.parteAtual : "");
     var g = this.grupos[chave];
-    if (!g) { g = this.grupos[chave] = { material: chave, v: [], f: [], volume: 0 }; this.ordem.push(chave); }
+    if (!g) { g = this.grupos[chave] = { material: String(mat || ""), v: [], f: [], volume: 0 }; if (this.parteAtual) g.parte = this.parteAtual; this.ordem.push(chave); }
     var base = g.v.length / 3;
     for (i = 0; i < w.length; i++) g.v.push(r6(w[i]));
     for (i = 0; i < ff.length; i++) g.f.push(ff[i] + base);
@@ -458,7 +478,9 @@
     var self = this;
     return this.ordem.map(function (k, i) {
       var g = self.grupos[k];
-      return { id: (prefixo || "m") + i, nome: g.material || "peça", forma: "malha", origemForma: "mob", suave: true, x: 0, y: 0, z: 0, rot: 0, v: g.v, f: g.f, volume: r6(g.volume), material: g.material, cor: "" };
+      var o = { id: (prefixo || "m") + i, nome: g.material || "peça", forma: "malha", origemForma: "mob", suave: true, x: 0, y: 0, z: 0, rot: 0, v: g.v, f: g.f, volume: r6(g.volume), material: g.material, cor: "" };
+      if (g.parte) { o.parte = g.parte; o.nome = (g.material || "peça") + " (" + g.parte + ")"; }
+      return o;
     });
   };
   P.triangulos = function () { return this.tri; };

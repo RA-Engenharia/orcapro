@@ -373,7 +373,11 @@
     return PALETA.padrao;
   }
   function corMovel(m, s) {
-    var mat = txt(s && s.material) + " " + txt(m.nome) + " " + txt(m.famId);
+    var mat = txt(s && s.material) + " " + txt(m.nome) + " " + txt(m.famId) + " " + arr(m.mats).join(" ");
+    if (/piscina/i.test(txt(m.famId) + " " + txt(m.nome))) return PALETA.agua;
+    if (/guarda-sol|guarda_sol|guardasol/i.test(txt(m.famId) + " " + txt(m.nome))) return "#efe3c8";
+    if (/laca grafite/i.test(mat)) return "#5a5d61";
+    if (/laca branca|mdf branco|acr[ií]lico/i.test(mat) && !/madeira/i.test(mat)) return "#f1f1ee";
     if (/vidro/i.test(mat)) return "#cfe8f3";
     if (/granito|pedra|m[áa]rmore|bancada/i.test(mat)) return m.categoria === "mobiliario" && /bancada/i.test(mat) ? "#8a8a8a" : "#9a9a9a";
     if (/madeira|marcenaria|mdf|carvalho|nogueira/i.test(mat)) return "#a9825a";
@@ -432,11 +436,29 @@
     d.pilaresPlanta(D, M, Lc.pilares, "humanizada");
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), "humanizada");
     /* mobiliário colorido com sombra */
-    Lc.moveis.forEach(function (m) {
+    var pecas = Lc.moveis.filter(function (m) { return !m.simbolo; }), plantas = Lc.moveis.filter(function (m) { return !!m.simbolo; });
+    pecas.forEach(function (m) {
       var P = m.pts.map(function (p) { return M.Pp(p); });
       d.fundoPol(D, P.map(function (q) { return [q[0] + 0.7, q[1] + 0.7]; }), "#b9b9b9", "ARQ-HUM");
+      /* família de malha (sem sólido caixa/cilindro): a pegada leva a cor do material; a piscina leva o azul da água */
+      if (!arr(m.solidos).some(function (so) { return so.forma === "caixa" || so.forma === "cilindro"; })) d.fundoPol(D, P, corMovel(m, null), "ARQ-HUM");
     });
-    d.moveisPlanta(D, M, Lc.moveis, { cheio: corMovel });
+    d.moveisPlanta(D, M, pecas, { cheio: corMovel });
+    /* plantas de paisagismo: o símbolo de copa/forração que a própria família devolve (círculos de projeção, tronco, faixa), com sombra */
+    plantas.forEach(function (m) {
+      var cs = Math.cos(m.rotY), sn = Math.sin(m.rotY), sm = m.simbolo || {};
+      function W(u, v) { return M.P(m.x + u * cs + v * sn, m.z - u * sn + v * cs); }
+      if (sm.faixa) {
+        var fa = sm.faixa, hw = (fa.larg || 1) / 2, hp = (fa.prof || 1) / 2, Pf = [W(fa.x - hw, fa.z - hp), W(fa.x + hw, fa.z - hp), W(fa.x + hw, fa.z + hp), W(fa.x - hw, fa.z + hp)];
+        d.fundoPol(D, Pf, /seixo|pedra/i.test(txt(m.famId)) ? "#d8d4c8" : "#86b863", "ARQ-HUM");
+      }
+      arr(sm.copa).forEach(function (cp) {
+        var q = W(cp.x, cp.z), r = Math.max(0.8, cp.r * pl.k);
+        D.add('<circle cx="' + d.n(q[0] + 0.9) + '" cy="' + d.n(q[1] + 0.9) + '" r="' + d.n(r) + '" fill="#b7c9a3" stroke="none" data-cam="ARQ-HUM"/>');
+        D.add('<circle cx="' + d.n(q[0]) + '" cy="' + d.n(q[1]) + '" r="' + d.n(r) + '" fill="#6aa84f" stroke="#3f7a2c" stroke-width="0.18" data-cam="ARQ-HUM"/>');
+      });
+      arr(sm.tronco).forEach(function (tr) { var q = W(tr.x, tr.z); D.add('<circle cx="' + d.n(q[0]) + '" cy="' + d.n(q[1]) + '" r="' + d.n(Math.max(0.4, tr.r * pl.k)) + '" fill="#7a5a3a" stroke="none" data-cam="ARQ-HUM"/>'); });
+    });
     /* vegetação com copa e sombra */
     arr(T.componentes).forEach(function (cp) {
       var p = M.P(cp.x, cp.z), r = Math.max(1.6, Math.min(8, Math.max(cp.altura, 1) * 0.28 * pl.k));

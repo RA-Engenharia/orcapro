@@ -448,9 +448,21 @@
         if (!global.firebase.apps.length) global.firebase.initializeApp(CONFIG.backend.firebaseConfig);
         self.auth = global.firebase.auth();
         self.db = global.firebase.firestore();
-        // cache offline (funciona sem internet; sincroniza ao voltar)
-        try { self.db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
-        return true;
+        /* ⚠ SEM O CACHE DO SDK NO APARELHO (20/10/2026, 1.2.162 — o "Out of Memory" que voltou na 1.2.161).
+           O enablePersistence guardava no IndexedDB do navegador toda gravação ainda não confirmada pelo servidor.
+           No aparelho do Rogério a fila chegou a 390 MB (344 cópias do bim_edicoes de ~1 MB, de 15 a 20/10): a cada
+           ~10 min de app aberto o SDK lia a fila inteira de uma vez (pilha do Crashpad: onsuccess do IndexedDB dentro
+           do firebase-firestore-compat.js) e a página passava de 4 GB. Quem guarda o dado no aparelho é o Store; a
+           nuvem só precisa subir o estado ATUAL — o _sincronizarAgora de cada abertura compara e sobe o que faltar.
+           Por isso: cache só em memória e, antes de qualquer uso, o clearPersistence apaga a fila velha (falha sem
+           dano se outra aba antiga ainda a tem aberta — ela some quando todas fecharem e esta abrir de novo).
+           Prova: tools/test-nuvem-fila-oom.js. */
+        /* ⚠ SÓ LIMPA SE O BANCO VELHO EXISTE, E COM TETO DE TEMPO (revisão adversarial, 20/10/2026). Uma aba antiga
+           congelada (abas em suspensão do navegador) pode segurar o banco, e o clearPersistence ficaria esperando para
+           sempre: a nuvem não ligaria nesta sessão, sem aviso. Com indexedDB.databases() (quando o navegador tem) o
+           aparelho que já limpou nem chama; e em LIMPAR_MS o init segue de qualquer jeito (a fila velha é apagada na
+           próxima abertura). */
+        return self._limparCacheVelho().then(function () { return true; });
       });
       return this._initP;
     },
@@ -551,6 +563,27 @@
         return 8;
       }
       return tam(x) + 32;
+    },
+    LIMPAR_MS: 4000,
+    _limparCacheVelho: function () {
+      var self = this, db = this.db;
+      if (!db || typeof db.clearPersistence !== "function") return Promise.resolve(false);
+      var temBanco = Promise.resolve(true);
+      try {
+        var idb = global.indexedDB;
+        if (idb && typeof idb.databases === "function") {
+          temBanco = Promise.resolve(idb.databases()).then(function (l) {
+            return (l || []).some(function (d) { return d && /^firestore\//.test(String(d.name || "")); });
+          }, function () { return true; });
+        }
+      } catch (e) { temBanco = Promise.resolve(true); }
+      var limpeza = temBanco.then(function (tem) {
+        if (!tem) return false;
+        try { return Promise.resolve(db.clearPersistence()).then(function () { return true; }, function () { return false; }); }
+        catch (e) { return false; }
+      });
+      var teto = new Promise(function (r) { setTimeout(function () { r(false); }, self.LIMPAR_MS); });
+      return Promise.race([limpeza, teto]);
     },
     _setDoc: function (ent, doc) {
       var t = 0;
@@ -682,7 +715,17 @@
          (prova: tools/test-nuvem-push-falha.js, CN do catch vazio) */
       if (!fila.ativos && !this._revsDe(ent)) {
         var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
-        if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) return this._setDoc(ent, { v: vN, em: Date.now() });
+        if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) {
+          var p0 = this._setDoc(ent, { v: vN, em: Date.now() });
+          /* ⚠ E A PRÓXIMA DA MESMA ENTIDADE ESPERA ESTA SER CONFIRMADA (20/10/2026, 1.2.162). Antes só a gravação em
+             partes esperava; a de documento só ia direto, e com o servidor sem confirmar (rede ruim, cota, ouvinte
+             caído) cada salvamento do BIM empilhava mais um bim_edicoes inteiro na fila do SDK — sem teto. Agora, no
+             máximo uma no ar e uma esperando (a mais nova) por entidade. */
+          fila.ativos++;
+          var dec0 = function () { fila.ativos--; };
+          fila.corrente = Promise.resolve(p0).then(dec0, dec0);
+          return p0;
+        }
       }
       var item = { vN: vN, juntadas: 0 };
       fila.ativos++;
@@ -706,7 +749,7 @@
       var temBatch = !!this.db && typeof this.db.batch === "function";
       var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
       /* (c): entidade que nunca esteve em partes neste aparelho → o caminho de sempre, sem leitura antes */
-      if (!emPartes && (!this._revsDe(ent) || !temBatch)) return Promise.resolve({ p: this._setDoc(ent, doc) });
+      if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = this._setDoc(ent, doc); return Promise.resolve({ p: pU, esperar: pU }); }
       var lerAtual = this._doc(ent).get().then(function (s0) {
         var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
         return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
@@ -719,10 +762,11 @@
         var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
         var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
         if (!emPartes) {
-          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) return { p: self._setDoc(ent, doc) };
+          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = self._setDoc(ent, doc); return { p: pS, esperar: pS }; }
           /* voltou a caber num documento: o principal sem `partes` e as partes antigas apagadas, juntos */
           var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
-          return { p: b1.commit().then(esquecer) };
+          var pB1 = b1.commit().then(esquecer);
+          return { p: pB1, esperar: pB1 };
         }
         var partes = self._fatiar(vN);
         if (!partes || t > self.TETO_LOTE || partes.length + nApagar > 450) {
@@ -803,12 +847,26 @@
     _marcasDe: function (empresaId, ent) {
       try { var m = Store.adapter.ler(empresaId, "_syncmarcas", {}); return (m && m[ent]) || {}; } catch (e) { return {}; }
     },
-    _marcarSync: function (empresaId, ent, lista) {
+    /* `soIguaisA` (opcional, a lista da NUVEM): marca só o registro que já está IGUAL nos dois lados; o resto mantém a
+       marca anterior. ⚠ É o caso do sincronizar ANTES de o servidor confirmar a subida (revisão adversarial,
+       20/10/2026, 1.2.162 — tools/test-nuvem-fila-oom.js [6]). Sem o cache do SDK no aparelho, a gravação que não foi
+       confirmada some ao fechar o app; se a marca já tivesse avançado para a versão daqui, o próximo merge acharia que
+       "só o outro aparelho editou" e a edição daqui — que nunca chegou à nuvem — sumia sem cópia de conflito. */
+    _marcarSync: function (empresaId, ent, lista, soIguaisA) {
       if (ent === "prefs" || ent === "conta") return;
       try {
         var m = Store.adapter.ler(empresaId, "_syncmarcas", {}) || {};
         var mm = {};
-        Util.arr(lista).forEach(function (o) { if (o && o.id) mm[o.id] = String(o.atualizadoEm || ""); });
+        if (arguments.length > 3) {
+          var ant = (m[ent] && typeof m[ent] === "object") ? m[ent] : {}, naNuvem = {}, temP = Object.prototype.hasOwnProperty;
+          Util.arr(soIguaisA).forEach(function (o) { if (o && o.id) naNuvem[o.id] = String(o.atualizadoEm || ""); });
+          Util.arr(lista).forEach(function (o) {
+            if (!o || !o.id) return;
+            var t = String(o.atualizadoEm || "");
+            if (temP.call(naNuvem, o.id) && naNuvem[o.id] === t) mm[o.id] = t;
+            else if (temP.call(ant, o.id)) mm[o.id] = ant[o.id];
+          });
+        } else Util.arr(lista).forEach(function (o) { if (o && o.id) mm[o.id] = String(o.atualizadoEm || ""); });
         m[ent] = mm;
         var antes = this._aplicandoDaNuvem;
         this._aplicandoDaNuvem = true; // marca não é dado: nunca dispara push
@@ -1243,6 +1301,37 @@
         return self._sincronizarAgora(empresaId);
       });
     },
+    /* ⚠ O SINCRONIZAR NÃO ESPERA A CONFIRMAÇÃO DO SERVIDOR PARA SEMPRE (revisão adversarial, 20/10/2026, 1.2.162 —
+       tools/test-nuvem-fila-oom.js [5]). O SDK repete sem fim a gravação que o servidor não confirma por erro
+       passageiro (cota estourada, rede caindo, envio grande demais para a conexão) — a promessa nunca termina. E o
+       boot (js/app.js, _conectarNuvemLicenca) só liga os ouvintes DEPOIS do sincronizar: uma gravação presa — e as
+       lápides vão primeiro, então bastava a delas — deixava o aparelho sem ouvinte nenhum a sessão inteira, com a tela
+       sem saber (a vigia de 20/10 viu "0 ouvintes"). Passado o teto, o sincronizar segue com a entidade como FALHA
+       ("sem-confirmacao"), nunca como sincronizada; a gravação continua na fila do SDK (não se manda outra: a fila da
+       entidade junta) e, se o servidor recusar depois, a marca de "já subiu" cai e a falha é registrada. */
+    TETO_CONFIRMA_SYNC: 30000,
+    _esperarConfirmacao: function (ent, pW, ck, tam) {
+      var self = this, acabou = false;
+      return new Promise(function (resolver, rejeitar) {
+        var tm = setTimeout(function () {
+          if (acabou) return;
+          acabou = true;
+          self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
+          Promise.resolve(pW)["catch"](function (e) {
+            if (self._ultimoEnviado[ck] !== undefined) delete self._ultimoEnviado[ck];
+            self._registrarFalha(ent, e, tam);
+          });
+          resolver("pendente");
+        }, self.TETO_CONFIRMA_SYNC);
+        Promise.resolve(pW).then(function () {
+          if (acabou) return;
+          acabou = true; clearTimeout(tm); resolver(true);
+        }, function (e) {
+          if (acabou) return;
+          acabou = true; clearTimeout(tm); rejeitar(e);
+        });
+      });
+    },
     _sincronizarAgora: function (empresaId) {
       var self = this;
       self._conflitosUltimoMerge = 0;
@@ -1296,7 +1385,8 @@
              aparecendo — exatamente o que a v1.1.232 anunciou ter fechado.
              A base comum é o que ficou igual nos DOIS lados, não só o que
              este aparelho subiu. */
-          self._marcarSync(empresaId, ent, merged);
+          /* ⚠ ...MAS SÓ O QUE JÁ ESTÁ IGUAL NA NUVEM (ver `_marcarSync`): o resto avança quando o servidor confirmar */
+          self._marcarSync(empresaId, ent, merged, cloud);
           /* o que SOBE é a forma guardada (ver `paraNuvem`); o tamanho que
              o aviso mede e o "nada mudou" comparam esta mesma carga */
           var subir = paraNuvem(ent, merged);
@@ -1325,7 +1415,12 @@
              podia crescer por conflito até o teto do Firestore sem nenhum recado */
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
-          return self._escreverEnt(ent, subir).then(function () { return true; });
+          var pW = self._escreverEnt(ent, subir);
+          Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
+          return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
+            if (r === "pendente") { falhou++; return false; }
+            return true;
+          });
         }).catch(function (e) {
           /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
           falhou++;

@@ -181,7 +181,7 @@
   var ABA_VISTA = [
     { nome: "Gráficos", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
       "estilos-objeto"] },
-    { nome: "Apresentação", ids: ["render-fisico", "render-ia", "galeria-ia"] },
+    { nome: "Apresentação", ids: ["render-fisico", "render-ia", "galeria-ia", "apresentar-reforma"] },
     { nome: "Criar", ids: ["fx-vista-3d", "corte-2d", "chamada-detalhe", "planta-2d", "planta-nova", "planta-forro", "planta-estrutural",
       "elevacao-vista", "elevacao-interior", "vista-desenho", "duplicar-vista", "p7-legenda", "tabela-quantidades", "levantamento-material"] },
     { nome: "Composição de folha", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas"] },
@@ -193,7 +193,7 @@
     { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
   ];
   /* na Vista os botões são pequenos (3 por coluna): são ~60 comandos — fora estes, que são o que mais se usa */
-  var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
+  var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "apresentar-reforma": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
     "nova-folha": 1, "posicionar-vista": 1, "fx-alternar-janelas": 1, "fx-fechar-inativas": 1, "fx-guia-vistas": 1, "lado-a-lado": 1, "fx-interface": 1 };
 
   /* a aba contextual: os painéis por categoria da seleção */

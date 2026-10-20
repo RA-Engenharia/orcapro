@@ -30,6 +30,7 @@
         { nome: "Material_folha", tipoDado: "material", escopo: "tipo", valor: "Madeira", grupo: "Materiais" },
         { nome: "Material_batente", tipoDado: "material", escopo: "tipo", valor: "Madeira", grupo: "Materiais" },
         { nome: "Lado_folha", tipoDado: "numero", escopo: "instancia", formula: "se(Abre_para_fora; 1; -1)", grupo: "Construção" },
+        { nome: "Mao_direita", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Mão: ligado = dobradiça (ou o lado em que a folha corre) à direita. Espelha a folha, a maçaneta, o arco da planta e o giro." }, { nome: "Sinal_mao", tipoDado: "numero", escopo: "instancia", formula: "se(Mao_direita; -1; 1)", grupo: "Construção" },
         { nome: "Area_vao", tipoDado: "area", escopo: "tipo", formula: "(Largura + 2*Batente) * (Altura + Batente)", grupo: "Quantidades" }
       ],
       tipos: [
@@ -43,7 +44,7 @@
         { id: "bd", nome: "Batente direito", forma: "caixa", x: "(Largura + Batente)/2", y: "0", z: "0", dx: "Batente", dy: "Altura + Batente", dz: "Espessura_parede", material: "Material_batente" },
         { id: "bs", nome: "Batente superior", forma: "caixa", x: "0", y: "Altura", z: "0", dx: "Largura", dy: "Batente", dz: "Espessura_parede", material: "Material_batente" },
         { id: "fo", nome: "Folha", forma: "caixa", x: "0", y: "0.008", z: "Lado_folha*(Espessura_parede - Espessura_folha)/2", dx: "Largura - 0.006", dy: "Altura - 0.012", dz: "Espessura_folha", material: "Material_folha" },
-        { id: "ma", nome: "Maçaneta", forma: "cilindro", eixo: "z", x: "Largura/2 - 0.07", y: "1.05", z: "Lado_folha*(Espessura_parede/2 + 0.002)", raio: "0.012", altura: "0.06", material: "Metal" }
+        { id: "ma", nome: "Maçaneta", forma: "cilindro", eixo: "z", x: "Sinal_mao*(Largura/2 - 0.07)", y: "1.05", z: "Lado_folha*(Espessura_parede/2 + 0.002)", raio: "0.012", altura: "0.06", material: "Metal" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Porta de madeira de giro" }
     },
@@ -59,7 +60,9 @@
         { nome: "Com_pingadeira", tipoDado: "simnao", escopo: "tipo", valor: true, grupo: "Construção" },
         { nome: "Material_marco", tipoDado: "material", escopo: "tipo", valor: "Alumínio", grupo: "Materiais" },
         { nome: "Material_vidro", tipoDado: "material", escopo: "tipo", valor: "Vidro", grupo: "Materiais" },
-        { nome: "Area_vao", tipoDado: "area", escopo: "tipo", formula: "Largura * Altura", grupo: "Quantidades" }
+        { nome: "Area_vao", tipoDado: "area", escopo: "tipo", formula: "Largura * Altura", grupo: "Quantidades" },
+        { nome: "Abre_para_fora", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Lado: ligado = folha/abertura para fora; desligado = para dentro" }, { nome: "Lado_folha", tipoDado: "numero", escopo: "instancia", formula: "se(Abre_para_fora; 1; -1)", grupo: "Construção" },
+        { nome: "Mao_direita", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Mão: ligado = dobradiça (ou o lado em que a folha corre) à direita. Espelha a folha, a maçaneta, o arco da planta e o giro." }, { nome: "Sinal_mao", tipoDado: "numero", escopo: "instancia", formula: "se(Mao_direita; -1; 1)", grupo: "Construção" }
       ],
       tipos: [
         { id: "j1010", nome: "1,00 × 1,00", valores: { Largura: 1.00, Altura: 1.00 } },
@@ -73,8 +76,8 @@
         { id: "ms", nome: "Marco superior", forma: "caixa", x: "0", y: "Peitoril + Altura - Marco", z: "0", dx: "Largura", dy: "Marco", dz: "0.08", material: "Material_marco" },
         { id: "me", nome: "Marco esquerdo", forma: "caixa", x: "-(Largura - Marco)/2", y: "Peitoril", z: "0", dx: "Marco", dy: "Altura", dz: "0.08", material: "Material_marco" },
         { id: "md", nome: "Marco direito", forma: "caixa", x: "(Largura - Marco)/2", y: "Peitoril", z: "0", dx: "Marco", dy: "Altura", dz: "0.08", material: "Material_marco" },
-        { id: "v1", nome: "Folha 1 (vidro)", forma: "caixa", x: "-(Largura - 2*Marco)/4", y: "Peitoril + Marco", z: "-0.015", dx: "(Largura - 2*Marco)/2 + 0.02", dy: "Altura - 2*Marco", dz: "0.008", material: "Material_vidro" },
-        { id: "v2", nome: "Folha 2 (vidro)", forma: "caixa", x: "(Largura - 2*Marco)/4", y: "Peitoril + Marco", z: "0.015", dx: "(Largura - 2*Marco)/2 + 0.02", dy: "Altura - 2*Marco", dz: "0.008", material: "Material_vidro" },
+        { id: "v1", nome: "Folha 1 (vidro)", forma: "caixa", x: "-Sinal_mao*(Largura - 2*Marco)/4", y: "Peitoril + Marco", z: "Lado_folha*0.015", dx: "(Largura - 2*Marco)/2 + 0.02", dy: "Altura - 2*Marco", dz: "0.008", material: "Material_vidro" },
+        { id: "v2", nome: "Folha 2 (vidro)", forma: "caixa", x: "Sinal_mao*(Largura - 2*Marco)/4", y: "Peitoril + Marco", z: "-Lado_folha*0.015", dx: "(Largura - 2*Marco)/2 + 0.02", dy: "Altura - 2*Marco", dz: "0.008", material: "Material_vidro" },
         { id: "pi", nome: "Pingadeira", forma: "caixa", x: "0", y: "Peitoril - 0.02", z: "Espessura_parede/2", dx: "Largura + 0.06", dy: "0.02", dz: "0.06", material: "Granito", visivel: "Com_pingadeira" }
       ],
       quantitativo: { unidade: "m2", quantidade: "Largura * Altura", codigo: "", fonte: "", descricao: "Janela de correr em alumínio com vidro" }
@@ -399,7 +402,9 @@
         { nome: "Espessura_folha", tipoDado: "comprimento", escopo: "tipo", valor: 0.035, grupo: "Dimensões" },
         { nome: "Espessura_parede", tipoDado: "comprimento", escopo: "instancia", valor: 0.15, grupo: "Hospedeiro" },
         { nome: "Material_marco", tipoDado: "material", escopo: "tipo", valor: "Alumínio", grupo: "Materiais" },
-        { nome: "Material_folha", tipoDado: "material", escopo: "tipo", valor: "Vidro", grupo: "Materiais" }
+        { nome: "Material_folha", tipoDado: "material", escopo: "tipo", valor: "Vidro", grupo: "Materiais" },
+        { nome: "Abre_para_fora", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Lado: ligado = folha/abertura para fora; desligado = para dentro" }, { nome: "Lado_folha", tipoDado: "numero", escopo: "instancia", formula: "se(Abre_para_fora; 1; -1)", grupo: "Construção" },
+        { nome: "Mao_direita", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Mão: ligado = dobradiça (ou o lado em que a folha corre) à direita. Espelha a folha, a maçaneta, o arco da planta e o giro." }, { nome: "Sinal_mao", tipoDado: "numero", escopo: "instancia", formula: "se(Mao_direita; -1; 1)", grupo: "Construção" }
       ],
       tipos: [
         { id: "c160", nome: "1,60 × 2,10", valores: { Largura: 1.60 } },
@@ -411,8 +416,8 @@
         { id: "me", nome: "Marco esquerdo", forma: "caixa", x: "-(Largura - Marco)/2", y: "0", z: "0", dx: "Marco", dy: "Altura", dz: "Espessura_parede", material: "Material_marco" },
         { id: "md", nome: "Marco direito", forma: "caixa", x: "(Largura - Marco)/2", y: "0", z: "0", dx: "Marco", dy: "Altura", dz: "Espessura_parede", material: "Material_marco" },
         { id: "ms", nome: "Marco superior", forma: "caixa", x: "0", y: "Altura - Marco", z: "0", dx: "Largura - 2*Marco", dy: "Marco", dz: "Espessura_parede", material: "Material_marco" },
-        { id: "f1", nome: "Folha 1", forma: "caixa", x: "-(Largura - 2*Marco)/4", y: "0.01", z: "-Espessura_folha", dx: "(Largura - 2*Marco)/2 + 0.04", dy: "Altura - Marco - 0.02", dz: "Espessura_folha", material: "Material_folha" },
-        { id: "f2", nome: "Folha 2", forma: "caixa", x: "(Largura - 2*Marco)/4", y: "0.01", z: "Espessura_folha", dx: "(Largura - 2*Marco)/2 + 0.04", dy: "Altura - Marco - 0.02", dz: "Espessura_folha", material: "Material_folha" }
+        { id: "f1", nome: "Folha 1", forma: "caixa", x: "-Sinal_mao*(Largura - 2*Marco)/4", y: "0.01", z: "Lado_folha*Espessura_folha", dx: "(Largura - 2*Marco)/2 + 0.04", dy: "Altura - Marco - 0.02", dz: "Espessura_folha", material: "Material_folha" },
+        { id: "f2", nome: "Folha 2", forma: "caixa", x: "Sinal_mao*(Largura - 2*Marco)/4", y: "0.01", z: "-Lado_folha*Espessura_folha", dx: "(Largura - 2*Marco)/2 + 0.04", dy: "Altura - Marco - 0.02", dz: "Espessura_folha", material: "Material_folha" }
       ],
       quantitativo: { unidade: "m2", quantidade: "Largura * Altura", codigo: "", fonte: "", descricao: "Porta de correr de duas folhas" }
     },
@@ -634,6 +639,53 @@
     if (FP && FP.lista) FP.lista().forEach(function (f) { LISTA.push(f); });
   })();
 
+
+  /* =====================================================================
+   * PARTES MÓVEIS (20/10/2026, js/partesmoveis.js) — porta, folha e janela que ABREM no clique do 3D.
+   * Cada parte é um conjunto de sólidos com UM movimento, em fórmula (sistema local da família). A geometria
+   * não muda com o estado: quantitativo e orçamento são os mesmos aberta ou fechada. O estado (Aberto / Abertura)
+   * é de INSTÂNCIA, o mesmo par de parâmetros da pele de vidro retrátil.
+   *   GIRO: eixo vertical na borda da folha (a dobradiça), regra da mão direita: em torno de +Y, a folha que parte do
+   *   eixo para +X vai para −Z com ângulo positivo. Por isso o sentido é o oposto do lado em que a folha encosta.
+   * ===================================================================== */
+  (function () {
+    var EST = [
+      { nome: "Aberto", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Abertura", descricao: "Posição para o 3D: aberto. Não muda o quantitativo." },
+      { nome: "Abertura", tipoDado: "numero", escopo: "instancia", valor: 0, grupo: "Abertura", descricao: "Fração aberta de 0 (fechado) a 1 (aberto), quando 'Aberto' está desligado" }
+    ];
+    var V = function (x, y, z) { return { x: x, y: y, z: z }; };
+    var D = {
+      "ra-porta-giro": {
+        partes: [{ id: "folha", nome: "Folha da porta", tipo: "giro", solidos: ["fo", "ma"], eixo: V("Sinal_mao*(-Largura/2 + 0.003)", "0.008", "Lado_folha*(Espessura_parede - Espessura_folha)/2"), angulo: "90", sentido: "-Lado_folha*Sinal_mao" }]
+      },
+      "ra-porta-giro-2f": {
+        extra: [{ nome: "Abre_para_fora", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção" }],
+        partes: [
+          { id: "folha_e", nome: "Folha esquerda", tipo: "giro", solidos: ["fe"], eixo: V("-Largura/2 + 0.003", "0.008", "0"), angulo: "90", sentido: "se(Abre_para_fora; -1; 1)" },
+          { id: "folha_d", nome: "Folha direita", tipo: "giro", solidos: ["fd"], eixo: V("Largura/2 - 0.003", "0.008", "0"), angulo: "90", sentido: "se(Abre_para_fora; 1; -1)" }
+        ]
+      },
+      "ra-porta-correr": {
+        partes: [{ id: "folha1", nome: "Folha 1 (corre sobre a folha 2)", tipo: "correr", solidos: ["f1"], vetor: V("Sinal_mao", "0", "0"), curso: "(Largura - 2*Marco)/2 - 0.02" }]
+      },
+      "ra-janela-correr": {
+        partes: [{ id: "folha1", nome: "Folha 1 (corre sobre a folha 2)", tipo: "correr", solidos: ["v1"], vetor: V("Sinal_mao", "0", "0"), curso: "(Largura - 2*Marco)/2 - 0.02" }]
+      },
+      "ra-janela-basculante": {
+        extra: [{ nome: "Abre_para_fora", tipoDado: "simnao", escopo: "instancia", valor: false, grupo: "Construção", descricao: "Lado: ligado = a folha projeta para fora; desligado = para dentro" }, { nome: "Maxim_ar", tipoDado: "simnao", escopo: "tipo", valor: false, grupo: "Construção", descricao: "Ligado: maxim-ar (cada folha gira pela borda de CIMA e projeta para fora); desligado: basculante (gira pelo meio)" }],
+        partes: [
+          { id: "folha_inf", nome: "Báscula inferior", tipo: "basculante", solidos: ["v1"], eixo: V("0", "Peitoril + Marco + se(Maxim_ar; (Altura - 2*Marco)/2 - 0.005; ((Altura - 2*Marco)/2 - 0.005)/2)", "0"), angulo: "70", sentido: "se(Abre_para_fora; 1; -1)" },
+          { id: "folha_sup", nome: "Báscula superior", tipo: "basculante", solidos: ["v2"], eixo: V("0", "Peitoril + Altura/2 + 0.005 + se(Maxim_ar; (Altura - 2*Marco)/2 - 0.005; ((Altura - 2*Marco)/2 - 0.005)/2)", "0"), angulo: "70", sentido: "se(Abre_para_fora; 1; -1)" }
+        ]
+      }
+    };
+    LISTA.forEach(function (f) {
+      var d = D[f.id]; if (!d) return;
+      f.partesMoveis = JSON.parse(JSON.stringify(d.partes));
+      f.parametros = f.parametros.concat(JSON.parse(JSON.stringify(d.extra || [])), JSON.parse(JSON.stringify(EST)));
+    });
+  })();
+
   var FamiliasRA = {
     /* registrar(lista): outros arquivos da biblioteca RA (js/familiasmob.js, js/familiasmobcoz.js, js/familiaspais.js) somam as famílias deles
        a esta lista — assim biblioteca, render, vistas e templates acham tudo por lista()/obter(). Idempotente: o mesmo id substitui. */
@@ -643,6 +695,18 @@
         for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === f.id) { LISTA[i] = f; return; }
         LISTA.push(f);
       });
+    },
+    /* A CÓPIA da família RA que não nasceu com as partes móveis (a cópia de obra, gravada antes de 20/10/2026) herda as da BASE: a que tem a
+       mesma categoria e o MESMO conjunto de sólidos (id). Devolve só { partesMoveis, parametros } da base (clonados) ou null — nunca varre quem não é porta/janela. */
+    baseDePartes: function (fam) {
+      if (!fam || fam.geometria || (fam.categoria !== "porta" && fam.categoria !== "janela")) return null;
+      var ids = (fam.solidos || []).map(function (s) { return String(s.id); }).sort().join(",");
+      for (var i = 0; i < LISTA.length; i++) {
+        var b = LISTA[i];
+        if (!b.partesMoveis || b.categoria !== fam.categoria || b.id === fam.id || b.hospedagem !== fam.hospedagem) continue;
+        if ((b.solidos || []).map(function (s) { return String(s.id); }).sort().join(",") === ids) return JSON.parse(JSON.stringify({ partesMoveis: b.partesMoveis, parametros: b.parametros }));
+      }
+      return null;
     },
     lista: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas); }))); },
     obter: function (id, todas) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id && visivel(LISTA[i], todas)) return JSON.parse(JSON.stringify(LISTA[i])); return null; }

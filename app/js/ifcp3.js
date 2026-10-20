@@ -55,7 +55,111 @@
     return "FREEFORM";
   }
 
+  /* ================= T3 (20/10/2026) — o PACOTE do telhado paramétrico no IFC =================
+   * O telhado com `modelo` (js/bimtelhadoestrut.js modelar → t.pacote) sai como o IfcRoof AGREGANDO (IfcRelAggregates):
+   *   · cada PEÇA da estrutura → IfcMember (terça .PURLIN., caibro/… .RAFTER., ripa/testeira .MEMBER., linha/perna/banzo
+   *     .CHORD., pendural/montante .POST., escora/diagonal .STRUT.), IfcBeam .BEAM. (espigão, rincão, viga W) e IfcColumn
+   *     .COLUMN. (pontalete, pilar) — a seção do pacote (retângulo, Ue, W) como perfil fechado COMPARTILHADO por seção,
+   *     extrudado pelo comprimento da peça (o eixo da peça é o Z do sólido): uma linha de perfil por seção, nada de malha;
+   *   · as TELHAS → um IfcCovering .ROOFING. por água: o polígono da água no plano dela, na cota do fundo da telha DAQUELA
+   *     água (pk.camadasAgua), extrudado na normal pela espessura da telha (onda + chapa) — a ondulação fica no 3D;
+   *   · a base de OSB (shingle) → IfcPlate .SHEET. por água.
+   * As lajes .ROOF. por água NÃO saem neste caso: o pacote é o telhado (a laje de 37 cm por cima de tudo dobraria o volume).
+   * Cada peça: material, Qto_*BaseQuantities (Length, CrossSectionArea, NetVolume; aço + NetWeight) e OrcaPRO_PecaTelhado
+   * (papel, seção, tesoura). Conferido no teste [ifc] do tools/test-telhado-parametrico.js (peças = quantitativo). */
+  var PAPEL_IFC = {
+    terca: ["IFCMEMBER", "PURLIN", "Terça"], caibro: ["IFCMEMBER", "RAFTER", "Caibro"], ripa: ["IFCMEMBER", "MEMBER", "Ripa"], testeira: ["IFCMEMBER", "MEMBER", "Testeira"],
+    linha: ["IFCMEMBER", "CHORD", "Linha (tirante)"], perna: ["IFCMEMBER", "CHORD", "Perna"], banzo: ["IFCMEMBER", "CHORD", "Banzo superior"], "banzo-inferior": ["IFCMEMBER", "CHORD", "Banzo inferior"],
+    pendural: ["IFCMEMBER", "POST", "Pendural"], "pendural-aco": ["IFCMEMBER", "POST", "Montante central"], montante: ["IFCMEMBER", "POST", "Montante (sarrafo)"], "montante-aco": ["IFCMEMBER", "POST", "Montante"],
+    escora: ["IFCMEMBER", "STRUT", "Escora"], diag: ["IFCMEMBER", "STRUT", "Diagonal"],
+    espigao: ["IFCBEAM", "BEAM", "Espigão"], rincao: ["IFCBEAM", "BEAM", "Rincão"], "viga-aco": ["IFCBEAM", "BEAM", "Viga principal"],
+    pontalete: ["IFCCOLUMN", "COLUMN", "Pontalete"], "pilar-aco": ["IFCCOLUMN", "COLUMN", "Pilar da cumeeira"]
+  };
+  var MAPA_PECA = { IFCMEMBER: "membroTelhado", IFCBEAM: "vigaTelhado", IFCCOLUMN: "pilarTelhado" };
+  /* a seção no plano (w, v), v de 0 a h a partir da face de baixo — a MESMA do js/bimtelhadoestrut.js secaoPts (o 3D) */
+  function secaoPts(pc) {
+    var b = pc.w, h = pc.h;
+    if (pc.forma === "ue" && pc.dims) {
+      var t = pc.dims.t, D = pc.dims.D, x0 = -b / 2, x1 = b / 2;
+      return [[x0, 0], [x1, 0], [x1, D], [x1 - t, D], [x1 - t, t], [x0 + t, t], [x0 + t, h - t], [x1 - t, h - t], [x1 - t, h - D], [x1, h - D], [x1, h], [x0, h]];
+    }
+    if (pc.forma === "w" && pc.dims) {
+      var tf = pc.dims.tf, tw = pc.dims.tw;
+      return [[-b / 2, 0], [b / 2, 0], [b / 2, tf], [tw / 2, tf], [tw / 2, h - tf], [b / 2, h - tf], [b / 2, h], [-b / 2, h], [-b / 2, h - tf], [-tw / 2, h - tf], [-tw / 2, tf], [-b / 2, tf]];
+    }
+    return [[-b / 2, 0], [b / 2, 0], [b / 2, h], [-b / 2, h]];
+  }
+  function areaPoli(P) { var s = 0; for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s / 2); }
+  function cm(v) { return String(Math.round(v * 1000) / 10).replace(".", ","); }
+  function escreverPacote(A, t, pk, nv, plT, out) {
+    var partes = [], volume = 0, resumo = { membros: 0, porEntidade: {}, telhas: 0, placas: 0 };
+    var c2i = function (p) { return [p[0], -p[2], p[1] - nv.elevacao]; }, d2i = function (v) { return [v[0], -v[2], v[1]]; };
+    var plE = A.placement(plT, [0, 0, 0]), perfis = {}, nPorPapel = {};
+    var BTp = A.dep ? A.dep("BimTelhado", "./bimtelhado.js") : null, telC = BTp && BTp.telha ? BTp.telha(t.tipoId) : null;
+    arr(pk.pecas).forEach(function (o) {
+      var m = PAPEL_IFC[o.p] || ["IFCMEMBER", "MEMBER", String(o.p)], ent = m[0];
+      var ax = norm(sub(o.b, o.a)), up = o.up || [0, 1, 0], L = Math.sqrt(dot(sub(o.b, o.a), sub(o.b, o.a)));
+      if (!(L > 1e-4)) { A.avisos.push("telhado " + t.id + ": peça " + o.p + " de comprimento nulo — ficou de fora do IFC"); return; }
+      if (Math.abs(dot(ax, up)) > 0.999) up = Math.abs(ax[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+      var w = norm(cruz(ax, up));
+      var aco = o.mat === "aco", secRot = o.perfil ? String(o.perfil) : cm(o.w) + "×" + cm(o.h) + " cm";
+      var kP = [o.forma, o.w, o.h, o.dims ? JSON.stringify(o.dims) : "", secRot].join("|"), S0 = secaoPts(o);
+      /* (q_w, q_v) → perfil (q_w, −q_v): com X = w e Z = o eixo, o Y do perfil é Z × X = −v */
+      if (!perfis[kP]) perfis[kP] = A.perfilPoli(S0.map(function (q) { return [q[0], -q[1]]; }), null, secRot, "telhado " + t.id + ", seção " + secRot);
+      var sol = A.extrudado(perfis[kP], A.pos3(c2i(o.a), d2i(ax), d2i(w)), L), matN = aco ? "Aço" : "Madeira serrada";
+      A.pintar(sol, matN);
+      var k = (nPorPapel[o.p] = (nPorPapel[o.p] || 0) + 1), chave = t.id + ":" + o.p + k, nome = m[2] + " " + k + " do telhado " + t.id;
+      var el = A.peca(chave, ent, nome, m[2] + " " + secRot, plE, A.forma([sol], "SweptSolid"), [A.E(m[1])], Math.min(o.a[1], o.b[1]), nv, { parte: t.id, mapa: MAPA_PECA[ent] });
+      A.ligarMaterial(el, matN);
+      var As = areaPoli(S0), V = As * L, q = [["Length", "L", L], ["CrossSectionArea", "A", As], ["NetVolume", "V", V]];
+      if (aco) { var PA = A.dep ? A.dep("PerfisAco", "./perfisaco.js") : null, pf = PA && PA.obter && o.perfil ? PA.obter(o.perfil) : null; if (pf && isFinite(pf.massa)) q.push(["NetWeight", "W", pf.massa * L]); }
+      A.qto(el, ent === "IFCBEAM" ? "Qto_BeamBaseQuantities" : (ent === "IFCCOLUMN" ? "Qto_ColumnBaseQuantities" : "Qto_MemberBaseQuantities"), q);
+      A.pset(el, "OrcaPRO_PecaTelhado", [["Papel", "IFCLABEL", m[2]], ["Secao", "IFCLABEL", secRot], ["Telhado", "IFCIDENTIFIER", String(t.id)], ["Modelo", "IFCLABEL", String(pk.rotulo || t.modelo)],
+                                         ["Tesoura", "IFCIDENTIFIER", o.tesoura ? String(o.tesoura) : ""], ["Agua", "IFCINTEGER", o.agua != null ? o.agua + 1 : null]]);
+      el.volume = r6(V); el.comprimento = r6(L); volume += V; partes.push(el.ent);
+      resumo.membros++; resumo.porEntidade[ent] = (resumo.porEntidade[ent] || 0) + 1;
+    });
+    /* as TELHAS (uma por água) e a OSB, no plano de cada água inclinada (a mesma ordem do pacote: pecas[].agua) */
+    var ags = arr(t.aguasCalc).filter(function (ag) { var p = ag.plano || {}; return Math.abs(p.bx || 0) + Math.abs(p.bz || 0) > 1e-9; });
+    var cam = function (ia) { return arr(pk.camadasAgua)[ia] || pk.camadas || {}; };
+    var matT = String((telC && telC.produto) || (t.tipoTelhado && t.tipoTelhado.rotulo) || "Telha"), eT = num(pk.telhaEsp, 0.02);
+    function noPlano(ag, ia, pts, base, e, sufixo, entidade, pre, mat, nomeTipo, mapa) {
+      var pl = ag.plano, nrm = norm([-pl.bx, pl.bz, 1]), X = norm(cruz(nrm, cruz([0, 0, 1], nrm))), Y = cruz(nrm, X), O = [0, 0, pl.a - nv.elevacao + base];
+      var P = pts.map(function (q) { var Q = [q[0], -q[1], pl.a + pl.bx * q[0] + pl.bz * q[1] - nv.elevacao + base], d = sub(Q, O); return [dot(d, X), dot(d, Y)]; });
+      var ep = e;   /* e: espessura PERPENDICULAR ao plano */
+      var sol = A.extrudado(A.perfilPoli(P, null, null, "telhado " + t.id + ", " + sufixo), A.pos3([0, 0, 0]), ep);
+      A.pintar(sol, mat);
+      var el = A.peca(t.id + ":" + sufixo, entidade, nomeTipo + " — água " + (ia + 1) + " do telhado " + t.id, nomeTipo, A.placement(plT, O, nrm, X), A.forma([sol], "SweptSolid"), [A.E(pre)], num(t.cotaApoio, 0), nv, { parte: t.id, mapa: mapa });
+      A.ligarMaterial(el, mat);
+      var ar = areaPoli(P);
+      el.volume = r6(ar * ep); el.area = ar; volume += ar * ep; partes.push(el.ent);
+      return el;
+    }
+    ags.forEach(function (ag, ia) {
+      arr(ag.pecas).forEach(function (pq, ip) {
+        var pts = pq.pts.map(function (q) { return [q.x, q.z]; }); if (pts.length < 3) return;
+        var suf = "telha" + (ia + 1) + (ag.pecas.length > 1 ? "-" + (ip + 1) : "");
+        var el = noPlano(ag, ia, pts, num(cam(ia).telha, 0), eT, suf, "IFCCOVERING", "ROOFING", matT, "Telhas " + matT, "telhaTelhado");
+        A.qto(el, "Qto_CoveringBaseQuantities", [["Width", "L", eT], ["NetArea", "A", el.area]]);
+        A.pset(el, "OrcaPRO_TelhaTelhado", [["Telha", "IFCLABEL", matT], ["Inclinacao", "IFCREAL", ag.inclinacao], ["Telhado", "IFCIDENTIFIER", String(t.id)]]);
+        resumo.telhas++;
+      });
+    });
+    arr(pk.placas).forEach(function (pq, k) {
+      var ag = ags[pq.agua]; if (!ag || arr(pq.pts).length < 3) return;
+      var el = noPlano(ag, pq.agua, pq.pts, num(pq.base, 0), num(pq.e, 0.0111), "osb" + (k + 1), "IFCPLATE", "SHEET", "OSB", "Base de OSB e = " + String(Math.round(num(pq.e, 0.0111) * 10000) / 10).replace(".", ",") + " mm", "placaTelhado");
+      A.qto(el, "Qto_PlateBaseQuantities", [["Width", "L", num(pq.e, 0.0111)], ["NetArea", "A", el.area], ["NetVolume", "V", el.volume]]);
+      resumo.placas++;
+    });
+    /* o total do pacote no IfcRoof: peças por papel, telhas (un) do quantitativo */
+    var nTel = 0; arr(pk.quantitativo).forEach(function (q) { if (q.grupo === "Telhas" && q.un === "un") nTel += num(q.qtd, 0); });
+    out.membros = (out.membros || 0) + resumo.membros; out.telhasIfc = (out.telhasIfc || 0) + resumo.telhas;
+    resumo.telhasUn = nTel;
+    return { partes: partes, volume: volume, resumo: resumo, nTelhas: nTel };
+  }
+
   var IfcP3 = {
+    PAPEL_IFC: PAPEL_IFC, secaoPts: secaoPts,
     tipoTelhado: tipoTelhado,
     /* api = as ferramentas do js/ifcsaida.js gerar(): w, ref, S, E, L, R, G, OH, peca, placement, pos3,
        extrudado, perfilPoli, circulo, retangulo, forma, brepFaces, pintar, ligarMaterial, ligarCodigos,
@@ -73,7 +177,13 @@
         var er = A.peca(t.id, "IFCROOF", "Telhado " + t.id, tipoRef, plT, null, [A.E(tipoTelhado(t))], num(t.cotaApoio, 0), nv, { mapa: "telhado" });
         A.ligarMaterial(er, matN);
         var partes = [], volTot = 0;
-        arr(t.aguasCalc).forEach(function (ag, ia) {
+        /* T3 (20/10/2026): telhado com MODELO → as peças do pacote (estrutura + telhas + OSB) no lugar das lajes por água */
+        var pk = t.modelo && t.pacote && t.pacote.ok && arr(t.pacote.pecas).length ? t.pacote : null;
+        if (pk) {
+          var rp = escreverPacote(A, t, pk, nv, plT, out); partes = rp.partes; volTot = rp.volume; er.pacote = rp.resumo;
+          A.pset(er, "OrcaPRO_PacoteTelhado", [["Modelo", "IFCLABEL", String(pk.rotulo || t.modelo)], ["Pecas", "IFCINTEGER", rp.resumo.membros], ["TelhasUn", "IFCINTEGER", rp.nTelhas || null]]);
+        }
+        else arr(t.aguasCalc).forEach(function (ag, ia) {
           var pl = ag.plano;
           ag.pecas.forEach(function (pc, ip) {
             /* o plano da água no IFC: cena (x, y, z) → IFC (x, −z, y); y = a + bx·x + bz·z  →  Z = a + bx·X − bz·Y */

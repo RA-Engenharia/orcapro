@@ -330,6 +330,8 @@
       if (F && F.sub === sub && F.pts.length) { var u = F.pts[F.pts.length - 1]; return { snap: u, ang: F.f.pontos === "livre" ? u : null }; }
       var b = B(), pz = b && b.precisao ? b.precisao() : null;
       if (pz && pz.ferramenta && pz.ferramenta()) { var q = pz.basePlanta ? pz.basePlanta() : null; return { snap: q, ang: q }; }
+      /* T4: o telhado por linha/corte trava e cota a partir do último ponto dele (js/bimp3ui.js) */
+      if (sub === "telhado" && global.BimP3UI && global.BimP3UI._m3d && global.BimP3UI._m3d.base) { var bT = global.BimP3UI._m3d.base(); if (bT) return { snap: bT, ang: bT }; }
       var a = this.api(), t = a ? a.traco() : null;
       /* laje/furo por retângulo: o 2º ponto é o canto oposto — a diagonal não trava em ângulo */
       var diagonal = (sub === "laje" || sub === "furo") && t && t.lajeModo === "retangulo" && t.pts.length === 1;
@@ -559,6 +561,11 @@
         var lpP = null; try { lpP = global.MetalProntasUI.previaPlanta(r.p.x, r.p.z); } catch (eP) { lpP = null; }
         if (lpP) lpP.segs.forEach(function (sg) { var ep = caminho([P(sg[0], sg[1]), P(sg[2], sg[3])], sg[4]); if (ep && lpP.falta) ep.style.stroke = "var(--vermelho)"; });
       }
+      /* T4 — TELHADO (js/bimp3ui.js): o contorno do telhado que vai nascer, a linha do perfil e as SETAS do caimento */
+      if (sub === "telhado" && global.BimP3UI && global.BimP3UI._m3d && global.BimP3UI._m3d.previaPlanta) {
+        var lpT = []; try { lpT = global.BimP3UI._m3d.previaPlanta(r ? r.p : null) || []; } catch (eT) { lpT = []; }
+        lpT.forEach(function (l) { caminho(l.pts, l.cls, l.fechar); });
+      }
       /* porta/janela: a parede sob o cursor e o vão que vai abrir */
       if (sub === "familia" && r && this._familiaHospedada()) this._desenharVao(id, caminho, r, t);
       if (sub === "familia") this._desenharSetas(id, g, u);
@@ -735,7 +742,8 @@
         if (F && (F.pts.length || F.picks.length)) { self._formaLimpar(); status("Forma cancelada — clique o 1º ponto de novo, ou Esc para sair."); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
         if (naPlanta) {
           var t = self.api().traco();
-          if (t.p1 || t.pts.length || t.vol.length) { self.api().cancelar(); st.cur = null; if (st.id) self._desenhar(st.id); status("Traço encerrado — clique o início do próximo, ou Esc para sair da ferramenta."); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
+          var p3p = sub === "telhado" && global.BimP3UI && global.BimP3UI._m3d && global.BimP3UI._m3d.pendentes ? global.BimP3UI._m3d.pendentes() : 0;   /* T4: o telhado pela metade */
+          if (t.p1 || t.pts.length || t.vol.length || p3p) { self.api().cancelar(); st.cur = null; if (st.id) self._desenhar(st.id); status("Traço encerrado — clique o início do próximo, ou Esc para sair da ferramenta."); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
         }
         return;
       }

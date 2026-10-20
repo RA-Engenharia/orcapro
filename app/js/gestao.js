@@ -10798,6 +10798,7 @@
       try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
       /* P10: Arquitetura › Grupos e reforma (Demolir, grupos) e Gerenciar › Fases e opções / Consultar — js/bimp10ui.js (sem a prévia do modelador, sai na hora) */
       try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
+      try { if (window.BimApresentacaoUI) BimApresentacaoUI.registrar(reg, self); } catch (eAp) {}   /* Vista › Apresentação da reforma (js/bimapresentacaoui.js) */
       /* P12: Instalações › Acessórios e dispositivos (acessório de tubo, tomada/interruptor, luminária, quadro,
          eletrocalha) e Sistemas (verificar, desconexões, legenda, tabela) — js/biminstui.js (sem a prévia, sai na hora) */
       try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
@@ -11456,7 +11457,7 @@
           ]) };
       }
       var st = this._bimVxEst();
-      var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); } }];
+      var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); }, menu: (window.BimApresentacaoUI && BimApresentacaoUI.menuNo) ? BimApresentacaoUI.menuNo() : undefined }];   /* clique direito: Antes · Obra · Depois e a Apresentação da reforma (js/bimapresentacaoui.js) */
       st.lista.forEach(function (v) {
         if (v.tipo === "2d" || v.tipo === "folha") return;   /* planta/corte 2D (e a folha, P8) aparecem no ramo deles */
         v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
@@ -14300,6 +14301,15 @@
     /* Propriedades de uma família COLOCADA: tipo (lista), parâmetros de instância
        editáveis, os de tipo e os calculados só de leitura, quantitativo. Mudar
        vira uma op "instancia" (desfaz como as outras). */
+    /* PORTAS E JANELAS (js/vaoinverter.js): os botões "Inverter dentro/fora" e "Espelhar (mão)" nas Propriedades da instância */
+    _vaoInverterAcoes: function (id) {
+      var V = window.BimVaoArr, ac = [];
+      try { ac = V && V.acoes ? V.acoes(String(id)) : []; } catch (e) { ac = []; }
+      return ac.map(function (q) {
+        return { id: "fam-inv-" + q.id, rotulo: q.id === "fora" ? "Lado" : "Mão", tipo: "botao", rotuloBotao: q.rotulo + (q.id === "fora" ? " (hoje: " + (q.valor ? "fora" : "dentro") + ")" : " (hoje: " + (q.valor ? "direita" : "esquerda") + ")"),
+          fn: function () { V.inverter(q.id, String(id)); } };
+      });
+    },
     _famPropsInstancia: function (id) {
       var self = this, b = window.BIM; if (!b || !b.instanciaInfo) return null;
       var info = b.instanciaInfo(id); if (!info) return null;
@@ -14330,6 +14340,7 @@
       /* ORÇAMENTO PELO MODELO (F1, js/orcmodeloui.js) — só na prévia visual */
       try { if (window.OrcModeloUI) secoes = secoes.concat(OrcModeloUI.secoesFamilia(id)); } catch (eOM) {}
       secoes.push({ nome: "Ações", params: [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fam); } }]
+        .concat(self._vaoInverterAcoes(id))
         .concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }]) });
       return {
         titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
@@ -14517,6 +14528,7 @@
           if (window.BimInstUI && BimInstUI.secoesFamilia) extras = extras.concat(BimInstUI.secoesFamilia(fid));   /* FLUIDEZ: UHC e DN da ficha da louça */
           var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
           extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
+            .concat(self._vaoInverterAcoes(fid))
             .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
         } else {
           if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));

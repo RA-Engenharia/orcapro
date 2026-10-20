@@ -43,7 +43,7 @@
         var esp = global.Store && global.Store._d && global.Store._d.esp;
         if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
       } catch (e) {}
-      try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; } } catch (e) {}
+      try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
       try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
       try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
       return c;

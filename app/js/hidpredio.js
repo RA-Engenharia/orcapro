@@ -63,7 +63,9 @@
     margemNo: 0.05,        // hid:ok
     acimaUltimoPiso: 0.30, // hid:ok o TQ passa o piso do último pavimento e vira ventilador primário (o ramal mais alto entra abaixo do piso)
     tocoAF: 0.10,          // hid:ok toco da coluna de água fria abaixo da ligação mais baixa (tampão / registro de limpeza)
-    afBase: 0.10           // hid:ok a coluna de água fria nasce provisória a isto acima do piso térreo e é aparada na ligação mais baixa
+    afBase: 0.10,          // hid:ok a coluna de água fria nasce provisória a isto acima do piso térreo e é aparada na ligação mais baixa
+    registroAcima: 0.20,   // hid:ok face de baixo do registro da coluna acima do topo da obra (laje de cobertura): montagem e acesso no barrilete
+    tocoBarrilete: 0.15    // hid:ok espera da coluna acima do registro (ponta "continua" que o barrilete recebe)
   };
   function geo(par, k) { return par && par[k] != null && isFinite(Number(par[k])) ? Number(par[k]) : GEO_PREDIO[k]; }
 
@@ -316,7 +318,7 @@
     unidades.forEach(function (u) { (u.esp ? grupos[1] : grupos[0]).unidades.push(u); });
     decide("predio.shaft", "Shaft " + (par.shaft && par.shaft.tq ? "informado" : sh0.onde + (tentados > 1 ? " (o " + tentados + "º lugar testado: o traçado do pavimento-tipo passou ali; os anteriores ficavam sem caminho junto da bacia)" : "")) + ": tubo de queda, coluna de ventilação e coluna de água fria enfileiradas a " + f2(geo(par, "afastPrumadas")) + " m entre eixos, a " + f2(geo(par, "recuoShaft")) + " m da parede (critério do projetista; o shaft é fechado e visitável)" + (eixo ? "; a unidade espelhada tem o shaft espelhado" : "") + ".");
     grupos.forEach(function (G) { var Pg = prumadasGrupo(G, true); if (Pg) { Pg.novas.forEach(function (o) { acc.push(o); }); out.prumadas.push(Pg.prumada); } });
-    if (out.prumadas.length) pend("predio.barrilete", "ligue a(s) coluna(s) de água fria " + out.prumadas.map(function (p) { return p.af; }).join(", ") + " ao barrilete/reservatório superior (não modelado)", out.prumadas.map(function (p) { return p.af; }), { tipo: "modelar", sistema: "agua_fria", elemento: "barrilete" });
+    if (out.prumadas.length) pend("predio.barrilete", "ligue a(s) coluna(s) de água fria " + out.prumadas.map(function (p) { return p.af; }).join(", ") + " ao barrilete/reservatório superior (não modelado): a espera acima do registro de gaveta de cada coluna recebe o barrilete; na saída do reservatório, outro registro de gaveta (NBR 5626:2020, 6.5.12.4 a)", out.prumadas.map(function (p) { return p.af; }), { tipo: "modelar", sistema: "agua_fria", elemento: "barrilete" });
     st = est();
 
     /* 6) LIGAR AMBIENTE de cada unidade (o térreo à espera; os andares ao TQ; a ventilação à coluna) */
@@ -335,6 +337,39 @@
       u.ambiente = R.ambiente ? R.ambiente.id : null; u.terreo = R.ambiente ? R.ambiente.terreo : null;
       u.destino = R.rota ? R.rota.nome : null;
     });
+
+    /* FRENTE H2 (20/10/2026): REGISTRO DE SETORIZAÇÃO no início de cada coluna de água fria — NBR 5626:2020, 6.5.12.4 a (no
+       barrilete, em cada trecho que liga o barrilete ao reservatório) e b (na coluna, a montante do 1º ramal); PADROES-PROJETO-RA
+       R-C2/R-E17. Antes a coluna nascia no topo da obra sem registro (o HidAF avisava "sem registro de setorização").
+       ⚠ O ID DA COLUNA FICA: vários pontos chamam a coluna pelo id (o "ligar" do ambiente acha a coluna por ele, o aparar acima,
+       a válvula, os testes). Por isso o registro NÃO divide o trecho: a coluna sobe até a face de baixo do registro (acima da
+       laje de cobertura — o topo da obra é o topo da laje e o registro dentro dela não se alcança), o registro é um acessório
+       LIVRE (sem `trecho`: as duas faces são pontos de ligação, como os do kit depois de inseridos) e, acima dele, a ESPERA do
+       barrilete (ponta "continua"). Entra depois do "ligar" (passo 6): o traçado das unidades nunca vê a espera como coluna.
+       O giro: o volante para o lado LIVRE do shaft — perpendicular à fileira das prumadas (nunca na direção do tubo de queda
+       ou da coluna de ventilação), para o lado com mais espaço até a parede. */
+    function frenteShaft(sh) {
+      var a = sh.af, b = sh.tq, dx = b.x - a.x, dz = b.z - a.z, L = Math.sqrt(dx * dx + dz * dz);
+      var perp = L > EPS ? { x: -dz / L, z: dx / L } : { x: 1, z: 0 }, yS = y0 + geo(par, "margemNo") * 2, melhor = null;
+      [1, -1].forEach(function (sg) {
+        var v = { x: perp.x * sg, z: perp.z * sg }, livre = geo(par, "buscaLado");
+        for (var d = geo(par, "passoBusca"); d <= geo(par, "buscaLado") + EPS; d += geo(par, "passoBusca")) { if (K._int.paredeDe(st, { x: a.x + v.x * d, z: a.z + v.z * d }, yS)) { livre = d; break; } }
+        if (!melhor || livre > melhor.livre + EPS) melhor = { v: v, livre: livre };
+      });
+      return { x: r4(melhor.v.x), y: 0, z: r4(melhor.v.z) };
+    }
+    function registroColuna(G, opAF) {
+      var F = G.sh.af, Lr = B.ACESSORIO_PADRAO, yTop = r4(topoObra + geo(par, "registroAcima")), dirR = { x: 0, y: -1, z: 0 };   /* a água desce: face 1 em cima */
+      var BIC = dep("BimInstColocar", "./biminstcolocar.js"), fr = frenteShaft(G.sh), giro = BIC && BIC.giroPara ? BIC.giroPara(dirR, fr) : 0;
+      opAF.p1.y = yTop;   /* a coluna sobe até a face de baixo do registro */
+      if (opAF.continua === "ambos") opAF.continua = "p2"; else if (opAF.continua === "p1") delete opAF.continua;
+      var rg = { op: "acessorio", id: G.prumada.id + "-af-rg", famId: "ra-registro-gaveta", tipoId: B.varianteAuto ? B.varianteAuto("registro_gaveta", { sistema: "agua_fria", material: opAF.material, aplicacao: "reservacao" }) : "bruto",
+                 x: F.x, y: r4(yTop + Lr / 2), z: F.z, dir: dirR, sistema: "agua_fria", material: opAF.material, dn: opAF.dn, comprimento: Lr, predio: id, predioParte: "registro_coluna" };
+      if (giro) rg.giro = giro;
+      var esp = { op: "trecho", id: G.prumada.id + "-af-bar", sistema: "agua_fria", material: opAF.material, dn: opAF.dn, p1: { x: F.x, y: r4(yTop + Lr + geo(par, "tocoBarrilete")), z: F.z }, p2: { x: F.x, y: r4(yTop + Lr), z: F.z }, continua: "p1", predio: id, predioParte: "af_barrilete" };
+      acc.push(rg); acc.push(esp);
+      G.prumada.registro = rg.id; G.prumada.esperaBarrilete = esp.id; G.prumada.frenteRegistro = fr;
+    }
 
     /* 7) VÁLVULA → coluna de água fria (o ramal exclusivo da válvula sai da coluna) e a coluna APARADA na ligação mais baixa */
     var lista = K.achatar(opsAgora()), apag = apagadosDepois(lista);
@@ -363,7 +398,9 @@
       var yBaseAF = yLow != null ? r4(yLow - geo(par, "tocoAF")) : null;
       if (yBaseAF != null && yBaseAF > opAF.p2.y + EPS) { opAF.p2.y = yBaseAF; opAF.continua = "ambos"; G.prumada.yBaseAF = yBaseAF; G.prumada.yLigAF = r4(yLow); }
       else if (yLow == null) aviso("nenhum ramal de água chegou à coluna " + opAF.id + ": confira os pontos de água", [opAF.id]);
+      registroColuna(G, opAF);
     });
+    if (out.prumadas.some(function (p) { return p.registro; })) decide("predio.registro_coluna", "Registro de gaveta no início de cada coluna de água fria (" + out.prumadas.filter(function (p) { return p.registro; }).map(function (p) { return p.registro; }).join(", ") + "), no barrilete, acima da laje de cobertura e a montante do 1º ramal (NBR 5626:2020, 6.5.12.4 a e b): o volante para o lado livre do shaft (fora das outras prumadas e das paredes); acima dele, a espera que o barrilete recebe. O registro na saída do reservatório entra com o barrilete (pendência predio.barrilete).");
     if (out.prumadas.some(function (p) { return p.yBaseAF != null; })) decide("predio.valvula", "Válvula de descarga: o ramal exclusivo de cada bacia sai da coluna de água fria do shaft sob a laje (NBR 5626, 6.14.5) — a coluna termina " + f2(geo(par, "tocoAF")) + " m abaixo da ligação mais baixa (tampão / registro de limpeza; critério do projetista).");
 
     out.unidades = unidades.map(function (u) { return { id: u.id, pavimento: u.k, y: u.y, espelhada: u.esp, aparelhos: u.fams.slice(), ambiente: u.ambiente, terreo: u.terreo }; });

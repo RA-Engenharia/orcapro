@@ -488,14 +488,26 @@
     });
     arr(estado && estado.rufosEncontro).forEach(function (r) {
       if (!r || !r.ok || !r.encontros.length) return;
-      var ob = PADRAO_RUFO.obs + "; " + r.obsChapa, inc = "incluso na composição SINAPI do rufo (só conferência, não somar; quantidade por metro: valor de partida — conferir)";
-      if (r.comprimentoRufo > 0) itens.push(item("Cobertura", "Rufo de encontro com parede — " + r.chapa + ", corte " + virg(r.corteRufoEf * 100, 0) + " cm", "m", r.comprimentoRufo, r.sinapiRufo, ob, { rufo: r.id }));
-      itens.push(item("Cobertura", "Contrarrufo embutido na parede — " + r.chapa + ", corte " + virg(r.corteContraEf * 100, 0) + " cm", "m", r.comprimentoContra, r.sinapiContra, ob, { rufo: r.id }));
-      itens.push(item("Cobertura", "Chapa do rufo e do contrarrufo (massa, com " + PADRAO_RUFO.perdaPct + "% de perda por corte)", "kg", r.kgRufo + r.kgContra, null, "conferência de compra: " + virg(r.kgPorMRufo, 3) + " kg/m (rufo) e " + virg(r.kgPorMContra, 3) + " kg/m (contrarrufo); " + r.obsChapa, { rufo: r.id, somar: false }));
-      var fx = r.sinapiRufo ? inc : "fixação: " + PADRAO_RUFO.obs;
-      itens.push(item("Cobertura", "Fixação do contrarrufo — parafuso + bucha S-8 na alvenaria", "un", r.fixacao.parafusoBucha, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
-      itens.push(item("Cobertura", "Rebite de repuxo Ø3,2 × 8 mm (emendas)", "un", r.fixacao.rebites, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
-      itens.push(item("Cobertura", "Selante PU — cordão no encontro com a parede", "m", r.fixacao.selanteM, null, fx, { rufo: r.id, somar: !r.sinapiRufo }));
+      var cc = r.corteContraInfo || {}, comSin = arr(r.pecasRufo).some(function (p) { return !!p.sinapi; }), FX = DADOS_TEL.fixacao;
+      function obCorte(info) { return info && info.padronizado ? "corte padronizado " + (info.insumo ? "(insumo SINAPI " + info.insumo + ") " : "") + "— " + info.fonte : "corte sob medida (nenhum corte padronizado da bitola cobre o desenvolvimento): orçar à parte"; }
+      arr(r.pecasRufo).forEach(function (p) {
+        itens.push(item("Cobertura", "Rufo de encontro com parede (" + p.posicoes.join(", ") + ") — " + r.chapa + ", corte " + virg(p.corte * 100, 0) + " cm", "m", p.comprimento, p.sinapi,
+                        obCorte(p.info) + "; dobras: " + p.dobras.fonte + "; " + r.obsChapa, { rufo: r.id }));
+      });
+      itens.push(item("Cobertura", "Contrarrufo embutido na parede — " + r.chapa + ", corte " + virg(r.corteContraEf * 100, 0) + " cm", "m", r.comprimentoContra, r.sinapiContra,
+                      "desenvolvimento do contrarrufo " + PADRAO_RUFO.obs + " (" + DADOS_TEL.contrarrufo.semFonte.split(".")[0] + "); recobrimento mínimo de " + virg(num(DADOS_TEL.contrarrufo.recobrimentoM, 0) * 100, 0) + " cm sobre o rufo (" + DADOS_TEL.contrarrufo.recobrimentoFonte + "); " + obCorte(cc) + "; " + r.obsChapa, { rufo: r.id }));
+      itens.push(item("Cobertura", "Chapa do rufo e do contrarrufo (massa)", "kg", r.kgRufo + r.kgContra, null, "conferência de compra: corte × massa da chapa (" + r.obsChapa + ") × " + virg(FX.rufoMPorM, 2) + " m de chapa por metro (perda de " + FX.perdaPct + "% — " + FX.fonte + ")", { rufo: r.id, somar: false }));
+      /* a fixação À PARTE só dos metros sem composição (r.fixacaoAParte); tudo com composição → só conferência, como antes */
+      var FA = r.fixacaoAParte, Ltot = r4(num(r.comprimentoRufo, 0) + num(r.comprimentoContra, 0));
+      var aParte = FA ? FA.metros > 1e-9 : !comSin, Fq = FA && aParte ? FA : r.fixacao, Lcob = FA ? r4(Ltot - FA.metros) : 0;
+      var fx = !aParte ? "incluso na composição SINAPI do rufo (só conferência, não somar) — coeficiente por metro: " + FX.fonte
+                       : "coeficiente por metro: " + FX.fonte + (Lcob > 1e-9 ? "; só os " + virg(FA.metros) + " m sem composição (os " + virg(Lcob) + " m pela composição SINAPI já a incluem)" : "");
+      itens.push(item("Cobertura", "Rebite de repuxo de alumínio Ø3,2 × 8 mm", "un", Fq.rebites, null, fx, { rufo: r.id, somar: aParte }));
+      itens.push(item("Cobertura", "Prego de aço inox 18 × 27 (rufo sobre estrutura de madeira)", "un", Fq.pregos, null, fx, { rufo: r.id, somar: aParte }));
+      itens.push(item("Cobertura", "Selante PU, cartucho 310 ml — cordão em todo o encontro com a parede (" + virg(Fq.selanteM) + " m)", "un", Fq.selanteCartuchos, null, fx, { rufo: r.id, somar: aParte }));
+      itens.push(item("Cobertura", "Solda de estanho 50/50 (emendas)", "kg", Fq.soldaKg, null, fx, { rufo: r.id, somar: aParte }));
+      itens.push(item("Cobertura", "Fixação do contrarrufo — " + txt(FX.bucha).toLowerCase(), "un", r.fixacao.parafusoBucha, null,
+                      "insumo: " + FX.buchaFonte + "; espaçamento de " + virg(PADRAO_RUFO.espBucha * 100, 0) + " cm " + PADRAO_RUFO.obs + " (o SINAPI não dá; a Isoeste usa 500 mm no acessório dela)", { rufo: r.id }));
     });
     arr(estado && estado.condutores).forEach(function (c) {
       if (!c || !c.ok) return;
@@ -524,23 +536,51 @@
        PARTIDA — CONFERIR e sai escrito assim no quantitativo e no memorial. COM fonte: a composição SINAPI 94231 (rufo nº 24, corte
        25 cm: rebite de repuxo Ø3,2 × 8 mm, prego inox 18 × 27 na madeira, parafuso + bucha S-8 na alvenaria, cordão de selante PU
        em todo o encontro, perda de 5% por corte — SINAPI Caderno Telhamento 06/2026, p. 64–65). */
+  /* PLUVIAL 2 (20/10/2026): os números do rufo e do condutor vêm de DADOS_TEL — bloco GERADO dos json com fonte (não editar à
+     mão: node tools/gerar-telhado-cobertura-dados.js; o teste tools/test-telhado-pluvial2.js reprova bloco velho). */
+  /* telhado-dados-inicio — GERADO por tools/gerar-telhado-cobertura-dados.js de data/telhado-condutor-nbr10844.json e data/telhado-rufos.json: NÃO editar à mão */
+  var DADOS_TEL = {"versaoAbaco":"2026-10-20.1","versaoRufos":"2026-10-20.1","abaco":{"fonte":"ABNT NBR 10844:1989 - Instalacoes prediais de aguas pluviais, Figura 3 e itens 5.6.3-5.6.4, página 8 do PDF de consulta","tipoFonte":"primária (digitalizada do ábaco)","exemplarLicenciado":false,"incerteza":"estimada +-15 a 20 L/min (cerca de +-2 a 3 %) por leitura do desenho (espessura do traco ~10 L/min, calibracao dos eixos, ajuste); em regioes de curvas muito proximas (D<65 mm, L<=1,5 m) pode chegar a +-30 L/min. Nao usar abaixo do diametro interno minimo da norma (70 mm, item 5.6.3).","regra":"5.6.4.1: levantar vertical por Q ate interceptar as curvas de H e L; transportar a intersecao MAIS ALTA ate o eixo D; adotar o diametro nominal cujo diametro interno seja >= D. Equivale a Q_max(D) = min(Q_curva_H(D), Q_curva_L(D)).","diFonte":"diametro interno aproximado = dem - 2 x espessura minima (serie reforcada SR), de dados-fonte/hidro/normas/tubos-pvc.json (NBR 5688:2018, primaria, exemplarLicenciado false): DN75 = 75,5 - 2x2,0 = 71,5 mm; DN100 = 101,6 - 2x2,5 = 96,6 mm; DN150 = 150,0 - 2x3,6 = 142,8 mm; DN50 ~ 47 mm (abaixo do minimo de 70 mm); DN200 ~ 191 mm (fora do abaco, max 150 mm). Serie normal da 0,5 a 1 mm a mais de diametro interno.","versao":"2026-10-20.1","aresta_viva":{"H":[{"H":50,"pts":[[50,385],[55,405],[60,430],[65,450],[70,470],[75,495],[80,515],[85,540],[90,560],[95,585],[100,605],[105,630],[110,650],[115,670],[120,695],[125,715],[130,740],[135,760],[140,785],[145,805],[150,830]]},{"H":60,"pts":[[50,540],[55,565],[60,595],[65,620],[70,650],[75,675],[80,705],[85,735],[90,760],[95,790],[100,815],[105,845],[110,870],[115,900],[120,930],[125,955],[130,985],[135,1010],[140,1040],[145,1065],[150,1095]]},{"H":70,"pts":[[55,760],[60,795],[65,830],[70,865],[75,900],[80,935],[85,975],[90,1010],[95,1045],[100,1080],[105,1115],[110,1150],[115,1185],[120,1220],[125,1255],[130,1290],[135,1325],[140,1365],[145,1400],[150,1435]]},{"H":80,"pts":[[65,1075],[70,1120],[75,1160],[80,1205],[85,1250],[90,1290],[95,1335],[100,1375],[105,1420],[110,1460],[115,1505],[120,1545],[125,1590],[130,1635],[135,1675],[140,1720],[145,1760]]},{"H":90,"pts":[[75,1455],[80,1510],[85,1560],[90,1615],[95,1665],[100,1715],[105,1770],[110,1820],[115,1870],[120,1925],[125,1975],[130,2025],[135,2075],[140,2130],[145,2180],[150,2230]]},{"H":100,"pts":[[80,1850],[85,1915],[90,1975],[95,2035],[100,2095],[105,2155],[110,2215],[115,2280],[120,2340],[125,2400],[130,2460],[135,2520],[140,2580],[145,2640],[150,2695]]}],"L":[{"L":0.3,"pts":[[55,215],[60,265],[65,320],[70,385],[75,450],[80,530],[85,610],[90,700],[95,795],[100,900],[105,1005],[110,1120],[115,1240],[120,1365],[125,1495],[130,1635],[135,1775],[140,1920],[145,2075]]},{"L":0.6,"pts":[[50,220],[55,275],[60,335],[65,400],[70,470],[75,545],[80,630],[85,720],[90,820],[95,925],[100,1035],[105,1155],[110,1280],[115,1415],[120,1555],[125,1705],[130,1865],[135,2030],[140,2205],[145,2390],[150,2585]]},{"L":1,"pts":[[50,255],[55,320],[60,390],[65,465],[70,550],[75,640],[80,740],[85,845],[90,960],[95,1080],[100,1205],[105,1345],[110,1490],[115,1640],[120,1800],[125,1970],[130,2150]]},{"L":1.5,"pts":[[50,285],[55,360],[60,445],[65,535],[70,630],[75,735],[80,845],[85,960],[90,1090],[95,1220],[100,1365],[105,1515],[110,1675],[115,1850],[120,2030],[125,2225],[130,2430]]},{"L":2,"pts":[[50,315],[55,400],[60,495],[65,590],[70,695],[75,805],[80,925],[85,1050],[90,1190],[95,1335],[100,1490],[105,1660],[110,1840],[115,2035],[120,2240],[125,2460]]},{"L":3,"pts":[[50,360],[55,455],[60,555],[65,665],[70,780],[75,905],[80,1040],[85,1185],[90,1340],[95,1510],[100,1690],[105,1890],[110,2100],[115,2325]]},{"L":6,"pts":[[50,445],[55,550],[60,670],[65,800],[70,945],[75,1100],[80,1270],[85,1455],[90,1655],[95,1870],[100,2105]]},{"L":25,"pts":[[55,670],[60,830],[65,1005],[70,1200],[75,1410],[80,1645],[85,1895]]},{"L":null,"pts":[[55,745],[60,925],[65,1125],[70,1350],[75,1595],[80,1865]]}],"dn":[{"dn":75,"di":71.5},{"dn":100,"di":96.6},{"dn":150,"di":142.8}]},"funil":{"H":[{"H":50,"pts":[[50,440],[55,470],[60,495],[65,520],[70,550],[75,575],[80,605],[85,630],[90,655],[95,685],[100,710],[105,735],[110,765],[115,790],[120,815],[125,845],[130,870],[135,895],[140,925],[145,950],[150,975]]},{"H":60,"pts":[[50,635],[55,670],[60,705],[65,740],[70,770],[75,805],[80,840],[85,875],[90,905],[95,940],[100,975],[105,1005],[110,1040],[115,1075],[120,1110],[125,1140],[130,1175],[135,1210],[140,1245],[145,1275],[150,1310]]},{"H":70,"pts":[[60,915],[65,960],[70,1005],[75,1045],[80,1090],[85,1130],[90,1175],[95,1220],[100,1260],[105,1305],[110,1350],[115,1390],[120,1435],[125,1480],[130,1520],[135,1565],[140,1605],[145,1650],[150,1695]]},{"H":80,"pts":[[70,1295],[75,1350],[80,1405],[85,1460],[90,1515],[95,1570],[100,1620],[105,1675],[110,1730],[115,1785],[120,1840],[125,1890],[130,1945],[135,2000],[140,2055],[145,2110],[150,2160]]},{"H":90,"pts":[[80,1760],[85,1825],[90,1885],[95,1950],[100,2015],[105,2080],[110,2145],[115,2210],[120,2270],[125,2335],[130,2400],[135,2465],[140,2525],[145,2590]]},{"H":100,"pts":[[85,2215],[90,2290],[95,2365],[100,2435],[105,2510],[110,2585],[115,2660],[120,2735]]}],"L":[{"L":0.3,"pts":[[55,250],[60,310],[65,375],[70,445],[75,525],[80,610],[85,705],[90,800],[95,910],[100,1025],[105,1145],[110,1275],[115,1415],[120,1560],[125,1715],[130,1880],[135,2050],[140,2230]]},{"L":0.6,"pts":[[50,245],[55,310],[60,375],[65,450],[70,530],[75,620],[80,710],[85,815],[90,925],[95,1040],[100,1165],[105,1300],[110,1440],[115,1595],[120,1755],[125,1925],[130,2105],[135,2295]]},{"L":1,"pts":[[50,285],[55,355],[60,435],[65,520],[70,610],[75,710],[80,815],[85,930],[90,1055],[95,1185],[100,1320],[105,1470],[110,1625],[115,1790],[120,1970],[125,2155],[130,2350],[135,2555]]},{"L":1.5,"pts":[[50,320],[55,405],[60,495],[65,590],[70,690],[75,800],[80,920],[85,1045],[90,1180],[95,1320],[100,1475],[105,1635],[110,1810],[115,1995],[120,2195],[125,2405]]},{"L":2,"pts":[[50,355],[55,435],[60,530],[65,630],[70,740],[75,860],[80,990],[85,1125],[90,1275],[95,1430],[100,1595],[105,1770],[110,1955],[115,2145],[120,2350]]},{"L":3,"pts":[[55,490],[60,590],[65,705],[70,825],[75,960],[80,1105],[85,1265],[90,1435],[95,1615],[100,1810],[105,2015],[110,2235],[115,2470]]},{"L":6,"pts":[[50,460],[55,570],[60,690],[65,825],[70,975],[75,1135],[80,1315],[85,1505],[90,1715],[95,1940],[100,2185],[105,2440]]},{"L":25,"pts":[[50,555],[55,690],[60,845],[65,1015],[70,1205],[75,1420],[80,1660],[85,1930],[90,2225]]},{"L":null,"pts":[[50,590],[55,750],[60,925],[65,1125],[70,1345],[75,1595],[80,1870],[85,2180]]}],"dn":[{"dn":75,"di":71.5},{"dn":100,"di":96.6},{"dn":150,"di":142.8}]}},"chapas":{"galv24":{"gsg":24,"espessuraMm":0.64,"kgM2":5.12,"insumo":43106,"fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 43106"},"galv26":{"gsg":26,"espessuraMm":0.5,"kgM2":4,"insumo":11051,"fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 11051"},"galv22":{"gsg":22,"espessuraMm":0.8,"kgM2":6.4,"insumo":11049,"fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 11049"},"aluminio":{"espessuraMm":0.5,"larguraCm":30,"fonte":"DER-ES - Caderno de Especificacoes 0903 Rufos e Calhas (05/2025), servico 090314"}},"cortes":[{"corteCm":25,"mat":"galv24","insumo":40873,"peca":"rufo interno/externo (composicao 94231)","fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 40873"},{"corteCm":25,"mat":"galv26","insumo":1116,"peca":"rufo externo","fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 1116"},{"corteCm":28,"mat":"galv26","insumo":1115,"peca":"rufo externo","fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 1115"},{"corteCm":30,"mat":"galv26","insumo":null,"peca":"rufo externo/interno n. 26","fonte":"DER-ES - Caderno de Especificacoes 0903 Rufos e Calhas (05/2025), servico 090302"},{"corteCm":30,"mat":"aluminio","insumo":null,"peca":"rufo externo/interno de alumínio","fonte":"DER-ES - Caderno de Especificacoes 0903 Rufos e Calhas (05/2025), servico 090314"},{"corteCm":33,"mat":"galv26","insumo":1113,"peca":"rufo externo/interno (composicao 100327)","fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 1113"},{"corteCm":50,"mat":"galv26","insumo":1114,"peca":"rufo interno","fonte":"CAIXA - SINAPI, Fichas de Especificacao Tecnica de Insumos (09/2026), ficha 1114"}],"dobras":{"lateral":{"posicao":"encontro com parede/alvenaria - rufo lateral inferior","tipo":"telha metalica trapezoidal Kingspan Isoeste TP40","abaTelhaMm":270,"abaParedeMm":160,"dobrasMm":40,"desenvolvimentoMm":470,"desenvolvimentoSomado":false,"pecaMm":3000,"utilMm":2800,"fonte":"Kingspan Isoeste - Manual de Instalacao TP40 (rufos, pag. 20 a 27; cotas em mm lidas nos desenhos), p. 23"},"superior":{"posicao":"encontro superior com parede - rufo superior dentado","tipo":"Kingspan Isoeste TP40","abaTelhaMm":280,"abaParedeMm":160,"dobrasMm":20,"desenvolvimentoMm":460,"desenvolvimentoSomado":true,"pecaMm":1200,"utilMm":980,"fonte":"Kingspan Isoeste - Manual de Instalacao TP40 (rufos, pag. 20 a 27; cotas em mm lidas nos desenhos), p. 25"}},"fixacao":{"rufoMPorM":1.05,"perdaPct":5,"cartuchoPorM":0.0403226,"mPorCartucho":24.8,"pregosPorM":1.26,"rebitesPorM":1.25,"soldaKgPorM":0.045,"fonte":"CAIXA - SINAPI, Caderno Tecnico de Composicoes: Telhamento para Cobertura (06/2026), p. 63-65 (composicao 94231)","obs":"Coeficientes por m de rufo, conferidos no caderno (layout do PDF embaralha a coluna; item->coeficiente validado pela proporcao 33/25 = 1,32 entre 94231 e 100327). Considera fixacao sobre estrutura de MADEIRA; sobre alvenaria/concreto 'utilizar parafusos e buchas de nailon S-8 em substituicao aos pregos' (sem coeficiente publicado).","bucha":"BUCHA DE NYLON SEM ABA S8, COM PARAFUSO DE 4,80 X 50 MM","buchaFonte":"CAIXA - SINAPI, ficha de insumo 7583"},"contrarrufo":{"recobrimentoM":0.1,"recobrimentoFonte":"Eternit - Catalogo Tecnico Fibrocimento 2020/21 (rufo/contrarrufo das telhas de fibrocimento), p. 85 (leitura do desenho; confirmar com o catalogo)","juntaM":0.02,"juntaFonte":"CAIXA - SINAPI, Caderno Tecnico de Composicoes: Telhamento para Cobertura (06/2026), p. 119 (composicao 100435, item 8 Informacoes complementares)","semFonte":"Nenhuma fonte tecnica traz dobras/desenvolvimento do contrarrufo metalico (profundidade do rasgo, largura da aba). Orcamentos publicos citam 'rufo e contrarrufo' com corte de 15 a 60 cm (ver orcamentos_publicos_desenvolvimento_cm). O que ha de fonte:"},"semFonteRufos":["dobras e desenvolvimento do contrarrufo metalico (profundidade do rasgo e largura das abas)","dobras de rufo de oitao/empena especificas para telha ceramica/concreto (so ha rufos de acessorio de telha metalica)","rufo de encosto em laje, com dobras","rufo de cumeeira em chapa galvanizada n. 24/26 (so cumeeira lisa de telha metalica)","espacamento do parafuso+bucha S-8 em rufo de alvenaria (o SINAPI nao informa; Isoeste usa 500 mm em acessorio proprio)","espessura de rufo pre-pintado","tabela de bitolas dentro da NBR 7008 (texto nao lido); hipotese 0,70/0,55 mm nao confirmada","catalogo Brasilit (site bloqueia robo - HTTP 403); TCPO (pago); catalogos de calhas Tigre/Amanco/Wavin/Kennedy sem desenvolvimento/dobras em fonte aberta"]};
+  /* telhado-dados-fim */
+  /* VALOR DE PARTIDA — CONFERIR: o que data/telhado-rufos.json lista em "sem_fonte" (20/10/2026) */
   var PADRAO_RUFO = {
-    corteRufo: 0.25, corteContra: 0.25, abaTelha: 0.10, abaParede: 0.15, contraDe: 0.10, contraAte: 0.22, folga: 0.05,
-    parafusoPorM: 2, rebitePorM: 2, selantePorM: 1, perdaPct: 5,
-    obs: "valor de partida — conferir (dobras, desenvolvimento e fixação por metro sem fonte técnica: docs/telhado/PADROES-TELHADO.md §5.1)"
+    abaTelha: 0.10, abaParede: 0.15,   /* dobras do rufo para telha que NÃO é metálica (cerâmica, concreto, fibrocimento…): sem fonte */
+    corteContra: 0.25,                 /* desenvolvimento do contrarrufo metálico: sem fonte (orçamentos públicos: 15 a 60 cm) */
+    espBucha: 0.50,                    /* espaçamento do parafuso + bucha S-8 na alvenaria: o SINAPI não dá; a Isoeste usa 500 mm no acessório dela */
+    folga: 0.05,                       /* o quanto a parede passa da telha para levar rufo (detecção geométrica, não é norma) */
+    obs: "valor de partida — conferir"
   };
-  /* a chapa: a massa é física (corte × espessura × densidade); a ESPESSURA da bitola é valor de partida (fontes divergem) */
+  /* hid:fisica — densidade do alumínio (propriedade do material, kg/m³): a ficha do DER-ES dá só a espessura */
+  var DENSIDADE_ALUMINIO = 2700;
   var CHAPAS = {
-    galv24: { rotulo: "chapa de aço galvanizado nº 24", espessuraMm: 0.64, densidade: 7850, sinapi: { 0.25: "rufo25" },
-              obsEsp: "espessura 0,64 mm de partida (fontes: 0,60–0,64 mm) — conferir com o fornecedor" },
-    galv26: { rotulo: "chapa de aço galvanizado nº 26", espessuraMm: 0.50, densidade: 7850, sinapi: { 0.33: "rufo33" },
-              obsEsp: "espessura ≈ 0,50 mm (DER-ES 0903, fonte secundária) — conferir com o fornecedor" },
-    aluminio: { rotulo: "chapa de alumínio", espessuraMm: 0.50, densidade: 2700, sinapi: {},
-                obsEsp: "espessura 0,50 mm de partida (sem fonte) — conferir com o fornecedor" }
+    galv24: { rotulo: "chapa de aço galvanizado nº 24", d: DADOS_TEL.chapas.galv24, sinapi: { 25: "rufo25" } },
+    galv26: { rotulo: "chapa de aço galvanizado nº 26", d: DADOS_TEL.chapas.galv26, sinapi: { 33: "rufo33" } },
+    aluminio: { rotulo: "chapa de alumínio", d: DADOS_TEL.chapas.aluminio, sinapi: {} }
   };
-  function chapaDe(m) { return CHAPAS[m] ? m : "galv24"; }
-  function sinRufo(mat, corte) { var c = CHAPAS[chapaDe(mat)], k = Object.keys(c.sinapi).filter(function (x) { return Math.abs(Number(x) - corte) < 1e-6; })[0]; return k ? sin(c.sinapi[k]) : null; }
-  function kgPorM(mat, corte) { var c = CHAPAS[chapaDe(mat)]; return corte * c.espessuraMm / 1000 * c.densidade * (1 + PADRAO_RUFO.perdaPct / 100); }
+  function chapaDe(m) { return CHAPAS[m] && CHAPAS[m].d ? m : "galv24"; }
+  function kgM2(mat) { var d = CHAPAS[chapaDe(mat)].d; return d.kgM2 != null ? d.kgM2 : d.espessuraMm / 1000 * DENSIDADE_ALUMINIO; }
+  function obsChapa(mat) {
+    var d = CHAPAS[chapaDe(mat)].d;
+    return "e = " + virg(d.espessuraMm, 2) + " mm" + (d.kgM2 != null ? ", " + virg(d.kgM2, 2) + " kg/m²" : " (massa pela densidade do alumínio)") + " — " + d.fonte;
+  }
+  /* a composição SINAPI só quando bitola e corte batem com ela (94231 = nº 24 corte 25; 100327 = nº 26 corte 33) */
+  function sinRufo(mat, corte) { var c = CHAPAS[chapaDe(mat)], k = Object.keys(c.sinapi).filter(function (x) { return Math.abs(Number(x) / 100 - corte) < 1e-6; })[0]; return k ? sin(c.sinapi[k]) : null; }
+  /* kg por metro de rufo: corte × massa da chapa × o consumo de chapa por metro da SINAPI 94231 (inclui a perda por corte) */
+  function kgPorM(mat, corte) { return corte * kgM2(mat) * DADOS_TEL.fixacao.rufoMPorM; }
+  /* o MENOR corte padronizado (SINAPI / DER-ES) da bitola que cobre o desenvolvimento; nenhum → sob medida, sem código */
+  function cortePara(mat, dev) {
+    var cs = DADOS_TEL.cortes.filter(function (c) { return c.mat === chapaDe(mat) && c.corteCm / 100 >= dev - 1e-9; });
+    if (cs.length) return { corte: cs[0].corteCm / 100, padronizado: true, insumo: cs[0].insumo, peca: cs[0].peca, fonte: cs[0].fonte };
+    return { corte: Math.ceil(dev * 100 - 1e-6) / 100, padronizado: false, insumo: null, peca: null, fonte: null };
+  }
+  /* as dobras do rufo pela POSIÇÃO: telha metálica/sanduíche → Kingspan Isoeste TP40 (lateral: a água corre ao longo da parede;
+     superior: a telha sobe até a parede); qualquer outra telha → valor de partida */
+  function dobrasRufo(familia, pos) {
+    var d = (familia === "metalica" || familia === "sanduiche") ? DADOS_TEL.dobras[pos === "superior" ? "superior" : "lateral"] : null;
+    if (d) return { abaTelha: d.abaTelhaMm / 1000, abaParede: d.abaParedeMm / 1000, desenvolvimento: d.desenvolvimentoMm / 1000, partida: false,
+                    fonte: d.fonte + " — " + d.posicao + (d.desenvolvimentoSomado ? " (desenvolvimento = soma das cotas do desenho)" : "") };
+    return { abaTelha: PADRAO_RUFO.abaTelha, abaParede: PADRAO_RUFO.abaParede, desenvolvimento: PADRAO_RUFO.abaTelha + PADRAO_RUFO.abaParede, partida: true,
+             fonte: "dobras " + PADRAO_RUFO.obs + " (sem fonte para telha " + (familia || "deste tipo") + "; as dobras com cota são de acessório de telha metálica)" };
+  }
 
   function dentroP(x, z, pts) {
     var d = false;
@@ -620,28 +660,69 @@
     }
     return out;
   }
+  /* "superior" quando a água junto da parede sobe na direção dela (o plano cresce para fora do contorno); senão "lateral" */
+  function posicaoEncontro(t, en) {
+    var s = en.segs[0]; if (!s) return "lateral";
+    var mx = (s.a.x + s.b.x) / 2 + en.nIn.x * 0.05, mz = (s.a.z + s.b.z) / 2 + en.nIn.z * 0.05, g = null;
+    arr(t.aguasCalc).forEach(function (ag) { arr(ag.pecas).forEach(function (pc) { if (!g && dentroP(mx, mz, arr(pc.pts))) g = ag.plano || null; }); });
+    if (!g) return "lateral";
+    var gx = num(g.bx, 0), gz = num(g.bz, 0), m = Math.sqrt(gx * gx + gz * gz);
+    if (!(m > 1e-9)) return "lateral";
+    return (gx * -en.nIn.x + gz * -en.nIn.z) / m > Math.SQRT1_2 ? "superior" : "lateral";
+  }
   function calcularRufo(f, telhados, estado) {
     var r = clone(f), avisos = [], t = telhados[String(f.telhado)];
     r.tipo = "rufoEncontro"; r.ifc = "IFCCOVERING"; r.ifcPre = "FLASHING"; r.ok = false; r.encontros = []; r.comprimentoRufo = 0; r.comprimentoContra = 0;
-    r.materialEf = chapaDe(f.material); r.chapa = CHAPAS[r.materialEf].rotulo; r.obsChapa = CHAPAS[r.materialEf].obsEsp;
-    r.corteRufoEf = fin(Number(f.corteRufo)) ? Number(f.corteRufo) : PADRAO_RUFO.corteRufo;
-    r.corteContraEf = fin(Number(f.corteContra)) ? Number(f.corteContra) : PADRAO_RUFO.corteContra;
+    r.materialEf = chapaDe(f.material); r.chapa = CHAPAS[r.materialEf].rotulo; r.obsChapa = obsChapa(r.materialEf);
+    var ccF = cortePara(r.materialEf, fin(Number(f.corteContra)) ? Number(f.corteContra) : PADRAO_RUFO.corteContra);
+    r.corteContraEf = ccF.corte; r.corteContraInfo = ccF; r.corteRufoEf = null;
     if (!t) { avisos.push("O telhado deste rufo não existe mais."); r.avisos = avisos; return r; }
     if (!t.ok || t.modo !== "perimetro") { avisos.push("O rufo de encontro segue o contorno do telhado por perímetro que fechou."); r.avisos = avisos; return r; }
     var emb = {}; arr(estado && estado.calhasEmbutidas).forEach(function (c) { if (c && c.ok && String(c.telhado) === String(t.id)) arr(c.arestas).forEach(function (o) { emb[Number(o)] = true; }); });
-    var LR = 0, LC = 0;
+    var LR = 0, LC = 0, Tm = BT(), tel = Tm && Tm.telha ? Tm.telha(t.tipoId) : null, fam = tel ? tel.familia : null, kgR = 0;
+    r.familiaTelha = fam;
     encontrosDoTelhado(estado, t, { folga: f.folga }).forEach(function (en) {
       en.rufo = !(en.define && emb[en.orig]);                 /* no beiral com calha embutida a calha recebe a água: só o contrarrufo */
       en.contra = true;
+      /* a posição pela inclinação junto da parede: a telha SOBE até ela (superior) ou corre ao longo dela (lateral) */
+      en.posicao = en.define ? "beiral" : posicaoEncontro(t, en);
+      en.dobras = dobrasRufo(fam, en.posicao);
+      var cr = fin(Number(f.corteRufo)) ? { corte: Number(f.corteRufo), padronizado: false, insumo: null, fonte: "corte informado na op" } : cortePara(r.materialEf, en.dobras.desenvolvimento);
+      en.corteRufo = cr.corte; en.corteRufoInfo = cr; en.sinapiRufo = sinRufo(r.materialEf, cr.corte);
+      /* o desenho: o contrarrufo cobre a aba do rufo com o recobrimento da fonte */
+      var rec = num(DADOS_TEL.contrarrufo.recobrimentoM, 0);
+      en.contraDe = r4(Math.max(0, en.dobras.abaParede - rec)); en.contraAte = r4(en.contraDe + r.corteContraEf / 2);
+      if (en.rufo) { kgR += en.comprimento * kgPorM(r.materialEf, cr.corte); r.corteRufoEf = Math.max(r.corteRufoEf || 0, cr.corte); }
       if (en.define && !emb[en.orig]) avisos.push("A aresta " + (en.orig + 1) + " é beiral (a água sai por ela) e encosta na parede " + en.parede + ", mais alta que a telha: precisa de calha embutida (Cobertura completa › Calha embutida) — o rufo sozinho não leva a água.");
       if (en.rufo) LR += en.comprimento; LC += en.comprimento;
       r.encontros.push(en);
     });
     r.comprimentoRufo = r4(LR); r.comprimentoContra = r4(LC);
-    r.kgPorMRufo = r4(kgPorM(r.materialEf, r.corteRufoEf)); r.kgPorMContra = r4(kgPorM(r.materialEf, r.corteContraEf));
-    r.kgRufo = r4(LR * r.kgPorMRufo); r.kgContra = r4(LC * r.kgPorMContra);
-    r.fixacao = { parafusoBucha: Math.ceil(LC * PADRAO_RUFO.parafusoPorM), rebites: Math.ceil((LR + LC) * PADRAO_RUFO.rebitePorM), selanteM: r4((LR + LC) * PADRAO_RUFO.selantePorM) };
-    r.sinapiRufo = sinRufo(r.materialEf, r.corteRufoEf); r.sinapiContra = sinRufo(r.materialEf, r.corteContraEf);
+    if (r.corteRufoEf == null) r.corteRufoEf = cortePara(r.materialEf, PADRAO_RUFO.abaTelha + PADRAO_RUFO.abaParede).corte;
+    r.kgPorMRufo = r4(LR > 0 ? kgR / LR : kgPorM(r.materialEf, r.corteRufoEf)); r.kgPorMContra = r4(kgPorM(r.materialEf, r.corteContraEf));
+    r.kgRufo = r4(kgR); r.kgContra = r4(LC * r.kgPorMContra);
+    /* as peças por corte (o quantitativo sai por corte: cada um tem o seu código ou é "orçar à parte") */
+    var pc = {};
+    r.encontros.forEach(function (e) {
+      if (!e.rufo) return;
+      var k = String(e.corteRufo);
+      if (!pc[k]) pc[k] = { corte: e.corteRufo, comprimento: 0, sinapi: e.sinapiRufo, info: e.corteRufoInfo, dobras: e.dobras, posicoes: [] };
+      pc[k].comprimento = r4(pc[k].comprimento + e.comprimento); if (pc[k].posicoes.indexOf(e.posicao) < 0) pc[k].posicoes.push(e.posicao);
+    });
+    r.pecasRufo = Object.keys(pc).map(function (k) { return pc[k]; }).sort(function (a, b) { return a.corte - b.corte; });
+    /* fixação por metro (SINAPI 94231, sobre MADEIRA): rebite, prego inox 18 × 27, selante, solda; contrarrufo na alvenaria:
+       parafuso + bucha S-8 "em substituição aos pregos" (sem coeficiente publicado → espaçamento de partida) */
+    var FX = DADOS_TEL.fixacao, Lt = LR + LC;
+    r.fixacao = { rebites: Math.ceil(Lt * FX.rebitesPorM), pregos: Math.ceil(LR * FX.pregosPorM), parafusoBucha: Math.ceil(LC / PADRAO_RUFO.espBucha),
+                  selanteM: r4(Lt), selanteCartuchos: Math.ceil(Lt * FX.cartuchoPorM - 1e-9), soldaKg: r4(Lt * FX.soldaKgPorM), fonte: FX.fonte };
+    r.sinapiRufo = r.pecasRufo.length === 1 ? r.pecasRufo[0].sinapi : null; r.sinapiContra = sinRufo(r.materialEf, r.corteContraEf);
+    /* (revisor pluvial 2, 20/10/2026) a fixação À PARTE só dos metros SEM composição: a 94231 já traz rebite, prego, selante e
+       solda por metro. Antes valia "algum rufo tem composição?" para TUDO: telha metálica com chapa nº 24 (rufo TP40 sob medida,
+       contrarrufo pela 94231) orçava a fixação dos 20 m de contrarrufo duas vezes — e o caso inverso a deixava de fora */
+    var LRs = 0; r.pecasRufo.forEach(function (p) { if (!p.sinapi) LRs += p.comprimento; });
+    var LCs = r.sinapiContra ? 0 : LC, Ls = LRs + LCs;
+    r.fixacaoAParte = { metros: r4(Ls), metrosRufo: r4(LRs), metrosContra: r4(LCs), rebites: Math.ceil(Ls * FX.rebitesPorM), pregos: Math.ceil(LRs * FX.pregosPorM),
+                        selanteM: r4(Ls), selanteCartuchos: Math.ceil(Ls * FX.cartuchoPorM - 1e-9), soldaKg: r4(Ls * FX.soldaKgPorM) };
     r.ok = true;
     if (!r.encontros.length) avisos.push("Nenhuma parede mais alta que a telha encosta no contorno deste telhado: sem rufo de encontro.");
     if (avisos.length) r.avisos = avisos;
@@ -755,10 +836,59 @@
      cortadas no contorno do beiral) — h = a·i. Q = I·A/60 (L/min). CALHA: retangular de chapa, Manning (js/hidap.js), n do
      material e lâmina = metade da altura (premissa da RA, como antes), declividade mínima da norma. DESCIDAS: nas extremidades
      (divisor de águas entre elas), mais descidas no meio do maior vão até a calha passar. CONDUTOR: a tabela DN × vazão de
-     Botelho & Ribeiro Jr. (fonte SECUNDÁRIA — o ábaco da Figura 3 não está digitalizado) e o diâmetro interno mínimo da norma.
+     ÁBACO da Figura 3 da NBR 10844, digitalizado (PLUVIAL 2 — antes: a tabela secundária de Botelho & Ribeiro Jr.), e o diâmetro interno mínimo da norma.
      Ligação com o hidro: cada descida vira um trecho "pluvial" vertical do js/biminst.js (op trecho, sem mexer no biminst); a
      ponta de baixo fica como ESPERA PLUVIAL no piso (o condutor horizontal / caixa de areia é do projeto hidrossanitário). */
   var PREFIXO = "tel-calha-";
+  /* ============================================================ PLUVIAL 2: CONDUTOR VERTICAL PELO ÁBACO DA NBR 10844 (Figura 3)
+     Item 5.6.4.1: levantar a vertical por Q até as curvas de H (lâmina na calha) e de L (comprimento do condutor) e levar a
+     interseção MAIS ALTA ao eixo D — o mesmo que Q_max(D) = min(Q da curva H, Q da curva L); adotar o DN cujo diâmetro interno
+     é ≥ D. As curvas são as DIGITALIZADAS do desenho (DADOS_TEL.abaco, ±2–3 %). Entre duas curvas: interpolação linear; fora do
+     desenho, nada é estendido: H abaixo da 1ª curva ou L abaixo da 1ª = o ábaco não informa (null); H acima da última = a curva
+     mais alta e L acima da última finita = a de 25 m; curva não desenhada no D pedido = a de valor menor desenhada ali (as três a
+     favor da segurança: Q cresce com H e com L). */
+  function qCurva(pts, D) {
+    if (!pts.length || D < pts[0][0] - 1e-9 || D > pts[pts.length - 1][0] + 1e-9) return null;
+    for (var i = 0; i + 1 < pts.length; i++) if (D <= pts[i + 1][0] + 1e-9) { var a = pts[i], b = pts[i + 1]; return a[1] + (b[1] - a[1]) * (D - a[0]) / (b[0] - a[0]); }
+    return pts[pts.length - 1][1];
+  }
+  /* Q cresce com H e com L: a curva que não está DESENHADA neste D (o desenho para antes) é trocada pela curva de valor MENOR
+     mais próxima que está desenhada — nunca pela de cima (a favor da segurança; o ábaco não é estendido) */
+  function qFamilia(curvas, chave, v, D) {
+    var cs = curvas.filter(function (c) { return c[chave] != null; });
+    if (!cs.length || v < cs[0][chave] - 1e-9) return null;
+    var ve = Math.min(v, cs[cs.length - 1][chave]), i, lo = 0;
+    for (i = 0; i < cs.length; i++) if (cs[i][chave] <= ve + 1e-9) lo = i;
+    var qa = qCurva(cs[lo].pts, D);
+    if (qa != null && Math.abs(cs[lo][chave] - ve) < 1e-9) return qa;
+    if (qa != null && lo + 1 < cs.length) {
+      var qb = qCurva(cs[lo + 1].pts, D);
+      if (qb != null) return qa + (qb - qa) * (ve - cs[lo][chave]) / (cs[lo + 1][chave] - cs[lo][chave]);
+      return qa;
+    }
+    for (i = lo - 1; i >= 0; i--) { var q = qCurva(cs[i].pts, D); if (q != null) return q; }
+    return null;
+  }
+  function painelAbaco(saida) { return DADOS_TEL.abaco[saida === "funil" ? "funil" : "aresta_viva"]; }
+  /* a vazão máxima do condutor de diâmetro interno D (mm) com lâmina H (mm) e comprimento L (m) → {Q, QH, QL, limita} | null */
+  function qAbaco(saida, D, H, L) {
+    var P = painelAbaco(saida), QH = qFamilia(P.H, "H", H, D), QL = qFamilia(P.L, "L", L, D);
+    if (QH == null || QL == null) return null;
+    return { Q: Math.min(QH, QL), QH: QH, QL: QL, limita: QH <= QL ? "H" : "L" };
+  }
+  /* o MENOR DN (PVC série R) com Di ≥ o mínimo da norma e Q do ábaco ≥ a vazão da descida */
+  function dnPeloAbaco(qLmin, H, L, opc) {
+    opc = opc || {};
+    var P = painelAbaco(opc.saida), dns = arr(opc.dnsMat), dmin = opc.diMin;
+    for (var i = 0; i < P.dn.length; i++) {
+      var x = P.dn[i];
+      if (dmin != null && x.di < dmin) continue;
+      if (dns.length && dns.indexOf(x.dn) < 0) continue;
+      var q = qAbaco(opc.saida, x.di, H, L);
+      if (q && q.Q >= qLmin - 1e-9) return { dn: x.dn, di: x.di, Q: q.Q, QH: q.QH, QL: q.QL, limita: q.limita, H: H, L: L, painel: opc.saida === "funil" ? "funil" : "aresta_viva" };
+    }
+    return null;
+  }
   /* REVISÃO 20/10/2026 — a ÁREA DE CADA DESCIDA pela GEOMETRIA da água, não pela fração do comprimento da calha.
      O defeito que isto corrige: a divisão "Q da calha × fração do comprimento" supõe a mesma área por metro de calha. No telhado
      de 4 águas o trapézio do lado comprido tem a profundidade cheia no meio e o triângulo da ponta vai a zero; na quina
@@ -872,7 +1002,7 @@
     if (!cals.length) return { ok: false, motivo: "Nenhuma calha: marque \"calha de beiral\" ou lance a calha embutida da platibanda.", avisos: avisos };
 
     var nC = NR.consulta("ap.manning.n", { material: "chapa_metalica" }, "n"), dMin = NR.consulta("ap.calha.declividade_minima", null, "valor"), diMin = NR.consulta("ap.condutor_vertical.di_minimo_mm", null, "valor");
-    var capV = arr(NR.linhas("ap.condutor_vertical.capacidade", null)).slice().sort(function (a, b) { return a.dn - b.dn; });
+    var saidaCalha = cfg.saidaCalha === "funil" ? "funil" : "aresta_viva", Hmin = painelAbaco(saidaCalha).H[0].H;
     var dnsMat = BI && BI.MATERIAIS && BI.MATERIAIS.pvc_serie_r ? arr(BI.MATERIAIS.pvc_serie_r.dns) : [];
     var decl = fin(Number(cfg.declividadePct)) ? Number(cfg.declividadePct) : (dMin.ok ? num(dMin.valor, null) : null);
     if (decl == null) return { ok: false, motivo: "Sem a declividade mínima da calha (tabela da norma)." };
@@ -880,8 +1010,15 @@
     premissas.push("lâmina d'água da calha retangular = metade da altura (premissa da RA: a norma não traz borda livre para a retangular)");
     premissas.push("descidas nas extremidades da calha (divisor de águas entre elas); calha com menos de 2 m: uma descida — parâmetro adotado");
     premissas.push("vazão de cada descida = I × a área de influência dela / 60: cada ponto da água escorre no sentido da maior declividade até o beiral (ou pelo rincão até a quina) e vai para a descida mais próxima ao longo da calha (divisor no meio do vão); a área de cada água é a do caso (b); calha que dá a volta (telhado de 4 águas): descidas nas quinas, com o coeficiente da Tabela 1 (canto reto)");
-    premissas.push("condutor vertical pela tabela DN × vazão de Botelho & Ribeiro Jr. (fonte SECUNDÁRIA, via UFSM): o ábaco da Figura 3 da NBR 10844 não está digitalizado — conferir no ábaco");
+    premissas.push("condutor vertical pelo ÁBACO da NBR 10844, Figura 3 (" + (saidaCalha === "funil" ? "b) calha com funil de saída" : "a) calha com saída em aresta viva") + ", item 5.6.4): " + DADOS_TEL.abaco.tipoFonte + " — " + DADOS_TEL.abaco.incerteza.split(";")[0] + "; Di do PVC série R pela NBR 5688; " + (DADOS_TEL.abaco.exemplarLicenciado ? "" : "conferir no exemplar licenciado antes do memorial assinado"));
+    premissas.push("o ábaco começa em H = " + Hmin + " mm: a lâmina na saída da calha (metade da altura) fica ≥ " + Hmin + " mm; H acima da última curva e L acima de 25 m usam a última curva (a favor da segurança)");
 
+    /* o comprimento L de cada condutor (do fundo da calha ao piso), pela MESMA regra do replay: uma descida de prova por calha */
+    var Lcond = {};
+    (function () {
+      var prova = cals.map(function (c) { return { op: "condutor", id: "__L-" + c.id, calha: String(c.id), pos: 0.5 }; }), sp = est(ops.concat(prova));
+      arr(sp.condutores).forEach(function (c) { if (c && c.ok && String(c.id).indexOf("__L-") === 0) Lcond[String(c.id).slice(4)] = num(c.alturaM, null); });
+    })();
     var resCal = [], manLig = {}, descMin = Math.max(1, Math.round(num(cfg.descidasMin, 2)));
     function idDesc(calId, j, i) { var b = String(calId).indexOf(PREFIXO) === 0 ? String(calId) : PREFIXO + calId; return b + "-cd" + (j + 1) + (i != null ? "-" + (i + 1) : ""); }
     var avisou25 = false;
@@ -966,9 +1103,9 @@
         });
       }
       function distQuina(c, s) { var m = null; c.quinas.forEach(function (q) { var d = Math.abs(s - q); if (c.fechada) d = Math.min(d, c.L - d); if (m == null || d < m) m = d; }); return m; }
-      function dnPara(qLmin) {
-        return capV.filter(function (x) { return num(x.vazao_ls, -1) * 60 >= qLmin - 1e-9 && (!diMin.ok || num(x.dn, 0) >= num(diMin.valor, 0)) && (!dnsMat.length || dnsMat.indexOf(num(x.dn, 0)) >= 0); })[0] || null;
-      }
+      var Lc = Lcond[String(cal.id)];
+      function dnPara(qLmin, H) { return Lc == null ? null : dnPeloAbaco(qLmin, H, Lc, { saida: saidaCalha, dnsMat: dnsMat, diMin: diMin.ok ? num(diMin.valor, null) : null }); }
+      if (Lc == null) avisos.push("Calha " + cal.id + ": sem o comprimento do condutor (L) para o ábaco.");
       function maisUma(c) {
         var P = c.pos.slice(), gi = -1, gv = -1;
         for (var j = 0; j < P.length; j++) { var nx = j + 1 < P.length ? P[j + 1] : (c.fechada ? P[0] + c.L : null); if (nx == null) continue; if (nx - P[j] > gv) { gv = nx - P[j]; gi = j; } }
@@ -977,15 +1114,20 @@
       }
       var achou = null, tent = 0;
       while (!achou && tent++ < 16) {
-        var falhaDN = false;
         cad.forEach(function (c) {
           var inf = influencia(c);
-          c.sds = c.pos.map(function (s, i) { var d = distQuina(c, s), o = { s: s, q: c.Q * inf[i], areaInfluencia_m2: r4(c.A * inf[i]), curva: null, distanciaCurva_m: null }; if (d != null && d <= 4) { o.curva = "canto_reto"; o.distanciaCurva_m = r4(Math.max(0.01, d)); } o.dn = dnPara(o.q); if (!o.dn) falhaDN = true; return o; });
+          c.sds = c.pos.map(function (s, i) { var d = distQuina(c, s), o = { s: s, q: c.Q * inf[i], areaInfluencia_m2: r4(c.A * inf[i]), curva: null, distanciaCurva_m: null }; if (d != null && d <= 4) { o.curva = "canto_reto"; o.distanciaCurva_m = r4(Math.max(0.01, d)); } return o; });
         });
-        var pior = null;
-        if (!falhaDN) {
+        var pior = null, dnRuim = null;
+        {
           for (var c2 = 0; c2 < SECOES_CANDIDATAS.length && !achou; c2++) {
-            var bMm = SECOES_CANDIDATAS[c2][0], aMm = SECOES_CANDIDATAS[c2][1], ia = 0, ent = { situacao: "cobertura", intensidade_mm_h: Ic.valor_mm_h, fonteIntensidade: Ic.texto, areas: [], calhas: [] };
+            var bMm = SECOES_CANDIDATAS[c2][0], aMm = SECOES_CANDIDATAS[c2][1], ia = 0;
+            /* o condutor pelo ábaco com a lâmina DESTA seção: abaixo da 1ª curva de H o ábaco não informa → seção seguinte */
+            if (aMm / 2 < Hmin) continue;
+            var dnsC = cad.map(function (c) { return c.sds.map(function (o) { return dnPara(o.q, aMm / 2); }); });
+            if (dnsC.some(function (l) { return l.some(function (x) { return !x; }); })) { dnRuim = dnsC; continue; }
+            dnRuim = null;
+            var ent = { situacao: "cobertura", intensidade_mm_h: Ic.valor_mm_h, fonteIntensidade: Ic.texto, areas: [], calhas: [] };
             cad.forEach(function (c, j) {
               var cid = String(cal.id) + (cad.length > 1 ? "#" + (j + 1) : "");
               c.areas.forEach(function (x) { ent.areas.push({ id: "A" + (++ia), caso: "b", a: x.a, h: x.h, b: x.b, destino: { calha: cid } }); });
@@ -995,14 +1137,14 @@
             var ctx = NR.contexto(), rr = null;
             try { rr = AP.calcular({ pluvial: ent }, ctx, { trechos: [] }); } catch (eA) { rr = null; }
             var chs = rr ? arr(rr.calhas) : [], passa = chs.length === cad.length && chs.every(function (ch) { return ch.capacidade_l_min != null && ch.vazaoProjeto_l_min != null && ch.vazaoProjeto_l_min <= ch.capacidade_l_min; });
-            if (passa) achou = { bMm: bMm, aMm: aMm, hid: chs, qAP: rr.areas.reduce(function (s3, a3) { return s3 + num(a3.vazao_l_min, 0); }, 0), pend: ctx.pendencias(), ap: rr };
+            if (passa) { achou = { bMm: bMm, aMm: aMm, hid: chs, qAP: rr.areas.reduce(function (s3, a3) { return s3 + num(a3.vazao_l_min, 0); }, 0), pend: ctx.pendencias(), ap: rr }; cad.forEach(function (c, j) { c.sds.forEach(function (o, i) { o.dn = dnsC[j][i]; }); }); }
             else if (c2 === SECOES_CANDIDATAS.length - 1 && chs.length) pior = chs;
           }
         }
         if (!achou) {
           /* mais uma descida no trecho que reprovou (ou no que tem o condutor estourado) */
           cad.forEach(function (c, j) {
-            var ruim = c.sds.some(function (o) { return !o.dn; }) || (pior && pior[j] && !(pior[j].vazaoProjeto_l_min <= pior[j].capacidade_l_min));
+            var ruim = (dnRuim && dnRuim[j] && dnRuim[j].some(function (x) { return !x; })) || (pior && pior[j] && !(pior[j].vazaoProjeto_l_min <= pior[j].capacidade_l_min));
             if (ruim) maisUma(c);
           });
         }
@@ -1027,7 +1169,7 @@
             id = idDesc(cal.id, j, cad.length > 1 || c.sds.length > 1 ? kAuto : null); kAuto++; idsNovos[id] = 1;
             poe({ op: "condutor", id: id, calha: String(cal.id), pos: r4(Math.max(0, Math.min(1, (c.offset + o.s) / Ltot))), dn: num(o.dn.dn, 100) });
           }
-          descidas.push({ id: id, manual: !!fx, trecho: j + 1, pos: r4((c.offset + o.s) / Ltot), dist_m: r4(o.s), vazao_l_min: r4(o.q), area_m2: o.areaInfluencia_m2, coef: num(h.saidas && h.saidas[i] && h.saidas[i].coef, 1), dn: num(o.dn.dn, null), capDN_l_s: num(o.dn.vazao_ls, null) });
+          descidas.push({ id: id, manual: !!fx, trecho: j + 1, pos: r4((c.offset + o.s) / Ltot), dist_m: r4(o.s), vazao_l_min: r4(o.q), area_m2: o.areaInfluencia_m2, coef: num(h.saidas && h.saidas[i] && h.saidas[i].coef, 1), dn: num(o.dn.dn, null), abaco: o.dn });
         });
       });
       arr(st0.condutores).forEach(function (c) { if (c && String(c.calha) === String(cal.id) && String(c.id).indexOf(PREFIXO) === 0 && !idsNovos[c.id]) poe({ op: "apagar", id: c.id }); });
@@ -1080,14 +1222,15 @@
       memorial.push("  · seção retangular " + c.largura_mm + " × " + c.altura_mm + " mm, lâmina " + c.lamina_mm + " mm, n = " + virg(c.n, 3) + " (chapa metálica, Tabela 2), i = " + virg(c.declividade_pct) + "% (mínimo do item 5.5.2): capacidade por Manning-Strickler (item 5.5.7) = " +
                     virg(c.capacidade_l_min) + " L/min ≥ " + virg(c.vazaoProjeto_l_min) + " L/min → ATENDE; queda " + virg(c.queda_m * 100, 1) + " cm até a descida");
       memorial.push("  · desenvolvimento " + virg(c.desenvolvimento) + " m → " + (c.sinapi ? "SINAPI " + c.sinapi.codigo + " (" + c.sinapi.descricao + ")" : "sem composição SINAPI: orçar à parte"));
-      memorial.push("  · condutores verticais: " + c.descidas.map(function (d) { return "DN " + d.dn + " (" + virg(d.vazao_l_min / 60, 3) + " L/s ≤ " + virg(d.capDN_l_s, 2) + " L/s)"; }).join("; ") +
-                    " — tabela de Botelho & Ribeiro Jr. (fonte secundária; o ábaco da Figura 3 da norma não está digitalizado: conferir); diâmetro interno mínimo " + (diMin.ok ? diMin.valor : "—") + " mm (item 5.6.3)" + (ligar ? "; tubo PVC série R no sistema pluvial do hidro, ponta de baixo = espera pluvial no piso" : ""));
+      memorial.push("  · condutores verticais pelo ábaco da NBR 10844, Figura 3 " + (saidaCalha === "funil" ? "(b) funil de saída" : "(a) saída em aresta viva") + " (item 5.6.4: Q_max(D) = mín(curva H, curva L)): " +
+                    c.descidas.map(function (d) { var a = d.abaco || {}; return "DN " + d.dn + " (Di " + virg(a.di, 1) + " mm, H = " + virg(a.H, 0) + " mm, L = " + virg(a.L) + " m: Q_max = " + virg(a.Q, 1) + " L/min, limita a curva " + a.limita + ", ≥ " + virg(d.vazao_l_min) + " L/min)"; }).join("; ") +
+                    " — " + DADOS_TEL.abaco.tipoFonte + ", incerteza ±2–3 %; diâmetro interno mínimo " + (diMin.ok ? diMin.valor : "—") + " mm (item 5.6.3)" + (ligar ? "; tubo PVC série R no sistema pluvial do hidro, ponta de baixo = espera pluvial no piso" : ""));
       arr(c.pendencias).forEach(function (p) { if (!/abacos|ábaco/i.test(String(p.chave) + " " + p.motivo)) pendencias.push(p); });
     });
     resRuf.forEach(function (r) {
       if (!r.encontros.length) return;
       memorial.push("RUFO E CONTRARRUFO " + r.id + " (" + r.chapa + "): " + r.encontros.map(function (e) { return "aresta " + (e.orig + 1) + " × parede " + e.parede + " (" + virg(e.comprimento) + " m)"; }).join("; ") +
-                    " — rufo " + virg(r.comprimentoRufo) + " m (corte " + virg(r.corteRufoEf * 100, 0) + " cm, " + virg(r.kgRufo, 1) + " kg), contrarrufo " + virg(r.comprimentoContra) + " m (corte " + virg(r.corteContraEf * 100, 0) + " cm, " + virg(r.kgContra, 1) + " kg); cortes, dobras e fixação: " + PADRAO_RUFO.obs + "; " + r.obsChapa + ".");
+                    " — rufo " + virg(r.comprimentoRufo) + " m (" + arr(r.pecasRufo).map(function (p) { return "corte " + virg(p.corte * 100, 0) + " cm, " + p.posicoes.join("/") + ": dobras " + p.dobras.fonte; }).join("; ") + "; " + virg(r.kgRufo, 1) + " kg), contrarrufo " + virg(r.comprimentoContra) + " m (corte " + virg(r.corteContraEf * 100, 0) + " cm — desenvolvimento " + PADRAO_RUFO.obs + "; " + virg(r.kgContra, 1) + " kg); chapa " + r.obsChapa + "; fixação por metro: " + DADOS_TEL.fixacao.fonte + ".");
     });
     /* a conferência: o cálculo pluvial do hidro (js/hidap.js) refeito sobre o estado com o lote aplicado */
     var verificacao = resCal.map(function (c) { return { calha: c.id, vazao_l_min: c.vazaoHidAP_l_min, calhas: c.hidap }; });
@@ -1197,7 +1340,7 @@
     desenvolvimentoCalha: desenvolvimentoCalha, entradaPluvial: entradaPluvial, dimensionarCalhas: dimensionarCalhas, secaoMinimaCalha: secaoMinimaCalha,
     quantitativo: quantitativo, sin: sin,
     PADRAO_RUFO: PADRAO_RUFO, CHAPAS: CHAPAS, PREFIXO: PREFIXO, encontrosDoTelhado: encontrosDoTelhado, calcularRufo: calcularRufo, topoTelhaEm: topoTelhaEm,
-    cidadeDaObra: cidadeDaObra, postoNoTexto: postoNoTexto, intensidadeNBR: intensidadeNBR, periodoCobertura: periodoCobertura, gerarPluvial: gerarPluvial, kgPorM: kgPorM, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
+    cidadeDaObra: cidadeDaObra, postoNoTexto: postoNoTexto, intensidadeNBR: intensidadeNBR, periodoCobertura: periodoCobertura, gerarPluvial: gerarPluvial, kgPorM: kgPorM, DADOS_TEL: DADOS_TEL, qAbaco: qAbaco, dnPeloAbaco: dnPeloAbaco, cortePara: cortePara, dobrasRufo: dobrasRufo, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
     opPlatibanda: function (id, d) {
       d = d || {}; var o = { op: "platibanda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado };
       ["arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });

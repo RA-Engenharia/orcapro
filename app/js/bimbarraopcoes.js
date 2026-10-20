@@ -497,6 +497,9 @@
     /* a ORDEM (fixa, em uma linha): as formas, a precisão — o que se usa a cada traço — e por
        último os campos da ferramenta, que também estão em Propriedades (tela estreita corta à direita) */
     /* o grupo DESENHAR: as formas que o js/bimdesenho.js oferece para esta ferramenta */
+    /* T4 (telhado paramétrico, 20/10/2026): os ícones do TELHADO — tipo (1 água, 2 águas, várias águas), modo de
+       desenho (retângulo, linha, corte), a linha de referência, "Seguir inclinação de…" e as cotas (js/bimp3ui.js) */
+    if (sub === "telhado" && global.BimP3UI && global.BimP3UI.barraTelhado) { try { h += global.BimP3UI.barraTelhado(); } catch (eT) {} }
     var L = this._formas(sub);
     if (L.length > 1) {
       var fa = this.formaAtual(sub);
@@ -533,6 +536,7 @@
       var b = e.target.closest ? e.target.closest("[data-bbo]") : null; if (!b || !el.contains(b)) return;
       var k = b.getAttribute("data-bbo"), sub = UIst.sub; if (!sub) return;
       if (k === "forma") { self.mudar(sub, "forma", b.getAttribute("data-forma")); self._aplicar(sub, "forma"); self.pintar(); return; }
+      if (k === "p3") { if (global.BimP3UI && global.BimP3UI.barraClique) global.BimP3UI.barraClique(b.getAttribute("data-p3")); self.pintar(); self._repintarProps(sub); return; }
       if (k === "orto" || k === "snap" || k === "grade" || k === "encadear" || k === "virar" || k === "unir") {
         var c = self.cfg(sub), v = !c[k];
         if (k === "virar") { var P = PM(); if (P && P.familiaVirar) P.familiaVirar(v); }
@@ -555,7 +559,13 @@
     }, { passive: false });
     el.addEventListener("keydown", function (e) {
       e.stopPropagation();   /* digitar na barra não aciona atalho do visualizador (G da grade, WASD do voo) */
-      if (e.key === "Enter" && e.target && e.target.tagName === "INPUT") { e.preventDefault(); e.target.blur(); }
+      if (e.key === "Enter" && e.target && e.target.tagName === "INPUT") {
+        e.preventDefault();
+        /* T4: a cota do telhado confirma no Enter (o campo foi aberto digitando — o change do blur não viria) */
+        var kk = e.target.getAttribute("data-bbo");
+        if (kk && kk.indexOf("p3:") === 0 && UIst.sub) { self._campo(UIst.sub, kk, e.target.value, e.target); return; }
+        e.target.blur();
+      }
       if (e.key === "Escape") { self._fecharMenu(); if (e.target && e.target.blur) e.target.blur(); }
     });
     /* ⚠ os ouvintes do documento entram UMA vez: a casca remontada cria outra barra, e cada
@@ -574,6 +584,7 @@
   BimBarraOpcoes._campo = function (sub, k, valor, alvo) {
     var U = AU();
     function b2(pid, v) { if (!U || !U.mudarFerramenta) return; U.mudarFerramenta(sub, pid, v); try { if (U._sub === sub && U._repintar) U._repintar(); } catch (e) {} }
+    if (k.indexOf("p3:") === 0) { if (global.BimP3UI && global.BimP3UI.barraCampo) global.BimP3UI.barraCampo(k.slice(3), valor); this.pintar(); this._repintarProps(sub); return; }
     if (k === "tipoParede") { b2("b2f:tipoParede", valor); this.pintar(); return; }
     if (k === "tipoLaje") { b2("b2f:tipoLaje", valor); return; }
     if (k === "nivel") { b2("b2f:nivel", valor); status("Nível atual: " + (alvo && alvo.selectedOptions && alvo.selectedOptions[0] ? alvo.selectedOptions[0].textContent : valor) + "."); this.pintar(); return; }
@@ -596,6 +607,8 @@
       if (ck === "perfil") this.pintar();
     }
   };
+  /* as Propriedades da ferramenta acompanham o que a barra mudou (T4: o telhado) */
+  BimBarraOpcoes._repintarProps = function (sub) { var U = AU(); try { if (U && U._sub === sub && U._repintar) U._repintar(); } catch (e) {} };
   /* a configuração vale para o visualizador: snaps e grade no desenho de precisão
      (js/bimprecisaoui.js), encadear e linha de localização no editor */
   BimBarraOpcoes._aplicar = function (sub, campo) {

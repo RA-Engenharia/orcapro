@@ -368,6 +368,20 @@
       sol.push(cx("fb" + i, "Folha " + i + " — perfil de base", xc, "Folga_inf", zc, "Folha_larg", "Perfil_folha_alt", "Espessura_vidro + 0.012", "Cor_perfil", { rot: rot, visivel: vis.visivel }));
       sol.push(cx("ft" + i, "Folha " + i + " — perfil de topo", xc, "Folga_inf + Folha_alt - Perfil_folha_alt", zc, "Folha_larg", "Perfil_folha_alt", "Espessura_vidro + 0.012", "Cor_perfil", { rot: rot, visivel: vis.visivel }));
     }
+    /* PARTES MÓVEIS (js/partesmoveis.js): o clique do 3D abre e fecha a pele ANIMANDO a pose de cada folha, sem refazer a cena.
+       Cada folha é um movimento COMPOSTO: gira em torno do eixo vertical no pivô FECHADO (a borda do lado da pilha) e desliza até a pilha.
+       Conferido contra as fórmulas acima (teste das partes móveis): a pose em t = a geometria com Abertura = t.
+       `geoEstado`: a geometria destes sólidos já acompanha Aberto/Abertura, então o 3D anima a partir do estado salvo.
+       Escalonado: a folha junto da pilha sai primeiro e cada uma seguinte começa um pouco depois (janela de tempo). */
+    var partes = [];
+    for (i = 1; i <= MAX_FOLHAS; i++) {
+      var dEx = "((" + i + " - 1)*(Folha_larg + Junta - Passo_pilha) - Folga_lateral)";   /* quanto o pivô anda do fechado ao aberto (assinado, em X sem o sinal do lado) */
+      partes.push({ id: "folha" + i, nome: "Folha " + i + " (vidro)", tipo: "recolher", geoEstado: true, grupo: "pele", solidos: ["f" + i, "fb" + i, "ft" + i],
+        eixo: { x: "Sinal_lado*(Vao/2 - (" + i + " - 1)*(Folha_larg + Junta))", y: "0", z: "0" },
+        angulo: "90", sentido: "Sinal_fora*Sinal_lado",
+        vetor: { x: "Sinal_lado*se(" + dEx + " >= 0; 1; -1)", y: "0", z: "0" }, curso: "max(abs(" + dEx + "); 0.000001)",
+        janela: { ini: "(min(" + i + "; N_folhas) - 1)/N_folhas*0.4", fim: "(min(" + i + "; N_folhas) - 1)/N_folhas*0.4 + 0.6" } });
+    }
     /* símbolo de planta: o traço da posição FECHADA (aparece quando já abriu) e a seta do empilhamento */
     sol.push(cx("sp-fechada", "Posição fechada (símbolo de planta)", "0", "0.002", "0", "Vao", "0.002", "0.004", "Cinza claro", { visivel: "Simbolo_planta e Fracao > 0.01" }));
     sol.push(cx("sp-pilha", "Onde a pilha recolhida fica (símbolo de planta)", "Sinal_lado*(Vao/2 - Folga_lateral - Zona_pilha/2 + Passo_pilha/2)", "0.002", "Sinal_fora*(Folha_larg/2)", "Zona_pilha", "0.002", "Folha_larg", "Cinza claro", { visivel: "Simbolo_planta e Fracao < 0.99" }));
@@ -384,6 +398,7 @@
       }),
       abertura: hospedada ? { largura: "Vao", altura: "Altura", peitoril: "0" } : undefined,
       solidos: sol,
+      partesMoveis: partes,
       servicos: [
         S("vidro", "Vidro temperado das folhas", "m2", "Area_vidro"),
         S("trilho_inf", "Trilho inferior embutido", "m", "Trilho_inf_m"),

@@ -12,6 +12,9 @@
  *   tipos:      [{ id, nome, valores: { <param>: valor } }],
  *   solidos:    [{ id, nome, forma, ...medidas em FÓRMULA, material, visivel }],
  *   abertura:   { largura, altura, peitoril }      (fórmulas; só hospedada)
+ *   partesMoveis: [{ id, nome, tipo: giro|basculante|pivotante|correr|gaveta, solidos: [ids],
+ *                    eixo:{x,y,z}, dir:{x,y,z}, angulo, sentido      (rotação; fórmulas, sistema local)
+ *                    vetor:{x,y,z}, curso                            (translação; fórmulas) }]   (js/partesmoveis.js)
  *   quantitativo: { unidade, quantidade (fórmula), codigo, fonte, descricao }
  * }
  * SISTEMA LOCAL da família (metros): origem no ponto de inserção, no PISO do
@@ -48,6 +51,12 @@
 
   function txt(v) { return v == null ? "" : String(v); }
   function arr(a) { return Array.isArray(a) ? a : []; }
+  /* PARTES MÓVEIS (porta, folha, gaveta): o motor puro vive em js/partesmoveis.js */
+  function motorPartes() {
+    if (global.PartesMoveis) return global.PartesMoveis;
+    if (typeof require === "function") { try { return require("./partesmoveis.js"); } catch (e) { return null; } }
+    return null;
+  }
   function nomeValido(n) { return /^[A-Za-zÀ-ÿ_][A-Za-zÀ-ÿ0-9_]*$/.test(txt(n)); }
   function chave(n) { return txt(n).toLowerCase(); }
 
@@ -186,7 +195,8 @@
   }
 
   /* ---------------------------------------------------------- VALIDAÇÃO */
-  function validar(fam) {
+  function validar(fam, opc) {
+    fam = comHeranca(fam);
     var erros = [], avisos = [];
     if (!fam || typeof fam !== "object") return { ok: false, erros: ["família vazia"], avisos: [] };
     if (!txt(fam.nome).trim()) erros.push("a família precisa de nome");
@@ -250,6 +260,9 @@
       }
       if (s.forma === "extrusao" && arr(s.contorno).length < 3) erros.push("sólido \"" + (s.nome || i + 1) + "\": o contorno precisa de 3 pontos ou mais");
     });
+    /* PARTES MÓVEIS: estrutura (tipo, sólidos, fórmulas) e, com a estrutura sã, a conferência NUMÉRICA com o tipo padrão
+       (eixo dentro da caixa da peça, ângulo de 0 a 180, curso > 0) */
+    validarPartes(fam, nomes, erros, avisos, opc);
     /* FAMIMPORT: a família importada (malha) traz o vão POR TIPO (tipo.vao), não em fórmula */
     if (fam.hospedagem === "parede" && fam.geometria !== "malha" && !(fam.abertura && fam.abertura.largura && fam.abertura.altura)) erros.push("família hospedada em parede precisa dizer a largura e a altura do vão");
     /* ORÇAMENTO (F1, 07/10/2026): o tipo pode ter o próprio código (sobrepõe o
@@ -273,6 +286,99 @@
       Object.keys(t.codigos || {}).forEach(function (k) { if (!sids[chave(k)]) avisos.push("tipo \"" + t.nome + "\" dá código ao serviço \"" + k + "\", que não existe"); });
     });
     return { ok: !erros.length, erros: erros, avisos: avisos };
+  }
+  /* PARTES MÓVEIS HERDADAS: a cópia de obra de uma família RA de porta/janela (gravada antes de existirem as partes móveis) herda as da BASE
+     (js/familiasra.js baseDePartes: mesma categoria e mesmo conjunto de sólidos). Traz também os parâmetros que as fórmulas das partes usam e
+     a cópia não tem. Família que já declara as próprias partes, ou de geometria gerada, passa direto. */
+  function comHeranca(fam) {
+    if (!fam || arr(fam.partesMoveis).length || fam.geometria) return fam;
+    if (fam.categoria !== "porta" && fam.categoria !== "janela") return fam;
+    var RA = global.FamiliasRA || (typeof require === "function" ? (function () { try { return require("./familiasra.js"); } catch (e) { return null; } })() : null);
+    var b = RA && RA.baseDePartes ? RA.baseDePartes(fam) : null;
+    if (!b) return fam;
+    var f2 = {}; Object.keys(fam).forEach(function (k) { f2[k] = fam[k]; });
+    var tem = {}, deBase = {}, falta = [], need = {};
+    arr(fam.parametros).forEach(function (p) { tem[chave(p.nome)] = 1; });
+    arr(b.parametros).forEach(function (p) { deBase[chave(p.nome)] = p; });
+    function precisa(expr) { try { Object.keys(refs(analisar(String(expr)))).forEach(function (r) { need[r] = 1; }); } catch (e) {} }
+    b.partesMoveis.forEach(function (p) { formulasDaParte(p).forEach(function (fm) { precisa(fm[1]); }); });
+    need.aberto = 1; need.abertura = 1;
+    var mudou = true, add = [];
+    while (mudou) {
+      mudou = false;
+      Object.keys(need).forEach(function (k) {
+        if (tem[k] || !deBase[k]) return;
+        tem[k] = 1; add.push(deBase[k]); mudou = true;
+        if (deBase[k].formula) precisa(deBase[k].formula);
+      });
+    }
+    f2.parametros = arr(fam.parametros).concat(add);
+    f2.partesMoveis = b.partesMoveis;
+    f2.partesHerdadas = true;
+    return f2;
+  }
+  /* ---------------------------------------------------- PARTES MÓVEIS */
+  var CAMPOS_PARTE = { eixo: ["x", "y", "z"], dir: ["x", "y", "z"], vetor: ["x", "y", "z"] };
+  function formulasDaParte(p) {
+    var out = [];
+    ["eixo", "dir", "vetor"].forEach(function (g) { if (p[g]) CAMPOS_PARTE[g].forEach(function (c) { if (p[g][c] != null && p[g][c] !== "") out.push([g + "." + c, p[g][c]]); }); });
+    if (p.janela) { if (p.janela.ini != null) out.push(["janela.ini", p.janela.ini]); if (p.janela.fim != null) out.push(["janela.fim", p.janela.fim]); }
+    ["angulo", "sentido", "curso"].forEach(function (g) { if (p[g] != null && p[g] !== "") out.push([g, p[g]]); });
+    return out;
+  }
+  function validarPartes(fam, nomes, erros, avisos, opc) {
+    var lista = arr(fam.partesMoveis);
+    if (!lista.length) return;
+    var PM = motorPartes();
+    /* sem o motor carregado (um carregador antigo, um teste isolado) a família vale sem as partes: a porta fica fechada, nunca inválida */
+    if (!PM) { avisos.push("partes móveis ignoradas: o motor (js/partesmoveis.js) não carregou"); return; }
+    var ids = {}, sol = {}, n0 = erros.length;
+    arr(fam.solidos).forEach(function (s) { if (s && s.id != null) sol[String(s.id)] = 1; });
+    lista.forEach(function (p, i) {
+      var rot = "parte móvel " + (p && p.id ? "\"" + p.id + "\"" : (i + 1));
+      if (!p || !nomeValido(p.id)) { erros.push(rot + ": id inválido (letras, números e _)"); return; }
+      if (ids[chave(p.id)]) erros.push(rot + " repetida"); ids[chave(p.id)] = 1;
+      var T = PM.TIPOS[p.tipo];
+      if (!T) { erros.push(rot + ": tipo \"" + txt(p.tipo) + "\" desconhecido (" + Object.keys(PM.TIPOS).join(", ") + ")"); return; }
+      /* a família com geometria gerada (mob, malha, marcenaria) não tem `solidos` por id: as partes vêm do gerador */
+      if (!fam.geometria) {
+        if (!arr(p.solidos).length) erros.push(rot + ": nenhum sólido na parte");
+        arr(p.solidos).forEach(function (sid) { if (!sol[String(sid)]) erros.push(rot + ": o sólido \"" + sid + "\" não existe"); });
+      }
+      if (T.mov === "rotacao" || T.mov === "composto") { if (!p.eixo) erros.push(rot + ": falta o eixo (ponto x, y, z)"); if (p.angulo == null || p.angulo === "") erros.push(rot + ": falta o ângulo de abertura"); }
+      if (T.mov === "composto" || T.mov === "translacao") { if (!p.vetor) erros.push(rot + ": falta o vetor do movimento"); if (p.curso == null || p.curso === "") erros.push(rot + ": falta o curso"); }
+      formulasDaParte(p).forEach(function (fm) {
+        try { Object.keys(refs(analisar(String(fm[1])))).forEach(function (r) { if (!nomes[r]) erros.push(rot + ", " + fm[0] + ": usa \"" + r + "\", que não existe"); }); }
+        catch (e) { erros.push(rot + ", " + fm[0] + ": " + e.message); }
+      });
+    });
+    /* conferência numérica: só com a estrutura sã e fora da própria avaliação (que já confere) */
+    if (erros.length === n0 && !(opc && opc.semNumerico)) {
+      var av = avaliar(fam, arr(fam.tipos).length ? fam.tipos[0].id : null, {}, { semNumerico: true });
+      if (av && av.errosPartes) av.errosPartes.forEach(function (m) { erros.push(m); });
+    }
+  }
+  /* avalia as partes móveis contra o ambiente (f = avaliador de fórmula, sólidos já avaliados, caixa da peça) */
+  function avaliarPartes(fam, f, solidos, caixa, erros) {
+    var PM = motorPartes(), lista = arr(fam.partesMoveis), out = [], vistos = {};
+    if (!lista.length || !PM) return out;
+    solidos.forEach(function (s) { vistos[String(s.id)] = 1; });
+    lista.forEach(function (p) {
+      var T = PM.TIPOS[p.tipo]; if (!T) return;
+      /* parte cujos sólidos todos estão invisíveis neste tipo/instância (a folha 7 de uma pele de 4 folhas) não existe: sem malha, sem eixo a conferir */
+      if (arr(p.solidos).length && !p.solidos.some(function (sid) { return vistos[String(sid)]; })) return;
+      function v3(o, pad) { return o ? [f(o.x, pad ? pad[0] : 0), f(o.y, pad ? pad[1] : 0), f(o.z, pad ? pad[2] : 0)] : null; }
+      var def = { id: p.id, nome: p.nome, tipo: p.tipo, solidos: p.solidos, geoEstado: !!p.geoEstado, grupo: p.grupo };
+      if (T.mov === "rotacao" || T.mov === "composto") { def.eixo = v3(p.eixo); def.dir = p.dir ? v3(p.dir) : null; def.angulo = f(p.angulo, NaN); def.sentido = f(p.sentido, 1); }
+      if (T.mov === "composto" || T.mov === "translacao") { def.vetor = v3(p.vetor); def.curso = f(p.curso, NaN); }
+      if (p.janela) def.janela = [f(p.janela.ini, 0), f(p.janela.fim, 1)];
+      var r = PM.normalizar(def);
+      if (!r.ok) { r.erros.forEach(function (m) { erros.push(m); }); return; }
+      out.push(r.parte);
+    });
+    var chk = PM.checar(out, caixa);
+    chk.erros.forEach(function (m) { erros.push(m); });
+    return out;
   }
   function camposDoSolido(s) {
     var base = ["x", "y", "z", "rot", "visivel"];
@@ -463,8 +569,9 @@
     if (!isFinite(n)) n = 0;
     return p.tipoDado === "inteiro" ? Math.round(n) : n;
   }
-  function avaliar(fam, tipoId, instancia) {
-    var v = validar(fam);
+  function avaliar(fam, tipoId, instancia, opc) {
+    fam = comHeranca(fam);
+    var v = validar(fam, { semNumerico: true });
     if (!v.ok) return { ok: false, erros: v.erros };
     var tipo = tipoDe(fam, tipoId), inst = instancia || {}, env = {}, valores = {}, erros = [];
     var ps = {}; arr(fam.parametros).forEach(function (p) { ps[chave(p.nome)] = p; });
@@ -522,7 +629,19 @@
       var ct = tipo.codigos ? txt(lerChave(tipo.codigos, s.id)).trim() : "", cf = txt(s.codigo).trim();
       return { id: s.id, descricao: txt(s.descricao) || s.id, unidade: s.unidade, quantidade: f(s.quantidade, 0), codigo: ct || cf, codigoOrigem: ct ? "tipo" : (cf ? "familia" : "") };
     });
-    var saida = { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos), conectores: conectores };
+    /* PARTES MÓVEIS (porta, folha, gaveta — js/partesmoveis.js): a geometria NÃO muda com o estado (o quantitativo é o mesmo
+       aberta ou fechada); a parte diz o movimento e os sólidos dela levam a marca `parte`. Geometria gerada (mob) traz as
+       próprias partes pelo gerador (js/familiasmob.js). */
+    var partesMov = [], errosPartes = [], PMo = motorPartes();
+    if (arr(fam.partesMoveis).length && !fam.geometria) {
+      var nE0 = erros.length;
+      partesMov = avaliarPartes(fam, f, solidos, caixaDe(solidos), erros);
+      errosPartes = erros.slice(nE0);
+      partesMov.forEach(function (pm) { solidos.forEach(function (sd) { if (pm.solidos.indexOf(String(sd.id)) >= 0) sd.parte = pm.id; }); });
+    }
+    var saida = { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos), conectores: conectores,
+                  partesMoveis: partesMov, errosPartes: errosPartes };
+    if (PMo && (partesMov.length || arr(fam.partesMoveis).length)) saida.estadoPartes = { fracao: PMo.fracaoDe(valores, inst) };
     /* P12: a família MEP diz ao js/biminst.js que peça SINAPI ela é ({peca}); sem `mep`, nada muda */
     if (fam.mep && typeof fam.mep === "object" && fam.mep.peca) saida.mep = { peca: txt(fam.mep.peca) };
     /* FAMIMPORT: família importada (js/familiamalha.js) — a geometria, o vão, os conectores e a luz vêm da malha do TIPO */
@@ -593,7 +712,9 @@
     TIPOS_DADO: TIPOS_DADO, CATEGORIAS: CATEGORIAS, FORMAS: FORMAS, UNIDADES_QTO: UNIDADES_QTO,
     formula: formula, analisar: analisar, referencias: function (s) { return Object.keys(refs(analisar(s))); },
     validar: validar, ordemCalculo: ordemCalculo, avaliar: avaliar, nova: nova, clonar: clonar,
-    camposDoSolido: camposDoSolido, nomeValido: nomeValido, triangulos: triangulos
+    camposDoSolido: camposDoSolido, nomeValido: nomeValido, triangulos: triangulos,
+    /* partes móveis (porta, folha, gaveta): parâmetros de estado da instância e a pose */
+    parametrosEstado: function () { var P = motorPartes(); return P ? P.parametrosEstado() : []; }
   };
   global.Familia = Familia;
   if (typeof module !== "undefined" && module.exports) module.exports = Familia;

@@ -526,7 +526,7 @@
     perna16: { b: 0.06, h: 0.16, rot: "Perna 6×16 cm", fonte: F_TRAMA + ", Anexos 06–10 (vãos de 8 a 12 m)" },
     escora: { b: 0.06, h: 0.08, rot: "Escora 6×8 cm", fonte: F_TRAMA + ", Anexos 02–10" },
     pendural: { b: 0.06, h: 0.12, rot: "Pendural 6×12 cm", fonte: F_TRAMA + " (sem rótulo no desenho; o SINAPI conta na viga 6×12)", partida: true },
-    montante: { b: 0.05, h: 0.05, rot: "Montante 2 × sarrafo 2,5×5 cm", fonte: F_TRAMA + ", Anexos 05–10 (vãos de 7 a 12 m)" },
+    montante: { b: 0.025, h: 0.05, pecas: 2, rot: "Montante 2 × sarrafo 2,5×5 cm", fonte: F_TRAMA + ", Anexos 05–10 (vãos de 7 a 12 m; 2 peças 2,5×5 por montante — data/telhado-madeiramento.json)" },
     pontalete: { b: 0.08, h: 0.08, rot: "Pontalete 8×8 cm", fonte: FONTE_MADEIRA, partida: true },
     espigao: { b: 0.06, h: 0.16, rot: "Espigão/rincão 6×16 cm", fonte: null, partida: true },
     testeira: { b: 0.025, h: 0.20, rot: "Testeira tábua 2,5×20 cm", fonte: null, partida: true }
@@ -555,6 +555,88 @@
     tercaApoio: { prego: "prego 22×48 (4 1/4 × 5) com cabeça, a ~45°", kgM2: 0.03 },
     fonte: F_TRAMA + ", p. 35–36 (consumo em kg/m²)"
   };
+  /* ======================================================================
+   * PREGOS POR LIGAÇÃO (frente "pregos", 20/10/2026) — fonte: data/telhado-madeiramento.json (ramo claude/telhado-fontes
+   * 2d1be5e6), blocos pregos_usuais e pregos_por_ligacao; docs/telhado/PADROES-TELHADO.md seção 7.
+   *   · Dimensões e pregos/kg: catálogo Belgo Arames / ArcelorMittal-Bekaert "Pregos polidos e galvanizados" (PE-148), p. 2–3.
+   *   · Regras: ABNT NBR 7190-1:2022 (cópia de consulta NÃO licenciada à RA — exemplar próprio pendente):
+   *       7.1.1 (p. impressa 48): não há ligação com um pino só → MÍNIMO 2 pregos por ligação dimensionada;
+   *       7.1.9 / Tabela 13 (p. 51): prego estrutural com d ≥ 3,0 mm;
+   *       7.2 (p. 56): d ≤ 1/5 da menor espessura ligada; penetração em qualquer peça ≥ a espessura da mais delgada; a ponta
+   *       na peça mais distante da cabeça com ≥ 12 d (ou igual à espessura dessa peça).
+   *   A norma NÃO fixa a quantidade por ligação: ela sai do cálculo (Rk = nsp·nef·Fv,Rk, 7.1.2) com os esforços — que este
+   *   gerador não tem. Quantidade = o MÍNIMO da norma (2), com o aviso "dimensionar no módulo Madeira".
+   * ====================================================================== */
+  var F_BELGO = "Belgo Arames / ArcelorMittal-Bekaert — catálogo Pregos polidos e galvanizados (PE-148), p. 2–3";
+  var F_7190 = "ABNT NBR 7190-1:2022 (cópia de consulta não licenciada; exemplar próprio pendente)";
+  /* o 17×21 (2 × 11) fica de fora: o catálogo traz 17×27 com 360/kg, incoerente com ele (provável erro de impressão — o JSON diz "não usar") */
+  var PREGOS_CAT = [
+    { des: "14×18 (1 1/2 × 14)", L: 38, d: 2.1, porKg: 850 },
+    { des: "15×15 (1 1/4 × 13)", L: 32, d: 2.45, porKg: 745 },
+    { des: "18×27 (2 1/2 × 10)", L: 63, d: 3.45, porKg: 200 },
+    { des: "18×30 (2 3/4 × 10)", L: 70, d: 3.45, porKg: 180 },
+    { des: "19×36 (3 1/4 × 9)", L: 82, d: 3.9, porKg: 120 },
+    { des: "19×39 (3 1/2 × 9)", L: 89, d: 3.9, porKg: 110 },
+    { des: "22×42 (3 3/4 × 5)", L: 95, d: 5.6, porKg: 50 },
+    { des: "22×48 (4 1/4 × 5)", L: 108, d: 5.6, porKg: 45 }
+  ];
+  var NBR_PREGO = {
+    minPinos: 2, minFonte: F_7190 + ", 7.1.1 (p. impressa 48)",
+    dMin: 3.0, dMinFonte: F_7190 + ", 7.1.9 e Tabela 13 (p. 51)",
+    fracaoD: 5, fracaoFonte: F_7190 + ", 7.2 (p. 56): d ≤ 1/5 da menor espessura ligada",
+    penD: 12, penFonte: F_7190 + ", 7.2 (p. 56): ponta na peça mais distante ≥ 12 d; penetração ≥ a espessura da peça mais delgada"
+  };
+  function pregoCat(des) { for (var i = 0; i < PREGOS_CAT.length; i++) if (PREGOS_CAT[i].des.indexOf(des) === 0) return PREGOS_CAT[i]; return null; }
+  /* a ligação de 2 peças pregadas (a de espessura t1, do lado da cabeça, na de espessura t2), em mm, com n pregos:
+     { ok, falhas:[texto], penetracao } — as regras da NBR 7190-1:2022 acima */
+  function verificarPrego(pr, t1, t2, n, opc) {
+    opc = opc || {};
+    var f = [], tmin = Math.min(t1, t2), pen = pr.L - t1;
+    if (!(n >= NBR_PREGO.minPinos)) f.push("ligação com " + n + " prego(s): a norma não admite ligação com um pino só (mínimo " + NBR_PREGO.minPinos + ", " + NBR_PREGO.minFonte + ")");
+    if (pr.d > tmin / NBR_PREGO.fracaoD + 1e-9) f.push("d = " + virg(pr.d, 2) + " mm > t/5 = " + virg(tmin / NBR_PREGO.fracaoD, 2) + " mm da peça mais fina (" + NBR_PREGO.fracaoFonte + ")");
+    if (!opc.naoEstrutural && pr.d < NBR_PREGO.dMin - 1e-9) f.push("d = " + virg(pr.d, 2) + " mm < 3,0 mm: não é prego estrutural (" + NBR_PREGO.dMinFonte + ")");
+    if (pen < NBR_PREGO.penD * pr.d - 1e-9) f.push("penetração " + virg(pen, 0) + " mm < 12 d = " + virg(NBR_PREGO.penD * pr.d, 0) + " mm (" + NBR_PREGO.penFonte + ")");
+    else if (pen < tmin - 1e-9) f.push("penetração " + virg(pen, 0) + " mm < a espessura da peça mais delgada (" + virg(tmin, 0) + " mm, 7.2)");
+    if (pen > t2 + 1e-9) f.push("o prego atravessa a peça de baixo (L = " + pr.L + " mm > " + virg(t1 + t2, 0) + " mm)");
+    return { ok: !f.length, falhas: f, penetracao: pen };
+  }
+  /* a bitola do catálogo que cumpre a norma para t1 → t2 (a de menor diâmetro e, nela, a mais curta); null se nenhuma cumpre */
+  function escolherPrego(t1, t2, opc) {
+    var ok = PREGOS_CAT.filter(function (pr) { return verificarPrego(pr, t1, t2, NBR_PREGO.minPinos, opc).ok; });
+    ok.sort(function (a, b) { return a.d - b.d || a.L - b.L; });
+    return ok[0] || null;
+  }
+  /* os NÓS de cada tesoura (meia, de canto ou inteira): pontos onde as peças dela se encontram (ponta de uma peça sobre outra
+     peça da mesma tesoura, até 3 cm). Ligações no nó = as peças que chegam a ele (cada uma pregada no cobre-junta) */
+  function nosDasTesouras(pecas, filtro) {
+    var porT = {}, out = { nos: 0, ligacoes: 0 };
+    pecas.forEach(function (o) { if (o.tesoura && filtro(o.tesoura) && /^(linha|perna|pendural|escora|montante)$/.test(o.p)) (porT[o.tesoura] = porT[o.tesoura] || []).push(o); });
+    Object.keys(porT).forEach(function (id) {
+      var ps = porT[id], vistos = [], pares = {};
+      /* (revisor pregos, 20/10/2026) a ponta q encosta na PEÇA (o sólido, não o eixo): o eixo a→b é a face de baixo da seção
+         (0 a h no sentido de `up`, ±w/2 de lado). Pelo eixo, o pé do pendural (no topo da linha, 12 cm acima do eixo dela) não
+         achava a linha, e cada tesoura de 8 m saía com 14 ligações em vez de 23. */
+      function noSeg(q, o) {
+        var ab = s3(o.b, o.a), L = ln3(ab); if (!(L > 1e-9)) return ln3(s3(q, o.a)) < 0.03;
+        var e = [ab[0] / L, ab[1] / L, ab[2] / L], up = arr(o.up).length === 3 ? o.up : [0, 1, 0], u = nz3(ad3(up, e, -dt3(up, e))), v = cr3(e, u), d = s3(q, o.a);
+        function fora(x, a, b) { return x < a ? a - x : (x > b ? x - b : 0); }
+        var ft = fora(dt3(d, e), 0, L), fs = fora(dt3(d, u), 0, num(o.h, 0)), fl = fora(dt3(d, v), -num(o.w, 0) / 2, num(o.w, 0) / 2);
+        return Math.sqrt(ft * ft + fs * fs + fl * fl) < 0.03;
+      }
+      /* os sarrafos do montante (T3: 2 por montante, um de cada lado, pregados direto na linha e na perna, sem cobre-junta):
+         2 nós por montante (pé e topo) e, em cada um, 1 ligação por sarrafo — contados à parte do nó com cobre-junta */
+      ps.forEach(function (o) { if (o.p === "montante" && o.montante) (pares[o.montante] = pares[o.montante] || []).push(o); });
+      Object.keys(pares).forEach(function (k) { out.nos += 2; out.ligacoes += 2 * pares[k].length; });
+      var gerais = ps.filter(function (o) { return !(o.p === "montante" && o.montante); });
+      gerais.forEach(function (o) { [o.a, o.b].forEach(function (q) {
+        if (vistos.some(function (v) { return ln3(s3(v, q)) < 0.05; })) return;
+        var nP = gerais.filter(function (x) { return noSeg(q, x); }).length;
+        if (nP >= 2) { vistos.push(q); out.nos++; out.ligacoes += nP; }
+      }); });
+    });
+    return out;
+  }
+
   var PERFIS_TEL = { terca: "Ue 150 x 60 x 20 x 3,00", banzo: "Ue 150 x 60 x 20 x 3,00", diagonal: "Ue 100 x 50 x 17 x 2,28" };
   var MODELOS = {
     "mad-tesoura": { rotulo: "Madeira — tesoura + terça + caibro + ripa", mat: "madeira", tesoura: true, caibro: true, ripa: true, familias: ["ceramica", "concreto"],
@@ -876,6 +958,15 @@
       prem.push("Base de OSB e = " + virg(eOSB * 1000, 1) + " mm — " + (bOsb.espessuraPartida ? "VALOR DE PARTIDA — conferir (o catálogo da telha pede " + bOsb.texto + ", sem a espessura)" : bOsb.fonte));
       baseTel = baseR + eOSB * f0;
     }
+    /* T3 (20/10/2026): as camadas pelo plano da PRÓPRIA água. A seção é perpendicular ao plano: a altura vertical de cada
+       camada é h · √(1 + i²) da água em que ela está. Com o fator da água principal (f0) em todas, a água de inclinação
+       diferente ficava com a camada descolada (ou entrando na de baixo) alguns mm — 4 águas de 30/45/35/60 %: até 8 mm. */
+    function camadasDe(f) {
+      var bT = hTesV * f, bC = bT + sT.h * f, bR = bC + (sC ? sC.h * f : 0), bTel = bR + (sR ? sR.h * f : 0);
+      if (!sC) bTel = bC;
+      if (M.osb) bTel = bR + eOSB * f;
+      return { tercas: bT, caibros: bC, ripas: bR, telha: bTel };
+    }
     var pfT = tel && tel.perfil ? tel.perfil : { passo: 0.2, altura: 0.04, esp: 0.01, partida: true };
     var espTel = (pfT.altura + (tel && tel.familia === "sanduiche" ? num(tel.nucleoMm, 30) / 1000 : pfT.esp)) * f0;
     var espPacote = r4(baseTel + espTel + 0.04);   /* + a cumeeira da telha (o "V" de geometria sobe até 3 cm acima do topo da telha) */
@@ -889,6 +980,40 @@
     }
     var UPV = [0, 1, 0], H3 = [d0[0], 0, d0[1]];
     function upNoPlano(ax) { var Y = [0, 1, 0], a = nz3(ax); return nz3(s3(Y, [a[0] * a[1], a[1] * a[1], a[2] * a[1]])); }
+    /* T3 (20/10/2026): o MONTANTE lateral da tesoura de madeira são DOIS sarrafos 2,5×5 (SINAPI, Anexos 05–10: "montantes 2 pc
+       2,5x5"), um de cada lado da linha e da perna, pregados nelas — não uma peça 5×5 no eixo. Cada sarrafo vai do pé da linha
+       (yPe) ao topo da perna (o plano + a altura vertical da perna nesta água), encostado na face lateral (meia largura da
+       linha/perna + meia espessura do sarrafo). Hx = o sentido da tesoura (horizontal); lado = a normal ao plano dela. */
+    var nMont = 0;
+    function montanteSarrafos(p2, yPe, yPerna, Hx, lado, idT) {
+      var sm = SEC.montante, ag = null;
+      ags.forEach(function (a) { if (!ag && arr(a.pecas).some(function (pq) { return T.dentro(p2, pq.pts.map(function (q) { return [q.x, q.z]; })); })) ag = a; });
+      var fP = ag ? sistemaDe(ag).f : f0, yTopo = yPerna + sPerna.h * fP, lg = nz3(lado), off = Math.max(SEC.linha.b, sPerna.w != null ? sPerna.w : sPerna.b) / 2 + sm.b / 2;
+      /* revisor T3 (20/10/2026): o topo do sarrafo é RETO (horizontal), ele tem sm.h de largura no sentido da tesoura e fica a
+         `off` do eixo dela; com o topo = o topo da perna NO EIXO, o canto mais baixo do topo da perna (o lado de baixo da água, e
+         na tesoura de canto o lado de fora do espigão) ficava abaixo do sarrafo — ele entrava na terça que apoia ali (4 águas
+         30/45/35/60 %: 8 mm; L e U: até 18 mm). O topo de CADA sarrafo = o menor topo da perna nos 4 cantos dele. */
+      function topoEm(x, z) {
+        var y = yEm(x, z); if (y == null) return null;
+        var a = null; ags.forEach(function (q) { if (!a && arr(q.pecas).some(function (pq) { return T.dentro([x, z], pq.pts.map(function (r) { return [r.x, r.z]; })); })) a = q; });
+        return y + sPerna.h * (a ? sistemaDe(a).f : fP);
+      }
+      var hx = Math.sqrt(Hx[0] * Hx[0] + Hx[2] * Hx[2]), Hn = hx > 1e-9 ? [Hx[0] / hx, Hx[2] / hx] : [0, 0];
+      function topoDe(k) {
+        var cx = p2[0] + lg[0] * off * k, cz = p2[1] + lg[2] * off * k, y = yTopo;
+        [-1, 1].forEach(function (i) { [-1, 1].forEach(function (j) {
+          var yc = topoEm(cx + lg[0] * sm.b / 2 * i + Hn[0] * sm.h / 2 * j, cz + lg[2] * sm.b / 2 * i + Hn[1] * sm.h / 2 * j);
+          if (yc != null && yc < y) y = yc;
+        }); });
+        return y;
+      }
+      nMont++;
+      [-1, 1].forEach(function (k) {
+        /* a seção vai de 0 a h no sentido de Hx: recua meia altura para o sarrafo ficar centrado no ponto da escora */
+        var x = p2[0] + lg[0] * off * k - Hx[0] * sm.h / 2, z = p2[1] + lg[2] * off * k - Hx[2] * sm.h / 2;
+        pc("montante", [x, yPe, z], [x, topoDe(k), z], Hx, sm, { tesoura: idT, montante: idT + ":m" + nMont, lado: k });
+      });
+    }
     /* ---- 1) as linhas de apoio: tesoura, parede ou pontalete */
     var apoios = [];   /* { t, tipo:"tesoura"|"parede"|"pontalete", parede? } */
     var nTes = 0, tesVaos = [];
@@ -1005,7 +1130,7 @@
             if (mm < 2 - 1e-6) return;
             var sm = sp + (se - sp) * 0.5, pm = pt2(sm), ym = yEm(pm[0], pm[1]); if (ym == null) return;
             pc(mat === "aco" ? "diag" : "escora", P3(sp, yL + hL), P3(sm, ym), upNoPlano(s3(P3(sm, ym), P3(sp, yL + hL))), secE, { tesoura: idT });
-            if (mm >= 3.5 - 1e-6 && ym - (yL + hL) > 0.08) pc(mat === "aco" ? "montante-aco" : "montante", P3(sm, yL + hL), P3(sm, ym), Hx, secM, { tesoura: idT });
+            if (mm >= 3.5 - 1e-6 && ym - (yL + hL) > 0.08) { if (mat === "aco") pc("montante-aco", P3(sm, yL + hL), P3(sm, ym), Hx, secM, { tesoura: idT }); else montanteSarrafos(pm, yL, ym, Hx, [tdG[0], 0, tdG[1]], idT); }
           });
         }
         });
@@ -1049,7 +1174,7 @@
           var pmd = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2], ymd = yEm(pmd[0], pmd[1]);
           if (ymd != null) {
             pc(mat === "aco" ? "diag" : "escora", [pb[0], H0 + hLd, pb[1]], [pmd[0], ymd, pmd[1]], upNoPlano(s3([pmd[0], ymd, pmd[1]], [pb[0], H0 + hLd, pb[1]])), mat === "aco" ? sDg : SEC.escora, { tesoura: idD });
-            if (Lh >= 3.5 - 1e-6 && ymd - (H0 + hLd) > 0.08) pc(mat === "aco" ? "montante-aco" : "montante", [pmd[0], H0 + hLd, pmd[1]], [pmd[0], ymd, pmd[1]], Hd, mat === "aco" ? sDg : SEC.montante, { tesoura: idD });
+            if (Lh >= 3.5 - 1e-6 && ymd - (H0 + hLd) > 0.08) { if (mat === "aco") pc("montante-aco", [pmd[0], H0 + hLd, pmd[1]], [pmd[0], ymd, pmd[1]], Hd, sDg, { tesoura: idD }); else montanteSarrafos(pmd, H0, ymd, Hd, [-Hd[2], 0, Hd[0]], idD); }
           }
         }
         diagonais.push({ a: pa, b: pb, tipo: ln.tipo });
@@ -1079,6 +1204,7 @@
     var aguasInfo = [];
     ags.forEach(function (ag, ia) {
       var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f, e = ag.aresta >= 0 ? arr(t.arestasCalc)[ag.aresta] : null;
+      var CA = camadasDe(f), baseT = CA.tercas, baseC = CA.caibros, baseR = CA.ripas;   /* T3: as camadas DESTA água */
       arr(ag.pecas).forEach(function (pq) {
         var Q = pq.pts.map(function (q) { return [q.x, q.z]; }); if (Q.length < 3) return;
         var umin = Infinity, umax = -Infinity, tmn = Infinity, tmx = -Infinity;
@@ -1219,7 +1345,11 @@
         var V1 = ver[v1]; if (fora.indexOf(V1) >= 0) continue;
         for (var v2 = v1 + 1; v2 < ver.length; v2++) {
           var V2 = ver[v2]; if (fora.indexOf(V2) >= 0) continue;
+          /* T3: os dois sarrafos do mesmo montante ficam (um de cada lado); sarrafo × sarrafo só junta com o do MESMO lado */
+          if (V1.montante && V2.montante && (V1.montante === V2.montante || V1.lado !== V2.lado)) continue;
           if (Math.sqrt(Math.pow(V1.a[0] - V2.a[0], 2) + Math.pow(V1.a[2] - V2.a[2], 2)) > 0.12) continue;
+          /* sarrafo no lugar de um pendural 6×12: o pendural já faz a peça — o sarrafo sai */
+          if (!!V1.montante !== !!V2.montante) { fora.push(V1.montante ? V1 : V2); if (V1.montante) break; continue; }
           var yb1 = Math.min(V1.a[1], V2.a[1]), yt1 = Math.max(V1.b[1], V2.b[1]);
           if (V2.tesoura && /^tes/.test(V2.tesoura) && !/^tes/.test(String(V1.tesoura))) { V1.tesoura = V2.tesoura; V1.p = V2.p; }
           V1.a = rr([V1.a[0], yb1, V1.a[2]]); V1.b = rr([V1.a[0], yt1, V1.a[2]]); V1.L = r4(yt1 - yb1);
@@ -1244,7 +1374,10 @@
     /* ---- 4) espigão e rincão (as linhas do telhado entre águas), na altura das terças */
     arr(t.linhas).forEach(function (ln) {
       if (ln.tipo !== "espigao" && ln.tipo !== "rincao") return;
-      var a = [ln.a.x, ln.a.y + baseT, ln.a.z], b = [ln.b.x, ln.b.y + baseT, ln.b.z];
+      /* T3: na altura das terças das águas que ele separa (a menor das duas — inclinações diferentes, bases diferentes) */
+      var bE = null; arr(ln.aguas).forEach(function (k) { var ag = arr(t.aguasCalc)[k], p = ag && ag.plano; if (!p || Math.sqrt(p.bx * p.bx + p.bz * p.bz) < 1e-6) return; var b0 = camadasDe(sistemaDe(ag).f).tercas; if (bE == null || b0 < bE) bE = b0; });
+      if (bE == null) bE = baseT;
+      var a = [ln.a.x, ln.a.y + bE, ln.a.z], b = [ln.b.x, ln.b.y + bE, ln.b.z];
       if (ln3(s3(b, a)) < 0.3) return;
       pc(ln.tipo, a, b, upNoPlano(s3(b, a)), mat === "aco" ? sT : SEC.espigao, {});
     });
@@ -1298,11 +1431,13 @@
     });
     /* ---- 6) a platibanda: nada passa do topo dela */
     var maxY = -Infinity; pecas.forEach(function (o) { maxY = Math.max(maxY, o.a[1] + o.h, o.b[1] + o.h); });
-    var topoTelha = num(t.cotaCumeeira, H0) + espPacote; maxY = Math.max(maxY, topoTelha);
+    var camAg = ags.map(function (ag) { var c = camadasDe(sistemaDe(ag).f); return { tercas: r4(c.tercas), caibros: r4(c.caibros), ripas: r4(c.ripas), telha: r4(c.telha) }; });
+    var espMax = espPacote; camAg.forEach(function (c, k) { espMax = Math.max(espMax, c.telha + espTel / f0 * sistemaDe(ags[k]).f + 0.04); });
+    var topoTelha = num(t.cotaCumeeira, H0) + espMax; maxY = Math.max(maxY, topoTelha);
     var tp = topoPlatibanda(t, opc.ctxCob, espPacote);
     if (tp != null && maxY > tp + 1e-6) avisos.push("A cobertura (estrutura + telha) chega a " + virg(maxY) + " m e passa do topo da platibanda (" + virg(tp) + " m): suba a platibanda ou diminua a inclinação — o telhado embutido não pode aparecer.");
     /* ---- 7) quantitativo (lista de material) */
-    var Q = quantDoPacote(t, M, tel, pecas, { nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT });
+    var Q = quantDoPacote(t, M, tel, pecas, { sR: sR, sC: sC, sPerna: sPerna, nMeias: nMeias, nDiag: nDiag, espT: espT, espCb: espCb, galga: galga, nCruzRC: nCruzRC, nCruzCT: nCruzCT, nCruzTA: nCruzTA, nTes: nTes, tesVaos: tesVaos, aguasInfo: aguasInfo, sT: sT });
     arr(Q.avisos).forEach(function (a) { avisos.push(a); });
     var cont = {}; pecas.forEach(function (o) { cont[o.p] = (cont[o.p] || 0) + 1; });
     /* as MEDIDAS do orçamento do modelo (BimTelhado.medidas → servicos do telhado no Orçamento do modelo) */
@@ -1321,7 +1456,7 @@
     });
     Object.keys(med).forEach(function (k) { med[k] = r4(med[k]); });
     return { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
-             paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
+             paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, camadasAgua: camAg, telhaEsp: r4(espTel / f0), espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
              espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo,
              quantitativo: Q.itens, premissas: prem, avisos: avisos };
   }
@@ -1403,6 +1538,22 @@
     if (M.tesoura && mat !== "aco") x.tesVaos.forEach(function (v, i) {
       for (var j = 0; j < tabT.length; j++) if (tabT[j][0] >= v - 1e-6) { tesComp["tes" + (i + 1)] = tabT[j]; break; }
     });
+    /* a ligação da trama pela norma: a bitola que cumpre (ou, se nenhuma do catálogo cumpre, a do SINAPI com o porquê) */
+    function ligacaoTrama(nome, t1, t2, nLig, desSinapi, naoEstrutural) {
+      var pr = escolherPrego(t1, t2, { naoEstrutural: naoEstrutural }), cumpre = !!pr, txt0;
+      if (!pr) pr = pregoCat(desSinapi);
+      var v = verificarPrego(pr, t1, t2, NBR_PREGO.minPinos, { naoEstrutural: naoEstrutural }), n = nLig * NBR_PREGO.minPinos;
+      txt0 = cumpre ? pr.des + " cumpre a NBR 7190-1 (d ≤ t/5, penetração " + virg(v.penetracao, 0) + " mm ≥ 12 d)" :
+        "nenhuma bitola do catálogo cumpre a 7.2 nesta ligação (" + virg(t1, 0) + " mm na peça de " + virg(t2, 0) + " mm) — vale o " + pr.des + " do SINAPI como FIXAÇÃO, não como ligação dimensionada: " + v.falhas.join("; ");
+      if (!cumpre) avisos.push("Pregos " + nome + ": nenhuma bitola do catálogo cumpre a NBR 7190-1 (7.2) — o " + pr.des + " do SINAPI vale como fixação, não como ligação dimensionada; dimensionar no módulo Madeira.");
+      return { item: "Pregos pela NBR 7190 — " + nome + ": " + nLig + " ligações × " + NBR_PREGO.minPinos + " = " + n + " pregos " + pr.des, kg: n / pr.porKg, pr: pr, cumpre: cumpre,
+               obs: "mínimo da norma (" + NBR_PREGO.minFonte + ") — dimensionar no módulo Madeira; " + txt0 + "; " + pr.porKg + " pregos/kg (" + F_BELGO + ")" };
+    }
+    /* os nós das tesouras: cobre-junta de tábua 2,5 cm (SINAPI, tesoura de referência) pregado na peça de 6 cm (largura da perna/linha) */
+    function ligacaoTesoura(filtro) {
+      var nn = nosDasTesouras(pecas, filtro), t1 = 25, t2 = SEC.perna.b * 1000, pr = escolherPrego(t1, t2) || pregoCat("18×30"), v = verificarPrego(pr, t1, t2, NBR_PREGO.minPinos);
+      return { nos: nn.nos, lig: nn.ligacoes, n: nn.ligacoes * NBR_PREGO.minPinos, pr: pr, texto: pr.des + (v.ok ? " (cobre-junta 25 mm na peça de " + virg(t2, 0) + " mm: d ≤ t/5 e penetração " + virg(v.penetracao, 0) + " mm ≥ 12 d — 7.2)" : " — " + v.falhas.join("; ")) };
+    }
     var por = {};
     pecas.forEach(function (o) {
       var inf = !!(o.tesoura && tesComp[o.tesoura]);
@@ -1411,7 +1562,7 @@
     });
     var cods0 = {}; Object.keys(tesComp).forEach(function (id) { cods0[tesComp[id][1]] = 1; });
     var inclTes = "composição SINAPI de tesoura " + Object.keys(cods0).join(", ");
-    var ROT = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante", terca: "Terça", caibro: "Caibro", ripa: "Ripa", pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira",
+    var ROT = { linha: "Linha (tirante)", perna: "Perna", pendural: "Pendural", escora: "Escora", montante: "Montante (sarrafo, 2 por montante)", terca: "Terça", caibro: "Caibro", ripa: "Ripa", pontalete: "Pontalete", espigao: "Espigão", rincao: "Rincão", testeira: "Testeira",
                 "banzo-inferior": "Banzo inferior da tesoura", "viga-aco": "Viga principal (alma cheia)", "pilar-aco": "Pilar da cumeeira", banzo: "Banzo superior da tesoura", "pendural-aco": "Montante central da tesoura", diag: "Diagonal da tesoura", "montante-aco": "Montante da tesoura" };
     var SECP = { linha: SEC.linha, perna: null, pendural: SEC.pendural, escora: SEC.escora, montante: SEC.montante, terca: SEC.terca, caibro: SEC.caibro, ripa: SEC.ripa, pontalete: SEC.pontalete, espigao: SEC.espigao, rincao: SEC.espigao, testeira: SEC.testeira };
     Object.keys(por).forEach(function (k) {
@@ -1456,14 +1607,28 @@
       var Lmt = 0; pecas.forEach(function (o) { if (o.tesoura && /^(mt|esp|rin)/.test(o.tesoura)) Lmt += o.L; });
       it("Estrutura do telhado", "Meias-tesouras " + x.nMeias + " un e tesouras de canto (espigão/rincão) " + x.nDiag + " un — peça a peça", "un", x.nMeias + x.nDiag, "sem composição SINAPI própria (o SINAPI só traz a tesoura inteira): a madeira delas está no Madeiramento", false, { informativo: true, inclusoEm: "peças do Madeiramento (peça a peça)" });
       if (mat !== "aco") {
+        /* ORÇAMENTO pela taxa do SINAPI (kg de prego 18×30 ÷ metros de madeira da tesoura de referência de 8 m) — decisão da RA
+           (20/10/2026, regra "100 % orçado, na incerteza o preço mais alto"): o mínimo da norma (2 por ligação) dá bem menos e
+           não cobre perdas nem fixações auxiliares. A contagem pela NBR 7190-1 vai logo abaixo como DETALHAMENTO, sem somar. */
         var ref = tabT[5] || tabT[tabT.length - 1], taxa = ref[2] / (ref[4] + ref[5] + ref[6] + ref[7]);
         it("Fixação", "Prego 18×30 (2 3/4 × 10) com cabeça — nós das meias-tesouras e tesouras de canto (" + virg(Lmt) + " m de peça)", "kg", taxa * Lmt,
-           "taxa da tesoura SINAPI " + ref[1] + " (" + virg(ref[2], 3) + " kg ÷ " + virg(ref[4] + ref[5] + ref[6] + ref[7], 1) + " m de madeira) aplicada aos metros das meias-tesouras — VALOR DE PARTIDA, conferir", true);
+           "taxa da tesoura SINAPI " + ref[1] + " (" + virg(ref[2], 3) + " kg ÷ " + virg(ref[4] + ref[5] + ref[6] + ref[7], 1) + " m de madeira, " + TESOURAS_SINAPI.fonte + ") aplicada aos metros das meias-tesouras — proporção calculada pela RA, conferir", true);
+        var lgM = ligacaoTesoura(function (id) { return /^(mt|esp|rin)/.test(id); });
+        if (lgM.n) it("Fixação", "Pregos pela NBR 7190 — nós das meias-tesouras e tesouras de canto: " + lgM.nos + " nós, " + lgM.lig + " ligações × " + NBR_PREGO.minPinos + " = " + lgM.n + " pregos " + lgM.pr.des, "kg", lgM.n / lgM.pr.porKg,
+           "mínimo da norma (" + NBR_PREGO.minFonte + ") — dimensionar no módulo Madeira; bitola " + lgM.texto + "; " + lgM.pr.porKg + " pregos/kg (" + F_BELGO + ")", false, { informativo: true, inclusoEm: "a taxa de pregos do SINAPI (base do orçamento das meias-tesouras)" });
       } else it("Fixação", "Ligações parafusadas dos nós das meias-tesouras e de canto", "un", x.nMeias + x.nDiag, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
     }
     if (M.tesoura && mat === "aco" && x.nTes) it("Fixação", "Ligações parafusadas dos nós da tesoura metálica", "un", x.nTes, "chapas e parafusos por nó: SEM FONTE — VALOR DE PARTIDA, dimensionar no cálculo da Metálica", true);
-    /* pregos da trama: kg pelo SINAPI (por m² em projeção) + o número de ligações contado no modelo */
+    /* pregos da trama: o ORÇAMENTO fica pelo kg/m² do SINAPI (é a base de orçamento: inclui perdas e fixações auxiliares);
+       a contagem pela NORMA (ligações do modelo × mínimo 2, bitola pela 7.2) vai como DETALHAMENTO logo abaixo de cada um */
     if (mat !== "aco") {
+      var detN = { informativo: true, inclusoEm: "o kg/m² do SINAPI (base do orçamento da trama)" };
+      avisos.push("Pregos: a quantidade por ligação é o MÍNIMO da NBR 7190-1:2022 (2 pregos, 7.1.1) — dimensionar no módulo Madeira com os esforços.");
+      var tR = x.sR ? x.sR.h * 1000 : 0, tC = x.sC ? x.sC.h * 1000 : 0, tT = x.sT.h * 1000, tAp = M.tesoura ? x.sPerna.h * 1000 : SEC.pontalete.b * 1000;
+      if (M.ripa) { var lr = ligacaoTrama("ripa × caibro", tR, tC, x.nCruzRC, "15×15", true); it("Fixação", lr.item, "kg", lr.kg, lr.obs, false, detN); }
+      if (M.caibro) { var lc = ligacaoTrama("caibro × terça", tC, tT, x.nCruzCT, "19×36"); it("Fixação", lc.item, "kg", lc.kg, lc.obs, false, detN); }
+      var lt = ligacaoTrama("terça × apoio", tT, tAp, x.nCruzTA, "22×48"); it("Fixação", lt.item, "kg", lt.kg, lt.obs, false, detN);
+      if (M.tesoura && x.nTes) { var lgI = ligacaoTesoura(function (id) { return /^tes/.test(id); }); if (lgI.n) it("Fixação", "Pregos pela NBR 7190 — nós das tesouras inteiras: " + lgI.nos + " nós, " + lgI.lig + " ligações × " + NBR_PREGO.minPinos + " = " + lgI.n + " pregos " + lgI.pr.des, "kg", lgI.n / lgI.pr.porKg, "mínimo da norma (" + NBR_PREGO.minFonte + ") — dimensionar no módulo Madeira; bitola " + lgI.texto, false, { informativo: true, inclusoEm: "a composição SINAPI da tesoura" }); }
       if (M.ripa) it("Fixação", PREGOS.ripaCaibro.prego + " — ripa × caibro (" + x.nCruzRC + " cruzamentos)", "kg", PREGOS.ripaCaibro.kgM2 * AP, PREGOS.fonte + "; quantidade de pregos por cruzamento: SEM FONTE (o kg do SINAPI manda)");
       if (M.caibro) it("Fixação", PREGOS.caibroTerca.prego + " — caibro × terça (" + x.nCruzCT + " cruzamentos)", "kg", PREGOS.caibroTerca.kgM2 * AP, PREGOS.fonte);
       it("Fixação", PREGOS.tercaApoio.prego + " — terça × apoio (" + x.nCruzTA + " apoios)", "kg", PREGOS.tercaApoio.kgM2 * AP, PREGOS.fonte);
@@ -1535,11 +1700,17 @@
     opc = opc || {};
     var pk = t && t.pacote, T = BT(); if (!pk || !pk.ok || !T) return { grupos: [], nTri: 0 };
     var chave = null;
-    try { chave = JSON.stringify([t.tipoId, t.modelo, opc.teto || 0, t.aguasCalc, t.linhas, pk.camadas, pk.pecas]); } catch (eK) { chave = null; }
+    try { chave = JSON.stringify([t.tipoId, t.modelo, opc.teto || 0, t.aguasCalc, t.linhas, pk.camadas, pk.camadasAgua, pk.pecas]); } catch (eK) { chave = null; }
     if (chave) for (var ci = 0; ci < CACHE_GEO.length; ci++) if (CACHE_GEO[ci].k === chave) return CACHE_GEO[ci].g;
     var g0 = geometriaCalc(t, opc, pk, T);
     if (chave) { CACHE_GEO.unshift({ k: chave, g: g0 }); if (CACHE_GEO.length > 6) CACHE_GEO.length = 6; }
     return g0;
+  }
+  /* o núcleo da sanduíche: o do catálogo (tel.nucleo) ou a camada isolante do tipo (EPS/PIR/PU) */
+  function nucleoTipo(tel, t) {
+    var n = String(tel && tel.nucleo || "").toUpperCase();
+    if (!n) arr(t && t.tipoTelhado && t.tipoTelhado.camadas).forEach(function (c) { var m = String(c && c.material || ""); if (!n && /\bPIR\b/i.test(m)) n = "PIR"; else if (!n && /\bPU\b|poliuretano/i.test(m)) n = "PU"; else if (!n && /EPS|isopor|poliestireno/i.test(m)) n = "EPS"; });
+    return /PIR/.test(n) ? "PIR" : (/PU|POLIURET/.test(n) ? "PU" : "EPS");
   }
   function geometriaCalc(t, opc, pk, T) {
     var grupos = [], porMat = {}, nTot = 0, teto = fin(opc.teto) ? opc.teto : TETO_TRI_AGUA;
@@ -1562,7 +1733,11 @@
     Object.keys(porMat).forEach(function (k) { grupos.push(porMat[k]); nTot += porMat[k].nTri; });
     var tel = T.telha(t.tipoId), pf = tel && tel.perfil ? tel.perfil : { passo: 0.2, altura: 0.04, esp: 0.01 }, h = perfilFn(tel);
     var sand = tel && tel.familia === "sanduiche", nucleo = sand ? num(tel.nucleoMm, 30) / 1000 : 0;
+    /* T4 (20/10/2026): o NÚCLEO da sanduíche (EPS/PIR/PU do catálogo; senão a camada isolante do tipo) aparece nas bordas
+       entre as duas chapas — material próprio, espessura do catálogo */
+    var nucTipo = sand ? nucleoTipo(tel, t) : null;
     var faceMad = arr(t.tipoTelhado && t.tipoTelhado.camadas).some(function (c) { return /madeira/i.test(c.material || ""); });
+    var cristas = [];   /* por peça de água: o topo da crista da telha num ponto (para a capa do espigão/cumeeira assentar) */
     aguasInclinadas(t).forEach(function (ag, ia) {
       var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f;
       arr(ag.pecas).forEach(function (pq) {
@@ -1575,16 +1750,27 @@
         var nRow = Math.max(1, Math.ceil(rampa / Lp - 1e-9));
         /* teto: amostras por passo e, se ainda passar, fileiras juntas */
         var porPasso = amostrasPorPasso(tel), nCol = function (pp) { return Math.ceil((tmx - tmn) / pf.passo * pp) + 2; };
-        var est = function (pp, nr) { return nr * nCol(pp) * 4; };
+        /* T4: a telha com CORPO — além de cima e de baixo, cada fileira fecha a frente (2 por coluna), a última o topo e as
+           pontas: ~6 triângulos por célula; os topos que o contorno corta (espigão, rincão) entram enquanto couber no teto */
+        var est = function (pp, nr) { return nr * nCol(pp) * 6 + 2 * nCol(pp) + nr * 4; };
         /* nunca menos de 4 amostras por onda (revisor T1, 20/10/2026): com 2, as amostras caem em fase com o perfil — a capa e
            canal de um 20×30 saía PLANA (h(0) = h(½) = 0,45·A) e a romana sem a crista; o trapézio usa as 4 quinas sempre */
         var minPP = tel && tel.forma === "plana" ? 1 : 4;
         while (est(porPasso, nRow) > teto && porPasso > minPP) porPasso--;
         var junta = 1; while (est(porPasso, Math.ceil(nRow / junta)) > teto && junta < nRow) junta++;
         nRow = Math.ceil(nRow / junta);
-        var gT = { chave: "telha-" + ia, material: "telha", agua: ia, pos: [], nTri: 0 }, gB = { chave: "telha-baixo-" + ia, material: faceMad ? "telha-madeira" : "telha", agua: ia, pos: [], nTri: 0 };
-        var base = pk.camadas.telha, esp = pf.esp, lift = (esp + 0.004) * (tel && /ceramica|concreto/.test(tel.familia) ? 3 : 1);
+        var gT = { chave: "telha-" + ia, material: "telha", agua: ia, pos: [], nTri: 0, nBorda: 0 }, gB = { chave: "telha-baixo-" + ia, material: faceMad ? "telha-madeira" : "telha", agua: ia, pos: [], nTri: 0 };
+        /* as bordas: na telha comum, na malha de cima (mesmo material — uma malha a menos); na sanduíche, o núcleo */
+        var gW = sand ? { chave: "telha-nucleo-" + ia, material: "telha-nucleo", nucleo: nucTipo, nucleoMm: nucleo * 1000, agua: ia, pos: [], nTri: 0, nBorda: 0 } : gT;
+        var orcW = Math.max(0, teto - est(porPasso, nRow)), extraW = 0;
+        var base = pk.camadasAgua && pk.camadasAgua[ia] ? pk.camadasAgua[ia].telha : pk.camadas.telha, esp = pf.esp,   /* T3: o fundo da telha pelo plano desta água */
+         lift = (esp + 0.004) * (tel && /ceramica|concreto/.test(tel.familia) ? 3 : 1);
         function tri(g, p, q, r) { g.pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]); g.nTri++; }
+        function parede(g, p, q, r2, s2) {
+          var d1 = Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]), d2 = Math.abs(p[0] - s2[0]) + Math.abs(p[1] - s2[1]) + Math.abs(p[2] - s2[2]);
+          if (d1 < 1e-9 || d2 < 1e-9) return;   /* aresta sem comprimento (ponta do espigão) ou sem altura */
+          tri(g, p, q, r2); tri(g, p, r2, s2); g.nBorda += 2;
+        }
         function P3(u, tt, dy) { var x = d[0] * u + td[0] * tt, z = d[1] * u + td[1] * tt; return [x, S.y(x, z) + base + dy, z]; }
         /* as COLUNAS (as ondas, retas ao longo do caimento): cada coluna é cortada pelo contorno da água NA PRÓPRIA coluna —
            o corte do espigão/rincão sai em diagonal e as ondas ficam paralelas, como a telha cortada na obra */
@@ -1592,6 +1778,22 @@
         if (tel && tel.forma === "trapezoidal" && pf.passo) pontosTrap(tel, tmn, tmx).forEach(function (q) { ts.push(q); });
         else { var dtc = pf.passo / porPasso, k0 = Math.ceil(tmn / dtc + 1e-9); for (var kk = k0; kk * dtc < tmx - 1e-9; kk++) ts.push(kk * dtc); }
         ts.push(tmx);
+        (function (Qc, Sc, dc, umn, umx, nR, base0, lift0, fc, hm) {
+          var bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity, du = (umx - umn) / nR;
+          Qc.forEach(function (q) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); bz0 = Math.min(bz0, q[1]); bz1 = Math.max(bz1, q[1]); });
+          cristas.push({ Q: Qc, cx: [bx0 - 1e-6, bx1 + 1e-6, bz0 - 1e-6, bz1 + 1e-6], top: function (x, z) {
+            var u = dc[0] * x + dc[1] * z, best = null, rk = du > 0 ? Math.floor((u - umn) / du) : 0;
+            /* só a fileira de u e a de antes (a sobreposição de até 10 cm da anterior): o mesmo resultado do laço em todas */
+            for (var rr2 = Math.max(0, rk - 1); rr2 <= Math.min(nR - 1, rk + 1); rr2++) {
+              var ua2 = umn + (umx - umn) * rr2 / nR, ub2 = umn + (umx - umn) * (rr2 + 1) / nR, ubx2 = rr2 + 1 < nR ? ub2 + Math.min(0.1, (ub2 - ua2) * 0.25) : ub2;
+              if (u < ua2 - 1e-6 || u > ubx2 + 1e-6) continue;
+              var la = rr2 > 0 ? lift0 : 0, sb = la * (ubx2 - u) / Math.max(1e-9, ubx2 - ua2);
+              var y = Sc.y(x, z) + base0 + sb + (sand ? nucleo : 0) + hm * fc + pf.esp * fc;
+              if (best == null || y > best) best = y;
+            }
+            return best;
+          } });
+        })(Q, S, d, umin, umax, nRow, base, lift, f, ts.reduce(function (m, tt) { return Math.max(m, h(tt)); }, 0));   /* a crista DESENHADA (as amostras da onda), não a teórica */
         var faixaU = ts.map(function (tt, i) {
           var t2 = i === 0 ? tt + 1e-4 : (i === ts.length - 1 ? tt - 1e-4 : tt), cc = cordasT(Q, t2, d, td);
           return cc.length ? [cc[0][0], cc[cc.length - 1][1]] : null;
@@ -1615,16 +1817,87 @@
             tri(gT, A0, B0, B1); tri(gT, A0, B1, A1);
             var C0 = fundo(l0, t0), C1 = fundo(h0, t0), D0 = fundo(l1, t1), D1 = fundo(h1, t1);
             tri(gB, C0, D1, D0); tri(gB, C0, C1, D1);
+            /* T4 — o CORPO: a frente da fileira (o degrau/beiral e o corte do contorno), o topo da última (e onde o contorno
+               corta) e as pontas. Os vértices são os MESMOS da face de cima e da de baixo: a fileira fecha sem fresta */
+            parede(gW, A0, B0, D0, C0);
+            if (r === nRow - 1) parede(gW, A1, B1, D1, C1);
+            else if ((h0 < ubx - 1e-6 || h1 < ubx - 1e-6) && extraW + 2 <= orcW) { parede(gW, A1, B1, D1, C1); extraW += 2; }
+            if (c === 0) parede(gW, A0, A1, C1, C0);
+            if (c + 2 === ts.length) parede(gW, B0, B1, D1, D0);
           }
         }
         if (gT.nTri) { grupos.push(gT); nTot += gT.nTri; }
         if (gB.nTri) { grupos.push(gB); nTot += gB.nTri; }
+        if (gW !== gT && gW.nTri) { grupos.push(gW); nTot += gW.nTri; }
       });
     });
     /* a CUMEEIRA e o espigão da telha (peça complementar): um "V" invertido sobre a linha, na altura do topo da telha */
     var gC = { chave: "cumeeira", material: "telha", cumeeira: true, pos: [], nTri: 0 };
-    var hTop = pk.camadas.telha + (pf.altura + (sand ? nucleo : pf.esp)) * 1.02;
-    arr(t.linhas).forEach(function (ln) {
+    var hTel = pk.camadas.telha; arr(pk.camadasAgua).forEach(function (c) { if (c && c.telha > hTel) hTel = c.telha; });
+    var hTop = hTel + (pf.altura + (sand ? nucleo : pf.esp)) * 1.02;
+    /* (revisor T3, 20/10/2026) com águas de inclinações DIFERENTES a telha de cada água chega ao espigão na própria cota
+       (degrau de 2,6 a 4,3 cm) e o "V" de queda fixa ficava até 6,8 cm acima da telha mais baixa. A capa passa a ASSENTAR nas
+       duas águas: amostrada a cada 5 cm ao longo da linha, cada aba desce até a crista da telha DAQUELE lado (+ 2 mm), o meio
+       da aba nunca abaixo da telha e a aresta 3 cm acima da crista mais alta. Inclinação única: o "V" de antes, igual. */
+    var incs = aguasInclinadas(t).map(function (ag) { return num(ag.inclinacao, 0); }), variaInc = incs.length && Math.max.apply(null, incs) - Math.min.apply(null, incs) > 1e-6;
+    var assentos = [], ABA = 0.16, FOLGA = 0.002, SOBE = 0.03;
+    function crista(x, z) { var y = null; for (var i = 0; i < cristas.length; i++) { var c = cristas[i], b = c.cx; if (x < b[0] || x > b[1] || z < b[2] || z > b[3] || !T.dentro([x, z], c.Q)) continue; var v = c.top(x, z); if (v != null && (y == null || v > y)) y = v; } return y; }
+    if (variaInc) arr(t.linhas).forEach(function (ln) {
+      if (ln.tipo !== "cumeeira" && ln.tipo !== "espigao") return;
+      var dx = ln.b.x - ln.a.x, dz = ln.b.z - ln.a.z, L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.1)) return;
+      /* amostras a cada 10 cm ao longo da linha; em cada uma, a aba de cada lado em 5 trechos (0, 2, 4, 8, 12 e 16 cm da aresta):
+         cada ponto da aba fica acima da crista da telha DAQUELE lado (o degrau entre fileiras incluído), o último assenta nela */
+      var nx = -dz / L, nz = dx / L, N = Math.max(2, Math.ceil(L / 0.10)), lin = [], OFS = [0, 0.02, 0.04, 0.08, 0.12, ABA], TIPO = ["", "aresta", "aba", "meio", "aba", "assento"];
+      /* (revisor capa, 20/10/2026) a crista ENTRE as amostras: o degrau da fileira da telha cerâmica sobe ~5,7 cm de uma vez
+         (lift) e a amostra a cada 10 cm caía antes dele — entre duas amostras a capa (reta) ficava até 4,9 cm DENTRO da telha
+         (4 águas 30/45/35/60 %, romana: 171 vértices da telha furando a capa). Cada nó da capa passa a valer o MAIOR da crista
+         numa grade fina (2,5 cm ao longo da linha × 1–2 cm na aba) em toda a vizinhança dele (a amostra de antes e a de depois,
+         a faixa da aba de antes e a de depois): a capa reta entre dois nós nunca desce abaixo da telha dessa célula. */
+      var SUB = 4, FO = [0.01, 0.02, 0.03, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, ABA], FJ = [0, 1, 3, 5, 7, 9], GR = [[], []], EX = [[], []];   /* FJ: OFS[j] em FO */
+      [1, -1].forEach(function (sg, si) { for (var m = 0; m <= SUB * N; m++) { var xm = ln.a.x + dx * m / (SUB * N), zm = ln.a.z + dz * m / (SUB * N); GR[si].push(FO.map(function (o) { return crista(xm + sg * nx * o, zm + sg * nz * o); })); } });
+      /* o quanto a crista passa da capa RETA (os dois triângulos do quad, como o quad() abaixo os monta) em cada célula: a parte
+         plana da telha a capa já segue; o que sobra é o degrau da fileira. Cada nó sobe o maior excesso das células vizinhas */
+      for (var si0 = 0; si0 < 2; si0++) {
+        var ex = []; for (var kk = 0; kk <= N; kk++) ex.push(OFS.map(function () { return 0; }));
+        for (var kc = 0; kc < N; kc++) for (var jc = 0; jc + 1 < OFS.length; jc++) {
+          var C00 = GR[si0][SUB * kc][FJ[jc]], C01 = GR[si0][SUB * kc][FJ[jc + 1]], C10 = GR[si0][SUB * (kc + 1)][FJ[jc]], C11 = GR[si0][SUB * (kc + 1)][FJ[jc + 1]], mx = 0;
+          var cnt = [C00, C01, C10, C11].filter(function (v) { return v != null; }), cmin = cnt.length ? Math.min.apply(null, cnt) : null;
+          for (var m2 = SUB * kc; m2 <= SUB * (kc + 1); m2++) for (var f2 = FJ[jc]; f2 <= FJ[jc + 1]; f2++) {
+            var g = GR[si0][m2][f2]; if (g == null) continue;
+            var sP = (m2 - SUB * kc) / SUB, tP = (FO[f2] - FO[FJ[jc]]) / (FO[FJ[jc + 1]] - FO[FJ[jc]]), v;
+            if (cnt.length < 4) v = cmin; else v = tP >= sP ? C00 + (C01 - C00) * (tP - sP) + (C11 - C00) * sP : C00 + (C10 - C00) * (sP - tP) + (C11 - C00) * tP;
+            if (v == null) v = g; if (g - v > mx) mx = g - v;
+          }
+          if (mx > 0) [[kc, jc], [kc, jc + 1], [kc + 1, jc], [kc + 1, jc + 1]].forEach(function (q) { if (mx > ex[q[0]][q[1]]) ex[q[0]][q[1]] = mx; });
+        }
+        EX[si0] = ex;
+      }
+      function envCr(si, k, j) { var c = GR[si][SUB * k][FJ[j]]; return c == null ? null : c + EX[si][k][j]; }
+      for (var k = 0; k <= N; k++) {
+        var x = ln.a.x + dx * k / N, z = ln.a.z + dz * k / N, cr = [[], []], cl = -Infinity;
+        [1, -1].forEach(function (sg, si) { OFS.forEach(function (o, j) { var c = envCr(si, k, j); cr[si].push(c); if (c != null && j <= 3) cl = Math.max(cl, c); }); });
+        if (!isFinite(cl)) { lin.push(null); continue; }
+        var ap = [x, cl + SOBE, z], lados = [];
+        [1, -1].forEach(function (sg, si) {
+          var cs = cr[si][OFS.length - 1], seatY = cs != null ? cs + FOLGA : cl - SOBE, pts = [ap];
+          if (cr[si][0] != null) assentos.push({ x: r4(x + sg * nx * 0.001), z: r4(z + sg * nz * 0.001), y: r4(ap[1]), tipo: "cume", linha: ln.tipo });   /* a aresta, rente à linha, de cada lado */
+          for (var j = 1; j < OFS.length; j++) {
+            var o = OFS[j], xo = x + sg * nx * o, zo = z + sg * nz * o, c = cr[si][j];
+            var y = j === OFS.length - 1 ? seatY : Math.max(ap[1] + (seatY - ap[1]) * o / ABA, c == null ? -Infinity : c + FOLGA);
+            pts.push([xo, y, zo]);
+            if (c != null) assentos.push({ x: r4(xo), z: r4(zo), y: r4(y), tipo: TIPO[j], linha: ln.tipo });
+          }
+          lados.push(pts);
+        });
+        lin.push({ l: lados });
+      }
+      function quad(p0, p1, p2, p3) { gC.pos.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2], p0[0], p0[1], p0[2], p2[0], p2[1], p2[2], p3[0], p3[1], p3[2]); gC.nTri += 2; }
+      for (var k2 = 0; k2 < N; k2++) {
+        var A = lin[k2], B = lin[k2 + 1]; if (!A || !B) continue;
+        for (var sd = 0; sd < 2; sd++) for (var j2 = 0; j2 + 1 < OFS.length; j2++) quad(A.l[sd][j2], A.l[sd][j2 + 1], B.l[sd][j2 + 1], B.l[sd][j2]);
+      }
+    });
+    if (!variaInc) arr(t.linhas).forEach(function (ln) {
       if (ln.tipo !== "cumeeira" && ln.tipo !== "espigao") return;
       var a = [ln.a.x, ln.a.y + hTop, ln.a.z], b = [ln.b.x, ln.b.y + hTop, ln.b.z], dx = b[0] - a[0], dz = b[2] - a[2], L = Math.sqrt(dx * dx + dz * dz); if (!(L > 0.1)) return;
       var nx = -dz / L * 0.16, nz = dx / L * 0.16, cai = 0.16 * 0.35, sobe = 0.03;
@@ -1633,7 +1906,7 @@
       [[a0, a1, b1, b0], [a1, a2, b2, b1]].forEach(function (q) { gC.pos.push(q[0][0], q[0][1], q[0][2], q[1][0], q[1][1], q[1][2], q[2][0], q[2][1], q[2][2], q[0][0], q[0][1], q[0][2], q[2][0], q[2][1], q[2][2], q[3][0], q[3][1], q[3][2]); gC.nTri += 2; });
     });
     if (gC.nTri) { grupos.push(gC); nTot += gC.nTri; }
-    return { grupos: grupos, nTri: nTot, teto: teto };
+    return { grupos: grupos, nTri: nTot, teto: teto, assentos: assentos };
   }
 
   /* o quantitativo do telhado com modelo, no formato do BimCobertura.quantitativo (lista de material) */
@@ -1661,6 +1934,7 @@
     entradaCalculo: entradaCalculo, verificarAco: verificarAco, resumoDePecas: resumoDePecas,
     alturaPerfilAco: alturaPerfilAco, cordasU: cordasU, cordasT: cordasT, trechoNaParede: trechoNaParede, paredesDe: paredesDe,
     /* TELHADO PARAMÉTRICO (T1) */
+    PREGOS_CAT: PREGOS_CAT, NBR_PREGO: NBR_PREGO, verificarPrego: verificarPrego, escolherPrego: escolherPrego, nosDasTesouras: nosDasTesouras,
     MODELOS: MODELOS, SEC: SEC, ESPAC: ESPAC, TESOURAS_SINAPI: TESOURAS_SINAPI, PREGOS: PREGOS, PERFIS_TEL: PERFIS_TEL, TETO_TRI_AGUA: TETO_TRI_AGUA,
     TELHAMENTO_SINAPI: TELHAMENTO_SINAPI, composicaoTelhamento: composicaoTelhamento, ajustarQuantCobertura: ajustarQuantCobertura,
     modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn

@@ -58,6 +58,7 @@
     compMinLeitura: 1.0,       // hid:ok trecho curto (≤ 1 m) não conta como "atravessa o cômodo"
     desvioMax: 0.60,           // hid:ok um "dente" (sai e volta) de até 60 cm é desvio a conferir
     chanfroMax: 0.30,          // hid:ok perna diagonal até 30 cm = desvio de 45° de um canto (não é diagonal solta)
+    faixaCruzamento: 0.60,     // hid:ok água × esgoto que se cruzam na MESMA faixa (enchimento, vala, parede, forro): até 60 cm livres entre eles; mais longe (outro andar, teto × piso) não é o cruzamento da regra
     diagonalMax: 1.0,          // hid:ok desvio de 45° do esgoto até 1 m é leitura normal
     tolAngulo: 0.035,          // hid:ok ~2° de tolerância para "paralelo à parede"
     registroMin: 0.30,         // hid:ok registro acessível: no mínimo 30 cm acima do piso
@@ -138,9 +139,16 @@
   regra("leitura.atravessaComodo", { gravidade: "sugestao", custo: 1.5, titulo: "Tubo cruzando o cômodo pelo meio",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Corre junto às paredes: no meio do cômodo o tubo fica sob o piso ou no forro onde ninguém espera, sem acesso e no caminho de outras instalações.",
     fonte: "critério de projeto", corrigir: "Refazer junto às paredes" });
-  regra("interferencia.aguaSobEsgoto", { gravidade: "alerta", custo: 2.0, titulo: "Água passando por baixo do esgoto",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
-    porque: "No cruzamento a água fica ACIMA do esgoto: um vazamento de esgoto não escorre sobre o tubo de água potável (proteção sanitária).",
-    fonte: "critério de projeto (proteção sanitária da água potável; a ABNT NBR 5626:2020 trata da prevenção de contaminação — sem item conferido para a posição relativa no cruzamento)", corrigir: "Refazer com a água acima do esgoto" });
+  /* FRENTE H1 (20/10/2026, R-C7/R-A14 do docs/hidro/PADROES-PROJETO-RA.md): no cruzamento a geratriz inferior da água fica ACIMA da
+     superior do esgoto, com a folga da tabela (af2020.cruzamento_esgoto — NBR 5626:2020 6.5.3.2). Era alerta comparando os EIXOS (um
+     DN 20 "acima" do eixo de um DN 100 passava por dentro dele); agora é PROIBIDO pelas geratrizes: o motor descarta a estratégia
+     (desvio = outra estratégia) e, sem nenhuma, o descarte diz por quê. O enterrado (fora da edificação) pede o desnível usual. */
+  regra("interferencia.aguaSobEsgoto", { gravidade: "dura", custo: 0, titulo: "Água passando por baixo do esgoto",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "No cruzamento a água fica ACIMA do esgoto — a geratriz inferior da água acima da superior do esgoto: um vazamento de esgoto não escorre sobre o tubo de água potável (proteção sanitária).",
+    fonte: "ABNT NBR 5626:2020, 6.5.3.2 (pelo HidNormas, af2020.cruzamento_esgoto); dentro da edificação, prática de projetista", corrigir: "Refazer com a água acima do esgoto (pela parede ou pelo forro)" });
+  regra("interferencia.cruzamentoEnterrado", { gravidade: "alerta", custo: 1.0, titulo: "Cruzamento enterrado com pouco desnível",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "Fora da edificação, enterrados, a água passa acima do esgoto com o desnível usual dos memoriais: o solo em volta de um vazamento de esgoto não chega ao tubo de água.",
+    fonte: "memorial de projeto (fonte secundária, pelo HidNormas: af2020.cruzamento_esgoto)", corrigir: "Refazer o cruzamento com o desnível (água mais rasa ou esgoto mais fundo)" });
   regra("interferencia.afastamento", { gravidade: "alerta", custo: 1.0, motor: false, titulo: "Tubos colados",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Água e esgoto/ventilação/elétrica precisam de espaço livre entre si para montagem, isolamento e manutenção.",
     fonte: "critério de projeto (afastamento livre entre geratrizes)", corrigir: "Refazer com o afastamento" });
@@ -477,7 +485,24 @@
     });
 
     /* ---------- INTERFERÊNCIAS entre sistemas */
-    var gasTab = null;
+    var gasTab = null, czTab = null;
+    /* o cruzamento água × esgoto (FRENTE H1): a folga entre geratrizes e o desnível do enterrado, cada um com a fonte da linha */
+    function cruzTab() {
+      if (czTab) return czTab;
+      czTab = { folga: null, enterrado: null, fonteFolga: null, fonteEnterrado: null };
+      function fo(l) { var f = l && l.fonte; return f ? [f.doc, f.tabela, f.pagina].filter(Boolean).join(" — ") : null; }
+      arr(N.linhas("af2020.cruzamento_esgoto", "critérios: água acima do esgoto no cruzamento")).forEach(function (l) {
+        if (l.parametro === "folga_geratrizes_min_m") { czTab.folga = num(l.valor, null); czTab.fonteFolga = fo(l); }
+        if (l.parametro === "desnivel_enterrado_m") { czTab.enterrado = num(l.valor, null); czTab.fonteEnterrado = fo(l); }
+      });
+      return czTab;
+    }
+    /* uma laje (o volume dela) entre as cotas yLo e yHi no ponto P */
+    function lajeEntre(P, yLo, yHi) {
+      return arr(O.lajes).some(function (l) { var tp = num(l.topo, NaN), es = num(l.espessura, 0); return isFinite(tp) && es > EPS && P.x >= Math.min(l.x0, l.x1) - EPS && P.x <= Math.max(l.x0, l.x1) + EPS && P.z >= Math.min(l.z0, l.z1) - EPS && P.z <= Math.max(l.z0, l.z1) + EPS && tp - es >= yLo - EPS && tp <= yHi + EPS; });
+    }
+    /* enterrado = abaixo do piso e fora de todo ambiente (o terreno em volta da obra); sem ambientes, não se sabe: não confere */
+    function enterrado(p, y) { return ambientes.length > 0 && !ambienteEm(p, null) && E.piso != null && y < num(E.piso, INF) - EPS; }
     for (var i = 0; i < T.length; i++) for (var j = i + 1; j < T.length; j++) {
       var a = T[i], b = T[j]; if (a.sistema === b.sistema && !(ehGas(a) !== ehGas(b))) continue;
       if (a.ap && a.ap === b.ap) continue;   /* as descidas do MESMO aparelho ficam onde a louça manda */
@@ -499,7 +524,17 @@
       /* (só o que leva LÍQUIDO servido: a ventilação não pinga esgoto na água) */
       if (LIQ[e.sistema] && w.horiz && e.horiz) {
         var cz = cruzaPlanta(w.p1, w.p2, e.p1, e.p2);
-        if (cz) { var yw = w.p1.y + w.dy * cz.t, ye = e.p1.y + e.dy * cz.s; if (yw < ye - EPS) add("interferencia.aguaSobEsgoto", [w.id, e.id], { x: w.p1.x + (w.p2.x - w.p1.x) * cz.t, y: yw, z: w.p1.z + (w.p2.z - w.p1.z) * cz.t }, "No cruzamento, a " + quem(w) + " (cota " + f2(yw) + " m) passa por baixo do " + quem(e) + " (cota " + f2(ye) + " m)."); }
+        if (cz) {
+          var yw = w.p1.y + w.dy * cz.t, ye = e.p1.y + e.dy * cz.s, Pc = { x: w.p1.x + (w.p2.x - w.p1.x) * cz.t, y: yw, z: w.p1.z + (w.p2.z - w.p1.z) * cz.t };
+          var CZ = cruzTab(), folgaG = (yw - w.r) - (ye + e.r);   /* geratriz inferior externa da água − superior externa do esgoto */
+          /* sem a tabela: a regra antiga (eixo da água abaixo do eixo do esgoto), sem número */
+          var baixo = CZ.folga != null ? folgaG < CZ.folga - EPS : yw < ye - EPS;
+          /* só o cruzamento na MESMA faixa: a água muito abaixo (outro andar, o piso sob o forro) ou com uma laje entre os dois não é
+             o cruzamento da regra (o vazamento não chega nela) */
+          if (baixo && ((ye - e.r) - (yw + w.r) > G.faixaCruzamento + EPS || lajeEntre(Pc, yw + w.r, ye - e.r))) baixo = false;
+          if (baixo) add("interferencia.aguaSobEsgoto", [w.id, e.id], Pc, "No cruzamento, a " + quem(w) + " (eixo a " + f2(yw) + " m, geratriz inferior a " + f2(yw - w.r) + " m) não passa acima do " + quem(e) + " (eixo a " + f2(ye) + " m, geratriz superior a " + f2(ye + e.r) + " m)" + (CZ.folga != null ? "" : " — folga da tabela af2020.cruzamento_esgoto pendente: conferido pelos eixos") + ".", { fonte: CZ.fonteFolga || R["interferencia.aguaSobEsgoto"].fonte });
+          else if (CZ.enterrado != null && enterrado(Pc, Math.max(yw, ye)) && folgaG < CZ.enterrado - EPS) add("interferencia.cruzamentoEnterrado", [w.id, e.id], Pc, "Cruzamento enterrado fora da edificação: a " + quem(w) + " passa só " + fcm(Math.max(0, folgaG)) + " cm acima do " + quem(e) + " (desnível usual " + fcm(CZ.enterrado) + " cm).", { fonte: CZ.fonteEnterrado || R["interferencia.cruzamentoEnterrado"].fonte });
+        }
       }
       if (dd < G.afastamento - TOL_FOLGA) add("interferencia.afastamento", [w.id, e.id], ptEm(w.p1, w.p2, 1 / 2), "A " + quem(w) + " está a " + fcm(Math.max(0, dd)) + " cm do " + quem(e) + " (mínimo livre " + fcm(G.afastamento) + " cm).");
     }

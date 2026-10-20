@@ -34,6 +34,7 @@
     return null;
   }
   var Mob = dep("Mob", "mobgeo.js");
+  var PMov = dep("PartesMoveis", "partesmoveis.js");   /* porta, folha e gaveta que abrem (c.parte, js/mobgeo.js) */
   function num(v, d) { return typeof v === "number" && isFinite(v) ? v : d; }
   function clamp(x, a, b) { return x < a ? a : (x > b ? b : x); }
 
@@ -69,6 +70,8 @@
       quantitativo: { unidade: o.unidade || "un", quantidade: o.quantidade || "1", codigo: "", fonte: "", descricao: (o.quantDesc || o.nome) + " (orçar à parte)" }
     };
     if (o.fonteGeral) fam.fonteMedidas = o.fonteGeral;
+    /* PARTES MÓVEIS: a peça com porta/gaveta carrega o estado Aberto/Abertura na instância (o mesmo da pele de vidro); não entra no orçamento */
+    if (o.moveis && PMov) fam.parametros = fam.parametros.concat(PMov.parametrosEstado());
     LISTA.push(fam); GER[o.id] = o.gerar; if (o.simbolo) SIMB[o.id] = o.simbolo;
     return fam;
   }
@@ -92,6 +95,22 @@
   };
   /* puxador cava (reentrância preta fina) */
   H.cava = function (c, x, y, z, comp, mat) { c.caixa(mat || MAT.PRETO, x, y, z, comp, 0.012, 0.012); };
+  /* ------------------------------------------------ PARTES MÓVEIS (porta, folha, gaveta — js/partesmoveis.js)
+   * O 3D abre a parte no clique. Tudo o que `fn` desenha vira a parte; as coordenadas do eixo são as da PEÇA (as mesmas do desenho).
+   *   H.giro(c, id, hx, hy, hz, lado, fn[, ang])  porta de giro que abre para a FRENTE (+Z): (hx, hz) = a dobradiça (borda da folha, meio da
+   *       espessura), hy = meio da altura; lado = -1 dobradiça à ESQUERDA (a folha vai para +X) ou +1 à direita. Abre 105° (porta de armário).
+   *   H.gaveta(c, id, curso, fn)                  gaveta que sai para a frente (+Z) o `curso` (= profundidade da gaveta x fração).
+   *   H.correr(c, id, dx, fn)                     folha de correr: anda `dx` em X (o sinal manda; o curso é |dx|).
+   *   H.gavetaCaixa(c, mat, x, y, zFrente, w, h, prof)  o corpo da gaveta (fundo, laterais, traseira) atrás da frente — anda junto. */
+  H.giro = function (c, id, hx, hy, hz, lado, fn, ang) { c.parte(id, { tipo: "giro", eixo: [hx, hy, hz], angulo: ang || 105, sentido: lado < 0 ? -1 : 1 }, fn); };
+  H.gaveta = function (c, id, curso, fn) { c.parte(id, { tipo: "gaveta", vetor: [0, 0, 1], curso: curso }, fn); };
+  H.correr = function (c, id, dx, fn) { c.parte(id, { tipo: "correr", vetor: [dx < 0 ? -1 : 1, 0, 0], curso: Math.abs(dx) }, fn); };
+  H.gavetaCaixa = function (c, mat, x, y, zf, w, h, prof) {
+    var e = 0.012, ww = Math.max(0.05, w - 0.05), hh = Math.max(0.04, h - 0.05), pp = Math.max(0.08, prof);
+    c.caixa(mat, x, y + 0.02, zf - pp / 2, ww, e, pp);                                              // fundo
+    c.caixa(mat, x - ww / 2 + e / 2, y + 0.02, zf - pp / 2, e, hh, pp); c.caixa(mat, x + ww / 2 - e / 2, y + 0.02, zf - pp / 2, e, hh, pp);   // laterais
+    c.caixa(mat, x, y + 0.02, zf - pp + e / 2, ww, hh, e);                                           // traseira
+  };
   /* pé de móvel afunilado */
   H.pe = function (c, mat, x, z, alt, topo, base, giroX, giroZ) { c.tronco(mat, x, 0, z, base, base, topo, topo, alt, { rotX: giroX, rotZ: giroZ }); };
   /* almofada de decoração */
@@ -205,7 +224,7 @@
 
   /* ---- rack + painel + TV ---- */
   def({
-    id: "ra-mob-rack-tv", nome: "Rack com painel e TV", descricao: "Rack suspenso com portas e nicho, painel de fundo com ripas e TV. A TV tem as proporções 16:9 da polegada escolhida (largura = 0,8719 × diagonal; altura = 0,4905 × diagonal).",
+    id: "ra-mob-rack-tv", moveis: true, nome: "Rack com painel e TV", descricao: "Rack suspenso com portas e nicho, painel de fundo com ripas e TV. A TV tem as proporções 16:9 da polegada escolhida (largura = 0,8719 × diagonal; altura = 0,4905 × diagonal).",
     parametros: [P("Comprimento", "comprimento", 1.80, "Dimensões", "Comprimento do rack. " + USUAL), P("Profundidade", "comprimento", 0.40, "Dimensões"), P("Altura_rack", "comprimento", 0.40, "Dimensões"), P("Altura_pe", "comprimento", 0.20, "Dimensões", "Vão livre sob o rack (suspenso)"),
       P("TV_polegadas", "inteiro", 55, "TV", "Diagonal da tela, em polegadas"), P("Altura_centro_tv", "comprimento", 1.10, "TV", "Do piso ao centro da tela", "instancia"),
       P("Painel_largura", "comprimento", 2.40, "Painel"), P("Painel_altura", "comprimento", 2.40, "Painel", "Do piso ao topo do painel"), P("Painel_ripado", "simnao", true, "Painel"),
@@ -225,7 +244,8 @@
       for (var m = 0; m < nm; m++) {
         var xm = -L / 2 + wm * (m + 0.5);
         if (m === 1 && nm >= 3) { c.caixa(MAT.GRAFITE, xm, y0 + 0.02, 0.05 + 0.02, wm - 0.03, h - 0.04, D - 0.04); continue; }   // nicho aberto
-        H.porta(c, v.Rack, xm, y0 + 0.01, 0.05 + D, wm - 0.012, h - 0.02, 0.018, "liso"); H.cava(c, xm, y0 + h - 0.045, 0.05 + D + 0.018, 0.12);
+        var wpR = wm - 0.012, ladoR = m % 2 ? 1 : -1;
+        H.giro(c, "porta" + (m + 1), xm + ladoR * wpR / 2, y0 + h / 2, 0.05 + D + 0.009, ladoR, function () { H.porta(c, v.Rack, xm, y0 + 0.01, 0.05 + D, wpR, h - 0.02, 0.018, "liso"); H.cava(c, xm, y0 + h - 0.045, 0.05 + D + 0.018, 0.12); });
       }
       c.caixa(MAT.PRETO, 0, y0 - 0.02, zc, L - 0.08, 0.02, D - 0.1);
       // TV
@@ -237,7 +257,7 @@
 
   /* ---- aparador ---- */
   def({
-    id: "ra-mob-aparador", nome: "Aparador", descricao: "Aparador baixo com portas de friso, gavetas e pés cônicos.",
+    id: "ra-mob-aparador", moveis: true, nome: "Aparador", descricao: "Aparador baixo com portas de friso, gavetas e pés cônicos.",
     parametros: [P("Comprimento", "comprimento", 1.60, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.45, "Dimensões"), P("Altura", "comprimento", 0.80, "Dimensões"), P("Altura_pe", "comprimento", 0.15, "Dimensões"),
       P("Corpo", "material", "madeira nogueira", "Materiais"), P("Tampo", "material", "marmore branco", "Materiais")],
     tipos: [T("a160", "1,60 m", {}), T("a120", "1,20 m", { Comprimento: 1.20 }), T("a200", "2,00 m", { Comprimento: 2.00 })],
@@ -247,7 +267,12 @@
       c.caixaR(v.Corpo, 0, y0, D / 2, L - 0.02, Ht - y0 - e, D - 0.02, 0.005, { k: 1 });
       c.caixaR(v.Tampo, 0, Ht - e, D / 2, L, e, D, 0.004, { k: 1 });
       var nm = Math.max(2, Math.round(L / 0.55)), wm = (L - 0.04) / nm;
-      for (var m = 0; m < nm; m++) { var xm = -(L - 0.04) / 2 + wm * (m + 0.5); H.porta(c, v.Corpo, xm, y0 + 0.02, D, wm - 0.008, Ht - y0 - e - 0.04, 0.02, "friso"); H.puxador(c, xm + (m % 2 ? -1 : 1) * (wm / 2 - 0.05), y0 + (Ht - y0) * 0.55, D + 0.02, 0.1, true); }
+      for (var m = 0; m < nm; m++) {
+        var xm = -(L - 0.04) / 2 + wm * (m + 0.5), wpA = wm - 0.008, ladoA = m % 2 ? 1 : -1;   // o puxador fica do lado oposto à dobradiça
+        H.giro(c, "porta" + (m + 1), xm + ladoA * wpA / 2, y0 + (Ht - y0 - e) / 2, D + 0.01, ladoA, function () {
+          H.porta(c, v.Corpo, xm, y0 + 0.02, D, wpA, Ht - y0 - e - 0.04, 0.02, "friso"); H.puxador(c, xm + (m % 2 ? -1 : 1) * (wm / 2 - 0.05), y0 + (Ht - y0) * 0.55, D + 0.02, 0.1, true);
+        });
+      }
     }
   });
 
@@ -327,7 +352,7 @@
     }
   });
   def({
-    id: "ra-mob-criado", nome: "Criado-mudo", descricao: "Criado-mudo com duas gavetas, puxador cava e pés cônicos.",
+    id: "ra-mob-criado", moveis: true, nome: "Criado-mudo", descricao: "Criado-mudo com duas gavetas, puxador cava e pés cônicos.",
     parametros: [P("Largura", "comprimento", 0.50, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.40, "Dimensões"), P("Altura", "comprimento", 0.50, "Dimensões", "Em geral na altura do colchão. " + USUAL), P("Altura_pe", "comprimento", 0.15, "Dimensões"), P("Corpo", "material", "madeira nogueira", "Materiais")],
     tipos: [T("c50", "50 × 40 × 50", {}), T("c40", "40 × 35 × 45", { Largura: 0.40, Profundidade: 0.35, Altura: 0.45 })],
     gerar: function (c, v) {
@@ -335,13 +360,17 @@
       [[-1, 0.06], [1, 0.06], [-1, D - 0.06], [1, D - 0.06]].forEach(function (s) { c.tronco(MAT.PRETO, s[0] * (W / 2 - 0.05), 0, s[1], 0.035, 0.035, 0.025, 0.025, y0); });
       c.caixaR(v.Corpo, 0, y0, D / 2 - 0.01, W, h, D - 0.02, 0.006, { k: 1 });
       var hg = (h - 0.06) / 2;
-      [0, 1].forEach(function (i) { var yg = y0 + 0.02 + i * (hg + 0.015); H.porta(c, v.Corpo, 0, yg, D - 0.02, W - 0.03, hg, 0.02, "liso"); H.cava(c, 0, yg + hg - 0.03, D, W * 0.5); });
+      var profG = (D - 0.06) * 0.85;
+      [0, 1].forEach(function (i) {
+        var yg = y0 + 0.02 + i * (hg + 0.015);
+        H.gaveta(c, "gaveta" + (i + 1), profG * 0.75, function () { H.porta(c, v.Corpo, 0, yg, D - 0.02, W - 0.03, hg, 0.02, "liso"); H.cava(c, 0, yg + hg - 0.03, D, W * 0.5); H.gavetaCaixa(c, MAT.CLARA, 0, yg, D - 0.02, W - 0.03, hg, profG); });
+      });
     }
   });
 
   /* ---- guarda-roupa ---- */
   def({
-    id: "ra-mob-guarda-roupa", nome: "Guarda-roupa (portas de correr ou de abrir)", descricao: "Armário de quarto até o teto baixo com portas de correr em trilho ou de abrir com friso, bagageiro, rodapé recuado e puxadores.",
+    id: "ra-mob-guarda-roupa", moveis: true, nome: "Guarda-roupa (portas de correr ou de abrir)", descricao: "Armário de quarto até o teto baixo com portas de correr em trilho ou de abrir com friso, bagageiro, rodapé recuado e puxadores.",
     parametros: [P("Largura", "comprimento", 2.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 2.50, "Dimensões"), P("Altura_bagageiro", "comprimento", 0.45, "Dimensões", "0 = sem bagageiro"), P("Tipo_porta", "texto", "correr", "Construção", "correr ou abrir", "instancia"), P("Portas", "inteiro", 3, "Construção", "Folhas de porta (por faixa)"),
       P("Corpo", "material", "madeira clara", "Materiais"), P("Frente", "material", "madeira freijo", "Materiais"), P("Espelho", "simnao", true, "Construção", "Uma folha com espelho")],
     tipos: [T("g240c", "2,40 m — 3 portas de correr", {}), T("g300c", "3,00 m — 4 portas de correr", { Largura: 3.00, Portas: 4 }), T("g180a", "1,80 m — 4 portas de abrir", { Largura: 1.80, Portas: 4, Tipo_porta: "abrir", Altura: 2.40 }), T("g240a", "2,40 m — 6 portas de abrir", { Tipo_porta: "abrir", Portas: 6 })],
@@ -355,24 +384,31 @@
         for (var i = 0; i < nP; i++) {
           var x = -W / 2 + wf / 2 + i * (W - wf) / (nP - 1), z = zf + 0.012 + (i % 2) * 0.026;
           var mat = (v.Espelho && i === nP - 1) ? MAT.ESPELHO : v.Frente;
-          c.caixaR(mat, x, rod + 0.02, z, wf, hp - 0.02, esp, 0.004, { k: 1 });
-          H.cava(c, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.5, z + esp / 2 + 0.006, 0.01);
-          c.caixa(MAT.PRETO, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.45, z + esp / 2 + 0.003, 0.012, 0.3, 0.008);
+          var folhaC = function () {
+            c.caixaR(mat, x, rod + 0.02, z, wf, hp - 0.02, esp, 0.004, { k: 1 });
+            H.cava(c, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.5, z + esp / 2 + 0.006, 0.01);
+            c.caixa(MAT.PRETO, x + (i % 2 ? -1 : 1) * (wf / 2 - 0.03), rod + hp * 0.45, z + esp / 2 + 0.003, 0.012, 0.3, 0.008);
+          };
+          /* só as folhas da frente (ímpares) correm, por cima da vizinha de trás; as de trás ficam no trilho, como no móvel real */
+          if (i % 2 === 1) H.correr(c, "folha" + (i + 1), -(W - wf) / (nP - 1), folhaC); else folhaC();
         }
         c.caixa(MAT.PRETO, 0, rod + hp - 0.005, zf + 0.02, W, 0.02, 0.07);
       } else {
         var wp = W / nP;
         for (var j = 0; j < nP; j++) {
           var xj = -W / 2 + wp * (j + 0.5), m2 = (v.Espelho && j === nP - 1) ? MAT.ESPELHO : v.Frente;
-          if (m2 === MAT.ESPELHO) c.caixa(m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, 0.012); else H.porta(c, m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, esp, "friso");
-          H.puxador(c, xj + (j % 2 ? 1 : -1) * (wp / 2 - 0.05), rod + hp * 0.5, zf + esp, 0.2, true);
+          var ladoG = j % 2 ? -1 : 1, wpG = wp - 0.006;   // a dobradiça fica do lado oposto ao puxador
+          H.giro(c, "porta" + (j + 1), xj + ladoG * wpG / 2, rod + hp * 0.5, zf + esp / 2, ladoG, function () {
+            if (m2 === MAT.ESPELHO) c.caixa(m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, 0.012); else H.porta(c, m2, xj, rod + 0.02, zf, wp - 0.006, hp - 0.02, esp, "friso");
+            H.puxador(c, xj + (j % 2 ? 1 : -1) * (wp / 2 - 0.05), rod + hp * 0.5, zf + esp, 0.2, true);
+          });
         }
       }
-      if (bag > 0.05) { var nb = Math.max(2, Math.round(W / 0.6)), wb = W / nb; for (var b = 0; b < nb; b++) { var xb = -W / 2 + wb * (b + 0.5); H.porta(c, v.Frente, xb, Ht - bag, zf, wb - 0.006, bag - 0.01, esp, "liso"); H.cava(c, xb, Ht - bag + 0.03, zf + esp, 0.1); } }
+      if (bag > 0.05) { var nb = Math.max(2, Math.round(W / 0.6)), wb = W / nb; for (var b = 0; b < nb; b++) { var xb = -W / 2 + wb * (b + 0.5), wbp = wb - 0.006, ladoB = b % 2 ? 1 : -1; H.giro(c, "bagageiro" + (b + 1), xb + ladoB * wbp / 2, Ht - bag / 2, zf + esp / 2, ladoB, function () { H.porta(c, v.Frente, xb, Ht - bag, zf, wbp, bag - 0.01, esp, "liso"); H.cava(c, xb, Ht - bag + 0.03, zf + esp, 0.1); }); } }
     }
   });
   def({
-    id: "ra-mob-closet", nome: "Módulo de closet aberto (cabideiro e prateleiras)", descricao: "Módulo de closet sem portas: cabideiro de tubo, prateleiras, gaveteiro inferior e fundo. Vários módulos lado a lado formam o closet.",
+    id: "ra-mob-closet", moveis: true, nome: "Módulo de closet aberto (cabideiro e prateleiras)", descricao: "Módulo de closet sem portas: cabideiro de tubo, prateleiras, gaveteiro inferior e fundo. Vários módulos lado a lado formam o closet.",
     parametros: [P("Largura", "comprimento", 1.20, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.55, "Dimensões"), P("Altura", "comprimento", 2.40, "Dimensões"), P("Prateleiras", "inteiro", 4, "Construção"), P("Gavetas", "inteiro", 2, "Construção"), P("Cabideiro_altura", "comprimento", 1.75, "Construção", "Do piso ao eixo do tubo"),
       P("Corpo", "material", "madeira clara", "Materiais"), P("Gaveta", "material", "madeira freijo", "Materiais"), P("Tubo", "material", "inox", "Materiais")],
     tipos: [T("c120", "1,20 m", {}), T("c90", "0,90 m", { Largura: 0.90 }), T("c60", "0,60 m", { Largura: 0.60, Prateleiras: 5, Gavetas: 0 })],
@@ -382,7 +418,10 @@
       c.caixa(v.Corpo, 0, 0, 0.005, W, Ht, 0.01);
       c.caixa(v.Corpo, 0, Ht - e, D / 2, W - 2 * e, e, D); c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.03, W - 2 * e, rod, D - 0.06); c.caixa(v.Corpo, 0, rod, D / 2, W - 2 * e, e, D);
       var hg = 0.16, y = rod + e;
-      for (var g = 0; g < ng; g++) { H.porta(c, v.Gaveta, 0, y, D - 0.01, W - 2 * e - 0.01, hg - 0.01, 0.02, "liso"); H.cava(c, 0, y + hg - 0.035, D + 0.01, 0.15); y += hg; }
+      for (var g = 0; g < ng; g++) {
+        (function (yg, ig) { H.gaveta(c, "gaveta" + (ig + 1), (D - 0.1) * 0.7, function () { H.porta(c, v.Gaveta, 0, yg, D - 0.01, W - 2 * e - 0.01, hg - 0.01, 0.02, "liso"); H.cava(c, 0, yg + hg - 0.035, D + 0.01, 0.15); H.gavetaCaixa(c, v.Gaveta, 0, yg, D - 0.01, W - 2 * e - 0.01, hg - 0.01, D - 0.1); }); })(y, g);
+        y += hg;
+      }
       c.cilH(v.Tubo, 0, v.Cabideiro_altura, D / 2, 0.015, W - 2 * e, "x", { seg: 10 });
       for (var p = 0; p < np; p++) { var yp = Ht - e - 0.30 - p * 0.30; if (yp > v.Cabideiro_altura + 0.05) c.caixa(v.Corpo, 0, yp, D / 2, W - 2 * e, e, D - 0.02); }
       if (ng > 0) c.caixa(v.Corpo, 0, Math.max(rod + e + ng * hg + 0.30, 1.0), D / 2, W - 2 * e, e, D - 0.02);
@@ -399,7 +438,7 @@
     [-1, 1].forEach(function (s) { c.caixaR(MAT.PRETO, s * 0.27, hA + 0.08, -0.02, 0.04, 0.03, 0.26, 0.012, { k: 1 }); c.caixa(MAT.PRETO, s * 0.27, hA - 0.04, -0.02, 0.025, 0.12, 0.025); });
   };
   def({
-    id: "ra-mob-escrivaninha", nome: "Escrivaninha com cadeira", descricao: "Mesa de trabalho com tampo de madeira, painéis laterais, gaveteiro suspenso e cadeira de escritório giratória com base estrela. A cadeira fica a 0,25 m da borda.",
+    id: "ra-mob-escrivaninha", moveis: true, nome: "Escrivaninha com cadeira", descricao: "Mesa de trabalho com tampo de madeira, painéis laterais, gaveteiro suspenso e cadeira de escritório giratória com base estrela. A cadeira fica a 0,25 m da borda.",
     parametros: [P("Largura", "comprimento", 1.40, "Dimensões", USUAL), P("Profundidade", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.75, "Dimensões", "Altura usual de mesa de trabalho"), P("Com_cadeira", "simnao", true, "Construção"), P("Tampo", "material", "madeira nogueira", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais"), P("Tecido", "material", "tecido grafite", "Materiais", "Estofado da cadeira")],
     tipos: [T("e140", "1,40 × 0,60", {}), T("e120", "1,20 × 0,60", { Largura: 1.20 }), T("e160", "1,60 × 0,70", { Largura: 1.60, Profundidade: 0.70 })],
     gerar: function (c, v) {
@@ -408,7 +447,9 @@
       c.caixa(v.Estrutura, -W / 2 + 0.03, 0, D / 2, 0.03, Ht - e, D - 0.08); c.caixa(v.Estrutura, W / 2 - 0.03, 0, D / 2, 0.03, Ht - e, D - 0.08);
       c.caixa(v.Estrutura, 0, Ht - e - 0.25, 0.05, W - 0.1, 0.20, 0.015);
       var gx = W / 2 - 0.30; c.caixaR(MAT.CLARA, gx, Ht - e - 0.42, D / 2, 0.40, 0.40, D - 0.12, 0.005, { k: 1 });
-      [0, 1].forEach(function (i) { H.porta(c, MAT.FREIJO, gx, Ht - e - 0.41 + i * 0.19, D - 0.06 + 0.01, 0.38, 0.18, 0.016, "liso"); H.cava(c, gx, Ht - e - 0.41 + i * 0.19 + 0.14, D - 0.06 + 0.026, 0.14); });
+      [0, 1].forEach(function (i) {
+        H.gaveta(c, "gaveta" + (i + 1), (D - 0.2) * 0.7, function () { H.porta(c, MAT.FREIJO, gx, Ht - e - 0.41 + i * 0.19, D - 0.06 + 0.01, 0.38, 0.18, 0.016, "liso"); H.cava(c, gx, Ht - e - 0.41 + i * 0.19 + 0.14, D - 0.06 + 0.026, 0.14); H.gavetaCaixa(c, MAT.CLARA, gx, Ht - e - 0.41 + i * 0.19, D - 0.05, 0.38, 0.18, D - 0.2); });
+      });
       if (v.Com_cadeira) c.grupo(-0.15, 0, D + 0.28, 180, function (k) { H.cadeiraEscritorio(k, v.Tecido); });
     }
   });
@@ -422,8 +463,17 @@
     saida.solidos = c.solidos(fam.id.replace(/^ra-/, "") + ":");
     saida.caixa = c.env ? { x0: c.env.x0, y0: c.env.y0, z0: c.env.z0, x1: c.env.x1, y1: c.env.y1, z1: c.env.z1 } : null;
     saida.mob = { triangulos: c.triangulos(), pecas: saida.solidos.length };
+    /* PARTES MÓVEIS: as que o gerador declarou (c.parte); o eixo tem de estar dentro da caixa da peça e o ângulo de 0 a 180 */
+    saida.partesMoveis = c.partes.slice(); saida.errosPartes = c.errosPartes.slice();
+    if (PMov && c.partes.length) {
+      var ck = PMov.checar(c.partes, saida.caixa);
+      saida.errosPartes = saida.errosPartes.concat(ck.erros);
+    }
+    if (PMov) saida.estadoPartes = { fracao: PMov.fracaoDe(v, inst) };
+    if (saida.errosPartes.length) { saida.ok = false; saida.erros = (saida.erros || []).concat(saida.errosPartes); }
     /* SÍMBOLO DE PLANTA (copa, faixa de forração): o desenho técnico usa no lugar do emaranhado de arestas da malha */
-    if (SIMB[fam.id]) { try { saida.simboloPlanta = SIMB[fam.id](v); } catch (eS) { /* sem símbolo: a planta usa a malha */ } }
+    var simK = SIMB[fam.id] ? fam.id : (fam.mob && SIMB[fam.mob] ? fam.mob : null);   /* a cópia da família numa obra (outro id) guarda o id de origem em `mob` */
+    if (simK) { try { saida.simboloPlanta = SIMB[simK](v); } catch (eS) { /* sem símbolo: a planta usa a malha */ } }
     return saida;
   }
   function clonar(o) { return JSON.parse(JSON.stringify(o)); }
@@ -434,7 +484,7 @@
   /* cor de cada material para a MINIATURA da biblioteca (a mesma da tabela FAM_PBR do js/bim.js — o teste de mobiliário (tools/test-*mobiliario.js) confere que os nomes existem lá) */
   var CORES = { "madeira nogueira": "#6b4a32", "madeira clara": "#b58a55", "madeira escura": "#3b2a20", "madeira deck": "#6a3d25", "madeira freijo": "#a27240", "laca branca": "#f2f2ef", "laca grafite": "#3a3d40",
     "metal preto": "#1f2023", "inox": "#d0d4d8", "metal cromado": "#cfd3d8", "latão": "#b89b47", "marmore branco": "#ece9e4", "quartzo branco": "#e9e8e4", "granito preto": "#1d1e20", "vidro": "#9fd3f0", "espelho": "#c9d3d8", "vidro fume": "#4a5560",
-    "louça branca": "#f4f4f2", "tela preta": "#0b0c0e", "couro caramelo": "#9a5f34", "colchao": "#e9e5dc", "roupa de cama": "#e2ded4", "manta cinza": "#9a9a98", "cimento queimado": "#9b9a96", "tijolo refratario": "#c79a6a",
+    "louça branca": "#f4f4f2", "tela preta": "#0b0c0e", "couro caramelo": "#9a5f34", "colchao": "#e9e5dc", "roupa de cama": "#e2ded4", "manta cinza": "#9a9a98", "cimento queimado": "#9b9a96", "tijolo refratario": "#c79a6a", "tijolinho aparente": "#b5683f", "tijolinho escuro": "#5d4a40",
     "pedra cinza": "#8a8d8f", "acrilico branco": "#f7f7f5", "borracha preta": "#1a1a1a", "linho natural": "#cdbfa6", "terra": "#5a4332", "ceramica terracota": "#b5623c", "tecido cinza": "#777a7e", "tecido bege": "#b09b7e",
     "tecido grafite": "#35383c", "tecido verde": "#5a7058", "tecido terracota": "#b4603f", "tecido azul": "#4a6a8a", "tronco palmeira": "#6a5238", "casca de arvore": "#7b6a5a", "folha verde escura": "#2f5a2e", "folha verde": "#4a7f35",
     "folha verde clara": "#7fae4a", "folha variegada": "#6f9a48", "flor amarela": "#f2c53a", "flor rosa": "#e58aa6", "flor lilas": "#b48ad2", "flor azul": "#6f7fd8", "flor branca": "#f4f2ee", "grama esmeralda": "#3f7d2b", "grama amendoim": "#5f9b35", "seixo": "#d8d0c0" };

@@ -185,13 +185,18 @@
     if (/^hid-|^ra-/.test(id) || typeof famAval !== "function") return false;
     try { var av = famAval(f.famId, f.tipoId, f.inst || {}); return arr(av && av.conectores).some(function (c) { return c && (c.sistema === "agua_fria" || c.sistema === "agua_quente"); }); } catch (e) { return false; }
   }
-  function ladoComodo(estado, p, famAval) {
+  /* a parede (caixa do BimEdit) que CONTÉM o ponto p em planta — a de eixo mais perto; null = fora de parede (tubo aparente) */
+  function paredeQueContem(estado, p) {
     var w = null;
     paredes(estado).forEach(function (c) {
       var E = eixoParede(c), dx = p.x - c.cx, dz = p.z - c.cz, uu = dx * E.a.x + dz * E.a.z, ww = dx * E.n.x + dz * E.n.z;
       if (Math.abs(uu) > c.comprimento / 2 + 1e-6 || Math.abs(ww) > num(c.espessura, 0) / 2 + 1e-6) return;
       if (!w || Math.abs(ww) < w.ww) w = { c: c, E: E, ww: Math.abs(ww) };
     });
+    return w;
+  }
+  function ladoComodo(estado, p, famAval) {
+    var w = paredeQueContem(estado, p);
     if (!w) return null;
     var san = arr(estado.familias).filter(function (f) { return pontoDeAgua(f, famAval); });
     var ambs = arr(estado.ambientes).filter(function (A) { return A && A.calc && arr(A.calc.contorno).length >= 3 && san.some(function (f) { return dentroPol(f, A.calc.contorno); }); });
@@ -199,6 +204,81 @@
     var sg = lados[0].amb !== lados[1].amb ? (lados[0].amb ? 1 : -1) : 0;
     if (!sg) { var best = null; san.forEach(function (f) { var d = Math.hypot(f.x - p.x, f.z - p.z), v = (f.x - p.x) * w.E.n.x + (f.z - p.z) * w.E.n.z; if (Math.abs(v) > 1e-6 && (!best || d < best.d)) best = { d: d, s: v > 0 ? 1 : -1 }; }); sg = best ? best.s : 0; }
     return sg ? { x: w.E.n.x * sg, y: 0, z: w.E.n.z * sg } : null;
+  }
+
+  /* FRENTE H2 (20/10/2026): o lado do volante do registro posto à mão é o do PONTO QUE ELE ALIMENTA. Antes o cômodo delimitado
+     com ponto de água ganhava sempre: o registro da TORNEIRA DE JARDIM, na face externa da parede da cozinha, virava o volante
+     para a cozinha (quem fecha a torneira do quintal entra na casa). Regra (critério RA, PADROES-PROJETO-RA R-C3/R-C9): segue
+     o tubo A JUSANTE do registro até o(s) ponto(s) de utilização e vira para o lado deles (cômodo ou área externa); sem tubo a
+     jusante que chegue a um ponto, o cômodo vizinho (ladoComodo). Jusante = o lado SEM a alimentação (espera "continua" de água
+     ou saída de reservatório/cavalete); sem alimentação achada (ou nos dois lados), o lado da ponta p2 (o traçado desenha a
+     água de p1 para p2); se só um lado chega a ponto, é ele. Grafo: HidGrafo.montar sobre BimInst.rede (o mesmo do cálculo). */
+  var FONTE_AGUA = /caixa-dagua|reservatorio|cisterna|cavalete|hidrometro/;
+  /* REVISÃO ADVERSARIAL H2 (20/10/2026): na ÁGUA QUENTE a alimentação é o AQUECEDOR (a saída "aq" dele). Sem isto a rede quente
+     nunca tinha fonte e caía no sentido do desenho: ramal quente desenhado do lavatório para o aquecedor, com outro ponto do
+     lado do aquecedor, virava o volante para fora (o master acertava pelo cômodo). Na água FRIA o aquecedor é consumidor. */
+  var FONTE_AQ = /aquecedor|boiler|acumulador|coletor-solar/;
+  var _grafoCache = { est: null, nOps: -1, aval: null, sis: null, val: null };
+  function grafoAgua(estado, famAval, sis, nOps) {
+    var C0 = _grafoCache;
+    if (C0.est === estado && C0.nOps === nOps && C0.aval === famAval && C0.sis === sis) return C0.val;
+    var I = BI(), Gr = dep("HidGrafo", "./hidgrafo.js"), val = null;
+    if (I && Gr && I.rede && Gr.montar) {
+      try { var R = I.rede(estado, famAval); val = { R: R, G: Gr.montar(R, estado, [sis]) }; } catch (eG) { val = null; }
+    }
+    _grafoCache = { est: estado, nOps: nOps, aval: famAval, sis: sis, val: val };
+    return val;
+  }
+  function ladoJusante(estado, famAval, t, q, nOps) {
+    if (!t || !q) return null;
+    var w = paredeQueContem(estado, q); if (!w) return null;
+    var I = BI(), RG = grafoAgua(estado, famAval, t.sistema, nOps); if (!I || !RG || !RG.G) return null;
+    var G = RG.G, TOLr = I.TOL;
+    /* a aresta do trecho em que o registro cai (o trecho pode estar partido por derivações) */
+    var eSel = null, dSel = Infinity;
+    arr(G.partes && G.partes[t.id]).forEach(function (eid) {
+      var e = G.arestas[eid], ab = { x: e.pb.x - e.pa.x, y: e.pb.y - e.pa.y, z: e.pb.z - e.pa.z }, L2 = dot3(ab, ab); if (!(L2 > 0)) return;
+      var s = Math.max(0, Math.min(1, dot3({ x: q.x - e.pa.x, y: q.y - e.pa.y, z: q.z - e.pa.z }, ab) / L2)), pp = add3(e.pa, ab, s);
+      var d = Math.sqrt(Math.pow(pp.x - q.x, 2) + Math.pow(pp.y - q.y, 2) + Math.pow(pp.z - q.z, 2));
+      if (d < dSel) { dSel = d; eSel = e; }
+    });
+    if (!eSel) return null;
+    var famDe = {}; arr(estado.familias).forEach(function (f) { famDe[String(f.id)] = f; });
+    var fonteNo = {};
+    arr(RG.R && RG.R.continuacoes).forEach(function (c) {
+      var tc = trechoDe(estado, c.trecho); if (!tc || tc.sistema !== t.sistema) return;
+      G.ordemN.forEach(function (nid) { var n = G.nos[nid]; if (Math.sqrt(Math.pow(n.x - c.x, 2) + Math.pow(n.y - c.y, 2) + Math.pow(n.z - c.z, 2)) <= TOLr) fonteNo[nid] = 1; });
+    });
+    /* a busca de um lado do registro, sem atravessar a aresta onde ele está */
+    function lado(no0) {
+      var vis = {}, fila = [no0], out = { pontos: [], fonte: false }; vis[no0] = 1;
+      while (fila.length) {
+        var nid = fila.shift(), n = G.nos[nid];
+        if (fonteNo[nid]) out.fonte = true;
+        if (n.aparelho) {
+          var f = famDe[String(n.aparelho.famInst)];
+          if (f && (FONTE_AGUA.test(String(f.famId)) || (t.sistema === "agua_quente" && FONTE_AQ.test(String(f.famId))))) out.fonte = true;
+          else if (f && pontoDeAgua(f, famAval)) out.pontos.push({ f: f, no: n });
+        }
+        arr(n.arestas).forEach(function (eid) { if (eid === eSel.id) return; var e = G.arestas[eid], o = G.outro(e, nid); if (!vis[o]) { vis[o] = 1; fila.push(o); } });
+      }
+      return out;
+    }
+    var A = lado(eSel.a), Bl = lado(eSel.b), jus = null;   /* eSel.a fica do lado de p1 do trecho, eSel.b do lado de p2 */
+    if (A.fonte !== Bl.fonte) jus = A.fonte ? Bl : A;
+    else jus = Bl.pontos.length || !A.pontos.length ? Bl : A;
+    if (!jus.pontos.length) return null;
+    /* o ponto a jusante mais perto do registro manda; o lado = a posição da família em relação ao eixo da parede (a louça e a
+       torneira encostam na FACE dela); família no próprio eixo → a frente dela (Z local, convenção do js/familia.js) */
+    var best = null;
+    jus.pontos.forEach(function (P0) {
+      var f = P0.f, v = (num(f.x, 0) - w.c.cx) * w.E.n.x + (num(f.z, 0) - w.c.cz) * w.E.n.z;
+      if (Math.abs(v) < 1e-3) { var r = num(f.rotY, 0); v = Math.sin(r) * w.E.n.x + Math.cos(r) * w.E.n.z; }
+      if (Math.abs(v) < 1e-6) return;
+      var d = Math.sqrt(Math.pow(P0.no.x - q.x, 2) + Math.pow(P0.no.y - q.y, 2) + Math.pow(P0.no.z - q.z, 2));
+      if (!best || d < best.d) best = { d: d, s: v > 0 ? 1 : -1 };
+    });
+    return best ? { x: w.E.n.x * best.s, y: 0, z: w.E.n.z * best.s } : null;
   }
 
   /* INSERIR NO TUBO: a op (ou o lote) que põe o acessório/conexão `cfg.famId` no ponto do trecho mais perto de alvo.q.
@@ -241,7 +321,8 @@
       var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
       /* FRENTE B (19/10/2026, D-01): o REGISTRO posto à mão num tubo embutido nasce com o volante para o lado do cômodo (o giro do
          Espaço soma por cima). Pedido do Rogério: "sempre para o sentido onde está o ambiente" (critério RA, R-C9). */
-      if (/registro/.test(String(chave))) { var fC = ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
+      /* FRENTE H2 (20/10/2026): o lado do PONTO a jusante manda; sem tubo a jusante até um ponto, o cômodo vizinho */
+      if (/registro/.test(String(chave))) { var fC = ladoJusante(estado, famAval, t, q, arr(ops).length) || ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
       if (giro) op.giro = giro;
       return { ok: true, oQue: k, nome: A.nome, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,
                previa: { centro: q, dir: u, comprimento: Lff, dn: t.dn, material: t.material, sistema: t.sistema, acessorio: chave, variante: tipo, giro: giro } };
@@ -773,7 +854,7 @@
   var BimInstColocar = {
     VERSAO: 1, GEO: GEO, CONEXOES: CONEXOES, ORDEM_INLINE: ORDEM_INLINE,
     oQue: oQue, nomeInline: nomeInline, tuboSob: tuboSob, encaixeGrade: encaixeGrade, inserir: inserir, girar: girar, poseFamilia: poseFamilia, cotaParede: cotaParede,
-    paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, giroPara: giroPara, ladoComodo: ladoComodo, idsUsados: idsUsados, novoId: novoId,
+    paredeAtras: paredeAtras, frenteAcessorio: frenteAcessorio, giroPara: giroPara, ladoComodo: ladoComodo, ladoJusante: ladoJusante, idsUsados: idsUsados, novoId: novoId,
     montar3d: T.montar3d, tela: T
   };
   global.BimInstColocar = BimInstColocar;

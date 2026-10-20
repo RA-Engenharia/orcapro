@@ -6694,6 +6694,7 @@ try { if (window.BimTabelaUI) BimTabelaUI.registrar(reg, self); if (window.BimAn
 try { if (window.BimModeloVista) { this._d2Config(); BimModeloVista.registrar(reg, self); } } catch (eP6) {}
 try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
 try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
+try { if (window.BimApresentacaoUI) BimApresentacaoUI.registrar(reg, self); } catch (eAp) {}
 try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
 try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
 try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
@@ -7226,7 +7227,7 @@ return { id: "d2:" + cid, rotulo: "Corte " + c.letra, icone: "corte", arrastar: 
 ]) };
 }
 var st = this._bimVxEst();
-var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); } }];
+var v3d = [{ id: "3d", rotulo: "{3D}", icone: "quadrado", fn: function () { self._bimVxAtivar("3d"); }, menu: (window.BimApresentacaoUI && BimApresentacaoUI.menuNo) ? BimApresentacaoUI.menuNo() : undefined }];
 st.lista.forEach(function (v) {
 if (v.tipo === "2d" || v.tipo === "folha") return;
 v3d.push({ id: "vx:" + v.id, rotulo: v.nome + (v.janela ? " (outra janela)" : ""), icone: "quadrado",
@@ -9502,6 +9503,14 @@ if (window.BIM && BIM.editarArmar) BIM.editarArmar("cobertura", { inclinacao: i 
 } }
 ]);
 },
+_vaoInverterAcoes: function (id) {
+var V = window.BimVaoArr, ac = [];
+try { ac = V && V.acoes ? V.acoes(String(id)) : []; } catch (e) { ac = []; }
+return ac.map(function (q) {
+return { id: "fam-inv-" + q.id, rotulo: q.id === "fora" ? "Lado" : "Mão", tipo: "botao", rotuloBotao: q.rotulo + (q.id === "fora" ? " (hoje: " + (q.valor ? "fora" : "dentro") + ")" : " (hoje: " + (q.valor ? "direita" : "esquerda") + ")"),
+fn: function () { V.inverter(q.id, String(id)); } };
+});
+},
 _famPropsInstancia: function (id) {
 var self = this, b = window.BIM; if (!b || !b.instanciaInfo) return null;
 var info = b.instanciaInfo(id); if (!info) return null;
@@ -9531,6 +9540,7 @@ if (calc.length) secoes.push({ nome: "Calculados", params: calc });
 secoes.push({ nome: "Quantitativo", params: [ro("fq-q", "Quantidade", Util.fmtNum(q.quantidade || 0, 3) + " " + (q.unidade || "un")), ro("fq-c", "Código", q.codigo || "— (preencha na família)"), ro("fq-d", "Descrição", q.descricao || "")] });
 try { if (window.OrcModeloUI) secoes = secoes.concat(OrcModeloUI.secoesFamilia(id)); } catch (eOM) {}
 secoes.push({ nome: "Ações", params: [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fam); } }]
+.concat(self._vaoInverterAcoes(id))
 .concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }]) });
 return {
 titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
@@ -9688,6 +9698,7 @@ if (window.OrcModeloUI) extras = extras.concat(OrcModeloUI.secoesFamilia(fid));
 if (window.BimInstUI && BimInstUI.secoesFamilia) extras = extras.concat(BimInstUI.secoesFamilia(fid));
 var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
 extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
+.concat(self._vaoInverterAcoes(fid))
 .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
 } else {
 if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
@@ -51916,8 +51927,7 @@ this._initP = this._carregarSDK().then(function () {
 if (!global.firebase.apps.length) global.firebase.initializeApp(CONFIG.backend.firebaseConfig);
 self.auth = global.firebase.auth();
 self.db = global.firebase.firestore();
-try { self.db.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
-return true;
+return self._limparCacheVelho().then(function () { return true; });
 });
 return this._initP;
 },
@@ -51981,6 +51991,27 @@ if (t === "object") { var m = 0; for (var k in v) if (Object.prototype.hasOwnPro
 return 8;
 }
 return tam(x) + 32;
+},
+LIMPAR_MS: 4000,
+_limparCacheVelho: function () {
+var self = this, db = this.db;
+if (!db || typeof db.clearPersistence !== "function") return Promise.resolve(false);
+var temBanco = Promise.resolve(true);
+try {
+var idb = global.indexedDB;
+if (idb && typeof idb.databases === "function") {
+temBanco = Promise.resolve(idb.databases()).then(function (l) {
+return (l || []).some(function (d) { return d && /^firestore\//.test(String(d.name || "")); });
+}, function () { return true; });
+}
+} catch (e) { temBanco = Promise.resolve(true); }
+var limpeza = temBanco.then(function (tem) {
+if (!tem) return false;
+try { return Promise.resolve(db.clearPersistence()).then(function () { return true; }, function () { return false; }); }
+catch (e) { return false; }
+});
+var teto = new Promise(function (r) { setTimeout(function () { r(false); }, self.LIMPAR_MS); });
+return Promise.race([limpeza, teto]);
 },
 _setDoc: function (ent, doc) {
 var t = 0;
@@ -52059,7 +52090,13 @@ var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve()
 if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
 if (!fila.ativos && !this._revsDe(ent)) {
 var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
-if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) return this._setDoc(ent, { v: vN, em: Date.now() });
+if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) {
+var p0 = this._setDoc(ent, { v: vN, em: Date.now() });
+fila.ativos++;
+var dec0 = function () { fila.ativos--; };
+fila.corrente = Promise.resolve(p0).then(dec0, dec0);
+return p0;
+}
 }
 var item = { vN: vN, juntadas: 0 };
 fila.ativos++;
@@ -52077,7 +52114,7 @@ var self = this, em = Date.now(), doc = { v: vN, em: em };
 var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
 var temBatch = !!this.db && typeof this.db.batch === "function";
 var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
-if (!emPartes && (!this._revsDe(ent) || !temBatch)) return Promise.resolve({ p: this._setDoc(ent, doc) });
+if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = this._setDoc(ent, doc); return Promise.resolve({ p: pU, esperar: pU }); }
 var lerAtual = this._doc(ent).get().then(function (s0) {
 var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
 return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
@@ -52090,9 +52127,10 @@ var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0
 var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
 var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
 if (!emPartes) {
-if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) return { p: self._setDoc(ent, doc) };
+if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = self._setDoc(ent, doc); return { p: pS, esperar: pS }; }
 var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
-return { p: b1.commit().then(esquecer) };
+var pB1 = b1.commit().then(esquecer);
+return { p: pB1, esperar: pB1 };
 }
 var partes = self._fatiar(vN);
 if (!partes || t > self.TETO_LOTE || partes.length + nApagar > 450) {
@@ -52139,12 +52177,21 @@ _conflitosCc: [],
 _marcasDe: function (empresaId, ent) {
 try { var m = Store.adapter.ler(empresaId, "_syncmarcas", {}); return (m && m[ent]) || {}; } catch (e) { return {}; }
 },
-_marcarSync: function (empresaId, ent, lista) {
+_marcarSync: function (empresaId, ent, lista, soIguaisA) {
 if (ent === "prefs" || ent === "conta") return;
 try {
 var m = Store.adapter.ler(empresaId, "_syncmarcas", {}) || {};
 var mm = {};
-Util.arr(lista).forEach(function (o) { if (o && o.id) mm[o.id] = String(o.atualizadoEm || ""); });
+if (arguments.length > 3) {
+var ant = (m[ent] && typeof m[ent] === "object") ? m[ent] : {}, naNuvem = {}, temP = Object.prototype.hasOwnProperty;
+Util.arr(soIguaisA).forEach(function (o) { if (o && o.id) naNuvem[o.id] = String(o.atualizadoEm || ""); });
+Util.arr(lista).forEach(function (o) {
+if (!o || !o.id) return;
+var t = String(o.atualizadoEm || "");
+if (temP.call(naNuvem, o.id) && naNuvem[o.id] === t) mm[o.id] = t;
+else if (temP.call(ant, o.id)) mm[o.id] = ant[o.id];
+});
+} else Util.arr(lista).forEach(function (o) { if (o && o.id) mm[o.id] = String(o.atualizadoEm || ""); });
 m[ent] = mm;
 var antes = this._aplicandoDaNuvem;
 this._aplicandoDaNuvem = true;
@@ -52337,6 +52384,29 @@ self.bloqueioDeDono = null;
 return self._sincronizarAgora(empresaId);
 });
 },
+TETO_CONFIRMA_SYNC: 30000,
+_esperarConfirmacao: function (ent, pW, ck, tam) {
+var self = this, acabou = false;
+return new Promise(function (resolver, rejeitar) {
+var tm = setTimeout(function () {
+if (acabou) return;
+acabou = true;
+self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
+Promise.resolve(pW)["catch"](function (e) {
+if (self._ultimoEnviado[ck] !== undefined) delete self._ultimoEnviado[ck];
+self._registrarFalha(ent, e, tam);
+});
+resolver("pendente");
+}, self.TETO_CONFIRMA_SYNC);
+Promise.resolve(pW).then(function () {
+if (acabou) return;
+acabou = true; clearTimeout(tm); resolver(true);
+}, function (e) {
+if (acabou) return;
+acabou = true; clearTimeout(tm); rejeitar(e);
+});
+});
+},
 _sincronizarAgora: function (empresaId) {
 var self = this;
 self._conflitosUltimoMerge = 0;
@@ -52367,7 +52437,7 @@ var merged = self._merge(local, cloud, ent, empresaId);
 self._aplicandoDaNuvem = true;
 try { Store.adapter.gravar(empresaId, ent, merged); }
 finally { self._aplicandoDaNuvem = false; }
-self._marcarSync(empresaId, ent, merged);
+self._marcarSync(empresaId, ent, merged, cloud);
 var subir = paraNuvem(ent, merged);
 var carga = "";
 try { carga = JSON.stringify(subir); } catch (e) { carga = ""; }
@@ -52381,7 +52451,12 @@ if (cargaNuvem === carga) { self._ultimoEnviado[ck] = carga; return true; }
 }
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[ck] = carga;
-return self._escreverEnt(ent, subir).then(function () { return true; });
+var pW = self._escreverEnt(ent, subir);
+Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
+return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
+if (r === "pendente") { falhou++; return false; }
+return true;
+});
 }).catch(function (e) {
 falhou++;
 delete self._ultimoEnviado[empresaId + "|" + ent];
@@ -67793,7 +67868,7 @@ try {
 var esp = global.Store && global.Store._d && global.Store._d.esp;
 if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
 } catch (e) {}
-try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; } } catch (e) {}
+try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
 try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
 try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
 return c;
@@ -68437,5 +68512,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=409c12a6d2"},{"src":"js/bim-pacote.js?v=7dff3688f1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=ff9dbb96e9"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=f5c99134ff"},{"src":"js/bim-pacote.js?v=6baf515a28","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map
