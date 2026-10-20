@@ -4813,7 +4813,7 @@ if (S._abrirUI && S._abrirUI.gate(e)) return;
 var SL = SLx(); if (!SL || SL.mao() || !semFerramenta3d()) return;
 var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), mod = modeladorOn() && !!S._prec;
 var a = SL.acao({ botao: 0, vista: '3d', alvo: u ? 'peca' : 'vazio', editavel: !!(u && /^edit:/.test(u)), modelador: mod, ctrl: !!(e.ctrlKey || e.metaKey), shift: e.shiftKey });
-sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null };
+sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null, hits: _ultimosHits.slice() };
 });
 canvasEl.addEventListener('pointermove', function (e) {
 var s = sel3; if (!s || e.pointerId !== s.id) return;
@@ -4828,6 +4828,9 @@ if (BimVaoArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y })) s.modo = 'vao'
 else if ((s.acao === 'peca-mover' || s.acao === 'peca') && s.u && !s.ctrl && window.BimInstArr && BimInstArr.pode && BimInstArr.pode(s.u)) {
 if (BimInstArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y }, s.hp)) s.modo = 'inst';
 }
+else if ((s.acao === 'peca-mover' || s.acao === 'peca') && s.u && !s.ctrl && window.BimTelhadoPecaArr && BimTelhadoPecaArr.pode && BimTelhadoPecaArr.pode(s.u, s.hits)) {
+if (BimTelhadoPecaArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y, shiftKey: e.shiftKey, altKey: e.altKey }, s.hp, s.hits)) s.modo = 'telpeca';
+}
 else if (s.acao === 'peca-mover') {
 if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');
 if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
@@ -4837,6 +4840,7 @@ try { canvasEl.setPointerCapture(e.pointerId); } catch (_) {}
 if (s.modo === 'mover') S._prec.arrastoMover(e);
 else if (s.modo === 'inst') BimInstArr.mover(e);
 else if (s.modo === 'vao') BimVaoArr.mover(e);
+else if (s.modo === 'telpeca') BimTelhadoPecaArr.mover(e);
 else if (s.modo === 'janela') selRetDesenhar(s, e);
 });
 function selRetDesenhar(s, e) {
@@ -4881,6 +4885,7 @@ if (!s.modo) { sel3Clique(e); return true; }
 if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(e); marcarFechamento(); return true; }
 if (s.modo === 'inst') { if (window.BimInstArr) BimInstArr.soltar(e); marcarFechamento(); return true; }
 if (s.modo === 'vao') { if (window.BimVaoArr) BimVaoArr.soltar(e); marcarFechamento(); return true; }
+if (s.modo === 'telpeca') { if (window.BimTelhadoPecaArr) BimTelhadoPecaArr.soltar(e); marcarFechamento(); return true; }
 if (s.modo === 'janela') {
 var ids = janela3d(s, e);
 selAplicar(ids, s.ctrl ? 'somar' : 'trocar');
@@ -4889,7 +4894,7 @@ S._hint(ids.length ? ids.length + ' peça(s) selecionada(s) pela janela (' + (SL
 }
 return true;
 };
-canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); });
+canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3 && sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); });
 S._selTeclas = function (e) {
 if (!S || S !== Sm || !S.alive) return;
 var k = e.key; if (k !== 'Escape' && k !== 'Delete' && k !== 'Del') return;
@@ -4899,7 +4904,7 @@ var h = S.host || host, raiz = h && h.closest ? (h.closest('.bim-revit') || h) :
 if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return;
 var SL = SLx();
 if (k === 'Escape') {
-if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
+if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
 if (SL && SL.arrastando && SL.arrastando()) { SL.cancelar(); e.preventDefault(); e.stopPropagation(); return; }
 if (!semFerramenta3d() || (SL && SL.ferramenta2d && SL.ferramenta2d()) || (edit.on && edit.p1)) return;
 if (!selAtual().length) return;
@@ -13736,6 +13741,8 @@ editarB2: function (cfg) { return (S && S._b2Config) ? S._b2Config(cfg) : null; 
 planta2d: function () { return (S && S._planta2d) ? S._planta2d : null; },
 b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
 realceTelhadoPeca: function (pos) { return (S && S._telPecaRealce) ? S._telPecaRealce(pos) : false; },
+raioEm: function (clientX, clientY) { return (S && S._raioDe) ? S._raioDe(clientX, clientY) : null; },
+dica: function (msg) { if (S && S._hint) S._hint(msg); },
 b2Op: function (o) {
 if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'desidentificar'].indexOf(o.op) >= 0) { if (!BimEdit.sanear([o]).length) return false; S._editOpExterna(o); return true; }
 if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);

@@ -14558,6 +14558,7 @@ modificar: [
 ],
 geometria: [
 { id: "juntas-parede", sub: "juntas", rotulo: "Juntas de\nparede", icone: "parede", dica: "Escolha Topo, Meia-esquadria ou Esquadrar na barra de opções e clique perto do canto de duas paredes." },
+{ id: "fechar-cantos", sub: null, rotulo: "Fechar cantos\nabertos", icone: "quadrado", dica: "Acha as pontas de parede que ficaram perto de outra sem estar no canto (a até 0,30 m, configurável), mostra a lista e fecha tudo de uma vez: até o encontro dos eixos (L) ou até a face (T). Pega a seleção, ou o modelo inteiro. Parede desunida de propósito não é tocada; um Ctrl+Z desfaz tudo." },
 { id: "alternar-uniao", sub: "alternar-uniao", rotulo: "Alternar ordem\nde união", icone: "ciclo", dica: "Clique perto do canto de duas paredes: troca a que passa e a que para (o volume de cada uma muda). Em peças unidas (pilar, viga, laje), clique as duas: troca quem corta quem." },
 { id: "unir-geometria", sub: "unir-geo", rotulo: "Unir\ngeometria", icone: "mais", dica: "Clique duas peças (parede, pilar, viga, laje): a de maior prioridade corta a outra — pilar > viga > laje > parede — e o volume comum não conta duas vezes no orçamento." },
 { id: "desunir-geometria", sub: "desunir-geo", rotulo: "Desunir\ngeometria", icone: "fechar", dica: "Clique as duas peças unidas: cada uma volta inteira (na parede × parede, o canto deixa de ser feito)." }
@@ -14617,6 +14618,7 @@ escala: ["sel", "baseE"], juntas: ["canto"], "alternar-uniao": ["pecaU1", "pecaU
 pintar: ["face"], "dividir-face": ["face"], "remover-pintura": ["face"]
 };
 var PASSO_TRACO = { destino: 1, eixo2: 1, p2: 1, ref: 1, final: 1 };
+var PASSO_PECA = { pecaA: 1, pecaB: 1, alvoV: 1, alvoD: 1, pontoDiv: 1, pecaF: 1 };
 var P4 = { linhaRef: 1, linhaAlvo: 1, alvoD: 1, pecaA: 1, pecaB: 1, alvoV: 1, pontoDiv: 1, pecaF: 1, fonte: 1, pS1: 1, pS2: 1, alvoT: 1, baseE: 1, canto: 1, pecaU1: 1, pecaU2: 1, face: 1 };
 var DICA = {
 sel: "Clique no elemento criado no OrçaPRO (Ctrl soma outro; Enter segue).",
@@ -14729,6 +14731,14 @@ var V = VUI(), g = V ? V.gravar(estado(), op, { evento: ev, novoId: nid }) : { o
 api.op(g.op);
 if (V) V.falar(g.res, (msg || "") + (g.sozinho ? " (Alt: só esta peça)" : ""), hint); else if (msg) hint(msg + " (Ctrl+Z desfaz).");
 return g.res;
+}
+function encaixarPonta(id, ponta, p, ev) {
+var F = global.BimFechar;
+if (!F || !F.encaixar || typeof ponta !== "string" || (ev && ev.altKey)) return { x: p.x, z: p.z, nota: "" };
+var raio = 0.15; try { if (ev && isFinite(ev.clientX)) raio = tolM(ev); } catch (eR) {}
+var r = null; try { r = F.encaixar(estado(), id, ponta, { x: p.x, z: p.z }, { raio: raio }); } catch (eE) { r = null; }
+if (!r) return { x: p.x, z: p.z, nota: "" };
+return { x: r.x, z: r.z, nota: r.dist > 0.002 ? " — encaixou no canto (" + (r.tipo === "T" ? "face da outra parede" : "encontro dos eixos") + ")" : "" };
 }
 function previaVinc(st, op, e, excluir) {
 var V = VUI(); if (!V) return null;
@@ -15088,7 +15098,8 @@ var a = pr.arrasto; pr.arrasto = null; pr.geo = null; limparGrupo(grp);
 try { a.b.releasePointerCapture(e.pointerId); } catch (eR) {}
 api.marcaEsconder();
 if (!a.p || (Math.abs(a.p.x - a.p0.x) < 1e-6 && Math.abs(a.p.z - a.p0.z) < 1e-6)) { if (VUI()) VUI().soltar(); posicionar(); return; }
-gravarOp({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(a.p.x * 10000) / 10000, z: Math.round(a.p.z * 10000) / 10000 }, "Esticado", e);
+var enc = encaixarPonta(a.id, a.k, a.p, e);
+gravarOp({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(enc.x * 10000) / 10000, z: Math.round(enc.z * 10000) / 10000 }, "Esticado" + enc.nota, e);
 }
 camadaDom.addEventListener("pointerup", soltarAlca);
 camadaDom.addEventListener("pointercancel", function () { pr.arrasto = null; limparGrupo(grp); if (VUI()) VUI().soltar(); posicionar(); });
@@ -15135,6 +15146,11 @@ api.op(r.op); hint(msg + " (Ctrl+Z desfaz.)"); api.fechou(); return true;
 function girarCom(graus) {
 var c = pr.pts[0]; if (!c) return;
 var T = { tipo: "girar", cx: c.x, cz: c.z, graus: Math.round(graus * 10000) / 10000 };
+if (!pr.copiaGir) {
+var rG = Pr().opTransformar(estado(), pr.sel, T, false, nid);
+if (!rG || rG.erro) { hint((rG && rG.erro) || "Não deu para girar."); return; }
+gravarOp(rG.op, "Girado " + fmt(graus) + "°", null); api.fechou(); limparGrupo(grp); reiniciarPasso(); return;
+}
 if (aplicarResultado(Pr().opTransformar(estado(), pr.sel, T, pr.copiaGir, nid), (pr.copiaGir ? "Copiado e girado " : "Girado ") + fmt(graus) + "°")) { limparGrupo(grp); reiniciarPasso(); }
 }
 function passoComPonto(p) {
@@ -15198,6 +15214,34 @@ if (aplicarP4(Pr().opAlinhar(st, ref0, sa), "Alinhado")) oferecerCadeado(st, ref
 return true;
 }
 function oferecerCadeado(st, ref, alvo) { try { if (global.BimAlinharInst && global.BimAlinharInst.oferecerTrava) global.BimAlinharInst.oferecerTrava(st, ref, alvo); } catch (eC) { global.__cadeadoErro = String(eC && eC.stack || eC); } }
+function passoPecaEm(passo, id, p) {
+var f = ferramenta(), st = estado(), q = pr.p4;
+if (passo === "alvoV") { aplicarP4(Pr().opAparoAte(st, q.ref, { id: id, p: p }), "Aparado/estendido até a referência", true); return true; }
+if (passo === "alvoD") { aplicarP4(Pr().opDeslocamento(st, id, q.desl, p, q.deslCopia, nid), (q.deslCopia ? "Cópia deslocada " : "Deslocada ") + fmt(q.desl) + " m", true); return true; }
+if (passo === "pecaA") { q.a = { id: id, p: p }; pr.pts = [p]; irPara("pecaB"); return true; }
+if (passo === "pecaB") {
+var rc = Pr().opAparoCanto(st, q.a, { id: id, p: p }, nid);
+if (rc && rc.op && !rc.erro) rc = { op: comPilha(st, rc.op) };
+aplicarP4(rc, "Canto fechado"); return true;
+}
+if (passo === "pontoDiv") { aplicarP4(Pr().opDividir(st, id, p, nid), "Dividida em duas", true); return true; }
+if (passo === "pecaF") { aplicarP4(Pr().opFixar(st, [id], f === "fixar"), f === "fixar" ? "Fixada" : "Desafixada", true); return true; }
+return false;
+}
+function comPilha(st, op) {
+var V = global.BimVinculos; if (!V || !V.pilhaDe) return op;
+var lista = op.op === "lote" ? op.ops.slice() : [op], extra = [], ja = {};
+lista.forEach(function (o) { if (o && o.op === "esticar") ja[String(o.id)] = 1; });
+lista.forEach(function (o) {
+if (!o || o.op !== "esticar") return;
+V.pilhaDe(st, o.id).forEach(function (m) {
+if (ja[m.id]) return; ja[m.id] = 1;
+extra.push({ op: "esticar", id: m.id, ponta: m.inv ? (o.ponta === "a" ? "b" : "a") : o.ponta, x: o.x, z: o.z });
+});
+});
+if (!extra.length) return op;
+return { op: "lote", id: op.op === "lote" ? op.id : nid("l"), origem: "modificar", pedido: (op.pedido || "Aparar/estender para canto"), ops: lista.concat(extra) };
+}
 function passoP4(e, hit) {
 var f = ferramenta(), st = estado(), passo = pr.passo, q = pr.p4;
 var sp = pontoSnap(e, hit), p = sp ? sp.p : null, id = idDoHit(), tol = sp ? Math.max(sp.tol, 0.08) : 0.3;
@@ -15214,18 +15258,7 @@ var refA = q.ref;
 if (aplicarP4(Pr().opAlinhar(st, refA, sa), "Alinhado")) oferecerCadeado(st, refA, sa);
 return true;
 }
-if (passo === "alvoV") {
-if (id == null || !p) { hint(DICA.alvoV); return true; }
-aplicarP4(Pr().opAparoAte(st, q.ref, { id: id, p: p }), "Aparado/estendido até a referência", true); return true;
-}
-if (passo === "alvoD") {
-if (id == null || !p) { hint(DICA.alvoD); return true; }
-aplicarP4(Pr().opDeslocamento(st, id, q.desl, p, q.deslCopia, nid), (q.deslCopia ? "Cópia deslocada " : "Deslocada ") + fmt(q.desl) + " m", true); return true;
-}
-if (passo === "pecaA") { if (id == null || !p) { hint(DICA.pecaA); return true; } q.a = { id: id, p: p }; pr.pts = [p]; irPara("pecaB"); return true; }
-if (passo === "pecaB") { if (id == null || !p) { hint(DICA.pecaB); return true; } aplicarP4(Pr().opAparoCanto(st, q.a, { id: id, p: p }, nid), "Canto fechado"); return true; }
-if (passo === "pontoDiv") { if (id == null || !p) { hint(DICA.pontoDiv); return true; } aplicarP4(Pr().opDividir(st, id, p, nid), "Dividida em duas", true); return true; }
-if (passo === "pecaF") { if (id == null) { hint(DICA.pecaF); return true; } aplicarP4(Pr().opFixar(st, [id], f === "fixar"), f === "fixar" ? "Fixada" : "Desafixada", true); return true; }
+if (PASSO_PECA[passo]) { if (id == null || (!p && passo !== "pecaF")) { hint(DICA[passo]); return true; } return passoPecaEm(passo, id, p); }
 if (passo === "fonte") {
 if (id == null) { hint("Clique numa peça criada no OrçaPRO."); return true; }
 q.fonte = id; pr.pts = [p || { x: 0, z: 0 }];
@@ -15489,6 +15522,10 @@ if (!soma) proximo(); else hint(ROT_FERR[f] + ": " + pr.sel.length + " seleciona
 return true;
 }
 if (pr.passo === "linhaRef" || pr.passo === "linhaAlvo") return passoLinhaEm(mods.raw && isFinite(mods.raw.x) ? mods.raw : p, mods.tol);
+if (PASSO_PECA[pr.passo]) {
+if (alvoId == null || !existe(alvoId)) { hint(DICA[pr.passo]); return true; }
+return passoPecaEm(pr.passo, alvoId, mods.raw && isFinite(mods.raw.x) ? mods.raw : p);
+}
 if (P4[pr.passo]) { hint(ROT_FERR[f] + ": esta etapa pega a face/linha da peça na vista 3D."); return true; }
 limparGrupo(grp); caixaEsconder(); passoComPonto(p);
 return true;
@@ -15604,8 +15641,9 @@ return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: re
 esticar: function (id, ponta, p, e) {
 if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };
 if (Pr().fixado(estado(), id)) { hint("Elemento fixado: use Desafixar antes."); return { ok: false }; }
-var op = { op: "esticar", id: id, ponta: ponta, x: Math.round(p.x * 10000) / 10000, z: Math.round(p.z * 10000) / 10000 };
-var res = typeof ponta === "string" ? gravarOp(op, "Esticado", e) : (api.op(op), hint("Esticado (Ctrl+Z desfaz)."), null);
+var enc = encaixarPonta(id, ponta, p, e);
+var op = { op: "esticar", id: id, ponta: ponta, x: Math.round(enc.x * 10000) / 10000, z: Math.round(enc.z * 10000) / 10000 };
+var res = typeof ponta === "string" ? gravarOp(op, "Esticado" + enc.nota, e) : (api.op(op), hint("Esticado (Ctrl+Z desfaz)."), null);
 return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
 },
 previaVinculos: function (op) { var V = VUI(); if (!V) return null; var r = V.previa(estado(), op, null); return r ? { acompanharam: r.acompanharam.slice(), avisos: r.avisos.slice(), resumo: r.resumo } : null; },
@@ -54760,7 +54798,8 @@ return ks.every(function (k) {
 var v = s[k]; if (v === null) return true;
 if (k === "removida") return v === true || v === false;
 if (k === "perfil" || k === "secao") return typeof v === "string" && v.length > 0 && v.length <= 60;
-if (k === "desloc") return !!v && typeof v === "object" && ["x", "y", "z"].every(function (c) { return v[c] == null || (fin(v[c]) && Math.abs(v[c]) <= 20); });
+if (k === "desloc") return !!v && typeof v === "object" && ["x", "y", "z"].every(function (c) { return v[c] == null || (fin(v[c]) && Math.abs(v[c]) <= 20); }) &&
+(v.agua == null || (typeof v.agua === "object" && ["u", "v"].every(function (c) { return v.agua[c] == null || (fin(v.agua[c]) && Math.abs(v.agua[c]) <= 20); })));
 if (k === "ext") return !!v && typeof v === "object" && ["a", "b"].every(function (c) { return v[c] == null || (fin(v[c]) && v[c] >= -20 && v[c] <= 20); });
 return false;
 });
@@ -54803,7 +54842,10 @@ var sm = secaoMadeira(s.secao);
 if (sm) { o.w = sm.b; o.h = sm.h; o.forma = "ret"; delete o.dims; delete o.perfil; o.secao = sm.id; mud.push("secao"); }
 else out.avisos.push(rotuloPeca(o) + " " + o.id + ": a seção \"" + s.secao + "\" não está no catálogo de madeira — ficou o automático.");
 }
-if (s.desloc) { var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)]; o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
+if (s.desloc) {
+var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)];
+if (s.desloc.agua && PECAS_AGUA[o.p]) { var plA = planoArrasto(o, false); if (plA.tipo === "agua") dv = rr(ad3(ad3([0, 0, 0], plA.e1, num(s.desloc.agua.u, 0)), plA.e2, num(s.desloc.agua.v, 0))); }
+o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
 if (s.ext && (num(s.ext.a, 0) || num(s.ext.b, 0))) {
 var ax = nz3(s3(o.b, o.a)), ea = num(s.ext.a, 0), eb = num(s.ext.b, 0), L0 = ln3(s3(o.b, o.a));
 if (L0 + ea + eb > 0.05) { o.a = rr(ad3(o.a, ax, -ea)); o.b = rr(ad3(o.b, ax, eb)); mud.push("ext"); }
@@ -54875,6 +54917,113 @@ return SECOES_MADEIRA.map(function (s) { return { id: s.id, rotulo: virg(s.b * 1
 function opPeca(telhadoId, pecaId, campos) {
 var m = {}; m[String(pecaId)] = campos === null ? null : campos;
 return { op: "telhado", id: String(telhadoId), sobrepor: m };
+}
+var PECAS_AGUA = { terca: 1, caibro: 1, ripa: 1, espigao: 1, rincao: 1, testeira: 1 };
+function eixoPeca(o) { return nz3(s3(o.b, o.a)); }
+function meioPeca(o) { return [(o.a[0] + o.b[0]) / 2, (o.a[1] + o.b[1]) / 2, (o.a[2] + o.b[2]) / 2]; }
+function planoArrasto(o, vertical) {
+var ax = eixoPeca(o), up = o.up ? nz3(o.up) : [0, 1, 0], n = null, tipo = "horizontal", e1, e2;
+if (!vertical && PECAS_AGUA[o.p]) {
+var u2 = ad3(up, ax, -dt3(up, ax));
+if (ln3(u2) > 1e-6 && Math.abs(nz3(u2)[1]) < 0.9995) { n = nz3(u2); tipo = "agua"; }
+}
+if (!n && vertical) {
+var hz = [ax[0], 0, ax[2]];
+if (ln3(hz) > 0.05) n = nz3([-hz[2], 0, hz[0]]);
+else { var uh = [up[0], 0, up[2]]; n = ln3(uh) > 0.05 ? nz3(uh) : [0, 0, 1]; }
+tipo = "vertical";
+}
+if (!n) { n = [0, 1, 0]; tipo = "horizontal"; }
+if (tipo === "horizontal") { e1 = [1, 0, 0]; e2 = [0, 0, 1]; }
+else if (tipo === "vertical") { e1 = nz3(cr3(n, [0, 1, 0])); e2 = [0, 1, 0]; }
+else { var ap = ad3(ax, n, -dt3(ax, n)); e1 = ln3(ap) > 1e-6 ? nz3(ap) : nz3(cr3(n, [0, 1, 0])); e2 = nz3(cr3(n, e1)); }
+return { n: n, tipo: tipo, ax: ax, e1: e1, e2: e2 };
+}
+function raioNoPlano(ray, P0, n) {
+if (!ray || !ray.origem || !ray.direcao) return null;
+var D = nz3(ray.direcao), den = dt3(D, n); if (Math.abs(den) < 1e-6) return null;
+var t = dt3(s3(P0, ray.origem), n) / den; if (!(t > 0)) return null;
+return ad3(ray.origem, D, t);
+}
+function raioNaReta(ray, A, u) {
+if (!ray || !ray.origem || !ray.direcao) return null;
+var D = nz3(ray.direcao), w0 = s3(A, ray.origem), b = dt3(u, D), c = dt3(D, D), d = dt3(u, w0), e = dt3(D, w0), den = dt3(u, u) * c - b * b;
+if (Math.abs(den) < 1e-6) return null;
+return (b * e - c * d) / den;
+}
+function candidatosPontas(outras, id) {
+var out = [];
+arr(outras).forEach(function (q) { if (!q || q.id === id) return; out.push({ p: q.a, q: q }); out.push({ p: q.b, q: q }); out.push({ p: meioPeca(q), q: q, meio: true }); });
+return out;
+}
+function arrastoPeca(o, outras, d0, plano, opc) {
+opc = opc || {};
+var n = plano.n, d = ad3(d0, n, -dt3(d0, n)), guia = null, grade = false;
+if (fin(opc.dig) && opc.dig > 0 && ln3(d) > 1e-9) { d = ad3([0, 0, 0], nz3(d), opc.dig); guia = "valor digitado"; }
+else if (!opc.livre && opc.snap !== false) {
+var tol = fin(opc.tol) && opc.tol > 0 ? opc.tol : 0.1, melhor = null, refs = [o.a, o.b, meioPeca(o)];
+candidatosPontas(outras, o.id).forEach(function (c) {
+refs.forEach(function (R) {
+var v = s3(c.p, ad3(R, d)); v = ad3(v, n, -dt3(v, n));
+var dd = ln3(v) + (c.meio ? 0.01 : 0);
+if (dd <= tol && (!melhor || dd < melhor.dd)) melhor = { dd: dd, v: v, q: c.q, meio: c.meio };
+});
+});
+if (melhor) { d = ad3(d, melhor.v); guia = "encosta " + (melhor.meio ? "no meio" : "na ponta") + " de " + (rotuloPeca(melhor.q) || "outra peça").toLowerCase(); }
+else if (fin(opc.passo) && opc.passo > 0) {
+var p = opc.passo, c1g = Math.round(dt3(d, plano.e1) / p) * p, c2g = Math.round(dt3(d, plano.e2) / p) * p;
+d = ad3(ad3([0, 0, 0], plano.e1, c1g), plano.e2, c2g); grade = true;
+}
+}
+return { d: rr(d), c1: r4(dt3(d, plano.e1)), c2: r4(dt3(d, plano.e2)), dy: r4(d[1]), dist: r4(ln3(d)), guia: guia, grade: grade };
+}
+function esticarAlcaPeca(o, outras, ext, ray, opc) {
+opc = opc || {};
+var ax = eixoPeca(o), u = ext === "b" ? ax : [-ax[0], -ax[1], -ax[2]], A = ext === "b" ? o.b : o.a, guia = null, s;
+if (fin(opc.dig) && opc.dig > 0) s = (opc.sinal < 0 ? -1 : 1) * opc.dig;
+else {
+s = raioNaReta(ray, A, u); if (s == null) return null;
+if (!opc.livre && opc.snap !== false) {
+var tol = fin(opc.tol) && opc.tol > 0 ? opc.tol : 0.1, melhor = null;
+candidatosPontas(outras, o.id).forEach(function (c) {
+var v = s3(c.p, A), sc = dt3(v, u), perp = ln3(ad3(v, u, -sc));
+if (perp > Math.max(tol, 0.12) || Math.abs(sc - s) > tol) return;
+var dd = Math.abs(sc - s) + (c.meio ? 0.01 : 0);
+if (!melhor || dd < melhor.dd) melhor = { dd: dd, s: sc, q: c.q };
+});
+if (melhor) { s = melhor.s; guia = "alinha com " + (rotuloPeca(melhor.q) || "outra peça").toLowerCase(); }
+else if (fin(opc.passo) && opc.passo > 0) s = Math.round(s / opc.passo) * opc.passo;
+}
+}
+if (o.L + s < 0.06) s = 0.06 - o.L;
+if (Math.abs(s) > 20) s = s > 0 ? 20 : -20;
+return { delta: r4(s), L: r4(o.L + s), guia: guia };
+}
+function camposDesloc(t, pecaId, d, plano) {
+var s = (t && t.sobrepor && t.sobrepor[pecaId]) || {}, o = s.desloc || {};
+var x = Math.round((num(o.x, 0) + d[0]) * 1000) / 1000, y = Math.round((num(o.y, 0) + d[1]) * 1000) / 1000, z = Math.round((num(o.z, 0) + d[2]) * 1000) / 1000;
+if (Math.abs(x) > 20 || Math.abs(y) > 20 || Math.abs(z) > 20) return null;
+if (!(x || y || z)) return { desloc: null };
+var out = { x: x, y: y, z: z }, antesMundo = !o.agua && (num(o.x, 0) || num(o.y, 0) || num(o.z, 0));
+if (plano && plano.tipo === "agua" && !antesMundo) {
+var oa = o.agua || {}, u = Math.round((num(oa.u, 0) + dt3(d, plano.e1)) * 1000) / 1000, v = Math.round((num(oa.v, 0) + dt3(d, plano.e2)) * 1000) / 1000;
+if (Math.abs(u) > 20 || Math.abs(v) > 20) return null;
+out.agua = { u: u, v: v };
+}
+return { desloc: out };
+}
+function camposEsticar(t, pecaId, ext, delta) {
+var s = (t && t.sobrepor && t.sobrepor[pecaId]) || {}, o = s.ext || {};
+var a = num(o.a, 0), b = num(o.b, 0);
+if (ext === "a") a += delta; else b += delta;
+a = Math.round(a * 1000) / 1000; b = Math.round(b * 1000) / 1000;
+if (Math.abs(a) > 20 || Math.abs(b) > 20) return null;
+return { ext: a || b ? { a: a, b: b } : null };
+}
+function pecaMovida(o, d, ea, eb) {
+var c = clone(o), ax = eixoPeca(o); d = d || [0, 0, 0];
+c.a = rr(ad3(ad3(o.a, d), ax, -(ea || 0))); c.b = rr(ad3(ad3(o.b, d), ax, eb || 0)); c.L = r4(ln3(s3(c.b, c.a)));
+return c;
 }
 function modelar(t, estado, opc) {
 opc = opc || {};
@@ -55864,7 +56013,8 @@ MODELOS: MODELOS, SEC: SEC, ESPAC: ESPAC, TESOURAS_SINAPI: TESOURAS_SINAPI, PREG
 TELHAMENTO_SINAPI: TELHAMENTO_SINAPI, composicaoTelhamento: composicaoTelhamento, ajustarQuantCobertura: ajustarQuantCobertura,
 modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria,
 ROTULO_PECA: ROTULO_PECA, rotuloPeca: rotuloPeca, sobreporValido: sobreporValido, mesclarSobrepor: mesclarSobrepor, pecaMaisPerto: pecaMaisPerto, malhaPeca: malhaPeca,
-opcoesSecao: opcoesSecao, opPeca: opPeca, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
+opcoesSecao: opcoesSecao, opPeca: opPeca,
+planoArrasto: planoArrasto, raioNoPlano: raioNoPlano, raioNaReta: raioNaReta, arrastoPeca: arrastoPeca, esticarAlcaPeca: esticarAlcaPeca, camposDesloc: camposDesloc, camposEsticar: camposEsticar, pecaMovida: pecaMovida, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
 };
 global.BimTelhadoEstrut = BimTelhadoEstrut;
 if (typeof module !== "undefined" && module.exports) module.exports = BimTelhadoEstrut;
@@ -74111,7 +74261,7 @@ def(COMUM, [
 ]);
 def("civil", [
 "parede", "porta", "janela", "cobertura", "tipos-parede", "modelar-ia", "forro", "escada", "escada-u", "rampa",
-"telhado-borda", "telhado-unir", "juntas-parede",
+"telhado-borda", "telhado-unir", "juntas-parede", "fechar-cantos",
 "ambiente", "separador-ambiente", "identificador-ambiente", "esquema-cores", "ambientes-3d",
 "familia-bloco", "modular", "junta", "paginar-alvenaria", "elevacoes", "blocok", "conferir-modulacao", "peso-alvenaria",
 "parede-cebola", "presets-acabamento", "aplicar-ambiente", "paginar-piso", "paginar-parede", "pranchas-paginacao",
@@ -112680,11 +112830,11 @@ if (!lst || lst.length < 2) return;
 var g = new THREE.BufferGeometry().setFromPoints(lst.map(function (q) { return new THREE.Vector3(q.x, fin(q.y) ? q.y : edit.base + 0.02, q.z); }));
 var l = new THREE.Line(g, mt || matLinha); l.renderOrder = 998; l.raycast = function () {}; l.frustumCulled = false; grp.add(l);
 }
-function fantasma(c) {
-var k = JSON.stringify([pts, c ? [Math.round(c.x * 100), Math.round(c.z * 100), fin(c.y) ? Math.round(c.y * 100) : null] : null, cfg.telhado.modo, cfg.telhado.aguas, cfg.telhado.ref, cfg.telhado.comp, cfg.telhado.larg, cfg.telhado.inclinacao, !!segEf()]);
+function fantasma(c, Lx) {
+var k = JSON.stringify([pts, Lx || null, c ? [Math.round(c.x * 100), Math.round(c.z * 100), fin(c.y) ? Math.round(c.y * 100) : null] : null, cfg.telhado.modo, cfg.telhado.aguas, cfg.telhado.ref, cfg.telhado.comp, cfg.telhado.larg, cfg.telhado.inclinacao, !!segEf()]);
 if (k === kFant) return; kFant = k;
 limparPrevia();
-var L = comCursor(c), y0 = edit.base + 0.02, r = self.contornoDesenho(L, { seguir: segEf() });
+var L = Lx || comCursor(c), y0 = edit.base + 0.02, r = self.contornoDesenho(L, { seguir: segEf() });
 if (cfg.telhado.modo === "corte" && L.length >= 2) addLinha([L[0], L[1]]);
 if (!r.ok || !r.contorno) { if (L.length >= 2 && cfg.telhado.modo !== "corte") addLinha(L); return; }
 addLinha(r.contorno.concat([r.contorno[0]]).map(function (q) { return { x: q.x, y: y0, z: q.z }; }));
@@ -112746,7 +112896,7 @@ if (!pts.length && c.modo === "retangulo" && c.aguas === 1 && !c.seguir && hit &
 var ia = infoDoHit(hit, q), ri = ia && ia.info && ia.info.normal ? inclinacaoDePeca(ia.info, "face inclinada") : null;
 if (ri && ri.ok) segAuto = ri;
 }
-if (pts.length === 1 && c.modo !== "retangulo") { var qt = travar("telhado", q, e); if (qt !== q) q = { x: qt.x, y: q.y, z: qt.z }; }
+if (pts.length === 1 && c.modo !== "retangulo" && !(e && e._corte)) { var qt = travar("telhado", q, e); if (qt !== q) q = { x: qt.x, y: q.y, z: qt.z }; }
 pts.push(q); marca(q);
 if (pts.length >= nPts()) return concluirTelhado();
 kFant = ""; fantasma(cur);
@@ -112784,6 +112934,7 @@ avancar: avancarTelhado,
 pegarPeca: function (on) { var v = on == null ? !segPick : !!on; cancelar(); segPick = v; if (api.hint && edit && edit.sub === "telhado") api.hint(dicaTelhado()); return segPick; },
 pegando: function () { return segPick; },
 refazerPrevia: function () { kFant = ""; if (pts.length) fantasma(cur); else limparPrevia(); },
+previaPontos: function (L) { if (!edit || !edit.on || edit.sub !== "telhado") return false; kFant = ""; fantasma(null, arr(L)); return true; },
 previaPlanta: function (c) {
 if (!edit || !edit.on || edit.sub !== "telhado" || !telNovo()) return [];
 if (c) cur = { x: c.x, y: edit.base, z: c.z };
@@ -113017,6 +113168,14 @@ var b = B(); if (!b || !b.realceTelhadoPeca) return;
 var t = st.sub ? comPacote(st.sub.tid) : null, o = t ? peca(t, st.sub.pid) : null;
 if (st.sub && !o) st.sub = null;
 try { b.realceTelhadoPeca(o && ES() ? ES().malhaPeca(o) : null); } catch (e) {}
+try { if (global.BimTelhadoPecaArr && global.BimTelhadoPecaArr.aoMudarPeca) global.BimTelhadoPecaArr.aoMudarPeca(); } catch (eA) {}
+}
+function dicaTela(t) { try { var b = B(); if (b && b.dica) b.dica(t); } catch (e) {} }
+function avisoPeca(o) {
+var E = ES(), tipo = E && E.planoArrasto ? E.planoArrasto(o, false).tipo : "horizontal";
+var como = tipo === "agua" ? "arraste move ao longo da água" : "arraste move no plano horizontal (Shift: vertical)";
+var tx = "Peça: " + textoPeca(o) + " — " + como + "; alças verdes esticam as pontas; Alt solta o snap; Delete apaga só ela; Esc volta ao telhado.";
+status(tx); dicaTela(tx);
 }
 function repintar() {
 if (!st.app || !st.info || !global.BimShell) return;
@@ -113028,23 +113187,40 @@ var r = E.pecaMaisPerto(t, P); if (!r || (!semLimite && r.d > 0.6)) return null;
 st.sub = { tid: String(tid), pid: r.id };
 return r.peca;
 }
+function pontoDoClique(tid, hits) {
+var hs = arr(hits).filter(function (h) { return h && h.object && h.object.userData && h.point && String(h.object.userData.expressID) === String(tid); });
+var hE = hs.filter(function (h) { return /^estr-/.test(String(h.object.userData.telhadoGrupo || "")); })[0] || hs[0];
+return hE ? [hE.point.x, hE.point.y, hE.point.z] : null;
+}
 function textoPeca(o) { return ES().rotuloPeca(o) + " " + (o.perfil || (n2(o.w * 100, 0) + "×" + n2(o.h * 100, 0) + " cm")) + ", " + n2(o.L) + " m"; }
 var BimTelhadoPecaUI = {
 estado: function () { return { sub: st.sub ? { tid: st.sub.tid, pid: st.sub.pid } : null, ultimo: st.ultimo, sel: st.sel.slice() }; },
+pecaAtual: function () {
+if (!st.sub) return null;
+var t = comPacote(st.sub.tid), o = t ? peca(t, st.sub.pid) : null;
+return o ? { tid: st.sub.tid, pid: st.sub.pid, t: t, o: o } : null;
+},
+cliqueNaPeca: function (uid, hits) {
+var pa = this.pecaAtual(), E = ES(); if (!pa || !E || String(uid) !== "edit:" + pa.tid) return false;
+var P = pontoDoClique(pa.tid, hits); if (!P) return false;
+var r = E.pecaMaisPerto(pa.t, P);
+return !!(r && r.id === pa.pid && r.d <= 0.15);
+},
+atualizarRealce: function () { realcar(); },
+repintar: function () { repintar(); },
+mostrarPeca: function (o) { var b = B(); if (b && b.realceTelhadoPeca && ES()) b.realceTelhadoPeca(o ? ES().malhaPeca(o) : null); },
 clique: function (uid, hits, selAtual) {
 var tid = tidDe(uid), t = tid ? comPacote(tid) : null;
 if (!t) { st.sub = null; st.ultimo = null; realcar(); return false; }
-var hs = arr(hits).filter(function (h) { return h && h.object && h.object.userData && String(h.object.userData.expressID) === String(tid); });
-var hE = hs.filter(function (h) { return /^estr-/.test(String(h.object.userData.telhadoGrupo || "")); })[0] || hs[0];
-var P = hE ? [hE.point.x, hE.point.y, hE.point.z] : null;
+var P = pontoDoClique(tid, hits);
 var sa = arr(selAtual).length ? arr(selAtual) : st.sel, jaSel = sa.length === 1 && sa[0] === uid;
 st.ultimo = P ? { tid: String(tid), p: P } : null;
 if (jaSel && P) {
 var o = escolher(tid, P);
-if (o) { realcar(); setTimeout(function () { status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Propriedades trocam o perfil, deslocam e esticam; Tab ou Esc voltam ao telhado inteiro."); }, 0); return true; }
+if (o) { realcar(); setTimeout(function () { avisoPeca(o); }, 0); return true; }
 }
 st.sub = null; realcar();
-setTimeout(function () { status("Telhado inteiro selecionado. Clique de novo numa peça da estrutura (ou Tab) para editar só ela."); }, 0);
+setTimeout(function () { var tx = "Telhado inteiro selecionado — arraste para mover o telhado. Clique de novo numa peça da estrutura (ou Tab) para mover, esticar ou apagar só ela."; status(tx); dicaTela(tx); }, 0);
 return false;
 },
 aoSelecionar: function (uids) {
@@ -113054,19 +113230,20 @@ if (!(arr(uids).length === 1 && uids[0] === "edit:" + st.sub.tid)) { st.sub = nu
 },
 tecla: function (e) {
 var k = e.key; if (k !== "Tab" && k !== "Escape" && k !== "Delete" && k !== "Del") return false;
+if (global.BimTelhadoPecaArr && global.BimTelhadoPecaArr.ocupado && global.BimTelhadoPecaArr.ocupado()) return false;
 if (e.ctrlKey || e.metaKey || e.altKey) return false;
 var tg = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tg.tagName || "") || tg.isContentEditable) return false;
 if (global.document && global.document.getElementById("modal-bg")) return false;
 var sel = st.sel;
 if (k === "Tab") {
 if (!(sel.length === 1 && st.ultimo && sel[0] === "edit:" + st.ultimo.tid && comPacote(st.ultimo.tid))) return false;
-if (st.sub) { st.sub = null; status("Telhado inteiro selecionado (Tab entra na peça)."); }
-else { var o = escolher(st.ultimo.tid, st.ultimo.p, true); if (!o) return false; status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Tab volta ao telhado inteiro."); }
+if (st.sub) { st.sub = null; var t1 = "Telhado inteiro selecionado (Tab entra na peça)."; status(t1); dicaTela(t1); }
+else { var o = escolher(st.ultimo.tid, st.ultimo.p, true); if (!o) return false; avisoPeca(o); }
 e.preventDefault(); e.stopImmediatePropagation(); realcar(); repintar(); return true;
 }
 if (!st.sub || !(sel.length === 1 && sel[0] === "edit:" + st.sub.tid)) return false;
 e.preventDefault(); e.stopImmediatePropagation();
-if (k === "Escape") { st.sub = null; realcar(); repintar(); status("Telhado inteiro selecionado."); return true; }
+if (k === "Escape") { st.sub = null; realcar(); repintar(); status("Telhado inteiro selecionado."); dicaTela("Telhado inteiro selecionado — arraste para mover o telhado. Tab ou 2º clique pegam uma peça."); return true; }
 this.apagar();
 return true;
 },
@@ -113083,7 +113260,8 @@ if (!o) return false;
 if (!this.editar(sub.tid, sub.pid, { removida: true })) return false;
 st.sub = null; realcar();
 var t2 = comPacote(sub.tid), pr = t2 ? arr(t2.pacote.problemas).filter(function (p) { return p.peca === sub.pid; })[0] : null;
-status(ES().rotuloPeca(o) + " apagada (só ela; Ctrl+Z desfaz)." + (pr ? " Atenção: " + pr.texto : "") + " Para trazer de volta: Propriedades do telhado › Peças editadas.");
+var ta = ES().rotuloPeca(o) + " apagada (só ela; Ctrl+Z desfaz)." + (pr ? " Atenção: " + pr.texto : "") + " Para trazer de volta: Propriedades do telhado › Peças editadas.";
+status(ta); dicaTela(ta);
 repintar();
 return true;
 },
@@ -113145,6 +113323,425 @@ return [{ nome: "Peças da estrutura", params: ps }];
 };
 if (typeof global.addEventListener === "function") global.addEventListener("keydown", function (e) { try { BimTelhadoPecaUI.tecla(e); } catch (eT) {} }, true);
 global.BimTelhadoPecaUI = BimTelhadoPecaUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+(function (global) {
+"use strict";
+function UI() { return global.BimTelhadoPecaUI || null; }
+function ES() { return global.BimTelhadoEstrut || null; }
+function B() { return global.BIM || null; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function n2(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+function sg(v, c) { var x = Number(v); return (x > 0.00049 ? "+" : "") + n2(x, c); }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function dica(t) { try { var b = B(); if (b && b.dica) b.dica(t); } catch (e) {} }
+function barra() { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.cfg ? Bo.cfg("mover") : null; } catch (e) { return null; } }
+var A = null;
+var H = { camada: null, lista: [], raf: 0, arr: null, chave: "" };
+var K = { dig: "", tk: null };
+var rot = null;
+function metrosPorPx(P) {
+var b = B(), q1 = b && b.telaDe ? b.telaDe(P[0], P[1], P[2]) : null, q2 = q1 ? b.telaDe(P[0] + 1, P[1], P[2]) : null, px = q1 && q2 ? Math.sqrt(Math.pow(q2.x - q1.x, 2) + Math.pow(q2.y - q1.y, 2)) : 0;
+if (px < 1 && q1) { q2 = b.telaDe(P[0], P[1] + 1, P[2]); px = q2 ? Math.sqrt(Math.pow(q2.x - q1.x, 2) + Math.pow(q2.y - q1.y, 2)) : 0; }
+return 1 / Math.max(px, 1);
+}
+function opcoes(ev, P) {
+var c = barra() || {}, dig = K.dig ? parseFloat(String(K.dig).replace(",", ".")) : NaN;
+return { tol: 12 * metrosPorPx(P), passo: c.grade !== false && c.passo > 0 ? c.passo : 0, snap: c.snap !== false, livre: !!(ev && ev.altKey), dig: isFinite(dig) && dig > 0 ? dig : null };
+}
+function mescla(a, b) { Object.keys(b).forEach(function (k) { a[k] = b[k]; }); return a; }
+function pxRotulo() {
+if (!rot) {
+rot = global.document.createElement("div"); rot.className = "tpa-rot"; rot.setAttribute("data-tpa", "cota");
+rot.style.cssText = "position:fixed;z-index:60;pointer-events:none;background:#14532d;color:#fff;font:600 12px/1.3 sans-serif;padding:3px 7px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:nowrap";
+global.document.body.appendChild(rot);
+}
+return rot;
+}
+function rotulo(x, y, t) { var r = pxRotulo(); r.textContent = t; r.style.left = (x + 16) + "px"; r.style.top = (y + 14) + "px"; r.style.display = "block"; r.setAttribute("data-texto", t); }
+function tirarRotulo() { if (rot) rot.style.display = "none"; }
+var NOME_PLANO = { agua: "plano da água", horizontal: "plano horizontal", vertical: "plano vertical" };
+function textoMover(o, plano, r) {
+var t = ES().rotuloPeca(o) + " · " + NOME_PLANO[plano.tipo] + ": ";
+if (K.dig) t += "⌨ " + K.dig + " m";
+else if (plano.tipo === "agua") t += "ao longo " + sg(r.c1) + " m · na água " + sg(r.c2) + " m";
+else if (plano.tipo === "vertical") t += "↔ " + sg(r.c1) + " m · altura " + sg(r.c2) + " m";
+else t += "X " + sg(r.c1) + " m · Z " + sg(r.c2) + " m";
+t += " (" + n2(r.dist) + " m)";
+if (r.guia) t += " · " + r.guia; else if (r.grade) t += " · grade";
+return t;
+}
+function teclas(on) {
+if (!global.document) return;
+if (!K.tk) K.tk = function (e) {
+if (!A && !H.arr) return;
+var k = e.key;
+if (k === "Escape") { e.preventDefault(); e.stopPropagation(); Arr.cancelar(); return; }
+if (k === "Enter") { e.preventDefault(); e.stopPropagation(); if (A) { Arr._calcular(); Arr.soltar(null); } else Arr._soltarAlca(); return; }
+if (/^[0-9]$/.test(k) || k === "," || k === ".") K.dig += k;
+else if (k === "Backspace") K.dig = K.dig.slice(0, -1);
+else return;
+e.preventDefault(); e.stopPropagation();
+if (A) Arr._calcular(); else Arr._calcularAlca();
+};
+if (on) global.document.addEventListener("keydown", K.tk, true); else global.document.removeEventListener("keydown", K.tk, true);
+}
+var Arr = {
+ocupado: function () { return !!(A || H.arr); },
+estado: function () {
+return { arrasto: A ? { tid: A.tid, pid: A.pid, plano: A.plano.tipo, d: A.res ? A.res.d : null, guia: A.res ? A.res.guia : null } : null,
+alcas: H.lista.map(function (a) { return { ext: a.ext, p: a.p, x: a.dom ? a.dom.style.left : null, y: a.dom ? a.dom.style.top : null }; }), alcaArrasto: H.arr ? { ext: H.arr.ext, delta: H.arr.delta } : null,
+rotulo: rot && rot.style.display !== "none" ? rot.getAttribute("data-texto") : null };
+},
+pode: function (uid, hits) { var u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null; return !!(pa && String(uid) === "edit:" + pa.tid && ES() && u.cliqueNaPeca && u.cliqueNaPeca(uid, hits)); },
+iniciar: function (vista, uid, ev, hp, hits) {
+if (A || H.arr || !this.pode(uid, hits)) return false;
+var u = UI(), E = ES(), pa = u.pecaAtual(); if (!pa) return false;
+var o = pa.o, plano = E.planoArrasto(o, !!(ev && ev.shiftKey)), mid = [(o.a[0] + o.b[0]) / 2, (o.a[1] + o.b[1]) / 2, (o.a[2] + o.b[2]) / 2];
+var P0 = hp && isFinite(hp.x) ? [hp.x, hp.y, hp.z] : mid;
+K.dig = "";
+A = { vista: vista, tid: pa.tid, pid: pa.pid, t: pa.t, o: o, outras: arr(pa.t.pacote.pecas), plano: plano, P0: P0, vert: plano.tipo === "vertical", res: null, ev: null, raf: null };
+teclas(true);
+status("Movendo " + E.rotuloPeca(o) + " no " + NOME_PLANO[plano.tipo] + " — digite a medida e Enter; Alt solta o snap; Shift troca o plano; Esc cancela.");
+return true;
+},
+mover: function (ev) {
+if (!A) return false;
+A.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey };
+if (A.raf) return true;
+var self = this, f = global.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+A.raf = f(function () { if (A) A.raf = null; self._calcular(); });
+return true;
+},
+_calcular: function () {
+var a = A, b = B(), E = ES(), u = UI(); if (!a || !a.ev || !b || !b.raioEm) return;
+var vert = !!a.ev.shiftKey;
+if (vert !== a.vert) { a.vert = vert; a.plano = E.planoArrasto(a.o, vert); }
+var P = E.raioNoPlano(b.raioEm(a.ev.clientX, a.ev.clientY), a.P0, a.plano.n); if (!P) return;
+var r = E.arrastoPeca(a.o, a.outras, [P[0] - a.P0[0], P[1] - a.P0[1], P[2] - a.P0[2]], a.plano, opcoes(a.ev, a.P0));
+a.res = r;
+try { u.mostrarPeca(E.pecaMovida(a.o, r.d)); } catch (e) {}
+rotulo(a.ev.clientX, a.ev.clientY, textoMover(a.o, a.plano, r));
+},
+cancelar: function () {
+var had = !!(A || H.arr);
+if (A) { if (A.raf && global.cancelAnimationFrame) { try { global.cancelAnimationFrame(A.raf); } catch (e) {} } A = null; }
+if (H.arr) { var bt = H.arr.bt; H.arr = null; if (bt) { try { bt.classList.remove("arrastando"); } catch (e) {} } }
+K.dig = ""; teclas(false); tirarRotulo();
+var u = UI(); if (u && u.atualizarRealce) u.atualizarRealce();
+if (had) status("Arraste cancelado: nada mudou.");
+return had;
+},
+soltar: function (ev) {
+var a = A; if (!a) return false;
+if (ev && ev.clientX != null) { a.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey }; this._calcular(); }
+A = null; K.dig = ""; teclas(false); tirarRotulo();
+var u = UI(), E = ES(), r = a.res;
+if (!r || !(r.dist > 1e-4)) { u.atualizarRealce(); status("Nada foi movido."); return true; }
+var campos = E.camposDesloc(a.t, a.pid, r.d, a.plano);
+if (!campos) { u.atualizarRealce(); status("O deslocamento passa de 20 m: não gravei."); return true; }
+var ok = u.editar(a.tid, a.pid, campos);
+u.atualizarRealce(); u.repintar();
+if (ok) { var tx = E.rotuloPeca(a.o) + " movida " + n2(r.dist) + " m no " + NOME_PLANO[a.plano.tipo] + (r.guia ? " (" + r.guia + ")" : "") + " — só ela; um Ctrl+Z desfaz."; status(tx); dica(tx); }
+return true;
+},
+aoMudarPeca: function () {
+var u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null;
+if (!pa) { this._limparAlcas(); return; }
+var ch = pa.tid + "|" + pa.pid + "|" + pa.o.a.join(",") + "|" + pa.o.b.join(",");
+if (H.chave === ch && H.lista.length) return;
+this._montarAlcas(pa, ch);
+},
+_limparAlcas: function () {
+H.lista = []; H.chave = ""; if (H.camada) H.camada.innerHTML = "";
+if (H.raf && global.cancelAnimationFrame) { try { global.cancelAnimationFrame(H.raf); } catch (e) {} } H.raf = 0;
+},
+_css: function () {
+var d = global.document; if (!d || d.getElementById("tpa-css")) return;
+var s = d.createElement("style"); s.id = "tpa-css";
+s.textContent = ".tpa-camada{position:absolute;inset:0;pointer-events:none;z-index:6}" +
+".tpa-alca{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--surface,#fff);background:var(--verde,#15803d);box-shadow:0 0 0 1px var(--texto,#1d2733);pointer-events:auto;cursor:grab;padding:0}" +
+".tpa-alca:focus-visible{outline:2px solid var(--amarelo,#d99a1e);outline-offset:2px}.tpa-alca.arrastando{cursor:grabbing;background:var(--amarelo,#d99a1e)}";
+d.head.appendChild(s);
+},
+_montarAlcas: function (pa, chave) {
+var b = B(), d = global.document; if (!b || !b.host || !b.telaDe || !d) return false;
+var host = b.host(); if (!host) return false;
+this._limparAlcas(); this._css();
+if (!H.camada || H.camada.parentNode !== host) { H.camada = d.createElement("div"); H.camada.className = "tpa-camada"; H.camada.setAttribute("data-tpa", "alcas"); host.appendChild(H.camada); this._ligar(H.camada); }
+H.chave = chave;
+var o = pa.o, self = this;
+[{ ext: "a", p: o.a, rot: "Início" }, { ext: "b", p: o.b, rot: "Fim" }].forEach(function (a, i) {
+var bt = d.createElement("button"); bt.type = "button"; bt.className = "tpa-alca"; bt.setAttribute("data-tpa-alca", a.ext);
+bt.title = a.rot + " da " + ES().rotuloPeca(o).toLowerCase() + " — arraste para esticar ou encurtar; setas: 1 cm (Shift: 5 cm). Ctrl+Z volta.";
+bt.setAttribute("aria-label", a.rot + " da peça — alça para esticar");
+H.camada.appendChild(bt); a.dom = bt; H.lista.push(a); void i;
+});
+var passo = function () { if (!H.lista.length) { H.raf = 0; return; } self._posicionar(); H.raf = global.requestAnimationFrame ? global.requestAnimationFrame(passo) : 0; };
+passo();
+return true;
+},
+_posicionar: function () {
+var b = B(), h = b && b.host ? b.host() : null; if (!h || !h.isConnected) return;
+var r = h.getBoundingClientRect(), vis = h.getClientRects().length > 0;
+H.lista.forEach(function (a) {
+if (!a.dom) return;
+var P = H.arr && H.arr.a === a && H.arr.P ? H.arr.P : a.p, t = b.telaDe(P[0], P[1], P[2]);
+if (!t || t.atras || !vis) { a.dom.style.display = "none"; return; }
+a.dom.style.display = ""; a.dom.style.left = (t.x - r.left) + "px"; a.dom.style.top = (t.y - r.top) + "px";
+});
+},
+_ligar: function (camada) {
+var self = this;
+camada.addEventListener("pointerdown", function (e) {
+var bt = e.target.closest ? e.target.closest("[data-tpa-alca]") : null; if (!bt) return;
+var ext = bt.getAttribute("data-tpa-alca"), u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null, a = H.lista.filter(function (x) { return x.ext === ext; })[0];
+if (!pa || !a || A) return;
+e.preventDefault(); e.stopPropagation();
+try { bt.setPointerCapture(e.pointerId); } catch (eC) {}
+K.dig = ""; bt.classList.add("arrastando");
+H.arr = { ext: ext, a: a, bt: bt, id: e.pointerId, tid: pa.tid, pid: pa.pid, t: pa.t, o: pa.o, outras: arr(pa.t.pacote.pecas), delta: 0, P: a.p.slice(), res: null, ev: { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey }, sinal: 1 };
+teclas(true);
+status("Esticando o " + (ext === "a" ? "início" : "fim") + " da " + ES().rotuloPeca(pa.o).toLowerCase() + " — digite a medida e Enter; Alt solta o snap; Esc cancela.");
+});
+camada.addEventListener("pointermove", function (e) {
+var d = H.arr; if (!d || e.pointerId !== d.id) return;
+d.ev = { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey };
+self._calcularAlca();
+});
+camada.addEventListener("pointerup", function (e) { var d = H.arr; if (!d || e.pointerId !== d.id) return; d.ev = { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey }; self._calcularAlca(); self._soltarAlca(); });
+camada.addEventListener("pointercancel", function (e) { var d = H.arr; if (!d || e.pointerId !== d.id) return; self.cancelar(); });
+camada.addEventListener("keydown", function (e) {
+var bt = e.target.closest ? e.target.closest("[data-tpa-alca]") : null; if (!bt || H.arr) return;
+var ext = bt.getAttribute("data-tpa-alca"), s = e.shiftKey ? 0.05 : 0.01, dv = (e.key === "ArrowRight" || e.key === "ArrowUp") ? s : ((e.key === "ArrowLeft" || e.key === "ArrowDown") ? -s : 0);
+if (!dv) return;
+e.preventDefault(); e.stopPropagation();
+self.esticar(ext, dv);
+});
+},
+_calcularAlca: function () {
+var d = H.arr, b = B(), E = ES(); if (!d || !b || !b.raioEm) return;
+var r = E.esticarAlcaPeca(d.o, d.outras, d.ext, b.raioEm(d.ev.clientX, d.ev.clientY), mescla(opcoes(d.ev, d.a.p), { sinal: d.sinal }));
+if (!r) return;
+d.res = r; d.delta = r.delta; if (r.delta) d.sinal = r.delta < 0 ? -1 : 1;
+var ax = E.planoArrasto(d.o, false).ax, u = d.ext === "b" ? ax : [-ax[0], -ax[1], -ax[2]];
+d.P = [d.a.p[0] + u[0] * r.delta, d.a.p[1] + u[1] * r.delta, d.a.p[2] + u[2] * r.delta];
+try { UI().mostrarPeca(E.pecaMovida(d.o, [0, 0, 0], d.ext === "a" ? r.delta : 0, d.ext === "b" ? r.delta : 0)); } catch (e) {}
+rotulo(d.ev.clientX, d.ev.clientY, E.rotuloPeca(d.o) + " · " + (d.ext === "a" ? "início" : "fim") + " " + (K.dig ? "⌨ " + K.dig + " m" : sg(r.delta) + " m") + " → comprimento " + n2(r.L) + " m" + (r.guia ? " · " + r.guia : ""));
+this._posicionar();
+},
+_soltarAlca: function () {
+var d = H.arr; if (!d) return false;
+H.arr = null; try { d.bt.classList.remove("arrastando"); } catch (e) {}
+K.dig = ""; teclas(false); tirarRotulo();
+var u = UI(), E = ES();
+if (!d.res || Math.abs(d.res.delta) < 0.003) { u.atualizarRealce(); this._posicionar(); return false; }
+var r = this.esticar(d.ext, d.res.delta, true);
+return r;
+},
+esticar: function (ext, delta, jaVisto) {
+var u = UI(), E = ES(), pa = u && u.pecaAtual ? u.pecaAtual() : null; void jaVisto;
+if (!pa || !E) return false;
+var campos = E.camposEsticar(pa.t, pa.pid, ext, delta);
+if (!campos) { status("O alongamento passa de 20 m: não gravei."); return false; }
+var ok = u.editar(pa.tid, pa.pid, campos);
+u.atualizarRealce(); u.repintar();
+if (ok) { var tx = E.rotuloPeca(pa.o) + ": " + (ext === "a" ? "início" : "fim") + " " + (delta >= 0 ? "esticado " : "encurtado ") + n2(Math.abs(delta)) + " m — um Ctrl+Z desfaz."; status(tx); dica(tx); }
+return ok;
+}
+};
+global.BimTelhadoPecaArr = Arr;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+(function (global) {
+"use strict";
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function n2(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function quadroCorte(def) {
+if (!def || def.tipo === "planta") return null;
+var d = def.corte || def, ax = +d.ax, az = +d.az, dx = (+d.bx) - ax, dz = (+d.bz) - az, L = Math.sqrt(dx * dx + dz * dz);
+if (!(L > 0.05)) return null;
+var nx = dz / L, nz = -dx / L; if (d.inv) { nx = -nx; nz = -nz; }
+return { ax: ax, az: az, nx: nx, nz: nz, ux: -nz, uz: nx, prof: +d.prof > 0 ? +d.prof : null };
+}
+function mundoDoCorte(def, q, t) {
+var Q = quadroCorte(def); if (!Q || !q) return null; t = +t || 0;
+return { x: r4(Q.ax + q.x * Q.ux + Q.nx * t), y: r4(-q.y), z: r4(Q.az + q.x * Q.uz + Q.nz * t) };
+}
+function desenhoDoCorte(def, P) {
+var Q = quadroCorte(def); if (!Q || !P) return null;
+return { x: r4((P.x - Q.ax) * Q.ux + (P.z - Q.az) * Q.uz), y: r4(-P.y) };
+}
+function profundidadeNoCorte(def, P) { var Q = quadroCorte(def); return Q && P ? r4((P.x - Q.ax) * Q.nx + (P.z - Q.az) * Q.nz) : null; }
+function pontosDoCorte(def, a, b, t0, t1) {
+var Q = quadroCorte(def); if (!Q || !a || !b) return null;
+function Pd(t) { return { x: r4(a.x + Q.nx * t), y: a.y, z: r4(a.z + Q.nz * t) }; }
+return [{ x: a.x, y: a.y, z: a.z }, { x: b.x, y: b.y, z: b.z }, Pd(+t0 || 0), Pd(+t1 || 0)];
+}
+function perfilDoCorte(def, qa, qb) {
+var a = mundoDoCorte(def, qa, 0), b = mundoDoCorte(def, qb, 0); if (!a || !b) return null;
+var vao = Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.z - a.z, 2)), dy = b.y - a.y;
+return { a: a, b: b, vao: r4(vao), dy: r4(dy), inclinacao: vao > 1e-6 ? r4(Math.abs(dy) / vao * 100) : null, cotaBeiral: r4(Math.min(a.y, b.y)), cotaCumeeira: r4(Math.max(a.y, b.y)) };
+}
+var S = null;
+var NS = "http://www.w3.org/2000/svg";
+function P3() { return global.BimP3UI || null; }
+function M3() { var p = P3(); return p && p._m3d ? p._m3d : null; }
+function D2() { return global.Bim2D || null; }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function dica(t) { try { var b = global.BIM; if (b && b.dica) b.dica(t); } catch (e) {} }
+function cache(id) { var D = D2(); return D && D._cache ? D._cache[id] : null; }
+function modoCorte() { var p = P3(); try { return !!p && p.cfg("telhado").modo === "corte"; } catch (e) { return false; } }
+function precisao() { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.cfg ? Bo.cfg("telhado") : null; } catch (e) { return null; } }
+function grade(p, ev) {
+var c = precisao() || {}, passo = c.snap !== false && c.grade !== false && c.passo > 0 ? c.passo : 0;
+if (!passo || (ev && ev.altKey)) return { x: p[0], y: p[1] };
+return { x: r4(Math.round(p[0] / passo) * passo), y: r4(Math.round(p[1] / passo) * passo) };
+}
+function sincronizado() {
+var m = M3(), e = m && m.estado ? m.estado() : null;
+if (S && e && arr(e.pts).length !== S.w.length) { S = null; }
+}
+function camada(id) {
+var c = cache(id); if (!c || !c.svg) return null;
+var g = c.svg.querySelector("g.tcp-prev");
+if (!g) { g = global.document.createElementNS(NS, "g"); g.setAttribute("class", "tcp-prev"); g.setAttribute("pointer-events", "none"); }
+if (g.parentNode !== c.svg || c.svg.lastChild !== g) c.svg.appendChild(g);
+while (g.firstChild) g.removeChild(g.firstChild);
+return g;
+}
+function limparCamada(id) { var c = cache(id), g = c && c.svg ? c.svg.querySelector("g.tcp-prev") : null; if (g && g.parentNode) g.parentNode.removeChild(g); rotuloTela(id, null, null); }
+function el(g, tag, at) { var e = global.document.createElementNS(NS, tag); Object.keys(at).forEach(function (k) { e.setAttribute(k, at[k]); }); e.setAttribute("vector-effect", "non-scaling-stroke"); g.appendChild(e); return e; }
+function rotuloTela(id, ev, t) {
+var c = cache(id); if (!c || !c.tela || !global.document) return;
+var e = c.tela.querySelector(".tcp-rot");
+if (!e) { e = global.document.createElement("div"); e.className = "tcp-rot"; e.setAttribute("data-tcp", "rotulo"); e.setAttribute("aria-live", "off"); c.tela.appendChild(e); }
+if (!t || !ev || !fin(ev.clientX)) { e.style.display = "none"; return; }
+var rc = c.tela.getBoundingClientRect();
+e.textContent = t; e.style.display = ""; e.style.left = (ev.clientX - rc.left + 16) + "px"; e.style.top = (ev.clientY - rc.top + 14) + "px";
+}
+function desenharPrev(id, cursor, ev) {
+var c = cache(id), g = c ? camada(id) : null; if (!g) return;
+var txt = null;
+var vb = c.vb || { w: 10 }, r = vb.w / 160;
+if (S && S.qa) {
+el(g, "circle", { cx: S.qa.x, cy: S.qa.y, r: r, fill: "#2fbf71", stroke: "#14532d", "stroke-width": "1.5" });
+var fim = S.qb || cursor;
+if (fim) {
+el(g, "line", { x1: S.qa.x, y1: S.qa.y, x2: fim.x, y2: fim.y, stroke: "#2fbf71", "stroke-width": "2.5", "stroke-dasharray": S.qb ? "" : "6 4" });
+var pf = perfilDoCorte(S.def, S.qa, fim);
+if (pf && pf.vao > 0.01 && !S.qb) txt = n2(pf.inclinacao, 1) + " % · vão " + n2(pf.vao) + " m · Δ " + n2(Math.abs(pf.dy)) + " m";
+}
+if (S.qb) el(g, "circle", { cx: S.qb.x, cy: S.qb.y, r: r, fill: "#fff", stroke: "#14532d", "stroke-width": "1.5" });
+}
+if (cursor && !S.qb) {
+el(g, "circle", { cx: cursor.x, cy: cursor.y, r: r * 0.8, fill: "none", stroke: "#14532d", "stroke-width": "1.5" });
+if (!S.qa) txt = "cota " + n2(-cursor.y) + " m";
+}
+rotuloTela(id, ev, txt);
+}
+var Corte = {
+puro: { quadroCorte: quadroCorte, mundoDoCorte: mundoDoCorte, desenhoDoCorte: desenhoDoCorte, profundidadeNoCorte: profundidadeNoCorte, pontosDoCorte: pontosDoCorte, perfilDoCorte: perfilDoCorte },
+estado: function () { sincronizado(); return S ? { id: S.id, etapa: S.qb ? 2 : (S.qa ? 1 : 0), qa: S.qa, qb: S.qb, ini: S.ini, fim: S.fim, painel: !!(S.painel && S.painel.isConnected) } : null; },
+cliqueCorte: function (id, ev, p) {
+var D = D2(), def = D && D.def ? D.def(id) : null, m = M3();
+if (!def || def.tipo === "planta" || !p || !global.document) return false;
+if (!modoCorte()) { var t1 = "Na vista de corte/elevação o telhado se desenha no modo \"Por corte\": troque em Desenho, na barra do Telhado (ou desenhe na planta/3D)."; dica(t1); status(t1); return true; }
+if (!m || !m.clique || !m.estado || !quadroCorte(def)) { var t2 = "O telhado por corte precisa do 3D aberto: abra a aba {3D} uma vez e volte a este corte."; dica(t2); status(t2); return true; }
+sincronizado();
+if (S && S.id !== id) this.cancelar();
+if (S && S.qb) { this._piscar(); return true; }
+var q = grade(p, ev), w = mundoDoCorte(def, q, 0); if (!w) return false;
+if (!S) { m.cancelar(); S = { id: id, def: def, qa: null, qb: null, w: [], ini: 0, fim: null }; }
+if (S.qa) {
+var pf = perfilDoCorte(def, S.qa, q);
+if (!pf || !(pf.vao > 0.3)) { dica("Vão curto demais na horizontal (mínimo 0,30 m): clique a cumeeira mais longe do beiral."); status("Vão curto demais: mínimo 0,30 m."); return true; }
+if (!(Math.abs(pf.dy) > 0.01)) { dica("Os dois pontos estão na mesma cota: o telhado precisa de inclinação. Clique a cumeeira mais alto."); return true; }
+}
+var nAntes = arr((m.estado() || {}).pts).length;
+try { m.clique("telhado", { _corte: true, shiftKey: !!(ev && ev.shiftKey), altKey: !!(ev && ev.altKey), clientX: ev && ev.clientX, clientY: ev && ev.clientY }, null, w); } catch (eC) { void eC; }
+if (arr((m.estado() || {}).pts).length !== nAntes + 1) { this.cancelar(); var t3 = "O 3D não aceitou o ponto do corte: abra a aba {3D} uma vez (com a ferramenta Telhado) e desenhe de novo no corte."; dica(t3); status(t3); return true; }
+if (!S.qa) {
+S.qa = q; S.w.push(w);
+dica("Telhado por corte: agora clique o TOPO da água (cumeeira) — a inclinação sai da linha."); status("Beiral na cota " + n2(w.y) + " m. Agora a cumeeira.");
+} else {
+S.qb = q; S.w.push(w);
+this._painel();
+var pf2 = perfilDoCorte(def, S.qa, q);
+dica("Perfil: " + n2(pf2.inclinacao, 1) + " %, beiral na cota " + n2(pf2.cotaBeiral) + " m. Informe onde o telhado começa e termina e confirme (Enter).");
+status("Perfil pronto: " + n2(pf2.inclinacao, 1) + " %. Informe o começo e o fim do telhado (distância atrás do plano do corte).");
+}
+desenharPrev(id, null);
+return true;
+},
+moverCorte: function (id, ev, p) {
+var D = D2(), def = D && D.def ? D.def(id) : null;
+if (!def || def.tipo === "planta" || !p || !modoCorte() || !global.document) return false;
+sincronizado();
+if (S && S.id !== id) return false;
+if (!S) S = { id: id, def: def, qa: null, qb: null, w: [], ini: 0, fim: null };
+var q = grade(p, ev);
+desenharPrev(id, S.qb ? null : q, ev);
+return true;
+},
+cancelar: function () {
+var id = S && S.id, m = M3();
+if (S && S.painel && S.painel.parentNode) S.painel.parentNode.removeChild(S.painel);
+S = null; if (m) m.cancelar(); if (id) limparCamada(id);
+return !!id;
+},
+_piscar: function () { var p = S && S.painel; if (p) { try { p.querySelector("[data-tcp=ini]").focus(); } catch (e) {} } },
+_painel: function () {
+var c = cache(S.id), self = this; if (!c || !c.tela) return;
+var pf = perfilDoCorte(S.def, S.qa, S.qb), Q = quadroCorte(S.def), cfg = P3() ? P3().cfg("telhado") : {};
+S.fim = fin(cfg.comp) && cfg.comp > 0 ? cfg.comp : (Q && Q.prof ? Q.prof : 5);
+S.ini = 0;
+var box = global.document.createElement("div"); box.className = "tcp-painel"; box.setAttribute("data-tcp", "painel"); box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Telhado por corte: começo e fim");
+box.style.cssText = "position:absolute;right:12px;top:12px;z-index:8;background:var(--surface,#fff);color:var(--texto,#1d2733);border:2px solid #14532d;border-radius:8px;padding:10px 12px;font:13px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.28);max-width:330px";
+box.innerHTML = '<div style="font-weight:700;margin-bottom:4px">Telhado por corte</div>' +
+'<div data-tcp="resumo" style="font-size:12px;margin-bottom:6px"></div>' +
+'<label style="display:flex;justify-content:space-between;gap:8px;margin:3px 0">Começa a <input data-tcp="ini" inputmode="decimal" autocomplete="off" style="width:5.5em" aria-label="Começa a quantos metros atrás do plano do corte"> m</label>' +
+'<label style="display:flex;justify-content:space-between;gap:8px;margin:3px 0">Termina a <input data-tcp="fim" inputmode="decimal" autocomplete="off" style="width:5.5em" aria-label="Termina a quantos metros atrás do plano do corte"> m</label>' +
+'<div style="font-size:11px;color:var(--texto-fraco,#555);margin:4px 0 6px">Distâncias atrás do plano do corte (o lado que a vista mostra); negativo = na frente. O telhado se estende perpendicular ao corte.</div>' +
+'<div style="display:flex;gap:6px"><button type="button" class="btn sm" data-tcp="ok">Criar telhado (Enter)</button><button type="button" class="btn sm" data-tcp="cancelar">Cancelar (Esc)</button></div>';
+c.tela.appendChild(box); S.painel = box;
+var ri = box.querySelector("[data-tcp=resumo]");
+ri.textContent = n2(pf.inclinacao, 1) + " %  ·  beiral na cota " + n2(pf.cotaBeiral) + " m  ·  cumeeira na cota " + n2(pf.cotaCumeeira) + " m  ·  vão " + n2(pf.vao) + " m";
+var iIni = box.querySelector("[data-tcp=ini]"), iFim = box.querySelector("[data-tcp=fim]");
+iIni.value = n2(S.ini); iFim.value = n2(S.fim);
+["pointerdown", "mousedown", "click", "dblclick", "wheel"].forEach(function (k) { box.addEventListener(k, function (e) { e.stopPropagation(); }); });
+box.addEventListener("keydown", function (e) {
+e.stopPropagation();
+if (e.key === "Enter") { e.preventDefault(); self.confirmar(); }
+else if (e.key === "Escape") { e.preventDefault(); self.cancelar(); status("Telhado por corte cancelado."); }
+});
+function ler() { var a = parseFloat(String(iIni.value).replace(",", ".")), b = parseFloat(String(iFim.value).replace(",", ".")); S.ini = isFinite(a) ? a : S.ini; S.fim = isFinite(b) ? b : S.fim; self._previa3d(); }
+iIni.addEventListener("input", ler); iFim.addEventListener("input", ler);
+box.querySelector("[data-tcp=ok]").addEventListener("click", function () { self.confirmar(); });
+box.querySelector("[data-tcp=cancelar]").addEventListener("click", function () { self.cancelar(); status("Telhado por corte cancelado."); });
+this._previa3d();
+setTimeout(function () { try { iFim.focus(); iFim.select(); } catch (e) {} }, 0);
+},
+_pontos: function () { return S && S.qb ? pontosDoCorte(S.def, S.w[0], S.w[1], S.ini, S.fim) : null; },
+_previa3d: function () {
+var m = M3(), L = this._pontos(); if (!m || !L || !m.previaPontos) return;
+m.previaPontos(L);
+},
+confirmar: function () {
+sincronizado(); var m = M3(), L = this._pontos(); if (!S || !S.qb || !m || !L) return false;
+if (!(Math.abs(S.fim - S.ini) > 0.3)) { dica("O começo e o fim estão perto demais (mínimo 0,30 m)."); status("O começo e o fim estão perto demais: mínimo 0,30 m."); return true; }
+var id = S.id, box = S.painel;
+m.clique("telhado", { _corte: true }, null, L[2]);
+m.clique("telhado", { _corte: true }, null, L[3]);
+if (box && box.parentNode) box.parentNode.removeChild(box);
+S = null; limparCamada(id);
+return true;
+}
+};
+global.BimTelhadoCorte = Corte;
+if (global.document && global.document.addEventListener) global.document.addEventListener("keydown", function (e) {
+if (e.key === "Escape" && S && !(e.target && e.target.closest && e.target.closest("[data-tcp=painel]"))) { Corte.cancelar(); status("Telhado por corte cancelado."); }
+}, true);
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/marcenariaui.js ==== */
@@ -121353,6 +121950,7 @@ if (global.BimTerrenoUI) global.BimTerrenoUI.registrar(reg, self);
 if (global.BimEstrutUI) global.BimEstrutUI.registrar(reg, self);
 if (global.BimP3UI) global.BimP3UI.registrar(reg, self);
 if (global.MarcenariaUI) global.MarcenariaUI.registrar(reg, self);
+if (global.BimFecharUI) global.BimFecharUI.registrar(reg, self);
 if (global.BimElevarUI) global.BimElevarUI.registrar(reg, self);
 function ferr(sub) {
 return function (e) {
@@ -126573,6 +127171,7 @@ clique2d: function (id, ev, p) {
 if (!this.ativo() || !p || (ev && ev.button !== 0)) return false;
 var sub = this.ferramenta(); if (!sub) return false;
 if (sub === "inst" && global.BimInstUI && global.BimInstUI.cliqueCorte && global.BimInstUI.cliqueCorte(id, ev, p)) return true;
+if (sub === "telhado" && global.BimTelhadoCorte && global.BimTelhadoCorte.cliqueCorte && global.BimTelhadoCorte.cliqueCorte(id, ev, p)) return true;
 var d = this._def(id); if (!d) return false;
 var seta = ev && ev.target && ev.target.closest ? ev.target.closest("[data-pm-virar]") : null;
 if (seta) { this._virarColocada(seta.getAttribute("data-pm-virar")); return true; }
@@ -126605,6 +127204,7 @@ mover2d: function (id, ev, p) {
 var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c || !c.el) return;
 var sub = this.ativo() ? this.ferramenta() : null;
 if (sub === "inst" && !this._def(id) && global.BimInstUI && global.BimInstUI.moverCorte && global.BimInstUI.moverCorte(id, ev, p)) return;
+if (sub === "telhado" && !this._def(id) && global.BimTelhadoCorte && global.BimTelhadoCorte.moverCorte && global.BimTelhadoCorte.moverCorte(id, ev, p)) return;
 if (!sub || !this._def(id)) { if (c.el.hasAttribute("data-pm-ferr")) { c.el.removeAttribute("data-pm-ferr"); this._limparCamada(id); } return; }
 c.el.setAttribute("data-pm-ferr", sub);
 if (!p) return;
@@ -128860,7 +129460,7 @@ var ALTERNATIVA = {};
 var ABA_MODIFICAR = [
 { nome: "Selecionar", ids: ["fx-modificar", "fx-propriedades", "fx-filtro-selecao"] },
 { nome: "Área de transferência", ids: ["fx-copiar-area", "fx-colar", "fx-colar-alinhado"] },
-{ nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "alternar-uniao"] },
+{ nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "fechar-cantos", "alternar-uniao"] },
 { nome: "Modificar", ids: ["alinhar", "deslocamento", "espelhar", "mover-preciso", "copiar", "girar",
 "aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "snaps-editor"] },
 { nome: "Vista", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
@@ -130391,6 +130991,19 @@ var p = add(X1.p, mul(dA, dot(sub(E0, X0.p), dA0)));
 if (dot(sub(p, Q1), dA) < 0.05) return null;
 return p;
 }
+var TOL_PILHA = 0.02;
+function pilhaDe(estado, id) {
+var caixas = arr(estado && estado.caixas), alvo = null, out = [];
+caixas.forEach(function (c) { if (c && String(c.id) === String(id)) alvo = pecaDe(c); });
+if (!alvo || alvo.k !== "parede") return out;
+caixas.forEach(function (c) {
+if (!c || String(c.id) === String(id) || c.fixo) return;
+var q = pecaDe(c); if (!q || q.k !== "parede") return;
+if (dist(q.a, alvo.a) <= TOL_PILHA && dist(q.b, alvo.b) <= TOL_PILHA) out.push({ id: q.id, inv: false });
+else if (dist(q.a, alvo.b) <= TOL_PILHA && dist(q.b, alvo.a) <= TOL_PILHA) out.push({ id: q.id, inv: true });
+});
+return out;
+}
 function preparar(estado) {
 var caixas = arr(estado && estado.caixas), porId = {}, pecas = {}, lista = [];
 caixas.forEach(function (c) { if (c && c.id != null) porId[String(c.id)] = c; });
@@ -130430,14 +131043,32 @@ var P = Prec(); if (!P) { res.avisos.push("Vínculos: o motor de precisão (js/b
 var prep = o.prep && o.prep.estado === estado ? o.prep : preparar(estado);
 var porId = prep.porId, pecas = prep.pecas, L = prep.L;
 var nomeDe = typeof o.nome === "function" ? o.nome : nomePadrao;
-var novos = {}, arrastada = {}, ordemNovos = [], Tmov = {};
+var novos = {}, arrastada = {}, ordemNovos = [], Tmov = {}, extras = [];
 function novo(id, c, T) { if (!c) return; c.id = porId[id].id; novos[id] = c; ordemNovos.push(id); if (T) Tmov[id] = T; }
-if (op.op === "transformar" && !op.copia && op.T && op.T.tipo === "mover" && P.validaT(op.T) && Array.isArray(op.ids)) {
-op.ids.forEach(function (id0) { var id = String(id0), c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, op.T), [op.T.dx, 0, op.T.dz]); });
+function pilhaAnda(idsFonte, T) {
+var ja = {}; idsFonte.forEach(function (x) { ja[String(x)] = 1; });
+var mais = [];
+idsFonte.forEach(function (x) { pilhaDe(estado, x).forEach(function (m) { if (!ja[m.id] && !novos[m.id]) { ja[m.id] = 1; mais.push(m.id); } }); });
+mais.forEach(function (id) { var c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, T), T.tipo === "mover" ? [T.dx, 0, T.dz] : null); });
+var feitos = mais.filter(function (id) { return !!novos[id]; });
+if (feitos.length) { extras.push({ op: "transformar", ids: feitos, T: T, copia: false }); res.empilhadas = (res.empilhadas || []).concat(feitos); }
+}
+if (op.op === "transformar" && !op.copia && op.T && (op.T.tipo === "mover" || op.T.tipo === "girar") && P.validaT(op.T) && Array.isArray(op.ids)) {
+op.ids.forEach(function (id0) { var id = String(id0), c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, op.T), op.T.tipo === "mover" ? [op.T.dx, 0, op.T.dz] : null); });
+pilhaAnda(op.ids.map(String).filter(function (id) { return !!novos[id]; }), op.T);
 } else if (op.op === "mover" && porId[String(op.id)] && fin(op.cx) && fin(op.cz)) {
-var cm = porId[String(op.id)]; if (!cm.fixo && cm.cx != null) { var Tm = { tipo: "mover", dx: op.cx - num(cm.cx, 0), dz: op.cz - num(cm.cz, 0) }; novo(String(op.id), P.transformarEl("caixa", cm, Tm), [Tm.dx, 0, Tm.dz]); }
+var cm = porId[String(op.id)]; if (!cm.fixo && cm.cx != null) { var Tm = { tipo: "mover", dx: op.cx - num(cm.cx, 0), dz: op.cz - num(cm.cz, 0) }; novo(String(op.id), P.transformarEl("caixa", cm, Tm), [Tm.dx, 0, Tm.dz]); pilhaAnda([String(op.id)], Tm); }
 } else if (op.op === "esticar" && porId[String(op.id)] && (op.ponta === "a" || op.ponta === "b")) {
-var ce = porId[String(op.id)]; if (!ce.fixo) { novo(String(op.id), P.esticarCaixa(ce, op.ponta, { x: op.x, z: op.z })); arrastada[String(op.id)] = op.ponta; }
+var ce = porId[String(op.id)];
+if (!ce.fixo) {
+novo(String(op.id), P.esticarCaixa(ce, op.ponta, { x: op.x, z: op.z })); arrastada[String(op.id)] = op.ponta;
+pilhaDe(estado, op.id).forEach(function (m) {
+var cp = porId[m.id], kp = m.inv ? outra(op.ponta) : op.ponta; if (!cp || cp.fixo) return;
+var cn = P.esticarCaixa(cp, kp, { x: op.x, z: op.z }); if (!cn) return;
+novo(m.id, cn); arrastada[m.id] = kp; (res.empilhadas = res.empilhadas || []).push(m.id);
+extras.push({ op: "esticar", id: cp.id, ponta: kp, x: op.x, z: op.z });
+});
+}
 } else if (op.op === "metalAjustar" && porId[String(op.id)] && op.caixa) {
 novo(String(op.id), clone(op.caixa));
 } else if (op.op === "elevar" || (op.op === "lote" && op.origem === "elevar" && Array.isArray(op.ops))) {
@@ -130498,6 +131129,7 @@ linha[aid] = linhaCom(aid, A1);
 res.presas++;
 });
 }
+extras.forEach(function (x) { res.ajustes.push(x); });
 var ordem = ordemNovos.concat(Object.keys(pontas).filter(function (id) { return !novos[id]; }));
 var MC = Cri();
 ordem.forEach(function (id) {
@@ -130645,7 +131277,9 @@ return r + (el.marca ? " " + el.marca : (el.nome ? " " + el.nome : ""));
 }
 function fechar(res) {
 var n = res.acompanharam.length + res.fundacoes.length;
+var emp = res.empilhadas && res.empilhadas.length ? res.empilhadas.length + (res.empilhadas.length === 1 ? " parede empilhada junto" : " paredes empilhadas juntas") : "";
 res.resumo = n === 0 ? (res.avisos.length ? "Nenhuma peça acompanhou" : "") : (n === 1 ? "1 peça acompanhou" : n + " peças acompanharam");
+if (emp) res.resumo += (res.resumo ? " · " : "") + emp;
 if (res.presas) res.resumo += (res.resumo ? " · " : "") + res.presas + (res.presas === 1 ? " ponta presa no canto (Alt: solta)" : " pontas presas nos cantos (Alt: solta)");
 if (res.avisos.length) res.resumo += (res.resumo ? " · " : "") + res.avisos.length + (res.avisos.length === 1 ? " aviso" : " avisos");
 return res;
@@ -130710,6 +131344,7 @@ pecaDe: pecaDe, ligacoes: function (estadoOuPecas) {
 var l = Array.isArray(estadoOuPecas) ? estadoOuPecas : arr(estadoOuPecas && estadoOuPecas.caixas).map(pecaDe).filter(Boolean);
 return ligacoes(l);
 },
+pilhaDe: pilhaDe, TOL_PILHA: TOL_PILHA,
 preparar: preparar, propagar: propagar, novaPonta: novaPonta, interLinhas: interLinhas, presasEm: presasEm,
 assinatura: assinatura, ligacoesDesenhadas: ligacoesDesenhadas,
 aplicarOp: aplicarOp, validaOp: validaOp, opPonta: opPonta, solto: solto, registrar: registrar
@@ -130804,6 +131439,224 @@ return [[p[0], p[1]], [p[1], p[2]], [p[2], p[3]], [p[3], p[0]]];
 try { if (typeof document !== "undefined") BimVinculosUI._ouvir(); } catch (eO) {}
 global.BimVinculosUI = BimVinculosUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimVinculosUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimfechar.js ==== */
+try {
+(function (global) {
+"use strict";
+var SEN_MIN = 0.17;
+var TOL_UNIAO = 0.01;
+var DIST_PADRAO = 0.30;
+var JA_FECHADO = 0.0015;
+var RAIO_PX = 15;
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function Arq() { return dep("BimArq", "./bimarq.js"); }
+function Prec() { return dep("BimPrecisao", "./bimprecisao.js"); }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function outra(k) { return k === "a" ? "b" : "a"; }
+function d2(p, q) { return Math.sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1])); }
+function br(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+function quadro(c) {
+if (!c || c.tipo !== "parede" || c.id == null || c.arco) return null;
+var L = num(c.comprimento, 0), t = num(c.espessura, 0), th = num(c.rotY, 0), co = Math.cos(th), si = Math.sin(th);
+if (!(L > 0.01) || !(t > 0)) return null;
+var cx = num(c.cx, 0), cz = num(c.cz, 0), H = num(c.altura, 0);
+var a = [cx - co * L / 2, cz + si * L / 2], b = [cx + co * L / 2, cz - si * L / 2];
+return { id: String(c.id), el: c, a: a, b: b, u: [(b[0] - a[0]) / L, (b[1] - a[1]) / L], L: L, t: t,
+y0: num(c.cy, 0) - H / 2, y1: num(c.cy, 0) + H / 2 };
+}
+function saida(A, k) { return k === "b" ? A.u : [-A.u[0], -A.u[1]]; }
+function une(A) { return !!A && A.el.unir !== false && !A.el.linhaLoc; }
+function desunidas(A, B) {
+var BA = Arq(); if (!BA || !BA.geoUniao) return false;
+try { return BA.geoUniao(A.el, B.el).unida === false; } catch (e) { return false; }
+}
+function sobrepoeY(A, B) { return Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) > 0.05; }
+function soltoNaPonta(A, k) { return !!(A.el.vinculoSolto && A.el.vinculoSolto[k]); }
+function candidato(A, kA, E, B, dist) {
+var d = saida(A, kA), cr = d[0] * B.u[1] - d[1] * B.u[0], s = Math.abs(cr);
+if (!(s >= SEN_MIN)) return null;
+var rx = B.a[0] - E[0], ry = B.a[1] - E[1];
+var lam = (rx * B.u[1] - ry * B.u[0]) / cr, mu = (rx * d[1] - ry * d[0]) / cr;
+var X = [E[0] + lam * d[0], E[1] + lam * d[1]];
+var folgaA = A.t / 2 / s + TOL_UNIAO;
+var muA = mu, muB = mu - B.L;
+var melhor = null;
+function tenta(c) { if (!melhor || c.corr < melhor.corr - 1e-9) melhor = c; }
+var alem = Math.max(dist, folgaA);
+var pertoA = muA >= -dist && muA <= alem, pertoB = muB <= dist && muB >= -alem;
+if ((pertoA || pertoB) && Math.abs(lam) <= dist) tenta({ p: X, tipo: "L", com: B.id, corr: Math.abs(lam) });
+if (muA > folgaA && muB < -folgaA) {
+var lf = lam - B.t / 2 / s;
+if (Math.abs(lf) <= dist) tenta({ p: [E[0] + lf * d[0], E[1] + lf * d[1]], tipo: "T", com: B.id, corr: Math.abs(lf) });
+}
+return melhor;
+}
+function quadros(estado) {
+var out = [];
+arr(estado && estado.caixas).forEach(function (c) { var q = quadro(c); if (q) out.push(q); });
+return out;
+}
+function melhorCanto(A, kA, E, W, dist, tolPor) {
+var m = null;
+W.forEach(function (B) {
+if (B === A || !une(B) || !sobrepoeY(A, B) || desunidas(A, B)) return;
+var alcance = typeof tolPor === "function" ? tolPor(B) : dist;
+var c = candidato(A, kA, E, B, alcance);
+if (c && (!m || c.corr < m.corr - 1e-9)) m = c;
+});
+return m;
+}
+function encaixar(estado, id, ponta, p, o) {
+o = o || {};
+if (!p || !isFinite(p.x) || !isFinite(p.z) || (ponta !== "a" && ponta !== "b")) return null;
+var W = quadros(estado), A = null;
+W.forEach(function (q) { if (q.id === String(id)) A = q; });
+if (!A || !une(A) || A.el.fixo || soltoNaPonta(A, ponta)) return null;
+var raio = num(o.raio, 0.15);
+var O = A[outra(ponta)], dx = p.x - O[0], dz = p.z - O[1], Ln = Math.sqrt(dx * dx + dz * dz);
+if (!(Ln > 0.01)) return null;
+var An = { id: A.id, el: A.el, a: ponta === "b" ? O : [p.x, p.z], b: ponta === "b" ? [p.x, p.z] : O, t: A.t, y0: A.y0, y1: A.y1, L: Ln };
+An.u = [(An.b[0] - An.a[0]) / Ln, (An.b[1] - An.a[1]) / Ln];
+var m = melhorCanto(An, ponta, [p.x, p.z], W, 0, function (B) { return Math.max(B.t / 2 + TOL_UNIAO, raio); });
+if (!m) return null;
+return { x: r4(m.p[0]), z: r4(m.p[1]), tipo: m.tipo, com: m.com, dist: d2([p.x, p.z], m.p) };
+}
+function propor(estado, o) {
+o = o || {};
+var dist = o.dist > 0 ? o.dist : DIST_PADRAO, W = quadros(estado), sel = null, itens = [], pulados = [];
+if (arr(o.ids).length) { sel = {}; o.ids.forEach(function (x) { sel[String(x)] = 1; }); }
+W.forEach(function (A) {
+if (sel && !sel[A.id]) return;
+if (A.el.unir === false) { pulados.push({ id: A.id, motivo: "Unir nos cantos = Não" }); return; }
+if (A.el.linhaLoc) { pulados.push({ id: A.id, motivo: "linha de localização fora do eixo" }); return; }
+["a", "b"].forEach(function (k) {
+if (soltoNaPonta(A, k)) { pulados.push({ id: A.id, ponta: k, motivo: "ponta desunida de propósito" }); return; }
+var E = A[k], m = melhorCanto(A, k, E, W, dist);
+if (!m || m.corr < JA_FECHADO) return;
+if (A.el.fixo) { pulados.push({ id: A.id, ponta: k, motivo: "parede fixada" }); return; }
+itens.push({ id: A.id, ponta: k, de: [r4(E[0]), r4(E[1])], para: [r4(m.p[0]), r4(m.p[1])], tipo: m.tipo, com: m.com, dist: r4(m.corr) });
+});
+});
+return { itens: itens, pulados: pulados, dist: dist };
+}
+function descrever(estado, prop) {
+var nome = {}; arr(estado && estado.caixas).forEach(function (c) { if (c && c.id != null) nome[String(c.id)] = (c.marca ? c.marca : (c.nome ? c.nome : "parede " + c.id)); });
+return arr(prop && prop.itens).map(function (it) {
+return (nome[it.id] || it.id) + " (ponta " + it.ponta.toUpperCase() + ") " + (it.tipo === "T" ? "até a face de " : "até o canto com ") + (nome[it.com] || it.com) + ": " + br(it.dist) + " m";
+});
+}
+function aplicar(estado, itens, o) {
+o = o || {};
+var P = Prec(), ops = [];
+arr(itens).forEach(function (it) {
+var c = arr(estado && estado.caixas).filter(function (x) { return String(x.id) === String(it.id); })[0];
+if (!c || c.fixo) return;
+if (P && P.esticarCaixa && !P.esticarCaixa(c, it.ponta, { x: it.para[0], z: it.para[1] })) return;
+ops.push({ op: "esticar", id: c.id, ponta: it.ponta, x: it.para[0], z: it.para[1] });
+});
+if (!ops.length) return { erro: "Nenhum canto aberto para fechar." };
+var id = typeof o.novoId === "function" ? o.novoId("l") : "l" + Date.now().toString(36);
+return { op: { op: "lote", id: id, origem: "modificar", pedido: "Fechar cantos abertos", ops: ops }, n: ops.length };
+}
+function raioEmMetros(mPorPx) { return Math.max(0.01, Math.min(1, num(mPorPx, 0) * RAIO_PX)); }
+var BimFechar = {
+DIST_PADRAO: DIST_PADRAO, RAIO_PX: RAIO_PX, JA_FECHADO: JA_FECHADO,
+quadro: quadro, candidato: candidato, encaixar: encaixar, propor: propor, descrever: descrever, aplicar: aplicar, raioEmMetros: raioEmMetros
+};
+global.BimFechar = BimFechar;
+if (typeof module !== "undefined" && module.exports) module.exports = BimFechar;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimfecharui.js ==== */
+try {
+(function (global) {
+"use strict";
+function B() { return global.BIM || null; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) {} }
+function lerM(v, d) { var n = parseFloat(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) && n > 0 && n <= 5 ? n : d; }
+function brm(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+var BimFecharUI = {
+_seq: 0, _ultimo: null,
+estado: function () { var b = B(), e = null; try { e = b && b.editarEstado ? b.editarEstado() : null; } catch (x) { e = null; } return e ? e.estado : null; },
+novoId: function (p) { BimFecharUI._seq++; return (p || "l") + "fch" + Date.now().toString(36) + BimFecharUI._seq; },
+selecao: function () {
+var b = B(), ids = [], vistos = {};
+function add(x) { x = String(x).replace(/^edit:/, ""); if (!vistos[x]) { vistos[x] = 1; ids.push(x); } }
+try { var p = b && b.precisao ? b.precisao() : null; if (p && p.selecao) p.selecao().forEach(add); } catch (e) {}
+try { var s = b && b.selecao ? b.selecao().uids : []; arr(s).forEach(function (u) { if (/^edit:/.test(String(u))) add(u); }); } catch (e2) {}
+return ids;
+},
+planejar: function (o) {
+o = o || {};
+var F = global.BimFechar, st = this.estado();
+if (!F || !st) return { ok: false, erro: "O editor do modelo não está aberto." };
+var ids = o.semSelecao ? [] : (o.ids || this.selecao());
+var prop = F.propor(st, { dist: o.dist > 0 ? o.dist : F.DIST_PADRAO, ids: ids });
+return { ok: true, prop: prop, linhas: F.descrever(st, prop), st: st, ids: ids };
+},
+executar: function (o) {
+o = o || {};
+var pl = this.planejar(o), F = global.BimFechar, b = B();
+if (!pl.ok) { status(pl.erro); this._ultimo = { ok: false, erro: pl.erro, n: 0 }; return this._ultimo; }
+if (!pl.prop.itens.length) {
+var t0 = "Nenhum canto aberto" + (pl.ids.length ? " na seleção" : "") + " a até " + brm(pl.prop.dist) + " m.";
+status(t0); this._ultimo = { ok: true, n: 0, texto: t0 }; return this._ultimo;
+}
+var ap = F.aplicar(pl.st, pl.prop.itens, { novoId: this.novoId });
+if (!ap.op || !b || !b.editarLote || !b.editarLote(ap.op)) { var er = ap.erro || "O editor recusou a mudança."; status(er); this._ultimo = { ok: false, erro: er, n: 0 }; return this._ultimo; }
+var t = ap.n + (ap.n === 1 ? " canto fechado" : " cantos fechados") + " (Ctrl+Z desfaz tudo).";
+status(t); toast(t, "info");
+this._ultimo = { ok: true, n: ap.n, texto: t, itens: pl.prop.itens };
+return this._ultimo;
+},
+abrir: function () {
+var U = global.UI, d = global.document, self = this;
+if (!global.BimFechar || !this.estado()) { status("Abra o editor do modelo para fechar cantos."); return false; }
+if (!U || !U.modal) return false;
+var ids = this.selecao();
+var h = '<div data-bfc="dlg" style="font-size:12.5px;min-width:360px">' +
+'<p style="margin:0 0 8px">' + (ids.length ? "<b>" + ids.length + (ids.length === 1 ? " peça selecionada</b>" : " peças selecionadas</b>") : "<b>Modelo inteiro</b> (nada selecionado)") + " — acha as pontas de parede que ficaram perto de outra e não estão no canto, e leva até o encontro dos eixos (L) ou até a face (T).</p>" +
+'<label style="display:flex;gap:8px;align-items:center;margin:0 0 8px">Alcance <input data-bfc="dist" inputmode="decimal" value="0,30" style="width:5em" aria-label="Alcance em metros"> m</label>' +
+(ids.length ? '<label style="display:flex;gap:8px;align-items:center;margin:0 0 8px"><input type="checkbox" data-bfc="todo"> Modelo inteiro (ignora a seleção)</label>' : "") +
+'<div data-bfc="lista" style="max-height:220px;overflow:auto;border:1px solid var(--borda,#d0d5dd);border-radius:6px;padding:6px 8px" aria-live="polite"></div>' +
+'<p class="muted" style="margin:8px 0 0">Parede desunida de propósito (Unir nos cantos = Não, Desunir geometria, ponta desligada) e parede fixada não são tocadas.</p></div>';
+function q(k) { return d.querySelector('[data-bfc="' + k + '"]'); }
+function ler() { return { dist: lerM((q("dist") || {}).value, 0.3), semSelecao: !!(q("todo") && q("todo").checked), ids: ids }; }
+function lista() {
+var el = q("lista"); if (!el) return;
+var pl = self.planejar(ler());
+if (!pl.ok) { el.textContent = pl.erro; return; }
+var n = pl.linhas.length;
+el.innerHTML = n ? "<b>" + n + (n === 1 ? " canto a fechar:" : " cantos a fechar:") + "</b><ul style='margin:4px 0 0 16px;padding:0'>" + pl.linhas.slice(0, 14).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + (n > 14 ? "<li>… e mais " + (n - 14) + "</li>" : "") + "</ul>" : "Nenhum canto aberto neste alcance.";
+}
+U.modal("Fechar cantos abertos", h, [
+{ texto: "Cancelar", classe: "ghost", onClick: function () { U.fecharModal(); status("Fechar cantos: nada mudou."); } },
+{ texto: "Fechar cantos", classe: "primary", onClick: function () { var r = self.executar(ler()); if (r.ok) U.fecharModal(); } }
+]);
+var raiz = q("dlg");
+if (raiz) { raiz.addEventListener("input", lista); raiz.addEventListener("change", lista); }
+lista();
+return true;
+},
+registrar: function (reg) {
+var self = this;
+reg["fechar-cantos"] = function () { self.abrir(); return true; };
+return true;
+}
+};
+global.BimFecharUI = BimFecharUI;
+if (typeof module !== "undefined" && module.exports) module.exports = BimFecharUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimelevar.js ==== */

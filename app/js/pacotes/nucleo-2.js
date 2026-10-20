@@ -51908,8 +51908,79 @@ function lerEnt(empresaId, ent) {
 return Store.lerParaSync ? Store.lerParaSync(empresaId, ent)
 : Store.adapter.ler(empresaId, ent, vazioDe(ent));
 }
-function paraNuvem(ent, v) { return (Store.compactar ? Store.compactar(ent, v) : v); }
-function daNuvem(ent, v) { return (Store.expandir ? Store.expandir(ent, v) : v); }
+var DOC_V2 = { bim_edicoes: 1, bim_vistas: 1, bim_estrut: 1, bim_sondagens: 1, bim_pranchas: 1 };
+var SUFIXO_V2 = "~v2";
+var LIMITE_REG_V2 = 600 * 1024;
+var PEDACO_V2 = 200000;
+var RESERVADAS_V2 = { __lista: 1, __frag: 1, __esc: 1 };
+function desaninharV2(v, dentroDeLista) {
+if (Array.isArray(v)) { var a = v.map(function (x) { return desaninharV2(x, true); }); return dentroDeLista ? { __lista: a } : a; }
+if (v && typeof v === "object") {
+var o = {}, esc = false;
+for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) { if (RESERVADAS_V2[k] === 1) esc = true; o[k] = desaninharV2(v[k], false); }
+return esc ? { __esc: o } : o;
+}
+return v;
+}
+function reaninharV2(v) {
+if (Array.isArray(v)) return v.map(reaninharV2);
+if (v && typeof v === "object") {
+var ks = Object.keys(v), o = {};
+if (ks.length === 1 && ks[0] === "__lista" && Array.isArray(v.__lista)) return v.__lista.map(reaninharV2);
+var src = v;
+if (ks.length === 1 && ks[0] === "__esc" && v.__esc && typeof v.__esc === "object" && !Array.isArray(v.__esc)) { src = v.__esc; ks = Object.keys(src); }
+ks.forEach(function (k) { o[k] = reaninharV2(src[k]); });
+return o;
+}
+return v;
+}
+function fragmentarV2(lista) {
+var out = [], N = global.Nuvem;
+lista.forEach(function (r) {
+var d = desaninharV2(r);
+var t = 0; try { t = N ? N._tamanhoFirestore(d) : 0; } catch (e) { t = 0; }
+if (!(t > LIMITE_REG_V2) || !r || typeof r !== "object" || !r.id) { out.push(d); return; }
+var txt = JSON.stringify(r), pedacos = [], i = 0;
+while (i < txt.length) {
+var f = Math.min(txt.length, i + PEDACO_V2);
+if (f < txt.length) { var c = txt.charCodeAt(f - 1); if (c >= 0xd800 && c < 0xdc00) f--; }
+pedacos.push(txt.slice(i, f)); i = f;
+}
+pedacos.forEach(function (s, k) { out.push({ __frag: String(r.id), i: k, n: pedacos.length, s: s }); });
+});
+return out;
+}
+function juntarV2(ent, lista) {
+if (!Array.isArray(lista)) return reaninharV2(lista);
+var out = [], grupos = {}, ordem = [], lugar = {};
+lista.forEach(function (o) {
+if (o && typeof o === "object" && !Array.isArray(o) && typeof o.__frag === "string") {
+if (!grupos[o.__frag]) { grupos[o.__frag] = []; ordem.push(o.__frag); lugar[o.__frag] = out.length; out.push(null); }
+grupos[o.__frag].push(o);
+} else out.push(reaninharV2(o));
+});
+ordem.forEach(function (id) {
+var g = grupos[id].slice().sort(function (a, b) { return a.i - b.i; }), n = +g[0].n || 0;
+var ok = n > 0 && g.length === n && g.every(function (x, j) { return +x.i === j && +x.n === n && typeof x.s === "string"; });
+var r = null;
+if (ok) { try { r = JSON.parse(g.map(function (x) { return x.s; }).join("")); } catch (e) { r = null; } }
+if (!r || typeof r !== "object" || String(r.id) !== id) {
+var err = new Error("o registro \"" + id + "\" da lista \"" + ent + "\" na nuvem está em pedaços e algum não chegou");
+err.code = "partes-incompletas"; throw err;
+}
+out[lugar[id]] = r;
+});
+return out;
+}
+function paraNuvem(ent, v) {
+var g = (Store.compactar ? Store.compactar(ent, v) : v);
+if (!DOC_V2[ent]) return g;
+return Array.isArray(g) ? fragmentarV2(g) : desaninharV2(g);
+}
+function daNuvem(ent, v) {
+if (DOC_V2[ent]) v = juntarV2(ent, v);
+return (Store.expandir ? Store.expandir(ent, v) : v);
+}
 function ilegivelLocal(empresaId, ent) {
 try {
 var m = (Store.ilegivel && Store.ilegivel(empresaId, ent)) || null;
@@ -51992,7 +52063,51 @@ if (!chave) return Promise.reject(new Error("sem licença"));
 var cr = this._credLicenca(chave);
 return this.entrar(cr.email, cr.senha);
 },
-_doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
+_nomeDoc: function (ent) { return DOC_V2[ent] ? ent + SUFIXO_V2 : ent; },
+_doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(this._nomeDoc(ent)); },
+_docAntigo: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
+DOC_V2: DOC_V2,
+CHAVE_V2: "orcapro:nuvem:v2:ok",
+_v2Mem: {},
+_v2Pronto: function (ent) {
+var k = String(this.uid || "") + "|" + ent;
+if (this._v2Mem[k]) return true;
+try { var o = JSON.parse(global.localStorage.getItem(this.CHAVE_V2) || "null"); if (o && o[k]) { this._v2Mem[k] = 2; return true; } } catch (e) {}
+return false;
+},
+_v2Ok: function (ent, persistir) {
+var k = String(this.uid || "") + "|" + ent;
+if (this._v2Mem[k] === 2 || (!persistir && this._v2Mem[k])) return;
+this._v2Mem[k] = persistir ? 2 : 1;
+if (!persistir) return;
+try {
+var o = JSON.parse(global.localStorage.getItem(this.CHAVE_V2) || "null");
+if (!o || typeof o !== "object") o = {};
+if (!o[k]) { o[k] = 1; global.localStorage.setItem(this.CHAVE_V2, JSON.stringify(o)); }
+} catch (e) {}
+},
+_limparFalhasDe: function (ent, velhas) {
+var f = this._falhas || [];
+for (var i = f.length - 1; i >= 0; i--) if (f[i] && f[i].entidade === ent && (!velhas || velhas.indexOf(f[i]) >= 0)) f.splice(i, 1);
+},
+_nuvemCobre: function (cloud, merged) {
+if (!Array.isArray(cloud) || !Array.isArray(merged) || cloud.length !== merged.length) return false;
+var m = {}, i;
+for (i = 0; i < cloud.length; i++) { var c = cloud[i]; if (!c || !c.id) return false; m[c.id] = String(c.atualizadoEm || ""); }
+for (i = 0; i < merged.length; i++) { var o = merged[i]; if (!o || !o.id || !Object.prototype.hasOwnProperty.call(m, o.id) || m[o.id] !== String(o.atualizadoEm || "")) return false; }
+return true;
+},
+_v2ouAntigo: function (ent, rc) {
+var self = this;
+if (!DOC_V2[ent]) return rc;
+if (rc && rc.existe) { this._v2Ok(ent, true); return rc; }
+return this._docAntigo(ent).get().then(function (s) { return self._valorDoSnap(ent, s, false, true); }).then(function (ra) {
+return { existe: !!(ra && ra.existe), v: ra && ra.v, partes: 0, doAntigo: true };
+}, function (e) {
+if (e && e.code === "partes-incompletas") return { existe: false, partes: 0, doAntigo: true, antigoIlegivel: true };
+throw e;
+});
+},
 TETO_DOC: 1048576,
 _tamanhoFirestore: function (x) {
 var self = this;
@@ -52049,7 +52164,7 @@ REVS_MAX: 8,
 _revNuvem: {},
 _seqSnap: {},
 _filaEsc: {},
-_chaveRev: function (ent) { return String(this.uid || "") + "|" + ent; },
+_chaveRev: function (ent) { return String(this.uid || "") + "|" + this._nomeDoc(ent); },
 CHAVE_REVS: "orcapro:nuvem:revs:partes",
 _revsCarregadas: false,
 _carregarRevs: function () {
@@ -52089,7 +52204,7 @@ if (ks.length >= this.REVS_MAX) delete m[ks[0]];
 m[rev] = n;
 this._guardarRevs();
 },
-_refParte: function (ent, rev, i) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent + "~p~" + rev + "~" + i); },
+_refParte: function (ent, rev, i, antigo) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc((antigo ? ent : this._nomeDoc(ent)) + "~p~" + rev + "~" + i); },
 _fatiar: function (lista) {
 var self = this, partes = [], atual = [], tam = 0, ok = true;
 lista.forEach(function (o) {
@@ -52103,6 +52218,12 @@ if (atual.length || !partes.length) partes.push(atual);
 return partes;
 },
 _escreverEnt: function (ent, vN) {
+var self = this, velhas = DOC_V2[ent] ? (this._falhas || []).filter(function (f) { return f && f.entidade === ent; }) : null;
+var p = this._escreverEntFila(ent, vN);
+if (DOC_V2[ent]) Promise.resolve(p).then(function () { self._v2Ok(ent, true); self._limparFalhasDe(ent, velhas); }, function () {});
+return p;
+},
+_escreverEntFila: function (ent, vN) {
 var self = this, k = this._chaveRev(ent);
 var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve(), espera: null, ativos: 0 });
 if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
@@ -52165,19 +52286,19 @@ var pB = b.commit().then(esquecer);
 return { p: pB, esperar: pB };
 });
 },
-_valorDoSnap: function (ent, snap, jaTentou) {
+_valorDoSnap: function (ent, snap, jaTentou, antigo) {
 var self = this;
 if (!snap || !snap.exists) return Promise.resolve({ existe: false });
 var d = snap.data() || {}, n = +d.partes || 0;
 if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
-self._lembrarRev(ent, d.rev, n);
+if (!antigo) self._lembrarRev(ent, d.rev, n);
 var pedidos = [];
-for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i).get());
+for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i, antigo).get());
 return Promise.all(pedidos).then(function (ps) {
 var falta = ps.some(function (p, k) { var x = p && p.exists ? p.data() : null; return !x || x.rev !== d.rev || +x.i !== k || !Array.isArray(x.v); });
 if (falta) {
 if (jaTentou) { var e = new Error("a lista \"" + ent + "\" na nuvem está em partes e alguma não chegou (rev " + d.rev + ")"); e.code = "partes-incompletas"; throw e; }
-return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+return (antigo ? self._docAntigo(ent) : self._doc(ent)).get().then(function (s2) { return self._valorDoSnap(ent, s2, true, antigo); });
 }
 var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
 return { existe: true, v: v, partes: n };
@@ -52437,6 +52558,7 @@ var uma = function (ent) {
 tentadas++;
 var cargaU = null;
 return self._doc(ent).get().then(function (snap) { return self._valorDoSnap(ent, snap); }).then(function (rc) {
+return self._v2ouAntigo(ent, rc); }).then(function (rc) {
 var cloud = rc.existe ? daNuvem(ent, rc.v) : null;
 var local = lerEnt(empresaId, ent);
 if (naoCarregadaLocal(empresaId, ent)) {
@@ -52461,7 +52583,8 @@ var carga = "";
 try { carga = JSON.stringify(subir); } catch (e) { carga = ""; }
 cargaU = carga;
 var ck = empresaId + "|" + ent;
-if (carga && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length)) return true;
+if (carga && !rc.doAntigo && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length) &&
+(!DOC_V2[ent] || self._nuvemCobre(cloud, merged))) return true;
 if (carga && rc.partes > 0) {
 var cargaNuvem = null;
 try { cargaNuvem = JSON.stringify(rc.v); } catch (eC) { cargaNuvem = null; }
@@ -52470,6 +52593,7 @@ if (cargaNuvem === carga) { self._ultimoEnviado[ck] = carga; return true; }
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[ck] = carga;
 var pW = self._escreverEnt(ent, subir);
+if (DOC_V2[ent]) self._v2Ok(ent, false);
 Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
 return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
 if (r === "pendente") { falhou++; return false; }
@@ -52547,6 +52671,7 @@ ENTIDADES.forEach(function (ent) {
 var un = self._doc(ent).onSnapshot(function (snap) {
 if (!snap.exists) return;
 if (snap.metadata && snap.metadata.hasPendingWrites) return;
+if (DOC_V2[ent] && !(snap.metadata && snap.metadata.fromCache)) self._v2Ok(ent, true);
 var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
 self._valorDoSnap(ent, snap).then(function (rs) {
 if (seqS !== self._seqSnap[ent] || !rs.existe) return;
@@ -52631,6 +52756,7 @@ var self = this;
 var mandar = function () {
 var chave = empresaId + "|" + ent, carga = "", marcou = false;
 try {
+if (DOC_V2[ent] && !self._v2Pronto(ent)) return;
 var v = lerEnt(empresaId, ent);
 if (ilegivelLocal(empresaId, ent)) return;
 if (naoCarregadaLocal(empresaId, ent)) return;
@@ -67898,6 +68024,9 @@ try {
 (function (global) {
 "use strict";
 var CHAVE_RECARGA = "orcapro:memvigia:recarga";
+function msgSegura(m) {
+return String(m || "").replace(/[^\s@]+@[^\s@]+/g, "<email>").replace(/[A-Za-z0-9_\-]{20,}/g, "<id>").slice(0, 80);
+}
 var V = {
 INTERVALO_MS: 20000,
 FRACAO_RECARREGAR: 0.45,
@@ -67920,7 +68049,7 @@ try {
 var esp = global.Store && global.Store._d && global.Store._d.esp;
 if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
 } catch (e) {}
-try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
+try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); c.nuvemUltMsgs = (N._falhas || []).slice(-4).map(function (f) { return msgSegura(f.msg); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
 try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
 try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
 return c;
@@ -68564,5 +68693,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=28024ac9e4"},{"src":"js/bim-pacote.js?v=21fa9d2f0f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=5bf0b00706"},{"src":"js/bim-pacote.js?v=4a6e582d8e","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

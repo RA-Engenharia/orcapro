@@ -1232,6 +1232,8 @@
     /* P4 — unir geometria e juntas de parede (js/bimarq.js, frentes A e B) */
     geometria: [
       { id: "juntas-parede", sub: "juntas", rotulo: "Juntas de\nparede", icone: "parede", dica: "Escolha Topo, Meia-esquadria ou Esquadrar na barra de opções e clique perto do canto de duas paredes." },
+      /* UNIÃO DE CANTO (20/10/2026, js/bimfecharui.js): um diálogo, não uma ferramenta de clique — o registrar do js/bimarqui.js põe o reg por cima do genérico */
+      { id: "fechar-cantos", sub: null, rotulo: "Fechar cantos\nabertos", icone: "quadrado", dica: "Acha as pontas de parede que ficaram perto de outra sem estar no canto (a até 0,30 m, configurável), mostra a lista e fecha tudo de uma vez: até o encontro dos eixos (L) ou até a face (T). Pega a seleção, ou o modelo inteiro. Parede desunida de propósito não é tocada; um Ctrl+Z desfaz tudo." },
       { id: "alternar-uniao", sub: "alternar-uniao", rotulo: "Alternar ordem\nde união", icone: "ciclo", dica: "Clique perto do canto de duas paredes: troca a que passa e a que para (o volume de cada uma muda). Em peças unidas (pilar, viga, laje), clique as duas: troca quem corta quem." },
       { id: "unir-geometria", sub: "unir-geo", rotulo: "Unir\ngeometria", icone: "mais", dica: "Clique duas peças (parede, pilar, viga, laje): a de maior prioridade corta a outra — pilar > viga > laje > parede — e o volume comum não conta duas vezes no orçamento." },
       { id: "desunir-geometria", sub: "desunir-geo", rotulo: "Desunir\ngeometria", icone: "fechar", dica: "Clique as duas peças unidas: cada uma volta inteira (na parede × parede, o canto deixa de ser feito)." }

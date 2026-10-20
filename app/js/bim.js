@@ -6503,7 +6503,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var SL = SLx(); if (!SL || SL.mao() || !semFerramenta3d()) return;
     var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), mod = modeladorOn() && !!S._prec;
     var a = SL.acao({ botao: 0, vista: '3d', alvo: u ? 'peca' : 'vazio', editavel: !!(u && /^edit:/.test(u)), modelador: mod, ctrl: !!(e.ctrlKey || e.metaKey), shift: e.shiftKey });
-    sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null };
+    sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null, hits: _ultimosHits.slice() };
   });
   canvasEl.addEventListener('pointermove', function (e) {
     var s = sel3; if (!s || e.pointerId !== s.id) return;
@@ -6520,6 +6520,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         /* ARRASTAR O TUBO (js/biminstarr.js): tubo, conexão ou caixa das instalações — a rede acompanha */
         if (BimInstArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y }, s.hp)) s.modo = 'inst';
       }
+      else if ((s.acao === 'peca-mover' || s.acao === 'peca') && s.u && !s.ctrl && window.BimTelhadoPecaArr && BimTelhadoPecaArr.pode && BimTelhadoPecaArr.pode(s.u, s.hits)) {
+        /* T6 (js/bimp3ui.js BimTelhadoPecaArr): a PEÇA da estrutura do telhado escolhida anda sozinha, no plano dela —
+           só se o clique caiu NELA (revisor T6); em outra parte do telhado segue abaixo: arrasta o telhado inteiro */
+        if (BimTelhadoPecaArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y, shiftKey: e.shiftKey, altKey: e.altKey }, s.hp, s.hits)) s.modo = 'telpeca';
+      }
       else if (s.acao === 'peca-mover') {
         if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');   /* M5: arrastar uma peça de peça pronta move o componente inteiro */
         if (S._prec && S._prec.arrastoIniciar && S._prec.arrastoIniciar({ clientX: s.x, clientY: s.y, pointerType: s.tipo })) s.modo = 'mover';
@@ -6529,6 +6534,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (s.modo === 'mover') S._prec.arrastoMover(e);
     else if (s.modo === 'inst') BimInstArr.mover(e);
     else if (s.modo === 'vao') BimVaoArr.mover(e);
+    else if (s.modo === 'telpeca') BimTelhadoPecaArr.mover(e);
     else if (s.modo === 'janela') selRetDesenhar(s, e);
   });
   function selRetDesenhar(s, e) {
@@ -6575,6 +6581,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (s.modo === 'mover') { if (S._prec && S._prec.arrastoSoltar) S._prec.arrastoSoltar(e); marcarFechamento(); return true; }
     if (s.modo === 'inst') { if (window.BimInstArr) BimInstArr.soltar(e); marcarFechamento(); return true; }
     if (s.modo === 'vao') { if (window.BimVaoArr) BimVaoArr.soltar(e); marcarFechamento(); return true; }
+    if (s.modo === 'telpeca') { if (window.BimTelhadoPecaArr) BimTelhadoPecaArr.soltar(e); marcarFechamento(); return true; }
     if (s.modo === 'janela') {
       var ids = janela3d(s, e);
       selAplicar(ids, s.ctrl ? 'somar' : 'trocar');
@@ -6583,7 +6590,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     return true;
   };
-  canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); });
+  canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3 && sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); });
   /* Esc limpa a seleção (e cancela o arrasto); Delete apaga a do editor. Na CAPTURA da JANELA: roda antes
      do Esc do desenho de precisão e do Esc de sempre (que fecharia o editor) — e só para a tecla quando a
      usou. Digitando num campo, ou com ferramenta armada, segue o caminho de sempre. */
@@ -6598,7 +6605,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return;
     var SL = SLx();
     if (k === 'Escape') {
-      if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
+      if (sel3 && sel3.modo) { if (sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); e.preventDefault(); e.stopPropagation(); return; }
       if (SL && SL.arrastando && SL.arrastando()) { SL.cancelar(); e.preventDefault(); e.stopPropagation(); return; }
       if (!semFerramenta3d() || (SL && SL.ferramenta2d && SL.ferramenta2d()) || (edit.on && edit.p1)) return;
       if (!selAtual().length) return;
@@ -18059,6 +18066,8 @@ window.BIM = {
   /* fecha o contorno/caminho em andamento (o mesmo que o Enter) */
   b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
   realceTelhadoPeca: function (pos) { return (S && S._telPecaRealce) ? S._telPecaRealce(pos) : false; },   /* T5 */
+  raioEm: function (clientX, clientY) { return (S && S._raioDe) ? S._raioDe(clientX, clientY) : null; },   /* T6: o raio do cursor { origem, direcao } (o arrasto da peça do telhado) */
+  dica: function (msg) { if (S && S._hint) S._hint(msg); },   /* T6: o aviso por cima do 3D */
   /* uma operação do modelador vinda da tela (Propriedades): ajustar, renomear,
      apagar, mover — vira op como as outras (desfaz/refaz).
      P1-C: e as do registro de parâmetros (js/bimparam.js, js/bimpropsui.js):

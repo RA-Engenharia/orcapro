@@ -366,8 +366,129 @@
    * merge e a conferência "nada mudou" do `escutar` comparam registros, e a
    * mesma vista numa forma de cada lado viraria escrita a cada snapshot.
    * Store antigo sem as funções: passa intacto (o comportamento de sempre). */
-  function paraNuvem(ent, v) { return (Store.compactar ? Store.compactar(ent, v) : v); }
-  function daNuvem(ent, v) { return (Store.expandir ? Store.expandir(ent, v) : v); }
+  /* ===================================================================
+   * ⚠ O DOCUMENTO NOVO SEM LISTA DENTRO DE LISTA (`<entidade>~v2`, 20/10/2026)
+   *
+   * Roteiro do defeito: o Firestore recusa o documento INTEIRO quando há lista dentro de lista ("Nested arrays are not
+   * supported", invalid-argument). O modelo BIM (bim_edicoes — todas as obras da empresa) tem os volumes com
+   * `receita.contorno = [[x, y], …]`: a vigia de 20/10 viu centenas de `bim_edicoes:invalid-argument` (~2,9 MB) desde a
+   * 1.2.162 e o backup do Rogério tinha 610 dessas listas — o modelo não sincronizava entre aparelhos. Pontos de vista
+   * (marcações/medidas `pts`), projeto estrutural (`origem.tamanhos`), sondagem (`area`) e pranchas (bloco de tabela
+   * `linhas`) têm o mesmo formato (memória orcapro-nuvem-lista-em-lista, 02/10).
+   *
+   * Por que DOCUMENTO NOVO e não só desaninhar: o aparelho de versão ANTIGA lê o documento de sempre e leria
+   * { "__lista": [...] } onde espera lista — volume sem contorno — e ainda regravaria. Então:
+   *  · estas entidades leem, escutam e gravam SÓ `<ent>~v2` (e as partes dele, `<ent>~v2~p~<rev>~<i>`), sempre
+   *    desaninhadas (Store.desaninhar) — o aparelho antigo não conhece esse nome e não o toca;
+   *  · o documento de sempre NUNCA é apagado nem regravado por este aparelho: fica como o antigo o deixa (e hoje ele já
+   *    é recusado nessas entidades, então nada piora para quem não atualizou);
+   *  · PRIMEIRA VEZ (o `~v2` ainda não existe): o sincronizar lê o documento antigo (só leitura) e faz o merge de sempre
+   *    com o local; o resultado vai para o `~v2`. Antigo ilegível por partes faltando → segue só com o local; erro de
+   *    rede → não cria o `~v2` (tenta de novo no próximo sincronizar — criar sem ler deixaria de fora o que só o
+   *    documento antigo tem);
+   *  · o `push` dessas entidades só grava depois de saber que o `~v2` existe (visto na nuvem ou gravado pelo
+   *    sincronizar), para nunca criar o `~v2` sem a união com o documento antigo.
+   * Lápides (`_lapides`), marcas, conflitos e `_ultimoEnviado` seguem iguais: muda só o nome do documento.
+   * ⚠ bim_icamento NÃO entra: ele já sobe desaninhado no documento de sempre desde o 75bb430 (era só prévia).
+   *
+   * ⚠ E O REGISTRO MAIOR QUE UMA PARTE VAI EM PEDAÇOS DE TEXTO (só no `~v2`). Medido no backup do Rogério de 20/10
+   *   (14:38): bim_edicoes com 12 registros (um por obra), o maior com 1.764 KB e o segundo com 1.106 KB de JSON. A
+   *   gravação em partes da 1.2.158 põe cada REGISTRO inteiro numa parte (até TETO_PARTE_SOLO, ~1 MiB): um registro
+   *   desses recusa a entidade INTEIRA ("exceeds the maximum allowed size even split in parts") — desaninhar sozinho
+   *   não faria o modelo sincronizar. Como o `~v2` é formato novo (ninguém mais o lê), o registro acima de
+   *   LIMITE_REG_V2 sobe como N itens { __frag: id, i, n, s: <pedaço do JSON dele> }; ao descer, os
+   *   pedaços são juntados ANTES do merge (o merge nunca vê pedaço). Faltou pedaço → falha "partes-incompletas" e nada
+   *   é aplicado (a mesma regra das partes). O corte nunca separa um par substituto (o Firestore recusa UTF-16 partido).
+   * Prova: tools/test-nuvem-v2.js (CN: sem desaninhar, recusado e o B não recebe; sem os pedaços, o registro de
+   *   1,8 MB trava a entidade).
+   * =================================================================== */
+  var DOC_V2 = { bim_edicoes: 1, bim_vistas: 1, bim_estrut: 1, bim_sondagens: 1, bim_pranchas: 1 };
+  var SUFIXO_V2 = "~v2";
+  var LIMITE_REG_V2 = 600 * 1024;    // registro acima disto (regra de tamanho do Firestore) vai em pedaços de texto
+  var PEDACO_V2 = 200000;            // caracteres por pedaço: no pior caso (3 bytes por caractere) 600 KB, abaixo do TETO_PARTE
+  /* cada registro sobe DESANINHADO; o que passa de LIMITE_REG_V2 sobe em pedaços do JSON CRU dele (texto não tem a regra
+     da lista dentro de lista, e o cru é bem menor: [12.3,4.5] contra {"__lista":[12.3,4.5]}) */
+  /* ⚠ AS CONVERSÕES DO `~v2` MORAM AQUI, E NÃO NO store.js (revisão adversarial da N1, 20/10/2026 —
+     tools/test-nuvem-v2-rev.js [R5] e [R8]). Dois defeitos do primeiro desenho, que usava Store.desaninhar/reaninhar:
+     (1) VERSÕES MISTURADAS: o sw.js busca cada arquivo na rede e, sem rede, do cache — um nuvem.js novo pode rodar com
+         o store.js antigo. Sem o Store.reaninhar, o daNuvem gravava no DISCO o contorno como [{ "__lista": [x, y] }, …]
+         (o modelo do aparelho estragado) e o push mandava a lista aninhada (recusada).
+     (2) NÃO ERA REVERSÍVEL: um dado legítimo com a chave `__lista` ({ __lista: [1, 2] }) descia como [1, 2], e um
+         registro com o campo `__frag` (texto) era tomado por pedaço — a entidade inteira parava em "partes-incompletas".
+     Agora, só no `~v2` (formato que ainda ninguém leu): objeto que TEM chave reservada (__lista, __frag, __esc) sobe
+     embrulhado em { __esc: { ... } } e desce desembrulhado, sem olhar as chaves de dentro como marca; lista dentro de
+     lista continua { __lista: [...] }. O bim_icamento (documento de sempre) segue com as funções do store.js. */
+  var RESERVADAS_V2 = { __lista: 1, __frag: 1, __esc: 1 };
+  function desaninharV2(v, dentroDeLista) {
+    if (Array.isArray(v)) { var a = v.map(function (x) { return desaninharV2(x, true); }); return dentroDeLista ? { __lista: a } : a; }
+    if (v && typeof v === "object") {
+      var o = {}, esc = false;
+      for (var k in v) if (Object.prototype.hasOwnProperty.call(v, k)) { if (RESERVADAS_V2[k] === 1) esc = true; o[k] = desaninharV2(v[k], false); }
+      return esc ? { __esc: o } : o;
+    }
+    return v;
+  }
+  function reaninharV2(v) {
+    if (Array.isArray(v)) return v.map(reaninharV2);
+    if (v && typeof v === "object") {
+      var ks = Object.keys(v), o = {};
+      if (ks.length === 1 && ks[0] === "__lista" && Array.isArray(v.__lista)) return v.__lista.map(reaninharV2);
+      var src = v;
+      if (ks.length === 1 && ks[0] === "__esc" && v.__esc && typeof v.__esc === "object" && !Array.isArray(v.__esc)) { src = v.__esc; ks = Object.keys(src); }
+      ks.forEach(function (k) { o[k] = reaninharV2(src[k]); });
+      return o;
+    }
+    return v;
+  }
+  function fragmentarV2(lista) {
+    var out = [], N = global.Nuvem;
+    lista.forEach(function (r) {
+      var d = desaninharV2(r);
+      var t = 0; try { t = N ? N._tamanhoFirestore(d) : 0; } catch (e) { t = 0; }
+      if (!(t > LIMITE_REG_V2) || !r || typeof r !== "object" || !r.id) { out.push(d); return; }
+      var txt = JSON.stringify(r), pedacos = [], i = 0;
+      while (i < txt.length) {
+        var f = Math.min(txt.length, i + PEDACO_V2);
+        if (f < txt.length) { var c = txt.charCodeAt(f - 1); if (c >= 0xd800 && c < 0xdc00) f--; }   // não parte o par substituto
+        pedacos.push(txt.slice(i, f)); i = f;
+      }
+      pedacos.forEach(function (s, k) { out.push({ __frag: String(r.id), i: k, n: pedacos.length, s: s }); });
+    });
+    return out;
+  }
+  /* junta os pedaços e devolve a lista JÁ ABERTA: o registro remontado é o JSON CRU (não passa pelo reaninharV2 — um
+     `__lista` legítimo dentro dele viraria lista); o resto passa */
+  function juntarV2(ent, lista) {
+    if (!Array.isArray(lista)) return reaninharV2(lista);
+    var out = [], grupos = {}, ordem = [], lugar = {};
+    lista.forEach(function (o) {
+      if (o && typeof o === "object" && !Array.isArray(o) && typeof o.__frag === "string") {
+        if (!grupos[o.__frag]) { grupos[o.__frag] = []; ordem.push(o.__frag); lugar[o.__frag] = out.length; out.push(null); }
+        grupos[o.__frag].push(o);
+      } else out.push(reaninharV2(o));
+    });
+    ordem.forEach(function (id) {
+      var g = grupos[id].slice().sort(function (a, b) { return a.i - b.i; }), n = +g[0].n || 0;
+      var ok = n > 0 && g.length === n && g.every(function (x, j) { return +x.i === j && +x.n === n && typeof x.s === "string"; });
+      var r = null;
+      if (ok) { try { r = JSON.parse(g.map(function (x) { return x.s; }).join("")); } catch (e) { r = null; } }
+      if (!r || typeof r !== "object" || String(r.id) !== id) {
+        var err = new Error("o registro \"" + id + "\" da lista \"" + ent + "\" na nuvem está em pedaços e algum não chegou");
+        err.code = "partes-incompletas"; throw err;
+      }
+      out[lugar[id]] = r;
+    });
+    return out;
+  }
+  function paraNuvem(ent, v) {
+    var g = (Store.compactar ? Store.compactar(ent, v) : v);
+    if (!DOC_V2[ent]) return g;
+    return Array.isArray(g) ? fragmentarV2(g) : desaninharV2(g);
+  }
+  function daNuvem(ent, v) {
+    if (DOC_V2[ent]) v = juntarV2(ent, v);
+    return (Store.expandir ? Store.expandir(ent, v) : v);
+  }
 
   /* ⚠ CONTEÚDO LOCAL ILEGÍVEL NÃO ENTRA NO MERGE NEM SOBE (js/store.js, nota
    * da quarentena). O `lerEnt` de uma entidade corrompida devolve `[]`, e:
@@ -534,7 +655,70 @@
       return this.entrar(cr.email, cr.senha);
     },
 
-    _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
+    /* o NOME do documento da entidade na nuvem: `<ent>~v2` para as do DOC_V2 (ver a nota lá), o de sempre para as outras */
+    _nomeDoc: function (ent) { return DOC_V2[ent] ? ent + SUFIXO_V2 : ent; },
+    _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(this._nomeDoc(ent)); },
+    /* o documento de SEMPRE de uma entidade do DOC_V2: só LEITURA, só na primeira vez (ver `_v2ouAntigo`) */
+    _docAntigo: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
+    DOC_V2: DOC_V2,
+    /* ⚠ "O `~v2` DESTA CONTA JÁ EXISTE" — só com isto o `push` grava a entidade do DOC_V2 (ver a nota do DOC_V2). Na
+       memória quando o sincronizar CHAMA a gravação da migração; no localStorage (por conta) quando a nuvem MOSTROU o
+       documento ou CONFIRMOU a gravação — aí uma sessão que abre sem rede continua subindo o que se edita, como as
+       outras entidades. Três trechos depois de "orcapro:" de propósito (o RE_CHAVE_ENT do store.js não a lê como
+       entidade de empresa). */
+    CHAVE_V2: "orcapro:nuvem:v2:ok",
+    _v2Mem: {},
+    _v2Pronto: function (ent) {
+      var k = String(this.uid || "") + "|" + ent;
+      if (this._v2Mem[k]) return true;
+      try { var o = JSON.parse(global.localStorage.getItem(this.CHAVE_V2) || "null"); if (o && o[k]) { this._v2Mem[k] = 2; return true; } } catch (e) {}
+      return false;
+    },
+    _v2Ok: function (ent, persistir) {
+      var k = String(this.uid || "") + "|" + ent;
+      if (this._v2Mem[k] === 2 || (!persistir && this._v2Mem[k])) return;
+      this._v2Mem[k] = persistir ? 2 : 1;
+      if (!persistir) return;
+      try {
+        var o = JSON.parse(global.localStorage.getItem(this.CHAVE_V2) || "null");
+        if (!o || typeof o !== "object") o = {};
+        if (!o[k]) { o[k] = 1; global.localStorage.setItem(this.CHAVE_V2, JSON.stringify(o)); }
+      } catch (e) {}
+    },
+    /* ⚠ a gravação do `~v2` deu certo: as falhas ANTERIORES da entidade (o invalid-argument da lista dentro de lista,
+       registrado quando o documento era o antigo) deixam de valer — sem isto o `estado().formatoRecusado` acusaria a
+       sessão inteira um defeito que já não existe */
+    _limparFalhasDe: function (ent, velhas) {
+      var f = this._falhas || [];
+      for (var i = f.length - 1; i >= 0; i--) if (f[i] && f[i].entidade === ent && (!velhas || velhas.indexOf(f[i]) >= 0)) f.splice(i, 1);
+    },
+    /* ⚠ A NUVEM TEM CADA REGISTRO DESTA LISTA, NA MESMA VERSÃO, E NADA A MAIS? (revisão da N1 — test-nuvem-v2-rev [R1]).
+       Só para o DOC_V2. Dois aparelhos migrando ao mesmo tempo (a atualização chega a todos juntos): o último a gravar o
+       `~v2` fica, sem o que só o outro tinha. O outro não perde nada no aparelho (merge é união), mas o "nada mudou" do
+       `_ultimoEnviado` (a carga dele é igual à que ele mandou) o impedia de repor — a nuvem ficava sem o registro até ele
+       reabrir o app ou editar, e quem instalasse no meio não recebia. Compara por id + atualizadoEm (barato). */
+    _nuvemCobre: function (cloud, merged) {
+      if (!Array.isArray(cloud) || !Array.isArray(merged) || cloud.length !== merged.length) return false;
+      var m = {}, i;
+      for (i = 0; i < cloud.length; i++) { var c = cloud[i]; if (!c || !c.id) return false; m[c.id] = String(c.atualizadoEm || ""); }
+      for (i = 0; i < merged.length; i++) { var o = merged[i]; if (!o || !o.id || !Object.prototype.hasOwnProperty.call(m, o.id) || m[o.id] !== String(o.atualizadoEm || "")) return false; }
+      return true;
+    },
+    /* PRIMEIRA VEZ (ver a nota do DOC_V2): o `~v2` não existe → o valor da NUVEM, para o merge, é o documento ANTIGO
+       (só leitura). `doAntigo: true` avisa o sincronizar que o `~v2` precisa ser criado mesmo que nada pareça mudar.
+       Ilegível por partes faltando → segue só com o local (o antigo fica como está); qualquer outro erro → sobe (a
+       entidade falha e o `~v2` não é criado nesta volta). */
+    _v2ouAntigo: function (ent, rc) {
+      var self = this;
+      if (!DOC_V2[ent]) return rc;
+      if (rc && rc.existe) { this._v2Ok(ent, true); return rc; }
+      return this._docAntigo(ent).get().then(function (s) { return self._valorDoSnap(ent, s, false, true); }).then(function (ra) {
+        return { existe: !!(ra && ra.existe), v: ra && ra.v, partes: 0, doAntigo: true };
+      }, function (e) {
+        if (e && e.code === "partes-incompletas") return { existe: false, partes: 0, doAntigo: true, antigoIlegivel: true };
+        throw e;
+      });
+    },
 
     /* ⚠ O DOCUMENTO QUE A NUVEM VAI RECUSAR NÃO SAI DO APARELHO (19/10/2026). O Firestore recusa documento acima de
        1 MiB — mas o SDK, antes de o servidor dizer não, serializa a carga, grava no cache local (persistência com
@@ -635,7 +819,9 @@
     _revNuvem: {},
     _seqSnap: {},
     _filaEsc: {},
-    _chaveRev: function (ent) { return String(this.uid || "") + "|" + ent; },
+    /* ⚠ pelo NOME DO DOCUMENTO (DOC_V2): as revisões lembradas do documento antigo nunca são apagadas no novo nem vice-versa —
+       apagar as partes do antigo deixaria o aparelho de versão antiga com o principal apontando para o nada */
+    _chaveRev: function (ent) { return String(this.uid || "") + "|" + this._nomeDoc(ent); },
     /* ⚠ AS REVISÕES LEMBRADAS SOBREVIVEM A FECHAR O APP (revisão adversarial 2, 19/10/2026 — test-nuvem-partes
        [16]). Viviam só na memória: o aparelho novo gravava R1 e fechava; o antigo gravava { v } por cima do
        principal; o novo reabria, via o documento só, reenviava R2 — e as partes de R1 (5 MB no bim_edicoes)
@@ -681,7 +867,7 @@
       m[rev] = n;
       this._guardarRevs();
     },
-    _refParte: function (ent, rev, i) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent + "~p~" + rev + "~" + i); },
+    _refParte: function (ent, rev, i, antigo) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc((antigo ? ent : this._nomeDoc(ent)) + "~p~" + rev + "~" + i); },
     /* fatia a lista em partes de até TETO_PARTE (pela regra do Firestore); o registro maior que isso vai sozinho
        numa parte (até TETO_PARTE_SOLO); null = algum registro passa até disso (não caberia nem num documento só) */
     _fatiar: function (lista) {
@@ -706,7 +892,17 @@
        foi confirmada, as seguintes viram UMA só, com a lista mais nova (cada uma é a entidade inteira, então só a
        última importa); quem chamou recebe a promessa dessa. Fechou o app com uma esperando: o dado está no aparelho
        e o próximo sincronizar sobe. A gravação num documento só continua sem esperar confirmação (como sempre). */
+    /* a porta de gravação: a fila (abaixo) + o que vale para o `~v2` quando o servidor CONFIRMA (ver DOC_V2). O `throw`
+       síncrono da fila passa direto (o `catch` do push depende dele). */
     _escreverEnt: function (ent, vN) {
+      /* ⚠ só as falhas que JÁ ESTAVAM registradas quando a gravação saiu (revisão da N1 — test-nuvem-v2-rev [R9]): a que
+         chega depois (o ouvinte com pedaço faltando, outra gravação recusada) é notícia nova e não pode sumir da tela */
+      var self = this, velhas = DOC_V2[ent] ? (this._falhas || []).filter(function (f) { return f && f.entidade === ent; }) : null;
+      var p = this._escreverEntFila(ent, vN);
+      if (DOC_V2[ent]) Promise.resolve(p).then(function () { self._v2Ok(ent, true); self._limparFalhasDe(ent, velhas); }, function () {});
+      return p;
+    },
+    _escreverEntFila: function (ent, vN) {
       var self = this, k = this._chaveRev(ent);
       var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve(), espera: null, ativos: 0 });
       if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
@@ -787,19 +983,21 @@
     /* o valor da entidade a partir do documento principal: { existe, v, partes }. Em partes, junta as da `rev` dele.
        ⚠ (e): ver o principal num documento só NÃO faz esquecer as revisões lembradas — as partes delas podem ter
        ficado na nuvem (o aparelho antigo grava assim), e só quem lembra apaga. */
-    _valorDoSnap: function (ent, snap, jaTentou) {
+    /* `antigo` = o documento de SEMPRE de uma entidade do DOC_V2 (só leitura): não lembra a revisão (só se apaga o que se
+       lembra, e o antigo nunca é apagado por este aparelho) e relê o mesmo documento antigo */
+    _valorDoSnap: function (ent, snap, jaTentou, antigo) {
       var self = this;
       if (!snap || !snap.exists) return Promise.resolve({ existe: false });
       var d = snap.data() || {}, n = +d.partes || 0;
       if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
-      self._lembrarRev(ent, d.rev, n);
+      if (!antigo) self._lembrarRev(ent, d.rev, n);
       var pedidos = [];
-      for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i).get());
+      for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i, antigo).get());
       return Promise.all(pedidos).then(function (ps) {
         var falta = ps.some(function (p, k) { var x = p && p.exists ? p.data() : null; return !x || x.rev !== d.rev || +x.i !== k || !Array.isArray(x.v); });
         if (falta) {
           if (jaTentou) { var e = new Error("a lista \"" + ent + "\" na nuvem está em partes e alguma não chegou (rev " + d.rev + ")"); e.code = "partes-incompletas"; throw e; }
-          return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+          return (antigo ? self._docAntigo(ent) : self._doc(ent)).get().then(function (s2) { return self._valorDoSnap(ent, s2, true, antigo); });
         }
         var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
         return { existe: true, v: v, partes: n };
@@ -1356,6 +1554,7 @@
            tamanho no catch → reprova). */
         var cargaU = null;
         return self._doc(ent).get().then(function (snap) { return self._valorDoSnap(ent, snap); }).then(function (rc) {
+          return self._v2ouAntigo(ent, rc); }).then(function (rc) {   /* ⚠ DOC_V2: o `~v2` ainda não existe → lê o antigo */
           var cloud = rc.existe ? daNuvem(ent, rc.v) : null;
           var local = lerEnt(empresaId, ent);
           /* ⚠ ver `naoCarregadaLocal`: nem merge, nem marca, nem subida */
@@ -1399,7 +1598,10 @@
           var ck = empresaId + "|" + ent;
           /* ⚠ ...a não ser que a nuvem esteja num documento só e a lista daqui precise de partes: alguém (o aparelho
              antigo) gravou por cima do principal — ver `_nuvemSemMinhasPartes` */
-          if (carga && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length)) return true;
+          /* ⚠ ...nem quando o `~v2` ainda não existe (DOC_V2, `doAntigo`): a carga igual à última enviada não prova que ele foi criado */
+          /* ⚠ ...e, no DOC_V2, nem quando a nuvem ficou sem algum registro daqui (outro aparelho gravou por cima — ver `_nuvemCobre`) */
+          if (carga && !rc.doAntigo && self._ultimoEnviado[ck] === carga && !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length) &&
+              (!DOC_V2[ent] || self._nuvemCobre(cloud, merged))) return true;
           /* ⚠ E A NUVEM EM PARTES JÁ IGUAL AO QUE SUBIRIA: não sobe (revisão adversarial 2, 19/10/2026 —
              test-nuvem-partes [15]). O `_ultimoEnviado` vive só na memória: a cada abertura do app, cada lista grande
              subia INTEIRA de novo (5 MB do bim_edicoes, ~11 MB nas quatro), e cada subida fazia todo aparelho que escuta
@@ -1416,6 +1618,8 @@
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
           var pW = self._escreverEnt(ent, subir);
+          /* DOC_V2: a gravação do `~v2` foi CHAMADA (já com a união do antigo) — daqui em diante o push pode gravar */
+          if (DOC_V2[ent]) self._v2Ok(ent, false);
           Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
           return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
             if (r === "pendente") { falhou++; return false; }
@@ -1544,6 +1748,7 @@
         var un = self._doc(ent).onSnapshot(function (snap) {
           if (!snap.exists) return;
           if (snap.metadata && snap.metadata.hasPendingWrites) return; // ignora o eco do próprio write
+          if (DOC_V2[ent] && !(snap.metadata && snap.metadata.fromCache)) self._v2Ok(ent, true);   // o `~v2` existe na nuvem
           /* EM PARTES (1.2.158): o valor vem de _valorDoSnap (junta as partes da `rev` do principal). Enquanto junta,
              pode chegar um snapshot mais novo: o mais velho é descartado (nunca aplica por cima do mais novo). */
           var seqS = (self._seqSnap[ent] = (self._seqSnap[ent] || 0) + 1);
@@ -1712,6 +1917,9 @@
       var mandar = function () {
         var chave = empresaId + "|" + ent, carga = "", marcou = false;
         try {
+          /* ⚠ DOC_V2: o `~v2` desta conta ainda não foi criado pelo sincronizar (com a união do documento antigo) — o push
+             o criaria só com o local. O dado fica neste aparelho; o próximo sincronizar faz a migração e sobe. */
+          if (DOC_V2[ent] && !self._v2Pronto(ent)) return;
           var v = lerEnt(empresaId, ent);
           /* ⚠ o `[]` de uma leitura ilegível NÃO sobe: ele substituiria na
              nuvem a lista que os outros aparelhos ainda têm (ver `ilegivelLocal`) */

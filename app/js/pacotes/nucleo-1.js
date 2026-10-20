@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.165",
+versao: "1.2.166",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -2577,6 +2577,8 @@ compactar: function (entidade, valor) {
 var g = Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
 return NUVEM_SEM_LISTA_EM_LISTA[entidade] ? desaninhar(g, false) : g;
 },
+desaninhar: function (valor) { return desaninhar(valor, false); },
+reaninhar: function (valor) { return reaninhar(valor); },
 expandir: function (entidade, valor) {
 if (NUVEM_SEM_LISTA_EM_LISTA[entidade]) valor = reaninhar(valor);
 if (entidade === "bim_vistas") return abrirVistas(valor);

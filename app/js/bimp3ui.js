@@ -650,11 +650,11 @@
       }
       /* a PRÉVIA ao vivo: o contorno, as setas do caimento e o telhado FANTASMA (as águas calculadas pelo motor de sempre,
          translúcidas). Recalcula só quando o cursor anda 1 cm. */
-      function fantasma(c) {
-        var k = JSON.stringify([pts, c ? [Math.round(c.x * 100), Math.round(c.z * 100), fin(c.y) ? Math.round(c.y * 100) : null] : null, cfg.telhado.modo, cfg.telhado.aguas, cfg.telhado.ref, cfg.telhado.comp, cfg.telhado.larg, cfg.telhado.inclinacao, !!segEf()]);
+      function fantasma(c, Lx) {
+        var k = JSON.stringify([pts, Lx || null, c ? [Math.round(c.x * 100), Math.round(c.z * 100), fin(c.y) ? Math.round(c.y * 100) : null] : null, cfg.telhado.modo, cfg.telhado.aguas, cfg.telhado.ref, cfg.telhado.comp, cfg.telhado.larg, cfg.telhado.inclinacao, !!segEf()]);
         if (k === kFant) return; kFant = k;
         limparPrevia();
-        var L = comCursor(c), y0 = edit.base + 0.02, r = self.contornoDesenho(L, { seguir: segEf() });
+        var L = Lx || comCursor(c), y0 = edit.base + 0.02, r = self.contornoDesenho(L, { seguir: segEf() });
         if (cfg.telhado.modo === "corte" && L.length >= 2) addLinha([L[0], L[1]]);   /* o perfil (com a altura dos pontos no 3D) */
         if (!r.ok || !r.contorno) { if (L.length >= 2 && cfg.telhado.modo !== "corte") addLinha(L); return; }
         addLinha(r.contorno.concat([r.contorno[0]]).map(function (q) { return { x: q.x, y: y0, z: q.z }; }));
@@ -721,7 +721,7 @@
           if (ri && ri.ok) segAuto = ri;
         }
         /* o Orto/incrementos valem para a DIREÇÃO da linha (2º ponto); o lado do caimento e o começo/fim são distâncias */
-        if (pts.length === 1 && c.modo !== "retangulo") { var qt = travar("telhado", q, e); if (qt !== q) q = { x: qt.x, y: q.y, z: qt.z }; }
+        if (pts.length === 1 && c.modo !== "retangulo" && !(e && e._corte)) { var qt = travar("telhado", q, e); if (qt !== q) q = { x: qt.x, y: q.y, z: qt.z }; }
         pts.push(q); marca(q);
         if (pts.length >= nPts()) return concluirTelhado();
         kFant = ""; fantasma(cur);
@@ -761,6 +761,8 @@
         pegarPeca: function (on) { var v = on == null ? !segPick : !!on; cancelar(); segPick = v; if (api.hint && edit && edit.sub === "telhado") api.hint(dicaTelhado()); return segPick; },
         pegando: function () { return segPick; },
         refazerPrevia: function () { kFant = ""; if (pts.length) fantasma(cur); else limparPrevia(); },
+        /* T6: o fantasma do telhado a partir de uma lista de pontos dada (o painel do desenho por corte numa vista de corte/elevação) */
+        previaPontos: function (L) { if (!edit || !edit.on || edit.sub !== "telhado") return false; kFant = ""; fantasma(null, arr(L)); return true; },
         /* a prévia na PLANTA (js/bimplantamodelar.js): o contorno, a linha do perfil e as setas, em {x, z} */
         previaPlanta: function (c) {
           if (!edit || !edit.on || edit.sub !== "telhado" || !telNovo()) return [];
@@ -1028,6 +1030,15 @@
     var t = st.sub ? comPacote(st.sub.tid) : null, o = t ? peca(t, st.sub.pid) : null;
     if (st.sub && !o) st.sub = null;
     try { b.realceTelhadoPeca(o && ES() ? ES().malhaPeca(o) : null); } catch (e) {}
+    try { if (global.BimTelhadoPecaArr && global.BimTelhadoPecaArr.aoMudarPeca) global.BimTelhadoPecaArr.aoMudarPeca(); } catch (eA) {}   /* T6: as alças das pontas seguem a peça */
+  }
+  /* T6: o aviso por cima do 3D (e a barra de status) diz o que vale PARA A PEÇA escolhida, conforme o plano em que ela anda */
+  function dicaTela(t) { try { var b = B(); if (b && b.dica) b.dica(t); } catch (e) {} }
+  function avisoPeca(o) {
+    var E = ES(), tipo = E && E.planoArrasto ? E.planoArrasto(o, false).tipo : "horizontal";
+    var como = tipo === "agua" ? "arraste move ao longo da água" : "arraste move no plano horizontal (Shift: vertical)";
+    var tx = "Peça: " + textoPeca(o) + " — " + como + "; alças verdes esticam as pontas; Alt solta o snap; Delete apaga só ela; Esc volta ao telhado.";
+    status(tx); dicaTela(tx);
   }
   function repintar() {
     if (!st.app || !st.info || !global.BimShell) return;
@@ -1040,26 +1051,48 @@
     st.sub = { tid: String(tid), pid: r.id };
     return r.peca;
   }
+  /* o ponto do clique no telhado: o da malha da ESTRUTURA deste telhado (a telha por cima não esconde a terça), senão o 1º do telhado */
+  function pontoDoClique(tid, hits) {
+    var hs = arr(hits).filter(function (h) { return h && h.object && h.object.userData && h.point && String(h.object.userData.expressID) === String(tid); });
+    var hE = hs.filter(function (h) { return /^estr-/.test(String(h.object.userData.telhadoGrupo || "")); })[0] || hs[0];
+    return hE ? [hE.point.x, hE.point.y, hE.point.z] : null;
+  }
   function textoPeca(o) { return ES().rotuloPeca(o) + " " + (o.perfil || (n2(o.w * 100, 0) + "×" + n2(o.h * 100, 0) + " cm")) + ", " + n2(o.L) + " m"; }
 
   var BimTelhadoPecaUI = {
     estado: function () { return { sub: st.sub ? { tid: st.sub.tid, pid: st.sub.pid } : null, ultimo: st.ultimo, sel: st.sel.slice() }; },
+    /* T6: a peça escolhida agora (com o telhado e o pacote atuais) — o arrasto e as alças leem daqui */
+    pecaAtual: function () {
+      if (!st.sub) return null;
+      var t = comPacote(st.sub.tid), o = t ? peca(t, st.sub.pid) : null;
+      return o ? { tid: st.sub.tid, pid: st.sub.pid, t: t, o: o } : null;
+    },
+    /* REVISOR T6: o arrasto só é da PEÇA se o clique caiu NELA — a mesma regra do clique que a escolhe (a mais perto do
+       ponto da estrutura), mais apertada: a escolhida tem de ser a mais perto E estar a ≤ 15 cm. Em outra parte do mesmo
+       telhado o arrasto é do telhado inteiro, como antes (o risco declarado da T6: arrastar em qualquer lugar movia a peça). */
+    cliqueNaPeca: function (uid, hits) {
+      var pa = this.pecaAtual(), E = ES(); if (!pa || !E || String(uid) !== "edit:" + pa.tid) return false;
+      var P = pontoDoClique(pa.tid, hits); if (!P) return false;
+      var r = E.pecaMaisPerto(pa.t, P);
+      return !!(r && r.id === pa.pid && r.d <= 0.15);
+    },
+    atualizarRealce: function () { realcar(); },
+    repintar: function () { repintar(); },
+    /* a prévia do arrasto: o realce verde mostra a peça JÁ no lugar novo (a de verdade só muda ao soltar) */
+    mostrarPeca: function (o) { var b = B(); if (b && b.realceTelhadoPeca && ES()) b.realceTelhadoPeca(o ? ES().malhaPeca(o) : null); },
     /* o clique no 3D (gancho no js/bim.js sel3Clique, ANTES da seleção): hits = os objetos sob o cursor */
     clique: function (uid, hits, selAtual) {
       var tid = tidDe(uid), t = tid ? comPacote(tid) : null;
       if (!t) { st.sub = null; st.ultimo = null; realcar(); return false; }
-      /* o ponto: o da malha da ESTRUTURA deste telhado (a telha por cima não esconde a terça), senão o 1º do telhado */
-      var hs = arr(hits).filter(function (h) { return h && h.object && h.object.userData && String(h.object.userData.expressID) === String(tid); });
-      var hE = hs.filter(function (h) { return /^estr-/.test(String(h.object.userData.telhadoGrupo || "")); })[0] || hs[0];
-      var P = hE ? [hE.point.x, hE.point.y, hE.point.z] : null;
+      var P = pontoDoClique(tid, hits);
       var sa = arr(selAtual).length ? arr(selAtual) : st.sel, jaSel = sa.length === 1 && sa[0] === uid;
       st.ultimo = P ? { tid: String(tid), p: P } : null;
       if (jaSel && P) {
         var o = escolher(tid, P);
-        if (o) { realcar(); setTimeout(function () { status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Propriedades trocam o perfil, deslocam e esticam; Tab ou Esc voltam ao telhado inteiro."); }, 0); return true; }
+        if (o) { realcar(); setTimeout(function () { avisoPeca(o); }, 0); return true; }
       }
       st.sub = null; realcar();
-      setTimeout(function () { status("Telhado inteiro selecionado. Clique de novo numa peça da estrutura (ou Tab) para editar só ela."); }, 0);
+      setTimeout(function () { var tx = "Telhado inteiro selecionado — arraste para mover o telhado. Clique de novo numa peça da estrutura (ou Tab) para mover, esticar ou apagar só ela."; status(tx); dicaTela(tx); }, 0);
       return false;
     },
     /* a seleção mudou (gancho no selAplicar): outra coisa selecionada → sai da peça */
@@ -1071,19 +1104,20 @@
     /* Tab: alterna conjunto ↔ peça (a do último clique); Esc: volta ao conjunto; Delete: apaga a peça */
     tecla: function (e) {
       var k = e.key; if (k !== "Tab" && k !== "Escape" && k !== "Delete" && k !== "Del") return false;
+      if (global.BimTelhadoPecaArr && global.BimTelhadoPecaArr.ocupado && global.BimTelhadoPecaArr.ocupado()) return false;   /* T6: no meio do arrasto o Esc cancela o arrasto, não sai da peça */
       if (e.ctrlKey || e.metaKey || e.altKey) return false;
       var tg = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(tg.tagName || "") || tg.isContentEditable) return false;
       if (global.document && global.document.getElementById("modal-bg")) return false;
       var sel = st.sel;
       if (k === "Tab") {
         if (!(sel.length === 1 && st.ultimo && sel[0] === "edit:" + st.ultimo.tid && comPacote(st.ultimo.tid))) return false;
-        if (st.sub) { st.sub = null; status("Telhado inteiro selecionado (Tab entra na peça)."); }
-        else { var o = escolher(st.ultimo.tid, st.ultimo.p, true); if (!o) return false; status("Peça: " + textoPeca(o) + ". Delete apaga só ela; Tab volta ao telhado inteiro."); }
+        if (st.sub) { st.sub = null; var t1 = "Telhado inteiro selecionado (Tab entra na peça)."; status(t1); dicaTela(t1); }
+        else { var o = escolher(st.ultimo.tid, st.ultimo.p, true); if (!o) return false; avisoPeca(o); }
         e.preventDefault(); e.stopImmediatePropagation(); realcar(); repintar(); return true;
       }
       if (!st.sub || !(sel.length === 1 && sel[0] === "edit:" + st.sub.tid)) return false;
       e.preventDefault(); e.stopImmediatePropagation();
-      if (k === "Escape") { st.sub = null; realcar(); repintar(); status("Telhado inteiro selecionado."); return true; }
+      if (k === "Escape") { st.sub = null; realcar(); repintar(); status("Telhado inteiro selecionado."); dicaTela("Telhado inteiro selecionado — arraste para mover o telhado. Tab ou 2º clique pegam uma peça."); return true; }
       this.apagar();
       return true;
     },
@@ -1101,7 +1135,8 @@
       if (!this.editar(sub.tid, sub.pid, { removida: true })) return false;
       st.sub = null; realcar();
       var t2 = comPacote(sub.tid), pr = t2 ? arr(t2.pacote.problemas).filter(function (p) { return p.peca === sub.pid; })[0] : null;
-      status(ES().rotuloPeca(o) + " apagada (só ela; Ctrl+Z desfaz)." + (pr ? " Atenção: " + pr.texto : "") + " Para trazer de volta: Propriedades do telhado › Peças editadas.");
+      var ta = ES().rotuloPeca(o) + " apagada (só ela; Ctrl+Z desfaz)." + (pr ? " Atenção: " + pr.texto : "") + " Para trazer de volta: Propriedades do telhado › Peças editadas.";
+      status(ta); dicaTela(ta);
       repintar();
       return true;
     },
@@ -1165,4 +1200,473 @@
   };
   if (typeof global.addEventListener === "function") global.addEventListener("keydown", function (e) { try { BimTelhadoPecaUI.tecla(e); } catch (eT) {} }, true);
   global.BimTelhadoPecaUI = BimTelhadoPecaUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+/* =====================================================================
+ * BimTelhadoPecaArr — T6 (20/10/2026): ARRASTAR A PEÇA DA ESTRUTURA DO TELHADO COM O MOUSE
+ * Pedido: "com a peça escolhida, arrastar ainda move o telhado inteiro; mover/esticar só pelos campos".
+ *   · com a peça escolhida (2º clique ou Tab), arrastar no 3D move SÓ ela: terça, caibro e ripa andam no PLANO DA ÁGUA
+ *     (sem sair dele); viga, pilar e as demais no plano horizontal — Shift passa para o vertical;
+ *   · snap nas pontas e no meio das outras peças e na grade da barra; Alt solta; digitar uma medida e Enter crava a
+ *     distância; cota temporária junto ao cursor; Esc cancela;
+ *   · duas ALÇAS (início e fim) esticam a peça pela ponta, com o mesmo snap;
+ *   · grava na MESMA sobreposição da T5 (desloc / ext): um arrasto = uma op = um Ctrl+Z; "Voltar ao automático" desfaz.
+ * A conta está em js/bimtelhadoestrut.js (planoArrasto, arrastoPeca, esticarAlcaPeca, camposDesloc, camposEsticar).
+ * Ganchos: js/bim.js (modo 'telpeca' do arrasto do esquerdo; BIM.raioEm e BIM.dica) e BimTelhadoPecaUI (realce).
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+  function UI() { return global.BimTelhadoPecaUI || null; }
+  function ES() { return global.BimTelhadoEstrut || null; }
+  function B() { return global.BIM || null; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function n2(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+  function sg(v, c) { var x = Number(v); return (x > 0.00049 ? "+" : "") + n2(x, c); }
+  function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+  function dica(t) { try { var b = B(); if (b && b.dica) b.dica(t); } catch (e) {} }
+  function barra() { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.cfg ? Bo.cfg("mover") : null; } catch (e) { return null; } }
+  var A = null;                                                  /* o arrasto do corpo */
+  var H = { camada: null, lista: [], raf: 0, arr: null, chave: "" };   /* as alças */
+  var K = { dig: "", tk: null };                                 /* a medida digitada */
+  var rot = null;                                                /* a cota temporária ao lado do cursor */
+
+  function metrosPorPx(P) {
+    var b = B(), q1 = b && b.telaDe ? b.telaDe(P[0], P[1], P[2]) : null, q2 = q1 ? b.telaDe(P[0] + 1, P[1], P[2]) : null, px = q1 && q2 ? Math.sqrt(Math.pow(q2.x - q1.x, 2) + Math.pow(q2.y - q1.y, 2)) : 0;
+    if (px < 1 && q1) { q2 = b.telaDe(P[0], P[1] + 1, P[2]); px = q2 ? Math.sqrt(Math.pow(q2.x - q1.x, 2) + Math.pow(q2.y - q1.y, 2)) : 0; }
+    return 1 / Math.max(px, 1);
+  }
+  function opcoes(ev, P) {
+    var c = barra() || {}, dig = K.dig ? parseFloat(String(K.dig).replace(",", ".")) : NaN;
+    return { tol: 12 * metrosPorPx(P), passo: c.grade !== false && c.passo > 0 ? c.passo : 0, snap: c.snap !== false, livre: !!(ev && ev.altKey), dig: isFinite(dig) && dig > 0 ? dig : null };
+  }
+  function mescla(a, b) { Object.keys(b).forEach(function (k) { a[k] = b[k]; }); return a; }
+  function pxRotulo() {
+    if (!rot) {
+      rot = global.document.createElement("div"); rot.className = "tpa-rot"; rot.setAttribute("data-tpa", "cota");
+      rot.style.cssText = "position:fixed;z-index:60;pointer-events:none;background:#14532d;color:#fff;font:600 12px/1.3 sans-serif;padding:3px 7px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:nowrap";
+      global.document.body.appendChild(rot);
+    }
+    return rot;
+  }
+  function rotulo(x, y, t) { var r = pxRotulo(); r.textContent = t; r.style.left = (x + 16) + "px"; r.style.top = (y + 14) + "px"; r.style.display = "block"; r.setAttribute("data-texto", t); }
+  function tirarRotulo() { if (rot) rot.style.display = "none"; }
+  var NOME_PLANO = { agua: "plano da água", horizontal: "plano horizontal", vertical: "plano vertical" };
+  function textoMover(o, plano, r) {
+    var t = ES().rotuloPeca(o) + " · " + NOME_PLANO[plano.tipo] + ": ";
+    if (K.dig) t += "⌨ " + K.dig + " m";
+    else if (plano.tipo === "agua") t += "ao longo " + sg(r.c1) + " m · na água " + sg(r.c2) + " m";
+    else if (plano.tipo === "vertical") t += "↔ " + sg(r.c1) + " m · altura " + sg(r.c2) + " m";
+    else t += "X " + sg(r.c1) + " m · Z " + sg(r.c2) + " m";
+    t += " (" + n2(r.dist) + " m)";
+    if (r.guia) t += " · " + r.guia; else if (r.grade) t += " · grade";
+    return t;
+  }
+  function teclas(on) {
+    if (!global.document) return;
+    if (!K.tk) K.tk = function (e) {
+      if (!A && !H.arr) return;
+      var k = e.key;
+      if (k === "Escape") { e.preventDefault(); e.stopPropagation(); Arr.cancelar(); return; }
+      if (k === "Enter") { e.preventDefault(); e.stopPropagation(); if (A) { Arr._calcular(); Arr.soltar(null); } else Arr._soltarAlca(); return; }
+      if (/^[0-9]$/.test(k) || k === "," || k === ".") K.dig += k;
+      else if (k === "Backspace") K.dig = K.dig.slice(0, -1);
+      else return;
+      e.preventDefault(); e.stopPropagation();
+      if (A) Arr._calcular(); else Arr._calcularAlca();
+    };
+    if (on) global.document.addEventListener("keydown", K.tk, true); else global.document.removeEventListener("keydown", K.tk, true);
+  }
+
+  var Arr = {
+    /* o arrasto do corpo está em curso (a UI não deve tratar Esc/Tab) */
+    ocupado: function () { return !!(A || H.arr); },
+    estado: function () {
+      return { arrasto: A ? { tid: A.tid, pid: A.pid, plano: A.plano.tipo, d: A.res ? A.res.d : null, guia: A.res ? A.res.guia : null } : null,
+               alcas: H.lista.map(function (a) { return { ext: a.ext, p: a.p, x: a.dom ? a.dom.style.left : null, y: a.dom ? a.dom.style.top : null }; }), alcaArrasto: H.arr ? { ext: H.arr.ext, delta: H.arr.delta } : null,
+               rotulo: rot && rot.style.display !== "none" ? rot.getAttribute("data-texto") : null };
+    },
+    /* este uid se arrasta como PEÇA? (a peça do telhado está escolhida e o uid é o do telhado dela) */
+    /* REVISOR T6: e o clique (hits = os objetos do raio do pointerdown) tem de cair NA peça; sem hits, não é arrasto da peça */
+    pode: function (uid, hits) { var u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null; return !!(pa && String(uid) === "edit:" + pa.tid && ES() && u.cliqueNaPeca && u.cliqueNaPeca(uid, hits)); },
+    iniciar: function (vista, uid, ev, hp, hits) {
+      if (A || H.arr || !this.pode(uid, hits)) return false;
+      var u = UI(), E = ES(), pa = u.pecaAtual(); if (!pa) return false;
+      var o = pa.o, plano = E.planoArrasto(o, !!(ev && ev.shiftKey)), mid = [(o.a[0] + o.b[0]) / 2, (o.a[1] + o.b[1]) / 2, (o.a[2] + o.b[2]) / 2];
+      var P0 = hp && isFinite(hp.x) ? [hp.x, hp.y, hp.z] : mid;
+      K.dig = "";
+      A = { vista: vista, tid: pa.tid, pid: pa.pid, t: pa.t, o: o, outras: arr(pa.t.pacote.pecas), plano: plano, P0: P0, vert: plano.tipo === "vertical", res: null, ev: null, raf: null };
+      teclas(true);
+      status("Movendo " + E.rotuloPeca(o) + " no " + NOME_PLANO[plano.tipo] + " — digite a medida e Enter; Alt solta o snap; Shift troca o plano; Esc cancela.");
+      return true;
+    },
+    mover: function (ev) {
+      if (!A) return false;
+      A.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey };
+      if (A.raf) return true;
+      var self = this, f = global.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); };
+      A.raf = f(function () { if (A) A.raf = null; self._calcular(); });
+      return true;
+    },
+    _calcular: function () {
+      var a = A, b = B(), E = ES(), u = UI(); if (!a || !a.ev || !b || !b.raioEm) return;
+      var vert = !!a.ev.shiftKey;
+      if (vert !== a.vert) { a.vert = vert; a.plano = E.planoArrasto(a.o, vert); }
+      var P = E.raioNoPlano(b.raioEm(a.ev.clientX, a.ev.clientY), a.P0, a.plano.n); if (!P) return;
+      var r = E.arrastoPeca(a.o, a.outras, [P[0] - a.P0[0], P[1] - a.P0[1], P[2] - a.P0[2]], a.plano, opcoes(a.ev, a.P0));
+      a.res = r;
+      try { u.mostrarPeca(E.pecaMovida(a.o, r.d)); } catch (e) {}
+      rotulo(a.ev.clientX, a.ev.clientY, textoMover(a.o, a.plano, r));
+    },
+    cancelar: function () {
+      var had = !!(A || H.arr);
+      if (A) { if (A.raf && global.cancelAnimationFrame) { try { global.cancelAnimationFrame(A.raf); } catch (e) {} } A = null; }
+      if (H.arr) { var bt = H.arr.bt; H.arr = null; if (bt) { try { bt.classList.remove("arrastando"); } catch (e) {} } }
+      K.dig = ""; teclas(false); tirarRotulo();
+      var u = UI(); if (u && u.atualizarRealce) u.atualizarRealce();
+      if (had) status("Arraste cancelado: nada mudou.");
+      return had;
+    },
+    soltar: function (ev) {
+      var a = A; if (!a) return false;
+      if (ev && ev.clientX != null) { a.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey }; this._calcular(); }
+      A = null; K.dig = ""; teclas(false); tirarRotulo();
+      var u = UI(), E = ES(), r = a.res;
+      if (!r || !(r.dist > 1e-4)) { u.atualizarRealce(); status("Nada foi movido."); return true; }
+      var campos = E.camposDesloc(a.t, a.pid, r.d, a.plano);
+      if (!campos) { u.atualizarRealce(); status("O deslocamento passa de 20 m: não gravei."); return true; }
+      var ok = u.editar(a.tid, a.pid, campos);
+      u.atualizarRealce(); u.repintar();
+      if (ok) { var tx = E.rotuloPeca(a.o) + " movida " + n2(r.dist) + " m no " + NOME_PLANO[a.plano.tipo] + (r.guia ? " (" + r.guia + ")" : "") + " — só ela; um Ctrl+Z desfaz."; status(tx); dica(tx); }
+      return true;
+    },
+
+    /* ------------------------------------------------ as ALÇAS das pontas */
+    aoMudarPeca: function () {
+      var u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null;
+      if (!pa) { this._limparAlcas(); return; }
+      var ch = pa.tid + "|" + pa.pid + "|" + pa.o.a.join(",") + "|" + pa.o.b.join(",");
+      if (H.chave === ch && H.lista.length) return;
+      this._montarAlcas(pa, ch);
+    },
+    _limparAlcas: function () {
+      H.lista = []; H.chave = ""; if (H.camada) H.camada.innerHTML = "";
+      if (H.raf && global.cancelAnimationFrame) { try { global.cancelAnimationFrame(H.raf); } catch (e) {} } H.raf = 0;
+    },
+    _css: function () {
+      var d = global.document; if (!d || d.getElementById("tpa-css")) return;
+      var s = d.createElement("style"); s.id = "tpa-css";
+      s.textContent = ".tpa-camada{position:absolute;inset:0;pointer-events:none;z-index:6}" +
+        ".tpa-alca{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--surface,#fff);background:var(--verde,#15803d);box-shadow:0 0 0 1px var(--texto,#1d2733);pointer-events:auto;cursor:grab;padding:0}" +
+        ".tpa-alca:focus-visible{outline:2px solid var(--amarelo,#d99a1e);outline-offset:2px}.tpa-alca.arrastando{cursor:grabbing;background:var(--amarelo,#d99a1e)}";
+      d.head.appendChild(s);
+    },
+    _montarAlcas: function (pa, chave) {
+      var b = B(), d = global.document; if (!b || !b.host || !b.telaDe || !d) return false;
+      var host = b.host(); if (!host) return false;
+      this._limparAlcas(); this._css();
+      if (!H.camada || H.camada.parentNode !== host) { H.camada = d.createElement("div"); H.camada.className = "tpa-camada"; H.camada.setAttribute("data-tpa", "alcas"); host.appendChild(H.camada); this._ligar(H.camada); }
+      H.chave = chave;
+      var o = pa.o, self = this;
+      [{ ext: "a", p: o.a, rot: "Início" }, { ext: "b", p: o.b, rot: "Fim" }].forEach(function (a, i) {
+        var bt = d.createElement("button"); bt.type = "button"; bt.className = "tpa-alca"; bt.setAttribute("data-tpa-alca", a.ext);
+        bt.title = a.rot + " da " + ES().rotuloPeca(o).toLowerCase() + " — arraste para esticar ou encurtar; setas: 1 cm (Shift: 5 cm). Ctrl+Z volta.";
+        bt.setAttribute("aria-label", a.rot + " da peça — alça para esticar");
+        H.camada.appendChild(bt); a.dom = bt; H.lista.push(a); void i;
+      });
+      var passo = function () { if (!H.lista.length) { H.raf = 0; return; } self._posicionar(); H.raf = global.requestAnimationFrame ? global.requestAnimationFrame(passo) : 0; };
+      passo();
+      return true;
+    },
+    _posicionar: function () {
+      var b = B(), h = b && b.host ? b.host() : null; if (!h || !h.isConnected) return;
+      var r = h.getBoundingClientRect(), vis = h.getClientRects().length > 0;
+      H.lista.forEach(function (a) {
+        if (!a.dom) return;
+        var P = H.arr && H.arr.a === a && H.arr.P ? H.arr.P : a.p, t = b.telaDe(P[0], P[1], P[2]);
+        if (!t || t.atras || !vis) { a.dom.style.display = "none"; return; }
+        a.dom.style.display = ""; a.dom.style.left = (t.x - r.left) + "px"; a.dom.style.top = (t.y - r.top) + "px";
+      });
+    },
+    _ligar: function (camada) {
+      var self = this;
+      camada.addEventListener("pointerdown", function (e) {
+        var bt = e.target.closest ? e.target.closest("[data-tpa-alca]") : null; if (!bt) return;
+        var ext = bt.getAttribute("data-tpa-alca"), u = UI(), pa = u && u.pecaAtual ? u.pecaAtual() : null, a = H.lista.filter(function (x) { return x.ext === ext; })[0];
+        if (!pa || !a || A) return;
+        e.preventDefault(); e.stopPropagation();
+        try { bt.setPointerCapture(e.pointerId); } catch (eC) {}
+        K.dig = ""; bt.classList.add("arrastando");
+        H.arr = { ext: ext, a: a, bt: bt, id: e.pointerId, tid: pa.tid, pid: pa.pid, t: pa.t, o: pa.o, outras: arr(pa.t.pacote.pecas), delta: 0, P: a.p.slice(), res: null, ev: { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey }, sinal: 1 };
+        teclas(true);
+        status("Esticando o " + (ext === "a" ? "início" : "fim") + " da " + ES().rotuloPeca(pa.o).toLowerCase() + " — digite a medida e Enter; Alt solta o snap; Esc cancela.");
+      });
+      camada.addEventListener("pointermove", function (e) {
+        var d = H.arr; if (!d || e.pointerId !== d.id) return;
+        d.ev = { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey };
+        self._calcularAlca();
+      });
+      camada.addEventListener("pointerup", function (e) { var d = H.arr; if (!d || e.pointerId !== d.id) return; d.ev = { clientX: e.clientX, clientY: e.clientY, altKey: !!e.altKey }; self._calcularAlca(); self._soltarAlca(); });
+      camada.addEventListener("pointercancel", function (e) { var d = H.arr; if (!d || e.pointerId !== d.id) return; self.cancelar(); });
+      camada.addEventListener("keydown", function (e) {
+        var bt = e.target.closest ? e.target.closest("[data-tpa-alca]") : null; if (!bt || H.arr) return;
+        var ext = bt.getAttribute("data-tpa-alca"), s = e.shiftKey ? 0.05 : 0.01, dv = (e.key === "ArrowRight" || e.key === "ArrowUp") ? s : ((e.key === "ArrowLeft" || e.key === "ArrowDown") ? -s : 0);
+        if (!dv) return;
+        e.preventDefault(); e.stopPropagation();
+        self.esticar(ext, dv);
+      });
+    },
+    _calcularAlca: function () {
+      var d = H.arr, b = B(), E = ES(); if (!d || !b || !b.raioEm) return;
+      var r = E.esticarAlcaPeca(d.o, d.outras, d.ext, b.raioEm(d.ev.clientX, d.ev.clientY), mescla(opcoes(d.ev, d.a.p), { sinal: d.sinal }));
+      if (!r) return;
+      d.res = r; d.delta = r.delta; if (r.delta) d.sinal = r.delta < 0 ? -1 : 1;
+      var ax = E.planoArrasto(d.o, false).ax, u = d.ext === "b" ? ax : [-ax[0], -ax[1], -ax[2]];
+      d.P = [d.a.p[0] + u[0] * r.delta, d.a.p[1] + u[1] * r.delta, d.a.p[2] + u[2] * r.delta];
+      try { UI().mostrarPeca(E.pecaMovida(d.o, [0, 0, 0], d.ext === "a" ? r.delta : 0, d.ext === "b" ? r.delta : 0)); } catch (e) {}
+      rotulo(d.ev.clientX, d.ev.clientY, E.rotuloPeca(d.o) + " · " + (d.ext === "a" ? "início" : "fim") + " " + (K.dig ? "⌨ " + K.dig + " m" : sg(r.delta) + " m") + " → comprimento " + n2(r.L) + " m" + (r.guia ? " · " + r.guia : ""));
+      this._posicionar();
+    },
+    _soltarAlca: function () {
+      var d = H.arr; if (!d) return false;
+      H.arr = null; try { d.bt.classList.remove("arrastando"); } catch (e) {}
+      K.dig = ""; teclas(false); tirarRotulo();
+      var u = UI(), E = ES();
+      if (!d.res || Math.abs(d.res.delta) < 0.003) { u.atualizarRealce(); this._posicionar(); return false; }
+      var r = this.esticar(d.ext, d.res.delta, true);
+      return r;
+    },
+    /* esticar a ponta `ext` em `delta` (m; + alonga): a alça, as setas do teclado e o e2e */
+    esticar: function (ext, delta, jaVisto) {
+      var u = UI(), E = ES(), pa = u && u.pecaAtual ? u.pecaAtual() : null; void jaVisto;
+      if (!pa || !E) return false;
+      var campos = E.camposEsticar(pa.t, pa.pid, ext, delta);
+      if (!campos) { status("O alongamento passa de 20 m: não gravei."); return false; }
+      var ok = u.editar(pa.tid, pa.pid, campos);
+      u.atualizarRealce(); u.repintar();
+      if (ok) { var tx = E.rotuloPeca(pa.o) + ": " + (ext === "a" ? "início" : "fim") + " " + (delta >= 0 ? "esticado " : "encurtado ") + n2(Math.abs(delta)) + " m — um Ctrl+Z desfaz."; status(tx); dica(tx); }
+      return ok;
+    }
+  };
+  global.BimTelhadoPecaArr = Arr;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+/* =====================================================================
+ * BimTelhadoCorte — T6 (20/10/2026): DESENHAR O TELHADO DENTRO DE UMA VISTA DE CORTE OU ELEVAÇÃO
+ * O modo "Por corte" da ferramenta Telhado já funcionava na planta e no 3D; na vista de corte/elevação (vista 2D vetorial
+ * do js/bim2dui.js) o clique não chegava. Agora, com a ferramenta Telhado no modo "Por corte":
+ *   1º clique = o pé da água (beiral)      → a cota é a do clique, no plano do corte
+ *   2º clique = o topo da água (cumeeira)  → a inclinação sai da linha desenhada (Δ altura ÷ vão), a cota do beiral é a real
+ *   depois, o painel na própria vista pede ONDE O TELHADO COMEÇA E TERMINA — a distância atrás do plano do corte (o lado
+ *   que o corte mostra; negativo = na frente). A extrusão é perpendicular ao plano do corte. Enter cria o telhado.
+ * Os pontos viram pontos do mundo e entram no MESMO fluxo do desenho em planta e 3D (BimP3UI._m3d.clique): a mesma op
+ * `telhado`, o mesmo fantasma no 3D, o mesmo Ctrl+Z. Snap na grade da barra de precisão; Alt solta.
+ * A geometria (quadro do corte, mundo ↔ desenho, os 4 pontos) é pura e está testada em tools/test-telhado-corte.js.
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+  function fin(v) { return typeof v === "number" && isFinite(v); }
+  function n2(v, c) { c = c == null ? 2 : c; var x = Number(v); return isFinite(x) ? x.toFixed(c).replace(".", ",") : "—"; }
+  function r4(v) { return Math.round(v * 10000) / 10000; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+
+  /* ---------------- PURO: o quadro do corte (a mesma conta do BIM.vista2d / BimInstCon) */
+  function quadroCorte(def) {
+    if (!def || def.tipo === "planta") return null;
+    var d = def.corte || def, ax = +d.ax, az = +d.az, dx = (+d.bx) - ax, dz = (+d.bz) - az, L = Math.sqrt(dx * dx + dz * dz);
+    if (!(L > 0.05)) return null;
+    var nx = dz / L, nz = -dx / L; if (d.inv) { nx = -nx; nz = -nz; }
+    return { ax: ax, az: az, nx: nx, nz: nz, ux: -nz, uz: nx, prof: +d.prof > 0 ? +d.prof : null };
+  }
+  /* o ponto do desenho q = {x: ao longo do corte, y: −altura} → o mundo, a t m ATRÁS do plano do corte (t < 0: na frente) */
+  function mundoDoCorte(def, q, t) {
+    var Q = quadroCorte(def); if (!Q || !q) return null; t = +t || 0;
+    return { x: r4(Q.ax + q.x * Q.ux + Q.nx * t), y: r4(-q.y), z: r4(Q.az + q.x * Q.uz + Q.nz * t) };
+  }
+  function desenhoDoCorte(def, P) {
+    var Q = quadroCorte(def); if (!Q || !P) return null;
+    return { x: r4((P.x - Q.ax) * Q.ux + (P.z - Q.az) * Q.uz), y: r4(-P.y) };
+  }
+  function profundidadeNoCorte(def, P) { var Q = quadroCorte(def); return Q && P ? r4((P.x - Q.ax) * Q.nx + (P.z - Q.az) * Q.nz) : null; }
+  /* os 4 pontos do desenho "Por corte" (perfil: beiral, cumeeira; começo, fim) a partir de dois pontos do mundo no plano do
+     corte e das distâncias t0/t1 atrás dele. Os pontos do começo/fim levam a cota do beiral (só a posição conta). */
+  function pontosDoCorte(def, a, b, t0, t1) {
+    var Q = quadroCorte(def); if (!Q || !a || !b) return null;
+    function Pd(t) { return { x: r4(a.x + Q.nx * t), y: a.y, z: r4(a.z + Q.nz * t) }; }
+    return [{ x: a.x, y: a.y, z: a.z }, { x: b.x, y: b.y, z: b.z }, Pd(+t0 || 0), Pd(+t1 || 0)];
+  }
+  function perfilDoCorte(def, qa, qb) {
+    var a = mundoDoCorte(def, qa, 0), b = mundoDoCorte(def, qb, 0); if (!a || !b) return null;
+    var vao = Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.z - a.z, 2)), dy = b.y - a.y;
+    return { a: a, b: b, vao: r4(vao), dy: r4(dy), inclinacao: vao > 1e-6 ? r4(Math.abs(dy) / vao * 100) : null, cotaBeiral: r4(Math.min(a.y, b.y)), cotaCumeeira: r4(Math.max(a.y, b.y)) };
+  }
+
+  var S = null;                                  /* { id, def, qa, qb, w:[], painel, ini, fim } */
+  var NS = "http://www.w3.org/2000/svg";
+  function P3() { return global.BimP3UI || null; }
+  function M3() { var p = P3(); return p && p._m3d ? p._m3d : null; }
+  function D2() { return global.Bim2D || null; }
+  function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+  function dica(t) { try { var b = global.BIM; if (b && b.dica) b.dica(t); } catch (e) {} }
+  function cache(id) { var D = D2(); return D && D._cache ? D._cache[id] : null; }
+  function modoCorte() { var p = P3(); try { return !!p && p.cfg("telhado").modo === "corte"; } catch (e) { return false; } }
+  function precisao() { try { var Bo = global.BimBarraOpcoes; return Bo && Bo.cfg ? Bo.cfg("telhado") : null; } catch (e) { return null; } }
+  /* o ponto do clique/cursor na grade da barra (Alt solta) */
+  function grade(p, ev) {
+    var c = precisao() || {}, passo = c.snap !== false && c.grade !== false && c.passo > 0 ? c.passo : 0;
+    if (!passo || (ev && ev.altKey)) return { x: p[0], y: p[1] };
+    return { x: r4(Math.round(p[0] / passo) * passo), y: r4(Math.round(p[1] / passo) * passo) };
+  }
+  function sincronizado() {
+    /* o desenho do telhado no 3D foi zerado por fora (trocou de ferramenta, Esc, concluiu): esquece o do corte */
+    var m = M3(), e = m && m.estado ? m.estado() : null;
+    if (S && e && arr(e.pts).length !== S.w.length) { S = null; }
+  }
+  function camada(id) {
+    var c = cache(id); if (!c || !c.svg) return null;
+    var g = c.svg.querySelector("g.tcp-prev");
+    if (!g) { g = global.document.createElementNS(NS, "g"); g.setAttribute("class", "tcp-prev"); g.setAttribute("pointer-events", "none"); }
+    if (g.parentNode !== c.svg || c.svg.lastChild !== g) c.svg.appendChild(g);
+    while (g.firstChild) g.removeChild(g.firstChild);
+    return g;
+  }
+  function limparCamada(id) { var c = cache(id), g = c && c.svg ? c.svg.querySelector("g.tcp-prev") : null; if (g && g.parentNode) g.parentNode.removeChild(g); rotuloTela(id, null, null); }
+  function el(g, tag, at) { var e = global.document.createElementNS(NS, tag); Object.keys(at).forEach(function (k) { e.setAttribute(k, at[k]); }); e.setAttribute("vector-effect", "non-scaling-stroke"); g.appendChild(e); return e; }
+  /* REVISOR T6: a cota temporária é a MESMA caixa das outras da vista (.pm-rot, css/bimbarraopcoes.css) junto ao cursor.
+     Era um <text> do SVG: o letter-spacing do body (0,1 px) vale em unidades do desenho (m) dentro do SVG e abria
+     "3 0 , 0 %" (print t6-6). */
+  function rotuloTela(id, ev, t) {
+    var c = cache(id); if (!c || !c.tela || !global.document) return;
+    var e = c.tela.querySelector(".tcp-rot");
+    if (!e) { e = global.document.createElement("div"); e.className = "tcp-rot"; e.setAttribute("data-tcp", "rotulo"); e.setAttribute("aria-live", "off"); c.tela.appendChild(e); }
+    if (!t || !ev || !fin(ev.clientX)) { e.style.display = "none"; return; }
+    var rc = c.tela.getBoundingClientRect();
+    e.textContent = t; e.style.display = ""; e.style.left = (ev.clientX - rc.left + 16) + "px"; e.style.top = (ev.clientY - rc.top + 14) + "px";
+  }
+  /* o elástico: o perfil já clicado + a linha até o cursor; a inclinação e a cota vão na caixa junto ao cursor */
+  function desenharPrev(id, cursor, ev) {
+    var c = cache(id), g = c ? camada(id) : null; if (!g) return;
+    var txt = null;
+    var vb = c.vb || { w: 10 }, r = vb.w / 160;
+    if (S && S.qa) {
+      el(g, "circle", { cx: S.qa.x, cy: S.qa.y, r: r, fill: "#2fbf71", stroke: "#14532d", "stroke-width": "1.5" });
+      var fim = S.qb || cursor;
+      if (fim) {
+        el(g, "line", { x1: S.qa.x, y1: S.qa.y, x2: fim.x, y2: fim.y, stroke: "#2fbf71", "stroke-width": "2.5", "stroke-dasharray": S.qb ? "" : "6 4" });
+        var pf = perfilDoCorte(S.def, S.qa, fim);
+        if (pf && pf.vao > 0.01 && !S.qb) txt = n2(pf.inclinacao, 1) + " % · vão " + n2(pf.vao) + " m · Δ " + n2(Math.abs(pf.dy)) + " m";
+      }
+      if (S.qb) el(g, "circle", { cx: S.qb.x, cy: S.qb.y, r: r, fill: "#fff", stroke: "#14532d", "stroke-width": "1.5" });
+    }
+    if (cursor && !S.qb) {
+      el(g, "circle", { cx: cursor.x, cy: cursor.y, r: r * 0.8, fill: "none", stroke: "#14532d", "stroke-width": "1.5" });
+      if (!S.qa) txt = "cota " + n2(-cursor.y) + " m";
+    }
+    rotuloTela(id, ev, txt);
+  }
+
+  var Corte = {
+    puro: { quadroCorte: quadroCorte, mundoDoCorte: mundoDoCorte, desenhoDoCorte: desenhoDoCorte, profundidadeNoCorte: profundidadeNoCorte, pontosDoCorte: pontosDoCorte, perfilDoCorte: perfilDoCorte },
+    estado: function () { sincronizado(); return S ? { id: S.id, etapa: S.qb ? 2 : (S.qa ? 1 : 0), qa: S.qa, qb: S.qb, ini: S.ini, fim: S.fim, painel: !!(S.painel && S.painel.isConnected) } : null; },
+    /* o clique do corte/elevação (js/bimplantamodelar.js clique2d, com a ferramenta Telhado armada): true = foi tratado aqui */
+    cliqueCorte: function (id, ev, p) {
+      var D = D2(), def = D && D.def ? D.def(id) : null, m = M3();
+      if (!def || def.tipo === "planta" || !p || !global.document) return false;
+      /* REVISOR T6: nunca em silêncio — na vista de corte/elevação o Telhado só se desenha "Por corte" e precisa do 3D montado */
+      if (!modoCorte()) { var t1 = "Na vista de corte/elevação o telhado se desenha no modo \"Por corte\": troque em Desenho, na barra do Telhado (ou desenhe na planta/3D)."; dica(t1); status(t1); return true; }
+      if (!m || !m.clique || !m.estado || !quadroCorte(def)) { var t2 = "O telhado por corte precisa do 3D aberto: abra a aba {3D} uma vez e volte a este corte."; dica(t2); status(t2); return true; }
+      sincronizado();
+      if (S && S.id !== id) this.cancelar();
+      if (S && S.qb) { this._piscar(); return true; }          /* o painel está aberto: confirme ou cancele */
+      var q = grade(p, ev), w = mundoDoCorte(def, q, 0); if (!w) return false;
+      if (!S) { m.cancelar(); S = { id: id, def: def, qa: null, qb: null, w: [], ini: 0, fim: null }; }
+      if (S.qa) {
+        var pf = perfilDoCorte(def, S.qa, q);
+        if (!pf || !(pf.vao > 0.3)) { dica("Vão curto demais na horizontal (mínimo 0,30 m): clique a cumeeira mais longe do beiral."); status("Vão curto demais: mínimo 0,30 m."); return true; }
+        if (!(Math.abs(pf.dy) > 0.01)) { dica("Os dois pontos estão na mesma cota: o telhado precisa de inclinação. Clique a cumeeira mais alto."); return true; }
+      }
+      var nAntes = arr((m.estado() || {}).pts).length;
+      try { m.clique("telhado", { _corte: true, shiftKey: !!(ev && ev.shiftKey), altKey: !!(ev && ev.altKey), clientX: ev && ev.clientX, clientY: ev && ev.clientY }, null, w); } catch (eC) { void eC; }
+      /* REVISOR T6: o desenho do 3D não aceitou o ponto (3D sem cena, ferramenta trocada) → avisa e recomeça, nunca silencioso */
+      if (arr((m.estado() || {}).pts).length !== nAntes + 1) { this.cancelar(); var t3 = "O 3D não aceitou o ponto do corte: abra a aba {3D} uma vez (com a ferramenta Telhado) e desenhe de novo no corte."; dica(t3); status(t3); return true; }
+      if (!S.qa) {
+        S.qa = q; S.w.push(w);
+        dica("Telhado por corte: agora clique o TOPO da água (cumeeira) — a inclinação sai da linha."); status("Beiral na cota " + n2(w.y) + " m. Agora a cumeeira.");
+      } else {
+        S.qb = q; S.w.push(w);
+        this._painel();
+        var pf2 = perfilDoCorte(def, S.qa, q);
+        dica("Perfil: " + n2(pf2.inclinacao, 1) + " %, beiral na cota " + n2(pf2.cotaBeiral) + " m. Informe onde o telhado começa e termina e confirme (Enter).");
+        status("Perfil pronto: " + n2(pf2.inclinacao, 1) + " %. Informe o começo e o fim do telhado (distância atrás do plano do corte).");
+      }
+      desenharPrev(id, null);
+      return true;
+    },
+    moverCorte: function (id, ev, p) {
+      var D = D2(), def = D && D.def ? D.def(id) : null;
+      if (!def || def.tipo === "planta" || !p || !modoCorte() || !global.document) return false;
+      sincronizado();
+      if (S && S.id !== id) return false;
+      if (!S) S = { id: id, def: def, qa: null, qb: null, w: [], ini: 0, fim: null };
+      var q = grade(p, ev);
+      desenharPrev(id, S.qb ? null : q, ev);
+      return true;
+    },
+    cancelar: function () {
+      var id = S && S.id, m = M3();
+      if (S && S.painel && S.painel.parentNode) S.painel.parentNode.removeChild(S.painel);
+      S = null; if (m) m.cancelar(); if (id) limparCamada(id);
+      return !!id;
+    },
+    _piscar: function () { var p = S && S.painel; if (p) { try { p.querySelector("[data-tcp=ini]").focus(); } catch (e) {} } },
+    /* o painel do começo/fim, dentro da própria vista */
+    _painel: function () {
+      var c = cache(S.id), self = this; if (!c || !c.tela) return;
+      var pf = perfilDoCorte(S.def, S.qa, S.qb), Q = quadroCorte(S.def), cfg = P3() ? P3().cfg("telhado") : {};
+      S.fim = fin(cfg.comp) && cfg.comp > 0 ? cfg.comp : (Q && Q.prof ? Q.prof : 5);
+      S.ini = 0;
+      var box = global.document.createElement("div"); box.className = "tcp-painel"; box.setAttribute("data-tcp", "painel"); box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Telhado por corte: começo e fim");
+      box.style.cssText = "position:absolute;right:12px;top:12px;z-index:8;background:var(--surface,#fff);color:var(--texto,#1d2733);border:2px solid #14532d;border-radius:8px;padding:10px 12px;font:13px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.28);max-width:330px";
+      box.innerHTML = '<div style="font-weight:700;margin-bottom:4px">Telhado por corte</div>' +
+        '<div data-tcp="resumo" style="font-size:12px;margin-bottom:6px"></div>' +
+        '<label style="display:flex;justify-content:space-between;gap:8px;margin:3px 0">Começa a <input data-tcp="ini" inputmode="decimal" autocomplete="off" style="width:5.5em" aria-label="Começa a quantos metros atrás do plano do corte"> m</label>' +
+        '<label style="display:flex;justify-content:space-between;gap:8px;margin:3px 0">Termina a <input data-tcp="fim" inputmode="decimal" autocomplete="off" style="width:5.5em" aria-label="Termina a quantos metros atrás do plano do corte"> m</label>' +
+        '<div style="font-size:11px;color:var(--texto-fraco,#555);margin:4px 0 6px">Distâncias atrás do plano do corte (o lado que a vista mostra); negativo = na frente. O telhado se estende perpendicular ao corte.</div>' +
+        '<div style="display:flex;gap:6px"><button type="button" class="btn sm" data-tcp="ok">Criar telhado (Enter)</button><button type="button" class="btn sm" data-tcp="cancelar">Cancelar (Esc)</button></div>';
+      c.tela.appendChild(box); S.painel = box;
+      var ri = box.querySelector("[data-tcp=resumo]");
+      ri.textContent = n2(pf.inclinacao, 1) + " %  ·  beiral na cota " + n2(pf.cotaBeiral) + " m  ·  cumeeira na cota " + n2(pf.cotaCumeeira) + " m  ·  vão " + n2(pf.vao) + " m";
+      var iIni = box.querySelector("[data-tcp=ini]"), iFim = box.querySelector("[data-tcp=fim]");
+      iIni.value = n2(S.ini); iFim.value = n2(S.fim);
+      ["pointerdown", "mousedown", "click", "dblclick", "wheel"].forEach(function (k) { box.addEventListener(k, function (e) { e.stopPropagation(); }); });
+      box.addEventListener("keydown", function (e) {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); self.confirmar(); }
+        else if (e.key === "Escape") { e.preventDefault(); self.cancelar(); status("Telhado por corte cancelado."); }
+      });
+      function ler() { var a = parseFloat(String(iIni.value).replace(",", ".")), b = parseFloat(String(iFim.value).replace(",", ".")); S.ini = isFinite(a) ? a : S.ini; S.fim = isFinite(b) ? b : S.fim; self._previa3d(); }
+      iIni.addEventListener("input", ler); iFim.addEventListener("input", ler);
+      box.querySelector("[data-tcp=ok]").addEventListener("click", function () { self.confirmar(); });
+      box.querySelector("[data-tcp=cancelar]").addEventListener("click", function () { self.cancelar(); status("Telhado por corte cancelado."); });
+      this._previa3d();
+      setTimeout(function () { try { iFim.focus(); iFim.select(); } catch (e) {} }, 0);
+    },
+    _pontos: function () { return S && S.qb ? pontosDoCorte(S.def, S.w[0], S.w[1], S.ini, S.fim) : null; },
+    _previa3d: function () {
+      var m = M3(), L = this._pontos(); if (!m || !L || !m.previaPontos) return;
+      m.previaPontos(L);
+    },
+    /* Enter / Criar telhado: os dois pontos que faltam entram no desenho (o 4º conclui a op) */
+    confirmar: function () {
+      sincronizado(); var m = M3(), L = this._pontos(); if (!S || !S.qb || !m || !L) return false;
+      if (!(Math.abs(S.fim - S.ini) > 0.3)) { dica("O começo e o fim estão perto demais (mínimo 0,30 m)."); status("O começo e o fim estão perto demais: mínimo 0,30 m."); return true; }
+      var id = S.id, box = S.painel;
+      m.clique("telhado", { _corte: true }, null, L[2]);
+      m.clique("telhado", { _corte: true }, null, L[3]);
+      if (box && box.parentNode) box.parentNode.removeChild(box);
+      S = null; limparCamada(id);
+      return true;
+    }
+  };
+  global.BimTelhadoCorte = Corte;
+  if (global.document && global.document.addEventListener) global.document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && S && !(e.target && e.target.closest && e.target.closest("[data-tcp=painel]"))) { Corte.cancelar(); status("Telhado por corte cancelado."); }
+  }, true);
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

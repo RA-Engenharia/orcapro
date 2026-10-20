@@ -312,6 +312,25 @@
     return p;
   }
 
+  /* ================================================================ PILHA (união de canto, 20/10/2026)
+   * Paredes EMPILHADAS na mesma linha (mureta, viga, parede alta: base e topo diferentes, MESMO eixo) são UMA frente
+   * para o canto. Roteiro do defeito (print do caixote, 1.2.163): a frente em 3 peças foi girada/arrastada; só a peça
+   * clicada andou ou as laterais não acompanharam, e os cantos ficaram abertos. Aqui: quem tem o eixo coincidente
+   * (pontas a 2 cm, em qualquer ordem) anda junto. → [{ id, inv }] (inv: a ponta "a" de uma é a "b" da outra). */
+  var TOL_PILHA = 0.02;
+  function pilhaDe(estado, id) {
+    var caixas = arr(estado && estado.caixas), alvo = null, out = [];
+    caixas.forEach(function (c) { if (c && String(c.id) === String(id)) alvo = pecaDe(c); });
+    if (!alvo || alvo.k !== "parede") return out;
+    caixas.forEach(function (c) {
+      if (!c || String(c.id) === String(id) || c.fixo) return;
+      var q = pecaDe(c); if (!q || q.k !== "parede") return;
+      if (dist(q.a, alvo.a) <= TOL_PILHA && dist(q.b, alvo.b) <= TOL_PILHA) out.push({ id: q.id, inv: false });
+      else if (dist(q.a, alvo.b) <= TOL_PILHA && dist(q.b, alvo.a) <= TOL_PILHA) out.push({ id: q.id, inv: true });
+    });
+    return out;
+  }
+
   /* ================================================================ PREPARAR
    * A topologia de ANTES, uma vez por arraste (a prévia chama `propagar` a
    * cada movimento do mouse e não refaz o n² das ligações). */
@@ -368,14 +387,33 @@
     var porId = prep.porId, pecas = prep.pecas, L = prep.L;
     var nomeDe = typeof o.nome === "function" ? o.nome : nomePadrao;
     /* ---- 1. o elemento movido, já transformado */
-    var novos = {}, arrastada = {}, ordemNovos = [], Tmov = {};
+    var novos = {}, arrastada = {}, ordemNovos = [], Tmov = {}, extras = [];
     function novo(id, c, T) { if (!c) return; c.id = porId[id].id; novos[id] = c; ordemNovos.push(id); if (T) Tmov[id] = T; }
-    if (op.op === "transformar" && !op.copia && op.T && op.T.tipo === "mover" && P.validaT(op.T) && Array.isArray(op.ids)) {
-      op.ids.forEach(function (id0) { var id = String(id0), c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, op.T), [op.T.dx, 0, op.T.dz]); });
+    /* a PILHA (paredes empilhadas na mesma linha) anda junto: a mesma transformação, uma op a mais no lote */
+    function pilhaAnda(idsFonte, T) {
+      var ja = {}; idsFonte.forEach(function (x) { ja[String(x)] = 1; });
+      var mais = [];
+      idsFonte.forEach(function (x) { pilhaDe(estado, x).forEach(function (m) { if (!ja[m.id] && !novos[m.id]) { ja[m.id] = 1; mais.push(m.id); } }); });
+      mais.forEach(function (id) { var c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, T), T.tipo === "mover" ? [T.dx, 0, T.dz] : null); });
+      var feitos = mais.filter(function (id) { return !!novos[id]; });
+      if (feitos.length) { extras.push({ op: "transformar", ids: feitos, T: T, copia: false }); res.empilhadas = (res.empilhadas || []).concat(feitos); }
+    }
+    if (op.op === "transformar" && !op.copia && op.T && (op.T.tipo === "mover" || op.T.tipo === "girar") && P.validaT(op.T) && Array.isArray(op.ids)) {
+      op.ids.forEach(function (id0) { var id = String(id0), c = porId[id]; if (c && !c.fixo) novo(id, P.transformarEl("caixa", c, op.T), op.T.tipo === "mover" ? [op.T.dx, 0, op.T.dz] : null); });
+      pilhaAnda(op.ids.map(String).filter(function (id) { return !!novos[id]; }), op.T);
     } else if (op.op === "mover" && porId[String(op.id)] && fin(op.cx) && fin(op.cz)) {
-      var cm = porId[String(op.id)]; if (!cm.fixo && cm.cx != null) { var Tm = { tipo: "mover", dx: op.cx - num(cm.cx, 0), dz: op.cz - num(cm.cz, 0) }; novo(String(op.id), P.transformarEl("caixa", cm, Tm), [Tm.dx, 0, Tm.dz]); }
+      var cm = porId[String(op.id)]; if (!cm.fixo && cm.cx != null) { var Tm = { tipo: "mover", dx: op.cx - num(cm.cx, 0), dz: op.cz - num(cm.cz, 0) }; novo(String(op.id), P.transformarEl("caixa", cm, Tm), [Tm.dx, 0, Tm.dz]); pilhaAnda([String(op.id)], Tm); }
     } else if (op.op === "esticar" && porId[String(op.id)] && (op.ponta === "a" || op.ponta === "b")) {
-      var ce = porId[String(op.id)]; if (!ce.fixo) { novo(String(op.id), P.esticarCaixa(ce, op.ponta, { x: op.x, z: op.z })); arrastada[String(op.id)] = op.ponta; }
+      var ce = porId[String(op.id)];
+      if (!ce.fixo) {
+        novo(String(op.id), P.esticarCaixa(ce, op.ponta, { x: op.x, z: op.z })); arrastada[String(op.id)] = op.ponta;
+        pilhaDe(estado, op.id).forEach(function (m) {
+          var cp = porId[m.id], kp = m.inv ? outra(op.ponta) : op.ponta; if (!cp || cp.fixo) return;
+          var cn = P.esticarCaixa(cp, kp, { x: op.x, z: op.z }); if (!cn) return;
+          novo(m.id, cn); arrastada[m.id] = kp; (res.empilhadas = res.empilhadas || []).push(m.id);
+          extras.push({ op: "esticar", id: cp.id, ponta: kp, x: op.x, z: op.z });
+        });
+      }
     } else if (op.op === "metalAjustar" && porId[String(op.id)] && op.caixa) {
       novo(String(op.id), clone(op.caixa));
     } else if (op.op === "elevar" || (op.op === "lote" && op.origem === "elevar" && Array.isArray(op.ops))) {
@@ -446,6 +484,7 @@
       });
     }
 
+    extras.forEach(function (x) { res.ajustes.push(x); });   /* a pilha primeiro: o lote reproduz a ordem */
     /* ---- 3. as linhas novas e (fora da prévia) as ops de ajuste: o movido primeiro, depois quem acompanhou */
     var ordem = ordemNovos.concat(Object.keys(pontas).filter(function (id) { return !novos[id]; }));
     var MC = Cri();
@@ -618,8 +657,10 @@
   }
   function fechar(res) {
     var n = res.acompanharam.length + res.fundacoes.length;
+    var emp = res.empilhadas && res.empilhadas.length ? res.empilhadas.length + (res.empilhadas.length === 1 ? " parede empilhada junto" : " paredes empilhadas juntas") : "";
     res.resumo = n === 0 ? (res.avisos.length ? "Nenhuma peça acompanhou" : "") : (n === 1 ? "1 peça acompanhou" : n + " peças acompanharam");
     /* a parte do movimento AO LONGO da peça que o canto segurou: sem dizer, a pessoa não entende por que ela não deslizou */
+    if (emp) res.resumo += (res.resumo ? " · " : "") + emp;
     if (res.presas) res.resumo += (res.resumo ? " · " : "") + res.presas + (res.presas === 1 ? " ponta presa no canto (Alt: solta)" : " pontas presas nos cantos (Alt: solta)");
     if (res.avisos.length) res.resumo += (res.resumo ? " · " : "") + res.avisos.length + (res.avisos.length === 1 ? " aviso" : " avisos");
     return res;
@@ -703,6 +744,7 @@
       var l = Array.isArray(estadoOuPecas) ? estadoOuPecas : arr(estadoOuPecas && estadoOuPecas.caixas).map(pecaDe).filter(Boolean);
       return ligacoes(l);
     },
+    pilhaDe: pilhaDe, TOL_PILHA: TOL_PILHA,
     preparar: preparar, propagar: propagar, novaPonta: novaPonta, interLinhas: interLinhas, presasEm: presasEm,
     assinatura: assinatura, ligacoesDesenhadas: ligacoesDesenhadas,
     aplicarOp: aplicarOp, validaOp: validaOp, opPonta: opPonta, solto: solto, registrar: registrar

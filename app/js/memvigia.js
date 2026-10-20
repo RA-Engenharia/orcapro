@@ -19,6 +19,9 @@
 (function (global) {
   "use strict";
   var CHAVE_RECARGA = "orcapro:memvigia:recarga";
+  function msgSegura(m) {
+    return String(m || "").replace(/[^\s@]+@[^\s@]+/g, "<email>").replace(/[A-Za-z0-9_\-]{20,}/g, "<id>").slice(0, 80);
+  }
   var V = {
     INTERVALO_MS: 20000,
     FRACAO_RECARREGAR: 0.45,
@@ -33,6 +36,10 @@
       return { usadoMB: Math.round(pm.usedJSHeapSize / 1048576), totalMB: Math.round(pm.totalJSHeapSize / 1048576), limiteMB: Math.round(pm.jsHeapSizeLimit / 1048576) };
     },
     /* contadores BARATOS (nada que percorra a cena ou serialize lista grande) */
+    /* ⚠ nuvemUltMsgs (20/10/2026): o `code` sozinho não separa as recusas — o Firestore diz invalid-argument para lista
+       dentro de lista E para documento grande demais, e só o texto diz qual. Vão os 80 primeiros caracteres da mensagem
+       (a do SDK fala de campo e documento, nunca do valor), com e-mail e identificador longo trocados por marcas — o
+       registro é diagnóstico, não pode levar dado de cliente. */
     contadores: function () {
       var c = {}, d = global.document;
       try { c.tela = global.App ? String(global.App.view || "") : ""; } catch (e) {}
@@ -43,7 +50,7 @@
         var esp = global.Store && global.Store._d && global.Store._d.esp;
         if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
       } catch (e) {}
-      try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
+      try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); c.nuvemUltMsgs = (N._falhas || []).slice(-4).map(function (f) { return msgSegura(f.msg); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
       try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
       try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
       return c;

@@ -87,11 +87,11 @@
 .pm-seta:hover path { stroke: var(--d2-papel); }
 
 /* comprimento · ângulo junto ao cursor, e a caixa de digitar */
-.pm-rot, .pm-dig {
+.pm-rot, .tcp-rot, .pm-dig {
   position: absolute; z-index: 7; padding: 2px 6px; border: 1px solid var(--d2-sel); border-radius: 3px;
   background: var(--d2-papel); color: var(--d2-tinta); font-size: var(--t-micro); font-variant-numeric: tabular-nums; white-space: nowrap;
 }
-.pm-rot { pointer-events: none; }
+.pm-rot, .tcp-rot { pointer-events: none; }
 .pm-dig { display: none; align-items: center; gap: 8px; }
 .pm-dig label { display: inline-flex; align-items: center; gap: 4px; }
 .pm-dig input { width: 5em; height: 22px; padding: 0 4px; border: 1px solid var(--d2-fraco); border-radius: 3px; background: var(--d2-papel); color: var(--d2-tinta); font-size: var(--t-micro); }

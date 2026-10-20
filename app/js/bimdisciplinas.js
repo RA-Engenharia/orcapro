@@ -120,7 +120,7 @@
   /* ARQUITETURA & CIVIL */
   def("civil", [
     "parede", "porta", "janela", "cobertura", "tipos-parede", "modelar-ia", "forro", "escada", "escada-u", "rampa",
-    "telhado-borda", "telhado-unir", "juntas-parede",
+    "telhado-borda", "telhado-unir", "juntas-parede", "fechar-cantos",
     "ambiente", "separador-ambiente", "identificador-ambiente", "esquema-cores", "ambientes-3d",
     /* alvenaria */
     "familia-bloco", "modular", "junta", "paginar-alvenaria", "elevacoes", "blocok", "conferir-modulacao", "peso-alvenaria",

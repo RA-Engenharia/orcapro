@@ -463,6 +463,8 @@
       /* TUBO NO CORTE (17/10/2026, js/biminstui.js cliqueCorte): no corte e na elevação o tubo se desenha também —
          subida, descida, inclinado e mudança de cota no plano do corte */
       if (sub === "inst" && global.BimInstUI && global.BimInstUI.cliqueCorte && global.BimInstUI.cliqueCorte(id, ev, p)) return true;
+      /* T6 (js/bimp3ui.js BimTelhadoCorte): o telhado "Por corte" se desenha DENTRO da vista de corte/elevação (perfil beiral → cumeeira, começo e fim) */
+      if (sub === "telhado" && global.BimTelhadoCorte && global.BimTelhadoCorte.cliqueCorte && global.BimTelhadoCorte.cliqueCorte(id, ev, p)) return true;
       var d = this._def(id); if (!d) return false;   /* corte/elevação: a modelagem é na planta */
       /* as setas da porta: virar a folha da peça já colocada */
       var seta = ev && ev.target && ev.target.closest ? ev.target.closest("[data-pm-virar]") : null;
@@ -501,6 +503,7 @@
       var sub = this.ativo() ? this.ferramenta() : null;
       /* FLUIDEZ: TUBO NO CORTE — a prévia elástica do traço (js/biminstui.js moverCorte) */
       if (sub === "inst" && !this._def(id) && global.BimInstUI && global.BimInstUI.moverCorte && global.BimInstUI.moverCorte(id, ev, p)) return;
+      if (sub === "telhado" && !this._def(id) && global.BimTelhadoCorte && global.BimTelhadoCorte.moverCorte && global.BimTelhadoCorte.moverCorte(id, ev, p)) return;   /* T6: o elástico do perfil no corte */
       if (!sub || !this._def(id)) { if (c.el.hasAttribute("data-pm-ferr")) { c.el.removeAttribute("data-pm-ferr"); this._limparCamada(id); } return; }
       c.el.setAttribute("data-pm-ferr", sub);
       if (!p) return;

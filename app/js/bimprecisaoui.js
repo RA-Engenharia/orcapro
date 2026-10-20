@@ -47,6 +47,8 @@
   /* os passos que têm PONTO BASE (o ortogonal/incrementos da barra de baixo valem neles) */
   var PASSO_TRACO = { destino: 1, eixo2: 1, p2: 1, ref: 1, final: 1 };
   /* P4: os passos que pedem a PEÇA ou a LINHA clicada (não só um ponto do plano) */
+  /* UNIÃO DE CANTO: dos passos P4, os que valem com a PEÇA clicada (a planta também) */
+  var PASSO_PECA = { pecaA: 1, pecaB: 1, alvoV: 1, alvoD: 1, pontoDiv: 1, pecaF: 1 };
   var P4 = { linhaRef: 1, linhaAlvo: 1, alvoD: 1, pecaA: 1, pecaB: 1, alvoV: 1, pontoDiv: 1, pecaF: 1, fonte: 1, pS1: 1, pS2: 1, alvoT: 1, baseE: 1, canto: 1, pecaU1: 1, pecaU2: 1, face: 1 };
   var DICA = {
     sel: "Clique no elemento criado no OrçaPRO (Ctrl soma outro; Enter segue).",
@@ -184,6 +186,17 @@
         api.op(g.op);
         if (V) V.falar(g.res, (msg || "") + (g.sozinho ? " (Alt: só esta peça)" : ""), hint); else if (msg) hint(msg + " (Ctrl+Z desfaz).");
         return g.res;
+      }
+      /* UNIÃO DE CANTO (20/10/2026, js/bimfechar.js): a ponta que ficou solta a até max(meia espessura da outra + 1 cm, o raio do snap)
+         de outra ponta, da face ou do eixo de outra parede encaixa no encontro dos eixos (L) ou na face (T). Alt = só como soltou;
+         parede com "Unir nos cantos = Não", par desunido e ponta desligada não encaixam (o motor respeita). → { x, z, nota } */
+      function encaixarPonta(id, ponta, p, ev) {
+        var F = global.BimFechar;
+        if (!F || !F.encaixar || typeof ponta !== "string" || (ev && ev.altKey)) return { x: p.x, z: p.z, nota: "" };
+        var raio = 0.15; try { if (ev && isFinite(ev.clientX)) raio = tolM(ev); } catch (eR) {}
+        var r = null; try { r = F.encaixar(estado(), id, ponta, { x: p.x, z: p.z }, { raio: raio }); } catch (eE) { r = null; }
+        if (!r) return { x: p.x, z: p.z, nota: "" };
+        return { x: r.x, z: r.z, nota: r.dist > 0.002 ? " — encaixou no canto (" + (r.tipo === "T" ? "face da outra parede" : "encontro dos eixos") + ")" : "" };
       }
       /* a prévia das que acompanham: linhas laranja (parede = contorno em planta; barra = a linha 3D) */
       function previaVinc(st, op, e, excluir) {
@@ -593,7 +606,8 @@
         try { a.b.releasePointerCapture(e.pointerId); } catch (eR) {}
         api.marcaEsconder();
         if (!a.p || (Math.abs(a.p.x - a.p0.x) < 1e-6 && Math.abs(a.p.z - a.p0.z) < 1e-6)) { if (VUI()) VUI().soltar(); posicionar(); return; }   /* soltou sem arrastar */
-        gravarOp({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(a.p.x * 10000) / 10000, z: Math.round(a.p.z * 10000) / 10000 }, "Esticado", e);
+        var enc = encaixarPonta(a.id, a.k, a.p, e);
+        gravarOp({ op: "esticar", id: a.id, ponta: a.k, x: Math.round(enc.x * 10000) / 10000, z: Math.round(enc.z * 10000) / 10000 }, "Esticado" + enc.nota, e);
       }
       camadaDom.addEventListener("pointerup", soltarAlca);
       camadaDom.addEventListener("pointercancel", function () { pr.arrasto = null; limparGrupo(grp); if (VUI()) VUI().soltar(); posicionar(); });
@@ -643,6 +657,12 @@
       function girarCom(graus) {
         var c = pr.pts[0]; if (!c) return;
         var T = { tipo: "girar", cx: c.x, cz: c.z, graus: Math.round(graus * 10000) / 10000 };
+        /* UNIÃO DE CANTO (20/10/2026): girar leva as paredes amarradas (as laterais seguem a frente girada) — a cópia nasce solta */
+        if (!pr.copiaGir) {
+          var rG = Pr().opTransformar(estado(), pr.sel, T, false, nid);
+          if (!rG || rG.erro) { hint((rG && rG.erro) || "Não deu para girar."); return; }
+          gravarOp(rG.op, "Girado " + fmt(graus) + "°", null); api.fechou(); limparGrupo(grp); reiniciarPasso(); return;
+        }
         if (aplicarResultado(Pr().opTransformar(estado(), pr.sel, T, pr.copiaGir, nid), (pr.copiaGir ? "Copiado e girado " : "Girado ") + fmt(graus) + "°")) { limparGrupo(grp); reiniciarPasso(); }
       }
       /* um ponto (clicado ou digitado) entra no passo atual da ferramenta */
@@ -713,6 +733,37 @@
       }
       /* o CADEADO depois do Alinhar (js/bimalinharinst.js): manter alinhado quando a referência andar */
       function oferecerCadeado(st, ref, alvo) { try { if (global.BimAlinharInst && global.BimAlinharInst.oferecerTrava) global.BimAlinharInst.oferecerTrava(st, ref, alvo); } catch (eC) { global.__cadeadoErro = String(eC && eC.stack || eC); } }
+      /* os passos que pedem a PEÇA clicada: o mesmo código no 3D (passoP4) e na planta (cliquePlanta) */
+      function passoPecaEm(passo, id, p) {
+        var f = ferramenta(), st = estado(), q = pr.p4;
+        if (passo === "alvoV") { aplicarP4(Pr().opAparoAte(st, q.ref, { id: id, p: p }), "Aparado/estendido até a referência", true); return true; }
+        if (passo === "alvoD") { aplicarP4(Pr().opDeslocamento(st, id, q.desl, p, q.deslCopia, nid), (q.deslCopia ? "Cópia deslocada " : "Deslocada ") + fmt(q.desl) + " m", true); return true; }
+        if (passo === "pecaA") { q.a = { id: id, p: p }; pr.pts = [p]; irPara("pecaB"); return true; }
+        if (passo === "pecaB") {
+          /* UNIÃO DE CANTO: a pilha (mureta, viga, parede alta na mesma linha) vai junto até o canto */
+          var rc = Pr().opAparoCanto(st, q.a, { id: id, p: p }, nid);
+          if (rc && rc.op && !rc.erro) rc = { op: comPilha(st, rc.op) };
+          aplicarP4(rc, "Canto fechado"); return true;
+        }
+        if (passo === "pontoDiv") { aplicarP4(Pr().opDividir(st, id, p, nid), "Dividida em duas", true); return true; }
+        if (passo === "pecaF") { aplicarP4(Pr().opFixar(st, [id], f === "fixar"), f === "fixar" ? "Fixada" : "Desafixada", true); return true; }
+        return false;
+      }
+      /* as ops de `esticar` (soltas ou num lote) ganham as da PILHA de cada parede esticada (mesma ponta, mesmo ponto) */
+      function comPilha(st, op) {
+        var V = global.BimVinculos; if (!V || !V.pilhaDe) return op;
+        var lista = op.op === "lote" ? op.ops.slice() : [op], extra = [], ja = {};
+        lista.forEach(function (o) { if (o && o.op === "esticar") ja[String(o.id)] = 1; });
+        lista.forEach(function (o) {
+          if (!o || o.op !== "esticar") return;
+          V.pilhaDe(st, o.id).forEach(function (m) {
+            if (ja[m.id]) return; ja[m.id] = 1;
+            extra.push({ op: "esticar", id: m.id, ponta: m.inv ? (o.ponta === "a" ? "b" : "a") : o.ponta, x: o.x, z: o.z });
+          });
+        });
+        if (!extra.length) return op;
+        return { op: "lote", id: op.op === "lote" ? op.id : nid("l"), origem: "modificar", pedido: (op.pedido || "Aparar/estender para canto"), ops: lista.concat(extra) };
+      }
       function passoP4(e, hit) {
         var f = ferramenta(), st = estado(), passo = pr.passo, q = pr.p4;
         var sp = pontoSnap(e, hit), p = sp ? sp.p : null, id = idDoHit(), tol = sp ? Math.max(sp.tol, 0.08) : 0.3;
@@ -729,18 +780,7 @@
           if (aplicarP4(Pr().opAlinhar(st, refA, sa), "Alinhado")) oferecerCadeado(st, refA, sa);
           return true;
         }
-        if (passo === "alvoV") {
-          if (id == null || !p) { hint(DICA.alvoV); return true; }
-          aplicarP4(Pr().opAparoAte(st, q.ref, { id: id, p: p }), "Aparado/estendido até a referência", true); return true;
-        }
-        if (passo === "alvoD") {
-          if (id == null || !p) { hint(DICA.alvoD); return true; }
-          aplicarP4(Pr().opDeslocamento(st, id, q.desl, p, q.deslCopia, nid), (q.deslCopia ? "Cópia deslocada " : "Deslocada ") + fmt(q.desl) + " m", true); return true;
-        }
-        if (passo === "pecaA") { if (id == null || !p) { hint(DICA.pecaA); return true; } q.a = { id: id, p: p }; pr.pts = [p]; irPara("pecaB"); return true; }
-        if (passo === "pecaB") { if (id == null || !p) { hint(DICA.pecaB); return true; } aplicarP4(Pr().opAparoCanto(st, q.a, { id: id, p: p }, nid), "Canto fechado"); return true; }
-        if (passo === "pontoDiv") { if (id == null || !p) { hint(DICA.pontoDiv); return true; } aplicarP4(Pr().opDividir(st, id, p, nid), "Dividida em duas", true); return true; }
-        if (passo === "pecaF") { if (id == null) { hint(DICA.pecaF); return true; } aplicarP4(Pr().opFixar(st, [id], f === "fixar"), f === "fixar" ? "Fixada" : "Desafixada", true); return true; }
+        if (PASSO_PECA[passo]) { if (id == null || (!p && passo !== "pecaF")) { hint(DICA[passo]); return true; } return passoPecaEm(passo, id, p); }
         if (passo === "fonte") {
           if (id == null) { hint("Clique numa peça criada no OrçaPRO."); return true; }
           q.fonte = id; pr.pts = [p || { x: 0, z: 0 }];
@@ -1037,6 +1077,12 @@
           /* ALINHAR / APARAR na PLANTA (18/10/2026, pedido do Rogério: "AL na planta, no corte e no 3D"): a LINHA mais perto do
              clique (face, eixo de parede, grade, eixo do tubo, da peça, da louça, do conector — js/bimalinharinst.js) */
           if (pr.passo === "linhaRef" || pr.passo === "linhaAlvo") return passoLinhaEm(mods.raw && isFinite(mods.raw.x) ? mods.raw : p, mods.tol);
+          /* UNIÃO DE CANTO (20/10/2026): os passos que pedem a PEÇA clicada (Aparar para canto, Aparar vários, Deslocamento, Dividir, Fixar)
+             funcionam na PLANTA — a peça sob o clique (alvoId) e o ponto clicado, como o Alinhar já fazia */
+          if (PASSO_PECA[pr.passo]) {
+            if (alvoId == null || !existe(alvoId)) { hint(DICA[pr.passo]); return true; }
+            return passoPecaEm(pr.passo, alvoId, mods.raw && isFinite(mods.raw.x) ? mods.raw : p);
+          }
           if (P4[pr.passo]) { hint(ROT_FERR[f] + ": esta etapa pega a face/linha da peça na vista 3D."); return true; }
           limparGrupo(grp); caixaEsconder(); passoComPonto(p);
           return true;
@@ -1168,8 +1214,9 @@
           esticar: function (id, ponta, p, e) {
             if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };
             if (Pr().fixado(estado(), id)) { hint("Elemento fixado: use Desafixar antes."); return { ok: false }; }
-            var op = { op: "esticar", id: id, ponta: ponta, x: Math.round(p.x * 10000) / 10000, z: Math.round(p.z * 10000) / 10000 };
-            var res = typeof ponta === "string" ? gravarOp(op, "Esticado", e) : (api.op(op), hint("Esticado (Ctrl+Z desfaz)."), null);
+            var enc = encaixarPonta(id, ponta, p, e);   /* UNIÃO DE CANTO: ponta solta perto de outra encaixa no canto */
+            var op = { op: "esticar", id: id, ponta: ponta, x: Math.round(enc.x * 10000) / 10000, z: Math.round(enc.z * 10000) / 10000 };
+            var res = typeof ponta === "string" ? gravarOp(op, "Esticado" + enc.nota, e) : (api.op(op), hint("Esticado (Ctrl+Z desfaz)."), null);
             return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
           },
           /* VÍNCULOS: a prévia (e2e e suporte) — o que acompanharia a op, sem gravar */

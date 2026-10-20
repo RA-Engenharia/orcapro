@@ -2202,6 +2202,12 @@
       var g = Object.prototype.hasOwnProperty.call(GUARDAR, entidade) ? GUARDAR[entidade](valor) : valor;
       return NUVEM_SEM_LISTA_EM_LISTA[entidade] ? desaninhar(g, false) : g;
     },
+    /* ⚠ AS DUAS CONVERSÕES SOLTAS, para o DOCUMENTO NOVO da nuvem (js/nuvem.js, DOC_V2 — 20/10/2026). Quem decide QUANDO
+       desaninhar é o nuvem.js, e não a tabela acima: o documento antigo de bim_edicoes/bim_vistas/… continua sendo lido pelos
+       aparelhos de versão antiga e NUNCA pode receber { "__lista" }. Se a decisão morasse aqui, um store.js novo com um nuvem.js
+       antigo (cache do navegador no meio da atualização) gravaria a forma nova no documento antigo. */
+    desaninhar: function (valor) { return desaninhar(valor, false); },
+    reaninhar: function (valor) { return reaninhar(valor); },
     expandir: function (entidade, valor) {
       if (NUVEM_SEM_LISTA_EM_LISTA[entidade]) valor = reaninhar(valor);
       if (entidade === "bim_vistas") return abrirVistas(valor);

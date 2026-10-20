@@ -856,7 +856,8 @@
       var v = s[k]; if (v === null) return true;
       if (k === "removida") return v === true || v === false;
       if (k === "perfil" || k === "secao") return typeof v === "string" && v.length > 0 && v.length <= 60;
-      if (k === "desloc") return !!v && typeof v === "object" && ["x", "y", "z"].every(function (c) { return v[c] == null || (fin(v[c]) && Math.abs(v[c]) <= 20); });
+      if (k === "desloc") return !!v && typeof v === "object" && ["x", "y", "z"].every(function (c) { return v[c] == null || (fin(v[c]) && Math.abs(v[c]) <= 20); }) &&
+        (v.agua == null || (typeof v.agua === "object" && ["u", "v"].every(function (c) { return v.agua[c] == null || (fin(v.agua[c]) && Math.abs(v.agua[c]) <= 20); })));
       if (k === "ext") return !!v && typeof v === "object" && ["a", "b"].every(function (c) { return v[c] == null || (fin(v[c]) && v[c] >= -20 && v[c] <= 20); });
       return false;
     });
@@ -900,7 +901,13 @@
         if (sm) { o.w = sm.b; o.h = sm.h; o.forma = "ret"; delete o.dims; delete o.perfil; o.secao = sm.id; mud.push("secao"); }
         else out.avisos.push(rotuloPeca(o) + " " + o.id + ": a seção \"" + s.secao + "\" não está no catálogo de madeira — ficou o automático.");
       }
-      if (s.desloc) { var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)]; o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
+      if (s.desloc) {
+        var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)];
+        /* REVISOR T6: o arrasto NO PLANO DA ÁGUA guarda também as coordenadas na água (u ao longo da peça, v na água):
+           mudou a inclinação, o deslocamento é refeito na água NOVA — o x/y/z do mundo (o de antes) deixava a terça
+           12 cm fora do plano a 30 → 60 %. O x/y/z fica gravado para quem lê a op sem conhecer o `agua`. */
+        if (s.desloc.agua && PECAS_AGUA[o.p]) { var plA = planoArrasto(o, false); if (plA.tipo === "agua") dv = rr(ad3(ad3([0, 0, 0], plA.e1, num(s.desloc.agua.u, 0)), plA.e2, num(s.desloc.agua.v, 0))); }
+        o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
       if (s.ext && (num(s.ext.a, 0) || num(s.ext.b, 0))) {
         var ax = nz3(s3(o.b, o.a)), ea = num(s.ext.a, 0), eb = num(s.ext.b, 0), L0 = ln3(s3(o.b, o.a));
         if (L0 + ea + eb > 0.05) { o.a = rr(ad3(o.a, ax, -ea)); o.b = rr(ad3(o.b, ax, eb)); mud.push("ext"); }
@@ -979,6 +986,135 @@
   function opPeca(telhadoId, pecaId, campos) {
     var m = {}; m[String(pecaId)] = campos === null ? null : campos;
     return { op: "telhado", id: String(telhadoId), sobrepor: m };
+  }
+
+  /* ======================================================================
+   * T6 (20/10/2026) — ARRASTAR A PEÇA COM O MOUSE (motor puro; a tela está em js/bimp3ui.js, BimTelhadoPecaArr)
+   * O arrasto grava na MESMA sobreposição da T5 (desloc / ext), então vale tudo o que ela já tem: id estável, Voltar ao
+   * automático, Ctrl+Z (uma op por arrasto). O plano de trabalho depende da peça:
+   *   · terça, caibro, ripa, espigão, rincão, testeira = o PLANO DA ÁGUA (a normal é o `up` da peça): a peça anda ao longo
+   *     da água e não sai do plano;
+   *   · as outras (viga, pilar, linha, pendural…) = o plano HORIZONTAL (como as peças do editor); com Shift, o VERTICAL
+   *     que contém o eixo (pilar: o plano da normal `up`).
+   * Snaps: as pontas e o meio das OUTRAS peças do telhado (a peça encosta nelas) e, sem ponto notável, a grade da barra
+   * (passo em m). Alt solta tudo. Dígitos durante o arrasto cravam a distância (opc.dig, m).
+   * ====================================================================== */
+  var PECAS_AGUA = { terca: 1, caibro: 1, ripa: 1, espigao: 1, rincao: 1, testeira: 1 };
+  function eixoPeca(o) { return nz3(s3(o.b, o.a)); }
+  function meioPeca(o) { return [(o.a[0] + o.b[0]) / 2, (o.a[1] + o.b[1]) / 2, (o.a[2] + o.b[2]) / 2]; }
+  function planoArrasto(o, vertical) {
+    var ax = eixoPeca(o), up = o.up ? nz3(o.up) : [0, 1, 0], n = null, tipo = "horizontal", e1, e2;
+    if (!vertical && PECAS_AGUA[o.p]) {
+      var u2 = ad3(up, ax, -dt3(up, ax));
+      if (ln3(u2) > 1e-6 && Math.abs(nz3(u2)[1]) < 0.9995) { n = nz3(u2); tipo = "agua"; }
+    }
+    if (!n && vertical) {
+      var hz = [ax[0], 0, ax[2]];
+      if (ln3(hz) > 0.05) n = nz3([-hz[2], 0, hz[0]]);
+      else { var uh = [up[0], 0, up[2]]; n = ln3(uh) > 0.05 ? nz3(uh) : [0, 0, 1]; }
+      tipo = "vertical";
+    }
+    if (!n) { n = [0, 1, 0]; tipo = "horizontal"; }
+    if (tipo === "horizontal") { e1 = [1, 0, 0]; e2 = [0, 0, 1]; }
+    else if (tipo === "vertical") { e1 = nz3(cr3(n, [0, 1, 0])); e2 = [0, 1, 0]; }
+    else { var ap = ad3(ax, n, -dt3(ax, n)); e1 = ln3(ap) > 1e-6 ? nz3(ap) : nz3(cr3(n, [0, 1, 0])); e2 = nz3(cr3(n, e1)); }
+    return { n: n, tipo: tipo, ax: ax, e1: e1, e2: e2 };
+  }
+  /* o ponto do raio {origem, direcao} no plano (P0, n); null = paralelo ou atrás da câmera */
+  function raioNoPlano(ray, P0, n) {
+    if (!ray || !ray.origem || !ray.direcao) return null;
+    var D = nz3(ray.direcao), den = dt3(D, n); if (Math.abs(den) < 1e-6) return null;
+    var t = dt3(s3(P0, ray.origem), n) / den; if (!(t > 0)) return null;
+    return ad3(ray.origem, D, t);
+  }
+  /* o parâmetro s do ponto da reta A + s·u mais perto do raio; null = reta paralela ao raio */
+  function raioNaReta(ray, A, u) {
+    if (!ray || !ray.origem || !ray.direcao) return null;
+    var D = nz3(ray.direcao), w0 = s3(A, ray.origem), b = dt3(u, D), c = dt3(D, D), d = dt3(u, w0), e = dt3(D, w0), den = dt3(u, u) * c - b * b;
+    if (Math.abs(den) < 1e-6) return null;
+    return (b * e - c * d) / den;
+  }
+  function candidatosPontas(outras, id) {
+    var out = [];
+    arr(outras).forEach(function (q) { if (!q || q.id === id) return; out.push({ p: q.a, q: q }); out.push({ p: q.b, q: q }); out.push({ p: meioPeca(q), q: q, meio: true }); });
+    return out;
+  }
+  /* MOVER: d0 = o deslocamento cru (m, mundo) → { d, c1, c2, dy, dist, guia, grade }.
+     opc = { tol (m), passo (m; 0 = sem grade), snap (bool), livre (Alt), dig (m) } */
+  function arrastoPeca(o, outras, d0, plano, opc) {
+    opc = opc || {};
+    var n = plano.n, d = ad3(d0, n, -dt3(d0, n)), guia = null, grade = false;
+    if (fin(opc.dig) && opc.dig > 0 && ln3(d) > 1e-9) { d = ad3([0, 0, 0], nz3(d), opc.dig); guia = "valor digitado"; }
+    else if (!opc.livre && opc.snap !== false) {
+      var tol = fin(opc.tol) && opc.tol > 0 ? opc.tol : 0.1, melhor = null, refs = [o.a, o.b, meioPeca(o)];
+      candidatosPontas(outras, o.id).forEach(function (c) {
+        refs.forEach(function (R) {
+          var v = s3(c.p, ad3(R, d)); v = ad3(v, n, -dt3(v, n));
+          var dd = ln3(v) + (c.meio ? 0.01 : 0);   /* ponta ganha do meio no empate */
+          if (dd <= tol && (!melhor || dd < melhor.dd)) melhor = { dd: dd, v: v, q: c.q, meio: c.meio };
+        });
+      });
+      if (melhor) { d = ad3(d, melhor.v); guia = "encosta " + (melhor.meio ? "no meio" : "na ponta") + " de " + (rotuloPeca(melhor.q) || "outra peça").toLowerCase(); }
+      else if (fin(opc.passo) && opc.passo > 0) {
+        var p = opc.passo, c1g = Math.round(dt3(d, plano.e1) / p) * p, c2g = Math.round(dt3(d, plano.e2) / p) * p;
+        d = ad3(ad3([0, 0, 0], plano.e1, c1g), plano.e2, c2g); grade = true;
+      }
+    }
+    return { d: rr(d), c1: r4(dt3(d, plano.e1)), c2: r4(dt3(d, plano.e2)), dy: r4(d[1]), dist: r4(ln3(d)), guia: guia, grade: grade };
+  }
+  /* ESTICAR: a alça da ponta `ext` ("a" início | "b" fim) levada até o raio. Devolve o quanto ALONGA (+) ou encurta (−) */
+  function esticarAlcaPeca(o, outras, ext, ray, opc) {
+    opc = opc || {};
+    var ax = eixoPeca(o), u = ext === "b" ? ax : [-ax[0], -ax[1], -ax[2]], A = ext === "b" ? o.b : o.a, guia = null, s;
+    if (fin(opc.dig) && opc.dig > 0) s = (opc.sinal < 0 ? -1 : 1) * opc.dig;
+    else {
+      s = raioNaReta(ray, A, u); if (s == null) return null;
+      if (!opc.livre && opc.snap !== false) {
+        var tol = fin(opc.tol) && opc.tol > 0 ? opc.tol : 0.1, melhor = null;
+        candidatosPontas(outras, o.id).forEach(function (c) {
+          var v = s3(c.p, A), sc = dt3(v, u), perp = ln3(ad3(v, u, -sc));
+          if (perp > Math.max(tol, 0.12) || Math.abs(sc - s) > tol) return;
+          var dd = Math.abs(sc - s) + (c.meio ? 0.01 : 0);
+          if (!melhor || dd < melhor.dd) melhor = { dd: dd, s: sc, q: c.q };
+        });
+        if (melhor) { s = melhor.s; guia = "alinha com " + (rotuloPeca(melhor.q) || "outra peça").toLowerCase(); }
+        else if (fin(opc.passo) && opc.passo > 0) s = Math.round(s / opc.passo) * opc.passo;
+      }
+    }
+    if (o.L + s < 0.06) s = 0.06 - o.L;
+    if (Math.abs(s) > 20) s = s > 0 ? 20 : -20;
+    return { delta: r4(s), L: r4(o.L + s), guia: guia };
+  }
+  /* os CAMPOS da sobreposição (para opPeca) a partir do deslocamento / alongamento — somados ao que já está gravado */
+  /* plano (opcional) = o do arrasto: no PLANO DA ÁGUA grava também { agua: {u, v} } (refeito na água nova se a inclinação
+     mudar — REVISOR T6). Só quando o deslocamento anterior também era na água (ou não havia): um x/y/z vindo das
+     Propriedades (que pode sair do plano) continua no mundo. */
+  function camposDesloc(t, pecaId, d, plano) {
+    var s = (t && t.sobrepor && t.sobrepor[pecaId]) || {}, o = s.desloc || {};
+    var x = Math.round((num(o.x, 0) + d[0]) * 1000) / 1000, y = Math.round((num(o.y, 0) + d[1]) * 1000) / 1000, z = Math.round((num(o.z, 0) + d[2]) * 1000) / 1000;
+    if (Math.abs(x) > 20 || Math.abs(y) > 20 || Math.abs(z) > 20) return null;
+    if (!(x || y || z)) return { desloc: null };
+    var out = { x: x, y: y, z: z }, antesMundo = !o.agua && (num(o.x, 0) || num(o.y, 0) || num(o.z, 0));
+    if (plano && plano.tipo === "agua" && !antesMundo) {
+      var oa = o.agua || {}, u = Math.round((num(oa.u, 0) + dt3(d, plano.e1)) * 1000) / 1000, v = Math.round((num(oa.v, 0) + dt3(d, plano.e2)) * 1000) / 1000;
+      if (Math.abs(u) > 20 || Math.abs(v) > 20) return null;
+      out.agua = { u: u, v: v };
+    }
+    return { desloc: out };
+  }
+  function camposEsticar(t, pecaId, ext, delta) {
+    var s = (t && t.sobrepor && t.sobrepor[pecaId]) || {}, o = s.ext || {};
+    var a = num(o.a, 0), b = num(o.b, 0);
+    if (ext === "a") a += delta; else b += delta;
+    a = Math.round(a * 1000) / 1000; b = Math.round(b * 1000) / 1000;
+    if (Math.abs(a) > 20 || Math.abs(b) > 20) return null;
+    return { ext: a || b ? { a: a, b: b } : null };
+  }
+  /* a peça (cópia) já movida/esticada: a prévia do arrasto desenha esta (malhaPeca) */
+  function pecaMovida(o, d, ea, eb) {
+    var c = clone(o), ax = eixoPeca(o); d = d || [0, 0, 0];
+    c.a = rr(ad3(ad3(o.a, d), ax, -(ea || 0))); c.b = rr(ad3(ad3(o.b, d), ax, eb || 0)); c.L = r4(ln3(s3(c.b, c.a)));
+    return c;
   }
 
   function modelar(t, estado, opc) {
@@ -2161,7 +2297,9 @@
     modeloSugerido: modeloSugerido, modelar: modelar, geometria: geometria,
     /* T5: editar uma peça da estrutura derivada */
     ROTULO_PECA: ROTULO_PECA, rotuloPeca: rotuloPeca, sobreporValido: sobreporValido, mesclarSobrepor: mesclarSobrepor, pecaMaisPerto: pecaMaisPerto, malhaPeca: malhaPeca,
-    opcoesSecao: opcoesSecao, opPeca: opPeca, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
+    opcoesSecao: opcoesSecao, opPeca: opPeca,
+    /* T6: arrastar a peça com o mouse */
+    planoArrasto: planoArrasto, raioNoPlano: raioNoPlano, raioNaReta: raioNaReta, arrastoPeca: arrastoPeca, esticarAlcaPeca: esticarAlcaPeca, camposDesloc: camposDesloc, camposEsticar: camposEsticar, pecaMovida: pecaMovida, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
   };
   global.BimTelhadoEstrut = BimTelhadoEstrut;
   if (typeof module !== "undefined" && module.exports) module.exports = BimTelhadoEstrut;

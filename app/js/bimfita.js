@@ -170,7 +170,7 @@
   var ABA_MODIFICAR = [
     { nome: "Selecionar", ids: ["fx-modificar", "fx-propriedades", "fx-filtro-selecao"] },
     { nome: "Área de transferência", ids: ["fx-copiar-area", "fx-colar", "fx-colar-alinhado"] },
-    { nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "alternar-uniao"] },
+    { nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "fechar-cantos", "alternar-uniao"] },
     { nome: "Modificar", ids: ["alinhar", "deslocamento", "espelhar", "mover-preciso", "copiar", "girar",
       "aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "snaps-editor"] },
     { nome: "Vista", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
