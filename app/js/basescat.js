@@ -217,7 +217,10 @@
       nota: "Competência híbrida declarada pelo próprio órgão: construção 01/26 com insumos 04/26."
     },
     {
-      id: "IOPES", nome: "IOPES", orgao: "Instituto de Obras Públicas do Espírito Santo — DER-ES",
+      /* nome de exibição: o IOPES foi extinto (LC 926/2019) e a tabela é do
+         DER-ES; "antigo IOPES" fica para quem procura pelo nome de mercado.
+         O id NÃO muda (ver Bases.META.IOPES) */
+      id: "IOPES", nome: "DER-ES Edificações (antigo IOPES)", orgao: "Departamento de Edificações e de Rodovias do Espírito Santo — DER-ES (sucessor do IOPES, LC 926/2019)",
       regiao: "sudeste", uf: "ES", localRotulo: "Espírito Santo",
       entrega: { local: "data/iopes-ES-current.json", vps: "iopes-ES-current.json" },
       chaveStatus: "iopes", coleta: "cron", versaoPacote: "2026-05", itens: 1363, pesoMb: 0.37, eixos: []

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.164",
+versao: "1.2.165",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -5348,11 +5348,16 @@ FDE: { label: "FDE-SP", cor: "fde" },
 AGETOP: { label: "AGETOP-GO", cor: "agetop" },
 SEDOP: { label: "SEDOP-PA", cor: "sedop" },
 CEHOP: { label: "CEHOP-SE", cor: "cehop" },
-IOPES: { label: "IOPES-ES", cor: "iopes" },
+IOPES: { label: "DER-ES Edificações", curto: "DER-ES", cor: "iopes" },
 DEINFRA: { label: "DEINFRA-SC", cor: "deinfra" },
 DER: { label: "DER (rodovias)", cor: "der" },
 CDHU: { label: "CDHU-SP", cor: "cdhu" },
 PROPRIA: { label: "Própria", cor: "proprio" }
+},
+rotuloCurto: function (fonte) {
+var f = String(fonte == null ? "" : fonte);
+var m = this.META[f.toUpperCase()];
+return (m && m.curto) || f;
 },
 _indexar: function (b) {
 b.porCodigo = {}; b.tokens = new Array(b.itens.length);
@@ -5854,7 +5859,7 @@ eixos: [],
 nota: "Competência híbrida declarada pelo próprio órgão: construção 01/26 com insumos 04/26."
 },
 {
-id: "IOPES", nome: "IOPES", orgao: "Instituto de Obras Públicas do Espírito Santo — DER-ES",
+id: "IOPES", nome: "DER-ES Edificações (antigo IOPES)", orgao: "Departamento de Edificações e de Rodovias do Espírito Santo — DER-ES (sucessor do IOPES, LC 926/2019)",
 regiao: "sudeste", uf: "ES", localRotulo: "Espírito Santo",
 entrega: { local: "data/iopes-ES-current.json", vps: "iopes-ES-current.json" },
 chaveStatus: "iopes", coleta: "cron", versaoPacote: "2026-05", itens: 1363, pesoMb: 0.37, eixos: []
@@ -12830,7 +12835,7 @@ atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wra
 (inst && !fix ? resExtra(e.id) : '') + '</div>';
 });
 return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
-'<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, IOPES ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
+'<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, DER-ES Edificações (antigo IOPES) ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
 this._linhaVarredura() +
 '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
 '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
@@ -13471,7 +13476,7 @@ return !!(bp && bp.insumos && bp.insumos.length);
 var ehBaseAna = !ehSinapi && !ehPropriaDet && temCodBase(it) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonte);
 var attrBase = ehBaseAna ? ' data-vi-base="' + Util.esc(String(fonte).toUpperCase()) + '"' : '';
 var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
-var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : fonte;
+var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : ((typeof Bases !== "undefined" && Bases.rotuloCurto) ? Bases.rotuloCurto(fonte) : fonte);
 var numItem = L.numero || Orcamento.itemNumero(ei, ii);
 var temCod = it.codigo && it.codigo !== "—";
 var cadeia = subId ? (subId + " " + e.id) : e.id;
@@ -15390,7 +15395,8 @@ etCusto += ct; etVenda += pt;
 row.getCell(1).value = (_L && _L.numero) ? _L.numero : ((etIdx + 1) + '.' + (itIdx + 1));
 row.getCell(2).value = it.codigo || '';
 var fonteIt = it.baseFonte || it.origem || '';
-row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra' : fonteIt);
+row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra'
+: ((typeof Bases !== 'undefined' && Bases.rotuloCurto) ? Bases.rotuloCurto(fonteIt) : fonteIt));
 row.getCell(4).value = it.descricao || '';
 row.getCell(5).value = _un(it.unidade);
 row.getCell(6).value = qt;
@@ -17395,7 +17401,7 @@ quantidade: ["qtd", "qtde", "quant", "quantidade", "qty", "quantity"],
 custoUnit: ["unitario", "unit", "preco unit", "preco unitario", "valor unit", "valor unitario", "custo unit", "custo unitario", "p unit", "punit", "vlr unit", "r$ unit", "unit price", "unit cost", "price"],
 custoTotal: ["total", "valor total", "custo total", "preco total", "vlr total", "subtotal", "amount"]
 };
-var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
+var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "der es", "der es edificacoes", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
 var UNID = { "m2": 1, "m²": 1, "m3": 1, "m³": 1, "m": 1, "ml": 1, "kg": 1, "un": 1, "und": 1, "unid": 1, "pc": 1, "vb": 1, "cj": 1, "l": 1, "t": 1, "h": 1, "dia": 1, "mes": 1, "gl": 1, "pt": 1, "cx": 1, "par": 1, "km": 1, "ha": 1 };
 var UNID_NORM = { "m2": "m²", "m²": "m²", "m3": "m³", "m³": "m³", "und": "un", "unid": "un", "ml": "m" };
 var TOTAL_KW = ["total", "subtotal", "sub total", "total geral", "totais", "valor total",
@@ -17779,7 +17785,9 @@ var PADROES = [
 { id: "ALFA", re: /^[A-Z]\.\d{2}\.\d{3}\.\d{6}$/i, fonte: null, aliases: [], certeza: 0, rotulo: "tabela estadual (L.NN.NNN.NNNNNN) — informe a base" },
 { id: "OUTRO", re: /./, fonte: null, aliases: [], certeza: 0, rotulo: "formato não reconhecido" }
 ];
-var ALIAS_FONTE = { CDHU: "CPOS", "CPOS/CDHU": "CPOS", "SINAPI DESONERADA": "SINAPI", "SINAPI_DES": "SINAPI", PROPRIO: "PROPRIA", "COMPOSICAO PROPRIA": "PROPRIA", COTACAO: "PROPRIA", MERCADO: "PROPRIA" };
+var ALIAS_FONTE = { CDHU: "CPOS", "CPOS/CDHU": "CPOS", "SINAPI DESONERADA": "SINAPI", "SINAPI_DES": "SINAPI", PROPRIO: "PROPRIA", "COMPOSICAO PROPRIA": "PROPRIA", COTACAO: "PROPRIA", MERCADO: "PROPRIA",
+"DER-ES": "IOPES", DERES: "IOPES", "DER-ES EDIFICACOES": "IOPES", "DER-ES EDIFICAÇÕES": "IOPES",
+DERESEDIFICACOES: "IOPES", DERESEDIFICAES: "IOPES", "IOPES-ES": "IOPES", IOPESES: "IOPES" };
 var STOP = { de: 1, da: 1, do: 1, das: 1, dos: 1, em: 1, e: 1, ou: 1, a: 1, o: 1, as: 1, os: 1, para: 1, com: 1, sem: 1, por: 1, no: 1, na: 1, nos: 1, nas: 1, um: 1, uma: 1, ate: 1, tipo: 1, inclusive: 1, ref: 1, af: 1, "-": 1, fornecimento: 1, instalacao: 1, execucao: 1, ou_equivalente: 1 };
 function normFallback(s) {
 s = String(s == null ? "" : s).toLowerCase();

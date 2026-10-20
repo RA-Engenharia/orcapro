@@ -39,7 +39,7 @@
   };
   /* Nomes de banco de preço que uma coluna "Fonte" costuma trazer. Serve para
      DEDUZIR o papel fonte pelo conteúdo quando o cabeçalho não diz. */
-  var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
+  var FONTES_CONHECIDAS = ["sinapi", "sicro", "sudecap", "seinfra", "setop", "orse", "iopes", "cpos", "cdhu", "fde", "emop", "sbc", "siurb", "agetop", "goinfra", "sedop", "cehop", "deinfra", "der", "der es", "der es edificacoes", "propria", "proprio", "cotacao", "composicao propria", "mercado"];
   var UNID = { "m2": 1, "m²": 1, "m3": 1, "m³": 1, "m": 1, "ml": 1, "kg": 1, "un": 1, "und": 1, "unid": 1, "pc": 1, "vb": 1, "cj": 1, "l": 1, "t": 1, "h": 1, "dia": 1, "mes": 1, "gl": 1, "pt": 1, "cx": 1, "par": 1, "km": 1, "ha": 1 };
   var UNID_NORM = { "m2": "m²", "m²": "m²", "m3": "m³", "m³": "m³", "und": "un", "unid": "un", "ml": "m" };
   /* v1.1.234 — as grafias de total que apareciam em planilha REAL e passavam:

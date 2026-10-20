@@ -464,7 +464,8 @@
         row.getCell(2).value = it.codigo || '';
         // FASE 2: fonte honesta no xlsx — SEINFRA/SETOP/etc. não são "Própria"
         var fonteIt = it.baseFonte || it.origem || '';
-        row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra' : fonteIt);
+        row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra'
+          : ((typeof Bases !== 'undefined' && Bases.rotuloCurto) ? Bases.rotuloCurto(fonteIt) : fonteIt));
         row.getCell(4).value = it.descricao || '';
         row.getCell(5).value = _un(it.unidade);
         row.getCell(6).value = qt;

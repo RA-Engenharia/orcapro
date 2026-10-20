@@ -31,11 +31,28 @@
       AGETOP: { label: "AGETOP-GO", cor: "agetop" },
       SEDOP: { label: "SEDOP-PA", cor: "sedop" },
       CEHOP: { label: "CEHOP-SE", cor: "cehop" },
-      IOPES: { label: "IOPES-ES", cor: "iopes" },
+      /* ⚠ A CHAVE CONTINUA "IOPES"; SÓ O NOME MUDOU (20/10/2026).
+         O IOPES foi extinto pela LC estadual 926/2019 e absorvido pelo DER-ES
+         (Departamento de Edificações e de Rodovias), que é quem publica a
+         Tabela Referencial de Edificações. Documento que cita instituto
+         extinto em licitação é questionado. Mas "IOPES" está gravado em cada
+         item de orçamento salvo (baseFonte/origem), nos nomes dos arquivos do
+         servidor e nos robôs: trocar a chave pediria migrar a frota. Daí:
+         `label` (documentos, analítico) e `curto` (coluna Fonte, etiqueta da
+         planilha) mudam; a chave não. */
+      IOPES: { label: "DER-ES Edificações", curto: "DER-ES", cor: "iopes" },
       DEINFRA: { label: "DEINFRA-SC", cor: "deinfra" },
       DER: { label: "DER (rodovias)", cor: "der" },
       CDHU: { label: "CDHU-SP", cor: "cdhu" },
       PROPRIA: { label: "Própria", cor: "proprio" }
+    },
+
+    /* nome curto da fonte para coluna/etiqueta de item ("DER-ES" para a
+       chave IOPES); sem `curto`, a própria chave — como sempre foi */
+    rotuloCurto: function (fonte) {
+      var f = String(fonte == null ? "" : fonte);
+      var m = this.META[f.toUpperCase()];
+      return (m && m.curto) || f;
     },
 
     _indexar: function (b) {

@@ -57,7 +57,14 @@
     { id: "ALFA", re: /^[A-Z]\.\d{2}\.\d{3}\.\d{6}$/i, fonte: null, aliases: [], certeza: 0, rotulo: "tabela estadual (L.NN.NNN.NNNNNN) — informe a base" },
     { id: "OUTRO", re: /./, fonte: null, aliases: [], certeza: 0, rotulo: "formato não reconhecido" }
   ];
-  var ALIAS_FONTE = { CDHU: "CPOS", "CPOS/CDHU": "CPOS", "SINAPI DESONERADA": "SINAPI", "SINAPI_DES": "SINAPI", PROPRIO: "PROPRIA", "COMPOSICAO PROPRIA": "PROPRIA", COTACAO: "PROPRIA", MERCADO: "PROPRIA" };
+  var ALIAS_FONTE = { CDHU: "CPOS", "CPOS/CDHU": "CPOS", "SINAPI DESONERADA": "SINAPI", "SINAPI_DES": "SINAPI", PROPRIO: "PROPRIA", "COMPOSICAO PROPRIA": "PROPRIA", COTACAO: "PROPRIA", MERCADO: "PROPRIA",
+    /* desde 20/10/2026 o app ESCREVE "DER-ES" na coluna Fonte para a chave
+       IOPES (Bases.META.IOPES.curto; o IOPES foi extinto e a tabela é do
+       DER-ES). O Excel que sai daqui tem de voltar como IOPES ao ser
+       importado. Não há base de rodovias do DER-ES no app para disputar o nome.
+       As formas sem pontuação/acento são as que sobram do replace abaixo. */
+    "DER-ES": "IOPES", DERES: "IOPES", "DER-ES EDIFICACOES": "IOPES", "DER-ES EDIFICAÇÕES": "IOPES",
+    DERESEDIFICACOES: "IOPES", DERESEDIFICAES: "IOPES", "IOPES-ES": "IOPES", IOPESES: "IOPES" };
 
   var STOP = { de: 1, da: 1, do: 1, das: 1, dos: 1, em: 1, e: 1, ou: 1, a: 1, o: 1, as: 1, os: 1, para: 1, com: 1, sem: 1, por: 1, no: 1, na: 1, nos: 1, nas: 1, um: 1, uma: 1, ate: 1, tipo: 1, inclusive: 1, ref: 1, af: 1, "-": 1, fornecimento: 1, instalacao: 1, execucao: 1, ou_equivalente: 1 };
 

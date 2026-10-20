@@ -765,7 +765,7 @@
           (inst && !fix ? resExtra(e.id) : '') + '</div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, IOPES ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 8px">As tabelas se atualizam <b>sozinhas</b>, <b>1× por dia</b>, ao abrir o app: quando sai competência nova da SINAPI (onerada e desonerada), do SICRO, ORSE, DER-ES Edificações (antigo IOPES) ou GOINFRA, o app baixa e aplica sem você clicar em nada. Uma base <b>própria</b> que você importou nunca é substituída.</p>' +
         this._linhaVarredura() +
         '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
         '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
@@ -1840,7 +1840,7 @@
           var ehBaseAna = !ehSinapi && !ehPropriaDet && temCodBase(it) && typeof AnaliticoBases !== "undefined" && AnaliticoBases.suporta(fonte);
           var attrBase = ehBaseAna ? ' data-vi-base="' + Util.esc(String(fonte).toUpperCase()) + '"' : '';
           var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
-          var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : fonte;
+          var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : ((typeof Bases !== "undefined" && Bases.rotuloCurto) ? Bases.rotuloCurto(fonte) : fonte);
           // número vem da FONTE ÚNICA (1.2 solto, 1.1.1 dentro de sub etapa)
           var numItem = L.numero || Orcamento.itemNumero(ei, ii);
           var temCod = it.codigo && it.codigo !== "—";
