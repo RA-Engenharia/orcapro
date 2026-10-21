@@ -485,7 +485,7 @@
       }
     } else if (E0.tipo === "ralo_box" || E0.tipo === "ralo_piso") {
       /* ralo seco no box, sob o crivo (projeção do braço da família) — afastado da parede */
-      var av2 = avaliar(avaliarFam, fi), cx2 = E0.tipo === "ralo_box" && av2 ? av2.caixa : null, prof = cx2 ? Math.max(num(cx2.z1, 0), geo(par, "afastRaloParede")) - (num(cx2.x1, 0) - num(cx2.x0, 0)) / 2 : geo(par, "afastRaloParede");
+      var av2 = avaliar(avaliarFam, fi), cx2 = E0.tipo === "ralo_box" && av2 ? (av2.caixaObstaculo || av2.caixa) : null, prof = cx2 ? Math.max(num(cx2.z1, 0), geo(par, "afastRaloParede")) - (num(cx2.x1, 0) - num(cx2.x0, 0)) / 2 : geo(par, "afastRaloParede");
       prof = Math.max(prof, geo(par, "afastRaloParede"));
       var pr = mundo(fi, 0, 0, prof); pr.y = piso;
       /* NÍVEL AUTOMÁTICO (js/hidnivel.js): a grelha no piso ACABADO no ponto (box rebaixado, contrapiso + revestimento) */

@@ -608,13 +608,16 @@
       else if (s.forma === "revolucao") { var rv = malhaRevolucao(s, f, erros); if (!rv) return; rv.id = s.id; rv.nome = s.nome || ""; rv.material = mat(s.material); rv.cor = s.cor || ""; solidos.push(rv); return; }
       else if (s.forma === "gerada") { malhasGeradas(s, f, mat, erros).forEach(function (mg) { solidos.push(mg); }); return; }
       else { o.altura = f(s.altura, 0.1); o.contorno = arr(s.contorno).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; }); o.plano = s.plano === "frente" ? "frente" : "planta"; }
+      if (s.naParede) o.naParede = true;   /* REVISÃO H5: peça rente à face da parede (canopla/volante de registro) — fora do volume de obstáculo */
       ["dx", "dy", "dz", "raio", "altura"].forEach(function (c) { if (o[c] != null && o[c] <= 0) erros.push("sólido \"" + (s.nome || s.id) + "\": " + c + " ficou ≤ 0 (" + o[c] + ")"); });
       solidos.push(o);
     });
     /* B5 (instalações, js/biminst.js): pontos de LIGAÇÃO do aparelho — sistema,
        DN e a posição LOCAL (fórmula, como os sólidos). O tubo que chega nele
        está ligado; família sem `conectores` continua igual. */
-    var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema; }).map(function (k, i) {
+    /* REVISÃO H5 (21/10/2026): o conector pode ter `visivel` (fórmula, como o sólido): o chuveiro ELÉTRICO não tem o ponto de
+       água quente da ducha com misturador. Sem `visivel` = sempre (nada muda nas outras famílias) */
+    var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema && (k.visivel == null || f(k.visivel, 1)); }).map(function (k, i) {
       return { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
     });
     var abertura = null;
@@ -644,6 +647,9 @@
     }
     var saida = { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos), conectores: conectores,
                   partesMoveis: partesMov, errosPartes: errosPartes };
+    /* REVISÃO H5 (21/10/2026): a caixa de OBSTÁCULO do traçado sem as peças rentes à parede (o registro do misturador da ducha, a
+       1,10 m sob o braço: a caixa do aparelho inteiro ficaria com 1,3 m de altura na frente da parede e desviaria os ramais vizinhos) */
+    if (solidos.some(function (sd) { return sd.naParede; })) { var semP = solidos.filter(function (sd) { return !sd.naParede; }); if (semP.length) saida.caixaObstaculo = caixaDe(semP); }
     if (PMo && (partesMov.length || arr(fam.partesMoveis).length)) saida.estadoPartes = { fracao: PMo.fracaoDe(valores, inst) };
     /* P12: a família MEP diz ao js/biminst.js que peça SINAPI ela é ({peca}); sem `mep`, nada muda */
     if (fam.mep && typeof fam.mep === "object" && fam.mep.peca) saida.mep = { peca: txt(fam.mep.peca) };

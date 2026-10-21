@@ -46578,10 +46578,11 @@ else if (s.forma === "cilindro") { o.raio = f(s.raio, 0.05); o.altura = f(s.altu
 else if (s.forma === "revolucao") { var rv = malhaRevolucao(s, f, erros); if (!rv) return; rv.id = s.id; rv.nome = s.nome || ""; rv.material = mat(s.material); rv.cor = s.cor || ""; solidos.push(rv); return; }
 else if (s.forma === "gerada") { malhasGeradas(s, f, mat, erros).forEach(function (mg) { solidos.push(mg); }); return; }
 else { o.altura = f(s.altura, 0.1); o.contorno = arr(s.contorno).map(function (q) { return [f(q[0], 0), f(q[1], 0)]; }); o.plano = s.plano === "frente" ? "frente" : "planta"; }
+if (s.naParede) o.naParede = true;
 ["dx", "dy", "dz", "raio", "altura"].forEach(function (c) { if (o[c] != null && o[c] <= 0) erros.push("sólido \"" + (s.nome || s.id) + "\": " + c + " ficou ≤ 0 (" + o[c] + ")"); });
 solidos.push(o);
 });
-var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema; }).map(function (k, i) {
+var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema && (k.visivel == null || f(k.visivel, 1)); }).map(function (k, i) {
 return { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
 });
 var abertura = null;
@@ -46606,6 +46607,7 @@ partesMov.forEach(function (pm) { solidos.forEach(function (sd) { if (pm.solidos
 }
 var saida = { ok: !erros.length, erros: erros, tipo: { id: tipo.id, nome: tipo.nome }, valores: valores, solidos: solidos, abertura: abertura, quantitativo: qtd, servicos: servicos, caixa: caixaDe(solidos), conectores: conectores,
 partesMoveis: partesMov, errosPartes: errosPartes };
+if (solidos.some(function (sd) { return sd.naParede; })) { var semP = solidos.filter(function (sd) { return !sd.naParede; }); if (semP.length) saida.caixaObstaculo = caixaDe(semP); }
 if (PMo && (partesMov.length || arr(fam.partesMoveis).length)) saida.estadoPartes = { fracao: PMo.fracaoDe(valores, inst) };
 if (fam.mep && typeof fam.mep === "object" && fam.mep.peca) saida.mep = { peca: txt(fam.mep.peca) };
 if (fam.geometria === "malha") {
@@ -64320,8 +64322,17 @@ metalParedeAcimaTampo: 0.22,
 piaParede: 1.10,
 esgoto: { sobrepor: 0.46, embutir: 0.35, undermount: 0.35, semi_encaixe: 0.345, apoio: 0.35, esculpida: 0.35 },
 esgotoAbaixoFundo: 0.06,
-alturaBanho: 0.85, alturaCozinha: 0.90
+alturaBanho: 0.85, alturaCozinha: 0.90,
+afastAguaEsgoto: 0.10,
+dnAguaCuba: 20,
+dnEsgotoCuba: { cozinha: 50, banheiro: 40 }
 };
+function entreMesa(amb) {
+var HRt = dep("HidRota", "./hidrota.js"), HNo = dep("HidNormas", "./hidnormas.js"), ap = amb === "cozinha" ? "pia_cozinha" : "lavatorio";
+var af = HRt && HRt.GEO && isFinite(HRt.GEO.afastamento) ? HRt.GEO.afastamento : REGRA.afastAguaEsgoto, dA = REGRA.dnAguaCuba, dE = REGRA.dnEsgotoCuba[amb === "cozinha" ? "cozinha" : "banheiro"];
+try { if (HNo && HNo.valor) { var va = Number(HNo.valor("af.aparelhos.dn_min", { aparelho: ap }, "dn_min")), ve = Number(HNo.valor("es.aparelhos", { aparelho: ap }, "dn_min")); if (va > 0) dA = va; if (ve > 0) dE = ve; } } catch (e) {}
+return Math.max(REGRA.entrePontosAgua, 2 * (af + dA / 2000 + dE / 2000));
+}
 var DES = {
 recuoMin: 0.05,
 margemLateral: 0.05,
@@ -64481,7 +64492,7 @@ if (hS > 0) { yA = hS > 0.6 ? hS : H + hS; fonteA = "ficha da torneira"; }
 else if (amb === "cozinha") { yA = REGRA.piaParede; fonteA = FONTE_TIGRE + " (PIA 110 cm)"; }
 else { yA = H + REGRA.metalParedeAcimaTampo; fonteA = FONTE_DECA + " (metais de parede 170 a 220 mm acima do tampo; adotado 220)"; }
 } else { yA = H - REGRA.aguaAbaixoTampo; fonteA = FONTE_DECA + " (220 mm abaixo da face do tampo)"; }
-var entre = tn && tn.pontoParede && num(tn.pontoParede.entre_eixos_mm, 0) > 0 ? num(tn.pontoParede.entre_eixos_mm, 0) / 1000 : REGRA.entrePontosAgua;
+var entre = tn && tn.pontoParede && num(tn.pontoParede.entre_eixos_mm, 0) > 0 ? num(tn.pontoParede.entre_eixos_mm, 0) / 1000 : (tn && tn.instalacao !== "parede" ? entreMesa(amb) : REGRA.entrePontosAgua);
 cb.yAgua = yA; cb.fonteAgua = fonteA;
 def.conectores.push({ id: "esgoto" + cb.suf, nome: "Esgoto (saída do sifão, cuba " + (i + 1) + ")", sistema: "esgoto", dn: 0, x: r4(xc), y: r4(H - Ea), z: 0 });
 if (tn) {
@@ -71346,6 +71357,7 @@ if (M.isos && !M.secao) t.iso = M.isos.indexOf(txt(o.iso)) >= 0 ? txt(o.iso) : M
 if (o.serie != null && o.serie !== "") t.serie = txt(o.serie);
 if (o.linha === "liquido" || o.linha === "succao") t.linha = o.linha;
 if (o.continua === "p1" || o.continua === "p2" || o.continua === "ambos") t.continua = o.continua;
+if (o.isolamento === true && o.sistema === "agua_quente") t.isolamento = true;
 if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
 if (t.continua && o.predio != null && o.predio !== "") t.predio = txt(o.predio).slice(0, 120);
 if (t.continua && o.piscLinha != null && o.piscLinha !== "") t.piscLinha = txt(o.piscLinha).slice(0, 120);
@@ -71527,7 +71539,7 @@ return out;
 function volumesFamilias(estado, avaliarFam) {
 var out = [];
 arr(estado && estado.familias).forEach(function (fi) {
-var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && av.caixa;
+var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && (av.caixaObstaculo || av.caixa);
 if (!b || ![b.x0, b.x1, b.y0, b.y1, b.z0, b.z1].every(isFinite) || b.y1 <= TOL) return;
 var rot = num(fi.rotY, 0), c = Math.cos(rot), s = Math.sin(rot), mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2;
 out.push({ id: fi.id, famId: fi.famId, cx: r4(num(fi.x, 0) + mx * c + mz * s), cz: r4(num(fi.z, 0) - mx * s + mz * c), ux: c, uz: -s,
@@ -71945,6 +71957,14 @@ if (M.larguras && c.aplicacao === "vertical") it.semTabela = "curva/tê VERTICAL
 if (c.tipo === "te_inspecao" && c.material === "pvc_esgoto") it.mercado = "te_inspecao_esgoto|" + c.dn;
 return it;
 }
+var ISOLAMENTO_AQ = { insumos: { "1/2": "39712", "3/4": "39715", "1": "39714", "1 1/4": "39708", "1 1/2": "39707" }, coeficiente: 1.022727, coefFonte: "SINAPI 97329 (insumo de isolamento por metro de tubo)",
+descricao: "Tubo de espuma de polietileno expandido flexível para isolamento térmico de água quente, E = 10 mm" };
+function isolamentoDe(t) {
+var b = (BITOLA_REF[t.material] || {})[t.dn], cod = b ? ISOLAMENTO_AQ.insumos[b] : null;
+if (!cod) return { status: "pendente", chave: "isolamento|" + t.material + "|" + t.dn, rotulo: "Isolamento térmico DN " + t.dn, motivo: "isolamento térmico do tubo " + t.material + " DN " + t.dn + ": sem a bitola do insumo SINAPI — pendente" };
+return { status: "ok", chave: "isolamento|" + b, rotulo: ISOLAMENTO_AQ.descricao + ", DN " + b + "\"", codigo: cod, unidade: "M", descricao: ISOLAMENTO_AQ.descricao + ", DN " + b + "\"", insumo: true, alternativas: 0,
+observacao: "metro de isolamento = metro de tubo × " + ISOLAMENTO_AQ.coeficiente + " (" + ISOLAMENTO_AQ.coefFonte + ")" };
+}
 function refMercado(it) {
 var PM = global.HidPrecoMercado || null;
 if (!PM || !it) return null;
@@ -72000,6 +72020,13 @@ ordP.push(k);
 }
 g.n++; g.ids.push(p.id); sis(p.sistema).pecas++;
 });
+var isos = {}, ordI = [];
+R.trechos.forEach(function (t) {
+if (!t.isolamento) return;
+var sp = isolamentoDe(t), k = sp.chave, g = isos[k];
+if (!g) { g = isos[k] = { sistema: t.sistema, material: t.material, dn: t.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", coeficiente: ISOLAMENTO_AQ.coeficiente, trechos: [], sinapi: sp }; ordI.push(k); }
+g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.metros * ISOLAMENTO_AQ.coeficiente); g.trechos.push(t.id);
+});
 var acs = {}, ordA = [], dsp = {}, ordD = [];
 arr(R.acessorios).forEach(function (a) {
 var it = itemAcessorio(a), k = [a.acessorio, a.sistema, it.material, it.aplicacao, it.dn].join("|");
@@ -72016,6 +72043,7 @@ g.n++; g.ids.push(d.id);
 return {
 acessorios: ordA.map(function (k) { return acs[k]; }),
 dispositivos: ordD.map(function (k) { return dsp[k]; }),
+isolamentos: ordI.map(function (k) { return isos[k]; }),
 tubos: ordT.map(function (k) { return tubos[k]; }),
 conexoes: ordC.map(function (k) { return cxs[k]; }),
 pecas: ordP.map(function (k) { return pcs[k]; }),
@@ -72037,7 +72065,9 @@ var rm = refMercado(it); if (rm) o.referenciaMercado = rm;
 }
 out.push(o);
 }
-R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it)); });
+R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it));
+if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));
+});
 R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
 var it = itemConexao(c);
 linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
@@ -72124,7 +72154,9 @@ return A.variantes[v] ? v : Object.keys(A.variantes)[0];
 }
 var ACESSORIO_DA_FAM = {};
 Object.keys(ACESSORIOS).forEach(function (k) { ACESSORIO_DA_FAM[ACESSORIOS[k].fam] = k; });
-var BITOLA_REF = { pvc_soldavel: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 60: "2", 75: "2 1/2", 85: "3", 110: "4" } };
+var BITOLA_REF = { pvc_soldavel: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 60: "2", 75: "2 1/2", 85: "3", 110: "4" },
+ppr: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 63: "2", 75: "2 1/2", 90: "3", 110: "4" },
+cpvc: { 15: "1/2", 22: "3/4", 28: "1", 35: "1 1/4", 42: "1 1/2", 54: "2" } };
 var DISPOSITIVOS = {
 tomada: { nome: "Tomada", categoria: "Dispositivos elétricos", ifc: "IFCOUTLET", pre: "POWEROUTLET" },
 interruptor: { nome: "Interruptor", categoria: "Dispositivos elétricos", ifc: "IFCSWITCHINGDEVICE", pre: "TOGGLESWITCH" },
@@ -72228,7 +72260,7 @@ var it = { peca: a.acessorio, sistema: a.sistema, material: V.material, aplicaca
 if (V.rosca) {
 var b = (BITOLA_REF[a.material] || {})[a.dn];
 it.dn = b || ("DN " + a.dn);
-if (!b) it.semTabela = A.nome + " " + V.rot + ": a bitola de rosca para o tubo " + ((MATERIAIS[a.material] || {}).nome || a.material) + " DN " + a.dn + " não está tabelada (BITOLA_REF: só PVC soldável, ABNT NBR 5648) — pendente";
+if (!b) it.semTabela = A.nome + " " + V.rot + ": a bitola de rosca para o tubo " + ((MATERIAIS[a.material] || {}).nome || a.material) + " DN " + a.dn + " não está tabelada (BITOLA_REF: PVC soldável, PPR e CPVC) — pendente";
 } else {
 it.dn = String(a.dn);
 if (a.material !== V.material) it.semTabela = A.nome + " " + V.rot + " no tubo de " + ((MATERIAIS[a.material] || {}).nome || a.material) + ": não casa — troque o tipo do registro (pendente)";
@@ -130808,7 +130840,7 @@ pose.cota = cotaParede(estado, pose, pose.parede);
 return pose;
 }
 function paredeAtras(estado, fi, av) {
-var cx = av && av.caixa; if (!cx || !isFinite(cx.z0)) return null;
+var cx = av && (av.caixaObstaculo || av.caixa); if (!cx || !isFinite(cx.z0)) return null;
 var r = num(fi.rotY, 0), co = Math.cos(r), si = Math.sin(r), mx = (cx.x0 + cx.x1) / 2;
 var Bk = { x: fi.x + mx * co + cx.z0 * si, z: fi.z - mx * si + cx.z0 * co }, nO = { x: si, z: co }, achou = null;
 paredes(estado).forEach(function (c) {
@@ -130881,7 +130913,7 @@ poseFamiliaEm: function (p) {
 var ed = T.ctx.edit, fs = ed.famSel; if (!fs || !p) return null;
 var av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}); if (!av) return null;
 p = T.naGrade(p);
-return poseFamilia(T.estado(), av.caixa, p, { base: T.base(), rot: num(ed.famRot, 0), louca: T.categoria(fs.famId) === "loucas", nivel: T.ehNivel(fs.famId), pisoNivel: true, altura: T.alturaPadrao(fs.famId, av) });
+return poseFamilia(T.estado(), av.caixaObstaculo || av.caixa, p, { base: T.base(), rot: num(ed.famRot, 0), louca: T.categoria(fs.famId) === "loucas", nivel: T.ehNivel(fs.famId), pisoNivel: true, altura: T.alturaPadrao(fs.famId, av) });
 },
 posePecaEm: function (p) {
 var U = global.BimInstUI, cf = U && U.cfg, I = BI(); if (!cf || !p || !I) return null;
@@ -131068,7 +131100,7 @@ if (T.ctx.scene && md) T._mostrarPose(md, { x: w.x, z: w.z });
 var co = Math.cos(pose.rotY), si = Math.sin(pose.rotY);
 function W(lx, ly, lz) { return { x: pose.x + lx * co + lz * si, y: pose.y + ly, z: pose.z - lx * si + lz * co }; }
 if (md === "familia") {
-var fs = T.ctx.edit.famSel, av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}), b = av && av.caixa;
+var fs = T.ctx.edit.famSel, av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}), b = av && (av.caixaObstaculo || av.caixa);
 if (b) {
 if (planta) poli([W(b.x0, 0, b.z0), W(b.x1, 0, b.z0), W(b.x1, 0, b.z1), W(b.x0, 0, b.z1), W(b.x0, 0, b.z0)], ESTILO);
 else { var cs = [], xs = [], ys = []; [b.x0, b.x1].forEach(function (x) { [b.y0, b.y1].forEach(function (yv) { [b.z0, b.z1].forEach(function (z) { var s = proj(W(x, yv, z)); if (s) { xs.push(s.x); ys.push(s.y); } }); }); }); if (xs.length) el("rect", Object.assign({ x: r4(Math.min.apply(null, xs)), y: r4(Math.min.apply(null, ys)), width: r4(Math.max.apply(null, xs) - Math.min.apply(null, xs)), height: r4(Math.max.apply(null, ys) - Math.min.apply(null, ys)) }, ESTILO)); }

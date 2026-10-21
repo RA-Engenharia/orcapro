@@ -437,7 +437,7 @@
   }
   /* a louça JÁ COLOCADA está de costas para a face de uma parede? */
   function paredeAtras(estado, fi, av) {
-    var cx = av && av.caixa; if (!cx || !isFinite(cx.z0)) return null;
+    var cx = av && (av.caixaObstaculo || av.caixa); if (!cx || !isFinite(cx.z0)) return null;   /* revisão H5: sem as peças rentes à parede */
     var r = num(fi.rotY, 0), co = Math.cos(r), si = Math.sin(r), mx = (cx.x0 + cx.x1) / 2;
     var Bk = { x: fi.x + mx * co + cx.z0 * si, z: fi.z - mx * si + cx.z0 * co }, nO = { x: si, z: co }, achou = null;
     paredes(estado).forEach(function (c) {
@@ -520,7 +520,7 @@
       var ed = T.ctx.edit, fs = ed.famSel; if (!fs || !p) return null;
       var av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}); if (!av) return null;
       p = T.naGrade(p);   /* item 8: o ponto de inserção no passo da grade */
-      return poseFamilia(T.estado(), av.caixa, p, { base: T.base(), rot: num(ed.famRot, 0), louca: T.categoria(fs.famId) === "loucas", nivel: T.ehNivel(fs.famId), pisoNivel: true, altura: T.alturaPadrao(fs.famId, av) });
+      return poseFamilia(T.estado(), av.caixaObstaculo || av.caixa, p, { base: T.base(), rot: num(ed.famRot, 0), louca: T.categoria(fs.famId) === "loucas", nivel: T.ehNivel(fs.famId), pisoNivel: true, altura: T.alturaPadrao(fs.famId, av) });
     },
     posePecaEm: function (p) {
       var U = global.BimInstUI, cf = U && U.cfg, I = BI(); if (!cf || !p || !I) return null;
@@ -719,7 +719,7 @@
       var co = Math.cos(pose.rotY), si = Math.sin(pose.rotY);
       function W(lx, ly, lz) { return { x: pose.x + lx * co + lz * si, y: pose.y + ly, z: pose.z - lx * si + lz * co }; }
       if (md === "familia") {
-        var fs = T.ctx.edit.famSel, av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}), b = av && av.caixa;
+        var fs = T.ctx.edit.famSel, av = T.ctx.famAval(fs.famId, fs.tipoId, fs.inst || {}), b = av && (av.caixaObstaculo || av.caixa);
         if (b) {
           if (planta) poli([W(b.x0, 0, b.z0), W(b.x1, 0, b.z0), W(b.x1, 0, b.z1), W(b.x0, 0, b.z1), W(b.x0, 0, b.z0)], ESTILO);
           else { var cs = [], xs = [], ys = []; [b.x0, b.x1].forEach(function (x) { [b.y0, b.y1].forEach(function (yv) { [b.z0, b.z1].forEach(function (z) { var s = proj(W(x, yv, z)); if (s) { xs.push(s.x); ys.push(s.y); } }); }); }); if (xs.length) el("rect", Object.assign({ x: r4(Math.min.apply(null, xs)), y: r4(Math.min.apply(null, ys)), width: r4(Math.max.apply(null, xs) - Math.min.apply(null, xs)), height: r4(Math.max.apply(null, ys) - Math.min.apply(null, ys)) }, ESTILO)); }

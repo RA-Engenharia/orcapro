@@ -705,7 +705,11 @@
       if (!/registro|valvula_bloqueio/.test(txt(q.acessorio || q.tipo))) return;
       var c = q.centro || q, P = { x: num(c.x, NaN), y: num(c.y, NaN), z: num(c.z, NaN) }; if (![P.x, P.y, P.z].every(isFinite)) return;
       /* a parede que o contém EM PLANTA (o registro no enchimento fica sob a base dela): a base dela é o piso */
-      var wl = paredes.filter(function (w) { var lp = local(w, P.x, P.z); return Math.abs(lp.u) <= w.hl + G.tolNo && Math.abs(lp.v) <= w.hw + G.tolNo; })[0];
+      /* ⚠ REVISÃO H5 (21/10/2026): no PRÉDIO as paredes dos pavimentos estão empilhadas na mesma planta e a primeira era a do
+         térreo — o registro do 2º pavimento saía "a 4,70 m do piso" (falso alerta). Agora só a parede da FAIXA DE COTA do registro
+         (a que o contém na altura; senão a de cima dele até a faixa do enchimento sob a base) */
+      var wls = paredes.filter(function (w) { var lp = local(w, P.x, P.z); return Math.abs(lp.u) <= w.hl + G.tolNo && Math.abs(lp.v) <= w.hw + G.tolNo && P.y >= w.y0 - G.alturaSoleira - EPS && P.y <= w.y1 + EPS; });
+      var wl = wls.filter(function (w) { return P.y >= w.y0 - EPS; }).sort(function (a, b) { return b.y0 - a.y0; })[0] || wls.sort(function (a, b) { return a.y0 - b.y0; })[0];
       var A = ambienteEm(P, P.y) || ambientes.filter(function (a) { return distPoli(P, a.contorno) <= G.faceAmbiente * 2 && P.y >= a.base - G.alturaSoleira && P.y <= a.topo; }).sort(function (a, b) { return distPoli(P, a.contorno) - distPoli(P, b.contorno); })[0];
       var piso = wl ? wl.base : (A ? A.base : num(E.piso, null));
       if (piso != null) {

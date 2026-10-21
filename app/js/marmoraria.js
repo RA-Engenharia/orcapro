@@ -72,8 +72,24 @@
     esgoto: { sobrepor: 0.46, embutir: 0.35, undermount: 0.35, semi_encaixe: 0.345, apoio: 0.35, esculpida: 0.35 },
     /* pia/tanque de inox: o sifão sanfonado desce 6 cm abaixo do fundo da cuba até a parede (o mesmo desenho do js/hidlouca.js e da família hid-pia-cozinha) */
     esgotoAbaixoFundo: 0.06,
-    alturaBanho: 0.85, alturaCozinha: 0.90  /* dados-fonte/hidro/kits/alturas-instalacao.json (Deca p.116, faixa 850 a 900) */
+    alturaBanho: 0.85, alturaCozinha: 0.90,  /* dados-fonte/hidro/kits/alturas-instalacao.json (Deca p.116, faixa 850 a 900) */
+    /* FRENTE H5 (21/10/2026): os pontos de água da torneira DE MESA ficam na parede sob o tampo, na MESMA altura da saída de esgoto
+       da cuba; com os 200 mm da Deca (±100 mm do eixo) a água ficava a 7 cm LIVRES do esgoto e o auditor do Traçar acusava
+       (critério RA: 10 cm livres entre as geratrizes de água e esgoto — js/hidrota.js GEO.afastamento, PADROES-PROJETO-RA R-C3).
+       Agora o entre-eixos = o maior entre o da Deca e 2 × (afastamento + raio da água + raio do esgoto) — com DN 20 e DN 50,
+       ±135 mm do eixo. A furação do tampo não muda (os flexíveis da torneira de mesa alcançam os pontos); a torneira de PAREDE
+       segue a ficha/Deca (os pontos dela ficam acima do tampo, longe do esgoto). Sem os motores do hidro: os valores abaixo. */
+    afastAguaEsgoto: 0.10,   /* critério RA = js/hidrota.js GEO.afastamento (água × esgoto, livre) — o motor manda quando carregado */
+    dnAguaCuba: 20,          /* DN do sub-ramal (af.aparelhos.dn_min) — o HidNormas manda quando carregado */
+    dnEsgotoCuba: { cozinha: 50, banheiro: 40 }   /* NBR 8160 Tabela 3 (es.aparelhos: pia de cozinha DN 50, lavatório DN 40) — idem */
   };
+  /* o entre-eixos dos pontos de água da torneira de mesa (ver REGRA.afastAguaEsgoto) */
+  function entreMesa(amb) {
+    var HRt = dep("HidRota", "./hidrota.js"), HNo = dep("HidNormas", "./hidnormas.js"), ap = amb === "cozinha" ? "pia_cozinha" : "lavatorio";
+    var af = HRt && HRt.GEO && isFinite(HRt.GEO.afastamento) ? HRt.GEO.afastamento : REGRA.afastAguaEsgoto, dA = REGRA.dnAguaCuba, dE = REGRA.dnEsgotoCuba[amb === "cozinha" ? "cozinha" : "banheiro"];
+    try { if (HNo && HNo.valor) { var va = Number(HNo.valor("af.aparelhos.dn_min", { aparelho: ap }, "dn_min")), ve = Number(HNo.valor("es.aparelhos", { aparelho: ap }, "dn_min")); if (va > 0) dA = va; if (ve > 0) dE = ve; } } catch (e) {}
+    return Math.max(REGRA.entrePontosAgua, 2 * (af + dA / 2000 + dE / 2000));
+  }
   var DES = {   /* FOLGAS DE DESENHO (padrão RA, a conferir com a marmoraria — não são norma) */
     recuoMin: 0.05,        /* da borda frontal da pedra à borda do recorte */
     margemLateral: 0.05,   /* do recorte à ponta da bancada */
@@ -250,7 +266,7 @@
         else if (amb === "cozinha") { yA = REGRA.piaParede; fonteA = FONTE_TIGRE + " (PIA 110 cm)"; }
         else { yA = H + REGRA.metalParedeAcimaTampo; fonteA = FONTE_DECA + " (metais de parede 170 a 220 mm acima do tampo; adotado 220)"; }
       } else { yA = H - REGRA.aguaAbaixoTampo; fonteA = FONTE_DECA + " (220 mm abaixo da face do tampo)"; }
-      var entre = tn && tn.pontoParede && num(tn.pontoParede.entre_eixos_mm, 0) > 0 ? num(tn.pontoParede.entre_eixos_mm, 0) / 1000 : REGRA.entrePontosAgua;
+      var entre = tn && tn.pontoParede && num(tn.pontoParede.entre_eixos_mm, 0) > 0 ? num(tn.pontoParede.entre_eixos_mm, 0) / 1000 : (tn && tn.instalacao !== "parede" ? entreMesa(amb) : REGRA.entrePontosAgua);
       cb.yAgua = yA; cb.fonteAgua = fonteA;
       def.conectores.push({ id: "esgoto" + cb.suf, nome: "Esgoto (saída do sifão, cuba " + (i + 1) + ")", sistema: "esgoto", dn: 0, x: r4(xc), y: r4(H - Ea), z: 0 });
       if (tn) {

@@ -306,7 +306,19 @@
   var CON_AF = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" }];
   var CON_AF_AQ = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0.04", y: "0", z: "0" },       /* hid:ok afastamento entre pontos do misturador: a conferir */
                    { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-0.04", y: "0", z: "0" }];  /* hid:ok idem */
-  ESPECS.push(metal("hid-chuveiro", "Chuveiro / ducha", ["chuveiro"], ["agua_fria"], CON_AF, "Chuveiro e ducha de parede ou de teto (Docol).", []));
+  /* ⚠ REVISÃO H5 (21/10/2026, ALTO): o chuveiro só tinha o ponto de ÁGUA FRIA — com aquecedor no modelo, a ducha (o principal ponto
+     de água quente da casa) ficava sem água quente e o Traçar não via nada a traçar. Agora a DUCHA (não elétrica: a metálica do
+     catálogo Docol, que não aquece) tem o ponto de ÁGUA QUENTE do misturador de parede (registros de AF e AQ separados): na altura do
+     registro de pressão (RP), ao lado do eixo do braço. O chuveiro ELÉTRICO (Eletrico = sim) aquece a água: só a água fria.
+     Desnível = CH − RP da tabela da Tigre (Manual Técnico 2025, p.40: CH 2,20 m, RP 1,10 m — dados-fonte/hidro/kits/alturas-pontos.json);
+     o afastamento lateral entre os registros não tem cota no catálogo (a conferir, aviso da família). */
+  var CON_CHUVEIRO = [CON_AF[0], { id: "aq", nome: "Água quente (misturador de parede, na altura do RP)", sistema: "agua_quente", dn: "DN_agua", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "0", visivel: "1 - Eletrico" }];
+  ESPECS.push(metal("hid-chuveiro", "Chuveiro / ducha", ["chuveiro"], ["agua_fria", "agua_quente"], CON_CHUVEIRO, "Chuveiro e ducha de parede ou de teto (Docol). A ducha recebe água fria e água quente pelo misturador de parede (dois registros); o chuveiro elétrico, só água fria.",
+    ["Afastamento lateral entre o registro de água fria e o de água quente do misturador sem cota no catálogo: conferir."]));
+  ESPECS[ESPECS.length - 1].geo.push(
+    X("Eletrico", "simnao", false, "Instalação", "Chuveiro elétrico (corpo com resistência) no lugar da ducha metálica — só água fria (sem o ponto de água quente)"),
+    I("Misturador_desnivel", 1.1, null, "Desnível do braço (ponto CH) ao ponto de água quente do misturador (registro na altura RP): CH − RP da Tigre p.40 (2,20 − 1,10)"),   /* hid:ok geometria: CH − RP da tabela da Tigre p.40 */
+    I("Misturador_afastamento", 0.15, null, "Afastamento lateral do ponto de água quente do misturador ao eixo do braço (sem cota no catálogo: a conferir)"));   /* hid:ok geometria a conferir (sem cota no catálogo) */
   ESPECS.push(metal("hid-ducha-higienica", "Ducha higiênica", ["ducha_higienica"], ["agua_fria"], CON_AF, "Ducha higiênica com registro (Docol).", []));
   ESPECS.push(metal("hid-torneira", "Torneira", ["torneira"], ["agua_fria"], CON_AF, "Torneira de lavatório, cozinha, jardim e tanque (Docol).", []));
   ESPECS.push(metal("hid-misturador", "Misturador (água fria + quente)", ["misturador"], ["agua_fria", "agua_quente"], CON_AF_AQ, "Misturador de lavatório, cozinha, bidê e chuveiro (Docol).",
@@ -879,6 +891,21 @@
       e.solidos = [solidoGerado(e, d)];
       if (e.avisos.indexOf(AV_FORMA) < 0) e.avisos.push(AV_FORMA);
     } else if (GEO_FAM[e.id]) e.solidos = GEO_FAM[e.id]();
+  });
+  /* REVISÃO H5 (21/10/2026, modelar como se executa): a DUCHA (não elétrica) tem o REGISTRO DO MISTURADOR de água quente na parede,
+     no ponto de AQ (altura RP, ao lado do braço) — a canopla e o volante do acabamento DocolBase (Docol, catálogo geral pág. 44: canopla
+     Ø 58 × 40 mm, volante Ø 57 × 25 mm; as mesmas cotas do registro do traçado, js/biminstgeo.js), saindo da face da parede. Assim a
+     caixa envolvente da família inclui o conector de AQ (test-hid-geometria). O chuveiro ELÉTRICO não tem (visivel = 1 − Eletrico) */
+  ESPECS.forEach(function (e) {
+    if (e.id !== "hid-chuveiro") return;
+    e.solidos = e.solidos.concat([
+      { id: "misturador-aq-canopla", nome: "Registro do misturador (água quente): canopla", forma: "cilindro", eixo: "z", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "0", raio: "Canopla_diametro/2", altura: "Canopla_altura", visivel: "1 - Eletrico", naParede: true, material: "Material" },
+      { id: "misturador-aq-volante", nome: "Registro do misturador (água quente): volante", forma: "cilindro", eixo: "z", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "Canopla_altura", raio: "Volante_diametro/2", altura: "Volante_altura", visivel: "1 - Eletrico", naParede: true, material: "Material" }]);
+    e.geo.push(
+      I("Canopla_diametro", 0.058, null, "Diâmetro da canopla do registro do misturador (DocolBase, Docol catálogo geral p.44: Ø 58 mm)"),
+      I("Canopla_altura", 0.04, null, "Altura da canopla do registro do misturador (DocolBase, Docol catálogo geral p.44: 40 mm)"),
+      I("Volante_diametro", 0.057, null, "Diâmetro do volante do registro do misturador (DocolBase, Docol catálogo geral p.44: Ø 57 mm)"),
+      I("Volante_altura", 0.025, null, "Altura do volante do registro do misturador (DocolBase, Docol catálogo geral p.44: 25 mm)"));
   });
   /* hid:geometria-fim */
 

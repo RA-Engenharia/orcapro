@@ -492,6 +492,22 @@
           var n = JSON.parse(JSON.stringify(o)), q = n.p1; n.p1 = n.p2; n.p2 = q; n.continua = "p1"; ops.push(n);
         });
       }
+      /* (e2) FRENTE H5 (21/10/2026): a ÁGUA QUENTE (js/hidaqtraco.js) — com aquecedor no modelo, a alimentação de água fria dele
+         (com registro), a saída até a distribuição no entreforro e a descida embutida até cada ponto de água quente do escopo (com
+         registro, volante para dentro do cômodo). O traçado anterior do mesmo aquecedor sai no mesmo lote (Traçar de novo = o mesmo) */
+      var HAQ = dep("HidAQTraco"); if (!HAQ && typeof require === "function") { try { HAQ = require("./hidaqtraco.js"); } catch (eRq) { HAQ = null; } }   /* Node (testes): o motor pelo require */
+      if (HAQ) {
+        try {
+          var velhasAQ = HAQ.anteriores(K.achatar(c.ops));
+          velhasAQ.forEach(function (id) { ops.push({ op: "apagar", id: id }); });
+          var estAQ = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]));
+          var RAQ = HAQ.tracar({ estado: estAQ, avaliarFam: c.avaliarFam, ops: c.ops.concat(ops), escopo: esc0.aparelhos, parametros: par });
+          RAQ.ops.forEach(function (o) { ops.push(o); });
+          RAQ.pendencias.forEach(function (p) { pendencias.push(p); });
+          RAQ.avisos.forEach(function (a) { avisos.push(a); });
+          if (RAQ.ligados) avisos.push({ texto: "Água quente: " + RAQ.ligados + " ponto(s) ligado(s) ao aquecedor (alimentação de água fria com registro, distribuição no entreforro, descida embutida com registro em cada ponto).", elementos: [] });
+        } catch (eAQ0) { pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: o traçado falhou (" + (eAQ0 && eAQ0.message ? eAQ0.message : eAQ0) + "); trace à mão", elementos: [] }); }
+      }
       /* (f) a PISCINA: o lançamento completo do js/hidpiscinarede.js (casa de máquinas, dispositivos, sucção, retorno, descarte
          na caixa receptora, drenagem da casa, reposição com descarga livre) no MESMO lote — depois da casa, para a vala
          desviar dos tubos já traçados */
@@ -512,7 +528,7 @@
       if (HCr) { try { crit = HCr.auditar(HCr.doEstado(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])), c.avaliarFam, { escopo: resumo.ids })); } catch (eC) { crit = null; } }
       ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (!/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto)) avisos.push({ texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }); }); });
       resumo.piscinas = piscinas.length;
-      /* ⚠ REVISÃO H4 (21/10/2026): ÁGUA QUENTE. O TA não traça a água quente (do aquecedor aos pontos). Com o aquecedor no modelo, os
+      /* ⚠ REVISÃO H4 (21/10/2026): ÁGUA QUENTE — a REDE DE SEGURANÇA depois do traçado da H5 (e2): o ponto de AQ que ficou sem tubo. Com o aquecedor no modelo, os
          pontos de AQ das 2 cubas da bancada (e de qualquer aparelho) ficavam SEM TUBO sem pendência nenhuma — e o auditor, que só
          olhava a AQ quando já havia tubo de AQ, dava verde. Agora: fonte de AQ no modelo (equipamento com saída de água quente) +
          ponto de AQ do escopo sem tubo depois do lote = pendência com os pontos, para a pessoa traçar à mão */
@@ -522,7 +538,7 @@
           var noEsc = {}; esc0.aparelhos.forEach(function (id) { noEsc[String(id)] = 1; });
           var semAQ = arr(BIi.rede(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-aq", ops: ops }])), c.avaliarFam).conectoresLivres).filter(function (k) { return k.sistema === "agua_quente" && noEsc[String(k.famInst)]; });
           var elsAQ = []; semAQ.forEach(function (k) { if (elsAQ.indexOf(String(k.famInst)) < 0) elsAQ.push(String(k.famInst)); });
-          if (semAQ.length) pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: o Traçar automaticamente não traça a água quente — " + semAQ.length + " ponto(s) de água quente sem tubo até o aquecedor (" + semAQ.map(function (k) { return k.famInst + ":" + k.id; }).join(", ") + "); trace à mão", elementos: elsAQ });
+          if (semAQ.length && !pendencias.some(function (p) { return p.chave === "ta.agua_quente"; })) pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: " + semAQ.length + " ponto(s) de água quente ficaram sem tubo até o aquecedor (" + semAQ.map(function (k) { return k.famInst + ":" + k.id; }).join(", ") + "); trace à mão", elementos: elsAQ });
         } catch (eAQ) { pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: não consegui conferir os pontos de água quente (" + (eAQ && eAQ.message ? eAQ.message : eAQ) + "); confira à mão", elementos: [] }); }
       }
       return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: c.ops.length };

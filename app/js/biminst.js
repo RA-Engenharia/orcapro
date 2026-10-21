@@ -339,6 +339,9 @@
     /* QUALIDADE VISUAL 2: a ponta que CONTINUA fora do que está modelado (a prumada que segue para o pavimento de
        cima/baixo, o ramal que sai para a rede pública) — declarada pelo projetista, não é ponta solta */
     if (o.continua === "p1" || o.continua === "p2" || o.continua === "ambos") t.continua = o.continua;
+    /* REVISÃO H5 (21/10/2026): o trecho de água quente que corre FORA do ambiente aquecido (o entreforro do js/hidaqtraco.js) leva o
+       ISOLAMENTO TÉRMICO (NBR 5626:2020 6.12.3) — vai ao levantamento (ISOLAMENTO_AQ) */
+    if (o.isolamento === true && o.sistema === "agua_quente") t.isolamento = true;
     /* CONECTIVIDADE (frente A, 19/10/2026): a tomada da ventilação diz em QUAL tubo de esgoto ela liga (o tê só nele); as esperas de
        projeto do prédio e da piscina ficam marcadas (a R-E2 as permite: viram pendência no motor delas) */
     if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
@@ -569,7 +572,7 @@
   function volumesFamilias(estado, avaliarFam) {
     var out = [];
     arr(estado && estado.familias).forEach(function (fi) {
-      var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && av.caixa;
+      var av = typeof avaliarFam === "function" ? avaliarFam(fi.famId, fi.tipoId, fi.inst) : null, b = av && (av.caixaObstaculo || av.caixa);   /* revisão H5: sem as peças rentes à parede */
       if (!b || ![b.x0, b.x1, b.y0, b.y1, b.z0, b.z1].every(isFinite) || b.y1 <= TOL) return;   /* tudo abaixo da origem (só a tampa/grelha no piso) = enterrada */
       var rot = num(fi.rotY, 0), c = Math.cos(rot), s = Math.sin(rot), mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2;
       out.push({ id: fi.id, famId: fi.famId, cx: r4(num(fi.x, 0) + mx * c + mz * s), cz: r4(num(fi.z, 0) - mx * s + mz * c), ux: c, uz: -s,
@@ -1087,6 +1090,19 @@
     if (c.tipo === "te_inspecao" && c.material === "pvc_esgoto") it.mercado = "te_inspecao_esgoto|" + c.dn;
     return it;
   }
+  /* ISOLAMENTO TÉRMICO DA ÁGUA QUENTE (revisão H5, 21/10/2026): o insumo SINAPI "TUBO DE ESPUMA DE POLIETILENO EXPANDIDO FLEXIVEL
+     PARA ISOLAMENTO TERMICO DE TUBULACAO DE AR CONDICIONADO, AGUA QUENTE, DN <bitola>, E= 10 MM" (SINAPI 06/2026, conferido na base
+     local data/sinapi-MG-2026-06.json) pela bitola do tubo (BITOLA_REF); o metro de isolamento por metro de tubo = o coeficiente
+     do isolamento na composição SINAPI 97329 (tubo de cobre com isolamento: 1,022727 m/m — data/sinapi-MG-analitico.json). Só
+     fornecimento (insumo): a colocação do tubo de espuma acompanha a montagem do tubo */
+  var ISOLAMENTO_AQ = { insumos: { "1/2": "39712", "3/4": "39715", "1": "39714", "1 1/4": "39708", "1 1/2": "39707" }, coeficiente: 1.022727, coefFonte: "SINAPI 97329 (insumo de isolamento por metro de tubo)",
+    descricao: "Tubo de espuma de polietileno expandido flexível para isolamento térmico de água quente, E = 10 mm" };   // hid:ok códigos e coeficiente da SINAPI conferidos (fonte acima)
+  function isolamentoDe(t) {
+    var b = (BITOLA_REF[t.material] || {})[t.dn], cod = b ? ISOLAMENTO_AQ.insumos[b] : null;
+    if (!cod) return { status: "pendente", chave: "isolamento|" + t.material + "|" + t.dn, rotulo: "Isolamento térmico DN " + t.dn, motivo: "isolamento térmico do tubo " + t.material + " DN " + t.dn + ": sem a bitola do insumo SINAPI — pendente" };
+    return { status: "ok", chave: "isolamento|" + b, rotulo: ISOLAMENTO_AQ.descricao + ", DN " + b + "\"", codigo: cod, unidade: "M", descricao: ISOLAMENTO_AQ.descricao + ", DN " + b + "\"", insumo: true, alternativas: 0,
+             observacao: "metro de isolamento = metro de tubo × " + ISOLAMENTO_AQ.coeficiente + " (" + ISOLAMENTO_AQ.coefFonte + ")" };
+  }
   /* REFERÊNCIA DE MERCADO (pendências finais, 18/10/2026; js/hidprecomercado.js, só no grupo "hidro" da prévia): o item SEM
      composição SINAPI que tem preço público levantado (o maior de 3 lojas) — sem o módulo carregado, nada muda (pendente) */
   function refMercado(it) {
@@ -1150,6 +1166,14 @@
       }
       g.n++; g.ids.push(p.id); sis(p.sistema).pecas++;
     });
+    /* REVISÃO H5: o isolamento térmico da água quente fora do ambiente aquecido, por bitola */
+    var isos = {}, ordI = [];
+    R.trechos.forEach(function (t) {
+      if (!t.isolamento) return;
+      var sp = isolamentoDe(t), k = sp.chave, g = isos[k];
+      if (!g) { g = isos[k] = { sistema: t.sistema, material: t.material, dn: t.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", coeficiente: ISOLAMENTO_AQ.coeficiente, trechos: [], sinapi: sp }; ordI.push(k); }
+      g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.metros * ISOLAMENTO_AQ.coeficiente); g.trechos.push(t.id);
+    });
     /* P12: acessórios de tubo (registro, válvula) e dispositivos elétricos (família com `mep`) */
     var acs = {}, ordA = [], dsp = {}, ordD = [];
     arr(R.acessorios).forEach(function (a) {
@@ -1167,6 +1191,7 @@
     return {
       acessorios: ordA.map(function (k) { return acs[k]; }),
       dispositivos: ordD.map(function (k) { return dsp[k]; }),
+      isolamentos: ordI.map(function (k) { return isos[k]; }),
       tubos: ordT.map(function (k) { return tubos[k]; }),
       conexoes: ordC.map(function (k) { return cxs[k]; }),
       pecas: ordP.map(function (k) { return pcs[k]; }),
@@ -1193,7 +1218,9 @@
       }
       out.push(o);
     }
-    R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it)); });
+    R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it));
+      if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));   /* revisão H5: o isolamento térmico da AQ */
+    });
     R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
       var it = itemConexao(c);
       linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
@@ -1338,7 +1365,13 @@
   /* bitola de rosca do adaptador para o DN do tubo (mm → polegada).
      FONTE: ABNT NBR 5648 (tubo de PVC soldável — DN × referência). Os outros
      materiais ficam sem equivalência de propósito (pendente com o motivo). */
-  var BITOLA_REF = { pvc_soldavel: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 60: "2", 75: "2 1/2", 85: "3", 110: "4" } };
+  /* FRENTE H5 (21/10/2026): a ÁGUA QUENTE do Traçar automaticamente (js/hidaqtraco.js) é PPR e o registro de gaveta de latão
+     dela pedia a bitola — sem a linha o orçamento saía PENDENTE. PPR (ABNT NBR 15813): a correspondência DN × rosca dos adaptadores
+     dos fabricantes (Tigre/Amanco: DN 20 × 1/2", 25 × 3/4", 32 × 1", …) — a mesma série de diâmetros externos do PVC soldável até
+     DN 50; CPVC (ABNT NBR 15884, Aquatherm): 15 × 1/2", 22 × 3/4", 28 × 1", 35 × 1 1/4", 42 × 1 1/2", 54 × 2". */
+  var BITOLA_REF = { pvc_soldavel: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 60: "2", 75: "2 1/2", 85: "3", 110: "4" },
+    ppr: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 63: "2", 75: "2 1/2", 90: "3", 110: "4" },
+    cpvc: { 15: "1/2", 22: "3/4", 28: "1", 35: "1 1/4", 42: "1 1/2", 54: "2" } };
   /* dispositivos = famílias com `mep: {peca}`; a categoria do Revit e a classe IFC
      (a do IMPORTADOR do Revit — revit-ifc, IFCCategoryUtil.cs, lido em 09/10/2026) */
   var DISPOSITIVOS = {
@@ -1459,7 +1492,7 @@
     if (V.rosca) {
       var b = (BITOLA_REF[a.material] || {})[a.dn];
       it.dn = b || ("DN " + a.dn);
-      if (!b) it.semTabela = A.nome + " " + V.rot + ": a bitola de rosca para o tubo " + ((MATERIAIS[a.material] || {}).nome || a.material) + " DN " + a.dn + " não está tabelada (BITOLA_REF: só PVC soldável, ABNT NBR 5648) — pendente";
+      if (!b) it.semTabela = A.nome + " " + V.rot + ": a bitola de rosca para o tubo " + ((MATERIAIS[a.material] || {}).nome || a.material) + " DN " + a.dn + " não está tabelada (BITOLA_REF: PVC soldável, PPR e CPVC) — pendente";
     } else {
       it.dn = String(a.dn);
       if (a.material !== V.material) it.semTabela = A.nome + " " + V.rot + " no tubo de " + ((MATERIAIS[a.material] || {}).nome || a.material) + ": não casa — troque o tipo do registro (pendente)";
