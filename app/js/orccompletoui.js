@@ -97,12 +97,21 @@
   /* ---------------- IA em blocos: texto grande não falha ---------------- */
   /* Promise → {linhas, blocos, semIA, avisos}. Nunca rejeita: bloco que a IA
      não estruturar (rede, limite, servidor) vira análise linha a linha. */
-  App._escopoEstruturar = function (txt, aoProgredir, sessao) {
+  /* ⚠ `parada` (opcional): o objeto ganha `parar()` — o botão "Parar a IA" do aviso de carregamento.
+     21/10/2026: o Rogério ficou 6+ min olhando "Estruturando o escopo com a IA — parte 1 de 1…" sem saída
+     (cada pedido espera até 330 s e repete uma vez: até 11 min com a tela tomada). Parar NÃO perde nada:
+     o pedido em voo é abortado e esse bloco e os seguintes vão para a análise linha a linha — o mesmo
+     caminho de quando a IA não responde. `out.parado` diz à tela que foi a pessoa, não a IA. */
+  App._escopoEstruturar = function (txt, aoProgredir, sessao, parada) {
     var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
-    var blocos = Escopo.dividirEmBlocos(txt, BLOCO), out = { linhas: [], blocos: blocos.length, semIA: 0, avisos: [], modelo: "" };
+    var blocos = Escopo.dividirEmBlocos(txt, BLOCO), out = { linhas: [], blocos: blocos.length, semIA: 0, avisos: [], modelo: "", parado: false };
     var excl = this._fontesExcluidas();
+    var ctlAtual = null;
+    if (parada) parada.parar = function () { out.parado = true; if (ctlAtual) { try { ctlAtual.abort(); } catch (e) {} } };
     var pedir = function (texto) {
+      if (out.parado) return Promise.reject(new Error("IA parada por você"));
       var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+      ctlAtual = ctl;
       var prazo = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 330000) : null;
       return fetch(back + "/ia/orcamento", { method: "POST", signal: ctl ? ctl.signal : undefined,
         headers: (function () { var h = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }; if (sessao) h["x-orcm-sessao"] = sessao; return h; })(),
@@ -123,16 +132,16 @@
           Escopo.analisarItensIA(j.resultado.etapas, { excluirFontes: excl }).forEach(function (l) { out.linhas.push(l); });
           return;
         }
-        if (tentativa < 1 && o.status !== 400 && o.status !== 401 && o.status !== 402 && o.status !== 403) return umBloco(texto, tentativa + 1);
+        if (tentativa < 1 && !out.parado && o.status !== 400 && o.status !== 401 && o.status !== 402 && o.status !== 403) return umBloco(texto, tentativa + 1);
         throw new Error(j.error || ("HTTP " + o.status));
       }, function (e) {
-        if (tentativa < 1) return umBloco(texto, tentativa + 1);
+        if (tentativa < 1 && !out.parado) return umBloco(texto, tentativa + 1);
         throw e;
       }).catch(function (e) {
-        if (tentativa >= 1 || /HTTP 40[0123]/.test(String(e && e.message))) {
-          /* a IA não respondeu para este bloco: análise linha a linha, sem perder nada */
+        if (tentativa >= 1 || out.parado || /HTTP 40[0123]/.test(String(e && e.message))) {
+          /* a IA não respondeu para este bloco (ou a pessoa parou): análise linha a linha, sem perder nada */
           out.semIA++;
-          if (out.avisos.length < 3) out.avisos.push(String((e && e.message) || e).slice(0, 140));
+          if (!out.parado && out.avisos.length < 3) out.avisos.push(String((e && e.message) || e).slice(0, 140));
           Escopo.analisar(texto, { excluirFontes: excl }).forEach(function (l) { l.semIA = true; out.linhas.push(l); });
           return;
         }
@@ -254,8 +263,9 @@
     var etapaTexto;
     if (origem === "revisao") etapaTexto = Promise.resolve(linhasRev || []);
     else if (txt) {
-      UI.loading("Estruturando o escopo com a IA…");
-      etapaTexto = this._escopoEstruturar(txt, function (f, t) { setTxt("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+      var parada = {};
+      UI.loading("Estruturando o escopo com a IA…", { botao: { rotulo: "Parar a IA e analisar linha a linha", aoClicar: function () { if (parada.parar) parada.parar(); } } });
+      etapaTexto = this._escopoEstruturar(txt, function (f, t) { setTxt("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao, parada)
         .then(function (r) { info = r; return r.linhas; });
     } else etapaTexto = Promise.resolve([]);
 

@@ -52962,13 +52962,18 @@ var jaAvisado = self._avisouTamanho[ent];
 if (!jaAvisado) {
 try { jaAvisado = global.localStorage.getItem(marcaTam) === verAtual; } catch (eL) {}
 }
-if (carga.length > 900 * 1024 && !jaAvisado) {
+var emPartes = !!(self.db && typeof self.db.batch === "function") && self.TETO_LOTE > 0;
+var limiar = emPartes ? Math.round(self.TETO_LOTE * 0.8) : 900 * 1024;
+if (carga.length > limiar && !jaAvisado) {
 self._avisouTamanho[ent] = 1;
 try { global.localStorage.setItem(marcaTam, verAtual); } catch (eL2) {}
 try {
 if (global.UI && global.UI.toast) global.UI.toast(
 "⚠ A lista \"" + ent + "\" já tem " + Math.round(carga.length / 1024)
-+ " KB e está perto do limite de 1 MB por lista da nuvem. Perto disso ela PARA de sincronizar, sem aviso."
++ (emPartes
+? " KB e está perto do limite da nuvem (" + Math.round(self.TETO_LOTE / 1048576) + " MB por lista, mesmo dividida em partes)."
+: " KB e está perto do limite de 1 MB por lista da nuvem.")
++ " Perto disso ela PARA de sincronizar, sem aviso."
 + " Faça backup e fale com o suporte antes que isso aconteça.", "erro");
 } catch (eT) {}
 try { console.warn("[nuvem] entidade grande:", ent, Math.round(carga.length / 1024) + " KB"); } catch (eC) {}
@@ -56299,6 +56304,7 @@ _backupEnviar: function () {
 var self = this, eid, dump;
 try { eid = Auth.empresaId(); } catch (e) { return; }
 if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(eid)) return;
+if (this._demo || eid === "demo") return;
 if (this._bkpSemServidor) return;
 if (!this._hostLocal()) { this._bkpSemServidor = true; return; }
 try { dump = this._dumpBackup(eid); } catch (e) { return; }
@@ -63567,8 +63573,9 @@ return reqId === self._escReq && self.orcAtual && self.orcAtual.id === orcId;
 };
 var setTxtE = function (t) { var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild; if (tn && tn.nodeType === 3) tn.nodeValue = t; };
 this._escopoComPagamento({ texto: txt }, function (sessao) {
-UI.loading("Estruturando o escopo com a IA…");
-self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+var parada = {};
+UI.loading("Estruturando o escopo com a IA…", { botao: { rotulo: "Parar a IA e analisar linha a linha", aoClicar: function () { if (parada.parar) parada.parar(); } } });
+self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao, parada)
 .then(function (r) {
 UI.loadingFim();
 if (!meuTurno()) { UI.toast("O escopo estruturado pela IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return; }
@@ -63577,7 +63584,7 @@ if (!self._escopo.length) { UI.toast("Nenhum serviço reconhecido no texto.", "e
 self._escopoIA = true;
 var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
 UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão)" +
-(r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) sem resposta da IA foram analisadas linha a linha" : "") +
+(r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) " + (r.parado ? "analisadas linha a linha porque você parou a IA" : "sem resposta da IA foram analisadas linha a linha") : "") +
 ". Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar ou Gerar tudo sem pendência.", r.semIA ? "erro" : "ok");
 self._mostrarEscopoResultado(0);
 })
@@ -68983,12 +68990,16 @@ return "<tr><td style=\"font-size:11px\">" + esc(l.etapa) + "</td><td>" + (l.cod
 }).join("") + "</tbody></table></div>" +
 '<div class="muted" style="font-size:11.5px;margin-top:6px"><b>' + r.linhas.length + " serviços.</b> Premissas: " + esc(r.premissas.join(" · ")) + "</div>";
 };
-App._escopoEstruturar = function (txt, aoProgredir, sessao) {
+App._escopoEstruturar = function (txt, aoProgredir, sessao, parada) {
 var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
-var blocos = Escopo.dividirEmBlocos(txt, BLOCO), out = { linhas: [], blocos: blocos.length, semIA: 0, avisos: [], modelo: "" };
+var blocos = Escopo.dividirEmBlocos(txt, BLOCO), out = { linhas: [], blocos: blocos.length, semIA: 0, avisos: [], modelo: "", parado: false };
 var excl = this._fontesExcluidas();
+var ctlAtual = null;
+if (parada) parada.parar = function () { out.parado = true; if (ctlAtual) { try { ctlAtual.abort(); } catch (e) {} } };
 var pedir = function (texto) {
+if (out.parado) return Promise.reject(new Error("IA parada por você"));
 var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+ctlAtual = ctl;
 var prazo = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 330000) : null;
 return fetch(back + "/ia/orcamento", { method: "POST", signal: ctl ? ctl.signal : undefined,
 headers: (function () { var h = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }; if (sessao) h["x-orcm-sessao"] = sessao; return h; })(),
@@ -69008,15 +69019,15 @@ if (metades.length > 1) return metades.reduce(function (p, m) { return p.then(fu
 Escopo.analisarItensIA(j.resultado.etapas, { excluirFontes: excl }).forEach(function (l) { out.linhas.push(l); });
 return;
 }
-if (tentativa < 1 && o.status !== 400 && o.status !== 401 && o.status !== 402 && o.status !== 403) return umBloco(texto, tentativa + 1);
+if (tentativa < 1 && !out.parado && o.status !== 400 && o.status !== 401 && o.status !== 402 && o.status !== 403) return umBloco(texto, tentativa + 1);
 throw new Error(j.error || ("HTTP " + o.status));
 }, function (e) {
-if (tentativa < 1) return umBloco(texto, tentativa + 1);
+if (tentativa < 1 && !out.parado) return umBloco(texto, tentativa + 1);
 throw e;
 }).catch(function (e) {
-if (tentativa >= 1 || /HTTP 40[0123]/.test(String(e && e.message))) {
+if (tentativa >= 1 || out.parado || /HTTP 40[0123]/.test(String(e && e.message))) {
 out.semIA++;
-if (out.avisos.length < 3) out.avisos.push(String((e && e.message) || e).slice(0, 140));
+if (!out.parado && out.avisos.length < 3) out.avisos.push(String((e && e.message) || e).slice(0, 140));
 Escopo.analisar(texto, { excluirFontes: excl }).forEach(function (l) { l.semIA = true; out.linhas.push(l); });
 return;
 }
@@ -69121,8 +69132,9 @@ var info = { blocos: 0, semIA: 0, avisos: [], modelo: "" };
 var etapaTexto;
 if (origem === "revisao") etapaTexto = Promise.resolve(linhasRev || []);
 else if (txt) {
-UI.loading("Estruturando o escopo com a IA…");
-etapaTexto = this._escopoEstruturar(txt, function (f, t) { setTxt("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+var parada = {};
+UI.loading("Estruturando o escopo com a IA…", { botao: { rotulo: "Parar a IA e analisar linha a linha", aoClicar: function () { if (parada.parar) parada.parar(); } } });
+etapaTexto = this._escopoEstruturar(txt, function (f, t) { setTxt("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao, parada)
 .then(function (r) { info = r; return r.linhas; });
 } else etapaTexto = Promise.resolve([]);
 etapaTexto.then(function (linhas) {

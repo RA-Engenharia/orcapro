@@ -4670,6 +4670,10 @@
          backup REAL, começando pelo mais antigo. E o modal de Backup passaria
          a mostrar como "última cópia" um arquivo de dado falso. */
       if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(eid)) return;
+      /* ⚠ E A VITRINE (?demo=1) TAMBÉM NÃO (21/10/2026). A empresa dela é "demo", que o ehPrevia não
+         reconhece: aberta na instalação (ou num servidor de desenvolvimento), a "Construtora Modelo" ia para
+         a pasta de backup a cada poucos minutos e expulsou os backups reais da RA de cinco dias. */
+      if (this._demo || eid === "demo") return;
       /* ⚠ SEM SERVIDOR LOCAL, NÃO MONTA O DUMP. Toda gravação da Gestão pede
          backup (js/store.js), e no celular e no PWA não existe o servidor que
          grava. O _bkpUltimo só andava no SUCESSO, então cada 15 s de edição
@@ -15237,8 +15241,9 @@
       /* ⚠ 21/10/2026 — PAGA ANTES DE GERAR: o orçamento por IA é cobrado (2 grátis por mês) e a IA só
          roda com a janela aberta. Pago aqui, o "Gerar tudo sem pendência" da revisão usa a MESMA janela. */
       this._escopoComPagamento({ texto: txt }, function (sessao) {
-      UI.loading("Estruturando o escopo com a IA…");
-      self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+      var parada = {};
+      UI.loading("Estruturando o escopo com a IA…", { botao: { rotulo: "Parar a IA e analisar linha a linha", aoClicar: function () { if (parada.parar) parada.parar(); } } });
+      self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao, parada)
         .then(function (r) {
           UI.loadingFim();
           if (!meuTurno()) { UI.toast("O escopo estruturado pela IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return; }
@@ -15247,7 +15252,7 @@
           self._escopoIA = true;
           var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
           UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão)" +
-            (r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) sem resposta da IA foram analisadas linha a linha" : "") +
+            (r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) " + (r.parado ? "analisadas linha a linha porque você parou a IA" : "sem resposta da IA foram analisadas linha a linha") : "") +
             ". Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar ou Gerar tudo sem pendência.", r.semIA ? "erro" : "ok");
           self._mostrarEscopoResultado(0);
         })

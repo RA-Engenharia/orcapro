@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.169",
+versao: "1.2.170",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -12595,7 +12595,7 @@ try { fnDiz = !!(this._modalDirty && this._modalDirty()); } catch (e) {}
 return fnDiz || !!m._tocado;
 },
 fecharModal: function () { this._modalDirty = null; this._modalConsulta = false; var m = this.el("modal-bg"); if (m) m.remove(); },
-loading: function (msg) {
+loading: function (msg, opts) {
 this.loadingFim();
 if (!document.getElementById("ui-loading-css")) {
 var s = document.createElement("style"); s.id = "ui-loading-css";
@@ -12608,6 +12608,18 @@ d.style.cssText = "position:fixed;inset:0;background:rgba(15,39,64,.45);z-index:
 d.innerHTML = '<div style="background:#fff;border-radius:12px;padding:18px 26px;font-weight:600;color:#1e293b;box-shadow:0 18px 50px rgba(0,0,0,.3);display:flex;gap:12px;align-items:center">' +
 '<span style="width:18px;height:18px;border:3px solid #cbd5e1;border-top-color:#2e6f9e;border-radius:50%;display:inline-block;animation:uiSpin .8s linear infinite"></span>' +
 Util.esc(msg || "Carregando…") + "</div>";
+if (opts && opts.botao) {
+d.style.flexDirection = "column"; d.style.gap = "12px";
+var b = document.createElement("button");
+b.type = "button"; b.id = "ui-loading-botao";
+b.style.cssText = "background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 16px;font-weight:600;color:#1e293b;cursor:pointer";
+b.textContent = opts.botao.rotulo || "Parar";
+b.onclick = function () {
+b.disabled = true; b.textContent = "Parando…";
+try { if (opts.botao.aoClicar) opts.botao.aoClicar(); } catch (e) { try { console.error("[loading] botão:", e); } catch (e2) {} }
+};
+d.appendChild(b);
+}
 document.body.appendChild(d);
 },
 loadingFim: function () { var d = document.getElementById("ui-loading"); if (d) d.remove(); },

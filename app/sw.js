@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.2.169';
+var CACHE = 'orcapro-app-v1.2.170';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -99,8 +99,26 @@ self.addEventListener('fetch', function (e) {
       if (r && r.ok) { var cp = r.clone(); caches.open(CACHE).then(function (c) { c.put(req, cp); }); }
       return r;
     }).catch(function () {
-      return caches.match(req).then(function (m) {
-        return m || (req.mode === 'navigate' ? caches.match('./index.html') : undefined);
+      /* ⚠ O respondWith NUNCA PODE RECEBER undefined (21/10/2026, console do Rogério na 1.2.168:
+         "Uncaught (in promise) TypeError: Failed to convert value to 'Response'" + "The FetchEvent for
+         /?_upd=… resulted in a network error"). Roteiro: a atualização automática apaga os caches e
+         reinicia o servidor local; a recarga com ?_upd= cai com o servidor ainda subindo; o pré-cache do
+         install falhou pelo mesmo motivo; e este catch devolvia `undefined` — página em branco, sem recado.
+         Agora: a navegação procura a cópia guardada IGNORANDO a busca (o ?_upd= muda a cada atualização e
+         nunca está guardado com ela) e, sem cópia nenhuma, mostra "reiniciando" e tenta de novo sozinha;
+         o resto devolve um erro de rede de verdade (Response.error), que o fetch de quem pediu já trata. */
+      var nav = req.mode === 'navigate';
+      return caches.match(req, nav ? { ignoreSearch: true } : undefined).then(function (m) {
+        if (m) return m;
+        if (!nav) return Response.error();
+        return caches.match('./index.html').then(function (i) { return i || caches.match('./'); }).then(function (i) {
+          return i || new Response(
+            '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="3">' +
+            '<title>OrçaPRO</title><body style="font:16px system-ui,sans-serif;padding:40px;color:#1e293b">' +
+            '<b>O OrçaPRO está reiniciando.</b><br>Esta página tenta de novo sozinha a cada 3 segundos. ' +
+            'Se não abrir em 1 minuto: no computador, rode o Iniciar-OrcaPRO; no celular, confira a internet.</body>',
+            { status: 503, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        });
       });
     })
   );

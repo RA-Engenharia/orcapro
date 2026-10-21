@@ -2013,13 +2013,24 @@
           if (!jaAvisado) {
             try { jaAvisado = global.localStorage.getItem(marcaTam) === verAtual; } catch (eL) {}
           }
-          if (carga.length > 900 * 1024 && !jaAvisado) {
+          /* ⚠ O LIMIAR SEGUE O MESMO CRITÉRIO DA GRAVAÇÃO (21/10/2026). Desde a 1.2.158 a lista acima de 1 MiB
+             sobe EM PARTES (_escreverEntVez) quando o SDK tem `db.batch` — o teto real passou a ser o do lote
+             (TETO_LOTE). Este aviso ficou nos 900 KB dizendo "PARA de sincronizar": recado que mente. No
+             console do Rogério (1.2.168) saiu para orcamentos, bim_vistas, bim_familias e bim_edicoes
+             (1,3 a 3,3 MB), que sincronizam em partes. Sem batch (SDK antigo, ou antes de conectar) o teto
+             continua sendo o de um documento só, e o aviso de sempre vale. */
+          var emPartes = !!(self.db && typeof self.db.batch === "function") && self.TETO_LOTE > 0;
+          var limiar = emPartes ? Math.round(self.TETO_LOTE * 0.8) : 900 * 1024;
+          if (carga.length > limiar && !jaAvisado) {
             self._avisouTamanho[ent] = 1;
             try { global.localStorage.setItem(marcaTam, verAtual); } catch (eL2) {}
             try {
               if (global.UI && global.UI.toast) global.UI.toast(
                 "⚠ A lista \"" + ent + "\" já tem " + Math.round(carga.length / 1024)
-                + " KB e está perto do limite de 1 MB por lista da nuvem. Perto disso ela PARA de sincronizar, sem aviso."
+                + (emPartes
+                  ? " KB e está perto do limite da nuvem (" + Math.round(self.TETO_LOTE / 1048576) + " MB por lista, mesmo dividida em partes)."
+                  : " KB e está perto do limite de 1 MB por lista da nuvem.")
+                + " Perto disso ela PARA de sincronizar, sem aviso."
                 + " Faça backup e fale com o suporte antes que isso aconteça.", "erro");
             } catch (eT) {}
             try { console.warn("[nuvem] entidade grande:", ent, Math.round(carga.length / 1024) + " KB"); } catch (eC) {}

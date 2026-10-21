@@ -255,7 +255,11 @@
 
     // LOTE 5: overlay de carregamento p/ operações longas (analítico 17MB, IA).
     // Sem isso o app parece travado e a primeira impressão morre ali.
-    loading: function (msg) {
+    /* `opts.botao` = { rotulo, aoClicar }: uma saída para a espera longa (ex.: "Parar a IA" do Escopo).
+       ⚠ O botão vai FORA da caixa, embaixo dela: quem troca o texto do aviso no meio do caminho
+       (setTxt/setTxtE do Escopo) acha o texto em `#ui-loading > 1º filho > último nó` — um botão dentro
+       da caixa viraria o último nó e o texto deixaria de andar. */
+    loading: function (msg, opts) {
       this.loadingFim();
       if (!document.getElementById("ui-loading-css")) {
         var s = document.createElement("style"); s.id = "ui-loading-css";
@@ -268,6 +272,18 @@
       d.innerHTML = '<div style="background:#fff;border-radius:12px;padding:18px 26px;font-weight:600;color:#1e293b;box-shadow:0 18px 50px rgba(0,0,0,.3);display:flex;gap:12px;align-items:center">' +
         '<span style="width:18px;height:18px;border:3px solid #cbd5e1;border-top-color:#2e6f9e;border-radius:50%;display:inline-block;animation:uiSpin .8s linear infinite"></span>' +
         Util.esc(msg || "Carregando…") + "</div>";
+      if (opts && opts.botao) {
+        d.style.flexDirection = "column"; d.style.gap = "12px";
+        var b = document.createElement("button");
+        b.type = "button"; b.id = "ui-loading-botao";
+        b.style.cssText = "background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:8px 16px;font-weight:600;color:#1e293b;cursor:pointer";
+        b.textContent = opts.botao.rotulo || "Parar";
+        b.onclick = function () {
+          b.disabled = true; b.textContent = "Parando…";
+          try { if (opts.botao.aoClicar) opts.botao.aoClicar(); } catch (e) { try { console.error("[loading] botão:", e); } catch (e2) {} }
+        };
+        d.appendChild(b);
+      }
       document.body.appendChild(d);
     },
     loadingFim: function () { var d = document.getElementById("ui-loading"); if (d) d.remove(); },
