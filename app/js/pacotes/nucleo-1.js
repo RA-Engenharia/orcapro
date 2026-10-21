@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.173",
+versao: "1.2.174",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -18324,6 +18324,26 @@ ok.sort(function (a, b) { return b.sim - a.sim; });
 var melhor = ok[0].sim, esc = ok[0];
 ok.forEach(function (o) { if (o.sim >= melhor - 0.05 && Number(o.c.item.custoUnitario) > Number(esc.c.item.custoUnitario)) esc = o; });
 return { custoUnitario: Number(esc.c.item.custoUnitario), codigo: String(esc.c.item.codigo), fonte: esc.c.fonte, descricao: esc.c.item.descricao, sim: esc.sim, equivalentes: ok.length };
+},
+candidatosParaIA: function (desc, unidade, ctx, max) {
+var self = this;
+return self.candidatosInsumo(desc, ctx).filter(function (r) { return r && r.item && Number(r.item.custoUnitario) > 0; })
+.map(function (r) { return { r: r, s: self.pontuarInsumo(desc, unidade, r.item, ctx) }; })
+.sort(function (a, b) { return b.s - a.s; }).slice(0, max || 15).map(function (o) { return o.r; });
+},
+aplicarEquivalenteIA: function (ins, cand, fator, memoria, ctx) {
+var uk = (ctx && ctx.unidadeChave) || unidFallback, it = cand && cand.item;
+if (!it || !(Number(it.custoUnitario) > 0) || !(fator > 0)) return false;
+var direto = Math.abs(fator - 1) < 1e-9 && uk(ins.unidade || "") === uk(it.unidade || "");
+var preco = Math.round(Number(it.custoUnitario) * fator * 10000) / 10000;
+if (!(preco > 0)) return false;
+ins.memoria = (ins.memoria ? ins.memoria + " · " : "") + "era \"" + String(ins.descricao).slice(0, 60) + "\" (" + ins.codigo + ") — equivalente escolhido pela IA: " +
+cand.fonte + " " + it.codigo + " (" + String(it.descricao).slice(0, 60) + ", " + (it.unidade || "?") + ")" +
+(direto ? "" : " × " + String(fator).replace(".", ",") + " = " + String(preco).replace(".", ",")) + (memoria ? " — " + memoria : "") + "; conferir";
+if (direto) { ins.codigo = String(it.codigo); ins.fonte = cand.fonte; ins.descricao = it.descricao; }
+else { ins.codigo = "EQ-" + it.codigo; ins.fonte = "PROPRIA"; }
+ins.custoUnitario = preco;
+return true;
 },
 validarComposicaoIA: function (L, resposta, ctx) {
 if (!L || !resposta || !Array.isArray(resposta.insumos) || !resposta.insumos.length) return null;

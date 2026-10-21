@@ -444,6 +444,22 @@
           }, function () {});
       });
     }, Promise.resolve()).then(function () {
+      /* insumo das composições NOVAS que o texto não casou: a IA escolhe o equivalente, na MESMA janela */
+      var novas = [];
+      pend.forEach(function (L) { if (L.comp && L.via === "ia" && novas.indexOf(L.comp) < 0 && L.comp.insumos.some(function (i) { return !(Number(i.custoUnitario) > 0); })) novas.push(L.comp); });
+      if (parar || !novas.length) return;
+      var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild;
+      if (tn && tn.nodeType === 3) tn.nodeValue = "A IA está escolhendo nas bases o equivalente dos insumos sem preço…";
+      return self._insumosEquivalentesIA(back, sessao, novas, ctx).then(function (r) {
+        if (!r.n) return;
+        pend.forEach(function (X) {
+          if (!X.comp || r.comps.indexOf(X.comp) < 0) return;
+          var cu = ComposicaoPropria.custo(X.comp.insumos, "truncar2"), sem = X.comp.insumos.filter(function (i) { return !(Number(i.custoUnitario) > 0); }).length;
+          X.custoUnitario = cu.total; X.custoMO = cu.mo; X.custoMAT = cu.mat; X.custoEQ = cu.eq;
+          X.motivo = String(X.motivo || "").replace(/; \d+ insumo\(s\) sem preço/, "") + " · equivalente de insumo escolhido pela IA" + (sem ? " (" + sem + " ainda sem preço)" : "");
+        });
+      });
+    }).then(function () {
       UI.loadingFim();
       pend.forEach(function (L) { delete L._grupoIA; });
       var resto = pend.filter(function (L) { return L.status === "pendente"; }).length;
@@ -476,52 +492,139 @@
      troca o COT-… pelo código real, recalcula a composição e o preço dos itens que a usam, e grava.
      `soItem` = "etapaId|itemId" para um item só. Devolve quantos insumos ganharam preço. */
   App._completarInsumosProprias = function (soItem) {
-    var self = this, orc = this.orcAtual;
-    if (!orc || typeof Bases === "undefined" || !Bases.obter || typeof ComposicaoPropria === "undefined") return 0;
-    var par = String(soItem || "").split("|");
+    if (typeof Orcamentista === "undefined") return 0;
+    var ctx = this._ctxInsumos(), novas = this._propriasComInsumoSemPreco(soItem), mud = {}, total = 0;
+    Object.keys(novas).forEach(function (cod) {
+      var nc = novas[cod], n = 0;
+      nc.insumos.forEach(function (ins) {
+        if (Number(ins.custoUnitario) > 0) return;
+        var eq = Orcamentista.precoPorEquivalencia(ins, Orcamentista.candidatosInsumo(ins.descricao, ctx), ctx);
+        if (!eq) return;
+        ins.memoria = (ins.memoria ? ins.memoria + " · " : "") + "era \"" + String(ins.descricao).slice(0, 60) + "\" (" + ins.codigo + ") — preço de " + eq.fonte + " " + eq.codigo + ", o maior entre " + eq.equivalentes + " equivalente(s); conferir";
+        ins.codigo = eq.codigo; ins.fonte = eq.fonte; ins.descricao = eq.descricao; ins.custoUnitario = eq.custoUnitario;
+        n++;
+      });
+      if (n) { mud[cod] = nc; total += n; }
+    });
+    if (!total || !this._gravarProprias(mud, "preço dos insumos das composições próprias")) return 0;
+    UI.toast(total + " insumo(s) sem preço completado(s) pelas bases em " + Object.keys(mud).length + " composição(ões) própria(s) — sem custo de IA.", "ok");
+    return total;
+  };
+
+  /* o contexto de busca de insumo: as bases ativas do orçamento + a mescla (_escopoFontesInsumo) */
+  App._ctxInsumos = function () {
     var excl = this._fontesExcluidas() || [];
-    var fontes = (Bases.lista ? Bases.lista() : []).filter(function (b) { return b.ativa !== false && excl.indexOf(b.fonte) < 0; }).map(function (b) { return b.fonte; });
+    var fontes = ((typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : []).filter(function (b) { return b.ativa !== false && excl.indexOf(b.fonte) < 0; }).map(function (b) { return b.fonte; });
     var ctx = this._orcmCtx({ fontes: fontes.length ? fontes : ["SINAPI"], elaborar: false });
     ctx.fontesInsumo = this._escopoFontesInsumo(ctx);
-    var novas = {}, total = 0;
+    return ctx;
+  };
+
+  /* CÓPIAS das composições PRÓPRIAS usadas no orçamento (ou só no item "etapaId|itemId") que têm insumo sem
+     preço, por código. Mexer na cópia não muda nada até _gravarProprias. */
+  App._propriasComInsumoSemPreco = function (soItem) {
+    var orc = this.orcAtual, novas = {};
+    if (!orc || typeof Bases === "undefined" || !Bases.obter || typeof ComposicaoPropria === "undefined") return novas;
+    var par = String(soItem || "").split("|");
     Util.arr(orc.etapas).forEach(function (e) {
       if (soItem && e.id !== par[0]) return;
       Util.arr(e.itens).forEach(function (it) {
         if (soItem && it.id !== par[1]) return;
         if (it.baseFonte !== "PROPRIA" || !it.codigo || novas[it.codigo]) return;
         var c = Bases.obter("PROPRIA", it.codigo);
-        if (!c || !(c.insumos || []).some(function (i) { return !(Number(i.custoUnitario) > 0); })) return;
-        var nc = Util.clone(c), n = 0;
-        nc.insumos.forEach(function (ins) {
-          if (Number(ins.custoUnitario) > 0) return;
-          var eq = Orcamentista.precoPorEquivalencia(ins, Orcamentista.candidatosInsumo(ins.descricao, ctx), ctx);
-          if (!eq) return;
-          ins.memoria = (ins.memoria ? ins.memoria + " · " : "") + "era \"" + String(ins.descricao).slice(0, 60) + "\" (" + ins.codigo + ") — preço de " + eq.fonte + " " + eq.codigo + ", o maior entre " + eq.equivalentes + " equivalente(s); conferir";
-          ins.codigo = eq.codigo; ins.fonte = eq.fonte; ins.descricao = eq.descricao; ins.custoUnitario = eq.custoUnitario;
-          n++;
-        });
-        if (!n) return;
-        var custo = ComposicaoPropria.custo(nc.insumos, nc.metodo || "truncar2");
-        nc.custoUnitario = custo.total; nc.custoMO = custo.mo; nc.custoMAT = custo.mat; nc.custoEQ = custo.eq;
-        novas[it.codigo] = nc; total += n;
+        if (c && (c.insumos || []).some(function (i) { return !(Number(i.custoUnitario) > 0); })) novas[it.codigo] = Util.clone(c);
       });
     });
-    var cods = Object.keys(novas);
-    if (!cods.length) return 0;
-    try { this._propriaGravarVarios(cods.map(function (k) { return novas[k]; })); } catch (eG) { UI.toast("Não consegui gravar as composições: " + eG.message, "erro"); return 0; }
+    return novas;
+  };
+
+  /* recalcula as composições alteradas, grava na base PRÓPRIA e atualiza o preço dos itens que as usam
+     (numa CÓPIA do orçamento, persistida pelas travas de sempre). true = gravou. */
+  App._gravarProprias = function (mud, rotulo) {
+    var orc = this.orcAtual, cods = Object.keys(mud || {});
+    if (!orc || !cods.length) return false;
+    cods.forEach(function (k) {
+      var nc = mud[k], custo = ComposicaoPropria.custo(nc.insumos, nc.metodo || "truncar2");
+      nc.custoUnitario = custo.total; nc.custoMO = custo.mo; nc.custoMAT = custo.mat; nc.custoEQ = custo.eq;
+    });
+    try { this._propriaGravarVarios(cods.map(function (k) { return mud[k]; })); } catch (eG) { UI.toast("Não consegui gravar as composições: " + eG.message, "erro"); return false; }
     var copia = Util.clone(orc);
-    if (!copia || copia === orc) return 0;
+    if (!copia || copia === orc) return false;
     Util.arr(copia.etapas).forEach(function (e) { Util.arr(e.itens).forEach(function (it) {
-      var nc = it.baseFonte === "PROPRIA" ? novas[it.codigo] : null; if (!nc) return;
+      var nc = it.baseFonte === "PROPRIA" ? mud[it.codigo] : null; if (!nc) return;
       it.custoUnitario = nc.custoUnitario; it.custoMO = nc.custoMO; it.custoMAT = nc.custoMAT; it.custoEQ = nc.custoEQ;
     }); });
     this.orcAtual = copia;
     var gravou = false;
-    try { gravou = this.persistir ? this.persistir({ semBackupModal: true, rotulo: "preço dos insumos das composições próprias" }) : !!Store.salvarOrcamento(Auth.empresaId(), copia); } catch (eP) { gravou = false; }
-    if (!gravou) { if (this.orcAtual === copia) this.orcAtual = orc; return 0; }
+    try { gravou = this.persistir ? this.persistir({ semBackupModal: true, rotulo: rotulo }) : !!Store.salvarOrcamento(Auth.empresaId(), copia); } catch (eP) { gravou = false; }
+    if (!gravou) { if (this.orcAtual === copia) this.orcAtual = orc; return false; }
     this.render();
-    UI.toast(total + " insumo(s) sem preço completado(s) pelas bases em " + cods.length + " composição(ões) própria(s) — sem custo de IA.", "ok");
-    return total;
+    return true;
+  };
+
+  /* A IA ESCOLHE O EQUIVALENTE (Rogério, 21/10/2026: "para não ficar sem — esse insumo tem nos nossos
+     bancos, às vezes não com o mesmo nome"). O que a busca por texto não aprovou — unidade diferente
+     (rebite UN × SINAPI em KG, batente M × JG), tamanho que a base não tem — vai para
+     /ia/insumo-equivalente com até 15 candidatos REAIS das bases, SEM preço; volta qual candidato e o fator.
+     O preço é o do candidato × fator, marcado "conferir" (Orcamentista.aplicarEquivalenteIA). Só roda
+     dentro da janela já paga (sessao). `comps` = composições que se pode alterar.
+     Devolve Promise<{ n: insumos que ganharam preço, comps: as composições alteradas }>; falha = n 0. */
+  App._insumosEquivalentesIA = function (back, sessao, comps, ctx) {
+    var grupos = [], porChave = {};
+    (comps || []).forEach(function (c) { Util.arr(c && c.insumos).forEach(function (ins) {
+      if (Number(ins.custoUnitario) > 0) return;
+      var ch = Util.normalizar(ins.descricao || "") + "|" + Util.normalizar(ins.unidade || "");
+      if (!porChave[ch]) {
+        var g = { ins: [], comps: [], cands: Orcamentista.candidatosParaIA(ins.descricao, ins.unidade, ctx, 15) };
+        porChave[ch] = g;
+        if (g.cands.length) { g.i = grupos.length; grupos.push(g); }
+      }
+      porChave[ch].ins.push(ins);
+      if (porChave[ch].comps.indexOf(c) < 0) porChave[ch].comps.push(c);
+    }); });
+    var vazio = { n: 0, comps: [] };
+    if (!grupos.length || !back) return Promise.resolve(vazio);
+    var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
+    if (sessao) hdr["x-orcm-sessao"] = sessao;
+    var lotes = []; for (var k = 0; k < grupos.length; k += 40) lotes.push(grupos.slice(k, k + 40));   // 40 = MAX_INSUMOS do server/ia-insumo-eq.js
+    var n = 0, alteradas = [], parar = false;
+    return lotes.reduce(function (p, lote) {
+      return p.then(function () {
+        if (parar) return;
+        var corpo = JSON.stringify({ insumos: lote.map(function (g) {
+          return { i: g.i, descricao: g.ins[0].descricao, unidade: g.ins[0].unidade || "", candidatos: g.cands.map(function (r, kk) { return { k: kk, descricao: r.item.descricao, unidade: r.item.unidade || "" }; }) };
+        }) });
+        var pedir = function (tent) {
+          return fetch(back + "/ia/insumo-equivalente", { method: "POST", headers: hdr, body: corpo })
+            .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); }, function () { return { status: 0, j: {} }; })
+            .then(function (o) { return (tent < 1 && (o.status === 0 || o.status >= 500) && !(o.j && o.j.devolvido)) ? new Promise(function (res) { setTimeout(res, 4000); }).then(function () { return pedir(tent + 1); }) : o; });
+        };
+        return pedir(0).then(function (o) {
+          if (o.status === 402 || o.status === 404 || (o.j && o.j.devolvido)) { parar = true; return; }
+          if (!o.j || !o.j.ok || !Array.isArray(o.j.escolhas)) return;
+          o.j.escolhas.forEach(function (e) {
+            var g = grupos[e.i], cand = g && g.cands[e.k];
+            if (!cand) return;
+            g.ins.forEach(function (ins) { if (Orcamentista.aplicarEquivalenteIA(ins, cand, Number(e.fator), e.memoria, ctx)) n++; });
+            g.comps.forEach(function (c) { if (alteradas.indexOf(c) < 0) alteradas.push(c); });
+          });
+        });
+      });
+    }, Promise.resolve()).then(function () { return { n: n, comps: alteradas }; }, function () { return { n: n, comps: alteradas }; });
+  };
+
+  /* as composições PRÓPRIAS do orçamento (ou do item) que ainda têm insumo sem preço → a IA escolhe o
+     equivalente → grava. Devolve Promise<nº de insumos que ganharam preço>. */
+  App._propriasEquivalenteIA = function (back, sessao, soItem) {
+    var self = this, novas = this._propriasComInsumoSemPreco(soItem), cods = Object.keys(novas);
+    if (!cods.length) return Promise.resolve(0);
+    UI.loading("A IA está escolhendo nas bases o equivalente dos insumos sem preço…");
+    return this._insumosEquivalentesIA(back, sessao, cods.map(function (k) { return novas[k]; }), this._ctxInsumos()).then(function (r) {
+      UI.loadingFim();
+      if (!r.n) return 0;
+      var mud = {}; cods.forEach(function (k) { if (r.comps.indexOf(novas[k]) > -1) mud[k] = novas[k]; });
+      return self._gravarProprias(mud, "equivalente dos insumos escolhido pela IA") ? r.n : 0;
+    });
   };
 
   App.precificarPendentesIA = function (alvo) {
@@ -535,13 +638,21 @@
     var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
     if (!back) { UI.toast("O servidor de IA não está configurado neste aparelho.", "erro"); return; }
     var par = String(alvo || "").split("|"), soEtapa = alvo ? par[0] : "", soItem = alvo ? par[1] : "";
-    var etapas = [], total = 0, assin = [], vistos = {};
+    var etapas = [], total = 0, assin = [], vistos = {}, propSem = [];
     Util.arr(orc.etapas).forEach(function (e) {
       if (soEtapa && e.id !== soEtapa) return;
       var et = { nome: e.nome, codigo: e.codigo, itens: [] };
       Util.arr(e.itens).forEach(function (it) {
         if (soItem && it.id !== soItem) return;
-        if (Util.num(it.custoUnitario) > 0) return;
+        if (Util.num(it.custoUnitario) > 0) {
+          /* tem preço, mas a composição PRÓPRIA tem insumo sem preço (o grátis das bases não resolveu) */
+          if (UI._insSemPreco && UI._insSemPreco(it) && propSem.indexOf(it.codigo) < 0) {
+            propSem.push(it.codigo);
+            var hp = self._orcmHash(String(Util.normalizar(it.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim());
+            if (!vistos[hp]) { vistos[hp] = 1; assin.push(hp); }
+          }
+          return;
+        }
         var cod = it.codigo && it.codigo !== "—" ? String(it.codigo) : "", fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "");
         var casca = "";
         if (cod && fonte === "PROPRIA" && typeof Bases !== "undefined") {
@@ -555,15 +666,19 @@
       });
       if (et.itens.length) etapas.push(et);
     });
-    if (!total) {
-      if (completados) return;   // resolvido pelas bases (o toast já disse)
-      var restam = 0;
-      Util.arr(orc.etapas).forEach(function (e) { Util.arr(e.itens).forEach(function (it) { if (UI._insSemPreco && UI._insSemPreco(it)) restam++; }); });
-      UI.toast(restam ? restam + " composição(ões) própria(s) com insumo que nenhuma base tem — informe o preço no Analítico do item." : (alvo ? "Este item já tem preço." : "Nenhum item sem preço neste orçamento."), restam ? "erro" : "ok");
+    if (!total && !propSem.length) {
+      if (!completados) UI.toast(alvo ? "Este item já tem preço." : "Nenhum item sem preço neste orçamento.", "ok");
       return;
     }
+    /* o que sobra de insumo sem preço depois de tudo: diz quantas composições e onde corrigir */
+    var avisoFinal = function (nIA) {
+      var restam = 0;
+      Util.arr((self.orcAtual || orc).etapas).forEach(function (e) { Util.arr(e.itens).forEach(function (it) { if ((!alvo || it.id === soItem) && UI._insSemPreco && UI._insSemPreco(it)) restam++; }); });
+      if (restam) UI.toast((nIA ? nIA + " insumo(s) ganharam preço pelo equivalente escolhido pela IA; " : "") + restam + " composição(ões) própria(s) ainda com insumo sem equivalente nas bases — informe o preço no Analítico do item.", "erro");
+      else if (nIA) UI.toast(nIA + " insumo(s) ganharam preço pelo equivalente escolhido pela IA nas bases — confira no Analítico do item.", "ok");
+    };
     var st = this._orcm = { modo: "pendentes", etapas: etapas, etapasRodadas: etapas, nome: orc.nome, total: total, orcId: orc.id, carimboEm: orc.atualizadoEm,
-      plano: [], assinaturaEscopo: assin.slice(0, 2000), uso: { revisar: 0, pendentes: total } };
+      plano: [], assinaturaEscopo: assin.slice(0, 2000), uso: { revisar: 0, pendentes: total + propSem.length } };
     st.aoDesistir = function () { UI.toast("Nada foi alterado: a IA só compõe depois de confirmado o pagamento (ou no grátis do mês).", "erro"); };
     var go = function (sessao) {
       if (self._orcm !== st) return;
@@ -581,11 +696,21 @@
         ctx.semPendente = true;
         ctx.fontesInsumo = self._escopoFontesInsumo(ctx);
         self._escopoPrecoEquivalencia(ctx);
+        /* depois dos itens: as composições PRÓPRIAS com insumo sem preço → a IA escolhe o equivalente */
+        var proprias = function () { return self._propriasEquivalenteIA(back, sessao, alvo).then(function (n) { return n; }, function () { return 0; }); };
+        if (!total) {
+          UI.loadingFim();
+          proprias().then(avisoFinal);
+          return;
+        }
         Orcamentista.planejarAsync(etapas, ctx, function () {}).then(function (r) {
           UI.loadingFim();
           if (self._orcm !== st || !self.orcAtual || self.orcAtual.id !== st.orcId) return;
           Object.assign(st, { plano: r.plano, fontes: r.fontes, cfg: cfg, ctx: ctx, carimboEm: self.orcAtual.atualizadoEm });
-          var aplicar = function () { if (self._orcm === st && self._orcmAplicar()) self._escopoRelatorio(st, null, "Itens precificados"); };
+          var aplicar = function () {
+            if (self._orcm !== st || !self._orcmAplicar()) return;
+            proprias().then(function (n) { self._escopoRelatorio(st, null, "Itens precificados"); avisoFinal(n); });
+          };
           var pend = r.plano.filter(function (L) { return L.status === "pendente"; });
           if (!pend.length) { aplicar(); return; }
           self._escopoComporIA(back, sessao, pend).then(aplicar, aplicar);

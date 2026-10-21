@@ -631,6 +631,33 @@
       return { custoUnitario: Number(esc.c.item.custoUnitario), codigo: String(esc.c.item.codigo), fonte: esc.c.fonte, descricao: esc.c.item.descricao, sim: esc.sim, equivalentes: ok.length };
     },
 
+    /* A IA ESCOLHE O EQUIVALENTE (21/10/2026) — o que a semelhança de texto não aprovou: unidade diferente
+       (rebite UN × SINAPI em KG), tamanho que a base não tem. Candidatos de QUALQUER unidade (a diferença é
+       o que a IA resolve com o fator), só com preço, os mais parecidos primeiro. */
+    candidatosParaIA: function (desc, unidade, ctx, max) {
+      var self = this;
+      return self.candidatosInsumo(desc, ctx).filter(function (r) { return r && r.item && Number(r.item.custoUnitario) > 0; })
+        .map(function (r) { return { r: r, s: self.pontuarInsumo(desc, unidade, r.item, ctx) }; })
+        .sort(function (a, b) { return b.s - a.s; }).slice(0, max || 15).map(function (o) { return o.r; });
+    },
+    /* aplica a escolha: preço = preço do candidato × fator. Mesmo item na mesma unidade (fator 1) adota o
+       código real. ⚠ Com conversão o código vira EQ-<código> da PRÓPRIA: o preço já não é o da base, e quem
+       reprecificasse pelo código real poria o preço do KG no lugar do da UNIDADE (1.025 vezes mais). */
+    aplicarEquivalenteIA: function (ins, cand, fator, memoria, ctx) {
+      var uk = (ctx && ctx.unidadeChave) || unidFallback, it = cand && cand.item;
+      if (!it || !(Number(it.custoUnitario) > 0) || !(fator > 0)) return false;
+      var direto = Math.abs(fator - 1) < 1e-9 && uk(ins.unidade || "") === uk(it.unidade || "");
+      var preco = Math.round(Number(it.custoUnitario) * fator * 10000) / 10000;
+      if (!(preco > 0)) return false;
+      ins.memoria = (ins.memoria ? ins.memoria + " · " : "") + "era \"" + String(ins.descricao).slice(0, 60) + "\" (" + ins.codigo + ") — equivalente escolhido pela IA: " +
+        cand.fonte + " " + it.codigo + " (" + String(it.descricao).slice(0, 60) + ", " + (it.unidade || "?") + ")" +
+        (direto ? "" : " × " + String(fator).replace(".", ",") + " = " + String(preco).replace(".", ",")) + (memoria ? " — " + memoria : "") + "; conferir";
+      if (direto) { ins.codigo = String(it.codigo); ins.fonte = cand.fonte; ins.descricao = it.descricao; }
+      else { ins.codigo = "EQ-" + it.codigo; ins.fonte = "PROPRIA"; }
+      ins.custoUnitario = preco;
+      return true;
+    },
+
     validarComposicaoIA: function (L, resposta, ctx) {
       if (!L || !resposta || !Array.isArray(resposta.insumos) || !resposta.insumos.length) return null;
       var self = this, insumos = [], aCotar = 0;
