@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.168",
+versao: "1.2.169",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -991,7 +991,7 @@ var DISCIPLINAS = [
 { id: "marcenaria", nome: "Marcenaria" }
 ];
 var IDS = DISCIPLINAS.map(function (d) { return d.id; });
-var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }];
+var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }];
 var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
 var DEMO_URL = false;
 try { DEMO_URL = /[?&]demo=1\b/.test((global.location && global.location.search) || ""); } catch (e) {}
@@ -1199,10 +1199,11 @@ return !(o && o.modelador === false);
 } catch (e) { return true; }
 },
 _modela: function () { return (global.Modela && typeof global.Modela.status === "function") ? global.Modela : null; },
+_marm: function () { try { var MM = global.MarmModulo; return !!(MM && MM.liberado && MM.liberado()); } catch (e) { return false; } },
 modelador: function () {
 if (!BimPrevia._aparelho()) return false;
 var M = BimPrevia._modela(); if (!M) return true;
-try { return !!M.status().liberado; } catch (e) { return true; }
+try { return !!M.status().liberado || BimPrevia._marm(); } catch (e) { return true; }
 },
 HIDRO_OFF: HIDRO_OFF,
 hidro: function () {
@@ -1211,12 +1212,76 @@ try { return global.localStorage.getItem(HIDRO_OFF) !== "1"; } catch (e) { retur
 },
 disciplina: function (id) {
 if (!BimPrevia._aparelho()) return false;
+if (id === "marmoraria" && global.MarmModulo) return BimPrevia._marm();
 var M = BimPrevia._modela(); if (!M) return true;
 try { return !!M.tem(id); } catch (e) { return true; }
 }
 };
 global.BimPrevia = BimPrevia;
 if (typeof module !== "undefined" && module.exports) module.exports = BimPrevia;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/marmmodulo.js ==== */
+try {
+(function (global) {
+"use strict";
+var ID = "marmoraria";
+var OWNER = "orcapro:marmoraria:owner";
+var OFERTA = {
+titulo: "Módulo Marmoraria",
+subtitulo: "Da parede à proposta: a bancada certa, o executivo pronto e o orçamento com os seus preços.",
+itens: [
+"Parede desenhada ou ambiente pelas medidas: a bancada encosta nela.",
+"Bancada de banheiro e de cozinha: pedra, espessura, saia, rodabanca, borda, cuba e torneira — o tampo já sai com o furo ou o recorte pelo gabarito da cuba.",
+"Executivo de marmoraria: planta da peça cotada a partir das bordas, vista frontal, detalhe da borda, plano de chapa e lista de peças, em PDF e DXF.",
+"A sua tabela de preços: R$/m² por pedra, R$/m de cada acabamento, furo, recorte, cuba, mão-francesa, instalação, frete, perda de chapa, margem e desconto — importa e exporta planilha.",
+"Orçamento na hora de modelar e a proposta em PDF com a sua marca, o executivo anexo, validade, prazo e condições de pagamento."
+],
+semOrcapro: "Não precisa do OrçaPRO: a licença do módulo abre só a área da marmoraria.",
+vendaFechada: "A venda do módulo abre em breve. Para usar agora, fale com a RA Engenharia."
+};
+function M() { return global.Modela && typeof global.Modela.tem === "function" ? global.Modela : null; }
+function L() { return global.Licenca || null; }
+function dono() { try { return !!(global.localStorage && global.localStorage.getItem(OWNER) === "1"); } catch (e) { return false; } }
+var MarmModulo = {
+ID: ID, OWNER: OWNER, OFERTA: OFERTA,
+estado: function () {
+if (dono()) return { liberado: true, motivo: "dono", teste: null };
+var m = M(), s = null;
+try { s = m && m.status ? m.status() : null; } catch (e) { s = null; }
+var tem = false; try { tem = !!(m && m.tem(ID)); } catch (e2) { tem = false; }
+if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play) };
+var mot = "compra", comprado = false;
+try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
+if (s && s.demo) mot = "demo";
+else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
+return { liberado: true, motivo: mot, teste: s ? s.teste : null };
+},
+liberado: function () { return this.estado().liberado; },
+guarda: function (acao) {
+var e = this.estado();
+if (e.liberado) return { ok: true, motivo: e.motivo };
+var t = e.teste || {};
+return { ok: false, acao: acao || "", motivo: "O " + OFERTA.titulo + " não está liberado nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado };
+},
+soMarmoraria: function () {
+var lic = L(), m = M();
+try { if (!lic || !lic.soModela || !lic.soModela()) return false; } catch (e) { return false; }
+if (!this.liberado()) return false;
+try {
+var s = m ? m.status() : null;
+if (!s || s.demo || s.vitalicia) return false;
+return !Object.keys(s.compradas || {}).length;
+} catch (e2) { return false; }
+},
+iniciarTeste: function (cb) { var m = M(); if (!m || !m.iniciarTeste) { if (cb) cb({ ok: false }); return false; } return m.iniciarTeste(cb); },
+planosAVenda: function (oferta) {
+var p = (oferta && oferta.planos) || {};
+return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+}
+};
+global.MarmModulo = MarmModulo;
+if (typeof module !== "undefined" && module.exports) module.exports = MarmModulo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/idb.js ==== */
@@ -1386,7 +1451,7 @@ var o = {};
 "bim_clash_resultados", "bim_orc_vinculos", "bim_tarefas", "bim_4d_aparencias", "atividades", "horas_extras", "batidas",
 "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
 "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
-"carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "remun_param", "remun_apur", "portal_padrao",
+"carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
 "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
 return o;
 })();
@@ -66669,11 +66734,23 @@ ceramica: { rotulo: "Revestimento cerâmico", e: 15, material: "ceramica", traco
 porcelanato: { rotulo: "Porcelanato", e: 18, material: "porcelanato", traco: "placa 10 mm + argamassa colante AC-III", servico: "Porcelanato", fonte: "prática — placa + colante" }
 },
 NUCLEOS: {
-bloco_concreto_14: { rotulo: "Bloco de concreto 14 cm", e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 14" },
-bloco_concreto_19: { rotulo: "Bloco de concreto 19 cm", e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 19" },
-bloco_concreto_9: { rotulo: "Bloco de concreto 9 cm", e: 90, familia: null, peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — vedação" },
-bloco_ceramico_14: { rotulo: "Bloco cerâmico 14 cm", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³" },
-bloco_ceramico_9: { rotulo: "Bloco cerâmico 9 cm", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019" },
+bloco_concreto_14: { rotulo: "Bloco de concreto 14 cm", e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 14", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
+bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — M15, família 29 (14×19×29)", alv: "bc-M15-29" },
+bloco_concreto_19: { rotulo: "Bloco de concreto 19 cm", e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 19", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
+bloco_concreto_9: { rotulo: "Bloco de concreto 9 cm", e: 90, familia: null, peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — vedação", alv: "bc-M10-ved" },
+bloco_ceramico_14: { rotulo: "Bloco cerâmico 14 cm", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³", alv: "cv-9f-14" },
+bloco_ceramico_9: { rotulo: "Bloco cerâmico 9 cm", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019", alv: "cv-8f-9" },
+cer_8f_9: { rotulo: "Cerâmico 8 furos 9×19×19 (furos na horizontal)", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 (bloco cerâmico vazado ≈ 13 kN/m³); peça: SINAPI 7271", alv: "cv-8f-9" },
+cer_8f_9_29: { rotulo: "Cerâmico 8 furos 9×19×29", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 7268", alv: "cv-8f-9-29" },
+cer_6f_9: { rotulo: "Cerâmico 6 furos 9×14×19 em pé", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 7267", alv: "cv-6f-9" },
+cer_6f_deitado: { rotulo: "Cerâmico 6 furos 9×14×19 deitado (parede de 14)", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; SINAPI 103334 (bloco deitado)", alv: "cv-6f-9-deitado" },
+cer_9f_11: { rotulo: "Cerâmico 9 furos 11,5×14×24", e: 115, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44459", alv: "cv-9f-11" },
+cer_9f_14: { rotulo: "Cerâmico 9 furos 14×19×29", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44462", alv: "cv-9f-14" },
+cer_9f_19: { rotulo: "Cerâmico 9 furos 19×19×29", e: 190, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44464", alv: "cv-9f-19" },
+cer_est_14: { rotulo: "Cerâmico estrutural 14×19×29", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 (≈ 13 kN/m³ — conferir o estrutural na ficha); peça: SINAPI 34586", alv: "ce-29" },
+cer_est_14_39: { rotulo: "Cerâmico estrutural 14×19×39", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 34588", alv: "ce-39" },
+tijolo_macico_10: { rotulo: "Tijolo maciço 5×10×20 (deitado)", e: 100, familia: null, peso: 1800, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 Tabela 1 — cerâmica 18 kN/m³ (o mesmo do PESO.ceramica); peça: SINAPI 7258", alv: "tm-10" },
+tijolinho_11: { rotulo: "Tijolinho laminado aparente 5,5×11×23", e: 110, familia: null, peso: 1800, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 Tabela 1 — cerâmica 18 kN/m³ (o laminado de 21 furos é mais leve — conferir ficha); peça: SINAPI 34401", alv: "tl-11" },
 concreto_armado_15: { rotulo: "Parede de concreto 15 cm", e: 150, familia: null, peso: 2500, unidade: "kg/m3", tipo: "concreto", fonte: "NBR 6120:2019 — concreto armado 25 kN/m³" },
 drywall_70: { rotulo: "Drywall montante 70 mm", e: 95, familia: null, peso: 280, unidade: "kg/m3", tipo: "seco", fonte: "prática — 70 mm + 2 chapas de 12,5 mm" },
 blocok_10: { rotulo: "Blocok 10 cm (painel EPS)", e: 100, familia: null, peso: 469, unidade: "kg/m3", tipo: "blocok", modulo: "blocok", fonte: "38 kg ÷ (0,81 m² × 0,10 m) — franqueado Blocok" },
@@ -66775,6 +66852,34 @@ nota: "Cerâmica colada direto na peça. Mesmas limitações da 13 cm: sem vão,
 rotulo: "Blocok 10 · divisória leve", funcao: "vedacao", nucleo: "blocok_10", modulo: "blocok",
 dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
 nota: "Não aceita concreto embutido: só divisória SEM vão, entre paredes travadas, até 4,0 m, encunhada sob a laje."
+},
+"crua-cer-8f-9": {
+rotulo: "Crua · cerâmico 8 furos 9×19×19 (sem revestimento)", funcao: "vedacao", nucleo: "cer_8f_9", dentro: [], fora: [],
+nota: "O tijolo baiano de 8 furos, furos na horizontal paralelos à parede. Ponto de partida da vedação corrente; o revestimento entra depois."
+},
+"crua-cer-9f-14": {
+rotulo: "Crua · cerâmico 9 furos 14×19×29 (sem revestimento)", funcao: "vedacao", nucleo: "cer_9f_14", dentro: [], fora: [],
+nota: "Vedação de 14 cm em bloco cerâmico de 9 furos."
+},
+"crua-cer-6f-deitado": {
+rotulo: "Crua · cerâmico 6 furos deitado (parede de 14)", funcao: "vedacao", nucleo: "cer_6f_deitado", dentro: [], fora: [],
+nota: "O 9×14×19 assentado deitado dá parede de 14 cm (SINAPI 103334) — os furos seguem paralelos à parede."
+},
+"crua-cer-est-14": {
+rotulo: "Crua · cerâmico estrutural 14×19×29", funcao: "estrutural", nucleo: "cer_est_14", dentro: [], fora: [],
+nota: "Alvenaria estrutural cerâmica: furos verticais, canaleta na última fiada e nas vergas."
+},
+"crua-bc-14-est": {
+rotulo: "Crua · bloco de concreto estrutural 14 (M15, família 39)", funcao: "estrutural", nucleo: "bloco_concreto_14", dentro: [], fora: [],
+nota: "Bloco aparente: alvéolos verticais, amarração L de 34 e T de 54, canaleta grauteada na verga, contraverga e respaldo."
+},
+"crua-bc-14-29": {
+rotulo: "Crua · bloco de concreto estrutural 14 (M15, família 29)", funcao: "estrutural", nucleo: "bloco_concreto_14_29", dentro: [], fora: [],
+nota: "Família 29: módulo de 15 cm, o canto fecha com o próprio inteiro; bloco e meio (44) no T."
+},
+"crua-tijolinho": {
+rotulo: "Tijolinho aparente 5,5×11×23 (laminado)", funcao: "vedacao", nucleo: "tijolinho_11", dentro: [], fora: [],
+nota: "Tijolinho laminado à vista, assentado deitado; os 21 furos ficam na junta."
 },
 "crua": {
 rotulo: "Parede crua (só o núcleo)",
@@ -66966,6 +67071,905 @@ return out;
 };
 global.AlvTipos = AlvTipos;
 if (typeof module !== "undefined" && module.exports) module.exports = AlvTipos;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/alvunidades.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function BL() { return dep("Blocos", "./blocos.js"); }
+var JUNTA = 0.010;
+var FONTES = {
+SINAPI: { doc: "SINAPI — Caixa: insumos e composições MG 06/2026, não desonerado (base local data/sinapi-MG-2026-06.json e data/sinapi-MG-analitico.json)",
+url: "https://www.caixa.gov.br/poder-publico/modernizacao-gestao/sinapi/Paginas/default.aspx" },
+NBR15270: { doc: "ABNT NBR 15270-1 — Componentes cerâmicos — Blocos e tijolos para alvenaria — Parte 1: Requisitos (vigente: 15270-1:2023, publicada em 14/12/2023, que cancelou a 2017 — catálogo ABNT consultado em 20/10/2026; valores daqui da 2017: valor da edição anterior — conferir na edição vigente)",
+url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/24627/abnt-nbr15270-1-componentes-ceramicos-blocos-e-tijolos-para-alvenaria-parte-1-requisitos",
+secundaria: { doc: "SUDECAP/PBH — Caderno de encargos cap. 7 (29/08/2024), Tabelas 2 e 4 (NBR 15270-1:2017: tolerância ±5 mm na peça e ±3 mm na média, parede externa ≥ 7 mm, septo ≥ 6 mm, esquadro e planeza ≤ 3 mm)",
+url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
+nota: "a NBR 7170 (tijolo maciço) foi cancelada em 11/2017 e incorporada à 15270 (CBIC)" },
+NBR6136: { doc: "ABNT NBR 6136:2016 — Blocos vazados de concreto simples para alvenaria (CANCELADA em 27/02/2026 → NBR 6136-1:2026 Requisitos e 6136-2:2026 Métodos de ensaio — catálogo ABNT consultado em 20/10/2026; valores daqui da 2016: valor da edição anterior — conferir na edição vigente)",
+url: "https://normas.com.br/visualizar/abnt-nbr-nm/14326/abnt-nbr6136-1-blocos-vazados-de-concreto-para-alvenaria-parte-1-requisitos",
+secundaria: { doc: "SUDECAP/PBH cap. 7, Tabelas 3 e 6 (NBR 6136:2016 Tabela 1 — famílias M-20 a M-7,5, meio, amarração L e T, compensadores 90 e 40 mm; Tabela 2 — paredes: classes A/B 190 = 32/25 mm, 140 = 25/25 mm; classe C 18 mm)",
+url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
+nota: "classes (2016): A ≥ 8 MPa, B 4 a 8 MPa, C ≥ 3 MPa — conferir na 6136-1:2026" },
+NBR16868: { doc: "ABNT NBR 16868-1:2020 — Alvenaria estrutural — Parte 1: Projeto (substitui NBR 15961 e NBR 15812)", url: "https://www.abntcatalogo.com.br/" },
+NBR8545: { doc: "ABNT NBR 8545:1984 — Execução de alvenaria sem função estrutural de tijolos e blocos cerâmicos — verga/contraverga 20 cm de cada lado (via js/alvenaria.js)", url: "https://www.abntcatalogo.com.br/" },
+BLOCOS_JS: { doc: "js/blocos.js — família e peso de referência do bloco de concreto (compilação de 6 fabricantes: Tatu, Pavibloco, JB, Original, ArtBlocos, Portital; regra R1–R5 no cabeçalho)", url: null }
+};
+var PAREDE = {
+ceramico_vedacao: { ext: 0.007, septo: 0.006, fonte: "NBR 15270-1:2017 via SUDECAP cap. 7 Tabela 2 — parede externa ≥ 7 mm, septo ≥ 6 mm (o MÍNIMO; conferir a ficha do fornecedor) — valor da edição anterior — conferir na edição vigente (NBR 15270-1:2023)" },
+ceramico_estrutural: { ext: 0.0121, septo: 0.0127, fonte: "FAD 003 (PBQP-H) Tabela 1 — 14×19×29 medido: paredes 12,1 mm, septos 12,7 mm (a norma 2017 pede ≥ 7 e ≥ 6 mm)" },
+concreto_AB: { ext: 0.025, septo: 0.025, fonte: "NBR 6136:2016 — classes A e B, M15: parede longitudinal e transversal ≥ 25 mm (o mesmo mínimo que o js/blocos.js usa na regra R3b) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
+concreto_M20: { ext: 0.032, septo: 0.025, fonte: "NBR 6136:2016 — M20: parede longitudinal ≥ 32 mm, transversal ≥ 25 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
+concreto_C: { ext: 0.018, septo: 0.018, fonte: "NBR 6136:2016 — classe C (vedação): paredes ≥ 18 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" }
+};
+function U(o) { return o; }
+var UNIDADES = [
+U({ id: "cv-4f-9x9x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 4 furos 9×9×19", l: 0.09, a: 0.09, c: 0.19, furos: { eixo: "x", nz: 2, ny: 2 }, parede: "ceramico_vedacao", sinapi: "7270" }),
+U({ id: "cv-6f-9x14x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×14×19 (em pé)", l: 0.09, a: 0.14, c: 0.19, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "7267" }),
+U({ id: "cv-6f-14x9x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×14×19 deitado (parede de 14)", l: 0.14, a: 0.09, c: 0.19, furos: { eixo: "x", nz: 3, ny: 2 }, parede: "ceramico_vedacao", sinapi: "7267", deitado: "cv-6f-9x14x19" }),
+U({ id: "cv-6f-9x14x24", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×14×24", l: 0.09, a: 0.14, c: 0.24, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44458" }),
+U({ id: "cv-6f-9x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×19×39", l: 0.09, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44457" }),
+U({ id: "cv-6f-11x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×29", l: 0.115, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44460", massa: { kg: 3.61, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "11,5×19×29 = 3,61 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-6f-11x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×39", l: 0.115, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44461" }),
+U({ id: "cv-8f-9x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×19 (tijolo baiano)", l: 0.09, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, sinapi: "7271", massa: { kg: 2.05, fonte: "FAD 47 (PBQP-H/IPT) Tabela 1 — massa seca 2.049 g", metodo: "publicado" }, parede: { ext: 0.006, septo: 0.006, fonte: "FAD 47 Tabela 1 — paredes 6 mm, septos 6 mm (amostra medida 88×187×189 mm)" }, fontes: [{ doc: "FAD 47 — bloco cerâmico de vedação 9×19×19 (PBQP-H, ensaio IPT)", item: "Tabela 1 e Figura 1 (2 × 4 furos horizontais)", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD-47.pdf" }, { doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×19 = 1,85 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-8f-9x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×29", l: 0.09, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "7268", massa: { kg: 2.82, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×29 = 2,82 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-8f-11x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 11,5×19×19 (furos na horizontal)", l: 0.115, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "38783",
+conferir: ["o insumo SINAPI 38783 não diz o número de furos: a grade 2×4 (8 furos) é a do 8 furos de 9 cm — conferir a ficha do fornecedor"] }),
+U({ id: "cv-9f-11x14x24", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 9 furos 11,5×14×24", l: 0.115, a: 0.14, c: 0.24, furos: { eixo: "x", nz: 3, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44459", massa: { kg: 2.20, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "11,5×14×24 = 2,20 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-9f-14x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 9 furos 14×19×29", l: 0.14, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 3, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44462", massa: { kg: 4.39, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "14×19×29 = 4,39 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-9f-14x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 9 furos 14×19×39", l: 0.14, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 3, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44463" }),
+U({ id: "cv-9f-19x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 9 furos 19×19×29", l: 0.19, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 3, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44464" }),
+U({ id: "cv-9f-19x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 9 furos 19×19×39", l: 0.19, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 3, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44465" }),
+U({ id: "cvv-9x19x39", grupo: "ceramico_vedacao_v", nome: "Bloco cerâmico de vedação 9×19×39 (furos na vertical)", l: 0.09, a: 0.19, c: 0.39, furos: { eixo: "y", nz: 2, nx: 4 }, parede: "ceramico_vedacao", sinapi: "37592",
+conferir: ["SINAPI não diz o número de furos: grade 2×4 representativa — conferir a ficha"] }),
+U({ id: "cvv-14x19x29", grupo: "ceramico_vedacao_v", nome: "Bloco cerâmico de vedação 14×19×29 (furos na vertical)", l: 0.14, a: 0.19, c: 0.29, furos: { eixo: "y", nz: 2, nx: 3 }, parede: "ceramico_vedacao", sinapi: "44468",
+conferir: ["SINAPI não diz o número de furos: grade 2×3 representativa — conferir a ficha"] }),
+U({ id: "cvv-14x19x39", grupo: "ceramico_vedacao_v", nome: "Bloco cerâmico de vedação 14×19×39 (furos na vertical)", l: 0.14, a: 0.19, c: 0.39, furos: { eixo: "y", nz: 2, nx: 4 }, parede: "ceramico_vedacao", sinapi: "37593",
+conferir: ["SINAPI não diz o número de furos: grade 2×4 representativa — conferir a ficha"] }),
+U({ id: "ce-14x19x29", grupo: "ceramico_estrutural", nome: "Bloco cerâmico estrutural 14×19×29", l: 0.14, a: 0.19, c: 0.29, furos: { eixo: "y", nz: 1, nx: 2 }, parede: "ceramico_estrutural", sinapi: "34586", papel: "inteiro", familia: "ce-29", massa: { kg: 6.30, fonte: "Pauluzzi — bloco estrutural 14 cm 7 MPa", metodo: "publicado" }, fontes: [{ doc: "Pauluzzi — bloco cerâmico estrutural 14 cm", item: "6,30 kg; 16,70 peças/m²", url: "https://pauluzzi.com.br/blocos-ceramicos-estruturais/bloco-14cm-7-mpa/" }, { doc: "FAD 003 — bloco cerâmico estrutural 14×19×29 (PBQP-H)", item: "Tabela 1: paredes 12,1 mm, septos 12,7 mm", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD003-bloco-cer%C3%A2mico-estrutural-14x19x29-com-argamassa_18-12-vlimpa.pdf" }] }),
+U({ id: "ce-14x19x14", grupo: "ceramico_estrutural", nome: "Meio bloco cerâmico estrutural 14×19×14", l: 0.14, a: 0.19, c: 0.14, furos: { eixo: "y", nz: 1, nx: 1 }, parede: "ceramico_estrutural", sinapi: "34788", papel: "meio", familia: "ce-29", massa: { kg: 3.20, fonte: "Pauluzzi — complementares", metodo: "publicado" }, fontes: [{ doc: "Pauluzzi — bloco cerâmico estrutural 14 cm", item: "meio 14×19×14 = 3,20 kg", url: "https://pauluzzi.com.br/blocos-ceramicos-estruturais/bloco-14cm-7-mpa/" }] }),
+U({ id: "ce-14x19x44", grupo: "ceramico_estrutural", nome: "Bloco cerâmico estrutural de amarração 14×19×44", l: 0.14, a: 0.19, c: 0.44, furos: { eixo: "y", nz: 1, nx: 3 }, parede: "ceramico_estrutural", sinapi: null, papel: "amarracao-t", familia: "ce-29",
+conferir: ["sem insumo SINAPI: a peça de 44 (bloco e meio) é de catálogo de fabricante — conferir a ficha"], massa: { kg: 9.60, fonte: "Pauluzzi — complementares", metodo: "publicado" }, fontes: [{ doc: "Pauluzzi — bloco cerâmico estrutural 14 cm", item: "bloco e meio 14×19×44 = 9,60 kg", url: "https://pauluzzi.com.br/blocos-ceramicos-estruturais/bloco-14cm-7-mpa/" }] }),
+U({ id: "ce-can-14x19x29", grupo: "ceramico_estrutural", nome: "Canaleta cerâmica estrutural 14×19×29", l: 0.14, a: 0.19, c: 0.29, furos: null, canaleta: "U", parede: "ceramico_estrutural", sinapi: "34649", papel: "canaleta-u", familia: "ce-29", massa: { kg: 5.20, fonte: "Pauluzzi — canaleta (sem função estrutural, segundo a ficha)", metodo: "publicado" }, fontes: [{ doc: "Pauluzzi — bloco cerâmico estrutural 14 cm", item: "canaleta U 14×19×29 = 5,20 kg", url: "https://pauluzzi.com.br/blocos-ceramicos-estruturais/bloco-14cm-7-mpa/" }] }),
+U({ id: "ce-14x19x39", grupo: "ceramico_estrutural", nome: "Bloco cerâmico estrutural 14×19×39", l: 0.14, a: 0.19, c: 0.39, furos: { eixo: "y", nz: 1, nx: 2 }, parede: "ceramico_estrutural", sinapi: "34588", papel: "inteiro", familia: "ce-39", fontes: [{ doc: "Cerâmica City — família 14", item: "14×19×39 EST 100 e 120; canaleta 14×19×39; canaleta J", url: "https://www.ceramicacity.com.br/familia14" }] }),
+U({ id: "ce-14x19x19", grupo: "ceramico_estrutural", nome: "Meio bloco cerâmico estrutural 14×19×19", l: 0.14, a: 0.19, c: 0.19, furos: { eixo: "y", nz: 1, nx: 1 }, parede: "ceramico_estrutural", sinapi: "34781", papel: "meio", familia: "ce-39" }),
+U({ id: "ce-14x19x34", grupo: "ceramico_estrutural", nome: "Bloco cerâmico estrutural de amarração 14×19×34", l: 0.14, a: 0.19, c: 0.34, furos: { eixo: "y", nz: 1, nx: 2 }, parede: "ceramico_estrutural", sinapi: "38603", papel: "amarracao-l", familia: "ce-39" }),
+U({ id: "ce-can-14x19x39", grupo: "ceramico_estrutural", nome: "Canaleta cerâmica estrutural 14×19×39", l: 0.14, a: 0.19, c: 0.39, furos: null, canaleta: "U", parede: "ceramico_estrutural", sinapi: "34655", papel: "canaleta-u", familia: "ce-39" }),
+U({ id: "ce-can-14x19x19", grupo: "ceramico_estrutural", nome: "Meia canaleta cerâmica estrutural 14×19×19", l: 0.14, a: 0.19, c: 0.19, furos: null, canaleta: "U", parede: "ceramico_estrutural", sinapi: "38548", papel: "meia-canaleta", familia: "ce-39" }),
+U({ id: "tm-5x10x20", grupo: "tijolo_macico", nome: "Tijolo cerâmico maciço comum 5×10×20", l: 0.10, a: 0.05, c: 0.20, furos: null, parede: null, sinapi: "7258",
+nota: "SINAPI escreve 5 X 10 X 20 (L X A X C) e a composição 101159 diz ESPESSURA 10 CM: o tijolo vai deitado, 5 cm é a altura da fiada" }),
+U({ id: "tm-ap-6x12x24", grupo: "tijolo_macico", nome: "Tijolo cerâmico maciço aparente 6×12×24", l: 0.12, a: 0.06, c: 0.24, furos: null, parede: null, sinapi: "7260" }),
+U({ id: "tm-ap2f-6x10x20", grupo: "tijolo_macico", nome: "Tijolo maciço aparente 2 furos 6,5×10×20", l: 0.10, a: 0.065, c: 0.20, furos: { eixo: "y", nz: 1, nx: 2, d: 0.025 }, parede: null, sinapi: "7256" }),
+U({ id: "tl-21f-5x11x23", grupo: "tijolo_macico", nome: "Tijolinho laminado 21 furos 5,5×11×23 (aparente)", l: 0.11, a: 0.055, c: 0.23, furos: { eixo: "y", nz: 3, nx: 7, d: 0.012 }, parede: null, sinapi: "34401",
+nota: "os 21 furos são verticais (atravessam a face de assentamento): somem na junta, a face aparente é cheia", massa: { kg: 1.98, fonte: "Cerâmica Braúnas — bloco laminado (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Braúnas — bloco laminado", item: "5,5×11×23 = 1,98 kg; 75 peças/m²", url: "https://www.aecweb.com.br/produto/bloco-laminado/42314" }] }),
+U({ id: "bc-ved-9x19x39", grupo: "concreto", nome: "Bloco de concreto de vedação 9×19×39 (classe C)", l: 0.09, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "650", papel: "inteiro", familia: "bc-M10-ved", massa: { kg: 7.80, fonte: "Bloco Morumbi — blocos 9 (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "vedação 7,8 kg", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] }),
+U({ id: "bc-ved-9x19x19", grupo: "concreto", nome: "Meio bloco de concreto de vedação 9×19×19", l: 0.09, a: 0.19, c: 0.19, alveolos: 1, parede: "concreto_C", sinapi: "34764", papel: "meio", familia: "bc-M10-ved", massa: { kg: 4.60, fonte: "Bloco Morumbi — blocos 9 (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "meio 9×19×19 = 4,6 kg", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] }),
+U({ id: "bc-ved-can-9x19x19", grupo: "concreto", nome: "Canaleta de concreto 9×19×19 (classe C)", l: 0.09, a: 0.19, c: 0.19, canaleta: "U", parede: "concreto_C", sinapi: "658", papel: "meia-canaleta", familia: "bc-M10-ved" }),
+U({ id: "bc-ved-14x19x39", grupo: "concreto", nome: "Bloco de concreto de vedação 14×19×39 (classe C)", l: 0.14, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "651", papel: "inteiro", familia: "bc-M15-ved", massa: { kg: 9.70, fonte: "Bloco Morumbi — blocos 14 (vedação vazado)", metodo: "publicado" }, fontes: [{ doc: "Bloco Morumbi — blocos 14", item: "vedação vazado 9,7 kg", url: "https://www.aecweb.com.br/produto/blocos-14/49115" }] }),
+U({ id: "bc-ved-14x19x19", grupo: "concreto", nome: "Meio bloco de concreto de vedação 14×19×19", l: 0.14, a: 0.19, c: 0.19, alveolos: 1, parede: "concreto_C", sinapi: "34774", papel: "meio", familia: "bc-M15-ved", massa: { kg: 4.20, fonte: "Bloco Morumbi — blocos 14 (meio vedação)", metodo: "publicado" }, fontes: [{ doc: "Bloco Morumbi — blocos 14", item: "meio vedação 4,2 kg", url: "https://www.aecweb.com.br/produto/blocos-14/49115" }] }),
+U({ id: "bc-ved-can-14x19x19", grupo: "concreto", nome: "Canaleta de concreto 14×19×19 (classe C)", l: 0.14, a: 0.19, c: 0.19, canaleta: "U", parede: "concreto_C", sinapi: "659", papel: "meia-canaleta", familia: "bc-M15-ved" }),
+U({ id: "bc-ved-19x19x39", grupo: "concreto", nome: "Bloco de concreto de vedação 19×19×39 (classe C)", l: 0.19, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "654", papel: "inteiro", familia: "bc-M20-ved", massa: { kg: 11.60, fonte: "Bloco Morumbi — blocos 19 (vedação vazado)", metodo: "publicado" }, fontes: [{ doc: "Bloco Morumbi — blocos 19", item: "vazado 11,6 kg", url: "https://www.aecweb.com.br/produto/blocos-19/49116" }] }),
+U({ id: "bc-ved-19x19x19", grupo: "concreto", nome: "Meio bloco de concreto de vedação 19×19×19", l: 0.19, a: 0.19, c: 0.19, alveolos: 1, parede: "concreto_C", sinapi: "34771", papel: "meio", familia: "bc-M20-ved" }),
+U({ id: "bc-ved-can-19x19x19", grupo: "concreto", nome: "Canaleta de concreto 19×19×19 (classe C)", l: 0.19, a: 0.19, c: 0.19, canaleta: "U", parede: "concreto_C", sinapi: "660", papel: "meia-canaleta", familia: "bc-M20-ved" }),
+U({ id: "bc-14x19x39", grupo: "concreto", nome: "Bloco de concreto estrutural 14×19×39", l: 0.14, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_AB", sinapi: "25070", papel: "inteiro", familia: "bc-M15-39", blocos: "39-inteiro", fontes: [{ doc: "Tatu — FT-ENG-05 Linha de blocos", item: "desenho: 2 alvéolos", url: "https://www.tatu.com.br/Conteudo/Pdf/pdf_atualizado/FT-ENG-05_Linha_de_Blocos.pdf" }, { doc: "Bloco Morumbi — blocos 14", item: "estrutural 11,6 kg (o padrão é o do js/blocos.js)", url: "https://www.aecweb.com.br/produto/blocos-14/49115" }] }),
+U({ id: "bc-14x19x19", grupo: "concreto", nome: "Meio bloco de concreto estrutural 14×19×19", l: 0.14, a: 0.19, c: 0.19, alveolos: 1, parede: "concreto_AB", sinapi: "38589", papel: "meio", familia: "bc-M15-39", blocos: "39-meio", fontes: [{ doc: "Tatu — FT-ENG-05", item: "meio bloco: 1 alvéolo", url: "https://www.tatu.com.br/Conteudo/Pdf/pdf_atualizado/FT-ENG-05_Linha_de_Blocos.pdf" }, { doc: "Bloco Morumbi — blocos 14", item: "meio estrutural 5,9 kg", url: "https://www.aecweb.com.br/produto/blocos-14/49115" }] }),
+U({ id: "bc-14x19x34", grupo: "concreto", nome: "Bloco de amarração L 14×19×34", l: 0.14, a: 0.19, c: 0.34, alveolos: 2, parede: "concreto_AB", sinapi: "38591", papel: "amarracao-l", familia: "bc-M15-39", blocos: "39-amarr-l", fontes: [{ doc: "Tatu — FT-ENG-05", item: "14×34: 2 alvéolos", url: "https://www.tatu.com.br/Conteudo/Pdf/pdf_atualizado/FT-ENG-05_Linha_de_Blocos.pdf" }] }),
+U({ id: "bc-14x19x54", grupo: "concreto", nome: "Bloco de amarração T 14×19×54", l: 0.14, a: 0.19, c: 0.54, alveolos: 3, parede: "concreto_AB", sinapi: null, papel: "amarracao-t", familia: "bc-M15-39", blocos: "39-amarr-t",
+conferir: ["sem insumo SINAPI do 54: a composição 89470 conta o 34 e o meio bloco; o 54 é peça de fabricante (peso em js/blocos.js)"], fontes: [{ doc: "Tatu — FT-ENG-05", item: "54: 3 alvéolos", url: "https://www.tatu.com.br/Conteudo/Pdf/pdf_atualizado/FT-ENG-05_Linha_de_Blocos.pdf" }, { doc: "JB Blocos — família 14 classe A", item: "14×19×54 = 17 kg", url: "https://www.aecweb.com.br/produto/bloco-de-concreto-estrutural-familia-14-classe-a/47166" }] }),
+U({ id: "bc-can-14x19x39", grupo: "concreto", nome: "Canaleta U estrutural 14×19×39", l: 0.14, a: 0.19, c: 0.39, canaleta: "U", parede: "concreto_AB", sinapi: "38597", papel: "canaleta-u", familia: "bc-M15-39", blocos: "39-can-u", fontes: [{ doc: "Bloco Morumbi — blocos 14", item: "canaleta 10,3 kg; meia 5,5 kg", url: "https://www.aecweb.com.br/produto/blocos-14/49115" }] }),
+U({ id: "bc-can-14x19x19", grupo: "concreto", nome: "Meia canaleta U estrutural 14×19×19", l: 0.14, a: 0.19, c: 0.19, canaleta: "U", parede: "concreto_AB", sinapi: "38595", papel: "meia-canaleta", familia: "bc-M15-39", blocos: "39-can-u-meia" }),
+U({ id: "bc-canj-14x19x39", grupo: "concreto", nome: "Canaleta J 14×19×39 (borda de laje)", l: 0.14, a: 0.19, c: 0.39, canaleta: "J", parede: "concreto_AB", sinapi: null, papel: "canaleta-j", familia: "bc-M15-39", blocos: "39-can-j",
+conferir: ["sem insumo SINAPI da canaleta J — peça de fabricante (peso em js/blocos.js)"] }),
+U({ id: "bc-14x19x09", grupo: "concreto", nome: "Compensador 14×19×9", l: 0.14, a: 0.19, c: 0.09, alveolos: 1, parede: "concreto_AB", sinapi: null, papel: "compensador", familia: "bc-M15-39", blocos: "39-comp-9" }),
+U({ id: "bc-14x19x04", grupo: "concreto", nome: "Compensador 14×19×4 (maciço)", l: 0.14, a: 0.19, c: 0.04, alveolos: 0, parede: "concreto_AB", sinapi: null, papel: "compensador", familia: "bc-M15-39", blocos: "39-comp-4" }),
+U({ id: "bc-14x19x29", grupo: "concreto", nome: "Bloco de concreto estrutural 14×19×29", l: 0.14, a: 0.19, c: 0.29, alveolos: 2, parede: "concreto_AB", sinapi: "38590", papel: "inteiro", familia: "bc-M15-29", blocos: "29-inteiro", fontes: [{ doc: "JB Blocos — família 14 classe A", item: "14×19×29 = 10 kg", url: "https://www.aecweb.com.br/produto/bloco-de-concreto-estrutural-familia-14-classe-a/47166" }] }),
+U({ id: "bc-14x19x14", grupo: "concreto", nome: "Meio bloco de concreto estrutural 14×19×14", l: 0.14, a: 0.19, c: 0.14, alveolos: 1, parede: "concreto_AB", sinapi: "38588", papel: "meio", familia: "bc-M15-29", blocos: "29-meio" }),
+U({ id: "bc-14x19x44", grupo: "concreto", nome: "Bloco e meio (amarração T) 14×19×44", l: 0.14, a: 0.19, c: 0.44, alveolos: 3, parede: "concreto_AB", sinapi: null, papel: "amarracao-t", familia: "bc-M15-29", blocos: "29-amarr-t", fontes: [{ doc: "Tatu — FT-ENG-05", item: "44: 3 alvéolos", url: "https://www.tatu.com.br/Conteudo/Pdf/pdf_atualizado/FT-ENG-05_Linha_de_Blocos.pdf" }] }),
+U({ id: "bc-can-14x19x29", grupo: "concreto", nome: "Canaleta U estrutural 14×19×29", l: 0.14, a: 0.19, c: 0.29, canaleta: "U", parede: "concreto_AB", sinapi: "38596", papel: "canaleta-u", familia: "bc-M15-29", blocos: "29-can-u" }),
+U({ id: "bc-can-14x19x14", grupo: "concreto", nome: "Meia canaleta U 14×19×14", l: 0.14, a: 0.19, c: 0.14, canaleta: "U", parede: "concreto_AB", sinapi: null, papel: "meia-canaleta", familia: "bc-M15-29", blocos: "29-can-u-meia" }),
+U({ id: "bc-19x19x39", grupo: "concreto", nome: "Bloco de concreto estrutural 19×19×39", l: 0.19, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_M20", sinapi: "25067", papel: "inteiro", familia: "bc-M20-39", blocos: "39x19-inteiro", fontes: [{ doc: "Bloco Morumbi — blocos 19", item: "estrutural 14,8 kg; canaleta 16; meio 8", url: "https://www.aecweb.com.br/produto/blocos-19/49116" }] }),
+U({ id: "bc-19x19x19", grupo: "concreto", nome: "Meio bloco de concreto estrutural 19×19×19", l: 0.19, a: 0.19, c: 0.19, alveolos: 1, parede: "concreto_M20", sinapi: null, papel: "meio", familia: "bc-M20-39", blocos: "39x19-meio",
+conferir: ["SINAPI MG 06/2026 só tem o meio bloco 19×19×19 de VEDAÇÃO (34771); o estrutural é de fabricante"] }),
+U({ id: "bc-can-19x19x39", grupo: "concreto", nome: "Canaleta U estrutural 19×19×39", l: 0.19, a: 0.19, c: 0.39, canaleta: "U", parede: "concreto_M20", sinapi: null, papel: "canaleta-u", familia: "bc-M20-39", blocos: "39x19-can-u" }),
+U({ id: "bc-can-19x19x19", grupo: "concreto", nome: "Meia canaleta U 19×19×19", l: 0.19, a: 0.19, c: 0.19, canaleta: "U", parede: "concreto_M20", sinapi: "660", papel: "meia-canaleta", familia: "bc-M20-39", blocos: "39x19-can-u-meia" }),
+U({ id: "bc-19x19x09", grupo: "concreto", nome: "Compensador 19×19×9", l: 0.19, a: 0.19, c: 0.09, alveolos: 1, parede: "concreto_M20", sinapi: null, papel: "compensador", familia: "bc-M20-39", blocos: "39x19-comp-9" }),
+U({ id: "bc-19x19x04", grupo: "concreto", nome: "Compensador 19×19×4 (maciço)", l: 0.19, a: 0.19, c: 0.04, alveolos: 0, parede: "concreto_M20", sinapi: null, papel: "compensador", familia: "bc-M20-39", blocos: "39x19-comp-4" }),
+U({ id: "bc-9x19x39", grupo: "concreto", nome: "Bloco de concreto estrutural 9×19×39", l: 0.09, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "25071", papel: "inteiro", familia: "bc-M10-39",
+conferir: ["NBR 6136:2016: M10 só na classe C (com limite de pavimentos) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026) e a classe do fornecedor"], fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "9×19×39 7,8 kg; meio 4,6", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] })
+];
+var FAMILIAS = {
+"cv-8f-9": { rotulo: "Cerâmico 8 furos 9×19×19 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-8f-9x19x19" }, comp: "103328", espCm: 10 },
+"cv-8f-9-29": { rotulo: "Cerâmico 8 furos 9×19×29 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-8f-9x19x29" }, comp: "103356", espCm: 10 },
+"cv-8f-11": { rotulo: "Cerâmico 11,5×19×19 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-8f-11x19x19" }, comp: "103330", espCm: 10 },
+"cv-6f-9": { rotulo: "Cerâmico 6 furos 9×14×19 em pé (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-6f-9x14x19" }, comp: "103332", espCm: 10 },
+"cv-6f-9-deitado": { rotulo: "Cerâmico 6 furos 9×14×19 deitado — parede de 14 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-6f-14x9x19" }, comp: "103334", espCm: 15 },
+"cv-6f-9-24": { rotulo: "Cerâmico 6 furos 9×14×24 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-6f-9x14x24" }, comp: "103352", espCm: 10 },
+"cv-6f-11": { rotulo: "Cerâmico 6 furos 11,5×19×29 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-6f-11x19x29" }, comp: "103358", espCm: 10 },
+"cv-9f-11": { rotulo: "Cerâmico 9 furos 11,5×14×24 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-9f-11x14x24" }, comp: "103354", espCm: 10 },
+"cv-9f-14": { rotulo: "Cerâmico 9 furos 14×19×29 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-9f-14x19x29" }, comp: "103360", espCm: 15 },
+"cv-9f-14-39": { rotulo: "Cerâmico 9 furos 14×19×39 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-9f-14x19x39" }, comp: "103368", espCm: 15 },
+"cv-9f-19": { rotulo: "Cerâmico 9 furos 19×19×29 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-9f-19x19x29" }, comp: "103362", espCm: 20 },
+"cv-4f-9": { rotulo: "Cerâmico 4 furos 9×9×19 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-4f-9x9x19" }, comp: "103350", espCm: 10 },
+"cvv-14": { rotulo: "Cerâmico de vedação 14×19×29 furos na vertical", funcao: "vedacao", grupo: "ceramico_vedacao_v", pecas: { inteiro: "cvv-14x19x29" }, comp: "103346", espCm: 15 },
+"ce-29": { rotulo: "Cerâmico estrutural 14×19×29 (família 29)", funcao: "estrutural", grupo: "ceramico_estrutural", pecas: { inteiro: "ce-14x19x29", meio: "ce-14x19x14", "amarracao-t": "ce-14x19x44", "canaleta-u": "ce-can-14x19x29" }, comp: "89290", espCm: 15 },
+"ce-39": { rotulo: "Cerâmico estrutural 14×19×39 (família 39)", funcao: "estrutural", grupo: "ceramico_estrutural", pecas: { inteiro: "ce-14x19x39", meio: "ce-14x19x19", "amarracao-l": "ce-14x19x34", "canaleta-u": "ce-can-14x19x39", "meia-canaleta": "ce-can-14x19x19" }, comp: "89282", espCm: 15 },
+"tm-10": { rotulo: "Tijolo maciço 5×10×20 (parede de 10)", funcao: "vedacao", grupo: "tijolo_macico", pecas: { inteiro: "tm-5x10x20" }, comp: "101159", espCm: 10,
+conferir: ["a composição SINAPI 101159 conta 73,49 tijolos/m² — menos que a modulação de 1 cm de junta (79,37/m²): a premissa da Caixa é de junta mais grossa. O assentamento conta pela junta de 1 cm; o preço é o da composição"] },
+"tl-11": { rotulo: "Tijolinho laminado aparente 5,5×11×23", funcao: "vedacao", grupo: "tijolo_macico", pecas: { inteiro: "tl-21f-5x11x23" }, comp: null, espCm: 10,
+conferir: ["SINAPI MG 06/2026 não tem composição de alvenaria de tijolinho laminado: o insumo 34401 existe, a composição fica PENDENTE (escolha no Orçamento do modelo)"] },
+"tm-ap-12": { rotulo: "Tijolo maciço aparente 6×12×24", funcao: "vedacao", grupo: "tijolo_macico", pecas: { inteiro: "tm-ap-6x12x24" }, comp: null, espCm: 10,
+conferir: ["SINAPI MG 06/2026 não tem composição de alvenaria deste tijolo: composição PENDENTE"] },
+"bc-M10-ved": { rotulo: "Bloco de concreto 9×19×39 vedação (M10, classe C)", funcao: "vedacao", grupo: "concreto", pecas: { inteiro: "bc-ved-9x19x39", meio: "bc-ved-9x19x19", "meia-canaleta": "bc-ved-can-9x19x19" }, comp: "103316", espCm: 10 },
+"bc-M15-ved": { rotulo: "Bloco de concreto 14×19×39 vedação (M15, classe C)", funcao: "vedacao", grupo: "concreto", pecas: { inteiro: "bc-ved-14x19x39", meio: "bc-ved-14x19x19", "meia-canaleta": "bc-ved-can-14x19x19" }, comp: "103318", espCm: 15 },
+"bc-M20-ved": { rotulo: "Bloco de concreto 19×19×39 vedação (M20, classe C)", funcao: "vedacao", grupo: "concreto", pecas: { inteiro: "bc-ved-19x19x39", meio: "bc-ved-19x19x19", "meia-canaleta": "bc-ved-can-19x19x19" }, comp: "103320", espCm: 20 },
+"bc-M15-39": { rotulo: "Bloco de concreto estrutural 14×19×39 (M15, família 39)", funcao: "estrutural", grupo: "concreto", blocos: "39-14",
+pecas: { inteiro: "bc-14x19x39", meio: "bc-14x19x19", "amarracao-l": "bc-14x19x34", "amarracao-t": "bc-14x19x54", "canaleta-u": "bc-can-14x19x39", "meia-canaleta": "bc-can-14x19x19", "canaleta-j": "bc-canj-14x19x39", comp9: "bc-14x19x09", comp4: "bc-14x19x04" },
+comp: "89453", compPorClasse: { "4.5": "89453", "14": "89455" }, espCm: 15 },
+"bc-M15-29": { rotulo: "Bloco de concreto estrutural 14×19×29 (M15, família 29)", funcao: "estrutural", grupo: "concreto", blocos: "29",
+pecas: { inteiro: "bc-14x19x29", meio: "bc-14x19x14", "amarracao-t": "bc-14x19x44", "canaleta-u": "bc-can-14x19x29", "meia-canaleta": "bc-can-14x19x14" },
+comp: "89462", compPorClasse: { "4.5": "89462", "14": "89464" }, espCm: 15 },
+"bc-M20-39": { rotulo: "Bloco de concreto estrutural 19×19×39 (M20)", funcao: "estrutural", grupo: "concreto", blocos: "39-19",
+pecas: { inteiro: "bc-19x19x39", meio: "bc-19x19x19", "canaleta-u": "bc-can-19x19x39", "meia-canaleta": "bc-can-19x19x19", comp9: "bc-19x19x09", comp4: "bc-19x19x04" },
+comp: null, espCm: 20,
+conferir: ["SINAPI MG 06/2026 não tem composição de alvenaria ESTRUTURAL 19×19×39: composição PENDENTE (a de vedação 103320 não serve para estrutural)"] }
+};
+var VERGA_SINAPI = {
+canaleta: { verga: { 10: "105026", 15: "105025", 20: "93191" }, contraverga: { 10: "105032", 15: "105031", 20: "93199" } },
+premoldada: { verga: { 10: "105022", 15: "105021", 20: "93184" }, contraverga: { 10: "105028", 15: "105027", 20: "93194" } },
+moldada: { verga: { 10: "105024", 15: "105023", 20: "93187" }, contraverga: { 10: "105030", 15: "105029", 20: "93197" } }
+};
+var AVISO_EDICAO = "valor da edição anterior — conferir na edição vigente";
+var GRAUTE_SINAPI = { verga: "89995", cinta: "89995", contraverga: "89994" };
+var ENCUNHAMENTO_SINAPI = "93200";
+var POR_ID = {};
+UNIDADES.forEach(function (u) { POR_ID[u.id] = u; });
+function paredeDe(u) {
+if (!u || !u.parede) return null;
+if (typeof u.parede === "object") return u.parede;
+return PAREDE[u.parede] || null;
+}
+function massaDe(u) {
+if (!u) return { kg: null, fonte: "", metodo: "sem-fonte" };
+if (u.massa && u.massa.kg != null) return u.massa;
+var B = BL();
+if (u.blocos && B && B.pesoDe) {
+var kg = B.pesoDe(u.blocos), org = B.origemDoPeso ? B.origemDoPeso(u.blocos) : null;
+if (kg != null) return { kg: kg, fonte: "js/blocos.js (" + u.blocos + (org && org.fabricante ? " — " + org.fabricante : "") + ")", metodo: org && org.metodo ? org.metodo : "referencia" };
+}
+return { kg: null, fonte: "sem fonte — conferir a ficha do fornecedor", metodo: "sem-fonte" };
+}
+function geometria(idOuU, opts) {
+opts = opts || {};
+var u = typeof idOuU === "string" ? POR_ID[idOuU] : idOuU;
+if (!u) return null;
+var c = num(opts.c, u.c), a = num(opts.a, u.a), l = u.l;
+var cx = [], furos = [], pw = paredeDe(u);
+function caixa(x, y, z, w, h, d) { if (w > 1e-5 && h > 1e-5 && d > 1e-5) cx.push({ x: r4(x), y: r4(y), z: r4(z), w: r4(w), h: r4(h), d: r4(d) }); }
+var f = u.furos;
+if (opts.simples || (!f && !u.alveolos && !u.canaleta)) {
+caixa(0, 0, -l / 2, c, a, l);
+return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id };
+}
+if (u.canaleta) {
+var e = pw ? pw.ext : 0.02, fundo = Math.max(0.03, e);
+caixa(0, 0, -l / 2, c, a, e);
+var hDentro = u.canaleta === "J" ? a - 0.05 : a;
+caixa(0, 0, l / 2 - e, c, hDentro, e);
+caixa(0, 0, -l / 2 + e, c, fundo, l - 2 * e);
+furos.push({ eixo: "x", x: 0, y: fundo, z: -l / 2 + e, w: c, h: a - fundo, d: l - 2 * e, canal: true });
+return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id };
+}
+if (f && f.eixo === "x") {
+var ext = pw.ext, s = pw.septo, nz = f.nz, ny = f.ny;
+var fw = (l - 2 * ext - (nz - 1) * s) / nz, fh = (a - 2 * ext - (ny - 1) * s) / ny;
+caixa(0, 0, -l / 2, c, a, ext);
+caixa(0, 0, l / 2 - ext, c, a, ext);
+caixa(0, 0, -l / 2 + ext, c, ext, l - 2 * ext);
+caixa(0, a - ext, -l / 2 + ext, c, ext, l - 2 * ext);
+for (var i = 1; i < nz; i++) caixa(0, ext, -l / 2 + ext + i * fw + (i - 1) * s, c, a - 2 * ext, s);
+for (var k = 1; k < ny; k++) caixa(0, ext + k * fh + (k - 1) * s, -l / 2 + ext, c, s, l - 2 * ext);
+for (var zi = 0; zi < nz; zi++) for (var yi = 0; yi < ny; yi++)
+furos.push({ eixo: "x", x: 0, y: r4(ext + yi * (fh + s)), z: r4(-l / 2 + ext + zi * (fw + s)), w: c, h: r4(fh), d: r4(fw) });
+return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id, furoW: r4(fw), furoH: r4(fh) };
+}
+var nzv = f ? f.nz : 1, nx;
+if (u.alveolos != null) nx = u.alveolos;
+else nx = f ? f.nx : 0;
+if (opts.c != null && u.c > 0 && nx > 0) nx = Math.max(0, Math.round(nx * c / u.c));
+if (f && f.d && !u.alveolos) {
+caixa(0, 0, -l / 2, c, a, l);
+var px = c / nx, pz = l / nzv;
+for (var ix = 0; ix < nx; ix++) for (var iz = 0; iz < nzv; iz++)
+furos.push({ eixo: "y", x: r4((ix + 0.5) * px - f.d / 2), y: 0, z: r4(-l / 2 + (iz + 0.5) * pz - f.d / 2), w: f.d, h: a, d: f.d, oculto: true });
+return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id };
+}
+var exv = pw ? pw.ext : 0.025, sv = pw ? pw.septo : 0.025;
+if (!(nx > 0)) { caixa(0, 0, -l / 2, c, a, l); return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id, macico: true }; }
+caixa(0, 0, -l / 2, c, a, exv);
+caixa(0, 0, l / 2 - exv, c, a, exv);
+var vaoX = (c - (nx + 1) * sv) / nx;
+for (var w = 0; w <= nx; w++) caixa(w * (vaoX + sv), 0, -l / 2 + exv, sv, a, l - 2 * exv);
+var vaoZ = (l - 2 * exv - (nzv - 1) * sv) / nzv;
+for (var z2 = 1; z2 < nzv; z2++) caixa(0, 0, -l / 2 + exv + z2 * vaoZ + (z2 - 1) * sv, c, a, sv);
+for (var a1 = 0; a1 < nx; a1++) for (var a2 = 0; a2 < nzv; a2++)
+furos.push({ eixo: "y", x: r4(sv + a1 * (vaoX + sv)), y: 0, z: r4(-l / 2 + exv + a2 * (vaoZ + sv)), w: r4(vaoX), h: a, d: r4(vaoZ) });
+return { caixas: cx, furos: furos, triangulos: cx.length * 12, unidade: u.id, alveolo: { w: r4(vaoX), d: r4(vaoZ) } };
+}
+function faceCheia(geo, u, lado) {
+if (!geo || !u) return false;
+var zf = lado > 0 ? u.l / 2 : -u.l / 2, area = 0, c = 0, a = 0;
+geo.caixas.forEach(function (b) { c = Math.max(c, b.x + b.w); a = Math.max(a, b.y + b.h); });
+geo.caixas.forEach(function (b) {
+var toca = lado > 0 ? Math.abs(b.z + b.d - zf) < 1e-4 : Math.abs(b.z - zf) < 1e-4;
+if (toca) area += b.w * b.h;
+});
+var furoNaFace = geo.furos.some(function (h) {
+if (h.oculto || h.canal) return false;
+return lado > 0 ? Math.abs(h.z + h.d - zf) < 1e-4 : Math.abs(h.z - zf) < 1e-4;
+});
+return !furoNaFace && area >= c * a - 1e-6;
+}
+function volumeSolido(geo) {
+var v = 0; if (!geo) return 0;
+geo.caixas.forEach(function (b) { v += b.w * b.h * b.d; });
+return v;
+}
+var AlvUnidades = {
+JUNTA: JUNTA, FONTES: FONTES, PAREDE: PAREDE, UNIDADES: UNIDADES, FAMILIAS: FAMILIAS,
+VERGA_SINAPI: VERGA_SINAPI, ENCUNHAMENTO_SINAPI: ENCUNHAMENTO_SINAPI, GRAUTE_SINAPI: GRAUTE_SINAPI, AVISO_EDICAO: AVISO_EDICAO,
+unidade: function (id) { return POR_ID[String(id)] || null; },
+familia: function (id) { var f = FAMILIAS[String(id)]; if (!f) return null; var o = clone(f); o.id = String(id); return o; },
+listarFamilias: function () { return Object.keys(FAMILIAS).map(function (k) { return { id: k, rotulo: FAMILIAS[k].rotulo, funcao: FAMILIAS[k].funcao, grupo: FAMILIAS[k].grupo }; }); },
+peca: function (famId, papel) { var f = FAMILIAS[famId]; if (!f) return null; var id = f.pecas[papel]; return id ? POR_ID[id] : null; },
+geometria: geometria,
+faceCheia: faceCheia,
+volumeSolido: volumeSolido,
+massa: function (id) { return massaDe(POR_ID[id]); },
+massaCalculada: function (id) {
+var u = POR_ID[id]; if (!u) return null;
+var g = geometria(u), v = volumeSolido(g);
+var gama = u.grupo === "concreto" ? 2200 : 1800;
+return { kg: Math.round(v * gama * 100) / 100, formula: "volume das caixas da peça (" + r4(v * 1e3) + " L) × " + gama + " kg/m³ — CALCULADO, não publicado", gama: gama };
+},
+pecasPorM2: function (id, junta) {
+var u = POR_ID[id]; if (!u) return 0;
+var j = junta != null ? num(junta, JUNTA) : JUNTA;
+return r4(1 / ((u.c + j) * (u.a + j)));
+},
+ficha: function (id) {
+var u = POR_ID[id]; if (!u) return null;
+var g = geometria(u), m = massaDe(u);
+var fontes = [{ doc: FONTES.SINAPI.doc, item: u.sinapi ? "insumo " + u.sinapi : "sem insumo SINAPI", url: FONTES.SINAPI.url }];
+if (u.grupo === "concreto") fontes.push({ doc: FONTES.NBR6136.doc, item: "família e classe", url: FONTES.NBR6136.url });
+else if (u.grupo !== "tijolo_macico") fontes.push({ doc: FONTES.NBR15270.doc, item: "dimensões, parede e septo", url: FONTES.NBR15270.url });
+if (u.blocos) fontes.push({ doc: FONTES.BLOCOS_JS.doc, item: u.blocos, url: null });
+var conferir = (u.conferir || []).slice();
+if (u.grupo === "concreto") conferir.push("NBR 6136:2016 (cancelada em 27/02/2026; vigente NBR 6136-1:2026): parede, septo e classe — " + AVISO_EDICAO);
+else if (u.grupo !== "tijolo_macico") conferir.push("NBR 15270-1:2017 (substituída pela 15270-1:2023): parede externa e septo — " + AVISO_EDICAO);
+(u.fontes || []).forEach(function (f) { fontes.push(f); });
+return {
+id: u.id, nome: u.nome, grupo: u.grupo,
+real: { l: u.l, a: u.a, c: u.c },
+nominal: { l: r3(u.l + JUNTA), a: r3(u.a + JUNTA), c: r3(u.c + JUNTA) },
+junta: JUNTA,
+furos: u.furos ? { eixo: u.furos.eixo, n: geometria(u).furos.length, orientacao: u.furos.eixo === "x" ? "horizontal, paralelos à parede" : "vertical" } : (u.alveolos != null ? { eixo: "y", n: u.alveolos, orientacao: "vertical (alvéolos)" } : (u.canaleta ? { eixo: "x", n: 1, orientacao: "canal aberto em cima (canaleta " + u.canaleta + ")" } : null)),
+parede: paredeDe(u),
+massa: m, massaCalculada: this.massaCalculada(id),
+pecasPorM2: this.pecasPorM2(id), sinapi: u.sinapi || null,
+triangulos: g.triangulos, fontes: fontes, conferir: conferir, nota: u.nota || ""
+};
+}
+};
+global.AlvUnidades = AlvUnidades;
+if (typeof module !== "undefined" && module.exports) module.exports = AlvUnidades;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/alvassentamento.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function r3(v) { return Math.round(v * 1000) / 1000; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function AU() { return dep("AlvUnidades", "./alvunidades.js"); }
+function AV() { return dep("Alvenaria", "./alvenaria.js"); }
+var TOL = 0.003;
+var ENCUNHAMENTO = 0.03;
+var H_VERGA_MIN = 0.10;
+var RECUO_JUNTA = 0.005;
+var JUNTA_GROSSA = 0.025;
+function apoios(fam, vao) {
+var Av = AV(), estr = fam.funcao === "estrutural";
+var w = vao.x1 - vao.x0;
+var av = 0.20, ac = 0.20, fv = "NBR 8545 (20 cm de cada lado)", fc = fv;
+if (estr) { av = w <= 1.0 ? 0.15 : 0.30; ac = 0.30; fv = "ABCP — 15 cm até 1,00 m; 30 cm acima"; fc = "ABCP (30 cm de cada lado)"; }
+if (Av && Av.verga && Av.malha) {
+try { var rv = Av.verga(w, "39-14", { tipo: estr ? "estrutural" : "vedacao" }); if (rv && rv.ok) { av = rv.apoioCada; fv = rv.fonte; } } catch (e) {}
+try { var rc = Av.contraverga(w, "39-14", { tipo: estr ? "estrutural" : "vedacao" }); if (rc && rc.ok) { ac = rc.apoioCada; fc = rc.fonte; } } catch (e2) {}
+}
+return { verga: av, contraverga: ac, fonteVerga: fv, fonteContra: fc };
+}
+function livreEmY(yb, yt, obs) {
+var cobre = obs.map(function (o) { return [Math.max(yb, o.y0), Math.min(yt, o.y1)]; }).filter(function (p) { return p[1] > p[0] + 1e-6; });
+if (!cobre.length) return [[yb, yt]];
+cobre.sort(function (a, b) { return a[0] - b[0]; });
+var livres = [], y = yb;
+cobre.forEach(function (p) { if (p[0] > y + 1e-6) livres.push([y, p[0]]); y = Math.max(y, p[1]); });
+if (yt > y + 1e-6) livres.push([y, yt]);
+return livres;
+}
+function paginar(parede, opts) {
+opts = opts || {};
+var U = AU();
+if (!U) return { ok: false, motivo: "catálogo de unidades (js/alvunidades.js) não carregado" };
+var fam = U.familia(parede.familia);
+if (!fam) return { ok: false, motivo: "família de alvenaria desconhecida: " + parede.familia };
+var uI = U.unidade(fam.pecas.inteiro);
+var j = num(opts.junta, U.JUNTA);
+var L = num(parede.L, 0), H = num(parede.H, 0);
+if (!(L > 0.05) || !(H > 0.05)) return { ok: false, motivo: "parede sem comprimento ou altura" };
+var c = uI.c, a = uI.a, l = uI.l, hm = a + j;
+var estr = fam.funcao === "estrutural";
+function pc(papel) { var id = fam.pecas[papel]; return id ? U.unidade(id) : null; }
+var uMeio = pc("meio"), uAmL = pc("amarracao-l"), uAmT = pc("amarracao-t"), uCan = pc("canaleta-u"), uMCan = pc("meia-canaleta") || null;
+var uC9 = pc("comp9"), uC4 = pc("comp4");
+var avisos = [], pecas = [], vergas = [], argamassa = [], cortes = 0;
+var fiadas = [], k = 0;
+while (true) {
+var yk = j + k * hm;
+if (yk + a > H - (estr ? 0 : ENCUNHAMENTO) + TOL) break;
+fiadas.push({ k: k, y: yk, a: a, cheia: true });
+k++;
+}
+var topo = fiadas.length ? fiadas[fiadas.length - 1].y + a : 0;
+var sobra = H - topo, encunhamento = null;
+if (!estr) {
+if (sobra > ENCUNHAMENTO + j + 0.04) {
+var aCorte = r4(sobra - ENCUNHAMENTO - j);
+fiadas.push({ k: k, y: topo + j, a: aCorte, cheia: false });
+avisos.push("A altura de " + H.toFixed(2) + " m não fecha em fiadas de " + Math.round(hm * 100) + " cm: a última fiada vai com peças cortadas na altura (" + Math.round(aCorte * 100) + " cm) e " + Math.round(ENCUNHAMENTO * 100) + " cm de encunhamento.");
+encunhamento = { altura: ENCUNHAMENTO, comprimento: L };
+} else if (sobra > 0.005) {
+encunhamento = { altura: r4(sobra), comprimento: L };
+}
+} else if (sobra > 0.02) {
+avisos.push("Pé-direito fora da modulação vertical: sobram " + Math.round(sobra * 100) + " cm acima da última fiada (use " + (topo).toFixed(2) + " m ou bloco de meia altura).");
+}
+var obst = [];
+arr(parede.vaos).forEach(function (v, iv) {
+var x0 = num(v.x0, 0), x1 = num(v.x1, 0), y0 = num(v.y0, 0), y1 = num(v.y1, 0);
+if (!(x1 > x0) || !(y1 > y0)) return;
+var porta = v.tipo === "porta" || y0 < 0.05;
+obst.push({ x0: x0, x1: x1, y0: y0, y1: y1, tipo: "vao" });
+var ap = apoios(fam, { x0: x0, x1: x1 });
+var modo = (fam.grupo === "concreto" || fam.grupo === "ceramico_estrutural") ? "canaleta" : ((x1 - x0) <= 1.5 ? "premoldada" : "moldada");
+if (y1 < H - 0.02) {
+var yv1 = null;
+for (var q = 0; q < fiadas.length; q++) { var ft = fiadas[q].y + fiadas[q].a; if (ft >= y1 + (modo === "canaleta" ? Math.min(H_VERGA_MIN, a) : H_VERGA_MIN) - 1e-6) { yv1 = ft; break; } }
+if (yv1 == null) yv1 = Math.min(H, y1 + H_VERGA_MIN);
+var vx0 = x0 - ap.verga, vx1 = x1 + ap.verga;
+var ini0 = -num(parede.ini && parede.ini.t, 0) / 2, fim0 = L + num(parede.fim && parede.fim.t, 0) / 2;
+if (vx0 < ini0 - 1e-6 || vx1 > fim0 + 1e-6) avisos.push("Vão " + (iv + 1) + ": a verga não tem os " + Math.round(ap.verga * 100) + " cm de apoio de um dos lados (encosta na ponta da parede) — grauteie o encontro ou use pilarete.");
+vx0 = Math.max(vx0, ini0); vx1 = Math.min(vx1, fim0);
+var vg = { tipo: "verga", vao: iv, x0: r4(vx0), x1: r4(vx1), y0: r4(y1), y1: r4(yv1), modo: modo, apoio: ap.verga, fonte: ap.fonteVerga, comprimento: r4(vx1 - vx0) };
+if ((x1 - x0) > 2.40) { vg.viga = true; avisos.push("Vão " + (iv + 1) + " passa de 2,40 m: não é verga, é viga — calcule."); }
+vergas.push(vg); obst.push({ x0: vg.x0, x1: vg.x1, y0: vg.y0, y1: vg.y1, tipo: "verga" });
+}
+if (!porta) {
+var yc0 = null;
+for (var q2 = fiadas.length - 1; q2 >= 0; q2--) { if (fiadas[q2].y <= y0 - H_VERGA_MIN + 1e-6) { yc0 = fiadas[q2].y; break; } }
+if (yc0 == null) yc0 = Math.max(0, y0 - H_VERGA_MIN);
+var cx0 = Math.max(x0 - ap.contraverga, -num(parede.ini && parede.ini.t, 0) / 2), cx1 = Math.min(x1 + ap.contraverga, L + num(parede.fim && parede.fim.t, 0) / 2);
+var cv = { tipo: "contraverga", vao: iv, x0: r4(cx0), x1: r4(cx1), y0: r4(yc0), y1: r4(y0), modo: modo === "canaleta" ? "canaleta" : "premoldada", apoio: ap.contraverga, fonte: ap.fonteContra, comprimento: r4(cx1 - cx0) };
+vergas.push(cv); obst.push({ x0: cv.x0, x1: cv.x1, y0: cv.y0, y1: cv.y1, tipo: "contraverga" });
+}
+});
+function pontaExt(p, par) {
+if (!p || !p.tipo || p.tipo === "livre") return 0;
+var t = num(p.t, l);
+var passa = (p.passa === "par" && par === 0) || (p.passa === "impar" && par === 1) || p.passa === "sempre";
+return passa ? t / 2 : -t / 2;
+}
+function pontaPassa(p, par) {
+if (!p || !p.tipo || p.tipo === "livre") return false;
+return (p.passa === "par" && par === 0) || (p.passa === "impar" && par === 1) || p.passa === "sempre";
+}
+function emitir(u, papel, x, y, cc, aa, fiada, corte, consumo) {
+pecas.push({ u: u.id, papel: papel, x: r4(x), y: r4(y), c: r4(cc), a: r4(aa), l: u.l, k: fiada.k, corte: corte || null, consumo: consumo == null ? 1 : consumo });
+if (corte) cortes++;
+}
+function canalOuNao(papel, ultima) {
+if (!ultima) return null;
+if (papel === "inteiro" && uCan && uCan.c === c) return uCan;
+if (papel === "meio" && uMCan) return uMCan;
+return null;
+}
+var AJ_JUNTA = 0.003;
+function preencher(x0, x1, fiada, comeco, altura, ultima) {
+var i0 = pecas.length;
+preencher0(x0, x1, fiada, comeco, altura, ultima);
+var n = pecas.length - i0; if (n < 2) return;
+var ult = pecas[pecas.length - 1], d = x1 - (ult.x + ult.c);
+if (Math.abs(d) < 1e-4 || Math.abs(d) > (n - 1) * 0.003 + 1e-6) return;
+for (var q = 1; q < n; q++) pecas[i0 + q].x = r4(pecas[i0 + q].x + d * q / (n - 1));
+}
+function preencher0(x0, x1, fiada, comeco, altura, ultima) {
+var x = x0, cortadaAltura = altura < a - 1e-4, nJ = 0;
+var Lseg = x1 - x0;
+if (Lseg < JUNTA_GROSSA) return;
+function tol() { return Math.max(TOL, (nJ + 1) * AJ_JUNTA); }
+function poe(u, papel, cc, corte, consumo) {
+var cn = canalOuNao(papel, ultima);
+if (!cn && ultima && papel === "amarracao-l" && uCan) { cn = uCan; corte = "comprimento"; }
+var uu = cn || u, pp = cn ? (papel === "meio" ? "meia-canaleta" : "canaleta-u") : papel;
+emitir(uu, pp, x, fiada.y, cc, altura, fiada, cortadaAltura ? (corte ? corte + "+altura" : "altura") : corte, consumo);
+if (cn) { pecas[pecas.length - 1].graute = true; pecas[pecas.length - 1].cinta = true; }
+x += cc + j; nJ++;
+}
+function cabe(cc) { var r0 = x1 - x; return Math.abs(r0 - cc) <= tol(); }
+if (comeco === "amarracao-l" && uAmL && uAmL.c <= Lseg + TOL) poe(uAmL, "amarracao-l", uAmL.c);
+else if (comeco === "meio") {
+if (uMeio && uMeio.c <= Lseg + TOL) poe(uMeio, "meio", uMeio.c);
+else { var cm = r4((c - j) / 2); if (cm <= Lseg + TOL) poe(uI, "meio-cortado", cm, "comprimento", 0.5); }
+}
+while (x + c <= x1 + TOL || cabe(c)) { poe(uI, "inteiro", c); if (x > x1 + 1e-6) break; }
+var r = x1 - x;
+if (r < JUNTA_GROSSA - 1e-6) {
+if (r > tol() + 1e-6) avisos.push("Fiada " + (fiada.k + 1) + ": sobra de " + Math.round(r * 1000) + " mm vira junta mais grossa (enchimento de argamassa).");
+return;
+}
+var meioC = r4((c - j) / 2);
+if (uMeio && cabe(uMeio.c)) { poe(uMeio, "meio", uMeio.c); return; }
+if (!uMeio && cabe(meioC)) { poe(uI, "meio-cortado", meioC, "comprimento", 0.5); return; }
+if (uMeio && r > uMeio.c + j) { poe(uMeio, "meio", uMeio.c); r = x1 - x; if (r < JUNTA_GROSSA - 1e-6) return; }
+if (uC9 && cabe(uC9.c)) { poe(uC9, "compensador", uC9.c); return; }
+if (uC9 && uC4 && Math.abs(r - (uC9.c + j + uC4.c)) <= tol()) { poe(uC9, "compensador", uC9.c); poe(uC4, "compensador", uC4.c); return; }
+if (uC4 && cabe(uC4.c)) { poe(uC4, "compensador", uC4.c); return; }
+if (uC9 && r > uC9.c + j + JUNTA_GROSSA) { poe(uC9, "compensador", uC9.c); r = x1 - x; if (r < JUNTA_GROSSA) return; }
+r = x1 - x;
+var consumo = r <= meioC + TOL ? 0.5 : 1;
+poe(uI, "cortado", r, "comprimento", consumo);
+foraModulacao.push({ fiada: fiada.k + 1, x: r4(x1 - r), comprimento: r4(r) });
+}
+var foraModulacao = [];
+var ultimaK = fiadas.length ? fiadas[fiadas.length - 1].k : -1;
+fiadas.forEach(function (fiada) {
+var par = fiada.k % 2;
+var xa = -pontaExt(parede.ini, par) + (parede.ini && parede.ini.tipo && parede.ini.tipo !== "livre" && !pontaPassa(parede.ini, par) ? j : 0);
+var xb = L + pontaExt(parede.fim, par) - (parede.fim && parede.fim.tipo && parede.fim.tipo !== "livre" && !pontaPassa(parede.fim, par) ? j : 0);
+var yb = fiada.y, yt = fiada.y + fiada.a;
+var ultima = estr && fiada.k === ultimaK && fiada.cheia;
+var obF = obst.filter(function (o) { return o.y0 < yt - 1e-6 && o.y1 > yb + 1e-6; });
+arr(parede.interrupcoes).forEach(function (it) { if (it.paridade == null || it.paridade === par) obF.push({ x0: num(it.x0), x1: num(it.x1), y0: yb, y1: yt, tipo: "interrupcao" }); });
+arr(parede.fixas).forEach(function (fx) {
+if (fx.paridade != null && fx.paridade !== par) return;
+var uf = fx.papel === "amarracao-t" ? uAmT : null; if (!uf) return;
+var fx0 = num(fx.x) - uf.c / 2, fx1 = fx0 + uf.c;
+if (fx0 < xa - 1e-6 || fx1 > xb + 1e-6) return;
+if (obF.some(function (o) { return o.x0 < fx1 && o.x1 > fx0; })) return;
+emitir(uf, "amarracao-t", fx0, fiada.y, uf.c, fiada.a, fiada, null, 1);
+obF.push({ x0: fx0 - j, x1: fx1 + j, y0: yb, y1: yt, tipo: "fixa" });
+});
+var xs = [xa, xb];
+obF.forEach(function (o) { if (o.x0 > xa && o.x0 < xb) xs.push(o.x0); if (o.x1 > xa && o.x1 < xb) xs.push(o.x1); });
+xs.sort(function (p, q) { return p - q; });
+var ivs = [];
+for (var i = 0; i < xs.length - 1; i++) {
+var p0 = xs[i], p1 = xs[i + 1]; if (p1 - p0 < 1e-5) continue;
+var meio = (p0 + p1) / 2;
+var cob = obF.filter(function (o) { return o.x0 <= meio && o.x1 >= meio; });
+var lv = livreEmY(yb, yt, cob);
+var chave = lv.map(function (z) { return r4(z[0]) + "-" + r4(z[1]); }).join("|");
+var ultimo = ivs[ivs.length - 1];
+if (ultimo && ultimo.chave === chave && Math.abs(ultimo.x1 - p0) < 1e-5) ultimo.x1 = p1;
+else ivs.push({ x0: p0, x1: p1, livres: lv, chave: chave });
+}
+ivs.forEach(function (iv, idx) {
+iv.livres.forEach(function (z) {
+var h = z[1] - z[0];
+if (h < 0.04) return;
+var naPontaIni = Math.abs(iv.x0 - xa) < 1e-5 && fiada.cheia !== undefined;
+var comeco;
+if (naPontaIni) comeco = pontaPassa(parede.ini, par) ? "amarracao-l" : (parede.ini && parede.ini.tipo && parede.ini.tipo !== "livre" ? "inteiro" : (par ? "meio" : "inteiro"));
+else comeco = par ? "meio" : "inteiro";
+var f2 = { k: fiada.k, y: z[0] };
+preencher(iv.x0, iv.x1, f2, comeco, h, ultima && Math.abs(h - a) < 1e-4);
+argamassa.push({ x0: r4(iv.x0), x1: r4(iv.x1), y0: r4(z[0] - j), y1: r4(z[1]), k: fiada.k });
+});
+});
+});
+vergas.forEach(function (vg) {
+if (vg.modo !== "canaleta") return;
+fiadas.forEach(function (fiada) {
+var yb = Math.max(fiada.y, vg.y0), yt = Math.min(fiada.y + fiada.a, vg.y1);
+if (yt - yb < 0.04) return;
+var x = vg.x0, uC = uCan || uI, nV = 0;
+while (x + uC.c <= vg.x1 + TOL) { nV++; emitir(uC, "canaleta-u", x, yb, uC.c, yt - yb, fiada, yt - yb < a - 1e-4 ? "altura" : null, 1); pecas[pecas.length - 1].graute = true; pecas[pecas.length - 1].verga = vg.tipo; x += uC.c + j; }
+var r = vg.x1 - x;
+if (r >= JUNTA_GROSSA) { var uM = uMCan && Math.abs(r - uMCan.c) <= Math.max(TOL, (nV + 1) * AJ_JUNTA) ? uMCan : uC; emitir(uM, uM === uMCan ? "meia-canaleta" : "canaleta-u", x, yb, uM === uMCan ? uMCan.c : r, yt - yb, fiada, uM === uMCan ? null : "comprimento", 1); pecas[pecas.length - 1].graute = true; pecas[pecas.length - 1].verga = vg.tipo; }
+argamassa.push({ x0: r4(vg.x0), x1: r4(vg.x1), y0: r4(yb - j), y1: r4(yt), k: fiada.k });
+});
+});
+if (foraModulacao.length) avisos.push("Fora de modulação: " + foraModulacao.length + " peça(s) cortada(s) no comprimento (a parede ou o vão não é múltiplo de " + Math.round((c + j) * 100) + " cm). Ajuste a medida ou aceite o corte.");
+var porUnidade = {}, porPapel = {};
+pecas.forEach(function (p) {
+var e = porUnidade[p.u] || (porUnidade[p.u] = { unidade: p.u, nome: U.unidade(p.u).nome, inteiras: 0, cortadas: 0, consumo: 0, sinapi: U.unidade(p.u).sinapi || null });
+if (p.corte) e.cortadas++; else e.inteiras++;
+e.consumo += p.consumo;
+porPapel[p.papel] = (porPapel[p.papel] || 0) + 1;
+});
+Object.keys(porUnidade).forEach(function (k2) { porUnidade[k2].consumo = r3(porUnidade[k2].consumo); });
+var volPecas = 0;
+pecas.forEach(function (p) { volPecas += p.c * p.a * p.l; });
+var volArg = 0;
+argamassa.forEach(function (f) { volArg += (f.x1 - f.x0) * (f.y1 - f.y0) * (l - 2 * RECUO_JUNTA); });
+var argM3 = Math.max(0, volArg - volPecas * (l - 2 * RECUO_JUNTA) / l);
+var areaBruta = L * H, areaVaos = 0;
+arr(parede.vaos).forEach(function (v) { areaVaos += Math.max(0, num(v.x1) - num(v.x0)) * Math.max(0, Math.min(H, num(v.y1)) - Math.max(0, num(v.y0))); });
+var graute = 0, grautePor = { verga: 0, contraverga: 0, cinta: 0 };
+pecas.forEach(function (p) {
+if (!p.graute) return;
+var g = U.geometria(p.u, { c: p.c, a: p.a }), canal = g && g.furos.filter(function (h) { return h.canal; })[0];
+if (!canal) return;
+var v = canal.w * canal.h * canal.d;
+graute += v; grautePor[p.cinta ? "cinta" : (p.verga === "contraverga" ? "contraverga" : "verga")] += v;
+});
+var tri = 0;
+pecas.forEach(function (p) { var g = U.geometria(p.u, { c: p.c, a: p.a }); tri += g ? g.triangulos : 12; });
+tri += argamassa.length * 12 + vergas.filter(function (v) { return v.modo !== "canaleta"; }).length * 12;
+return {
+ok: true, id: parede.id, familia: fam.id, funcao: fam.funcao, rotulo: fam.rotulo,
+L: r4(L), H: r4(H), junta: j, modulo: { h: r4(c + j), v: r4(hm) }, espessura: l,
+fiadas: fiadas.map(function (f) { return { k: f.k, y: r4(f.y), a: r4(f.a), cheia: f.cheia }; }),
+pecas: pecas, vergas: vergas, argamassa: argamassa, encunhamento: encunhamento,
+porUnidade: porUnidade, porPapel: porPapel, cortes: cortes, foraModulacao: foraModulacao,
+areaBruta: r4(areaBruta), areaVaos: r4(areaVaos), areaLiquida: r4(areaBruta - areaVaos),
+argamassaM3: r4(argM3), grauteM3: r4(graute),
+grauteM3Por: { verga: r4(grautePor.verga), contraverga: r4(grautePor.contraverga), cinta: r4(grautePor.cinta) },
+triangulos: tri, avisos: avisos
+};
+}
+function orcamento(res, opts) {
+opts = opts || {};
+var U = AU(); if (!res || !res.ok || !U) return { ok: false, linhas: [], detalhamento: [] };
+var fam = U.familia(res.familia), base = opts.base || {}, analitico = opts.analitico || {};
+var existentes = arr(opts.servicosParede).map(function (s) { var b = base[String(s.codigo)]; return { codigo: String(s.codigo || ""), desc: (b && b.descricao) || String(s.descricao || "") }; });
+var temAlv = existentes.some(function (s) { return /^ALVENARIA/i.test(s.desc); });
+var temVerga = existentes.some(function (s) { return /^VERGA/i.test(s.desc); });
+var temContra = existentes.some(function (s) { return /^CONTRAVERGA/i.test(s.desc); });
+var temEnc = existentes.some(function (s) { return /ENCUNHAMENTO/i.test(s.desc); });
+var linhas = [], avisos = [];
+function linha(cod, qtd, papel, motivoPend) {
+var b = cod ? base[String(cod)] : null;
+if (!cod || !b) { linhas.push({ codigo: cod || "", descricao: papel, unidade: "", quantidade: r4(qtd), status: "pendente", papel: papel, motivo: motivoPend || (cod ? "código " + cod + " não está na base" : "sem composição SINAPI para esta família") }); return; }
+linhas.push({ codigo: String(cod), descricao: b.descricao, unidade: b.unidade, quantidade: r4(qtd), status: "ok", papel: papel, custoUnitario: b.custoUnitario, total: Math.round(b.custoUnitario * qtd * 100) / 100 });
+}
+var codM2 = fam.comp;
+if (opts.classe && fam.compPorClasse && fam.compPorClasse[String(opts.classe)]) codM2 = fam.compPorClasse[String(opts.classe)];
+if (temAlv) avisos.push("A parede já tem composição de alvenaria (" + existentes.filter(function (s) { return /^ALVENARIA/i.test(s.desc); }).map(function (s) { return s.codigo; }).join(", ") + "): a do assentamento NÃO entra de novo.");
+else linha(codM2, res.areaLiquida, "alvenaria (m²)", (fam.conferir || [])[0]);
+var esp = fam.espCm <= 10 ? 10 : (fam.espCm <= 15 ? 15 : 20);
+var VS = U.VERGA_SINAPI;
+var mVerga = 0, mContra = 0, porModo = {};
+res.vergas.forEach(function (v) {
+var modo = v.modo === "canaleta" ? "canaleta" : (v.tipo === "verga" ? (v.vaoLargo ? "moldada" : v.modo) : "premoldada");
+var cod = (VS[modo] || VS.premoldada)[v.tipo][esp];
+var k = v.tipo + "|" + cod;
+porModo[k] = porModo[k] || { cod: cod, tipo: v.tipo, m: 0 };
+porModo[k].m += v.comprimento;
+if (v.tipo === "verga") mVerga += v.comprimento; else mContra += v.comprimento;
+});
+var estrutural = fam.funcao === "estrutural";
+var GE = U.GRAUTE_SINAPI || { verga: "89995", cinta: "89995", contraverga: "89994" };
+if (estrutural) {
+var gp = res.grauteM3Por || { verga: 0, contraverga: 0, cinta: 0 };
+var gVerga = (temVerga ? 0 : gp.verga) + gp.cinta, gContra = temContra ? 0 : gp.contraverga;
+if (gVerga > 0) linha(GE.verga, gVerga, "graute de verga e cinta superior (m³)");
+if (gContra > 0) linha(GE.contraverga, gContra, "graute de contraverga (m³)");
+if (gVerga > 0 || gContra > 0) linhas.push({ codigo: "", descricao: "armadura de verga, contraverga e cinta (kg pelo projeto — SINAPI 89999/89998 por diâmetro)", unidade: "KG", quantidade: 0, status: "pendente", papel: "armadura (kg)", motivo: "a bitola e o número de barras vêm do projeto estrutural" });
+} else Object.keys(porModo).forEach(function (k) {
+var g = porModo[k];
+if (g.tipo === "verga" && temVerga) return;
+if (g.tipo === "contraverga" && temContra) return;
+linha(g.cod, g.m, g.tipo + " (m)");
+});
+if (temVerga && mVerga) avisos.push("A parede já tem verga no orçamento: a do assentamento não entra de novo.");
+if (temContra && mContra) avisos.push("A parede já tem contraverga no orçamento: a do assentamento não entra de novo.");
+if (res.encunhamento && fam.funcao === "vedacao" && !temEnc) linha(U.ENCUNHAMENTO_SINAPI, res.encunhamento.comprimento, "encunhamento (m)");
+var comp = analitico[String(codM2)];
+var detalhamento = Object.keys(res.porUnidade).map(function (k2) {
+var e = res.porUnidade[k2], coef = null;
+if (comp && e.sinapi) comp.insumos.forEach(function (it) { if (String(it.codigo) === String(e.sinapi)) coef = it.coeficiente; });
+var naVerga = res.pecas.filter(function (p) { return p.u === k2 && p.verga; }).length;
+return { unidade: e.unidade, nome: e.nome, sinapi: e.sinapi, inteiras: e.inteiras, cortadas: e.cortadas, consumo: e.consumo,
+naVerga: naVerga, coefSinapiM2: coef, previstoSinapi: coef != null ? r3(coef * res.areaLiquida) : null,
+incluidaEm: naVerga === e.inteiras + e.cortadas ? "verga/contraverga (composição por metro)" : (temAlv ? "composição de alvenaria da parede" : (codM2 || "pendente")) };
+});
+var total = 0; linhas.forEach(function (x) { if (x.total) total += x.total; });
+return { ok: true, linhas: linhas, detalhamento: detalhamento, total: Math.round(total * 100) / 100, avisos: avisos,
+argamassaM3: res.argamassaM3, grauteM3: res.grauteM3,
+regra: estrutural
+? "estrutural: a composição por m² JÁ conta blocos, canaletas e argamassa; à parte só o graute (m³) das canaletas de verga, contraverga e cinta e a armadura (kg, pelo projeto)"
+: "a composição por m² JÁ conta blocos e argamassa de assentamento: as unidades são detalhamento, sem preço; verga, contraverga e encunhamento são composições por metro, à parte" };
+}
+var TETO = { triangulosParede: 400000, triangulosCena: 2500000, distanciaDetalhe: 18, pecasCena: 60000 };
+var AlvAssentamento = { paginar: paginar, orcamento: orcamento, TETO: TETO, TOL: TOL, ENCUNHAMENTO: ENCUNHAMENTO, RECUO_JUNTA: RECUO_JUNTA };
+global.AlvAssentamento = AlvAssentamento;
+if (typeof module !== "undefined" && module.exports) module.exports = AlvAssentamento;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/alvassentamento3d.js ==== */
+try {
+(function (global) {
+"use strict";
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function AU() { return global.AlvUnidades || null; }
+function AS() { return global.AlvAssentamento || null; }
+function AT() { return global.AlvTipos || null; }
+function AG() { return global.AlvGeo || null; }
+var CORES = {
+ceramico_vedacao: 0xb4613d, ceramico_vedacao_v: 0xb4613d, ceramico_estrutural: 0xa8593a, tijolo_macico: 0xb5683f,
+concreto: 0x85837e, argamassa: 0xbfb7a8, graute: 0x6f6c66, verga: 0xa7a49d
+};
+function nucleoDe(c) {
+var tp = c && c.tipoParede; if (!tp) return null;
+return arr(tp.camadas).filter(function (k) { return k.face === "nucleo"; })[0] || null;
+}
+function ehBlocok(c) {
+var tp = c && c.tipoParede; if (!tp) return false;
+if (/^blk-/.test(String(tp.id || ""))) return true;
+var n = nucleoDe(c); return !!(n && /^blocok_/.test(String(n.id || "")));
+}
+function familiaDe(c, todas) {
+if (!c || c.tipo !== "parede" || ehBlocok(c)) return null;
+if (c.alvFamilia && AU() && AU().familia(c.alvFamilia)) return String(c.alvFamilia);
+var T = AT(), n = nucleoDe(c);
+if (n && T && T.NUCLEOS[n.id]) {
+var nu = T.NUCLEOS[n.id];
+if (nu.alv) return nu.alv;
+if (nu.alvPorFuncao) {
+var tipo = T.TIPOS[String(c.tipoParede.id || "")], f = (tipo && tipo.funcao) || "vedacao";
+return nu.alvPorFuncao[f] || nu.alvPorFuncao.vedacao || null;
+}
+return null;
+}
+if (!todas) return null;
+if (n && n.material && /concreto|drywall|seco/i.test(String(n.material))) return null;
+var t = num(n ? n.e : c.espessura, 0);
+if (!(t > 0.05)) return null;
+return t <= 0.105 ? "cv-8f-9" : (t <= 0.13 ? "cv-8f-11" : (t <= 0.165 ? "cv-9f-14" : (t <= 0.21 ? "cv-9f-19" : null)));
+}
+function ehCrua(c) {
+var tp = c && c.tipoParede; if (!tp) return false;
+return !arr(tp.camadas).some(function (k) { return k.face !== "nucleo"; });
+}
+function paredesDoEstado(st, vaosMap, todas, frameDe, aMundo) {
+var U = AU(), lista = [];
+arr(st && st.caixas).forEach(function (c) {
+if (!c || c.tipo !== "parede") return;
+if (!todas && !ehCrua(c)) return;
+var fam = familiaDe(c, todas); if (!fam) return;
+var F = U.familia(fam); if (!F) return;
+var f = frameDe(c), p1 = aMundo(f, -f.L / 2, 0), p2 = aMundo(f, f.L / 2, 0);
+var vr = vaosMap[c.id] || {}, ac = vr.aceitos || [];
+var uI = U.unidade(F.pecas.inteiro);
+lista.push({ c: c, f: f, fam: fam, l: uI.l, id: String(c.id), p1: { x: p1[0], y: p1[1] }, p2: { x: p2[0], y: p2[1] },
+entrada: { id: String(c.id), L: f.L, H: f.H, familia: fam, ini: { tipo: "livre" }, fim: { tipo: "livre" }, interrupcoes: [], fixas: [],
+vaos: ac.map(function (v) { return { tipo: num(v.y0, 0) < 0.05 ? "porta" : "janela", x0: num(v.x0, 0) + f.L / 2, x1: num(v.x1, 0) + f.L / 2, y0: num(v.y0, 0), y1: num(v.y1, 0) }; }) } });
+});
+var G = AG(), J = U.JUNTA;
+if (G && G.encontros && lista.length > 1) {
+var porId = {}; lista.forEach(function (w) { porId[w.id] = w; });
+var ens = G.encontros(lista.map(function (w) { return { id: w.id, p1: w.p1, p2: w.p2 }; }), { tolerancia: 0.05 });
+ens.forEach(function (e) {
+var A = porId[e.a], B = porId[e.b]; if (!A || !B) return;
+function sDe(w, P) { var dx = w.p2.x - w.p1.x, dy = w.p2.y - w.p1.y, L = Math.sqrt(dx * dx + dy * dy) || 1; return ((P.x - w.p1.x) * dx + (P.y - w.p1.y) * dy) / L; }
+if (e.tipo === "L") {
+var aPassa = String(A.id) < String(B.id) ? "par" : "impar", bPassa = aPassa === "par" ? "impar" : "par";
+A.entrada[e.pontaA === "p1" ? "ini" : "fim"] = { tipo: "L", passa: aPassa, t: B.l };
+B.entrada[e.pontaB === "p1" ? "ini" : "fim"] = { tipo: "L", passa: bPassa, t: A.l };
+} else if (e.tipo === "T") {
+var ponta = e.pontaA ? A : B, corpo = e.pontaA ? B : A, qual = e.pontaA || e.pontaB;
+ponta.entrada[qual === "p1" ? "ini" : "fim"] = { tipo: "T", passa: "par", t: corpo.l };
+var s = sDe(corpo, e.ponto);
+corpo.entrada.interrupcoes.push({ x0: s - ponta.l / 2 - J, x1: s + ponta.l / 2 + J, paridade: 0 });
+corpo.entrada.fixas.push({ x: s, paridade: 1, papel: "amarracao-t" });
+} else if (e.tipo === "X") {
+var sa = sDe(A, e.ponto), sb = sDe(B, e.ponto);
+A.entrada.interrupcoes.push({ x0: sa - B.l / 2 - J, x1: sa + B.l / 2 + J, paridade: 0 });
+B.entrada.interrupcoes.push({ x0: sb - A.l / 2 - J, x1: sb + A.l / 2 + J, paridade: 1 });
+}
+});
+}
+return lista;
+}
+function geoDaPeca(T, cache, uid, c, a, simples) {
+var k = uid + "|" + Math.round(c * 1000) + "|" + Math.round(a * 1000) + (simples ? "|s" : "");
+if (cache[k]) return cache[k];
+var U = AU(), u = U.unidade(uid);
+var g = U.geometria(u, { c: c, a: a, simples: simples });
+var pos = [], nor = [];
+function face(p0, p1, p2, p3, n) {
+[p0, p1, p2, p0, p2, p3].forEach(function (p) { pos.push(p[0], p[1], p[2]); nor.push(n[0], n[1], n[2]); });
+}
+g.caixas.forEach(function (b) {
+var x0 = b.x, x1 = b.x + b.w, y0 = b.y, y1 = b.y + b.h, z0 = b.z, z1 = b.z + b.d;
+face([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], [0, 0, 1]);
+face([x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [0, 0, -1]);
+face([x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [1, 0, 0]);
+face([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [-1, 0, 0]);
+face([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0]);
+face([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [0, -1, 0]);
+});
+var geo = new T.BufferGeometry();
+geo.setAttribute("position", new T.Float32BufferAttribute(pos, 3));
+geo.setAttribute("normal", new T.Float32BufferAttribute(nor, 3));
+geo.userData = { tri: pos.length / 9 };
+cache[k] = geo;
+return geo;
+}
+var estado = { ligado: false, api: null, grupos: [], cache: {}, escondidas: [], ultimo: null, quadro: 0, resumo: null, mats: null };
+function materiais(T) {
+if (estado.mats) return estado.mats;
+var m = {};
+Object.keys(CORES).forEach(function (k) {
+m[k] = new T.MeshStandardMaterial({ color: CORES[k], roughness: k === "graute" ? 0.95 : 0.88, metalness: 0 });
+});
+estado.mats = m;
+return m;
+}
+function limpar() {
+estado.grupos.forEach(function (g) {
+if (g.grupo.parent) g.grupo.parent.remove(g.grupo);
+var ims = []; g.grupo.traverse(function (o) { if (o.isInstancedMesh) ims.push(o); });
+ims.forEach(function (o) { try { o.dispose(); } catch (e) {} });
+});
+estado.grupos = [];
+estado.escondidas.forEach(function (m) { m.visible = true; }); estado.escondidas = [];
+}
+function desenhar(st) {
+var api = estado.api; if (!api || !api.THREE) return null;
+var T = api.THREE, S = api.S, U = AU(), A = AS();
+limpar();
+if (!U || !A || !global.BimArq || !BimArq.frameDe) return null;
+var vaosMap = {};
+try { vaosMap = api.vaos ? api.vaos(st) : {}; } catch (e) { vaosMap = {}; }
+var lista = paredesDoEstado(st, vaosMap, estado.ligado, BimArq.frameDe, BimArq.aMundo);
+if (!lista.length) { estado.resumo = { paredes: 0, pecas: 0, triangulos: 0 }; return estado.resumo; }
+var M = materiais(T), unit = estado.unit || (estado.unit = new T.BoxGeometry(1, 1, 1));
+var res = lista.map(function (w) { return A.paginar(w.entrada); });
+var triTot = 0, pecTot = 0;
+res.forEach(function (r) { if (r && r.ok) { triTot += r.triangulos; pecTot += r.pecas.length; } });
+var simples = triTot > A.TETO.triangulosCena || pecTot > A.TETO.pecasCena;
+var root = (S && S.modelRoot) || api.scene || (S && S.scene);
+var triReal = 0, avisos = [];
+lista.forEach(function (w, iw) {
+var r = res[iw]; if (!r || !r.ok) { if (r && r.motivo) avisos.push(w.id + ": " + r.motivo); return; }
+var f = w.f, F = U.familia(w.fam);
+var co = f.co, si = f.si;
+var mw = new T.Matrix4().set(co, 0, si, f.cx, 0, 1, 0, f.y0, -si, 0, co, f.cz, 0, 0, 0, 1);
+var grupo = new T.Group(); grupo.name = "alv-assentada-" + w.id; grupo.userData = { alvParede: w.id };
+var porGeo = {};
+r.pecas.forEach(function (p) {
+var geo = geoDaPeca(T, estado.cache, p.u, p.c, p.a, simples);
+var k = geo.uuid;
+(porGeo[k] = porGeo[k] || { geo: geo, grupoCor: U.unidade(p.u).grupo, ms: [] }).ms.push(new T.Matrix4().makeTranslation(p.x - f.L / 2, p.y, 0).premultiply(mw));
+});
+Object.keys(porGeo).forEach(function (k) {
+var g = porGeo[k], im = new T.InstancedMesh(g.geo, M[g.grupoCor] || M.ceramico_vedacao, g.ms.length);
+g.ms.forEach(function (m, i) { im.setMatrixAt(i, m); });
+im.instanceMatrix.needsUpdate = true; im.raycast = function () {}; im.userData = { alvPecas: true };
+im.computeBoundingSphere && im.computeBoundingSphere();
+grupo.add(im); triReal += g.geo.userData.tri * g.ms.length;
+});
+var lA = r.espessura - 2 * A.RECUO_JUNTA;
+function caixas(lst, mat, prof) {
+if (!lst.length) return;
+var im = new T.InstancedMesh(unit, mat, lst.length);
+lst.forEach(function (b, i) {
+var m = new T.Matrix4().compose(new T.Vector3((b.x0 + b.x1) / 2 - f.L / 2, (b.y0 + b.y1) / 2, 0), new T.Quaternion(), new T.Vector3(Math.max(1e-4, b.x1 - b.x0), Math.max(1e-4, b.y1 - b.y0), prof));
+im.setMatrixAt(i, m.premultiply(mw));
+});
+im.instanceMatrix.needsUpdate = true; im.raycast = function () {}; im.userData = { unitBox: true };
+grupo.add(im); triReal += 12 * lst.length;
+}
+caixas(r.argamassa, M.argamassa, lA);
+caixas(r.vergas.filter(function (v) { return v.modo !== "canaleta"; }), M.verga, r.espessura);
+var gr = [];
+r.pecas.forEach(function (p) {
+if (!p.graute && !/canaleta/.test(p.papel)) return;
+var g = U.geometria(p.u, { c: p.c, a: p.a }), canal = g && g.furos.filter(function (h) { return h.canal; })[0];
+if (canal) gr.push({ x0: p.x, x1: p.x + p.c, y0: p.y + canal.y, y1: p.y + p.a - 0.01 });
+});
+caixas(gr, M.graute, Math.max(0.02, r.espessura - 2 * (U.unidade(F.pecas.inteiro).parede ? 0.03 : 0.03)));
+root.add(grupo);
+estado.grupos.push({ id: w.id, grupo: grupo, centro: new T.Vector3(f.cx, f.y0 + f.H / 2, f.cz), raio: Math.max(f.L, f.H) / 2, res: r });
+});
+estado.resumo = { paredes: estado.grupos.length, pecas: pecTot, triangulos: triReal, simples: simples, avisos: avisos,
+porParede: estado.grupos.map(function (g) { return { id: g.id, familia: g.res.familia, pecas: g.res.pecas.length, porPapel: g.res.porPapel, avisos: g.res.avisos, triangulos: g.res.triangulos }; }) };
+if (simples) avisos.push("Cena grande: as peças saem em caixa simples (teto de " + A.TETO.triangulosCena + " triângulos).");
+lod(true);
+return estado.resumo;
+}
+var _v = null;
+function lod(forcar) {
+var api = estado.api; if (!api || !estado.grupos.length) return;
+var S = api.S, T = api.THREE, cam = S && S.camera; if (!cam) return;
+var desenho = !cam.isPerspectiveCamera || (S.planta && S.planta.on) || (S.corteL && S.corteL.on);
+var D = AS().TETO.distanciaDetalhe;
+_v = _v || new T.Vector3();
+estado.grupos.forEach(function (g) {
+_v.copy(g.centro); if (S.modelRoot) { S.modelRoot.updateMatrixWorld(); _v.applyMatrix4(S.modelRoot.matrixWorld); }
+var perto = !desenho && (_v.distanceTo(cam.position) - g.raio) < D;
+if (g.grupo.visible !== perto || forcar) {
+g.grupo.visible = perto;
+mostrarOriginal(g.id, !perto);
+}
+});
+}
+function mostrarOriginal(id, mostra) {
+var api = estado.api, S = api && api.S; if (!S || !S.modelRoot) return;
+S.modelRoot.traverse(function (m) {
+if (!m.isMesh) return; var ud = m.userData || {};
+if (ud.mid === "edit" && String(ud.expressID) === String(id)) {
+if (!mostra) { if (m.visible) { m.visible = false; estado.escondidas.push(m); } }
+else if (!m.visible && estado.escondidas.indexOf(m) >= 0) { m.visible = true; estado.escondidas.splice(estado.escondidas.indexOf(m), 1); }
+}
+});
+}
+var timer = null;
+var AlvAssentamento3D = {
+familiaDe: familiaDe, ehCrua: ehCrua, paredesDoEstado: paredesDoEstado,
+montar3d: function (api) {
+estado.api = api || null;
+try {
+if (api && api.S && api.S._tickExtra) api.S._tickExtra.push(function () { if (++estado.quadro % 15) return; lod(false); });
+} catch (e) {}
+return {
+aposRebuild: function (st) {
+estado.ultimo = st || null;
+clearTimeout(timer);
+timer = setTimeout(function () { try { desenhar(estado.ultimo); } catch (e) { try { console.warn("[alvenaria assentada]", e); } catch (_) {} } }, 250);
+}
+};
+},
+alternar: function (liga) {
+estado.ligado = liga == null ? !estado.ligado : !!liga;
+var st = estado.ultimo;
+if (!st) { try { var e = global.BIM && BIM.editarEstado ? BIM.editarEstado() : null; st = e && e.estado ? e.estado : null; } catch (e2) {} }
+var r = desenhar(st);
+return { ligado: estado.ligado, resumo: r };
+},
+ligado: function () { return estado.ligado; },
+redesenhar: function () { return desenhar(estado.ultimo); },
+resumo: function () { return estado.resumo; },
+_camera: function (pos, alvo) {
+var S = estado.api && estado.api.S; if (!S || !S.camera || !S.orbit) return false;
+var T = estado.api.THREE, P = new T.Vector3(pos[0], pos[1], pos[2]), A = new T.Vector3(alvo[0], alvo[1], alvo[2]);
+if (S.modelRoot) { S.modelRoot.updateMatrixWorld(true); P.applyMatrix4(S.modelRoot.matrixWorld); A.applyMatrix4(S.modelRoot.matrixWorld); }
+S.camera.position.copy(P); S.orbit.target.copy(A); S.orbit.update(); lod(true); return true;
+},
+forcarDetalhe: function (perto) { estado.grupos.forEach(function (g) { g.grupo.visible = !!perto; mostrarOriginal(g.id, !perto); }); }
+};
+global.AlvAssentamento3D = AlvAssentamento3D;
+if (typeof module !== "undefined" && module.exports) module.exports = AlvAssentamento3D;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/paginacao.js ==== */

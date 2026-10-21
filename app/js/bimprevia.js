@@ -48,10 +48,14 @@
       } catch (e) { return true; }
     },
     _modela: function () { return (global.Modela && typeof global.Modela.status === "function") ? global.Modela : null; },
+    /* ⚠ O MÓDULO MARMORARIA TAMBÉM ABRE O MODELADOR (20/10/2026): quem comprou só ele (sem nenhuma disciplina do Modela,
+       com o teste de 7 dias já encerrado) tem `status().liberado` falso — sem esta linha o marmorista pagaria e o BIM
+       abriria sem a fita de modelar. A área dele é a enxuta (js/bimdisciplinas.js, disciplina "marmoraria"). */
+    _marm: function () { try { var MM = global.MarmModulo; return !!(MM && MM.liberado && MM.liberado()); } catch (e) { return false; } },
     modelador: function () {
       if (!BimPrevia._aparelho()) return false;
       var M = BimPrevia._modela(); if (!M) return true;
-      try { return !!M.status().liberado; } catch (e) { return true; }
+      try { return !!M.status().liberado || BimPrevia._marm(); } catch (e) { return true; }
     },
     HIDRO_OFF: HIDRO_OFF,
     /* o hidrossanitário/climatização aparece? = modelador ligado E este aparelho não o desligou (`?previa=hidro-desligar`).
@@ -62,6 +66,7 @@
     },
     disciplina: function (id) {
       if (!BimPrevia._aparelho()) return false;
+      if (id === "marmoraria" && global.MarmModulo) return BimPrevia._marm();
       var M = BimPrevia._modela(); if (!M) return true;
       try { return !!M.tem(id); } catch (e) { return true; }
     }

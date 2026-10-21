@@ -578,7 +578,7 @@
   function Arvore(sistema, grupo) { this.sistema = sistema; this.grupo = grupo; this.nos = []; this.arestas = []; this.raiz = null; this.porRef = {}; }
   Arvore.prototype.no = function (x, z, tipo, ref) { var n = { id: this.nos.length, x: r4(x), z: r4(z), tipo: tipo, ref: ref || null, sai: null, entram: [] }; this.nos.push(n); if (ref) this.porRef[ref] = n.id; return n.id; };
   Arvore.prototype.aresta = function (de, para, info) {
-    var a = { id: this.arestas.length, de: de, para: para, paraCaixa: !!(info && info.paraCaixa), vivo: true };
+    var a = { id: this.arestas.length, de: de, para: para, paraCaixa: !!(info && info.paraCaixa), igual: (info && info.igual) || null, vivo: true };
     this.arestas.push(a); this.nos[de].sai = a.id; this.nos[para].entram.push(a.id); return a.id;
   };
   /* parte a aresta no ponto (x,z): de→N e N→para; devolve N */
@@ -586,7 +586,7 @@
     var a = this.arestas[aid], n = this.no(x, z, "juncao");
     var para = a.para; this.nos[para].entram = this.nos[para].entram.filter(function (e) { return e !== aid; });
     a.para = n; this.nos[n].entram.push(aid);
-    this.aresta(n, para, { paraCaixa: a.paraCaixa });
+    this.aresta(n, para, { paraCaixa: a.paraCaixa, igual: a.igual });
     return n;
   };
   Arvore.prototype.segs = function () { var T = this; return this.arestas.map(function (a) { return { a: T.nos[a.de], b: T.nos[a.para], aresta: a }; }); };
@@ -772,12 +772,14 @@
     if (ini < 0) return { erro: "ponto fora da grade" };
     var alvos = {}, ign = o.ignorar || {};
     if (o.alvoPeca != null) { var kp = G.idx(o.alvoPeca.x, o.alvoPeca.z); if (kp >= 0) alvos[kp] = { tipo: "peca", no: o.alvoPeca.no }; }
-    else {
+    if (o.alvoPeca == null || o.igual) {
       if (o.raiz) { var kr = G.idx(o.raiz.x, o.raiz.z); if (kr >= 0) alvos[kr] = { tipo: "raiz" }; }
       /* ⚠ junção só no MEIO de uma aresta horizontal reta, longe das pontas — senão
          nasce nó de 4 trechos (cruzeta) ou trecho de centímetros */
       arv.arestas.forEach(function (a) {
-        if (!a.vivo || (a.paraCaixa && !o.aceitaCaixa)) return;
+        if (!a.vivo) return;
+        /* FRENTE H4: com o alvo na caixa, só o ramal do aparelho IGUAL que vai à MESMA caixa (2 lavatórios da bancada dupla) */
+        if (o.alvoPeca != null ? !(o.igual && a.igual === o.igual) : (a.paraCaixa && !o.aceitaCaixa)) return;
         var A = arv.nos[a.de], B = arv.nos[a.para], horiz = Math.abs(A.z - B.z) < EPS, vert = Math.abs(A.x - B.x) < EPS;
         if (!horiz && !vert) return;
         var folga = o.folgaJuncao, linha = horiz ? G.xs : G.zs, fixo = horiz ? A.z : A.x, ini2 = horiz ? Math.min(A.x, B.x) : Math.min(A.z, B.z), fim = horiz ? Math.max(A.x, B.x) : Math.max(A.z, B.z);
@@ -933,31 +935,64 @@
     var rMax = Math.max.apply(null, folhas.map(function (f) { return (f.dn || 0) / 1000 / 2; }));
     var usadaRaiz = false, caixaAlvo = {};
     if (!receptores.length && paraCaixa.length) saida.pendencias.push(pend("rota.caixa_sifonada", "ambiente " + g.id + " sem caixa sifonada: " + paraCaixa.map(function (f) { return f.ref; }).join(", ") + " ligados direto ao ramal (cada um precisa de sifão e ventilação) — ponha a caixa no modelo", paraCaixa.map(function (f) { return f.ap ? f.ap.id : f.ref; }), { tipo: "inserirPeca", peca: "caixa_sifonada", grupo: g.id }));
-    var fila = ord(bacias).concat(ord(receptores), ord(outros), ord(paraCaixa));
-    for (var i = 0; i < fila.length; i++) {
-      var f = fila[i], ign = {};
-      ign[f.ref] = 1; if (f.peca) ign[f.peca.id] = 1;
-      var o = { de: f, b0: F.b0, b1: F.b1, r: (f.dn || 0) / 1000 / 2, rArv: rMax, modo: "livre", ignorar: ign, curva: P.pesos.conexao * 2,
-                folgaJuncao: P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };
-      var vaiCaixa = PARA_CAIXA[f.aparelho] && receptores.length;
-      if (vaiCaixa) {
-        /* lavatório, chuveiro, bidê, ralo seco → a caixa (ou ralo) sifonada mais perto */
-        var rc = receptores.slice().sort(function (a, b) { return (a.aparelho === "caixa_sifonada" ? 0 : 1) - (b.aparelho === "caixa_sifonada" ? 0 : 1) || d2(f, a) - d2(f, b) || (a.ref < b.ref ? -1 : 1); })[0];
-        var noR = arv.porRef[rc.ref];
-        if (noR == null) return falha("caixa sifonada " + rc.ref + " sem rota até o destino", [rc.ref], { tipo: "ajustar", ids: [rc.ref] });
-        o.alvoPeca = { x: rc.x, z: rc.z, no: noR }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
-      } else {
-        /* ⚠ uma entrada por ambiente no TQ (a 2ª chega na árvore); caixa/ponto: idem */
-        o.raiz = usadaRaiz ? null : raizD; ign[raizD.id || "destino-es"] = 1;
+    /* ⚠ FRENTE H4 (21/10/2026): AMBIENTE COM 2+ APARELHOS IGUAIS indo ao MESMO destino (as 2 cubas da bancada ou 2 pias →
+       caixa de gordura; 2 tanques). Na ordem "o mais perto primeiro" o 1º ramal ia reto ao destino e ficava curto demais para a
+       junção de 45° do 2º (folgaJuncao nas duas pontas), e o 2º já não podia entrar no destino (uma entrada por ambiente): o 2º
+       ficava SEM TUBO e a estratégia caía — o "Traçar automaticamente" deixava as duas cubas sem tubo. Na falha, o traçado refaz
+       com o mais a MONTANTE (o mais longe) primeiro: o ramal dele passa pelos outros, que entram nele com junção de 45° antes do
+       destino (a cota de partida continua pelo fluxo: quem está mais a montante manda). A 1ª ordem segue valendo quando fecha. */
+    /* os IGUAIS que vão à caixa (os 2 lavatórios da bancada dupla): o mais longe primeiro — o ramal dele passa pelo outro, que
+       entra nele com junção de 45° (o de perto, primeiro, ia reto à caixa e não deixava trecho reto para a junção) */
+    function ordIguais(l) {
+      var o = ord(l), n = {}; o.forEach(function (f) { n[f.aparelho] = (n[f.aparelho] || 0) + 1; });
+      Object.keys(n).forEach(function (ap) {
+        if (n[ap] < 2) return;
+        var pos = [], fs = []; o.forEach(function (f, k) { if (f.aparelho === ap) { pos.push(k); fs.push(f); } });
+        fs.reverse(); pos.forEach(function (k, j) { o[k] = fs[j]; });
+      });
+      return o;
+    }
+    var filas = [ord(bacias).concat(ord(receptores), ord(outros), ordIguais(paraCaixa))];
+    if (outros.length > 1) filas.push(ord(bacias).concat(ord(receptores), ord(outros).reverse(), ordIguais(paraCaixa)));
+    var cruz0 = copia(W.cruz), idsCruz0 = copia(W.idsCruz), falha0 = null;
+    for (var iF = 0; iF < filas.length; iF++) {
+      var fila = filas[iF];
+      if (iF) { arv = new Arvore("esgoto", g.id); avisos = []; usadaRaiz = false; caixaAlvo = {}; W.cruz = copia(cruz0); W.idsCruz = copia(idsCruz0); }
+      var fEr = tracarFila(fila);
+      if (!fEr) { if (iF) saida.justificativa.push("esgoto: " + outros.map(function (f) { return f.ref; }).join(", ") + " no mesmo ramal — o mais a montante traçado primeiro, os outros entram nele com junção de 45° antes do destino"); falha0 = null; break; }
+      if (!falha0) falha0 = fEr;
+    }
+    if (falha0) return falha0;
+    function tracarFila(fila) {
+      for (var i = 0; i < fila.length; i++) {
+        var f = fila[i], ign = {};
+        ign[f.ref] = 1; if (f.peca) ign[f.peca.id] = 1;
+        var o = { de: f, b0: F.b0, b1: F.b1, r: (f.dn || 0) / 1000 / 2, rArv: rMax, modo: "livre", ignorar: ign, curva: P.pesos.conexao * 2,
+                  folgaJuncao: P.chanfro + P.margemNo * 2, juncao45: true, chanfrar: true, raizPlanta: raizD, aceitaCaixa: false };
+        var vaiCaixa = PARA_CAIXA[f.aparelho] && receptores.length;
+        if (vaiCaixa) {
+          /* lavatório, chuveiro, bidê, ralo seco → a caixa (ou ralo) sifonada mais perto */
+          var rc = receptores.slice().sort(function (a, b) { return (a.aparelho === "caixa_sifonada" ? 0 : 1) - (b.aparelho === "caixa_sifonada" ? 0 : 1) || d2(f, a) - d2(f, b) || (a.ref < b.ref ? -1 : 1); })[0];
+          var noR = arv.porRef[rc.ref];
+          if (noR == null) return falha("caixa sifonada " + rc.ref + " sem rota até o destino", [rc.ref], { tipo: "ajustar", ids: [rc.ref] });
+          o.alvoPeca = { x: rc.x, z: rc.z, no: noR }; ign[rc.ref] = 1; ign[rc.peca.id] = 1; caixaAlvo[f.ref] = rc.ref;
+          /* ⚠ FRENTE H4 (21/10/2026): 2 aparelhos IGUAIS para a mesma caixa (os 2 lavatórios da bancada dupla): o 2º pode entrar no
+             ramal do 1º por junção de 45° antes da caixa (um ramal só chegando nela) — a busca escolhe o mais curto */
+          if (paraCaixa.filter(function (q) { return q.aparelho === f.aparelho; }).length > 1) o.igual = f.aparelho + "@" + rc.ref;
+        } else {
+          /* ⚠ uma entrada por ambiente no TQ (a 2ª chega na árvore); caixa/ponto: idem */
+          o.raiz = usadaRaiz ? null : raizD; ign[raizD.id || "destino-es"] = 1;
+        }
+        if (!o.raiz && !o.alvoPeca && !arv.arestas.length) return falha("sem destino para " + f.ref, [f.ap ? f.ap.id : f.ref], { tipo: "destino", sistema: "esgoto", grupo: g.id });
+        var rota = rotear(W, G, arv, o);
+        if (rota.erro) return falha("esgoto de " + f.ref + ": " + rota.erro + " até " + (vaiCaixa ? "a caixa sifonada" : "o destino") + " (" + F.nome + ")", [f.ap ? f.ap.id : f.ref, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) });
+        if (rota.alvo.tipo === "raiz") usadaRaiz = true;
+        somarCruz(W, rota);
+        rota.avisos.forEach(function (a) { avisos.push(a); });
+        var noF = enxertar(arv, rota, { tipo: f.tipo, ref: f.ref, no: arv.porRef[f.ref] }, { paraCaixa: !!vaiCaixa, igual: o.igual || null });
+        arv.nos[noF].folha = f;
       }
-      if (!o.raiz && !o.alvoPeca && !arv.arestas.length) return falha("sem destino para " + f.ref, [f.ap ? f.ap.id : f.ref], { tipo: "destino", sistema: "esgoto", grupo: g.id });
-      var rota = rotear(W, G, arv, o);
-      if (rota.erro) return falha("esgoto de " + f.ref + ": " + rota.erro + " até " + (vaiCaixa ? "a caixa sifonada" : "o destino") + " (" + F.nome + ")", [f.ap ? f.ap.id : f.ref, pt3(f.x, f.y, f.z)], { tipo: "parametro", campo: "passo", sugerido: r4(P.passo / 2) });
-      if (rota.alvo.tipo === "raiz") usadaRaiz = true;
-      somarCruz(W, rota);
-      rota.avisos.forEach(function (a) { avisos.push(a); });
-      var noF = enxertar(arv, rota, { tipo: f.tipo, ref: f.ref, no: arv.porRef[f.ref] }, { paraCaixa: !!vaiCaixa });
-      arv.nos[noF].folha = f;
+      return null;
     }
     /* ---- DN e UHC a jusante (o DN nunca diminui: max dos de montante + tabela de ramal pela soma de UHC) */
     var porNo = {}; arv.nos.forEach(function (n) { porNo[n.id] = n; });

@@ -363,7 +363,8 @@
   /* desenho → SVG. `extra.titulo` = nome da vista. Devolve { svg, caixa, cotas } */
   function svg(d, est, extra) {
     var e = normEstilo(est), pena = PENAS[e.pena], k = e.escala / 1000;
-    var cx = caixa(d) || { x0: 0, y0: 0, x1: 1, y1: 1 };
+    /* d.area: a folha em branco do projeto que ainda não tem peça (js/bim2dui.js `_vazio`, 20/10/2026) */
+    var cx = caixa(d) || (d.area && d.area.x1 > d.area.x0 && d.area.y1 > d.area.y0 ? { x0: d.area.x0, y0: d.area.y0, x1: d.area.x1, y1: d.area.y1 } : null) || { x0: 0, y0: 0, x1: 1, y1: 1 };
     var cotas = cotasDe(d, e);
     var m = 32 * k;   /* margem de papel para cotas, níveis e marcas */
     var conv = e.convencao === "reforma" ? CONV_REFORMA : null;

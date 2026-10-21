@@ -89,11 +89,16 @@
     madeira_deck: { m: 2.4, asp: 1.0, media: [0.574, 0.508, 0.392], natural: 1, fonte: "ambientCG Planks029S", nome: "Deck de madeira", cat: "madeira" },
 
     /* ---- leva do ESTILO VISUAL (07/10/2026): cor 1K, normal e rugosidade 512 ---- */
-    bloco_ceramico_furado: { m: 1.8, asp: 1.0, media: [0.603, 0.366, 0.271], natural: 1, fonte: "ambientCG Bricks088", nome: "Bloco cerâmico (tijolo furado)", cat: "alvenaria" },
+    /* ⚠ 20/10/2026 — A FOTO ESTAVA ERRADA, NÃO A COORDENADA: o ambientCG Bricks088 é tijolo perfurado assentado
+       com os FUROS NA FACE (e fiada de ~15 cm). No Brasil o bloco de vedação vai com os furos na HORIZONTAL,
+       paralelos à parede (SINAPI 103328): na face só a parede lisa e ranhurada do bloco. Agora é a face 19×19
+       do 8 furos 9×19×19 desenhada na medida (tools/gerar-texturas-alvenaria.py): módulo 20×20, junta 1 cm,
+       6 peças × 6 fiadas em 1,20 m. Prova: tools/test-alvunidades.js [textura]. */
+    bloco_ceramico_furado: { m: 1.2, asp: 1.0, media: [0.675, 0.376, 0.274], natural: 1, fonte: "RA (procedural) — face do bloco 8 furos 9×19×19, junta 1 cm", nome: "Bloco cerâmico (tijolo furado)", cat: "alvenaria", modulo: [0.20, 0.20] },
     tijolinho_laranja: { m: 1.1, asp: 1.0, media: [0.701, 0.465, 0.303], natural: 1, fonte: "ambientCG Bricks092", nome: "Tijolinho aparente", cat: "alvenaria" },
-    /* ⚠ asp 1,4 FORÇADO: a foto é de tijolo cinza delgado; esticada na vertical a
-       peça chega a ~39 × 19 cm (não há bloco de concreto CC0 — ver ORIGEM.txt) */
-    bloco_concreto: { m: 1.75, asp: 1.4, media: [0.593, 0.590, 0.582], fonte: "ambientCG Bricks061", nome: "Bloco de concreto", cat: "alvenaria" },
+    /* 20/10/2026: era a foto de tijolo cinza delgado esticada a asp 1,4 (sem bloco 39×19 CC0). Agora a face
+       39×19 do bloco NBR 6136 desenhada na medida: módulo 40×20, junta 1 cm, 4 peças × 8 fiadas em 1,60 m. */
+    bloco_concreto: { m: 1.6, asp: 1.0, media: [0.589, 0.584, 0.568], fonte: "RA (procedural) — face do bloco 14×19×39 (NBR 6136), junta 1 cm", nome: "Bloco de concreto", cat: "alvenaria", modulo: [0.40, 0.20] },
     concreto_aparente_formas: { m: 3.6, asp: 1.0, media: [0.630, 0.630, 0.632], fonte: "ambientCG Concrete008", nome: "Concreto aparente (fôrma)", cat: "concreto" },
     concreto_liso_claro: { m: 1.1, asp: 0.5, media: [0.723, 0.723, 0.723], fonte: "ambientCG Concrete034", nome: "Concreto liso / pré-moldado", cat: "concreto" },
     cimento_queimado: { m: 2.0, asp: 1.0, media: [0.494, 0.514, 0.529], fonte: "ambientCG Concrete016", nome: "Cimento queimado", cat: "concreto" },

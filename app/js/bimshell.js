@@ -523,7 +523,9 @@
       if (!res.ok) {
         if (res.trancada) {
           var M = global.Modela;
-          if (M && typeof M.oferta === "function") { try { M.oferta(id); } catch (e) {} }
+          /* a Marmoraria é módulo à parte: a oferta é a dela (js/marmorariaui.js), não a do Modela por disciplina */
+          if (id === "marmoraria" && global.MarmorariaUI && global.MarmModulo) { try { MarmorariaUI.oferta(MarmModulo.guarda("disciplina")); } catch (eM) {} }
+          else if (M && typeof M.oferta === "function") { try { M.oferta(id); } catch (e) {} }
           else { this.status(res.motivo); try { if (global.UI && UI.toast) UI.toast(res.motivo, "aviso"); } catch (e2) {} }
         }
         return res;

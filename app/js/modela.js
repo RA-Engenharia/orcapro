@@ -51,7 +51,9 @@
      Não entram no "completo" nem na vitalícia — só compra própria, o teste de
      7 dias e a vitrine (?demo=1). O cliente que já tinha o Blocok (licença
      GCon) segue liberado pela trava antiga do js/bim.js (BLOCOK_HASHES). */
-  var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }];
+  /* MARMORARIA (20/10/2026): bancadas de pedra + executivo + tabela de preços + proposta do marmorista (js/marmmodulo.js).
+     Mesma regra do Blocok; a licença interna da RA chega pelo servidor (modela.internos) ou pela trava da máquina. */
+  var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }];
   var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
 
   /* a URL é lida na CARGA (a navegação interna pode limpar o endereço depois) */

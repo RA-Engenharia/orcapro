@@ -397,6 +397,13 @@
         '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
         " no plano; depois, cada orçamento tem o preço calculado pelo tamanho do escopo, mostrado aqui ANTES de gerar. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
         " h. Se ela não entregar, o valor volta para a carteira.</p>";
+    } else if (rg.porUso) {
+      /* ORÇAMENTISTA PELO USO (21/10/2026: "cobra só o uso mais 100%") */
+      html += '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
+        '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
+        " no plano; depois, você paga " + esc(rg.preco || "o custo do uso") + (rg.minimo ? " (mínimo " + esc(rg.minimo) + ")" : "") +
+        ", calculado pelo número de linhas que a IA vai trabalhar e mostrado aqui ANTES. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
+        " h. Se ela não responder, o valor volta para a carteira.</p>";
     } else html +=
       '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
       '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") + " no plano; depois, " + esc(rg.preco || "") +
@@ -434,6 +441,7 @@
     var corpo = { raiz: this._orcmRaiz(), assinatura: this._orcmAssinatura() };
     /* escopo: o servidor calcula o preço pelo TAMANHO (caracteres, linhas, parâmetros) — nunca pelo texto */
     if (st.modo === "escopo" && st.escopo) corpo.escopo = st.escopo;
+    else if (st.uso) corpo.uso = st.uso;
     var post = function (rota, b) {
       return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
         .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
@@ -442,6 +450,7 @@
     var abrir = function (orcamentoId) {
       var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
       if (corpo.escopo) b.escopo = corpo.escopo;
+      if (corpo.uso) b.uso = corpo.uso;
       if (orcamentoId) b.orcamentoId = orcamentoId;
       UI.loading("Liberando a IA neste orçamento…");
       post("/ia/orcamentista/abrir", b).then(function (o) {
@@ -471,6 +480,8 @@
     var revisar = st.plano.filter(function (L) { return L.status === "revisar" && L.candidatos.length >= 2 && !L.decididoPeloUsuario && !L.refinadoIA; });
     var pend = st.plano.filter(function (L) { return L.status === "pendente" && !L.decididoPeloUsuario && !L.refinadoIA; });
     if (!revisar.length && !pend.length) { UI.toast("Nada para a IA refinar: sem linhas em revisão ou pendentes.", "ok"); return; }
+    /* o preço é PELO USO (21/10/2026): o servidor estima o custo pelo que a IA vai fazer — só contagens */
+    st.uso = { revisar: revisar.length, pendentes: pend.length };
     this._orcmJanelaIA(back, function (sessao) { self._orcmRefinarIAComJanela(back, sessao, revisar, pend); });
   };
   App._orcmRefinarIAComJanela = function (back, sessao, revisar, pend) {

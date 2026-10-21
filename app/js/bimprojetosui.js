@@ -461,10 +461,11 @@
       this._lerIndice().then(function () { self.pintarTitulo(); });
       return this._proj;
     },
-    novo: function () {
+    /* opts.tpl: o template de início já marcado (o cartão da tela inicial, js/bimtplinicio.js) */
+    novo: function (opts) {
       var g = G();
       if (!g) return false;
-      this._fecharComPergunta(function () { g._novoProjeto(); });
+      this._fecharComPergunta(function () { g._novoProjeto(opts); });
       return true;
     },
     /* ÁREA DE TESTE (14/10/2026): o BIM sem obra e sem projeto — a área de trabalho "sem obra" que o editor já
@@ -479,8 +480,45 @@
         self.esconderInicio();
         self.pintarTitulo();
         toast("Área de teste: o BIM sem obra. O que você modelar aqui fica só nesta área — não entra em obra nenhuma. Para guardar de verdade, use Novo projeto (Início).", "ok", 9000);
+        self._inicioDaAreaTeste();
       });
       return true;
+    },
+    /* TEMPLATE DE INÍCIO NA ÁREA DE TESTE (20/10/2026): vazia (sem peça, sem modelo e sem nível), ela pergunta
+       com qual template começa — o lembrado como padrão entra sem perguntar — e abre na PLANTA BAIXA, liberada para
+       desenhar. Com modelagem, fica como estava (3D). ⚠ Nada aqui monta a cena (ver o laço da 1.2.156). */
+    _inicioDaAreaTeste: function () {
+      var g = G(), T = global.BimTplInicio, self = this;
+      if (!g || !this.emAreaTeste()) return false;
+      var vazia = g._tplIniCenaVazia ? g._tplIniCenaVazia() : false, semNivel = true;
+      try { semNivel = !g._nivLer().length; } catch (e) {}
+      if (!vazia) return false;
+      if (!semNivel || !T || !g._tplIniGradeHtml) { try { g._tplIniAbrirPlanta(null); } catch (e2) {} return true; }
+      var lembrado = T.padrao();
+      if (lembrado) { this._areaTesteComTemplate(lembrado); return true; }
+      var sel = T.inicial(), lembrar = false;
+      global.UI.modal("Área de teste — começar com qual template?",
+        '<p class="muted" style="margin:0 0 10px;font-size:12.5px">A área está vazia. O template cria os níveis, as vistas (planta de cada nível, cortes A e B, elevações e 3D), as penas do padrão RA e a fita da disciplina — e abre na planta baixa, pronta para desenhar.</p>' +
+        '<div data-tpl-box="teste">' + g._tplIniGradeHtml(sel, false) + "</div>", [
+          { texto: "Sem template (só a planta)", classe: "ghost", onClick: function () { global.UI.fecharModal(); try { g._tplIniAbrirPlanta(null); } catch (e3) {} } },
+          { texto: "Começar", classe: "primary", onClick: function () {
+            global.UI.fecharModal();
+            if (T) T.lembrar(lembrar ? sel : null);
+            self._areaTesteComTemplate(sel);
+          } }
+        ]);
+      var box = document.querySelector('#modal-bg [data-tpl-box="teste"]');
+      if (box) g._tplIniLigar(box, function (id, lb) { sel = id; lembrar = lb; });
+      return true;
+    },
+    _areaTesteComTemplate: function (id) {
+      var g = G(), r = null;
+      try { r = g._tplIniAreaTeste(id); } catch (e) { r = { ok: false, avisos: [String(e && e.message || e)] }; }
+      var t = global.BimTplInicio ? global.BimTplInicio.obter(id) : null;
+      if (r && r.ok) toast("Área de teste com o template " + (t ? t.nomeCompleto : id) + ": níveis, vistas e penas prontos. A planta baixa do Térreo está na frente." + (r.avisos && r.avisos.length ? " (" + r.avisos.join("; ") + ")" : ""), "ok", 8000);
+      else toast("Não consegui aplicar o template na área de teste" + (r && r.avisos ? ": " + r.avisos.join("; ") : "") + ".", "erro", 8000);
+      this.pintarTitulo();
+      return r;
     },
     /* a cena na tela é a área de teste: sem projeto, sem obra no alto e com a área "sem obra" carregada */
     emAreaTeste: function () {
@@ -796,6 +834,12 @@
       return Promise.resolve(pr).then(function () {
         self._abrindo = false;
         g._bimCenaObra = info.obraId;
+        /* PROJETO SEM VOLUMETRIA (20/10/2026): sem peça, sem IFC e sem malha, abre na planta baixa do nível de
+           trabalho; com modelo, fica como sempre (o 3D). Só abre a aba da planta — a cena não é tocada. */
+        try {
+          var md = (r && r.modelo) || {}, semNada = !(md.edicao || []).length && !(r.ifcs || []).length && !(r.malhas || []).length && !(md.malhas || []).length;
+          if (semNada && g._tplIniCenaVazia && g._tplIniCenaVazia() && g._tplIniAbrirPlanta) g._tplIniAbrirPlanta(null);
+        } catch (eV) {}
         var t = agora();
         self._proj = { id: info.id, nome: info.nome, obraId: info.obraId, obraNome: obraNome(info.obraId) || info.obraNome, criadoEm: info.criadoEm || t,
                        salvoEm: info.salvoEm || t, base: null, salvo: null };
@@ -914,6 +958,12 @@
           /* ÁREA DE TESTE (14/10/2026, pedido do Rogério): abrir o BIM sem criar obra nem projeto, para experimentar */
           '<button type="button" class="bp-bt" data-bp="teste"><b>' + ico("editar", 16) + "Área de teste</b><span>O BIM vazio, sem obra: experimente as ferramentas — nada entra em obra nenhuma</span></button>" +
         "</div>" +
+        /* TEMPLATE DE INÍCIO (20/10/2026): começar do zero já pela disciplina — o cartão abre o Novo projeto com ele marcado */
+        (global.BimTplInicio ? '<section class="bp-sec bp-tpls" data-bp-tpls><h3>Começar do zero com um template</h3><div class="bp-tpl-grade">' +
+          global.BimTplInicio.grupos().map(function (gr) {
+            return '<button type="button" class="bp-tpl" data-bp="tpl" data-id="' + esc(gr.id) + '" title="' + esc(gr.descricao) + '">' + ico(gr.icone, 18) +
+              "<b>" + esc(gr.nome) + "</b><span>" + esc(gr.sub) + "</span></button>";
+          }).join("") + '</div><p class="bp-sub" style="margin:8px 0 0">Níveis, vistas (plantas, cortes, elevações e 3D), penas e prancha do padrão RA prontos; o projeto abre na planta baixa.</p></section>' : "") +
         '<div class="bp-colunas">' +
           '<section class="bp-sec" data-bp-recentes><h3>Projetos recentes</h3>' + this._htmlRecentes(rec, srv) + "</section>" +
           '<section class="bp-sec" data-bp-modelos><h3>Modelos IFC salvos na obra</h3>' + this._htmlModelos() + "</section>" +
@@ -963,6 +1013,7 @@
         if (!b || !el.contains(b)) return;
         var a = b.getAttribute("data-bp"), id = b.getAttribute("data-id");
         if (a === "novo") self.novo();
+        else if (a === "tpl") self.novo({ tpl: global.BimTplInicio ? global.BimTplInicio.primeiraDo(id) : null });
         else if (a === "abrir-sistema") self.abrirDoSistema();
         else if (a === "abrir-computador") self.abrirDoComputador();
         else if (a === "teste") self.areaTeste();
@@ -1063,6 +1114,11 @@
         ".bp-mini:hover{background:var(--rv-hover,#d8e6f2)}.bp-mini-pri{border-color:var(--rv-foco,#1a6cb5);font-weight:700}" +
         ".bp-vazio{color:var(--rv-tx-fraco,#6a6a6a);margin:4px 0}.bp-lbl{display:block;font-size:12px;margin-bottom:6px}" +
         ".bp-lbl select{display:block;width:100%;margin-top:3px}.bp-lista{margin:4px 0 10px;padding-left:18px;max-height:150px;overflow:auto}" +
+        ".bp-tpls{margin-bottom:16px}.bp-tpl-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}" +
+        ".bp-tpl{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:10px 12px;min-height:44px;border-radius:10px;border:1px solid var(--rv-linha-forte,#b4b4b4);" +
+          "background:var(--rv-painel-bg,#f0f0f0);color:inherit;font:inherit;text-align:left;cursor:pointer}" +
+        ".bp-tpl:hover{background:var(--rv-hover,#d8e6f2)}.bp-tpl:focus-visible{outline:2px solid var(--rv-foco,#1a6cb5);outline-offset:2px}" +
+        ".bp-tpl svg{color:var(--rv-foco,#1a6cb5)}.bp-tpl b{font-size:13px}.bp-tpl span{font-size:11.5px;color:var(--rv-tx-fraco,#6a6a6a)}" +
         ".bp-rodape{margin:12px 0 0;font-size:11.5px;color:var(--rv-tx-fraco,#6a6a6a);text-align:center}" +
         ".bp-titulo{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:62%}" +
         ".bp-titulo-nome{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}" +

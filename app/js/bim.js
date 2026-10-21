@@ -9874,7 +9874,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     def = def || {};
     var box = new THREE.Box3().setFromObject(modelRoot);
-    if (box.isEmpty()) return { ok: false, erro: 'Abra um modelo primeiro.' };
+    /* `vazio` (20/10/2026): o modelo ainda não tem peça nenhuma — a planta do projeto novo desenha a folha em
+       branco (js/bim2dui.js `_vazio`) em vez de dizer "abra um modelo" */
+    if (box.isEmpty()) return { ok: false, vazio: true, erro: 'Abra um modelo primeiro.' };
     var planta = def.tipo !== 'corte';
     /* P6 — GANCHO (js/bimmodelovista.js + js/bim2dui.js): 'forro' = planta de forro
        refletido (olha para CIMA a partir do corte; o X volta espelhado no fim, igual
@@ -12449,7 +12451,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   S._famDefinir = famDefinir; S._famAval = famAval;
   /* MOBILIÁRIO/PAISAGISMO: o nome de material tem cor definida na tabela (e não a cor-hash de reserva)? — para o teste ver se faltou registrar */
-  S._famCorDefinida = function (nome) { var k = String(nome || '').toLowerCase().trim(); return !!(FAM_PBR[k] || FAM_CORES[k] != null); };
+  S._famCorDefinida = function (nome) { var k = String(nome || '').toLowerCase().trim(); return !!(FAM_PBR[k] || FAM_CORES[k] != null || acabEnt(nome)); };   /* o nome do catálogo de acabamento visual (pedras da marmoraria) também tem cor */
   /* NÍVEL DE DETALHE das formas geradas (js/hidlouca.js via js/familia.js: s.lod = [nível 1, nível 2]).
      A malha é a MESMA (seleção, raio e propriedades seguem nela); só a geometria troca: perto (< 8 m) o
      nível 0, até 25 m o 1, longe o 2. Planta, corte e desenho técnico (câmera ortográfica / planta ligada)
@@ -12886,6 +12888,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._p11) S._p11.aposRebuild(st);   /* P11: as curvas de nível do terreno */
     if (S._emb) S._emb.aposRebuild(st);   /* EMBREVE: as barras e o graute da alvenaria estrutural (js/bimgraute.js) */
     if (S._bkx) S._bkx.aposRebuild(st);   /* BLOCOK: as peças no 3D e a tela do módulo acompanham (js/blocokexecui.js) */
+    if (S._alv) S._alv.aposRebuild(st);   /* ALVENARIA ASSENTADA: a parede crua acompanha (js/alvassentamento3d.js) */
     if (S._metc) S._metc.aposRebuild(st);   /* METÁLICA: cotas entre eixos, níveis no 3D e o plano da ferramenta acompanham */
     if (S._cot) S._cot.aposRebuild(st);   /* COTAS: as cotas 3D medem de novo (a peça andou, trocou de perfil, sumiu → órfã) — js/bimcotasui.js */
     if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
@@ -13963,6 +13966,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   /* BLOCOK — GANCHO (14/10/2026, js/blocokexecui.js): as peças Blocok no 3D (faces, EPS,
      concreto dos reforços e juntas) acompanham o modelo. Sem o módulo liberado não desenha nada. */
   S._bkx = (window.BlocokExecUI && BlocokExecUI.montar3d) ? BlocokExecUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
+  }) : null;
+  /* ALVENARIA ASSENTADA — GANCHO (20/10/2026, js/alvassentamento3d.js): a parede crua mostra os blocos como
+     assentados (fiadas, juntas, amarração, verga), por instancing e com nível de detalhe pela distância. */
+  S._alv = (window.AlvAssentamento3D && AlvAssentamento3D.montar3d) ? AlvAssentamento3D.montar3d({
     THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
   }) : null;
   /* METÁLICA — GANCHOS (12/10/2026, js/metalcriarui.js + js/metalcriar.js): criar pilar, viga,

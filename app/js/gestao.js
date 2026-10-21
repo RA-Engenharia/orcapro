@@ -481,6 +481,10 @@
        proposta e a folha variavel de obra que nao e dele. Registro SEM
        obra continua visivel — ver a nota do filtro logo abaixo. */
     carp_propostas: 1, remun_apur: 1,
+    /* a proposta da marmoraria (js/marmorariaui.js, 21/10/2026) carrega obraId, sincroniza (Nuvem.ENTIDADES) e
+       morre com a obra (_ENT_DA_OBRA): pelo mesmo motivo da carp_propostas, o sub-usuário de outra obra não a vê.
+       A emissão sem obra (id "mprop:sem-obra:…") fica visível, como a nota do filtro abaixo. */
+    marm_propostas: 1,
     /* ⚠ o tour carrega obraId e mostra a obra POR DENTRO — é o registro mais
        revelador que existe aqui. Sem esta linha, o sub-usuário restrito à obra
        A abriria o passeio 360 da obra B, com os comentários internos da equipe
@@ -5329,6 +5333,8 @@
          aprovação/contratual — "4 linhas de base" para 2 versões enganava */
       ["crono_selo", "registro(s) das linhas de base seladas (versões e aprovações)"],
       ["crono_alt", "sessão(ões) de alteração do cronograma"],
+      /* a proposta da marmoraria (js/marmorariaui.js) é da obra: sem ela o número e o total não apontam para nada */
+      ["marm_propostas", "proposta(s) da marmoraria"],
       /* ⚠ AS DUAS LISTAS DO AGENTE DE APROPRIAÇÃO morrem com a obra
          (ESPEC-medicao-cc §6.3). A regra "toda nota do fornecedor X nesta obra
          vai para o centro 4.1" e a decisão tomada sobre um lançamento DAQUELA
@@ -10657,6 +10663,14 @@
         self._pagPrancha(); return true;
       };
       reg["paginar-alvenaria"] = function () { self._elevacao(); return true; };
+      /* ALVENARIA ASSENTADA (20/10/2026, js/alvassentamento3d.js): liga/desliga a parede crua com os blocos como assentados */
+      reg["alvenaria-assentada"] = function () {
+        if (!window.AlvAssentamento3D) return false;
+        var r = AlvAssentamento3D.alternar();
+        var n = r && r.resumo ? r.resumo.paredes : 0;
+        try { UI.toast(r.ligado ? (n ? "Alvenaria assentada: " + n + " parede(s) crua(s), bloco a bloco (de perto; de longe volta o desenho)." : "Nenhuma parede de alvenaria do modelo para assentar.") : "Alvenaria assentada desligada: as paredes voltam ao acabamento.", n || !r.ligado ? "ok" : "alerta", 5000); } catch (e) {}
+        return true;
+      };
       reg["elevacoes"] = function () {
         if (!self._elevAtual) { self._elevacao(); return true; }
         self._elevPrancha(); return true;
@@ -12380,7 +12394,8 @@
      * fixa o tipo de parede e já joga o perímetro no 3D, pronto para
      * editar. É a porta que faltava.
      * ================================================================== */
-    _novoProjeto: function () {
+    /* `opts.tpl` (20/10/2026): o template já marcado — o cartão clicado na tela inicial do BIM */
+    _novoProjeto: function (opts) {
       if (this._bloqueado && this._bloqueado()) return;
       if (!window.Niveis || !window.AlvTipos) { UI.toast("Motores de nível e tipo não carregados.", "erro"); return; }
       var self = this;
@@ -12389,6 +12404,12 @@
         tipo: this._alvTipoId || "bloco_concreto_14_est",
         contorno: "retangulo", largura: 8.00, comprimento: 6.00
       });
+      /* TEMPLATE DE INÍCIO (js/bimtplinicio.js): o lembrado como padrão, ou o Universal */
+      if (window.BimTplInicio) {
+        if (opts && opts.tpl && BimTplInicio.obter(opts.tpl)) g.tplIni = opts.tpl;
+        else if (!g.tplIni || !BimTplInicio.obter(g.tplIni)) g.tplIni = BimTplInicio.inicial();
+        g.tplLembrar = BimTplInicio.padrao() === g.tplIni;
+      }
       /* PROJETOS BIM (12/10/2026): o projeto tem OBRA e NOME DO ARQUIVO.
          A obra começa na do alto (quem já está numa obra cria nela); sem obra
          no alto, fica a última escolhida, se ainda existir. O nome do arquivo
@@ -12411,8 +12432,9 @@
 
       var h =
         '<p class="muted" style="font-size:12.5px;margin:0 0 12px">' +
-        "Cria os níveis da obra, fixa o tipo de parede e joga o contorno no 3D. " +
-        "Daí em diante é só desenhar — o quantitativo e o peso acompanham.</p>" +
+        "Escolha o template, a obra e as medidas: o projeto nasce com os níveis, as vistas e as penas do padrão RA e abre na planta baixa, " +
+        "pronto para desenhar — o quantitativo e o peso acompanham.</p>" +
+        (window.BimTplInicio ? '<div data-tpl-box="np">' + this._tplIniGradeHtml(g.tplIni, g.tplLembrar) + "</div>" : "") +
         '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px">' +
           '<label>Obra<select data-np="obra" style="width:100%">' + optObras + "</select></label>" +
           '<label>Nome do arquivo<input type="text" data-np="arquivo" value="' + Util.esc(g.arquivo || "") + '" style="width:100%" title="É o nome do arquivo .opbim — no sistema, nos recentes e na pasta do computador"></label>' +
@@ -12427,9 +12449,10 @@
             '<option value="vazio"' + (g.contorno === "vazio" ? " selected" : "") + ">Nada — desenho tudo</option></select></label>" +
           '<label>Largura (m)<input type="number" step="0.1" data-np="largura" value="' + g.largura + '" style="width:100%"></label>' +
           '<label>Comprimento (m)<input type="number" step="0.1" data-np="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
-          /* TEMPLATE (.optpl) já na criação: os templates RA e os do hidrossanitário por disciplina (18/10/2026).
-             JUNÇÃO 18/10/2026: só com a prévia ?previa=hidro — sem ela o diálogo é o do master (e2e-bim-inicio, 9 campos) */
-          ((window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
+          /* TEMPLATE (.optpl) já na criação (18/10/2026): desde 20/10/2026 é a grade de templates de início, no alto
+             do diálogo (js/bimtplinicio.js) — o hidrossanitário por disciplina está lá, como variante. Sem o motor
+             novo, o seletor de antes (só com a prévia hidro). */
+          ((!window.BimTplInicio && window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
             return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.template ? " selected" : "") + ">" + Util.esc(t.nome) + "</option>"; }).join("") + "</select></label>" : "") +
         "</div>" +
         '<div id="np-resumo" style="margin-top:12px"></div>';
@@ -12454,6 +12477,147 @@
     _npTemplateObter: function (id) {
       try { if (/^disc-/.test(id) && window.HidTemplates) return HidTemplates.obter(id); } catch (e) {}
       try { return window.TemplatesRA ? TemplatesRA.obter(id) : null; } catch (e2) { return null; }
+    },
+
+    /* ==================================================================
+     * TEMPLATE DE INÍCIO (20/10/2026) — pedido do Rogério: "Tem de abrir na
+     * PLANTA BAIXA e estar liberada para começar o projeto. O TEMPLATE já tem
+     * de estar pré-configurado, e a pessoa escolhe em qual disciplina quer
+     * abrir." O motor (catálogo e plano) é o js/bimtplinicio.js; aqui, a
+     * grade na tela e a aplicação: níveis (no _npCriar), .optpl de base sem
+     * perguntar (penas, estilos, prancha RA, famílias), Corte A e B, as
+     * quatro elevações, a disciplina da fita, a planta baixa na frente e a
+     * ferramenta inicial armada quando o modelo está vazio.
+     * ⚠ NÃO MEXE NA CENA: nada aqui chama editarAplicar (o laço da 1.2.156
+     *   nascia de montar a cena sem dono — ver js/bimprojetosui.js).
+     * ================================================================== */
+    _tplIniGradeHtml: function (sel, lembrar) {
+      var T = window.BimTplInicio; if (!T) return "";
+      var t = T.obter(sel) || T.obter(T.PADRAO), gAt = t.grupo;
+      this._tplIniCss();
+      var h = '<div class="tpi" role="radiogroup" aria-label="Template do projeto">' + T.grupos().map(function (gr) {
+        var on = gr.id === gAt;
+        return '<button type="button" class="tpi-c' + (on ? " tpi-on" : "") + '" role="radio" aria-checked="' + (on ? "true" : "false") + '" data-tpl-grupo="' + Util.esc(gr.id) + '" title="' + Util.esc(gr.descricao) + '">' +
+          '<span class="tpi-ic">' + (typeof Icones !== "undefined" ? Icones.get(gr.icone, 20) : "") + "</span>" +
+          '<b>' + Util.esc(gr.nome) + '</b><span class="tpi-sub">' + Util.esc(gr.sub) + "</span></button>";
+      }).join("") + "</div>";
+      var grSel = T.grupos().filter(function (x) { return x.id === gAt; })[0];
+      if (grSel && grSel.variantes.length > 1) {
+        h += '<label class="tpi-var">' + (gAt === "hidro" ? "Disciplina" : "Tipo") + '<select data-tpl-var>' + grSel.variantes.map(function (v) {
+          return '<option value="' + Util.esc(v.id) + '"' + (v.id === t.id ? " selected" : "") + ">" + Util.esc(v.nome) + "</option>";
+        }).join("") + "</select></label>";
+      }
+      var p = T.plano(t.id, this._npCfg || {}), dsc = window.BimDisciplinas ? BimDisciplinas.get(t.disciplina) : null;
+      h += '<div class="tpi-info" data-tpl-info="' + Util.esc(t.id) + '"><b>' + Util.esc(t.nomeCompleto) + "</b> — " + Util.esc(grSel ? grSel.descricao : "") +
+        '<div class="tpi-linha">Abre em <b>Planta baixa — Térreo</b>, liberada para desenhar' + (t.ferramenta ? " (" + Util.esc({ parede: "Parede", eixo: "Eixos", tubo: "Tubo", eletroduto: "Eletroduto", aparelho: "Aparelho" }[t.ferramenta] || t.ferramenta) + " armada)" : "") +
+          " · fita: " + Util.esc(dsc ? dsc.nome : t.disciplina) + "</div>" +
+        '<div class="tpi-linha">Vistas: ' + Util.esc(p.ok ? p.vistas.join(" · ") : "—") + "</div>" +
+        '<div class="tpi-linha">Penas e estilos do padrão RA · prancha A1 com o carimbo RA</div>' +
+        (t.aviso ? '<div class="tpi-aviso" data-tpl-aviso>' + Util.esc(t.aviso) + "</div>" : "") +
+        "</div>" +
+        '<label class="tpi-lembrar"><input type="checkbox" data-tpl-lembrar' + (lembrar ? " checked" : "") + "> Lembrar como padrão neste aparelho</label>";
+      return h;
+    },
+    /* liga a grade: `aoMudar(id, lembrar)` a cada troca; repinta a própria caixa */
+    _tplIniLigar: function (box, aoMudar) {
+      var self = this, T = window.BimTplInicio;
+      if (!box || !T || box._tpiLigado) return;
+      box._tpiLigado = true;
+      function atual() { var i = box.querySelector("[data-tpl-info]"); return i ? i.getAttribute("data-tpl-info") : T.PADRAO; }
+      function lembrar() { var c = box.querySelector("[data-tpl-lembrar]"); return !!(c && c.checked); }
+      function trocar(id) {
+        var lb = lembrar();
+        box.innerHTML = self._tplIniGradeHtml(id, lb);
+        try { if (aoMudar) aoMudar(id, lb); } catch (e) {}
+      }
+      box.addEventListener("click", function (e) {
+        var c = e.target && e.target.closest ? e.target.closest("[data-tpl-grupo]") : null;
+        if (!c || !box.contains(c)) return;
+        var gr = c.getAttribute("data-tpl-grupo");
+        if (T.grupoDe(atual()) === gr) return;
+        trocar(T.primeiraDo(gr));
+      });
+      box.addEventListener("change", function (e) {
+        var el = e.target;
+        if (el && el.hasAttribute && el.hasAttribute("data-tpl-var")) trocar(el.value);
+        else if (el && el.hasAttribute && el.hasAttribute("data-tpl-lembrar")) { try { if (aoMudar) aoMudar(atual(), !!el.checked); } catch (e2) {} }
+      });
+    },
+    _tplIniCss: function () {
+      if (document.getElementById("tpi-css")) return;
+      var s = document.createElement("style");
+      s.id = "tpi-css";
+      s.textContent =
+        ".tpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;margin:0 0 8px}" +
+        ".tpi-c{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 10px;min-height:64px;border-radius:10px;border:1px solid var(--linha,#d4d4d4);" +
+          "background:var(--surface,#fff);color:inherit;font:inherit;text-align:left;cursor:pointer}" +
+        ".tpi-c:hover{border-color:var(--rv-foco,#1a6cb5)}.tpi-c:focus-visible{outline:2px solid var(--rv-foco,#1a6cb5);outline-offset:2px}" +
+        ".tpi-c b{font-size:13px}.tpi-sub{font-size:11px;color:var(--texto-fraco,#6a6a6a)}.tpi-ic{display:flex;color:var(--rv-foco,#1a6cb5)}" +
+        ".tpi-on{border-color:var(--rv-foco,#1a6cb5);box-shadow:inset 0 0 0 2px var(--rv-foco,#1a6cb5)}" +
+        ".tpi-var{display:block;font-size:12px;margin:0 0 8px}.tpi-var select{display:block;width:100%;margin-top:3px}" +
+        ".tpi-info{font-size:12px;line-height:1.45;border:1px solid var(--linha,#d4d4d4);border-radius:8px;padding:8px 10px;margin:0 0 6px}" +
+        ".tpi-linha{color:var(--texto-fraco,#6a6a6a);margin-top:3px}" +
+        ".tpi-aviso{margin-top:6px;padding:6px 8px;border-radius:6px;border-left:3px solid var(--amarelo,#d99a00);background:rgba(217,154,0,.10)}" +
+        ".tpi-lembrar{display:flex;align-items:center;gap:6px;font-size:12px;margin:0 0 12px}";
+      document.head.appendChild(s);
+    },
+    /* a cena está vazia? (nenhum modelo aberto, nenhuma operação do editor) — a regra da vista inicial */
+    _tplIniCenaVazia: function () {
+      try { return !((window.BIM && BIM.modelos) || []).length && !((window.BIM && BIM.editarOps) ? BIM.editarOps() : []).length; } catch (e) { return false; }
+    },
+    /* a planta baixa do nível de trabalho na frente; com a cena vazia, a ferramenta inicial armada */
+    _tplIniAbrirPlanta: function (ferramenta) {
+      var pid = this._d2PlantaPadrao(), self = this;
+      if (!pid) return null;
+      /* a aba 2D que ficou do projeto anterior (outra obra: a vista já não existe aqui) sai antes — senão a barra
+         mostrava duas "Planta baixa — Térreo", uma delas de outra obra (visto no print de 20/10/2026) */
+      try { this._bimVxEst().lista.slice().forEach(function (v) { if (v && v.tipo === "2d" && /^d2[pc]-/.test(String(v.id)) && !Bim2D.def(v.id)) self._bimVxFechar(v.id); }); } catch (eAb) {}
+      this._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+      if (ferramenta && this._tplIniCenaVazia() && window.BimShell && BimShell.executar) { try { BimShell.executar(ferramenta); } catch (e) {} }
+      return pid;
+    },
+    /* aplica o PLANO (BimTplInicio.plano) na obra do alto. Os níveis já foram gravados por quem chama.
+       opts.manterTipo: o tipo de parede escolhido no diálogo ganha do 1º tipo do template */
+    _tplIniAplicar: function (plano, opts) {
+      opts = opts || {};
+      var self = this, t = plano && plano.template, avisos = [];
+      if (!t) return { ok: false };
+      /* 1) o .optpl de base, sem perguntar: penas e estilos das vistas, prancha com o carimbo RA, famílias */
+      var tp = t.base ? this._npTemplateObter(t.base) : null;
+      if (tp) { try { this._optplAplicarJa(tp, { semNiveis: true, manterTipo: !!opts.manterTipo, soFaltantes: true }); } catch (eTp) { avisos.push("o template de base não entrou inteiro: " + (eTp && eTp.message || eTp)); } }
+      else if (t.base) avisos.push("o template de base (" + t.base + ") não carregou: ficam só os níveis e as vistas");
+      /* 2) a área de trabalho da folha vazia, Corte A e B e as quatro elevações — só o que a obra ainda não tem */
+      var nCortes = 0, nElev = 0;
+      if (this._d2Config()) {
+        var e2 = Bim2D.estado(), cx = plano.caixa, mg = 2;
+        e2.area = { x0: cx.min[0] - mg, z0: cx.min[2] - mg, x1: cx.max[0] + mg, z1: cx.max[2] + mg };
+        e2.templateInicio = { id: t.id, nome: t.nomeCompleto, disciplina: t.disciplina, proprio: !!t.proprio };
+        Bim2D._gravar();
+        if (!e2.cortes.length) plano.cortes.forEach(function (c) { if (Bim2D.criarCorte(c.ax, c.az, c.bx, c.bz, { silencioso: true, letra: c.letra })) nCortes++; });
+        var M = (window.BimModeloVista && BimModeloVista.ativo && BimModeloVista.ativo()) ? BimModeloVista : null;
+        if (M) {
+          var vs = M.estado().vistas || {}, temElev = Object.keys(vs).some(function (k) { return vs[k] && vs[k].tipo === "elevacao" && !vs[k].interior; });
+          if (!temElev) plano.elevacoes.forEach(function (d) { if (Bim2D.criarElevacao(d, { abrir: false, silencioso: true, caixa: plano.caixa })) nElev++; });
+        }
+      }
+      /* 3) a disciplina da fita (trancada pela licença: fica a de agora, e o recado diz) */
+      if (window.BimDisciplinas && plano.disciplina) {
+        if (BimDisciplinas.trancada(plano.disciplina)) avisos.push("a fita de " + ((BimDisciplinas.get(plano.disciplina) || {}).nome || plano.disciplina) + " não está liberada nesta conta");
+        else if (window.BimShell && BimShell.escolherDisciplina) { try { BimShell.escolherDisciplina(plano.disciplina); } catch (eD) {} }
+        else BimDisciplinas.escolher(plano.disciplina);
+      }
+      try { this._nivArvore(); } catch (eNv) {}
+      /* 4) a planta baixa na frente — liberada para desenhar */
+      var pid = this._tplIniAbrirPlanta(opts.semFerramenta ? null : plano.ferramenta);
+      return { ok: true, template: t.id, cortes: nCortes, elevacoes: nElev, planta: pid, avisos: avisos };
+    },
+    /* ÁREA DE TESTE VAZIA: o mesmo template, na área "sem obra" (níveis só se ela ainda não tem) */
+    _tplIniAreaTeste: function (id) {
+      var T = window.BimTplInicio, self = this;
+      var plano = T ? T.plano(id, { pavimentos: 1, peDireito: 2.8, largura: 12, comprimento: 10 }) : null;
+      if (!plano || !plano.ok) return { ok: false };
+      if (!this._nivLer().length) plano.niveis.forEach(function (n) { self._nivGravar(n); });
+      return this._tplIniAplicar(plano, {});
     },
     /* "Projeto <nome> — <obra>", enquanto a pessoa não escrever o nome dela */
     _npArquivoPadrao: function () {
@@ -12503,6 +12667,9 @@
         self._npResumo();
       }
       box.addEventListener("change", mexeu);
+      /* a grade de templates (js/bimtplinicio.js): cartão, variante e "lembrar como padrão" */
+      var tplBox = box.querySelector('[data-tpl-box="np"]');
+      if (tplBox) this._tplIniLigar(tplBox, function (id, lembrar) { self._npCfg.tplIni = id; self._npCfg.tplLembrar = lembrar; self._npResumo(); });
       box.addEventListener("input", function (e) {
         var k = e.target && e.target.getAttribute ? e.target.getAttribute("data-np") : "";
         /* o nome do arquivo acompanha o nome do projeto enquanto se digita */
@@ -12520,6 +12687,8 @@
                      elevacao: +(i * g.peDireito).toFixed(2) });
       }
       lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2) });
+      var plR = (window.BimTplInicio && g.tplIni) ? BimTplInicio.plano(g.tplIni, g) : null;
+      if (plR && plR.ok) lista = plR.niveis.slice();   /* os do template de início (a Fundação na estrutura) */
       var L = N.listar(lista);
       var t = AlvTipos.tipo(g.tipo);
       var per = g.contorno === "retangulo" ? 2 * (g.largura + g.comprimento) : 0;
@@ -12535,7 +12704,7 @@
           (g.pavimentos * 4) + " paredes",
           "medida de EIXO a eixo; o 3D já nasce com elas");
       } else {
-        h += this._pagLinha("Contorno", "nenhum — o 3D abre vazio", "você desenha as paredes com o editor");
+        h += this._pagLinha("Contorno", "nenhum — a planta baixa abre vazia", "você desenha as paredes na planta (ou no 3D) com o editor");
       }
       /* PROJETOS BIM: onde o projeto fica e o que acontece com a obra */
       var obNp = g.obra ? Store.obter(eid(), "obras", g.obra) : null;
@@ -12580,14 +12749,19 @@
         if (dup) { UI.toast("Já existe o projeto “" + dup.nome + "” nesta obra — dê outro nome ao arquivo.", "erro"); return; }
       }
 
-      /* 1) níveis */
-      var lista = [], i;
-      for (i = 0; i < g.pavimentos; i++) {
-        lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavimento"),
-                     elevacao: +(i * g.peDireito).toFixed(2), corte: 1.20 });
+      /* 1) níveis — os do TEMPLATE DE INÍCIO (js/bimtplinicio.js: Térreo + pavimentos + Cobertura, e a
+         Fundação na estrutura); sem o motor, os de sempre */
+      var lista = [], i, planoTpl = (window.BimTplInicio && g.tplIni) ? BimTplInicio.plano(g.tplIni, g) : null;
+      if (planoTpl && planoTpl.ok) lista = planoTpl.niveis.slice();
+      else {
+        planoTpl = null;
+        for (i = 0; i < g.pavimentos; i++) {
+          lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavimento"),
+                       elevacao: +(i * g.peDireito).toFixed(2), corte: 1.20 });
+        }
+        lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2),
+                     corte: 1.20, peDireitoDeclarado: g.peDireito });
       }
-      lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2),
-                   corte: 1.20, peDireitoDeclarado: g.peDireito });
       var v = Niveis.validar(lista);
       if (v.erros.length) { UI.toast(v.erros[0], "erro"); return; }
       /* A editarEstado só existe com o visualizador de pé: sem ele as paredes
@@ -12658,7 +12832,15 @@
           : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
       }
       if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
-      if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
+      /* TEMPLATE DE INÍCIO: penas, prancha RA, cortes, elevações, a disciplina e a PLANTA BAIXA na frente */
+      var resTpl = null;
+      if (planoTpl) {
+        if (window.BimTplInicio) BimTplInicio.lembrar(g.tplLembrar ? g.tplIni : (BimTplInicio.padrao() === g.tplIni ? null : BimTplInicio.padrao()));
+        try { resTpl = this._tplIniAplicar(planoTpl, { manterTipo: true }); } catch (eTpl) { resTpl = { ok: false, avisos: [String(eTpl && eTpl.message || eTpl)] }; }
+        if (window.BimShell) BimShell.status(arquivo + " (" + planoTpl.template.nomeCompleto + "): " + lista.length + " níveis" + (ops.length ? ", " + ops.length + " paredes" : "") +
+          ". A planta baixa do Térreo está na frente" + (ops.length ? "." : " — desenhe a primeira peça nela."));
+      } else if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
+      if (resTpl && resTpl.avisos && resTpl.avisos.length) UI.toast("Template: " + resTpl.avisos.join("; ") + ".", "aviso", 8000);
       UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
       try { this._bimCascaContexto(); } catch (e) {}
     },
@@ -14208,28 +14390,61 @@
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Usar template", classe: "primary", onClick: function () {
           UI.fecharModal();
-          self._famConfig();
-          (tp.familias || []).forEach(function (f) { f = JSON.parse(JSON.stringify(f)); f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
-          self._famSync();
-          var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
-          (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
-          if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
-          /* B6: o tipo de parede ATIVO e a espessura do editor vêm do 1º tipo do template; os tipos, lajes,
-             materiais e a prancha ficam guardados com as vistas 2D da obra (a prancha nova usa o formato e as notas) */
-          var tpar = (tp.tiposParede || [])[0];
-          if (tpar) {
-            if (tpar.base && window.AlvTipos && AlvTipos.TIPOS[tpar.base] && tpar.base !== "crua") self._alvTrocarTipo(tpar.base);
-            if (window.BIM && BIM.espessuraTipo && tpar.espessura > 0) BIM.espessuraTipo(tpar.espessura, tpar.nome);
-          }
-          if ((tpar || tp.prancha) && self._d2Config()) {
-            var e2 = Bim2D.estado();
-            e2.templateAtivo = { nome: tp.nome || "", tiposParede: tp.tiposParede || [], tiposLaje: tp.tiposLaje || [], materiais: tp.materiais || [], prancha: tp.prancha || null };
-            Bim2D._gravar();
-          }
+          var tpar = self._optplAplicarJa(tp, {});
           self._nivArvore();
           UI.toast("Template aplicado" + (tpar ? " — parede ativa: " + tpar.nome : "") + ".", "ok");
         } }
       ]);
+    },
+    /* o "Usar template" sem a pergunta (o template de início também passa aqui, 20/10/2026).
+       opts.semNiveis: os níveis já foram gravados por quem chama; opts.manterTipo: o tipo de parede ativo fica.
+       Devolve o 1º tipo de parede do template (ou null). */
+    _optplAplicarJa: function (tp, opts) {
+      var self = this;
+      opts = opts || {};
+      /* sem a biblioteca de famílias de pé, o resto do template (penas, prancha, tipo) entra do mesmo jeito */
+      /* opts.soFaltantes (template de início, revisão de 20/10/2026): a família que o PROGRAMA já tem (biblioteca RA,
+         hidro, climatização, tratamento, piscina, marcenaria, orçáveis) é REFERENCIADA, não copiada. ⚠ Copiar gravava
+         a família inteira no Store "bim_familias" da empresa, que sobe para a nuvem num documento só (teto de 1 MiB):
+         o Hidrossanitário completo sozinho punha ~1,6 MB lá — a lista parava de sincronizar — e a cópia "importada"
+         passava a ESCONDER a família do programa (o mapa do FamiliaUI.biblioteca dá prioridade à da empresa), ficando
+         congelada nas versões seguintes e furando o portão da prévia do modelador. Teste: tools/test-bim-tpl-inicio.js [7]. */
+      if (self._famConfig() || !opts.semNiveis) {
+        var doPrograma = opts.soFaltantes ? self._famIdsDoPrograma() : {};
+        (tp.familias || []).forEach(function (f) { if (f && doPrograma[f.id]) return; f = JSON.parse(JSON.stringify(f)); f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
+        self._famSync();
+      }
+      if (!opts.semNiveis) {
+        var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
+        (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
+      }
+      if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
+      /* B6: o tipo de parede ATIVO e a espessura do editor vêm do 1º tipo do template; os tipos, lajes,
+         materiais e a prancha ficam guardados com as vistas 2D da obra (a prancha nova usa o formato e as notas) */
+      var tpar = (tp.tiposParede || [])[0];
+      if (tpar && !opts.manterTipo) {
+        if (tpar.base && window.AlvTipos && AlvTipos.TIPOS[tpar.base] && tpar.base !== "crua") self._alvTrocarTipo(tpar.base);
+        if (window.BIM && BIM.espessuraTipo && tpar.espessura > 0) BIM.espessuraTipo(tpar.espessura, tpar.nome);
+      }
+      if ((tpar || tp.prancha) && self._d2Config()) {
+        var e2 = Bim2D.estado();
+        e2.templateAtivo = { nome: tp.nome || "", tiposParede: tp.tiposParede || [], tiposLaje: tp.tiposLaje || [], materiais: tp.materiais || [], prancha: tp.prancha || null };
+        Bim2D._gravar();
+      }
+      return tpar || null;
+    },
+    /* os ids das famílias que o PROGRAMA traz (qualquer prévia: a visibilidade continua com o portão de cada uma) */
+    _famIdsDoPrograma: function () {
+      var m = {};
+      function pega(l) { try { (l || []).forEach(function (x) { var id = x && typeof x === "object" ? x.id : x; if (id) m[String(id)] = 1; }); } catch (e) {} }
+      try { if (window.FamiliasRA) pega(FamiliasRA.lista(true)); } catch (e1) {}
+      try { if (window.FamiliasOrc) pega(FamiliasOrc.lista()); } catch (e2) {}
+      try { if (window.FamiliasMarcenaria) pega(FamiliasMarcenaria.lista(true)); } catch (e3) {}
+      try { if (window.HidFamilias) pega(HidFamilias.ids ? HidFamilias.ids() : HidFamilias.todas()); } catch (e4) {}
+      try { if (window.ClimFamilias) pega(ClimFamilias.ids ? ClimFamilias.ids() : ClimFamilias.todas()); } catch (e5) {}
+      try { if (window.HidTanques) pega(HidTanques.ids ? HidTanques.ids() : HidTanques.familias()); } catch (e6) {}
+      try { if (window.HidPiscinaFam) pega(HidPiscinaFam.todas()); } catch (e7) {}
+      return m;
     },
     /* B6: os templates RA prontos (js/templatesra.js) — usar aqui ou baixar o .optpl */
     _optplRA: function () {

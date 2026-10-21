@@ -110,6 +110,10 @@
 
   /* a linha da Tabela 3 da NBR 8160 (es.aparelhos) do aparelho: o mictório depende do TIPO DE DESCARGA da instância
      (válvula, caixa, automática, calha; padrão declarado = válvula); os demais usam o próprio nome */
+  /* BANCADA (kit porCuba): o tipo de APARELHO da norma (tabelas de DN/UHC, caixa de gordura, caixa sifonada) — a bancada de
+     cozinha é pia de cozinha e a de banheiro é lavatório (o kit declara `aparelhoNorma`). Sem isto o Traçar automaticamente
+     via "bancada_cozinha": sem caixa de gordura, DN padrão sem tabela e, com 2 cubas, os 4 pontos ficavam sem tubo. */
+  function aparelhoNorma(tipo) { var k = tipo ? kits()[tipo] : null; return k && k.aparelhoNorma ? k.aparelhoNorma : tipo; }
   function aparelhoEsDe(tipo, inst) {
     if (tipo !== "mictorio") return null;
     var HEk = dep("HidES", "./hides.js"), md = HEk && HEk.mictorioDe ? HEk.mictorioDe(inst || {}) : null;
@@ -238,8 +242,8 @@
   }
 
   /* --------------------------------------------------- OPS (com as marcas do kit) */
-  function Construtor(fi, tipo, ass) {
-    var ops = [], pref = "k" + fi.id + "-";
+  function Construtor(fi, tipo, ass, sufCuba) {
+    var ops = [], pref = "k" + fi.id + "-" + (sufCuba ? "c" + String(sufCuba).replace(/\W/g, "") + "-" : "");
     function marca(o, parte) { o.kit = String(fi.id); o.kitParte = parte; o.kitAss = ass; o.kitTipo = tipo; return o; }
     return {
       ops: ops, pref: pref,
@@ -261,16 +265,24 @@
     return C.giroPara({ x: t.p2.x - t.p1.x, y: t.p2.y - t.p1.y, z: t.p2.z - t.p1.z }, frente);
   }
   /* assinatura da pose: o que, mudando, refaz o kit */
-  function assinatura(fi, y) { return [fi.famId, fi.tipoId, r4(num(fi.x, 0)), r4(y != null ? y : num(fi.y, 0)), r4(num(fi.z, 0)), r4(num(fi.rotY, 0))].join("|"); }
+  function assinatura(fi, y) {
+    var a = [fi.famId, fi.tipoId, r4(num(fi.x, 0)), r4(y != null ? y : num(fi.y, 0)), r4(num(fi.z, 0)), r4(num(fi.rotY, 0))].join("|");
+    /* BANCADA (kit porCuba, js/marmoraria.js): a cuba e a torneira mudam pelos parâmetros da instância — eles entram na assinatura
+       (mudou a cuba, a posição, o comprimento ou a torneira → o kit se refaz e os pontos acompanham) */
+    var K0 = kits()[tipoDaFamilia(fi.famId, fi.tipoId)];
+    if (K0 && K0.porCuba) { var ins = fi.inst || {}, ks = Object.keys(ins).filter(function (k) { return k.charAt(0) !== "$"; }).sort(); a += "|" + ks.map(function (k) { return k + "=" + txt(ins[k]); }).join(";"); }
+    return a;
+  }
 
   /* ESPERA DE ÁGUA: toco do ponto (face) ao eixo embutido e o tubo embutido subindo/descendo até a cota do ramal.
      É PROVISÓRIA (kitParte "espera"): o "Ligar ambiente" a troca pelo traçado completo do ambiente. */
-  function esperaAgua(K, suf, ponto, n, e, yRamal, dn) {
+  function esperaAgua(K, suf, ponto, n, e, yRamal, dn, sis, mat) {
     if (!n) return null;
     var A = eixo(ponto, n, e);
+    sis = sis || "agua_fria"; mat = mat || "pvc_soldavel";
     /* FRENTE B (19/10/2026, D-04): no sentido da água — da cota do ramal (a ponta aberta, p1) ao eixo embutido e dele ao ponto */
-    var v = Math.abs(yRamal - ponto.y) > geo(null, "margemNo") ? K.trecho(suf + "-v", "agua_fria", "pvc_soldavel", dn, eixo(ponto, n, e, yRamal), A, "espera", { continua: "p1" }) : null;
-    K.trecho(suf + "-t", "agua_fria", "pvc_soldavel", dn, A, ponto, "espera");
+    var v = Math.abs(yRamal - ponto.y) > geo(null, "margemNo") ? K.trecho(suf + "-v", sis, mat, dn, eixo(ponto, n, e, yRamal), A, "espera", { continua: "p1" }) : null;
+    K.trecho(suf + "-t", sis, mat, dn, A, ponto, "espera");
     return v;
   }
   /* ESPERA DE ESGOTO: saída de piso desce até o ramal sob o piso; saída de parede vai ao eixo embutido e desce. Provisória. */
@@ -299,7 +311,13 @@
     out.tipo = tipo;
     if (!K0) { pend("kit.tipo", "a família " + fi.famId + " não tem kit (não é aparelho sanitário conhecido)"); return out; }
     if (K0.semFicha) { pend(K0.semFicha, "sem ficha/família para o kit de " + K0.nome); return out; }
+    /* BANCADA (porCuba): um kit por cuba — os conectores "esgoto", "af", "aq" (cuba 1) e "esgoto_2", "af_2", "aq_2" (cuba 2) */
+    if (K0.porCuba && e.cuba == null) return gerarPorCuba(e, fi, tipo, out);
     var ctx = NN().contexto(), cs = conectores(avaliarFam, fi);
+    if (K0.porCuba) {
+      var sfx = String(e.cuba);
+      cs = cs.filter(function (k) { var m = /^(.*?)(_\d+)?$/.exec(k.cid); return (m[2] || "") === sfx; }).map(function (k) { k.cid = k.cid.replace(/_\d+$/, ""); return k; });
+    }
     var e0 = geo(par, "embutir");
     /* ponto de parede de referência: a normal que ENTRA na parede (do conector, ou da pose) */
     var refPt = cs.filter(function (k) { return k.parede; })[0] || null;
@@ -326,7 +344,7 @@
       poseY = r4(piso + aCH.valor - dyCon);
     }
     out.assinatura = assinatura(fi, poseY);
-    K = Construtor(fi, tipo, out.assinatura);
+    K = Construtor(fi, tipo, out.assinatura, K0.porCuba ? e.cuba : null);
     if (Math.abs(poseY - num(fi.y, 0)) > EPS) { K.instancia(poseY, "altura"); cs = conectores(avaliarFam, fi, { x: fi.x, y: poseY, z: fi.z, rotY: fi.rotY }); }
     var esg = porCid(cs, (K0.esgoto || {}).conector || "esgoto") || porSis(cs, "esgoto");
 
@@ -384,8 +402,11 @@
       var pa = porCid(cs, A0.conector || "af") || porSis(cs, "agua_fria");
       if (!pa) pend("kit.conector", fi.id + " sem ponto de água fria na família");
       else if (yRamal != null) {
-        var dnA = dnAgua(ctx, tipo, pa, out.pendencias);
+        var dnA = dnAgua(ctx, K0.aparelhoNorma || tipo, pa, out.pendencias);
         esperaAgua(K, "af", pa, pa.parede ? { x: pa.parede.x, z: pa.parede.z } : n, emb(pa), yRamal, dnA);
+        /* BANCADA: o ponto de água quente do misturador ganha a espera dele (PPR, o material padrão do sistema no biminst) */
+        var pq = A0.quente ? porCid(cs, A0.quente) : null;
+        if (pq) esperaAgua(K, "aq", pq, pq.parede ? { x: pq.parede.x, z: pq.parede.z } : n, emb(pq), yRamal, dnA, "agua_quente", BI().SISTEMAS && BI().SISTEMAS.agua_quente ? BI().SISTEMAS.agua_quente.material : "ppr");
         decide("kit.ponto.familia", "Água a " + f2(pa.y - piso) + " m do piso (conector da família)" + (A0.engate ? "; engate flexível da caixa acoplada (acessório da louça)" : "") + ".");
         if (A0.engate) out.materiais.push({ item: "Engate flexível (ligação da caixa acoplada ao ponto)", fonte: "acessório da bacia" });
       }
@@ -447,7 +468,7 @@
     if (E0.tipo === "saida_piso" || E0.tipo === "saida_parede") {
       if (!esg) pend("kit.conector", fi.id + " sem ponto de esgoto na família");
       else {
-        var aparelhoNorma = tipo === "bacia_valvula" ? "bacia_valvula" : (tipo === "bacia_caixa_acoplada" ? "bacia_caixa_acoplada" : tipo);
+        var aparelhoNorma = K0.aparelhoNorma || (tipo === "bacia_valvula" ? "bacia_valvula" : (tipo === "bacia_caixa_acoplada" ? "bacia_caixa_acoplada" : tipo));
         /* mictório: a linha da Tabela 3 da NBR 8160 sai do TIPO DE DESCARGA (propriedade da instância; padrão declarado no HidES) */
         if (tipo === "mictorio") {
           var HEk = dep("HidES", "./hides.js"), mdK = HEk && HEk.mictorioDe ? HEk.mictorioDe(fi.inst) : null;
@@ -502,6 +523,22 @@
     out.ops = K.ops;
     out.ok = !!K.ops.length;
     out.piso = piso; out.pisoOrigem = P.origem;
+    return out;
+  }
+
+  /* BANCADA (porCuba): junta os kits de cada cuba num só (a mesma assinatura; os ids levam o sufixo da cuba) */
+  function gerarPorCuba(e, fi, tipo, out) {
+    var avs = avaliar(e.avaliarFam, fi), sufs = [];
+    arr(avs && avs.conectores).forEach(function (k) { var m = /^esgoto(_\d+)?$/.exec(txt(k.id)); if (m && sufs.indexOf(m[1] || "") < 0) sufs.push(m[1] || ""); });
+    if (!sufs.length) { out.pendencias.push({ chave: "kit.conector", motivo: fi.id + " sem cuba (nenhum ponto de esgoto na bancada)", texto: fi.id + " sem cuba", elementos: [String(fi.id)], acao: null }); return out; }
+    sufs.forEach(function (sf) {
+      var g = gerar(Object.assign({}, e, { cuba: sf, tipo: tipo }));
+      out.ops = out.ops.concat(g.ops); out.avisos = out.avisos.concat(g.avisos); out.pendencias = out.pendencias.concat(g.pendencias);
+      g.decisoes.forEach(function (d) { if (!out.decisoes.some(function (x) { return x.id === d.id; })) out.decisoes.push(d); });
+      g.fontes.forEach(function (f) { if (!out.fontes.some(function (x) { return x.doc === f.doc; })) out.fontes.push(f); });
+      out.materiais = out.materiais.concat(g.materiais); out.assinatura = g.assinatura; out.piso = g.piso; out.pisoOrigem = g.pisoOrigem;
+    });
+    out.ok = !!out.ops.length; out.cubas = sufs.length;
     return out;
   }
 
@@ -612,7 +649,7 @@
 
   var HidKit = {
     VERSAO: 1, GEO_KIT: GEO_KIT,
-    kits: kits, tipoDaFamilia: tipoDaFamilia, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
+    kits: kits, tipoDaFamilia: tipoDaFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
     aparelhosForcados: aparelhosForcados, paraCalculo: paraCalculo, travados: travados, decisoesDoModelo: decisoesDoModelo, assinatura: assinatura,
     _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
   };

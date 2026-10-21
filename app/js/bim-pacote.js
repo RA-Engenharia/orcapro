@@ -7326,7 +7326,7 @@ if (S._famLodTudo0) S._famLodTudo0();
 var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 def = def || {};
 var box = new THREE.Box3().setFromObject(modelRoot);
-if (box.isEmpty()) return { ok: false, erro: 'Abra um modelo primeiro.' };
+if (box.isEmpty()) return { ok: false, vazio: true, erro: 'Abra um modelo primeiro.' };
 var planta = def.tipo !== 'corte';
 var p6Forro = def.tipo === 'forro', p6Oc = typeof def.p6Ocultar === 'function' ? def.p6Ocultar : null, p6Tag = !!def.p6Tag, linhasUd = [];
 var NVi = window.BimInstNivel, instVet = null;
@@ -9383,7 +9383,7 @@ estMarcarMat(famMatsCor[k], String(nome || '').trim() || k);
 return famMatsCor[k];
 }
 S._famDefinir = famDefinir; S._famAval = famAval;
-S._famCorDefinida = function (nome) { var k = String(nome || '').toLowerCase().trim(); return !!(FAM_PBR[k] || FAM_CORES[k] != null); };
+S._famCorDefinida = function (nome) { var k = String(nome || '').toLowerCase().trim(); return !!(FAM_PBR[k] || FAM_CORES[k] != null || acabEnt(nome)); };
 var famLod = { lista: [], quadro: 0 };
 function famLodRegistrar(m, s) {
 var geos = [m.geometry];
@@ -9762,6 +9762,7 @@ if (S._p10) S._p10.aposRebuild(st, edit.modelo);
 if (S._p11) S._p11.aposRebuild(st);
 if (S._emb) S._emb.aposRebuild(st);
 if (S._bkx) S._bkx.aposRebuild(st);
+if (S._alv) S._alv.aposRebuild(st);
 if (S._metc) S._metc.aposRebuild(st);
 if (S._cot) S._cot.aposRebuild(st);
 if (window.BimInstUI && BimInstUI.aoMudarModelo) BimInstUI.aoMudarModelo();
@@ -10670,6 +10671,9 @@ vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); },
 alvo: function () { return orbit && orbit.target ? orbit.target.clone() : null; }
 }) : null;
 S._bkx = (window.BlocokExecUI && BlocokExecUI.montar3d) ? BlocokExecUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
+}) : null;
+S._alv = (window.AlvAssentamento3D && AlvAssentamento3D.montar3d) ? AlvAssentamento3D.montar3d({
 THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
 }) : null;
 S._raioDe = function (cx, cy) {

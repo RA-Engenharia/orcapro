@@ -112,6 +112,8 @@
   <!-- modela.js: o direito ao OrçaPRO Modela (teste de 7 dias, disciplinas compradas, vitalícia). Antes do bimprevia.js, que pergunta a ele se o modelador aparece -->
   <script src="js/modela.js"></script>
   <script src="js/bimprevia.js"></script>
+  <!-- MARMORARIA (módulo à parte): a licença e a área enxuta do marmorista. No núcleo: o BimPrevia e a fita perguntam a ele -->
+  <script src="js/marmmodulo.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
   <!-- paineis.js: o tamanho dos painéis (Gantt, histograma, macrofluxo,
@@ -475,6 +477,10 @@
   <script src="js/mobgeo.js"></script>
   <script src="js/familiasmob.js"></script>
   <script src="js/familiasmobcoz.js"></script>
+  <script src="js/marmorariadados.js"></script>   <!-- MARMORARIA: catálogo de cubas, torneiras, pedras e chapas (GERADO por tools/gerar-marmoraria-dados.js) -->
+  <script src="js/marmoraria.js"></script>   <!-- MARMORARIA: bancada de pedra + cuba + torneira (família geometria "marmoraria") -->
+  <script src="js/marmprecos.js"></script>   <!-- MARMORARIA: tabela de preços do marmorista e o orçamento dele -->
+  <script src="js/marmproposta.js"></script>   <!-- MARMORARIA: proposta comercial em PDF com a marca da empresa -->
   <script src="js/familiaspais.js"></script>
   <script src="js/familiaschurras.js"></script>
   <!-- MOBILIÁRIO DO CATÁLOGO (20/10/2026): 64 famílias por categoria, cada peça comercial um tipo com preço e fonte; armário planejado inteligente; composições próprias RA de fábrica (somente leitura) -->
@@ -671,6 +677,10 @@
   <script src="js/alvgeo.js"></script>
   <script src="js/niveis.js"></script>
   <script src="js/alvtipos.js"></script>
+  <!-- ALVENARIA COMO É ASSENTADA (20/10/2026): catálogo das unidades (furos na orientação real, SINAPI, fonte), o assentamento da parede (fiadas, amarração, verga) e a parede crua no 3D (instancing + nível de detalhe) -->
+  <script src="js/alvunidades.js"></script>
+  <script src="js/alvassentamento.js"></script>
+  <script src="js/alvassentamento3d.js"></script>
   <script src="js/paginacao.js"></script>
   <script src="js/elevacao.js"></script>
   <script src="js/imgplanta.js"></script>
@@ -860,6 +870,8 @@
   <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->
   <script src="js/bimdxf.js"></script>
   <script src="js/blocokdxf.js"></script>
+  <script src="js/marmorariapranchas.js"></script>   <!-- MARMORARIA: executivo (folhas com carimbo RA, SVG/PDF/DXF) -->
+  <script src="js/marmorariaui.js"></script>
   <script src="js/bimfolhaui.js"></script>
   <script src="js/arqgeo.js"></script>   <!-- PRANCHAS DE ARQUITETURA (reforma/ampliação): geometria plana (união exata de áreas) -->
   <script src="js/arqmodelo.js"></script>   <!-- … o modelo lido: paredes, lajes, ambientes, vãos, telhado, forro, terreno, por fase -->
@@ -892,6 +904,8 @@
   <!-- PROJETOS BIM (12/10/2026): o BIM abre na tela inicial (nada carrega sozinho); projeto com nome e obra, salvo no sistema (IndexedDB) e na pasta do computador, recentes — motor puro em js/bimprojetos.js, tela e ganchos em js/bimprojetosui.js -->
   <script src="js/bimprojetos.js"></script>
   <script src="js/bimprojetosui.js"></script>
+  <!-- TEMPLATE DE INÍCIO (20/10/2026): o projeto do zero escolhe o template (Universal, Arquitetura, Estrutura, Hidrossanitário, Elétrica, Climatização) e abre na planta baixa — motor puro em js/bimtplinicio.js -->
+  <script src="js/bimtplinicio.js"></script>
   </template>
   <template data-grupo="nucleo">
   <script src="js/iaacabamento.js"></script>

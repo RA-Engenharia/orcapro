@@ -139,7 +139,15 @@
     return out;
   }
 
-  var BimAcabVis = { tinta: tinta, CATALOGO: CATALOGO, porNome: porNome, resolver: resolver, rgb: rgb, normalizar: normalizar, REGRAS_PISO: REGRAS_PISO, REGRAS_PAREDE: REGRAS_PAREDE };
+  /* entradas novas em tempo de execução (js/marmoraria.js: as pedras e os metais do catálogo da marmoraria); o nome já
+     existente não é trocado */
+  function registrar(lista) {
+    (lista || []).forEach(function (e) {
+      if (!e || !e.id || !e.rotulo || POR_ID[e.id] || POR_NOME[normalizar(e.rotulo)]) return;
+      CATALOGO.push(e); POR_ID[e.id] = e; POR_NOME[normalizar(e.rotulo)] = e;
+    });
+  }
+  var BimAcabVis = { registrar: registrar, tinta: tinta, CATALOGO: CATALOGO, porNome: porNome, resolver: resolver, rgb: rgb, normalizar: normalizar, REGRAS_PISO: REGRAS_PISO, REGRAS_PAREDE: REGRAS_PAREDE };
   global.BimAcabVis = BimAcabVis;
   if (typeof module !== "undefined" && module.exports) module.exports = BimAcabVis;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

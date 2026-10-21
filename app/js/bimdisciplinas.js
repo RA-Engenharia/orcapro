@@ -47,6 +47,7 @@
    *   metalica    #A3392B × branco 6,61 · #ED7A68 4,24
    *   marcenaria  #8A5A2E × branco 5,86 · #D4A373 5,18
    *   completo    #2D6A9C × branco 5,75 · #3FB5E5 5,00 (a cor da marca)
+   *   marmoraria  #6E5F52 × branco 6,1 · acento escuro #B8A89A 5,1 (pedra)
    * --------------------------------------------------------------- */
   var REGISTRO = [
     { id: "completo", nome: "Todas as disciplinas", curto: "Todas", cor: "#2D6A9C", texto: "#FFFFFF", acento: "#2D6A9C", acentoEscuro: "#3FB5E5", icone: "camadas",
@@ -62,10 +63,25 @@
     { id: "metalica", nome: "Metálica & Mecânica", curto: "Metálica", cor: "#A3392B", texto: "#FFFFFF", acento: "#A3392B", acentoEscuro: "#ED7A68", icone: "guindaste",
       descricao: "Perfis de aço, chapas, ligações, galpões, peças mecânicas e o içamento." },
     { id: "marcenaria", nome: "Carpintaria & Marcenaria", curto: "Carpintaria", cor: "#8A5A2E", texto: "#FFFFFF", acento: "#8A5A2E", acentoEscuro: "#D4A373", icone: "familia",
-      descricao: "Estrutura de madeira, móveis em chapa e plano de corte." }
+      descricao: "Estrutura de madeira, móveis em chapa e plano de corte." },
+    /* MARMORARIA (módulo à parte, js/marmmodulo.js, 20/10/2026): a área ENXUTA do marmorista — parede, bancada,
+       executivo, plano de chapa, tabela de preços, orçamento e proposta. Os comandos "comuns" aqui são SÓ os da lista
+       ENXUTA_MARM abaixo (arquivo, mover, medir, cotar, vista): a fita inteira de comuns (4D, 6D, render, clash…)
+       enterrava os seis botões que o marmorista usa. */
+    { id: "marmoraria", nome: "Marmoraria", curto: "Marmoraria", cor: "#6E5F52", texto: "#FFFFFF", acento: "#6E5F52", acentoEscuro: "#B8A89A", icone: "familia",
+      descricao: "Parede, bancada de pedra com cuba e torneira, executivo, plano de chapa, tabela de preços, orçamento e proposta." }
   ];
   var COMUM = "comum";
   var PADRAO = "completo";
+  var MARM = "marmoraria";
+  /* os comuns que a área da marmoraria mostra (o resto dos comuns some nela) */
+  var ENXUTA_MARM = {};
+  ["novo-projeto", "abrir-opbim", "salvar-opbim", "salvar-modelo", "arquivo-obra", "niveis",
+   "mover-preciso", "copiar", "espelhar", "girar", "alinhar", "deslocamento", "aparar-canto",
+   "medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
+   "planta-2d", "home", "orbita", "ortogonal", "estilo", "materiais", "vistas", "lado-a-lado", "tamanho-ui", "atalhos"].forEach(function (id) { ENXUTA_MARM[id] = 1; });
+  /* a licença deste aparelho é só a da marmoraria? (js/marmmodulo.js) — então a área enxuta é a única */
+  function soMarm() { try { var MM = global.MarmModulo; return !!(MM && MM.soMarmoraria && MM.soMarmoraria()); } catch (e) { return false; } }
 
   /* ---------------------------------------------------------------
    * O MAPA comando → disciplinas. Comum = aparece em todas.
@@ -123,7 +139,7 @@
     "telhado-borda", "telhado-unir", "juntas-parede", "fechar-cantos",
     "ambiente", "separador-ambiente", "identificador-ambiente", "esquema-cores", "ambientes-3d",
     /* alvenaria */
-    "familia-bloco", "modular", "junta", "paginar-alvenaria", "elevacoes", "blocok", "conferir-modulacao", "peso-alvenaria",
+    "familia-bloco", "modular", "junta", "paginar-alvenaria", "elevacoes", "alvenaria-assentada", "blocok", "conferir-modulacao", "peso-alvenaria",
     /* acabamentos */
     "parede-cebola", "presets-acabamento", "aplicar-ambiente", "paginar-piso", "paginar-parede", "pranchas-paginacao",
     "pintar-face", "dividir-face", "remover-pintura",
@@ -142,6 +158,12 @@
     "tel-mod-aco-viga", "tel-mod-mad-tesoura-terca"]);
   def("civil", ["cob-telha", "cob-platibanda", "cob-sanca", "cob-quant"]);
   def(["civil", "hidraulica"], ["cob-calha", "cob-calha-calc", "cob-pluvial"]);
+  /* MARMORARIA (js/marmorariaui.js): a bancada de pedra é arquitetura, leva os pontos do hidro e o executivo é de oficina (como a marcenaria) */
+  def(["civil", "hidraulica", "marcenaria", MARM], ["marm-banho", "marm-cozinha", "marm-executivo"]);
+  /* o módulo Marmoraria (js/marmorariaui.js): tabela de preços, orçamento/proposta e o ambiente pelas medidas */
+  def(["civil", MARM], ["marm-ambiente", "marm-precos", "marm-orcamento"]);
+  /* a parede também é da área da marmoraria (a bancada encosta nela) */
+  def(["civil", MARM], ["parede"]);
   def(["civil", "eletrica"], ["cob-luminarias"]);
   def(["civil", "metalica"], ["guarda-corpo"]);
   /* furo na laje: shaft de tubo e de eletroduto também */
@@ -176,14 +198,15 @@
    * --------------------------------------------------------------- */
   var ABA_INICIAL = {
     civil: ["civil", "arquitetura"], estrutura: ["estrutura"], hidraulica: ["hidraulica", "instalacoes"],
-    eletrica: ["eletrica", "instalacoes"], metalica: ["metalica", "icamento"], marcenaria: ["marcenaria"]
+    eletrica: ["eletrica", "instalacoes"], metalica: ["metalica", "icamento"], marcenaria: ["marcenaria"], marmoraria: ["arquitetura"]
   };
   var ROTULO_ABA = {
     estrutura: { arquitetura: "Modelar" },
     hidraulica: { arquitetura: "Modelar", instalacoes: "Hidráulica" },
     eletrica: { arquitetura: "Modelar", instalacoes: "Elétrica" },
     metalica: { arquitetura: "Modelar" },
-    marcenaria: { arquitetura: "Modelar" }
+    marcenaria: { arquitetura: "Modelar" },
+    marmoraria: { arquitetura: "Marmoraria" }
   };
 
   var CHAVE = "orcapro:bim:disciplina:v1";
@@ -195,6 +218,7 @@
   var D = {
     REGISTRO: REGISTRO,
     COMUM: COMUM,
+    ENXUTA_MARM: ENXUTA_MARM,
     PADRAO: PADRAO,
     MAPA: MAPA,
     CHAVE: CHAVE,
@@ -229,7 +253,8 @@
       var d = disc || this.atual();
       if (d === PADRAO || !ehDisc(d)) return true;
       var de = this.disciplinasDe(cmdId, abaId);
-      if (de === null || de === COMUM) return true;   /* sem declaração: aparece (e o teste reprova) */
+      if (de === null) return true;   /* sem declaração: aparece (e o teste reprova) */
+      if (de === COMUM) return d !== MARM || !!ENXUTA_MARM[cmdId];
       return de.indexOf(d) >= 0;
     },
 
@@ -250,6 +275,8 @@
 
     /* ---- trava por licença (js/modela.js) ---- */
     trancada: function (id) {
+      /* licença só da marmoraria: as outras disciplinas (e "Todas") ficam trancadas, mesmo no teste do Modela */
+      if (id !== MARM && soMarm()) return true;
       try {
         var P = global.BimPrevia;
         if (P && typeof P.disciplina === "function") return !P.disciplina(id);
@@ -285,7 +312,7 @@
     /* {ok, id} · {ok:false, trancada:true, id} · {ok:false, motivo} */
     escolher: function (id) {
       if (!porId(id)) return { ok: false, motivo: "Disciplina desconhecida: " + id };
-      if (this.trancada(id)) return { ok: false, trancada: true, id: id, motivo: "Disponível no OrçaPRO Modela " + porId(id).nome + "." };
+      if (this.trancada(id)) return { ok: false, trancada: true, id: id, motivo: id !== MARM && soMarm() ? "A sua licença é a do módulo Marmoraria: as outras disciplinas fazem parte do OrçaPRO Modela." : (id === MARM ? "Disponível no módulo Marmoraria." : "Disponível no OrçaPRO Modela " + porId(id).nome + ".") };
       var antes = this.atual();
       this._gravar(id);
       if (antes !== id) this._ouvintes.forEach(function (fn) { try { fn(id, antes); } catch (e) {} });

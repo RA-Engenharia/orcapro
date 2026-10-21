@@ -343,6 +343,42 @@
   }
 
   /* --------------------------------------------------------------------
+   * BANCADA DE PEDRA PELA TABELA DA MARMORARIA (módulo Marmoraria, 20/10/2026). Escolhido no painel ("usar a tabela da
+   * marmoraria"), a bancada sai com os itens do quantitativo da marmoraria (pedra em m², borda e polimento em m, furos,
+   * recortes, cuba, mão-francesa, instalação) precificados pela tabela DA EMPRESA (js/marmprecos.js) — e SÓ eles:
+   * ⚠ SEM DOBRAR. A linha principal da família (m² sem código) e os serviços que a instância ganhou no editor (uma
+   *   composição SINAPI posta à mão na bancada) NÃO entram junto; senão a mesma pedra seria paga duas vezes.
+   * Item sem preço na tabela = "pendente" (fora do total, com o que fazer) — nunca preço inventado. O frete e a margem da
+   * tabela do marmorista ficam na proposta dele; aqui vale o BDI do orçamento da obra.
+   * cfg = { tabela: MarmPrecos.tabela(), km }. Sem os motores, devolve null e a família segue pelo caminho de sempre.
+   * ------------------------------------------------------------------ */
+  function daMarmoraria(f, av, cfg, opcoes) {
+    var MMo = dep("Marmoraria", "./marmoraria.js"), MPr = dep("MarmPrecos", "./marmprecos.js");
+    if (!MMo || !MPr || !cfg || !cfg.tabela || !MMo.ehMarmoraria(f.famId) || !av || !av.valores) return null;
+    var def; try { def = MMo.montar(av.valores, { ambiente: /cozinha/.test(f.famId) ? "cozinha" : "banheiro" }); } catch (e) { return null; }
+    var o = MPr.orcar([{ rotulo: String(f.id), id: f.id, def: def }], cfg.tabela, { km: cfg.km }), b = o.bancadas[0], linhas = [];
+    arr(b && b.itens).forEach(function (it) {
+      var qc = it.quantidadeCobrada != null ? it.quantidadeCobrada : it.quantidade, un = it.unidade, ok = !it.pendente && it.total != null;
+      linhas.push({ codigo: "MARM:" + it.chave, descricao: "Marmoraria — " + it.descricao + (it.obs ? " (" + it.obs + ")" : ""), unidade: un, unidadeQto: un, quantidade: r4(qc),
+        status: ok ? "ok" : "pendente", custo: ok ? { mo: 0, mat: r2(it.total), eq: 0, total: r2(it.total) } : null, unitario: ok ? { mo: 0, mat: it.unitario, eq: 0, total: it.unitario } : null,
+        horas: [], horasTotal: 0, duracaoDias: 0, funcaoCritica: null, avisos: ok ? arr(o.avisos).filter(function (a) { return /^pedra:/.test(it.chave); }) : ["preencha o preço na Tabela de preços da marmoraria"], servico: it.chave, rotulo: "Tabela da marmoraria", fonte: "tabela da marmoraria" });
+    });
+    /* ⚠ NADA SOME CALADO (revisão 21/10/2026): o que a tabela do marmorista deixa de fora não pode sumir do orçamento da
+       obra — (1) parâmetro sem decisão (modo/valor da instalação, % de perda): antes a instalação simplesmente não
+       aparecia e a pedra ia sem perda, com o item "ok"; (2) o que ele marcou "não fornecemos" (torneira, válvula,
+       sifão, flexível, instalação): no caminho de sempre esses itens estavam na composição da bancada. Os dois viram
+       linha PENDENTE (fora do total, com o que fazer). Frete e margem são da proposta dele, não da obra. */
+    var CAMPOS_OBRA = { perdaModo: 1, perdaPct: 1, instalacaoModo: 1, instalacaoValor: 1 };
+    function pendente(cod, desc, aviso) {
+      linhas.push({ codigo: cod, descricao: "Marmoraria — " + desc, unidade: "un", unidadeQto: "un", quantidade: 0, status: "pendente", custo: null, unitario: null,
+        horas: [], horasTotal: 0, duracaoDias: 0, funcaoCritica: null, avisos: [aviso], servico: cod, rotulo: "Tabela da marmoraria", fonte: "tabela da marmoraria" });
+    }
+    arr(o.pendencias).forEach(function (p) { if (p.chave === "_param" && CAMPOS_OBRA[p.campo]) pendente("MARM:_param:" + p.campo, p.texto, p.texto); });
+    arr(o.naoIncluso).forEach(function (rot) { if (rot !== "Frete") pendente("MARM:fora:" + rot, rot + " — não fornecido pela marmoraria (tabela)", "orçar à parte: a tabela da marmoraria marca \"não fornecemos\""); });
+    return { linhas: linhas, resumo: resumir(linhas, opcoes), peso: pesoSolidos(av.solidos), rotulo: "bancada " + f.id };
+  }
+
+  /* --------------------------------------------------------------------
    * P1-D — A QUANTIDADE SAI DO REGISTRO (js/bimparam.js), pelo id do
    * parâmetro: a mesma "Área" da tela de Propriedades e do Qto do IFC. Este
    * motor não faz conta de medida. Duas medidas não são parâmetro:
@@ -697,6 +733,8 @@
         somar(f.id, "família " + f.famId, { linhas: [{ codigo: "", descricao: "família \"" + f.famId + "\" não está na biblioteca deste aparelho", unidade: "", unidadeQto: "", quantidade: 0, status: "sem-codigo", avisos: ["família não carregada"], horas: [], servico: "principal" }], resumo: null, peso: { ok: false, kg: null, motivo: "família não carregada" } });
         return;
       }
+      var rM = opcoes && opcoes.marmoraria ? daMarmoraria(f, av, opcoes.marmoraria, opcoes) : null;
+      if (rM) { somar(f.id, rM.rotulo, rM); return; }
       somar(f.id, (av.quantitativo && av.quantitativo.descricao) || f.famId, daFamilia(av, base, opcoes, f.servicos, pecaDe(f.id)));
     });
     /* P2-C: ACABAMENTO POR AMBIENTE (js/bimacabamento.js) — piso, contrapiso,
@@ -832,6 +870,8 @@
         /* hidro (pendências finais): a referência de mercado vai como item PRÓPRIO com o preço e a fonte "MERCADO" (não é SINAPI) */
         if (/^REF-MERC:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MERCADO" };
         if (it.mercado && g.provisorio) it.mercado.provisorio = { motivo: g.provisorio.motivo };   /* revisão A1: vai marcado ao orçamento */
+        /* bancada pela tabela da marmoraria: item próprio com o preço da tabela da empresa (nunca procurado na SINAPI) */
+        if (/^MARM:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MARMORARIA" };
         itens.push(it);
       }
       else fora.push({ codigo: g.codigo, descricao: g.descricao, status: g.status, quantidade: g.quantidade, motivo: (g.avisos || [])[0] || (g.status === "ok" ? "quantidade zero" : g.status), elementos: g.elementos.slice() });
@@ -842,7 +882,7 @@
   var OrcModelo = {
     VERSAO: 1,
     unidadeChave: unidadeChave, mesmaUnidade: mesmaUnidade, funcaoDe: funcaoDe, chaveFuncao: chaveFuncao,
-    orcar: orcar, daFamilia: daFamilia, daElemento: daElemento, daAmbiente: daAmbiente, doModelo: doModelo, resumir: resumir,
+    orcar: orcar, daFamilia: daFamilia, daMarmoraria: daMarmoraria, daElemento: daElemento, daAmbiente: daAmbiente, doModelo: doModelo, resumir: resumir,
     medidasDaCategoria: medidasDaCategoria, pecaRegistro: pecaRegistro,
     volumeSolido: volumeSolido, pesoSolidos: pesoSolidos, pesoPorDescricao: pesoPorDescricao,
     baseComPreco: baseComPreco, paraOrcamento: paraOrcamento

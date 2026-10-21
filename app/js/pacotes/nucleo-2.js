@@ -189,6 +189,7 @@ medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, aditivos: 1, compras: 1, requi
 cotacoes: 1, producao_med: 1, epi: 1, ponto: 1, folha: 1, fs_lancamentos: 1,
 estoque_mov: 1, tarefas: 1, atividades: 1,
 carp_propostas: 1, remun_apur: 1,
+marm_propostas: 1,
 tour360: 1,
 lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
 producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
@@ -3219,6 +3220,7 @@ _ENT_DA_OBRA: [
 ["crono_obra", "registro(s) do cronograma da obra (linhas de base, plano de execução e avanço)"],
 ["crono_selo", "registro(s) das linhas de base seladas (versões e aprovações)"],
 ["crono_alt", "sessão(ões) de alteração do cronograma"],
+["marm_propostas", "proposta(s) da marmoraria"],
 ["cc_regras", "regra(s) de centro de custo"], ["cc_aprop", "decisão(ões) de centro de custo"],
 ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
 ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
@@ -6585,6 +6587,13 @@ if (!self._pagAtual) { self._pagModelo(self._pagCfg ? self._pagCfg.modo : "piso"
 self._pagPrancha(); return true;
 };
 reg["paginar-alvenaria"] = function () { self._elevacao(); return true; };
+reg["alvenaria-assentada"] = function () {
+if (!window.AlvAssentamento3D) return false;
+var r = AlvAssentamento3D.alternar();
+var n = r && r.resumo ? r.resumo.paredes : 0;
+try { UI.toast(r.ligado ? (n ? "Alvenaria assentada: " + n + " parede(s) crua(s), bloco a bloco (de perto; de longe volta o desenho)." : "Nenhuma parede de alvenaria do modelo para assentar.") : "Alvenaria assentada desligada: as paredes voltam ao acabamento.", n || !r.ligado ? "ok" : "alerta", 5000); } catch (e) {}
+return true;
+};
 reg["elevacoes"] = function () {
 if (!self._elevAtual) { self._elevacao(); return true; }
 self._elevPrancha(); return true;
@@ -7983,7 +7992,7 @@ res.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</
 if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Elevação de parede", html);
 else UI.toast("Impressão indisponível.", "erro");
 },
-_novoProjeto: function () {
+_novoProjeto: function (opts) {
 if (this._bloqueado && this._bloqueado()) return;
 if (!window.Niveis || !window.AlvTipos) { UI.toast("Motores de nível e tipo não carregados.", "erro"); return; }
 var self = this;
@@ -7992,6 +8001,11 @@ nome: "Projeto novo", pavimentos: 1, peDireito: 2.80,
 tipo: this._alvTipoId || "bloco_concreto_14_est",
 contorno: "retangulo", largura: 8.00, comprimento: 6.00
 });
+if (window.BimTplInicio) {
+if (opts && opts.tpl && BimTplInicio.obter(opts.tpl)) g.tplIni = opts.tpl;
+else if (!g.tplIni || !BimTplInicio.obter(g.tplIni)) g.tplIni = BimTplInicio.inicial();
+g.tplLembrar = BimTplInicio.padrao() === g.tplIni;
+}
 var obrasNp = lista("obras");
 if (g.obraNova) { g.obra = g.obraNova; g.obraNova = ""; }
 else if (this._bimSel) g.obra = this._bimSel;
@@ -8006,8 +8020,9 @@ Util.esc(t.rotulo) + " · " + (t.espessura / 10).toFixed(1) + " cm</option>";
 }).join("");
 var h =
 '<p class="muted" style="font-size:12.5px;margin:0 0 12px">' +
-"Cria os níveis da obra, fixa o tipo de parede e joga o contorno no 3D. " +
-"Daí em diante é só desenhar — o quantitativo e o peso acompanham.</p>" +
+"Escolha o template, a obra e as medidas: o projeto nasce com os níveis, as vistas e as penas do padrão RA e abre na planta baixa, " +
+"pronto para desenhar — o quantitativo e o peso acompanham.</p>" +
+(window.BimTplInicio ? '<div data-tpl-box="np">' + this._tplIniGradeHtml(g.tplIni, g.tplLembrar) + "</div>" : "") +
 '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:10px">' +
 '<label>Obra<select data-np="obra" style="width:100%">' + optObras + "</select></label>" +
 '<label>Nome do arquivo<input type="text" data-np="arquivo" value="' + Util.esc(g.arquivo || "") + '" style="width:100%" title="É o nome do arquivo .opbim — no sistema, nos recentes e na pasta do computador"></label>' +
@@ -8022,7 +8037,7 @@ var h =
 '<option value="vazio"' + (g.contorno === "vazio" ? " selected" : "") + ">Nada — desenho tudo</option></select></label>" +
 '<label>Largura (m)<input type="number" step="0.1" data-np="largura" value="' + g.largura + '" style="width:100%"></label>' +
 '<label>Comprimento (m)<input type="number" step="0.1" data-np="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
-((window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
+((!window.BimTplInicio && window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) ? '<label>Template<select data-np="template" style="width:100%"><option value="">— nenhum —</option>' + this._npTemplates().map(function (t) {
 return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.template ? " selected" : "") + ">" + Util.esc(t.nome) + "</option>"; }).join("") + "</select></label>" : "") +
 "</div>" +
 '<div id="np-resumo" style="margin-top:12px"></div>';
@@ -8042,6 +8057,122 @@ return l;
 _npTemplateObter: function (id) {
 try { if (/^disc-/.test(id) && window.HidTemplates) return HidTemplates.obter(id); } catch (e) {}
 try { return window.TemplatesRA ? TemplatesRA.obter(id) : null; } catch (e2) { return null; }
+},
+_tplIniGradeHtml: function (sel, lembrar) {
+var T = window.BimTplInicio; if (!T) return "";
+var t = T.obter(sel) || T.obter(T.PADRAO), gAt = t.grupo;
+this._tplIniCss();
+var h = '<div class="tpi" role="radiogroup" aria-label="Template do projeto">' + T.grupos().map(function (gr) {
+var on = gr.id === gAt;
+return '<button type="button" class="tpi-c' + (on ? " tpi-on" : "") + '" role="radio" aria-checked="' + (on ? "true" : "false") + '" data-tpl-grupo="' + Util.esc(gr.id) + '" title="' + Util.esc(gr.descricao) + '">' +
+'<span class="tpi-ic">' + (typeof Icones !== "undefined" ? Icones.get(gr.icone, 20) : "") + "</span>" +
+'<b>' + Util.esc(gr.nome) + '</b><span class="tpi-sub">' + Util.esc(gr.sub) + "</span></button>";
+}).join("") + "</div>";
+var grSel = T.grupos().filter(function (x) { return x.id === gAt; })[0];
+if (grSel && grSel.variantes.length > 1) {
+h += '<label class="tpi-var">' + (gAt === "hidro" ? "Disciplina" : "Tipo") + '<select data-tpl-var>' + grSel.variantes.map(function (v) {
+return '<option value="' + Util.esc(v.id) + '"' + (v.id === t.id ? " selected" : "") + ">" + Util.esc(v.nome) + "</option>";
+}).join("") + "</select></label>";
+}
+var p = T.plano(t.id, this._npCfg || {}), dsc = window.BimDisciplinas ? BimDisciplinas.get(t.disciplina) : null;
+h += '<div class="tpi-info" data-tpl-info="' + Util.esc(t.id) + '"><b>' + Util.esc(t.nomeCompleto) + "</b> — " + Util.esc(grSel ? grSel.descricao : "") +
+'<div class="tpi-linha">Abre em <b>Planta baixa — Térreo</b>, liberada para desenhar' + (t.ferramenta ? " (" + Util.esc({ parede: "Parede", eixo: "Eixos", tubo: "Tubo", eletroduto: "Eletroduto", aparelho: "Aparelho" }[t.ferramenta] || t.ferramenta) + " armada)" : "") +
+" · fita: " + Util.esc(dsc ? dsc.nome : t.disciplina) + "</div>" +
+'<div class="tpi-linha">Vistas: ' + Util.esc(p.ok ? p.vistas.join(" · ") : "—") + "</div>" +
+'<div class="tpi-linha">Penas e estilos do padrão RA · prancha A1 com o carimbo RA</div>' +
+(t.aviso ? '<div class="tpi-aviso" data-tpl-aviso>' + Util.esc(t.aviso) + "</div>" : "") +
+"</div>" +
+'<label class="tpi-lembrar"><input type="checkbox" data-tpl-lembrar' + (lembrar ? " checked" : "") + "> Lembrar como padrão neste aparelho</label>";
+return h;
+},
+_tplIniLigar: function (box, aoMudar) {
+var self = this, T = window.BimTplInicio;
+if (!box || !T || box._tpiLigado) return;
+box._tpiLigado = true;
+function atual() { var i = box.querySelector("[data-tpl-info]"); return i ? i.getAttribute("data-tpl-info") : T.PADRAO; }
+function lembrar() { var c = box.querySelector("[data-tpl-lembrar]"); return !!(c && c.checked); }
+function trocar(id) {
+var lb = lembrar();
+box.innerHTML = self._tplIniGradeHtml(id, lb);
+try { if (aoMudar) aoMudar(id, lb); } catch (e) {}
+}
+box.addEventListener("click", function (e) {
+var c = e.target && e.target.closest ? e.target.closest("[data-tpl-grupo]") : null;
+if (!c || !box.contains(c)) return;
+var gr = c.getAttribute("data-tpl-grupo");
+if (T.grupoDe(atual()) === gr) return;
+trocar(T.primeiraDo(gr));
+});
+box.addEventListener("change", function (e) {
+var el = e.target;
+if (el && el.hasAttribute && el.hasAttribute("data-tpl-var")) trocar(el.value);
+else if (el && el.hasAttribute && el.hasAttribute("data-tpl-lembrar")) { try { if (aoMudar) aoMudar(atual(), !!el.checked); } catch (e2) {} }
+});
+},
+_tplIniCss: function () {
+if (document.getElementById("tpi-css")) return;
+var s = document.createElement("style");
+s.id = "tpi-css";
+s.textContent =
+".tpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px;margin:0 0 8px}" +
+".tpi-c{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 10px;min-height:64px;border-radius:10px;border:1px solid var(--linha,#d4d4d4);" +
+"background:var(--surface,#fff);color:inherit;font:inherit;text-align:left;cursor:pointer}" +
+".tpi-c:hover{border-color:var(--rv-foco,#1a6cb5)}.tpi-c:focus-visible{outline:2px solid var(--rv-foco,#1a6cb5);outline-offset:2px}" +
+".tpi-c b{font-size:13px}.tpi-sub{font-size:11px;color:var(--texto-fraco,#6a6a6a)}.tpi-ic{display:flex;color:var(--rv-foco,#1a6cb5)}" +
+".tpi-on{border-color:var(--rv-foco,#1a6cb5);box-shadow:inset 0 0 0 2px var(--rv-foco,#1a6cb5)}" +
+".tpi-var{display:block;font-size:12px;margin:0 0 8px}.tpi-var select{display:block;width:100%;margin-top:3px}" +
+".tpi-info{font-size:12px;line-height:1.45;border:1px solid var(--linha,#d4d4d4);border-radius:8px;padding:8px 10px;margin:0 0 6px}" +
+".tpi-linha{color:var(--texto-fraco,#6a6a6a);margin-top:3px}" +
+".tpi-aviso{margin-top:6px;padding:6px 8px;border-radius:6px;border-left:3px solid var(--amarelo,#d99a00);background:rgba(217,154,0,.10)}" +
+".tpi-lembrar{display:flex;align-items:center;gap:6px;font-size:12px;margin:0 0 12px}";
+document.head.appendChild(s);
+},
+_tplIniCenaVazia: function () {
+try { return !((window.BIM && BIM.modelos) || []).length && !((window.BIM && BIM.editarOps) ? BIM.editarOps() : []).length; } catch (e) { return false; }
+},
+_tplIniAbrirPlanta: function (ferramenta) {
+var pid = this._d2PlantaPadrao(), self = this;
+if (!pid) return null;
+try { this._bimVxEst().lista.slice().forEach(function (v) { if (v && v.tipo === "2d" && /^d2[pc]-/.test(String(v.id)) && !Bim2D.def(v.id)) self._bimVxFechar(v.id); }); } catch (eAb) {}
+this._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
+if (ferramenta && this._tplIniCenaVazia() && window.BimShell && BimShell.executar) { try { BimShell.executar(ferramenta); } catch (e) {} }
+return pid;
+},
+_tplIniAplicar: function (plano, opts) {
+opts = opts || {};
+var self = this, t = plano && plano.template, avisos = [];
+if (!t) return { ok: false };
+var tp = t.base ? this._npTemplateObter(t.base) : null;
+if (tp) { try { this._optplAplicarJa(tp, { semNiveis: true, manterTipo: !!opts.manterTipo, soFaltantes: true }); } catch (eTp) { avisos.push("o template de base não entrou inteiro: " + (eTp && eTp.message || eTp)); } }
+else if (t.base) avisos.push("o template de base (" + t.base + ") não carregou: ficam só os níveis e as vistas");
+var nCortes = 0, nElev = 0;
+if (this._d2Config()) {
+var e2 = Bim2D.estado(), cx = plano.caixa, mg = 2;
+e2.area = { x0: cx.min[0] - mg, z0: cx.min[2] - mg, x1: cx.max[0] + mg, z1: cx.max[2] + mg };
+e2.templateInicio = { id: t.id, nome: t.nomeCompleto, disciplina: t.disciplina, proprio: !!t.proprio };
+Bim2D._gravar();
+if (!e2.cortes.length) plano.cortes.forEach(function (c) { if (Bim2D.criarCorte(c.ax, c.az, c.bx, c.bz, { silencioso: true, letra: c.letra })) nCortes++; });
+var M = (window.BimModeloVista && BimModeloVista.ativo && BimModeloVista.ativo()) ? BimModeloVista : null;
+if (M) {
+var vs = M.estado().vistas || {}, temElev = Object.keys(vs).some(function (k) { return vs[k] && vs[k].tipo === "elevacao" && !vs[k].interior; });
+if (!temElev) plano.elevacoes.forEach(function (d) { if (Bim2D.criarElevacao(d, { abrir: false, silencioso: true, caixa: plano.caixa })) nElev++; });
+}
+}
+if (window.BimDisciplinas && plano.disciplina) {
+if (BimDisciplinas.trancada(plano.disciplina)) avisos.push("a fita de " + ((BimDisciplinas.get(plano.disciplina) || {}).nome || plano.disciplina) + " não está liberada nesta conta");
+else if (window.BimShell && BimShell.escolherDisciplina) { try { BimShell.escolherDisciplina(plano.disciplina); } catch (eD) {} }
+else BimDisciplinas.escolher(plano.disciplina);
+}
+try { this._nivArvore(); } catch (eNv) {}
+var pid = this._tplIniAbrirPlanta(opts.semFerramenta ? null : plano.ferramenta);
+return { ok: true, template: t.id, cortes: nCortes, elevacoes: nElev, planta: pid, avisos: avisos };
+},
+_tplIniAreaTeste: function (id) {
+var T = window.BimTplInicio, self = this;
+var plano = T ? T.plano(id, { pavimentos: 1, peDireito: 2.8, largura: 12, comprimento: 10 }) : null;
+if (!plano || !plano.ok) return { ok: false };
+if (!this._nivLer().length) plano.niveis.forEach(function (n) { self._nivGravar(n); });
+return this._tplIniAplicar(plano, {});
 },
 _npArquivoPadrao: function () {
 var g = this._npCfg;
@@ -8087,6 +8218,8 @@ g[k] = v;
 self._npResumo();
 }
 box.addEventListener("change", mexeu);
+var tplBox = box.querySelector('[data-tpl-box="np"]');
+if (tplBox) this._tplIniLigar(tplBox, function (id, lembrar) { self._npCfg.tplIni = id; self._npCfg.tplLembrar = lembrar; self._npResumo(); });
 box.addEventListener("input", function (e) {
 var k = e.target && e.target.getAttribute ? e.target.getAttribute("data-np") : "";
 if (e.target && e.target.tagName === "INPUT" && (e.target.type === "number" || k === "nome" || k === "arquivo")) mexeu(e);
@@ -8102,6 +8235,8 @@ lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavime
 elevacao: +(i * g.peDireito).toFixed(2) });
 }
 lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2) });
+var plR = (window.BimTplInicio && g.tplIni) ? BimTplInicio.plano(g.tplIni, g) : null;
+if (plR && plR.ok) lista = plR.niveis.slice();
 var L = N.listar(lista);
 var t = AlvTipos.tipo(g.tipo);
 var per = g.contorno === "retangulo" ? 2 * (g.largura + g.comprimento) : 0;
@@ -8117,7 +8252,7 @@ g.comprimento.toFixed(2).replace(".", ",") + " m · perímetro " + per.toFixed(2
 (g.pavimentos * 4) + " paredes",
 "medida de EIXO a eixo; o 3D já nasce com elas");
 } else {
-h += this._pagLinha("Contorno", "nenhum — o 3D abre vazio", "você desenha as paredes com o editor");
+h += this._pagLinha("Contorno", "nenhum — a planta baixa abre vazia", "você desenha as paredes na planta (ou no 3D) com o editor");
 }
 var obNp = g.obra ? Store.obter(eid(), "obras", g.obra) : null;
 h += this._pagLinha("Arquivo", Util.esc(String(g.arquivo || "").trim() || "—") + ".opbim",
@@ -8150,13 +8285,17 @@ if (!vNp.ok) { UI.toast(vNp.erros[0], "erro"); return; }
 var dup = BP.conflitoDeNome(BPU && BPU._ix, arquivo, g.obra, "");
 if (dup) { UI.toast("Já existe o projeto “" + dup.nome + "” nesta obra — dê outro nome ao arquivo.", "erro"); return; }
 }
-var lista = [], i;
+var lista = [], i, planoTpl = (window.BimTplInicio && g.tplIni) ? BimTplInicio.plano(g.tplIni, g) : null;
+if (planoTpl && planoTpl.ok) lista = planoTpl.niveis.slice();
+else {
+planoTpl = null;
 for (i = 0; i < g.pavimentos; i++) {
 lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavimento"),
 elevacao: +(i * g.peDireito).toFixed(2), corte: 1.20 });
 }
 lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2),
 corte: 1.20, peDireitoDeclarado: g.peDireito });
+}
 var v = Niveis.validar(lista);
 if (v.erros.length) { UI.toast(v.erros[0], "erro"); return; }
 if (!window.BIM || !BIM.editarAplicar || !(BIM.editarEstado && BIM.editarEstado())) { UI.toast("O visualizador 3D ainda não está de pé — espere ele abrir e crie o projeto de novo.", "erro"); return; }
@@ -8205,7 +8344,14 @@ BimShell.status(ops.length
 : arquivo + ": " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
 }
 if (BPU) BPU.criado(this, { nome: arquivo, obraId: g.obra, obraNome: obraNp.nome || "", foto: fotoNp });
-if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
+var resTpl = null;
+if (planoTpl) {
+if (window.BimTplInicio) BimTplInicio.lembrar(g.tplLembrar ? g.tplIni : (BimTplInicio.padrao() === g.tplIni ? null : BimTplInicio.padrao()));
+try { resTpl = this._tplIniAplicar(planoTpl, { manterTipo: true }); } catch (eTpl) { resTpl = { ok: false, avisos: [String(eTpl && eTpl.message || eTpl)] }; }
+if (window.BimShell) BimShell.status(arquivo + " (" + planoTpl.template.nomeCompleto + "): " + lista.length + " níveis" + (ops.length ? ", " + ops.length + " paredes" : "") +
+". A planta baixa do Térreo está na frente" + (ops.length ? "." : " — desenhe a primeira peça nela."));
+} else if (g.template) { var tpNp = this._npTemplateObter(g.template); if (tpNp) this._optplAplicar(tpNp, []); }
+if (resTpl && resTpl.avisos && resTpl.avisos.length) UI.toast("Template: " + resTpl.avisos.join("; ") + ".", "aviso", 8000);
 UI.toast("Projeto “" + arquivo + "” criado na obra “" + (obraNp.nome || "") + "”. Salve para ele ir aos recentes e à pasta do computador.", "ok", 6000);
 try { this._bimCascaContexto(); } catch (e) {}
 },
@@ -9419,14 +9565,27 @@ UI.modal("Usar o template \"" + Util.esc(tp.nome || "") + "\"?", "<p>" + (tp.niv
 { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
 { texto: "Usar template", classe: "primary", onClick: function () {
 UI.fecharModal();
-self._famConfig();
-(tp.familias || []).forEach(function (f) { f = JSON.parse(JSON.stringify(f)); f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
+var tpar = self._optplAplicarJa(tp, {});
+self._nivArvore();
+UI.toast("Template aplicado" + (tpar ? " — parede ativa: " + tpar.nome : "") + ".", "ok");
+} }
+]);
+},
+_optplAplicarJa: function (tp, opts) {
+var self = this;
+opts = opts || {};
+if (self._famConfig() || !opts.semNiveis) {
+var doPrograma = opts.soFaltantes ? self._famIdsDoPrograma() : {};
+(tp.familias || []).forEach(function (f) { if (f && doPrograma[f.id]) return; f = JSON.parse(JSON.stringify(f)); f._origem = "importada"; FamiliaUI._ctx.salvar(f); });
 self._famSync();
+}
+if (!opts.semNiveis) {
 var tem = {}; self._nivLer().forEach(function (n) { tem[String(n.nome).toLowerCase()] = 1; });
 (tp.niveis || []).forEach(function (n) { if (!tem[String(n.nome).toLowerCase()]) Store.salvar(eid(), "bim_niveis", { id: Util.uid("niv"), obraId: self._bimSel || null, nome: n.nome, elevacao: n.elevacao, corte: n.corte }); });
+}
 if (self._d2Config() && tp.estilos2d) { var e = Bim2D.estado(); e.padrao = tp.estilos2d; Bim2D._gravar(); }
 var tpar = (tp.tiposParede || [])[0];
-if (tpar) {
+if (tpar && !opts.manterTipo) {
 if (tpar.base && window.AlvTipos && AlvTipos.TIPOS[tpar.base] && tpar.base !== "crua") self._alvTrocarTipo(tpar.base);
 if (window.BIM && BIM.espessuraTipo && tpar.espessura > 0) BIM.espessuraTipo(tpar.espessura, tpar.nome);
 }
@@ -9435,10 +9594,19 @@ var e2 = Bim2D.estado();
 e2.templateAtivo = { nome: tp.nome || "", tiposParede: tp.tiposParede || [], tiposLaje: tp.tiposLaje || [], materiais: tp.materiais || [], prancha: tp.prancha || null };
 Bim2D._gravar();
 }
-self._nivArvore();
-UI.toast("Template aplicado" + (tpar ? " — parede ativa: " + tpar.nome : "") + ".", "ok");
-} }
-]);
+return tpar || null;
+},
+_famIdsDoPrograma: function () {
+var m = {};
+function pega(l) { try { (l || []).forEach(function (x) { var id = x && typeof x === "object" ? x.id : x; if (id) m[String(id)] = 1; }); } catch (e) {} }
+try { if (window.FamiliasRA) pega(FamiliasRA.lista(true)); } catch (e1) {}
+try { if (window.FamiliasOrc) pega(FamiliasOrc.lista()); } catch (e2) {}
+try { if (window.FamiliasMarcenaria) pega(FamiliasMarcenaria.lista(true)); } catch (e3) {}
+try { if (window.HidFamilias) pega(HidFamilias.ids ? HidFamilias.ids() : HidFamilias.todas()); } catch (e4) {}
+try { if (window.ClimFamilias) pega(ClimFamilias.ids ? ClimFamilias.ids() : ClimFamilias.todas()); } catch (e5) {}
+try { if (window.HidTanques) pega(HidTanques.ids ? HidTanques.ids() : HidTanques.familias()); } catch (e6) {}
+try { if (window.HidPiscinaFam) pega(HidPiscinaFam.todas()); } catch (e7) {}
+return m;
 },
 _optplRA: function () {
 var self = this, lista = this._npTemplates();
@@ -51865,6 +52033,7 @@ var ENTIDADES = [
 "folha", "fs_lancamentos", "fs_pagamentos", "ponto",
 "frota_mov",
 "carp_param", "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros",
+"marm_precos", "marm_propostas",
 "remun_param", "remun_apur",
 "portal_padrao",
 "precosinsumos",
@@ -68454,6 +68623,12 @@ html += '<p class="muted" style="font-size:12.5px">A IA estrutura o escopo, casa
 '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
 " no plano; depois, cada orçamento tem o preço calculado pelo tamanho do escopo, mostrado aqui ANTES de gerar. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
 " h. Se ela não entregar, o valor volta para a carteira.</p>";
+} else if (rg.porUso) {
+html += '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
+'<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
+" no plano; depois, você paga " + esc(rg.preco || "o custo do uso") + (rg.minimo ? " (mínimo " + esc(rg.minimo) + ")" : "") +
+", calculado pelo número de linhas que a IA vai trabalhar e mostrado aqui ANTES. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
+" h. Se ela não responder, o valor volta para a carteira.</p>";
 } else html +=
 '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
 '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") + " no plano; depois, " + esc(rg.preco || "") +
@@ -68484,6 +68659,7 @@ if (st.janela && st.janela.ate > new Date().getTime() + 60000) { seguir(st.janel
 var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
 var corpo = { raiz: this._orcmRaiz(), assinatura: this._orcmAssinatura() };
 if (st.modo === "escopo" && st.escopo) corpo.escopo = st.escopo;
+else if (st.uso) corpo.uso = st.uso;
 var post = function (rota, b) {
 return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
 .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
@@ -68492,6 +68668,7 @@ var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servid
 var abrir = function (orcamentoId) {
 var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
 if (corpo.escopo) b.escopo = corpo.escopo;
+if (corpo.uso) b.uso = corpo.uso;
 if (orcamentoId) b.orcamentoId = orcamentoId;
 UI.loading("Liberando a IA neste orçamento…");
 post("/ia/orcamentista/abrir", b).then(function (o) {
@@ -68518,6 +68695,7 @@ if (!back) { UI.toast("Servidor de IA não configurado.", "erro"); return; }
 var revisar = st.plano.filter(function (L) { return L.status === "revisar" && L.candidatos.length >= 2 && !L.decididoPeloUsuario && !L.refinadoIA; });
 var pend = st.plano.filter(function (L) { return L.status === "pendente" && !L.decididoPeloUsuario && !L.refinadoIA; });
 if (!revisar.length && !pend.length) { UI.toast("Nada para a IA refinar: sem linhas em revisão ou pendentes.", "ok"); return; }
+st.uso = { revisar: revisar.length, pendentes: pend.length };
 this._orcmJanelaIA(back, function (sessao) { self._orcmRefinarIAComJanela(back, sessao, revisar, pend); });
 };
 App._orcmRefinarIAComJanela = function (back, sessao, revisar, pend) {
@@ -69147,5 +69325,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=7f9e20cb0d"},{"src":"js/bim-pacote.js?v=265a981735","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=ba7b80ecac"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=20fd6e6a14"},{"src":"js/bim-pacote.js?v=b59cd077d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=7974a3c05b"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

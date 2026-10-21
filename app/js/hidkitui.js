@@ -512,6 +512,19 @@
       if (HCr) { try { crit = HCr.auditar(HCr.doEstado(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])), c.avaliarFam, { escopo: resumo.ids })); } catch (eC) { crit = null; } }
       ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (!/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto)) avisos.push({ texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }); }); });
       resumo.piscinas = piscinas.length;
+      /* ⚠ REVISÃO H4 (21/10/2026): ÁGUA QUENTE. O TA não traça a água quente (do aquecedor aos pontos). Com o aquecedor no modelo, os
+         pontos de AQ das 2 cubas da bancada (e de qualquer aparelho) ficavam SEM TUBO sem pendência nenhuma — e o auditor, que só
+         olhava a AQ quando já havia tubo de AQ, dava verde. Agora: fonte de AQ no modelo (equipamento com saída de água quente) +
+         ponto de AQ do escopo sem tubo depois do lote = pendência com os pontos, para a pessoa traçar à mão */
+      var HFm = dep("HidFamilias"), temFonteAQ = !!HFm && arr(est.familias).some(function (f) { var F = HFm.porId(f.famId); return !!F && F.categoria === "equipamento" && arr(F.sistemas).indexOf("agua_quente") >= 0; });
+      if (temFonteAQ) {
+        try {
+          var noEsc = {}; esc0.aparelhos.forEach(function (id) { noEsc[String(id)] = 1; });
+          var semAQ = arr(BIi.rede(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa-aq", ops: ops }])), c.avaliarFam).conectoresLivres).filter(function (k) { return k.sistema === "agua_quente" && noEsc[String(k.famInst)]; });
+          var elsAQ = []; semAQ.forEach(function (k) { if (elsAQ.indexOf(String(k.famInst)) < 0) elsAQ.push(String(k.famInst)); });
+          if (semAQ.length) pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: o Traçar automaticamente não traça a água quente — " + semAQ.length + " ponto(s) de água quente sem tubo até o aquecedor (" + semAQ.map(function (k) { return k.famInst + ":" + k.id; }).join(", ") + "); trace à mão", elementos: elsAQ });
+        } catch (eAQ) { pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: não consegui conferir os pontos de água quente (" + (eAQ && eAQ.message ? eAQ.message : eAQ) + "); confira à mão", elementos: [] }); }
+      }
       return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: c.ops.length };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);

@@ -97,10 +97,12 @@ madeira_deck
   licença: CC0 · tamanho físico de uma repetição: 2.4 m (dimensionX da API)
 
 bloco_ceramico_furado
-  fonte: ambientCG · id: Bricks088
-  https://ambientcg.com/view?id=Bricks088
-  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.8 m (dimensionX da API)
+  fonte: RA Engenharia — desenho procedural (tools/gerar-texturas-alvenaria.py), sem foto de terceiro
+  licença: desenho próprio, uso livre · tamanho físico de uma repetição: 1.2 m (6 peças de 19 cm + junta 1 cm; 6 fiadas de 20 cm)
   arquivos: cor 1024 px, normal e rugosidade 512 px
+  obs. da origem: 20/10/2026 — a anterior (ambientCG Bricks088) era tijolo perfurado assentado com os FUROS NA FACE, que não é como se
+  assenta no Brasil (bloco de vedação vai com os furos na horizontal, paralelos à parede — SINAPI 103328). Agora é a face lisa e
+  ranhurada do bloco 8 furos 9×19×19 (SINAPI 7271), na medida.
 
 tijolinho_laranja
   fonte: ambientCG · id: Bricks092
@@ -109,11 +111,10 @@ tijolinho_laranja
   arquivos: cor 1024 px, normal e rugosidade 512 px
 
 bloco_concreto
-  fonte: ambientCG · id: Bricks061
-  https://ambientcg.com/view?id=Bricks061
-  licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.75 m (estimado: ~4,5 peças por repetição = 39 cm)
+  fonte: RA Engenharia — desenho procedural (tools/gerar-texturas-alvenaria.py), sem foto de terceiro
+  licença: desenho próprio, uso livre · tamanho físico de uma repetição: 1.6 m (4 peças de 39 cm + junta 1 cm; 8 fiadas de 20 cm)
   arquivos: cor 1024 px, normal e rugosidade 512 px
-  obs. da origem: a foto é de tijolo cinza delgado (~23 x 8 cm, dimensionX 105 cm); não há bloco de concreto 39x19 CC0 no ambientCG nem no Poly Haven (procurado em 07/10/2026). Escala 1,75 m e proporção forçada 1,4 levam a peça a ~39 x 19 cm.
+  obs. da origem: 20/10/2026 — substitui a foto de tijolo cinza delgado (ambientCG Bricks061) que era esticada a 1,4 para parecer 39 × 19.
 
 concreto_aparente_formas
   fonte: ambientCG · id: Concrete008

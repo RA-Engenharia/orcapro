@@ -1794,8 +1794,9 @@
     return arr(fam && fam.parametros).filter(function (p) { return p && nomeValido(p.nome) && !FAM_MAPEADOS[String(p.nome).toLowerCase()]; }).map(function (p) {
       var dado = DADOS[p.tipoDado] ? p.tipoDado : "numero";
       /* FAMIMPORT (js/familiamalha.js): o nome ORIGINAL da família importada (`rotulo`), o parâmetro com fórmula na
-         família é de leitura (`somenteLeitura`), a lista de opções e a unidade de grandeza fora do SI (W, lm, K) */
-      var imp = !!p.importado, lista = imp && Array.isArray(p.opcoes) && p.opcoes.length, leit = !!p.formula || (imp && !!p.somenteLeitura);
+         família é de leitura (`somenteLeitura`), a lista de opções e a unidade de grandeza fora do SI (W, lm, K).
+         A família RA que declara `opcoes` (marmoraria: pedra, cuba, torneira) também vira lista. */
+      var imp = !!p.importado, lista = (imp || !!p.opcoes) && Array.isArray(p.opcoes) && p.opcoes.length, leit = !!p.formula || (imp && !!p.somenteLeitura);
       if (lista) dado = "lista";
       return congelar({
         id: "FAM:" + p.nome, nome: imp && p.rotulo ? String(p.rotulo) : String(p.nome).replace(/_/g, " "), grupo: txt(p.grupo) || "Outros", lado: p.escopo === "tipo" ? "tipo" : "instancia",

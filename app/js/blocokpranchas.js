@@ -1504,5 +1504,7 @@
   }
 
   return { PADRAO: PADRAO, MODELOS: MODELOS, gerar: gerar, sobreposicoes: sobreposicoes, Desenho: Desenho, montarAco: montarAco, quadroReforcos: quadroReforcos,
-    parseArm: parseArm, grau: grau, htmlImpressao: htmlImpressao, dataBR: dataBR, larg: larg };
+    parseArm: parseArm, grau: grau, htmlImpressao: htmlImpressao, dataBR: dataBR, larg: larg,
+    /* reaproveitados pelas pranchas da marmoraria (js/marmorariapranchas.js) */
+    carimboSvg: carimboSvg, tabela: tabela, medirTabela: medirTabela, tituloDesenho: tituloDesenho, quebrar: quebrar };
 });

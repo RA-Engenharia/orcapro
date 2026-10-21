@@ -662,6 +662,11 @@
       var FMb = global.FamiliasMob || (typeof require === "function" ? (function () { try { return require("./familiasmob.js"); } catch (eR) { return null; } })() : null);
       if (FMb) FMb.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador de mobiliário (js/familiasmob.js) não carregou"); }
     }
+    /* MARMORARIA (js/marmoraria.js): bancada de pedra com a cuba e a torneira — a pedra recortada, os pontos do hidro e o quantitativo */
+    if (fam.geometria === "marmoraria") {
+      var MM = global.Marmoraria || (typeof require === "function" ? (function () { try { return require("./marmoraria.js"); } catch (eR) { return null; } })() : null);
+      if (MM) MM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marmoraria (js/marmoraria.js) não carregou"); }
+    }
     return saida;
   }
   function lerChave(o, nome) {

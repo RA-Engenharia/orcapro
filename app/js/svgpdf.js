@@ -144,10 +144,23 @@
     objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
     objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
     objs.push("<< /Title (" + win1252(txt(info.titulo || "Desenho")) + ") /Producer (OrcaPRO) /Creator (OrcaPRO Modela) >>");
+    /* IMAGENS (opcional, js/marmproposta.js: o logo da empresa na proposta): info.imagens = [{ pagina, x, y, w, h (mm,
+       origem no canto de cima como no SVG), jpeg (texto binário 0–255 de um JPEG), pxW, pxH }]. Só JPEG (DCTDecode: o
+       PDF lê o arquivo como está, sem decodificar nada aqui). Sem `imagens` o PDF sai byte a byte como antes. */
+    var imgs = (Array.isArray(info.imagens) ? info.imagens : []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; });
+    var baseImg = 6 + 2 * pgs.length;
     pgs.forEach(function (p, i) {
-      var cont = p.ops.join("\n");
-      objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents " + (7 + 2 * i) + " 0 R >>");
+      var cont = p.ops.join("\n"), xo = [];
+      imgs.forEach(function (im, k) {
+        if (num(im.pagina, 0) !== i) return;
+        xo.push("/Im" + k + " " + (baseImg + k) + " 0 R");
+        cont += "\nq " + f(num(im.w, 10) * PT) + " 0 0 " + f(num(im.h, 10) * PT) + " " + f(num(im.x, 0) * PT) + " " + f((p.h - num(im.y, 0) - num(im.h, 10)) * PT) + " cm /Im" + k + " Do Q";
+      });
+      objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
       objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
+    });
+    imgs.forEach(function (im) {
+      objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
     });
     var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
     objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
@@ -165,7 +178,8 @@
     s.replace(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g, function (_, w, h) { tam.push([Math.round(+w / PT), Math.round(+h / PT)]); return _; });
     s.replace(/\/F[12] ([\d.]+) Tf[^(]*\(((?:\\.|[^\\)])*)\) Tj/g, function (_, c, t) { corpos.push(+c / PT); textos.push(t.replace(/\\(.)/g, "$1")); return _; });
     var xr = /startxref\n(\d+)\n%%EOF\s*$/.exec(s), xrOk = !!xr && s.substr(+xr[1], 4) === "xref";
-    return { ok: /^%PDF-1\.\d/.test(s) && xrOk, paginas: pags, tamanhos: tam, textos: textos, corpos: corpos };
+    var imagens = (s.match(/\/Subtype \/Image\b/g) || []).length;
+    return { ok: /^%PDF-1\.\d/.test(s) && xrOk, paginas: pags, tamanhos: tam, textos: textos, corpos: corpos, imagens: imagens };
   }
 
   var SvgPdf = { pagina: pagina, paginas: paginas, pdf: pdf, ler: ler, largura: largura, PT: PT };

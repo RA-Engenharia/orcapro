@@ -250,6 +250,10 @@
      *   voltou sozinho ao valor velho depois do sync. Dinheiro passa pelo
      *   merge por id, com `atualizadoEm` — como `producao_preco` acima. */
     "carp_param", "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros",
+    /* MÓDULO MARMORARIA (js/marmprecos.js): a TABELA DE PREÇOS do marmorista (um registro por linha, plano — nunca
+       lista dentro de lista) e o registro de cada proposta (um por obra: o número não muda ao gerar de novo).
+       Pelo mesmo motivo do carp_param: preço não pode morar em prefs (o local vence campo a campo). */
+    "marm_precos", "marm_propostas",
     "remun_param", "remun_apur",
     /* padrao de privacidade do Portal do Cliente (o que a obra herda quando
        ainda nao decidiu). Nao e sob demanda — vale para qualquer empresa —

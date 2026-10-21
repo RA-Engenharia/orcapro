@@ -45,7 +45,7 @@
     prefs: function () {
       if (!this._prefs) {
         var o = {}; try { o = JSON.parse(localStorage.getItem(CHAVE) || "{}") || {}; } catch (e) { o = {}; }
-        this._prefs = { equipe: (o.equipe && typeof o.equipe === "object") ? o.equipe : {}, horasDia: o.horasDia > 0 && o.horasDia <= 24 ? +o.horasDia : 8 };
+        this._prefs = { equipe: (o.equipe && typeof o.equipe === "object") ? o.equipe : {}, horasDia: o.horasDia > 0 && o.horasDia <= 24 ? +o.horasDia : 8, marmTabela: o.marmTabela === true };
       }
       return this._prefs;
     },
@@ -55,6 +55,8 @@
       /* P10 (js/bimfases.js): a categoria da família (porta/janela demolida) e a fase da vista */
       if (global.BIM && BIM.familiaCategoria) o.categoriaFamFases = function (id) { return BIM.familiaCategoria(id); };
       try { if (global.BimP10UI && BimP10UI.ativo() && BimP10UI.fase) o.fase = BimP10UI.fase(); } catch (eF) {}
+      /* módulo Marmoraria: as bancadas de pedra pela tabela da empresa (só com o módulo liberado; sem ele, o caminho de sempre) */
+      try { if (p.marmTabela && global.MarmPrecos && global.MarmModulo && MarmModulo.liberado()) o.marmoraria = { tabela: MarmPrecos.tabela() }; } catch (eM) {}
       return o;
     },
 
@@ -463,6 +465,11 @@
         mod.pendencias.forEach(function (g) { h += "<li" + (g.quantidade > 0 ? ' data-om-pend-qtd="' + esc(String(g.quantidade)) + '"' : "") + "><b>" + esc(g.codigo || "sem código") + "</b> " + esc(curto(g.descricao, 70)) + (g.quantidade > 0 ? " — " + fmt(g.quantidade, 2) + " " + esc(unTela(g.unidade)) : "") + " — " + g.elementos.length + " peça(s): " + esc((g.avisos || [])[0] || g.status) + "</li>"; });
         h += "</ul></div>";
       }
+      /* módulo Marmoraria: escolher a tabela da marmoraria para as bancadas de pedra (substitui, não soma) */
+      try {
+        if (global.MarmModulo && MarmModulo.liberado() && global.MarmorariaUI && MarmorariaUI.bancadas().length)
+          h += '<div class="om-sec" data-om="marm-sec"><label><input type="checkbox" data-om="marm"' + (p.marmTabela ? " checked" : "") + '> Bancadas de pedra: usar a <b>tabela de preços da marmoraria</b> (no lugar da composição de cada bancada — não soma as duas)</label></div>';
+      } catch (eM2) {}
       h += '<div class="om-acoes"><button class="btn sm" data-om="atualizar">Atualizar</button><button class="btn sm primary" data-om="enviar"' + (ok.length ? "" : " disabled") + ">Enviar ao orçamento da obra</button></div>";
       corpo.innerHTML = h;
       this._ultimo = mod;
@@ -479,7 +486,8 @@
       };
       corpo.onchange = function (e) {
         var t = e.target, p = self.prefs(), v = parseFloat(String(t.value).replace(",", "."));
-        if (t.getAttribute("data-om") === "hd") { if (v > 0 && v <= 24) p.horasDia = v; }
+        if (t.getAttribute("data-om") === "marm") p.marmTabela = !!t.checked;
+        else if (t.getAttribute("data-om") === "hd") { if (v > 0 && v <= 24) p.horasDia = v; }
         else if (t.getAttribute("data-om-eq")) { if (v >= 1) p.equipe[t.getAttribute("data-om-eq")] = Math.round(v); }
         else return;
         self.gravarPrefs(); self.renderPainel(); self._repintarProps();

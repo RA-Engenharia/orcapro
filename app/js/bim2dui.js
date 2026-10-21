@@ -65,7 +65,9 @@
       if (!L.length) {
         var p = B() && B().pavimentos2d ? B().pavimentos2d() : { pav: [] };
         L = (p.pav || []).map(function (x, i) { return { id: "pav" + i, nome: x.nome, y: x.y }; });
-        if (!L.length && p.caixa) L = [{ id: "modelo", nome: "Térreo", y: p.caixa.min[1] }];
+        /* sem nível nenhum e sem modelo, a planta do Térreo existe do mesmo jeito (20/10/2026): é nela que a
+           primeira parede nasce — antes ela só aparecia depois da 1ª peça. Mesmo id do caso com modelo. */
+        if (!L.length) L = [{ id: "modelo", nome: "Térreo", y: p.caixa ? p.caixa.min[1] : 0 }];
       }
       return L;
     },
@@ -130,7 +132,31 @@
     },
 
     /* ----------------------------------------------------------- dados */
+    /* PROJETO DO ZERO (20/10/2026, pedido do Rogério: "só depois que puxo uma parede é que a planta baixa libera"):
+       com o modelo ainda sem peça nenhuma a vista é a FOLHA EM BRANCO da área de trabalho — o SVG existe, os cliques
+       das ferramentas caem nele (js/bimplantamodelar.js) e a primeira parede nasce na planta. Antes, a vista dizia
+       "Abra um modelo primeiro." e não havia onde clicar. */
     _extrair: function (d) {
+      var r = this._extrairModelo(d);
+      if (r && !r.ok && r.vazio && d && d.tipo !== "desenho") return this._vazio(d);
+      return r;
+    },
+    /* a área de trabalho da folha vazia: a do template (estado().area, em metro do mundo) ou 12 × 10 m na origem */
+    areaVazia: function () {
+      var a = this.estado().area;
+      return (a && isFinite(a.x0) && isFinite(a.z0) && a.x1 > a.x0 && a.z1 > a.z0) ? a : { x0: 0, z0: 0, x1: 12, z1: 10 };
+    },
+    _vazio: function (d) {
+      var a = this.areaVazia(), ehCorte = d.tipo === "corte" || d.tipo === "elevacao" || !!d.corte;
+      var area;
+      if (ehCorte) {
+        var c = d.corte || d.linha || {}, L = Math.sqrt(Math.pow((c.bx || 0) - (c.ax || 0), 2) + Math.pow((c.bz || 0) - (c.az || 0), 2));
+        if (!(L > 0.05)) L = Math.max(a.x1 - a.x0, a.z1 - a.z0);
+        area = { x0: 0, y0: -3.5, x1: L, y1: 0.5 };
+      } else area = { x0: a.x0, y0: a.z0, x1: a.x1, y1: a.z1 };
+      return { ok: true, tipo: ehCorte ? "corte" : "planta", vazio: true, area: area, cortes: [], linhas: [], linhasK: [], p6Estilos: {}, info: { ms: 0, vazio: true } };
+    },
+    _extrairModelo: function (d) {
       var b = B(); if (!b || !b.vista2d) return { ok: false, erro: "O visualizador 3D ainda não abriu." };
       if (this._p6()) { var r6 = this._p6Extrair(d, b); if (r6) return r6; }   /* P6: V/G, faixa, forro, recorte */
       /* p6Tag: cada contorno/aresta leva o uid da peça — é por ele que o clique na vista SELECIONA (js/bimselecao.js) */
@@ -501,10 +527,12 @@
       var e = this.estado();
       var letra = D2().proximaLetra(e.cortes.map(function (x) { return x.letra; }));
       var c = { id: "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), letra: letra, ax: ax, az: az, bx: bx, bz: bz, inv: !!(opts && opts.inv), prof: 0 };
+      if (opts && opts.letra && e.cortes.every(function (x) { return x.letra !== opts.letra; })) c.letra = letra = String(opts.letra);
       e.cortes.push(c); this._gravar();
       /* as plantas abertas ganham a marca do corte novo */
       var self = this; Object.keys(this._cache).forEach(function (k) { if (/^d2p-/.test(k)) self.redesenhar(k, false); });
       this._avisarMudou();
+      if (opts && opts.silencioso) return c;   /* o template de início cria os cortes A e B sem abrir aba nem avisar */
       this.abrir(this.idCorte(c.id));
       toast("Corte " + letra + " criado. Ele está em Navegador de projeto › Cortes.", "ok");
       status("Corte " + letra + " criado e aberto. A marca dele está na planta; os parâmetros, em Propriedades.");
@@ -865,12 +893,14 @@
     },
     criarElevacao: function (dir, opts) {
       var M = this._p6(); if (!M) return null;
-      var p = B() && B().pavimentos2d ? B().pavimentos2d() : null;
+      /* opts.caixa (template de início, 20/10/2026): a elevação de um projeto que ainda não tem peça olha para a
+         área de trabalho do template — a marca já fica nas plantas */
+      var p = (opts && opts.caixa) ? { caixa: opts.caixa } : (B() && B().pavimentos2d ? B().pavimentos2d() : null);
       if (!p || !p.caixa) { toast("Abra um modelo primeiro: a elevação é desenhada dele.", "aviso"); return null; }
       if (["norte", "sul", "leste", "oeste"].indexOf(dir) < 0) dir = "sul";
       var NOMES = { norte: "Elevação Norte", sul: "Elevação Sul", leste: "Elevação Leste", oeste: "Elevação Oeste" };
       var v = M.criar("elevacao", { nome: NOMES[dir], linha: this.linhaElevacao(dir, p.caixa), numero: { norte: "N", sul: "S", leste: "L", oeste: "O" }[dir] });
-      return this._p6Depois(v, opts && opts.abrir, "“" + v.nome + "” criada: a marca está nas plantas e a vista em Navegador › Elevações.");
+      return this._p6Depois(v, opts && opts.abrir, (opts && opts.silencioso) ? "" : "“" + v.nome + "” criada: a marca está nas plantas e a vista em Navegador › Elevações.");
     },
     /* ELEVAÇÃO INTERIOR: o clique dentro do cômodo; olha para a parede CORTADA mais
        perto; a região de recorte vai de uma parede lateral à outra e do piso ao teto */

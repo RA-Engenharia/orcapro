@@ -36,6 +36,22 @@
   function BI() { return dep("BimInst", "./biminst.js"); }
   function BE() { return dep("BimEdit", "./bimedit.js"); }
   function HR() { return dep("HidRota", "./hidrota.js"); }
+  /* FRENTE H4 (21/10/2026) — 2+ APARELHOS IGUAIS indo ao MESMO destino pelo ramal (2 cubas/pias → caixa de gordura; 2 tanques
+     → espera da área de serviço). Com o destino logo atrás do 1º ponto, o ramal do outro chegava ao destino por baixo do 1º e o
+     1º, sem trecho reto para a junção de 45°, dava a volta (ia 30 cm para o lado errado e voltava com duas curvas) ou ficava
+     SEM TUBO (o 2º não entra no destino: uma entrada por ambiente). O ponto de referência do destino vai para ALÉM do ponto da
+     ponta, do lado de p0, à distância de uma junção de 45° do HidRota dos dois lados (2 × (perna do desvio + 2 × distância
+     mínima entre nós)): o ramal do mais a montante passa sob os outros, que entram nele com junção de 45° antes do destino.
+     cs = os pontos de esgoto; p0 = a referência de antes (o 1º ponto). Um ponto só: p0 sem mudança. */
+  function alemDaPonta(cs, p0, par) {
+    if (!p0 || arr(cs).length < 2 || !HR() || !HR().GEO) return p0;
+    var Gr = HR().GEO, cF = cs.slice().sort(function (a, b) { return d2(b, p0) - d2(a, p0); })[0], Lp = d2(cF, p0);
+    if (!(Lp > EPS)) return p0;
+    var u = { x: (p0.x - cF.x) / Lp, z: (p0.z - cF.z) / Lp };
+    var ponta = cs.slice().sort(function (a, b) { return ((a.x - cF.x) * u.x + (a.z - cF.z) * u.z) - ((b.x - cF.x) * u.x + (b.z - cF.z) * u.z); }).pop();
+    var dJ = 2 * (num(par && par.chanfro, Gr.chanfro) + 2 * num(par && par.margemNo, Gr.margemNo));
+    return { x: r4(ponta.x + u.x * dJ), y: ponta.y, z: r4(ponta.z + u.z * dJ), dn: ponta.dn, alemDaPonta: true };
+  }
   function HK() { return dep("HidKit", "./hidkit.js"); }
   function HI() { return dep("HidImplantacao", "./hidimplantacao.js"); }
   function NN() { return dep("HidNormas", "./hidnormas.js"); }
@@ -440,7 +456,7 @@
     }
     kitOps.forEach(function (o) { if (o.kitParte === "chuveiro" && /-ch-espera$/.test(txt(o.id))) esperaCh[o.kit] = o.continua === "p2" ? o.p2 : o.p1; });   /* a ponta aberta (p1 desde a FRENTE B, 19/10/2026: sentido da água) */
     M.fams.forEach(function (f) {
-      var tipo = K.tipoDaFamilia(f.famId, f.tipoId); tipos[f.id] = tipo;
+      var tipo = K.tipoDaFamilia(f.famId, f.tipoId); if (K.aparelhoNorma) tipo = K.aparelhoNorma(tipo); tipos[f.id] = tipo;   /* bancada de pedra = pia de cozinha / lavatório da norma (js/hidkit.js aparelhoNorma) */
       var cs = K._int.conectores(avaliarFam, f).filter(function (c) { return c.sistema === "esgoto" || c.sistema === "agua_fria"; });
       var con = [];
       cs.forEach(function (c) {
@@ -504,6 +520,10 @@
     /* 4) DESTINOS */
     var tetoA = K._int.tetoDe(estado, baciaEs || M.fams[0], piso);
     var destinos = {}, ancora = baciaEs || (aparelhos[0] && aparelhos[0].conectores[0]) || M.fams[0];
+    /* FRENTE H4: sem bacia, 2+ tanques (ou outro aparelho de sifão próprio que vai ao destino pelo ramal) — a espera além do ponto
+       da ponta (alemDaPonta). A pia não conta: ela vai à caixa de gordura, não à espera */
+    if (!baciaEs) { var csRaiz = []; aparelhos.forEach(function (a) { if (a.aparelho !== "tanque") return; a.conectores.forEach(function (c) { if (c.sistema === "esgoto") csRaiz.push(c); }); });
+      if (csRaiz.length > 1) ancora = alemDaPonta(csRaiz, csRaiz[0], par); }
     var gerados = {}; vivas(opsLimpo).forEach(function (o) { if (o && o.id != null && (o.kit != null || o.amb != null) && o.op !== "apagar") gerados[o.id] = 1; });
     /* ⚠ PRÉDIO: no TÉRREO, o tubo de queda que desce dos andares de cima NÃO recebe o térreo (a base do TQ é zona de
        sobrepressão — critério do projetista, declarado): o térreo sai pela espera própria até a rede */
@@ -827,6 +847,9 @@
        (antes: o lado da caixa envolvente da obra, que podia cair longe da cozinha) */
     if (pias.length && !cgsRota.length && HI() && !(par.areaTecnica)) {
       var pP = null; pias.forEach(function (pa) { pa.conectores.forEach(function (c) { if (c.sistema === "esgoto" && !pP) pP = c; }); });
+      /* FRENTE H4: 2+ pontos de pia (2 cubas da bancada, 2 pias lado a lado) — a caixa além do ponto da ponta (alemDaPonta) */
+      var csPia = []; pias.forEach(function (pa) { pa.conectores.forEach(function (c) { if (c.sistema === "esgoto") csPia.push(c); }); });
+      pP = alemDaPonta(csPia, pP, par);
       var peP = pP ? HI().posicaoExterna(estado, pP, { raio: 0.15, afast: num(par.afastamentoCaixaGordura, HI().GEO_IMP.afastamentoCaixaGordura), parametros: par }) : null;   // hid:ok o raio da caixa de gordura padrão (DN300) e o recuo do HidRota
       if (peP) { parR.areaTecnica = { x: peP.x, z: peP.z }; decide("amb.caixa_gordura", "Caixa de gordura proposta do lado de fora da parede da cozinha, " + peP.motivo + "."); }
     }
@@ -1150,7 +1173,15 @@
       if (dCx) desc.push(dCx);
       if (dBa) desc.push(dBa);
       var SIFAO = { pia_cozinha: 1, tanque: 1, mictorio: 1 };
-      aparelhos.forEach(function (a) { if (!SIFAO[a.aparelho]) return; a.conectores.forEach(function (c) { if (c.sistema !== "esgoto") return; var n0 = G.noPerto({ x: c.x, y: c.y, z: c.z }, B.TOL_CONECTOR); if (n0 != null) desc.push({ ref: a.id, no: n0, dn: null }); }); });
+      /* ⚠ FRENTE H4 (21/10/2026): a BANCADA DE 2 CUBAS é UM aparelho com DOIS pontos de esgoto (um sifão por cuba): com a mesma
+         ref para os dois, o ramal de ventilação da 2ª cuba procurava a tomada no caminho da 1ª (desc.filter(ref)[0]) e nascia em
+         cima da ventilação dela (dois tubos no mesmo eixo, colados na descida da cuba). Cada sifão é um desconector: ref própria
+         (aparelho:ponto) e `el` = o aparelho, para os ids dos avisos. */
+      aparelhos.forEach(function (a) {
+        if (!SIFAO[a.aparelho]) return;
+        var csE = a.conectores.filter(function (c) { return c.sistema === "esgoto"; });
+        csE.forEach(function (c) { var n0 = G.noPerto({ x: c.x, y: c.y, z: c.z }, B.TOL_CONECTOR); if (n0 != null) desc.push({ ref: csE.length > 1 ? a.id + ":" + c.id : a.id, el: a.id, no: n0, dn: null }); });
+      });
       if (!desc.length) return;
       /* ⚠ a distância máxima vale pelo DN do ramal de descarga do desconector; o da caixa é a SAÍDA dela (o traçado pode
          sair maior e o dimensionamento reduzir — vale o menor, o lado seguro) */
@@ -1191,7 +1222,7 @@
               if (ach == null) for (var k = ic; k < q0.cam.length; k++) { var nb = q0.cam[k].e.b; if (q.sNo[nb] != null) { ach = q.sNo[nb] + (q0.cam[k].s0 + q0.cam[k].e.L - sP); break; } }
               var ok = ach != null && (q.limite == null || ach <= q.limite - w0 + EPS);
               if (!ok) viol++;
-              dists.push({ ref: q.ref, L: ach == null ? null : r4(ach), limite: q.limite, dn: q.dn, ok: ok });
+              dists.push({ ref: q.ref, el: q.el || q.ref, L: ach == null ? null : r4(ach), limite: q.limite, dn: q.dn, ok: ok });
             });
             var dq = dists.filter(function (d) { return d.ref === q0.ref; })[0];
             /* o sentido do escoamento no ramal (p1 → p2) em planta: a junção 45° da ventilação sai para MONTANTE (a favor do fluxo) */
@@ -1202,7 +1233,7 @@
         return cs;
       }
       var cands = candidatos(desc[0]);
-      if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].ref]); return; }
+      if (!cands.length) { pend("amb.ventilacao", "nenhum ponto horizontal do ramal de " + desc[0].ref + (desc[0].caixa && dBa ? " (antes da junção com o ramal da bacia)" : "") + " dentro da distância máxima da NBR 8160 (e a pelo menos 2 × DN do desconector) para ligar a ventilação", [desc[0].el || desc[0].ref]); return; }
       /* DN do RAMAL DE VENTILAÇÃO: Tabela 8 pelo grupo ventilado (com bacia = o banheiro tem bacia) e a soma das UHC */
       var temBacia = !!dBa, uT = 0;
       aparelhos.forEach(function (a) { var u = NR.uhc(a.aparelho, "ventilação"); uT += u == null ? 0 : u; });
@@ -1232,7 +1263,9 @@
              deitado sob o piso passava rente à coluna de ventilação (folga −2,1 cm), e o último trecho parava a 3 cm do eixo dela */
           var exc = exceto && exceto.some(function (x) { return x === t || (x && x.id != null && x.id === t.id); });
           return segs.some(function (sg) {
-            if (exc && d2(sg.b, t.p1) <= B.TOL) return false;   /* o trecho que entra na coluna: a junção */
+            /* o trecho que entra na coluna: a junção. ⚠ FRENTE H4 (21/10/2026): só o que CHEGA de fora dela — o vertical do desvio que
+               subia NO EIXO da coluna (a ventilação da 2ª pia/tanque) também "terminava nela" em planta e corria 1,6 m dentro dela */
+            if (exc && d2(sg.b, t.p1) <= B.TOL && d2(sg.a, t.p1) > raio(num(t.dn, 0)) + r - EPS) return false;
             return H._int.segSeg3(sg.a, sg.b, t.p1, t.p2) - r - raio(num(t.dn, 0)) < (t.sistema === "agua_fria" ? geo(par, "afastamento") : geo(par, "folga")) - EPS;
           });
         }) || trs.some(function (t) {
@@ -1464,7 +1497,7 @@
       melhor.c.dists.filter(function (d) { return !d.ok; }).forEach(function (d) {
         var q = desc.filter(function (x) { return x.ref === d.ref; })[0], cs = q ? candidatos(q) : [];
         var uq = out.caixaSifonada && out.caixaSifonada.id === d.ref ? num(out.caixaSifonada.uhc, 0) : 0, dnR = NR.dnVentRamal(0, uq, "ventilação: ramal de " + d.ref);
-        if (dnR == null || !cs.length) { pend("amb.ventilacao." + d.ref, d.ref + (d.L == null ? " não passa pelo ponto da ventilação" : " a " + f2(d.L) + " m do ponto ventilado (máximo " + f2(d.limite) + " m, DN " + d.dn + ")") + " e não coube um ramal de ventilação próprio: ponha à mão", [d.ref], { tipo: "ajustar", ids: [d.ref] }); return; }
+        if (dnR == null || !cs.length) { pend("amb.ventilacao." + d.ref, d.ref + (d.L == null ? " não passa pelo ponto da ventilação" : " a " + f2(d.L) + " m do ponto ventilado (máximo " + f2(d.limite) + " m, DN " + d.dn + ")") + " e não coube um ramal de ventilação próprio: ponha à mão", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] }); return; }
         dnR = HRcomercial("ventilacao", dnR);
         /* o ramal corre sob o teto e entra na coluna ABAIXO do topo dela (a junção precisa de coluna dos dois lados) */
         var yTopoR = r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), bR = null;
@@ -1472,13 +1505,34 @@
           var b = subida(c, raio(dnR), function (qq) { return r4(yTopoR - (Math.abs(qq.x - coluna.p1.x) + Math.abs(qq.z - coluna.p1.z)) * ac); }, ateColuna(coluna));
           if (b && (!bR || b.nota < bR.nota - EPS)) bR = b;
         });
-        if (!bR) { pend("amb.ventilacao." + d.ref, "ramal de ventilação de " + d.ref + ": sem caminho livre até a coluna — ponha à mão", [d.ref], { tipo: "ajustar", ids: [d.ref] }); return; }
+        /* ⚠ FRENTE H4 (21/10/2026): 2 pias/cubas na mesma parede — o ramal de água fria corre a parede inteira na altura do ramal e
+           a descida da alimentação fica entre as pias e a coluna: o ramal de ventilação da pia de longe só chegava à coluna
+           ATRAVESSANDO a água (a subida passava por dentro do ramal de água fria, "0 cm"; o deitado sob o teto cruzava a descida
+           da alimentação). Sem coluna de ventilação do prédio (o térreo, com terminal próprio), o desconector que não chega na
+           coluna sem bater ganha VENTILAÇÃO INDIVIDUAL: sobe (com o desvio dentro da parede, se preciso) até a altura de saída e
+           termina no terminal de ventilação do catálogo (NBR 8160: todo desconector ventilado; o terminal fica acima da
+           cobertura, conferido pelo RT como o da coluna). A ligação na coluna segue a preferida quando não bate. */
+        if ((!bR || bR.bate) && !CV) {
+          var bT = null;
+          cs.forEach(function (c) { var b = subida(c, raio(dnR), function () { return ySaida; }); if (b && !b.bate && (!bT || b.nota < bT.nota - EPS)) bT = b; });
+          var dnsTr = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnTr = dnsTr.filter(function (x) { return x >= dnR - EPS; })[0];
+          if (bT && dnTr != null) {
+            var colR = emitir(bT, dnR, "ventilacao_ramal", dnTr), idTr = pr + "terminal" + (out.ventilacao.ramais.length + 2);
+            novas.push({ op: "peca", id: idTr, peca: "terminal_ventilacao", sistema: "ventilacao", dn: String(dnTr), x: r4(colR.p2.x), y: r4(colR.p2.y), z: r4(colR.p2.z), amb: ambId, ambParte: "ventilacao_ramal" });
+            var dT = bT.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
+            out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, dnTerminal: dnTr, L: dT.L, limite: dT.limite, terminal: idTr, individual: true });
+            d.ramal = { dn: dnR, L: dT.L, individual: true };
+            decide("amb.ventilacao.individual", "Ventilação individual de " + d.ref + " (DN " + dnR + ", terminal DN " + dnTr + "): o ramal até a coluna atravessaria a água fria da parede; sobe embutido até " + f2(hSaida) + " m do piso com o terminal de ventilação próprio (NBR 8160, desconector ventilado a " + f2(dT.L) + " m).");
+            return;
+          }
+        }
+        if (!bR) { pend("amb.ventilacao." + d.ref, "ramal de ventilação de " + d.ref + ": sem caminho livre até a coluna — ponha à mão", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] }); return; }
         var sub = emitir(bR, dnR, "ventilacao_ramal"), ult = sub.p2;
         bR.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnR, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ult = sg.b; });
         var dR = bR.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
         out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) } });
         d.ramal = { dn: dnR, L: dR.L };
-        if (bR.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.ref], { tipo: "ajustar", ids: [d.ref] });
+        if (bR.bate) aviso("o ramal de ventilação de " + d.ref + " passa perto de outro tubo: confira", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] });
       });
       if (melhor.semIni) aviso("ventilação ligada em ângulo menor (junção 45°) com o trecho inicial no aclive mínimo de " + f2(ac * 100) + " %: o enchimento sob o piso não deixa o aclive de " + f2(acIni * 100) + " % da NBR 8160 4.3.16 b 2 — aumente o rebaixo/enchimento ou leve a tomada para perto da parede", ids, { tipo: "parametro", campo: "alturaEnchimento" });
       var cx0 = melhor.c, sMin0 = fatorDn != null && desc[0].dn ? fatorDn * desc[0].dn / 1000 : null;

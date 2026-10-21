@@ -122,18 +122,33 @@
      * PEÇA. Foi essa ambiguidade que produziu o bloco cerâmico dez vezes
      * leve; por isso cada núcleo declara a unidade. */
     NUCLEOS: {
-      bloco_concreto_14:  { rotulo: "Bloco de concreto 14 cm",  e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 14" },
-      bloco_concreto_19:  { rotulo: "Bloco de concreto 19 cm",  e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 19" },
+      /* `alv` / `alvPorFuncao`: a FAMÍLIA DE ASSENTAMENTO (js/alvunidades.js) — é por ela que a parede crua mostra
+         os blocos como assentados (js/alvassentamento3d.js) e o assentamento conta as peças. */
+      bloco_concreto_14:  { rotulo: "Bloco de concreto 14 cm",  e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 14", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
+      bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — M15, família 29 (14×19×29)", alv: "bc-M15-29" },
+      bloco_concreto_19:  { rotulo: "Bloco de concreto 19 cm",  e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 19", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
       /* familia: null de propósito — não existe família de 9 cm no catálogo.
          Apontava para a "29", que é de 14 cm de largura: no dia em que o peso
          fosse ligado, a divisória de 9 receberia carga de parede de 14 (+55%). */
-      bloco_concreto_9:   { rotulo: "Bloco de concreto 9 cm",   e: 90,  familia: null,    peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — vedação" },
+      bloco_concreto_9:   { rotulo: "Bloco de concreto 9 cm",   e: 90,  familia: null,    peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — vedação", alv: "bc-M10-ved" },
       /* 13 kN/m³ × 102 ≈ 1300 kg/m³. Estava 130 — dez vezes leve, e saindo
          com selo de "peso completo". Uma parede cerâmica de 14 cm, 3,0 × 2,8 m,
          era anunciada com 153 kg de nucleo quando o certo sao 1.528,8 kg
          (2.344,6 kg com o revestimento das duas faces). */
-      bloco_ceramico_14:  { rotulo: "Bloco cerâmico 14 cm",     e: 140, familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³" },
-      bloco_ceramico_9:   { rotulo: "Bloco cerâmico 9 cm",      e: 90,  familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019" },
+      bloco_ceramico_14:  { rotulo: "Bloco cerâmico 14 cm",     e: 140, familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³", alv: "cv-9f-14" },
+      bloco_ceramico_9:   { rotulo: "Bloco cerâmico 9 cm",      e: 90,  familia: null,    peso: 1300, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6120:2019", alv: "cv-8f-9" },
+      /* 20/10/2026 — as unidades como se assentam no Brasil (js/alvunidades.js): a espessura do núcleo é a LARGURA real da peça */
+      cer_8f_9:        { rotulo: "Cerâmico 8 furos 9×19×19 (furos na horizontal)", e: 90,  familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 (bloco cerâmico vazado ≈ 13 kN/m³); peça: SINAPI 7271", alv: "cv-8f-9" },
+      cer_8f_9_29:     { rotulo: "Cerâmico 8 furos 9×19×29", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 7268", alv: "cv-8f-9-29" },
+      cer_6f_9:        { rotulo: "Cerâmico 6 furos 9×14×19 em pé", e: 90,  familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 7267", alv: "cv-6f-9" },
+      cer_6f_deitado:  { rotulo: "Cerâmico 6 furos 9×14×19 deitado (parede de 14)", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; SINAPI 103334 (bloco deitado)", alv: "cv-6f-9-deitado" },
+      cer_9f_11:       { rotulo: "Cerâmico 9 furos 11,5×14×24", e: 115, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44459", alv: "cv-9f-11" },
+      cer_9f_14:       { rotulo: "Cerâmico 9 furos 14×19×29", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44462", alv: "cv-9f-14" },
+      cer_9f_19:       { rotulo: "Cerâmico 9 furos 19×19×29", e: 190, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 44464", alv: "cv-9f-19" },
+      cer_est_14:      { rotulo: "Cerâmico estrutural 14×19×29", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 (≈ 13 kN/m³ — conferir o estrutural na ficha); peça: SINAPI 34586", alv: "ce-29" },
+      cer_est_14_39:   { rotulo: "Cerâmico estrutural 14×19×39", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019; peça: SINAPI 34588", alv: "ce-39" },
+      tijolo_macico_10: { rotulo: "Tijolo maciço 5×10×20 (deitado)", e: 100, familia: null, peso: 1800, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 Tabela 1 — cerâmica 18 kN/m³ (o mesmo do PESO.ceramica); peça: SINAPI 7258", alv: "tm-10" },
+      tijolinho_11:    { rotulo: "Tijolinho laminado aparente 5,5×11×23", e: 110, familia: null, peso: 1800, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 Tabela 1 — cerâmica 18 kN/m³ (o laminado de 21 furos é mais leve — conferir ficha); peça: SINAPI 34401", alv: "tl-11" },
       concreto_armado_15: { rotulo: "Parede de concreto 15 cm", e: 150, familia: null,    peso: 2500, unidade: "kg/m3", tipo: "concreto", fonte: "NBR 6120:2019 — concreto armado 25 kN/m³" },
       drywall_70:         { rotulo: "Drywall montante 70 mm",   e: 95,  familia: null,    peso: 280,  unidade: "kg/m3", tipo: "seco",   fonte: "prática — 70 mm + 2 chapas de 12,5 mm" },
       /* BLOCOK (módulo à parte, js/blocokexec.js): painel 90×90 de EPS com 2 faces de
@@ -250,6 +265,36 @@
         rotulo: "Blocok 10 · divisória leve", funcao: "vedacao", nucleo: "blocok_10", modulo: "blocok",
         dentro: ["massa_corrida", "pintura_latex"], fora: ["massa_corrida", "pintura_latex"],
         nota: "Não aceita concreto embutido: só divisória SEM vão, entre paredes travadas, até 4,0 m, encunhada sob a laje."
+      },
+      /* PAREDE CRUA COMO É EXECUTADA (20/10/2026): sem revestimento, a parede mostra os blocos ASSENTADOS
+         (js/alvassentamento3d.js) — fiadas, juntas, amarração, verga e contraverga. */
+      "crua-cer-8f-9": {
+        rotulo: "Crua · cerâmico 8 furos 9×19×19 (sem revestimento)", funcao: "vedacao", nucleo: "cer_8f_9", dentro: [], fora: [],
+        nota: "O tijolo baiano de 8 furos, furos na horizontal paralelos à parede. Ponto de partida da vedação corrente; o revestimento entra depois."
+      },
+      "crua-cer-9f-14": {
+        rotulo: "Crua · cerâmico 9 furos 14×19×29 (sem revestimento)", funcao: "vedacao", nucleo: "cer_9f_14", dentro: [], fora: [],
+        nota: "Vedação de 14 cm em bloco cerâmico de 9 furos."
+      },
+      "crua-cer-6f-deitado": {
+        rotulo: "Crua · cerâmico 6 furos deitado (parede de 14)", funcao: "vedacao", nucleo: "cer_6f_deitado", dentro: [], fora: [],
+        nota: "O 9×14×19 assentado deitado dá parede de 14 cm (SINAPI 103334) — os furos seguem paralelos à parede."
+      },
+      "crua-cer-est-14": {
+        rotulo: "Crua · cerâmico estrutural 14×19×29", funcao: "estrutural", nucleo: "cer_est_14", dentro: [], fora: [],
+        nota: "Alvenaria estrutural cerâmica: furos verticais, canaleta na última fiada e nas vergas."
+      },
+      "crua-bc-14-est": {
+        rotulo: "Crua · bloco de concreto estrutural 14 (M15, família 39)", funcao: "estrutural", nucleo: "bloco_concreto_14", dentro: [], fora: [],
+        nota: "Bloco aparente: alvéolos verticais, amarração L de 34 e T de 54, canaleta grauteada na verga, contraverga e respaldo."
+      },
+      "crua-bc-14-29": {
+        rotulo: "Crua · bloco de concreto estrutural 14 (M15, família 29)", funcao: "estrutural", nucleo: "bloco_concreto_14_29", dentro: [], fora: [],
+        nota: "Família 29: módulo de 15 cm, o canto fecha com o próprio inteiro; bloco e meio (44) no T."
+      },
+      "crua-tijolinho": {
+        rotulo: "Tijolinho aparente 5,5×11×23 (laminado)", funcao: "vedacao", nucleo: "tijolinho_11", dentro: [], fora: [],
+        nota: "Tijolinho laminado à vista, assentado deitado; os 21 furos ficam na junta."
       },
       "crua": {
         rotulo: "Parede crua (só o núcleo)",

@@ -101,6 +101,7 @@
           { id: "paginar-alvenaria", rotulo: "Paginar\nalvenaria", icone: "grade", grande: true, requer: "modelo", dica: "Distribui as peças fiada a fiada, com amarração nos encontros em L, T e X." },
           { id: "elevacoes", rotulo: "Elevações\nde parede", icone: "prancha", grande: true, requer: "modelo", dica: "Gera a prancha de elevação de cada parede, com peças numeradas e lista de material." },
           { id: "graute", emBreve: true, rotulo: "Graute e\narmadura", icone: "estrutura", requer: "modelo", dica: "Alvenaria estrutural: pontos de graute e armadura vertical, com m³ e kg." },
+          { id: "alvenaria-assentada", rotulo: "Alvenaria\nassentada", icone: "grade", requer: "modelo", dica: "Mostra a parede crua como é executada: cada bloco com os furos na posição real, fiadas, juntas de 1 cm, amarração nos cantos e encontros, verga e contraverga. De longe volta o desenho com a textura." },
           { id: "blocok", rotulo: "Plantas\nBlocok", icone: "prancha", requer: "modelo", dica: "Plantas executivas Blocok: a prancha de cada parede com as placas 90×90 numeradas e a tabela de material." }
         ] },
         { nome: "Conferência", comandos: [
@@ -488,8 +489,8 @@
     "abrir-opbim": { id: "abrir-opbim", rotulo: "Abrir\n.opbim", icone: "abrir", grande: true, dica: "Abrir um Projeto OrçaPRO (.opbim) recebido: entra o modelo, as famílias, os níveis e as vistas." },
     "importar-outros": { id: "importar-outros", rotulo: "Importar de\noutros programas", icone: "importar", grande: true, dica: "Revit, SketchUp, AutoCAD (DWG/DXF), glTF/GLB, OBJ, STL e IFC: o que dá para trazer de cada um e como." },
     "materiais-proj": B("materiais-proj", "Materiais\ndo projeto", "paleta", "Biblioteca de materiais do projeto — fase B6."),
-    "planta-2d": { id: "planta-2d", rotulo: "Planta\nbaixa", icone: "planta", grande: true, requer: "modelo", dica: "Planta baixa em desenho técnico: o que o plano corta em linha grossa, o resto em linha fina, com cotas. Abre numa aba; os parâmetros ficam em Propriedades." },
-    "corte-2d": { id: "corte-2d", rotulo: "Corte\nA, B, C…", icone: "corte", grande: true, requer: "modelo", dica: "Trace o corte com dois cliques na planta. Ele ganha a próxima letra, abre numa aba e fica em Navegador de projeto › Cortes." },
+    "planta-2d": { id: "planta-2d", rotulo: "Planta\nbaixa", icone: "planta", grande: true, /* sem `requer` (20/10/2026): a planta existe antes da 1ª peça — é nela que o projeto começa */ dica: "Planta baixa em desenho técnico: o que o plano corta em linha grossa, o resto em linha fina, com cotas. Abre numa aba; os parâmetros ficam em Propriedades." },
+    "corte-2d": { id: "corte-2d", rotulo: "Corte\nA, B, C…", icone: "corte", grande: true, dica: "Trace o corte com dois cliques na planta. Ele ganha a próxima letra, abre numa aba e fica em Navegador de projeto › Cortes." },
     "quant-ilustrado": { id: "quant-ilustrado", rotulo: "Quantitativo\nilustrado", icone: "tabela", grande: true, requer: "modelo", dica: "Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro." },
     "max-3d": { id: "max-3d", rotulo: "Só o 3D", icone: "expandir", grande: true, dica: "O 3D ocupa a tela inteira; as análises continuam na gaveta lateral. Esc volta." },
     "janela-3d": { id: "janela-3d", rotulo: "3D em outra\njanela", icone: "abrir", grande: true, dica: "Abre o 3D desta obra numa janela própria (2º monitor ou projetor)." },
@@ -553,7 +554,7 @@
       { nome: "Referência", ids: ["niveis", "nivel-atual", "plano-trabalho"] },
       { nome: "Por comando", ids: ["modelar-ia"] }] },
     { id: "alvenaria", rotulo: "Alvenaria", paineis: [
-      { nome: "Paginação", ids: ["paginar-alvenaria", "elevacoes", "graute", "blocok"] },
+      { nome: "Paginação", ids: ["paginar-alvenaria", "elevacoes", "graute", "alvenaria-assentada", "blocok"] },
       { nome: "Conferência", ids: ["conferir-modulacao"] }] },
     { id: "acabamentos", rotulo: "Acabamentos", paineis: [
       { nome: "Parede", ids: ["parede-cebola", "presets-acabamento", "aplicar-ambiente"] },
