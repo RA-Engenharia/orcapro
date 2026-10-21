@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.172",
+versao: "1.2.173",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -13506,7 +13506,13 @@ var _idxOn = (typeof App !== "undefined") ? !!App._idxAberto : false;
 var _temIdx = orc.etapas.length >= 5;
 var _cmpOn = (typeof App !== "undefined") ? !!App._plCompacta : false;
 var _semPreco = 0;
-orc.etapas.forEach(function (e0) { (e0.itens || []).forEach(function (i0) { if (!(Util.num(i0.custoUnitario) > 0)) _semPreco++; }); });
+var _insSem = function (i0) {
+if (i0.baseFonte !== "PROPRIA" || !i0.codigo || typeof Bases === "undefined" || !Bases.obter) return false;
+var c0 = Bases.obter("PROPRIA", i0.codigo);
+return !!(c0 && (c0.insumos || []).some(function (x) { return !(Number(x.custoUnitario) > 0); }));
+};
+orc.etapas.forEach(function (e0) { (e0.itens || []).forEach(function (i0) { if (!(Util.num(i0.custoUnitario) > 0) || _insSem(i0)) _semPreco++; }); });
+UI._insSemPreco = _insSem;
 var html = '<div class="flex between mb"><div>' +
 (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
 (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
@@ -13635,7 +13641,7 @@ UI._seloAjuste(e.id, it) +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
 (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
-(Util.num(it.custoUnitario) > 0 ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
+(Util.num(it.custoUnitario) > 0 && !(UI._insSemPreco && UI._insSemPreco(it)) ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
 (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
 '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
 (_licAv && Licitacao.itemTravado(orc, it)
@@ -18271,6 +18277,36 @@ custoUnitario: planilhaTemPreco ? Number(it.custoUnitario) : 0,
 orcamentista: { status: "pendente", via: "nenhum", confianca: 0, motivo: L.motivo, codigoLido: L.codigoLido, fonteLida: L.fonteLida }
 };
 },
+numerosDe: function (s) {
+return (String(s || "").match(/\d+(?:[.,]\d+)?/g) || []).map(function (n) { return n.replace(".", ","); });
+},
+candidatosInsumo: function (desc, ctx) {
+if (!ctx || typeof ctx.buscar !== "function") return [];
+var norm = ctx.normalizar || normFallback, toks = this.tokens(desc, norm), termos = this.termosDeBusca(desc, norm);
+var pal = termos.filter(function (t) { return !/\d/.test(t); }), nums = this.numerosDe(desc).slice(0, 2);
+var cab = toks[0] || pal[0] || "", seg = toks.filter(function (t, i) { return i > 0 && !/\d/.test(t); })[0] || "";
+var consultas = [pal.slice(0, 3).join(" "), pal.slice(0, 2).join(" "), cab && nums.length ? cab + " " + nums.join(" ") : "", cab && seg ? cab + " " + seg : "", cab];
+var fontesI = (ctx.fontesInsumo && ctx.fontesInsumo.length) ? ctx.fontesInsumo : ctx.fontes;
+var vistos = {}, out = [];
+consultas.forEach(function (q) {
+q = String(q || "").trim(); if (!q || vistos["q:" + q]) return; vistos["q:" + q] = 1;
+(ctx.buscar(q, { fontes: fontesI, max: 80 }) || []).forEach(function (r) {
+var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1; out.push(r);
+});
+});
+return out;
+},
+pontuarInsumo: function (desc, unidade, item, ctx) {
+var norm = (ctx && ctx.normalizar) || normFallback;
+var s = this.similaridade(desc, item.descricao, unidade, item.unidade, ctx);
+var nA = this.numerosDe(desc), nB = this.numerosDe(item.descricao);
+if (nA.length) s += nA.every(function (n) { return nB.indexOf(n) > -1; }) ? 0.10 : -0.10;
+var ta = this.tokens(desc, norm), tb = this.tokens(item.descricao, norm);
+if (ta[0] && tb[0] && (ta[0] === tb[0] || (ta[0].length >= 5 && tb[0].indexOf(ta[0].slice(0, 5)) === 0))) s += 0.05;
+var neg = function (t) { return /(^| )(nao|sem)( |$)/.test(" " + norm(t) + " "); };
+if (neg(desc) !== neg(item.descricao)) s -= 0.10;
+return Math.round(s * 1000) / 1000;
+},
 precoPorEquivalencia: function (insumo, candidatos, ctx) {
 var self = this, uk = (ctx && ctx.unidadeChave) || unidFallback;
 var un = uk(insumo && insumo.unidade), desc = String((insumo && insumo.descricao) || "");
@@ -18280,8 +18316,8 @@ var ok = [];
 var it = c && c.item; if (!it || !(Number(it.custoUnitario) > 0)) return;
 if (String(it.codigo) === String(insumo.codigo) && c.fonte === insumo.fonte) return;
 if (un && uk(it.unidade) !== un) return;
-var sim = self.similaridade(desc, it.descricao, insumo.unidade, it.unidade, ctx);
-if (sim >= 0.55) ok.push({ c: c, sim: sim });
+var bruto = self.similaridade(desc, it.descricao, insumo.unidade, it.unidade, ctx);
+if (bruto >= 0.55) ok.push({ c: c, sim: self.pontuarInsumo(desc, insumo.unidade, it, ctx) });
 });
 if (!ok.length) return null;
 ok.sort(function (a, b) { return b.sim - a.sim; });
@@ -18297,14 +18333,11 @@ var d = String(x && x.descricao || "").trim(), coef = Number(x && x.coeficiente)
 if (!d || !(coef > 0) || coef > 10000) return;
 var cat = String(x.categoria || "").toUpperCase(); cat = cat === "MO" || cat === "EQ" ? cat : "MAT";
 var melhor = null;
-if (typeof ctx.buscar === "function") {
-var q = self.termosDeBusca(d, ctx.normalizar).slice(0, 3).join(" ");
-(ctx.buscar(q, { fontes: ctx.fontes, max: 30, tipo: "insumo" }) || []).forEach(function (r) {
-var s = self.similaridade(d, r.item.descricao, x.unidade, r.item.unidade, ctx);
-if (!melhor || s > melhor.s) melhor = { s: s, r: r };
+self.candidatosInsumo(d, ctx).forEach(function (r) {
+var s = self.pontuarInsumo(d, x.unidade, r.item, ctx), b = self.similaridade(d, r.item.descricao, x.unidade, r.item.unidade, ctx);
+if (b >= 0.6 && (!melhor || s > melhor.s)) melhor = { s: s, b: b, r: r };
 });
-}
-if (melhor && melhor.s >= 0.6 && Number(melhor.r.item.custoUnitario) > 0) {
+if (melhor && melhor.b >= 0.6 && Number(melhor.r.item.custoUnitario) > 0) {
 insumos.push({ codigo: String(melhor.r.item.codigo), descricao: melhor.r.item.descricao, unidade: melhor.r.item.unidade || x.unidade || "", coeficiente: coef, custoUnitario: Number(melhor.r.item.custoUnitario), categoria: cat, tipo: "insumo", fonte: melhor.r.fonte, memoria: String(x.memoria || "coeficiente proposto pela IA — confira") });
 } else {
 aCotar++;

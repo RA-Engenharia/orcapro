@@ -555,6 +555,60 @@
      * Devolve null quando nada serve — e aí o insumo continua sem preço e o
      * aviso continua na linha. Nunca inventa número.
      * ================================================================== */
+    /* ==================================================================
+     * ACHAR O INSUMO NAS BASES (21/10/2026, 1º orçamento do Rogério).
+     *
+     * A IA escreveu "TABUA DE MADEIRA NAO APARELHADA *2,5 X 30* CM, CEDRINHO
+     * OU EQUIVALENTE DA REGIAO" — a descrição ANTIGA da SINAPI. Hoje a base
+     * publica "TABUA NAO APARELHADA *2,5 X 30* CM, EM MACARANDUBA/…" (6189,
+     * R$ 40,32/m em MG). A semelhança entre as duas é 0,76; o insumo saía
+     * SEM PREÇO porque a busca era UMA só, com as 3 palavras mais longas
+     * ("equivalente aparelhada cedrinho") — e "cedrinho" não existe mais.
+     *
+     * Agora a busca vai por vários caminhos (as palavras principais, o OBJETO
+     * com as MEDIDAS, o objeto com a 2ª palavra, o objeto sozinho) e a nota
+     * pesa as medidas: "2,5 x 7" e "2,5 x 10" são sarrafos DIFERENTES — a
+     * régua de texto descarta o "7" (uma letra) e empatava os dois.
+     * ================================================================== */
+    numerosDe: function (s) {
+      return (String(s || "").match(/\d+(?:[.,]\d+)?/g) || []).map(function (n) { return n.replace(".", ","); });
+    },
+    candidatosInsumo: function (desc, ctx) {
+      if (!ctx || typeof ctx.buscar !== "function") return [];
+      var norm = ctx.normalizar || normFallback, toks = this.tokens(desc, norm), termos = this.termosDeBusca(desc, norm);
+      var pal = termos.filter(function (t) { return !/\d/.test(t); }), nums = this.numerosDe(desc).slice(0, 2);
+      var cab = toks[0] || pal[0] || "", seg = toks.filter(function (t, i) { return i > 0 && !/\d/.test(t); })[0] || "";
+      var consultas = [pal.slice(0, 3).join(" "), pal.slice(0, 2).join(" "), cab && nums.length ? cab + " " + nums.join(" ") : "", cab && seg ? cab + " " + seg : "", cab];
+      /* MESCLAR BANCOS (Rogério, 21/10/2026: "pode casar pegando insumo de outro banco, para não ficar
+         sem"): o insumo procura em TODAS as bases instaladas (ctx.fontesInsumo), não só nas escolhidas
+         para as composições; cada insumo guarda a fonte de onde veio. Licitação restringe (fiação). */
+      var fontesI = (ctx.fontesInsumo && ctx.fontesInsumo.length) ? ctx.fontesInsumo : ctx.fontes;
+      var vistos = {}, out = [];
+      consultas.forEach(function (q) {
+        q = String(q || "").trim(); if (!q || vistos["q:" + q]) return; vistos["q:" + q] = 1;
+        (ctx.buscar(q, { fontes: fontesI, max: 80 }) || []).forEach(function (r) {
+          var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1; out.push(r);
+        });
+      });
+      return out;
+    },
+    /* a nota do candidato: semelhança de texto + as medidas (todas iguais +0,10; alguma diferente −0,10)
+       + o objeto (1ª palavra) igual +0,05 */
+    pontuarInsumo: function (desc, unidade, item, ctx) {
+      var norm = (ctx && ctx.normalizar) || normFallback;
+      var s = this.similaridade(desc, item.descricao, unidade, item.unidade, ctx);
+      var nA = this.numerosDe(desc), nB = this.numerosDe(item.descricao);
+      if (nA.length) s += nA.every(function (n) { return nB.indexOf(n) > -1; }) ? 0.10 : -0.10;
+      var ta = this.tokens(desc, norm), tb = this.tokens(item.descricao, norm);
+      if (ta[0] && tb[0] && (ta[0] === tb[0] || (ta[0].length >= 5 && tb[0].indexOf(ta[0].slice(0, 5)) === 0))) s += 0.05;
+      /* NEGAÇÃO: "NÃO aparelhada" × "aparelhada" — as palavras quase todas batem, mas é o contrário. Medido no
+         e2e de 21/10/2026: a tábua cedrinho NÃO aparelhada (6189, R$ 40,32) empatava com a APARELHADA (3992,
+         R$ 45,36) e o "maior preço entre os empatados" levava a errada. −0,10 tira o empate. */
+      var neg = function (t) { return /(^| )(nao|sem)( |$)/.test(" " + norm(t) + " "); };
+      if (neg(desc) !== neg(item.descricao)) s -= 0.10;
+      return Math.round(s * 1000) / 1000;
+    },
+
     precoPorEquivalencia: function (insumo, candidatos, ctx) {
       var self = this, uk = (ctx && ctx.unidadeChave) || unidFallback;
       var un = uk(insumo && insumo.unidade), desc = String((insumo && insumo.descricao) || "");
@@ -564,8 +618,11 @@
         var it = c && c.item; if (!it || !(Number(it.custoUnitario) > 0)) return;
         if (String(it.codigo) === String(insumo.codigo) && c.fonte === insumo.fonte) return;
         if (un && uk(it.unidade) !== un) return;
-        var sim = self.similaridade(desc, it.descricao, insumo.unidade, it.unidade, ctx);
-        if (sim >= 0.55) ok.push({ c: c, sim: sim });
+        /* ⚠ a NOTA (texto + medidas + objeto) só ORDENA; quem APROVA é a semelhança de TEXTO. Medido: "basalto
+           vulcânico 40 x 40" × "concreto poroso 40 x 40" tem texto 0,475 e os bônus o levavam a 0,625 — o
+           basalto virava bloco drenante. Medida e objeto iguais não fazem dois materiais serem o mesmo. */
+        var bruto = self.similaridade(desc, it.descricao, insumo.unidade, it.unidade, ctx);
+        if (bruto >= 0.55) ok.push({ c: c, sim: self.pontuarInsumo(desc, insumo.unidade, it, ctx) });
       });
       if (!ok.length) return null;
       ok.sort(function (a, b) { return b.sim - a.sim; });
@@ -582,14 +639,13 @@
         if (!d || !(coef > 0) || coef > 10000) return;
         var cat = String(x.categoria || "").toUpperCase(); cat = cat === "MO" || cat === "EQ" ? cat : "MAT";
         var melhor = null;
-        if (typeof ctx.buscar === "function") {
-          var q = self.termosDeBusca(d, ctx.normalizar).slice(0, 3).join(" ");
-          (ctx.buscar(q, { fontes: ctx.fontes, max: 30, tipo: "insumo" }) || []).forEach(function (r) {
-            var s = self.similaridade(d, r.item.descricao, x.unidade, r.item.unidade, ctx);
-            if (!melhor || s > melhor.s) melhor = { s: s, r: r };
-          });
-        }
-        if (melhor && melhor.s >= 0.6 && Number(melhor.r.item.custoUnitario) > 0) {
+        /* vários caminhos de busca e a nota que pesa as medidas (ver "ACHAR O INSUMO NAS BASES") —
+           insumo OU composição auxiliar (PEDREIRO COM ENCARGOS é composição na SINAPI) */
+        self.candidatosInsumo(d, ctx).forEach(function (r) {
+          var s = self.pontuarInsumo(d, x.unidade, r.item, ctx), b = self.similaridade(d, r.item.descricao, x.unidade, r.item.unidade, ctx);
+          if (b >= 0.6 && (!melhor || s > melhor.s)) melhor = { s: s, b: b, r: r };   // aprova pelo texto (0,6), ordena pela nota
+        });
+        if (melhor && melhor.b >= 0.6 && Number(melhor.r.item.custoUnitario) > 0) {
           insumos.push({ codigo: String(melhor.r.item.codigo), descricao: melhor.r.item.descricao, unidade: melhor.r.item.unidade || x.unidade || "", coeficiente: coef, custoUnitario: Number(melhor.r.item.custoUnitario), categoria: cat, tipo: "insumo", fonte: melhor.r.fonte, memoria: String(x.memoria || "coeficiente proposto pela IA — confira") });
         } else {
           aCotar++;
