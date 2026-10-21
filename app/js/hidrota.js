@@ -113,6 +113,7 @@
     folga: 0.03,               // hid:ok folga do tubo até obstáculo e entre tubos do mesmo sistema (m)
     cobrimento: 0.02,          // hid:ok argamassa sobre o tubo / acima do forro (m)
     alturaEnchimento: 0.30,    // hid:ok enchimento do piso do ambiente molhado (m)
+    reservaVentilacao: 0,      // hid:ok faixa livre sob o piso ACIMA do esgoto, para a ventilação passar por cima (m; o HidAmbiente põe no andar do prédio)
     alturaRamalAF: 1.20,       // hid:ok ramal de água fria na parede, acima do piso (m)
     peDireito: 2.50,           // hid:ok do piso ao forro do ambiente (m)
     alturaPlenoInferior: 0.40, // hid:ok da laje ao forro do pavimento de baixo (m)
@@ -255,7 +256,7 @@
   }
   var ROTULO_GEO = {
     passo: "grade da busca", chanfro: "perna do desvio de 45°", margemNo: "distância mínima entre nós", quedaMin: "descida mínima do ponto ao ramal",
-    folga: "folga a obstáculos", cobrimento: "cobrimento do tubo", alturaEnchimento: "altura do enchimento", alturaRamalAF: "altura do ramal de água na parede",
+    folga: "folga a obstáculos", cobrimento: "cobrimento do tubo", alturaEnchimento: "altura do enchimento", reservaVentilacao: "faixa da ventilação acima do esgoto no enchimento", alturaRamalAF: "altura do ramal de água na parede",
     peDireito: "pé-direito", alturaPlenoInferior: "pleno do forro de baixo", alturaVentForro: "ventilação acima do forro",
     espacamentoEntradas: "espaçamento entre entradas no TQ/coluna", afastamento: "afastamento água × esgoto", distanciaRegistro: "posição do registro",
     tolFace: "tolerância ponto × face da parede", raioTerminal: "raio livre em volta da coluna/TQ", recuoCaixaGordura: "recuo da caixa de gordura proposta",
@@ -876,7 +877,9 @@
   /* ===================================================== ESGOTO (um grupo) */
   function faixaEs(W, g, raizD) {
     var P = W.P, E = W.E;
-    if (E.es === "enchimento") return { b0: P.terreo ? -INF : g.piso - P.alturaEnchimento, b1: g.piso - P.cobrimento, nome: "enchimento do piso" };
+    /* FRENTE H3 (20/10/2026): no andar com rebaixo, a reservaVentilacao baixa o TOPO da faixa do esgoto — a ventilação do ambiente
+       cruza por cima do ramal da bacia sem atravessá-lo (antes o DN 100 corria colado ao piso e o DN 50 passava por dentro dele) */
+    if (E.es === "enchimento") return { b0: P.terreo ? -INF : g.piso - P.alturaEnchimento, b1: g.piso - P.cobrimento - (P.terreo ? 0 : num(P.reservaVentilacao, 0)), nome: "enchimento do piso" };
     /* forro do pavimento de baixo: entre o fundo da laje sob o ambiente e o forro */
     var cand = [];
     g._pontos.forEach(function (p) { lajeEm(W.O.lajes, p.x, p.z).forEach(function (l) { if (l.topo <= g.piso + EPS && cand.indexOf(l) < 0) cand.push(l); }); });
@@ -1872,7 +1875,7 @@
     BACIA: BACIA, RECEPTOR: RECEPTOR, PARA_CAIXA: PARA_CAIXA, SIFAO_PROPRIO: SIFAO_PROPRIO,
     propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, entradaDoModelo: entradaDoModelo,
     ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
-    _int: { aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
+    _int: { LAJE_MIN: LAJE_MIN, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };
   global.HidRota = HidRota;
   if (typeof module !== "undefined" && module.exports) module.exports = HidRota;

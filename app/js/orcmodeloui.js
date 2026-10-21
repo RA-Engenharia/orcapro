@@ -62,7 +62,8 @@
     baseCarregada: function () { return !!(global.Analitico && Analitico.carregado); },
     base: function () {
       if (!this.baseCarregada() || !global.OrcModelo) return null;
-      return OrcModelo.baseComPreco(Analitico, global.Sinapi && Sinapi.obter ? Sinapi : null);
+      var prop = { obter: function (c) { var x = null; try { x = global.Bases && Bases.obter ? Bases.obter("PROPRIA", c) : null; } catch (e) { x = null; } return x || (global.PropriasRA ? PropriasRA.obter(c) : null); } };   /* composição própria (PROP-…): a do cliente; faltando, a de fábrica RA (js/propriasra.js) */
+      return OrcModelo.baseComPreco(Analitico, global.Sinapi && Sinapi.obter ? Sinapi : null, prop);
     },
     rotuloBase: function () {
       if (!this.baseCarregada()) return "base SINAPI analítica não carregada";
@@ -451,6 +452,11 @@
         h += '<div class="om-sec" data-om="fases"><b>Reforma — fase "' + esc(fz.fase) + '"</b><div class="om-nota">Construção: <b data-om="fase-construcao">' + moeda(fz.construcao) + '</b> · Demolição: <b data-om="fase-demolicao">' + moeda(fz.demolicao) + "</b> (" + fz.demolidos.length + " peça(s))</div>" +
           (fz.existentes.length ? '<div class="om-nota" data-om="fase-existentes">Existente, fora do orçamento (' + fz.existentes.length + "): " + esc(fz.existentes.map(function (x) { return x.rotulo; }).join(", ")) + "</div>" : "") + "</div>";
       }
+      /* revisão A1: PREÇO PROVISÓRIO (mobiliário sob consulta) — entra no total com o maior preço da categoria, mas listado para cotar */
+      if (mod.pendenciasPreco && mod.pendenciasPreco.length) {
+        h += '<div class="om-sec om-pend" data-om="pendencias-preco"><b>Preço provisório — cotar com o fornecedor (' + mod.pendenciasPreco.length + ")</b><ul>" +
+          mod.pendenciasPreco.map(function (g) { return "<li><b>" + esc(g.codigo) + "</b> " + esc(curto(g.descricao.split(" — PREÇO PROVISÓRIO")[0], 90)) + " — " + moeda(g.custo.total) + " — " + esc(g.provisorio.motivo) + "</li>"; }).join("") + "</ul></div>";
+      }
       if (mod.pendencias.length) {
         h += '<div class="om-sec om-pend" data-om="pendencias"><b>Fora do orçamento (' + mod.pendencias.length + ")</b><ul>";
         /* P11: a pendência com quantidade (o volume de corte/aterro sem composição) mostra a quantidade */
@@ -520,9 +526,14 @@
         if (it.mercado) {
           Orcamento.addItem(orc, etapa.id, { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: it.mercado.custoUnitario, custoMO: 0, custoMAT: it.mercado.custoUnitario, custoEQ: 0, baseFonte: it.mercado.baseFonte || "MERCADO" }, it.quantidade);
           var nvM = etapa.itens[etapa.itens.length - 1]; if (nvM) nvM.bimElementos = (it.elementos || []).slice(0, 200);
+          if (nvM && it.mercado.provisorio) nvM.precoProvisorio = { motivo: it.mercado.provisorio.motivo, desde: "modelo" };   /* revisão A1: pendência de preço (cotar com o fornecedor) */
           return;
         }
         var b = null;
+        if (/^PROP-/i.test(String(it.codigo))) {   /* composição própria (armário planejado PROP-MOB-90xx): da base PRÓPRIA, com os insumos */
+          var pr = null; try { pr = global.Bases && Bases.obter ? Bases.obter("PROPRIA", it.codigo) : null; } catch (eP) { pr = null; } if (!pr && global.PropriasRA) pr = PropriasRA.obter(it.codigo);
+          if (pr) { var itP = JSON.parse(JSON.stringify(pr)); itP.baseFonte = "PROPRIA"; if (!(Number(itP.custoUnitario) > 0)) semPreco++; Orcamento.addItem(orc, etapa.id, itP, it.quantidade); var nvP = etapa.itens[etapa.itens.length - 1]; if (nvP) nvP.bimElementos = (it.elementos || []).slice(0, 200); return; }
+        }
         try { b = global.Bases && Bases.obter ? Bases.obter("SINAPI", it.codigo) : null; } catch (e) { b = null; }
         if (!b && global.Sinapi && Sinapi.obter) b = Sinapi.obter(it.codigo);
         var item;
@@ -532,6 +543,7 @@
         } else {
           /* a base sintética não tem o código (outra competência?): o preço é o do analítico carregado */
           var a = Analitico.obter(it.codigo);
+          if (!a) { semPreco++; return; }   /* nem a sintética nem o analítico têm o código: não lança linha quebrada */
           item = { codigo: a.codigo, descricao: a.descricao, unidade: a.unidade, custoUnitario: a.custoUnitario, custoMO: a.custoMO, custoMAT: a.custoMAT, custoEQ: a.custoEQ, baseFonte: "SINAPI" };
         }
         if (!(Number(item.custoUnitario) > 0)) semPreco++;

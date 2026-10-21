@@ -369,6 +369,13 @@
           if (ordemF.indexOf(o.id) < 0) ordemF.push(o.id);
         } else if (o.op === "instancia" && fams[o.id]) {
           /* troca de tipo / parâmetros de instância / giro — o resto fica */
+          /* TROCAR POR… (mobiliário do catálogo, 20/10/2026): outra FAMÍLIA no mesmo lugar — num passo só do desfazer; os parâmetros
+             de instância da família velha não valem na nova (começa limpa, com `inst` da op) e a posição pode vir acertada (encaixe) */
+          if (o.famId != null && String(o.famId) !== fams[o.id].famId) {
+            fams[o.id].famId = String(o.famId); fams[o.id].inst = {}; delete fams[o.id].tipoNomeado;
+            if (o.x != null) fams[o.id].x = num(o.x, fams[o.id].x);
+            if (o.z != null) fams[o.id].z = num(o.z, fams[o.id].z);
+          }
           if (o.tipoId != null) { if (String(o.tipoId) !== fams[o.id].tipoId) delete fams[o.id].tipoNomeado; fams[o.id].tipoId = String(o.tipoId); }
           if (o.inst) Object.keys(o.inst).forEach(function (k) { fams[o.id].inst[k] = o.inst[k]; });
           if (o.rotY != null) fams[o.id].rotY = num(o.rotY, fams[o.id].rotY);
@@ -1127,7 +1134,8 @@
         if (o.op === "anotar") return o.id != null && o.texto != null && String(o.texto).length > 0;
         if (o.op === "familia") return o.id != null && typeof o.famId === "string" && o.famId.length > 0 &&
           (o.host ? (o.host.id != null && fin(o.host.t)) : (fin(o.x) && fin(o.z))) && (o.inst == null || typeof o.inst === "object");
-        if (o.op === "instancia") return o.id != null && (o.tipoId != null || (o.inst && typeof o.inst === "object") || fin(o.rotY) || fin(o.y));
+        if (o.op === "instancia") return o.id != null && (o.famId == null || (typeof o.famId === "string" && o.famId.length > 0)) && (o.x == null || fin(o.x)) && (o.z == null || fin(o.z)) &&
+          (o.tipoId != null || o.famId != null || (o.inst && typeof o.inst === "object") || fin(o.rotY) || fin(o.y));
         if (o.op === "orcar") return o.id != null && Array.isArray(o.servicos) && o.servicos.every(function (s) {
           return !!s && (typeof s.codigo === "string" || typeof s.codigo === "number") && BimEdit.medidaValida(s.medida) &&
             (s.fator == null || (fin(s.fator) && s.fator > 0));

@@ -9,8 +9,11 @@
  *     com atalho Alt+1…4. Só aparece quando o modelo tem fases. COMPARAR = a CORTINA: metade da tela o ANTES,
  *     metade o DEPOIS, com a divisória arrastável (a cena é desenhada duas vezes, cada uma com o seu
  *     recorte — o renderer do BIM ganha um desenho duplo enquanto a cortina estiver ligada).
- *  2. APRESENTAÇÃO DA REFORMA: tela cheia sem a interface, câmera em órbita, legendas e contadores,
- *     a planta no chão, as paredes que sobem, a demolição, a construção, os acabamentos e o antes × depois.
+ *  2. APRESENTAÇÃO DA REFORMA — DENTRO DA VISTA 3D (20/10/2026: "não precisa abrir uma nova tela"): a interface recolhe
+ *     (Recolher), a câmera faz um percurso suave com enquadramento por capítulo, legendas no terço inferior e contadores;
+ *     a planta no chão, as paredes que sobem, a demolição, a construção, os acabamentos e o FECHO: a casa pronta em órbita,
+ *     o DISSOLVE para o antes, a CORTINA 3D (plano de recorte que atravessa o modelo com uma linha luminosa) e o COMPARAR,
+ *     em que o usuário arrasta a linha e gira a vista.
  *     Tudo é função do tempo t (arrastar a barra de tempo funciona em qualquer ponto). Sai restaurando a
  *     cena EXATAMENTE como estava (visibilidade, matrizes, materiais, câmera, estilo, vista de fase).
  *  3. EXPORTAR VÍDEO: 1920×1080, WebM (ou MP4 se o navegador gravar), quadro a quadro com tempo fixo.
@@ -217,7 +220,7 @@
         box.appendChild(b);
       });
       var ap = el("button", null, "▶ Apresentar");
-      ap.type = "button"; ap.setAttribute("data-ad", "apresentar"); ap.title = "Apresentação da reforma: a planta, a demolição e a construção em animação, para o cliente (tela cheia, exporta vídeo)";
+      ap.type = "button"; ap.setAttribute("data-ad", "apresentar"); ap.title = "Apresentação da reforma: a planta, a demolição e a construção em animação, para o cliente, dentro da própria vista (exporta vídeo)";
       ap.onclick = function () { self.iniciar(); };
       box.appendChild(ap);
       this._ctl = box;
@@ -289,7 +292,7 @@
       var R = global.BimRibbon, self = this;
       if (!R || !reg || !previa() || !AP()) return false;
       R.acrescentar("vista", "Vista", "Apresentação", [
-        { id: "apresentar-reforma", rotulo: "Apresentação\nda reforma", icone: "apresentar", grande: true, dica: "Apresentação da reforma para o cliente: a planta baixa do existente no chão, as paredes subindo, o que sai (demolição) e o que entra (construção) em animação, os acabamentos e o antes × depois — tela cheia, com legendas e contadores de m². Exporta vídeo 1920×1080. Precisa de um modelo com fases (Existente / Construção nova)." }
+        { id: "apresentar-reforma", rotulo: "Apresentação\nda reforma", icone: "apresentar", grande: true, dica: "Apresentação da reforma para o cliente: a planta baixa do existente no chão, as paredes subindo, o que sai (demolição) e o que entra (construção) em animação, os acabamentos, a cortina antes × depois e o comparar arrastando a linha — dentro da própria vista, com legendas e contadores de m². Exporta vídeo 1920×1080. Precisa de um modelo com fases (Existente / Construção nova)." }
       ]);
       reg["apresentar-reforma"] = function () { self.iniciar(); return true; };
       this.instalar();
@@ -314,8 +317,95 @@
   };
 
   /* ================================================================== A APRESENTAÇÃO */
-  var COR = { planta: "#2d7ff9", existente: "#8aa0b8", demolicao: "#ff3b30", construcao: "#2fbf71", acabamentos: "#ffb020", final: "#ffffff" };
-  var MARCA = "OrçaPRO";
+  var COR = { planta: "#2d7ff9", existente: "#8aa0b8", demolicao: "#ff3b30", construcao: "#2fbf71", acabamentos: "#ffb020", final: "#ffffff", transicao: "#8fd3ff", comparar: "#8fd3ff" };
+  var MARCA = "RA · OrçaPRO";
+
+  /* ------------------------------------------------------------------ a interface RECOLHE (a apresentação roda DENTRO da vista 3D)
+   * Pedido do engenheiro (20/10/2026): "não precisa abrir uma nova tela: aqui dentro mesmo da área de trabalho".
+   * A fita, as abas, a lateral, a barra da vista e o status somem com transição (opacidade) e depois saem do layout (a vista
+   * cresce); os painéis do próprio 3D (barra, cubo, dicas) ficam transparentes. No fim tudo volta NA MESMA TAREFA do parar()
+   * (o layout primeiro, a animação de volta depois) — assim o renderer volta ao tamanho exato que tinha. */
+  var CSS_AP =
+    /* tudo o que não é o palco da vista: o que vem antes do corpo (título, abas, fita, barras de contexto), as colunas ao lado e as barras debaixo da vista */
+    ".bim-revit[data-ap-ui]>:not(.rv-corpo),.bim-revit[data-ap-ui] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui] .rv-disc-selo{transition:opacity .35s ease}" +
+    ".bim-revit[data-ap-ui=saindo]>:not(.rv-corpo),.bim-revit[data-ap-ui=saindo] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui=saindo] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=saindo] .rv-disc-selo{opacity:0}" +
+    ".bim-revit[data-ap-ui='1']>:not(.rv-corpo),.bim-revit[data-ap-ui='1'] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui='1'] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui='1'] .rv-disc-selo{display:none!important}" +
+    ".bim-revit[data-ap-ui='1'] .rv-corpo{padding:0}" +
+    ".bim-revit[data-ap-ui=voltando]>:not(.rv-corpo),.bim-revit[data-ap-ui=voltando] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui=voltando] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=voltando] .rv-disc-selo{animation:apVolta .45s ease both}" +
+    "@keyframes apVolta{from{opacity:0}to{opacity:1}}" +
+    "[data-ap-oculto]{opacity:0!important;pointer-events:none!important;transition:opacity .3s ease}" +
+    /* a camada da apresentação na vista */
+    ".ap-vista{position:absolute;left:0;top:0;right:0;bottom:0;z-index:40;overflow:hidden;color:#fff;font-family:inherit;user-select:none;pointer-events:none;--ap-cor:#8fd3ff}" +
+    ".ap-vista>*{transition:opacity .6s ease,transform .6s ease}" +
+    ".ap-vista[data-entrando='1']>*:not(.ap-capa){opacity:0}" +
+    ".ap-capa{position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:auto;cursor:default;touch-action:none}" +
+    ".ap-vista[data-livre='1'] .ap-capa{cursor:grab}.ap-vista[data-livre='1'] .ap-capa:active{cursor:grabbing}" +
+    ".ap-vinheta{position:absolute;left:0;top:0;right:0;bottom:0;background:radial-gradient(ellipse at 50% 46%,rgba(0,0,0,0) 58%,rgba(6,12,24,.30) 100%)}" +
+    ".ap-sombra{position:absolute;left:0;right:0;bottom:0;height:190px;background:linear-gradient(0deg,rgba(6,12,24,.42),rgba(6,12,24,0))}" +
+    ".ap-obra{position:absolute;left:26px;top:18px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;opacity:.88;text-shadow:0 1px 4px rgba(0,0,0,.55);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".ap-marca{position:absolute;right:22px;top:18px;font-size:11px;font-weight:600;letter-spacing:.14em;opacity:.72;text-shadow:0 1px 4px rgba(0,0,0,.55)}" +
+    ".ap-terco{position:absolute;left:26px;bottom:78px;max-width:min(520px,58%);padding:12px 18px 13px 18px;background:rgba(12,20,34,.7);border-radius:10px;border-left:3px solid var(--ap-cor);box-shadow:0 6px 24px rgba(0,0,0,.18)}" +
+    ".ap-terco.ap-troca{opacity:0;transform:translateY(10px)}" +
+    ".ap-terco .ap-cap{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;opacity:.7}" +
+    ".ap-terco .ap-tit{font-size:21px;font-weight:600;line-height:1.2;margin-top:3px}" +
+    ".ap-terco .ap-leg{font-size:13px;line-height:1.45;opacity:.86;margin-top:4px}" +
+    ".ap-cont{position:absolute;right:24px;bottom:78px;display:flex;gap:8px;align-items:flex-end}" +
+    ".ap-pill{background:rgba(12,20,34,.7);border-radius:10px;padding:8px 13px 9px;text-align:right;min-width:104px;border-top:2px solid var(--ap-pc,#fff)}" +
+    ".ap-pill[hidden]{display:none}" +
+    ".ap-pill b{display:block;font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.15}" +
+    ".ap-pill span{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.74;margin-top:2px;white-space:nowrap}" +
+    ".ap-barra{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:5px 8px;background:rgba(12,20,34,.78);border-radius:999px;pointer-events:auto;font-size:12.5px;box-shadow:0 6px 22px rgba(0,0,0,.22);max-width:calc(100% - 32px)}" +
+    ".ap-vista[data-oculta-barra='1'] .ap-barra{opacity:0;transform:translate(-50%,10px)}" +
+    ".ap-barra button{min-width:32px;height:32px;border-radius:16px;border:0;background:transparent;color:#fff;cursor:pointer;font:inherit;font-size:14px;padding:0 8px;white-space:nowrap}" +
+    ".ap-barra button:hover{background:rgba(255,255,255,.14)}.ap-barra button:focus-visible{outline:2px solid #8fd3ff;outline-offset:1px}" +
+    ".ap-barra button[data-ap=play]{background:rgba(255,255,255,.16)}" +
+    ".ap-barra .ap-capnome{min-width:170px;padding:0 8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+    ".ap-barra input[type=range]{width:160px;accent-color:#8fd3ff;cursor:pointer;margin:0 4px}" +
+    ".ap-barra .ap-tempo{min-width:78px;text-align:center;opacity:.8;font-variant-numeric:tabular-nums}" +
+    ".ap-barra .ap-sep{width:1px;height:18px;background:rgba(255,255,255,.22);margin:0 4px}" +
+    ".ap-alca{position:absolute;left:0;top:0;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:#fff;color:#1d2b44;box-shadow:0 2px 14px rgba(0,0,0,.35),0 0 0 5px rgba(143,211,255,.38);pointer-events:auto;cursor:ew-resize;font-weight:700;font-size:15px;line-height:40px;text-align:center;touch-action:none;display:none}" +
+    ".ap-alca .ap-rot{position:absolute;top:50%;margin-top:-11px;height:22px;line-height:22px;font-size:10.5px;letter-spacing:.16em;padding:0 9px;border-radius:5px;background:rgba(12,20,34,.72);color:#fff;font-weight:600;white-space:nowrap}" +
+    ".ap-alca .ap-rot-a{right:52px}.ap-alca .ap-rot-d{left:52px;background:rgba(36,128,78,.86)}" +
+    ".ap-aviso{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);padding:12px 20px;background:rgba(12,20,34,.72);border-radius:10px;font-size:15px;display:none}" +
+    ".ap-grav{position:absolute;left:0;top:0;right:0;bottom:0;background:#0b1220;pointer-events:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}" +
+    ".ap-grav canvas{max-width:86%;max-height:72%;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.4)}" +
+    ".ap-grav .ap-grav-txt{font-size:13px;opacity:.9}.ap-grav .ap-grav-trilho{width:min(520px,80%);height:4px;border-radius:2px;background:rgba(255,255,255,.18);overflow:hidden}.ap-grav .ap-grav-trilho i{display:block;height:100%;width:0;background:#8fd3ff}" +
+    "@media (max-width:760px){.ap-cont{display:none}.ap-terco{left:12px;right:12px;max-width:none;bottom:70px}.ap-barra input[type=range]{width:90px}.ap-barra .ap-capnome{min-width:0;max-width:110px}.ap-obra{left:12px}.ap-marca{right:12px}}";
+  function injetarCssAp() {
+    if (document.getElementById("bim-ap-vista-estilo")) return;
+    var st = document.createElement("style"); st.id = "bim-ap-vista-estilo"; st.textContent = CSS_AP; document.head.appendChild(st);
+  }
+  var Recolher = {
+    raiz: null, ocultos: [], _t: null,
+    ligar: function (c) {
+      var sh = global.BimShell, self = this, raiz = (sh && sh._raiz && sh._raiz.isConnected) ? sh._raiz : (c.host && c.host.closest ? c.host.closest(".bim-revit") : null);
+      var host = c.host, cv = c.renderer.domElement;
+      this.ocultos = [];
+      if (host) Array.prototype.forEach.call(host.children, function (el) {
+        if (el === cv || el.hasAttribute("data-ap-vista") || el.hasAttribute("data-ap-oculto")) return;
+        el.setAttribute("data-ap-oculto", "1"); self.ocultos.push(el);
+      });
+      this.raiz = raiz;
+      if (!raiz) return;
+      global.clearTimeout(this._t);
+      raiz.setAttribute("data-ap-ui", "saindo");
+      this._t = global.setTimeout(function () { if (self.raiz === raiz && raiz.getAttribute("data-ap-ui") === "saindo") { raiz.setAttribute("data-ap-ui", "1"); self._layout(c); } }, 380);
+    },
+    desligar: function (c) {
+      global.clearTimeout(this._t);
+      this.ocultos.forEach(function (el) { el.removeAttribute("data-ap-oculto"); });
+      this.ocultos = [];
+      var raiz = this.raiz; this.raiz = null;
+      if (!raiz) return;
+      raiz.setAttribute("data-ap-ui", "voltando");
+      this._layout(c);
+      this._t = global.setTimeout(function () { if (raiz.getAttribute("data-ap-ui") === "voltando") raiz.removeAttribute("data-ap-ui"); }, 520);
+    },
+    _layout: function (c) {
+      try { var sh = global.BimShell; if (sh && sh._opts && typeof sh._opts.onLayout === "function") sh._opts.onLayout(); } catch (e) {}
+      try { if (c && c.redimensionar) c.redimensionar(); } catch (e2) {}
+    }
+  };
 
   /* o estado de uma apresentação (nada fica pendurado fora daqui; parar() devolve tudo) */
   var Apres = {
@@ -340,9 +430,14 @@
       if (!linha.ok) { toast(linha.motivo, "aviso"); status(linha.motivo); return { ok: false, motivo: linha.motivo }; }
       Cortina.desligar();
       this.ativa = true; this.c = c; this.mo = mo; this.linha = linha; this.t = 0; this.tocando = false; this.vel = 1; this.info = info; this.opcoes = opts;
+      this.escolha = esc; this.livre = null; this._posUsuario = null; this._blend = null;
       this._salvar(c, mo);
       this._preparar(c, mo, info, linha);
+      this._quadros = this._medirQuadros(info, linha);
       this._montarUi();
+      Recolher.ligar(c);
+      /* a ENTRADA: a câmera sai de onde o usuário estava e voa para o começo do percurso (sem corte) */
+      this._iniciarBlend(2.2);
       var self = this;
       this._pronto = false;
       /* o estilo Realista (a casa pronta com material de verdade): carrega as texturas antes de começar */
@@ -352,6 +447,7 @@
       var comecar = function () {
         if (!self.ativa) return;
         self._pronto = true; self._mostrarAviso(null);
+        self._iniciarBlend(2.2);   /* a entrada começa quando o primeiro quadro sai (as texturas do Realista já carregaram) */
         self._registrarTick();
         self.t = opts.inicio != null ? clamp(+opts.inicio, 0, linha.total) : 0;
         self.tocando = opts.tocar !== false;
@@ -432,6 +528,7 @@
       sv.tam = { w: c.renderer.domElement.width, h: c.renderer.domElement.height, pr: c.renderer.getPixelRatio() };
       sv.clearColor = c.renderer.getClearColor(new THREE.Color()).getHex(); sv.clearAlpha = c.renderer.getClearAlpha();
       sv.fundo = c.scene.background;
+      sv.clipLocal = c.renderer.localClippingEnabled;
       this.sv = sv;
     },
 
@@ -441,7 +538,7 @@
       /* 2) as peças desenhadas por si */
       var meshes = Assumir.pegar(mo);
       c.modelRoot.updateMatrixWorld(true);
-      var ctx = { meshes: meshes, porId: info.porId, films: [], mat: {}, estado: {}, particulas: null, plano: null };
+      var ctx = { meshes: meshes, porId: info.porId, films: [], mat: {}, estado: {}, particulas: null, plano: null, cloneDe: {}, matLado: {} };
       ctx.I = new THREE.Matrix4();
       meshes.forEach(function (m) {
         m.matrixAutoUpdate = false; m.userData._apM0 = m.matrix.clone(); m.userData._apP = m.parent ? m.parent.matrixWorld.clone() : new THREE.Matrix4(); m.userData._apPi = m.userData._apP.clone().invert();
@@ -477,6 +574,7 @@
       this._chao(c, ctx, info);
       this._planta(c, ctx, info, linha);
       this._particulas(c, ctx, info, linha);
+      this._prepararCortina(c, ctx, info);
       /* 4) o que não entra no filme */
       this.sv.escondidos.forEach(function (e) { e.o.visible = false; });
       var gr = c.scene.children.filter(function (o) { return o.type === "GridHelper"; }); gr.forEach(function (o) { self.sv.escondidos.push({ o: o, visible: o.visible }); o.visible = false; });
@@ -606,11 +704,14 @@
     _clone: function (m) {
       var ctx = this.ctx, o = ctx.mat[m.uuid];
       if (o) return o;
-      var orig = m.userData._apMat || m.material, cl = orig.clone();
+      var orig = m.userData._apMat || this._base(m), cl = orig.clone();
       o = ctx.mat[m.uuid] = { orig: orig, cl: cl, cor: orig.color ? orig.color.clone() : null, emi: orig.emissive ? orig.emissive.clone() : null, emiI: orig.emissiveIntensity, op: orig.opacity, tr: orig.transparent, dw: orig.depthWrite };
+      ctx.cloneDe[cl.uuid] = orig;
       m.userData._apMat = orig;
       return o;
     },
+    /* o material "de verdade" da malha (o que ela tem fora dos clones desta apresentação) */
+    _base: function (m) { var mt = m.material, ctx = this.ctx; return ctx && mt && ctx.cloneDe[mt.uuid] ? ctx.cloneDe[mt.uuid] : mt; },
     /* pinta o material da malha: cor (mistura com `tom`), brilho, opacidade */
     _pintar: function (m, tom, mist, emiCor, emiI, op) {
       var THREE = THR(), o = this._clone(m), cl = o.cl;
@@ -621,8 +722,8 @@
       cl.opacity = opa; cl.transparent = op < 0.999 || o.tr; cl.depthWrite = op < 0.999 ? false : o.dw;
     },
     _devolver: function (m) {
-      var o = this.ctx.mat[m.uuid]; if (!o) return;
-      if (m.material !== o.orig) m.material = o.orig;
+      var o = this.ctx.mat[m.uuid], alvo = o ? o.orig : this._base(m);
+      if (alvo && m.material !== alvo) m.material = alvo;
     },
     /* delta no MUNDO → matriz local da malha: Pi · Δ · P · M0 */
     _matriz: function (m, D) {
@@ -716,7 +817,7 @@
       /* a planta baixa e a prancha */
       this._aplicarPlanta(t);
       this._atualizarParticulas(t);
-      this._aplicarLados(t);
+      this._aplicarFecho(t);
     },
     _aplicarPlanta: function (t) {
       var ctx = this.ctx, L = this.linha, ep = L.porEtapa.planta, ex = L.porEtapa.existente, self = this;
@@ -738,46 +839,206 @@
       });
     },
 
-    /* ------------------------------------------------------------- o antes × depois do final (cortina na apresentação) */
-    _aplicarLados: function (t) {
-      var L = this.linha, ctx = this.ctx, comparar = t >= L.final.comparar.t0;
-      ctx.comparar = comparar;
-      if (!comparar) { if (Duplo.on && Duplo.lado && Duplo.lado.id === "apresentacao") Duplo.desligar(); return; }
-      var self = this;
-      if (!ctx.lados) { var a = AP(), p = P10(); ctx.lados = a.lados(p.estado(), p.deps()); }
-      if (!Duplo.on) {
-        var lado = {
-          id: "apresentacao",
-          entrar: function (k) {
-            var ids = ctx.porId, ld = ctx.lados.porId;
-            Object.keys(ids).forEach(function (id) {
-              var l = ld[id], vis = l ? !!l[k] : true;
-              ids[id].meshes.forEach(function (m) { m.visible = vis; if (vis) m.layers.enable(0); });
-            });
-            ctx.films.forEach(function (f) { var l = f.base ? ld[f.base] : null; f.m.visible = f.tipo === "piso" ? k === "d" : (l ? !!l[k] : true); });
-          },
-          sair: function () {
-            Object.keys(ctx.porId).forEach(function (id) { var l = ctx.lados.porId[id], vis = l ? (l.d) : true; ctx.porId[id].meshes.forEach(function (m) { m.visible = vis; }); });
-          }
-        };
-        Duplo.ligar(this.c, lado);
+    /* ------------------------------------------------------------- o FECHO: dissolve, cortina 3D e comparar
+     * A cortina é um PLANO DE RECORTE vertical no mundo (renderer.localClippingEnabled): a peça só do ANTES (demolida) recebe um
+     * clone do material com o plano que guarda o lado esquerdo; a só do DEPOIS (nova), o clone com o plano oposto; a existente que
+     * fica não muda (aparece dos dois lados). Os clones são POR MATERIAL e por lado (poucos), feitos uma vez e liberados no parar().
+     * As peças já estão fora do mesclado (Assumir) — por isso cada uma leva o seu material.
+     * O plano tem a normal = a direita da tela (horizontal), recalculada a cada quadro: à esquerda da linha, sempre o antes. */
+    _prepararCortina: function (c, ctx, info) {
+      var THREE = THR(), a = AP(), p = P10(), self = this;
+      var st = p.estado();
+      try { st = a.soEscolhida(st, this.escolha); } catch (e) {}
+      ctx.lados = a.lados(st, p.deps());
+      ctx.plA = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 1e6); ctx.plD = new THREE.Plane(new THREE.Vector3(1, 0, 0), 1e6);
+      var b = info.tudo, mn = b.min, mx = b.max;
+      ctx.caixaC = { min: [mn.x, mn.y, mn.z], max: [mx.x, mx.y, mx.z] };
+      /* a LINHA LUMINOSA no corte: uma lâmina fina e clara (vista de lado, um traço; de frente, um véu) + um halo que se vê através das paredes */
+      var fio = new THREE.Group(); fio.name = "ap-cortina-fio"; fio.visible = false; fio.renderOrder = 8;
+      var esp = Math.max(0.035, this.raio * 0.0035);
+      /* a moldura: quatro barras finas no contorno do plano (de lado, um traço fino; de frente, um quadro leve — nunca uma parede branca) */
+      var geoB = new THREE.BoxGeometry(1, 1, 1);
+      var matB = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false });
+      var matH = new THREE.MeshBasicMaterial({ color: 0x8fd3ff, transparent: true, opacity: 0.14, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, toneMapped: false });
+      var barras = [], halos = [];
+      for (var ib = 0; ib < 4; ib++) { var mb = new THREE.Mesh(geoB, matB), mh = new THREE.Mesh(geoB, matH); mb.renderOrder = 9; mh.renderOrder = 10; mb.frustumCulled = mh.frustumCulled = false; fio.add(mb); fio.add(mh); barras.push(mb); halos.push(mh); }
+      var veu = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.045, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false }));
+      veu.rotation.y = Math.PI / 2;   /* o véu fica no plano local YZ (a normal do plano é o x local = o eixo da cortina) */
+      veu.renderOrder = 8; veu.frustumCulled = false; fio.add(veu);
+      ctx.grupo.add(fio);
+      ctx.fio = { g: fio, barras: barras, halos: halos, matB: matB, matH: matH, veu: veu, esp: esp };
+      ctx.pl = null;
+    },
+    /* o clone do material para um lado da cortina (um por material e por lado) */
+    _matLado: function (orig, lado) {
+      var ctx = this.ctx, k = orig.uuid + "|" + lado, o = ctx.matLado[k];
+      if (o) return o;
+      var THREE = THR(), cl = orig.clone();
+      cl.clippingPlanes = [lado === "antes" ? ctx.plA : ctx.plD];
+      cl.clipShadows = true;
+      /* o miolo da peça cortada aparece (sem a "casca oca" do recorte) */
+      if (!orig.transparent) cl.side = THREE.DoubleSide;
+      o = ctx.matLado[k] = { cl: cl, op: orig.opacity, tr: orig.transparent, dw: orig.depthWrite };
+      ctx.cloneDe[cl.uuid] = orig;
+      return o;
+    },
+    _vestirLado: function (m, orig, lado, alfa) {
+      var o = this._matLado(orig, lado), cl = o.cl;
+      if (m.material !== cl) m.material = cl;
+      var op = o.op * alfa;
+      if (cl.opacity !== op) cl.opacity = op;
+      cl.transparent = alfa < 0.999 || o.tr; cl.depthWrite = alfa < 0.999 ? false : o.dw;
+    },
+    /* o eixo da cortina: a direita da câmera, no plano do chão */
+    _eixoCortina: function () {
+      var cam = this.c.camera, e = cam.matrixWorld.elements, x = e[0], z = e[2], L = Math.sqrt(x * x + z * z);
+      if (L < 1e-6) { var f = new (THR()).Vector3(); cam.getWorldDirection(f); x = -f.z; z = f.x; L = Math.sqrt(x * x + z * z) || 1; }
+      return [x / L, z / L];
+    },
+    _aplicarFecho: function (t) {
+      var a = AP(), L = this.linha, ctx = this.ctx, self = this, k = a.cortinaEm(L, t), fio = ctx.fio;
+      if (!this.gravando && (this.livre || t >= L.total - 1e-6) && this._posUsuario != null) k = { fase: "comparar", mistura: 0, pos: this._posUsuario };
+      ctx.fecho = k;
+      if (!k.fase) { if (fio) fio.g.visible = false; ctx.pl = null; if (this.sv && this.c.renderer.localClippingEnabled !== !!this.sv.clipLocal) this.c.renderer.localClippingEnabled = !!this.sv.clipLocal; return; }
+      var c = this.c, r = c.renderer;
+      if (!r.localClippingEnabled) r.localClippingEnabled = true;
+      var dissolve = k.fase === "dissolve";
+      this.c.camera.updateMatrixWorld();
+      var eixo = this._eixoCortina(), pl = a.planoCortina(ctx.caixaC, eixo, k.pos, -0.05);   /* folga NEGATIVA: de 0 a 1 a linha anda DENTRO da caixa — na borda, a moldura e a alça ficam no canto da casa */
+      ctx.pl = pl; ctx.secao = a.secaoCortina(ctx.caixaC, pl);
+      if (dissolve) { ctx.plA.normal.set(pl.antes.n[0], 0, pl.antes.n[2]); ctx.plA.constant = 1e6; ctx.plD.normal.set(pl.depois.n[0], 0, pl.depois.n[2]); ctx.plD.constant = 1e6; }
+      else { ctx.plA.normal.set(pl.antes.n[0], 0, pl.antes.n[2]); ctx.plA.constant = pl.antes.c; ctx.plD.normal.set(pl.depois.n[0], 0, pl.depois.n[2]); ctx.plD.constant = pl.depois.c; }
+      var ld = ctx.lados;
+      Object.keys(ctx.porId).forEach(function (id) {
+        var lado = a.ladoDe(ld, id);
+        if (lado == null) return;    /* fora da conta (extra sem mãe): fica como o filme deixou */
+        var alfa = dissolve ? a.opacidadeLado(lado, k.mistura) : (lado === "nenhum" ? 0 : 1);
+        ctx.porId[id].meshes.forEach(function (m) {
+          if (alfa <= 0.002) { if (m.visible) m.visible = false; ctx.estado[m.uuid] = "L"; return; }
+          if (!m.visible) m.visible = true;
+          if (ctx.estado[m.uuid] === "a") self._restaurarMatriz(m);
+          var base = self._base(m);
+          if (lado === "ambos") { if (m.material !== base) m.material = base; }
+          else self._vestirLado(m, base, lado, alfa);
+          ctx.estado[m.uuid] = "L";
+        });
+      });
+      /* as películas (pintura e piso) seguem a peça de baixo; o piso novo é do DEPOIS */
+      ctx.films.forEach(function (f) {
+        var lado = f.tipo === "piso" ? "depois" : (f.base ? a.ladoDe(ld, f.base) : null);
+        if (lado == null) return;
+        var alfa = dissolve ? a.opacidadeLado(lado, k.mistura) : (lado === "nenhum" ? 0 : 1), m = f.m;
+        if (alfa <= 0.002) { m.visible = false; return; }
+        m.visible = true; self._restaurarMatriz(m);
+        if (lado === "ambos") { if (m.material !== f.orig) m.material = f.orig; }
+        else self._vestirLado(m, f.orig, lado, alfa);
+      });
+      /* a linha luminosa: no corte, do tamanho da caixa; entra com a cortina e fica no comparar */
+      if (fio) {
+        var sec = ctx.secao, on = !dissolve && !!sec && sec.comp > 0.05;
+        fio.g.visible = on;
+        if (on) {
+          /* a moldura PRESA ao corte do modelo: o segmento em que o plano atravessa a caixa das peças, na altura dela */
+          var cx = ctx.caixaC, comp = sec.comp + 0.2, alt = (cx.max[1] - cx.min[1]) + 0.3, y = (cx.min[1] + cx.max[1]) / 2 + 0.1;
+          fio.g.position.set(sec.meio[0], y, sec.meio[1]);
+          fio.g.rotation.set(0, Math.atan2(-eixo[1], eixo[0]), 0);
+          var E = fio.esp, H2 = alt / 2, C2 = comp / 2;
+          /* topo, base e os dois montantes (no plano local YZ) */
+          [[0, H2, 0, E, E, comp], [0, -H2, 0, E, E, comp], [0, 0, -C2, E, alt, E], [0, 0, C2, E, alt, E]].forEach(function (q, iq) {
+            fio.barras[iq].position.set(q[0], q[1], q[2]); fio.barras[iq].scale.set(q[3], q[4], q[5]);
+            fio.halos[iq].position.set(q[0], q[1], q[2]); fio.halos[iq].scale.set(q[3] * 4, q[4] + (iq > 1 ? 0 : E * 3), q[5] + (iq > 1 ? E * 3 : 0));
+          });
+          fio.veu.scale.set(comp, alt, 1);
+          var ent = k.fase === "cortina" ? suave((t - L.final.cortina.t0) / 0.5) : 1;
+          fio.matB.opacity = 0.95 * ent; fio.matH.opacity = 0.14 * ent; fio.veu.material.opacity = 0.045 * ent;
+        }
       }
-      /* a divisória passeia de leve em volta do centro da casa na tela (onde o antes e o depois se encontram) */
-      var u = clamp((t - L.final.comparar.t0) / L.final.comparar.dur, 0, 1), cam = this.c.camera, pc = this.centro.clone().project(cam);
-      var meio = clamp((pc.x + 1) / 2, 0.35, 0.65);
-      Duplo.frac = clamp(meio + 0.07 * Math.sin(u * Math.PI * 2), 0.2, 0.8);
-      ctx.fracCompara = Duplo.frac;
+    },
+    /* a posição da linha na tela e o ponto da alça (o centro da caixa, no plano) — para a alça de arrastar e para o vídeo */
+    _linhaNaTela: function (W, H) {
+      var ctx = this.ctx, pl = ctx && ctx.pl; if (!pl) return null;
+      var THREE = THR(), cx = ctx.caixaC, cam = this.c.camera, e = pl.eixo;
+      /* a alça fica SEMPRE no plano, no meio do trecho em que ele corta a casa (na borda, fica na borda junto com a linha) */
+      var sec = ctx.secao, y = this.centro ? this.centro.y : (cx.min[1] + cx.max[1]) / 2;
+      var mx = sec ? sec.meio[0] : (cx.min[0] + cx.max[0]) / 2, mz = sec ? sec.meio[1] : (cx.min[2] + cx.max[2]) / 2;
+      var off = pl.s - (e[0] * mx + e[2] * mz);
+      function tela(s) { var v = new THREE.Vector3(mx + e[0] * (s - pl.s + off), y, mz + e[2] * (s - pl.s + off)).project(cam); return { x: (v.x + 1) / 2 * W, y: (1 - v.y) / 2 * H, z: v.z }; }
+      return { p: tela(pl.s), lo: tela(pl.lo), hi: tela(pl.hi) };
+    },
+    /* arrastar: a posição do mouse vira a fração da linha (projeção no segmento lo → hi da tela) */
+    _posDoMouse: function (x, y, W, H) {
+      /* o raio do mouse até o chão da obra (altura do centro): a linha passa por baixo do cursor; fora da casa, trava em 0 ou 1 */
+      var pl = this.ctx && this.ctx.pl, THREE = THR(), cam = this.c.camera;
+      if (pl && this.centro) {
+        var o = cam.position, d = new THREE.Vector3((x / W) * 2 - 1, -(y / H) * 2 + 1, 0.5).unproject(cam).sub(o).normalize();
+        if (Math.abs(d.y) > 1e-4) {
+          var k = (this.centro.y - o.y) / d.y;
+          if (k > 0) { var wx = o.x + d.x * k, wz = o.z + d.z * k; return clamp((pl.eixo[0] * wx + pl.eixo[2] * wz - pl.lo) / (pl.hi - pl.lo), 0, 1); }
+        }
+      }
+      var ln = this._linhaNaTela(W, H); if (!ln) return null;
+      var dx = ln.hi.x - ln.lo.x, dy = ln.hi.y - ln.lo.y, L2 = dx * dx + dy * dy;
+      if (L2 < 1) return null;
+      return clamp(((x - ln.lo.x) * dx + (y - ln.lo.y) * dy) / L2, 0, 1);
+    },
+
+    /* ------------------------------------------------------------- o enquadramento de cada capítulo (caixa das peças que ele anima) */
+    _medirQuadros: function (info, linha) {
+      var THREE = THR(), a = AP(), Q = {}, por = {}, self = this;
+      Q._tudo = { c: [this.centro.x, this.centro.y, this.centro.z], r: this.raio };
+      linha.eventos.forEach(function (ev) { var o = info.porId[ev.id]; if (!o) return; (por[ev.etapa] = por[ev.etapa] || new THREE.Box3()).union(o.box); });
+      linha.etapas.forEach(function (e) {
+        var b = por[e.id];
+        if (!b || b.isEmpty() || (a.FECHO && a.FECHO[e.id])) { Q[e.id] = Q._tudo; return; }
+        var ce = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+        var r = Math.max(3, Math.sqrt(sz.x * sz.x + sz.z * sz.z) / 2 * 0.95 + sz.y * 0.1), w = 0.55;
+        var cy = Math.max(0.6, b.min.y + sz.y * 0.28);
+        /* metade do caminho até as peças do capítulo: aproxima sem perder a casa de vista */
+        Q[e.id] = { c: [lerp(Q._tudo.c[0], ce.x, w), lerp(Q._tudo.c[1], cy, w), lerp(Q._tudo.c[2], ce.z, w)], r: clamp(r * 1.2, self.raio * 0.62, self.raio) };
+      });
+      return Q;
+    },
+    /* a câmera sai da pose atual e chega ao percurso em `dur` segundos (entrada, troca de capítulo, fim do modo livre) */
+    _iniciarBlend: function (dur) {
+      var c = this.c; if (!c) return;
+      var alvo = this._alvoAtual ? this._alvoAtual.clone() : (c.orbit ? c.orbit.target.clone() : c.camera.position.clone().add(c.camera.getWorldDirection(new (THR()).Vector3()).multiplyScalar(10)));
+      this._blend = { pos: c.camera.position.clone(), alvo: alvo, fov: c.camera.fov, t0: (global.performance ? global.performance.now() : Date.now()), dur: (dur || 1) * 1000 };
+    },
+    _livreSync: function () {
+      var deve = !this.gravando && !this.tocando && this.linha && this.t >= this.linha.total - 1e-6;
+      if (deve && !this.livre) {
+        var cam = this.c.camera, v = cam.position.clone().sub(this.centro), d = v.length() || 1;
+        this.livre = { az: Math.atan2(v.x, v.z), el: Math.asin(clamp(v.y / d, -1, 1)), d: d };
+      } else if (!deve && this.livre) { this.livre = null; this._iniciarBlend(1.0); }
+      if (this.ui && this.ui.vista) this.ui.vista.setAttribute("data-livre", this.livre ? "1" : "0");
     },
 
     /* ------------------------------------------------------------- a câmera */
     _camera: function (t) {
-      var a = AP(), THREE = THR(), c = this.c, k = a.camera(this.linha, t), cam = c.camera;
+      var a = AP(), THREE = THR(), c = this.c, cam = c.camera;
       var fov = 38, asp = cam.aspect || 1.6, vfov = fov * Math.PI / 180, hfov = 2 * Math.atan(Math.tan(vfov / 2) * asp);
-      var d0 = this.raio / Math.sin(Math.min(vfov, hfov) / 2) * 0.92, d = d0 * k.d, el = k.el * Math.PI / 180;
       cam.fov = fov; cam.near = 0.2; cam.far = 800; cam.up.set(0, 1, 0);
-      cam.position.set(this.centro.x + d * Math.sin(k.az) * Math.cos(el), this.centro.y + d * Math.sin(el), this.centro.z + d * Math.cos(k.az) * Math.cos(el));
-      cam.lookAt(this.centro);
-      if (c.orbit) c.orbit.target.copy(this.centro);
+      var P = this._camP || (this._camP = new THREE.Vector3()), C = this._camC || (this._camC = new THREE.Vector3());
+      if (this.livre && !this.gravando) {
+        /* o COMPARAR livre: o usuário gira (arrastando fora da alça) e aproxima (roda do mouse) em volta da obra */
+        var lv = this.livre; C.copy(this.centro);
+        P.set(C.x + lv.d * Math.sin(lv.az) * Math.cos(lv.el), C.y + lv.d * Math.sin(lv.el), C.z + lv.d * Math.cos(lv.az) * Math.cos(lv.el));
+      } else {
+        var k = a.camera(this.linha, t), q = this._quadros ? a.enquadramentoEm(this.linha, this._quadros, t) : null;
+        if (q) C.set(q.c[0], q.c[1], q.c[2]); else C.copy(this.centro);
+        var R = q ? q.r : this.raio, d = R / Math.sin(Math.min(vfov, hfov) / 2) * 0.92 * k.d, el = k.el * Math.PI / 180;
+        P.set(C.x + d * Math.sin(k.az) * Math.cos(el), C.y + d * Math.sin(el), C.z + d * Math.cos(k.az) * Math.cos(el));
+        var b = this._blend;
+        if (b && !this.gravando) {
+          var u = ((global.performance ? global.performance.now() : Date.now()) - b.t0) / b.dur;
+          if (u >= 1) this._blend = null;
+          else { var e = u * u * u * (u * (u * 6 - 15) + 10); P.lerpVectors(b.pos, P, e); C.lerpVectors(b.alvo, C, e); cam.fov = lerp(b.fov, fov, e); }
+        }
+      }
+      cam.position.copy(P);
+      cam.lookAt(C);
+      this._alvoAtual = (this._alvoAtual || new THREE.Vector3()).copy(C);
+      if (c.orbit) c.orbit.target.copy(C);
       cam.updateProjectionMatrix();
     },
 
@@ -785,7 +1046,7 @@
     quadro: function (t, W, H, alvo2d) {
       var c = this.c, r = c.renderer, cam = c.camera;
       if (!this.ctx) return false;
-      var sz = r.getSize(new (THR()).Vector2());
+      var sz = r.getSize(this._v2q || (this._v2q = new (THR()).Vector2()));
       if (Math.round(sz.x) !== W || Math.round(sz.y) !== H) { r.setPixelRatio(1); r.setSize(W, H, false); }
       if (Math.abs(cam.aspect - W / H) > 1e-4) { cam.aspect = W / H; cam.updateProjectionMatrix(); }
       this._camera(t);
@@ -795,7 +1056,7 @@
       r.render(c.scene, cam);
       if (alvo2d) {
         var g = alvo2d.getContext("2d");
-        /* o céu: o renderer é transparente (o BIM põe o fundo por trás do canvas) — aqui o fundo entra no quadro */
+        /* o céu: o renderer é transparente (o BIM põe o fundo por trás do canvas) — no vídeo o fundo entra no quadro */
         var fg = g.createLinearGradient(0, 0, 0, H); fg.addColorStop(0, "#6f9bc9"); fg.addColorStop(0.55, "#cfdeec"); fg.addColorStop(1, "#eef2f6");
         g.fillStyle = fg; g.fillRect(0, 0, W, H);
         g.drawImage(r.domElement, 0, 0, W, H);
@@ -808,10 +1069,10 @@
       if (c._apTick) return;
       var fn = function (dt) { try { self._tick(dt); } catch (e) { self._erro(e); } };
       c._apTick = fn; c.tickExtra.push(fn);
-      var pos = function () { };
       this._tickFn = fn;
     },
     _erro: function (e) { if (global.console && console.error) console.error("[apresentacao]", e); this._mostrarAviso("Erro na apresentação: " + (e && e.message ? e.message : e)); this.tocando = false; },
+    /* o quadro da VISTA: a cena desenhada no próprio canvas do 3D, no tamanho dele (nada de tela à parte) */
     _tick: function (dt) {
       if (!this.ativa || !this._pronto || this.gravando) return;
       var c = cena();
@@ -824,41 +1085,44 @@
         this.t += passo * this.vel;
         if (this.t >= L.total) { this.t = L.total; this.tocando = false; this._pintarUi(); }
       }
-      var tela = this.ui && this.ui.tela;
-      if (!tela) return;
-      var W = tela.width, H = tela.height;
-      this.quadro(this.t, W, H, tela);
+      this._livreSync();
+      var r = this.c.renderer, sz = r.getSize(this._v2t || (this._v2t = new (THR()).Vector2()));
+      var W = Math.max(1, Math.round(sz.x)), H = Math.max(1, Math.round(sz.y));
+      this.quadro(this.t, W, H, null);
+      this._pintarHud(W, H);
       this._atualizarBarra();
     },
 
-    /* ------------------------------------------------------------- a interface (tela cheia) */
+    /* ------------------------------------------------------------- a interface: uma camada DENTRO da vista 3D */
     _montarUi: function () {
-      var self = this, c = this.c, L = this.linha;
-      var raiz = document.createElement("div");
-      raiz.setAttribute("data-ap-raiz", "1");
-      raiz.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:#000;color:#fff;font-family:'Segoe UI',Arial,sans-serif;overflow:hidden;user-select:none";
-      var tela = document.createElement("canvas");
-      tela.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;display:block";
-      var W = Math.max(640, global.innerWidth || 1280), H = Math.max(360, global.innerHeight || 720);
-      tela.width = W; tela.height = H;
-      raiz.appendChild(tela);
-      var aviso = document.createElement("div");
-      aviso.style.cssText = "position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);padding:14px 22px;background:rgba(10,18,32,.78);border-radius:10px;font-size:20px;display:none";
-      raiz.appendChild(aviso);
-      var barra = document.createElement("div");
-      barra.setAttribute("data-ap-barra", "1");
-      barra.style.cssText = "position:absolute;left:0;right:0;bottom:0;padding:10px 18px 14px;background:linear-gradient(0deg,rgba(0,0,0,.72),rgba(0,0,0,0));display:flex;align-items:center;gap:10px;transition:opacity .35s;font-size:14px";
-      function btn(id, rot, tit) { var b = document.createElement("button"); b.type = "button"; b.setAttribute("data-ap", id); b.textContent = rot; b.title = tit || ""; b.style.cssText = "background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:7px;padding:5px 11px;font:inherit;cursor:pointer;min-width:34px"; return b; }
-      var bAnt = btn("anterior", "⏮", "Etapa anterior (←)"), bPlay = btn("play", "⏸", "Reproduzir / pausar (Espaço)"), bProx = btn("proxima", "⏭", "Próxima etapa (→)");
+      var self = this, c = this.c, L = this.linha, host = c.renderer.domElement.parentNode || c.host;
+      injetarCssAp();
+      var vista = document.createElement("div");
+      vista.className = "ap-vista"; vista.setAttribute("data-ap-vista", "1"); vista.setAttribute("data-entrando", "1");
+      vista.innerHTML =
+        '<div class="ap-capa" data-ap="capa"></div><div class="ap-vinheta"></div><div class="ap-sombra"></div>' +
+        '<div class="ap-obra"></div><div class="ap-marca">' + esc(MARCA) + '</div>' +
+        '<div class="ap-terco"><div class="ap-cap"></div><div class="ap-tit"></div><div class="ap-leg"></div></div>' +
+        '<div class="ap-cont"><div class="ap-pill" data-ap-pill="exi" style="--ap-pc:#cfe0f5"><b></b><span></span></div><div class="ap-pill" data-ap-pill="dem" style="--ap-pc:#ff6b60"><b></b><span>Demolido</span></div><div class="ap-pill" data-ap-pill="nov" style="--ap-pc:#56e09a"><b></b><span>Construído</span></div></div>' +
+        '<div class="ap-alca" data-ap="alca" title="Arraste para comparar o antes e o depois">⇔<span class="ap-rot ap-rot-a">ANTES</span><span class="ap-rot ap-rot-d">DEPOIS</span></div>' +
+        '<div class="ap-aviso"></div>' +
+        '<div class="ap-barra" data-ap-barra="1"></div>';
+      var barra = vista.querySelector(".ap-barra");
+      function btn(id, rot, tit) { var b = document.createElement("button"); b.type = "button"; b.setAttribute("data-ap", id); b.textContent = rot; b.title = tit || ""; b.setAttribute("aria-label", tit || rot); barra.appendChild(b); return b; }
+      function sep() { var s = document.createElement("span"); s.className = "ap-sep"; barra.appendChild(s); }
+      var bAnt = btn("anterior", "⏮", "Capítulo anterior (←)"), bPlay = btn("play", "▶", "Reproduzir / pausar (Espaço)"), bProx = btn("proxima", "⏭", "Próximo capítulo (→)");
+      var cap = document.createElement("span"); cap.className = "ap-capnome"; cap.setAttribute("data-ap", "capitulo"); barra.appendChild(cap);
+      var tempo = document.createElement("input"); tempo.type = "range"; tempo.min = "0"; tempo.max = String(Math.round(L.total * 100)); tempo.value = "0"; tempo.setAttribute("data-ap", "tempo"); tempo.title = "Arraste para ir a qualquer ponto"; tempo.setAttribute("aria-label", "Posição na apresentação"); barra.appendChild(tempo);
+      var rotT = document.createElement("span"); rotT.className = "ap-tempo"; rotT.setAttribute("data-ap", "rotulo"); barra.appendChild(rotT);
+      sep();
       var bVel = btn("vel", "1×", "Velocidade: 0,5× · 1× · 2× (V)");
-      var tempo = document.createElement("input"); tempo.type = "range"; tempo.min = "0"; tempo.max = String(Math.round(L.total * 100)); tempo.value = "0"; tempo.setAttribute("data-ap", "tempo"); tempo.style.cssText = "flex:1;accent-color:#ff9f1c;cursor:pointer"; tempo.title = "Arraste para ir a qualquer ponto";
-      var rotT = document.createElement("span"); rotT.setAttribute("data-ap", "rotulo"); rotT.style.cssText = "min-width:86px;text-align:right;opacity:.85;font-variant-numeric:tabular-nums";
-      var bVid = btn("video", "⬇ Exportar vídeo", "Grava a apresentação em 1920×1080 (WebM ou MP4) e baixa o arquivo");
-      var bSair = btn("sair", "✕ Sair", "Sair da apresentação (Esc)");
-      [bAnt, bPlay, bProx, bVel, tempo, rotT, bVid, bSair].forEach(function (e) { barra.appendChild(e); });
-      raiz.appendChild(barra);
-      document.body.appendChild(raiz);
-      this.ui = { raiz: raiz, tela: tela, barra: barra, aviso: aviso, bPlay: bPlay, tempo: tempo, rotT: rotT, bVel: bVel, ultimoMov: Date.now() };
+      var bVid = btn("video", "⬇ Vídeo", "Grava a apresentação em 1920×1080 (WebM ou MP4) e baixa o arquivo");
+      var bSair = btn("sair", "✕ Sair", "Sair da apresentação (Esc) — a vista volta como estava");
+      host.appendChild(vista);
+      vista.querySelector(".ap-obra").textContent = String(L.titulo || "");
+      this.ui = { vista: vista, barra: barra, aviso: vista.querySelector(".ap-aviso"), bPlay: bPlay, tempo: tempo, rotT: rotT, cap: cap, bVel: bVel, terco: vista.querySelector(".ap-terco"), alca: vista.querySelector(".ap-alca"), capa: vista.querySelector(".ap-capa"), pills: {}, ultimoMov: Date.now(), etapa: null, txt: {} };
+      Array.prototype.forEach.call(vista.querySelectorAll("[data-ap-pill]"), function (p) { self.ui.pills[p.getAttribute("data-ap-pill")] = { el: p, b: p.querySelector("b"), s: p.querySelector("span") }; });
+      global.setTimeout(function () { if (self.ui && self.ui.vista === vista) vista.removeAttribute("data-entrando"); }, 420);
       /* eventos */
       bPlay.onclick = function () { self.alternar(); };
       bAnt.onclick = function () { self.irEtapa(-1); };
@@ -866,13 +1130,43 @@
       bVel.onclick = function () { self.velocidade(self.vel === 1 ? 2 : (self.vel === 2 ? 0.5 : 1)); };
       bSair.onclick = function () { self.parar(); };
       bVid.onclick = function () { self.exportarVideo(); };
-      tempo.oninput = function () { self.irPara(+tempo.value / 100); };
-      this._moveu = function () { self.ui.ultimoMov = Date.now(); barra.style.opacity = "1"; raiz.style.cursor = "default"; };
-      raiz.addEventListener("mousemove", this._moveu);
-      this._esconder = global.setInterval(function () { if (!self.ui) return; if (Date.now() - self.ui.ultimoMov > 3200 && self.tocando && !self.gravando) { barra.style.opacity = "0"; raiz.style.cursor = "none"; } }, 600);
+      tempo.oninput = function () { self.irPara(+tempo.value / 100, true); };
+      this._moveu = function () { if (!self.ui) return; self.ui.ultimoMov = Date.now(); vista.removeAttribute("data-oculta-barra"); };
+      vista.addEventListener("pointermove", this._moveu, true);
+      barra.addEventListener("pointerenter", this._moveu);
+      this._esconder = global.setInterval(function () { if (!self.ui) return; if (Date.now() - self.ui.ultimoMov > 3200 && self.tocando && !self.gravando) vista.setAttribute("data-oculta-barra", "1"); }, 600);
+      /* a ALÇA da cortina: arrastar move a linha (para o filme e entra no comparar livre) */
+      var alca = this.ui.alca, arr = null;
+      alca.addEventListener("pointerdown", function (e) {
+        arr = e.pointerId; try { alca.setPointerCapture(e.pointerId); } catch (x) {}
+        if (self.tocando || self.t < self.linha.total) { self.tocando = false; self.t = self.linha.total; self._pintarUi(); }
+        e.preventDefault(); e.stopPropagation();
+      });
+      alca.addEventListener("pointermove", function (e) {
+        if (arr == null) return;
+        var rc = self.c.renderer.domElement.getBoundingClientRect(), f = self._posDoMouse(e.clientX - rc.left, e.clientY - rc.top, rc.width, rc.height);
+        if (f != null) self._posUsuario = f;
+        e.preventDefault(); e.stopPropagation();
+      });
+      function soltaA(e) { arr = null; try { alca.releasePointerCapture(e.pointerId); } catch (x) {} }
+      alca.addEventListener("pointerup", soltaA); alca.addEventListener("pointercancel", soltaA);
+      /* a CAPA cobre o canvas: o 3D não seleciona nada durante a apresentação; no comparar livre ela gira e aproxima a vista */
+      var capa = this.ui.capa, gir = null;
+      capa.addEventListener("pointerdown", function (e) { if (!self.livre) return; gir = { id: e.pointerId, x: e.clientX, y: e.clientY }; try { capa.setPointerCapture(e.pointerId); } catch (x) {} e.preventDefault(); });
+      capa.addEventListener("pointermove", function (e) {
+        if (!gir || !self.livre) return;
+        var dx = e.clientX - gir.x, dy = e.clientY - gir.y; gir.x = e.clientX; gir.y = e.clientY;
+        self.livre.az -= dx * 0.006; self.livre.el = clamp(self.livre.el + dy * 0.004, 0.06, 1.45);
+        e.preventDefault();
+      });
+      function soltaG(e) { gir = null; try { capa.releasePointerCapture(e.pointerId); } catch (x) {} }
+      capa.addEventListener("pointerup", soltaG); capa.addEventListener("pointercancel", soltaG);
+      capa.addEventListener("wheel", function (e) { if (!self.livre) return; self.livre.d = clamp(self.livre.d * (e.deltaY > 0 ? 1.1 : 1 / 1.1), self.raio * 0.6, self.raio * 8); e.preventDefault(); }, { passive: false });
+      capa.addEventListener("contextmenu", function (e) { e.preventDefault(); });
       this._teclas = function (ev) {
         if (!self.ativa) return;
-        var k = ev.key;
+        var k = ev.key, tg = ev.target, tag = tg && tg.tagName ? String(tg.tagName).toLowerCase() : "";
+        if (tag === "input" && tg.type !== "range" || tag === "textarea" || (tg && tg.isContentEditable)) return;
         if (k === "Escape") { if (self.gravando) { self._cancelarVideo = true; } else self.parar(); ev.preventDefault(); ev.stopPropagation(); }
         else if (self.gravando) { return; }
         else if (k === " ") { self.alternar(); ev.preventDefault(); ev.stopPropagation(); }
@@ -882,33 +1176,74 @@
         else if (k === "Home") { self.irPara(0); ev.preventDefault(); ev.stopPropagation(); }
       };
       global.addEventListener("keydown", this._teclas, true);
-      this._redim = function () {
-        if (!self.ui || self.gravando) return;
-        var w = Math.max(640, global.innerWidth), h = Math.max(360, global.innerHeight);
-        self.ui.tela.width = w; self.ui.tela.height = h;
-      };
-      global.addEventListener("resize", this._redim);
-      try { var fs = raiz.requestFullscreen ? raiz.requestFullscreen() : null; if (fs && fs.catch) fs.catch(function () {}); } catch (eF) {}
-      this._fsh = function () { if (!document.fullscreenElement && self.ativa && !self.gravando && self._entrouFs) { self.parar(); } if (document.fullscreenElement) self._entrouFs = true; };
-      document.addEventListener("fullscreenchange", this._fsh);
     },
     _mostrarAviso: function (txt) { var u = this.ui; if (!u) return; u.aviso.style.display = txt ? "block" : "none"; if (txt) u.aviso.textContent = txt; },
     _pintarUi: function () { var u = this.ui; if (!u) return; u.bPlay.textContent = this.tocando ? "⏸" : "▶"; u.bVel.textContent = (this.vel === 0.5 ? "0,5" : this.vel) + "×"; this._atualizarBarra(); },
     _atualizarBarra: function () {
       var u = this.ui; if (!u) return;
       if (!u.tempo.matches || !u.tempo.matches(":active")) u.tempo.value = String(Math.round(this.t * 100));
-      function mmss(s) { s = Math.max(0, Math.round(s)); return (s < 600 ? "0" : "") + Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60); }
-      u.rotT.textContent = mmss(this.t) + " / " + mmss(this.linha.total);
+      function mmss(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + (s % 60 < 10 ? "0" : "") + (s % 60); }
+      var txt = mmss(this.t) + " / " + mmss(this.linha.total);
+      if (u.txt.t !== txt) { u.rotT.textContent = txt; u.txt.t = txt; }
     },
-    alternar: function () { if (this.t >= this.linha.total - 0.01) this.t = 0; this.tocando = !this.tocando; this._ultimo = 0; this._pintarUi(); return this.tocando; },
+    /* o HUD da vista (DOM): o terço inferior com o capítulo, os contadores, a alça da cortina */
+    _pintarHud: function (W, H) {
+      var u = this.ui; if (!u) return;
+      var a = AP(), L = this.linha, info = a.legendaEm(L, this.t), self = this;
+      if (u.etapa !== info.etapa) {
+        var primeira = u.etapa == null; u.etapa = info.etapa;
+        var por = function () {
+          if (!self.ui) return;
+          u.terco.querySelector(".ap-cap").textContent = "Capítulo " + info.n + " de " + info.de;
+          u.terco.querySelector(".ap-tit").textContent = info.titulo;
+          u.terco.querySelector(".ap-leg").textContent = info.legenda;
+          u.vista.style.setProperty("--ap-cor", COR[info.etapa] || "#8fd3ff");
+          u.terco.classList.remove("ap-troca");
+        };
+        var capTxt = info.n + "/" + info.de + " · " + info.titulo;
+        u.cap.textContent = capTxt; u.cap.title = capTxt;
+        if (primeira) por(); else { u.terco.classList.add("ap-troca"); global.setTimeout(por, 320); }
+      }
+      /* os contadores: existente na subida do existente; demolido da demolição em diante; construído da construção em diante; no fecho, os totais */
+      var cn = info.contadores, tot = info.totais, e = info.etapa, fecho = !!(a.FECHO && a.FECHO[e]);
+      var mExi = e === "existente" || fecho, mDem = (["demolicao", "construcao", "acabamentos"].indexOf(e) >= 0 || fecho) && tot.demolidoPecas > 0, mNov = (["construcao", "acabamentos"].indexOf(e) >= 0 || fecho) && tot.construidoPecas > 0;
+      function pill(k, on, b, s) { var p = u.pills[k]; if (p.el.hidden === on) p.el.hidden = !on; if (!on) return; if (u.txt[k] !== b) { p.b.textContent = b; u.txt[k] = b; } if (s != null && u.txt[k + "s"] !== s) { p.s.textContent = s; u.txt[k + "s"] = s; } }
+      pill("exi", mExi, fecho && tot.existenteM2 ? num1(tot.existenteM2) + " m²" : inteiro(tot.existentePecas) + " peças", fecho ? "Existente mantido" : "Existentes no lote");
+      pill("dem", mDem, num1(fecho ? tot.demolidoM2 : cn.demolidoM2) + " m²", null);
+      pill("nov", mNov, num1(fecho ? tot.construidoM2 : cn.construidoM2) + " m²", null);
+      /* a alça da cortina: no comparar, sobre a linha, no centro da obra */
+      var ln = info.cortina && info.cortina.fase === "comparar" || this.livre ? this._linhaNaTela(W, H) : null;
+      if (ln && ln.p.z < 1) {
+        u.alca.style.display = "block";
+        var rc = this.c.renderer.domElement.getBoundingClientRect(), hr = u.vista.getBoundingClientRect();
+        u.alca.style.left = (rc.left - hr.left + ln.p.x * rc.width / W) + "px"; u.alca.style.top = (rc.top - hr.top + ln.p.y * rc.height / H) + "px";
+      } else if (u.alca.style.display !== "none") u.alca.style.display = "none";
+    },
+    alternar: function () {
+      if (this.t >= this.linha.total - 0.01) { this.t = 0; this._posUsuario = null; }
+      this.tocando = !this.tocando; this._ultimo = 0; this._pintarUi(); return this.tocando;
+    },
     velocidade: function (v) { this.vel = v; this._pintarUi(); return v; },
-    irPara: function (t) { this.t = clamp(+t || 0, 0, this.linha.total); this._ultimo = 0; if (!this.tocando) this._pintarUi(); return this.t; },
-    /* passa para o início da etapa seguinte / anterior (volta ao início da atual se já passou de 1,5 s dela) */
+    /* ir a um instante: a câmera chega lá voando (sem corte seco), menos quando se arrasta a barra de tempo */
+    irPara: function (t, arrastando) {
+      var t2 = clamp(+t || 0, 0, this.linha.total);
+      if (!arrastando && !this.gravando && Math.abs(t2 - this.t) > 0.5) this._iniciarBlend(0.9);
+      this.t = t2; this._ultimo = 0;
+      if (t2 < this.linha.final.comparar.t0) this._posUsuario = null;
+      if (!this.tocando) this._pintarUi();
+      return this.t;
+    },
+    /* passa para o início do capítulo seguinte / anterior (volta ao início do atual se já passou de 1,5 s dele) */
     irEtapa: function (d) {
       var L = this.linha, a = AP(), e = a.etapaEm(L, this.t), i = L.etapas.indexOf(e);
       if (d < 0) i = (this.t - e.t0 > 1.5) ? i : i - 1; else i = i + 1;
       i = clamp(i, 0, L.etapas.length - 1);
       return this.irPara(i === L.etapas.length - 1 && d > 0 && e === L.etapas[L.etapas.length - 1] ? L.total : L.etapas[i].t0 + 0.01);
+    },
+    /* a posição da linha da cortina no comparar (0 = esquerda, 1 = direita); sem argumento, só lê */
+    posCortina: function (f) {
+      if (f != null) { this.tocando = false; this.t = this.linha.total; this._posUsuario = clamp(+f, 0, 1); this._pintarUi(); }
+      var k = this.ctx && this.ctx.fecho; return k ? k.pos : null;
     },
 
     /* ------------------------------------------------------------- sair, restaurando tudo */
@@ -920,10 +1255,9 @@
       /* o tick: sai da lista */
       try { var i = c.tickExtra.indexOf(this._tickFn); if (i >= 0) c.tickExtra.splice(i, 1); c._apTick = null; } catch (e2) {}
       try { global.clearInterval(this._esconder); } catch (e3) {}
-      try { global.removeEventListener("keydown", this._teclas, true); global.removeEventListener("resize", this._redim); document.removeEventListener("fullscreenchange", this._fsh); } catch (e4) {}
-      try { if (document.fullscreenElement && document.exitFullscreen) { var pr = document.exitFullscreen(); if (pr && pr.catch) pr.catch(function () {}); } } catch (e5) {}
-      if (this.ui && this.ui.raiz && this.ui.raiz.parentNode) this.ui.raiz.parentNode.removeChild(this.ui.raiz);
-      this.ui = null;
+      try { global.removeEventListener("keydown", this._teclas, true); } catch (e4) {}
+      if (this.ui && this.ui.vista && this.ui.vista.parentNode) this.ui.vista.parentNode.removeChild(this.ui.vista);
+      this.ui = null; this.livre = null; this._blend = null; this._posUsuario = null; this._alvoAtual = null;
       /* as peças: matriz, visibilidade, material, camadas */
       if (sv) {
         sv.meshes.forEach(function (s) {
@@ -940,6 +1274,8 @@
       /* o que a apresentação criou */
       if (ctx) {
         Object.keys(ctx.mat).forEach(function (k) { try { ctx.mat[k].cl.dispose(); } catch (e) {} });
+        Object.keys(ctx.matLado || {}).forEach(function (k) { try { ctx.matLado[k].cl.dispose(); } catch (e) {} });
+        ctx.matLado = {}; ctx.cloneDe = {}; ctx.mat = {};
         if (ctx.grupo) { ctx.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); c.scene.remove(ctx.grupo); }
       }
       /* câmera, órbita, desenho */
@@ -950,7 +1286,10 @@
         if (c.orbit && sv.orbit) { c.orbit.enabled = sv.orbit.enabled; try { c.orbit.update(); } catch (eO) {} }
       }
       try { c.principalOculta(!!sv.principal); } catch (e6) {}
+      try { if (sv) c.renderer.localClippingEnabled = !!sv.clipLocal; } catch (e6b) {}
       try { c.renderer.setPixelRatio(sv.tam.pr); } catch (e7) {}
+      /* a interface volta (o layout na hora — o renderer mede o tamanho certo —, a animação de volta depois) */
+      try { Recolher.desligar(c); } catch (e7b) {}
       try { if (c.redimensionar) c.redimensionar(); } catch (e8) {}
       /* a vista de fase como estava, e o estilo */
       try { var p = P10(); p.definirVista({ fase: sv.vista.fase, filtro: sv.vista.filtro, modo: sv.vista.modo || undefined, realce: sv.vista.realce }); } catch (e9) {}
@@ -984,7 +1323,9 @@
       this.gravando = true; this._cancelarVideo = false;
       var tocava = this.tocando; this.tocando = false;
       var u = this.ui, tOrig = this.t, c = this.c, r = c.renderer, szAntes = r.getSize(new (THR()).Vector2()), prAntes = r.getPixelRatio(), aspAntes = c.camera.aspect;
-      var pre = u && u.tela ? u.tela.getContext("2d") : null;
+      /* enquanto grava, a vista mostra o quadro do vídeo reduzido e o progresso (a cena está em 1920×1080 fora da tela) */
+      var grav = null, pre = null;
+      if (u && u.vista) { grav = document.createElement("div"); grav.className = "ap-grav"; grav.innerHTML = '<canvas></canvas><div class="ap-grav-trilho"><i></i></div><div class="ap-grav-txt"></div>'; u.vista.appendChild(grav); var pc = grav.querySelector("canvas"); pc.width = 960; pc.height = 540; pre = pc.getContext("2d"); }
       return new Promise(function (resolve) {
         var terminado = false, i = 0, t0Real = Date.now(), intervalo = 1000 / fps;
         rec.onstop = function () {
@@ -992,6 +1333,7 @@
           try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
           /* devolve a cena à tela */
           try { r.setPixelRatio(prAntes); r.setSize(szAntes.x, szAntes.y, false); c.camera.aspect = aspAntes; c.camera.updateProjectionMatrix(); } catch (e4) {}
+          try { if (grav && grav.parentNode) grav.parentNode.removeChild(grav); } catch (eG) {}
           self.gravando = false; self.t = tOrig; self.tocando = tocava; self._ultimo = 0; self._mostrarAviso(null); self._pintarUi();
           var blob = new global.Blob(pedacos, { type: sup.mime || "video/webm" });
           var res = { ok: !!blob.size && !self._cancelarVideo, cancelado: !!self._cancelarVideo, blob: blob, bytes: blob.size, ext: sup.ext || "webm", nome: sup.nome, mime: sup.mime, quadros: i, de: de, ate: ate, fps: fps, largura: W, altura: H, ms: Date.now() - t0Real };
@@ -1007,12 +1349,10 @@
             var t = de + i / fps;
             self.t = t; self.quadro(t, W, H, cnv);
             trilha.requestFrame();
-            if (pre && u && u.tela) {   /* o que a tela mostra enquanto grava: o quadro, reduzido, com o progresso */
-              var tw = u.tela.width, th = u.tela.height, esc2 = Math.min(tw / W, th / H);
-              pre.fillStyle = "#000"; pre.fillRect(0, 0, tw, th); pre.drawImage(cnv, (tw - W * esc2) / 2, (th - H * esc2) / 2, W * esc2, H * esc2);
-              pre.fillStyle = "rgba(0,0,0,.65)"; pre.fillRect(0, th - 46, tw, 46);
-              pre.fillStyle = "#ff9f1c"; pre.fillRect(0, th - 46, tw * (i / N), 4);
-              pre.fillStyle = "#fff"; pre.font = "600 16px Segoe UI, Arial"; pre.fillText("Gravando " + Math.round(i / N * 100) + "% — " + (de + i / fps).toFixed(1).replace(".", ",") + " s de " + ate.toFixed(0) + " s · Esc cancela", 16, th - 18);
+            if (pre) {
+              pre.drawImage(cnv, 0, 0, 960, 540);
+              grav.querySelector("i").style.width = Math.round(i / N * 100) + "%";
+              grav.querySelector(".ap-grav-txt").textContent = "Gravando o vídeo " + Math.round(i / N * 100) + "% — " + (de + i / fps).toFixed(1).replace(".", ",") + " s de " + ate.toFixed(0) + " s · Esc cancela";
             }
           } catch (e5) { if (global.console) console.error("[apresentacao/video]", e5); }
           i++;
@@ -1033,84 +1373,69 @@
     }
   };
 
-  /* ================================================================== O HUD (desenhado no quadro — vai para o vídeo) */
+  /* ================================================================== O HUD DO VÍDEO */
+  /* o mesmo desenho do HUD da vista (terço inferior, contadores, marca, alça da cortina), em canvas — é o que vai para o vídeo */
   var Hud = {
     desenhar: function (g, W, H, ap) {
-      var a = AP(), L = ap.linha, t = ap.t, s = H / 1080, info = a.legendaEm(L, t), cor = COR[info.etapa] || "#fff", e = L.porEtapa[info.etapa], tEt = t - e.t0;
+      var a = AP(), L = ap.linha, t = ap.t, s = H / 1080, info = a.legendaEm(L, t), cor = COR[info.etapa] || "#8fd3ff", e = L.porEtapa[info.etapa], tEt = t - e.t0;
+      var F = "Segoe UI, Arial, sans-serif";
+      function caixa(x, y, w, h, r, fill) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); g.fillStyle = fill; g.fill(); }
       g.save();
       g.textBaseline = "alphabetic";
-      /* o antes × depois: os rótulos de cada lado e a divisória */
-      if (info.comparar && Duplo.on) {
-        var x = Math.round(Duplo.frac * W);
-        g.fillStyle = "#fff"; g.fillRect(x - 2 * s, 0, 4 * s, H);
-        g.beginPath(); g.arc(x, H * 0.46, 22 * s, 0, Math.PI * 2); g.fillStyle = "#fff"; g.fill();
-        g.fillStyle = "#25324a"; g.font = "700 " + Math.round(20 * s) + "px Segoe UI, Arial"; g.textAlign = "center"; g.fillText("⇔", x, H * 0.46 + 7 * s);
-        function rotulo(txt, xx, al, bg) { g.font = "700 " + Math.round(34 * s) + "px Segoe UI, Arial"; var w = g.measureText(txt).width + 36 * s; g.fillStyle = bg; var x0 = al === "left" ? xx : xx - w; g.fillRect(x0, 54 * s, w, 56 * s); g.fillStyle = "#fff"; g.textAlign = "left"; g.fillText(txt, x0 + 18 * s, 94 * s); }
-        rotulo("ANTES", 40 * s, "left", "rgba(60,72,92,.88)"); rotulo("DEPOIS", W - 40 * s, "right", "rgba(46,158,91,.92)");
-        g.textAlign = "left";
-      }
-      /* o título da obra (alto, à esquerda) e as etapas (à direita) */
-      var gt = g.createLinearGradient(0, 0, 0, 190 * s); gt.addColorStop(0, "rgba(6,12,24,.62)"); gt.addColorStop(1, "rgba(6,12,24,0)"); g.fillStyle = gt; g.fillRect(0, 0, W, 190 * s);
-      g.shadowColor = "rgba(0,0,0,.55)"; g.shadowBlur = 8 * s;
-      g.fillStyle = "#fff"; g.font = "600 " + Math.round(22 * s) + "px Segoe UI, Arial"; g.textAlign = "left";
-      var rotTop = String(L.titulo || "").toUpperCase();
-      if (!info.comparar) {
-        g.fillText("APRESENTAÇÃO DA OBRA", 40 * s, 62 * s);
-        g.font = "700 " + Math.round(34 * s) + "px Segoe UI, Arial"; g.fillText(rotTop.length > 46 ? rotTop.slice(0, 45) + "…" : rotTop, 40 * s, 104 * s);
-        g.fillStyle = cor; g.fillRect(40 * s, 118 * s, 96 * s, 4 * s);
-      }
+      /* vinheta e sombra de baixo (as mesmas da vista) */
+      var gv = g.createRadialGradient(W / 2, H * 0.46, H * 0.35, W / 2, H * 0.46, H * 0.95); gv.addColorStop(0, "rgba(6,12,24,0)"); gv.addColorStop(1, "rgba(6,12,24,.30)"); g.fillStyle = gv; g.fillRect(0, 0, W, H);
+      var gs = g.createLinearGradient(0, H - 300 * s, 0, H); gs.addColorStop(0, "rgba(6,12,24,0)"); gs.addColorStop(1, "rgba(6,12,24,.42)"); g.fillStyle = gs; g.fillRect(0, H - 300 * s, W, 300 * s);
+      /* a obra (alto, à esquerda) e a marca (alto, à direita) */
+      g.shadowColor = "rgba(0,0,0,.55)"; g.shadowBlur = 6 * s;
+      g.fillStyle = "rgba(255,255,255,.9)"; g.font = "600 " + Math.round(19 * s) + "px " + F; g.textAlign = "left";
+      var tit = String(L.titulo || "").toUpperCase(); g.fillText(tit.length > 60 ? tit.slice(0, 59) + "…" : tit, 44 * s, 52 * s);
+      g.textAlign = "right"; g.fillStyle = "rgba(255,255,255,.75)"; g.font = "700 " + Math.round(18 * s) + "px " + F; g.fillText(MARCA, W - 40 * s, 52 * s);
       g.shadowBlur = 0;
-      var nE = L.etapas.length, xr = W - 40 * s;
-      g.font = "600 " + Math.round(17 * s) + "px Segoe UI, Arial"; g.textAlign = "right";
-      for (var i = nE - 1; i >= 0; i--) {
-        var et = L.etapas[i], ativa = et.id === info.etapa, txt = et.n + "  " + (et.id === "final" ? "Final" : et.titulo.split(" ")[0]);
-        var w = g.measureText(txt).width;
-        if (!info.comparar) { g.fillStyle = ativa ? COR[et.id] : "rgba(255,255,255,.5)"; g.fillText(txt, xr, 56 * s); }
-        xr -= w + 22 * s;
-      }
-      /* a faixa de baixo: título da etapa, legenda e contadores */
-      var alt = 200 * s, y0 = H - alt;
-      var gr = g.createLinearGradient(0, y0 - 40 * s, 0, H); gr.addColorStop(0, "rgba(6,12,24,0)"); gr.addColorStop(0.35, "rgba(6,12,24,.62)"); gr.addColorStop(1, "rgba(6,12,24,.86)");
-      g.fillStyle = gr; g.fillRect(0, y0 - 40 * s, W, alt + 40 * s);
-      var entra = suave(tEt / 0.7), px = 40 * s + (1 - entra) * -50 * s;
+      /* o terço inferior: capítulo, título, legenda */
+      var entra = suave(tEt / 0.6), x0 = 44 * s, y1 = H - 64 * s, wT = Math.min(900 * s, W * 0.56), hT = 150 * s, y0 = y1 - hT;
       g.globalAlpha = entra;
-      g.fillStyle = cor; g.fillRect(px, y0 + 24 * s, 8 * s, 92 * s);
-      g.fillStyle = "#fff"; g.font = "700 " + Math.round(62 * s) + "px Segoe UI, Arial"; g.textAlign = "left";
-      g.fillText(info.titulo, px + 26 * s, y0 + 78 * s);
-      g.fillStyle = "rgba(255,255,255,.86)"; g.font = "400 " + Math.round(27 * s) + "px Segoe UI, Arial";
-      g.fillText(info.legenda, px + 28 * s, y0 + 116 * s);
+      caixa(x0, y0 + (1 - entra) * 14 * s, wT, hT, 16 * s, "rgba(12,20,34,.62)");
+      g.fillStyle = cor; g.fillRect(x0, y0 + (1 - entra) * 14 * s + 14 * s, 5 * s, hT - 28 * s);
+      g.textAlign = "left"; g.fillStyle = "rgba(255,255,255,.72)"; g.font = "600 " + Math.round(17 * s) + "px " + F;
+      g.fillText(("Capítulo " + info.n + " de " + info.de).toUpperCase(), x0 + 30 * s, y0 + 40 * s + (1 - entra) * 14 * s);
+      g.fillStyle = "#fff"; g.font = "600 " + Math.round(38 * s) + "px " + F; g.fillText(info.titulo, x0 + 30 * s, y0 + 84 * s + (1 - entra) * 14 * s);
+      g.fillStyle = "rgba(255,255,255,.86)"; g.font = "400 " + Math.round(22 * s) + "px " + F;
+      var leg = info.legenda; while (leg.length > 8 && g.measureText(leg).width > wT - 60 * s) leg = leg.slice(0, -2);
+      if (leg !== info.legenda) leg = leg.replace(/\s+\S*$/, "") + "…";
+      g.fillText(leg, x0 + 30 * s, y0 + 122 * s + (1 - entra) * 14 * s);
       g.globalAlpha = 1;
-      /* os contadores */
-      var cn = info.contadores, tot = info.totais, x2 = W - 40 * s;
-      function bloco(rot, m2, pecas, corB, yy) {
-        g.textAlign = "right"; g.fillStyle = corB; g.font = "700 " + Math.round(46 * s) + "px Segoe UI, Arial";
-        g.fillText(num1(m2) + " m²", x2, yy);
-        g.fillStyle = "rgba(255,255,255,.88)"; g.font = "600 " + Math.round(20 * s) + "px Segoe UI, Arial";
-        g.fillText(rot + " · " + inteiro(pecas) + (pecas === 1 ? " peça" : " peças"), x2, yy + 28 * s);
+      /* os contadores (as mesmas regras da vista) */
+      var cn = info.contadores, tot = info.totais, et = info.etapa, fecho = !!(a.FECHO && a.FECHO[et]), pills = [];
+      if (et === "existente" || fecho) pills.push([fecho && tot.existenteM2 ? num1(tot.existenteM2) + " m²" : inteiro(tot.existentePecas) + " peças", fecho ? "EXISTENTE MANTIDO" : "EXISTENTES NO LOTE", "#cfe0f5"]);
+      if ((["demolicao", "construcao", "acabamentos"].indexOf(et) >= 0 || fecho) && tot.demolidoPecas > 0) pills.push([num1(fecho ? tot.demolidoM2 : cn.demolidoM2) + " m²", "DEMOLIDO", "#ff6b60"]);
+      if ((["construcao", "acabamentos"].indexOf(et) >= 0 || fecho) && tot.construidoPecas > 0) pills.push([num1(fecho ? tot.construidoM2 : cn.construidoM2) + " m²", "CONSTRUÍDO", "#56e09a"]);
+      var xr = W - 40 * s, wp = 190 * s, hp = 86 * s;
+      for (var i = pills.length - 1; i >= 0; i--) {
+        var px = xr - wp;
+        caixa(px, y1 - hp, wp, hp, 14 * s, "rgba(12,20,34,.62)");
+        g.fillStyle = pills[i][2]; g.fillRect(px + 14 * s, y1 - hp, wp - 28 * s, 3 * s);
+        g.textAlign = "right"; g.fillStyle = "#fff"; g.font = "600 " + Math.round(32 * s) + "px " + F; g.fillText(pills[i][0], px + wp - 18 * s, y1 - hp + 46 * s);
+        g.fillStyle = "rgba(255,255,255,.74)"; g.font = "600 " + Math.round(14 * s) + "px " + F; g.fillText(pills[i][1], px + wp - 18 * s, y1 - hp + 70 * s);
+        xr = px - 12 * s;
       }
-      var mostraD = ["demolicao", "construcao", "acabamentos", "final"].indexOf(info.etapa) >= 0 && tot.demolidoPecas > 0, mostraC = ["construcao", "acabamentos", "final"].indexOf(info.etapa) >= 0 && tot.construidoPecas > 0;
-      if (info.etapa === "existente" && tot.existentePecas) { g.textAlign = "right"; g.fillStyle = "#cfe0f5"; g.font = "700 " + Math.round(46 * s) + "px Segoe UI, Arial"; g.fillText(inteiro(tot.existentePecas) + " peças", x2, y0 + 66 * s); g.fillStyle = "rgba(255,255,255,.88)"; g.font = "600 " + Math.round(20 * s) + "px Segoe UI, Arial"; g.fillText("existentes no lote", x2, y0 + 94 * s); }
-      if (info.comparar) { mostraD = false; mostraC = false; }
-      if (mostraD && mostraC) { bloco("DEMOLIDO", cn.demolidoM2, cn.demolidoPecas, "#ff6b60", y0 + 28 * s); bloco("CONSTRUÍDO", cn.construidoM2, cn.construidoPecas, "#56e09a", y0 + 108 * s); }
-      else if (mostraD) bloco("DEMOLIDO", cn.demolidoM2, cn.demolidoPecas, "#ff6b60", y0 + 70 * s);
-      else if (mostraC) bloco("CONSTRUÍDO", cn.construidoM2, cn.construidoPecas, "#56e09a", y0 + 70 * s);
-      /* o cartão de entrada da etapa: título grande no centro por ~2 s */
-      var cartao = clamp(1 - Math.abs(tEt - 1.1) / 1.1, 0, 1);
-      if (tEt < 2.2 && info.etapa !== "final" || (info.etapa === "final" && !info.comparar && tEt < 2.2)) {
-        var al = suave(Math.min(1, tEt / 0.45)) * (1 - suave((tEt - 1.5) / 0.7));
-        g.globalAlpha = al * 0.95;
-        var gv = g.createRadialGradient(W / 2, H * 0.42, H * 0.1, W / 2, H * 0.42, H * 0.7); gv.addColorStop(0, "rgba(0,0,0,0)"); gv.addColorStop(1, "rgba(0,0,0,.4)");
-        g.fillStyle = gv; g.fillRect(0, 0, W, H);
-        g.textAlign = "center"; g.shadowColor = "rgba(0,0,0,.6)"; g.shadowBlur = 20 * s;
-        g.fillStyle = "#fff"; g.font = "800 " + Math.round(110 * s) + "px Segoe UI, Arial"; g.fillText(info.titulo.toUpperCase(), W / 2, H * 0.44 + (1 - al) * 18 * s);
-        g.shadowBlur = 0; g.fillStyle = cor; g.fillRect(W / 2 - 120 * s * al, H * 0.44 + 22 * s, 240 * s * al, 7 * s);
-        g.fillStyle = "rgba(255,255,255,.9)"; g.font = "500 " + Math.round(34 * s) + "px Segoe UI, Arial"; g.fillText("Etapa " + info.n + " de " + info.de, W / 2, H * 0.44 + 78 * s);
-        g.globalAlpha = 1;
+      /* a alça da cortina no comparar (o mesmo círculo da vista) */
+      var k = info.cortina;
+      if (k && k.fase === "comparar") {
+        var ln = ap._linhaNaTela(W, H);
+        if (ln && ln.p.z < 1) {
+          var cx = ln.p.x, cy = ln.p.y, R = 22 * s;
+          g.beginPath(); g.arc(cx, cy, R + 6 * s, 0, Math.PI * 2); g.fillStyle = "rgba(143,211,255,.38)"; g.fill();
+          g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fillStyle = "#fff"; g.fill();
+          g.fillStyle = "#1d2b44"; g.font = "700 " + Math.round(20 * s) + "px " + F; g.textAlign = "center"; g.fillText("⇔", cx, cy + 7 * s);
+          g.font = "600 " + Math.round(15 * s) + "px " + F;
+          var wa = g.measureText("ANTES").width + 22 * s, wd = g.measureText("DEPOIS").width + 22 * s;
+          caixa(cx - R - 14 * s - wa, cy - 15 * s, wa, 30 * s, 6 * s, "rgba(12,20,34,.72)"); caixa(cx + R + 14 * s, cy - 15 * s, wd, 30 * s, 6 * s, "rgba(36,128,78,.86)");
+          g.fillStyle = "#fff"; g.textAlign = "left"; g.fillText("ANTES", cx - R - 14 * s - wa + 11 * s, cy + 6 * s); g.fillText("DEPOIS", cx + R + 14 * s + 11 * s, cy + 6 * s);
+        }
       }
-      /* a marca e o progresso */
-      g.shadowBlur = 0; g.textAlign = "right"; g.fillStyle = "rgba(255,255,255,.55)"; g.font = "600 " + Math.round(16 * s) + "px Segoe UI, Arial"; g.fillText(MARCA, W - 40 * s, H - 14 * s);
-      g.fillStyle = "rgba(255,255,255,.2)"; g.fillRect(0, H - 5 * s, W, 5 * s);
-      g.fillStyle = cor; g.fillRect(0, H - 5 * s, W * clamp(t / L.total, 0, 1), 5 * s);
+      /* o progresso, fino, no pé do quadro */
+      g.fillStyle = "rgba(255,255,255,.16)"; g.fillRect(0, H - 4 * s, W, 4 * s);
+      g.fillStyle = cor; g.fillRect(0, H - 4 * s, W * clamp(t / L.total, 0, 1), 4 * s);
       g.restore();
     }
   };

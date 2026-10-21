@@ -117,7 +117,21 @@
     telha_metalica: { m: 0.76, asp: 1.0, media: [0.585, 0.591, 0.602], metal: 0.6, fonte: "ambientCG CorrugatedSteel005 (onda assada na cor)", nome: "Telha metálica", cat: "cobertura" },
     terra: { m: 2.0, asp: 1.0, media: [0.480, 0.381, 0.265], natural: 1, fonte: "ambientCG Ground067", nome: "Terra", cat: "externo" },
     areia: { m: 2.0, asp: 1.0, media: [0.708, 0.601, 0.453], natural: 1, fonte: "ambientCG Ground079L", nome: "Areia", cat: "externo" },
-    asfalto: { m: 2.5, asp: 1.0, media: [0.338, 0.321, 0.281], natural: 1, fonte: "ambientCG Asphalt033", nome: "Asfalto", cat: "externo" }
+    asfalto: { m: 2.5, asp: 1.0, media: [0.338, 0.321, 0.281], natural: 1, fonte: "ambientCG Asphalt033", nome: "Asfalto", cat: "externo" },
+
+    /* ---- leva do MOBILIÁRIO (20/10/2026): tecidos, couro, madeirados, cobre, latão e pedra escura ----
+       tecido NÃO é `natural`: a cor do tecido vem do IFC (o veludo da foto é vermelho; num sofá verde a
+       textura é tingida para o verde). Cobre e latão SÃO `natural`: sobre o cinza genérico valem a cor do metal. */
+    madeira_carvalho: { m: 1.0, asp: 1.0, media: [0.633, 0.495, 0.344], natural: 1, fonte: "Poly Haven oak_veneer_01", nome: "Carvalho (folheado, MDF)", cat: "madeira" },
+    madeira_nogueira: { m: 1.0, asp: 1.0, media: [0.536, 0.495, 0.448], natural: 1, fonte: "Poly Haven natural_walnut_veneer", nome: "Nogueira (folheado, MDF)", cat: "madeira" },
+    tecido_linho: { m: 0.4, asp: 1.0, media: [0.730, 0.730, 0.730], fonte: "ambientCG Fabric036", nome: "Tecido linho", cat: "tecido" },
+    tecido_trama: { m: 0.4, asp: 1.0, media: [0.358, 0.356, 0.359], fonte: "ambientCG Fabric030", nome: "Tecido de estofado (trama fechada)", cat: "tecido" },
+    tecido_veludo: { m: 0.4, asp: 0.9619, media: [0.681, 0.177, 0.279], fonte: "Poly Haven velour_velvet", nome: "Tecido veludo", cat: "tecido" },
+    couro_liso: { m: 0.5, asp: 1.0, media: [0.101, 0.097, 0.096], natural: 1, fonte: "ambientCG Leather026", nome: "Couro liso (preto)", cat: "tecido" },
+    couro_marrom: { m: 0.5, asp: 1.0, media: [0.318, 0.178, 0.063], natural: 1, fonte: "Poly Haven brown_leather", nome: "Couro marrom / caramelo", cat: "tecido" },
+    metal_cobre: { m: 0.5, asp: 1.0, media: [0.796, 0.519, 0.363], natural: 1, metal: 0.9, fonte: "ambientCG Metal047A", nome: "Cobre", cat: "metal" },
+    metal_latao: { m: 0.5, asp: 1.0, media: [0.952, 0.839, 0.569], natural: 1, metal: 0.9, fonte: "ambientCG Metal042A", nome: "Latão / dourado", cat: "metal" },
+    granito_preto: { m: 1.0, asp: 1.0, media: [0.111, 0.110, 0.108], natural: 1, fonte: "ambientCG Marble006", nome: "Granito preto / pedra escura", cat: "pedra" }
   };
 
   /* as categorias da lista de Propriedades, na ordem em que aparecem */
@@ -128,6 +142,7 @@
     { id: "piso", nome: "Porcelanato, cerâmica e azulejo" },
     { id: "pedra", nome: "Pedra e mármore" },
     { id: "madeira", nome: "Madeira" },
+    { id: "tecido", nome: "Tecido e couro" },
     { id: "metal", nome: "Metal e vidro" },
     { id: "cobertura", nome: "Telhas" },
     { id: "externo", nome: "Terreno e pavimento" }
@@ -198,6 +213,13 @@
     { re: /pastilha|glass mosaic|mosaico de vidro/, slug: "pastilha_vidro" },
     { re: /espelho|mirror/, classe: "metal" },
     { re: /vidro|glass|cristal|policarbonato/, classe: "vidro" },
+    /* MOBILIÁRIO (20/10/2026): tecido e couro. Ficam logo após o vidro: nenhum nome de obra
+       antigo casa nestas palavras, e "tecido verde" não pode cair em "grama" nem "terra". */
+    { re: /veludo|velvet|velour/, slug: "tecido_veludo" },
+    { re: /linho|linen/, slug: "tecido_linho" },
+    { re: /tecido|fabric|textile|estofad|upholster|boucle|chenille|\bcloth\b/, slug: "tecido_trama" },
+    { re: /couro.{0,12}(marrom|caramelo|conhaque|tabaco|castanho)|(marrom|caramelo|brown|tan).{0,8}(couro|leather)/, slug: "couro_marrom" },
+    { re: /couro|leather|courino|corino|\bskai\b/, slug: "couro_liso" },
     { re: /shingle/, slug: "telha_shingle_marrom" },
     { re: /telha.{0,30}(metal|aco|galvaniz|zinc|termoacust|sanduiche|trapez)|metal(lic)? roof|steel roof|termoacustic/, slug: "telha_metalica" },
     { re: /fibrocimento|fibro cimento|fib(er|re) ?cement|eternit|cimento amianto|telha ondulada/, slug: "telha_fibrocimento" },
@@ -209,14 +231,18 @@
     { re: /antiderrapante|piso externo|exterior floor/, slug: "porcelanato_antiderrapante_externo" },
     { re: /sao tome|miracema|pedra mineira|quartzito|pedra goia|arenito|sandstone|flagstone/, slug: "pedra_sao_tome" },
     { re: /rachao|pedra de mao|arrimo de pedra|alvenaria de pedra|muro de pedra|gabiao|rubble|fieldstone|stone wall/, slug: "pedra_rachao" },
+    { re: /granito.{0,15}(preto|negro|black|escuro)|(preto|negro|black).{0,10}(granito|granite)|(marmore|marble).{0,10}(preto|negro|black|nero)|(preto|negro|black).{0,10}(marmore|marble)/, slug: "granito_preto" },
     { re: /granito|granite/, slug: "granito_cinza" },
-    { re: /marmore|marble|travertin/, slug: "marmore_branco" },
+    { re: /marmore|marble|travertin|quartzo|quartz\b/, slug: "marmore_branco" },
     { re: /ardosia|slate/, slug: "porcelanato_grafite" },
     { re: /porcelanato.{0,30}(grafite|preto|cinza escuro|chumbo|black|dark|antracite|anthracite)|(grafite|preto|chumbo).{0,20}porcelanato/, slug: "porcelanato_grafite" },
     { re: /porcelanato.{0,30}(branco|white|polido)|(branco|white).{0,20}porcelan/, slug: "porcelanato_branco_60" },
     { re: /azulejo|revestimento ceramic|wall til|subway/, slug: "azulejo_porcelanato_bwc" },
     { re: /porcelanato|porcelain|piso ceramic|ceramica\b|ceramic til|floor til|\btiles?\b/, slug: "porcelanato_acetinado_claro" },
     { re: /pintura|pintad|\btinta\b|painted|\bpaint\b|latex|gesso|drywall|gypsum|plasterboard|massa corrida|emassad/, slug: "pintura_lisa" },
+    /* MOBILIÁRIO: MDF/laca de COR LISA é pintura (nunca madeira tingida de branco) e vem ANTES
+       do \bmdf\b da madeira clara. "mdf carvalho/nogueira/freijo" não casam aqui. */
+    { re: /\b(mdf|mdp|laca|lacad[oa]|melamin\w*)\b.{0,15}\b(branc[oa]|off white|grafite|preto|preta|verde|azul|cinza|black|white|gray|grey)\b|metal.{0,8}\b(branco|white|off white)\b/, slug: "pintura_lisa" },
     { re: /reboco|rebocad|emboco|argamassa|chapisco|grafiato|textura|plaster|stucco|\brender\b/, slug: "reboco_rustico_offwhite" },
     { re: /amadeirad/, slug: "pvc_amadeirado_caramelo" },
     { re: /\btaco|parquet|espinha|herringbone|chevron/, slug: "taco_espinha" },
@@ -224,6 +250,8 @@
     { re: /\bdeck/, slug: "madeira_deck" },
     { re: /lambri|forro.{0,20}madeira|macho ?femea/, slug: "forro_madeira_lambri" },
     { re: /tabua|siding|mata ?junta|ripad/, slug: "madeira_tabua_vertical_avela" },
+    { re: /nogueira|walnut/, slug: "madeira_nogueira" },
+    { re: /\bmdf\b.{0,12}(carvalho|oak)|(carvalho|oak).{0,12}(folhead|veneer)|folhead.{0,12}(carvalho|oak)/, slug: "madeira_carvalho" },
     { re: /imbuia|mogno|\bipe\b|cumaru|jatoba|tabaco|nogueira|walnut|mahogany|dark wood|madeira escura|wenge|cerejeira|cherry/, slug: "madeira_escura_imbuia" },
     { re: /freijo|carvalho|\boak\b|marfim|madeira clara|light wood|\bmdf\b|compensado|plywood|\bosb\b|birch|maple|betula|pinus|\bpine\b/, slug: "madeira_clara_freijo" },
     { re: /madeira|angelim|eucalipto|\bwood|timber/, slug: "madeira_angelim_pedra" },
@@ -240,6 +268,9 @@
     { re: /\bareia|\bsand\b/, slug: "areia" },
     { re: /brita|cascalho|pedrisco|gravel|seixo|pebble/, slug: "cascalho" },
     { re: /\bterra\b|\bsolo\b|\bsoil|\bearth\b|\bdirt\b|aterro|terreno/, slug: "terra" },
+    { re: /\bcobre\b|copper/, slug: "metal_cobre" },
+    { re: /latao|dourad|\bbrass\b|\bgold\b|golden/, slug: "metal_latao" },
+    { re: /cromad|chrome|chromium/, slug: "aluminio_escovado" },
     { re: /alumini|aluminum|inox|stainless|anodiz/, slug: "aluminio_escovado" },
     { re: /ferro|\baco\b|metalic|metal|steel|galvaniz|chapa/, slug: "metal_preto_fosco" },
     { re: /pedra|stone|moledo|rocha|\brock/, slug: "pedra_moledo_clara" }

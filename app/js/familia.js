@@ -47,7 +47,7 @@
     conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"
   };
   var FORMAS = { caixa: "Caixa", cilindro: "Cilindro", extrusao: "Extrusão de contorno", revolucao: "Revolução de perfil", gerada: "Forma gerada (louça/equipamento RA)" };
-  var UNIDADES_QTO = { un: "unidade", m: "metro", m2: "m²", m3: "m³", kg: "kg" };
+  var UNIDADES_QTO = { un: "unidade", m: "metro", m2: "m²", m3: "m³", kg: "kg", h: "hora" };   /* h: a montagem da peça pronta (mobiliário, js/familiascat.js) é mão de obra por hora */
 
   function txt(v) { return v == null ? "" : String(v); }
   function arr(a) { return Array.isArray(a) ? a : []; }

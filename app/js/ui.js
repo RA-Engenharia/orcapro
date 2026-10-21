@@ -1534,10 +1534,18 @@
           (_semQtd.length > 5 ? '…' : '') +
           ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</span>');
       }
+      /* revisão A1: PENDÊNCIAS DE PREÇO — item com preço provisório (mobiliário de alto padrão sob consulta): soma no total
+         com o maior preço da categoria, não bloqueia, mas a tela diz que tem de ser cotado */
+      var _prov = Orcamento.itensPrecoProvisorio ? Orcamento.itensPrecoProvisorio(orc) : [];
+      if (_prov.length) {
+        linhasAv.push('<span data-orc-preco-provisorio="' + _prov.length + '"><b>' + _prov.length + ' item(ns) com preço provisório — cotar com o fornecedor:</b> ' +
+          _prov.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
+          (_prov.length > 5 ? '…' : '') + ' — ' + Util.esc(_prov[0].motivo) + '. Entram no total com o maior preço da categoria; ao digitar o preço cotado a pendência sai.</span>');
+      }
       cab2 += this._licitacaoPainel(orc);
       if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
       if (linhasAv.length || _desf) {
-        cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length ? "alerta" : "info"),
+        cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info"),
           textoHtml: linhasAv.join(""), acaoHtml: _desf });
       }
 

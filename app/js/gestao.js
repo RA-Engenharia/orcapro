@@ -14341,7 +14341,8 @@
       try { if (window.OrcModeloUI) secoes = secoes.concat(OrcModeloUI.secoesFamilia(id)); } catch (eOM) {}
       secoes.push({ nome: "Ações", params: [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fam); } }]
         .concat(self._vaoInverterAcoes(id))
-        .concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }]) });
+        .concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }])
+        .concat(window.MobTrocaUI ? MobTrocaUI.acoes(id) : []) });   /* mobiliário do catálogo: Trocar por… e Fabricante/linha/acabamento */
       return {
         titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
         onMudar: function (pid, valor) {
@@ -14531,7 +14532,8 @@
           var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
           extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
             .concat(self._vaoInverterAcoes(fid))
-            .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
+            .concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : [])
+            .concat(window.MobTrocaUI ? MobTrocaUI.acoes(fid) : []) });   /* mobiliário do catálogo: Trocar por… e Fabricante/linha/acabamento */
         } else {
           if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
           if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado) extras = extras.concat(BimTelhadoPecaUI.secoesTelhado(info));   /* T5: peças editadas do telhado */

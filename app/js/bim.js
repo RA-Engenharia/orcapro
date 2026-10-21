@@ -12280,7 +12280,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     'ceramica terracota': { cor: 0xb5623c, rug: 0.7, met: 0 }, 'tronco palmeira': { cor: 0x6a5238, rug: 0.95, met: 0 }, 'casca de arvore': { cor: 0x7b6a5a, rug: 0.95, met: 0 },
     'folha verde escura': { cor: 0x2f5a2e, rug: 0.6, met: 0 }, 'folha verde': { cor: 0x4a7f35, rug: 0.6, met: 0 }, 'folha verde clara': { cor: 0x7fae4a, rug: 0.6, met: 0 }, 'folha variegada': { cor: 0x6f9a48, rug: 0.55, met: 0 },
     'flor amarela': { cor: 0xf2c53a, rug: 0.6, met: 0 }, 'flor rosa': { cor: 0xe58aa6, rug: 0.6, met: 0 }, 'flor lilas': { cor: 0xb48ad2, rug: 0.6, met: 0 }, 'flor azul': { cor: 0x6f7fd8, rug: 0.6, met: 0 }, 'flor branca': { cor: 0xf4f2ee, rug: 0.6, met: 0 },
-    'grama esmeralda': { cor: 0x3f7d2b, rug: 0.95, met: 0 }, 'grama amendoim': { cor: 0x5f9b35, rug: 0.95, met: 0 }, 'seixo': { cor: 0xd8d0c0, rug: 0.7, met: 0 }
+    'grama esmeralda': { cor: 0x3f7d2b, rug: 0.95, met: 0 }, 'grama amendoim': { cor: 0x5f9b35, rug: 0.95, met: 0 }, 'seixo': { cor: 0xd8d0c0, rug: 0.7, met: 0 },
+    /* MOBILIÁRIO (20/10/2026): variações de cor de tecido, couro, MDF liso/madeirado, metal cobre/dourado — as texturas CC0 vestem por cima (js/bimtextura.js) */
+    'tecido off-white': { cor: 0xe6e1d6, rug: 0.95, met: 0 }, 'tecido mostarda': { cor: 0xc79a2e, rug: 0.95, met: 0 }, 'tecido rosa': { cor: 0xd9a1a8, rug: 0.95, met: 0 },
+    'tecido linho': { cor: 0xcdbfa6, rug: 0.95, met: 0 }, 'tecido veludo verde': { cor: 0x2f5a45, rug: 0.9, met: 0 }, 'tecido veludo azul': { cor: 0x1f3f6a, rug: 0.9, met: 0 },
+    'tecido veludo rosa': { cor: 0xc98a97, rug: 0.9, met: 0 }, 'tecido boucle': { cor: 0xe4dfd3, rug: 0.97, met: 0 }, 'couro preto': { cor: 0x1c1b1b, rug: 0.45, met: 0, cc: 0.1, ccr: 0.5 },
+    'couro marrom': { cor: 0x5a3722, rug: 0.45, met: 0, cc: 0.1, ccr: 0.5 }, 'couro sintetico preto': { cor: 0x1f1e1e, rug: 0.5, met: 0, cc: 0.1, ccr: 0.5 }, 'mdf carvalho': { cor: 0xb98d5a, rug: 0.6, met: 0 },
+    'mdf nogueira': { cor: 0x6b4a32, rug: 0.55, met: 0, cc: 0.15, ccr: 0.4 }, 'mdf freijo': { cor: 0xa27240, rug: 0.55, met: 0, cc: 0.12, ccr: 0.4 }, 'mdf branco': { cor: 0xf1f1ef, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 },
+    'mdf off-white': { cor: 0xe8e4da, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf grafite': { cor: 0x3a3d40, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf preto': { cor: 0x1f2023, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 },
+    'mdf verde': { cor: 0x4f6a52, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf azul': { cor: 0x3f5f82, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'metal branco': { cor: 0xe9e9e6, rug: 0.4, met: 0.6 },
+    'metal cobre': { cor: 0xb87333, rug: 0.35, met: 1 }, 'metal dourado': { cor: 0xc9a24a, rug: 0.3, met: 1 }, 'vidro': { cor: 0xc6dde6, rug: 0.05, met: 0, op: 0.3 },
+    'palha natural': { cor: 0xc9b17f, rug: 0.9, met: 0 }, 'rattan natural': { cor: 0xb99b6b, rug: 0.85, met: 0 }, 'concreto': { cor: 0x9c9b97, rug: 0.85, met: 0 }
   };
   function famMatPBR(k, nome) {
     var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
@@ -18130,6 +18140,7 @@ window.BIM = {
     if (!S || !S.edit || !S._editOpExterna) return false;
     mud = mud || {};
     var o = { op: 'instancia', id: id };
+    if (mud.famId != null) { o.famId = String(mud.famId); if (mud.x != null) o.x = +mud.x; if (mud.z != null) o.z = +mud.z; }   /* Trocar por… (js/mobtrocaui.js) */
     if (mud.tipoId != null) o.tipoId = mud.tipoId;
     if (mud.inst) o.inst = mud.inst;
     if (mud.rotY != null) o.rotY = +mud.rotY;

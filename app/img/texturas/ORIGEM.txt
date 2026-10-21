@@ -139,7 +139,6 @@ pintura_lisa
   licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 1.5 m (estimado)
   arquivos: cor 1024 px, normal e rugosidade 512 px
 
-
 porcelanato_grafite
   fonte: ambientCG · id: Tiles140
   https://ambientcg.com/view?id=Tiles140
@@ -255,4 +254,64 @@ pedra_rachao
   fonte: ambientCG · id: Bricks089
   https://ambientcg.com/view?id=Bricks089
   licença: CC0 1.0 (https://docs.ambientcg.com/license/) · tamanho físico de uma repetição: 2.2 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+madeira_carvalho
+  fonte: Poly Haven · id: oak_veneer_01
+  https://polyhaven.com/a/oak_veneer_01
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+madeira_nogueira
+  fonte: Poly Haven · id: natural_walnut_veneer
+  https://polyhaven.com/a/natural_walnut_veneer
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+tecido_linho
+  fonte: ambientCG · id: Fabric036
+  https://ambientcg.com/view?id=Fabric036
+  licença: CC0 · tamanho físico de uma repetição: 0.4 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+tecido_trama
+  fonte: ambientCG · id: Fabric030
+  https://ambientcg.com/view?id=Fabric030
+  licença: CC0 · tamanho físico de uma repetição: 0.4 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+tecido_veludo
+  fonte: Poly Haven · id: velour_velvet
+  https://polyhaven.com/a/velour_velvet
+  licença: CC0 · tamanho físico de uma repetição: 0.4 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+couro_liso
+  fonte: ambientCG · id: Leather026
+  https://ambientcg.com/view?id=Leather026
+  licença: CC0 · tamanho físico de uma repetição: 0.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+couro_marrom
+  fonte: Poly Haven · id: brown_leather
+  https://polyhaven.com/a/brown_leather
+  licença: CC0 · tamanho físico de uma repetição: 0.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+metal_cobre
+  fonte: ambientCG · id: Metal047A
+  https://ambientcg.com/view?id=Metal047A
+  licença: CC0 · tamanho físico de uma repetição: 0.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+metal_latao
+  fonte: ambientCG · id: Metal042A
+  https://ambientcg.com/view?id=Metal042A
+  licença: CC0 · tamanho físico de uma repetição: 0.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px
+
+granito_preto
+  fonte: ambientCG · id: Marble006
+  https://ambientcg.com/view?id=Marble006
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
   arquivos: cor 1024 px, normal e rugosidade 512 px

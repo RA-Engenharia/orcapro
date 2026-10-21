@@ -893,6 +893,8 @@
            logo abaixo uma "Composição do custo" de 5.000) e envenenava o
            fechamento em um valor, que reconstrói o unitário a partir delas. */
         this.repartirParcelas(it, novo, this.garantirConfig(orc).arredondamento, antesU);
+        /* revisão A1 (mobiliário): o preço COTADO pelo usuário substitui o provisório — a pendência de preço sai da lista */
+        if (it.precoProvisorio && Math.abs(novo - antesU) > 0.004) { it.precoCotadoDe = it.precoProvisorio; delete it.precoProvisorio; }
       }
       if (campos.descricao != null) it.descricao = campos.descricao;
       return orc;
@@ -1201,6 +1203,18 @@
       var out = [];
       this.calcular(orc).linhas.forEach(function (L) {
         if (!(L.custoUnitario > 0)) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome });
+      });
+      return out;
+    },
+
+    /* PENDÊNCIAS DE PREÇO (revisão A1, 20/10/2026): item orçado com PREÇO PROVISÓRIO — o mobiliário de alto padrão "sob
+     * consulta" entra com o maior preço da categoria (regra RA: incerto = o mais alto) e precisa ser cotado com o fornecedor.
+     * NÃO bloqueia proposta (o valor existe e é o conservador); a tela lista para ninguém tomar provisório por preço real. */
+    itensPrecoProvisorio: function (orc) {
+      var out = [];
+      this.calcular(orc).linhas.forEach(function (L) {
+        var it = L.item || null, pv = it && it.precoProvisorio;
+        if (pv) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome, motivo: pv.motivo || "preço provisório", custoUnitario: L.custoUnitario });
       });
       return out;
     },

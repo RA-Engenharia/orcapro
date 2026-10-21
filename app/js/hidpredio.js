@@ -273,7 +273,16 @@
          (sistema ventilação, mesmo DN) até o terminal — o HidES confere a ventilação primária pelo trecho que sai do topo */
       var yVP = r4(pavs[pavs.length - 1] + geo(par, "acimaUltimoPiso"));
       novas.push({ op: "trecho", id: pid + "-tq", sistema: "esgoto", material: "pvc_esgoto", dn: dnTQ, p1: { x: S.x, y: yVP, z: S.z }, p2: { x: S.x, y: yPe, z: S.z }, continua: "p1", predio: id, predioParte: "tq" });
-      novas.push({ op: "trecho", id: pid + "-vp", sistema: "ventilacao", material: "pvc_esgoto", dn: dnTQ, p1: { x: S.x, y: yVP, z: S.z }, p2: { x: S.x, y: yTopo, z: S.z }, continua: "ambos", predio: id, predioParte: "ventilador_primario" });
+      /* FRENTE H3 (20/10/2026): o TERMINAL DE VENTILAÇÃO (a peça do produto, como no ambiente: js/hidambiente.js) no topo do
+         ventilador primário e da coluna — antes as duas terminavam em ponta aberta ("continua") acima da cobertura */
+      function terminal(tid, dn, P0) {
+        var pc = B.PECAS && B.PECAS.terminal_ventilacao;
+        if (pc && arr(pc.dns).indexOf(String(dn)) >= 0) { novas.push({ op: "peca", id: tid, peca: "terminal_ventilacao", sistema: "ventilacao", dn: String(dn), x: r4(P0.x), y: r4(P0.y), z: r4(P0.z), predio: id, predioParte: "terminal" }); return true; }
+        pend("predio.terminal", "terminal de ventilação DN " + dn + " sem peça no catálogo: a ponta " + tid + " ficou aberta", [tid]); return false;
+      }
+      var opVP = { op: "trecho", id: pid + "-vp", sistema: "ventilacao", material: "pvc_esgoto", dn: dnTQ, p1: { x: S.x, y: yVP, z: S.z }, p2: { x: S.x, y: yTopo, z: S.z }, continua: "ambos", predio: id, predioParte: "ventilador_primario" };
+      novas.push(opVP);
+      if (terminal(pid + "-vp-terminal", dnTQ, opVP.p2)) opVP.continua = "p1";
       novas.push({ op: "trecho", id: pid + "-pe", sistema: "esgoto", material: "pvc_esgoto", dn: dnTQ, p1: { x: S.x, y: yPe, z: S.z }, p2: { x: r4(E.x), y: r4(yPe - Lpe * iPe), z: r4(E.z) }, continua: "p2", predio: id, predioParte: "pe" });
       if (cr.length && modo === "atravessar") cr.forEach(function (q, i) {
         novas.push({ op: "anotar", id: pid + "-furo" + (i + 1), x: q.ponto.x, y: r4(q.b.yTopo + Rd.GEO_REDE.folgaBaldrame), z: q.ponto.z, texto: "Furo em viga baldrame " + q.b.id + ": pé do tubo de queda DN " + dnTQ + " com tubo-camisa — verificar com o projeto estrutural", predio: id, predioParte: "furo" });
@@ -285,9 +294,13 @@
       if (linV) [40, 50, 75, 100, 150, 200, 250, 300].some(function (d) { var v = linV["ventilador_dn" + d + "_m"]; if (v != null && num(v, -1) >= Lcv) { dnCV = d; return true; } return false; });   // hid:ok colunas da Tabela 2 (DN do ventilador)
       if (dnCV == null) { Pn("es.coluna_ventilacao", "DN da coluna de ventilação " + pid + " sem linha na Tabela 2 (TQ DN " + lin.dn + ", " + uhc + " UHC, " + f2(Lcv) + " m)", [pid]); dnCV = dnTQ; }
       dnCV = (pvcEs.dns || []).filter(function (d) { return d >= dnCV; })[0] || dnCV;
-      var yC0 = r4(yJ + d2(S, C) * ac);
+      /* FRENTE H3 (20/10/2026): no tubo VERTICAL a ventilação liga por junção a 45° (NBR 8160 4.3.16 a, es8160.ventilacao_regras): a
+         ligação sobe a 45° do TQ até a coluna. Antes saía deitada (aclive de 1 %) do TQ — um tê de lado no tubo de queda */
+      var yC0 = r4(yJ + d2(S, C));
       novas.push({ op: "trecho", id: pid + "-cvl", sistema: "ventilacao", material: "pvc_esgoto", dn: dnCV, p1: { x: S.x, y: yJ, z: S.z }, p2: { x: C.x, y: yC0, z: C.z }, continua: "p1", predio: id, predioParte: "cv_ligacao" });
-      novas.push({ op: "trecho", id: pid + "-cv", sistema: "ventilacao", material: "pvc_esgoto", dn: dnCV, p1: { x: C.x, y: yC0, z: C.z }, p2: { x: C.x, y: yTopo, z: C.z }, continua: "p2", predio: id, predioParte: "cv" });
+      var opCV = { op: "trecho", id: pid + "-cv", sistema: "ventilacao", material: "pvc_esgoto", dn: dnCV, p1: { x: C.x, y: yC0, z: C.z }, p2: { x: C.x, y: yTopo, z: C.z }, continua: "p2", predio: id, predioParte: "cv" };
+      novas.push(opCV);
+      if (terminal(pid + "-cv-terminal", dnCV, opCV.p2)) delete opCV.continua;
       /* COLUNA DE ÁGUA FRIA: do barrilete (topo da obra) para baixo; aparada na ligação mais baixa depois do "ligar" */
       var F = G.sh.af, dnAF = pvcAf.dn, yAF0 = r4(terreno + geo(par, "afBase"));
       var opAF = { op: "trecho", id: pid + "-af", sistema: "agua_fria", material: "pvc_soldavel", dn: dnAF, p1: { x: F.x, y: topoObra, z: F.z }, p2: { x: F.x, y: yAF0, z: F.z }, continua: "p1", predio: id, predioParte: "af" };

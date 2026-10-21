@@ -85,6 +85,16 @@
     if (!PM) { this.errosPartes.push("o motor de partes móveis (js/partesmoveis.js) não carregou"); fn(this); return this; }
     var d = {}; Object.keys(def || {}).forEach(function (k) { d[k] = def[k]; });
     d.id = id;
+    /* PARTE DENTRO DE GRUPO (20/10/2026 — a geladeira e o forno desenhados dentro do armário planejado): o eixo e a direção vêm nas
+       coordenadas do grupo e vão para as da peça pela matriz atual. Na raiz (matriz identidade) nada muda — as famílias antigas declaram na raiz. */
+    if (this.pilha.length) {
+      var Mx = this.M, R0 = Mx.r;
+      var pt = function (q) { return [R0[0] * q[0] + R0[1] * q[1] + R0[2] * q[2] + Mx.t[0], R0[3] * q[0] + R0[4] * q[1] + R0[5] * q[2] + Mx.t[1], R0[6] * q[0] + R0[7] * q[1] + R0[8] * q[2] + Mx.t[2]]; };
+      var dr = function (q) { return [R0[0] * q[0] + R0[1] * q[1] + R0[2] * q[2], R0[3] * q[0] + R0[4] * q[1] + R0[5] * q[2], R0[6] * q[0] + R0[7] * q[1] + R0[8] * q[2]]; };
+      if (Array.isArray(d.eixo)) d.eixo = pt(d.eixo);
+      if (Array.isArray(d.vetor)) d.vetor = dr(d.vetor);
+      if (Array.isArray(d.dir)) d.dir = dr(d.dir);
+    }
     var ja = this.partes.filter(function (p) { return p.id === id; })[0], antes = this.parteAtual;
     if (!ja) {
       var r = PM.normalizar(d);
@@ -490,12 +500,19 @@
   /* ---------------------------------------------------------- MINIATURA (canvas) */
   /* miniatura(solidos, caixa, tam, corDe): vista isométrica por pintor; `corDe(material)` devolve #hex.
      Só no navegador. Devolve data URL PNG ou "" (sem DOM). Triângulo a triângulo, mas com teto de 6 mil. */
-  function miniatura(solidos, tam, corDe) {
-    var D = global.document;
-    if (!D || !D.createElement) return "";
-    var cv; try { cv = D.createElement("canvas"); } catch (e) { return ""; }
-    tam = tam || 96; cv.width = tam; cv.height = tam;
-    var cx = cv.getContext && cv.getContext("2d"); if (!cx) return "";
+  /* LUZ DA MINIATURA = a do 3D (js/bim.js): hemisfério céu branco / chão 0x223344 a 0,55, sol branco 1,0 vindo de (30, 50, 20) e
+     preenchimento 0xbfd8ee 0,35 de (−40, 25, −30). Normalizado para a face de cima de uma peça clara não estourar. */
+  var CAM = (function () { var a = 35 * RAD, b = 30 * RAD; return [-Math.sin(a) * Math.cos(b), Math.sin(b), Math.cos(a) * Math.cos(b)]; })();
+  var SOL = (function () { var l = Math.sqrt(30 * 30 + 50 * 50 + 20 * 20); return [30 / l, 50 / l, 20 / l]; })();
+  var PREENCHE = (function () { var l = Math.sqrt(40 * 40 + 25 * 25 + 30 * 30); return [-40 / l, 25 / l, -30 / l]; })();
+  var FUNDO_MINI = "#f4f4f2";
+  function luzDe(nx, ny, nz) {
+    var hemi = 0.55 * (0.5 * (1 + ny) + 0.5 * (1 - ny) * 0.16);   /* chão 0x223344 ≈ 16 % de brilho */
+    var sol = Math.max(0, nx * SOL[0] + ny * SOL[1] + nz * SOL[2]), pre = 0.35 * 0.85 * Math.max(0, nx * PREENCHE[0] + ny * PREENCHE[1] + nz * PREENCHE[2]);
+    return cl(0.18 + (hemi + sol + pre) * 0.72, 0.3, 1.08);
+  }
+  /* trisMini(solidos, corDe): os triângulos projetados, com a luz e na ORDEM DO PINTOR (o mais longe primeiro) — puro, testável no Node */
+  function trisMini(solidos, corDe) {
     var ca = Math.cos(35 * RAD), sa = Math.sin(35 * RAD), cb = Math.cos(30 * RAD), sb = Math.sin(30 * RAD);   /* giro em Y de 35°, queda de 30° */
     var tris = [], mn = [Infinity, Infinity], mx = [-Infinity, -Infinity];
     function proj(x, y, z) { var X = x * ca + z * sa, Z = -x * sa + z * ca, Y = y * cb - Z * sb, D2 = y * sb + Z * cb; return [X, -Y, D2]; }
@@ -512,15 +529,31 @@
         var o0 = s.f[t] * 3, o1 = s.f[t + 1] * 3, o2 = s.f[t + 2] * 3;
         var e1 = [s.v[o1] - s.v[o0], s.v[o1 + 1] - s.v[o0 + 1], s.v[o1 + 2] - s.v[o0 + 2]], e2 = [s.v[o2] - s.v[o0], s.v[o2 + 1] - s.v[o0 + 1], s.v[o2 + 2] - s.v[o0 + 2]];
         var nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0], nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
-        var luz = cl(0.45 + 0.55 * ((nx * -0.35 + ny * 0.8 + nz * 0.5) / nl), 0.25, 1.05);
+        nx /= nl; ny /= nl; nz /= nl;
+        /* REVISÃO A1 (20/10/2026): a face vista é a que olha para a câmera — o sentido do enrolamento das malhas geradas não é
+           confiável, e a normal invertida pintava a face de cima no escuro. Vira a normal para a câmera (luz dos dois lados). */
+        if (nx * CAM[0] + ny * CAM[1] + nz * CAM[2] < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        var luz = luzDe(nx, ny, nz);
         tris.push({ p: [a, b, d], z: (a[2] + b[2] + d[2]) / 3, k: luz, rgb: rgb });
         [a, b, d].forEach(function (q) { if (q[0] < mn[0]) mn[0] = q[0]; if (q[0] > mx[0]) mx[0] = q[0]; if (q[1] < mn[1]) mn[1] = q[1]; if (q[1] > mx[1]) mx[1] = q[1]; });
       }
     });
+    /* REVISÃO A1: D2 CRESCE PARA PERTO da câmera (a face de cima e a da frente têm D2 > 0). A ordem antiga (q.z − p.z) pintava
+       o MAIS PERTO primeiro e o fundo, a base e as costas por cima — a miniatura saía escura e igual para todo acabamento. */
+    tris.sort(function (p, q) { return p.z - q.z; });   /* o mais longe primeiro (pintor) */
+    return { tris: tris, mn: mn, mx: mx };
+  }
+  function miniatura(solidos, tam, corDe) {
+    var D = global.document;
+    if (!D || !D.createElement) return "";
+    var cv; try { cv = D.createElement("canvas"); } catch (e) { return ""; }
+    tam = tam || 96; cv.width = tam; cv.height = tam;
+    var cx = cv.getContext && cv.getContext("2d"); if (!cx) return "";
+    var TM = trisMini(solidos, corDe), tris = TM.tris, mn = TM.mn, mx = TM.mx;
     if (!tris.length) return "";
-    tris.sort(function (p, q) { return q.z - p.z; });   /* o mais longe primeiro */
     var sc = (tam - 10) / Math.max(mx[0] - mn[0], mx[1] - mn[1], 1e-6), ox = (tam - (mx[0] - mn[0]) * sc) / 2 - mn[0] * sc, oy = (tam - (mx[1] - mn[1]) * sc) / 2 - mn[1] * sc;
     cx.clearRect(0, 0, tam, tam);
+    cx.fillStyle = FUNDO_MINI; cx.fillRect(0, 0, tam, tam);   /* fundo claro (a cor do acabamento aparece também no tema escuro) */
     tris.forEach(function (t) {
       cx.beginPath(); cx.moveTo(t.p[0][0] * sc + ox, t.p[0][1] * sc + oy); cx.lineTo(t.p[1][0] * sc + ox, t.p[1][1] * sc + oy); cx.lineTo(t.p[2][0] * sc + ox, t.p[2][1] * sc + oy); cx.closePath();
       var col = "rgb(" + Math.round(cl(t.rgb[0] * t.k, 0, 255)) + "," + Math.round(cl(t.rgb[1] * t.k, 0, 255)) + "," + Math.round(cl(t.rgb[2] * t.k, 0, 255)) + ")";
@@ -530,7 +563,7 @@
   }
 
   var Mob = {
-    cena: cena, sorteio: sorteio, contornoRR: contornoRR, contornoElipse: contornoElipse, miniatura: miniatura, num: num, cl: cl,
+    cena: cena, sorteio: sorteio, contornoRR: contornoRR, contornoElipse: contornoElipse, miniatura: miniatura, _trisMini: trisMini, _luzMini: luzDe, num: num, cl: cl,
     malhaCaixaR: malhaCaixaR, malhaCaixa: malhaCaixa, areaSinal: areaSinal, orelha: orelha
   };
   global.Mob = Mob;

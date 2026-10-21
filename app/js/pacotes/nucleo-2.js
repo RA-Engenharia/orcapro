@@ -9541,7 +9541,8 @@ secoes.push({ nome: "Quantitativo", params: [ro("fq-q", "Quantidade", Util.fmtNu
 try { if (window.OrcModeloUI) secoes = secoes.concat(OrcModeloUI.secoesFamilia(id)); } catch (eOM) {}
 secoes.push({ nome: "Ações", params: [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fam); } }]
 .concat(self._vaoInverterAcoes(id))
-.concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }]) });
+.concat(info.instancia.host ? [] : [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(id, { rotY: (info.instancia.rotY || 0) + Math.PI / 2 }); } }])
+.concat(window.MobTrocaUI ? MobTrocaUI.acoes(id) : []) });
 return {
 titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
 onMudar: function (pid, valor) {
@@ -9700,7 +9701,8 @@ if (window.BimInstUI && BimInstUI.secoesFamilia) extras = extras.concat(BimInstU
 var b = window.BIM, inf = b && b.instanciaInfo ? b.instanciaInfo(fid) : null, fd = inf && window.FamiliaUI ? FamiliaUI.obter(inf.instancia.famId) : null;
 extras.push({ nome: "Ações", params: (fd ? [{ id: "fam-editar", rotulo: "Família", tipo: "botao", rotuloBotao: "Editar família", fn: function () { self._famAbrir("editor", fd); } }] : [])
 .concat(self._vaoInverterAcoes(fid))
-.concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : []) });
+.concat(inf && !inf.instancia.host ? [{ id: "fam-girar", rotulo: "Girar", tipo: "botao", rotuloBotao: "Girar 90°", fn: function () { b.instanciaAlterar(fid, { rotY: (inf.instancia.rotY || 0) + Math.PI / 2 }); } }] : [])
+.concat(window.MobTrocaUI ? MobTrocaUI.acoes(fid) : []) });
 } else {
 if (window.BimArqUI) extras = extras.concat(BimArqUI.secoesExtrasPaleta(info));
 if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.secoesTelhado) extras = extras.concat(BimTelhadoPecaUI.secoesTelhado(info));
@@ -68693,5 +68695,5 @@ UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revi
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=5bf0b00706"},{"src":"js/bim-pacote.js?v=4a6e582d8e","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5f5380e072"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=7f9e20cb0d"},{"src":"js/bim-pacote.js?v=265a981735","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=ba7b80ecac"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

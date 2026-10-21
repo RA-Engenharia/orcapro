@@ -194,9 +194,13 @@
     demolicao: { titulo: "Demolição", legenda: "O que sai da obra." },
     construcao: { titulo: "Construção", legenda: "Paredes, esquadrias, cobertura e forro novos." },
     acabamentos: { titulo: "Acabamentos e entorno", legenda: "Pisos, revestimentos, piscina, mobiliário e paisagismo." },
-    final: { titulo: "Casa pronta", legenda: "O resultado da reforma." }
+    final: { titulo: "Casa pronta", legenda: "O resultado da reforma." },
+    transicao: { titulo: "Como era, como ficou", legenda: "O antes volta por um instante; a cortina passa e revela o depois." },
+    comparar: { titulo: "Antes × Depois", legenda: "À esquerda da linha, como era; à direita, como ficou. Arraste a linha para comparar." }
   };
-  var ORDEM_ETAPAS = ["planta", "existente", "demolicao", "construcao", "acabamentos", "final"];
+  var ORDEM_ETAPAS = ["planta", "existente", "demolicao", "construcao", "acabamentos", "final", "transicao", "comparar"];
+  /* o FECHO do filme tem duração fixa (não encolhe com a obra): a órbita da casa pronta, a transição e o comparar */
+  var FECHO = { final: 1, transicao: 1, comparar: 1 };
 
   var MENSAGEM_SEM_FASES = "Este modelo não tem fases (Existente / Construção nova): marque as peças existentes, as que serão demolidas e as novas (Gerenciar › Fases e Arquitetura › Demolir) para montar a apresentação da reforma.";
 
@@ -225,7 +229,9 @@
     if (id === "demolicao") return 5 + 1.2 * s;
     if (id === "construcao") return 8 + 0.9 * s;
     if (id === "acabamentos") return 6 + 0.9 * s;
-    return 12.5;   /* final: órbita + antes × depois */
+    if (id === "final") return 9;          /* órbita da casa pronta */
+    if (id === "transicao") return 11;     /* dissolve para o antes + cortina que revela o depois */
+    return 5;                              /* comparar: a linha para no meio */
   }
 
   /* opts: { deps, titulo, posicoes:{id:[x,z]}, duracaoMin, duracaoMax, duracao (força o total) } */
@@ -266,16 +272,16 @@
     var plantaLista = antes.filter(function (x) { return x.planta; });
 
     /* 2) quais etapas existem, e a janela de cada uma */
-    var contagem = { planta: plantaLista.length, existente: antes.length, demolicao: demolidas.length, construcao: novasConstr.length, acabamentos: novasAcab.length, final: 1 };
+    var contagem = { planta: plantaLista.length, existente: antes.length, demolicao: demolidas.length, construcao: novasConstr.length, acabamentos: novasAcab.length, final: 1, transicao: 1, comparar: 1 };
     var etapasIds = ORDEM_ETAPAS.filter(function (id) {
-      if (id === "final") return true;
+      if (FECHO[id]) return true;
       return contagem[id] > 0;
     });
-    var nom = {}, soma = 0, somaFora = 0, F0 = duracaoNominal("final", 1);
-    etapasIds.forEach(function (id) { nom[id] = duracaoNominal(id, contagem[id]); soma += nom[id]; if (id !== "final") somaFora += nom[id]; });
+    var nom = {}, soma = 0, somaFora = 0, F0 = 0;
+    etapasIds.forEach(function (id) { nom[id] = duracaoNominal(id, contagem[id]); soma += nom[id]; if (!FECHO[id]) somaFora += nom[id]; else F0 += nom[id]; });
     var alvo = opts.duracao ? +opts.duracao : clamp(soma, opts.duracaoMin || 60, opts.duracaoMax || 90);
     var fator = somaFora > 0 ? Math.max(0.3, (alvo - F0) / somaFora) : 1, dur = {}, total = 0;
-    etapasIds.forEach(function (id) { dur[id] = id === "final" ? F0 : Math.max(4, nom[id] * fator); });
+    etapasIds.forEach(function (id) { dur[id] = FECHO[id] ? nom[id] : Math.max(4, nom[id] * fator); });
     var t = 0, etapas = [];
     etapasIds.forEach(function (id, i) {
       var d = r3(dur[id]);
@@ -336,15 +342,19 @@
     var pintura = null;
     if (porId.acabamentos) pintura = { t0: r3(porId.acabamentos.t0 + 0.2), dur: r3(Math.min(5, porId.acabamentos.dur * 0.35) - 0.2) };
     else if (porId.construcao) pintura = { t0: r3(porId.construcao.t1 - 3), dur: 2.6 };
-    var ef = porId.final, comparar = 3.5, orbita = Math.max(6, ef.dur - comparar - 0.5);
-    var final = { orbita: { t0: ef.t0, dur: r3(orbita) }, comparar: { t0: r3(ef.t0 + orbita), dur: comparar }, fim: ef.t1 };
+    /* o fecho: órbita (final) → DISSOLVE do depois para o antes → CORTINA que atravessa e revela o depois → COMPARAR (a linha para no meio) */
+    var ef = porId.final, et = porId.transicao, ec = porId.comparar;
+    var final = { orbita: { t0: ef.t0, dur: ef.dur },
+                  dissolve: { t0: et.t0, dur: r3(et.dur * 0.34) },
+                  cortina: { t0: r3(et.t0 + et.dur * 0.42), dur: r3(et.dur * 0.5) },
+                  comparar: { t0: ec.t0, dur: ec.dur }, fim: ec.t1 };
 
     /* 5) os contadores finais (BimFases.quantidadesPorFase da fase de agora) */
     var qf = b.quantidadesPorFase(estado, F, deps).porStatus;
     var contadores = {
       demolidoM2: r3(qf.demolido.area + qf.temporario.area), demolidoPecas: qf.demolido.n + qf.temporario.n,
       construidoM2: r3(qf.novo.area + qf.temporario.area), construidoPecas: qf.novo.n + qf.temporario.n,
-      existentePecas: qf.existente.n, fase: F
+      existentePecas: qf.existente.n, existenteM2: r3(qf.existente.area), fase: F
     };
     if (temporarias.length) avisos.push(temporarias.length + " peça(s) temporária(s) (criada e demolida na mesma fase): entram na construção e saem nos acabamentos.");
     if (!demolidas.length) avisos.push("Nenhuma peça marcada como demolida: a etapa de demolição foi omitida.");
@@ -395,8 +405,83 @@
   function legendaEm(linha, t) {
     var e = etapaEm(linha, clamp(t, 0, linha.total)), c = contadoresEm(linha, t), tot = linha.contadores;
     var info = { etapa: e.id, n: e.n, de: linha.etapas.length, titulo: e.titulo, legenda: e.legenda, progresso: clamp((t - e.t0) / e.dur, 0, 1), contadores: c, totais: tot, comparar: false };
-    if (e.id === "final" && t >= linha.final.comparar.t0) { info.comparar = true; info.titulo = "Antes × Depois"; info.legenda = "À esquerda, como era; à direita, como ficou."; }
+    if (t >= linha.final.comparar.t0) info.comparar = true;
+    info.cortina = cortinaEm(linha, t);
     return info;
+  }
+
+  /* ------------------------------------------------------------ A CORTINA E O DISSOLVE (o fecho)
+   * cortinaEm(t) → { fase, mistura, pos }:
+   *   fase null       — ainda no filme da obra (a cena é a da linha do tempo);
+   *   fase "dissolve" — mistura 1 → 0: o DEPOIS se dissolve no ANTES (peça só do depois some, só do antes aparece);
+   *   fase "cortina"  — pos 1 → 0: a linha atravessa da direita para a esquerda; à direita dela, o DEPOIS;
+   *   fase "comparar" — a linha volta e para no meio (pos 0,5) — depois o usuário arrasta.
+   * pos é a fração da caixa do modelo (0 = borda esquerda na tela, 1 = direita); à ESQUERDA da linha fica o ANTES. */
+  function cortinaEm(linha, t) {
+    var f = linha.final;
+    if (!f || !f.dissolve || t < f.dissolve.t0) return { fase: null, mistura: 1, pos: 0 };
+    if (t < f.cortina.t0) return { fase: "dissolve", mistura: r3(1 - suave(clamp((t - f.dissolve.t0) / f.dissolve.dur, 0, 1))), pos: 1 };
+    if (t < f.comparar.t0) return { fase: "cortina", mistura: 0, pos: r3(1 - suave(clamp((t - f.cortina.t0) / f.cortina.dur, 0, 1))) };
+    var u = clamp((t - f.comparar.t0) / f.comparar.dur, 0, 1), v = clamp((u - 0.5) / 0.5, 0, 1);
+    return { fase: "comparar", mistura: 0, pos: r3(0.5 * suave(Math.min(1, u / 0.5)) + 0.06 * Math.sin(2 * Math.PI * v) * Math.sin(Math.PI * v)) };
+  }
+  /* de que lado a peça mora: "ambos" (existente que fica), "antes" (demolida), "depois" (nova), "nenhum" (temporária); null = fora da conta */
+  function ladoDe(ld, id) {
+    var l = ld && ld.porId ? ld.porId[String(id)] : null;
+    if (!l) return null;
+    return l.a && l.d ? "ambos" : (l.a ? "antes" : (l.d ? "depois" : "nenhum"));
+  }
+  /* o PLANO DA CORTINA: vertical, com a normal `eixo` (horizontal, [x, z] — a direita da tela), na fração pos da caixa
+     (caixa = { min:[x,y,z], max:[x,y,z] }). Devolve os dois planos de recorte no formato do three (normal · p + c ≥ 0 fica):
+     `antes` guarda o lado esquerdo, `depois` o direito. A folga tira a linha de cima da última parede nos extremos (pos 0 e 1). */
+  function planoCortina(caixa, eixo, pos, folga) {
+    var ex = eixo[0], ez = eixo[1], L = Math.sqrt(ex * ex + ez * ez) || 1, lo = Infinity, hi = -Infinity;
+    ex /= L; ez /= L; folga = folga == null ? 0.3 : folga;
+    [caixa.min[0], caixa.max[0]].forEach(function (x) { [caixa.min[2], caixa.max[2]].forEach(function (z) { var d = ex * x + ez * z; if (d < lo) lo = d; if (d > hi) hi = d; }); });
+    lo -= folga; hi += folga;
+    var s = lo + clamp(pos, 0, 1) * (hi - lo);
+    return { eixo: [ex, 0, ez], s: s, lo: lo, hi: hi, antes: { n: [-ex, 0, -ez], c: s }, depois: { n: [ex, 0, ez], c: -s } };
+  }
+  /* o CORTE do plano na caixa (no chão, em x/z): o segmento em que a linha da cortina atravessa o modelo — é onde a moldura
+     luminosa e a alça ficam (nunca fora da casa). null quando o plano não corta a caixa. */
+  function secaoCortina(caixa, plano) {
+    var ex = plano.eixo[0], ez = plano.eixo[2], ux = -ez, uz = ex, s = plano.s, t0 = -Infinity, t1 = Infinity;
+    function faixa(base, d, mn, mx) {   /* mn ≤ base + d·t ≤ mx */
+      if (Math.abs(d) < 1e-12) { if (base < mn - 1e-9 || base > mx + 1e-9) { t0 = Infinity; t1 = -Infinity; } return; }
+      var a = (mn - base) / d, b = (mx - base) / d; if (a > b) { var q = a; a = b; b = q; }
+      if (a > t0) t0 = a; if (b < t1) t1 = b;
+    }
+    faixa(ex * s, ux, caixa.min[0], caixa.max[0]); faixa(ez * s, uz, caixa.min[2], caixa.max[2]);
+    if (!(t1 >= t0)) return null;
+    var A = [ex * s + ux * t0, ez * s + uz * t0], B = [ex * s + ux * t1, ez * s + uz * t1];
+    return { a: A, b: B, meio: [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], comp: t1 - t0, u: [ux, uz] };
+  }
+  /* a peça (pelo lado) aparece no ponto p ([x,y,z])? — a mesma regra que os materiais recortados seguem na tela */
+  function visivelNoPonto(lado, plano, p) {
+    if (lado === "ambos" || lado == null) return true;
+    if (lado === "nenhum") return false;
+    var q = lado === "antes" ? plano.antes : plano.depois;
+    return q.n[0] * p[0] + q.n[1] * p[1] + q.n[2] * p[2] + q.c >= 0;
+  }
+  /* a opacidade de cada lado no dissolve (mistura 1 = depois, 0 = antes) */
+  function opacidadeLado(lado, mistura) {
+    if (lado === "antes") return clamp(1 - mistura, 0, 1);
+    if (lado === "depois") return clamp(mistura, 0, 1);
+    if (lado === "nenhum") return 0;
+    return 1;
+  }
+
+  /* ------------------------------------------------------------ O ENQUADRAMENTO POR CAPÍTULO
+   * quadros = { idDaEtapa: { c:[x,y,z], r }, _tudo: {...} } (a tela mede a caixa das peças de cada capítulo). Dentro da
+   * etapa i o enquadramento vai do da etapa anterior ao dela com smootherstep (velocidade zero nas pontas): sem tranco nem corte. */
+  function lerp(a, b, u) { return a + (b - a) * u; }
+  function enquadramentoEm(linha, quadros, t) {
+    var e = linha.etapas, i = 0, tt = clamp(t, 0, linha.total);
+    while (i < e.length - 1 && tt >= e[i].t1) i++;
+    var Q = function (k) { return quadros[e[clamp(k, 0, e.length - 1)].id] || quadros._tudo; };
+    var b = Q(i), a = i > 0 ? Q(i - 1) : b, w = Math.min(3.5, e[i].dur * 0.6), x = clamp((tt - e[i].t0) / w, 0, 1);
+    var u = x * x * x * (x * (x * 6 - 15) + 10);
+    return { c: [lerp(a.c[0], b.c[0], u), lerp(a.c[1], b.c[1], u), lerp(a.c[2], b.c[2], u)], r: lerp(a.r, b.r, u) };
   }
 
   /* ------------------------------------------------------------ A CÂMERA ABSTRATA
@@ -404,9 +489,10 @@
    * A tela converte em posição (centro e raio do modelo). Catmull-Rom pelos pontos de cada etapa. */
   var CAM = {
     //            elevação no fim da etapa, distância no fim da etapa, deriva do azimute (rad/s)
-    inicio: { el: 82, d: 1.5 },
+    inicio: { el: 82, d: 1.85 },   /* a entrada: do alto e de longe, aproximando da obra */
     planta: { el: 62, d: 1.28, w: 0.040 }, existente: { el: 42, d: 1.12, w: 0.045 }, demolicao: { el: 34, d: 1.04, w: 0.050 },
-    construcao: { el: 31, d: 1.02, w: 0.045 }, acabamentos: { el: 27, d: 0.98, w: 0.055 }, final: { el: 24, d: 1.0, w: 0 }
+    construcao: { el: 31, d: 1.02, w: 0.045 }, acabamentos: { el: 27, d: 0.98, w: 0.055 }, final: { el: 24, d: 1.0, w: 0 },
+    transicao: { el: 24, d: 1.0, w: 0 }, comparar: { el: 24, d: 1.0, w: 0 }
   };
   var AZ_FINAL = 0.50;   /* o 3/4 frontal em que a órbita termina e a cortina do antes × depois começa */
   function crom(p0, p1, p2, p3, u) {
@@ -419,13 +505,13 @@
     linha.etapas.forEach(function (e) {
       var c = CAM[e.id];
       T.push(e.t1); EL.push(c.el); D.push(c.d);
-      if (e.id !== "final") deriva += c.w * e.dur;
+      if (!FECHO[e.id]) deriva += c.w * e.dur;
     });
     /* a órbita do final começa em AZ_FINAL − 2π: a deriva das etapas de antes é calculada para chegar ali sem salto */
     var azFim = AZ_FINAL - 2 * Math.PI, azIni = azFim - deriva;
     var AZ = [azIni], az = azIni;
     linha.etapas.forEach(function (e) {
-      if (e.id === "final") az = azFim + 0.05 * e.dur;   /* só guia a curva do último trecho antes da órbita (a órbita tem fórmula própria) */
+      if (FECHO[e.id]) az = azFim + 0.05 * e.dur;   /* só guia a curva do último trecho antes da órbita (a órbita tem fórmula própria) */
       else az += CAM[e.id].w * e.dur;
       AZ.push(az);
     });
@@ -435,6 +521,12 @@
   function suave(x) { return x * x * (3 - 2 * x); }
   function camera(linha, t) {
     var P = camPontos(linha), tt = clamp(t, 0, linha.total), T = P.T, i = 0, fim = linha.final;
+    var fimOrb = fim.orbita.t0 + fim.orbita.dur;
+    if (tt > fimOrb && linha.total > fimOrb) {
+      /* depois da órbita: um balanço lento em volta do 3/4 frontal (vai e volta, velocidade zero nas pontas) — a cortina passa com a câmera viva */
+      var ub = clamp((tt - fimOrb) / (linha.total - fimOrb), 0, 1), sb = Math.sin(Math.PI * ub);
+      return { az: AZ_FINAL - 0.30 * sb * sb, el: CAM.final.el + 4 * sb * sb, d: CAM.final.d * (1 - 0.07 * sb * sb) };
+    }
     if (tt >= fim.orbita.t0) {
       /* a órbita completa do final: de AZ_FINAL − 2π a AZ_FINAL, devagar no começo e no fim; depois fica no 3/4 frontal (o antes × depois) */
       var uo = clamp((tt - fim.orbita.t0) / fim.orbita.dur, 0, 1);
@@ -450,7 +542,9 @@
     MODOS: MODOS, modoPorId: modoPorId, temFases: temFases, modoVista: modoVista, modoDaVista: modoDaVista, lados: lados, resumo: resumo, herdeiros: herdeiros, daMae: daMae,
     ETAPAS: ETAPAS, ORDEM_ETAPAS: ORDEM_ETAPAS, ENTRADA: ENTRADA, SAIDA: SAIDA, MENSAGEM_SEM_FASES: MENSAGEM_SEM_FASES, AZ_FINAL: AZ_FINAL,
     grupoDe: grupoDe, posicaoDe: posicaoDe, ehPlanta: ehPlanta,
-    linhaDoTempo: linhaDoTempo, etapaEm: etapaEm, estadoPeca: estadoPeca, contadoresEm: contadoresEm, legendaEm: legendaEm, camera: camera
+    linhaDoTempo: linhaDoTempo, etapaEm: etapaEm, estadoPeca: estadoPeca, contadoresEm: contadoresEm, legendaEm: legendaEm, camera: camera,
+    FECHO: FECHO, cortinaEm: cortinaEm, ladoDe: ladoDe, planoCortina: planoCortina, secaoCortina: secaoCortina, visivelNoPonto: visivelNoPonto, opacidadeLado: opacidadeLado,
+    enquadramentoEm: enquadramentoEm, soEscolhida: soEscolhida
   };
   global.BimApresentacao = BimApresentacao;
   if (typeof module !== "undefined" && module.exports) module.exports = BimApresentacao;

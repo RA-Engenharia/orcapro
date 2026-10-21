@@ -36,7 +36,8 @@
       tipos: [
         { id: "p70", nome: "0,70 × 2,10", valores: { Largura: 0.70 } },
         { id: "p80", nome: "0,80 × 2,10", valores: { Largura: 0.80 } },
-        { id: "p90", nome: "0,90 × 2,10", valores: { Largura: 0.90 } }
+        { id: "p90", nome: "0,90 × 2,10", valores: { Largura: 0.90 } },
+        { id: "p60", nome: "0,60 × 2,10", valores: { Largura: 0.60 } }   /* lavabo, despensa (esquadrias automáticas, 20/10/2026) — no FIM: a ordem dos tipos antigos não muda */
       ],
       abertura: { largura: "Largura + 2*Batente", altura: "Altura + Batente", peitoril: "0" },
       solidos: [
@@ -68,7 +69,11 @@
         { id: "j1010", nome: "1,00 × 1,00", valores: { Largura: 1.00, Altura: 1.00 } },
         { id: "j1210", nome: "1,20 × 1,00", valores: { Largura: 1.20, Altura: 1.00 } },
         { id: "j1512", nome: "1,50 × 1,20", valores: { Largura: 1.50, Altura: 1.20 } },
-        { id: "j6060", nome: "0,60 × 0,60 (banheiro)", valores: { Largura: 0.60, Altura: 0.60 } }
+        { id: "j6060", nome: "0,60 × 0,60 (banheiro)", valores: { Largura: 0.60, Altura: 0.60 } },
+        /* j1510, j1212, j2012: grade comercial da pesquisa de esquadrias (docs/arquitetura/esquadrias, 20/10/2026) — no FIM: a ordem dos tipos antigos não muda */
+        { id: "j1510", nome: "1,50 × 1,00", valores: { Largura: 1.50, Altura: 1.00 } },
+        { id: "j1212", nome: "1,20 × 1,20", valores: { Largura: 1.20, Altura: 1.20 } },
+        { id: "j2012", nome: "2,00 × 1,20", valores: { Largura: 2.00, Altura: 1.20 } }
       ],
       abertura: { largura: "Largura", altura: "Altura", peitoril: "Peitoril" },
       solidos: [

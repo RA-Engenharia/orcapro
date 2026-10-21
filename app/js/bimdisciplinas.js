@@ -131,6 +131,8 @@
     "p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular", "p11-plataforma", "p11-divisa", "p11-norte", "p11-comp"
   ]);
   def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
+  /* PORTAS E JANELAS AUTOMÁTICAS (js/esqautoui.js, 20/10/2026): arquitetura */
+  def("civil", ["esq-auto", "esq-auto-sel", "esq-auto-todos", "esq-auto-acess", "esq-auditar", "esq-criterios"]);
   /* COBERTURA COMPLETA e TELHADO PARAMÉTRICO (Casa 487 + noite de 19→20/10/2026): o telhado é civil; a estrutura dele é
      também da madeira (marcenaria) e da metálica; a calha/descida também da hidráulica (pluvial); a luminária do forro,
      da elétrica */

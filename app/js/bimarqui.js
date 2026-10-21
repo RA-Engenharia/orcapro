@@ -311,6 +311,7 @@
       if (global.BimTerrenoUI) global.BimTerrenoUI.registrar(reg, self);   /* P11: aba Massa e terreno (js/bimterrenoui.js) */
       if (global.BimEstrutUI) global.BimEstrutUI.registrar(reg, self);   /* P9 — GANCHO: Rampa, Escada em U, Treliça (js/bimestrutui.js) */
       if (global.BimP3UI) global.BimP3UI.registrar(reg, self);   /* P3: telhado, bordas, unir telhado e fundação (js/bimp3ui.js) */
+      if (global.EsqAutoUI) global.EsqAutoUI.registrar(reg, self);   /* PORTAS E JANELAS AUTOMÁTICAS + auditor de esquadrias (js/esqautoui.js) */
       if (global.MarcenariaUI) global.MarcenariaUI.registrar(reg, self);   /* CARPINTARIA & MARCENARIA: aba da disciplina (js/marcenariaui.js) */
       if (global.BimFecharUI) global.BimFecharUI.registrar(reg, self);   /* UNIÃO DE CANTO: Geometria › Fechar cantos abertos (js/bimfecharui.js) */
       if (global.BimElevarUI) global.BimElevarUI.registrar(reg, self);   /* ELEVAR: Modificar › Elevar e o atalho EL (js/bimelevarui.js) — depois do laço da FITA, que armaria o genérico */

@@ -20,6 +20,11 @@
  *      (m² de parede vezes um preço por m³ é erro de 7×, 10×, e ninguém vê).
  *   3. O preço vem da base VIGENTE no momento da conta, nunca da família: a
  *      família leva o código, não o valor (PLANO-BIM-FAMILIAS-FORMATOS.md §1).
+ *      EXCEÇÃO DECLARADA (20/10/2026, mobiliário do catálogo — js/familiascat.js): a peça de VAREJO
+ *      não tem composição; o tipo traz Preco_unitario + Fonte_preco + Data_preco (preço público com
+ *      fonte) e a linha vira REFERÊNCIA DE MERCADO ("REF-MERC:MOB:<peça>", só material), no molde da
+ *      hidro. Só quando o quantitativo NÃO tem código: com Composicao_id vai a composição e o preço do
+ *      tipo é ignorado — nunca os dois (não cobra em dobro).
  *
  * P1-D (09/10/2026): a QUANTIDADE de cada serviço sai do REGISTRO ÚNICO de
  *   parâmetros (js/bimparam.js) pelo id do parâmetro (`orc.medida`), e a linha
@@ -264,6 +269,12 @@
    * + os serviços da família + os que a INSTÂNCIA ganhou no editor
    * (servicosInst: [{codigo, medida:'quantidade', fator}]).
    * ------------------------------------------------------------------ */
+  /* o MOTIVO do preço provisório, lido da fonte gravada no catálogo ("PROVISORIO maior preco lido da categoria (Tidelli sob consulta) …") */
+  function motivoProvisorio(fonte) {
+    var m = /\(([^)]*)\)/.exec(fonte || ""), dentro = m ? m[1] : "";
+    if (/sob consulta/i.test(dentro)) return "fabricante " + dentro + ", sem preço público; valor = o maior preço de varejo lido da categoria";
+    return "peça sem preço público; valor = o maior preço lido na categoria" + (dentro ? " (" + dentro + ")" : "");
+  }
   function daFamilia(av, base, opcoes, servicosInst, peca) {
     if (!av || !av.quantitativo) return { linhas: [], resumo: resumir([], opcoes), peso: { ok: false, motivo: "família não avaliada", kg: null } };
     var q = av.quantitativo, linhas = [];
@@ -287,6 +298,27 @@
     linhas.push(orcar({ id: "principal", codigo: q.codigo, unidade: q.unidade, quantidade: q.quantidade, descricao: q.descricao, rotulo: "Quantitativo da família" }, base, opcoes));
     linhas[0].codigoOrigem = q.codigoOrigem || "";
     if (q.param) linhas[0].param = q.param;
+    var vf = av.valores || {}, pu = num(vf.Preco_unitario, 0);
+    /* REVISÃO A1 (20/10/2026): a porta é SÓ a peça do catálogo de varejo — Peca_catalogo + Fonte_preco + preço > 0, quantitativo
+       POR UNIDADE e sem código. Antes bastava Preco_unitario + Fonte_preco: qualquer família (do usuário, importada) com esses
+       dois nomes passava a injetar preço, e um quantitativo em m² multiplicava o preço da PEÇA pela área. */
+    if (linhas[0].status === "sem-codigo" && pu > 0 && txt(vf.Fonte_preco) && txt(vf.Peca_catalogo) && unidadeChave(q.unidade) === "un") {   /* MOBILIÁRIO DE VAREJO: referência de mercado do tipo (regra 3, exceção) */
+      var idP = txt(vf.Peca_catalogo), qP = r4(num(q.quantidade, 1)), vtP = r2(pu * qP);
+      /* a fonte sem o nome do arquivo INTERNO de dúvidas (a descrição vai para a proposta do cliente) */
+      var fonteLimpa = txt(vf.Fonte_preco).replace(/\s*-?\s*DUVIDAS[-A-Z_]*/gi, "").trim();
+      var fonteP = fonteLimpa + (txt(vf.Data_preco) && fonteLimpa.indexOf(txt(vf.Data_preco)) < 0 ? " (" + txt(vf.Data_preco) + ")" : "");
+      /* PREÇO PROVISÓRIO (alto padrão "sob consulta" e peça sem preço público): o valor é o MAIOR da categoria (regra RA: incerto =
+         o mais alto) e entra no orçamento, mas a linha diz que é provisório e por quê — nunca passa por preço real */
+      var provP = vf.Preco_provisorio === true || /^\s*provis/i.test(txt(vf.Fonte_preco));
+      var motP = provP ? (txt(vf.Motivo_preco) || motivoProvisorio(txt(vf.Fonte_preco))) : "";
+      var rmP = { id: "MOB:" + idP, valor: pu, unidade: "un", texto: fonteP, data: txt(vf.Data_preco), criterio: "preço público da peça (fornecimento, sem montagem e sem frete)", url: txt(vf.Url_ficha) };
+      if (provP) { rmP.provisorio = true; rmP.motivo = motP; }
+      linhas[0] = { codigo: "REF-MERC:" + rmP.id, descricao: txt(q.descricao) + " — " + txt(av.tipo && av.tipo.nome) + (provP ? " — PREÇO PROVISÓRIO, cotar com o fornecedor (" + motP + (txt(vf.Data_preco) ? "; " + txt(vf.Data_preco) : "") + ")" : " — preço: " + fonteP),
+        unidade: "UN", unidadeQto: q.unidade, quantidade: qP, status: "ok", horas: [], horasTotal: 0, servico: "principal",
+        unitario: r2(pu), custo: { mo: 0, mat: vtP, eq: 0, total: vtP }, codigoOrigem: "mercado", referenciaMercado: rmP, rotulo: "Fornecimento da peça",
+        avisos: [(provP ? "PREÇO PROVISÓRIO — cotar com o fornecedor (" + motP + "): " : "peça de varejo sem composição: ") + fonteP] };
+      if (provP) linhas[0].provisorio = { motivo: motP };
+    }
     arr(av.servicos).forEach(function (s) {
       var si = sobre[String(s.id).toLowerCase()], cod = si ? txt(si.codigo) : txt(s.codigo);
       if (si) delete sobre[String(s.id).toLowerCase()];
@@ -513,6 +545,7 @@
                             custo: { mo: 0, mat: 0, eq: 0, total: 0 }, unitario: l.unitario, horasAcc: {}, elementos: [], avisos: [] };
           ordem.push(k);
         }
+        if (l.provisorio) g.provisorio = l.provisorio;   /* revisão A1: o preço provisório (mobiliário sob consulta) viaja até o orçamento */
         g.quantidade += num(l.quantidade);
         if (g.elementos.indexOf(elId) < 0) g.elementos.push(elId);
         l.avisos.forEach(function (a) { if (g.avisos.indexOf(a) < 0) g.avisos.push(a); });
@@ -726,15 +759,18 @@
       return { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, status: g.status, quantidade: r4(g.quantidade),
                custo: g.status === "ok" ? { mo: r2(g.custo.mo), mat: r2(g.custo.mat), eq: r2(g.custo.eq), total: r2(g.custo.total) } : null,
                unitario: g.unitario, horas: fh.horas, horasTotal: fh.horasTotal, duracaoDias: fh.duracaoDias, funcaoCritica: fh.funcaoCritica,
-               elementos: g.elementos, avisos: g.avisos, bloco: g.bloco || undefined };
+               elementos: g.elementos, avisos: g.avisos, bloco: g.bloco || undefined, provisorio: g.provisorio || undefined };
     });
+    porComposicao.forEach(function (g) { if (!g.provisorio) delete g.provisorio; });
     porComposicao.forEach(function (g) { if (!g.bloco) delete g.bloco; });   /* P10: só a demolição leva bloco (o resto fica como antes) */
     var ok = porComposicao.filter(function (g) { return g.status === "ok"; });
     var res = resumir(ok.map(function (g) { return { status: "ok", custo: g.custo, duracaoDias: g.duracaoDias, horas: g.horas }; }), opcoes);
     var saida = {
       porComposicao: porComposicao, elementos: elementos, resumo: res,
       peso: { kg: r2(pesoKg), comPeso: comPeso, semPeso: semPeso },
-      pendencias: porComposicao.filter(function (g) { return g.status !== "ok"; })
+      pendencias: porComposicao.filter(function (g) { return g.status !== "ok"; }),
+      /* revisão A1: PENDÊNCIAS DE PREÇO — orçadas com valor provisório (o maior da categoria), a cotar com o fornecedor */
+      pendenciasPreco: porComposicao.filter(function (g) { return g.status === "ok" && g.provisorio; })
     };
     /* P10: os três blocos da reforma (só quando o modelo usa fases) */
     if (FX) {
@@ -755,10 +791,12 @@
    * mesma régua do app (Analitico.quebra: a proporção do analítico aplicada
    * ao custo unitário real). Se os dois divergem, a linha leva o aviso.
    * ------------------------------------------------------------------ */
-  function baseComPreco(analitico, sintetico) {
+  function baseComPreco(analitico, sintetico, propria) {
     return {
       obter: function (cod) {
         var a = analitico && analitico.obter ? analitico.obter(cod) : null;
+        /* COMPOSIÇÃO PRÓPRIA (PROP-…, ex.: o armário planejado PROP-MOB-90xx): a base PRÓPRIA do app tem os insumos e o preço dela */
+        if (!a && propria && propria.obter && /^PROP-/i.test(String(cod))) { var pp = propria.obter(cod); if (pp) { var cp = {}; Object.keys(pp).forEach(function (k) { cp[k] = pp[k]; }); cp._precoFonte = "propria"; return cp; } }
         if (!a) return null;
         var s = sintetico && sintetico.obter ? sintetico.obter(cod) : null, cu = s ? num(s.custoUnitario, NaN) : NaN;
         if (!s || !isFinite(cu) || Math.abs(cu - num(a.custoUnitario)) < 0.005) return a;
@@ -793,6 +831,7 @@
         if (g.bloco === "demolicao") it.bloco = "demolicao";   /* P10: bloco */
         /* hidro (pendências finais): a referência de mercado vai como item PRÓPRIO com o preço e a fonte "MERCADO" (não é SINAPI) */
         if (/^REF-MERC:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MERCADO" };
+        if (it.mercado && g.provisorio) it.mercado.provisorio = { motivo: g.provisorio.motivo };   /* revisão A1: vai marcado ao orçamento */
         itens.push(it);
       }
       else fora.push({ codigo: g.codigo, descricao: g.descricao, status: g.status, quantidade: g.quantidade, motivo: (g.avisos || [])[0] || (g.status === "ok" ? "quantidade zero" : g.status), elementos: g.elementos.slice() });

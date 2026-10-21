@@ -224,7 +224,7 @@
     /* TERMINAL DE VENTILAÇÃO (js/hidambiente.js + js/hidventgeo.js, 18/10/2026): o produto da ficha (Amanco 11849 / Tigre
        59502719 no DN 50) no topo da coluna de ventilação — y = o topo do tubo, que entra na bolsa (prof = a bolsa, C da ficha);
        r = metade do chapéu (B). A ponta do tubo dentro da bolsa liga na peça (não é ponta solta) */
-    terminal_ventilacao: { nome: "Terminal de ventilação", sistemas: ["ventilacao"], dns: ["50", "75", "100"], dn: "50", material: "pvc_esgoto", ifc: "IFCPIPEFITTING", forma: "cil", r: 0.033, h: 0.069, prof: 0.031, captura: 0.04, semSinapi: true },
+    terminal_ventilacao: { nome: "Terminal de ventilação", sistemas: ["ventilacao"], dns: ["50", "75", "100"], dn: "50", material: "pvc_esgoto", ifc: "IFCPIPEFITTING", forma: "cil", r: 0.033, h: 0.069, prof: 0.031, captura: 0.04 },   /* SINAPI 104348/104351/104356 (tools/gerar-biminst-sinapi.js SUBSTITUTOS, 20/10/2026) */
     /* PROJETO INTELIGENTE (js/hidrede.js + js/hidcigeo.js): CAIXA DE INSPEÇÃO da rede enterrada = o PRODUTO da ficha (corpo PVC
        DN300 + prolongadores + tampa com porta-tampa; a forma sai do js/hidcigeo.js). r = metade do Ø do CORPO da ficha (Amanco
        Wavin FTC000003 p.9, A = 332 mm — test-hid-ci confere contra os dados gerados); a PROFUNDIDADE é da instância (profVariavel:
@@ -372,7 +372,7 @@
       if (t.inclinacao < -1e-6) t.avisos.push("o trecho SOBE no sentido do escoamento (" + fmtPct(-t.inclinacao) + "): esgoto e pluvial descem de p1 para p2");
       else if (abaixoDaMinima(o.sistema, t.dn, t.inclinacao)) t.avisos.push("inclinação " + fmtPct(t.inclinacao) + " abaixo da mínima de " + fmtPct(im) + " (" + (o.sistema === "esgoto" ? "NBR 8160" : (o.sistema === "dreno" ? "norma do dreno de condensado (HidNormas)" : "NBR 10844")) + ")");
     }
-    if (t.aplicacao === "ramal_ventilacao") t.avisos.push("a SINAPI 06/2026 não tem composição de ramal de ventilação: fica pendente (troque a aplicação se for o caso)");
+    /* ramal de ventilação: a SINAPI não separa — a composição da aplicação irmã de maior custo, com a observação no item (tools/gerar-biminst-sinapi.js IRMAS, 20/10/2026); o aviso "fica pendente" saiu */
     return t;
   }
   function fmtPct(v) { return String(r2(v)).replace(".", ",") + "%"; }
@@ -1056,7 +1056,10 @@
       var cl = M.classeDe(cod);
       if (cl !== "instalacao_trecho" && cl !== "instalacao_peca") return { status: "pendente", chave: k, rotulo: rot, motivo: "o código " + cod + " não está no mapa de instalações — pendente" };
     }
-    return { status: "ok", chave: k, rotulo: rot, codigo: cod, unidade: c[0][1], descricao: c[0][2], alternativas: c.length - 1 };
+    /* a observação do substituto / da aplicação irmã (tools/gerar-biminst-sinapi.js: ORÇAMENTO 100%) vai com o item */
+    var r0 = { status: "ok", chave: k, rotulo: rot, codigo: cod, unidade: c[0][1], descricao: c[0][2], alternativas: c.length - 1 };
+    if (c[0][3] && c[0][3].obs) r0.observacao = c[0][3].obs;
+    return r0;
   }
 
   /* quantidade do TUBO na unidade da composição: m (eixo, real) ou m² (duto retangular: perímetro × comprimento) */
@@ -1183,7 +1186,7 @@
     var R = rede(estado, avaliarFam), out = [];
     function linha(id, it, q, un, sp) {
       var o = { id: id, rotulo: sp.rotulo || rotuloItem(it), unidade: un, quantidade: q };
-      if (sp.status === "ok") { o.codigo = sp.codigo; o.descricao = sp.descricao; o.alternativas = sp.alternativas; }
+      if (sp.status === "ok") { o.codigo = sp.codigo; o.descricao = sp.descricao; o.alternativas = sp.alternativas; if (sp.observacao) o.observacao = sp.observacao; }
       else {
         o.codigo = ""; o.motivo = sp.motivo;
         var rm = refMercado(it); if (rm) o.referenciaMercado = rm;   /* pendências finais: o preço de varejo levantado, nunca "a cotar" */

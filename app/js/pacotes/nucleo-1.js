@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.166",
+versao: "1.2.167",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -8430,6 +8430,7 @@ this._registrarAjuste(orc, it, "custoUnitario", it.custoUnitario, novo);
 var antesU = Util.num(it.custoUnitario);
 it.custoUnitario = novo;
 this.repartirParcelas(it, novo, this.garantirConfig(orc).arredondamento, antesU);
+if (it.precoProvisorio && Math.abs(novo - antesU) > 0.004) { it.precoCotadoDe = it.precoProvisorio; delete it.precoProvisorio; }
 }
 if (campos.descricao != null) it.descricao = campos.descricao;
 return orc;
@@ -8611,6 +8612,14 @@ itensSemPreco: function (orc) {
 var out = [];
 this.calcular(orc).linhas.forEach(function (L) {
 if (!(L.custoUnitario > 0)) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome });
+});
+return out;
+},
+itensPrecoProvisorio: function (orc) {
+var out = [];
+this.calcular(orc).linhas.forEach(function (L) {
+var it = L.item || null, pv = it && it.precoProvisorio;
+if (pv) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome, motivo: pv.motivo || "preço provisório", custoUnitario: L.custoUnitario });
 });
 return out;
 },
@@ -13286,10 +13295,16 @@ _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || 
 (_semQtd.length > 5 ? '…' : '') +
 ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</span>');
 }
+var _prov = Orcamento.itensPrecoProvisorio ? Orcamento.itensPrecoProvisorio(orc) : [];
+if (_prov.length) {
+linhasAv.push('<span data-orc-preco-provisorio="' + _prov.length + '"><b>' + _prov.length + ' item(ns) com preço provisório — cotar com o fornecedor:</b> ' +
+_prov.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
+(_prov.length > 5 ? '…' : '') + ' — ' + Util.esc(_prov[0].motivo) + '. Entram no total com o maior preço da categoria; ao digitar o preço cotado a pendência sai.</span>');
+}
 cab2 += this._licitacaoPainel(orc);
 if (_desf && !linhasAv.length) linhasAv.push('<span>A última edição da IA ainda pode ser desfeita — o que você mexeu depois dela fica.</span>');
 if (linhasAv.length || _desf) {
-cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length ? "alerta" : "info"),
+cab2 += M.aviso({ tom: _semPreco.length ? "erro" : (_semQtd.length || _prov.length ? "alerta" : "info"),
 textoHtml: linhasAv.join(""), acaoHtml: _desf });
 }
 var subPreco = "";
