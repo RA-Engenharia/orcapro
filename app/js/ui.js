@@ -1725,7 +1725,14 @@
          tela em obra grande. É preferência de TELA (não do orçamento), então
          mora no localStorage e vale para qualquer planilha que o usuário abrir. */
       var _cmpOn = (typeof App !== "undefined") ? !!App._plCompacta : false;
-      var html = '<div class="flex between mb"><div></div><div style="display:flex;gap:6px">' +
+      /* ITEM SEM PREÇO → A IA COMPÕE (Rogério, 21/10/2026: "tem que ter a opção de clicar onde está sem
+         o valor e gerar a composição com valores usando a IA; e uma opção para todos os pendentes"). */
+      var _semPreco = 0;
+      orc.etapas.forEach(function (e0) { (e0.itens || []).forEach(function (i0) { if (!(Util.num(i0.custoUnitario) > 0)) _semPreco++; }); });
+      var html = '<div class="flex between mb"><div>' +
+        (_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
+          (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
+        '</div><div style="display:flex;gap:6px">' +
         '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
           (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
           (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
@@ -1928,6 +1935,7 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
+              (Util.num(it.custoUnitario) > 0 ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
               (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
               /* com quantidade pendente o botão do memorial vira o caminho
                  principal: é lá que a metragem nasce, então ele se destaca */

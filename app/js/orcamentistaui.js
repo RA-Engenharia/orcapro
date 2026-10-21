@@ -347,7 +347,7 @@
     var st = this._orcm;
     if (st.raiz) return st.raiz;
     /* o modo escopo (js/orccompletoui.js) roda sobre o orçamento ABERTO: a cobrança é dele, como no modo orçamento */
-    var orc = ((st.modo === "orcamento" || st.modo === "escopo") && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
+    var orc = ((st.modo === "orcamento" || st.modo === "escopo" || st.modo === "pendentes") && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
     if (orc) {
       r = orc.orcmRaiz || "";
       if (!r) {
@@ -376,7 +376,7 @@
      deslocamentos: Math.imul não é ES5) */
   App._orcmAssinatura = function () {
     /* modo escopo: ainda não há plano quando o preço é pedido — a assinatura são as linhas do escopo (js/orccompletoui.js) */
-    if (this._orcm && this._orcm.modo === "escopo" && this._orcm.assinaturaEscopo) return this._orcm.assinaturaEscopo.slice();
+    if (this._orcm && (this._orcm.modo === "escopo" || this._orcm.modo === "pendentes") && this._orcm.assinaturaEscopo) return this._orcm.assinaturaEscopo.slice();
     var self = this, vistos = {}, out = [];
     Util.arr(this._orcm && this._orcm.plano).forEach(function (L) {
       var d = String((typeof Util !== "undefined" && Util.normalizar) ? Util.normalizar(L.item.descricao || "") : (L.item.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim();
@@ -416,7 +416,7 @@
     /* sem saldo: compra por PIX aqui mesmo (js/iaacabamento.js); creditou → volta à janela do preço */
     else if (p.compraCreditos && p.compraCreditos.pix && typeof IAAcabamento !== "undefined" && IAAcabamento.comprarCreditos) botoes.push({ texto: "Comprar créditos (PIX)", classe: "success", onClick: function () {
       var falta = Math.max(0, (Number(p.precoCent) || 0) - (Number(p.carteira && p.carteira.saldoCent) || 0));
-      IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { var stC = self._orcm; if (stC && stC.modo === "escopo" && stC.retomarIA) stC.retomarIA(); else self._orcmRefinarIA(); }, aoFechar: function () { self._orcmVoltar(true); } });
+      IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { var stC = self._orcm; if (stC && (stC.modo === "escopo" || stC.modo === "pendentes") && stC.retomarIA) stC.retomarIA(); else self._orcmRefinarIA(); }, aoFechar: function () { self._orcmVoltar(true); } });
     } });
     UI.modal(ic("ia") + " IA do Orçamentista — " + (pago ? "o preço antes de usar" : "incluído no plano"), html, botoes);
   };
@@ -426,7 +426,7 @@
      gravado com o resíduo marcado, nunca fica a geração pela metade. */
   App._orcmVoltar = function (desistiu) {
     var st = this._orcm;
-    if (st && st.modo === "escopo") {
+    if (st && (st.modo === "escopo" || st.modo === "pendentes")) {
       UI.fecharModal();
       if (desistiu && typeof st.aoDesistir === "function") { var f = st.aoDesistir; st.aoDesistir = null; f(); }
       return;
@@ -446,7 +446,7 @@
       return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
         .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
     };
-    var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); if (st.modo === "escopo") self._orcmVoltar(true); };
+    var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); if (st.modo === "escopo" || st.modo === "pendentes") self._orcmVoltar(true); };
     var abrir = function (orcamentoId) {
       var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
       if (corpo.escopo) b.escopo = corpo.escopo;
@@ -466,7 +466,7 @@
     post("/ia/orcamentista/preco", corpo).then(function (o) {
       UI.loadingFim();
       if (o.status === 404 || o.status === 503) { seguir(null); return; }   // servidor sem a cobrança: como antes
-      if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); if (st.modo === "escopo") self._orcmVoltar(true); return; }
+      if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); if (st.modo === "escopo" || st.modo === "pendentes") self._orcmVoltar(true); return; }
       if (o.j.situacao === "aberta") { abrir(null); return; }
       self._orcmPrecoModal(o.j, function () { abrir(o.j.orcamentoId || null); });
     }, semRede);
@@ -567,7 +567,7 @@
     var st = this._orcm; if (!st) return;
     st.recado = String(msg == null ? "" : msg);
     /* no modo escopo não há quadro de revisão: o recado vai direto à pessoa */
-    if (st.modo === "escopo") { if (st.recado) UI.toast(st.recado, "erro"); return; }
+    if (st.modo === "escopo" || st.modo === "pendentes") { if (st.recado) UI.toast(st.recado, "erro"); return; }
     var el = document.getElementById("orcm-recado");
     if (el) { el.textContent = st.recado; el.style.display = st.recado ? "" : "none"; try { el.scrollIntoView({ block: "nearest" }); } catch (e) {} }
     else if (st.recado) this._orcmAbrirRevisao();

@@ -2636,6 +2636,8 @@
         case "escopo-param-previa": this.escopoParamPrevia(); break;
         case "escopo-completo": this.escopoGerarCompleto("entrada"); break;
         case "escopo-completo-rev": this.escopoGerarCompleto("revisao"); break;
+        case "pendentes-ia": this.precificarPendentesIA(); break;
+        case "item-compor-ia": this.precificarPendentesIA(String(t.dataset.item || "")); break;
         case "escopo-casar": this.refinarEscopoCasar(); break;
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;

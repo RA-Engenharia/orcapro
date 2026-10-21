@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.171",
+versao: "1.2.172",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -13505,7 +13505,12 @@ var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas
 var _idxOn = (typeof App !== "undefined") ? !!App._idxAberto : false;
 var _temIdx = orc.etapas.length >= 5;
 var _cmpOn = (typeof App !== "undefined") ? !!App._plCompacta : false;
-var html = '<div class="flex between mb"><div></div><div style="display:flex;gap:6px">' +
+var _semPreco = 0;
+orc.etapas.forEach(function (e0) { (e0.itens || []).forEach(function (i0) { if (!(Util.num(i0.custoUnitario) > 0)) _semPreco++; }); });
+var html = '<div class="flex between mb"><div>' +
+(_semPreco ? '<button class="btn sm success" data-acao="pendentes-ia" title="A IA cria a composição (insumos, coeficientes e o preço das bases) de cada item sem preço deste orçamento">' +
+(typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' ' + _semPreco + (_semPreco === 1 ? ' item sem preço' : ' itens sem preço') + ' — Precificar com IA</button>' : '') +
+'</div><div style="display:flex;gap:6px">' +
 '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
 (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
 (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
@@ -13630,6 +13635,7 @@ UI._seloAjuste(e.id, it) +
 '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
 (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
+(Util.num(it.custoUnitario) > 0 ? '' : '<button class="btn sm success" data-acao="item-compor-ia" data-item="' + e.id + '|' + it.id + '" title="Gera a composição deste item com a IA: insumos, coeficientes e o preço das bases">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Compor com IA</button>') +
 (ehSinapi || ehPropriaDet || ehBaseAna ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '"' + attrBase + ' title="Analítico do item: os insumos e coeficientes desta composição — ver e ajustar">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Analítico do item</button>' : '') +
 '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
 (_licAv && Licitacao.itemTravado(orc, it)

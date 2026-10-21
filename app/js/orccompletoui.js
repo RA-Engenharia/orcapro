@@ -381,8 +381,21 @@
         var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild;
         if (tn && tn.nodeType === 3) tn.nodeValue = "A IA está compondo os serviços sem base — lote " + (li + 1) + " de " + lotes.length + "…";
         var payload = lote.map(function (L) { return { i: L.i, descricao: L.item.descricao, unidade: L.item.unidade || "" }; });
-        return fetch(back + "/ia/compor", { method: "POST", headers: hdr, body: JSON.stringify({ itens: payload }) })
-          .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
+        /* ⚠ UMA RETENTATIVA (21/10/2026): o 1º teste pago do Rogério perdeu a composição porque o servidor
+           foi reiniciado no meio do pedido (502 do proxy) — o pedido inteiro voltava pendente e o crédito já
+           tinha sido usado. Rede caída ou 5xx: espera 4 s e pede de novo, uma vez. 402 (janela) não repete. */
+        var pedir = function (tentativa) {
+          return fetch(back + "/ia/compor", { method: "POST", headers: hdr, body: JSON.stringify({ itens: payload }) })
+            .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); },
+                  function () { return { status: 0, j: {} }; })
+            .then(function (o) {
+              if (tentativa < 1 && (o.status === 0 || o.status >= 500) && !(o.j && o.j.devolvido)) {
+                return new Promise(function (res) { setTimeout(res, 4000); }).then(function () { return pedir(tentativa + 1); });
+              }
+              return o;
+            });
+        };
+        return pedir(0)
           .then(function (o) {
             if (o.status === 402 || (o.j && o.j.devolvido)) { parar = (o.j && o.j.error) || "a janela da IA foi encerrada"; st.janela = null; return; }
             if (o.status === 404) { parar = "o servidor de IA ainda não tem a rota de composição"; return; }
@@ -405,8 +418,14 @@
               });
               var custo = ComposicaoPropria.custo(v.insumos, "truncar2");
               var semPreco = v.insumos.filter(function (i) { return !(Number(i.custoUnitario) > 0); }).length;
-              var cods = self._cpCodigosExistentes().concat(ctx.codigosGerados || []);
-              var codigo = ComposicaoPropria.gerarCodigoLegivel("OUTROS", cods); (ctx.codigosGerados = ctx.codigosGerados || []).push(codigo);
+              /* casca de item já gravado (PROP-… vazia): a composição nasce NO MESMO código — o item não muda
+                 de código e a casca vira a composição completa (a base própria substitui pelo código) */
+              var codigo = L.item && L.item.cascaCodigo;
+              if (!codigo) {
+                var cods = self._cpCodigosExistentes().concat(ctx.codigosGerados || []);
+                codigo = ComposicaoPropria.gerarCodigoLegivel("OUTROS", cods);
+              }
+              (ctx.codigosGerados = ctx.codigosGerados || []).push(codigo);
               L.comp = { codigo: codigo, codigoSec: "", descricao: L.item.descricao, grupo: "OUTROS", unidade: v.unidade, modeloRef: "SINAPI", metodo: "truncar2",
                 maoDeObra: v.insumos.some(function (i) { return i.categoria === "MO"; }),
                 observacao: "Composição criada pela IA no Escopo e validada contra as bases: " + v.insumos.length + " insumo(s)" + (eqN ? ", " + eqN + " com preço por equivalência (maior valor)" : "") + (semPreco ? ", " + semPreco + " SEM preço" : "") + ". Confira coeficiente por coeficiente.",
@@ -428,14 +447,87 @@
       UI.loadingFim();
       pend.forEach(function (L) { delete L._grupoIA; });
       var resto = pend.filter(function (L) { return L.status === "pendente"; }).length;
-      st.escopoGerado.compostasIA = feitas;
+      if (st.escopoGerado) st.escopoGerado.compostasIA = feitas;
       if (parar) UI.toast("A IA parou: " + parar + ". " + feitas + " composição(ões) criada(s); " + resto + " serviço(s) ficam marcados para completar.", "erro");
       else if (resto) UI.toast(feitas + " composição(ões) criada(s) pela IA; " + resto + " ainda sem composição — estão no relatório.", "erro");
     });
   };
 
+  /* ---------------- PRECIFICAR COM IA OS ITENS SEM PREÇO ----------------
+     Rogério, 21/10/2026: "sempre que ficar item sem valor, tem que ter a opção de clicar onde está sem o
+     valor e gerar a composição com valores usando a IA; e também a opção de precificar todos os pendentes".
+     Um item (etapaId|itemId) ou todos os sem preço. O caminho é o do orçamento gerado: Orçamentista sem
+     pendente (base oficial primeiro, só a mesma unidade) → o resíduo a IA compõe (/ia/compor) → grava pelas
+     travas de sempre (_orcmAplicar, modo que aplica nos itens que já existem). Cobrança = a do Orçamentista
+     pelo uso (custo + margem, 1 grátis/mês) — e dentro da janela já aberta deste orçamento, sem custo. */
+  App.precificarPendentesIA = function (alvo) {
+    var self = this, orc = this.orcAtual;
+    if (!orc) return;
+    if (this._trialBloqueado && this._trialBloqueado()) { this._avisoTrial(); return; }
+    if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) { UI.toast("Este orçamento está aprovado — crie uma revisão para mudar preços.", "erro"); return; }
+    var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+    if (!back) { UI.toast("O servidor de IA não está configurado neste aparelho.", "erro"); return; }
+    var par = String(alvo || "").split("|"), soEtapa = alvo ? par[0] : "", soItem = alvo ? par[1] : "";
+    var etapas = [], total = 0, assin = [], vistos = {};
+    Util.arr(orc.etapas).forEach(function (e) {
+      if (soEtapa && e.id !== soEtapa) return;
+      var et = { nome: e.nome, codigo: e.codigo, itens: [] };
+      Util.arr(e.itens).forEach(function (it) {
+        if (soItem && it.id !== soItem) return;
+        if (Util.num(it.custoUnitario) > 0) return;
+        var cod = it.codigo && it.codigo !== "—" ? String(it.codigo) : "", fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "");
+        var casca = "";
+        if (cod && fonte === "PROPRIA" && typeof Bases !== "undefined") {
+          var bp = Bases.obter("PROPRIA", cod);
+          if (!bp || bp.pendente || (!((bp.insumos || []).length) && !(Number(bp.custoUnitario) > 0))) { casca = cod; cod = ""; fonte = ""; }
+        }
+        et.itens.push({ _ref: it, codigo: cod, fonte: fonte, cascaCodigo: casca, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: 0, custoPlanilha: 0, formula: it.memoriaCalculo || "" });
+        var h = self._orcmHash(String(Util.normalizar(it.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim());
+        if (!vistos[h]) { vistos[h] = 1; assin.push(h); }
+        total++;
+      });
+      if (et.itens.length) etapas.push(et);
+    });
+    if (!total) { UI.toast(alvo ? "Este item já tem preço." : "Nenhum item sem preço neste orçamento.", "ok"); return; }
+    var st = this._orcm = { modo: "pendentes", etapas: etapas, etapasRodadas: etapas, nome: orc.nome, total: total, orcId: orc.id, carimboEm: orc.atualizadoEm,
+      plano: [], assinaturaEscopo: assin.slice(0, 2000), uso: { revisar: 0, pendentes: total } };
+    st.aoDesistir = function () { UI.toast("Nada foi alterado: a IA só compõe depois de confirmado o pagamento (ou no grátis do mês).", "erro"); };
+    var go = function (sessao) {
+      if (self._orcm !== st) return;
+      st.aoDesistir = null;
+      var rodar = function () {
+        if (self._orcm !== st || !self.orcAtual || self.orcAtual.id !== st.orcId) { UI.loadingFim(); return; }
+        var excl = self._fontesExcluidas() || [];
+        var fontes = ((typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [])
+          .filter(function (b) { return b.ativa !== false && excl.indexOf(b.fonte) < 0; })
+          .sort(function (a, b) { return (a.fonte === "SINAPI" ? 0 : 1) - (b.fonte === "SINAPI" ? 0 : 1); })
+          .map(function (b) { return b.fonte; });
+        if (!fontes.length) fontes = ["SINAPI"];
+        var cfg = { fontes: fontes, elaborar: typeof Analitico !== "undefined" && Analitico.carregado, planilhaVence: false };
+        var ctx = self._orcmCtx(cfg);
+        ctx.semPendente = true;
+        self._escopoPrecoEquivalencia(ctx);
+        Orcamentista.planejarAsync(etapas, ctx, function () {}).then(function (r) {
+          UI.loadingFim();
+          if (self._orcm !== st || !self.orcAtual || self.orcAtual.id !== st.orcId) return;
+          Object.assign(st, { plano: r.plano, fontes: r.fontes, cfg: cfg, ctx: ctx, carimboEm: self.orcAtual.atualizadoEm });
+          var aplicar = function () { if (self._orcm === st && self._orcmAplicar()) self._escopoRelatorio(st, null, "Itens precificados"); };
+          var pend = r.plano.filter(function (L) { return L.status === "pendente"; });
+          if (!pend.length) { aplicar(); return; }
+          self._escopoComporIA(back, sessao, pend).then(aplicar, aplicar);
+        }).catch(function (e) { UI.loadingFim(); UI.toast("Não consegui precificar: " + ((e && e.message) || e) + " — nada foi gravado.", "erro"); });
+      };
+      UI.loading("Procurando o serviço nas bases…");
+      if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
+      var urls = self._prepararAnalitico();
+      Analitico.carregarArquivo(urls.alts).then(rodar, rodar);
+    };
+    st.retomarIA = function () { self._orcmJanelaIA(back, go); };
+    this._orcmJanelaIA(back, go);
+  };
+
   /* ---------------- o relatório do que conferir ---------------- */
-  App._escopoRelatorio = function (st, info) {
+  App._escopoRelatorio = function (st, info, titulo) {
     var plano = st.plano || [], n = { casado: 0, revisar: 0, propria: 0, pendente: 0 }, custo = 0;
     var codsProprias = {};
     var conferir = [];
@@ -465,10 +557,11 @@
         (conferir.length > 200 ? '<p class="muted" style="font-size:11.5px">… e mais ' + (conferir.length - 200) + " no arquivo.</p>" : "") : "") +
       '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Cada item guarda a origem do preço e a memória de cálculo da quantidade (coluna Memória). O relatório de conferência é <b>interno</b> — não vai na proposta.</p>';
     var self = this;
-    UI.modal(ic("check") + " Orçamento gerado", corpo, [
-      { texto: ic("baixar") + " Baixar relatório de conferência", classe: "ghost", onClick: function () { self._escopoBaixarRelatorio(st); } },
-      { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
-    ]);
+    var pendRest = plano.filter(function (L) { return L.status === "pendente"; }).length;
+    var botoesR = [{ texto: ic("baixar") + " Baixar relatório de conferência", classe: "ghost", onClick: function () { self._escopoBaixarRelatorio(st); } }];
+    if (pendRest) botoesR.push({ texto: ic("ia") + " Precificar os " + pendRest + " sem preço com IA", classe: "success", onClick: function () { UI.fecharModal(); self.precificarPendentesIA(); } });
+    botoesR.push({ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } });
+    UI.modal(ic("check") + " " + (titulo || "Orçamento gerado"), corpo, botoesR);
     var m = document.querySelector(".modal-bg:last-child .modal"); if (m) m.style.maxWidth = "980px";
   };
 
