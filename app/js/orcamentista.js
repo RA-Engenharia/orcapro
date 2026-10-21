@@ -587,7 +587,15 @@
       consultas.forEach(function (q) {
         q = String(q || "").trim(); if (!q || vistos["q:" + q]) return; vistos["q:" + q] = 1;
         (ctx.buscar(q, { fontes: fontesI, max: 80 }) || []).forEach(function (r) {
-          var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1; out.push(r);
+          var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1;
+          /* ⚠ composição PRÓPRIA incompleta (casca pendente ou insumo sem preço) não é insumo de ninguém. Medido
+             na e2e de 21/10/2026: o portão refeito pela IA casou o insumo "PORTAO BASCULANTE…" com a PRÓPRIA
+             antiga e errada (portão sobre placa viária) — o defeito voltava escondido dentro da composição nova. */
+          if (r.fonte === "PROPRIA") {
+            var cp = r.item.insumos ? r.item : (typeof ctx.obter === "function" ? ctx.obter("PROPRIA", r.item.codigo) : null);
+            if (cp && (cp.pendente || (cp.insumos || []).some(function (i) { return !(Number(i.custoUnitario) > 0); }))) return;
+          }
+          out.push(r);
         });
       });
       return out;

@@ -69441,18 +69441,22 @@ orc = this.orcAtual;
 var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
 if (!back) { UI.toast("O servidor de IA não está configurado neste aparelho.", "erro"); return; }
 var par = String(alvo || "").split("|"), soEtapa = alvo ? par[0] : "", soItem = alvo ? par[1] : "";
+var hashDe = function (it) { return self._orcmHash(String(Util.normalizar(it.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim()); };
+var montar = function (recompor) {
 var etapas = [], total = 0, assin = [], vistos = {}, propSem = [];
-Util.arr(orc.etapas).forEach(function (e) {
+Util.arr(self.orcAtual.etapas).forEach(function (e) {
 if (soEtapa && e.id !== soEtapa) return;
 var et = { nome: e.nome, codigo: e.codigo, itens: [] };
 Util.arr(e.itens).forEach(function (it) {
 if (soItem && it.id !== soItem) return;
+var h = hashDe(it);
 if (Util.num(it.custoUnitario) > 0) {
-if (UI._insSemPreco && UI._insSemPreco(it) && propSem.indexOf(it.codigo) < 0) {
-propSem.push(it.codigo);
-var hp = self._orcmHash(String(Util.normalizar(it.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim());
-if (!vistos[hp]) { vistos[hp] = 1; assin.push(hp); }
-}
+if (!(UI._insSemPreco && UI._insSemPreco(it))) return;
+if (propSem.indexOf(it.codigo) < 0) propSem.push(it.codigo);
+if (!vistos[h]) { vistos[h] = 1; assin.push(h); }
+if (!recompor) return;
+et.itens.push({ _ref: it, codigo: "", fonte: "", cascaCodigo: "", recompor: true, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: 0, custoPlanilha: 0, formula: it.memoriaCalculo || "" });
+total++;
 return;
 }
 var cod = it.codigo && it.codigo !== "—" ? String(it.codigo) : "", fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "");
@@ -69462,24 +69466,27 @@ var bp = Bases.obter("PROPRIA", cod);
 if (!bp || bp.pendente || (!((bp.insumos || []).length) && !(Number(bp.custoUnitario) > 0))) { casca = cod; cod = ""; fonte = ""; }
 }
 et.itens.push({ _ref: it, codigo: cod, fonte: fonte, cascaCodigo: casca, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: 0, custoPlanilha: 0, formula: it.memoriaCalculo || "" });
-var h = self._orcmHash(String(Util.normalizar(it.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim());
 if (!vistos[h]) { vistos[h] = 1; assin.push(h); }
 total++;
 });
 if (et.itens.length) etapas.push(et);
 });
-if (!total && !propSem.length) {
+return { etapas: etapas, total: total, assin: assin, propSem: propSem };
+};
+var m0 = montar(false);
+if (!m0.total && !m0.propSem.length) {
 if (!completados) UI.toast(alvo ? "Este item já tem preço." : "Nenhum item sem preço neste orçamento.", "ok");
 return;
 }
-var avisoFinal = function (nIA) {
+var avisoFinal = function (nIA, nRefeitos) {
 var restam = 0;
 Util.arr((self.orcAtual || orc).etapas).forEach(function (e) { Util.arr(e.itens).forEach(function (it) { if ((!alvo || it.id === soItem) && UI._insSemPreco && UI._insSemPreco(it)) restam++; }); });
-if (restam) UI.toast((nIA ? nIA + " insumo(s) ganharam preço pelo equivalente escolhido pela IA; " : "") + restam + " composição(ões) própria(s) ainda com insumo sem equivalente nas bases — informe o preço no Analítico do item.", "erro");
-else if (nIA) UI.toast(nIA + " insumo(s) ganharam preço pelo equivalente escolhido pela IA nas bases — confira no Analítico do item.", "ok");
+var feito = (nIA ? nIA + " insumo(s) ganharam preço pelo equivalente escolhido pela IA; " : "") + (nRefeitos ? nRefeitos + " item(ns) com composição refeita; " : "");
+if (restam) UI.toast(feito + restam + " composição(ões) própria(s) ainda com insumo sem preço — informe o preço no Analítico do item.", "erro");
+else if (feito) UI.toast(feito.replace(/; $/, "") + " — confira no Analítico do item.", "ok");
 };
-var st = this._orcm = { modo: "pendentes", etapas: etapas, etapasRodadas: etapas, nome: orc.nome, total: total, orcId: orc.id, carimboEm: orc.atualizadoEm,
-plano: [], assinaturaEscopo: assin.slice(0, 2000), uso: { revisar: 0, pendentes: total + propSem.length } };
+var st = this._orcm = { modo: "pendentes", etapas: m0.etapas, etapasRodadas: m0.etapas, nome: orc.nome, total: m0.total, orcId: orc.id, carimboEm: orc.atualizadoEm,
+plano: [], assinaturaEscopo: m0.assin.slice(0, 2000), uso: { revisar: 0, pendentes: m0.total + m0.propSem.length } };
 st.aoDesistir = function () { UI.toast("Nada foi alterado: a IA só compõe depois de confirmado o pagamento (ou no grátis do mês).", "erro"); };
 var go = function (sessao) {
 if (self._orcm !== st) return;
@@ -69497,24 +69504,40 @@ var ctx = self._orcmCtx(cfg);
 ctx.semPendente = true;
 ctx.fontesInsumo = self._escopoFontesInsumo(ctx);
 self._escopoPrecoEquivalencia(ctx);
-var proprias = function () { return self._propriasEquivalenteIA(back, sessao, alvo).then(function (n) { return n; }, function () { return 0; }); };
-if (!total) {
 UI.loadingFim();
-proprias().then(avisoFinal);
-return;
-}
-Orcamentista.planejarAsync(etapas, ctx, function () {}).then(function (r) {
+self._propriasEquivalenteIA(back, sessao, alvo).then(function (n) { return n; }, function () { return 0; }).then(function (nIA) {
+if (self._orcm !== st || !self.orcAtual || self.orcAtual.id !== st.orcId) return;
+var m = montar(true);
+if (!m.total) { avisoFinal(nIA, 0); return; }
+Object.assign(st, { etapas: m.etapas, etapasRodadas: m.etapas, total: m.total });
+UI.loading("Procurando o serviço nas bases…");
+Orcamentista.planejarAsync(m.etapas, ctx, function () {}).then(function (r) {
 UI.loadingFim();
 if (self._orcm !== st || !self.orcAtual || self.orcAtual.id !== st.orcId) return;
 Object.assign(st, { plano: r.plano, fontes: r.fontes, cfg: cfg, ctx: ctx, carimboEm: self.orcAtual.atualizadoEm });
 var aplicar = function () {
-if (self._orcm !== st || !self._orcmAplicar()) return;
-proprias().then(function (n) { self._escopoRelatorio(st, null, "Itens precificados"); avisoFinal(n); });
+if (self._orcm !== st) return;
+st.plano = st.plano.filter(function (L) { return !(L.item.recompor && (L.status === "pendente" || (L.status === "propria" && !(Number(L.custoUnitario) > 0)))); });
+var refeitos = st.plano.filter(function (L) { return L.item.recompor; }).length;
+if (!st.plano.length) { avisoFinal(nIA, 0); return; }
+if (!self._orcmAplicar()) return;
+self._escopoRelatorio(st, null, "Itens precificados");
+avisoFinal(nIA, refeitos);
 };
+r.plano.forEach(function (L) {
+if (!L.item.recompor || L.status === "pendente") return;
+var ruim = !(Number(L.custoUnitario) > 0) || String(L.codigo || "") === String(L.item._ref.codigo || "");
+if (!ruim && L.fonte === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) {
+var cp = Bases.obter("PROPRIA", L.codigo);
+ruim = !!(cp && (cp.insumos || []).some(function (i) { return !(Number(i.custoUnitario) > 0); }));
+}
+if (ruim) { L.status = "pendente"; L.codigo = ""; L.fonte = ""; L.comp = null; L.custoUnitario = 0; L.custoMO = 0; L.custoMAT = 0; L.custoEQ = 0; }
+});
 var pend = r.plano.filter(function (L) { return L.status === "pendente"; });
 if (!pend.length) { aplicar(); return; }
 self._escopoComporIA(back, sessao, pend).then(aplicar, aplicar);
 }).catch(function (e) { UI.loadingFim(); UI.toast("Não consegui precificar: " + ((e && e.message) || e) + " — nada foi gravado.", "erro"); });
+});
 };
 UI.loading("Procurando o serviço nas bases…");
 if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }

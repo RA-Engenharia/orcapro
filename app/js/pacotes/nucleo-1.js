@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.174",
+versao: "1.2.175",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -18291,7 +18291,12 @@ var vistos = {}, out = [];
 consultas.forEach(function (q) {
 q = String(q || "").trim(); if (!q || vistos["q:" + q]) return; vistos["q:" + q] = 1;
 (ctx.buscar(q, { fontes: fontesI, max: 80 }) || []).forEach(function (r) {
-var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1; out.push(r);
+var k = r.fonte + ":" + r.item.codigo; if (vistos[k]) return; vistos[k] = 1;
+if (r.fonte === "PROPRIA") {
+var cp = r.item.insumos ? r.item : (typeof ctx.obter === "function" ? ctx.obter("PROPRIA", r.item.codigo) : null);
+if (cp && (cp.pendente || (cp.insumos || []).some(function (i) { return !(Number(i.custoUnitario) > 0); }))) return;
+}
+out.push(r);
 });
 });
 return out;
