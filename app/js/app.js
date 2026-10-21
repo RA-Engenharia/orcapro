@@ -2633,6 +2633,9 @@
           break;
         case "escopo": this.abrirEscopo(); break;
         case "escopo-ia": this.analisarEscopoIA(); break;
+        case "escopo-param-previa": this.escopoParamPrevia(); break;
+        case "escopo-completo": this.escopoGerarCompleto("entrada"); break;
+        case "escopo-completo-rev": this.escopoGerarCompleto("revisao"); break;
         case "escopo-casar": this.refinarEscopoCasar(); break;
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;
@@ -15225,20 +15228,31 @@
       var meuTurno = function () {
         return reqId === self._escReq && self.orcAtual && self.orcAtual.id === orcId;
       };
-      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Estruturando o escopo com a IA do ERP…", "ok");
-      fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ descricao: txt }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
+      /* ⚠ 20/10/2026 — TEXTO GRANDE NÃO FALHA MAIS. Aqui ia o texto inteiro num
+         pedido só; memorial grande voltava cortado e a pessoa perdia tudo em
+         "IA não retornou estrutura". Agora vai em BLOCOS (App._escopoEstruturar,
+         js/orccompletoui.js): cada bloco tem 2 tentativas e, sem resposta, é
+         analisado linha a linha — a lista volta inteira, sempre. */
+      var setTxtE = function (t) { var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild; if (tn && tn.nodeType === 3) tn.nodeValue = t; };
+      /* ⚠ 21/10/2026 — PAGA ANTES DE GERAR: o orçamento por IA é cobrado (2 grátis por mês) e a IA só
+         roda com a janela aberta. Pago aqui, o "Gerar tudo sem pendência" da revisão usa a MESMA janela. */
+      this._escopoComPagamento({ texto: txt }, function (sessao) {
+      UI.loading("Estruturando o escopo com a IA…");
+      self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+        .then(function (r) {
+          UI.loadingFim();
           if (!meuTurno()) { UI.toast("O escopo estruturado pela IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return; }
-          if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
-          self._escopo = Escopo.analisarItensIA(j.resultado.etapas || [], { excluirFontes: self._fontesExcluidas() });
-          if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
+          self._escopo = r.linhas;
+          if (!self._escopo.length) { UI.toast("Nenhum serviço reconhecido no texto.", "erro"); return; }
           self._escopoIA = true;
           var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
-          UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar p/ a IA escolher o código exato.", "ok");
+          UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão)" +
+            (r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) sem resposta da IA foram analisadas linha a linha" : "") +
+            ". Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar ou Gerar tudo sem pendência.", r.semIA ? "erro" : "ok");
           self._mostrarEscopoResultado(0);
         })
-        .catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — confira a internet e a licença. Detalhe no Console (F12).", "erro"); });
+        .catch(function (e) { UI.loadingFim(); console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — confira a internet e a licença. Detalhe no Console (F12).", "erro"); });
+      });
     },
 
     // 2º passo (opcional): IA escolhe o código EXATO. Em LOTES, só os ainda NÃO refinados,

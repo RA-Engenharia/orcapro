@@ -340,6 +340,15 @@
         });
         cands.sort(function (x, y) { return y.score - x.score; });
         var top = cands.slice(0, 3);
+        /* ⚠ NO MODO SEM PENDENTE, SÓ A MESMA UNIDADE DECIDE. Aqui a revisão
+           humana existe (o quadro do Orçamentista) e um candidato de unidade
+           diferente entra como "revisar" com aviso. No orçamento gerado de
+           uma vez não há esse quadro antes de gravar: kg × preço por m² iria
+           para a planilha. Achado pelo tools/test-orccompleto.js [4]. */
+        if (ctx.semPendente && it.unidade) {
+          var ukT = ctx.unidadeChave || unidFallback, unT = ukT(it.unidade);
+          top = cands.filter(function (c) { return ukT(c.item.unidade) === unT; }).slice(0, 3);
+        }
         // candidatos vindos do código (descrição incompatível) ficam depois dos da descrição
         L.candidatos = top.concat(L.candidatos.filter(function (c) { return !vistos[c.fonte + ":" + c.item.codigo]; })).slice(0, 4);
         var codDivergente = L.candidatos.some(function (c) { return c.via === "codigo" && c.score === 0.5; });
@@ -385,7 +394,19 @@
         if (r && r.ok && r.comp && (r.comp.insumos || []).length) {
           var ref = r.referencia || {}, refUnid = ref.unidade || "", unidOk = !it.unidade || !refUnid || uk(refUnid) === uk(it.unidade);
           var refScore = Number(ref.score) || 0;
-          if (!unidOk) {
+          /* ⚠ NO ORÇAMENTO GERADO DE UMA VEZ, SÓ ANALOGIA DE CONFIANÇA ALTA.
+             Medido na base MG (20/10/2026): com confiança "média" a análoga de
+             "limpeza final de obra" foi LIMPEZA DE TANQUE DE LOUÇA, a de "caixa
+             de inspeção de esgoto" foi JUNTA ARGAMASSADA DE TUBO e a de "ligação
+             provisória de água e energia" foi a ESTRUTURA DE MADEIRA DA CAIXA
+             D'ÁGUA de R$ 7.677. Sem o quadro de revisão antes de gravar, isso
+             vira preço errado calado. O resíduo vai para a IA compor
+             (js/orccompletoui.js); a análoga fica como candidato à vista. */
+          var fracaParaGerar = ctx.semPendente && r.confianca !== "alta";
+          if (fracaParaGerar) {
+            L.candidatos.push({ fonte: "SINAPI", item: { codigo: ref.codigo, descricao: ref.descricao, unidade: refUnid, custoUnitario: (r.rota && r.rota.preco) || 0 }, score: Math.round(refScore * 40) / 100, sim: refScore, motivo: "análoga de confiança " + (r.confianca || "baixa") + " — não aplicada no orçamento gerado", via: "descricao" });
+            trace("análoga " + ref.codigo + " com confiança " + (r.confianca || "baixa") + " — fica para a IA compor");
+          } else if (!unidOk) {
             /* coeficiente é POR UNIDADE da referência: análoga em UN não serve
                para item em kg. Fica como sugestão fraca, e o item vai a pendente. */
             L.candidatos.push({ fonte: "SINAPI", item: { codigo: ref.codigo, descricao: ref.descricao, unidade: refUnid, custoUnitario: (r.rota && r.rota.preco) || 0 }, score: Math.round(refScore * 50) / 100, sim: refScore, motivo: "análoga mais próxima, mas a unidade difere (" + refUnid + " × " + it.unidade + ") — coeficientes não se transferem", via: "descricao" });
@@ -418,6 +439,15 @@
           }
         } else trace("sem análoga na base analítica" + (r && r.erro ? ": " + String(r.erro).slice(0, 80) : ""));
       }
+
+      /* ⚠ NÃO HÁ "APROXIMAÇÃO" AQUI, DE PROPÓSITO (20/10/2026). A primeira
+         versão do modo sem pendente adotava o candidato de mesma unidade mais
+         parecido, pelo maior preço. Medido na base MG: "ligação provisória de
+         água e energia" virou ESTRUTURA DE MADEIRA DA CAIXA D'ÁGUA a R$ 9.905
+         e "limpeza final de obra" virou ANDAIME FACHADEIRO. Semelhança baixa
+         não é parentesco — e "o maior preço" multiplicava o erro. O que chega
+         aqui sem nada seguro é RESÍDUO: a IA compõe (insumos e coeficientes,
+         preço das bases) em js/orccompletoui.js; sem IA, fica a casca honesta. */
 
       // ---- 6. PENDENTE (casca) ----
       L.status = "pendente"; L.via = "nenhum"; L.fonte = "PROPRIA";
@@ -511,6 +541,39 @@
      * reais, o que não casa vira insumo próprio A COTAR (preço 0) — nunca
      * um preço inventado. A composição sai com confiança BAIXA e aviso.
      * ================================================================== */
+    /* ==================================================================
+     * PREÇO DE INSUMO POR EQUIVALÊNCIA (20/10/2026)
+     *
+     * A composição própria por analogia copia os coeficientes oficiais, mas
+     * às vezes um insumo não tem coleta de preço na UF (rota "cotar"): ele
+     * entrava com R$ 0,00 e a composição saía BARATA — o pior erro, porque
+     * ninguém vê. Regra do Rogério: "na dúvida, joga pra mais".
+     *
+     * `candidatos` = [{item, fonte}] vindos da busca de INSUMOS nas bases do
+     * usuário. Vale só o de MESMA unidade, com preço, e semelhança ≥ 0,55;
+     * entre os que ficam até 0,05 do mais parecido, o de MAIOR preço.
+     * Devolve null quando nada serve — e aí o insumo continua sem preço e o
+     * aviso continua na linha. Nunca inventa número.
+     * ================================================================== */
+    precoPorEquivalencia: function (insumo, candidatos, ctx) {
+      var self = this, uk = (ctx && ctx.unidadeChave) || unidFallback;
+      var un = uk(insumo && insumo.unidade), desc = String((insumo && insumo.descricao) || "");
+      if (!desc) return null;
+      var ok = [];
+      (candidatos || []).forEach(function (c) {
+        var it = c && c.item; if (!it || !(Number(it.custoUnitario) > 0)) return;
+        if (String(it.codigo) === String(insumo.codigo) && c.fonte === insumo.fonte) return;
+        if (un && uk(it.unidade) !== un) return;
+        var sim = self.similaridade(desc, it.descricao, insumo.unidade, it.unidade, ctx);
+        if (sim >= 0.55) ok.push({ c: c, sim: sim });
+      });
+      if (!ok.length) return null;
+      ok.sort(function (a, b) { return b.sim - a.sim; });
+      var melhor = ok[0].sim, esc = ok[0];
+      ok.forEach(function (o) { if (o.sim >= melhor - 0.05 && Number(o.c.item.custoUnitario) > Number(esc.c.item.custoUnitario)) esc = o; });
+      return { custoUnitario: Number(esc.c.item.custoUnitario), codigo: String(esc.c.item.codigo), fonte: esc.c.fonte, descricao: esc.c.item.descricao, sim: esc.sim, equivalentes: ok.length };
+    },
+
     validarComposicaoIA: function (L, resposta, ctx) {
       if (!L || !resposta || !Array.isArray(resposta.insumos) || !resposta.insumos.length) return null;
       var self = this, insumos = [], aCotar = 0;

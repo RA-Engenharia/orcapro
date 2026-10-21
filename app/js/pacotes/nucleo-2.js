@@ -54830,6 +54830,9 @@ if (typeof OrcWizard !== "undefined" && this.orcAtual) OrcWizard.editarParametro
 break;
 case "escopo": this.abrirEscopo(); break;
 case "escopo-ia": this.analisarEscopoIA(); break;
+case "escopo-param-previa": this.escopoParamPrevia(); break;
+case "escopo-completo": this.escopoGerarCompleto("entrada"); break;
+case "escopo-completo-rev": this.escopoGerarCompleto("revisao"); break;
 case "escopo-casar": this.refinarEscopoCasar(); break;
 case "escopo-analisar": this.analisarEscopo(); break;
 case "escopo-confirmar": this.confirmarEscopo(); break;
@@ -63393,20 +63396,24 @@ var orcId = this.orcAtual ? this.orcAtual.id : "";
 var meuTurno = function () {
 return reqId === self._escReq && self.orcAtual && self.orcAtual.id === orcId;
 };
-UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Estruturando o escopo com a IA do ERP…", "ok");
-fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ descricao: txt }) })
-.then(function (r) { return r.json(); })
-.then(function (j) {
+var setTxtE = function (t) { var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild; if (tn && tn.nodeType === 3) tn.nodeValue = t; };
+this._escopoComPagamento({ texto: txt }, function (sessao) {
+UI.loading("Estruturando o escopo com a IA…");
+self._escopoEstruturar(txt, function (f, t) { setTxtE("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+.then(function (r) {
+UI.loadingFim();
 if (!meuTurno()) { UI.toast("O escopo estruturado pela IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return; }
-if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
-self._escopo = Escopo.analisarItensIA(j.resultado.etapas || [], { excluirFontes: self._fontesExcluidas() });
-if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
+self._escopo = r.linhas;
+if (!self._escopo.length) { UI.toast("Nenhum serviço reconhecido no texto.", "erro"); return; }
 self._escopoIA = true;
 var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
-UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar p/ a IA escolher o código exato.", "ok");
+UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão)" +
+(r.semIA ? " · " + r.semIA + " de " + r.blocos + " parte(s) sem resposta da IA foram analisadas linha a linha" : "") +
+". Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar ou Gerar tudo sem pendência.", r.semIA ? "erro" : "ok");
 self._mostrarEscopoResultado(0);
 })
-.catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — confira a internet e a licença. Detalhe no Console (F12).", "erro"); });
+.catch(function (e) { UI.loadingFim(); console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — confira a internet e a licença. Detalhe no Console (F12).", "erro"); });
+});
 },
 _casarEscopoIA: function (back) {
 var an = this._escopo || [];
@@ -68405,7 +68412,7 @@ UI.modal(ic("tabela") + " Composição própria elaborada — " + esc(c.codigo |
 App._orcmRaiz = function () {
 var st = this._orcm;
 if (st.raiz) return st.raiz;
-var orc = (st.modo === "orcamento" && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
+var orc = ((st.modo === "orcamento" || st.modo === "escopo") && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
 if (orc) {
 r = orc.orcmRaiz || "";
 if (!r) {
@@ -68428,6 +68435,7 @@ for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h + (h << 1) + (
 return ("0000000" + h.toString(16)).slice(-8);
 };
 App._orcmAssinatura = function () {
+if (this._orcm && this._orcm.modo === "escopo" && this._orcm.assinaturaEscopo) return this._orcm.assinaturaEscopo.slice();
 var self = this, vistos = {}, out = [];
 Util.arr(this._orcm && this._orcm.plano).forEach(function (L) {
 var d = String((typeof Util !== "undefined" && Util.normalizar) ? Util.normalizar(L.item.descricao || "") : (L.item.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim();
@@ -68440,41 +68448,58 @@ return out.slice(0, 2000);
 App._orcmPrecoModal = function (p, confirmar) {
 var self = this, rg = p.regra || {}, pago = p.precoCent > 0, suficiente = !pago || !!(p.carteira && p.carteira.suficiente);
 var revs = function (n) { return n === 1 ? "1 revisão incluída" : n + " revisões incluídas"; };
-var html = '<p style="font-size:14px;margin-top:0" data-orcm="preco-texto"><b>' + esc(p.texto || "") + "</b></p>" +
+var html = '<p style="font-size:14px;margin-top:0" data-orcm="preco-texto"><b>' + esc(p.texto || "") + "</b></p>";
+if (rg.escopo) {
+html += '<p class="muted" style="font-size:12.5px">A IA estrutura o escopo, casa cada serviço com as bases e cria a composição própria do que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
+'<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
+" no plano; depois, cada orçamento tem o preço calculado pelo tamanho do escopo, mostrado aqui ANTES de gerar. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
+" h. Se ela não entregar, o valor volta para a carteira.</p>";
+} else html +=
 '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
 '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") + " no plano; depois, " + esc(rg.preco || "") +
 " por orçamento, com " + revs(rg.revisoesIncluidas) + "; revisão extra, " + esc(rg.revisao || "") + ". Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
 " h. Se ela não responder, o valor volta para a carteira.</p>";
 if (pago) html += '<p style="font-size:13px">Saldo da carteira de créditos: <b>' + esc((p.carteira && p.carteira.saldo) || "") + "</b>" + (suficiente ? "" : " — insuficiente.") + "</p>" +
 (suficiente ? "" : '<p class="muted" style="font-size:12.5px">' + esc((p.compraCreditos && p.compraCreditos.texto) || "") + "</p>");
-var botoes = [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self._orcmAbrirRevisao(); } }];
+var botoes = [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self._orcmVoltar(true); } }];
 if (suficiente) botoes.push({ texto: ic("alvo") + (pago ? " Confirmar " + esc(p.preco || "") + " e usar a IA" : " Usar a IA (incluído)"), classe: "success", onClick: function () { confirmar(); } });
 else if (p.compraCreditos && p.compraCreditos.pix && typeof IAAcabamento !== "undefined" && IAAcabamento.comprarCreditos) botoes.push({ texto: "Comprar créditos (PIX)", classe: "success", onClick: function () {
 var falta = Math.max(0, (Number(p.precoCent) || 0) - (Number(p.carteira && p.carteira.saldoCent) || 0));
-IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { self._orcmRefinarIA(); }, aoFechar: function () { self._orcmAbrirRevisao(); } });
+IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { var stC = self._orcm; if (stC && stC.modo === "escopo" && stC.retomarIA) stC.retomarIA(); else self._orcmRefinarIA(); }, aoFechar: function () { self._orcmVoltar(true); } });
 } });
 UI.modal(ic("ia") + " IA do Orçamentista — " + (pago ? "o preço antes de usar" : "incluído no plano"), html, botoes);
+};
+App._orcmVoltar = function (desistiu) {
+var st = this._orcm;
+if (st && st.modo === "escopo") {
+UI.fecharModal();
+if (desistiu && typeof st.aoDesistir === "function") { var f = st.aoDesistir; st.aoDesistir = null; f(); }
+return;
+}
+this._orcmAbrirRevisao();
 };
 App._orcmJanelaIA = function (back, seguir) {
 var self = this, st = this._orcm;
 if (st.janela && st.janela.ate > new Date().getTime() + 60000) { seguir(st.janela.id); return; }
 var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
 var corpo = { raiz: this._orcmRaiz(), assinatura: this._orcmAssinatura() };
+if (st.modo === "escopo" && st.escopo) corpo.escopo = st.escopo;
 var post = function (rota, b) {
 return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
 .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
 };
-var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); };
+var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); if (st.modo === "escopo") self._orcmVoltar(true); };
 var abrir = function (orcamentoId) {
 var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
+if (corpo.escopo) b.escopo = corpo.escopo;
 if (orcamentoId) b.orcamentoId = orcamentoId;
 UI.loading("Liberando a IA neste orçamento…");
 post("/ia/orcamentista/abrir", b).then(function (o) {
 UI.loadingFim();
-if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui liberar a IA (HTTP " + o.status + ") — nada foi cobrado."), "erro"); UI.fecharModal(); self._orcmAbrirRevisao(); return; }
+if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui liberar a IA (HTTP " + o.status + ") — nada foi cobrado."), "erro"); UI.fecharModal(); self._orcmVoltar(true); return; }
 st.janela = { id: o.j.sessao, ate: Date.parse(o.j.ate) || (new Date().getTime() + 3600000) };
 if (o.j.cobrado) UI.toast("Cobrado " + o.j.cobrado.texto + " da carteira de créditos (saldo: " + o.j.cobrado.saldo + ").", "ok");
-UI.fecharModal(); self._orcmAbrirRevisao();
+UI.fecharModal(); self._orcmVoltar(false);
 seguir(st.janela.id);
 }, semRede);
 };
@@ -68482,7 +68507,7 @@ UI.loading("Consultando o preço da IA…");
 post("/ia/orcamentista/preco", corpo).then(function (o) {
 UI.loadingFim();
 if (o.status === 404 || o.status === 503) { seguir(null); return; }
-if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); return; }
+if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); if (st.modo === "escopo") self._orcmVoltar(true); return; }
 if (o.j.situacao === "aberta") { abrir(null); return; }
 self._orcmPrecoModal(o.j, function () { abrir(o.j.orcamentoId || null); });
 }, semRede);
@@ -68568,6 +68593,7 @@ criadoPor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "", insumo
 App._orcmRecado = function (msg) {
 var st = this._orcm; if (!st) return;
 st.recado = String(msg == null ? "" : msg);
+if (st.modo === "escopo") { if (st.recado) UI.toast(st.recado, "erro"); return; }
 var el = document.getElementById("orcm-recado");
 if (el) { el.textContent = st.recado; el.style.display = st.recado ? "" : "none"; try { el.scrollIntoView({ block: "nearest" }); } catch (e) {} }
 else if (st.recado) this._orcmAbrirRevisao();
@@ -68658,7 +68684,31 @@ UI.fecharModal();
 this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
 } else {
 var fora = 0;
+if (st.modo === "escopo") {
+var idPorNome = {};
+Util.arr(copia.etapas).forEach(function (e) { idPorNome[String(e.nome || "").trim().toUpperCase()] = e.id; });
+var destinoDe = function (nome) {
+var k = String(nome || "SERVIÇOS GERAIS").trim().toUpperCase();
+if (!idPorNome[k]) { Orcamento.addEtapa(copia, nome || "SERVIÇOS GERAIS"); idPorNome[k] = copia.etapas[copia.etapas.length - 1].id; }
+return idPorNome[k];
+};
 plano.forEach(function (L) {
+var et = (st.etapasRodadas || [])[L.etapaIdx] || {};
+var etapaId = destinoDe(et.nome);
+var item = Orcamentista.itemParaOrcamento(L);
+if (L.status !== "pendente") { item.custoUnitario = Number(L.custoUnitario) || 0; item.custoMO = Number(L.custoMO) || 0; item.custoMAT = Number(L.custoMAT) || 0; item.custoEQ = Number(L.custoEQ) || 0; }
+var etapaDest = Util.arr(copia.etapas).filter(function (e) { return e.id === etapaId; })[0], antes = {};
+Util.arr(etapaDest && etapaDest.itens).forEach(function (x) { antes[x.id] = 1; });
+Orcamento.addItem(copia, etapaId, item, L.item.quantidade);
+var novo = Util.arr(etapaDest && etapaDest.itens).filter(function (x) { return !antes[x.id]; })[0];
+if (novo) {
+if (item.orcamentista) novo.orcamentista = item.orcamentista;
+if (L.item.formula && !novo.memoriaCalculo) novo.memoriaCalculo = String(L.item.formula);
+}
+n[L.status]++;
+});
+if (st.escopoGerado) copia.escopoGerado = st.escopoGerado;
+} else plano.forEach(function (L) {
 var orig = L.item._ref; if (!orig) return;
 var ref = null;
 for (var k = 0; k < pares.length; k++) { if (pares[k][0] === orig) { ref = pares[k][1]; break; } }
@@ -68691,6 +68741,408 @@ this.render();
 try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo("orcamentista"); } catch (e) {}
 UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") +
 (fora ? " · ⚠ " + fora + " item(ns) do plano não estão mais neste orçamento e ficaram de fora" : "") + ".", (n.pendente || fora) ? "erro" : "ok");
+return true;
+};
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/orccompletoui.js ==== */
+try {
+(function (global) {
+"use strict";
+if (typeof App === "undefined" || typeof UI === "undefined") return;
+var ic = function (n, s) { return (typeof Icones !== "undefined" && Icones.get) ? Icones.get(n, s || 15) : ""; };
+var esc = function (s) { return Util.esc(String(s == null ? "" : s)); };
+var BLOCO = 6000;
+UI.renderEscopoParametros = function () {
+if (typeof OrcParam === "undefined") return "";
+var sel = function (id, mapa, padrao) {
+return '<select id="' + id + '" style="width:100%;box-sizing:border-box">' + Object.keys(mapa).map(function (k) {
+var r = mapa[k]; var rot = typeof r === "string" ? r : r.rotulo;
+return '<option value="' + k + '"' + (k === padrao ? " selected" : "") + '>' + esc(rot) + "</option>";
+}).join("") + "</select>";
+};
+var campo = function (rot, html, dica) {
+return '<div class="field" style="margin:0;min-width:0"><label style="font-size:11px"' + (dica ? ' title="' + esc(dica) + '"' : "") + ">" + rot + "</label>" + html + "</div>";
+};
+var num = function (id, ph) { return '<input id="' + id + '" inputmode="decimal" placeholder="' + esc(ph) + '" style="width:100%;box-sizing:border-box">'; };
+return '<details id="esc-param" class="card" style="padding:9px 12px;margin-bottom:8px">' +
+'<summary style="cursor:pointer;font-weight:600;font-size:13px">' + ic("regua") + ' Parâmetros da obra — gerar o orçamento só com a área</summary>' +
+'<p class="muted" style="font-size:12px;margin:6px 0 8px">Preencha o que souber; o resto entra como premissa escrita. Cada quantidade sai com a fórmula ao lado e o código SINAPI conferido. Pode somar com o texto acima.</p>' +
+'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">' +
+campo("Tipo", sel("escp-tipo", OrcParam.TIPOS, "residencial")) +
+campo("Área construída (m²) *", num("escp-area", "ex.: 120")) +
+campo("Pavimentos", num("escp-pav", "1")) +
+campo("Pé-direito (m)", num("escp-pd", "2,80")) +
+campo("Padrão", sel("escp-padrao", OrcParam.PADROES, "normal")) +
+campo("Quartos", num("escp-quartos", "auto")) +
+campo("Banheiros", num("escp-banh", "auto")) +
+campo("Cobertura", sel("escp-cob", OrcParam.COBERTURAS, "ceramica")) +
+campo("Forro", '<select id="escp-forro" style="width:100%;box-sizing:border-box"><option value="">Pelo padrão</option>' + Object.keys(OrcParam.FORROS).map(function (k) { return '<option value="' + k + '">' + esc(OrcParam.FORROS[k]) + "</option>"; }).join("") + "</select>") +
+campo("Piso", '<select id="escp-piso" style="width:100%;box-sizing:border-box"><option value="">Pelo padrão</option>' + Object.keys(OrcParam.PISOS).map(function (k) { return '<option value="' + k + '">' + esc(OrcParam.PISOS[k]) + "</option>"; }).join("") + "</select>") +
+campo("Perímetro externo (m)", num("escp-perim", "auto"), "Se souber, informe: deixa paredes, reboco e fundação mais precisos") +
+campo("Esgoto", '<select id="escp-esgoto" style="width:100%;box-sizing:border-box"><option value="rede">Rede pública</option><option value="fossa">Fossa e sumidouro</option></select>') +
+"</div>" +
+'<div class="flex" style="gap:8px;margin-top:8px"><button type="button" class="btn sm" data-acao="escopo-param-previa">' + ic("buscar") + " Ver as quantidades</button></div>" +
+'<div id="esc-param-prev"></div>' +
+"</details>";
+};
+App._escopoParamLer = function () {
+var v = function (id) { var e = UI.el(id); return e ? String(e.value || "").trim() : ""; };
+return { tipo: v("escp-tipo"), area: v("escp-area"), pavimentos: v("escp-pav"), peDireito: v("escp-pd"), padrao: v("escp-padrao"),
+quartos: v("escp-quartos"), banheiros: v("escp-banh"), cobertura: v("escp-cob"), forro: v("escp-forro"), piso: v("escp-piso"),
+perimetro: v("escp-perim"), esgoto: v("escp-esgoto") };
+};
+App.escopoParamPrevia = function () {
+var box = UI.el("esc-param-prev"); if (!box || typeof OrcParam === "undefined") return;
+var r = OrcParam.gerar(this._escopoParamLer());
+if (!r.ok) { box.innerHTML = '<div style="color:var(--vermelho);font-size:12.5px;margin-top:6px">' + esc(r.erros.join(" ")) + "</div>"; return; }
+this._escParam = r;
+box.innerHTML = '<div style="max-height:260px;overflow:auto;margin-top:8px;border:1px solid var(--linha);border-radius:8px">' +
+'<table class="tbl"><thead><tr><th>Etapa</th><th>Código</th><th>Serviço</th><th class="num">Qtd</th><th>Un</th><th>Fórmula</th></tr></thead><tbody>' +
+r.linhas.map(function (l) {
+return "<tr><td style=\"font-size:11px\">" + esc(l.etapa) + "</td><td>" + (l.codigo ? esc(l.codigo) : '<span class="muted" title="A SINAPI não tem o serviço inteiro: o Orçamentista acha pela descrição ou elabora a composição própria">própria</span>') + "</td><td style=\"font-size:12px\">" + esc(String(l.descricao).slice(0, 70)) +
+'</td><td class="num">' + Util.fmtNum(l.quantidade, 2) + "</td><td>" + esc(l.unidade) + '</td><td class="muted" style="font-size:11px">' + esc(l.formula) + "</td></tr>";
+}).join("") + "</tbody></table></div>" +
+'<div class="muted" style="font-size:11.5px;margin-top:6px"><b>' + r.linhas.length + " serviços.</b> Premissas: " + esc(r.premissas.join(" · ")) + "</div>";
+};
+App._escopoEstruturar = function (txt, aoProgredir, sessao) {
+var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+var blocos = Escopo.dividirEmBlocos(txt, BLOCO), out = { linhas: [], blocos: blocos.length, semIA: 0, avisos: [], modelo: "" };
+var excl = this._fontesExcluidas();
+var pedir = function (texto) {
+var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+var prazo = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 330000) : null;
+return fetch(back + "/ia/orcamento", { method: "POST", signal: ctl ? ctl.signal : undefined,
+headers: (function () { var h = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }; if (sessao) h["x-orcm-sessao"] = sessao; return h; })(),
+body: JSON.stringify({ descricao: texto }) })
+.then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
+.then(function (o) { if (prazo) clearTimeout(prazo); return o; }, function (e) { if (prazo) clearTimeout(prazo); throw e; });
+};
+var umBloco = function (texto, tentativa) {
+return pedir(texto).then(function (o) {
+var j = o.j || {};
+if (j.ok && j.resultado && (j.resultado.etapas || []).length) {
+out.modelo = j.model || out.modelo;
+if (j.truncado && tentativa < 2 && texto.length > 1500) {
+var metades = Escopo.dividirEmBlocos(texto, Math.ceil(texto.length / 2) + 10);
+if (metades.length > 1) return metades.reduce(function (p, m) { return p.then(function () { return umBloco(m, 2); }); }, Promise.resolve());
+}
+Escopo.analisarItensIA(j.resultado.etapas, { excluirFontes: excl }).forEach(function (l) { out.linhas.push(l); });
+return;
+}
+if (tentativa < 1 && o.status !== 400 && o.status !== 401 && o.status !== 402 && o.status !== 403) return umBloco(texto, tentativa + 1);
+throw new Error(j.error || ("HTTP " + o.status));
+}, function (e) {
+if (tentativa < 1) return umBloco(texto, tentativa + 1);
+throw e;
+}).catch(function (e) {
+if (tentativa >= 1 || /HTTP 40[0123]/.test(String(e && e.message))) {
+out.semIA++;
+if (out.avisos.length < 3) out.avisos.push(String((e && e.message) || e).slice(0, 140));
+Escopo.analisar(texto, { excluirFontes: excl }).forEach(function (l) { l.semIA = true; out.linhas.push(l); });
+return;
+}
+throw e;
+});
+};
+var feitos = 0;
+return blocos.reduce(function (p, b) {
+return p.then(function () {
+if (aoProgredir) { try { aoProgredir(feitos, blocos.length); } catch (e) {} }
+return umBloco(b, 0).then(function () { feitos++; });
+});
+}, Promise.resolve()).then(function () { return out; });
+};
+function etapaDe(l) {
+if (l.etapaSugerida) return String(l.etapaSugerida).trim().toUpperCase();
+var cat = (typeof Cronograma !== "undefined" && Cronograma.classificar) ? Cronograma.classificar(l.textoOriginal) : null;
+return cat ? String(cat.nome).toUpperCase() : "SERVIÇOS GERAIS";
+}
+App._escopoParaEtapas = function (linhasEscopo, param) {
+var ls = [];
+if (param && param.ok) param.linhas.forEach(function (l) { ls.push(l); });
+(linhasEscopo || []).forEach(function (l) {
+if (!l) return;
+var cand = (l.escolhido > -1 && l.candidatos) ? l.candidatos[l.escolhido] : null;
+var firme = !!cand && (l.decididoPeloUsuario || l.refinadoIA || cand.motivo === "código informado");
+ls.push({
+etapa: etapaDe(l),
+codigo: firme ? String(cand.item.codigo) : "",
+fonte: firme ? (cand.fonte || "SINAPI") : "",
+descricao: l.descricao || Escopo.descricaoLimpa(l.textoOriginal),
+unidade: l.unidade || (firme ? cand.item.unidade : "") || "",
+quantidade: Number(l.quantidade) || 1,
+formula: l.observacao ? l.observacao : (l.qtdInferida ? "quantidade não informada no escopo — conferir" : "quantidade informada no escopo"),
+textoOriginal: l.textoOriginal
+});
+});
+return OrcParam.paraEtapas(ls);
+};
+App.escopoGerarCompleto = function (origem) {
+var self = this, orc = this.orcAtual;
+if (!orc) { UI.toast("Abra um orçamento primeiro.", "erro"); return; }
+if (this._trialBloqueado && this._trialBloqueado()) { this._avisoTrial(); return; }
+if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) {
+UI.toast("Este orçamento está aprovado — crie uma revisão para gerar itens nele.", "erro"); return;
+}
+if (typeof Licitacao !== "undefined" && Licitacao.temBasesExigidas && Licitacao.temBasesExigidas(orc) && this._licCtxBases && Licitacao.basesPendentes(orc, this._licCtxBases()).length) {
+UI.toast("O edital exige bases que ainda não estão em uso — resolva no Orçamentista antes de gerar.", "erro"); return;
+}
+var param = null, txt = "";
+if (origem !== "revisao") {
+var temArea = UI.el("escp-area") && String(UI.el("escp-area").value || "").trim();
+if (temArea) { param = OrcParam.gerar(this._escopoParamLer()); if (!param.ok) { UI.toast(param.erros.join(" "), "erro"); return; } }
+txt = String((UI.el("esc-txt") || {}).value || "").trim();
+if (!param && !txt) { UI.toast("Descreva a obra ou preencha a área nos Parâmetros da obra.", "erro"); return; }
+}
+var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+if (!back) { UI.toast("O servidor de IA não está configurado neste aparelho — o orçamento por IA não pode ser gerado.", "erro"); return; }
+var linhasRev = origem === "revisao" ? (this._escopo || []) : null;
+UI.fecharModal();
+this._escopoComPagamento({ texto: txt, param: param, linhas: linhasRev }, function (sessao) {
+self._escopoGerarPago(origem, txt, param, linhasRev, sessao);
+});
+};
+App._escopoComPagamento = function (o, seguir) {
+var self = this, orc = this.orcAtual, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+if (!orc) return;
+var linhasTxt = o.texto ? String(o.texto).split(/\r?\n/).filter(function (x) { return String(x).trim(); })
+: (o.linhas || []).map(function (l) { return String(l.textoOriginal || l.descricao || ""); });
+var assin = [], vistos = {};
+linhasTxt.forEach(function (l) {
+var h = self._orcmHash(String(Util.normalizar(l)).toUpperCase().replace(/\s+/g, " ").trim());
+if (!vistos[h]) { vistos[h] = 1; assin.push(h); }
+});
+if (o.param && o.param.ok) assin.push(self._orcmHash("PARAM:" + JSON.stringify(o.param.p)));
+if (!assin.length) assin.push(self._orcmHash("ESCOPO:" + orc.id));
+var st = this._orcm = { modo: "escopo", orcId: orc.id, nome: orc.nome, carimboEm: orc.atualizadoEm, plano: [], assinaturaEscopo: assin.slice(0, 2000),
+escopo: { caracteres: String(o.texto || "").length, linhas: linhasTxt.length, parametros: !!(o.param && o.param.ok) } };
+var form = {};
+["escp-tipo", "escp-area", "escp-pav", "escp-pd", "escp-padrao", "escp-quartos", "escp-banh", "escp-cob", "escp-forro", "escp-piso", "escp-perim", "escp-esgoto"].forEach(function (id) { var e = UI.el(id); if (e) form[id] = e.value; });
+st.aoDesistir = function () {
+UI.toast("Nada foi gerado: o orçamento por IA só é gerado depois de confirmado o pagamento (ou dentro dos grátis do mês).", "erro");
+if (o.linhas || typeof self.abrirEscopo !== "function") return;
+self.abrirEscopo();
+var t = UI.el("esc-txt"); if (t && o.texto) t.value = o.texto;
+var temForm = false;
+Object.keys(form).forEach(function (id) { var e = UI.el(id); if (e) { e.value = form[id]; if (id === "escp-area" && form[id]) temForm = true; } });
+var det = UI.el("esc-param"); if (det && temForm) det.open = true;
+};
+var go = function (sessao) { if (self._orcm !== st) return; st.aoDesistir = null; st.sessao = sessao || null; seguir(sessao || null); };
+st.retomarIA = function () { self._orcmJanelaIA(back, go); };
+this._orcmJanelaIA(back, go);
+};
+App._escopoGerarPago = function (origem, txt, param, linhasRev, sessao) {
+var self = this, orc = this.orcAtual, st0 = this._orcm;
+if (!orc || !st0 || st0.modo !== "escopo" || st0.orcId !== orc.id) { UI.toast("Você saiu do orçamento — a geração foi descartada.", "erro"); return; }
+var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+var orcId = orc.id;
+var noMesmo = function () { return self.orcAtual && self.orcAtual.id === orcId && self._orcm === st0; };
+var setTxt = function (t) { var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild; if (tn && tn.nodeType === 3) tn.nodeValue = t; };
+var info = { blocos: 0, semIA: 0, avisos: [], modelo: "" };
+var etapaTexto;
+if (origem === "revisao") etapaTexto = Promise.resolve(linhasRev || []);
+else if (txt) {
+UI.loading("Estruturando o escopo com a IA…");
+etapaTexto = this._escopoEstruturar(txt, function (f, t) { setTxt("Estruturando o escopo com a IA — parte " + (f + 1) + " de " + t + "…"); }, sessao)
+.then(function (r) { info = r; return r.linhas; });
+} else etapaTexto = Promise.resolve([]);
+etapaTexto.then(function (linhas) {
+if (!noMesmo()) { UI.loadingFim(); UI.toast("Você saiu do orçamento — a geração foi descartada.", "erro"); return; }
+var etapas = self._escopoParaEtapas(linhas, param);
+var total = 0; etapas.forEach(function (e) { total += e.itens.length; });
+if (!total) { UI.loadingFim(); UI.toast("Nenhum serviço reconhecido.", "erro"); return; }
+var lim = Auth.limite ? Auth.limite("limiteItensPorOrcamento") : Infinity;
+var ja = Orcamento.totais(orc).qtdItens || 0;
+if (ja + total > lim) { UI.loadingFim(); UI.toast("O plano permite " + lim + " itens por orçamento; este geraria " + (ja + total) + ".", "erro"); return; }
+var rodar = function () {
+var excl = self._fontesExcluidas() || [];
+var fontes = ((typeof Bases !== "undefined" && Bases.lista) ? Bases.lista() : [])
+.filter(function (b) { return b.ativa !== false && excl.indexOf(b.fonte) < 0; })
+.sort(function (a, b) { return (a.fonte === "SINAPI" ? 0 : 1) - (b.fonte === "SINAPI" ? 0 : 1); })
+.map(function (b) { return b.fonte; });
+if (!fontes.length) fontes = ["SINAPI"];
+var cfg = { fontes: fontes, elaborar: typeof Analitico !== "undefined" && Analitico.carregado, planilhaVence: false };
+var ctx = self._orcmCtx(cfg);
+ctx.semPendente = true;
+self._escopoPrecoEquivalencia(ctx);
+setTxt("Orçamentista: casando e precificando…");
+Orcamentista.planejarAsync(etapas, ctx, function (f, t) { setTxt("Orçamentista: " + f + " de " + t + " serviços…"); })
+.then(function (r) {
+UI.loadingFim();
+if (!noMesmo()) { UI.toast("Você saiu do orçamento — a geração foi descartada.", "erro"); return; }
+var cur = self.orcAtual;
+var st = Object.assign(st0, { etapas: etapas, etapasRodadas: etapas, nome: cur.nome, total: total, orcId: cur.id, carimboEm: cur.atualizadoEm,
+plano: r.plano, fontes: r.fontes, cfg: cfg, ctx: ctx,
+escopoGerado: { em: new Date().toISOString(), parametros: param && param.ok ? param.p : null, premissas: param && param.ok ? param.premissas : [],
+blocosIA: info.blocos || 0, blocosSemIA: info.semIA || 0, modelo: info.modelo || "", cobranca: st0.janela ? "janela" : "sem-cobranca" } });
+var aplicar = function () {
+if (self._orcm !== st) return;
+if (self._orcmAplicar()) self._escopoRelatorio(st, info);
+};
+var pend = r.plano.filter(function (L) { return L.status === "pendente"; });
+if (!pend.length || !back) { aplicar(); return; }
+self._escopoComporIA(back, sessao, pend).then(aplicar, aplicar);
+})
+.catch(function (e) { UI.loadingFim(); UI.toast("A geração falhou: " + ((e && e.message) || e) + " — nada foi gravado.", "erro"); });
+};
+if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
+setTxt("Carregando a base analítica (insumos e coeficientes)…");
+var urls = self._prepararAnalitico();
+Analitico.carregarArquivo(urls.alts).then(rodar, function () {
+UI.toast("A base analítica não carregou — os serviços sem correspondência vão para a IA compor.", "erro");
+rodar();
+});
+}).catch(function (e) { UI.loadingFim(); UI.toast("A geração falhou: " + ((e && e.message) || e) + " — nada foi gravado.", "erro"); });
+};
+App._escopoPrecoEquivalencia = function (ctx) {
+if (!ctx || typeof ctx.elaborar !== "function" || typeof ComposicaoPropria === "undefined") return;
+var original = ctx.elaborar;
+ctx.elaborar = function (desc, o) {
+var r = original(desc, o);
+if (!r || !r.ok || !r.comp || !r.rota || r.rota.tipo !== "cotar") return r;
+var faltou = 0, preench = 0;
+(r.comp.insumos || []).forEach(function (ins) {
+if (Number(ins.custoUnitario) > 0) return;
+var cands = (typeof Bases !== "undefined" && Bases.buscar) ? Bases.buscar(String(ins.descricao || "").split(/\s+/).slice(0, 4).join(" "), { max: 60, fontes: ctx.fontes, tipo: "insumo" }) : [];
+var eq = Orcamentista.precoPorEquivalencia(ins, cands.map(function (x) { return { item: x.item, fonte: x.fonte }; }), ctx);
+if (!eq) { faltou++; return; }
+ins.custoUnitario = eq.custoUnitario;
+ins.memoria = (ins.memoria ? ins.memoria + " · " : "") + "Sem preço na UF: adotado o de " + eq.fonte + " " + eq.codigo + " (" + String(eq.descricao).slice(0, 60) + "), maior valor entre " + eq.equivalentes + " equivalente(s) — conferir.";
+preench++;
+});
+if (preench) {
+r.custo = ComposicaoPropria.custo(r.comp.insumos, r.comp.metodo || "truncar2");
+r.aviso = (r.aviso ? r.aviso + " " : "") + preench + " insumo(s) sem preço na UF precificado(s) por equivalência (maior valor) — conferir.";
+if (!faltou) r.rota = { tipo: "calculada", codigo: r.rota.codigo, descricao: r.rota.descricao, unidade: r.rota.unidade, preco: 0, faltam: [] };
+else r.rota.faltam = (r.rota.faltam || []).filter(function (f) { return !(r.comp.insumos || []).some(function (i) { return String(i.codigo) === String(f.codigo) && Number(i.custoUnitario) > 0; }); });
+}
+return r;
+};
+};
+App._escopoComporIA = function (back, sessao, pend) {
+var self = this, st = this._orcm, ctx = st.ctx;
+var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
+if (sessao) hdr["x-orcm-sessao"] = sessao;
+var grupos = {}, unicos = [];
+pend.forEach(function (L) {
+var chave = Util.normalizar(L.item.descricao) + "|" + (ctx.unidadeChave ? ctx.unidadeChave(L.item.unidade || "") : String(L.item.unidade || ""));
+if (!grupos[chave]) { grupos[chave] = []; unicos.push(L); }
+grupos[chave].push(L);
+L._grupoIA = chave;
+});
+var irmaos = function (L) { return grupos[L._grupoIA] || [L]; };
+var lotes = []; for (var k = 0; k < unicos.length; k += 12) lotes.push(unicos.slice(k, k + 12));
+var feitas = 0, parar = "";
+UI.loading("A IA está compondo " + pend.length + " serviço(s) que nenhuma base tem…");
+return lotes.reduce(function (p, lote, li) {
+return p.then(function () {
+if (parar) return;
+var d = document.getElementById("ui-loading"), box = d && d.firstElementChild, tn = box && box.lastChild;
+if (tn && tn.nodeType === 3) tn.nodeValue = "A IA está compondo os serviços sem base — lote " + (li + 1) + " de " + lotes.length + "…";
+var payload = lote.map(function (L) { return { i: L.i, descricao: L.item.descricao, unidade: L.item.unidade || "" }; });
+return fetch(back + "/ia/compor", { method: "POST", headers: hdr, body: JSON.stringify({ itens: payload }) })
+.then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
+.then(function (o) {
+if (o.status === 402 || (o.j && o.j.devolvido)) { parar = (o.j && o.j.error) || "a janela da IA foi encerrada"; st.janela = null; return; }
+if (o.status === 404) { parar = "o servidor de IA ainda não tem a rota de composição"; return; }
+var j = o.j; if (!j || !j.ok || !Array.isArray(j.composicoes)) return;
+j.composicoes.forEach(function (c) {
+var L = st.plano[c.i]; if (!L || L.status !== "pendente") return;
+var v = Orcamentista.validarComposicaoIA(L, c, ctx); L.refinadoIA = true;
+if (!v) return;
+var eqN = 0;
+v.insumos.forEach(function (ins) {
+if (Number(ins.custoUnitario) > 0) return;
+var q = Orcamentista.termosDeBusca(ins.descricao, ctx.normalizar).slice(0, 3).join(" ");
+var eq = Orcamentista.precoPorEquivalencia(ins, ctx.buscar(q, { fontes: ctx.fontes, max: 80 }) || [], ctx);
+if (!eq) return;
+ins.custoUnitario = eq.custoUnitario; ins.fonte = eq.fonte; ins.codigo = eq.codigo; eqN++;
+ins.memoria = "insumo proposto pela IA sem igual nas bases — preço de " + eq.fonte + " " + eq.codigo + " (" + String(eq.descricao).slice(0, 60) + "), o maior entre " + eq.equivalentes + " equivalente(s); conferir";
+});
+var custo = ComposicaoPropria.custo(v.insumos, "truncar2");
+var semPreco = v.insumos.filter(function (i) { return !(Number(i.custoUnitario) > 0); }).length;
+var cods = self._cpCodigosExistentes().concat(ctx.codigosGerados || []);
+var codigo = ComposicaoPropria.gerarCodigoLegivel("OUTROS", cods); (ctx.codigosGerados = ctx.codigosGerados || []).push(codigo);
+L.comp = { codigo: codigo, codigoSec: "", descricao: L.item.descricao, grupo: "OUTROS", unidade: v.unidade, modeloRef: "SINAPI", metodo: "truncar2",
+maoDeObra: v.insumos.some(function (i) { return i.categoria === "MO"; }),
+observacao: "Composição criada pela IA no Escopo e validada contra as bases: " + v.insumos.length + " insumo(s)" + (eqN ? ", " + eqN + " com preço por equivalência (maior valor)" : "") + (semPreco ? ", " + semPreco + " SEM preço" : "") + ". Confira coeficiente por coeficiente.",
+insumos: v.insumos };
+var comp = L.comp, motivo = "composição própria criada pela IA (insumos e coeficientes; preços das bases" + (eqN ? ", " + eqN + " por equivalência" : "") + (semPreco ? "; " + semPreco + " insumo(s) sem preço" : "") + ")";
+irmaos(L).forEach(function (X, xi) {
+if (X.status !== "pendente") return;
+X.comp = comp; X.status = "propria"; X.via = "ia"; X.fonte = "PROPRIA"; X.codigo = codigo; X.refinadoIA = true;
+X.custoUnitario = custo.total; X.custoMO = custo.mo; X.custoMAT = custo.mat; X.custoEQ = custo.eq;
+X.confianca = 30; X.motivo = motivo + (xi ? " — a mesma da linha " + (L.i + 1) : "");
+X.avisos.push(v.aviso);
+});
+feitas++;
+});
+}, function () {});
+});
+}, Promise.resolve()).then(function () {
+UI.loadingFim();
+pend.forEach(function (L) { delete L._grupoIA; });
+var resto = pend.filter(function (L) { return L.status === "pendente"; }).length;
+st.escopoGerado.compostasIA = feitas;
+if (parar) UI.toast("A IA parou: " + parar + ". " + feitas + " composição(ões) criada(s); " + resto + " serviço(s) ficam marcados para completar.", "erro");
+else if (resto) UI.toast(feitas + " composição(ões) criada(s) pela IA; " + resto + " ainda sem composição — estão no relatório.", "erro");
+});
+};
+App._escopoRelatorio = function (st, info) {
+var plano = st.plano || [], n = { casado: 0, revisar: 0, propria: 0, pendente: 0 }, custo = 0;
+var codsProprias = {};
+var conferir = [];
+plano.forEach(function (L) {
+n[L.status] = (n[L.status] || 0) + 1;
+if (L.status === "propria" && L.codigo) codsProprias[L.codigo] = 1;
+custo += (Number(L.item.quantidade) || 0) * (Number(L.custoUnitario) || 0);
+if (L.status !== "casado") conferir.push(L);
+});
+var rot = { revisar: "Conferir", propria: "Composição própria", pendente: "Sem preço" };
+var linhas = conferir.slice(0, 200).map(function (L) {
+return "<tr><td>" + esc(rot[L.status] || L.status) + "</td><td>" + esc(L.codigo || "") + "</td><td style=\"font-size:12px\">" + esc(String(L.item.descricao).slice(0, 70)) +
+'</td><td class="num">' + Util.fmtMoeda(Number(L.custoUnitario) || 0) + '</td><td class="muted" style="font-size:11px">' + esc(String(L.motivo || "").slice(0, 120)) + "</td></tr>";
+}).join("");
+var g = st.escopoGerado || {};
+var corpo = '<p style="font-size:13.5px;margin-top:0"><b>' + plano.length + " serviços gravados no orçamento</b> — custo direto estimado " + Util.fmtMoeda(Math.round(custo * 100) / 100) + " (antes do BDI).</p>" +
+'<div class="flex" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+'<span class="pill" style="background:#16a34a;color:#fff">' + n.casado + " da base oficial</span>" +
+'<span class="pill" style="background:#2e6f9e;color:#fff">' + Object.keys(codsProprias).length + " composições próprias criadas" + (n.propria > Object.keys(codsProprias).length ? " (" + n.propria + " linhas)" : "") + "</span>" +
+'<span class="pill" style="background:#f59e0b;color:#fff">' + n.revisar + " a conferir</span>" +
+(n.pendente ? '<span class="pill" style="background:#dc2626;color:#fff">' + n.pendente + " sem preço</span>" : "") +
+"</div>" +
+(info && info.blocos ? '<p class="muted" style="font-size:12px;margin:0 0 6px">Texto estruturado pela IA em ' + info.blocos + " parte(s)" + (info.modelo ? " (" + esc(info.modelo) + ")" : "") + "." +
+(info.semIA ? " <b>" + info.semIA + " parte(s) sem resposta da IA foram analisadas linha a linha</b> — nada ficou de fora." : "") + "</p>" : "") +
+(g.premissas && g.premissas.length ? '<details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:12.5px"><b>Premissas dos parâmetros</b> (' + g.premissas.length + ")</summary><ul style=\"font-size:12px;margin:6px 0 0 16px\">" + g.premissas.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul></details>" : "") +
+(conferir.length ? '<div style="max-height:320px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Situação</th><th>Código</th><th>Serviço</th><th class="num">Unitário</th><th>Por quê</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
+(conferir.length > 200 ? '<p class="muted" style="font-size:11.5px">… e mais ' + (conferir.length - 200) + " no arquivo.</p>" : "") : "") +
+'<p class="muted" style="font-size:11.5px;margin:8px 0 0">Cada item guarda a origem do preço e a memória de cálculo da quantidade (coluna Memória). O relatório de conferência é <b>interno</b> — não vai na proposta.</p>';
+var self = this;
+UI.modal(ic("check") + " Orçamento gerado", corpo, [
+{ texto: ic("baixar") + " Baixar relatório de conferência", classe: "ghost", onClick: function () { self._escopoBaixarRelatorio(st); } },
+{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
+]);
+var m = document.querySelector(".modal-bg:last-child .modal"); if (m) m.style.maxWidth = "980px";
+};
+App._escopoBaixarRelatorio = function (st) {
+var g = st.escopoGerado || {}, L = [];
+L.push("RELATÓRIO INTERNO DE CONFERÊNCIA — orçamento gerado pelo Escopo Inteligente");
+L.push("Orçamento: " + (st.nome || "") + " · gerado em " + new Date(g.em || Date.now()).toLocaleString("pt-BR"));
+L.push("Bases varridas: " + (st.fontes || []).join(" > "));
+if (g.parametros) L.push("Parâmetros: " + JSON.stringify(g.parametros));
+(g.premissas || []).forEach(function (p) { L.push("Premissa: " + p); });
+L.push("");
+(st.plano || []).forEach(function (Lx, i) {
+L.push((i + 1) + ". [" + Lx.status.toUpperCase() + "] " + (Lx.codigo || "-") + " " + (Lx.fonte || "") + " | " + Lx.item.descricao + " | " + Lx.item.quantidade + " " + (Lx.item.unidade || "") +
+" | unit. " + (Number(Lx.custoUnitario) || 0).toFixed(2) + " | " + (Lx.motivo || "") + (Lx.item.formula ? " | quantidade: " + Lx.item.formula : "") + ((Lx.avisos || []).length ? " | AVISOS: " + Lx.avisos.join(" / ") : ""));
+});
+try {
+var blob = new Blob([L.join("\r\n")], { type: "text/plain;charset=utf-8" });
+var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+a.download = "conferencia-" + String(st.nome || "orcamento").replace(/[^\w\-]+/g, "_").slice(0, 40) + ".txt";
+document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 500);
+} catch (e) { UI.toast("Não consegui gerar o arquivo: " + e.message, "erro"); }
 };
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }

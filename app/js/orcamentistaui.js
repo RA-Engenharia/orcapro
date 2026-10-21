@@ -346,7 +346,8 @@
   App._orcmRaiz = function () {
     var st = this._orcm;
     if (st.raiz) return st.raiz;
-    var orc = (st.modo === "orcamento" && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
+    /* o modo escopo (js/orccompletoui.js) roda sobre o orçamento ABERTO: a cobrança é dele, como no modo orçamento */
+    var orc = ((st.modo === "orcamento" || st.modo === "escopo") && this.orcAtual && this.orcAtual.id === st.orcId) ? this.orcAtual : null, r = "";
     if (orc) {
       r = orc.orcmRaiz || "";
       if (!r) {
@@ -374,6 +375,8 @@
   /* FNV-1a de 32 bits da descrição normalizada, em 8 hex; sem repetir (a multiplicação pelo primo em
      deslocamentos: Math.imul não é ES5) */
   App._orcmAssinatura = function () {
+    /* modo escopo: ainda não há plano quando o preço é pedido — a assinatura são as linhas do escopo (js/orccompletoui.js) */
+    if (this._orcm && this._orcm.modo === "escopo" && this._orcm.assinaturaEscopo) return this._orcm.assinaturaEscopo.slice();
     var self = this, vistos = {}, out = [];
     Util.arr(this._orcm && this._orcm.plano).forEach(function (L) {
       var d = String((typeof Util !== "undefined" && Util.normalizar) ? Util.normalizar(L.item.descricao || "") : (L.item.descricao || "")).toUpperCase().replace(/\s+/g, " ").trim();
@@ -387,21 +390,41 @@
   App._orcmPrecoModal = function (p, confirmar) {
     var self = this, rg = p.regra || {}, pago = p.precoCent > 0, suficiente = !pago || !!(p.carteira && p.carteira.suficiente);
     var revs = function (n) { return n === 1 ? "1 revisão incluída" : n + " revisões incluídas"; };
-    var html = '<p style="font-size:14px;margin-top:0" data-orcm="preco-texto"><b>' + esc(p.texto || "") + "</b></p>" +
+    var html = '<p style="font-size:14px;margin-top:0" data-orcm="preco-texto"><b>' + esc(p.texto || "") + "</b></p>";
+    /* ORÇAMENTO PELO ESCOPO (21/10/2026): outra regra — grátis do mês e, depois, preço pelo tamanho do escopo */
+    if (rg.escopo) {
+      html += '<p class="muted" style="font-size:12.5px">A IA estrutura o escopo, casa cada serviço com as bases e cria a composição própria do que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
+        '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") +
+        " no plano; depois, cada orçamento tem o preço calculado pelo tamanho do escopo, mostrado aqui ANTES de gerar. Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
+        " h. Se ela não entregar, o valor volta para a carteira.</p>";
+    } else html +=
       '<p class="muted" style="font-size:12.5px">A IA escolhe entre os candidatos que o Orçamentista achou nas bases e propõe a estrutura das composições que nenhuma base tem. Ela nunca inventa código nem preço.</p>' +
       '<p class="muted" style="font-size:12.5px">Regra: ' + (rg.gratisPorMes === 1 ? "1 orçamento" : esc(String(rg.gratisPorMes)) + " orçamentos") + " por IA por mês incluído" + (rg.gratisPorMes === 1 ? "" : "s") + " no plano; depois, " + esc(rg.preco || "") +
       " por orçamento, com " + revs(rg.revisoesIncluidas) + "; revisão extra, " + esc(rg.revisao || "") + ". Confirmado, a IA fica liberada neste orçamento por " + esc(String(rg.janelaHoras || "")) +
       " h. Se ela não responder, o valor volta para a carteira.</p>";
     if (pago) html += '<p style="font-size:13px">Saldo da carteira de créditos: <b>' + esc((p.carteira && p.carteira.saldo) || "") + "</b>" + (suficiente ? "" : " — insuficiente.") + "</p>" +
       (suficiente ? "" : '<p class="muted" style="font-size:12.5px">' + esc((p.compraCreditos && p.compraCreditos.texto) || "") + "</p>");
-    var botoes = [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self._orcmAbrirRevisao(); } }];
+    var botoes = [{ texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self._orcmVoltar(true); } }];
     if (suficiente) botoes.push({ texto: ic("alvo") + (pago ? " Confirmar " + esc(p.preco || "") + " e usar a IA" : " Usar a IA (incluído)"), classe: "success", onClick: function () { confirmar(); } });
     /* sem saldo: compra por PIX aqui mesmo (js/iaacabamento.js); creditou → volta à janela do preço */
     else if (p.compraCreditos && p.compraCreditos.pix && typeof IAAcabamento !== "undefined" && IAAcabamento.comprarCreditos) botoes.push({ texto: "Comprar créditos (PIX)", classe: "success", onClick: function () {
       var falta = Math.max(0, (Number(p.precoCent) || 0) - (Number(p.carteira && p.carteira.saldoCent) || 0));
-      IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { self._orcmRefinarIA(); }, aoFechar: function () { self._orcmAbrirRevisao(); } });
+      IAAcabamento.comprarCreditos({ valorCent: falta, aoCreditar: function () { var stC = self._orcm; if (stC && stC.modo === "escopo" && stC.retomarIA) stC.retomarIA(); else self._orcmRefinarIA(); }, aoFechar: function () { self._orcmVoltar(true); } });
     } });
     UI.modal(ic("ia") + " IA do Orçamentista — " + (pago ? "o preço antes de usar" : "incluído no plano"), html, botoes);
+  };
+  /* Para onde a tela volta depois do quadro do preço. No Orçamentista, para a
+     revisão (como sempre). No modo escopo NÃO há revisão: fecha o quadro e,
+     se a pessoa desistiu ou deu erro, segue `st.aoDesistir` — o orçamento é
+     gravado com o resíduo marcado, nunca fica a geração pela metade. */
+  App._orcmVoltar = function (desistiu) {
+    var st = this._orcm;
+    if (st && st.modo === "escopo") {
+      UI.fecharModal();
+      if (desistiu && typeof st.aoDesistir === "function") { var f = st.aoDesistir; st.aoDesistir = null; f(); }
+      return;
+    }
+    this._orcmAbrirRevisao();
   };
   /* pede a situação, mostra, confirma e abre a janela; `seguir(sessao)` roda a IA (sessao null = servidor sem cobrança) */
   App._orcmJanelaIA = function (back, seguir) {
@@ -409,21 +432,24 @@
     if (st.janela && st.janela.ate > new Date().getTime() + 60000) { seguir(st.janela.id); return; }
     var hdr = { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") };
     var corpo = { raiz: this._orcmRaiz(), assinatura: this._orcmAssinatura() };
+    /* escopo: o servidor calcula o preço pelo TAMANHO (caracteres, linhas, parâmetros) — nunca pelo texto */
+    if (st.modo === "escopo" && st.escopo) corpo.escopo = st.escopo;
     var post = function (rota, b) {
       return fetch(back + rota, { method: "POST", headers: hdr, body: JSON.stringify(b) })
         .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j || {} }; }, function () { return { status: r.status, j: {} }; }); });
     };
-    var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); };
+    var semRede = function () { UI.loadingFim(); UI.toast("Sem conexão com o servidor de IA — nada foi cobrado.", "erro"); if (st.modo === "escopo") self._orcmVoltar(true); };
     var abrir = function (orcamentoId) {
       var b = { raiz: corpo.raiz, assinatura: corpo.assinatura };
+      if (corpo.escopo) b.escopo = corpo.escopo;
       if (orcamentoId) b.orcamentoId = orcamentoId;
       UI.loading("Liberando a IA neste orçamento…");
       post("/ia/orcamentista/abrir", b).then(function (o) {
         UI.loadingFim();
-        if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui liberar a IA (HTTP " + o.status + ") — nada foi cobrado."), "erro"); UI.fecharModal(); self._orcmAbrirRevisao(); return; }
+        if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui liberar a IA (HTTP " + o.status + ") — nada foi cobrado."), "erro"); UI.fecharModal(); self._orcmVoltar(true); return; }
         st.janela = { id: o.j.sessao, ate: Date.parse(o.j.ate) || (new Date().getTime() + 3600000) };
         if (o.j.cobrado) UI.toast("Cobrado " + o.j.cobrado.texto + " da carteira de créditos (saldo: " + o.j.cobrado.saldo + ").", "ok");
-        UI.fecharModal(); self._orcmAbrirRevisao();
+        UI.fecharModal(); self._orcmVoltar(false);
         seguir(st.janela.id);
       }, semRede);
     };
@@ -431,7 +457,7 @@
     post("/ia/orcamentista/preco", corpo).then(function (o) {
       UI.loadingFim();
       if (o.status === 404 || o.status === 503) { seguir(null); return; }   // servidor sem a cobrança: como antes
-      if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); return; }
+      if (o.status !== 200 || !o.j.ok) { UI.toast(o.j.error || ("Não consegui consultar o preço da IA (HTTP " + o.status + ")."), "erro"); if (st.modo === "escopo") self._orcmVoltar(true); return; }
       if (o.j.situacao === "aberta") { abrir(null); return; }
       self._orcmPrecoModal(o.j, function () { abrir(o.j.orcamentoId || null); });
     }, semRede);
@@ -529,6 +555,8 @@
   App._orcmRecado = function (msg) {
     var st = this._orcm; if (!st) return;
     st.recado = String(msg == null ? "" : msg);
+    /* no modo escopo não há quadro de revisão: o recado vai direto à pessoa */
+    if (st.modo === "escopo") { if (st.recado) UI.toast(st.recado, "erro"); return; }
     var el = document.getElementById("orcm-recado");
     if (el) { el.textContent = st.recado; el.style.display = st.recado ? "" : "none"; try { el.scrollIntoView({ block: "nearest" }); } catch (e) {} }
     else if (st.recado) this._orcmAbrirRevisao();
@@ -661,7 +689,35 @@
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
     } else {
       var fora = 0;
-      plano.forEach(function (L) {
+      /* MODO ESCOPO (20/10/2026, js/orccompletoui.js): os itens NÃO existem
+         ainda — nascem na CÓPIA, na etapa de mesmo nome (ou numa nova), com a
+         memória de cálculo da quantidade. Pendente também entra (com a casca
+         de código próprio), para nada sumir do orçamento calado. */
+      if (st.modo === "escopo") {
+        var idPorNome = {};
+        Util.arr(copia.etapas).forEach(function (e) { idPorNome[String(e.nome || "").trim().toUpperCase()] = e.id; });
+        var destinoDe = function (nome) {
+          var k = String(nome || "SERVIÇOS GERAIS").trim().toUpperCase();
+          if (!idPorNome[k]) { Orcamento.addEtapa(copia, nome || "SERVIÇOS GERAIS"); idPorNome[k] = copia.etapas[copia.etapas.length - 1].id; }
+          return idPorNome[k];
+        };
+        plano.forEach(function (L) {
+          var et = (st.etapasRodadas || [])[L.etapaIdx] || {};
+          var etapaId = destinoDe(et.nome);
+          var item = Orcamentista.itemParaOrcamento(L);
+          if (L.status !== "pendente") { item.custoUnitario = Number(L.custoUnitario) || 0; item.custoMO = Number(L.custoMO) || 0; item.custoMAT = Number(L.custoMAT) || 0; item.custoEQ = Number(L.custoEQ) || 0; }
+          var etapaDest = Util.arr(copia.etapas).filter(function (e) { return e.id === etapaId; })[0], antes = {};
+          Util.arr(etapaDest && etapaDest.itens).forEach(function (x) { antes[x.id] = 1; });
+          Orcamento.addItem(copia, etapaId, item, L.item.quantidade);
+          var novo = Util.arr(etapaDest && etapaDest.itens).filter(function (x) { return !antes[x.id]; })[0];
+          if (novo) {
+            if (item.orcamentista) novo.orcamentista = item.orcamentista;
+            if (L.item.formula && !novo.memoriaCalculo) novo.memoriaCalculo = String(L.item.formula);
+          }
+          n[L.status]++;
+        });
+        if (st.escopoGerado) copia.escopoGerado = st.escopoGerado;
+      } else plano.forEach(function (L) {
         var orig = L.item._ref; if (!orig) return;
         var ref = null;
         for (var k = 0; k < pares.length; k++) { if (pares[k][0] === orig) { ref = pares[k][1]; break; } }
@@ -719,5 +775,6 @@
     try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo("orcamentista"); } catch (e) {}
     UI.toast("Orçamentista: " + n.casado + " casados · " + n.revisar + " para revisar · " + n.propria + " composições próprias · " + n.pendente + " pendentes" + (gravadas ? " · " + gravadas + " composição(ões) gravada(s) na base PRÓPRIA" : "") +
       (fora ? " · ⚠ " + fora + " item(ns) do plano não estão mais neste orçamento e ficaram de fora" : "") + ".", (n.pendente || fora) ? "erro" : "ok");
+    return true;   // gravado — o modo escopo abre o relatório só neste caso
   };
 })(typeof window !== "undefined" ? window : this);

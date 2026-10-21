@@ -4058,10 +4058,15 @@
             (typeof Icones !== 'undefined' ? Icones.get('laudo', 15) : '') + ' Anexar planta/PDF</button>' +
         '</div>' +
         '<div id="esc-aux"></div>' +
-        '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</button>' +
+        (UI.renderEscopoParametros ? UI.renderEscopoParametros() : '') +
+        /* O CAMINHO PRINCIPAL (20/10/2026): gera e GRAVA o orçamento inteiro —
+           texto e/ou parâmetros → IA em blocos → Orçamentista sem pendente.
+           Os botões de antes continuam para quem quer revisar linha a linha. */
+        '<div class="flex" style="gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn success" data-acao="escopo-completo" title="Estrutura o texto com a IA (em partes, se for grande), soma os parâmetros da obra, casa com as bases, cria composição própria para o que não existir e grava o orçamento">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Gerar orçamento completo</button>' +
+        '<button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA e revisar</button>' +
         '<button class="btn" data-acao="escopo-analisar">Analisar linha a linha (sem IA)</button>' +
         '<button class="btn ghost" data-acao="escopo-sugerir" title="Mostra os serviços auxiliares que a boa técnica exige para o que você escreveu">Sugerir complementos</button></div>' +
-        '<div class="watermark-hint">Sem match, o item fica <b>Pendente</b> — nunca inventamos código. (A IA roda no servidor do OrçaPRO — precisa de internet e da licença ativa.)</div>';
+        '<div class="watermark-hint"><b>Gerar orçamento completo</b> não deixa pendência: o que não existe nas bases vira <b>composição própria</b> (insumos e coeficientes da base analítica) e a dúvida vai para o relatório de conferência, pelo preço mais alto. Nunca inventamos código. (A IA roda no servidor do OrçaPRO — precisa de internet e da licença ativa; sem ela, o texto é analisado linha a linha.)</div>';
     },
 
     // ---------- Escopo Inteligente: resultado ----------
@@ -4071,7 +4076,8 @@
       var html = '<div class="flex between mb"><div><b>' + analise.length + '</b> serviços · ' +
         '<span style="color:var(--verde)">' + totalOk + ' com sugestão</span> · ' +
         '<span style="color:var(--vermelho)">' + (analise.length - totalOk) + ' pendentes</span>' +
-        (temIA ? ' <button class="btn sm primary" data-acao="escopo-casar" title="A IA escolhe o código exato entre os candidatos (em lotes)" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Refinar com IA</button>' : '') + '</div>' +
+        (temIA ? ' <button class="btn sm primary" data-acao="escopo-casar" title="A IA escolhe o código exato entre os candidatos (em lotes)" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Refinar com IA</button>' : '') +
+        ' <button class="btn sm success" data-acao="escopo-completo-rev" title="Gera TODOS os serviços desta lista — os pendentes viram composição própria — e grava o orçamento" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Gerar tudo sem pendência</button></div>' +
         '<div class="flex"><label class="muted" style="font-size:12px">Adicionar à etapa:</label>' +
         '<select id="esc-etapa" class="btn sm">' +
           (temIA ? '<option value="__por_ia__" selected>★ Criar etapas conforme a IA</option>' : '') +

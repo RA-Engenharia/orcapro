@@ -455,9 +455,43 @@
       return { rotulo: "Baixa", cor: "vermelho" };
     },
 
+    /* A descrição SEM a quantidade e a unidade: "240 m2 alvenaria de bloco"
+       vira "alvenaria de bloco". É o que vai ao Orçamentista — número solto
+       na descrição derruba a semelhança com a base (o motor pune número que
+       não bate) e "240" não é parte do serviço. */
+    descricaoLimpa: function (bruto) {
+      var s = String(bruto || "")
+        .replace(/^\s*\[[^\]]*\]\s*/, "")
+        .replace(/(^|\s)(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(m2|m²|m3|m³|ml|m|kg|un|und|unid|p[cç]|vb|cj|l|t|h|dias?)(?=\s|$|[.,;:])/i, " ")
+        .replace(/\s+/g, " ").trim();
+      return s.length >= 3 ? s : String(bruto || "").trim();
+    },
+
+    /* Texto grande em BLOCOS de até `max` caracteres, cortando em quebra de
+       linha — nunca no meio de um serviço. É a mesma regra do servidor
+       (dividirTextoOrc em server/orcapro-ia.js): o app manda bloco a bloco e
+       um bloco que falhe não leva os outros junto. */
+    dividirEmBlocos: function (texto, max) {
+      max = max || 6000;
+      var linhas = String(texto || "").split(/\r?\n/), blocos = [], atual = "";
+      function empurra() { if (atual.replace(/\s+/g, "")) blocos.push(atual.trim()); atual = ""; }
+      for (var i = 0; i < linhas.length; i++) {
+        var l = linhas[i];
+        while (l.length > max) {
+          var corte = l.lastIndexOf(". ", max); if (corte < max * 0.5) corte = max;
+          empurra(); blocos.push(l.slice(0, corte + 1).trim()); l = l.slice(corte + 1);
+        }
+        if ((atual + "\n" + l).length > max) empurra();
+        atual += (atual ? "\n" : "") + l;
+      }
+      empurra();
+      return blocos;
+    },
+
     _linha: function (bruto, quantidade, unidade, termos, candidatos, status, qtdAchada) {
       return {
         textoOriginal: bruto,
+        descricao: this.descricaoLimpa(bruto),
         quantidade: quantidade,
         qtdInferida: !qtdAchada,
         unidade: unidade,
@@ -533,6 +567,8 @@
         var q = Util.num(it.quantidade); if (q > 0) { l.quantidade = q; l.qtdInferida = false; }
         if (Util.naoVazio(it.unidade)) l.unidade = it.unidade;
         l.etapaSugerida = it.etapa || "";
+        l.descricao = String(it.descricao);
+        if (Util.naoVazio(it.observacao)) l.observacao = String(it.observacao);
         l.textoOriginal = (it.etapa ? "[" + it.etapa + "] " : "") + it.descricao;
         out.push(l);
       });

@@ -1,6 +1,14 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.16 — vigente a partir de 14/10/2026
+Versão 1.17 — vigente a partir de 21/10/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.17: o ORÇAMENTO POR IA do Escopo Inteligente (item 4.1). Quando
+você gera um orçamento descrevendo a obra, o texto do escopo passa pelo nosso
+servidor e vai à Anthropic (Claude), com a Groq como reserva. O uso é cobrado
+por orçamento gerado: os dois primeiros de cada mês são incluídos no plano e,
+depois, o preço aparece ANTES de gerar e só é cobrado pela carteira de créditos
+se você confirmar. Para o preço, o nosso servidor recebe só o TAMANHO do escopo
+(quantidade de caracteres e de linhas), nunca o texto.
 
 O que mudou na 1.15: duas coisas.
 1) Na MODELAGEM POR COMANDO do BIM (item 4.1), o pedido e o croqui passam a ir
@@ -246,6 +254,21 @@ Estados Unidos (transferência internacional, art. 33 da LGPD).
     texto — e o registro de cada uso (data, se foi incluído ou pago, valor
     cobrado e custo do provedor), por 12 meses (item 6). Se a IA não responder,
     o valor volta para a carteira.
+  · No ORÇAMENTO POR IA do Escopo Inteligente ("Gerar orçamento completo" e
+    "Estruturar com IA e revisar"), o texto do escopo que você escreveu vai,
+    pelo nosso servidor, à Anthropic, PBC (Claude), com processamento nos
+    Estados Unidos (transferência internacional, art. 33 da LGPD); se ela
+    estiver fora do ar, à Groq, Inc. A composição dos serviços que nenhuma base
+    tem vai do mesmo jeito, só com a descrição e a unidade de cada serviço. O
+    uso é cobrado POR ORÇAMENTO GERADO: os dois primeiros de cada mês são
+    incluídos no plano; depois, o preço — calculado pelo TAMANHO do escopo, sem
+    o texto — aparece ANTES de gerar e só é cobrado, pela carteira de créditos
+    (item 4.17), se você confirmar. O nosso servidor guarda, ligados a um
+    resumo da licença, o identificador do orçamento, uma ASSINATURA do escopo
+    (códigos curtos calculados das linhas, que não permitem ler o texto) e o
+    registro de cada uso (data, se foi incluído ou pago, valor cobrado e custo
+    do provedor), por 12 meses (item 6). Se a IA não entregar, o valor volta
+    para a carteira.
   · Acontece apenas no clique. Nada é enviado em segundo plano.
   · O conteúdo é usado só para produzir aquela resposta; não alimentamos
     treinamento de modelo com ele.
@@ -936,7 +959,8 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
   · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
   · Anthropic, PBC (EUA) — Claude: recebe, pelo nosso servidor, o texto do
     pedido, o croqui e os nomes e medidas das famílias da modelagem por
-    comando do BIM (item 4.1).
+    comando do BIM, e o texto do escopo do orçamento por IA do Escopo
+    Inteligente (item 4.1).
   · Google LLC — Gemini API: recebe, pelo nosso servidor, o pedido e as imagens
     da família por IA, a imagem da vista 3D, o escopo e as referências do
     render por IA e, no acabamento com IA, a imagem do render, a descrição
