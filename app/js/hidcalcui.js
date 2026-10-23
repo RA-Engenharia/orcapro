@@ -273,6 +273,8 @@
   function aplicar() { return aplicarOps(E.resultado ? E.resultado.ops : [], "Diâmetros aplicados no modelo"); }
 
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     if (!doc) return false;
     try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }   // hid:ok 5 s até soltar a URL do arquivo
   }
@@ -340,6 +342,8 @@
     catch (e) { E.msg = { k: "erro", t: "O memorial falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
     if (!g || !g.ok) { E.msg = { k: "erro", t: "Memorial: " + ((g && g.motivo) || "não foi possível gerar") }; redesenhar(); return null; }
     E.memorialHtml = g.html; E.memorial = { titulo: g.titulo, secoes: g.secoes.length, tabelas: g.tabelas, divergencias: arr(g.avisos).length };
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(g.html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } g.html = hT; }
     var aberto = null;
     try { var bl = new Blob([g.html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }
     if (!aberto) baixar("memorial-hidrossanitario.html", g.html, "text/html;charset=utf-8");
@@ -1113,6 +1117,8 @@
     catch (e) { E.msg = { k: "erro", t: "O manual falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
     if (!g || !g.ok || !g.html) { E.msg = { k: "erro", t: "Manual: " + arr(g && g.avisos).join(" ") }; redesenhar(); return null; }
     E.manualHtml = g.html; E.manual = { pendencias: arr(g.pendencias).length, avisos: arr(g.avisos).length };
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(g.html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } g.html = hT; }
     var aberto = null;
     try { var bl = new Blob([g.html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }
     if (!aberto) baixar("manual-execucao-e-uso.html", g.html, "text/html;charset=utf-8");

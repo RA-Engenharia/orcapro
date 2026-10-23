@@ -538,10 +538,14 @@
   /* --------------------------------------------------------- documentos */
   function janela(titulo) { var w = global.open("", "_blank"); if (w) { w.document.write("<!doctype html><meta charset=utf-8><title>" + esc(titulo) + "</title><p style='font-family:sans-serif;padding:24px'>Montando…</p>"); } return w; }
   function mostrar(w, html, nome) {
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(html, "blocok"); if (hT == null) { try { if (w) w.close(); } catch (eW) {} return; } html = hT; }
     if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); return; }
     baixar(nome, html, "text/html");
   }
   function baixar(nome, conteudo, tipo) {
+    /* teste de 1 hora (js/testemodulo.js): em teste sai com a marca; vencido não sai (null) */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var w = TesteModulo.marcarArquivo(nome, conteudo, tipo, "blocok"); if (!w) return false; nome = w.nome; conteudo = w.dados; }
     var b = conteudo instanceof Blob ? conteudo : new Blob([conteudo], { type: tipo || "application/octet-stream" });
     var a = doc.createElement("a"); a.href = URL.createObjectURL(b); a.download = nome; doc.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
@@ -624,16 +628,25 @@
     { id: "blocok-pecas", rotulo: "Peças\nno 3D", icone: "camadas", grande: true, dica: "Mostra/esconde cada peça Blocok no 3D (faces, EPS, concreto dos reforços, juntas)." },
     { id: "blocok-docs", rotulo: "Documentos\nBlocok", icone: "relatorio", dica: "Memorial, pranchas, DXF, manual de montagem e planilha." }
   ];
+  /* teste de 1 hora vencido (js/testemodulo.js): o painel CONTINUA na fita e cada comando pede a compra */
+  function visivelNoTeste() { try { return !!(global.TesteModulo && TesteModulo.visivel && TesteModulo.visivel("blocok")); } catch (e) { return false; } }
+  function porta(fn) {
+    return function () {
+      if (!liberado()) { try { if (global.TesteModuloUI) TesteModuloUI.oferta("blocok"); } catch (e) {} return false; }
+      try { if (global.TesteModulo && TesteModulo.emTeste && TesteModulo.emTeste("blocok")) TesteModulo.tocar("blocok"); } catch (e2) {}
+      return fn();
+    };
+  }
   function registrar(reg) {
     ligarTipos();
     var R = global.BimRibbon;
-    if (!liberado() || !R || !reg) return false;
+    if (!(liberado() || visivelNoTeste()) || !R || !reg) return false;
     R.acrescentar("alvenaria", "Alvenaria", "Blocok", COMANDOS);
     var ids = COMANDOS.map(function (c) { return c.id; });
     if (global.BimDisciplinas && typeof global.BimDisciplinas.declarar === "function") { try { global.BimDisciplinas.declarar(ids, "civil"); } catch (e) {} }
-    reg["blocok-exec"] = function () { abrir(); return true; };
-    reg["blocok-pecas"] = function () { alternar3d(); return true; };
-    reg["blocok-docs"] = function () { abrir("documentos"); return true; };
+    reg["blocok-exec"] = porta(function () { abrir(); return true; });
+    reg["blocok-pecas"] = porta(function () { alternar3d(); return true; });
+    reg["blocok-docs"] = porta(function () { abrir("documentos"); return true; });
     setTimeout(function () { try { var sh = global.BimShell; if (sh && sh._raiz && typeof sh._sincAbas === "function") sh._sincAbas(); } catch (e) {} }, 0);
     return true;
   }

@@ -50,6 +50,8 @@
       return !!(b.b2Op && b.b2Op(op));
     },
     baixar: function (nome, dados, mime) {
+      /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+      if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, (arguments[3] || "modela:metalica")); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
       var G = this._G || global.Gestao;
       if (G && G._opBaixar) return G._opBaixar(nome, dados, mime);
       try { var bl = new Blob([dados], { type: mime || "application/octet-stream" }), u = URL.createObjectURL(bl), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }

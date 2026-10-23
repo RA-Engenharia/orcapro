@@ -175,8 +175,13 @@
       try { var g = global.Gestao; if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel) || {}; } catch (e2) {}
       return { obra: { nome: o.nome || "", endereco: o.local || "", cliente: o.clienteNome || "" }, empresa: { nome: d.nome || "" }, responsavel: { nome: d.responsavel || "", crea: d.crea || "" } };
     },
-    _abrir: function (html) { try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); return global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e) { return null; } },
-    _baixar: function (nome, dados, mime) { try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; } },   // hid:ok tempo de limpeza do link (ms)
+    _abrir: function (html) {
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+      if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (html == null) return null; }
+      try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); return global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e) { return null; } },
+    _baixar: function (nome, dados, mime) {
+      /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+      if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; } try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; } },   // hid:ok tempo de limpeza do link (ms)
     /* o resultado vigente: o do último lançamento; sem ele, refaz (só leitura) para o documento */
     _rede: function () {
       var u = U.ultimo; if (u && u.ok && u.rede) return u.rede;

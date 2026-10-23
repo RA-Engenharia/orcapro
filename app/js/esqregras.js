@@ -5,8 +5,9 @@
  * docs/acessibilidade/pesquisa/ (NBR 9050:2020). Cada critério leva { valor, nivel, fonte } e o NÍVEL vai para a tela e
  * para o memorial — ninguém lê "1/6" sem saber de onde veio:
  *   A  texto primário lido (NBR 9050:2020, Código Civil art. 1.301, NBR 15575-1:2013);
- *   B  trecho de lei citado em busca / agregador — Uberlândia LC 524/2011: o texto consolidado NÃO foi aberto (o site da
- *      prefeitura recusa leitura automática). Sai na tela como "provisório — conferir o texto consolidado";
+ *   B  lei lida em CÓPIA NÃO OFICIAL — Uberlândia LC 524/2011 (texto de 2011 + alterações no Diário Oficial, 21/10/2026): o texto
+ *      consolidado da Prefeitura NÃO foi aberto (o site recusa leitura automática). Sai na tela como "provisório — conferir o texto
+ *      consolidado". Os números do município moram em js/esqcodigo.js (dados por município; padrão nacional conservador para os demais);
  *   C  PRÁTICA DE PROJETO RA (decisão, não norma): peitoris, verga, boneca, larguras por ambiente, distância ao canto.
  *      Sai como "critério RA (editável)". O dono valida.
  *
@@ -26,7 +27,8 @@
   function arr(a) { return Array.isArray(a) ? a : []; }
   function copia(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 
-  var UDI = "Uberlândia, LC 524/2011 (Código de Obras) — trecho citado em busca; provisório: conferir o texto consolidado";
+  /* o texto de 2011 foi lido em cópia não oficial (as alterações LC 713/2020 e 739/2022, no Diário Oficial): o nível é B, provisório */
+  var UDI = "Uberlândia, LC 524/2011 (Código de Obras) — texto de 2011 em cópia não oficial + alterações no Diário Oficial; provisório: conferir no texto consolidado da Prefeitura";
   var NIVEIS = {
     A: "norma/lei lida (texto primário)",
     B: "provisório — conferir o texto consolidado",
@@ -39,13 +41,11 @@
   var CRITERIOS = {
     fracaoProlongada: { valor: 1 / 6, nivel: "B", rotulo: "Iluminação mínima — permanência prolongada (fração da área do piso)", fonte: UDI + " (1/6)" },
     fracaoTransitoria: { valor: 1 / 8, nivel: "B", rotulo: "Iluminação mínima — permanência transitória", fonte: UDI + " (1/8)" },
-    ventilacaoDaIluminacao: { valor: 0.5, nivel: "B", rotulo: "Ventilação efetiva mínima (fração da iluminação exigida)", fonte: UDI + " (≥ 50 % da iluminação)" },
-    fatorVentCorrer: { valor: 0.5, nivel: "B", rotulo: "Ventilação efetiva da janela de correr 2 folhas (fração do vão)", fonte: "ORSE ES00114, Tabela 01 (50 % do vão)" },
-    fatorVentBasculante: { valor: 0.5, nivel: "C", rotulo: "Ventilação efetiva da basculante (fração do vão)", fonte: "sem % publicado pelo fabricante: 0,5 adotado (conservador)" },
+    ventilacaoDaIluminacao: { valor: 0.5, nivel: "B", rotulo: "Ventilação mínima — área que ABRE da esquadria (fração da iluminação exigida)", fonte: UDI + " (art. 54: ≥ 50 % da iluminação exigida; a área que abre sai da geometria da família — js/esqabertura.js)" },
     divisaFrente: { valor: 1.5, nivel: "A", rotulo: "Distância mínima da janela à divisa que ela vê (de frente ou oblíqua)", fonte: "Código Civil, art. 1.301 caput (1,50 m); visão oblíqua conta como direta: Súmula 414 do STF e STJ REsp 1.531.094/SP (2016)" },
     divisaPerpendicular: { valor: 0.75, nivel: "A", rotulo: "Distância mínima à divisa que a janela não vê (perpendicular)", fonte: "Código Civil, art. 1.301, § 1º (0,75 m)" },
     anguloPerpendicular: { valor: 15, nivel: "C", rotulo: "Tolerância (graus) para tratar a divisa como perpendicular à janela", fonte: "critério RA: até 15° do eixo da janela a divisa conta como perpendicular (0,75 m); acima disso a visão é oblíqua e vale 1,50 m" },
-    fracaoEnvidracada: { valor: 1, nivel: "C", rotulo: "Fração do vão que conta como iluminação (1 = vão inteiro; caixilho de alumínio ≈ 0,80)", fonte: "pendente: o texto de Uberlândia (B) não diz se a área de iluminação é o vão ou o vidro — 1,00 conta o vão; para contar só o vidro use 0,80 (estimativa RA do caixilho, conferir com o fabricante)" },
+    fracaoEnvidracada: { valor: 1, nivel: "C", rotulo: "Fração do vão que conta como iluminação (1 = vão inteiro; caixilho de alumínio ≈ 0,80)", fonte: "decisão do dono (21/10/2026): o art. 53 diz \"área das aberturas\" — a iluminação conta pelo VÃO, sem descontar caixilho (a lei não define o termo). Para contar só o vidro use 0,80 (estimativa RA do caixilho, conferir com o fabricante)" },
     verga: { valor: 2.2, nivel: "C", rotulo: "Verga (topo do vão das janelas, alinhado na fachada)", fonte: "prática de projeto RA; NBR 15575-1:2013 13.2.6 recomenda testeira ≤ 2,20 m (A)" },
     distanciaCanto: { valor: 0.2, nivel: "C", rotulo: "Janela: distância mínima do vão ao canto", fonte: "prática de projeto RA (≥ 0,20 m; ideal 0,30)" },
     trechoCego: { valor: 0.15, nivel: "C", rotulo: "Trecho cego mínimo entre dois vãos", fonte: "prática de projeto RA" },
@@ -66,10 +66,10 @@
       janela: { exige: true, famId: BASC, peitoril: [1.5, 1.6] }, porta: { minimo: 60, folha: 70, abre: "dentro" }, ventIndireta: true },
     { id: "lavabo", rotulo: "Lavabo", classe: "transitoria", nivelClasse: "B", sin: ["lavabo", "toalete social", "wc lavabo"],
       janela: { exige: true, famId: BASC, peitoril: [1.4, 1.6] }, porta: { minimo: 60, folha: 60, abre: "dentro" }, ventIndireta: true },
-    { id: "cozinha", rotulo: "Cozinha", classe: "prolongada", nivelClasse: "X", obsClasse: "cozinha não aparece nos trechos lidos: prolongada adotada por prudência",
+    { id: "cozinha", rotulo: "Cozinha", classe: "prolongada", nivelClasse: "B",   /* LC 524/2011 art. 37: "preparar ou consumir alimentos, tais como copas, cozinhas" */
       sin: ["cozinha", "cozinha americana", "copa cozinha", "copa/cozinha", "kitchen", "cozinha gourmet"],
       janela: { exige: true, famId: CORRER, peitoril: [1.1, 1.2], bancada: true }, porta: { minimo: 70, folha: 80, abre: "dentro" } },
-    { id: "area_servico", rotulo: "Área de serviço", classe: "prolongada", nivelClasse: "X", obsClasse: "área de serviço sem classe nos trechos lidos: prolongada adotada por prudência",
+    { id: "area_servico", rotulo: "Área de serviço", classe: "prolongada", nivelClasse: "X", pendenteClasse: true, obsClasse: "área de serviço NÃO é classificada pela LC 524/2011 (arts. 37 e 38): pendência; usada a regra mais exigente (prolongada, 1/6)",
       sin: ["area de servico", "area servico", "a.s.", "as", "lavanderia", "servico", "tanque"],
       janela: { exige: true, famId: CORRER, peitoril: [1.1, 1.2] }, porta: { minimo: 80, folha: 80, abre: "fora" } },
     { id: "suite", rotulo: "Suíte", classe: "prolongada", nivelClasse: "B", sin: ["suite", "quarto suite", "master suite"],
@@ -95,12 +95,23 @@
     { id: "garagem", rotulo: "Garagem", classe: null, nivelClasse: "X", sin: ["garagem", "abrigo", "carport", "vaga", "abrigo de veiculos"],
       janela: { exige: false }, porta: null, semPortaPropria: true, externo: true }
   ];
+  /* poço de luz / claraboia (arts. 48 e 49): espaço interno descoberto — as janelas que dão para ele contam (fator 2,0 × pé-direito, art. 50, II) */
+  /* REVISÃO (21/10/2026): "poço" sozinho pegava o POÇO DO ELEVADOR como claraboia — ESQ_POCO erro ("aumente o poço para 6 m²") e o
+     lançador abria JANELA da sala para dentro da caixa do elevador (orçada). `naoSe` tira esses nomes do poço de luz; eles vão para o
+     compartimento SEM PERMANÊNCIA (art. 40 da LC 524/2011: sótãos, porões, casas de máquina…), que não pede janela, porta nem área. */
+  AMB.push({ id: "tecnico", rotulo: "Sem permanência (poço do elevador, shaft, casa de máquinas)", classe: null, nivelClasse: "B",
+    sin: ["poco do elevador", "poco de elevador", "poco dos elevadores", "caixa do elevador", "caixa de elevador", "elevador", "shaft", "casa de maquinas", "casa de bombas", "barrilete", "sotao", "porao", "camara frigorifica", "poco artesiano", "poco de visita"],
+    janela: { exige: false }, porta: null, semPortaPropria: true });
+  AMB.push({ id: "poco", rotulo: "Poço de luz / claraboia", classe: null, nivelClasse: "A", descoberto: true,
+    naoSe: /(elevador|elevadores|artesiano|visita|inspecao|bomba|bombas|recalque|drenagem|esgoto|gordura|shaft|maquinas)/,
+    sin: ["poco de luz", "poco", "claraboia", "prisma", "prisma de ventilacao", "poco de ventilacao", "patio interno", "espaco interno descoberto", "area iluminante"],
+    janela: { exige: false }, porta: null, semPortaPropria: true, externo: true });
   var GENERICO = { id: "generico", rotulo: "Ambiente (sem tipo)", classe: "prolongada", nivelClasse: "C", obsClasse: "nome sem tipo conhecido: a regra mais restritiva (prolongada)",
     sin: [], janela: { exige: true, famId: CORRER, peitoril: [0.9, 1.1] }, porta: { minimo: 70, folha: 80, abre: "dentro" } };
   /* desempate (pesquisa: outras-regras.json › classificacao_por_nome) — o resto vem na ordem da lista */
   var ORDEM = ["banheiro", "lavabo", "cozinha", "area_servico", "suite", "dormitorio", "sala_jantar", "sala_estar", "escritorio", "circulacao"];
   /* a precedência do DESTINO privativo: a porta entre dois ambientes obedece ao mais privativo (C) */
-  var PRIVACIDADE = ["banheiro", "lavabo", "despensa", "suite", "dormitorio", "area_servico", "cozinha", "escritorio", "area_gourmet", "generico", "sala_jantar", "sala_estar", "circulacao", "escada", "varanda", "garagem"];
+  var PRIVACIDADE = ["banheiro", "lavabo", "despensa", "suite", "dormitorio", "area_servico", "cozinha", "escritorio", "area_gourmet", "generico", "sala_jantar", "sala_estar", "circulacao", "escada", "varanda", "garagem", "poco", "tecnico"];
 
   function normalizar(s) {
     var t = String(s == null ? "" : s).toLowerCase();
@@ -124,8 +135,9 @@
   function classificar(nome) {
     var t = normalizar(nome), L = ordenados(), i, j, d;
     if (t) {
-      for (i = 0; i < L.length; i++) for (j = 0; j < L[i].sin.length; j++) if (normalizar(L[i].sin[j]) === t) return saida(L[i], true, L[i].sin[j]);
+      for (i = 0; i < L.length; i++) for (j = 0; j < L[i].sin.length; j++) if (!(L[i].naoSe && L[i].naoSe.test(t)) && normalizar(L[i].sin[j]) === t) return saida(L[i], true, L[i].sin[j]);
       for (i = 0; i < L.length; i++) for (j = 0; j < L[i].sin.length; j++) {
+        if (L[i].naoSe && L[i].naoSe.test(t)) continue;   /* "poço do elevador" não é poço de luz */
         d = normalizar(L[i].sin[j]);
         if (d.length >= 2 && contemPalavra(t, d)) return saida(L[i], true, L[i].sin[j]);
       }
@@ -136,13 +148,29 @@
   function porId(id) { for (var i = 0; i < AMB.length; i++) if (AMB[i].id === id) return AMB[i]; return id === "generico" ? GENERICO : null; }
   function privacidade(id) { var k = PRIVACIDADE.indexOf(id); return k < 0 ? PRIVACIDADE.indexOf("generico") : k; }
 
-  /* os critérios com as trocas do usuário */
-  function criterios(sobre) {
-    var out = copia(CRITERIOS);
+  function EC() { if (global.EsqCodigo) return global.EsqCodigo; if (typeof require === "function") { try { return require("./esqcodigo.js"); } catch (e) {} } return null; }
+  /* os números da lei do MUNICÍPIO (js/esqcodigo.js) por cima dos padrões: iluminação 1/6 e 1/8 (art. 53) e ventilação 50 % (art. 54) */
+  function doMunicipio(out, K) {
+    if (!K || !K.iluminacao || !K.ventilacao) return out;
+    var q;
+    function poe(chave, valor, art, inc, extra) {
+      if (!out[chave]) return;
+      out[chave].valor = valor; out[chave].nivel = K.nivel;
+      out[chave].fonte = K.padrao ? K.fonte : (K.sigla + ", art. " + art + (inc ? ", " + inc : "") + (extra || "") + " — " + EC().CONFERIR_UDI);
+    }
+    q = K.iluminacao;
+    poe("fracaoProlongada", q.prolongada.fracao, q.art, q.prolongada.inc, " (1/6)");
+    poe("fracaoTransitoria", q.transitoria.fracao, q.art, q.transitoria.inc, " (1/8)");
+    poe("ventilacaoDaIluminacao", K.ventilacao.fracaoDaIluminacao, K.ventilacao.art, "", " (área que abre ≥ " + Math.round(K.ventilacao.fracaoDaIluminacao * 100) + " % da iluminação exigida)");
+    return out;
+  }
+  /* os critérios com as trocas do usuário (e, se vier, a regra do município K = EsqCodigo.resolver(…)) */
+  function criterios(sobre, K) {
+    var out = doMunicipio(copia(CRITERIOS), K);
     Object.keys(sobre || {}).forEach(function (k) {
       var v = Number(sobre[k]);
       if (!out[k] || !isFinite(v)) return;
-      if (Math.abs(v - out[k].valor) > 1e-9) { out[k].valor = v; out[k].nivelOriginal = out[k].nivel; out[k].nivel = "C"; out[k].alterado = true; out[k].fonte = "alterado pelo usuário (era " + out[k].fonte + ")"; }
+      if (Math.abs(v - out[k].valor) > 6e-5) { out[k].valor = v; out[k].nivelOriginal = out[k].nivel; out[k].nivel = "C"; out[k].alterado = true; out[k].fonte = "alterado pelo usuário (era " + out[k].fonte + ")"; }
     });
     return out;
   }
@@ -153,16 +181,14 @@
   }
   /* a parte do vão que conta como iluminação (critério fracaoEnvidracada) */
   function fatorIluminacao(famId, crit) { var c = crit || CRITERIOS; return c.fracaoEnvidracada ? c.fracaoEnvidracada.valor : 1; }
-  function fatorVentilacao(famId, crit) {
-    var c = crit || CRITERIOS;
-    return famId === BASC ? c.fatorVentBasculante.valor : c.fatorVentCorrer.valor;
-  }
   /* o catálogo que o lançador usa (os tipos da biblioteca RA: js/familiasra.js) */
   var CATALOGO = [
     { famId: CORRER, tipoId: "j1010", L: 1.0, H: 1.0 }, { famId: CORRER, tipoId: "j1210", L: 1.2, H: 1.0 }, { famId: CORRER, tipoId: "j1510", L: 1.5, H: 1.0 },
     { famId: CORRER, tipoId: "j1212", L: 1.2, H: 1.2 }, { famId: CORRER, tipoId: "j1512", L: 1.5, H: 1.2 }, { famId: CORRER, tipoId: "j2012", L: 2.0, H: 1.2 },
     { famId: CORRER, tipoId: "j6060", L: 0.6, H: 0.6 },
-    { famId: BASC, tipoId: "b6060", L: 0.6, H: 0.6 }, { famId: BASC, tipoId: "b8060", L: 0.8, H: 0.6 }, { famId: BASC, tipoId: "b10060", L: 1.0, H: 0.6 }
+    { famId: BASC, tipoId: "b6060", L: 0.6, H: 0.6 }, { famId: BASC, tipoId: "b8060", L: 0.8, H: 0.6 }, { famId: BASC, tipoId: "b10060", L: 1.0, H: 0.6 },
+    /* MAXIM-AR (só entra quando a janela do ambiente não basta para a ventilação — art. 54: a de correr abre ≈ 40 % do vão, a maxim-ar ≈ 55 %) */
+    { famId: BASC, tipoId: "m1010", L: 1.0, H: 1.0, maxim: true }, { famId: BASC, tipoId: "m1210", L: 1.2, H: 1.0, maxim: true }, { famId: BASC, tipoId: "m1510", L: 1.5, H: 1.0, maxim: true }
   ];
   var PORTAS = [{ folha: 60, tipoId: "p60" }, { folha: 70, tipoId: "p70" }, { folha: 80, tipoId: "p80" }, { folha: 90, tipoId: "p90" }];
   var BATENTE = 0.05;   /* o da família ra-porta-giro (vão = folha + 2 × batente) */
@@ -180,8 +206,13 @@
     "ra-janela-basculante": { "*": "94569", un: "m2", rotulo: "janela de alumínio maxim-ar com vidro", curta: "APROXIMADA (maxim-ar)", aproximada: "APROXIMADA: a SINAPI 06/2026 não tem basculante de alumínio — usada a maxim-ar de alumínio com vidro (94569), a mais cara do mesmo material; troque em Propriedades › Orçamento se tiver cotação" },
     "ra-porta-giro-2f": { "*": null, un: "un", motivo: "a SINAPI 06/2026 não tem kit de porta de giro de 2 folhas: escolha a composição em Propriedades › Orçamento" }
   };
+  /* tipos da família basculante que SÃO maxim-ar de alumínio com vidro: a composição 94569 é exata para eles (sem "APROXIMADA") */
+  var MAXIM_EXATOS = { m1010: 1, m1210: 1, m1510: 1 };
   function sinapiDe(famId, tipoId) {
     var m = SINAPI[famId]; if (!m) return { codigo: null, motivo: "família fora da tabela de esquadrias" };
+    /* o TIPO é exato (maxim-ar de alumínio com vidro), mas a composição é de 60 × 80 cm (A × L): o preço por m² dela vai para o vão do
+       tipo (1,00 × 1,00 a 1,50 × 1,00) — dito na linha do orçamento, curto: o rótulo da op orcar corta em 80 caracteres (bimedit.js) */
+    if (famId === BASC && MAXIM_EXATOS[tipoId]) return { codigo: "94569", rotulo: "janela de alumínio maxim-ar com vidro", un: "m2", aproximada: null, curta: "(60×80, por m²)", obs: "SINAPI 94569 é maxim-ar de alumínio com vidro de 60 × 80 cm (A × L), em m²: o preço por m² foi aplicado ao vão deste tamanho — conferir com o fornecedor." };
     var c = Object.prototype.hasOwnProperty.call(m, tipoId) ? m[tipoId] : m["*"];
     return c ? { codigo: c, rotulo: m.rotulo, un: m.un, aproximada: m.aproximada || null, curta: m.curta || null } : { codigo: null, motivo: m.motivo || "sem composição para este tamanho" };
   }
@@ -190,7 +221,7 @@
     NIVEIS: NIVEIS, CRITERIOS: CRITERIOS, AMBIENTES: AMB, GENERICO: GENERICO, CATALOGO: CATALOGO, PORTAS: PORTAS, BATENTE: BATENTE, SINAPI: SINAPI,
     CORRER: CORRER, BASCULANTE: BASC,
     normalizar: normalizar, classificar: classificar, porId: porId, privacidade: privacidade, criterios: criterios,
-    fracaoIluminacao: fracaoIluminacao, fatorIluminacao: fatorIluminacao, fatorVentilacao: fatorVentilacao, rotuloNivel: rotuloNivel, sinapiDe: sinapiDe, arr: arr
+    fracaoIluminacao: fracaoIluminacao, fatorIluminacao: fatorIluminacao, rotuloNivel: rotuloNivel, sinapiDe: sinapiDe, arr: arr
   };
   global.EsqRegras = EsqRegras;
   if (typeof module !== "undefined" && module.exports) module.exports = EsqRegras;

@@ -9,15 +9,17 @@
  * ---------------------------------------------------------------------
  * DE ONDE VÊM OS NÚMEROS (nada aqui foi inventado)
  * ---------------------------------------------------------------------
- * · Dimensões e famílias: ABNT NBR 6136 + catálogos de fabricante.
- *   Regra mestra: dimensão REAL = dimensão NOMINAL (modular) − 10 mm.
- *   Real 140→nominal 150 · 190→200 · 290→300 · 390→400 · 540→550.
+ * · Dimensões e famílias: ABNT NBR 6136-1:2026, Tabela 2 (medidas nominais 140 × 190 × 390 etc.; conferida em 21/10/2026 no texto —
+ *   cópia NÃO licenciada à RA, só valores; prova: tools/test-alv-normas-2026.js) + catálogos de fabricante.
+ *   Regra mestra: medida da peça (a "nominal" da norma, item 3.14) = medida MODULAR (item 3.13, ABNT NBR 15873) − 10 mm de junta.
+ *   Peça 140→módulo 150 · 190→200 · 290→300 · 390→400 · 540→550. Peças que a Tabela 2 NÃO traz (compensadores da
+ *   família 29, bloco de meia altura, canaleta compensadora) são de fabricante; a lista está declarada em tools/test-alv-normas-2026.js.
  * · Consumo de argamassa "modo orçamento": coeficientes da própria base
  *   SINAPI (89470, 89453, 89478, 89464), que já embutem perdas.
  * · Pesos: são dado de FABRICANTE, não de norma — o mesmo 14x19x39
  *   aparece com 13,27 kg (Original Blocos), 12,35 kg (Casa Fácil) e
  *   11,9 kgf (Pavibloco). Por isso peso aqui é DEFAULT editável.
- * · Classes A/B/C e limite de pavimentos: NBR 6136:2016.
+ * · Classes A/B/C e limite de pavimentos: NBR 6136-1:2026, Tabelas 1 e 6 (conferidas em 21/10/2026; a NBR 6136:2016 foi cancelada em 02/2026).
  *
  * ---------------------------------------------------------------------
  * TRÊS ERROS CLÁSSICOS QUE ESTE ARQUIVO IMPEDE
@@ -126,7 +128,7 @@
    *      tabela agregada fica fora, e o motivo vai gravado.
    *  R3b COERÊNCIA INTERNA, antes de escolher: descarta-se o valor que
    *      (i) implique espessura de parede abaixo dos 25 mm mínimos da
-   *      NBR 6136, resolvendo a espessura pelo peso com y = 2200 kg/m3;
+   *      NBR 6136-1:2026 Tabela 4 (140 × 390: 25 mm), resolvendo a espessura pelo peso com y = 2200 kg/m3;
    *      ou (ii) viole relação obrigatória DENTRO do mesmo fabricante —
    *      canaleta mais leve que o inteiro, meia canaleta mais leve que
    *      o meio, meio bloco nunca menos denso que o inteiro.
@@ -175,7 +177,7 @@
                        nota: "os 5,18 kg que estavam aqui são da canaleta J de 19 cm; esta peça tem 14 cm. Dimensão diferente não é aproximação." },
     "29-comp-9":     { kg: 3.40,  fabricante: "JB|Original", metodo: "publicado", confianca: "alta",
                        pesoMin: 3.40, pesoMax: 3.40, n: 2,
-                       nota: "Pavibloco 1,90 descartado: implicaria parede de 10,9 mm, menos da metade do mínimo da NBR 6136." },
+                       nota: "Pavibloco 1,90 descartado: implicaria parede de 10,9 mm, menos da metade do mínimo de 25 mm da NBR 6136-1:2026 (Tabela 4, 140 × 290)." },
     "29-comp-4":     { kg: macico(0.14, 0.19, 0.04), fabricante: "", metodo: "geometrico-macico", confianca: "media",
                        formula: "0,14 x 0,19 x 0,04 x 2200 kg/m3 — peça maciça: 4 cm não comportam vazio com parede de 25 mm" },
     "29-meia-alt":   { kg: null,  fabricante: "", metodo: "sem-fonte", confianca: "nenhuma", n: 0,
@@ -267,12 +269,14 @@
     return erros;
   })();
 
-  /* Classes da NBR 6136:2016 — fbk sobre a área bruta.
-   * O limite de pavimentos vale para a Classe C COM função estrutural. */
+  /* Classes da NBR 6136-1:2026 (Tabela 1: A fbk ≥ 8,0 · B 4,0 ≤ fbk ≤ 6,0 · C fbk ≥ 3,0 MPa; Tabela 6: classe C estrutural até
+   * cinco pavimentos em 190 e 140 mm, dois em 115, um em 90; 65 mm só sem função estrutural) — fbk sobre a área bruta.
+   * O limite de pavimentos vale para a Classe C COM função estrutural. A faixa B (≤ 6,0) não é cobrada aqui: o fbk máximo
+   * da B fica na especificação do projeto (a própria Tabela 6 subclassifica amostras B de 6 a 7,9 MPa — conferir na norma). */
   var CLASSES = {
     A: { id: "A", fbkMin: 8.0, uso: "Estrutural, acima ou abaixo do nível do solo", limitePav: null },
     B: { id: "B", fbkMin: 4.0, uso: "Estrutural, apenas acima do nível do solo", limitePav: null },
-    C: { id: "C", fbkMin: 3.0, uso: "Com ou sem função estrutural", limitePav: { 0.09: 1, 0.115: 2, 0.14: 5, 0.19: 5 } }
+    C: { id: "C", fbkMin: 3.0, uso: "Com ou sem função estrutural", limitePav: { 0.065: 0, 0.09: 1, 0.115: 2, 0.14: 5, 0.19: 5 } }
   };
 
   /* Consumo de argamassa de assentamento — coeficientes da BASE SINAPI.
@@ -711,14 +715,17 @@
       var C = CLASSES[String(classe || "").toUpperCase()];
       if (!C) return { ok: false, motivo: "Classe deve ser A, B ou C." };
       if (abaixoDoSolo && C.id !== "A") {
-        return { ok: false, motivo: "Abaixo do nível do solo a NBR 6136 exige Classe A." };
+        return { ok: false, motivo: "Abaixo do nível do solo a NBR 6136-1:2026 (Tabela 1) só permite a Classe A." };
       }
       if (C.id === "B" && abaixoDoSolo) return { ok: false, motivo: "Classe B só é permitida acima do nível do solo." };
       if (C.id === "C" && estrutural) {
         var lim = C.limitePav[num(larguraM)];
         if (lim == null) return { ok: true, aviso: "Largura fora da tabela de limite da Classe C — confira a norma." };
+        var cmL = (Math.round(num(larguraM) * 1000) / 10).toString().replace(".", ",");   /* 11,5 cm, não "12 cm" */
+        /* 65 mm: "apenas uso sem função estrutural" — recusa com função estrutural mesmo sem o número de pavimentos */
+        if (lim === 0) return { ok: false, motivo: "Classe C com " + cmL + " cm só serve SEM função estrutural (NBR 6136-1:2026, Tabela 6)." };
         if (num(pavimentos) > lim) {
-          return { ok: false, motivo: "Classe C com " + Math.round(num(larguraM) * 100) + " cm suporta no máximo " + lim + " pavimento(s) com função estrutural." };
+          return { ok: false, motivo: "Classe C com " + cmL + " cm suporta no máximo " + lim + " pavimento(s) com função estrutural (NBR 6136-1:2026, Tabela 6)." };
         }
       }
       return { ok: true, motivo: "" };

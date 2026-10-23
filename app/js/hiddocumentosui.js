@@ -27,11 +27,15 @@
   function gravarHist(h) { try { global.localStorage.setItem(chave(), JSON.stringify(h)); } catch (e) {} }
 
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     if (!doc) return false;
     try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }   // hid:ok 5 s até soltar a URL
   }
   /* PDF pela impressão do navegador (links continuam ativos no "Salvar como PDF") */
   function abrirPdf(html) {
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (html == null) return false; }
     var w = null;
     try { w = global.open("", "_blank"); } catch (e) { w = null; }
     if (!w) { toast("O navegador bloqueou a janela de impressão. Libere pop-ups para este endereço ou abra o HTML baixado e imprima.", "aviso"); return false; }

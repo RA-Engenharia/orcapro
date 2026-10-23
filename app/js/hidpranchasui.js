@@ -129,6 +129,8 @@
     return HP().normalizarConfig(c);
   }
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     var d = global.document; if (!d) return false;
     try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }   // hid:ok 5 s até soltar a URL do arquivo
   }

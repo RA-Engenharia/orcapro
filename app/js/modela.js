@@ -106,9 +106,14 @@
       [num(e.testeLocal), c && c.teste ? num(c.teste.inicio) : 0].forEach(function (x) { if (x > 0 && (!ini || x < ini)) ini = x; });
       var fim = ini ? ini + TESTE_MS : 0;
       var rest = ini ? Math.max(0, fim - agora) : TESTE_MS;
+      /* TESTE DE 1 HORA POR MÓDULO (js/testemodulo.js, 21/10/2026): para licença PAGA, a hora por disciplina
+         SUBSTITUI o teste de 7 dias — o de 7 dias nunca começa (`disponivel` falso). Quem já começou os 7 dias
+         mantém até o fim (o `ativo` abaixo não muda). Sem o regime (flag do servidor desligada, demo, teste
+         grátis sem chave) `t1` é null e tudo segue como antes. */
+      var t1 = e.teste1h && e.teste1h.regime ? e.teste1h : null;
       var teste = {
         inicio: ini, fim: fim,
-        disponivel: !ini,
+        disponivel: !ini && !(t1 && t1.substitui),
         ativo: !!ini && agora < fim,
         encerrado: !!ini && agora >= fim,
         restanteMs: rest,
@@ -117,10 +122,17 @@
 
       var demo = !!e.demo, play = !!e.play;
       IDS_EXTRAS.forEach(function (id) { if (demo || teste.ativo) extras[id] = true; });
+      /* o teste de 1 hora: estado "teste" libera; "vencido"/"pausado" fica VISÍVEL (pede a compra), não libera */
+      var est1 = t1 ? (t1.estados || {}) : {}, em1 = {}, venc1 = {};
+      if (t1) IDS_EXTRAS.forEach(function (id) {
+        if (extras[id]) return;
+        if (est1[id] === "teste") { extras[id] = true; em1[id] = 1; }
+        else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
+      });
       var out = {
         liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
         teste: teste, vitalicia: vitalicia, demo: demo, play: play,
-        podeComprar: !play && !demo, compradas: compradas,
+        podeComprar: !play && !demo, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
         revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
           Object.keys(c.disciplinas).some(function (k) { return num(c.disciplinas[k]) > agora; }))
       };
@@ -131,6 +143,21 @@
       if (lista.length === IDS.length) return tudo("compra");
       if (teste.ativo) return tudo("teste");
       if (teste.disponivel) return tudo("teste-disponivel");
+      if (t1) {
+        IDS.forEach(function (id) {
+          if (compradas[id]) return;
+          if (est1[id] === "teste") em1[id] = 1;
+          else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
+        });
+        var lib = IDS.filter(function (id) { return !!compradas[id] || !!em1[id]; });
+        out.visivel1h = Object.keys(venc1).length > 0;
+        if (lib.length) {
+          out.liberado = true; out.disciplinas = lib; out.completo = lib.length === IDS.length;
+          out.motivo = IDS.some(function (id) { return !!em1[id]; }) ? "teste-1h" : "compra";
+          return out;
+        }
+        if (out.visivel1h) { out.motivo = "teste-1h-encerrado"; return out; }
+      }
       if (lista.length) {
         out.liberado = true; out.disciplinas = lista; out.motivo = "compra";
         return out;
@@ -141,7 +168,7 @@
 
     /* ---------------- o ambiente (navegador) ---------------- */
     _ler: function () { try { return JSON.parse(global.localStorage.getItem(KEY) || "null") || {}; } catch (e) { return {}; } },
-    _gravar: function (o) { this._memo = null; try { global.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
+    _gravar: function (o) { this._memo = null; this._memoBase = null; try { global.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
     _lic: function () { return (typeof global.Licenca !== "undefined" && global.Licenca) ? global.Licenca : null; },
     _chave: function () { var L = this._lic(); try { return (L && L.chave && L.chave()) || ""; } catch (e) { return ""; } },
     /* só os 16 últimos caracteres: a chave inteira é credencial e não vai para mais um lugar do disco */
@@ -159,10 +186,36 @@
       try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
       try { return global.document.documentElement.getAttribute("data-origem") === "play"; } catch (e2) { return false; }
     },
-    _entrada: function () {
+    _entrada: function (semEstados) {
       var l = this._ler();
-      return { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
+      var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
         chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
+      /* o teste de 1 hora por módulo (js/testemodulo.js). `semEstados`: o direito SEM a hora de teste
+         (statusBase) — é o que o próprio TesteModulo pergunta para saber o que já é comprado, sem laço */
+      var TM = global.TesteModulo;
+      try {
+        if (TM && TM.regimeInfo) {
+          var ri = TM.regimeInfo();
+          if (ri && ri.regime) e.teste1h = { regime: true, substitui: ri.substitui !== false, estados: semEstados ? {} : TM.estadosModela() };
+        }
+      } catch (eT) {}
+      return e;
+    },
+    /* o direito sem a hora de teste (compra, vitalícia, cortesia, demo, os 7 dias já começados) */
+    _memoBase: null,
+    statusBase: function () {
+      var t = Date.now(), m = this._memoBase;
+      if (m && t - m.t < 1000 && t >= m.t) return m.s;
+      var s = this.calcular(this._entrada(true));
+      this._memoBase = { t: t, s: s };
+      return s;
+    },
+    /* a oferta da disciplina/módulo trancado (o js/bimshell.js chama ao escolher uma disciplina trancada) */
+    oferta: function (id) {
+      var k = String(id || "").toLowerCase(), TM = global.TesteModulo, idT = TM && TM.idDisciplina ? TM.idDisciplina(k) : "";
+      try { if (idT && TM.status().regime && global.TesteModuloUI) return TesteModuloUI.oferta(idT); } catch (e) {}
+      try { if (global.ModelaUI && ModelaUI.abrirAviso) return ModelaUI.abrirAviso(k); } catch (e2) {}
+      return false;
     },
     /* ~30 módulos do modelador perguntam a cada desenho de tela: 1 s de
        memória poupa ler o disco e decodificar a chave a cada pergunta */
@@ -196,7 +249,7 @@
     /* grava a resposta do servidor. Devolve true se o direito mudou. */
     _aplicar: function (d) {
       if (!d || d.ok !== true) return false;
-      this._memo = null;
+      this._memo = null; this._memoBase = null;
       var l = this._ler(), antes = JSON.stringify(this.status());
       var dis = {};
       IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });

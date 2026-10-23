@@ -65,16 +65,34 @@
 
   /* os eletros: largura do vão reservado (m) — nichos lidos nas fichas da pesquisa */
   var ELETRO = { geladeira: 0.80, lava_loucas: 0.62, forno_base: 0.60, coifa: 0.90 };
+  var NOME_ELETRO = { geladeira: "geladeira", lava_loucas: "lava-louças", forno_base: "forno sob o cooktop", coifa: "coifa" };
+  /* tamponamento mínimo de cada lado com parede (planejarFila: tampMin 20 mm) — o mesmo número da fórmula Vao_disponivel */
+  var TAMP_MIN = 0.02;
   var ULTIMO = null;
+  function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+  /* ⚠ DEFEITO DO A1 (corrigido em 21/10/2026, frente "mobiliar ambiente"): os vãos de eletro marcados somavam MAIS que a largura
+     total (base de 1,00 m com geladeira + lava-louças + forno = 2,02 m de vão) e o gerador desenhava a fila inteira mesmo assim —
+     tamponamento + vãos passavam 1,06 m além da parede (a caixa da família ia de −0,50 a +1,56), atravessando a parede do lado e
+     o ambiente vizinho. Agora os vãos entram na ORDEM (geladeira, lava-louças, forno, coifa) enquanto cabem; o que não cabe sai
+     com aviso, e a fórmula do Reserva_eletros faz a MESMA conta (o orçamento cobra a frente que o desenho constrói). */
   function planoDe(v) {
-    var reservas = [], lt = v.Largura_total, tm = String(v.Tipo_modulo).toLowerCase();
-    if (v.Nicho_geladeira && (tm === "torre" || tm === "base")) reservas.push({ id: "geladeira", w: ELETRO.geladeira });
-    if (v.Nicho_lava_loucas && tm === "base") reservas.push({ id: "lava_loucas", w: ELETRO.lava_loucas });
-    if (v.Nicho_forno_base && tm === "base") reservas.push({ id: "forno_base", w: ELETRO.forno_base });
-    if (v.Vao_coifa && tm === "aereo") reservas.push({ id: "coifa", w: ELETRO.coifa });
+    var cands = [], reservas = [], avisos = [], lt = v.Largura_total, tm = String(v.Tipo_modulo).toLowerCase();
+    if (v.Nicho_geladeira && (tm === "torre" || tm === "base")) cands.push({ id: "geladeira", w: ELETRO.geladeira });
+    if (v.Nicho_lava_loucas && tm === "base") cands.push({ id: "lava_loucas", w: ELETRO.lava_loucas });
+    if (v.Nicho_forno_base && tm === "base") cands.push({ id: "forno_base", w: ELETRO.forno_base });
+    if (v.Vao_coifa && tm === "aereo") cands.push({ id: "coifa", w: ELETRO.coifa });
+    var disp = lt - (v.Parede_esquerda !== false ? TAMP_MIN : 0) - (v.Parede_direita !== false ? TAMP_MIN : 0), usado = 0;
+    cands.forEach(function (r) {
+      if (usado + r.w <= disp + 1e-9) { reservas.push(r); usado += r.w; }
+      else avisos.push("o vão de " + NOME_ELETRO[r.id] + " (" + f2(r.w) + " m) não cabe na largura total de " + f2(lt) + " m — retirado (o desenho e o orçamento seguem a parede)");
+    });
     var lgs = String(v.Larguras_catalogo || "400,500,600,800,1000").split(/[;, ]+/).map(function (s) { return Math.round(+s); }).filter(function (x) { return x >= 150 && x <= 1200; });
     var pl = planejarFila(Math.round(lt * 1000), { larguras: lgs.length ? lgs : null, paredeEsq: v.Parede_esquerda !== false, paredeDir: v.Parede_direita !== false, reservados: reservas.map(function (r) { return Math.round(r.w * 1000); }) });
-    pl.reservas = reservas;
+    /* largura menor que os dois tamponamentos: o tamponamento encolhe (nunca passa da largura total) */
+    var lim = Math.max(0, Math.round(lt * 1000));
+    if (pl.tampEsq + pl.tampDir > lim) { var k = lim / Math.max(1, pl.tampEsq + pl.tampDir); pl.tampEsq = Math.floor(pl.tampEsq * k); pl.tampDir = Math.floor(pl.tampDir * k); }
+    pl.reservas = reservas; pl.vaosRetirados = cands.filter(function (c) { return reservas.indexOf(c) < 0; }).map(function (c) { return c.id; });
+    pl.avisos = avisos.concat(pl.avisos || []);
     return pl;
   }
 
@@ -102,6 +120,14 @@
       return;
     }
     var pl = planoDe(v); ULTIMO = pl;
+    if (pl.vaosRetirados.length) c.avisos = (c.avisos || []).concat(pl.avisos.slice(0, pl.vaosRetirados.length));   /* vai para saida.avisos (js/familiasmob.js completar) */
+    /* ⚠ REVISÃO (21/10/2026): a SOBRA sem módulo (o que fica livre abaixo do módulo mínimo de 300 mm, ex.: 0,30 m com dois
+       tamponamentos; 1,10 m com o vão da geladeira) não é desenhada — e a fórmula (Largura_total − Reserva_eletros) × Altura a
+       cobrava como frente de armário. O orçamento cobra a frente que o desenho constrói: módulos + tamponamentos. Sem sobra
+       a conta é a mesma da fórmula (os módulos e os tamponamentos fecham a largura menos os vãos). */
+    var frenteMm = pl.tampEsq + pl.tampDir; pl.modulos.forEach(function (m) { frenteMm += m; });
+    c.quantidade = Math.max(0, frenteMm / 1000) * A;
+    if (pl.sobraMm > 0) c.avisos = (c.avisos || []).concat(["sobra de " + Math.round(pl.sobraMm) + " mm sem módulo (menor que o módulo mínimo de 300 mm) — não desenhada e fora do orçamento; feche com tamponamento/peça sob medida ou ajuste a largura total"]);
     var y0 = tm === "aereo" ? v.Altura_instalacao : 0, hCorpo = tm === "aereo" ? A : A - rod, yC = tm === "aereo" ? y0 : rod;
     var seq = [], x = -Lt / 2;
     seq.push({ t: "tamp", w: pl.tampEsq / 1000 });
@@ -218,7 +244,16 @@
     gerar: gerar
   });
   /* a reserva dos eletros sai por fórmula (o orçamento cobra só a frente do armário) */
-  fam.parametros.forEach(function (q) { if (q.nome === "Reserva_eletros") { q.formula = "se(Nicho_geladeira; 0,8; 0) * Vao_geladeira_tipo + (se(Nicho_lava_loucas; 0,62; 0) + se(Nicho_forno_base; 0,6; 0)) * Vao_base_tipo + se(Vao_coifa; 0,9; 0) * Vao_coifa_tipo";
+  /* A1 (21/10/2026): os vãos entram em ORDEM enquanto cabem em Vao_disponivel (largura total − 20 mm de tamponamento em cada lado
+     com parede) — a mesma conta do planoDe; o vão que não cabe não é desenhado e não desconta a frente */
+  var G_EL = "Eletros", CALC = "cálculo (não editar): o vão que o desenho constrói — o que não cabe na largura total sai";
+  fam.parametros.push(
+    { nome: "Vao_disponivel", tipoDado: "comprimento", escopo: "instancia", valor: 0, grupo: G_EL, descricao: CALC, formula: "Largura_total - se(Parede_esquerda; 0,02; 0) - se(Parede_direita; 0,02; 0)" },
+    { nome: "Vao_geladeira_usado", tipoDado: "comprimento", escopo: "instancia", valor: 0, grupo: G_EL, descricao: CALC, formula: "se(se(Nicho_geladeira; 0,8; 0) * Vao_geladeira_tipo <= Vao_disponivel; se(Nicho_geladeira; 0,8; 0) * Vao_geladeira_tipo; 0)" },
+    { nome: "Vao_lava_usado", tipoDado: "comprimento", escopo: "instancia", valor: 0, grupo: G_EL, descricao: CALC, formula: "se(Vao_geladeira_usado + se(Nicho_lava_loucas; 0,62; 0) * Vao_base_tipo <= Vao_disponivel; se(Nicho_lava_loucas; 0,62; 0) * Vao_base_tipo; 0)" },
+    { nome: "Vao_forno_usado", tipoDado: "comprimento", escopo: "instancia", valor: 0, grupo: G_EL, descricao: CALC, formula: "se(Vao_geladeira_usado + Vao_lava_usado + se(Nicho_forno_base; 0,6; 0) * Vao_base_tipo <= Vao_disponivel; se(Nicho_forno_base; 0,6; 0) * Vao_base_tipo; 0)" },
+    { nome: "Vao_coifa_usado", tipoDado: "comprimento", escopo: "instancia", valor: 0, grupo: G_EL, descricao: CALC, formula: "se(Vao_geladeira_usado + Vao_lava_usado + Vao_forno_usado + se(Vao_coifa; 0,9; 0) * Vao_coifa_tipo <= Vao_disponivel; se(Vao_coifa; 0,9; 0) * Vao_coifa_tipo; 0)" });
+  fam.parametros.forEach(function (q) { if (q.nome === "Reserva_eletros") { q.formula = "Vao_geladeira_usado + Vao_lava_usado + Vao_forno_usado + Vao_coifa_usado";
     /* ⚠ REVISÃO A1 (20/10/2026): a fórmula antiga descontava TODO vão marcado de QUALQUER tipo — o aéreo com "geladeira" marcada
        perdia 0,80 m de frente que o desenho constrói (aéreo sobre a geladeira), a torre perdia lava-louças e forno da base e o
        painel perdia tudo: orçamento ABAIXO do que se fabrica. Agora desconta só o vão que o tipo reserva (planoDe). */ } });

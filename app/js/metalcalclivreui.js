@@ -663,7 +663,10 @@
      as que não fecham e PROPÕE a de menor acréscimo de aço (empate → menos mudança). Nada é aplicado sem o clique em
      "Aplicar"; peças vão num lote do editor (Ctrl+Z) e apoios/ligações têm "Desfazer a solução". */
   var LIM_RESOLVER = 45000;
+  /* ⚠ o Resolver refaz o cálculo INTEIRO para cada solução: é cálculo, não consulta (revisão adversarial 21/10/2026 — sem esta
+     trava, com o teste vencido, a proposta de solução saía de cálculos novos sem licença) */
   function resolverIniciar(el) {
+    if (!lic("resolver o problema")) return;
     var R0 = RS(), D = DL(), r = U.r, kP = el ? +el.getAttribute("data-ml-p") : 0, prob = r && arr(r.problemas)[kP];
     if (!R0 || !D || !prob) { toast("O Resolver não carregou (js/acoresolverlivre.js).", "erro"); return; }
     if (barrarVelho()) return;
@@ -870,6 +873,7 @@
   }
   function fundacoesModelo() { try { var st = global.BIM && BIM.editarEstado ? BIM.editarEstado().estado : null; return (st && st.fundacoes) || []; } catch (e) { return []; } }
   function pranchas() {
+    if (!lic("gerar as pranchas")) return;
     var r = U.r, P = PL(); if (!r || !r.ok || !P) { toast("As pranchas saem de um cálculo que fechou.", "aviso"); return; }
     if (barrarVelho()) return;
     var ligs = []; try { if (global.MetalLigSugUI && MetalLigSugUI.ligacoesComCalculo) ligs = MetalLigSugUI.ligacoesComCalculo(r); } catch (eL) { ligs = []; }
@@ -922,22 +926,28 @@
   }
   function imprimirPranchas() {
     var x = U.pranchas; if (!x) return;
+    if (!lic("imprimir as pranchas")) return;
     var f0 = x.folhas[0] || {}, A = { A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297] }[f0.formato || "A1"] || [841, 594];
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pranchas — estrutura metálica — ' + esc((obra() || {}).nome || "") + "</title><style>@page{size:" + A[0] + "mm " + A[1] + "mm;margin:0}html,body{margin:0;background:#888}.f{width:" + A[0] + "mm;height:" + A[1] + "mm;background:#fff;page-break-after:always;overflow:hidden;margin:0 auto 8mm}.f svg{width:100%;height:100%;display:block}@media print{body{background:#fff}.f{margin:0}}</style></head><body>" +
       x.folhas.map(function (f) { return '<div class="f">' + f.svg + "</div>"; }).join("") + "</body></html>";
-    U.ultimoPrint = html;
+    /* teste de 1 hora: a janela de impressão leva a marca; vencido não abre (o `baixar` de reserva marca sozinho) */
+    var hP = global.TesteModulo && TesteModulo.marcarHtml ? TesteModulo.marcarHtml(html, "modela:metalica") : html;
+    if (hP == null) return;
+    U.ultimoPrint = hP;
     var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
-    if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Pranchas abertas em outra aba: imprima em PDF no tamanho " + (f0.formato || "A1") + ".", "ok", 7000); }
+    if (w && w.document) { w.document.open(); w.document.write(hP); w.document.close(); toast("Pranchas abertas em outra aba: imprima em PDF no tamanho " + (f0.formato || "A1") + ".", "ok", 7000); }
     else baixar(nomeArq() + "-pranchas-estrutura-desenhada.html", html, "text/html");
   }
   function nomeFolha(f, i, ext) { return (f.numero || ("folha-" + (i + 1))).replace(/[^\w.-]+/g, "-") + "-" + String(f.titulo || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").slice(0, 40) + "." + ext; }
   function baixarSvgs() {
     var x = U.pranchas; if (!x || !global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return; }
+    if (!lic("baixar as pranchas")) return;
     var arqs = {}; x.folhas.forEach(function (f, i) { arqs[nomeFolha(f, i, "svg")] = f.svg; });
     baixar(nomeArq() + "-pranchas-estrutura-desenhada-svg.zip", BimBcf.zipEscrever(arqs), "application/zip");
   }
   function baixarDxf() {
     var x = U.pranchas, P = PL(); if (!x || !P || !P.dxf) { toast("O DXF das pranchas não carregou.", "erro"); return; }
+    if (!lic("baixar o DXF das pranchas")) return;
     var arqs = {}, nomes = [];
     try { x.folhas.forEach(function (f, i) { var n = nomeFolha(f, i, "dxf"); arqs[n] = P.dxf(f); nomes.push(n); }); } catch (e) { toast("DXF: " + e.message, "erro", 9000); return; }
     U.ultimoDxf = { nomes: nomes, bytes: Object.keys(arqs).reduce(function (t, k) { return t + arqs[k].length; }, 0), primeiro: arqs[nomes[0]], arquivos: arqs };
@@ -954,6 +964,7 @@
   function selecionarNoModelo(ids) { try { if (global.BIM && BIM.selecionar) BIM.selecionar(ids.map(function (id) { return "edit:" + id; }), "trocar"); toast(ids.length + " peça(s) selecionada(s) no modelo.", "ok", 3000); } catch (e) { toast("Não deu para selecionar: " + e.message, "aviso"); } }
 
   function calcular() {
+    if (!lic("calcular a estrutura desenhada")) return false;
     var D = DL(); if (!D) { toast("O cálculo da estrutura desenhada não carregou (js/acodimlivre.js).", "erro", 8000); return false; }
     var ent = entrada();
     U.calculando = true; U.modo = "calculando"; render();
@@ -1005,7 +1016,12 @@
   }
   function nomeArq() { var o = obra(), n = String((o && o.nome) || "obra"); try { n = n.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {} return n.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "obra"; }
   function baixar(nome, dados, mime) { var M = MU(); if (M && M.baixar) return M.baixar(nome, dados, mime); return false; }
+  /* ⚠ TRAVA DE LICENÇA NA FUNÇÃO (21/10/2026, js/licencafuncao.js): igual à do cálculo do galpão (js/metalcalcui.js) — o cálculo e cada
+     entrega da estrutura desenhada conferem sozinhos a disciplina Metálica (teste de 1 hora: libera e conta; vencido ou sem licença
+     recusa e mostra a oferta). Consultar o que já foi calculado continua livre. Sem o módulo: não trava. */
+  function lic(acao) { var L = global.LicencaFuncao; return L && L.guarda ? L.guarda("metalica", acao) : true; }
   function memorial() {
+    if (!lic("gerar o memorial")) return;
     var r = U.r, Mm = global.AcoMemorialLivre; if (!r || !r.ok || !Mm) { toast("O memorial sai de um cálculo que fechou.", "aviso"); return; }
     if (barrarVelho()) return;
     var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
@@ -1026,7 +1042,11 @@
       U.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length, ids: x.secoes.map(function (q) { return q.id; }) } : null;
       U.ultimoHtml = x && x.ok ? x.html : null;
       if (!x || !x.ok) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return; }
-      if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
+      /* teste de 1 hora (js/testemodulo.js): a janela nova leva a marca "Versão de teste"; vencido não abre (revisão adversarial
+         21/10/2026 — esta tela abria o memorial limpo em teste). O U.ultimoHtml fica sem marca: o Word passa pelo `baixar`, que marca. */
+      var hT = global.TesteModulo && TesteModulo.marcarHtml ? TesteModulo.marcarHtml(x.html, "modela:metalica") : x.html;
+      if (hT == null) { if (w) try { w.close(); } catch (eW) {} return; }
+      if (w && w.document) { w.document.open(); w.document.write(hT); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
       else { baixar(nomeArq() + "-memorial-estrutura-metalica.html", x.html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); }
       try { quadroEmissao(fxE, pendE, x); } catch (eQ) { if (global.console) global.console.error(eQ); }
     });
@@ -1078,6 +1098,7 @@
   }
   /* MEMORIAL EM WORD: o mesmo html do memorial (U.ultimoHtml) passado pelo js/docx.js */
   function memorialDocx() {
+    if (!lic("baixar o memorial em Word")) return false;
     if (!U.ultimoHtml) { toast("Gere o memorial primeiro.", "aviso"); return false; }
     if (!global.Docx || !Docx.deHtml) { toast("O gerador de Word não carregou (js/docx.js).", "erro"); return false; }
     var d; try { d = Docx.deHtml(U.ultimoHtml, { titulo: "Memorial — estrutura metálica" }); } catch (e) { toast("Memorial em Word: " + (e && e.message ? e.message : e), "erro", 9000); return false; }
@@ -1086,6 +1107,7 @@
     toast("Memorial baixado (.docx).", "ok", 6000); return true;
   }
   function cype() {
+    if (!lic("exportar para o CYPE 3D")) return;
     var r = U.r, CY = global.AcoCype; if (!r || !r.ok || !CY) { toast("A exportação para o CYPE sai de um cálculo que fechou.", "aviso"); return; }
     if (barrarVelho()) return;
     var b = (nomeArq() + "-estrutura-cype3d").replace(/[^A-Za-z0-9_-]+/g, "_"), lista;
@@ -1119,7 +1141,9 @@
       U.r = null; salvar();
       return e;
     },
-    calcular: function () { estado(); garantir(); return calcular(); },
+    calcular: function () { if (!lic("calcular a estrutura desenhada")) return false; estado(); garantir(); return calcular(); },
+    /* a trava na função, para quem integra e para o teste */
+    licenca: function (acao) { return lic(acao || "usar a função"); },
     resultado: function () { return U.r; },
     /* LIGAÇÃO AO LANÇAR: o que o último cálculo fez com as ligações "a confirmar" (a e2e lê) */
     ligAuto: function () { return U.ligAuto || null; },

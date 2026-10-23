@@ -356,6 +356,8 @@
     },
     _nome: function (ext) { var d = new Date(), z = function (n) { return (n < 10 ? "0" : "") + n; }; return "marcenaria-" + d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + "-" + z(d.getHours()) + z(d.getMinutes()) + "." + ext; },
     baixar: function (nome, dados, mime) {
+      /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+      if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:marcenaria"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
       var tam = dados && dados.byteLength != null ? dados.byteLength : txt(dados).length;
       this._ultimoArquivo = { nome: nome, tamanho: tam, tipo: mime };
       try {

@@ -25,7 +25,7 @@
  *       parede interna  5 a 20 mm · parede externa 20 a 30 mm · teto ≤ 20 mm
  *   · NBR 7200:1998 — execução de revestimento de argamassa
  *   · NBR 6120:2019 — pesos específicos aparentes (Tabela 1 e 2)
- *   · NBR 6136:2016 — bloco vazado de concreto (via blocos.js)
+ *   · NBR 6136-1:2026 — bloco vazado de concreto (via blocos.js; a 6136:2016 foi cancelada em 02/2026; conferida em 21/10/2026)
  * Onde o valor é PRÁTICA e não norma, está escrito assim no campo `fonte`.
  *
  * Teste: node tools/test-alvtipos.js
@@ -124,13 +124,13 @@
     NUCLEOS: {
       /* `alv` / `alvPorFuncao`: a FAMÍLIA DE ASSENTAMENTO (js/alvunidades.js) — é por ela que a parede crua mostra
          os blocos como assentados (js/alvassentamento3d.js) e o assentamento conta as peças. */
-      bloco_concreto_14:  { rotulo: "Bloco de concreto 14 cm",  e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 14", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
-      bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — M15, família 29 (14×19×29)", alv: "bc-M15-29" },
-      bloco_concreto_19:  { rotulo: "Bloco de concreto 19 cm",  e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — família 39, largura 19", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
+      bloco_concreto_14:  { rotulo: "Bloco de concreto 14 cm",  e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136-1:2026 Tabela 2 — família 15 × 40 (39), largura 140 mm", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
+      bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136-1:2026 Tabela 2 — família 15 × 30 (29), 140 × 190 × 290", alv: "bc-M15-29" },
+      bloco_concreto_19:  { rotulo: "Bloco de concreto 19 cm",  e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136-1:2026 Tabela 2 — família 20 × 40 (39), largura 190 mm", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
       /* familia: null de propósito — não existe família de 9 cm no catálogo.
          Apontava para a "29", que é de 14 cm de largura: no dia em que o peso
          fosse ligado, a divisória de 9 receberia carga de parede de 14 (+55%). */
-      bloco_concreto_9:   { rotulo: "Bloco de concreto 9 cm",   e: 90,  familia: null,    peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136 — vedação", alv: "bc-M10-ved" },
+      bloco_concreto_9:   { rotulo: "Bloco de concreto 9 cm",   e: 90,  familia: null,    peso: null, unidade: "kg/m3", tipo: "bloco",  fonte: "NBR 6136-1:2026 Tabelas 2 e 4 — família 10 × 40, largura 90 mm, classe C", alv: "bc-M10-ved" },
       /* 13 kN/m³ × 102 ≈ 1300 kg/m³. Estava 130 — dez vezes leve, e saindo
          com selo de "peso completo". Uma parede cerâmica de 14 cm, 3,0 × 2,8 m,
          era anunciada com 153 kg de nucleo quando o certo sao 1.528,8 kg

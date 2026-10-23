@@ -468,7 +468,13 @@
       tipos: [
         { id: "b6060", nome: "0,60 × 0,60", valores: { Largura: 0.60, Altura: 0.60 } },
         { id: "b8060", nome: "0,80 × 0,60", valores: { Largura: 0.80, Altura: 0.60 } },
-        { id: "b10060", nome: "1,00 × 0,60", valores: { Largura: 1.00, Altura: 0.60 } }
+        { id: "b10060", nome: "1,00 × 0,60", valores: { Largura: 1.00, Altura: 0.60 } },
+        /* MAXIM-AR (21/10/2026, esquadrias × Código de Obras): duas folhas, cada uma gira pela borda de CIMA e projeta para fora (Maxim_ar ligado).
+           1,00 × 1,00 é medida de catálogo (Esquadrivax e Atlântica, docs/arquitetura/esquadrias); 1,20 e 1,50 de largura seguem a grade da janela de correr
+           (alumínio sob medida). Servem à ventilação: a área que abre sai da geometria (js/esqabertura.js), ≈ 55 % do vão contra ≈ 40 % da de correr. No FIM. */
+        { id: "m1010", nome: "Maxim-ar 1,00 × 1,00", valores: { Largura: 1.00, Altura: 1.00, Maxim_ar: true } },
+        { id: "m1210", nome: "Maxim-ar 1,20 × 1,00", valores: { Largura: 1.20, Altura: 1.00, Maxim_ar: true } },
+        { id: "m1510", nome: "Maxim-ar 1,50 × 1,00", valores: { Largura: 1.50, Altura: 1.00, Maxim_ar: true } }
       ],
       abertura: { largura: "Largura", altura: "Altura", peitoril: "Peitoril" },
       solidos: [

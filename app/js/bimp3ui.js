@@ -1150,7 +1150,7 @@
       var s = (t.sobrepor || {})[o.id] || {}, ops = E.opcoesSecao(o), aco = o.mat === "aco";
       var atual = aco ? o.perfil : (o.secao || null), autoTxt = o.auto ? (o.auto.perfil || (n2(o.auto.w * 100, 0) + "×" + n2(o.auto.h * 100, 0) + " cm")) : (o.perfil || (n2(o.w * 100, 0) + "×" + n2(o.h * 100, 0) + " cm"));
       var opc = [{ id: "", rotulo: "Automático (" + autoTxt + ")" }].concat(ops);
-      var dl = s.desloc || {}, ex = s.ext || {};
+      var dl = o.deslocEf ? { x: o.deslocEf[0], y: o.deslocEf[1], z: o.deslocEf[2] } : (s.desloc || {}), ex = s.ext || {};   /* deslocamento EFETIVO (na água refeita pela inclinação nova), não o x/y/z gravado no arrasto */
       var massa = null; try { var PA = global.PerfisAco, inf = aco && PA ? PA.obter(o.perfil) : null; massa = inf && isFinite(inf.massa) ? inf.massa * o.L : null; } catch (eM) {}
       var secoes = [
         { nome: "Peça do telhado", params: [
@@ -1514,6 +1514,24 @@
     if (!passo || (ev && ev.altKey)) return { x: p[0], y: p[1] };
     return { x: r4(Math.round(p[0] / passo) * passo), y: r4(Math.round(p[1] / passo) * passo) };
   }
+  /* a caixa da construção (planta: min/max x,y,z) — o que a elevação externa olha */
+  function caixaModelo() { try { var b = global.BIM, p = b && b.pavimentos2d ? b.pavimentos2d() : null, c = p && p.caixa; return c && c.min && c.max && fin(c.min[0]) && fin(c.max[0]) && fin(c.min[2]) && fin(c.max[2]) ? c : null; } catch (e) { return null; } }
+  /* REVISOR (21/10/2026): a caixa do modelo inteiro leva junto o TERRENO, a sondagem e os IFCs federados — com o lote
+     modelado, a elevação externa fica DENTRO da caixa (o começo voltava a 0, no ar) ou o telhado nascia na divisa do lote.
+     O que o telhado cobre são as PAREDES do editor: os 4 cantos de cada uma (planta x/z), com a espessura. */
+  function cantosParedes() {
+    var out = [];
+    try {
+      var b = global.BIM, e = b && b.editarEstado ? b.editarEstado() : null, st = e && e.estado;
+      arr(st && st.caixas).forEach(function (c) {
+        if (!c || c.tipo !== "parede" || !fin(c.cx) || !fin(c.cz) || !fin(c.comprimento) || !(c.comprimento > 0) || !fin(c.rotY)) return;
+        var ux = Math.cos(c.rotY), uz = -Math.sin(c.rotY), h = c.comprimento / 2, t = (fin(c.espessura) && c.espessura > 0 ? c.espessura : 0) / 2;
+        out.push([[c.cx - ux * h - uz * t, c.cz - uz * h + ux * t], [c.cx + ux * h - uz * t, c.cz + uz * h + ux * t],
+                  [c.cx + ux * h + uz * t, c.cz + uz * h - ux * t], [c.cx - ux * h + uz * t, c.cz - uz * h - ux * t]]);
+      });
+    } catch (eP) { return []; }
+    return out;
+  }
   function sincronizado() {
     /* o desenho do telhado no 3D foi zerado por fora (trocou de ferramenta, Esc, concluiu): esquece o do corte */
     var m = M3(), e = m && m.estado ? m.estado() : null;
@@ -1620,8 +1638,8 @@
     _painel: function () {
       var c = cache(S.id), self = this; if (!c || !c.tela) return;
       var pf = perfilDoCorte(S.def, S.qa, S.qb), Q = quadroCorte(S.def), cfg = P3() ? P3().cfg("telhado") : {};
-      S.fim = fin(cfg.comp) && cfg.comp > 0 ? cfg.comp : (Q && Q.prof ? Q.prof : 5);
-      S.ini = 0;
+      var pd = this.padraoIniFim(S.def, cfg, S.qa && S.qb ? { u0: S.qa.x, u1: S.qb.x } : null);
+      S.ini = pd.ini; S.fim = pd.fim;
       var box = global.document.createElement("div"); box.className = "tcp-painel"; box.setAttribute("data-tcp", "painel"); box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Telhado por corte: começo e fim");
       box.style.cssText = "position:absolute;right:12px;top:12px;z-index:8;background:var(--surface,#fff);color:var(--texto,#1d2733);border:2px solid #14532d;border-radius:8px;padding:10px 12px;font:13px/1.4 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.28);max-width:330px";
       box.innerHTML = '<div style="font-weight:700;margin-bottom:4px">Telhado por corte</div>' +
@@ -1632,7 +1650,7 @@
         '<div style="display:flex;gap:6px"><button type="button" class="btn sm" data-tcp="ok">Criar telhado (Enter)</button><button type="button" class="btn sm" data-tcp="cancelar">Cancelar (Esc)</button></div>';
       c.tela.appendChild(box); S.painel = box;
       var ri = box.querySelector("[data-tcp=resumo]");
-      ri.textContent = n2(pf.inclinacao, 1) + " %  ·  beiral na cota " + n2(pf.cotaBeiral) + " m  ·  cumeeira na cota " + n2(pf.cotaCumeeira) + " m  ·  vão " + n2(pf.vao) + " m";
+      ri.textContent = n2(pf.inclinacao, 1) + " %  ·  beiral na cota " + n2(pf.cotaBeiral) + " m  ·  cumeeira na cota " + n2(pf.cotaCumeeira) + " m  ·  vão " + n2(pf.vao) + " m" + (pd.doModelo ? "  ·  começo e fim propostos pela construção (a vista fica fora dela)" : "");
       var iIni = box.querySelector("[data-tcp=ini]"), iFim = box.querySelector("[data-tcp=fim]");
       iIni.value = n2(S.ini); iFim.value = n2(S.fim);
       ["pointerdown", "mousedown", "click", "dblclick", "wheel"].forEach(function (k) { box.addEventListener(k, function (e) { e.stopPropagation(); }); });
@@ -1647,6 +1665,35 @@
       box.querySelector("[data-tcp=cancelar]").addEventListener("click", function () { self.cancelar(); status("Telhado por corte cancelado."); });
       this._previa3d();
       setTimeout(function () { try { iFim.focus(); iFim.select(); } catch (e) {} }, 0);
+    },
+    /* O começo e o fim PROPOSTOS (distância atrás do plano da vista). Corte que passa dentro da casa: 0 até a profundidade
+       da vista (ou o comprimento do Telhado). Elevação externa: o plano fica FORA da construção (a marca olha para ela de
+       longe), então "0" nascia no ar — o padrão vem do MODELO: onde a construção começa e termina atrás do plano. */
+    /* `faixa` (opcional) = {u0, u1}: o trecho do perfil desenhado, ao longo do corte (x do desenho). Só as paredes que
+       passam nesse trecho contam — a garagem ao lado, fora do perfil, não puxa o começo para longe. Sem paredes do editor
+       (só IFC): a caixa do modelo, como antes. */
+    padraoIniFim: function (def, cfg, faixa) {
+      cfg = cfg || {};
+      var Q = quadroCorte(def), comp = fin(cfg.comp) && cfg.comp > 0 ? cfg.comp : null, fim0 = comp != null ? comp : (Q && Q.prof ? Q.prof : 5);
+      var pts = [];
+      if (Q) {
+        var pars = cantosParedes(), u0 = faixa && fin(faixa.u0) && fin(faixa.u1) ? Math.min(faixa.u0, faixa.u1) - 0.05 : null, u1 = u0 != null ? Math.max(faixa.u0, faixa.u1) + 0.05 : null;
+        var noTrecho = u0 == null ? pars : pars.filter(function (cs) {
+          var a = Infinity, b = -Infinity; cs.forEach(function (p) { var u = (p[0] - Q.ax) * Q.ux + (p[1] - Q.az) * Q.uz; if (u < a) a = u; if (u > b) b = u; });
+          return b >= u0 && a <= u1;
+        });
+        (noTrecho.length ? noTrecho : pars).forEach(function (cs) { cs.forEach(function (p) { pts.push(p); }); });
+        if (!pts.length) { var cx = caixaModelo(); if (cx) [cx.min[0], cx.max[0]].forEach(function (x) { [cx.min[2], cx.max[2]].forEach(function (z) { pts.push([x, z]); }); }); }
+      }
+      if (pts.length) {
+        var t0 = Infinity, t1 = -Infinity;
+        pts.forEach(function (p) { var t = (p[0] - Q.ax) * Q.nx + (p[1] - Q.az) * Q.nz; if (t < t0) t0 = t; if (t > t1) t1 = t; });
+        if (fin(t0) && fin(t1) && t1 - t0 > 0.3 && t0 > 0.05) {        /* o plano da vista está antes da construção */
+          t0 = r4(t0); t1 = r4(t1);
+          return { ini: t0, fim: comp != null ? r4(t0 + comp) : t1, doModelo: true };
+        }
+      }
+      return { ini: 0, fim: fim0, doModelo: false };
     },
     _pontos: function () { return S && S.qb ? pontosDoCorte(S.def, S.w[0], S.w[1], S.ini, S.fim) : null; },
     _previa3d: function () {

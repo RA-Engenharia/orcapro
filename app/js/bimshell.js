@@ -475,6 +475,7 @@
       m.setAttribute("role", "menu");
       m.setAttribute("aria-label", "Disciplina da modelagem");
       dd.lista().forEach(function (d) {
+        if (dd.oculta && dd.oculta(d.id)) return;   /* "Mostrar só o que comprei" (js/testemoduloui.js) */
         var tr = dd.trancada(d.id);
         var o = el("button", "rv-disc-op");
         o.type = "button";

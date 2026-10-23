@@ -32,6 +32,8 @@
   function toast(m, t) { try { if (global.UI && UI.toast) UI.toast(m, t || "ok"); } catch (e) {} }
   function status(t) { try { if (global.BimShell && BimShell.status) BimShell.status(t); } catch (e) {} }
   function baixar(nome, conteudo, tipo) {
+    /* teste de 1 hora (js/testemodulo.js): em teste sai com a marca; vencido não sai (null) */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var w = TesteModulo.marcarArquivo(nome, conteudo, tipo, "marmoraria"); if (!w) return false; nome = w.nome; conteudo = w.dados; }
     var d = global.document, b = conteudo instanceof Blob ? conteudo : new Blob([conteudo], { type: tipo || "application/octet-stream" });
     var a = d.createElement("a"); a.href = URL.createObjectURL(b); a.download = nome; d.body.appendChild(a); a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
@@ -73,11 +75,13 @@
     /* ⚠ a porta de todo comando: liberado → executa; senão recusa e mostra a oferta (nunca executa "só desta vez") */
     porta: function (acao, fn) {
       var M = MOD(), g = M ? M.guarda(acao) : { ok: false, motivo: "módulo não carregado" };   /* sem o js/marmmodulo.js: fecha (antes abria tudo) */
-      if (g.ok) return fn();
+      if (g.ok) { try { if (global.TesteModulo && g.motivo === "teste-1h") TesteModulo.tocar("marmoraria"); } catch (eT) {} return fn(); }
       this.oferta(g);
       return false;
     },
     oferta: function (g) {
+      /* o teste de 1 hora acabou (js/testemodulo.js): a oferta é a dele (o trabalho continua salvo, compra, "não mostrar mais") */
+      if (g && g.teste1h && global.TesteModuloUI) { try { return TesteModuloUI.oferta("marmoraria"); } catch (eT) {} }
       var M = MOD(), O = (g && g.oferta) || (M && M.OFERTA) || {}, self = this;
       var h = '<div style="font-size:13px;line-height:1.5;max-width:560px">' + (g && g.demo ? '<p data-marm-demo style="margin:0 0 10px;padding:8px 10px;border:1px solid #f3c77a;background:#fff8e6;border-radius:6px;color:#7a4b00"><b>Demonstração: exportar está bloqueado.</b> ' + esc(g.motivo) + "</p>" : "") + '<p style="margin:0 0 8px"><b>' + esc(O.subtitulo) + "</b></p><ul style=\"margin:0 0 10px 18px;padding:0\">" +
         arr(O.itens).map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul><p class=\"muted\" style=\"margin:0 0 8px\">" + esc(O.semOrcapro) + "</p>" +
@@ -205,7 +209,10 @@
     orcamentoDoExecutivo: function () { return this.porta("orcamento", this.orcamento.bind(this)); },
     pdf: function () {
       var u = this._ultimo; if (!u) return;
-      var html = MP().htmlImpressao(u.r.folhas, "Executivo de marmoraria", { imprimir: true }), w = global.open("", "_blank");
+      var html = MP().htmlImpressao(u.r.folhas, "Executivo de marmoraria", { imprimir: true });
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+      if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "marmoraria"); if (html == null) return; }
+      var w = global.open("", "_blank");
       if (w && !w.closed) { w.document.open(); w.document.write(html); w.document.close(); } else baixar("Executivo de marmoraria.html", html, "text/html");
     },
     dxf: function () {
@@ -424,7 +431,7 @@
       var self = this;
       this.gerarPdf(function (r) {
         if (!r || !r.ok) { if (r) toast("A proposta não foi gerada: " + r.motivo, "erro"); return; }
-        baixar(nomeArq("Proposta " + r.numero + (r.dados.cliente ? " - " + r.dados.cliente : "")) + ".pdf", new Blob([r.bytes], { type: "application/pdf" }));
+        baixar(nomeArq("Proposta " + r.numero + (r.dados.cliente ? " - " + r.dados.cliente : "")) + ".pdf", r.bytes, "application/pdf");   /* em bytes: o teste de 1 hora marca o PDF por dentro (R7) */
         if (r.placeholders.length) toast("Proposta " + r.numero + " gerada com " + r.placeholders.length + " campo(s) em vermelho para completar: " + r.placeholders.slice(0, 4).join(", ") + (r.placeholders.length > 4 ? "…" : "") + ". Complete em ⚙ Empresa e na Tabela de preços.", "aviso");
         else toast("Proposta " + r.numero + " gerada (" + r.paginas + " páginas, executivo anexo).", "ok");
         try { if (global.Auditoria && Auditoria.registrar) Auditoria.registrar("marmoraria", "proposta", { numero: r.numero, total: r.orc.total }); } catch (e) {}
@@ -457,6 +464,7 @@
       var self = this, args = arguments, cb = typeof args[args.length - 1] === "function" ? args[args.length - 1] : null;
       var M = MOD(), g = M ? M.guarda(nome) : { ok: false, motivo: "módulo não carregado" };
       if (!g.ok) { self.oferta(g); if (cb && nome === "gerarPdf") cb(null); return false; }
+      if (g.motivo === "teste-1h") { try { if (global.TesteModulo) TesteModulo.tocar("marmoraria"); } catch (eT) {} }   /* o relógio do teste de 1 hora anda com o uso */
       /* VITRINE (?demo=1) — decisão do Rogério, 21/10/2026: "demo modela, mas não exporta". Na vitrine modela-se e o
          orçamento aparece NA TELA; proposta (PDF), planilha (.xlsx) e o PDF/DXF do executivo NÃO saem — senão a
          vitrine vira licença grátis (as tabelas ficam salvas no aparelho). Aviso com o teste de 7 dias / contato. */

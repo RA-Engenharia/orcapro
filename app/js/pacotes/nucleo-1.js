@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.175",
+versao: "1.2.176",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -974,6 +974,670 @@ if (typeof document !== "undefined") { try { Modulo.ligar(document); } catch (e)
 if (typeof module !== "undefined" && module.exports) module.exports = Modulo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/testemodulo.js ==== */
+try {
+(function (global) {
+"use strict";
+var MIN = 60000;
+var KEY = "orcapro:teste1h:v1";
+var MAX_DELTA = 15000;
+var TIQUE_MS = 5000;
+var SYNC_MS = 60000;
+var STATUS_MS = 5 * MIN;
+var PADRAO = { ligado: false, minutos: 60, ociosoSegundos: 120, avisosMinutos: [10, 1], substituiTeste7Dias: true,
+aposTeste7Dias: true, offlineHoras: 72, pendenteMax: 5, planos: { orcamento: "anual", gestao: "plus_anual", bim: "bim_anual" } };
+var DISC = ["civil", "estrutura", "hidraulica", "eletrica", "metalica", "marcenaria"];
+var NOME_DISC = { civil: "Arquitetura & Civil", estrutura: "Estrutura", hidraulica: "Hidráulica & Sanitária", eletrica: "Elétrica & Dados", metalica: "Metálica & Mecânica", marcenaria: "Carpintaria & Marcenaria" };
+var MODULOS = [
+{ id: "orcamento", nome: "Orçamentos", area: "orcamento", tipo: "plano",
+oque: "Orçamento com SINAPI, composições, BDI, cronograma e a proposta comercial." },
+{ id: "gestao", nome: "Gestão de Obras", area: "gestao", tipo: "plano",
+oque: "Obras, contratos, medições, financeiro, compras, estoque, diário (RDO), equipe, ponto e frota." },
+{ id: "bim", nome: "BIM", area: "bim", tipo: "plano",
+oque: "Abrir e compatibilizar IFC, conferir interferências e gerar o orçamento do modelo." }
+];
+DISC.forEach(function (d) {
+MODULOS.push({ id: "modela:" + d, nome: "Modela · " + NOME_DISC[d], area: "bim", tipo: "disciplina", disciplina: d,
+oque: "A modelagem da disciplina " + NOME_DISC[d] + " no BIM: as ferramentas da fita, as pranchas e os documentos dela." });
+});
+MODULOS.push({ id: "blocok", nome: "Blocok — paredes prontas", area: "bim", tipo: "extra", extra: "blocok",
+oque: "Paginação das placas, executivo, memorial, orçamento e pranchas do sistema Blocok." });
+MODULOS.push({ id: "marmoraria", nome: "Marmoraria", area: "bim", tipo: "extra", extra: "marmoraria",
+oque: "Bancadas de pedra, executivo, plano de chapa, tabela de preços, orçamento e proposta do marmorista." });
+var POR_ID = {};
+MODULOS.forEach(function (m) { POR_ID[m.id] = m; });
+var IDS = MODULOS.map(function (m) { return m.id; });
+var ENTREGAVEL = /\.(pdf|dxf|ifc|svg|html?|dwg|xlsx|docx|pptx|png|jpe?g|csv)$/i;
+var PREFIXO = "VERSAO DE TESTE - ";
+var TEXTO_MARCA = "Versão de teste";
+function num(x) { x = Number(x); return isFinite(x) ? x : 0; }
+function obj(o) { return (o && typeof o === "object") ? o : {}; }
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function copia(o) { try { return JSON.parse(JSON.stringify(o || {})); } catch (e) { return {}; } }
+var TM = {
+MIN: MIN, KEY: KEY, PADRAO: PADRAO, MODULOS: MODULOS, IDS: IDS, DISC: DISC, MAX_DELTA: MAX_DELTA,
+PREFIXO: PREFIXO, TEXTO_MARCA: TEXTO_MARCA, ENTREGAVEL: ENTREGAVEL,
+modulo: function (id) { return POR_ID[String(id || "")] || null; },
+nome: function (id) { var m = POR_ID[id]; return m ? m.nome : String(id || ""); },
+idDisciplina: function (d) { return d === "marmoraria" || d === "blocok" ? d : (DISC.indexOf(d) >= 0 ? "modela:" + d : ""); },
+cfgDe: function (b) {
+b = obj(b);
+var c = copia(PADRAO);
+c.ligado = b.ligado === true;
+var mi = num(b.minutos); if (mi >= 1 && mi <= 24 * 60) c.minutos = mi;
+var oc = num(b.ociosoSegundos); if (oc >= 30 && oc <= 3600) c.ociosoSegundos = oc;
+if (arr(b.avisosMinutos).length) c.avisosMinutos = arr(b.avisosMinutos).map(num).filter(function (x) { return x > 0 && x < c.minutos; });
+if (b.substituiTeste7Dias === false) c.substituiTeste7Dias = false;
+if (b.aposTeste7Dias === false) c.aposTeste7Dias = false;
+var oh = num(b.offlineHoras); if (oh >= 1 && oh <= 24 * 30) c.offlineHoras = oh;
+var pm = num(b.pendenteMax); if (pm >= 2 && pm <= 240) c.pendenteMax = pm;
+var p = obj(b.planos);
+Object.keys(p).forEach(function (k) { if (/^[a-z0-9_]{2,60}$/.test(String(p[k]))) c.planos[k] = String(p[k]); });
+return c;
+},
+calcular: function (e) {
+e = obj(e);
+var agora = num(e.agora) || Date.now(), cfg = this.cfgDe(e.cfg), cfgEm = num(e.cfgEm);
+var limite = cfg.minutos * MIN, out = { regime: false, pausado: false, motivo: "", cfg: cfg, mods: {} };
+var dir = obj(e.direitos), uso = obj(e.uso), srv = obj(e.srv), fora = obj(e.foraDoTeste), pend = obj(e.pendentes);
+function por(estado) { IDS.forEach(function (id) { out.mods[id] = { estado: estado, usadoMs: 0, restanteMs: limite, limiteMs: limite }; }); }
+if (!cfg.ligado || !cfgEm) { out.motivo = "desligado"; por("fora"); return out; }
+if (e.demo) { out.motivo = "demo"; por("fora"); return out; }
+if (!e.licencaPaga) { out.motivo = "licenca"; por("fora"); return out; }
+out.regime = true;
+out.pausado = cfgEm > agora + MIN || agora > cfgEm + cfg.offlineHoras * 3600000;
+var pv = num(e.pendMaisAntigo);
+if (pv > 0 && pv * MIN < agora - cfg.offlineHoras * 3600000) out.pausado = true;
+IDS.forEach(function (id) {
+var usado = Math.max(num(uso[id]), num(srv[id]) * MIN), rest = Math.max(0, limite - usado), est;
+if (dir[id]) est = "comprado";
+else if (fora[id]) est = "fora";
+else if (e.soComprados) est = "oculto";
+else if (out.pausado) est = "pausado";
+else if (rest > 0 && num(pend[id]) >= cfg.pendenteMax) est = "pausado";
+else est = rest > 0 ? "teste" : "vencido";
+out.mods[id] = { estado: est, usadoMs: usado, restanteMs: rest, limiteMs: limite };
+});
+return out;
+},
+acumular: function (st, ctx) {
+st = st || {}; ctx = obj(ctx);
+var agora = num(ctx.agora) || Date.now(), calc = ctx.calc || { mods: {}, cfg: PADRAO }, cfg = calc.cfg || PADRAO;
+var temTab = Object.prototype.hasOwnProperty.call(ctx, "antTab");
+var ant = temTab ? num(ctx.antTab) : num(st.ultTick), antC = num(st.ultConta), eventos = [];
+st.uso = obj(st.uso); st.srv = obj(st.srv); st.pend = obj(st.pend); st.mins = obj(st.mins);
+st.inicio = obj(st.inicio); st.fim = obj(st.fim); st.avisos = obj(st.avisos);
+st.ultTick = agora;
+if (!calc.regime || calc.pausado) return { st: st, eventos: eventos };
+var desde = Math.max(ant, antC > 0 && antC <= agora ? antC : 0);
+var delta = desde > 0 && agora > desde ? Math.min(agora - desde, MAX_DELTA) : 0;
+var contou = false;
+var ativo = !!ctx.visivel && (agora - num(ctx.ultimaInteracao)) <= cfg.ociosoSegundos * 1000;
+var vistos = {}, limite = cfg.minutos * MIN;
+arr(ctx.ativos).forEach(function (id) {
+if (vistos[id]) return; vistos[id] = 1;
+var m = calc.mods && calc.mods[id];
+if (!m || m.estado !== "teste" || !ativo || !delta) return;
+var base = Math.max(num(st.uso[id]), num(st.srv[id]) * MIN), novo = Math.min(limite, base + delta);
+st.uso[id] = novo; contou = true;
+if (!st.inicio[id]) { st.inicio[id] = agora; eventos.push({ tipo: "inicio", modulo: id }); }
+var feitos = Math.floor(novo / MIN), reg = Math.max(num(st.mins[id]), num(st.srv[id]));
+if (feitos > reg) {
+var p = arr(st.pend[id]).slice(), idx = Math.floor(agora / MIN);
+for (var k = feitos - reg - 1; k >= 0; k--) { var mi = idx - k; if (p.indexOf(mi) < 0) p.push(mi); }
+st.pend[id] = p; st.mins[id] = feitos;
+}
+var rest = limite - novo, av = st.avisos[id] = obj(st.avisos[id]);
+var novos = arr(cfg.avisosMinutos).filter(function (a) { return rest > 0 && rest <= a * MIN && !av[a]; });
+if (novos.length) {
+novos.forEach(function (a) { av[a] = 1; });
+eventos.push({ tipo: "aviso", modulo: id, min: Math.min.apply(null, novos) });
+}
+if (rest <= 0 && !st.fim[id]) { st.fim[id] = agora; eventos.push({ tipo: "fim", modulo: id }); }
+});
+if (contou) st.ultConta = agora;
+return { st: st, eventos: eventos };
+},
+aplicarServidor: function (st, resp, enviados) {
+st = st || {}; st.srv = obj(st.srv); st.mins = obj(st.mins); st.uso = obj(st.uso); st.pend = obj(st.pend);
+var z = obj(resp && resp.zerados);
+st.zeradoVisto = obj(st.zeradoVisto);
+Object.keys(z).forEach(function (id) {
+if (!POR_ID[id] || !(num(z[id]) > num(st.zeradoVisto[id]))) return;
+st.zeradoVisto[id] = num(z[id]);
+delete st.uso[id]; delete st.srv[id]; delete st.mins[id]; delete st.pend[id];
+if (st.inicio) delete st.inicio[id]; if (st.fim) delete st.fim[id]; if (st.avisos) delete st.avisos[id];
+});
+var u = obj(resp && resp.uso);
+Object.keys(u).forEach(function (id) {
+if (!POR_ID[id]) return;
+var m = Math.max(0, Math.floor(num(u[id])));
+if (m > num(st.srv[id])) st.srv[id] = m;
+if (num(st.srv[id]) > num(st.mins[id])) st.mins[id] = num(st.srv[id]);
+if (num(st.srv[id]) * MIN > num(st.uso[id])) st.uso[id] = num(st.srv[id]) * MIN;
+});
+var env = obj(enviados);
+Object.keys(env).forEach(function (id) {
+st.pend[id] = arr(st.pend[id]).filter(function (x) { return arr(env[id]).indexOf(x) < 0; });
+if (!st.pend[id].length) delete st.pend[id];
+});
+return st;
+},
+marcarConteudo: function (nome, dados, mime) {
+nome = String(nome || "arquivo");
+if (nome.indexOf(PREFIXO) === 0) return { nome: nome, dados: dados, ja: true };
+var n2 = PREFIXO + nome, ext = (nome.match(/\.([a-z0-9]+)$/i) || [])[1] || "";
+ext = ext.toLowerCase();
+if (ext === "pdf" && typeof dados !== "string") { var pm = this.marcarPdf(dados); return { nome: n2, dados: pm || dados, soNome: !pm }; }
+if (typeof dados !== "string") return { nome: n2, dados: dados };
+if (dados.indexOf('data-teste-marca="1"') >= 0) return { nome: n2, dados: dados };
+var d = dados, aviso = "VERSAO DE TESTE - OrcaPRO (teste de 1 hora do modulo; compre para tirar a marca)";
+if (ext === "dxf") {
+var nl = d.indexOf("\r\n") >= 0 ? "\r\n" : "\n";
+var lin = d.split(/\r?\n/), x0 = 0, y0 = 0, x1 = 0, h = 1;
+for (var i = 0; i < lin.length - 6; i++) {
+if (/^\s*\$EXTMIN\s*$/.test(lin[i])) { x0 = num(lin[i + 2]); y0 = num(lin[i + 4]); }
+if (/^\s*\$EXTMAX\s*$/.test(lin[i])) { x1 = num(lin[i + 2]); }
+}
+if (x1 > x0) h = Math.max((x1 - x0) * 0.04, 0.01);
+var ent = ["0", "TEXT", "8", "VERSAO_DE_TESTE", "62", "1", "10", String(x0), "20", String(y0), "30", "0", "40", String(Math.round(h * 1000) / 1000), "1", "VERSAO DE TESTE - OrcaPRO"].join(nl) + nl;
+var j = -1;
+for (var k = 0; k < lin.length - 1; k++) { if (/^\s*2\s*$/.test(lin[k]) && /^\s*ENTITIES\s*$/.test(lin[k + 1])) { j = k + 1; break; } }
+if (j >= 0) { lin.splice(j + 1, 0, ent.replace(new RegExp(nl + "$"), "")); d = lin.join(nl); }
+d = "999" + nl + aviso + nl + d;
+return { nome: n2, dados: d };
+}
+if (ext === "ifc" || /^ISO-10303-21;/.test(d)) {
+d = d.replace(/HEADER;/, "HEADER;\n/* " + aviso + " */");
+d = d.replace(/FILE_DESCRIPTION\s*\(\s*\(/, "FILE_DESCRIPTION(('VERSAO DE TESTE - OrcaPRO',");
+return { nome: n2, dados: d };
+}
+if (ext === "svg") {
+var marca = '<text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" font-family="Arial,sans-serif" font-size="64" font-weight="700" fill="#c0392b" fill-opacity="0.22" transform="rotate(-30)" transform-origin="center" data-teste-marca="1">VERSÃO DE TESTE</text>';
+d = d.lastIndexOf("</svg>") >= 0 ? d.slice(0, d.lastIndexOf("</svg>")) + marca + "</svg>" : d;
+return { nome: n2, dados: d };
+}
+if (ext === "html" || ext === "htm") {
+var faixa = '<div data-teste-marca="1" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#c0392b;color:#fff;font:700 12px Arial,sans-serif;text-align:center;padding:3px">VERSÃO DE TESTE — OrçaPRO</div>';
+d = /<body[^>]*>/i.test(d) ? d.replace(/<body[^>]*>/i, function (b) { return b + faixa; }) : faixa + d;
+return { nome: n2, dados: d };
+}
+if (ext === "csv") return { nome: n2, dados: aviso + "\n" + d };
+return { nome: n2, dados: d };
+},
+marcarPdf: function (dados) {
+var u = null;
+try {
+if (typeof ArrayBuffer !== "undefined" && dados instanceof ArrayBuffer) u = new Uint8Array(dados);
+else if (dados && dados.BYTES_PER_ELEMENT === 1 && typeof dados.subarray === "function") u = dados;
+} catch (e0) { u = null; }
+if (!u || u.length < 40) return null;
+try {
+var s = "";
+for (var i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, Math.min(u.length, i + 8192)));
+if (!/^%PDF-1\.\d/.test(s)) return null;
+var sx = /startxref\s+(\d+)\s+%%EOF\s*$/.exec(s), it = s.lastIndexOf("trailer");
+if (!sx || it < 0) return null;
+var tr = s.slice(it, sx.index), tSize = /\/Size\s+(\d+)/.exec(tr), tRoot = /\/Root\s+(\d+\s+\d+\s+R)/.exec(tr), tInfo = /\/Info\s+(\d+\s+\d+\s+R)/.exec(tr);
+if (!tSize || !tRoot) return null;
+var objs = {}, re = /(\d+)\s+0\s+obj\b([\s\S]*?)endobj/g, m;
+while ((m = re.exec(s))) objs[m[1]] = m[2];
+var pags = Object.keys(objs).filter(function (k) { var b = objs[k]; return /\/Type\s*\/Page(?![A-Za-z])/.test(b) && b.indexOf("stream") < 0; });
+if (!pags.length) return null;
+var prox = Math.floor(num(tSize[1])), nF = prox++, nG = prox++, nQ = prox++, novos = [], falhou = false;
+novos.push([nF, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"]);
+novos.push([nG, "<< /Type /ExtGState /ca 0.16 /CA 0.16 >>"]);
+novos.push([nQ, "<< /Length 1 >>\nstream\nq\nendstream"]);
+var r2 = function (v) { return String(Math.round(v * 100) / 100); };
+pags.forEach(function (k) {
+if (falhou) return;
+var b = objs[k].replace(/^\s+|\s+$/g, "");
+var mb = /\/MediaBox\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]/.exec(b);
+var x0 = mb ? num(mb[1]) : 0, y0 = mb ? num(mb[2]) : 0, x1 = mb ? num(mb[3]) : 595, y1 = mb ? num(mb[4]) : 842, w = x1 - x0, h = y1 - y0;
+if (!(w > 0 && h > 0) || /\/Font\s+\d+\s+\d+\s+R/.test(b) || /\/ExtGState\s+\d+\s+\d+\s+R/.test(b)) { falhou = true; return; }
+var ri = b.search(/\/Resources\s*<</); if (ri < 0) { falhou = true; return; }
+var ang = Math.atan2(h, w), co = Math.cos(ang), si = Math.sin(ang), S = Math.sqrt(w * w + h * h) * 0.62 / 9.391, tw = S * 9.391;
+var ex = x0 + w / 2 - (tw / 2) * co + (S * 0.35) * si, ey = y0 + h / 2 - (tw / 2) * si - (S * 0.35) * co, corpo = Math.max(5, Math.min(9, w / 70));
+var cont = "Q\nq /GSvt gs 0.75 0.11 0.11 rg BT /FVt " + r2(S) + " Tf " + r2(co) + " " + r2(si) + " " + r2(-si) + " " + r2(co) + " " + r2(ex) + " " + r2(ey) + " Tm (VERS\xc3O DE TESTE) Tj ET Q\n" +
+"q 0.75 0.11 0.11 rg BT /FVt " + r2(corpo) + " Tf 1 0 0 1 " + r2(x0 + 8) + " " + r2(y1 - corpo - 4) + " Tm (VERS\xc3O DE TESTE - Or\xe7aPRO - teste de 1 hora do m\xf3dulo; compre para tirar a marca) Tj ET Q";
+var nW = prox++;
+novos.push([nW, "<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream"]);
+var cRef = /\/Contents\s+(\d+\s+\d+\s+R)/.exec(b), cArr = /\/Contents\s*\[([^\]]*)\]/.exec(b);
+if (cRef) b = b.replace(cRef[0], "/Contents [" + nQ + " 0 R " + cRef[1] + " " + nW + " 0 R]");
+else if (cArr) b = b.replace(cArr[0], "/Contents [" + nQ + " 0 R " + cArr[1] + " " + nW + " 0 R]");
+else { falhou = true; return; }
+ri = b.search(/\/Resources\s*<</);
+var abre = b.indexOf("<<", ri) + 2, resto = b.slice(abre);
+resto = /\/Font\s*<</.test(resto) ? resto.replace(/\/Font\s*<</, "/Font << /FVt " + nF + " 0 R") : " /Font << /FVt " + nF + " 0 R >>" + resto;
+resto = /\/ExtGState\s*<</.test(resto) ? resto.replace(/\/ExtGState\s*<</, "/ExtGState << /GSvt " + nG + " 0 R") : " /ExtGState << /GSvt " + nG + " 0 R >>" + resto;
+novos.push([Math.floor(num(k)), b.slice(0, abre) + resto]);
+});
+if (falhou) return null;
+var base = u.length, app = s.charAt(s.length - 1) === "\n" ? "" : "\n", offs = [];
+novos.forEach(function (o) { offs.push([o[0], base + app.length]); app += o[0] + " 0 obj\n" + o[1] + "\nendobj\n"; });
+var xr = base + app.length;
+app += "xref\n";
+offs.sort(function (a, b2) { return a[0] - b2[0]; }).forEach(function (o) { app += o[0] + " 1\n" + ("0000000000" + o[1]).slice(-10) + " 00000 n \n"; });
+app += "trailer\n<< /Size " + prox + " /Root " + tRoot[1] + (tInfo ? " /Info " + tInfo[1] : "") + " /Prev " + sx[1] + " >>\nstartxref\n" + xr + "\n%%EOF\n";
+var out = new Uint8Array(base + app.length); out.set(u, 0);
+for (var j = 0; j < app.length; j++) out[base + j] = app.charCodeAt(j) & 255;
+return out;
+} catch (e) { return null; }
+},
+marcarZip: function (nome, dados) {
+var n2 = String(nome).indexOf(PREFIXO) === 0 ? String(nome) : PREFIXO + nome, Z = global.BimBcf, self = this, u = null;
+try { u = (dados && dados.BYTES_PER_ELEMENT === 1) ? dados : ((typeof ArrayBuffer !== "undefined" && dados instanceof ArrayBuffer) ? new Uint8Array(dados) : null); } catch (e0) { u = null; }
+if (!u || !Z || !Z.zipEscrever || typeof TextDecoder === "undefined") return { nome: n2, dados: dados };
+try {
+var r16 = function (p) { return u[p] | (u[p + 1] << 8); }, r32 = function (p) { return (u[p] | (u[p + 1] << 8) | (u[p + 2] << 16)) + u[p + 3] * 16777216; };
+var fim = -1; for (var i = u.length - 22; i >= 0 && i > u.length - 66000; i--) if (r32(i) === 0x06054b50) { fim = i; break; }
+if (fim < 0) return { nome: n2, dados: dados };
+var n = r16(fim + 10), p = r32(fim + 16), saida = {}, dec = new TextDecoder("utf-8");
+for (var k = 0; k < n; k++) {
+if (r32(p) !== 0x02014b50) return { nome: n2, dados: dados };
+var metodo = r16(p + 10), cs = r32(p + 20), nl = r16(p + 28), el = r16(p + 30), cl = r16(p + 32), off = r32(p + 42);
+var en = dec.decode(u.subarray(p + 46, p + 46 + nl));
+p += 46 + nl + el + cl;
+if (metodo !== 0 || r32(off) !== 0x04034b50) return { nome: n2, dados: dados };
+var ini = off + 30 + r16(off + 26) + r16(off + 28), bruto = u.subarray(ini, ini + cs), ext = ((en.match(/\.([a-z0-9]+)$/i) || [])[1] || "").toLowerCase();
+if (/^(dxf|svg|html?|csv|ifc)$/.test(ext)) saida[en] = self.marcarConteudo(en, dec.decode(bruto)).dados;
+else if (ext === "pdf") saida[en] = self.marcarPdf(bruto.slice(0)) || bruto.slice(0);
+else saida[en] = bruto.slice(0);
+}
+return { nome: n2, dados: Z.zipEscrever(saida) };
+} catch (e) { return { nome: n2, dados: dados }; }
+},
+marcarHtml: function (html, modulo) {
+var r = this.marcarArquivo("documento.html", String(html == null ? "" : html), "text/html", modulo || "");
+return r ? r.dados : null;
+},
+_ultimaInteracao: 0,
+_ler: function () { try { return JSON.parse(global.localStorage.getItem(KEY) || "null") || {}; } catch (e) { return {}; } },
+_gravar: function (st) { this._memo = null; try { global.localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} },
+_lic: function () { return global.Licenca || null; },
+_chaveRef: function () { var L = this._lic(); try { var k = (L && L.chave && L.chave()) || ""; return k ? k.slice(-16) : ""; } catch (e) { return ""; } },
+_estado: function () {
+var st = this._ler(), ref = this._chaveRef();
+if (String(st.chaveRef || "") !== ref) st = { chaveRef: ref };
+return st;
+},
+_demo: function () {
+try { if (/[?&]demo=1\b/.test((global.location && global.location.search) || "")) return true; } catch (e) {}
+try { return !!(global.App && global.App._demo); } catch (e2) { return false; }
+},
+licencaPaga: function () {
+var L = this._lic(); if (!L || !L.status) return false;
+try { var s = L.status() || {}; return !!(s.ativo && !s.trial && !s.suspensa && !s.expirada && L.chave && L.chave()); } catch (e) { return false; }
+},
+_direitos: function () {
+var d = {}, G = global.Gestao, M = global.Modela, L = this._lic(), so = false, gest = false, base = null;
+try { so = !!(L && L.soModela && L.soModela()); } catch (e0) {}
+try { gest = !!(G && (G.podeGestaoComprada ? G.podeGestaoComprada() : (G.podeGestao && G.podeGestao()))); } catch (e1) {}
+try { base = M && M.statusBase ? M.statusBase() : null; } catch (e2) { base = null; }
+d.orcamento = !so;
+d.gestao = gest;
+var modelaAlgo = !!(base && base.liberado);
+DISC.forEach(function (x) { d["modela:" + x] = !!(base && base.liberado && arr(base.disciplinas).indexOf(x) >= 0); });
+var dono = function (k) { try { return global.localStorage.getItem(k) === "1"; } catch (e) { return false; } };
+d.blocok = dono("orcapro:blocok:owner") || !!(base && base.extras && base.extras.blocok) || this._blocokEmail();
+d.marmoraria = dono("orcapro:marmoraria:owner") || !!(base && base.extras && base.extras.marmoraria);
+d.bim = so || gest || modelaAlgo || d.blocok || d.marmoraria;
+return d;
+},
+_blocokEmail: function () {
+try {
+if (typeof global.blocokEmailLiberado !== "function") return false;
+var r = [];
+try { var A = global.Auth; if (A && A.usuario && A.usuario() && A.usuario().email) r.push(A.usuario().email); } catch (e) {}
+try { var N = global.Nuvem; if (N && N.auth && N.auth.currentUser && N.auth.currentUser.email) r.push(N.auth.currentUser.email); } catch (e) {}
+return r.some(function (m) { return global.blocokEmailLiberado(m); });
+} catch (e2) { return false; }
+},
+_foraDoTeste: function (cfg) {
+var f = {}, M = global.Modela, enc = false;
+try { var s = M && M.statusBase ? M.statusBase() : null; enc = !!(s && s.teste && s.teste.encerrado); } catch (e) {}
+if (!cfg.substituiTeste7Dias || (!cfg.aposTeste7Dias && enc)) {
+DISC.forEach(function (x) { f["modela:" + x] = true; }); f.blocok = true; f.marmoraria = true;
+}
+return f;
+},
+regimeInfo: function () {
+var st = this._estado(), cfg = this.cfgDe(st.cfg), agora = Date.now();
+var regime = !!(cfg.ligado && st.cfgEm && !this._demo() && this.licencaPaga());
+var pausado = regime && (num(st.cfgEm) > agora + MIN || agora > num(st.cfgEm) + cfg.offlineHoras * 3600000);
+return { regime: regime, pausado: pausado, substitui: cfg.substituiTeste7Dias, aposTeste7: cfg.aposTeste7Dias, cfg: cfg };
+},
+_pendentes: function (st) { var o = {}, p = obj(st && st.pend); Object.keys(p).forEach(function (id) { o[id] = arr(p[id]).length; }); return o; },
+_pendMaisAntigo: function (st) {
+var m = 0, p = obj(st && st.pend);
+Object.keys(p).forEach(function (id) { arr(p[id]).forEach(function (x) { x = num(x); if (x > 0 && (!m || x < m)) m = x; }); });
+return m;
+},
+soComprados: function () {
+var P = this._pref(); return !!(P && P.ler && P.ler());
+},
+_pref: function () { return global.TesteModuloPref || null; },
+_memo: null,
+status: function () {
+var t = Date.now(), m = this._memo;
+if (m && t - m.t < 1000 && t >= m.t) return m.s;
+if (this._dentro) return this.calcular({ agora: t, cfg: null, cfgEm: 0 });
+var st = this._estado(), cfg = this.cfgDe(st.cfg), ri = this.regimeInfo(), s;
+this._dentro = true;
+try {
+if (!ri.regime) s = this.calcular({ agora: t, cfg: st.cfg, cfgEm: st.cfgEm, demo: this._demo(), licencaPaga: this.licencaPaga() });
+else s = this.calcular({ agora: t, cfg: st.cfg, cfgEm: st.cfgEm, demo: false, licencaPaga: true, uso: st.uso, srv: st.srv, pendMaisAntigo: this._pendMaisAntigo(st), pendentes: this._pendentes(st),
+direitos: this._direitos(), soComprados: this.soComprados(), foraDoTeste: this._foraDoTeste(cfg) });
+} finally { this._dentro = false; }
+this._memo = { t: t, s: s };
+return s;
+},
+estado: function (id) { var m = this.status().mods[id]; return m ? m.estado : "fora"; },
+info: function (id) { return this.status().mods[id] || null; },
+liberado: function (id) { var e = this.estado(id); return e === "comprado" || e === "teste"; },
+visivel: function (id) { var e = this.estado(id); return e === "comprado" || e === "teste" || e === "vencido" || e === "pausado"; },
+emTeste: function (id) { return this.estado(id) === "teste"; },
+bloqueado: function (id) { var e = this.estado(id); return e === "vencido" || e === "pausado"; },
+estadosModela: function () {
+var s = this.status(), o = {};
+DISC.forEach(function (d) { o[d] = (s.mods["modela:" + d] || {}).estado || "fora"; });
+o.blocok = (s.mods.blocok || {}).estado || "fora";
+o.marmoraria = (s.mods.marmoraria || {}).estado || "fora";
+return o;
+},
+moduloDaView: function (view) {
+view = String(view || "");
+if (!view) return "";
+if (view === "orcamentos") return "orcamento";
+if (view === "bim") return "bim";
+if (view === "ajuda") return "";
+return "gestao";
+},
+_view: function () {
+var A = global.App; if (!A || A.tela === "login") return "";
+try { return A.view || (A.viewPadrao ? A.viewPadrao() : "orcamentos"); } catch (e) { return A.view || ""; }
+},
+moduloDaTela: function () { return this.moduloDaView(this._view()); },
+_tocados: {},
+tocar: function (id) { if (POR_ID[id]) this._tocados[id] = Date.now(); },
+ativos: function () {
+var mod = this.moduloDaTela(), out = [];
+if (!mod) return out;
+if (mod !== "bim") { out.push(mod); return out; }
+var s = this.status(), cfg = s.cfg, agora = Date.now(), self = this, modelaAtivo = false;
+try {
+var D = global.BimDisciplinas, d = D && D.atual ? D.atual() : "";
+var idD = this.idDisciplina(d);
+if (idD) out.push(idD);
+} catch (e) {}
+Object.keys(this._tocados).forEach(function (id) { if (agora - self._tocados[id] <= cfg.ociosoSegundos * 1000 && out.indexOf(id) < 0) out.push(id); });
+out.forEach(function (id) { if (id !== "bim" && s.mods[id] && s.mods[id].estado === "teste") modelaAtivo = true; });
+if (!modelaAtivo) out.unshift("bim");
+return out;
+},
+marcaAtiva: function (area) {
+var s = this.status(); if (!s.regime) return false;
+area = area || ((this.modulo(this.moduloDaTela()) || {}).area || "");
+if (!area) return false;
+var base = s.mods[area];
+if (base && base.estado === "comprado") {
+var at = []; try { at = this.ativos(); } catch (eA) { at = []; }
+return MODULOS.some(function (m) {
+var x = s.mods[m.id];
+return m.area === area && m.id !== area && x && x.estado === "teste" && x.usadoMs > 0 && at.indexOf(m.id) >= 0;
+});
+}
+return MODULOS.some(function (m) {
+var x = s.mods[m.id];
+return m.area === area && x && (x.estado === "teste" || x.estado === "vencido") && x.usadoMs > 0;
+});
+},
+bloqueiaTela: function () {
+var mod = this.moduloDaTela(); if (!mod || !this.bloqueado(mod)) return "";
+if (mod === "bim") {
+var s = this.status(), algum = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && s.mods[m.id] && (s.mods[m.id].estado === "teste" || s.mods[m.id].estado === "comprado"); });
+if (algum) return "";
+}
+return mod;
+},
+_oferta: function (id, motivo) {
+try { if (global.TesteModuloUI && TesteModuloUI.oferta) { TesteModuloUI.oferta(id, motivo); return true; } } catch (e) {}
+try { if (global.UI && UI.toast) UI.toast(motivo || ("O teste de " + this.nome(id) + " terminou."), "erro"); } catch (e2) {}
+return false;
+},
+_abaDe: function (cmdId) {
+var R = global.BimRibbon; if (!R || !R.ABAS) return "";
+for (var i = 0; i < R.ABAS.length; i++) {
+var ps = arr(R.ABAS[i].paineis);
+for (var j = 0; j < ps.length; j++) {
+var cs = arr(ps[j].comandos);
+for (var k = 0; k < cs.length; k++) {
+if (cs[k].id === cmdId) return R.ABAS[i].id;
+var its = arr(cs[k].itens);
+for (var m = 0; m < its.length; m++) if (its[m].id === cmdId) return R.ABAS[i].id;
+}
+}
+}
+return "";
+},
+EDITA_MODELO: (function () {
+var o = {};
+["mover-preciso", "copiar", "espelhar", "girar", "matriz", "alinhar", "deslocamento", "aparar-canto", "aparar-varios", "dividir-elemento",
+"fixar", "desafixar", "criar-similar", "escala", "elevar", "demolir", "criar-grupo", "colar-niveis", "editar-grupo", "desagrupar",
+"extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar", "editar-tipo", "combinar", "componente", "eixo"].forEach(function (k) { o[k] = 1; });
+return o;
+})(),
+CMD_MODULO: { "blocok-exec": "blocok", "blocok-pecas": "blocok", "blocok-docs": "blocok" },
+modulosDoComando: function (cmdId) {
+if (this.CMD_MODULO[cmdId]) return { aba: this._abaDe(cmdId), mods: [this.CMD_MODULO[cmdId]] };
+var D = global.BimDisciplinas, aba = this._abaDe(cmdId), de = null, self = this;
+try { de = D && D.disciplinasDe ? D.disciplinasDe(cmdId, aba) : null; } catch (e) { de = null; }
+var mods = (de && de !== "comum" && arr(de).length) ? arr(de).map(function (x) { return self.idDisciplina(x); }).filter(Boolean) : [];
+return { aba: aba, mods: mods };
+},
+guardaComando: function (cmdId, opts) {
+opts = opts || {};
+var s = this.status(); if (!s.regime) return { ok: true };
+var dc = this.modulosDoComando(cmdId), self = this;
+var est = function (id) { return (s.mods[id] || {}).estado || "fora"; };
+var livre = function (id) { var e = est(id); return e === "comprado" || e === "teste" || e === "fora"; };
+function recusa(id) {
+var m = est(id) === "pausado" ? "O teste de " + self.nome(id) + " está pausado: conecte à internet para continuar."
+: (est(id) === "oculto" ? self.nome(id) + " não faz parte das suas compras (você escolheu mostrar só o que comprou)."
+: "O teste de 1 hora de " + self.nome(id) + " terminou. O que você fez continua salvo; para editar e exportar, compre o módulo.");
+if (opts.mostrar !== false) self._oferta(id, m);
+return { ok: false, modulo: id, motivo: m };
+}
+if (dc.mods.length) {
+if (dc.mods.some(function (id) { return est(id) === "comprado" || est(id) === "fora"; })) return { ok: true };
+var emT = dc.mods.filter(function (id) { return est(id) === "teste"; });
+if (emT.length) {
+var atual = ""; try { atual = this.idDisciplina(global.BimDisciplinas.atual()); } catch (e) {}
+this.tocar(emT.indexOf(atual) >= 0 ? atual : emT[0]);
+return { ok: true };
+}
+return recusa(dc.mods[0]);
+}
+var algum = MODULOS.some(function (m) { return m.area === "bim" && livre(m.id) && est(m.id) !== "fora"; }) || est("bim") === "fora";
+if (algum && this.EDITA_MODELO[cmdId]) {
+var modLivre = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "comprado" || est(m.id) === "teste" || est(m.id) === "fora"); });
+if (!modLivre) {
+var alvoM = MODULOS.filter(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "vencido" || est(m.id) === "pausado"); })[0];
+if (alvoM) return recusa(alvoM.id);
+}
+}
+if (algum || dc.aba === "vista") return { ok: true };
+var alvo = ["bim"].concat(MODULOS.filter(function (m) { return m.area === "bim"; }).map(function (m) { return m.id; }))
+.filter(function (id) { return est(id) === "vencido" || est(id) === "pausado"; })[0] || "bim";
+return recusa(alvo);
+},
+OPS_CLASSICAS: { criar: 1, apagar: 1, mover: 1, renomear: 1, orcar: 1 },
+travaEdicao: function () {
+var s = this.status(); if (!s.regime || this.moduloDaTela() !== "bim") return null;
+var est = function (id) { return (s.mods[id] || {}).estado || "fora"; };
+var tela = this.bloqueiaTela();
+if (tela) return { modulo: tela, classicas: false };
+var livre = MODULOS.some(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "comprado" || e === "teste" || e === "fora"); });
+if (livre) return null;
+var alvo = MODULOS.filter(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "vencido" || e === "pausado"); })[0];
+return alvo ? { modulo: alvo.id, classicas: true } : null;
+},
+guardaEdicao: function (novas, opts) {
+opts = opts || {};
+var tr = this.travaEdicao(); if (!tr) return { ok: true };
+novas = arr(novas); if (!novas.length) return { ok: true };
+var self = this;
+if (tr.classicas && novas.every(function (o) { return !!(o && self.OPS_CLASSICAS[o.op]); })) return { ok: true };
+var e = this.estado(tr.modulo);
+var m = e === "pausado" ? "O teste de " + this.nome(tr.modulo) + " está pausado: conecte à internet para continuar. A edição foi desfeita; nada foi gravado."
+: "O teste de 1 hora de " + this.nome(tr.modulo) + " terminou: a edição foi desfeita e nada foi gravado. O que você já fez continua salvo; para editar, compre o módulo.";
+if (opts.mostrar !== false) this._oferta(tr.modulo, m);
+return { ok: false, modulo: tr.modulo, motivo: m };
+},
+guardaGravacao: function () { var s = this.status(); if (!s.regime) return ""; return this.bloqueiaTela(); },
+marcarArquivo: function (nome, dados, mime, modulo) {
+nome = String(nome || "");
+var s = this.status();
+var ehZip = !!modulo && /\.zip$/i.test(nome);
+if (!s.regime || !(ENTREGAVEL.test(nome) || ehZip)) return { nome: nome, dados: dados };
+if (modulo) {
+var e = this.estado(modulo);
+if (e === "vencido" || e === "pausado") { this._oferta(modulo, e === "pausado" ? "O teste de " + this.nome(modulo) + " está pausado: conecte à internet." : "O teste de 1 hora de " + this.nome(modulo) + " terminou: o entregável sai depois da compra. O seu trabalho continua salvo."); return null; }
+if (e === "teste") { this._registrar("exportacao", modulo, { arquivo: nome.slice(0, 80) }); return ehZip ? this.marcarZip(nome, dados) : this.marcarConteudo(nome, dados, mime); }
+if (e === "comprado" || e === "fora") { this._liberado = { nome: nome, t: Date.now() }; return { nome: nome, dados: dados }; }
+}
+if (!modulo && this._liberado && this._liberado.nome === nome && Date.now() - this._liberado.t < 3000) return { nome: nome, dados: dados };
+if (!modulo) { var tb = this.guardaGravacao(); if (tb) { this._oferta(tb, "O teste de 1 hora de " + this.nome(tb) + " terminou: o entregável sai depois da compra. O seu trabalho continua salvo."); return null; } }
+if (this.marcaAtiva((this.modulo(modulo) || {}).area || "")) return this.marcarConteudo(nome, dados, mime);
+return { nome: nome, dados: dados };
+},
+_visivel: function () {
+try { var d = global.document; if (d && d.visibilityState && d.visibilityState !== "visible") return false; } catch (e) {}
+return true;
+},
+tique: function () {
+var s = this.status(); if (!s.regime) return null;
+var st = this._estado(), agT = Date.now();
+var r = this.acumular(st, { agora: agT, antTab: num(this._ultTickTab), ativos: this.ativos(), visivel: this._visivel(), ultimaInteracao: this._ultimaInteracao, calc: s });
+this._ultTickTab = agT;
+this._gravar(r.st);
+var self = this;
+r.eventos.forEach(function (ev) { self._evento(ev); });
+try { if (global.TesteModuloUI && TesteModuloUI.pintar) TesteModuloUI.pintar(); } catch (e) {}
+if (Object.keys(r.st.pend || {}).length && Date.now() - num(this._ultSync) >= SYNC_MS) this.sincronizar();
+this._detectarCompra();
+return r;
+},
+_evento: function (ev) {
+this._registrar(ev.tipo, ev.modulo, ev.min ? { min: ev.min } : null);
+try { if (global.TesteModuloUI && TesteModuloUI.aoEvento) TesteModuloUI.aoEvento(ev); } catch (e) {}
+},
+_registrar: function (tipo, modulo, extra) {
+var st = this._estado(), e = { tipo: String(tipo), modulo: String(modulo || ""), em: Date.now() };
+if (extra) e.extra = extra;
+st.log = arr(st.log); st.log.push(e); if (st.log.length > 60) st.log = st.log.slice(-60);
+st.filaEv = arr(st.filaEv); st.filaEv.push(e); if (st.filaEv.length > 100) st.filaEv = st.filaEv.slice(-100);
+this._gravar(st);
+try { if (global.Auditoria && Auditoria.registrar) Auditoria.registrar("teste-modulo", tipo, { modulo: modulo, extra: extra || null }); } catch (eA) {}
+return e;
+},
+_detectarCompra: function () {
+var s = this.status(); if (!s.regime) return;
+var st = this._estado(), mudou = false, self = this;
+st.compra = obj(st.compra);
+IDS.forEach(function (id) {
+var m = s.mods[id];
+if (m && m.estado === "comprado" && (num(st.uso[id]) > 0 || num((st.srv || {})[id]) > 0) && !st.compra[id]) {
+st.compra[id] = Date.now(); mudou = true;
+setTimeout(function () { self._registrar("compra", id, null); }, 0);
+}
+});
+if (mudou) this._gravar(st);
+},
+_servidor: function () { return (typeof global.CONFIG !== "undefined" && global.CONFIG && global.CONFIG.licencaServer) ? String(global.CONFIG.licencaServer).replace(/\/$/, "") : ""; },
+_cab: function (json) {
+var h = {}; if (json) h["Content-Type"] = "application/json";
+var L = this._lic(); try { var k = L && L.chave ? L.chave() : ""; if (k) h["x-licenca"] = k; } catch (e) {}
+return h;
+},
+_device: function () { var L = this._lic(); try { return (L && L.deviceId && L.deviceId()) || ""; } catch (e) { return ""; } },
+_aplicarStatus: function (d) {
+if (!d || d.ok !== true) return false;
+var st = this._estado();
+st.cfg = obj(d.cfg); st.cfgEm = Date.now();
+this.aplicarServidor(st, d, null);
+this._gravar(st);
+return true;
+},
+atualizar: function (cb) {
+cb = cb || function () {};
+var self = this, srv = this._servidor();
+if (!srv || typeof global.fetch === "undefined" || !this.licencaPaga()) { cb({ ok: false, offline: true }); return; }
+try {
+global.fetch(srv + "/api/teste-modulo/status?deviceId=" + encodeURIComponent(this._device()), { headers: this._cab(false), cache: "no-store" })
+.then(function (r) { return r.json(); })
+.then(function (d) { var ok = self._aplicarStatus(d); self._avisarMudanca(); cb({ ok: ok }); }, function () { cb({ ok: false, offline: true }); });
+} catch (e) { cb({ ok: false, offline: true }); }
+},
+sincronizar: function (cb) {
+cb = cb || function () {};
+var self = this, srv = this._servidor();
+this._ultSync = Date.now();
+var st = this._estado(), env = copia(st.pend || {}), evs = arr(st.filaEv).slice();
+if (!srv || typeof global.fetch === "undefined" || (!Object.keys(env).length && !evs.length)) { cb({ ok: false, vazio: true }); return; }
+try {
+global.fetch(srv + "/api/teste-modulo/uso", { method: "POST", headers: this._cab(true), body: JSON.stringify({ deviceId: this._device(), minutos: env, eventos: evs, agora: Date.now() }) })
+.then(function (r) { return r.json(); })
+.then(function (d) {
+if (!d || d.ok !== true) { cb({ ok: false }); return; }
+var s2 = self._estado();
+if (d.cfg) { s2.cfg = obj(d.cfg); s2.cfgEm = Date.now(); }
+self.aplicarServidor(s2, d, env);
+s2.filaEv = arr(s2.filaEv).filter(function (x) { return !evs.some(function (y) { return y.em === x.em && y.tipo === x.tipo && y.modulo === x.modulo; }); });
+self._gravar(s2); self._avisarMudanca();
+cb({ ok: true });
+}, function () { cb({ ok: false, offline: true }); });
+} catch (e) { cb({ ok: false, offline: true }); }
+},
+_antes: "",
+_avisarMudanca: function () {
+this._memo = null;
+try { if (global.Modela) global.Modela._memo = null; if (global.Modela) global.Modela._memoBase = null; } catch (e) {}
+var foto = ""; try { var s = this.status(); foto = JSON.stringify(IDS.map(function (id) { return s.mods[id].estado; })); } catch (e2) {}
+if (foto === this._antes) return false;
+this._antes = foto;
+try { if (typeof global.CustomEvent === "function" && global.dispatchEvent) global.dispatchEvent(new global.CustomEvent("orcapro:teste-modulo", { detail: this.status() })); } catch (e3) {}
+return true;
+},
+redesenhar: function () {
+this._memo = null;
+try { if (global.Modela) { global.Modela._memo = null; global.Modela._memoBase = null; } } catch (e) {}
+this._avisarMudanca();
+try { if (global.App && App.render && App.tela !== "login") App.render(); } catch (e2) {}
+},
+_ligado: false,
+ligar: function () {
+if (this._ligado || typeof window === "undefined" || !global.document) return;
+this._ligado = true;
+var self = this;
+var marcar = function () { self._ultimaInteracao = Date.now(); };
+["pointerdown", "keydown", "wheel", "touchstart", "input"].forEach(function (t) { try { global.document.addEventListener(t, marcar, true); } catch (e) {} });
+var ultMov = 0;
+try { global.document.addEventListener("pointermove", function () { var t = Date.now(); if (t - ultMov > 3000) { ultMov = t; marcar(); } }, true); } catch (e) {}
+try { global.document.addEventListener("visibilitychange", function () { if (global.document.visibilityState === "visible") self.atualizar(); else self.sincronizar(); }); } catch (e) {}
+try { global.addEventListener("pagehide", function () { self.sincronizar(); }); } catch (e) {}
+setInterval(function () { try { self.tique(); } catch (e) {} }, TIQUE_MS);
+setInterval(function () { try { self.atualizar(); } catch (e) {} }, STATUS_MS);
+setTimeout(function () { try { self.atualizar(); } catch (e) {} }, 3000);
+}
+};
+global.TesteModulo = TM;
+try {
+if (typeof window !== "undefined" && global.setTimeout) global.setTimeout(function () { try { TM.ligar(); } catch (e) {} }, 1500);
+} catch (eL) {}
+if (typeof module !== "undefined" && module.exports) module.exports = TM;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/modela.js ==== */
 try {
 (function (global) {
@@ -1028,9 +1692,10 @@ var ini = 0;
 [num(e.testeLocal), c && c.teste ? num(c.teste.inicio) : 0].forEach(function (x) { if (x > 0 && (!ini || x < ini)) ini = x; });
 var fim = ini ? ini + TESTE_MS : 0;
 var rest = ini ? Math.max(0, fim - agora) : TESTE_MS;
+var t1 = e.teste1h && e.teste1h.regime ? e.teste1h : null;
 var teste = {
 inicio: ini, fim: fim,
-disponivel: !ini,
+disponivel: !ini && !(t1 && t1.substitui),
 ativo: !!ini && agora < fim,
 encerrado: !!ini && agora >= fim,
 restanteMs: rest,
@@ -1038,10 +1703,16 @@ dias: Math.ceil(rest / DIA)
 };
 var demo = !!e.demo, play = !!e.play;
 IDS_EXTRAS.forEach(function (id) { if (demo || teste.ativo) extras[id] = true; });
+var est1 = t1 ? (t1.estados || {}) : {}, em1 = {}, venc1 = {};
+if (t1) IDS_EXTRAS.forEach(function (id) {
+if (extras[id]) return;
+if (est1[id] === "teste") { extras[id] = true; em1[id] = 1; }
+else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
+});
 var out = {
 liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
 teste: teste, vitalicia: vitalicia, demo: demo, play: play,
-podeComprar: !play && !demo, compradas: compradas,
+podeComprar: !play && !demo, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
 revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
 Object.keys(c.disciplinas).some(function (k) { return num(c.disciplinas[k]) > agora; }))
 };
@@ -1051,6 +1722,21 @@ if (vitalicia) return tudo("vitalicia");
 if (lista.length === IDS.length) return tudo("compra");
 if (teste.ativo) return tudo("teste");
 if (teste.disponivel) return tudo("teste-disponivel");
+if (t1) {
+IDS.forEach(function (id) {
+if (compradas[id]) return;
+if (est1[id] === "teste") em1[id] = 1;
+else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
+});
+var lib = IDS.filter(function (id) { return !!compradas[id] || !!em1[id]; });
+out.visivel1h = Object.keys(venc1).length > 0;
+if (lib.length) {
+out.liberado = true; out.disciplinas = lib; out.completo = lib.length === IDS.length;
+out.motivo = IDS.some(function (id) { return !!em1[id]; }) ? "teste-1h" : "compra";
+return out;
+}
+if (out.visivel1h) { out.motivo = "teste-1h-encerrado"; return out; }
+}
 if (lista.length) {
 out.liberado = true; out.disciplinas = lista; out.motivo = "compra";
 return out;
@@ -1059,7 +1745,7 @@ if (out.revalidar) out.motivo = "revalidar";
 return out;
 },
 _ler: function () { try { return JSON.parse(global.localStorage.getItem(KEY) || "null") || {}; } catch (e) { return {}; } },
-_gravar: function (o) { this._memo = null; try { global.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
+_gravar: function (o) { this._memo = null; this._memoBase = null; try { global.localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
 _lic: function () { return (typeof global.Licenca !== "undefined" && global.Licenca) ? global.Licenca : null; },
 _chave: function () { var L = this._lic(); try { return (L && L.chave && L.chave()) || ""; } catch (e) { return ""; } },
 _chaveRef: function () { var k = this._chave(); return k ? k.slice(-16) : ""; },
@@ -1075,10 +1761,32 @@ _play: function () {
 try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
 try { return global.document.documentElement.getAttribute("data-origem") === "play"; } catch (e2) { return false; }
 },
-_entrada: function () {
+_entrada: function (semEstados) {
 var l = this._ler();
-return { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
+var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
 chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
+var TM = global.TesteModulo;
+try {
+if (TM && TM.regimeInfo) {
+var ri = TM.regimeInfo();
+if (ri && ri.regime) e.teste1h = { regime: true, substitui: ri.substitui !== false, estados: semEstados ? {} : TM.estadosModela() };
+}
+} catch (eT) {}
+return e;
+},
+_memoBase: null,
+statusBase: function () {
+var t = Date.now(), m = this._memoBase;
+if (m && t - m.t < 1000 && t >= m.t) return m.s;
+var s = this.calcular(this._entrada(true));
+this._memoBase = { t: t, s: s };
+return s;
+},
+oferta: function (id) {
+var k = String(id || "").toLowerCase(), TM = global.TesteModulo, idT = TM && TM.idDisciplina ? TM.idDisciplina(k) : "";
+try { if (idT && TM.status().regime && global.TesteModuloUI) return TesteModuloUI.oferta(idT); } catch (e) {}
+try { if (global.ModelaUI && ModelaUI.abrirAviso) return ModelaUI.abrirAviso(k); } catch (e2) {}
+return false;
 },
 _memo: null,
 status: function () {
@@ -1104,7 +1812,7 @@ return h;
 },
 _aplicar: function (d) {
 if (!d || d.ok !== true) return false;
-this._memo = null;
+this._memo = null; this._memoBase = null;
 var l = this._ler(), antes = JSON.stringify(this.status());
 var dis = {};
 IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
@@ -1203,7 +1911,7 @@ _marm: function () { try { var MM = global.MarmModulo; return !!(MM && MM.libera
 modelador: function () {
 if (!BimPrevia._aparelho()) return false;
 var M = BimPrevia._modela(); if (!M) return true;
-try { return !!M.status().liberado || BimPrevia._marm(); } catch (e) { return true; }
+try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
 },
 HIDRO_OFF: HIDRO_OFF,
 hidro: function () {
@@ -1250,11 +1958,12 @@ if (dono()) return { liberado: true, motivo: "dono", teste: null };
 var m = M(), s = null;
 try { s = m && m.status ? m.status() : null; } catch (e) { s = null; }
 var tem = false; try { tem = !!(m && m.tem(ID)); } catch (e2) { tem = false; }
-if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play) };
+if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play), teste1h: (s && s.vencidos1h && s.vencidos1h[ID]) || "" };
 var mot = "compra", comprado = false;
 try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
 if (s && s.demo) mot = "demo";
 else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
+else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
 return { liberado: true, motivo: mot, teste: s ? s.teste : null };
 },
 liberado: function () { return this.estado().liberado; },
@@ -1262,7 +1971,7 @@ guarda: function (acao) {
 var e = this.estado();
 if (e.liberado) return { ok: true, motivo: e.motivo };
 var t = e.teste || {};
-return { ok: false, acao: acao || "", motivo: "O " + OFERTA.titulo + " não está liberado nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado };
+return { ok: false, acao: acao || "", motivo: "O " + OFERTA.titulo + " não está liberado nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado, teste1h: e.teste1h || "" };
 },
 soMarmoraria: function () {
 var lic = L(), m = M();
@@ -13032,6 +13741,7 @@ html += '<div class="card"><b style="color:#b91c1c">Licença de outro computador
 } else {
 html += '<div class="card"><b style="color:var(--verde,#16a34a)">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
 if (String(st.tier || "").toLowerCase() === "modela") html += '<div class="card" style="margin-top:8px" data-licenca-modela="1"><b>OrçaPRO Modela</b>: esta licença abre o <b>BIM com o modelador</b>, nas disciplinas contratadas. Orçamento, cronograma, compras e gestão fazem parte dos planos do OrçaPRO.</div>';
+try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.cartaoLicenca) html += TesteModuloUI.cartaoLicenca(); } catch (eTm) {}
 var mxU = Number(st.usuariosMax) || 0;
 if (st.tipoLicenca === "equipe") html += '<div class="card" style="margin-top:8px">Licença <b>independente</b>: ' + (mxU > 0
 ? 'você e até ' + mxU + (mxU === 1 ? ' usuário' : ' usuários') + ' da sua empresa, em até ' + (st.dispositivosMax || 3) + ' aparelhos no total.'
@@ -14285,7 +14995,8 @@ return !(Auth.podeObra && !Auth.podeObra(ob.id));
 };
 var info = CronoExecUI.obraDaCadeia(orc, orcs, obras, podeVer);
 info.podeGestao = true;
-info.podeCriar = info.podeEditarObra = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras"));
+info.podeCriar = info.podeEditarObra = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras")) &&
+!(typeof Gestao !== "undefined" && Gestao.podeGestaoLiberada && !(typeof App !== "undefined" && App._demo) && !Gestao.podeGestaoLiberada());
 return info;
 },
 _temEtapaOpcional: function (orc) {
@@ -65361,7 +66072,7 @@ pesoMin: 7.40, pesoMax: 8.51, n: 2 },
 nota: "os 5,18 kg que estavam aqui são da canaleta J de 19 cm; esta peça tem 14 cm. Dimensão diferente não é aproximação." },
 "29-comp-9": { kg: 3.40, fabricante: "JB|Original", metodo: "publicado", confianca: "alta",
 pesoMin: 3.40, pesoMax: 3.40, n: 2,
-nota: "Pavibloco 1,90 descartado: implicaria parede de 10,9 mm, menos da metade do mínimo da NBR 6136." },
+nota: "Pavibloco 1,90 descartado: implicaria parede de 10,9 mm, menos da metade do mínimo de 25 mm da NBR 6136-1:2026 (Tabela 4, 140 × 290)." },
 "29-comp-4": { kg: macico(0.14, 0.19, 0.04), fabricante: "", metodo: "geometrico-macico", confianca: "media",
 formula: "0,14 x 0,19 x 0,04 x 2200 kg/m3 — peça maciça: 4 cm não comportam vazio com parede de 25 mm" },
 "29-meia-alt": { kg: null, fabricante: "", metodo: "sem-fonte", confianca: "nenhuma", n: 0,
@@ -65438,7 +66149,7 @@ return erros;
 var CLASSES = {
 A: { id: "A", fbkMin: 8.0, uso: "Estrutural, acima ou abaixo do nível do solo", limitePav: null },
 B: { id: "B", fbkMin: 4.0, uso: "Estrutural, apenas acima do nível do solo", limitePav: null },
-C: { id: "C", fbkMin: 3.0, uso: "Com ou sem função estrutural", limitePav: { 0.09: 1, 0.115: 2, 0.14: 5, 0.19: 5 } }
+C: { id: "C", fbkMin: 3.0, uso: "Com ou sem função estrutural", limitePav: { 0.065: 0, 0.09: 1, 0.115: 2, 0.14: 5, 0.19: 5 } }
 };
 var ARGAMASSA_SINAPI = [
 { codigo: "89470", familia: "39-14", tecnica: "colher", fbk: 4.5, traco: "1:2:9", m3porM2: 0.0168, pedreiroH: 0.62, serventeH: 0.62 },
@@ -65767,14 +66478,16 @@ validarClasse: function (classe, larguraM, pavimentos, estrutural, abaixoDoSolo)
 var C = CLASSES[String(classe || "").toUpperCase()];
 if (!C) return { ok: false, motivo: "Classe deve ser A, B ou C." };
 if (abaixoDoSolo && C.id !== "A") {
-return { ok: false, motivo: "Abaixo do nível do solo a NBR 6136 exige Classe A." };
+return { ok: false, motivo: "Abaixo do nível do solo a NBR 6136-1:2026 (Tabela 1) só permite a Classe A." };
 }
 if (C.id === "B" && abaixoDoSolo) return { ok: false, motivo: "Classe B só é permitida acima do nível do solo." };
 if (C.id === "C" && estrutural) {
 var lim = C.limitePav[num(larguraM)];
 if (lim == null) return { ok: true, aviso: "Largura fora da tabela de limite da Classe C — confira a norma." };
+var cmL = (Math.round(num(larguraM) * 1000) / 10).toString().replace(".", ",");
+if (lim === 0) return { ok: false, motivo: "Classe C com " + cmL + " cm só serve SEM função estrutural (NBR 6136-1:2026, Tabela 6)." };
 if (num(pavimentos) > lim) {
-return { ok: false, motivo: "Classe C com " + Math.round(num(larguraM) * 100) + " cm suporta no máximo " + lim + " pavimento(s) com função estrutural." };
+return { ok: false, motivo: "Classe C com " + cmL + " cm suporta no máximo " + lim + " pavimento(s) com função estrutural (NBR 6136-1:2026, Tabela 6)." };
 }
 }
 return { ok: true, motivo: "" };
@@ -66810,10 +67523,10 @@ ceramica: { rotulo: "Revestimento cerâmico", e: 15, material: "ceramica", traco
 porcelanato: { rotulo: "Porcelanato", e: 18, material: "porcelanato", traco: "placa 10 mm + argamassa colante AC-III", servico: "Porcelanato", fonte: "prática — placa + colante" }
 },
 NUCLEOS: {
-bloco_concreto_14: { rotulo: "Bloco de concreto 14 cm", e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 14", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
-bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — M15, família 29 (14×19×29)", alv: "bc-M15-29" },
-bloco_concreto_19: { rotulo: "Bloco de concreto 19 cm", e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — família 39, largura 19", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
-bloco_concreto_9: { rotulo: "Bloco de concreto 9 cm", e: 90, familia: null, peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136 — vedação", alv: "bc-M10-ved" },
+bloco_concreto_14: { rotulo: "Bloco de concreto 14 cm", e: 140, familia: "39-14", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136-1:2026 Tabela 2 — família 15 × 40 (39), largura 140 mm", alvPorFuncao: { estrutural: "bc-M15-39", vedacao: "bc-M15-ved" } },
+bloco_concreto_14_29: { rotulo: "Bloco de concreto 14 cm (família 29)", e: 140, familia: "29", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136-1:2026 Tabela 2 — família 15 × 30 (29), 140 × 190 × 290", alv: "bc-M15-29" },
+bloco_concreto_19: { rotulo: "Bloco de concreto 19 cm", e: 190, familia: "39-19", peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136-1:2026 Tabela 2 — família 20 × 40 (39), largura 190 mm", alvPorFuncao: { estrutural: "bc-M20-39", vedacao: "bc-M20-ved" } },
+bloco_concreto_9: { rotulo: "Bloco de concreto 9 cm", e: 90, familia: null, peso: null, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6136-1:2026 Tabelas 2 e 4 — família 10 × 40, largura 90 mm, classe C", alv: "bc-M10-ved" },
 bloco_ceramico_14: { rotulo: "Bloco cerâmico 14 cm", e: 140, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 — alvenaria de bloco cerâmico vazado ≈ 13 kN/m³", alv: "cv-9f-14" },
 bloco_ceramico_9: { rotulo: "Bloco cerâmico 9 cm", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019", alv: "cv-8f-9" },
 cer_8f_9: { rotulo: "Cerâmico 8 furos 9×19×19 (furos na horizontal)", e: 90, familia: null, peso: 1300, unidade: "kg/m3", tipo: "bloco", fonte: "NBR 6120:2019 (bloco cerâmico vazado ≈ 13 kN/m³); peça: SINAPI 7271", alv: "cv-8f-9" },
@@ -67167,26 +67880,28 @@ var JUNTA = 0.010;
 var FONTES = {
 SINAPI: { doc: "SINAPI — Caixa: insumos e composições MG 06/2026, não desonerado (base local data/sinapi-MG-2026-06.json e data/sinapi-MG-analitico.json)",
 url: "https://www.caixa.gov.br/poder-publico/modernizacao-gestao/sinapi/Paginas/default.aspx" },
-NBR15270: { doc: "ABNT NBR 15270-1 — Componentes cerâmicos — Blocos e tijolos para alvenaria — Parte 1: Requisitos (vigente: 15270-1:2023, publicada em 14/12/2023, que cancelou a 2017 — catálogo ABNT consultado em 20/10/2026; valores daqui da 2017: valor da edição anterior — conferir na edição vigente)",
+NBR15270: { doc: "ABNT NBR 15270-1:2023 — Componentes cerâmicos — Blocos e tijolos para alvenaria — Parte 1: Requisitos (publicada em 14/12/2023, cancelou a 2017; valores conferidos no texto em 21/10/2026 — Tabela 2 paredes e resistência, Tabelas 3 e 4 dimensões nominais, itens 5.1 tolerâncias e 5.2 espessuras)",
+exemplarLicenciado: false,
 url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/24627/abnt-nbr15270-1-componentes-ceramicos-blocos-e-tijolos-para-alvenaria-parte-1-requisitos",
-secundaria: { doc: "SUDECAP/PBH — Caderno de encargos cap. 7 (29/08/2024), Tabelas 2 e 4 (NBR 15270-1:2017: tolerância ±5 mm na peça e ±3 mm na média, parede externa ≥ 7 mm, septo ≥ 6 mm, esquadro e planeza ≤ 3 mm)",
+secundaria: { doc: "SUDECAP/PBH — Caderno de encargos cap. 7 (29/08/2024), Tabelas 2 e 4 (NBR 15270-1:2017, edição anterior — a primária 2023 já foi conferida)",
 url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
-nota: "a NBR 7170 (tijolo maciço) foi cancelada em 11/2017 e incorporada à 15270 (CBIC)" },
-NBR6136: { doc: "ABNT NBR 6136:2016 — Blocos vazados de concreto simples para alvenaria (CANCELADA em 27/02/2026 → NBR 6136-1:2026 Requisitos e 6136-2:2026 Métodos de ensaio — catálogo ABNT consultado em 20/10/2026; valores daqui da 2016: valor da edição anterior — conferir na edição vigente)",
+nota: "a NBR 7170 (tijolo maciço) foi cancelada em 11/2017 e incorporada à 15270 (CBIC). 15270-1:2023, item 5.1: tolerância de largura, altura e comprimento VED/BFS ± 5,0 mm individual e ± 3,0 mm na média, EST ± 3,0 mm individual; itens 5.3 e 5.4: esquadro e planeza ≤ 3,0 mm" },
+NBR6136: { doc: "ABNT NBR 6136-1:2026 — Blocos vazados de concreto para alvenaria — Parte 1: Requisitos (1ª edição, 27/02/2026; cancela e substitui a NBR 6136:2016; a Parte 2 é de métodos de ensaio; valores conferidos no texto em 21/10/2026 — Tabela 1 classes, Tabela 2 dimensões nominais, Tabela 3 tolerâncias, Tabela 4 paredes, Tabela 6 resistência e pavimentos)",
+exemplarLicenciado: false,
 url: "https://normas.com.br/visualizar/abnt-nbr-nm/14326/abnt-nbr6136-1-blocos-vazados-de-concreto-para-alvenaria-parte-1-requisitos",
-secundaria: { doc: "SUDECAP/PBH cap. 7, Tabelas 3 e 6 (NBR 6136:2016 Tabela 1 — famílias M-20 a M-7,5, meio, amarração L e T, compensadores 90 e 40 mm; Tabela 2 — paredes: classes A/B 190 = 32/25 mm, 140 = 25/25 mm; classe C 18 mm)",
+secundaria: { doc: "SUDECAP/PBH cap. 7, Tabelas 3 e 6 (NBR 6136:2016, edição anterior — a primária 2026 já foi conferida)",
 url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
-nota: "classes (2016): A ≥ 8 MPa, B 4 a 8 MPa, C ≥ 3 MPa — conferir na 6136-1:2026" },
+nota: "classes (6136-1:2026, Tabela 1): A fbk ≥ 8,0 MPa; B 4,0 ≤ fbk ≤ 6,0 MPa (a Tabela 6 ainda subclassifica amostras B de 6 a 7,9 MPa — texto da norma, conferir); C fbk ≥ 3,0 MPa. Tolerâncias (Tabela 3): largura ± 2,0 mm, altura e comprimento ± 3,0 mm, espessura de parede − 1,0 mm" },
 NBR16868: { doc: "ABNT NBR 16868-1:2020 — Alvenaria estrutural — Parte 1: Projeto (substitui NBR 15961 e NBR 15812)", url: "https://www.abntcatalogo.com.br/" },
 NBR8545: { doc: "ABNT NBR 8545:1984 — Execução de alvenaria sem função estrutural de tijolos e blocos cerâmicos — verga/contraverga 20 cm de cada lado (via js/alvenaria.js)", url: "https://www.abntcatalogo.com.br/" },
 BLOCOS_JS: { doc: "js/blocos.js — família e peso de referência do bloco de concreto (compilação de 6 fabricantes: Tatu, Pavibloco, JB, Original, ArtBlocos, Portital; regra R1–R5 no cabeçalho)", url: null }
 };
 var PAREDE = {
-ceramico_vedacao: { ext: 0.007, septo: 0.006, fonte: "NBR 15270-1:2017 via SUDECAP cap. 7 Tabela 2 — parede externa ≥ 7 mm, septo ≥ 6 mm (o MÍNIMO; conferir a ficha do fornecedor) — valor da edição anterior — conferir na edição vigente (NBR 15270-1:2023)" },
-ceramico_estrutural: { ext: 0.0121, septo: 0.0127, fonte: "FAD 003 (PBQP-H) Tabela 1 — 14×19×29 medido: paredes 12,1 mm, septos 12,7 mm (a norma 2017 pede ≥ 7 e ≥ 6 mm)" },
-concreto_AB: { ext: 0.025, septo: 0.025, fonte: "NBR 6136:2016 — classes A e B, M15: parede longitudinal e transversal ≥ 25 mm (o mesmo mínimo que o js/blocos.js usa na regra R3b) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
-concreto_M20: { ext: 0.032, septo: 0.025, fonte: "NBR 6136:2016 — M20: parede longitudinal ≥ 32 mm, transversal ≥ 25 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
-concreto_C: { ext: 0.018, septo: 0.018, fonte: "NBR 6136:2016 — classe C (vedação): paredes ≥ 18 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" }
+ceramico_vedacao: { ext: 0.007, septo: 0.006, fonte: "NBR 15270-1:2023 Tabela 2 — parede externa ≥ 7 mm (VED15, vazados horizontais; VED40 e EST de vazados verticais: externa ≥ 7 e interna ≥ 6 mm). Septo de 6 mm: a norma vigente NÃO traz mínimo de septo para o VED15 (só a soma das paredes de um corte ≥ 20 mm, item 5.2) — 6 mm é o padrão de geometria, conferir a ficha do fornecedor" },
+ceramico_estrutural: { ext: 0.0121, septo: 0.0127, fonte: "FAD 003 (PBQP-H) Tabela 1 — 14×19×29 medido: paredes 12,1 mm, septos 12,7 mm (NBR 15270-1:2023 Tabela 2, EST de vazados verticais: externa ≥ 7 e interna ≥ 6 mm nas classes EST40 a EST80; ≥ 8 e ≥ 7 mm de EST100 a EST140 — leitura do texto extraído da tabela, conferir)" },
+concreto_AB: { ext: 0.025, septo: 0.025, fonte: "NBR 6136-1:2026 Tabela 4 — classes A e B, 140 × 390 e 140 × 290: parede longitudinal e transversal ≥ 25 mm (o mesmo mínimo que o js/blocos.js usa na regra R3b)" },
+concreto_M20: { ext: 0.032, septo: 0.025, fonte: "NBR 6136-1:2026 Tabela 4 — classes A e B, 190 × 390: parede longitudinal ≥ 32 mm, transversal ≥ 25 mm" },
+concreto_C: { ext: 0.018, septo: 0.018, fonte: "NBR 6136-1:2026 Tabela 4 — classe C (vedação) de 90 a 190 mm de largura: paredes ≥ 18 mm (a de 65 mm pede 15 mm)" }
 };
 function U(o) { return o; }
 var UNIDADES = [
@@ -67197,7 +67912,7 @@ U({ id: "cv-6f-9x14x24", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 fur
 U({ id: "cv-6f-9x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×19×39", l: 0.09, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44457" }),
 U({ id: "cv-6f-11x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×29", l: 0.115, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44460", massa: { kg: 3.61, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "11,5×19×29 = 3,61 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
 U({ id: "cv-6f-11x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×39", l: 0.115, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44461" }),
-U({ id: "cv-8f-9x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×19 (tijolo baiano)", l: 0.09, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, sinapi: "7271", massa: { kg: 2.05, fonte: "FAD 47 (PBQP-H/IPT) Tabela 1 — massa seca 2.049 g", metodo: "publicado" }, parede: { ext: 0.006, septo: 0.006, fonte: "FAD 47 Tabela 1 — paredes 6 mm, septos 6 mm (amostra medida 88×187×189 mm)" }, fontes: [{ doc: "FAD 47 — bloco cerâmico de vedação 9×19×19 (PBQP-H, ensaio IPT)", item: "Tabela 1 e Figura 1 (2 × 4 furos horizontais)", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD-47.pdf" }, { doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×19 = 1,85 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+U({ id: "cv-8f-9x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×19 (tijolo baiano)", l: 0.09, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, sinapi: "7271", massa: { kg: 2.05, fonte: "FAD 47 (PBQP-H/IPT) Tabela 1 — massa seca 2.049 g", metodo: "publicado" }, parede: { ext: 0.006, septo: 0.006, fonte: "FAD 47 Tabela 1 — paredes 6 mm, septos 6 mm (amostra medida 88×187×189 mm; a parede externa de 6 mm fica ABAIXO do mínimo de 7 mm da NBR 15270-1:2023 Tabela 2 — conferir a ficha atual do fornecedor)" }, fontes: [{ doc: "FAD 47 — bloco cerâmico de vedação 9×19×19 (PBQP-H, ensaio IPT)", item: "Tabela 1 e Figura 1 (2 × 4 furos horizontais)", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD-47.pdf" }, { doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×19 = 1,85 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
 U({ id: "cv-8f-9x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×29", l: 0.09, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "7268", massa: { kg: 2.82, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×29 = 2,82 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
 U({ id: "cv-8f-11x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 11,5×19×19 (furos na horizontal)", l: 0.115, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "38783",
 conferir: ["o insumo SINAPI 38783 não diz o número de furos: a grade 2×4 (8 furos) é a do 8 furos de 9 cm — conferir a ficha do fornecedor"] }),
@@ -67261,7 +67976,7 @@ U({ id: "bc-can-19x19x19", grupo: "concreto", nome: "Meia canaleta U 19×19×19"
 U({ id: "bc-19x19x09", grupo: "concreto", nome: "Compensador 19×19×9", l: 0.19, a: 0.19, c: 0.09, alveolos: 1, parede: "concreto_M20", sinapi: null, papel: "compensador", familia: "bc-M20-39", blocos: "39x19-comp-9" }),
 U({ id: "bc-19x19x04", grupo: "concreto", nome: "Compensador 19×19×4 (maciço)", l: 0.19, a: 0.19, c: 0.04, alveolos: 0, parede: "concreto_M20", sinapi: null, papel: "compensador", familia: "bc-M20-39", blocos: "39x19-comp-4" }),
 U({ id: "bc-9x19x39", grupo: "concreto", nome: "Bloco de concreto estrutural 9×19×39", l: 0.09, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "25071", papel: "inteiro", familia: "bc-M10-39",
-conferir: ["NBR 6136:2016: M10 só na classe C (com limite de pavimentos) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026) e a classe do fornecedor"], fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "9×19×39 7,8 kg; meio 4,6", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] })
+conferir: ["NBR 6136-1:2026 Tabelas 4 e 6: bloco de 90 mm só na classe C, até um pavimento — conferir a classe do fornecedor"], fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "9×19×39 7,8 kg; meio 4,6", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] })
 ];
 var FAMILIAS = {
 "cv-8f-9": { rotulo: "Cerâmico 8 furos 9×19×19 (vedação)", funcao: "vedacao", grupo: "ceramico_vedacao", pecas: { inteiro: "cv-8f-9x19x19" }, comp: "103328", espCm: 10 },
@@ -67426,12 +68141,12 @@ ficha: function (id) {
 var u = POR_ID[id]; if (!u) return null;
 var g = geometria(u), m = massaDe(u);
 var fontes = [{ doc: FONTES.SINAPI.doc, item: u.sinapi ? "insumo " + u.sinapi : "sem insumo SINAPI", url: FONTES.SINAPI.url }];
-if (u.grupo === "concreto") fontes.push({ doc: FONTES.NBR6136.doc, item: "família e classe", url: FONTES.NBR6136.url });
-else if (u.grupo !== "tijolo_macico") fontes.push({ doc: FONTES.NBR15270.doc, item: "dimensões, parede e septo", url: FONTES.NBR15270.url });
+if (u.grupo === "concreto") fontes.push({ doc: FONTES.NBR6136.doc, item: "Tabela 2 (dimensões nominais), Tabela 4 (paredes), Tabelas 1 e 6 (classe e pavimentos)", url: FONTES.NBR6136.url });
+else if (u.grupo !== "tijolo_macico") fontes.push({ doc: FONTES.NBR15270.doc, item: "Tabelas 3 e 4 (dimensões nominais), Tabela 2 e item 5.2 (parede e septo)", url: FONTES.NBR15270.url });
 if (u.blocos) fontes.push({ doc: FONTES.BLOCOS_JS.doc, item: u.blocos, url: null });
 var conferir = (u.conferir || []).slice();
-if (u.grupo === "concreto") conferir.push("NBR 6136:2016 (cancelada em 27/02/2026; vigente NBR 6136-1:2026): parede, septo e classe — " + AVISO_EDICAO);
-else if (u.grupo !== "tijolo_macico") conferir.push("NBR 15270-1:2017 (substituída pela 15270-1:2023): parede externa e septo — " + AVISO_EDICAO);
+if (u.parede === "ceramico_vedacao") conferir.push("septo de 6 mm: a NBR 15270-1:2023 não traz mínimo de septo para o VED15 (só a soma das paredes ≥ 20 mm, item 5.2) — padrão de geometria, conferir a ficha do fornecedor");
+if (u.grupo === "tijolo_macico") conferir.push("a medida comercial do tijolo (SINAPI) não é uma das dimensões nominais da Tabela 5 da NBR 15270-1:2023 (largura 90, 115 ou 140 mm; altura 53, 57, 65, 90 ou 115 mm; comprimento 190, 240 ou 290 mm) — conferir a ficha do fornecedor");
 (u.fontes || []).forEach(function (f) { fontes.push(f); });
 return {
 id: u.id, nome: u.nome, grupo: u.grupo,
@@ -74600,6 +75315,7 @@ if (s.motivo === "demo") return "Modela · demonstração";
 if (s.motivo === "vitalicia") return "Modela · completo";
 if (s.motivo === "teste") return "Modela · teste: " + dias(Math.max(1, s.teste.dias));
 if (s.motivo === "teste-disponivel") return "Modela · teste de 7 dias";
+if (s.motivo === "teste-1h") return "Modela · teste de 1 hora";
 if (s.motivo === "compra") {
 if (s.completo) return "Modela · completo";
 if (s.disciplinas.length <= 2) return "Modela · " + s.disciplinas.map(nome).join(" + ");
@@ -74627,8 +75343,11 @@ abre = "A modelagem (paredes, lajes, famílias, instalações, pranchas e render
 linhas.push("<p>" + abre + "</p>");
 var li = (m ? m.DISCIPLINAS : []).map(function (d) {
 var ate = s.compradas && s.compradas[d.id];
-var st = s.completo && s.motivo !== "compra" ? (s.motivo === "teste" ? "no teste" : "liberada")
-: (ate ? "contratada até " + data(ate) : "não contratada");
+var st = s.completo && s.motivo !== "compra" && s.motivo !== "teste-1h" ? (s.motivo === "teste" ? "no teste" : "liberada")
+: ate ? "contratada até " + data(ate)
+: (s.teste1h && s.teste1h[d.id]) ? "em teste (1 hora de uso)"
+: (s.vencidos1h && s.vencidos1h[d.id]) ? (s.vencidos1h[d.id] === "pausado" ? "teste pausado (sem internet)" : "teste de 1 hora encerrado")
+: "não contratada";
 return "<li><b>" + esc(d.nome) + "</b> — " + esc(st) + "</li>";
 }).join("");
 linhas.push("<p style=\"margin-top:10px\">Disciplinas:</p><ul style=\"margin:4px 0 0 18px\">" + li + "</ul>");
@@ -74690,6 +75409,237 @@ return b;
 };
 global.ModelaUI = ModelaUI;
 if (typeof module !== "undefined" && module.exports) module.exports = ModelaUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/testemoduloui.js ==== */
+try {
+(function (global) {
+"use strict";
+var MIN = 60000;
+function TM() { return global.TesteModulo || null; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function minutos(ms) { return Math.ceil(Math.max(0, ms) / MIN) + " min"; }
+function toast(t, k, ms) { try { if (global.UI && UI.toast) UI.toast(t, k || "info", ms); } catch (e) {} }
+function play() {
+try { if (global.document.documentElement.getAttribute("data-origem") === "play") return true; } catch (e) {}
+try { return global.localStorage.getItem("orcapro:origem") === "play"; } catch (e2) { return false; }
+}
+var Pref = {
+_usuario: function () {
+var A = global.Auth, u = null;
+try { u = A && A.usuario ? A.usuario() : null; } catch (e) { u = null; }
+return String((u && (u.usuarioId || u.email)) || "dono").toLowerCase();
+},
+_eid: function () { try { return global.Auth && Auth.empresaId ? Auth.empresaId() : "default"; } catch (e) { return "default"; } },
+ler: function () {
+var S = global.Store; if (!S || !S.lerPrefs) return false;
+try { var p = S.lerPrefs(this._eid()) || {}, t = p.testeModulos || {}, x = t.soComprados ? t.soComprados[this._usuario()] : null; return x === true || !!(x && x.v === true); } catch (e) { return false; }
+},
+gravar: function (ligar) {
+var S = global.Store; if (!S || !S.lerPrefs || !S.salvarPrefs) return false;
+var eid = this._eid(), u = this._usuario();
+try {
+var p = S.lerPrefs(eid) || {};
+p.testeModulos = p.testeModulos || {}; p.testeModulos.soComprados = p.testeModulos.soComprados || {};
+p.testeModulos.soComprados[u] = { v: !!ligar, em: Date.now() };
+S.salvarPrefs(eid, p);
+} catch (e) { return false; }
+var T = TM();
+try { if (T) { T._registrar("preferencia", "", { soComprados: !!ligar }); T.redesenhar(); } } catch (e2) {}
+return true;
+}
+};
+global.TesteModuloPref = Pref;
+var UIT = {
+Pref: Pref,
+rotulo: function (id, info) {
+if (!id || !info) return "";
+if (info.estado === "teste") return "Teste: " + minutos(info.restanteMs);
+if (info.estado === "vencido") return "Teste encerrado · comprar";
+if (info.estado === "pausado") return "Teste pausado · sem internet";
+return "";
+},
+_doSelo: function () {
+var T = TM(); if (!T) return "";
+var s = T.status(); if (!s.regime) return "";
+var ativos = T.ativos();
+for (var i = 0; i < ativos.length; i++) {
+var m = s.mods[ativos[i]];
+if (m && (m.estado === "teste" || m.estado === "vencido" || m.estado === "pausado")) return ativos[i];
+}
+return "";
+},
+_css: function () {
+var d = global.document; if (!d || d.getElementById("teste-modulo-css")) return;
+var st = d.createElement("style"); st.id = "teste-modulo-css";
+st.textContent = "#teste-modulo-selo{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:9500;padding:3px 10px;border-radius:99px;border:1px solid #d97706;background:rgba(255,251,235,.96);color:#92400e;font:600 11.5px/1.4 system-ui,sans-serif;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);white-space:nowrap}"
++ "#teste-modulo-selo[data-estado=vencido]{border-color:#b91c1c;background:#fef2f2;color:#991b1b}"
++ "#teste-modulo-selo[data-estado=pausado]{border-color:#64748b;background:#f8fafc;color:#334155}"
++ "#teste-modulo-selo:focus-visible{outline:2px solid #2563eb;outline-offset:2px}"
++ "body.bim-app #teste-modulo-selo{bottom:36px}"
++ ".teste-faixa{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px;padding:10px 14px;border:1px solid #fca5a5;background:#fef2f2;color:#7f1d1d;border-radius:10px;font-size:13.5px}"
++ ".teste-faixa .btn{margin-left:auto}"
++ "@media print{"
++ "html[data-teste-marca] body::before{content:'VERSÃO DE TESTE — OrçaPRO (teste de 1 hora do módulo)';position:fixed;top:0;left:0;right:0;z-index:2147483647;text-align:center;font:700 9pt Arial,sans-serif;color:#b91c1c;background:#fff;border-bottom:1px solid #b91c1c;padding:2px 0}"
++ "html[data-teste-marca] body::after{content:'VERSÃO DE TESTE';position:fixed;top:42%;left:0;right:0;z-index:2147483647;text-align:center;font:700 64pt Arial,sans-serif;color:rgba(185,28,28,.14);transform:rotate(-28deg);pointer-events:none}"
++ "html[data-teste-bloqueio] body>*{display:none!important}"
++ "html[data-teste-bloqueio] body::before{content:'Teste encerrado: este entregável sai depois da compra do módulo. O seu trabalho continua salvo no OrçaPRO.';display:block;padding:40px;font:600 14pt Arial,sans-serif;color:#7f1d1d}"
++ "#teste-modulo-selo{display:none!important}}";
+(d.head || d.documentElement).appendChild(st);
+},
+pintar: function () {
+var d = global.document, T = TM(); if (!d || !d.body || !T) return null;
+this._css();
+var id = this._doSelo(), info = id ? T.info(id) : null, txt = this.rotulo(id, info);
+var b = d.getElementById("teste-modulo-selo");
+try {
+if (T.marcaAtiva()) d.documentElement.setAttribute("data-teste-marca", "1"); else d.documentElement.removeAttribute("data-teste-marca");
+if (T.guardaGravacao()) d.documentElement.setAttribute("data-teste-bloqueio", "1"); else d.documentElement.removeAttribute("data-teste-bloqueio");
+} catch (eM) {}
+if (!txt) { if (b) b.remove(); return null; }
+if (!b) {
+b = d.createElement("button"); b.type = "button"; b.id = "teste-modulo-selo";
+b.onclick = function () { UIT.oferta(b.getAttribute("data-teste-selo") || "", null, { forcar: true }); };
+d.body.appendChild(b);
+}
+b.textContent = txt;
+b.setAttribute("data-teste-selo", id);
+b.setAttribute("data-estado", info.estado);
+b.title = T.nome(id) + " — teste de " + (info.limiteMs / MIN) + " minutos de uso (conta só enquanto você usa). Clique para ver a oferta.";
+return b;
+},
+aoEvento: function (ev) {
+var T = TM(); if (!T || !ev) return;
+var nome = T.nome(ev.modulo);
+if (ev.tipo === "inicio") toast("Começou o teste de 1 hora de " + nome + ". O relógio só anda enquanto você usa o módulo.", "info", 7000);
+else if (ev.tipo === "aviso") toast("Teste de " + nome + ": falta" + (ev.min === 1 ? " 1 minuto" : "m " + ev.min + " minutos") + ". O que você fizer continua salvo.", "aviso", 9000);
+else if (ev.tipo === "fim") {
+try { T.redesenhar(); } catch (e) {}
+this.oferta(ev.modulo, "O teste de 1 hora de " + nome + " terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
+}
+},
+faixa: function (view) {
+var T = TM(); if (!T) return "";
+var id = T.moduloDaView(view), e = id ? T.estado(id) : "";
+if (e !== "vencido" && e !== "pausado") return "";
+var txt = e === "pausado" ? "O teste de <b>" + esc(T.nome(id)) + "</b> está pausado: o OrçaPRO não conseguiu confirmar o tempo de uso com o servidor. Conecte à internet e ele continua de onde parou."
+: "O teste de 1 hora de <b>" + esc(T.nome(id)) + "</b> terminou. O que você fez continua aqui, só para consulta: editar e exportar voltam com a compra.";
+return '<div class="teste-faixa" data-teste-faixa="' + esc(id) + '" role="status"><span>' + txt + "</span>"
++ (e === "vencido" ? '<button class="btn primary sm" data-teste-acao="oferta" data-mod="' + esc(id) + '">Ver a oferta</button>'
++ '<button class="btn ghost sm" data-teste-acao="so-comprados">Não mostrar mais os módulos que não comprei</button>' : "")
++ "</div>";
+},
+conteudo: function (id, motivo, extra) {
+var T = TM(); extra = extra || {};
+var m = T ? T.modulo(id) : null, info = T ? T.info(id) : null;
+var nome = m ? m.nome : String(id || ""), h = [];
+var est = info ? info.estado : "";
+var abre = motivo || (est === "teste" ? "Você está testando <b>" + esc(nome) + "</b>: restam <b>" + minutos(info.restanteMs) + "</b> de uso (o relógio só anda enquanto você usa o módulo). Durante o teste tudo funciona; o que você exportar sai com a marca \"Versão de teste\"."
+: est === "pausado" ? "O teste de <b>" + esc(nome) + "</b> está pausado: o OrçaPRO não fala com o servidor há algumas horas. Conecte à internet e ele continua de onde parou."
+: "O teste de 1 hora de <b>" + esc(nome) + "</b> terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
+h.push("<p data-teste-oferta=\"" + esc(id) + "\">" + (motivo ? esc(motivo) : abre) + "</p>");
+if (m && m.oque) h.push("<p class=\"muted\" style=\"margin-top:8px\">" + esc(m.oque) + "</p>");
+if (arr(extra.planos).length) {
+h.push("<ul style=\"margin:8px 0 0 18px\">" + extra.planos.map(function (p) {
+return "<li><b>" + esc(p.nome) + "</b> — R$ " + esc(fmt(p.valor)) + " " + esc(p.periodo || "") + "</li>";
+}).join("") + "</ul>");
+}
+if (extra.semVenda) h.push("<p class=\"muted\" style=\"margin-top:8px\">A venda deste módulo abre em breve. Para usar agora, fale com a RA Engenharia.</p>");
+if (play()) h.push("<p class=\"muted\" style=\"margin-top:10px\">Este aplicativo não faz contratações. O que for liberado para a sua conta aparece aqui sozinho.</p>");
+h.push("<p style=\"margin-top:12px;font-size:12.5px\"><a href=\"#\" data-teste-acao=\"so-comprados\">Não mostrar mais os módulos que não comprei</a> <span class=\"muted\">(volta em Configurações › Licença)</span></p>");
+return { titulo: nome, html: h.join(""), url: play() ? "" : (extra.url || ""), zap: play() ? "" : (extra.zap || "") };
+},
+_srv: function () { return (global.CONFIG && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
+_chave: function () { try { return global.Licenca && Licenca.chave ? Licenca.chave() : ""; } catch (e) { return ""; } },
+_compra: function (id, cb) {
+var T = TM(), m = T ? T.modulo(id) : null, srv = this._srv(), self = this, st = T ? T._estado() : {};
+var cfgSrv = (st && st.cfg) || {}, zap = String(cfgSrv.whatsapp || "").replace(/\D/g, "");
+var zapUrl = zap ? "https://wa.me/" + zap + "?text=" + encodeURIComponent("Olá! Testei o módulo " + (m ? m.nome : id) + " no OrçaPRO e quero liberar na minha licença.") : "";
+if (!m) { cb({ zap: zapUrl }); return; }
+if (m.tipo === "plano") {
+var link = cfgSrv.compra && cfgSrv.compra[id] ? String(cfgSrv.compra[id]) : "";
+cb({ url: link && /^\/[A-Za-z0-9_\-\/?=&.#]*$/.test(link) && srv ? srv + link : "", zap: zapUrl });
+return;
+}
+if (!srv || typeof global.fetch === "undefined") { cb({ zap: zapUrl }); return; }
+var alvo = m.tipo === "disciplina" ? m.disciplina : m.extra, k = self._chave();
+try {
+global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
+var p = (d && d.planos) || {}, re = new RegExp("^modela_" + alvo + "_");
+var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo }; });
+if (!lista.length) { cb({ semVenda: true, zap: zapUrl }); return; }
+cb({ planos: lista, url: srv + "/modelagem?plano=" + encodeURIComponent(lista[0].id) + (k ? "#lic=" + encodeURIComponent(k) : ""), zap: zapUrl });
+}, function () { cb({ zap: zapUrl }); });
+} catch (e) { cb({ zap: zapUrl }); }
+},
+oferta: function (id, motivo, opts) {
+var self = this;
+if (!id) return false;
+var aberto = false; try { aberto = !!(global.document && global.document.getElementById("modal-bg")); } catch (eA) {}
+if (aberto && !(opts && opts.forcar)) {
+var T0 = TM();
+toast((motivo || ("O teste de 1 hora de " + (T0 ? T0.nome(id) : id) + " terminou.")) + " Nada foi gravado. A oferta está no selo do canto da tela.", "erro", 10000);
+try { this.pintar(); } catch (eP) {}
+return false;
+}
+this._compra(id, function (extra) {
+var a = self.conteudo(id, motivo, extra);
+var bts = [{ texto: "Agora não", classe: "ghost", onClick: function () { try { UI.fecharModal(); } catch (e) {} } }];
+if (a.zap) bts.push({ texto: "Falar com a RA", classe: "ghost", onClick: function () { try { global.open(a.zap, "_blank", "noopener"); } catch (e) {} } });
+if (a.url) bts.push({ texto: "Comprar", classe: "primary", onClick: function () {
+try { global.open(a.url, "_blank", "noopener"); } catch (e) {}
+try { var T = TM(); if (T) T._registrar("oferta-comprar", id, null); } catch (e2) {}
+try { UI.fecharModal(); } catch (e3) {}
+} });
+try { if (global.UI && UI.modal) UI.modal(a.titulo, a.html, bts); } catch (e) {}
+});
+return true;
+},
+cartaoLicenca: function () {
+var T = TM(); if (!T) return "";
+var s = T.status(), on = Pref.ler();
+if (!s.regime && !on) return "";
+var linhas = T.MODULOS.filter(function (m) { var x = s.mods[m.id]; return x && (x.estado === "teste" || x.estado === "vencido" || x.estado === "pausado"); })
+.map(function (m) {
+var x = s.mods[m.id];
+return "<li>" + esc(m.nome) + " — " + (x.estado === "teste" ? (x.usadoMs > 0 ? "em teste: restam " + minutos(x.restanteMs) : "teste de " + (x.limiteMs / MIN) + " min disponível") : x.estado === "pausado" ? "teste pausado (sem internet)" : "teste encerrado") + "</li>";
+}).join("");
+return '<div class="card" style="margin-top:8px" data-teste-cartao="1"><b>Módulos para testar</b>'
++ '<p class="muted" style="margin:4px 0 6px;font-size:13px">Cada módulo que não está na sua licença pode ser usado por 1 hora de uso ativo. Vencida a hora, o que você fez continua salvo e o módulo pede a compra.</p>'
++ (linhas ? '<ul style="margin:0 0 8px 18px;font-size:13px">' + linhas + "</ul>" : "")
++ '<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" data-teste-acao="pref"' + (on ? " checked" : "") + "> Mostrar só o que comprei (esconde os módulos que não estão na licença)</label></div>";
+},
+_ligado: false,
+ligar: function () {
+if (this._ligado || !global.document) return;
+this._ligado = true;
+var self = this;
+global.document.addEventListener("click", function (ev) {
+var el = ev.target && ev.target.closest ? ev.target.closest("[data-teste-acao]") : null;
+if (!el || el.tagName === "INPUT") return;
+var ac = el.getAttribute("data-teste-acao");
+if (ac === "oferta") { ev.preventDefault(); self.oferta(el.getAttribute("data-mod") || "", null, { forcar: true }); }
+else if (ac === "so-comprados") {
+ev.preventDefault();
+try { UI.fecharModal(); } catch (e) {}
+Pref.gravar(true);
+toast("Pronto: aparece só o que você comprou. Para mostrar de novo, Configurações › Licença › \"Mostrar só o que comprei\".", "ok", 9000);
+}
+}, true);
+global.document.addEventListener("change", function (ev) {
+var el = ev.target; if (!el || !el.getAttribute || el.getAttribute("data-teste-acao") !== "pref") return;
+Pref.gravar(!!el.checked);
+toast(el.checked ? "Só o que você comprou fica à vista." : "Os módulos para testar voltaram ao menu.", "ok");
+}, true);
+try { global.addEventListener("beforeprint", function () { self.pintar(); }); } catch (e) {}
+try { global.addEventListener("orcapro:teste-modulo", function () { self.pintar(); }); } catch (e) {}
+}
+};
+function arr(v) { return Object.prototype.toString.call(v) === "[object Array]" ? v : []; }
+function fmt(v) { var n = Number(v) || 0; try { return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); } catch (e) { return n.toFixed(2); } }
+global.TesteModuloUI = UIT;
+try { if (typeof window !== "undefined" && global.document) { if (global.document.readyState === "loading") global.document.addEventListener("DOMContentLoaded", function () { UIT.ligar(); }); else UIT.ligar(); } } catch (eL) {}
+if (typeof module !== "undefined" && module.exports) module.exports = UIT;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/cobranca.js ==== */

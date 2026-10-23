@@ -885,6 +885,8 @@
         html += '<div class="card"><b style="color:var(--verde,#16a34a)">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
         /* licença só do OrçaPRO Modela (tier "modela"): diz o que ela abre */
         if (String(st.tier || "").toLowerCase() === "modela") html += '<div class="card" style="margin-top:8px" data-licenca-modela="1"><b>OrçaPRO Modela</b>: esta licença abre o <b>BIM com o modelador</b>, nas disciplinas contratadas. Orçamento, cronograma, compras e gestão fazem parte dos planos do OrçaPRO.</div>';
+        /* o teste de 1 hora por módulo e a preferência "Mostrar só o que comprei" (js/testemoduloui.js) */
+        try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.cartaoLicenca) html += TesteModuloUI.cartaoLicenca(); } catch (eTm) {}
         /* usuariosMax > 0: o titular liberou usuários da própria empresa para esta
            licença independente (server/licencas-filhas.js, usuariosPorIndependente) */
         var mxU = Number(st.usuariosMax) || 0;
@@ -2880,7 +2882,9 @@
          gravam no cadastro da obra: exigem o módulo Obras. O RBAC por obra
          (Auth.podeObra) é conferido de novo NA FUNÇÃO, no clique — botão
          escondido não é guarda. */
-      info.podeCriar = info.podeEditarObra = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras"));
+      /* (revisão R8) e a Gestão liberada: vencida no teste de 1 hora ela só aparece; criar/editar obra daqui gravaria nela */
+      info.podeCriar = info.podeEditarObra = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras")) &&
+        !(typeof Gestao !== "undefined" && Gestao.podeGestaoLiberada && !(typeof App !== "undefined" && App._demo) && !Gestao.podeGestaoLiberada());
       return info;
     },
     /* O cartão de parâmetros de HOJE (mesmos ids cron-*, Recalcular, Limpar

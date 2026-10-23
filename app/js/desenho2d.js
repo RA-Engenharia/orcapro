@@ -167,6 +167,50 @@
     });
     return agrupar(pos, 0.015);
   }
+  /* as CONSTRUÇÕES do desenho: peças cortadas cujas caixas ficam a menos de GAP_CONSTRUCAO m uma da outra formam um grupo
+     (a casa e a garagem a 3 m são uma; o exemplo 40 m ao lado é outra) */
+  var GAP_CONSTRUCAO = 10;
+  function construcoes(cortes) {
+    var bs = cortes.map(function (c) {
+      var b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      (c.pts || []).forEach(function (q) { if (q[0] < b.x0) b.x0 = q[0]; if (q[0] > b.x1) b.x1 = q[0]; if (q[1] < b.y0) b.y0 = q[1]; if (q[1] > b.y1) b.y1 = q[1]; });
+      return b;
+    }), pai = bs.map(function (b, i) { return i; });
+    function raiz(i) { while (pai[i] !== i) { pai[i] = pai[pai[i]]; i = pai[i]; } return i; }
+    /* varredura por x0 crescente: parou de sobrepor em x, os seguintes (x0 maior) também não sobrepõem */
+    var ord = bs.map(function (b, i) { return i; }).filter(function (i) { return bs[i].x0 !== Infinity; }).sort(function (a, b) { return bs[a].x0 - bs[b].x0; });
+    for (var oi = 0; oi < ord.length; oi++) {
+      var i = ord[oi];
+      for (var oj = oi + 1; oj < ord.length; oj++) {
+        var j = ord[oj];
+        if (bs[j].x0 - GAP_CONSTRUCAO > bs[i].x1) break;
+        if (bs[i].y0 - GAP_CONSTRUCAO <= bs[j].y1 && bs[j].y0 - GAP_CONSTRUCAO <= bs[i].y1) pai[raiz(j)] = raiz(i);
+      }
+    }
+    var mapa = {}, out = [];
+    cortes.forEach(function (c, i) { if (bs[i].x0 === Infinity) return; var r = raiz(i); if (!mapa[r]) { mapa[r] = []; out.push(mapa[r]); } mapa[r].push(c); });
+    return out;
+  }
+  /* REVISOR (21/10/2026): a caixa do que está desenhado EM VOLTA de uma construção (as paredes dela + linha, porta e o que
+     está acima do corte cuja caixa encosta na dela, a até meia GAP_CONSTRUCAO). Com uma construção só, a cadeia fica "por
+     fora de tudo" (a caixa do desenho); com várias, a linha ficava só por fora das paredes e cruzava o beiral desenhado. */
+  function caixaEmVolta(d, cg) {
+    var b = { x0: cg.x0, y0: cg.y0, x1: cg.x1, y1: cg.y1 }, m = GAP_CONSTRUCAO / 2;
+    function item(pts) {
+      var q = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      pts.forEach(function (p) { if (p[0] < q.x0) q.x0 = p[0]; if (p[0] > q.x1) q.x1 = p[0]; if (p[1] < q.y0) q.y0 = p[1]; if (p[1] > q.y1) q.y1 = p[1]; });
+      if (q.x0 === Infinity || q.x0 > cg.x1 + m || q.x1 < cg.x0 - m || q.y0 > cg.y1 + m || q.y1 < cg.y0 - m) return;
+      if (q.x0 < b.x0) b.x0 = q.x0; if (q.x1 > b.x1) b.x1 = q.x1; if (q.y0 < b.y0) b.y0 = q.y0; if (q.y1 > b.y1) b.y1 = q.y1;
+    }
+    (d.linhas || []).forEach(function (l) { if (l) item([[l[0], l[1]], [l[2], l[3]]]); });
+    (d.portas || []).forEach(function (sp) { item(pontosPorta(sp)); });
+    (d.acima || []).forEach(function (it) {
+      if (!it) return;
+      var ps = (it.pts || []).slice(); (it.segs || []).forEach(function (l) { ps.push([l[0], l[1]], [l[2], l[3]]); });
+      item(ps);
+    });
+    return b;
+  }
   function cotasDe(d, est) {
     var e = normEstilo(est), cx = caixa(d), out = [];
     if (!cx || !e.cotas) return out;
@@ -197,12 +241,32 @@
       cadeia("v", ys, cx.x1, +1, 0, cx.y0, cx.y1);
     } else {
       /* fachada de cima e lateral esquerda: a parede de fora, vão a vão */
-      /* mede o que foi CORTADO (as paredes), com a linha de cota por fora de tudo */
-      var cc = caixa({ cortes: d.cortes }) || cx;
-      var px = agrupar(facesCortadas(d, "x", "cima", 0.8).concat([cc.x0, cc.x1]), 0.015);
-      cadeia("h", px, cx.y0, -1, 0, cc.x0, cc.x1);
-      var py = agrupar(facesCortadas(d, "y", "esq", 0.8).concat([cc.y0, cc.y1]), 0.015);
-      cadeia("v", py, cx.x0, -1, 0, cc.y0, cc.y1);
+      /* mede o que foi CORTADO (as paredes), com a linha de cota por fora de tudo.
+         CONSTRUÇÕES SEPARADAS (21/10/2026): a cadeia e o total iam do canto de uma casa até outra construção 40 m ao
+         lado (o contorno era o de TUDO o que está desenhado). Cada grupo de peças cortadas a menos de GAP_CONSTRUCAO
+         umas das outras é uma construção e tem a cadeia no PRÓPRIO contorno; com uma só, nada muda. */
+      var grupos = construcoes(d.cortes || []);
+      if (grupos.length <= 1) {
+        var cc = caixa({ cortes: d.cortes }) || cx;
+        var px = agrupar(facesCortadas(d, "x", "cima", 0.8).concat([cc.x0, cc.x1]), 0.015);
+        cadeia("h", px, cx.y0, -1, 0, cc.x0, cc.x1);
+        var py = agrupar(facesCortadas(d, "y", "esq", 0.8).concat([cc.y0, cc.y1]), 0.015);
+        cadeia("v", py, cx.x0, -1, 0, cc.y0, cc.y1);
+      } else grupos.forEach(function (g) {
+        var dg = { cortes: g }, cg = caixa(dg);
+        if (!cg) return;
+        var cf = caixaEmVolta(d, cg);   /* a linha por fora do que está desenhado em volta desta construção */
+        /* PEÇA SOLTA (poste, pilar isolado, muro de divisa longe da casa) não é construção: a cadeia só sai no eixo em que o
+           grupo tem ao menos 1 m — o muro mantém o comprimento, a espessura dele e o poste não viram cota total */
+        if (cg.x1 - cg.x0 >= 1) {
+          var pxg = agrupar(facesCortadas(dg, "x", "cima", 0.8).concat([cg.x0, cg.x1]), 0.015);
+          cadeia("h", pxg, cf.y0, -1, 0, cg.x0, cg.x1);
+        }
+        if (cg.y1 - cg.y0 >= 1) {
+          var pyg = agrupar(facesCortadas(dg, "y", "esq", 0.8).concat([cg.y0, cg.y1]), 0.015);
+          cadeia("v", pyg, cf.x0, -1, 0, cg.y0, cg.y1);
+        }
+      });
     }
     return out;
   }

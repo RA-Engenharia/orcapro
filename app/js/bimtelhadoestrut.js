@@ -905,9 +905,10 @@
         var dv = [num(s.desloc.x, 0), num(s.desloc.y, 0), num(s.desloc.z, 0)];
         /* REVISOR T6: o arrasto NO PLANO DA ÁGUA guarda também as coordenadas na água (u ao longo da peça, v na água):
            mudou a inclinação, o deslocamento é refeito na água NOVA — o x/y/z do mundo (o de antes) deixava a terça
-           12 cm fora do plano a 30 → 60 %. O x/y/z fica gravado para quem lê a op sem conhecer o `agua`. */
+           12 cm fora do plano a 30 → 60 %. O x/y/z fica gravado para quem lê a op sem conhecer o `agua`.
+           `deslocEf` = o deslocamento que a peça TEM de fato (o das Propriedades da peça mostra este, não o x/y/z antigo). */
         if (s.desloc.agua && PECAS_AGUA[o.p]) { var plA = planoArrasto(o, false); if (plA.tipo === "agua") dv = rr(ad3(ad3([0, 0, 0], plA.e1, num(s.desloc.agua.u, 0)), plA.e2, num(s.desloc.agua.v, 0))); }
-        o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); mud.push("desloc"); }
+        o.a = rr(ad3(o.a, dv)); o.b = rr(ad3(o.b, dv)); o.deslocEf = rr(dv); mud.push("desloc"); }
       if (s.ext && (num(s.ext.a, 0) || num(s.ext.b, 0))) {
         var ax = nz3(s3(o.b, o.a)), ea = num(s.ext.a, 0), eb = num(s.ext.b, 0), L0 = ln3(s3(o.b, o.a));
         if (L0 + ea + eb > 0.05) { o.a = rr(ad3(o.a, ax, -ea)); o.b = rr(ad3(o.b, ax, eb)); mud.push("ext"); }
@@ -2299,7 +2300,7 @@
     ROTULO_PECA: ROTULO_PECA, rotuloPeca: rotuloPeca, sobreporValido: sobreporValido, mesclarSobrepor: mesclarSobrepor, pecaMaisPerto: pecaMaisPerto, malhaPeca: malhaPeca,
     opcoesSecao: opcoesSecao, opPeca: opPeca,
     /* T6: arrastar a peça com o mouse */
-    planoArrasto: planoArrasto, raioNoPlano: raioNoPlano, raioNaReta: raioNaReta, arrastoPeca: arrastoPeca, esticarAlcaPeca: esticarAlcaPeca, camposDesloc: camposDesloc, camposEsticar: camposEsticar, pecaMovida: pecaMovida, planoNaParede: planoNaParede, secaoMadeira: secaoMadeira, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
+    planoArrasto: planoArrasto, raioNoPlano: raioNoPlano, raioNaReta: raioNaReta, arrastoPeca: arrastoPeca, esticarAlcaPeca: esticarAlcaPeca, camposDesloc: camposDesloc, camposEsticar: camposEsticar, pecaMovida: pecaMovida, planoNaParede: planoNaParede, quantitativoModelos: quantitativoModelos, perfilFn: perfilFn
   };
   global.BimTelhadoEstrut = BimTelhadoEstrut;
   if (typeof module !== "undefined" && module.exports) module.exports = BimTelhadoEstrut;

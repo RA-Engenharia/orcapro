@@ -524,6 +524,8 @@
     var BC = dep("BimCurva", "./bimcurva.js");   /* CURVA: parede curva e contorno com arco */
     var linhas = [], n = 0, avisos = [], porEnt = {}, elementos = [], todosEls = [], regPorChave = {};
     var famIfc = {};   /* P12: famílias exportadas (as portas dos conectores) */
+    var rotuloPre = {};   /* o rótulo do pré-lançamento de estrutura por id da peça (c.conc.rotulo) */
+    arr(estado && estado.caixas).forEach(function (c) { if (c && c.id != null && c.conc && typeof c.conc.rotulo === "string" && /A CALCULAR/.test(c.conc.rotulo)) rotuloPre[String(c.id)] = c.conc.rotulo; });
     function w(tipo, args) { n++; linhas.push("#" + n + "=" + tipo + "(" + args.join(",") + ");"); return n; }
     var semente = String(opts.semente || opts.projeto || "orcapro");
     function G(chave) { return S(guid(semente + "|" + chave)); }
@@ -680,6 +682,11 @@
        quando o id não é estável (conexão deduzida: vale o lugar e o tipo) */
     function peca(chave, entidade, nome, objType, pl, rep, extra, yBase, nivel, o) {
       o = o || {};
+      /* PRÉ-LANÇAMENTO DE ESTRUTURA (js/conclanc.js, revisão 21/10/2026): a peça pré-dimensionada leva o rótulo
+         "PRÉ-DIMENSIONAMENTO — A CALCULAR" no ObjectType (o "tipo" que o programa de cálculo mostra) — antes só num
+         Pset de comentário, e o tipo dizia "Pilar 26 × 14 cm" como seção definida */
+      var rotPre = entidade !== "IFCOPENINGELEMENT" ? rotuloPre[String(chave)] : null;
+      if (rotPre && !(objType && String(objType).indexOf(rotPre) >= 0)) objType = (objType || nome) + " — " + rotPre;
       var sem = o.semente || ("el:" + chave);
       /* P1-D: a peça do registro leva a MARCA no atributo Tag (o equivalente
          ao "Mark" dos importadores); o id do OrçaPRO passa para a Description — a ida e

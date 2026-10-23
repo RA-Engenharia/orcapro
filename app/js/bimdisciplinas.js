@@ -149,6 +149,8 @@
   def(["civil", "estrutura"], ["piso", "editor", "graute", "alternar-uniao", "unir-geometria", "desunir-geometria"]);
   /* PORTAS E JANELAS AUTOMÁTICAS (js/esqautoui.js, 20/10/2026): arquitetura */
   def("civil", ["esq-auto", "esq-auto-sel", "esq-auto-todos", "esq-auto-acess", "esq-auditar", "esq-criterios"]);
+  /* MOBILIAR AMBIENTE (js/mobautoui.js, 21/10/2026) */
+  def("civil", ["mob-auto", "mob-auto-sel", "mob-auto-todos", "mob-auto-refazer", "mob-auto-acess", "mob-opcoes", "mob-auditar"]);
   /* COBERTURA COMPLETA e TELHADO PARAMÉTRICO (Casa 487 + noite de 19→20/10/2026): o telhado é civil; a estrutura dele é
      também da madeira (marcenaria) e da metálica; a calha/descida também da hidráulica (pluvial); a luminária do forro,
      da elétrica */
@@ -171,6 +173,8 @@
 
   /* ESTRUTURA (concreto, fundação, armação, fôrma) */
   def("estrutura", ["fundacao", "estrutural", "sondagem"]);
+  /* PRÉ-LANÇAR ESTRUTURA DE CONCRETO (js/concui.js, 21/10/2026) */
+  def("estrutura", ["conc-prelancar", "conc-pre-auto", "conc-pre-macica", "conc-pre-trelicada", "conc-pre-refazer", "conc-auditar", "conc-quant", "conc-ifc", "conc-criterios"]);
   /* pilar e viga: concreto, aço ou madeira — a seção diz o material */
   def(["estrutura", "metalica", "marcenaria"], ["pilar", "viga"]);
   def(["estrutura", "marcenaria"], ["trelica"]);
@@ -185,6 +189,8 @@
 
   /* ELÉTRICA & DADOS */
   def("eletrica", ["eletroduto", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "eletrocalha"]);
+  /* PONTOS ELÉTRICOS POR AMBIENTE (js/eleautoui.js, 21/10/2026) */
+  def("eletrica", ["ele-auto", "ele-auto-sel", "ele-auto-todos", "ele-auditar", "ele-criterios"]);
 
   /* METÁLICA & MECÂNICA — o içamento inteiro mora aqui (pedido do Rogério) */
   def("metalica", ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio",
@@ -282,6 +288,18 @@
         if (P && typeof P.disciplina === "function") return !P.disciplina(id);
       } catch (e) {}
       return false;
+    },
+
+    /* "Mostrar só o que comprei" (js/testemoduloui.js): a disciplina não comprada some do seletor (trancada, ela
+       aparecia com cadeado). "Todas" some junto quando não está inteira comprada. Sem o js/testemodulo.js: nada some. */
+    oculta: function (id) {
+      try {
+        var T = global.TesteModulo;
+        if (!T || !T.soComprados || !T.soComprados() || !T.status().regime) return false;
+        if (id === PADRAO) return this.trancada(PADRAO);
+        var tid = T.idDisciplina(id);
+        return !!tid && T.estado(tid) === "oculto";
+      } catch (e) { return false; }
     },
 
     /* ---- escolha (gravada por usuário e aparelho) ---- */

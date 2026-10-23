@@ -460,6 +460,11 @@
     if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de mobiliário \"" + (fam.mob || fam.id) + "\" não carregou"]); return saida; }
     var c = Mob.cena(), v = saida.valores || {};
     try { g(c, v); } catch (e) { saida.ok = false; saida.erros = (saida.erros || []).concat(["mobiliário \"" + fam.nome + "\": " + e.message]); return saida; }
+    /* aviso do gerador (ex.: o vão de eletro do armário planejado que não coube na largura total) chega a quem avalia */
+    if (c.avisos && c.avisos.length) saida.avisos = (saida.avisos || []).concat(c.avisos);
+    /* a QUANTIDADE que o desenho constrói (o armário planejado: módulos + tamponamentos, sem a sobra que não vira módulo) — vence a
+       fórmula do quantitativo, que não sabe a fila de módulos (js/familiasplanejado.js gerar) */
+    if (typeof c.quantidade === "number" && isFinite(c.quantidade) && saida.quantitativo) saida.quantitativo.quantidade = c.quantidade;
     saida.solidos = c.solidos(fam.id.replace(/^ra-/, "") + ":");
     saida.caixa = c.env ? { x0: c.env.x0, y0: c.env.y0, z0: c.env.z0, x1: c.env.x1, y1: c.env.y1, z1: c.env.z1 } : null;
     saida.mob = { triangulos: c.triangulos(), pecas: saida.solidos.length };

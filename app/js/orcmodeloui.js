@@ -503,7 +503,9 @@
       var G = global.Gestao, obra = null;
       try { obra = G && G._bimSel ? Store.obter(Auth.empresaId(), "obras", G._bimSel) : null; } catch (e) {}
       var antes = []; try { antes = (Store.listarOrcamentos(Auth.empresaId()) || []).filter(function (o) { return o && o.origemBim && o.origemBim.obraId === (G && G._bimSel || null); }); } catch (e2) {}
-      var tot = 0; seed.itens.forEach(function (it) { var g = mod.porComposicao.filter(function (x) { return x.codigo === it.codigo && x.status === "ok"; })[0]; if (g) tot += g.custo.total; });
+      /* o total da prévia = as composições que vão (status ok e quantidade > 0); por código pegava só a 1ª quando o mesmo código
+         vem em duas linhas (demolição, ESTIMATIVA do pré-lançamento de estrutura) */
+      var tot = 0; mod.porComposicao.forEach(function (g) { if (g.status === "ok" && g.quantidade > 0 && g.custo) tot += g.custo.total; });
       var html = '<p style="font-size:13px">Vai ser criado um <b>orçamento novo</b>' + (obra ? " para a obra <b>" + esc(obra.nome) + "</b>" : "") + " com <b>" + seed.itens.length + " composição(ões)</b> do modelo — " + moeda(tot) + " de custo direto na base " + esc(this.rotuloBase()) + ". O BDI e as condições entram no orçamento, como sempre.</p>" +
         '<div style="max-height:260px;overflow:auto"><table class="tbl" data-om="previa"><thead><tr><th>Código</th><th>Descrição</th><th>Qtd</th></tr></thead><tbody>' +
         seed.itens.map(function (it) { return "<tr><td>" + esc(it.codigo) + "</td><td>" + esc(curto(it.descricao, 70)) + "</td><td>" + fmt(it.quantidade, 2) + " " + esc(unTela(it.unidade)) + "</td></tr>"; }).join("") + "</tbody></table></div>" +
@@ -555,8 +557,12 @@
           item = { codigo: a.codigo, descricao: a.descricao, unidade: a.unidade, custoUnitario: a.custoUnitario, custoMO: a.custoMO, custoMAT: a.custoMAT, custoEQ: a.custoEQ, baseFonte: "SINAPI" };
         }
         if (!(Number(item.custoUnitario) > 0)) semPreco++;
+        /* pré-lançamento de estrutura (js/conclanc.js): a quantidade é ESTIMATIVA de pré-dimensionamento — a marca vai na
+           descrição da linha (relatório e proposta mostram) e no campo estimativa (revisão 21/10/2026) */
+        if (it.estimativa && it.estimativa.motivo) item.descricao = String(item.descricao || "") + " — " + it.estimativa.motivo;
         Orcamento.addItem(orc, etapa.id, item, it.quantidade);
         var nv = etapa.itens[etapa.itens.length - 1];
+        if (nv && it.estimativa) nv.estimativa = { motivo: it.estimativa.motivo, desde: "modelo" };
         if (nv) nv.bimElementos = (it.elementos || []).slice(0, 200);   /* de que peças do modelo a quantidade veio */
       });
       /* o carimbo da origem é a auditoria: quando, de que obra, de que base */

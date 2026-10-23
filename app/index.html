@@ -110,6 +110,8 @@
   <script src="js/icones.js"></script>
   <script src="js/modulo.js"></script>
   <!-- modela.js: o direito ao OrçaPRO Modela (teste de 7 dias, disciplinas compradas, vitalícia). Antes do bimprevia.js, que pergunta a ele se o modelador aparece -->
+  <!-- testemodulo.js: o teste de 1 hora por módulo (licença paga; o tempo e a regra vêm do servidor). O modela.js, o gestao.js, o app.js e o bimcmd.js perguntam a ele -->
+  <script src="js/testemodulo.js"></script>
   <script src="js/modela.js"></script>
   <script src="js/bimprevia.js"></script>
   <!-- MARMORARIA (módulo à parte): a licença e a área enxuta do marmorista. No núcleo: o BimPrevia e a fita perguntam a ele -->
@@ -472,7 +474,9 @@
   <script src="js/bimopcoes.js"></script>
   <script src="js/bimgerenciar.js"></script>
   <script src="js/familiaspiscina.js"></script>   <!-- piscina de fibra, casa de máquinas e pele de vidro recolhível (lidas pelo familiasra.js) -->
+  <script src="js/guardacorpo.js"></script>   <!-- GUARDA-CORPO pela NBR 14718:2019: valores da norma, cargas, preço, auditoria (lida pelas famílias e pelo auditor de esquadrias) -->
   <script src="js/familiasra.js"></script>
+  <script src="js/familiasguarda.js"></script>   <!-- … a família paramétrica ra-guarda-corpo -->
   <!-- MOBILIÁRIO E PAISAGISMO (19/10/2026): ferramentas de geometria, biblioteca de mobiliário, cozinha/banho/lazer e paisagismo (famílias de geometria "mob") -->
   <script src="js/mobgeo.js"></script>
   <script src="js/familiasmob.js"></script>
@@ -870,6 +874,9 @@
   <script src="js/bimtabelaui.js"></script>
   <!-- P8: folhas no BIM (vista em escala, carimbo parametrizado, listas, revisões) e o DXF da vista e da folha — só com a prévia do modelador -->
   <script src="js/bimdxf.js"></script>
+  <!-- PRANCHAS DO GALPÃO E DA MADEIRA EM DXF (21/10/2026): o SVG das pranchas vira DXF no Padrão RA (layers com pena, textos e cotas como entidades, carimbo RA); e a TRAVA DE LICENÇA NA FUNÇÃO da Metálica e da Marcenaria (teste de 1 hora) -->
+  <script src="js/pranchasdxf.js"></script>
+  <script src="js/licencafuncao.js"></script>
   <script src="js/blocokdxf.js"></script>
   <script src="js/marmorariapranchas.js"></script>   <!-- MARMORARIA: executivo (folhas com carimbo RA, SVG/PDF/DXF) -->
   <script src="js/marmorariaui.js"></script>
@@ -877,10 +884,28 @@
   <script src="js/arqgeo.js"></script>   <!-- PRANCHAS DE ARQUITETURA (reforma/ampliação): geometria plana (união exata de áreas) -->
   <script src="js/arqmodelo.js"></script>   <!-- … o modelo lido: paredes, lajes, ambientes, vãos, telhado, forro, terreno, por fase -->
   <!-- PORTAS E JANELAS AUTOMÁTICAS (20/10/2026): classificador de ambiente + critérios com nível de fonte, o lançador de um clique, o auditor e a tela -->
+  <script src="js/esqcodigo.js"></script>   <!-- … o CÓDIGO DE OBRAS por município, em dados (Uberlândia LC 524/2011; padrão nacional conservador) -->
+  <script src="js/esqabertura.js"></script>   <!-- … a área que ABRE de uma esquadria, pela geometria da família -->
   <script src="js/esqregras.js"></script>
   <script src="js/esqauto.js"></script>
   <script src="js/esqauditor.js"></script>
   <script src="js/esqautoui.js"></script>
+  <!-- PONTOS ELÉTRICOS POR AMBIENTE (21/10/2026): regras com nível de fonte (NBR 5410 por fonte secundária), o lançador de um clique, o auditor e a tela -->
+  <script src="js/eleregras.js"></script>
+  <script src="js/eleauto.js"></script>
+  <script src="js/eleauditor.js"></script>
+  <script src="js/eleautoui.js"></script>
+  <!-- PRÉ-LANÇAR ESTRUTURA DE CONCRETO (21/10/2026): critérios com fonte (gerado de dados-fonte/concreto), o lançador, o auditor e a tela — PRÉ-DIMENSIONAMENTO, A CALCULAR -->
+  <script src="js/concdados.js"></script>
+  <script src="js/conclanc.js"></script>
+  <script src="js/concauditor.js"></script>
+  <script src="js/concui.js"></script>
+  <!-- MOBILIAR AMBIENTE (21/10/2026): regras de layout com fonte (gerado de docs/arquitetura/interiores), o motor de um clique, o auditor e a tela -->
+  <script src="js/mobregrasdados.js"></script>
+  <script src="js/mobregras.js"></script>
+  <script src="js/mobauto.js"></script>
+  <script src="js/mobauditor.js"></script>
+  <script src="js/mobautoui.js"></script>
   <script src="js/arqindices.js"></script>   <!-- … índices urbanísticos: ocupação, permeabilidade, aproveitamento × limites do município -->
   <script src="js/arqdesenho.js"></script>   <!-- … primitivas de desenho e a conferência de sobreposição -->
   <script src="js/arqplantas.js"></script>   <!-- … situação, plantas, cobertura, forro, paginação, humanizada -->
@@ -946,6 +971,8 @@
   <script src="js/licenca.js"></script>
   <!-- modelaui.js: selo do Modela na barra do BIM e o aviso de teste terminado / disciplina não contratada -->
   <script src="js/modelaui.js"></script>
+  <!-- testemoduloui.js: selo "Teste: 42 min", avisos, faixa, oferta e a preferência "Mostrar só o que comprei" -->
+  <script src="js/testemoduloui.js"></script>
   <script src="js/cobranca.js"></script>
   <script src="js/assinatura.js"></script>
   <script src="js/laudo.js"></script>

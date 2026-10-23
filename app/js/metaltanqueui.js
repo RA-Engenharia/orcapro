@@ -378,6 +378,8 @@
       if (x && x.ok && global.UnidadesMemorial) x.html = UnidadesMemorial.preparar(x.html);   /* aba SI | Técnica (kgf / tf) */
       this.ultimoMemorial = x && x.ok ? { titulo: x.titulo, secoes: x.secoes.length, bytes: x.html.length, avisos: x.avisos.length } : null;
       if (!x || !x.ok) { toast("Memorial: " + ((x && x.motivo) || "falhou"), "erro"); return x; }
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+      if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(x.html, "modela:metalica"); if (hT == null) return x; x.html = hT; }
       var w = null; try { w = global.open("", "_blank"); } catch (e3) { w = null; }
       if (w && w.document) { w.document.open(); w.document.write(x.html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P).", "ok", 7000); }
       else { var U = global.BimMetalUI; if (U && U.baixar) U.baixar("memorial-tanque.html", x.html, "text/html"); toast("Memorial baixado (.html).", "ok", 6000); }

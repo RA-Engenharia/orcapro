@@ -315,7 +315,7 @@
         g(10, num(e.x)); g(20, num(e.y)); g(30, 0); g(40, num(e.h)); g(1, txtDxf(e.s));
         if (e.ang) g(50, num(e.ang));
         g(7, "RA-ARIAL");
-        if (e.centro) { g(72, 1); g(11, num(e.x)); g(21, num(e.y)); g(31, 0); }
+        if (e.centro || e.direita) { g(72, e.direita ? 2 : 1); g(11, num(e.x)); g(21, num(e.y)); g(31, 0); }   /* direita: texto que termina no ponto (pranchas do galpão e da madeira) */
         g(100, "AcDbText");
       } else if (e.t === "HATCH") {
         comum("HATCH", hh, owner, e.camada, "AcDbHatch");
@@ -404,8 +404,74 @@
     }
     return out;
   }
+  /* MODO CAMADA POR ELEMENTO (opts.camadaPor — pranchas do galpão e da madeira, js/pranchasdxf.js, 21/10/2026).
+   * O SVG dessas pranchas não tem a classe do desenho 2D: cada traço traz `data-cam` (a camada MET-/MAD- do desenho)
+   * e usa polyline/polygon, texto com rotate(a x y) e âncora à direita. Quem chama dá `camadaPor(tag, atributos)`:
+   * devolve o nome da camada (já criada no doc) ou null = pular o elemento.
+   * ⚠ Só entra quando `camadaPor` é passado: o caminho antigo (planta/corte do desenho 2D) NÃO muda. */
+  function svgPorCamada(svg, doc, xf, opts) {
+    var re = /<(\/?)([a-zA-Z]+)([^>]*?)(\/?)>|([^<]+)/g, m, txtAberto = null, defs = 0, rec = opts.recorte || null, altT = opts.alturaTexto || 0.7;
+    function P(x, y) { return xf.pt(+x, +y); }
+    function cheio(a) { var f = String(a.fill == null ? "" : a.fill).toLowerCase(); return f && f !== "none" && f !== "#fff" && f !== "#ffffff" && f !== "white"; }
+    function contorno(a) { var st = String(a.stroke == null ? "" : a.stroke).toLowerCase(); return st && st !== "none"; }
+    function tracado(ini, a) { var da = String(a["stroke-dasharray"] || "").trim().split(/[\s,]+/).filter(Boolean).length, lt = da >= 4 ? "TRACO-PONTO" : da >= 2 ? "TRACEJADO" : null; if (lt) for (var i = ini; i < doc.entidades.length; i++) doc.entidades[i].lt = lt; }
+    function linhas(cam, pts, fechado, a) {
+      var n0 = doc.entidades.length, Q = pts.map(function (q) { return P(q[0], q[1]); });
+      if (!rec || Q.every(function (q) { return dentro(q[0], q[1], rec); })) doc.poli(cam, Q, fechado);
+      else for (var i = 0; i + 1 < Q.length + (fechado ? 1 : 0); i++) { var r = recortarSeg(Q[i][0], Q[i][1], Q[(i + 1) % Q.length][0], Q[(i + 1) % Q.length][1], rec); if (r) doc.linha(cam, r[0], r[1], r[2], r[3]); }
+      tracado(n0, a);
+    }
+    function sol(cam, pts) { var Q = pts.map(function (q) { return P(q[0], q[1]); }); if (Q.length >= 3) doc.hachura(cam, [Q], null, true); }
+    while ((m = re.exec(svg))) {
+      if (m[5] != null) { if (txtAberto) txtAberto.s += m[5]; continue; }
+      var fecha = m[1] === "/", tag = m[2].toLowerCase(), a = attrs(m[3] || ""), auto = m[4] === "/";
+      if (tag === "defs" || tag === "pattern" || tag === "style") { if (!fecha && !auto) defs++; else if (fecha) defs = Math.max(0, defs - 1); continue; }
+      if (defs) continue;
+      if (tag === "g" || tag === "svg" || tag === "title") continue;
+      if (tag === "text") {
+        if (!fecha) { txtAberto = auto ? null : { a: a, s: "" }; continue; }
+        var t = txtAberto; txtAberto = null; if (!t) continue;
+        var s = desesc(t.s); if (!s.trim()) continue;
+        if (typeof opts.paraTexto === "function") s = opts.paraTexto(s);   /* ex.: Ø → %%c (o SHX da RA não tem o Ø) */
+        var cT = opts.camadaPor("text", t.a); if (!cT) continue;
+        var tr = t.a.transform || "", mr = /rotate\(([-\d.eE]+)/.exec(tr), fs = +(t.a["font-size"] || 100), pt = P(t.a.x || 0, t.a.y || 0);
+        if (!dentro(pt[0], pt[1], rec)) continue;
+        /* a letra do SVG é o corpo (font-size); a altura do DXF é a da maiúscula (~0,7 do corpo) */
+        var te = doc.texto(cT, pt[0], pt[1], fs * altT * xf.s, s, -(mr ? +mr[1] : 0), t.a["text-anchor"] === "middle");
+        if (te && t.a["text-anchor"] === "end") te.direita = true;
+        continue;
+      }
+      if (fecha) continue;
+      var cam = opts.camadaPor(tag, a), n0 = doc.entidades.length;
+      if (tag === "line") {
+        if (!cam || !contorno(a)) continue;
+        var p1 = P(a.x1, a.y1), p2 = P(a.x2, a.y2), r = recortarSeg(p1[0], p1[1], p2[0], p2[1], rec);
+        if (r) { doc.linha(cam, r[0], r[1], r[2], r[3]); tracado(n0, a); }
+      } else if (tag === "polyline" || tag === "polygon") {
+        var pts = String(a.points || "").trim().split(/\s+/).filter(Boolean).map(function (q) { var v = q.split(","); return [+v[0], +v[1]]; });
+        if (pts.length < 2) continue;
+        if (cheio(a)) { var cc = opts.camadaPor("fill", a); if (cc && tag === "polygon") sol(cc, pts); }
+        if (cam && contorno(a)) linhas(cam, pts, tag === "polygon", a);
+      } else if (tag === "rect") {
+        var x0 = +a.x, y0 = +a.y, w = +a.width, hh = +a.height, q4 = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + hh], [x0, y0 + hh]];
+        if (cheio(a)) { var cr = opts.camadaPor("fill", a); if (cr) sol(cr, q4); }
+        if (cam && contorno(a)) linhas(cam, q4, true, a);
+      } else if (tag === "circle") {
+        var pc = P(a.cx, a.cy), rr = +a.r * xf.s;
+        if (cheio(a)) {
+          var cf = opts.camadaPor("fill", a);
+          if (cf) { var ring = []; for (var k = 0; k < 16; k++) ring.push([pc[0] + rr * Math.cos(k * Math.PI / 8), pc[1] + rr * Math.sin(k * Math.PI / 8)]); doc.hachura(cf, [ring], null, true); }
+        }
+        if (cam && contorno(a) && dentro(pc[0], pc[1], rec)) { doc.circulo(cam, pc[0], pc[1], rr); tracado(n0, a); }
+      } else if (tag === "path") {
+        if (!cam || !contorno(a)) continue;
+        pathPts(a.d || "").forEach(function (c) { linhas(cam, c.pts, c.fechado, a); });
+      }
+    }
+  }
   function svgParaDxf(svg, doc, xf, opts) {
     opts = opts || {};
+    if (typeof opts.camadaPor === "function") return svgPorCamada(svg, doc, xf, opts);
     var pular = opts.pular || {}, pilha = [], re = /<(\/?)([a-zA-Z]+)([^>]*?)(\/?)>|([^<]+)/g, m, txtAberto = null;
     var mapaCam = opts.camadas || {};
     function camadaAtual(cls) {

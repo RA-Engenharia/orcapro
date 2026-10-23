@@ -31,7 +31,11 @@
   function lerVista() {
     var v = null; try { v = JSON.parse(global.localStorage.getItem(CHAVE_VISTA) || "null"); } catch (e) { v = null; }
     v = v && typeof v === "object" ? v : {};
-    return { fase: v.fase || null, filtro: v.filtro || "tudo", modo: v.modo && v.modo !== "livre" ? v.modo : null, realce: !!v.realce, escolha: v.escolha && typeof v.escolha === "object" ? v.escolha : {} };
+    /* MIGRAÇÃO (21/10/2026): o modo "comparar" era a cortina antiga, que saiu — o Comparar agora é a régua da apresentação
+       (js/bimapresentacaoui.js), aberta só pelo botão / Alt+4 / menu. Gravado no aparelho, ele vale como o Depois (mesma
+       fase e filtro): sem isto, abrir uma obra com fases desenhava o antes e o depois sobrepostos e abria a apresentação sozinho. */
+    var modo = v.modo && v.modo !== "livre" ? (v.modo === "comparar" ? "depois" : v.modo) : null;
+    return { fase: v.fase || null, filtro: v.filtro || "tudo", modo: modo, realce: !!v.realce, escolha: v.escolha && typeof v.escolha === "object" ? v.escolha : {} };
   }
   /* o modo "livre" (a apresentação da reforma está no ar: nada some pelo filtro) nunca fica gravado */
   function gravarVista(v) { try { global.localStorage.setItem(CHAVE_VISTA, JSON.stringify(v.modo === "livre" ? { fase: v.fase, filtro: v.filtro, modo: null, realce: false, escolha: v.escolha } : v)); } catch (e) {} }
@@ -541,8 +545,9 @@
         if (!mo || !mo.grupo) return { n: 0 };
         var BF = global.BimFases, BO = global.BimOpcoes, AP = global.BimApresentacao, v = self.vista();
         var temFase = !!(BF && st && BF.faseado(st)), temOpc = !!(BO && st && st.opcoes && arr(st.opcoes.conjuntos).length);
-        /* COMPARAR (a cortina, js/bimapresentacaoui.js): nenhuma peça some aqui — cada uma leva as marcas { a, d } (existe no antes? no depois?)
-           e a cortina desenha a cena duas vezes; o que não existe em nenhum dos lados é que fica escondido */
+        /* modo "comparar" na vista: só de passagem — a cortina antiga saiu (21/10/2026); o BimApresentacaoUI._sincronizarComparar
+           leva a vista ao Depois e abre a régua, e a vista gravada no aparelho já é lida como Depois (lerVista). Enquanto durar,
+           cada peça leva as marcas { a, d } e só o que não existe em nenhum dos lados fica escondido */
         var cmp = !!(temFase && AP && v.modo === "comparar"), lad = cmp ? AP.lados(st, self.deps()) : null;
         /* calha e condutor (js/bimcobertura.js) não têm fase própria: valem como o telhado a que pertencem */
         var her = temFase && AP && AP.herdeiros ? AP.herdeiros(st) : {};

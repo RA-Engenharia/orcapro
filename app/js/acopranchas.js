@@ -222,7 +222,8 @@
   DP.add = function (t) { this.s.push(t); };
   DP.estilo = function (cam, extra) {
     var c = this.E.camadas[cam] || this.E.camadas["MET-FINA"];
-    return ' stroke="' + (c.cor || PRETO) + '" stroke-width="' + n(c.mm) + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : "") + (extra || "");
+    /* data-cam = a camada do desenho (só as MET-*: outras telas, como a do clima, usam este Desenho com camadas próprias que não vão ao SVG): o DXF (js/pranchasdxf.js) põe cada traço na layer do Padrão RA que a camada nomeia */
+    return (/^MET-/.test(cam) ? ' data-cam="' + (this.E.camadas[cam] ? cam : "MET-FINA") + '"' : "") + ' stroke="' + (c.cor || PRETO) + '" stroke-width="' + n(c.mm) + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : "") + (extra || "");
   };
   DP.traco = function (lista, fechado) { for (var i = 0; i + 1 < lista.length; i++) this.sg.push([lista[i][0], lista[i][1], lista[i + 1][0], lista[i + 1][1]]); if (fechado && lista.length > 2) this.sg.push([lista[lista.length - 1][0], lista[lista.length - 1][1], lista[0][0], lista[0][1]]); };
   DP.linha = function (x1, y1, x2, y2, cam, extra) {
@@ -337,7 +338,7 @@
             if (cands.length) { mx += ux * cands[0]; my += uy * cands[0]; }
           }
         }
-        txs.push([mx + tnx * sobe, my + tny * sobe, v, o.attrs ? o.attrs[i] : ""]);
+        txs.push([mx + tnx * sobe, my + tny * sobe, v, o.attrs ? o.attrs[i] : "", i]);
       }
       return { of: of, Q: Q, txs: txs, ext0: ext0, ext1: ext1 };
     }
@@ -351,7 +352,7 @@
       }
       if (achou) pl = achou;
     }
-    var Q = pl.Q, sg = pl.of >= 0 ? 1 : -1;
+    var Q = pl.Q, sg = pl.of >= 0 ? 1 : -1, gIni = this.s.length;
     if (!o.semExt) P.forEach(function (p, i) {
       if (o.desde && o.desde[i] === false) return;
       var g0 = o.desde && o.desde[i] != null ? o.desde[i] : 1.0;
@@ -361,6 +362,19 @@
     this.linha(Q[0][0] - ux * pl.ext0, Q[0][1] - uy * pl.ext0, Q[nseg][0] + ux * pl.ext1, Q[nseg][1] + uy * pl.ext1, "MET-COTA");
     Q.forEach(function (q) { self.tique(q[0], q[1], ux, uy); });
     pl.txs.forEach(function (t) { self.texto(t[0], t[1], t[2], h, { al: "C", rot: ang, attr: t[3] }); });
+    this.grupoCota("cadeia", P, pl.of, pl.txs.map(function (t) { return t[4]; }), gIni, P.map(function (p, i) {
+      if (o.semExt || (o.desde && o.desde[i] === false)) return "x";
+      var g0 = o.desde && o.desde[i] != null ? o.desde[i] : 1.0;
+      return Math.abs(pl.of) - g0 < 0.6 ? "x" : n(g0);
+    }), pl.ext0, pl.ext1);
+  };
+  /* A COTA COMO GRUPO: o SVG é o mesmo (o <g> não desenha nada); o DXF lê o grupo e grava DIMENSION de verdade
+     (js/pranchasdxf.js) em vez de traços soltos. data-pts = os pontos medidos; data-off = o afastamento da linha de cota;
+     data-seg = os trechos que têm texto, na ordem dos <text> do grupo; data-ext = a folga da linha de chamada em cada ponto
+     ("x" = sem linha); data-e = quanto a linha de cota passa do primeiro e do último ponto. */
+  DP.grupoCota = function (tipo, P, off, segs, ini, ext, e0, e1) {
+    this.s.splice(ini, 0, '<g data-dimgrp="' + tipo + '" data-pts="' + pts(P) + '" data-off="' + n(off) + '" data-seg="' + segs.join(",") + '" data-ext="' + ext.join(",") + '" data-e="' + n(e0) + "," + n(e1) + '">');
+    this.s.push("</g>");
   };
   DP.cota = function (x1, y1, x2, y2, off, valor, o) { this.cadeia([[x1, y1], [x2, y2]], off, [valor], o); };
   /* COTA ACUMULADA: origem com círculo, traço em cada ponto e o valor acumulado escrito
@@ -371,7 +385,7 @@
     var self = this, h = o.h || this.E.T.cota;
     var p0 = P[0], pn = P[P.length - 1], L = hip(pn[0] - p0[0], pn[1] - p0[1]);
     var ux = (pn[0] - p0[0]) / L, uy = (pn[1] - p0[1]) / L, nx = uy, ny = -ux, sg = off >= 0 ? 1 : -1;
-    var Q = P.map(function (p) { return [p[0] + nx * off, p[1] + ny * off]; });
+    var Q = P.map(function (p) { return [p[0] + nx * off, p[1] + ny * off]; }), gIni = this.s.length;
     if (!o.semExt) P.forEach(function (p, i) {
       if (Math.abs(off) < 1.6) return;
       self.linha(p[0] + nx * sg, p[1] + ny * sg, Q[i][0] + nx * 1.5 * sg, Q[i][1] + ny * 1.5 * sg, "MET-COTA");
@@ -385,6 +399,8 @@
       var v = valores[i]; if (v == null || v === "") return;
       self.texto(q[0] - ux * 0.8 + nx * sg * 1.2, q[1] - uy * 0.8 + ny * sg * 1.2, v, h, { al: mesmo ? "E" : "D", rot: angT, attr: o.attrs ? o.attrs[i] : "" });
     });
+    var com = []; Q.forEach(function (q, i) { if (valores[i] != null && valores[i] !== "") com.push(i); });
+    this.grupoCota("acum", P, off, com, gIni, P.map(function () { return Math.abs(off) < 1.6 || o.semExt ? "x" : "1"; }), 1.2, 1.2);
   };
   /* balão de eixo */
   DP.balao = function (cx, cy, rot, attr) {
@@ -2505,6 +2521,9 @@
         "<title>" + esc(numero + " - " + f.def.titulo + " - " + rev) + "</title>" +
         '<rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + corpo + "</g>" + F.svg() + "</svg>";
       var o = { id: f.def.id, rotulo: f.rotulo, numero: numero, titulo: f.def.titulo, formato: formato, escala: f.escala, svg: svg };
+      /* o que o DXF (js/pranchasdxf.js) precisa para refazer o carimbo RA e achar a layer do Padrão RA de cada camada MET-*; só dados simples (a madeira devolve isto do Worker em JSON) */
+      o.dxf = { familia: "metalica", pr: pr, folha: fl, geo: geo, empresa: empObj, rotulo: f.rotulo + "/" + dois(nPrinc), logo: !!opcoes.logo, padrao: opcoes.padrao || null,
+                camadas: PADRAO_ACO.camadas, tituloH: E.T.titulo, codigo: codigo };
       if (opcoes.depurar) o.caixasTexto = D.caixas;
       return o;
     });

@@ -710,9 +710,11 @@ renderSidebar: function (viewAtiva) {
 var pode = (typeof App !== "undefined" && App._demo) || this.podeGestao();
 var soMod = !!this.soModela && this.soModela();
 if (soMod) pode = true;
-var mods;
+var mods, selfS = this;
 if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
 else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); });
+try { if (soMod && typeof TesteModulo !== "undefined" && TesteModulo.soComprados && TesteModulo.soComprados()) mods = mods.filter(function (m) { return !selfS._trancadoModela(m.id); }); } catch (eSc) {}
+try { if (!soMod && pode && !(typeof App !== "undefined" && App._demo) && !this.podeBim()) mods = mods.filter(function (m) { return m.id !== "bim"; }); } catch (eBm) {}
 this.menuMarcarUso(viewAtiva);
 var fix = this._menuFixados();
 var self = this;
@@ -1409,10 +1411,12 @@ Array.prototype.forEach.call(clone.querySelectorAll("details"), function (d) { d
 var empresa = "";
 try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (e2) { empresa = ""; }
 var cab = '<div class="pn-imp-cab"><b>Painel de Gestão</b>' + (empresa ? " · " + Util.esc(empresa) : "") + " · " + Util.esc(this._pnDataExtenso(String(this._hojeISO()).slice(0, 10))) + "</div>";
-w.document.write('<!DOCTYPE html><html lang="pt-BR" data-tema="light"><head><meta charset="utf-8"><title>Painel de Gestão</title>'
+var hPn = '<!DOCTYPE html><html lang="pt-BR" data-tema="light"><head><meta charset="utf-8"><title>Painel de Gestão</title>'
 + '<link rel="stylesheet" href="css/fontes.css"><link rel="stylesheet" href="css/app.css"></head>'
 + '<body class="pn-impresso"><div class="main">' + cab + clone.outerHTML + "</div>"
-+ '<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>');
++ '<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>';
+if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { hPn = TesteModulo.marcarHtml(hPn, ""); if (hPn == null) { try { w.close(); } catch (eW) {} return; } }
+w.document.write(hPn);
 w.document.close();
 },
 renderPainelNovo: function () {
@@ -6705,6 +6709,8 @@ try { if (window.BimFolhaUI) BimFolhaUI.registrar(reg, self); } catch (eP8) {}
 try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
 try { if (window.BimApresentacaoUI) BimApresentacaoUI.registrar(reg, self); } catch (eAp) {}
 try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
+try { if (window.EleAutoUI) EleAutoUI.registrar(reg, self); } catch (eEle) {}
+try { if (window.ConcUI) ConcUI.registrar(reg, self); } catch (eConc) {}
 try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
 try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
 try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
@@ -9348,6 +9354,7 @@ var a = ""; try { a = (Auth._usuario && (Auth._usuario.nome || Auth._usuario.ema
 return { app: "OrçaPRO " + ((typeof CONFIG !== "undefined" && CONFIG.versao) || ""), autor: a };
 },
 _opBaixar: function (nome, dados, mime) {
+if (typeof TesteModulo !== "undefined" && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, ""); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
 try {
 var blob = new Blob([dados], { type: mime || "application/octet-stream" }), url = URL.createObjectURL(blob), a = document.createElement("a");
 a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
@@ -10925,7 +10932,9 @@ if (!jan) { UI.toast("O navegador bloqueou a janela da prancha. Permita pop-ups 
 jan.document.write('<p style="font-family:Arial;padding:20px">Montando ' + pr.folhas.length + ' folha(s) de ' + Util.esc(pr.nome) + '…</p>');
 var pImg = Object.keys(chavesImg).map(function (k) { return window.Idb ? Idb.get(k).then(function (d) { if (d) rec.imagens[k] = typeof d === "string" ? d : URL.createObjectURL(new Blob([d])); })["catch"](function () {}) : Promise.resolve(); });
 Promise.all(pImg).then(function () { return self._prFotografarVistas(vistasBlocos, rec); }).then(function () {
-jan.document.open(); jan.document.write(PranchaUI.documento(pr, rec, geo)); jan.document.close();
+var hPr = PranchaUI.documento(pr, rec, geo);
+if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { hPr = TesteModulo.marcarHtml(hPr, ""); if (hPr == null) { try { jan.close(); } catch (eW) {} return; } }
+jan.document.open(); jan.document.write(hPr); jan.document.close();
 setTimeout(function () { try { jan.focus(); jan.print(); } catch (e) {} }, 900);
 })["catch"](function (e) { UI.toast("Não consegui montar a prancha: " + (e && e.message || e), "erro"); });
 },
@@ -12568,6 +12577,7 @@ rel.motivos.forEach(function (x) { h += "<li>" + x.n + " peça(s): " + esc(x.mot
 h += '</ul><p class="m">Peça sem peso NÃO entra nos totais acima. Informe o peso específico do material no painel Peso das peças.</p>';
 }
 h += '<p class="m" style="margin-top:18px">Fontes: massa publicada no IFC (IfcQuantityWeight) quando existe; senão volume × peso específico aparente (ABNT NBR 6120:2019, valor médio quando a norma dá faixa) ou o valor informado pelo engenheiro. Gerado pelo OrçaPRO.</p></body></html>';
+if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { h = TesteModulo.marcarHtml(h, ""); if (h == null) return; }
 var jan = null;
 try { jan = window.open("", "_blank"); } catch (e4) { jan = null; }
 if (!jan) { Util.baixar(nomeArq + ".html", h, "text/html;charset=utf-8"); UI.toast("O navegador bloqueou a janela: baixei o relatório (.html) — abra e imprima.", "aviso"); return; }
@@ -15035,6 +15045,7 @@ if (eq.notas && eq.notas.length) h += '<p class="m">Notas do fabricante: ' + eq.
 h += '<p class="m">Em laranja: as linhas usadas no cálculo — vale o menor valor entre as duas linhas vizinhas ao raio de cada içamento.</p></section>';
 }
 h += "</body></html>";
+if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { h = TesteModulo.marcarHtml(h, ""); if (h == null) return; }
 var jan = null;
 try { jan = window.open("", "_blank"); } catch (e5) { jan = null; }
 if (!jan) { Util.baixar(this._icarNomeArq("html"), h, "text/html;charset=utf-8"); UI.toast("O navegador bloqueou a janela: baixei o plano (.html) — abra e imprima em PDF.", "aviso"); return; }
@@ -17676,6 +17687,23 @@ if (!this._bimAvisouSemDono) { this._bimAvisouSemDono = 1; UI.toast("Esta obra j
 return;
 }
 dono = this._bimCenaObra = chave;
+}
+var TMe = window.TesteModulo;
+if (TMe && TMe.travaEdicao && TMe.travaEdicao()) {
+var antesE = (this._bimEdPend && this._bimEdPend.id === dono) ? (this._bimEdPend.ops || []) : null;
+if (!antesE) { try { var gA = Store.obter(eid(), "bim_edicoes", dono); antesE = (gA && gA.ops) || []; } catch (eGa) { antesE = []; } }
+var opsE = ops || [], kE = 0;
+while (kE < antesE.length && kE < opsE.length && JSON.stringify(antesE[kE]) === JSON.stringify(opsE[kE])) kE++;
+var gE = null; try { gE = TMe.guardaEdicao(opsE.slice(kE)); } catch (eGe) { gE = null; }
+if (gE && gE.ok === false) {
+if (!this._bimRevertTeste) {
+this._bimRevertTeste = setTimeout(function () {
+self._bimRevertTeste = null;
+try { if (window.BIM && BIM.editarAplicar) BIM.editarAplicar(antesE); } catch (eRv) {}
+}, 0);
+}
+return;
+}
 }
 clearTimeout(this._bimEdSaveT);
 this._bimEdPend = { id: dono, ops: ops };
@@ -35151,6 +35179,10 @@ out.sort();
 return out;
 },
 _bloqueado: function () {
+try {
+var tmB = typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao ? TesteModulo.guardaGravacao() : "";
+if (tmB) { if (typeof TesteModuloUI !== "undefined") TesteModuloUI.oferta(tmB); return true; }
+} catch (eTm) {}
 if (typeof App !== "undefined" && App._trialBloqueado && App._trialBloqueado()) {
 var sB = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {};
 if (sB.suspensa && App._avisoTrial) { App._avisoTrial(); return true; }
@@ -35160,6 +35192,14 @@ return true;
 return false;
 },
 podeGestao: function () {
+if (this.podeGestaoComprada()) return true;
+try { return typeof TesteModulo !== "undefined" && !!TesteModulo.visivel && TesteModulo.visivel("gestao"); } catch (eT) { return false; }
+},
+podeGestaoLiberada: function () {
+if (this.podeGestaoComprada()) return true;
+try { return typeof TesteModulo !== "undefined" && !!TesteModulo.liberado && TesteModulo.liberado("gestao"); } catch (eT) { return false; }
+},
+podeGestaoComprada: function () {
 if (typeof Licenca === "undefined") return true;
 var s = Licenca.status() || {};
 if (s.trial) return true;
@@ -35170,9 +35210,14 @@ MODELA_VIEWS: ["bim", "ajuda"],
 soModela: function () {
 try { return typeof Licenca !== "undefined" && !!Licenca.soModela && Licenca.soModela() && !(typeof App !== "undefined" && App._demo); } catch (e) { return false; }
 },
-podeBim: function () { return this.soModela() || this.podeGestao(); },
+podeBim: function () {
+if (this.soModela() || this.podeGestaoComprada()) return true;
+try { return typeof TesteModulo !== "undefined" && !!TesteModulo.visivel && TesteModulo.visivel("bim"); } catch (eT) { return false; }
+},
 _trancadoModela: function (view) {
-return this.soModela() && this.MODELA_VIEWS.indexOf(String(view || "")) < 0;
+if (!this.soModela() || this.MODELA_VIEWS.indexOf(String(view || "")) >= 0) return false;
+try { if (typeof TesteModulo !== "undefined" && TesteModulo.visivel && TesteModulo.visivel(TesteModulo.moduloDaView(view))) return false; } catch (eT) {}
+return true;
 },
 _modelaPlay: function () {
 try { if (document.documentElement.getAttribute("data-origem") === "play") return true; } catch (e) {}
@@ -37825,6 +37870,12 @@ templates: "modelos"
 },
 abrir: function (entidade, id) {
 if (!this.podeGestao()) { if (typeof UI !== "undefined") UI.toast("Gestão de Obras é recurso do plano Plus.", "erro"); return; }
+try {
+if (!this.podeGestaoLiberada() && typeof TesteModulo !== "undefined" && TesteModulo.moduloDaTela && TesteModulo.moduloDaTela() !== "gestao") {
+if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.oferta) TesteModuloUI.oferta("gestao", null, { forcar: true });
+return;
+}
+} catch (eTa) {}
 var _mod = this.MOD_DA_ENTIDADE[entidade] || entidade;
 if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(_mod)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
 var r = Store.obter(eid(), entidade, id); if (!r) return;
@@ -52520,6 +52571,16 @@ if (Object.prototype.hasOwnProperty.call(c, "nomeDono")) r.nomeDono = c.nomeDono
 else delete r.nomeDono;
 r.nomeDonoEm = c.nomeDonoEm;
 }
+var lT = l.testeModulos && typeof l.testeModulos === "object" ? l.testeModulos : null, cT = c.testeModulos && typeof c.testeModulos === "object" ? c.testeModulos : null;
+if (lT || cT) {
+var lS = (lT && lT.soComprados && typeof lT.soComprados === "object") ? lT.soComprados : {}, cS = (cT && cT.soComprados && typeof cT.soComprados === "object") ? cT.soComprados : {};
+var emDe = function (x) { return (x && typeof x === "object") ? (Number(x.em) || 0) : 0; }, tmN = {}, kT, sN = {};
+for (kT in (lT || {})) if (Object.prototype.hasOwnProperty.call(lT, kT)) tmN[kT] = lT[kT];
+for (kT in cS) if (Object.prototype.hasOwnProperty.call(cS, kT)) sN[kT] = cS[kT];
+for (kT in lS) if (Object.prototype.hasOwnProperty.call(lS, kT) && (!Object.prototype.hasOwnProperty.call(sN, kT) || emDe(lS[kT]) >= emDe(sN[kT]))) sN[kT] = lS[kT];
+tmN.soComprados = sN;
+r.testeModulos = tmN;
+}
 var lG = String(l.gestaoEm || ""), cG = String(c.gestaoEm || "");
 if (cG && cG > lG) {
 var rtR = (r.responsavelTecnico && typeof r.responsavelTecnico === "object") ? r.responsavelTecnico : {};
@@ -53823,7 +53884,9 @@ if (typeof Tour !== "undefined") Tour.iniciar();
 }
 var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
 var soModela = typeof Gestao !== "undefined" && !this._demo && !!Gestao.soModela && Gestao.soModela();
-var view = this.view || (soModela ? "bim" : (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+var gestaoComprada = typeof Gestao !== "undefined" && (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : podeGestao);
+var view = this.view || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
 if (!this.viewValida(view)) { view = this.viewPadrao(); this.view = view; }
 if (soModela) {
 } else if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
@@ -53862,7 +53925,8 @@ return;
 if (view !== "orcamentos" && typeof Gestao !== "undefined") {
 var htmlG = Gestao.render(view), okG = !!(htmlG && String(htmlG).trim());
 this._gxDesligar();
-main.innerHTML = okG ? this._avisosDadoGestao() + htmlG : this._viewVazia(view);
+var faixaT = ""; try { faixaT = (typeof TesteModuloUI !== "undefined" && TesteModuloUI.faixa) ? TesteModuloUI.faixa(view) : ""; } catch (eFx) { faixaT = ""; }
+main.innerHTML = okG ? faixaT + this._avisosDadoGestao() + htmlG : this._viewVazia(view);
 if (okG && Gestao.afterRender) Gestao.afterRender(view);
 return;
 }
@@ -54536,7 +54600,7 @@ return vs;
 viewValida: function (view) { return !!view && this.viewsValidas().indexOf(String(view)) > -1; },
 viewPadrao: function () {
 if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) return "bim";
-var podeG = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
+var podeG = typeof Gestao !== "undefined" && (this._demo || (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : Gestao.podeGestao()));
 if (podeG && (typeof Auth === "undefined" || !Auth.podeModulo || Auth.podeModulo("dashboard"))) return "dashboard";
 return "orcamentos";
 },
@@ -57052,6 +57116,7 @@ try { return (typeof Gestao !== "undefined" && typeof Gestao._cronoDinheiro === 
 },
 _cronoSemPermissao: function (obraId) {
 if (typeof Gestao === "undefined" || !Gestao.podeGestao || !Gestao.podeGestao()) return "O planejamento da obra é da Gestão de Obras (plano Plus).";
+if (Gestao.podeGestaoLiberada && !Gestao.podeGestaoLiberada()) return "O teste de 1 hora da Gestão de Obras terminou: o planejamento da obra volta com a compra. O que você fez continua salvo.";
 if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras")) return "Seu usuário não tem permissão no módulo Obras — peça ao administrador.";
 if (obraId && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obraId)) return "Esta obra não está liberada para o seu usuário.";
 return null;
@@ -64398,6 +64463,7 @@ _trialBloqueado: function () {
 if (this._demo) return false;
 if (typeof Licenca === "undefined") return false;
 var s = Licenca.status(); if (!s) return false;
+try { if (typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao && TesteModulo.guardaGravacao()) return true; } catch (eTm) {}
 if (s.trial) return !s.ativo;
 if (s.suspensa) return true;
 return !s.ativo;
@@ -64405,6 +64471,10 @@ return !s.ativo;
 _avisoTrial: function () {
 var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
 var msg;
+try {
+var tmA = typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao ? TesteModulo.guardaGravacao() : "";
+if (tmA && typeof TesteModuloUI !== "undefined") { TesteModuloUI.oferta(tmA); return; }
+} catch (eTm) {}
 if (s.suspensa) {
 UI.toast("Licença suspensa por falta de pagamento. Seus dados estão preservados; o acesso volta quando o pagamento compensar.", "erro");
 try { if (typeof Cobranca === "undefined" || !Cobranca.mostrarAgora()) this.abrirLicenca(); } catch (eS) {}
@@ -64421,7 +64491,11 @@ try { this.abrirLicenca(); } catch (e) {}
 persistir: function (opts) {
 if (!this.orcAtual) return false;
 if (this.orcAtual._planoDaObra) { UI.toast("Isto é o plano de execução da obra, não o orçamento — nada foi gravado no orçamento. Recarregue a tela.", "erro"); return false; }
-if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) {
+var orcEmTeste = false;
+try { orcEmTeste = typeof TesteModulo !== "undefined" && TesteModulo.liberado && TesteModulo.liberado("orcamento"); } catch (eOt) { orcEmTeste = false; }
+if (!this._demo && !orcEmTeste && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) {
+var tmO = ""; try { tmO = typeof TesteModulo !== "undefined" && TesteModulo.bloqueado && TesteModulo.bloqueado("orcamento") ? "orcamento" : ""; } catch (eOb) {}
+if (tmO && typeof TesteModuloUI !== "undefined") { TesteModuloUI.oferta(tmO); return false; }
 UI.toast("Orçamentos faz parte do OrçaPRO. A sua licença é do OrçaPRO Modela (a modelagem BIM) — nada foi gravado.", "erro"); return false; }
 if (this._trialBloqueado()) {
 var sSus = (typeof Licenca !== "undefined") ? Licenca.status() : {};
@@ -69606,5 +69680,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=fa8b1867c7"},{"src":"js/bim-pacote.js?v=b59cd077d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=826684f39c"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=beaf7a19aa"},{"src":"js/bim-pacote.js?v=b59cd077d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=7e9eedfb9d"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -18018,6 +18018,7 @@ solucoes: c && c.texto ? [{ id: "c" + i, texto: c.texto, pecas: [], temOps: tem,
 return out;
 }
 function baixar(nome, dados, mime) {
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
 if (!doc) return false;
 try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
 }
@@ -18052,6 +18053,7 @@ if (g && g.ok) { html = g.html; proprio = true; } else falha = (g && g.motivo) |
 } catch (e) { html = null; falha = e && e.message ? e.message : String(e); }
 } else falha = "módulo não carregado (js/climmemorial.js)";
 if (!html) html = htmlSimples(E.resultado);
+if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } html = hT; }
 E.memorialHtml = html;
 var aberto = null;
 try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }
@@ -21783,6 +21785,7 @@ c.perspectiva = { vista: q('[data-hpr="vista"]') ? q('[data-hpr="vista"]').value
 return HP().normalizarConfig(c);
 }
 function baixar(nome, dados, mime) {
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
 var d = global.document; if (!d) return false;
 try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = d.createElement("a"); a.href = u; a.download = nome; d.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
 }
@@ -24062,10 +24065,12 @@ function chave() { var C = dep("HidCalcUI"), em = C && C.dadosEmpresa ? C.dadosE
 function lerHist() { try { var o = JSON.parse(global.localStorage.getItem(chave()) || "null"); return o && typeof o === "object" ? o : { revisoes: [], portal: "" }; } catch (e) { return { revisoes: [], portal: "" }; } }
 function gravarHist(h) { try { global.localStorage.setItem(chave(), JSON.stringify(h)); } catch (e) {} }
 function baixar(nome, dados, mime) {
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
 if (!doc) return false;
 try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
 }
 function abrirPdf(html) {
+if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (html == null) return false; }
 var w = null;
 try { w = global.open("", "_blank"); } catch (e) { w = null; }
 if (!w) { toast("O navegador bloqueou a janela de impressão. Libere pop-ups para este endereço ou abra o HTML baixado e imprima.", "aviso"); return false; }
@@ -28112,8 +28117,11 @@ try { if (global.Empresa && Empresa.dados) d = Empresa.dados() || {}; } catch (e
 try { var g = global.Gestao; if (g && g._bimSel && global.Store && global.Auth) o = Store.obter(Auth.empresaId(), "obras", g._bimSel) || {}; } catch (e2) {}
 return { obra: { nome: o.nome || "", endereco: o.local || "", cliente: o.clienteNome || "" }, empresa: { nome: d.nome || "" }, responsavel: { nome: d.responsavel || "", crea: d.crea || "" } };
 },
-_abrir: function (html) { try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); return global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e) { return null; } },
-_baixar: function (nome, dados, mime) { try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; } },
+_abrir: function (html) {
+if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (html == null) return null; }
+try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); return global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e) { return null; } },
+_baixar: function (nome, dados, mime) {
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; } try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = document.createElement("a"); a.href = u; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; } },
 _rede: function () {
 var u = U.ultimo; if (u && u.ok && u.rede) return u.rede;
 var c = U._ctx(), Rd = dep("HidPiscinaRede"); if (!c || !Rd) return null;
@@ -28511,6 +28519,7 @@ return true;
 }
 function aplicar() { return aplicarOps(E.resultado ? E.resultado.ops : [], "Diâmetros aplicados no modelo"); }
 function baixar(nome, dados, mime) {
+if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
 if (!doc) return false;
 try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
 }
@@ -28570,6 +28579,7 @@ materiais: listaMaterialDoModelo(modelo()) || [], icones: dep("HidPecas") ? HidP
 catch (e) { E.msg = { k: "erro", t: "O memorial falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
 if (!g || !g.ok) { E.msg = { k: "erro", t: "Memorial: " + ((g && g.motivo) || "não foi possível gerar") }; redesenhar(); return null; }
 E.memorialHtml = g.html; E.memorial = { titulo: g.titulo, secoes: g.secoes.length, tabelas: g.tabelas, divergencias: arr(g.avisos).length };
+if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(g.html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } g.html = hT; }
 var aberto = null;
 try { var bl = new Blob([g.html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }
 if (!aberto) baixar("memorial-hidrossanitario.html", g.html, "text/html;charset=utf-8");
@@ -29303,6 +29313,7 @@ pecas: listaMaterialDoModelo(modelo()) || [], icones: dep("HidPecas") ? HidPecas
 catch (e) { E.msg = { k: "erro", t: "O manual falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
 if (!g || !g.ok || !g.html) { E.msg = { k: "erro", t: "Manual: " + arr(g && g.avisos).join(" ") }; redesenhar(); return null; }
 E.manualHtml = g.html; E.manual = { pendencias: arr(g.pendencias).length, avisos: arr(g.avisos).length };
+if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(g.html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } g.html = hT; }
 var aberto = null;
 try { var bl = new Blob([g.html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }
 if (!aberto) baixar("manual-execucao-e-uso.html", g.html, "text/html;charset=utf-8");

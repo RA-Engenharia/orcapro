@@ -1111,6 +1111,19 @@
          * requisições nunca recebia. Viaja com `gestaoEm`; só ESTE campo segue a
          * data — o resto de `responsavelTecnico` continua como sempre. Sem carimbo
          * dos dois lados, comportamento antigo. `delete` respeitado como no nome. */
+        /* ⚠ "MOSTRAR SÓ O QUE COMPREI" (js/testemoduloui.js, teste de 1 hora por módulo) TAMBÉM VENCE PELO MAIS NOVO,
+         * por USUÁRIO: cada um tem { v, em } em testeModulos.soComprados. Com o "local vence" a escolha feita num
+         * aparelho nunca chegava ao outro (revisão adversarial R10). `true` (formato antigo) vale como data 0. */
+        var lT = l.testeModulos && typeof l.testeModulos === "object" ? l.testeModulos : null, cT = c.testeModulos && typeof c.testeModulos === "object" ? c.testeModulos : null;
+        if (lT || cT) {
+          var lS = (lT && lT.soComprados && typeof lT.soComprados === "object") ? lT.soComprados : {}, cS = (cT && cT.soComprados && typeof cT.soComprados === "object") ? cT.soComprados : {};
+          var emDe = function (x) { return (x && typeof x === "object") ? (Number(x.em) || 0) : 0; }, tmN = {}, kT, sN = {};
+          for (kT in (lT || {})) if (Object.prototype.hasOwnProperty.call(lT, kT)) tmN[kT] = lT[kT];
+          for (kT in cS) if (Object.prototype.hasOwnProperty.call(cS, kT)) sN[kT] = cS[kT];
+          for (kT in lS) if (Object.prototype.hasOwnProperty.call(lS, kT) && (!Object.prototype.hasOwnProperty.call(sN, kT) || emDe(lS[kT]) >= emDe(sN[kT]))) sN[kT] = lS[kT];
+          tmN.soComprados = sN;
+          r.testeModulos = tmN;
+        }
         var lG = String(l.gestaoEm || ""), cG = String(c.gestaoEm || "");
         if (cG && cG > lG) {
           var rtR = (r.responsavelTecnico && typeof r.responsavelTecnico === "object") ? r.responsavelTecnico : {};

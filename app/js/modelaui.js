@@ -28,6 +28,8 @@
       if (s.motivo === "vitalicia") return "Modela · completo";
       if (s.motivo === "teste") return "Modela · teste: " + dias(Math.max(1, s.teste.dias));
       if (s.motivo === "teste-disponivel") return "Modela · teste de 7 dias";
+      /* teste de 1 hora por disciplina (js/testemodulo.js): os minutos de cada uma estão no selo do teste */
+      if (s.motivo === "teste-1h") return "Modela · teste de 1 hora";
       if (s.motivo === "compra") {
         if (s.completo) return "Modela · completo";
         if (s.disciplinas.length <= 2) return "Modela · " + s.disciplinas.map(nome).join(" + ");
@@ -57,8 +59,11 @@
       linhas.push("<p>" + abre + "</p>");
       var li = (m ? m.DISCIPLINAS : []).map(function (d) {
         var ate = s.compradas && s.compradas[d.id];
-        var st = s.completo && s.motivo !== "compra" ? (s.motivo === "teste" ? "no teste" : "liberada")
-          : (ate ? "contratada até " + data(ate) : "não contratada");
+        var st = s.completo && s.motivo !== "compra" && s.motivo !== "teste-1h" ? (s.motivo === "teste" ? "no teste" : "liberada")
+          : ate ? "contratada até " + data(ate)
+          : (s.teste1h && s.teste1h[d.id]) ? "em teste (1 hora de uso)"
+          : (s.vencidos1h && s.vencidos1h[d.id]) ? (s.vencidos1h[d.id] === "pausado" ? "teste pausado (sem internet)" : "teste de 1 hora encerrado")
+          : "não contratada";
         return "<li><b>" + esc(d.nome) + "</b> — " + esc(st) + "</li>";
       }).join("");
       linhas.push("<p style=\"margin-top:10px\">Disciplinas:</p><ul style=\"margin:4px 0 0 18px\">" + li + "</ul>");

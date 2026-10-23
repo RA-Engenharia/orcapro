@@ -9,7 +9,7 @@
  * Este arquivo só DECIDE (nada de cena, nada de tela):
  *   1. ANTES / OBRA / DEPOIS — que fase e que filtro de fase cada modo usa. Os filtros são os do
  *      js/bimfases.js (BimFases.FILTROS): não há um segundo jeito de filtrar. `lados()` diz, por peça,
- *      se ela existe no ANTES e no DEPOIS (a cortina do "Comparar" e o "Antes × Depois" do final).
+ *      se ela existe no ANTES e no DEPOIS (a régua "Antes × Depois" do final, que o Comparar abre).
  *   2. A LINHA DO TEMPO da apresentação, montada do estado + fases:
  *        planta → existente → demolição → construção → acabamentos → final
  *      cada etapa com a sua janela em segundos e os EVENTOS das peças (quem entra, quem sai, quando,
@@ -55,12 +55,13 @@
    * obra   = a fase de agora, "Mostrar tudo" + realce: o existente em meio-tom, o que SAI em vermelho
    *          translúcido e tracejado, o que ENTRA destacado;
    * depois = a fase de agora, "Mostrar completo": existente + novo, sem o demolido;
-   * comparar = os dois lados ao mesmo tempo (a cortina): cada peça leva as marcas { a, d } de lados(). */
+   * comparar = o botão da barra: abre a régua antes × depois da apresentação (js/bimapresentacaoui.js); a vista de fase
+   *            fica no Depois (a cortina antiga, que usava as marcas { a, d } de lados() na vista, saiu em 21/10/2026). */
   var MODOS = [
     { id: "antes", rotulo: "Antes", dica: "Como é hoje: só o existente, com o que vai ser demolido aparecendo normal. (Alt+1)" },
     { id: "obra", rotulo: "Obra", dica: "O que sai em vermelho translúcido, o que entra destacado, o existente em meio-tom. (Alt+2)" },
     { id: "depois", rotulo: "Depois", dica: "Como fica: existente + novo, sem o demolido. (Alt+3)" },
-    { id: "comparar", rotulo: "Comparar", dica: "Cortina: metade da tela o ANTES, metade o DEPOIS; arraste a divisória. (Alt+4)" }
+    { id: "comparar", rotulo: "Comparar", dica: "Régua antes × depois: abre a apresentação já no fim; arraste a alça ⇔ (à esquerda o ANTES, à direita o DEPOIS) e gire a vista. Esc sai. (Alt+4)" }
   ];
   function modoPorId(id) { for (var i = 0; i < MODOS.length; i++) if (MODOS[i].id === id) return MODOS[i]; return null; }
 

@@ -186,6 +186,8 @@
 
   /* ------------------------------------------------------------------ memorial */
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:hidraulica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     if (!doc) return false;
     try { var bl = new Blob([dados], { type: mime }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }   // clim:ok 5 s até soltar a URL
   }
@@ -222,6 +224,8 @@
       } catch (e) { html = null; falha = e && e.message ? e.message : String(e); }
     } else falha = "módulo não carregado (js/climmemorial.js)";
     if (!html) html = htmlSimples(E.resultado);
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(html, "modela:hidraulica"); if (hT == null) { redesenhar(); return null; } html = hT; }
     E.memorialHtml = html;
     var aberto = null;
     try { var bl = new Blob([html], { type: "text/html;charset=utf-8" }); aberto = global.open ? global.open(URL.createObjectURL(bl), "_blank") : null; } catch (e2) { aberto = null; }

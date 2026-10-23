@@ -15,6 +15,7 @@
   function f2(v) { var x = Number(v); return isFinite(x) ? x.toFixed(2).replace(".", ",") : "—"; }
   function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
   var CHAVE = "raerp:bim:esquadrias-criterios";
+  var CHAVE_COD = "raerp:bim:esquadrias-codigo";   /* { municipio, uso }: o código de obras em uso (js/esqcodigo.js) */
 
   function estado() {
     var B = global.BIM, E = global.BimEdit;
@@ -29,6 +30,26 @@
   }
   function lerCriterios() { try { var t = global.localStorage && global.localStorage.getItem(CHAVE); return t ? JSON.parse(t) || {} : {}; } catch (e) { return {}; } }
   function gravarCriterios(o) { try { if (global.localStorage) global.localStorage.setItem(CHAVE, JSON.stringify(o || {})); } catch (e) {} }
+  /* o código de obras: o município escolhido neste aparelho, senão o local/endereço da obra aberta; o uso padrão é residencial unifamiliar */
+  function lerCodigo() { try { var t = global.localStorage && global.localStorage.getItem(CHAVE_COD); return t ? JSON.parse(t) || {} : {}; } catch (e) { return {}; } }
+  function gravarCodigo(o) { try { if (global.localStorage) global.localStorage.setItem(CHAVE_COD, JSON.stringify(o || {})); } catch (e) {} }
+  function localDaObra() {
+    try {
+      var G = global.Gestao, ob = G && G._bimSel && global.Store && global.Auth ? global.Store.obter(global.Auth.empresaId(), "obras", G._bimSel) : null;
+      return ob ? String(ob.local || ob.endereco || "") : "";
+    } catch (e) { return ""; }
+  }
+  function contextoCodigo() {
+    var c = lerCodigo(), EC = global.EsqCodigo;
+    return { municipio: c.municipio != null && c.municipio !== "" ? c.municipio : localDaObra(), uso: c.uso || (EC ? EC.USO_PADRAO : "residencial_unifamiliar"), usoEscolhido: !!c.uso };
+  }
+  /* uma linha com o código de obras em uso, o nível da fonte e o aviso do padrão nacional */
+  function cabecalhoCodigo(cod) {
+    if (!cod) return "";
+    var EC = global.EsqCodigo, uso = EC && EC.USOS ? EC.USOS[cod.uso] || cod.uso : cod.uso;
+    return '<p style="margin:4px 0 8px;font-size:12px">' + selo(cod.nivel) + " <b>Código de obras: " + esc(cod.nome) + "</b> — " + esc(cod.fonte) + ". Uso: " + esc(uso) + (cod.usoAssumido || !contextoCodigo().usoEscolhido ? " (assumido; mude em Critérios das esquadrias)" : "") + "." +
+      (cod.aviso ? ' <b style="color:#a35a00">' + esc(cod.aviso) + "</b>" : "") + (cod.conferir ? " " + esc(cod.conferir) : "") + "</p>";
+  }
   function selecionados(st) {
     var B = global.BIM, uids = []; try { uids = (B && B.selecao ? B.selecao().uids : []) || []; } catch (e) { uids = []; }
     var ids = uids.map(function (u) { return String(u).replace(/^edit:/, ""); }), ambs = arr(st && st.ambientes).map(function (a) { return String(a.id); });
@@ -65,7 +86,8 @@
     var st = estado(), EA = global.EsqAuto; if (!st || !EA) { status("O editor 3D não está aberto."); return; }
     var ids = null;
     if (modo === "sel") { ids = selecionados(st); if (!ids.length) { status("Selecione um ambiente (clique no ambiente na planta) ou use \"Em todos os ambientes\"."); return; } }
-    var res = EA.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: lerCriterios(), acessivel: modo === "acess" });
+    var cx = contextoCodigo();
+    var res = EA.gerar({ estado: st, avaliarFam: avaliar(), ambientes: ids, criterios: lerCriterios(), acessivel: modo === "acess", municipio: cx.municipio, uso: cx.uso });
     if (!res.ok) { janela("Portas e janelas automáticas", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return; }
     var aplicado = res.lote ? aplicar(res.lote) : false;
     var R = global.EsqRegras, it = res.itens.filter(function (x) { return x.tipo === "porta" || x.tipo === "janela"; });
@@ -74,9 +96,9 @@
       return "<tr><td>" + esc(x.id) + "</td><td>" + esc(x.ambienteNome) + "</td><td>" + (x.tipo === "porta" ? "Porta " + f2(x.folha) + " × 2,10" + (x.abreEm ? " · abre para " + esc(x.abreEm) : "") : "Janela " + f2(x.largura) + " × " + f2(x.altura) + " · peitoril " + f2(x.peitoril)) + "</td><td>" +
         (s.codigo ? "SINAPI " + esc(s.codigo) + (s.aproximada ? ' <span style="color:#a35a00">(' + esc(s.aproximada) + ")</span>" : "") : '<span style="color:#a35a00">sem composição — ' + esc(s.motivo || "") + "</span>") + "</td><td style=\"font-size:12px\">" + arr(x.regras).map(esc).join("<br>") + "</td></tr>";
     }).join("");
-    var html = legenda() + "<p><b>" + res.resumo.portas + "</b> porta(s) e <b>" + res.resumo.janelas + "</b> janela(s) em " + res.resumo.ambientes + " ambiente(s)" + (aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": nada a lançar (o que existe já atende).")) + "</p>" +
+    var html = legenda() + cabecalhoCodigo(res.codigo) + "<p><b>" + res.resumo.portas + "</b> porta(s) e <b>" + res.resumo.janelas + "</b> janela(s) em " + res.resumo.ambientes + " ambiente(s)" + (aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": nada a lançar (o que existe já atende).")) + "</p>" +
       (linhas ? '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th>Peça</th><th>Ambiente</th><th>O quê</th><th>Orçamento</th><th>Regras aplicadas</th></tr></thead><tbody>' + linhas + "</tbody></table>" : "") +
-      '<p style="font-size:12px;margin-top:8px">' + selo("B") + " Iluminação 1/6 e 1/8 e ventilação 50 %: Uberlândia LC 524/2011 — <b>provisório, conferir o texto consolidado</b>. " + selo("A") + " Divisa 1,50 m: Código Civil art. 1.301. " + selo("A") + " Vão livre 0,80 e banheiro acessível abrindo para fora: NBR 9050:2020. " + selo("C") + " Peitoril, verga, boneca e largura por ambiente: critério RA (editável em \"Critérios das esquadrias\").</p>" +
+      '<p style="font-size:12px;margin-top:8px">' + selo("B") + " Iluminação pelo VÃO (1/6 e 1/8, art. 53) e ventilação pela área que ABRE (≥ 50 % da iluminação exigida, art. 54): Uberlândia LC 524/2011 — <b>provisório, conferir o texto consolidado</b>; outro município: padrão nacional conservador, conferir o código de obras. " + selo("A") + " Divisa 1,50 m: Código Civil art. 1.301 (e, em Uberlândia, art. 47 da LC 524). " + selo("A") + " Vão livre 0,80 e banheiro acessível abrindo para fora: NBR 9050:2020. " + selo("C") + " Peitoril, verga, boneca e largura por ambiente: critério RA (editável em \"Critérios das esquadrias\").</p>" +
       lista("Pendências", res.pendencias.map(function (p) { return p.texto; })) + lista("Avisos", res.avisos);
     janela("Portas e janelas automáticas", html);
     status("Portas e janelas automáticas: " + res.resumo.portas + " porta(s), " + res.resumo.janelas + " janela(s)" + (res.pendencias.length ? "; " + res.pendencias.length + " pendência(s)" : "") + ".");
@@ -84,7 +106,8 @@
   }
   function auditar() {
     var st = estado(), AU = global.EsqAuditor, PC = global.ProblemaCard; if (!st || !AU) { status("O editor 3D não está aberto."); return; }
-    var res = AU.auditar({ estado: st, avaliarFam: avaliar(), criterios: lerCriterios() }), probs = res.problemas;
+    var cx = contextoCodigo();
+    var res = AU.auditar({ estado: st, avaliarFam: avaliar(), criterios: lerCriterios(), municipio: cx.municipio, uso: cx.usoEscolhido ? cx.uso : null }), probs = res.problemas;
     var erros = probs.filter(function (p) { return p.gravidade === "erro"; }), avs = probs.filter(function (p) { return p.gravidade !== "erro"; });
     var opts = { acoes: function (s) { return s && arr(s.ops).length ? (s.texto || true) : false; } };
     function bloco(L, tit, grav) {
@@ -93,7 +116,7 @@
       o.depois = function (p) { return '<p style="font-size:11px;margin:2px 0 0">' + selo(p.nivel) + " " + esc(p.nivelRotulo) + "</p>"; };
       return PC ? PC.lista(L, o) : lista(tit, L.map(function (p) { return p.titulo; }));
     }
-    var html = legenda() + (probs.length ? "" : "<p><b>Nenhum problema</b> nas portas e janelas do modelo.</p>") + bloco(erros, "Erros (" + erros.length + ")", "erro") + bloco(avs, "Avisos (" + avs.length + ")", "aviso");
+    var html = legenda() + cabecalhoCodigo(res.codigo) + (probs.length ? "" : "<p><b>Nenhum problema</b> nas portas e janelas do modelo.</p>") + bloco(erros, "Erros (" + erros.length + ")", "erro") + bloco(avs, "Avisos (" + avs.length + ")", "aviso");
     var ov = janela("Auditar esquadrias", html);
     if (ov && PC) PC.ligar(ov, {
       corrigir: function (solId, k) {
@@ -108,19 +131,23 @@
   }
   function criteriosTela() {
     var R = global.EsqRegras; if (!R) return;
-    var C = R.criterios(lerCriterios());
+    var EC = global.EsqCodigo, cx = contextoCodigo(), K = EC ? EC.resolver(cx.municipio) : null, C = R.criterios(lerCriterios(), K);
     var linhas = Object.keys(C).filter(function (k) { return C[k].valor > 0; }).map(function (k) {
       var c = C[k];
       return "<tr><td>" + selo(c.nivel) + "</td><td>" + esc(c.rotulo) + '</td><td><input data-esq-crit="' + esc(k) + '" type="number" step="0.01" value="' + (Math.round(c.valor * 10000) / 10000) + '" style="width:80px"></td><td style="font-size:12px">' + esc(c.fonte) + "</td></tr>";
     }).join("");
-    var ov = janela("Critérios das esquadrias", legenda() + '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Critério</th><th>Valor</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
+    var munOpts = EC ? EC.listaMunicipios().filter(function (m) { return !m.padrao; }).map(function (m) { return '<option value="' + esc(m.nome) + '"' + (K && K.reconhecido && K.id === m.id ? " selected" : "") + ">" + esc(m.nome) + "</option>"; }).join("") : "";
+    var usoOpts = EC ? Object.keys(EC.USOS).map(function (k) { return '<option value="' + k + '"' + (cx.uso === k ? " selected" : "") + ">" + esc(EC.USOS[k]) + "</option>"; }).join("") : "";
+    var cabCod = EC ? '<div style="margin:6px 0 10px;padding:8px;border:1px solid var(--border,#ccd);border-radius:8px"><label>Município (código de obras) <select data-esq-mun><option value="">' + (K && !K.reconhecido ? "Padrão nacional conservador" + (cx.municipio ? " (\"" + esc(cx.municipio) + "\" sem regra cadastrada)" : "") : "Padrão nacional conservador") + "</option>" + munOpts + "</select></label> &nbsp; " +
+      '<label>Uso da edificação <select data-esq-uso>' + usoOpts + "</select></label><br>" + cabecalhoCodigo(K ? { nome: K.nome, nivel: K.nivel, fonte: K.fonte, aviso: K.aviso, conferir: K.conferir, uso: cx.uso, usoAssumido: !cx.usoEscolhido } : null) + "</div>" : "";
+    var ov = janela("Critérios das esquadrias", legenda() + cabCod + '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th></th><th>Critério</th><th>Valor</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table>" +
       '<p style="font-size:12px">O valor alterado vira critério RA (C) e vale neste aparelho. Peitoril por ambiente: Sala/Quarto 0,90–1,10 · Cozinha/Serviço 1,10–1,20 · Banheiro 1,50–1,60 (C).</p>' +
       '<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-esq-salvar>Salvar</button><button type="button" class="btn ghost sm" data-esq-padrao>Voltar ao padrão</button></div>');
     if (!ov) return;
     ov.addEventListener("click", function (e) {
       var t = e.target; if (!t || !t.hasAttribute) return;
-      if (t.hasAttribute("data-esq-salvar")) { var o = {}; arr(ov.querySelectorAll("[data-esq-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-esq-crit")] = v; }); gravarCriterios(o); status("Critérios das esquadrias gravados neste aparelho."); criteriosTela(); }
-      if (t.hasAttribute("data-esq-padrao")) { gravarCriterios({}); status("Critérios das esquadrias: padrão."); criteriosTela(); }
+      if (t.hasAttribute("data-esq-salvar")) { var mu = ov.querySelector("[data-esq-mun]"), us = ov.querySelector("[data-esq-uso]"); if (mu && us) gravarCodigo({ municipio: mu.value, uso: us.value }); var o = {}; arr(ov.querySelectorAll("[data-esq-crit]")).forEach(function (i) { var v = parseFloat(String(i.value).replace(",", ".")); if (isFinite(v)) o[i.getAttribute("data-esq-crit")] = v; }); gravarCriterios(o); status("Critérios das esquadrias gravados neste aparelho."); criteriosTela(); }
+      if (t.hasAttribute("data-esq-padrao")) { gravarCriterios({}); gravarCodigo({}); status("Critérios das esquadrias: padrão."); criteriosTela(); }
     });
   }
 
@@ -130,9 +157,9 @@
       if (!R || !reg || !global.EsqAuto) return false;
       R.acrescentar("arquitetura", "Arquitetura", "Portas e janelas", [
         { id: "esq-auto", rotulo: "Portas e janelas\nautomáticas", icone: "mais", grande: true, tipo: "menu",
-          dica: "Lança portas e janelas pelo uso do ambiente: janela com a área mínima de iluminação e ventilação (1/6 e 1/8 — provisório, Uberlândia), tamanho comercial, só em parede externa, longe da divisa (1,50 m, Código Civil); porta na parede do acesso, boneca no canto, folha sem bater. Um Ctrl+Z desfaz; rodar de novo não duplica.",
+          dica: "Lança portas e janelas pelo uso do ambiente e pelo código de obras do município (Uberlândia: LC 524/2011): janela com o vão de iluminação (1/6 e 1/8) e a área que abre para a ventilação (50 % da iluminação), profundidade do ambiente, tamanho comercial, só em parede externa, longe da divisa (1,50 m, Código Civil e art. 47); porta na parede do acesso, boneca no canto, folha sem bater. Um Ctrl+Z desfaz; rodar de novo não duplica.",
           itens: [{ id: "esq-auto-sel", rotulo: "No ambiente selecionado", icone: "mais" }, { id: "esq-auto-todos", rotulo: "Em todos os ambientes", icone: "mais" }, { id: "esq-auto-acess", rotulo: "Em todos — projeto acessível (NBR 9050)", icone: "mais" }] },
-        { id: "esq-auditar", rotulo: "Auditar\nesquadrias", icone: "calculadora", grande: true, dica: "Confere iluminação, ventilação, divisa, largura e varredura das portas, peitoril e banheiro sem ventilação — cada item com Corrigir e Mostrar no 3D." },
+        { id: "esq-auditar", rotulo: "Auditar\nesquadrias", icone: "calculadora", grande: true, dica: "Confere iluminação (vão) e ventilação (área que abre), profundidade, pé-direito, áreas mínimas, poço de luz, divisa (Código Civil e art. 47 da LC 524), largura e varredura das portas, peitoril e banheiro sem ventilação — cada item com Corrigir e Mostrar no 3D." },
         { id: "esq-criterios", rotulo: "Critérios das\nesquadrias", icone: "regua", grande: true, dica: "Os números usados, com o nível da fonte: lei lida, provisório (conferir) ou critério RA (editável)." }
       ]);
       reg["esq-auto"] = function () { return true; };

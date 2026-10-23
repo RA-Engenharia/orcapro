@@ -6,9 +6,9 @@
  * filtrar. Este arquivo só faz a fiação e a cena:
  *
  *  1. CONTROLE ANTES · OBRA · DEPOIS · COMPARAR na barra da vista (a mesma barra da {3D} e das plantas 2D),
- *     com atalho Alt+1…4. Só aparece quando o modelo tem fases. COMPARAR = a CORTINA: metade da tela o ANTES,
- *     metade o DEPOIS, com a divisória arrastável (a cena é desenhada duas vezes, cada uma com o seu
- *     recorte — o renderer do BIM ganha um desenho duplo enquanto a cortina estiver ligada).
+ *     com atalho Alt+1…4. Só aparece quando o modelo tem fases. COMPARAR = a RÉGUA antes × depois da apresentação (item 2,
+ *     o "comparar livre"): a apresentação abre direto no fim, parada; arrasta-se a alça ⇔ e gira-se a vista. É um componente
+ *     só (21/10/2026) — a cortina antiga, em tela, com desenho duplo, saiu.
  *  2. APRESENTAÇÃO DA REFORMA — DENTRO DA VISTA 3D (20/10/2026: "não precisa abrir uma nova tela"): a interface recolhe
  *     (Recolher), a câmera faz um percurso suave com enquadramento por capítulo, legendas no terço inferior e contadores;
  *     a planta no chão, as paredes que sobem, a demolição, a construção, os acabamentos e o FECHO: a casa pronta em órbita,
@@ -19,7 +19,7 @@
  *  3. EXPORTAR VÍDEO: 1920×1080, WebM (ou MP4 se o navegador gravar), quadro a quadro com tempo fixo.
  *
  * ⚠ AS PEÇAS DO EDITOR SÓ APARECEM NA TELA PELA MALHA MESCLADA (js/bimagreg.js, vértices com a matriz assada):
- *   mexer na matriz ou na visibilidade da peça não muda nada ali. Quem anima (cortina e apresentação) marca a
+ *   mexer na matriz ou na visibilidade da peça não muda nada ali. Quem anima (a apresentação) marca a
  *   peça com userData._solta — o mesmo marcador da folha de porta aberta —, e ela passa a ser desenhada POR SI,
  *   fora do mesclado. Ao sair, o marcador sai e o mesclado volta sozinho.
  * ===================================================================== */
@@ -73,116 +73,6 @@
     }
   };
 
-  /* ================================================================== A CORTINA (comparar) E O DESENHO DUPLO */
-  var Duplo = {
-    on: false, frac: 0.5, _orig: null, _r: null, lado: null, _dx: 0,
-    /* lado(l) põe a cena como o lado l ("a" = antes, "d" = depois) a vê; antes(): guarda; depois(): devolve */
-    ligar: function (c, lado, aposPasse) {
-      if (!c || !lado) return false;
-      this.desligar();
-      var self = this, r = c.renderer, THREE = THR();
-      this._r = r; this._orig = r.render; this.lado = lado; this.on = true;
-      var v2 = new THREE.Vector2();
-      r.render = function (scene, camera) {
-        if (!self.on) return self._orig.call(r, scene, camera);
-        r.getSize(v2);
-        var w = v2.x, h = v2.y, x = Math.round(clamp(self.frac, 0.0, 1.0) * w);
-        var prevTest = r.getScissorTest();
-        r.setScissorTest(true);
-        try {
-          if (x > 0) { r.setScissor(0, 0, x, h); self.lado.entrar("a"); self._orig.call(r, scene, camera); }
-          if (x < w) { r.setScissor(x, 0, w - x, h); self.lado.entrar("d"); self._orig.call(r, scene, camera); }
-        } finally { self.lado.sair(); r.setScissorTest(prevTest); }
-      };
-      return true;
-    },
-    desligar: function () {
-      /* ⚠ no three r150 o `render` é propriedade PRÓPRIA do renderer (criada no construtor), não do protótipo: devolve-se a função guardada */
-      if (this._r && this._orig) this._r.render = this._orig;
-      this._r = null; this._orig = null; this.on = false; this.lado = null;
-    }
-  };
-
-  /* a cortina do modo COMPARAR: as marcas { a, d } de cada peça vêm do BimP10UI (userData._p10lado) */
-  var Cortina = {
-    el: null, mo: null,
-    ligada: function () { return Duplo.on && Duplo.lado && Duplo.lado.id === "cortina"; },
-    ligar: function () {
-      var c = cena(), mo = modeloEditor(c); if (!c || !mo) return false;
-      this.desligar();
-      var self = this, THREE = THR(), scene = c.scene;
-      this.mo = mo;
-      var pisos = scene.getObjectByName("acab-pisos"), pint = scene.getObjectByName("p4-pinturas");
-      var porId = {};
-      function reunir() {
-        var l = Assumir.pegar(mo), vis = {};
-        porId = {}; l.forEach(function (m) { porId[String(m.userData.expressID)] = m; });
-        return l;
-      }
-      var meshes = reunir();
-      var lado = {
-        id: "cortina",
-        entrar: function (k) {
-          meshes.forEach(function (m) { var ld = m.userData._p10lado; if (ld && !m.userData._p10oculta) { m.visible = !!ld[k]; m.layers.enable(0); } });
-          if (pint) pint.children.forEach(function (f) { var b = porId[String(f.userData.p4Pintura)]; var ld = b && b.userData._p10lado; f.visible = ld ? !!ld[k] : (b ? b.visible !== false : true); });
-          if (pisos) pisos.children.forEach(function (f) { f.visible = k === "d"; });
-        },
-        sair: function () {
-          meshes.forEach(function (m) { if (m.userData._p10lado && !m.userData._p10oculta) m.visible = true; });
-          if (pint) pint.children.forEach(function (f) { f.visible = true; });
-          if (pisos) pisos.children.forEach(function (f) { f.visible = true; });
-        },
-        reunir: function () { meshes = reunir(); }
-      };
-      this._lado = lado;
-      Duplo.ligar(c, lado);
-      this._montarDivisoria(c);
-      return true;
-    },
-    /* o modelo foi refeito (op, Ctrl+Z): as malhas novas entram na cortina */
-    reaplicar: function () {
-      if (!this.ligada()) return;
-      var c = cena(), mo = modeloEditor(c); if (!c || !mo) return;
-      Assumir.soltar(this.mo); this.mo = mo;
-      this._lado.reunir();
-    },
-    desligar: function () {
-      if (Duplo.on && Duplo.lado && Duplo.lado.id === "cortina") Duplo.desligar();
-      if (this.mo) Assumir.soltar(this.mo);
-      this.mo = null; this._lado = null;
-      if (this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el);
-      this.el = null;
-      if (this._h) { try { global.removeEventListener("resize", this._h); } catch (e) {} this._h = null; }
-    },
-    _montarDivisoria: function (c) {
-      var host = c.renderer.domElement.parentNode, self = this;
-      if (!host) return;
-      var el = document.createElement("div");
-      el.setAttribute("data-ap-cortina", "1");
-      el.style.cssText = "position:absolute;top:0;bottom:0;width:30px;margin-left:-15px;z-index:7;cursor:ew-resize;touch-action:none;";
-      el.innerHTML = '<div style="position:absolute;left:14px;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)"></div>' +
-        '<div style="position:absolute;left:3px;top:50%;margin-top:-12px;width:24px;height:24px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(0,0,0,.45);font:700 13px/24px Segoe UI,Arial;text-align:center;color:#25324a">⇔</div>' +
-        '<div style="position:absolute;top:10px;right:20px;white-space:nowrap;background:rgba(20,30,50,.72);color:#fff;font:600 12px Segoe UI,Arial;padding:3px 8px;border-radius:4px">ANTES</div>' +
-        '<div style="position:absolute;top:10px;left:20px;white-space:nowrap;background:rgba(20,30,50,.72);color:#fff;font:600 12px Segoe UI,Arial;padding:3px 8px;border-radius:4px">DEPOIS</div>';
-      host.appendChild(el); this.el = el;
-      function posicionar() { var rc = c.renderer.domElement.getBoundingClientRect(), hr = host.getBoundingClientRect(); el.style.left = (rc.left - hr.left + Duplo.frac * rc.width) + "px"; el.style.top = (rc.top - hr.top) + "px"; el.style.height = rc.height + "px"; }
-      this._pos = posicionar; posicionar();
-      this._h = posicionar; global.addEventListener("resize", this._h);
-      var arrastando = false;
-      el.addEventListener("pointerdown", function (e) { arrastando = true; try { el.setPointerCapture(e.pointerId); } catch (x) {} e.preventDefault(); e.stopPropagation(); });
-      el.addEventListener("pointermove", function (e) {
-        if (!arrastando) return;
-        var rc = c.renderer.domElement.getBoundingClientRect();
-        Duplo.frac = clamp((e.clientX - rc.left) / rc.width, 0.02, 0.98); posicionar(); e.preventDefault();
-      });
-      function solta(e) { arrastando = false; try { el.releasePointerCapture(e.pointerId); } catch (x) {} }
-      el.addEventListener("pointerup", solta); el.addEventListener("pointercancel", solta);
-      /* o desenho duplo só roda quando o 3D desenha: a divisória fica junto da vista */
-      var obs = global.setInterval(function () { if (!self.el) { global.clearInterval(obs); return; } posicionar(); }, 700);
-    },
-    posicao: function (f) { if (f != null) { Duplo.frac = clamp(+f, 0.02, 0.98); if (this._pos) this._pos(); } return Duplo.frac; }
-  };
-
   /* ================================================================== O CONTROLE NA BARRA DA VISTA */
   var CSS_CTL =
     ".rv-ad{display:inline-flex;align-items:center;gap:2px;margin-left:10px;padding:0 4px 0 8px;border-left:1px solid rgba(127,127,127,.35)}" +
@@ -201,7 +91,7 @@
 
   var Ui = {
     _ctl: null, _G: null,
-    Duplo: Duplo, Cortina: Cortina, Assumir: Assumir,
+    Assumir: Assumir,
     ativo: previa,
     estado: function () { var p = P10(); return p ? p.estado() : null; },
     temFases: function () { var a = AP(), st = this.estado(); return !!(a && st && a.temFases(st)); },
@@ -243,28 +133,39 @@
     /* chamado pelo BimP10UI depois de cada reconstrução do modelo do editor */
     aoRebuild: function () {
       this.atualizar();
-      if (Cortina.ligada()) { Cortina.reaplicar(); }
-      else if (this.modo() === "comparar" && this.temFases()) this._sincronizarCortina();
+      this._sincronizarComparar();
     },
-    /* a vista de fase mudou (qualquer caminho): liga/desliga a cortina e repinta o controle */
+    /* a vista de fase mudou (qualquer caminho): repinta o controle */
     aoVista: function () {
       this.atualizar();
-      this._sincronizarCortina();
+      this._sincronizarComparar();
     },
-    _sincronizarCortina: function () {
-      var comparar = this.modo() === "comparar" && this.temFases() && !Apres.ativa;
-      if (comparar && !Cortina.ligada()) { if (Cortina.ligar()) status("Comparar: arraste a divisória — à esquerda o ANTES, à direita o DEPOIS."); }
-      else if (!comparar && Cortina.ligada()) Cortina.desligar();
+    /* COMPARAR é UM componente só (21/10/2026): a régua antes × depois da apresentação (plano de recorte no mundo, moldura,
+       alça ⇔ com ANTES/DEPOIS, vista que gira). A cortina antiga (desenho duplo em tela) saiu. Uma vista de fase gravada no
+       modo antigo "comparar" volta ao Depois e abre a régua nova. */
+    _sincronizarComparar: function () {
+      if (Apres.ativa || this.modo() !== "comparar" || !this.temFases()) return;
+      var p = P10(); if (!p) return;
+      p.definirModo("depois");
+      this.comparar();
+    },
+    /* a régua antes × depois: a apresentação aberta direto no fim, parada (✕ Sair ou Esc devolvem a vista como estava) */
+    comparar: function () {
+      if (Apres.ativa) return null;
+      if (!this.temFases()) { toast(AP() ? AP().MENSAGEM_SEM_FASES : "Sem fases.", "aviso"); return null; }
+      /* a régua é do 3D: com uma planta na frente, leva à {3D} primeiro */
+      try { var G = this._G || global.Gestao, at = G && G._bimVxEst ? G._bimVxEst().ativa : "3d"; if (at && at !== "3d" && G._bimVxAtivar) G._bimVxAtivar("3d"); } catch (eV) {}
+      var r = Apres.iniciar({ comparar: true });
+      if (r && r.ok) status("Antes × Depois: arraste a alça ⇔ para comparar (à esquerda o ANTES, à direita o DEPOIS) e gire a vista com o mouse. Esc sai.");
+      return r;
     },
     definirModo: function (modo) {
       var p = P10();
       if (!p) return null;
       if (Apres.ativa) return null;
       if (!this.temFases()) { toast(AP() ? AP().MENSAGEM_SEM_FASES : "Sem fases.", "aviso"); return null; }
-      var atual = this.modo();
-      /* a cortina é do 3D: com uma planta na frente, o Comparar leva à {3D} primeiro */
-      if (modo === "comparar" && atual !== "comparar") { try { var G = this._G || global.Gestao, at = G && G._bimVxEst ? G._bimVxEst().ativa : "3d"; if (at && at !== "3d" && G._bimVxAtivar) G._bimVxAtivar("3d"); } catch (eV) {} }
-      var r = p.definirModo(modo === atual && modo === "comparar" ? "depois" : modo);   /* clicar de novo em Comparar sai da cortina */
+      if (modo === "comparar") return this.comparar();
+      var r = p.definirModo(modo);
       this.aoVista();
       return r;
     },
@@ -428,7 +329,6 @@
       var esc = null; try { esc = (p.vista && p.vista().escolha) || null; } catch (eE) {}
       var linha = a.linhaDoTempo(st, { deps: p.deps(), titulo: tit, posicoes: pos, duracao: opts.duracao, escolha: esc, extras: this._extras(info, st, p, esc) });
       if (!linha.ok) { toast(linha.motivo, "aviso"); status(linha.motivo); return { ok: false, motivo: linha.motivo }; }
-      Cortina.desligar();
       this.ativa = true; this.c = c; this.mo = mo; this.linha = linha; this.t = 0; this.tocando = false; this.vel = 1; this.info = info; this.opcoes = opts;
       this.escolha = esc; this.livre = null; this._posUsuario = null; this._blend = null;
       this._salvar(c, mo);
@@ -449,13 +349,20 @@
         self._pronto = true; self._mostrarAviso(null);
         self._iniciarBlend(2.2);   /* a entrada começa quando o primeiro quadro sai (as texturas do Realista já carregaram) */
         self._registrarTick();
-        self.t = opts.inicio != null ? clamp(+opts.inicio, 0, linha.total) : 0;
-        self.tocando = opts.tocar !== false;
+        var pi = self._pontoInicial(opts, linha);
+        self.t = pi.t; self.tocando = pi.tocando;
         self._ultimo = 0;
         self._pintarUi();
       };
       if (pEst && pEst.then) pEst.then(function () { global.setTimeout(comecar, 200); }, function () { comecar(); }); else comecar();
       return { ok: true, linha: linha };
+    },
+    /* onde a apresentação começa: no 0 tocando (padrão); `inicio`/`tocar` informados; `comparar` = no FIM, parada — é onde a régua
+       antes × depois (o comparar livre) mora */
+    _pontoInicial: function (opts, linha) {
+      opts = opts || {};
+      if (opts.comparar) return { t: linha.total, tocando: false };
+      return { t: opts.inicio != null ? clamp(+opts.inicio, 0, linha.total) : 0, tocando: opts.tocar !== false };
     },
     _tituloObra: function () {
       var G = global.Gestao, nome = "";
@@ -1251,7 +1158,6 @@
       if (!this.ativa) return false;
       var c = this.c, sv = this.sv, ctx = this.ctx, self = this;
       this.ativa = false; this.tocando = false; this._pronto = false;
-      try { Duplo.desligar(); } catch (e) {}
       /* o tick: sai da lista */
       try { var i = c.tickExtra.indexOf(this._tickFn); if (i >= 0) c.tickExtra.splice(i, 1); c._apTick = null; } catch (e2) {}
       try { global.clearInterval(this._esconder); } catch (e3) {}

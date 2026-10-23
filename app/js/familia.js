@@ -41,7 +41,7 @@
     parede: "Parede", laje: "Laje", piso: "Piso",
     /* P12: instalações (acessório de tubo e dispositivos com conector) — nomes das categorias em PT-BR (convenção de mercado) */
     /* MOBILIÁRIO E PAISAGISMO (js/familiasmob.js, familiasmobcoz.js, familiaspais.js) */
-    cozinha: "Cozinha", banho: "Banho", lazer: "Lazer e área gourmet", paisagismo: "Paisagismo",
+    cozinha: "Cozinha", banho: "Banho", lazer: "Lazer e área gourmet", paisagismo: "Paisagismo", guarda_corpo: "Guarda-corpo",
     acessorio_tubo: "Acessórios do tubo", dispositivo_eletrico: "Dispositivos elétricos", luminaria: "Luminárias", equipamento_eletrico: "Equipamento elétrico",
     /* FAMIMPORT (js/familiamalha.js): as conexões das famílias importadas de .rfa */
     conexao_tubo: "Conexões de tubo", conexao_duto: "Conexões de duto", conexao_eletroduto: "Conexões do conduite"

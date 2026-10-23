@@ -505,6 +505,8 @@
 
     /* --------------------------------------------- saída: DXF, DWG, PDF */
     _baixar: function (nome, texto, tipo) {
+      /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+      if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, texto, tipo, ""); if (!wT) return false; nome = wT.nome; texto = wT.dados; }
       this._ultimoArquivo = { nome: nome, texto: texto, tamanho: texto.length };
       try {
         var url = URL.createObjectURL(new Blob([texto], { type: tipo || "application/dxf" })), a = document.createElement("a");
@@ -567,6 +569,8 @@
         "@media screen{body{background:#666}.folha{margin:10px auto;box-shadow:0 2px 12px rgba(0,0,0,.4)}}</style></head><body>" + corpo + "</body></html>";
       this._ultimoArquivo = { nome: titulo + ".pdf", texto: html, tamanho: html.length };
       /* a janela abre depois de montar (tudo aqui é síncrono: continua no mesmo clique) */
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+      if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, ""); if (html == null) return null; }
       var jan = global.open("", "_blank");
       if (!jan) { toast("O navegador bloqueou a janela do PDF. Permita pop-ups para o OrçaPRO.", "erro"); return null; }
       jan.document.open(); jan.document.write(html); jan.document.close();

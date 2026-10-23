@@ -992,7 +992,7 @@
     else if (UIC.modo === "normas") h = cabecalho("Normas configuradas") + '<div class="mc-corpo cheio"><main class="mc-palco" data-mc-modo="normas">' + normasHtml() + "</main></div>" + rodapeSimples('<button class="mc-bt" data-mc-acao="voltar-assistente">Voltar ao assistente</button>' + (UIC.r ? '<button class="mc-bt" data-mc-acao="resultados">Ver o resultado</button>' : ""));
     else if (UIC.modo === "cypeguia") h = cabecalho("Como usar no CYPE 3D") + '<div class="mc-corpo cheio"><main class="mc-palco" data-mc-modo="cypeguia">' + guiaCypeHtml() + "</main></div>" +
       rodapeSimples('<button class="mc-bt" data-mc-acao="cype-guia-voltar">' + (UIC.cypeVolta === "fechar" ? "Fechar" : (voltaDoGuia() === "resultado" ? "Voltar ao resultado" : "Voltar")) + "</button>");
-    else if (UIC.modo === "pranchas") h = cabecalho("Pranchas do projeto executivo") + '<div class="mc-corpo cheio"><main class="mc-palco" data-mc-modo="pranchas">' + pranchasHtml() + "</main></div>" + rodapeSimples('<button class="mc-bt" data-mc-acao="resultados">Voltar ao resultado</button><button class="mc-bt" data-mc-acao="pranchas-zip">Baixar todas (.zip)</button><button class="mc-bt pri" data-mc-acao="pranchas-imprimir">Imprimir / salvar em PDF</button>');
+    else if (UIC.modo === "pranchas") h = cabecalho("Pranchas do projeto executivo") + '<div class="mc-corpo cheio"><main class="mc-palco" data-mc-modo="pranchas">' + pranchasHtml() + "</main></div>" + rodapeSimples('<button class="mc-bt" data-mc-acao="resultados">Voltar ao resultado</button><button class="mc-bt" data-mc-acao="pranchas-zip">Baixar todas (.zip)</button><button class="mc-bt" data-mc-acao="pranchas-dxf" title="Uma folha por DXF, no Padrão RA, com o carimbo RA: abre no AutoCAD e salva em DWG">DXF (.zip)</button><button class="mc-bt pri" data-mc-acao="pranchas-imprimir">Imprimir / salvar em PDF</button>');
     else if (UIC.modo === "folha") h = cabecalho("Pranchas do projeto executivo") + '<div class="mc-corpo cheio"><main class="mc-palco" data-mc-modo="folha">' + folhaHtml() + "</main></div>" + rodapeSimples('<button class="mc-bt" data-mc-acao="pranchas-voltar">Todas as folhas</button><button class="mc-bt" data-mc-acao="folha-nav" data-mc-v="-1">← Anterior</button><button class="mc-bt pri" data-mc-acao="folha-nav" data-mc-v="1">Próxima →</button>');
     else if (UIC.modo === "vista") h = cabecalho("Resultado em 3D") + '<div class="mc-corpo cheio"><main class="mc-palco" style="padding:0" data-mc-modo="vista"><div data-mc="vista3d" style="position:relative;width:100%;height:100%;min-height:420px"></div></main></div>' + rodapeSimples('<button class="mc-bt" data-mc-acao="resultados">Voltar ao resultado</button>');
     jan.innerHTML = h;
@@ -1362,6 +1362,7 @@
   ];
   function versao() { try { return (global.CONFIG && CONFIG.versao) || ""; } catch (e) { return ""; } }
   function calcular(op) {
+    if (!lic("calcular a estrutura")) return false;
     var e = UIC.est, val = validar(e);
     if (!val.ok) { UIC.modo = "assistente"; UIC.passo = val.falta[0].passo; render(); toast(val.falta[0].texto, "aviso", 6000); return false; }
     salvar(true);
@@ -1484,8 +1485,11 @@
     return o;
   }
   function baseDe(r) { return (r && r.parametros && r.parametros.geometria && r.parametros.geometria.base) || (UIC.rPar && UIC.rPar.geometria && UIC.rPar.geometria.base) || "rotulada"; }
+  /* ⚠ a comparação CALCULA o galpão de novo (no Worker) e "Usar a base engastada" troca o resultado: é cálculo, não consulta
+     (revisão adversarial 21/10/2026 — com o teste vencido e a janela aberta, saía um dimensionamento novo sem licença) */
   function compararBase() {
     var r = UIC.r; if (!r || !r.ok || (UIC.alt && UIC.alt.estado === "rodando")) return;
+    if (!lic("comparar a base dos pilares")) return;
     var par = JSON.parse(JSON.stringify(UIC.rPar || parametros(UIC.est))), atual = resumoAtual(r);
     par.geometria.base = baseDe(r);
     var A = UIC.alt = { estado: "rodando", base: par.geometria.base === "engastada" ? "rotulada" : "engastada", t0: Date.now(), id: "a" + Date.now(), etapa: "", rodada: 0 };
@@ -1768,9 +1772,16 @@
     return n.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "obra";
   }
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:metalica"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     if (global.BimMetalUI && BimMetalUI.baixar) return BimMetalUI.baixar(nome, dados, mime);
     try { var bl = new Blob([dados], { type: mime || "application/octet-stream" }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 5000); return true; } catch (e) { return false; }
   }
+  /* ⚠ TRAVA DE LICENÇA NA FUNÇÃO (21/10/2026, js/licencafuncao.js): a fita esconde o grupo da Metálica quando a disciplina não está
+     liberada, mas o cálculo e cada entrega também são chamados pelos botões desta janela, pela API e por atalho — cada função
+     confere sozinha. Em teste de 1 hora libera e conta (o entregável sai com a marca, pelo `baixar`); vencido ou sem licença
+     recusa e mostra a oferta. Consultar (abrir a janela, ver o que já foi calculado) continua livre. Sem o módulo: não trava. */
+  function lic(acao) { var L = global.LicencaFuncao; return L && L.guarda ? L.guarda("metalica", acao) : true; }
   function hojeBR() { var d = new Date(); function z(n) { return (n < 10 ? "0" : "") + n; } return z(d.getDate()) + "/" + z(d.getMonth() + 1) + "/" + d.getFullYear(); }
   /* o cadastro da conta (Empresa.dados: nome, CNPJ, responsável, título, CREA…) e o logo */
   function empresaApp() { var d = {}, logo = null; try { if (global.Empresa && Empresa.dados) d = Empresa.dados() || {}; if (global.Empresa && Empresa.logo) logo = Empresa.logo(); } catch (e) {} return { d: d, logo: logo }; }
@@ -1825,6 +1836,7 @@
     });
   }
   function memorial() {
+    if (!lic("gerar o memorial")) return;
     var r = UIC.r, M = global.AcoMemorial; if (!r || !r.ok || !M || !M.gerar) { toast("O memorial sai de um cálculo que fechou.", "aviso"); return; }
     var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
     if (w && w.document) { try { w.document.write('<!doctype html><meta charset="utf-8"><title>Memorial</title><p style="font:15px system-ui;padding:40px;color:#334">Montando o memorial de cálculo…</p>'); } catch (e) {} }
@@ -1833,12 +1845,15 @@
       var html = typeof x === "string" ? x : (x && x.html) || "";
       if (html && global.UnidadesMemorial) html = UnidadesMemorial.preparar(html);   /* aba SI | Técnica (kgf / tf) */
       if (!html) { if (w) try { w.close(); } catch (e) {} toast("Memorial: " + ((x && x.motivo) || "não gerou conteúdo") + ".", "erro", 9000); return; }
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+      if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(html, "modela:metalica"); if (hT == null) { if (w) try { w.close(); } catch (eW) {} return; } html = hT; }
       UIC.ultimoMemorial = { titulo: x.titulo, secoes: arr(x.secoes).length, avisos: arr(x.avisos).length, bytes: html.length };
       if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Memorial aberto em outra aba: imprima ou salve em PDF (Ctrl+P)." + (arr(x.avisos).length ? " " + x.avisos.length + " conferência(s) acusada(s) na seção 13." : ""), "ok", 8000); }
       else { baixar(nomeArq() + "-memorial-metalica.html", html, "text/html"); toast("Memorial baixado (.html): abra e imprima em PDF.", "ok", 7000); }
     }, function (e) { if (w) try { w.close(); } catch (e2) {} toast("Memorial: " + (e && e.message ? e.message : e), "erro", 9000); });
   }
   function pranchas() {
+    if (!lic("gerar as pranchas")) return;
     var r = UIC.r, PR = global.AcoPranchas; if (!r || !r.ok || !PR || !PR.gerar) { toast("As pranchas saem de um cálculo que fechou.", "aviso"); return; }
     var x = null;
     try { x = PR.gerar(r, opcoesPranchas()); } catch (e) { toast("Pranchas: " + e.message, "erro", 9000); return; }
@@ -1850,7 +1865,7 @@
     var h = '<div class="mc-ph"><div><h3>Pranchas do projeto executivo</h3><p>' + x.folhas.length + " folhas " + esc((x.folhas[0] || {}).formato || "A1") + " no padrão da casa (carimbo RA). Imprima em PDF ou baixe os desenhos.</p></div></div>";
     if (arr(x.avisos).length) h += '<ul class="mc-avisos">' + x.avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>";
     h += '<div class="mc-modelos" data-mc="pranchas">' + x.folhas.map(function (f, i) {
-      return '<div class="mc-mod" style="cursor:default"><div class="mc-fig" style="background:#fff;cursor:zoom-in" data-mc-acao="prancha-ver" data-mc-v="' + i + '" title="Ver a folha grande">' + f.svg + '</div><div class="mc-mc"><b>' + esc((f.numero ? f.numero + " — " : "") + f.titulo) + '</b><p>Escala ' + esc(f.escala || "indicada") + '</p><div class="mc-ds"><button class="mc-bt" data-mc-acao="prancha-svg" data-mc-v="' + i + '">Baixar SVG</button></div></div></div>';
+      return '<div class="mc-mod" style="cursor:default"><div class="mc-fig" style="background:#fff;cursor:zoom-in" data-mc-acao="prancha-ver" data-mc-v="' + i + '" title="Ver a folha grande">' + f.svg + '</div><div class="mc-mc"><b>' + esc((f.numero ? f.numero + " — " : "") + f.titulo) + '</b><p>Escala ' + esc(f.escala || "indicada") + '</p><div class="mc-ds"><button class="mc-bt" data-mc-acao="prancha-svg" data-mc-v="' + i + '">Baixar SVG</button><button class="mc-bt" data-mc-acao="prancha-dxf" data-mc-v="' + i + '">Baixar DXF</button></div></div></div>';
     }).join("") + "</div>";
     return h;
   }
@@ -1858,22 +1873,46 @@
   function folhaHtml() {
     var x = UIC.pranchas || { folhas: [] }, i = UIC.folha || 0, f = x.folhas[i];
     if (!f) return '<div class="mc-vazio">Sem folha.</div>';
-    return '<div class="mc-ph"><div><h3>' + esc((f.numero ? f.numero + " — " : "") + f.titulo) + "</h3><p>Folha " + (i + 1) + " de " + x.folhas.length + " · " + esc(f.formato || "A1") + " · escala " + esc(f.escala || "indicada") + '</p></div><span class="mc-cont"><button class="mc-bt" data-mc-acao="prancha-svg" data-mc-v="' + i + '">Baixar SVG</button></span></div>' +
+    return '<div class="mc-ph"><div><h3>' + esc((f.numero ? f.numero + " — " : "") + f.titulo) + "</h3><p>Folha " + (i + 1) + " de " + x.folhas.length + " · " + esc(f.formato || "A1") + " · escala " + esc(f.escala || "indicada") + '</p></div><span class="mc-cont"><button class="mc-bt" data-mc-acao="prancha-svg" data-mc-v="' + i + '">Baixar SVG</button><button class="mc-bt" data-mc-acao="prancha-dxf" data-mc-v="' + i + '">Baixar DXF</button></span></div>' +
       '<div class="mc-papel" style="padding:0;background:#fff" data-mc="folha">' + f.svg + "</div>";
   }
   function imprimirPranchas() {
     var x = UIC.pranchas; if (!x) return;
+    if (!lic("imprimir as pranchas")) return;
     var f0 = x.folhas[0] || {}, A = { A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297], A4: [297, 210] }[f0.formato || "A1"] || [841, 594];
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Pranchas — estrutura metálica — ' + esc((obra() || {}).nome || "") + "</title><style>@page{size:" + A[0] + "mm " + A[1] + "mm;margin:0}html,body{margin:0;background:#888}.f{width:" + A[0] + "mm;height:" + A[1] + "mm;background:#fff;page-break-after:always;overflow:hidden;margin:0 auto 8mm}.f svg{width:100%;height:100%;display:block}@media print{body{background:#fff}.f{margin:0}}</style></head><body>" +
       x.folhas.map(function (f) { return '<div class="f">' + f.svg + "</div>"; }).join("") + "</body></html>";
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { html = TesteModulo.marcarHtml(html, "modela:metalica"); if (html == null) return; }
     var w = null; try { w = global.open("", "_blank"); } catch (e) { w = null; }
     if (w && w.document) { w.document.open(); w.document.write(html); w.document.close(); toast("Pranchas abertas em outra aba: imprima em PDF no tamanho " + (f0.formato || "A1") + ".", "ok", 7000); }
     else baixar(nomeArq() + "-pranchas-metalica.html", html, "text/html");
   }
   function zipPranchas() {
     var x = UIC.pranchas; if (!x || !global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return; }
+    if (!lic("baixar as pranchas")) return;
     var arqs = {}; x.folhas.forEach(function (f, i) { arqs[(f.numero || ("folha-" + (i + 1))).replace(/[^\w.-]+/g, "-") + "-" + String(f.titulo || "").replace(/[^\w.-]+/g, "-").slice(0, 40) + ".svg"] = f.svg; });
     baixar(nomeArq() + "-pranchas-metalica.zip", BimBcf.zipEscrever(arqs), "application/zip");
+  }
+  /* O DXF DAS PRANCHAS (21/10/2026, js/pranchasdxf.js): cada folha em DXF R2000, mm de papel 1:1, layers e penas do Padrão RA,
+     textos e cotas como entidades, carimbo RA. Em teste de 1 hora o `baixar` põe a marca "Versão de teste" em cada DXF (também dentro do .zip). */
+  function dxfFolha(i) {
+    var x = UIC.pranchas, PX = global.PranchasDxf, f = x && x.folhas[i];
+    if (!f) return;
+    if (!PX) { toast("O DXF das pranchas não carregou (js/pranchasdxf.js).", "erro"); return; }
+    if (!lic("baixar o DXF da prancha")) return;
+    var t = null; try { t = PX.dxfDaFolha(f); } catch (e) { toast("DXF: " + e.message, "erro", 9000); return; }
+    if (baixar(nomeArq() + "-" + PX.nomeArquivo(f, i), t, "application/dxf") !== false) toast("DXF da folha " + (f.numero || (i + 1)) + " baixado (R2000, mm de papel 1:1, layers do Padrão RA). O AutoCAD abre direto e salva em DWG.", "ok", 8000);
+  }
+  function dxfPranchas() {
+    var x = UIC.pranchas, PX = global.PranchasDxf;
+    if (!x) return;
+    if (!PX || !global.BimBcf || !BimBcf.zipEscrever) { toast("O DXF das pranchas (ou o gerador de .zip) não carregou.", "erro"); return; }
+    if (!lic("baixar o DXF das pranchas")) return;
+    var r = null; try { r = PX.arquivos(x); } catch (e) { toast("DXF: " + e.message, "erro", 9000); return; }
+    if (!r || !r.nomes.length) { toast("DXF: " + ((r && r.avisos[0]) || "nada gerado") + ".", "erro", 9000); return; }
+    if (baixar(nomeArq() + "-pranchas-metalica-dxf.zip", BimBcf.zipEscrever(r.arquivos), "application/zip") !== false)
+      toast(r.nomes.length + " DXF (R2000, mm de papel 1:1, layers do Padrão RA com a pena de cada uma, textos e cotas como entidades, carimbo RA)." + (r.avisos.length ? " " + r.avisos.length + " aviso(s): " + r.avisos[0] : "") + " O AutoCAD abre direto e salva em DWG.", "ok", 9000);
   }
   /* os nomes dos arquivos do pacote: o MESMO base vai para o AcoCype.arquivos e para o guia
      (o guia cita o IFC e os textos por etiqueta pelo nome que estão no .zip). O AcoCype troca
@@ -1933,6 +1972,7 @@
     } catch (e) { return null; }
   }
   function cype() {
+    if (!lic("exportar para o CYPE 3D")) return;
     var r = UIC.r, CY = global.AcoCype; if (!r || !r.ok || !CY) { toast("A exportação para o CYPE sai de um cálculo que fechou.", "aviso"); return; }
     var op = opCype(), lista = null;
     try { lista = CY.arquivos ? CY.arquivos(r, op) : null; } catch (e) { toast("CYPE: " + e.message, "erro", 9000); return; }
@@ -1967,6 +2007,7 @@
     return !id && gs.length === 1 ? gs[0] : null;
   }
   function gerarModelo3D() {
+    if (!lic("gerar o modelo 3D")) return null;
     var r = UIC.r, U = global.BimMetalUI, MG = global.BimMetalGalpao;
     if (!r || !r.ok || !U || !U.gerarGalpao || !MG || !MG.parDoCalculo) { toast("O modelador da metálica não carregou.", "erro"); return null; }
     /* PÓRTICOS M4 (14/10/2026): o BimMetalGalpao desenha também UMA água (parDoCalculo leva `aguas`, a água sobe para a direita
@@ -2140,7 +2181,9 @@
       case "pranchas-voltar": UIC.modo = "pranchas"; render(); return;
       case "folha-nav": var nf = UIC.pranchas ? UIC.pranchas.folhas.length : 1; UIC.folha = ((UIC.folha || 0) + (+val || 0) + nf) % nf; render(); return;
       case "pranchas-zip": zipPranchas(); return;
-      case "prancha-svg": var fo = UIC.pranchas && UIC.pranchas.folhas[+val]; if (fo) baixar(nomeArq() + "-" + String((fo.numero || "folha") + "-" + (fo.titulo || "")).replace(/[^\w.-]+/g, "-").slice(0, 60) + ".svg", fo.svg, "image/svg+xml"); return;
+      case "pranchas-dxf": dxfPranchas(); return;
+      case "prancha-dxf": dxfFolha(+val); return;
+      case "prancha-svg": var fo = UIC.pranchas && UIC.pranchas.folhas[+val]; if (fo && lic("baixar a prancha")) baixar(nomeArq() + "-" + String((fo.numero || "folha") + "-" + (fo.titulo || "")).replace(/[^\w.-]+/g, "-").slice(0, 60) + ".svg", fo.svg, "image/svg+xml"); return;
       default: return;
     }
     salvar(); UIC.manterRolagem = true; render();
@@ -2170,7 +2213,9 @@
     modelos: function () { conferirObra(); garantir(); UIC.modo = "modelos"; render(); return true; },
     normas: function () { conferirObra(); garantir(); UIC.modo = "normas"; render(); return true; },
     resultados: function () { conferirObra(); garantir(); UIC.modo = UIC.r ? "resultado" : "assistente"; if (!UIC.r) { UIC.passo = PASSOS.length; toast("Ainda não há cálculo nesta sessão: confira os dados e calcule.", "aviso", 5000); } render(); return !!UIC.r; },
-    calcular: function () { conferirObra(); garantir(); return calcular(); },
+    calcular: function () { if (!lic("calcular a estrutura")) return false; conferirObra(); garantir(); return calcular(); },
+    /* a trava na função, para quem integra e para o teste: true = pode (e em teste de 1 hora o relógio do módulo anda) */
+    licenca: function (acao) { return lic(acao || "usar a função"); },
     memorial: function () { conferirObra(); if (!UIC.r) { toast("Calcule primeiro: o memorial sai do resultado.", "aviso"); return false; } memorial(); return true; },
     pranchas: function () { conferirObra(); if (!UIC.r) { toast("Calcule primeiro: as pranchas saem do resultado.", "aviso"); return false; } pranchas(); return true; },
     cype: function () { conferirObra(); if (!UIC.r) { toast("Calcule primeiro: o arquivo do CYPE sai do resultado.", "aviso"); return false; } cype(); return true; },

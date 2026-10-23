@@ -53,12 +53,14 @@
       var m = M(), s = null;
       try { s = m && m.status ? m.status() : null; } catch (e) { s = null; }
       var tem = false; try { tem = !!(m && m.tem(ID)); } catch (e2) { tem = false; }
-      if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play) };
+      /* teste de 1 hora vencido/pausado (js/testemodulo.js): a oferta é a do teste, não a dos 7 dias */
+      if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play), teste1h: (s && s.vencidos1h && s.vencidos1h[ID]) || "" };
       /* compra (ou licença interna pelo servidor) vale mais que o teste: quem comprou durante o teste é "compra" */
       var mot = "compra", comprado = false;
       try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
       if (s && s.demo) mot = "demo";
       else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
+      else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
       return { liberado: true, motivo: mot, teste: s ? s.teste : null };
     },
     liberado: function () { return this.estado().liberado; },
@@ -68,7 +70,7 @@
       var e = this.estado();
       if (e.liberado) return { ok: true, motivo: e.motivo };
       var t = e.teste || {};
-      return { ok: false, acao: acao || "", motivo: "O " + OFERTA.titulo + " não está liberado nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado };
+      return { ok: false, acao: acao || "", motivo: "O " + OFERTA.titulo + " não está liberado nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado, teste1h: e.teste1h || "" };
     },
 
     /* a licença deste aparelho é SÓ a da marmoraria? (tier "modela" e nenhuma disciplina do Modela comprada) */

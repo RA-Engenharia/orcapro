@@ -923,7 +923,12 @@
          "sem Plus → só Orçamento" logo abaixo: abriria o orçamento para quem
          comprou só a modelagem, e trancaria o BIM que ele comprou. */
       var soModela = typeof Gestao !== "undefined" && !this._demo && !!Gestao.soModela && Gestao.soModela();
-      var view = this.view || (soModela ? "bim" : (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+      /* ⚠ A ABERTURA usa a Gestão COMPRADA: com o teste de 1 hora por módulo (js/testemodulo.js) a Gestão aparece
+         para quem tem só o Orçamento, e abrir o programa no Painel gastaria o relógio do teste sem ninguém pedir */
+      var gestaoComprada = typeof Gestao !== "undefined" && (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : podeGestao);
+      var view = this.view || (soModela ? "bim" : (gestaoComprada && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos"));
+      /* o selo e a faixa do teste de 1 hora acompanham a tela nova (depois do render, que é síncrono) */
+      try { if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.pintar) setTimeout(function () { try { TesteModuloUI.pintar(); } catch (eP) {} }, 0); } catch (eTp) {}
       // Rede de segurança: quem seta App.view direto (deep-link ?view=xxx, console,
       // harness de screenshot) não passa por irPara. View desconhecida deixava o
       // #main VAZIO — normaliza aqui p/ o padrão seguro antes de qualquer render.
@@ -1000,7 +1005,9 @@
         var htmlG = Gestao.render(view), okG = !!(htmlG && String(htmlG).trim());
         // ⚠ o #main troca de tela aqui: o Gantt que estava nele é solto (ver _gxDesligar)
         this._gxDesligar();
-        main.innerHTML = okG ? this._avisosDadoGestao() + htmlG : this._viewVazia(view);
+        /* teste de 1 hora vencido (js/testemodulo.js): a faixa "continua aqui, só para consulta" + a compra */
+        var faixaT = ""; try { faixaT = (typeof TesteModuloUI !== "undefined" && TesteModuloUI.faixa) ? TesteModuloUI.faixa(view) : ""; } catch (eFx) { faixaT = ""; }
+        main.innerHTML = okG ? faixaT + this._avisosDadoGestao() + htmlG : this._viewVazia(view);
         if (okG && Gestao.afterRender) Gestao.afterRender(view);
         return;
       }
@@ -1981,7 +1988,8 @@
     viewPadrao: function () {
       /* licença só do OrçaPRO Modela: a casa é o BIM */
       if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) return "bim";
-      var podeG = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
+      /* a COMPRADA: o destino padrão não pode cair num módulo em teste (gastaria o relógio — js/testemodulo.js) */
+      var podeG = typeof Gestao !== "undefined" && (this._demo || (Gestao.podeGestaoComprada ? Gestao.podeGestaoComprada() : Gestao.podeGestao()));
       if (podeG && (typeof Auth === "undefined" || !Auth.podeModulo || Auth.podeModulo("dashboard"))) return "dashboard";
       return "orcamentos";
     },
@@ -5953,6 +5961,8 @@
     },
     _cronoSemPermissao: function (obraId) {
       if (typeof Gestao === "undefined" || !Gestao.podeGestao || !Gestao.podeGestao()) return "O planejamento da obra é da Gestão de Obras (plano Plus).";
+      /* teste de 1 hora da Gestão vencido (js/testemodulo.js, revisão R8): o plano da obra grava no cadastro da Gestão */
+      if (Gestao.podeGestaoLiberada && !Gestao.podeGestaoLiberada()) return "O teste de 1 hora da Gestão de Obras terminou: o planejamento da obra volta com a compra. O que você fez continua salvo.";
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("obras")) return "Seu usuário não tem permissão no módulo Obras — peça ao administrador.";
       if (obraId && typeof Auth !== "undefined" && Auth.podeObra && !Auth.podeObra(obraId)) return "Esta obra não está liberada para o seu usuário.";
       return null;
@@ -16360,6 +16370,9 @@
       if (this._demo) return false; // a vitrine da página de vendas nunca bloqueia
       if (typeof Licenca === "undefined") return false;
       var s = Licenca.status(); if (!s) return false;
+      /* TESTE DE 1 HORA POR MÓDULO (js/testemodulo.js): o módulo da tela venceu (ou pausou sem servidor) → nada
+         grava nem exporta nesta tela; o que a pessoa comprou (outra tela) segue livre. Fora do regime: "". */
+      try { if (typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao && TesteModulo.guardaGravacao()) return true; } catch (eTm) {}
       // LOTE 5: trial de 7 dias é COMPLETO (salva/exporta) enquanto ativo;
       // bloqueia só quando expira. Antes: s.trial bloqueava sempre — ninguém
       // experimentava o entregável antes de pagar.
@@ -16372,6 +16385,11 @@
     _avisoTrial: function () {
       var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
       var msg;
+      /* bloqueado pelo teste de 1 hora: a oferta do módulo (nunca "ative sua licença" — ela já está ativa) */
+      try {
+        var tmA = typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao ? TesteModulo.guardaGravacao() : "";
+        if (tmA && typeof TesteModuloUI !== "undefined") { TesteModuloUI.oferta(tmA); return; }
+      } catch (eTm) {}
       /* SUSPENSA POR COBRANÇA: o caminho é pagar, não a tela de chave — mandar
          para "ative sua licença" faria a pessoa colar a chave de novo e achar
          que o sistema quebrou. Mostra o aviso com os links de pagamento. */
@@ -16405,7 +16423,12 @@
       /* licença só do OrçaPRO Modela: o orçamento é do OrçaPRO. A tela já vem
          trancada (App.render); esta é a porta de gravação, para nenhum caminho
          lateral (atalho, modal, BIM) gravar orçamento por baixo. */
-      if (!this._demo && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) {
+      /* (21/10/2026) o teste de 1 hora do Orçamento (js/testemodulo.js) abre esta porta enquanto há minutos */
+      var orcEmTeste = false;
+      try { orcEmTeste = typeof TesteModulo !== "undefined" && TesteModulo.liberado && TesteModulo.liberado("orcamento"); } catch (eOt) { orcEmTeste = false; }
+      if (!this._demo && !orcEmTeste && typeof Gestao !== "undefined" && Gestao.soModela && Gestao.soModela()) {
+        var tmO = ""; try { tmO = typeof TesteModulo !== "undefined" && TesteModulo.bloqueado && TesteModulo.bloqueado("orcamento") ? "orcamento" : ""; } catch (eOb) {}
+        if (tmO && typeof TesteModuloUI !== "undefined") { TesteModuloUI.oferta(tmO); return false; }
         UI.toast("Orçamentos faz parte do OrçaPRO. A sua licença é do OrçaPRO Modela (a modelagem BIM) — nada foi gravado.", "erro"); return false; }
       if (this._trialBloqueado()) {
         /* ⚠ quem está SUSPENSO não está em "modo demonstração": esse texto

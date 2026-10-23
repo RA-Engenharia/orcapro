@@ -575,6 +575,11 @@
            (as 12 paredes sem código viram uma linha "12 elementos") */
         var k = l.status === "ok" ? l.codigo + "|" + unidadeChave(l.unidade) : "~" + l.status + "|" + l.codigo + "|" + l.descricao + "|" + unidadeChave(l.unidadeQto);
         if (l.bloco) k = l.bloco + "#" + k;   /* P10: a demolição não soma com a construção (mesmo código, outro bloco) */
+        /* ESTIMATIVA (pré-lançamento de estrutura, js/conclanc.js — revisão 21/10/2026): a linha cuja quantidade é
+           PRÉ-DIMENSIONAMENTO (rótulo "ESTIMATIVA") não soma com a mesma composição orçada pelo projeto e leva a marca até
+           o orçamento — antes chegava lá como um "CONCRETAGEM DE PILARES" qualquer, sem dizer que é estimativa */
+        var est = /ESTIMATIVA/.test(txt(l.rotulo)) ? txt(l.rotulo).replace(/^.*?ESTIMATIVA/, "ESTIMATIVA") : "";
+        if (est) k = "est#" + k;
         var g = porCod[k];
         if (!g) {
           g = porCod[k] = { chave: k, codigo: l.codigo, descricao: l.descricao, unidade: l.unidade || l.unidadeQto, status: l.status, quantidade: 0, bloco: l.bloco || null,
@@ -582,6 +587,7 @@
           ordem.push(k);
         }
         if (l.provisorio) g.provisorio = l.provisorio;   /* revisão A1: o preço provisório (mobiliário sob consulta) viaja até o orçamento */
+        if (est) g.estimativa = est;
         g.quantidade += num(l.quantidade);
         if (g.elementos.indexOf(elId) < 0) g.elementos.push(elId);
         l.avisos.forEach(function (a) { if (g.avisos.indexOf(a) < 0) g.avisos.push(a); });
@@ -797,9 +803,9 @@
       return { codigo: g.codigo, descricao: g.descricao, unidade: g.unidade, status: g.status, quantidade: r4(g.quantidade),
                custo: g.status === "ok" ? { mo: r2(g.custo.mo), mat: r2(g.custo.mat), eq: r2(g.custo.eq), total: r2(g.custo.total) } : null,
                unitario: g.unitario, horas: fh.horas, horasTotal: fh.horasTotal, duracaoDias: fh.duracaoDias, funcaoCritica: fh.funcaoCritica,
-               elementos: g.elementos, avisos: g.avisos, bloco: g.bloco || undefined, provisorio: g.provisorio || undefined };
+               elementos: g.elementos, avisos: g.avisos, bloco: g.bloco || undefined, provisorio: g.provisorio || undefined, estimativa: g.estimativa || undefined };
     });
-    porComposicao.forEach(function (g) { if (!g.provisorio) delete g.provisorio; });
+    porComposicao.forEach(function (g) { if (!g.provisorio) delete g.provisorio; if (!g.estimativa) delete g.estimativa; });
     porComposicao.forEach(function (g) { if (!g.bloco) delete g.bloco; });   /* P10: só a demolição leva bloco (o resto fica como antes) */
     var ok = porComposicao.filter(function (g) { return g.status === "ok"; });
     var res = resumir(ok.map(function (g) { return { status: "ok", custo: g.custo, duracaoDias: g.duracaoDias, horas: g.horas }; }), opcoes);
@@ -872,6 +878,7 @@
         if (it.mercado && g.provisorio) it.mercado.provisorio = { motivo: g.provisorio.motivo };   /* revisão A1: vai marcado ao orçamento */
         /* bancada pela tabela da marmoraria: item próprio com o preço da tabela da empresa (nunca procurado na SINAPI) */
         if (/^MARM:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MARMORARIA" };
+        if (g.estimativa) { it.estimativa = { motivo: g.estimativa }; it.descricao = txt(it.descricao) + " — " + g.estimativa; }   /* a marca vai NA LINHA */
         itens.push(it);
       }
       else fora.push({ codigo: g.codigo, descricao: g.descricao, status: g.status, quantidade: g.quantidade, motivo: (g.avisos || [])[0] || (g.status === "ok" ? "quantidade zero" : g.status), elementos: g.elementos.slice() });

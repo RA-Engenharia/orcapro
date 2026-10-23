@@ -49,8 +49,11 @@
  *     local (descrição da Caixa), conferido por tools/test-alvunidades.js;
  *   · consumo por m²: o COEFICIENTE do insumo na composição SINAPI analítica
  *     MG (data/sinapi-MG-analitico.json) — já com a perda da Caixa;
- *   · concreto: NBR 6136:2016 (famílias e classes) via js/blocos.js;
- *   · espessura de parede e septo: NBR 15270-1:2017 / NBR 6136:2016 como
+ *   · concreto: NBR 6136-1:2026 (Tabela 2 famílias, Tabelas 1 e 6 classes, Tabela 4 paredes) via js/blocos.js;
+ *   · cerâmico: NBR 15270-1:2023 (Tabelas 3 e 4 dimensões nominais, Tabela 2 paredes);
+ *     (conferido em 21/10/2026 no texto das duas edições — cópia NÃO licenciada à RA: só valores,
+ *     `exemplarLicenciado: false`; prova: tools/test-alv-normas-2026.js)
+ *   · espessura de parede e septo: NBR 15270-1:2023 Tabela 2 / NBR 6136-1:2026 Tabela 4 como
  *     MÍNIMO; a geometria usa o valor de ficha quando há, senão o mínimo da
  *     norma marcado "conferir ficha do fornecedor";
  *   · massa: ficha de fabricante (URL no campo `fontes`); sem ficha, NULO e
@@ -79,20 +82,22 @@
   var FONTES = {
     SINAPI: { doc: "SINAPI — Caixa: insumos e composições MG 06/2026, não desonerado (base local data/sinapi-MG-2026-06.json e data/sinapi-MG-analitico.json)",
               url: "https://www.caixa.gov.br/poder-publico/modernizacao-gestao/sinapi/Paginas/default.aspx" },
-    /* ⚠ EDIÇÕES (pesquisa de 20/10/2026): a NBR 15270-1:2017 foi substituída pela edição 12/2023 e a NBR 6136:2016
-       foi CANCELADA em 02/2026 (NBR 6136-1 e 6136-2:2026). Os números de norma daqui são das edições anteriores, por
-       fonte secundária oficial (caderno SUDECAP/PBH, fichas FAD do PBQP-H) — conferir na edição vigente antes de
-       citar em memorial. Nenhuma está na biblioteca de normas da RA. */
-    NBR15270: { doc: "ABNT NBR 15270-1 — Componentes cerâmicos — Blocos e tijolos para alvenaria — Parte 1: Requisitos (vigente: 15270-1:2023, publicada em 14/12/2023, que cancelou a 2017 — catálogo ABNT consultado em 20/10/2026; valores daqui da 2017: valor da edição anterior — conferir na edição vigente)",
+    /* ⚠ EDIÇÕES: a NBR 15270-1:2017 foi substituída pela edição 12/2023 e a NBR 6136:2016 foi CANCELADA em 02/2026
+       (NBR 6136-1 e 6136-2:2026). Em 21/10/2026 o texto das duas edições vigentes foi conferido contra os valores daqui
+       (cópia NÃO licenciada à RA — só valores, nunca o PDF; `exemplarLicenciado: false`): tools/test-alv-normas-2026.js.
+       O que a edição nova NÃO traz fica marcado em `conferir`. */
+    NBR15270: { doc: "ABNT NBR 15270-1:2023 — Componentes cerâmicos — Blocos e tijolos para alvenaria — Parte 1: Requisitos (publicada em 14/12/2023, cancelou a 2017; valores conferidos no texto em 21/10/2026 — Tabela 2 paredes e resistência, Tabelas 3 e 4 dimensões nominais, itens 5.1 tolerâncias e 5.2 espessuras)",
+                exemplarLicenciado: false,
                 url: "https://www.normas.com.br/visualizar/abnt-nbr-nm/24627/abnt-nbr15270-1-componentes-ceramicos-blocos-e-tijolos-para-alvenaria-parte-1-requisitos",
-                secundaria: { doc: "SUDECAP/PBH — Caderno de encargos cap. 7 (29/08/2024), Tabelas 2 e 4 (NBR 15270-1:2017: tolerância ±5 mm na peça e ±3 mm na média, parede externa ≥ 7 mm, septo ≥ 6 mm, esquadro e planeza ≤ 3 mm)",
+                secundaria: { doc: "SUDECAP/PBH — Caderno de encargos cap. 7 (29/08/2024), Tabelas 2 e 4 (NBR 15270-1:2017, edição anterior — a primária 2023 já foi conferida)",
                               url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
-                nota: "a NBR 7170 (tijolo maciço) foi cancelada em 11/2017 e incorporada à 15270 (CBIC)" },
-    NBR6136: { doc: "ABNT NBR 6136:2016 — Blocos vazados de concreto simples para alvenaria (CANCELADA em 27/02/2026 → NBR 6136-1:2026 Requisitos e 6136-2:2026 Métodos de ensaio — catálogo ABNT consultado em 20/10/2026; valores daqui da 2016: valor da edição anterior — conferir na edição vigente)",
+                nota: "a NBR 7170 (tijolo maciço) foi cancelada em 11/2017 e incorporada à 15270 (CBIC). 15270-1:2023, item 5.1: tolerância de largura, altura e comprimento VED/BFS ± 5,0 mm individual e ± 3,0 mm na média, EST ± 3,0 mm individual; itens 5.3 e 5.4: esquadro e planeza ≤ 3,0 mm" },
+    NBR6136: { doc: "ABNT NBR 6136-1:2026 — Blocos vazados de concreto para alvenaria — Parte 1: Requisitos (1ª edição, 27/02/2026; cancela e substitui a NBR 6136:2016; a Parte 2 é de métodos de ensaio; valores conferidos no texto em 21/10/2026 — Tabela 1 classes, Tabela 2 dimensões nominais, Tabela 3 tolerâncias, Tabela 4 paredes, Tabela 6 resistência e pavimentos)",
+               exemplarLicenciado: false,
                url: "https://normas.com.br/visualizar/abnt-nbr-nm/14326/abnt-nbr6136-1-blocos-vazados-de-concreto-para-alvenaria-parte-1-requisitos",
-               secundaria: { doc: "SUDECAP/PBH cap. 7, Tabelas 3 e 6 (NBR 6136:2016 Tabela 1 — famílias M-20 a M-7,5, meio, amarração L e T, compensadores 90 e 40 mm; Tabela 2 — paredes: classes A/B 190 = 32/25 mm, 140 = 25/25 mm; classe C 18 mm)",
+               secundaria: { doc: "SUDECAP/PBH cap. 7, Tabelas 3 e 6 (NBR 6136:2016, edição anterior — a primária 2026 já foi conferida)",
                              url: "https://prefeitura.pbh.gov.br/sites/default/files/estrutura-de-governo/obras-e-infraestrutura/cap07-24-08-29_0.pdf" },
-               nota: "classes (2016): A ≥ 8 MPa, B 4 a 8 MPa, C ≥ 3 MPa — conferir na 6136-1:2026" },
+               nota: "classes (6136-1:2026, Tabela 1): A fbk ≥ 8,0 MPa; B 4,0 ≤ fbk ≤ 6,0 MPa (a Tabela 6 ainda subclassifica amostras B de 6 a 7,9 MPa — texto da norma, conferir); C fbk ≥ 3,0 MPa. Tolerâncias (Tabela 3): largura ± 2,0 mm, altura e comprimento ± 3,0 mm, espessura de parede − 1,0 mm" },
     NBR16868: { doc: "ABNT NBR 16868-1:2020 — Alvenaria estrutural — Parte 1: Projeto (substitui NBR 15961 e NBR 15812)", url: "https://www.abntcatalogo.com.br/" },
     NBR8545: { doc: "ABNT NBR 8545:1984 — Execução de alvenaria sem função estrutural de tijolos e blocos cerâmicos — verga/contraverga 20 cm de cada lado (via js/alvenaria.js)", url: "https://www.abntcatalogo.com.br/" },
     BLOCOS_JS: { doc: "js/blocos.js — família e peso de referência do bloco de concreto (compilação de 6 fabricantes: Tatu, Pavibloco, JB, Original, ArtBlocos, Portital; regra R1–R5 no cabeçalho)", url: null }
@@ -102,11 +107,11 @@
    * A casca e o septo que a peça modela quando a ficha não diz. É o MÍNIMO da
    * norma (o bloco real costuma ter mais) — marcado em cada peça. */
   var PAREDE = {
-    ceramico_vedacao: { ext: 0.007, septo: 0.006, fonte: "NBR 15270-1:2017 via SUDECAP cap. 7 Tabela 2 — parede externa ≥ 7 mm, septo ≥ 6 mm (o MÍNIMO; conferir a ficha do fornecedor) — valor da edição anterior — conferir na edição vigente (NBR 15270-1:2023)" },
-    ceramico_estrutural: { ext: 0.0121, septo: 0.0127, fonte: "FAD 003 (PBQP-H) Tabela 1 — 14×19×29 medido: paredes 12,1 mm, septos 12,7 mm (a norma 2017 pede ≥ 7 e ≥ 6 mm)" },
-    concreto_AB: { ext: 0.025, septo: 0.025, fonte: "NBR 6136:2016 — classes A e B, M15: parede longitudinal e transversal ≥ 25 mm (o mesmo mínimo que o js/blocos.js usa na regra R3b) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
-    concreto_M20: { ext: 0.032, septo: 0.025, fonte: "NBR 6136:2016 — M20: parede longitudinal ≥ 32 mm, transversal ≥ 25 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" },
-    concreto_C: { ext: 0.018, septo: 0.018, fonte: "NBR 6136:2016 — classe C (vedação): paredes ≥ 18 mm — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026)" }
+    ceramico_vedacao: { ext: 0.007, septo: 0.006, fonte: "NBR 15270-1:2023 Tabela 2 — parede externa ≥ 7 mm (VED15, vazados horizontais; VED40 e EST de vazados verticais: externa ≥ 7 e interna ≥ 6 mm). Septo de 6 mm: a norma vigente NÃO traz mínimo de septo para o VED15 (só a soma das paredes de um corte ≥ 20 mm, item 5.2) — 6 mm é o padrão de geometria, conferir a ficha do fornecedor" },
+    ceramico_estrutural: { ext: 0.0121, septo: 0.0127, fonte: "FAD 003 (PBQP-H) Tabela 1 — 14×19×29 medido: paredes 12,1 mm, septos 12,7 mm (NBR 15270-1:2023 Tabela 2, EST de vazados verticais: externa ≥ 7 e interna ≥ 6 mm nas classes EST40 a EST80; ≥ 8 e ≥ 7 mm de EST100 a EST140 — leitura do texto extraído da tabela, conferir)" },
+    concreto_AB: { ext: 0.025, septo: 0.025, fonte: "NBR 6136-1:2026 Tabela 4 — classes A e B, 140 × 390 e 140 × 290: parede longitudinal e transversal ≥ 25 mm (o mesmo mínimo que o js/blocos.js usa na regra R3b)" },
+    concreto_M20: { ext: 0.032, septo: 0.025, fonte: "NBR 6136-1:2026 Tabela 4 — classes A e B, 190 × 390: parede longitudinal ≥ 32 mm, transversal ≥ 25 mm" },
+    concreto_C: { ext: 0.018, septo: 0.018, fonte: "NBR 6136-1:2026 Tabela 4 — classe C (vedação) de 90 a 190 mm de largura: paredes ≥ 18 mm (a de 65 mm pede 15 mm)" }
   };
 
   /* -------------------------------------------------------------- UNIDADES
@@ -126,7 +131,7 @@
     U({ id: "cv-6f-9x19x39",  grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 9×19×39",  l: 0.09, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44457" }),
     U({ id: "cv-6f-11x19x29", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×29", l: 0.115, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44460", massa: { kg: 3.61, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "11,5×19×29 = 3,61 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
     U({ id: "cv-6f-11x19x39", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 6 furos 11,5×19×39", l: 0.115, a: 0.19, c: 0.39, furos: { eixo: "x", nz: 2, ny: 3 }, parede: "ceramico_vedacao", sinapi: "44461" }),
-    U({ id: "cv-8f-9x19x19",  grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×19 (tijolo baiano)", l: 0.09, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, sinapi: "7271", massa: { kg: 2.05, fonte: "FAD 47 (PBQP-H/IPT) Tabela 1 — massa seca 2.049 g", metodo: "publicado" }, parede: { ext: 0.006, septo: 0.006, fonte: "FAD 47 Tabela 1 — paredes 6 mm, septos 6 mm (amostra medida 88×187×189 mm)" }, fontes: [{ doc: "FAD 47 — bloco cerâmico de vedação 9×19×19 (PBQP-H, ensaio IPT)", item: "Tabela 1 e Figura 1 (2 × 4 furos horizontais)", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD-47.pdf" }, { doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×19 = 1,85 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
+    U({ id: "cv-8f-9x19x19",  grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×19 (tijolo baiano)", l: 0.09, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, sinapi: "7271", massa: { kg: 2.05, fonte: "FAD 47 (PBQP-H/IPT) Tabela 1 — massa seca 2.049 g", metodo: "publicado" }, parede: { ext: 0.006, septo: 0.006, fonte: "FAD 47 Tabela 1 — paredes 6 mm, septos 6 mm (amostra medida 88×187×189 mm; a parede externa de 6 mm fica ABAIXO do mínimo de 7 mm da NBR 15270-1:2023 Tabela 2 — conferir a ficha atual do fornecedor)" }, fontes: [{ doc: "FAD 47 — bloco cerâmico de vedação 9×19×19 (PBQP-H, ensaio IPT)", item: "Tabela 1 e Figura 1 (2 × 4 furos horizontais)", url: "https://pbqp-h.mdr.gov.br/wp-content/uploads/2021/09/FAD-47.pdf" }, { doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×19 = 1,85 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
     U({ id: "cv-8f-9x19x29",  grupo: "ceramico_vedacao", nome: "Bloco cerâmico 8 furos 9×19×29",  l: 0.09, a: 0.19, c: 0.29, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "7268", massa: { kg: 2.82, fonte: "Cerâmica Auxiliadora (AECweb)", metodo: "publicado" }, fontes: [{ doc: "Cerâmica Auxiliadora — blocos de vedação", item: "9×19×29 = 2,82 kg", url: "https://www.aecweb.com.br/produto/blocos-de-vedacao-ceramica-auxiliadora/34391" }] }),
     U({ id: "cv-8f-11x19x19", grupo: "ceramico_vedacao", nome: "Bloco cerâmico 11,5×19×19 (furos na horizontal)", l: 0.115, a: 0.19, c: 0.19, furos: { eixo: "x", nz: 2, ny: 4 }, parede: "ceramico_vedacao", sinapi: "38783",
         conferir: ["o insumo SINAPI 38783 não diz o número de furos: a grade 2×4 (8 furos) é a do 8 furos de 9 cm — conferir a ficha do fornecedor"] }),
@@ -206,7 +211,7 @@
 
     /* ---- CONCRETO NBR 6136 — ESTRUTURAL M10 (9×19×39) ---- */
     U({ id: "bc-9x19x39", grupo: "concreto", nome: "Bloco de concreto estrutural 9×19×39", l: 0.09, a: 0.19, c: 0.39, alveolos: 2, parede: "concreto_C", sinapi: "25071", papel: "inteiro", familia: "bc-M10-39",
-        conferir: ["NBR 6136:2016: M10 só na classe C (com limite de pavimentos) — valor da edição anterior — conferir na edição vigente (NBR 6136-1:2026) e a classe do fornecedor"], fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "9×19×39 7,8 kg; meio 4,6", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] })
+        conferir: ["NBR 6136-1:2026 Tabelas 4 e 6: bloco de 90 mm só na classe C, até um pavimento — conferir a classe do fornecedor"], fontes: [{ doc: "Bloco Morumbi — blocos 9", item: "9×19×39 7,8 kg; meio 4,6", url: "https://www.aecweb.com.br/produto/blocos-9/49114" }] })
   ];
 
   /* ------------------------------------------------------------ FAMÍLIAS
@@ -410,14 +415,14 @@
       var u = POR_ID[id]; if (!u) return null;
       var g = geometria(u), m = massaDe(u);
       var fontes = [{ doc: FONTES.SINAPI.doc, item: u.sinapi ? "insumo " + u.sinapi : "sem insumo SINAPI", url: FONTES.SINAPI.url }];
-      if (u.grupo === "concreto") fontes.push({ doc: FONTES.NBR6136.doc, item: "família e classe", url: FONTES.NBR6136.url });
-      else if (u.grupo !== "tijolo_macico") fontes.push({ doc: FONTES.NBR15270.doc, item: "dimensões, parede e septo", url: FONTES.NBR15270.url });
+      if (u.grupo === "concreto") fontes.push({ doc: FONTES.NBR6136.doc, item: "Tabela 2 (dimensões nominais), Tabela 4 (paredes), Tabelas 1 e 6 (classe e pavimentos)", url: FONTES.NBR6136.url });
+      else if (u.grupo !== "tijolo_macico") fontes.push({ doc: FONTES.NBR15270.doc, item: "Tabelas 3 e 4 (dimensões nominais), Tabela 2 e item 5.2 (parede e septo)", url: FONTES.NBR15270.url });
       if (u.blocos) fontes.push({ doc: FONTES.BLOCOS_JS.doc, item: u.blocos, url: null });
-      /* EDIÇÃO DA NORMA (revisão de 21/10/2026): a 15270-1:2017 e a 6136:2016 saíram de vigor; os números
-         daqui (parede, septo, classe) são da edição anterior e não foram conferidos no texto vigente. */
+      /* EDIÇÃO DA NORMA: dimensões, paredes e classes foram conferidas em 21/10/2026 no texto da 6136-1:2026 e da
+         15270-1:2023 (tools/test-alv-normas-2026.js). Fica marcado só o que a norma vigente não traz. */
       var conferir = (u.conferir || []).slice();
-      if (u.grupo === "concreto") conferir.push("NBR 6136:2016 (cancelada em 27/02/2026; vigente NBR 6136-1:2026): parede, septo e classe — " + AVISO_EDICAO);
-      else if (u.grupo !== "tijolo_macico") conferir.push("NBR 15270-1:2017 (substituída pela 15270-1:2023): parede externa e septo — " + AVISO_EDICAO);
+      if (u.parede === "ceramico_vedacao") conferir.push("septo de 6 mm: a NBR 15270-1:2023 não traz mínimo de septo para o VED15 (só a soma das paredes ≥ 20 mm, item 5.2) — padrão de geometria, conferir a ficha do fornecedor");
+      if (u.grupo === "tijolo_macico") conferir.push("a medida comercial do tijolo (SINAPI) não é uma das dimensões nominais da Tabela 5 da NBR 15270-1:2023 (largura 90, 115 ou 140 mm; altura 53, 57, 65, 90 ou 115 mm; comprimento 190, 240 ou 290 mm) — conferir a ficha do fornecedor");
       (u.fontes || []).forEach(function (f) { fontes.push(f); });
       return {
         id: u.id, nome: u.nome, grupo: u.grupo,

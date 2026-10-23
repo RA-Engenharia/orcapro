@@ -55,7 +55,9 @@
     modelador: function () {
       if (!BimPrevia._aparelho()) return false;
       var M = BimPrevia._modela(); if (!M) return true;
-      try { return !!M.status().liberado || BimPrevia._marm(); } catch (e) { return true; }
+      /* teste de 1 hora vencido (js/testemodulo.js): o modelador CONTINUA aparecendo — o trabalho fica visível e
+         cada comando pede a compra (BimCmd.executar → TesteModulo.guardaComando) */
+      try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
     },
     HIDRO_OFF: HIDRO_OFF,
     /* o hidrossanitário/climatização aparece? = modelador ligado E este aparelho não o desligou (`?previa=hidro-desligar`).

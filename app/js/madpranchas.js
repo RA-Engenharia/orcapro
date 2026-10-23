@@ -185,7 +185,8 @@
   DP.add = function (t) { this.s.push(t); };
   DP.estilo = function (cam, extra) {
     var c = this.E.camadas[cam] || this.E.camadas["MAD-FINA"];
-    return ' stroke="' + (c.cor || PRETO) + '" stroke-width="' + n(c.mm) + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : "") + ' stroke-linecap="round" stroke-linejoin="round"' + (extra || "");
+    /* data-cam = a camada do desenho (só as MAD-*: outras telas, como a do clima, usam este Desenho com camadas próprias que não vão ao SVG): o DXF (js/pranchasdxf.js) põe cada traço na layer do Padrão RA que a camada nomeia */
+    return (/^MAD-/.test(cam) ? ' data-cam="' + (this.E.camadas[cam] ? cam : "MAD-FINA") + '"' : "") + ' stroke="' + (c.cor || PRETO) + '" stroke-width="' + n(c.mm) + '"' + (c.dash ? ' stroke-dasharray="' + c.dash + '"' : "") + ' stroke-linecap="round" stroke-linejoin="round"' + (extra || "");
   };
   DP.seg = function (x1, y1, x2, y2) { var i = this.sg.length; this.sg.push([x1, y1, x2, y2]); this._cel(this.gS, [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)], i); };
   DP.traco = function (L, fechado) { for (var i = 0; i + 1 < L.length; i++) this.seg(L[i][0], L[i][1], L[i + 1][0], L[i + 1][1]); if (fechado && L.length > 2) this.seg(L[L.length - 1][0], L[L.length - 1][1], L[0][0], L[0][1]); };
@@ -295,7 +296,7 @@
           else if (i === nseg - 1 && nseg > 1) { var de = w / 2 + 1.6; mx = b[0] + ux * de; my = b[1] + uy * de; ext1 = Math.max(ext1, w + 2.4); }
           else if (nseg > 1) { alt++; sobe = 0.8 + h * (alt % 2 ? 1.25 : 2.5); }
         } else alt = 0;
-        txs.push([mx + tnx * sobe, my + tny * sobe, v, o.attrs ? o.attrs[i] : ""]);
+        txs.push([mx + tnx * sobe, my + tny * sobe, v, o.attrs ? o.attrs[i] : "", i]);
       }
       return { of: of, Q: Q, txs: txs, ext0: ext0, ext1: ext1 };
     }
@@ -305,11 +306,18 @@
       for (var k = 0; k < tenta.length && !achou; k++) { var pk = plano(tenta[k]); if (pk.txs.every(function (t) { return self.livreQ(caixaTexto(t[0], t[1], t[2], h, { al: "C", rot: ang }), 0.3); })) achou = pk; }
       if (achou) pl = achou;
     }
-    var Q = pl.Q, sg = pl.of >= 0 ? 1 : -1;
+    var Q = pl.Q, sg = pl.of >= 0 ? 1 : -1, gIni = this.s.length;
     if (!o.semExt) P.forEach(function (p, i) { if (Math.abs(pl.of) < 1.6) return; self.linha(p[0] + nx * sg, p[1] + ny * sg, Q[i][0] + nx * 1.5 * sg, Q[i][1] + ny * 1.5 * sg, "MAD-COTA"); });
     this.linha(Q[0][0] - ux * pl.ext0, Q[0][1] - uy * pl.ext0, Q[nseg][0] + ux * pl.ext1, Q[nseg][1] + uy * pl.ext1, "MAD-COTA");
     Q.forEach(function (q) { self.tique(q[0], q[1], ux, uy); });
     pl.txs.forEach(function (t) { self.texto(t[0], t[1], t[2], h, { al: "C", rot: ang, attr: t[3] }); });
+    /* A COTA COMO GRUPO: o SVG é o mesmo (o <g> não desenha nada); o DXF lê o grupo e grava DIMENSION de verdade
+       (js/pranchasdxf.js). data-pts = os pontos medidos; data-off = o afastamento da linha de cota; data-seg = os trechos
+       que têm texto, na ordem dos <text> do grupo; data-ext = a folga da linha de chamada em cada ponto ("x" = sem linha);
+       data-e = quanto a linha de cota passa do primeiro e do último ponto. */
+    this.s.splice(gIni, 0, '<g data-dimgrp="cadeia" data-pts="' + pts(P) + '" data-off="' + n(pl.of) + '" data-seg="' + pl.txs.map(function (t) { return t[4]; }).join(",") + '" data-ext="' +
+      P.map(function () { return o.semExt || Math.abs(pl.of) < 1.6 ? "x" : "1"; }).join(",") + '" data-e="' + n(pl.ext0) + "," + n(pl.ext1) + '">');
+    this.s.push("</g>");
   };
   DP.cota = function (x1, y1, x2, y2, off, valor, o) { this.cadeia([[x1, y1], [x2, y2]], off, [valor], o); };
   DP.balao = function (cx, cy, rot, attr) { var h = this.E.T.eixo, r = Math.max(h * 1.3, largTexto(rot, h) / 2 + 1.3); this.circ(cx, cy, r, "MAD-FINA"); this.texto(cx, cy, rot, h, { al: "C", meio: true, attr: attr }); return r; };
@@ -1510,6 +1518,9 @@
         "<title>" + esc(numero + " - " + f.def.titulo + " - " + rev) + "</title>" +
         '<rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '" fill="#fff"/>' + '<g data-corpo="1">' + D.svg() + "</g>" + Fd.svg() + "</svg>";
       var o = { id: f.def.id, rotulo: f.rotulo, numero: numero, titulo: f.def.titulo, formato: formato, escala: f.escala, svg: svg };
+      /* o que o DXF (js/pranchasdxf.js) precisa para refazer o carimbo RA e achar a layer do Padrão RA de cada camada MAD-*; só dados simples (a tela recebe isto do Worker em JSON) */
+      o.dxf = { familia: "madeira", pr: pr, folha: pr.folhas[i], geo: geo, empresa: empObj, rotulo: f.rotulo + "/" + dois(nPrinc), logo: !!opcoes.logo, padrao: opcoes.padrao || null,
+                camadas: PADRAO_MAD.camadas, tituloH: E.T.titulo, codigo: codigo };
       if (opcoes.depurar) o.caixasTexto = D.caixas;
       return o;
     });

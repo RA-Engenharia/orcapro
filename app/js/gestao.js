@@ -1455,9 +1455,13 @@
          tela "Faz parte do OrçaPRO". Sem o "Desbloquear Gestão" do base. */
       var soMod = !!this.soModela && this.soModela();
       if (soMod) pode = true;
-      var mods;
+      var mods, selfS = this;
       if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
       else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos
+      /* "Mostrar só o que comprei" (js/testemoduloui.js): a licença só do Modela deixa de ver os trancados */
+      try { if (soMod && typeof TesteModulo !== "undefined" && TesteModulo.soComprados && TesteModulo.soComprados()) mods = mods.filter(function (m) { return !selfS._trancadoModela(m.id); }); } catch (eSc) {}
+      /* o BIM em teste vencido/oculto para quem tem a Gestão em teste (os dois andam juntos; a preferência esconde os dois) */
+      try { if (!soMod && pode && !(typeof App !== "undefined" && App._demo) && !this.podeBim()) mods = mods.filter(function (m) { return m.id !== "bim"; }); } catch (eBm) {}
       /* registrar aqui pega TODO caminho de navegação — clique na barra,
          busca Ctrl+K, link interno — porque a barra é redesenhada em todos. */
       this.menuMarcarUso(viewAtiva);
@@ -2679,10 +2683,13 @@
       var empresa = "";
       try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (e2) { empresa = ""; }
       var cab = '<div class="pn-imp-cab"><b>Painel de Gestão</b>' + (empresa ? " · " + Util.esc(empresa) : "") + " · " + Util.esc(this._pnDataExtenso(String(this._hojeISO()).slice(0, 10))) + "</div>";
-      w.document.write('<!DOCTYPE html><html lang="pt-BR" data-tema="light"><head><meta charset="utf-8"><title>Painel de Gestão</title>'
+      var hPn = '<!DOCTYPE html><html lang="pt-BR" data-tema="light"><head><meta charset="utf-8"><title>Painel de Gestão</title>'
         + '<link rel="stylesheet" href="css/fontes.css"><link rel="stylesheet" href="css/app.css"></head>'
         + '<body class="pn-impresso"><div class="main">' + cab + clone.outerHTML + "</div>"
-        + '<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>');
+        + '<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>';
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o relatório da janela nova leva a marca; tela vencida não imprime */
+      if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { hPn = TesteModulo.marcarHtml(hPn, ""); if (hPn == null) { try { w.close(); } catch (eW) {} return; } }
+      w.document.write(hPn);
       w.document.close();
     },
 
@@ -10816,6 +10823,10 @@
       /* P12: Instalações › Acessórios e dispositivos (acessório de tubo, tomada/interruptor, luminária, quadro,
          eletrocalha) e Sistemas (verificar, desconexões, legenda, tabela) — js/biminstui.js (sem a prévia, sai na hora) */
       try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
+      /* PONTOS ELÉTRICOS (21/10/2026): Instalações › Pontos elétricos — lançar por ambiente, auditar e critérios (js/eleautoui.js) */
+      try { if (window.EleAutoUI) EleAutoUI.registrar(reg, self); } catch (eEle) {}
+      /* PRÉ-LANÇAR ESTRUTURA (21/10/2026): Estrutura › Pré-lançamento — lançar, auditar, quantitativo, IFC e critérios (js/concui.js) */
+      try { if (window.ConcUI) ConcUI.registrar(reg, self); } catch (eConc) {}
       /* TRAÇAR AUTOMATICAMENTE (18/10/2026): Instalações › Projeto inteligente, a aba Modificar | Aparelhos e o atalho TA — js/hidkitui.js (ANTES da fita organizada) */
       try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
       /* EMBREVE (09/10/2026): Igualar tipo, Plano de trabalho e Graute e armadura saem do "em breve" — js/bimembreveui.js (sem a prévia do modelador, sai na hora) */
@@ -14148,6 +14159,8 @@
       return { app: "OrçaPRO " + ((typeof CONFIG !== "undefined" && CONFIG.versao) || ""), autor: a };
     },
     _opBaixar: function (nome, dados, mime) {
+      /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+      if (typeof TesteModulo !== "undefined" && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, ""); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
       try {
         var blob = new Blob([dados], { type: mime || "application/octet-stream" }), url = URL.createObjectURL(blob), a = document.createElement("a");
         a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove();
@@ -16057,7 +16070,10 @@
       jan.document.write('<p style="font-family:Arial;padding:20px">Montando ' + pr.folhas.length + ' folha(s) de ' + Util.esc(pr.nome) + '…</p>');
       var pImg = Object.keys(chavesImg).map(function (k) { return window.Idb ? Idb.get(k).then(function (d) { if (d) rec.imagens[k] = typeof d === "string" ? d : URL.createObjectURL(new Blob([d])); })["catch"](function () {}) : Promise.resolve(); });
       Promise.all(pImg).then(function () { return self._prFotografarVistas(vistasBlocos, rec); }).then(function () {
-        jan.document.open(); jan.document.write(PranchaUI.documento(pr, rec, geo)); jan.document.close();
+        var hPr = PranchaUI.documento(pr, rec, geo);
+        /* teste de 1 hora (js/testemodulo.js, revisão R7): o relatório da janela nova leva a marca; tela vencida não imprime */
+        if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { hPr = TesteModulo.marcarHtml(hPr, ""); if (hPr == null) { try { jan.close(); } catch (eW) {} return; } }
+        jan.document.open(); jan.document.write(hPr); jan.document.close();
         setTimeout(function () { try { jan.focus(); jan.print(); } catch (e) {} }, 900);
       })["catch"](function (e) { UI.toast("Não consegui montar a prancha: " + (e && e.message || e), "erro"); });
     },
@@ -18153,6 +18169,8 @@
         h += '</ul><p class="m">Peça sem peso NÃO entra nos totais acima. Informe o peso específico do material no painel Peso das peças.</p>';
       }
       h += '<p class="m" style="margin-top:18px">Fontes: massa publicada no IFC (IfcQuantityWeight) quando existe; senão volume × peso específico aparente (ABNT NBR 6120:2019, valor médio quando a norma dá faixa) ou o valor informado pelo engenheiro. Gerado pelo OrçaPRO.</p></body></html>';
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o relatório da janela nova leva a marca; tela vencida não imprime */
+      if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { h = TesteModulo.marcarHtml(h, ""); if (h == null) return; }
       var jan = null;
       try { jan = window.open("", "_blank"); } catch (e4) { jan = null; }
       if (!jan) { Util.baixar(nomeArq + ".html", h, "text/html;charset=utf-8"); UI.toast("O navegador bloqueou a janela: baixei o relatório (.html) — abra e imprima.", "aviso"); return; }
@@ -20832,6 +20850,8 @@
         h += '<p class="m">Em laranja: as linhas usadas no cálculo — vale o menor valor entre as duas linhas vizinhas ao raio de cada içamento.</p></section>';
       }
       h += "</body></html>";
+      /* teste de 1 hora (js/testemodulo.js, revisão R7): o relatório da janela nova leva a marca; tela vencida não imprime */
+      if (typeof TesteModulo !== "undefined" && TesteModulo.marcarHtml) { h = TesteModulo.marcarHtml(h, ""); if (h == null) return; }
       var jan = null;
       try { jan = window.open("", "_blank"); } catch (e5) { jan = null; }
       if (!jan) { Util.baixar(this._icarNomeArq("html"), h, "text/html;charset=utf-8"); UI.toast("O navegador bloqueou a janela: baixei o plano (.html) — abra e imprima em PDF.", "aviso"); return; }
@@ -24200,6 +24220,27 @@
           return;
         }
         dono = this._bimCenaObra = chave;
+      }
+      /* ⚠ TESTE DE 1 HORA VENCIDO (js/testemodulo.js, revisão adversarial R5): o painel de propriedades, o arrasto e
+         o tipo editam o modelo sem passar pela fita (BimCmd). A porta é AQUI, por onde passa toda edição: as
+         operações NOVAS (depois do que já está gravado) vão ao TesteModulo; recusadas, a tela volta ao gravado e
+         nada vai para o disco. Fora do regime, `travaEdicao` é null e nada é comparado. */
+      var TMe = window.TesteModulo;
+      if (TMe && TMe.travaEdicao && TMe.travaEdicao()) {
+        var antesE = (this._bimEdPend && this._bimEdPend.id === dono) ? (this._bimEdPend.ops || []) : null;
+        if (!antesE) { try { var gA = Store.obter(eid(), "bim_edicoes", dono); antesE = (gA && gA.ops) || []; } catch (eGa) { antesE = []; } }
+        var opsE = ops || [], kE = 0;
+        while (kE < antesE.length && kE < opsE.length && JSON.stringify(antesE[kE]) === JSON.stringify(opsE[kE])) kE++;
+        var gE = null; try { gE = TMe.guardaEdicao(opsE.slice(kE)); } catch (eGe) { gE = null; }
+        if (gE && gE.ok === false) {
+          if (!this._bimRevertTeste) {
+            this._bimRevertTeste = setTimeout(function () {
+              self._bimRevertTeste = null;
+              try { if (window.BIM && BIM.editarAplicar) BIM.editarAplicar(antesE); } catch (eRv) {}
+            }, 0);
+          }
+          return;
+        }
       }
       clearTimeout(this._bimEdSaveT);
       this._bimEdPend = { id: dono, ops: ops };
@@ -50463,6 +50504,11 @@ renderFolha: function () {
 
     // Modo demonstração: abrir formulários é livre; QUALQUER gravação exige licença ativa.
     _bloqueado: function () {
+      /* teste de 1 hora do módulo vencido (js/testemodulo.js): a oferta do módulo, não o "modo demonstração" */
+      try {
+        var tmB = typeof TesteModulo !== "undefined" && TesteModulo.guardaGravacao ? TesteModulo.guardaGravacao() : "";
+        if (tmB) { if (typeof TesteModuloUI !== "undefined") TesteModuloUI.oferta(tmB); return true; }
+      } catch (eTm) {}
       if (typeof App !== "undefined" && App._trialBloqueado && App._trialBloqueado()) {
         /* ⚠ suspenso por cobrança não é "modo demonstração": o texto certo e
            os links de pagamento moram no App._avisoTrial */
@@ -50474,8 +50520,24 @@ renderFolha: function () {
       return false;
     },
 
-    // A Gestão de Obras é da versão PLUS. Demonstração (sem licença) explora à vontade; base = só orçamento.
+    /* A Gestão de Obras APARECE? = comprada, ou no teste de 1 hora por módulo (js/testemodulo.js, 21/10/2026):
+       em teste ela funciona; vencida ela continua aparecendo, só leitura (as gravações param no `_bloqueado` e no
+       App._trialBloqueado, que perguntam ao TesteModulo). ⚠ A tela de ABERTURA do app usa a COMPRADA
+       (App.render/viewPadrao): abrir o programa não pode gastar o relógio do teste. */
     podeGestao: function () {
+      if (this.podeGestaoComprada()) return true;
+      try { return typeof TesteModulo !== "undefined" && !!TesteModulo.visivel && TesteModulo.visivel("gestao"); } catch (eT) { return false; }
+    },
+    /* A Gestão de Obras FUNCIONA? = comprada ou EM TESTE (minutos sobrando). Vencida ela só aparece (podeGestao) para
+       consulta NA TELA DELA. ⚠ Revisão adversarial R8: as portas da Gestão que se abrem de OUTRA tela (Ctrl+K na tela
+       do Orçamento, o cronograma do orçamento criando obra/plano) perguntam ISTO — a trava de gravação olha a tela
+       aberta, e na tela do Orçamento comprado ela deixava a Gestão vencida gravar. */
+    podeGestaoLiberada: function () {
+      if (this.podeGestaoComprada()) return true;
+      try { return typeof TesteModulo !== "undefined" && !!TesteModulo.liberado && TesteModulo.liberado("gestao"); } catch (eT) { return false; }
+    },
+    // A Gestão de Obras é da versão PLUS. Demonstração (sem licença) explora à vontade; base = só orçamento.
+    podeGestaoComprada: function () {
       if (typeof Licenca === "undefined") return true;
       var s = Licenca.status() || {};
       if (s.trial) return true;               // demonstração: explora a gestão (mas não salva)
@@ -50503,10 +50565,16 @@ renderFolha: function () {
       try { return typeof Licenca !== "undefined" && !!Licenca.soModela && Licenca.soModela() && !(typeof App !== "undefined" && App._demo); } catch (e) { return false; }
     },
     /* o módulo BIM abre? Gestão liberada OU licença só do Modela (o BIM é o produto dela) */
-    podeBim: function () { return this.soModela() || this.podeGestao(); },
-    /* este módulo está trancado para a licença só-modela? */
+    /* (21/10/2026) e o teste de 1 hora do BIM / do Modela (js/testemodulo.js): visível = em teste ou vencido */
+    podeBim: function () {
+      if (this.soModela() || this.podeGestaoComprada()) return true;
+      try { return typeof TesteModulo !== "undefined" && !!TesteModulo.visivel && TesteModulo.visivel("bim"); } catch (eT) { return false; }
+    },
+    /* este módulo está trancado para a licença só-modela? (o teste de 1 hora destranca o Orçamento e a Gestão) */
     _trancadoModela: function (view) {
-      return this.soModela() && this.MODELA_VIEWS.indexOf(String(view || "")) < 0;
+      if (!this.soModela() || this.MODELA_VIEWS.indexOf(String(view || "")) >= 0) return false;
+      try { if (typeof TesteModulo !== "undefined" && TesteModulo.visivel && TesteModulo.visivel(TesteModulo.moduloDaView(view))) return false; } catch (eT) {}
+      return true;
     },
     _modelaPlay: function () {
       try { if (document.documentElement.getAttribute("data-origem") === "play") return true; } catch (e) {}
@@ -54447,6 +54515,14 @@ case "nova-folha": return this.novoFolha();
       // gestão E a permissão RBAC do módulo — não importa por onde o clique veio
       // (sidebar, busca Ctrl+K, sino…).
       if (!this.podeGestao()) { if (typeof UI !== "undefined") UI.toast("Gestão de Obras é recurso do plano Plus.", "erro"); return; }
+      /* teste de 1 hora vencido (R8): fora da tela da Gestão o registro não abre (o salvar dele passaria pela trava da
+         tela do Orçamento, que é comprada); na tela da Gestão abre para consulta e a gravação para no `_bloqueado` */
+      try {
+        if (!this.podeGestaoLiberada() && typeof TesteModulo !== "undefined" && TesteModulo.moduloDaTela && TesteModulo.moduloDaTela() !== "gestao") {
+          if (typeof TesteModuloUI !== "undefined" && TesteModuloUI.oferta) TesteModuloUI.oferta("gestao", null, { forcar: true });
+          return;
+        }
+      } catch (eTa) {}
       var _mod = this.MOD_DA_ENTIDADE[entidade] || entidade;
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(_mod)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
       var r = Store.obter(eid(), entidade, id); if (!r) return;

@@ -87,7 +87,7 @@
     tl.push(["Enter", "Repete o último comando"]);
     tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
     tl.push(["Delete", "Apaga as peças selecionadas do editor"]);
-    tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a cortina)"]);
+    tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a régua antes × depois)"]);
     tl.push(["?", "Abre esta tela de atalhos"]);
     out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,
       nota: "As teclas de uma letra não funcionam com o cursor dentro de um campo de texto nem com um diálogo aberto." });
@@ -131,7 +131,7 @@
       ["Metálica", "Lançar vigas entre pilares", "Vigas de pilar a pilar em X, Y ou nos dois, na face certa, com emendas a cada 12 m"],
       ["Metálica", "Catálogo BR · Catálogo industrial", "Perfis, parafusos, chumbadores, chapas, telhas, aços e pintura, com a fonte"],
       ["Criar peça (pilar, viga…)", "Campo Perfil", "Digite série ou fabricante (W200, Ue 150, tubo, Gerdau); ao lado da lista, o desenho cotado da seção sob o mouse ou as setas"],
-      ["Barra da vista (modelo com fases)", "Antes · Obra · Depois · Comparar · Apresentar", "O ambiente como era e como fica (a Obra põe o que sai em vermelho e o que entra em verde; Comparar é a cortina); Apresentar abre a animação da reforma para o cliente, com exportação de vídeo"],
+      ["Barra da vista (modelo com fases)", "Antes · Obra · Depois · Comparar · Apresentar", "O ambiente como era e como fica (a Obra põe o que sai em vermelho e o que entra em verde; Comparar é a régua antes × depois, arrastável); Apresentar abre a animação da reforma para o cliente, com exportação de vídeo"],
       ["Vista › Navegar", "Atalhos", "Esta tela (também pela tecla ?)"]
     ] });
     /* EM DESENVOLVIMENTO (P3 da junção, 18/10/2026 — regra de 09/10: nenhum botão sem função): o que ainda não tem

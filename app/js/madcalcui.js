@@ -55,10 +55,17 @@
   function lerSalvo() { try { var t = global.localStorage.getItem(chave()); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
   function salvar() { try { global.localStorage.setItem(chave(), JSON.stringify({ premissas: UIC.prem, documento: UIC.docu, em: Date.now() })); return true; } catch (e) { return false; } }
   function baixar(nome, dados, mime) {
+    /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
+    if (global.TesteModulo && TesteModulo.marcarArquivo) { var wT = TesteModulo.marcarArquivo(nome, dados, mime, "modela:marcenaria"); if (!wT) return false; nome = wT.nome; dados = wT.dados; }
     UIC.baixados.push(nome);
-    if (global.BimMetalUI && BimMetalUI.baixar) return BimMetalUI.baixar(nome, dados, mime);
+    if (global.BimMetalUI && BimMetalUI.baixar) return BimMetalUI.baixar(nome, dados, mime, "modela:marcenaria");   /* o dono do entregável é a Marcenaria, não a Metálica (teste de 1 hora) */
     try { var bl = new Blob([dados], { type: mime || "application/octet-stream" }), u = URL.createObjectURL(bl), a = doc.createElement("a"); a.href = u; a.download = nome; doc.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 60000); return true; } catch (e) { return false; }
   }
+  /* ⚠ TRAVA DE LICENÇA NA FUNÇÃO (21/10/2026, js/licencafuncao.js): a fita esconde o grupo da Marcenaria quando a disciplina não
+     está liberada, mas o cálculo e cada entrega também são chamados pelos botões desta janela, pela API e por atalho — cada
+     função confere sozinha. Em teste de 1 hora libera e conta (o entregável sai com a marca, pelo `baixar`); vencido ou sem
+     licença recusa e mostra a oferta. Consultar (abrir a janela, ver o que já foi calculado) continua livre. Sem o módulo: não trava. */
+  function lic(acao) { var L = global.LicencaFuncao; return L && L.guarda ? L.guarda("marcenaria", acao) : true; }
   function bt(acao, texto, o) {
     o = o || {};
     return '<button type="button" class="btn' + (o.pri ? " primary" : "") + (o.sm ? " sm" : "") + '" data-mdc-acao="' + acao + '"' + (o.v != null ? ' data-mdc-v="' + esc(o.v) + '"' : "") + (o.dis ? " disabled" : "") + (o.dica ? ' title="' + esc(o.dica) + '"' : "") + ">" + (o.ico ? ico(o.ico, 15) + " " : "") + esc(texto) + "</button>";
@@ -366,6 +373,7 @@
 
   /* ================================================================ 3. CALCULAR */
   function calcular() {
+    if (!lic("calcular a estrutura")) return false;
     var w = W(); if (!w) { toast("O módulo do cálculo da madeira não carregou.", "erro"); return false; }
     garantir();
     if (!pacoteOk()) { UIC.aba = "dados"; render(); toast("Faltam arquivos no pacote da obra — veja a lista.", "aviso", 6000); return false; }
@@ -536,10 +544,10 @@
   function pranchasSecao() {
     var x = UIC.pranchas;
     return sec({ titulo: "Pranchas", sub: x.folhas.length + " folhas " + ((x.folhas[0] || {}).formato || "A1") + (x.avisos.length ? " · " + x.avisos.length + " aviso(s)" : ""), id: "mdc-pranchas",
-      acoesHtml: bt("pranchas-zip", "Baixar todas (.zip)", { sm: 1 }) + bt("pranchas-imprimir", "Imprimir / PDF", { sm: 1, pri: 1 }),
+      acoesHtml: bt("pranchas-zip", "Baixar todas (.zip)", { sm: 1 }) + bt("pranchas-dxf", "DXF (.zip)", { sm: 1, dica: "Uma folha por DXF, no Padrão RA, com o carimbo RA: abre no AutoCAD e salva em DWG" }) + bt("pranchas-imprimir", "Imprimir / PDF", { sm: 1, pri: 1 }),
       corpoHtml: (x.avisos.length ? '<ul class="mdc-lista mdc-fraco">' + x.avisos.slice(0, 8).map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>" : "") +
         '<div class="mdc-folhas">' + x.folhas.map(function (f, i) {
-          return '<div class="mdc-folha" data-mdc="folha"><div class="mdc-fig" data-mdc-acao="folha-abrir" data-mdc-v="' + i + '" title="Abrir a folha grande">' + f.svg + '</div><div class="mdc-fc"><span><b>' + esc(f.numero || "") + "</b> " + esc(f.titulo || "") + '<br><small class="mdc-fraco">Escala ' + esc(f.escala || "indicada") + "</small></span>" + bt("folha-svg", "SVG", { sm: 1, v: i, ico: "baixar" }) + "</div></div>";
+          return '<div class="mdc-folha" data-mdc="folha"><div class="mdc-fig" data-mdc-acao="folha-abrir" data-mdc-v="' + i + '" title="Abrir a folha grande">' + f.svg + '</div><div class="mdc-fc"><span><b>' + esc(f.numero || "") + "</b> " + esc(f.titulo || "") + '<br><small class="mdc-fraco">Escala ' + esc(f.escala || "indicada") + "</small></span>" + bt("folha-svg", "SVG", { sm: 1, v: i, ico: "baixar" }) + bt("folha-dxf", "DXF", { sm: 1, v: i, ico: "baixar" }) + "</div></div>";
         }).join("") + "</div>" });
   }
 
@@ -582,6 +590,8 @@
     return w;
   }
   function mostrarHtml(w, html, nomeArq) {
+    /* teste de 1 hora (js/testemodulo.js, revisão R7): o documento da janela nova leva a marca; vencido não abre */
+    if (global.TesteModulo && TesteModulo.marcarHtml) { var hT = TesteModulo.marcarHtml(html, "modela:marcenaria"); if (hT == null) { try { if (w) w.close(); } catch (eW) {} return "recusado"; } html = hT; }
     if (w && !w.closed && w.document) { w.document.open(); w.document.write(html); w.document.close(); return "aba"; }
     baixar(nomeArq, html, "text/html"); return "baixado";
   }
@@ -595,6 +605,7 @@
   }
   function base() { return nomeSeguro((UIC.docu && UIC.docu.obra) || "obra"); }
   function memorial() {
+    if (!lic("gerar o memorial")) return Promise.resolve(false);
     if (semResultado()) return Promise.resolve(false);
     var w = abrirJanela("Memorial de cálculo"); status("Montando o memorial de cálculo da madeira…");
     return pedirSaida("memorial").then(function (x) {
@@ -607,6 +618,7 @@
     }).catch(function (e) { if (w) try { w.close(); } catch (e2) {} toast("Memorial: " + e.message, "erro", 9000); return false; });
   }
   function manual() {
+    if (!lic("gerar o manual de montagem")) return Promise.resolve(false);
     if (semResultado()) return Promise.resolve(false);
     var w = abrirJanela("Manual de montagem"); status("Montando o manual de montagem…");
     return pedirSaida("manual").then(function (x) {
@@ -619,6 +631,7 @@
     }).catch(function (e) { if (w) try { w.close(); } catch (e2) {} toast("Manual: " + e.message, "erro", 9000); return false; });
   }
   function pranchas() {
+    if (!lic("gerar as pranchas")) return Promise.resolve(false);
     if (semResultado()) return Promise.resolve(false);
     status("Desenhando as pranchas…");
     return pedirSaida("pranchas").then(function (x) {
@@ -632,10 +645,12 @@
   function folhaHtml(f) { return '<!doctype html><meta charset="utf-8"><title>' + esc((f.numero || "") + " " + (f.titulo || "")) + '</title><style>html,body{margin:0;background:white}svg{width:100vw;height:auto;display:block}</style>' + f.svg; }
   function folhaAbrir(i) {
     var f = UIC.pranchas && UIC.pranchas.folhas[i]; if (!f) return;
+    if (!lic("abrir a prancha")) return;
     var w = abrirJanela(f.titulo || "Prancha"); mostrarHtml(w, folhaHtml(f), base() + "-" + nomeSeguro(f.numero || "folha" + (i + 1)) + ".html");
   }
   function pranchasImprimir() {
     var x = UIC.pranchas; if (!x) return;
+    if (!lic("imprimir as pranchas")) return;
     var fmtF = (x.folhas[0] || {}).formato || "A1";
     var html = '<!doctype html><meta charset="utf-8"><title>Pranchas</title><style>@page{size:' + fmtF + ' landscape;margin:0}html,body{margin:0;background:white}.pg{page-break-after:always;break-after:page}.pg:last-child{page-break-after:auto}svg{width:100%;height:auto;display:block}</style>' +
       x.folhas.map(function (f) { return '<div class="pg">' + f.svg + "</div>"; }).join("") + "<script>setTimeout(function(){try{window.print()}catch(e){}},400)<\/script>";
@@ -644,11 +659,34 @@
   function pranchasZip() {
     var x = UIC.pranchas; if (!x) return;
     if (!global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return; }
+    if (!lic("baixar as pranchas")) return;
     var arqs = {}; x.folhas.forEach(function (f, i) { arqs[nomeSeguro((f.numero || "folha-" + (i + 1)) + " " + (f.titulo || "")).slice(0, 80) + ".svg"] = f.svg; });
     baixar(base() + "-pranchas-madeira.zip", BimBcf.zipEscrever(arqs), "application/zip");
   }
+  /* O DXF DAS PRANCHAS (21/10/2026, js/pranchasdxf.js): cada folha em DXF R2000, mm de papel 1:1, layers e penas do Padrão RA,
+     textos e cotas como entidades, carimbo RA. Em teste de 1 hora o `baixar` põe a marca "Versão de teste" em cada DXF (também dentro do .zip).
+     Os dados do carimbo vêm junto de cada folha (folha.dxf), que o Worker devolve em JSON. */
+  function folhaDxf(i) {
+    var x = UIC.pranchas, PX = global.PranchasDxf, f = x && x.folhas[i];
+    if (!f) return;
+    if (!PX) { toast("O DXF das pranchas não carregou (js/pranchasdxf.js).", "erro"); return; }
+    if (!lic("baixar o DXF da prancha")) return;
+    var t = null; try { t = PX.dxfDaFolha(f); } catch (e) { toast("DXF: " + e.message, "erro", 9000); return; }
+    if (baixar(base() + "-" + PX.nomeArquivo(f, i), t, "application/dxf") !== false) toast("DXF da folha " + (f.numero || (i + 1)) + " baixado (R2000, mm de papel 1:1, layers do Padrão RA). O AutoCAD abre direto e salva em DWG.", "ok", 8000);
+  }
+  function pranchasDxf() {
+    var x = UIC.pranchas, PX = global.PranchasDxf;
+    if (!x) return;
+    if (!PX || !global.BimBcf || !BimBcf.zipEscrever) { toast("O DXF das pranchas (ou o gerador de .zip) não carregou.", "erro"); return; }
+    if (!lic("baixar o DXF das pranchas")) return;
+    var r = null; try { r = PX.arquivos(x); } catch (e) { toast("DXF: " + e.message, "erro", 9000); return; }
+    if (!r || !r.nomes.length) { toast("DXF: " + ((r && r.avisos[0]) || "nada gerado") + ".", "erro", 9000); return; }
+    if (baixar(base() + "-pranchas-madeira-dxf.zip", BimBcf.zipEscrever(r.arquivos), "application/zip") !== false)
+      toast(r.nomes.length + " DXF (R2000, mm de papel 1:1, layers do Padrão RA com a pena de cada uma, textos e cotas como entidades, carimbo RA)." + (r.avisos.length ? " " + r.avisos.length + " aviso(s): " + r.avisos[0] : "") + " O AutoCAD abre direto e salva em DWG.", "ok", 9000);
+  }
   function latin1Bytes(t) { var b = new Uint8Array(t.length); for (var i = 0; i < t.length; i++) b[i] = t.charCodeAt(i) & 255; return b; }
   function cype() {
+    if (!lic("exportar para o CYPE 3D")) return Promise.resolve(false);
     if (semResultado()) return Promise.resolve(false);
     if (!global.BimBcf || !BimBcf.zipEscrever) { toast("O gerador de .zip não carregou.", "erro"); return Promise.resolve(false); }
     return pedirSaida("cype").then(function (x) {
@@ -669,6 +707,7 @@
     else toast("O gerador de Excel não carregou.", "erro");
   }
   function compra() {
+    if (!lic("baixar a lista de compra")) return Promise.resolve(false);
     var r = UIC.resumo; if (semResultado()) return Promise.resolve(false);
     if (!r.compra) { toast("Este cálculo não tem lista de compra (sem catálogo de madeira serrada).", "aviso"); return Promise.resolve(false); }
     return new Promise(function (ok) {
@@ -726,9 +765,11 @@
       else if (a === "cype") cype();
       else if (a === "compra") compra();
       else if (a === "pranchas-zip") pranchasZip();
+      else if (a === "pranchas-dxf") pranchasDxf();
+      else if (a === "folha-dxf") folhaDxf(+val);
       else if (a === "pranchas-imprimir") pranchasImprimir();
       else if (a === "folha-abrir") folhaAbrir(+val);
-      else if (a === "folha-svg") { var f = UIC.pranchas && UIC.pranchas.folhas[+val]; if (f) baixar(base() + "-" + nomeSeguro(f.numero || "folha") + ".svg", f.svg, "image/svg+xml"); }
+      else if (a === "folha-svg") { var f = UIC.pranchas && UIC.pranchas.folhas[+val]; if (f && lic("baixar a prancha")) baixar(base() + "-" + nomeSeguro(f.numero || "folha") + ".svg", f.svg, "image/svg+xml"); }
     });
     v.addEventListener("change", function (ev) {
       var el = ev.target; if (!el) return;
@@ -784,15 +825,17 @@
     COMANDOS: COMANDOS, registrar: registrar,
     abrir: function () { return abrirEm(null); },
     exemplo: function () { garantir(); return exemplo(); },
-    calcular: function () { garantir(); return calcular(); },
+    calcular: function () { if (!lic("calcular a estrutura")) return false; garantir(); return calcular(); },
+    /* a trava na função, para quem integra e para o teste: true = pode (e em teste de 1 hora o relógio do módulo anda) */
+    licenca: function (acao) { return lic(acao || "usar a função"); },
     resultados: function () { return abrirEm(UIC.resumo ? "resultado" : (UIC.pacote ? "dados" : "dados")); },
     premissas: function () { return abrirEm("premissas"); },
     documentos: function () { return abrirEm("documentos"); },
-    memorial: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return memorial(); },
-    pranchas: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return pranchas(); },
-    manual: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return manual(); },
-    cype: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return cype(); },
-    compra: function () { garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return compra(); },
+    memorial: function () { if (!lic("gerar o memorial")) return Promise.resolve(false); garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return memorial(); },
+    pranchas: function () { if (!lic("gerar as pranchas")) return Promise.resolve(false); garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return pranchas(); },
+    manual: function () { if (!lic("gerar o manual de montagem")) return Promise.resolve(false); garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return manual(); },
+    cype: function () { if (!lic("exportar para o CYPE 3D")) return Promise.resolve(false); garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return cype(); },
+    compra: function () { if (!lic("baixar a lista de compra")) return Promise.resolve(false); garantir(); if (!UIC.resumo) { abrirEm("documentos"); } return compra(); },
     fechar: fechar,
     lerArquivos: lerArquivos,
     /* para as e2e e para quem integra: o estado sem expor o pacote inteiro */

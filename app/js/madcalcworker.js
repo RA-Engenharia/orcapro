@@ -312,7 +312,7 @@
       var MP = G("MadPranchas"); if (!MP) throw new Error("o gerador das pranchas (js/madpranchas.js) não carregou");
       o.fonte = a.fonte; o.ligacoesFonte = a.ligacoes; o.catalogo = G("MadCatalogo");
       var p = MP.gerar(r, o);
-      return { ok: p.ok, avisos: arr(p.avisos), folhas: arr(p.folhas).map(function (f) { return { id: f.id, numero: f.numero, titulo: f.titulo, formato: f.formato, escala: f.escala, svg: f.svg }; }) };
+      return { ok: p.ok, avisos: arr(p.avisos), folhas: arr(p.folhas).map(function (f) { return { id: f.id, numero: f.numero, titulo: f.titulo, formato: f.formato, escala: f.escala, svg: f.svg, dxf: f.dxf }; }) };
     }
     if (qual === "manual") {
       var MN = G("MadManual"); if (!MN) throw new Error("o gerador do manual (js/madmanual.js) não carregou");
