@@ -432,7 +432,8 @@
       sv.orbit = c.orbit ? { enabled: c.orbit.enabled } : null;
       try { var es = global.BimEstilo && global.BimEstilo.estado ? global.BimEstilo.estado() : null; sv.estilo = es ? es.modo : null; } catch (e) { sv.estilo = null; }
       sv.principal = c.principalOculta();
-      sv.tam = { w: c.renderer.domElement.width, h: c.renderer.domElement.height, pr: c.renderer.getPixelRatio() };
+      var cvT = (c.canvas && c.canvas()) || c.renderer.domElement;   /* o canvas de DESENHO (o renderer pode ter nascido de novo, ver js/bim.js) */
+      sv.tam = { w: cvT.width, h: cvT.height, pr: c.renderer.getPixelRatio() };
       sv.clearColor = c.renderer.getClearColor(new THREE.Color()).getHex(); sv.clearAlpha = c.renderer.getClearAlpha();
       sv.fundo = c.scene.background;
       sv.clipLocal = c.renderer.localClippingEnabled;
@@ -966,7 +967,7 @@
         /* o céu: o renderer é transparente (o BIM põe o fundo por trás do canvas) — no vídeo o fundo entra no quadro */
         var fg = g.createLinearGradient(0, 0, 0, H); fg.addColorStop(0, "#6f9bc9"); fg.addColorStop(0.55, "#cfdeec"); fg.addColorStop(1, "#eef2f6");
         g.fillStyle = fg; g.fillRect(0, 0, W, H);
-        g.drawImage(r.domElement, 0, 0, W, H);
+        g.drawImage((c.canvas && c.canvas()) || r.domElement, 0, 0, W, H);
         Hud.desenhar(g, W, H, this);
       }
       return true;

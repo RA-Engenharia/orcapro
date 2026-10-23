@@ -9,6 +9,12 @@
  *   1. ?demo=1 (vitrine)                  → tudo liberado.
  *   2. licença VITALÍCIA do OrçaPRO       → Modela completo grátis
  *      (exp = 0 dentro da chave; o servidor também responde `vitalicia`).
+ *      (23/10/2026, confirmada 2×) VITALÍCIA = TUDO: as disciplinas, os
+ *      módulos à parte (Blocok, Marmoraria) e QUALQUER módulo novo —
+ *      `tem(id)` responde true para todo id. A licença interna da RA chega
+ *      igual pelo servidor (`tudo: true`). Ninguém oferece compra a ela.
+ *      ⚠ A LICENÇA DE EQUIPE de titular vitalício (exp 0 também) NÃO tem
+ *      `tudo`: só o Modela completo, como antes de 23/10/2026 (`equipe`).
  *   3. disciplina comprada e no prazo     → só ela (todas = completo).
  *   4. TESTE de 7 dias do Modela completo, contado do 1º uso do modelador e
  *      ancorado no servidor (por e-mail da licença E por aparelho — trocar
@@ -48,8 +54,8 @@
   ];
   var IDS = DISCIPLINAS.map(function (d) { return d.id; });
   /* MÓDULOS À PARTE (decisão do Rogério, 14/10/2026: "módulo pago à parte").
-     Não entram no "completo" nem na vitalícia — só compra própria, o teste de
-     7 dias e a vitrine (?demo=1). O cliente que já tinha o Blocok (licença
+     Não entram no "completo" — compra própria, o teste de 7 dias, a vitrine
+     (?demo=1) e, desde 23/10/2026, a VITALÍCIA (vitalícia = tudo). O cliente que já tinha o Blocok (licença
      GCon) segue liberado pela trava antiga do js/bim.js (BLOCOK_HASHES). */
   /* MARMORARIA (20/10/2026): bancadas de pedra + executivo + tabela de preços + proposta do marmorista (js/marmmodulo.js).
      Mesma regra do Blocok; a licença interna da RA chega pelo servidor (modela.internos) ou pela trava da máquina. */
@@ -99,6 +105,14 @@
       var extras = {};
       IDS_EXTRAS.forEach(function (id) { extras[id] = !!(cacheValido && c.disciplinas && num(c.disciplinas[id]) > agora); });
       var vitalicia = !!e.vitaliciaLocal || !!(cacheValido && c.vitalicia === true);
+      /* ⚠ LICENÇA DE EQUIPE (a independente que o titular emite, server/licencas-filhas.js): a chave nasce com exp 0
+         quando o titular é vitalício, mas o "tudo" é só do titular (decisão do Rogério, 23/10/2026). Ela fica com o
+         de antes: o Modela completo pela vitalícia, módulo à parte só comprado. Sabe-se pela ativação
+         (Licenca.status().tipoLicenca === "equipe") ou pelo servidor (`filha: true` no /api/modela/status). */
+      var equipe = !!e.equipeLocal || !!(cacheValido && c.filha === true);
+      /* VITALÍCIA = TUDO (23/10/2026); a licença interna da RA vem do servidor com `tudo` */
+      var tudoLic = (vitalicia && !equipe) || !!(cacheValido && c.tudo === true);
+      if (tudoLic) IDS_EXTRAS.forEach(function (id) { extras[id] = true; });
 
       /* o início do teste: o MAIS ANTIGO entre o local e o do servidor. O do
          servidor vale mesmo com o cache velho — ele só pode encurtar o teste. */
@@ -131,8 +145,8 @@
       });
       var out = {
         liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
-        teste: teste, vitalicia: vitalicia, demo: demo, play: play,
-        podeComprar: !play && !demo, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
+        teste: teste, vitalicia: vitalicia, tudo: tudoLic, equipe: equipe, demo: demo, play: play,
+        podeComprar: !play && !demo && !tudoLic, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
         revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
           Object.keys(c.disciplinas).some(function (k) { return num(c.disciplinas[k]) > agora; }))
       };
@@ -140,6 +154,7 @@
 
       if (demo) return tudo("demo");
       if (vitalicia) return tudo("vitalicia");
+      if (tudoLic) return tudo("interno");
       if (lista.length === IDS.length) return tudo("compra");
       if (teste.ativo) return tudo("teste");
       if (teste.disponivel) return tudo("teste-disponivel");
@@ -181,6 +196,11 @@
         return !!(st && st.ativo && !st.trial && info && Number(info.exp) === 0);
       } catch (e) { return false; }
     },
+    /* a ativação disse que esta chave é licença de EQUIPE (js/licenca.js _aplicarEquipe) */
+    _equipeLocal: function () {
+      var L = this._lic(); if (!L) return false;
+      try { var st = L.status(); return !!(st && st.tipoLicenca === "equipe"); } catch (e) { return false; }
+    },
     _demo: function () { try { return DEMO_URL || !!(global.App && global.App._demo); } catch (e) { return DEMO_URL; } },
     _play: function () {
       try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
@@ -188,7 +208,7 @@
     },
     _entrada: function (semEstados) {
       var l = this._ler();
-      var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
+      var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(), equipeLocal: this._equipeLocal(),
         chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
       /* o teste de 1 hora por módulo (js/testemodulo.js). `semEstados`: o direito SEM a hora de teste
          (statusBase) — é o que o próprio TesteModulo pergunta para saber o que já é comprado, sem laço */
@@ -232,6 +252,7 @@
        inteira mostraria comando de disciplina não contratada. */
     tem: function (id) {
       var s = this.status(), k = String(id || "").toLowerCase();
+      if (s.tudo) return true;   // vitalícia/interna = tudo, inclusive o módulo que ainda não existe nesta lista
       if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);   // módulo à parte: não precisa do Modela liberado
       if (!s.liberado) return false;
       if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
@@ -253,7 +274,7 @@
       var l = this._ler(), antes = JSON.stringify(this.status());
       var dis = {};
       IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
-      l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, disciplinas: dis,
+      l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis,
         teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
       this._gravar(l);
       var mudou = JSON.stringify(this.status()) !== antes;
@@ -295,7 +316,7 @@
        a pessoa não tem o direito por outro caminho (vitalícia, compra completa, demo) */
     iniciarTeste: function (cb) {
       var s = this.status();
-      if (!s.teste.disponivel || s.demo || s.vitalicia || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
+      if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
       var l = this._ler();
       if (!num(l.testeLocal)) { l.testeLocal = Date.now(); this._gravar(l); this._avisar(); }
       this._ancorar(cb);

@@ -43818,6 +43818,7 @@ try {
 var c = global.document.createElement("canvas");
 var gl = c.getContext("webgl") || c.getContext("experimental-webgl");
 if (!gl) return { ok: false, motivo: "Este aparelho não tem aceleração 3D disponível — o tour 360 não abre aqui, mas as fotos continuam na galeria." };
+try { var ext = gl.getExtension("WEBGL_lose_context"); if (ext) ext.loseContext(); } catch (eL) {}
 } catch (e) {
 return { ok: false, motivo: "Não consegui abrir o 3D neste aparelho." };
 }
@@ -52220,6 +52221,8 @@ return typeof empresaId === "string" && empresaId.indexOf("prev:") === 0;
 }
 var Nuvem = {
 ENTIDADES: ENTIDADES,
+_paraNuvem: function (ent, v) { return paraNuvem(ent, v); },
+_daNuvem: function (ent, v) { return daNuvem(ent, v); },
 ligado: false, uid: null, db: null, auth: null,
 _un: [], _push: {}, _patched: false, _initP: null,
 _escutando: null,
@@ -52238,6 +52241,7 @@ this._initP = this._carregarSDK().then(function () {
 if (!global.firebase.apps.length) global.firebase.initializeApp(CONFIG.backend.firebaseConfig);
 self.auth = global.firebase.auth();
 self.db = global.firebase.firestore();
+self._ouvirSdk();
 return self._limparCacheVelho().then(function () { return true; });
 });
 return this._initP;
@@ -52439,11 +52443,77 @@ if (!ok) return null;
 if (atual.length || !partes.length) partes.push(atual);
 return partes;
 },
-_escreverEnt: function (ent, vN) {
+_escreverEnt: function (ent, vN, tam) {
 var self = this, velhas = DOC_V2[ent] ? (this._falhas || []).filter(function (f) { return f && f.entidade === ent; }) : null;
 var p = this._escreverEntFila(ent, vN);
 if (DOC_V2[ent]) Promise.resolve(p).then(function () { self._v2Ok(ent, true); self._limparFalhasDe(ent, velhas); }, function () {});
+this._anotarPendente(ent, p, tam);
 return p;
+},
+_pend: {},
+_anotarPendente: function (ent, p, tam) {
+var self = this, k = String(this.uid || "") + "|" + ent;
+var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0 });
+if (!e.n) e.desde = Date.now();
+e.n++;
+if (typeof tam === "number" && isFinite(tam)) e.tam = tam;
+var fim = function () { var x = self._pend[k]; if (x && --x.n <= 0) delete self._pend[k]; };
+Promise.resolve(p).then(fim, fim);
+},
+_temNoAr: function (ent) {
+var f = this._filaEsc[this._chaveRev(ent)];
+var kP = String(this.uid || "") + "|" + ent;
+return !!((f && f.ativos > 0) || (this._pend[kP] && this._pend[kP].n > 0));
+},
+_canon: function (v) {
+var self = this;
+if (v === null || typeof v !== "object") { var s = JSON.stringify(v); return s === undefined ? "null" : s; }
+if (typeof v.toJSON === "function") return self._canon(v.toJSON());
+if (Array.isArray(v)) return "[" + v.map(function (x) { return (x === undefined || typeof x === "function") ? "null" : self._canon(x); }).join(",") + "]";
+var ks = Object.keys(v).filter(function (k) { return v[k] !== undefined && typeof v[k] !== "function"; }).sort();
+return "{" + ks.map(function (k) { return JSON.stringify(k) + ":" + self._canon(v[k]); }).join(",") + "}";
+},
+_mesmoConteudo: function (a, b) {
+try {
+if (JSON.stringify(a) === JSON.stringify(b)) return true;
+return this._canon(a) === this._canon(b);
+} catch (e) { return false; }
+},
+TETO_DIRETO: 256 * 1024,
+_vaiNaFaixa: function (ent, t) { return t > this.TETO_DIRETO && ent !== "_lapides"; },
+_faixas: {},
+_naFaixa: function (fn, conta) {
+var kF = String(conta === undefined ? this.uid : conta);
+var antes = this._faixas[kF] || Promise.resolve();
+var vez = antes.then(function () { return fn(); });
+this._faixas[kF] = vez.then(function () {}, function () {});
+return vez;
+},
+diag: function () {
+var p = this._pend || {}, n = 0, maior = null, velha = 0, agora = Date.now();
+for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k) && p[k] && p[k].n > 0) {
+n++;
+if (!maior || p[k].tam > maior.tam) maior = { ent: k.slice(k.indexOf("|") + 1), tam: p[k].tam };
+if (!velha || p[k].desde < velha) velha = p[k].desde;
+}
+return { pendentes: n, maior: maior, idadeS: velha ? Math.round((agora - velha) / 1000) : 0, sdk: (this._sdkMsgs || []).slice(-3) };
+},
+_sdkMsgs: [],
+_ouvirSdk: function () {
+var self = this, fb = global.firebase;
+if (this._ouvindoSdk || !fb || typeof fb.onLog !== "function") return;
+this._ouvindoSdk = true;
+try {
+fb.onLog(function (r) {
+try {
+if (!r || !/firestore/i.test(String(r.type || ""))) return;
+var txt = String(r.message || "");
+var m = /(resource[-_ ]exhausted|unavailable|deadline[-_ ]exceeded|permission[-_ ]denied|invalid[-_ ]argument|unauthenticated|failed[-_ ]precondition|aborted|internal|maximum backoff|transport errored|could not reach|offline)/i.exec(txt);
+self._sdkMsgs.push({ em: Date.now(), cod: m ? m[1].toLowerCase().replace(/[ _]/g, "-") : String(r.level || "aviso"), msg: txt.slice(0, 120) });
+if (self._sdkMsgs.length > 6) self._sdkMsgs.shift();
+} catch (e) {}
+}, { level: "warn" });
+} catch (e) {}
 },
 _escreverEntFila: function (ent, vN) {
 var self = this, k = this._chaveRev(ent);
@@ -52451,7 +52521,7 @@ var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve()
 if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
 if (!fila.ativos && !this._revsDe(ent)) {
 var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
-if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) {
+if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN)) && !this._vaiNaFaixa(ent, t0)) {
 var p0 = this._setDoc(ent, { v: vN, em: Date.now() });
 fila.ativos++;
 var dec0 = function () { fila.ativos--; };
@@ -52459,28 +52529,39 @@ fila.corrente = Promise.resolve(p0).then(dec0, dec0);
 return p0;
 }
 }
-var item = { vN: vN, juntadas: 0 };
+var item = { vN: vN, juntadas: 0, uid: this.uid };
 fila.ativos++;
 var vez = fila.corrente.then(function () {
 if (fila.espera === item) fila.espera = null;
-return self._escreverEntVez(ent, item.vN);
+return self._escreverEntVez(ent, item.vN, item.uid);
 });
 item.promessa = vez.then(function (r) { return r.p; });
 fila.espera = item;
 fila.corrente = vez.then(function (r) { return r.esperar; }).then(function () { fila.ativos--; }, function () { fila.ativos--; });
 return item.promessa;
 },
-_escreverEntVez: function (ent, vN) {
+_escreverEntVez: function (ent, vN, uidChamada) {
 var self = this, em = Date.now(), doc = { v: vN, em: em };
+var conta = uidChamada === undefined ? this.uid : uidChamada;
+var mesmaConta = function () {
+if (self.uid !== conta) {
+var eC = new Error("a conta da nuvem mudou durante a gravação de \"" + ent + "\" — nada foi gravado na conta nova");
+eC.code = "conta-trocou";
+throw eC;
+}
+};
+mesmaConta();
 var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
 var temBatch = !!this.db && typeof this.db.batch === "function";
 var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
-if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = this._setDoc(ent, doc); return Promise.resolve({ p: pU, esperar: pU }); }
+var setDoc = function () { return self._vaiNaFaixa(ent, t) ? self._naFaixa(function () { mesmaConta(); return self._setDoc(ent, doc); }, conta) : self._setDoc(ent, doc); };
+if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
 var lerAtual = this._doc(ent).get().then(function (s0) {
 var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
 return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
 })["catch"](function () { return null; });
 return lerAtual.then(function (naNuvem) {
+mesmaConta();
 if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
 var lembradas = self._revsDe(ent) || {};
 var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
@@ -52488,9 +52569,12 @@ var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0
 var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
 var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
 if (!emPartes) {
-if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = self._setDoc(ent, doc); return { p: pS, esperar: pS }; }
+if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = setDoc(); return { p: pS, esperar: pS }; }
+var pB1 = (self._vaiNaFaixa(ent, t) ? self._naFaixa : function (fn) { return fn(); }).call(self, function () {
+mesmaConta();
 var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
-var pB1 = b1.commit().then(esquecer);
+return b1.commit();
+}, conta).then(esquecer);
 return { p: pB1, esperar: pB1 };
 }
 var partes = self._fatiar(vN);
@@ -52499,20 +52583,29 @@ var err = new Error("Document \"" + ent + "\" cannot be written because its size
 err.code = "invalid-argument";
 throw err;
 }
-var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), b = self.db.batch();
-partes.forEach(function (pv, i) { b.set(self._refParte(ent, rev, i), { v: pv, i: i, n: partes.length, rev: rev, em: em }); });
-b.set(self._doc(ent), { v: [], partes: partes.length, rev: rev, em: em });
+var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), nP = partes.length;
+self._lembrarRev(ent, rev, nP);
+var subidas = partes.reduce(function (cad, pv, i) {
+return cad.then(function () {
+return self._naFaixa(function () { mesmaConta(); return self._refParte(ent, rev, i).set({ v: pv, i: i, n: nP, rev: rev, em: em }); }, conta);
+});
+}, Promise.resolve());
+var pB = subidas.then(function () {
+mesmaConta();
+var b = self.db.batch();
+b.set(self._doc(ent), { v: [], partes: nP, rev: rev, em: em });
 apagarAntigas(b);
-self._lembrarRev(ent, rev, partes.length);
-var pB = b.commit().then(esquecer);
+return b.commit();
+}).then(esquecer);
 return { p: pB, esperar: pB };
 });
 },
 _valorDoSnap: function (ent, snap, jaTentou, antigo) {
 var self = this;
 if (!snap || !snap.exists) return Promise.resolve({ existe: false });
+var pend = !!(snap.metadata && snap.metadata.hasPendingWrites);
 var d = snap.data() || {}, n = +d.partes || 0;
-if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
+if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0, pend: pend });
 if (!antigo) self._lembrarRev(ent, d.rev, n);
 var pedidos = [];
 for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i, antigo).get());
@@ -52523,7 +52616,7 @@ if (jaTentou) { var e = new Error("a lista \"" + ent + "\" na nuvem está em par
 return (antigo ? self._docAntigo(ent) : self._doc(ent)).get().then(function (s2) { return self._valorDoSnap(ent, s2, true, antigo); });
 }
 var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
-return { existe: true, v: v, partes: n };
+return { existe: true, v: v, partes: n, pend: pend || ps.some(function (p) { return !!(p && p.metadata && p.metadata.hasPendingWrites); }) };
 });
 },
 _nuvemSemMinhasPartes: function (ent, r, listaN, tamJson) {
@@ -52762,8 +52855,9 @@ return new Promise(function (resolver, rejeitar) {
 var tm = setTimeout(function () {
 if (acabou) return;
 acabou = true;
-self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
-Promise.resolve(pW)["catch"](function (e) {
+var regP = self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
+Promise.resolve(pW).then(function () { self._tirarFalha(regP); }, function (e) {
+self._tirarFalha(regP);
 if (self._ultimoEnviado[ck] !== undefined) delete self._ultimoEnviado[ck];
 self._registrarFalha(ent, e, tam);
 });
@@ -52785,7 +52879,7 @@ self._conflitosCrono = [];
 self._conflitosCc = [];
 self._ilegiveisUltimoSync = [];
 self._naoCarregadasUltimoSync = [];
-var falhou = 0, tentadas = 0;
+var falhou = 0, tentadas = 0, pendentes = 0;
 var uma = function (ent) {
 tentadas++;
 var cargaU = null;
@@ -52824,11 +52918,16 @@ if (cargaNuvem === carga) { self._ultimoEnviado[ck] = carga; return true; }
 }
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[ck] = carga;
-var pW = self._escreverEnt(ent, subir);
+if (carga && rc.existe && !rc.doAntigo && !rc.pend && !self._temNoAr(ent) &&
+!self._nuvemSemMinhasPartes(ent, rc, subir, carga.length) && self._mesmoConteudo(cloud, merged)) {
+self._marcarSync(empresaId, ent, merged);
+return true;
+}
+var pW = self._escreverEnt(ent, subir, carga.length);
 if (DOC_V2[ent]) self._v2Ok(ent, false);
 Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
 return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
-if (r === "pendente") { falhou++; return false; }
+if (r === "pendente") { pendentes++; return false; }
 return true;
 });
 }).catch(function (e) {
@@ -52863,7 +52962,12 @@ try {
 if (global.UI && global.UI.toast) global.UI.toast("⚠ O cronograma de " + qtdObras + " obra(s) foi editado em 2 aparelhos ao mesmo tempo — valeu a versão gravada por último, e a do outro aparelho NÃO foi guardada (o plano de execução da obra é um registro só). Abra o cronograma dessas obras e confira o plano.", "erro");
 } catch (e2) {}
 }
-if (falhou >= tentadas && tentadas > 0) return false;
+if (falhou + pendentes >= tentadas && tentadas > 0) return false;
+if (pendentes > 0) {
+try {
+if (global.UI && global.UI.toast) global.UI.toast("☁ " + pendentes + " de " + tentadas + " partes ainda estão subindo para a nuvem (a conexão está lenta). O trabalho está salvo neste aparelho; a confirmação chega sozinha.", "ok");
+} catch (eP) {}
+}
 var nIleg = (self._ilegiveisUltimoSync || []).length;
 if (falhou > 0) {
 try {
@@ -52934,12 +53038,19 @@ self._un.push(un);
 },
 _falhas: [],
 _registrarFalha: function (ent, err, tamCarga) {
+if (err && err.code === "conta-trocou") { try { console.warn("[nuvem] " + ent + ": conta-trocou"); } catch (eW) {} return null; }
 var cod = (err && (err.code || err.message)) || "erro";
 var reg = { entidade: ent, codigo: String(cod), msg: String((err && err.message) || "") };
 if (typeof tamCarga === "number" && isFinite(tamCarga)) reg.tam = tamCarga;
 this._falhas.push(reg);
 if (this._falhas.length > 40) this._falhas.shift();
 try { console.warn("[nuvem] " + ent + ": " + cod); } catch (e) {}
+return reg;
+},
+_tirarFalha: function (reg) {
+var f = this._falhas || [];
+for (var i = f.length - 1; i >= 0; i--) if (f[i] === reg) { f.splice(i, 1); return true; }
+return false;
 },
 estado: function () {
 var f = this._falhas || [];
@@ -52997,7 +53108,7 @@ try { carga = JSON.stringify(vN); } catch (e) { carga = ""; }
 if (carga && self._ultimoEnviado[chave] === carga) return;
 self._avisarTamanho(ent, carga);
 self._ultimoEnviado[chave] = carga; marcou = true;
-self._escreverEnt(ent, vN).then(function () {
+self._escreverEnt(ent, vN, carga.length).then(function () {
 self._marcarSync(empresaId, ent, v);
 }).catch(function (e) {
 delete self._ultimoEnviado[chave];
@@ -68306,11 +68417,22 @@ try { c.tela = global.App ? String(global.App.view || "") : ""; } catch (e) {}
 try { if (d) { c.dom = d.getElementsByTagName("*").length; c.canvas = d.getElementsByTagName("canvas").length; c.iframes = d.getElementsByTagName("iframe").length; } } catch (e) {}
 try { var B = global.BIM; if (B) { c.bimOps = B.editarOps ? B.editarOps().length : -1; c.bimModelos = (B.modelos || []).length; } } catch (e) {}
 try { var G = global.Gestao; if (G) { c.bimSel = String(G._bimSel || ""); c.bimElementos = (G._bimElementos || []).length; } } catch (e) {}
+try { var B3 = global.BIM; if (B3 && B3.saude3d) { var s3 = B3.saude3d(); if (s3) { c.bim3dPerdas = s3.perdas; c.bim3dErros = s3.erros; c.bim3dAviso = s3.aviso ? String(s3.aviso.cod || s3.aviso.tipo || "") : ""; } } } catch (e) {}
 try {
 var esp = global.Store && global.Store._d && global.Store._d.esp;
 if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
 } catch (e) {}
 try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); c.nuvemUltMsgs = (N._falhas || []).slice(-4).map(function (f) { return msgSegura(f.msg); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
+try {
+var Nd = global.Nuvem;
+if (Nd && typeof Nd.diag === "function") {
+var dg = Nd.diag() || {};
+c.nuvemPend = dg.pendentes || 0;
+c.nuvemPendIdadeS = dg.idadeS || 0;
+c.nuvemPendMaior = dg.maior ? String(dg.maior.ent || "") + ":" + (+dg.maior.tam || 0) : "";
+c.nuvemSdk = (dg.sdk || []).map(function (x) { return String((x && x.cod) || "").slice(0, 30) + ":" + msgSegura(x && x.msg); });
+}
+} catch (e) {}
 try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
 try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
 return c;
@@ -69680,5 +69802,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=beaf7a19aa"},{"src":"js/bim-pacote.js?v=b59cd077d1","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=7e9eedfb9d"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=54047ba10d"},{"src":"js/bim-pacote.js?v=5750bad00c","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=7e9eedfb9d"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -588,6 +588,19 @@
     }
   };
 
+  /* ⚠ LICENÇA SUSPENSA POR PARCELA VENCIDA (js/cobranca.js → Licenca.status().suspensa): nada exporta, a mesma regra
+     do resto do app (App._trialBloqueado) e da Marmoraria (saidaBloqueada). Revisão adversarial 23/10/2026: com a
+     "vitalícia = tudo", a vitalícia parcelada e inadimplente ganhou o Blocok — e memorial, manual, pranchas, DXF e
+     planilha saíam mesmo suspensa. Só a SUSPENSÃO barra aqui (quem comprou o Blocok para sempre e deixou o plano
+     anual vencer segue exportando o que pagou). A vitrine (?demo=1) nunca bloqueia. */
+  function suspensa() {
+    try { if (global.App && App._demo) return false; var L = global.Licenca, s = L && L.status ? L.status() : null; return !!(s && s.suspensa); } catch (e) { return false; }
+  }
+  function avisoSuspensa() {
+    try { if (global.App && App._avisoTrial) { App._avisoTrial(); return false; } } catch (e) {}
+    toast("Licença suspensa por falta de pagamento: o Blocok não exporta até o pagamento compensar. Seus dados estão preservados.", "erro", 9000);
+    return false;
+  }
   function acao(a, v) {
     try {
       if (a === "fechar") return fechar();
@@ -600,7 +613,7 @@
       if (a === "exemplo") return exemplo();
       if (a === "ver") { UI.parede = v; UI.aba = "paredes"; return render(); }
       if (a === "fechar-par") { UI.parede = null; return render(); }
-      if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); if (velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } return DOC[a](); }
+      if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); if (velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } if (suspensa()) return avisoSuspensa(); return DOC[a](); }
     } catch (e) { toast("Blocok: " + (e && e.message ? e.message : e), "erro", 8000); }
   }
   /* exemplo sem modelo: casa térrea 10 × 8 com laje (o mesmo de tools/blocok-exemplo.js) */
@@ -663,6 +676,7 @@
     estado: function () { return { aba: UI.aba, fonte: UI.fonte, paredes: UI.obra ? UI.obra.paredes.length : 0, ok: UI.res ? UI.res.ok : null, erros: UI.res ? UI.res.erros.length : 0, pendencias: UI.res ? UI.res.pendencias.length : 0, pecas3d: UI.pecas3d, instancias: grupo3 ? grupo3.children.reduce(function (s, m) { return s + (m.count || 0); }, 0) : 0,
       ref: UI.ref ? { versao: UI.obra && UI.obra.referencia ? UI.obra.referencia.versao : null, bruta: UI.ref.area.bruta, liquida: UI.ref.area.liquida, brutaComBancada: UI.ref.area.brutaComBancada, diasBlocok: UI.ref.crono.blocok.total.diasUteis, diasConvencional: UI.ref.crono.convencional.total.diasUteis, m2Dia: UI.ref.crono.parametros.blocok.m2Dia } : null }; },
     _paredesDoModelo: paredesDoModelo,
+    _suspensa: suspensa,
     _resultado: function () { return UI.res; },
     desatualizado: function () { return velho(); },
     _desatualizadoDe: desatualizadoDe,

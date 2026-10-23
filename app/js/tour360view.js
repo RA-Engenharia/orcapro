@@ -168,6 +168,10 @@
       var c = global.document.createElement("canvas");
       var gl = c.getContext("webgl") || c.getContext("experimental-webgl");
       if (!gl) return { ok: false, motivo: "Este aparelho não tem aceleração 3D disponível — o tour 360 não abre aqui, mas as fotos continuam na galeria." };
+      /* ⚠ o contexto do TESTE é solto na hora: preso, ele contava no teto de contextos
+         da página a cada abertura do tour, e estourado o navegador mata o mais antigo
+         — o 3D do BIM (ver "O 3D NUNCA FICA PRESO VAZIO", js/bim.js) */
+      try { var ext = gl.getExtension("WEBGL_lose_context"); if (ext) ext.loseContext(); } catch (eL) {}
     } catch (e) {
       return { ok: false, motivo: "Não consegui abrir o 3D neste aparelho." };
     }

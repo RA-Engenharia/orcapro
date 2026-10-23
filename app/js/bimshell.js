@@ -1117,6 +1117,8 @@
         { id: "visibilidade", ico: "olho", dica: "Visibilidade e raio-X" },
         { id: "snap", ico: "ima", dica: "Snap" },
         { id: "home", ico: "casa", dica: "Enquadrar tudo" },
+        /* o 3D sumiu e não volta: desliga o que esconde, enquadra e recria o desenho (js/bim.js, "O 3D NUNCA FICA PRESO VAZIO") */
+        { id: "fx-recuperar-vista", ico: "ciclo", dica: "Recuperar vista 3D (RV): o modelo sumiu? Desliga corte, isolar e ocultar temporário, enquadra tudo e refaz o desenho" },
         { id: "foto", ico: "camera", dica: "Foto da vista" }
       ].forEach(function (b) {
         var bt = el("button", "rv-vb");

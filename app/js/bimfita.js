@@ -126,6 +126,8 @@
     c("fx-linhas-ocultas-remover", "Remover linhas ocultas", "olhoFechado", "Tira o tracejado das linhas ocultas dos selecionados (sem seleção: de todos)."),
     /* Vista › Criar */
     c("fx-vista-3d", "Vista 3D", "casa", "Vista 3D padrão: volta para a vista {3D} e enquadra o modelo inteiro.", { grande: true }),
+    /* Vista › Navegar: o 3D sumiu e não volta (23/10/2026, js/bim.js "O 3D NUNCA FICA PRESO VAZIO") */
+    c("fx-recuperar-vista", "Recuperar\nvista 3D", "ciclo", "O 3D sumiu ou não volta? Desliga o que pode estar escondendo o modelo (caixa de corte, planta, corte, isolar/ocultar temporário, 4D), enquadra o modelo inteiro e, se a placa de vídeo descartou o desenho, cria o 3D de novo. Nada do modelo muda. Atalho: RV."),
     /* Vista › Composição de folha */
     c("fx-titulo-folha", "Título da vista", "nota", "Título da vista na folha (número, nome e escala debaixo do desenho): com uma vista posicionada selecionada, mostra ou esconde o dela; sem seleção, põe o título em todas as vistas da folha."),
     c("fx-carimbo", "Carimbo", "assinar", "Carimbo da folha: com uma folha aberta, os campos do carimbo (obra, prancha, escala, revisão, responsável) ficam em Propriedades. Sem folha, abre as Pranchas."),
@@ -187,7 +189,7 @@
     { nome: "Composição de folha", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas"] },
     { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "vistas", "max-3d", "janela-3d",
       "fx-interface"] },
-    { nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
+    { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
     { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "cores-categoria", "cores-categoria-paleta",
       "caixa-corte", "ortogonal", "grade", "ambientes-3d", "navegador-org"] },
     { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
@@ -217,7 +219,7 @@
   var TECLA_FIXA = { "desfazer": "Ctrl+Z", "refazer": "Ctrl+Y", "fx-modificar": "Esc", "fx-excluir": "Delete", "medir": "M", "fx-medir": "M",
     "caixa-corte": "C", "fx-ocultar": "H", "fx-isolar": "I", "home": "F", "grade": "G", "atalhos": "?", "fx-copiar-area": "Ctrl+C", "fx-colar": "Ctrl+V" };
   /* atalhos de duas letras que este arquivo acrescenta (valem fora e dentro do modo de edição) */
-  var ATALHOS_FX = { BX: "fx-caixa-selecao", TL: "fx-linhas-finas" };
+  var ATALHOS_FX = { BX: "fx-caixa-selecao", TL: "fx-linhas-finas", RV: "fx-recuperar-vista" };
   var CHAVE_FINAS = "orcapro:bim:linhas-finas";
 
   var BimFita = {
@@ -485,6 +487,15 @@
         try { if (g && g._bimVxAtivar) g._bimVxAtivar("3d"); } catch (e) {}
         try { if (b && b.home) b.home(); } catch (e2) {}
         status("Vista {3D}: o modelo inteiro enquadrado.");
+        return true;
+      };
+      /* RECUPERAR VISTA 3D: a vista {3D} na frente (numa aba de ponto de vista o 3D principal nem desenha) e o BIM desliga o que esconde */
+      a["fx-recuperar-vista"] = function () {
+        var g = G(), b = B(), r = null;
+        try { if (g && g._bimVxAtivar) g._bimVxAtivar("3d"); } catch (e) {}
+        try { r = (b && b.recuperarVista) ? b.recuperarVista({ origem: "comando" }) : null; } catch (e2) { r = null; }
+        if (!r || !r.ok) { status("O 3D não está aberto — abra um modelo ou a área de teste."); return true; }
+        status(r.feito.length ? "Vista 3D recuperada (" + r.feito.join(", ") + "). O modelo inteiro está enquadrado." : "Vista 3D recuperada: nada estava escondendo o modelo. O modelo inteiro está enquadrado.");
         return true;
       };
       a["fx-carimbo"] = function () {
@@ -1194,7 +1205,10 @@
         if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
         if (d.getElementById("modal-bg")) return;
         var s = SH(), raiz = s && s._raiz;
-        if (!raiz || !d.body.contains(raiz) || raiz.offsetParent === null) return;
+        /* ⚠ "a casca está na tela" é ter CAIXA, não `offsetParent`: a casca é `position:fixed`, e elemento fixo tem
+           offsetParent null SEMPRE — com ele, nenhum atalho de duas letras daqui (BX, TL, RV…) disparava (medido
+           em 23/10/2026 na e2e-bim-3d-volta). `display:none` continua barrando: sem caixa, sem atalho. */
+        if (!raiz || !d.body.contains(raiz) || !raiz.getClientRects().length) return;
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && /^[cv]$/i.test(e.key || "")) {
           var txt = ""; try { txt = String(global.getSelection ? global.getSelection() : ""); } catch (eS) {}
           if (txt) return;

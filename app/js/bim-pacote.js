@@ -100,11 +100,12 @@ S.opts = opts;
 host.innerHTML = '';
 host.style.position = 'relative';
 host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-[(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.ctlMira, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
+[(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S._cvVivo, S.aviso3d, S.vcubeEl, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.travaChip, S.ctlMira, S.eixoBar, S.marcasSvg, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
 if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); }
 S.host = host;
 try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
 setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); try { if (window.BimMesa) window.BimMesa.aoMontar(); } catch (eM) {} }, 0);
+try { if (S._ro) { S._ro.disconnect(); S._ro.observe(host); } } catch (eRo) {}
 return;
 }
 if (S && !S.alive) desmontarMorto();
@@ -516,6 +517,7 @@ host.appendChild(loading);
 if (!document.getElementById('bim-spin-style')) { var st = document.createElement('style'); st.id = 'bim-spin-style'; st.textContent = '@keyframes bimsp{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
 var scene = new THREE.Scene(); scene.background = null;
 var camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000); camera.position.set(20, 18, 22);
+var envPadrao3d = null;
 var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.outputEncoding = THREE.sRGBEncoding;
@@ -523,9 +525,22 @@ try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
 renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
 try { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; } catch (_) {}
 try { renderer.xr.enabled = true; } catch (_) {}
+function prepararRenderer(r, de) {
+r.setPixelRatio(de.getPixelRatio());
+r.outputEncoding = de.outputEncoding;
+try { r.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
+r.toneMapping = de.toneMapping; r.toneMappingExposure = de.toneMappingExposure;
+try { r.shadowMap.enabled = de.shadowMap.enabled; r.shadowMap.type = de.shadowMap.type; } catch (_) {}
+try { r.xr.enabled = true; } catch (_) {}
+r.clippingPlanes = de.clippingPlanes; r.localClippingEnabled = de.localClippingEnabled;
+r.sortObjects = de.sortObjects; r.autoClear = de.autoClear;
+try { r.setClearColor(de.getClearColor(new THREE.Color()), de.getClearAlpha()); } catch (_) {}
+try { if ('useLegacyLights' in de) r.useLegacyLights = de.useLegacyLights; if ('physicallyCorrectLights' in de) r.physicallyCorrectLights = de.physicallyCorrectLights; } catch (_) {}
+}
 renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
 host.appendChild(renderer.domElement);
-renderer.domElement.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (S) { S.alive = false; if (S.raf) cancelAnimationFrame(S.raf); } try { over.style.display = 'flex'; over.querySelector('div').innerHTML = '<div style="font-size:30px">🧊</div><h3 style="margin:8px 0">O 3D ficou pesado demais</h3><p style="color:#a9c1d8;font-size:13px">A memória de vídeo esgotou (modelos grandes / Ultra). Recarregue a aba BIM com menos modelos, ou desligue o ' + (typeof Icones !== 'undefined' ? Icones.get('escopo', 15) : '') + ' Ultra.</p>'; } catch (_) {} }, false);
+renderer.domElement.addEventListener('webglcontextlost', function (e) { aoPerderContexto3d(e, renderer); }, false);
+renderer.domElement.addEventListener('webglcontextrestored', function (e) { aoVoltarContexto3d(e); }, false);
 var hemi = new THREE.HemisphereLight(luzNum(0xffffff), luzNum(0x223344), 0.55); scene.add(hemi);
 var dir = new THREE.DirectionalLight(0xffffff, 1.0); dir.position.set(30, 50, 20); scene.add(dir);
 try {
@@ -539,7 +554,7 @@ _envScn.add(_areaLuz(0xdfeaf7, 1, 10, 12, -11.5, 2, -3, 1.6));
 _envScn.add(_areaLuz(0xfff0dc, 1, 10, 12, 11.5, 2, 4, 1.3));
 _envScn.add(_areaLuz(0xc4d0dd, 16, 1, 16, 0, -8.5, 0, 0.6));
 var _envRT = _pmrem.fromScene(_envScn, 0.04);
-scene.environment = _envRT.texture;
+scene.environment = _envRT.texture; envPadrao3d = _envRT.texture;
 _room.geometry.dispose(); _envScn.traverse(function (o) { if (o.material && o.material.dispose) o.material.dispose(); if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
 _pmrem.dispose();
 } catch (eEnv) { }
@@ -571,12 +586,20 @@ var Sm = S;
 S.barToggle = barToggle; S._setBarra = setBarra;
 S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; S._dockRolar = aoRolar;
 S._dockDocClick = dockDocClick;
+var _szRes = new THREE.Vector2();
 function resize() {
 var alvo = (S && S.host) || host;
 var w = alvo.clientWidth, h = alvo.clientHeight;
-if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+if (!(w && h)) return;
+var cv = cvDesenho(), pr = renderer.getPixelRatio(), sz = renderer.getSize(_szRes);
+if (sz.x !== w || sz.y !== h || cv.width !== Math.floor(w * pr) || cv.height !== Math.floor(h * pr)) renderer.setSize(w, h, false);
+var c0 = renderer.domElement;
+if (c0 !== cv && (c0.width !== cv.width || c0.height !== cv.height)) { c0.width = cv.width; c0.height = cv.height; }
+if (camera.aspect !== w / h) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
 }
-S._resize = resize; window.addEventListener('resize', resize); resize();
+function cvDesenho() { return (S && S._cvVivo) || renderer.domElement; }
+S._resize = resize; S._canvasDesenho = cvDesenho; window.addEventListener('resize', resize); resize();
+try { if (window.ResizeObserver) { S._ro = new ResizeObserver(function () { if (S && S.alive && !S._principalOculta) resize(); }); S._ro.observe(host); } } catch (_) {}
 var canvasEl = renderer.domElement, fly = S.fly, _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
 var trava = { on: false, avisoT: 0 };
 S.trava = trava;
@@ -653,8 +676,295 @@ if (S._cxMain) S._cxMain.desenhar(renderer, camera);
 if (S._renderVistas) S._renderVistas(dt);
 for (var tp = 0; tp < S._tickPos.length; tp++) { try { S._tickPos[tp](dt); } catch (_) {} }
 }
-function tick() { if (!S || !S.alive) return; if (S._xrActive) { S.raf = 0; return; } var dt = Math.min(clock.getDelta(), 0.1); renderFrame(dt); S.raf = requestAnimationFrame(tick); }
-S._renderFrame = renderFrame; S._retomarTick = function () { if (S && S.alive && !S._xrActive && !S.raf) tick(); };
+var SAUDE = { erros: 0, seguidos: 0, ultErro: '', bom: null, nQ: 0, tCheca: 0, vazioN: 0, dispensado: '', raio: null, raioSig: '', raioT: 0, tentativas: 0, tRec: 0, farAjustes: 0 };
+S._saude3d = SAUDE;
+function msg3d(e) { return String((e && (e.message || e)) || '').replace(/[^\s@]+@[^\s@]+/g, '<email>').replace(/[A-Za-z0-9_\-]{24,}/g, '<id>').slice(0, 140); }
+function diag3d(evento, extra) {
+try {
+var reg = { tipo: '3d', evento: evento, em: new Date().toISOString(), versao: (window.CONFIG && window.CONFIG.versao) || '' };
+if (extra) for (var k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) reg[k] = extra[k];
+(S._diag3d = S._diag3d || []).push(reg); if (S._diag3d.length > 40) S._diag3d.shift();
+if (window.MemVigia && MemVigia.enviar) MemVigia.enviar(reg);
+} catch (_) {}
+}
+function v3fin(v) { return !!v && isFinite(v.x) && isFinite(v.y) && isFinite(v.z); }
+function cameraSa() {
+var q = camera.quaternion;
+return v3fin(camera.position) && v3fin(orbit.target) && isFinite(q.x) && isFinite(q.y) && isFinite(q.z) && isFinite(q.w) &&
+isFinite(camera.near) && isFinite(camera.far) && camera.near > 0 && camera.far > camera.near &&
+isFinite(camera.fov) && camera.fov > 0 && camera.fov < 180 && isFinite(camera.zoom) && camera.zoom > 0 &&
+isFinite(camera.aspect) && camera.aspect > 0 && isFinite(fly.yaw) && isFinite(fly.pitch);
+}
+function guardarCameraBoa() {
+var b = SAUDE.bom || (SAUDE.bom = { p: new THREE.Vector3(), q: new THREE.Quaternion(), t: new THREE.Vector3() });
+b.p.copy(camera.position); b.q.copy(camera.quaternion); b.t.copy(orbit.target);
+b.near = camera.near; b.far = camera.far; b.fov = camera.fov; b.zoom = camera.zoom; b.yaw = fly.yaw; b.pitch = fly.pitch;
+}
+function sanearCamera(motivo) {
+if (S._cancelTween) S._cancelTween();
+var amort = orbit.enableDamping; orbit.enableDamping = false; try { orbit.update(); } catch (_) {} orbit.enableDamping = amort;
+if (!v3fin(camera.up)) camera.up.set(0, 1, 0);
+var b = SAUDE.bom;
+if (b) {
+camera.position.copy(b.p); camera.quaternion.copy(b.q); orbit.target.copy(b.t);
+camera.near = b.near; camera.far = b.far; camera.fov = b.fov; camera.zoom = b.zoom; fly.yaw = b.yaw; fly.pitch = b.pitch;
+} else {
+camera.position.set(20, 18, 22); orbit.target.set(0, 0, 0); camera.near = 0.1; camera.far = 5000; camera.fov = 60; camera.zoom = 1; fly.yaw = 0; fly.pitch = -0.35;
+}
+if (!isFinite(camera.aspect) || camera.aspect <= 0) camera.aspect = 1;
+camera.updateProjectionMatrix();
+if (!b) { try { enquadrar(); } catch (_) {} }
+try { orbit.update(); } catch (_) {}
+if (!cameraSa()) { camera.position.set(20, 18, 22); orbit.target.set(0, 0, 0); camera.near = 0.1; camera.far = 5000; camera.fov = 60; camera.zoom = 1; fly.yaw = 0; fly.pitch = -0.35; camera.updateProjectionMatrix(); try { orbit.update(); } catch (_) {} }
+diag3d('camera-saneada', { motivo: motivo || '', voltou: b ? 'ultima-boa' : 'enquadrar' });
+}
+function raioCena() {
+var n = 0, gs = modelRoot.children; for (var i = 0; i < gs.length; i++) n += (gs[i].children || []).length;
+var sig = gs.length + ':' + n, ag = performance.now();
+if (SAUDE.raioT && ag - SAUDE.raioT < (SAUDE.raioSig === sig ? 10000 : 1000)) return SAUDE.raio;
+SAUDE.raioSig = sig; SAUDE.raioT = ag; SAUDE.raio = null;
+if (!n) return null;
+var bx = new THREE.Box3().setFromObject(modelRoot);
+if (!bx.isEmpty() && v3fin(bx.min) && v3fin(bx.max)) { var sf = bx.getBoundingSphere(new THREE.Sphere()); SAUDE.raio = { c: sf.center, r: Math.max(0.5, sf.radius) }; }
+return SAUDE.raio;
+}
+function ajustarPlanos() {
+if ((typeof ortoMain !== 'undefined' && ortoMain && ortoMain.on) || S._xrActive) return;
+var rc = raioCena(); if (!rc) return;
+var precisa = camera.position.distanceTo(rc.c) + rc.r * 1.25 + 1;
+if (!(camera.far < precisa)) return;
+camera.far = precisa * 2;
+if (camera.near < camera.far / 2e6) camera.near = camera.far / 2e6;
+camera.updateProjectionMatrix();
+if (SAUDE.farAjustes++ < 3) diag3d('far-ajustado', { far: Math.round(camera.far), raio: Math.round(rc.r) });
+}
+function conferirTamanho() {
+if (S._principalOculta || S._xrActive) return;
+var alvo = S.host; if (!alvo) return;
+var w = alvo.clientWidth, h = alvo.clientHeight; if (!(w && h)) return;
+var cv = cvDesenho(), pr = renderer.getPixelRatio();
+if (cv.width === Math.floor(w * pr) && cv.height === Math.floor(h * pr)) return;
+diag3d('canvas-redimensionado', { de: cv.width + 'x' + cv.height, para: Math.floor(w * pr) + 'x' + Math.floor(h * pr) });
+resize();
+}
+var aviso3d = document.createElement('div');
+aviso3d.className = 'bim-flut';
+aviso3d.setAttribute('data-bim', 'aviso-3d'); aviso3d.setAttribute('role', 'status');
+aviso3d.style.cssText = 'position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:6;display:none;max-width:min(460px,92%);box-sizing:border-box;background:var(--card-bg,#fff);color:var(--texto,#15181d);border:1px solid var(--linha-forte,#8697a9);border-radius:var(--raio,10px);padding:12px 14px;font-size:var(--t-base,13px);pointer-events:auto';
+host.appendChild(aviso3d);
+S.aviso3d = aviso3d;
+function escAv(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function mostrarAviso3d(o) {
+aviso3d.setAttribute('data-tipo', o.tipo || ''); aviso3d.setAttribute('data-cod', o.cod || '');
+var h = '<div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><b style="display:block;margin-bottom:3px">' + escAv(o.titulo) + '</b><span style="color:var(--texto-fraco,#4b5563)">' + escAv(o.texto) + '</span></div>' +
+(o.dispensavel ? '<button type="button" class="btn sm ghost" data-av3d="fechar" title="Fechar este aviso" aria-label="Fechar este aviso" style="flex:none">' + ico('fechar') + '</button>' : '') + '</div>';
+var bts = o.botoes || [];
+if (bts.length) h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">' + bts.map(function (b, i) { return '<button type="button" class="btn sm' + (b.primario ? ' primary' : '') + '" data-av3d="' + i + '">' + escAv(b.rotulo) + '</button>'; }).join('') + '</div>';
+aviso3d.innerHTML = h;
+aviso3d.onclick = function (e) {
+var t = e.target && e.target.closest ? e.target.closest('[data-av3d]') : null; if (!t) return;
+var k = t.getAttribute('data-av3d');
+if (k === 'fechar') { SAUDE.dispensado = o.cod || o.tipo || ''; aviso3d.style.display = 'none'; return; }
+var b = bts[+k]; if (b && b.acao) { try { b.acao(); } catch (eA) { diag3d('aviso-acao-falhou', { msg: msg3d(eA) }); } }
+};
+aviso3d.style.display = 'block';
+}
+function esconderAviso3d(tipo) { if (aviso3d.style.display !== 'none' && (!tipo || aviso3d.getAttribute('data-tipo') === tipo)) aviso3d.style.display = 'none'; }
+S._aviso3d = function () { return aviso3d.style.display === 'none' ? null : { tipo: aviso3d.getAttribute('data-tipo'), cod: aviso3d.getAttribute('data-cod'), texto: aviso3d.textContent }; };
+var _frus3 = new THREE.Frustum(), _mPS3 = new THREE.Matrix4(), _esf3 = new THREE.Sphere();
+function oQueSeVe() {
+camera.updateMatrixWorld(); _mPS3.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frus3.setFromProjectionMatrix(_mPS3);
+var pls = renderer.clippingPlanes || [], r = { pecas: 0, vis: 0, quadro: 0, cortado: 0, desenha: false }, gs = modelRoot.children;
+for (var i = 0; i < gs.length; i++) {
+var ms = gs[i].children || []; r.pecas += ms.length;
+if (gs[i].visible === false) continue;
+for (var j = 0; j < ms.length; j++) {
+var m = ms[j]; if (!m.visible) continue;
+r.vis++;
+if (!m.isMesh || m.isInstancedMesh || m.frustumCulled === false || !m.geometry) { r.desenha = true; return r; }
+var gg = m.geometry;
+if (!gg.boundingSphere) { try { gg.computeBoundingSphere(); } catch (_) {} }
+if (!gg.boundingSphere || !isFinite(gg.boundingSphere.radius)) continue;
+_esf3.copy(gg.boundingSphere).applyMatrix4(m.matrixWorld);
+if (!_frus3.intersectsSphere(_esf3)) continue;
+r.quadro++;
+var fora = false; for (var k = 0; k < pls.length; k++) if (pls[k].distanceToPoint(_esf3.center) < -_esf3.radius) { fora = true; break; }
+if (fora) { r.cortado++; continue; }
+r.desenha = true; return r;
+}
+}
+return r;
+}
+function motivoVazio(r) {
+if (modelRoot.visible === false) return { cod: 'raiz', texto: 'O modelo está escondido nesta vista.', rotulo: 'Mostrar o modelo', acao: function () { modelRoot.visible = true; } };
+if (!r.vis) {
+var comPecas = S.modelos.filter(function (m) { return m && m.grupo && (m.grupo.children || []).length; });
+if (comPecas.length && comPecas.every(function (m) { return m.visivel === false || m.grupo.visible === false; }))
+return { cod: 'modelos', texto: 'Todos os modelos estão desligados no painel Modelos.', rotulo: 'Ligar os modelos', acao: function () { comPecas.forEach(function (m) { setVisivel(m.mid, true); }); } };
+if (S._fut4d) return { cod: '4d', texto: 'A simulação 4D está numa data em que nada foi construído ainda.', rotulo: 'Sair do 4D', acao: function () { mostrarTudo(); } };
+if (typeof pav !== 'undefined' && pav && (pav.isolado || pav.manual)) return { cod: 'pavimento', texto: pav.isolado ? 'O pavimento "' + pav.isolado + '" está isolado e não tem peça visível.' : 'O isolamento da Visibilidade não deixou nenhuma peça visível.', rotulo: 'Mostrar todos os pavimentos', acao: function () { restaurarVisibilidade(); } };
+var ocl = 0; try { ocl = (window.BimSelInst && BimSelInst.ocultos) ? BimSelInst.ocultos().length : 0; } catch (_) {}
+if (ocl) return { cod: 'ocultos', texto: ocl + (ocl === 1 ? ' peça está oculta' : ' peças estão ocultas') + ' temporariamente (Ocultar/Isolar) e nada sobrou à vista.', rotulo: 'Mostrar todos', acao: function () { if (window.BimSelInst && BimSelInst.mostrarTodos) BimSelInst.mostrarTodos(); else restaurarVisibilidade(); } };
+var fl = null; try { fl = (window.BimP10UI && BimP10UI.vista) ? BimP10UI.vista().filtro : null; } catch (_) {}
+if (fl && fl !== 'tudo') { var nmF = fl; try { nmF = window.BimFases ? BimFases.filtro(fl).nome : fl; } catch (_) {} return { cod: 'fase', texto: 'O filtro de fase da vista ("' + nmF + '") não mostra nenhuma peça.', rotulo: 'Mostrar todas as fases', acao: function () { BimP10UI.definirVista({ filtro: 'tudo' }); } }; }
+return { cod: 'oculto', texto: 'Nenhuma peça está visível: tudo foi ocultado ou isolado.', rotulo: 'Mostrar tudo', acao: function () { recuperarVista3d({ origem: 'aviso' }); } };
+}
+if (!r.quadro && fly.on) return null;
+if (!r.quadro) return { cod: 'fora', texto: 'O modelo está fora do enquadramento da câmera.', rotulo: 'Enquadrar tudo', acao: function () { enquadrar(); } };
+if (r.cortado >= r.quadro) {
+var qual = (typeof cxMain !== 'undefined' && cxMain && cxMain.on) ? 'A caixa de corte' : ((typeof planta !== 'undefined' && planta && planta.on) ? 'O plano de corte da planta' : 'O corte');
+return { cod: 'corte', texto: qual + ' está escondendo o modelo inteiro.', rotulo: 'Desligar o corte', acao: function () { if (S._cxDesligar) S._cxDesligar(); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); } };
+}
+return null;
+}
+function conferirVazio() {
+var calar = S._principalOculta || S._xrActive || S._ctxPerdido || loading.style.display === 'flex' || (typeof cris !== 'undefined' && cris && cris.estado === 'abrindo');
+if (calar) { SAUDE.vazioN = 0; return; }
+var temPecas = S.modelos.some(function (m) { return m && m.grupo && (m.grupo.children || []).length; });
+var mv = temPecas ? motivoVazio(oQueSeVe()) : null;
+if (!mv) { SAUDE.vazioN = 0; SAUDE.dispensado = ''; esconderAviso3d('vazio'); return; }
+if (++SAUDE.vazioN < 2 || SAUDE.dispensado === mv.cod) return;
+if (aviso3d.style.display !== 'none' && aviso3d.getAttribute('data-cod') === mv.cod) return;
+if (SAUDE.vazioN === 2) diag3d('vista-vazia', { motivo: mv.cod });
+mostrarAviso3d({ tipo: 'vazio', cod: mv.cod, titulo: 'Nada aparece no 3D', texto: mv.texto, dispensavel: true, botoes: [
+{ rotulo: mv.rotulo, primario: true, acao: function () { mv.acao(); SAUDE.vazioN = 0; esconderAviso3d('vazio'); } },
+{ rotulo: 'Recuperar vista 3D', acao: function () { recuperarVista3d({ origem: 'aviso-vazio' }); } }] });
+}
+function quadroFalhou(e) {
+SAUDE.erros++; SAUDE.seguidos++; SAUDE.ultErro = msg3d(e);
+if (SAUDE.erros <= 3 || SAUDE.seguidos === 120) {
+try { console.error('[3D] um quadro falhou e o desenho seguiu:', e); } catch (_) {}
+diag3d('quadro-falhou', { msg: SAUDE.ultErro, seguidos: SAUDE.seguidos, total: SAUDE.erros });
+}
+if (SAUDE.seguidos === 20 && !cameraSa()) sanearCamera('quadro-falhou');
+if (SAUDE.seguidos === 60) mostrarAviso3d({ tipo: 'erro', cod: 'erro', titulo: 'O 3D não está conseguindo desenhar', texto: 'Um erro se repete a cada quadro: ' + SAUDE.ultErro + '. O modelo e a edição continuam salvos.', botoes: [
+{ rotulo: 'Recuperar vista 3D', primario: true, acao: function () { recuperarVista3d({ origem: 'aviso-erro' }); } }] });
+}
+function tick() {
+if (!S || S !== Sm || !S.alive) return;
+if (S._xrActive) { S.raf = 0; return; }
+S.raf = requestAnimationFrame(tick);
+var dt = Math.min(clock.getDelta(), 0.1);
+if (S._ctxPerdido) return;
+try {
+if (!cameraSa()) sanearCamera('nan');
+ajustarPlanos();
+renderFrame(dt);
+if (SAUDE.seguidos) { SAUDE.seguidos = 0; esconderAviso3d('erro'); }
+SAUDE.nQ++; if (cameraSa()) guardarCameraBoa();
+} catch (e) { quadroFalhou(e); }
+SAUDE.tCheca += dt;
+if (SAUDE.tCheca >= 1.5) { SAUDE.tCheca = 0; try { conferirTamanho(); conferirVazio(); } catch (_) {} }
+}
+S._renderFrame = renderFrame;
+S._retomarTick = function () { if (S && S === Sm && S.alive && !S._xrActive) { if (S.raf) { try { cancelAnimationFrame(S.raf); } catch (_) {} } S.raf = 0; tick(); } };
+var ESPERAS_REC = [0, 1500, 3000, 6000, 12000, 20000];
+function aoPerderContexto3d(e) {
+try { e.preventDefault(); } catch (_) {}
+if (!S || S !== Sm) return;
+if (e && e.target && e.target !== cvDesenho()) return;
+S._ctxPerdido = true; S._ctxPerdas = (S._ctxPerdas || 0) + 1; SAUDE.tentativas = 0;
+diag3d('contexto-perdido', { perdas: S._ctxPerdas, modelos: S.modelos.length, canvas: document.getElementsByTagName('canvas').length });
+mostrarAviso3d({ tipo: 'contexto', cod: 'contexto', titulo: 'Recuperando o 3D…', texto: 'A placa de vídeo descartou o desenho desta vista. O modelo e a edição continuam aqui; o 3D volta em instantes.' });
+clearTimeout(SAUDE.tRec);
+SAUDE.tRec = setTimeout(function () { recriarRenderer('perda'); }, 900);
+}
+function aoVoltarContexto3d(e) {
+if (!S || S !== Sm) return;
+if (e && e.target && e.target !== cvDesenho()) {
+try { var g0 = e.target.getContext('webgl2') || e.target.getContext('webgl'), x0 = g0 && g0.getExtension('WEBGL_lose_context'); if (x0) x0.loseContext(); } catch (_) {}
+return;
+}
+if (!S._ctxPerdido) return;
+clearTimeout(SAUDE.tRec);
+refazerAmbiente();
+fimRecuperacao('o navegador devolveu');
+}
+function refazerAmbiente() {
+try {
+var nv = envPara(renderer); if (!nv) return;
+var velho = envPadrao3d; envPadrao3d = nv;
+(S._envAntigos = S._envAntigos || []).push(velho);
+if (scene.environment === velho) scene.environment = nv;
+} catch (_) {}
+}
+function fimRecuperacao(como) {
+S._ctxPerdido = false; esconderAviso3d('contexto');
+try { resize(); } catch (_) {}
+if (S._retomarTick) S._retomarTick();
+diag3d('contexto-recuperado', { como: como, tentativas: SAUDE.tentativas });
+try { if (window.UI && UI.toast) UI.toast('O 3D voltou. A placa de vídeo tinha descartado o desenho; o modelo e a edição ficaram como estavam.', 'ok', 6000); } catch (_) {}
+}
+function recriarRenderer(origem) {
+if (!S || S !== Sm || !S.alive) return false;
+clearTimeout(SAUDE.tRec);
+try { if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } catch (_) {}
+var velho = renderer, cvVelho = cvDesenho(), base = renderer.domElement;
+var cv = document.createElement('canvas');
+cv.setAttribute('data-bim-desenho', '1');
+cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block;outline:none;pointer-events:none';
+var novo = null;
+try { novo = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, powerPreference: 'high-performance' }); } catch (eN) { novo = null; }
+if (!novo || !novo.getContext() || novo.getContext().isContextLost()) {
+try { if (novo) { novo.dispose(); novo.forceContextLoss(); } } catch (_) {}
+SAUDE.tentativas++;
+diag3d('contexto-recriar-falhou', { tentativa: SAUDE.tentativas, origem: origem });
+if (SAUDE.tentativas < ESPERAS_REC.length) { SAUDE.tRec = setTimeout(function () { recriarRenderer('nova-tentativa'); }, ESPERAS_REC[SAUDE.tentativas]); return false; }
+mostrarAviso3d({ tipo: 'contexto', cod: 'contexto-falhou', titulo: 'O 3D não conseguiu voltar', texto: 'A placa de vídeo recusou um desenho novo (' + SAUDE.tentativas + ' tentativas). O modelo e a edição estão salvos. Feche outras abas com 3D e tente de novo, ou recarregue a página.', botoes: [
+{ rotulo: 'Tentar de novo', primario: true, acao: function () { SAUDE.tentativas = 0; recriarRenderer('botao'); } },
+{ rotulo: 'Recarregar a página', acao: function () { try { if (window.Gestao && Gestao._bimEdFlush) Gestao._bimEdFlush(); } catch (_) {} setTimeout(function () { try { location.reload(); } catch (_) {} }, 300); } }] });
+return false;
+}
+prepararRenderer(novo, velho);
+novo.domElement = base;
+cv.addEventListener('webglcontextlost', function (ev) { aoPerderContexto3d(ev); }, false);
+cv.addEventListener('webglcontextrestored', function (ev) { aoVoltarContexto3d(ev); }, false);
+if (cvVelho !== base && cvVelho.parentNode) cvVelho.parentNode.removeChild(cvVelho);
+if (base.parentNode) base.parentNode.insertBefore(cv, base.nextSibling); else if (S.host) S.host.appendChild(cv);
+try { velho.dispose(); } catch (_) {}
+if (cvVelho !== base) { try { velho.forceContextLoss(); } catch (_) {} }
+renderer = novo; S.renderer = novo; S._cvVivo = cv;
+refazerAmbiente();
+fimRecuperacao(origem === 'manual' ? 'renderer novo (comando)' : 'renderer novo');
+return true;
+}
+S._recriarRenderer = recriarRenderer;
+S._sanearCamera = sanearCamera;
+function recuperarVista3d(o) {
+o = o || {};
+var feito = [];
+if (!S || S !== Sm || !S.alive) return { ok: false, feito: feito };
+try { if (S.xr && S.xr.on && S._sairImersivo) { S._sairImersivo(); feito.push('imersivo'); } } catch (_) {}
+try { if (fly.on) { setMode(false); feito.push('voo'); } } catch (_) {}
+try {
+if (planta.on) feito.push('planta'); if (corteL.on) feito.push('corte');
+if (medir.on || area.on || ang.on || cota.on) feito.push('ferramenta de medida');
+sairFerramentas();
+} catch (_) {}
+try { if (cxMain.on && S._cxDesligar) { S._cxDesligar(); feito.push('caixa de corte'); } } catch (_) {}
+try {
+var ocl = (window.BimSelInst && BimSelInst.ocultos) ? BimSelInst.ocultos().length : 0;
+if (pav.isolado || pav.manual || ocl) feito.push('isolar/ocultar temporário');
+if (window.BimSelInst && BimSelInst.mostrarTodos && ocl) BimSelInst.mostrarTodos(); else restaurarVisibilidade();
+} catch (_) {}
+try { if (S._fut4d) { mostrarTudo(); feito.push('simulação 4D'); } } catch (_) {}
+try {
+var comPecas = S.modelos.filter(function (m) { return m && m.grupo && (m.grupo.children || []).length; });
+if (comPecas.length && comPecas.every(function (m) { return m.visivel === false || m.grupo.visible === false; })) { comPecas.forEach(function (m) { setVisivel(m.mid, true); }); feito.push('modelos religados'); }
+} catch (_) {}
+if (modelRoot.visible === false) { modelRoot.visible = true; feito.push('modelo escondido'); }
+try { var rr = oQueSeVe(), fl = (window.BimP10UI && BimP10UI.vista) ? BimP10UI.vista().filtro : null; if (!rr.vis && fl && fl !== 'tudo') { BimP10UI.definirVista({ filtro: 'tudo' }); feito.push('filtro de fase'); } } catch (_) {}
+if (!cameraSa()) { sanearCamera('recuperar'); feito.push('câmera inválida'); }
+try { if (S._cancelTween) S._cancelTween(); enquadrar(); } catch (_) {}
+var perdido = !!S._ctxPerdido; try { perdido = perdido || renderer.getContext().isContextLost(); } catch (_) {}
+if (perdido) { if (recriarRenderer('manual')) feito.push('3D recriado'); }
+try { resize(); } catch (_) {}
+if (S._retomarTick) S._retomarTick();
+SAUDE.vazioN = 0; SAUDE.dispensado = ''; esconderAviso3d('vazio'); esconderAviso3d('erro');
+diag3d('recuperar-vista', { feito: feito.join(', '), origem: o.origem || '' });
+return { ok: true, feito: feito };
+}
+S._recuperarVista = recuperarVista3d;
 tick();
 var ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
 function cadeiaVisivel(o) { for (var n = o; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; } return true; }
@@ -707,6 +1017,7 @@ function cancelTween() { _cvT = null; }
 S._cancelTween = cancelTween;
 function voarCam(destPos, destTgt, dur) {
 if (!destPos) return;
+if (!(isFinite(destPos.x) && isFinite(destPos.y) && isFinite(destPos.z)) || (destTgt && !(isFinite(destTgt.x) && isFinite(destTgt.y) && isFinite(destTgt.z)))) return;
 _cvT = { p0: camera.position.clone(), p1: destPos.clone(), t0: orbit.target.clone(), t1: (destTgt || orbit.target).clone(), dur: Math.max(0.15, dur || 0.6), e: 0 };
 }
 S._tickExtra.push(function (dt) {
@@ -719,11 +1030,14 @@ if (k >= 1) _cvT = null;
 });
 function enquadrarObj(box, fator) {
 if (!box || box.isEmpty()) return;
+if (!(isFinite(box.min.x) && isFinite(box.min.y) && isFinite(box.min.z) && isFinite(box.max.x) && isFinite(box.max.y) && isFinite(box.max.z))) return;
+if (S._sanearCamera && !(isFinite(camera.position.x) && isFinite(camera.position.y) && isFinite(camera.position.z) && isFinite(orbit.target.x) && isFinite(orbit.target.y) && isFinite(orbit.target.z))) S._sanearCamera('enquadrar');
 var c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
 var raio = Math.max(sz.x, sz.y, sz.z, 0.5) * 0.5;
 var dist = (raio / Math.tan((camera.fov * Math.PI / 180) / 2)) * (fator || 1.6);
-var dir = camera.position.clone().sub(orbit.target); if (dir.lengthSq() < 1e-6) dir.set(0.7, 0.55, 0.8); dir.normalize();
+var dir = camera.position.clone().sub(orbit.target); if (!(dir.lengthSq() >= 1e-6)) dir.set(0.7, 0.55, 0.8); dir.normalize();
 var near = Math.max(0.01, (dist - raio) * 0.5); if (near < camera.near) { camera.near = near; camera.updateProjectionMatrix(); }
+var precisaFar = dist + raio * 4; if (camera.far < precisaFar) { camera.far = precisaFar; camera.updateProjectionMatrix(); }
 voarCam(c.clone().add(dir.multiplyScalar(dist)), c, 0.55);
 }
 S._enquadrarObj = enquadrarObj; S._voarCam = voarCam;
@@ -957,7 +1271,7 @@ function raioModelo() { var b = new THREE.Box3().setFromObject(modelRoot); if (b
 function aplicarOrto(cam, orb, on, estado) {
 if (!!estado.on === !!on) return;
 var d = cam.position.distanceTo(orb.target), dir = cam.position.clone().sub(orb.target).normalize();
-var fov0 = on ? cam.fov : estado.fovPersp || 60, fov1 = on ? ORTO_FOV : (estado.fovPersp || 60);
+var fov0 = cam.fov, fov1 = on ? ORTO_FOV : (estado.fovPersp || 60);
 var h = 2 * d * Math.tan(fov0 * Math.PI / 360);
 var d1 = h / (2 * Math.tan(fov1 * Math.PI / 360));
 if (on) { estado.fovPersp = cam.fov; estado.near0 = cam.near; estado.far0 = cam.far; }
@@ -1289,6 +1603,14 @@ rr.toneMapping = renderer.toneMapping; rr.toneMappingExposure = renderer.toneMap
 rr.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
 cont.style.position = cont.style.position || 'relative';
 cont.appendChild(rr.domElement);
+rr.domElement.addEventListener('webglcontextlost', function (e) {
+try { e.preventDefault(); } catch (_) {}
+setTimeout(function () {
+if (!S || v.renderer !== rr || !v.cont) return;
+var c2 = v.cont; desmontarVista(v);
+try { montarVista(v, c2); diag3d('vista-recriada', { vista: String(v.id || '') }); } catch (eV) { diag3d('vista-recriar-falhou', { msg: msg3d(eV) }); }
+}, 900);
+}, false);
 var orb = new OrbitControls(v.camera, rr.domElement); orb.enableDamping = true; orb.dampingFactor = .08; orb.target.copy(v.alvo);
 v.renderer = rr; v.orbit = orb; v.cont = cont; v.env = envPara(rr);
 var cxAnt = v.cx && v.cx.on ? v.cx.box.clone() : null;
@@ -3481,7 +3803,7 @@ camera.lookAt(c); camera.updateProjectionMatrix();
 scene.background = new THREE.Color(0xffffff);
 if (_selLn) _selLn.visible = false;
 renderer.render(scene, camera);
-url = renderer.domElement.toDataURL('image/png');
+url = cvDesenho().toDataURL('image/png');
 } catch (_) { url = null; } finally {
 camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
 icMapaG.visible = true;
@@ -3502,7 +3824,7 @@ o = o || {};
 if (!S) return { ok: false, erro: 'visualizador não montado' };
 var W = Math.max(320, Math.min(3840, Math.round(+o.largura || 1920))), H = Math.max(240, Math.min(2160, Math.round(+o.altura || 1080)));
 var maxRB = (renderer.capabilities && renderer.capabilities.maxRenderbufferSize) || 4096, ss = Math.max(1, Math.min(2, Math.floor(Math.min(maxRB / W, maxRB / H))));
-var cv = renderer.domElement, tam = new THREE.Vector2(); renderer.getSize(tam);
+var cv = cvDesenho(), tam = new THREE.Vector2(); renderer.getSize(tam);
 var sc = dir.shadow.camera, bk = { w: cv.width, h: cv.height, pr: renderer.getPixelRatio(), asp: camera.aspect, cast: dir.castShadow, map: dir.shadow.mapSize.clone(),
 cam: [sc.left, sc.right, sc.top, sc.bottom, sc.near, sc.far], pos: dir.position.clone(), tgt: dir.target.position.clone() };
 var g3F = icG3G.visible; icG3G.visible = false;
@@ -4307,7 +4629,7 @@ grid.visible = false; _chao.visible = false;
 } else if (EST.luz) {
 var l = EST.luz; EST.luz = null;
 hemi.color.copy(l.hc); hemi.groundColor.copy(l.hg); fill.color.copy(l.fc);
-renderer.toneMapping = l.tm; scene.environment = l.env; grid.visible = l.grid; _chao.visible = l.chao;
+renderer.toneMapping = l.tm; scene.environment = (S._envAntigos && S._envAntigos.indexOf(l.env) >= 0) ? envPadrao3d : l.env; grid.visible = l.grid; _chao.visible = l.chao;
 }
 try { aplicarTema(); } catch (_) {}
 }
@@ -5985,6 +6307,7 @@ S.blocok = gerarBlocok;
 S._blocokLiberado = blocokLiberado;
 function gerarPlanilhaBlocok() {
 if (!blocokLiberado()) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Recurso exclusivo (liberado por licença).'); return null; }
+try { if (!(window.App && App._demo) && window.Licenca && Licenca.status && Licenca.status().suspensa) { if (window.App && App._avisoTrial) App._avisoTrial(); return null; } } catch (_) {}
 var BK = getBK(); if (!BK) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Motor Blocok não carregou.'); return null; }
 var XLS = (typeof window !== 'undefined' && window.BlocokXLS) || null;
 if (!XLS) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Módulo de planilha não carregou (js/blocokxls.js).'); return null; }
@@ -6371,7 +6694,7 @@ var cx = (lupa.x - rc.left) * dpr, cy = (lupa.y - rc.top) * dpr;
 var lado = (LUPA_D / LUPA_Z) * dpr;
 lupaCtx.clearRect(0, 0, LUPA_D, LUPA_D);
 try {
-lupaCtx.drawImage(canvasEl, cx - lado / 2, cy - lado / 2, lado, lado, 0, 0, LUPA_D, LUPA_D);
+lupaCtx.drawImage(cvDesenho(), cx - lado / 2, cy - lado / 2, lado, lado, 0, 0, LUPA_D, LUPA_D);
 } catch (e) { return; }
 var m = LUPA_D / 2;
 lupaCtx.strokeStyle = 'rgba(255,255,255,.85)'; lupaCtx.lineWidth = 1;
@@ -8131,7 +8454,7 @@ camera.near = dim / 100; camera.far = dim * 50; camera.updateProjectionMatrix();
 camera.lookAt(cx, cy, cz);
 scene.background = new THREE.Color(0xf3f6fa);
 renderer.render(scene, camera);
-var srcCnv = renderer.domElement, lado = Math.min(srcCnv.width, srcCnv.height);
+var srcCnv = cvDesenho(), lado = Math.min(srcCnv.width, srcCnv.height);
 var out = document.createElement('canvas'); var mp = maxPx || 220; out.width = mp; out.height = mp;
 out.getContext('2d').drawImage(srcCnv, (srcCnv.width - lado) / 2, (srcCnv.height - lado) / 2, lado, lado, 0, 0, mp, mp);
 thumb = out.toDataURL('image/jpeg', 0.85);
@@ -8217,7 +8540,7 @@ if (_selLn) _selLn.visible = false;
 renderer.render(scene, camera);
 } catch (e) { return null; }
 finally { scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn; }
-return renderer.domElement;
+return cvDesenho();
 }
 S._desenharQuadro = desenharQuadro;
 function desenharQuadroEm(fundo, larg, alt, opts) {
@@ -8237,7 +8560,7 @@ if (na < asp) camera.fov = 2 * Math.atan(Math.tan(fov * Math.PI / 360) * asp / n
 camera.aspect = na; camera.updateProjectionMatrix();
 renderer.render(scene, camera);
 out = document.createElement('canvas'); out.width = larg; out.height = alt;
-out.getContext('2d').drawImage(renderer.domElement, 0, 0);
+out.getContext('2d').drawImage(cvDesenho(), 0, 0);
 } catch (e) { out = null; }
 finally {
 scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn;
@@ -8258,7 +8581,7 @@ try {
 scene.background = new THREE.Color(estiloD.on ? 0xffffff : 0x0d1f33);
 if (_selLn) _selLn.visible = false;
 renderer.render(scene, camera);
-url = renderer.domElement.toDataURL('image/png');
+url = cvDesenho().toDataURL('image/png');
 } catch (_) { url = null; } finally { scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn; }
 if (!url) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Não consegui capturar a imagem.'); return null; }
 var img = new Image();
@@ -9969,6 +10292,12 @@ S._famPreview = function (canvas, av) {
 if (!canvas || !av) return false;
 var pv = canvas._famPrev;
 if (!pv) {
+var antiga = S._famPrevViva;
+if (antiga && antiga.canvas !== canvas) {
+try { antiga.pv.rnd.dispose(); antiga.pv.rnd.forceContextLoss(); } catch (_) {}
+try { antiga.canvas._famPrev = null; } catch (_) {}
+S._famPrevViva = null;
+}
 var rnd = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
 rnd.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 var sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.9));
@@ -9976,6 +10305,7 @@ var dl = new THREE.DirectionalLight(0xffffff, 0.8); dl.position.set(3, 5, 4); sc
 var cam = new THREE.PerspectiveCamera(35, 1, 0.01, 200), grp = new THREE.Group(); sc.add(grp);
 var grade = new THREE.GridHelper(4, 16, 0x7f98b0, 0xc5d3df); sc.add(grade);
 pv = canvas._famPrev = { rnd: rnd, sc: sc, cam: cam, grp: grp, th: 0.8, ph: 1.05, r: 3, alvo: new THREE.Vector3() };
+S._famPrevViva = { canvas: canvas, pv: pv };
 var arr = null;
 canvas.addEventListener('pointerdown', function (e) { arr = { x: e.clientX, y: e.clientY, th: pv.th, ph: pv.ph }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} });
 canvas.addEventListener('pointermove', function (e) { if (!arr) return; pv.th = arr.th - (e.clientX - arr.x) * 0.01; pv.ph = Math.max(0.15, Math.min(1.5, arr.ph - (e.clientY - arr.y) * 0.01)); desenhar(); });
@@ -13016,6 +13346,8 @@ try { if (S._mouse) S._mouse.dispor(); } catch (_) {}
 try { if (S._abrirUI) S._abrirUI.dispor(); } catch (_) {}
 try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
 try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
+try { if (S._ro) S._ro.disconnect(); } catch (_) {}
+try { if (S._saude3d && S._saude3d.tRec) clearTimeout(S._saude3d.tRec); } catch (_) {}
 try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
 try { if (S._fabObserver) S._fabObserver.disconnect(); } catch (_) {}
 try { if (S._fabEstilo) window.removeEventListener('resize', S._fabEstilo); } catch (_) {}
@@ -13816,6 +14148,14 @@ _p3dTexto: function (txt, nome) { if (S && S._p3dProcessar) S._p3dProcessar(txt,
 painelP3d: function () { if (S && S._toggleP3d) { S._toggleP3d(); return true; } return false; },
 voo: function (on) { if (S && S._setVoo) { S._setVoo(on); return true; } return false; },
 home: function () { if (S && S._fit) { S._fit(); return true; } return false; },
+recuperarVista: function (o) { return (S && S._recuperarVista) ? S._recuperarVista(o) : { ok: false, feito: [] }; },
+canvasDesenho: function () { return S ? (S._canvasDesenho ? S._canvasDesenho() : S.renderer.domElement) : null; },
+saude3d: function () {
+if (!S) return null;
+var sd = S._saude3d || {}, gl = null; try { gl = S.renderer.getContext(); } catch (_) {}
+return { erros: sd.erros || 0, seguidos: sd.seguidos || 0, ultErro: sd.ultErro || '', perdas: S._ctxPerdas || 0, perdido: !!S._ctxPerdido || !!(gl && gl.isContextLost()),
+tentativas: sd.tentativas || 0, renderNovo: !!S._cvVivo, aviso: S._aviso3d ? S._aviso3d() : null, far: S.camera.far, near: S.camera.near, diag: (S._diag3d || []).slice(-12) };
+},
 painelVis: function () { if (S && S._toggleVis) { S._toggleVis(); return true; } return false; },
 painelPav: function () { if (S && S._togglePav) { S._togglePav(); return true; } return false; },
 planta: function (on) { if (S && S._setPlanta) { var q = on == null ? !(S.planta && S.planta.on) : !!on; if (!q && !(S.planta && S.planta.on)) return; S._setPlanta(q); } },
@@ -13989,7 +14329,8 @@ materialDaPeca: function (uid) { return (S && S._estMaterialDaPeca) ? S._estMate
 materiaisEstado: function () { return (S && S._texEstado) ? S._texEstado() : { on: false }; },
 cenaApresentacao: function () {
 if (!S || !S.alive) return null;
-return { THREE: THREE, renderer: S.renderer, scene: S.scene, camera: S.camera, orbit: S.orbit, modelRoot: S.modelRoot, modelos: S.modelos, host: S.host,
+var S0 = S;
+return { THREE: THREE, get renderer() { return S0.renderer; }, canvas: function () { return S0._canvasDesenho ? S0._canvasDesenho() : null; }, scene: S.scene, camera: S.camera, orbit: S.orbit, modelRoot: S.modelRoot, modelos: S.modelos, host: S.host,
 tickExtra: S._tickExtra, tickPos: S._tickPos, redimensionar: S._resize,
 principalOculta: function (on) { if (on !== undefined) S._principalOculta = !!on; return !!S._principalOculta; } };
 },

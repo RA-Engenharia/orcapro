@@ -488,7 +488,9 @@
       var T = this._THREE; if (!T || !canvas) return null;
       if (this._prev && this._prev.canvas === canvas) return this._prev;
       var r;
-      if (this._prev) { r = this._prev.r; try { r.dispose(); } catch (e) {} this._prev = null; }
+      /* ⚠ dispose() NÃO solta o contexto WebGL: só a perda forçada solta. Contexto preso conta no teto do
+         navegador, e estourado ele mata o mais antigo — o 3D principal (ver "O 3D NUNCA FICA PRESO VAZIO", js/bim.js) */
+      if (this._prev) { r = this._prev.r; try { r.dispose(); } catch (e) {} try { r.forceContextLoss(); } catch (e2) {} this._prev = null; }
       try { r = new T.WebGLRenderer({ canvas: canvas, antialias: true, preserveDrawingBuffer: true, alpha: false }); } catch (e1) { return null; }
       r.setPixelRatio(1); r.setSize(240, 180, false);
       if (T.sRGBEncoding !== undefined && "outputEncoding" in r) r.outputEncoding = T.sRGBEncoding;

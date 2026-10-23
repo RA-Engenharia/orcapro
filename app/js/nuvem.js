@@ -552,6 +552,9 @@
   var Nuvem = {
     // exposta p/ o Store saber o que vale a pena lapidar (só o que sincroniza pode ressuscitar)
     ENTIDADES: ENTIDADES,
+    /* a forma que SOBE e a que DESCE (só leitura, para medir: tools/medir-nuvem-envio.js) */
+    _paraNuvem: function (ent, v) { return paraNuvem(ent, v); },
+    _daNuvem: function (ent, v) { return daNuvem(ent, v); },
     ligado: false, uid: null, db: null, auth: null,
     _un: [], _push: {}, _patched: false, _initP: null,
     _escutando: null,   // empresaId que já tem escuta ativa (ver escutar())
@@ -573,6 +576,7 @@
         if (!global.firebase.apps.length) global.firebase.initializeApp(CONFIG.backend.firebaseConfig);
         self.auth = global.firebase.auth();
         self.db = global.firebase.firestore();
+        self._ouvirSdk();
         /* ⚠ SEM O CACHE DO SDK NO APARELHO (20/10/2026, 1.2.162 — o "Out of Memory" que voltou na 1.2.161).
            O enablePersistence guardava no IndexedDB do navegador toda gravação ainda não confirmada pelo servidor.
            No aparelho do Rogério a fila chegou a 390 MB (344 cópias do bim_edicoes de ~1 MB, de 15 a 20/10): a cada
@@ -818,6 +822,10 @@
     TETO_UM_DOC: 1048576 - 8 * 1024,
     TETO_PARTE: 700 * 1024,
     TETO_PARTE_SOLO: 1048576 - 16 * 1024,
+    /* ⚠ desde 23/10/2026 o TETO_LOTE é o teto da LISTA INTEIRA, não de uma requisição: cada parte sobe sozinha (ver
+       `_naFaixa`). Medido (tools/medir-nuvem-envio.js, backup do Rogério): no fio a requisição pesa 1,7–5,4x a carga
+       (2,7x em média); a maior passou de 5,5 MiB (orcamentos, lote único) para 2,2 MiB (uma parte). No pior caso, uma
+       parte de TETO_PARTE_SOLO com o fator 5,4x = ~5,4 MiB, abaixo dos 10 MiB por requisição do Firestore. */
     TETO_LOTE: 9 * 1024 * 1024,
     REVS_MAX: 8,
     _revNuvem: {},
@@ -898,13 +906,107 @@
        e o próximo sincronizar sobe. A gravação num documento só continua sem esperar confirmação (como sempre). */
     /* a porta de gravação: a fila (abaixo) + o que vale para o `~v2` quando o servidor CONFIRMA (ver DOC_V2). O `throw`
        síncrono da fila passa direto (o `catch` do push depende dele). */
-    _escreverEnt: function (ent, vN) {
+    _escreverEnt: function (ent, vN, tam) {
       /* ⚠ só as falhas que JÁ ESTAVAM registradas quando a gravação saiu (revisão da N1 — test-nuvem-v2-rev [R9]): a que
          chega depois (o ouvinte com pedaço faltando, outra gravação recusada) é notícia nova e não pode sumir da tela */
       var self = this, velhas = DOC_V2[ent] ? (this._falhas || []).filter(function (f) { return f && f.entidade === ent; }) : null;
       var p = this._escreverEntFila(ent, vN);
       if (DOC_V2[ent]) Promise.resolve(p).then(function () { self._v2Ok(ent, true); self._limparFalhasDe(ent, velhas); }, function () {});
+      this._anotarPendente(ent, p, tam);
       return p;
+    },
+    /* ⚠ O QUE AINDA NÃO FOI CONFIRMADO, PARA A VIGIA (23/10/2026). `nuvemNoAr` só contava gravações; não dizia o
+       tamanho nem há quanto tempo esperavam — e foi esse o número que faltou para separar "o servidor nunca confirma"
+       (o que se achava) de "confirma, só que em 2 minutos" (o que a vigia de 21–23/10 mostrava). Por entidade: quantas
+       chamadas esperam, desde quando (a mais velha) e o tamanho da última carga (caracteres do JSON). */
+    _pend: {},
+    _anotarPendente: function (ent, p, tam) {
+      /* por CONTA e entidade: a gravação da conta antiga que nunca termina (ver `_naFaixa`) não conta como "no ar" na nova */
+      var self = this, k = String(this.uid || "") + "|" + ent;
+      var e = this._pend[k] || (this._pend[k] = { n: 0, desde: Date.now(), tam: 0 });
+      if (!e.n) e.desde = Date.now();
+      e.n++;
+      if (typeof tam === "number" && isFinite(tam)) e.tam = tam;
+      var fim = function () { var x = self._pend[k]; if (x && --x.n <= 0) delete self._pend[k]; };
+      Promise.resolve(p).then(fim, fim);
+    },
+    /* a entidade tem gravação no ar ou esperando a vez (a fila dela) */
+    _temNoAr: function (ent) {
+      var f = this._filaEsc[this._chaveRev(ent)];
+      var kP = String(this.uid || "") + "|" + ent;
+      return !!((f && f.ativos > 0) || (this._pend[kP] && this._pend[kP].n > 0));
+    },
+    /* o MESMO conteúdo (como o JSON o vê), sem olhar a ordem das chaves dos mapas — a ordem das listas conta */
+    _canon: function (v) {
+      var self = this;
+      if (v === null || typeof v !== "object") { var s = JSON.stringify(v); return s === undefined ? "null" : s; }
+      if (typeof v.toJSON === "function") return self._canon(v.toJSON());
+      if (Array.isArray(v)) return "[" + v.map(function (x) { return (x === undefined || typeof x === "function") ? "null" : self._canon(x); }).join(",") + "]";
+      var ks = Object.keys(v).filter(function (k) { return v[k] !== undefined && typeof v[k] !== "function"; }).sort();
+      return "{" + ks.map(function (k) { return JSON.stringify(k) + ":" + self._canon(v[k]); }).join(",") + "}";
+    },
+    _mesmoConteudo: function (a, b) {
+      try {
+        if (JSON.stringify(a) === JSON.stringify(b)) return true;
+        return this._canon(a) === this._canon(b);
+      } catch (e) { return false; }   // na dúvida, sobe
+    },
+    /* ⚠ A FAIXA DAS GRAVAÇÕES GRANDES (23/10/2026). O canal de escrita do Firestore é UM só e confirma NA ORDEM em
+       que as gravações foram chamadas: a pequena chamada depois de uma grande espera a grande inteira subir. Antes,
+       a lista grande ia num lote só com TODAS as partes (orcamentos: 4 documentos, 5,5 MiB no fio, medido). Agora
+       cada parte é UMA gravação, e as grandes (parte, ou documento só acima de TETO_DIRETO) passam por esta faixa, uma
+       de cada vez: a pequena chamada no meio espera no máximo UMA parte (~0,7 MB pela regra do Firestore). */
+    TETO_DIRETO: 256 * 1024,
+    /* ⚠ AS LÁPIDES NUNCA ENTRAM NA FAIXA enquanto couberem num documento (revisão adversarial, 23/10/2026 —
+       tools/test-nuvem-confirma-rev.js [2]). O push manda `_lapides` na FRENTE da lista sem o registro excluído ("senão o
+       outro aparelho devolve tudo"), e a ordem só vale se as duas entrarem no canal na ordem em que foram chamadas. Com o
+       teto de 3.000 lápides (~95 bytes cada pela regra do Firestore) elas passam dos 256 KB: na faixa, esperavam as
+       partes de uma lista grande enquanto a lista pequena sem o registro ia direto — o outro aparelho recebia a lista
+       primeiro. */
+    _vaiNaFaixa: function (ent, t) { return t > this.TETO_DIRETO && ent !== "_lapides"; },
+    /* ⚠ UMA FAIXA POR CONTA (revisão adversarial, 23/10/2026 — tools/test-nuvem-confirma-rev.js [5]). O SDK não confirma
+       nem recusa a gravação de um usuário depois que outro entra (a fila de escrita dele fica guardada para quando ele
+       voltar): com uma faixa só, a parte da conta antiga presa na cabeça travava para sempre, na sessão, toda lista grande
+       da conta nova — ativar outra licença no meio da subida deixava orçamentos e BIM da empresa nova sem subir até
+       reabrir o app. */
+    _faixas: {},
+    _naFaixa: function (fn, conta) {
+      var kF = String(conta === undefined ? this.uid : conta);
+      var antes = this._faixas[kF] || Promise.resolve();
+      var vez = antes.then(function () { return fn(); });
+      this._faixas[kF] = vez.then(function () {}, function () {});
+      return vez;
+    },
+    /* para a vigia (js/memvigia.js): pendentes, a maior e a mais velha, e o que o SDK disse por último */
+    diag: function () {
+      var p = this._pend || {}, n = 0, maior = null, velha = 0, agora = Date.now();
+      for (var k in p) if (Object.prototype.hasOwnProperty.call(p, k) && p[k] && p[k].n > 0) {
+        n++;
+        if (!maior || p[k].tam > maior.tam) maior = { ent: k.slice(k.indexOf("|") + 1), tam: p[k].tam };
+        if (!velha || p[k].desde < velha) velha = p[k].desde;
+      }
+      return { pendentes: n, maior: maior, idadeS: velha ? Math.round((agora - velha) / 1000) : 0, sdk: (this._sdkMsgs || []).slice(-3) };
+    },
+    /* ⚠ O QUE O SDK DIZ QUANDO REPETE SOZINHO (23/10/2026): erro passageiro do canal (rede, cota, conexão derrubada) não
+       chega à promessa da gravação — o SDK tenta de novo calado e só escreve no console. A vigia precisa do motivo real:
+       guarda as 6 últimas mensagens de aviso/erro do Firestore com o código que elas trazem (texto cortado; quem manda
+       para o diag passa pelo msgSegura do js/memvigia.js). */
+    _sdkMsgs: [],
+    _ouvirSdk: function () {
+      var self = this, fb = global.firebase;
+      if (this._ouvindoSdk || !fb || typeof fb.onLog !== "function") return;
+      this._ouvindoSdk = true;
+      try {
+        fb.onLog(function (r) {
+          try {
+            if (!r || !/firestore/i.test(String(r.type || ""))) return;
+            var txt = String(r.message || "");
+            var m = /(resource[-_ ]exhausted|unavailable|deadline[-_ ]exceeded|permission[-_ ]denied|invalid[-_ ]argument|unauthenticated|failed[-_ ]precondition|aborted|internal|maximum backoff|transport errored|could not reach|offline)/i.exec(txt);
+            self._sdkMsgs.push({ em: Date.now(), cod: m ? m[1].toLowerCase().replace(/[ _]/g, "-") : String(r.level || "aviso"), msg: txt.slice(0, 120) });
+            if (self._sdkMsgs.length > 6) self._sdkMsgs.shift();
+          } catch (e) {}
+        }, { level: "warn" });
+      } catch (e) {}
     },
     _escreverEntFila: function (ent, vN) {
       var self = this, k = this._chaveRev(ent);
@@ -915,7 +1017,8 @@
          (prova: tools/test-nuvem-push-falha.js, CN do catch vazio) */
       if (!fila.ativos && !this._revsDe(ent)) {
         var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
-        if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN))) {
+        /* ⚠ o documento só GRANDE (acima de TETO_DIRETO) vai pela fila e pela faixa das grandes (ver `_naFaixa`) */
+        if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN)) && !this._vaiNaFaixa(ent, t0)) {
           var p0 = this._setDoc(ent, { v: vN, em: Date.now() });
           /* ⚠ E A PRÓXIMA DA MESMA ENTIDADE ESPERA ESTA SER CONFIRMADA (20/10/2026, 1.2.162). Antes só a gravação em
              partes esperava; a de documento só ia direto, e com o servidor sem confirmar (rede ruim, cota, ouvinte
@@ -927,11 +1030,12 @@
           return p0;
         }
       }
-      var item = { vN: vN, juntadas: 0 };
+      /* a CONTA em que a gravação foi chamada (ver `_escreverEntVez`, "conta-trocou"); a fila já é por conta (`_chaveRev`) */
+      var item = { vN: vN, juntadas: 0, uid: this.uid };
       fila.ativos++;
       var vez = fila.corrente.then(function () {
         if (fila.espera === item) fila.espera = null;
-        return self._escreverEntVez(ent, item.vN);
+        return self._escreverEntVez(ent, item.vN, item.uid);
       });
       item.promessa = vez.then(function (r) { return r.p; });
       fila.espera = item;
@@ -943,18 +1047,39 @@
        gravado no meio (o sincronizar dele, o ouvinte atrasado). Por isso lê o principal logo antes (do cache, se
        offline) e apaga a revisão dele E as lembradas. Resolve com { p: promessa do commit } assim que o commit é
        CHAMADO — é o que libera a fila. */
-    _escreverEntVez: function (ent, vN) {
+    /* ⚠ A GRAVAÇÃO SÓ VAI PARA A CONTA EM QUE FOI CHAMADA (revisão adversarial, 23/10/2026 — tools/test-nuvem-confirma-rev.js
+       [1]). Cada referência (`_doc`, `_refParte`) é montada com o `this.uid` da HORA em que é usada. Com a lista grande
+       subindo parte a parte (minutos numa conexão lenta) e a faixa das grandes, ativar outra licença no meio
+       (`trocouDeLicenca` + `entrarPorLicenca`) mandava as partes seguintes e o principal da empresa A para
+       `empresas/<conta da B>`: o principal da B passava a apontar para uma revisão com partes na conta A (a lista da B
+       ficava ilegível) e uma parte da lista da A ficava na conta da B. Agora cada passo confere a conta antes de montar a
+       referência (no mesmo tique, sem espera no meio); trocou → recusa "conta-trocou": nada vai para a conta nova, e a
+       antiga fica na revisão inteira de antes (as partes já gravadas são de revisão lembrada). Desligar a sincronização
+       (`sair`, uid nulo) também para o que ainda não saiu. */
+    _escreverEntVez: function (ent, vN, uidChamada) {
       var self = this, em = Date.now(), doc = { v: vN, em: em };
+      var conta = uidChamada === undefined ? this.uid : uidChamada;
+      var mesmaConta = function () {
+        if (self.uid !== conta) {
+          var eC = new Error("a conta da nuvem mudou durante a gravação de \"" + ent + "\" — nada foi gravado na conta nova");
+          eC.code = "conta-trocou";
+          throw eC;
+        }
+      };
+      mesmaConta();
       var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
       var temBatch = !!this.db && typeof this.db.batch === "function";
       var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
+      /* documento só: o grande espera a vez na faixa das grandes (ver `_naFaixa`); o pequeno vai direto */
+      var setDoc = function () { return self._vaiNaFaixa(ent, t) ? self._naFaixa(function () { mesmaConta(); return self._setDoc(ent, doc); }, conta) : self._setDoc(ent, doc); };
       /* (c): entidade que nunca esteve em partes neste aparelho → o caminho de sempre, sem leitura antes */
-      if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = this._setDoc(ent, doc); return Promise.resolve({ p: pU, esperar: pU }); }
+      if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
       var lerAtual = this._doc(ent).get().then(function (s0) {
         var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
         return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
       })["catch"](function () { return null; });
       return lerAtual.then(function (naNuvem) {
+        mesmaConta();
         if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
         var lembradas = self._revsDe(ent) || {};
         var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
@@ -962,10 +1087,13 @@
         var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
         var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
         if (!emPartes) {
-          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = self._setDoc(ent, doc); return { p: pS, esperar: pS }; }
+          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = setDoc(); return { p: pS, esperar: pS }; }
           /* voltou a caber num documento: o principal sem `partes` e as partes antigas apagadas, juntos */
-          var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
-          var pB1 = b1.commit().then(esquecer);
+          var pB1 = (self._vaiNaFaixa(ent, t) ? self._naFaixa : function (fn) { return fn(); }).call(self, function () {
+            mesmaConta();
+            var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
+            return b1.commit();
+          }, conta).then(esquecer);
           return { p: pB1, esperar: pB1 };
         }
         var partes = self._fatiar(vN);
@@ -974,13 +1102,29 @@
           err.code = "invalid-argument";
           throw err;
         }
-        var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), b = self.db.batch();
-        partes.forEach(function (pv, i) { b.set(self._refParte(ent, rev, i), { v: pv, i: i, n: partes.length, rev: rev, em: em }); });
-        b.set(self._doc(ent), { v: [], partes: partes.length, rev: rev, em: em });
-        apagarAntigas(b);
-        /* já agora, antes da confirmação: a gravação seguinte na fila tem de apagar esta se a substituir */
-        self._lembrarRev(ent, rev, partes.length);
-        var pB = b.commit().then(esquecer);
+        var rev = em.toString(36) + Math.random().toString(36).slice(2, 6), nP = partes.length;
+        /* já agora, antes da primeira parte: a gravação seguinte (ou a próxima abertura, se esta parar no meio) tem de
+           apagar as partes desta revisão se a substituir */
+        self._lembrarRev(ent, rev, nP);
+        /* ⚠ UMA PARTE POR GRAVAÇÃO, E O PRINCIPAL SÓ DEPOIS DE TODAS CONFIRMADAS (23/10/2026 — ver `_naFaixa`). Antes era
+           um lote atômico com tudo (a lista de 9 MiB do TETO_LOTE iria numa requisição só, ~24 MiB no fio pelo fator
+           medido de 2,7x — acima dos 10 MiB por requisição do Firestore). A consistência continua a mesma: quem lê segue
+           SÓ o principal, e ele passa a apontar para a revisão nova num lote pequeno no fim (o principal + a remoção das
+           partes antigas), depois de cada parte nova ter sido confirmada pelo servidor. Parou no meio (rede, app
+           fechado, parte recusada): o principal continua na revisão anterior, inteira; as partes já gravadas da nova são
+           de uma revisão LEMBRADA e saem no próximo commit da entidade. Nada é apagado antes de o novo estar inteiro. */
+        var subidas = partes.reduce(function (cad, pv, i) {
+          return cad.then(function () {
+            return self._naFaixa(function () { mesmaConta(); return self._refParte(ent, rev, i).set({ v: pv, i: i, n: nP, rev: rev, em: em }); }, conta);
+          });
+        }, Promise.resolve());
+        var pB = subidas.then(function () {
+          mesmaConta();
+          var b = self.db.batch();
+          b.set(self._doc(ent), { v: [], partes: nP, rev: rev, em: em });
+          apagarAntigas(b);
+          return b.commit();
+        }).then(esquecer);
         return { p: pB, esperar: pB };
       });
     },
@@ -992,8 +1136,11 @@
     _valorDoSnap: function (ent, snap, jaTentou, antigo) {
       var self = this;
       if (!snap || !snap.exists) return Promise.resolve({ existe: false });
+      /* `pend`: o SDK mostra a gravação AINDA NÃO CONFIRMADA deste aparelho por cima do documento (compensação de
+         latência) — o que ele devolve não prova o que está no servidor (ver o "não sobe" do `_sincronizarAgora`) */
+      var pend = !!(snap.metadata && snap.metadata.hasPendingWrites);
       var d = snap.data() || {}, n = +d.partes || 0;
-      if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0 });
+      if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0, pend: pend });
       if (!antigo) self._lembrarRev(ent, d.rev, n);
       var pedidos = [];
       for (var i = 0; i < n; i++) pedidos.push(this._refParte(ent, d.rev, i, antigo).get());
@@ -1004,7 +1151,7 @@
           return (antigo ? self._docAntigo(ent) : self._doc(ent)).get().then(function (s2) { return self._valorDoSnap(ent, s2, true, antigo); });
         }
         var v = []; ps.forEach(function (p) { v = v.concat(p.data().v); });
-        return { existe: true, v: v, partes: n };
+        return { existe: true, v: v, partes: n, pend: pend || ps.some(function (p) { return !!(p && p.metadata && p.metadata.hasPendingWrites); }) };
       });
     },
     /* ⚠ O APARELHO ANTIGO APAGA O PONTEIRO (revisão adversarial, 19/10/2026 — test-nuvem-partes [11]). Ele lê `v`
@@ -1525,14 +1672,21 @@
        ("sem-confirmacao"), nunca como sincronizada; a gravação continua na fila do SDK (não se manda outra: a fila da
        entidade junta) e, se o servidor recusar depois, a marca de "já subiu" cai e a falha é registrada. */
     TETO_CONFIRMA_SYNC: 30000,
+    /* ⚠ E A CONFIRMAÇÃO QUE CHEGA DEPOIS DO TETO TIRA A FALHA (23/10/2026). A vigia de 21–23/10 (diag/memoria-*.jsonl)
+       mostrou, em TODA abertura, ~60 gravações no ar aos 20 s, 20–35 "sem-confirmacao" aos 40 s e a fila zerada
+       (nuvemNoAr 0) entre 120 e 190 s — o servidor confirmava todas, só que depois dos 30 s. A falha ficava registrada
+       para sempre (nuvemFalhas 20–35 a sessão inteira, crono_alt de 6,5 KB entre elas) e o recado dizia "não subiram".
+       Recado que mente. Agora: confirmou depois → a falha desta gravação sai; recusou depois → fica a recusa de
+       verdade, com o código do servidor. */
     _esperarConfirmacao: function (ent, pW, ck, tam) {
       var self = this, acabou = false;
       return new Promise(function (resolver, rejeitar) {
         var tm = setTimeout(function () {
           if (acabou) return;
           acabou = true;
-          self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
-          Promise.resolve(pW)["catch"](function (e) {
+          var regP = self._registrarFalha(ent, { code: "sem-confirmacao", message: "o servidor ainda não confirmou a gravação (a subida continua na fila)" }, tam);
+          Promise.resolve(pW).then(function () { self._tirarFalha(regP); }, function (e) {
+            self._tirarFalha(regP);
             if (self._ultimoEnviado[ck] !== undefined) delete self._ultimoEnviado[ck];
             self._registrarFalha(ent, e, tam);
           });
@@ -1554,7 +1708,7 @@
       self._conflitosCc = [];
       self._ilegiveisUltimoSync = [];
       self._naoCarregadasUltimoSync = [];
-      var falhou = 0, tentadas = 0;
+      var falhou = 0, tentadas = 0, pendentes = 0;
       var uma = function (ent) {
         tentadas++;
         /* ⚠ O TAMANHO DA CARGA VIVE AQUI, FORA DO `then` (revisão adversarial
@@ -1631,15 +1785,33 @@
           }
           /* ⚠ o MESMO aviso de tamanho do push (revisão 3, lente sync): o que
              o merge grava e sobe aqui nunca passava por ele — o documento
-             podia crescer por conflito até o teto do Firestore sem nenhum recado */
+             podia crescer por conflito até o teto do Firestore sem nenhum recado.
+             Vem ANTES do "não sobe" abaixo: a lista grande que só CHEGOU (igual à nuvem) também avisa. */
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[ck] = carga;
-          var pW = self._escreverEnt(ent, subir);
+          /* ⚠ A NUVEM JÁ TEM EXATAMENTE ISTO: NÃO SOBE (23/10/2026) — para TODA entidade, e comparando o CONTEÚDO.
+             Roteiro do defeito: o "nada mudou" acima mora só na memória (`_ultimoEnviado`), e a conferência das partes
+             compara o texto JSON — e o Firestore devolve os campos de cada mapa na ordem dele, não na do aparelho, então
+             ela quase nunca batia. Resultado medido (tools/medir-nuvem-envio.js no backup do Rogério de 23/10 06:20):
+             CADA abertura do app regravava as 60 entidades com dado, 23,8 MiB no fio (o JSON do protocolo passa por
+             encodeURIComponent: 2,7x a carga), num canal de escrita que confirma NA ORDEM — o crono_alt de 6,5 KB
+             esperava atrás de orcamentos/bim_edicoes/bim_vistas/bim_familias (2,2 MB, 1,9, 1,4, 2,0) e passava dos 30 s
+             do teto. Agora: a nuvem (o que o SERVIDOR confirmou — nada pendente nela nem na fila desta entidade) aberta é
+             igual à lista mesclada, campo a campo e sem olhar a ordem das chaves → não sobe, e a base comum avança
+             inteira (é igual dos dois lados). Diferente em qualquer coisa → sobe como sempre.
+             ⚠ Nunca no `doAntigo` (o `~v2` ainda precisa nascer) nem quando a nuvem está num documento só e a lista
+             precisa de partes (ver `_nuvemSemMinhasPartes`). */
+          if (carga && rc.existe && !rc.doAntigo && !rc.pend && !self._temNoAr(ent) &&
+              !self._nuvemSemMinhasPartes(ent, rc, subir, carga.length) && self._mesmoConteudo(cloud, merged)) {
+            self._marcarSync(empresaId, ent, merged);
+            return true;
+          }
+          var pW = self._escreverEnt(ent, subir, carga.length);
           /* DOC_V2: a gravação do `~v2` foi CHAMADA (já com a união do antigo) — daqui em diante o push pode gravar */
           if (DOC_V2[ent]) self._v2Ok(ent, false);
           Promise.resolve(pW).then(function () { self._marcarSync(empresaId, ent, merged); }, function () {});
           return self._esperarConfirmacao(ent, pW, ck, carga.length).then(function (r) {
-            if (r === "pendente") { falhou++; return false; }
+            if (r === "pendente") { pendentes++; return false; }
             return true;
           });
         }).catch(function (e) {
@@ -1687,7 +1859,14 @@
         /* Devolve FALSO quando tudo falhou. Antes devolvia `true` mesmo com as
            32 entidades reprovadas, e quem chamou anunciava "☁ Sincronizado!"
            sem um único byte ter subido. */
-        if (falhou >= tentadas && tentadas > 0) return false;
+        if (falhou + pendentes >= tentadas && tentadas > 0) return false;
+        /* ⚠ AINDA SUBINDO NÃO É "NÃO SUBIU" (23/10/2026): a gravação está no canal e o servidor confirma em seguida
+           (ver `_esperarConfirmacao`); o recado de falha é só para a falha de verdade */
+        if (pendentes > 0) {
+          try {
+            if (global.UI && global.UI.toast) global.UI.toast("☁ " + pendentes + " de " + tentadas + " partes ainda estão subindo para a nuvem (a conexão está lenta). O trabalho está salvo neste aparelho; a confirmação chega sozinha.", "ok");
+          } catch (eP) {}
+        }
         /* ⚠ a parte ilegível NÃO "vai de novo sozinha": sem a pessoa agir, ela
            fica parada para sempre — o recado geral mentiria sobre ela */
         var nIleg = (self._ilegiveisUltimoSync || []).length;
@@ -1810,6 +1989,9 @@
      * ou escrita. Agora toda falha fica registrada e a tela tem o que mostrar. */
     _falhas: [],
     _registrarFalha: function (ent, err, tamCarga) {
+      /* a gravação da conta ANTERIOR parada na troca (ver `_escreverEntVez`) não é falha da conta que está aberta: só o
+         console, senão a tela da empresa nova acusaria "não subiu" sobre o que nem é dela */
+      if (err && err.code === "conta-trocou") { try { console.warn("[nuvem] " + ent + ": conta-trocou"); } catch (eW) {} return null; }
       var cod = (err && (err.code || err.message)) || "erro";
       /* guarda também a mensagem: o Firestore diz "invalid-argument" no
          `code` para várias coisas, e só o texto separa documento grande demais
@@ -1822,6 +2004,13 @@
       this._falhas.push(reg);
       if (this._falhas.length > 40) this._falhas.shift();
       try { console.warn("[nuvem] " + ent + ": " + cod); } catch (e) {}
+      return reg;
+    },
+    /* tira UMA falha registrada (a mesma, por referência) — a "sem-confirmacao" quando a confirmação chega depois */
+    _tirarFalha: function (reg) {
+      var f = this._falhas || [];
+      for (var i = f.length - 1; i >= 0; i--) if (f[i] === reg) { f.splice(i, 1); return true; }
+      return false;
     },
     /* Resumo para a tela: quantas falhas e de que tipo. `cota` é o caso que
      * derruba a sincronização do cliente inteiro e precisa de nome próprio. */
@@ -1948,7 +2137,7 @@
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._avisarTamanho(ent, carga);
           self._ultimoEnviado[chave] = carga; marcou = true;
-          self._escreverEnt(ent, vN).then(function () {
+          self._escreverEnt(ent, vN, carga.length).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
           }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa

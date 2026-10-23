@@ -79502,6 +79502,7 @@ d.appendChild(el("span", "rv-vb-rot", "Perspectiva"));
 { id: "visibilidade", ico: "olho", dica: "Visibilidade e raio-X" },
 { id: "snap", ico: "ima", dica: "Snap" },
 { id: "home", ico: "casa", dica: "Enquadrar tudo" },
+{ id: "fx-recuperar-vista", ico: "ciclo", dica: "Recuperar vista 3D (RV): o modelo sumiu? Desliga corte, isolar e ocultar temporário, enquadra tudo e refaz o desenho" },
 { id: "foto", ico: "camera", dica: "Foto da vista" }
 ].forEach(function (b) {
 var bt = el("button", "rv-vb");
@@ -125300,6 +125301,14 @@ xlsx: function () {
 BlocokExecXLS.gerar({ resultado: UI.res, orcamento: UI.orc, cronograma: UI.crono, obra: UI.obra, nome: UI.param.nome }, { nome: nomeBase(), ok: function () { toast("Planilha baixada.", "ok"); }, erro: function (e) { toast("Planilha: " + (e && e.message || e), "erro"); } });
 }
 };
+function suspensa() {
+try { if (global.App && App._demo) return false; var L = global.Licenca, s = L && L.status ? L.status() : null; return !!(s && s.suspensa); } catch (e) { return false; }
+}
+function avisoSuspensa() {
+try { if (global.App && App._avisoTrial) { App._avisoTrial(); return false; } } catch (e) {}
+toast("Licença suspensa por falta de pagamento: o Blocok não exporta até o pagamento compensar. Seus dados estão preservados.", "erro", 9000);
+return false;
+}
 function acao(a, v) {
 try {
 if (a === "fechar") return fechar();
@@ -125312,7 +125321,7 @@ if (a === "pecas3d") { if (!UI.pecas3d && velho()) { toast(MSG_VELHO, "alerta", 
 if (a === "exemplo") return exemplo();
 if (a === "ver") { UI.parede = v; UI.aba = "paredes"; return render(); }
 if (a === "fechar-par") { UI.parede = null; return render(); }
-if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); if (velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } return DOC[a](); }
+if (DOC[a]) { if (!UI.res) return toast("Calcule primeiro.", "alerta"); if (velho()) { toast(MSG_VELHO, "alerta", 9000); return render(); } if (suspensa()) return avisoSuspensa(); return DOC[a](); }
 } catch (e) { toast("Blocok: " + (e && e.message ? e.message : e), "erro", 8000); }
 }
 function exemplo() {
@@ -125369,6 +125378,7 @@ registrar: registrar, abrir: abrir, fechar: fechar, montar3d: montar3d, liberado
 estado: function () { return { aba: UI.aba, fonte: UI.fonte, paredes: UI.obra ? UI.obra.paredes.length : 0, ok: UI.res ? UI.res.ok : null, erros: UI.res ? UI.res.erros.length : 0, pendencias: UI.res ? UI.res.pendencias.length : 0, pecas3d: UI.pecas3d, instancias: grupo3 ? grupo3.children.reduce(function (s, m) { return s + (m.count || 0); }, 0) : 0,
 ref: UI.ref ? { versao: UI.obra && UI.obra.referencia ? UI.obra.referencia.versao : null, bruta: UI.ref.area.bruta, liquida: UI.ref.area.liquida, brutaComBancada: UI.ref.area.brutaComBancada, diasBlocok: UI.ref.crono.blocok.total.diasUteis, diasConvencional: UI.ref.crono.convencional.total.diasUteis, m2Dia: UI.ref.crono.parametros.blocok.m2Dia } : null }; },
 _paredesDoModelo: paredesDoModelo,
+_suspensa: suspensa,
 _resultado: function () { return UI.res; },
 desatualizado: function () { return velho(); },
 _desatualizadoDe: desatualizadoDe,
@@ -133108,6 +133118,7 @@ c("fx-linhas-finas", "Linhas finas", "desLinha", "Mostra todas as linhas das vis
 c("fx-linhas-ocultas-exibir", "Exibir linhas ocultas", "olho", "Mostra tracejadas, no {3D}, as arestas dos elementos selecionados que estão escondidas atrás de outros."),
 c("fx-linhas-ocultas-remover", "Remover linhas ocultas", "olhoFechado", "Tira o tracejado das linhas ocultas dos selecionados (sem seleção: de todos)."),
 c("fx-vista-3d", "Vista 3D", "casa", "Vista 3D padrão: volta para a vista {3D} e enquadra o modelo inteiro.", { grande: true }),
+c("fx-recuperar-vista", "Recuperar\nvista 3D", "ciclo", "O 3D sumiu ou não volta? Desliga o que pode estar escondendo o modelo (caixa de corte, planta, corte, isolar/ocultar temporário, 4D), enquadra o modelo inteiro e, se a placa de vídeo descartou o desenho, cria o 3D de novo. Nada do modelo muda. Atalho: RV."),
 c("fx-titulo-folha", "Título da vista", "nota", "Título da vista na folha (número, nome e escala debaixo do desenho): com uma vista posicionada selecionada, mostra ou esconde o dela; sem seleção, põe o título em todas as vistas da folha."),
 c("fx-carimbo", "Carimbo", "assinar", "Carimbo da folha: com uma folha aberta, os campos do carimbo (obra, prancha, escala, revisão, responsável) ficam em Propriedades. Sem folha, abre as Pranchas."),
 c("fx-alternar-janelas", "Alternar\njanelas", "camadas", "Lista as vistas abertas ({3D}, plantas, cortes, folhas) para ir direto a uma.", { grande: true }),
@@ -133157,7 +133168,7 @@ var ABA_VISTA = [
 { nome: "Composição de folha", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas"] },
 { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "vistas", "max-3d", "janela-3d",
 "fx-interface"] },
-{ nome: "Navegar", ids: ["home", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
+{ nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
 { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "cores-categoria", "cores-categoria-paleta",
 "caixa-corte", "ortogonal", "grade", "ambientes-3d", "navegador-org"] },
 { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
@@ -133179,7 +133190,7 @@ var QA_PADRAO = ["salvar-modelo", "fx-modificar", "desfazer", "refazer", "fx-med
 var QA_NATIVOS = { "salvar-modelo": "Salvar no projeto", "desfazer": "Desfazer", "refazer": "Refazer" };
 var TECLA_FIXA = { "desfazer": "Ctrl+Z", "refazer": "Ctrl+Y", "fx-modificar": "Esc", "fx-excluir": "Delete", "medir": "M", "fx-medir": "M",
 "caixa-corte": "C", "fx-ocultar": "H", "fx-isolar": "I", "home": "F", "grade": "G", "atalhos": "?", "fx-copiar-area": "Ctrl+C", "fx-colar": "Ctrl+V" };
-var ATALHOS_FX = { BX: "fx-caixa-selecao", TL: "fx-linhas-finas" };
+var ATALHOS_FX = { BX: "fx-caixa-selecao", TL: "fx-linhas-finas", RV: "fx-recuperar-vista" };
 var CHAVE_FINAS = "orcapro:bim:linhas-finas";
 var BimFita = {
 ORDEM: ORDEM, FX: FX, CTX: CTX, ABA_MODIFICAR: ABA_MODIFICAR, ABA_VISTA: ABA_VISTA, CTX_PAINEIS: CTX_PAINEIS,
@@ -133424,6 +133435,14 @@ var g = G(), b = B();
 try { if (g && g._bimVxAtivar) g._bimVxAtivar("3d"); } catch (e) {}
 try { if (b && b.home) b.home(); } catch (e2) {}
 status("Vista {3D}: o modelo inteiro enquadrado.");
+return true;
+};
+a["fx-recuperar-vista"] = function () {
+var g = G(), b = B(), r = null;
+try { if (g && g._bimVxAtivar) g._bimVxAtivar("3d"); } catch (e) {}
+try { r = (b && b.recuperarVista) ? b.recuperarVista({ origem: "comando" }) : null; } catch (e2) { r = null; }
+if (!r || !r.ok) { status("O 3D não está aberto — abra um modelo ou a área de teste."); return true; }
+status(r.feito.length ? "Vista 3D recuperada (" + r.feito.join(", ") + "). O modelo inteiro está enquadrado." : "Vista 3D recuperada: nada estava escondendo o modelo. O modelo inteiro está enquadrado.");
 return true;
 };
 a["fx-carimbo"] = function () {
@@ -134083,7 +134102,7 @@ var t = e.target || {};
 if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
 if (d.getElementById("modal-bg")) return;
 var s = SH(), raiz = s && s._raiz;
-if (!raiz || !d.body.contains(raiz) || raiz.offsetParent === null) return;
+if (!raiz || !d.body.contains(raiz) || !raiz.getClientRects().length) return;
 if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && /^[cv]$/i.test(e.key || "")) {
 var txt = ""; try { txt = String(global.getSelection ? global.getSelection() : ""); } catch (eS) {}
 if (txt) return;
@@ -138213,14 +138232,15 @@ return false;
 oferta: function (g) {
 if (g && g.teste1h && global.TesteModuloUI) { try { return TesteModuloUI.oferta("marmoraria"); } catch (eT) {} }
 var M = MOD(), O = (g && g.oferta) || (M && M.OFERTA) || {}, self = this;
+var naPlay = false; try { naPlay = !!(global.Modela && Modela.status && Modela.status().play); } catch (eP) { naPlay = false; }
 var h = '<div style="font-size:13px;line-height:1.5;max-width:560px">' + (g && g.demo ? '<p data-marm-demo style="margin:0 0 10px;padding:8px 10px;border:1px solid #f3c77a;background:#fff8e6;border-radius:6px;color:#7a4b00"><b>Demonstração: exportar está bloqueado.</b> ' + esc(g.motivo) + "</p>" : "") + '<p style="margin:0 0 8px"><b>' + esc(O.subtitulo) + "</b></p><ul style=\"margin:0 0 10px 18px;padding:0\">" +
 arr(O.itens).map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul><p class=\"muted\" style=\"margin:0 0 8px\">" + esc(O.semOrcapro) + "</p>" +
-'<div id="marm-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(O.vendaFechada) + "</div></div>";
+'<div id="marm-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(naPlay ? "Este aplicativo não faz contratações. Quando o módulo for liberado para a sua conta, ele aparece aqui sozinho." : O.vendaFechada) + "</div></div>";
 var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
 if (g && g.podeTestar) bts.unshift({ texto: "Começar o teste de 7 dias", classe: "primary", onClick: function () { M.iniciarTeste(function () {}); UI.fecharModal(); toast("Teste de 7 dias do módulo Marmoraria começado.", "ok"); } });
 if (global.UI && UI.modal) UI.modal(O.titulo || "Módulo Marmoraria", h, bts);
 try {
-var srv = global.Modela && Modela._servidor ? Modela._servidor() : "";
+var srv = !naPlay && global.Modela && Modela._servidor ? Modela._servidor() : "";
 if (srv && global.fetch && M) global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
 var pl = M.planosAVenda(d), el = q("#marm-oferta-venda"); if (!pl.length || !el) return;
 el.innerHTML = pl.map(function (p) { return '<a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id)) + '">' + esc(p.nome) + " — " + esc(brl(p.valor)) + " " + esc(p.periodo || "") + "</a>"; }).join(" ");
@@ -147988,7 +148008,8 @@ sv.cam = { pos: c.camera.position.clone(), up: c.camera.up.clone(), quat: c.came
 sv.orbit = c.orbit ? { enabled: c.orbit.enabled } : null;
 try { var es = global.BimEstilo && global.BimEstilo.estado ? global.BimEstilo.estado() : null; sv.estilo = es ? es.modo : null; } catch (e) { sv.estilo = null; }
 sv.principal = c.principalOculta();
-sv.tam = { w: c.renderer.domElement.width, h: c.renderer.domElement.height, pr: c.renderer.getPixelRatio() };
+var cvT = (c.canvas && c.canvas()) || c.renderer.domElement;
+sv.tam = { w: cvT.width, h: cvT.height, pr: c.renderer.getPixelRatio() };
 sv.clearColor = c.renderer.getClearColor(new THREE.Color()).getHex(); sv.clearAlpha = c.renderer.getClearAlpha();
 sv.fundo = c.scene.background;
 sv.clipLocal = c.renderer.localClippingEnabled;
@@ -148460,7 +148481,7 @@ if (alvo2d) {
 var g = alvo2d.getContext("2d");
 var fg = g.createLinearGradient(0, 0, 0, H); fg.addColorStop(0, "#6f9bc9"); fg.addColorStop(0.55, "#cfdeec"); fg.addColorStop(1, "#eef2f6");
 g.fillStyle = fg; g.fillRect(0, 0, W, H);
-g.drawImage(r.domElement, 0, 0, W, H);
+g.drawImage((c.canvas && c.canvas()) || r.domElement, 0, 0, W, H);
 Hud.desenhar(g, W, H, this);
 }
 return true;
@@ -151295,7 +151316,7 @@ _prevMontar: function (canvas) {
 var T = this._THREE; if (!T || !canvas) return null;
 if (this._prev && this._prev.canvas === canvas) return this._prev;
 var r;
-if (this._prev) { r = this._prev.r; try { r.dispose(); } catch (e) {} this._prev = null; }
+if (this._prev) { r = this._prev.r; try { r.dispose(); } catch (e) {} try { r.forceContextLoss(); } catch (e2) {} this._prev = null; }
 try { r = new T.WebGLRenderer({ canvas: canvas, antialias: true, preserveDrawingBuffer: true, alpha: false }); } catch (e1) { return null; }
 r.setPixelRatio(1); r.setSize(240, 180, false);
 if (T.sRGBEncoding !== undefined && "outputEncoding" in r) r.outputEncoding = T.sRGBEncoding;

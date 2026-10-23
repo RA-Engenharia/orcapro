@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.176",
+versao: "1.2.177",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -1688,6 +1688,9 @@ if (ate > agora) { compradas[id] = ate; lista.push(id); }
 var extras = {};
 IDS_EXTRAS.forEach(function (id) { extras[id] = !!(cacheValido && c.disciplinas && num(c.disciplinas[id]) > agora); });
 var vitalicia = !!e.vitaliciaLocal || !!(cacheValido && c.vitalicia === true);
+var equipe = !!e.equipeLocal || !!(cacheValido && c.filha === true);
+var tudoLic = (vitalicia && !equipe) || !!(cacheValido && c.tudo === true);
+if (tudoLic) IDS_EXTRAS.forEach(function (id) { extras[id] = true; });
 var ini = 0;
 [num(e.testeLocal), c && c.teste ? num(c.teste.inicio) : 0].forEach(function (x) { if (x > 0 && (!ini || x < ini)) ini = x; });
 var fim = ini ? ini + TESTE_MS : 0;
@@ -1711,14 +1714,15 @@ else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
 });
 var out = {
 liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
-teste: teste, vitalicia: vitalicia, demo: demo, play: play,
-podeComprar: !play && !demo, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
+teste: teste, vitalicia: vitalicia, tudo: tudoLic, equipe: equipe, demo: demo, play: play,
+podeComprar: !play && !demo && !tudoLic, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
 revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
 Object.keys(c.disciplinas).some(function (k) { return num(c.disciplinas[k]) > agora; }))
 };
 function tudo(motivo) { out.liberado = true; out.completo = true; out.disciplinas = IDS.slice(); out.motivo = motivo; return out; }
 if (demo) return tudo("demo");
 if (vitalicia) return tudo("vitalicia");
+if (tudoLic) return tudo("interno");
 if (lista.length === IDS.length) return tudo("compra");
 if (teste.ativo) return tudo("teste");
 if (teste.disponivel) return tudo("teste-disponivel");
@@ -1756,6 +1760,10 @@ var st = L.status(), info = L._lerExpDe(L.chave());
 return !!(st && st.ativo && !st.trial && info && Number(info.exp) === 0);
 } catch (e) { return false; }
 },
+_equipeLocal: function () {
+var L = this._lic(); if (!L) return false;
+try { var st = L.status(); return !!(st && st.tipoLicenca === "equipe"); } catch (e) { return false; }
+},
 _demo: function () { try { return DEMO_URL || !!(global.App && global.App._demo); } catch (e) { return DEMO_URL; } },
 _play: function () {
 try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
@@ -1763,7 +1771,7 @@ try { return global.document.documentElement.getAttribute("data-origem") === "pl
 },
 _entrada: function (semEstados) {
 var l = this._ler();
-var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(),
+var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(), equipeLocal: this._equipeLocal(),
 chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
 var TM = global.TesteModulo;
 try {
@@ -1798,6 +1806,7 @@ return s;
 },
 tem: function (id) {
 var s = this.status(), k = String(id || "").toLowerCase();
+if (s.tudo) return true;
 if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);
 if (!s.liberado) return false;
 if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
@@ -1816,7 +1825,7 @@ this._memo = null; this._memoBase = null;
 var l = this._ler(), antes = JSON.stringify(this.status());
 var dis = {};
 IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
-l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, disciplinas: dis,
+l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis,
 teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
 this._gravar(l);
 var mudou = JSON.stringify(this.status()) !== antes;
@@ -1855,7 +1864,7 @@ global.fetch(srv + "/api/modela/teste", { method: "POST", headers: this._cab(tru
 },
 iniciarTeste: function (cb) {
 var s = this.status();
-if (!s.teste.disponivel || s.demo || s.vitalicia || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
+if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
 var l = this._ler();
 if (!num(l.testeLocal)) { l.testeLocal = Date.now(); this._gravar(l); this._avisar(); }
 this._ancorar(cb);
@@ -1962,6 +1971,8 @@ if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play:
 var mot = "compra", comprado = false;
 try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
 if (s && s.demo) mot = "demo";
+else if (s && s.vitalicia) mot = "vitalicia";
+else if (s && s.tudo) mot = "interno";
 else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
 else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
 return { liberado: true, motivo: mot, teste: s ? s.teste : null };

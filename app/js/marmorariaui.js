@@ -83,15 +83,19 @@
       /* o teste de 1 hora acabou (js/testemodulo.js): a oferta é a dele (o trabalho continua salvo, compra, "não mostrar mais") */
       if (g && g.teste1h && global.TesteModuloUI) { try { return TesteModuloUI.oferta("marmoraria"); } catch (eT) {} }
       var M = MOD(), O = (g && g.oferta) || (M && M.OFERTA) || {}, self = this;
+      /* ⚠ APP DA GOOGLE PLAY (origem=play): nenhum botão nem link de compra (política da loja; ModelaUI e TesteModuloUI
+         já seguem). Revisão adversarial 23/10/2026: com o plano modela_marmoraria_vitalicio NO AR, esta oferta passava a
+         listar "Marmoraria — R$ 989,00" com link para /modelagem também dentro do app da Play. */
+      var naPlay = false; try { naPlay = !!(global.Modela && Modela.status && Modela.status().play); } catch (eP) { naPlay = false; }
       var h = '<div style="font-size:13px;line-height:1.5;max-width:560px">' + (g && g.demo ? '<p data-marm-demo style="margin:0 0 10px;padding:8px 10px;border:1px solid #f3c77a;background:#fff8e6;border-radius:6px;color:#7a4b00"><b>Demonstração: exportar está bloqueado.</b> ' + esc(g.motivo) + "</p>" : "") + '<p style="margin:0 0 8px"><b>' + esc(O.subtitulo) + "</b></p><ul style=\"margin:0 0 10px 18px;padding:0\">" +
         arr(O.itens).map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul><p class=\"muted\" style=\"margin:0 0 8px\">" + esc(O.semOrcapro) + "</p>" +
-        '<div id="marm-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(O.vendaFechada) + "</div></div>";
+        '<div id="marm-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(naPlay ? "Este aplicativo não faz contratações. Quando o módulo for liberado para a sua conta, ele aparece aqui sozinho." : O.vendaFechada) + "</div></div>";
       var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (g && g.podeTestar) bts.unshift({ texto: "Começar o teste de 7 dias", classe: "primary", onClick: function () { M.iniciarTeste(function () {}); UI.fecharModal(); toast("Teste de 7 dias do módulo Marmoraria começado.", "ok"); } });
       if (global.UI && UI.modal) UI.modal(O.titulo || "Módulo Marmoraria", h, bts);
       /* a venda abre quando o servidor listar um plano modela_marmoraria_* (decisão de preço do dono) */
       try {
-        var srv = global.Modela && Modela._servidor ? Modela._servidor() : "";
+        var srv = !naPlay && global.Modela && Modela._servidor ? Modela._servidor() : "";
         if (srv && global.fetch && M) global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
           var pl = M.planosAVenda(d), el = q("#marm-oferta-venda"); if (!pl.length || !el) return;
           el.innerHTML = pl.map(function (p) { return '<a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id)) + '">' + esc(p.nome) + " — " + esc(brl(p.valor)) + " " + esc(p.periodo || "") + "</a>"; }).join(" ");

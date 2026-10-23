@@ -3,14 +3,15 @@
  *
  * Pedido do Rogério (20/10/2026): "plugin à parte, mas dentro do sistema" — quem tem marmoraria compra só isto e
  * entra numa área enxuta (parede, bancada, executivo, plano de chapa, tabela de preços, orçamento e proposta); a RA
- * usa dentro do OrçaPRO completo sem comprar. O preço ainda não foi decidido: a OFERTA está DESLIGADA (o texto está
- * pronto aqui; ligar é no VPS — docs/marmoraria/OFERTA.md).
+ * usa dentro do OrçaPRO completo sem comprar. Preço (23/10/2026): compra única R$ 989 em até 12× ou à vista com 10 %
+ * — o valor mora só no vendas-config do VPS (docs/marmoraria/OFERTA.md).
  *
  * QUEM LIBERA (nesta ordem):
  *   1. a trava da MÁQUINA da RA (`orcapro:marmoraria:owner` = "1", como a do Blocok) — instalação interna;
- *   2. Modela.tem("marmoraria"): compra do módulo, licença interna pelo servidor (vendas-config modela.internos),
- *      o teste de 7 dias do Modela já começado e a vitrine (?demo=1) — a regra mora em js/modela.js;
- *   fora disso → trancado. A vitalícia do OrçaPRO NÃO libera (módulo à parte, como o Blocok).
+ *   2. Modela.tem("marmoraria"): a VITALÍCIA do OrçaPRO (23/10/2026: vitalícia = tudo), compra do módulo, licença
+ *      interna pelo servidor (vendas-config modela.internos), o teste de 7 dias do Modela já começado e a vitrine
+ *      (?demo=1) — a regra mora em js/modela.js;
+ *   fora disso → trancado.
  * ⚠ A TRAVA É NA FUNÇÃO, NÃO NO BOTÃO: todo comando do módulo (js/marmorariaui.js) passa por `guarda()` antes de
  *   fazer qualquer coisa; esconder o botão não basta (o atalho, a busca e o console chamam o comando direto).
  *
@@ -47,7 +48,7 @@
   var MarmModulo = {
     ID: ID, OWNER: OWNER, OFERTA: OFERTA,
 
-    /* {liberado, motivo: "dono"|"demo"|"teste"|"compra"|"" , teste: {...} | null} */
+    /* {liberado, motivo: "dono"|"demo"|"vitalicia"|"interno"|"teste"|"compra"|"" , teste: {...} | null} */
     estado: function () {
       if (dono()) return { liberado: true, motivo: "dono", teste: null };
       var m = M(), s = null;
@@ -59,6 +60,8 @@
       var mot = "compra", comprado = false;
       try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
       if (s && s.demo) mot = "demo";
+      else if (s && s.vitalicia) mot = "vitalicia";
+      else if (s && s.tudo) mot = "interno";
       else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
       else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
       return { liberado: true, motivo: mot, teste: s ? s.teste : null };

@@ -46,11 +46,28 @@
       try { if (d) { c.dom = d.getElementsByTagName("*").length; c.canvas = d.getElementsByTagName("canvas").length; c.iframes = d.getElementsByTagName("iframe").length; } } catch (e) {}
       try { var B = global.BIM; if (B) { c.bimOps = B.editarOps ? B.editarOps().length : -1; c.bimModelos = (B.modelos || []).length; } } catch (e) {}
       try { var G = global.Gestao; if (G) { c.bimSel = String(G._bimSel || ""); c.bimElementos = (G._bimElementos || []).length; } } catch (e) {}
+      /* a saúde do DESENHO do 3D (23/10/2026, "o 3D some do nada"): perdas de contexto WebGL, quadros com erro e o
+         aviso que está na vista — o próximo relato chega com prova (js/bim.js, "O 3D NUNCA FICA PRESO VAZIO") */
+      try { var B3 = global.BIM; if (B3 && B3.saude3d) { var s3 = B3.saude3d(); if (s3) { c.bim3dPerdas = s3.perdas; c.bim3dErros = s3.erros; c.bim3dAviso = s3.aviso ? String(s3.aviso.cod || s3.aviso.tipo || "") : ""; } } } catch (e) {}
       try {
         var esp = global.Store && global.Store._d && global.Store._d.esp;
         if (esp) { var n = 0, ch = 0; for (var k in esp) if (Object.prototype.hasOwnProperty.call(esp, k)) { n++; ch += (esp[k] && esp[k].raw) ? esp[k].raw.length : 0; } c.storeChaves = n; c.storeMB = Math.round(ch / 1048576); }
       } catch (e) {}
       try { var N = global.Nuvem; if (N) { c.nuvemLigada = !!N.ligado; c.nuvemFalhas = (N._falhas || []).length; c.nuvemOuvintes = (N._un || []).length; c.nuvemUltFalhas = (N._falhas || []).slice(-4).map(function (f) { return String(f.entidade || "") + ":" + String(f.codigo || "").slice(0, 40) + (typeof f.tam === "number" ? ":" + f.tam : ""); }); c.nuvemUltMsgs = (N._falhas || []).slice(-4).map(function (f) { return msgSegura(f.msg); }); var fe = N._filaEsc || {}, fa = 0; for (var kf in fe) if (Object.prototype.hasOwnProperty.call(fe, kf) && fe[kf]) fa += fe[kf].ativos || 0; c.nuvemNoAr = fa; } } catch (e) {}
+      /* ⚠ O QUE ESPERA CONFIRMAÇÃO, DE QUE TAMANHO, HÁ QUANTO TEMPO, E O QUE O SDK DISSE (23/10/2026). Com só o
+         nuvemNoAr e as falhas, "o servidor nunca confirma" e "confirma em 2 minutos" pareciam a mesma coisa. A vigia de
+         saúde acusa: nuvemPendIdadeS alto (o mais velho sem confirmação), nuvemPendMaior (entidade:tamanho da carga em
+         caracteres do JSON) e nuvemSdk (código:mensagem do Firestore — o motivo real quando ele repete calado). */
+      try {
+        var Nd = global.Nuvem;
+        if (Nd && typeof Nd.diag === "function") {
+          var dg = Nd.diag() || {};
+          c.nuvemPend = dg.pendentes || 0;
+          c.nuvemPendIdadeS = dg.idadeS || 0;
+          c.nuvemPendMaior = dg.maior ? String(dg.maior.ent || "") + ":" + (+dg.maior.tam || 0) : "";
+          c.nuvemSdk = (dg.sdk || []).map(function (x) { return String((x && x.cod) || "").slice(0, 30) + ":" + msgSegura(x && x.msg); });
+        }
+      } catch (e) {}
       try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
       try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
       return c;
