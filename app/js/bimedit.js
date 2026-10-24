@@ -96,6 +96,10 @@
       var dx = p2.x - p1.x, dz = p2.z - p1.z;
       var L = Math.sqrt(dx * dx + dz * dz);
       if (!(L > 0.01)) return null;
+      /* ⚠ PONTO NO HORIZONTE (24/10/2026, obra 176 teste): o clique quase paralelo ao plano de trabalho cruza o plano a
+         trilhões de metros e virava a parede "e28" com 39·10¹² m de comprimento e centro em x = −1,28·10¹⁴ — que ia
+         para o quantitativo e jogava o enquadrar para o espaço. Parede de mais de 10 km não é desenho: recusada. */
+      if (!(L <= 1e4) || !isFinite(p1.x + p1.z + p2.x + p2.z)) return null;
       espessura = num(espessura, 0.15); altura = num(altura, 2.8); base = num(base, 0);
       if (!(espessura > 0) || !(altura > 0)) return null; // dimensão negativa/zero não vira QTO silencioso
       return {

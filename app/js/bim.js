@@ -5408,7 +5408,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var plano = BimAgreg.planejar({ instancias: insts, geometrias: geos });
     /* ⚠ TODOS OS MODELOS DA OBRA USAM A MESMA ORIGEM. Origens diferentes por
        modelo desalinhariam a federacao — que e o D7 acontecendo por dentro. */
-    if (!S._origemAgreg) S._origemAgreg = BimAgreg.origemDe(plano);
+    /* ⚠ MAS A ORIGEM É DA CENA, NÃO DA SESSÃO (24/10/2026, obra 176 teste). Ela era calculada UMA vez e nunca mais:
+       o "Novo projeto"/"Abrir projeto" esvazia a cena e a origem do projeto anterior continuava valendo. Lá ela tinha
+       saído em y = 4,96·10¹¹ m (um joelho com geometria absurda) — e o projeto novo, limpo, abriu com TODAS as faces
+       achatadas pelo float32 (só arestas na tela) até a página ser recarregada. Sem outro modelo mesclado na cena
+       (nem suspenso pelo raio-X, que volta com a origem de todos), a origem é refeita a partir deste conteúdo. */
+    var outroMesclado = S.modelos.some(function (x) { return x !== mo && (x._agreg || x._agregSuspenso); });
+    if (!S._origemAgreg || !outroMesclado) S._origemAgreg = BimAgreg.origemDe(plano);
     var origem = S._origemAgreg;
 
     var grupo = new THREE.Group();
@@ -13075,7 +13081,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // conclui a parede em p2 (2º clique OU distância digitada) com o traço ENCADEADO
   function editConcluirParede(p2) {
     var cxP = BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p2.x, z: p2.z }, edit.esp, edit.alt, edit.base);
-    if (!cxP) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.'); return; }
+    if (!cxP) {
+      var dLonge = Math.sqrt(Math.pow(p2.x - edit.p1.x, 2) + Math.pow(p2.z - edit.p1.z, 2));
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + (dLonge > 1e4 || !isFinite(dLonge) ? ' Ponto longe demais (clique perto do horizonte?) — clique o fim da parede sobre o piso.' : ' Pontos muito próximos — clique 2 pontos distintos.'));
+      return;
+    }
     if (edit.b2 && window.BimArq) BimArq.marcarParede(cxP, S._b2CfgParede ? S._b2CfgParede() : {});   /* B2: tipo, união nos cantos, topo */
     editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cxP });
     var comp = cxP.comprimento.toFixed(2).replace('.', ',');

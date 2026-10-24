@@ -186,17 +186,32 @@
    * todos os modelos da obra usarem a MESMA, que é o que mantém dois IFCs
    * alinhados (D7/D8).
    * ------------------------------------------------------------- */
+  /* ⚠ A MEDIANA, NÃO A MÉDIA (24/10/2026 — "as faces sumiram, só ficaram as arestas", obra 176 teste). Uma peça só
+     com translação absurda arrastava a média: o joelho deduzido entre dois drenos sobrepostos do ar-condicionado saiu
+     com y = 1,85·10¹⁴ m (tangente de 90° na geometria), e a média de 373 peças pôs a origem em y = 4,96·10¹¹ m. Em
+     float32, a 5·10¹¹ m o passo é 65 km: TODOS os vértices mesclados caíram no mesmo y e cada face virou um risco sem
+     área — na tela, só as arestas e o contorno da seleção (desenhados à parte, em double). A mediana ignora a peça
+     fora da curva e continua no centro do conteúdo (o modelo em UTM segue com origem nos 7 milhões). Valor não
+     finito não entra. */
+  function mediana(v) {
+    if (!v.length) return 0;
+    v.sort(function (a, b) { return a - b; });
+    var h = v.length >> 1;
+    return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2;
+  }
   function origemDe(plano, origemDada) {
     if (Array.isArray(origemDada) && origemDada.length === 3) return [num(origemDada[0]), num(origemDada[1]), num(origemDada[2])];
-    var sx = 0, sy = 0, sz = 0, n = 0;
+    var xs = [], ys = [], zs = [];
     (plano.buckets || []).forEach(function (b) {
       b.membros.forEach(function (mb) {
         var m = mb.m; if (!m || m.length < 16) return;
-        sx += num(m[12]); sy += num(m[13]); sz += num(m[14]); n++;
+        var x = +m[12], y = +m[13], z = +m[14];
+        if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+        xs.push(x); ys.push(y); zs.push(z);
       });
     });
-    if (!n) return [0, 0, 0];
-    return [sx / n, sy / n, sz / n];
+    if (!xs.length) return [0, 0, 0];
+    return [mediana(xs), mediana(ys), mediana(zs)];
   }
 
   /* ---------------------------------------------------------------

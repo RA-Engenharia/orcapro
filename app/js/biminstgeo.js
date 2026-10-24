@@ -830,6 +830,12 @@
   }
   function conexaoBruta(c, eixos, o) {
     o = o || {};
+    /* ⚠ JOELHO/CURVA ENTRE DOIS TUBOS QUE SAEM DO NÓ PARA O MESMO LADO (24/10/2026, obra 176 teste): os drenos de dois
+       ar-condicionados desciam pela MESMA prumada e terminavam no mesmo ponto — o "joelho" entre eles dobraria 180°. A
+       tangente da curva é R·tan(180°/2) = R·1,6·10¹⁶: a peça saiu com 15 trilhões de metros e y = 1,85·10¹⁴ m, e foi ela
+       que pôs a origem da agregação no espaço e apagou as faces do modelo inteiro. Não existe peça física para isso
+       (são tubos sobrepostos): sem geometria — o nó fica com o símbolo, como qualquer conexão que não se desenha. */
+    if (c && /^(joelho|curva)/.test(c.tipo) && eixos && eixos.length >= 2 && desvio(eixos[0].dir, eixos[1].dir) > 179) return null;
     /* a peça medida do produto, quando há o perfil (esgoto série normal e soldável); senão, a construção de antes */
     var ppP = c && perfilProduto(c.material, c.tipo, c.dn);
     if (ppP && eixos && eixos.length) { var rP = conexaoProduto(c, eixos, o, ppP); if (rP) return rP; }

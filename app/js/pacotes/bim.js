@@ -2622,17 +2622,25 @@ triangulos: lista.reduce(function (a, b2) { return a + b2.nIdx / 3; }, 0)
 }
 };
 }
+function mediana(v) {
+if (!v.length) return 0;
+v.sort(function (a, b) { return a - b; });
+var h = v.length >> 1;
+return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2;
+}
 function origemDe(plano, origemDada) {
 if (Array.isArray(origemDada) && origemDada.length === 3) return [num(origemDada[0]), num(origemDada[1]), num(origemDada[2])];
-var sx = 0, sy = 0, sz = 0, n = 0;
+var xs = [], ys = [], zs = [];
 (plano.buckets || []).forEach(function (b) {
 b.membros.forEach(function (mb) {
 var m = mb.m; if (!m || m.length < 16) return;
-sx += num(m[12]); sy += num(m[13]); sz += num(m[14]); n++;
+var x = +m[12], y = +m[13], z = +m[14];
+if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return;
+xs.push(x); ys.push(y); zs.push(z);
 });
 });
-if (!n) return [0, 0, 0];
-return [sx / n, sy / n, sz / n];
+if (!xs.length) return [0, 0, 0];
+return [mediana(xs), mediana(ys), mediana(zs)];
 }
 function construir(bucket, geometrias, origem) {
 var o = origem || [0, 0, 0];
@@ -12825,6 +12833,7 @@ parede: function (p1, p2, espessura, altura, base) {
 var dx = p2.x - p1.x, dz = p2.z - p1.z;
 var L = Math.sqrt(dx * dx + dz * dz);
 if (!(L > 0.01)) return null;
+if (!(L <= 1e4) || !isFinite(p1.x + p1.z + p2.x + p2.z)) return null;
 espessura = num(espessura, 0.15); altura = num(altura, 2.8); base = num(base, 0);
 if (!(espessura > 0) || !(altura > 0)) return null;
 return {
@@ -75915,6 +75924,7 @@ return { partes: [cascaSaida(m)], recuo: zFace * MM, cotas: { produto: true, cha
 }
 function conexaoBruta(c, eixos, o) {
 o = o || {};
+if (c && /^(joelho|curva)/.test(c.tipo) && eixos && eixos.length >= 2 && desvio(eixos[0].dir, eixos[1].dir) > 179) return null;
 var ppP = c && perfilProduto(c.material, c.tipo, c.dn);
 if (ppP && eixos && eixos.length) { var rP = conexaoProduto(c, eixos, o, ppP); if (rP) return rP; }
 var P = pv(c), tipo = c.tipo, mat = c.material, J = JUNTA[mat];
