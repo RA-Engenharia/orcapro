@@ -881,7 +881,7 @@
     var P = W.P, E = W.E;
     /* FRENTE H3 (20/10/2026): no andar com rebaixo, a reservaVentilacao baixa o TOPO da faixa do esgoto — a ventilação do ambiente
        cruza por cima do ramal da bacia sem atravessá-lo (antes o DN 100 corria colado ao piso e o DN 50 passava por dentro dele) */
-    if (E.es === "enchimento") return { b0: P.terreo ? -INF : g.piso - P.alturaEnchimento, b1: g.piso - P.cobrimento - (P.terreo ? 0 : num(P.reservaVentilacao, 0)), nome: "enchimento do piso" };
+    if (E.es === "enchimento") return { b0: P.terreo ? -INF : g.piso - P.alturaEnchimento, b1: g.piso - P.cobrimento - num(P.reservaVentilacao, 0), nome: "enchimento do piso" };
     /* forro do pavimento de baixo: entre o fundo da laje sob o ambiente e o forro */
     var cand = [];
     g._pontos.forEach(function (p) { lajeEm(W.O.lajes, p.x, p.z).forEach(function (l) { if (l.topo <= g.piso + EPS && cand.indexOf(l) < 0) cand.push(l); }); });
@@ -954,6 +954,12 @@
     }
     var filas = [ord(bacias).concat(ord(receptores), ord(outros), ordIguais(paraCaixa))];
     if (outros.length > 1) filas.push(ord(bacias).concat(ord(receptores), ord(outros).reverse(), ordIguais(paraCaixa)));
+    /* ⚠ REVISÃO H7 (21/10/2026): ÁREA DE SERVIÇO (tanque + máquina): a caixa sifonada da máquina ia primeiro e tomava a entrada do
+       ambiente com um ramal CURTO (a caixa fica perto da saída) — o tanque (sifão próprio, vai ao ramal) não tinha trecho reto para
+       a junção de 45° e ficava "sem caminho livre até o destino": o Traçar automaticamente nunca fechava a área de serviço com o
+       tanque e a máquina. Na falha, o traçado refaz com o tanque (os "outros") primeiro: o ramal dele vai à saída e a caixa entra
+       nele com a junção de 45°. A 1ª ordem segue valendo quando fecha. */
+    if (outros.length && receptores.length) filas.push(ord(bacias).concat(ord(outros), ord(receptores), ordIguais(paraCaixa)));
     var cruz0 = copia(W.cruz), idsCruz0 = copia(W.idsCruz), falha0 = null;
     for (var iF = 0; iF < filas.length; iF++) {
       var fila = filas[iF];

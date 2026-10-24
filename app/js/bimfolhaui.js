@@ -149,6 +149,11 @@
 
     /* o desenho de uma vista 2D, pronto para o viewport (cache da sessão; "Atualizar" refaz) */
     desenho: function (vistaId, refazer) {
+      /* ⚠ O DESENHO É DA OBRA (revisão da Prancha Viva, 23/10/2026): o id da vista ("d2p-pav0", "d2c-…") se repete em toda
+         obra, e o cache era só por id — abrir a obra A, trocar para a B e a folha da B mostrava a planta da A; o pacote do
+         link da Prancha Viva levava essa imagem ao celular do cliente da obra B (tools/test-pranchaviva-rev.js [a]) */
+      var obraK = this.obraKey();
+      if (this._desenhosObra !== obraK) { this._desenhos = {}; this._desenhosObra = obraK; }
       if (!refazer && this._desenhos[vistaId]) return this._desenhos[vistaId];
       var b2 = B2(), D = D2(); if (!b2 || !D) return null;
       try { var g = this.G(); if (g && g._d2Config) g._d2Config(); } catch (e0) {}
@@ -167,7 +172,8 @@
       /* CORES POR CATEGORIA: a folha sai SEM as cores, a menos que a vista peça "imprimir com as cores" (js/bimcorescatui.js) */
       try { var cf = global.BimCoresCatUI ? global.BimCoresCatUI.paraImpressao(vistaId, bruto, exF) : null; if (cf) { an = b2._anotar(d, cf); an.linhasIfc = bruto.linhasIfc || []; } } catch (eCF) { exF = { titulo: "" }; }
       var res = D.svg(an, est, exF);
-      var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala };
+      /* `def`: a vista COMO ESTAVA ao desenhar (a Prancha Viva tira a matriz dela: desenho e matriz sempre da mesma vista) */
+      var o = { vistaId: vistaId, nome: d.nome, tipo: d.tipo, dados: an, estilo: est, svg: res.svg, vb: res.vb, pena: est.pena, penasPx: D.PENAS[est.pena], escala: est.escala, def: (function () { try { return clone(d); } catch (eDf) { return null; } })() };
       this._desenhos[vistaId] = o;
       return o;
     },
@@ -631,6 +637,16 @@
       var M = global.BimModeloVista; if (!M || !M.ativo || !M.ativo()) return false;
       try { var v = M.estado().vistas[id]; if (!v) return false; var ef = M.efetivo(v, M.estado()); return !!(ef.travados && ef.travados.escala); } catch (e) { return false; }
     },
+    /* a escala travada veio de um modelo de vista RA (o padrão da vista criada), não de um modelo do usuário? */
+    travaSolta: function (id) {
+      var M = global.BimModeloVista; if (!M || !M.ativo || !M.ativo()) return false;
+      try { var est = M.estado(), v = est.vistas[id], m = v && v.modeloId ? M.modelo(est, v.modeloId) : null; return !!(m && m.ra); } catch (e) { return false; }
+    },
+    /* solta a vista do modelo de vista RA: leva os parâmetros dele UMA vez (aplicar) e desliga o vínculo — a escala volta a ser da vista */
+    soltarEscala: function (id) {
+      var M = global.BimModeloVista; if (!M || !this.travaSolta(id)) return false;
+      try { var est = M.estado(), v = est.vistas[id], m = M.modelo(est, v.modeloId); M.aplicarModelo(v, m); M.vincularModelo(v, null); M.gravar(); return true; } catch (e) { return false; }
+    },
     definirEscala: function (id, esc) {
       var b2 = B2(), M = global.BimModeloVista; if (!b2 || this.escalaTravada(id)) return false;
       try {
@@ -645,23 +661,41 @@
     },
     gerar: function (opts) {
       opts = opts || {};
-      if (!this.ativo()) return null;
+      /* PRANCHA VIVA (js/pranchavivaui.js gerarDoModelo, 23/10/2026): o módulo é "só visualiza" e pode ser comprado sem o
+         modelador — o jogo de pranchas do modelo aberto também sai para ele (a trava é a do módulo, conferida lá) */
+      var podePv = !!(opts.pranchaViva && PR() && UI2() && PR().colocarViewport && PR().gerarJogo && global.PranchaVivaModulo && global.PranchaVivaModulo.liberado());
+      if (!this.ativo() && !podePv) return null;
       var self = this, PRm = PR(), b2 = B2(), g = this.G();
       var todas = this.vistasParaGerar(), ids = opts.vistas ? opts.vistas.map(String) : null;
       var escolhidas = todas.filter(function (v) { return !ids || ids.indexOf(v.id) >= 0; });
       if (!escolhidas.length) { toast("Nenhuma vista para pôr em folha: crie as plantas, os cortes ou as elevações (Navegador › Vistas).", "aviso"); return null; }
-      var reg = this.conjunto(opts.formato), formato = PRm.FORMATOS[opts.formato] ? opts.formato : (reg.formato || "A1");
-      var outras = this.registros().filter(function (r) { return !reg.id || String(r.id) !== String(reg.id); });
+      /* FORMATO AUTOMÁTICO (23/10/2026, opts.formato "auto"): o menor formato (A3 → A0) onde tudo cabe em escala legível, e a escala
+         travada por um modelo de vista RA (o que a vista criada já traz, não uma escolha) vira ponto de partida — desce a escala
+         ou sobe o formato, e a mensagem diz o que foi escolhido. Só com a prancha SEM folha feita à mão (mudar o formato bagunçaria
+         a dela): com folha à mão, vale o formato da prancha e a escala sobe como antes. O formato explícito segue como sempre. */
+      var auto = opts.formato === "auto";
+      var reg = this.conjunto(auto ? null : opts.formato), formato = PRm.FORMATOS[opts.formato] ? opts.formato : (reg.formato || "A1");
+      if (auto && PRm.normalizar(reg).folhas.some(function (f) { return !f.auto; })) auto = false;
+      var outras = this.registros().filter(function (r) { return !reg.id || String(r.id) !== String(reg.id); }), soltas = [], avisoFormato = "";
       function vistas(fixas) {
         return escolhidas.filter(function (v) { return !fixas || fixas[v.id]; }).map(function (v) {
           var trav = self.escalaTravada(v.id), dz = self.desenho(v.id, true), esc = fixas ? fixas[v.id] : self.escalaPadrao(v.tipo);
           if (trav) { try { esc = b2.estilo(v.id).escala; } catch (e) {} }
-          return { id: v.id, nome: dz ? dz.nome : v.nome, tipo: v.tipo, disciplina: v.disciplina, ordem: v.ordem, escala: esc, fixa: !!fixas || trav,
+          return { id: v.id, nome: dz ? dz.nome : v.nome, tipo: v.tipo, disciplina: v.disciplina, ordem: v.ordem, escala: esc, fixa: !!fixas || (trav && !(auto && self.travaSolta(v.id))),
                    caixa: dz ? { w: dz.vb.w, h: dz.vb.h } : null };
         });
       }
-      var r1 = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(null), outras: outras, folga: 0.9 });
-      Object.keys(r1.escalas).forEach(function (id) { var e0 = null; try { e0 = b2.estilo(id).escala; } catch (e) {} if (e0 !== r1.escalas[id]) self.definirEscala(id, r1.escalas[id]); });
+      var r1;
+      if (auto) {
+        var ga = PRm.gerarJogoAuto({ base: reg, vistas: vistas(null), outras: outras, folga: 0.9 });
+        r1 = ga.resultado; formato = ga.formato; avisoFormato = ga.aviso;
+      } else r1 = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(null), outras: outras, folga: 0.9 });
+      Object.keys(r1.escalas).forEach(function (id) {
+        var e0 = null; try { e0 = b2.estilo(id).escala; } catch (e) {}
+        if (e0 === r1.escalas[id]) return;
+        if (auto && self.escalaTravada(id) && self.travaSolta(id) && self.soltarEscala(id)) soltas.push(id);
+        self.definirEscala(id, r1.escalas[id]);
+      });
       var r = PRm.gerarJogo({ formato: formato, base: reg, vistas: vistas(r1.escalas), outras: outras, folga: 1 });
       r.puladas = r1.puladas.concat(r.puladas);
       var pr = r.prancha; pr.id = reg.id; pr.obraId = reg.obraId; pr.criadoEm = reg.criadoEm;
@@ -670,9 +704,14 @@
       this._repintarTodas(); this._renomearAbas();
       var primeira = pr.folhas.filter(function (f) { return !!f.auto; })[0];
       if (primeira && opts.abrir !== false) this.abrir(this.idFolha(salvo.id, primeira.id));
-      var msg = "Pranchas geradas em " + formato + ": " + r.criadas + " folha(s) nova(s), " + r.atualizadas + " atualizada(s)" + (r.puladas.length ? "; fora: " + r.puladas.map(function (p) { return p.nome + " (" + p.motivo + ")"; }).join("; ") : "") + ".";
+      var nomeDe = {}; escolhidas.forEach(function (v) { nomeDe[v.id] = v.nome; });
+      var escTxt = ""; if (auto) { var escSet = {}; Object.keys(r1.escalas).forEach(function (id) { escSet[r1.escalas[id]] = 1; }); escTxt = " Escalas: " + Object.keys(escSet).map(Number).sort(function (a, b) { return a - b; }).map(function (e) { return "1:" + e; }).join(", ") + "."; }
+      var msg = "Pranchas geradas em " + formato + (auto ? " (formato automático)" : "") + ": " + r.criadas + " folha(s) nova(s), " + r.atualizadas + " atualizada(s)" + (r.puladas.length ? "; fora: " + r.puladas.map(function (p) { return p.nome + " (" + p.motivo + ")"; }).join("; ") : "") + "." +
+        (auto ? " " + avisoFormato + escTxt : "") +
+        (soltas.length ? " Escala solta do modelo de vista RA (para caber): " + soltas.map(function (id) { return (nomeDe[id] || id) + " em 1:" + r1.escalas[id]; }).join(", ") + "." : "");
       toast(msg, r.puladas.length ? "aviso" : "ok"); status(msg);
-      return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr) };
+      return { ok: true, id: salvo.id, criadas: r.criadas, atualizadas: r.atualizadas, puladas: r.puladas, escalas: r1.escalas, folhas: pr.folhas.length, conferir: PRm.conferir(pr),
+               formato: formato, automatico: auto, aviso: auto ? avisoFormato : "", soltas: soltas, mensagem: msg };
     },
     /* a pergunta mínima: o formato e quais vistas (todas marcadas) */
     abrirGerar: function () {
@@ -682,7 +721,7 @@
       var DISC = { arquitetura: "Arquitetura", estrutural: "Estrutural", hidraulica: "Hidráulica", eletrica: "Elétrica", mecanica: "Mecânica", coordenacao: "Coordenação" };
       var TIPO = { planta: "planta", corte: "corte", elevacao: "elevação" };
       var h = '<p class="muted" style="font-size:12px;margin:0 0 8px">Uma folha por planta; os cortes e as elevações juntos. Escala do Padrão de detalhamento (1:50) ou a maior que couber; carimbo do escritório; numeração código-nn. Gerar de novo <b>atualiza</b> as mesmas folhas (não duplica) e não mexe nas folhas feitas à mão.</p>' +
-        '<label style="font-size:12.5px">Formato <select id="pv-ger-formato">' + ["A0", "A1", "A2", "A3", "A4"].map(function (f) { return '<option value="' + f + '"' + (f === f0 ? " selected" : "") + ">" + f + "</option>"; }).join("") + "</select></label>" +
+        '<label style="font-size:12.5px">Formato <select id="pv-ger-formato">' + ["A0", "A1", "A2", "A3", "A4", "auto"].map(function (f) { return '<option value="' + f + '"' + (f === f0 ? " selected" : "") + ">" + (f === "auto" ? "Automático (o menor onde tudo cabe)" : f) + "</option>"; }).join("") + "</select></label>" +
         '<div style="margin-top:8px;max-height:46vh;overflow:auto">' + vs.map(function (v) {
           return '<label style="display:block;font-size:12.5px;padding:2px 0"><input type="checkbox" checked data-pv-ger="' + esc(v.id) + '"> ' + esc(v.nome) + ' <span class="muted">(' + esc(DISC[v.disciplina] || v.disciplina) + " · " + esc(TIPO[v.tipo] || v.tipo) + ")</span></label>";
         }).join("") + "</div>";
@@ -707,11 +746,13 @@
           return '<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px"><span style="flex:1">' + esc(it.rot) + ' <span class="muted">' + esc(it.formato) + (it.modelo === "RA" ? " · carimbo RA" : "") + '</span></span><button class="btn sm" data-pv-abrir="' + esc(it.id) + '">Abrir</button></div>';
         }).join("") : '<p style="font-size:13px">Nenhuma folha ainda. <b>Gerar pranchas</b> monta o jogo do modelo aberto — plantas, cortes e elevações — com o carimbo do escritório.</p>');
       global.UI.modal("Pranchas do projeto", h, [
-        { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } },
+        { texto: "Gerar pranchas", classe: "primary", onClick: function () { global.UI.fecharModal(); self.abrirGerar(); } }].concat(
+        /* PRANCHA VIVA (js/pranchavivaui.js): a folha que abre o 3D no ponto tocado */
+        global.PranchaVivaUI ? [{ texto: "Prancha Viva", onClick: function () { global.UI.fecharModal(); global.PranchaVivaUI.abrir(); } }] : []).concat([
         { texto: "Pranchas de arquitetura", onClick: function () { global.UI.fecharModal(); if (global.ArqPranchasUI) global.ArqPranchasUI.abrir(); } },
         { texto: "Nova folha", onClick: function () { global.UI.fecharModal(); self.novaFolha(); } },
         { texto: "PDF em lote", onClick: function () { global.UI.fecharModal(); self.pdfLote(); } },
-        { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]);
+        { texto: "Fechar", onClick: function () { global.UI.fecharModal(); } }]));
       [].forEach.call(document.querySelectorAll("[data-pv-abrir]"), function (b) { b.onclick = function () { global.UI.fecharModal(); self.abrir(b.getAttribute("data-pv-abrir")); }; });
       return true;
     },
@@ -730,6 +771,8 @@
       });
       /* as ações ficam À VISTA no nó (o dono não achava onde ficam as pranchas) */
       filhos.unshift({ id: "fl:gerar", rotulo: "Gerar pranchas…", icone: "prancha", fn: function () { self.abrirGerar(); } });
+      /* PRANCHA VIVA: a folha → o 3D no ponto tocado (o comando da fita, com a trava do módulo) */
+      if (global.PranchaVivaUI) filhos.unshift({ id: "fl:viva", rotulo: "Prancha Viva (folha → 3D)", icone: "prancha", acao: "prancha-viva" });
       if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
       filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
       return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };

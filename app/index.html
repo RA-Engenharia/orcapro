@@ -116,6 +116,8 @@
   <script src="js/bimprevia.js"></script>
   <!-- MARMORARIA (módulo à parte): a licença e a área enxuta do marmorista. No núcleo: o BimPrevia e a fita perguntam a ele -->
   <script src="js/marmmodulo.js"></script>
+  <!-- PRANCHA VIVA (módulo à parte): a licença. No núcleo, como a da Marmoraria (a fita e o link perguntam a ela) -->
+  <script src="js/pranchavivamodulo.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
   <!-- paineis.js: o tamanho dos painéis (Gantt, histograma, macrofluxo,
@@ -396,6 +398,10 @@
   <script src="js/metalplanif.js"></script>
   <script src="js/metalcorte.js"></script>
   <script src="js/metalpintura.js"></script>
+  <!-- METÁLICA — ORÇAMENTO 100 % DA ESTRUTURA POR PESO (frente F2, 21/10/2026): aço por kg, ligações, pintura por demão SINAPI, içamento e frete; composições próprias PROP-MET-90xx -->
+  <script src="js/metalorc.js"></script>
+  <!-- METÁLICA — PLANO DE MONTAGEM AUTOMÁTICO (23/10/2026): a estrutura desenhada vira os içamentos do plano, na ordem de montagem (vão contraventado primeiro) — motor puro -->
+  <script src="js/metalmontagem.js"></script>
   <script src="js/svgpdf.js"></script>
   <script src="js/metalfabdes.js"></script>
   <!-- METÁLICA — CRIAR CLICANDO (12/10/2026): pilar, viga, diagonal, terça e chapa pelos pontos clicados, encaixe 3D, editar pelas Propriedades (op metalAjustar), grade e cotas de eixos — motor puro -->
@@ -491,6 +497,7 @@
   <script src="js/mobcatalogodados.js"></script>
   <script src="js/familiascat.js"></script>
   <script src="js/familiasplanejado.js"></script>
+  <script src="js/familiasagua.js"></script>   <!-- FRENTE H7: toda peça que recebe água (cuba, lavatório, tanque, pia) com o ponto de água e o de esgoto -->
   <script src="js/propriasra.js"></script>
   <script src="js/mobtrocaui.js"></script>
   <!-- CARPINTARIA & MARCENARIA (09/10/2026): módulos em chapa, plano de corte, arquivos para a empresa de corte (motores puros) -->
@@ -509,6 +516,9 @@
   <!-- PADRÃO DE APRESENTAÇÃO DE INSTALAÇÕES (17/10/2026): cor, pena e traço por sistema, filtros, modelos de vista e rótulos (dados GERADOS por tools/gerar-biminst-padrao.js) -->
   <script src="js/biminstpadraodados.js"></script>
   <script src="js/biminst.js"></script>
+  <!-- LIGAÇÃO ELÉTRICA DA ILUMINAÇÃO (21/10/2026): colocou a luminária, nascem o ponto de luz, os interruptores, o eletroduto e a fiação (motor puro; números da pesquisa NBR 5410 em eletilumdados; contrato com o render em docs/eletrica/CONTRATO-ILUMINACAO.md) -->
+  <script src="js/eletilumdados.js"></script>
+  <script src="js/eletilum.js"></script>
   <script src="js/biminstpiscina.js"></script>   <!-- PISCINA: a op hidPiscina e os sistemas de tubo da piscina no replay — no grupo bim para o sanear não descartar a piscina e os tubos -->
   <!-- QUALIDADE VISUAL 1 (17/10/2026): geometria paramétrica de tubos, conexões, caixas e registros com as cotas da norma/ficha (cotas GERADAS por tools/gerar-hidgeo-dados.js + motor puro) -->
   <script src="js/biminstgeodados.js"></script>
@@ -589,8 +599,15 @@
   <script src="js/hiddoclinks.js"></script>   <!-- GERAR DOCUMENTOS: links externos CONFERIDOS (GERADO por tools/hid-doc-links.js) -->
   <script src="js/hiddocumentos.js"></script>   <!-- GERAR DOCUMENTOS: memorial único, descritivo e manual com links (motor puro) -->
   <script src="js/hiddocumentosui.js"></script>   <!-- GERAR DOCUMENTOS: a tela (um clique) -->
+  <script src="js/hidgas.js"></script>   <!-- APARELHO A GÁS: conferência da NBR 13103:2020 (local, ventilação, exaustão, posição, pontos), motor puro (FRENTE H6) -->
   <script src="js/hidaqtraco.js"></script>   <!-- ÁGUA QUENTE no Traçar automaticamente (aquecedor → pontos), motor puro (FRENTE H5) -->
+  <script src="js/hidbarrilete.js"></script>   <!-- BARRILETE e colunas a partir da caixa d'água no Traçar automaticamente, motor puro (FRENTE H8) -->
+  <script src="js/madviga.js"></script>   <!-- N23: viga contínua da madeira (a base de apoio da caixa d'água verifica tablado, barrote e viga) -->
+  <script src="js/maddim7190.js"></script>   <!-- N23: verificações da NBR 7190 (a base de madeira; o cálculo de madeira completo segue no Worker) -->
+  <script src="js/hidbaseapoio.js"></script>   <!-- N23: BASE DE APOIO da caixa d'água elevada (madeira ou metálica), motor puro -->
   <script src="js/hidkitui.js"></script>   <!-- PROJETO INTELIGENTE: kit ao posicionar, Ligar ambiente (fiação fina) -->
+  <script src="js/hidequipar.js"></script>   <!-- FRENTE H7: "Equipar ambiente" — as peças sanitárias pelo nome do ambiente + o auditor (motor puro) -->
+  <script src="js/hidequiparui.js"></script>   <!-- FRENTE H7: a tela do Equipar ambiente (Instalações › Projeto inteligente; fiação fina) -->
   <script src="js/hidpiscinadados.js"></script>   <!-- PISCINA: catálogos de equipamentos de piscina com página (GERADO por tools/gerar-hid-piscina.js) -->
   <script src="js/hidpiscina.js"></script>   <!-- PISCINA: reconhecer e dimensionar (NBR 10339 + fabricante) -->
   <script src="js/hidpiscinafam.js"></script>   <!-- PISCINA: famílias com a volumetria do produto -->
@@ -715,6 +732,7 @@
   <script src="js/familiaimportui.js"></script>
   <script src="js/orcmodeloui.js"></script>
   <script src="js/biminstui.js"></script>
+  <script src="js/eletilumui.js"></script>   <!-- LIGAÇÃO ELÉTRICA DA ILUMINAÇÃO: o gancho da colocação da luminária e o painel (caminho, regra dos interruptores, comandos, problemas) -->
   <!-- SELETOR DE TIPOS em Propriedades + ATALHOS de duas letras das instalações (17/10/2026) -->
   <script src="js/biminsttipos.js"></script>
   <script src="js/biminstcon.js"></script>
@@ -848,6 +866,8 @@
   <script src="js/bimplantamodelar.js"></script>
   <!-- COLOCAÇÃO DE PEÇAS (18/10/2026): prévia translúcida antes do clique, inserir registro/conexão no tubo existente, Espaço gira -->
   <script src="js/biminstcolocar.js"></script>
+  <!-- N23: CONECTAR PELA ALTURA DE REFERÊNCIA (rota ortogonal na cota do tubo de destino, encaixe conferido) e o alinhamento pelo prolongamento do tubo -->
+  <script src="js/biminstconectar.js"></script>
   <script src="js/bimselecao.js"></script>
   <!-- CONTROLE DE VIDEOGAME (15/10/2026): Xbox 360 com fio no BIM (Gamepad API) — a parte pura (zona morta, mapa de botões, integração por dt) e o gancho do laço de quadro -->
   <script src="js/bimcontrole.js"></script>
@@ -881,6 +901,8 @@
   <script src="js/marmorariapranchas.js"></script>   <!-- MARMORARIA: executivo (folhas com carimbo RA, SVG/PDF/DXF) -->
   <script src="js/marmorariaui.js"></script>
   <script src="js/bimfolhaui.js"></script>
+  <script src="js/pranchaviva.js"></script>   <!-- PRANCHA VIVA: a matriz folha ↔ modelo (viewport, ponto de vista, folha com matriz), câmeras, corte, a peça com orçamento e etapa -->
+  <script src="js/pranchavivaui.js"></script>   <!-- PRANCHA VIVA: a tela (folha → 3D no ponto tocado → folha), o pacote do link e a importação das pranchas ligadas -->
   <script src="js/arqgeo.js"></script>   <!-- PRANCHAS DE ARQUITETURA (reforma/ampliação): geometria plana (união exata de áreas) -->
   <script src="js/arqmodelo.js"></script>   <!-- … o modelo lido: paredes, lajes, ambientes, vãos, telhado, forro, terreno, por fase -->
   <!-- PORTAS E JANELAS AUTOMÁTICAS (20/10/2026): classificador de ambiente + critérios com nível de fonte, o lançador de um clique, o auditor e a tela -->
@@ -900,6 +922,13 @@
   <script src="js/conclanc.js"></script>
   <script src="js/concauditor.js"></script>
   <script src="js/concui.js"></script>
+  <!-- CIRCUITOS, QUADRO, CONDUTORES E ELETRODUTOS (frente E2, 21/10/2026): tabelas da NBR 5410 conferidas na imagem (cópia não licenciada), traçado, dimensionamento, auditor, pranchas e a tela -->
+  <script src="js/eletabelas.js"></script>
+  <script src="js/eletracado.js"></script>
+  <script src="js/elecircuitos.js"></script>
+  <script src="js/elecircauditor.js"></script>
+  <script src="js/elepranchas.js"></script>
+  <script src="js/elecircuitosui.js"></script>
   <!-- MOBILIAR AMBIENTE (21/10/2026): regras de layout com fonte (gerado de docs/arquitetura/interiores), o motor de um clique, o auditor e a tela -->
   <script src="js/mobregrasdados.js"></script>
   <script src="js/mobregras.js"></script>

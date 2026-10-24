@@ -415,6 +415,10 @@
       var est = c.estado, porId = {}; arr(est.familias).forEach(function (f) { porId[String(f.id)] = f; });
       var par = U.parametros(); if (opcoes.opcaoRota != null) par.opcaoRota = opcoes.opcaoRota;
       var avisos = [], pendencias = [], ops = [];
+      /* FRENTE H8 (21/10/2026): o BARRILETE anterior (js/hidbarrilete.js) sai no começo do lote — os ambientes e o aquecedor são
+         traçados sem ele (a coluna dele não vira "coluna de água fria" do ambiente) e no fim (e3) ele é refeito: Traçar de novo = o mesmo */
+      var HBR = dep("HidBarrilete"); if (!HBR && typeof require === "function") { try { HBR = require("./hidbarrilete.js"); } catch (eRb) { HBR = null; } }   /* Node (testes): o motor pelo require */
+      if (HBR) HBR.anteriores(K.achatar(c.ops)).forEach(function (idB) { ops.push({ op: "apagar", id: idB }); });
       /* o aparelho fora de um ambiente (o modelo TEM ambientes): liga pelos vizinhos à vista, mas avisa */
       if (arr(est.ambientes).some(function (a) { return a && a.calc && arr(a.calc.contorno).length >= 3; }))   // hid:ok polígono tem 3+ vértices
         esc0.aparelhos.forEach(function (id) { var f = porId[id]; if (f && !K._int.ambienteDe(est, f)) avisos.push({ texto: "O " + U._nomeAp(f) + " está fora de um ambiente: liguei com os aparelhos vizinhos à vista. Desenhe o ambiente (Arquitetura › Ambiente) para garantir o cômodo.", elementos: [id] }); });
@@ -502,11 +506,32 @@
           velhasAQ.forEach(function (id) { ops.push({ op: "apagar", id: id }); });
           var estAQ = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]));
           var RAQ = HAQ.tracar({ estado: estAQ, avaliarFam: c.avaliarFam, ops: c.ops.concat(ops), escopo: esc0.aparelhos, parametros: par });
+          /* FRENTE H6: as DECISÕES da água quente (coluna central, válvula do boiler, conferência hidráulica, diâmetro da chaminé) vão na
+             1ª peça do lote, como a do ambiente/prédio — o memorial lê (HidKitUI.decisoes); antes elas se perdiam aqui */
+          var idsAq = []; RAQ.ops.forEach(function (o) { if (o.aq != null && idsAq.indexOf(String(o.aq)) < 0) idsAq.push(String(o.aq)); });
+          if (RAQ.ops.length && arr(RAQ.decisoes).length) RAQ.ops[0].aqInfo = { id: "aq:" + idsAq.join(","), aquecedores: idsAq, decisoes: RAQ.decisoes, pendencias: RAQ.pendencias.map(function (p) { return { chave: p.chave, motivo: p.texto }; }) };
           RAQ.ops.forEach(function (o) { ops.push(o); });
           RAQ.pendencias.forEach(function (p) { pendencias.push(p); });
           RAQ.avisos.forEach(function (a) { avisos.push(a); });
           if (RAQ.ligados) avisos.push({ texto: "Água quente: " + RAQ.ligados + " ponto(s) ligado(s) ao aquecedor (alimentação de água fria com registro, distribuição no entreforro, descida embutida com registro em cada ponto).", elementos: [] });
         } catch (eAQ0) { pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: o traçado falhou (" + (eAQ0 && eAQ0.message ? eAQ0.message : eAQ0) + "); trace à mão", elementos: [] }); }
+      }
+      /* (e3) FRENTE H8 (21/10/2026): o BARRILETE a partir da caixa d'água (js/hidbarrilete.js) — pedido do Rogério: "colocar uma caixa
+         d'água próximo de algum ambiente, ele monta o barrilete e desce as tubulações para cada ambiente". As esperas de água fria
+         que os ambientes, o aquecedor e o prédio deixaram passam a ser LIGADAS (saída com registro, ventilação, barrilete, colunas
+         com registro, extravasor, limpeza, boia); a pressão é conferida (NBR 5626, o mesmo cálculo do dimensionamento) e, sem caixa
+         no modelo, a oferta de pôr uma (Corrigir) */
+      if (HBR) {
+        try {
+          var todosB = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]);
+          var RB = HBR.montar({ estado: BE.aplicar(todosB), avaliarFam: c.avaliarFam, ops: todosB, parametros: par, pressao: true, oferta: true, programa: U._programa() });
+          RB.ops.forEach(function (o) { ops.push(o); });
+          RB.pendencias.forEach(function (p) { pendencias.push(p); });
+          RB.avisos.forEach(function (a) { avisos.push(a); });
+          /* o respiro do boiler modelado aqui fecha a pendência da H6 (ta.boiler_respiro) daquele aquecedor */
+          if (RB.respiros.length) pendencias = pendencias.filter(function (p) { return !(p.chave === "ta.boiler_respiro" && arr(p.elementos).some(function (x) { return RB.respiros.indexOf(String(x)) >= 0; })); });
+          if (RB.ligadas) avisos.push({ texto: "Barrilete: " + RB.ligadas + " espera(s) de água fria ligada(s) à caixa d'água " + RB.caixas.filter(function (x) { return x.ligadas; }).map(function (x) { return x.id; }).join(", ") + " (saída com registro, ventilação, colunas com registro, extravasor, limpeza e boia). " + arr(RB.decisoes).map(function (d) { return d.texto; }).join(" "), elementos: RB.caixas.map(function (x) { return x.id; }) });
+        } catch (eB) { pendencias.push({ chave: "ta.barrilete", texto: "Barrilete: o traçado falhou (" + (eB && eB.message ? eB.message : eB) + "); ligue à mão", elementos: [] }); }
       }
       /* (f) a PISCINA: o lançamento completo do js/hidpiscinarede.js (casa de máquinas, dispositivos, sucção, retorno, descarte
          na caixa receptora, drenagem da casa, reposição com descarga livre) no MESMO lote — depois da casa, para a vala
@@ -616,6 +641,62 @@
       var pecas = arr(fim.instalacoes && fim.instalacoes.pecas).filter(function (k) { return ids[String(k.id)]; }).map(function (k) { return k.peca; });
       return { tubos: trs.length, metros: Math.round(metros * 100) / 100, conexoes: nC, dns: dns, pecas: pecas, pontasNovas: pontas, soltas: soltas, ids: Object.keys(ids) };   // hid:ok arredondamento a cm
     },
+    /* FRENTE H8: o programa de necessidades da tela de cálculo (uso, dormitórios, população) — o volume da caixa proposta */
+    _programa: function () { var HC = dep("HidCalcUI"); try { return HC && HC.programa ? HC.programa() : null; } catch (e) { return null; } },
+    /* FRENTE H8 (21/10/2026): "MONTAR BARRILETE" — só o barrilete da caixa selecionada (ou de todas), com a mesma prévia e o mesmo
+       cartão do Traçar (Enter aplica, um Ctrl+Z desfaz). O Traçar automaticamente já monta o barrilete junto; este é para quem pôs
+       a caixa depois de traçar os ambientes */
+    ID_BAR: "montar-barrilete", ID_CTX_BAR: "ctx-montar-barrilete",
+    _caixaSel: function (c, uids) {
+      var HBR = dep("HidBarrilete"); if (!HBR || !c) return null;
+      var ids = arr(uids).map(function (u) { return String(u).replace(/^edit:/, ""); }), cxs = HBR.caixas(c.estado, c.avaliarFam).filter(function (x) { return ids.indexOf(x.id) >= 0; });
+      return cxs.length ? cxs[0].id : null;
+    },
+    planejarBarrilete: function (opcoes) {
+      opcoes = opcoes || {};
+      var K = dep("HidKit"), BE = dep("BimEdit"), HBR = dep("HidBarrilete"), c = U._ctx();
+      if (!HBR && typeof require === "function") { try { HBR = require("./hidbarrilete.js"); } catch (eR) { HBR = null; } }
+      if (!K || !BE || !HBR || !c) return { ok: false, erro: "O motor do barrilete não carregou (js/hidbarrilete.js)." };
+      var uids = opcoes.uids != null ? opcoes.uids : (c.b.selecao ? arr(c.b.selecao().uids) : []);
+      var cxId = opcoes.caixa != null ? String(opcoes.caixa) : U._caixaSel(c, uids);
+      var ops = HBR.anteriores(K.achatar(c.ops), cxId).map(function (idB) { return { op: "apagar", id: idB }; });
+      var todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]);
+      var RB = HBR.montar({ estado: BE.aplicar(todos), avaliarFam: c.avaliarFam, ops: todos, parametros: U.parametros(), caixa: cxId, pressao: true, oferta: true, programa: U._programa() });
+      RB.ops.forEach(function (o) { ops.push(o); });
+      var esc0 = { tipo: "barrilete", aparelhos: [], ambientes: [], erro: null };
+      /* N23: nada traçado, mas com o que fazer (a caixa baixa demais: as bases de apoio com o Corrigir) — o cartão abre com as opções,
+         em vez de só o erro (a caixa recém-posta no chão diz "eleve sobre a base de madeira ou metálica" e o Corrigir faz) */
+      var comAcao = RB.pendencias.concat(RB.avisos).filter(function (p) { return p && p.acao && p.acao.tipo === "ops"; });
+      if (!RB.ops.length && !comAcao.length) return { ok: false, erro: (RB.pendencias.concat(RB.avisos)[0] || {}).texto || "Nada a montar: nenhuma caixa d'água e nenhuma espera de água fria no modelo.", escopo: esc0, pendencias: RB.pendencias, avisos: RB.avisos };
+      var resumo = U._resumo(c, ops);
+      resumo.kits = 0; resumo.ambientes = 0; resumo.reaproveitadas = []; resumo.caixasNovas = []; resumo.piscinas = 0;
+      var avisos = RB.avisos.slice(); if (RB.ligadas) avisos.unshift({ texto: arr(RB.decisoes).map(function (d) { return d.texto; }).join(" "), elementos: RB.caixas.map(function (x) { return x.id; }) });
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: RB.pendencias.slice(), criterios: null, opcoes: 1, indice: 0, escopo: esc0, ambientes: [], redes: [], kits: [], piscinas: [], barrilete: RB, opsNaProposta: c.ops.length };
+    },
+    /* N23 (23/10/2026) — pedido do Rogério: "colocou a caixa → conecta sozinha: barrilete, colunas, registros, extravasor, limpeza,
+       boia". A caixa recém-posta abre a PRÉVIA do barrilete dela (o mesmo cartão: Enter aplica, Esc cancela, um Ctrl+Z desfaz); sem
+       espera de água fria no modelo e com aparelhos, a prévia é o Traçar automaticamente inteiro (os ambientes + o barrilete). Outra
+       prévia aberta não é atropelada. Devolve o que fez (para o teste) */
+    RESERVATORIO: /^(ra-caixa-dagua|hid-caixa-dagua|hid-reservatorio-tanque)$/,
+    aoColocarFamilia: function (d) {
+      if (!d || !U.RESERVATORIO.test(String(d.famId)) || U._plano) return null;
+      var c = U._ctx(); if (!c) return null;
+      var P = U.planejarBarrilete({ caixa: String(d.id) });
+      if (P && P.ok) { U._plano = P; U._planoUids = []; U._previa(P.ops); U._cardMostrar(P); status("Caixa d'água posta: a prévia do barrilete (" + P.resumo.tubos + " tubo(s)). Enter aplica, Esc cancela."); return "barrilete"; }
+      if (U._aparelhosDe(c).length) { var T = U.tracarAuto({ todos: true }); return T && T.ok ? "tracar" : "nada"; }
+      status("Caixa d'água posta. Ponha os aparelhos (ou trace os ambientes) e ela liga sozinha no Traçar automaticamente.");
+      return "nada";
+    },
+    montarBarrilete: function (opcoes) {
+      var c = U._ctx(); if (!c) { status("Abra o BIM para montar o barrilete."); return null; }
+      status("Montar barrilete: calculando…");
+      var P = U.planejarBarrilete(opcoes || {});
+      U._plano = P; U._planoUids = [];
+      if (!P.ok) { U.ultimo = { ok: false, erro: P.erro }; U._previa(null); U._cardMostrar(P); U._redesenhar(); status(P.erro); return P; }
+      U._previa(P.ops); U._cardMostrar(P);
+      status("Prévia do barrilete: " + P.resumo.tubos + " tubo(s), " + P.resumo.conexoes + " conexão(ões). Enter aplica, Esc cancela.");
+      return P;
+    },
     /* ---------------- a tela da prévia: card flutuante + prévia translúcida no 3D/planta; Tab alterna; Enter aplica; Esc cancela */
     tracarAuto: function (opcoes) {
       opcoes = opcoes || {};
@@ -693,6 +774,34 @@
       status("Ponta solta: " + q.trecho + (q.continua ? " (marcada como espera, mas não é espera permitida)" : ""));
       return true;
     },
+    /* FRENTE H6: Mostrar no 3D os elementos de uma pendência/aviso do cartão (o aquecedor, o ambiente, a janela do terminal) */
+    avisoMostrar: function (i) {
+      var x = arr(U._avisosCard)[i], b = global.BIM; if (!x) return false;
+      var uids = arr(x.o.elementos).map(function (id) { return "edit:" + id; });
+      try { if (b && b.selecionar) b.selecionar(uids); } catch (e1) {}
+      try { if (b && b.enquadrarUids) b.enquadrarUids(uids); } catch (e2) {}
+      status(x.o.texto);
+      return true;
+    },
+    /* FRENTE H6: Corrigir de uma pendência/aviso — "ops": grava o lote da correção (um Ctrl+Z desfaz) e refaz a prévia; "dn": aumenta o
+       DN dos trechos da PRÓPRIA prévia (ainda não gravados) e redesenha */
+    avisoCorrigir: function (i) {
+      var x = arr(U._avisosCard)[i], P = U._plano, c = U._ctx(); if (!x || !x.o.acao || !P || !P.ok || !c) return false;
+      var ac = x.o.acao;
+      if (ac.tipo === "dn") {
+        var n = 0; arr(ac.mudancas).forEach(function (m) { P.ops.forEach(function (o) { if (o && o.op === "trecho" && String(o.id) === String(m.id) && Number(o.dn) < Number(m.para)) { o.dn = m.para; n++; } }); });
+        P.pendencias = P.pendencias.filter(function (q) { return q !== x.o; }); P.avisos = P.avisos.filter(function (q) { return q !== x.o; });
+        U._previa(P.ops); U._cardMostrar(P);
+        status(n ? "Corrigido na prévia: " + ac.texto + ". Enter aplica." : "Nada a mudar: os trechos já têm o DN.");
+        return n > 0;
+      }
+      if (ac.tipo !== "ops" || !arr(ac.ops).length) return false;
+      U._previa(null);
+      var ok = U._gravar(c, ac.ops, "hidgas");
+      status(ok ? "Corrigido: " + ac.texto + " (Ctrl+Z desfaz). Refazendo a prévia…" : "O editor recusou a correção (" + ac.texto + ").");
+      if (ok) U.tracarAuto({ uids: U._planoUids || [], todos: true });
+      return ok;
+    },
     cancelarTracado: function () { U._previa(null); U._cardFechar(); U._plano = null; return true; },
     _previa: function (ops) { var b = B(); try { if (b && b.editarPreviaInst) b.editarPreviaInst(ops && ops.length ? ops : null); } catch (e) {} U._previaPlanta(ops); },
     /* a PRÉVIA nas PLANTAS abertas (o 3D tem a dele, no js/bim.js): os tubos e as peças do lote, translúcidos, por cima do desenho */
@@ -744,11 +853,17 @@
           return '<li class="' + (a.gravidade === "dura" ? "hid-pend" : "") + '" title="' + esc(a.porque + " Fonte: " + a.fonte) + '"><b>' + rotG[a.gravidade] + " · " + esc(a.titulo) + ":</b> " + esc(a.texto) + ' <button type="button" class="btn sm ghost" data-hid-tr="crit-ver" data-n="' + i + '">Mostrar</button></li>';
         }).join("") + "</ul>";
       }
-      var av = P.pendencias.map(function (p) { return { t: p.texto, k: "pend" }; }).concat(P.avisos.map(function (a) { return { t: a.texto, k: "aviso", acao: a.acao }; }));
+      /* FRENTE H6: o achado com CORRIGIR (as ops da NBR 13103 — trocar o tipo, a altura, lançar a tomada; o aumento de DN da água quente)
+         e com MOSTRAR (os elementos no 3D) — o padrão da casa: o que é + Corrigir + Mostrar no 3D */
+      U._avisosCard = P.pendencias.map(function (p) { return { o: p, k: "pend" }; }).concat(P.avisos.map(function (a) { return { o: a, k: "aviso" }; }));
+      var av = U._avisosCard.map(function (x, i) { return { t: x.o.texto, k: x.k, acao: x.o.acao || null, i: i, els: arr(x.o.elementos) }; });
+      function botoes(a) { return (a.acao && (a.acao.tipo === "ops" || a.acao.tipo === "dn") ? ' <button type="button" class="btn sm" data-hid-tr="av-corrigir" data-n="' + a.i + '" title="' + esc(a.acao.texto || "") + '">Corrigir</button>' : "") + (a.els.length ? ' <button type="button" class="btn sm ghost" data-hid-tr="av-ver" data-n="' + a.i + '">Mostrar no 3D</button>' : ""); }
       /* o que tem CORRIGIR (o aparelho duplicado) vem antes e aberto, com o botão */
       av.filter(function (a) { return a.acao && a.acao.tipo === "remover"; }).forEach(function (a) { h += '<p class="hidtr-erro" data-hid-tr-dup="' + esc(a.acao.id) + '">' + esc(a.t) + ' <button type="button" class="btn sm" data-hid-tr="remover" data-id="' + esc(a.acao.id) + '">Corrigir: ' + esc(a.acao.texto) + "</button></p>"; });
       av = av.filter(function (a) { return !(a.acao && a.acao.tipo === "remover"); });
-      if (av.length) h += '<details' + (av.length <= U.MAX_AVISOS / 2 ? " open" : "") + ' data-hid-tr-avisos><summary>Avisos (' + av.length + ")</summary><ul>" + av.slice(0, U.MAX_AVISOS * 2).map(function (a) { return '<li class="' + (a.k === "pend" ? "hid-pend" : "") + '">' + esc(a.t) + "</li>"; }).join("") + "</ul></details>";
+      /* o que tem Corrigir vem primeiro (a lista corta no fim) */
+      av.sort(function (a, b) { return (b.acao ? 1 : 0) - (a.acao ? 1 : 0) || a.i - b.i; });
+      if (av.length) h += '<details' + (av.length <= U.MAX_AVISOS / 2 || av.some(function (a) { return a.acao; }) ? " open" : "") + ' data-hid-tr-avisos><summary>Avisos (' + av.length + ")</summary><ul>" + av.slice(0, U.MAX_AVISOS * 2).map(function (a) { return '<li class="' + (a.k === "pend" ? "hid-pend" : "") + '" data-hid-tr-aviso="' + a.i + '">' + esc(a.t) + botoes(a) + "</li>"; }).join("") + "</ul></details>";
       if (P.opcoes > 1) h += '<p class="muted" data-hid-tr-opcao>Opção ' + (P.indice + 1) + " de " + P.opcoes + ' — <button type="button" class="btn sm ghost" data-hid-tr="opcao">Tab: outra opção</button></p>';
       var nDura = P.criterios && P.criterios.contagem ? P.criterios.contagem.dura : 0;
       h += '<div class="hidtr-bt"><button type="button" class="btn sm primary" data-hid-tr="aplicar"' + (nDura ? ' data-hid-tr-dura="' + nDura + '" title="Há proibido(s) de projetista: aplicar pede confirmação (decisão do RT)">Aplicar com proibido (RT)' : ">Aplicar (Enter)") + '</button><button type="button" class="btn sm" data-hid-tr="cancelar">Cancelar (Esc)</button></div>';
@@ -765,7 +880,8 @@
           var a = b.getAttribute("data-hid-tr");
           if (a === "aplicar") U.aplicarTracado(); else if (a === "opcao") U.alternarOpcao(); else if (a === "remover") U.removerDuplicado(b.getAttribute("data-id"));
           else if (a === "crit-ver") U.critMostrar(Number(b.getAttribute("data-n")));
-          else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
+          else if (a === "solta-ver") U.soltaMostrar(Number(b.getAttribute("data-n")));
+          else if (a === "av-ver") U.avisoMostrar(Number(b.getAttribute("data-n"))); else if (a === "av-corrigir") U.avisoCorrigir(Number(b.getAttribute("data-n"))); else U.cancelarTracado();
         });
         d.body.appendChild(el);
         if (!d.getElementById("hid-tracar-css")) {
@@ -807,11 +923,15 @@
     registrar: function (reg, R) {
       R = R || global.BimRibbon; if (!R || !reg) return false;
       var cmd = { id: U.ID_CMD, rotulo: "Traçar\nautomaticamente", icone: "link", grande: true, dica: "Gera os tubos sozinho: o kit de cada aparelho que ainda não tem, a caixa sifonada (aproveita a que você pôs), a ventilação, o ramal DN 100 e a água pela parede; com a linha da rede, liga nela. Selecione o ambiente ou os aparelhos (nada selecionado = todos). Mostra a prévia antes de aplicar; Tab alterna a opção; um Ctrl+Z desfaz (atalho TA)." };
-      try { R.acrescentar("instalacoes", "Instalações", "Projeto inteligente", [cmd]); } catch (e) {}
+      var cmdBar = { id: U.ID_BAR, rotulo: "Montar\nbarrilete", icone: "link", dica: "Com a caixa d'água no modelo: a saída com registro e a ventilação, o barrilete no ático descendo até cada espera de água fria, a coluna com registro, o extravasor, a limpeza e a boia; confere a pressão (NBR 5626). Selecione a caixa (nada = todas). O Traçar automaticamente já faz isto junto." };
+      try { R.acrescentar("instalacoes", "Instalações", "Projeto inteligente", [cmd, cmdBar]); } catch (e) {}
       reg[U.ID_CMD] = function () { U.tracarAuto(); return true; };
+      reg[U.ID_BAR] = function () { U.montarBarrilete(); return true; };
+      /* N23: CAIXA D'ÁGUA EM UM CLIQUE — pôs a caixa, o barrilete aparece na prévia (Enter aplica) */
+      if (!U._ouveCaixa && global.addEventListener) { U._ouveCaixa = true; global.addEventListener("bim:familia-colocada", function (ev) { U.aoColocarFamilia(ev && ev.detail); }); }
       /* a fita por DISCIPLINA (js/bimdisciplinas.js): o comando é da hidráulica — sem declarar, a aba Instalações aparecia na
          disciplina civil (e2e-bim-disciplinas [b], achado na bateria das pendências finais, 18/10/2026) */
-      try { var BD = global.BimDisciplinas; if (BD && BD.declarar) BD.declarar([U.ID_CMD, U.ID_CTX], "hidraulica"); } catch (eD) {}
+      try { var BD = global.BimDisciplinas; if (BD && BD.declarar) BD.declarar([U.ID_CMD, U.ID_CTX, U.ID_BAR, U.ID_CTX_BAR], "hidraulica"); } catch (eD) {}
       /* o atalho de duas letras: fora (BimFita) e dentro do modo de edição (BimPrecisao.ATALHOS_CMD) */
       try { var F = global.BimFita; if (F && F.ATALHOS_FX && !F.ATALHOS_FX[U.ATALHO]) F.ATALHOS_FX[U.ATALHO] = U.ID_CMD; } catch (eF) {}
       try { if (global.BimAlinharInst && global.BimAlinharInst.atalhoAL) global.BimAlinharInst.atalhoAL(); } catch (eAL) {}   /* AL fora do modo de edição */
@@ -821,17 +941,18 @@
          ATALHO "ctx-…" com alias (a regra da fita: nada de comando em dois lugares; o _ehCtx reconhece o painel pelo prefixo) */
       /* a ação do atalho da aba contextual vai DIRETO no BimCmd: o registrar dele recusa id que não está na fita agora (o
          painel contextual só existe com seleção) */
-      try { var Cm = global.BimCmd; if (Cm && Cm._acoes) Cm._acoes[U.ID_CTX] = function () { U.tracarAuto(); return true; }; } catch (eCm) {}
+      try { var Cm = global.BimCmd; if (Cm && Cm._acoes) { Cm._acoes[U.ID_CTX] = function () { U.tracarAuto(); return true; }; Cm._acoes[U.ID_CTX_BAR] = function () { U.montarBarrilete(); return true; }; } } catch (eCm) {}
       try {
         var F2 = global.BimFita;
         if (F2 && F2.aplicarContexto && !F2._hidTracarEmbrulho) {
           var orig = F2.aplicarContexto, cmdCtx = { id: U.ID_CTX, rotulo: cmd.rotulo, icone: cmd.icone, grande: true, alias: U.ID_CMD, dica: cmd.dica };
+          var cmdCtxBar = { id: U.ID_CTX_BAR, rotulo: cmdBar.rotulo, icone: cmdBar.icone, grande: true, alias: U.ID_BAR, dica: cmdBar.dica };
           F2._hidTracarEmbrulho = true;
           F2.aplicarContexto = function (cat) {
             var r = orig.apply(this, arguments);
             try {
               var p = cat ? U._ctxExtra(this._selecao ? this._selecao() : []) : null, Rb = global.BimRibbon, m = p && Rb && Rb.aba ? Rb.aba("modificar") : null;
-              if (m) { m.paineis.push({ nome: p.nome, comandos: [cmdCtx] }); if (cat.k === "geral") m.rotulo = "Modificar | " + p.rot; }
+              if (m) { m.paineis.push({ nome: p.nome, comandos: [p.ids[0] === U.ID_BAR ? cmdCtxBar : cmdCtx] }); if (cat.k === "geral") m.rotulo = "Modificar | " + p.rot; }
             } catch (eC) {}
             return r;
           };
@@ -895,13 +1016,17 @@
     /* BimFita.aplicarContexto pergunta: o painel extra da seleção (null = nada); rot = o nome da aba contextual */
     _ctxExtra: function (uids) {
       var c = U._ctx(); if (!c || !arr(uids).length) return null;
+      if (U._caixaSel(c, uids)) return { nome: "Projeto inteligente", ids: [U.ID_BAR], rot: "Reservatório" };   /* FRENTE H8: a caixa d'água selecionada */
       var e = U.escopo(c, uids); if (e.erro) return null;
       return { nome: "Projeto inteligente", ids: [U.ID_CMD], rot: e.tipo === "ambiente" ? "Ambientes" : "Aparelhos" };
     },
     /* o botão direito no ambiente (ou num aparelho) — js/gestao.js _nivAquiLigarMenu */
     itensMenu: function (o) {
       o = o || {};
-      var c = U._ctx(); if (!c || !U._aparelhosDe(c).length) return [];
+      var c = U._ctx(); if (!c) return [];
+      var cxM = o.uid ? U._caixaSel(c, [String(o.uid)]) : null;   /* FRENTE H8: botão direito na caixa d'água */
+      if (cxM) return [{ id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }];
+      if (!U._aparelhosDe(c).length) return [];
       var K = dep("HidKit"), uid = o.uid ? String(o.uid) : null, alvo = null;
       if (uid) { var e1 = U.escopo(c, [uid]); if (!e1.erro) alvo = [uid]; }
       var p = o.ponto ? { x: o.ponto[0], z: o.ponto[1] } : null;
@@ -986,8 +1111,13 @@
       var out = K.decisoesDoModelo(estado, avaliarFam, ops).map(function (k) { return { elemento: "Kit de " + k.famInst + " — " + k.nome, decisoes: k.decisoes, pendencias: k.pendencias }; });
       var vistos = {};
       var lista = K.achatar(ops), apag = {}; lista.forEach(function (o, i) { if (o.op === "apagar" && o.id != null) apag[o.id] = i; });
+      /* FRENTE H8: o barrilete vivo (js/hidbarrilete.js) e os prédios cujas colunas ele ligou (a pendência predio.barrilete fecha) */
+      var predLig = {}, barVistos = {};
+      lista.forEach(function (o, i) { if (o.barInfo && !(apag[o.id] > i)) arr(o.barInfo.predios).forEach(function (pid) { predLig[pid] = 1; }); });
+      lista.slice().reverse().forEach(function (o, ri) { var i = lista.length - 1 - ri; if (o.barInfo && !barVistos[o.barInfo.id] && !(apag[o.id] > i)) { barVistos[o.barInfo.id] = 1; out.push({ elemento: "Barrilete da caixa d'água " + o.barInfo.caixa + " (" + o.barInfo.colunas + " coluna(s))", decisoes: arr(o.barInfo.decisoes), pendencias: arr(o.barInfo.pendencias) }); } });
       lista.slice().reverse().forEach(function (o, ri) { var i = lista.length - 1 - ri; if (o.ambInfo && !vistos[o.ambInfo.id] && !(apag[o.id] > i)) { vistos[o.ambInfo.id] = 1; out.push({ elemento: "Ambiente " + o.ambInfo.id + " (" + arr(o.ambInfo.aparelhos).join(", ") + ")", decisoes: arr(o.ambInfo.decisoes), pendencias: arr(o.ambInfo.pendencias) }); }
-        if (o.predioInfo && !vistos["predio:" + o.predioInfo.id] && !(apag[o.id] > i)) { vistos["predio:" + o.predioInfo.id] = 1; out.push({ elemento: "Prédio " + o.predioInfo.id + " (pavimento-tipo: " + o.predioInfo.unidades + " unidade(s), " + o.predioInfo.prumadas + " shaft(s))", decisoes: arr(o.predioInfo.decisoes), pendencias: arr(o.predioInfo.pendencias) }); }
+        if (o.predioInfo && !vistos["predio:" + o.predioInfo.id] && !(apag[o.id] > i)) { vistos["predio:" + o.predioInfo.id] = 1; out.push({ elemento: "Prédio " + o.predioInfo.id + " (pavimento-tipo: " + o.predioInfo.unidades + " unidade(s), " + o.predioInfo.prumadas + " shaft(s))", decisoes: arr(o.predioInfo.decisoes), pendencias: arr(o.predioInfo.pendencias).filter(function (p) { return !(p.chave === "predio.barrilete" && predLig[o.predioInfo.id]); }) }); }
+        if (o.aqInfo && !vistos[o.aqInfo.id] && !(apag[o.id] > i)) { vistos[o.aqInfo.id] = 1; out.push({ elemento: "Água quente (" + arr(o.aqInfo.aquecedores).join(", ") + ")", decisoes: arr(o.aqInfo.decisoes), pendencias: arr(o.aqInfo.pendencias) }); }
         if (o.redeInfo && !vistos["rede:" + o.redeInfo.id] && !(apag[o.id] > i) && arr(estado && estado.hidRedes).some(function (r) { return r.id === o.redeInfo.id; })) { vistos["rede:" + o.redeInfo.id] = 1; out.push({ elemento: "Rede " + o.redeInfo.id + " (linha do coletor, " + o.redeInfo.caixas + " caixa(s) de inspeção)", decisoes: arr(o.redeInfo.decisoes), pendencias: arr(o.redeInfo.pendencias) }); } });
       return out;
     }

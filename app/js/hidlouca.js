@@ -950,9 +950,72 @@
     caixaRz(pa.m, { x0: -W * 0.3, x1: W * 0.3, y0: H * 0.18, y1: H * 0.4, z0: Pp - 0.004, z1: Pp + 0.003, r: 0.002, rad: 0.012 }, q);
     torno(pa.m, [[0.016, 0], [0.016, 0.01], [0.012, 0.014]], q.n, { c: [W * 0.18, H * 0.29, Pp], eixo: [0, 0, 1] });
     torno(pa.m, [[0.016, 0], [0.016, 0.01], [0.012, 0.014]], q.n, { c: [-W * 0.18, H * 0.29, Pp], eixo: [0, 0, 1] });
-    [W * 0.25, 0, -W * 0.25].forEach(function (x) { torno(cn.m, [[0.012, 0], [0.012, 0.05], [0.015, 0.052], [0.015, 0.062]], q.n, { c: [x, 0, Pp * 0.45], eixo: [0, -1, 0] }); });
-    torno(cn.m, [[0.034, 0], [0.034, 0.1]], q.n + 4, { c: [0, H, Pp * 0.5], eixo: [0, 1, 0] });
+    /* FRENTE H6: o aquecedor ELÉTRICO de passagem usa o mesmo corpo (P.ch = 0: sem a ligação de gás do meio nem a chaminé) */
+    var semGas = P.ch != null && P.ch < 0.5;
+    (semGas ? [W * 0.25, -W * 0.25] : [W * 0.25, 0, -W * 0.25]).forEach(function (x) { torno(cn.m, [[0.012, 0], [0.012, 0.05], [0.015, 0.052], [0.015, 0.062]], q.n, { c: [x, 0, Pp * 0.45], eixo: [0, -1, 0] }); });
+    if (!semGas) torno(cn.m, [[0.034, 0], [0.034, 0.1]], q.n + 4, { c: [0, H, Pp * 0.5], eixo: [0, 1, 0] });
     partes.push(ga, pa, cn);
+    return partes;
+  }
+  /* ---------- FRENTE H6: aquecedor de ACUMULAÇÃO (boiler) — cilindro do catálogo (Diâmetro × Altura; horizontal: × Comprimento).
+     Origem = centro da face de baixo, rente à parede (o corpo sai D da parede, Z local). P.hz = 1 horizontal; P.gas = 1 a gás (chaminé
+     e defletor no topo); P.vs = 1 válvula de segurança na entrada de água fria (o manual manda: entre o registro e o aquecedor), com
+     altura P.vh abaixo do corpo; P.xa = posição X da entrada de água fria. Tampos abaulados e cintas: proporção de desenho. */
+  /* ---------- N23 (23/10/2026): BASE DE APOIO da caixa d'água elevada — a forma (o js/hidbaseapoio.js dimensiona e escolhe as seções).
+     4 pilares nos cantos; 2 vigas principais ao longo de X sobre os pilares; barrotes ao longo de Z sobre as vigas; tablado no topo;
+     travessas a meia altura nas 4 faces e as diagonais em X (o contraventamento que o cálculo considera: pilar travado, K = 1).
+     Origem = centro da base, no apoio; topo do tablado = H. P.met = 1: metálica (tubo quadrado, chapa xadrez); 0: madeira serrada. */
+  function geoBaseCaixa(P, q) {
+    var L = P.L, H = P.H, sp = P.sp, bv = P.bv, hv = P.hv, bb = P.bb, hb = P.hb, et = P.et, nb = Math.max(2, Math.round(P.nb || 0)), met = P.met > 0.5;
+    var rr = met ? 0.002 : 0.0005, rad = met ? 0.004 : 0.0008;   /* quina: tubo dobrado x madeira serrada (desenho) */
+    var es = parte("estrutura", met ? "Estrutura metálica (pilares, vigas, barrotes, travessas e diagonais)" : "Estrutura de madeira (pilares, vigas, barrotes, travessas e diagonais)", met ? "metal preto" : "madeira escura");
+    var tb = parte("tablado", met ? "Chapa xadrez do tablado" : "Tablado de tábuas", met ? ESCURO : "madeira deck"), partes = [es, tb];
+    var hP = Math.max(sp, H - et - hb - hv), a = L / 2 - sp / 2;   /* topo do pilar = fundo da viga */
+    function bx(m, x0, x1, y0, y1, z0, z1) { caixaR(m, { x0: x0, x1: x1, y0: y0, y1: y1, z0: z0, z1: z1, r: rr, rad: rad }, q); }
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (s) { bx(es.m, s[0] * a - sp / 2, s[0] * a + sp / 2, 0, hP, s[1] * a - sp / 2, s[1] * a + sp / 2); });
+    [-1, 1].forEach(function (s) { bx(es.m, -L / 2, L / 2, hP, hP + hv, s * a - bv / 2, s * a + bv / 2); });
+    for (var i = 0; i < nb; i++) { var x = -L / 2 + bb / 2 + (L - bb) * i / (nb - 1); bx(es.m, x - bb / 2, x + bb / 2, hP + hv, hP + hv + hb, -L / 2, L / 2); }
+    bx(tb.m, -L / 2, L / 2, H - et, H, -L / 2, L / 2);
+    /* travessas a meia altura (entre as faces internas dos pilares) e diagonais do pé de um pilar ao alto do outro, nas 4 faces */
+    var yt = hP / 2, ht = Math.min(sp, hv) * 0.8, bt = sp * 0.6, td = sp * 0.5, y0 = Math.min(0.05, hP * 0.1), y1 = hP - Math.min(0.05, hP * 0.1);
+    function diag(x0, z0, ya, x1, z1, yb) { loft(es.m, [anelRR(ya, x0, z0, td / 2, td / 2, rad, q.k), anelRR(yb, x1, z1, td / 2, td / 2, rad, q.k)]); }
+    var e = a - sp / 2 - td / 2;
+    [-1, 1].forEach(function (s) {
+      bx(es.m, -a + sp / 2, a - sp / 2, yt - ht / 2, yt + ht / 2, s * a - bt / 2, s * a + bt / 2);
+      bx(es.m, s * a - bt / 2, s * a + bt / 2, yt - ht / 2, yt + ht / 2, -a + sp / 2, a - sp / 2);
+      if (hP > 4 * td) { diag(-e, s * a, y0, e, s * a, y1); diag(e, s * a, y0, -e, s * a, y1); diag(s * a, -e, y0, s * a, e, y1); diag(s * a, e, y0, s * a, -e, y1); }
+    });
+    return partes;
+  }
+  function geoBoiler(P, q) {
+    var D = P.D, R = D / 2, H = P.H, Lh = P.Lh > 0 ? P.Lh : D, hz = P.hz > 0.5, partes = [], N = q.N + 8;
+    var co = parte("corpo", hz ? "Corpo do boiler (horizontal)" : "Corpo do boiler", BRANCO), ci = parte("cintas", "Cintas e tampos", CLARO), cn = parte("ligacoes", "Ligações", LATAO, true);
+    var zc = R + 0.004, k = Math.min(R * 0.18, 0.06);
+    if (!hz) {
+      torno(co.m, [[0, 0], [R * 0.7, 0.004], [R * 0.96, k * 0.55], [R, k], [R, H - k], [R * 0.96, H - k * 0.55], [R * 0.7, H - 0.004], [0, H]], N, { c: [0, 0, zc] });
+      [k, H - k].forEach(function (y) { torno(ci.m, [[R * 1.005, y - 0.012], [R * 1.012, y - 0.008], [R * 1.012, y + 0.008], [R * 1.005, y + 0.012]], N, { c: [0, 0, zc], fechado: true }); });
+      if (P.gas > 0.5) {
+        var cm = parte("chamine", "Defletor e saída da chaminé", ESCURO);
+        torno(cm.m, [[R * 0.28, 0], [R * 0.32, 0.03], [R * 0.32, 0.08], [R * 0.2, 0.1], [R * 0.17, 0.1], [R * 0.17, 0.22]], q.n + 6, { c: [0, H, zc], eixo: [0, 1, 0] });
+        partes.push(cm);
+      }
+    } else {
+      torno(co.m, [[0, -Lh / 2], [R * 0.7, -Lh / 2 + 0.004], [R * 0.96, -Lh / 2 + k * 0.55], [R, -Lh / 2 + k], [R, Lh / 2 - k], [R * 0.96, Lh / 2 - k * 0.55], [R * 0.7, Lh / 2 - 0.004], [0, Lh / 2]], N, { c: [0, R, zc], eixo: [1, 0, 0] });
+      [-Lh / 2 + k, Lh / 2 - k].forEach(function (x) { torno(ci.m, [[R * 1.005, x - 0.012], [R * 1.012, x - 0.008], [R * 1.012, x + 0.008], [R * 1.005, x + 0.012]], N, { c: [0, R, zc], eixo: [1, 0, 0], fechado: true }); });
+      /* suportes de parede */
+      [-Lh / 2 + Lh * 0.2, Lh / 2 - Lh * 0.2].forEach(function (x) { caixaR(ci.m, { x0: x - 0.02, x1: x + 0.02, y0: R * 0.2, y1: R * 1.8, z0: 0, z1: zc * 0.35, r: 0.003, rad: 0.006 }, q); });
+    }
+    /* as duas ligações de água (embaixo; a gás: em cima) */
+    var xa = P.xa, yL = P.gas > 0.5 && !hz ? H : 0, sg = P.gas > 0.5 && !hz ? 1 : -1;
+    [xa, -xa].forEach(function (x) { torno(cn.m, [[0.013, 0], [0.013, 0.03], [0.017, 0.032], [0.017, 0.045]], q.n, { c: [x, yL, zc], eixo: [0, sg, 0] }); });
+    if (P.vs > 0.5 && P.vh > 0) {
+      /* válvula de segurança (latão) e a saída de alívio voltada para a frente */
+      var vs = parte("valvula-seguranca", "Válvula de segurança (entrada de água fria)", LATAO, true), vh = P.vh;
+      torno(vs.m, [[0.016, 0], [0.016, vh * 0.3], [0.024, vh * 0.35], [0.024, vh * 0.75], [0.016, vh * 0.8], [0.016, vh]], q.n, { c: [xa, -vh, zc], eixo: [0, 1, 0] });
+      torno(vs.m, [[0.01, 0], [0.01, 0.04]], q.n, { c: [xa, -vh * 0.55, zc], eixo: [0, 0, 1] });
+      partes.push(vs);
+    }
+    partes.unshift(co, ci); partes.push(cn);
     return partes;
   }
 
@@ -1039,14 +1102,14 @@
     lavatorio: geoLavatorio, cuba: geoCuba, pia: geoPia, tanque: geoTanque, mictorio: geoMictorio,
     chuveiro: geoChuveiro, ducha_higienica: geoDucha, torneira: geoTorneira, misturador: geoMisturador, registro: geoRegistro,
     valvula_descarga: geoValvula, caixa_descarga_embutida: geoCaixaEmbutida, caixa_sifonada: geoCaixaSifonada, ralo: geoRalo, caixa_cil: geoCaixaCil,
-    reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor,
+    reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto
   };
   /* ORÇAMENTO de triângulos do nível 0 (perto), por gerador — tools/test-hid-louca.js mede e reprova acima */
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 800, caixa_descarga_embutida: 1400,
-    caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, reservatorio: 3200, bomba: 6000, aquecedor: 1350,
+    caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */

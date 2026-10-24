@@ -571,13 +571,25 @@
         { nome: "Modulos", tipoDado: "inteiro", escopo: "tipo", valor: 1, grupo: "Elétrica" },
         { nome: "Placa", tipoDado: "simnao", escopo: "tipo", valor: true, grupo: "Elétrica", descricao: "Incluindo suporte e placa" },
         { nome: "Altura_montagem", tipoDado: "comprimento", escopo: "instancia", valor: 1.30, grupo: "Restrições", descricao: "Do piso ao centro da caixa" },
-        { nome: "Material", tipoDado: "material", escopo: "tipo", valor: "Plástico branco", grupo: "Materiais" }
+        { nome: "Material", tipoDado: "material", escopo: "tipo", valor: "Plástico branco", grupo: "Materiais" },
+        /* LIGAÇÃO ELÉTRICA (21/10/2026, contrato docs/eletrica/CONTRATO-ILUMINACAO.md): o que cada MÓDULO comanda e o esquema dele */
+        { nome: "Comandos", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "Comando de cada módulo, na ordem dos módulos (separados por vírgula). As luminárias com o mesmo Comando acendem juntas." },
+        { nome: "Esquemas", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "Esquema de cada módulo neste ponto: simples, paralelo (three-way) ou intermediario (four-way)." }
       ],
       tipos: [
         { id: "s1", nome: "Simples, 1 módulo", valores: {} },
         { id: "s2", nome: "Simples, 2 módulos", valores: { Modulos: 2 } },
+        { id: "s3", nome: "Simples, 3 módulos", valores: { Modulos: 3 } },
         { id: "p1", nome: "Paralelo (three-way), 1 módulo", valores: { Tipo_interruptor: "paralelo" } },
+        { id: "p2", nome: "Paralelo (three-way), 2 módulos", valores: { Tipo_interruptor: "paralelo", Modulos: 2 } },
+        { id: "p3", nome: "Paralelo (three-way), 3 módulos", valores: { Tipo_interruptor: "paralelo", Modulos: 3 } },
         { id: "i1", nome: "Intermediário (four-way), 1 módulo", valores: { Tipo_interruptor: "intermediario" } },
+        { id: "i2", nome: "Intermediário (four-way), 2 módulos", valores: { Tipo_interruptor: "intermediario", Modulos: 2 } },
+        { id: "i3", nome: "Intermediário (four-way), 3 módulos", valores: { Tipo_interruptor: "intermediario", Modulos: 3 } },
+        /* módulos de esquemas diferentes na mesma placa (ex.: o geral em paralelo e os spots simples): a SINAPI 06/2026 não tem
+           composição única — o quantitativo fica pendente com o motivo */
+        { id: "m2", nome: "Misto, 2 módulos", valores: { Tipo_interruptor: "misto", Modulos: 2 } },
+        { id: "m3", nome: "Misto, 3 módulos", valores: { Tipo_interruptor: "misto", Modulos: 3 } },
         { id: "b1", nome: "Bipolar, 1 módulo", valores: { Tipo_interruptor: "bipolar" } }
       ],
       solidos: [{ id: "placa", nome: "Placa 4×2", forma: "caixa", x: "0", y: "Altura_montagem - 0.06", z: "0", dx: "0.075", dy: "0.12", dz: "0.01", material: "Material" }],
@@ -602,7 +614,10 @@
         { nome: "Temperatura_K", tipoDado: "numero", escopo: "tipo", valor: 4000, grupo: "Fotometria", descricao: "Temperatura de cor em kelvin: 2700–3000 branco quente, 4000 neutro, 5000–6500 frio. A ficha do produto manda." },
         { nome: "Tipo_luz", tipoDado: "texto", escopo: "tipo", valor: "painel", grupo: "Fotometria", descricao: "Como a luz sai, para o render: painel (pela face de baixo), spot (em facho) ou pendente (para todos os lados)." },
         { nome: "Angulo_facho", tipoDado: "angulo", escopo: "tipo", valor: 120, grupo: "Fotometria", descricao: "Abertura do facho em graus (spot PAR20 usual: 36°)." },
-        { nome: "Circuito", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "Circuito ou comando: no render, as luminárias do mesmo circuito ligam e desligam juntas." }
+        { nome: "Circuito", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "Circuito ou comando: no render, as luminárias do mesmo circuito ligam e desligam juntas." },
+        /* LIGAÇÃO ELÉTRICA (21/10/2026, contrato docs/eletrica/CONTRATO-ILUMINACAO.md) */
+        { nome: "Comando", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "O comando (grupo de acendimento) desta luminária: as do mesmo Comando acendem juntas no interruptor." },
+        { nome: "Circuito_quadro", tipoDado: "texto", escopo: "instancia", valor: "", grupo: "Elétrica", descricao: "O circuito de proteção no quadro (C1, C2…)." }
       ],
       tipos: [
         { id: "pq18e", nome: "Plafon quadrado LED 18 W, de embutir", valores: {} },

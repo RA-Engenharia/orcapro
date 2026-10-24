@@ -1994,7 +1994,7 @@
       var Rd = BI.rede(st, avaliarFam), cods = {}, grupos = {}, ordemS = [];
       /* código SINAPI SÓ quando o BimInst já deu (status ok, da tabela gerada do
          mapa); pendente vai sem classificação — nunca a composição "parecida" */
-      try { BI.servicosOrc(st, avaliarFam).forEach(function (l) { if (l && l.codigo) cods[l.id] = String(l.codigo); }); }
+      try { BI.servicosOrc(st, avaliarFam).forEach(function (l) { if (l && l.codigo && cods[l.id] == null) cods[l.id] = String(l.codigo); });   /* a PRIMEIRA linha da peça é a peça (a seguinte é acessório dela: prolongador do ralo, isolamento do tubo, tampa da caixa) — a última linha apagava o código da própria peça (ralo 89709 saía como 11735, o do prolongador) */ }
       catch (eS) { avisos.push("instalações: a tabela SINAPI não respondeu (" + (eS && eS.message) + ") — tubos e peças foram sem código"); }
       function noSistema(s, el) { if (!grupos[s]) { grupos[s] = []; ordemS.push(s); } grupos[s].push(el.ent); el.sistema = s; }
       function propsBase(el, sis, mat, extra) {

@@ -82,6 +82,13 @@
     oque: "Paginação das placas, executivo, memorial, orçamento e pranchas do sistema Blocok." });
   MODULOS.push({ id: "marmoraria", nome: "Marmoraria", area: "bim", tipo: "extra", extra: "marmoraria",
     oque: "Bancadas de pedra, executivo, plano de chapa, tabela de preços, orçamento e proposta do marmorista." });
+  /* PRANCHA VIVA (21/10/2026, js/pranchavivamodulo.js): módulo à parte, como a Marmoraria */
+  /* ⚠ soVisualiza: a Prancha Viva MOSTRA o modelo (folha → 3D), não o edita nem gera entregável do BIM. Em teste, ela mantém
+     a tela do BIM de pé (é nela que roda), mas NÃO destrava comando que edita o modelado, comando comum nem a marca dos
+     entregáveis. Roteiro do defeito (21/10/2026): com o módulo novo em teste e o Modela vencido, o "copiar" voltou a rodar
+     (tools/test-teste-modulo.js "PLUS com o Modela vencido" reprovou). */
+  MODULOS.push({ id: "pranchaviva", nome: "Prancha Viva", area: "bim", tipo: "extra", extra: "pranchaviva", soVisualiza: true,
+    oque: "A prancha do projeto que abre o 3D no ponto tocado: corte na cota, disciplinas, medir, a peça com o item do orçamento e a etapa, e o pacote para o celular." });
   var POR_ID = {};
   MODULOS.forEach(function (m) { POR_ID[m.id] = m; });
   var IDS = MODULOS.map(function (m) { return m.id; });
@@ -436,8 +443,10 @@
       var dono = function (k) { try { return global.localStorage.getItem(k) === "1"; } catch (e) { return false; } };
       d.blocok = dono("orcapro:blocok:owner") || !!(base && base.extras && base.extras.blocok) || this._blocokEmail();
       d.marmoraria = dono("orcapro:marmoraria:owner") || !!(base && base.extras && base.extras.marmoraria);
-      /* o BIM: a Gestão comprada (plus/bim), a licença só do Modela, ou qualquer direito do Modela (a modelagem abre o BIM) */
-      d.bim = so || gest || modelaAlgo || d.blocok || d.marmoraria;
+      d.pranchaviva = dono("orcapro:pranchaviva:owner") || !!(base && base.extras && base.extras.pranchaviva);
+      /* o BIM: a Gestão comprada (plus/bim), a licença só do Modela, ou qualquer direito do Modela (a modelagem abre o BIM;
+         a Prancha Viva abre o 3D do modelo) */
+      d.bim = so || gest || modelaAlgo || d.blocok || d.marmoraria || d.pranchaviva;
       return d;
     },
     _blocokEmail: function () {
@@ -455,7 +464,7 @@
       var f = {}, M = global.Modela, enc = false;
       try { var s = M && M.statusBase ? M.statusBase() : null; enc = !!(s && s.teste && s.teste.encerrado); } catch (e) {}
       if (!cfg.substituiTeste7Dias || (!cfg.aposTeste7Dias && enc)) {
-        DISC.forEach(function (x) { f["modela:" + x] = true; }); f.blocok = true; f.marmoraria = true;
+        DISC.forEach(function (x) { f["modela:" + x] = true; }); f.blocok = true; f.marmoraria = true; f.pranchaviva = true;
       }
       return f;
     },
@@ -507,6 +516,7 @@
       DISC.forEach(function (d) { o[d] = (s.mods["modela:" + d] || {}).estado || "fora"; });
       o.blocok = (s.mods.blocok || {}).estado || "fora";
       o.marmoraria = (s.mods.marmoraria || {}).estado || "fora";
+      o.pranchaviva = (s.mods.pranchaviva || {}).estado || "fora";
       return o;
     },
 
@@ -560,12 +570,12 @@
         var at = []; try { at = this.ativos(); } catch (eA) { at = []; }
         return MODULOS.some(function (m) {
           var x = s.mods[m.id];
-          return m.area === area && m.id !== area && x && x.estado === "teste" && x.usadoMs > 0 && at.indexOf(m.id) >= 0;
+          return m.area === area && m.id !== area && !m.soVisualiza && x && x.estado === "teste" && x.usadoMs > 0 && at.indexOf(m.id) >= 0;
         });
       }
       return MODULOS.some(function (m) {
         var x = s.mods[m.id];
-        return m.area === area && x && (x.estado === "teste" || x.estado === "vencido") && x.usadoMs > 0;
+        return m.area === area && !m.soVisualiza && x && (x.estado === "teste" || x.estado === "vencido") && x.usadoMs > 0;
       });
     },
     /* o módulo da tela está vencido/pausado? (App._trialBloqueado pergunta isto) — no BIM, uma disciplina ainda
@@ -611,7 +621,7 @@
        "extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar", "editar-tipo", "combinar", "componente", "eixo"].forEach(function (k) { o[k] = 1; });
       return o;
     })(),
-    CMD_MODULO: { "blocok-exec": "blocok", "blocok-pecas": "blocok", "blocok-docs": "blocok" },
+    CMD_MODULO: { "blocok-exec": "blocok", "blocok-pecas": "blocok", "blocok-docs": "blocok", "prancha-viva": "pranchaviva" },
     modulosDoComando: function (cmdId) {
       if (this.CMD_MODULO[cmdId]) return { aba: this._abaDe(cmdId), mods: [this.CMD_MODULO[cmdId]] };
       var D = global.BimDisciplinas, aba = this._abaDe(cmdId), de = null, self = this;
@@ -646,14 +656,14 @@
       }
       /* comando comum (arquivo, mover, vista…): vale se ALGUM módulo da área do BIM está liberado. Com tudo vencido,
          só a aba Vista continua (olhar o que foi feito; editar e exportar não) */
-      var algum = MODULOS.some(function (m) { return m.area === "bim" && livre(m.id) && est(m.id) !== "fora"; }) || est("bim") === "fora";
+      var algum = MODULOS.some(function (m) { return m.area === "bim" && !m.soVisualiza && livre(m.id) && est(m.id) !== "fora"; }) || est("bim") === "fora";
       /* os comuns que EDITAM o modelo (Modificar, volume livre, grupos, tipo): com o BIM comprado mas nenhuma
          disciplina do Modela liberada, o modelador só continua de pé porque o teste venceu — mover e copiar o que foi
          modelado no teste seria editar sem comprar. Antes do teste de 1 hora o modelador nem aparecia para essa pessoa. */
       if (algum && this.EDITA_MODELO[cmdId]) {
-        var modLivre = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "comprado" || est(m.id) === "teste" || est(m.id) === "fora"); });
+        var modLivre = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (est(m.id) === "comprado" || est(m.id) === "teste" || est(m.id) === "fora"); });
         if (!modLivre) {
-          var alvoM = MODULOS.filter(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "vencido" || est(m.id) === "pausado"); })[0];
+          var alvoM = MODULOS.filter(function (m) { return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (est(m.id) === "vencido" || est(m.id) === "pausado"); })[0];
           if (alvoM) return recusa(alvoM.id);
         }
       }
@@ -682,9 +692,9 @@
       var est = function (id) { return (s.mods[id] || {}).estado || "fora"; };
       var tela = this.bloqueiaTela();
       if (tela) return { modulo: tela, classicas: false };
-      var livre = MODULOS.some(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "comprado" || e === "teste" || e === "fora"); });
+      var livre = MODULOS.some(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (e === "comprado" || e === "teste" || e === "fora"); });
       if (livre) return null;
-      var alvo = MODULOS.filter(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "vencido" || e === "pausado"); })[0];
+      var alvo = MODULOS.filter(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (e === "vencido" || e === "pausado"); })[0];
       return alvo ? { modulo: alvo.id, classicas: true } : null;
     },
     guardaEdicao: function (novas, opts) {

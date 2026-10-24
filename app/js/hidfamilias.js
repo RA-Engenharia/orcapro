@@ -222,7 +222,7 @@
         { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2" }
       ], material: "Louça branca" },
 
-    { id: "hid-cuba-apoio", nome: "Cuba / lavatório de bancada", categoria: "loucas", sistemas: ["esgoto"], tipos: ["cuba"],
+    { id: "hid-cuba-apoio", nome: "Cuba / lavatório de bancada", categoria: "loucas", sistemas: ["esgoto", "agua_fria", "agua_quente"], tipos: ["cuba"],
       descricao: "Cuba de apoio, de embutir ou de semi-encaixe. Origem = superfície do tampo, centro da cuba; ela sobe Altura_cuba acima do tampo.",
       avisos: [AV_LETRAS, AV_REGRA, AV_CONECTOR, "Esgoto 'abaixo do tampo' é a cota de cuba com válvula oculta (pág. 116); cuba comum varia por produto (tabela 3, pág. 115)."],
       geo: [
@@ -233,7 +233,14 @@
         DN("DN_esgoto", null, "DN do esgoto")
       ],
       solidos: [{ id: "cuba", nome: "Cuba", forma: "caixa", x: "0", y: "0", z: "0", dx: "Largura", dy: "Altura_cuba", dz: "Profundidade", material: "Material" }],
-      conectores: [{ id: "esgoto", nome: "Esgoto (válvula/sifão)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "0" }],
+      /* FRENTE H7 (21/10/2026 — o Rogério: "coloquei uma cuba e ele não queria colocar de jeito nenhum a água fria nela, colocou só o
+         esgoto"): a cuba de bancada só tinha o ponto de ESGOTO e o kit do lavatório ("ponto" af) acusava "sem ponto de água fria na
+         família". Agora os pontos de água da TORNEIRA da cuba ficam na PAREDE atrás dela (Distancia_parede, que o Traçar
+         automaticamente mede): mesa = 220 mm abaixo do tampo, parede = 220 mm acima (Deca p.116, a mesma leitura do js/marmoraria.js);
+         água quente só com misturador (Agua_quente). Parâmetros e o engate flexível no bloco de geometria (adiante). */
+      conectores: [{ id: "esgoto", nome: "Esgoto (válvula/sifão)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "0" },
+        { id: "af", nome: "Água fria (torneira da cuba)", sistema: "agua_fria", dn: "DN_agua", x: "se(Agua_quente; Agua_afastamento/2; 0)", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede" },
+        { id: "aq", nome: "Água quente (misturador da cuba)", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede", visivel: "Agua_quente" }],
       material: "Louça branca" },
 
     { id: "hid-pia-cozinha", nome: "Pia de cozinha", categoria: "mobiliario", sistemas: ["esgoto"], tipos: [], generico: true,
@@ -498,6 +505,36 @@
       { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "0.03 + Largura/2", z: "0" },
       { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + Comprimento*0.3", y: "Altura", z: "0" }
     ], material: "Azul" });
+  /* N23 (23/10/2026): BASE DE APOIO da caixa d'água elevada — pedido do Rogério: "se a pressão não atende, sugere elevar a caixa com base
+     de apoio, madeira ou metálica, estrutura + caixa em cima, peso cheio no cálculo do apoio, orçada". As cotas e as seções vêm do
+     dimensionamento (js/hidbaseapoio.js), gravadas na INSTÂNCIA; o preço da metálica (sem composição SINAPI) vai pela referência
+     pública marcada PROVISÓRIA (Preco_unitario/Fonte_preco — o Orçamento do modelo a lança como "REF-MERC"); a de madeira, pelas
+     composições SINAPI dos serviços (op "orcar"). */
+  function IC(nome, def, desc) { var g = I(nome, def, null, desc); g.semConferir = true; return g; }
+  ESPECS.push({
+    id: "hid-base-caixa", nome: "Base de apoio da caixa d'água (madeira ou metálica)", categoria: "equipamento", sistemas: ["agua_fria"], tipos: [], generico: true,
+    descricao: "Torre de apoio da caixa d'água elevada: 4 pilares, 2 vigas, barrotes, tablado, travessas e contraventamento em X nas 4 faces. Origem = centro da base, no apoio (laje/forro); o topo do tablado é a base da caixa. Seções pelo dimensionamento (peso da caixa CHEIA).",
+    avisos: ["As seções e as cotas vêm do pré-dimensionamento (Corrigir da pressão / Montar barrilete): o vento (NBR 6123) e a ligação na laje de apoio ficam com o RT."],
+    geo: [
+      IC("Lado", 1.3, "Lado do tablado (m)"), IC("Altura", 1.0, "Altura do apoio ao topo do tablado (m)"), IC("Secao_pilar", 0.15, "Seção quadrada do pilar (m)"),   /* hid:ok reserva de desenho: o dimensionamento grava */
+      IC("Base_viga", 0.06, "Base da viga principal (m)"), IC("Altura_viga", 0.16, "Altura da viga principal (m)"), IC("Base_barrote", 0.06, "Base do barrote (m)"),   /* hid:ok reserva de desenho */
+      IC("Altura_barrote", 0.12, "Altura do barrote (m)"), IC("Espessura_tablado", 0.025, "Espessura do tablado (m)"),   /* hid:ok reserva de desenho */
+      X("N_barrotes", "numero", 4, "Instalação", "Número de barrotes sobre as vigas"), X("Metalica", "simnao", false, "Instalação", "Estrutura metálica (tubo quadrado, chapa xadrez); não = madeira serrada"),   /* hid:ok reserva de desenho */
+      X("Peso_cheio_kN", "numero", 0, "Instalação", "Peso da caixa CHEIA que o apoio recebe (kN, característico) — do dimensionamento"),
+      X("Preco_unitario", "numero", 0, "Instalação", "Preço da base (R$) quando não há composição SINAPI (a metálica): referência pública"),
+      X("Fonte_preco", "texto", "", "Instalação", "Fonte do preço (base pública, código, data)"), X("Peca_catalogo", "texto", "", "Instalação", "Identificação da referência de preço"),
+      X("Preco_provisorio", "simnao", false, "Instalação", "Preço provisório (cotar com o fornecedor)"), X("Motivo_preco", "texto", "", "Instalação", "Por que o preço é provisório"), X("Data_preco", "texto", "", "Instalação", "Data-base do preço")
+    ],
+    solidos: [], conectores: [], material: "madeira escura",
+    /* os SERVIÇOS MEDIDOS da base (o Orçamento do modelo: op "orcar" com medida "servico:<id>"; o código é da instância — a madeira; a
+       metálica vai pela referência pública e não usa estes). As medidas são as da forma (js/hidlouca.js geoBaseCaixa) */
+    servicos: [
+      { id: "pilares", descricao: "Pilares da base (4 × a altura do pilar)", unidade: "m", quantidade: "4 * max(Secao_pilar; Altura - Espessura_tablado - Altura_barrote - Altura_viga)", codigo: "" },
+      { id: "vigas", descricao: "Vigas principais (2 × o lado)", unidade: "m", quantidade: "2 * Lado", codigo: "" },
+      { id: "barrotes", descricao: "Barrotes (n × o lado)", unidade: "m", quantidade: "N_barrotes * Lado", codigo: "" },
+      { id: "contravento", descricao: "Travessas e diagonais (X nas 4 faces)", unidade: "m", quantidade: "4 * (Lado - Secao_pilar) + 8 * raiz((Lado - 2 * Secao_pilar) * (Lado - 2 * Secao_pilar) + (Altura - Espessura_tablado - Altura_barrote - Altura_viga) * (Altura - Espessura_tablado - Altura_barrote - Altura_viga))", codigo: "" },
+      { id: "tablado", descricao: "Tablado (lado × lado)", unidade: "m2", quantidade: "Lado * Lado", codigo: "" }
+    ] });
   ESPECS.push({
     id: "hid-hidrante-abrigo", nome: "Abrigo de hidrante (mangueira + registro)", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
     descricao: "Abrigo de mangueira com porta de vidro. Origem = piso, centro da caixa; a parede fica em Z = −Profundidade/2.",
@@ -837,7 +874,14 @@
     "hid-reservatorio-tanque": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "0", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "2" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
       x: [G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_inspecao_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")] },
     "hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
-    "hid-aquecedor-gas": { g: "aquecedor", p: { W: "Largura", H: "Altura", P: "Profundidade" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] }
+    "hid-base-caixa": { g: "base_caixa", p: { L: "Lado", H: "Altura", sp: "Secao_pilar", bv: "Base_viga", hv: "Altura_viga", bb: "Base_barrote", hb: "Altura_barrote", nb: "N_barrotes", et: "Espessura_tablado", met: "se(Metalica; 1; 0)" },
+      env: ["0", "0", "0", "Lado", "Altura", "Lado"], x: [] },
+    "hid-aquecedor-gas": { g: "aquecedor", p: { W: "Largura", H: "Altura", P: "Profundidade", ch: "1" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] },
+    /* FRENTE H6: o elétrico de passagem (mesmo corpo, sem gás nem chaminé) e os de ACUMULAÇÃO (boiler elétrico de parede e a gás de piso) */
+    "hid-aquecedor-eletrico-passagem": { g: "aquecedor", p: { W: "Largura", H: "Altura", P: "Profundidade", ch: "0" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] },
+    "hid-boiler-eletrico": { g: "boiler", p: { D: "Diametro", H: "se(Horizontal; Diametro; Altura)", Lh: "se(Horizontal; Comprimento; 0)", hz: "se(Horizontal; 1; 0)", gas: "0", vs: "se(Valvula_seguranca; 1; 0)", vh: "Valvula_altura", xa: "se(Horizontal; Comprimento/4; Diametro/4)" },
+      env: ["0", "se(Valvula_seguranca; -Valvula_altura; 0)", "Diametro/2", "se(Horizontal; Comprimento; Diametro)", "se(Horizontal; Diametro; Altura) + se(Valvula_seguranca; Valvula_altura; 0)", "Diametro"], x: [] },
+    "hid-boiler-gas": { g: "boiler", p: { D: "Diametro", H: "Altura", Lh: "0", hz: "0", gas: "1", vs: "0", vh: "0", xa: "Diametro/4" }, env: ["0", "0", "Diametro/2", "Diametro", "Altura + 0.22", "Diametro"], x: [] }
   };
   /* AQUECEDOR A GÁS DE PASSAGEM (família nova): tipos = os aquecedores de passagem do catálogo. Cotas: as do
      catálogo com nome (altura_mm…) ou as da ficha impressa "Dimensões LxAxP (cm)"; conectores sem cota → a conferir */
@@ -865,6 +909,114 @@
     conectores: [
       { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45" },
       { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45" }
+    ], material: "Branco" });
+  /* FRENTE H6 (21/10/2026): NBR 13103:2020 — o TIPO quanto à exaustão (Anexo A), a POTÊNCIA e o duto viram parâmetros do tipo, lidos da
+     ficha. "B23 (exaustão forçada)" (Rinnai) = B23; "Forçada" sem dizer onde está o ventilador (Komeco) = "B22/B23" (as regras dos dois
+     são as mesmas: 6.4.2.1, 7.3), INTERPRETADO; tiragem "Natural" com chaminé (Orbis) = B11, INTERPRETADO (a ficha não diz se tem o
+     sensor AS/BS do 6.3.2.1). Sem fonte = vazio → pendência no Traçar, nunca um padrão silencioso. */
+  function SC(g) { g.semConferir = true; return g; }   /* cota que só vale numa orientação (vertical × horizontal) ou de desenho: não entra no Conferir */
+  function XC(nome, tipoDado, def, grupo, desc, le) { var o = X(nome, tipoDado, def, grupo, desc, le); o.semConferir = false; return o; }
+  function fichaImp(it, re) { var fi = it.dados && it.dados.fichaTecnicaComoImpressa, s = null; if (fi) Object.keys(fi).forEach(function (k) { if (s == null && re.test(k)) s = txt(fi[k]); }); return s; }
+  function TIPOGAS(it) {
+    var d = it.dados || {}, t = txt(d.tipoDeExaustao), m = /\b(A[123]?(AS)?|B11(AS|BS)?|B2[23]|C[135])\b/.exec(t.toUpperCase());
+    if (m) return { v: m[1], origem: "catalogo" };
+    if (/natural/i.test(t)) return { v: "B11", origem: "interpretado" };
+    var ex = fichaImp(it, /^Exaust/i) || t;
+    if (/for[cç]ad/i.test(ex)) return { v: "B22/B23", origem: "interpretado" };
+    return null;
+  }
+  function POTGAS(it) {
+    var d = it.dados || {}, n = typeof d.potenciaNominal_kW === "number" ? d.potenciaNominal_kW : null;
+    if (n == null && (typeof d.potenciaNominal_kW_GLP === "number" || typeof d.potenciaNominal_kW_GN === "number")) n = Math.max(typeof d.potenciaNominal_kW_GLP === "number" ? d.potenciaNominal_kW_GLP : 0, typeof d.potenciaNominal_kW_GN === "number" ? d.potenciaNominal_kW_GN : 0);   /* a maior dos dois gases (lado seguro) */
+    if (n == null) { var s = fichaImp(it, /^Pot[eê]ncia nominal/i), m = s ? /\(([\d.,]+)\s*kW\)/i.exec(s) : null; if (m) n = parseFloat(m[1].replace(",", ".")); }
+    return n != null && n > 0 ? { v: n, origem: "catalogo" } : null;
+  }
+  function CHAMGAS(it) {
+    var d = it.dados || {}, n = typeof d.diametroChamine_mm === "number" ? d.diametroChamine_mm : null;
+    if (n == null) { var s = fichaImp(it, /^Di[aâ]metro da chamin/i); if (s && isFinite(parseFloat(s))) n = parseFloat(s); }
+    return n != null && n > 0 ? { v: n, origem: "catalogo" } : null;
+  }
+  function DADONUM(chave) { return function (it) { var v = (it.dados || {})[chave]; return typeof v === "number" ? { v: v, origem: "catalogo" } : null; }; }
+  function DADOTXT(chave) { return function (it) { var v = (it.dados || {})[chave]; return v != null && txt(v) ? { v: txt(v), origem: "catalogo" } : null; }; }
+  var PARAM_GAS = [
+    XC("Tipo_NBR13103", "texto", "", GRUPO, "Tipo do aparelho a gás quanto à exaustão (ABNT NBR 13103:2020, Anexo A): A1/A2/A3 (AS = sensor), B11/B11AS/B11BS, B22, B23, C1/C3/C5. Vazio = a ficha não diz (pendência)", TIPOGAS),
+    XC("Potencia_kW", "numero", 0, GRUPO, "Potência nominal do aparelho a gás (kW), da ficha; 0 = a ficha não dá (pendência)", POTGAS),
+    X("Chamine_diametro_mm", "numero", 0, GRUPO, "Diâmetro do duto de exaustão da ficha (mm); 0 = a ficha não dá → NBR 13103, Anexo E, Método 2", CHAMGAS),
+    X("Chamine_saida", "texto", "fachada", "Instalação", "Por onde sai o duto de exaustão: fachada (pela parede atrás do aparelho) ou cobertura (B11 acima de 24,4 kW: NBR 13103:2020 7.2.1)")
+  ];
+  ESPECS.forEach(function (e) { if (e.id === "hid-aquecedor-gas") PARAM_GAS.forEach(function (g) { e.geo.push(g); }); });
+  /* N23 (23/10/2026, orçamento 100 %): a peça SEM composição SINAPI do produto (o chuveiro/ducha metálico — a SINAPI só tem o elétrico
+     de plástico) entra no Orçamento do modelo pela referência de PREÇO da ficha (js/hidpecas.js, estimativa com a fonte), marcada
+     PROVISÓRIA — antes ficava "pendente" e o chuveiro saía do orçamento. O "Equipar ambiente" grava estes campos na instância */
+  var PRECO_INST = [X("Preco_unitario", "numero", 0, "Instalação", "Preço da peça (R$) quando não há composição SINAPI do produto: a referência da ficha"),
+    X("Fonte_preco", "texto", "", "Instalação", "Fonte do preço (base, código, data)"), X("Peca_catalogo", "texto", "", "Instalação", "Identificação da referência de preço"),
+    X("Preco_provisorio", "simnao", false, "Instalação", "Preço provisório (cotar com o fornecedor)"), X("Motivo_preco", "texto", "", "Instalação", "Por que o preço é provisório"), X("Data_preco", "texto", "", "Instalação", "Data-base do preço")];
+  ESPECS.forEach(function (e) { if (e.id === "hid-chuveiro") PRECO_INST.forEach(function (g) { if (!e.geo.some(function (x) { return x.nome === g.nome; })) e.geo.push(JSON.parse(JSON.stringify(g))); }); });
+  /* AQUECEDOR ELÉTRICO DE PASSAGEM (central, vários pontos): Cardal Aquecedor Central (manual IM-588/R.01). Origem e conectores como o
+     de passagem a gás (centro da face de baixo, rente à parede; entradas embaixo — a ficha cota o corpo, não a posição das roscas) */
+  ESPECS.push({
+    id: "hid-aquecedor-eletrico-passagem", nome: "Aquecedor elétrico de passagem", categoria: "equipamento", sistemas: ["agua_fria", "agua_quente"], tipos: ["aquecedor_eletrico_passagem"],
+    descricao: "Aquecedor elétrico de passagem de parede (central, atende vários pontos). Origem = centro da face de baixo, rente à parede; o corpo sobe Altura e sai Profundidade da parede.",
+    avisos: [AV_CONECTOR, "Entrada de água fria e saída de água quente com rosca macho 1/2\" BSP (ficha); a posição exata das roscas na face de baixo não é cotada. O circuito exclusivo (disjuntor e fio da ficha) é do projeto elétrico: o Traçar lança o ponto de força como pendência."],
+    geo: [
+      G("Largura", 0.154, [0.08, 0.6], DIMFICHA(0, "largura_mm"), "Largura (catálogo)"),
+      G("Altura", 0.205, [0.1, 0.9], DIMFICHA(1, "altura_mm"), "Altura (catálogo)"),
+      G("Profundidade", 0.112, [0.05, 0.4], DIMFICHA(2, "profundidade_mm"), "Profundidade (catálogo)"),
+      DN("DN_agua", null, "DN das ligações de água"),
+      XC("Potencia_W", "numero", 0, GRUPO, "Potência elétrica (W) da ficha", DADONUM("potencia_W")),
+      X("Tensao_V", "texto", "", GRUPO, "Tensão (ficha)", DADOTXT("tensao_V")),
+      X("Disjuntor_A", "numero", 0, GRUPO, "Disjuntor indicado pelo fabricante (A); 0 = a ficha não dá", DADONUM("disjuntor_A")),
+      X("Bitola_mm2", "numero", 0, GRUPO, "Seção mínima do fio indicada pelo fabricante (mm²); 0 = a ficha não dá", DADONUM("bitolaFio_mm2"))
+    ],
+    solidos: [],
+    conectores: [
+      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45" }
+    ], material: "Branco" });
+  /* AQUECEDOR ELÉTRICO DE ACUMULAÇÃO (boiler de parede, vertical ou horizontal): Cumulus (manual rev. out/2004) e Albacete (manual
+     08/07/2021). A VÁLVULA DE SEGURANÇA de pressão faz parte do conjunto: o manual Cumulus (p.8) manda instalá-la na ENTRADA DE ÁGUA
+     FRIA, entre o registro de gaveta e o aquecedor, nunca na saída de água quente; o Albacete (p.4): "na entrada de água fria". A
+     entrada de água fria da família é a ponta de baixo da válvula (o Traçar liga ali; o registro fica a montante). O RESPIRO (Cumulus
+     p.3/9/10: no ponto mais alto da água quente, 0,80 m acima do nível máximo da caixa d'água, em instalação de baixa pressão) não é
+     modelado: o Traçar o declara como pendência com o valor. */
+  ESPECS.push({
+    id: "hid-boiler-eletrico", nome: "Aquecedor elétrico de acumulação (boiler)", categoria: "equipamento", sistemas: ["agua_fria", "agua_quente"], tipos: ["aquecedor_eletrico_acumulacao"],
+    descricao: "Boiler elétrico de parede (cilindro vertical ou horizontal). Origem = centro da face de baixo, rente à parede; o corpo sai Diametro da parede. Válvula de segurança na entrada de água fria (manual do fabricante).",
+    avisos: [AV_CONECTOR, "Conexões de água na face de baixo (posição não cotada na ficha). Válvula de segurança na entrada de água fria (manual Cumulus p.8; Albacete p.4). Respiro em instalação de baixa pressão: pendência do Traçar."],
+    geo: [
+      G("Diametro", 0.46, [0.25, 0.9], N("diametro_mm"), "Diâmetro do corpo (catálogo)"),
+      SC(G("Altura", 0.96, [0.3, 2.5], N("altura_mm"), "Altura total do vertical (catálogo; no horizontal não é usada)")),
+      SC(G("Comprimento", 0.94, [0.3, 2.5], N("largura_mm"), "Comprimento do horizontal (catálogo; no vertical não é usado)")),
+      DN("DN_agua", null, "DN das ligações de água"),
+      X("Horizontal", "simnao", false, GRUPO, "Boiler horizontal (lido do modelo do catálogo)", function (it) { return { v: !!it.horizontal || /horizontal/i.test(txt(it.codigo)), origem: "catalogo" }; }),
+      XC("Potencia_W", "numero", 0, GRUPO, "Potência da resistência (W) da ficha; 0 = a ficha não dá", DADONUM("potencia_W")),
+      X("Tensao_V", "texto", "", GRUPO, "Tensão (ficha)", DADOTXT("tensao_V")),
+      X("Valvula_seguranca", "simnao", true, "Instalação", "Válvula de segurança de pressão na entrada de água fria (manual do fabricante: entre o registro e o aquecedor)"),
+      SC(I("Valvula_altura", 0.12, null, "Altura da válvula de segurança abaixo do corpo (desenho: o conector de água fria é a ponta de baixo dela)"))
+    ],
+    extraDados: [["Volume_L", "volume_L", "Volume nominal (L)"]],
+    solidos: [],
+    conectores: [
+      { id: "af", nome: "Entrada de água fria (ponta da válvula de segurança)", sistema: "agua_fria", dn: "DN_agua", x: "se(Horizontal; Comprimento/4; Diametro/4)", y: "se(Valvula_seguranca; -Valvula_altura; 0)", z: "Diametro/2" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-se(Horizontal; Comprimento/4; Diametro/4)", y: "0", z: "Diametro/2" }
+    ], material: "Branco" });
+  /* AQUECEDOR A GÁS DE ACUMULAÇÃO (boiler de piso): Orbis (ficha HTML do site oficial; o manual só sai com cadastro — não baixado).
+     A ficha não cota as conexões: água fria e água quente no TOPO (o padrão do tipo; a conferir), chaminé no centro do topo. A válvula
+     de segurança para alívio de pressão é do próprio produto ("Válvula de segurança para alívio de pressão", ficha). */
+  ESPECS.push({
+    id: "hid-boiler-gas", nome: "Aquecedor a gás de acumulação (boiler)", categoria: "equipamento", sistemas: ["agua_fria", "agua_quente"], tipos: ["aquecedor_gas_acumulacao"],
+    descricao: "Boiler a gás de piso (cilindro vertical, chaminé no topo). Origem = centro da base no piso, rente à parede.",
+    avisos: [AV_CONECTOR, "Conexões de água no topo (a ficha do fabricante não as cota: posição a conferir). Válvula de segurança de alívio de pressão: do produto (ficha). Ficha: 'local permanentemente ventilado' — a ventilação e o duto de exaustão são conferidos pela NBR 13103 no Traçar."],
+    geo: [
+      G("Diametro", 0.45, [0.3, 0.9], N("diametro_mm"), "Diâmetro (catálogo)"),
+      G("Altura", 1.5, [0.6, 2.4], N("altura_mm"), "Altura (catálogo)"),
+      DN("DN_agua", null, "DN das ligações de água")
+    ].concat(PARAM_GAS),
+    extraDados: [["Volume_L", "volume_L", "Volume nominal (L)"]],
+    solidos: [],
+    conectores: [
+      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Diametro/4", y: "Altura", z: "Diametro/2" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Diametro/4", y: "Altura", z: "Diametro/2" }
     ], material: "Branco" });
   /* registros embutidos: a canopla (Ø) e o castelo com o volante são o volume envolvente de reserva */
   /* reservas pelas FICHAS COTADAS (QV3, rodada final): acabamento DocolBase (canopla Ø 58, projeção 64,9 da parede + 50 de
@@ -907,6 +1059,30 @@
       I("Volante_diametro", 0.057, null, "Diâmetro do volante do registro do misturador (DocolBase, Docol catálogo geral p.44: Ø 57 mm)"),
       I("Volante_altura", 0.025, null, "Altura do volante do registro do misturador (DocolBase, Docol catálogo geral p.44: 25 mm)"));
   });
+  /* FRENTE H7 (21/10/2026): a CUBA DE BANCADA recebe água — a torneira (de mesa ou de parede) e o ponto na parede atrás da cuba.
+     A origem da família é a face do tampo, no eixo da cuba: a parede fica a Distancia_parede atrás (o Traçar automaticamente mede a
+     parede de verdade e acerta este valor; o padrão é a bancada de 0,55 m do js/marmoraria.js com a cuba centrada). O ENGATE flexível
+     sai do ponto da parede e chega sob a torneira: além de ser a peça da obra, põe a face de trás do corpo na parede (o ponto vira
+     ponto de PAREDE no js/biminst.js e o traçado chega por dentro dela). Alturas: Deca p.116 (cotas do desenho 220/200 — a leitura do
+     js/marmoraria.js REGRA: água 220 mm abaixo do tampo, 200 mm entre os pontos; metais de parede 170 a 220 mm acima — adotado 220). */
+  var MMR = (function () { var M = carregar("Marmoraria", "marmoraria.js"); return (M && M.REGRA) || {}; })();
+  ESPECS.forEach(function (e) {
+    if (e.id !== "hid-cuba-apoio") return;
+    var yA = "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", vis = "Distancia_parede > Profundidade/2";
+    e.solidos = e.solidos.concat([
+      { id: "engate-af", nome: "Engate flexível da água fria (do ponto na parede à torneira)", forma: "cilindro", eixo: "z", x: "se(Agua_quente; Agua_afastamento/2; 0)", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: vis },
+      { id: "engate-aq", nome: "Engate flexível da água quente (do ponto na parede ao misturador)", forma: "cilindro", eixo: "z", x: "-Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ")" }]);
+    e.geo.push(
+      X("Torneira_de_parede", "simnao", false, "Instalação", "Torneira de PAREDE (o ponto de água sobe para 220 mm acima do tampo, Deca p.116); desligado = torneira de MESA (ponto 220 mm abaixo do tampo)"),
+      X("Agua_quente", "simnao", false, "Instalação", "Misturador (água fria + quente): dois pontos a ±Agua_afastamento/2 do eixo; desligado = torneira só de água fria (um ponto, no eixo)"),
+      I("Distancia_parede", 0.275, null, "Do eixo da cuba à face da parede atrás dela (m). Padrão = a bancada de 0,55 m com a cuba centrada (js/marmoraria.js); o Traçar automaticamente mede a parede e acerta"),
+      I("Agua_abaixo_tampo", num0(MMR.aguaAbaixoTampo) || 0.22, null, "Ponto de água da torneira de MESA abaixo da face do tampo — Deca p.116 (220 mm)"),
+      I("Agua_acima_tampo", num0(MMR.metalParedeAcimaTampo) || 0.22, null, "Ponto de água da torneira de PAREDE acima da face do tampo — Deca p.116 (170 a 220 mm; adotado 220)"),
+      I("Agua_afastamento", num0(MMR.entrePontosAgua) || 0.2, null, "Afastamento entre os pontos de água fria e quente do misturador — Deca p.116 (200 mm)"),
+      I("Engate_diametro", 0.016, null, "Diâmetro do engate flexível desenhado (geometria de desenho)"),
+      DN("DN_agua", null, "DN da água"));
+  });
+  function num0(v) { var n = Number(v); return isFinite(n) && n > 0 ? n : 0; }
   /* hid:geometria-fim */
 
   /* -------------------------------------------------- PARÂMETROS COMUNS */
@@ -962,6 +1138,7 @@
       if (r && r.v != null && (g.grupo === "Instalação" || g.ehDN)) def = r.v;               /* padrão da família = valor da regra de instalação do catálogo */
       if (seen[g.nome]) return; seen[g.nome] = 1;
       ps.push({ nome: g.nome, tipoDado: g.tipoDado, escopo: g.grupo === "Instalação" ? "instancia" : "tipo", valor: def, grupo: g.grupo, descricao: g.desc });
+      if (g.semConferir && g.grupo === "Dimensões") ps[ps.length - 1].soNumaOrientacao = true;   /* FRENTE H6: a cota do boiler que só vale no vertical (Altura) ou no horizontal (Comprimento) — o tipo da outra orientação não a tem */
     });
     arr(e.extraDados).forEach(function (x) { ps.push({ nome: x[0], tipoDado: "numero", escopo: "tipo", valor: 0, grupo: GRUPO, descricao: x[2] + " (0 = o catálogo não informa)" }); });
     ps.push({ nome: "Material", tipoDado: "material", escopo: "tipo", valor: e.material || "", grupo: "Materiais", descricao: "Material de aparência" });
@@ -981,8 +1158,8 @@
       var r = g.le ? lerParam(g, it, e.id, nome) : null;
       if (r && r.rejeitado) { conferir.push(g.nome + " (letra " + (PROBLEMAS[PROBLEMAS.length - 1].letra) + " = " + PROBLEMAS[PROBLEMAS.length - 1].valorMm + " mm descartada: fora da faixa plausível)"); avisos.push("Cota " + g.nome + ": a letra da ficha trouxe valor fora da faixa plausível; usado o padrão."); return; }
       if (r && r.v != null) {
-        valores[g.nome] = g.ehDN ? r.v : r4(r.v);
-        if (r.origem !== "catalogo") conferir.push(g.nome + (g.ehDN ? " (DN vindo de regra/interpretação)" : r.letra ? " (letra " + r.letra + ")" : " (regra de instalação Deca)"));
+        valores[g.nome] = g.ehDN || typeof r.v !== "number" ? r.v : r4(r.v);   /* FRENTE H6: texto (o tipo da NBR 13103) não passa pelo arredondamento */
+        if (r.origem !== "catalogo") conferir.push(g.nome + (g.ehDN ? " (DN vindo de regra/interpretação)" : r.letra ? " (letra " + r.letra + ")" : (r.origem === "interpretado" ? " (interpretado da ficha: " + r.v + ")" : " (regra de instalação Deca)")));
       } else if (!g.semConferir) conferir.push(g.nome + (g.ehDN ? " (DN: o dimensionamento define)" : " (padrão de reserva)"));   /* semConferir: liga/desliga de desenho (QUALIDADE VISUAL 3) */
     });
     arr(e.extraDados).forEach(function (x) { var v = it.dados[x[1]]; if (typeof v === "number") valores[x[0]] = v; });
@@ -1009,6 +1186,7 @@
       parametros: parametrosDe(e), tipos: [], solidos: JSON.parse(JSON.stringify(e.solidos)), conectores: JSON.parse(JSON.stringify(e.conectores)),
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: e.nome }
     };
+    if (e.servicos) { fam.servicos = JSON.parse(JSON.stringify(e.servicos)); fam.quantitativo.porServicos = true; }   /* N23: os serviços medidos (a base da caixa d'água) — o orçamento é por eles (js/orcmodelo.js) */
     if (e.generico) fam.tipos.push(montarGenerico(e));
     else {
       var its = [];

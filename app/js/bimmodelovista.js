@@ -200,6 +200,8 @@
       if (v.paiId) o.paiId = txt(v.paiId);
       if (v.ret) { var r = obj(v.ret); o.ret = { x0: num(r.x0, 0), y0: num(r.y0, 0), x1: num(r.x1, 1), y1: num(r.y1, 1) }; }
       if (v.numero) o.numero = txt(v.numero).slice(0, 8);
+      /* a elevação que o GERADOR DE PRANCHAS pôs (pvAuto) e a face dela: ele a reposiciona quando a caixa da edificação muda; a feita à mão não */
+      if (v.pvAuto) { o.pvAuto = true; if (/^(norte|sul|leste|oeste)$/.test(txt(v.pvDir))) o.pvDir = txt(v.pvDir); }
       if (v.linhas2d) { o.linhas2d = {}; Object.keys(obj(v.linhas2d)).forEach(function (k) { var q = obj(v.linhas2d[k]); if ([q.x1, q.y1, q.x2, q.y2].every(function (x) { return isFinite(+x); })) o.linhas2d[k] = { x1: +q.x1, y1: +q.y1, x2: +q.x2, y2: +q.y2, pena: Math.max(1, Math.min(16, Math.round(num(q.pena, 3)))) }; }); }
       return o;
     },

@@ -101,6 +101,24 @@
     return o;
   }
 
+  /* a ligação da folha pronta com o modelo (lista branca: só números e os poucos textos; o motor é o js/pranchaviva.js) */
+  var PV_CAMPOS_NUM = ['w', 'h', 'dpi', 'cota_corte', 'cota_piso'];
+  function pvDaFolha(p) {
+    if (!p || typeof p !== 'object') return null;
+    var m = arr(p.m);
+    if (m.length !== 3 || !m.every(function (l) { return arr(l).length === 3 && l.every(function (x) { return isFinite(+x); }); })) return null;
+    var o = { m: m.map(function (l) { return l.map(Number); }) };
+    PV_CAMPOS_NUM.forEach(function (k) { if (p[k] != null && isFinite(+p[k])) o[k] = +p[k]; });
+    if (!(o.w > 0 && o.h > 0 && o.dpi > 0)) return null;
+    var pm = arr(p.papel_mm); if (pm.length === 2 && +pm[0] > 0 && +pm[1] > 0) o.papel_mm = [+pm[0], +pm[1]];
+    if (/^(planta|corte|fachada)$/.test(txt(p.tipo))) o.tipo = txt(p.tipo);
+    var d = p.eixos && arr(p.eixos.d_olhar); if (d && d.length === 3 && d.every(function (x) { return isFinite(+x); })) o.eixos = { d_olhar: d.map(Number) };
+    o.titulo = txt(p.titulo).slice(0, 120); o.pavimento = txt(p.pavimento).slice(0, 80);
+    o.ambientes = arr(p.ambientes).slice(0, 400).filter(function (a) { return a && arr(a.xy).length >= 2 && isFinite(+a.xy[0]) && isFinite(+a.xy[1]); })
+      .map(function (a) { return { nome: txt(a.nome).slice(0, 80), area: num(a.area, 0), xy: [+a.xy[0], +a.xy[1]] }; });
+    return o;
+  }
+
   function normalizar(pr) {
     pr = pr || {};
     var formato = FORMATOS[pr.formato] ? pr.formato : 'A1';
@@ -112,6 +130,9 @@
                blocos: arr(f.blocos).map(bloco).filter(function (b) { return !!b; }), imagemInteira: txt(f.imagemInteira),
                auto: txt(f.auto) };   /* auto = a chave do "Gerar pranchas" (gerarJogo): gerar de novo atualiza esta folha */
       paramsFolha(f, o);   /* P8: os parâmetros da folha */
+      /* PRANCHA VIVA (js/pranchaviva.js): a folha pronta que veio com a MATRIZ pixel → IFC do gerador (pranchas.json).
+         ⚠ Sem isto o normalizar jogava a matriz fora no primeiro salvar e a folha deixava de abrir no 3D. */
+      var pv = pvDaFolha(f.pv); if (pv) o.pv = pv;
       return o;
     });
     return {
@@ -646,6 +667,36 @@
     return res;
   }
 
+  /* ESCOLHA AUTOMÁTICA DO FORMATO (23/10/2026): o menor formato (A3 → A2 → A1 → A0) em que TODAS as vistas cabem numa escala
+   * legível (a série padrão 1:50, 1:75, 1:100… até `escalaMax`, 1:100 por padrão). Nenhum cabe: o formato com menos vistas
+   * de fora e, empatando, a menor escala — e o aviso diz que ficou apertado. Roteiro do defeito: o IFC do SketchUp media
+   * 355 × 163 m (terreno) e tudo "não cabia no A1 nem em 1:500"; com a casa medida (js/pranchaviva.js caixaEdificacao) o
+   * mesmo gerador, fixo em A1, já resolve — mas o prédio grande ou a escala travada pedem o formato maior, e a pessoa quer
+   * saber qual foi escolhido e por quê.
+   * o = o do gerarJogo (+ formatos:['A3','A2','A1','A0'], escalaMax:100) → { ok, formato, resultado (o do gerarJogo), tentativas, aviso } */
+  function gerarJogoAuto(o) {
+    o = o || {};
+    var lista = arr(o.formatos).filter(function (f) { return FORMATOS[f]; });
+    if (!lista.length) lista = ['A3', 'A2', 'A1', 'A0'];
+    var legivel = Math.max(25, num(o.escalaMax, 100)), tent = [], escolhida = null;
+    lista.forEach(function (f) {
+      var o2 = {}; Object.keys(o).forEach(function (k) { o2[k] = o[k]; }); o2.formato = f;
+      var r = gerarJogo(o2), maxEsc = 0, ids = Object.keys(r.escalas);
+      ids.forEach(function (id) { if (r.escalas[id] > maxEsc) maxEsc = r.escalas[id]; });
+      var t = { formato: f, puladas: r.puladas.length, escalaMax: maxEsc, vistas: ids.length, resultado: r };
+      tent.push(t);
+      if (!escolhida && !t.puladas && t.vistas && maxEsc <= legivel) escolhida = t;
+    });
+    var apertado = false;
+    if (!escolhida) {
+      apertado = true;
+      escolhida = tent.slice().sort(function (a, b) { return (a.puladas - b.puladas) || (a.escalaMax - b.escalaMax) || (lista.indexOf(a.formato) - lista.indexOf(b.formato)); })[0];
+    }
+    var aviso = 'Formato ' + escolhida.formato + ' escolhido' + (escolhida.escalaMax ? ' (a vista mais apertada ficou em 1:' + escolhida.escalaMax + ')' : '') +
+      (apertado ? (escolhida.puladas ? ': nem no maior formato tudo coube — ' + escolhida.puladas + ' vista(s) ficaram de fora' : ': coube só em escala menor que 1:' + legivel + ' — confira a legibilidade') : ': o menor onde tudo cabe em 1:' + legivel + ' ou melhor') + '.';
+    return { ok: true, formato: escolhida.formato, resultado: escolhida.resultado, tentativas: tent.map(function (t) { return { formato: t.formato, puladas: t.puladas, escalaMax: t.escalaMax }; }), apertado: apertado, aviso: aviso };
+  }
+
   /* -------------------------------------------- listas (tabelas) */
   function natural(a, b) { return String(a).localeCompare(String(b), 'pt-BR', { numeric: true }); }
   /* Lista de folhas (tabela da categoria Folhas): só as que "Aparecem na lista" */
@@ -696,7 +747,7 @@
     /* modelo de carimbo RA e o Gerar pranchas (09/10/2026) */
     CARIMBO_RA: CARIMBO_RA, MODELOS_CARIMBO: MODELOS_CARIMBO, CAMADAS_CARIMBO_RA: CAMADAS_CARIMBO_RA, ALT_MAIUSCULA: ALT_MAIUSCULA, ESCALAS_FOLHA: ESCALAS_FOLHA,
     modeloCarimbo: modeloCarimbo, geometriaDe: geometriaDe, dadosCarimbo: dadosCarimbo, carimboRA: carimboRA, tituloCurto: tituloCurto, fmtRegistro: fmtRegistro, cabe: cabe, largTexto: largTexto,
-    escolherEscala: escolherEscala, empacotar: empacotar, gerarJogo: gerarJogo };
+    escolherEscala: escolherEscala, empacotar: empacotar, gerarJogo: gerarJogo, gerarJogoAuto: gerarJogoAuto };
   global.Prancha = Prancha;
   if (typeof module !== 'undefined' && module.exports) module.exports = Prancha;
 })(typeof window !== 'undefined' ? window : this);

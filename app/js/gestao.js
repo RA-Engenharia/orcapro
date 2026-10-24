@@ -10286,6 +10286,8 @@
         acoes: this._bimAcoesTitulo || [],
         /* PRANCHAS à vista na barra de título (js/bimshell.js, ao lado do Salvar) */
         onPranchas: function () { self.bimPranchas(); },
+        /* PRANCHA VIVA à vista na barra de título (23/10/2026, "deixa de fácil acesso"): o comando da fita, com a trava do módulo */
+        onPranchaViva: function () { try { if (window.BimShell) BimShell.executar("prancha-viva"); } catch (ePv) {} },
         /* a obra na barra de título e a volta ao OrçaPRO: no modo programa
            (tela inteira) o cabeçalho e o menu da página não aparecem */
         obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
@@ -10827,6 +10829,8 @@
       try { if (window.EleAutoUI) EleAutoUI.registrar(reg, self); } catch (eEle) {}
       /* PRÉ-LANÇAR ESTRUTURA (21/10/2026): Estrutura › Pré-lançamento — lançar, auditar, quantitativo, IFC e critérios (js/concui.js) */
       try { if (window.ConcUI) ConcUI.registrar(reg, self); } catch (eConc) {}
+      /* CIRCUITOS E QUADRO (frente E2, 21/10/2026): Instalações › Circuitos e quadro — dividir, quadro, eletrodutos, dimensionar, auditar, pranchas (js/elecircuitosui.js) */
+      try { if (window.EleCircuitosUI) EleCircuitosUI.registrar(reg, self); } catch (eElc) {}
       /* TRAÇAR AUTOMATICAMENTE (18/10/2026): Instalações › Projeto inteligente, a aba Modificar | Aparelhos e o atalho TA — js/hidkitui.js (ANTES da fita organizada) */
       try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
       /* EMBREVE (09/10/2026): Igualar tipo, Plano de trabalho e Graute e armadura saem do "em breve" — js/bimembreveui.js (sem a prévia do modelador, sai na hora) */
@@ -10844,6 +10848,9 @@
       try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
       /* BLOCOK (14/10/2026): Alvenaria › Blocok — paginação em amarração, cálculo, orçamento e documentos — js/blocokexecui.js (módulo à parte: sem a compra, sai na hora) */
       try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
+      /* PRANCHA VIVA (21/10/2026): Anotar › Documentar › Prancha Viva — a prancha que abre o 3D no ponto tocado (js/pranchavivaui.js;
+         módulo à parte: a trava é na função, js/pranchavivamodulo.js) */
+      try { if (window.PranchaVivaUI) PranchaVivaUI.registrar(reg, self); } catch (ePv) {}
       /* CORES POR CATEGORIA (14/10/2026): Vista › Gráficos › Cores por categoria + a legenda e o painel — js/bimcorescatui.js (a barra de baixo e as Propriedades da vista chamam o mesmo módulo) */
       try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */
@@ -11510,8 +11517,8 @@
         /* P8: com a prévia do modelador, as FOLHAS uma a uma (abrem numa aba; recebem a vista arrastada) — js/bimfolhaui.js */
         (function () { try { var rf = window.BimFolhaUI && BimFolhaUI.ativo() ? BimFolhaUI.ramoNavegador() : null; if (rf) return rf; } catch (eRf) {} return null; })() ||
         { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: pr.length, aberto: false,
-          filhos: pr.length ? pr.map(function (r) { return { id: "pr:" + r.id, rotulo: r.nome || "Prancha", icone: "prancha", fn: function () { self._bimAbrirPainel("pranchas"); self._prRender(); } }; })
-                            : [{ id: "pr:vazio", rotulo: "Nenhuma — Anotar → Pranchas do projeto", icone: "prancha", acao: "pranchas" }] },
+          filhos: (window.PranchaVivaUI ? [{ id: "pr:viva", rotulo: "Prancha Viva (folha → 3D)", icone: "prancha", acao: "prancha-viva" }] : []).concat(pr.length ? pr.map(function (r) { return { id: "pr:" + r.id, rotulo: r.nome || "Prancha", icone: "prancha", fn: function () { self._bimAbrirPainel("pranchas"); self._prRender(); } }; })
+                            : [{ id: "pr:vazio", rotulo: "Nenhuma — Anotar → Pranchas do projeto", icone: "prancha", acao: "pranchas" }]) },
         { id: "tabelas", rotulo: "Tabelas/Quantidades", icone: "tabela", aberto: false, filhos: [
           { id: "t:qto", rotulo: "Quantitativos do modelo", icone: "calculadora", acao: "qto" },
           { id: "t:ins", rotulo: "Insumos do modelo", icone: "insumo", acao: "insumos-modelo" },
@@ -15217,6 +15224,8 @@
          Trocar de obra com ela aberta deixaria no projetor a obra anterior,
          parada, enquanto o painel simula a nova. Fecha antes (com o id velho). */
       if (this._b4Destacado) { try { this._b4FecharJanela3d(); } catch (eJ3) {} }
+      /* PRANCHA VIVA (revisão, 23/10/2026): as folhas abertas são da obra anterior — fecha antes de trocar (com a cena dela) */
+      try { if (window.PranchaVivaUI && PranchaVivaUI.aberto() && obraId !== this._bimSel) PranchaVivaUI.fechar(); } catch (ePv) {}
       this._bimSel = obraId;
       /* B0: a âncora do vínculo BIM leva a obra, e o registro salvo TAMBÉM é
          por obra. Trocar aqui sem avisar o viewer deixaria a chave apontando
@@ -15981,7 +15990,8 @@
       if (!window.Prancha || !window.PranchaUI) { box.innerHTML = '<p class="muted">O módulo de pranchas não carregou nesta tela. Recarregue o app.</p>'; return; }
       var self = this, regs = this._prRegs();
       var h = '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px"><h3 style="margin:0;display:flex;align-items:center">' + (typeof Icones !== "undefined" ? Icones.get("prancha", 15) : "") + 'Pranchas do projeto</h3>' +
-        '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" data-pr="pacote">Importar pacote</button><button class="btn sm primary" data-pr="nova">+ Prancha com pontos de vista</button></span></div>' +
+        '<span class="flex" style="gap:6px;flex-wrap:wrap">' + (window.PranchaVivaUI ? '<button class="btn sm" data-pr="viva" title="A folha que abre o 3D no ponto tocado (corte na cota, disciplinas, medir, a peça com o orçamento e a etapa)">' + (typeof Icones !== "undefined" ? Icones.get("prancha", 14) : "") + ' Prancha Viva</button>' : '') +
+        '<button class="btn sm" data-pr="pacote">Importar pacote</button><button class="btn sm primary" data-pr="nova">+ Prancha com pontos de vista</button></span></div>' +
         '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Folhas A0 a A4 com o <b>carimbo da empresa</b> e as <b>vistas do modelo</b> (com as cotas de cada ponto de vista). A vista é fotografada na hora de imprimir: regravou o ponto de vista, a prancha sai com ele. Para PDF: Imprimir → Salvar como PDF (o tamanho da folha já vai certo).</p>';
       if (!regs.length) h += '<p class="muted" style="font-size:12.5px">Nenhuma prancha nesta obra ainda.</p>';
       regs.forEach(function (r) {
@@ -16005,6 +16015,7 @@
       var self = this, reg = this._prRegs().filter(function (r) { return r.id === id; })[0] || null;
       if (a === "pacote") { this._bimPacoteEscolher(); return; }
       if (a === "nova") { this._prNova(); return; }
+      if (a === "viva") { if (window.PranchaVivaUI) PranchaVivaUI.abrir(); return; }
       if (!reg) return;
       if (a === "del") {
         if (!confirm('Apagar a prancha "' + reg.nome + '"? As vistas e os desenhos continuam.')) return;
@@ -18217,6 +18228,106 @@
       return this._bimIcarSt;
     },
     _icarObra: function () { return this._bimSel || "geral"; },
+    /* =====================================================================
+     * PLANO DE MONTAGEM DA METÁLICA (23/10/2026, js/metalmontagem.js)
+     * A estrutura de aço do editor vira os içamentos do plano, já na ordem de
+     * montagem — o motor só AGRUPA e ORDENA; equipamento, capacidade e tempo
+     * continuam com o agente (js/icaragente.js) e o plano (js/icarplano.js).
+     * ⚠ NADA SEM CONFERÊNCIA: a lista aparece num modal (etapas, peças, peso,
+     *   o que fica fora e por quê) e só "Criar" grava; depois o agente sugere
+     *   o equipamento e a pessoa escolhe com "Usar este" (não aplica sozinho).
+     * ⚠ REFAZER NÃO DUPLICA: os içamentos gerados levam `origem: "montagem"`;
+     *   gerar de novo troca só esses — menos os que já têm liberação no plano
+     *   ou tarefa lançada no 4D (esses ficam, e as peças deles não entram de
+     *   novo). Içamento feito à mão nunca é tocado, e as peças dele também não
+     *   entram de novo.
+     * ===================================================================== */
+    /* ⚠ TEMPO VELHO NÃO VAI PARA O ORÇAMENTO (revisor, 23/10/2026): o `tempo_min` gravado no "Usar este" vale para aquela
+       posição e aquele equipamento. Mudou posição, rumo, coleta, equipamento ou peças → apaga; o orçamento volta ao tempo
+       do motor (e avisa) até o próximo "Usar este" ou "Lançar". */
+    _icarTempoVelho: function (p) { (p && p.icamentos || []).forEach(function (ic) { if (ic) delete ic.tempo_min; }); },
+    _icarTemMetal: function () {
+      try { var st = window.MetalMontagem && window.BimMetalUI ? BimMetalUI.estado() : null; return !!(st && (st.caixas || []).some(function (c) { return c && c.tipo === "metal"; })); } catch (e) { return false; }
+    },
+    _icarMontagemUnidades: function () {
+      if (!window.MetalMontagem || !window.BimMetalFab || !window.BimMetalUI) return null;
+      var est = null; try { est = BimMetalUI.estado(); } catch (e) { est = null; }
+      if (!est || !(est.caixas || []).some(function (c) { return c && c.tipo === "metal"; })) return null;
+      var m = this._pesoResumo();
+      var geoDe = function (uids) { try { return window.BIM && BIM.icarGeometria ? (BIM.icarGeometria(uids) || {}) : {}; } catch (e2) { return {}; } };
+      /* o peso é o do painel Peso das peças (o MESMO que o cartão do içamento soma); o da caixa só se a peça não estiver lá */
+      var kgDe = function (c) { var it = m && m.porUid["edit:" + c.id]; return it && it.p && it.p.ok && !it.p.naoFisico ? it.p.kg : c.massa; };
+      return MetalMontagem.unidadesDoEstado(est, BimMetalFab, geoDe, kgDe);
+    },
+    _icarMontagemTravado: function (p, ic) {
+      if ((p.liberacoes || []).some(function (r) { return r && r.icamentoId === ic.id; })) return "tem liberação registrada";
+      try { if ((Store.listar(eid(), "bim_tarefas") || []).some(function (t) { return t && t.origemIcamento && t.origemIcamento.icamentoId === ic.id; })) return "já foi lançado no 4D"; } catch (e) {}
+      return "";
+    },
+    _icarMontagemPreparar: function () {
+      var us = this._icarMontagemUnidades();
+      if (!us) return { erro: "Não há estrutura de aço desenhada nesta obra (aba Metálica & Mecânica)." };
+      var p = this._icarPlano(), self = this, ficam = [], trocar = [], ocupados = {};
+      p.icamentos.forEach(function (ic) {
+        if (ic.origem === "montagem") { var t = self._icarMontagemTravado(p, ic); if (!t) { trocar.push(ic); return; } ficam.push({ ic: ic, motivo: t }); }
+        else ficam.push({ ic: ic, motivo: "feito à mão" });
+        (ic.uids || []).forEach(function (u) { ocupados[u] = ic.nome || ic.id; });
+      });
+      var r = MetalMontagem.planejar({ unidades: us });
+      var novos = [], jaEm = 0;
+      r.icamentos.forEach(function (x) {
+        var uids = x.uids.filter(function (u) { if (ocupados[u]) { jaEm++; return false; } return true; });
+        if (uids.length) novos.push({ x: x, uids: uids });
+      });
+      return { p: p, r: r, novos: novos, trocar: trocar, ficam: ficam, jaEm: jaEm };
+    },
+    _icarMontagem: function () {
+      if (!this._icarLigado()) { UI.toast("O plano de içamento ainda está em preparação — chega numa próxima versão.", "aviso"); return; }
+      var self = this, esc = Util.esc, f = function (v, d) { return self._icarFmt(v, d); };
+      var pr = this._icarMontagemPreparar();
+      if (pr.erro) { UI.toast(pr.erro, "aviso"); return; }
+      var r = pr.r;
+      if (!r.ok || !pr.novos.length) { UI.toast(!r.ok ? (r.avisos[0] || "Sem peças para montar.") : "Todas as peças de aço já estão em içamentos do plano (" + pr.jaEm + " peça(s)).", "aviso", 9000); return; }
+      var porEt = {}, ordEt = [];
+      pr.novos.forEach(function (n) { var k = n.x.etapa; if (!porEt[k]) { porEt[k] = { nome: n.x.etapaNome, l: [] }; ordEt.push(k); } porEt[k].l.push(n); });
+      var kg = 0; pr.novos.forEach(function (n) { kg += n.x.kg; });
+      var nVed = 0; try { nVed = (BimMetalUI.estado().caixas || []).filter(function (c) { return c && c.tipo === "vedacao"; }).length; } catch (eV) {}
+      if (nVed) r.avisos.push(nVed + " peça(s) de vedação (telhas, rufos, cumeeira, paredes) não entram: o fechamento é montado depois da estrutura, à parte deste plano.");
+      var h = '<div data-icar-montagem="' + pr.novos.length + '" style="font-size:12.5px">' +
+        '<p style="margin:0 0 6px"><b>' + pr.novos.length + " içamento(s)</b> em " + ordEt.length + " etapa(s), " + f(kg, 0) + " kg" + (r.linhas.length >= 2 ? " — " + r.linhas.length + " linhas de montagem ao longo de " + esc(String(r.eixo).toUpperCase()) : "") + ".</p>" +
+        '<p class="muted" style="margin:0 0 6px">Ordem: ' + esc(MetalMontagem.FONTE_ORDEM) + ". Acessórios soltos de ligação sobem com a peça que ligam; terças, tirantes e contraventos sobem em feixe por vão e por lado.</p>" +
+        r.avisos.map(function (a) { return '<div style="color:' + (/PROVISÓRIO/.test(a) ? "#b45309" : "var(--muted)") + ';margin:2px 0" data-icar-montagem-aviso>• ' + esc(a) + "</div>"; }).join("") +
+        (pr.trocar.length ? '<div style="margin:4px 0" data-icar-montagem-troca="' + pr.trocar.length + '">• ' + pr.trocar.length + " içamento(s) gerados antes serão substituídos.</div>" : "") +
+        (pr.ficam.length ? '<div style="margin:4px 0">• Ficam como estão: ' + pr.ficam.length + " içamento(s) (" + esc(pr.ficam.map(function (x) { return x.motivo; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).join("; ")) + ")" + (pr.jaEm ? " — as " + pr.jaEm + " peça(s) deles não entram de novo" : "") + ".</div>" : "") +
+        '<div style="max-height:46vh;overflow:auto;border:1px solid var(--linha);border-radius:8px;margin-top:6px"><table class="tbl" style="width:100%;font-size:12px"><tr><th>Nº</th><th>Içamento</th><th>Peças</th><th style="text-align:right">Peso</th></tr>' +
+        ordEt.map(function (k) {
+          return '<tr><td colspan="4" style="background:var(--fundo2,#f1f5f9);font-weight:600">' + esc(porEt[k].nome) + "</td></tr>" +
+            porEt[k].l.map(function (n) { return "<tr><td>" + n.x.ordem + "</td><td>" + esc(n.x.nome.replace(/^\d+\.\s*/, "")) + "</td><td>" + n.uids.length + '</td><td style="text-align:right">' + f(n.x.kg, 0) + " kg</td></tr>"; }).join("");
+        }).join("") + "</table></div>" +
+        (r.fora.length ? '<details style="margin-top:6px"><summary class="muted">' + r.fora.length + " peça(s) fora do plano</summary>" + r.fora.map(function (x) { return '<div class="muted">• ' + esc(x.nome) + " — " + esc(x.motivo) + "</div>"; }).join("") + "</details>" : "") +
+        '<p class="muted" style="margin:8px 0 0">Depois de criar, o sistema sugere o equipamento e a posição pela tabela de carga (você escolhe em <b>Usar este</b>).</p></div>';
+      UI.modal("Plano de montagem da estrutura metálica", h, [
+        { texto: "Criar os " + pr.novos.length + " içamentos", classe: "primary", onClick: function () { UI.fecharModal(); self._icarMontagemCriar(); } },
+        { texto: "Cancelar", onClick: function () { UI.fecharModal(); } }]);
+    },
+    _icarMontagemCriar: function () {
+      var pr = this._icarMontagemPreparar(); if (pr.erro || !pr.novos.length) { UI.toast(pr.erro || "Nada a criar.", "aviso"); return; }
+      var p = pr.p, st = this._icarEst(), trocaIds = {}, self = this;
+      pr.trocar.forEach(function (ic) { trocaIds[ic.id] = 1; });
+      p.icamentos = p.icamentos.filter(function (ic) { return !trocaIds[ic.id]; });
+      var base = Date.now().toString(36);
+      pr.novos.forEach(function (n, i) {
+        var gs = self._icarGeos(n.uids).filter(Boolean), modo = IcarPlano.modoSugerido(IcarPlano.geometria(gs));
+        p.icamentos.push({ id: "ic" + base + "m" + i, nome: n.x.nome, uids: n.uids, modo: modo, lingas: { tipo: "cinta", modo: "direto" }, origem: "montagem",
+          montagem: { chave: n.x.chave, ordem: n.x.ordem, etapa: n.x.etapa, etapaNome: n.x.etapaNome, tipo: n.x.tipo, feixe: n.x.n > 1 } });
+      });
+      p.historico = (p.historico || []).concat([{ em: new Date().toISOString(), acao: "plano de montagem", quem: (window.Auth && Auth._usuario && (Auth._usuario.nome || Auth._usuario.email)) || "", detalhe: pr.novos.length + " içamento(s) gerados pela estrutura de aço; " + pr.trocar.length + " substituído(s)" }]);
+      st.sel = 0;
+      if (!this._icarSalvar(p)) return;
+      this._icarRender(); this._icarRedesenhar(true);
+      UI.toast(pr.novos.length + " içamentos criados na ordem de montagem. Agora o sistema sugere o equipamento.", "ok", 8000);
+      if (window.IcarAgente) this._icarAgente();
+    },
     _icarPlano: function () {
       var ob = this._icarObra(), l = [];
       try { l = (Store.listar(eid(), "bim_icamento") || []).filter(function (p) { return p && p.obraId === ob; }); } catch (e) {}
@@ -18428,9 +18539,11 @@
       if (!eq) h += '<div style="border:1px solid #fdba74;background:#fff7ed;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px">Escolha o equipamento na aba <b>Equipamento</b> (catálogo ou a tabela da placa) e marque a posição dele no projeto.</div>';
       var selPeso = this._pesoEst().sel.length;
       h += '<div class="flex between" style="align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px"><b style="font-size:13px">Içamentos</b>' +
-        '<button class="btn sm primary" data-icar="novo"' + (selPeso ? "" : " disabled") + ' title="Cria um içamento com as peças da seleção de peso (laranja)">+ Novo com a seleção de peso (' + selPeso + ")</button></div>";
+        '<span style="display:flex;gap:6px;flex-wrap:wrap">' + (this._icarTemMetal() ? '<button class="btn sm" data-icar="montagem" title="A estrutura de aço do modelo vira os içamentos, na ordem de montagem (vão contraventado primeiro); você confere antes de criar">Plano de montagem da metálica</button>' : "") +
+        '<button class="btn sm primary" data-icar="novo"' + (selPeso ? "" : " disabled") + ' title="Cria um içamento com as peças da seleção de peso (laranja)">+ Novo com a seleção de peso (' + selPeso + ")</button></span></div>";
       if (!p.icamentos.length) {
-        return h + '<p class="muted" style="font-size:12px">Selecione as peças que sobem juntas no painel <b>Peso das peças</b> (clicando no modelo ou por tipo) e crie o içamento aqui. Cada içamento é uma subida do gancho.</p>';
+        return h + '<p class="muted" style="font-size:12px">Selecione as peças que sobem juntas no painel <b>Peso das peças</b> (clicando no modelo ou por tipo) e crie o içamento aqui. Cada içamento é uma subida do gancho.' +
+          (this._icarTemMetal() ? " Ou gere todos de uma vez pela estrutura de aço: <b>Plano de montagem da metálica</b>." : "") + "</p>";
       }
       if (st.sel >= p.icamentos.length) st.sel = p.icamentos.length - 1;
       var avs = p.icamentos.map(function (ic) { return self._icarAvaliar(p, ic); });
@@ -19531,6 +19644,7 @@
         return;
       }
       if (acao === "sel") { st.sel = +v || 0; this._icarRender(); this._icarRedesenhar(true); return; }
+      if (acao === "montagem") { this._icarMontagem(); return; }
       if (acao === "novo" || acao === "trocar-pecas") {
         var uids = this._pesoEst().sel.slice(); if (!uids.length) return;
         if (acao === "novo") {
@@ -19539,7 +19653,7 @@
           var gs0 = this._icarGeos(uids).filter(Boolean), modo0 = IcarPlano.modoSugerido(IcarPlano.geometria(gs0));
           p.icamentos.push({ id: "ic" + Date.now().toString(36), nome: nm, uids: uids, modo: modo0, lingas: { tipo: "cinta", modo: "direto" } });
           st.sel = p.icamentos.length - 1;
-        } else if (p.icamentos[st.sel]) p.icamentos[st.sel].uids = uids;
+        } else if (p.icamentos[st.sel]) { p.icamentos[st.sel].uids = uids; delete p.icamentos[st.sel].tempo_min; }
         if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(true); UI.toast(acao === "novo" ? "Içamento criado com " + uids.length + " peça(s)." : "Peças do içamento trocadas pela seleção de peso.", "ok"); }
         return;
       }
@@ -19550,7 +19664,7 @@
         if (this._icarSalvar(p)) { this._icarRender(); try { BIM.icarLimpar(); } catch (e) {} }
         return;
       }
-      if (acao === "usar-eq") { p.equipamento = p.equipamento || {}; p.equipamento.catalogoId = v; if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast("Equipamento do plano: " + IcarPlano.nomeEq(IcarCatalogo.porId(v)) + ".", "ok"); } return; }
+      if (acao === "usar-eq") { p.equipamento = p.equipamento || {}; p.equipamento.catalogoId = v; this._icarTempoVelho(p); if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); UI.toast("Equipamento do plano: " + IcarPlano.nomeEq(IcarCatalogo.porId(v)) + ".", "ok"); } return; }
       if (acao === "marcar-pos" || acao === "marcar-coleta") { this._icarMarcar(acao === "marcar-pos" ? "pos" : "coleta"); return; }
       if (acao === "marcar-tandem") { this._icarMarcar("tandem"); return; }
       if (acao === "tandem-ligar") { if (p.icamentos[st.sel]) { p.icamentos[st.sel].tandem = { ligado: true, catalogoId2: "" }; if (this._icarSalvar(p)) this._icarRender(); } return; }
@@ -19565,6 +19679,7 @@
       if (acao === "rumo") {
         if (v === "auto") p.rumo_graus = null;
         else { var base = p.rumo_graus; if (base == null) { var a0 = p.icamentos[st.sel] ? this._icarAvaliar(p, p.icamentos[st.sel]) : null; base = IcarPlano.rumoPadrao(p.pos, a0 && a0.geo && a0.geo.cg); } p.rumo_graus = Math.round(((base + (+v)) % 360 + 360) % 360); }
+        this._icarTempoVelho(p);
         if (this._icarSalvar(p)) { this._icarRender(); this._icarRedesenhar(); }
         return;
       }
@@ -19625,6 +19740,7 @@
           icT.tandem = icT.tandem || {};
           icT.tandem.pos2 = { x: pt.x, y: pt.y, z: ap.modo === "superficie" ? pt.z : +ap.cota || 0 };
         } else if (p.icamentos[st.sel]) p.icamentos[st.sel].coleta = { x: pt.x, y: pt.y, z: pt.z };
+        self._icarTempoVelho(p);
         if (self._icarSalvar(p)) {
           self._icarRender(); self._icarRedesenhar(true);
           try { BimShell.status((qual === "pos" ? "Posição do equipamento" : qual === "tandem" ? "Posição do 2º equipamento" : "Coleta da peça") + " marcada: X " + Util.fmtNum(pt.x, 2) + " · Y " + Util.fmtNum(pt.y, 2) + " · Z " + Util.fmtNum(pt.z, 2) + "."); } catch (e2) {}
@@ -20368,6 +20484,10 @@
         ps.ics.forEach(function (x) { var ic = p.icamentos.filter(function (y) { return y.id === x.id; })[0]; if (ic) { ic.pos = { x: ps.x, y: ps.y, z: ps.z }; ic.rumo_graus = ps.rumo; } });
       });
       st.colisoes = {}; st.visadas = {};   // o caminho e a visada conferidos eram de outra posição
+      /* 23/10/2026: o TEMPO de cada içamento na posição escolhida fica no plano — é dele que o orçamento por peso
+         (js/metalorc.js) tira as horas do guindaste; sem isto ele caía no tempo genérico (giro de 180°) até o "Lançar" */
+      var self = this;
+      p.icamentos.forEach(function (ic) { try { var a = self._icarAvaliar(p, ic); if (a && a.tempo && a.tempo.total_min > 0) ic.tempo_min = Math.round(a.tempo.total_min * 10) / 10; } catch (eT) {} });
       if (this._icarSalvar(p)) {
         this._icarRender(); this._icarRedesenhar(true);
         UI.toast(c.nome + " aplicado em " + c.posicoes.length + " posição(ões). Confira a física e rode \"Verificar o caminho\" em cada içamento.", c.faltam.length ? "aviso" : "ok");
@@ -20733,6 +20853,16 @@
         "<tr><td>Vento</td><td>NBR 6123:" + esc((p.local && p.local.edicao) || "2023") + " — Vk = V0·S1·S2·S3; q = 0,613·Vk²; a rajada prevista a 10 m é levada à altura da carga por S2(z)/S2(10) (abaixo de 10 m, adota-se 10 m)</td></tr>" +
         "<tr><td>Peso das peças</td><td>massa do IFC; senão volume × peso específico aparente (NBR 6120:2019) ou informado. Peça sem peso bloqueia o içamento (NR-18 18.10.1.29)</td></tr>" +
         "<tr><td>Normas</td><td>NR-18; NR-12 (Anexo XII — plano de movimentação de carga); NR-11; ABNT NBR 6120:2019; NBR 6123; NBR 8400; NBR 14768:2021; NBR 13541; NBR 13545; NBR 15637; NBR 15516-1; NBR 17089:2023</td></tr></table>";
+      /* SEQUÊNCIA DE MONTAGEM (23/10/2026, js/metalmontagem.js): os içamentos gerados pela estrutura de aço levam a etapa
+         e o porquê da ordem — quem monta lê a sequência no papel, não só a lista */
+      var mont = itens.filter(function (x) { return x.ic && x.ic.montagem; });
+      if (mont.length) {
+        h += "<h3>Sequência de montagem da estrutura metálica</h3><p class=\"m\">Gerada pela estrutura do modelo: " + esc(window.MetalMontagem ? MetalMontagem.FONTE_ORDEM : "vão contraventado primeiro, módulo a módulo") +
+          ". Acessórios de ligação sobem com a peça que ligam; chumbadores são concretados antes; peças leves do vão sobem em feixe e são distribuídas à mão.</p>" +
+          "<table><tr><th>Nº</th><th>Etapa</th><th>Içamento</th><th>Peças</th><th class=\"n\">Peso</th><th class=\"n\">Tempo</th></tr>" +
+          mont.map(function (x) { var m = x.ic.montagem, a = x.aval; return "<tr><td class=\"n\">" + (m.ordem || "") + "</td><td>" + esc(m.etapaNome || "") + "</td><td>" + esc(x.nome) + "</td><td class=\"n\">" + ((x.ic.uids || []).length) +
+            "</td><td class=\"n\">" + (a && a.carga ? f(a.carga.total_kg, 0) + " kg" : "—") + "</td><td class=\"n\">" + (a && a.tempo ? f(a.tempo.total_min, 0) + " min" : "—") + "</td></tr>"; }).join("") + "</table>";
+      }
       /* 4. resumo */
       h += "<h2>4. Resumo dos içamentos</h2><table><tr><th>#</th><th>Içamento</th><th>Carga (kg)</th><th>Raio (m)</th><th>Capacidade (kg)</th><th>Utilização</th><th>Tempo (min)</th><th>Situação</th></tr>";
       itens.forEach(function (it, i) {
@@ -25442,6 +25572,7 @@
             chk("marca", "Nome e logo da empresa", "O celular mostra quem enviou e o nome da obra.", true) +
             chk("vistas", "Pontos de vista" + (extra.vistas ? " (" + extra.vistas + ")" : ""), extra.vistas ? "Sem os comentários da equipe." : "Esta obra não tem pontos de vista salvos.", extra.vistas > 0) +
             chk("crono", "Obra no tempo (4D)", extra.crono ? "O cronograma, SEM valores (custo e venda não vão)." : extra.cronoMotivo, extra.crono) +
+            (window.PranchaVivaUI ? chk("pranchas", "Pranchas (Prancha Viva)" + (extra.pranchas ? " (" + extra.pranchas + ")" : ""), extra.pranchas ? "As folhas ligadas ao modelo, leves: o cliente toca na folha e o 3D abre ali." : extra.pranchasMotivo, extra.pranchas > 0) : "") +
             '</div>';
         }
         h += '<button class="btn primary longo" data-rv="nuvem" style="width:100%;padding:12px"' + (trava ? " disabled" : "") + '>' + I("nuvem") + ' Gerar link e QR para qualquer celular</button>' +
@@ -25522,14 +25653,25 @@
       var dias = Number(o.dias);
       return {
         dias: (typeof RvNuvem !== "undefined" && RvNuvem.VALIDADES.some(function (v) { return v.dias === dias; })) ? dias : 3,
-        marca: o.marca !== false, vistas: o.vistas !== false, crono: o.crono !== false
+        marca: o.marca !== false, vistas: o.vistas !== false, crono: o.crono !== false,
+        /* PRANCHA VIVA: as folhas ligadas ao modelo, leves (imagem + matriz). Desligado até a pessoa pedir: é o
+           maior peso do link, e só quem tem o módulo monta o pacote (js/pranchavivaui.js pacoteLink) */
+        pranchas: o.pranchas === true
       };
     },
     _rvGuardarOpcoes: function (o) { try { localStorage.setItem("orcapro:rv:opcoes", JSON.stringify(o)); } catch (e) {} },
     /* o que dá para mandar junto AGORA (e por que não, quando não dá) */
     _rvExtrasDisponiveis: function () {
-      var r = { vistas: 0, crono: false, cronoMotivo: "" };
+      var r = { vistas: 0, crono: false, cronoMotivo: "", pranchas: 0, pranchasMotivo: "" };
       try { r.vistas = (typeof RvNuvem !== "undefined") ? RvNuvem.vistasParaLink(this._bimVistaDaObra()).length : 0; } catch (e) {}
+      /* as folhas com vista ligada ao modelo; sem o módulo Prancha Viva liberado, a opção aparece desligada e diz por quê */
+      try {
+        if (window.PranchaVivaUI && window.PranchaVivaModulo) {
+          if (!PranchaVivaModulo.liberado()) r.pranchasMotivo = "Faz parte do módulo Prancha Viva.";
+          else r.pranchas = PranchaVivaUI._folhasDaObra().filter(function (f) { return f.nLig > 0; }).length;
+          if (PranchaVivaModulo.liberado() && !r.pranchas) r.pranchasMotivo = "Nenhuma folha com vista ligada ao modelo.";
+        }
+      } catch (eP) {}
       var s = this._b4Sim;
       if (!s && this._bimElementos && this._bimElementos.length) { try { this._bimReplanejar(); s = this._b4Sim; } catch (e2) { s = null; } }
       /* ⚠ só o cronograma DE VERDADE da obra viaja. Sem cronograma, a
@@ -25554,6 +25696,16 @@
         if (dados.crono) { resumo.crono = true; resumo.semChave = dados.crono.semChave; }
       }
       var obra = null; try { obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null; } catch (e) { obra = null; }
+      /* PRANCHA VIVA: as folhas leves (assíncrono: cada folha vira uma imagem). ⚠ A trava é na função: sem o módulo, nada vai */
+      var cb0 = cb;
+      if (op.pranchas && window.PranchaVivaUI && window.PranchaVivaModulo && PranchaVivaModulo.liberado()) {
+        cb = function (d, r, o) {
+          PranchaVivaUI.pacoteLink(function (pk) {
+            if (pk && pk.folhas && pk.folhas.length) { d.pranchas = { versao: 1, folhas: pk.folhas }; r.pranchas = pk.folhas.length; r.pranchasCortadas = pk.cortadas; r.pranchasDesatualizadas = pk.desatualizadas || 0; }
+            cb0(d, r, o);
+          });
+        };
+      }
       if (!op.marca) { cb(dados, resumo, obra); return; }
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? (Empresa.dados() || {}) : {};
       self._avatarLogoSmall(function (logo) {
@@ -25568,7 +25720,10 @@
     _rvAssinatura: function (modelos, base, op) {
       op = op || {};
       return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || ""); }).join("|") +
-        "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",");
+        "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",") +
+        /* ⚠ PRANCHA VIVA (23/10/2026): a assinatura das FOLHAS e do modelo entra junto — sem ela, a prancha mudada (vista nova,
+           folha apagada, modelo editado) reaproveitava o link guardado e o cliente recebia o pacote velho */
+        (op.pranchas ? ",pranchas:" + (function () { try { return window.PranchaVivaUI && PranchaVivaUI.assinatura ? PranchaVivaUI.assinatura() : ""; } catch (e) { return ""; } })() : "");
     },
     _rvLinkSalvo: function (modelos, base, op) {
       if (!modelos || !modelos.length) return null;
@@ -25728,7 +25883,8 @@
                 });
               }
               if (ov.parentNode) ov.remove();
-              var urlT = base + "/rvapp/#rv?t=" + res.j.token;
+              /* com as pranchas no link, o celular abre DIRETO na Prancha Viva (a folha aparece enquanto o 3D baixa) */
+              var urlT = base + "/rvapp/#rv?t=" + res.j.token + (resumo && resumo.pranchas ? "&pv=1" : "");
               self._rvGuardarLink(modelos, base, urlT, res.j.expira, res.j.token, op);
               self._modalNuvemRV(urlT, res.j.expira, res.j.token, resumo);
             }).catch(function (e) { falhou((placa ? "Não deu pra publicar a placa: " : "Não deu pra criar o link: ") + (e && e.message || e), e && e.cota); });
@@ -25748,6 +25904,10 @@
         if (resumo.crono) junto.push("obra no tempo (4D), sem valores" + (resumo.semChave ? " — " + resumo.semChave + " peça(s) sem identificação ficaram de fora" : ""));
         /* o que o servidor TIROU do arquivo — número que a pessoa confere */
         if (resumo.semValores) junto.push(resumo.semValores + " valor(es) de custo/venda tirados do arquivo antes de sair");
+        /* PRANCHA VIVA (revisão, 23/10/2026): quantas folhas foram, as que ficaram de fora pelo tamanho e as que foram com
+           o desenho de ANTES da última mudança do modelo — o dono precisa saber o que o cliente vai ver */
+        if (resumo.pranchas) junto.push(resumo.pranchas + " prancha(s) da Prancha Viva" + (resumo.pranchasCortadas ? " — " + resumo.pranchasCortadas + " ficaram de fora pelo tamanho do link" : "") +
+          (resumo.pranchasDesatualizadas ? " — ⚠ " + resumo.pranchasDesatualizadas + " com o desenho de antes da última mudança do modelo (Prancha Viva › Atualizar o desenho e gere o link de novo)" : ""));
       }
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
@@ -25975,6 +26135,9 @@
           '<input class="inp" data-pl="dias-n" type="number" min="1" max="' + RvNuvem.PLACA_DIAS_MAX + '" placeholder="dias (1 a ' + RvNuvem.PLACA_DIAS_MAX + ')" style="width:100%;display:none;margin-top:6px">' +
           '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:10px;color:' + (extra.crono ? "#cbd8e6" : "#6b7f94") + '"><input type="checkbox" data-pl="crono"' + (extra.crono ? " checked" : " disabled") + '><span><b>Mostrar o cronograma</b> (obra no tempo e lista de etapas, SEM valores)' + (extra.crono ? "" : '<br><span style="font-size:11px">' + Util.esc(extra.cronoMotivo) + '</span>') + '</span></label>' +
           '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:6px;color:#cbd8e6"><input type="checkbox" data-pl="notas"><span><b>Receber apontamentos</b> de quem entrar (texto e foto no modelo)</span></label>' +
+          /* PRANCHA VIVA na placa (23/10/2026): quem entra pela placa — e pelo portal das pranchas (/qr-obra/) — abre as folhas
+             ligadas ao 3D; o endereço com ?pv=1 abre direto nelas */
+          (window.PranchaVivaUI ? '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;margin-top:6px;color:' + (extra.pranchas ? "#cbd8e6" : "#6b7f94") + '"><input type="checkbox" data-pl="pranchas"' + (extra.pranchas ? (self._rvOpcoes().pranchas ? " checked" : "") : " disabled") + '><span><b>Pranchas (Prancha Viva)</b> — as folhas ligadas ao 3D' + (extra.pranchas ? " (" + extra.pranchas + ")" : '<br><span style="font-size:11px">' + Util.esc(extra.pranchasMotivo || "") + "</span>") + "</span></label>" : "") +
           '<div style="font-size:11.5px;color:#8fa3b8;margin:10px 0">Vai: ' + Util.esc(modelos.length + (modelos.length === 1 ? " modelo aberto" : " modelos abertos") + (extra.vistas ? " · " + extra.vistas + " ponto(s) de vista" : "") + " · nome e logo da empresa") + '.</div>' +
           '<button class="btn primary longo" data-pl="criar" style="width:100%;padding:12px"' + (modelos.length ? '' : ' disabled') + '>' + I("nuvem") + ' Publicar a placa</button>' +
           (modelos.length ? '' : '<div style="font-size:12px;color:#f0b94a;margin-top:8px">Abra o modelo .ifc da obra pelo + IFC antes (o que veio do guardado não tem o arquivo).</div>') + '</div>';
@@ -25987,6 +26150,8 @@
           (info.senhaNova ? '<div style="font-size:12.5px;background:rgba(22,163,74,.18);border:1px solid #16a34a;border-radius:10px;padding:8px 10px;margin-bottom:10px">Senha desta placa: <b data-pl="senha-vista">' + Util.esc(info.senhaNova) + '</b> — anote: depois ela não aparece mais.</div>' : '') +
           '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
           '<div style="font-size:12px;color:#9fb2c8;margin-top:8px;word-break:break-all"><b>Endereço permanente:</b> <span data-pl="url">' + Util.esc(p.url) + '</span></div>' +
+          /* o endereço que abre DIRETO na Prancha Viva (o portal das pranchas da obra, /qr-obra/, aponta para ele) */
+          (window.PranchaVivaUI && extra.pranchas ? '<div style="font-size:12px;color:#9fb2c8;margin-top:4px;word-break:break-all"><b>Direto na Prancha Viva:</b> <span data-pl="url-pv">' + Util.esc(p.url + "?pv=1") + '</span> <span style="color:#6b7f94">(as folhas vão quando a placa leva as pranchas — Atualizar o modelo com a opção ligada)</span></div>' : "") +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn sm primary" data-pl="baixar-qr" style="flex:1">' + I("baixar") + ' Baixar o QR para a gráfica (SVG)</button><button class="btn sm" data-pl="copiar" style="flex:1">' + I("copiar") + ' Copiar endereço</button></div>' +
           '<div style="border-top:1px solid #24435f;margin-top:12px;padding-top:10px;display:grid;gap:8px">' +
           '<button class="btn sm' + (p.publicado ? '' : ' primary') + '" data-pl="publicar">' + (p.publicado ? I("proibido") + ' Despublicar (ninguém entra até publicar de novo)' : I("olho") + ' Publicar de novo') + '</button>' +
@@ -26004,7 +26169,7 @@
       document.body.appendChild(ov);
       function q(k) { return ov.querySelector('[data-pl="' + k + '"]'); }
       function dias() { var sel = q("dias"); if (!sel) return 0; if (sel.value === "outro") { var n = Math.floor(Number(q("dias-n").value)); return n >= 1 && n <= RvNuvem.PLACA_DIAS_MAX ? n : 0; } return Number(sel.value) || 0; }
-      function op() { var o = self._rvOpcoes(); o.marca = true; o.vistas = true; o.crono = !!(q("crono") && q("crono").checked); return o; }
+      function op() { var o = self._rvOpcoes(); o.marca = true; o.vistas = true; o.crono = !!(q("crono") && q("crono").checked); if (q("pranchas")) o.pranchas = !!q("pranchas").checked; return o; }
       function mudar(corpo, txtOk) {
         return self._rvPlacaPost("/rv/placa", corpo).then(function (j) { UI.toast(txtOk, "ok"); self._rvPlacaTela(j.placa, { senhaNova: corpo.senha || "" }); })
           .catch(function (e) { UI.toast("Não consegui mudar a placa: " + e.message, "erro"); });

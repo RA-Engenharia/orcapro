@@ -70,6 +70,9 @@
       quantitativo: { unidade: o.unidade || "un", quantidade: o.quantidade || "1", codigo: "", fonte: "", descricao: (o.quantDesc || o.nome) + " (orçar à parte)" }
     };
     if (o.fonteGeral) fam.fonteMedidas = o.fonteGeral;
+    /* REVISÃO H7 (21/10/2026): serviços medidos da peça (o box: m² de vidro) — código vazio: só entram no orçamento com o código da
+       instância (op "orcar", medida "servico:<id>"); sem eles o vidro em m² não casava com a peça em "un" (regra 2 do js/orcmodelo.js) */
+    if (o.servicos) fam.servicos = o.servicos;
     /* PARTES MÓVEIS: a peça com porta/gaveta carrega o estado Aberto/Abertura na instância (o mesmo da pele de vidro); não entra no orçamento */
     if (o.moveis && PMov) fam.parametros = fam.parametros.concat(PMov.parametrosEstado());
     LISTA.push(fam); GER[o.id] = o.gerar; if (o.simbolo) SIMB[o.id] = o.simbolo;

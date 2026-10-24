@@ -631,6 +631,7 @@
     var codTipo = txt(tipo.codigo).trim(), codFam = txt(q.codigo).trim();
     var qtd = { unidade: q.unidade || "un", quantidade: f(q.quantidade, 1), codigo: codTipo || codFam, codigoOrigem: codTipo ? "tipo" : (codFam ? "familia" : ""),
                 fonte: txt(tipo.fonte).trim() || txt(q.fonte), descricao: txt(q.descricao) || fam.nome };
+    if (q.porServicos === true) qtd.porServicos = true;   /* N23: a família orçada pelos serviços medidos (js/orcmodelo.js tira a linha principal sem código) */
     var servicos = arr(fam.servicos).map(function (s) {
       var ct = tipo.codigos ? txt(lerChave(tipo.codigos, s.id)).trim() : "", cf = txt(s.codigo).trim();
       return { id: s.id, descricao: txt(s.descricao) || s.id, unidade: s.unidade, quantidade: f(s.quantidade, 0), codigo: ct || cf, codigoOrigem: ct ? "tipo" : (cf ? "familia" : "") };
@@ -672,6 +673,15 @@
     if (fam.geometria === "marmoraria") {
       var MM = global.Marmoraria || (typeof require === "function" ? (function () { try { return require("./marmoraria.js"); } catch (eR) { return null; } })() : null);
       if (MM) MM.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o motor de marmoraria (js/marmoraria.js) não carregou"); }
+    }
+    /* FRENTE H7 (21/10/2026): a FACE DA PAREDE declarada pela família (fórmula do Z local) — a churrasqueira tem o rufo e o chapéu da
+       chaminé atrás do fundo (sobre a cobertura) e a caixa envolvente passava da parede: os pontos de água e esgoto, encostados no
+       fundo, deixavam de ser pontos de PAREDE (js/biminst.js conectoresDe). Sem `faceParede`, nada muda. */
+    if (fam.faceParede != null && fam.faceParede !== "") {
+      saida.faceParede = f(fam.faceParede, 0);
+      /* o que fica atrás da face (o chapéu, sobre a cobertura) não é obstáculo do traçado embutido na parede */
+      var cxO = saida.caixaObstaculo || saida.caixa;
+      if (cxO && isFinite(cxO.z0) && cxO.z0 < saida.faceParede) { saida.caixaObstaculo = { x0: cxO.x0, y0: cxO.y0, z0: saida.faceParede, x1: cxO.x1, y1: cxO.y1, z1: cxO.z1 }; }
     }
     return saida;
   }

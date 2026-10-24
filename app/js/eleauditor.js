@@ -192,7 +192,7 @@
     /* solução que o lançador não conseguiu montar (sem posição livre): não promete "Lançar…" sem botão — diz o que fazer à mão */
     probs.forEach(function (q) { q.solucoes.forEach(function (s) { if (s.ops && !s.ops.length) { delete s.ops; s.id = "nota-" + s.id; s.texto = "Sem posição livre automática para isso: lance à mão (Instalações › Tomada e interruptor) e rode o auditor de novo."; } }); });
     var porCod = {}; probs.forEach(function (q) { porCod[q.codigo] = (porCod[q.codigo] || 0) + 1; });
-    return { problemas: probs, porCodigo: porCod, criterios: C, aviso: "NBR 5410:2004 conferida no item (cópia não licenciada à RA — só valores). Circuitos, quadro e condutor ficam para a próxima etapa.", norma: R.NORMA,
+    return { problemas: probs, porCodigo: porCod, criterios: C, aviso: "NBR 5410:2004 conferida no item (cópia não licenciada à RA — só valores). Circuitos, quadro e condutor: Instalações › Auditar circuitos.", norma: R.NORMA,
       ambientes: L.ambientes.map(function (a) { return { id: a.id, nome: a.nome, grupo: a.cls.grupo, area: a.area, perimetro: a.perimetro }; }) };
   }
 

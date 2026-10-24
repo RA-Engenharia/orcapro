@@ -644,6 +644,52 @@
   /* o FIM DA PONTA na perna da luva: o conector da família quando ele fica dentro da luva (tê/junção: a ponta entra até o
      meio dela); no joelho/curva a família põe o conector no começo da luva — a ponta vai então até o meio da luva */
   function pontaFim(pe) { return pe.conector - pe.luvaIni >= 10 ? pe.conector : pe.luvaIni + (pe.face - pe.luvaIni) / 2; }
+  /* ⚠ 2ª PRIORIDADE de 21/10/2026 (print do Rogério): a ventilação saía do tê do ramal e o JOELHO seguinte ficava a 8–12 cm do centro
+     do tê — menos que a face da derivação do tê (DN 50: 79,4 mm) + a face do joelho (DN 50: 71,2 mm): as duas peças se sobrepunham, o
+     joelho "descia" para dentro do tê e a ponta do tubo não entrava em bolsa nenhuma. alcanceDerivacao = a distância mínima, no eixo da
+     derivação, do centro do tê/junção até o vértice da próxima conexão (m): face da derivação (perna 3 do perfil medido) + face da
+     perna da conexão seguinte que recebe o tubo (a de bolsa; com luva, a maior). Sem o perfil medido: null (o traçado decide como antes) */
+  function alcanceDerivacao(material, tipoNo, dnNo, tipoProx, dnProx) {
+    var pN = perfilProduto(material, tipoNo, dnNo), pP = perfilProduto(material, tipoProx, dnProx); if (!pN || !pP) return null;
+    var d = (pN.pernas || []).filter(function (x) { return Number(x.id) === 3; })[0]; if (!d) return null;   /* a derivação dos perfis de tê/junção */
+    var bolsa = (pP.pernas || []).filter(function (x) { return !x.luva; }).map(function (x) { return Number(x.face) || 0; }), todas = (pP.pernas || []).map(function (x) { return Number(x.face) || 0; });
+    var fP = bolsa.length ? Math.min.apply(null, bolsa) : Math.max.apply(null, todas.concat([0]));
+    /* o joelho/curva de 45° usa o perfil medido de 90° com a tangência do ângulo (a mesma conta do desenho: sh = s − tl0 + tl) */
+    var ang = /45$/.test(String(tipoProx)) ? 45 : 90, a0 = (Number(pP.angulo) || 90) * Math.PI / 180, rc = Number(pP.rCentral) || 0;
+    if (rc > 0 && ang !== Number(pP.angulo || 90)) fP = fP - rc * Math.tan(a0 / 2) + rc * Math.tan(ang * Math.PI / 180 / 2);
+    return (Number(d.face) + fP) * MM;
+  }
+  /* a FACE de uma perna da peça medida (m), do centro (tê/junção) ou do vértice (joelho/curva) até a boca: papel "derivacao" (perna 3
+     do tê/junção), "bolsa" (a perna sem luva — o tubo que CHEGA no joelho) ou "luva" (a perna com luva — o tubo que SAI); no joelho, a
+     tangência do ângulo real (desvio em graus) entra como no desenho. Sem o perfil: null */
+  function faceProduto(material, tipo, dn, papel, desvioGraus) {
+    var pp = perfilProduto(material, tipo, dn); if (!pp) return null;
+    var ps = pp.pernas || [], pe = null;
+    if (papel === "derivacao") pe = ps.filter(function (x) { return Number(x.id) === 3; })[0];
+    else if (papel === "luva") pe = ps.filter(function (x) { return x.luva; })[0] || ps.slice().sort(function (a, b) { return b.face - a.face; })[0];
+    else pe = ps.filter(function (x) { return !x.luva; }).sort(function (a, b) { return a.face - b.face; })[0] || ps[0];
+    if (!pe) return null;
+    var f = Number(pe.face) || 0, rc = Number(pp.rCentral) || 0;
+    if (pp.tipo === "cotovelo" && rc > 0 && desvioGraus != null) f = f - rc * Math.tan((Number(pp.angulo) || 90) * Math.PI / 360) + rc * Math.tan(Number(desvioGraus) * Math.PI / 360);
+    return f * MM;
+  }
+  /* a FACE pela MESMA conta do 3D (conexao): um nó sintético com os tubos nas direções dadas — ramos [{ d: [x,y,z] (do nó para fora),
+     chega: true = o tubo TERMINA no nó (montante), false = COMEÇA nele (jusante), passante: true = atravessa (o ramal do tê), dn }];
+     devolve a face (m) de cada ramo, na ordem (null onde a peça não deu porta). É o que o traçado usa para medir o encaixe — a peça
+     medida, a luva, a bucha e o ramal fora do catálogo saem exatamente como no desenho */
+  function facesNo(c, ramos) {
+    var T = {}, ids = [];
+    ramos.forEach(function (r, i) {
+      var id = "s" + i, d = nrmz(pv(r.d)), L = 1, a, b;
+      if (r.passante) { a = [-d[0] * L, -d[1] * L, -d[2] * L]; b = [d[0] * L, d[1] * L, d[2] * L]; }
+      else if (r.chega) { a = [d[0] * L, d[1] * L, d[2] * L]; b = [0, 0, 0]; }
+      else { a = [0, 0, 0]; b = [d[0] * L, d[1] * L, d[2] * L]; }
+      T[id] = { id: id, p1: { x: a[0], y: a[1], z: a[2] }, p2: { x: b[0], y: b[1], z: b[2] }, dn: r.dn, material: c.material, sistema: c.sistema || "esgoto" }; ids.push(id);
+    });
+    var cc = {}; Object.keys(c).forEach(function (k) { cc[k] = c[k]; }); cc.x = 0; cc.y = 0; cc.z = 0; cc.ramos = ids;
+    var r0 = null; try { r0 = no([cc], T, { tol: 1e-6 }); } catch (e) { r0 = null; }
+    return ids.map(function (id, i) { if (!r0) return null; var f = ramos[i].passante ? null : (r0.faces || {})[id + ":" + (ramos[i].chega ? 1 : 0)]; return f == null ? null : f; });
+  }
   function perfilProduto(material, tipo, dn) {
     var PR = produto(), base = (CHAVE_PERFIL[material] || {})[tipo]; if (!base || !PR || !PR.perfis) return null;
     return PR.perfis[base + "-" + dn] || null;
@@ -1012,7 +1058,7 @@
     /* a LUVA da ponta (biminst.juntasDaPonta: c.juntaDe) não é a peça principal do nó: ela abraça a ponta da principal */
     var princ = lista.filter(function (c) { return c.tipo !== "reducao" && !c.juntaDe; })[0], reds = lista.filter(function (c) { return c.tipo === "reducao"; });
     var luvas = lista.filter(function (c) { return c.juntaDe != null; });
-    function recuo(p) { var k = p.trecho + ":" + p.lado; out.recuos[k] = Math.max(out.recuos[k] || 0, p.recuo); if (p.bolsaAtras != null) out.bolsas[k] = p.bolsaAtras; if (p.desloc) { out.deslocs = out.deslocs || {}; out.deslocs[k] = p.desloc; } }
+    function recuo(p) { var k = p.trecho + ":" + p.lado; out.recuos[k] = Math.max(out.recuos[k] || 0, p.recuo); if (p.z != null) { out.faces = out.faces || {}; out.faces[k] = Math.max(out.faces[k] || 0, p.z); } if (p.bolsaAtras != null) out.bolsas[k] = p.bolsaAtras; if (p.desloc) { out.deslocs = out.deslocs || {}; out.deslocs[k] = p.desloc; } }
     var oT = {}; Object.keys(o).forEach(function (k) { oT[k] = o[k]; }); oT.trechos = trechosPorId;   /* a redução excêntrica lê a orientação no trecho */
     if (princ) {
       var g = conexao(princ, eixos, oT);
@@ -1029,11 +1075,11 @@
           var lg = pLuva.length ? { partes: lv.invertida ? espelharLuva(pLuva, P, p.dir) : pLuva, recuo: p.recuo, cotas: cotasConexao(princ.material, "luva", e ? e.dn : princ.dn), aConferir: false }
             : (p.produto && luvaProduto(princ.material, e ? e.dn : princ.dn, P, p.dir, p.z / MM, o.lod)) || luvaNaPonta(princ.material, e ? e.dn : princ.dn, P, p.dir, p.z / MM, !!lv.invertida, o.lod);
           out.pecas.push({ id: lv.id, partes: lg.partes, aConferir: lg.aConferir, cotas: lg.cotas });
-          recuo({ trecho: p.trecho, lado: p.lado, recuo: lg.recuo });
+          recuo({ trecho: p.trecho, lado: p.lado, recuo: lg.recuo, z: Math.max(num(p.z, 0), lg.recuo) });   /* z: até onde a peça vai no eixo (a luva) — a conferência do encaixe */
         } else if (red && !(princ.tipo === "te_reducao" && p.ramal)) {
           var bu = bucha(princ.material, princ.dn, e.dn, P, p.dir, p.z / MM, o.lod);
           out.pecas.push({ id: red.id, partes: bu.partes, aConferir: true, cotas: bu.cotas });
-          recuo({ trecho: p.trecho, lado: p.lado, recuo: bu.recuo });
+          recuo({ trecho: p.trecho, lado: p.lado, recuo: bu.recuo, z: Math.max(num(p.z, 0), bu.recuo) });
         } else recuo(p);
       });
       /* LUVA SEM PERNA DE PONTA NO PERFIL (19/10/2026, "pecinhas quadradas" do Rogério): o biminst deduz a luva pela ficha
@@ -1046,7 +1092,7 @@
         var ej = eixos.filter(function (x) { return x.trecho === pj.trecho && x.lado === pj.lado; })[0], dnL = ej ? ej.dn : princ.dn;
         var lg3 = luvaNaPonta(princ.material, dnL, P, pj.dir, pj.z / MM, !!lv.invertida, o.lod);
         out.pecas.push({ id: lv.id, partes: lg3.partes, aConferir: true, cotas: lg3.cotas });
-        recuo({ trecho: pj.trecho, lado: pj.lado, recuo: lg3.recuo });
+        recuo({ trecho: pj.trecho, lado: pj.lado, recuo: lg3.recuo, z: Math.max(num(pj.z, 0), lg3.recuo) });
       });
     } else if (reds.length) {
       var g2 = conexao(reds[0], eixos, oT); if (!g2) return null;
@@ -1103,19 +1149,57 @@
    * para fora, horizontal ou não), dn, ponto (a ponta do tubo na peça)}].
    * As entradas/saída LIGADAS saem na direção e na altura do tubo real (a caixa gira na obra); as que
    * sobram ficam fechadas, no ângulo declarado (o catálogo dá o número e o DN, não o ângulo). */
-  function peca(k, ligados, o) {
-    o = o || {};
-    var tab = (dados().pecas || {})[k.peca] || {}, ct = tab[String(k.dn)], aConf = false, fontes = [];
-    var alt, diam, topo, dnS, dnE, nE, hS;
-    if (ct) { alt = ct.alt; diam = ct.diam; topo = ct.topo || null; dnS = ct.dnSaida; dnE = ct.dnEntrada || dnS; nE = ct.entradas || 0; hS = ct.hSaida || null; fontes.push(fonte(ct.f, ct.pag)); if (ct.interpretacao) aConf = true; }
+  /* as cotas da peça pela ficha (ou pelo nome do DN, a conferir) */
+  function cotasPeca(k) {
+    var tab = (dados().pecas || {})[k.peca] || {}, ct = tab[String(k.dn)], o = { aConf: false, fontes: [] };
+    if (ct) { o.alt = ct.alt; o.diam = ct.diam; o.topo = ct.topo || null; o.dnS = ct.dnSaida; o.dnE = ct.dnEntrada || ct.dnSaida; o.nE = ct.entradas || 0; o.hS = ct.hSaida || null; o.fontes.push(fonte(ct.f, ct.pag)); if (ct.interpretacao) o.aConf = true; }
     else {
       var ps = String(k.dn || "").split("x").map(Number); if (!(ps[0] > 0)) return null;
-      diam = ps[0]; alt = ps.length > 2 ? ps[1] : 100; dnS = ps[ps.length - 1]; dnE = 40; nE = k.peca === "caixa_sifonada" ? 3 : 0; aConf = true;
+      o.diam = ps[0]; o.alt = ps.length > 2 ? ps[1] : 100; o.dnS = ps[ps.length - 1]; o.dnE = 40; o.nE = k.peca === "caixa_sifonada" ? 3 : 0; o.aConf = true;
     }
+    return o;
+  }
+  /* ⚠ PRIORIDADE 21/10/2026 (print do Rogério): o CORPO da caixa sifonada / do ralo ficava junto do piso (topo da grelha no piso e o
+     corpo logo abaixo) e os tubos na profundidade certa — as bocas eram "puxadas" para dentro do corpo e o tubo ficava solto. Na obra o
+     CORPO DESCE e acompanha a cota da tubulação (a saída do corpo alinhada com o tubo de saída; as entradas com os ramais) e entre o
+     corpo e o piso entra o PROLONGADOR do diâmetro da caixa (cortado na medida); no topo fica só o porta-grelha com a grelha, rente ao
+     piso acabado. Aqui: a cota do corpo pela tubulação ligada. A saída: o tubo mais baixo (horizontal) — a boca de saída do corpo fica
+     a hSaida (ficha) do fundo; o tubo que sai PELO FUNDO (vertical para baixo) — o fundo do corpo na ponta dele. O corpo nunca SOBE
+     acima da posição de catálogo (grelha no piso). prolongador = o quanto o corpo desceu (m). */
+  var TOL_SAIDA_MM = 5;   // hid:ok critério de desenho (revisão H6): o tubo até 5 mm abaixo da saída da ficha acomoda na declividade do ramal, sem prolongador (a cota do traçado é arredondada em cm; prolongador de 1–2 mm não existe na obra)
+  var PORTA_GRELHA_MM = 12;   /* altura do porta-grelha (desenho: a mesma faixa do corpo de antes) */
+  function corpoPeca(k, ligados) {
+    var ct = cotasPeca(k); if (!ct) return null;
+    var top = num(k.y, 0), H = ct.alt, baseCat = top - H * MM, base = baseCat, quem = null;
+    var cs = cotasConexao("pvc_esgoto", "luva", ct.dnS), od = cs && cs.od ? cs.od : ct.dnS;
+    (ligados || []).forEach(function (l) {
+      var d = pv(l.dir), pt = pv(l.ponto), b;
+      if (Math.abs(d[1]) > 0.9) { if (d[1] < 0) b = pt[1]; else return; }   /* pelo fundo: o fundo do corpo na ponta do tubo; por cima: passa pela grelha */
+      else {
+        /* REVISÃO H6 (21/10/2026): a SAÍDA da peça tem altura fixa (hSaida da ficha) — o tubo abaixo dela (mais que TOL_SAIDA_MM) faz o corpo descer
+           com a saída na cota do tubo. Antes só descia abaixo de meio diâmetro + 2 mm do fundo: entre isso e a hSaida (2,6 cm na caixa
+           100, 7,5 cm na 150) a boca era desenhada na cota do tubo, abaixo da saída real, sem prolongador — o mesmo tubo solto do print.
+           Sem hSaida na ficha (o ralo): a boca vai até meio diâmetro + 2 mm do fundo, como antes */
+        var hRef = ct.hS != null ? ct.hS : od / 2 + 2;
+        if ((pt[1] - baseCat) / MM >= hRef - TOL_SAIDA_MM) return;
+        b = pt[1] - hRef * MM;
+      }
+      if (b < base - 1e-6) { base = b; quem = l.trecho; }
+    });
+    var desce = Math.max(0, baseCat - base);
+    return { top: top, base: base, baseCatalogo: baseCat, desce: desce, prolongador: desce > 1e-4 ? desce : 0, porTrecho: quem, cotas: ct, diam: ct.diam };
+  }
+  function peca(k, ligados, o) {
+    o = o || {};
+    var ct0 = cotasPeca(k); if (!ct0) return null;
+    var aConf = ct0.aConf, fontes = ct0.fontes, alt = ct0.alt, diam = ct0.diam, topo = ct0.topo, dnS = ct0.dnS, dnE = ct0.dnE, nE = ct0.nE, hS = ct0.hS;
     var mat = "pvc_esgoto", seg = o.lod === "longe" ? 12 : 24, C = [num(k.x, 0), num(k.y, 0), num(k.z, 0)], Y = [0, 1, 0];
-    var m = new Malha(), mb = new Malha(), mg = new Malha(), mA = new Malha(), mF = new Malha(), H = alt, rb = diam / 2, rf = Math.max(rb + 4, (topo || diam) / 2 + 2), hf = 12;
-    /* corpo: fundo levemente menor (a caixa é injetada com saída de molde) */
-    var base = sub(C, [0, H * MM, 0]);
+    var m = new Malha(), mb = new Malha(), mg = new Malha(), mA = new Malha(), mF = new Malha(), mP = new Malha(), H = alt, rb = diam / 2, rf = Math.max(rb + 4, (topo || diam) / 2 + 2), hf = PORTA_GRELHA_MM;
+    /* corpo: fundo levemente menor (a caixa é injetada com saída de molde) — na cota da tubulação (corpoPeca); o.semDescer = o
+       desenho de antes (o controle negativo do teste) */
+    var CP = o.semDescer ? null : corpoPeca(k, ligados), desce = CP ? CP.desce : 0;
+    var base = sub(C, [0, H * MM + desce, 0]);
+    var topoG = sub(C, [0, H * MM, 0]);   /* a base de referência do PORTA-GRELHA e da grelha: ficam no piso */
     /* PARIDADE VISUAL (18/10/2026, bancada contra o modelo do fabricante): a caixa sifonada tem o PORTA-GRELHA
        QUADRADO (a planta já a desenha quadrada) e a grelha de FENDAS paralelas; o ralo tem o corpo CÔNICO (afina para
        a saída) e a grelha redonda de fendas. Antes: corpo cilíndrico e disco de frisos concêntricos nos dois. */
@@ -1124,19 +1208,25 @@
     if (ehCx) {
       varrer(m, reta(base, Y), escala([[0, 0], [0, rFundo], [4, rb * 0.97], [H - hf, rb], [H - hf, 0]]), seg, false);
       var Lq = rf;   /* meio lado do porta-grelha */
-      caixaM(m, add(base, [0, (H - hf / 2 - 0.75) * MM, 0]), [eX, Y, eZ], [Lq * MM, (hf / 2 - 0.75) * MM, Lq * MM]);
-      grelhaFendas(mg, mF, add(base, [0, (H - 1.5) * MM, 0]), eX, eZ, Lq - 7, null, o.lod);
+      caixaM(m, add(topoG, [0, (H - hf / 2 - 0.75) * MM, 0]), [eX, Y, eZ], [Lq * MM, (hf / 2 - 0.75) * MM, Lq * MM]);
+      grelhaFendas(mg, mF, add(topoG, [0, (H - 1.5) * MM, 0]), eX, eZ, Lq - 7, null, o.lod);
     } else {
-      varrer(m, reta(base, Y), escala([[0, 0], [0, rFundo], [4, rFundo + (rb - rFundo) * 4 / Math.max(8, H - hf)], [H - hf, rb], [H - hf, rf], [H - 1, rf], [H, rf - 1], [H, rf - 7], [H - 5, rf - 7], [H - 5, 0]]), seg, false);
-      grelhaFendas(mg, mF, add(base, [0, (H - 5) * MM, 0]), eX, eZ, rf - 7.5, rf - 7.5, o.lod);
+      varrer(m, reta(base, Y), escala([[0, 0], [0, rFundo], [4, rFundo + (rb - rFundo) * 4 / Math.max(8, H - hf)], [H - hf, rb]].concat(desce > 0 ? [[H - hf, 0]] : [[H - hf, rf], [H - 1, rf], [H, rf - 1], [H, rf - 7], [H - 5, rf - 7], [H - 5, 0]])), seg, false);
+      if (desce > 0) varrer(m, reta(topoG, Y), escala([[H - hf, rb], [H - hf, rf], [H - 1, rf], [H, rf - 1], [H, rf - 7], [H - 5, rf - 7], [H - 5, rb * 0.9]]), seg, false);
+      grelhaFendas(mg, mF, add(topoG, [0, (H - 5) * MM, 0]), eX, eZ, rf - 7.5, rf - 7.5, o.lod);
+    }
+    /* o PROLONGADOR: tubo do diâmetro da caixa (parede de 2 mm, desenho) do topo do corpo baixado até o porta-grelha no piso */
+    if (desce > 0) {
+      var eP = 2, y0P = (H - hf) * MM;
+      varrer(mP, reta(add(base, [0, y0P, 0]), Y), escala([[0, rb - eP], [0, rb + 0.5], [desce / MM, rb + 0.5], [desce / MM, rb - eP]]), seg, true);
     }
     /* bocas: as ligadas na direção do tubo; as que faltam, fechadas */
-    var portas = [], usadas = [];
+    var portas = [], usadas = [], bocasLig = [];
     var lig = (ligados || []).map(function (l) { return l; });
     var cs = cotasConexao(mat, "luva", dnS), ce = cotasConexao(mat, "luva", dnE);
     function bocaRadial(dir, h, c, fechada) {
       var dh = nrmz([dir[0], 0, dir[2]]); if (len(dh) < 0.5) return null;
-      var y0 = Math.max(c.od / 2 + 2, Math.min(H - hf - c.od / 2 - 2, h));
+      var y0 = Math.max(c.od / 2 + 2, Math.min(H - hf - c.od / 2 - (fechada ? 2 : 0), h));   /* a boca LIGADA vai até a borda do corpo (a saída da ficha fica a meio diâmetro do topo) */
       var C0 = add(base, [0, y0 * MM, 0]), Lb = rb + c.pb + 8;
       var pf = [[0, 0], [0, raioCorpo(c)], [Lb - c.pb - transicao(c), raioCorpo(c)]], q = [];
       /* entrada LIVRE (rodada 3, 18/10/2026): tubinho liso e curto, ABERTO, com a borda na boca, como a peça de verdade;
@@ -1157,6 +1247,8 @@
       }
       var pt0 = pv(l.ponto), h = (pt0[1] - base[1]) / MM;
       var b = bocaRadial(d, h, c, false); if (!b) return;
+      /* a boca desenhada × a ponta do tubo: o teste da prioridade de 21/10 confere que a boca fica NA cota do tubo (não puxada para o corpo) */
+      bocasLig.push({ trecho: l.trecho, yTubo: pt0[1], yBoca: Math.round((base[1] + b.y * MM) * 10000) / 10000 });
       usadas.push(c === cs ? "s" : "e");
       /* a ponta do tubo vai até o fundo da bolsa: distância horizontal (b.face − pb) do eixo da caixa */
       portas.push({ trecho: l.trecho, lado: l.lado, raio: (b.face - c.pb) * MM, centro: C });
@@ -1172,7 +1264,8 @@
     if (hS == null) aConf = true;
     var partesP = [cascaSaida(m), cascaSaida(mb), cascaSaida(mg, "grelha")]; if (mA.idx.length) partesP.push(cascaSaida(mA, "anel"));
     if (mF.idx.length) partesP.push(cascaSaida(mF, "fenda"));
-    return { partes: partesP, portas: portas, aConferir: aConf, fontes: fontes, cotas: { alt: alt, diam: diam, dnSaida: dnS, dnEntrada: dnE, entradas: nE, hSaida: hS } };
+    if (mP.idx.length) partesP.push(cascaSaida(mP, "prolongador"));
+    return { partes: partesP, portas: portas, aConferir: aConf, fontes: fontes, cotas: { alt: alt, diam: diam, dnSaida: dnS, dnEntrada: dnE, entradas: nE, hSaida: hS }, corpo: CP, bocas: bocasLig };
   }
   /* caixa (paralelepípedo) FECHADA: centro, eixos [ex, ey, ez] (destros, unitários), meias medidas (m) */
   function caixaM(m, C, ax, hs) {
@@ -1514,7 +1607,7 @@
     VERSAO: 1, PROP: PROP, JUNTA: JUNTA, APAR: APAR, PAPEL: PAPEL, FOLGA: FOLGA,
     Malha: Malha, varrer: varrer, reta: reta, cotovelo: cotovelo, toro: toro, caixaM: caixaM,   /* caixaM: a caixa de inspeção de alvenaria (js/hidcigeo.js) */
     cotasTubo: cotasTubo, cotasConexao: cotasConexao, aparencia: aparencia,
-    tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
+    tubo: tubo, eixosDoNo: eixosDoNo, conexao: conexao, conexaoProduto: conexaoProduto, perfilProduto: perfilProduto, luvaProduto: luvaProduto, bucha: bucha, no: no, luvaNaPonta: luvaNaPonta, temPonta: temPonta, peca: peca, corpoPeca: corpoPeca, cotasPeca: cotasPeca, alcanceDerivacao: alcanceDerivacao, faceProduto: faceProduto, facesNo: facesNo, registro: registro, pecaSimples: pecaSimples, marcador: marcador, perfilRamal: perfilRamal,
     TETO_CONEXAO: 2000, TETO_CONEXAO_GRANDE: 2800, tetoConexao: tetoConexao, TETO_PRODUTO: 3200, TETO_PRODUTO_GRANDE: 4800, TETO_ANEL: 200, TETO_TUBO: 400, TETO_PECA: 4200, TETO_REGISTRO: 2600
   };
   global.HidGeo = HidGeo;

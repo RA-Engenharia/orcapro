@@ -338,6 +338,10 @@
       var l2 = orcar({ id: "inst" + i, codigo: s.codigo, unidade: q.unidade, quantidade: q.quantidade * num(s.fator, 1), rotulo: s.rotulo || "Camada da peça" }, base, opcoes);
       l2.codigoOrigem = "instancia"; l2.medida = "quantidade"; l2.fator = num(s.fator, 1); if (q.param) l2.param = q.param; linhas.push(l2);
     });
+    /* N23 (23/10/2026): a família ORÇADA PELOS SERVIÇOS MEDIDOS (quantitativo.porServicos — a base de madeira da caixa d'água: pilares,
+       vigas, tablado em m/m²) não tem composição na unidade dela; com um serviço orçado, a linha principal "sem código" não é falta de
+       orçamento (ela ficava em "Fora do orçamento" com a base inteira paga pelos serviços). Sem nenhum serviço orçado, ela fica e diz. */
+    if (q.porServicos && linhas[0] && linhas[0].status === "sem-codigo" && linhas.slice(1).some(function (l) { return l.status === "ok"; })) linhas.shift();
     linhas.forEach(arredLinha);
     return { linhas: linhas, resumo: resumir(linhas, opcoes), peso: pesoSolidos(av.solidos) };
   }
@@ -776,6 +780,20 @@
       else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
       somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
     });
+    /* CIRCUITOS ELÉTRICOS (frente E2, js/elecircuitos.js): o que só o projeto dos circuitos sabe — cabo por seção (a cor vai no
+       rótulo), disjuntores, DR e DPS. Eletroduto, caixa de passagem e quadro já vêm acima (instalações); dispositivo e caixa do ponto
+       também — nada é cobrado duas vezes. Sem o projeto gravado no quadro, nada entra (o auditor dos circuitos acusa). */
+    var ECi = dep("EleCircuitos", "./elecircuitos.js");
+    if (ECi && ECi.servicosOrc && estado) { var linhasEle = []; try { linhasEle = ECi.servicosOrc(estado, avaliarFam); } catch (eEle) { linhasEle = []; }
+      linhasEle.forEach(function (s) {
+        var l;
+        if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "eletrica"; if (s.observacao) (l.avisos = l.avisos || []).push(s.observacao);
+          /* integração n23: o item fora da medida da SINAPI orçado pela composição de maior preço vai MARCADO provisório até o orçamento (pendenciasPreco) */
+          if (s.provisorio || /provisório/.test(txt(s.observacao))) l.provisorio = { motivo: s.observacao || "provisório — cotar com o fornecedor" }; }
+        else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
+        somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
+      });
+    }
     /* P10 — DEMOLIÇÃO (js/bimfases.js): cada peça demolida na fase do orçamento vira o
        serviço de demolição do MAPA (código SINAPI conferido) ou do projeto, na medida do
        REGISTRO (a mesma da tela). Sem composição, ou sem a medida: PENDENTE com o motivo. */

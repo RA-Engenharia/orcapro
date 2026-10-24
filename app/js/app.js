@@ -155,7 +155,7 @@
       if (_rvt && /(^|[#&/])rv\b/i.test(location.hash || location.search || "")) { return this._abrirRVCloud(_rvt[1]); }
       /* PLACA DA OBRA (#placa=<código>) — o QR permanente impresso na placa:
          senha + cadastro, depois o mesmo visor do link. Também antes de todo o app. */
-      var _plc = (location.hash || "").match(/^#placa=([a-z2-9]{6,16})$/);
+      var _plc = (location.hash || "").match(/^#placa=([a-z2-9]{6,16})(?:&pv=1)?$/);   /* &pv=1: abre direto na Prancha Viva (js/rvvisor.js) */
       if (_plc) { return this._abrirPlacaObra(_plc[1]); }
 
       // USO SOLO/LOCAL: entra direto (sem a barreira de login). O login segue acessível via "Sair"

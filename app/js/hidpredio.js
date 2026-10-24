@@ -331,7 +331,7 @@
     unidades.forEach(function (u) { (u.esp ? grupos[1] : grupos[0]).unidades.push(u); });
     decide("predio.shaft", "Shaft " + (par.shaft && par.shaft.tq ? "informado" : sh0.onde + (tentados > 1 ? " (o " + tentados + "º lugar testado: o traçado do pavimento-tipo passou ali; os anteriores ficavam sem caminho junto da bacia)" : "")) + ": tubo de queda, coluna de ventilação e coluna de água fria enfileiradas a " + f2(geo(par, "afastPrumadas")) + " m entre eixos, a " + f2(geo(par, "recuoShaft")) + " m da parede (critério do projetista; o shaft é fechado e visitável)" + (eixo ? "; a unidade espelhada tem o shaft espelhado" : "") + ".");
     grupos.forEach(function (G) { var Pg = prumadasGrupo(G, true); if (Pg) { Pg.novas.forEach(function (o) { acc.push(o); }); out.prumadas.push(Pg.prumada); } });
-    if (out.prumadas.length) pend("predio.barrilete", "ligue a(s) coluna(s) de água fria " + out.prumadas.map(function (p) { return p.af; }).join(", ") + " ao barrilete/reservatório superior (não modelado): a espera acima do registro de gaveta de cada coluna recebe o barrilete; na saída do reservatório, outro registro de gaveta (NBR 5626:2020, 6.5.12.4 a)", out.prumadas.map(function (p) { return p.af; }), { tipo: "modelar", sistema: "agua_fria", elemento: "barrilete" });
+    if (out.prumadas.length) pend("predio.barrilete", "ligue a(s) coluna(s) de água fria " + out.prumadas.map(function (p) { return p.af; }).join(", ") + " ao barrilete/reservatório superior (não modelado): a espera acima do registro de gaveta de cada coluna recebe o barrilete; na saída do reservatório, outro registro de gaveta (NBR 5626:2020, 6.5.12.4 a) — com a caixa d'água no modelo, o Traçar automaticamente (ou Montar barrilete) liga", out.prumadas.map(function (p) { return p.af; }), { tipo: "modelar", sistema: "agua_fria", elemento: "barrilete" });
     st = est();
 
     /* 6) LIGAR AMBIENTE de cada unidade (o térreo à espera; os andares ao TQ; a ventilação à coluna) */
@@ -416,6 +416,23 @@
     if (out.prumadas.some(function (p) { return p.registro; })) decide("predio.registro_coluna", "Registro de gaveta no início de cada coluna de água fria (" + out.prumadas.filter(function (p) { return p.registro; }).map(function (p) { return p.registro; }).join(", ") + "), no barrilete, acima da laje de cobertura e a montante do 1º ramal (NBR 5626:2020, 6.5.12.4 a e b): o volante para o lado livre do shaft (fora das outras prumadas e das paredes); acima dele, a espera que o barrilete recebe. O registro na saída do reservatório entra com o barrilete (pendência predio.barrilete).");
     if (out.prumadas.some(function (p) { return p.yBaseAF != null; })) decide("predio.valvula", "Válvula de descarga: o ramal exclusivo de cada bacia sai da coluna de água fria do shaft sob a laje (NBR 5626, 6.14.5) — a coluna termina " + f2(geo(par, "tocoAF")) + " m abaixo da ligação mais baixa (tampão / registro de limpeza; critério do projetista).");
 
+    /* FRENTE H8 (21/10/2026): com a CAIXA D'ÁGUA no modelo, o barrilete (js/hidbarrilete.js) liga a espera acima do registro de cada
+       coluna — a pendência predio.barrilete fecha (sem caixa, ela fica, e o Traçar automaticamente liga quando a caixa for posta) */
+    var HBR = dep("HidBarrilete", "./hidbarrilete.js");
+    /* ⚠ a caixa é procurada no estado que já existe (st, as famílias não mudam depois do passo 6): o replicar sem caixa não paga mais
+       um BimEdit.aplicar do prédio inteiro (o test-hid-predio roda o replicar 6 vezes) */
+    if (out.prumadas.length && HBR && HBR.caixas(st, avaliarFam).length) {
+      try {
+        var RB = HBR.montar({ estado: est(), avaliarFam: avaliarFam, ops: opsAgora(), parametros: par, pressao: true });
+        var esperasP = out.prumadas.map(function (p) { return p.esperaBarrilete; }).filter(Boolean), todasLig = esperasP.length && esperasP.every(function (x) { return RB.esperasLigadas.indexOf(x) >= 0; });
+        RB.ops.forEach(function (o) { acc.push(o); });
+        RB.pendencias.forEach(function (p) { pend(p.chave, p.texto, p.elementos, p.acao); });
+        RB.avisos.forEach(function (a) { aviso(a.texto, a.elementos, a.acao); });
+        RB.decisoes.forEach(function (d) { decide(d.id, d.texto); });
+        if (todasLig) out.pendencias = out.pendencias.filter(function (p) { return p.chave !== "predio.barrilete"; });
+        out.barrilete = { ligadas: RB.ligadas, esperas: RB.esperasLigadas, caixas: RB.caixas };
+      } catch (eB) { aviso("barrilete: o traçado falhou (" + (eB && eB.message ? eB.message : eB) + ") — ligue as colunas à caixa à mão", out.prumadas.map(function (p) { return p.af; })); }
+    }
     out.unidades = unidades.map(function (u) { return { id: u.id, pavimento: u.k, y: u.y, espelhada: u.esp, aparelhos: u.fams.slice(), ambiente: u.ambiente, terreo: u.terreo }; });
     ctx.pendencias().forEach(function (p) { pend(p.chave, p.motivo, [id]); });
     out.normas = ctx.normas();

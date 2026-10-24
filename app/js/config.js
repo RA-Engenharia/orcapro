@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.177",
+    versao: "1.2.178",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -138,13 +138,14 @@
            negativo [6-1] devolve o carimbo antigo e exige a reprovação.
        ⚠ `ccIA` nasce DESLIGADA (§1.10): nenhuma chamada nesta leva. */
     /* ---- Plano de içamento do BIM (aba Içamento) — PRÉVIA ----
-       Desligado na FROTA (a fita mostra "em breve", como na 1.2.113); ligado
-       numa instalação só pela chave local `orcapro:tela:icamento-recursos:v1`
-       ({"plano":true}), que o `App._previaDaUrl` grava quando o app abre com
-       `?previa=icamento` (e apaga com `?previa=icamento-desligar`). O peso das
+       LIGADO na FROTA desde a 1.2.178 (23/10/2026: o plano de montagem da metálica
+       ficou pronto). A chave local `orcapro:tela:icamento-recursos:v1` manda por
+       cima: {"plano":false} desliga NESTA instalação (a fita volta a "em breve",
+       como na 1.2.113); {"plano":true} é o que o `App._previaDaUrl` grava com
+       `?previa=icamento` (e `?previa=icamento-desligar` só APAGA a chave). O peso das
        peças (fase 1) não depende desta chave. Quem lê é `Gestao._icarLigado`.
        ⚠ Desligar NÃO apaga dado: o `bim_icamento` gravado continua e sincroniza. */
-    icamentoRecursos: { plano: false },
+    icamentoRecursos: { plano: true },
 
     /* ---- Cristal OrçaPRO no BIM + cubo de navegação novo (ESPEC-BIM-CUBO-LOGO.md) — PRÉVIA ----
        Desligado na FROTA (o BIM vazio e o cubo de antes); ligado numa instalação pela chave local

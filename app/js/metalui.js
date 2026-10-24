@@ -121,6 +121,10 @@
         { id: "met-listas", rotulo: "Listas\n(.xlsx)", icone: "planilha", grande: true, dica: "Lista de peças, de conjuntos, de parafusos/porcas/arruelas, de chapas e o resumo de peso por material (o mesmo peso do içamento)." },
         { id: "met-ifc", rotulo: "IFC de\nfabricação", icone: "estrutura", grande: true, dica: "IFC4 com IfcPlate, IfcMember, IfcBeam e IfcColumn agrupados em conjuntos (IfcElementAssembly), parafusos como IfcMechanicalFastener e os furos como aberturas." },
         { id: "met-pacote", rotulo: "Pacote da\nfábrica", icone: "pasta", grande: true, dica: "Tudo num .zip: DSTV, DXF, nesting, listas em Excel e o IFC de fabricação." },
+        /* 23/10/2026: o orçamento por peso (js/metalorc.js) só abria por dentro de "Pintura e peso"; o plano de montagem
+           (js/metalmontagem.js) gera os içamentos da estrutura — os dois na fita, onde a pessoa procura */
+        { id: "met-orcamento", rotulo: "Orçamento\nda estrutura", icone: "calculadora", grande: true, dica: "Orçamento 100 % da estrutura de aço por peso: fornecimento, fabricação e montagem (por tipo de perfil), parafusos e chumbadores por diâmetro, pintura por demão ou galvanização, içamento pelo plano de montagem e frete. O que a base pública não tem sai pelo maior preço público, marcado provisório." },
+        { id: "met-montagem", rotulo: "Plano de\nmontagem", icone: "estrutura", grande: true, dica: "A estrutura de aço vira os içamentos do plano de içamento, na ordem de montagem: o vão contraventado primeiro, linha a linha; acessórios sobem com a peça, terças em feixe. Depois o sistema sugere o guindaste ou munck pela tabela de carga, e as horas vão para o orçamento." },
         { id: "met-fontes", rotulo: "De onde vem\ncada número", icone: "livro", grande: true, dica: "As fontes de cada regra (NBR 8800, catálogos, DSTV) e o que é valor de partida a conferir." }
       ]
     },
@@ -165,7 +169,15 @@
         "met-calc-cype": function () { self.calcRota("cype"); }, "met-calc-normas": function () { self.calc("normas"); },
         "met-numerar": function () { self.numerar(); }, "met-desenho": function () { self.fab("desenhos"); }, "met-corte": function () { self.fab("corte"); }, "met-dobrada": function () { self.fab("dobrada"); },
         "met-planif": function () { self.fab("planificacao"); }, "met-nesting": function () { self.fab("nesting"); }, "met-pintura": function () { self.fab("pintura"); }, "met-dstv": function () { self.exportar("dstv"); }, "met-dxf": function () { self.exportar("dxf"); },
-        "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); }
+        "met-listas": function () { self.listas(); }, "met-ifc": function () { self.ifc(); }, "met-pacote": function () { self.pacote(); }, "met-fontes": function () { self.fontes(); },
+        "met-orcamento": function () { if (!global.MetalOrc || !global.MetalOrc.abrir) { toast("O orçamento da estrutura não carregou (js/metalorc.js).", "erro", 8000); return; } global.MetalOrc.abrir(); },
+        "met-montagem": function () {
+          var G = self._G || global.Gestao;
+          if (!global.MetalMontagem || !G || !G._icarMontagem) { toast("O plano de montagem não carregou (js/metalmontagem.js).", "erro", 8000); return; }
+          if (G._icarLigado && !G._icarLigado()) { toast("O plano de içamento ainda está em preparação nesta instalação — chega numa próxima versão.", "aviso", 8000); return; }
+          if (G._icarAbrir) G._icarAbrir("icamentos");
+          G._icarMontagem();
+        }
       };
       Object.keys(h).forEach(function (k) { reg[k] = function () { try { h[k](); } catch (e) { toast("Metálica: " + (e && e.message ? e.message : e), "erro", 8000); } return true; }; });
       if (PP && PP.registrar) { try { PP.registrar(reg); } catch (eP) { toast("Metálica (peças prontas): " + (eP && eP.message ? eP.message : eP), "erro", 8000); } }

@@ -165,7 +165,7 @@
     esgoto:     { ramal: "Ramal de descarga / de esgoto", prumada: "Tubo de queda (prumada)", subcoletor: "Subcoletor aéreo" },
     ventilacao: { prumada: "Coluna de ventilação", ramal_ventilacao: "Ramal de ventilação" },
     pluvial:    { ramal: "Condutor horizontal (ramal)", prumada: "Condutor vertical" },
-    eletrica:   { laje: "Embutido na laje", parede: "Embutido na parede", forro: "Sobre o forro", aparente: "Aparente" },
+    eletrica:   { laje: "Embutido na laje", parede: "Embutido na parede", forro: "Sobre o forro", aparente: "Aparente", piso: "Embutido no piso" },   /* piso: a alimentação da ligação elétrica "pelo piso" (js/eletilum.js) */
     ar:         { ar: "Rede de ar-condicionado" },
     frigorigeno: { parede: "Embutido na parede", forro: "Sobre o forro", laje: "Embutido na laje", aparente: "Aparente (canaleta)" },
     dreno:       { parede: "Embutido na parede", forro: "Sobre o forro", laje: "Embutido na laje", aparente: "Aparente", bomba: "Recalcado (bomba de dreno)" },
@@ -347,6 +347,9 @@
     if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
     if (t.continua && o.predio != null && o.predio !== "") t.predio = txt(o.predio).slice(0, 120);
     if (t.continua && o.piscLinha != null && o.piscLinha !== "") t.piscLinha = txt(o.piscLinha).slice(0, 120);
+    /* FRENTE H8 (21/10/2026): as SAÍDAS LIVRES da caixa d'água (js/hidbarrilete.js) — extravasor e limpeza (descarga livre e visível),
+       a ventilação do barrilete, a espera do alimentador da boia e o respiro do boiler: extremidade aberta que a R-E2 permite */
+    if (t.continua && o.saidaLivre != null && o.saidaLivre !== "") t.saidaLivre = txt(o.saidaLivre).slice(0, 120);
     /* QUALIDADE VISUAL 1 (juntas, 17/10/2026): como esta ponta do tubo encontra a PONTA de uma conexão de esgoto —
        "luva" (padrão: luva de verdade, no quantitativo), "bolsa" (a bolsa do próprio tubo) ou "invertida" (luva contra
        o fluxo: aviso com o motivo). Ausente = luva. juntaIni vale para p1, juntaFim para p2. */
@@ -421,7 +424,8 @@
     var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
     if (P.sistemas[0] === "eletrica") {
       k.alturaPiso = num(o.alturaPiso, null);
-      k.aplicacao = o.peca === "caixa_octogonal" ? "laje" : alturaCaixa(k.alturaPiso);
+      /* LIGAÇÃO ELÉTRICA (21/10/2026, js/eletilum.js): o ponto de luz do ambiente com forro é a caixa octogonal SOBRE o forro */
+      k.aplicacao = o.peca === "caixa_octogonal" ? (o.aplicacao === "forro" ? "forro" : "laje") : alturaCaixa(k.alturaPiso);
     } else k.aplicacao = sis;                         /* ralo/caixa sifonada: a SINAPI separa esgoto × pluvial */
     /* o cilindro de captura (ver PECAS): do topo da peça até a saída */
     var R = P.captura, prof = P.forma === "cil" ? (P.prof || 0) : 0.06;
@@ -446,6 +450,16 @@
     if (!est.acessorios) { est.acessorios = {}; est.ordemAc = []; est.nomesSis = {}; }
     /* P12: acessório no tubo (divide o trecho) e o nome do sistema */
     if (o.op === "acessorio") return aplicarAcessorio(est, o);
+    /* LIGAÇÃO ELÉTRICA DA ILUMINAÇÃO (21/10/2026, js/eletilum.js; contrato docs/eletrica/CONTRATO-ILUMINACAO.md): o REGISTRO do
+       ambiente (comandos, regra dos interruptores, caminho, circuito, fiação por trecho). Só dados: as peças são trechos, peças e
+       famílias comuns. Apagar com o id do registro tira o registro (as peças ficam, editáveis). */
+    if (o.op === "ligEletrica" && o.id != null) {
+      if (!est.ligacoes) { est.ligacoes = {}; est.ordemLig = []; }
+      est.ligacoes[o.id] = copia(o);
+      if (est.ordemLig.indexOf(o.id) < 0) est.ordemLig.push(o.id);
+      return true;
+    }
+    if (o.op === "apagar" && o.id != null && est.ligacoes && est.ligacoes[o.id]) { delete est.ligacoes[o.id]; est.ordemLig.splice(est.ordemLig.indexOf(o.id), 1); return true; }
     if (o.op === "instSistema" && o.id != null) {
       if (!est.trechos[o.id]) return false;
       var nm = txt(o.nome).trim().slice(0, 60);
@@ -516,6 +530,8 @@
     var acs = arr(est.ordemAc).map(function (id) { return normAcessorio(est.acessorios[id]); }).filter(Boolean);
     if (acs.length) out.acessorios = acs;
     if (est.nomesSis && Object.keys(est.nomesSis).length) out.nomesSistema = copia(est.nomesSis);
+    /* ligação elétrica: só quando há (o estado das obras sem ela fica byte a byte o de antes) */
+    if (est.ordemLig && est.ordemLig.length) out.ligacoes = est.ordemLig.map(function (id) { var r = copia(est.ligacoes[id]); delete r.op; return r; });
     return out;
   }
   /* sanear: shape válido de uma op de instalação (storage corrompido não derruba o replay) */
@@ -530,6 +546,7 @@
     if (o.op === "acessorio") return o.id != null && typeof o.famId === "string" && !!ACESSORIO_DA_FAM[o.famId] && fin(o.x) && fin(o.y) && fin(o.z) &&
       (o.trecho == null ? true : o.novoId != null) && (o.comprimento == null || fin(o.comprimento)) && (o.giro == null || fin(o.giro));
     if (o.op === "instSistema") return o.id != null && typeof o.nome === "string";
+    if (o.op === "ligEletrica") return o.id != null && typeof o.amb === "string" && Array.isArray(o.comandos);
     return false;
   }
 
@@ -551,6 +568,8 @@
     var temFace = cx && isFinite(cx.z0) && isFinite(cx.z1) && cx.z1 - cx.z0 > FACE_TOL * 2;
     /* peça EM LINHA (luva, registro, conexão importada): tem ponto também na face da FRENTE — não é de parede */
     if (temFace && arr(av.conectores).some(function (k) { return k && Math.abs(num(k.z, 0) - cx.z1) <= FACE_TOL; })) temFace = false;
+    /* FRENTE H7: a família que DECLARA a face da parede (js/familia.js faceParede — a churrasqueira com o chapéu atrás do fundo) */
+    var z0F = temFace && av.faceParede != null && isFinite(Number(av.faceParede)) ? Number(av.faceParede) : (cx ? cx.z0 : 0);
     arr(av.conectores).forEach(function (k, i) {
       if (!k || !SISTEMAS[k.sistema]) return;
       var lx = num(k.x, 0), ly = num(k.y, 0), lz = num(k.z, 0);
@@ -559,7 +578,7 @@
                  x: r4(num(inst && inst.x, 0) + lx * c + lz * s), y: r4(num(inst && inst.y, 0) + ly), z: r4(num(inst && inst.z, 0) - lx * s + lz * c) };
       /* d = quanto o ponto está À FRENTE da face de trás do corpo (a louça encosta na parede pelo corpo): o eixo embutido
          se mede da face da parede, e todos os pontos da mesma parede caem na mesma linha */
-      if (temFace && Math.abs(lz - cx.z0) <= FACE_TOL) o.parede = { x: r4(-s), z: r4(-c), d: r4(Math.max(0, lz - cx.z0)) };
+      if (temFace && Math.abs(lz - z0F) <= FACE_TOL) o.parede = { x: r4(-s), z: r4(-c), d: r4(Math.max(0, lz - z0F)) };
       out.push(o);
     });
     return out;
@@ -934,6 +953,9 @@
         if (pc) {
           ramos.forEach(function (r) { ligacoes.push({ trecho: r.trecho, alvo: pc.id, tipo: "peca", x: r4(P.x), y: r4(P.y), z: r4(P.z) }); });
           ligPeca[pc.id] = (ligPeca[pc.id] || 0) + ramos.length;
+          /* LIGAÇÃO ELÉTRICA (21/10/2026): o DISPOSITIVO (luminária, interruptor, tomada) cujo ponto está DENTRO da caixa elétrica
+             em que o eletroduto chega está ligado por ela — a caixa é o ponto dele (antes ficava "ponto sem tubo") */
+          if (grupoDe(s) === "eletrica") conectores.forEach(function (c) { if (!usadosCon[c.id] && c.sistema === s && dentroHub(c, pc.hub)) { usadosCon[c.id] = 1; ligacoes.push({ trecho: ramos[0].trecho, alvo: c.id, famInst: c.famInst, tipo: "aparelho", pelaCaixa: pc.id, x: c.x, y: c.y, z: c.z }); } });
           return;
         }
         var con = null;
@@ -974,6 +996,21 @@
        qualquer tubo) é estado do projeto, não defeito: fica na lista, sem marca vermelha em cima da louça */
     var emUso = {}; trechos.forEach(function (t) { emUso[t.sistema] = 1; });
     var marcar = semLigacao.filter(function (c) { return emUso[c.sistema]; });
+    /* ⚠ PRIORIDADE 21/10/2026: o CORPO da caixa sifonada / do ralo acompanha a cota da tubulação ligada e o PROLONGADOR enche até o
+       porta-grelha no piso (js/biminstgeo.js corpoPeca — a mesma conta do 3D, do orçamento e da conferência da laje) */
+    var HGc = dep("HidGeo", "./biminstgeo.js");
+    if (HGc && HGc.corpoPeca) {
+      var porIdR = {}; trechos.forEach(function (t) { porIdR[t.id] = t; });
+      pecas.forEach(function (q) {
+        if (!/^(ralo_|caixa_sifonada)/.test(q.peca)) return;
+        var lig = ligacoes.filter(function (l) { return l.tipo === "peca" && l.alvo === q.id; }).map(function (l) {
+          var t = porIdR[l.trecho]; if (!t) return null;
+          var e = dist(t.p1, l) <= dist(t.p2, l) ? t.p1 : t.p2, f = e === t.p1 ? t.p2 : t.p1;
+          return { trecho: t.id, dn: t.dn, ponto: e, dir: [f.x - e.x, f.y - e.y, f.z - e.z] };
+        }).filter(Boolean);
+        try { var cp = HGc.corpoPeca(q, lig); if (cp) q.corpo = { base: r4(cp.base), baseCatalogo: r4(cp.baseCatalogo), prolongador: r4(cp.prolongador), diam: cp.diam, porTrecho: cp.porTrecho }; } catch (eCp) {}
+      });
+    }
     return { trechos: trechos, pecas: pecas, conectores: conectores, conexoes: conexoes, ligacoes: ligacoes, pontasLivres: livres, continuacoes: continuacoes,
              conectoresLivres: semLigacao, conectoresMarcar: marcar, ligacoesPeca: ligPeca, avisos: avisosRede, acessorios: acessorios, nosRamos: nosRamos, juntas: juntas, luvasQto: luvasQto };
   }
@@ -1032,6 +1069,7 @@
   }
   function rotuloItem(item) {
     if (ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) return rotuloP12(item);   /* P12 */
+    if (item.peca === "cabo") return "Cabo de cobre flexível isolado " + String(item.dn).replace(".", ",") + " mm² " + (item.material === "cobre_450_750" ? "450/750 V" : item.material) + ", circuitos terminais";   /* ligação elétrica */
     var M = MATERIAIS[item.material], P = PECAS[item.peca];
     if (P && item.nome) return item.nome + (SISTEMAS[item.sistema] ? " — " + SISTEMAS[item.sistema].nome.toLowerCase() : "");   /* pendências finais: a caixa de inspeção pelo tipo */
     if (item.peca === "tubo") return (M ?(M.secao === "retangular" ? M.nome + " " + Math.round(item.larg * 100) + "×" + Math.round(item.alt * 100) + " cm" : M.nome + " DN " + item.dn) : item.material) + aplRot(item);
@@ -1097,6 +1135,23 @@
      fornecimento (insumo): a colocação do tubo de espuma acompanha a montagem do tubo */
   var ISOLAMENTO_AQ = { insumos: { "1/2": "39712", "3/4": "39715", "1": "39714", "1 1/4": "39708", "1 1/2": "39707" }, coeficiente: 1.022727, coefFonte: "SINAPI 97329 (insumo de isolamento por metro de tubo)",
     descricao: "Tubo de espuma de polietileno expandido flexível para isolamento térmico de água quente, E = 10 mm" };   // hid:ok códigos e coeficiente da SINAPI conferidos (fonte acima)
+  /* ⚠ PRIORIDADE 21/10/2026 — o PROLONGADOR da caixa sifonada / do ralo (o corpo desce até a cota da tubulação: js/biminstgeo.js
+     corpoPeca). Insumos SINAPI 06/2026 conferidos na base local data/sinapi-MG-2026-06.json: 11735 "PROLONGAMENTO / PROLONGADOR PARA
+     CAIXA SIFONADA, PVC, 100 MM X 200 MM (NBR 5688)", 11737 "... 150 MM X 150 MM", 11738 "... 150 MM X 200 MM". Comprimento comercial
+     de 200 mm (Tigre, Catálogo Predial 2025, p.29: "Prolongamento para Caixa Sifonada 100 x 200"; cortado na medida). Acima de 200 mm:
+     EMENDA de peças (n = ⌈altura / 200 mm⌉, com aviso). Só fornecimento (insumo): a composição da caixa/ralo já paga a instalação —
+     sem cobrança dupla. O ralo Ø 100 usa o prolongador Ø 100 (encaixe a conferir no catálogo do ralo). Ø 250: sem insumo → pendente. */
+  var PROLONGADOR_CS = { classes: [100, 150, 250], insumos: { "100": [[0.2, "11735", "100 MM X 200 MM"]], "150": [[0.15, "11737", "150 MM X 150 MM"], [0.2, "11738", "150 MM X 200 MM"]] }, comercial: 0.2,   // hid:ok códigos e medidas comerciais da SINAPI/Tigre conferidos (fonte acima)
+    descricao: "Prolongamento / prolongador para caixa sifonada, PVC (NBR 5688), cortado na medida" };
+  function prolongadorDe(k) {
+    var c = k && k.corpo, L = c ? num(c.prolongador, 0) : 0; if (!(L > 0)) return null;
+    var cls = PROLONGADOR_CS.classes.slice().sort(function (a, b) { return Math.abs(a - num(c.diam, 0)) - Math.abs(b - num(c.diam, 0)); })[0], ls = PROLONGADOR_CS.insumos[String(cls)];
+    var n = Math.ceil(L / PROLONGADOR_CS.comercial - 1e-6), it = { peca: "prolongador_cs", sistema: k.sistema, material: "pvc_esgoto", aplicacao: k.sistema, dn: String(cls) };
+    if (!ls) return { item: it, n: n, comprimento: L, sinapi: { status: "pendente", chave: "prolongador|" + cls, rotulo: "Prolongador Ø " + cls, motivo: "prolongador da caixa Ø " + cls + ": sem insumo SINAPI 06/2026 (só Ø 100 e Ø 150) — pendente" } };
+    var esc = n === 1 ? (ls.filter(function (x) { return L <= x[0] + 1e-6; })[0] || ls[ls.length - 1]) : ls[ls.length - 1];
+    return { item: it, n: n, comprimento: L, emenda: n > 1, sinapi: { status: "ok", chave: "prolongador|" + cls + "|" + esc[1], rotulo: "Prolongador para caixa sifonada Ø " + cls + " (" + esc[2] + ")", codigo: esc[1], unidade: "UN", descricao: "PROLONGAMENTO / PROLONGADOR PARA CAIXA SIFONADA, PVC, " + esc[2] + " (NBR 5688)", insumo: true, alternativas: 0,
+      observacao: (n > 1 ? n + " peças emendadas" : "1 peça") + " para " + Math.round(L * 1000) + " mm (corpo na cota da tubulação; " + PROLONGADOR_CS.descricao + ")" } };
+  }
   function isolamentoDe(t) {
     var b = (BITOLA_REF[t.material] || {})[t.dn], cod = b ? ISOLAMENTO_AQ.insumos[b] : null;
     if (!cod) return { status: "pendente", chave: "isolamento|" + t.material + "|" + t.dn, rotulo: "Isolamento térmico DN " + t.dn, motivo: "isolamento térmico do tubo " + t.material + " DN " + t.dn + ": sem a bitola do insumo SINAPI — pendente" };
@@ -1133,7 +1188,7 @@
    * conexões por tipo, peças — cada grupo com a composição (ou pendente). */
   function qto(estado, avaliarFam) {
     var R = rede(estado, avaliarFam);
-    var tubos = {}, ordT = [], cxs = {}, ordC = [], pcs = {}, ordP = [], porSis = {};
+    var tubos = {}, ordT = [], cxs = {}, ordC = [], pcs = {}, ordP = [], porSis = {}, prol = {}, ordPl = [];
     function sis(s) { return porSis[s] || (porSis[s] = { sistema: s, nome: SISTEMAS[s].nome, cor: SISTEMAS[s].cor, metros: 0, conexoes: 0, pecas: 0 }); }
     R.trechos.forEach(function (t) {
       var it = itemTrecho(t), q = quantidadeTrecho(t);
@@ -1165,6 +1220,10 @@
         ordP.push(k);
       }
       g.n++; g.ids.push(p.id); sis(p.sistema).pecas++;
+      /* o PROLONGADOR da caixa/ralo baixado até a cota da tubulação: grupo próprio por insumo (n peças por caixa) */
+      var pl = prolongadorDe(p);
+      if (pl) { var kp = pl.sinapi.chave, gp = prol[kp]; if (!gp) { gp = prol[kp] = { peca: "prolongador_cs", nome: pl.sinapi.rotulo, sistema: p.sistema, dn: pl.item.dn, n: 0, quantidade: 0, unidade: "UN", ids: [], comprimentos: [], emendas: 0, sinapi: pl.sinapi }; ordPl.push(kp); }
+        gp.n++; gp.quantidade += pl.n; gp.ids.push(p.id); gp.comprimentos.push(r4(pl.comprimento)); if (pl.emenda) gp.emendas++; }
     });
     /* REVISÃO H5: o isolamento térmico da água quente fora do ambiente aquecido, por bitola */
     var isos = {}, ordI = [];
@@ -1183,15 +1242,25 @@
       g.n++; g.ids.push(a.id); sis(a.sistema).pecas++;
     });
     dispositivosDo(estado, avaliarFam).forEach(function (d) {
-      var it = d.item, k = [it.peca, it.material, it.aplicacao, it.dn, it.placa || "", it.corrente || ""].join("|");
+      var it = d.item, k = [it.peca, it.material, it.aplicacao, it.dn, it.placa || "", it.corrente || "", it.composicoes ? it.composicoes.map(function (c) { return c.codigo; }).join("+") : ""].join("|");
       var g = dsp[k];
-      if (!g) { g = dsp[k] = { peca: it.peca, nome: DISPOSITIVOS[it.peca].nome, material: it.material, aplicacao: it.aplicacao, dn: it.dn, placa: it.placa, corrente: it.corrente, n: 0, ids: [], sinapi: sinapiDe(it), rotulo: rotuloP12(it) }; ordD.push(k); }
+      if (!g) { g = dsp[k] = { peca: it.peca, nome: DISPOSITIVOS[it.peca].nome, material: it.material, aplicacao: it.aplicacao, dn: it.dn, placa: it.placa, corrente: it.corrente, n: 0, ids: [], sinapi: it.composicoes ? it.composicoes[0] : sinapiDe(it), rotulo: rotuloP12(it) }; if (it.composicoes) g.composicoes = it.composicoes; ordD.push(k); }
       g.n++; g.ids.push(d.id);
     });
+    /* LIGAÇÃO ELÉTRICA (21/10/2026, js/eletilum.js): o CABO da fiação lógica, por seção, em metro (comprimento de AGORA dos trechos ×
+       número de condutores do registro). Sem o motor da ligação ou sem registro: lista vazia (o resto fica igual) */
+    /* ⚠ com o projeto dos circuitos no quadro, o cabo é DELE (js/elecircuitos.js cuidaDoCabo, integração n23): aqui fica vazio */
+    var ECc = dep("EleCircuitos", "./elecircuitos.js"), caboDoProjeto = !!(ECc && ECc.cuidaDoCabo && ECc.cuidaDoCabo(estado, avaliarFam));
+    var EI = dep("EletIlum", "./eletilum.js"), cabos = !caboDoProjeto && EI && EI.cabos ? EI.cabos(estado).map(function (g) {
+      var it = { peca: "cabo", sistema: "", material: g.material, aplicacao: "terminal", dn: String(g.secao) };
+      g.sinapi = sinapiDe(it); g.rotulo = rotuloItem(it); g.unidade = "m"; g.quantidade = g.metros; return g;
+    }) : [];
     return {
+      cabos: cabos, caboDoProjeto: caboDoProjeto,
       acessorios: ordA.map(function (k) { return acs[k]; }),
       dispositivos: ordD.map(function (k) { return dsp[k]; }),
       isolamentos: ordI.map(function (k) { return isos[k]; }),
+      prolongadores: ordPl.map(function (k) { return prol[k]; }),
       tubos: ordT.map(function (k) { return tubos[k]; }),
       conexoes: ordC.map(function (k) { return cxs[k]; }),
       pecas: ordP.map(function (k) { return pcs[k]; }),
@@ -1230,10 +1299,25 @@
       /* a peça com MAIS de uma composição (a caixa de inspeção: a caixa + a tampa de ferro, ou o poço + a tampa) */
       if (it.composicoes) { it.composicoes.forEach(function (cp) { linha(p.id, it, cp.qtd != null ? cp.qtd : 1, cp.unidadeQto || "un", cp); }); return; }   /* o PV: acréscimo e chaminé em metro */
       linha(p.id, it, 1, "un", sinapiDe(it));
+      var pl = prolongadorDe(p); if (pl) linha(p.id, pl.item, pl.n, "un", pl.sinapi);   /* o prolongador da caixa/ralo baixado (só fornecimento) */
     });
     /* P12: cada registro/válvula e cada dispositivo (tomada, interruptor, luminária, quadro) é 1 UN */
     arr(R.acessorios).forEach(function (a) { var it = itemAcessorio(a); linha(a.id, it, 1, "un", sinapiDe(it)); });
-    dispositivosDo(estado, avaliarFam).forEach(function (d) { linha(d.id, d.item, 1, "un", sinapiDe(d.item)); });
+    dispositivosDo(estado, avaliarFam).forEach(function (d) {
+      if (d.item.composicoes) { d.item.composicoes.forEach(function (cp) { linha(d.id, d.item, cp.qtd != null ? cp.qtd : 1, "un", cp); }); return; }   /* a placa sem composição única (integração n23) */
+      linha(d.id, d.item, 1, "un", sinapiDe(d.item));
+    });
+    /* LIGAÇÃO ELÉTRICA: o cabo de cada trecho de eletroduto da ligação (metros de cabo = comprimento × condutores) */
+    var trPorId = {}; R.trechos.forEach(function (t) { trPorId[t.id] = t; });
+    /* ⚠ com o projeto dos circuitos, o cabo vem do js/elecircuitos.js (servicosOrc) — somar aqui também cobrava o fio duas vezes */
+    var ECo = dep("EleCircuitos", "./elecircuitos.js");
+    if (!(ECo && ECo.cuidaDoCabo && ECo.cuidaDoCabo(estado, avaliarFam))) arr(estado && estado.instalacoes && estado.instalacoes.ligacoes).forEach(function (rg) {
+      Object.keys(rg.fiacao || {}).forEach(function (tid) {
+        var t = trPorId[tid], f = rg.fiacao[tid]; if (!t || !f || !(num(f.n, 0) > 0)) return;
+        var it = { peca: "cabo", sistema: "", material: "cobre_450_750", aplicacao: "terminal", dn: String(num(rg.secao, 1.5)) };
+        linha(tid, it, r4(t.comprimento * num(f.n, 0)), "m", sinapiDe(it));
+      });
+    });
     return out;
   }
 
@@ -1248,6 +1332,9 @@
     var inst = (estado && estado.instalacoes) || { trechos: [], pecas: [] };
     var y0 = num(o.yFundo, -Infinity), yc = num(o.yCorte, Infinity), y1 = num(o.yTopo, yc + 3);
     var out = { linhas: [], simbolos: [], textos: [] };
+    /* LIGAÇÃO ELÉTRICA (21/10/2026, js/eletilum.js): o número de condutores do trecho entra no rótulo ("EL Ø20 · 3#1,5") */
+    var fiacaoT = {}, ligs = arr(inst.ligacoes);
+    ligs.forEach(function (rg) { Object.keys(rg.fiacao || {}).forEach(function (tid) { fiacaoT[tid] = rg.fiacao[tid].n + "#" + String(num(rg.secao, 1.5)).replace(".", ","); }); });
     arr(inst.trechos).forEach(function (t) {
       var lo = Math.min(t.p1.y, t.p2.y), hi = Math.max(t.p1.y, t.p2.y);
       if (hi < y0 - 1e-6 || lo > y1 + 1e-6) return;
@@ -1263,6 +1350,7 @@
            esgoto e no pluvial, a inclinação) — sem o padrão carregado, fica o rótulo acima */
         var PADR = dep("BimInstPadrao", "./biminstpadrao.js");
         if (PADR && PADR.pronto && PADR.pronto() && M.secao !== "retangular" && previaHidro()) {   /* P8: sem a prévia hidro, o rótulo do master */ var rp = PADR.rotuloTrecho({ sistema: t.sistema, dn: t.dn, inclinacao: S.gravidade ? t.inclinacao : null }); if (rp) rot = rp; }
+        if (fiacaoT[t.id]) rot += " · " + fiacaoT[t.id];
         var ang = Math.atan2(t.p2.z - t.p1.z, t.p2.x - t.p1.x) * 180 / Math.PI;
         if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
         out.textos.push({ x: r4((t.p1.x + t.p2.x) / 2), y: r4((t.p1.z + t.p2.z) / 2), t: rot, cor: S.cor, rot: r2(ang) });
@@ -1282,6 +1370,20 @@
       if (a.centro.y < y0 - 1e-6 || a.centro.y > y1 + 1e-6) return;
       simboloAcessorio(a).forEach(function (sg) { out.linhas.push({ seg: sg, cor: SISTEMAS[a.sistema].cor, tracejado: false, largura: 0, sistema: a.sistema, id: a.id }); });
     });
+    /* LIGAÇÃO ELÉTRICA: o símbolo do interruptor (S, S3w paralelo, S4w intermediário; um por módulo) ao lado da placa, e o
+       circuito/comando de cada luminária ("C1·a") — a convenção do projeto elétrico em planta */
+    if (ligs.length) {
+      var letra = {}; ligs.forEach(function (rg) { arr(rg.comandos).forEach(function (k, i) { letra[k.id] = (rg.circuito || "") + "·" + String.fromCharCode(97 + i); }); });
+      var SIMB = { simples: "S", paralelo: "S3w", intermediario: "S4w" };
+      arr(estado && estado.familias).forEach(function (f) {
+        var I = f.inst || {}, yf = num(f.y, 0); if (yf < y0 - 3 || yf > y1 + 1e-6) return;
+        if (I.Comandos && I.Esquemas) {
+          var th = num(f.rotY, 0), s = txt(I.Esquemas).split(",").map(function (e) { return SIMB[e.trim()] || "S"; }).join("+");
+          var cs = txt(I.Comandos).split(",").map(function (k) { return (letra[k.trim()] || "").split("·")[1] || ""; }).join("");
+          out.textos.push({ x: r4(num(f.x, 0) + Math.sin(th) * 0.2), y: r4(num(f.z, 0) + Math.cos(th) * 0.2), t: s + (cs ? " " + cs : ""), cor: COR_CAIXA_ELETRICA, rot: 0, id: f.id, livre: true });
+        } else if (I.Comando && letra[I.Comando]) out.textos.push({ x: r4(num(f.x, 0) + 0.18), y: r4(num(f.z, 0) - 0.18), t: letra[I.Comando], cor: COR_CAIXA_ELETRICA, rot: 0, id: f.id, livre: true });
+      });
+    }
     /* P12: LEGENDA de tubulação por sistema e DN (só quando pedida: a planta de sempre fica igual) */
     if (o.legenda) legendaNaPlanta(estado, out);
     return out;
@@ -1523,9 +1625,45 @@
     if (typeof avaliarFam !== "function") return out;
     arr(estado && estado.familias).forEach(function (f) {
       var av = avaliarFam(f.famId, f.tipoId, f.inst), it = familiaMep(av, f);
+      if (it && it.peca === "interruptor") { var cps = composInterruptor(it, f); if (cps) it.composicoes = cps; }
       if (it) out.push({ id: f.id, item: it, av: av, inst: f });
     });
     return out;
+  }
+  /* ⚠ ORÇAMENTO 100 % (integração n23, 23/10/2026): a placa que a SINAPI MG 06/2026 não tem como composição ÚNICA — o
+     intermediário de 2 ou 3 módulos (o four-way de vários comandos) e a placa MISTA (o geral em paralelo e os spots simples) —
+     saía PENDENTE, R$ 0 no orçamento. Agora: a combinação exata quando ela existe na SINAPI (simples + paralelo, chave em ordem alfabética: 91957, 91963,
+     91965, 91973, 91971 — conferidas na base) e, sem ela, a SOMA dos módulos que existem: 1 módulo "incluindo suporte e placa" +
+     os demais "sem suporte e sem placa", cada um pela composição SINAPI do seu esquema. Nunca a parecida: cada parcela é o módulo
+     que está na placa. Os esquemas vêm do parâmetro Esquemas (contrato da iluminação), senão do Tipo_interruptor repetido. */
+  var INT_COMBO = { "paralelo1+simples1": ["91957", "91956", "INTERRUPTOR SIMPLES (1 MÓDULO) COM INTERRUPTOR PARALELO (1 MÓDULO)"], "paralelo2+simples1": ["91963", "91962", "INTERRUPTOR SIMPLES (1 MÓDULO) COM INTERRUPTOR PARALELO (2 MÓDULOS)"],
+    "paralelo1+simples2": ["91965", "91964", "INTERRUPTOR SIMPLES (2 MÓDULOS) COM INTERRUPTOR PARALELO (1 MÓDULO)"], "paralelo2+simples2": ["91973", "91972", "INTERRUPTOR SIMPLES (2 MÓDULOS) COM INTERRUPTOR PARALELO (2 MÓDULOS)"],
+    "paralelo1+simples3": ["91971", "91970", "INTERRUPTOR SIMPLES (3 MÓDULOS) COM INTERRUPTOR PARALELO (1 MÓDULO)"] };
+  function composInterruptor(it, f) {
+    if (sinapiDe(it).status === "ok") return null;
+    var T = tabela(); if (!T || !T.chaves) return null;
+    var nMod = Math.max(1, num(it.dn, 1)), esq = txt(f && f.inst && f.inst.Esquemas).split(",").map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean);
+    if (esq.length !== nMod) { if (it.material === "misto") return null; esq = []; for (var i = 0; i < nMod; i++) esq.push(it.material); }
+    var com = it.placa !== "sem", conta = {};
+    esq.forEach(function (e) { conta[e] = (conta[e] || 0) + 1; });
+    function cod(chave, placa) { var c = arr(T.chaves[chave]).filter(function (x) { return x[3] && x[3].placa === placa; })[0]; return c || null; }
+    function linhaDe(c, qtd, obs) { return { status: "ok", codigo: c[0], unidade: c[1], descricao: c[2], rotulo: rotuloP12(it), alternativas: 0, qtd: qtd, observacao: obs }; }
+    var kc = Object.keys(conta).sort().map(function (k) { return k + conta[k]; }).join("+"), ex = INT_COMBO[kc];
+    if (ex) {
+      return [{ status: "ok", codigo: ex[com ? 0 : 1], unidade: "UN", descricao: ex[2] + ", 10A/250V, " + (com ? "INCLUINDO SUPORTE E PLACA" : "SEM SUPORTE E SEM PLACA") + " - FORNECIMENTO E INSTALAÇÃO. AF_03/2023", rotulo: rotuloP12(it), alternativas: 0, qtd: 1,
+               observacao: "placa " + esq.join(" + ") + ": a composição SINAPI da combinação (integração n23)" }];
+    }
+    var out = [], primeira = true, falta = null;
+    esq.forEach(function (e) {
+      if (falta) return;
+      var c = cod("interruptor|" + e + "|10a|1", primeira && com ? "com" : "sem");
+      if (!c) { falta = e; return; }
+      var ja = out.filter(function (x) { return x.codigo === c[0]; })[0];   /* o mesmo módulo duas vezes = UMA linha com 2 (sem linha repetida no orçamento) */
+      if (ja) ja.qtd += 1;
+      else out.push(linhaDe(c, 1, "placa de " + nMod + " módulos (" + esq.join(" + ") + ") sem composição SINAPI única: orçada pela soma dos módulos — 1 com suporte e placa, os outros sem (integração n23)"));
+      primeira = false;
+    });
+    return falta ? null : out;
   }
   function rotuloP12(it) {
     var A = ACESSORIOS[it.peca];
@@ -1597,6 +1735,7 @@
       arr(R.conectoresLivres).some(function (c) { return c.sistema === t.sistema && enc(c); }));
     if (perto) return null;
     if (t.predio || t.piscLinha) return "espera de projeto (" + (t.predio ? "prédio" : "piscina") + ")";
+    if (t.saidaLivre) return "saída livre (" + t.saidaLivre + ")";
     /* ⚠ (revisão adversarial, 20/10/2026) a ponta "continua" de ventilação ENCOSTADA no meio de um esgoto é a tomada que NÃO virou tê
        (a ventilação desce dele, ou sai deitada): é desconexão, nunca terminal — antes a ventilação que descia do esgoto tinha a ponta
        de cima no esgoto e passava como "terminal", e o cartão dizia "Pronto" */
@@ -1853,7 +1992,7 @@
     pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
     sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,
     /* ops que este motor recebe do BimEdit */
-    ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema"; }
+    ehOp: function (op) { return op === "trecho" || op === "peca" || op === "instAlterar" || op === "acessorio" || op === "instSistema" || op === "ligEletrica"; }
   };
   global.BimInst = BimInst;
   if (typeof module !== "undefined" && module.exports) module.exports = BimInst;

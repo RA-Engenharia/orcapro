@@ -350,7 +350,12 @@
     arr(q.conexoes).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Conexão", desc: g.nome || g.tipo, dn: g.dn, dn2: g.dn2 || "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
     arr(q.pecas).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Peça", desc: g.nome || g.peca, dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
     arr(q.acessorios).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Acessório", desc: (g.nome || g.acessorio) + (g.variante ? " (" + g.variante + ")" : ""), dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
-    arr(q.dispositivos).forEach(function (g) { out.push({ sistema: "dispositivos", material: g.material, item: "Dispositivo", desc: g.rotulo || g.nome || g.peca, dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
+    /* a placa sem composição SINAPI única (mista / intermediário de vários módulos — js/biminst.js composInterruptor) é orçada por
+       PARCELAS: uma linha por composição, com a quantidade dela (antes saía só a 1ª — a planilha não fechava com o orçamento) */
+    arr(q.dispositivos).forEach(function (g) {
+      if (arr(g.composicoes).length) { g.composicoes.forEach(function (cp, i) { out.push({ sistema: "dispositivos", material: g.material, item: "Dispositivo", desc: (g.rotulo || g.nome || g.peca) + (g.composicoes.length > 1 ? " — parcela " + (i + 1) + " de " + g.composicoes.length : ""), dn: g.dn, dn2: "", qtd: g.n * (cp.qtd != null ? cp.qtd : 1), un: "un", n: g.n, s: sin(cp) }); }); return; }
+      out.push({ sistema: "dispositivos", material: g.material, item: "Dispositivo", desc: g.rotulo || g.nome || g.peca, dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) });
+    });
     return out;
   }
 
@@ -707,7 +712,7 @@
 
   /* hid:fisica-fim */
 
-  var HidPlanilhas = { gerar: gerar, escrever: escrever, coeficienteC: coeficienteC };
+  var HidPlanilhas = { gerar: gerar, escrever: escrever, coeficienteC: coeficienteC, _linhasQto: linhasQto };
   global.HidPlanilhas = HidPlanilhas;
   if (typeof module !== "undefined" && module.exports) module.exports = HidPlanilhas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

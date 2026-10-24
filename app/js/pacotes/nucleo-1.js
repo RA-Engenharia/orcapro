@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.177",
+versao: "1.2.178",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -44,7 +44,7 @@ cronoRecursos: {
 motor: true, rede: true, extras: true, cal: true, avanco: true,
 bases: true, seloTardio: true, historico: true, filtro: true, pilha: true, sino: true
 },
-icamentoRecursos: { plano: false },
+icamentoRecursos: { plano: true },
 bimRecursos: { cristal: false, materiais: true },
 medccRecursos: {
 medAvanco: true, medAvancoAuto: true, medOrigem: true,
@@ -1004,6 +1004,8 @@ MODULOS.push({ id: "blocok", nome: "Blocok — paredes prontas", area: "bim", ti
 oque: "Paginação das placas, executivo, memorial, orçamento e pranchas do sistema Blocok." });
 MODULOS.push({ id: "marmoraria", nome: "Marmoraria", area: "bim", tipo: "extra", extra: "marmoraria",
 oque: "Bancadas de pedra, executivo, plano de chapa, tabela de preços, orçamento e proposta do marmorista." });
+MODULOS.push({ id: "pranchaviva", nome: "Prancha Viva", area: "bim", tipo: "extra", extra: "pranchaviva", soVisualiza: true,
+oque: "A prancha do projeto que abre o 3D no ponto tocado: corte na cota, disciplinas, medir, a peça com o item do orçamento e a etapa, e o pacote para o celular." });
 var POR_ID = {};
 MODULOS.forEach(function (m) { POR_ID[m.id] = m; });
 var IDS = MODULOS.map(function (m) { return m.id; });
@@ -1281,7 +1283,8 @@ DISC.forEach(function (x) { d["modela:" + x] = !!(base && base.liberado && arr(b
 var dono = function (k) { try { return global.localStorage.getItem(k) === "1"; } catch (e) { return false; } };
 d.blocok = dono("orcapro:blocok:owner") || !!(base && base.extras && base.extras.blocok) || this._blocokEmail();
 d.marmoraria = dono("orcapro:marmoraria:owner") || !!(base && base.extras && base.extras.marmoraria);
-d.bim = so || gest || modelaAlgo || d.blocok || d.marmoraria;
+d.pranchaviva = dono("orcapro:pranchaviva:owner") || !!(base && base.extras && base.extras.pranchaviva);
+d.bim = so || gest || modelaAlgo || d.blocok || d.marmoraria || d.pranchaviva;
 return d;
 },
 _blocokEmail: function () {
@@ -1297,7 +1300,7 @@ _foraDoTeste: function (cfg) {
 var f = {}, M = global.Modela, enc = false;
 try { var s = M && M.statusBase ? M.statusBase() : null; enc = !!(s && s.teste && s.teste.encerrado); } catch (e) {}
 if (!cfg.substituiTeste7Dias || (!cfg.aposTeste7Dias && enc)) {
-DISC.forEach(function (x) { f["modela:" + x] = true; }); f.blocok = true; f.marmoraria = true;
+DISC.forEach(function (x) { f["modela:" + x] = true; }); f.blocok = true; f.marmoraria = true; f.pranchaviva = true;
 }
 return f;
 },
@@ -1343,6 +1346,7 @@ var s = this.status(), o = {};
 DISC.forEach(function (d) { o[d] = (s.mods["modela:" + d] || {}).estado || "fora"; });
 o.blocok = (s.mods.blocok || {}).estado || "fora";
 o.marmoraria = (s.mods.marmoraria || {}).estado || "fora";
+o.pranchaviva = (s.mods.pranchaviva || {}).estado || "fora";
 return o;
 },
 moduloDaView: function (view) {
@@ -1384,12 +1388,12 @@ if (base && base.estado === "comprado") {
 var at = []; try { at = this.ativos(); } catch (eA) { at = []; }
 return MODULOS.some(function (m) {
 var x = s.mods[m.id];
-return m.area === area && m.id !== area && x && x.estado === "teste" && x.usadoMs > 0 && at.indexOf(m.id) >= 0;
+return m.area === area && m.id !== area && !m.soVisualiza && x && x.estado === "teste" && x.usadoMs > 0 && at.indexOf(m.id) >= 0;
 });
 }
 return MODULOS.some(function (m) {
 var x = s.mods[m.id];
-return m.area === area && x && (x.estado === "teste" || x.estado === "vencido") && x.usadoMs > 0;
+return m.area === area && !m.soVisualiza && x && (x.estado === "teste" || x.estado === "vencido") && x.usadoMs > 0;
 });
 },
 bloqueiaTela: function () {
@@ -1427,7 +1431,7 @@ var o = {};
 "extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar", "editar-tipo", "combinar", "componente", "eixo"].forEach(function (k) { o[k] = 1; });
 return o;
 })(),
-CMD_MODULO: { "blocok-exec": "blocok", "blocok-pecas": "blocok", "blocok-docs": "blocok" },
+CMD_MODULO: { "blocok-exec": "blocok", "blocok-pecas": "blocok", "blocok-docs": "blocok", "prancha-viva": "pranchaviva" },
 modulosDoComando: function (cmdId) {
 if (this.CMD_MODULO[cmdId]) return { aba: this._abaDe(cmdId), mods: [this.CMD_MODULO[cmdId]] };
 var D = global.BimDisciplinas, aba = this._abaDe(cmdId), de = null, self = this;
@@ -1458,11 +1462,11 @@ return { ok: true };
 }
 return recusa(dc.mods[0]);
 }
-var algum = MODULOS.some(function (m) { return m.area === "bim" && livre(m.id) && est(m.id) !== "fora"; }) || est("bim") === "fora";
+var algum = MODULOS.some(function (m) { return m.area === "bim" && !m.soVisualiza && livre(m.id) && est(m.id) !== "fora"; }) || est("bim") === "fora";
 if (algum && this.EDITA_MODELO[cmdId]) {
-var modLivre = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "comprado" || est(m.id) === "teste" || est(m.id) === "fora"); });
+var modLivre = MODULOS.some(function (m) { return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (est(m.id) === "comprado" || est(m.id) === "teste" || est(m.id) === "fora"); });
 if (!modLivre) {
-var alvoM = MODULOS.filter(function (m) { return m.area === "bim" && m.id !== "bim" && (est(m.id) === "vencido" || est(m.id) === "pausado"); })[0];
+var alvoM = MODULOS.filter(function (m) { return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (est(m.id) === "vencido" || est(m.id) === "pausado"); })[0];
 if (alvoM) return recusa(alvoM.id);
 }
 }
@@ -1477,9 +1481,9 @@ var s = this.status(); if (!s.regime || this.moduloDaTela() !== "bim") return nu
 var est = function (id) { return (s.mods[id] || {}).estado || "fora"; };
 var tela = this.bloqueiaTela();
 if (tela) return { modulo: tela, classicas: false };
-var livre = MODULOS.some(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "comprado" || e === "teste" || e === "fora"); });
+var livre = MODULOS.some(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (e === "comprado" || e === "teste" || e === "fora"); });
 if (livre) return null;
-var alvo = MODULOS.filter(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && (e === "vencido" || e === "pausado"); })[0];
+var alvo = MODULOS.filter(function (m) { var e = est(m.id); return m.area === "bim" && m.id !== "bim" && !m.soVisualiza && (e === "vencido" || e === "pausado"); })[0];
 return alvo ? { modulo: alvo.id, classicas: true } : null;
 },
 guardaEdicao: function (novas, opts) {
@@ -1655,7 +1659,7 @@ var DISCIPLINAS = [
 { id: "marcenaria", nome: "Marcenaria" }
 ];
 var IDS = DISCIPLINAS.map(function (d) { return d.id; });
-var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }];
+var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }, { id: "pranchaviva", nome: "Prancha Viva — a prancha que abre o 3D no ponto tocado" }];
 var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
 var DEMO_URL = false;
 try { DEMO_URL = /[?&]demo=1\b/.test((global.location && global.location.search) || ""); } catch (e) {}
@@ -2002,6 +2006,59 @@ return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k)
 };
 global.MarmModulo = MarmModulo;
 if (typeof module !== "undefined" && module.exports) module.exports = MarmModulo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/pranchavivamodulo.js ==== */
+try {
+(function (global) {
+"use strict";
+var ID = "pranchaviva";
+var OWNER = "orcapro:pranchaviva:owner";
+var OFERTA = {
+titulo: "Prancha Viva",
+subtitulo: "A prancha do projeto que abre o prédio no ponto tocado.",
+itens: [
+"Toque num ponto da planta, do corte ou da fachada: o modelo sai da folha e o 3D abre exatamente ali.",
+"No 3D: o corte na cota da prancha com a alça para arrastar, as disciplinas liga/desliga e a trena.",
+"Toque numa peça: nome, tipo, GUID — e o item do orçamento e a etapa do cronograma ligados a ela.",
+"Volte para a prancha no mesmo ponto em que estava no 3D.",
+"Mande para o celular do cliente pelo link e QR da obra, com as pranchas e a maquete em realidade aumentada."
+],
+vendaFechada: "A venda do módulo abre em breve. Para usar agora, fale com a RA Engenharia."
+};
+function M() { return global.Modela && typeof global.Modela.tem === "function" ? global.Modela : null; }
+function dono() { try { return !!(global.localStorage && global.localStorage.getItem(OWNER) === "1"); } catch (e) { return false; } }
+var PranchaVivaModulo = {
+ID: ID, OWNER: OWNER, OFERTA: OFERTA,
+estado: function () {
+if (dono()) return { liberado: true, motivo: "dono", teste: null };
+var m = M(), s = null;
+try { s = m && m.status ? m.status() : null; } catch (e) { s = null; }
+var tem = false; try { tem = !!(m && m.tem(ID)); } catch (e2) { tem = false; }
+if (!tem) return { liberado: false, motivo: "", teste: s ? s.teste : null, play: !!(s && s.play), teste1h: (s && s.vencidos1h && s.vencidos1h[ID]) || "" };
+var mot = "compra", comprado = false;
+try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
+if (s && s.demo) mot = "demo";
+else if (!comprado && s && s.tudo) mot = s.vitalicia ? "vitalicia" : "interno";
+else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
+else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
+return { liberado: true, motivo: mot, teste: s ? s.teste : null };
+},
+liberado: function () { return this.estado().liberado; },
+guarda: function (acao) {
+var e = this.estado();
+if (e.liberado) return { ok: true, motivo: e.motivo, acao: acao || "" };
+var t = e.teste || {};
+return { ok: false, acao: acao || "", motivo: "A " + OFERTA.titulo + " não está liberada nesta licença.", oferta: OFERTA, podeTestar: !!t.disponivel && !e.play, testeEncerrado: !!t.encerrado, teste1h: e.teste1h || "" };
+},
+iniciarTeste: function (cb) { var m = M(); if (!m || !m.iniciarTeste) { if (cb) cb({ ok: false }); return false; } return m.iniciarTeste(cb); },
+planosAVenda: function (oferta) {
+var p = (oferta && oferta.planos) || {};
+return Object.keys(p).filter(function (k) { return /^modela_pranchaviva_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+}
+};
+global.PranchaVivaModulo = PranchaVivaModulo;
+if (typeof module !== "undefined" && module.exports) module.exports = PranchaVivaModulo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/idb.js ==== */

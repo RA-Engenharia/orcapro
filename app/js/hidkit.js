@@ -52,7 +52,10 @@
     lateralChuveiro: 0.10, // hid:ok perna lateral da espera do chuveiro (o ramal desce ao lado do tubo que sobe ao chuveiro)
     margemTopo: 0.03,      // hid:ok o tubo de espera para abaixo da laje/forro (não fura sem projeto)
     afastRaloParede: 0.15, // hid:ok ralo do box nunca encostado na parede (porta-grelha + rodapé)
-    raioRaloExistente: 0.60 // hid:ok ralo/caixa que o usuário já pôs a até 60 cm do ponto do ralo do box = o ralo do box (a área de um box)
+    raioRaloExistente: 0.60, // hid:ok ralo/caixa que o usuário já pôs a até 60 cm do ponto do ralo do box = o ralo do box (a área de um box)
+    alcanceParedeCuba: 1.20, // hid:ok FRENTE H7: a parede atrás da cuba de bancada é procurada até 1,20 m do eixo (bancada de ilha não tem parede)
+    tolParedeCuba: 0.005,    // hid:ok FRENTE H7: 5 mm — abaixo disto a distância medida é a que já está no parâmetro
+    paralelaCos: 0.90        // hid:ok FRENTE H7: a parede "de frente" para o fundo da peça (cos do ângulo entre as normais ≥ 0,90)
   };
   /* as peças de esgoto que fazem o papel do ralo do box (o usuário pode ter posto qualquer uma delas à mão) */
   var RALOS_BOX = { ralo_seco: 1, ralo_sifonado: 1, caixa_sifonada: 1 };
@@ -136,6 +139,32 @@
   function normalParede(p) { var c = Math.cos(num(p.rotY, 0)), s = Math.sin(num(p.rotY, 0)); return { x: r4(-s), z: r4(-c) }; }
   function tangente(n) { return { x: -n.z, z: n.x }; }
   function eixo(pt, n, e, y) { return { x: r4(pt.x + n.x * e), y: r4(y == null ? pt.y : y), z: r4(pt.z + n.z * e) }; }
+
+  /* FRENTE H7 (21/10/2026): a face da parede ATRÁS da peça (no sentido da normal que entra na parede), na cota da peça —
+     a distância da origem até ela, ou null (nenhuma parede perpendicular ao fundo, a até alcanceParedeCuba). */
+  function ajustarParede(estado, avaliarFam, fi) {
+    var av = avaliar(avaliarFam, fi), v = av && av.valores; if (!v || v.Distancia_parede == null) return null;
+    var ins = fi.inst || {};
+    if (ins.Distancia_parede != null && !ins.Distancia_parede_auto) return null;   /* o usuário pôs o valor à mão: fica */
+    var n = normalParede(fi), o = { x: num(fi.x, 0), z: num(fi.z, 0) }, y = num(fi.y, 0), melhor = null, alc = geo(null, "alcanceParedeCuba");
+    paredes(estado).forEach(function (w) {
+      if (!(y >= w.base - EPS && y <= w.topo + EPS)) return;
+      var dx = w.p2.x - w.p1.x, dz = w.p2.z - w.p1.z, L = Math.sqrt(dx * dx + dz * dz); if (L < EPS) return;
+      var u = { x: dx / L, z: dz / L }, nw = { x: -u.z, z: u.x }, dn = n.x * nw.x + n.z * nw.z;
+      if (Math.abs(dn) < geo(null, "paralelaCos")) return;   /* a parede tem de ficar de frente para o fundo da peça */
+      var t = -((o.x - w.p1.x) * nw.x + (o.z - w.p1.z) * nw.z) / dn, face = t - (w.esp / 2) / Math.abs(dn);
+      if (!(face > EPS && face <= alc)) return;
+      var tl = (o.x + n.x * t - w.p1.x) * u.x + (o.z + n.z * t - w.p1.z) * u.z;
+      if (tl < -EPS || tl > L + EPS) return;
+      if (melhor == null || face < melhor) melhor = face;
+    });
+    if (melhor == null) return null;
+    melhor = r4(melhor);
+    if (Math.abs(melhor - num(v.Distancia_parede, 0)) < geo(null, "tolParedeCuba")) return null;   /* já está na parede */
+    var f = copia(fi), inst = { Distancia_parede: melhor, Distancia_parede_auto: 1 };
+    f.inst = Object.assign({}, ins, inst);
+    return { fi: f, inst: inst, valor: melhor };
+  }
 
   /* --------------------------------------------------- PISO / TETO
    * piso = a base do aparelho de piso (caixa y0 ≈ 0 na origem); senão a base da parede onde ele encosta; senão o
@@ -255,7 +284,9 @@
       familia: function (suf, famId, tipoId, p, rotY, parte) { var o = { op: "familia", id: pref + suf, famId: famId, tipoId: tipoId, x: r4(p.x), y: r4(p.y), z: r4(p.z), rotY: r4(num(rotY, 0)), inst: {} }; ops.push(marca(o, parte)); return o; },
       acessorio: function (suf, famId, tipoId, trecho, p, parte) { var o = { op: "acessorio", id: pref + suf, famId: famId, tipoId: tipoId, trecho: trecho.id, novoId: trecho.id + "b", x: r4(p.x), y: r4(p.y), z: r4(p.z), comprimento: BI().ACESSORIO_PADRAO }; ops.push(marca(o, parte)); return o; },
       peca: function (suf, peca, p, parte) { var o = { op: "peca", id: pref + suf, peca: peca, sistema: "esgoto", x: r4(p.x), y: r4(p.y), z: r4(p.z) }; ops.push(marca(o, parte)); return o; },
-      instancia: function (y, parte) { var o = { op: "instancia", id: fi.id, y: r4(y) }; ops.push(marca(o, parte)); return o; }
+      instancia: function (y, parte) { var o = { op: "instancia", id: fi.id, y: r4(y) }; ops.push(marca(o, parte)); return o; },
+      /* FRENTE H7: parâmetro de instância que o kit acerta (a distância da cuba à parede medida no modelo) */
+      parametros: function (inst, parte) { var o = { op: "instancia", id: fi.id, inst: inst }; ops.push(marca(o, parte)); return o; }
     };
   }
   /* FRENTE B (19/10/2026, D-01): o giro do registro posto no trecho `t` (eixo = p1→p2 dele, o mesmo do BimInst) para a frente
@@ -314,6 +345,11 @@
     /* BANCADA (porCuba): um kit por cuba — os conectores "esgoto", "af", "aq" (cuba 1) e "esgoto_2", "af_2", "aq_2" (cuba 2) */
     if (K0.porCuba && e.cuba == null) return gerarPorCuba(e, fi, tipo, out);
     var ctx = NN().contexto(), cs = conectores(avaliarFam, fi);
+    /* FRENTE H7 (21/10/2026): a CUBA DE BANCADA (parâmetro Distancia_parede, js/hidfamilias.js) tem o ponto de água na parede atrás
+       dela — o kit mede a face da parede no modelo e acerta o parâmetro (op "instancia" do kit, no mesmo lote). Valor posto pelo
+       usuário (sem a marca Distancia_parede_auto) não se mexe. */
+    var ajP = ajustarParede(estado, avaliarFam, fi);
+    if (ajP) { fi = ajP.fi; cs = conectores(avaliarFam, fi); }
     if (K0.porCuba) {
       var sfx = String(e.cuba);
       cs = cs.filter(function (k) { var m = /^(.*?)(_\d+)?$/.exec(k.cid); return (m[2] || "") === sfx; }).map(function (k) { k.cid = k.cid.replace(/_\d+$/, ""); return k; });
@@ -345,6 +381,7 @@
     }
     out.assinatura = assinatura(fi, poseY);
     K = Construtor(fi, tipo, out.assinatura, K0.porCuba ? e.cuba : null);
+    if (ajP) { K.parametros(ajP.inst, "parede"); decide("kit.ponto.familia", "Ponto de água na parede atrás da cuba, a " + f2(ajP.valor) + " m do eixo (medido no modelo)."); }
     if (Math.abs(poseY - num(fi.y, 0)) > EPS) { K.instancia(poseY, "altura"); cs = conectores(avaliarFam, fi, { x: fi.x, y: poseY, z: fi.z, rotY: fi.rotY }); }
     var esg = porCid(cs, (K0.esgoto || {}).conector || "esgoto") || porSis(cs, "esgoto");
 
@@ -627,12 +664,20 @@
   /* o ramal exclusivo e a descida da válvula ficam na BITOLA DA VÁLVULA (catálogo): o cálculo verifica e não reduz
      (reduzir para DE 40 deixava a válvula de 1 1/2" ligada num tubo menor que a rosca dela) */
   function travados(ops) { var o = []; achatar(ops).forEach(function (x) { if (x.kit != null && x.op === "trecho" && (x.kitParte === "valvula" || x.kitParte === "descida")) { o.push(x.id); o.push(x.id + "b"); } }); return o; }
-  function idsDescida(ops) { var s = {}; achatar(ops).forEach(function (x) { if (x.kit != null && x.kitParte === "descida" && x.op === "trecho") s[x.id] = 1; }); return s; }
+  /* FRENTE H8 (21/10/2026): as SAÍDAS LIVRES da caixa d'água (js/hidbarrilete.js — extravasor, limpeza, ventilação do barrilete,
+     espera do alimentador da boia e o respiro do boiler) também saem do cálculo: não são rede pressurizada a jusante da saída (o
+     HidAF avisaria "trechos sem ligação com a alimentação" e a ventilação seria um ramal sem consumo) */
+  var BAR_FORA = { extravasor: 1, limpeza: 1, ventilacao: 1, alimentacao: 1, respiro: 1 };
+  function idsDescida(ops) { var s = {}; achatar(ops).forEach(function (x) { if (x.op !== "trecho") return; if (x.kit != null && x.kitParte === "descida") s[x.id] = 1; if (x.bar != null && BAR_FORA[x.barParte]) s[x.id] = 1; });
+    /* o registro num desses trechos (a limpeza, a entrada da boia) sai junto, com a metade que ele criou (novoId) */
+    achatar(ops).forEach(function (x) { if (x.op === "acessorio" && x.bar != null && x.trecho != null && s[x.trecho]) { s[x.id] = 1; if (x.novoId != null) s[x.novoId] = 1; } });
+    return s; }
   function paraCalculo(estado, ops) {
     var fora = idsDescida(ops); if (!Object.keys(fora).length || !estado || !estado.instalacoes) return estado;
     var e2 = {}; Object.keys(estado).forEach(function (k) { e2[k] = estado[k]; });
     var inst = {}; Object.keys(estado.instalacoes).forEach(function (k) { inst[k] = estado.instalacoes[k]; });
     inst.trechos = arr(estado.instalacoes.trechos).filter(function (t) { return !fora[t.id]; });
+    if (estado.instalacoes.acessorios) inst.acessorios = arr(estado.instalacoes.acessorios).filter(function (a) { return !fora[a.id]; });
     e2.instalacoes = inst;
     return e2;
   }

@@ -38,7 +38,7 @@
   function num(v, d) { var n = Number(v); return v != null && v !== "" && isFinite(n) ? n : d; }
 
   var NIVEIS = {
-    A: "fonte primária lida (SINAPI MG 06/2026 / CEMIG ND-5.1)",
+    A: "fonte primária lida (SINAPI MG 06/2026 / CEMIG ND-5.1 / NBR 9050:2020)",
     N: "NBR 5410:2004, item lido (cópia não licenciada à RA — só o valor)",
     S: "NBR 5410 por fonte secundária — conferir na NBR 5410",
     C: "critério RA (prática de projeto, editável)",
@@ -79,7 +79,7 @@
     alturaBaixa: { valor: 0.30, nivel: "A", rotulo: "Tomada baixa (m do piso ao centro)", fonte: F_SINAPI + " 91998-92001 \"TOMADA BAIXA … (0,30 M DO PISO)\"" },
     alturaMedia: { valor: 1.30, nivel: "A", rotulo: "Tomada média (m)", fonte: F_SINAPI + " 91994-91997 \"TOMADA MÉDIA … (1,30 M DO PISO)\"" },
     alturaAlta: { valor: 2.00, nivel: "A", rotulo: "Tomada alta (m)", fonte: F_SINAPI + " 91990-91993 \"TOMADA ALTA … (2,00 M DO PISO)\"" },
-    alturaInterruptor: { valor: 1.20, nivel: "X", rotulo: "Interruptor (m do piso)", fonte: F_ENG360 + "; a NBR 5410:2004 não fixa altura (9.5.2.1.1 nota 3 remete à NBR 6527, não lida); acessível: NBR 9050 manda (faixa não lida)" },
+    alturaInterruptor: { valor: 1.00, nivel: "A", item: "NBR 9050:2020 4.6.9, Figura 26", rotulo: "Interruptor (m do piso)", fonte: "ABNT NBR 9050:2020, 4.6.9 e Figura 26 (interruptor de 0,60 a 1,00 m; adotado o topo da faixa) — a NBR 5410:2004 não fixa altura. ⚠ UMA altura para o \"Lançar pontos\" e a \"Ligação da iluminação\" (integração n23, 23/10/2026: eram 1,20 m aqui e 1,00 m lá — dois interruptores na mesma porta em alturas diferentes)" },
     sobreBancada: { valor: 0.20, nivel: "C", rotulo: "Tomada sobre bancada: acima do tampo (m)", fonte: "decisão RA da pesquisa (0,15–0,25 m; faixa 1,10–1,30 m, orçada como média)" },
     alturaChuveiro: { valor: 2.20, nivel: "C", rotulo: "Chuveiro elétrico: caixa de ligação direta (m)", fonte: "decisão RA: logo acima do ponto d'água, faixa alta da pesquisa (2,00–2,25 m); ligação direta, sem tomada (NBR 5410 9.5.2.3); no volume, só a caixa do próprio aparelho (9.1.4.2.4)" },
     afastBox: { valor: 0.60, nivel: "N", item: "NBR 5410 9.1.4.3.1 + 9.1.2.1 (Figuras 16 a 18)", rotulo: "Banheiro: tomada/interruptor fora dos volumes 0, 1 e 2 — o volume 2 vai 0,60 m além do box/banheira (m)", fonte: F_NBR + "; tomada só no volume 3, com DR ≤ 30 mA (9.1.4.3.2 c); 0,60 m da porta de cabine pré-fabricada (9.1.4.3.3)" },

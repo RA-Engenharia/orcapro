@@ -145,6 +145,7 @@
     c("ctx-inclinacao", "Inclinação", "angulo", "Muda a inclinação dos trechos selecionados (%): a ponta final desce a partir da inicial e as pontas ligadas nela vão junto (um Ctrl+Z)."),
     c("ctx-isolamento", "Isolamento", "camadas", "Põe ou tira o isolamento dos trechos selecionados, quando o material tem as duas opções (cobre, duto de chapa)."),
     c("ctx-conectar", "Conectar a", "link", "Liga a ponta livre do 1º tubo selecionado ao 2º (Ctrl+clique): na ponta dele ou no meio, que é dividido no nó (um Ctrl+Z)."),
+    c("ctx-conectar-altura", "Conectar\npela altura", "link", "Liga a ponta livre do 1º tubo ao 2º (Ctrl+clique) NA COTA DO 2º: desce/sobe na vertical e corre em L até ele (tê no meio; no esgoto, junção 45° a favor do escoamento e a declividade mínima), sem diagonal no ar — e recusa se as conexões não couberem (um Ctrl+Z)."),
     c("ctx-desconexoes", "Mostrar\ndesconexões", "alerta", "Mostra as pontas livres da rede (o mesmo de Instalações › Sistemas).", { grande: true, alias: "desconexoes" }),
     c("ctx-inspetor", "Inspetor de\nsistema", "buscar", "Confere o sistema da seleção: inclinação mínima, desconexões, diâmetros e o que falta (o mesmo de Instalações › Verificar sistemas).", { grande: true, alias: "verificar-sistemas" }),
     c("ctx-cotar-tubo", "Cotar\ntubo", "regua", "Cota o tubo selecionado (diâmetro, inclinação e comprimento) — o mesmo de Instalações › Rede.", { grande: true, alias: "cota" }),
@@ -201,7 +202,7 @@
   /* a aba contextual: os painéis por categoria da seleção */
   var CTX_PAINEIS = {
     tubos: [{ nome: "Tubo", ids: ["ctx-tipo", "ctx-dn", "ctx-inclinacao", "ctx-isolamento"] },
-      { nome: "Conexões", ids: ["ctx-conectar", "ctx-desconexoes"] },
+      { nome: "Conexões", ids: ["ctx-conectar", "ctx-conectar-altura", "ctx-desconexoes"] },
       { nome: "Sistema", ids: ["ctx-inspetor", "ctx-cotar-tubo", "ctx-sel-tipo"] }],
     pecas: [{ nome: "Peça", ids: ["ctx-tipo", "ctx-dn"] },
       { nome: "Conexões", ids: ["ctx-desconexoes"] },
@@ -546,6 +547,7 @@
       a["ctx-inclinacao"] = function () { return self.inclinacaoTela(); };
       a["ctx-isolamento"] = function () { return self.isolamentoTela(); };
       a["ctx-conectar"] = function () { return self.conectarTela(); };
+      a["ctx-conectar-altura"] = function () { return self.conectarAlturaTela(); };
       /* os atalhos: executam o comando de verdade */
       FX.concat(CTX).forEach(function (cm) {
         if (!cm.alias || a[cm.id]) return;
@@ -770,6 +772,19 @@
       if (!r.ok) { this._aviso(r.erro); return true; }
       if (!this._despachar(r.ops, "Conectar a")) { this._aviso("O editor recusou a ligação."); return true; }
       status("Ligado: a ponta livre do " + ids[0] + " foi " + (r.meio ? "ao meio do " + ids[1] + " (dividido no nó)" : "à ponta do " + ids[1]) + ". Um Ctrl+Z desfaz.");
+      return true;
+    },
+
+    /* N23 (23/10/2026): CONECTAR PELA ALTURA DE REFERÊNCIA — o motor é o js/biminstconectar.js (a cota é a do tubo de destino, a rota é
+       ortogonal e o encaixe das conexões é conferido); recusado, a mensagem diz o que falta */
+    conectarAlturaTela: function () {
+      var ids = this._trechosSel(), MC = global.BimInstConectar;
+      if (ids.length < 2) { this._aviso("Conectar pela altura: selecione o tubo que vai ligar e, com Ctrl+clique, o tubo de destino (a cota de referência é a dele); depois clique em Conectar pela altura."); return true; }
+      if (!MC || !MC.conectarRef) { this._aviso("O motor de conexão pela altura (js/biminstconectar.js) não carregou nesta página."); return true; }
+      var r = MC.conectarRef(this._estadoEd(), ids[0], ids[1]);
+      if (!r.ok) { this._aviso(r.erro); return true; }
+      if (!this._despachar(r.ops, "Conectar pela altura")) { this._aviso("O editor recusou a ligação."); return true; }
+      status("Ligado na cota " + String(r.cota).replace(".", ",") + " m do " + ids[1] + " (" + (r.ligacao === "juncao45" ? "junção 45°" : r.ligacao === "te" ? "tê no meio dele" : "na ponta dele") + "), em " + (r.rota.length - 1) + " trecho(s) ortogonais" + (r.avisos.length ? " — " + r.avisos.join("; ") : "") + ". Um Ctrl+Z desfaz.");
       return true;
     },
 

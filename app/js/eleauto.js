@@ -3,7 +3,7 @@
  *
  * Pedido: por AMBIENTE (o selecionado ou todos), pelo NOME/uso e pela área/perímetro, lançar os PONTOS — iluminação,
  * tomadas de uso geral (TUG), tomadas de uso específico (TUE) dos aparelhos que o modelo já tem e interruptores junto às
- * portas. Circuitos, quadro e dimensionamento de condutor ficam para quando a NBR 5410 for comprada (pendência).
+ * portas. Circuitos, quadro, eletroduto e condutor: js/elecircuitos.js (frente E2, "Circuitos e quadro").
  * Os números e o NÍVEL da fonte moram no js/eleregras.js (NBR 5410:2004 conferida no item, cópia não licenciada: só valores).
  *
  *   EleAuto.leitura(estado, avaliarFam) → { …EsqAuto.leitura, ambientes[{ …, cls, perimetro, alongado }], pontos[], caixas[],
@@ -453,8 +453,16 @@
         var tipoL = a.forro ? "pq18e" : "pq24s";
         mundo.forEach(function (p) {
           var id = novoId("elel-" + a.id);
-          ops.push({ op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe) } });
-          ops.push({ op: "peca", id: id + "-cx", peca: "caixa_octogonal", sistema: "eletrica", material: "pvc", x: r4(p[0]), y: r4(a.base + a.pe), z: r4(p[1]), rotY: 0 });
+          var opL = { op: "familia", id: id, famId: "ra-luminaria", tipoId: tipoL, x: r4(p[0]), y: r4(a.base), z: r4(p[1]), rotY: 0, inst: { Altura_montagem: r4(a.pe) } };
+          ops.push(opL);
+          /* ⚠ a caixa NO CONECTOR elétrico da luminária (a canopla), não na face dela (revisão adversarial n23, 23/10/2026). Roteiro do
+             defeito: no ambiente com forro o plafon de embutir tem o conector 3 cm acima da face; a caixa ficava na face, o
+             "Circuitos e quadro" ligava os eletrodutos nela, e o conector ficava fora da caixa — "luminária sem ponto de luz" no
+             auditor (C487, ordem pontos → circuitos → ligação). Só no FORRO (na laje a caixa fica no fundo da laje, a mesma regra
+             da ligação da iluminação); sem o motor das instalações, a face (como antes). */
+          var yCxL = a.base + a.pe, BIm = dep("BimInst", "./biminst.js");
+          try { var avL = typeof aval === "function" ? aval(opL.famId, opL.tipoId, opL.inst) : null, cL = avL && BIm && BIm.conectoresDe ? BIm.conectoresDe(avL, opL).filter(function (q) { return q.sistema === "eletrica"; })[0] : null; if (a.forro && cL && isFinite(Number(cL.y)) && Math.abs(Number(cL.y) - yCxL) <= 0.10) yCxL = Number(cL.y); } catch (eC) {}
+          ops.push({ op: "peca", id: id + "-cx", peca: "caixa_octogonal", sistema: "eletrica", material: "pvc", x: r4(p[0]), y: r4(yCxL), z: r4(p[1]), rotY: 0 });
           res.luz.lancado++;
           itens.push({ id: id, tipo: "luminaria", ambiente: a.id, ambienteNome: a.nome, tipoId: tipoL, altura: r4(a.pe), caixa: id + "-cx",
             regras: ["ao menos " + C.luzMinimo.valor + " ponto de luz no teto, comandado por interruptor (" + R.citar(C.luzMinimo) + ")",
@@ -566,7 +574,7 @@
     var lote = ops.length ? { op: "lote", id: "ele-" + (o.loteId || Date.now().toString(36)), origem: "pontos-eletricos", pedido: "Lançar pontos elétricos", ops: ops } : null;
     var resumo = { luminarias: 0, tug: 0, tue: 0, interruptores: 0, ambientes: alvo.length };
     itens.forEach(function (x) { if (x.tipo === "luminaria") resumo.luminarias++; else if (x.tipo === "interruptor") resumo.interruptores++; else if (x.uso === "TUE") resumo.tue++; else resumo.tug++; });
-    pend.push({ ambiente: null, texto: "Circuitos, quadro de distribuição, eletroduto, cabo e dimensionamento de condutor ficam para a próxima etapa (aguardando o exemplar da NBR 5410): o orçamento dos pontos tem o dispositivo e a caixa; eletroduto e cabo entram com os circuitos." });
+    pend.push({ ambiente: null, texto: "Circuitos, quadro de distribuição, eletroduto, cabo e disjuntor: rode Instalações › Circuitos e quadro (frente E2 — NBR 5410:2004, cópia não licenciada, sem a Errata 1/2008). O orçamento dos pontos tem o dispositivo e a caixa; eletroduto, cabo, disjuntor, DR e DPS entram com os circuitos." });
     return { ok: true, lote: lote, ops: ops, itens: itens, porAmbiente: porAmb, avisos: avisos, pendencias: pend, criterios: C, leitura: L, resumo: resumo };
   }
 

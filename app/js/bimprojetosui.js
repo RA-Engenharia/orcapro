@@ -950,7 +950,9 @@
         '<div class="bp-cab"><div class="bp-marca">' + ico("obra", 28) + '</div><div style="flex:1;min-width:0"><h2>OrçaPRO BIM</h2>' +
           '<p>Comece um projeto ou abra um que já existe. Nada abre sozinho: o modelo só entra na tela quando você escolher.</p></div>' +
           (comoProj ? '<button type="button" class="bp-mini" data-bp="salvar-como" title="O que está aberto na obra “' + esc(obraNome(g._bimSel)) + '” vira um projeto (recentes, sistema e computador)">Salvar o que está aberto como projeto</button>' : "") +
-          (cenaCheia ? '<button type="button" class="bp-mini" data-bp="voltar">Voltar ao modelo</button>' : "") + "</div>" +
+          (cenaCheia ? '<button type="button" class="bp-mini" data-bp="voltar">Voltar ao modelo</button>' : "") +
+          /* PRANCHA VIVA à vista na tela inicial (23/10/2026): a folha que abre o 3D no ponto tocado */
+          (global.PranchaVivaUI && cenaCheia ? '<button type="button" class="bp-mini bp-mini-pri" data-bp="pviva" title="As pranchas do projeto aberto: toque num ponto e o 3D abre ali">' + ico("prancha", 14) + "Prancha Viva</button>" : "") + "</div>" +
         '<div class="bp-acoes">' +
           '<button type="button" class="bp-bt bp-pri" data-bp="novo"><b>' + ico("obra", 16) + "Novo projeto</b><span>Nome do arquivo, obra, níveis, pé-direito e paredes</span></button>" +
           '<button type="button" class="bp-bt" data-bp="abrir-sistema"><b>' + ico("abrir", 16) + "Abrir projeto do sistema</b><span>Os projetos guardados neste aparelho</span></button>" +
@@ -1004,6 +1006,7 @@
         }).join("") + "</select></label>" +
         '<ul class="bp-lista">' + porObra[sel].map(function (r) { return "<li>" + esc(r.nome || "modelo") + (r.disciplina ? ' <span class="bp-sub">· ' + esc(r.disciplina) + "</span>" : "") + "</li>"; }).join("") + "</ul>" +
         '<button type="button" class="bp-mini bp-mini-pri" data-bp="abrir-modelos">Abrir os modelos desta obra</button>' +
+        (global.PranchaVivaUI ? '<button type="button" class="bp-mini" data-bp="abrir-pviva" title="Abre os modelos desta obra e as pranchas dela na Prancha Viva: toque num ponto da folha e o 3D abre ali">' + ico("prancha", 14) + "Abrir na Prancha Viva</button>" : "") +
         '<p class="bp-sub" style="margin:6px 0 0">Abre a obra no alto, a modelagem guardada nela e os IFC que este aparelho tem guardados (sem pedir o arquivo).</p>';
     },
     _ligarInicio: function (el) {
@@ -1021,6 +1024,9 @@
         else if (a === "tirar") self.tirarDaLista(id);
         else if (a === "pasta") self.abrirPasta(id);
         else if (a === "abrir-modelos") self.abrirModelosDaObra(self._obraModelos);
+        /* PRANCHA VIVA: os modelos da obra entram e a Prancha Viva abre por cima (a trava do módulo é do comando) */
+        else if (a === "abrir-pviva") self.abrirModelosDaObra(self._obraModelos).then(function (ok) { if (ok && global.BimShell) { try { global.BimShell.executar("prancha-viva"); } catch (ePv) {} } });
+        else if (a === "pviva") { self.esconderInicio(); if (global.BimShell) { try { global.BimShell.executar("prancha-viva"); } catch (ePv2) {} } }
         else if (a === "voltar") self.esconderInicio();
         else if (a === "salvar-como") self.salvarComo();
       });

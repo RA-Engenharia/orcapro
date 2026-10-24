@@ -285,6 +285,8 @@
       '<nav id="rvv-barra">' +
       '<button data-f="vistas">' + I("camera", 20) + 'Vistas</button>' +
       '<button data-f="camadas">' + I("camadas", 20) + 'Camadas</button>' +
+      /* PRANCHA VIVA: as folhas ligadas ao modelo que vieram no link (dados.pranchas) — escondido até chegarem */
+      '<button data-f="pranchas" hidden>' + I("prancha", 20) + 'Prancha Viva</button>' +
       '<button data-f="4d" hidden>' + I("calendario", 20) + 'Obra no tempo</button>' +
       /* escondido até o manifesto dizer que o link recebe (aceitaNotas) */
       '<button data-f="notas" hidden>' + I("nota", 20) + 'Apontar</button>' +
@@ -306,6 +308,8 @@
          da RA, ele cobria o ✕ do painel (a e2e de 29/09 pegou o
          "Apontamento enviado" em cima do fechar) */
       if (f === "medir") { ligarMedir(!st.medindo); return; }
+      /* PRANCHA VIVA (js/pranchavivaui.js): a folha → o 3D no ponto tocado, com as folhas leves do link */
+      if (f === "pranchas") { recado(""); fecharFolha(); fecharCard(); if (st.medindo) ligarMedir(false); abrirPranchas(); return; }
       /* na RA a tela é do imersivo: toque ali anda/olha, não marca ponto */
       if (f === "ra") { recado(""); fecharFolha(); fecharCard(); if (st.medindo) ligarMedir(false); if (B().abrirXR) B().abrirXR(); return; }
       if (st.folha === f) fecharFolha(); else abrirFolha(f);
@@ -359,7 +363,7 @@
       '<button class="rvv-bt" data-a="trena-limpar"' + (algo ? "" : " disabled") + ">Limpar</button>" +
       '<button class="rvv-bt" data-a="trena-parar" title="Parar de medir" aria-label="Parar de medir">' + I("fechar", 15) + "</button>";
   }
-  function txtCarga(t) { var e = $("rv-load-txt"); if (e) e.textContent = t; }
+  function txtCarga(t) { var e = $("rv-load-txt"); if (e) e.textContent = t; if (st) st.txtCarga = t; try { if (global.PranchaVivaUI && global.PranchaVivaUI.aberto()) global.PranchaVivaUI.progresso3d(t); } catch (ePv) {} }
   function erroCarga(t) {
     var l = $("rv-load"); if (!l) { recado(t, true); return; }
     txtCarga(t);
@@ -697,6 +701,9 @@
   function fecharCard() { var c = $("rvv-card"); if (c) { c.style.display = "none"; c.innerHTML = ""; } }
   function aoTocarPeca(p) {
     if (st.apontando) return;
+    /* ⚠ com a Prancha Viva por cima, o toque na peça é DELA (o cartão dela, com o mesmo GUID): o cartão do visor abria
+       atrás dela e reaparecia ao fechar, com a peça de um toque antigo */
+    try { if (global.PranchaVivaUI && global.PranchaVivaUI.aberto()) return; } catch (ePv) {}
     recado("");
     if (!p) { fecharCard(); return; }
     fecharFolha();
@@ -857,6 +864,29 @@
     }, 500);
   }
 
+  /* PRANCHA VIVA no celular: a mesma tela do computador, com as folhas do link (fonte "link": a licença foi conferida
+     em quem gerou o link) */
+  /* ⚠ CARREGAMENTO PROGRESSIVO (23/10/2026): os dados do link chegam ANTES dos modelos — a prancha abre já ali (é uma
+     imagem), e o toque espera o 3D (PranchaVivaUI.progresso3d/pronto3d). Antes, o botão só aparecia depois de baixar e
+     montar todos os IFC: no 4G a pessoa olhava a tela de "Baixando" por um minuto com a prancha já no aparelho. */
+  function pranchasDoLink() { var d = (st.dados && st.dados.pranchas) || (st.dadosBrutos && st.dadosBrutos.pranchas); return d && d.folhas && d.folhas.length ? d : null; }
+  /* a chave estável da peça (a do computador) → o uid NESTE aparelho: traduz pelo mapa dos modelos e acha a peça */
+  function uidDaChave(ch) {
+    var t = ch; try { t = RV().traduzir(ch, st.mapa || {}); } catch (e) { t = ch; }
+    var u = ""; try { (B().elementos || []).some(function (e) { if (e.chave === t) { u = e.uid; return true; } return false; }); } catch (e2) {}
+    return u;
+  }
+  function abrirPranchas() {
+    var P = global.PranchaVivaUI, d = pranchasDoLink();
+    if (!P || !d) { recado("Este link não trouxe pranchas.", true); return; }
+    P.abrir({ fonte: "link", folhas: d.folhas, visor: true, uidDaChave: uidDaChave, esperando3d: !st.carregou, textoCarga: st.txtCarga || "" });
+  }
+  function mostrarBotaoPranchas() {
+    if (!pranchasDoLink() || !global.PranchaVivaUI) return false;
+    var bP = document.querySelector('#rvv-barra [data-f="pranchas"]'); if (bP) bP.hidden = false;
+    return true;
+  }
+
   /* ---------------- depois que os modelos abriram ---------------- */
   function aposCarga() {
     var l = $("rv-load"); if (l) l.remove();
@@ -875,6 +905,10 @@
         }
       }
     } else { st.dados = {}; st.inverso = {}; }
+    st.carregou = true;
+    mostrarBotaoPranchas();
+    /* a Prancha Viva já aberta (o link com pv=1 abre nela) recebe o 3D: o toque guardado abre agora */
+    try { if (global.PranchaVivaUI && global.PranchaVivaUI.aberto()) global.PranchaVivaUI.pronto3d(); } catch (ePv) {}
     recado("Toque numa peça para ver o que ela é. RA/RV mostra o projeto no seu ambiente.", false);
     carregarNotas(true).then(function () { if ((st.fila || []).some(function (x) { return !x.erro; })) enviarFila(); });
   }
@@ -1058,6 +1092,8 @@
           return pDados.then(function (d) {
             st.dadosBrutos = d;
             aplicarMarca((d && d.marca) || { obra: man.nome });
+            /* PRANCHA VIVA: o botão aparece já, e o link com pv=1 (o QR que leva as pranchas) abre direto nela */
+            if (mostrarBotaoPranchas() && /[#&?]pv=1\b/.test(location.hash || "")) { try { abrirPranchas(); } catch (ePv) {} }
             var arqs = man.arquivos || [], i = 0;
             return new Promise(function (fim, falha) {
               (function prox() {

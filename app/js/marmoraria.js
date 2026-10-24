@@ -100,6 +100,8 @@
     kerf: 4, refilo: 20,   /* plano de chapa: disco e refilo da borda bruta (mm) */
     juntaRodabanca: 0      /* rodabanca encostada sobre o tampo */
   };
+  /* FRENTE H7: a torneira padrão do ambiente quando a cuba está "Sem torneira" — só para o PONTO de água (de mesa, só água fria) */
+  var TORNEIRA_PADRAO = { id: "", instalacao: "mesa", aguaQuente: false, assumida: true };
   var BORDAS = ["Reta", "Meia-cana", "Boleado", "Chanfro"];
   var SUPERFICIES = ["Polido", "Levigado", "Escovado"];
   var APOIOS = ["Mão-francesa", "Gabinete", "Alvenaria"];
@@ -211,7 +213,8 @@
     if (!(rbH > 0)) rl = { fundo: false, esq: false, dir: false };
     var apoio = APOIOS.indexOf(txt(v.Apoio)) >= 0 ? txt(v.Apoio) : "Mão-francesa";
     var def = { ambiente: amb, L: L, P: P, H: H, e: e, pedra: pd, superficie: sup, borda: borda, saia: { h: saiaH, lados: sl }, rodabanca: { h: rbH, lados: rl }, apoio: apoio,
-      cubas: [], furos: [], pecas: [], conectores: [], avisos: avisos, pendencias: pend, metais3d: v.Metais_3D !== false };
+      cubas: [], furos: [], pecas: [], conectores: [], avisos: avisos, pendencias: pend, escolhas: [], metais3d: v.Metais_3D !== false,
+      padraoMetais: padraoDe(v.Padrao_metais), padraoInformado: v.Padrao_metais != null && txt(v.Padrao_metais) !== "" };
     if (saiaH > 0 && saiaH <= e) { avisos.push("saia de " + mm(saiaH) + " mm não passa da espessura da pedra — sem saia"); def.saia.h = saiaH = 0; }
     var zFundo = rl.fundo ? e : 0;   /* face da rodabanca: o recorte e o furo não entram nela */
     var nC = Math.max(0, Math.min(2, Math.round(num(v.Cubas, 1))));
@@ -227,6 +230,13 @@
       if (xMax < xMin) { pend.push("cuba " + (i + 1) + " (" + mm(rec.L) + " mm) não cabe na bancada de " + mm(L) + " mm"); xL = L / 2; }
       else if (xL < xMin || xL > xMax) { avisos.push("cuba " + (i + 1) + ": posição ajustada para caber (" + mm(xL) + " → " + mm(Math.min(xMax, Math.max(xMin, xL))) + " mm da ponta esquerda)"); xL = Math.min(xMax, Math.max(xMin, xL)); }
       var tn = tns[i] === "Sem torneira" ? null : (torneira(tns[i]) || (i > 0 ? torneira(tns[0]) : null));
+      /* FRENTE H7 (21/10/2026 — o Rogério: "coloquei uma cuba e ele não queria colocar de jeito nenhum a água fria nela, colocou só
+         o esgoto"): cuba SEM torneira escolhida ficava só com o ponto de esgoto e o Traçar automaticamente não levava água. Toda cuba
+         recebe água: sem a torneira, vale a TORNEIRA PADRÃO DO AMBIENTE (de mesa, só água fria — cozinha: de mesa; banheiro: de mesa
+         para lavatório) para o PONTO (a regra de sempre, Deca p.116) e sai a escolha pendente. Só o ponto: a pedra não ganha furo,
+         o 3D não desenha torneira e o quantitativo da marmoraria não muda (a torneira não foi escolhida). */
+      var tnPonto = tn || TORNEIRA_PADRAO;
+      if (!tn) def.escolhas.push({ campo: i ? "Torneira_2" : "Torneira", cuba: i, texto: "Escolha a torneira da cuba " + (i + 1) + ": o ponto de água foi lançado pela torneira padrão de mesa do ambiente (só água fria, 220 mm abaixo do tampo — Deca p.116); com um misturador ou uma torneira de parede, o ponto muda." });
       if (tns[i] && tns[i] !== "Sem torneira" && !tn) avisos.push("torneira \"" + txt(tns[i]) + "\" fora do catálogo");
       var mesa = !!(tn && tn.instalacao === "mesa"), dFuro = mesa ? (num(tn.furo, 0) > 0 ? num(tn.furo, 0) / 1000 : DES.furoTorneiraPadrao) : 0;
       if (mesa && !(num(tn.furo, 0) > 0)) avisos.push("torneira " + rotuloTorneira(tn) + ": a ficha não dá o Ø do furo — Ø " + mm(DES.furoTorneiraPadrao) + " mm a conferir");
@@ -260,20 +270,22 @@
       if (apo) Ea = Math.min(Ea, REGRA.esgoto.apoio);
       cb.Ea = Ea; cb.inox = inox;
       var yA, fonteA;
-      if (tn && tn.instalacao === "parede") {
-        var pp = tn.pontoParede || {}, hS = num(pp.altura_sugerida_mm, 0) / 1000;
+      if (tnPonto.instalacao === "parede") {
+        var pp = tnPonto.pontoParede || {}, hS = num(pp.altura_sugerida_mm, 0) / 1000;
         if (hS > 0) { yA = hS > 0.6 ? hS : H + hS; fonteA = "ficha da torneira"; }
         else if (amb === "cozinha") { yA = REGRA.piaParede; fonteA = FONTE_TIGRE + " (PIA 110 cm)"; }
         else { yA = H + REGRA.metalParedeAcimaTampo; fonteA = FONTE_DECA + " (metais de parede 170 a 220 mm acima do tampo; adotado 220)"; }
       } else { yA = H - REGRA.aguaAbaixoTampo; fonteA = FONTE_DECA + " (220 mm abaixo da face do tampo)"; }
-      var entre = tn && tn.pontoParede && num(tn.pontoParede.entre_eixos_mm, 0) > 0 ? num(tn.pontoParede.entre_eixos_mm, 0) / 1000 : (tn && tn.instalacao !== "parede" ? entreMesa(amb) : REGRA.entrePontosAgua);
-      cb.yAgua = yA; cb.fonteAgua = fonteA;
+      var entre = tnPonto.pontoParede && num(tnPonto.pontoParede.entre_eixos_mm, 0) > 0 ? num(tnPonto.pontoParede.entre_eixos_mm, 0) / 1000 : (tnPonto.instalacao !== "parede" ? entreMesa(amb) : REGRA.entrePontosAgua);
+      cb.yAgua = yA; cb.fonteAgua = fonteA; cb.torneiraAssumida = !tn;
       def.conectores.push({ id: "esgoto" + cb.suf, nome: "Esgoto (saída do sifão, cuba " + (i + 1) + ")", sistema: "esgoto", dn: 0, x: r4(xc), y: r4(H - Ea), z: 0 });
-      if (tn) {
-        var quente = tn.aguaQuente !== false;
+      if (tnPonto) {
+        var quente = tnPonto.aguaQuente !== false;
         /* a ficha da torneira (vazão e pressão mínima) segue no ponto, para o dimensionamento do hidro conferir */
-        var ficha = { vazao_L_min: tn.vazao, pressaoMin_kPa: tn.pressaoMin, pressaoMax_kPa: tn.pressaoMax, torneira: rotuloTorneira(tn) };
-        def.conectores.push(Object.assign({ id: "af" + cb.suf, nome: "Água fria (cuba " + (i + 1) + ")", sistema: "agua_fria", dn: 0, x: r4(xc + (quente ? entre / 2 : 0)), y: r4(yA), z: 0 }, ficha));
+        var ficha = tn ? { vazao_L_min: tn.vazao, pressaoMin_kPa: tn.pressaoMin, pressaoMax_kPa: tn.pressaoMax, torneira: rotuloTorneira(tn) } : { torneira: "padrão de mesa (a escolher)", torneiraAssumida: true };
+        /* a torneira padrão assumida (só água fria) põe o ponto no lado da água fria do misturador (+entre/2): no eixo ele ficaria a 4 cm
+           da saída do sifão da cuba de inox (critério RA R-C3, 10 cm livres entre água e esgoto — js/hidrota.js GEO.afastamento) */
+        def.conectores.push(Object.assign({ id: "af" + cb.suf, nome: "Água fria (cuba " + (i + 1) + ")", sistema: "agua_fria", dn: 0, x: r4(xc + (quente || !tn ? entre / 2 : 0)), y: r4(yA), z: 0 }, ficha));
         if (quente) def.conectores.push(Object.assign({ id: "aq" + cb.suf, nome: "Água quente (cuba " + (i + 1) + ")", sistema: "agua_quente", dn: 0, x: r4(xc - entre / 2), y: r4(yA), z: 0 }, ficha));
       }
       def.cubas.push(cb);
@@ -373,6 +385,31 @@
     }
     return cands.sort(function (a, b) { return b.valor - a.valor; })[0] || null;
   }
+  /* FRENTE H7 (revisão, 21/10/2026): o PADRÃO dos metais (econômico/médio/alto) e a torneira provisória de cada um.
+     Faixas (o mesmo critério do "Equipar ambiente", js/hidequipar.js porPadrao, que escolhe a torneira de mesa pelo preço):
+       econômico → a SINAPI "padrão popular" de mesa da classe (lavatório: 86906). Pia de cozinha: a SINAPI não tem a de mesa
+                   padrão popular — vale a de mesa que ela tem (86909, tubo móvel). O catálogo (Docol/Deca) não tem linha econômica.
+       médio     → a SINAPI "padrão médio" de mesa (lavatório: 86915) e a METADE MAIS BARATA do catálogo de mesa da classe, até a
+                   torneira de preço mediano (a que o Equipar escolhe no médio);
+       alto      → o catálogo de mesa da classe inteiro (o maior preço público).
+     Dentro da faixa, o MAIOR (regra RA: incerto = o maior daquele padrão). Catálogo = preço público + a MO da SINAPI equivalente. */
+  var NOME_PADRAO = { economico: "Econômico", medio: "Médio", alto: "Alto" };
+  var PADROES_METAIS = ["Econômico", "Médio", "Alto"];
+  function padraoDe(v) { var t = norm(v); return /^eco|popular|baixo/.test(t) ? "economico" : (/^alto|luxo|premium/.test(t) ? "alto" : "medio"); }
+  var SINAPI_PADRAO = { banheiro: { economico: ["86906"], medio: ["86915"], alto: [] }, cozinha: { economico: ["86909"], medio: [], alto: [] } };
+  function torneiraDoPadrao(amb, padrao) {
+    amb = amb === "cozinha" ? "cozinha" : "banheiro"; padrao = NOME_PADRAO[padrao] ? padrao : "medio";
+    var moT = moDe(amb === "cozinha" ? "86909" : "100853"), cands = [];
+    arr(SINAPI_PADRAO[amb][padrao]).forEach(function (cod) { var s = sinapi(cod); if (s && num(s.custo, 0) > 0) cands.push({ valor: r2(s.custo), codigo: s.codigo, fonte: "SINAPI", criterio: "SINAPI " + s.codigo + " — " + s.descricao }); });
+    if (padrao !== "economico") {
+      var cat = arr(D().torneiras).filter(function (o) { return o.preco && num(o.preco.valor, 0) > 0 && o.ambiente === amb && o.instalacao === "mesa"; }).sort(function (a, b) { return a.preco.valor - b.preco.valor; });
+      var faixa = padrao === "medio" ? cat.slice(0, Math.floor((cat.length - 1) / 2) + 1) : cat;
+      faixa.forEach(function (t) { cands.push({ valor: r2(t.preco.valor + moT), codigo: txt(t.codigo), fonte: t.fabricante + " (" + (t.preco.loja || "preço público") + " " + txt(t.preco.data) + ")", criterio: rotuloTorneira(t) + " " + r2(t.preco.valor) + " + instalação " + r2(moT) + " (MO da SINAPI); " + txt(t.preco.url), t: t }); });
+    }
+    if (!cands.length) { var s0 = sinapi(amb === "cozinha" ? "86909" : "100853"); if (s0) cands.push({ valor: r2(s0.custo), codigo: s0.codigo, fonte: "SINAPI", criterio: "SINAPI " + s0.codigo + " (sem faixa do padrão)" }); }
+    cands.sort(function (a, b) { return b.valor - a.valor; });
+    return cands[0] || null;
+  }
   function moDe(cod) { var s = sinapi(cod); return s && s.custoMO != null ? s.custoMO : 0; }
   function orcamento(def) {
     var q = quantitativo(def), itens = [], duvidas = [], pd = def.pedra;
@@ -466,6 +503,16 @@
           duvidas.push("Torneira " + rotuloTorneira(t) + ": sem preço público lido — adotado o maior da classe/SINAPI.");
         }
         var eg = sinapi("86887"); if (eg && t.instalacao === "mesa") item({ grupo: "Louças e metais", codigo: eg.codigo, fonte: "SINAPI", descricao: eg.descricao, unidade: "un", quantidade: t.aguaQuente !== false ? 2 : 1, unitario: eg.custo });
+      } else if (c.torneiraAssumida) {
+        /* FRENTE H7: cuba sem torneira escolhida — o ponto de água foi lançado pela torneira padrão de mesa; o orçamento leva a
+           torneira PROVISÓRIA DO PADRÃO da bancada (Padrao_metais: econômico/médio/alto) e, dentro dele, o MAIOR preço público
+           (regra RA: incerto = o maior DAQUELE padrão). REVISÃO H7 (21/10/2026): antes era o maior da CLASSE inteira — a cuba
+           econômica saía com uma torneira de R$ 9.470 (a Docol rose gold de alto padrão). Faixas: torneiraDoPadrao(). */
+        var tp = torneiraDoPadrao(def.ambiente === "cozinha" ? "cozinha" : "banheiro", def.padraoMetais);
+        if (tp) item({ grupo: "Louças e metais", codigo: tp.codigo, fonte: tp.fonte, descricao: "TORNEIRA DE MESA (A ESCOLHER) — CUBA " + (c.i + 1) + " — PADRÃO " + NOME_PADRAO[def.padraoMetais].toUpperCase(), unidade: "un", quantidade: 1, unitario: tp.valor, provisorio: true,
+          obs: "PREÇO PROVISÓRIO: a torneira não foi escolhida — adotado o maior preço público do padrão " + NOME_PADRAO[def.padraoMetais].toLowerCase() + " (" + tp.criterio + "); cotar com o fornecedor" + (def.padraoInformado ? "" : ". Padrão não informado na bancada: adotado o médio (troque em Propriedades › Padrão dos metais)") });
+        var ega = sinapi("86887"); if (ega) item({ grupo: "Louças e metais", codigo: ega.codigo, fonte: "SINAPI", descricao: ega.descricao, unidade: "un", quantidade: 1, unitario: ega.custo, provisorio: true });
+        duvidas.push("Cuba " + (c.i + 1) + ": torneira não escolhida — o ponto é o da torneira padrão de mesa e o preço é o maior do padrão " + NOME_PADRAO[def.padraoMetais].toLowerCase() + " (provisório)" + (def.padraoInformado ? "" : "; padrão não informado: médio") + ".");
       }
     });
     var tot = 0; itens.forEach(function (i) { tot += i.total; });
@@ -796,7 +843,9 @@
     var q = quantitativo(def);
     saida.quantitativo = { unidade: "m2", quantidade: q.m2, codigo: "", codigoOrigem: "", fonte: "", descricao: "Bancada em " + def.pedra.nome + " (marmoraria: ver orçamento da bancada)" };
     saida.marmoraria = { def: resumo(def), quantitativo: q };
-    saida.avisosFamilia = def.avisos.concat(def.pendencias);
+    saida.avisosFamilia = def.avisos.concat(def.pendencias).concat(def.escolhas.map(function (x) { return x.texto; }));
+    /* FRENTE H7: o que falta escolher (a torneira da cuba "Sem torneira") — o auditor do hidro mostra com o Corrigir */
+    saida.escolhas = def.escolhas.slice();
     return saida;
   }
   /* o que a prancha e o orçamento precisam, sem os objetos do catálogo inteiros */
@@ -845,6 +894,7 @@
         P("Posicao_cuba_2", "comprimento", 0, "Cuba", "Da ponta esquerda ao eixo da 2ª cuba (0 = automática: a 3/4)"),
         P("Torneira", "texto", tor0 ? rotuloTorneira(tor0) : "Sem torneira", "Torneira", "Mesa (furo pela ficha) ou parede (sem furo; o ponto vai para a parede)", "instancia", rt),
         P("Torneira_2", "texto", tor0 ? rotuloTorneira(tor0) : "Sem torneira", "Torneira", "Torneira da 2ª cuba", "instancia", rt),
+        P("Padrao_metais", "texto", "Médio", "Torneira", "Padrão dos metais (econômico, médio, alto): com a cuba \"Sem torneira\", o orçamento leva a torneira provisória deste padrão — o maior preço público dele", "instancia", PADROES_METAIS),
         P("Metais_3D", "simnao", true, "Construção", "Desenhar válvula, sifão e flexíveis no 3D")
       ],
       tipos: amb === "cozinha"
@@ -870,7 +920,7 @@
     alternativasCuba: alternativasCuba, alternativasTorneira: alternativasTorneira,
     recorteDe: recorteDe, contorno: contorno, montar: montar, quantitativo: quantitativo, orcamento: orcamento, itensQuantitativo: itensQuantitativo, orcamentoTabela: orcamentoTabela, planoChapa: planoChapa, chapaDe: chapaDe, maosFrancesas: maosFrancesas,
     malha: malha, placaFurada: placaFurada, completar: completar, familia: familia, lista: lista, registrar: registrar, ehMarmoraria: ehMarmoraria, deInstancia: deInstancia, resumo: resumo,
-    materialPedra: materialPedra, _limpar: function () { _rotC = _rotT = null; LISTA = null; }
+    materialPedra: materialPedra, entreMesa: entreMesa, torneiraDoPadrao: torneiraDoPadrao, padraoDe: padraoDe, _limpar: function () { _rotC = _rotT = null; LISTA = null; }
   };
   global.Marmoraria = Marmoraria;
   registrar();

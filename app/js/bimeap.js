@@ -75,7 +75,7 @@
     { id: "estrutura-viga", tipos: ["IFCBEAM"], disc: "estrutura", nome: "Concreto estrutural em vigas", medida: "volume", unidade: "m³", termos: ["concretagem", "viga"], estrut: "viga" },
     { id: "estrutura-laje", tipos: ["IFCSLAB"], disc: "estrutura", nome: "Concreto em lajes / pisos estruturais", medida: "volume", unidade: "m³", termos: ["concretagem", "laje"], estrut: "laje" },
     { id: "estrutura-escada", tipos: ["IFCSTAIR"], disc: "estrutura", nome: "Escada (estrutura)", medida: "contagem", unidade: "un", termos: ["escada", "concreto"] },
-    { id: "estrutura-metalica", tipos: ["IFCMEMBER", "IFCPLATE"], disc: "estrutura", nome: "Estrutura metálica (perfis/chapas)", medida: "comprimento", unidade: "m", termos: ["estrutura", "metalica"], aviso: "peso em kg não é derivável do IFC — confirme com o projeto estrutural" },
+    { id: "estrutura-metalica", tipos: ["IFCMEMBER", "IFCPLATE"], disc: "estrutura", nome: "Estrutura metálica (perfis/chapas)", medida: "comprimento", unidade: "m", termos: ["estrutura", "metalica"], aviso: "peça sem massa e sem material de aço no IFC: medida pelo comprimento — com a massa (editor ou IfcQuantityWeight) ela vai para o serviço por kg" },   /* a peça de AÇO com massa vai por kg (ehAco, logo abaixo) */
     { id: "estrutura-armadura", tipos: ["IFCREINFORCING"], disc: "estrutura", nome: "Armadura (barras modeladas)", medida: "comprimento", unidade: "m", termos: ["armadura", "aco"], aviso: "kg de aço exige bitola do projeto — o IFC só dá o comprimento" },
     // --- alvenaria (+ cebola: derivados de revestimento e pintura) ---
     {
@@ -182,6 +182,27 @@
 
   // ---------- helpers ----------
   function tipoBase(tipo) { return String(tipo || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
+  /* ESTRUTURA METÁLICA POR PESO (frente F2, 21/10/2026). Antes: IFCMEMBER/IFCPLATE só por COMPRIMENTO e o pilar/viga de AÇO
+     (IFCCOLUMN/IFCBEAM) caía na regra de CONCRETO (m³ + aço paramétrico + fôrma — dinheiro errado). Agora a peça de aço vai para
+     um serviço em kg (a massa da peça: a do editor ou IfcQuantityWeight); sem massa, fica no comprimento (o de sempre).
+     Quem é aço: os uids que o js/metalorc.js lista do editor (opts.metalUids ou MetalOrc.uidsDoModelo()) e, no IFC de fora,
+     o MATERIAL da peça (aço, steel, ASTM, S235/S275/S355, A36/A572). O orçamento COMPLETO (ligações, pintura, içamento, frete)
+     é o do js/metalorc.js — o aviso do serviço diz para não lançar os dois. */
+  var RE_ACO = /(^|[^a-z])(aco|steel|astm|a36|a572|a992|s235|s275|s355|sae ?10[0-9]{2}|ar ?350)([^a-z]|$)/;
+  function ehAco(el, uids) {
+    if (uids && uids[String(el.uid || el.id || "")]) return true;
+    var t = tipoBase(el.tipo);
+    if (!/^(IFCMEMBER|IFCPLATE|IFCBEAM|IFCCOLUMN|IFCMECHANICALFASTENER)/.test(t)) return false;
+    var m = el.materiais; if (!m) return false;
+    var s = String(typeof m === "string" ? m : JSON.stringify(m)).toLowerCase();
+    if (s.normalize) s = s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    /* ⚠ revisor 21/10/2026: o IFC de CONCRETO ARMADO costuma listar o aço da ARMADURA no material ("Concreto C30" + "Aço CA-50").
+       Sem esta trava o pilar de concreto virava kg de estrutura metálica (sumiam m³, fôrma e armadura do orçamento). Concreto ou
+       barra de armadura (CA-25/50/60) no material = peça de concreto — vai para a regra de concreto de sempre. */
+    if (RE_CONCRETO.test(s)) return false;
+    return RE_ACO.test(s);
+  }
+  var RE_CONCRETO = /concret|betao|beton|(^|[^a-z0-9])ca ?-? ?(25|50|60)([^0-9]|$)|(^|[^a-z0-9])c ?(1[5-9]|[2-9][0-9])([^0-9]|$)|(^|[^a-z])fck/;
   function excluivel(tipo) {
     // exatos de propósito: IFCSPACEHEATER começa com IFCSPACE mas é orçável (mesma régua do BIMQto)
     var t = tipoBase(tipo);
@@ -222,6 +243,7 @@
   // mede o elemento numa grandeza: IFC (exato) > caixa envolvente (estimado) > sem-medida
   function medir(el, medida) {
     if (medida === "contagem") return { v: 1, fonte: "contagem" };
+    if (medida === "massa") { var qm = el.qto && num(el.qto.massa); return qm > 0 ? { v: qm, fonte: "ifc" } : { v: 0, fonte: "sem-medida" }; }   /* kg: só a massa da peça (sem caixa envolvente) */
     var q = el.qto && num(el.qto[medida]);
     if (q > 0) return { v: q, fonte: "ifc" };
     var d = bboxDim(el.aabb);
@@ -268,6 +290,7 @@
 
     /* quantidade do serviço na unidade da composição escolhida (carimbados) */
     quantidadeDoServico: function (sv, unidade) {
+      if (sv && sv.medida === "massa" && /^kg$/i.test(String(unidade || "").trim())) return num(sv.quantidade) > 0 ? r2(sv.quantidade) : null;   /* metálica por peso */
       var g = this.grandezaDaUnidade(unidade);
       if (!g) return null; // kg/sc/vb: não derivável — o wizard exige quantidade manual
       var v = sv.somas ? num(sv.somas[g]) : 0;
@@ -276,6 +299,7 @@
 
     /* fonte REAL da quantidade na unidade escolhida (a caixa envolvente nunca vira "medido no IFC") */
     fonteDaQuantidade: function (sv, unidade) {
+      if (sv && sv.medida === "massa") return sv.fonte;
       var g = this.grandezaDaUnidade(unidade);
       if (g === "contagem") return "contagem";
       if (g && sv.fontes && sv.fontes[g]) return sv.fontes[g];
@@ -348,6 +372,9 @@
       o.taxasAco = taxasAco;
 
       var els = (elementos || []).filter(function (e) { return e && (e.tipo || e.nome); });
+      /* as peças de aço do editor (js/metalorc.js) — orçadas por kg, nunca como concreto */
+      var metalUids = opts.metalUids || null;
+      if (!metalUids && global.MetalOrc && global.MetalOrc.uidsDoModelo) { try { metalUids = global.MetalOrc.uidsDoModelo(); } catch (eMU) { metalUids = null; } }
       var avisos = [];
       // reforma com 2 IFCs federados (modelo + *_DEMOLICAO do plugin): o arquivo de demolição
       // só contribui com os DEMOLIDOS — nova/existente vêm do modelo principal (senão duplicaria)
@@ -453,6 +480,18 @@
             termos: r0 ? r0.termos : null, estrut: r0 ? r0.estrut : null
           });
           acumular(gc, el);
+          return;
+        }
+
+        // ---- estrutura metálica: por PESO (kg); sem massa, pelo comprimento — nunca como concreto ----
+        if (ehAco(el, metalUids)) {
+          porDisciplina.estrutura = (porDisciplina.estrutura || 0) + 1;
+          var temMassa = el.qto && num(el.qto.massa) > 0;
+          var gm = temMassa ? grupo("estrutura-metalica-kg|estrutura", { regra: "estrutura-metalica-kg", disc: "estrutura", nome: "Estrutura metálica (perfis, chapas e ligações) — por peso", medida: "massa", unidade: "kg", termos: ["estrutura", "metalica"],
+                                aviso: "o orçamento COMPLETO da estrutura metálica (fornecimento, fabricação e montagem por kg, ligações, pintura, içamento e frete, tudo com preço) sai em Metálica › Fabricação › Pintura e peso › Orçamento da estrutura (por peso) — lance um OU outro, não os dois" })
+                            : grupo("estrutura-metalica|estrutura", { regra: "estrutura-metalica", disc: "estrutura", nome: "Estrutura metálica (perfis/chapas)", medida: "comprimento", unidade: "m", termos: ["estrutura", "metalica"], aviso: "peça de aço sem massa no modelo: medida pelo comprimento — informe a massa (ou o perfil do catálogo) para orçar por kg" });
+          if (temMassa) gm.memorialExtra = "Peso = massa de cada peça (geometria × 7 850 kg/m³ do editor, ou IfcQuantityWeight do IFC) — o mesmo do Peso das peças e do içamento.";
+          acumular(gm, el);
           return;
         }
 

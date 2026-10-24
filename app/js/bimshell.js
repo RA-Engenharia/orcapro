@@ -338,6 +338,17 @@
         bp.onclick = function () { opts.onPranchas(); };
         qat.appendChild(bp);
       }
+      /* PRANCHA VIVA À VISTA (23/10/2026, "deixa de fácil acesso"): ao lado de Pranchas — a folha que abre o 3D no ponto
+         tocado. Sem a licença o próprio comando mostra a oferta (a trava é na função) */
+      if (typeof opts.onPranchaViva === "function") {
+        var bpv = el("button", "rv-tacao rv-qat-pranchas rv-qat-pviva");
+        bpv.type = "button"; bpv.id = "bim-btn-pviva"; bpv.setAttribute("data-rv-qat", "pranchaviva");
+        bpv.title = "Prancha Viva: toque num ponto da prancha e o 3D abre ali — corte na cota, disciplinas, medir, a peça com o orçamento; e o link para o celular";
+        bpv.setAttribute("aria-label", "Prancha Viva");
+        bpv.innerHTML = ico("prancha", 14) + '<span class="rv-tacao-rot">Prancha Viva</span>';
+        bpv.onclick = function () { opts.onPranchaViva(); };
+        qat.appendChild(bpv);
+      }
       t.appendChild(qat);
 
       var nome = el("div", "rv-titulo-nome");

@@ -323,6 +323,13 @@
       var a = U._crit && U._crit.apontamentos[i], K = global.HidKitUI, c = a && a.corrigir; if (!a || !c) return false;
       if (c.tipo === "rt") { status("Decisão do RT/estrutural: " + c.texto + " — " + a.texto); return false; }
       if (c.tipo === "juntar" && c.ids.length === 2) return U.critJuntar(c.ids[0], c.ids[1]);
+      /* FRENTE H6: o Corrigir do aparelho a gás (NBR 13103) — as ops do achado num lote (Ctrl+Z desfaz) e a lista refeita */
+      if (c.tipo === "ops" && Array.isArray(c.ops) && c.ops.length) {
+        var bO = B(), okO = false; try { okO = !!(bO && bO.editarLote && bO.editarLote({ op: "lote", id: "hidgas-" + String(new Date().getTime()), origem: "hidcrit", ops: JSON.parse(JSON.stringify(c.ops)) })); } catch (eO) { okO = false; }
+        status(okO ? "Corrigido: " + c.texto + " (Ctrl+Z desfaz)." : "O editor recusou a correção (" + c.texto + ").");
+        if (okO) { try { var c4 = bO.editarEstado ? bO.editarEstado() : null; if (c4) U._crit = U.criterios(c4.estado, bO.familiaAvaliar); } catch (eC) {} reconstruir(); }
+        return okO;
+      }
       /* refazer: o traçado do(s) aparelho(s) servido(s) por aquele trecho, pelo motor que já obedece às regras (prévia + Aplicar) */
       if (K && K.tracarAuto && arr(c.aparelhos).length) { K.tracarAuto({ uids: c.aparelhos.map(function (id) { return "edit:" + id; }), todos: true }); return true; }
       status("Corrigir: " + a.titulo + " — o trecho não está ligado a um aparelho; ajuste à mão (" + c.texto + ").");
@@ -436,7 +443,8 @@
       }
       if (q.dispositivos && q.dispositivos.length) {
         h += '<b>Dispositivos elétricos, luminárias e quadros</b><table class="tbl" data-inst="dispositivos" style="font-size:12px;margin:4px 0 10px"><thead><tr><th>Item</th><th>Qtd</th><th>SINAPI</th></tr></thead><tbody>';
-        q.dispositivos.forEach(function (g) { h += "<tr><td>" + esc(g.rotulo) + "</td><td>" + g.n + "</td><td>" + spH(g.sinapi) + "</td></tr>"; });
+        /* a placa orçada por parcelas (mista / intermediário de vários módulos): todos os códigos, com a quantidade de cada um */
+        q.dispositivos.forEach(function (g) { var cps = Array.isArray(g.composicoes) && g.composicoes.length ? g.composicoes : null; h += "<tr><td>" + esc(g.rotulo) + "</td><td>" + g.n + "</td><td>" + (cps ? cps.map(function (cp) { return spH(cp) + " × " + (g.n * (cp.qtd != null ? cp.qtd : 1)); }).join(" + ") : spH(g.sinapi)) + "</td></tr>"; });
         h += "</tbody></table>";
       }
       var S = I.sistemas(est.estado, b.familiaAvaliar);
@@ -476,6 +484,7 @@
           "</tbody></table></div>";
       }
       h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"><button class="btn sm" data-inst="p12-verificar">Verificar sistemas</button><button class="btn sm" data-inst="p12-desc">' + (U._desc ? "Ocultar desconexões" : "Mostrar desconexões") + '</button>' +
+        (global.EletIlumUI ? '<button class="btn sm" data-inst="p12-ilum" title="Ponto de luz, interruptores, eletroduto e fiação da iluminação do ambiente">Ligação da iluminação</button>' : "") +
         '<button class="btn sm" data-inst="p12-legenda">' + (U._legenda ? "Tirar a legenda da planta" : "Legenda na planta") + '</button><button class="btn sm" data-inst="p12-tabela">' + (U._tabela ? "Fechar a tabela" : "Tabela de peças") + "</button>" +
         (U._tabela ? '<button class="btn sm primary" data-inst="p12-xlsx">Baixar .xlsx</button>' : "") +
         /* QUALIDADE VISUAL 1: a peça aparece com a cor do MATERIAL (PVC marrom, branco, cinza, cobre…); a cor do
@@ -487,6 +496,7 @@
     };
     U.cliquePainelP12 = function (a, bt) {
       if (a === "p12-verificar") { U.verificarSistemas(); return true; }
+      if (a === "p12-ilum") { if (global.EletIlumUI) global.EletIlumUI.abrir(); return true; }
       if (a === "crit-ver") { U.critMostrar(Number(bt.getAttribute("data-n"))); return true; }
       if (a === "crit-corrigir") { U.critCorrigir(Number(bt.getAttribute("data-n"))); return true; }
       if (a === "p12-desc") { U.alternarDesconexoes(!U._desc); U.renderPainel(); return true; }
@@ -837,7 +847,15 @@
         ctx.marcar(); return;
       }
       var S = I.SISTEMAS[c.sistema], livre = this.livre(ev);
-      var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true));   /* CORTE: a peça sob o cursor (js/biminstcon.js pickCorte) */
+      var alvo = ev && ev._corte && ev._alvo !== undefined ? ev._alvo : this.agarrar(est, ctx.famAval, p, c.sistema, null, ed.p1 ? ed.p1.y : base + this.alturaTrabalho(true));
+      /* N23 (23/10/2026): SNAP NO PROLONGAMENTO — sem alvo de ligação perto, o cursor na RETA de um tubo deitado (além da ponta dele, a
+         até 15 cm de lado) ALINHA o ponto com ele e toma a cota dele como altura de referência (js/biminstconectar.js). Não é ligação:
+         o ponto fica livre, só alinhado (no corte o clique já traz a cota: fica como está) */
+      var refP = null;
+      if (!alvo && !(ev && ev._corte) && !livre && global.BimInstConectar && global.BimInstConectar.snapProlongamento) {
+        refP = global.BimInstConectar.snapProlongamento((est.instalacoes || {}).trechos, p, c.sistema);
+        if (refP) { p = { x: refP.x, y: p.y, z: refP.z }; this._ultimoSnap = refP; }
+      }   /* CORTE: a peça sob o cursor (js/biminstcon.js pickCorte) */
       if (!ed.p1) {
         /* FAMIMPORT: começar no conector de uma família IMPORTADA (js/familiamalha.js) pega o DN dele — a conexão
            da família é feita para aquele diâmetro; DN fora da lista comercial do material fica o do traço (e a rede pede a redução) */
@@ -855,6 +873,7 @@
         /* começar numa caixa/ralo: a saída na cota de trabalho, se ela está dentro da captura da peça */
         if (alvo && alvo.tipo === "peca" && alvo.hub && yT >= alvo.hub.yBot && yT <= alvo.hub.yTop) q0.y = yT;
         if (!alvo && ev && ev._corte && isFinite(p.y)) q0.y = r6(p.y);   /* no corte, o clique já diz a cota */
+        if (refP) q0.y = refP.y;   /* N23: alinhado no prolongamento de um tubo — a cota de referência é a dele */
         /* começar NUM APARELHO longe da cota de trabalho: toco até dentro da parede (ponto de parede) e
            descida/subida embutida até a cota — o traço segue de lá, nunca na altura da louça */
         /* o ponto JÁ tem tubo (o toco que chega nele): o traço novo sai da outra ponta desse toco (vira tê no

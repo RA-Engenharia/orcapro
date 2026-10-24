@@ -146,13 +146,38 @@
     return { linhas: L.map(function (l) { l.nElementos = r.total.pecas; l.medida = "metalica"; return l; }), resumo: { nElementos: r.total.pecas, nEstimados: r.tinta.length } };
   }
 
+  /* ============================================================ A COMPOSIÇÃO SINAPI DE CADA DEMÃO (frente F2, 21/10/2026)
+   * Usada pelo orçamento da estrutura (js/metalorc.js): cada demão vira a composição SINAPI MG 06/2026 "POR DEMÃO" sobre
+   * PERFIL METÁLICO EXECUTADO EM FÁBRICA, pulverizada (códigos e unidade M2 conferidos na base do repositório):
+   *   epóxi fundo 100727 · epóxi acabamento 100729 · alquídico fundo (zarcão) 100719 · alquídico acabamento (esmalte acetinado) 100739.
+   * A tinta JÁ ESTÁ na composição — os litros desta tela não viram linha de orçamento (seria cobrança dupla).
+   * Ligante sem composição na SINAPI (poliuretano, zinco, acrílico…): a de MAIOR preço por demão (epóxi de fundo 100727), marcada
+   * "provisório — cotar com o fornecedor". Demão sem ligante (rendimentos digitados): epóxi, o sistema de maior preço, com o aviso.
+   * sistema: "auto" (pelo ligante/nome da demão) | "epoxi" | "alquidico". */
+  var SINAPI_DEMAO = { epoxi: { fundo: "100727", acabamento: "100729" }, alquidico: { fundo: "100719", acabamento: "100739" } };
+  function composicaoDaDemao(d, i, total, sistema) {
+    d = d || {};
+    var t = (txt(d.funcao) + " " + txt(d.ligante) + " " + txt(d.nome) + " " + txt(d.produto)).toLowerCase();
+    if (t.normalize) t = t.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    var fundo = /fundo|primer|zarcao|zinco|intermedi/.test(t) || (!/acabamento|esmalte|final/.test(t) && i === 0 && total > 1);
+    var papel = fundo ? "fundo" : "acabamento", sis = sistema === "epoxi" || sistema === "alquidico" ? sistema : null, o;
+    if (!sis) {
+      if (/epox/.test(t)) sis = "epoxi";
+      else if (/alquid|esmalte|sintetic|zarcao|oleo/.test(t)) sis = "alquidico";
+      else if (/poliuret|\bpu\b|zinco|acril|silicat|vinil|polissilox/.test(t)) return { codigo: SINAPI_DEMAO.epoxi.fundo, sistema: "epoxi", papel: papel, provisorio: "ligante \"" + (txt(d.ligante) || txt(d.nome)) + "\" sem composição SINAPI por demão: adotada a de maior preço (epóxi de fundo 100727) — cotar com o aplicador" };
+      else { o = { codigo: SINAPI_DEMAO.epoxi[papel], sistema: "epoxi", papel: papel, aviso: "demão sem ligante definido (" + (txt(d.nome) || "demão " + (i + 1)) + "): adotado o epóxi, o sistema de maior preço da SINAPI" }; return o; }
+    }
+    return { codigo: SINAPI_DEMAO[sis][papel], sistema: sis, papel: papel };
+  }
+
   /* ============================================================ QUANTITATIVO DE PINTURA DO MODELO
    * quantitativo(n, op): a partir das peças metálicas do modelo (n = BimMetalFab.numerar(estado); a área de pintura é a que a
    * fabricação já calcula — perímetro do perfil × comprimento, chapas dos dois lados, bordas se op.bordas) e do SISTEMA de pintura
    * do catálogo industrial por ambiente (ISO 12944-2) e durabilidade, devolve:
    *   area_m2, kg, preparo { grau, texto, area_m2 }, demaos [{ funcao, ligante, produtoExemplo, eps_um, sv_pct, litros, litrosFaixa }],
    *   litrosTotal, e as LINHAS PRONTAS PARA O ORÇAMENTO — `linhas` [{ descricao, unidade, quantidade }] e `orcamento` (o mesmo, no
-   *   formato do levantamento do BIM). SEM preço e SEM código SINAPI: a pessoa vincula a composição depois.
+   *   formato do levantamento do BIM). Estas linhas são o QUANTITATIVO (sem preço); o orçamento com código e preço — pintura por
+   *   demão na composição SINAPI (composicaoDaDemao), estrutura por kg, ligações, içamento e frete — é o js/metalorc.js.
    * op: { ambiente, durabilidade, substrato } ou { sistema: id|objeto }; { perdaPct | metodo, geometria }, { sv: {índice: %} }, { bordas }.
    * Consumo = o do catálogo (consumoTinta): rendimento teórico = SV × 10 ÷ EPS; litros = m² ÷ rendimento ÷ (1 − perda). A perda é declarada
    * em perdaOrigem; demão sem SV vai em `pendentes` e fica FORA das linhas (nunca zero silencioso). */
@@ -234,7 +259,8 @@
     return wb;
   }
 
-  var BimMetalPintura = { CONFIG: CONFIG, MAX_DEMAOS: MAX_DEMAOS, cfgDe: cfgDe, areaPeca: areaPeca, calcular: calcular, linhasOrcamento: linhasOrcamento, quantitativo: quantitativo, quantitativoDoModelo: quantitativoDoModelo, grauDe: grauDe, xlsxPintura: xlsxPintura };
+  var BimMetalPintura = { CONFIG: CONFIG, MAX_DEMAOS: MAX_DEMAOS, cfgDe: cfgDe, areaPeca: areaPeca, calcular: calcular, linhasOrcamento: linhasOrcamento, quantitativo: quantitativo, quantitativoDoModelo: quantitativoDoModelo, grauDe: grauDe, xlsxPintura: xlsxPintura,
+                          SINAPI_DEMAO: SINAPI_DEMAO, composicaoDaDemao: composicaoDaDemao };
   global.BimMetalPintura = BimMetalPintura;
   if (typeof module !== "undefined" && module.exports) module.exports = BimMetalPintura;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

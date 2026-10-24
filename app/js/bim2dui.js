@@ -67,7 +67,10 @@
         L = (p.pav || []).map(function (x, i) { return { id: "pav" + i, nome: x.nome, y: x.y }; });
         /* sem nível nenhum e sem modelo, a planta do Térreo existe do mesmo jeito (20/10/2026): é nela que a
            primeira parede nasce — antes ela só aparecia depois da 1ª peça. Mesmo id do caso com modelo. */
-        if (!L.length) L = [{ id: "modelo", nome: "Térreo", y: p.caixa ? p.caixa.min[1] : 0 }];
+        /* EDIFICAÇÃO (23/10/2026): sem pavimento declarado (IFC do SketchUp) o piso vem das peças verticais da CASA (cotas) ou do pé
+           da casa — não do pé do terreno. O 1º nível mantém o id "modelo" (as folhas já guardadas apontam para d2p-modelo). */
+        if (!L.length && p.cotas && p.cotas.length) L = p.cotas.map(function (c, i) { return { id: i ? "cota" + i : "modelo", nome: c.nome, y: c.y }; });
+        if (!L.length) { var cxN = p.caixaEdif || p.caixa; L = [{ id: "modelo", nome: "Térreo", y: cxN ? cxN.min[1] : 0 }]; }
       }
       return L;
     },
@@ -230,6 +233,13 @@
         if (desenhados ? !desenhados["edit:" + pc.id] : (rec && !(pc.x >= Math.min(rec.x0, rec.x1) && pc.x <= Math.max(rec.x0, rec.x1) && pc.z >= Math.min(rec.y0, rec.y1) && pc.z <= Math.max(rec.y0, rec.y1)))) return;
         var Pp = (BIx0 && BIx0.PECAS && BIx0.PECAS[pc.peca]) || {}, rP = Pp.forma === "caixa" ? (Pp.w || 0.1) / 2 : (Pp.r || 0.05);
         tx.push({ t: tr, x: pc.x, y: pc.z, rot: 0, cor: "#c00000", seg: [pc.x, pc.z, pc.x, pc.z], raio: rP, id: pc.id, peca: true });   /* o rótulo vai AO LADO da peça (js/biminstnivel.js rotular) */
+      });
+      /* LIGAÇÃO ELÉTRICA (21/10/2026): o símbolo do interruptor (S, S3w, S4w) e o circuito·comando da luminária — texto LIVRE
+         (sem trecho), posto ao lado da peça pelo mesmo arrumador de rótulos */
+      ins.textos.forEach(function (t) {
+        if (!t.livre) return;
+        if (rec && !(t.x >= Math.min(rec.x0, rec.x1) && t.x <= Math.max(rec.x0, rec.x1) && t.y >= Math.min(rec.y0, rec.y1) && t.y <= Math.max(rec.y0, rec.y1))) return;
+        tx.push({ t: t.t, x: t.x, y: t.y, rot: 0, cor: t.cor, seg: [t.x, t.y, t.x, t.y], raio: 0.05, id: t.id, peca: true });
       });
       /* AVISO: inclinação ABAIXO DA MÍNIMA (esgoto: 2 % até DN 75, 1 % acima — BimInst.inclinacaoMinima, a mesma regra do
          Verificar sistemas) não se esconde: o rótulo sai na cor de aviso. Mede a inclinação no próprio trecho do modelo
@@ -528,6 +538,7 @@
       var letra = D2().proximaLetra(e.cortes.map(function (x) { return x.letra; }));
       var c = { id: "c" + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), letra: letra, ax: ax, az: az, bx: bx, bz: bz, inv: !!(opts && opts.inv), prof: 0 };
       if (opts && opts.letra && e.cortes.every(function (x) { return x.letra !== opts.letra; })) c.letra = letra = String(opts.letra);
+      if (opts && opts.pvAuto) c.pvAuto = true;   /* posto pelo gerador de pranchas: ele o reposiciona se a caixa da edificação mudar */
       e.cortes.push(c); this._gravar();
       /* as plantas abertas ganham a marca do corte novo */
       var self = this; Object.keys(this._cache).forEach(function (k) { if (/^d2p-/.test(k)) self.redesenhar(k, false); });
@@ -538,11 +549,23 @@
       status("Corte " + letra + " criado e aberto. A marca dele está na planta; os parâmetros, em Propriedades.");
       return c;
     },
+    /* muda a linha de um corte já criado (o gerador de pranchas põe o corte antigo, feito sobre o terreno, no meio da casa) */
+    moverCorte: function (cid, ax, az, bx, bz, marcarAuto) {
+      var c = null; this.estado().cortes.forEach(function (x) { if (x.id === cid) c = x; });
+      if (!c || ![ax, az, bx, bz].every(function (v) { return isFinite(v); })) return false;
+      c.ax = ax; c.az = az; c.bx = bx; c.bz = bz; if (marcarAuto) c.pvAuto = true;
+      this._gravar();
+      var self = this, idc = this.idCorte(cid);
+      Object.keys(this._cache).forEach(function (k) { if (k === idc || /^d2p-/.test(k)) self.redesenhar(k, false); });
+      this._avisarMudou();
+      return true;
+    },
     /* corte pelo meio do modelo: 'longitudinal' (ao longo do lado maior) ou 'transversal' */
     corteRapido: function (modo) {
       var p = B() && B().pavimentos2d ? B().pavimentos2d() : null;
       if (!p || !p.caixa) { toast("Abra um modelo primeiro.", "aviso"); return null; }
-      var mn = p.caixa.min, mx = p.caixa.max, lx = mx[0] - mn[0], lz = mx[2] - mn[2], cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2, m = 1;
+      var cxE = p.caixaEdif || p.caixa;   /* EDIFICAÇÃO: o meio da casa, não o do terreno */
+      var mn = cxE.min, mx = cxE.max, lx = mx[0] - mn[0], lz = mx[2] - mn[2], cx = (mn[0] + mx[0]) / 2, cz = (mn[2] + mx[2]) / 2, m = 1;
       var aoLongoX = (modo === "longitudinal") === (lx >= lz);
       return aoLongoX ? this.criarCorte(mn[0] - m, cz, mx[0] + m, cz) : this.criarCorte(cx, mx[2] + m, cx, mn[2] - m);
     },
@@ -899,7 +922,8 @@
       if (!p || !p.caixa) { toast("Abra um modelo primeiro: a elevação é desenhada dele.", "aviso"); return null; }
       if (["norte", "sul", "leste", "oeste"].indexOf(dir) < 0) dir = "sul";
       var NOMES = { norte: "Elevação Norte", sul: "Elevação Sul", leste: "Elevação Leste", oeste: "Elevação Oeste" };
-      var v = M.criar("elevacao", { nome: NOMES[dir], linha: this.linhaElevacao(dir, p.caixa), numero: { norte: "N", sul: "S", leste: "L", oeste: "O" }[dir] });
+      /* EDIFICAÇÃO: as quatro faces da CASA (sem o terreno); pvAuto marca a elevação que o gerador de pranchas pode reposicionar */
+      var v = M.criar("elevacao", { nome: NOMES[dir], linha: this.linhaElevacao(dir, p.caixaEdif || p.caixa), numero: { norte: "N", sul: "S", leste: "L", oeste: "O" }[dir], pvDir: dir, pvAuto: !!(opts && opts.pvAuto) });
       return this._p6Depois(v, opts && opts.abrir, (opts && opts.silencioso) ? "" : "“" + v.nome + "” criada: a marca está nas plantas e a vista em Navegador › Elevações.");
     },
     /* ELEVAÇÃO INTERIOR: o clique dentro do cômodo; olha para a parede CORTADA mais

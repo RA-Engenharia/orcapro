@@ -65,6 +65,11 @@
   function teto4(v) { return Math.ceil(v * CASAS - 1e-6) / CASAS; }   // hid:ok arredondamento de 4 casas
   function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
   var EPS = 1e-6;   // hid:ok
+  /* ⚠ 21/10/2026: o ENCAIXE das conexões da subida pesa 95 na nota da escolha — abaixo da colisão com outro tubo (100, agora também a
+     subida cruzando ela mesma e a que passa na caixa sifonada/ralo: o auditor achou as duas quando o encaixe passou a pesar) e da violação
+     de norma (1000). O tê vertical sobe o que as peças medidas pedem quando o enchimento deixa; o que não encaixa vira PENDÊNCIA com os mm */
+  var PESO_BATE_DURO = 100, PESO_BATE_AFAST = 30;   // hid:ok N23: pesos da escolha da subida — colisão física (100 + 100) > encaixe (95) > só o afastamento da água (30)
+  var EPS_ENCAIXE = 0.001, MARGEM_ENCAIXE = 0.003, PESO_ENCAIXE = 95;   // hid:ok 1 mm de tolerância no encaixe e 3 mm de sobra na escolha (a tangência real da peça difere um nada da conta); os pesos da escolha (ordem acima)
   var INF = Infinity;
   function d2(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
   function raio(dn) { return dn / 1000 / 2; }   /* DN em mm → raio em m */
@@ -84,6 +89,7 @@
     afastQuedaCaixa: 0.30,   // hid:ok a descida do ramal que chega alto fica a isto fora da parede da caixa (nunca em cima dela)
     degrauMinimoCaixa: 0.02, // hid:ok menor degrau que se faz antes da caixa: o ramal já nasce na cota de controle (js/hidrota.js, topoEntrada); sobra menor que isto (a peça rasa da rede manda) não vira joelho
     paredeAtrasMax: 0.60,    // hid:ok procura da parede atrás de um ponto de parede (raio pela normal do conector), a partir da face da louça
+    corredorDesconector: 0.60, // hid:ok N23 (23/10/2026): até esta distância em planta do ponto de esgoto de OUTRO desconector do ambiente, o deitado/desvio de uma ventilação passa por cima de onde ele vai subir (a 2ª pia)
     margemVent: 0.10,        // hid:ok o ponto da ventilação fica a esta folga ANTES da distância máxima (m)
     caixasAvaliadas: 3,      // hid:ok quantos pontos de caixa sifonada são TRAÇADOS de verdade para escolher (o melhor custo do HidRota vence)
     distCandidatos: 0.30,    // hid:ok entre dois pontos avaliados (senão seriam o mesmo traçado)
@@ -167,6 +173,57 @@
 
   /* ---------------------------------------------------------- O CÔMODO */
   var PARTES_DE_KIT = { valvula: 1, torneira: 1 };
+  /* ⚠ PRIORIDADE de 21/10/2026 (print do Rogério, a ventilação no tê): quando o tê do ramal + o joelho da ventilação não cabem sob o
+     piso (o ramal raso: no projeto real 8 cm para 15 cm), o traçado APROFUNDA o esgoto do ambiente só o que falta — a faixa do esgoto
+     no enchimento desce (HidRota reservaVentilacao, agora também no térreo), a declividade fica e o corpo da caixa sifonada desce com o
+     prolongador (js/biminstgeo.js corpoPeca). Refaz o ambiente uma vez com a faixa nova; só fica com o refeito se ele ENCAIXA e a faixa
+     se manteve (no andar, o rebaixo/a laje: o esgoto descido não pode entrar na laje — aí fica o de antes, com a pendência e o Corrigir). */
+  function clonePar(e, par, reserva) {
+    var par2 = {}; Object.keys(par).forEach(function (k) { par2[k] = par[k]; }); par2.reservaVentilacao = reserva; par2._reservaEncaixe = true;
+    var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2.parametros = par2;
+    return e2;
+  }
+  function pendEncaixe(r) { return arr(r && r.pendencias).filter(function (p) { return p.chave === "amb.ventilacao_encaixe"; })[0] || null; }
+  function batidasVent(r) { return arr(r && r.avisos).filter(function (a) { return /ventila[çc][ãa]o.*passa perto de outro tubo/.test(String(a && a.texto || "")); }).length; }
+  /* o refazer do ENCAIXE (a pendência com o que falta no 1º trecho): devolve { r2 } quando o refeito encaixa, ou { reserva, r2 } */
+  function aprofundarEncaixe(e, r, par) {
+    var pe = arr(r && r.pendencias).filter(function (p) { return p.chave === "amb.ventilacao_encaixe" && p.acao && num(p.acao.falta0Mm, 0) > EPS_ENCAIXE * 1000 && p.acao.yTomada != null; })[0];
+    if (!pe) return null;
+    var a = pe.acao, falta = num(a.falta0Mm, 0) / 1000 + MARGEM_ENCAIXE;   /* o que falta no trecho do tê (o 1º da subida) */
+    /* o topo do ramal na tomada desce o que falta: a faixa do esgoto termina ali (o resto do ramal sobe a montante pela declividade) */
+    var reserva = r4(Math.max(num(a.reserva, 0), num(a.piso, 0) - num(a.cobrimento, 0) - (num(a.yTomada, 0) - falta + raio(num(a.dnEs, 0)))));
+    if (!(reserva > num(a.reserva, 0) + EPS)) return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: null, ok: false };
+    var r2 = null; try { r2 = ligar0(clonePar(e, par, reserva)); } catch (eR) { r2 = null; }
+    var ok = !!(r2 && r2.ok && r2.reservaEncaixe > EPS && !pendEncaixe(r2));
+    return { pe: pe, reserva: reserva, base: num(a.reserva, 0), r2: r2, ok: ok };
+  }
+  function ligar(e) {
+    var r = ligar0(e), par = (e && e.parametros) || {};
+    if (par._reservaEncaixe) return r;
+    var A = aprofundarEncaixe(e, r, par);
+    if (A && A.ok && !batidasVent(A.r2)) return A.r2;
+    /* ⚠ N23 (23/10/2026, auditor COZ-2PIAS): a ventilação que só achou caminho BATENDO em outro tubo (o aviso "passa perto de outro
+       tubo") num ramal raso — na cozinha de 2 pias a junção 45° da tomada corria rente ao próprio ramal até a descida da pia e a
+       subida direta atravessava a descida dela. Aprofundar o esgoto do ambiente uns centímetros dá altura para o tê 90° e a subida
+       vai para o lado livre da parede. Degraus de RELIGAR_DEGRAU (até RELIGAR_PASSOS); em cada um, se faltar só o encaixe do tê,
+       aprofunda o que falta. Fica com o 1º que liga sem bater e sem pendência de encaixe; senão, o de antes. */
+    var r1 = A && A.ok ? A.r2 : r;
+    if (r1 && r1.ok && batidasVent(r1)) {
+      var base = num(par.reservaVentilacao, 0);
+      for (var k = 1; k <= RELIGAR_PASSOS; k++) {
+        var e2 = clonePar(e, par, r4(base + k * RELIGAR_DEGRAU)), r2 = null; try { r2 = ligar0(e2); } catch (eR) { r2 = null; }
+        if (!r2 || !r2.ok || batidasVent(r2)) continue;
+        if (!pendEncaixe(r2)) return r2;
+        var A2 = aprofundarEncaixe(e2, r2, e2.parametros);
+        if (A2 && A2.ok && !batidasVent(A2.r2)) return A2.r2;
+      }
+    }
+    if (A && A.ok) return A.r2;
+    /* não coube (o rebaixo/a laje, ou ainda falta): fica o traçado de antes, com a pendência dizendo por quê e o Corrigir */
+    if (A && A.pe) A.pe.motivo = A.pe.texto = A.pe.texto + " — o esgoto não pôde descer " + fcmAmb(A.reserva - A.base) + " cm no enchimento (" + (A.r2 && A.r2.reservaEncaixe > EPS ? "ainda não encaixa" : "o rebaixo/a laje não deixa") + ")";
+    return r;
+  }
+  var RELIGAR_DEGRAU = 0.03, RELIGAR_PASSOS = 3;   // hid:ok degraus do aprofundamento do esgoto do ambiente (m) — a folga de montagem
   function membros(estado, avaliarFam, ops, seed, par) {
     var K = HK(), fams = arr(estado.familias), porId = {}, kitDe = {};
     fams.forEach(function (f) { porId[String(f.id)] = f; });
@@ -362,7 +419,7 @@
   }
 
   /* ======================================================= LIGAR */
-  function ligar(e) {
+  function ligar0(e) {
     e = e || {};
     var estado0 = e.estado || {}, avaliarFam = e.avaliarFam, ops0 = arr(e.ops), par = e.parametros || {}, K = HK(), B = BI(), H = HR();
     var out = { ok: false, ambiente: null, ops: [], avisos: [], pendencias: [], decisoes: [], rota: null, caixaSifonada: null, ventilacao: null, normas: [], descartadas: [] };
@@ -860,6 +917,7 @@
        de ventilação da Tabela 8 + a folga entre tubos + o cobrimento), e o deitado da ventilação passa por cima do ramal, sempre
        subindo. Não coube (rebaixo raso): o traçado de antes, e a interferência aparece no Verificar/auditor. */
     var reservaV = 0;
+    if (par._reservaEncaixe && num(parR.reservaVentilacao, 0) > 0) reservaV = parR.reservaVentilacao;   /* o refazer do encaixe (ligar): a faixa vem pronta */
     if (!terreo && destinos.ventilacao && destinos.esgoto && parR.reservaVentilacao == null) {
       var uV = 0; aparelhos.forEach(function (a) { var u = NR.uhc(a.aparelho, "ventilação"); uV += u == null ? 0 : u; });
       if (out.caixaSifonada && out.caixaSifonada.uhc) uV = Math.max(uV, out.caixaSifonada.uhc);
@@ -911,7 +969,9 @@
           } else virados.forEach(function (v) { v.cAF.x = v.guarda.x; v.cAF.z = v.guarda.z; });   /* não resolveu: volta como estava (o aviso abaixo) */
         }
       }
-      if (reservaV) decide("amb.reserva_ventilacao", "Andar com rebaixo: o esgoto do ambiente corre " + fcmAmb(reservaV) + " cm mais baixo no enchimento (o diâmetro do ramal de ventilação + a folga entre tubos + o cobrimento), para a ventilação passar POR CIMA do ramal da bacia, sempre subindo, sem atravessá-lo.");
+      out.reservaEncaixe = par._reservaEncaixe ? reservaV : 0;
+      if (reservaV && par._reservaEncaixe) decide("amb.ventilacao.encaixe_ramal", "O esgoto do ambiente corre " + fcmAmb(reservaV) + " cm abaixo do topo do enchimento para o tê do ramal + o joelho da ventilação encaixarem (as peças medidas), com a mesma declividade; o corpo da caixa sifonada desce com o prolongador até a cota do tubo.");
+      else if (reservaV) decide("amb.reserva_ventilacao", "Andar com rebaixo: o esgoto do ambiente corre " + fcmAmb(reservaV) + " cm mais baixo no enchimento (o diâmetro do ramal de ventilação + a folga entre tubos + o cobrimento), para a ventilação passar POR CIMA do ramal da bacia, sempre subindo, sem atravessá-lo.");
       /* FRENTE H1 (20/10/2026): a espera "ao lado da referência" cuja água CRUZA a si mesma (dois tubos do ramal na mesma cota se
          atravessando, sem conexão: o ramal da bacia girada contornando o registro) vai para a alternativa longe da referência —
          só se ela fechar melhor (com opção e sem cruzar) */
@@ -1180,7 +1240,7 @@
       aparelhos.forEach(function (a) {
         if (!SIFAO[a.aparelho]) return;
         var csE = a.conectores.filter(function (c) { return c.sistema === "esgoto"; });
-        csE.forEach(function (c) { var n0 = G.noPerto({ x: c.x, y: c.y, z: c.z }, B.TOL_CONECTOR); if (n0 != null) desc.push({ ref: csE.length > 1 ? a.id + ":" + c.id : a.id, el: a.id, no: n0, dn: null }); });
+        csE.forEach(function (c) { var n0 = G.noPerto({ x: c.x, y: c.y, z: c.z }, B.TOL_CONECTOR); if (n0 != null) desc.push({ ref: csE.length > 1 ? a.id + ":" + c.id : a.id, el: a.id, no: n0, dn: null, pt: { x: c.x, z: c.z } }); });
       });
       if (!desc.length) return;
       /* ⚠ a distância máxima vale pelo DN do ramal de descarga do desconector; o da caixa é a SAÍDA dela (o traçado pode
@@ -1227,7 +1287,7 @@
             var dq = dists.filter(function (d) { return d.ref === q0.ref; })[0];
             /* o sentido do escoamento no ramal (p1 → p2) em planta: a junção 45° da ventilação sai para MONTANTE (a favor do fluxo) */
             var fxL = d2(t.p1, t.p2) || 1;
-            if (dq && dq.ok) cs.push({ P: P, viol: viol, dists: dists, s: sP, dnEs: num(t.dn, 0), trecho: t.id, fluxo: { x: (t.p2.x - t.p1.x) / fxL, z: (t.p2.z - t.p1.z) / fxL } });
+            if (dq && dq.ok) cs.push({ P: P, viol: viol, dists: dists, s: sP, dnEs: num(t.dn, 0), trecho: t.id, ref: q0.ref, fluxo: { x: (t.p2.x - t.p1.x) / fxL, z: (t.p2.z - t.p1.z) / fxL } });
           }
         });
         return cs;
@@ -1257,6 +1317,37 @@
       /* FRENTE H3 (20/10/2026): o esgoto que JÁ está no modelo (o tubo de queda do shaft) também é obstáculo — o deitado passava a 0,3 cm
          do TQ entre ele e a coluna de ventilação. O esgoto do próprio ambiente (refeito agora) fica de fora */
       var esExist = arr(estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t.sistema === "esgoto" && String(t.id).indexOf(ambId + "-") !== 0; });
+      /* 21/10/2026: a subida que cruza ELA MESMA (dois trechos não vizinhos mais perto que o diâmetro + a folga) ou que passa pelo cilindro
+         de captura de uma caixa sifonada/ralo (o tubo de ventilação "terminando" na caixa) também bate — sem isto a escolha que pondera o
+         encaixe caía nessas posições (auditor: cozinha de 2 pias e a casa) */
+      var cachePcs = { n: -1, v: null };   /* as caixas sifonadas/ralos do ambiente (só mudam quando entra peça nova) */
+      function bateProprio(segs, r) {
+        for (var i = 0; i < segs.length; i++) for (var j = i + 2; j < segs.length; j++) if (H._int.segSeg3(segs[i].a, segs[i].b, segs[j].a, segs[j].b) - 2 * r < geo(par, "folga") - EPS) return true;
+        var pcs = cachePcs.n === novas.length && cachePcs.v ? cachePcs.v : (cachePcs.n = novas.length, cachePcs.v = novas.filter(function (o) { return o.op === "peca" && /^(caixa_sifonada|ralo_)/.test(String(o.peca)); }).concat(arr(estado.instalacoes && estado.instalacoes.pecas).filter(function (k) { return /^(caixa_sifonada|ralo_)/.test(String(k.peca)); })));
+        return pcs.some(function (k) { var Pk = B.PECAS[k.peca] || {}, R0 = num(Pk.captura, 0) + r, y0 = num(k.y, 0) - num(Pk.prof, 0), y1 = num(k.y, 0); return segs.some(function (sg) { return H._int.segSeg3(sg.a, sg.b, { x: k.x, y: Math.min(Math.max(sg.a.y, y0), y1), z: k.z }, { x: k.x, y: Math.min(Math.max(sg.b.y, y0), y1), z: k.z }) < R0 && Math.min(sg.a.y, sg.b.y) <= y1 && Math.max(sg.a.y, sg.b.y) >= y0; }); });
+      }
+      /* ⚠ N23 (23/10/2026, auditor COZ-2PIAS): a ventilação de UM desconector não corre (deitado/desvio na parede) por cima do lugar
+         onde OUTRO desconector do ambiente vai precisar subir o ramal de ventilação PRÓPRIO dele (o que está longe da tomada escolhida:
+         c.dists com ok falso). Na cozinha de 2 pias, com o ramal aprofundado para o tê encaixar, o desvio da 1ª pia corria 1,35 m na
+         parede por cima da 2ª; a subida da 2ª, depois, só tinha caminho ATRAVESSANDO esse deitado (−4 cm entre geratrizes) e colada
+         na água fria. Conta como colisão na escolha e o desvio que cai em cima dele é recusado. */
+      function bloqueia(segsX, r, c) {
+        var outrosD = desc.filter(function (q) { return q.pt && c && q.ref !== c.ref && arr(c.dists).some(function (d) { return d.ref === q.ref && !d.ok; }); });
+        if (!outrosD.length) return false;
+        var cor = geo(par, "corredorDesconector"), fo = geo(par, "folga");
+        return segsX.some(function (sg) {
+          var L = d2(sg.a, sg.b); if (!(L > EPS) || Math.abs(sg.a.y - sg.b.y) > L) return false;   /* só o que CORRE (o vertical sobe no lugar dele) */
+          var ux = (sg.b.x - sg.a.x) / L, uz = (sg.b.z - sg.a.z) / L;
+          return outrosD.some(function (q) {
+            var dx = q.pt.x - sg.a.x, dz = q.pt.z - sg.a.z, tq = dx * ux + dz * uz, nq = Math.abs(-dx * uz + dz * ux), m = r * 2 + fo;
+            return tq > -m && tq < L + m && nq <= cor;
+          });
+        });
+      }
+      /* N23 (23/10/2026): a colisão FÍSICA (geratrizes a menos da folga de montagem, qualquer sistema) pesa mais que a falta só do
+         AFASTAMENTO de 10 cm da água fria (critério de projeto) e que o encaixe das peças: na cozinha de 2 pias a subida a 9,8 cm da
+         prumada de água perdia para a que ATRAVESSAVA a descida da pia (as duas contavam "bate" igual e o encaixe desempatava) */
+      function bateDuro(segs, r, exceto, tomada) { var a0 = par.afastamento; par.afastamento = geo(par, "folga"); try { return bateEm(segs, r, exceto, tomada); } finally { if (a0 === undefined) delete par.afastamento; else par.afastamento = a0; } }
       function bateEm(segs, r, exceto, tomada) {
         return outros.concat(esExist).concat(novas.filter(function (o) { return o.op === "trecho" && o.sistema === "ventilacao"; })).some(function (t) {
           /* FRENTE H3 (20/10/2026): a COLUNA de destino só é isenta no trecho que CHEGA nela (a junção); antes era isenta em todos e o
@@ -1281,15 +1372,58 @@
       /* a subida: do ponto no ramal (sob o piso) sobe o tê ACIMA DO EIXO, corre com aclive até o EIXO da parede mais perto e
          sobe embutida. ⚠ Antes ia à face da parede (embutir 5 cm) e, sem parede perto, o DN 100 ficava solto no cômodo */
       function subida(c, r, yAte, alvo) {
-        var best = null, passoP = geo(par, "passoParede"), nP = Math.round(geo(par, "deslizeParede") / passoP);
+        var best = null, passoP = geo(par, "passoParede"), nP = Math.round(geo(par, "deslizeParede") / passoP), nPmax = nP * 2;
         /* ⚠ o tê fica ACIMA DO EIXO do ramal (4.3.16 b 1): a derivação sobe o que o enchimento sob o piso deixa — o ideal é o
            tubo da ventilação inteiro acima do ramal; o mínimo, o eixo dela na geratriz de cima do ramal */
         var hIdeal = raio(c.dnEs) + r + geo(par, "folga"), hMin = raio(c.dnEs);
+        /* ⚠ 2ª PRIORIDADE de 21/10/2026 (print do Rogério): o JOELHO que vem depois do tê não pode ficar mais perto do centro do tê do que
+           a face da derivação + a face do joelho (as peças MEDIDAS, js/biminstgeo.js alcanceDerivacao) — com 8 cm de subida o joelho
+           entrava no tê e a ponta da ventilação não entrava em bolsa nenhuma. O tê sobe isso; na junção 45° o comprimento no eixo da
+           derivação (subida × √2). Sem o perfil medido: como antes */
+        var HGg = dep("HidGeo", "./biminstgeo.js"), dnV0 = r * 2 * 1000;
+        var hGeoTe = HGg && HGg.facesNo ? (function () { var a = HGg.facesNo({ tipo: "te", material: "pvc_esgoto", dn: c.dnEs }, [{ d: [1, 0, 0], passante: true, dn: c.dnEs }, { d: [0, 1, 0], chega: false, dn: dnV0 }])[1], b = HGg.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnV0 }, [{ d: [0, -1, 0], chega: true, dn: dnV0 }, { d: [1, 0, 0], chega: false, dn: dnV0 }])[0]; return a != null && b != null ? a + b : null; })() : null;
+        /* o ENCAIXE de cada trecho da subida entre as duas conexões dele (as peças medidas): face da peça do começo + face da do fim
+           ≤ comprimento — o tê/junção do ramal (derivação), os joelhos (o tubo que chega entra na perna de bolsa; o que sai, na de luva;
+           a tangência do ângulo real) e o tê da coluna de ventilação no fim. Devolve o quanto falta (m) no pior trecho (0 = encaixa) */
+        var memoFaces = {}, ondeE = { i: 0 }, dnProxV = HRcomercial("ventilacao", dnV0 + 1);
+        /* o passo mínimo do DESVIO na parede: o joelho do tubo + o do DN seguinte (a coluna pode subir maior) */
+        var LJdes = HGg && HGg.facesNo && dnProxV ? (function () { var a = HGg.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnV0 }, [{ d: [0, -1, 0], chega: true, dn: dnV0 }, { d: [1, 0, 0], chega: false, dn: dnV0 }])[1], b = HGg.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnProxV }, [{ d: [-1, 0, 0], chega: true, dn: dnProxV }, { d: [0, 1, 0], chega: false, dn: dnProxV }])[0]; return a != null && b != null ? a + b + MARGEM_ENCAIXE : null; })() : null;
+        /* a perna da JUNÇÃO 45° no plano dela: o joelho 45° que volta ao horizontal + o joelho 90° que vira para a parede */
+        var LJ45 = HGg && HGg.facesNo ? (function () { var a = HGg.facesNo({ tipo: "joelho45", material: "pvc_esgoto", dn: dnV0 }, [{ d: [Math.SQRT1_2, -Math.SQRT1_2, 0], chega: true, dn: dnV0 }, { d: [-1, 0, 0], chega: false, dn: dnV0 }])[1], b = HGg.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnV0 }, [{ d: [1, 0, 0], chega: true, dn: dnV0 }, { d: [0, 0, 1], chega: false, dn: dnV0 }])[0]; return a != null && b != null ? a + b + MARGEM_ENCAIXE : null; })() : null;
+        /* a subida mínima da JUNÇÃO 45° para a derivação + o joelho 45° encaixarem (m, na vertical: o comprimento no eixo ÷ √2) */
+        var hJ45 = HGg && HGg.facesNo ? (function () { var s2 = Math.SQRT1_2, a = HGg.facesNo({ tipo: "juncao", material: "pvc_esgoto", dn: c.dnEs }, [{ d: [1, 0, 0], passante: true, dn: c.dnEs }, { d: [-s2, s2, 0], chega: false, dn: dnV0 }])[1], b = HGg.facesNo({ tipo: "joelho45", material: "pvc_esgoto", dn: dnV0 }, [{ d: [s2, -s2, 0], chega: true, dn: dnV0 }, { d: [-1, 0, 0], chega: false, dn: dnV0 }])[0]; return a != null && b != null ? (a + b) * s2 + MARGEM_ENCAIXE : null; })() : null;
+        var LJ90 = HGg && HGg.facesNo ? (function () { var f = HGg.facesNo({ tipo: "joelho90", material: "pvc_esgoto", dn: dnV0 }, [{ d: [0, -1, 0], chega: true, dn: dnV0 }, { d: [1, 0, 0], chega: false, dn: dnV0 }]); return f[0] != null && f[1] != null ? f[0] + f[1] + MARGEM_ENCAIXE : null; })() : null;   /* a perna mínima entre dois joelhos (m) */   /* ondeE.i: o trecho da subida onde falta mais (0 = o do tê/junção do ramal) */
+        function facesM(cx, ramos) { var k = JSON.stringify([cx, ramos.map(function (q) { return [Math.round(q.d[0] * 1e3), Math.round(q.d[1] * 1e3), Math.round(q.d[2] * 1e3), q.chega, q.passante, q.dn]; })]); if (!memoFaces[k]) memoFaces[k] = HGg.facesNo(cx, ramos); return memoFaces[k]; }   // hid:ok 1e3 = chave da direção com 3 casas
+        function encaixeFalta(sg, j45, dnFim) {
+          if (!HGg || !HGg.facesNo) return 0;
+          var L = [], D = [];
+          sg.forEach(function (q) { var dx = q.b.x - q.a.x, dy = q.b.y - q.a.y, dz = q.b.z - q.a.z, Lq = Math.sqrt(dx * dx + dy * dy + dz * dz); if (Lq > EPS) { L.push(Lq); D.push([dx / Lq, dy / Lq, dz / Lq]); } });
+          if (!L.length) return 0;
+          function ang(i) { var a = D[i], b = D[i + 1], cs = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])); return Math.acos(cs) * 180 / Math.PI; }   // hid:ok radianos → graus
+          var ANG_MIN = 1, ANG_45 = 67.5, fIni = [], fFim = [];   // hid:ok abaixo de 1° os trechos seguem retos (sem conexão); até 67,5° o joelho de 45°
+          /* a peça do ramal (a MESMA conta do 3D: HidGeo.facesNo) — o ramal na horizontal pelo fluxo, a derivação na direção do 1º trecho */
+          var fl = c.fluxo ? [c.fluxo.x, 0, c.fluxo.z] : [1, 0, 0];
+          fIni[0] = facesM({ tipo: j45 ? "juncao" : "te", material: "pvc_esgoto", dn: c.dnEs }, [{ d: fl, passante: true, dn: c.dnEs }, { d: D[0], chega: false, dn: dnV0 }])[1];
+          for (var i = 0; i + 1 < L.length; i++) {
+            var g = ang(i); if (g <= ANG_MIN) { fFim[i] = 0; fIni[i + 1] = 0; continue; }
+            /* o joelho antes do ÚLTIMO trecho sem coluna de destino (o terminal): o último trecho é a coluna, de DN que pode ser maior
+               (Tabela 2) — o joelho é o dela (conta pelo DN seguinte: a casa tinha 10 cm entre o joelho DN 40 e o DN 50, 110 mm de peças) */
+            var dnJ = !dnFim && i + 1 === L.length - 1 && dnProxV ? dnProxV : dnV0, fj0 = dnJ !== dnV0 ? facesM({ tipo: g <= ANG_45 ? "joelho45" : "joelho90", material: "pvc_esgoto", dn: dnJ }, [{ d: [-D[i][0], -D[i][1], -D[i][2]], chega: true, dn: dnJ }, { d: D[i + 1], chega: false, dn: dnJ }]) : null;
+            var fj = facesM({ tipo: g <= ANG_45 ? "joelho45" : "joelho90", material: "pvc_esgoto", dn: dnV0 }, [{ d: [-D[i][0], -D[i][1], -D[i][2]], chega: true, dn: dnV0 }, { d: D[i + 1], chega: false, dn: dnV0 }]);
+            if (fj0) fj = [Math.max(num(fj[0], 0), num(fj0[0], 0)), Math.max(num(fj[1], 0), num(fj0[1], 0))];
+            fFim[i] = fj[0]; fIni[i + 1] = fj[1];
+          }
+          var k = L.length - 1;
+          fFim[k] = dnFim ? facesM({ tipo: "te", material: "pvc_esgoto", dn: dnFim }, [{ d: [0, 1, 0], passante: true, dn: dnFim }, { d: [-D[k][0], -D[k][1], -D[k][2]], chega: true, dn: dnV0 }])[1] : 0;
+          var pior = 0; ondeE.i = 0; ondeE.f0 = 0;
+          for (var m = 0; m < L.length; m++) { var fm = num(fIni[m], 0) + num(fFim[m], 0) - L[m]; if (m === 0) ondeE.f0 = fm; if (fm > pior) { pior = fm; ondeE.i = m; } }
+          return pior;
+        }
         function cortaAbertura(sg, rr) {
           var Hc = dep("HidCriterios", "./hidcriterios.js"); if (!Hc || !Hc.caixasAbertura) return false;
           return arr(obst.aberturas).some(function (a) { return Hc.caixasAbertura(a, par).some(function (z) { return sg.some(function (s) { return !!Hc._int.recorte(z.caixa, s.a, s.b, rr, rr); }); }); });
         }
-        paredes.forEach(function (w) {
+        function varrer() { paredes.forEach(function (w) {
           if (num(w.espessura, 0) < 2 * r + EPS) return;   /* o tubo não cabe dentro da parede */
           var q0 = projParede(c.P, w, num(w.espessura, 0) / 2); if (!q0) return;   /* embutir = meia espessura → o EIXO da parede */
           /* a tomada já está SOB a parede (o ramal corre por baixo dela): sobe ali mesmo, sem trecho deitado */
@@ -1306,11 +1440,18 @@
             for (var modoH = 0; modoH < 2; modoH++) {
             var canto = k === 0 ? null : { x: r4(c.P.x + (q.x - q0.x)), z: r4(c.P.z + (q.z - q0.z)) };
             var L1 = canto ? d2(c.P, canto) : 0, L2 = d2(canto || c.P, q), Lh = L1 + L2;
+            /* PRIORIDADE 21/10/2026 (encaixe): a perna do L mais curta que os dois joelhos dela (a luva de um + a bolsa do outro, as
+               peças medidas) não se monta — no andar do prédio saíam 10 cm entre dois joelhos DN 50 (164 mm de peças). Essa posição sai
+               da escolha (fica o deslize maior ou a subida sem canto; reto em diagonal passava rente ao esgoto do tanque) */
+            if (canto && LJ90 != null && (L1 < LJ90 || L2 < LJ90)) continue;
             var hTopo = piso - geo(par, "cobrimento") - r - Lh * ac - c.P.y;   /* o mais alto que o deitado vai, com o aclive, sob o piso */
             /* só no ANDAR (rebaixo com o esgoto descido pela reserva): no térreo o desvio dentro da parede segue sendo a escolha */
             if (modoH === 1 && (terreo || !(Lh > EPS && hTopo > hIdeal + EPS))) continue;
             /* subindo direto (a tomada já sob a parede) não há trecho deitado: o tê sobe dentro da parede */
             var hTe = Lh <= EPS ? hIdeal : (modoH === 1 ? hTopo : Math.min(hIdeal, hTopo)), acT = ac;
+            /* o tê vertical sobe o que as peças medidas pedem (a face da derivação + a do joelho), quando o enchimento sob o piso deixa;
+               se não deixa, a escolha fica como antes e o encaixe pesa (e vira pendência quando nenhuma posição encaixa) */
+            if (Lh > EPS && hGeoTe != null && hTe >= hIdeal - EPS && hTe < hGeoTe + MARGEM_ENCAIXE && hGeoTe + MARGEM_ENCAIXE <= hTopo + EPS) hTe = hGeoTe + MARGEM_ENCAIXE;
             /* o tê não sobe o ideal: ligação em ângulo menor (junção 45°) e o trecho inicial no aclive dela (4.3.16 b 2) */
             var semIni = false;
             if (Lh > EPS && hTe < hIdeal - EPS) {
@@ -1320,29 +1461,45 @@
               if (hTe2 >= hMin - EPS) { acT = acIni; hTe = hTe2; } else semIni = acIni > ac + EPS;
             }
             if (hTe < hMin - EPS) continue;   /* o trecho deitado sob o piso precisa caber no enchimento, com o tê acima do eixo */
-            var T = { x: c.P.x, y: chao4(c.P.y + hTe), z: c.P.z }, j45 = false;
+            var T = { x: c.P.x, y: chao4(c.P.y + hTe), z: c.P.z }, j45 = false, T2 = null;
+            /* 21/10/2026: na junção 45° o JOELHO 45° volta ao horizontal no MESMO plano da derivação (ao longo do ramal) e o deitado corre
+               Lc até o próximo joelho — as faces medidas das duas peças; antes o deitado virava direto no fim da derivação (~90°) e o joelho
+               entrava na junção */
+            var Lc = 0;
             /* FRENTE H1 (20/10/2026, revisão): em ÂNGULO MENOR a peça é a JUNÇÃO 45° — a derivação sai a 45° ao longo do ramal, para
                montante (o braço da junção a favor do fluxo), subindo o hTe; o deitado começa no fim dela. Antes a tomada dizia
                "juncao45" e o modelo desenhava a subida vertical (o 3D e o orçamento contavam o tê): memorial × modelo divergiam */
-            if (Lh > EPS && hTe < hIdeal - EPS && c.fluxo) {
+            /* PRIORIDADE 21/10/2026 (encaixe): no ANDAR, o tê + o joelho que não cabem no rebaixo (o esgoto não pode descer: a laje) vão
+               para a JUNÇÃO 45° + joelho 45° (4.3.16 b 2), subindo o que essas peças pedem — nunca peças sobrepostas no 3D. No térreo o
+               ligar aprofunda o esgoto e o tê encaixa */
+            var forca45 = !terreo && Lh > EPS && hGeoTe != null && hJ45 != null && hGeoTe + MARGEM_ENCAIXE > hTopo + EPS && hTe >= hIdeal - EPS;
+            if (Lh > EPS && (hTe < hIdeal - EPS || forca45) && c.fluxo) {
+              var alvoJ = forca45 ? Math.max(hIdeal, hJ45) : hIdeal;
+              /* o joelho 45° volta ao horizontal NO PLANO da junção e o deitado corre Lc ao longo do ramal até o joelho que vira para a
+                 parede (antes Lc = 0: o deitado virava direto no fim da derivação, ~90°, e o joelho entrava na junção) */
+              Lc = LJ45 != null ? LJ45 : 0;
               for (var it45 = 0; it45 < 2; it45++) {   /* o deitado depende do fim da junção, que depende do hTe: duas passadas bastam */
-                var Tp = { x: c.P.x - c.fluxo.x * hTe, z: c.P.z - c.fluxo.z * hTe }, sU = (q.x - Tp.x) * u.x + (q.z - Tp.z) * u.z;
+                var Tp = { x: c.P.x - c.fluxo.x * (hTe + Lc), z: c.P.z - c.fluxo.z * (hTe + Lc) }, sU = (q.x - Tp.x) * u.x + (q.z - Tp.z) * u.z;
                 var c2 = { x: r4(Tp.x + u.x * sU), z: r4(Tp.z + u.z * sU) }, L1j = d2(Tp, c2), L2j = d2(c2, q);
-                var hJ = Math.min(hIdeal, piso - geo(par, "cobrimento") - r - (L1j + L2j) * acT - c.P.y);
+                var hJ = Math.min(alvoJ, piso - geo(par, "cobrimento") - r - (Lc + L1j + L2j) * acT - c.P.y);
                 if (hJ < hMin - EPS) { hTe = -1; break; }
                 hTe = hJ; canto = L1j > EPS && L2j > EPS ? c2 : null; L1 = canto ? L1j : 0; L2 = canto ? L2j : L1j + L2j; Lh = L1j + L2j;
               }
               if (hTe < hMin - EPS) continue;
               T = { x: r4(c.P.x - c.fluxo.x * hTe), y: chao4(c.P.y + hTe), z: r4(c.P.z - c.fluxo.z * hTe) }; j45 = true;
+              if (Lc > EPS) T2 = { x: r4(T.x - c.fluxo.x * Lc), y: teto4(T.y + Lc * acT), z: r4(T.z - c.fluxo.z * Lc) };
+              if (canto && LJ90 != null && (L1 < LJ90 || L2 < LJ90)) continue;   /* a perna curta do L (os joelhos não cabem): fora da escolha */
             }
-            var yC = canto ? teto4(T.y + L1 * acT) : T.y, yW = Lh > geo(par, "margemNo") ? teto4(T.y + Lh * acT) : T.y;
+            var T0 = T2 || T;   /* o começo do deitado */
+            var yC = canto ? teto4(T0.y + L1 * acT) : T0.y, yW = Lh > geo(par, "margemNo") ? teto4(T0.y + Lh * acT) : T0.y;
             if (Lh > EPS && yW > piso - geo(par, "cobrimento") - r + EPS) continue;
             if (obst.aberturas.some(function (a) { return a.tipo === "porta" && distSeg(q, a.p1, a.p2) < geo(par, "raioPorta"); })) continue;
             var top = { x: q.x, y: yAte(q), z: q.z }, segs = [{ a: c.P, b: T }];
+            if (T2) segs.push({ a: T, b: T2 });
             if (Lh <= EPS) { segs = [{ a: c.P, b: top }]; yW = c.P.y; }   /* o tê sobe direto: a derivação É a coluna */
             else {
-              if (canto) segs.push({ a: T, b: { x: canto.x, y: yC, z: canto.z } });
-              if (d2(canto || T, q) > EPS) segs.push({ a: canto ? { x: canto.x, y: yC, z: canto.z } : T, b: { x: q.x, y: yW, z: q.z } });
+              if (canto) segs.push({ a: T0, b: { x: canto.x, y: yC, z: canto.z } });
+              if (d2(canto || T0, q) > EPS) segs.push({ a: canto ? { x: canto.x, y: yC, z: canto.z } : T0, b: { x: q.x, y: yW, z: q.z } });
               segs.push({ a: { x: q.x, y: canto && d2(canto, q) <= EPS ? yC : yW, z: q.z }, b: top });
             }
             var extra = alvo ? alvo(top) : null; if (alvo && !extra) continue;
@@ -1350,7 +1507,7 @@
                porta ou janela (o e2e do critério achou a ventilação subindo no meio da janela da parede hidráulica) */
             if (cortaAbertura(segs.concat(extra ? extra.segs : []), r)) continue;
             var tomada = { trecho: c.trecho, P: c.P, zona: raio(c.dnEs) + 2 * r + geo(par, "folga") };
-            var todas = segs.concat(extra ? extra.segs : []), bate = bateEm(todas, r, extra ? extra.exceto : null, tomada), desvio = 0;
+            var todas = segs.concat(extra ? extra.segs : []), bate = bateEm(todas, r, extra ? extra.exceto : null, tomada) || bateProprio(todas, r), desvio = 0;
             /* ⚠ a subida no eixo da parede MOLHADA cruza o barrilete/as prumadas de água da mesma parede (o banheiro do teste:
                a ventilação atravessava o barrilete sob a laje): DESVIO dentro da parede — sobe, corre no eixo (com aclive) por
                baixo do tubo que cruzaria e volta a subir onde a parede está livre */
@@ -1366,22 +1523,37 @@
               var achou = null;
               niveis.some(function (yD) {
                 for (var jd = 1; jd <= nD && !achou; jd++) for (var sd = -1; sd <= 1 && !achou; sd += 2) {
+                  if (LJdes != null && jd * passoP < LJdes) continue;   /* o desvio mais curto que os dois joelhos dele não se monta */
                   var dxD = sd * jd * passoP, q2 = { x: r4(q.x + u.x * dxD), z: r4(q.z + u.z * dxD) }, t2 = (q2.x - w.p1.x) * u.x + (q2.z - w.p1.z) * u.z;
                   if (t2 < geo(par, "afastParede") || t2 > Lw - geo(par, "afastParede")) continue;
                   var yD2 = teto4(yD + Math.abs(dxD) * ac), pD = { x: q.x, y: yD, z: q.z }, pD2 = { x: q2.x, y: yD2, z: q2.z };
                   var top2 = { x: q2.x, y: yAte(q2), z: q2.z }, segsD = segs.slice(0, -1).concat([{ a: vert.a, b: pD }, { a: pD, b: pD2 }, { a: pD2, b: top2 }]);
                   var extra2 = alvo ? alvo(top2) : null; if (alvo && !extra2) continue;
-                  if (top2.y > yD2 + geo(par, "margemNo") && !bateEm(segsD.concat(extra2 ? extra2.segs : []), r, extra2 ? extra2.exceto : null, tomada) && !cortaAbertura(segsD.concat(extra2 ? extra2.segs : []), r)) achou = { segs: segsD, L: Math.abs(dxD), top: top2, extra: extra2 };
+                  if (top2.y > yD2 + geo(par, "margemNo") && !bateEm(segsD.concat(extra2 ? extra2.segs : []), r, extra2 ? extra2.exceto : null, tomada) && !cortaAbertura(segsD.concat(extra2 ? extra2.segs : []), r) && !bloqueia(segsD.concat(extra2 ? extra2.segs : []), r, c)) achou = { segs: segsD, L: Math.abs(dxD), top: top2, extra: extra2 };
                 }
                 return !!achou;
               });
               if (achou) { segs = achou.segs; top = achou.top; extra = achou.extra; bate = false; desvio = achou.L; }
             }
-            var nota = c.viol * 1000 + (bate ? 100 : 0) + Lh + (canto ? geo(par, "pesoCurva") : 0) + (desvio ? desvio + geo(par, "pesoCurva") * 2 : 0) + (extra ? extra.L : 0) + c.s * 0.01 + (semIni ? 100 : 0);   // hid:ok pesos da escolha: norma, colisão, comprimento (sem o aclive inicial da tabela pesa como a colisão)
-            if (!best || nota < best.nota - EPS) best = { c: c, q: q, canto: canto, yC: yC, yW: yW, Lh: Lh, top: top, bate: bate, nota: nota, extra: extra, segs: segs, w: w, hTe: r4(T.y - c.P.y), desvio: desvio, angMenor: j45, aclive: acT, semIni: semIni, porCima: modoH === 1 };
+            /* o encaixe só é medido quando a posição ainda pode ganhar (a nota sem ele já perde → pula: o prédio ficava 4× mais lento) */
+            /* REVISÃO H6 (21/10/2026) + autor 0eeb5895: o encaixe e a subida cruzando ela mesma são medidos na rota FINAL — com o DESVIO na
+               parede, os trechos dele (antes o caminho de antes do desvio: a área de serviço de 2 tanques declarava 5 mm e o 3D sobrepunha
+               27 e 34 mm); o tê da chegada com o DN da COLUNA (ateColuna leva o dn) */
+            var segsF = desvio ? segs.concat(extra ? extra.segs : []) : todas;   /* com o desvio na parede, a rota nova (o bateEm do desvio não confere a própria subida) */
+            var duro = bate && bateDuro(segsF, r, extra ? extra.exceto : null, tomada);
+            var nota = c.viol * 1000 + (duro ? PESO_BATE_DURO : 0) + (bate || (desvio && bateProprio(segsF, r)) || bloqueia(segsF, r, c) ? (bate && !duro ? PESO_BATE_AFAST : 100) : 0) + Lh + (canto ? geo(par, "pesoCurva") : 0) + (desvio ? desvio + geo(par, "pesoCurva") * 2 : 0) + (extra ? extra.L : 0) + c.s * 0.01 + (semIni ? 100 : 0);   // hid:ok pesos da escolha: norma, colisão, comprimento (sem o aclive inicial da tabela pesa como a colisão)
+            var faltaE = best && nota >= best.nota - EPS ? 0 : encaixeFalta(segsF, j45, alvo ? (extra && extra.dn > 0 ? extra.dn : (CV ? num(CV.dn, dnV0) : dnV0)) : null) + MARGEM_ENCAIXE;
+            var faltaOnde = ondeE.i, falta0 = ondeE.f0;
+            if (faltaE > EPS_ENCAIXE) nota += PESO_ENCAIXE;
+            if (!best || nota < best.nota - EPS) best = { c: c, q: q, canto: canto, yC: yC, yW: yW, Lh: Lh, top: top, bate: bate, nota: nota, extra: extra, segs: segs, w: w, hTe: r4(T.y - c.P.y), desvio: desvio, angMenor: j45, faltaEncaixe: faltaE, faltaOnde: faltaOnde, falta0: falta0, aclive: acT, semIni: semIni, porCima: modoH === 1 };
             }
           }
-        });
+        }); }
+        varrer();
+        /* N23 (23/10/2026, auditor COZ-2PIAS): nenhuma posição sem colisão no deslize normal (a 1ª pia entre a prumada da água e a
+           descida da pia: a 60 cm a subida passava a 9,75 cm da água — o afastamento é 10 cm) → procura de novo até o DOBRO do deslize
+           (o que fecha sem bater vence; o que ainda bate fica como antes, com o aviso) */
+        if ((!best || best.bate) && nP < nPmax) { nP = nPmax; varrer(); }
         return best;
       }
       var melhor = null, CV = destinos.ventilacao || null, coluna = null;
@@ -1392,10 +1564,20 @@
           var mid = { x: C.x, y: r4(top.y + L1 * ac), z: top.z }, fim = { x: C.x, y: r4(mid.y + L2 * ac), z: C.z };
           if (fim.y > col.p2.y - geo(par, "margemNo") || fim.y < col.p1.y + geo(par, "margemNo")) return null;
           var segs = []; if (L1 > EPS) segs.push({ a: top, b: mid }); if (L2 > EPS) segs.push({ a: L1 > EPS ? mid : top, b: fim });
-          return { segs: segs, L: L1 + L2, fim: fim, exceto: [col] };
+          return { segs: segs, L: L1 + L2, fim: fim, exceto: [col], dn: col.dn != null ? num(col.dn, 0) : null };   /* o DN da coluna: o tê da chegada (o encaixe) */
         };
       }
       var yJunta = null, minTransb = null;
+      /* nenhuma posição encaixou as conexões (o rebaixo/enchimento não tem altura para o tê + o joelho): a melhor fica, com a pendência */
+      /* REVISÃO H6: onde falta diz o texto — no 1º trecho (o tê/junção do ramal + o joelho, sob o piso) ou mais adiante (os joelhos do
+         desvio / do caminho até a coluna e o tê da coluna, perto do teto); antes o texto dizia "sob o piso" para os dois */
+      function encaixePend(m) {
+        if (!(m && m.faltaEncaixe - MARGEM_ENCAIXE > EPS_ENCAIXE)) return;
+        var mmE = Math.round((m.faltaEncaixe - MARGEM_ENCAIXE) * 1000), noRamal = !m.faltaOnde;
+        pend("amb.ventilacao_encaixe", "a ventilação de " + desc[0].ref + " (ambiente " + ambId + "): faltam " + mmE + " mm entre as conexões — " + (noRamal ? "sem altura sob o piso para o tê/junção do ramal + o joelho da ventilação" : "sem comprimento entre os joelhos do caminho até a coluna e o tê da coluna") + " (as peças se sobrepõem no 3D): " + (noRamal ? "aprofunde o ramal/rebaixo ou suba a ventilação direto na parede" : "afaste a subida da coluna (ou ligue direto nela) à mão"), ids, { tipo: "ajustar", ids: ids, ambiente: ambId, faltaMm: mmE, noRamal: noRamal, falta0Mm: Math.round(num(m.falta0, 0) * 1000), yTomada: m.c && m.c.P ? m.c.P.y : null, dnEs: m.c ? m.c.dnEs : null, piso: piso, cobrimento: geo(par, "cobrimento"), reserva: num(parR.reservaVentilacao, 0) });
+      }
+      /* o DESVIO na parede (a subida anda um passo ao lado para passar fora do tubo que cruza o eixo) vai à decisão do memorial */
+      function desvioDec(m) { if (m && m.desvio > EPS) decide("amb.ventilacao.desvio", "A subida da ventilação de " + desc[0].ref + " anda " + fcmAmb(m.desvio) + " cm ao lado na parede para passar fora do tubo que cruza o eixo dela (sem atravessá-lo)."); }
       if (CV) {
         /* PRÉDIO: o ventilador do ambiente sobe embutido e corre sob o teto até a COLUNA DE VENTILAÇÃO (junção = tê), acima do
            nível de transbordamento do aparelho mais alto + o mínimo da tabela (fonte secundária) */
@@ -1404,11 +1586,13 @@
         cands.forEach(function (c) { var b = subida(c, raio(dnV), function (qq) { return r4(yTopoV - (Math.abs(qq.x - CV.x) + Math.abs(qq.z - CV.z)) * ac); }, ateColuna(coluna)); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         if (!melhor) { pend("amb.ventilacao", "sem caminho livre do ramal de " + desc[0].ref + " até a coluna de ventilação " + CV.id + " — ponha à mão", ids, { tipo: "ajustar", ids: [CV.id] }); return; }
         yJunta = melhor.extra.fim.y;
+        encaixePend(melhor); desvioDec(melhor);
       } else {
         cands.forEach(function (c) { var b = subida(c, raio(dnV), function () { return ySaida; }); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         if (!melhor) { pend("amb.ventilacao", "nenhuma parede perto do ramal de " + desc[0].ref + " para subir a ventilação embutida no eixo", ids); return; }
         /* sem coluna de ventilação (o térreo com terminal próprio): o ponto em que este ramal deixa de ser ramal é o topo dele */
         yJunta = melhor.top.y;
+        encaixePend(melhor); desvioDec(melhor);
       }
       /* ⚠ TRANSBORDAMENTO (NBR 8160 4.3.14 c e 4.3.16 b; R-B6 do PADROES-PROJETO-RA — frente A, 19/10/2026, D-07): antes de se ligar a
          outro ventilador (a coluna) — ou, sem coluna, antes de virar o tubo que vai ao terminal — o ramal eleva-se acima do topo do
@@ -1517,7 +1701,7 @@
           cs.forEach(function (c) { var b = subida(c, raio(dnR), function () { return ySaida; }); if (b && !b.bate && (!bT || b.nota < bT.nota - EPS)) bT = b; });
           var dnsTr = arr(B.PECAS.terminal_ventilacao && B.PECAS.terminal_ventilacao.dns).map(Number).sort(function (a, b) { return a - b; }), dnTr = dnsTr.filter(function (x) { return x >= dnR - EPS; })[0];
           if (bT && dnTr != null) {
-            var colR = emitir(bT, dnR, "ventilacao_ramal", dnTr), idTr = pr + "terminal" + (out.ventilacao.ramais.length + 2);
+            var colR = emitir(bT, dnR, "ventilacao_ramal", dnTr), idTr = pr + "terminal" + (out.ventilacao.ramais.length + 2); encaixePend(bT);
             novas.push({ op: "peca", id: idTr, peca: "terminal_ventilacao", sistema: "ventilacao", dn: String(dnTr), x: r4(colR.p2.x), y: r4(colR.p2.y), z: r4(colR.p2.z), amb: ambId, ambParte: "ventilacao_ramal" });
             var dT = bT.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
             out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, dnTerminal: dnTr, L: dT.L, limite: dT.limite, terminal: idTr, individual: true });
@@ -1527,7 +1711,7 @@
           }
         }
         if (!bR) { pend("amb.ventilacao." + d.ref, "ramal de ventilação de " + d.ref + ": sem caminho livre até a coluna — ponha à mão", [d.el || d.ref], { tipo: "ajustar", ids: [d.el || d.ref] }); return; }
-        var sub = emitir(bR, dnR, "ventilacao_ramal"), ult = sub.p2;
+        var sub = emitir(bR, dnR, "ventilacao_ramal"), ult = sub.p2; encaixePend(bR);
         bR.extra.segs.forEach(function (sg) { novas.push({ op: "trecho", id: pr + (++nV), sistema: "ventilacao", material: mat, dn: dnR, p1: { x: r4(sg.a.x), y: r4(sg.a.y), z: r4(sg.a.z) }, p2: { x: r4(sg.b.x), y: r4(sg.b.y), z: r4(sg.b.z) }, amb: ambId, ambParte: "ventilacao_ramal" }); ult = sg.b; });
         var dR = bR.c.dists.filter(function (x) { return x.ref === d.ref; })[0];
         out.ventilacao.ramais.push({ desconector: d.ref, dn: dnR, L: dR.L, limite: dR.limite, juncao: { x: r4(ult.x), y: r4(ult.y), z: r4(ult.z) } });

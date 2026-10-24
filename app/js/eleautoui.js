@@ -54,7 +54,7 @@
   function legenda() {
     var R = global.EleRegras; if (!R) return "";
     return '<p style="margin:4px 0 6px;font-size:12px">' + ["N", "A", "C", "X"].map(function (k) { return selo(k) + " " + esc(R.NIVEIS[k]); }).join(" &nbsp; ") + "</p>" +
-      '<p data-ele-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px"><b>NBR 5410:2004</b> conferida no item (cópia <b>não licenciada</b> à RA: só valores e itens). Alturas, posição do interruptor e número de luminárias não são da norma: saem como critério RA ou sem fonte. Circuitos, quadro e condutor ficam para a próxima etapa.</p>';
+      '<p data-ele-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px"><b>NBR 5410:2004</b> conferida no item (cópia <b>não licenciada</b> à RA: só valores e itens). Alturas, posição do interruptor e número de luminárias não são da norma: saem como critério RA ou sem fonte. Circuitos, quadro e condutor: Instalações › Circuitos e quadro.</p>';
   }
   var ROT = { tomada: "Tomada", interruptor: "Interruptor", luminaria: "Luminária", direta: "Ligação direta" };
 
@@ -77,7 +77,7 @@
       (aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": nada a lançar (o que existe já atende).")) + "</p>" +
       '<table class="tbl" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th>Ambiente</th><th>Regra</th><th>Área m² / perímetro m</th><th>Luz (tinha + lançou)</th><th>TUG</th><th>TUE</th><th>Interruptor</th></tr></thead><tbody>' + amb + "</tbody></table>" +
       (linhas ? '<h4 style="margin:10px 0 4px">Pontos lançados</h4><table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th>Peça</th><th>Ambiente</th><th>O quê</th><th>Regras aplicadas</th></tr></thead><tbody>' + linhas + "</tbody></table>" : "") +
-      '<p style="font-size:12px;margin-top:8px">Orçamento: cada ponto entra com a composição SINAPI do dispositivo (pela altura: baixa 0,30 · média 1,30 · alta 2,00 m) e a da caixa (4×2 na parede, octogonal no teto) — ' + selo("A") + " SINAPI MG 06/2026. A base não tem composição \"ponto de tomada\": eletroduto e cabo entram com os circuitos.</p>" +
+      '<p style="font-size:12px;margin-top:8px">Orçamento: cada ponto entra com a composição SINAPI do dispositivo (pela altura: baixa 0,30 · média 1,30 · alta 2,00 m) e a da caixa (4×2 na parede, octogonal no teto) — ' + selo("A") + " SINAPI MG 06/2026. A base não tem composição \"ponto de tomada\": eletroduto e cabo entram com os circuitos (Circuitos e quadro).</p>" +
       lista("Pendências", res.pendencias.map(function (p) { return p.texto; })) + lista("Avisos", res.avisos);
     janela("Lançar pontos elétricos", html);
     status("Pontos elétricos: " + z.luminarias + " luz, " + z.tug + " TUG, " + z.tue + " TUE, " + z.interruptores + " interruptor(es)" + (res.pendencias.length > 1 ? "; " + (res.pendencias.length - 1) + " pendência(s)" : "") + ".");

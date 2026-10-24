@@ -1495,6 +1495,8 @@
     /* a tela "Gerar documentos" (js/hiddocumentosui.js) monta a entrada com o que esta tela já sabe */
     dadosEmpresa: dadosEmpresa, pavimentos: pavimentos, materiaisProjeto: materiaisDoModelo, modeloAtual: function () { return modelo(); },
     listaMaterial: function () { return listaMaterialDoModelo(modelo()); }, comIcones: comIcones,
+    /* FRENTE H8: o programa de necessidades (uso e porte) para o volume da caixa d'água proposta pelo Traçar (js/hidbarrilete.js) */
+    programa: function () { if (!lido) { lido = true; lerLS(); } return E.uso ? programaEntrada() : null; },
     entrada: function () { var m = modelo(); if (m) garantirPadroes(m); return m ? entrada(m) : null; },
     propor: propor, aplicarRota: aplicarRota, corrigirRota: corrigirRota, areasCobertura: areasCobertura, htmlConfirmacoes: htmlConfirmacoes, confAdicionar: confAdicionar, uniaoPoligonos: uniaoPoligonos, aplicarTratamento: aplicarTratamento, redeInd: redeInd, aplicarTemplate: aplicarTemplate, trocarTipo: trocarTipo, acaoTrocarTipo: acaoTrocarTipo, desfazerTemplate: desfazerTemplate, baixarTemplate: baixarTemplate, manual: manual, poligonosPorNivel: poligonosPorNivel, assinatura: assinatura, modeloMudou: modeloMudou, pecasExistentes: pecasExistentes, problemas: problemas, aplicarCores: aplicarCores, indiceBiblioteca: indiceBiblioteca
   };

@@ -200,7 +200,9 @@
       o.origem = fc.origem || "nativa";
     }
     o.preco = fc ? precoPara(fc, extra.aplicacao, extra.sistema, extra.dn2) : { pendente: true, valor: null, criterio: "peça sem ficha técnica no catálogo nativo" };
-    if (extra.produto) { o.fabricante = [extra.produto[1] + " " + extra.produto[2]]; o.produto = extra.produto[3]; if (extra.produto[4] && base().sinapi[extra.produto[4]]) { var sd = base().sinapi[extra.produto[4]]; o.preco = { codigo: extra.produto[4], descricao: sd.descricao, unidade: sd.unidade, valor: sd.preco, data: sd.data, criterio: "regra do produto", estimativa: false }; } }   // hid:ok índices da forma curta / dígitos da data (não é norma)
+    if (extra.produto) { o.fabricante = [extra.produto[1] + " " + extra.produto[2]]; o.produto = extra.produto[3]; if (extra.produto[4] && base().sinapi[extra.produto[4]]) { var sd = base().sinapi[extra.produto[4]]; o.preco = { codigo: extra.produto[4], descricao: sd.descricao, unidade: sd.unidade, valor: sd.preco, data: sd.data, criterio: "regra do produto", estimativa: false }; }   // hid:ok índices da forma curta do produto (não é norma)
+      /* FRENTE H6: o preço de MERCADO do produto escolhido (o volume do boiler, a potência do elétrico): produto[5] */
+      var pm5 = extra.produto[5]; if (pm5 && typeof pm5.valor === "number") o.preco = { codigo: null, valor: pm5.valor, unidade: pm5.unidade || "UN", data: pm5.data, criterio: pm5.criterio, estimativa: false, referenciaMercado: true, provisorio: !!pm5.provisorio }; }   // hid:ok índices da forma curta / dígitos da data (não é norma)
     o.total = o.preco && typeof o.preco.valor === "number" && typeof o.quantidade === "number" ? Math.round(o.preco.valor * o.quantidade * 100) / 100 : null;
     return o;
   }

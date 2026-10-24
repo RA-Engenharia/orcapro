@@ -2533,7 +2533,7 @@ var mid = s.slice(0, i);
 return modeloDe(mid !== '' && !isNaN(+mid) ? +mid : mid) || modeloDe(mid);
 }
 function malhasDaPeca(uid) {
-var mo = modeloDaPeca(uid), eid = +String(uid).slice(String(uid).lastIndexOf(':') + 1);
+var mo = modeloDaPeca(uid), eid = String(uid).slice(String(uid).lastIndexOf(':') + 1);
 if (!mo || !mo.grupo) return [];
 if (!mo._malhasPorId) {
 mo._malhasPorId = {};
@@ -7650,6 +7650,11 @@ var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 def = def || {};
 var box = new THREE.Box3().setFromObject(modelRoot);
 if (box.isEmpty()) return { ok: false, vazio: true, erro: 'Abra um modelo primeiro.' };
+var edEx = null;
+if (!def.semEntorno) {
+var edA = null; try { edA = S._edificacaoAtiva(); } catch (eEd) { edA = null; }
+if (edA && edA.caixa) { edEx = edA.exclusoes; box = new THREE.Box3(new THREE.Vector3(edA.caixa.min[0], edA.caixa.min[1], edA.caixa.min[2]), new THREE.Vector3(edA.caixa.max[0], edA.caixa.max[1], edA.caixa.max[2])); }
+}
 var planta = def.tipo !== 'corte';
 var p6Forro = def.tipo === 'forro', p6Oc = typeof def.p6Ocultar === 'function' ? def.p6Ocultar : null, p6Tag = !!def.p6Tag, linhasUd = [];
 var NVi = window.BimInstNivel, instVet = null;
@@ -7714,6 +7719,7 @@ mat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: 
 renderer.clippingPlanes = [plano]; renderer.localClippingEnabled = false; renderer.toneMapping = THREE.NoToneMapping;
 scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
 if (p6Oc) modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && p6Oc(o.userData || {})) { escondidos.push(o); o.visible = false; } });
+if (edEx) modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && o.userData && o.userData.expressID != null && edEx[o.userData.mid + ':' + o.userData.expressID]) { escondidos.push(o); o.visible = false; } });
 modelRoot.traverse(function (o) { if (o.isMesh && o.visible !== false && o.userData && o.userData.sem2d) { escondidos.push(o); o.visible = false; } });
 scene.overrideMaterial = mat;
 renderer.autoClear = true;
@@ -7770,6 +7776,7 @@ modelRoot.children.forEach(function (g) {
 (g.children || []).forEach(function (m) {
 if (!m.isMesh || !m.geometry || !cadeiaVisivel(m)) return;
 if (p6Oc && p6Oc(m.userData || {})) return;
+if (edEx && m.userData && m.userData.expressID != null && edEx[m.userData.mid + ':' + m.userData.expressID]) return;
 if (m.userData && m.userData.sem2d) return;
 if (instVet) {
 var udI = m.userData || {};
@@ -10483,8 +10490,13 @@ S._hint(fam.nome + ' colocada na parede (o vão já foi aberto e descontado). Cl
 } else {
 if (!p) { S._hint('Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
 var pzC = S._colocar ? S._colocar.pose(p) : null;
-editOp({ op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: pzC ? pzC.x : Math.round(p.x * 1000) / 1000, y: pzC ? pzC.y : edit.base, z: pzC ? pzC.z : Math.round(p.z * 1000) / 1000, rotY: pzC ? pzC.rotY : edit.famRot, inst: fsel.inst || {} });
-S._hint(fam.nome + ' colocada. Barra de espaço gira 90°; clique para outra, ou Esc.');
+var idFam = 'f' + (edit.seq + 1);
+var opF = { op: 'familia', id: 'f' + (++edit.seq), famId: fsel.famId, tipoId: fsel.tipoId, x: pzC ? pzC.x : Math.round(p.x * 1000) / 1000, y: pzC ? pzC.y : edit.base, z: pzC ? pzC.z : Math.round(p.z * 1000) / 1000, rotY: pzC ? pzC.rotY : edit.famRot, inst: fsel.inst || {} };
+var ltL = null;
+try { if (window.EletIlumUI && fam.mep && fam.mep.peca === 'luminaria') { ltL = EletIlumUI.aoColocar(JSON.parse(JSON.stringify(opF)), edit.ops, famAval); if (ltL) ltL = BimEdit.sanear([ltL])[0] || null; } } catch (_eL) { ltL = null; }
+editOp(ltL || opF);
+S._hint(fam.nome + ' colocada' + (window.EletIlumUI && fam.mep && fam.mep.peca === 'luminaria' ? EletIlumUI.rotuloColocar() : '') + '. Barra de espaço gira 90°; clique para outra, ou Esc.');
+try { if (typeof window !== 'undefined' && window.dispatchEvent && typeof CustomEvent === 'function') window.dispatchEvent(new CustomEvent('bim:familia-colocada', { detail: { id: idFam, famId: fsel.famId, tipoId: fsel.tipoId } })); } catch (eEv) {}
 }
 marcarFechamento();
 }
@@ -12418,6 +12430,98 @@ bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); box.union(bm); acho
 });
 return achou && !box.isEmpty() ? { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z], malhas: achou } : null;
 };
+var edifCache = null;
+function lerCamadasPds(mid) {
+var porItem = {}, porRep = {}, porPds = {}, api = S.api;
+function linha(id) { try { return api.GetLine(mid, id, false); } catch (_) { return null; } }
+function lista(x) { return x == null ? [] : (Array.isArray(x) ? x : [x]); }
+function ref(x) { return (x && x.value != null) ? x.value : null; }
+try {
+var ls = api.GetLineIDsWithType(mid, 2022622350), n = ls.size();
+if (!n) return porPds;
+for (var i = 0; i < n; i++) {
+var l = linha(ls.get(i)), nome = l && l.Name && l.Name.value ? String(l.Name.value) : '';
+if (!nome) continue;
+lista(l.AssignedItems).forEach(function (h) { var id = ref(h); if (id != null && porItem[id] == null) porItem[id] = nome; });
+}
+var rs = api.GetLineIDsWithType(mid, 4240577450), nr = rs.size();
+if (nr > 60000) return porPds;
+for (var j = 0; j < nr; j++) {
+var rid = rs.get(j), r = linha(rid); if (!r) continue;
+if (porItem[rid] != null) { porRep[rid] = porItem[rid]; continue; }
+lista(r.Items).some(function (h) { var c = porItem[ref(h)]; if (c != null) { porRep[rid] = c; return true; } return false; });
+}
+var ps = api.GetLineIDsWithType(mid, 673634403), np = ps.size();
+for (var k = 0; k < np; k++) {
+var pid = ps.get(k), p = linha(pid); if (!p) continue;
+lista(p.Representations).some(function (h) { var c = porRep[ref(h)]; if (c != null) { porPds[pid] = c; return true; } return false; });
+}
+} catch (_) { }
+return porPds;
+}
+function edificacaoMedir() {
+var PV = window.PranchaViva;
+if (!PV || !PV.caixaEdificacao || !S || !S.modelRoot) return null;
+var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
+var cx = null; try { cx = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx = null; }
+var porUid = {}, nM = 0, bm = new THREE.Box3(), tipoDe = {};
+cadaMalha(function (m) {
+var ud = m.userData || {}; if (!m.geometry || ud.expressID == null) return;
+if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
+if (!m.geometry.boundingBox) return;
+bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); if (bm.isEmpty()) return;
+var u = ud.mid + ':' + ud.expressID, o = porUid[u]; nM++;
+if (!o) { porUid[u] = { min: [bm.min.x, bm.min.y, bm.min.z], max: [bm.max.x, bm.max.y, bm.max.z] }; tipoDe[u] = ud.tipo || ''; }
+else { o.min[0] = Math.min(o.min[0], bm.min.x); o.min[1] = Math.min(o.min[1], bm.min.y); o.min[2] = Math.min(o.min[2], bm.min.z); o.max[0] = Math.max(o.max[0], bm.max.x); o.max[1] = Math.max(o.max[1], bm.max.y); o.max[2] = Math.max(o.max[2], bm.max.z); }
+});
+function r2(v) { return Math.round(v * 100) / 100; }
+var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z), cx && cx.on ? cx.min.map(r2).join(',') + ';' + cx.max.map(r2).join(',') : '-'].join('|');
+if (edifCache && edifCache.sig === sig) return edifCache;
+var lista = [], vistos = {};
+(elementosVivos() || []).forEach(function (e) {
+var c = porUid[e.uid]; if (!c) return;
+vistos[e.uid] = 1;
+lista.push({ uid: e.uid, tipo: e.tipo, nome: e.nome, nomeIfc: e.nomeIfc, tag: e.tag, familia: e.familia, materiais: e.materiais, camada: e.camada || '', min: c.min, max: c.max, protegido: String(e.uid).indexOf('edit:') === 0 });
+});
+Object.keys(porUid).forEach(function (u) { if (!vistos[u]) lista.push({ uid: u, tipo: tipoDe[u], min: porUid[u].min, max: porUid[u].max, protegido: u.indexOf('edit:') === 0 }); });
+try {
+(S.modelos || []).forEach(function (mo) {
+if (typeof mo.mid !== 'number' || mo.sintetico || mo.editor || !S.api) return;
+var gen = lista.filter(function (e) { return e.uid.indexOf(mo.mid + ':') === 0 && PV.CLASSES_GENERICAS[PV._classeIfc(e.tipo)]; });
+if (!gen.length) return;
+if (!mo._camadasPds) mo._camadasPds = lerCamadasPds(mo.mid);
+var tem = false; for (var k in mo._camadasPds) { tem = true; break; }
+if (!tem) return;
+gen.forEach(function (e) {
+if (e.camada) return;
+try { var ln = S.api.GetLine(mo.mid, parseInt(e.uid.split(':')[1], 10), false), rp = ln && ln.Representation && ln.Representation.value; if (rp != null && mo._camadasPds[rp]) e.camada = mo._camadasPds[rp]; } catch (_) {}
+});
+});
+} catch (_) {}
+var r = PV.caixaEdificacao(lista, { caixaCorte: cx });
+var ativo = !!(r && r.caixa && r.criterio !== 'sem-entorno' && r.criterio !== 'vazio');
+var cota = []; try { if (ativo || r.caixa) cota = PV.pavimentosPorCota(lista, r.caixa, r.exclusoes); } catch (_) { cota = []; }
+edifCache = { sig: sig, r: r, ativo: ativo, cota: cota, caixaModelo: { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] } };
+return edifCache;
+}
+S._edificacao = function () { var c = edificacaoMedir(); return c ? c.r : null; };
+S._edificacaoAtiva = function () { var c = edificacaoMedir(); return c && c.ativo ? c.r : null; };
+S._edificacaoCota = function () { var c = edificacaoMedir(); return c ? c.cota : []; };
+S._caixasDe = function (uids) {
+var alvo = {}, out = {}, bm = new THREE.Box3(); (uids || []).forEach(function (u) { alvo[u] = 1; });
+cadaMalha(function (m) {
+var u = m.userData.expressID == null ? null : m.userData.mid + ':' + m.userData.expressID;
+if (!u || !alvo[u] || !m.geometry || m.visible === false) return;
+if (!m.geometry.boundingBox) { try { m.geometry.computeBoundingBox(); } catch (e) { return; } }
+if (!m.geometry.boundingBox) return;
+bm.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+if (bm.isEmpty()) return;
+var o = out[u];
+if (!o) out[u] = { min: [bm.min.x, bm.min.y, bm.min.z], max: [bm.max.x, bm.max.y, bm.max.z] };
+else { for (var k = 0; k < 3; k++) { var a = ["x", "y", "z"][k]; if (bm.min[a] < o.min[k]) o.min[k] = bm.min[a]; if (bm.max[a] > o.max[k]) o.max[k] = bm.max[a]; } }
+});
+return out;
+};
 var ocultasGrp = new THREE.Group(), ocultasMat = null;
 ocultasGrp.userData.marcador = true; scene.add(ocultasGrp);
 S._linhasOcultas = function (uids, on) {
@@ -14192,8 +14296,12 @@ pavimentos2d: function () {
 if (!S || !S.modelRoot) return { pav: [], caixa: null };
 var b = new THREE.Box3().setFromObject(S.modelRoot), lst = [];
 try { lst = (S._pavimentosCorte ? S._pavimentosCorte() : []).map(function (p) { return { nome: p.nome, y: p.y - 1.2 }; }); } catch (e) { lst = []; }
-return { pav: lst, caixa: b.isEmpty() ? null : { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] } };
+var cxM = b.isEmpty() ? null : { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] };
+var ed = null, cotas = []; try { ed = S._edificacao ? S._edificacao() : null; cotas = ed && S._edificacaoCota ? S._edificacaoCota() : []; } catch (eE) { ed = null; }
+return { pav: lst, caixa: cxM, caixaEdif: ed && ed.caixa ? ed.caixa : cxM, cotas: cotas || [],
+entorno: ed ? { criterio: ed.criterio, texto: ed.texto, excluidos: ed.nExcluidos, total: ed.nTotal, motivos: ed.motivos } : null };
 },
+edificacao: function () { return (S && S._edificacao) ? S._edificacao() : null; },
 _aneisDe: function (arrArestas) { return (S && S._acharAneis) ? S._acharAneis(arrArestas) : null; },
 _lupaEstado: function () { if (!S || !S.lupa) return null; var L = S.lupa; return { on: !!L.on, orbita: !!(S.orbit && S.orbit.enabled), x: L.x, y: L.y, id: L.id, esperando: !!L.timer, tipoSnap: L.sn && L.sn.tipo || null, mediDown: !!(S.medir && S.medir.down), ferramenta: !!(S._ferramentaClique && S._ferramentaClique()) }; },
 _coordMatriz: function (mid) {
@@ -14259,6 +14367,11 @@ _cotaIndice: function () { return (S && S._cotaIndice) ? S._cotaIndice() : null;
 numerarRede: function () { return (S && S._numerarRede) ? S._numerarRede() : null; },
 numeracao: function () { return (S && S._numeracao) ? S._numeracao() : null; },
 _testeTrena: function () { return S ? { S: S, THREE: THREE } : null; },
+pranchaVivaApi: function () {
+if (!S || !S.alive || !S.renderer) return null;
+return { THREE: THREE, scene: S.scene, camera: S.camera, renderer: S.renderer, orbit: S.orbit, canvas: S.renderer.domElement, modelRoot: S.modelRoot,
+raycast: S._raycastEm || null, tickExtra: S._tickExtra, tickPos: S._tickPos, host: S.host || null };
+},
 _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; },
 _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; },
 _telaDe: function (x, y, z) { return (S && S._telaDe) ? S._telaDe(x, y, z) : null; },
@@ -14311,6 +14424,7 @@ return true;
 },
 caixaCorte: function (on) { return (S && S._caixaCorte) ? S._caixaCorte(!!on) : false; },
 caixaUids: function (uids) { return (S && S._caixaUids) ? S._caixaUids(uids) : null; },
+caixasDe: function (uids) { return (S && S._caixasDe) ? S._caixasDe(uids) : {}; },
 linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
 linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
 caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },

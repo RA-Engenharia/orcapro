@@ -129,6 +129,8 @@
     "nova-folha", "posicionar-vista", "revisoes-folha", "lista-folhas", "lista-vistas", "exportar-dxf", "exportar-dwg", "pdf-lote",
     /* jogo de pranchas no carimbo do escritório (js/bimfolhaui.js; o botão "Pranchas" da barra de título fica fora da fita) */
     "gerar-pranchas",
+    /* PRANCHA VIVA (js/pranchavivaui.js): a folha que abre o 3D — vale em toda disciplina (módulo à parte, a trava é dele) */
+    "prancha-viva",
     /* Gerenciar: biblioteca, materiais, colaborar */
     "familias-param", "editor-familia", "familia-ia", "familias", "templates", "materiais-proj", "reuniao", "compartilhar"
   ]);
@@ -191,6 +193,8 @@
   def("eletrica", ["eletroduto", "dispositivo-eletrico", "luminaria-mep", "quadro-eletrico", "eletrocalha"]);
   /* PONTOS ELÉTRICOS POR AMBIENTE (js/eleautoui.js, 21/10/2026) */
   def("eletrica", ["ele-auto", "ele-auto-sel", "ele-auto-todos", "ele-auditar", "ele-criterios"]);
+  /* CIRCUITOS E QUADRO (js/elecircuitosui.js, frente E2, 21/10/2026) */
+  def("eletrica", ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-pdf", "ele-circ-dxf", "ele-circ-memorial", "ele-circ-criterios"]);
 
   /* METÁLICA & MECÂNICA — o içamento inteiro mora aqui (pedido do Rogério) */
   def("metalica", ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio",

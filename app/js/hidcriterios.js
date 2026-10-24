@@ -88,6 +88,15 @@
      custo = metros equivalentes somados ao custo da opção no HidRota (motor: false = o HidRota já conta). */
   var R = {};
   function regra(id, o) { o.id = id; R[id] = o; }
+  /* FRENTE H6 (21/10/2026): o APARELHO A GÁS pela ABNT NBR 13103:2020 (js/hidgas.js) — local, potência, volume e ventilação, exaustão,
+     posição, registros e os pontos de gás/força. É conferência do APARELHO, não do traçado: vai à lista com Mostrar/Corrigir, mas NÃO
+     entra na nota do traçado nem na contagem de proibidos que trava o Aplicar do Traçar (a contagem própria é contagem.gas) */
+  regra("gas13103", { gravidade: "alerta", custo: 0, motor: false, titulo: "Aparelho a gás (NBR 13103)",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "Local proibido, volume e ventilação permanente do ambiente, exaustão (cobertura, trechos, terminal na fachada), posição do aquecedor, registros e os pontos de gás e de força — os valores da ABNT NBR 13103:2020, com o item em cada achado.",
+    fonte: "ABNT NBR 13103:2020 — valores com o item (exemplar não licenciado à RA; texto conferido; a vigente é a 2024 = 2020 + Emenda 1, não lida — conferir)", corrigir: "Conforme o achado: trocar o tipo, ajustar a altura, lançar a tomada — ou mudar o aparelho de lugar" });
+  regra("caixa.laje", { gravidade: "dura", custo: 0, motor: false, titulo: "Corpo da caixa/ralo dentro da laje",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "O corpo da caixa sifonada (ou do ralo) desce até a cota da tubulação e o prolongador enche até o piso; com o rebaixo raso o fundo do corpo entra na laje estrutural — na obra não cabe sem quebrar a laje.",
+    fonte: "critério de projeto (prioridade de 21/10/2026: corpo na cota da tubulação, prolongador até o piso)", corrigir: "Aumentar o rebaixo da laje (estrutural) ou subir o ramal; com caixa de saída mais baixa no corpo, trocar a caixa" });
   regra("abertura.vao", { gravidade: "dura", custo: 0, titulo: "Tubo no vão de porta ou janela",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "O vão é da esquadria: tubo ali impede o batente/contramarco, fica à vista ou é cortado na instalação da esquadria. O tubo embutido passa ACIMA da verga, ABAIXO do peitoril/contraverga ou contorna o vão pela parede ao lado, com folga.",
     fonte: "critério de projeto (o vão é da esquadria; folga lateral declarada em docs/hidro/CRITERIOS-DE-PROJETISTA.md)", corrigir: "Refazer o trecho contornando o vão" });
@@ -812,12 +821,38 @@
       if (ap.corrigir && apIds.length) ap.corrigir.aparelhos = apIds;
     });
 
+    /* ---------- PRIORIDADE 21/10/2026: o CORPO da caixa sifonada / do ralo, baixado até a cota da tubulação (js/biminstgeo.js
+       corpoPeca), não pode entrar na LAJE estrutural (rebaixo raso): a laje sob a peça com o topo acima do fundo do corpo */
+    arr(E.corpos).forEach(function (k) {
+      var base = num(k.base, NaN); if (!isFinite(base)) return;
+      var sob = arr(O.lajes).filter(function (l) {
+        var tp = num(l.topo, NaN), e = num(l.espessura, 0); if (!isFinite(tp) || !(e > G.cobrimentoParede * 4)) return false;   // hid:ok placa de até 6 cm = revestimento, não laje (a mesma régua do furo na laje)
+        return k.x >= Math.min(l.x0, l.x1) - EPS && k.x <= Math.max(l.x0, l.x1) + EPS && k.z >= Math.min(l.z0, l.z1) - EPS && k.z <= Math.max(l.z0, l.z1) + EPS && tp <= num(k.y, 0) + EPS && tp - e < num(k.y, 0);
+      }).sort(function (a, b) { return num(b.topo, 0) - num(a.topo, 0); })[0];
+      if (!sob || !(num(sob.topo, 0) - base > TOL_FOLGA)) return;
+      k.troca = arr(k.alternativas).filter(function (a) { return num(a.base, -INF) >= num(sob.topo, 0) + TOL_FOLGA; })[0] || null;
+      var fundo = num(sob.topo, 0) - base, nome = k.peca === "caixa_sifonada" ? "caixa sifonada" : "ralo";
+      add("caixa.laje", [k.id], { x: k.x, y: base, z: k.z }, "O corpo da " + nome + " " + k.id + " desce até a cota da tubulação (fundo a " + f2(base) + " m) e entra " + fcm(fundo) + " cm na laje " + sob.id + " (topo a " + f2(num(sob.topo, 0)) + " m): o rebaixo é raso para esta peça" + (k.troca ? "; a " + k.troca.rotulo + " (saída mais baixa no corpo) cabe" : "") + ".",
+        { obstaculo: sob.id, corrigir: k.troca ? { tipo: "ops", ids: [k.id], ops: [{ op: "instAlterar", id: k.id, dn: k.troca.dn }], texto: "trocar pela " + k.troca.rotulo } : { tipo: "rt", ids: [k.id], texto: R["caixa.laje"].corrigir } });
+    });
+
     /* ---------- NOTA */
     var cont = { dura: 0, alerta: 0, sugestao: 0 }, custo = 0, custoMotor = 0;
     out.forEach(function (a) { cont[a.gravidade]++; var c = R[a.regra].custo || 0; custo += c; if (R[a.regra].motor !== false) custoMotor += c; });
     var nota = Math.max(0, 100 - cont.dura * NOTA.dura - cont.alerta * NOTA.alerta - cont.sugestao * NOTA.sugestao);
     if (cont.dura) nota = Math.min(nota, NOTA.tetoComDura);
     var conceito = CONCEITO.filter(function (c) { return nota >= c[0]; })[0][1];
+    /* FRENTE H6: os achados do aparelho a gás (fora da nota e da contagem do traçado) */
+    var contGas = { dura: 0, alerta: 0, sugestao: 0 };
+    arr(E.gas && E.gas.achados).forEach(function (g) {
+      var ids = arr(g.elementos).map(String); if (!noEscopo(ids)) return;
+      var grav = g.gravidade === "erro" ? "dura" : (g.gravidade === "aviso" ? "sugestao" : "alerta");
+      out.push({ id: "gas13103#" + (out.length + 1), regra: "gas13103", gravidade: grav, titulo: g.titulo || R.gas13103.titulo, texto: g.texto, porque: R.gas13103.porque, fonte: g.fonte || R.gas13103.fonte, ids: ids, obstaculo: null,
+        ponto: g.ponto ? { x: r4(g.ponto.x), y: g.ponto.y == null ? null : r4(g.ponto.y), z: r4(g.ponto.z) } : null, gas: true, item: g.item || "",
+        corrigir: g.corrigir && arr(g.corrigir.ops).length ? { tipo: "ops", ops: g.corrigir.ops, texto: g.corrigir.texto } : null });
+      contGas[grav]++;
+    });
+    cont.gas = contGas;
     /* ordem: dura → alerta → sugestão, e a regra na ordem do catálogo */
     var ordG = { dura: 0, alerta: 1, sugestao: 2 }, ordR = Object.keys(R);
     out.sort(function (a, b) { return ordG[a.gravidade] - ordG[b.gravidade] || ordR.indexOf(a.regra) - ordR.indexOf(b.regra); });
@@ -841,7 +876,18 @@
     pecas.filter(function (k) { return k.peca === "caixa_inspecao"; }).forEach(function (k) { caixas.push({ id: k.id, tipo: "caixa_inspecao", x: k.x, y: k.y, z: k.z, r: k.r }); });
     var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2 }; });
     var acessorios = arr(inst.acessorios).map(function (a) { return { id: a.id, acessorio: a.acessorio, sistema: a.sistema, trecho: a.trecho, centro: a.centro }; });
-    return { trechos: trechos, acessorios: acessorios, pecas: pecas, caixas: caixas, aparelhos: aparelhos, obstaculos: obst, ambientes: obst.ambientes || [], escopo: extra.escopo || null, parametros: extra.parametros || {}, piso: extra.piso };
+    /* FRENTE H6: o aparelho a gás pela NBR 13103 (js/hidgas.js), quando carregado */
+    var HGs = dep("HidGas", "./hidgas.js"), gas = null;
+    if (HGs && typeof avaliarFam === "function") { try { gas = HGs.conferir({ estado: estado, avaliarFam: avaliarFam }); } catch (eG) { gas = null; } }
+    /* PRIORIDADE 21/10/2026: o corpo da caixa/ralo na cota da tubulação (BimInst.rede → corpo) e as caixas de saída mais baixa no corpo (a troca do Corrigir) */
+    var corpos = [], HGc = dep("HidGeo", "./biminstgeo.js");
+    if (B && typeof avaliarFam === "function") { try { B.rede(estado, avaliarFam).pecas.forEach(function (k) {
+      if (!k.corpo) return;
+      var ct = HGc && HGc.cotasPeca ? HGc.cotasPeca(k) : null, alts = [];
+      if (ct && ct.hS != null && B.PECAS[k.peca]) B.PECAS[k.peca].dns.forEach(function (dn) { if (String(dn) === String(k.dn)) return; var c2 = HGc.cotasPeca({ peca: k.peca, dn: dn }); if (c2 && c2.hS != null && c2.dnS === ct.dnS && c2.hS < ct.hS) alts.push({ dn: String(dn), rotulo: B.PECAS[k.peca].nome.toLowerCase() + " " + dn, base: r4(num(k.corpo.base, 0) + (ct.hS - c2.hS) / 1000) }); });
+      corpos.push({ id: String(k.id), peca: k.peca, x: k.x, y: k.y, z: k.z, base: k.corpo.base, prolongador: k.corpo.prolongador, alternativas: alts.sort(function (a, b) { return b.base - a.base; }) });
+    }); } catch (eR) { corpos = []; } }
+    return { trechos: trechos, acessorios: acessorios, pecas: pecas, caixas: caixas, aparelhos: aparelhos, obstaculos: obst, ambientes: obst.ambientes || [], escopo: extra.escopo || null, parametros: extra.parametros || {}, piso: extra.piso, gas: gas, corpos: corpos };
   }
 
   /* texto curto para o memorial / painel */
