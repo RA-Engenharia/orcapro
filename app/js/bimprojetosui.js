@@ -1126,7 +1126,7 @@
         ".bp-tpl:hover{background:var(--rv-hover,#d8e6f2)}.bp-tpl:focus-visible{outline:2px solid var(--rv-foco,#1a6cb5);outline-offset:2px}" +
         ".bp-tpl svg{color:var(--rv-foco,#1a6cb5)}.bp-tpl b{font-size:13px}.bp-tpl span{font-size:11.5px;color:var(--rv-tx-fraco,#6a6a6a)}" +
         ".bp-rodape{margin:12px 0 0;font-size:11.5px;color:var(--rv-tx-fraco,#6a6a6a);text-align:center}" +
-        ".bp-titulo{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:62%}" +
+        ".bp-titulo{display:inline-flex;align-items:center;gap:7px;min-width:0;max-width:62%;flex-shrink:0}" +
         ".bp-titulo-nome{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}" +
         ".bp-titulo-obra{opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}" +
         ".bp-sujo{color:#f59e0b;font-size:11px}" +

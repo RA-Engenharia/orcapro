@@ -131,7 +131,7 @@
   };
   Extrator.prototype.final = function () {
     var self = this;
-    return this.ordem.map(function (k) { var g = self.grupos[k]; return { mat: g.mat, pos: g.pos.final(), nor: g.nor.final(), uv: g.uv.final(), idx: g.idx.final() }; })
+    return this.ordem.map(function (k) { var g = self.grupos[k]; return { mat: g.mat, pos: g.pos.final(), nor: g.nor.final(), uv: g.uv.final(), idx: g.idx.final(), cortina: !!g.cortina /* [Cena: efeitos] */ }; })
       .filter(function (g) { return g.idx.length >= 3; });
   };
 
@@ -236,7 +236,14 @@
       arr(el && el.materiais).forEach(function (x) { var n = txt(x && x.n).trim(); if (n && nomes.indexOf(n) < 0) nomes.push(n); });
       var nm = mt && mt.userData && mt.userData.nomeMaterial; if (nm && nomes.indexOf(nm) < 0) nomes.push(nm);
       var rgba = mt && mt.userData && mt.userData.rgba;
-      return { materiais: nomes, ifc: txt(m.userData.tipo).toUpperCase(), alfa: mt && mt.transparent ? num(mt.opacity, 1) : (rgba ? num(rgba[3], 1) : 1), cor: rgba && mo.mid !== "edit" ? [rgba[0], rgba[1], rgba[2]] : null };
+      return { materiais: nomes, ifc: txt(m.userData.tipo).toUpperCase(), alfa: mt && mt.transparent ? num(mt.opacity, 1) : (rgba ? num(rgba[3], 1) : 1), cor: rgba && mo.mid !== "edit" ? [rgba[0], rgba[1], rgba[2]] : null, cortina: this._cortinaMovel(el) };
+    },
+    /* [Cena: efeitos] a peça é cortina de TECIDO (família de cortina/persiana, tipo que não é persiana/rolô/romana)? Só ela balança com o vento:
+       sofá e almofada usam o mesmo material "tecido" e NÃO podem se mexer, então a cortina vira grupo próprio (ver o laço da extração).
+       A mesma regra existe como ehCortinaMovel em js/bimcenaefeitos.js (o teste confere as duas). */
+    _cortinaMovel: function (el) {
+      var f = el && el.familia; if (!f || !/cortina/i.test(String(f.famId || ""))) return false;
+      return !/persiana|rolo|romana/i.test(String(f.tipoId || "") + " " + String((el && el.nome) || ""));
     },
     /* os parâmetros do motor para (material de render, peça): textura pronta (CC0 = arquivos; rejunte = mapas) */
     _params: function (id, peca, nome) {
@@ -247,7 +254,19 @@
       var tx = p.textura, T = BT();
       if (tx && tx.tipo === "cc0") {
         var b = T && T.BIB && T.BIB[tx.slug];
-        if (b) { tx.arquivos = T.arquivos(tx.slug, false); tx.escala = b.m * (tx.escalaProjeto > 0 ? tx.escalaProjeto : 1); tx.asp = b.asp || 1; var mat = R.material(id); tx.tinta = p.projeto || (mat && mat.corDoModelo !== "nunca") ? T.tinta(p.corSrgb, tx.slug) : [1, 1, 1]; }   /* MATERIAIS: escala e cor do projeto */
+        if (b) { tx.arquivos = T.arquivos(tx.slug, false); tx.escala = b.m * (tx.escalaProjeto > 0 ? tx.escalaProjeto : 1); tx.asp = b.asp || 1; var mat = R.material(id); tx.tinta = p.projeto || (mat && (mat.corDoModelo !== "nunca" || mat.tintaBiblioteca)) ? T.tinta(p.corSrgb, tx.slug) : [1, 1, 1];
+          /* [frente T] o render ao vivo decide sozinho como tingir: o alvo (cor do material) e a média da foto, em sRGB, e se a tinta bateu no teto 0,2..5 (ex.: laca grafite sobre madeira clara) */
+          tx.alvoSrgb = p.corSrgb.slice(); tx.mediaSrgb = b.media.slice(); tx.natural = !!b.natural; tx.metal = b.metal || 0;
+          /* [frente T] a tinta que bateu no teto 0,2..5 (laca grafite sobre foto clara, branco sobre foto escura) saía com a cor errada nos DOIS motores
+             (o físico só multiplica cor × tinta): aqui a tinta passa a levar a LUMINÂNCIA média da foto à do material (por canal: alvo ÷ luminância da foto) */
+          var ti = tx.tinta;
+          if (ti && !(ti[0] === 1 && ti[1] === 1 && ti[2] === 1)) {
+            var lin = T._lin, rw = [0, 1, 2].map(function (q) { return lin(p.corSrgb[q]) / Math.max(lin(b.media[q]), 0.002); });
+            if (rw.some(function (v) { return v < 0.2 || v > 5; })) {
+              var lm = Math.max(0.2126 * lin(b.media[0]) + 0.7152 * lin(b.media[1]) + 0.0722 * lin(b.media[2]), 0.002);
+              tx.tinta = [0, 1, 2].map(function (q) { return Math.min(8, Math.max(0.004, lin(p.corSrgb[q]) / lm)); });
+            }
+          } }   /* MATERIAIS: escala e cor do projeto */
         else p.textura = null;
       } else if (tx && tx.tipo === "rejunte") {
         var k = [tx.peca[0], tx.peca[1], tx.junta, p.corSrgb.map(function (v) { return v.toFixed(2); }).join(","), p.rugosidade].join("|");
@@ -265,7 +284,7 @@
       /* a origem: a da agregação (a mesma de todos os modelos da obra) ou o centro arredondado ao metro */
       var orig = F.origem ? [F.origem[0], F.origem[1], F.origem[2]] : null;
       if (!orig) { var s = [0, 0, 0], n = 0; F.modelos.forEach(function (mo) { mo.grupo.children.forEach(function (m) { if (m.isMesh) { var e = m.matrixWorld.elements; s[0] += e[12]; s[1] += e[13]; s[2] += e[14]; n++; } }); }); orig = n ? s.map(function (v) { return Math.round(v / n); }) : [0, 0, 0]; }
-      var X = new Extrator(orig), tr = this.trocas(), st = this._estadoEditor(), faces = this._facesParede(st), matEd = this._materiaisEditor(st), pecasConf = [], luzes = [], luzIfc = {};
+      var X = new Extrator(orig), tr = this.trocas(), st = this._estadoEditor(), faces = this._facesParede(st), matEd = this._materiaisEditor(st), pecasConf = [], luzes = [], luzIfc = {}, luzesPend = [];   /* [frente I] luzesPend */
       var chaveParams = {};
       function grupoPara(id, peca, nome, extra) {
         var p = self._params(id, peca, nome); if (!p) return null;
@@ -312,7 +331,8 @@
             X.malha(m, function (Nn, a) { var d = (Nn[a * 3] * zx + Nn[a * 3 + 2] * zz) * sgn; return d > 0.5 ? gd : gf; });
             return;
           }
-          var mm = material(peca, null), g = grupoPara(mm.id, peca, mm.nome);
+          var mm = material(peca, null), g = grupoPara(mm.id, peca, mm.nome, peca.cortina ? "|cortina" : "");
+          if (g && peca.cortina) g.cortina = true;   /* [Cena: efeitos] */
           if (g) X.malha(m, function () { return g; });
         });
       });
@@ -331,6 +351,9 @@
         var c = a && a.calc; if (!c || !arr(c.contorno).length) return;
         [["acabPiso", c.base + 0.003, 1], ["acabForro", c.topo - 0.003, -1]].forEach(function (f) {
           var nome = txt(a[f[0]]).trim(); if (!nome) return;
+          /* "céu aberto" / "sem forro" no TETO é ausência de teto (jardim, pátio): a película virava uma laje de reboco
+             tampando o céu do jardim da Casa 487 (achado no render ao vivo, 20/10/2026) */
+          if (f[0] === "acabForro" && /c[eé]u\s*aberto|sem\s+forro|^aberto$|descoberto/i.test(nome)) return;
           var peca = { materiais: [nome], ifc: "IFCCOVERING", alfa: 1, cor: null }, ma = material(peca, nome), ga = grupoPara(ma.id, peca, nome);
           if (ga) self._pelicula(X, ga, c.contorno, c.furos, f[1], f[2]);
         });
@@ -340,6 +363,15 @@
         var cat = b.familiaCategoria ? b.familiaCategoria(fi.famId) : null; if (cat !== "luminaria") return;
         var av = b.familiaAvaliar ? b.familiaAvaliar(fi.famId, fi.tipoId, fi.inst) : null; if (!av || !av.valores) return;
         var fam = global.FamiliasRA && global.FamiliasRA.obter ? global.FamiliasRA.obter(fi.famId, true) : null;
+        /* [frente I] família de iluminação do catálogo (js/familiasluz.js): um ou vários emissores (lustre, fita, spot dirigível) com a
+           fotometria do catálogo; sem fluxo no catálogo a peça não acende (fica na lista do que falta) */
+        if (global.FamiliasLuz && global.FamiliasLuz.ehLuz(av.valores)) {
+          var nmL = (fam ? fam.nome : "Luminária") + (av.tipo ? " — " + av.tipo.nome : "") + " (" + fi.id + ")";
+          var rL = global.FamiliasLuz.luzes(av.valores, { x: fi.x - orig[0], y: fi.y - orig[1], z: fi.z - orig[2], rotY: fi.rotY }, { id: "edit:" + fi.id, nome: nmL }, R);
+          rL.luzes.forEach(function (lz) { lz.famInst = fi.id; luzes.push(lz); });
+          if (rL.pendente) luzesPend.push({ id: fi.id, nome: nmL, pendente: rL.pendente });
+          return;
+        }
         var l = R.luzDaLuminaria(av.valores, { x: fi.x - orig[0], y: fi.y - orig[1], z: fi.z - orig[2], rotY: fi.rotY }, { id: "edit:" + fi.id, nome: (fam ? fam.nome : "Luminária") + (av.tipo ? " — " + av.tipo.nome : "") + " (" + fi.id + ")" });
         luzes.push(l);
       });
@@ -350,7 +382,16 @@
         var idC = R.material(cfgC.chao) ? cfgC.chao : "grama", yC = (isFinite(X.yParede) ? X.yParede : X.min[1]) - 0.004;
         var meio = [(X.min[0] + X.max[0]) / 2, (X.min[2] + X.max[2]) / 2], raio = Math.max(40, 5 * Math.max(X.max[0] - X.min[0], X.max[2] - X.min[2]));
         var pc = { materiais: [], ifc: "", alfa: 1, cor: null }, gC = grupoPara(idC, pc, "", "|chao");
-        if (gC) self._pelicula(X, gC, [{ x: meio[0] - raio + orig[0], z: meio[1] - raio + orig[2] }, { x: meio[0] + raio + orig[0], z: meio[1] - raio + orig[2] }, { x: meio[0] + raio + orig[0], z: meio[1] + raio + orig[2] }, { x: meio[0] - raio + orig[0], z: meio[1] + raio + orig[2] }], [], yC + orig[1], 1);
+        /* ⚠ O CHÃO AO REDOR TEM FURO ONDE HÁ ÁGUA: a piscina é rebaixada e o gramado automático, no nível das paredes,
+           passava POR CIMA dela — a piscina da Casa 487 sumia no render (achado no render ao vivo, 20/10/2026) */
+        var furosC = [];
+        X.ordem.forEach(function (k) {
+          var g = X.grupos[k], mp = X.materiais[g.mat]; if (!mp || mp.id !== "agua" || !g.pos.n) return;
+          var a = g.pos.a, mn = [Infinity, Infinity], mx = [-Infinity, -Infinity];
+          for (var q = 0; q < g.pos.n; q += 3) { if (a[q] < mn[0]) mn[0] = a[q]; if (a[q] > mx[0]) mx[0] = a[q]; if (a[q + 2] < mn[1]) mn[1] = a[q + 2]; if (a[q + 2] > mx[1]) mx[1] = a[q + 2]; }
+          if (isFinite(mn[0])) furosC.push([{ x: mn[0] + orig[0], z: mn[1] + orig[2] }, { x: mx[0] + orig[0], z: mn[1] + orig[2] }, { x: mx[0] + orig[0], z: mx[1] + orig[2] }, { x: mn[0] + orig[0], z: mx[1] + orig[2] }]);
+        });
+        if (gC) self._pelicula(X, gC, [{ x: meio[0] - raio + orig[0], z: meio[1] - raio + orig[2] }, { x: meio[0] + raio + orig[0], z: meio[1] - raio + orig[2] }, { x: meio[0] + raio + orig[0], z: meio[1] + raio + orig[2] }, { x: meio[0] - raio + orig[0], z: meio[1] + raio + orig[2] }], furosC, yC + orig[1], 1);
         X.chao = { id: idC, y: yC + orig[1], raio: raio };
       }
       Object.keys(luzIfc).forEach(function (u) {
@@ -366,7 +407,7 @@
       var cam = F.camera, alvo = F.alvo;
       var camera = { tipo: "perspectiva", pos: [cam.position.x - orig[0], cam.position.y - orig[1], cam.position.z - orig[2]], quat: [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w],
                      fov: cam.fov || 50, near: cam.near, far: cam.far, aspecto: cam.aspect, alvo: alvo ? [alvo.x - orig[0], alvo.y - orig[1], alvo.z - orig[2]] : null };
-      this._ext = { origem: orig, grupos: X.final(), materiais: X.materiais, luzes: luzes, conferencia: conf, camera: camera, triangulos: X.tri, chao: X.chao || null };
+      this._ext = { origem: orig, grupos: X.final(), materiais: X.materiais, luzes: luzes, luzesPendentes: luzesPend /* [frente I] */, conferencia: conf, camera: camera, triangulos: X.tri, chao: X.chao || null };
       return this._ext;
     },
     /* polígono (contorno do ambiente, com furos) numa altura, virado para cima (1) ou para baixo (−1) */
@@ -479,6 +520,8 @@
       h += "</tbody></table></fieldset>";
       /* luzes */
       h += '<fieldset style="border:1px solid rgba(127,127,127,.35);border-radius:8px;padding:6px 8px;margin:0"><legend><b>' + ic("lampada") + " Luminárias (" + e.luzes.length + ")</b></legend>";
+      /* [frente I] a luminária do catálogo sem fluxo publicado não acende: diz qual e o que falta (Corrigir: trocar o tipo em Propriedades) */
+      if (e.luzesPendentes && e.luzesPendentes.length) h += '<div class="muted" style="font-size:11.5px;margin-bottom:4px">' + e.luzesPendentes.length + ' luminária(s) sem luz: ' + e.luzesPendentes.slice(0, 4).map(function (q) { return esc(q.nome) + ' — ' + esc(q.pendente); }).join('; ') + '. Troque o tipo (um com lâmpada do catálogo) em Propriedades.</div>';
       if (!e.luzes.length) h += '<div class="muted" style="font-size:11.5px">Nenhuma luminária no modelo. Coloque em Instalações › Luminária (o fluxo e a temperatura de cor ficam nos parâmetros do tipo).</div>';
       else {
         var circ = {}; e.luzes.forEach(function (l) { if (l.circuito) circ[l.circuito] = 1; });
@@ -544,6 +587,11 @@
       [].forEach.call(corpo.querySelectorAll("[data-rd-luzes]"), function (b) { b.onclick = function () { var on = b.getAttribute("data-rd-luzes") === "1", m = {}; (self._ext ? self._ext.luzes : []).forEach(function (l) { m[l.id] = on; }); self.luzes(m); self.renderPainel(); }; });
       [].forEach.call(corpo.querySelectorAll("[data-rd-circ]"), function (b) { b.onclick = function () { var k = b.getAttribute("data-rd-circ"), ls = (self._ext ? self._ext.luzes : []).filter(function (l) { return l.circuito === k; }), on = !ls.every(function (l) { return self.luzLigada(l.id); }), m = {}; ls.forEach(function (l) { m[l.id] = on; }); self.luzes(m); self.renderPainel(); }; });
       var br = corpo.querySelector('[data-rd-acao="renderizar"]'); if (br) br.onclick = function () { self.renderizar(); };
+      if (br && global.BimRenderVivo && global.BimRenderVivo.ligado()) {
+        var bv = document.createElement("button"); bv.type = "button"; bv.className = "btn"; bv.setAttribute("data-rd-acao", "vivo");
+        bv.innerHTML = ic("caminhar") + " Render ao vivo"; bv.title = "Andar pelo modelo com a imagem de render (parou a câmera, a foto física assume)";
+        br.parentNode.insertBefore(bv, br.nextSibling); bv.onclick = function () { global.BimRenderVivo.abrir(); };
+      }
       var bp = corpo.querySelector('[data-rd-acao="parar"]'); if (bp) bp.onclick = function () { self.parar(); };
     },
     /* liga/desliga luminárias: grava na obra e, com um render na tela, recomeça só o acúmulo */

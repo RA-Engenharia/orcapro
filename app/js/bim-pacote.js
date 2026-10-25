@@ -968,6 +968,12 @@ S._recuperarVista = recuperarVista3d;
 tick();
 var ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
 function cadeiaVisivel(o) { for (var n = o; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; } return true; }
+function visivelParaRaio(o) {
+if (cadeiaVisivel(o)) return true;
+if (!o || !o.userData || o.userData._alvOculta !== true) return false;
+for (var n = o.parent; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; }
+return true;
+}
 function foraDoClip(p) {
 var pls = renderer.clippingPlanes || [];
 for (var i = 0; i < pls.length; i++) if (pls[i].distanceToPoint(p) < -1e-6) return true;
@@ -975,7 +981,7 @@ return false;
 }
 function primeiroHit(hits) {
 for (var i = 0; i < hits.length; i++) {
-if (!cadeiaVisivel(hits[i].object)) continue;
+if (!visivelParaRaio(hits[i].object)) continue;
 if (foraDoClip(hits[i].point)) continue;
 return hits[i];
 }
@@ -2495,7 +2501,7 @@ ray.setFromCamera(mouse, camera);
 var hits = ray.intersectObjects(modelRoot.children, true);
 _ultimosHits = [];
 for (var hh = 0; hh < hits.length && _ultimosHits.length < 3; hh++) {
-if (!cadeiaVisivel(hits[hh].object) || foraDoClip(hits[hh].point)) continue;
+if (!visivelParaRaio(hits[hh].object) || foraDoClip(hits[hh].point)) continue;
 var repetido = false;
 for (var uh = 0; uh < _ultimosHits.length; uh++) if (_ultimosHits[uh].object === hits[hh].object) { repetido = true; break; }
 if (repetido) continue;
@@ -6655,7 +6661,7 @@ ico.style.transform = (!glifo && (sn.tipo === 'aresta' || sn.tipo === 'interseca
 var nmP = nomeDaPeca(sn.obj);
 snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot + (nmP ? ' · ' + nmP : '');
 snapMarca.querySelector('[data-sm="rot"]').style.color = glifo ? (sn.cor || vis.cor) : vis.cor;
-if (sn.editor && window.BimPrecisao) snapMarca.querySelector('[data-sm="rot"]').textContent = BimPrecisao.ROTULO[sn.tipo] || vis.rot;
+if (sn.editor && window.BimPrecisao) snapMarca.querySelector('[data-sm="rot"]').textContent = (BimPrecisao.ROTULO[sn.tipo] || vis.rot) + (sn.extra ? ' · ' + sn.extra : '');
 snapVivo = { p: sn.p.clone(), tipo: sn.tipo };
 posicionarSnapMarca();
 }
@@ -10241,6 +10247,76 @@ S._editDesfazer = function () { if (!edit.ops.length) return false; var o = edit
 S._editRefazer = function () { if (!edit.redo.length) return false; var o = edit.redo.pop(); edit.ops.push(o); if (!(opSoInst(o) && editRebuildInst())) editRebuild(); return true; };
 S._editReconstruir = function () { if (edit.ops.length) editRebuild(); };
 S._editOpExterna = function (o) { editOp(o); };
+function ifcConvCamadas(mid) {
+var porItem = {}, porRep = {}, porPds = {}, api = S.api;
+function linha(id) { try { return api.GetLine(mid, id, false); } catch (_) { return null; } }
+function lista(x) { return x == null ? [] : (Array.isArray(x) ? x : [x]); }
+function ref(x) { return (x && x.value != null) ? x.value : null; }
+try {
+var ls = api.GetLineIDsWithType(mid, 2022622350), n = ls.size();
+if (!n) return porPds;
+for (var i = 0; i < n; i++) {
+var l = linha(ls.get(i)), nome = l && l.Name && l.Name.value ? String(l.Name.value) : '';
+if (!nome) continue;
+lista(l.AssignedItems).forEach(function (h) { var id = ref(h); if (id != null && porItem[id] == null) porItem[id] = nome; });
+}
+var rs = api.GetLineIDsWithType(mid, 4240577450), nr = rs.size();
+if (nr > 60000) return porPds;
+for (var j = 0; j < nr; j++) {
+var rid = rs.get(j), r = linha(rid); if (!r) continue;
+if (porItem[rid] != null) { porRep[rid] = porItem[rid]; continue; }
+lista(r.Items).some(function (h) { var c = porItem[ref(h)]; if (c != null) { porRep[rid] = c; return true; } return false; });
+}
+var ps = api.GetLineIDsWithType(mid, 673634403), np = ps.size();
+for (var k = 0; k < np; k++) {
+var pid = ps.get(k), p = linha(pid); if (!p) continue;
+lista(p.Representations).some(function (h) { var c = porRep[ref(h)]; if (c != null) { porPds[pid] = c; return true; } return false; });
+}
+} catch (_) { }
+return porPds;
+}
+S._ifcConvLista = function () {
+var out = [], rem = S._remEd || {};
+try { modelRoot.updateMatrixWorld(true); } catch (_) {}
+(S.modelos || []).forEach(function (mo) {
+if (typeof mo.mid !== 'number' || mo.sintetico || mo.editor || mo.visivel === false) return;
+mo.elementos.forEach(function (e) {
+if (String(e.tipo).toUpperCase() === 'IFCBUILDINGELEMENTPROXY' && !rem[e.uid]) out.push({ uid: e.uid, id: e.id, mid: mo.mid, arq: mo.nome });
+});
+});
+return out;
+};
+S._ifcConvPeca = function (uid) {
+var mo = modeloDaPeca(uid), ms = malhasDaPeca(uid), el = null;
+if (!mo || !ms.length) return null;
+for (var q = 0; q < mo.elementos.length; q++) if (mo.elementos[q].uid === uid) { el = mo.elementos[q]; break; }
+if (!el) return null;
+var total = 0, i;
+ms.forEach(function (m) { var g = m.geometry; if (g && g.attributes && g.attributes.position) total += Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3); });
+var cam = '';
+try {
+if (S.api) {
+if (!mo._ifcCamadas) mo._ifcCamadas = ifcConvCamadas(mo.mid);
+var ln = S.api.GetLine(mo.mid, el.id, false), rp = ln && ln.Representation && ln.Representation.value;
+if (rp != null && mo._ifcCamadas[rp]) cam = mo._ifcCamadas[rp];
+}
+} catch (_) {}
+var mat = ''; try { mat = el.materiais ? JSON.stringify(el.materiais).slice(0, 240) : ''; } catch (_) {}
+var base = { uid: uid, id: el.id, arq: mo.nome, nome: el.nomeIfc || '', camada: cam, material: mat, familia: el.familia || '', nTri: total };
+if (total > 60000) { base.pesada = true; base.tris = new Float32Array(0); base.partes = []; return base; }
+var T = new Float32Array(total * 9), w = 0, partes = [], v = new THREE.Vector3();
+ms.forEach(function (m) {
+var g = m.geometry; if (!g || !g.attributes || !g.attributes.position) return;
+var pos = g.attributes.position, idx = g.index, n = Math.floor((idx ? idx.count : pos.count) / 3), M = m.matrixWorld;
+for (var t = 0; t < n; t++) for (var k = 0; k < 3; k++) {
+v.fromBufferAttribute(pos, idx ? idx.getX(t * 3 + k) : t * 3 + k).applyMatrix4(M);
+T[w++] = v.x; T[w++] = v.y; T[w++] = v.z;
+}
+partes.push(w / 9);
+});
+base.tris = w === T.length ? T : T.subarray(0, w); base.partes = partes;
+return base;
+};
 S._instCtx = function () {
 return { edit: edit, op: editOp, famAval: famAval, hint: function (t) { S._hint(t); }, marcar: marcarFechamento,
 inicio: function (p) {
@@ -10384,6 +10460,7 @@ instAlvo = !!(pI && BimInstUI.agarrar(edit.estado, famAval, pI, BimInstUI.cfg.si
 } catch (eI) { instAlvo = false; }
 }
 if (!pForcado && S._prec && !instAlvo) { var rPrec = S._prec.clique(e, hit); if (rPrec === true) return; if (rPrec) pForcado = rPrec; }
+var cotaSn = edit._cotaSnap; edit._cotaSnap = null; edit._cotaAgora = cotaSn;
 var sn = (hit && !pForcado) ? aplicarSnap(hit, raioToque(e)) : null;
 var p = pForcado ? pForcado.clone() : (sn ? sn.p.clone() : editPontoPlano(e.clientX, e.clientY));
 if (sn) mostrarSnapMarca(sn, e.clientX, e.clientY);
@@ -10428,10 +10505,12 @@ if ((sub === 'viga' || sub === 'cobertura') && edit.p1) {
 var p2v = editAjustarPonto(p, e), ini = edit.p1.clone();
 editTirarProv();
 if (sub === 'viga') {
-var cV = BimEdit.viga({ x: ini.x, z: ini.z }, { x: p2v.x, z: p2v.z }, edit.vigaB, edit.vigaH, edit.base + edit.alt);
+var topoV = edit._topoVista != null ? edit._topoVista : (edit._cotaP1 != null ? edit._cotaP1 : (cotaSn != null ? cotaSn : edit.base + edit.alt));
+edit._cotaP1 = null;
+var cV = BimEdit.viga({ x: ini.x, z: ini.z }, { x: p2v.x, z: p2v.z }, edit.vigaB, edit.vigaH, topoV);
 if (!cV) { S._hint('Pontos muito próximos — clique 2 pontos distintos.'); return; }
 editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cV });
-S._hint('Viga criada (' + cV.comprimento.toFixed(2).replace('.', ',') + ' m, ' + Math.round(edit.vigaB * 100) + ' × ' + Math.round(edit.vigaH * 100) + ', topo a ' + (edit.base + edit.alt).toFixed(2).replace('.', ',') + ' m). Clique o início da próxima, ou Esc.');
+S._hint('Viga criada (' + cV.comprimento.toFixed(2).replace('.', ',') + ' m, ' + Math.round(edit.vigaB * 100) + ' × ' + Math.round(edit.vigaH * 100) + ', topo a ' + topoV.toFixed(2).replace('.', ',') + ' m). Clique o início da próxima, ou Esc.');
 } else {
 var cb = BimEdit.cobertura({ x: ini.x, z: ini.z }, { x: p.x, z: p.z }, { base: edit.base + edit.alt, inclinacao: edit.cobIncl, aguas: edit.cobAguas, beiral: edit.cobBeiral, espessura: 0.08 });
 if (!cb) { S._hint('Retângulo pequeno demais para a cobertura.'); return; }
@@ -10442,6 +10521,7 @@ S._hint('Cobertura criada: ' + cb.area.toFixed(2).replace('.', ',') + ' m² de t
 marcarFechamento(); return;
 }
 if (sub === 'viga' || sub === 'cobertura') {
+edit._cotaP1 = sub === 'viga' ? cotaSn : null;
 edit.p1 = p.clone(); edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov);
 S._hint(sub === 'viga' ? 'Agora clique o FIM da viga.' : 'Agora clique o canto OPOSTO do telhado (o beiral de ' + String(edit.cobBeiral).replace('.', ',') + ' m é somado em volta).');
 return;
@@ -10982,6 +11062,7 @@ planoPonto: editPontoPlano, raio: raioToque, raycast: raycastEm, hits: function 
 snapMalha: function (e, h) { return h ? aplicarSnap(h, raioToque(e)) : null; },
 marca: mostrarSnapMarca, marcaEsconder: esconderSnapMarca,
 op: editOp, clique: editClique, concluirParede: editConcluirParede, ajustar: editAjustarPonto, ghost: editGhostMover,
+cotaSnap: function (y) { edit._cotaSnap = (y != null && isFinite(+y)) ? +y : null; },
 armar: function (sub) { if (!edit.on) setEdit(true); if (edit.sub !== sub) setEditSub(sub); },
 desarmar: function () { if (edit.sub) setEditSub(edit.sub); },
 rotulo: labelSprite, reescalar: rescaleObj, avaliar: famAval, matSel: function () { return editMat('sel'); },
@@ -11440,7 +11521,7 @@ edit.b2moverEixo = ex.id; S._hint('Eixo ' + ex.nome + ' escolhido: clique o novo
 }
 if (!p) return false;
 if (sub === 'eixo' || sub === 'escada' || sub === 'rampa' || sub === 'trelica' || (sub === 'viga' && b.perfilViga)) {
-if (!edit.p1) { edit.p1 = p.clone(); edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov); S._hint(sub === 'escada' || sub === 'rampa' ? 'Agora clique a DIREÇÃO da subida.' : 'Agora clique a outra ponta.'); return true; }
+if (!edit.p1) { if (sub === 'viga') edit._cotaP1 = edit._cotaAgora; edit.p1 = p.clone(); edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov); S._hint(sub === 'escada' || sub === 'rampa' ? 'Agora clique a DIREÇÃO da subida.' : 'Agora clique a outra ponta.'); return true; }
 var p2 = editAjustarPonto(p, e), ini = edit.p1.clone();
 editTirarProv();
 if (sub === 'eixo') {
@@ -11468,7 +11549,8 @@ var r9 = BimEstrutUI.criar(sub, ini, p2, { base: edit.base, alt: edit.alt, nivel
 if (!r9.ok) { S._hint(r9.motivo); return true; }
 editOp(r9.op); S._hint(r9.resumo);
 } else {
-var cv = A.vigaPerfil([ini.x, ini.z], [p2.x, p2.z], { perfil: b.perfilViga, material: b.materialViga || 'concreto', topo: edit.base + edit.alt, nivelId: b.nivel ? b.nivel.id : null, restricoes: b2Restr('viga'), niveis: b.niveis || null });
+var cotaV = edit._topoVista != null ? edit._topoVista : (edit._cotaP1 != null ? edit._cotaP1 : edit._cotaAgora), topoCota = cotaV != null; edit._cotaP1 = null;
+var cv = A.vigaPerfil([ini.x, ini.z], [p2.x, p2.z], { perfil: b.perfilViga, material: b.materialViga || 'concreto', topo: topoCota ? cotaV : edit.base + edit.alt, nivelId: b.nivel ? b.nivel.id : null, restricoes: topoCota ? null : b2Restr('viga'), niveis: b.niveis || null });
 if (!cv) { S._hint('Viga: pontos muito próximos ou perfil inválido.'); return true; }
 editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: A.paraOp(cv) });
 S._hint('Viga ' + cv.perfilRotulo + ' criada (' + b2Num(cv.comprimento) + ' m). Clique o início da próxima, ou Esc.');
@@ -11530,8 +11612,9 @@ o = o || {};
 var m = o.alvoId != null ? S.meshPorUid['edit:' + o.alvoId] : null;
 var hitF = m ? { object: m, point: new THREE.Vector3(p.x, edit.base + 0.5, p.z), distance: 1 } : null;
 var ant = _ultimosHits; _ultimosHits = hitF ? [hitF] : [];
+var topoAnt = edit._topoVista; edit._topoVista = (o.topo != null && isFinite(+o.topo)) ? +o.topo : null;
 try { editClique({ clientX: NaN, clientY: NaN, shiftKey: !!o.shift, ctrlKey: !!o.ctrl, metaKey: false, _semAjuste: true, _planta: true }, hitF, new THREE.Vector3(p.x, edit.base, p.z)); }
-finally { _ultimosHits = ant; }
+finally { _ultimosHits = ant; edit._topoVista = topoAnt; }
 return true;
 },
 cancelar: function () { editTirarProv(); if (pmPrevia3d) this.previa3d(null); return true; },
@@ -14156,6 +14239,8 @@ editarPreviaInst: function (ops) { return (S && S._editPreviaInst) ? S._editPrev
 editarPrevia: function (ops) { return (S && S._editPrevia) ? S._editPrevia(ops) : { ok: false, malhas: 0 }; },
 editarBase: function () { return S && S.edit && isFinite(S.edit.base) ? S.edit.base : 0; },
 pontoPlanoY: function (clientX, clientY, y) { return (S && S._pontoPlanoY) ? S._pontoPlanoY(clientX, clientY, y) : null; },
+ifcConvLista: function () { return (S && S._ifcConvLista) ? S._ifcConvLista() : []; },
+ifcConvPeca: function (uid) { return (S && S._ifcConvPeca) ? S._ifcConvPeca(uid) : null; },
 editarLote: function (lote) {
 if (!S || !S._editOpExterna || !lote || lote.op !== 'lote') return false;
 if (window.BimGrupos && BimGrupos.redirecionar && S.edit && S.edit.estado) lote = BimGrupos.redirecionar(lote, S.edit.estado);

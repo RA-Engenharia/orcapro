@@ -98,7 +98,7 @@
         var srv = !naPlay && global.Modela && Modela._servidor ? Modela._servidor() : "";
         if (srv && global.fetch && M) global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
           var pl = M.planosAVenda(d), el = q("#marm-oferta-venda"); if (!pl.length || !el) return;
-          el.innerHTML = pl.map(function (p) { return '<a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id)) + '">' + esc(p.nome) + " — " + esc(brl(p.valor)) + " " + esc(p.periodo || "") + "</a>"; }).join(" ");
+          el.innerHTML = pl.map(function (p) { return '<p style="margin:0 0 6px">' + esc(global.Modela && Modela.textoPlano ? Modela.textoPlano(p) : p.nome + " — " + brl(p.valor) + " " + (p.periodo || "")) + '</p><a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id)) + '">Comprar a Marmoraria</a>'; }).join(" ");
         }, function () {});
       } catch (e) {}
       return false;

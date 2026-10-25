@@ -62,6 +62,7 @@
       if (s && s.demo) mot = "demo";
       else if (s && s.vitalicia) mot = "vitalicia";
       else if (s && s.tudo) mot = "interno";
+      else if (!comprado && s && s.porTier && s.porTier[ID]) mot = "bim";   /* o plano BIM em dia inclui todos os módulos (24/10/2026) */
       else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
       else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
       return { liberado: true, motivo: mot, teste: s ? s.teste : null };
@@ -94,7 +95,7 @@
     /* a venda está aberta? — o servidor diz (planos modela_marmoraria_* no /api/modela/oferta). Sem resposta: fechada. */
     planosAVenda: function (oferta) {
       var p = (oferta && oferta.planos) || {};
-      return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+      return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista, descontoAVista: o.descontoAVista }; });
     }
   };
   global.MarmModulo = MarmModulo;

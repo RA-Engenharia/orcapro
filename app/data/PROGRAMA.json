@@ -22,6 +22,21 @@
       "motivo": "biblioteca de materiais PBR do render físico — tabela do programa"
     },
     {
+      "arquivo": "ceus-hdri.json",
+      "carregadoPor": "js/bimceuhdri.js (fetch, MANIFESTO 'data/ceus-hdri.json')",
+      "motivo": "manifesto dos céus fotografados do render ao vivo e do OrçaPRO Cena — tabela do programa"
+    },
+    {
+      "arquivo": "texturas2k.json",
+      "carregadoPor": "js/bimmat2k.js (fetch, new URL('../data/texturas2k.json'))",
+      "motivo": "manifesto das texturas 2K do render ao vivo (quais materiais têm relevo e o que vale em cada qualidade) — tabela do programa"
+    },
+    {
+      "arquivo": "render-pesado.json",
+      "carregadoPor": "js/bimpesado.js (fetch, 'data/render-pesado.json')",
+      "motivo": "a ENTREGA PESADA do render (texturas 2K e céus HDRI, 164 MB) que NÃO vai nos pacotes: caminho no servidor, bytes e sha256 de cada peça baixada sob demanda (tools/render-pesado.js gerar; docs/render-vivo/ENTREGA-PESADA.md) — tabela do programa"
+    },
+    {
       "arquivo": "madeira-exemplo.json.gz",
       "carregadoPor": "js/madcalcui.js (fetch, botão Carregar exemplo)",
       "motivo": "pacote de exemplo do cálculo da estrutura de madeira — gerado e ANONIMIZADO por tools/montar-mad-exemplo.js (a varredura recusa gravar com nome de cliente, documento, e-mail, telefone ou caminho de pasta); igual em toda instalação"
@@ -103,6 +118,11 @@
       "arquivo": "telhado-rufos.json",
       "usadoPor": "tools/gerar-telhado-cobertura-dados.js (gera o bloco telhado-dados de js/bimcobertura.js)",
       "motivo": "chapas, dobras e cortes dos rufos e contrarrufos com fonte; o app usa os valores já embutidos em js/bimcobertura.js"
+    },
+    {
+      "arquivo": "iluminacao-catalogo.json",
+      "usadoPor": "tools/test-iluminacao-catalogo.js, tools/test-familias-luz.mjs",
+      "motivo": "fonte da fotometria das famílias de luminária; o app usa a cópia dos números já embutida em js/familiasluz.js (CAT) e não o carrega"
     }
   ]
 }

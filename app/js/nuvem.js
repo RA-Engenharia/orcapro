@@ -110,6 +110,13 @@
      * importou o pacote; no outro aparelho a tela diz isso. */
     "bim_sondagens",
     "bim_pranchas",
+    /* AS CENAS DO ORÇAPRO CENA (js/bimcenaarm.js, 24/10/2026): a cena de apresentação da obra — hora, estação,
+     * materiais editados, câmeras, objetos postos, efeitos. É trabalho do arquiteto, e "salvar a cena NO PROJETO"
+     * significa que ela acompanha a obra de um computador para o outro. A cena vai como TEXTO (campo `json`, nunca
+     * lista dentro de lista: o Firestore recusa, memória orcapro-nuvem-lista-em-lista), então fica FORA do DOC_V2
+     * (como bim_familias): a lista passa de 1 MiB sem problema porque a gravação em partes põe cada REGISTRO inteiro
+     * numa parte — por isso o BimCenaArm recusa registro acima de 400 KB. A miniatura da câmera é JPEG pequeno. */
+    "bim_cenas",
     /* DOCUMENTOS DA OBRA (js/docobra.js): a FICHA de cada documento — tipo,
      * revisão, SHA-256 do arquivo, quem assinou (lido do próprio PDF) e o
      * histórico — viaja, para o escritório e o canteiro verem o mesmo arquivo
@@ -1383,7 +1390,13 @@
              lote, e só quando cobre o MESMO id, tem direito de reverter o
              empate. */
           if (emLote[o.id]) return String(o.atualizadoEm || "") > String(emLote[o.id]);
-          return true; // recriado depois de excluir → mantém
+          /* ⚠ "RECRIADO DEPOIS DE EXCLUIR" NÃO VALE PARA O FILHO DE OBRA APAGADA (revisão adversarial do OrçaPRO Cena,
+             24/10/2026 — tools/test-bimcena-nuvem-rev.js [4]). A exclusão da obra grava as DUAS lápides: a da cascata e
+             uma por registro (Store.excluirVarios). O registro editado noutro aparelho DEPOIS da exclusão (a "última
+             cena" que a tela aberta lá regrava sozinha; o diário salvo offline) é mais novo que a lápide própria, e este
+             `return true` o devolvia antes de a cascata ser consultada — órfão, apontando para obra que não existe, em
+             todos os aparelhos. A regra da cascata logo abaixo ("filho de verdade: NÃO há ressalva") passa a decidir. */
+          if (!(o.obraId && obrasMortas[o.obraId])) return true; // recriado depois de excluir → mantém
         }
         if (o.obraId && obrasMortas[o.obraId]) {
           /* cadastro da empresa (equipe, patrimônio, frota): a obra morreu, ele não. Faz aqui o

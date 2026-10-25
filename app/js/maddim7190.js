@@ -148,10 +148,11 @@
       e1 = sN / (kcx * f.fc0d) + sMx / f.fmd + p.kM * sMy / f.fmd;
       e2 = sN / (kcy * f.fc0d) + p.kM * sMx / f.fmd + sMy / f.fmd;
     }
-    var eta = Math.max(e1, e2), esbelto = Math.max(lx, ly) > 140;
+    var LAM_MAX = 40 * Math.sqrt(12);        // 9.3 (NBR 7190-1:2022, p. 68 impr.): peça comprimida de seção retangular, L0 ≤ 40 × a dimensão transversal ⇔ λ ≤ 40·√12 = 138,6 (mais severo que o 140 da 6.5.3)
+    var eta = Math.max(e1, e2), esbelto = Math.max(lx, ly) > LAM_MAX;
     var passos = [
       "Seção " + br(b * 100, 0) + " × " + br(h * 100, 0) + " cm, " + f.classe.nome + "; A = " + br(A * 1e4, 0) + " cm²; fc0,d = " + br(f.fc0d) + " MPa; fm,d = " + br(f.fmd) + " MPa; E0,05 = " + br(f.E005, 0) + " MPa; kmod = " + br(p.kmod, 3) + ".",
-      "Esbeltez: λx = L0x/ix = " + br(o.L0x) + "/" + br(ix, 4) + " = " + br(lx, 1) + "; λy = " + br(ly, 1) + " (limite 140" + (esbelto ? " — EXCEDIDO" : "") + "). λrel = (λ/π)·√(fc0,k/E0,05): " + br(lrx, 3) + " / " + br(lry, 3) + ".",
+      "Esbeltez: λx = L0x/ix = " + br(o.L0x) + "/" + br(ix, 4) + " = " + br(lx, 1) + "; λy = " + br(ly, 1) + " (limite 40·√12 = 138,6 pela 9.3 (L0 ≤ 40 × a dimensão transversal; 6.5.3: 140)" + (esbelto ? " — EXCEDIDO" : "") + "). λrel = (λ/π)·√(fc0,k/E0,05): " + br(lrx, 3) + " / " + br(lry, 3) + ".",
       dispensa ? "λrel ≤ 0,30 nos dois eixos: dispensa a verificação de estabilidade (6.5.5); resistência da seção (σN/fc0,d)² + σM/fm,d (+ kM·σM do outro eixo) = " + br(eta, 3) + "." :
         "kc = 1/(k + √(k² − λrel²)), k = 0,5[1 + βc(λrel − 0,3) + λrel²], βc = " + br(p.betaC, 1) + ": kcx = " + br(kcx, 3) + ", kcy = " + br(kcy, 3) + ".",
       dispensa ? "" : "σN,d = " + br(sN, 3) + " MPa; σMx,d = " + br(sMx, 3) + "; σMy,d = " + br(sMy, 3) + " MPa. σN/(kcx·fc0,d) + σMx/fm,d + kM·σMy/fm,d = " + br(e1, 3) + "; σN/(kcy·fc0,d) + kM·σMx/fm,d + σMy/fm,d = " + br(e2, 3) + " (kM = " + br(p.kM, 1) + ").",
@@ -211,6 +212,138 @@
     }
     res.ok = res.eta <= 1 + 1e-9;
     return res;
+  };
+
+  /* ==================================================================
+   * E1 (madeira engenharada) — funções NOVAS. As anteriores não mudam.
+   * Fonte secundária: NBR 7190-1:2022 sem texto; fórmulas de EN 1995-1-1 onde citado.
+   * ================================================================== */
+
+  /**
+   * Converte uma estação do acoanalise ({N, Vy, Vz, T, My, Mz}) nos dados de barra2022.
+   * A TORÇÃO vem na chave `T` (NÃO em Mx — o erro B1 da revisão da Casa Mar: `T: est.Mx` fazia a torção nunca entrar).
+   * Mapeamento do pórtico da RA: o eixo FORTE da seção (plano de h) é o Mz do acoanalise → My do barra2022, e vice-versa.
+   * o = { b, h, L0y, L0z, L1, classe, perfil, trocarEixos (padrão true), divisor (pilar duplo = 2),
+   *       kmAlfa (fator que DIVIDE o momento forte), kmAlfaQuando: "Mz<0" (padrão) | "Mz>0" }
+   */
+  MadDim.deAnalise = function (est, o) {
+    var d = o.divisor || 1, troca = o.trocarEixos !== false;
+    var Mz = est.Mz, q = o.kmAlfaQuando || "Mz<0";
+    if (o.kmAlfa && (q === "Mz<0" ? est.Mz < 0 : est.Mz > 0)) Mz = est.Mz / o.kmAlfa;
+    return {
+      N: est.N / d, My: troca ? Mz / d : est.My / d, Mz: troca ? est.My / d : Mz / d, Vy: est.Vy / d, Vz: est.Vz / d, T: (est.T || 0) / d,
+      b: o.b, h: o.h, L0y: o.L0y, L0z: o.L0z, L1: o.L1, classe: o.classe, perfil: o.perfil
+    };
+  };
+
+  /**
+   * L1 POR BORDA: distância entre travamentos da borda COMPRIMIDA. Convenção do acoanalise: Mz > 0 comprime a face de CIMA
+   * (travada pelo lambri/terça), Mz < 0 comprime a de BAIXO (travada por bloqueador/escora).
+   * trav = { cima: L1 com a borda de cima comprimida, baixo: L1 com a de baixo }
+   */
+  MadDim.L1PorBorda = function (Mz, trav) { return Mz > 0 ? trav.cima : trav.baixo; };
+
+  /**
+   * Seção CIRCULAR (pilar torneado/roliço). N: tração +. Flexocompressão: |N|/A/(kc·fc0,d) + M/W/fm,d; flexotração: N/A/ft0,d + M/W/fm,d
+   * (M = √(My² + Mz²), W = π·d³/32). Cisalhamento 4/3·V/A (+ torção τ = 16·T/(π·d³) se T for dado). kc com L0 e i = d/4.
+   * o = { N, My, Mz, Vy, Vz, T, d (m), L0 (m), classe, perfil }
+   */
+  MadDim.circular2022 = function (o) {
+    var pr = MadDim.perfilEResist(o.classe, o.perfil), p = pr.p, f = pr.f;
+    var d = o.d, A = Math.PI * d * d / 4, W = Math.PI * d * d * d / 32, i = d / 4, lam = o.L0 / i;
+    var lr = lam / Math.PI * Math.sqrt(f.fc0k / f.E005), kc = MadDim.kc(lr, p.betaC);
+    var N = o.N || 0, M = Math.sqrt(Math.pow(o.My || 0, 2) + Math.pow(o.Mz || 0, 2)) / W / 1e3, sN = N / A / 1e3;
+    var eta = N < 0 ? (-sN) / (kc * f.fc0d) + M / f.fmd : sN / f.ft0d + M / f.fmd;
+    var tau = 4 / 3 * Math.sqrt(Math.pow(o.Vy || 0, 2) + Math.pow(o.Vz || 0, 2)) / A / 1e3 + (o.T ? 16 * Math.abs(o.T) / (Math.PI * d * d * d) / 1e3 : 0);
+    var etaV = tau / f.fvd, esbelto = lam > 140, etaT = Math.max(eta, etaV);
+    return {
+      eta: etaT, ok: etaT <= 1 + 1e-9 && !esbelto, lambda: lam, lambdaRel: lr, kc: kc, esbelto: esbelto,
+      governa: eta >= etaV ? (N < 0 ? "flexocompressão" : "flexotração") : "cisalhamento", eta_flexao: eta, eta_cisalh: etaV,
+      passos: [
+        "Seção circular Ø" + br(d * 100, 0) + " cm, " + f.classe.nome + "; A = " + br(A * 1e4, 0) + " cm²; W = π·d³/32 = " + br(W * 1e6, 0) + " cm³; i = d/4 = " + br(i, 4) + " m.",
+        "λ = L0/i = " + br(o.L0) + "/" + br(i, 4) + " = " + br(lam, 1) + (esbelto ? " (limite 140 EXCEDIDO)" : "") + "; λrel = " + br(lr, 3) + "; kc = " + br(kc, 3) + " (βc = " + br(p.betaC, 1) + ").",
+        (N < 0 ? "Flexocompressão: |σN|/(kc·fc0,d) + σM/fm,d = " : "Flexotração: σt/ft0,d + σM/fm,d = ") + br(eta, 3) + " (σN = " + br(sN, 3) + " MPa, σM = " + br(M, 3) + " MPa).",
+        "Cisalhamento (seção circular): τ = 4/3·V/A" + (o.T ? " + 16·T/(π·d³)" : "") + " = " + br(tau, 3) + " MPa ≤ fv,d = " + br(f.fvd, 3) + " MPa → η = " + br(etaV, 3) + "."
+      ]
+    };
+  };
+
+  /**
+   * Pilar COMPOSTO/DUPLO sem espaçadores estruturais: duas peças lado a lado (a viga passa entre elas), CADA UMA com a metade dos
+   * esforços, flambagem de cada peça com o L0 de projeto nos DOIS eixos (a peça isolada não ganha inércia da seção composta).
+   * `est` é o esforço da barra equivalente (2 peças); com o modelo montado como ret(h, b) (Casa Mar, opção B) os eixos já
+   * coincidem com os da peça: trocarEixos:false.
+   * COM ESPAÇADORES (pilar composto de verdade): NÃO implementado — a NBR 7190-1:2022 (anexo de peças compostas) está sem texto e a
+   * EN 1995-1-1 Anexo C pede: nº de peças, distância livre a e entre eixos, espaçador (n_esp, comprimento, ligação com Kser),
+   * λef = √(λ² + (n/2)·λ1²) e η_ef de ligação. Sem esses dados e sem a fonte, `espacadores` é RECUSADO.
+   * o = { est (N,My,Mz,Vy,Vz,T do conjunto), b, h (peça), L0y, L0z, L1, classe, perfil, trocarEixos }
+   */
+  MadDim.pilarDuplo2022 = function (o) {
+    if (o.espacadores) throw new Error("maddim7190: pilar composto COM espaçadores recusado — sem texto da 7190-1:2022 (ver comentário da função: dados necessários)");
+    var e = MadDim.deAnalise(o.est, { b: o.b, h: o.h, L0y: o.L0y, L0z: o.L0z, L1: o.L1 || 0.01, classe: o.classe, perfil: o.perfil, divisor: 2, trocarEixos: !!o.trocarEixos });
+    var r = MadDim.barra2022(e);
+    r.passos = ["Pilar duplo: 2 peças " + br(o.b * 100, 0) + " × " + br(o.h * 100, 0) + " cm; cada peça leva a metade dos esforços; L0y = " + br(o.L0y) + " m, L0z = " + br(o.L0z) + " m (sem ganho de inércia composta)."].concat(
+      r.verif.reduce(function (a, v) { return a.concat(v.passos); }, []));
+    return r;
+  };
+
+  /**
+   * km,α (EN 1995-1-1 6.4.2) da borda cortada de viga de altura variável (lamelas paralelas à borda RETA; a outra borda faz
+   * ângulo α com a fibra). Calculado com os valores CARACTERÍSTICOS (como na conferência da Casa Mar: 0,911 para tgα = 0,048):
+   *   tração na borda cortada:     km,α = 1/√(1 + (fm/(0,75·fv)·tgα)² + (fm/ft90·tg²α)²)
+   *   compressão na borda cortada: km,α = 1/√(1 + (fm/(1,5·fv)·tgα)² + (fm/fc90·tg²α)²)
+   * o = { tgAlfa, classe, tipo: "tracao"|"compressao" }  → { km, passos }
+   */
+  MadDim.kmAlfa = function (o) {
+    var c = MM.classe2022(o.classe), t = o.tgAlfa, tr = (o.tipo || "tracao") === "tracao", G = MM.GAMA_2022, car = !!o.caracteristico;
+    if (c.incompleta) throw new Error("maddim7190: classe incompleta");
+    /* A5: a EN escreve km,α com valores de CÁLCULO; com γ diferentes (NBR: fm 1,4 / fv 1,8 / ft90 1,4 / fc90 1,4) a razão de cálculo fm,d/fv,d é 1,286 × a característica */
+    var gm = car ? 1 : G.m, gv = car ? 1 : G.v, g90 = car ? 1 : (tr ? G.t : G.c);
+    var a = (c.fmk / gm) / ((tr ? 0.75 : 1.5) * c.fvk / gv) * t, b = (c.fmk / gm) / ((tr ? c.ft90k : c.fc90k) / g90) * t * t;
+    var km = 1 / Math.sqrt(1 + a * a + b * b);
+    return { km: km, passos: ["km,α (" + (tr ? "tração" : "compressão") + " na borda cortada, tgα = " + br(t, 4) + ", valores " + (car ? "característicos" : "de cálculo: γm 1,4, γv 1,8, γ90 1,4") + "): 1/√(1 + (fm/(" + (tr ? "0,75" : "1,5") + "·fv)·tgα)² + (fm/f" + (tr ? "t90" : "c90") + "·tg²α)²) = 1/√(1 + " + br(a * a, 4) + " + " + br(b * b, 4) + ") = " + br(km, 4) + ".",
+      "EN 1995-1-1, 6.4.2 (fonte secundária — NBR 7190-1:2022 sem texto)."] };
+  };
+
+  /** altura linear entre hA e hB num trecho de comprimento L; tgα da borda inclinada */
+  MadDim.alturaVariavel = function (hA, hB, L) { return { tgAlfa: Math.abs(hB - hA) / L, h: function (x) { return hA + (hB - hA) * Math.min(1, Math.max(0, x / L)); } }; };
+
+  /**
+   * Barra de altura variável: barra2022 na altura da estação com km,α aplicado ao momento quando a borda CORTADA fica tracionada
+   * (borda cortada em cima: Mz < 0 no acoanalise). `compressaoTambem`: aplica também o km,α de compressão (padrão: não, como na R02).
+   * o = { est, b, hA, hB, Lb (comprimento do trecho), x (abscissa da estação), L0y, L0z, trav {cima, baixo}, classe, perfil,
+   *       bordaCortada: "cima"|"baixo" (padrão cima), tgAlfa (opcional; senão |hB−hA|/Lb), compressaoTambem }
+   */
+  MadDim.vigaAlturaVariavel2022 = function (o) {
+    var Lb = o.Lb, av = MadDim.alturaVariavel(o.hA, o.hB, Lb), tg = o.tgAlfa != null ? o.tgAlfa : av.tgAlfa;
+    var h = av.h(o.x), cortadaCima = (o.bordaCortada || "cima") === "cima";
+    var tracionaCortada = cortadaCima ? o.est.Mz < 0 : o.est.Mz > 0;
+    var km = null;
+    if (tracionaCortada) km = MadDim.kmAlfa({ tgAlfa: tg, classe: o.classe, tipo: "tracao", caracteristico: o.caracteristico }).km;
+    else if (o.compressaoTambem !== false) km = MadDim.kmAlfa({ tgAlfa: tg, classe: o.classe, tipo: "compressao", caracteristico: o.caracteristico }).km;      // A5: compressão também, por padrão
+    var L1 = MadDim.L1PorBorda(o.est.Mz, o.trav);
+    var e = MadDim.deAnalise(o.est, { b: o.b, h: h, L0y: o.L0y, L0z: o.L0z, L1: L1, classe: o.classe, perfil: o.perfil, kmAlfa: km,
+      kmAlfaQuando: tracionaCortada ? (cortadaCima ? "Mz<0" : "Mz>0") : (cortadaCima ? "Mz>0" : "Mz<0") });
+    var r = MadDim.barra2022(e);
+    r.h = h; r.kmAlfa = km; r.L1 = L1;
+    r.passos = ["Viga de altura variável: h(x) = " + br(h * 100, 1) + " cm (" + br(o.hA * 100, 1) + " → " + br(o.hB * 100, 1) + " cm em " + br(Lb) + " m); borda cortada: " + (cortadaCima ? "cima" : "baixo") + " (tgα = " + br(tg, 4) + "); L1 = " + br(L1) + " m (borda " + (o.est.Mz > 0 ? "de cima" : "de baixo") + " comprimida).",
+      km ? "Momento dividido por km,α = " + br(km, 4) + "." : "Sem km,α nesta estação."].concat(
+      r.verif.reduce(function (a, v) { return a.concat(v.passos); }, []));
+    return r;
+  };
+
+  /**
+   * M7 — comprimento de flambagem de PILAR EM BALANÇO COM MOLA DE ROTAÇÃO NA BASE (topo livre, sem restrição de rotação — a rótula do topo não é creditada, a favor da segurança):
+   * equilíbrio da elástica: x·tan x = C·L/(EI), x = k·L = π/β → L0 = β·L, β = π/x. C → ∞ dá x = π/2, β = 2,0 (engaste perfeito); C = 0 dá β → ∞ (mecanismo).
+   * Dedução no próprio código (EN 1993/Timoshenko, fonte secundária): y'' + k²y = k²δ, y(0) = 0, y'(0) = P·δ/C, y(L) = δ  ⇒  tan(kL)·(k·EI/C) = 1.
+   * o = { C (kN·m/rad), EI (kN·m²), L (m) } → { beta, x, CL_EI, passos[] }
+   */
+  MadDim.betaFlambagemMola = function (o) {
+    var C = o.C, EI = o.EI, L = o.L, r = C * L / EI, x, lo, hi, i;
+    if (!(r > 0)) return { beta: Infinity, x: 0, CL_EI: r || 0, passos: ["Mola de base nula: pilar em balanço sem engaste — mecanismo (β → ∞)."] };
+    if (r > 1e6) x = Math.PI / 2;
+    else { lo = 1e-9; hi = Math.PI / 2 - 1e-12; for (i = 0; i < 200; i++) { x = (lo + hi) / 2; if (x * Math.tan(x) > r) hi = x; else lo = x; } x = (lo + hi) / 2; }
+    return { beta: Math.PI / x, x: x, CL_EI: r, passos: ["Pilar em balanço com mola de base C = " + br(C, 0) + " kN·m/rad: C·L/EI = " + br(r, 2) + "; x·tan x = C·L/EI ⇒ x = " + br(x, 4) + "; β = π/x = " + br(Math.PI / x, 3) + " (L0 = β·L; engaste perfeito = 2,0)."] };
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = MadDim;

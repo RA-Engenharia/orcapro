@@ -44,6 +44,10 @@
   var MM = 1000;   /* mm por m */
   var PA_KPA = 1000;   /* Pa por kPa */
   var GPA = 1e9;   // hid:ok Pa por GPa (unidade)
+  /* N23: o TOCO da saída lateral do reservatório até a descida da tomada (adaptador, registro, tê da ventilação) — critério de projeto
+     declarado (não é norma): até isto somado, deitado na cota da saída (± a tolerância), conta como tomada (NBR 5626:2020 6.9.3) */
+  var TOMADA_TOCO_MAX = 0.60;   // hid:ok m de toco deitado na saída (o js/hidbarrilete.js usa 0,30 m)
+  var TOMADA_TOCO_DY = 0.01;    // hid:ok 1 cm: "na cota da saída"
 
   /* família do modelo → nome do aparelho nas tabelas (CONTRATO §1.1). A
      entrada.aparelhos força outro (ex.: chuveiro elétrico). Família fora
@@ -465,18 +469,38 @@
     /* ⚠ NBR 5626:2020, 6.9.3: os 5 kPa "em qualquer ponto" NÃO valem no trecho VERTICAL de tomada d'água
        na saída do reservatório elevado até o barrilete — ali a pressão é o desnível até o nível d'água mais
        baixo menos a perda (só não pode ser negativa). Fecha a decisão 5 da F3 (antes: aviso sem fonte). */
+    /* ⚠ N23 (24/10/2026): a TOMADA d'água da caixa com saída LATERAL — o toco na cota da saída (adaptador, registro de gaveta da
+       6.5.12.4 a, o tê da ventilação do barrilete) até a DESCIDA vertical — é a mesma tomada: antes a cadeia só começava se o 1º trecho
+       já descesse, e o toco (que toda saída lateral tem) reprovava por "5 kPa já na carga estática". Regras, todas para não isentar o
+       barrilete: (1) segue só o ramo COM consumo a jusante (a ventilação do barrilete, sem aparelho, não interrompe a tomada); (2) o
+       trecho deitado só conta ANTES da descida, na cota da saída e até TOMADA_TOCO_MAX somados; (3) sem descida nenhuma, o toco NÃO é
+       tomada (o barrilete na cota da saída continua precisando dos 5 kPa); (4) o nó de baixo da descida, onde o barrilete começa, NÃO é
+       tomada. Na tomada vale a pressão pelo desnível menos a perda, que só não pode ser negativa. */
     var tomada = {};
     (function () {
       if (rede) return;
-      var n0 = src;
-      while (filhos[n0] && filhos[n0].length === 1) {
-        var e1 = G.arestas[filhos[n0][0]];
-        if (!(e1.tipo === "acessorio" || (e1.vertical && G.nos[e1.para].y < G.nos[e1.de].y))) break;
+      var n0 = src, toco = 0, desceu = false, cand = [], guarda = 0;
+      function comConsumo(nid) { return (filhos[nid] || []).filter(function (eid) { return acc[G.arestas[eid].para] && acc[G.arestas[eid].para].nPontos > 0; }); }
+      while (guarda++ <= G.ordemA.length) {
+        var fs = comConsumo(n0); if (fs.length !== 1) break;
+        var e1 = G.arestas[fs[0]], dy = G.nos[e1.para].y - G.nos[e1.de].y;
+        if (e1.tipo === "acessorio") { /* o registro na tomada: passa */ }
+        else if (e1.vertical && dy < 0) desceu = true;
+        else if (!desceu && !e1.vertical && Math.abs(G.nos[e1.para].y - nS.y) <= TOMADA_TOCO_DY && (toco += num(e1.comprimento, 0)) <= TOMADA_TOCO_MAX) { /* o toco da saída lateral */ }
+        else break;
+        cand.push({ no: n0, desceu: desceu });
         n0 = e1.para;
-        if (filhos[n0] && filhos[n0].length === 1 && (G.arestas[filhos[n0][0]].tipo === "acessorio" || G.arestas[filhos[n0][0]].vertical)) tomada[n0] = 1;
       }
+      /* n0 = o 1º nó FORA da tomada (o início do barrilete): os de antes dele são tomada — desde que a cadeia tenha descido */
+      if (desceu) cand.forEach(function (c) { if (c.no !== src) tomada[c.no] = 1; });
     })();
-    function pmRedeNo(nid) { return tomada[nid] ? 0 : (pmRede.ok ? num(pmRede.valor, 0) : null); }
+    /* ⚠ SEM o nível d'água informado, o nível adotado é a própria cota da saída (o mais desfavorável): no toco DEITADO nessa cota a
+       "pressão" sai menos a perda de entrada (alguns milímetros) — artefato da premissa (com o nível na saída a saída nem trabalha
+       cheia), não sucção de verdade. Ali o "não negativa" da tomada não é julgado (premissa declarada) e o laço não engorda o toco
+       à toa (já foi DN 110 no teste); com o nível INFORMADO, o toco é conferido como o resto da tomada. */
+    var tocoNaSaida = {};
+    if (alAviso) Object.keys(tomada).forEach(function (nid) { if (Math.abs(G.nos[nid].y - nS.y) <= TOMADA_TOCO_DY) tocoNaSaida[nid] = 1; });
+    function pmRedeNo(nid) { return tocoNaSaida[nid] ? null : (tomada[nid] ? 0 : (pmRede.ok ? num(pmRede.valor, 0) : null)); }
     function deficit(nid) {   /* kPa que faltam no nó (0 = atende) */
       var p = pressaoKpa(nid); if (p == null) return 0;
       var lp = pontoDe[nid] ? pminPonto(pontoDe[nid], false).v : null;
@@ -512,7 +536,7 @@
       return (e0.tipo === "tubo" ? ds.hf : 0) + loc;
     }
     function ehDucha(pt) { return pt.aparelho === "chuveiro" || pt.aparelho === "chuveiro_eletrico" || pt.aparelho === "ducha"; }
-    function duchaQueda(pd) {   /* { p1, pior: { q (%), pj, p2 } } ou null */
+    function duchaQueda(pd, soPj) {   /* { p1, pior: { q (%), pj, p2 } } ou null; soPj = só o ponto pj (o limite otimista dele) */
       if (pd.vazao_ls == null) return null;
       var camD = caminho(pd.no);
       function pDucha(extra) {
@@ -527,7 +551,7 @@
       var p1 = pDucha(null); if (p1 == null || !(p1 > 0)) return null;
       var pior = null;
       out.pontos.forEach(function (pj) {
-        if (pj === pd || pj.vazao_ls == null) return;
+        if (pj === pd || pj.vazao_ls == null || (soPj && pj !== soPj)) return;
         var cj = caminho(pj.no), p2 = pDucha({ cam: cj, q: pj.vazao_ls }); if (p2 == null) return;
         var qd = (p1 - p2) / p1 * 100; if (!pior || qd > pior.q) pior = { q: qd, pj: pj, p2: p2, comum: camD.filter(function (eid) { return cj.indexOf(eid) >= 0; }) };   // hid:ok 100 = porcentagem
       });
@@ -555,7 +579,12 @@
         candD = candD.filter(function (eid) { var k3 = camDv.indexOf(eid), teto = Infinity; for (var j = 0; j < k3; j++) if (E[camDv[j]].travado && opc.dnNaoAumentaAJusante !== false) teto = Math.min(teto, E[camDv[j]].dn); return E[eid].dnsPossiveis[E[eid].dnsPossiveis.indexOf(E[eid].dn) + 1] <= teto; });
         var guardaDi = {};
         candD.forEach(function (eid) { var r = E[eid], dMax = r.dnsPossiveis[r.dnsPossiveis.length - 1]; guardaDi[eid] = r.di; r.di = di(r.e.material, dMax, "ducha 6.14.5") || r.di; });
-        var otim = duchaQueda(dv.pd);
+        /* ⚠ N23 (24/10/2026): o limite otimista é do PAR (ducha, o ponto que mais derruba) — só o trecho comum aos dois muda o quanto
+           ESSE ponto derruba. Antes ele perguntava pelo pior de TODOS os pontos com o comum no máximo: o pior passava a ser outro (o
+           lavatório do mesmo banheiro, com o ramal fora do comum) e a regra era abandonada ("sem saída"); a queda informada ficava
+           com o DN que o laço da pressão tivesse deixado — 15,36 % sem o nível d'água e 28,86 % com ele, na casa do livro. Agora o
+           par impossível sai; o possível aumenta o DN do comum, e o próximo par (o lavatório) é conferido na volta seguinte. */
+        var otim = duchaQueda(dv.pd, dv.dq.pior.pj);
         candD.forEach(function (eid) { E[eid].di = guardaDi[eid]; });
         if (!candD.length || !otim || otim.pior.q > num(limDucha.valor, 0)) { duchaSemSaida[dv.pd.no] = 1; continue; }
         candD.sort(function (x, y) { return (hfAresta(y, E[y].q) || 0) - (hfAresta(x, E[x].q) || 0); });
@@ -667,7 +696,8 @@
     ordem.forEach(function (nid) {
       if (nid === src) return;
       if (!pendNo[nid] && !tomada[nid]) { var p = pressaoKpa(nid); if (p != null && (minP == null || p < minP)) { minP = p; minNo = nid; } }
-      if (!pendNo[nid] && tomada[nid]) { var pt0 = pressaoKpa(nid); if (pt0 != null && (minT == null || pt0 < minT)) { minT = pt0; minTNo = nid; } }
+      if (!pendNo[nid] && tomada[nid] && tocoNaSaida[nid]) { var pS0 = pressaoKpa(nid); if (pS0 != null && pS0 < 0) premissa("toco da saída do reservatório (tomada d'água)", "nível d'água mínimo não informado: no toco deitado na cota da saída a pressão calculada é só a perda de entrada (" + f2(pS0) + " kPa) — não julgada; informe o nível d'água mínimo para conferir a tomada (NBR 5626:2020, 6.9.3)"); }
+      else if (!pendNo[nid] && tomada[nid]) { var pt0 = pressaoKpa(nid); if (pt0 != null && (minT == null || pt0 < minT)) { minT = pt0; minTNo = nid; } }
       var pe = pressaoEstKpa(nid); if (pe != null && (maxEst == null || pe > maxEst)) { maxEst = pe; maxNo = nid; }
     });
     function elemDoNo(nid) { var pe = pai[nid]; return pe ? [G.arestas[pe].trecho || G.arestas[pe].acessorio] : []; }

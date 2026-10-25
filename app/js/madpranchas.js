@@ -636,7 +636,14 @@
     while (lugar && tent < 6) {
       var ex = lugar[0] - (lugar[0] > cx ? (w / 2 + 0.6) : -(w / 2 + 0.6)), ey = lugar[1] + hb / 2 + 0.3;
       var ax = cx, ay = cy;
-      if (!D.cortaTexto(ax, ay, ex, ey)) {
+      /* chamadas que se cruzam (R05): o segmento novo não pode atravessar nenhuma chamada já desenhada nesta folha */
+      var cruzaCh = (D._chamadas = D._chamadas || []).some(function (q) {
+        function sg(px, py, qx, qy, rx, ry) { return (qx - px) * (ry - py) - (qy - py) * (rx - px); }
+        var d1 = sg(ax, ay, ex, ey, q[0], q[1]), d2 = sg(ax, ay, ex, ey, q[2], q[3]), d3 = sg(q[0], q[1], q[2], q[3], ax, ay), d4 = sg(q[0], q[1], q[2], q[3], ex, ey);
+        return d1 * d2 < 0 && d3 * d4 < 0;
+      });
+      if (!cruzaCh && !D.cortaTexto(ax, ay, ex, ey)) {
+        D._chamadas.push([ax, ay, ex, ey]);
         D.texto(lugar[0], lugar[1], s, h, { al: "C", meio: true, cor: oc.cor, attr: oc.attr });
         D.linha(ex, ey, lugar[0] + (lugar[0] > cx ? w / 2 + 0.6 : -(w / 2 + 0.6)), ey, o.cor ? "MAD-PEND" : "MAD-FINA");
         D.linha(ax, ay, ex, ey, o.cor ? "MAD-PEND" : "MAD-FINA"); D.ponto(ax, ay, 0.35, o.cor);
@@ -1530,7 +1537,10 @@
 
   function sobreposicoes(caixas, tol) { var A = AP(); if (A && A.sobreposicoes) return A.sobreposicoes(caixas, tol); var out = []; for (var i = 0; i < caixas.length; i++) for (var j = i + 1; j < caixas.length; j++) if (sobrepoeQ(caixas[i].p, caixas[j].p, -(tol == null ? 0.15 : tol))) out.push([caixas[i].s, caixas[j].s]); return out; }
 
-  var MadPranchas = { PADRAO_MAD: PADRAO_MAD, gerar: gerar, largTexto: largTexto, sobreposicoes: sobreposicoes, extrair: extrair, caixaPeca: caixaPeca, esquemaLig: esquemaLig };
+  var MadPranchas = { PADRAO_MAD: PADRAO_MAD, gerar: gerar, largTexto: largTexto, sobreposicoes: sobreposicoes, extrair: extrair, caixaPeca: caixaPeca, esquemaLig: esquemaLig,
+    /* peças internas reaproveitadas pelas pranchas da madeira ENGENHARADA (js/madengpranchas.js); só exportadas, nada mudou no que fazem */
+    _i: { Desenho: Desenho, estilo: estilo, tituloVista: tituloVista, carimbo: carimbo, colunaNotas: colunaNotas, medirTabela: medirTabela, rotuloPeca: rotuloPeca, caixaPeca: caixaPeca, casco: casco,
+      quebrar: quebrar, letraRomanS: letraRomanS, esc: esc, n: n, br: br, cm: cm, dois: dois, natural: natural, escolher: escolher, hip: hip, caixaTexto: caixaTexto, PRETO: PRETO, VERMELHO: VERMELHO, CINZA: CINZA, CINZA_CLARO: CINZA_CLARO, FONTE: FONTE } };
   global.MadPranchas = MadPranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = MadPranchas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

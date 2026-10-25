@@ -54,3 +54,15 @@ TEMPO MEDIDO (09/10/2026, sala de teste de ~200 triangulos):
 
 O 0.0.27 avisa no console que a classe WebGLPathTracer sera trocada pela WebGPUPathTracer numa versao
 futura: o caminho WebGL e o que roda em toda maquina hoje; a WebGPU fica para quando a frota tiver.
+
+RENDER AO VIVO (prototipo 20/10/2026, js/bimrendervivo.js, previa ?previa=rendervivo)
+  Do MESMO pacote three 0.186.1 (sha256 do .tgz 8cd068708ea44f2c73c944b1cead2ba2f0d5c15c8fc194e5700f4e4f4a033fe7),
+  licenca MIT (three/LICENSE-three). Usam o MESMO three/three.core.js de cima (identico ao do pacote, so o fim de linha
+  muda no checkout) - um nucleo so na memoria para o path tracer e o tempo real.
+  - build/three.webgpu.js -> three/three.webgpu.js (sem alteracao)
+  - build/three.tsl.js    -> three/three.tsl.js (unica alteracao: "from 'three/webgpu'" -> "from './three.webgpu.js'")
+  - examples/jsm/tsl/display/{SSGINode,SSRNode,TRAANode,BloomNode,GTAONode,SMAANode,ImportanceSampledEnvironment,boxBlur}.js,
+    examples/jsm/tsl/utils/{RNoise,SpecularHelpers,TAAUtils}.js e examples/jsm/lights/RectAreaLightTexturesLib.js
+    -> three/addons/... (unica alteracao: os imports 'three/webgpu' e 'three/tsl' viram caminhos relativos).
+  Copiados pelo scratchpad/copiar_three.py da sessao de 20/10/2026 (resolve as dependencias relativas sozinho).
+  O ".tsl" e o "addons" so baixam quando a pessoa abre a aba "Render ao vivo".

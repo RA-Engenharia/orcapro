@@ -338,6 +338,16 @@
         bp.onclick = function () { opts.onPranchas(); };
         qat.appendChild(bp);
       }
+      /* ORÇAPRO CENA à vista (23/10/2026): o módulo de apresentação ao vivo, ao lado de Pranchas */
+      if (typeof opts.onCena === "function") {
+        var bc = el("button", "rv-tacao rv-qat-cena");
+        bc.type = "button"; bc.id = "bim-btn-cena"; bc.setAttribute("data-rv-qat", "cena");
+        bc.title = "OrçaPRO Cena: apresente o projeto ao vivo — arraste móveis e árvores, troque materiais, escolha hora e estação, ligue as luzes, salve câmeras e exporte a imagem";
+        bc.setAttribute("aria-label", "OrçaPRO Cena");
+        bc.innerHTML = ico("apresentar", 14) + '<span class="rv-tacao-rot">OrçaPRO Cena</span>';
+        bc.onclick = function () { opts.onCena(); };
+        qat.appendChild(bc);
+      }
       /* PRANCHA VIVA À VISTA (23/10/2026, "deixa de fácil acesso"): ao lado de Pranchas — a folha que abre o 3D no ponto
          tocado. Sem a licença o próprio comando mostra a oferta (a trava é na função) */
       if (typeof opts.onPranchaViva === "function") {
@@ -648,7 +658,10 @@
              indisponível, mas responde. */
           b.disabled = !c.habilitado && !c.emBreve;
           if (c.emBreve) b.setAttribute("data-rv-embreve", "1");
-          b.title = c.habilitado ? c.dica : (c.motivo || c.dica);
+          /* a dica diz o que faz E o atalho (BimFita.tecla: o das duas letras, o do teclado ou o do mouse) — a mesma regra do cartão rico */
+          var tecDica = "";
+          try { tecDica = global.BimFita && global.BimFita.tecla ? global.BimFita.tecla(c.id) : ""; } catch (eTec) { tecDica = ""; }
+          b.title = (c.habilitado ? c.dica : (c.motivo || c.dica)) + (tecDica && String(c.dica || "").indexOf("(" + tecDica + ")") < 0 && String(c.dica || "").indexOf("atalho " + tecDica) < 0 ? " (atalho " + tecDica + ")" : "");
           if (c.tipo === "alterna") b.setAttribute("aria-pressed", c.ativo ? "true" : "false");
 
           var i = el("span", "rv-cmd-ico");

@@ -17071,7 +17071,7 @@
        do endereço vira chave arbitrária no aparelho. */
     /* `visual` = cara nova do sistema (07/10/2026): o index.html lê esta chave antes do 1º paint e põe html[data-visual="nova"].
        ⚠ o objeto fica numa LINHA só: tools/test-previa-url.js recorta esta linha para rodar o _previaDaUrl em Node. */
-    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'] },
+    _PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'] },
     /* `?previa=icamento` ou uma LISTA `?previa=icamento,cristal` (um atalho liga as duas); `-desligar` em cada nome apaga.
        Nome que não existe em _PREVIAS é ignorado — nunca grava chave inventada. */
     _previaDaUrl: function () {

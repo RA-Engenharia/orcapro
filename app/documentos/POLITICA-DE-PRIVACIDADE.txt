@@ -210,6 +210,13 @@ sozinho as atualizações de correção.
   · O que sai: NENHUM dado seu — só a requisição, que expõe ao GitHub o seu
     endereço IP e o identificador do navegador, como em qualquer download.
 
+  Texturas e céus de alta qualidade do OrçaPRO Cena: não vêm no pacote. Ao
+  abrir a Cena na qualidade Alta ou Ultra, o programa baixa do servidor da
+  RA Engenharia (o mesmo da licença, caminho /rv/render/) só as texturas e o
+  céu que a cena usa, uma vez, e os guarda no próprio aparelho.
+  · O que sai: NENHUM dado seu nem do projeto — só o pedido do arquivo, que
+    expõe o seu endereço IP e o identificador do navegador.
+
 3.4 BASES DE PREÇOS
 O programa consulta o servidor da fornecedora uma vez por dia para saber se há
 competência nova das bases públicas, e baixa a base quando necessário.

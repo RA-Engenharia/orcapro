@@ -97,6 +97,7 @@
     passoSubir: 0.05,       // hid:ok o "subir a caixa X m" sai em múltiplo de 5 cm
     margemSubir: 0.05,      // hid:ok e com 5 cm de sobra sobre a conta (arredondamento das perdas)
     iteracoesOferta: 3,     // hid:ok tentativas de altura da caixa proposta (barrilete → pressão → barrilete)
+    descidaMin: 0.05,       // hid:ok N23: o barrilete só desce pela tomada vertical se ganhar mais que isto (abaixo, já está no apoio)
     zDesvios: [2, 4, 6]     // hid:ok passos da grade dos desvios em "Z" (os do js/hidaqtraco.js)
   };
   /* SINAPI (MG 06/2026 — data/sinapi-MG-2026-06.json): os itens da CAIXA que o modelo não desenha. tools/test-hid-barrilete.js
@@ -267,6 +268,8 @@
     if (!cx.S) { pend("bar.saida", nome + ": a família não tem o ponto de saída (consumo) — use a família hid-caixa-dagua do catálogo", [cx.id]); return res; }
     var folga = num(par.folga, G.folga), mNo = num(par.margemNo, G.margemNo), passo = G.passo, Lr = B.ACESSORIO_PADRAO, TOL = B.TOL;
     var decl0 = num(par.declividadeBarrilete, GEO_BAR.declividade);
+    /* N23: a pressão dinâmica mínima "em qualquer ponto da rede" (NBR 5626:2020, 6.9.3 — pelo HidNormas) em metros de coluna d'água */
+    var hRedeM = (function () { var Nn0 = NN(), Hh0 = HHi(); try { var c0 = Nn0 ? Nn0.consulta("af.pressao.dinamica_minima_rede", null, "valor") : null; return c0 && c0.ok && Hh0 ? Hh0.kpaParaM(num(c0.valor, 0)) : 0; } catch (eR) { return 0; } })();
     var matAF = B.SISTEMAS.agua_fria.material, dnsAF = arr((B.MATERIAIS[matAF] || {}).dns), dnPad = (B.MATERIAIS[matAF] || {}).dn;
     function comercial(dn) { var ok = dnsAF.filter(function (d) { return d >= dn - EPS; }); return ok.length ? ok[0] : (dnsAF.length ? dnsAF[dnsAF.length - 1] : dn); }
     var tipoRg = B.varianteAuto ? B.varianteAuto("registro_gaveta", { sistema: "agua_fria", material: matAF, aplicacao: "reservacao" }) : "bruto";
@@ -410,7 +413,14 @@
       arestas.forEach(function (Ed) { var a = nos[Ed.a], b = nos[Ed.b], r = raio(Math.max(dnNo[Ed.a] || 0, dnNo[Ed.b] || 0) || dnSaida), s = suporte(Ap, a, b, r, teto); if (s > -Infinity) { yMin[Ed.a] = Math.max(yMin[Ed.a], s + r + APOIO); yMin[Ed.b] = Math.max(yMin[Ed.b], s + r + APOIO); } });
       var sA = suporte(Ap, { x: S0.x, z: S0.z }, { x: A.x, z: A.z }, rS, teto); if (sA > -Infinity) yMin[iR] = Math.max(yMin[iR], sA + rS + APOIO);
       folhas.forEach(function (l) { yMin[l.n] = Math.max(yMin[l.n], l.y + mNo); });
-      var y0 = S0.y, faltaMax = -Infinity, declMax = Infinity;
+      /* N23: no barrilete BAIXO (apoiado, pela tomada vertical) a coluna é curta — sobre a espera fica ainda a altura do REGISTRO no início
+         da coluna, acima do apoio (6.5.12.4 b; a mesma conta do registro mais abaixo), senão a coluna não tinha onde pôr o registro */
+      if (regColuna) folhas.forEach(function (l) {
+        if (l.predio) return;
+        var rLr = raio(l.dnCol), spR = suporte(Ap, l.L, l.L, rLr, teto), yB0 = spR > -Infinity ? spR + rLr : l.y;
+        yMin[l.n] = Math.max(yMin[l.n], Math.max(yB0 + folga, l.y + TOL) + Lr + mNo + TOL + APOIO);
+      });
+      var y0 = teto, faltaMax = -Infinity, declMax = Infinity;   /* N23: teto = a cota da saída (1º plano) ou a do pé da tomada vertical */
       ordem.forEach(function (n) {
         if (!(yMin[n] > -Infinity)) return;
         faltaMax = Math.max(faltaMax, yMin[n] + decl0 * dist[n] - y0);
@@ -452,21 +462,51 @@
       }
       return Pl;
     }
-    var ativas = lista.slice(), Pl = null;
-    for (var tent = 0; tent <= lista.length; tent++) {
-      Pl = planejarArvore(ativas);
-      if (!Pl.colunaFalha) break;
-      var lf = Pl.colunaFalha.l;
-      pend("bar.coluna", nome + ": a coluna até a espera " + lf.trecho + " esbarra em " + Pl.colunaFalha.com + " — essa espera ficou fora do barrilete; desça à mão", [lf.trecho, Pl.colunaFalha.com]);
-      ativas = ativas.filter(function (s) { return s !== lf; });
+    var regColuna = false;
+    function planejarCom(yP, base, reg) {
+      teto = yP; base0 = base; regColuna = !!reg;
+      var at = lista.slice(), P = null, pc = [];
+      for (var tent = 0; tent <= lista.length; tent++) {
+        P = planejarArvore(at);
+        if (!P.colunaFalha) break;
+        pc.push({ l: P.colunaFalha.l, com: P.colunaFalha.com });
+        at = at.filter(function (s) { return s !== P.colunaFalha.l; });
+      }
+      P.colunasFora = pc;
+      return P;
     }
+    var baseTopo = base0.slice(), Pl = planejarCom(cx.S.y, baseTopo), tomada = null;
+    /* ⚠ N23 (24/10/2026) — O BARRILETE DESCE ATÉ O APOIO PELA TOMADA VERTICAL. Antes ele corria na cota da SAÍDA da caixa: os nós dele
+       ficavam a poucos centímetros abaixo do nível d'água mínimo e a NBR 5626:2020, 6.9.3, pede 5 kPa "em qualquer ponto da rede"
+       (só o trecho VERTICAL de tomada d'água na saída do reservatório elevado até o barrilete fica fora) — o Dimensionar reprovava 19
+       nós por carga estática ("nenhum DN resolve") e subir a caixa não resolvia NUNCA, porque o barrilete subia junto com ela. Agora
+       a saída faz o toco com o registro e o tê da ventilação, DESCE na vertical (a tomada) e o barrilete corre APOIADO na laje/forro, na
+       cota mais baixa que as colunas permitem (um nó de margem sobre cada espera): a carga estática do barrilete passa a ser a altura
+       da caixa (com a base de apoio) acima da laje, e elevar a caixa resolve. A descida não pode esbarrar na BASE de apoio nem em nada:
+       esbarrou → o barrilete fica na cota da saída, como antes (e a pressão diz quanto falta). */
+    /* a cota mais baixa possível COM o registro no início de cada coluna (o plano na cota da saída, com essa folga sobre as esperas) */
+    var PlR = !Pl.baixa && !Pl.colunaFalha && Pl.folhas.length ? planejarCom(cx.S.y, baseTopo, true) : null;
+    if (PlR && !PlR.baixa && !PlR.colunaFalha && PlR.folhas.length === Pl.folhas.length && PlR.faltaMax < -GEO_BAR.descidaMin) {
+      var yAlvo = r4(PlR.y0 + PlR.faltaMax), At = P3(A.x, cx.S.y, A.z), Ab = P3(A.x, yAlvo, A.z);
+      var cT = conflito(At, Ab, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; });
+      if (!cT) {
+        var nF = Pl.folhas.length, nSC = Pl.semCaminho.length, nCF = Pl.colunasFora.length;
+        var Pl2 = planejarCom(yAlvo, baseTopo.concat([{ a: At, b: Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
+        /* o plano baixo só vale se liga as MESMAS esperas, sem caminho perdido e na declividade cheia */
+        if (!Pl2.baixa && !Pl2.colunaFalha && Pl2.folhas.length === nF && Pl2.semCaminho.length <= nSC && Pl2.colunasFora.length <= nCF && !(Pl2.faltaMax > EPS)) { Pl = Pl2; tomada = { a: At, b: Ab }; }
+      } else aviso(nome + ": a descida do barrilete até a laje (tomada vertical na saída) esbarra em " + cT.com + " — o barrilete ficou na cota da saída (sem os 5 kPa da NBR 5626:2020 6.9.3); gire a caixa (a saída para o lado livre) e trace de novo", [cx.id, cT.com],
+        { tipo: "ops", ops: [{ op: "instancia", id: cx.id, rotY: r4(cx.rot + Math.PI / 2) }], texto: "girar a caixa 90° (a saída para outro lado)" });   // hid:ok um quarto de volta
+    }
+    if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);   /* sem a descida: o plano da cota da saída, como antes (o estado das folhas volta) */
+    Pl.colunasFora.forEach(function (cf) { pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]); });
     Pl.semCaminho.forEach(function (s) { pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático; ligue à mão", [s.trecho, cx.id]); });
     if (!Pl.folhas.length || Pl.colunaFalha) return res;
     var y0 = Pl.y0, faltaMax = Pl.faltaMax;
     if (Pl.baixa) {
       /* ⚠ a caixa está BAIXA DEMAIS para o barrilete: a saída abaixo do forro/laje ou das esperas — nada de tubo subindo (bolsa de
-         ar, R-C10): o achado diz quanto subir a caixa, com o Corrigir */
-      var sub = Math.ceil((faltaMax + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
+         ar, R-C10): o achado diz quanto subir a caixa, com o Corrigir. N23: e mais a carga da rede (6.9.3) — depois de subir, o
+         barrilete desce até o apoio pela tomada e precisa dos 5 kPa abaixo do nível d'água mínimo (a saída, sem o nível informado) */
+      var sub = Math.ceil((faltaMax + hRedeM + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
       res.subir = r4(sub);
       pend("bar.caixa_baixa", nome + ": a saída (" + f2(y0) + " m) está abaixo do que o barrilete precisa para descer até as esperas sem subir no caminho (falta " + f2(faltaMax) + " m, com a declividade de " + f2(decl0 * 100) + " %; R-C10 — sem inflexão). Suba a caixa " + f2(sub) + " m (base a " + f2(cx.yb + sub) + " m) e trace de novo",
         [cx.id], { tipo: "ops", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }], texto: "subir a caixa " + f2(sub) + " m (base a " + f2(cx.yb + sub) + " m)" });
@@ -484,13 +524,16 @@
 
     /* ---------- 5) as OPS: o toco com o registro, a ventilação, o barrilete, as colunas */
     var ops = res.ops;
-    var tS = T("saida", "agua_fria", dnSaida, S0, P3(A.x, yDe(iR), A.z), { aplicacao: "reservacao" });
+    /* N23: com a tomada vertical, o toco e a ventilação ficam na cota da saída e a descida liga no início do barrilete (yDe(iR)) */
+    var yA = tomada ? cx.S.y : yDe(iR);
+    var tS = T("saida", "agua_fria", dnSaida, S0, P3(A.x, yA, A.z), { aplicacao: "reservacao" });
     ops.push(tS);
     var gUp = BIC() && BIC().giroPara ? BIC().giroPara({ x: u.x, y: 0, z: u.z }, { x: 0, y: 1, z: 0 }) : 0;
-    var rgS = { op: "acessorio", id: novoId("rg-saida"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tS.id, novoId: tS.id + "b", x: r4(S0.x + u.x * GEO_BAR.tocoSaida / 2), y: r4((S0.y + yDe(iR)) / 2), z: r4(S0.z + u.z * GEO_BAR.tocoSaida / 2), comprimento: Lr, bar: cx.id, barParte: "registro_saida" };
+    var rgS = { op: "acessorio", id: novoId("rg-saida"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tS.id, novoId: tS.id + "b", x: r4(S0.x + u.x * GEO_BAR.tocoSaida / 2), y: r4((S0.y + yA) / 2), z: r4(S0.z + u.z * GEO_BAR.tocoSaida / 2), comprimento: Lr, bar: cx.id, barParte: "registro_saida" };
     if (gUp) rgS.giro = gUp;
     ops.push(rgS);
-    if (comVent) ops.push(T("ventilacao", "agua_fria", dnSaida, P3(A.x, yDe(iR), A.z), pV, { aplicacao: "reservacao", continua: "p2", saidaLivre: "ventilação do barrilete da caixa " + cx.id }));
+    if (tomada) ops.push(T("tomada", "agua_fria", dnSaida, P3(A.x, yA, A.z), P3(A.x, yDe(iR), A.z), { aplicacao: "reservacao" }));
+    if (comVent) ops.push(T("ventilacao", "agua_fria", dnSaida, P3(A.x, yA, A.z), pV, { aplicacao: "reservacao", continua: "p2", saidaLivre: "ventilação do barrilete da caixa " + cx.id }));
     else aviso(nome + ": a ventilação do barrilete (Tigre p.72-73) esbarra em " + cV.com + " — lance à mão logo depois do registro de saída, subindo acima do nível máximo da caixa", [cx.id, cV.com]);
     var porNoBar = {};
     Pl.cadeias.forEach(function (cd) { var t = T("barrilete", "agua_fria", cd.dn, cd.p1, cd.p2, { aplicacao: "reservacao" }); ops.push(t); porNoBar[cd.fim] = t; });
@@ -621,7 +664,7 @@
     orc.pendencias.forEach(function (p) { pend(p.chave, p.texto, [cx.id]); });
 
     var nCol = folhas.filter(function (l) { return res.esperasLigadas.indexOf(l.trecho) >= 0; }).length;
-    res.decisoes.unshift({ id: "bar.barrilete", texto: nome + " (" + (cx.volume ? f2(cx.volume).replace(",00", "") + " L, " : "") + "base a " + f2(cx.yb) + " m): saída DN " + dnSaida + " com registro de gaveta (NBR 5626:2020 6.5.12.4 a) e ventilação do barrilete logo depois dele, subindo a " + f2(yVent) + " m (Tigre p.72-73); barrilete " + (B.MATERIAIS[matAF] || {}).nome + " no ático/sobre a laje, saindo a " + f2(y0) + " m e descendo " + f2(decl * 100) + " % (R-C10, sem inflexão), em árvore (tê, nunca cruzeta); " + nCol + " coluna(s) descendo até as esperas, com registro no início de cada uma (6.5.12.4 b; Tigre p.71)" + (lista.some(function (l) { return l.predio; }) ? " — as colunas do prédio já têm o registro delas" : "") + ". Extravasor e limpeza DN " + dnE + " (≥ a entrada, Tigre p.74) com saída livre e visível; limpeza com registro junto da caixa (6.5.9.1); o extravasor a " + f2(yX) + " m, abaixo da entrada com a separação atmosférica" + (sep != null ? " de " + f2(sep * 1000).replace(",00", "") + " mm (Tabela 1, 6.15)" : "") + ". Alimentação pela boia com registro (6.5.8.2)." });
+    res.decisoes.unshift({ id: "bar.barrilete", texto: nome + " (" + (cx.volume ? f2(cx.volume).replace(",00", "") + " L, " : "") + "base a " + f2(cx.yb) + " m): saída DN " + dnSaida + " com registro de gaveta (NBR 5626:2020 6.5.12.4 a) e ventilação do barrilete logo depois dele, subindo a " + f2(yVent) + " m (Tigre p.72-73); barrilete " + (B.MATERIAIS[matAF] || {}).nome + " no ático/sobre a laje, " + (tomada ? "descendo da saída (" + f2(cx.S.y) + " m) pela tomada vertical até " + f2(y0) + " m, apoiado (NBR 5626:2020 6.9.3: os 5 kPa valem em todo ponto da rede, fora a tomada vertical — " + f2(cx.S.y - y0) + " m de carga estática a mais no barrilete)," : "saindo a " + f2(y0) + " m") + " e descendo " + f2(decl * 100) + " % (R-C10, sem inflexão), em árvore (tê, nunca cruzeta); " + nCol + " coluna(s) descendo até as esperas, com registro no início de cada uma (6.5.12.4 b; Tigre p.71)" + (lista.some(function (l) { return l.predio; }) ? " — as colunas do prédio já têm o registro delas" : "") + ". Extravasor e limpeza DN " + dnE + " (≥ a entrada, Tigre p.74) com saída livre e visível; limpeza com registro junto da caixa (6.5.9.1); o extravasor a " + f2(yX) + " m, abaixo da entrada com a separação atmosférica" + (sep != null ? " de " + f2(sep * 1000).replace(",00", "") + " mm (Tabela 1, 6.15)" : "") + ". Alimentação pela boia com registro (6.5.8.2)." });
     res.barInfo = { id: cx.id, caixa: cx.id, colunas: nCol, esperas: res.esperasLigadas.slice(), predios: lista.filter(function (l) { return l.predio && res.esperasLigadas.indexOf(l.trecho) >= 0; }).map(function (l) { return l.predio; }), decisoes: res.decisoes.slice(), pendencias: res.pendencias.map(function (p) { return { chave: p.chave, motivo: p.texto }; }) };
     var o1 = ops.filter(function (o) { return o.op === "trecho"; })[0]; if (o1) o1.barInfo = res.barInfo;
     return res;
@@ -660,6 +703,14 @@
     var out = { caixa: cx.id, status: r.status, pontos: arr(r.pontos).map(function (p) { return { famInst: p.famInst, aparelho: p.aparelho, pdin: p.pressaoDinamica_kpa, pest: p.pressaoEstatica_kpa, pmin: p.pressaoMinima_kpa, ok: p.ok, status: p.status }; }), critico: r.pontoCritico, achados: [] };
     var rho = r.fluido && r.fluido.rho, mDe = function (kpa) { return Hh && Hh.kpaParaM ? Hh.kpaParaM(kpa, rho) : kpa / 9.80665; };   // hid:ok reserva: kPa → mca (g padrão), só sem o HidHidraulica
     var baixos = arr(r.pontos).filter(function (p) { return p.status === "reprovado" && num(p.pressaoDinamica_kpa, null) != null && num(p.pressaoMinima_kpa, null) != null && p.pressaoDinamica_kpa < p.pressaoMinima_kpa; });
+    /* N23: a REDE também (barrilete, colunas, ramais): a NBR 5626:2020 6.9.3 pede a pressão dinâmica mínima em QUALQUER ponto dela (fora a
+       tomada vertical, que só não pode ficar negativa). Antes só os pontos de utilização entravam aqui: o cartão não via o barrilete sem
+       pressão e o Dimensionar reprovava depois. A rede entra como um "ponto" a mais, com o trecho do nó mais desfavorável */
+    function vrf(re) { return arr(r.verificacoes).filter(function (v) { return re.test(String(v.nome)) && v.ok === false && num(v.valor, null) != null && num(v.limite, null) != null; })[0]; }
+    var vRd = vrf(/pressão dinâmica mínima na rede/), vTm = vrf(/pressão na tomada vertical/);
+    out.rede = vRd ? { alvo: String(vRd.alvo), pdin: num(vRd.valor, 0), pmin: num(vRd.limite, 0) } : null;
+    out.tomada = vTm ? { alvo: String(vTm.alvo), pdin: num(vTm.valor, 0), pmin: num(vTm.limite, 0) } : null;
+    [[vRd, "rede", "rede de distribuição, NBR 5626:2020 6.9.3"], [vTm, "tomada", "tomada vertical, não pode ser negativa"]].forEach(function (q) { if (q[0]) baixos.push({ famInst: String(q[0].alvo), aparelho: q[2], pressaoDinamica_kpa: num(q[0].valor, 0), pressaoMinima_kpa: num(q[0].limite, 0), rede: q[1] }); });
     if (baixos.length) {
       var falta = Math.max.apply(null, baixos.map(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa; })), pc = baixos.filter(function (p) { return p.pressaoMinima_kpa - p.pressaoDinamica_kpa === falta; })[0];
       var sub = Math.ceil((mDe(falta) + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
@@ -670,9 +721,10 @@
         try {
           var opsUp = arr(e.ops).concat([{ op: "lote", id: "previa-elevar", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + sub) }] }]);
           var R2 = montar({ estado: BE.aplicar(opsUp), avaliarFam: e.avaliarFam, ops: opsUp, parametros: e.parametros, caixa: cx.id, pressao: true, oferta: false, _semBase: true });
-          var P2 = arr(R2.pressao)[0], q2 = P2 ? arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0] : null;
+          var P2 = arr(R2.pressao)[0], q2 = P2 ? (pc.rede ? (P2[pc.rede] || { pdin: pc.pressaoMinima_kpa, pmin: pc.pressaoMinima_kpa, semReprovacao: true }) : arr(P2.pontos).filter(function (x) { return x.famInst === pc.famInst; })[0]) : null;
           out.depois = q2 ? { famInst: pc.famInst, pdin: q2.pdin, pmin: q2.pmin, ok: q2.pdin >= q2.pmin - EPS } : null;
-          if (q2) depoisTxt = "no " + pc.famInst + " a pressão dinâmica passa de " + f2(pc.pressaoDinamica_kpa) + " para " + f2(q2.pdin) + " kPa (mínimo " + f2(q2.pmin) + " kPa" + (q2.pdin >= q2.pmin - EPS ? ", ATENDE" : ", ainda não atende") + ")";
+          if (q2 && q2.semReprovacao) depoisTxt = "na " + (pc.rede === "rede" ? "rede" : "tomada") + " (" + pc.famInst + ") nenhum nó fica abaixo do mínimo (ATENDE)";
+          else if (q2) depoisTxt = "no " + pc.famInst + " a pressão dinâmica passa de " + f2(pc.pressaoDinamica_kpa) + " para " + f2(q2.pdin) + " kPa (mínimo " + f2(q2.pmin) + " kPa" + (q2.pdin >= q2.pmin - EPS ? ", ATENDE" : ", ainda não atende") + ")";
         } catch (eD) { depoisTxt = ""; }
       }
       out.achados.push({ chave: "bar.pressao_baixa", texto: "Pressão: a caixa " + cx.id + " está BAIXA para " + baixos.map(function (p) { return p.famInst + " (" + (p.aparelho || "ponto") + ": " + f2(p.pressaoDinamica_kpa) + " kPa < " + f2(p.pressaoMinima_kpa) + " kPa)"; }).slice(0, 4).join(", ") + " — NBR 5626:2020 6.9.2 / pressão do fabricante, com os DN do dimensionamento e o nível d'água na saída (o mais desfavorável). Suba a caixa " + f2(sub) + " m (base a " + f2(cx.yb + sub) + " m) ou ponha um pressurizador na saída (Instalações › Pressurização).",   // hid:ok até 4 pontos no texto

@@ -53,7 +53,12 @@ export class MotorRender {
     /* o motor desenha a tela por conta própria (exposição e tom antes do canvas) */
     this.pt.renderToCanvas = false; this.pt.rasterizeScene = false;
     this.pt.renderDelay = 0; this.pt.minSamples = 0; this.pt.fadeDuration = 0;
-    this.pt.filterGlossyFactor = 0.5;
+    /* [frente E] FILTRO DE BRILHO PEQUENO. O three-gpu-pathtracer põe rugosidade = max(rug, acumulada × fator × 5) depois de
+       cada rebote: com 0,5 o vidro liso virava vidro de rugosidade ~1 para toda luz que chega por uma parede, e a
+       transmissão de lâmina fina sorteava direção em reflexão interna total — o caminho morria. Medido 21/10/2026 no estar
+       da Casa 487 (10h30, sol): a luz do dia que entra pela janela saía 1,5–2,3× mais escura (o vidro "tirava" 45–75 % em
+       vez de ~15 %); com 0,05 o vidro tira 10–25 %. ⚠ 0 exato deixa a foto PRETA (rugosidade 0 gera NaN no vidro). */
+    this.pt.filterGlossyFactor = 0.05;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.05, 5000);
     this.luzes = {}; this.sol = null; this.texturas = []; this._cacheTex = {};
@@ -143,12 +148,13 @@ export class MotorRender {
         o = new ShapedAreaLight(corLin(l.cor), l.intensidade, l.largura, l.profundidade);
         o.isCircular = !!l.circular;
         o.position.set(l.posicao[0], l.posicao[1], l.posicao[2]);
-        o.rotation.order = 'YXZ'; o.rotation.y = l.rotY || 0; o.rotation.x = -Math.PI / 2;   /* −z local para baixo: o painel ilumina o piso */
+        o.rotation.order = 'YXZ'; o.rotation.y = l.rotY || 0; o.rotation.x = l.rotX == null ? -Math.PI / 2 : l.rotX;   /* −z local para baixo: o painel ilumina o piso ([frente I] rotX: a fita de sanca para cima) */
         o.visibleToCameraRays = true;
       } else if (l.tipo === 'spot') {
         o = new PhysicalSpotLight(corLin(l.cor), l.intensidade, 0, l.angulo / 2 * Math.PI / 180, 0.3, 2);
         o.radius = 0.03; o.position.set(l.posicao[0], l.posicao[1], l.posicao[2]);
-        o.target.position.set(l.posicao[0], l.posicao[1] - 1, l.posicao[2]); sc.add(o.target);
+        const dv = l.dir || [0, -1, 0];   /* [frente I] spot dirigível */
+        o.target.position.set(l.posicao[0] + dv[0], l.posicao[1] + dv[1], l.posicao[2] + dv[2]); sc.add(o.target);
       } else {
         o = new THREE.PointLight(corLin(l.cor), l.intensidade, 0, 2);
         o.position.set(l.posicao[0], l.posicao[1] - 0.05, l.posicao[2]);

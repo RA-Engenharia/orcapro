@@ -121,8 +121,21 @@
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || c.tipo !== "parede") return;
       var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th);
-      out.push({ id: c.id, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: ux, uz: uz, L: num(c.comprimento, 0), e: num(c.espessura, 0.15), topo: num(c.cy, 0) + num(c.altura, 0) / 2, base: num(c.cy, 0) - num(c.altura, 0) / 2,
-               modo: c.anexarTelhado === "sim" || c.anexarTelhado === "nao" ? c.anexarTelhado : "auto" });   /* T5: "Anexar ao telhado" da parede */
+      var comum = { id: c.id, e: num(c.espessura, 0.15), topo: num(c.cy, 0) + num(c.altura, 0) / 2, base: num(c.cy, 0) - num(c.altura, 0) / 2,
+                    modo: c.anexarTelhado === "sim" || c.anexarTelhado === "nao" ? c.anexarTelhado : "auto" };   /* T5: "Anexar ao telhado" da parede */
+      /* N23 (parede curva): o arco NÃO é a corda — a corda de um arco de 3 m e flecha de 1 m cai a 1 m do corpo da parede e o apoio da terça ficava no ar.
+         O arco vira uma sequência de retângulos tangentes (um a cada ~0,4 m de eixo, no máximo 48), todos com o id da parede. */
+      var CV = c.arco ? dep("BimCurva", "./bimcurva.js") : null, W = CV && CV.modelo ? CV.modelo(c) : null;
+      if (W && W.ok && W.arco && W.L > 0.05) {
+        var nP = Math.max(2, Math.min(48, Math.ceil(W.L / 0.4))), j;
+        for (j = 0; j < nP; j++) {
+          var pa = W.pt(-W.L / 2 + W.L * j / nP, 0), pb = W.pt(-W.L / 2 + W.L * (j + 1) / nP, 0), dx = pb[0] - pa[0], dz = pb[1] - pa[1], ll = Math.sqrt(dx * dx + dz * dz);
+          if (!(ll > 1e-6)) continue;
+          out.push({ id: comum.id, cx: (pa[0] + pb[0]) / 2, cz: (pa[1] + pb[1]) / 2, ux: dx / ll, uz: dz / ll, L: ll, e: comum.e, topo: comum.topo, base: comum.base, modo: comum.modo, arco: true });
+        }
+        return;
+      }
+      out.push({ id: comum.id, cx: num(c.cx, 0), cz: num(c.cz, 0), ux: ux, uz: uz, L: num(c.comprimento, 0), e: comum.e, topo: comum.topo, base: comum.base, modo: comum.modo });
     });
     return out;
   }

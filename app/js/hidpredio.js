@@ -436,6 +436,10 @@
     out.unidades = unidades.map(function (u) { return { id: u.id, pavimento: u.k, y: u.y, espelhada: u.esp, aparelhos: u.fams.slice(), ambiente: u.ambiente, terreo: u.terreo }; });
     ctx.pendencias().forEach(function (p) { pend(p.chave, p.motivo, [id]); });
     out.normas = ctx.normas();
+    /* N23 (24/10/2026): os PASSANTES nas lajes dos pavimentos (tubo de queda, ventilação, colunas) — o mesmo lançamento do Traçar
+       automaticamente (js/hidcriterios.js): a travessia sai com o furo previsto e vai ao orçamento do modelo */
+    var HCrP = global.HidCriterios;
+    if (HCrP && HCrP.lancarPassantes) { try { var LPp = HCrP.lancarPassantes(acc, st, avaliarFam); out.passantes = LPp.n; if (LPp.n) aviso("Passantes: " + LPp.n + " travessia(s) de laje com o furo previsto (tubo-camisa na fôrma; vai ao orçamento do modelo) — confira a posição com o projeto estrutural", LPp.trechos.slice(0, 40)); } catch (eLP) { aviso("Passantes: não consegui conferir as travessias de laje (" + (eLP && eLP.message ? eLP.message : eLP) + ") — confira à mão", []); } }   // hid:ok até 40 elementos no Mostrar
     out.ops = acc;
     out.ok = acc.some(function (o) { return o.op !== "apagar" && o.op !== "desanotar"; });
     return out;

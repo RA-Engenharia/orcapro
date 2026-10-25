@@ -289,7 +289,7 @@
      "colaboradores", "frota", "requisicoes", "epi", "faltas", "templates", "documentos", "pesos_bloco", "epi_catalogo",
      "fiscal", "patrimonio", "estoque_mov", "prop_modelos", "producao_med", "producao_preco", "composicoes_proprias",
      "bim_niveis", "tour360", "bim_modelos", "bim_conjuntos", "bim_vistas", "bim_familias", "bim_estrut", "bim_sondagens",
-     "bim_pranchas", "obra_docs", "doc_assinantes", "bim_pesos_esp", "bim_icamento", "bim_materiais", "bim_clash_testes",
+     "bim_pranchas", "bim_cenas", "obra_docs", "doc_assinantes", "bim_pesos_esp", "bim_icamento", "bim_materiais", "bim_clash_testes",
      "bim_clash_resultados", "bim_orc_vinculos", "bim_tarefas", "bim_4d_aparencias", "atividades", "horas_extras", "batidas",
      "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
      "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
@@ -1588,7 +1588,7 @@
       crono_selo: "Linhas de base seladas", crono_alt: "Histórico de alterações do cronograma",
       /* as maiores listas, para a Saúde do armazenamento (10/10/2026) */
       bim_vistas: "Pontos de vista do BIM", composicoes_proprias: "Composições próprias", prop_modelos: "Modelos de proposta",
-      bim_pranchas: "Pranchas do projeto", cotacoes: "Cotações", centrocusto: "Centros de custo", fiscal: "Notas fiscais",
+      bim_pranchas: "Pranchas do projeto", bim_cenas: "Cenas do OrçaPRO Cena", cotacoes: "Cotações", centrocusto: "Centros de custo", fiscal: "Notas fiscais",
       obra_docs: "Documentos da obra", familias: "Famílias", bim_icamento: "Plano de içamento", fs_lancamentos: "Folha semanal",
       batidas: "Ponto (batidas)", estoque_mov: "Movimento do almoxarifado", templates: "Modelos", _syncmarcas: "marcas da sincronização" },
     nomeEntidade: function (entidade) {

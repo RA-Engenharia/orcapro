@@ -168,8 +168,11 @@
         : "O teste de 1 hora de <b>" + esc(nome) + "</b> terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
       h.push("<p data-teste-oferta=\"" + esc(id) + "\">" + (motivo ? esc(motivo) : abre) + "</p>");
       if (m && m.oque) h.push("<p class=\"muted\" style=\"margin-top:8px\">" + esc(m.oque) + "</p>");
-      if (arr(extra.planos).length) {
+      /* ⚠ origem=play: nenhum preço (política da loja) — só o aviso mais abaixo. Antes a lista com R$ aparecia também no app da Play. */
+      if (arr(extra.planos).length && !play()) {
         h.push("<ul style=\"margin:8px 0 0 18px\">" + extra.planos.map(function (p) {
+          /* compra única: R$ 550,00 · compra única · até 12× de R$ 45,83 no cartão ou R$ 495,00 à vista (texto do Modela) */
+          if (p.parcelasMax > 1 && global.Modela && Modela.textoPlano) return "<li>" + esc(Modela.textoPlano(p)) + "</li>";
           return "<li><b>" + esc(p.nome) + "</b> — R$ " + esc(fmt(p.valor)) + " " + esc(p.periodo || "") + "</li>";
         }).join("") + "</ul>");
       }
@@ -198,7 +201,7 @@
       try {
         global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
           var p = (d && d.planos) || {}, re = new RegExp("^modela_" + alvo + "_");
-          var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo }; });
+          var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista }; });
           if (!lista.length) { cb({ semVenda: true, zap: zapUrl }); return; }
           cb({ planos: lista, url: srv + "/modelagem?plano=" + encodeURIComponent(lista[0].id) + (k ? "#lic=" + encodeURIComponent(k) : ""), zap: zapUrl });
         }, function () { cb({ zap: zapUrl }); });

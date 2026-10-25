@@ -50,7 +50,7 @@
      arquivo não depende dele para o teste em Node). A FACE nasce desligada: o ponto na face do modelo
      importado tira o clique do plano de trabalho — quem quer liga no menu. */
   var TIPOS_SNAP = ["fim", "intersecao", "meio", "centro", "centroide", "quadrante", "insercao", "no",
-                    "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "proximo", "grade",
+                    "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "eixo", "proximo", "grade",
                     "eixos", "vertice", "aresta", "face"];
   var TIPO_PADRAO = {}; TIPOS_SNAP.forEach(function (t) { TIPO_PADRAO[t] = t !== "face"; });
   function tipoDe(T, t) { return T && typeof T[t] === "boolean" ? T[t] : TIPO_PADRAO[t]; }

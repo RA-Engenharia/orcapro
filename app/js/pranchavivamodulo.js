@@ -33,8 +33,12 @@
       "Volte para a prancha no mesmo ponto em que estava no 3D.",
       "Mande para o celular do cliente pelo link e QR da obra, com as pranchas e a maquete em realidade aumentada."
     ],
+    /* 24/10/2026: o plano BIM já traz a Prancha Viva (enquanto a licença estiver em dia) */
+    incluidoNoBim: "Já inclusa no plano BIM do OrçaPRO, enquanto a licença estiver em dia.",
     vendaFechada: "A venda do módulo abre em breve. Para usar agora, fale com a RA Engenharia."
   };
+
+  function brl(v) { v = Math.round((Number(v) || 0) * 100) / 100; return "R$ " + v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
 
   function M() { return global.Modela && typeof global.Modela.tem === "function" ? global.Modela : null; }
   function dono() { try { return !!(global.localStorage && global.localStorage.getItem(OWNER) === "1"); } catch (e) { return false; } }
@@ -42,7 +46,7 @@
   var PranchaVivaModulo = {
     ID: ID, OWNER: OWNER, OFERTA: OFERTA,
 
-    /* {liberado, motivo: "dono"|"demo"|"teste"|"teste-1h"|"compra"|"", teste: {...} | null} */
+    /* {liberado, motivo: "dono"|"demo"|"vitalicia"|"interno"|"bim"|"teste"|"teste-1h"|"compra"|"", teste: {...} | null} */
     estado: function () {
       if (dono()) return { liberado: true, motivo: "dono", teste: null };
       var m = M(), s = null;
@@ -55,6 +59,7 @@
       try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
       if (s && s.demo) mot = "demo";
       else if (!comprado && s && s.tudo) mot = s.vitalicia ? "vitalicia" : "interno";
+      else if (!comprado && s && s.porTier && s.porTier[ID]) mot = "bim";   /* o plano BIM em dia (24/10/2026) */
       else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
       else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
       return { liberado: true, motivo: mot, teste: s ? s.teste : null };
@@ -75,7 +80,18 @@
     /* a venda está aberta? — o servidor diz (planos modela_pranchaviva_* no /api/modela/oferta). Sem resposta: fechada. */
     planosAVenda: function (oferta) {
       var p = (oferta && oferta.planos) || {};
-      return Object.keys(p).filter(function (k) { return /^modela_pranchaviva_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+      return Object.keys(p).filter(function (k) { return /^modela_pranchaviva_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista, descontoAVista: o.descontoAVista }; });
+    },
+
+    /* o texto do plano à venda, SÓ com o que o servidor mandou (preço nenhum escrito aqui):
+       "Prancha Viva — R$ 5.500,00 · compra única · até 12× de R$ 458,33 no cartão ou R$ 4.950,00 à vista" */
+    textoPlano: function (p) {
+      if (!p) return "";
+      var t = (p.nome || "Prancha Viva") + " — " + brl(p.valor) + (p.periodo ? " · " + p.periodo : "");
+      var n = Number(p.parcelasMax) || 0;
+      if (n > 1) t += " · até " + n + "× de " + brl(Number(p.valor) / n) + " no cartão";
+      if (Number(p.valorAVista) > 0 && Number(p.valorAVista) < Number(p.valor)) t += (n > 1 ? " ou " : " · ") + brl(p.valorAVista) + " à vista";
+      return t;
     }
   };
   global.PranchaVivaModulo = PranchaVivaModulo;

@@ -1,6 +1,6 @@
 # encoding: UTF-8
 # =====================================================================
-# OrçaPRO — Exportar para OrçaPRO (SketchUp 2017+)            v1.0.0
+# OrçaPRO — Exportar para OrçaPRO (SketchUp 2017+)            v1.0.1
 #
 # O .skp é formato fechado: o navegador não lê. Quem lê o .skp por inteiro é
 # o próprio SketchUp — por isso a conversão acontece AQUI, e sai um .json no
@@ -20,6 +20,7 @@ require 'json'
 
 module OrcaPRO
   module Exportar
+    VERSAO = '1.0.1'  # igual a ext.version do registrador (orcapro_exportar.rb); tools/test-sketchup-rbz.js confere
     POL_M = 0.0254  # o SketchUp guarda tudo em polegadas
 
     def self.cor_de(mat)
@@ -136,7 +137,7 @@ module OrcaPRO
       end
       doc = {
         'formato' => 'OrcaPRO-Malha', 'versao' => 1, 'programa' => 'SketchUp',
-        'versaoPrograma' => Sketchup.version.to_s, 'extensao' => '1.0.0',
+        'versaoPrograma' => Sketchup.version.to_s, 'extensao' => VERSAO,
         'modelo' => (model.title.to_s.empty? ? 'Modelo SketchUp' : model.title.to_s),
         'arquivo' => model.path.to_s, 'unidade' => 'm', 'eixoY' => 'cima',
         'criadoEm' => Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
@@ -156,7 +157,9 @@ module OrcaPRO
         so_sel = (r == IDYES)
       end
       base = model.title.to_s.empty? ? 'modelo' : model.title.to_s
+      # modelo ainda não salvo não tem pasta: cai na pasta do usuário (por precaução: nunca passar nil ao savepanel)
       dir = model.path.to_s.empty? ? nil : File.dirname(model.path)
+      dir = Dir.home unless dir && File.directory?(dir)
       arq = UI.savepanel('Exportar para OrçaPRO', dir, "#{base}.orcapro.json")
       return unless arq
       arq += '.json' unless arq =~ /\.json\z/i

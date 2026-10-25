@@ -520,6 +520,141 @@ html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) 
 /* painel de tile do Painel: o número grande na letra do site */
 html[data-visual="nova"] .pn-tile-val { font-family: var(--fonte-tit); letter-spacing: -.04em; font-weight: 700; font-variant-numeric: tabular-nums; }
 
+/* =====================================================================
+ * SISTEMA DE INTERFACE — 23/10/2026 (pedido do Rogério: "interface principal
+ * fraca e amadora; gráficos melhores; tudo mais interativo")
+ *
+ * O QUE ESTA SEÇÃO CONSERTA (medido nos prints antes/depois, claro e escuro,
+ * 1440 px e 390 px):
+ *  1. CONTROLES. O mesmo <select>/campo saía com 38, 44 e 46 px de altura,
+ *     fonte de 17 px (o corpo é 15) e canto de 8 ou 12 px — tudo na mesma
+ *     barra de filtro. Agora: UMA altura (--ctl-h), UMA fonte (--ctl-fs) e o
+ *     canto de pílula dos botões, só nas barras de filtro; dentro de
+ *     formulário (.field) o canto continua o de formulário.
+ *  2. FOCO. O anel do teclado era o --anel (azul a 22%: ~1,2:1 sobre branco)
+ *     em .btn, no menu lateral e no <select>: quem navega por Tab não via
+ *     onde estava. Agora: contorno de 2 px em --aco-claro (≥ 3:1 nos dois
+ *     temas), mais o halo suave de antes.
+ *  3. INDICADORES DO PAINEL. Cartão com degradê pastel + barra de 5 px de
+ *     ponta a ponta era o "kit de template". Agora: cartão liso, marca curta
+ *     de estado na borda, e o minigráfico ocupa a largura (era um risco de
+ *     60 px no meio).
+ *  4. TABELAS E FAIXAS DE INDICADOR. Cabeçalho em caixa alta com degradê vira
+ *     texto de frase com fio; a faixa de indicadores dos módulos usa a mesma
+ *     letra dos cartões do Painel.
+ *  5. CELULAR (≤ 480 px). O topo ocupava duas linhas (burger, marca, PRO,
+ *     instalar, busca, sino, conta); agora cabe em uma. Os botões do
+ *     cabeçalho do módulo dividem a largura em vez de empilhar quatro linhas.
+ *
+ * Régua nova (tokens abaixo): --esp-1…6 (espaçamento), --ctl-h/--ctl-fs/--ctl-raio
+ * (controle), --foco (anel). Só aparência: nada aqui esconde dado nem muda conta.
+ * ===================================================================== */
+html[data-visual="nova"] {
+  --esp-1: 4px; --esp-2: 8px; --esp-3: 12px; --esp-4: 16px; --esp-5: 24px; --esp-6: 32px;
+  --ctl-h: 40px;
+  --ctl-fs: var(--t-base);
+  --ctl-raio: 99px;
+  --foco: 2px solid var(--aco-claro);
+}
+@media (max-width: 820px) { html[data-visual="nova"] { --ctl-h: 44px; --ctl-fs: var(--t-campo-toque); } }
+
+/* ---- 1. controles de barra de filtro */
+html[data-visual="nova"] .mod-lado select:not(.cell),
+html[data-visual="nova"] .mod-obra select:not(.cell),
+html[data-visual="nova"] .mod-filtros .field select,
+html[data-visual="nova"] .mod-filtros .field input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html[data-visual="nova"] .main > select:not(.cell),
+html[data-visual="nova"] .main input[type="date"]:not(.cell),
+html[data-visual="nova"] .main input[type="search"]:not(.cell) {
+  height: var(--ctl-h); min-height: var(--ctl-h); font-size: var(--ctl-fs); line-height: 1.2;
+  border-radius: var(--ctl-raio); padding-top: 0; padding-bottom: 0; padding-left: 14px;
+}
+html[data-visual="nova"] .mod-filtros .field select,
+html[data-visual="nova"] .mod-lado select:not(.cell),
+html[data-visual="nova"] .mod-obra select:not(.cell) { padding-right: 32px; background-position: right 12px center; }
+html[data-visual="nova"] .mod-filtros .field label { font-size: var(--t-peq); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--texto-fraco); margin-bottom: var(--esp-1); }
+
+/* ---- 2. foco visível (WCAG 2.4.7): o contorno é o indicador, o halo é só enfeite */
+html[data-visual="nova"] .btn:focus-visible,
+html[data-visual="nova"] .conta-item:focus-visible,
+html[data-visual="nova"] .sb-item:focus-visible,
+html[data-visual="nova"] .lp-qcard:focus-visible,
+html[data-visual="nova"] .tab:focus-visible,
+html[data-visual="nova"] select:not(.cell):focus-visible,
+html[data-visual="nova"] input[type="search"]:not(.cell):focus-visible,
+html[data-visual="nova"] input[type="date"]:not(.cell):focus-visible {
+  outline: var(--foco); outline-offset: 2px; box-shadow: var(--anel);
+}
+html[data-visual="nova"] .sb-item:focus-visible { outline-offset: -2px; }
+
+/* ---- 3. indicadores do Painel */
+html[data-visual="nova"] .pn-tile { padding: 16px 18px 14px; gap: 6px; background: var(--card-bg); }
+html[data-visual="nova"] .pn-t-ok,
+html[data-visual="nova"] .pn-t-alerta,
+html[data-visual="nova"] .pn-t-aco { background: var(--card-bg); }
+html[data-visual="nova"] .pn-tile::before { top: 18px; bottom: auto; height: 26px; width: 4px; border-radius: 0 4px 4px 0; }
+html[data-visual="nova"] .pn-tile-rot { font-weight: 600; color: var(--texto); }
+html[data-visual="nova"] .pn-tile-mini { margin-top: 8px; }
+html[data-visual="nova"] .pn-tile .pn-mini { height: 48px; }
+html[data-visual="nova"] .pn-tile[data-gacao]:hover { box-shadow: var(--sombra-hover); }
+html[data-visual="nova"] .pn-tile[data-gacao]:active { transform: translateY(0); }
+html[data-visual="nova"] .pn-tile:focus-visible { outline: var(--foco); outline-offset: 2px; }
+
+/* ---- 3b. gráficos. `.pn-graf svg { max-width: 560px }` (0,1,1) vencia o `max-width: none` do
+   `.pn-combo` (0,1,0): o fluxo, a previsão e a lucratividade paravam em 560 px e deixavam 20% do
+   cartão vazio à direita. Como o desenho é todo em unidades do viewBox, esticar escala TUDO junto
+   (barra, eixo, rótulo) — nenhuma colisão nova, a letra só fica maior na tela. */
+html[data-visual="nova"] .pn-graf svg.pn-combo,
+html[data-visual="nova"] .pn-graf svg.pn-lucro-svg { max-width: none; }
+@media (min-width: 821px) {
+  html[data-visual="nova"] .pn-donut { grid-template-columns: 112px minmax(0, 1fr); gap: 12px; }
+  html[data-visual="nova"] .pn-donut svg { width: 112px; height: 112px; }
+}
+/* o valor no centro da rosca passava do furo ("R$ 215 mil" tocava o anel) */
+html[data-visual="nova"] .pn-d-val { font-size: 11.5px; }
+
+/* ---- 4. tabelas e faixas de indicador */
+html[data-visual="nova"] table.tbl th {
+  background: var(--surface-2); text-transform: none; letter-spacing: 0; font-size: var(--t-peq); font-weight: 600; color: var(--texto-fraco);
+  border-bottom: 1px solid var(--linha-forte);
+}
+html[data-visual="nova"] table.tbl th:first-child,
+html[data-visual="nova"] table.tbl th:last-child { border-radius: 0; }
+html[data-visual="nova"] table.tbl td { border-bottom-color: var(--linha); }
+html[data-visual="nova"] .mod-kpi-r { text-transform: none; letter-spacing: 0; font-size: var(--t-peq); font-weight: 600; }
+html[data-visual="nova"] .mod-kpi-v { font-family: var(--fonte-tit); font-size: var(--t-tit); letter-spacing: -.03em; }
+html[data-visual="nova"] .mod-kpi { padding: 16px 20px; gap: 6px; }
+
+/* ---- 5. celular */
+@media (max-width: 480px) {
+  html[data-visual="nova"] .topbar { flex-wrap: nowrap; gap: 6px; }
+  html[data-visual="nova"] .topbar .badge-plano,
+  html[data-visual="nova"] .topbar .conta-btn .conta-ic,
+  html[data-visual="nova"] .topbar .conta-btn .conta-ca { display: none; }
+  html[data-visual="nova"] .topbar .conta-btn { padding: 4px; min-width: 0; }
+  /* ⚠ o menu da conta pendura pela ESQUERDA do botão (app.css, "SAÍA PELA BORDA ESQUERDA") porque, com o topo em
+     duas linhas, o botão ia para a esquerda da tela. Com o topo em UMA linha o botão volta para a direita, e
+     pendurar pela esquerda joga o menu para fora da borda direita (e2e-menu-conta reprovou: 208–382 num aparelho de 375). */
+  html[data-visual="nova"] .topbar-conta .conta-drop { left: auto; right: 0; transform-origin: top right; width: max-content; min-width: min(252px, calc(100vw - 16px)); max-width: calc(100vw - 16px); }
+  html[data-visual="nova"] .topbar .spacer { flex: 1 1 0; min-width: 0; order: 0; height: 0; }
+  html[data-visual="nova"] .mod-lado { width: 100%; margin-left: 0; justify-content: stretch; }
+  html[data-visual="nova"] .mod-acoes { width: 100%; }
+  html[data-visual="nova"] .mod-acoes > .btn:not(.primary),
+  html[data-visual="nova"] .mod-acoes > .mod-mais { flex: 1 1 auto; justify-content: center; }
+  html[data-visual="nova"] .mod-acoes > .btn { white-space: nowrap; }
+  html[data-visual="nova"] .mod-acoes > .btn.primary { flex: 1 1 100%; }
+  html[data-visual="nova"] .mod-acoes > .mod-mais > .btn { width: 100%; }
+}
+/* aparelhos estreitos: o topo em UMA linha precisa caber em 375 e em 320 (medido: com a marca inteira, o botão da conta
+   passava 7 px da borda). "Instalar app" continua no menu da conta ("Usar no celular…"). */
+@media (max-width: 420px) {
+  html[data-visual="nova"] .topbar { padding-left: 8px; padding-right: 8px; }
+  html[data-visual="nova"] .topbar .topo-instalar { display: none; }
+}
+@media (max-width: 360px) {
+  html[data-visual="nova"] .topbar .logo > div { display: none !important; } /* o bloco da marca leva display inline no JS */
+}
+
 /* ============================================================== IMPRESSÃO
  * ⚠ O PAPEL É BRANCO E NÃO TEM CARA NOVA (08/10/2026). O app.css já devolve
  * os tokens aos valores claros no `@media print` — mas com seletor (0,1,0) a

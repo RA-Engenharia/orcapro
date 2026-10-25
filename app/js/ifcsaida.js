@@ -1722,6 +1722,8 @@
       pset(el, "OrcaPRO_Volume", [["Forma", "IFCLABEL", formaRaiz(v.receita)], ["Volume", "IFCVOLUMEMEASURE", vol], ["AreaSuperficie", "IFCAREAMEASURE", ar],
         ["Comprimento", "IFCLENGTHMEASURE", medidas && medidas.comprimento != null ? medidas.comprimento : null], ["Altura", "IFCLENGTHMEASURE", medidas && medidas.altura != null ? medidas.altura : null]]);
       ligarCodigos(el, arr(v.servicos).map(function (s) { return s.codigo; })); origemPset(el, [["Categoria", "IFCLABEL", v.categoria]]);
+      /* PSETS de quem traz o volume (madeira engenharada, E2): v.psets = { "Nome do conjunto": [[propriedade, "IFCLABEL"|"IFCLENGTHMEASURE"|…, valor], …] } */
+      if (v.psets && typeof v.psets === "object") Object.keys(v.psets).forEach(function (nomePs) { pset(el, nomePs, arr(v.psets[nomePs])); });
       el.volume = r6(vol);
     }));
     function formaRaiz(r) { var t = r; while (t && t.forma === "mover") t = t.base; return t ? { extrusao: "Extrusão", revolucao: "Revolução", varredura: "Varredura", bool: t.tipo === "subtracao" ? "Subtração" : (t.tipo === "uniao" ? "União" : "Interseção"), empurrar: "Empurrar/puxar" }[t.forma] || t.forma : ""; }

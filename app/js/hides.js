@@ -365,6 +365,20 @@
             return;
           }
           r.dn = dc;
+          /* ⚠ N23 (24/10/2026): o DN pela UHC não pode cair abaixo do DN do MODELO para um DN cuja declividade mínima o trecho, como foi
+             desenhado, não tem. Na casa do livro o coletor DN 100 a 1 % (atende: 1 % é a mínima do DN 100) saía DN 75 pela tabela de UHC
+             — e o mesmo motor reprovava "1 % abaixo da mínima de 2 % para DN 75": o dimensionamento criava a reprovação de um trecho
+             certo. Agora fica o menor DN entre o da UHC e o do modelo que a declividade do trecho atende (nunca maior que o do modelo:
+             trecho deitado demais para o próprio DN continua reprovado, com o Corrigir da declividade). */
+          if (!e.vertical && e.inclinacao != null && e.dn != null && dc < e.dn) {
+            var tDm = ctx.linhas("es.declividade_minima", null, "declividade") || [];
+            var dmDe = function (d) { var ln = tDm.filter(function (x) { return x.dn_max === "*" || num(x.dn_max, 0) >= d; }).sort(function (a, b) { return (a.dn_max === "*" ? Infinity : a.dn_max) - (b.dn_max === "*" ? Infinity : b.dn_max); })[0]; return ln ? num(ln.declividade_pct, null) : null; };
+            var i0 = e.inclinacao, dmM = dmDe(e.dn), dmC = dmDe(dc);
+            if (dmM != null && dmC != null && i0 >= dmM - EPS && dmC > i0 + EPS) {
+              var dS = dc; while (dS != null && dS < e.dn && (dmDe(dS) == null || dmDe(dS) > i0 + EPS)) dS = comercial(e.material, dS + 1);
+              if (dS != null && dS <= e.dn && dS !== dc) { r.passos.push("DN " + dS + " (não " + dc + "): o trecho foi desenhado a " + f2(i0) + "%, e a declividade mínima do DN " + dc + " é " + f2(dmC) + "% — o DN " + dS + " atende a " + f2(dmDe(dS)) + "% (NBR 8160, declividade mínima por DN)"); r.dn = dS; }
+            }
+          }
         }
       });
     });

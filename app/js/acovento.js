@@ -1149,6 +1149,7 @@
       });
     });
     R.casos = casos;
+    if (opcoes.obliquos) { var ob = casosObliquos(R, opcoes); R.casos = casos.concat(ob.casos); ob.avisos.forEach(aviso); casos = R.casos; }
     mem({ passo: "Casos de vento", formula: "p = q·(Cpe − Cpi) por zona (positivo empurra a face para dentro / a cobertura para baixo)",
           valores: casos.map(function (c) { return c.id; }).join(", ") + (dirs.length < 4 ? " — " + R.simetria.nota : ""),
           resultado: casos.length, unidade: "casos", referencia: ref("4.2.1", "linhas 471–493") });
@@ -1287,8 +1288,97 @@
     return R;
   }
 
+  /* ====================================================== E1 (madeira engenharada): oblíquos, beiral, abertura dominante */
+  var COEF_BEIRAL_BAIXO = 0.8;   // pressão POR BAIXO do beiral a barlavento = Ce de barlavento da parede (Tabela 5 nota a; 0,7 a 0,8) — adotado 0,8, a favor da segurança (Casa Mar R02)
+  var DELTA_CPI_DOMINANTE = 0.8; // 6.2.5: abertura dominante a barlavento, cpi até +0,8 (valor-limite usado como caso EXCEPCIONAL)
+
+  /**
+   * Casos de vento OBLÍQUOS (45/135/225/315) da cobertura — opção `obliquos:true` do calcular (padrão desligado: não muda quem já usa).
+   * Cobertura: pressão UNIFORME q·(cpe mais severo de H e L) com cpi 0 — as duas metades do quadrante com o MESMO valor, a favor da
+   * segurança (adoção da R02: Tabela 6 dá H −1,0 / L −0,9 e −0,9 / −1,0). Uma água: cpe de `cpe.coberturaObliquo` (45 → 45° e 135°;
+   * −45 → 225° e 315°; troque com opcoes.mapaObliquo). Duas águas: a Tabela 5 NÃO traz oblíquo → sem caso e com aviso; só com
+   * opcoes.envoltoriaDuasAguas:true usa o cpe mais severo das 4 direções ortogonais (ENVOLTÓRIA adotada, não é valor de tabela).
+   * Paredes: 0,707 × (soma dos dois casos ortogonais vizinhos com cpi mais próximo de 0) — ESTIMATIVA (revisão C3/N5), não é da norma.
+   * Cada caso traz `barlavento: [dir, dir]` (as duas faces a barlavento, para o beiral) e `obliquo: true`.
+   */
+  function casosObliquos(R, opcoes) {
+    opcoes = opcoes || {};
+    var avisos = [], out = [], casos = R.casos || [];
+    /* M3: o mapa depende do lado alto (espelho em x: d → 360° − d troca 45 ↔ −45) */
+    var altoDir = R.geometria && R.geometria.ladoAlto === "direita";
+    var mapa = opcoes.mapaObliquo || (altoDir ? { "45": "-45", "135": "-45", "225": "45", "315": "45" } : { "45": "45", "135": "45", "225": "-45", "315": "-45" });
+    function cpiZero(d) {
+      var c = casos.filter(function (k) { return k.direcao === d && !k.obliquo && k.cpi != null; });
+      c.sort(function (a, b) { return Math.abs(a.cpi) - Math.abs(b.cpi); });
+      return c[0] || null;
+    }
+    var tem = [0, 90, 180, 270].every(function (d) { return cpiZero(d); });
+    if (!tem) { avisos.push("vento oblíquo: faltam os casos ortogonais das 4 direções (use todasDirecoes:true) — oblíquos não montados"); return { casos: out, avisos: avisos }; }
+    var cpe;
+    function cpeCob(chave) {
+      if (R.cpe && R.cpe.coberturaObliquo && R.cpe.coberturaObliquo[chave]) { var o = R.cpe.coberturaObliquo[chave]; return Math.min(o.H, o.L); }
+      return null;
+    }
+    var duas = !(R.cpe && R.cpe.coberturaObliquo);
+    if (duas && !opcoes.envoltoriaDuasAguas) {
+      avisos.push("vento oblíquo na cobertura de duas águas: a Tabela 5 não traz valores oblíquos — caso NÃO montado (opcoes.envoltoriaDuasAguas:true adota o cpe mais severo das 4 direções, envoltória fora de tabela)");
+      return { casos: out, avisos: avisos };
+    }
+    var env = null;
+    if (duas) {
+      env = 0; [0, 90, 180, 270].forEach(function (d) { var m = R.cpe.cobertura[d] || {}; Object.keys(m).forEach(function (z) { if (typeof m[z] === "number" && m[z] < env) env = m[z]; }); });
+      avisos.push("vento oblíquo na cobertura de duas águas: ENVOLTÓRIA do cpe mais severo das 4 direções ortogonais (" + env + ") — adoção, não valor da Tabela 5");
+    }
+    [[45, 0, 90], [135, 90, 180], [225, 180, 270], [315, 270, 0]].forEach(function (t) {
+      var d = t[0], ca = cpiZero(t[1]), cb = cpiZero(t[2]);
+      var cp = duas ? env : cpeCob(mapa[String(d)]);
+      if (cp == null) { avisos.push("vento oblíquo " + d + "°: sem cpe na Tabela 6 — não montado"); return; }
+      var q = Math.max(ca.q, cb.q), paredes = {};
+      ["frente", "fundo", "esquerda", "direita"].forEach(function (f) {
+        var za = ca.pressao.paredes[f] || [], zb = cb.pressao.paredes[f] || [];
+        var pts = []; za.concat(zb).forEach(function (z) { pts.push(z.s0, z.s1); });
+        pts.sort(function (x, y) { return x - y; }); pts = pts.filter(function (v, i) { return i === 0 || v - pts[i - 1] > 1e-9; });
+        function pn(L, s) { for (var i = 0; i < L.length; i++) if (s >= L[i].s0 - 1e-6 && s <= L[i].s1 + 1e-6) return L[i].p; return 0; }
+        var L = [];
+        for (var i = 0; i + 1 < pts.length; i++) { var m = (pts[i] + pts[i + 1]) / 2; L.push({ zona: "obliquo", s0: pts[i], s1: pts[i + 1], p: 0.707 * (pn(za, m) + pn(zb, m)) }); }
+        paredes[f] = L;
+      });
+      out.push({ id: "V" + d + "_obliquo", nome: "Vento " + d + "° oblíquo (cpi 0)", direcao: d, obliquo: true, cpi: 0, q: q, barlavento: [t[1], t[2]],
+        coef: { cobertura: { obliquo: cp } }, cpeCobertura: cp,
+        pressao: { paredes: paredes, cobertura: [{ zona: "obliquo", agua: 1, x0: 0, x1: 1e9, z0: 0, z1: 1e9, cpe: cp, coef: cp, p: q * cp }] },
+        fonte: duas ? "envoltória adotada (Tabela 5 sem oblíquo)" : "Tabela 6, cpe.coberturaObliquo (cpe mais severo de H e L); paredes 0,707 × soma dos ortogonais" });
+    });
+    return { casos: out, avisos: avisos };
+  }
+
+  /** BEIRAL: pressão da cobertura no ponto (já negativa = sucção) mais a pressão POR BAIXO do beiral a barlavento (0,8·q, empurra para cima → soma sucção) */
+  function pressaoBeiral(pCobertura, q, aBarlavento, coef) { return aBarlavento ? pCobertura - (coef == null ? COEF_BEIRAL_BAIXO : coef) * q : pCobertura; }
+
+  /** ABERTURA DOMINANTE como caso EXCEPCIONAL (γ = 1): Δcpi = +0,8 → pressão interna 0,8·q (telhado para cima, paredes para fora) */
+  function casoAberturaDominante(q, dcpi) {
+    var d = dcpi == null ? DELTA_CPI_DOMINANTE : dcpi;
+    return { id: "DCPI", tipo: "E", nome: "abertura dominante (Δcpi +" + String(d).replace(".", ",") + ")", dcpi: d, q: q, p: d * q,
+      nota: "combinação excepcional: G 1,0 + vento (cpi 0) 1,0 + este caso 1,0 (NBR 8681); NBR 6123 6.2.5" };
+  }
+
+  /**
+   * M4 — ABERTURA DOMINANTE EM FACE DE SUCÇÃO (6.2.5): a pressão interna passa a ser cpi = Ce da zona onde está a abertura (negativo). Sem saber onde ela está, o motor adota o Ce MAIS NEGATIVO
+   * das zonas de parede (resultado `r` do calcular, todas as direções) — conservador. O incremento sobre o caso cpi = 0 é +|cpi|·q: sobrepressão PARA DENTRO nas fachadas de barlavento
+   * (Ce 0,7 + |cpi|) e para baixo na cobertura. Caso EXCEPCIONAL (γ = 1) como o DCPI. Devolve null se não houver Ce de parede negativo.
+   */
+  function casoAberturaDominanteSuccao(r, q) {
+    var m = 0;
+    if (r && r.cpe && r.cpe.paredes) Object.keys(r.cpe.paredes).forEach(function (d) { var z = r.cpe.paredes[d]; Object.keys(z).forEach(function (k) { if (typeof z[k] === "number" && z[k] < m) m = z[k]; }); });
+    if (!(m < 0)) return null;
+    var dc = -m;
+    return { id: "DCPIS", tipo: "E", nome: "abertura dominante em face de sucção (cpi " + String(m).replace(".", ",") + ")", dcpi: dc, cpi: m, q: q, p: dc * q,
+      nota: "combinação excepcional: G 1,0 + vento (cpi 0) 1,0 + este caso 1,0; NBR 6123 6.2.5 — cpi = Ce da zona de sucção onde a abertura se encontra (adotado o mais negativo das paredes)" };
+  }
+
   var AcoVento = {
-    calcular: calcular,
+    casoAberturaDominanteSuccao: casoAberturaDominanteSuccao,
+    calcular: calcular, casosObliquos: casosObliquos, pressaoBeiral: pressaoBeiral, casoAberturaDominante: casoAberturaDominante,
+    COEF_BEIRAL_BAIXO: COEF_BEIRAL_BAIXO, DELTA_CPI_DOMINANTE: DELTA_CPI_DOMINANTE,
     fatorS1: fatorS1, fatorS2: fatorS2, fatorS3: fatorS3, s2Tabela2: s2Tabela2, classePorDimensao: classePorDimensao,
     cpiAnexoD: cpiAnexoD, cpiBarlavento: cpiBarlavento, cpiSuccao: cpiSuccao,
     TABELAS: { TAB1: TAB1, TAB2: TAB2, TAB3: TAB3, TAB4: TAB4, TAB5: TAB5, TAB6: TAB6, T17: T17, T18: T18, CPI: CPI, CF: CF },

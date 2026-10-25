@@ -148,3 +148,10 @@
 .bbs-pop-gtit { font-weight: var(--p-forte); font-size: var(--t-mini); color: var(--rv-tx-fraco); text-transform: uppercase; letter-spacing: .04em; margin: 6px 0 2px; }
 @media (max-width: 640px) { .bbs-pop-grupos { grid-template-columns: 1fr; } }
 /* as guias do rastreamento e os pontos adquiridos ficam no 3D (js/bimprecisaoui.js); aqui só o menu */
+
+/* O NOME do encaixe junto ao cursor (23/10/2026): "Ponto final", "Prolongamento · cota 3,00 m · Tab 1/2" */
+.pm-snaprot {
+  position: absolute; z-index: 7; padding: 2px 6px; border: 1px solid var(--d2-sel); border-radius: 3px; pointer-events: none;
+  background: var(--d2-papel); color: var(--d2-tinta); font-size: var(--t-micro); white-space: nowrap;
+}
+.pm-snap-glifo { fill: none; stroke: var(--d2-sel); }

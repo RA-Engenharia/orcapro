@@ -101,6 +101,8 @@
     /* Modificar (js/bimprecisao.js FITA.modificar) */
     "mover-preciso", "copiar", "espelhar", "girar", "matriz", "snaps-editor", "alinhar", "deslocamento",
     "aparar-canto", "aparar-varios", "dividir-elemento", "fixar", "desafixar", "criar-similar", "escala", "elevar",
+    /* IFC do SketchUp chega genérico: converter em parede/laje/pilar/viga/porta/janela/telhado vale em toda disciplina (js/bimifcconvui.js) */
+    "converter-ifc",
     /* grupos, fases e opções (js/bimp10ui.js) */
     "demolir", "criar-grupo", "colar-niveis", "editar-grupo", "desagrupar",
     "fases", "filtro-fase", "opcoes-projeto", "selecionar-id", "localizar-substituir", "advertencias", "limpar-nao-usados", "vista-inicial",
@@ -122,7 +124,7 @@
     "home", "orbita", "voo", "mesa", "imersivo", "ultra", "atalhos",
     "visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "caixa-corte", "ortogonal", "grade",
     "nova-vista", "lado-a-lado", "vistas", "max-3d", "janela-3d", "paineis", "tamanho-ui", "pele-revit",
-    "render-ia", "galeria-ia", "render-fisico", "apresentar-reforma",
+    "render-ia", "acabamento-ia", "galeria-ia", "render-fisico", "cena", "apresentar-reforma",
     "elevacao-vista", "elevacao-interior", "planta-forro", "planta-estrutural", "planta-nova", "chamada-detalhe", "vista-desenho", "duplicar-vista",
     "modelos-vista", "vg-vista", "estilos-objeto", "cores-categoria", "cores-categoria-paleta", "navegador-org", "tabela-quantidades", "levantamento-material",
     /* Folhas e exportação técnica */
@@ -186,7 +188,9 @@
 
   /* HIDRÁULICA & SANITÁRIA */
   def("hidraulica", ["tubo", "conexao", "aparelho", "acessorio-tubo", "legenda-mep",
-    "cota", "cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"]);
+    "cota", "cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar",
+    /* o submenu "Cotar a rede" da organização de 23/10/2026 (js/bimfita.js ORG) */
+    "gm-cota-rede"]);
   def(["hidraulica", "eletrica"], ["verificar-sistemas", "desconexoes", "tabela-mep"]);
 
   /* ELÉTRICA & DADOS */
@@ -195,6 +199,10 @@
   def("eletrica", ["ele-auto", "ele-auto-sel", "ele-auto-todos", "ele-auditar", "ele-criterios"]);
   /* CIRCUITOS E QUADRO (js/elecircuitosui.js, frente E2, 21/10/2026) */
   def("eletrica", ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-pdf", "ele-circ-dxf", "ele-circ-memorial", "ele-circ-criterios"]);
+  /* INCÊNDIO E ACESSIBILIDADE (js/incacsui.js, 21/10/2026): o incêndio é de arquitetura, da hidráulica (extintor, hidrante) e da elétrica
+     (luminária de emergência); a acessibilidade é de arquitetura */
+  def(["civil", "hidraulica", "eletrica"], ["inc-dados", "inc-lancar", "inc-auditar"]);
+  def("civil", ["acs-auditar"]);
 
   /* METÁLICA & MECÂNICA — o içamento inteiro mora aqui (pedido do Rogério) */
   def("metalica", ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio",

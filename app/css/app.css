@@ -4098,6 +4098,64 @@ body.modo-bim3d .b4h-a { font-size: var(--t-base); }
 .est-dim { margin: 0; }
 
 /* =====================================================================
+ * GRÁFICOS INTERATIVOS (23/10/2026 — js/graftip.js)
+ * A dica nativa do SVG (<title>) demorava 1 s, não saía no toque nem no
+ * teclado e não dizia o que o clique faz. Agora é UMA dica desenhada aqui,
+ * a legenda vira botão (liga/desliga a série) e fatia ↔ legenda acendem juntas.
+ * ⚠ A dica é filha do <body> e `position: fixed`: nenhum ancestral com
+ *   backdrop-filter pode contê-la (a armadilha do vidro, 1.2.94).
+ * ===================================================================== */
+.gt-tip {
+  position: fixed; left: 0; top: 0; z-index: 10050; max-width: min(320px, calc(100vw - 16px));
+  padding: 10px 12px 9px; border-radius: 10px; background: var(--navy); color: #fff;
+  border: 1px solid rgba(255,255,255,.18); box-shadow: 0 14px 34px -10px rgba(0,0,0,.5);
+  font-size: var(--t-peq); line-height: 1.35; pointer-events: none; font-variant-numeric: tabular-nums;
+}
+.gt-tip[hidden] { display: none; }
+.gt-t { font-weight: var(--p-forte); margin-bottom: 6px; }
+.gt-l { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 2px 0; }
+.gt-l i { width: 10px; height: 10px; border-radius: 3px; background: transparent; }
+.gt-l i[style] { box-shadow: 0 0 0 1.5px rgba(255,255,255,.6); }
+.gt-l span { color: rgba(255,255,255,.84); }
+.gt-l b { font-weight: var(--p-forte); text-align: right; white-space: nowrap; }
+.gt-r { margin-top: 7px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.2); color: #bfe9ff; font-size: var(--t-micro); }
+/* a leitura embutida no desenho cede lugar à dica flutuante (o texto continua no DOM) */
+html.gt-ativo .g-ler { display: none; }
+
+/* o que se clica no gráfico se enxerga e se alcança pelo teclado */
+.g-col[data-gacao], .pn-tile[data-gacao], .pn-cat[data-gacao], .pn-gauge[data-gacao], .pn-fatia[data-gacao] { cursor: pointer; }
+.g-col { outline: none; }
+.g-col:focus-visible .g-guia, .g-col:focus-visible .g-pt { opacity: 1; }
+.g-col:focus-visible .g-hit { stroke: var(--aco-claro); stroke-width: 2; stroke-dasharray: 4 3; }
+.pn-fatia { outline: none; transition: opacity .15s ease, stroke-width .15s ease; }
+.pn-fatia:focus-visible, .pn-fatia.gt-hl { stroke-width: 19; }
+.pn-tile:focus-visible, .pn-cat:focus-visible, .pn-gauge:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 2px; }
+.pn-tile[data-gacao]:hover { border-color: var(--aco-claro); }
+.pn-cat[data-gacao]:hover, .pn-cat:focus-visible { background: var(--surface-2); border-radius: 6px; }
+.gt-tem-hl [data-gt-k]:not(.gt-hl) { opacity: .38; }
+/* ⚠ a rosca já esmaecia TODAS as fatias ao passar o mouse (.pn-donut:hover .pn-fatia, 0,3,0): sem estas duas a fatia acesa ficava em .85 */
+.pn-donut.gt-tem-hl .pn-fatia:not(.gt-hl) { opacity: .38; }
+.pn-donut.gt-tem-hl .pn-fatia.gt-hl { opacity: 1; }
+.pn-dl li { transition: opacity .15s ease; border-radius: 6px; }
+.pn-dl li.gt-hl { background: var(--surface-2); }
+
+/* legenda clicável: botão com a cara da legenda de sempre */
+button.g-leg {
+  appearance: none; -webkit-appearance: none; font: inherit; color: inherit; background: none; cursor: pointer;
+  border: 1px solid transparent; border-radius: 99px; padding: 3px 9px; margin: -3px -9px -3px -9px; min-height: 26px;
+  transition: opacity .15s ease, border-color .15s ease;
+}
+button.g-leg:hover { border-color: var(--linha-forte); }
+button.g-leg:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 1px; }
+button.g-leg[aria-pressed="false"] { opacity: .55; }
+button.g-leg[aria-pressed="false"] b { text-decoration: line-through; }
+[data-gt-grafico][data-off~="a"] [data-gt-serie="a"],
+[data-gt-grafico][data-off~="b"] [data-gt-serie="b"],
+[data-gt-grafico][data-off~="c"] [data-gt-serie="c"],
+[data-gt-grafico][data-off~="p"] [data-gt-serie="p"] { opacity: 0; pointer-events: none; }
+[data-gt-serie] { transition: opacity .18s ease; }
+
+/* =====================================================================
    PADRÃO DE TELA DE MÓDULO (js/modulo.js + ROTEIRO-MODULO.md, 08/10/2026)
    Uma ordem só em todo módulo: cabeçalho → aviso → filtros → indicadores →
    abas → seções/tabela. Só tokens: nenhum hex solto aqui.

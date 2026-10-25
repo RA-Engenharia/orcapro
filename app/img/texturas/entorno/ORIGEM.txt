@@ -1,0 +1,10 @@
+Texturas do ENTORNO do render ao vivo (js/bimentorno.js) — 2026-10-20
+
+casca/ (casca de árvore, 1K cor e normal, 512 rugosidade; JPEG recomprimido de 1K)
+  fonte  : Poly Haven · bark_brown_02 · https://polyhaven.com/a/bark_brown_02
+  licença: CC0 (domínio público) · baixado de dl.polyhaven.org (pacote 1K diff / nor_gl / rough)
+  sha256 : ca661383807f29a18ac4f418ccc427bddfcad254a8b024219038142be6559b29  cor.jpg
+           c5ab61a4a7c330ff560e25c5e3d23b1ccc22097181c632d33821e7d942c3490b  normal.jpg
+           66e33f57c289a60bfb08632b56442a9010893a2cfbb5b9606928db715254f319  rugosidade.jpg
+
+Folhas, grama (lâminas) e palmeira: geometria e textura GERADAS EM CÓDIGO pelo js/bimentorno.js — sem arquivo.

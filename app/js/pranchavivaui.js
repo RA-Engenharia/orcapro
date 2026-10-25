@@ -195,16 +195,22 @@
     oferta: function (g) {
       if (g && g.teste1h && global.TesteModuloUI) { try { return TesteModuloUI.oferta("pranchaviva"); } catch (eT) {} }
       var M = MOD(), O = (g && g.oferta) || (M && M.OFERTA) || {};
+      /* ⚠ APP DA GOOGLE PLAY (origem=play): nenhum preço, botão nem link de compra (política da loja; é a regra da Marmoraria,
+         revisão de 23/10/2026). O que a conta tem liberado aparece aqui sozinho. */
+      var naPlay = false; try { naPlay = !!(global.Modela && Modela.status && Modela.status().play); } catch (eP) { naPlay = false; }
       var h = '<div style="font-size:13px;line-height:1.5;max-width:560px"><p style="margin:0 0 8px"><b>' + esc(O.subtitulo) + '</b></p><ul style="margin:0 0 10px 18px;padding:0">' +
-        arr(O.itens).map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + '</ul><div id="pviva-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(O.vendaFechada) + "</div></div>";
+        arr(O.itens).map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + '</ul>' + (O.incluidoNoBim ? '<p class="muted" style="margin:0 0 8px">' + esc(O.incluidoNoBim) + "</p>" : "") +
+        '<div id="pviva-oferta-venda" class="muted">' + (g && g.testeEncerrado ? "O seu teste de 7 dias terminou. " : "") + esc(naPlay ? "Este aplicativo não faz contratações. Quando o módulo for liberado para a sua conta, ele aparece aqui sozinho." : O.vendaFechada) + "</div></div>";
       var bts = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (g && g.podeTestar && M) bts.unshift({ texto: "Começar o teste de 7 dias", classe: "primary", onClick: function () { M.iniciarTeste(function () {}); UI.fecharModal(); toast("Teste de 7 dias da Prancha Viva começado.", "ok"); } });
       if (global.UI && UI.modal) UI.modal(O.titulo || "Prancha Viva", h, bts);
       try {
-        var srv = global.Modela && Modela._servidor ? Modela._servidor() : "";
+        var srv = !naPlay && global.Modela && Modela._servidor ? Modela._servidor() : "";
         if (srv && global.fetch && M) global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
           var pl = M.planosAVenda(d), el = global.document && global.document.getElementById("pviva-oferta-venda"); if (!pl.length || !el) return;
-          el.innerHTML = pl.map(function (p) { return '<a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id)) + '">' + esc(p.nome) + "</a>"; }).join(" ");
+          /* o preço e as condições vêm do servidor (compra única: cartão em até 12× ou à vista com desconto) */
+          var k = ""; try { k = global.Licenca && Licenca.chave ? Licenca.chave() : ""; } catch (eK) { k = ""; }
+          el.innerHTML = pl.map(function (p) { return '<p style="margin:0 0 6px">' + esc(M.textoPlano(p)) + '</p><a class="btn primary" target="_blank" rel="noopener" href="' + esc(srv + "/modelagem?plano=" + encodeURIComponent(p.id) + (k ? "#lic=" + encodeURIComponent(k) : "")) + '">Comprar a Prancha Viva</a>'; }).join(" ");
         }, function () {});
       } catch (e) {}
       return false;

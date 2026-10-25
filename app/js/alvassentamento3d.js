@@ -174,7 +174,7 @@
       ims.forEach(function (o) { try { o.dispose(); } catch (e) {} });
     });
     estado.grupos = [];
-    estado.escondidas.forEach(function (m) { m.visible = true; }); estado.escondidas = [];
+    estado.escondidas.forEach(function (m) { m.visible = true; if (m.userData) m.userData._alvOculta = false; }); estado.escondidas = [];
   }
 
   function desenhar(st) {
@@ -269,8 +269,9 @@
     S.modelRoot.traverse(function (m) {
       if (!m.isMesh) return; var ud = m.userData || {};
       if (ud.mid === "edit" && String(ud.expressID) === String(id)) {
-        if (!mostra) { if (m.visible) { m.visible = false; estado.escondidas.push(m); } }
-        else if (!m.visible && estado.escondidas.indexOf(m) >= 0) { m.visible = true; estado.escondidas.splice(estado.escondidas.indexOf(m), 1); }
+        /* _alvOculta: a peça está escondida SÓ por causa dos blocos — o raio do clique ainda a acerta (js/bim.js visivelParaRaio) */
+        if (!mostra) { if (m.visible) { m.visible = false; m.userData._alvOculta = true; estado.escondidas.push(m); } }
+        else if (!m.visible && estado.escondidas.indexOf(m) >= 0) { m.visible = true; m.userData._alvOculta = false; estado.escondidas.splice(estado.escondidas.indexOf(m), 1); }
       }
     });
   }

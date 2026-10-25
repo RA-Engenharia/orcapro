@@ -95,9 +95,14 @@
     paraCadaTelhado(function (t, st) {
       var C = BC(), ja = arr(st.platibandas).filter(function (p) { return String(p.telhado) === String(t.id); })[0];
       if (ja) { aplicar({ op: "lote", id: "pl-x-" + t.id, origem: "platibanda", ops: [{ op: "apagar", id: ja.id }] }); status("Platibanda removida."); return; }
-      var d = { telhado: t.id }, b = C.baseSugerida(st, t.id); if (b != null) d.base = b;
+      /* N23: `herdar` — a platibanda nasce com o material, a espessura e a posição da parede de baixo e acompanha quando ela muda */
+      var d = { telhado: t.id, herdar: true }, b = C.baseSugerida(st, t.id); if (b != null) d.base = b;
       var op = C.opPlatibanda("plat-" + t.id, d); if (!op) { status("Platibanda inválida."); return; }
-      if (aplicar({ op: "lote", id: "pl-" + t.id, origem: "platibanda", ops: [op] })) status("Platibanda com rufo de capa e contra-rufo no telhado " + t.id + ". Clique de novo para tirar.");
+      if (aplicar({ op: "lote", id: "pl-" + t.id, origem: "platibanda", ops: [op] })) {
+        status("Platibanda herdando a parede de baixo (material, espessura e posição), com rufo de capa e contra-rufo no telhado " + t.id + ". Clique de novo para tirar.");
+        var dg = C.diagnosticarCobertura(estado(), {}), ps = arr(dg && dg.problemas).filter(function (x) { return x.tipo === "platibanda-sem-parede"; });
+        if (ps.length) cartoes("Platibanda — arestas sem parede embaixo", ps);
+      }
     });
   }
   function calha() {
@@ -106,10 +111,30 @@
       if (ja) { var ap = [{ op: "apagar", id: ja.id }]; arr(st.condutores).forEach(function (c) { if (String(c.calha) === String(ja.id)) ap.push({ op: "apagar", id: c.id }); }); aplicar({ op: "lote", id: "cal-x-" + t.id, origem: "calha", ops: ap }); status("Calha embutida removida."); return; }
       var origs = arr(t.arestasCalc).filter(function (e) { return e.define; }).map(function (e) { return e.orig; });
       if (!origs.length) { status("O telhado não tem aresta com beiral (todas são oitão)."); return; }
-      var op = C.opCalha("cal-" + t.id, { telhado: t.id, arestas: origs }); if (!op) { status("Calha inválida."); return; }
+      var op = C.opCalha("cal-" + t.id, { telhado: t.id, arestas: origs, cotaAuto: true }); if (!op) { status("Calha inválida."); return; }   /* N23: na cota certa */
       var E = global.BimEdit, st2 = E.aplicar(global.BIM.editarOps().concat([op])), cds = C.opsCondutores(st2, {});
       if (aplicar({ op: "lote", id: "cal-" + t.id, origem: "calha", ops: [op].concat(cds) })) status("Calha embutida (" + virg(0.30) + " × " + virg(0.12) + " m) e " + cds.length + " descida(s) no telhado " + t.id + ". Confira a seção em \"Calha pela NBR 10844\".");
     });
+  }
+  /* N23: os problemas da cobertura como cartões (o que é + Corrigir + Mostrar no 3D). Corrigir = UM lote (um Ctrl+Z desfaz). */
+  function htmlProblemas(probs) {
+    var PC = global.ProblemaCard; if (!PC || !probs.length) return "";
+    return PC.lista(probs, { titulo: "Problemas na cobertura (" + probs.length + ")", prefixoIndice: "p", acoes: function (s) { return s && arr(s.ops).length ? (s.texto || true) : false; } });
+  }
+  function ligarProblemas(raiz, obter, depois) {
+    var PC = global.ProblemaCard; if (!PC || !raiz) return;
+    PC.ligar(raiz, { corrigir: function (solId, k) {
+      var lst = obter(), p = lst[parseInt(String(k).slice(1), 10)], s = p && arr(p.solucoes).filter(function (x) { return x.id === solId; })[0];
+      if (!s || !arr(s.ops).length) return;
+      if (aplicar({ op: "lote", id: "cob-corr-" + p.tipo + "-" + Date.now(), origem: "corrigir-cobertura", ops: s.ops })) { status("Corrigido: " + s.texto + " (Ctrl+Z desfaz)."); if (depois) depois(); }
+    } });
+  }
+  function cartoes(titulo, probs) {
+    var ov = janela(titulo, '<div id="cob-cards">' + htmlProblemas(probs) + "</div>");
+    if (!ov) return;
+    var cur = probs;
+    function redo() { var dg = BC().diagnosticarCobertura(estado(), {}); cur = arr(dg && dg.problemas).filter(function (x) { return probs.some(function (q) { return q.tipo === x.tipo; }); }); ov.querySelector("#cob-cards").innerHTML = cur.length ? htmlProblemas(cur) : "<p><b>Resolvido.</b></p>"; }
+    ligarProblemas(ov, function () { return cur; }, redo);
   }
   function calhaCalculo() {
     var st = estado(), C = BC();
@@ -119,11 +144,27 @@
       '<label>Cidade (como na Tabela 5)<input id="cob-cid" class="inp" placeholder="ex.: Barbacena/MG" style="width:100%"></label>' +
       '<label>Intensidade informada (mm/h)<input id="cob-int" class="inp" style="width:100%"></label>' +
       '<label>Fonte da intensidade<input id="cob-fon" class="inp" placeholder="IDF, posto, estudo…" style="width:100%"></label></div>' +
-      '<button type="button" class="btn" id="cob-calc">Calcular</button><div id="cob-res" style="margin-top:10px"></div>');
+      '<button type="button" class="btn" id="cob-calc">Calcular</button><div id="cob-res" style="margin-top:10px"></div><div id="cob-prob" style="margin-top:10px"></div>');
     if (!ov) return;
+    var probsAtuais = [];
+    function mostrarProblemas(cfg0) {
+      var dg; try { dg = C.diagnosticarCobertura(estado(), cfg0); } catch (e) { dg = null; }
+      probsAtuais = arr(dg && dg.problemas);
+      ov.querySelector("#cob-prob").innerHTML = htmlProblemas(probsAtuais);
+    }
+    ligarProblemas(ov, function () { return probsAtuais; }, function () { mostrarProblemas(cfgAtual()); ov.querySelector("#cob-calc").click(); });
+    function cfgAtual() {
+      var cfg = { ops: global.BIM && global.BIM.editarOps ? global.BIM.editarOps() : [] }, cid = ov.querySelector("#cob-cid").value.trim(), it = parseFloat(String(ov.querySelector("#cob-int").value).replace(",", ".")), fo = ov.querySelector("#cob-fon").value.trim();
+      var oc = obraECliente(); cfg.obra = oc.obra; cfg.cliente = oc.cliente;
+      if (cid) cfg.cidade = cid; if (isFinite(it)) { cfg.intensidade_mm_h = it; cfg.fonteIntensidade = fo; }
+      return cfg;
+    }
+    mostrarProblemas({ ops: global.BIM && global.BIM.editarOps ? global.BIM.editarOps() : [], obra: obraECliente().obra, cliente: obraECliente().cliente });
     ov.querySelector("#cob-calc").addEventListener("click", function () {
+      mostrarProblemas(cfgAtual());
       var cfg = {}, cid = ov.querySelector("#cob-cid").value.trim(), it = parseFloat(String(ov.querySelector("#cob-int").value).replace(",", ".")), fo = ov.querySelector("#cob-fon").value.trim();
       if (cid) cfg.cidade = cid; if (isFinite(it)) { cfg.intensidade_mm_h = it; cfg.fonteIntensidade = fo; }
+      cfg.comoGerador = true;   /* REVISOR N23: a tabela e os cartões de problema julgam pela mesma regra do "Rufos, calhas e descidas" */
       var r = C.dimensionarCalhas(estado(), cfg), out = ov.querySelector("#cob-res");
       if (!r.ok) { out.innerHTML = "<p>" + esc(r.motivo) + "</p>"; return; }
       var linhas = arr(r.calhas).map(function (c) { return "<tr><td>" + esc(c.id) + "</td><td>" + (c.vazao_l_min == null ? "—" : virg(c.vazao_l_min, 1)) + "</td><td>" + (c.vazaoProjeto_l_min == null ? "—" : virg(c.vazaoProjeto_l_min, 1)) + "</td><td>" + (c.capacidade_l_min == null ? "—" : virg(c.capacidade_l_min, 1)) + "</td><td>" + esc(c.status) + "</td></tr>"; }).join("");
@@ -286,8 +327,10 @@
       void reg;
       arr(st.platibandas).forEach(function (p) {
         if (!p || !p.ok) return;
-        var m = self._m(THREE, "reboco"), mc = self._m(THREE, "capa"), n = 0;
+        var m0 = self._m(THREE, "reboco"), mc = self._m(THREE, "capa"), n = 0, m = m0;
         p.segs.forEach(function (s) {
+          /* N23: a platibanda que herda a parede usa o MESMO material dela (o da malha da parede de baixo) */
+          m = (p.herdar && s.heranca && matDaParede(mo, s.heranca.parede)) || m0;
           addMesh(new THREE.Mesh(prisma(quad2(s.quad), p.base, p.topo), m), p.id, p.ifc, m); n++;
           if (p.rufoCapa) {
             /* o rufo de capa: chapa no topo, uma aba de cada lado */
@@ -309,7 +352,8 @@
       arr(st.calhasEmbutidas).forEach(function (c) {
         if (!c || !c.ok) return;
         var m = self._m(THREE, "calha"), n = 0;
-        c.segs.forEach(function (s) {
+        if (c.perfil) n += trocho(THREE, P3, c.perfil, m, addMesh, c.id, c.ifc);
+        else c.segs.forEach(function (s) {
           var q = s.quad, a0 = q[0], b0 = q[1], b1 = q[2], a1 = q[3];
           addMesh(new THREE.Mesh(prisma(quad2(q), s.yFundo, s.yFundo + 0.004), m), c.id, c.ifc, m);
           addMesh(new THREE.Mesh(parede(a0, b0, s.yFundo, s.yBorda), m), c.id, c.ifc, m);
@@ -379,6 +423,29 @@
       });
     }
   };
+  /* N23: o material da parede de baixo (a malha dela já está no grupo) — a platibanda que a herda usa o mesmo */
+  function matDaParede(mo, id) {
+    var ch = mo && mo.grupo && mo.grupo.children ? mo.grupo.children : [];
+    for (var i = 0; i < ch.length; i++) { var u = ch[i].userData; if (u && id != null && String(u.expressID) === String(id)) return u.matOrig || ch[i].material; }
+    return null;
+  }
+  /* N23: a calha em CALHA (fundo inclinado até o bocal, borda numa cota só): um pedaço por sub-trecho de `perfil.subs` (js/bimcobertura.js perfilCalha) */
+  function trocho(THREE, P3, perfil, mat, addMesh, id, ifc) {
+    var n = 0, subs = arr(perfil && perfil.subs);
+    function V(p, y) { return [p.x, y, p.z]; }
+    function d2(p, q) { return Math.sqrt((p.x - q.x) * (p.x - q.x) + (p.z - q.z) * (p.z - q.z)); }
+    subs.forEach(function (s, i) {
+      if (!s.ia || !s.oa) return;
+      var faces = [[V(s.oa, s.ya), V(s.ob, s.yb), V(s.ib, s.yb), V(s.ia, s.ya)],
+                   [V(s.ia, s.ya), V(s.ib, s.yb), V(s.ib, s.yRim), V(s.ia, s.yRim)],
+                   [V(s.oa, s.ya), V(s.ob, s.yb), V(s.ob, s.yRim), V(s.oa, s.yRim)]], ant = subs[i - 1], prox = subs[i + 1];
+      if (!ant || d2(ant.b, s.a) > 1e-6) faces.push([V(s.ia, s.ya), V(s.oa, s.ya), V(s.oa, s.yRim), V(s.ia, s.yRim)]);
+      if (!prox || d2(prox.a, s.b) > 1e-6) faces.push([V(s.ib, s.yb), V(s.ob, s.yb), V(s.ob, s.yRim), V(s.ib, s.yRim)]);
+      addMesh(new THREE.Mesh(P3._faces(THREE, faces), mat), id, ifc, mat); n++;
+    });
+    return n;
+  }
+  BimCoberturaUI.trocho = trocho;
   global.BimCoberturaUI = BimCoberturaUI;
   if (typeof module !== "undefined" && module.exports) module.exports = BimCoberturaUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -1,0 +1,488 @@
+{
+ "versao": 1,
+ "convencao": "Equirretangular. u em [0,1) da esquerda para a direita (azimute = u*360 graus); linha/v 0 = topo da imagem; elevacao = 90 graus no topo (zenite), 0 no horizonte. Luminancia relativa = 0.2126R+0.7152G+0.0722B linear do .hdr; media do hemisferio de cima ponderada por angulo solido. sol.pico = pixel mais brilhante acima do horizonte; elevacao/azimuteU = centroide da regiao >=50% do pico a ate 20 graus do pico; visivel = pico > 50x a media (e > 20).",
+ "fonte": "Poly Haven (polyhaven.com), API publica, CC0",
+ "ceus": [
+  {
+   "id": "qwantani",
+   "nome": "Qwantani",
+   "tipo": "limpo-manha",
+   "horaAproximada": "08h30",
+   "justificativa": "ceu limpo de manha com sol a ~28 graus, morro aberto com represa ao fundo, sem predio/arvore",
+   "autores": [
+    "Greg Zaal"
+   ],
+   "link": "https://polyhaven.com/a/qwantani",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "skies",
+    "nature",
+    "morning-afternoon",
+    "clear",
+    "high contrast",
+    "natural light",
+    "sun",
+    "mountain",
+    "view",
+    "dam",
+    "lake",
+    "hilltop",
+    "grass"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani/qwantani_2k.hdr",
+    "1k": "img/ceus/qwantani/qwantani_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 28.06,
+    "azimuteU": 0.5999,
+    "pico": {
+     "valor": 55826.69,
+     "u": 0.5999,
+     "v": 0.3442,
+     "elevacao": 28.04,
+     "pixel": [
+      1228,
+      352
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 0.7823
+  },
+  {
+   "id": "qwantani_noon",
+   "nome": "Qwantani Noon",
+   "tipo": "limpo-meio-dia",
+   "horaAproximada": "12h",
+   "justificativa": "ceu limpo ao meio-dia, sol alto, topo de morro aberto",
+   "autores": [
+    "Greg Zaal",
+    "Jarod Guest"
+   ],
+   "link": "https://polyhaven.com/a/qwantani_noon",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "natural light",
+    "nature",
+    "skies",
+    "high contrast",
+    "midday",
+    "clear",
+    "sun",
+    "grass",
+    "hilltop",
+    "view",
+    "mountain",
+    "dam",
+    "lake"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani_noon/qwantani_noon_2k.hdr",
+    "1k": "img/ceus/qwantani_noon/qwantani_noon_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 49.82,
+    "azimuteU": 0.6005,
+    "pico": {
+     "valor": 134144.0,
+     "u": 0.6003,
+     "v": 0.2231,
+     "elevacao": 49.83,
+     "pixel": [
+      1229,
+      228
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.3485
+  },
+  {
+   "id": "qwantani_late_afternoon",
+   "nome": "Qwantani Late Afternoon",
+   "tipo": "limpo-tarde",
+   "horaAproximada": "16h",
+   "justificativa": "ceu limpo de fim de tarde, mesma locacao (comparavel com manha/meio-dia)",
+   "autores": [
+    "Greg Zaal",
+    "Jarod Guest"
+   ],
+   "link": "https://polyhaven.com/a/qwantani_late_afternoon",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "natural light",
+    "nature",
+    "skies",
+    "high contrast",
+    "morning-afternoon",
+    "clear",
+    "sun",
+    "mountain",
+    "view",
+    "dam",
+    "hilltop",
+    "lake",
+    "grass"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani_late_afternoon/qwantani_late_afternoon_2k.hdr",
+    "1k": "img/ceus/qwantani_late_afternoon/qwantani_late_afternoon_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 19.07,
+    "azimuteU": 0.6003,
+    "pico": {
+     "valor": 136775.88,
+     "u": 0.6003,
+     "v": 0.394,
+     "elevacao": 19.07,
+     "pixel": [
+      1229,
+      403
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.7678
+  },
+  {
+   "id": "qwantani_sunset",
+   "nome": "Qwantani Sunset",
+   "tipo": "por-do-sol",
+   "horaAproximada": "17h40",
+   "justificativa": "por do sol / hora dourada com poucas nuvens, horizonte livre",
+   "autores": [
+    "Greg Zaal",
+    "Jarod Guest"
+   ],
+   "link": "https://polyhaven.com/a/qwantani_sunset",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "natural light",
+    "nature",
+    "skies",
+    "medium contrast",
+    "sunrise-sunset",
+    "partly cloudy",
+    "mountain",
+    "view",
+    "dam",
+    "lake",
+    "hilltop",
+    "grass",
+    "sun"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani_sunset/qwantani_sunset_2k.hdr",
+    "1k": "img/ceus/qwantani_sunset/qwantani_sunset_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 6.08,
+    "azimuteU": 0.6001,
+    "pico": {
+     "valor": 58310.14,
+     "u": 0.5999,
+     "v": 0.4663,
+     "elevacao": 6.06,
+     "pixel": [
+      1228,
+      477
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.5765
+  },
+  {
+   "id": "kloofendal_48d_partly_cloudy",
+   "nome": "Kloofendal 48d Partly Cloudy",
+   "tipo": "parcialmente-nublado",
+   "horaAproximada": "12h",
+   "justificativa": "parcialmente nublado, sol a ~48 graus, morro com grama baixa",
+   "autores": [
+    "Greg Zaal"
+   ],
+   "link": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "skies",
+    "nature",
+    "midday",
+    "partly cloudy",
+    "high contrast",
+    "natural light",
+    "collection: verdant_trail",
+    "sun",
+    "grass",
+    "rock",
+    "view"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/kloofendal_48d_partly_cloudy/kloofendal_48d_partly_cloudy_2k.hdr",
+    "1k": "img/ceus/kloofendal_48d_partly_cloudy/kloofendal_48d_partly_cloudy_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 47.88,
+    "azimuteU": 0.5997,
+    "pico": {
+     "valor": 72961.94,
+     "u": 0.5999,
+     "v": 0.2339,
+     "elevacao": 47.9,
+     "pixel": [
+      1228,
+      239
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.1578
+  },
+  {
+   "id": "cloud_layers",
+   "nome": "Cloud Layers",
+   "tipo": "parcialmente-nublado",
+   "horaAproximada": "13h",
+   "justificativa": "parcialmente nublado com camadas de nuvens, campo aberto",
+   "autores": [
+    "Greg Zaal"
+   ],
+   "link": "https://polyhaven.com/a/cloud_layers",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "skies",
+    "nature",
+    "midday",
+    "partly cloudy",
+    "natural light",
+    "high contrast",
+    "sun",
+    "grass",
+    "path"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/cloud_layers/cloud_layers_2k.hdr",
+    "1k": "img/ceus/cloud_layers/cloud_layers_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 57.66,
+    "azimuteU": 0.8817,
+    "pico": {
+     "valor": 6936.49,
+     "u": 0.8816,
+     "v": 0.1792,
+     "elevacao": 57.74,
+     "pixel": [
+      1805,
+      183
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 0.525
+  },
+  {
+   "id": "kloofendal_overcast",
+   "nome": "Kloofendal Overcast",
+   "tipo": "nublado",
+   "horaAproximada": "10h",
+   "justificativa": "ceu encoberto uniforme, sem sol visivel, morro aberto",
+   "autores": [
+    "Greg Zaal"
+   ],
+   "link": "https://polyhaven.com/a/kloofendal_overcast",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "skies",
+    "nature",
+    "natural light",
+    "overcast",
+    "low contrast",
+    "morning-afternoon",
+    "collection: verdant_trail",
+    "grass",
+    "rock",
+    "view",
+    "hilltop"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/kloofendal_overcast/kloofendal_overcast_2k.hdr",
+    "1k": "img/ceus/kloofendal_overcast/kloofendal_overcast_1k.hdr"
+   },
+   "sol": {
+    "visivel": false,
+    "elevacao": 22.44,
+    "azimuteU": 0.5986,
+    "pico": {
+     "valor": 6.0,
+     "u": 0.5818,
+     "v": 0.3716,
+     "elevacao": 23.12,
+     "pixel": [
+      1191,
+      380
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.224
+  },
+  {
+   "id": "overcast_soil_2",
+   "nome": "Overcast Soil 2",
+   "tipo": "nublado",
+   "horaAproximada": "14h",
+   "justificativa": "encoberto, terra e campo agricola plano, sem construcao",
+   "autores": [
+    "Sergej Majboroda"
+   ],
+   "link": "https://polyhaven.com/a/overcast_soil_2",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "skies",
+    "natural light",
+    "nature",
+    "low contrast",
+    "overcast",
+    "morning-afternoon",
+    "soil",
+    "dirt",
+    "farm",
+    "field",
+    "rural",
+    "earth",
+    "backplates"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/overcast_soil_2/overcast_soil_2_2k.hdr",
+    "1k": "img/ceus/overcast_soil_2/overcast_soil_2_1k.hdr"
+   },
+   "sol": {
+    "visivel": false,
+    "elevacao": 10.71,
+    "azimuteU": 0.585,
+    "pico": {
+     "valor": 9.47,
+     "u": 0.595,
+     "v": 0.4517,
+     "elevacao": 8.7,
+     "pixel": [
+      1218,
+      462
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.4365
+  },
+  {
+   "id": "qwantani_dusk_2",
+   "nome": "Qwantani Dusk 2",
+   "tipo": "entardecer-azul",
+   "horaAproximada": "18h10",
+   "justificativa": "crepusculo azul apos o sol, horizonte livre",
+   "autores": [
+    "Greg Zaal",
+    "Jarod Guest"
+   ],
+   "link": "https://polyhaven.com/a/qwantani_dusk_2",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "natural light",
+    "nature",
+    "skies",
+    "clear",
+    "low contrast",
+    "sunrise-sunset",
+    "partly cloudy",
+    "mountain",
+    "view",
+    "dam",
+    "lake",
+    "hilltop",
+    "grass"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani_dusk_2/qwantani_dusk_2_2k.hdr",
+    "1k": "img/ceus/qwantani_dusk_2/qwantani_dusk_2_1k.hdr"
+   },
+   "sol": {
+    "visivel": false,
+    "elevacao": 16.39,
+    "azimuteU": 0.594,
+    "pico": {
+     "valor": 5.48,
+     "u": 0.5916,
+     "v": 0.4321,
+     "elevacao": 12.22,
+     "pixel": [
+      1211,
+      442
+     ]
+    }
+   },
+   "mediaHemisferioSuperior": 1.2432
+  },
+  {
+   "id": "qwantani_night",
+   "nome": "Qwantani Night",
+   "tipo": "noite",
+   "horaAproximada": "21h",
+   "justificativa": "noite limpa com estrelas, horizonte livre",
+   "autores": [
+    "Greg Zaal",
+    "Jarod Guest"
+   ],
+   "link": "https://polyhaven.com/a/qwantani_night",
+   "licenca": "CC0",
+   "tags": [
+    "outdoor",
+    "natural light",
+    "nature",
+    "skies",
+    "clear",
+    "low contrast",
+    "night",
+    "mountain",
+    "view",
+    "dam",
+    "lake",
+    "hilltop",
+    "grass",
+    "stars",
+    "milky way",
+    "light pollution",
+    "astronomy"
+   ],
+   "arquivos": {
+    "2k": "img/ceus/qwantani_night/qwantani_night_2k.hdr",
+    "1k": "img/ceus/qwantani_night/qwantani_night_1k.hdr"
+   },
+   "sol": {
+    "visivel": true,
+    "elevacao": 84.11,
+    "azimuteU": 0.7538,
+    "pico": {
+     "valor": 258.22,
+     "u": 0.7537,
+     "v": 0.0327,
+     "elevacao": 84.11,
+     "pixel": [
+      1543,
+      33
+     ]
+    },
+    "astro": "lua (corpo mais brilhante; nao e sol)"
+   },
+   "mediaHemisferioSuperior": 0.8874
+  }
+ ]
+}

@@ -30,7 +30,7 @@
   var CHAVE = "orcapro:bim:precisao:v1";   /* só preferência do aparelho (snaps ligados, passo da grade) */
   /* cor do marcador por tipo — tokens do css/app.css (o tema escuro vem junto) */
   var COR = { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", perpendicular: "var(--aco)",
-              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
+              extensao: "var(--amarelo)", eixo: "var(--aco)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
               /* snaps completos (14/10/2026) */
               centroide: "var(--aco)", quadrante: "var(--verde)", insercao: "var(--aco)", no: "var(--aco)", aparente: "var(--vermelho)",
               paralelo: "var(--amarelo)", tangente: "var(--verde)", rastreamento: "var(--amarelo)", vertice: "var(--verde)", aresta: "var(--texto-fraco)", face: "var(--texto-fraco)" };
@@ -244,7 +244,20 @@
         var incs = [90]; try { incs = BBO() ? BBO().precisao().inc : [90]; } catch (eI) {}
         /* FUNDAÇÃO e PILAR: o cruzamento de eixos e o centro da peça existente vêm primeiro (js/bimprecisao.js escolherCentro) */
         var cSub = !!(Pr().CENTRO_SUB && Pr().CENTRO_SUB[edit.sub]);
-        if (pr.snapOn) sn = Pr().snap(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0, paralelos: pr.par, adquiridos: pr.adq, incs: incs, prefereCentro: cSub });
+        var lista = [], cic = null;
+        if (pr.snapOn) {
+          lista = Pr().snapTodos(cur, geometria(), { tol: tol, tipos: pr.tipos, ref: ref, grade: pr.tipos.grade ? pr.grade : 0, paralelos: pr.par, adquiridos: pr.adq, incs: incs, prefereCentro: cSub });
+          /* FACE da peça CRIADA aqui (23/10/2026): o ponto onde o raio do cursor toca a face — com a cota dele. Só ligada no menu (nasce
+             desligada: tira o clique do plano de trabalho); vale mais que "próximo" e grade, menos que ponto notável e linha de construção */
+          if (pr.tipos.face && hit && hit.object && hit.object.userData && hit.object.userData.mid === "edit" && hit.point) {
+            var fc = { p: { x: Math.round(hit.point.x * 10000) / 10000, z: Math.round(hit.point.z * 10000) / 10000 }, tipo: "face", y: Math.round(hit.point.y * 10000) / 10000, d: 0, obj: hit.object }, ix = lista.length;
+            for (var li = 0; li < lista.length; li++) if (Pr().CLASSE[lista[li].sub || lista[li].tipo] >= 3) { ix = li; break; }
+            lista.splice(ix, 0, fc);
+          }
+          /* TAB (23/10/2026): dois encaixes concorrem no mesmo lugar — o Tab percorre a lista; o escolhido vale para o marcador E para o clique */
+          cic = Pr().escolherCiclo(pr.ciclo, lista, { x: e.clientX, y: e.clientY }, false);
+          sn = cic.sn;
+        }
         /* o canto do IFC importado (malha) entra quando aqui não há PONTO notável:
            desenhar a parede nova sobre a planta do projeto continua agarrando */
         if (pr.snapOn && (!sn || Pr().CLASSE[sn.sub || sn.tipo] > 0) && hit && hit.object && hit.object.userData && hit.object.userData.mid !== "edit") {
@@ -263,13 +276,13 @@
           var aj = BBO().travar(ref, (!sn || sn.tipo === "grade") ? cur : p, { tipoSnap: sn ? sn.tipo : null });
           if (aj.travado) { p = aj.p; sn = sn && sn.tipo === "grade" ? { p: p, tipo: "grade" } : null; malha = false; }
         }
-        return { p: p, sn: sn, malha: malha, tol: tol, cur: cur };
+        return { p: p, sn: sn, malha: malha, tol: tol, cur: cur, lista: lista, tabIdx: cic ? cic.idx : 0, tabN: cic ? cic.n : 0, y: sn && sn.y != null && isFinite(sn.y) ? sn.y : null };
       }
       /* ------------------------- SNAPS COMPLETOS: o que o cursor ADQUIRE e o meio entre 2 pontos (14/10/2026)
        * Parar o cursor ~0,5 s em cima de um PONTO notável (extremidade, meio, centro...) o adquire para o
        * RASTREAMENTO (as guias saem dele; parar de novo solta); em cima de uma ARESTA ("mais próximo") a
        * adquire para o PARALELO. Até 5 pontos; uma linha. Trocar de ferramenta limpa. */
-      pr.adq = []; pr.par = []; pr.adqCand = null; pr.m2p = null;
+      pr.adq = []; pr.par = []; pr.adqCand = null; pr.m2p = null; pr.ciclo = {}; pr.ult = null; pr.ultE = null;
       var adqGrp = new THREE.Group(); adqGrp.name = "precisao-adquiridos"; api.scene.add(adqGrp);
       function chaveP(p) { return Math.round(p.x * 1000) + ":" + Math.round(p.z * 1000); }
       function desenharAdquiridos() {
@@ -322,9 +335,11 @@
         limparGrupo(grp);
         if (!sp || !sp.sn || !sp.sn.tipo) { api.marcaEsconder(); return; }
         if (sp.malha) { api.marca({ p: V3(sp.p), tipo: sp.sn.tipo, obj: sp.sn.obj, seg: sp.sn.seg }); return; }
-        api.marca({ p: V3(sp.p), tipo: sp.sn.tipo, editor: true, cor: COR[sp.sn.tipo] });
+        /* o nome do encaixe + a cota da peça (prolongamento, face) + o Tab quando há mais de um candidato */
+        var extra = []; if (sp.y != null) extra.push("cota " + fmt(sp.y) + " m"); if (sp.tabN > 1) extra.push("Tab " + (sp.tabIdx + 1) + "/" + sp.tabN);
+        api.marca({ p: V3(sp.p, sp.y), tipo: sp.sn.tipo, editor: true, cor: COR[sp.sn.tipo], extra: extra.join(" · ") });
         var gs = (sp.sn.guias || []).map(function (g) { return [g.a, g.b]; });
-        var l = segs(gs, matGuia, edit.base + 0.01); if (l) grp.add(l);
+        var l = segs(gs, matGuia, sp.y != null ? sp.y + 0.01 : edit.base + 0.01); if (l) grp.add(l);
       }
 
       /* ------------------------------------------- caixa de digitar */
@@ -948,6 +963,14 @@
       }
 
       /* --------------------------------------------- teclado */
+      function tab3d() {
+        var sp = pr.ult, ee = pr.ultE;
+        if (!ativo() || !edit.sub || /^(cota|inst|telhado)/.test(edit.sub) || !sp || !sp.lista || sp.lista.length < 2 || !ee) return false;   /* cota, tubo e telhado têm o Tab deles */
+        try { var alvo = document.elementFromPoint(ee.clientX, ee.clientY); if (!alvo || !host().contains(alvo)) return false; } catch (eT) { return false; }
+        Pr().escolherCiclo(pr.ciclo, sp.lista, { x: ee.clientX, y: ee.clientY }, true);
+        self.mover(ee);   /* refaz o ponto com o candidato escolhido: marcador, guias e elástico */
+        return true;
+      }
       function digitandoFora(t) { return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) && !caixa.contains(t); }
       document.addEventListener("keydown", function (e) {
         if (!ativo()) return;
@@ -956,6 +979,8 @@
         /* F3 com a barra de baixo na tela: quem atende é ela (js/bimbarrasnaps.js — F3 snap, F8 ortogonal),
            senão o F3 alternava duas vezes (aqui e lá) e ficava como estava */
         if (e.key === "F3") { if (global.BimBarraSnaps && global.BimBarraSnaps.atendeTeclas && global.BimBarraSnaps.atendeTeclas()) return; e.preventDefault(); e.stopPropagation(); alternarSnaps(); return; }
+        /* TAB (23/10/2026): há mais de um encaixe sob o cursor — passa para o próximo. Sem candidato extra, o Tab segue como sempre. */
+        if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && tab3d()) { e.preventDefault(); e.stopPropagation(); return; }
         /* Esc, um passo por vez: 1) desfaz o ponto já clicado; 2) sai da
            ferramenta (o editor continua aberto); 3) limpa a seleção; 4) só então o Esc de
            sempre (fecha o editor). Parede/viga com o traço aberto: o Esc de sempre encerra o traço. */
@@ -1022,7 +1047,7 @@
           if (edit.sub === "familia") api.ghost(e);
           var hit = api.raycast(e.clientX, e.clientY);
           var sp = pontoSnap(e, hit); if (!sp) return true;
-          pr.ult = sp;
+          pr.ult = sp; pr.ultE = { clientX: e.clientX, clientY: e.clientY, shiftKey: !!e.shiftKey, pointerType: e.pointerType };
           mostrarMarca(sp);
           adquirir(sp);   /* rastreamento e paralelo: o cursor parado ~0,5 s adquire */
           var base = baseAtual(), pv = sp.p;
@@ -1043,6 +1068,7 @@
             var sp0 = pontoSnap(e, hit); if (!sp0) return null;
             var m0 = m2pPonto(sp0.p); if (m0 === true) return true;   /* MEIO ENTRE 2 PONTOS: o 1º clique só marca */
             caixaEsconder(); limparGrupo(grp);
+            api.cotaSnap(!m0 && sp0.sn && sp0.sn.ky === "topo" ? sp0.y : null);   /* a cota do encaixe (prolongamento do topo de OUTRA viga): a viga nasce no topo dela */
             return V3(m0 || sp0.p);
           }
           if (pr.passo === "sel") {
@@ -1145,7 +1171,7 @@
         arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
         /* o modelo foi refeito (op nova, desfazer, refazer, reabrir) */
         aposRebuild: function (st) {
-          pr.geo = null;
+          pr.geo = null; pr.ciclo = {};
           var n0 = pr.sel.length;
           pr.sel = pr.sel.filter(function (id) { return !!Pr().tipoNoEstado(st, id); });
           realcar(); desenharCotas(st); montarTemporarias(); pintarOpcoes();
@@ -1154,7 +1180,7 @@
           if (pr.sel.length !== n0) { try { if (global.BimSelecao && global.BimSelecao.mudou) global.BimSelecao.mudou(); } catch (eSL) {} }
         },
         aoSub: function (sub) {
-          pr.pts = []; caixaEsconder(); limparGrupo(grp);
+          pr.pts = []; pr.ciclo = {}; pr.ult = null; caixaEsconder(); limparGrupo(grp);
           limparAdquiridos(); pr.m2p = null;   /* snaps completos: troca de ferramenta zera o que foi adquirido */
           if (!ativo()) {   /* editor desligado: a seleção sai e a peça volta à cor dela */
             pr.sel = []; realcar(); pr.passo = null;
@@ -1222,7 +1248,7 @@
           /* VÍNCULOS: a prévia (e2e e suporte) — o que acompanharia a op, sem gravar */
           previaVinculos: function (op) { var V = VUI(); if (!V) return null; var r = V.previa(estado(), op, null); return r ? { acompanharam: r.acompanharam.slice(), avisos: r.avisos.slice(), resumo: r.resumo } : null; },
           estado: function () {
-            return { passo: pr.passo, ferramenta: ferramenta(), pts: pr.pts.slice(), sel: pr.sel.slice(), ultimo: pr.ult ? { p: pr.ult.p, tipo: pr.ult.sn ? pr.ult.sn.tipo : null } : null,
+            return { passo: pr.passo, ferramenta: ferramenta(), pts: pr.pts.slice(), sel: pr.sel.slice(), ultimo: pr.ult ? { p: pr.ult.p, tipo: pr.ult.sn ? pr.ult.sn.tipo : null, y: pr.ult.y != null ? pr.ult.y : null, tabN: pr.ult.tabN || 0, tabIdx: pr.ult.tabIdx || 0 } : null,
                      mov: pr.mov ? { base: { x: pr.mov.base.x, z: pr.mov.base.z }, dest: { x: pr.mov.dest.x, z: pr.mov.dest.z } } : null,   /* VÍNCULOS: o arraste da peça no 3D (e2e e suporte) */
                      cotasTemporarias: pr.cotasTmp.map(function (c) { return { k: c.k, valor: c.valor, vizinho: c.vizinho }; }), alcas: (pr.alcas || []).map(function (a) { return { k: a.k, p: a.p }; }),
                      caixa: caixa.style.display !== "none", cotas3d: cotasGrp.children.length, contorno: selGrp.children.length, opcoes: { copiaEsp: pr.copiaEsp, copiaGir: pr.copiaGir, matriz: JSON.parse(JSON.stringify(pr.mat)) } };

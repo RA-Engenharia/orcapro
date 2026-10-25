@@ -550,6 +550,9 @@
 /* PRANCHAS à vista (09/10/2026): o nome sempre escrito — o dono não achava onde ficam as pranchas */
 .rv-qat .rv-tacao.rv-qat-pranchas { margin-left: 8px; }
 @media (max-width: 1560px) { .rv-qat .rv-tacao.rv-qat-pranchas .rv-tacao-rot { display: inline; } .rv-qat .rv-tacao.rv-qat-pranchas { padding: 0 8px; } }
+/* ORÇAPRO CENA à vista (23/10/2026), ao lado de Pranchas */
+.rv-qat .rv-tacao.rv-qat-cena { margin-left: 4px; }
+@media (max-width: 1560px) { .rv-qat .rv-tacao.rv-qat-cena .rv-tacao-rot { display: inline; } .rv-qat .rv-tacao.rv-qat-cena { padding: 0 8px; } }
 
 /* os botões rápidos, à direita das abas (o que flutuava em cima do 3D) */
 .rv-abas-dir { margin-left: auto; display: flex; align-items: center; gap: 4px; padding: 3px 4px 3px 12px; flex: 0 0 auto; }
@@ -635,6 +638,9 @@
   border-radius: 3px; box-shadow: none; cursor: pointer;
 }
 .bim-revit .rv-titulo select.rv-obra option { color: #1a1a1a; background: #fff; }
+/* ⚠ junção 1.2.180 (Cena + Pranchas + Prancha Viva na barra de título): quem encolhe quando falta largura é o SELETOR DE OBRA (rótulo cortado), nunca o botão Início do BIM —
+   antes o <select> não encolhia (min-width auto) e a etiqueta .bp-titulo era espremida a 19 px, com o botão Início coberto pelo seletor (e2e-bim-inicio a 1440 px). */
+.bim-revit .rv-titulo select.rv-obra { min-width: 0; flex: 0 1 auto; }
 /* ⚠ tablet: o app força 16px em todo campo no toque (senão o Safari amplia a
    tela a cada toque — css/app.css, "hover: none and pointer: coarse"); com
    22px de altura o nome da obra saía cortado embaixo na barra de título */

@@ -238,7 +238,12 @@
         if (el.arco && el.arco.m && fin(el.arco.m.x)) { var ca = circ3(e0, P(el.arco.m.x, el.arco.m.z), e1); if (ca) { addCirc(ca, id, pontos, circs); ca.yr = yr; } }
       } else pontos.push({ p: c, tipo: "centro", id: id });
       comY(segs);
-      return { id: id, tipo: el.tipo || "caixa", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs, hospedada: false };
+      /* a COTA de referência da peça (23/10/2026): topo da viga, base da parede, eixo da barra de aço — o ponto e a
+         linha dela levam essa altura (`ya`/`y`), e o prolongamento alinha na reta E na cota */
+      var ya = (fin(el.cy) && fin(el.altura)) ? (el.tipo === "viga" ? el.cy + el.altura / 2 : el.tipo === "parede" ? el.cy - el.altura / 2 : (barraAco ? el.cy : null)) : null;
+      var kya = el.tipo === "viga" ? "topo" : el.tipo === "parede" ? "base" : "eixo";   /* o que a cota É: o topo da viga, a base da parede, o eixo da barra */
+      if (ya != null) { segs.forEach(function (s) { s.ya = ya; s.kya = kya; }); pontos.forEach(function (pt) { pt.y = ya; pt.ky = kya; }); }
+      return { id: id, tipo: el.tipo || "caixa", centro: c, rotY: rot, cantos: cantos, segs: segs, pontos: pontos, circs: circs, hospedada: false, ya: ya };
     }
     if (comEixos && fin(el.x0) && fin(el.z0) && fin(el.x1) && fin(el.z1) && el.tipo == null && el.nome != null) {   /* P4: eixo da grade — só para Alinhar/Aparar (a linha de referência); o snap do desenho fica como na B3 */
       var g0 = P(el.x0, el.z0), g1 = P(el.x1, el.z1);
@@ -308,12 +313,12 @@
      `aresta` e `face` são o encaixe na MALHA do modelo importado (js/bim.js aplicarSnap) — mas ligam e
      desligam no mesmo menu e moram no mesmo estado (js/bimbarraopcoes.js). */
   var TIPOS = ["fim", "intersecao", "meio", "centro", "centroide", "quadrante", "insercao", "no",
-               "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "proximo", "grade",
+               "perpendicular", "tangente", "aparente", "extensao", "paralelo", "rastreamento", "eixo", "proximo", "grade",
                "eixos", "vertice", "aresta", "face"];
   /* o menu da barra de baixo agrupa assim (js/bimbarrasnaps.js) */
   var GRUPOS = [
     { id: "pontos", rotulo: "Pontos", tipos: ["fim", "meio", "centro", "centroide", "quadrante", "insercao", "no"] },
-    { id: "geometria", rotulo: "Geometria", tipos: ["intersecao", "aparente", "extensao", "proximo"] },
+    { id: "geometria", rotulo: "Geometria", tipos: ["intersecao", "aparente", "extensao", "eixo", "proximo"] },
     { id: "relacoes", rotulo: "Relações", tipos: ["perpendicular", "paralelo", "tangente"] },
     { id: "referencias", rotulo: "Referências", tipos: ["grade", "eixos", "vertice", "aresta", "face"] },
     { id: "rastreamento", rotulo: "Rastreamento", tipos: ["rastreamento"] }
@@ -341,10 +346,10 @@
    * IFC; esta mede o que foi modelado aqui. */
   var CLASSE = { fim: 0, intersecao: 0, meio: 0, centro: 0, quadrante: 0, centroide: 0, insercao: 0, no: 0,
                  perpendicular: 1, tangente: 1, aparente: 1, extensao2: 1, rastreamento2: 1,
-                 extensao: 2, rastreamento: 2, paralelo: 2, proximo: 3, grade: 4 };
+                 extensao: 2, rastreamento: 2, paralelo: 2, eixo: 3, proximo: 3, grade: 4 };
   var ORDEM = { fim: 0, intersecao: 1, meio: 2, centro: 3, quadrante: 4, centroide: 5, insercao: 6, no: 7,
                 perpendicular: 8, tangente: 9, aparente: 10, extensao2: 11, rastreamento2: 12,
-                paralelo: 13, rastreamento: 14, extensao: 15, proximo: 16, grade: 17 };   /* o que o usuário ADQUIRIU (paralelo, guia) vem antes do prolongamento automático */
+                paralelo: 13, rastreamento: 14, extensao: 15, eixo: 16, proximo: 16, grade: 17 };   /* eixo = próximo na ordem: dentro da janela de empate vence o MAIS PERTO (a face a 2,5 cm não perde para o eixo a 10 cm) */   /* o que o usuário ADQUIRIU (paralelo, guia) vem antes do prolongamento automático */
   var EMPATE = 0.3;
   /* FUNDAÇÃO e PILAR (o.prefereCentro, 14/10/2026 — a simulação do pórtico: a Fundação clicada no centro do
      pilar W 250 × 32,7 nascia a 0,1295 m do eixo, presa ao meio da face da mesa). Nesta ordem, dentro da
@@ -390,9 +395,9 @@
      paralelos: [segmentos de referência ADQUIRIDOS — o traço fica paralelo a eles],
      adquiridos: [pontos ADQUIRIDOS do rastreamento], incs: [graus das guias polares; padrão 90] }.
      Devolve { p, tipo, d, guias:[{a,b}], seg } ou null. */
-  function snap(cur, geo, o) {
+  function snapTodos(cur, geo, o) {
     o = o || {};
-    if (o.on === false || !cur || !fin(cur.x) || !fin(cur.z)) return null;
+    if (o.on === false || !cur || !fin(cur.x) || !fin(cur.z)) return [];
     var tol = num(o.tol, 0.25), ti = o.tipos || PADRAO, cands = [], alcance = num(o.alcance, 30);
     geo = geo || { segs: [], pontos: [] };
     var circs = geo.circs || [], temRef = !!(o.ref && fin(o.ref.x) && fin(o.ref.z)), ref = temRef ? P(o.ref.x, o.ref.z) : null;
@@ -402,7 +407,13 @@
       if (ex) Object.keys(ex).forEach(function (k) { c[k] = ex[k]; });
       cands.push(c);
     }
-    geo.pontos.forEach(function (pt) { if (ti[pt.tipo]) add(pt.p, pt.tipo, pt.eixo ? { id: pt.id, eixo: true } : { id: pt.id }); });
+    /* COTA (23/10/2026): o ponto de uma peça com altura de referência (`y`: topo da viga, base da parede) leva a cota
+       junto — o prolongamento e o alinhamento nascem na reta E na altura dela (a vista de corte usa o `y` do desenho) */
+    geo.pontos.forEach(function (pt) {
+      if (!ti[pt.tipo]) return;
+      var ex0 = { id: pt.id }; if (pt.eixo) ex0.eixo = true; if (fin(pt.y)) { ex0.y = pt.y; if (pt.ky) ex0.ky = pt.ky; }
+      add(pt.p, pt.tipo, ex0);
+    });
     var perto = geo.segs.filter(function (s) { return distPontoSeg(cur, s.a, s.b) <= tol; });
     if (ti.intersecao || ti.aparente) {
       for (var i = 0; i < perto.length; i++) for (var j = i + 1; j < perto.length; j++) {
@@ -432,22 +443,23 @@
         var pr = projReta(cur, s.a, s.b); if (pr.d > tol || (pr.t >= 0 && pr.t <= 1)) return;
         var ponta = pr.t < 0 ? s.a : s.b; if (dist(ponta, pr.p) > alcance) return;
         var L = dist(s.a, s.b); if (L < 0.05) return;
-        linhas.push({ o: ponta, d: P((s.b.x - s.a.x) / L, (s.b.z - s.a.z) / L), foot: pr.p, dd: pr.d });
+        linhas.push({ o: ponta, d: P((s.b.x - s.a.x) / L, (s.b.z - s.a.z) / L), foot: pr.p, dd: pr.d, y: fin(s.ya) ? s.ya : undefined, ky: s.kya });
       });
-      var refs = geo.pontos.filter(function (pt) { return pt.tipo === "fim"; }).map(function (pt) { return pt.p; });
-      if (temRef) refs.push(P(ref.x, ref.z));
+      var refsY = [], refsK = [];
+      var refs = geo.pontos.filter(function (pt) { return pt.tipo === "fim"; }).map(function (pt) { refsY.push(fin(pt.y) ? pt.y : undefined); refsK.push(pt.ky); return pt.p; });
+      if (temRef) { refs.push(P(ref.x, ref.z)); refsY.push(fin(o.refY) ? o.refY : undefined); refsK.push(undefined); }
       /* ⚠ a linha X/Z de uma ponta pode ser a PRÓPRIA aresta (a face de uma
          parede reta corre em X): com o cursor em cima dela isso é "próximo",
          não alinhamento — senão a extensão roubava todo clique na aresta. */
       var sobreAresta = function (foot, d) {
         return perto.some(function (s) { var L = dist(s.a, s.b); if (L < 1e-9) return false; var cr = Math.abs(((s.b.x - s.a.x) * d.z - (s.b.z - s.a.z) * d.x) / L); return cr < 1e-6 && distPontoSeg(foot, s.a, s.b) < 1e-6; });
       };
-      refs.forEach(function (q) {
+      refs.forEach(function (q, iq) {
         if (dist(q, cur) > alcance || dist(q, cur) <= tol) return;
-        if (Math.abs(cur.z - q.z) <= tol && !sobreAresta(P(cur.x, q.z), P(1, 0))) linhas.push({ o: q, d: P(1, 0), foot: P(cur.x, q.z), dd: Math.abs(cur.z - q.z) });
-        if (Math.abs(cur.x - q.x) <= tol && !sobreAresta(P(q.x, cur.z), P(0, 1))) linhas.push({ o: q, d: P(0, 1), foot: P(q.x, cur.z), dd: Math.abs(cur.x - q.x) });
+        if (Math.abs(cur.z - q.z) <= tol && !sobreAresta(P(cur.x, q.z), P(1, 0))) linhas.push({ o: q, d: P(1, 0), foot: P(cur.x, q.z), dd: Math.abs(cur.z - q.z), y: refsY[iq], ky: refsK[iq] });
+        if (Math.abs(cur.x - q.x) <= tol && !sobreAresta(P(q.x, cur.z), P(0, 1))) linhas.push({ o: q, d: P(0, 1), foot: P(q.x, cur.z), dd: Math.abs(cur.x - q.x), y: refsY[iq], ky: refsK[iq] });
       });
-      linhas.forEach(function (l) { add(l.foot, "extensao", { guias: [{ a: l.o, b: l.foot }] }); });
+      linhas.forEach(function (l) { add(l.foot, "extensao", fin(l.y) ? { guias: [{ a: l.o, b: l.foot }], y: l.y, ky: l.ky } : { guias: [{ a: l.o, b: l.foot }] }); });
       /* duas linhas de construção que se cruzam perto do cursor: o cruzamento vale mais */
       for (var a = 0; a < linhas.length; a++) for (var b = a + 1; b < linhas.length && b < 40; b++) {
         var xi = intersecaoRetas(linhas[a].o, linhas[a].d, linhas[b].o, linhas[b].d); if (!xi) continue;
@@ -483,8 +495,21 @@
         add(f, "paralelo", { seg: s, guias: [{ a: P(ref.x, ref.z), b: f }, { a: s.a, b: s.b }] });
       });
     }
+    /* EIXO DA PEÇA (23/10/2026): o ponto da LINHA DE CENTRO de parede, viga e barra mais perto do cursor. Ligado, o eixo
+       deixa de ser "próximo" (o tipo mostrado e o que o menu liga/desliga é o do eixo); desligado, o eixo continua
+       agarrando como "próximo", como sempre foi */
+    if (ti.eixo) perto.forEach(function (s) {
+      if (s.k !== "eixo") return;
+      var pr = projReta(cur, s.a, s.b), t = Math.max(0, Math.min(1, pr.t)), ex1 = { seg: s, id: s.id };
+      if (fin(s.ya)) { ex1.y = s.ya; ex1.ky = s.kya; }
+      add(P(s.a.x + (s.b.x - s.a.x) * t, s.a.z + (s.b.z - s.a.z) * t), "eixo", ex1);
+    });
     if (ti.proximo) {
-      perto.forEach(function (s) { var pr = projReta(cur, s.a, s.b); var t = Math.max(0, Math.min(1, pr.t)); add(P(s.a.x + (s.b.x - s.a.x) * t, s.a.z + (s.b.z - s.a.z) * t), "proximo", { seg: s }); });
+      perto.forEach(function (s) {
+        if (ti.eixo && s.k === "eixo") return;
+        var pr = projReta(cur, s.a, s.b); var t = Math.max(0, Math.min(1, pr.t));
+        add(P(s.a.x + (s.b.x - s.a.x) * t, s.a.z + (s.b.z - s.a.z) * t), "proximo", fin(s.ya) ? { seg: s, y: s.ya, ky: s.kya } : { seg: s });
+      });
       /* sobre o CÍRCULO/ARCO: o ponto dele mais perto do cursor */
       circs.forEach(function (ci) { var dx = cur.x - ci.c.x, dz = cur.z - ci.c.z, L = Math.sqrt(dx * dx + dz * dz); if (L < 1e-9) return; var th = Math.atan2(dz, dx); if (!naArco(th, ci)) return; add(pontoCirc(ci, th), "proximo", { circ: ci }); });
     }
@@ -500,15 +525,49 @@
       });
       cands.forEach(function (c) { if (c.tipo === "intersecao" && c.segs && c.segs.length === 2 && c.segs.every(function (s) { return s.k === "eixo-grade"; })) c.cruzEixos = true; });
     }
-    var best = o.prefereCentro ? escolherCentro(cands, tol) : escolher(cands, tol);
-    if (best) return best;
+    /* A LISTA (Tab, 23/10/2026): o escolhido primeiro, depois os demais candidatos por classe e distância — o
+       Tab do desenho percorre esta lista quando dois pontos concorrem no mesmo lugar do cursor */
+    var lista = ordenarCandidatos(cands, tol, !!o.prefereCentro);
     var g = num(o.grade, 0);
     if (ti.grade && g > 0) {
       var og = o.origemGrade || P(0, 0);
       var gp2 = P(og.x + Math.round((cur.x - og.x) / g) * g, og.z + Math.round((cur.z - og.z) / g) * g);
-      return { p: P(r4(gp2.x), r4(gp2.z)), tipo: "grade", d: dist(gp2, cur) };
+      lista.push({ p: P(r4(gp2.x), r4(gp2.z)), tipo: "grade", d: dist(gp2, cur) });
     }
-    return null;
+    return lista;
+  }
+  /* o escolhido pela regra de prioridade + os outros, sem repetir o mesmo ponto (o mesmo canto chega por
+     várias arestas); o 1º é SEMPRE o que o snap de um candidato só devolvia antes */
+  function ordenarCandidatos(cands, tol, centro) {
+    if (!cands || !cands.length) return [];
+    var best = centro ? escolherCentro(cands, tol) : escolher(cands, tol);
+    if (!best) return [];
+    function chave(c) { return Math.round(c.p.x * 10000) + ":" + Math.round(c.p.z * 10000) + ":" + (c.y == null ? "" : Math.round(c.y * 10000)); }
+    var vistos = {}; vistos[chave(best)] = 1;
+    var resto = cands.filter(function (c) { return c !== best; }).sort(function (a, b) {
+      return (CLASSE[a.sub || a.tipo] - CLASSE[b.sub || b.tipo]) || (a.d - b.d) || (ORDEM[a.sub || a.tipo] - ORDEM[b.sub || b.tipo]);
+    }).filter(function (c) { var k = chave(c); if (vistos[k]) return false; vistos[k] = 1; return true; });
+    return [best].concat(resto);
+  }
+  /* o candidato que o snap devolve: o 1º da lista (ou null) */
+  function snap(cur, geo, o) { var L = snapTodos(cur, geo, o); return L.length ? L[0] : null; }
+  /* TAB: o próximo da lista (volta ao início); `idx` é o índice atual */
+  function proximoDaLista(lista, idx) { var n = lista ? lista.length : 0; return n ? (((idx | 0) + 1) % n) : 0; }
+  /* O CICLO DO TAB (23/10/2026): dois pontos concorrem no mesmo lugar do cursor (o canto do pilar e o nível, a ponta da viga
+     e o eixo): o Tab percorre a lista. `ciclo` é o estado de quem desenha ({}); `pos` = o cursor em PIXEL de tela. Cursor parado
+     (a até `tolPx` do ponto onde o ciclo começou) mantém o escolhido; andou mais que isso, o ciclo volta ao 1º — senão o
+     Tab de um lugar valeria no outro. A lista mudou (outra peça, outro tipo de snap) também recomeça.
+     → { sn: o escolhido (ou null), idx, n } */
+  function escolherCiclo(ciclo, lista, pos, avancar, tolPx) {
+    var n = lista ? lista.length : 0, tp = tolPx != null ? tolPx : 4;
+    if (!ciclo) ciclo = {};
+    var assinatura = n ? (lista[0].tipo + ":" + Math.round(lista[0].p.x * 1000) + ":" + Math.round(lista[0].p.z * 1000) + "/" + n) : "";
+    var andou = pos && ciclo.pos ? (Math.abs(pos.x - ciclo.pos.x) > tp || Math.abs(pos.y - ciclo.pos.y) > tp) : !!(pos && !ciclo.pos);
+    if (andou || ciclo.sig !== assinatura) { ciclo.idx = 0; if (pos) ciclo.pos = { x: pos.x, y: pos.y }; ciclo.sig = assinatura; }
+    if (!n) { ciclo.idx = 0; return { sn: null, idx: 0, n: 0 }; }
+    if (avancar && n > 1) ciclo.idx = proximoDaLista(lista, ciclo.idx | 0);
+    if ((ciclo.idx | 0) >= n) ciclo.idx = 0;
+    return { sn: lista[ciclo.idx | 0], idx: ciclo.idx | 0, n: n };
   }
   /* ------------------------------------------------ digitar e ortogonal */
   /* "2,5" · "2.5" · "250 cm" · "2500mm" · "2,5 m" → metros (null se não for número) */
@@ -1190,6 +1249,7 @@
     paralelo: '<path d="M3 13 L9 3 M7 13 L13 3"/>',
     tangente: '<circle cx="8" cy="9.5" r="4.5"/><path d="M1.5 5 L14.5 5"/>',
     rastreamento: '<path d="M8 1.5 L8 14.5 M1.5 8 L14.5 8" stroke-dasharray="2 1.5"/><circle cx="8" cy="8" r="1.6"/>',
+    eixo: '<path d="M1.5 8 L14.5 8" stroke-dasharray="4 1.5 1 1.5"/><path d="M8 5 L8 11"/>',
     eixos: '<path d="M5 1.5 L5 14.5 M1.5 11 L14.5 11" stroke-dasharray="4 1.5 1 1.5"/>',
     vertice: '<path d="M2.5 13.5 L8 2.5 L13.5 13.5"/>',
     aresta: '<path d="M2 13 L14 3"/><circle cx="8" cy="8" r="2"/>',
@@ -1197,7 +1257,7 @@
   };
   var ROTULO = { fim: "ponto final", intersecao: "interseção", meio: "ponto médio", centro: "centro", perpendicular: "perpendicular", extensao: "extensão", proximo: "próximo", grade: "grade",
                  centroide: "centro geométrico", quadrante: "quadrante", insercao: "inserção", no: "nó", aparente: "interseção aparente", paralelo: "paralelo",
-                 tangente: "tangente", rastreamento: "rastreamento", eixos: "eixos da grade", vertice: "vértice", aresta: "aresta", face: "face" };
+                 tangente: "tangente", rastreamento: "rastreamento", eixo: "eixo da peça", eixos: "eixos da grade", vertice: "vértice", aresta: "aresta", face: "face" };
   function glifoSvg(tipo) {
     var g = GLIFO[tipo]; if (!g) return "";
     return '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true">' + g + "</svg>";
@@ -1234,6 +1294,8 @@
       { id: "juntas-parede", sub: "juntas", rotulo: "Juntas de\nparede", icone: "parede", dica: "Escolha Topo, Meia-esquadria ou Esquadrar na barra de opções e clique perto do canto de duas paredes." },
       /* UNIÃO DE CANTO (20/10/2026, js/bimfecharui.js): um diálogo, não uma ferramenta de clique — o registrar do js/bimarqui.js põe o reg por cima do genérico */
       { id: "fechar-cantos", sub: null, rotulo: "Fechar cantos\nabertos", icone: "quadrado", dica: "Acha as pontas de parede que ficaram perto de outra sem estar no canto (a até 0,30 m, configurável), mostra a lista e fecha tudo de uma vez: até o encontro dos eixos (L) ou até a face (T). Pega a seleção, ou o modelo inteiro. Parede desunida de propósito não é tocada; um Ctrl+Z desfaz tudo." },
+      /* CONVERTER O IFC GENÉRICO (js/bimifcconv.js + js/bimifcconvui.js, 23/10/2026): um diálogo com prévia, não uma ferramenta de clique */
+      { id: "converter-ifc", sub: null, rotulo: "Converter IFC\ngenérico", icone: "ciclo", dica: "Troca as peças \"elemento genérico\" do IFC (o que o SketchUp exporta) por parede, laje, pilar, viga, porta, janela e telhado do modelador, pela GEOMETRIA. Mostra o que vira o quê, com a confiança de cada categoria, e só grava o que você confirmar — um lote, um Ctrl+Z desfaz tudo e o IFC original volta (ele só fica oculto). O que não for reconhecido com segurança continua genérico." },
       { id: "alternar-uniao", sub: "alternar-uniao", rotulo: "Alternar ordem\nde união", icone: "ciclo", dica: "Clique perto do canto de duas paredes: troca a que passa e a que para (o volume de cada uma muda). Em peças unidas (pilar, viga, laje), clique as duas: troca quem corta quem." },
       { id: "unir-geometria", sub: "unir-geo", rotulo: "Unir\ngeometria", icone: "mais", dica: "Clique duas peças (parede, pilar, viga, laje): a de maior prioridade corta a outra — pilar > viga > laje > parede — e o volume comum não conta duas vezes no orçamento." },
       { id: "desunir-geometria", sub: "desunir-geo", rotulo: "Desunir\ngeometria", icone: "fechar", dica: "Clique as duas peças unidas: cada uma volta inteira (na parede × parede, o canto deixa de ser feito)." }
@@ -1262,7 +1324,7 @@
     GRUPOS: GRUPOS, PADRAO_TIPOS: PADRAO_TIPOS, tangentes: tangentes, quadrantes: quadrantes, centroide: centroide, circ3: circ3, meio2p: meio2p,
     naArco: naArco, direcoesPolares: direcoesPolares, geoDeLinhas: geoDeLinhas, dentroPoli: dentroPoli, CENTRO_SUB: { fundacao: 1, pilar: 1, "met-pilar": 1 },
     projReta: projReta, distPontoSeg: distPontoSeg, intersecaoSegs: intersecaoSegs, intersecaoRetas: intersecaoRetas, raioSeg: raioSeg,
-    pegada: pegada, geometria: geometria, escolher: escolher, snap: snap,
+    pegada: pegada, geometria: geometria, escolher: escolher, snap: snap, snapTodos: snapTodos, proximoDaLista: proximoDaLista, escolherCiclo: escolherCiclo,
     lerNumero: lerNumero, lerAngulo: lerAngulo, lerRetangulo: lerRetangulo, distAng: distAng, pontoPor: pontoPor, orto: orto, fmtM: fmtM,
     validaT: validaT, ponto: ponto, angulo: angulo, transformarEl: transformarEl,
     alcas: alcas, esticarCaixa: function (el, ponta, p) { return esticarCaixa(el, ponta, p, BE); },

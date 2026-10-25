@@ -86,8 +86,11 @@
    * usa), depois a modelagem por disciplina, documentação e análise.
    * Aba que não está aqui (módulo novo) entra antes do Gerenciar.
    * --------------------------------------------------------------- */
-  var ORDEM = ["arquivo", "modificar", "arquitetura", "estrutura", "alvenaria", "acabamentos", "instalacoes", "metalica",
-    "marcenaria", "volume", "massa-terreno", "anotar", "vista", "analisar", "quantitativos", "icamento", "gerenciar"];
+  /* ⚠ 23/10/2026: a ordem do FLUXO de trabalho do projeto — o que se modela primeiro vem primeiro: arquitetura, alvenaria,
+     estrutura (concreto → aço, com o içamento colado nele → madeira), instalações, acabamentos, formas livres e terreno;
+     depois o que vale para todos (anotar, vista, analisar, quantitativos, gerenciar). */
+  var ORDEM = ["arquivo", "modificar", "arquitetura", "alvenaria", "estrutura", "metalica", "icamento", "marcenaria", "instalacoes", "acabamentos",
+    "volume", "massa-terreno", "anotar", "vista", "analisar", "quantitativos", "gerenciar"];
 
   /* um comando novo (o mesmo formato do js/bimribbon.js) */
   function c(id, rotulo, icone, dica, extra) {
@@ -113,12 +116,18 @@
     c("fx-isolar", "Isolar elemento", "olho", "Isola temporariamente os selecionados: o resto do modelo some. Redefinir traz de volta."),
     c("fx-restaurar-temp", "Redefinir temporário", "ciclo", "Desfaz o ocultar/isolar temporário: tudo volta a aparecer."),
     c("fx-sobrepor", "Sobrepor gráficos", "paleta", "Sobrepor gráficos: na vista 2D abre Visibilidade/Gráficos (cor, pena e meio-tom por categoria e por filtro)."),
-    /* Medir */
-    c("fx-medir", "Medir", "medir", "Mede entre dois pontos com snap, no 3D e na planta (a trena). Esc encerra.", { grande: true, alias: "medir" }),
+    /* Medir. ⚠ A Trena (Anotar › Medir › `medir`) e a Cota (Anotar › Cotas › `p7-cota-alinhada`) NÃO têm mais um irmão
+       "Modificar › Medir" (`fx-medir`, `fx-cota`): eram dois botões para a mesma ação. A parte que o `fx-medir` tinha de
+       diferente — medir na PLANTA, no corte e na elevação — foi para a própria Trena (`medirTrena`, ligada no `registrar`);
+       o id antigo na barra de acesso rápido vira `medir` (QA_LEGADO). */
     c("fx-medir-longo", "Medir ao longo", "regua", "Mede ao longo de um caminho: na planta, corte ou elevação, cada clique soma um trecho (Backspace tira o último, Esc encerra); no 3D, soma o comprimento dos tubos selecionados."),
-    c("fx-cota", "Cota\nalinhada", "regua", "Cota alinhada presa às peças, no 3D, na planta e no corte — a mesma de Anotar › Cotas.", { grande: true, alias: "p7-cota-alinhada" }),
     /* Caixa de seleção (BX) */
     c("fx-caixa-selecao", "Caixa de\nseleção", "quadrado", "Isola os elementos selecionados na vista 3D com uma caixa de corte justa em volta deles. Selecione em qualquer vista (planta, corte ou 3D) e aperte BX. Para voltar, desligue a Caixa de corte (tecla C).", { grande: true }),
+    /* Vista › Apresentação. ⚠ A ação "acabamento-ia" já estava registrada (js/gestao.js) e o botão só existia DENTRO do diálogo do
+       Render — o console avisava "ação registrada para acabamento-ia, que não existe na fita" a cada abertura do BIM. Agora é um
+       comando de verdade ao lado do Render por IA (o diálogo mostra o preço antes de gerar). Só na fita organizada: a fita de
+       sempre (sem a prévia hidro) é a do master e não ganha botão. */
+    c("acabamento-ia", "Acabamento\ncom IA", "pincel", "Testa acabamentos na imagem desta vista com IA: o preço aparece ANTES de gerar e o resultado vai para a galeria de renders. Ilustração, não projeto executivo.", { grande: true, requer: "modelo" }),
     /* Vista › Gráficos */
     c("fx-filtros", "Filtros", "categorias", "Filtros da vista: as regras de visibilidade e sobreposição por filtro, na Visibilidade/Gráficos da vista 2D ativa."),
     c("fx-linhas-finas", "Linhas finas", "desLinha", "Mostra todas as linhas das vistas 2D com a espessura mínima, para conferir detalhe sem o peso das penas. Não muda a impressão nem o PDF.", { tipo: "alterna" }),
@@ -169,35 +178,191 @@
   var ALTERNATIVA = {};
 
 
-  /* as abas reorganizadas: onde cada id mora (o id que não existir nesta fita é pulado) */
+  /* ===================================================================
+   * A ORGANIZAÇÃO DIDÁTICA DA FITA (23/10/2026)
+   *
+   * Pedido do Rogério: "tira qualquer botão duplicado; organiza as ferramentas do modo mais didático possível, com
+   * itens e subitens de acordo com a disciplina, para deixar a interface mais intuitiva."
+   *
+   * ORG é a ÚNICA fonte de "em que aba e em que painel mora cada comando", na ORDEM DO FLUXO de trabalho de cada
+   * disciplina (Arquitetura: construir → circulação → cobertura → esquadrias → mobiliário → ambientes; Instalações:
+   * hidro → elétrica → verificar; Vista: navegar → exibir → gráficos → criar vistas → janelas → apresentar → folhas →
+   * exportar). Os comandos são MOVIDOS (o mesmo objeto, o mesmo id, a mesma ação registrada no BimCmd): nenhum some.
+   *   · `ids` aceita, no lugar de um id, um SUBMENU: { grupo, rotulo, icone, dica, disc, itens: [ids] } — o botão abre
+   *     um menu suspenso com as variantes (quando o painel ficaria cheio de botões que são variações do mesmo trabalho);
+   *   · o que chegar à fita e NÃO estiver aqui cai no painel "Mais" da aba — o teste reprova (tools/test-bimfita.js,
+   *     tools/e2e-bim-ferramentas-org.js): comando novo precisa de endereço.
+   * ⚠ Mexeu aqui? Rode `node tools/bim-fita-inventario.js` (antes/depois) e as e2e que clicam na fita pela aba
+   *   (e2e-bim-fita-org, e2e-bim-p1, e2e-bim-p10…): elas encontram o botão pela ABA + id.
+   * =================================================================== */
   var ABA_MODIFICAR = [
     { nome: "Selecionar", ids: ["fx-modificar", "fx-propriedades", "fx-filtro-selecao"] },
     { nome: "Área de transferência", ids: ["fx-copiar-area", "fx-colar", "fx-colar-alinhado"] },
     { nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "fechar-cantos", "alternar-uniao"] },
+    { nome: "IFC importado", ids: ["converter-ifc"] },
     { nome: "Modificar", ids: ["alinhar", "deslocamento", "espelhar", "mover-preciso", "copiar", "girar",
       "aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "snaps-editor"] },
-    { nome: "Vista", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
-    { nome: "Medir", ids: ["fx-medir", "fx-medir-longo", "fx-cota"] },
-    { nome: "Criar", ids: ["criar-similar", "criar-grupo"] },
+    { nome: "Ocultar e isolar", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
+    { nome: "Similar e grupos", grande: true, ids: ["criar-similar", "criar-grupo", "editar-grupo", "desagrupar", "colar-niveis"] },
     { nome: "Caixa de seleção", ids: ["fx-caixa-selecao"] }
   ];
   var ABA_VISTA = [
-    { nome: "Gráficos", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
+    { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
+    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "ambientes-3d"] },
+    { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "caixa-corte"] },
+    { nome: "Gráficos da vista", ids: ["modelos-vista", "vg-vista", "fx-filtros", "fx-linhas-finas", "fx-linhas-ocultas-exibir", "fx-linhas-ocultas-remover",
       "estilos-objeto"] },
-    { nome: "Apresentação", ids: ["render-fisico", "render-ia", "galeria-ia", "apresentar-reforma"] },
-    { nome: "Criar", ids: ["fx-vista-3d", "corte-2d", "chamada-detalhe", "planta-2d", "planta-nova", "planta-forro", "planta-estrutural",
-      "elevacao-vista", "elevacao-interior", "vista-desenho", "duplicar-vista", "p7-legenda", "tabela-quantidades", "levantamento-material"] },
-    { nome: "Composição de folha", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas"] },
-    { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "vistas", "max-3d", "janela-3d",
+    { nome: "Plantas e cortes", ids: ["fx-vista-3d", "planta-2d", "planta-nova", "planta-forro", "planta-estrutural", "corte-2d", "chamada-detalhe"] },
+    { nome: "Elevações e outras vistas", ids: ["elevacao-vista", "elevacao-interior", "vista-desenho", "duplicar-vista"] },
+    { nome: "Tabelas e legenda", ids: ["tabela-quantidades", "levantamento-material", "p7-legenda"] },
+    { nome: "Janelas", ids: ["fx-alternar-janelas", "fx-fechar-inativas", "fx-guia-vistas", "lado-a-lado", "nova-vista", "max-3d", "janela-3d", "navegador-org",
       "fx-interface"] },
-    { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "atalhos"] },
-    { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "estilo", "materiais", "ultra", "cores-categoria", "cores-categoria-paleta",
-      "caixa-corte", "ortogonal", "grade", "ambientes-3d", "navegador-org"] },
+    { nome: "Apresentação", ids: ["cena", "render-fisico", "render-ia", "acabamento-ia", "galeria-ia", "apresentar-reforma"] },
+    { nome: "Folhas", ids: ["nova-folha", "posicionar-vista", "fx-titulo-folha", "fx-carimbo", "gerar-pranchas", "revisoes-folha", "lista-folhas", "lista-vistas", "prancha-viva"] },
     { nome: "Exportar", ids: ["exportar-dxf", "exportar-dwg", "pdf-lote"] }
   ];
   /* na Vista os botões são pequenos (3 por coluna): são ~60 comandos — fora estes, que são o que mais se usa */
-  var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "apresentar-reforma": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
-    "nova-folha": 1, "posicionar-vista": 1, "fx-alternar-janelas": 1, "fx-fechar-inativas": 1, "fx-guia-vistas": 1, "lado-a-lado": 1, "fx-interface": 1 };
+  var GRANDES_VISTA = { "modelos-vista": 1, "vg-vista": 1, "render-fisico": 1, "cena": 1, "apresentar-reforma": 1, "fx-vista-3d": 1, "corte-2d": 1, "planta-2d": 1, "chamada-detalhe": 1,
+    "nova-folha": 1, "posicionar-vista": 1, "fx-alternar-janelas": 1, "fx-fechar-inativas": 1, "fx-guia-vistas": 1, "lado-a-lado": 1, "fx-interface": 1,
+    "home": 1, "orbita": 1, "voo": 1, "gerar-pranchas": 1, "estilo": 1 };
+
+  var ABA_ARQUITETURA = [
+    { nome: "Construir", ids: ["parede", "piso", "furo-laje", "componente", "modelar-ia"] },
+    { nome: "Tipo", ids: ["tipos-parede", "editar-tipo", "combinar"] },
+    { nome: "Referência", ids: ["niveis", "nivel-atual", "eixo", "plano-trabalho"] },
+    { nome: "Circulação", ids: ["escada", "escada-u", "rampa", "guarda-corpo"] },
+    { nome: "Cobertura", ids: ["cobertura", "telhado-modelo", "telhado-borda", "telhado-unir"] },
+    { nome: "Estrutura e telhas", ids: ["cob-estrutura", "cob-telha", "cob-platibanda", "cob-quant"] },
+    { nome: "Calhas e pluvial", ids: ["cob-calha", "cob-calha-calc", "cob-pluvial"] },
+    { nome: "Forro", ids: ["forro", "cob-sanca", "cob-forro-estrutura", "cob-luminarias"] },
+    { nome: "Esquadrias", ids: ["porta", "janela", "esq-auto", "esq-auditar", "esq-criterios"] },
+    { nome: "Mobiliário", ids: ["mob-auto", "mob-opcoes", "mob-auditar"] },
+    { nome: "Ambientes", ids: ["ambiente", "separador-ambiente", "identificador-ambiente", "esquema-cores"] },
+    { nome: "Marmoraria", ids: ["marm-ambiente", "marm-banho", "marm-cozinha", "marm-executivo", "marm-precos", "marm-orcamento"] },
+    { nome: "Incêndio e acessibilidade", ids: ["inc-dados", "inc-lancar", "inc-auditar", "acs-auditar"] },
+    { nome: "Reforma", ids: ["demolir"] }
+  ];
+  var ABA_ALVENARIA = [
+    { nome: "Modulação", ids: ["conferir-modulacao"] },
+    { nome: "Paginação", ids: ["paginar-alvenaria", "elevacoes", "graute", "alvenaria-assentada"] },
+    { nome: "Blocok", ids: ["blocok", "blocok-exec", "blocok-pecas", "blocok-docs"] }
+  ];
+  var ABA_ESTRUTURA = [
+    { nome: "Elementos", ids: ["pilar", "viga", "fundacao", "trelica"] },
+    { nome: "Pré-lançamento", ids: ["conc-prelancar", "conc-auditar", "conc-quant", "conc-ifc", "conc-criterios"] },
+    { nome: "Projeto estrutural", ids: ["estrutural", "detalhe-peca", "sondagem"] }
+  ];
+  var ABA_ACABAMENTOS = [
+    { nome: "Camadas e padrões", ids: ["parede-cebola", "presets-acabamento", "aplicar-ambiente"] },
+    { nome: "Piso e revestimento", ids: ["paginar-piso", "paginar-parede", "pranchas-paginacao"] },
+    { nome: "Pintar", ids: ["pintar-face", "dividir-face", "remover-pintura"] }
+  ];
+  var ABA_INSTALACOES = [
+    { nome: "Hidrossanitário", ids: ["tubo", "conexao", "aparelho", "acessorio-tubo"] },
+    { nome: "Projeto inteligente", ids: ["tracar-auto", "montar-barrilete", "hid-equipar", "hid-equipar-auditar"] },
+    { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
+        dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",
+        itens: ["cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
+    { nome: "Elétrica", ids: ["eletroduto", "eletrocalha", "dispositivo-eletrico", "quadro-eletrico", "luminaria-mep"] },
+    { nome: "Pontos elétricos", ids: ["ele-auto", "ele-auditar", "ele-criterios"] },
+    { nome: "Circuitos e quadro", ids: ["ele-circ", "ele-circ-auditar", "ele-circ-pranchas", "ele-circ-criterios"] },
+    { nome: "Verificar e documentar", ids: ["verificar-sistemas", "desconexoes", "legenda-mep", "tabela-mep"] }
+  ];
+  /* a disciplina Metálica: do eixo à fabricação (o fluxo do detalhista) */
+  var ABA_METALICA = [
+    { nome: "Eixos e plano", ids: ["met-plano", "met-grade-eixos", "met-cotas-eixos", "met-niveis-3d"] },
+    { nome: "Peças", ids: ["met-pilar", "met-viga", "met-diagonal", "met-vigas-pilares", "met-terca", "met-chapa-cliques", "met-chapa", "met-perfil", "met-enrijecedor", "met-mecanica"] },
+    { nome: "Ligação inteligente", ids: ["met-lig-inteligente", "met-lig-catalogo", "met-lig-lote", "met-lig-config", "met-lig-biblio", "met-lig-tipos", "met-lig-memorial"] },
+    { nome: "Ligações", ids: ["met-placa-base", "met-chapa-ext", "met-cant-dupla", "met-emenda", "met-clip", "met-contravento", "met-no", "met-conferir", "met-apagar-lig"] },
+    { nome: "Galpão", ids: ["met-galpao"] },
+    { nome: "Pórticos", ids: ["met-porticos"] },
+    { nome: "Peças prontas", ids: ["met-pronta-trelica", "met-pronta-escada", "met-pronta-mezanino", "met-pronta-rolamento", "met-pronta-rack", "met-pronta-skid", "met-pronta-editar"] },
+    { nome: "Acessos", ids: ["met-ac-escolher", "met-ac-galeria", "met-ac-escada", "met-ac-escada-linha", "met-ac-marinheiro", "met-ac-helicoidal", "met-ac-rampa",
+      "met-ac-plataforma", "met-ac-anelar", "met-ac-passarela", "met-ac-guarda", "met-ac-corrimao", "met-ac-piso", "met-ac-verificar"] },
+    { nome: "Tanques", ids: ["met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular"] },
+    { nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-cype", "met-calc-normas"] },
+    { nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-ifc", "met-pacote", "met-fontes"] },
+    { nome: "Orçamento e montagem", ids: ["met-orcamento", "met-montagem"] },
+    { nome: "Catálogo", ids: ["met-catalogo-br", "met-catalogo"] }
+  ];
+  var ABA_MARCENARIA = [
+    { nome: "Módulos", ids: ["marc-inserir", "marc-editar", "marc-explodir"] },
+    { nome: "Chapas e fitas", ids: ["marc-catalogo"] },
+    { nome: "Corte", ids: ["marc-plano", "marc-planilha", "marc-cortecloud", "marc-csv", "marc-dxf", "marc-etiquetas", "marc-ferragens"] },
+    { nome: "Carpintaria", ids: ["marc-pergolado", "marc-deck", "marc-tesoura", "marc-serradas"] },
+    { nome: "Estruturas de madeira", ids: ["mad-eng-abrir", "mad-eng-exemplo", "mad-eng-calcular"] },
+    { nome: "Cálculo da madeira", ids: ["mad-calc-abrir", "mad-calc-exemplo", "mad-calc-calcular", "mad-calc-resultados", "mad-calc-memorial", "mad-calc-pranchas", "mad-calc-manual", "mad-calc-cype", "mad-calc-compra"] }
+  ];
+  var ABA_VOLUME = [
+    { nome: "Formas", ids: ["extrusao", "revolucao", "varredura"] },
+    { nome: "Combinar", ids: ["unir", "subtrair", "empurrar"] }
+  ];
+  var ABA_TERRENO = [
+    { nome: "Modelar terreno", ids: ["p11-topo", "p11-dxf", "p11-csv", "p11-subregiao", "p11-rotular"] },
+    { nome: "Terraplenagem", ids: ["p11-plataforma"] },
+    { nome: "Implantação", ids: ["p11-divisa", "p11-norte", "p11-comp"] }
+  ];
+  var ABA_ANOTAR = [
+    { nome: "Medir", ids: ["medir", "area", "angulo", "snap", "fx-medir-longo", "limpar-medidas"] },
+    { nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "p7-cota-linear"] },
+    { nome: "Cotas especiais", ids: ["p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-coordenada", "cota-furacao"] },
+    { nome: "Padrão das cotas", ids: ["cotas-padrao", "p7-tipos"] },
+    { nome: "Texto e símbolos", ids: ["p7-texto", "p7-simbolo", "p7-nota-chave"] },
+    { nome: "Identificar", ids: ["identificar-categoria", "identificar-todos"] },
+    { nome: "Detalhe 2D", ids: ["p7-linha-detalhe", "p7-regiao", "p7-mascara", "p7-componente"] },
+    { nome: "Revisões", ids: ["p7-nuvem", "p7-revisoes"] },
+    { nome: "Documentar", ids: ["anotacao", "foto", "pranchas"] }
+  ];
+  var ABA_ANALISAR = [
+    { nome: "Compatibilizar", ids: ["clash"] },
+    { nome: "Cortes no 3D", ids: ["planta", "corte"] },
+    { nome: "Tempo e custo", ids: ["quatro-d", "tarefas4d", "curva-s", "seis-d"] }
+  ];
+  var ABA_QUANTITATIVOS = [
+    { nome: "Levantar", ids: ["qto", "insumos-modelo", "quant-ilustrado", "peso-total"] },
+    { nome: "Orçamento", ids: ["orc-modelo", "eap", "rastrear", "req-bim"] }
+  ];
+  var ABA_ICAMENTO = [
+    { nome: "Peso", ids: ["peso-pecas", "peso-coletar", "peso-tipo", "peso-relatorio"] },
+    { nome: "Plano de içamento", ids: ["icar-equipamento", "icar-posicao", "icar-pontos", "icar-vento", "icar-simular", "icar-plano"] }
+  ];
+  var ABA_GERENCIAR = [
+    { nome: "Biblioteca", ids: ["familias-param", "editor-familia", "familia-ia", "familias", "templates", "materiais-proj"] },
+    { nome: "Modelos", ids: ["modelos", "remover-modelos"] },
+    { nome: "Fases e opções", ids: ["fases", "filtro-fase", "opcoes-projeto"] },
+    { nome: "Consultar e limpar", ids: ["selecionar-id", "localizar-substituir", "advertencias", "limpar-nao-usados", "vista-inicial"] },
+    { nome: "Colaborar", ids: ["reuniao", "compartilhar"] }
+  ];
+  /* a lista que o `organizar` percorre: aba → painéis (a ordem das ABAS é a de ORDEM, mais abaixo). `rotulo` só quando muda. */
+  var ORG = [
+    { id: "modificar", rotulo: "Modificar", paineis: ABA_MODIFICAR },
+    { id: "arquitetura", rotulo: "Arquitetura", paineis: ABA_ARQUITETURA },
+    { id: "alvenaria", rotulo: "Alvenaria", paineis: ABA_ALVENARIA },
+    { id: "estrutura", rotulo: "Estrutura", paineis: ABA_ESTRUTURA },
+    { id: "acabamentos", rotulo: "Acabamentos", paineis: ABA_ACABAMENTOS },
+    { id: "instalacoes", rotulo: "Instalações", paineis: ABA_INSTALACOES },
+    { id: "metalica", paineis: ABA_METALICA },
+    { id: "marcenaria", paineis: ABA_MARCENARIA },
+    { id: "volume", paineis: ABA_VOLUME },
+    { id: "massa-terreno", paineis: ABA_TERRENO },
+    { id: "anotar", rotulo: "Anotar", paineis: ABA_ANOTAR },
+    { id: "vista", rotulo: "Vista", paineis: ABA_VISTA, grandes: GRANDES_VISTA },
+    { id: "analisar", rotulo: "Analisar", paineis: ABA_ANALISAR },
+    { id: "quantitativos", rotulo: "Quantitativos", paineis: ABA_QUANTITATIVOS },
+    { id: "icamento", rotulo: "Içamento", paineis: ABA_ICAMENTO },
+    { id: "gerenciar", rotulo: "Gerenciar", paineis: ABA_GERENCIAR }
+  ];
+  /* rótulos que a organização troca para NÃO haver dois botões com o mesmo nome na mesma disciplina (o objeto é COPIADO:
+     o mapa de sempre fica como era). Pilar e Viga genéricos (a seção diz o material) × os de perfil de aço; a Copiar da
+     área de transferência × a ferramenta Copiar (ponto base e destino). */
+  var REMOVIDOS_ORG = ["met-eixo", "met-cotas"];
+  var ROTULOS_ORG = {
+    "fx-copiar-area": "Copiar\npara colar", "copiar": "Copiar\nelemento",
+    "met-pilar": "Pilar\nde aço", "met-viga": "Viga\nde aço", "met-plano": "Plano das\npeças de aço",
+    "met-ac-guarda": "Guarda-corpo\nde aço", "met-ac-rampa": "Rampa\nde aço",
+    /* "Traçar automaticamente" (15 letras sem espaço) passava por cima do vizinho no botão da fita */
+    "tracar-auto": "Traçado\nautomático"
+  };
 
   /* a aba contextual: os painéis por categoria da seleção */
   var CTX_PAINEIS = {
@@ -212,19 +377,22 @@
 
   /* barra de acesso rápido: o padrão (o pedido do Rogério, nesta ordem) */
   var CHAVE_QA = "orcapro:bim:acesso-rapido:v1";
-  var QA_PADRAO = ["salvar-modelo", "fx-modificar", "desfazer", "refazer", "fx-medir", "p7-cota-alinhada", "identificar-categoria", "p7-texto",
+  var QA_PADRAO = ["salvar-modelo", "fx-modificar", "desfazer", "refazer", "medir", "p7-cota-alinhada", "identificar-categoria", "p7-texto",
     "fx-vista-3d", "corte-2d", "fx-linhas-finas", "fx-fechar-inativas", "fx-alternar-janelas"];
+  /* ⚠ O QUE SAIU DA FITA NA ORGANIZAÇÃO DE 23/10/2026 (cada um fazia o MESMO que outro botão): quem tinha o id antigo na barra
+     de acesso rápido (gravada por aparelho) passa para o botão que ficou — sem isso a barra do cliente perdia o Medir calada. */
+  var QA_LEGADO = { "fx-medir": "medir", "fx-cota": "p7-cota-alinhada" };
   /* os botões que já moravam na barra de título (js/bimshell.js) — continuam os MESMOS nós (ids e cliques) */
   var QA_NATIVOS = { "salvar-modelo": "Salvar no projeto", "desfazer": "Desfazer", "refazer": "Refazer" };
   /* teclas que não vêm dos mapas de duas letras */
-  var TECLA_FIXA = { "desfazer": "Ctrl+Z", "refazer": "Ctrl+Y", "fx-modificar": "Esc", "fx-excluir": "Delete", "medir": "M", "fx-medir": "M",
+  var TECLA_FIXA = { "desfazer": "Ctrl+Z", "refazer": "Ctrl+Y", "fx-modificar": "Esc", "fx-excluir": "Delete", "medir": "M",
     "caixa-corte": "C", "fx-ocultar": "H", "fx-isolar": "I", "home": "F", "grade": "G", "atalhos": "?", "fx-copiar-area": "Ctrl+C", "fx-colar": "Ctrl+V" };
   /* atalhos de duas letras que este arquivo acrescenta (valem fora e dentro do modo de edição) */
   var ATALHOS_FX = { BX: "fx-caixa-selecao", TL: "fx-linhas-finas", RV: "fx-recuperar-vista" };
   var CHAVE_FINAS = "orcapro:bim:linhas-finas";
 
   var BimFita = {
-    ORDEM: ORDEM, FX: FX, CTX: CTX, ABA_MODIFICAR: ABA_MODIFICAR, ABA_VISTA: ABA_VISTA, CTX_PAINEIS: CTX_PAINEIS,
+    ORDEM: ORDEM, FX: FX, CTX: CTX, ABA_MODIFICAR: ABA_MODIFICAR, ABA_VISTA: ABA_VISTA, CTX_PAINEIS: CTX_PAINEIS, ORG: ORG, REMOVIDOS_ORG: REMOVIDOS_ORG, ROTULOS_ORG: ROTULOS_ORG,
     QA_PADRAO: QA_PADRAO, ALTERNATIVA: ALTERNATIVA, ATALHOS_FX: ATALHOS_FX, EM_DESENVOLVIMENTO: EM_DESENVOLVIMENTO,
     _clip: null, _ctx: null, _ctxAssin: "", _G: null,
 
@@ -256,17 +424,35 @@
     },
     /* monta a aba `abaId` com os painéis `paineis` (ids MOVIDOS de onde estiverem, ou novos);
        o que já estava na aba e não foi citado fica no painel "Mais" — nada se perde */
+    _copia: function (cm, extra) { var cp = {}; for (var k in cm) if (cm.hasOwnProperty(k)) cp[k] = cm[k]; for (var e in extra) if (extra.hasOwnProperty(e)) cp[e] = extra[e]; return cp; },
+    /* um SUBMENU da organização (`{ grupo, rotulo, itens }`): um botão com ▾ cujas variantes MORAM dentro dele (os mesmos
+       objetos, os mesmos ids). Quem já é menu (cob-telha…) continua como é; este é o menu que a organização cria. */
+    _novoGrupo: function (g) {
+      var self = this;
+      /* ⚠ o `organizar` roda de novo quando um módulo chega depois: o submenu JÁ existe e as variantes já moram dentro dele
+         (o `_tirar` só enxerga o nível de cima) — reaproveita o botão e só puxa o que ainda faltar */
+      var o = this._tirar(g.grupo) || { id: g.grupo, rotulo: g.rotulo, icone: g.icone || "camadas", tipo: "menu", grande: g.grande !== false, dica: g.dica || "", itens: [] };
+      arr(g.itens).forEach(function (id) {
+        if (o.itens.some(function (i) { return i.id === id; })) return;
+        var cm = self._tirar(id); if (cm) o.itens.push(cm);
+      });
+      return o.itens.length ? o : null;
+    },
     _montarAba: function (abaId, rotulo, paineis, grandes) {
       var r = R(), self = this, A = r.ABAS, aba = r.aba(abaId);
       var novos = paineis.map(function (p) {
         var cs = [];
         p.ids.forEach(function (id) {
-          var cm = self._tirar(id) || self._novo(id);
+          var cm = typeof id === "object" ? self._novoGrupo(id) : (self._tirar(id) || self._novo(id));
           if (!cm) return;
           if (grandes) {
-            var g = !!grandes[id];
-            if (!!cm.grande !== g) { var cp = {}; for (var k in cm) if (cm.hasOwnProperty(k)) cp[k] = cm[k]; cp.grande = g; cm = cp; }
+            var g = !!grandes[cm.id];
+            if (!!cm.grande !== g) cm = self._copia(cm, { grande: g });
           }
+          /* painel com `grande: true`: todos os botões dele no tamanho grande (poucos botões, todos com nome) */
+          if (p.grande === true && !cm.grande) cm = self._copia(cm, { grande: true });
+          /* o rótulo trocado pela organização (dois botões com o mesmo nome na mesma disciplina) */
+          if (ROTULOS_ORG[cm.id] && cm.rotulo !== ROTULOS_ORG[cm.id]) cm = self._copia(cm, { rotulo: ROTULOS_ORG[cm.id] });
           cs.push(cm);
         });
         return { nome: p.nome, comandos: cs };
@@ -275,9 +461,9 @@
         var resto = [];
         arr(aba.paineis).forEach(function (p) { arr(p.comandos).forEach(function (cm) { resto.push(cm); }); });
         if (resto.length) novos.push({ nome: "Mais", comandos: resto });
-        aba.paineis = novos; aba.rotulo = rotulo;
-      } else {
-        aba = { id: abaId, rotulo: rotulo, paineis: novos };
+        aba.paineis = novos; if (rotulo) aba.rotulo = rotulo;
+      } else if (novos.length) {
+        aba = { id: abaId, rotulo: rotulo || abaId, paineis: novos };
         A.push(aba);
       }
       return aba;
@@ -306,11 +492,13 @@
       /* módulo que chega DEPOIS (o grupo "bim" carrega aos poucos e o _bimCascaAcoes roda de novo) acrescenta
          comandos na fita já organizada: a assinatura muda e a organização roda de novo (mover é idempotente) */
       if (this._assinFita() === this._orgAssin) return { ok: true, ja: true };
-      var ctx = this._ctx;
+      var ctx = this._ctx, self0 = this;
       if (ctx) this.aplicarContexto(null);
       var antes = r.ids().length;
-      this._montarAba("modificar", "Modificar", ABA_MODIFICAR, null);
-      this._montarAba("vista", "Vista", ABA_VISTA, GRANDES_VISTA);
+      /* os botões que faziam o MESMO que outro saem da fita (Ribbon.SUBSTITUIDOS_B1 leva o id antigo ao que ficou) */
+      REMOVIDOS_ORG.forEach(function (id) { self0._tirar(id); });
+      /* a aba Modificar leva o rótulo da seleção ("Modificar | Tubos"): o `organizar` roda com o contexto já tirado (acima) */
+      ORG.forEach(function (o) { self0._montarAba(o.id, o.rotulo, o.paineis, o.grandes || null); });
       this._limparVazios();
       /* as abas sem painel (Analisar perdeu o Desenho, mas tem mais) somem; Arquivo é backstage */
       var A = r.ABAS;
@@ -474,14 +662,7 @@
         status(t); toast(t, "aviso"); return true;
       };
       a["fx-caixa-selecao"] = function () { self.caixaSelecao(); return true; };
-      /* MEDIR: no 3D é a trena (o comando de sempre); com uma planta/corte/elevação ativa, a medida da vista 2D */
-      a["fx-medir"] = function () {
-        if (self._ativa2d()) { self.medir2d(!(self._m2 && !self._m2.longo)); return true; }
-        if (self._m2) self.medir2d(false);
-        var cmd = CMD(), res = cmd ? cmd.executar("medir") : null;
-        if (res && !res.ok && res.motivo) { status(res.motivo); toast(res.motivo, "aviso"); }
-        return true;
-      };
+
       a["fx-linhas-finas"] = function (e) { self.linhasFinas(e && e.ligado != null ? !!e.ligado : null); return true; };
       a["fx-vista-3d"] = function () {
         var g = G(), b = B();
@@ -548,6 +729,9 @@
       a["ctx-isolamento"] = function () { return self.isolamentoTela(); };
       a["ctx-conectar"] = function () { return self.conectarTela(); };
       a["ctx-conectar-altura"] = function () { return self.conectarAlturaTela(); };
+      /* os SUBMENUS da organização: o botão abre a lista das variantes (cada uma é um comando de verdade, com a ação e a
+         disponibilidade dele) */
+      this.grupos().forEach(function (g) { a[g.grupo] = function () { return self.menuGrupo(g.grupo); }; });
       /* os atalhos: executam o comando de verdade */
       FX.concat(CTX).forEach(function (cm) {
         if (!cm.alias || a[cm.id]) return;
@@ -558,6 +742,36 @@
         };
       });
       return a;
+    },
+    /* a TRENA: no 3D é a de sempre (`orig` = a ação que o gestao.js registrou); com uma planta/corte/elevação ativa, a
+       medida da vista 2D. ⚠ Na vista 2D quem manda é o `_m2` (a medida de verdade), NÃO o `e.ligado` do BimCmd: o Esc da
+       medida a encerra sem repintar a fita, e o estado "ligado" do botão ficava velho — o clique seguinte desligava o que já
+       estava desligado e a Trena só começava no segundo clique. O botão é acertado pelo que a medida fez. */
+    medirTrena: function (e, orig) {
+      if (this._ativa2d()) {
+        var on = !(this._m2 && !this._m2.longo);
+        this.medir2d(on);
+        try { var r = R(); if (r && r.comando("medir")) r.setAtivo("medir", on); } catch (eT) {}
+        return true;
+      }
+      if (this._m2) this.medir2d(false);
+      return orig ? orig(e) : false;
+    },
+    /* os submenus declarados em ORG: [{ grupo, rotulo, disc, itens }] */
+    grupos: function () {
+      var l = [];
+      ORG.forEach(function (o) { arr(o.paineis).forEach(function (p) { arr(p.ids).forEach(function (id) { if (id && typeof id === "object") l.push(id); }); }); });
+      return l;
+    },
+    menuGrupo: function (id) {
+      var self = this, r = R(), cm = r ? r.comando(id) : null; if (!cm) return false;
+      var itens = [{ tit: str(cm.rotulo).replace(/\s*\n\s*/g, " ") }].concat(arr(cm.itens).map(function (it) {
+        var d = r.disponibilidade(it.id), tec = self.tecla(it.id);
+        return { id: it.id, rot: str(it.rotulo).replace(/\s*\n\s*/g, " "), dir: tec || "", check: it.tipo === "alterna" ? r.ativo(it.id) : null,
+          fn: function () { self._exec(it.id); } };
+      }));
+      this._abrirMenu(this._ancora(id), itens, "grupo");
+      return true;
     },
     _selPor: function (k) {
       var si = SI(), s = this._selecao();
@@ -1028,7 +1242,14 @@
     qaLista: function () {
       var v = lsGet(CHAVE_QA), l = null;
       try { l = v ? JSON.parse(v) : null; } catch (e) { l = null; }
-      return arr(l).length ? arr(l).filter(function (x) { return typeof x === "string" && x; }) : QA_PADRAO.slice();
+      if (!arr(l).length) return QA_PADRAO.slice();
+      var vistos = {}, out = [];
+      arr(l).forEach(function (x) {
+        if (typeof x !== "string" || !x) return;
+        x = QA_LEGADO[x] || x;
+        if (!vistos[x]) { vistos[x] = 1; out.push(x); }
+      });
+      return out;
     },
     qaGravar: function (l) {
       var u = [], vistos = {};
@@ -1080,12 +1301,12 @@
           b.onclick = function () { self.qaExecutar(id); };
           qa.appendChild(b);
           /* Medir: o "▾" escolhe entre dois pontos e ao longo */
-          if (id === "fx-medir") {
+          if (id === "medir") {
             var sb = d.createElement("button"); sb.type = "button"; sb.className = "fx-qa-seta"; sb.setAttribute("data-rv-qa-seta", id);
             sb.setAttribute("aria-label", "Opções de medir"); sb.textContent = "▾";
             sb.onclick = function () {
               self._abrirMenu(sb, [{ tit: "Medir" },
-                { id: "medir", ico: "medir", rot: "Medir entre dois pontos", dir: "M", fn: function () { self.qaExecutar("fx-medir"); } },
+                { id: "medir", ico: "medir", rot: "Medir entre dois pontos", dir: "M", fn: function () { self.qaExecutar("medir"); } },
                 { id: "fx-medir-longo", ico: "regua", rot: "Medir ao longo de um elemento", fn: function () { self.qaExecutar("fx-medir-longo"); } }], "medir");
             };
             qa.appendChild(sb);
@@ -1156,7 +1377,7 @@
         try { if (Pr && Pr.ATALHOS_CMD) Object.keys(Pr.ATALHOS_CMD).forEach(function (k) { var v = Pr.ATALHOS_CMD[k]; m[v] = m[v] || k; }); } catch (e3) {}
         Object.keys(ATALHOS_FX).forEach(function (k) { m[ATALHOS_FX[k]] = k; });
         if (m["p7-cota-alinhada"] == null && m["cota-alinhada"]) m["p7-cota-alinhada"] = m["cota-alinhada"];
-        if (m["fx-cota"] == null && m["p7-cota-alinhada"]) m["fx-cota"] = m["p7-cota-alinhada"];
+
         this._mapaTeclas = m;
       }
       return m[id] || "";
@@ -1283,6 +1504,9 @@
       if (!org.ok) return false;
       var a = this.acoes(), self = this;
       FX.forEach(function (cm) { if (a[cm.id] && r.comando(cm.id)) reg[cm.id] = a[cm.id]; });
+      /* os submenus da organização e a Trena (2D) */
+      this.grupos().forEach(function (g) { if (a[g.grupo] && r.comando(g.grupo)) reg[g.grupo] = a[g.grupo]; });
+      if (r.comando("medir")) { var medOrig = reg["medir"]; reg["medir"] = function (e) { return self.medirTrena(e, medOrig); }; }
       /* a aba contextual só existe com seleção: os comandos dela entram na fita só para registrar e saem */
       this.aplicarContexto({ k: "tubos", rot: "—" });
       var extra = {};
@@ -1292,7 +1516,14 @@
       this.aplicarContexto(null);
       this._ctxAssin = "";
       /* disciplina: tudo daqui é comum a todas */
-      try { var D = global.BimDisciplinas; if (D && D.declarar) D.declarar(FX.concat(CTX).map(function (cm) { return cm.id; }), D.COMUM || "comum"); } catch (eD) {}
+      try {
+        var D = global.BimDisciplinas;
+        if (D && D.declarar) {
+          D.declarar(FX.concat(CTX).map(function (cm) { return cm.id; }), D.COMUM || "comum");
+          /* o submenu é da disciplina das variantes que moram nele */
+          this.grupos().forEach(function (g) { D.declarar([g.grupo], g.disc || D.COMUM || "comum"); });
+        }
+      } catch (eD) {}
       /* em breve: o clique conta a alternativa */
       try { var s = SH(); if (s) { s._ALTERNATIVA = s._ALTERNATIVA || {}; Object.keys(ALTERNATIVA).forEach(function (k) { s._ALTERNATIVA[k] = ALTERNATIVA[k]; }); } } catch (eA) {}
       /* atalhos de duas letras: o modo de edição (js/bimprecisaoui.js) e a tela de atalhos também os conhecem */
@@ -1319,7 +1550,9 @@
         /* os atalhos (alias) acendem junto com o comando de verdade */
         var self0 = this;
         if (this._m2 && this._ativa2d() !== this._m2.id) this.medir2d(false);   /* trocou de vista: a medida 2D sai */
-        FX.concat(CTX).forEach(function (cm) { if (cm.alias && r.comando(cm.id)) { var on = r.ativo(cm.alias) || (cm.id === "fx-medir" && !!self0._m2 && !self0._m2.longo); if (r.ativo(cm.id) !== on) r.setAtivo(cm.id, on); } });
+        FX.concat(CTX).forEach(function (cm) { if (cm.alias && r.comando(cm.id)) { var on = r.ativo(cm.alias); if (r.ativo(cm.id) !== on) r.setAtivo(cm.id, on); } });
+        /* a Trena acende com a medida da vista 2D (planta, corte, elevação) igual acende no 3D */
+        if (r.comando("medir") && this._ativa2d()) { var on2 = !!(this._m2 && !this._m2.longo); if (r.ativo("medir") !== on2) r.setAtivo("medir", on2); }
         if (r.comando("fx-linhas-finas")) r.setAtivo("fx-linhas-finas", s._raiz.getAttribute("data-fx-linhas-finas") === "1");
         if (r.comando("fx-medir-longo")) r.setAtivo("fx-medir-longo", !!(this._m2 && this._m2.longo));
       }

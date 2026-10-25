@@ -550,6 +550,15 @@
       resumo.pontasNovas.forEach(function (t) { avisos.push({ texto: "Ponta solta: " + t, elementos: [] }); });
       /* CRITÉRIO DE PROJETISTA (js/hidcriterios.js): o auditor sobre a prévia — só o que é do lote novo (escopo) */
       var HCr = global.HidCriterios, crit = null;
+      /* N23 (24/10/2026): onde o tubo do lote atravessa uma laje (ventilação e colunas no forro), o traçado LANÇA o passante (tubo-camisa
+         fixado na fôrma, SINAPI "PASSANTE TIPO TUBO … FIXADO EM LAJE" no orçamento do modelo) — antes só o alerta "Furo na laje" ficava, sem
+         solução, e a nota da casa com caixa caía a 33/100. O furo é previsto; a posição se confere com o estrutural (aviso). */
+      if (HCr && HCr.lancarPassantes) {
+        try {
+          var LP = HCr.lancarPassantes(ops, BE.aplicar(c.ops), c.avaliarFam); resumo.passantes = LP.n;
+          if (LP.n) avisos.push({ texto: "Passantes: " + LP.n + " travessia(s) de laje com o furo previsto (tubo-camisa fixado na fôrma antes da concretagem; vai ao orçamento do modelo) — confira a posição com o projeto estrutural (ABNT NBR 6118, aberturas em lajes).", elementos: LP.trechos.slice(0, 40) });   // hid:ok até 40 elementos no Mostrar
+        } catch (eLP) { pendencias.push({ chave: "ta.passantes", texto: "Passantes: não consegui conferir as travessias de laje (" + (eLP && eLP.message ? eLP.message : eLP) + ") — confira à mão", elementos: [] }); }
+      }
       if (HCr) { try { crit = HCr.auditar(HCr.doEstado(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])), c.avaliarFam, { escopo: resumo.ids })); } catch (eC) { crit = null; } }
       ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (!/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto)) avisos.push({ texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }); }); });
       resumo.piscinas = piscinas.length;

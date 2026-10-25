@@ -952,6 +952,7 @@
           if (THREE.ShapeUtils.area(Q.map(function (q) { return new THREE.Vector2(q[0], q[1]); })) < 0) Q.reverse();
           addMesh(new THREE.Mesh(self._prisma(THREE, Q, function () { return y - lg; }, function () { return y; }), mat), b.id, b.ifc, mat); n++;
         });
+        else if (b.tipoBorda === "calha" && b.perfil && global.BimCoberturaUI && global.BimCoberturaUI.trocho) n += global.BimCoberturaUI.trocho(THREE, self, b.perfil, mat, addMesh, b.id, b.ifc);   /* N23: na cota certa */
         else arr(b.segs).forEach(function (sg) {
           var A = new THREE.Vector3(sg.a.x, sg.a.y - al / 2, sg.a.z), B = new THREE.Vector3(sg.b.x, sg.b.y - al / 2, sg.b.z), L = A.distanceTo(B);
           if (!(L > 1e-4)) return;

@@ -1,0 +1,26 @@
+EZ-Tree — gerador procedural de árvores para three.js (usado pelo js/bimentorno.js, render ao vivo)
+
+Pacote : @dgreenheck/ez-tree 1.1.0 (npm)
+Autor  : Daniel Greenheck · https://github.com/dgreenheck/ez-tree
+Licença: MIT (LICENSE-ez-tree, copiada do pacote)
+.tgz   : https://registry.npmjs.org/@dgreenheck/ez-tree/-/ez-tree-1.1.0.tgz
+sha256 : 4147b49d22b01f09c9d7f3c3c34f788ad37841103a758da25e399af3cbce2f98  (dgreenheck-ez-tree-1.1.0.tgz)
+Baixado: 2026-10-20 (npm pack)
+
+O QUE ENTROU (fonte src/lib do pacote, não o build de 4 MB):
+  branch.js, enums.js, options.js, rng.js, tree.js  + presets.js (os 10 presets usados, em JS)
+O QUE NÃO ENTROU (de propósito):
+  - as texturas de casca e de folha do pacote: a casca declara origem Poly Haven/texturecan e a folha (PNG) não declara
+    origem nenhuma no pacote. Por isso a RA usa SÓ material de licença conhecida:
+      casca  = Poly Haven bark_brown_02 (CC0) em img/texturas/entorno/casca/ (ver o ORIGEM.txt de lá)
+      folha  = desenhada em código (canvas 2D) pelo js/bimentorno.js — sem arquivo, sem licença de terceiro
+  - trellis.js (treliça) e o app de demonstração.
+
+ALTERAÇÕES NA FONTE (marcadas com [RA] no código; refazer se atualizar o pacote):
+  1. imports: 'three' → ../pathtracer/three/three.core.js (o mesmo núcleo r186 do render); './x' → './x.js' (sem bundler).
+  2. tree.js: sem textures.js/trellis.js (getBarkTexture/getLeafTexture devolvem null; o material é da RA);
+     sem o material de folha com GLSL (onBeforeCompile) — o vento das folhas é feito em TSL no js/bimentorno.js,
+     porque GLSL não roda no WebGPU; createTrellis/getNearestTrellisPoint removidos, calculateTrellisForce devolve null.
+  3. tree.js: índice de 32 bits quando a malha passa de 65 535 vértices (o original estourava o Uint16).
+  4. presets.js: os .json viram objetos JS (o original importa .json por bundler).
+Só a GEOMETRIA (ramos e cartões de folha) é usada; a semente (seed) do preset dá sempre a mesma árvore.

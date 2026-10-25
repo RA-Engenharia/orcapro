@@ -136,7 +136,17 @@
     couro_marrom: { m: 0.5, asp: 1.0, media: [0.318, 0.178, 0.063], natural: 1, fonte: "Poly Haven brown_leather", nome: "Couro marrom / caramelo", cat: "tecido" },
     metal_cobre: { m: 0.5, asp: 1.0, media: [0.796, 0.519, 0.363], natural: 1, metal: 0.9, fonte: "ambientCG Metal047A", nome: "Cobre", cat: "metal" },
     metal_latao: { m: 0.5, asp: 1.0, media: [0.952, 0.839, 0.569], natural: 1, metal: 0.9, fonte: "ambientCG Metal042A", nome: "Latão / dourado", cat: "metal" },
-    granito_preto: { m: 1.0, asp: 1.0, media: [0.111, 0.110, 0.108], natural: 1, fonte: "ambientCG Marble006", nome: "Granito preto / pedra escura", cat: "pedra" }
+    granito_preto: { m: 1.0, asp: 1.0, media: [0.111, 0.110, 0.108], natural: 1, fonte: "ambientCG Marble006", nome: "Granito preto / pedra escura", cat: "pedra" },
+    /* ---- leva da FRENTE T (21/10/2026): o que ainda vestia só a cor; tools/gerar-texturas-t.py ---- */
+    tecido_estofado: { m: 0.4, asp: 1.0, media: [0.730, 0.730, 0.730], fonte: "ambientCG Fabric036", nome: "Tecido de estofado (trama)", cat: "estofado" },
+    couro_claro: { m: 0.3, asp: 1.0, media: [0.880, 0.784, 0.652], fonte: "ambientCG Leather035D", nome: "Couro", cat: "estofado" },
+    aco_pintado_liso: { m: 1.0, asp: 1.0, media: [0.500, 0.500, 0.500], fonte: "ambientCG Metal029 (cor levada a cinza-médio)", nome: "Aço pintado (liso)", cat: "metal" },
+    inox_escovado: { m: 1.0, asp: 1.0, media: [0.576, 0.582, 0.597], metal: 0.85, fonte: "ambientCG Metal009 (rugosidade reescalada)", nome: "Inox / alumínio escovado (anisotrópico)", cat: "metal" },
+    aco_galvanizado: { m: 1.0, asp: 1.0, media: [0.967, 0.975, 0.971], metal: 0.85, fonte: "ambientCG Metal051A", nome: "Aço galvanizado / alumínio escovado em círculos", cat: "metal" },
+    plastico_liso_branco: { m: 0.6, asp: 1.0, media: [0.932, 0.916, 0.913], fonte: "ambientCG Plastic013A", nome: "Plástico / PVC / laminado branco", cat: "estofado" },
+    borracha_preta: { m: 0.75, asp: 1.0, media: [0.166, 0.170, 0.195], fonte: "ambientCG Rubber004", nome: "Borracha", cat: "estofado" },
+    louca_porcelana: { m: 0.5, asp: 1.0, media: [0.976, 0.976, 0.976], fonte: "ambientCG Porcelain001", nome: "Louça sanitária (porcelana)", cat: "piso" },
+    casca_arvore: { m: 1.0, asp: 1.0, media: [0.380, 0.345, 0.266], natural: 1, fonte: "PolyHaven bark_brown_02", nome: "Casca de árvore / tronco", cat: "externo" }
   };
 
   /* as categorias da lista de Propriedades, na ordem em que aparecem */
@@ -149,6 +159,7 @@
     { id: "madeira", nome: "Madeira" },
     { id: "tecido", nome: "Tecido e couro" },
     { id: "metal", nome: "Metal e vidro" },
+    { id: "estofado", nome: "Tecido, couro, plástico e borracha" },
     { id: "cobertura", nome: "Telhas" },
     { id: "externo", nome: "Terreno e pavimento" }
   ];

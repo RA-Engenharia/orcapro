@@ -1198,7 +1198,9 @@
     };
   }
 
-  var MadMemorial = { gerar: gerar, SECOES: SECOES, NORMAS: NORMAS, CORES: COR };
+  var MadMemorial = { gerar: gerar, SECOES: SECOES, NORMAS: NORMAS, CORES: COR,
+    /* peças reaproveitadas pelo memorial da madeira ENGENHARADA (js/madengmemorial.js); só exportadas */
+    _i: { Doc: Doc, css: css, logoBox: logoBox, esc: esc, br: br, un: un, td: td, trw: trw, tn: tn, thn: thn, h3: h3, caixa: caixa, situ: situ, ph: ph, t: t, tabVerif: tabVerif, plural: plural, dataTxt: dataTxt, fin: fin, COR: COR, reset: function () { estado.invalidos = 0; estado.indefinidos = []; }, estado: estado } };
   global.MadMemorial = MadMemorial;
   if (typeof module !== "undefined" && module.exports) module.exports = MadMemorial;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

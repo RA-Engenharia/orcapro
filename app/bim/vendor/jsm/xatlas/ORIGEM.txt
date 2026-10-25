@@ -1,0 +1,33 @@
+LUZ ASSADA DO RENDER AO VIVO - js/bimluzassada.js e js/bimluzassada-uv.js (20/10/2026)
+
+O que esta aqui, de onde veio e a licenca (conferida no LICENSE do pacote, copiado ao lado):
+
+  xatlasjs 0.2.0 (repalash/xatlas.js) - wrapper WASM do xatlas (jpcy/xatlas, C++), licenca MIT
+    (LICENSE-xatlasjs: "Copyright (c) 2018-2020 Jonathan Young", a licenca do xatlas que o pacote traz)
+    https://registry.npmjs.org/xatlasjs/-/xatlasjs-0.2.0.tgz
+    sha256 do .tgz: 09fa2625afeedcb6beb32d4f2eb809d7d612704eab06aa21cda6ba651f3ab1ad
+    sha1 do .tgz (shasum do registry): 5b23dcfb91ad419601ac76f87e98cfa39ad5b437
+
+  arquivos usados:
+    xatlas.wasm  <- dist/xatlas.wasm (sem mudanca)
+                    sha256 4f5eb292cb5ab54c3a6872452c8a1fea79976bffe97c060ba60e256419942b96
+    xatlas.js    <- source/web/build/xatlas.js, a fabrica emscripten (MODULARIZE, createXAtlasModule) do MESMO
+                    build do .wasm, tirada do "sourcesContent" do dist/xatlas.js.map do pacote (sem mudanca)
+                    sha256 7e4ebbf928da8fcc38048504a884e15e52dcc011c9e10c95810b0801eb27d0c7
+                    (o .map do pacote: sha256 fe4ca9e73783f102eb3b140a1ee94b26f4a9dde1dc89a8d4e8ddb0586705061c)
+
+POR QUE A FABRICA E NAO O dist/xatlas.js:
+  o dist/xatlas.js do pacote e um pacote webpack que so funciona como worker do comlink (expose da classe Api;
+  fala o protocolo de mensagens do comlink, com callbacks por MessagePort). A fabrica emscripten que ele embrulha
+  e a mesma, sem o comlink: o nosso worker CLASSICO (js/bimluzassada-uv.js) faz importScripts dela e chama as
+  funcoes do embind direto (createAtlas, createMesh, addMesh, generateAtlas, getAtlas, getMeshData...).
+  Classico e nao modulo: a fabrica detecta "worker" por `typeof importScripts == 'function'`, que nao existe
+  num worker de modulo (la ela aborta com "not compiled for this environment").
+
+LIMITE DO WRAPPER (medido 20/10/2026): o indice de entrada e UInt16 (HEAPU16) -> cada malha entregue ao xatlas
+  tem no maximo 65 535 vertices; o worker fatia os grupos grandes. A saida (indices e vertice de origem) e lida
+  direto do HEAPU32 (a classe Api do pacote convertia para Uint16Array e truncava acima de 65 535).
+  UV de saida normalizada (0..1) em largura x altura do atlas.
+
+Baixado do registry do npm em 20/10/2026. Carrega SO quando a aba do render ao vivo abre (o worker e criado no
+preparar da cena e encerrado logo depois).

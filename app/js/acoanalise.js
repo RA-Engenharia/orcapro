@@ -178,11 +178,16 @@
   function vetGlobal(lam, d12) { var o = []; for (var b = 0; b < 4; b++) { var g = paraGlobal(lam, [d12[3 * b], d12[3 * b + 1], d12[3 * b + 2]]); o.push(g[0], g[1], g[2]); } return o; }
   /* kG = Tᵀ k T, com T bloco-diagonal de λ */
   function kGlobal(lam, k) {
-    var o = zeros(12), T = zeros(12);
-    for (var b = 0; b < 4; b++) for (var i = 0; i < 3; i++) for (var j = 0; j < 3; j++) T[3 * b + i][3 * b + j] = lam[i][j];
-    var kt = zeros(12);
-    for (var i2 = 0; i2 < 12; i2++) for (var j2 = 0; j2 < 12; j2++) { var s = 0; for (var m = 0; m < 12; m++) s += k[i2][m] * T[m][j2]; kt[i2][j2] = s; }
-    for (var i3 = 0; i3 < 12; i3++) for (var j3 = 0; j3 < 12; j3++) { var s2 = 0; for (var m2 = 0; m2 < 12; m2++) s2 += T[m2][i3] * kt[m2][j3]; o[i3][j3] = s2; }
+    /* T é bloco-diagonal de 3×3 (λ): faz por blocos, somando na MESMA ordem de antes (os termos nulos que a versão cheia somava não alteram o valor) — 4× mais rápido */
+    var o = zeros(12), kt = zeros(12), bi, bj, i, j, m, s;
+    for (bi = 0; bi < 4; bi++) for (bj = 0; bj < 4; bj++) {
+      var r0 = 3 * bi, c0 = 3 * bj;
+      for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += k[r0 + i][c0 + m] * lam[m][j]; kt[r0 + i][c0 + j] = s; }
+    }
+    for (bi = 0; bi < 4; bi++) for (bj = 0; bj < 4; bj++) {
+      var r1 = 3 * bi, c1 = 3 * bj;
+      for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) { s = 0; for (m = 0; m < 3; m++) s += lam[m][i] * kt[r1 + m][c1 + j]; o[r1 + i][c1 + j] = s; }
+    }
     return o;
   }
 
@@ -276,20 +281,21 @@
     for (var r = g0 + 1; r < n; r++) if (f[r] <= g0) a[ptr[r] + (g0 - f[r])] = 0;
   };
   Perfil.prototype.fatorar = function () {
-    var n = this.n, f = this.f, a = this.a, ptr = this.ptr;
+    var n = this.n, f = this.f, a = this.a, ptr = this.ptr, pivMin = 1;
     for (var i = 0; i < n; i++) {
       var fi = f[i], pi = ptr[i];
       for (var j = fi; j < i; j++) {
         var fj = f[j], pj = ptr[j], k0 = fi > fj ? fi : fj, s = a[pi + (j - fi)];
-        for (var k = k0; k < j; k++) s -= a[pi + (k - fi)] * a[pj + (k - fj)];
+        for (var ia = pi + (k0 - fi), ib = pj + (k0 - fj), fim = pi + (j - fi); ia < fim; ia++, ib++) s -= a[ia] * a[ib];   /* mesma ordem de somas de antes (resultado idêntico bit a bit), só com índices incrementais */
         a[pi + (j - fi)] = s / a[pj + (j - fj)];
       }
-      var d = a[pi + (i - fi)];
+      var d0 = a[pi + (i - fi)], d = d0;
       for (var k2 = fi; k2 < i; k2++) { var v = a[pi + (k2 - fi)]; d -= v * v; }
       if (!(d > 0)) return { ok: false, gl: i, pivo: d };
+      if (d0 > 0 && d / d0 < pivMin) pivMin = d / d0;   /* pivô relativo: perto de 0 = esse grau de liberdade está quase solto (estrutura perto do mecanismo/flambagem) */
       a[pi + (i - fi)] = Math.sqrt(d);
     }
-    return { ok: true };
+    return { ok: true, pivMin: pivMin };
   };
   Perfil.prototype.resolver = function (b) {
     var n = this.n, f = this.f, a = this.a, ptr = this.ptr, y = new Float64Array(n);
@@ -577,6 +583,31 @@
     return N;
   }
 
+  /* Gradiente conjugado PRÉ-CONDICIONADO por um fator de Cholesky já pronto (P = fator de uma matriz parecida, p. ex. a 2ª ordem de outra iteração).
+     Resolve A·x = b com a MESMA solução do Cholesky direto de A (erro de energia relativo < tol), sem fatorar A: a 2ª ordem refaz a matriz a cada
+     iteração (N muda um pouco) e a fatoração era 60 % do tempo de uma análise (R05, 24/10/2026). Devolve null se não convergir em maxIt
+     ou se A não for definida positiva — aí quem chamou fatora direto (e o aviso de "estrutura instável" continua saindo da fatoração). */
+  function pcg(A, b, P, x0, tol, maxIt) {
+    var n = A.n, i, x = x0 ? Float64Array.from(x0) : P.resolver(b), Ax = A.mult(x), r = new Float64Array(n);
+    for (i = 0; i < n; i++) r[i] = b[i] - Ax[i];
+    var z = P.resolver(r), p = Float64Array.from(z), rz = 0, xb = 0;
+    for (i = 0; i < n; i++) { rz += r[i] * z[i]; xb += x[i] * b[i]; }
+    var alvo = tol * tol * Math.max(Math.abs(xb), 1e-300);
+    for (var it = 0; it <= maxIt; it++) {
+      if (!(rz === rz) || !isFinite(rz)) return null;
+      if (rz <= alvo) return x;
+      if (it === maxIt) return null;
+      var Ap = A.mult(p), pAp = 0; for (i = 0; i < n; i++) pAp += p[i] * Ap[i];
+      if (!(pAp > 0)) return null;
+      var al = rz / pAp; for (i = 0; i < n; i++) { x[i] += al * p[i]; r[i] -= al * Ap[i]; }
+      z = P.resolver(r); var rz2 = 0; for (i = 0; i < n; i++) rz2 += r[i] * z[i];
+      var be = rz2 / rz; for (i = 0; i < n; i++) p[i] = z[i] + be * p[i];
+      rz = rz2;
+      xb = 0; for (i = 0; i < n; i++) xb += x[i] * b[i]; alvo = tol * tol * Math.max(Math.abs(xb), 1e-300);
+    }
+    return null;
+  }
+
   /* resolve UMA combinação (fatores por caso) com as opções dela */
   function resolverCombinacao(M, casosPrep, comb, op) {
     var lista = [];
@@ -609,17 +640,25 @@
       /* 1ª ordem: a matriz só depende do conjunto de barras ativas (e da redução de rigidez) — a fatoração é
          reaproveitada entre as combinações (cache pequeno, por memória) */
       var chave = (comb.segundaOrdem && !fase1) ? null : opc.reducaoRigidez + "|" + Object.keys(ativos).filter(function (k) { return ativos[k] === false; }).sort().join(",");
-      var cache = M._cacheK || (M._cacheK = { chaves: [], K: {} }), Kf = chave != null ? cache.K[chave] : null;
-      if (!Kf) {
+      var cache = M._cacheK || (M._cacheK = { chaves: [], K: {} }), Kf = chave != null ? cache.K[chave] : null, Un = null;
+      /* OPÇÃO `comPCG` (DESLIGADA por padrão — só a madeira liga; a Metálica segue no caminho direto de sempre até ter revisão própria).
+         2ª ordem: a matriz muda a cada iteração (Kg(N)); com o fator da última 2ª ordem como pré-condicionador o gradiente conjugado acha a mesma solução em poucas
+         voltas — só refatora quando ele não converge (matriz muito diferente, ou perto da flambagem) */
+      var preK = chave == null ? M._pre : M._pre1;
+      if (!Kf && preK && op.comPCG && !M._semPCG) Un = pcg(montado.K, montado.F, preK, U, 1e-6, 12);
+      if (!Kf && !Un) {
         var fat = montado.K.fatorar();
         if (!fat.ok) {
           var no = null; for (var q = 0; q < M.nos.length; q++) if (M.pos[q] === Math.floor(fat.gl / 6)) no = M.nos[q];
           return { ok: false, motivo: "Estrutura instável (mecanismo) no nó " + (no ? no.id : "?") + ", grau de liberdade " + ["ux", "uy", "uz", "rx", "ry", "rz"][fat.gl % 6] + (comb.segundaOrdem ? " — pode ser carga acima da crítica de flambagem global." : " — faltam apoios ou travamentos."), iteracoes: it };
         }
+        /* estrutura quase solta (pivô relativo < 1e-9: grau de liberdade sem rigidez, mecanismo por pouco): o gradiente conjugado poderia "resolver" uma matriz que o Cholesky recusaria — fica só no caminho direto (a mesma recusa de sempre) */
+        if (fat.pivMin < 1e-9) M._semPCG = true;
         Kf = montado.K;
         if (chave != null) { cache.K[chave] = Kf; cache.chaves.push(chave); if (cache.chaves.length > 3) delete cache.K[cache.chaves.shift()]; }
+        if (chave == null) M._pre = Kf; else M._pre1 = Kf;
       }
-      var Un = Kf.resolver(montado.F);
+      if (!Un) Un = Kf.resolver(montado.F);
       info = montado.info; travados = montado.travados;
       var mud = false, along = {}, quer = {};
       M.barras.forEach(function (B) {

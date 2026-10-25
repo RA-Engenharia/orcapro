@@ -41,12 +41,12 @@
   function num(v) { var n = Number(String(v == null ? "" : v).replace(",", ".")); return isFinite(n) ? n : NaN; }
 
   var ROT = { fim: "Extremidade (ponto final)", intersecao: "Interseção", meio: "Ponto médio", centro: "Centro (círculo e arco)", perpendicular: "Perpendicular",
-              extensao: "Prolongamento (extensão)", proximo: "Mais próximo (sobre a peça)", grade: "Grade",
+              extensao: "Prolongamento (extensão)", eixo: "Eixo da peça (linha de centro)", proximo: "Mais próximo (sobre a peça)", grade: "Grade",
               centroide: "Centro geométrico", quadrante: "Quadrante (0°, 90°, 180°, 270°)", insercao: "Inserção", no: "Nó (ponto)",
               aparente: "Interseção aparente", paralelo: "Paralelo", tangente: "Tangente", rastreamento: "Rastreamento (guias)",
               eixos: "Eixos da grade", vertice: "Vértice (3D)", aresta: "Aresta (3D)", face: "Face (3D)" };
   var COR = { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", perpendicular: "var(--aco)",
-              extensao: "var(--amarelo)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
+              extensao: "var(--amarelo)", eixo: "var(--aco)", proximo: "var(--texto-fraco)", grade: "var(--texto-fraco)",
               centroide: "var(--aco)", quadrante: "var(--verde)", insercao: "var(--aco)", no: "var(--aco)", aparente: "var(--vermelho)",
               paralelo: "var(--amarelo)", tangente: "var(--verde)", rastreamento: "var(--amarelo)", eixos: "var(--texto-fraco)",
               vertice: "var(--verde)", aresta: "var(--texto-fraco)", face: "var(--texto-fraco)" };
@@ -56,7 +56,7 @@
     centroide: "O centro geométrico (de massa) de laje, polígono, face.", quadrante: "Os pontos a 0°, 90°, 180° e 270° do círculo ou arco, girados com a peça.",
     insercao: "O ponto onde a família ou o componente foi colocado.", no: "Peça de um ponto só (sapata, ponto de referência).",
     intersecao: "Onde duas linhas se cruzam de verdade (na mesma altura).", aparente: "Onde duas linhas se cruzam na PLANTA mas passam em alturas diferentes (viga sobre viga).",
-    extensao: "O prolongamento de uma aresta além da ponta e o alinhamento com pontas.", proximo: "O ponto da aresta, do arco ou da face mais perto do cursor.",
+    extensao: "O prolongamento de uma aresta além da ponta e o alinhamento com pontas — na reta e na cota da peça (viga, parede, barra).", eixo: "O ponto da linha de centro (eixo) de parede, viga e barra mais perto do cursor.", proximo: "O ponto da aresta, do arco ou da face mais perto do cursor.",
     perpendicular: "O pé da perpendicular do 1º ponto até a aresta.", paralelo: "Pare o cursor ~0,5 s numa linha: o traço fica paralelo a ela.",
     tangente: "Os pontos onde a reta que sai do 1º ponto toca o círculo ou o arco.", rastreamento: "Pare o cursor ~0,5 s num ponto: guias horizontais, verticais e nos ângulos do Orto saem dele.",
     grade: "O passo da grade quando não há outro ponto perto.", eixos: "As linhas e os cruzamentos da grade de eixos.",
@@ -66,8 +66,21 @@
   var DICA_VINC = "Vínculos: ao mover ou esticar uma parede ou uma barra, o que está amarrado nela acompanha — as paredes do canto esticam, a viga segue o pilar, a sapata vem junto. Segure Alt durante o arraste para mover só a peça. Clique para ligar ou desligar.";
   var DICA_ORTO = "Orto: o traço anda só na horizontal/vertical e nos ângulos marcados (45°, 90°…). Vale para parede, viga, peça metálica, linha, cota, contorno de laje/telhado/fundação, guarda-corpo… F8 liga e desliga; Shift inverte enquanto está apertado (com o Orto apagado, é o orto temporário).";
 
+  /* O ATALHO DE CADA TIPO (23/10/2026): Alt + letra liga e desliga o tipo (o F3 liga e desliga o Snap inteiro). ⚠ As letras fogem do
+     F, E e D (Alt+F e Alt+E abrem o menu do Chrome, Alt+D vai à barra de endereço) e do G (a grade do visualizador); o código da tecla
+     (KeyL) vale em qualquer teclado. A mesma letra aparece no menu, ao lado do nome do tipo. */
+  var ATALHO_TIPO = { fim: "P", meio: "M", intersecao: "I", centro: "C", centroide: "J", quadrante: "Q", insercao: "N", no: "O",
+                      perpendicular: "R", tangente: "T", aparente: "A", extensao: "L", paralelo: "K", rastreamento: "S", eixo: "X",
+                      proximo: "U", grade: "Y", eixos: "Z", vertice: "V", aresta: "B", face: "W" };
   var CHAVE_NOME = "orcapro:bim:snap-nome:v1";   /* "0" = sem a dica com o nome do encaixe (preferência do aparelho) */
   var BimBarraSnaps = {
+    ATALHO_TIPO: ATALHO_TIPO,
+    /* a letra do atalho (maiúscula) → o tipo, ou null */
+    tipoDoAtalho: function (letra) {
+      var L = String(letra || "").toUpperCase(), achou = null;
+      Object.keys(ATALHO_TIPO).forEach(function (t) { if (ATALHO_TIPO[t] === L) achou = t; });
+      return achou;
+    },
     /* a dica com o NOME do encaixe ao lado do cursor (js/bimanot2dui.js): ligada por padrão */
     mostrarNome: function (on) {
       try { if (on != null) global.localStorage.setItem(CHAVE_NOME, on ? "1" : "0"); return global.localStorage.getItem(CHAVE_NOME) !== "0"; } catch (e) { return on != null ? !!on : true; }
@@ -143,7 +156,7 @@
         var GR = (Pr() && Pr().GRUPOS) || [{ id: "todos", rotulo: "Snaps", tipos: T }];
         var item = function (t) {
           var gl = Pr() && Pr().glifoSvg ? Pr().glifoSvg(t) : "";
-          return '<label class="bbs-pop-item" title="' + esc(DICA_TIPO[t] || "") + '"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + (COR[t] || "var(--aco)") + '">' + gl + "</span> " + esc(ROT[t] || t) + "</label>";
+          return '<label class="bbs-pop-item" title="' + esc((DICA_TIPO[t] || "") + (ATALHO_TIPO[t] ? " Atalho: Alt+" + ATALHO_TIPO[t] + "." : "")) + '"><input type="checkbox" data-bbs-tipo="' + t + '"' + (p.tipos[t] !== false ? " checked" : "") + '><span class="bbs-glifo" style="color:' + (COR[t] || "var(--aco)") + '">' + gl + "</span> " + esc(ROT[t] || t) + (ATALHO_TIPO[t] ? ' <span class="bbs-tecla" data-bbs-atalho="' + t + '">Alt+' + ATALHO_TIPO[t] + "</span>" : "") + "</label>";
         };
         pop.innerHTML = '<div class="bbs-pop-tit">Snaps <span class="bbs-tecla">F3</span></div>' +
           '<label class="bbs-pop-item bbs-pop-geral"><input type="checkbox" data-bbs-geral="1"' + (p.snap ? " checked" : "") + "> Snap ligado (F3)</label>" +
@@ -310,6 +323,16 @@
         var sub = self._armada(); if (!self.gira(sub)) return;
         e.preventDefault(); e.stopImmediatePropagation();   /* ⚠ o preventDefault também impede o Espaço de "clicar" o botão da fita que ficou com o foco (desarmaria a ferramenta) */
         self.girar(sub);
+      }, true);
+      /* ALT + LETRA = liga/desliga UM tipo de snap (ATALHO_TIPO). Só com o BIM na tela e a barra montada; nunca com o foco num campo */
+      document.addEventListener("keydown", function (e) {
+        if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.repeat || !self.atendeTeclas()) return;
+        var t0 = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t0.tagName || "") || t0.isContentEditable) return;
+        var m = /^Key([A-Z])$/.exec(e.code || ""), letra = m ? m[1] : String(e.key || "").toUpperCase();
+        var tipo = self.tipoDoAtalho(letra), B2 = BO(); if (!tipo || !B2) return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        var on = B2.alternar("tipo:" + tipo);
+        status((ROT[tipo] || tipo) + (on ? ": ligado." : ": desligado — não agarra mais.") + " (Alt+" + ATALHO_TIPO[tipo] + ")");
       }, true);
       /* F3 = snap, F8 = orto, com o BIM na tela. Teclas de função não escrevem: valem mesmo com o
          foco na caixa de digitar o comprimento (é ali que a pessoa está no meio do traço). */

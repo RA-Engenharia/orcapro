@@ -483,6 +483,7 @@
   <script src="js/guardacorpo.js"></script>   <!-- GUARDA-CORPO pela NBR 14718:2019: valores da norma, cargas, preço, auditoria (lida pelas famílias e pelo auditor de esquadrias) -->
   <script src="js/familiasra.js"></script>
   <script src="js/familiasguarda.js"></script>   <!-- … a família paramétrica ra-guarda-corpo -->
+  <script src="js/familiasinc.js"></script>   <!-- … INCÊNDIO: placa de sinalização, luminária de emergência e extintor (IT 15, 13 e 16 do CBMMG), com preço -->
   <!-- MOBILIÁRIO E PAISAGISMO (19/10/2026): ferramentas de geometria, biblioteca de mobiliário, cozinha/banho/lazer e paisagismo (famílias de geometria "mob") -->
   <script src="js/mobgeo.js"></script>
   <script src="js/familiasmob.js"></script>
@@ -492,6 +493,8 @@
   <script src="js/marmprecos.js"></script>   <!-- MARMORARIA: tabela de preços do marmorista e o orçamento dele -->
   <script src="js/marmproposta.js"></script>   <!-- MARMORARIA: proposta comercial em PDF com a marca da empresa -->
   <script src="js/familiaspais.js"></script>
+  <script src="js/familiasluz.js"></script>   <!-- ILUMINAÇÃO (frente I2, 21/10/2026): plafon, spot, pendente, lustre, fita de sanca, arandela, ventilador — fotometria do catálogo -->
+  <script src="js/iluminacaosugerir.js"></script>   <!-- "Sugerir iluminação" por ambiente (método dos lúmens, NBR 15575-1) -->
   <script src="js/familiaschurras.js"></script>
   <!-- MOBILIÁRIO DO CATÁLOGO (20/10/2026): 64 famílias por categoria, cada peça comercial um tipo com preço e fonte; armário planejado inteligente; composições próprias RA de fábrica (somente leitura) -->
   <script src="js/mobcatalogodados.js"></script>
@@ -627,6 +630,7 @@
   <script src="js/entradardo.js"></script>
   <script src="js/relatos.js"></script>
     <script src="js/escala.js"></script>
+    <script src="js/graftip.js"></script>
   <script src="js/atencao.js"></script>
 <script src="js/reconciliacao.js"></script>
   <script src="js/avancoservico.js"></script>
@@ -838,6 +842,20 @@
   <script src="js/maddimensionar.js"></script>
   <script src="js/madcalcworker.js"></script>
   <script src="js/madcalcui.js"></script>
+  <!-- ESTRUTURAS DE MADEIRA (E2, prévia ?previa=madeng): a tela em 5 passos, a entrada, as saídas e o orçamento (leves). Os motores pesados
+       (madtipologias, madligacoes, madauditor, maddimensionar2) o js/madengworker.js carrega por importScripts() no Worker quando a pessoa calcula. -->
+  <script src="js/madengentrada.js"></script>
+  <script src="js/madorcamento.js"></script>
+  <script src="js/madengsaidas.js"></script>
+  <script src="js/madengworker.js"></script>
+  <!-- E3: pranchas, memorial, manual, SketchUp e CYPE da madeira engenharada (prévia ?previa=madeng) -->
+  <script src="js/madpranchas.js"></script>
+  <script src="js/madmemorial.js"></script>
+  <script src="js/madengpranchas.js"></script>
+  <script src="js/madengmemorial.js"></script>
+  <script src="js/madengmanual.js"></script>
+  <script src="js/madengexport.js"></script>
+  <script src="js/madengui.js"></script>
   <script src="js/blocokexec.js"></script>
   <script src="js/blocokensaio.js"></script>
   <script src="js/blocokcalc.js"></script>
@@ -864,6 +882,9 @@
   <!-- PRECISÃO na barra de baixo (14/10/2026): Snap (F3) e Orto (F8) — um estado só (js/bimbarraopcoes.js), para toda ferramenta de criar -->
   <script src="js/bimbarrasnaps.js"></script>
   <script src="js/bimplantamodelar.js"></script>
+  <!-- MODELAR EM QUALQUER VISTA (23/10/2026): o plano de cada vista (planta, corte, elevação, 3D) e a matriz comando × vista — motor puro; a tela de modelar no corte e na elevação -->
+  <script src="js/bimvistaplano.js"></script>
+  <script src="js/bimvistamodelar.js"></script>
   <!-- COLOCAÇÃO DE PEÇAS (18/10/2026): prévia translúcida antes do clique, inserir registro/conexão no tubo existente, Espaço gira -->
   <script src="js/biminstcolocar.js"></script>
   <!-- N23: CONECTAR PELA ALTURA DE REFERÊNCIA (rota ortogonal na cota do tubo de destino, encaixe conferido) e o alinhamento pelo prolongamento do tubo -->
@@ -883,6 +904,9 @@
   <!-- UNIÃO DE CANTO (20/10/2026): encaixe da ponta ao soltar e "Fechar cantos abertos" (Modificar › Geometria) — motor puro + o diálogo -->
   <script src="js/bimfechar.js"></script>
   <script src="js/bimfecharui.js"></script>
+  <!-- CONVERTER O IFC GENÉRICO (23/10/2026): o que o SketchUp exporta sem classe vira parede, laje, pilar, viga, porta, janela e telhado do modelador, pela geometria — motor puro + o diálogo com prévia -->
+  <script src="js/bimifcconv.js"></script>
+  <script src="js/bimifcconvui.js"></script>
   <!-- ELEVAR (15/10/2026): subir/descer a seleção, levar a base/topo a um nível, alinhar a viga ao topo do pilar; a seção Elevação das Propriedades — motor puro + a tela -->
   <script src="js/bimelevar.js"></script>
   <script src="js/bimelevarui.js"></script>
@@ -917,6 +941,15 @@
   <script src="js/eleauto.js"></script>
   <script src="js/eleauditor.js"></script>
   <script src="js/eleautoui.js"></script>
+  <!-- INCÊNDIO (CBMMG) E ACESSIBILIDADE (NBR 9050) (21/10/2026): dados da pesquisa (gerado por tools/gerar-incdados.js), regras com fonte, rede de caminhamento, lançador, auditores e a tela -->
+  <script src="js/incdados.js"></script>
+  <script src="js/incregras.js"></script>
+  <script src="js/incgeo.js"></script>
+  <script src="js/incauto.js"></script>
+  <script src="js/incauditor.js"></script>
+  <script src="js/acsauditor.js"></script>
+  <script src="js/incacsui.js"></script>
+
   <!-- PRÉ-LANÇAR ESTRUTURA DE CONCRETO (21/10/2026): critérios com fonte (gerado de dados-fonte/concreto), o lançador, o auditor e a tela — PRÉ-DIMENSIONAMENTO, A CALCULAR -->
   <script src="js/concdados.js"></script>
   <script src="js/conclanc.js"></script>
@@ -950,6 +983,12 @@
   <!-- RENDER (09/10/2026): render físico a partir do modelo — números em js/rendermat.js, tela em js/bimrender.js; o motor (js/bimrendermotor.js) só carrega quando o render abre -->
   <script src="js/rendermat.js"></script>
   <script src="js/bimrender.js"></script>
+  <!-- RENDER AO VIVO (protótipo 20/10/2026, prévia ?previa=rendervivo): tela em js/bimrendervivoui.js; o motor WebGPU (js/bimrendervivo.js) só carrega quando a aba abre -->
+  <script src="js/bimcenaarm.js"></script>   <!-- ORÇAPRO CENA: onde a cena mora (entidade bim_cenas, salva no projeto da obra) -->
+  <script src="js/bimcenaobjs.js"></script>   <!-- ORÇAPRO CENA: biblioteca de objetos (móveis, luminárias, vegetação) arrastados para a cena; puro, o motor é js/bimcenaobjsmotor.js -->
+  <script src="js/bimcena.js"></script>   <!-- ORÇAPRO CENA: o estado da cena (puro): validação, desfazer, câmeras, qualidade pelo aparelho -->
+  <script src="js/bimcenaui.js"></script>   <!-- ORÇAPRO CENA: a tela do módulo (Vista › Apresentação › OrçaPRO Cena e a barra de título do BIM) -->
+  <script src="js/bimrendervivoui.js"></script>
   <!-- MATERIAIS (09/10/2026): materiais do projeto (Gerenciar › Biblioteca) — motor puro em js/bimmateriais.js, tela e ganchos em js/bimmateriaisui.js -->
   <script src="js/bimmateriais.js"></script>
   <script src="js/bimmateriaisui.js"></script>

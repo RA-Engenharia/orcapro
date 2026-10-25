@@ -1,0 +1,1028 @@
+{
+ "_leia": "Peças PESADAS do render (texturas 2K e céus HDRI) que NÃO vão nos pacotes: o app baixa sob demanda de <CONFIG.licencaServer> + caminho + rel e confere o sha256 (js/bimpesado.js). Gerado por tools/render-pesado.js gerar — não editar à mão.",
+ "versao": 1,
+ "caminho": "/rv/render/v1/",
+ "tetoCacheMB": 400,
+ "arquivos": {
+  "img/ceus/cloud_layers/cloud_layers_1k.hdr": [
+   1744648,
+   "2e9ecdc551bd08e71e05b526ba4defe0664d315070027e72eda94b2ffb1a2655"
+  ],
+  "img/ceus/cloud_layers/cloud_layers_2k.hdr": [
+   6985914,
+   "66f8fbaf7452c332d05ce607e2c785a2f99578e2b3a095a11cfe9fde7e82c275"
+  ],
+  "img/ceus/kloofendal_48d_partly_cloudy/kloofendal_48d_partly_cloudy_1k.hdr": [
+   1637206,
+   "5477b7dbb2aea4a6947cb36b96339c119f90bf36a03b039af3254b5e6a22896d"
+  ],
+  "img/ceus/kloofendal_48d_partly_cloudy/kloofendal_48d_partly_cloudy_2k.hdr": [
+   6480797,
+   "3fbd33f279f29bd64925c1dd3214fd46c627493d21f1100248b6b1098da4d06e"
+  ],
+  "img/ceus/kloofendal_overcast/kloofendal_overcast_1k.hdr": [
+   1590386,
+   "9b3f50a2c958ab7dc9c14562905f639de6cd74eb8a0af0d129650b2a6444a021"
+  ],
+  "img/ceus/kloofendal_overcast/kloofendal_overcast_2k.hdr": [
+   6286056,
+   "32941541ce8d10701436798be07ab595ad57b5216f14ec231b083f537e617754"
+  ],
+  "img/ceus/overcast_soil_2/overcast_soil_2_1k.hdr": [
+   1660890,
+   "aea130bc8e86b32cf0c3bd3acfca491f51b68bf1e882f639f7a6e0e1df0bb2af"
+  ],
+  "img/ceus/overcast_soil_2/overcast_soil_2_2k.hdr": [
+   6582720,
+   "cd39135ce92f66a048134b5ccbe73debfbe0c1d91a2be3b315b0c18ade40bfce"
+  ],
+  "img/ceus/qwantani/qwantani_1k.hdr": [
+   1513994,
+   "e4ce25aa40cc5bd2c5345119be31d36798bb7d8a96d20bf0dc8776a572c1d2b6"
+  ],
+  "img/ceus/qwantani/qwantani_2k.hdr": [
+   6232913,
+   "f0138aab93c2afb456858de6375e0563a91dda674e5870c2e02113f8493df549"
+  ],
+  "img/ceus/qwantani_dusk_2/qwantani_dusk_2_1k.hdr": [
+   1578108,
+   "67f51d0f158de3d32649379d0988d0663283392e763e4b74971b4ac746a12a63"
+  ],
+  "img/ceus/qwantani_dusk_2/qwantani_dusk_2_2k.hdr": [
+   6456886,
+   "7094cf5245937b55c1a64a97438625eaa13a2879950e2e451c5e01a51e0b9f48"
+  ],
+  "img/ceus/qwantani_late_afternoon/qwantani_late_afternoon_1k.hdr": [
+   1488472,
+   "7d14c4225bf2e9a1499cb3891a476eed447b3e14abd3ab65cc1f981d7b7f30f2"
+  ],
+  "img/ceus/qwantani_late_afternoon/qwantani_late_afternoon_2k.hdr": [
+   6039348,
+   "e8a693cadf555df588e8232e3febb520681c0bf44fb932bae426c37434a94dff"
+  ],
+  "img/ceus/qwantani_night/qwantani_night_1k.hdr": [
+   1698847,
+   "c10b3c17bb8cc4f65795e9c8cf412b325e89af7caa23efb6bd0d868436cb9189"
+  ],
+  "img/ceus/qwantani_night/qwantani_night_2k.hdr": [
+   6788455,
+   "5b032640e528342a1d2d9a3895a0b333b6b161351fb5ca083270092f2e1ace06"
+  ],
+  "img/ceus/qwantani_noon/qwantani_noon_1k.hdr": [
+   1420645,
+   "dd27e20fb8609d812055259be30f1e849152d68903c5e0cb8599bf56abc7cd78"
+  ],
+  "img/ceus/qwantani_noon/qwantani_noon_2k.hdr": [
+   5757155,
+   "6a36c0fd63f8a11788c84a514bfbb840b17400f24a55166d358b454accbc91a8"
+  ],
+  "img/ceus/qwantani_sunset/qwantani_sunset_1k.hdr": [
+   1459086,
+   "f447985bf792d34ab97bbe94395a573c0882cb07d7f279b688969b0636e7891c"
+  ],
+  "img/ceus/qwantani_sunset/qwantani_sunset_2k.hdr": [
+   5948919,
+   "240ae3c06f7f9f1e5476779ac762b132b0f1ae3750a03df667e03eb63cbf6dfb"
+  ],
+  "img/texturas2k/ORIGEM.txt": [
+   33167,
+   "90f780a5af2e963ecac4283fe106ca55d0729bed1117e8919ea634643fc1db2a"
+  ],
+  "img/texturas2k/aco_galvanizado/altura.jpg": [
+   9649,
+   "f8904511d094faea9a271babd9be05bc57e7e1a39419d44c044ce1494edd4df5"
+  ],
+  "img/texturas2k/aco_galvanizado/cor.jpg": [
+   239955,
+   "498eb91e3a2ec194ae2076d59efc949b11b75db521a76ad98664eafbd078f5fc"
+  ],
+  "img/texturas2k/aco_galvanizado/normal.jpg": [
+   107666,
+   "232ca57800b71047807e536b900b5a7a1572e4bd9a73057228e1f3cf7a113b32"
+  ],
+  "img/texturas2k/aco_galvanizado/rugosidade.jpg": [
+   273055,
+   "3eb23869f983f77f050dc9ea91f89fbd4c94517b88156f3e321a6db2f3ee7515"
+  ],
+  "img/texturas2k/aco_pintado_liso/altura.jpg": [
+   445699,
+   "db44fec48f88d48470c064cfaa1f6979313ca0780a99190211e4b151d421466a"
+  ],
+  "img/texturas2k/aco_pintado_liso/cor.jpg": [
+   741148,
+   "3f02da6fd1bfc24859d8e51dfe2e9e222eb8f4cec01cd060372febb711d2f58e"
+  ],
+  "img/texturas2k/aco_pintado_liso/normal.jpg": [
+   842390,
+   "1dc878806261027b12913fd482900fc171f9f8e57a3b423d4d13290eaa355b08"
+  ],
+  "img/texturas2k/aco_pintado_liso/rugosidade.jpg": [
+   542666,
+   "2521c7b4ad6e3f5ef2baa686af6e6ad5b9dbdeeaa0bf3809ee251ddaf0c4b410"
+  ],
+  "img/texturas2k/aluminio_escovado/altura.jpg": [
+   283875,
+   "bba002bde5ca24a589043f8172ac3202e692b88a18b6608cfae14f174548e474"
+  ],
+  "img/texturas2k/aluminio_escovado/cor.jpg": [
+   389735,
+   "fb3c28728814c4bc98362fe15da0d22defdddefd6f92131e226b9621fcfae6d0"
+  ],
+  "img/texturas2k/aluminio_escovado/normal.jpg": [
+   506093,
+   "9f26492508f5818eb7becdcdc7a112f18bd89abeba5b2e9ec6a0bdf7af70b3e6"
+  ],
+  "img/texturas2k/aluminio_escovado/rugosidade.jpg": [
+   179952,
+   "2513435fef05094ae978992a7a1c5c2e557eebfc7f429e7530954099d97b7d6b"
+  ],
+  "img/texturas2k/areia/altura.jpg": [
+   259848,
+   "119908e66aa727fee651e8ed5c95ea845231eecc0c1b649327027552b2186202"
+  ],
+  "img/texturas2k/areia/ao.jpg": [
+   401078,
+   "d6db437c5d22fa494c0286694d0088bfb45b8960082b5595cf78234683af7835"
+  ],
+  "img/texturas2k/areia/cor.jpg": [
+   900872,
+   "f0574fd368edb197bdb3f98184cb0e7f17fb65783ad6775c22a9dcf1f7f9b53b"
+  ],
+  "img/texturas2k/areia/normal.jpg": [
+   816896,
+   "5e56a7d00eaf53618546663d99b44823275de1214a1d47abfbd8c3aa2d5826a5"
+  ],
+  "img/texturas2k/areia/rugosidade.jpg": [
+   244072,
+   "5c77cc0bab882403c2f6b45f80d4f1207a1e3cdef458fccf481e8adcfb41a943"
+  ],
+  "img/texturas2k/asfalto/altura.jpg": [
+   273442,
+   "d895ce8f6cbbc97b97da9f4c407a588d62e3afe1c83a3604ae77d0b33a44db91"
+  ],
+  "img/texturas2k/asfalto/ao.jpg": [
+   538175,
+   "b6b7eef6551ebcfdbf887b0e72d549e1c68fa2944f65b550727e0b901f28b0ec"
+  ],
+  "img/texturas2k/asfalto/cor.jpg": [
+   770018,
+   "01c30b8cb06bb11c9bb5482fd8111aecfa7ab952839a543e66d9d341c6abb8a9"
+  ],
+  "img/texturas2k/asfalto/normal.jpg": [
+   918039,
+   "26edee62331cff2ea830fc1763c5eadb795aa5e3c8cf2aaffd53a0a20e2a3cdd"
+  ],
+  "img/texturas2k/asfalto/rugosidade.jpg": [
+   297892,
+   "1996f17e66983332a6c0d4c06e44c9177f25d9da2d2f6589d1661677306b744d"
+  ],
+  "img/texturas2k/azulejo_porcelanato_bwc/altura.jpg": [
+   83398,
+   "fa40c9bf6d120a85b9da2dade6fb513cbb35fbff1b0a443fa2dab73ed468f088"
+  ],
+  "img/texturas2k/azulejo_porcelanato_bwc/ao.jpg": [
+   37472,
+   "526f7aa6d5e5ea65e4c96212b459e48df7d1b7d7a6846453d7f59e03ebcb95ff"
+  ],
+  "img/texturas2k/azulejo_porcelanato_bwc/cor.jpg": [
+   154712,
+   "496070473663a0ba3d3cb2fc1a7244adf72f33797b8156f0630ae528e3fd9cb0"
+  ],
+  "img/texturas2k/azulejo_porcelanato_bwc/normal.jpg": [
+   293341,
+   "6aafb5aa41653284869f34c9bf86ada5a995549078a53cc95cff1ae1edb6ed15"
+  ],
+  "img/texturas2k/azulejo_porcelanato_bwc/rugosidade.jpg": [
+   73166,
+   "5cf4e03144ebbcc85638d3a5f776c7a01cd9fa8073ab587517035f45433a9b98"
+  ],
+  "img/texturas2k/borracha_preta/altura.jpg": [
+   345028,
+   "37b711ca9a22805fec8188cbddd2e8171989cf8da0ed208a6ae6032746b31228"
+  ],
+  "img/texturas2k/borracha_preta/cor.jpg": [
+   725901,
+   "3298853cb41bccdef74e821820d1214b2b8a017dec3dda052d66a3ec137b357b"
+  ],
+  "img/texturas2k/borracha_preta/normal.jpg": [
+   842623,
+   "9579371a8a8a3a9663640179e5b144d201a1acb3a63df5844afc84f5e4222aa8"
+  ],
+  "img/texturas2k/borracha_preta/rugosidade.jpg": [
+   415155,
+   "52e1c647565a32182b0a6f99e173c5c5d460eea0c2e8e9338ba9e97823fb75e4"
+  ],
+  "img/texturas2k/casca_arvore/altura.jpg": [
+   113264,
+   "a5d39ba136d8cdb182d868c8e729e54fc952cf91c4cb4baa1b65b68b68a365bd"
+  ],
+  "img/texturas2k/casca_arvore/ao.jpg": [
+   392489,
+   "02b1759ffad7fb08deb45d52b9af0a252a93b822fa2412072b28b8d183e5ea95"
+  ],
+  "img/texturas2k/casca_arvore/cor.jpg": [
+   916833,
+   "90fbac9d5c11c6b4e0c610ec38214634895ad98edd8e44a20529dfb646deb710"
+  ],
+  "img/texturas2k/casca_arvore/normal.jpg": [
+   905642,
+   "b21d0f9950f4bb9bd2b1e6a77e924cc74f389c47e98eea0f900e625155d214ad"
+  ],
+  "img/texturas2k/casca_arvore/rugosidade.jpg": [
+   223143,
+   "2fba2540af4075f8279f9667f3dd33b8f749881a8fef43b211116aac2187e549"
+  ],
+  "img/texturas2k/cascalho/altura.jpg": [
+   295479,
+   "6bf6805f0bfd8ab9551774f25291b5bb742114a70c39dbc73d5cec5613d24f53"
+  ],
+  "img/texturas2k/cascalho/ao.jpg": [
+   477877,
+   "e3c2cb7b7af8e579a668856c453c34ddb11b2243810d32cb626a400d63b69edc"
+  ],
+  "img/texturas2k/cascalho/cor.jpg": [
+   896330,
+   "6ff2b68ec212cdac3507766ee9f6168b39ec7ee29c3701615aee51a473ac5a52"
+  ],
+  "img/texturas2k/cascalho/normal.jpg": [
+   811547,
+   "dd39f45da9ed2bd3f5298b22f1ea2f6ddb170724cf0f01742c02be8094d6f544"
+  ],
+  "img/texturas2k/cascalho/rugosidade.jpg": [
+   191496,
+   "5aee36feb8598a7da2d606d09564e4becd83b88e03642a07a8fa44d3eb2cf405"
+  ],
+  "img/texturas2k/cimento_queimado/altura.jpg": [
+   164816,
+   "f20e149bd7237722845b372e4f0e89ff4a9d4cdc89d5b1fabf34f4e58119c3c7"
+  ],
+  "img/texturas2k/cimento_queimado/cor.jpg": [
+   466069,
+   "9daf8c13c066d9ccfe25a3b5f8f0b9ef67752a610a3d032931e812c2226af049"
+  ],
+  "img/texturas2k/cimento_queimado/normal.jpg": [
+   883679,
+   "67424da88a8a3f9ca5b2204eb723421df76f86e92b8d640d90edff44b9f5d266"
+  ],
+  "img/texturas2k/cimento_queimado/rugosidade.jpg": [
+   229844,
+   "3b913f95261570a92b2e4d30072358baf7cd5e5ec1f0dc0067b2831a895b48eb"
+  ],
+  "img/texturas2k/concreto_aparente_formas/altura.jpg": [
+   94238,
+   "1f23ff54e132801a7859e4da322b5cda7318d4d0140a867c2289bb959986729b"
+  ],
+  "img/texturas2k/concreto_aparente_formas/ao.jpg": [
+   158580,
+   "aaa16647c001b482152ac71d9074cab3b2d17dcd6dd3791ecbc93a2d29f104e7"
+  ],
+  "img/texturas2k/concreto_aparente_formas/cor.jpg": [
+   473517,
+   "1ad29e7e17ca1b0869cba6f132a2b26479561db55eab1f2d40d7049e3611fecc"
+  ],
+  "img/texturas2k/concreto_aparente_formas/normal.jpg": [
+   748313,
+   "4fb825c80623a23df2f7e36e73043ea31cb63890d51b1f3f0618b436f70e5a92"
+  ],
+  "img/texturas2k/concreto_aparente_formas/rugosidade.jpg": [
+   333152,
+   "d925bcab328164c1abc99b67e82257d6912cd3a4651678d9cbf93f1321662fa0"
+  ],
+  "img/texturas2k/concreto_liso_claro/altura.jpg": [
+   56046,
+   "ba88fdca25a5907bd219d6884b3367575a410f4af4bbc52a840b0351c0872145"
+  ],
+  "img/texturas2k/concreto_liso_claro/cor.jpg": [
+   291794,
+   "2a9a1c96f1c7f2ad834daf22256713d5ce8d460e41ed78511bfbc2832c8ad741"
+  ],
+  "img/texturas2k/concreto_liso_claro/normal.jpg": [
+   499614,
+   "faf156a270d6e3f2db15e4eb8d23fc03efd213b5b57cffc8753bed4f4f11e0f8"
+  ],
+  "img/texturas2k/concreto_liso_claro/rugosidade.jpg": [
+   64008,
+   "85a306a493eeba9474ad0ae6e586adabf3c8717d2d89058bd8a19900a6a8baf7"
+  ],
+  "img/texturas2k/concreto_natural_greige/altura.jpg": [
+   138505,
+   "8a366e03522161b5beb26023ecd249f1562a880d55853dc331da56ed13b8d915"
+  ],
+  "img/texturas2k/concreto_natural_greige/ao.jpg": [
+   241771,
+   "0857987e43ec0214caaaea5d55817a6c84015885ba0dae0d600243464c54e35f"
+  ],
+  "img/texturas2k/concreto_natural_greige/cor.jpg": [
+   866977,
+   "d47ffa26380e8999cc91b2e356893a4a01ea489fcb06a8b4e6e782230b30f2b4"
+  ],
+  "img/texturas2k/concreto_natural_greige/normal.jpg": [
+   912709,
+   "22163731e85390179f1fb665ed1235192d5bb773212092e63440b66a73879afb"
+  ],
+  "img/texturas2k/concreto_natural_greige/rugosidade.jpg": [
+   288348,
+   "e853fe46428af61aff503ba4b9843888650a9ed4b9e9a0a1d79b4c06bbc6a684"
+  ],
+  "img/texturas2k/couro_claro/altura.jpg": [
+   104146,
+   "a1ea0102e9bac5cd63d556383f928b74067ac783a3c343b41fd2a7e42225af8e"
+  ],
+  "img/texturas2k/couro_claro/ao.jpg": [
+   300271,
+   "4bd8ceda41ed856e8e922c38ffcfbaffb33d792f95d5896258cbac7116b5177e"
+  ],
+  "img/texturas2k/couro_claro/cor.jpg": [
+   288819,
+   "269b8c5cdf29c4b619cac8ba63a0b1b20c7f4baa0854c2c0f8a93eb541d6f8be"
+  ],
+  "img/texturas2k/couro_claro/normal.jpg": [
+   841340,
+   "f6b5235a4285655e9a90859848741fa7ef797d6ad55a19ba3d11c4584946bba7"
+  ],
+  "img/texturas2k/couro_claro/rugosidade.jpg": [
+   414382,
+   "65a1eca789e9ef2815a118f01f850395930abc5e474a222945fe44bfee6523a8"
+  ],
+  "img/texturas2k/forro_madeira_lambri/altura.jpg": [
+   184249,
+   "27b8ea62948a9f961e8c593ac548ae5b181e86bc323961cb4dff0f98e76fd2e8"
+  ],
+  "img/texturas2k/forro_madeira_lambri/ao.jpg": [
+   50518,
+   "49499dca79db3ca1a5df04b565d39411df49a4961e285a6c4da6b7cbc778ca80"
+  ],
+  "img/texturas2k/forro_madeira_lambri/cor.jpg": [
+   648513,
+   "4a82b43d9a13ba3edd1fcd558356c9a3b3889a0a14837fa8259f323ea1ee2495"
+  ],
+  "img/texturas2k/forro_madeira_lambri/normal.jpg": [
+   416843,
+   "465aa2e299a52d4faaadff54a9224cfd839fc0e4b5ff908e7b9a09d730fffd2a"
+  ],
+  "img/texturas2k/forro_madeira_lambri/rugosidade.jpg": [
+   157250,
+   "1d60134f11d5f8d5bbb04dd72c423b65ef5cec71237bee2c6624931b4f601a83"
+  ],
+  "img/texturas2k/grama/altura.jpg": [
+   420410,
+   "e9fa39d6e7c001b54a470a26989bbcb712b468b76cc0916c0fc7a1b3eb86b68f"
+  ],
+  "img/texturas2k/grama/ao.jpg": [
+   589020,
+   "50606236ed6838d8041a16ca4ba114571240c0f8ccbe5403b0a539ef4d32ab1e"
+  ],
+  "img/texturas2k/grama/cor.jpg": [
+   880965,
+   "5b0ec06c90b6e3de44efaf4b8068e6c0d2dacaaae7b2b53b1f48f29906cfb1e4"
+  ],
+  "img/texturas2k/grama/normal.jpg": [
+   870486,
+   "fd81bf2cc2506d4372db9d9eb14eed94071505709959deebb255a723795eec4e"
+  ],
+  "img/texturas2k/grama/rugosidade.jpg": [
+   451609,
+   "e8c369ce8c3716c002aff1a6f9ffd925806209a32001183a7d2723d1190087f7"
+  ],
+  "img/texturas2k/granito_cinza/altura.jpg": [
+   19937,
+   "666c2554e19cb7208676743303b06b547ef653297d12762c42b891faced91045"
+  ],
+  "img/texturas2k/granito_cinza/cor.jpg": [
+   869057,
+   "86c5e42c962200c296026b03039eec3a76dd232d1b30bceb212f48d8c5ebc057"
+  ],
+  "img/texturas2k/granito_cinza/normal.jpg": [
+   33317,
+   "67efbc87f92da61c38228f414f99aea81e1c70e13dc0144cd09e2b03ee10aeaf"
+  ],
+  "img/texturas2k/granito_cinza/rugosidade.jpg": [
+   208571,
+   "f257169e49f22fdcb86a75d1f1b86e50697f69f9fa52c08b2b50a1fc8445b6e8"
+  ],
+  "img/texturas2k/inox_escovado/altura.jpg": [
+   283875,
+   "bba002bde5ca24a589043f8172ac3202e692b88a18b6608cfae14f174548e474"
+  ],
+  "img/texturas2k/inox_escovado/cor.jpg": [
+   389735,
+   "fb3c28728814c4bc98362fe15da0d22defdddefd6f92131e226b9621fcfae6d0"
+  ],
+  "img/texturas2k/inox_escovado/normal.jpg": [
+   506093,
+   "9f26492508f5818eb7becdcdc7a112f18bd89abeba5b2e9ec6a0bdf7af70b3e6"
+  ],
+  "img/texturas2k/inox_escovado/rugosidade.jpg": [
+   231940,
+   "a6798a81cd693f20344c09d35e5cfae0cb8b81ab4344e0ca266685da57c8515d"
+  ],
+  "img/texturas2k/ladrilho_hidraulico/altura.jpg": [
+   199610,
+   "d7d24f11629a7de9bfec04d5ff853f656f1355beb4327c52f4e7400672ffa679"
+  ],
+  "img/texturas2k/ladrilho_hidraulico/ao.jpg": [
+   371825,
+   "032b512ce28e8cf2587c193903552c7501f522e2c7bc6a084ac8db3107426aa3"
+  ],
+  "img/texturas2k/ladrilho_hidraulico/cor.jpg": [
+   830912,
+   "9d37898f9a326851b632d3530403fd2d214e4356aec6bfafa53aa82956ef16bd"
+  ],
+  "img/texturas2k/ladrilho_hidraulico/normal.jpg": [
+   907725,
+   "fa85ac4454c1120a02c0f2fdaa5bd88129b311fc67e9e30b5085e4d2394e5fde"
+  ],
+  "img/texturas2k/ladrilho_hidraulico/rugosidade.jpg": [
+   369911,
+   "7a1fa9e9ba393ea534087b1650fe04080836017c2e193d2a96505139e47a0dfa"
+  ],
+  "img/texturas2k/louca_porcelana/altura.jpg": [
+   415479,
+   "4d36f8e80da711cf371d6295ac0a74494d46c9ede39b63f79cf6dd604b3b5391"
+  ],
+  "img/texturas2k/louca_porcelana/cor.jpg": [
+   34426,
+   "7099a614cdde60346b68d6552ff4995384c77fcc4bbe0d492cad7515cacf5b19"
+  ],
+  "img/texturas2k/louca_porcelana/normal.jpg": [
+   25229,
+   "e337cbd523c266a31e8259c822bf14d43bc8b874ca984a77d2cd5e1eacb62433"
+  ],
+  "img/texturas2k/louca_porcelana/rugosidade.jpg": [
+   346935,
+   "ba960375efb511dcdd2ebd2c034bdf8c649283a2ed83192e88e4a08d9f7f5774"
+  ],
+  "img/texturas2k/madeira_angelim_pedra/altura.jpg": [
+   239691,
+   "030f4f6549770a3b74477c6f4f7e8a2987668ccec94fbaa5352edb883c179517"
+  ],
+  "img/texturas2k/madeira_angelim_pedra/cor.jpg": [
+   570112,
+   "bd6e35c586e8ac3b6dcd68a196eb1b78b8803b6e5248391aac6666630a5415a5"
+  ],
+  "img/texturas2k/madeira_angelim_pedra/normal.jpg": [
+   772750,
+   "e12ca7ab191aaca469368e9451a7c744eb72d85d621e808a1955bc4266fc1f02"
+  ],
+  "img/texturas2k/madeira_angelim_pedra/rugosidade.jpg": [
+   96923,
+   "5fdd21b1df73628e56753cb953dc40b3ba00d8f677692213b7d0372a5fd26eb9"
+  ],
+  "img/texturas2k/madeira_clara_freijo/altura.jpg": [
+   191684,
+   "736c5f4f16e5e5e9c74e4db56c471c985cea698223f7f177cf1ed5092e10464c"
+  ],
+  "img/texturas2k/madeira_clara_freijo/cor.jpg": [
+   398025,
+   "80ceb65c4e8de190037468010b4bb409cec988a5ea5dc9644ee56895afb83d25"
+  ],
+  "img/texturas2k/madeira_clara_freijo/normal.jpg": [
+   175606,
+   "3e006e2886bd45a8345e37987775afeacff0d832c78a1fbae9d795f2895f3375"
+  ],
+  "img/texturas2k/madeira_clara_freijo/rugosidade.jpg": [
+   43598,
+   "6663152402748cb8617fa5117c0403ba91b32352abf71faea2a1708b3c8b1f95"
+  ],
+  "img/texturas2k/madeira_deck/altura.jpg": [
+   202172,
+   "fe9f64ee21d6efb583ebe0ffb16ea7cd327e8695a1ae16c451d29f22911f229b"
+  ],
+  "img/texturas2k/madeira_deck/ao.jpg": [
+   257343,
+   "4cbe6430d3e05748abe1b8db71d916a1eb2bc2367981f2b60c0e748df63eebfc"
+  ],
+  "img/texturas2k/madeira_deck/cor.jpg": [
+   828418,
+   "bcd1bf05fcd5df2a5aef7e8d1c052a76f1125050634ca3681eeca5475dad7978"
+  ],
+  "img/texturas2k/madeira_deck/normal.jpg": [
+   906965,
+   "12a18a81bd1490b0656e764bd6b8dab16e3c679c6932081910a6a2a923f21760"
+  ],
+  "img/texturas2k/madeira_deck/rugosidade.jpg": [
+   140676,
+   "cd26bb65c4cc6024c60a92c657b3d76593f80933c0bc64d47c2a61333adddd25"
+  ],
+  "img/texturas2k/madeira_escura_imbuia/altura.jpg": [
+   213270,
+   "4b11c254553b2d8a03ee3385364082f926206872502fe3963a3aee9ef53152d7"
+  ],
+  "img/texturas2k/madeira_escura_imbuia/cor.jpg": [
+   901689,
+   "12536a73476922e8369c71cca84e0a096b4facaa19608a910f105ad168a1a674"
+  ],
+  "img/texturas2k/madeira_escura_imbuia/normal.jpg": [
+   390141,
+   "1550ba1a3d9841692b2e45853bc6c6b3886c374de8d7ae177f80f597fdf345e2"
+  ],
+  "img/texturas2k/madeira_escura_imbuia/rugosidade.jpg": [
+   101069,
+   "abd0b09f5676351d4a0a3e1d6460da0f24bab986ef2539095efc2fc3c743c9dc"
+  ],
+  "img/texturas2k/madeira_tabua_vertical_avela/altura.jpg": [
+   30341,
+   "1e2ffffb45c710349d9bc29ce46e61ff46fa5c789744b43430fa1ccfdc543473"
+  ],
+  "img/texturas2k/madeira_tabua_vertical_avela/ao.jpg": [
+   39288,
+   "c88c204f0eabbc46c76389262026e2b885fc37d4f278348475d748d6b86375c4"
+  ],
+  "img/texturas2k/madeira_tabua_vertical_avela/cor.jpg": [
+   405142,
+   "94c49bbeb7386f7470ec6c80855521fad7eb45ec712a448066ca9e062a10e960"
+  ],
+  "img/texturas2k/madeira_tabua_vertical_avela/normal.jpg": [
+   658995,
+   "38b6295c88f4d112d1f8883641eabaca66b569887211a47551ef5162e0c15516"
+  ],
+  "img/texturas2k/madeira_tabua_vertical_avela/rugosidade.jpg": [
+   75793,
+   "b88c30ecc0c29cc42e91f19455066ccc892d6e77c83ceec890830657d14f5414"
+  ],
+  "img/texturas2k/marmore_branco/altura.jpg": [
+   372418,
+   "f6799977cf53852900015f8f45389e33fe91023753d0caa69ec8fc5bbd4c9d9c"
+  ],
+  "img/texturas2k/marmore_branco/cor.jpg": [
+   913113,
+   "29bdbee1b542c95131bbdfd54c4df5593287581befc4778ddb683818d6e230ac"
+  ],
+  "img/texturas2k/marmore_branco/normal.jpg": [
+   25642,
+   "75cd6f99d908e967562697447a6ae9001c8f9a6fcadacf2fbd187e380345e966"
+  ],
+  "img/texturas2k/marmore_branco/rugosidade.jpg": [
+   175410,
+   "facb3f0e3516be32d891921949ed1c372fe9c248f6eae5bd3c506b7a1d05e151"
+  ],
+  "img/texturas2k/metal_preto_fosco/altura.jpg": [
+   445699,
+   "db44fec48f88d48470c064cfaa1f6979313ca0780a99190211e4b151d421466a"
+  ],
+  "img/texturas2k/metal_preto_fosco/cor.jpg": [
+   665825,
+   "49dec7ab2bd96b2dd6d46566fc27d401d824cdd0fdfa471275528f9e4803c978"
+  ],
+  "img/texturas2k/metal_preto_fosco/normal.jpg": [
+   842390,
+   "1dc878806261027b12913fd482900fc171f9f8e57a3b423d4d13290eaa355b08"
+  ],
+  "img/texturas2k/metal_preto_fosco/rugosidade.jpg": [
+   400207,
+   "23ff116de0cf759bdcdbe5b9dea63c43bd3329ce66696e1bc547daa8200fe5fd"
+  ],
+  "img/texturas2k/pastilha_vidro/altura.jpg": [
+   131419,
+   "2c30b4275cfee77443fc72aee0ba4c8bd38aec2b99fccc82ce7260776b854195"
+  ],
+  "img/texturas2k/pastilha_vidro/ao.jpg": [
+   58972,
+   "8ff5fbf664bf33af141f2109f00683450562091c764fff87f920d88ce3244098"
+  ],
+  "img/texturas2k/pastilha_vidro/cor.jpg": [
+   263371,
+   "49e9ae7ece373be0ae9687ff2ebd6a78ed62027fd1edc5cacd70e6e0b2e396f9"
+  ],
+  "img/texturas2k/pastilha_vidro/normal.jpg": [
+   559355,
+   "f66156d54c0b6e460e8fe4cf9a11cf803f8ad8fd08d6160c10002caef27e0a51"
+  ],
+  "img/texturas2k/pastilha_vidro/rugosidade.jpg": [
+   180307,
+   "279dc968a4eba5dbfb7cbd9dc6c09cf4a3650a3c543a771e7d008b37ecc2a1f2"
+  ],
+  "img/texturas2k/pedra_moledo_clara/altura.jpg": [
+   73604,
+   "225f7810d0f8644dac851a5198b28befd253a1884f11edf1eaadc96b308b01f6"
+  ],
+  "img/texturas2k/pedra_moledo_clara/ao.jpg": [
+   115314,
+   "662c3a522395b60a8051df4c089392407402adf26e52384b67100203af6a94d8"
+  ],
+  "img/texturas2k/pedra_moledo_clara/cor.jpg": [
+   371099,
+   "68ed5dc13a9a88bc1af805b47d23a9dd05f3ee7cefb99cbbc86ee1d680c771ff"
+  ],
+  "img/texturas2k/pedra_moledo_clara/normal.jpg": [
+   801985,
+   "d2c970670ddc2789429a28da76f2e6b0cc651bab9e945dac48d41907594fb18f"
+  ],
+  "img/texturas2k/pedra_moledo_clara/rugosidade.jpg": [
+   100058,
+   "ff3611d773c17e3e36060fa30e8491411bfca9903bb0c5c9bad271d6562f764d"
+  ],
+  "img/texturas2k/pedra_rachao/altura.jpg": [
+   61902,
+   "e3c9a2f9fc2ea5df28796a57925452630cd2d098ea76c717161c466b3bc3b618"
+  ],
+  "img/texturas2k/pedra_rachao/ao.jpg": [
+   177274,
+   "ee26b3fd96bc3457454b40e31e287f56c6323556ef12f546d1331224a5946df2"
+  ],
+  "img/texturas2k/pedra_rachao/cor.jpg": [
+   678220,
+   "78e0485c7d8403ede60841e6b4275019c1221f7062b1fa1e7d3aa33f1ff92788"
+  ],
+  "img/texturas2k/pedra_rachao/normal.jpg": [
+   837055,
+   "21f282e4ea5396e4ab563ecd34c87ea272ab84b8919a174eb6c193080ba958c4"
+  ],
+  "img/texturas2k/pedra_rachao/rugosidade.jpg": [
+   109889,
+   "2bebce0784bd660e7a9e00bd1358aa2a205ce4f4dc26ffc02d78e60951585c63"
+  ],
+  "img/texturas2k/pedra_sao_tome/altura.jpg": [
+   179064,
+   "f22567c8f1a325cb562a94040165b63b9a7846177b54a5f614f733c292ca12b5"
+  ],
+  "img/texturas2k/pedra_sao_tome/cor.jpg": [
+   815889,
+   "f5a451509c5742536be8679361b2db04bd69f3a0f2e18ff61ff7be1da934a051"
+  ],
+  "img/texturas2k/pedra_sao_tome/normal.jpg": [
+   125677,
+   "363942e5cf6aa2ef56cfa497dd36f5a6c20ad8eacd2dda3948de9e6edf005f2f"
+  ],
+  "img/texturas2k/pedra_sao_tome/rugosidade.jpg": [
+   160894,
+   "4a37519262b7891158e61eaee3b3088e4f392350c8ede2f5463415e9a4a4c27a"
+  ],
+  "img/texturas2k/pintura_lisa/altura.jpg": [
+   240514,
+   "91c18021abda95f2c1e59043f60441ebd3fb77580828b91d8df5ceb60a51b3c7"
+  ],
+  "img/texturas2k/pintura_lisa/cor.jpg": [
+   820676,
+   "5eea24e53349ede91d3034a21b25f30204fa6c447acacafe53b990be819d29b4"
+  ],
+  "img/texturas2k/pintura_lisa/normal.jpg": [
+   801017,
+   "518c9507966b442054f4dd4bca25bc24d709ea61dc7739dd2ffbf276cca78b7f"
+  ],
+  "img/texturas2k/pintura_lisa/rugosidade.jpg": [
+   64652,
+   "8feb033b8b00338c3cce3dab6ca459a81a68a5b6df714ff528f9bc79afb5497f"
+  ],
+  "img/texturas2k/piso_laminado_claro/altura.jpg": [
+   171876,
+   "5b68c98aa15202057fe0aa45827987f0ff59d09699a64b61140c6b6979d1deba"
+  ],
+  "img/texturas2k/piso_laminado_claro/ao.jpg": [
+   97066,
+   "5106a5b263d06c94ee72e16df2cd17ec62bf25be5b3900c68bdf4451fdb71d5c"
+  ],
+  "img/texturas2k/piso_laminado_claro/cor.jpg": [
+   691228,
+   "5dbc4ec7fdaddac5ddd995afdeb6643aeff43565c687ad5ff54f6c3f5f5d26a4"
+  ],
+  "img/texturas2k/piso_laminado_claro/normal.jpg": [
+   727318,
+   "875083ecfe261ea20c35a6e43ae5fdc58fdf7178b8caa34d89a13980f400b06d"
+  ],
+  "img/texturas2k/piso_laminado_claro/rugosidade.jpg": [
+   97016,
+   "a7201b3e4f5ab10b3d6f38ccc16804a9415f85e4f5d938d88bc0de7bb063aa11"
+  ],
+  "img/texturas2k/piso_permeavel/altura.jpg": [
+   128223,
+   "028709bc6894f6672f25640052797d38d2cd50b5a54585c8551107b0c1dc4dac"
+  ],
+  "img/texturas2k/piso_permeavel/ao.jpg": [
+   307876,
+   "95ecb53aeaf58d079f565e0635f9aa7ab7e0eb9402b81d653732237b19b16f55"
+  ],
+  "img/texturas2k/piso_permeavel/cor.jpg": [
+   828119,
+   "c2f1ef2e326833e1a317eef74acb61e801d4abbfa8407b9dcd9d580becec5250"
+  ],
+  "img/texturas2k/piso_permeavel/normal.jpg": [
+   843867,
+   "b8852693687097ce0c499640dbfb161b66cc5fe17a3277613bdb03983819e7c3"
+  ],
+  "img/texturas2k/piso_permeavel/rugosidade.jpg": [
+   70004,
+   "65b702e0515905317b4355f9e06f64da2a0c132837700b518bb9848d637b9258"
+  ],
+  "img/texturas2k/piso_tijolo_macico/altura.jpg": [
+   138939,
+   "a8506c0ad03ed1c43b2a550fafec24d391edac38f417d19ee6cab716e63e4f84"
+  ],
+  "img/texturas2k/piso_tijolo_macico/ao.jpg": [
+   245467,
+   "145e3add0f1ffec62b50e93ac065c69352aa9771e1d16668de9a4e515cf2b00d"
+  ],
+  "img/texturas2k/piso_tijolo_macico/cor.jpg": [
+   832574,
+   "6d298c9511c515254a5c9c746dcf51786d81cc61594736df3abd7defed04e542"
+  ],
+  "img/texturas2k/piso_tijolo_macico/normal.jpg": [
+   784593,
+   "f84fcce0f85cd72dfa7f01f368791597c44d6e55f790fa8819b2f77a2b98d23b"
+  ],
+  "img/texturas2k/piso_tijolo_macico/rugosidade.jpg": [
+   203066,
+   "bbdbe49847bf00d444d7b45986ea2c4acf1531ca4773b13fd2ff4f2a257b73ea"
+  ],
+  "img/texturas2k/plastico_liso_branco/altura.jpg": [
+   348067,
+   "8ddcfa6a16179454eb123bfab9c1f0caeeab270dd9b38c70fa499b33ec7c1b14"
+  ],
+  "img/texturas2k/plastico_liso_branco/cor.jpg": [
+   459053,
+   "39a34dafbe84fc1f56947b6370a05b648126cef00fbfc34c39608c6980ce677d"
+  ],
+  "img/texturas2k/plastico_liso_branco/normal.jpg": [
+   830793,
+   "b81c2d103874bc4f8202bace8f7c3890bccf394298fda97bc02987cc83924333"
+  ],
+  "img/texturas2k/plastico_liso_branco/rugosidade.jpg": [
+   338046,
+   "2306e33bb5e620f1bd353645b0d838644a836767ea09ba014f02fd2c530869ba"
+  ],
+  "img/texturas2k/porcelanato_acetinado_claro/altura.jpg": [
+   4755,
+   "d39745d5fdcc8c3363498de6fd60899c2d371ee87f8bd5fd13a4e472bf986a4f"
+  ],
+  "img/texturas2k/porcelanato_acetinado_claro/ao.jpg": [
+   5703,
+   "55b1e68cd24ba77c3b654314574ebd3f94b12226ddf79d40765188c963ac8975"
+  ],
+  "img/texturas2k/porcelanato_acetinado_claro/cor.jpg": [
+   584234,
+   "aeb8f28ed9bc133a532ddf1d2a9425f70e50e3dd523ea1a7220b9128b04a8107"
+  ],
+  "img/texturas2k/porcelanato_acetinado_claro/normal.jpg": [
+   25508,
+   "32e6bbee8e1f14decfe8cb9795c8e25c70ca4a25758da5070f3445d88c786209"
+  ],
+  "img/texturas2k/porcelanato_acetinado_claro/rugosidade.jpg": [
+   55483,
+   "18e372a30ab3e75454ab4ce734546d5476f117ee703af3da44ea374986a33175"
+  ],
+  "img/texturas2k/porcelanato_antiderrapante_externo/altura.jpg": [
+   61669,
+   "a74245c27fd084b739faa57d1e59a8ab0173da5b795893b1b3af69e2d175c10b"
+  ],
+  "img/texturas2k/porcelanato_antiderrapante_externo/ao.jpg": [
+   132880,
+   "8c1d50b668d94c1dc6c662a90e3b3617a428d1fb25ea59927b27538aa75bbf51"
+  ],
+  "img/texturas2k/porcelanato_antiderrapante_externo/cor.jpg": [
+   882779,
+   "32f6a2f1b26c938c8c48a254eb718cb269837f69a8cd5f1f6ee1e178d4ad7bec"
+  ],
+  "img/texturas2k/porcelanato_antiderrapante_externo/normal.jpg": [
+   700333,
+   "e1060e6dd6fa9caadd85903d0d3f6fe46063ae70c68fc4192aa5996ed595a909"
+  ],
+  "img/texturas2k/porcelanato_antiderrapante_externo/rugosidade.jpg": [
+   179287,
+   "dd717d8112a732b5cfd64e8a6ae9658cf6bd426329a7173cb60a41f98a873b0a"
+  ],
+  "img/texturas2k/porcelanato_grafite/altura.jpg": [
+   54901,
+   "2efac8c8f67a0d1894df09b2e80a8dddb1e94fabab8ba4e1adcfe689fd4c4b05"
+  ],
+  "img/texturas2k/porcelanato_grafite/cor.jpg": [
+   840400,
+   "9cc4a62c3b7fbd4038eb1e225a335d84dc76c0890c7c215074fa7e8e648439a2"
+  ],
+  "img/texturas2k/porcelanato_grafite/normal.jpg": [
+   237650,
+   "a316f3536ab6b0eae758c24cbb3169540d8e8d278530f8d78a9ad022be1c13a6"
+  ],
+  "img/texturas2k/porcelanato_grafite/rugosidade.jpg": [
+   181664,
+   "b234099266e5f65ba003cb8dcebc1f8ed116a535138a190f23d9ad87745f3b1a"
+  ],
+  "img/texturas2k/pvc_amadeirado_caramelo/altura.jpg": [
+   254545,
+   "feaa2c85525c7dc7df30ef1075cc28fa6518d07ebb35661c020bcac993ca9fa0"
+  ],
+  "img/texturas2k/pvc_amadeirado_caramelo/cor.jpg": [
+   593492,
+   "656f2527e7bf40d5c38438be22992d3dbff1015bf22211c458b9fa13d6ef661c"
+  ],
+  "img/texturas2k/pvc_amadeirado_caramelo/normal.jpg": [
+   736915,
+   "1b69d42e0771460bb676dc4592754b7d2b2d6e89274249ef9b1c6f0e8cb3d22d"
+  ],
+  "img/texturas2k/pvc_amadeirado_caramelo/rugosidade.jpg": [
+   164468,
+   "870c5f9fe80b5e618459acb973a7235edd71620de1b8716f3479e99a795ab417"
+  ],
+  "img/texturas2k/reboco_rustico_offwhite/altura.jpg": [
+   226430,
+   "8946e2dce2bee024d88d0bc048faf7a8de6ca91f84079b50dad9218bf5fc992e"
+  ],
+  "img/texturas2k/reboco_rustico_offwhite/cor.jpg": [
+   573919,
+   "0757ee1b7d87482449491bc5157c1a918553622903fde952d3cf7a16a6746c37"
+  ],
+  "img/texturas2k/reboco_rustico_offwhite/normal.jpg": [
+   888006,
+   "4fa6924563c1bd41617de49cc4d4996580cd32fb277c8daa1dfe23691cabb560"
+  ],
+  "img/texturas2k/reboco_rustico_offwhite/rugosidade.jpg": [
+   97871,
+   "d536058ab78cdb96d78e7b0b03944e38dd2d3693e0c2aeb2eb684cf904b63f93"
+  ],
+  "img/texturas2k/taco_espinha/altura.jpg": [
+   330476,
+   "a9f67f152e146b0e3532c1df05cfe74a09e82331a5393c86ec101b042b7d0928"
+  ],
+  "img/texturas2k/taco_espinha/ao.jpg": [
+   235409,
+   "f0f3d7f979920b67338eb521bbb8d1d5703e496fdad000618c9fdf39d1bcba1d"
+  ],
+  "img/texturas2k/taco_espinha/cor.jpg": [
+   902045,
+   "542140b58b32ed3fb2a2bd5b4ff85e0e43722c63056b6b81fa7dafa6446cd70f"
+  ],
+  "img/texturas2k/taco_espinha/normal.jpg": [
+   656150,
+   "b5bb6c8d3736af7aa2bca0838e3074211c7939557c0bc1bcc06ce5f1a18e7bd5"
+  ],
+  "img/texturas2k/taco_espinha/rugosidade.jpg": [
+   284746,
+   "bc27d9c1bfad510ae1491e47279c0b5fec795ae5e11e9093d619a0fe52dffddd"
+  ],
+  "img/texturas2k/tecido_estofado/altura.jpg": [
+   501502,
+   "49a3ba3bc3a65931230906d0c7178b091a5cfe3b50b7fe661cb7b379aebfcbba"
+  ],
+  "img/texturas2k/tecido_estofado/ao.jpg": [
+   559786,
+   "9c94e74cf2c72e58ac244c7f3879ff56cf1796c664e09159f21a65d058b37dd4"
+  ],
+  "img/texturas2k/tecido_estofado/cor.jpg": [
+   765620,
+   "9717a7d22be69e854ee7da89383e0f939c85be7f63307a2755195f714db0b724"
+  ],
+  "img/texturas2k/tecido_estofado/normal.jpg": [
+   812561,
+   "2ef474ada52d6fa227bf57e7162e752e123f39acf2e9500355544458b101d699"
+  ],
+  "img/texturas2k/tecido_estofado/rugosidade.jpg": [
+   326573,
+   "2fab84c83fce0acd3d6b484457222940170bd887d6ce37c2234219886bcd210d"
+  ],
+  "img/texturas2k/telha_ceramica/altura.jpg": [
+   96260,
+   "d57ce40431b7a9c9045a18e9a2829f67e4ced13ebb483e52eb0cf5846db159cc"
+  ],
+  "img/texturas2k/telha_ceramica/ao.jpg": [
+   108305,
+   "6e1d8ac96e21e2f626d72ea527c7c99c5ccbb9dc75c3731dcf2a64c3da22726c"
+  ],
+  "img/texturas2k/telha_ceramica/cor.jpg": [
+   397237,
+   "61e9453a07ea59e6d916f0a51823d5300874af4d5de5cb23ecd63f2d520ed449"
+  ],
+  "img/texturas2k/telha_ceramica/normal.jpg": [
+   481019,
+   "203cea8af9db1dbf36cba2e0d4e65c4b7beeacf3d81f3ffed6d5cc867eed063f"
+  ],
+  "img/texturas2k/telha_ceramica/rugosidade.jpg": [
+   181258,
+   "34be3be4f52a86068b2cc6b0a667fcc0d447cd0818ee216ab2a8d55eec58791f"
+  ],
+  "img/texturas2k/telha_colonial/altura.jpg": [
+   84958,
+   "50484863b08fc68b68452d451205837371dacbaf0115aefa155745b0040ff2a8"
+  ],
+  "img/texturas2k/telha_colonial/ao.jpg": [
+   151075,
+   "76b79a461fc3532cab6a155dc6b71f076a7ed0a3ed94f8eca9318ce747890c3f"
+  ],
+  "img/texturas2k/telha_colonial/cor.jpg": [
+   163324,
+   "1a39a631844ce9067900091b0e72f535dbc7ad484a77f8e9792eb833b3edcf35"
+  ],
+  "img/texturas2k/telha_colonial/normal.jpg": [
+   824023,
+   "f4f7143a8cd4539155be62f2beaa54418b2c36cc89098727a533933f8b6a32d1"
+  ],
+  "img/texturas2k/telha_colonial/rugosidade.jpg": [
+   271813,
+   "5a1b124442657973561931e778b3e8d8aa4dd1c2b40a607fd8d0bf3943ced6bf"
+  ],
+  "img/texturas2k/telha_fibrocimento/altura.jpg": [
+   68609,
+   "dd98b8bd3d28f5ce2a38c5a3b620e68cbea36521118a54c57a92fa65ee8d0e02"
+  ],
+  "img/texturas2k/telha_fibrocimento/ao.jpg": [
+   96928,
+   "d16501d7f83f675f560743efc6d830ee84e1205427f3e415ace66dca26415e3d"
+  ],
+  "img/texturas2k/telha_fibrocimento/cor.jpg": [
+   906057,
+   "57bc85e7d9895776d4a2cb66668a7dbe46669941efb78348655b38010c759bf9"
+  ],
+  "img/texturas2k/telha_fibrocimento/normal.jpg": [
+   858018,
+   "a2a31a1134cee24e2169df6050f1e60f663d8b183a6b34fdd8ec610e7e5ccf0b"
+  ],
+  "img/texturas2k/telha_fibrocimento/rugosidade.jpg": [
+   260955,
+   "1331fcfab6faf06669df083a3184abc72586b65176f71398b9c86606134bb33d"
+  ],
+  "img/texturas2k/telha_metalica/altura.jpg": [
+   61964,
+   "ac634cce7e5b6a41f291255e71db670e126cd1c68dd10b5f7a395d9a574d1df2"
+  ],
+  "img/texturas2k/telha_metalica/ao.jpg": [
+   76775,
+   "648963af3590ed90e4011e831b4d86974a16372e457a91260554e9aa6c3356dd"
+  ],
+  "img/texturas2k/telha_metalica/cor.jpg": [
+   659947,
+   "688e15d9351d4214ddacb7ffd5607efb28b953a11a89018457ceb9c6608a7e7c"
+  ],
+  "img/texturas2k/telha_metalica/normal.jpg": [
+   470375,
+   "f8cea67f64ab1181cb5ca67bc27de00762f351811d9fab2ef241daf7d2b3228e"
+  ],
+  "img/texturas2k/telha_metalica/rugosidade.jpg": [
+   253929,
+   "9f1f0bb55013851acdfa1b764946b2f64dfd037eb5396619020ea726078ec97c"
+  ],
+  "img/texturas2k/telha_shingle_marrom/altura.jpg": [
+   115999,
+   "aeb66271ff27fcdcb04131a07f747dc5f8379650a3d3d9be68a08da56c171091"
+  ],
+  "img/texturas2k/telha_shingle_marrom/cor.jpg": [
+   667364,
+   "a7d978d2cd1658c37d2349d0930f13a8fbab765f4c6f095d7a2f0aaaa48edafd"
+  ],
+  "img/texturas2k/telha_shingle_marrom/normal.jpg": [
+   868263,
+   "de4f134ceeb8c7525ee52090c12486efadb9186f4e46f17fd3854d50bd4cd0c8"
+  ],
+  "img/texturas2k/telha_shingle_marrom/rugosidade.jpg": [
+   430181,
+   "678c37e5c8633625de2f122562c7675be221f7f23e79789cde09c58963c7f56d"
+  ],
+  "img/texturas2k/terra/altura.jpg": [
+   148776,
+   "032c45d04db407c7e9bdad2154d9935c77a00b9b2770e2cfe9e7d81b18fcc42d"
+  ],
+  "img/texturas2k/terra/ao.jpg": [
+   332623,
+   "c3ad8713c74e4ea680a3b96be6fa5143a5064eee2a28ee211d32974b0c601dd3"
+  ],
+  "img/texturas2k/terra/cor.jpg": [
+   835897,
+   "4e8c79e1a5e16b496e460af06b25fae9979f63d36c9a57df17538f1060cc44bf"
+  ],
+  "img/texturas2k/terra/normal.jpg": [
+   779256,
+   "f3e39644f567d368df8c86c4cbc63b2b323268c2f1b209cad5787daf4a5ae5d8"
+  ],
+  "img/texturas2k/terra/rugosidade.jpg": [
+   237794,
+   "95314dc95887c0f87e826455496697c606d977c4b6be73b0b2990b243afcdc0f"
+  ],
+  "img/texturas2k/tijolinho_laranja/altura.jpg": [
+   111114,
+   "8a478d47f52fc48b8b6c750535c991e6acf7997efa7c621622e25a2c50b746be"
+  ],
+  "img/texturas2k/tijolinho_laranja/ao.jpg": [
+   129249,
+   "cbccc194544ff9ce0711109273ae83a4babbd1f6508b64928456911f73b8e788"
+  ],
+  "img/texturas2k/tijolinho_laranja/cor.jpg": [
+   572742,
+   "7037c8dbe1add269d6a735867ebadf03d64dd06b0c0cf62c0e976c1855fe547d"
+  ],
+  "img/texturas2k/tijolinho_laranja/normal.jpg": [
+   852466,
+   "fcd0ee9a8842a62fb1254181b1ee8da0181e805fb3109e13ffe60e78c2a78348"
+  ],
+  "img/texturas2k/tijolinho_laranja/rugosidade.jpg": [
+   117679,
+   "ab00ab3c6a1310319082e3724d4db94a4dd5874aeb11d4ef0d89c0af6ee4167e"
+  ],
+  "img/texturas2k/tijolo_macico_colonial_palha/altura.jpg": [
+   83800,
+   "4f189e598c0ac0392d707d92f278d62c8607e247ae680a45877c9db917c0b32c"
+  ],
+  "img/texturas2k/tijolo_macico_colonial_palha/ao.jpg": [
+   128230,
+   "ccc4fa2f05023ff612d7164c1ffb61187848ab08c4f8cc3266895ba4075d9443"
+  ],
+  "img/texturas2k/tijolo_macico_colonial_palha/cor.jpg": [
+   705876,
+   "0ae97871929c63f1112b0b93d67eddbdb6a36e1929e7da2ad433298b33080ae4"
+  ],
+  "img/texturas2k/tijolo_macico_colonial_palha/normal.jpg": [
+   818407,
+   "2e6f3ee67b23c4984445edc89509f032d1304fecaca52e72e2ef42c1810a44e5"
+  ],
+  "img/texturas2k/tijolo_macico_colonial_palha/rugosidade.jpg": [
+   178585,
+   "dee0425a979c778e29338d1d5f552c12d5cee664826ba0f0a89919184da02a49"
+  ]
+ }
+}

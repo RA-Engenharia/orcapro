@@ -316,3 +316,60 @@ granito_preto
   https://ambientcg.com/view?id=Marble006
   licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
   arquivos: cor 1024 px, normal e rugosidade 512 px
+
+tecido_estofado
+  fonte: ambientCG · id: Fabric036
+  https://ambientcg.com/view?id=Fabric036
+  licença: CC0 · tamanho físico de uma repetição: 0.4 m (estimado: trama de linho fina)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+couro_claro
+  fonte: ambientCG · id: Leather035D
+  https://ambientcg.com/view?id=Leather035D
+  licença: CC0 · tamanho físico de uma repetição: 0.3 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+aco_pintado_liso
+  fonte: ambientCG · id: Metal029
+  https://ambientcg.com/view?id=Metal029
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+  obs. da origem: a cor foi levada a cinza-médio (arranhões a 30 % do contraste) para a tinta do IFC valer em qualquer cor
+
+aco_galvanizado
+  fonte: ambientCG · id: Metal051A
+  https://ambientcg.com/view?id=Metal051A
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+  obs. da origem: rugosidade reescalada para a média 0,85 (a foto original é polida demais para chapa galvanizada), mesmo desenho
+
+plastico_liso_branco
+  fonte: ambientCG · id: Plastic013A
+  https://ambientcg.com/view?id=Plastic013A
+  licença: CC0 · tamanho físico de uma repetição: 0.6 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+borracha_preta
+  fonte: ambientCG · id: Rubber004
+  https://ambientcg.com/view?id=Rubber004
+  licença: CC0 · tamanho físico de uma repetição: 0.75 m (dimensionX da API)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+louca_porcelana
+  fonte: ambientCG · id: Porcelain001
+  https://ambientcg.com/view?id=Porcelain001
+  licença: CC0 · tamanho físico de uma repetição: 0.5 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+casca_arvore
+  fonte: PolyHaven · id: bark_brown_02
+  https://polyhaven.com/a/bark_brown_02
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+
+inox_escovado
+  fonte: ambientCG · id: Metal009
+  https://ambientcg.com/view?id=Metal009
+  licença: CC0 · tamanho físico de uma repetição: 1.0 m (estimado)
+  arquivos: cor 1024 px, normal e rugosidade 512 px (frente T, 2026-10-21)
+  obs. da origem: a mesma foto de aluminio_escovado (Metal009) com a rugosidade reescalada para a média 0,85: o inox/alumínio do render usa esta; a antiga segue para quem escolheu a textura à mão

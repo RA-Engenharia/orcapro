@@ -312,6 +312,13 @@
   }
 
   /* normaliza um trecho (op ou estado): devolve null se não serve */
+  /* distância de um ponto ao segmento a–b (m), em 3D (N23: o passante está no tubo?) */
+  function distSeg(q, a, b) {
+    var ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, L2 = ux * ux + uy * uy + uz * uz;
+    var s = L2 > 0 ? ((num(q.x, 0) - a.x) * ux + (num(q.y, 0) - a.y) * uy + (num(q.z, 0) - a.z) * uz) / L2 : 0; s = Math.max(0, Math.min(1, s));
+    var dx = a.x + ux * s - num(q.x, 0), dy = a.y + uy * s - num(q.y, 0), dz = a.z + uz * s - num(q.z, 0);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
   function normTrecho(o) {
     var p1 = pt(o.p1), p2 = pt(o.p2), s = SISTEMAS[o.sistema];
     if (!p1 || !p2 || !s) return null;
@@ -342,6 +349,16 @@
     /* REVISÃO H5 (21/10/2026): o trecho de água quente que corre FORA do ambiente aquecido (o entreforro do js/hidaqtraco.js) leva o
        ISOLAMENTO TÉRMICO (NBR 5626:2020 6.12.3) — vai ao levantamento (ISOLAMENTO_AQ) */
     if (o.isolamento === true && o.sistema === "agua_quente") t.isolamento = true;
+    /* N23 (24/10/2026): os PASSANTES que o traçado lançou onde o tubo atravessa uma laje (HidCriterios.lancarPassantes) — a laje e o
+       ponto da travessia; vão ao levantamento (PASSANTE_LAJE) e o auditor aceita a travessia com eles. Lista de objetos (a nuvem aceita) */
+    if (Array.isArray(o.passantes) && o.passantes.length) {
+      var psL = o.passantes.filter(function (q) { return q && q.laje != null && q.laje !== "" && isFinite(num(q.x, NaN)) && isFinite(num(q.z, NaN)); }).slice(0, 12)   // hid:ok até 12 lajes por tubo
+        .map(function (q) { return { laje: txt(q.laje).slice(0, 80), x: r4(num(q.x, 0)), y: r4(num(q.y, 0)), z: r4(num(q.z, 0)) }; })
+        /* ⚠ só o passante que está NO tubo: o registro que divide o trecho copia os campos para a metade "b" (o passante ia aos dois
+           pedaços — orçado em dobro) e o tubo movido deixa de passar no furo (sai do orçamento e o alerta volta) */
+        .filter(function (q) { return t.p1 && t.p2 && distSeg(q, t.p1, t.p2) <= num(t.dn, 0) / 2000 + TOL; });   // hid:ok DN mm → raio em m
+      if (psL.length) t.passantes = psL;
+    }
     /* CONECTIVIDADE (frente A, 19/10/2026): a tomada da ventilação diz em QUAL tubo de esgoto ela liga (o tê só nele); as esperas de
        projeto do prédio e da piscina ficam marcadas (a R-E2 as permite: viram pendência no motor delas) */
     if (o.tomada != null && o.tomada !== "" && t.continua) t.tomada = txt(o.tomada).slice(0, 120);
@@ -1135,6 +1152,20 @@
      fornecimento (insumo): a colocação do tubo de espuma acompanha a montagem do tubo */
   var ISOLAMENTO_AQ = { insumos: { "1/2": "39712", "3/4": "39715", "1": "39714", "1 1/4": "39708", "1 1/2": "39707" }, coeficiente: 1.022727, coefFonte: "SINAPI 97329 (insumo de isolamento por metro de tubo)",
     descricao: "Tubo de espuma de polietileno expandido flexível para isolamento térmico de água quente, E = 10 mm" };   // hid:ok códigos e coeficiente da SINAPI conferidos (fonte acima)
+  /* N23 (24/10/2026): PASSANTE na laje (o furo previsto na fôrma: o tubo-camisa fixado na laje antes da concretagem) — as composições
+     SINAPI MG 06/2026 "PASSANTE TIPO TUBO COM DIÂMETRO DE X MM, FIXADO EM LAJE, PARA PASSAGEM DE TUBULAÇÕES COM NO MÁXIMO Y MM DE
+     DIÂMETRO. AF_09/2023" (data/sinapi-MG-2026-06.json; tools/test-hid-n23-pressao.js confere código e descrição na base). Vale a de
+     menor camisa que passa o diâmetro EXTERNO do tubo; acima de 100 mm a SINAPI não tem: pendência com o motivo (nunca a parecida). */
+  var PASSANTE_LAJE = [[32, "90453", 40], [40, "104783", 50], [50, "90454", 75], [75, "90455", 100], [100, "104784", 150]];   // hid:ok [DE máximo do tubo (mm), código SINAPI, Ø da camisa (mm)] — da descrição da composição
+  function passanteDe(deMm) {
+    var l = PASSANTE_LAJE.filter(function (x) { return deMm <= x[0] + 1e-6; })[0];   // hid:ok tolerância numérica
+    if (!l) return { status: "pendente", chave: "passante|" + deMm, rotulo: "Passante na laje para tubo DN " + deMm, motivo: "passante na laje para tubo DN " + deMm + ": a SINAPI 06/2026 só tem passante tipo tubo até tubulação de 100 mm — pendente (nunca a parecida)" };
+    var d = "PASSANTE TIPO TUBO COM DIÂMETRO DE " + l[2] + " MM, FIXADO EM LAJE, PARA PASSAGEM DE TUBULAÇÕES COM NO MÁXIMO " + l[0] + " MM DE DIÂMETRO. AF_09/2023";
+    return { status: "ok", chave: "passante|" + l[0], rotulo: "Passante na laje Ø " + l[2] + " mm (tubo até " + l[0] + " mm)", codigo: l[1], unidade: "UN", descricao: d, alternativas: 0 };
+  }
+  /* ⚠ o "diâmetro" da tubulação na descrição SINAPI é o DN (a SINAPI designa os tubos de PVC pelo DN: "TUBO PVC … ESGOTO PREDIAL, DN 100
+     MM", de DE 101,6) — a camisa de 150 mm passa o DE do DN 100 com folga; por isso a escolha é pelo DN do trecho */
+  function dnPassante(t) { return num(t.dn, 0); }
   /* ⚠ PRIORIDADE 21/10/2026 — o PROLONGADOR da caixa sifonada / do ralo (o corpo desce até a cota da tubulação: js/biminstgeo.js
      corpoPeca). Insumos SINAPI 06/2026 conferidos na base local data/sinapi-MG-2026-06.json: 11735 "PROLONGAMENTO / PROLONGADOR PARA
      CAIXA SIFONADA, PVC, 100 MM X 200 MM (NBR 5688)", 11737 "... 150 MM X 150 MM", 11738 "... 150 MM X 200 MM". Comprimento comercial
@@ -1233,6 +1264,15 @@
       if (!g) { g = isos[k] = { sistema: t.sistema, material: t.material, dn: t.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", coeficiente: ISOLAMENTO_AQ.coeficiente, trechos: [], sinapi: sp }; ordI.push(k); }
       g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.metros * ISOLAMENTO_AQ.coeficiente); g.trechos.push(t.id);
     });
+    /* N23: os PASSANTES na laje que o traçado lançou (um por travessia), pelo DN do tubo */
+    var pss = {}, ordPs = [];
+    R.trechos.forEach(function (t) {
+      arr(t.passantes).forEach(function (q) {
+        var sp = passanteDe(dnPassante(t)), k = sp.chave, g = pss[k];
+        if (!g) { g = pss[k] = { peca: "passante_laje", nome: sp.rotulo, sistema: t.sistema, dn: t.dn, n: 0, quantidade: 0, unidade: "UN", ids: [], lajes: [], sinapi: sp }; ordPs.push(k); }
+        g.n++; g.quantidade++; g.ids.push(t.id); if (g.lajes.indexOf(q.laje) < 0) g.lajes.push(q.laje);
+      });
+    });
     /* P12: acessórios de tubo (registro, válvula) e dispositivos elétricos (família com `mep`) */
     var acs = {}, ordA = [], dsp = {}, ordD = [];
     arr(R.acessorios).forEach(function (a) {
@@ -1260,6 +1300,7 @@
       acessorios: ordA.map(function (k) { return acs[k]; }),
       dispositivos: ordD.map(function (k) { return dsp[k]; }),
       isolamentos: ordI.map(function (k) { return isos[k]; }),
+      passantes: ordPs.map(function (k) { return pss[k]; }),
       prolongadores: ordPl.map(function (k) { return prol[k]; }),
       tubos: ordT.map(function (k) { return tubos[k]; }),
       conexoes: ordC.map(function (k) { return cxs[k]; }),
@@ -1289,6 +1330,7 @@
     }
     R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t); linha(t.id, it, q.quantidade, q.unidade, sinapiDe(it));
       if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));   /* revisão H5: o isolamento térmico da AQ */
+      arr(t.passantes).forEach(function () { linha(t.id, { peca: "passante_laje", sistema: t.sistema, material: t.material, dn: t.dn }, 1, "un", passanteDe(dnPassante(t))); });   /* N23: o passante de cada travessia de laje */
     });
     R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
       var it = itemConexao(c);
@@ -1988,6 +2030,7 @@
     ACESSORIO_MIN: ACESSORIO_MIN, ACESSORIO_MAX: ACESSORIO_MAX, ACESSORIO_PADRAO: ACESSORIO_PADRAO,
     normAcessorio: normAcessorio, itemAcessorio: itemAcessorio, itemDispositivo: itemDispositivo, familiaMep: familiaMep, dispositivosDo: dispositivosDo,
     /* pendências finais (18/10/2026): peça em linha (união / tê de inspeção), o tipo do registro pelo lugar, referência de mercado */
+    PASSANTE_LAJE: PASSANTE_LAJE, passanteDe: passanteDe,
     PECAS_LINHA: PECAS_LINHA, pecaLinhaExiste: pecaLinhaExiste, embutidoNaParede: embutidoNaParede, varianteAuto: varianteAuto, refMercado: refMercado, itemPeca: itemPeca, itemConexao: itemConexao,
     pecasRegistro: pecasRegistro, CAT_REGISTRO: CAT_REGISTRO,
     sistemas: sistemas, verificar: verificar, conectividade: conectividade, esperaPermitida: esperaPermitida, paralelos: paralelos, legenda: legenda, tabelaPecas: tabelaPecas, categoriaRevit: categoriaRevit, simboloAcessorio: simboloAcessorio,

@@ -100,6 +100,9 @@
 
   /* ------------------------------------------------------------ geometria plana */
   function distP(a, b) { var dx = a.x - b.x, dz = a.z - b.z; return Math.sqrt(dx * dx + dz * dz); }
+  /* o comprimento de um trecho de calha: com `len` (a calha na cota certa) é o da LINHA DA BORDA DA TELHA — não depende da largura da calha, então a
+     posição de uma descida (fração do comprimento) não anda quando a seção muda; sem `len`, o comprimento do próprio trecho */
+  function Lseg(s) { return fin(s && s.len) ? s.len : distP(s.a, s.b); }
   function areaQ(Q) { var s = 0; for (var i = 0, n = Q.length; i < n; i++) { var a = Q[i], b = Q[(i + 1) % n]; s += a.x * b.z - b.x * a.z; } return Math.abs(s) / 2; }
   function pt(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
 
@@ -138,40 +141,141 @@
     return out;
   }
 
+  /* ============================================================ N23 (23/10/2026) — HERANÇA DA PAREDE DE BAIXO E COTA DA CALHA
+     Pedido do Rogério: a platibanda nasce com o MESMO material (tipo/camadas/acabamento) e o MESMO alinhamento (face/eixo e
+     espessura) da parede em que assenta; se a parede muda, ela acompanha (tudo é refeito a cada replay a partir das paredes);
+     o telhado recua até a face de dentro dela (sem beiral onde há platibanda) e a calha fica encostada. A calha sai na cota
+     certa em relação à borda da telha: a telha entra na calha, o fundo cai com a declividade da NBR 10844 até o bocal e o bocal é
+     o topo do condutor vertical. Cada constante abaixo diz de onde vem — o que é só adotado diz que é adotado. */
+  var AVANCO_TELHA = 0.05;     /* a telha avança ≥ 5 cm DENTRO da calha — ficha técnica de calha PVC Wavin (docs/telhado/PADROES-TELHADO.md §5.3); a Eternit (p. 36) dá balanço de 10 a 25 cm com calha para a ondulada de fibrocimento */
+  var FOLGA_VERTICAL = 0.02;   /* a borda da calha fica 2 cm abaixo da face de baixo da telha: ADOTADO (já era o valor da calha embutida antes do N23) */
+  var DECL_MIN_CALHA_PCT = 0.5; /* ABNT NBR 10844:1989, item 5.5.2 — mesmo valor que o HidNormas devolve em ap.calha.declividade_minima (o gerarPluvial lê de lá) */
+
+  /* a normal EXTERNA (para fora do contorno anti-horário) da aresta A→B: (ez, −ex) */
+  function geoAresta(A, B) {
+    var ex = B[0] - A[0], ez = B[1] - A[1], L = Math.sqrt(ex * ex + ez * ez);
+    if (!(L > 1e-9)) return null;
+    return { ex: ex / L, ez: ez / L, nx: ez / L, nz: -ex / L, L: L };
+  }
+  /* AS PAREDES DE BAIXO de uma aresta do contorno: paralelas (≤ ~3°), com o corpo a até meia espessura + 25 cm da linha da aresta
+     e cobrindo ao menos 5 cm dela. `dc` = quanto o MEIO do corpo da parede fica para FORA da linha da aresta (negativo = para dentro).
+     Parede em arco (curva) entra com `curva:true`: herda tipo e espessura, mas a posição fica a da corda (a platibanda é reta). */
+  function paredesDaAresta(caixas, A, B, folgaExtra) {
+    var G = geoAresta(A, B), out = [];
+    if (!G) return out;
+    arr(caixas).forEach(function (c) {
+      if (!c || c.tipo !== "parede") return;
+      var th = num(c.rotY, 0), ux = Math.cos(th), uz = -Math.sin(th), Lw = num(c.comprimento, 0), t = num(c.espessura, 0), cx = num(c.cx, NaN), cz = num(c.cz, NaN);
+      if (!(Lw > 0 && t > 0 && isFinite(cx) && isFinite(cz))) return;
+      if (Math.abs(G.ex * uz - G.ez * ux) > 0.05) return;
+      var dc = (cx - A[0]) * G.nx + (cz - A[1]) * G.nz;
+      if (Math.abs(dc) > t / 2 + 0.25 + num(folgaExtra, 0)) return;   /* o contorno pode estar a uma calha de distância da parede */
+      var s0 = (cx - ux * Lw / 2 - A[0]) * G.ex + (cz - uz * Lw / 2 - A[1]) * G.ez, s1 = (cx + ux * Lw / 2 - A[0]) * G.ex + (cz + uz * Lw / 2 - A[1]) * G.ez;
+      var lo = Math.max(0, Math.min(s0, s1)), hi = Math.min(G.L, Math.max(s0, s1));
+      if (hi - lo < 0.05) return;
+      /* a normal da face "fora" da parede (w < 0 do corpo: −(sen θ, cos θ); "Inverter faces" troca) e se ela olha para fora da casa */
+      var fx = -Math.sin(th), fz = -Math.cos(th); if (c.inverterFaces) { fx = -fx; fz = -fz; }
+      out.push({ caixa: c, id: c.id, dc: dc, t: t, trecho: hi - lo, curva: !!c.arco, foraParaFora: (fx * G.nx + fz * G.nz) > 0 });
+    });
+    return out;
+  }
+  /* a que domina a aresta (a de maior trecho), se cobre ao menos 25 % dela */
+  function paredeDominante(lista, L) {
+    var m = null;
+    arr(lista).forEach(function (h) { if (!m || h.trecho > m.trecho + 1e-9) m = h; });
+    return m && m.trecho >= Math.max(0.25, 0.25 * L) ? m : null;
+  }
+  /* a largura da calha que ocupa lugar ao lado da platibanda (com `cotaAuto` a telha avança dentro dela) */
+  function larguraDaCalha(c) {
+    var l = fin(Number(c && c.largura)) ? Number(c.largura) : PADRAO.calhaLargura;
+    return c && c.cotaAuto === true ? Math.max(0, l - AVANCO_TELHA) : l;
+  }
+  /* quanto o contorno do telhado tem de andar (positivo = para fora) para a face de dentro da platibanda herdada ficar
+     `calha embutida` adiante dele: dc − t/2 − afastamento. `herd` = true (todas as arestas) | { origDaAresta: true }. */
+  function recuosHerdados(t, caixas, ctxCob, herd) {
+    var out = {}, avisos = [], sem = [];
+    if (!t || !t.ok || !herd) return { recuo: out, avisos: avisos };
+    var chs = calhasEmbDoTelhado(ctxCob, t.id);
+    arr(t.arestasCalc).forEach(function (e) {
+      if (!(herd === true || herd[e.orig])) return;
+      var A = [e.parede.a.x, e.parede.a.z], B = [e.parede.b.x, e.parede.b.z], G = geoAresta(A, B); if (!G) return;
+      var af = 0;
+      chs.forEach(function (c) { if (arr(c.arestas).some(function (o) { return Number(o) === e.orig; })) af = Math.max(af, larguraDaCalha(c)); });
+      var h = paredeDominante(paredesDaAresta(caixas, A, B, af), G.L);
+      if (!h) { sem.push(e.orig + 1); return; }
+      if (h.curva) return;
+      var d = h.dc - h.t / 2 - af;
+      if (Math.abs(d) > 1e-4) out[e.orig] = r6(d);
+    });
+    if (sem.length) avisos.push("Platibanda herdada: a(s) aresta(s) " + sem.join(", ") + " não tem(êm) parede embaixo — fica(m) com a espessura padrão, no contorno do telhado.");
+    return { recuo: out, avisos: avisos };
+  }
+
   /* ============================================================ PLATIBANDA */
   function calhasEmbDoTelhado(ctxCob, id) {
     var out = [];
     arr(ctxCob && ctxCob.ordCalha).forEach(function (cid) { var c = ctxCob.calha[cid]; if (c && String(c.telhado) === String(id)) out.push(c); });
     return out;
   }
-  function calcularPlatibanda(f, telhados, ctxCob) {
+  function calcularPlatibanda(f, telhados, ctxCob, caixas) {
     var p = clone(f), avisos = [], t = telhados[String(f.telhado)];
     p.tipo = "platibanda"; p.ifc = "IFCWALL"; p.ok = false; p.segs = []; p.comprimento = 0; p.area = 0; p.areaFaces = 0; p.volume = 0;
+    var herdar = f.herdar === true;
+    if (herdar) p.herdar = true; else delete p.herdar;
     p.espessuraEf = fin(Number(f.espessura)) ? Number(f.espessura) : PADRAO.espessura;
     p.abaRufoEf = fin(Number(f.abaRufo)) ? Number(f.abaRufo) : PADRAO.aba;
     p.rufoCapaAtivo = f.rufoCapa !== false; p.contraRufoAtivo = f.contraRufo !== false;
     if (!t) { avisos.push("O telhado desta platibanda não existe mais."); p.avisos = avisos; return p; }
     if (!t.ok || t.modo !== "perimetro") { avisos.push("A platibanda segue o contorno do telhado por perímetro que fechou."); p.avisos = avisos; return p; }
     var S = selecionar(t, f.arestas, avisos), P = S.C.P, n = P.length;
-    var folga = fin(Number(f.folgaCalha)) ? Number(f.folgaCalha) : PADRAO.folga, dIn = [], dOut = [], afast = [], k, ch = calhasEmbDoTelhado(ctxCob, f.telhado);
+    /* N23: a platibanda HERDADA não tem folga com a calha (ela assenta na parede; a calha encosta nela) */
+    var folga = fin(Number(f.folgaCalha)) ? Number(f.folgaCalha) : (herdar ? 0 : PADRAO.folga), dIn = [], dOut = [], afast = [], esps = [], heran = [], heranL = [], k, ch = calhasEmbDoTelhado(ctxCob, f.telhado), semParede = [], mistas = [], parciais = [], curvas = [];
     for (k = 0; k < n; k++) {
       var a = 0;
-      ch.forEach(function (c) { arr(c.arestas).forEach(function (o) { if (S.C.porOrig[Number(o)] === k) a = Math.max(a, (fin(Number(c.largura)) ? Number(c.largura) : PADRAO.calhaLargura) + folga); }); });
-      afast.push(a); dIn.push(a); dOut.push(a + p.espessuraEf);
+      ch.forEach(function (c) { arr(c.arestas).forEach(function (o) { if (S.C.porOrig[Number(o)] === k) a = Math.max(a, larguraDaCalha(c) + folga); }); });   /* REVISOR N23: também na platibanda antiga — a calha na cota certa (telha 5 cm dentro) ficava 5 cm longe dela; sem cotaAuto é a largura, como era */
+      afast.push(a);
+      var h = null;
+      if (herdar && S.sel[k]) {
+        var G = geoAresta(P[k], P[(k + 1) % n]);
+        var lst = G ? paredesDaAresta(caixas, P[k], P[(k + 1) % n], a) : [];
+        h = G ? paredeDominante(lst, G.L) : null;
+        if (!h) semParede.push(t.arestasCalc[k].orig + 1);
+        else {
+          /* REVISOR N23: duas paredes diferentes (tipo ou espessura) sob a mesma aresta — a forma segue a dominante, mas cada uma é orçada pelo trecho dela;
+             parede que não cobre a aresta toda e parede curva (a platibanda fica reta pela corda) também são ditas, nunca caladas */
+          heranL[k] = lst;
+          var cob = 0; lst.forEach(function (w) { cob += w.trecho; });
+          if (lst.some(function (w) { return Math.abs(w.t - h.t) > 1e-4 || txt(w.caixa.tipoParede && w.caixa.tipoParede.rotulo) !== txt(h.caixa.tipoParede && h.caixa.tipoParede.rotulo); }))
+            mistas.push({ aresta: t.arestasCalc[k].orig + 1, paredes: lst.map(function (w) { return w.id + " (" + (w.caixa.tipoParede ? w.caixa.tipoParede.rotulo : "sem tipo") + ", " + virg(w.t * 100, 0) + " cm)"; }), segue: h.id, ids: lst.map(function (w) { return w.id; }) });
+          if (cob < G.L - 0.10) parciais.push({ aresta: t.arestasCalc[k].orig + 1, coberto: r4(Math.min(cob, G.L)), L: r4(G.L), ids: lst.map(function (w) { return w.id; }) });
+          if (lst.some(function (w) { return w.curva; })) curvas.push({ aresta: t.arestasCalc[k].orig + 1, ids: lst.filter(function (w) { return w.curva; }).map(function (w) { return w.id; }) });
+        }
+      }
+      if (h && !h.curva) { dIn.push(h.dc - h.t / 2); dOut.push(h.dc + h.t / 2); esps.push(h.t); }
+      else { dIn.push(a); dOut.push(a + (h ? h.t : p.espessuraEf)); esps.push(h ? h.t : p.espessuraEf); }
+      heran.push(h);
     }
+    if (semParede.length) avisos.push("Platibanda herdada: a(s) aresta(s) " + semParede.join(", ") + " não tem(êm) parede embaixo — espessura padrão de " + virg(p.espessuraEf * 100, 0) + " cm, no contorno do telhado.");
+    mistas.forEach(function (m) { avisos.push("Platibanda herdada: a aresta " + m.aresta + " tem paredes diferentes embaixo (" + m.paredes.join("; ") + ") — a platibanda segue a posição e a espessura da " + m.segue + " na aresta toda; as camadas são orçadas pelo trecho de cada parede."); });
+    parciais.forEach(function (m) { avisos.push("Platibanda herdada: a parede de baixo cobre só " + virg(m.coberto) + " dos " + virg(m.L) + " m da aresta " + m.aresta + " — a platibanda corre a aresta toda (confira o trecho sem parede)."); });
+    curvas.forEach(function (m) { avisos.push("Platibanda herdada: a parede " + m.ids.join(", ") + " da aresta " + m.aresta + " é curva — a platibanda fica reta, pela corda (herda o tipo e a espessura, não a curva)."); });
+    if (mistas.length || parciais.length || curvas.length) p.herancaParcial = { mistas: mistas, parciais: parciais, curvas: curvas };
     var F = faixas(P, S.sel, dIn, dOut);
     if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a platibanda."); p.avisos = avisos; return p; }
     var base = fin(Number(f.base)) ? Number(f.base) : num(t.cotaApoio, 0);
     var topo = fin(Number(f.topo)) ? Number(f.topo) : num(t.cotaCumeeira, base) + num(t.espessura, 0) + (fin(Number(f.altura)) ? Number(f.altura) : PADRAO.altura);
     if (!(topo > base + 0.01)) { avisos.push("O topo da platibanda (" + virg(topo) + " m) não fica acima da base (" + virg(base) + " m)."); p.avisos = avisos; return p; }
-    var H = topo - base, L = 0, vol = 0, quadsA = 0;
+    var H = topo - base, L = 0, vol = 0, quadsA = 0, espMax = 0;
     F.forEach(function (s) {
       var Lm = (distP(s.a, s.b) + distP(s.quad[3], s.quad[2])) / 2;
       s.orig = t.arestasCalc[s.k].orig; s.afastamento = r4(afast[s.k]); s.comprimento = r6(distP(s.a, s.b)); s.comprimentoMeio = r6(Lm);
+      if (herdar) { s.espessura = r6(esps[s.k]); if (s.espessura > espMax) espMax = s.espessura; }   /* REVISOR N23: campo novo só na herdada (a op antiga sai byte a byte igual) */
       L += s.comprimento; vol += areaQ(s.quad) * H; quadsA += areaQ(s.quad);
     });
+    if (herdar) p.espessuraEf = espMax;   /* a mais grossa manda no corte do rufo (o preço mais alto, na dúvida) */
     p.segs = F; p.base = r6(base); p.topo = r6(topo); p.altura = r6(H); p.comprimento = r6(L);
     p.area = r4(L * H); p.areaFaces = r4(2 * L * H); p.volume = r4(vol); p.areaTopo = r4(quadsA);
+    if (herdar) herancaDaParede(p, F, heran, P, H, heranL);
     /* RUFO DE CAPA: no topo, corte = espessura + 2 × aba */
     var necC = p.espessuraEf + 2 * p.abaRufoEf, LC = 0;
     F.forEach(function (s) { LC += s.comprimentoMeio; });
@@ -186,6 +290,38 @@
     p.ok = true;
     if (avisos.length) p.avisos = avisos;
     return p;
+  }
+  /* N23: o que a platibanda herdou da(s) parede(s) de baixo — tipo (camadas e acabamento), espessura e posição por trecho, e as
+     camadas em m² por face física (para orçar como a parede), no mesmo formato do BimArq.camadasDe. */
+  function herancaDaParede(p, F, heran, P, H, heranL) {
+    var mapa = {}, ordem = [], ids = {}, tpDom = null, domL = 0, n = P.length;
+    F.forEach(function (s) {
+      var h = heran[s.k]; if (!h) return;
+      ids[h.id] = 1;
+      var G = geoAresta(P[s.k], P[(s.k + 1) % n]), tp = h.caixa.tipoParede;
+      s.heranca = { parede: h.id, espessura: r6(h.t), deslocamentoDoEixo: r6(h.dc), curva: !!h.curva, tipo: tp ? tp.rotulo : null, linhaLoc: h.caixa.linhaLoc != null ? h.caixa.linhaLoc : null, foraParaFora: h.foraParaFora };
+      if (tp && s.comprimento > domL) { domL = s.comprimento; tpDom = tp; }
+      var Lin = s.comprimento, Lout = r6(distP(s.quad[3], s.quad[2])), Lmeio = s.comprimentoMeio;
+      /* REVISOR N23: com mais de uma parede sob a aresta, cada uma leva a fração dela (pelo trecho que cobre) — antes a dominante levava a aresta toda
+         (a metade de bloco de concreto 30 cm saía orçada como bloco cerâmico 20) */
+      var ws = arr(heranL && heranL[s.k]).filter(function (w) { return w.trecho > 0; }), somaT = 0;
+      if (!ws.length) ws = [h];
+      ws.forEach(function (w) { somaT += w.trecho; });
+      ws.forEach(function (w) {
+        var fr = ws.length === 1 || !(somaT > 0) ? 1 : w.trecho / somaT, tw = w.caixa.tipoParede; ids[w.id] = 1;
+        arr(tw && tw.camadas).forEach(function (kc) {
+          /* a camada "fora" da parede vai na face que olha para o mesmo lado dela; a de "dentro", na outra */
+          var Lf = (kc.face === "nucleo" ? Lmeio : ((kc.face === "fora") === w.foraParaFora ? Lout : Lin)) * fr;
+          var chave = kc.face + "|" + kc.rotulo + "|" + txt(kc.servico), g = mapa[chave];
+          if (!g) { g = mapa[chave] = { id: kc.id, rotulo: kc.rotulo, face: kc.face, servico: kc.servico, e: kc.e, material: kc.material || "", area: 0, volume: 0 }; ordem.push(chave); }
+          g.area += Lf * H; g.volume += Lf * H * num(kc.e, 0);
+        });
+      });
+    });
+    p.paredesBase = Object.keys(ids);
+    p.tipoParede = tpDom ? clone(tpDom) : null;
+    p.camadas = ordem.map(function (c) { var g = mapa[c]; return { id: g.id, rotulo: g.rotulo, face: g.face, servico: g.servico, e: g.e, material: g.material, area: r4(g.area), volume: r6(g.volume) }; });
+    p.heranca = { paredes: p.paredesBase.slice(), tipo: tpDom ? tpDom.rotulo : null, espessuras: F.map(function (s) { return s.espessura; }) };
   }
 
   /* ============================================================ CALHA EMBUTIDA */
@@ -204,17 +340,20 @@
       var e = t.arestasCalc[k];
       if (!e.define) { avisos.push("A aresta " + (e.orig + 1) + " não define inclinação (é oitão): a calha vai no beiral, onde a água sai."); S.sel[k] = false; }
     }
-    var dOut = []; for (k = 0; k < n; k++) dOut.push(c.larguraEf);
-    var F = faixas(P, S.sel, P.map(function () { return 0; }), dOut);
+    /* N23: com `cotaAuto` a telha AVANÇA dentro da calha (AVANCO_TELHA): a calha vai de −avanço a largura−avanço contado da borda da telha */
+    if (f.cotaAuto === true) c.cotaAuto = true; else delete c.cotaAuto;   /* o estado das ops antigas sai byte a byte igual */
+    var dIn0 = c.cotaAuto ? -Math.min(AVANCO_TELHA, c.larguraEf) : 0, dOut = []; for (k = 0; k < n; k++) dOut.push(c.larguraEf + dIn0);
+    var F = faixas(P, S.sel, P.map(function () { return dIn0; }), dOut);
     if (!F || !F.length) { avisos.push("Nenhuma aresta válida para a calha."); c.avisos = avisos; return c; }
     var L = 0;
     F.forEach(function (s) {
       var e = t.arestasCalc[s.k];
       s.orig = e.orig; s.comprimento = r6(distP(s.a, s.b));
+      if (c.cotaAuto) s.ref = r6(Math.sqrt(Math.pow(P[s.k][0] - P[(s.k + 1) % n][0], 2) + Math.pow(P[s.k][1] - P[(s.k + 1) % n][1], 2)));   /* a aresta da telha: referência da posição das descidas */
       /* a linha do MEIO da calha (onde a descida fica) */
       s.ma = { x: r6((s.quad[0].x + s.quad[3].x) / 2), z: r6((s.quad[0].z + s.quad[3].z) / 2) }; s.mb = { x: r6((s.quad[1].x + s.quad[2].x) / 2), z: r6((s.quad[1].z + s.quad[2].z) / 2) };
       /* a borda da calha fica logo abaixo da face de baixo do telhado na linha do beiral */
-      s.yBorda = r6(num(e.alturaBeiral, num(t.cotaApoio, 0)) - 0.02);
+      s.yBorda = r6(num(e.alturaBeiral, num(t.cotaApoio, 0)) - FOLGA_VERTICAL);
       s.yFundo = r6(s.yBorda - c.alturaEf);
       L += s.comprimento;
     });
@@ -235,28 +374,133 @@
     arr(estado && estado.calhasEmbutidas).forEach(function (c) {
       if (!c || !c.ok) return;
       out.push({ id: c.id, tipo: "embutida", telhado: c.telhado, arestas: arr(c.arestas).slice(), comprimento: c.comprimento, largura: c.larguraEf, altura: c.alturaEf,
-                 declividadePct: c.declividadeEf, laminaMm: c.laminaMm != null && fin(Number(c.laminaMm)) ? Number(c.laminaMm) : null,
-                 segs: c.segs.map(function (s) { return { a: s.ma || s.a, b: s.mb || s.b, orig: s.orig, y: s.yFundo }; }), fonte: c });
+                 declividadePct: c.declividadeEf, laminaMm: c.laminaMm != null && fin(Number(c.laminaMm)) ? Number(c.laminaMm) : null, cotaAuto: !!c.perfil,
+                 segs: c.perfil ? c.perfil.subs.map(function (s) { return { a: s.a, b: s.b, len: s.len, orig: s.orig, y: s.yb, ya: s.ya, yb: s.yb }; })
+                                : c.segs.map(function (s) { return { a: s.ma || s.a, b: s.mb || s.b, orig: s.orig, y: s.yFundo }; }), fonte: c });
     });
     arr(estado && estado.bordas).forEach(function (b) {
       if (!b || !b.ok || b.tipoBorda !== "calha") return;
       out.push({ id: b.id, tipo: "beiral", telhado: b.telhado, arestas: arr(b.arestas).slice(), comprimento: b.comprimento, largura: b.larguraEf, altura: b.alturaEf,
-                 declividadePct: null, laminaMm: null, segs: arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z }, orig: s.aresta, y: s.a.y }; }), fonte: b });
+                 declividadePct: b.perfil ? b.perfil.declPct : null, laminaMm: null, cotaAuto: !!b.perfil,
+                 segs: b.perfil ? b.perfil.subs.map(function (s) { return { a: s.a, b: s.b, len: s.len, orig: s.orig, y: s.yb, ya: s.ya, yb: s.yb }; })
+                                : arr(b.segs).map(function (s) { return { a: { x: s.a.x, z: s.a.z }, b: { x: s.b.x, z: s.b.z }, orig: s.aresta, y: s.a.y }; }), fonte: b });
     });
     return out;
+  }
+
+  /* ============================================================ N23: O PERFIL DA CALHA (cota do fundo até o bocal)
+     A borda da calha fica numa cota só (FOLGA_VERTICAL abaixo da face de baixo da telha, que entra AVANCO_TELHA na calha); o FUNDO cai com a
+     declividade (≥ 0,5 %, NBR 10844 item 5.5.2) até o bocal. A profundidade é a da seção (`altura`) no ponto mais alto — o mais longe de
+     qualquer bocal — e cresce `declividade × distância` até o bocal. Calha sem bocal fica sem caimento (e o motor diz). Cada trecho contínuo
+     da calha (calha de beiral em duas arestas opostas são dois) tem os seus pontos altos; a calha que dá a volta mede a distância em círculo.
+     segs: [{a:{x,z}, b:{x,z}, orig, yRim, ia?, ib?, oa?, ob?}] pelo MEIO da calha, em ordem; o: { altura, declPct, bocais:[0..1 do comprimento total] }.
+     → { subs:[{a,b,orig,yRim,ya,yb,ia?,ib?,oa?,ob?}], bocais:[{pos,x,z,y}], semBocal:n, desnivel, comprimento, declPct } — a lista `subs` parte cada trecho nos
+     bocais e nos pontos altos, de modo que o fundo é uma reta em cada sub-trecho (o 3D e o ponto do bocal leem daí). */
+  function lp(P, Q, u) { return P && Q ? { x: r6(P.x + (Q.x - P.x) * u), z: r6(P.z + (Q.z - P.z) * u) } : null; }
+  function perfilCalha(segs, o) {
+    var cad = [], tot = 0, k, alt = num(o.altura, 0.12), dec = num(o.declPct, PADRAO.declividadePct);
+    for (k = 0; k < segs.length; k++) {
+      var s = segs[k], L = Lseg(s), ult = cad[cad.length - 1];
+      if (!ult || distP(segs[k - 1].b, s.a) > 0.05) { ult = { itens: [], L: 0, off: tot, bocais: [] }; cad.push(ult); }
+      ult.itens.push({ s: s, s0: ult.L, s1: ult.L + L, L: L }); ult.L += L; tot += L;
+    }
+    cad.forEach(function (c) { c.fechada = c.itens.length > 1 && distP(c.itens[0].s.a, c.itens[c.itens.length - 1].s.b) < 0.05; });
+    var semBocal = 0;
+    arr(o.bocais).forEach(function (fr) {
+      var g = Math.max(0, Math.min(1, num(fr, 0.5))) * tot, ach = null;
+      cad.forEach(function (c) { if (!ach && g >= c.off - 1e-9 && g <= c.off + c.L + 1e-9) ach = c; });
+      if (ach) ach.bocais.push(Math.max(0, Math.min(ach.L, g - ach.off)));
+    });
+    var subs = [], bocaisOut = [], desnivel = 0;
+    cad.forEach(function (c) {
+      c.bocais.sort(function (x, y) { return x - y; });
+      var B = c.bocais, nB = B.length;
+      function dB(s) { var m = Infinity; B.forEach(function (p) { var d = Math.abs(s - p); if (c.fechada) d = Math.min(d, c.L - d); if (d < m) m = d; }); return m; }
+      var altos = [];
+      if (nB) {
+        if (!c.fechada) { altos.push(0); altos.push(c.L); for (k = 0; k + 1 < nB; k++) altos.push((B[k] + B[k + 1]) / 2); }
+        else for (k = 0; k < nB; k++) { var nx = k + 1 < nB ? B[k + 1] : B[0] + c.L; altos.push(((B[k] + nx) / 2) % c.L); }
+      } else semBocal++;
+      var Dz = 0; altos.forEach(function (h) { Dz = Math.max(Dz, dB(h)); });
+      function prof(s) { return nB ? alt + dec / 100 * (Dz - dB(s)) : alt; }
+      if (nB) desnivel = Math.max(desnivel, dec / 100 * Dz);
+      var quebras = B.concat(altos);
+      c.itens.forEach(function (it) {
+        var pts = [it.s0, it.s1];
+        quebras.forEach(function (q) { var qq = q; if (qq > it.s0 + 1e-6 && qq < it.s1 - 1e-6) pts.push(qq); });
+        pts.sort(function (x, y) { return x - y; });
+        for (var j = 0; j + 1 < pts.length; j++) {
+          if (pts[j + 1] - pts[j] < 1e-6) continue;
+          var u0 = it.L > 0 ? (pts[j] - it.s0) / it.L : 0, u1 = it.L > 0 ? (pts[j + 1] - it.s0) / it.L : 1;
+          var sb = { a: lp(it.s.a, it.s.b, u0), b: lp(it.s.a, it.s.b, u1), len: r6(it.L * (u1 - u0)), orig: it.s.orig, yRim: it.s.yRim, ya: r6(it.s.yRim - prof(pts[j])), yb: r6(it.s.yRim - prof(pts[j + 1])) };
+          if (it.s.ia) { sb.ia = lp(it.s.ia, it.s.ib, u0); sb.ib = lp(it.s.ia, it.s.ib, u1); sb.oa = lp(it.s.oa, it.s.ob, u0); sb.ob = lp(it.s.oa, it.s.ob, u1); }
+          subs.push(sb);
+        }
+      });
+      B.forEach(function (p) {
+        var it = null; c.itens.forEach(function (x) { if (!it && p >= x.s0 - 1e-9 && p <= x.s1 + 1e-9) it = x; });
+        if (!it) return;
+        var u = it.L > 0 ? (p - it.s0) / it.L : 0;
+        bocaisOut.push({ pos: r6((c.off + p) / (tot || 1)), x: r6(it.s.a.x + (it.s.b.x - it.s.a.x) * u), z: r6(it.s.a.z + (it.s.b.z - it.s.a.z) * u), y: r6(it.s.yRim - prof(p)) });
+      });
+    });
+    return { subs: subs, bocais: bocaisOut, semBocal: semBocal, desnivel: r6(desnivel), comprimento: r6(tot), declPct: dec, altura: alt };
+  }
+  function bocaisDe(C, calhaId) {
+    return arr(C && C.ordCond).map(function (id) { return C.cond[id]; }).filter(function (f) { return f && String(f.calha) === String(calhaId); })
+      .map(function (f) { return fin(Number(f.pos)) ? Math.max(0, Math.min(1, Number(f.pos))) : 0.5; });
+  }
+  function aplicarPerfilEmbutida(c, bocais) {
+    var segs = c.segs.map(function (s) { return { a: s.ma, b: s.mb, len: s.ref, orig: s.orig, yRim: s.yBorda, ia: s.quad[0], ib: s.quad[1], oa: s.quad[3], ob: s.quad[2] }; });
+    c.perfil = perfilCalha(segs, { altura: c.alturaEf, declPct: c.declividadeEf, bocais: bocais });
+    /* REVISOR N23: com o fundo caindo até o bocal a lateral da calha cresce o desnível ali — a chapa é cortada pela MAIOR seção (o preço mais alto,
+       na dúvida): calha de 30 m com descidas nas pontas cai 7,4 cm e 150 × 100 vira desenvolvimento de 50 cm, não 35 */
+    if (c.perfil && c.perfil.desnivel > 1e-6) {
+      c.desenvolvimento = desenvolvimentoCalha(c.larguraEf, c.alturaEf + c.perfil.desnivel);
+      var dv = escolher(DESENV_CALHA, c.desenvolvimento, "dev");
+      c.sinapi = dv ? sin(dv.ref) : null;
+      c.obsSinapi = (dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(c.desenvolvimento * 100) + " cm" : "nenhum desenvolvimento de calha de chapa na SINAPI cobre " + Math.round(c.desenvolvimento * 100) + " cm") +
+                    " no bocal, com o caimento de " + virg(c.perfil.desnivel * 100, 1) + " cm" + (dv ? ")" : ": orçar à parte");
+    }
+  }
+  /* calha de BEIRAL com `cotaAuto`: a calha vai de −avanço a largura−avanço contado da linha do beiral (a borda da telha), com esquadria nos
+     cantos (o mesmo deslocamento do contorno que a calha embutida usa); a borda fica FOLGA_VERTICAL abaixo da telha */
+  function aplicarPerfilBeiral(b, telhados, bocais) {
+    var t = null; arr(telhados).forEach(function (x) { if (x && String(x.id) === String(b.telhado)) t = x; });
+    if (!t || !t.ok) return;
+    var larg = b.larguraEf, dI = -Math.min(AVANCO_TELHA, larg), dO = larg + dI, n = arr(t.arestasCalc).length, Pb = [], sel = [], porK = {}, k;
+    arr(t.arestasCalc).forEach(function (e, kk) { Pb.push([e.beiral.a.x, e.beiral.a.z]); sel.push(false); porK[e.orig] = kk; });
+    arr(b.arestas).forEach(function (o) { var kk = porK[Number(o)]; if (kk != null && t.arestasCalc[kk].define) sel[kk] = true; });
+    var F = faixas(Pb, sel, Pb.map(function () { return dI; }), Pb.map(function () { return dO; })), quad = {};
+    if (!F) return;
+    F.forEach(function (f) { quad[f.k] = f.quad; });
+    var segs = [];
+    arr(b.segs).forEach(function (s) {
+      k = porK[s.aresta]; var Q = quad[k]; if (!Q) return;
+      var A = Pb[k], B = Pb[(k + 1) % n], dx = B[0] - A[0], dz = B[1] - A[1], L2 = dx * dx + dz * dz; if (!(L2 > 1e-12)) return;
+      function u(p) { return Math.max(0, Math.min(1, ((p.x - A[0]) * dx + (p.z - A[1]) * dz) / L2)); }
+      var u0 = u(s.a), u1 = u(s.b);
+      function en(P0, P1, uu) { return { x: r6(P0.x + (P1.x - P0.x) * uu), z: r6(P0.z + (P1.z - P0.z) * uu) }; }
+      var ia = en(Q[0], Q[1], u0), ib = en(Q[0], Q[1], u1), oa = en(Q[3], Q[2], u0), ob = en(Q[3], Q[2], u1);
+      segs.push({ a: { x: r6((ia.x + oa.x) / 2), z: r6((ia.z + oa.z) / 2) }, b: { x: r6((ib.x + ob.x) / 2), z: r6((ib.z + ob.z) / 2) }, orig: s.aresta, len: r6(Math.sqrt(Math.pow(s.b.x - s.a.x, 2) + Math.pow(s.b.z - s.a.z, 2))),
+                  yRim: r6(Math.min(num(s.a.y, 0), num(s.b.y, 0)) - FOLGA_VERTICAL), ia: ia, ib: ib, oa: oa, ob: ob });
+    });
+    if (!segs.length) return;
+    b.perfil = perfilCalha(segs, { altura: b.alturaEf, declPct: fin(Number(b.declividadePct)) ? Number(b.declividadePct) : PADRAO.declividadePct, bocais: bocais });
   }
 
   /* ============================================================ CONDUTOR (descida) */
   function pontoNaCalha(cal, pos) {
     var segs = cal.segs, tot = 0, i;
-    segs.forEach(function (s) { tot += distP(s.a, s.b); });
+    segs.forEach(function (s) { tot += Lseg(s); });
     if (!(tot > 0)) return null;
     var alvo = Math.max(0, Math.min(1, pos)) * tot, ac = 0;
     for (i = 0; i < segs.length; i++) {
-      var s = segs[i], L = distP(s.a, s.b);
+      var s = segs[i], L = Lseg(s);
       if (ac + L >= alvo - 1e-9 || i === segs.length - 1) {
         var u = L > 0 ? Math.max(0, Math.min(1, (alvo - ac) / L)) : 0;
-        return { x: r6(s.a.x + (s.b.x - s.a.x) * u), z: r6(s.a.z + (s.b.z - s.a.z) * u), y: num(s.y, 0), seg: i, dist: r6(alvo), total: r6(tot) };
+        var yy = fin(s.ya) && fin(s.yb) ? s.ya + (s.yb - s.ya) * u : num(s.y, 0);   /* N23: o fundo cai até o bocal */
+        return { x: r6(s.a.x + (s.b.x - s.a.x) * u), z: r6(s.a.z + (s.b.z - s.a.z) * u), y: r6(yy), seg: i, dist: r6(alvo), total: r6(tot) };
       }
       ac += L;
     }
@@ -400,7 +644,11 @@
       var lam = fin(Number(propria.laminaMm)) ? Number(propria.laminaMm) : (fin(Number(cfg.laminaMm)) ? Number(cfg.laminaMm) : (cal.laminaMm != null ? cal.laminaMm : altMm / 2));
       var decl = fin(Number(propria.declividadePct)) ? Number(propria.declividadePct) : (cal.declividadePct != null ? cal.declividadePct : PADRAO.declividadePct);
       var cond = arr(estado.condutores).filter(function (c) { return c.ok && String(c.calha) === String(cal.id); });
-      var saidas = cond.length ? cond.map(function (c) { return { curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, c.distanciaDaPonta)), areaInfluencia_m2: null }; })
+      /* REVISOR N23: `comoGerador` — a mesma regra do gerarPluvial (área de influência de cada descida pela geometria da água; coeficiente da
+         Tabela 1 só com quina a ≤ 4 m). Sem ela (padrão, como era) cada saída leva a vazão TOTAL e a curva em toda ponta. */
+      var sg = cfg.comoGerador && cond.length ? saidasComoGerador(estado, cal) : null;
+      if (cfg.comoGerador && cond.length && !sg) premissas.push("calha " + cal.id + ": há trecho da calha com água e sem descida — cada saída verificada com a vazão TOTAL da calha (lado seguro)");
+      var saidas = cond.length ? cond.map(function (c) { var g = sg && sg[c.id]; return g ? clone(g) : { curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, c.distanciaDaPonta)), areaInfluencia_m2: null }; })
                                : [{ curva: "canto_reto", distanciaCurva_m: r4(Math.max(0.01, cal.comprimento / 2)) }];
       if (!cond.length) premissas.push("calha " + cal.id + ": sem condutor lançado — uma saída no meio, a distância da curva = metade do comprimento");
       calhas.push({ id: String(cal.id), secao: "retangular", base_mm: larMm, altura_mm: altMm, lamina_mm: lam, declividade_pct: decl, material: cfg.material || "chapa_metalica", saidas: saidas });
@@ -418,8 +666,29 @@
     if (!ent.pluvial.calhas.length) return { ok: false, motivo: "Nenhuma calha com água de telhado ligada: lance a calha (embutida ou de beiral) em uma aresta que define inclinação." };
     var ctx = NR.contexto(), r;
     try { r = AP.calcular({ pluvial: ent.pluvial }, ctx, { trechos: [] }); } catch (e) { return { ok: false, motivo: "O cálculo pluvial falhou: " + e.message }; }
-    return { ok: true, status: r.status, intensidade: r.intensidade, calhas: r.calhas, areas: r.areas, verificacoes: r.verificacoes, avisos: r.avisos,
+    var out = { ok: true, status: r.status, intensidade: r.intensidade, calhas: r.calhas, areas: r.areas, verificacoes: r.verificacoes, avisos: r.avisos,
              premissas: ent.premissas.concat(arr(r.premissas).map(function (x) { return x.item + ": " + x.valor; })), pendencias: ctx.pendencias ? ctx.pendencias() : [], entrada: ent.pluvial };
+    arr(out.calhas).forEach(function (h) { h.intensidade_mm_h = r.intensidade ? r.intensidade.valor_mm_h : null; });
+    /* REVISOR N23: `comoGerador` — a CALHA EMBUTIDA extravasa para dentro da edificação: T = 25 anos (NBR 10844 item 5.1.2 c), como o
+       gerarPluvial já faz desde a revisão de 20/10/2026. Sem isso o diagnóstico aprovava (e o Corrigir propunha) a seção pela chuva de T = 5. */
+    var T0 = fin(Number(cfg.periodoRetorno_anos)) ? null : periodoCobertura(cfg.situacao), T25 = periodoCobertura("sem_extravasamento");
+    var informada = fin(Number(cfg.intensidade_mm_h)) && txt(cfg.fonteIntensidade).trim();
+    var emb = {}; listarCalhas(estado).forEach(function (c) { if (c.tipo === "embutida") emb[String(c.id)] = true; });
+    if (cfg.comoGerador && T0 != null && T25 != null && T25 !== T0 && !informada && arr(ent.pluvial.calhas).some(function (c) { return emb[c.id]; })) {
+      var p25 = clone(ent.pluvial); delete p25.periodoRetorno_anos; p25.situacao = "sem_extravasamento";
+      p25.calhas = p25.calhas.filter(function (c) { return emb[c.id]; });
+      p25.areas = p25.areas.filter(function (a) { return a.destino && emb[a.destino.calha]; });
+      var ctx25 = NR.contexto(), r25 = null;
+      try { r25 = AP.calcular({ pluvial: p25 }, ctx25, { trechos: [] }); } catch (e25) { r25 = null; }
+      if (r25 && r25.intensidade && r25.intensidade.valor_mm_h != null) {
+        var porId = {}; arr(r25.calhas).forEach(function (h) { h.intensidade_mm_h = r25.intensidade.valor_mm_h; h.periodoRetorno_anos = T25; porId[h.id] = h; });
+        out.calhas = out.calhas.map(function (h) { return porId[h.id] || h; });
+        out.verificacoes = arr(out.verificacoes).filter(function (v) { return !emb[v.alvo]; }).concat(arr(r25.verificacoes).filter(function (v) { return emb[v.alvo]; }));
+        out.premissas.push("calha embutida: T = " + T25 + " anos (o extravasamento cai dentro da edificação, NBR 10844 item 5.1.2 c) — I = " + r25.intensidade.valor_mm_h + " mm/h");
+        if (r25.status === "reprovado" || (r25.status === "pendente" && out.status === "ok")) out.status = r25.status;
+      }
+    }
+    return out;
   }
   /* a MENOR seção da lista (por área) que passa na capacidade da NBR 10844 para a calha `id` */
   var SECOES_CANDIDATAS = [[100, 80], [150, 80], [150, 100], [200, 100], [200, 120], [250, 120], [300, 120], [300, 150], [400, 150], [500, 200]];
@@ -438,6 +707,98 @@
       if (ch.vazaoProjeto_l_min <= ch.capacidade_l_min) return { ok: true, baseMm: SECOES_CANDIDATAS[i][0], alturaMm: SECOES_CANDIDATAS[i][1], capacidade_l_min: ch.capacidade_l_min, vazaoProjeto_l_min: ch.vazaoProjeto_l_min, resultado: r };
     }
     return { ok: true, nenhuma: true, motivo: "Nenhuma das seções candidatas (até 500 × 200 mm) passa: aumente a declividade ou ponha mais condutores.", resultado: null };
+  }
+
+  /* ============================================================ N23: DIAGNÓSTICO COM CORRIGIR (o que é + solução testada)
+     Regra do Rogério (15/10/2026): todo problema mostrado vem com o que é, o botão Corrigir e o Mostrar no 3D. Aqui cada problema sai no formato
+     do js/problemacard.js: { tipo, titulo, texto, gravidade, solucoes:[{id, texto, muda, ops}], pecas:[ids] }. Uma solução só existe se a conta
+     dela FECHOU (a capacidade da calha é refeita pela NBR 10844 com a solução aplicada) — nunca uma sugestão sem teste.
+     estado = BimEdit.aplicar(ops); cfg = o mesmo do dimensionarCalhas (cidade, intensidade com fonte, …). */
+  function cfgPluvial(cfg) {
+    var o = {}; ["cidade", "obra", "cliente", "situacao", "periodoRetorno_anos", "intensidade_mm_h", "fonteIntensidade", "material", "telhado", "ligarHidro", "calhaBeiral"].forEach(function (k) { if (cfg && cfg[k] != null) o[k] = cfg[k]; });
+    return o;
+  }
+  function diagnosticarCobertura(estado, cfg) {
+    var P = [], cals = listarCalhas(estado), tem = {};
+    arr(estado && estado.condutores).forEach(function (d) { tem[String(d.calha)] = (tem[String(d.calha)] || 0) + 1; });
+    function opDaCalha(cal, campos) {
+      var o = { op: cal.tipo === "embutida" ? "calha" : "borda", id: cal.id }; Object.keys(campos).forEach(function (k) { o[k] = campos[k]; }); return o;
+    }
+    /* 1) platibanda que herda a parede: aresta sem parede embaixo */
+    arr(estado && estado.platibandas).forEach(function (p) {
+      if (!p || !p.herdar || !arr(p.avisos).some(function (a) { return /não tem\(êm\) parede embaixo/.test(a); })) return;
+      var sem = []; (arr(p.avisos).join(" ").match(/aresta\(s\) ([0-9, ]+) não/) || [null, ""])[1].split(",").forEach(function (x) { var k = parseInt(x, 10); if (isFinite(k)) sem.push(k - 1); });
+      var comPar = []; arr(estado.telhados).forEach(function (t) { if (String(t.id) === String(p.telhado)) arr(t.arestasCalc).forEach(function (e) { if (sem.indexOf(e.orig) < 0) comPar.push(e.orig); }); });
+      var sols = [{ id: "padrao", texto: "Usar a espessura padrão (" + virg(PADRAO.espessura * 100, 0) + " cm) onde não há parede", muda: "a platibanda deixa de herdar a parede e fica com a espessura padrão em todas as arestas", ops: [{ op: "platibanda", id: p.id, herdar: false }] }];
+      if (comPar.length) sols.unshift({ id: "so-onde-ha", texto: "Platibanda só onde há parede embaixo", muda: "a platibanda fica nas arestas " + comPar.map(function (k) { return k + 1; }).join(", ") + " e sai das demais", ops: [{ op: "platibanda", id: p.id, arestas: comPar }] });
+      P.push({ tipo: "platibanda-sem-parede", gravidade: "aviso", titulo: "Platibanda sem parede embaixo em " + (sem.length === 1 ? "uma aresta" : sem.length + " arestas"),
+               texto: "A platibanda copia o material e a posição da parede em que assenta, e nessa(s) aresta(s) não achei parede paralela e encostada ao contorno do telhado.", solucoes: sols, pecas: [p.id] });
+    });
+    /* REVISOR N23: herança só em parte (paredes diferentes sob a mesma aresta, parede que não cobre a aresta, parede curva): o que é + Mostrar no 3D
+       (a platibanda e as paredes) + as saídas possíveis; nenhuma é aplicada sozinha porque cada uma muda o projeto */
+    arr(estado && estado.platibandas).forEach(function (p) {
+      var hp = p && p.ok && p.herdar && p.herancaParcial; if (!hp) return;
+      var ids = [p.id], tx = [];
+      hp.mistas.forEach(function (m) { tx.push("na aresta " + m.aresta + " há paredes diferentes (" + m.paredes.join("; ") + "): a platibanda segue a " + m.segue + " na aresta toda e cada parede é orçada pelo trecho dela"); ids = ids.concat(m.ids); });
+      hp.parciais.forEach(function (m) { tx.push("na aresta " + m.aresta + " a parede cobre só " + virg(m.coberto) + " de " + virg(m.L) + " m e a platibanda corre a aresta toda"); ids = ids.concat(m.ids); });
+      hp.curvas.forEach(function (m) { tx.push("na aresta " + m.aresta + " a parede " + m.ids.join(", ") + " é curva e a platibanda fica reta pela corda"); ids = ids.concat(m.ids); });
+      var sols = [{ id: "padrao", texto: "Usar a espessura padrão (" + virg(PADRAO.espessura * 100, 0) + " cm) e não herdar a parede", muda: "a platibanda deixa de herdar a parede em todas as arestas", ops: [{ op: "platibanda", id: p.id, herdar: false }] },
+                  { id: "manual", texto: "Ajustar as paredes: um tipo só por aresta, parede na aresta toda, ou o contorno do telhado acompanhando a curva", ops: [] }];
+      P.push({ tipo: "platibanda-heranca-parcial", gravidade: "aviso", titulo: "Platibanda herdando a parede só em parte", texto: "A platibanda copia a parede de baixo, mas " + tx.join("; ") + ".", solucoes: sols,
+               pecas: ids.filter(function (x, i) { return ids.indexOf(x) === i; }) });
+    });
+    cals.forEach(function (cal) {
+      var base = opDaCalha(cal, {});
+      /* 2) fora da cota certa */
+      if (!cal.cotaAuto) P.push({ tipo: "calha-cota", gravidade: "aviso", titulo: "Calha " + cal.id + " fora da cota certa",
+        texto: "A calha ainda está numa altura só, sem o caimento até a descida, e a borda da telha não entra nela. Na cota certa a telha avança " + virg(AVANCO_TELHA * 100, 0) + " cm dentro da calha, a borda da calha fica " + virg(FOLGA_VERTICAL * 100, 0) + " cm abaixo da telha e o fundo cai " + virg(DECL_MIN_CALHA_PCT, 1) + " % (NBR 10844, item 5.5.2) até a descida.",
+        solucoes: [{ id: "cota", texto: "Pôr a calha na cota certa", muda: "a calha desloca " + virg(AVANCO_TELHA * 100, 0) + " cm para dentro do beiral e ganha o caimento até a(s) descida(s)", ops: [opDaCalha(cal, { cotaAuto: true })] }], pecas: [cal.id] });
+      /* 3) sem descida */
+      if (!tem[String(cal.id)]) {
+        var cds = opsCondutores({ condutores: [], calhasEmbutidas: estado.calhasEmbutidas, bordas: estado.bordas, telhados: estado.telhados }, { porCalha: 2 }).filter(function (o) { return String(o.calha) === String(cal.id); });
+        P.push({ tipo: "calha-sem-descida", gravidade: "erro", titulo: "Calha " + cal.id + " sem descida",
+          texto: "Sem descida a água da calha não tem para onde ir: a calha enche e transborda. A descida (condutor vertical) é o bocal onde o fundo da calha termina.",
+          solucoes: [{ id: "descidas", texto: "Lançar 2 descidas nas extremidades", muda: "2 condutores verticais ligados à calha (o DN sai do cálculo da NBR 10844)", ops: cds }], pecas: [cal.id] });
+      }
+      /* 4) declividade abaixo do mínimo (embutida: campo da calha; beiral com perfil: o da borda) */
+      var dec = cal.declividadePct;
+      if (dec != null && dec < DECL_MIN_CALHA_PCT - 1e-9) P.push({ tipo: "calha-declividade", gravidade: "erro", titulo: "Calha " + cal.id + " com declividade de " + virg(dec, 2) + " %",
+        texto: "A NBR 10844 (item 5.5.2) pede declividade mínima de " + virg(DECL_MIN_CALHA_PCT, 1) + " % e uniforme: abaixo disso a água empoça no fundo.",
+        solucoes: [{ id: "decl", texto: "Declividade de " + virg(DECL_MIN_CALHA_PCT, 1) + " %", muda: "a declividade da calha passa de " + virg(dec, 2) + " % para " + virg(DECL_MIN_CALHA_PCT, 1) + " %", ops: [opDaCalha(cal, { declividadePct: DECL_MIN_CALHA_PCT })] }], pecas: [cal.id] });
+    });
+    /* 5) capacidade: só com intensidade válida (cidade da Tabela 5 ou informada com fonte); cidade fora da tabela é pendência, não erro */
+    /* REVISOR N23: a capacidade é julgada pela MESMA regra do gerador (área de influência de cada descida, quina a ≤ 4 m, T = 25 anos na
+       embutida) — senão o "Recalcular pela NBR 10844" saía reprovado pelo próprio diagnóstico */
+    var cfgV = {}; Object.keys(cfg || {}).forEach(function (k) { cfgV[k] = cfg[k]; }); cfgV.comoGerador = true;
+    var r = cals.length ? dimensionarCalhas(estado, cfgV) : null;
+    if (r && r.ok && r.intensidade && r.intensidade.valor_mm_h != null) arr(r.calhas).forEach(function (h) {
+      if (h.capacidade_l_min == null || h.vazaoProjeto_l_min == null || h.vazaoProjeto_l_min <= h.capacidade_l_min) return;
+      var cal = cals.filter(function (c) { return String(c.id) === String(h.id); })[0]; if (!cal) return;
+      var sols = [], sm = secaoMinimaCalha(estado, h.id, cfgV);
+      if (sm && sm.ok && sm.baseMm) sols.push({ id: "secao", texto: "Seção " + sm.baseMm + " × " + sm.alturaMm + " mm", muda: "a calha passa para " + sm.baseMm + " × " + sm.alturaMm + " mm: capacidade " + virg(sm.capacidade_l_min, 0) + " L/min ≥ vazão " + virg(sm.vazaoProjeto_l_min, 0) + " L/min",
+                                                  ops: [opDaCalha(cal, { largura: sm.baseMm / 1000, altura: sm.alturaMm / 1000 })] });
+      /* sem seção que sirva (ou a pedido): o cálculo todo refeito — seção E número de descidas — pelo mesmo motor do "Rufos, calhas e descidas" */
+      var g = null; if (cfg && cfg.ops) { try { g = gerarPluvial(cfg.ops, cfgPluvial(cfg)); } catch (eG) { g = null; } }
+      if (g && g.ok) {
+        var nd = 0; arr(g.calhas).forEach(function (c) { nd += c.descidas.length; });
+        sols.push({ id: "recalcular", texto: "Recalcular calha e descidas pela NBR 10844", muda: arr(g.calhas).length + " calha(s) e " + nd + " descida(s) refeitas: seção, número de descidas e DN pelo ábaco; cada calha passa na capacidade", ops: g.ops });
+      }
+      /* só fica a solução cuja conta FECHA: refaz o estado com ela aplicada e confere a capacidade desta calha (a mesma verificação que acusou o problema) */
+      if (cfg && cfg.ops) {
+        var BE0 = dep("BimEdit", "./bimedit.js");
+        sols = sols.filter(function (s0) {
+          try {
+            var r2 = dimensionarCalhas(BE0.aplicar(BE0.sanear(cfg.ops.concat(s0.ops))), cfgV), c2 = arr(r2.calhas).filter(function (x) { return String(x.id) === String(h.id); })[0];
+            return !!c2 && c2.capacidade_l_min != null && c2.vazaoProjeto_l_min != null && c2.vazaoProjeto_l_min <= c2.capacidade_l_min;
+          } catch (eV) { return false; }
+        });
+      }
+      if (!sols.length) sols.push({ id: "manual", texto: "Divida a calha em dois trechos com descida própria, aumente a declividade ou use uma calha maior que 500 × 200 mm", ops: [] });
+      P.push({ tipo: "calha-capacidade", gravidade: "erro", titulo: "Calha " + h.id + " não comporta a chuva",
+        texto: "Pela NBR 10844 a vazão de projeto da calha é " + virg(h.vazaoProjeto_l_min, 0) + " L/min e a seção atual leva só " + virg(h.capacidade_l_min, 0) + " L/min (intensidade " + virg(h.intensidade_mm_h != null ? h.intensidade_mm_h : r.intensidade.valor_mm_h, 0) + " mm/h" + (h.periodoRetorno_anos ? ", T = " + h.periodoRetorno_anos + " anos: calha embutida" : "") + "): a calha transborda.",
+        solucoes: sols, pecas: [h.id] });
+    });
+    return { ok: true, problemas: P, calculo: r && r.ok ? { status: r.status, intensidade: r.intensidade } : null, pendencias: r && r.ok ? r.pendencias : [] };
   }
 
   /* ============================================================ QUANTITATIVO */
@@ -467,7 +828,13 @@
     });
     arr(estado && estado.platibandas).forEach(function (p) {
       if (!p || !p.ok) return;
-      itens.push(item("Platibanda", "Platibanda de alvenaria, e = " + virg(p.espessuraEf * 100, 0) + " cm", "m²", p.area, null, "altura " + virg(p.altura) + " m, " + virg(p.comprimento) + " m de comprimento, " + virg(p.volume, 3) + " m³; a alvenaria e o revestimento das duas faces (" + virg(p.areaFaces) + " m²) saem da composição de parede da obra", { platibanda: p.id }));
+      if (p.herdar && arr(p.camadas).length) {
+        /* N23: a platibanda é a continuação da parede de baixo — as MESMAS camadas (núcleo e acabamento de cada face), em m², com o serviço de cada uma */
+        p.camadas.forEach(function (k) {
+          itens.push(item("Platibanda", k.rotulo + " — platibanda (" + (k.face === "nucleo" ? "núcleo" : "face " + k.face) + ", e = " + virg(num(k.e, 0) * 100, 1) + " cm)", "m²", k.area, null,
+            "mesma camada da parede de baixo (" + p.paredesBase.join(", ") + ")" + (k.servico ? ": serviço \"" + k.servico + "\"" : "") + "; altura " + virg(p.altura) + " m, " + virg(p.volume, 3) + " m³ de platibanda", { platibanda: p.id, servico: k.servico || null, orcarAParte: true }));   /* REVISOR N23: sem código SINAPI é "orçar à parte" (com `servico` ou não) — antes não contava nem como com código nem à parte */
+        });
+      } else itens.push(item("Platibanda", "Platibanda de alvenaria, e = " + virg(p.espessuraEf * 100, 0) + " cm", "m²", p.area, null, "altura " + virg(p.altura) + " m, " + virg(p.comprimento) + " m de comprimento, " + virg(p.volume, 3) + " m³; a alvenaria e o revestimento das duas faces (" + virg(p.areaFaces) + " m²) saem da composição de parede da obra", { platibanda: p.id }));
       if (p.rufoCapa) itens.push(item("Platibanda", "Rufo de capa (chapim) — " + p.rufoCapa.obs, "m", p.rufoCapa.comprimento, p.rufoCapa.sinapi, null, { platibanda: p.id }));
       if (p.contraRufo) itens.push(item("Platibanda", "Contra-rufo — " + p.contraRufo.obs, "m", p.contraRufo.comprimento, p.contraRufo.sinapi, null, { platibanda: p.id }));
     });
@@ -478,7 +845,7 @@
     arr(estado && estado.bordas).forEach(function (b) {
       if (!b || !b.ok) return;
       if (b.tipoBorda === "calha") {
-        var pvc = opc.calhaBeiral === "pvc", dev = desenvolvimentoCalha(b.larguraEf, b.alturaEf), dv = escolher(DESENV_CALHA, dev, "dev");
+        var pvc = opc.calhaBeiral === "pvc", dev = desenvolvimentoCalha(b.larguraEf, b.alturaEf + (b.perfil ? num(b.perfil.desnivel, 0) : 0)), dv = escolher(DESENV_CALHA, dev, "dev");   /* REVISOR N23: a maior seção, no bocal */
         if (pvc) itens.push(item("Calha e descidas", "Calha de beiral semicircular de PVC DN 125 (inclui cabeceiras, emendas, bocais e suportes)", "m", b.comprimento, sin("calhaPvc125"), "calha de beiral: seção a confirmar pelo cálculo pluvial", { calha: b.id }));
         else itens.push(item("Calha e descidas", "Calha de beiral de chapa galvanizada — " + (dv ? "desenvolvimento " + Math.round(dv.dev * 100) + " cm (necessário " + Math.round(dev * 100) + " cm)" : "desenvolvimento " + Math.round(dev * 100) + " cm sem composição"), "m", b.comprimento, dv ? sin(dv.ref) : null, null, { calha: b.id }));
       } else if (b.tipoBorda === "rufo" || b.tipoBorda === "testeira" || b.tipoBorda === "intradorso") {
@@ -905,8 +1272,11 @@
       var dx = sg.b.x - sg.a.x, dz = sg.b.z - sg.a.z, L2 = dx * dx + dz * dz, L = Math.sqrt(L2);
       var u = L2 > 0 ? Math.max(0, Math.min(1, ((p.x - sg.a.x) * dx + (p.z - sg.a.z) * dz) / L2)) : 0;
       var qx = sg.a.x + dx * u, qz = sg.a.z + dz * u, d = Math.sqrt((p.x - qx) * (p.x - qx) + (p.z - qz) * (p.z - qz));
-      if (!best || d < best.d - 1e-9) best = { s: ac + L * u, d: d };
-      ac += L;
+      /* REVISOR N23: a posição ao longo da calha na MESMA régua das descidas (Lseg — com a calha na cota certa é o comprimento da borda da
+         telha, não o do meio da calha); na régua do meio o divisor de águas andava até (largura/2 − 5 cm) por quina */
+      var Lr = Lseg(sg);
+      if (!best || d < best.d - 1e-9) best = { s: ac + Lr * u, d: d };
+      ac += Lr;
     });
     return best;
   }
@@ -946,7 +1316,133 @@
     });
     return out.length ? out : null;
   }
+  /* REVISOR N23 (23/10/2026): os passos do gerarPluvial que repartem a água da calha entre as descidas, fora dele, para a VERIFICAÇÃO
+     (dimensionarCalhas com `comoGerador`, que o diagnóstico usa) seguir exatamente a mesma regra. O defeito: o diagnóstico verificava cada
+     descida com a vazão TOTAL da calha (as duas águas de uma calha de beiral em arestas opostas somadas) e o coeficiente de curva em toda
+     ponta; o "Recalcular pela NBR 10844" gerava 150 × 100 mm com 4 descidas (casa 8 × 10, 2 águas, BH) e o diagnóstico logo depois dizia
+     "não comporta" (538 > 279 L/min) e oferecia uma calha maior (dinheiro a mais) — ou nenhuma solução (4 águas 20 × 60: 500 × 200 "não passa").
+     trechosDaCalha: a calha em TRECHOS CONTÍNUOS (a de beiral em duas arestas opostas são duas linhas), as quinas e se dá a volta. */
+  function trechosDaCalha(segs) {
+    var cad = [], k;
+    for (k = 0; k < segs.length; k++) {
+      var s = segs[k], Ls = Lseg(s), ult = cad[cad.length - 1];
+      if (!ult || distP(segs[k - 1].b, s.a) > 0.05) { ult = { ini: 0, L: 0, quinas: [], origs: {}, fechada: false, segs: [] }; cad.push(ult); ult.offset = cad.length > 1 ? cad[cad.length - 2].offset + cad[cad.length - 2].L : 0; }
+      else {
+        var p = segs[k - 1], ux = p.b.x - p.a.x, uz = p.b.z - p.a.z, vx = s.b.x - s.a.x, vz = s.b.z - s.a.z, lu = Math.sqrt(ux * ux + uz * uz), lv = Math.sqrt(vx * vx + vz * vz);
+        if (lu > 1e-6 && lv > 1e-6 && Math.abs((ux * vz - uz * vx) / (lu * lv)) > 0.17) ult.quinas.push(ult.L);
+      }
+      ult.L += Ls; ult.segs.push(s); if (s.orig != null) ult.origs[Number(s.orig)] = true;
+      ult.ultimo = s; if (ult.primeiro == null) ult.primeiro = s;
+    }
+    cad.forEach(function (c) { if (c.primeiro !== c.ultimo && distP(c.ultimo.b, c.primeiro.a) < 0.05) { c.fechada = true; c.quinas.push(0); } });
+    return cad;
+  }
+  /* as águas que escorrem para o trecho `c` (caso b, com o beiral) e de onde cada ponto delas cai na calha (c.areas, c.A, c.amostras já criados) */
+  function aguasDoTrecho(c, ags, t) {
+    ags.forEach(function (ag) {
+      var e = arr(t.arestasCalc)[ag.aresta]; if (!e || !c.origs[e.orig]) return;
+      var ar = areaCasoB(ag); if (!ar) return;
+      var A = (ar.a + ar.h / 2) * ar.b;
+      c.areas.push({ aresta: e.orig, a: ar.a, b: ar.b, h: ar.h, i: num(ag.inclinacao, 0), A: r4(A), beiral: num(t.beiralEf, 0) }); c.A += A;
+      c.amostras.push({ A: A, ss: destinosDaAgua(ag, c.segs) });
+    });
+  }
+  /* a fração da água do trecho que vai para cada descida (c.pos = posições no trecho, ordenadas) */
+  function influenciaTrecho(c) {
+    var P = c.pos, L = c.L;
+    /* pela geometria (ver destinosDaAgua); só cai na fração do comprimento se alguma água não deu para amostrar */
+    if (c.A > 0 && c.amostras.length && c.amostras.every(function (am) { return am.ss; })) {
+      var f = P.map(function () { return 0; }), nP = P.length;
+      /* o vão de cada descida: do meio do vão anterior ao meio do seguinte (na calha que dá a volta, circular) */
+      var lim = P.map(function (p, i) {
+        if (c.fechada) { if (nP === 1) return [p - L / 2, p + L / 2]; return [p - ((p - P[(i - 1 + nP) % nP] + L) % L) / 2, p + ((P[(i + 1) % nP] - p + L) % L) / 2]; }
+        return [i === 0 ? -Infinity : (P[i - 1] + p) / 2, i === nP - 1 ? Infinity : (p + P[i + 1]) / 2];
+      });
+      function perto(s) { var bi = 0, bd = Infinity; P.forEach(function (p, i) { var d = Math.abs(s - p); if (c.fechada) d = Math.min(d, L - d); if (d < bd - 1e-9) { bd = d; bi = i; } }); return bi; }
+      c.amostras.forEach(function (am) {
+        var cnt = P.map(function () { return 0; }), pesoT = 0;
+        am.ss.forEach(function (ab) {
+          var a = ab[0], b = ab[1], pw = ab[2], larg = b - a, fr = P.map(function () { return 0; }), tot = 0;
+          if (larg > 1e-9) lim.forEach(function (lm, i) {
+            (c.fechada ? [-L, 0, L] : [0]).forEach(function (sh) { var o = Math.min(b, lm[1] + sh) - Math.max(a, lm[0] + sh); if (o > 0) { fr[i] += o / larg; tot += o / larg; } });
+          });
+          pesoT += pw;
+          if (tot > 1e-9) fr.forEach(function (x, i) { cnt[i] += pw * x / tot; }); else cnt[perto((a + b) / 2)] += pw;
+        });
+        cnt.forEach(function (k, i) { f[i] += am.A * k / pesoT; });
+      });
+      return f.map(function (x) { return x / c.A; });
+    }
+    return P.map(function (s, i) {
+      if (c.fechada) { if (P.length === 1) return 1; var ant = P[(i - 1 + P.length) % P.length], pro = P[(i + 1) % P.length]; return (((s - ant + L) % L) + ((pro - s + L) % L)) / 2 / L; }
+      var ini = i === 0 ? 0 : (P[i - 1] + s) / 2, fim2 = i === P.length - 1 ? L : (s + P[i + 1]) / 2; return (fim2 - ini) / L;
+    });
+  }
+  function distQuinaTrecho(c, s) { var m = null; c.quinas.forEach(function (q) { var d = Math.abs(s - q); if (c.fechada) d = Math.min(d, c.L - d); if (m == null || d < m) m = d; }); return m; }
+  /* VERIFICAÇÃO com as descidas que existem, pela regra do gerador: a área de influência de cada descida (geometria da água) e a curva só
+     quando há QUINA a ≤ 4 m dela (a ponta fechada da calha não é mudança de direção). → { condutorId: { areaInfluencia_m2, curva?, distanciaCurva_m? } }
+     ou null quando algum trecho com água não tem descida (aí vale o lado seguro do HidAP: cada saída com a vazão total). */
+  function saidasComoGerador(estado, cal) {
+    var t = null; arr(estado && estado.telhados).forEach(function (x) { if (String(x.id) === String(cal.telhado)) t = x; });
+    if (!t || !t.ok) return null;
+    var cad = trechosDaCalha(arr(cal.segs)), ags = aguasDaCalha(estado, cal), Ltot = 0, out = {}, faltou = false;
+    arr(cal.segs).forEach(function (s) { Ltot += Lseg(s); });
+    var conds = arr(estado.condutores).filter(function (d) { return d && d.ok && String(d.calha) === String(cal.id); }), usados = {};
+    cad.forEach(function (c) {
+      c.areas = []; c.A = 0; c.amostras = []; c.ids = [];
+      aguasDoTrecho(c, ags, t);
+      var ps = [];
+      conds.forEach(function (d) {
+        var sm = num(d.posEf, 0.5) * Ltot - c.offset;
+        if (usados[d.id] || sm < -1e-6 || sm > c.L + 1e-6) return;
+        usados[d.id] = 1; ps.push({ id: d.id, s: Math.max(0, Math.min(c.L, sm)) });
+      });
+      ps.sort(function (a, b) { return a.s - b.s; });
+      c.pos = ps.map(function (p) { return p.s; }); c.ids = ps.map(function (p) { return p.id; });
+      if (!c.areas.length || !(c.L > 0.1)) return;
+      if (!c.pos.length) { faltou = true; return; }
+      var inf = influenciaTrecho(c);
+      c.pos.forEach(function (s, i) {
+        var o = { areaInfluencia_m2: r4(c.A * inf[i]) }, dq = distQuinaTrecho(c, s);
+        if (dq != null && dq <= 4) { o.curva = "canto_reto"; o.distanciaCurva_m = r4(Math.max(0.01, dq)); }
+        out[c.ids[i]] = o;
+      });
+    });
+    return faltou || !Object.keys(out).length ? null : out;
+  }
+  /* REVISOR N23: com a platibanda que HERDA a parede o telhado recua até a face de dentro dela MENOS a largura da calha — a área do telhado
+     depende da seção que o cálculo escolhe. Medida uma vez só (com a seção antiga), o memorial saía com a área e a vazão de antes da troca
+     (casa 8 × 3: 20,59 m² e 39,46 L/min; com a calha nova são 21,80 m² e 41,78 L/min, −6 %) e o diagnóstico logo depois via outra vazão.
+     Refaz sobre o próprio lote até as ops pararem de mudar (2 passadas em geral; até 3) — só quando há platibanda herdada. */
   function gerarPluvial(opsBase, cfg) {
+    var r = gerarPluvial1(opsBase, cfg);
+    var herd = r && r.ok && arr(r.estado && r.estado.platibandas).some(function (p) { return p && p.ok && p.herdar; });
+    if (!herd) return r;
+    var BE = dep("BimEdit", "./bimedit.js"), base = arr(opsBase), st0 = BE.aplicar(BE.sanear(base));
+    function existe0(id) {
+      var achou = false;
+      ["calhasEmbutidas", "bordas", "condutores", "platibandas", "rufosEncontro", "telhados"].forEach(function (k) { arr(st0[k]).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; }); });
+      arr(st0.instalacoes && st0.instalacoes.trechos).forEach(function (x) { if (x && String(x.id) === String(id)) achou = true; });
+      return achou;
+    }
+    function semApagar(l) { return JSON.stringify(arr(l).filter(function (o) { return o.op !== "apagar"; })); }
+    for (var i = 0; i < 2; i++) {
+      /* a passada seguinte mede com o lote da anterior aplicado; as ops dela valem SOBRE O MODELO ORIGINAL quando só diferem nos "apagar"
+         (o que a anterior apagou já não existe para a seguinte) */
+      var r2 = gerarPluvial1(base.concat([clone(r.lote)]), cfg);
+      if (!r2 || !r2.ok) return r;
+      if (semApagar(r2.ops) === semApagar(r.ops)) { r2.ops = r.ops; r2.lote = r.lote; r2.estado = r.estado; return r2; }
+      /* a seção ou as descidas mudaram: o lote novo sobre o modelo original — os "apagar" só do que existe nele */
+      var cria = {}; r2.ops.forEach(function (o) { if (o.op !== "apagar") cria[String(o.id)] = true; });
+      var jaApaga = {}, ops = r2.ops.filter(function (o) { if (o.op !== "apagar") return true; if (!existe0(o.id)) return false; jaApaga[String(o.id)] = true; return true; });
+      r.ops.forEach(function (o) { if (o.op === "apagar" && existe0(o.id) && !cria[String(o.id)] && !jaApaga[String(o.id)]) ops.push(o); });
+      r2.ops = ops; r2.lote = { op: "lote", id: r.lote.id, origem: r.lote.origem, ops: ops }; r2.estado = BE.aplicar(BE.sanear(base.concat([clone(r2.lote)])));
+      r = r2;
+    }
+    (r.avisos = r.avisos || []).push("A seção da calha e a área do telhado (que recua até a platibanda herdada) não fecharam em 3 passadas: rode \"Rufos, calhas e descidas\" de novo.");
+    return r;
+  }
+  function gerarPluvial1(opsBase, cfg) {
     cfg = cfg || {};
     var BE = dep("BimEdit", "./bimedit.js"), AP = dep("HidAP", "./hidap.js"), NR = NRm(), BI = dep("BimInst", "./biminst.js");
     if (!BE || !AP || !NR) return { ok: false, motivo: "Os motores (js/bimedit.js, js/hidap.js, js/hidnormas.js) não carregaram." };
@@ -991,13 +1487,21 @@
     }
 
     /* 2) calha de beiral pedida: nas arestas que definem inclinação e ainda não têm calha */
+    var novasBordas = [];
     if (cfg.calhaBeiral) tels.forEach(function (t) {
       var tem = {}, id = PREFIXO + "b-" + t.id;
       listarCalhas(st0).forEach(function (c) { if (String(c.telhado) === String(t.id) && String(c.id) !== id) c.arestas.forEach(function (o) { tem[Number(o)] = true; }); });
       var ks = arr(t.arestasCalc).filter(function (e) { return e.define && !tem[e.orig]; }).map(function (e) { return e.orig; });
-      if (ks.length) poe({ op: "borda", id: id, telhado: String(t.id), tipoBorda: "calha", arestas: ks });
+      if (ks.length) { poe({ op: "borda", id: id, telhado: String(t.id), tipoBorda: "calha", arestas: ks }); novasBordas.push(id); }
     });
-    var st1 = est(ops);
+    /* N23: TODAS as calhas deste cálculo vão para a cota certa ANTES de medir (a posição das descidas é uma fração do comprimento da calha, e a
+       calha com `cotaAuto` tem o comprimento do meio dela — medir antes e repetir depois deslocava as descidas dos cantos) */
+    var preCota = novasBordas.map(function (id) { return { op: "borda", id: id, cotaAuto: true }; });   /* só para MEDIR; a flag entra nas ops na emissão (mesma ordem de campos em toda rodada: o lote é idempotente) */
+    listarCalhas(st0).forEach(function (c) {
+      if (c.cotaAuto || !tels.some(function (t) { return String(t.id) === String(c.telhado); })) return;
+      preCota.push(c.tipo === "embutida" ? { op: "calha", id: c.id, cotaAuto: true } : { op: "borda", id: c.id, cotaAuto: true });
+    });
+    var st1 = est(ops.concat(preCota));
     var cals = listarCalhas(st1).filter(function (c) { return tels.some(function (t) { return String(t.id) === String(c.telhado); }); });
     if (!cals.length) return { ok: false, motivo: "Nenhuma calha: marque \"calha de beiral\" ou lance a calha embutida da platibanda.", avisos: avisos };
 
@@ -1016,7 +1520,7 @@
     /* o comprimento L de cada condutor (do fundo da calha ao piso), pela MESMA regra do replay: uma descida de prova por calha */
     var Lcond = {};
     (function () {
-      var prova = cals.map(function (c) { return { op: "condutor", id: "__L-" + c.id, calha: String(c.id), pos: 0.5 }; }), sp = est(ops.concat(prova));
+      var prova = cals.map(function (c) { return { op: "condutor", id: "__L-" + c.id, calha: String(c.id), pos: 0.5 }; }), sp = est(ops.concat(prova, preCota));
       arr(sp.condutores).forEach(function (c) { if (c && c.ok && String(c.id).indexOf("__L-") === 0) Lcond[String(c.id).slice(4)] = num(c.alturaM, null); });
     })();
     var resCal = [], manLig = {}, descMin = Math.max(1, Math.round(num(cfg.descidasMin, 2)));
@@ -1031,21 +1535,10 @@
         if (I25.aviso) avisos.push("Calha embutida (T = " + T25 + " anos): " + I25.aviso);
       }
       /* a calha em TRECHOS CONTÍNUOS (a de beiral em duas arestas opostas são duas linhas): cada trecho tem as suas águas e descidas */
-      var segs = cal.segs, cad = [], k;
-      for (k = 0; k < segs.length; k++) {
-        var s = segs[k], Ls = distP(s.a, s.b), ult = cad[cad.length - 1];
-        if (!ult || distP(segs[k - 1].b, s.a) > 0.05) { ult = { ini: 0, L: 0, quinas: [], origs: {}, fechada: false, segs: [] }; cad.push(ult); ult.offset = cad.length > 1 ? cad[cad.length - 2].offset + cad[cad.length - 2].L : 0; }
-        else {
-          var p = segs[k - 1], ux = p.b.x - p.a.x, uz = p.b.z - p.a.z, vx = s.b.x - s.a.x, vz = s.b.z - s.a.z, lu = Math.sqrt(ux * ux + uz * uz), lv = Math.sqrt(vx * vx + vz * vz);
-          if (lu > 1e-6 && lv > 1e-6 && Math.abs((ux * vz - uz * vx) / (lu * lv)) > 0.17) ult.quinas.push(ult.L);
-        }
-        ult.L += Ls; ult.segs.push(s); if (s.orig != null) ult.origs[Number(s.orig)] = true;
-        ult.ultimo = s; if (ult.primeiro == null) ult.primeiro = s;
-      }
-      cad.forEach(function (c) { if (c.primeiro !== c.ultimo && distP(c.ultimo.b, c.primeiro.a) < 0.05) { c.fechada = true; c.quinas.push(0); } });
+      var segs = cal.segs, cad = trechosDaCalha(segs);
       /* as águas de cada trecho (caso b, com o beiral) */
       var ags = aguasDaCalha(st1, cal), Ltot0 = 0;
-      segs.forEach(function (s) { Ltot0 += distP(s.a, s.b); });
+      segs.forEach(function (s) { Ltot0 += Lseg(s); });
       /* REVISÃO 20/10/2026: a descida lançada À MÃO (id sem o prefixo tel-calha-) é trabalho do usuário — antes ia embora por
          "apagar" a cada rodada. Agora fica onde está, entra na conta como posição fixa (só o DN é o do cálculo) e o motor só
          acrescenta descida se a calha não passar com elas. */
@@ -1058,13 +1551,7 @@
           if (usadas[m.id] || sm < -1e-6 || sm > c.L + 1e-6) return;
           usadas[m.id] = 1; c.fixos.push({ id: m.id, s: Math.max(0, Math.min(c.L, sm)) });
         });
-        ags.forEach(function (ag) {
-          var e = arr(t.arestasCalc)[ag.aresta]; if (!e || !c.origs[e.orig]) return;
-          var ar = areaCasoB(ag); if (!ar) return;
-          var A = (ar.a + ar.h / 2) * ar.b;
-          c.areas.push({ aresta: e.orig, a: ar.a, b: ar.b, h: ar.h, i: num(ag.inclinacao, 0), A: r4(A), beiral: num(t.beiralEf, 0) }); c.A += A;
-          c.amostras.push({ A: A, ss: destinosDaAgua(ag, c.segs) });
-        });
+        aguasDoTrecho(c, ags, t);
         c.Q = Ic.valor_mm_h * c.A / 60;
         var fp = Math.min(0.15, c.L / 4);
         c.pos = c.fixos.length ? c.fixos.map(function (f) { return f.s; }) : c.fechada ? c.quinas.slice() : (c.L < 2 || descMin === 1 ? [fp] : [fp, c.L - fp]);
@@ -1072,37 +1559,7 @@
       });
       cad = cad.filter(function (c) { return c.areas.length && c.L > 0.1; });
       if (!cad.length) { avisos.push("Calha " + cal.id + ": nenhuma água inclinada escorre para ela."); return; }
-      function influencia(c) {
-        var P = c.pos, L = c.L;
-        /* pela geometria (ver destinosDaAgua); só cai na fração do comprimento se alguma água não deu para amostrar */
-        if (c.A > 0 && c.amostras.length && c.amostras.every(function (am) { return am.ss; })) {
-          var f = P.map(function () { return 0; }), nP = P.length;
-          /* o vão de cada descida: do meio do vão anterior ao meio do seguinte (na calha que dá a volta, circular) */
-          var lim = P.map(function (p, i) {
-            if (c.fechada) { if (nP === 1) return [p - L / 2, p + L / 2]; return [p - ((p - P[(i - 1 + nP) % nP] + L) % L) / 2, p + ((P[(i + 1) % nP] - p + L) % L) / 2]; }
-            return [i === 0 ? -Infinity : (P[i - 1] + p) / 2, i === nP - 1 ? Infinity : (p + P[i + 1]) / 2];
-          });
-          function perto(s) { var bi = 0, bd = Infinity; P.forEach(function (p, i) { var d = Math.abs(s - p); if (c.fechada) d = Math.min(d, L - d); if (d < bd - 1e-9) { bd = d; bi = i; } }); return bi; }
-          c.amostras.forEach(function (am) {
-            var cnt = P.map(function () { return 0; }), pesoT = 0;
-            am.ss.forEach(function (ab) {
-              var a = ab[0], b = ab[1], pw = ab[2], larg = b - a, fr = P.map(function () { return 0; }), tot = 0;
-              if (larg > 1e-9) lim.forEach(function (lm, i) {
-                (c.fechada ? [-L, 0, L] : [0]).forEach(function (sh) { var o = Math.min(b, lm[1] + sh) - Math.max(a, lm[0] + sh); if (o > 0) { fr[i] += o / larg; tot += o / larg; } });
-              });
-              pesoT += pw;
-              if (tot > 1e-9) fr.forEach(function (x, i) { cnt[i] += pw * x / tot; }); else cnt[perto((a + b) / 2)] += pw;
-            });
-            cnt.forEach(function (k, i) { f[i] += am.A * k / pesoT; });
-          });
-          return f.map(function (x) { return x / c.A; });
-        }
-        return P.map(function (s, i) {
-          if (c.fechada) { if (P.length === 1) return 1; var ant = P[(i - 1 + P.length) % P.length], pro = P[(i + 1) % P.length]; return (((s - ant + L) % L) + ((pro - s + L) % L)) / 2 / L; }
-          var ini = i === 0 ? 0 : (P[i - 1] + s) / 2, fim2 = i === P.length - 1 ? L : (s + P[i + 1]) / 2; return (fim2 - ini) / L;
-        });
-      }
-      function distQuina(c, s) { var m = null; c.quinas.forEach(function (q) { var d = Math.abs(s - q); if (c.fechada) d = Math.min(d, c.L - d); if (m == null || d < m) m = d; }); return m; }
+      var influencia = influenciaTrecho, distQuina = distQuinaTrecho;   /* REVISOR N23: as mesmas funções da verificação (dimensionarCalhas com comoGerador) */
       var Lc = Lcond[String(cal.id)];
       function dnPara(qLmin, H) { return Lc == null ? null : dnPeloAbaco(qLmin, H, Lc, { saida: saidaCalha, dnsMat: dnsMat, diMin: diMin.ok ? num(diMin.valor, null) : null }); }
       if (Lc == null) avisos.push("Calha " + cal.id + ": sem o comprimento do condutor (L) para o ábaco.");
@@ -1152,9 +1609,10 @@
       if (!achou) { avisos.push("Calha " + cal.id + ": nenhuma seção até 500 × 200 mm passa com até 16 descidas — aumente a declividade ou divida a calha."); return; }
       /* as ops: a seção (op calha embutida ou op borda de beiral) e as descidas com id fixo */
       var lg = achou.bMm / 1000, al = achou.aMm / 1000, Ltot = 0;
-      segs.forEach(function (s) { Ltot += distP(s.a, s.b); });
-      if (cal.tipo === "embutida") poe({ op: "calha", id: cal.id, largura: lg, altura: al, declividadePct: decl });
-      else poe({ op: "borda", id: cal.id, largura: lg, altura: al });
+      segs.forEach(function (s) { Ltot += Lseg(s); });
+      /* N23: a calha sai na COTA CERTA (cotaAuto): a telha entra nela, a borda fica abaixo da telha e o fundo cai `decl` % até cada descida */
+      if (cal.tipo === "embutida") poe({ op: "calha", id: cal.id, largura: lg, altura: al, declividadePct: decl, cotaAuto: true });
+      else poe({ op: "borda", id: cal.id, largura: lg, altura: al, declividadePct: decl, cotaAuto: true });
       var idsNovos = {}, descidas = [], A = 0, Q = 0, Qp = 0, cap = null, areasT = [];
       cad.forEach(function (c) { c.fixos.forEach(function (f) { f.usado = false; }); });
       cad.forEach(function (c, j) {
@@ -1173,8 +1631,10 @@
         });
       });
       arr(st0.condutores).forEach(function (c) { if (c && String(c.calha) === String(cal.id) && String(c.id).indexOf(PREFIXO) === 0 && !idsNovos[c.id]) poe({ op: "apagar", id: c.id }); });
-      var dev = desenvolvimentoCalha(lg, al), dv = escolher(DESENV_CALHA, dev, "dev"), maiorVao = 0;
+      var maiorVao = 0;
       cad.forEach(function (c) { var P = c.pos; for (var q = 0; q + 1 < P.length; q++) maiorVao = Math.max(maiorVao, (P[q + 1] - P[q]) / 2); if (P.length === 1) maiorVao = Math.max(maiorVao, c.L); });
+      /* REVISOR N23: o desenvolvimento pela MAIOR seção (no bocal, com o caimento), como no estado */
+      var dev = desenvolvimentoCalha(lg, al + maiorVao * decl / 100), dv = escolher(DESENV_CALHA, dev, "dev");
       resCal.push({ id: cal.id, tipo: cal.tipo, telhado: cal.telhado, trechos: cad.length, areas: areasT, area_m2: r4(A), intensidade_mm_h: Ic.valor_mm_h, periodo_anos: Ic.periodo_anos, vazao_l_min: r4(Q), comprimento: r4(Ltot),
                     largura_mm: achou.bMm, altura_mm: achou.aMm, lamina_mm: achou.aMm / 2, declividade_pct: decl, n: nC.ok ? num(nC.valor, null) : null,
                     capacidade_l_min: r4(cap), vazaoProjeto_l_min: r4(Qp), vazaoHidAP_l_min: r4(achou.qAP), hidap: achou.hid,
@@ -1219,6 +1679,7 @@
       memorial.push("  · vazão de projeto (item 5.3.1): Q = I·A/60 = " + c.intensidade_mm_h + " × " + virg(c.area_m2) + " / 60 = " + virg(c.vazao_l_min) + " L/min");
       memorial.push("  · " + c.descidas.length + " descida(s): " + c.descidas.map(function (d) { return "a " + virg(d.dist_m) + " m do início (" + virg(d.area_m2) + " m², " + virg(d.vazao_l_min) + " L/min)"; }).join("; ") +
                     "; Q de projeto na saída (maior saída × coeficiente da Tabela 1 quando há quina a menos de 4 m) = " + virg(c.vazaoProjeto_l_min) + " L/min");
+      memorial.push("  · cota: a telha avança " + virg(AVANCO_TELHA * 100, 0) + " cm dentro da calha (ficha técnica Wavin; a Eternit dá 10 a 25 cm de balanço com calha), a borda da calha fica " + virg(FOLGA_VERTICAL * 100, 0) + " cm abaixo da face de baixo da telha (adotado) e o fundo cai " + virg(c.declividade_pct) + " % até cada descida (NBR 10844, item 5.5.2: mínimo " + virg(DECL_MIN_CALHA_PCT, 1) + " %); o fundo da calha na descida é o topo do condutor vertical");
       memorial.push("  · seção retangular " + c.largura_mm + " × " + c.altura_mm + " mm, lâmina " + c.lamina_mm + " mm, n = " + virg(c.n, 3) + " (chapa metálica, Tabela 2), i = " + virg(c.declividade_pct) + "% (mínimo do item 5.5.2): capacidade por Manning-Strickler (item 5.5.7) = " +
                     virg(c.capacidade_l_min) + " L/min ≥ " + virg(c.vazaoProjeto_l_min) + " L/min → ATENDE; queda " + virg(c.queda_m * 100, 1) + " cm até a descida");
       memorial.push("  · desenvolvimento " + virg(c.desenvolvimento) + " m → " + (c.sinapi ? "SINAPI " + c.sinapi.codigo + " (" + c.sinapi.descricao + ")" : "sem composição SINAPI: orçar à parte"));
@@ -1250,14 +1711,16 @@
     if (!arestasOk(o.arestas)) return false;
     if (o.rufoCapa != null && typeof o.rufoCapa !== "boolean") return false;
     if (o.contraRufo != null && typeof o.contraRufo !== "boolean") return false;
-    return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].some(function (k) { return o[k] !== undefined; });
+    if (o.herdar != null && typeof o.herdar !== "boolean") return false;   /* N23: herda tipo, espessura e posição da parede de baixo */
+    return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar"].some(function (k) { return o[k] !== undefined; });
   }
   function validaCalha(o) {
     if (!idOk(o.id)) return false;
     if (o.telhado !== undefined && !idOk(o.telhado)) return false;
     if (!faixa(o, "largura", LIM.calhaLarg[0], LIM.calhaLarg[1]) || !faixa(o, "altura", LIM.calhaAlt[0], LIM.calhaAlt[1]) || !faixa(o, "declividadePct", LIM.decl[0], LIM.decl[1]) || !faixa(o, "laminaMm", LIM.lamina[0], LIM.lamina[1])) return false;
+    if (o.cotaAuto != null && typeof o.cotaAuto !== "boolean") return false;   /* N23: a telha entra na calha e o fundo cai até o bocal */
     if (o.arestas !== undefined && o.arestas !== null && !(arestasOk(o.arestas) && o.arestas.length >= 1)) return false;
-    return ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"].some(function (k) { return o[k] !== undefined; });
+    return ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm", "cotaAuto"].some(function (k) { return o[k] !== undefined; });
   }
   function validaCondutor(o) {
     if (!idOk(o.id)) return false;
@@ -1282,8 +1745,8 @@
     if (o.op === "rufo") return validaRufo(o);
     return undefined;
   }
-  var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"],
-                 calha: ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm"],
+  var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar"],
+                 calha: ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm", "cotaAuto"],
                  cond: ["calha", "pos", "dn", "trecho"], rufo: ["telhado", "material", "corteRufo", "corteContra", "folga"] };
   function aplicarOp(o, ctx) {
     if (!o || !ctx) return false;
@@ -1309,11 +1772,17 @@
     return false;
   }
   function fim(ctx, saida, NIV) {
-    var C = ctx && ctx.cob; if (!C || !saida) return;
-    if (!C.ordPlat.length && !C.ordCalha.length && !C.ordCond.length && !(C.ordRufo && C.ordRufo.length)) return;
+    if (!ctx || !saida) return;
+    var bordaCota = arr(saida.bordas).some(function (b) { return b && b.ok && b.tipoBorda === "calha" && b.cotaAuto === true; });
+    var C = ctx.cob || (bordaCota ? idsDoCob(ctx) : null); if (!C) return;   /* N23: a calha de beiral na cota certa vale mesmo sem nenhuma op de cobertura completa */
+    if (!C.ordPlat.length && !C.ordCalha.length && !C.ordCond.length && !(C.ordRufo && C.ordRufo.length) && !bordaCota) return;
     var tel = {}; arr(saida.telhados).forEach(function (t) { tel[String(t.id)] = t; });
-    if (C.ordCalha.length) saida.calhasEmbutidas = C.ordCalha.map(function (id) { return calcularCalha(C.calha[id], tel); });
-    if (C.ordPlat.length) saida.platibandas = C.ordPlat.map(function (id) { return calcularPlatibanda(C.plat[id], tel, C); });
+    if (C.ordCalha.length) {
+      saida.calhasEmbutidas = C.ordCalha.map(function (id) { return calcularCalha(C.calha[id], tel); });
+      saida.calhasEmbutidas.forEach(function (c) { if (c && c.ok && c.cotaAuto) aplicarPerfilEmbutida(c, bocaisDe(C, c.id)); });
+    }
+    arr(saida.bordas).forEach(function (b) { if (b && b.ok && b.tipoBorda === "calha" && b.cotaAuto === true) aplicarPerfilBeiral(b, saida.telhados, bocaisDe(C, b.id)); });
+    if (C.ordPlat.length) saida.platibandas = C.ordPlat.map(function (id) { return calcularPlatibanda(C.plat[id], tel, C, saida.caixas); });
     if (C.ordCond.length) {
       var piso = Infinity; arr(NIV).forEach(function (n) { var e = num(n && n.elevacao, NaN); if (fin(e) && e < piso) piso = e; });
       var cals = listarCalhas(saida);
@@ -1338,17 +1807,18 @@
     calcularPlatibanda: calcularPlatibanda, calcularCalha: calcularCalha, calcularCondutor: calcularCondutor,
     listarCalhas: listarCalhas, resumoDoTelhado: resumoDoTelhado, opsCondutores: opsCondutores, baseSugerida: baseSugerida,
     desenvolvimentoCalha: desenvolvimentoCalha, entradaPluvial: entradaPluvial, dimensionarCalhas: dimensionarCalhas, secaoMinimaCalha: secaoMinimaCalha,
-    quantitativo: quantitativo, sin: sin,
+    quantitativo: quantitativo, sin: sin, paredesDaAresta: paredesDaAresta, paredeDominante: paredeDominante, recuosHerdados: recuosHerdados, perfilCalha: perfilCalha, diagnosticarCobertura: diagnosticarCobertura,
+    AVANCO_TELHA: AVANCO_TELHA, FOLGA_VERTICAL: FOLGA_VERTICAL, DECL_MIN_CALHA_PCT: DECL_MIN_CALHA_PCT,
     PADRAO_RUFO: PADRAO_RUFO, CHAPAS: CHAPAS, PREFIXO: PREFIXO, encontrosDoTelhado: encontrosDoTelhado, calcularRufo: calcularRufo, topoTelhaEm: topoTelhaEm,
     cidadeDaObra: cidadeDaObra, postoNoTexto: postoNoTexto, intensidadeNBR: intensidadeNBR, periodoCobertura: periodoCobertura, gerarPluvial: gerarPluvial, kgPorM: kgPorM, DADOS_TEL: DADOS_TEL, qAbaco: qAbaco, dnPeloAbaco: dnPeloAbaco, cortePara: cortePara, dobrasRufo: dobrasRufo, valida: valida, aplicarOp: aplicarOp, fim: fim, registrar: registrar,
     opPlatibanda: function (id, d) {
       d = d || {}; var o = { op: "platibanda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado };
-      ["arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      ["arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
       return validaPlatibanda(o) ? o : null;
     },
     opCalha: function (id, d) {
       d = d || {}; var o = { op: "calha", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, arestas: arr(d.arestas).map(Number) };
-      ["largura", "altura", "declividadePct", "laminaMm"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      ["largura", "altura", "declividadePct", "laminaMm", "cotaAuto"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
       return validaCalha(o) ? o : null;
     },
     opCondutor: function (id, d) {

@@ -126,6 +126,33 @@
       fmk: r[0], ft0k: r[1], ft90k: r[2], fc0k: r[3], fc90k: r[4], fvk: r[5], Ec0m: r[6] * 1000, E005: r[7] * 1000, E90m: r[8] * 1000,
       Gm: r[9] * 1000, rhok: r[10], rhom: r[11], fonte: F22 + ", tabela de peças estruturais (7190-4)" };
   });
+  /* ------------------------------------------------------------------
+   * MLC (madeira lamelada colada) — EN 14080:2013, Tabela 5 (fonte SECUNDÁRIA: a NBR 7190-6 está sem texto na biblioteca).
+   * Homogêneas "h" (GL20h … GL32h). fmk = ft0k/0,8 = fc0k = o número da classe; ft90k 0,5; fc90k 2,5; fvk 3,5; E90m 300; Gm 650 (MPa).
+   * ⚠ valores transcritos do quadro da EN 14080 e CONFERIDOS só no GL24h (usado na regressão da Casa Mar R02 contra o PDF);
+   *   as demais colunas ficam com `conferir: true` até alguém abrir o PDF.
+   * Combinadas "c" (GL20c … GL32c): a Tabela 5 tem valores próprios por camada e eles NÃO foram conferidos aqui → todos `null`
+   *   e `resistencias2022` RECUSA calcular (pendência visível, nunca um número de cabeça).
+   * CLT e LVL: sem valor com fonte na biblioteca (NBR 7190-6/-7 e ETA do fabricante sem texto) → estrutura pronta com `null` e recusa.
+   * ------------------------------------------------------------------ */
+  var FMLC = "EN 14080:2013, Tabela 5 (fonte secundária — NBR 7190-6 sem texto)";
+  /* [classe, fmk, ft0k, E0m, E005, rhok, rhom] */
+  [["GL20h", 20, 16, 8400, 7000, 340, 370], ["GL22h", 22, 17.6, 10500, 8800, 370, 410], ["GL24h", 24, 19.2, 11500, 9600, 385, 420],
+   ["GL26h", 26, 20.8, 12100, 10100, 405, 445], ["GL28h", 28, 22.3, 12600, 10500, 425, 460], ["GL30h", 30, 24, 13600, 11300, 430, 480],
+   ["GL32h", 32, 25.6, 14200, 11800, 440, 490]].forEach(function (r) {
+    CLASSES_2022["mlc:" + r[0]] = { origem: "peca", produto: "mlc", grupo: "conifera", nome: "MLC " + r[0] + " (EN 14080)", fmk: r[1], ft0k: r[2], ft90k: 0.5,
+      fc0k: r[1], fc90k: 2.5, fvk: 3.5, Ec0m: r[3], E005: r[4], E90m: 300, Gm: 650, rhok: r[5], rhom: r[6],
+      fonte: FMLC + (r[0] === "GL24h" ? "" : " — conferir no PDF"), conferir: r[0] !== "GL24h" };
+  });
+  ["GL20c", "GL22c", "GL24c", "GL26c", "GL28c", "GL30c", "GL32c"].forEach(function (c) {
+    CLASSES_2022["mlc:" + c] = { origem: "peca", produto: "mlc", grupo: "conifera", nome: "MLC " + c + " (EN 14080)", fmk: Number(c.slice(2, 4)), ft0k: null, ft90k: null,
+      fc0k: null, fc90k: null, fvk: null, Ec0m: null, E005: null, E90m: null, Gm: null, rhok: null, rhom: null,
+      incompleta: "classe combinada: valores da EN 14080 Tab. 5 não conferidos — abrir o PDF e preencher", fonte: FMLC };
+  });
+  var PRODUTOS_SEM_VALOR = {
+    clt: { nome: "CLT (madeira laminada cruzada)", valores: null, incompleta: "sem valores com fonte (NBR 7190-7 e ETA do fabricante sem texto na biblioteca)" },
+    lvl: { nome: "LVL (madeira laminada de lâminas)", valores: null, incompleta: "sem valores com fonte (ETA do fabricante / EN 14374 sem texto na biblioteca)" }
+  };
   var KMOD1_2022 = {
     serrada: { permanente: 0.60, longa: 0.70, media: 0.80, curta: 0.90, instantanea: 1.10 },
     recomposta: { permanente: 0.30, longa: 0.45, media: 0.65, curta: 0.90, instantanea: 1.10 },
@@ -141,7 +168,7 @@
   var MadMateriais = {
     CLASSES_1997: CLASSES_1997, KMOD1_1997: KMOD1_1997, KMOD2_1997: KMOD2_1997, KMOD3_1997: KMOD3_1997,
     GAMA_1997: GAMA_1997, PHI_1997: PHI_1997, ESPECIES: ESPECIES, PERFIS: PERFIS,
-    CLASSES_2022: CLASSES_2022, KMOD1_2022: KMOD1_2022, KMOD2_2022: KMOD2_2022, PHI_2022: PHI_2022, GAMA_2022: GAMA_2022
+    CLASSES_2022: CLASSES_2022, PRODUTOS_SEM_VALOR: PRODUTOS_SEM_VALOR, KMOD1_2022: KMOD1_2022, KMOD2_2022: KMOD2_2022, PHI_2022: PHI_2022, GAMA_2022: GAMA_2022
   };
 
   /**
@@ -156,16 +183,19 @@
     var prod = o.produto || "serrada", u = o.umidade, car = o.carregamento;
     var k1 = (KMOD1_2022[prod] || {})[car], k2 = (KMOD2_2022[prod] || {})[u];
     var phi = (PHI_2022[o.fluencia || prod] || PHI_2022.serrada)[u];
+    /* R26: φ da Tabela 20 da NBR 7190-1:2022 (p. 66 impressa / PDF 78, transcrição conferida): por produto e classe de umidade (serrada/MLC/MLCC/LVL/roliça: 0,6 / 0,8 / 0,8 / 2,0). `phiConservador` é OPÇÃO explícita
+       (decisão R2 antiga: φ = 2,0 nas classes 3 e 4 — NBR 7190:1997 e EN 1995 SC3); sem ela vale a norma de 2022. */
+    if (o.phiConservador && u >= 3 && (phi == null || phi < 2.0)) phi = 2.0;
     if (k1 == null || k2 == null) throw new Error("madmateriais: perfil2022 sem kmod para " + prod + "/" + car + "/umidade " + u);
     if (phi == null) throw new Error("madmateriais: perfil2022 sem φ para umidade " + u + " (OSB na classe 4 não se aplica)");
     if (!o.limVao || !o.limBalanco) throw new Error("madmateriais: perfil2022 exige limVao e limBalanco (a Tabela 21 dá faixas; decisão de projeto)");
     return {
       nome: "NBR 7190-1:2022 — " + prod + ", " + car + ", umidade " + u, edicao: "2022", completo: true, fonteSecundaria: true,
-      kmod: k1 * k2, kmodPartes: "kmod1 " + String(k1).replace(".", ",") + " (" + car + ") × kmod2 " + String(k2).replace(".", ",") + " (umidade " + u + ")",
+      kmod: k1 * k2, kmod1: k1, kmod2: k2, kmodPartes: "kmod1 " + String(k1).replace(".", ",") + " (" + car + ") × kmod2 " + String(k2).replace(".", ",") + " (umidade " + u + ")",
       gw: { c: GAMA_2022.c, t: GAMA_2022.t, m: GAMA_2022.m, v: GAMA_2022.v }, flexaoPor: "fmd", fc90Fator: null,
       gamaG: o.gamaG || 1.4, gamaQ: o.gamaQ || 1.4, psi2: o.psi2 == null ? 0.4 : o.psi2, phi: phi,
-      limVao: o.limVao, limBalanco: o.limBalanco, eRigidez: "E0m", flecha: "2022",
-      kM: 0.7, betaC: prod === "serrada" ? 0.2 : 0.1,
+      limVao: o.limVao, limBalanco: o.limBalanco, eRigidez: "E0m", flecha: "2022", phiConservador: !!o.phiConservador,
+      kM: 0.7, betaC: o.betaC != null ? o.betaC : (prod === "serrada" ? 0.2 : 0.1),       // B2: MLC passa betaC 0,1 (lamelado)
       fonte: F22 + "; ações NBR 8681:2003 (γ 1,4 edificação tipo 2; ψ2 Tab. 6) — 8681:2025 vigente, não conferida"
     };
   };
@@ -173,6 +203,7 @@
   /** classe da 2022 ("nativa:D40", "peca:C24"…) */
   MadMateriais.classe2022 = function (id) {
     var c = CLASSES_2022[id];
+    if (!c && /^(clt|lvl):/i.test(id)) throw new Error("madmateriais: " + PRODUTOS_SEM_VALOR[id.slice(0, 3).toLowerCase()].nome + " — " + PRODUTOS_SEM_VALOR[id.slice(0, 3).toLowerCase()].incompleta + " (o motor recusa calcular)");
     if (!c) throw new Error("madmateriais: classe 2022 desconhecida " + id + (/C25$/.test(id) ? " (C25 não existe na 7190-1:2022)" : ""));
     return c;
   };
@@ -180,6 +211,7 @@
   /** valores de cálculo (MPa) de uma classe da 2022 num perfil2022 */
   MadMateriais.resistencias2022 = function (classeId, perfil) {
     var c = MadMateriais.classe2022(classeId), p = perfil, k = p.kmod;
+    if (c.incompleta) throw new Error("madmateriais: classe " + classeId + " incompleta — " + c.incompleta + " (o motor recusa calcular sem valor com fonte)");
     var nat = c.origem === "nativa_cp";
     var fc0d = k * c.fc0k / p.gw.c;
     return {

@@ -27,6 +27,7 @@
      A única saída é `?previa=hidro-desligar`: grava a chave de desligado neste aparelho e o BIM volta a ficar como no master
      (o grupo "hidro" do index.html nem é baixado); `?previa=hidro` apaga essa chave. */
   var HIDRO_OFF = "orcapro:tela:bim-hidro:off";
+  var VIVO = "orcapro:tela:bim-rendervivo:on";
   /* a URL é lida na CARGA: o App._previaDaUrl limpa o `?previa=` do endereço logo depois */
   try {
     var q = (global.location && global.location.search) || "";
@@ -34,6 +35,9 @@
     else if (/[?&]previa=[^&]*modelador(?!-desligar)/i.test(q)) global.localStorage.removeItem(OFF);
     if (/[?&]previa=[^&]*hidro-desligar/i.test(q)) global.localStorage.setItem(HIDRO_OFF, "1");
     else if (/[?&]previa=[^&]*hidro(?!-desligar)/i.test(q)) global.localStorage.removeItem(HIDRO_OFF);
+    /* RENDER AO VIVO (protótipo 20/10/2026, js/bimrendervivo.js): só aparece neste aparelho com `?previa=rendervivo` */
+    if (/[?&]previa=[^&]*rendervivo-desligar/i.test(q)) global.localStorage.removeItem(VIVO);
+    else if (/[?&]previa=[^&]*rendervivo(?!-desligar)/i.test(q)) global.localStorage.setItem(VIVO, "1");
   } catch (e) {}
   var BimPrevia = {
     CHAVE: CHAVE,
@@ -60,6 +64,9 @@
       try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
     },
     HIDRO_OFF: HIDRO_OFF,
+    VIVO: VIVO,
+    /* o botão "Render ao vivo" aparece? (prévia deste aparelho, desligada por padrão) */
+    renderVivo: function () { try { return global.localStorage.getItem(VIVO) === "1"; } catch (e) { return false; } },
     /* o hidrossanitário/climatização aparece? = modelador ligado E este aparelho não o desligou (`?previa=hidro-desligar`).
        Armazenamento bloqueado: sem como ler a escolha, vale o padrão (aparece). */
     hidro: function () {

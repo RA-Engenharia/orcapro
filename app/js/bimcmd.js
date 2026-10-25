@@ -65,7 +65,9 @@
     },
     soltas: function () {              /* ação registrada, sem comando na fita */
       var R = this._R(); if (!R) return [];
-      return Object.keys(this._acoes).filter(function (id) { return !R.comando(id); });
+      /* ⚠ duas famílias que NÃO são botão perdido (23/10/2026): o gancho interno `__cancelar` (Esc) e os `ctx-…`, os botões da
+         aba contextual — que só existe com seleção e registra a ação direto aqui (js/bimfita.js, js/hidkitui.js). */
+      return Object.keys(this._acoes).filter(function (id) { return !R.comando(id) && id.indexOf("__") !== 0 && id.indexOf("ctx-") !== 0; });
     },
     cobertura: function () {
       var R = this._R(); if (!R) return { total: 0, comAcao: 0, pct: 0 };

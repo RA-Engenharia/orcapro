@@ -231,7 +231,7 @@
   /* o parâmetro de instância que vira a folha (porta de giro da biblioteca RA) */
   var VIRAR_PARAM = ["Abre_para_fora", "Virar", "Inverter", "Espelhar"];
 
-  var st = { id: null, cur: null, forma: null, geo: null, gk1: null, gk2: null, dig: null, tMov: 0, ultEv: null, texto: "" };
+  var st = { ciclo: {}, id: null, cur: null, forma: null, geo: null, gk1: null, gk2: null, dig: null, tMov: 0, ultEv: null, texto: "" };
 
   var BimPlantaModelar = {
     /* puro (testes) */
@@ -259,7 +259,11 @@
     _def: function (id) { var P2 = D2(); var d = P2 && P2.def ? P2.def(id) : null; return d && d.tipo === "planta" && d.nivel ? d : null; },
     _vistaAtiva: function () { try { return global.Gestao && global.Gestao._bimVxEst ? global.Gestao._bimVxEst().ativa : null; } catch (e) { return null; } },
     /* a planta está na frente com uma ferramenta armada (o duplo clique é ponto, não "enquadrar") */
-    ocupado: function () { var a = this._vistaAtiva(); return !!(this.ativo() && a && this._def(a) && this.ferramenta()); },
+    ocupado: function () {
+      var a = this._vistaAtiva(); if (!(this.ativo() && a)) return false;
+      if (this._def(a)) return !!this.ferramenta();
+      return !!(this.ferramenta() && global.BimVistaModelar && global.BimVistaModelar.ocupado(a, this.ferramenta()));   /* corte/elevação com a ferramenta armada: duplo clique também é ponto */
+    },
     _escala: function (id) {
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null;
       var m = c && c.svg && c.svg.getScreenCTM ? c.svg.getScreenCTM() : null;
@@ -279,24 +283,28 @@
         (BB() && BB().snapLigado && BB().snapLigado("eixos"))));   /* e TODA ferramenta com "Eixos da grade" marcado no menu do Snap */
       if (st.geo && st.gk1 === est && st.gk2 === dados && st.geo.id === id && st.gk3 === comEixos) return st.geo;
       var R = Pr(), g = R ? R.geometria(est || {}, { avaliar: b && b.familiaAvaliar ? function (f, t, i) { return b.familiaAvaliar(f, t, i); } : null, eixos: comEixos }) : { els: [], segs: [], pontos: [] };
-      var segs = g.segs.slice(), pontos = g.pontos.slice(), n = 0, MAX = 4000;
+      var segs = g.segs.slice(), pontos = g.pontos.slice();
+      this._juntarDesenho(dados, segs, pontos);
+      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos, circs: g.circs || [] }; st.gk1 = est; st.gk2 = dados; st.gk3 = comEixos;   /* circs: pilar redondo, parede curva (quadrante, tangente) */
+      return st.geo;
+    },
+    /* as linhas do DESENHO (corte e vista): o IFC importado também agarra — a parede nova nasce sobre a planta do projeto.
+       Serve a planta e o corte/elevação (js/bimvistamodelar.js): as coordenadas do desenho são as do snap */
+    _juntarDesenho: function (dados, segs, pontos) {
+      var n = 0, MAX = 4000;
       function seg(a, q) {
         if (n >= MAX || dist(a, q) < 1e-4) return;
         n++; var id2 = "d" + n;
         segs.push({ a: a, b: q, id: id2, k: "desenho" });
         pontos.push({ p: a, tipo: "fim", id: id2 }, { p: q, tipo: "fim", id: id2 }, { p: P((a.x + q.x) / 2, (a.z + q.z) / 2), tipo: "meio", id: id2 });
       }
-      /* as linhas do DESENHO (corte e vista): o IFC importado também agarra — a parede nova nasce sobre a planta do projeto */
-      if (dados) {
-        (dados.cortes || []).forEach(function (pl) {
-          if (!Array.isArray(pl)) return;
-          var q = simplificar(pl.filter(function (x) { return x && fin(x[0]) && fin(x[1]); }).map(function (x) { return P(x[0], x[1]); }));
-          for (var i = 0; i + 1 < q.length; i++) seg(q[i], q[i + 1]);
-        });
-        (dados.linhas || []).forEach(function (l) { if (l && fin(l[0]) && fin(l[1]) && fin(l[2]) && fin(l[3])) seg(P(l[0], l[1]), P(l[2], l[3])); });
-      }
-      st.geo = { id: id, els: g.els, segs: segs, pontos: pontos, circs: g.circs || [] }; st.gk1 = est; st.gk2 = dados; st.gk3 = comEixos;   /* circs: pilar redondo, parede curva (quadrante, tangente) */
-      return st.geo;
+      if (!dados) return;
+      (dados.cortes || []).forEach(function (pl) {
+        if (!Array.isArray(pl)) return;
+        var q = simplificar(pl.filter(function (x) { return x && fin(x[0]) && fin(x[1]); }).map(function (x) { return P(x[0], x[1]); }));
+        for (var i = 0; i + 1 < q.length; i++) seg(q[i], q[i + 1]);
+      });
+      (dados.linhas || []).forEach(function (l) { if (l && fin(l[0]) && fin(l[1]) && fin(l[2]) && fin(l[3])) seg(P(l[0], l[1]), P(l[2], l[3])); });
     },
     /* a peça do editor sob o ponto (pegada); porta/janela só aceita parede */
     _alvo: function (id, sub, raw) {
@@ -340,10 +348,13 @@
     },
     _ponto: function (id, ev, p, sub) {
       var cur = P(p[0], p[1]), R = Pr(), Bo = BB(), cfg = Bo ? Bo.cfg(sub) : null, base = this._base(sub), tol = this._tol(id, 12);
-      var sn = null;
+      var sn = null, lista = [], cic = null;
       if (R && cfg && cfg.snap) {
         var T = {}; (R.TIPOS || []).forEach(function (t) { T[t] = !cfg.tipos || cfg.tipos[t] !== false; }); T.grade = !!cfg.grade && T.grade;
-        sn = R.snap(cur, this._geo(id), { tol: tol, tipos: T, ref: base.snap, grade: cfg.grade ? cfg.passo : 0, prefereCentro: !!(R.CENTRO_SUB && R.CENTRO_SUB[sub]) });   /* fundação e pilar: cruzamento de eixos e centro primeiro */
+        lista = R.snapTodos(cur, this._geo(id), { tol: tol, tipos: T, ref: base.snap, grade: cfg.grade ? cfg.passo : 0, prefereCentro: !!(R.CENTRO_SUB && R.CENTRO_SUB[sub]) });   /* fundação e pilar: cruzamento de eixos e centro primeiro */
+        /* TAB: dois pontos concorrem no mesmo lugar — o Tab percorre a lista (o escolhido vale para o marcador E para o clique) */
+        cic = R.escolherCiclo(st.ciclo, lista, ev && isFinite(ev.clientX) ? { x: ev.clientX, y: ev.clientY } : null, false);
+        sn = cic.sn;
       }
       var q = sn ? P(sn.p.x, sn.p.z) : cur, forte = !!(sn && R && (R.CLASSE[sn.sub || sn.tipo] <= 1 || sn.tipo === "paralelo" || sn.tipo === "rastreamento")), aj = null;   /* o paralelo e a guia do rastreamento mandam na direção (não a trava) */
       if (base.ang && Bo && !forte) {
@@ -359,7 +370,8 @@
         }
       }
       var ref = base.ang || base.snap;
-      return { p: q, raw: cur, sn: sn, tol: tol, base: ref, graus: ref && dist(ref, q) > 1e-9 && Bo ? Bo.grausDe(ref, q) : null, dist: ref ? dist(ref, q) : 0, travado: !!(aj && aj.travado) };
+      return { p: q, raw: cur, sn: sn, tol: tol, base: ref, graus: ref && dist(ref, q) > 1e-9 && Bo ? Bo.grausDe(ref, q) : null, dist: ref ? dist(ref, q) : 0, travado: !!(aj && aj.travado),
+               lista: lista, tabIdx: cic ? cic.idx : 0, tabN: cic ? cic.n : 0 };
     },
     /* a planta clicada é o nível em que a peça nasce */
     _nivelDaPlanta: function (d) {
@@ -465,7 +477,9 @@
       if (sub === "inst" && global.BimInstUI && global.BimInstUI.cliqueCorte && global.BimInstUI.cliqueCorte(id, ev, p)) return true;
       /* T6 (js/bimp3ui.js BimTelhadoCorte): o telhado "Por corte" se desenha DENTRO da vista de corte/elevação (perfil beiral → cumeeira, começo e fim) */
       if (sub === "telhado" && global.BimTelhadoCorte && global.BimTelhadoCorte.cliqueCorte && global.BimTelhadoCorte.cliqueCorte(id, ev, p)) return true;
-      var d = this._def(id); if (!d) return false;   /* corte/elevação: a modelagem é na planta */
+      var d = this._def(id);
+      /* CORTE e ELEVAÇÃO (23/10/2026, js/bimvistamodelar.js): parede, pilar, viga, porta, janela e componente se modelam no plano da vista */
+      if (!d) return !!(global.BimVistaModelar && global.BimVistaModelar.clique(id, ev, p, sub));
       /* as setas da porta: virar a folha da peça já colocada */
       var seta = ev && ev.target && ev.target.closest ? ev.target.closest("[data-pm-virar]") : null;
       if (seta) { this._virarColocada(seta.getAttribute("data-pm-virar")); return true; }
@@ -477,6 +491,7 @@
       if (sub === "inst" && r.raw && global.BimInstUI && global.BimInstUI.alvoEm && global.BimInstUI.alvoEm(r.raw)) r.p = r.raw;
       this._fecharDig();
       this._aplicarPonto(id, sub, r.p, r.raw, { shift: !!(ev && ev.shiftKey), ctrl: !!(ev && (ev.ctrlKey || ev.metaKey)) }, r.tol);
+      st.ciclo = {};   /* o clique mexeu na geometria: o Tab recomeça do 1º candidato */
       st.cur = this._ponto(id, ev, p, sub); this._desenhar(id);
       return true;
     },
@@ -504,6 +519,7 @@
       /* FLUIDEZ: TUBO NO CORTE — a prévia elástica do traço (js/biminstui.js moverCorte) */
       if (sub === "inst" && !this._def(id) && global.BimInstUI && global.BimInstUI.moverCorte && global.BimInstUI.moverCorte(id, ev, p)) return;
       if (sub === "telhado" && !this._def(id) && global.BimTelhadoCorte && global.BimTelhadoCorte.moverCorte && global.BimTelhadoCorte.moverCorte(id, ev, p)) return;   /* T6: o elástico do perfil no corte */
+      if (sub && !this._def(id) && global.BimVistaModelar && global.BimVistaModelar.mover(id, ev, p, sub)) return;   /* corte/elevação */
       if (!sub || !this._def(id)) { if (c.el.hasAttribute("data-pm-ferr")) { c.el.removeAttribute("data-pm-ferr"); this._limparCamada(id); } return; }
       c.el.setAttribute("data-pm-ferr", sub);
       if (!p) return;
@@ -519,6 +535,7 @@
       var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c) return;
       var g = c.svg ? c.svg.querySelector("g.pm-cam") : null; if (g) g.parentNode.removeChild(g);
       var rt = c.tela ? c.tela.querySelector(".pm-rot") : null; if (rt) rt.style.display = "none";
+      var rs = c.tela ? c.tela.querySelector(".pm-snaprot") : null; if (rs) rs.style.display = "none";
     },
 
     /* ------------------------------------------------ o desenho da prévia (SVG) */
@@ -575,10 +592,11 @@
       /* o snap: marcador + guias */
       if (r && r.sn && r.sn.tipo) {
         (r.sn.guias || []).forEach(function (gu) { caminho([gu.a, gu.b], "pm-guia"); });
-        this._marcador(el, r.sn.tipo, r.p, 6 * u);
+        this._marcador(el, r.sn.tipo, r.p, 6 * u, g);
       }
       if (r) { el("line", { x1: r6(r.p.x - 9 * u), y1: r6(r.p.z), x2: r6(r.p.x + 9 * u), y2: r6(r.p.z), "class": "pm-mira" }); el("line", { x1: r6(r.p.x), y1: r6(r.p.z - 9 * u), x2: r6(r.p.x), y2: r6(r.p.z + 9 * u), "class": "pm-mira" }); }
       this._rotulo(id, r);
+      this._rotuloSnap(id, r);
     },
     /* o deslocamento (w) da linha de localização escolhida na barra, para a prévia da parede */
     _wLinhaLoc: function (esp) {
@@ -588,13 +606,44 @@
       var w = A.wLinhaLoc({ espessura: tp && tp.espessura > 0 ? tp.espessura : esp, tipoParede: tp }, ll);
       return fin(w) ? w : 0;
     },
-    _marcador: function (el, tipo, p, s) {
-      var x = r6(p.x), z = r6(p.z), k = "pm-snap pm-snap-" + tipo;
-      if (tipo === "fim") el("rect", { x: r6(p.x - s), y: r6(p.z - s), width: r6(2 * s), height: r6(2 * s), "class": k });
-      else if (tipo === "meio") el("path", { d: "M" + r6(p.x - s) + " " + r6(p.z + s) + "L" + r6(p.x + s) + " " + r6(p.z + s) + "L" + x + " " + r6(p.z - s) + "Z", "class": k });
-      else if (tipo === "centro") el("circle", { cx: x, cy: z, r: r6(s), "class": k });
-      else if (tipo === "perpendicular") el("path", { d: "M" + r6(p.x - s) + " " + r6(p.z - s) + "L" + r6(p.x - s) + " " + r6(p.z + s) + "L" + r6(p.x + s) + " " + r6(p.z + s) + "M" + r6(p.x - s) + " " + z + "L" + x + " " + z + "L" + x + " " + r6(p.z + s), "class": k });
-      else el("path", { d: "M" + r6(p.x - s) + " " + r6(p.z - s) + "L" + r6(p.x + s) + " " + r6(p.z + s) + "M" + r6(p.x - s) + " " + r6(p.z + s) + "L" + r6(p.x + s) + " " + r6(p.z - s), "class": k });
+    /* O MARCADOR de cada tipo de snap (23/10/2026): o MESMO símbolo da barra de baixo e do 3D (BimPrecisao.GLIFO), no tamanho
+       de tela de sempre — ponta, meio, interseção, perpendicular, paralelo, centro, eixo, prolongamento, próximo… cada um com o seu
+       desenho. O nome vem junto, ao lado do cursor (_rotuloSnap). `g` = o grupo de SVG onde entra. */
+    _marcador: function (el, tipo, p, s, g) {
+      var x = r6(p.x), z = r6(p.z), k = "pm-snap pm-snap-" + tipo, R = Pr(), gl = R && R.GLIFO ? R.GLIFO[tipo] : null;
+      if (gl && g && g.ownerDocument) {
+        var m = document.createElementNS(NS, "g");
+        m.setAttribute("class", k + " pm-snap-glifo"); m.setAttribute("data-pm-snap", tipo);
+        m.setAttribute("transform", "translate(" + r6(x - s) + " " + r6(z - s) + ") scale(" + r6(2 * s / 16) + ")");
+        m.innerHTML = gl;
+        Array.prototype.forEach.call(m.querySelectorAll("*"), function (e2) { e2.setAttribute("vector-effect", "non-scaling-stroke"); });
+        g.appendChild(m);
+        return;
+      }
+      el("rect", { x: r6(p.x - s), y: r6(p.z - s), width: r6(2 * s), height: r6(2 * s), "class": k });
+    },
+    /* o NOME do encaixe junto ao cursor (tooltip): "Ponto final", a cota quando a peça tem, e o Tab quando há mais de um candidato */
+    _textoSnap: function (r) {
+      if (!r || !r.sn || !r.sn.tipo) return "";
+      var R = Pr(), nome = (R && R.ROTULO && R.ROTULO[r.sn.sub || r.sn.tipo]) || r.sn.tipo;
+      if (r.sn.tipo === "extensao") nome = "prolongamento";
+      nome = nome.charAt(0).toUpperCase() + nome.slice(1);
+      var t = nome + (r.sn.y != null && isFinite(r.sn.y) ? " · cota " + fmt(r.sn.y) + " m" : "");
+      if (r.tabN > 1) t += " · Tab " + (r.tabIdx + 1) + "/" + r.tabN;
+      return t;
+    },
+    _rotuloSnap: function (id, r, pos) {
+      var P2 = D2(), c = P2 && P2._cache ? P2._cache[id] : null; if (!c || !c.tela) return;
+      var el = c.tela.querySelector(".pm-snaprot");
+      var txt = this._textoSnap(r);
+      /* "Mostrar nome do encaixe" desligado no menu do Snap: só o símbolo no ponto (o Tab segue valendo) */
+      try { if (global.BimBarraSnaps && global.BimBarraSnaps.mostrarNome && !global.BimBarraSnaps.mostrarNome()) txt = ""; } catch (eN) {}
+      if (!txt) { if (el) el.style.display = "none"; return; }
+      if (!el) { el = document.createElement("div"); el.className = "pm-snaprot"; el.setAttribute("aria-live", "off"); el.setAttribute("data-pm", "snaprot"); c.tela.appendChild(el); }
+      el.textContent = txt; el.setAttribute("data-tipo", r.sn.tipo);
+      var rc = c.tela.getBoundingClientRect(), e = pos || st.ultEv;
+      el.style.display = "";
+      if (e) { el.style.left = (e.x - rc.left + 16) + "px"; el.style.top = (e.y - rc.top + 36) + "px"; }
     },
     _paredeDe: function (id) {
       var b = B(), est = null; try { est = b.editarEstado().estado; } catch (e) { return null; }
@@ -728,6 +777,31 @@
       return true;
     },
 
+    /* O Tab: o cursor está sobre a vista que desenhou o último ponto e há mais de um candidato → avança o ciclo e redesenha */
+    _tab: function () {
+      /* cota, tubo e telhado têm o Tab deles (encaixe da cota, ligação A → B, perfil do telhado): aqui não se mexe */
+      var subT = this.ferramenta(); if (!subT || /^(cota|inst|telhado)/.test(subT)) return false;
+      var vmT = global.BimVistaModelar, ativaT = this._vistaAtiva();
+      if (vmT && vmT.tab && ativaT && !this._def(ativaT)) return vmT.tab();   /* corte/elevação na frente: o ciclo é o dela */
+      var id = st.id, P2 = D2(), c = id && P2 && P2._cache ? P2._cache[id] : null, R = Pr(), e = st.ultEv;
+      if (!c || !c.el || !R || !st.cur || !st.cur.lista || st.cur.lista.length < 2 || !e) return false;
+      try { var alvo = document.elementFromPoint(e.x, e.y); if (!alvo || !c.el.contains(alvo)) return false; } catch (eT) { return false; }
+      var cic = R.escolherCiclo(st.ciclo, st.cur.lista, { x: e.x, y: e.y }, true);
+      var sub = this.ferramenta(); if (!cic || !sub) return false;
+      st.cur.sn = cic.sn; st.cur.tabIdx = cic.idx; st.cur.tabN = cic.n;
+      this._aposTabPlanta(id, sub);   /* o ponto do cursor passa a ser o do candidato escolhido (a trava de ângulo volta a valer sobre ele, como em _ponto) */
+      return true;
+    },
+    _aposTabPlanta: function (id, sub) {
+      var r = st.cur; if (!r || !r.sn) return;
+      var Bo = BB(), base = this._base(sub), cfg = Bo ? Bo.cfg(sub) : null, q = P(r.sn.p.x, r.sn.p.z), R = Pr();
+      var forte = !!(R && R.CLASSE[r.sn.sub || r.sn.tipo] <= 1);
+      if (base.ang && Bo && !forte && cfg) { var aj = Bo.ajustarPontoCom(base.ang, q, cfg, !!(st.ultEv && st.ultEv.shift)); if (aj.travado) q = aj.p; }
+      r.p = q; var ref = base.ang || base.snap;
+      r.graus = ref && dist(ref, q) > 1e-9 && Bo ? Bo.grausDe(ref, q) : null; r.dist = ref ? dist(ref, q) : 0;
+      this._desenhar(id);
+    },
+
     /* ------------------------------------------------ teclado */
     /* ⚠ stopImmediatePropagation, não só stopPropagation: o desenho de precisão (js/bimprecisaoui.js)
        também ouve o teclado no DOCUMENTO, na captura — stopPropagation não para ouvintes do mesmo nó,
@@ -740,6 +814,10 @@
       var sub = self.ferramenta(), F = st.forma;
       if (!sub) { if (F) self._formaLimpar(); return; }
       var naPlanta = !!self._def(self._vistaAtiva());
+      /* TAB (23/10/2026): dois encaixes concorrem no cursor (canto × nível, ponta × eixo): o Tab passa para o próximo da lista.
+         Sem mais de um candidato, o Tab segue o caminho de sempre (foco) */
+      if (ev.key === "Tab" && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && self._tab()) { ev.preventDefault(); ev.stopImmediatePropagation(); return; }
+      if (ev.key === "Escape" && !naPlanta && global.BimVistaModelar && global.BimVistaModelar.esc()) { ev.preventDefault(); ev.stopImmediatePropagation(); return; }   /* corte/elevação: o traço em andamento */
       if (ev.key === "Escape") {
         /* 1º Esc encerra o que está em andamento; o 2º sai da ferramenta (segue para a casca) */
         if (F && (F.pts.length || F.picks.length)) { self._formaLimpar(); status("Forma cancelada — clique o 1º ponto de novo, ou Esc para sair."); ev.preventDefault(); ev.stopImmediatePropagation(); return; }
@@ -794,7 +872,7 @@
     estado: function () {
       var F = st.forma;
       return { ativo: this.ativo(), ferramenta: this.ferramenta(), ocupado: this.ocupado(), forma: F ? { sub: F.sub, id: F.f.id, pts: F.pts.length, picks: F.picks.length } : null,
-               cursor: st.cur ? { p: st.cur.p, snap: st.cur.sn ? st.cur.sn.tipo : null, graus: st.cur.graus, dist: st.cur.dist, travado: st.cur.travado } : null,
+               cursor: st.cur ? { p: st.cur.p, snap: st.cur.sn ? st.cur.sn.tipo : null, graus: st.cur.graus, dist: st.cur.dist, travado: st.cur.travado, tabN: st.cur.tabN || 0, tabIdx: st.cur.tabIdx || 0, y: st.cur.sn && st.cur.sn.y != null ? st.cur.sn.y : null } : null,
                digitando: !!st.dig, dubl: !!this.desenho().dubl };
     }
   };

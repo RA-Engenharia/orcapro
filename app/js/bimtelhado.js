@@ -894,6 +894,16 @@
     lis.forEach(function (e, k) { if (!e || !cont[k]) return; cont[k].d = e.d !== false; if (e.d !== false) cont[k].i = e.i; else delete cont[k].i; });
     var pc = prepararContorno(cont, inclP);
     if (!pc.ok) { avisos.push(pc.motivo); return null; }
+    /* N23: onde a platibanda herda a parede de baixo (js/bimcobertura.js), o telhado ANDA até a face de dentro dela (mais a calha embutida,
+       se houver): `extra.recuo` = { arestaOrig: metros para FORA (negativo = para dentro) }. Sem platibanda herdada nada muda. */
+    if (extra && extra.recuo) {
+      var dr = pc.arestas.map(function (a) { return fin(extra.recuo[a.orig]) ? extra.recuo[a.orig] : 0; });
+      if (dr.some(function (v) { return Math.abs(v) > 1e-9; })) {
+        var Pr = deslocar(pc.pts, dr);
+        if (Pr) pc = { ok: true, pts: Pr, arestas: pc.arestas, recuado: true };
+        else avisos.push("O telhado não pôde recuar até a face de dentro da platibanda (a aresta sumiria): confira a espessura da parede de baixo ou a largura da calha.");
+      }
+    }
     var b = Math.max(0, Math.min(LIM.beiral[1], num(f.beiral, 0)));
     /* TELHADO PARAMÉTRICO (T1): a aresta com PLATIBANDA não tem beiral — o telhado é cortado rente à parede (pedido da Casa 487).
        `extra.semBeiral` vem do fim() (as platibandas do replay); sem platibanda, todas as arestas levam o beiral, como antes. */
@@ -1265,11 +1275,14 @@
       if (v !== null && !(fin(v) && v > 0 && v <= 2)) return false;
       algum = true;
     }
+    /* N23: calha de beiral na cota certa (a telha entra na calha, o fundo cai até o bocal) e a declividade dela */
+    if (o.cotaAuto !== undefined) { if (o.cotaAuto !== null && typeof o.cotaAuto !== "boolean") return false; algum = true; }
+    if (o.declividadePct !== undefined) { if (o.declividadePct !== null && !(fin(o.declividadePct) && o.declividadePct >= 0 && o.declividadePct <= 10)) return false; algum = true; }
     return algum;
   }
 
   var CAMPOS = ["modo", "contorno", "inclinacao", "beiral", "nivelId", "base", "deslocBase", "tipoId", "tipoTelhado", "unir", "perfil", "origem", "ang", "inicio", "fim", "inclinacoes", "modelo", "anexarParedes"];
-  var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura"];
+  var CAMPOS_BORDA = ["telhado", "tipoBorda", "arestas", "largura", "altura", "cotaAuto", "declividadePct"];
   function moverPts(l, dx, dz) { return arr(l).map(function (q) { var o = clone(q); o.x = r6(Number(q.x) + dx); o.z = r6(Number(q.z) + dz); return o; }); }
 
   /* T1: as medidas do pacote no orçamento do modelo — acrescentadas ao BimEdit.MEDIDAS_ORC (só chaves novas, nunca troca uma que existe) */
@@ -1424,17 +1437,22 @@
         /* T1: as arestas com PLATIBANDA (ops do js/bimcobertura.js, já no replay) ficam sem beiral — SÓ no telhado com
            `modelo` (revisor T1, 20/10/2026: aplicado a todos, o projeto antigo com platibanda perdia o beiral ao reabrir —
            área, telhamento e orçamento mudavam calados; op sem `modelo` tem de sair igual à de antes) */
-        var semB = {};
+        var semB = {}, herd = {}, semBH = {};
         var CB = ctx.cob; if (CB && CB.plat) arr(CB.ordPlat).forEach(function (pid) {
           var pq = CB.plat[pid]; if (!pq || pq.telhado == null) return;
           var k = String(pq.telhado);
+          /* N23: a platibanda `herdar` vale em QUALQUER telhado (sem beiral onde ela está; o contorno recua até a parede) */
+          if (pq.herdar === true) {
+            if (!Array.isArray(pq.arestas) || !pq.arestas.length) { herd[k] = true; semBH[k] = true; }
+            else if (herd[k] !== true) { var mh = herd[k] || (herd[k] = {}), ms = semBH[k] || (semBH[k] = {}); pq.arestas.forEach(function (o) { mh[Number(o)] = true; ms[Number(o)] = true; }); }
+          }
           if (!Array.isArray(pq.arestas) || !pq.arestas.length) { semB[k] = true; return; }
           if (semB[k] === true) return;
           var m = semB[k] || (semB[k] = {}); pq.arestas.forEach(function (o) { m[Number(o)] = true; });
         });
         saida.telhados = arr(ctx.ordemTe).map(function (id) {
-          var fonte = ctx.telhados[id], sb0 = semB[String(id)] && fonte && fonte.modelo ? semB[String(id)] : null;
-          var t = calcular(fonte, niveis, sb0 ? { semBeiral: sb0 } : null);
+          var fonte = ctx.telhados[id], sb0 = semB[String(id)] && fonte && fonte.modelo ? semB[String(id)] : (semBH[String(id)] || null);
+          var t = calcular(fonte, niveis, sb0 ? { semBeiral: sb0 } : null), sbFinal = sb0;
           /* REVISOR T5: a aresta encostada em parede MAIS ALTA (caixote) fica sem beiral — só no telhado com modelo */
           if (t && t.ok && fonte && fonte.modelo && sb0 !== true && num(t.beiralEf, 0) > 0) {
             var cp = arestasContraParede(t, saida.caixas);
@@ -1444,8 +1462,24 @@
               if (t2 && t2.ok) {
                 t2.semBeiralParede = cp.slice();
                 (t2.avisos = t2.avisos || []).push("Sem beiral na(s) aresta(s) " + cp.map(function (q) { return q + 1; }).join(", ") + ": encostada(s) em parede mais alta que o telhado (o telhado para na parede; rufo e contrarrufo).");
-                t = t2;
+                t = t2; sbFinal = m2;
               }
+            }
+          }
+          /* N23: o telhado recua até a face de dentro da platibanda que herda a parede de baixo (e deixa lugar para a calha embutida) */
+          if (t && t.ok && herd[String(id)] && fonte && fonte.modo !== "extrusao") {
+            var BCm = dep("BimCobertura", "./bimcobertura.js");
+            if (BCm && BCm.recuosHerdados) {
+              var rh = BCm.recuosHerdados(t, saida.caixas, ctx.cob, herd[String(id)]), nrec = Object.keys(rh.recuo).length;
+              if (nrec) {
+                var t3 = calcular(fonte, niveis, { semBeiral: sbFinal || semBH[String(id)] || null, recuo: rh.recuo });
+                if (t3 && t3.ok) {
+                  t3.recuoPlatibanda = rh.recuo;
+                  (t3.avisos = t3.avisos || []).push("O telhado recua até a face de dentro da platibanda (arestas " + Object.keys(rh.recuo).map(function (q) { return (Number(q) + 1) + ": " + String(Math.round(rh.recuo[q] * 1000) / 10).replace(".", ",") + " cm"; }).join("; ") + "), sem beiral.");
+                  t = t3;
+                } else (t.avisos = t.avisos || []).push("Não consegui recuar o telhado até a platibanda: " + (t3 && arr(t3.avisos)[0] ? arr(t3.avisos)[0] : "o contorno ficaria inválido") + ".");
+              }
+              rh.avisos.forEach(function (a) { (t.avisos = t.avisos || []).push(a); });
             }
           }
           porId[String(id)] = t; return t;

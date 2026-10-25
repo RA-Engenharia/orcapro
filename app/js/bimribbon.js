@@ -608,7 +608,13 @@
     "familia-bloco": "conferir-modulacao", "modular": "conferir-modulacao", "junta": "conferir-modulacao", "peso-alvenaria": "conferir-modulacao",
     /* COTAS (13/10/2026): a cota do modelo ponto a ponto (só 3D, solta das peças) → a Cota de Anotar › Cotas
        (3D, planta e corte, presa às peças, valor antes do clique) */
-    "cota-alinhada": "p7-cota-alinhada"
+    "cota-alinhada": "p7-cota-alinhada",
+    /* ORGANIZAÇÃO DE 23/10/2026 — dois botões para a mesma ação saíram da fita:
+       · Modificar › Medir › Medir e Cota (o `fx-medir` e o `fx-cota`): a Trena e a Cota de Anotar já faziam tudo (a medida da
+         planta passou para a própria Trena);
+       · Metálica › Eixo (`met-eixo`: armava o MESMO eixo do `eixo` de Arquitetura) e Metálica › Cotas (`met-cotas`: só levava
+         a Anotar › Cotas). Quem chamar o id antigo (atalho, busca, IA, e2e antiga) cai no substituto. */
+    "fx-medir": "medir", "fx-cota": "p7-cota-alinhada", "met-eixo": "eixo", "met-cotas": "p7-cota-alinhada"
   };
   /* com o MODELADOR ligado o editor sintético da primeira versão sai: o painel
      dele já não abre (pedido de 09/10/2026) e Parede, Piso, Pilar, Viga, o

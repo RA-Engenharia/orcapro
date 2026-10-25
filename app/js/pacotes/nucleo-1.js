@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.180",
+versao: "1.2.181",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -1661,6 +1661,7 @@ var DISCIPLINAS = [
 var IDS = DISCIPLINAS.map(function (d) { return d.id; });
 var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }, { id: "pranchaviva", nome: "Prancha Viva — a prancha que abre o 3D no ponto tocado" }];
 var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
+var POR_TIER = { bim: "*" };
 var DEMO_URL = false;
 try { DEMO_URL = /[?&]demo=1\b/.test((global.location && global.location.search) || ""); } catch (e) {}
 function num(x) { x = Number(x); return isFinite(x) ? x : 0; }
@@ -1669,6 +1670,7 @@ var Modela = {
 DISCIPLINAS: DISCIPLINAS,
 IDS: IDS,
 EXTRAS: EXTRAS,
+POR_TIER: POR_TIER,
 IDS_EXTRAS: IDS_EXTRAS,
 TESTE_MS: TESTE_MS,
 GRACE_MS: GRACE_MS,
@@ -1695,6 +1697,15 @@ var vitalicia = !!e.vitaliciaLocal || !!(cacheValido && c.vitalicia === true);
 var equipe = !!e.equipeLocal || !!(cacheValido && c.filha === true);
 var tudoLic = (vitalicia && !equipe) || !!(cacheValido && c.tudo === true);
 if (tudoLic) IDS_EXTRAS.forEach(function (id) { extras[id] = true; });
+var porTier = {}, tierTudo = false;
+if (!e.suspensa) {
+var TODOS = IDS.concat(IDS_EXTRAS);
+if (cacheValido && c.porTier) TODOS.forEach(function (id) { if (num(c.porTier[id]) > agora) porTier[id] = true; });
+if (cacheValido && num(c.tierTudo) > agora) tierTudo = true;
+if (e.bimLocal && POR_TIER.bim === "*") { tierTudo = true; TODOS.forEach(function (id) { porTier[id] = true; }); }
+IDS_EXTRAS.forEach(function (id) { if (porTier[id]) extras[id] = true; });
+IDS.forEach(function (id) { if (porTier[id] && !compradas[id]) { compradas[id] = (cacheValido && c.porTier && num(c.porTier[id])) || Date.UTC(2999, 11, 31); lista.push(id); } });
+}
 var ini = 0;
 [num(e.testeLocal), c && c.teste ? num(c.teste.inicio) : 0].forEach(function (x) { if (x > 0 && (!ini || x < ini)) ini = x; });
 var fim = ini ? ini + TESTE_MS : 0;
@@ -1717,7 +1728,7 @@ if (est1[id] === "teste") { extras[id] = true; em1[id] = 1; }
 else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
 });
 var out = {
-liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
+liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras, porTier: porTier, tierTudo: tierTudo,
 teste: teste, vitalicia: vitalicia, tudo: tudoLic, equipe: equipe, demo: demo, play: play,
 podeComprar: !play && !demo && !tudoLic, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
 revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
@@ -1727,6 +1738,7 @@ function tudo(motivo) { out.liberado = true; out.completo = true; out.disciplina
 if (demo) return tudo("demo");
 if (vitalicia) return tudo("vitalicia");
 if (tudoLic) return tudo("interno");
+if (tierTudo) return tudo("bim");
 if (lista.length === IDS.length) return tudo("compra");
 if (teste.ativo) return tudo("teste");
 if (teste.disponivel) return tudo("teste-disponivel");
@@ -1768,6 +1780,17 @@ _equipeLocal: function () {
 var L = this._lic(); if (!L) return false;
 try { var st = L.status(); return !!(st && st.tipoLicenca === "equipe"); } catch (e) { return false; }
 },
+_bimLocal: function () {
+var L = this._lic(); if (!L) return false;
+try {
+var st = L.status();
+return !!(st && st.ativo && !st.trial && !st.expirada && String(st.tier || "").toLowerCase() === "bim");
+} catch (e) { return false; }
+},
+_suspensaLocal: function () {
+var L = this._lic(); if (!L) return false;
+try { var st = L.status(); return !!(st && st.suspensa); } catch (e) { return false; }
+},
 _demo: function () { try { return DEMO_URL || !!(global.App && global.App._demo); } catch (e) { return DEMO_URL; } },
 _play: function () {
 try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
@@ -1776,6 +1799,7 @@ try { return global.document.documentElement.getAttribute("data-origem") === "pl
 _entrada: function (semEstados) {
 var l = this._ler();
 var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(), equipeLocal: this._equipeLocal(),
+bimLocal: this._bimLocal(), suspensa: this._suspensaLocal(),
 chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
 var TM = global.TesteModulo;
 try {
@@ -1810,7 +1834,7 @@ return s;
 },
 tem: function (id) {
 var s = this.status(), k = String(id || "").toLowerCase();
-if (s.tudo) return true;
+if (s.tudo || s.tierTudo) return true;
 if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);
 if (!s.liberado) return false;
 if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
@@ -1827,9 +1851,10 @@ _aplicar: function (d) {
 if (!d || d.ok !== true) return false;
 this._memo = null; this._memoBase = null;
 var l = this._ler(), antes = JSON.stringify(this.status());
-var dis = {};
+var dis = {}, dst = {};
 IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
-l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis,
+IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.porTier && num(d.porTier[id]); if (a > 0) dst[id] = a; });
+l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis, porTier: dst, tierTudo: num(d.tierTudo),
 teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
 this._gravar(l);
 var mudou = JSON.stringify(this.status()) !== antes;
@@ -1868,16 +1893,25 @@ global.fetch(srv + "/api/modela/teste", { method: "POST", headers: this._cab(tru
 },
 iniciarTeste: function (cb) {
 var s = this.status();
-if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
+if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.tierTudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
 var l = this._ler();
 if (!num(l.testeLocal)) { l.testeLocal = Date.now(); this._gravar(l); this._avisar(); }
 this._ancorar(cb);
 return true;
 },
+brl: function (v) { v = Math.round((Number(v) || 0) * 100) / 100; return "R$ " + v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "."); },
+textoPlano: function (p) {
+if (!p) return "";
+var t = (p.nome || "") + " — " + this.brl(p.valor) + (p.periodo ? " · " + p.periodo : "");
+var n = Number(p.parcelasMax) || 0;
+if (n > 1) t += " · até " + n + "× de " + this.brl(Number(p.valor) / n) + " no cartão";
+if (Number(p.valorAVista) > 0 && Number(p.valorAVista) < Number(p.valor)) t += (n > 1 ? " ou " : " · ") + this.brl(p.valorAVista) + " à vista";
+return t;
+},
 urlCompra: function (plano) {
 var srv = this._servidor(); if (!srv) return "";
 var p = String(plano || "modela_completo_mensal");
-if (!/^modela_[a-z]+_(mensal|anual)$/.test(p)) p = "modela_completo_mensal";
+if (!/^modela_[a-z]+_(mensal|anual|vitalicio)$/.test(p)) p = "modela_completo_mensal";
 var k = this._chave();
 return srv + "/modelagem?plano=" + encodeURIComponent(p) + (k ? "#lic=" + encodeURIComponent(k) : "");
 }
@@ -1902,12 +1936,15 @@ try {
 var CHAVE = "orcapro:tela:bim-modelador:v1";
 var OFF = "orcapro:tela:bim-modelador:off";
 var HIDRO_OFF = "orcapro:tela:bim-hidro:off";
+var VIVO = "orcapro:tela:bim-rendervivo:on";
 try {
 var q = (global.location && global.location.search) || "";
 if (/[?&]previa=[^&]*modelador-desligar/i.test(q)) global.localStorage.setItem(OFF, "1");
 else if (/[?&]previa=[^&]*modelador(?!-desligar)/i.test(q)) global.localStorage.removeItem(OFF);
 if (/[?&]previa=[^&]*hidro-desligar/i.test(q)) global.localStorage.setItem(HIDRO_OFF, "1");
 else if (/[?&]previa=[^&]*hidro(?!-desligar)/i.test(q)) global.localStorage.removeItem(HIDRO_OFF);
+if (/[?&]previa=[^&]*rendervivo-desligar/i.test(q)) global.localStorage.removeItem(VIVO);
+else if (/[?&]previa=[^&]*rendervivo(?!-desligar)/i.test(q)) global.localStorage.setItem(VIVO, "1");
 } catch (e) {}
 var BimPrevia = {
 CHAVE: CHAVE,
@@ -1927,6 +1964,8 @@ var M = BimPrevia._modela(); if (!M) return true;
 try { var sM = M.status(); return !!sM.liberado || !!sM.visivel1h || BimPrevia._marm(); } catch (e) { return true; }
 },
 HIDRO_OFF: HIDRO_OFF,
+VIVO: VIVO,
+renderVivo: function () { try { return global.localStorage.getItem(VIVO) === "1"; } catch (e) { return false; } },
 hidro: function () {
 if (!BimPrevia.modelador()) return false;
 try { return global.localStorage.getItem(HIDRO_OFF) !== "1"; } catch (e) { return true; }
@@ -1977,6 +2016,7 @@ try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number
 if (s && s.demo) mot = "demo";
 else if (s && s.vitalicia) mot = "vitalicia";
 else if (s && s.tudo) mot = "interno";
+else if (!comprado && s && s.porTier && s.porTier[ID]) mot = "bim";
 else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
 else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
 return { liberado: true, motivo: mot, teste: s ? s.teste : null };
@@ -2001,7 +2041,7 @@ return !Object.keys(s.compradas || {}).length;
 iniciarTeste: function (cb) { var m = M(); if (!m || !m.iniciarTeste) { if (cb) cb({ ok: false }); return false; } return m.iniciarTeste(cb); },
 planosAVenda: function (oferta) {
 var p = (oferta && oferta.planos) || {};
-return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+return Object.keys(p).filter(function (k) { return /^modela_marmoraria_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista, descontoAVista: o.descontoAVista }; });
 }
 };
 global.MarmModulo = MarmModulo;
@@ -2024,8 +2064,10 @@ itens: [
 "Volte para a prancha no mesmo ponto em que estava no 3D.",
 "Mande para o celular do cliente pelo link e QR da obra, com as pranchas e a maquete em realidade aumentada."
 ],
+incluidoNoBim: "Já inclusa no plano BIM do OrçaPRO, enquanto a licença estiver em dia.",
 vendaFechada: "A venda do módulo abre em breve. Para usar agora, fale com a RA Engenharia."
 };
+function brl(v) { v = Math.round((Number(v) || 0) * 100) / 100; return "R$ " + v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
 function M() { return global.Modela && typeof global.Modela.tem === "function" ? global.Modela : null; }
 function dono() { try { return !!(global.localStorage && global.localStorage.getItem(OWNER) === "1"); } catch (e) { return false; } }
 var PranchaVivaModulo = {
@@ -2040,6 +2082,7 @@ var mot = "compra", comprado = false;
 try { var c = m._ler && m._ler().srv; comprado = !!(c && c.disciplinas && Number(c.disciplinas[ID]) > Date.now()); } catch (e3) {}
 if (s && s.demo) mot = "demo";
 else if (!comprado && s && s.tudo) mot = s.vitalicia ? "vitalicia" : "interno";
+else if (!comprado && s && s.porTier && s.porTier[ID]) mot = "bim";
 else if (!comprado && s && s.teste && s.teste.ativo) mot = "teste";
 else if (!comprado && s && s.teste1h && s.teste1h[ID]) mot = "teste-1h";
 return { liberado: true, motivo: mot, teste: s ? s.teste : null };
@@ -2054,7 +2097,15 @@ return { ok: false, acao: acao || "", motivo: "A " + OFERTA.titulo + " não est�
 iniciarTeste: function (cb) { var m = M(); if (!m || !m.iniciarTeste) { if (cb) cb({ ok: false }); return false; } return m.iniciarTeste(cb); },
 planosAVenda: function (oferta) {
 var p = (oferta && oferta.planos) || {};
-return Object.keys(p).filter(function (k) { return /^modela_pranchaviva_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico }; });
+return Object.keys(p).filter(function (k) { return /^modela_pranchaviva_/.test(k); }).map(function (k) { var o = p[k]; return { id: k, nome: o.nome, valor: o.valor, periodo: o.periodo, unico: !!o.unico, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista, descontoAVista: o.descontoAVista }; });
+},
+textoPlano: function (p) {
+if (!p) return "";
+var t = (p.nome || "Prancha Viva") + " — " + brl(p.valor) + (p.periodo ? " · " + p.periodo : "");
+var n = Number(p.parcelasMax) || 0;
+if (n > 1) t += " · até " + n + "× de " + brl(Number(p.valor) / n) + " no cartão";
+if (Number(p.valorAVista) > 0 && Number(p.valorAVista) < Number(p.valor)) t += (n > 1 ? " ou " : " · ") + brl(p.valorAVista) + " à vista";
+return t;
 }
 };
 global.PranchaVivaModulo = PranchaVivaModulo;
@@ -2224,7 +2275,7 @@ var o = {};
 "colaboradores", "frota", "requisicoes", "epi", "faltas", "templates", "documentos", "pesos_bloco", "epi_catalogo",
 "fiscal", "patrimonio", "estoque_mov", "prop_modelos", "producao_med", "producao_preco", "composicoes_proprias",
 "bim_niveis", "tour360", "bim_modelos", "bim_conjuntos", "bim_vistas", "bim_familias", "bim_estrut", "bim_sondagens",
-"bim_pranchas", "obra_docs", "doc_assinantes", "bim_pesos_esp", "bim_icamento", "bim_materiais", "bim_clash_testes",
+"bim_pranchas", "bim_cenas", "obra_docs", "doc_assinantes", "bim_pesos_esp", "bim_icamento", "bim_materiais", "bim_clash_testes",
 "bim_clash_resultados", "bim_orc_vinculos", "bim_tarefas", "bim_4d_aparencias", "atividades", "horas_extras", "batidas",
 "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
 "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
@@ -3122,7 +3173,7 @@ requisicoes: "Requisições", rdo: "Diário de Obra", colaboradores: "Equipe", e
 crono_obra: "Cronograma da obra", aditivos: "Termos aditivos", _lapides: "registro de exclusões",
 crono_selo: "Linhas de base seladas", crono_alt: "Histórico de alterações do cronograma",
 bim_vistas: "Pontos de vista do BIM", composicoes_proprias: "Composições próprias", prop_modelos: "Modelos de proposta",
-bim_pranchas: "Pranchas do projeto", cotacoes: "Cotações", centrocusto: "Centros de custo", fiscal: "Notas fiscais",
+bim_pranchas: "Pranchas do projeto", bim_cenas: "Cenas do OrçaPRO Cena", cotacoes: "Cotações", centrocusto: "Centros de custo", fiscal: "Notas fiscais",
 obra_docs: "Documentos da obra", familias: "Famílias", bim_icamento: "Plano de içamento", fs_lancamentos: "Folha semanal",
 batidas: "Ponto (batidas)", estoque_mov: "Movimento do almoxarifado", templates: "Modelos", _syncmarcas: "marcas da sincronização" },
 nomeEntidade: function (entidade) {
@@ -52856,6 +52907,187 @@ global.Escala = Escala;
 if (typeof module !== "undefined" && module.exports) module.exports = Escala;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/graftip.js ==== */
+try {
+(function (global) {
+"use strict";
+function esc(s) {
+return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+var COR_OK = /^(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})$/;
+function corSegura(c) { return COR_OK.test(String(c || "")) ? String(c) : ""; }
+function codificar(c) { return JSON.stringify(c || {}); }
+function decodificar(txt) {
+var o;
+try { o = JSON.parse(String(txt)); } catch (e) { return null; }
+if (!o || typeof o !== "object") return null;
+var linhas = [];
+(Array.isArray(o.l) ? o.l : []).forEach(function (x) {
+if (!Array.isArray(x) || x.length < 2) return;
+linhas.push([String(x[0]), String(x[1]), corSegura(x[2])]);
+});
+var t = o.t == null ? "" : String(o.t), r = o.r == null ? "" : String(o.r);
+if (!t && !linhas.length && !r) return null;
+return { t: t, l: linhas, r: r };
+}
+function html(c) {
+if (!c) return "";
+var h = "";
+if (c.t) h += '<div class="gt-t">' + esc(c.t) + "</div>";
+(c.l || []).forEach(function (x) {
+h += '<div class="gt-l">' + (x[2] ? '<i style="background:' + esc(x[2]) + '"></i>' : "<i></i>") + "<span>" + esc(x[0]) + "</span><b>" + esc(x[1]) + "</b></div>";
+});
+if (c.r) h += '<div class="gt-r">' + esc(c.r) + "</div>";
+return h;
+}
+function posicionar(x, y, w, h, vw, vh, folga, desl) {
+folga = folga == null ? 8 : folga; desl = desl == null ? 14 : desl;
+var px = x + desl, py = y + desl;
+if (px + w + folga > vw) px = x - desl - w;
+if (py + h + folga > vh) py = y - desl - h;
+px = Math.max(folga, Math.min(px, vw - w - folga));
+py = Math.max(folga, Math.min(py, vh - h - folga));
+return { x: Math.round(px), y: Math.round(py) };
+}
+function alternar(offTxt, serie, total) {
+var off = String(offTxt || "").split(/\s+/).filter(Boolean);
+var i = off.indexOf(serie);
+if (i > -1) off.splice(i, 1);
+else {
+if (total != null && off.length + 1 >= total) return off.join(" ");
+off.push(serie);
+}
+return off.join(" ");
+}
+var GrafTip = { esc: esc, codificar: codificar, decodificar: decodificar, html: html, posicionar: posicionar, alternar: alternar, corSegura: corSegura };
+var ligado = false;
+GrafTip.ligar = function (doc) {
+doc = doc || (typeof document !== "undefined" ? document : null);
+if (!doc || ligado) return false;
+ligado = true;
+try { doc.documentElement.classList.add("gt-ativo"); } catch (eCl) {}
+var win = doc.defaultView || global;
+var tip = null, atual = null, armado = null, bloqueiaClick = false, timer = null;
+function caixa() {
+if (tip && tip.parentNode) return tip;
+tip = doc.createElement("div");
+tip.id = "gt-tip"; tip.className = "gt-tip"; tip.setAttribute("role", "tooltip"); tip.hidden = true;
+doc.body.appendChild(tip);
+return tip;
+}
+function alvoDe(n) { return n && n.closest ? n.closest("[data-gt]") : null; }
+function esconder() {
+if (timer) { win.clearTimeout(timer); timer = null; }
+if (tip) tip.hidden = true;
+if (atual) { try { atual.removeAttribute("aria-describedby"); } catch (e) {} }
+atual = null;
+}
+function mostrar(el, x, y) {
+var c = decodificar(el.getAttribute("data-gt"));
+if (!c) return;
+var t = caixa();
+if (atual !== el) {
+t.innerHTML = html(c);
+if (atual) { try { atual.removeAttribute("aria-describedby"); } catch (e) {} }
+try { el.setAttribute("aria-describedby", "gt-tip"); } catch (e2) {}
+atual = el;
+}
+t.hidden = false;
+var p = posicionar(x, y, t.offsetWidth, t.offsetHeight, win.innerWidth || 1024, win.innerHeight || 768);
+t.style.left = p.x + "px"; t.style.top = p.y + "px";
+}
+function ancora(el) {
+var r = el.getBoundingClientRect();
+return { x: r.left + r.width / 2, y: r.top + Math.min(r.height / 2, 24) };
+}
+function destacar(el, ligarOuDesligar) {
+var k = el && el.getAttribute ? el.getAttribute("data-gt-k") : null;
+if (!k) return;
+var raiz = el.closest("[data-gt-grafico]") || el.parentNode;
+if (!raiz || !raiz.querySelectorAll) return;
+var par = raiz.querySelectorAll("[data-gt-k]");
+for (var i = 0; i < par.length; i++) {
+if (ligarOuDesligar && par[i].getAttribute("data-gt-k") === k) par[i].classList.add("gt-hl");
+else par[i].classList.remove("gt-hl");
+}
+if (ligarOuDesligar) raiz.classList.add("gt-tem-hl"); else raiz.classList.remove("gt-tem-hl");
+}
+doc.addEventListener("pointermove", function (e) {
+if (e.pointerType === "touch") return;
+var el = alvoDe(e.target);
+if (!el) { if (atual && !(doc.activeElement && doc.activeElement === atual)) esconder(); return; }
+mostrar(el, e.clientX, e.clientY);
+}, true);
+doc.addEventListener("pointerover", function (e) {
+if (e.pointerType === "touch") return;
+var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
+if (k) destacar(k, true);
+}, true);
+doc.addEventListener("pointerout", function (e) {
+var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
+if (k) destacar(k, false);
+if (e.pointerType !== "touch" && alvoDe(e.target) && !alvoDe(e.relatedTarget)) esconder();
+}, true);
+doc.addEventListener("focusin", function (e) {
+var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
+if (k) destacar(k, true);
+var el = alvoDe(e.target);
+if (!el) return;
+var a = ancora(el); mostrar(el, a.x, a.y);
+});
+doc.addEventListener("focusout", function (e) {
+var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
+if (k) destacar(k, false);
+if (alvoDe(e.target)) esconder();
+});
+doc.addEventListener("keydown", function (e) {
+if (e.key === "Escape" && atual) { esconder(); return; }
+if ((e.key === "Enter" || e.key === " ") && e.target && e.target.hasAttribute && e.target.hasAttribute("data-gt") && (e.target.hasAttribute("data-gacao") || e.target.hasAttribute("data-view"))) {
+e.preventDefault();
+e.target.dispatchEvent(new win.MouseEvent("click", { bubbles: true, cancelable: true }));
+}
+});
+doc.addEventListener("pointerdown", function (e) {
+if (e.pointerType !== "touch") return;
+var el = alvoDe(e.target);
+if (!el) { esconder(); armado = null; return; }
+if (armado === el) { bloqueiaClick = false; return; }
+armado = el; bloqueiaClick = el.hasAttribute("data-gacao") || el.hasAttribute("data-view");
+mostrar(el, e.clientX, e.clientY);
+if (timer) win.clearTimeout(timer);
+timer = win.setTimeout(function () { esconder(); armado = null; }, 4500);
+}, true);
+doc.addEventListener("click", function (e) {
+if (!bloqueiaClick) return;
+bloqueiaClick = false;
+if (alvoDe(e.target)) { e.stopPropagation(); e.preventDefault(); }
+}, true);
+doc.addEventListener("click", function (e) {
+var bt = e.target && e.target.closest ? e.target.closest("[data-gt-serie-bt]") : null;
+if (!bt) return;
+var raiz = bt.closest("[data-gt-grafico]");
+if (!raiz) return;
+var serie = bt.getAttribute("data-gt-serie-bt");
+var total = raiz.querySelectorAll("[data-gt-serie-bt]").length;
+var novo = alternar(raiz.getAttribute("data-off") || "", serie, total);
+if (novo) raiz.setAttribute("data-off", novo); else raiz.removeAttribute("data-off");
+var todos = raiz.querySelectorAll("[data-gt-serie-bt]");
+for (var i = 0; i < todos.length; i++) {
+var lig = (" " + novo + " ").indexOf(" " + todos[i].getAttribute("data-gt-serie-bt") + " ") < 0;
+todos[i].setAttribute("aria-pressed", lig ? "true" : "false");
+}
+esconder();
+});
+return true;
+};
+global.GrafTip = GrafTip;
+if (typeof module !== "undefined" && module.exports) module.exports = GrafTip;
+if (typeof document !== "undefined" && document.addEventListener) {
+var iniciar = function () { try { GrafTip.ligar(document); } catch (e) {} };
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar); else iniciar();
+}
+})(typeof window !== "undefined" ? window : this);
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/atencao.js ==== */
 try {
 (function (global) {
@@ -68701,7 +68933,7 @@ var ims = []; g.grupo.traverse(function (o) { if (o.isInstancedMesh) ims.push(o)
 ims.forEach(function (o) { try { o.dispose(); } catch (e) {} });
 });
 estado.grupos = [];
-estado.escondidas.forEach(function (m) { m.visible = true; }); estado.escondidas = [];
+estado.escondidas.forEach(function (m) { m.visible = true; if (m.userData) m.userData._alvOculta = false; }); estado.escondidas = [];
 }
 function desenhar(st) {
 var api = estado.api; if (!api || !api.THREE) return null;
@@ -68788,8 +69020,8 @@ var api = estado.api, S = api && api.S; if (!S || !S.modelRoot) return;
 S.modelRoot.traverse(function (m) {
 if (!m.isMesh) return; var ud = m.userData || {};
 if (ud.mid === "edit" && String(ud.expressID) === String(id)) {
-if (!mostra) { if (m.visible) { m.visible = false; estado.escondidas.push(m); } }
-else if (!m.visible && estado.escondidas.indexOf(m) >= 0) { m.visible = true; estado.escondidas.splice(estado.escondidas.indexOf(m), 1); }
+if (!mostra) { if (m.visible) { m.visible = false; m.userData._alvOculta = true; estado.escondidas.push(m); } }
+else if (!m.visible && estado.escondidas.indexOf(m) >= 0) { m.visible = true; m.userData._alvOculta = false; estado.escondidas.splice(estado.escondidas.indexOf(m), 1); }
 }
 });
 }
@@ -75607,8 +75839,9 @@ var abre = motivo || (est === "teste" ? "Você está testando <b>" + esc(nome) +
 : "O teste de 1 hora de <b>" + esc(nome) + "</b> terminou. O que você fez continua salvo e visível; para editar e exportar, compre o módulo.");
 h.push("<p data-teste-oferta=\"" + esc(id) + "\">" + (motivo ? esc(motivo) : abre) + "</p>");
 if (m && m.oque) h.push("<p class=\"muted\" style=\"margin-top:8px\">" + esc(m.oque) + "</p>");
-if (arr(extra.planos).length) {
+if (arr(extra.planos).length && !play()) {
 h.push("<ul style=\"margin:8px 0 0 18px\">" + extra.planos.map(function (p) {
+if (p.parcelasMax > 1 && global.Modela && Modela.textoPlano) return "<li>" + esc(Modela.textoPlano(p)) + "</li>";
 return "<li><b>" + esc(p.nome) + "</b> — R$ " + esc(fmt(p.valor)) + " " + esc(p.periodo || "") + "</li>";
 }).join("") + "</ul>");
 }
@@ -75634,7 +75867,7 @@ var alvo = m.tipo === "disciplina" ? m.disciplina : m.extra, k = self._chave();
 try {
 global.fetch(srv + "/api/modela/oferta", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (d) {
 var p = (d && d.planos) || {}, re = new RegExp("^modela_" + alvo + "_");
-var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo }; });
+var lista = Object.keys(p).filter(function (x) { return re.test(x); }).map(function (x) { var o = p[x]; return { id: x, nome: o.nome, valor: o.valor, periodo: o.periodo, parcelasMax: o.parcelasMax, valorAVista: o.valorAVista }; });
 if (!lista.length) { cb({ semVenda: true, zap: zapUrl }); return; }
 cb({ planos: lista, url: srv + "/modelagem?plano=" + encodeURIComponent(lista[0].id) + (k ? "#lic=" + encodeURIComponent(k) : ""), zap: zapUrl });
 }, function () { cb({ zap: zapUrl }); });

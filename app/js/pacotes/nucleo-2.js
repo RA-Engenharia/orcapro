@@ -195,6 +195,7 @@ lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
 producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
 bim_estrut: 1,
 bim_sondagens: 1, bim_pranchas: 1,
+bim_cenas: 1,
 obra_docs: 1,
 bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
 bim_orc_vinculos: 1,
@@ -1545,20 +1546,39 @@ if (a.tipo === "acaoGestao") return '<button class="' + cls + '" data-gacao="' +
 if (a.tipo === "acaoBotao") return '<button class="' + cls + '" data-acao="' + e(a.valor) + '">' + texto + "</button>";
 return '<button class="' + cls + '" data-view="' + e(a.valor) + '">' + texto + "</button>";
 },
-_pnMiniBarras: function (vals, cor, rotulos, fmt) {
+_pnGt: function (titulo, linhas, rodape) {
+if (typeof GrafTip === "undefined") return "";
+return ' data-gt="' + Util.esc(GrafTip.codificar({ t: titulo, l: linhas || [], r: rodape || "" })) + '"';
+},
+grafIr: function (d) {
+var dest = d && d.destino;
+if (dest === "painel-obra") { if (d.id) this.dashTrocaObra(d.id); return; }
+if (dest === "metas") return this.metasForm();
+if (dest === "financeiro") {
+var ob = this._dashObra;
+this._finObra = (typeof ob === "string" && ob && ob !== "todas") ? ob : "todas";
+return App.irPara("financeiro");
+}
+if (dest === "medicoes") return App.irPara("medicoes");
+},
+_pnMiniBarras: function (vals, cor, rotulos, fmt, serie) {
 if (!vals || !vals.length) return "";
-var W = 120, H = 40, n = vals.length, gap = 3, bw = Math.max(3, (W - gap * (n - 1)) / n);
+var W = 240, H = 48, n = vals.length, passo = W / n, bw = Math.min(16, passo * 0.5);
 var max = Math.max.apply(null, vals.concat([0])), min = Math.min.apply(null, vals.concat([0]));
 var esp = (max - min) || 1, y0 = 2 + (max - 0) / esp * (H - 4);
-var e = Util.esc, svg = '<svg class="pn-mini" viewBox="0 0 ' + W + " " + H + '" aria-hidden="true">';
+var self = this, e = Util.esc, svg = '<svg class="pn-mini" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">';
 vals.forEach(function (v, i) {
 var y = 2 + (max - v) / esp * (H - 4), top = Math.min(y, y0), h = Math.max(1, Math.abs(y - y0));
-svg += '<rect x="' + (i * (bw + gap)).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + cor + '"' + (i === n - 1 ? "" : ' opacity=".55"') + '><title>' + e(rotulos[i]) + ": " + e(fmt(v)) + "</title></rect>";
+svg += '<rect x="' + (i * passo + (passo - bw) / 2).toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5" fill="' + cor + '"' + (i === n - 1 ? "" : ' opacity=".55"') + "/>";
+});
+vals.forEach(function (v, i) {
+svg += '<rect class="g-hit" x="' + (i * passo).toFixed(1) + '" y="0" width="' + passo.toFixed(1) + '" height="' + H + '"' + self._pnGt(rotulos[i], [[serie || "Valor", Util.fmtMoeda(v), cor]], "") + "/>";
 });
 return svg + "</svg>";
 },
 _pnTile: function (o) {
-return '<div class="pn-tile ' + (o.cls || "") + '"' + (o.titulo ? ' title="' + Util.esc(o.titulo) + '"' : "") + '><div class="pn-tile-cab"><span class="pn-tile-rot">' + o.rotulo + "</span>" + (o.delta || "") + "</div>"
+var ir = o.ir ? ' data-gacao="graf-ir" data-destino="' + o.ir + '" tabindex="0" role="link"' : "";
+return '<div class="pn-tile ' + (o.cls || "") + '"' + ir + (o.titulo ? this._pnGt(o.rotulo, [["Valor exato", o.titulo]], o.ir === "medicoes" ? "Clique: abrir as Medições" : (o.ir ? "Clique: abrir o Financeiro" : "")) : "") + '><div class="pn-tile-cab"><span class="pn-tile-rot">' + o.rotulo + "</span>" + (o.delta || "") + "</div>"
 + '<div class="pn-tile-val">' + o.valor + "</div>"
 + (o.sub ? '<div class="pn-tile-sub">' + o.sub + "</div>" : "")
 + (o.mini ? '<div class="pn-tile-mini">' + o.mini + "</div>" : "") + "</div>";
@@ -1589,19 +1609,21 @@ if (min < 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0).toFixed
 var y0 = y(0);
 porMes.forEach(function (m, i) {
 var c = xc(i);
-[["recebido", "var(--graf-a)", -1], ["pago", "var(--graf-b)", 1]].forEach(function (s) {
+[["recebido", "var(--graf-a)", -1, "a"], ["pago", "var(--graf-b)", 1, "b"]].forEach(function (s) {
 var v = m[s[0]], top = Math.min(y(v), y0), h = Math.max(0, Math.abs(y(v) - y0));
 var x0 = s[2] < 0 ? c - bw - gap / 2 : c + gap / 2;
-if (h > 0) svg += '<path class="pn-barra" d="' + self._barraTopo(x0, top, bw, h, 3) + '" fill="' + s[1] + '"/>';
+if (h > 0) svg += '<path class="pn-barra" data-gt-serie="' + s[3] + '" d="' + self._barraTopo(x0, top, bw, h, 3) + '" fill="' + s[1] + '"/>';
 });
 });
-if (anterior && anterior.length === n) svg += '<polyline class="g-linha tracejada" points="' + anterior.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); }).join(" ") + '" stroke="var(--graf-prev)"/>';
+if (anterior && anterior.length === n) svg += '<polyline class="g-linha tracejada" data-gt-serie="p" points="' + anterior.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); }).join(" ") + '" stroke="var(--graf-prev)"/>';
 var pts = porMes.map(function (m, i) { return xc(i).toFixed(1) + "," + y(m.saldo).toFixed(1); });
-svg += '<polyline class="g-linha" points="' + pts.join(" ") + '" stroke="var(--graf-c)"/>'
-+ '<circle class="g-fim" cx="' + xc(n - 1).toFixed(1) + '" cy="' + y(ult.saldo).toFixed(1) + '" r="4.5" fill="var(--graf-c)"/>';
+svg += '<polyline class="g-linha" data-gt-serie="c" points="' + pts.join(" ") + '" stroke="var(--graf-c)"/>'
++ '<circle class="g-fim" data-gt-serie="c" cx="' + xc(n - 1).toFixed(1) + '" cy="' + y(ult.saldo).toFixed(1) + '" r="4.5" fill="var(--graf-c)"/>';
 porMes.forEach(function (m, i) {
 var c = xc(i), x0 = padL + slot * i, ant = anterior && anterior[i];
-svg += '<g class="g-col"><rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
+var fmx = Util.fmtMoeda, linhasGt = [["Recebido", fmx(m.recebido), "var(--graf-a)"], ["Pago", fmx(m.pago), "var(--graf-b)"], ["Resultado do mês", fmx(m.recebido - m.pago)], ["Saldo acumulado", fmx(m.saldo), "var(--graf-c)"]];
+if (ant) linhasGt.push(["Período anterior (" + rot(ant.mes) + "): saldo", fmx(ant.saldo), "var(--graf-prev)"]);
+svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(rot(m.mes) + ": recebido " + fk(m.recebido) + ", pago " + fk(m.pago) + ", saldo " + fk(m.saldo)) + '" data-gacao="graf-ir" data-destino="financeiro"' + self._pnGt(rot(m.mes), linhasGt, "Clique: abrir o Financeiro") + '><rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
 + '<line class="g-guia" x1="' + c.toFixed(1) + '" y1="' + padT + '" x2="' + c.toFixed(1) + '" y2="' + (padT + ih) + '"/>'
 + '<circle class="g-pt" cx="' + c.toFixed(1) + '" cy="' + y(m.saldo).toFixed(1) + '" r="4" fill="var(--graf-c)"/>'
 + '<g class="g-ler"><rect class="g-ler-fundo" x="' + (padL - 2) + '" y="' + (padT - 14) + '" width="' + (iw + 4) + '" height="14" rx="3"/>'
@@ -1612,10 +1634,14 @@ var passo = Math.max(1, Math.ceil(n / 6));
 if (i % passo === (n - 1) % passo) svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + c.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
 });
 svg += "</svg>";
-return svg + '<div class="g-legenda"><span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-a)"></i>Recebido <b>' + e(fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0))) + '</b></span>'
-+ '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-b)"></i>Pago <b>' + e(fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0))) + '</b></span>'
-+ '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-c)"></i>Saldo ao final <b>' + e(fk(ult.saldo)) + "</b></span>"
-+ (anterior ? '<span class="g-leg"><i class="g-leg-cor tracejada" style="color:var(--graf-prev)"></i>Saldo do período anterior <b>' + e(fk(anterior[anterior.length - 1].saldo)) + "</b></span>" : "") + "</div>";
+var btLeg = function (serie, corCss, rot, valor, extra) {
+return '<button type="button" class="g-leg" data-gt-serie-bt="' + serie + '" aria-pressed="true" title="Mostrar ou esconder: ' + e(rot) + '"><i class="g-leg-cor' + (extra || "") + '" style="' + corCss + '"></i>' + rot + " <b>" + e(valor) + "</b></button>";
+};
+return '<div class="gt-graf" data-gt-grafico>' + svg + '<div class="g-legenda">'
++ btLeg("a", "background:var(--graf-a)", "Recebido", fk(porMes.reduce(function (t, m) { return t + m.recebido; }, 0)))
++ btLeg("b", "background:var(--graf-b)", "Pago", fk(porMes.reduce(function (t, m) { return t + m.pago; }, 0)))
++ btLeg("c", "background:var(--graf-c)", "Saldo ao final", fk(ult.saldo))
++ (anterior ? btLeg("p", "color:var(--graf-prev)", "Saldo do período anterior", fk(anterior[anterior.length - 1].saldo), " tracejada") : "") + "</div></div>";
 },
 _pnSvgPrevisao: function (p) {
 var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
@@ -1639,21 +1665,30 @@ if (min < 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0).toFixed
 var y0 = y(0);
 sem.forEach(function (s, i) {
 var c = xc(i);
-[["entradas", "var(--graf-a)", -1], ["saidas", "var(--graf-b)", 1]].forEach(function (k) {
+[["entradas", "var(--graf-a)", -1, "a"], ["saidas", "var(--graf-b)", 1, "b"]].forEach(function (k) {
 var v = s[k[0]], top = Math.min(y(v), y0), h = Math.max(0, Math.abs(y(v) - y0)), x0 = k[2] < 0 ? c - bw - gap / 2 : c + gap / 2;
-if (h > 0) svg += '<path class="pn-barra" d="' + self._barraTopo(x0, top, bw, h, 3) + '" fill="' + k[1] + '"><title>' + (k[0] === "entradas" ? "Entradas previstas " : "Saídas previstas ") + e(fk(v)) + "</title></path>";
+if (h > 0) svg += '<path class="pn-barra" d="' + self._barraTopo(x0, top, bw, h, 3) + '" fill="' + k[1] + '" data-gt-serie="' + k[3] + '"/>';
 });
 });
-svg += '<polyline class="g-linha" points="' + sem.map(function (s, i) { return xc(i).toFixed(1) + "," + y(s.liquido).toFixed(1); }).join(" ") + '" stroke="var(--graf-c)"/>';
+svg += '<polyline class="g-linha" data-gt-serie="c" points="' + sem.map(function (s, i) { return xc(i).toFixed(1) + "," + y(s.liquido).toFixed(1); }).join(" ") + '" stroke="var(--graf-c)"/>';
 sem.forEach(function (s, i) {
-svg += '<circle class="g-fim" cx="' + xc(i).toFixed(1) + '" cy="' + y(s.liquido).toFixed(1) + '" r="4" fill="var(--graf-c)"><title>Posição líquida acumulada: ' + e(fk(s.liquido)) + "</title></circle>"
+svg += '<circle class="g-fim" data-gt-serie="c" cx="' + xc(i).toFixed(1) + '" cy="' + y(s.liquido).toFixed(1) + '" r="4" fill="var(--graf-c)"/>'
 + '<text class="g-mes' + (i === 0 ? " atual" : "") + '" x="' + xc(i).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle">' + (i === 0 ? "até " : "") + self._pnDataCurta(s.fim) + "</text>"
 + '<text class="g-eixo" x="' + xc(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + e(fk(s.liquido)) + "</text>";
 });
+sem.forEach(function (s, i) {
+var x0 = padL + slot * i, c = xc(i), fmx = Util.fmtMoeda, tit = (i === 0 ? "Até " : "Semana até ") + self._pnDataCurta(s.fim);
+svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(tit + ": entradas " + fk(s.entradas) + ", saídas " + fk(s.saidas) + ", posição " + fk(s.liquido)) + '" data-gacao="graf-ir" data-destino="financeiro"'
++ self._pnGt(tit, [["Entradas previstas", fmx(s.entradas), "var(--graf-a)"], ["Saídas previstas", fmx(s.saidas), "var(--graf-b)"], ["Posição líquida acumulada", fmx(s.liquido), "var(--graf-c)"]], "Previsão do que está em aberto. Clique: abrir o Financeiro") + '>'
++ '<rect class="g-hit" x="' + x0.toFixed(1) + '" y="' + padT + '" width="' + slot.toFixed(1) + '" height="' + ih + '"/>'
++ '<line class="g-guia" x1="' + c.toFixed(1) + '" y1="' + padT + '" x2="' + c.toFixed(1) + '" y2="' + (padT + ih) + '"/></g>';
+});
 svg += "</svg>";
-return svg + '<div class="g-legenda"><span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-a)"></i>Entradas previstas <b>' + e(fk(p.entradas)) + '</b></span>'
-+ '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-b)"></i>Saídas previstas <b>' + e(fk(p.saidas)) + '</b></span>'
-+ '<span class="g-leg"><i class="g-leg-cor" style="background:var(--graf-c)"></i>Posição líquida ao fim <b>' + e(fk(sem[n - 1].liquido)) + "</b></span></div>";
+var btLegP = function (serie, rot, valor) {
+return '<button type="button" class="g-leg" data-gt-serie-bt="' + serie + '" aria-pressed="true" title="Mostrar ou esconder: ' + e(rot) + '"><i class="g-leg-cor" style="background:var(--graf-' + serie + ')"></i>' + rot + " <b>" + e(valor) + "</b></button>";
+};
+return '<div class="gt-graf" data-gt-grafico>' + svg + '<div class="g-legenda">'
++ btLegP("a", "Entradas previstas", fk(p.entradas)) + btLegP("b", "Saídas previstas", fk(p.saidas)) + btLegP("c", "Posição líquida ao fim", fk(sem[n - 1].liquido)) + "</div></div>";
 },
 _pnSvgLucro: function (porMes, meta) {
 var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); };
@@ -1678,10 +1713,17 @@ var v = m.lucratividade;
 if (v === null) svg += '<text class="g-eixo" x="' + x(i).toFixed(1) + '" y="' + (padT + ih / 2).toFixed(1) + '" text-anchor="middle">—</text>';
 else {
 var cls = v < 0 ? "pn-p-alerta" : (v >= meta ? "pn-p-ok" : "pn-p-atencao");
-svg += '<circle class="pn-ponto ' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="5"><title>' + rot(m.mes) + ": recebido " + e(fk(m.recebido)) + ", pago " + e(fk(m.pago)) + ", lucratividade " + v + "%</title></circle>"
+svg += '<circle class="pn-ponto ' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(v).toFixed(1) + '" r="5"/>'
 + '<text class="pn-ponto-txt" x="' + x(i).toFixed(1) + '" y="' + (y(v) - 10).toFixed(1) + '" text-anchor="middle">' + v + "%</text>";
 }
 svg += '<text class="g-mes' + (i === n - 1 ? " atual" : "") + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle">' + rot(m.mes) + "</text>";
+if (v !== null) {
+var fmx = Util.fmtMoeda, lw = iw / Math.max(1, n - 1);
+svg += '<g class="g-col" tabindex="0" role="img" aria-label="' + e(rot(m.mes) + ": lucratividade " + v + "%, meta " + meta + "%") + '"'
++ self._pnGt(rot(m.mes), [["Recebido", fmx(m.recebido), "var(--graf-a)"], ["Pago", fmx(m.pago), "var(--graf-b)"], ["Lucratividade", String(v).replace(".", ",") + "%"], ["Meta de margem", meta + "%"]], v >= meta ? "Acima da meta" : "Abaixo da meta") + '>'
++ '<rect class="g-hit" x="' + (x(i) - lw / 2).toFixed(1) + '" y="' + padT + '" width="' + lw.toFixed(1) + '" height="' + ih + '"/>'
++ '<line class="g-guia" x1="' + x(i).toFixed(1) + '" y1="' + padT + '" x2="' + x(i).toFixed(1) + '" y2="' + (padT + ih) + '"/></g>';
+}
 });
 return svg + "</svg>";
 },
@@ -1692,7 +1734,7 @@ var cls = (atingido === null || atingido === undefined) ? " pn-g-vazio" : (ating
 var arco = "M" + (cx - r) + "," + cy + " A" + r + "," + r + " 0 0,1 " + (cx + r) + "," + cy;
 var am = Math.PI * (1 - 1 / 1.5), mx = cx + r * Math.cos(Math.PI - am), my = cy - r * Math.sin(Math.PI - am);
 var mx2 = cx + (r + 9) * Math.cos(Math.PI - am), my2 = cy - (r + 9) * Math.sin(Math.PI - am);
-return '<div class="pn-gauge' + cls + '" title="' + Util.esc(titulo || "") + '"><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + Util.esc(rotulo + ": " + valorTexto + ", meta " + metaTexto) + '">'
+return '<div class="pn-gauge' + cls + '" data-gacao="graf-ir" data-destino="metas" tabindex="0" role="button"' + this._pnGt(rotulo, [["Atingido", String(valorTexto).replace(/<[^>]*>/g, "")], ["Meta", String(metaTexto).replace(/<[^>]*>/g, "")]], (titulo ? titulo + ". " : "") + "Clique: ajustar as metas") + '><svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + Util.esc(rotulo + ": " + valorTexto + ", meta " + metaTexto) + '">'
 + '<path class="pn-g-trilho" d="' + arco + '"/>'
 + '<path class="pn-g-fill" d="' + arco + '" stroke-dasharray="' + (L * frac).toFixed(1) + " " + (L + 2).toFixed(1) + '"/>'
 + '<line class="pn-g-meta" x1="' + mx.toFixed(1) + '" y1="' + my.toFixed(1) + '" x2="' + mx2.toFixed(1) + '" y2="' + my2.toFixed(1) + '"/>'
@@ -1700,23 +1742,24 @@ return '<div class="pn-gauge' + cls + '" title="' + Util.esc(titulo || "") + '">
 + "</svg>" + '<div class="pn-g-rot">' + rotulo + '<span>meta ' + metaTexto + "</span></div></div>";
 },
 _pnDonut: function (itens, total, centro, fmt) {
-var e = Util.esc, r = 42, C = 2 * Math.PI * r, off = 0, svg = "";
+var self = this, e = Util.esc, r = 42, C = 2 * Math.PI * r, off = 0, svg = "";
 var tot = total || itens.reduce(function (s, i) { return s + i.valor; }, 0) || 1;
-itens.forEach(function (it) {
+itens.forEach(function (it, ix) {
 var len = it.valor / tot * C;
 if (len <= 0) return;
-svg += '<circle class="pn-fatia" r="' + r + '" cx="60" cy="60" fill="none" stroke="' + it.cor + '" stroke-width="16" stroke-dasharray="' + Math.max(0, len - 2).toFixed(2) + " " + C.toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 60 60)"><title>' + e(it.rotulo) + ": " + e(fmt(it.valor)) + ", " + Math.round(it.valor / tot * 100) + "%</title></circle>";
+svg += '<circle class="pn-fatia" r="' + r + '" cx="60" cy="60" fill="none" stroke="' + it.cor + '" stroke-width="16" stroke-dasharray="' + Math.max(0, len - 2).toFixed(2) + " " + C.toFixed(2) + '" stroke-dashoffset="' + (-off).toFixed(2) + '" transform="rotate(-90 60 60)" data-gt-k="' + ix + '" tabindex="0" role="img" aria-label="' + e(it.rotulo + ": " + fmt(it.valor) + ", " + Math.round(it.valor / tot * 100) + "%") + '" data-gacao="graf-ir" data-destino="financeiro"' + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor], ["Parte do total", Math.round(it.valor / tot * 100) + "%"]], "Clique: abrir o Financeiro") + '/>';
 off += len;
 });
-var leg = itens.map(function (it) { return '<li><i style="background:' + it.cor + '"></i><span class="pn-dl-nome">' + e(it.rotulo) + '</span><span class="pn-dl-val">' + e(fmt(it.valor)) + '</span><span class="pn-dl-pct">' + Math.round(it.valor / tot * 100) + "%</span></li>"; }).join("");
-return '<div class="pn-donut"><svg viewBox="0 0 120 120" role="img" aria-label="' + e(centro.rotulo + " " + centro.valor + ": " + itens.map(function (it) { return it.rotulo + " " + Math.round(it.valor / tot * 100) + "%"; }).join(", ")) + '">' + svg
+var leg = itens.map(function (it, ix) { return '<li data-gt-k="' + ix + '"' + self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor], ["Parte do total", Math.round(it.valor / tot * 100) + "%"]], "") + '><i style="background:' + it.cor + '"></i><span class="pn-dl-nome">' + e(it.rotulo) + '</span><span class="pn-dl-val">' + e(fmt(it.valor)) + '</span><span class="pn-dl-pct">' + Math.round(it.valor / tot * 100) + "%</span></li>"; }).join("");
+return '<div class="pn-donut" data-gt-grafico><svg viewBox="0 0 120 120" role="img" aria-label="' + e(centro.rotulo + " " + centro.valor + ": " + itens.map(function (it) { return it.rotulo + " " + Math.round(it.valor / tot * 100) + "%"; }).join(", ")) + '">' + svg
 + '<text class="pn-d-val" x="60" y="58" text-anchor="middle">' + e(centro.valor) + '</text><text class="pn-d-rot" x="60" y="73" text-anchor="middle">' + e(centro.rotulo) + "</text></svg><ul class=\"pn-dl\">" + leg + "</ul></div>";
 },
 _pnBarras: function (itens, total, cor, fmt) {
-var e = Util.esc, max = itens.length ? Math.max.apply(null, itens.map(function (i) { return i.valor; })) || 1 : 1;
+var self = this, e = Util.esc, max = itens.length ? Math.max.apply(null, itens.map(function (i) { return i.valor; })) || 1 : 1;
 return '<div class="pn-cats">' + itens.map(function (it) {
 var pct = total > 0 ? Math.round(it.valor / total * 100) : 0;
-return '<div class="pn-cat" title="' + e(it.rotulo) + ": " + e(fmt(it.valor)) + ", " + pct + '%"><span class="pn-cat-nome">' + e(it.rotulo) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(it.valor / max * 100)) + "%;background:" + (it.cor || cor) + '"></i></span><span class="pn-cat-val">' + e(fmt(it.valor)) + '</span><span class="pn-cat-pct">' + pct + "%</span></div>";
+return '<div class="pn-cat" tabindex="0"' + (it.id ? ' role="button" data-gacao="graf-ir" data-destino="painel-obra" data-id="' + e(it.id) + '"' : "")
++ self._pnGt(it.rotulo, [["Pago no período", Util.fmtMoeda(it.valor), it.cor || cor], ["Parte do total", pct + "%"]], it.id ? "Clique: ver só esta obra no Painel" : "") + '><span class="pn-cat-nome">' + e(it.rotulo) + '</span><span class="pn-cat-barra"><i style="width:' + Math.max(1, Math.round(it.valor / max * 100)) + "%;background:" + (it.cor || cor) + '"></i></span><span class="pn-cat-val">' + e(fmt(it.valor)) + '</span><span class="pn-cat-pct">' + pct + "%</span></div>";
 }).join("") + "</div>";
 },
 _pnDupla: function (l) {
@@ -1733,7 +1776,7 @@ else if (l.defasagem !== null && l.defasagem >= PainelDados.DEFASAGEM_PONTOS) le
 else if (l.defasagem !== null && l.defasagem <= -10) legDef = '<span class="pn-d-ok">' + (-l.defasagem) + " pontos à frente</span>";
 else if (l.defasagem !== null) legDef = '<span class="pn-d-ok">no ritmo do calendário</span>';
 var title = e(l.nome) + ": " + pz.prazoTexto + " do calendário consumido" + (a === null ? ", medição sem percentual" : ", " + l.avanco + "% do escopo medido");
-return '<div class="pn-dupla"><div class="pn-trilhos" role="img" aria-label="' + title + '" title="' + title + '">'
+return '<div class="pn-dupla"><div class="pn-trilhos" role="img" aria-label="' + title + '"' + this._pnGt(l.nome, [["Calendário consumido", pz.prazoTexto], ["Escopo medido", a === null ? "sem percentual" : l.avanco + "%"]], "") + '>'
 + '<div class="pn-trilho"><i class="pn-prazo" style="width:' + p + '%"></i></div>'
 + '<div class="pn-trilho">' + (a !== null ? '<i class="pn-medido" style="width:' + a + '%"></i>' : "") + (defasW > 0 ? '<i class="pn-defas' + (grave ? " pn-grave" : "") + '" style="left:' + (a || 0) + "%;width:" + defasW + '%"></i>' : "") + "</div>"
 + '<span class="pn-hoje-marca" style="left:' + (p >= 100 ? "calc(100% - 2px)" : p + "%") + '"></span></div>'
@@ -1749,10 +1792,10 @@ var margemTxt = cx.margem === null ? (cx.recebido > 0 ? "sem despesa paga no per
 : "margem de caixa " + Util.fmtNum(cx.margem, 1) + "%, meta " + Util.fmtNum(c.metas.margem, 0) + "%" + (cx.aPagar > 0 ? ". Não abate " + e(fk(cx.aPagar)) + " a pagar" : "");
 var ct = m.contratos;
 return html + '<section class="pn-tiles">'
-+ this._pnTile({ cls: "pn-t-ok", rotulo: "Recebido", valor: e(fk(cx.recebido)), titulo: fm(cx.recebido), delta: this._pnDeltaOuMelhor(cx.delta.recebido, m.periodo, cx.melhorMes.recebido, "melhor mês"), sub: "medições e faturas pagas", mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido; }), "var(--graf-a)", rotM, fk) })
-+ this._pnTile({ cls: "pn-t-alerta", rotulo: "Pago", valor: "− " + e(fk(cx.pago)), titulo: fm(cx.pago), delta: this._pnDeltaOuMelhor(cx.delta.pago, m.periodo, cx.melhorMes.pago, "maior mês"), sub: "custo desembolsado", mini: this._pnMiniBarras(meses.map(function (x) { return x.pago; }), "var(--graf-b)", rotM, fk) })
-+ this._pnTile({ cls: cx.resultado >= 0 ? "pn-t-aco" : "pn-t-alerta", rotulo: "Resultado de caixa", valor: (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))), titulo: fm(cx.resultado), delta: this._pnDeltaOuMelhor(cx.delta.resultado, m.periodo, cx.melhorMes.resultado, "melhor mês"), sub: margemTxt, mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido - x.pago; }), "var(--graf-c)", rotM, fk) })
-+ this._pnTile({ cls: "pn-t-neutro", rotulo: "Saldo a faturar", valor: e(fk(ct.saldoFaturar)), titulo: fm(ct.saldoFaturar), delta: "", sub: "contratado " + e(fk(ct.valorContratado)) + " menos " + e(fk(ct.faturado)) + " já medido" + (ct.semContrato.n ? ". " + this._pnN(ct.semContrato.n, "obra entra", "obras entram") + " pelo valor da obra, sem contrato" : "") + ". Acumulado, não do período." })
++ this._pnTile({ cls: "pn-t-ok", rotulo: "Recebido", valor: e(fk(cx.recebido)), titulo: fm(cx.recebido), delta: this._pnDeltaOuMelhor(cx.delta.recebido, m.periodo, cx.melhorMes.recebido, "melhor mês"), sub: "medições e faturas pagas", mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido; }), "var(--graf-a)", rotM, fk, "Recebido"), ir: "financeiro" })
++ this._pnTile({ cls: "pn-t-alerta", rotulo: "Pago", valor: "− " + e(fk(cx.pago)), titulo: fm(cx.pago), delta: this._pnDeltaOuMelhor(cx.delta.pago, m.periodo, cx.melhorMes.pago, "maior mês"), sub: "custo desembolsado", mini: this._pnMiniBarras(meses.map(function (x) { return x.pago; }), "var(--graf-b)", rotM, fk, "Pago"), ir: "financeiro" })
++ this._pnTile({ cls: cx.resultado >= 0 ? "pn-t-aco" : "pn-t-alerta", rotulo: "Resultado de caixa", valor: (cx.resultado < 0 ? "− " : "") + e(fk(Math.abs(cx.resultado))), titulo: fm(cx.resultado), delta: this._pnDeltaOuMelhor(cx.delta.resultado, m.periodo, cx.melhorMes.resultado, "melhor mês"), sub: margemTxt, mini: this._pnMiniBarras(meses.map(function (x) { return x.recebido - x.pago; }), "var(--graf-c)", rotM, fk, "Resultado"), ir: "financeiro" })
++ this._pnTile({ cls: "pn-t-neutro", rotulo: "Saldo a faturar", valor: e(fk(ct.saldoFaturar)), titulo: fm(ct.saldoFaturar), delta: "", sub: "contratado " + e(fk(ct.valorContratado)) + " menos " + e(fk(ct.faturado)) + " já medido" + (ct.semContrato.n ? ". " + this._pnN(ct.semContrato.n, "obra entra", "obras entram") + " pelo valor da obra, sem contrato" : "") + ". Acumulado, não do período.", ir: "medicoes" })
 + "</section>";
 },
 _pnBlPosicao: function (m, c) {
@@ -1798,7 +1841,7 @@ return '<div class="pn-tres">'
 + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Despesas por categoria</h2></div>'
 + (m.categorias.length ? this._pnDonut(m.categorias.map(function (x) { return { rotulo: rot(P.finCategoria, x.cat), valor: x.valor, cor: self._CORCAT[x.cat] || "var(--cat-outros)" }; }), cx.pago, { rotulo: "pago", valor: fk(cx.pago) }, fk) : '<p class="pn-vazio">Sem despesa paga no período.</p>') + "</div>"
 + '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Custo por obra</h2><p>pago no período</p></div>'
-+ (m.porObra.length ? this._pnBarras(m.porObra.map(function (o) { return { rotulo: o.nome, valor: o.valor }; }).concat(m.semObraPeriodo > 0 ? [{ rotulo: "Sem obra vinculada", valor: m.semObraPeriodo, cor: "var(--cat-outros)" }] : []), cx.pago, "var(--cat-obra)", fk) : '<p class="pn-vazio">Sem despesa paga com obra no período.</p>') + "</div>"
++ (m.porObra.length ? this._pnBarras(m.porObra.map(function (o) { return { id: o.id, rotulo: o.nome, valor: o.valor }; }).concat(m.semObraPeriodo > 0 ? [{ rotulo: "Sem obra vinculada", valor: m.semObraPeriodo, cor: "var(--cat-outros)" }] : []), cx.pago, "var(--cat-obra)", fk) : '<p class="pn-vazio">Sem despesa paga com obra no período.</p>') + "</div>"
 + "</div>";
 },
 _pnBlLucro: function (m, c) {
@@ -3240,6 +3283,7 @@ _ENT_DA_OBRA: [
 ["bim_estrut", "projeto(s) estrutural(is) lido(s) do PDF"],
 ["bim_sondagens", "sondagem(ns) SPT"],
 ["bim_pranchas", "prancha(s) do projeto"],
+["bim_cenas", "cena(s) de apresentação"],
 ["bim_clash_testes", "teste(s) de compatibilização"],
 ["bim_clash_resultados", "conflito(s) com histórico"],
 ["bim_tarefas", "tarefa(s) do cronograma 4D"],
@@ -6328,6 +6372,7 @@ arquivo: (obra && obra.nome) || "",
 tema: BimShell.temaSalvo(),
 acoes: this._bimAcoesTitulo || [],
 onPranchas: function () { self.bimPranchas(); },
+onCena: (window.BimCenaUI && BimCenaUI.ativo()) ? function () { BimCenaUI.abrir(); } : null,
 onPranchaViva: function () { try { if (window.BimShell) BimShell.executar("prancha-viva"); } catch (ePv) {} },
 obras: this._b4Janela3d ? null : obrasTit, obraSel: this._bimSel || "",
 onSair: this._b4Janela3d ? null : function () {
@@ -6603,7 +6648,7 @@ reg["elevacoes"] = function () {
 if (!self._elevAtual) { self._elevacao(); return true; }
 self._elevPrancha(); return true;
 };
-reg["editar-tipo"] = reg["tipo-parede"] = reg["parede-cebola"] = function () {
+reg["editar-tipo"] = reg["parede-cebola"] = function () {
 if (!window.AlvTipos || !window.BimShell) return false;
 BimShell.pintarProps(self._alvEsquemaProps());
 BimShell.status("Tipo de parede aberto nas Propriedades. Mude qualquer espessura e a parede recalcula na hora.");
@@ -6711,20 +6756,24 @@ try { if (window.BimP10UI) BimP10UI.registrar(reg, self); } catch (eP10) {}
 try { if (window.BimApresentacaoUI) BimApresentacaoUI.registrar(reg, self); } catch (eAp) {}
 try { if (window.BimInstUI && BimInstUI.registrarP12) BimInstUI.registrarP12(reg, self); } catch (eP12) {}
 try { if (window.EleAutoUI) EleAutoUI.registrar(reg, self); } catch (eEle) {}
+try { if (window.IncAcsUI) IncAcsUI.registrar(reg, self); } catch (eInc) {}
 try { if (window.ConcUI) ConcUI.registrar(reg, self); } catch (eConc) {}
 try { if (window.EleCircuitosUI) EleCircuitosUI.registrar(reg, self); } catch (eElc) {}
 try { if (window.HidKitUI && HidKitUI.registrar) HidKitUI.registrar(reg, window.BimRibbon); } catch (eHk) {}
 try { if (window.BimEmBreveUI) BimEmBreveUI.registrar(reg, self); } catch (eEmb) {}
 try { if (window.BimRender) BimRender.registrar(reg, self); } catch (eRender) {}
+try { if (window.BimCenaUI) BimCenaUI.registrar(reg, self); } catch (eCena) {}
 try { if (window.BimMateriaisUI) BimMateriaisUI.registrar(reg, self); } catch (eMat) {}
 try { if (window.BimMetalUI) BimMetalUI.registrar(reg, self); } catch (eMet) {}
 try { if (window.BimCotasUI) BimCotasUI.registrar(reg, self); } catch (eCot) {}
 try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
+try { if (window.MadEngUI) MadEngUI.registrar(reg, self); } catch (eMadEng) {}
 try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
 try { if (window.PranchaVivaUI) PranchaVivaUI.registrar(reg, self); } catch (ePv) {}
 try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
 try { if (window.BimFita) BimFita.registrar(reg, self); } catch (eFita) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
+if (reg["acabamento-ia"] && !(window.BimRibbon && BimRibbon.comando("acabamento-ia"))) delete reg["acabamento-ia"];
 BimCmd.registrar(reg);
 try { this._famSync(); } catch (eFs) {}
 BimCmd.aoCancelar(function () {
@@ -9488,7 +9537,13 @@ var bl = function (tit, txt, bts) { return '<div style="border:1px solid var(--l
 var bt = function (k, rot, pri) { return '<button class="btn sm' + (pri ? " primary" : "") + '" data-imp="' + k + '">' + rot + "</button>"; };
 var html =
 bl("Revit (.rvt)", "O RVT só o Revit lê por inteiro. No Revit, aba <b>OrçaPRO › Integração › Exportar para OrçaPRO</b>: sai um <b>.opbim</b> com o IFC e TODOS os parâmetros de instância e de tipo de cada peça, e os níveis. Depois abra o .opbim aqui.", bt("opbim", "Abrir .opbim", true)) +
-bl("SketchUp (.skp)", "Instale a extensão OrçaPRO no SketchUp (Extensões › Gerenciador de extensões › Instalar extensão › o arquivo .rbz). Depois <b>Extensões › OrçaPRO › Exportar para OrçaPRO</b> gera um .json com cada grupo/componente, etiqueta, material e atributos.", bt("rbz", "Baixar a extensão (.rbz)") + bt("skp", "Importar o .json do SketchUp", true)) +
+bl("SketchUp (.skp)", "A extensão do OrçaPRO exporta o modelo do SketchUp (2017 a 2026) com cada grupo/componente, etiqueta, material e atributos. Instalar leva 1 minuto:" +
+'</p><ol class="op-sk-passos" style="font-size:12.5px;margin:0 0 8px 18px;padding:0;line-height:1.5">' +
+"<li><b>Baixe</b> o arquivo <b>orcapro-sketchup.rbz</b> (botão abaixo). Não precisa abrir nem descompactar.</li>" +
+"<li>No SketchUp: menu <b>Extensions › Extension Manager</b> (em português, <i>Extensões › Gerenciador de extensões</i>) › botão <b>Install Extension</b> › escolha o .rbz › <b>Install</b>.</li>" +
+"<li>Se aparecer <b>Trust?</b> ao lado da extensão, clique e confirme em <b>Enable</b> (o aviso é porque a extensão ainda não tem a assinatura da Trimble). Se aparecer <b>Blocked</b>: engrenagem (<i>Settings</i>) › <i>Loading Policy</i> › <b>Approve Unidentified Extensions</b> › <b>Confirm</b>, e volte ao passo anterior.</li>" +
+"<li><b>Feche e abra o SketchUp.</b> Em <b>Extensions › OrçaPRO › Exportar para OrçaPRO…</b> salve o .json e importe aqui, no botão abaixo.</li>" +
+'</ol><p style="margin:0">', bt("rbz", "Baixar a extensão (.rbz)") + bt("skp", "Importar o .json do SketchUp", true)) +
 bl("AutoCAD (.dwg / .dxf)", "O DWG é convertido para DXF neste computador, com o AutoCAD ou o ODA File Converter instalados (o arquivo não sai da máquina). O desenho entra como <b>vínculo CAD</b> na planta 2D aberta — ou vira 3D em Arquivo › Gerar de desenho.", bt("cad", "Vincular DWG/DXF na planta", true) + bt("p3d", "Gerar de desenho") + '<span id="imp-dwg-st" class="muted" style="font-size:12px;align-self:center"></span>') +
 bl("Malha 3D (glTF/GLB, OBJ, STL, DAE, FBX)", "Do Blender, 3ds Max, Rhino, D5, Lumion, SketchUp (exportado)… Cada objeto vira uma peça com nome, área e volume. Malha não traz parâmetro BIM — nada é inventado.",
 '<label class="field" style="margin:0">Unidade <select id="imp-un"><option value="auto">detectar</option><option value="m">metro</option><option value="cm">centímetro</option><option value="mm">milímetro</option><option value="pol">polegada</option></select></label>' +
@@ -36127,7 +36182,7 @@ this._abrirDoc("Plano Semanal — " + (obra.nome || ""), this._docShell("PLANO D
 },
 _ISENTO_BLOQUEIO: {
 "custo-frota": 1, "consultar-chave": 1,
-"pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-obra-multi": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
+"pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-obra-multi": 1, "dash-metas": 1, "graf-ir": 1, "tar-filtro": 1, "tar-obra": 1,
 "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1, "req-obra": 1, "cot-obra": 1,
 "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
 "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
@@ -36225,6 +36280,7 @@ case "med-obra": return this.medTrocaObra(dataset);
 case "dash-metas": return this.metasForm();
 case "dash-status": return this.dashTrocaStatus(dataset.value);
 case "dash-comparar": return this.dashTrocaComparar();
+case "graf-ir": return this.grafIr(dataset);
 case "painel-organizar": return this.painelOrganizar();
 case "painel-bloco-toggle": return this.painelBlocoToggle(dataset.id);
 case "painel-bloco-sobe": return this.painelBlocoMover(dataset.id, -1);
@@ -52190,6 +52246,7 @@ var ENTIDADES = [
 "bim_estrut",
 "bim_sondagens",
 "bim_pranchas",
+"bim_cenas",
 "obra_docs",
 "doc_assinantes",
 "bim_pesos_esp",
@@ -52839,7 +52896,7 @@ var t = mortos[o.id];
 if (t) {
 if (String(o.atualizadoEm || "") < String(t)) return false;
 if (emLote[o.id]) return String(o.atualizadoEm || "") > String(emLote[o.id]);
-return true;
+if (!(o.obraId && obrasMortas[o.obraId])) return true;
 }
 if (o.obraId && obrasMortas[o.obraId]) {
 if (imune) { o.obraId = ""; o.obraNome = ""; return true; }
@@ -65129,7 +65186,7 @@ try { console.info(txt); } catch (eC) {}
 return ef;
 } catch (e) { return null; }
 },
-_PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'] },
+_PREVIAS: { icamento: ["orcapro:tela:icamento-recursos:v1", '{"plano":true}'], cristal: ["orcapro:tela:bim-cristal:v1", '{"cristal":true}'], visual: ["orcapro:tela:visual:v1", '{"visual":true}'], modelador: ["orcapro:tela:bim-modelador:v1", '{"modelador":true}'], madeng: ["orcapro:tela:madeng:v1", '{"madeng":true}'] },
 _previaDaUrl: function () {
 try {
 var m = /[?&]previa=([a-z0-9,-]+)/i.exec(location.search || ""); if (!m) return null;
@@ -69928,5 +69985,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=53704a83b0"},{"src":"js/bim-pacote.js?v=39caf46c2c","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=223bbb7804"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=1df04a4111"},{"src":"js/bim-pacote.js?v=dcc21ad85f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=6a62f7f406"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

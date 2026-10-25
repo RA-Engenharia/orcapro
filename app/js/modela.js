@@ -15,6 +15,8 @@
  *      igual pelo servidor (`tudo: true`). Ninguém oferece compra a ela.
  *      ⚠ A LICENÇA DE EQUIPE de titular vitalício (exp 0 também) NÃO tem
  *      `tudo`: só o Modela completo, como antes de 23/10/2026 (`equipe`).
+ *   2b. (24/10/2026) plano BIM em dia      → TODAS as disciplinas e TODOS os módulos (`porTier`/`tierTudo`, motivo "bim");
+ *      vencido ou suspenso por parcela vencida, não. NÃO é o `tudo` da vitalícia (a EQUIPE de titular BIM recebe pelo tier).
  *   3. disciplina comprada e no prazo     → só ela (todas = completo).
  *   4. TESTE de 7 dias do Modela completo, contado do 1º uso do modelador e
  *      ancorado no servidor (por e-mail da licença E por aparelho — trocar
@@ -62,6 +64,12 @@
   /* PRANCHA VIVA (21/10/2026): a prancha ligada ao 3D (js/pranchavivamodulo.js) — a mesma regra do Blocok e da Marmoraria. */
   var EXTRAS = [{ id: "blocok", nome: "Blocok — paredes prontas" }, { id: "marmoraria", nome: "Marmoraria — bancadas, executivo e orçamento" }, { id: "pranchaviva", nome: "Prancha Viva — a prancha que abre o 3D no ponto tocado" }];
   var IDS_EXTRAS = EXTRAS.map(function (d) { return d.id; });
+  /* O QUE O TIER DA LICENÇA JÁ INCLUI (decisão do Rogério, 24/10/2026): o plano BIM EM DIA recebe TODAS as disciplinas do Modela e
+     TODOS os módulos à parte (Prancha Viva, Marmoraria, Blocok… e os que vierem) — "*" = IDS + IDS_EXTRAS, e `tierTudo` libera até o
+     módulo que esta lista ainda não conhece. Não é compra: não é o `tudo` da vitalícia (a licença de EQUIPE de titular BIM recebe
+     pelo tier, sem o `tudo`). Licença vencida ou SUSPENSA por parcela vencida não ganha; o que foi COMPRADO avulso não é afetado.
+     O mesmo vem do servidor em `porTier`/`tierTudo` (/api/modela/status). */
+  var POR_TIER = { bim: "*" };
 
   /* a URL é lida na CARGA (a navegação interna pode limpar o endereço depois) */
   var DEMO_URL = false;
@@ -74,6 +82,7 @@
     DISCIPLINAS: DISCIPLINAS,
     IDS: IDS,
     EXTRAS: EXTRAS,
+    POR_TIER: POR_TIER,
     IDS_EXTRAS: IDS_EXTRAS,
     TESTE_MS: TESTE_MS,
     GRACE_MS: GRACE_MS,
@@ -114,6 +123,19 @@
       /* VITALÍCIA = TUDO (23/10/2026); a licença interna da RA vem do servidor com `tudo` */
       var tudoLic = (vitalicia && !equipe) || !!(cacheValido && c.tudo === true);
       if (tudoLic) IDS_EXTRAS.forEach(function (id) { extras[id] = true; });
+      /* módulo que o TIER já inclui (BIM → Prancha Viva): o servidor diz até quando (cache da MESMA licença, dentro da
+         carência) e o aparelho confere sozinho com a licença verificada (vale offline). Licença SUSPENSA por parcela vencida
+         (`suspensa`) não ganha: o módulo incluído no plano segue o plano. O módulo COMPRADO não é afetado. */
+      var porTier = {}, tierTudo = false;
+      if (!e.suspensa) {
+        var TODOS = IDS.concat(IDS_EXTRAS);
+        if (cacheValido && c.porTier) TODOS.forEach(function (id) { if (num(c.porTier[id]) > agora) porTier[id] = true; });
+        if (cacheValido && num(c.tierTudo) > agora) tierTudo = true;
+        if (e.bimLocal && POR_TIER.bim === "*") { tierTudo = true; TODOS.forEach(function (id) { porTier[id] = true; }); }
+        IDS_EXTRAS.forEach(function (id) { if (porTier[id]) extras[id] = true; });
+        /* as disciplinas que o tier inclui valem como as compradas (até a validade, ou "para sempre" no cálculo local) */
+        IDS.forEach(function (id) { if (porTier[id] && !compradas[id]) { compradas[id] = (cacheValido && c.porTier && num(c.porTier[id])) || Date.UTC(2999, 11, 31); lista.push(id); } });
+      }
 
       /* o início do teste: o MAIS ANTIGO entre o local e o do servidor. O do
          servidor vale mesmo com o cache velho — ele só pode encurtar o teste. */
@@ -145,7 +167,7 @@
         else if (est1[id] === "vencido" || est1[id] === "pausado") venc1[id] = est1[id];
       });
       var out = {
-        liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras,
+        liberado: false, completo: false, disciplinas: [], motivo: "encerrado", extras: extras, porTier: porTier, tierTudo: tierTudo,
         teste: teste, vitalicia: vitalicia, tudo: tudoLic, equipe: equipe, demo: demo, play: play,
         podeComprar: !play && !demo && !tudoLic, compradas: compradas, teste1h: em1, vencidos1h: venc1, visivel1h: false,
         revalidar: !!(c && !cacheValido && String(c.chaveRef || "") === chaveRef && c.disciplinas &&
@@ -156,6 +178,7 @@
       if (demo) return tudo("demo");
       if (vitalicia) return tudo("vitalicia");
       if (tudoLic) return tudo("interno");
+      if (tierTudo) return tudo("bim");   /* plano BIM em dia (24/10/2026): todas as disciplinas e todos os módulos */
       if (lista.length === IDS.length) return tudo("compra");
       if (teste.ativo) return tudo("teste");
       if (teste.disponivel) return tudo("teste-disponivel");
@@ -202,6 +225,19 @@
       var L = this._lic(); if (!L) return false;
       try { var st = L.status(); return !!(st && st.tipoLicenca === "equipe"); } catch (e) { return false; }
     },
+    /* a licença VERIFICADA deste aparelho é do plano BIM, em dia (ativa, fora do trial, não vencida)? Vale offline. */
+    _bimLocal: function () {
+      var L = this._lic(); if (!L) return false;
+      try {
+        var st = L.status();
+        return !!(st && st.ativo && !st.trial && !st.expirada && String(st.tier || "").toLowerCase() === "bim");
+      } catch (e) { return false; }
+    },
+    /* parcela vencida (js/cobranca.js): a licença segue válida mas "não grava nem exporta" */
+    _suspensaLocal: function () {
+      var L = this._lic(); if (!L) return false;
+      try { var st = L.status(); return !!(st && st.suspensa); } catch (e) { return false; }
+    },
     _demo: function () { try { return DEMO_URL || !!(global.App && global.App._demo); } catch (e) { return DEMO_URL; } },
     _play: function () {
       try { if (global.localStorage.getItem("orcapro:origem") === "play") return true; } catch (e) {}
@@ -210,6 +246,7 @@
     _entrada: function (semEstados) {
       var l = this._ler();
       var e = { agora: Date.now(), demo: this._demo(), play: this._play(), vitaliciaLocal: this._vitaliciaLocal(), equipeLocal: this._equipeLocal(),
+        bimLocal: this._bimLocal(), suspensa: this._suspensaLocal(),
         chaveRef: this._chaveRef(), testeLocal: num(l.testeLocal), cache: l.srv || null };
       /* o teste de 1 hora por módulo (js/testemodulo.js). `semEstados`: o direito SEM a hora de teste
          (statusBase) — é o que o próprio TesteModulo pergunta para saber o que já é comprado, sem laço */
@@ -253,7 +290,7 @@
        inteira mostraria comando de disciplina não contratada. */
     tem: function (id) {
       var s = this.status(), k = String(id || "").toLowerCase();
-      if (s.tudo) return true;   // vitalícia/interna = tudo, inclusive o módulo que ainda não existe nesta lista
+      if (s.tudo || s.tierTudo) return true;   // vitalícia/interna e plano BIM em dia = tudo, inclusive o módulo que ainda não existe nesta lista
       if (IDS_EXTRAS.indexOf(k) >= 0) return !!(s.extras && s.extras[k]);   // módulo à parte: não precisa do Modela liberado
       if (!s.liberado) return false;
       if (k === "completo") return IDS.every(function (d) { return s.disciplinas.indexOf(d) >= 0; });
@@ -273,9 +310,10 @@
       if (!d || d.ok !== true) return false;
       this._memo = null; this._memoBase = null;
       var l = this._ler(), antes = JSON.stringify(this.status());
-      var dis = {};
+      var dis = {}, dst = {};
       IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.disciplinas && num(d.disciplinas[id]); if (a > 0) dis[id] = a; });
-      l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis,
+      IDS.concat(IDS_EXTRAS).forEach(function (id) { var a = d.porTier && num(d.porTier[id]); if (a > 0) dst[id] = a; });
+      l.srv = { em: Date.now(), chaveRef: this._chaveRef(), vitalicia: d.vitalicia === true, tudo: d.tudo === true, filha: d.filha === true, disciplinas: dis, porTier: dst, tierTudo: num(d.tierTudo),
         teste: { inicio: d.teste ? num(d.teste.inicio) : 0 } };
       this._gravar(l);
       var mudou = JSON.stringify(this.status()) !== antes;
@@ -317,18 +355,30 @@
        a pessoa não tem o direito por outro caminho (vitalícia, compra completa, demo) */
     iniciarTeste: function (cb) {
       var s = this.status();
-      if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
+      if (!s.teste.disponivel || s.demo || s.vitalicia || s.tudo || s.tierTudo || s.disciplinas.length === IDS.length && s.motivo === "compra") { if (cb) cb({ ok: true, ja: true }); return false; }
       var l = this._ler();
       if (!num(l.testeLocal)) { l.testeLocal = Date.now(); this._gravar(l); this._avisar(); }
       this._ancorar(cb);
       return true;
     },
 
+    /* o texto do plano à venda, SÓ com o que o servidor mandou (preço nenhum escrito aqui). Compra única:
+       "Prancha Viva — R$ 550,00 · compra única · até 12× de R$ 45,83 no cartão ou R$ 495,00 à vista". Centavos sempre com 2 casas. */
+    brl: function (v) { v = Math.round((Number(v) || 0) * 100) / 100; return "R$ " + v.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, "."); },
+    textoPlano: function (p) {
+      if (!p) return "";
+      var t = (p.nome || "") + " — " + this.brl(p.valor) + (p.periodo ? " · " + p.periodo : "");
+      var n = Number(p.parcelasMax) || 0;
+      if (n > 1) t += " · até " + n + "× de " + this.brl(Number(p.valor) / n) + " no cartão";
+      if (Number(p.valorAVista) > 0 && Number(p.valorAVista) < Number(p.valor)) t += (n > 1 ? " ou " : " · ") + this.brl(p.valorAVista) + " à vista";
+      return t;
+    },
+
     /* o endereço da compra na loja. Sem botão em origem=play (política da loja). */
     urlCompra: function (plano) {
       var srv = this._servidor(); if (!srv) return "";
       var p = String(plano || "modela_completo_mensal");
-      if (!/^modela_[a-z]+_(mensal|anual)$/.test(p)) p = "modela_completo_mensal";
+      if (!/^modela_[a-z]+_(mensal|anual|vitalicio)$/.test(p)) p = "modela_completo_mensal";
       var k = this._chave();
       return srv + "/modelagem?plano=" + encodeURIComponent(p) + (k ? "#lic=" + encodeURIComponent(k) : "");
     }

@@ -320,6 +320,7 @@
       o.horiz = !o.vert && Math.abs(dy) <= G.inclHoriz * Lh + EPS;
       o.dir = Lh > EPS ? { x: (p2.x - p1.x) / Lh, z: (p2.z - p1.z) / Lh } : null;
       o.ap = t.ap != null ? String(t.ap) : null;
+      o.passantes = arr(t.passantes);   /* N23: os passantes que o traçado lançou (laje + ponto) */
       return o;
     }).filter(Boolean);
   }
@@ -335,6 +336,45 @@
   }
 
   /* ================================================================ AUDITAR */
+  /* ---------------------------------------------------------------- TRAVESSIA DE LAJE (N23, 24/10/2026)
+     onde um tubo NÃO deitado atravessa uma laje de verdade (placa mais grossa que o revestimento): a mesma conta do alerta
+     "Furo na laje" e do lançamento do passante — os dois nunca discordam de onde o tubo fura a laje. T = normTrechos(...) */
+  function travessiasLaje(T, lajes, G) {
+    var out = [];
+    arr(lajes).forEach(function (l) {
+      var x0 = Math.min(num(l.x0, INF), num(l.x1, INF)), x1 = Math.max(num(l.x0, -INF), num(l.x1, -INF)), z0 = Math.min(num(l.z0, INF), num(l.z1, INF)), z1 = Math.max(num(l.z0, -INF), num(l.z1, -INF));
+      var tp = num(l.topo, NaN), e = num(l.espessura, 0); if (!isFinite(tp) || !(e > G.cobrimentoParede * 4)) return;   // hid:ok placa de até 6 cm = revestimento, não laje
+      var fundo = tp - e;
+      arr(T).forEach(function (t) {
+        if (t.horiz) return;
+        var ylo = Math.min(t.p1.y, t.p2.y), yhi = Math.max(t.p1.y, t.p2.y); if (!(ylo < fundo + EPS && yhi > tp - EPS)) return;
+        var s = (tp - t.p1.y) / (t.dy || 1), P = ptEm(t.p1, t.p2, Math.max(0, Math.min(1, s)));
+        if (!(P.x >= x0 - EPS && P.x <= x1 + EPS && P.z >= z0 - EPS && P.z <= z1 + EPS)) return;
+        out.push({ t: t, laje: l, P: P });
+      });
+    });
+    return out;
+  }
+  /* o passante lançado vale para ESTA laje e ESTE ponto (até o raio do tubo + a folga de montagem da camisa) */
+  function temPassante(t, l, P) {
+    var tolP = Math.max(num(t.r, 0), 0) + GEO.tolNo;
+    return arr(t.passantes).some(function (q) { return q && String(q.laje) === String(l.id) && Math.abs(num(q.x, INF) - P.x) <= tolP && Math.abs(num(q.z, INF) - P.z) <= tolP; });
+  }
+  /* LANÇA o passante em cada travessia de laje dos tubos de um lote (as ops de trecho, inclusive dentro de "lote") — muta as ops:
+     op.passantes = [{ laje, x, y, z }] (substitui, idempotente). As lajes vêm do estado (HidRota.obstaculosDoBim). O eletroduto
+     embutido na laje não é "passante" (vai na laje): fica de fora. → o número de passantes lançados e os trechos */
+  function lancarPassantes(ops, estado, avaliarFam) {
+    var H = HR(), O = H && H.obstaculosDoBim ? H.obstaculosDoBim(estado, avaliarFam) : { lajes: [] }, lista = [], n = 0, ids = [];
+    (function rec(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") rec(o.ops); else if (o.op === "trecho" && !/^(eletrica|bandeja|dados)$/.test(txt(o.sistema))) lista.push(o); }); })(ops);
+    lista.forEach(function (o) {
+      var T = normTrechos([o], GEO); if (!T.length) return;
+      var tv = travessiasLaje(T, O.lajes, GEO);
+      if (!tv.length) { if (o.passantes) delete o.passantes; return; }
+      o.passantes = tv.map(function (x) { return { laje: String(x.laje.id), x: r4(x.P.x), y: r4(x.P.y), z: r4(x.P.z) }; });
+      n += tv.length; ids.push(String(o.id));
+    });
+    return { n: n, trechos: ids };
+  }
   function auditar(E) {
     E = E || {};
     var G = geo(E.parametros), O = E.obstaculos || {}, N = normas(), out = [], vistos = {};
@@ -425,18 +465,12 @@
         else add("estrutura.viga", [t.id], P, "O tubo de " + quem(t) + " fura a viga " + v.id + (liberada ? " FORA da zona que a NBR 6118 dispensa: " + desc : " (" + desc + ")") + ".", { obstaculo: v.id });
       });
     });
-    arr(O.lajes).forEach(function (l) {
-      var x0 = Math.min(num(l.x0, INF), num(l.x1, INF)), x1 = Math.max(num(l.x0, -INF), num(l.x1, -INF)), z0 = Math.min(num(l.z0, INF), num(l.z1, INF)), z1 = Math.max(num(l.z0, -INF), num(l.z1, -INF));
-      var tp = num(l.topo, NaN), e = num(l.espessura, 0); if (!isFinite(tp) || !(e > G.cobrimentoParede * 4)) return;   // hid:ok placa de até 6 cm = revestimento, não laje
-      var fundo = tp - e, passantes = arr(l.passantes).concat(arr(O.shafts));
-      T.forEach(function (t) {
-        if (t.horiz) return;
-        var ylo = Math.min(t.p1.y, t.p2.y), yhi = Math.max(t.p1.y, t.p2.y); if (!(ylo < fundo + EPS && yhi > tp - EPS)) return;
-        var s = (tp - t.p1.y) / (t.dy || 1), P = ptEm(t.p1, t.p2, Math.max(0, Math.min(1, s)));
-        if (!(P.x >= x0 - EPS && P.x <= x1 + EPS && P.z >= z0 - EPS && P.z <= z1 + EPS)) return;
-        if (passantes.some(function (q) { return P.x >= Math.min(q.x0, q.x1) - EPS && P.x <= Math.max(q.x0, q.x1) + EPS && P.z >= Math.min(q.z0, q.z1) - EPS && P.z <= Math.max(q.z0, q.z1) + EPS; })) return;
-        add("estrutura.laje", [t.id], P, "O tubo de " + quem(t) + " atravessa a laje " + l.id + " em (" + f2(P.x) + "; " + f2(P.z) + "): preveja o passante na fôrma ou o shaft.", { obstaculo: l.id, corrigir: { tipo: "rt", ids: [t.id], texto: R["estrutura.laje"].corrigir } });
-      });
+    travessiasLaje(T, O.lajes, G).forEach(function (tv) {
+      var t = tv.t, l = tv.laje, P = tv.P, passantes = arr(l.passantes).concat(arr(O.shafts));
+      if (passantes.some(function (q) { return P.x >= Math.min(q.x0, q.x1) - EPS && P.x <= Math.max(q.x0, q.x1) + EPS && P.z >= Math.min(q.z0, q.z1) - EPS && P.z <= Math.max(q.z0, q.z1) + EPS; })) return;
+      /* N23: o PASSANTE que o traçado lançou nesta laje, neste ponto (o tubo que mudou de lugar depois perde o passante: volta o alerta) */
+      if (temPassante(t, l, P)) return;
+      add("estrutura.laje", [t.id], P, "O tubo de " + quem(t) + " atravessa a laje " + l.id + " em (" + f2(P.x) + "; " + f2(P.z) + "): preveja o passante na fôrma ou o shaft.", { obstaculo: l.id, corrigir: { tipo: "rt", ids: [t.id], texto: R["estrutura.laje"].corrigir } });
     });
 
     /* ---------- PAREDES: o trecho EMBUTIDO (corre dentro dela) */
@@ -874,7 +908,7 @@
     var caixas = arr(estado && estado.familias).filter(function (f) { return FAM_CAIXA[f.famId]; }).map(function (f) { return { id: String(f.id), tipo: FAM_CAIXA[f.famId], x: f.x, y: f.y, z: f.z, r: 0 }; });
     var pecas = arr(inst.pecas).map(function (k) { var Pk = B && B.PECAS ? B.PECAS[k.peca] : null; return { id: String(k.id), peca: k.peca, sistema: k.sistema, x: k.x, y: k.y, z: k.z, r: Pk ? num(Pk.r, 0) : 0 }; });
     pecas.filter(function (k) { return k.peca === "caixa_inspecao"; }).forEach(function (k) { caixas.push({ id: k.id, tipo: "caixa_inspecao", x: k.x, y: k.y, z: k.z, r: k.r }); });
-    var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2 }; });
+    var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2, passantes: t.passantes }; });
     var acessorios = arr(inst.acessorios).map(function (a) { return { id: a.id, acessorio: a.acessorio, sistema: a.sistema, trecho: a.trecho, centro: a.centro }; });
     /* FRENTE H6: o aparelho a gás pela NBR 13103 (js/hidgas.js), quando carregado */
     var HGs = dep("HidGas", "./hidgas.js"), gas = null;
@@ -899,7 +933,7 @@
 
   var HidCriterios = {
     VERSAO: 1, GEO: GEO, NOTA: NOTA, REGRAS: R,
-    auditar: auditar, doEstado: doEstado, caixasAbertura: caixasAbertura, classificarAmbiente: classificarAmbiente, resumo: resumo,
+    auditar: auditar, doEstado: doEstado, caixasAbertura: caixasAbertura, classificarAmbiente: classificarAmbiente, resumo: resumo, lancarPassantes: lancarPassantes, travessiasLaje: travessiasLaje,
     _int: { recorte: recorte, caixaSeg: caixaSeg, segSeg3: segSeg3, dentroPoli: dentroPoli, normTrechos: normTrechos }
   };
   global.HidCriterios = HidCriterios;
