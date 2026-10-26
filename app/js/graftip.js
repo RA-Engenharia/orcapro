@@ -158,19 +158,32 @@
       if (!el) { if (atual && !(doc.activeElement && doc.activeElement === atual)) esconder(); return; }
       mostrar(el, e.clientX, e.clientY);
     }, true);
+    /* FOCO EM SÉRIE (26/10/2026): passar o mouse (ou o foco do teclado) no botão da legenda
+       acende a série e esmaece as outras — o CSS lê `data-foco` do contêiner. É só realce:
+       nenhuma série é ligada ou desligada aqui (isso é o clique). */
+    function focoSerie(el, ligar) {
+      var bt = el && el.closest ? el.closest("[data-gt-serie-bt]") : null;
+      if (!bt) return;
+      var raiz = bt.closest("[data-gt-grafico]");
+      if (!raiz) return;
+      if (ligar) raiz.setAttribute("data-foco", bt.getAttribute("data-gt-serie-bt")); else raiz.removeAttribute("data-foco");
+    }
     doc.addEventListener("pointerover", function (e) {
       if (e.pointerType === "touch") return;
       var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
       if (k) destacar(k, true);
+      focoSerie(e.target, true);
     }, true);
     doc.addEventListener("pointerout", function (e) {
       var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
       if (k) destacar(k, false);
+      focoSerie(e.target, false);
       if (e.pointerType !== "touch" && alvoDe(e.target) && !alvoDe(e.relatedTarget)) esconder();
     }, true);
     doc.addEventListener("focusin", function (e) {
       var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
       if (k) destacar(k, true);
+      focoSerie(e.target, true);
       var el = alvoDe(e.target);
       if (!el) return;
       var a = ancora(el); mostrar(el, a.x, a.y);
@@ -178,6 +191,7 @@
     doc.addEventListener("focusout", function (e) {
       var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
       if (k) destacar(k, false);
+      focoSerie(e.target, false);
       if (alvoDe(e.target)) esconder();
     });
     doc.addEventListener("keydown", function (e) {

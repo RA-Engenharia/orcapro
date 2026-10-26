@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.182",
+versao: "1.2.183",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -3803,17 +3803,20 @@ var CHAVE = "orcapro:tela:painel:v1";
 var DIAS_SUSPEITO = 1825;
 var DEFASAGEM_PONTOS = 20;
 var DIAS_ADIAR = 7;
+var DIAS_SEM_DIARIO = 7;
+var ABAS_OBRAS = { andamento: 1, todas: 1, concluidas: 1 };
+var POR_PAGINA = 12;
 var PERIODOS = { mes: 1, "6m": 1, ano: 1, tudo: 1 };
 var STATUS = { andamento: 1, planejamento: 1, pausada: 1, concluida: 1 };
 var BLOCOS = [
 { id: "tiles", nome: "Caixa (recebido, pago, resultado, saldo a faturar)", col: "esq" },
+{ id: "agenda", nome: "Próximos 7 dias (linha do tempo)", col: "esq" },
+{ id: "previsao", nome: "Caixa e previsão, 30 dias", col: "esq" },
 { id: "fluxo", nome: "Fluxo de caixa por mês", col: "esq" },
 { id: "composicao", nome: "Despesas por categoria e custo por obra", col: "esq" },
-{ id: "previsao", nome: "Previsão de caixa, 30 dias", col: "esq" },
 { id: "lucro", nome: "Lucratividade por mês", col: "esq" },
 { id: "metas", nome: "Metas (medidores)", col: "esq" },
 { id: "posicao", nome: "Posição de hoje (a receber, a pagar)", col: "esq" },
-{ id: "agenda", nome: "Agenda da semana", col: "esq" },
 { id: "obras", nome: "Obras", col: "cheia" },
 { id: "orcado", nome: "Orçado × gasto", col: "cheia" },
 { id: "operacao", nome: "Operação (contadores)", col: "cheia" }
@@ -3863,6 +3866,8 @@ CHAVE: CHAVE,
 DIAS_SUSPEITO: DIAS_SUSPEITO,
 DEFASAGEM_PONTOS: DEFASAGEM_PONTOS,
 DIAS_ADIAR: DIAS_ADIAR,
+DIAS_SEM_DIARIO: DIAS_SEM_DIARIO,
+POR_PAGINA: POR_PAGINA,
 BLOCOS: BLOCOS,
 GRUPOS: GRUPOS,
 hashUsuario: function (empresaId, email) {
@@ -4029,6 +4034,84 @@ return x.i - y.i;
 var m = max > 0 ? max : 6, lista = ord.map(function (x) { return x.l; });
 return { itens: lista.slice(0, m), restantes: Math.max(0, lista.length - m), total: lista.length };
 },
+variacao: function (atual, anterior) {
+var a = num(atual), p = num(anterior);
+if (a === 0 && p === 0) return { pct: null, dir: "sem", texto: "sem valor nos dois períodos" };
+if (p === 0) return { pct: null, dir: a > 0 ? "novo" : "baixa", texto: a > 0 ? "novo, sem valor no período anterior" : "zerou" };
+var pct = Math.round((a - p) / Math.abs(p) * 100);
+if (pct === 0) return { pct: 0, dir: "igual", texto: "igual ao período anterior" };
+return { pct: pct, dir: pct > 0 ? "alta" : "baixa", texto: (pct > 0 ? "+" : "−") + Math.abs(pct) + "% sobre o período anterior" };
+},
+sparkline: function (hojeISO, eventos) {
+var hoje = data(hojeISO);
+if (!hoje) return null;
+var dias = [], idx = {}, i;
+for (i = 29; i >= 0; i--) { var iso1 = somaDias(hojeISO, -i); idx[iso1] = dias.length; dias.push(0); }
+var comMov = {};
+(ehArr(eventos) ? eventos : []).forEach(function (e) {
+if (!e || !ehISO(e.data)) return;
+var k = String(e.data).slice(0, 10);
+if (!own(idx, k)) return;
+var v = num(e.valor);
+dias[idx[k]] += v;
+if (v !== 0) comMov[k] = 1;
+});
+var nMov = Object.keys(comMov).length;
+if (nMov < 2) return null;
+var ant = 0, rec = 0, tot = 0, max = 0;
+dias.forEach(function (v, k) { tot += v; if (v > max) max = v; if (k < 15) ant += v; else rec += v; });
+var dir, pct = null;
+if (ant === 0 && rec > 0) dir = "alta";
+else if (ant === 0) dir = "estavel";
+else {
+pct = Math.round((rec - ant) / Math.abs(ant) * 100);
+dir = pct > 5 ? "alta" : (pct < -5 ? "baixa" : "estavel");
+}
+return { dias: dias, total: tot, max: max, ultimos15: rec, anteriores15: ant, pct: pct, dir: dir, diasComMovimento: nMov };
+},
+_semAcento: function (s) {
+var x = String(s == null ? "" : s).toLowerCase();
+try { if (x.normalize) x = x.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+return x;
+},
+abaPadrao: function (abas, escolhida) {
+if (typeof escolhida === "string" && own(ABAS_OBRAS, escolhida)) return escolhida;
+return (abas && abas.andamento > 0) ? "andamento" : "todas";
+},
+obrasPainel: function (todas, o) {
+o = o || {};
+var self = this, lista = ehArr(todas) ? todas : [];
+var abas = { andamento: 0, concluidas: 0, todas: lista.length };
+lista.forEach(function (l) { if (!l) return; if (l.status === "andamento") abas.andamento++; else if (l.status === "concluida") abas.concluidas++; });
+var aba = this.abaPadrao(abas, o.aba);
+var q = this._semAcento(o.busca).replace(/^\s+|\s+$/g, "");
+var grupo = { andamento: 0, pausada: 1, planejamento: 2, concluida: 3 };
+var sel = lista.map(function (l, i) { return { l: l, i: i }; }).filter(function (x) {
+var l = x.l; if (!l) return false;
+if (aba === "andamento" && l.status !== "andamento") return false;
+if (aba === "concluidas" && l.status !== "concluida") return false;
+if (q && self._semAcento(l.nome).indexOf(q) < 0) return false;
+return true;
+});
+sel.sort(function (x, y) {
+var a = x.l, b = y.l;
+var ga = own(grupo, a.status) ? grupo[a.status] : 9, gb = own(grupo, b.status) ? grupo[b.status] : 9;
+if (ga !== gb) return ga - gb;
+var pa = (a.atencao && a.atencao.pontos) || 0, pb = (b.atencao && b.atencao.pontos) || 0;
+if (pa !== pb) return pb - pa;
+var da = (a.prazo && a.prazo.dias != null) ? a.prazo.dias : 1e9, db = (b.prazo && b.prazo.dias != null) ? b.prazo.dias : 1e9;
+if (da !== db) return da - db;
+return x.i - y.i;
+});
+var ordenadas = sel.map(function (x) { return x.l; });
+var corta = aba !== "andamento";
+var lim = corta ? Math.max(POR_PAGINA, Math.floor(num(o.ate)) || POR_PAGINA) : ordenadas.length;
+return { aba: aba, abas: abas, busca: q, total: ordenadas.length, itens: ordenadas.slice(0, lim), restantes: Math.max(0, ordenadas.length - lim), pagina: POR_PAGINA };
+},
+caixa30Total: function (c30) {
+if (!c30) return 0;
+return c30.saldoHoje + c30.entradas - c30.saidas - c30.atrasadasSaidas;
+},
 janela: function (periodo, hojeISO) {
 var hoje = data(hojeISO);
 var a = hoje.getFullYear(), m = hoje.getMonth();
@@ -4130,6 +4213,8 @@ var acum = {};
 var contas = [], abertos = [];
 var limiteContas = somaDias(hoje, metas.contasDias);
 var fimSemana = somaDias(hoje, 7);
+var fimDias7 = somaDias(hoje, 6);
+var vencPorObra = {}, eventosFin = [], sparkRec = [], sparkPag = [];
 fin.forEach(function (f) {
 if (!f) return;
 var v = num(f.valor), t = f.tipo;
@@ -4143,6 +4228,7 @@ if (mes) {
 if (!porMes[mes]) porMes[mes] = { recebido: 0, pago: 0 };
 if (t === "receita") porMes[mes].recebido += v; else porMes[mes].pago += v;
 }
+if (ehISO(f.data)) (t === "receita" ? sparkRec : sparkPag).push({ data: f.data, valor: v });
 if (self._noIntervalo(f, jan.ini, jan.fim)) {
 if (mes && (!primeiroMes || mes < primeiroMes)) primeiroMes = mes;
 if (t === "receita") caixa.recebido += v;
@@ -4161,8 +4247,10 @@ var temData = /^\d{4}-\d{2}-\d{2}$/.test(dv);
 if (t === "receita") caixa.aReceber += v;
 else {
 caixa.aPagar += v;
-if (temData && dv <= limiteContas) contas.push({ valor: v, vencimento: dv, vencida: dv < hoje });
+if (temData && dv <= limiteContas) contas.push({ valor: v, vencimento: dv, vencida: dv < hoje, id: f.id || "", desc: f.desc || f.fornecedor || "", obraId: oid });
+if (temData && dv < hoje && oid) { if (!vencPorObra[oid]) vencPorObra[oid] = { n: 0, valor: 0 }; vencPorObra[oid].n++; vencPorObra[oid].valor += v; }
 }
+if (temData && dv >= hoje && dv <= fimDias7) eventosFin.push({ tipo: t === "receita" ? "recebimento" : "vencimento", data: dv, valor: v, titulo: f.desc || f.fornecedor || (t === "receita" ? "Receita prevista" : "Conta a pagar"), id: f.id || "", obraId: oid, view: "financeiro" });
 abertos.push({ tipo: t, valor: v, data: temData ? dv : null, origem: "financeiro" });
 }
 });
@@ -4184,9 +4272,12 @@ var eixo = this.meses(periodo, hoje, primeiroMes);
 var saldo = 0;
 caixa.porMes = eixo.map(function (m) {
 var x = porMes[m] || { recebido: 0, pago: 0 };
+var chAnt = self._mesesAnteriores([m], "mes")[0], ya = porMes[chAnt] || { recebido: 0, pago: 0 };
+var temAnt = own(porMes, chAnt);
 saldo += x.recebido - x.pago;
 return { mes: m, recebido: x.recebido, pago: x.pago, saldo: saldo,
-lucratividade: (x.recebido > 0 && x.pago > 0) ? Math.round((x.recebido - x.pago) / x.recebido * 100) : null };
+lucratividade: (x.recebido > 0 && x.pago > 0) ? Math.round((x.recebido - x.pago) / x.recebido * 100) : null,
+vs: temAnt ? { mes: chAnt, recebido: self.variacao(x.recebido, ya.recebido), pago: self.variacao(x.pago, ya.pago), resultado: self.variacao(x.recebido - x.pago, ya.recebido - ya.pago) } : null };
 });
 caixa.porMesAnterior = null;
 if (jan.iniAnterior && eixo.length) {
@@ -4221,6 +4312,15 @@ if (pr && pr.linhas && pr.linhas.length) {
 if (pr.porEtapa) { if (obras.length === 1) orcadoUnico = { previsto: num(pr.prevTot), gasto: num(pr.realTot) }; }
 else pr.linhas.forEach(function (l) { if (l && l.rotulo) orcadoPorNome[l.rotulo] = { previsto: num(l.previsto), gasto: num(l.real) }; });
 }
+var ultRdo = {}, medPendObra = {}, medAprovObra = {}, faturadoObra = {};
+rdos.forEach(function (r) { if (r && r.obraId && ehISO(r.data)) { var dd = String(r.data).slice(0, 10); if (dd <= hoje && (!ultRdo[r.obraId] || dd > ultRdo[r.obraId])) ultRdo[r.obraId] = dd; } });
+medicoes.forEach(function (m) {
+if (!m || !m.obraId) return;
+var o2 = m.obraId;
+if (m.status === "pendente") { if (!medPendObra[o2]) medPendObra[o2] = { n: 0, numero: "" }; medPendObra[o2].n++; if (!medPendObra[o2].numero) medPendObra[o2].numero = String(m.numero || ""); }
+if (m.status === "aprovada" && !m.dataPgto) { if (!medAprovObra[o2]) medAprovObra[o2] = { n: 0, valor: 0, numero: "" }; medAprovObra[o2].n++; medAprovObra[o2].valor += num(m.valor); if (!medAprovObra[o2].numero) medAprovObra[o2].numero = String(m.numero || ""); }
+if (m.status === "aprovada" || m.status === "paga") faturadoObra[o2] = (faturadoObra[o2] || 0) + num(m.valor);
+});
 var comMov = [], semMov = [], emAndamento = 0, semDatasAndamento = 0, semDatasPlanej = 0, porObraPerLista = [], entregas = [];
 obras.forEach(function (o) {
 if (!o) return;
@@ -4257,6 +4357,31 @@ var linha = { id: o.id, nome: o.nome || "", status: o.status || "", entregue: pz
 contratado: ctrPorObra[o.id] > 0 ? ctrPorObra[o.id] : 0, valorObra: num(o.valor), base: base, semContrato: !(ctrPorObra[o.id] > 0),
 recebido: a.rec, custoPago: a.custo, margem: (a.rec > 0 && a.custo > 0) ? (a.rec - a.custo) / a.rec * 100 : null,
 custoM2: (a.custo > 0 && area > 0) ? a.custo / area : null, area: area, orcado: orcado, avisos: avisos };
+linha.faturado = faturadoObra[o.id] || 0;
+linha.avancoFin = base > 0 ? Math.max(0, Math.round(a.rec / base * 100)) : null;
+linha.saldoReceber = base > 0 ? Math.max(0, base - a.rec) : null;
+linha.ultimoDiario = ultRdo[o.id] || null;
+linha.diasSemDiario = linha.ultimoDiario ? diasEntre(linha.ultimoDiario, hoje) : null;
+linha.vencidas = vencPorObra[o.id] || { n: 0, valor: 0 };
+linha.medPendente = medPendObra[o.id] || null;
+linha.medAprovada = medAprovObra[o.id] || null;
+linha.atraso = null;
+if (o.status === "andamento" && pz.temDatas) {
+if (pz.vencido && !(linha.avanco !== null && linha.avanco >= 100)) linha.atraso = { tom: "alerta", texto: "Atrasada " + (-pz.dias) + (pz.dias === -1 ? " dia" : " dias") };
+else if (defas !== null && defas >= DEFASAGEM_PONTOS) linha.atraso = { tom: sinal === "alerta" ? "alerta" : "aviso", texto: defas + " pontos atrás do calendário" };
+}
+var pts = 0, motivos = [];
+if (o.status === "andamento") {
+if (linha.atraso && linha.atraso.tom === "alerta" && pz.vencido) { pts += 60 + Math.min(40, Math.floor(-pz.dias / 3)); motivos.push({ cod: "vencida", texto: linha.atraso.texto }); }
+else if (linha.atraso) { pts += 30 + (linha.atraso.tom === "alerta" ? 10 : 0); motivos.push({ cod: "defasagem", texto: linha.atraso.texto }); }
+if (orcado && orcado.estourou) { pts += 25; motivos.push({ cod: "estouro", texto: "Custo acima do orçado" }); }
+if (linha.vencidas.n > 0) { pts += 25 + Math.min(15, linha.vencidas.n); motivos.push({ cod: "vencidas", texto: linha.vencidas.n + (linha.vencidas.n === 1 ? " conta vencida" : " contas vencidas") }); }
+if (linha.ultimoDiario === null) { pts += 12; motivos.push({ cod: "sem-diario", texto: "Sem diário lançado" }); }
+else if (linha.diasSemDiario > DIAS_SEM_DIARIO) { pts += 12 + Math.min(10, Math.floor(linha.diasSemDiario / 7)); motivos.push({ cod: "sem-diario", texto: "Sem diário há " + linha.diasSemDiario + " dias" }); }
+if (linha.medPendente) { pts += 8; motivos.push({ cod: "medicao", texto: "Medição aguarda aprovação" }); }
+if (semPct && pz.temDatas) pts += 4;
+} else if (linha.vencidas.n > 0 && o.status !== "concluida") { pts += 10; motivos.push({ cod: "vencidas", texto: linha.vencidas.n + (linha.vencidas.n === 1 ? " conta vencida" : " contas vencidas") }); }
+linha.atencao = { pontos: pts, motivos: motivos };
 var movimento = a.rec > 0 || a.custo > 0 || (pz.temDatas && o.status === "andamento");
 if (movimento && !pz.entregue) comMov.push(linha); else semMov.push(linha);
 if (porObraPer[o.id] > 0) porObraPerLista.push({ id: o.id, nome: o.nome || "", valor: porObraPer[o.id] });
@@ -4291,10 +4416,18 @@ else { alvo.saidas += a.valor; if (alvo.nSaidas !== undefined) alvo.nSaidas++; }
 if (alvo === semData || alvo === atrasadas || alvo === depois) alvo.n++;
 });
 var liq = 0;
-semanas.forEach(function (s) { liq += s.entradas - s.saidas; s.liquido = liq; });
+semanas.forEach(function (s, i) {
+liq += s.entradas - s.saidas; s.liquido = liq;
+s.vs = i === 0 ? null : { entradas: self.variacao(s.entradas, semanas[i - 1].entradas), saidas: self.variacao(s.saidas, semanas[i - 1].saidas) };
+});
 var previsao30 = { semanas: semanas, atrasadas: atrasadas, semData: semData, depois: depois,
 entradas: semanas.reduce(function (s, x) { return s + x.entradas; }, 0), saidas: semanas.reduce(function (s, x) { return s + x.saidas; }, 0),
 temDado: abertos.length > 0 };
+var saldoHoje = 0, kk;
+for (kk in acum) if (own(acum, kk)) saldoHoje += acum[kk].rec - acum[kk].custo;
+var caixa30 = { saldoHoje: saldoHoje, entradas: previsao30.entradas, saidas: previsao30.saidas, atrasadasSaidas: atrasadas.saidas, atrasadasEntradas: atrasadas.entradas,
+semData: semData, depois: depois, temDado: previsao30.temDado || saldoHoje !== 0 };
+caixa30.projetado = saldoHoje + previsao30.entradas - previsao30.saidas - atrasadas.saidas;
 var contasSemana = contas.filter(function (c) { return c.vencimento <= fimSemana; });
 var receberSemana = abertos.filter(function (a) { return a.tipo === "receita" && a.data && a.data >= hoje && a.data <= fimSemana; });
 var medPend = medicoes.filter(function (m) { return m && m.status === "pendente"; });
@@ -4307,6 +4440,44 @@ medicoesAAprovar: medPend.length,
 tarefasAtrasadas: (d.tarefas && d.tarefas.atrasadas) || 0,
 vazia: !contasSemana.length && !receberSemana.length && !entregas.length && !medPend.length && !((d.tarefas && d.tarefas.atrasadas) || 0)
 };
+var eventos = [];
+var objDia = {};
+eventosFin.forEach(function (e) { eventos.push(e); });
+entregas.forEach(function (o) { eventos.push({ tipo: "entrega", data: somaDias(hoje, o.dias), titulo: o.nome, detalhe: o.avanco === null ? "" : o.avanco + "% medido", obraId: o.id, view: "cronobra" }); });
+aprov.forEach(function (m) {
+var base0 = ehISO(m.data) ? String(m.data).slice(0, 10) : (ehISO(m.periodoFim) ? String(m.periodoFim).slice(0, 10) : null);
+var dp = base0 ? somaDias(base0, metas.prazoReceber) : null;
+if (dp && dp >= hoje && dp <= fimDias7) eventos.push({ tipo: "recebimento", data: dp, valor: num(m.valor), titulo: "Boletim " + (m.numero || "") + " aprovado", detalhe: "pagamento previsto", obraId: m.obraId || "", view: "medicoes", id: m.id || "" });
+});
+medPend.forEach(function (m) {
+var pf = ehISO(m.periodoFim) ? String(m.periodoFim).slice(0, 10) : null;
+if (pf && pf >= hoje && pf <= fimDias7) eventos.push({ tipo: "medicao", data: pf, valor: num(m.valor), titulo: "Fecha a medição " + (m.numero || ""), detalhe: "aguarda aprovação", obraId: m.obraId || "", view: "medicoes", id: m.id || "" });
+});
+compras.forEach(function (c) {
+if (!c || compraTerminal(c.status)) return;
+var dc = (c.confirmacao && ehISO(c.confirmacao.dataEntrega)) ? String(c.confirmacao.dataEntrega).slice(0, 10) : (ehISO(c.previsaoEntrega) ? String(c.previsaoEntrega).slice(0, 10) : null);
+if (dc && dc >= hoje && dc <= fimDias7) eventos.push({ tipo: "compra", data: dc, titulo: "Entrega" + (c.fornecedorNome ? " de " + c.fornecedorNome : " de material"), detalhe: c.numero ? "pedido " + c.numero : "", obraId: c.obraId || "", view: "compras", id: c.id || "" });
+});
+var tarAtr = 0;
+(ehArr(d.tarefasLista) ? d.tarefasLista : []).forEach(function (t) {
+if (!t || !ehISO(t.prazo) || t.status === "feita" || t.status === "cancelada") return;
+var dt = String(t.prazo).slice(0, 10);
+if (dt < hoje) tarAtr++;
+else if (dt <= fimDias7) eventos.push({ tipo: "tarefa", data: dt, titulo: t.titulo || t.descricao || "Tarefa", obraId: t.obraId || "", view: "tarefas", id: t.id || "" });
+});
+var ordemTipo = { vencimento: 0, entrega: 1, medicao: 2, recebimento: 3, compra: 4, tarefa: 5 };
+var diasSemana = [];
+for (var di = 0; di < 7; di++) {
+var isoD = somaDias(hoje, di);
+var doDia = eventos.filter(function (e) { return e.data === isoD; }).map(function (e) {
+return { tipo: e.tipo, titulo: String(e.titulo || ""), detalhe: String(e.detalhe || ""), valor: e.valor === undefined ? null : e.valor, obraId: e.obraId || "", obraNome: e.obraId && own(nomeObra, e.obraId) ? nomeObra[e.obraId] : "", view: e.view || "", id: e.id || "" };
+});
+doDia.sort(function (x, y) { var ox = own(ordemTipo, x.tipo) ? ordemTipo[x.tipo] : 9, oy = own(ordemTipo, y.tipo) ? ordemTipo[y.tipo] : 9; if (ox !== oy) return ox - oy; return num(y.valor) - num(x.valor); });
+diasSemana.push({ data: isoD, hoje: di === 0, eventos: doDia });
+}
+var atrasadosCont = { n: contas.filter(function (c) { return c.vencida; }).length, valor: contas.filter(function (c) { return c.vencida; }).reduce(function (s, c) { return s + c.valor; }, 0) };
+var nEventos = diasSemana.reduce(function (s, x) { return s + x.eventos.length; }, 0);
+agenda.dias = diasSemana; agenda.atrasados = { contas: atrasadosCont, tarefas: tarAtr || ((d.tarefas && d.tarefas.atrasadas) || 0), medicoes: 0 }; agenda.totalEventos = nEventos;
 var dec = [];
 function push(x) { dec.push(x); }
 comMov.forEach(function (l) {
@@ -4320,14 +4491,23 @@ else if (l.prazo.dias <= 15 && l.avanco < 90) push({ codigo: "entrega-proxima", 
 if (pr && pr.linhas) pr.linhas.filter(function (x) { return x.estourou; }).forEach(function (x) {
 push({ codigo: "estouro", tema: "orcamento", gravidade: 3, unidade: "R$", valor: num(x.real) - num(x.previsto), obraNome: x.rotulo, previsto: num(x.previsto), real: num(x.real), acao: { tipo: "view", valor: "previstoreal" } });
 });
-if (contas.length) push({ codigo: "contas", gravidade: caixa.contasVencendo.vencidas ? 3 : 2, unidade: "R$", valor: contasVal, n: contas.length, vencidas: caixa.contasVencendo.vencidas, ate: limiteContas, dias: caixa.contasVencendo.dias, acao: { tipo: "view", valor: "financeiro" } });
+var itensContas = contas.slice().sort(function (x, y) { return x.vencimento < y.vencimento ? -1 : (x.vencimento > y.vencimento ? 1 : 0); }).slice(0, 4)
+.map(function (c) { return { id: c.id, rotulo: c.desc || "Conta a pagar", sub: (c.vencida ? "vencida em " : "vence em ") + c.vencimento.slice(8, 10) + "/" + c.vencimento.slice(5, 7), valor: c.valor, obraNome: c.obraId && own(nomeObra, c.obraId) ? nomeObra[c.obraId] : "" }; })
+.filter(function (i) { return !!i.id; });
+if (contas.length) push({ codigo: "contas", gravidade: caixa.contasVencendo.vencidas ? 3 : 2, unidade: "R$", valor: contasVal, n: contas.length, vencidas: caixa.contasVencendo.vencidas, ate: limiteContas, dias: caixa.contasVencendo.dias, itens: itensContas, itensAcao: "abrir-lancamento", acao: { tipo: "view", valor: "financeiro" } });
 var dinheiro = d.mostrarDinheiro !== false;
-if (medPend.length) push({ codigo: "medicoes-aprovar", gravidade: 2, unidade: dinheiro ? "R$" : "un", valor: dinheiro ? medPend.reduce(function (s, m) { return s + num(m.valor); }, 0) : medPend.length, n: medPend.length, acao: { tipo: "view", valor: "medicoes" } });
+var itemMed = function (m) { return { id: m.id || "", rotulo: "Medição " + (m.numero || "") + (m.obraId && own(nomeObra, m.obraId) ? " · " + nomeObra[m.obraId] : ""), sub: "", valor: dinheiro ? num(m.valor) : null, obraNome: "" }; };
+if (medPend.length) push({ codigo: "medicoes-aprovar", gravidade: 2, unidade: dinheiro ? "R$" : "un", valor: dinheiro ? medPend.reduce(function (s, m) { return s + num(m.valor); }, 0) : medPend.length, n: medPend.length, itens: medPend.slice(0, 4).map(itemMed).filter(function (i) { return !!i.id; }), itensAcao: "aprovar-medicao", acao: { tipo: "view", valor: "medicoes" } });
 var rec = d.reconciliacao || null;
 if (rec && rec.itens) rec.itens.forEach(function (i) {
-push({ codigo: "reconciliacao", gravidade: i.gravidade >= 3 ? 3 : 2, unidade: "R$", valor: num(i.valor), titulo: i.titulo, detalhe: i.detalhe, porque: i.porque, acaoTexto: i.acao, docId: i.docId || i.id || "", acao: { tipo: "view", valor: i.view } });
+var x = { codigo: "reconciliacao", gravidade: i.gravidade >= 3 ? 3 : 2, unidade: "R$", valor: num(i.valor), titulo: i.titulo, detalhe: i.detalhe, porque: i.porque, acaoTexto: i.acao, docId: i.docId || i.id || "", acao: { tipo: "view", valor: i.view } };
+if (i.tipo === "medicao-sem-recebimento" && i.docId && dinheiro) {
+var med = medicoes.filter(function (m) { return m && m.id === i.docId && m.status === "aprovada" && !m.dataPgto; })[0];
+if (med) { x.itens = [itemMed(med)]; x.itensAcao = "pagar-medicao"; x.n = 1; }
+}
+push(x);
 });
-if (dinheiro && !rec && aprov.length) push({ codigo: "aprovado-nao-pago", gravidade: 2, unidade: "R$", valor: caixa.aprovadoNaoPago.valor, n: aprov.length, acao: { tipo: "view", valor: "medicoes" } });
+if (dinheiro && !rec && aprov.length) push({ codigo: "aprovado-nao-pago", gravidade: 2, unidade: "R$", valor: caixa.aprovadoNaoPago.valor, n: aprov.length, itens: aprov.filter(function (m) { return !m.dataPgto; }).slice(0, 4).map(itemMed).filter(function (i) { return !!i.id; }), itensAcao: "pagar-medicao", acao: { tipo: "view", valor: "medicoes" } });
 (d.atencao || []).forEach(function (i) {
 var v = num(i.valor);
 var oNome = i.obraId && own(nomeObra, i.obraId) ? nomeObra[i.obraId] : "";
@@ -4394,10 +4574,11 @@ return {
 hoje: hoje, periodo: periodo, janela: jan, filtrado: !!(d.obraIds && d.obraIds.length),
 caixa: caixa,
 decisoes: ativas, decisoesAdiadas: adiadas, grupos: grupos, emJogo: emJogo, avisosDoSino: avisosTotal,
-obras: { comMovimento: comMovVis, semMovimento: semMovVis, total: obras.length, emAndamento: emAndamento, filtroStatus: statusObras,
+obras: { comMovimento: comMovVis, semMovimento: semMovVis, todas: comMov.concat(semMov), total: obras.length, emAndamento: emAndamento, filtroStatus: statusObras,
 ocultasPeloStatus: (comMov.length - comMovVis.length) + (semMov.length - semMovVis.length), semDatasAndamento: semDatasAndamento, semDatasPlanejamento: semDatasPlanej },
 categorias: categorias, porObra: porObraPerLista.slice(0, 8), semObraPeriodo: semObraPer,
-contratos: contratosOut, operacao: operacao, metas: metasOut, previsao30: previsao30, agenda: agenda,
+contratos: contratosOut, operacao: operacao, metas: metasOut, previsao30: previsao30, caixa30: caixa30, agenda: agenda,
+spark: { recebido: this.sparkline(hoje, sparkRec), pago: this.sparkline(hoje, sparkPag), obrasComDiario: this.sparkline(hoje, (function () { var seen = {}, out = []; rdos.forEach(function (r) { if (!r || !r.obraId || !ehISO(r.data)) return; var k2 = String(r.data).slice(0, 10) + "|" + r.obraId; if (seen[k2]) return; seen[k2] = 1; out.push({ data: r.data, valor: 1 }); }); return out; })()) },
 prevReal: pr
 };
 }
@@ -53057,19 +53238,29 @@ var el = alvoDe(e.target);
 if (!el) { if (atual && !(doc.activeElement && doc.activeElement === atual)) esconder(); return; }
 mostrar(el, e.clientX, e.clientY);
 }, true);
+function focoSerie(el, ligar) {
+var bt = el && el.closest ? el.closest("[data-gt-serie-bt]") : null;
+if (!bt) return;
+var raiz = bt.closest("[data-gt-grafico]");
+if (!raiz) return;
+if (ligar) raiz.setAttribute("data-foco", bt.getAttribute("data-gt-serie-bt")); else raiz.removeAttribute("data-foco");
+}
 doc.addEventListener("pointerover", function (e) {
 if (e.pointerType === "touch") return;
 var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
 if (k) destacar(k, true);
+focoSerie(e.target, true);
 }, true);
 doc.addEventListener("pointerout", function (e) {
 var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
 if (k) destacar(k, false);
+focoSerie(e.target, false);
 if (e.pointerType !== "touch" && alvoDe(e.target) && !alvoDe(e.relatedTarget)) esconder();
 }, true);
 doc.addEventListener("focusin", function (e) {
 var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
 if (k) destacar(k, true);
+focoSerie(e.target, true);
 var el = alvoDe(e.target);
 if (!el) return;
 var a = ancora(el); mostrar(el, a.x, a.y);
@@ -53077,6 +53268,7 @@ var a = ancora(el); mostrar(el, a.x, a.y);
 doc.addEventListener("focusout", function (e) {
 var k = e.target && e.target.closest ? e.target.closest("[data-gt-k]") : null;
 if (k) destacar(k, false);
+focoSerie(e.target, false);
 if (alvoDe(e.target)) esconder();
 });
 doc.addEventListener("keydown", function (e) {
@@ -53687,7 +53879,7 @@ titulo: "Medição aprovada há " + dias + " dias e não recebida",
 detalhe: "Medição " + (texto(m.numero) || "—")
 + (nomeObra[m.obraId] ? " · " + nomeObra[m.obraId] : ""),
 porque: "Você aprovou e o recebimento não foi registrado. Não entra no caixa nem alerta de atraso.",
-valor: v, obraId: m.obraId, view: "medicoes",
+valor: v, obraId: m.obraId, view: "medicoes", docId: m.id || "",
 acao: "Se o cliente pagou, marque a data de pagamento. Se não pagou, é cobrança em aberto."
 });
 });
@@ -69095,6 +69287,12 @@ var S = estado.api && estado.api.S; if (!S || !S.camera || !S.orbit) return fals
 var T = estado.api.THREE, P = new T.Vector3(pos[0], pos[1], pos[2]), A = new T.Vector3(alvo[0], alvo[1], alvo[2]);
 if (S.modelRoot) { S.modelRoot.updateMatrixWorld(true); P.applyMatrix4(S.modelRoot.matrixWorld); A.applyMatrix4(S.modelRoot.matrixWorld); }
 S.camera.position.copy(P); S.orbit.target.copy(A); S.orbit.update(); lod(true); return true;
+},
+paraDesenho: function (fn) {
+var trocas = [];
+estado.grupos.forEach(function (g) { if (g.grupo && g.grupo.visible !== false) { trocas.push([g.grupo, g.grupo.visible]); g.grupo.visible = false; } });
+estado.escondidas.forEach(function (m) { if (m && m.visible === false && m.userData && m.userData._alvOculta === true) { trocas.push([m, false]); m.visible = true; } });
+try { return fn(); } finally { for (var i = trocas.length - 1; i >= 0; i--) trocas[i][0].visible = trocas[i][1]; }
 },
 forcarDetalhe: function (perto) { estado.grupos.forEach(function (g) { g.grupo.visible = !!perto; mostrarOriginal(g.id, !perto); }); }
 };

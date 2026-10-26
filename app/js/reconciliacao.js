@@ -279,7 +279,7 @@
         detalhe: "Medição " + (texto(m.numero) || "—")
           + (nomeObra[m.obraId] ? " · " + nomeObra[m.obraId] : ""),
         porque: "Você aprovou e o recebimento não foi registrado. Não entra no caixa nem alerta de atraso.",
-        valor: v, obraId: m.obraId, view: "medicoes",
+        valor: v, obraId: m.obraId, view: "medicoes", docId: m.id || "",
         acao: "Se o cliente pagou, marque a data de pagamento. Se não pagou, é cobrança em aberto."
       });
     });

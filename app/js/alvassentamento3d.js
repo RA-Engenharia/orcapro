@@ -310,6 +310,22 @@
       if (S.modelRoot) { S.modelRoot.updateMatrixWorld(true); P.applyMatrix4(S.modelRoot.matrixWorld); A.applyMatrix4(S.modelRoot.matrixWorld); }
       S.camera.position.copy(P); S.orbit.target.copy(A); S.orbit.update(); lod(true); return true;
     },
+    /* ⚠ A VISTA 2D NÃO É O {3D} DE PERTO (26/10/2026, defeito da 1.2.182). O nível de detalhe acima troca a parede pelos
+       blocos com a câmera a menos de TETO.distanciaDetalhe (18 m) — e troca ESCONDENDO a malha original (visible = false,
+       _alvOculta) e pondo os grupos de blocos (InstancedMesh) dentro do modelRoot. A planta, o corte e a elevação
+       (js/bim.js vista2d) leem a cena e respeitam a visibilidade: extraídas com o 3D de perto, as paredes cruas SUMIAM da
+       planta (o Rogério: "volto para a planta baixa e as paredes somem ou aparecem só algumas" — só as que estavam a mais
+       de 18 m da câmera ficavam) e um bloco e uma caixa de 1 m da argamassa (a geometria da instância sem a matriz dela)
+       apareciam soltos na origem. Não era da fluidez: com o segundo plano desligado o mesmo acontecia na hora do clique
+       (tools/e2e-bim-planta-paredes.js, PAREDES_CN_FILA=1).
+       paraDesenho(fn) roda fn com a cena como o desenho técnico a vê — a parede original no lugar, os blocos fora — e
+       devolve a visibilidade EXATA de antes (não recalcula o nível de detalhe: nada muda no 3D). Síncrono; aninhado vale. */
+    paraDesenho: function (fn) {
+      var trocas = [];
+      estado.grupos.forEach(function (g) { if (g.grupo && g.grupo.visible !== false) { trocas.push([g.grupo, g.grupo.visible]); g.grupo.visible = false; } });
+      estado.escondidas.forEach(function (m) { if (m && m.visible === false && m.userData && m.userData._alvOculta === true) { trocas.push([m, false]); m.visible = true; } });
+      try { return fn(); } finally { for (var i = trocas.length - 1; i >= 0; i--) trocas[i][0].visible = trocas[i][1]; }
+    },
     /* para o e2e: força o detalhe (ou o longe) sem mexer na câmera */
     forcarDetalhe: function (perto) { estado.grupos.forEach(function (g) { g.grupo.visible = !!perto; mostrarOriginal(g.id, !perto); }); }
   };

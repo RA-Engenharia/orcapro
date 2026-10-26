@@ -7656,9 +7656,11 @@ if (itA) acima.push(itA);
 return acima;
 }
 function vista2d(def) {
-var BMU = window.BimMateriaisUI;
-if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(function () { return vista2dCorpo(def); });
-return vista2dCorpo(def);
+var BMU = window.BimMateriaisUI, A3 = window.AlvAssentamento3D;
+var corpo = function () { return vista2dCorpo(def); };
+var semBlocos = (A3 && typeof A3.paraDesenho === 'function') ? function () { return A3.paraDesenho(corpo); } : corpo;
+if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(semBlocos);
+return semBlocos();
 }
 function vista2dCorpo(def) {
 if (S._famLodTudo0) S._famLodTudo0();

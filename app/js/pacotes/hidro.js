@@ -27442,6 +27442,82 @@ else { out.erro = "A seleção não tem aparelho sanitário nem ambiente: clique
 out.aparelhos = sel.map(function (f) { return String(f.id); });
 return out;
 },
+_anteriores: function (c, apIds, opcoes) {
+opcoes = opcoes || {};
+var K = dep("HidKit"), A = dep("HidAmbiente"), out = { ops: [], avisos: [], ids: {}, mantidos: {}, mantidosAp: {}, aparelhosVelhos: {}, comodos: 0, migradas: 0, porComodo: {}, daRede: [] };
+if (!K || !A || !A._int || !A._int.limpeza) return out;
+var Ms = [], vistos = {};
+arr(apIds).forEach(function (seed) { var M = A.membros(c.estado, c.avaliarFam, c.ops, seed, null); if (!M || vistos[M.id]) return; vistos[M.id] = 1; Ms.push(M); });
+var apsDe = {};
+K.achatar(c.ops).forEach(function (o) { if (o && o.ambInfo && o.ambInfo.id != null) apsDe[String(o.ambInfo.id)] = arr(o.ambInfo.aparelhos).map(String); });
+Ms.forEach(function (M) {
+var ids = arr(M.fams).map(function (f) { return String(f.id); }), al = {};
+al[M.id] = 1; ids.forEach(function (id) { al["amb" + id] = 1; });
+Object.keys(apsDe).forEach(function (aid) { if (apsDe[aid].some(function (x) { return ids.indexOf(x) >= 0; })) al[aid] = 1; });
+M._ids = ids; M._alvos = Object.keys(al).sort(function (a, b) { return b.length - a.length; });
+});
+var todosAl = []; Ms.forEach(function (M) { M._alvos.forEach(function (a) { if (todosAl.indexOf(a) < 0) todosAl.push(a); }); });
+todosAl.sort(function (a, b) { return b.length - a.length; });
+var opsM = arr(c.ops).map(function (l) {
+if (!l || l.op !== "lote" || !/^hid/.test(String(l.origem || ""))) return l;
+var mudou = false, dentro = arr(l.ops).map(function (o) {
+if (!o || o.id == null || o.amb != null || o.kit != null || o.rede != null || o.bar != null || o.aq != null || o.predio != null || o.op === "apagar" || o.op === "desanotar") return o;
+var aid = todosAl.filter(function (a) { return String(o.id).indexOf(a + "-") === 0; })[0]; if (!aid) return o;
+var n = JSON.parse(JSON.stringify(o)); n.amb = aid; n.ambParte = "migrada"; mudou = true; out.migradas++; return n;
+});
+if (!mudou) return l;
+var l2 = {}; Object.keys(l).forEach(function (k) { l2[k] = l[k]; }); l2.ops = dentro; return l2;
+});
+var comPeca = {}, apag = {};
+K.achatar(opsM).forEach(function (o, i) { if (o && (o.op === "apagar" || o.op === "desanotar") && o.id != null) apag[o.id] = i; });
+K.achatar(opsM).forEach(function (o, i) { if (o && o.amb != null && o.op !== "apagar" && o.op !== "desanotar" && o.ambParte !== "reaproveitada" && o.ambParte !== "limpar" && !(apag[o.id] > i)) comPeca[String(o.amb)] = 1; });
+Ms.forEach(function (M) {
+var velhos = M._alvos.filter(function (aid) { return comPeca[aid]; }); if (!velhos.length) return;
+if (opcoes.perguntarManual !== false && velhos.some(function (aid) { return U._ambManual(opsM, aid); }) &&
+!U._confirmar("As ligações do ambiente " + M.id + " foram editadas à mão.\n\nRefazer as ligações (a edição manual é substituída)?")) {
+out.mantidos[M.id] = 1; M._ids.forEach(function (id) { out.mantidosAp[id] = 1; });
+out.avisos.push({ texto: "Ambiente " + M.id + ": mantive as ligações editadas à mão (o traçado deste cômodo não foi refeito).", elementos: M._ids.slice(0, 1) });
+return;
+}
+out.comodos++;
+var meus = out.porComodo[M.id] = [];
+velhos.forEach(function (aid) {
+arr(apsDe[aid]).forEach(function (x) { if (M._ids.indexOf(x) < 0) out.aparelhosVelhos[x] = 1; });
+A._int.limpeza(opsM.concat([{ op: "lote", id: "previa", ops: out.ops.slice() }]), M._ids, aid).forEach(function (o) { if (out.ids[String(o.id)]) return; out.ids[String(o.id)] = 1; out.ops.push(o); meus.push(String(o.id)); });
+});
+});
+if (out.comodos) {
+var redesVivas = {}; arr(c.estado.hidRedes).forEach(function (r) { redesVivas[String(r.id)] = 1; });
+var vivR = {}, ordR = { acessorio: 0, trecho: 1, peca: 2, anotar: 4 };
+K.achatar(c.ops).forEach(function (o, i) { if (o && o.rede != null && redesVivas[String(o.rede)] && o.id != null && ordR[o.op] != null && o.redeParte !== "limpar" && !(apag[o.id] > i)) vivR[String(o.id)] = o.op; });
+Object.keys(vivR).sort(function (a, b) { return ordR[vivR[a]] - ordR[vivR[b]]; }).forEach(function (id) { if (out.ids[id]) return; out.ids[id] = 1; out.ops.push({ op: vivR[id] === "anotar" ? "desanotar" : "apagar", id: id, rede: "pre-limpar" }); out.daRede.push(id); });
+}
+var HAQ = dep("HidAQTraco"); if (!HAQ && typeof require === "function") { try { HAQ = require("./hidaqtraco.js"); } catch (eRq) { HAQ = null; } }
+if (HAQ && HAQ.anteriores) arr(HAQ.anteriores(K.achatar(c.ops))).forEach(function (id) { if (out.ids[String(id)]) return; out.ids[String(id)] = 1; out.ops.push({ op: "apagar", id: id }); });
+return out;
+},
+_conflitosManuais: function (c, ops, resumo) {
+var K = dep("HidKit"), BE = dep("BimEdit"), gerado = {}, novos = {}, out = [];
+arr(c.ops).forEach(function (l) { if (l && l.op === "lote" && /^hid/.test(String(l.origem || ""))) K.achatar([l]).forEach(function (o) { if (o && o.id != null) gerado[String(o.id)] = 1; }); });
+arr(resumo.ids).forEach(function (id) { novos[String(id)] = 1; });
+var trs = arr((BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])).instalacoes || {}).trechos);
+var man = trs.filter(function (t) { return !gerado[String(t.id)] && !novos[String(t.id)]; }), nov = trs.filter(function (t) { return novos[String(t.id)]; });
+if (!man.length || !nov.length) return out;
+function d3(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
+function ptSeg(p, a, b) { var vx = b.x - a.x, vy = b.y - a.y, vz = b.z - a.z, L2 = vx * vx + vy * vy + vz * vz, t = L2 ? ((p.x - a.x) * vx + (p.y - a.y) * vy + (p.z - a.z) * vz) / L2 : 0; t = Math.max(0, Math.min(1, t)); return d3(p, { x: a.x + vx * t, y: a.y + vy * t, z: a.z + vz * t }); }
+function segSeg(A, B) { var m = Infinity, N = 16, i, t; for (i = 0; i <= N; i++) { t = i / N; m = Math.min(m, ptSeg({ x: A.p1.x + (A.p2.x - A.p1.x) * t, y: A.p1.y + (A.p2.y - A.p1.y) * t, z: A.p1.z + (A.p2.z - A.p1.z) * t }, B.p1, B.p2), ptSeg({ x: B.p1.x + (B.p2.x - B.p1.x) * t, y: B.p1.y + (B.p2.y - B.p1.y) * t, z: B.p1.z + (B.p2.z - B.p1.z) * t }, A.p1, A.p2)); } return m; }
+function raio(t) { return num0(t.dn) / 2000; }
+man.forEach(function (m) {
+var bate = nov.filter(function (n) {
+var toca = [m.p1, m.p2].some(function (p) { return [n.p1, n.p2].some(function (q) { return d3(p, q) <= 0.03; }); });
+return !toca && segSeg(m, n) < raio(m) + raio(n) - 0.002;
+});
+if (!bate.length) return;
+out.push({ texto: "Tubo desenhado à mão " + m.id + " (" + (m.sistema || "") + "): o traçado novo passa por ele (" + bate.slice(0, 3).map(function (n) { return n.id; }).join(", ") + "). Manter o seu: aplique como está (os dois ficam). Corrigir = substituir: apaga o tubo à mão e refaz a prévia.", elementos: [String(m.id)].concat(bate.slice(0, 3).map(function (n) { return String(n.id); })),
+acao: { tipo: "ops", ops: [{ op: "apagar", id: String(m.id) }], texto: "Substituir: apagar o tubo à mão " + m.id + " e traçar de novo" }, manual: String(m.id) });
+});
+return out;
+},
 planejar: function (opcoes) {
 opcoes = opcoes || {};
 var K = dep("HidKit"), A = dep("HidAmbiente"), BE = dep("BimEdit"), BIi = dep("BimInst"), c = U._ctx();
@@ -27461,12 +27537,21 @@ var dups = A.duplicados ? A.duplicados(U._aparelhosDe(c)) : [], dupDe = {};
 dups.forEach(function (d) { dupDe[d.id] = d; });
 if (dups.length) esc0.aparelhos = esc0.aparelhos.filter(function (id) { return !dupDe[id]; });
 dups.forEach(function (d) { avisos.push({ texto: "Aparelho duplicado: o " + U._nomeAp(porId[d.id]) + " está em cima do " + d.de + " (posto duas vezes). Ficou fora do traçado.", elementos: [d.id, d.de], acao: { tipo: "remover", id: d.id, texto: "Remover a duplicada (" + d.id + ")" } }); });
+var LA = U._anteriores(c, esc0.aparelhos, opcoes);
+LA.ops.forEach(function (o) { ops.push(o); });
+LA.avisos.forEach(function (a) { avisos.push(a); });
 var ks = K.kitsDoModelo(c.ops), semKit = esc0.aparelhos.filter(function (id) { return !(ks[id] && ks[id].vivos.length); });
-var acoes = semKit.length ? K.reconciliar({ estado: est, avaliarFam: c.avaliarFam, ops: c.ops, novos: semKit, vizinhos: U._vizinhos(est), parametros: par }).filter(function (a) { return a.acao === "gerar" && semKit.indexOf(a.famInst) >= 0; }) : [];
+var acoes = K.reconciliar({ estado: est, avaliarFam: c.avaliarFam, ops: c.ops, novos: semKit, vizinhos: U._vizinhos(est), parametros: par }).filter(function (a) {
+if (a.acao === "gerar") return semKit.indexOf(a.famInst) >= 0;
+if (a.acao === "atualizar" && esc0.aparelhos.indexOf(a.famInst) < 0) return false;
+if (a.acao === "remover" && !(esc0.tipo === "todos" || LA.aparelhosVelhos[a.famInst])) return false;
+if (a.manual && opcoes.perguntarManual !== false && !U._confirmar("O kit hidráulico de " + a.famInst + " foi editado à mão e " + String(a.motivo).replace(/^o aparelho \S+ /, "o aparelho ") + ".\n\nRefazer o kit (a edição manual é substituída)?")) { avisos.push({ texto: "Kit de " + a.famInst + ": mantive a edição à mão (o aparelho mudou e o kit ficou como estava).", elementos: [a.famInst] }); return false; }
+return true;
+});
 var kits = [], reaproveitadas = [];
 acoes.forEach(function (a) {
-a.ops.forEach(function (o) { ops.push(o); });
-kits.push({ famInst: a.famInst, acao: "gerar", kit: a.kit || null });
+a.ops.forEach(function (o) { if (o.op === "apagar" && LA.ids[String(o.id)]) return; ops.push(o); });
+if (a.acao !== "remover") kits.push({ famInst: a.famInst, acao: a.acao, kit: a.kit || null });
 if (a.kit && a.kit.raloExistente) reaproveitadas.push({ id: a.kit.raloExistente, papel: "ralo do box de " + a.famInst });
 arr(a.kit && a.kit.pendencias).forEach(function (p) { pendencias.push({ texto: p.motivo || p.texto, elementos: [a.famInst] }); });
 });
@@ -27480,7 +27565,7 @@ arr(rAuto.linha && rAuto.linha.pendencias).forEach(function (p) { pendencias.pus
 }
 esc0.aparelhos.forEach(function (seed) {
 var M = A.membros(est2, c.avaliarFam, todos, seed, null); if (!M || feitos[M.id]) return; feitos[M.id] = 1;
-if (opcoes.perguntarManual !== false && U._ambManual(c.ops, M.id) && !U._confirmar("As ligações do ambiente " + M.id + " foram editadas à mão.\n\nRefazer as ligações (a edição manual é substituída)?")) { avisos.push({ texto: "Ambiente " + M.id + ": mantive as ligações editadas à mão.", elementos: [seed] }); return; }
+if (LA.mantidos[M.id] || arr(M.fams).some(function (f) { return LA.mantidosAp[String(f.id)]; })) return;
 var R = A.ligar({ estado: est2, avaliarFam: c.avaliarFam, ops: todos, famInst: seed, parametros: par });
 ambs.push(R);
 if (R.rota) { nOp = Math.max(nOp, R.rota.opcoes || 1); iOp = Math.max(iOp, R.rota.indice || 0); }
@@ -27488,6 +27573,13 @@ if (R.caixaSifonada && R.caixaSifonada.existente) reaproveitadas.push({ id: R.ca
 R.pendencias.forEach(function (p) { pendencias.push({ texto: U._textoPend(p), elementos: arr(p.elementos) }); });
 if (R.ops.length) { U._marcar(R); R.ops.forEach(function (o) { ops.push(o); }); todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos); }
 });
+var devolver = {};
+Object.keys(LA.porComodo).forEach(function (mid) { if (!ambs.some(function (R) { return R.ambiente && R.ambiente.id === mid && R.ops.length; })) { LA.porComodo[mid].forEach(function (id) { devolver[id] = 1; }); avisos.push({ texto: "Ambiente " + mid + ": o traçado novo não fechou — mantive o traçado anterior dele (veja as pendências).", elementos: [] }); } });
+if (!(arr(est2.hidRedes).length && ambs.some(function (R) { return R.ops.length; }))) LA.daRede.forEach(function (id) { devolver[id] = 1; });
+if (Object.keys(devolver).length) {
+for (var iDv = ops.length - 1; iDv >= 0; iDv--) if (ops[iDv] && (ops[iDv].op === "apagar" || ops[iDv].op === "desanotar") && devolver[String(ops[iDv].id)] && LA.ids[String(ops[iDv].id)]) ops.splice(iDv, 1);
+todos = c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]); est2 = BE.aplicar(todos);
+}
 var velhas = ambs.some(function (R) { return R.caixaInspecaoUsuario; }) ? arr(est2.hidRedes).filter(function (r) { return /^rede-auto/.test(String(r.id)); }) : [];
 if (velhas.length) {
 velhas.forEach(function (r) { ops.push({ op: "apagar", id: r.id }); });
@@ -27518,7 +27610,7 @@ var HAQ = dep("HidAQTraco"); if (!HAQ && typeof require === "function") { try { 
 if (HAQ) {
 try {
 var velhasAQ = HAQ.anteriores(K.achatar(c.ops));
-velhasAQ.forEach(function (id) { ops.push({ op: "apagar", id: id }); });
+velhasAQ.forEach(function (id) { if (!LA.ids[String(id)]) ops.push({ op: "apagar", id: id }); });
 var estAQ = BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops.slice() }]));
 var RAQ = HAQ.tracar({ estado: estAQ, avaliarFam: c.avaliarFam, ops: c.ops.concat(ops), escopo: esc0.aparelhos, parametros: par });
 var idsAq = []; RAQ.ops.forEach(function (o) { if (o.aq != null && idsAq.indexOf(String(o.aq)) < 0) idsAq.push(String(o.aq)); });
@@ -27541,6 +27633,9 @@ if (RB.ligadas) avisos.push({ texto: "Barrilete: " + RB.ligadas + " espera(s) de
 } catch (eB) { pendencias.push({ chave: "ta.barrilete", texto: "Barrilete: o traçado falhou (" + (eB && eB.message ? eB.message : eB) + "); ligue à mão", elementos: [] }); }
 }
 var piscinas = U._lancarPiscinas(c, pisc, ops, avisos, pendencias);
+(function () { var fora = {}; for (var iA = 0; iA < ops.length; iA++) { var oA = ops[iA]; if (!oA || oA.id == null) continue; var kA = String(oA.id);
+if (oA.op === "apagar" || oA.op === "desanotar") { if (fora[kA]) { ops.splice(iA, 1); iA--; } else fora[kA] = 1; }
+else if (["trecho", "peca", "familia", "acessorio", "anotar", "criar"].indexOf(oA.op) >= 0) delete fora[kA]; } })();
 if (!ops.length) return { ok: false, erro: ambs.length && pendencias.length ? "Não consegui traçar: " + pendencias.map(function (p) { return p.texto; }).slice(0, 3).join(" · ") : "Nada a traçar: os aparelhos selecionados já estão ligados.", escopo: esc0, pendencias: pendencias, avisos: avisos };
 var resumo = U._resumo(c, ops);
 if (!resumo.tubos) {
@@ -27548,6 +27643,8 @@ var porque = pendencias.map(function (p) { return p.texto; }).concat(ambs.reduce
 return { ok: false, erro: "Nenhum tubo foi traçado: " + (porque.slice(0, 3).join(" · ") || "nenhuma estratégia de traçado fechou") + ". Confira o que está no caminho (louça, peça, parede) e trace de novo.", escopo: esc0, pendencias: pendencias, avisos: avisos };
 }
 resumo.kits = kits.length; resumo.ambientes = ambs.filter(function (R) { return R.ops.length; }).length; resumo.reaproveitadas = reaproveitadas;
+resumo.substituidas = ops.filter(function (o) { return (o.op === "apagar" || o.op === "desanotar") && LA.ids[String(o.id)]; }).length; resumo.migradas = LA.migradas;
+try { U._conflitosManuais(c, ops, resumo).forEach(function (a) { avisos.push(a); }); } catch (eMn) {}
 resumo.caixasNovas = ambs.filter(function (R) { return R.caixaSifonada && !R.caixaSifonada.existente; }).map(function (R) { return R.caixaSifonada.id; });
 resumo.pontasNovas.forEach(function (t) { avisos.push({ texto: "Ponta solta: " + t, elementos: [] }); });
 var HCr = global.HidCriterios, crit = null;
@@ -27813,6 +27910,7 @@ h += '<p data-hid-tr-resumo><b>' + R.tubos + "</b> tubo(s) · " + String(R.metro
 h += '<ul class="hidtr-dn">' + Object.keys(R.dns).map(function (k) { return "<li>" + esc(NOMES[k] || k) + ": DN " + R.dns[k].join(", ") + "</li>"; }).join("") + "</ul>";
 if (R.reaproveitadas.length) h += '<p class="hidtr-ok" data-hid-tr-reaproveita>Aproveitado do que você já pôs: ' + R.reaproveitadas.map(function (x) { return esc(x.id) + " (" + esc(x.papel) + ")"; }).join("; ") + ".</p>";
 if (R.caixasNovas.length) h += '<p class="muted">Caixa sifonada nova: ' + esc(R.caixasNovas.join(", ")) + ".</p>";
+if (R.substituidas) h += '<p class="muted" data-hid-tr-refeito="' + R.substituidas + '">Refazer: ' + R.substituidas + " peça(s) do traçado anterior saem neste lote e dão lugar ao novo (um Ctrl+Z volta tudo).</p>";
 var nS = Math.max(R.pontasNovas.length, arr(R.soltas).length);
 h += '<p class="' + (nS ? "hidtr-erro" : "hidtr-ok") + '" data-hid-tr-pontas="' + nS + '">' + (nS ? nS + " ponta(s) solta(s) — o traçado NÃO está pronto:" : "Pronto: nenhuma ponta solta.") + "</p>";
 if (arr(R.soltas).length) h += '<ul class="hidtr-soltas" data-hid-tr-soltas>' + R.soltas.slice(0, U.MAX_AVISOS * 2).map(function (q, i) { return '<li class="hid-pend">' + esc(q.trecho + " (" + (NOMES[q.sistema] || q.sistema || "") + ") em " + [q.x, q.y, q.z].map(function (v) { return String(Math.round(num0(v) * 100) / 100).replace(".", ","); }).join("; ") + (q.continua ? " — marcada como espera, mas não é espera permitida" : "")) + ' <button type="button" class="btn sm ghost" data-hid-tr="solta-ver" data-n="' + i + '">Mostrar no 3D</button></li>'; }).join("") + "</ul>";

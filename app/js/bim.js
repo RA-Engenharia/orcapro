@@ -10323,10 +10323,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * ===================================================================== */
   /* FLUIDEZ (25/10/2026): o desenho inteiro num LOTE dos materiais do projeto (js/bimmateriaisui.js emLote) — a união de
      paredes pergunta o material de cada contorno, e cada pergunta refazia o mapa peça → material do modelo inteiro */
+  /* ⚠ A ALVENARIA ASSENTADA DE PERTO (26/10/2026, js/alvassentamento3d.js paraDesenho): com a câmera do {3D} perto, a
+     parede crua está ESCONDIDA e os blocos instanciados no lugar — o desenho técnico vê a parede, nunca os blocos. Sem
+     isto as paredes sumiam da planta (todas de perto, só as distantes ficavam) e um bloco solto aparecia na origem. */
   function vista2d(def) {
-    var BMU = window.BimMateriaisUI;
-    if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(function () { return vista2dCorpo(def); });
-    return vista2dCorpo(def);
+    var BMU = window.BimMateriaisUI, A3 = window.AlvAssentamento3D;
+    var corpo = function () { return vista2dCorpo(def); };
+    var semBlocos = (A3 && typeof A3.paraDesenho === 'function') ? function () { return A3.paraDesenho(corpo); } : corpo;
+    if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(semBlocos);
+    return semBlocos();
   }
   function vista2dCorpo(def) {
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
