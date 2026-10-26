@@ -102,7 +102,9 @@
   /* os alvos do estado: { tipo: "peca"|"familia", ref (objeto do estado), id, gerado } */
   function alvos(estado, ops) {
     var K = dep("HidKit", "./hidkit.js"), opsPor = {}, lista = K && K.achatar ? K.achatar(arr(ops)) : arr(ops);
-    lista.forEach(function (o) { if (o && o.id != null) opsPor[String(o.id)] = o; });
+    /* ⚠ 25/10/2026: a op que CRIA a peça (familia/peca) — não a última com o mesmo id: o "orcar" da peça (Propriedades ›
+       Orçamento) vinha depois e escondia o nivelAuto:false e a marca de gerada (kit/amb/rede) da criação (projeto exemplo) */
+    lista.forEach(function (o) { if (o && o.id != null && (o.op === "familia" || o.op === "peca" || !opsPor[String(o.id)])) opsPor[String(o.id)] = o; });
     var out = [];
     arr(estado && estado.instalacoes && estado.instalacoes.pecas).forEach(function (k) {
       if (!PECAS_NIVEL[k.peca]) return; var o = opsPor[String(k.id)] || {};

@@ -183,6 +183,7 @@
     if (HK) { try { var bK = B(); opsK = bK && bK.editarOps ? bK.editarOps() : null; } catch (eK) { opsK = null; } }
     if (HK && opsK) {
       en.modelo.estado = HK.paraCalculo(m.estado, opsK);
+      en.modelo.estadoBruto = m.estado;   /* N23: o modelo inteiro (a entrada e o extravasor da caixa, fora da rede do cálculo) — separação atmosférica medida */
       var fz = HK.aparelhosForcados(opsK); if (Object.keys(fz).length) en.aparelhos = fz;
       var tv = HK.travados(opsK); if (tv.length) en.opcoes.travados = arr(en.opcoes.travados).concat(tv);
       if (HKU && HKU.decisoes) en.decisoesAutomaticas = HKU.decisoes(m.estado, m.avaliarFam, opsK);

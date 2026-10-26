@@ -468,6 +468,205 @@
       this._fecharComPergunta(function () { g._novoProjeto(opts); });
       return true;
     },
+    /* ============================================ PROJETO EXEMPLO COMPLETO (25/10/2026)
+       Pedido do Rogério: "deixe como MODELO PADRÃO de obra, para o usuário ver como modelo e para eu mostrar um exemplo de
+       projeto feito no sistema, com tudo mesmo". O exemplo é gerado pelos COMANDOS do sistema (tools/gerar-projeto-modelo.js →
+       bim/exemplos/projeto-exemplo-completo.json: as ops do modelo e a auditoria da geração).
+       ⚠ Abre numa obra de EXEMPLO própria (id fixo, nome "EXEMPLO — …", sem cliente, sem valor) — NUNCA na obra que está no
+       alto: o exemplo não se mistura com obra de cliente. O .opbim é montado aqui com as ops e os níveis do template Universal
+       (Térreo + Cobertura) e entra pelo MESMO caminho do "Abrir projeto" (abrirBytes: pergunta antes de fechar o que está
+       aberto, guarda a modelagem que já estiver na obra de exemplo). Depois: as pranchas de arquitetura nas abas de folha (a
+       Prancha Viva usa as mesmas), a cena de apresentação (fachada e sala) e a divisão A-1 do incêndio. `o.cliente`: abre a
+       Prancha Viva por cima. Devolve uma Promise<boolean>. */
+    abrirExemplo: function (o) {
+      var self = this, g = G();
+      o = o || {};
+      if (!g || !global.OpFormato || !global.BimBcf || !g._opbimMontar) { toast("O formato .opbim não carregou: não consigo abrir o exemplo.", "erro"); return Promise.resolve(false); }
+      if (this._exemploAbrindo) return this._exemploAbrindo;
+      toast("Abrindo o projeto exemplo…", "ok", 4000);
+      var arquivo = String(o.arquivo || "bim/exemplos/projeto-exemplo-completo.json");
+      this._exemploAbrindo = global.fetch(arquivo, { cache: "no-cache" }).then(function (r) {
+        if (!r.ok) throw new Error("o arquivo do exemplo não veio (HTTP " + r.status + ")");
+        return r.json();
+      }).then(function (ex) {
+        if (!ex || ex.formato !== "orcapro-projeto-exemplo" || !Array.isArray(ex.ops)) throw new Error("arquivo do exemplo inválido");
+        var ob = self._obraExemplo(ex.obra || {});
+        if (!ob) throw new Error("não consegui criar a obra de exemplo");
+        var niveis = self._niveisExemplo(ob.id), m = g._opbimMontar({ obraId: ob.id, ops: ex.ops, niveis: niveis, d2: null });
+        m.proj.nome = String(ex.nome || "Projeto exemplo");
+        m.proj.extras = m.proj.extras || {};
+        m.proj.extras["projeto-bim.json"] = { formato: 1, id: "projeto-exemplo-completo", nome: m.proj.nome, obraId: ob.id, obraNome: ob.nome, criadoEm: "", salvoEm: "" };
+        var bytes = global.OpFormato.projetoParaZip(m.proj, g._opMeta(), global.BimBcf.zipEscrever);
+        return self.abrirBytes(bytes, { obraId: ob.id, obraNome: ob.nome, nome: m.proj.nome }).then(function (ok) {
+          if (!ok) return false;
+          var r = self._depoisDoExemplo(ob.id);
+          /* o que o exemplo gera ao abrir (as vistas de corte e as pranchas ligadas) é parte do exemplo como ele abre: a marca
+             de "sem alteração" passa a ser esta — senão abrir o exemplo de novo (ou o "Mostrar ao cliente") perguntava "Salvar
+             as alterações?" de algo que o usuário não fez (e2e, 25/10/2026) */
+          try { if (self._proj && String(self._proj.obraId) === String(ob.id)) { self._proj.base = self.assinaturaAtual(); self._proj.salvo = self.fotoObra(ob.id); if (self.pintarTitulo) self.pintarTitulo(); } } catch (eB) {}
+          toast("Projeto exemplo aberto na obra “" + ob.nome + "”: " + (r.folhas ? r.folhas + " pranchas de arquitetura, " : "") + (r.hidro ? r.hidro + " pranchas do hidrossanitário, " : "") + (r.ele ? r.ele + " pranchas da elétrica, " : "") +
+            (r.ligadas ? r.ligadas + " folhas ligadas ao 3D (Prancha Viva), " : "") + (r.cena ? "a cena de apresentação, " : "") +
+            "o orçamento pelo modelo e os auditores de cada disciplina prontos. Nada disso entra nas suas obras.", "ok", 9000);
+          /* gerar as pranchas abre a 1ª folha numa aba: o exemplo abre no 3D, de frente para a casa (a folha fica na barra) */
+          try { if (global.BimShell && global.BimShell.abrirDoc) global.BimShell.abrirDoc("3d"); } catch (e3) {}
+          try { if (global.BIM && global.BIM.aplicarVista) global.BIM.aplicarVista({ camera: { pos: [24, 13, 36], alvo: [6, 1, 14], up: [0, 1, 0], fov: 45 } }, {}); } catch (eV) {}
+          if (o.cliente && global.BimShell) {
+            /* ⚠ SEM o módulo Prancha Viva liberado (regra de 24/10/2026: a vitalícia e o plano BIM em dia recebem; o teste do módulo também) o
+               exemplo NÃO gera folha ligada ao 3D — antes o "Mostrar ao cliente" abria, calado, numa folha sem ligação com o modelo. Agora diz o
+               que falta, por escrito, e fica no visor 3D comum, de frente para a casa (aberto logo acima). */
+            var MPv = global.PranchaVivaModulo, gPv = MPv && MPv.guarda ? MPv.guarda("abrir") : { ok: false, motivo: "O módulo Prancha Viva não carregou." };
+            if (!gPv.ok) { self._avisoSemPranchaViva(gPv); return true; }
+            try { global.BimShell.executar("prancha-viva"); } catch (ePv) {}
+            /* para o cliente, abre na primeira folha LIGADA ao 3D (a planta do térreo): as de arquitetura vêm antes na lista
+               e são imagem — "sem ligação com o modelo" justamente no que se quer mostrar */
+            var PVU = global.PranchaVivaUI, kk = 0, lig = function () {
+              var st = PVU && PVU._st;
+              if (st && st.folhas && st.folhas.length) {
+                var ix = -1; st.folhas.some(function (f, i) { if (f && f.nLig > 0) { ix = i; return true; } return false; });
+                if (ix > 0 && st.atual !== ix && PVU.abrirFolha) { try { PVU.abrirFolha(ix); } catch (eF) {} }
+                return;
+              }
+              if (++kk < 60) global.setTimeout(lig, 150);
+            };
+            global.setTimeout(lig, 150);
+          }
+          return true;
+        });
+      }).then(function (ok) { self._exemploAbrindo = null; return ok; }, function (e) {
+        self._exemploAbrindo = null;
+        toast("Não abri o projeto exemplo: " + (e && e.message || e) + ".", "erro", 9000);
+        return false;
+      });
+      return this._exemploAbrindo;
+    },
+    /* "Mostrar ao cliente" sem a Prancha Viva liberada: o que falta e o que o cliente vê no lugar (o visor 3D comum, que já está aberto) */
+    _avisoSemPranchaViva: function (g) {
+      var msg = "Para mostrar o projeto ao cliente com a Prancha Viva (a folha que abre o 3D no ponto tocado), o módulo Prancha Viva precisa estar liberado nesta licença — e ele não está. " +
+        "Sem ele, as folhas do exemplo não ficam ligadas ao modelo, por isso não abri nenhuma folha: o exemplo ficou no visor 3D comum, de frente para a casa. " +
+        "Quem tem a licença vitalícia ou o plano BIM em dia recebe a Prancha Viva; o teste do módulo também libera.";
+      var UI = global.UI, PVU = global.PranchaVivaUI;
+      /* os recados de "abrindo…" e "projeto aberto" ainda estão no canto e tampavam o botão do quadro: saem antes (o aviso é o que importa agora) */
+      try { var wT = global.document && global.document.getElementById("toasts"); if (wT) while (wT.firstChild) wT.removeChild(wT.firstChild); } catch (eT) {}
+      try {
+        if (UI && UI.modal) {
+          UI.modal("Mostrar ao cliente — falta liberar a Prancha Viva",
+            '<div style="font-size:13px;line-height:1.5;max-width:560px"><p style="margin:0 0 8px">' + esc(msg) + '</p><p class="muted" style="margin:0">O que está aberto agora: o projeto exemplo no 3D comum (gire, aproxime, corte e meça normalmente).</p></div>',
+            [{ texto: "Entendi", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+             { texto: "Como liberar a Prancha Viva", classe: "primary", onClick: function () { UI.fecharModal(); if (PVU && PVU.oferta) { try { PVU.oferta(g); } catch (eO) {} } } }]);
+          return true;
+        }
+      } catch (e) {}
+      toast(msg, "aviso", 14000);
+      return true;
+    },
+    /* a obra de EXEMPLO: id fixo, sem cliente — criada na primeira vez, reaproveitada depois (o nome volta ao do exemplo) */
+    _obraExemplo: function (d) {
+      var id = String(d.id || "exemplo-projeto-completo"), e = emp(), atual = null;
+      if (!/^exemplo-/.test(id)) return null;   /* ⚠ nunca grava por cima de uma obra que não é de exemplo */
+      try { atual = global.Store.obter(e, "obras", id); } catch (e0) { atual = null; }
+      if (!atual) {
+        var reg = { id: id, nome: String(d.nome || "EXEMPLO — Projeto completo (OrçaPRO)"), tipo: String(d.tipo || "residencial"), fase: "projeto", status: "planejamento",
+                    local: String(d.local || ""), areaTerreno: Number(d.areaTerreno) || 0, areaConstruida: Number(d.areaConstruida) || 0, exemplo: true,
+                    obs: "Projeto EXEMPLO do OrçaPRO (todas as disciplinas, feito pelos comandos do sistema). Não é obra de cliente: apague quando quiser." };
+        var s = null; try { s = global.Store.salvar(e, "obras", reg); } catch (e1) { s = null; }
+        if (!s) return null;
+        atual = reg;
+      }
+      /* o incêndio e a acessibilidade (js/incacsui.js, por aparelho): a casa é residência unifamiliar, divisão A-1 */
+      try {
+        var k = "raerp:bim:incendio-dados:" + id;
+        if (global.localStorage && !global.localStorage.getItem(k) && d.incendio) global.localStorage.setItem(k, JSON.stringify(d.incendio));
+      } catch (e2) {}
+      return { id: id, nome: String(atual.nome || d.nome || id) };
+    },
+    /* os níveis do template Universal (Térreo e Cobertura, pé-direito 2,80), com a chave da obra de exemplo */
+    _niveisExemplo: function (obraId) {
+      var T = global.BimTplInicio, pl = null;
+      try { pl = T ? T.plano(T.primeiraDo("universal"), { pavimentos: 1, peDireito: 2.8, largura: 12, comprimento: 25 }) : null; } catch (e) { pl = null; }
+      var ns = pl && pl.ok ? pl.niveis : [{ id: "nivel-1", nome: "Térreo", elevacao: 0, corte: 1.2 }, { id: "nivel-cob", nome: "Cobertura", elevacao: 2.8, corte: 1.2, peDireitoDeclarado: 2.8 }];
+      return ns.map(function (n) { return { id: obraId + "::" + n.id, nome: n.nome, elevacao: n.elevacao, corte: n.corte != null ? n.corte : null, peDireitoDeclarado: n.peDireitoDeclarado != null ? n.peDireitoDeclarado : null }; });
+    },
+    /* depois de abrir: as pranchas de arquitetura (abas de folha / Prancha Viva) e a cena de apresentação — o que já existe na
+       obra de exemplo fica (gerar de novo substitui as folhas; a cena com o mesmo nome não duplica) */
+    _depoisDoExemplo: function (obraId) {
+      var out = { folhas: 0, cena: false };
+      try {
+        var AU = global.ArqPranchasUI;
+        if (AU && AU.gerar && AU._int && AU._int.ctxAtual) {
+          var ctx = AU._int.ctxAtual(); ctx.pavimentos = [{ nome: "Térreo", cota: 0 }];
+          ctx.cortes = { A: 7.0, B: 7.55 };   /* AA pela escada de marinheiro e pelo alçapão, BB pela caixa d'água e pelo closet: o que o projeto tem de mais para mostrar */
+          var cj = { situacao: true, existente: false, demolir: false, layout: true, cobertura: true, forro: true, cortes: true, fachadas: true, piso: true, quadros: true, humanizada: true };
+          var r = AU.gerar(ctx, { formato: "AUTO", escala: "auto", prefixo: "ARQ", revisao: "R00", conjuntos: cj, municipio: "", cotasInternas: true }, { pdf: false, dxf: false, abas: true });
+          if (r && r.ok) out.folhas = (r.folhas || []).length;
+        }
+      } catch (eA) {}
+      /* HIDROSSANITÁRIO e ELÉTRICA nas abas de folha (25/10/2026): as mesmas pranchas dos botões "Gerar pranchas" do hidro e "Pranchas elétricas", no
+         padrão RA e com a conferência de sobreposição do motor delas (o total vai em `BimProjetosUI._exemploRel`). O hidro precisa do dimensionamento:
+         roda o "Dimensionar" como na tela e tira a pintura de verificação do 3D (o exemplo abre limpo). */
+      out.sobreposicao = { hidro: null, ele: null };
+      try {
+        var HCu = global.HidCalcUI, HPu = global.HidPranchasUI;
+        if (HCu && HCu.dimensionar && HPu && HPu.gerar && HPu._int && HPu._int.ctxAtual) {
+          /* ⚠ o "Dimensionar" grava a entrada do cálculo no aparelho (orcapro:hid:entrada, de TODAS as obras): o exemplo guarda o que havia e devolve —
+             "nada disto entra nas suas obras" */
+          var kHid = "orcapro:hid:entrada", lsHid = null, E0 = HCu.estado, antes = { uso: E0.uso, valores: JSON.parse(JSON.stringify(E0.valores || {})), alim: JSON.parse(JSON.stringify(E0.alim || {})) };
+          try { lsHid = global.localStorage.getItem(kHid); } catch (eK) {}
+          if (HCu.entrada) HCu.entrada();   /* o uso e o programa padrão da tela (residencial unifamiliar, pelos aparelhos do modelo) */
+          /* o nível d'água da caixa do projeto (informado, não o mais desfavorável): mínimo 15 cm acima da saída, máximo na altura do extravasor */
+          try {
+            var stH = global.BIM.editarEstado().estado, cxH = (stH.familias || []).filter(function (f) { return f.famId === "hid-caixa-dagua"; })[0];
+            if (cxH && isFinite(+cxH.y)) { E0.alim.nivelAgua = Math.round((+cxH.y + 0.15) * 100) / 100; E0.alim.nivelAguaMax = Math.round((+cxH.y + 0.85) * 100) / 100; }
+          } catch (eN) {}
+          var Rh = HCu.dimensionar();
+          if (Rh) {
+            var cxh = HPu._int.ctxAtual(); cxh.pavimentos = [{ nome: "Térreo", cota: 0 }];
+            var rh = HPu.gerar(cxh, HPu._int.lerMemoria(cxh.obraKey), { pdf: false, dxf: false, abas: true });
+            if (rh && rh.ok) { out.hidro = (rh.folhas || []).length; out.sobreposicao.hidro = rh.verificacao ? (rh.verificacao.sobreposicoes || 0) + (rh.verificacao.rotuloTubo || 0) + (rh.verificacao.rotuloCota || 0) : null; }
+            else out.hidroMotivo = (rh && rh.avisos ? rh.avisos.join(" ") : "não gerou");
+          }
+          try { if (global.BimInstUI) { global.BimInstUI._corVerif = null; } if (global.BIM && global.BIM.editarReconstruir) global.BIM.editarReconstruir(); } catch (eCor) {}
+          try {
+            E0.uso = antes.uso; E0.valores = antes.valores; E0.alim = antes.alim; E0.resultado = null; E0.opsNoCalculo = null;
+            if (lsHid == null) global.localStorage.removeItem(kHid); else global.localStorage.setItem(kHid, lsHid);
+          } catch (eR) {}
+        }
+      } catch (eH) { out.hidroMotivo = String(eH && eH.message || eH); }
+      try {
+        var ECu = global.EleCircuitosUI;
+        if (ECu && ECu.pranchasNasAbas) {
+          var re = ECu.pranchasNasAbas();
+          if (re && re.ok) { out.ele = re.folhas; out.sobreposicao.ele = re.verificacao ? re.verificacao.sobreposicoes : null; }
+          else out.eleMotivo = re && re.motivo || "não gerou";
+        }
+      } catch (eE) { out.eleMotivo = String(eE && eE.message || eE); }
+      try { global.BimProjetosUI._exemploRel = out; } catch (eRel) {}
+      try {
+        var C = global.BimCena, A = global.BimCenaArm;
+        if (C && A && A.salvar) {
+          var ja = (A.listar ? A.listar(obraId) : []).filter(function (x) { return x && x.nome === "Apresentação ao cliente"; })[0];
+          if (!ja) {
+            var est = C.padrao(), r1;
+            est.nome = "Apresentação ao cliente"; est.ambiente.hora = "16:30";
+            r1 = C.adicionarCamera(est, { nome: "Fachada", camera: { pos: [16, 3.2, 34], alvo: [6, 1.8, 18], fov: 50 } }); est = r1.estado;
+            r1 = C.adicionarCamera(est, { nome: "Sala e cozinha", camera: { pos: [2.3, 1.6, 18.4], alvo: [8.6, 1.1, 14.6], fov: 60 } }); est = r1.estado;
+            est.camAtiva = est.cameras.length ? est.cameras[0].id : "";
+            var rs = A.salvar(obraId, { nome: "Apresentação ao cliente", estado: est, padrao: false });
+            out.cena = !!(rs && rs.ok);
+          } else out.cena = true;
+        }
+      } catch (eC) {}
+      /* as pranchas LIGADAS ao modelo (plantas, cortes e elevações com a matriz folha → 3D): é o que a Prancha Viva mostra ao
+         cliente — as de arquitetura acima vão em imagem e apareciam "sem ligação com o modelo" (revisor, 25/10/2026). Só com o
+         módulo liberado: sem ele o gerador abriria a oferta por cima do exemplo */
+      try {
+        var PVU = global.PranchaVivaUI, MP = global.PranchaVivaModulo, gd = MP && MP.guarda ? MP.guarda("gerar") : null;
+        if (PVU && PVU.gerarDoModelo && global.BimFolhaUI && gd && gd.ok) {
+          var rv = PVU.gerarDoModelo();
+          if (rv && rv.ok) out.ligadas = (rv.criadas || 0) + (rv.atualizadas || 0);
+        }
+      } catch (eV) {}
+      return out;
+    },
     /* ÁREA DE TESTE (14/10/2026): o BIM sem obra e sem projeto — a área de trabalho "sem obra" que o editor já
        guarda à parte (Store "bim_edicoes", chave "geral"). Nada do que se modela aqui entra numa obra. Com um
        projeto aberto, pergunta antes se salva (como o Novo projeto). */
@@ -960,6 +1159,14 @@
           /* ÁREA DE TESTE (14/10/2026, pedido do Rogério): abrir o BIM sem criar obra nem projeto, para experimentar */
           '<button type="button" class="bp-bt" data-bp="teste"><b>' + ico("editar", 16) + "Área de teste</b><span>O BIM vazio, sem obra: experimente as ferramentas — nada entra em obra nenhuma</span></button>" +
         "</div>" +
+        /* PROJETO EXEMPLO COMPLETO (25/10/2026): uma casa feita pelos comandos do sistema, com todas as disciplinas — abre numa
+           obra de EXEMPLO (nunca na de um cliente); "Mostrar ao cliente" abre direto na Prancha Viva */
+        '<section class="bp-sec bp-exemplo" data-bp-exemplo><h3>Projeto exemplo completo</h3><div class="bp-exemplo-linha">' +
+          '<button type="button" class="bp-bt bp-ex" data-bp="exemplo" title="Abre o exemplo numa obra de exemplo, separada das suas obras">' +
+            "<b>" + ico("obra", 16) + "Casa térrea 3 quartos — todas as disciplinas</b>" +
+            "<span>Arquitetura, estrutura em concreto, aço e madeira, hidrossanitário, elétrica, mobiliário, terreno e orçamento 100 % — tudo feito pelos comandos do OrçaPRO. Abre numa obra de exemplo, separada das suas.</span></button>" +
+          '<button type="button" class="bp-mini bp-mini-pri" data-bp="exemplo-cliente" title="Abre o exemplo e as pranchas dele na Prancha Viva: toque num ponto da folha e o 3D abre ali">' + ico("prancha", 14) + "Mostrar ao cliente</button>" +
+        "</div></section>" +
         /* TEMPLATE DE INÍCIO (20/10/2026): começar do zero já pela disciplina — o cartão abre o Novo projeto com ele marcado */
         (global.BimTplInicio ? '<section class="bp-sec bp-tpls" data-bp-tpls><h3>Começar do zero com um template</h3><div class="bp-tpl-grade">' +
           global.BimTplInicio.grupos().map(function (gr) {
@@ -1020,6 +1227,8 @@
         else if (a === "abrir-sistema") self.abrirDoSistema();
         else if (a === "abrir-computador") self.abrirDoComputador();
         else if (a === "teste") self.areaTeste();
+        else if (a === "exemplo") self.abrirExemplo();
+        else if (a === "exemplo-cliente") self.abrirExemplo({ cliente: true });
         else if (a === "abrir-recente") self.abrirRecente(id);
         else if (a === "tirar") self.tirarDaLista(id);
         else if (a === "pasta") self.abrirPasta(id);
@@ -1120,6 +1329,8 @@
         ".bp-mini:hover{background:var(--rv-hover,#d8e6f2)}.bp-mini-pri{border-color:var(--rv-foco,#1a6cb5);font-weight:700}" +
         ".bp-vazio{color:var(--rv-tx-fraco,#6a6a6a);margin:4px 0}.bp-lbl{display:block;font-size:12px;margin-bottom:6px}" +
         ".bp-lbl select{display:block;width:100%;margin-top:3px}.bp-lista{margin:4px 0 10px;padding-left:18px;max-height:150px;overflow:auto}" +
+        ".bp-exemplo{margin-bottom:16px}.bp-exemplo-linha{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}.bp-ex{flex:1;min-width:240px;text-align:left}" +
+        ".bp-exemplo-linha .bp-mini{align-self:center}" +
         ".bp-tpls{margin-bottom:16px}.bp-tpl-grade{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}" +
         ".bp-tpl{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:10px 12px;min-height:44px;border-radius:10px;border:1px solid var(--rv-linha-forte,#b4b4b4);" +
           "background:var(--rv-painel-bg,#f0f0f0);color:inherit;font:inherit;text-align:left;cursor:pointer}" +

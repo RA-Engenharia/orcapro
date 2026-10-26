@@ -163,7 +163,7 @@
     if (at) linhas.push(at);
     return linhas;
   }
-  function letraRomanS(s) { return s.replace(/[—–]/g, "-").replace(/×/g, "x").replace(/·/g, ".").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/→/g, "->").replace(/³/g, "3").replace(/²/g, "2").replace(/[“”]/g, "\"").replace(/η/g, "eta").replace(/Σ/g, "soma ").replace(/β/g, "beta").replace(/α/g, "alfa").replace(/γ/g, "gama").replace(/ρ/g, "rho").replace(/ψ/g, "psi"); }
+  function letraRomanS(s) { return s.replace(/[—–]/g, "-").replace(/×/g, "x").replace(/·/g, ".").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/→/g, "->").replace(/³/g, "3").replace(/²/g, "2").replace(/[“”]/g, "\"").replace(/η/g, "eta").replace(/Σ/g, "soma ").replace(/β/g, "beta").replace(/α/g, "alfa").replace(/γ/g, "gama").replace(/ρ/g, "rho").replace(/ψ/g, "psi").replace(/⊥/g, "perp.").replace(/θ/g, "teta"); }      /* E4 r10: "⊥" saía como "?" no PDF (TS-5a/5b) */
 
   /* ================================================================ DESENHO (SVG em mm de papel, y para baixo)
    * Guarda os traços e as caixas dos textos num índice por células: um rótulo procura um lugar onde nenhuma

@@ -246,7 +246,7 @@
   DP.ponto = function (cx, cy, r, cor) { this.s.push('<circle cx="' + n(cx) + '" cy="' + n(cy) + '" r="' + n(r) + '" fill="' + (cor || PRETO) + '" stroke="none"/>'); };
   /* texto: y = linha de base (o.meio: y = meio da maiúscula); al E/C/D; rot em graus (horário, papel) */
   /* a RomanS não tem travessão, ×, ·, ≥, ³ e seta: troca pelo equivalente que ela tem (senão o navegador põe outra letra) */
-  function letraRomanS(s) { return s.replace(/[—–]/g, "-").replace(/×/g, "x").replace(/·/g, ".").replace(/≥/g, ">=").replace(/→/g, "->").replace(/³/g, "3").replace(/[“”]/g, "\""); }
+  function letraRomanS(s) { return s.replace(/[—–]/g, "-").replace(/×/g, "x").replace(/·/g, ".").replace(/≥/g, ">=").replace(/→/g, "->").replace(/³/g, "3").replace(/⊥/g, "perp.").replace(/∥/g, "par.").replace(/[“”]/g, "\""); }
   /* cantos da caixa de um texto (como o DP.texto a desenha): al, meio, rot */
   function caixaTexto(x, y, s, h, o) {
     o = o || {};
@@ -367,6 +367,7 @@
       var g0 = o.desde && o.desde[i] != null ? o.desde[i] : 1.0;
       return Math.abs(pl.of) - g0 < 0.6 ? "x" : n(g0);
     }), pl.ext0, pl.ext1);
+    return pl.of;   /* o afastamento usado (o pedido ou um dos o.offs): quem põe outra cota por fora precisa dele */
   };
   /* A COTA COMO GRUPO: o SVG é o mesmo (o <g> não desenha nada); o DXF lê o grupo e grava DIMENSION de verdade
      (js/pranchasdxf.js) em vez de traços soltos. data-pts = os pontos medidos; data-off = o afastamento da linha de cota;

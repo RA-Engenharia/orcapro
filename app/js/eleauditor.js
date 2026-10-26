@@ -184,7 +184,10 @@
         [{ id: "caixa", texto: "Pôr a caixa octogonal no teto", ops: [{ op: "peca", id: q.id + "-cx", peca: "caixa_octogonal", sistema: "eletrica", material: "pvc", x: r4(q.p[0]), y: r4(q.y + q.h), z: r4(q.p[1]), rotY: 0 }] }]);
     });
     L.caixas.forEach(function (c) {
-      if (c.dono || ehTue[c.id]) return;
+      /* ⚠ 25/10/2026: a caixa de PASSAGEM/DERIVAÇÃO que o "Circuitos e quadro" põe no eletroduto (js/elecircuitos.js e js/eletracado.js,
+         ids "elecp-…" — NBR 5410 6.2.11.1.9) não tem ponto junto por natureza: é do eletroduto. Antes cada uma saía "caixa sem ponto"
+         com a sugestão de TIRAR a caixa que a norma pede */
+      if (c.dono || ehTue[c.id] || /^elecp-/.test(String(c.id))) return;
       p("ELE_CAIXA_SOLTA", "aviso", "C", "Caixa elétrica " + c.id + " sem ponto", "A caixa não tem tomada, interruptor ou luminária junto (a ≤ 10 cm) nem aparelho a ≤ " + f2(C.distTue.valor) + " m: ponto movido sem a caixa, ou caixa sobrando (o orçamento conta a caixa).", [c.id],
         [{ id: "apagar", texto: "Tirar a caixa", ops: [{ op: "apagar", id: c.id }] }]);
     });

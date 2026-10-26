@@ -540,6 +540,12 @@
     if (inG == null) pend.push({ texto: "Disjuntor geral: " + f2(iMax) + " A por fase passa de 250 A — divida a instalação em mais de um quadro ou faça o projeto do quadro geral à parte." });
     if (dem.entrada && inG != null && inG > dem.entrada.disjuntor_A) pend.push({ texto: "Disjuntor geral de " + inG + " A acima do disjuntor da entrada CEMIG (" + dem.entrada.disjuntor_A + " A): reveja o fornecimento." });
     var alim = { comprimento: C.alimentadorComprimento.valor, provisorio: !C.alimentadorComprimento.alterado, nCarr: nF === 1 ? 2 : 3, ref: "B1" }, secA = null;
+    /* ⚠ 25/10/2026: o comprimento INFORMADO do alimentador vai gravado no projeto do quadro (informado: true) e vale nas contas
+       seguintes que não passam critério — o Orçamento pelo modelo (servicosOrc) e o auditor sem a tela: antes o critério do
+       usuário só vivia no aparelho (localStorage da tela dos circuitos) e o orçamento voltava aos 15 m PROVISÓRIOS (projeto exemplo) */
+    if (!C.alimentadorComprimento.alterado && guardado && guardado.alimentador && guardado.alimentador.informado && Number(guardado.alimentador.comprimento) > 0) {
+      alim.comprimento = Number(guardado.alimentador.comprimento); alim.provisorio = false; alim.informadoNoProjeto = true;
+    }
     /* ⚠ queda no alimentador (6.2.7), em % da tensão fase-neutro, na fase mais carregada: ΔV ≤ R·L·(I_fase + I_neutro), o neutro
        com a soma VETORIAL das correntes fase-neutro (fases a 120°; a carga entre fases não passa por ele) — limite superior,
        conservador: 1 fase = 200·R·L·I/V; 3 fases equilibradas = 100; 2 fases equilibradas = 200. Integração n23 (revisão
@@ -579,7 +585,7 @@
       circuitos: circs.map(function (c) { return { id: c.id, nome: c.nome, tipo: c.tipo, chave: c.chave, tensao: c.tensao, fases: c.fases, pontos: c.pontos.slice(), secao: c.dim.secao, disjuntor: c.dim.In, polos: c.polos, dr: c.drId || null }; }),
       drs: drs.map(function (g) { return { id: g.id, In: g.In, polos: g.polos, fases: g.fases, circuitos: g.circuitos.slice() }; }),
       dps: dps.exigido ? { quantidade: dps.quantidade, uc_V: dps.uc_V, in_kA: dps.in_kA } : null,
-      geral: { In: geral.In, polos: geral.polos }, alimentador: { secao: alim.secao, comprimento: alim.comprimento }, eletrodutos: atrib };
+      geral: { In: geral.In, polos: geral.polos }, alimentador: { secao: alim.secao, comprimento: alim.comprimento, informado: !alim.provisorio }, eletrodutos: atrib };
     circs.forEach(function (c) { if (c.dim.estimado) avisos.push(c.id + " (" + c.nome + "): " + c.semRota.length + " ponto(s) sem eletroduto até o quadro — comprimento e agrupamento ESTIMADOS (trace os eletrodutos)."); });
     return { ok: true, leitura: L, pontos: pontos, existe: existe, circuitos: circs, quadro: qd, fornecimento: dem, demanda: dem, fases: fs, geral: geral, alimentador: alim, drs: drs, dps: dps,
       quadroModelo: modelo, modulos: mod, reserva: res, eletrodutos: eletrodutos, atribuicao: atrib, porTrecho: porTrecho, rotas: rotas, grafo: G, projeto: projeto, projetoGravado: guardado, pendencias: pend, avisos: avisos, criterios: C };

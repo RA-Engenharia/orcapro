@@ -114,8 +114,16 @@
       if (R.chuveiroIndefinido(fid)) L.chuveirosIndef.push({ id: id, p: [num(f.x, 0), num(f.z, 0)], pav: pav, amb: ambDe(add([num(f.x, 0), num(f.z, 0)], frente(f), 0.3), pav) });
     });
     var inst = (estado && estado.instalacoes) || {};
+    /* as pontas dos tubos de OUTRO sistema (água, esgoto, gás…): a caixa elétrica não nasce colada nelas (ver verificar) */
+    L.pontasTubo = [];
+    arr(inst.trechos).forEach(function (t) {
+      if (!t || t.sistema === "eletrica" || !t.p1 || !t.p2) return;
+      [t.p1, t.p2].forEach(function (q) { L.pontasTubo.push({ id: String(t.id), sistema: t.sistema, p: [num(q.x, 0), num(q.z, 0)], y: num(q.y, 0) }); });
+    });
     arr(inst.pecas).forEach(function (k) {
-      if (!k || !/^caixa_/.test(String(k.peca))) return;
+      /* ⚠ 25/10/2026: só caixa ELÉTRICA — "caixa_sifonada" e "caixa_inspecao" do esgoto também começam com caixa_: com o hidro no
+         modelo, o auditor dos pontos dava a caixa sifonada e as caixas de inspeção como "caixa elétrica sem ponto" (projeto exemplo) */
+      if (!k || !/^caixa_/.test(String(k.peca)) || (k.sistema && k.sistema !== "eletrica")) return;
       L.caixas.push({ id: String(k.id), peca: k.peca, p: [num(k.x, 0), num(k.z, 0)], y: num(k.y, 0), h: num(k.alturaPiso, null), rotY: num(k.rotY, 0), dir: [Math.sin(num(k.rotY, 0)), Math.cos(num(k.rotY, 0))], pav: pavDe(num(k.y, 0) - 0.5), auto: PREFIXO.test(String(k.id)) });
     });
     /* a caixa de cada ponto (a ≤ 10 cm, mesma altura) e a caixa SOLTA (sem dispositivo = ligação direta, ou ponto órfão) */
@@ -201,6 +209,14 @@
     for (i = 0; i < L.fixos.length; i++) {
       var m = L.fixos[i]; if (m.pav !== cand.pav || m.id === o.exceto) continue;
       if (dentro(pin, m.pts) && h >= m.y0 - 0.06 && h <= m.y1 + 0.06) return "atrás de " + (m.nome || m.id);
+    }
+    /* ⚠ 25/10/2026: a caixa do chuveiro elétrico nascia a 4 cm da saída de água do chuveiro, na mesma altura (o lugar mais perto
+       do aparelho): o tubo de água "terminava na caixa elétrica" e o Verificar das instalações dava sistemas misturados (projeto
+       exemplo). A caixa fica a ≥ 0,15 m da ponta de qualquer tubo de outro sistema (critério RA de montagem: a caixa 4×2 tem
+       10 cm e a conexão do tubo precisa da parede livre em volta) */
+    for (i = 0; i < arr(L.pontasTubo).length; i++) {
+      var pt = L.pontasTubo[i];
+      if (Math.abs(pt.y - h) < 0.15 && dist(cand.P, pt.p) < 0.15) return "junto da ponta do tubo " + pt.id + " (" + pt.sistema + ")";
     }
     if (!o.semBox) for (i = 0; i < L.boxes.length; i++) {
       var b = L.boxes[i]; if (b.pav !== cand.pav || (ambC && b.amb && b.amb !== ambC)) continue;

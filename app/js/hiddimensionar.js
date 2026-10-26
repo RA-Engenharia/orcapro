@@ -173,9 +173,28 @@
         var vv = (av && av.valores) || {}, sai = arr(av && av.conectores).filter(function (k) { return k.id === "saida"; })[0];
         var vol = vv.Volume_L != null ? Number(vv.Volume_L) : (vv.Capacidade_L != null ? Number(vv.Capacidade_L) : null);
         var ent0 = arr(av && av.conectores).filter(function (k) { return k.id === "entrada"; })[0];
+        /* N23 (25/10/2026) — a ENTRADA e o EXTRAVASOR que o barrilete (js/hidbarrilete.js, "Traçar automaticamente") lançou: o Traçar já
+           põe o extravasor S abaixo da entrada pela Tabela 1, e o Dimensionar dizia "cota da entrada × extravasor não está no modelo". Agora
+           ele MEDE no modelo: S = (cota da entrada − DN/2 do tubo de entrada) − (geratriz de cima do extravasor). O DN da entrada é o do
+           tubo ligado ao conector (a família traz "DN_entrada = 0: o dimensionamento define"). Sem os dois tubos, como antes (pendente). */
+        var dnFam = vv.DN_entrada != null && Number(vv.DN_entrada) > 0 ? Number(vv.DN_entrada) : (ent0 && Number(ent0.dn) > 0 ? Number(ent0.dn) : null), sMod = null, dnMod = null;
+        if (ent0 && isFinite(Number(ent0.y)) && isFinite(Number(f.y))) {
+          /* o estado aplicado não guarda bar/barParte: o id do barrilete é "bar-<caixa>-<parte>-<n>" (js/hidbarrilete.js novoId) */
+          /* ⚠ o estado do CÁLCULO (HidKit.paraCalculo) tira a entrada, o extravasor e a limpeza da rede pressurizada: a medida usa o modelo inteiro */
+          var estB = mod.estadoBruto || est, yEnt = Number(f.y) + Number(ent0.y), trsCx = arr(estB.instalacoes && estB.instalacoes.trechos);
+          var reBar = function (parte) { var pre = "bar-" + String(f.id) + "-" + parte + "-"; return function (t) { return !!t && ((t.barParte === parte && String(t.bar) === String(f.id)) || String(t.id).indexOf(pre) === 0); }; };
+          var tAl = trsCx.filter(reBar("alimentacao")).filter(function (t) { return [t.p1, t.p2].some(function (p) { return p && Math.abs(Number(p.y) - yEnt) < 0.02; }); })[0];   // hid:ok 2 cm: o tubo na cota do conector (geometria)
+          var trX = trsCx.filter(reBar("extravasor"));
+          if (tAl && Number(tAl.dn) > 0) dnMod = Number(tAl.dn);
+          if (dnMod && trX.length) {
+            var yX = -Infinity, dnX = 0;
+            trX.forEach(function (t) { [t.p1, t.p2].forEach(function (p) { if (p && Number(p.y) > yX) { yX = Number(p.y); dnX = Number(t.dn) || 0; } }); });
+            if (yX > -Infinity && dnX > 0) sMod = Math.round(((yEnt - dnMod / 2000) - (yX + dnX / 2000)) * 1000 * 10) / 10;   // hid:ok mm com 1 casa (DN em mm → m)
+          }
+        }
         reservs.push({ id: f.id, volume_L: isFinite(vol) ? vol : null, diametro_m: vv.Diametro != null && isFinite(Number(vv.Diametro)) ? Number(vv.Diametro) : null, ySaida_m: sai && isFinite(Number(sai.y)) ? Number(sai.y) : null,
                        compartimentos: vv.Compartimentos != null ? Number(vv.Compartimentos) : null, funcao: (entrada.reservatorios || {})[f.id] || null,
-                       dnEntrada: vv.DN_entrada != null ? Number(vv.DN_entrada) : (ent0 && ent0.dn != null ? Number(ent0.dn) : null), familia: f });
+                       dnEntrada: dnFam != null ? dnFam : dnMod, sepModelo_mm: sMod, familia: f });
       });
       var FAMH = dep("HidFamilias", "./hidfamilias.js"), cx = null, catR = [];
       try { cx = FAMH && FAMH.porId ? FAMH.porId("hid-caixa-dagua") : null; } catch (eC) { cx = null; }
@@ -193,8 +212,15 @@
         if (tS) { var lS = tS.filter(function (x) { return x.d_max_mm !== "*" && dmm <= Number(x.d_max_mm); }).sort(function (a, b) { return a.d_max_mm - b.d_max_mm; })[0] || tS.filter(function (x) { return x.d_max_mm === "*"; })[0];
                   if (lS) Sreq = lS.s_min_mm != null ? Number(lS.s_min_mm) : Number(lS.s_fator_d) * dmm; }
         var cL = ctx.consulta("af.separacao.obstaculo_fator", null, "valor", "separação atmosférica " + rv.id), Lreq = cL.ok ? Number(cL.valor) * dmm : null;
-        var Sdecl = rv.familia && entrada.alimentacao && entrada.alimentacao.separacaoAtmosferica_mm != null ? Number(entrada.alimentacao.separacaoAtmosferica_mm) : null;
+        var Sdecl = rv.familia && entrada.alimentacao && entrada.alimentacao.separacaoAtmosferica_mm != null ? Number(entrada.alimentacao.separacaoAtmosferica_mm) : null, Smedida = false;
+        if (Sdecl == null && rv.sepModelo_mm != null) { Sdecl = rv.sepModelo_mm; Smedida = true; }
         var passosS = ["entrada DN " + rv.dnEntrada + " (d = " + f1(dmm) + " mm" + (cdi.ok ? "" : ", DN usado como d — sem diâmetro interno tabelado") + "): S ≥ " + f1(Sreq) + " mm; obstáculo lateral L ≥ " + f1(Lreq) + " mm (NBR 5626:2020, Tabela 1 e Figuras 3/4)"];
+        if (Smedida) {
+          passosS.push("S medida no modelo = " + f1(Sdecl) + " mm: da geratriz de baixo do tubo de entrada (boia) à geratriz de cima do extravasor lançados pelo barrilete");
+          /* REVISÃO (25/10/2026): a NBR 5626 mede da SAÍDA da torneira de boia, que o modelo não desenha e fica abaixo do tubo de entrada —
+             a S real é menor que a medida: premissa declarada, o RT confere a cota de saída da boia do fabricante */
+          if (!res.premissas.some(function (p) { return p.item === "separação atmosférica medida (" + rv.id + ")"; })) res.premissas.push({ item: "separação atmosférica medida (" + rv.id + ")", valor: f1(Sdecl) + " mm até a geratriz de baixo do tubo de entrada; a saída da torneira de boia fica abaixo dele (a S real é menor): conferir a cota de saída da boia do fabricante — exigido S ≥ " + f1(Sreq) + " mm", origem: "padrao_motor" });
+        }
         if (Sreq == null) { res.verificacoes.push({ id: "rs-v" + res.verificacoes.length, sistema: "programa", alvo: rv.id, nome: nomeS, valor: null, limite: null, unidade: "mm", eta: null, ok: null, status: "pendente", passos: passosS.concat(["pendente: tabela de separação atmosférica"]), fonte: null }); return; }
         if (Sdecl == null) {
           ctx.pendencia("modelo.reservatorio[" + rv.id + "].separacaoAtmosferica", "cota da entrada × extravasor não está no modelo: separação atmosférica S ≥ " + f1(Sreq) + " mm e L ≥ " + f1(Lreq) + " mm não verificadas", "separação atmosférica");
@@ -202,7 +228,7 @@
           return;
         }
         var okS = Sdecl >= Sreq;
-        res.verificacoes.push({ id: "rs-v" + res.verificacoes.length, sistema: "programa", alvo: rv.id, nome: nomeS, valor: Sdecl, limite: Sreq, unidade: "mm", eta: Sreq / Sdecl, ok: okS, status: okS ? "ok" : "reprovado", passos: passosS.concat(["S informada = " + Sdecl + " mm"]), fonte: NR.fonte("af.separacao_atmosferica") });
+        res.verificacoes.push({ id: "rs-v" + res.verificacoes.length, sistema: "programa", alvo: rv.id, nome: nomeS, valor: Sdecl, limite: Sreq, unidade: "mm", eta: Sreq / Sdecl, ok: okS, status: okS ? "ok" : "reprovado", passos: Smedida ? passosS : passosS.concat(["S informada = " + Sdecl + " mm"]), fonte: NR.fonte("af.separacao_atmosferica") });
         if (!okS) aviso("programa", "erro", "separação atmosférica da entrada do reservatório " + rv.id + " = " + Sdecl + " mm < " + Sreq + " mm (refluxo para a rede pública)", [rv.id], { texto: "subir a entrada para ≥ " + Sreq + " mm acima do extravasor" });
       });
       /* NBR 5626:2020, 6.7.2: alimentador predial repõe o consumo diário em ≤ 6 h (≤ 3 h residência unifamiliar) */

@@ -588,6 +588,7 @@ S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; S._dockRolar = aoRo
 S._dockDocClick = dockDocClick;
 var _szRes = new THREE.Vector2();
 function resize() {
+try { if (window.BimDocaUI && BimDocaUI.congelado && BimDocaUI.congelado()) return; } catch (_) {}
 var alvo = (S && S.host) || host;
 var w = alvo.clientWidth, h = alvo.clientHeight;
 if (!(w && h)) return;
@@ -852,6 +853,9 @@ ajustarPlanos();
 renderFrame(dt);
 if (SAUDE.seguidos) { SAUDE.seguidos = 0; esconderAviso3d('erro'); }
 SAUDE.nQ++; if (cameraSa()) guardarCameraBoa();
+var cpE = camera.matrixWorld.elements, cpU = S._camUlt || (S._camUlt = new Float64Array(16)), cpM = false;
+for (var cpI = 0; cpI < 16; cpI++) if (cpU[cpI] !== cpE[cpI]) { cpM = true; cpU[cpI] = cpE[cpI]; }
+if (cpM) S._camMudouEm = performance.now();
 } catch (e) { quadroFalhou(e); }
 SAUDE.tCheca += dt;
 if (SAUDE.tCheca >= 1.5) { SAUDE.tCheca = 0; try { conferirTamanho(); conferirVazio(); } catch (_) {} }
@@ -7652,6 +7656,11 @@ if (itA) acima.push(itA);
 return acima;
 }
 function vista2d(def) {
+var BMU = window.BimMateriaisUI;
+if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(function () { return vista2dCorpo(def); });
+return vista2dCorpo(def);
+}
+function vista2dCorpo(def) {
 if (S._famLodTudo0) S._famLodTudo0();
 var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 def = def || {};
@@ -9741,6 +9750,7 @@ S._tickExtra.push(function () {
 if (++famLod.quadro % 15 || !famLod.lista.length) return;
 var desenho = !S.camera.isPerspectiveCamera || (S.planta && S.planta.on) || (S.corteL && S.corteL.on);
 famLod.lista = famLod.lista.filter(function (m) {
+if (!m.userData || !m.userData.famLod) return false;
 var vivo = false; for (var p = m.parent; p; p = p.parent) if (p === S.scene) { vivo = true; break; }
 if (!vivo) { if (!m.parent) { (m.userData.famLod || []).forEach(function (g) { if (g !== m.geometry) try { g.dispose(); } catch (_) {} }); return false; } return true; }
 if (desenho) { famLodNivel(m, 0); return true; }
@@ -9952,6 +9962,11 @@ if (edit.modelo) {
 desagregarModelo(edit.modelo);
 modelRoot.remove(edit.modelo.grupo);
 edit.modelo.grupo.traverse(function (o) { if (o.geometry && !(o.geometry.userData && (o.geometry.userData.metGeo || o.geometry.userData.instGeoCache))) o.geometry.dispose(); });
+edit.modelo.grupo.traverse(function (o) {
+var gs = o.userData && o.userData.famLod; if (!gs) return;
+gs.forEach(function (g) { if (g && g !== o.geometry && !(g.userData && (g.userData.metGeo || g.userData.instGeoCache))) { try { g.dispose(); } catch (_) {} } });
+o.userData.famLod = null;
+});
 edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
 var ix = S.modelos.indexOf(edit.modelo); if (ix >= 0) S.modelos.splice(ix, 1);
 edit.modelo = null;
@@ -12547,9 +12562,23 @@ lista(p.Representations).some(function (h) { var c = porRep[ref(h)]; if (c != nu
 } catch (_) { }
 return porPds;
 }
+S._sigGeo = function () {
+var BF = window.BimFluidez; if (!BF || !BF.assinaturaCena || !S.modelRoot) return null;
+var cx0 = null; try { cx0 = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx0 = null; }
+var rem = S._remEd ? Object.keys(S._remEd).filter(function (k) { return S._remEd[k]; }).sort().join(',') : '';
+return BF.assinaturaCena(S.modelRoot, { extra: [S._partesVersao || 0, cx0 && cx0.on ? JSON.stringify([cx0.min, cx0.max]) : '-', rem, (S.modelos || []).length, (S.elementos || []).length] });
+};
+S._sigVis = function () {
+var BF = window.BimFluidez; if (!BF || !BF.assinaturaCena || !S.modelRoot) return null;
+var cx0 = null; try { cx0 = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx0 = null; }
+var rem = S._remEd ? Object.keys(S._remEd).filter(function (k) { return S._remEd[k]; }).sort().join(',') : '';
+return BF.assinaturaCena(S.modelRoot, { vis: true, extra: [S._partesVersao || 0, cx0 && cx0.on ? JSON.stringify([cx0.min, cx0.max]) : '-', rem, (S.modelos || []).length, (S.elementos || []).length, scene.visible === false ? 0 : 1] });
+};
 function edificacaoMedir() {
 var PV = window.PranchaViva;
 if (!PV || !PV.caixaEdificacao || !S || !S.modelRoot) return null;
+var sigR = null; try { sigR = S._sigGeo(); } catch (_) { sigR = null; }
+if (sigR && edifCache && edifCache.sigR === sigR) return edifCache;
 var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
 var cx = null; try { cx = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx = null; }
 var porUid = {}, nM = 0, bm = new THREE.Box3(), tipoDe = {};
@@ -12564,7 +12593,7 @@ else { o.min[0] = Math.min(o.min[0], bm.min.x); o.min[1] = Math.min(o.min[1], bm
 });
 function r2(v) { return Math.round(v * 100) / 100; }
 var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z), cx && cx.on ? cx.min.map(r2).join(',') + ';' + cx.max.map(r2).join(',') : '-'].join('|');
-if (edifCache && edifCache.sig === sig) return edifCache;
+if (edifCache && edifCache.sig === sig) { edifCache.sigR = sigR; return edifCache; }
 var lista = [], vistos = {};
 (elementosVivos() || []).forEach(function (e) {
 var c = porUid[e.uid]; if (!c) return;
@@ -12589,7 +12618,7 @@ try { var ln = S.api.GetLine(mo.mid, parseInt(e.uid.split(':')[1], 10), false), 
 var r = PV.caixaEdificacao(lista, { caixaCorte: cx });
 var ativo = !!(r && r.caixa && r.criterio !== 'sem-entorno' && r.criterio !== 'vazio');
 var cota = []; try { if (ativo || r.caixa) cota = PV.pavimentosPorCota(lista, r.caixa, r.exclusoes); } catch (_) { cota = []; }
-edifCache = { sig: sig, r: r, ativo: ativo, cota: cota, caixaModelo: { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] } };
+edifCache = { sig: sig, sigR: sigR, r: r, ativo: ativo, cota: cota, caixaModelo: { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] } };
 return edifCache;
 }
 S._edificacao = function () { var c = edificacaoMedir(); return c ? c.r : null; };
@@ -14384,6 +14413,18 @@ ifcFontes: function () { return (S && S.modelos ? S.modelos : []).filter(functio
 vista2d: function (def) { return (S && S._vista2d) ? S._vista2d(def || {}) : { ok: false, erro: 'Visualizador não montado.' }; },
 pavimentos2d: function () {
 if (!S || !S.modelRoot) return { pav: [], caixa: null };
+var BF = window.BimFluidez, sig = null;
+if (BF && BF.Memo && S._sigGeo) {
+try { sig = S._sigGeo(); } catch (_) { sig = null; }
+if (!S._pav2dMemo) S._pav2dMemo = new BF.Memo();
+var r = S._pav2dMemo.obter(sig, function () { return window.BIM._pavimentos2dCalc(); });
+return BF.copia ? BF.copia(r) : JSON.parse(JSON.stringify(r));
+}
+return window.BIM._pavimentos2dCalc();
+},
+assinaturaVista: function () { return (S && S._sigVis) ? S._sigVis() : null; },
+cameraParadaMs: function () { return (S && S._camMudouEm) ? performance.now() - S._camMudouEm : Infinity; },
+_pavimentos2dCalc: function () {
 var b = new THREE.Box3().setFromObject(S.modelRoot), lst = [];
 try { lst = (S._pavimentosCorte ? S._pavimentosCorte() : []).map(function (p) { return { nome: p.nome, y: p.y - 1.2 }; }); } catch (e) { lst = []; }
 var cxM = b.isEmpty() ? null : { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] };

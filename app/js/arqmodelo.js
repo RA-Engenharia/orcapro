@@ -95,6 +95,24 @@
     return [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(function (q) { return [r4(fx + q[0] * cs + q[1] * sn), r4(fz - q[0] * sn + q[1] * cs)]; });
   }
 
+  /* a peça de AÇO (js/metalpeca.js): a linha da barra em coordenadas do mundo (metal.cria, relativa ao centro, girada por rotY), a seção do perfil
+     (a = a maior medida, b = a menor) ou, na chapa, a pegada e a espessura. Serve ao corte (onde o plano cruza a barra) e à fachada (a barra em elevação). */
+  function metalDe(c, st, base) {
+    var m = c.metal || {}, cr = m.cria, th = num(c.rotY, 0), cs = Math.cos(th), sn = Math.sin(th);
+    function W(v) { return [r4(num(c.cx, 0) + v[0] * cs + v[2] * sn), r4(num(c.cy, 0) + v[1]), r4(num(c.cz, 0) - v[0] * sn + v[2] * cs)]; }
+    var pf = m.perfil || {}, a = 0.05, b = 0.05;
+    if (pf.forma === "I") { a = num(pf.d, 0.15); b = num(pf.bf, 0.1); }
+    else if (pf.forma === "tubo-ret") { a = num(pf.h, 0.1); b = num(pf.b, 0.1); }
+    else if (pf.forma === "frio") { a = num(pf.bw, 0.1); b = num(pf.bf, 0.05); }
+    else if (pf.forma === "L") { a = num(pf.a, 0.05); b = num(pf.b, 0.05); }
+    else if (pf.forma === "circ") { a = b = num(pf.d, 0.025); }
+    if (m.kind === "chapa" || (m.t != null && !cr) || (cr && cr.ferr === "chapa")) {
+      return { id: String(c.id), chapa: true, pts: G0().retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0.1), num(c.espessura, 0.1), th), base: r4(base), topo: r4(base + num(c.altura, 0.006)), status: st };
+    }
+    var pa = cr && cr.a ? W(cr.a) : [num(c.cx, 0), base, num(c.cz, 0)], pb = cr && cr.b ? W(cr.b) : [num(c.cx, 0), base + num(c.altura, 0), num(c.cz, 0)];
+    return { id: String(c.id), chapa: false, a: pa, b: pb, sa: r4(Math.max(a, b)), sb: r4(Math.min(a, b)), status: st };
+  }
+  function G0() { return GEO(); }
   function agruparBases(valores, tol) {
     var v = valores.slice().sort(function (a, b) { return a - b; }), out = [], g = [];
     v.forEach(function (x) { if (g.length && x - g[g.length - 1] > tol) { out.push(g.reduce(function (s, q) { return s + q; }, 0) / g.length); g = []; } g.push(x); });
@@ -114,7 +132,7 @@
     if (!S.faseado) avisos.push("O modelo não tem fases (existente / demolir / construir): tudo sai como A CONSTRUIR. Marque a fase das peças para a convenção de reforma.");
 
     /* ---- paredes, pilares, lajes */
-    out.paredes = []; out.pilares = []; out.lajes = [];
+    out.paredes = []; out.pilares = []; out.lajes = []; out.vigas = []; out.metais = [];
     arr(est.caixas).forEach(function (c) {
       if (!c || c.id == null) return;
       var st = S.de(c); if (!VIVOS[st]) return;
@@ -125,6 +143,12 @@
           rotY: num(c.rotY, 0), base: r4(base), topo: r4(base + num(c.altura, 0)), altura: num(c.altura, 0), status: st, muro: ehMuro(c), marca: txt(c.marca), tipoParede: txt(c.tipoParede) });
       } else if (c.tipo === "pilar") {
         out.pilares.push({ id: String(c.id), pts: G.retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0.2), num(c.espessura, 0.2), num(c.rotY, 0)), base: r4(base), topo: r4(base + num(c.altura, 0)), status: st });
+      } else if (c.tipo === "viga") {
+        /* viga de concreto (as do "Pré-lançar") ou de madeira (estrutura do telhado, base da caixa): o corte as mostra */
+        out.vigas.push({ id: String(c.id), pts: G.retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0.2), num(c.espessura, 0.2), num(c.rotY, 0)), base: r4(base), topo: r4(base + num(c.altura, 0)), status: st,
+          madeira: txt(c.material) === "madeira" || /^tec-/.test(String(c.id)) });
+      } else if (c.tipo === "metal") {
+        out.metais.push(metalDe(c, st, base));
       } else if (c.tipo === "laje") {
         var pts = arr(c.contorno).length >= 3 ? c.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }) : G.retCaixa(num(c.cx, 0), num(c.cz, 0), num(c.comprimento, 0), num(c.espessura, 0), 0);
         out.lajes.push({ id: String(c.id), pts: pts, area: G.areaPol(pts), topo: r4(num(c.cy, 0) + num(c.altura, 0) / 2), espessura: num(c.altura, 0), status: st });
@@ -184,7 +208,7 @@
         if (padrao) avisos.push("Vão " + f.id + " (" + f.famId + "): sem dimensão avaliada, usei " + larg + " x " + alt + " m (conferir).");
         var ins = f.inst || {}, ab2 = ins.Abre_para_fora === true || ins.Abre_para_fora === "true";
         out.vaos.push({ id: String(f.id), tipo: cat, famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), parede: String(f.host.id), x: num(f.x, 0), z: num(f.z, 0), rotY: num(f.rotY, par.rotY),
-          largura: r4(larg), altura: r4(alt), peitoril: r4(peit), dimPadrao: padrao, abreFora: ab2, status: st, pav: par.pav, material: txt(ins.Material_folha || ins.Material_marco || ""), marca: txt(f.marca) });
+          largura: r4(larg), altura: r4(alt), peitoril: r4(peit), dimPadrao: padrao, abreFora: ab2, maoDireita: ins.Mao_direita === true || ins.Mao_direita === "true", status: st, pav: par.pav, material: txt(ins.Material_folha || ins.Material_marco || ""), marca: txt(f.marca) });
         return;
       }
       var pts = pegadaFamilia(av, f);
@@ -192,7 +216,7 @@
       if (cat === "pilar" || cat === "viga" || cat === "dispositivo_eletrico" || cat === "equipamento_eletrico") return;
       if (!pts) return;
       var matsM = []; arr(av && av.solidos).forEach(function (so) { var mm = txt(so && so.material); if (mm && matsM.indexOf(mm) < 0 && matsM.length < 8) matsM.push(mm); });
-      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
+      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, h0: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y0, 0)), h1: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y1, 0)), mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
         solidos: arr(av && av.solidos).slice(0, 40).map(function (s) { return { forma: s.forma, x: s.x, y: s.y, z: s.z, dx: s.dx, dy: s.dy, dz: s.dz, raio: s.raio, altura: s.altura, eixo: s.eixo, material: s.material, cor: s.cor }; }) });
     });
     /* marcas P1, P2… J1, J2…: um código por TIPO de vão (família + tipo + tamanho), na ordem em que aparecem */
@@ -218,6 +242,29 @@
       var st = S.de(f); if (!VIVOS[st]) return null;
       return { id: String(f.id), pts: f.contorno.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), cota: num(f.cota, 0), tipo: txt(f.tipoForro && f.tipoForro.rotulo), tipoId: txt(f.tipoId), area: num(f.area, 0), ambienteId: txt(f.ambienteId), inclinacao: num(f.inclinacao, 0), sanca: f.sanca || null, status: st };
     }).filter(function (f) { return !!f; });
+
+    /* ---- FUNDAÇÕES (bloco, estacas, baldrame), CALHAS e o que a fachada e o corte precisam saber das instalações aparentes */
+    out.fundacoes = arr(est.fundacoes).filter(function (f) { return f && f.ok !== false && arr(f.planta).length >= 3; }).map(function (f) {
+      var st = S.de(f); if (!VIVOS[st]) return null;
+      return { id: String(f.id), tipo: txt(f.tipoFundacao), pts: f.planta.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), topo: num(f.cotaTopo, 0), base: num(f.cotaFundo, num(f.cotaTopo, 0) - num(f.altura, 0)),
+        estacas: arr(f.estacas).map(function (e) { return { x: num(e.x, 0), z: num(e.z, 0) }; }), dEstaca: num(f.diametroEf, num(f.diametro, 0)), ponta: isFinite(+f.cotaPontaEstacas) ? +f.cotaPontaEstacas : null, status: st };
+    }).filter(function (f) { return !!f; });
+    /* a "cobertura" de uma água (js/bimedit.js cobertura) que o projeto usa como regularização com caimento da laje descoberta: o sentido da água (para onde desce) */
+    out.caimentos = arr(est.coberturas).filter(function (cb) { return cb && arr(cb.planos).length === 1; }).map(function (cb) {
+      var st = S.de(cb); if (!VIVOS[st]) return null;
+      var p = cb.planos[0], sg = num(p.rotX, 0) > 0 ? 1 : -1, alongX = Math.abs(Math.sin(num(p.rotY, 0))) > 0.5;
+      return { id: String(cb.id), x0: num(cb.x0, 0), z0: num(cb.z0, 0), x1: num(cb.x1, 0), z1: num(cb.z1, 0), dir: alongX ? [sg, 0] : [0, sg], pct: num(cb.inclinacao, 0), status: st };
+    }).filter(function (q) { return !!q; });
+    out.calhas = [];
+    arr(est.calhasEmbutidas).forEach(function (k) {
+      arr(k && k.segs).forEach(function (s) {
+        if (arr(s.quad).length >= 3) out.calhas.push({ id: String(k.id), pts: s.quad.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), base: num(s.yFundo, 0), topo: num(s.yBorda, 0), status: "novo" });
+      });
+    });
+    /* tubos APARENTES na fachada: as descidas e o ladrão do pluvial, o ventilador primário e o alimentador de água (os que sobem fora da parede) */
+    out.tubosAparentes = arr(est.instalacoes && est.instalacoes.trechos).filter(function (t) {
+      return t && t.p1 && t.p2 && /^(tel-calha|AP-AT-|AF-ALIM-|VE-PRIM-|bar-caixa1-(extravasor|limpeza))/.test(String(t.id)) && Math.max(num(t.p1.y, 0), num(t.p2.y, 0)) > 0.05;
+    }).map(function (t) { return { id: String(t.id), sistema: txt(t.sistema), dn: num(t.dn, 50), a: [num(t.p1.x, 0), num(t.p1.y, 0), num(t.p1.z, 0)], b: [num(t.p2.x, 0), num(t.p2.y, 0), num(t.p2.z, 0)] }; });
 
     /* ---- terreno */
     var T = est.terreno || {}, dv = arr(T.divisas).filter(function (d) { return d && d.ok !== false && arr(d.contorno).length >= 3; })[0] || null;

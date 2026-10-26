@@ -29,12 +29,16 @@
       E05: "CORTES E ELEVAÇÕES GERAIS", E06: "DETALHES TÍPICOS DAS LIGAÇÕES", E07: "CONTRAVENTAMENTO", E08: "DESENHOS DE OFICINA POR PEÇA", E09: "PAINÉIS CLT - PAGINAÇÃO E USINAGEM",
       E10: "TABELA DE PEÇAS POR POSIÇÃO", E11: "TABELA DE FERRAGENS E CONECTORES", E12: "MANUAL DE MONTAGEM"
     },
-    marcas: { PL: "pilar de MLC", VL: "viga de MLC (altura variável)", TL: "terça de MLC", BQ: "bloqueador", ES: "escora", VG: "verga", TR: "travessa", PD: "pendural", TI: "fita de contraventamento", DB: "barrote do deck superior", DV: "viga do deck superior", DP: "pilarete do deck superior", DW: "viga do deck inferior", DC: "barrote do deck inferior", DQ: "pilar do deck inferior", EL: "longarina da escada", ED: "degrau da escada" },
+    marcas: { PL: "pilar de MLC", VL: "viga de MLC (altura variável)", TL: "terça de MLC", BQ: "bloqueador", ES: "escora", VG: "verga", TR: "travessa", PD: "pendural", TI: "fita de contraventamento", DB: "barrote do deck superior", DV: "viga do deck superior", DP: "pilarete do deck superior", DW: "viga do deck inferior", DC: "barrote do deck inferior", DQ: "pilar do deck inferior", DY: "diagonal do contraventamento do deck", EL: "longarina da escada", ED: "degrau da escada" },
     escalas: { planta: [50, 100], porticos: [25, 50], ligacao: [2, 5, 10] }
   };
 
   /* ------------------------------------------------------------ utilidades */
   var FAIXA = "Documento gerado pelo sistema — emissão somente após conferência e ART do responsável técnico";
+  /* garfo (E4 r2): pilar duplo (forma "duplo": 2 peças b x h com a V entre elas). Lado visto na elevação = h; chapas externas de 12 mm com largura h - 20 mm; colunas de parafusos a h/2 - 4d. */
+  function ladoPilar(P) { return P.forma === "quadrado" ? P.b : (P.forma === "duplo" ? P.h : P.d); }
+  function aBase(L, P) { var cz = L.base && L.base.cruz && L.base.cruz.a; if (cz != null) return cz; return P && P.forma === "duplo" && L.base ? P.h / 2 - 4 * (L.base.d || 0.016) : 0.076; }
+  function chapaLarg(b, P) { return P && P.forma === "duplo" ? Math.round((P.h - 0.02) * 1000) : (b.chapa ? b.chapa.largura_mm : 193); }
   function num(v, d) { if (v == null || v === "") return d; var x = Number(v); return isFinite(x) ? x : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
@@ -67,9 +71,9 @@
 
   /* ================================================================ PEÇAS, MARCAS, TABELAS */
   var PREFIXOS = [[/^T\d/, "TL"], [/^V\d/, "VL"], [/^P\d/, "PL"], [/^BL/, "BQ"], [/^ES\d/, "ES"], [/^VG/, "VG"], [/^TR/, "TR"], [/^PD/, "PD"], [/^FX\d/, "TI"],
-    [/^DS-B/, "DB"], [/^DS-V/, "DV"], [/^DS-P/, "DP"], [/^DI-V/, "DW"], [/^DI-B/, "DC"], [/^DI-P/, "DQ"], [/^ESC-L/, "EL"], [/^ESC-D/, "ED"]];
+    [/^DS-B/, "DB"], [/^DS-V/, "DV"], [/^DS-P/, "DP"], [/^DI-V/, "DW"], [/^DI-B/, "DC"], [/^DI-P/, "DQ"], [/^D[SI]-CV\d/, "DY"], [/^ESC-L/, "EL"], [/^ESC-D/, "ED"]];
   var NOME_PREFIXO = { TL: "terça", VL: "viga V", PL: "pilar", BQ: "bloqueador", ES: "escora", VG: "verga", TR: "travessa", PD: "pendural", TI: "fita de contraventamento",
-    DB: "barrote do deck superior", DV: "viga do deck superior", DP: "pilarete do deck superior", DW: "viga do deck inferior", DC: "barrote do deck inferior", DQ: "pilar do deck inferior", EL: "longarina da escada", ED: "degrau da escada" };
+    DB: "barrote do deck superior", DV: "viga do deck superior", DP: "pilarete do deck superior", DW: "viga do deck inferior", DC: "barrote do deck inferior", DQ: "pilar do deck inferior", DY: "diagonal do contraventamento do deck", EL: "longarina da escada", ED: "degrau da escada" };
   function prefixoDe(id) { for (var i = 0; i < PREFIXOS.length; i++) if (PREFIXOS[i][0].test(id)) return PREFIXOS[i][1]; return null; }
   function classeDe(m) { var t = txt(m), g = /GL\s?(\d+[hc])/i.exec(t); if (g) return "GL" + g[1]; if (/eucalipto/i.test(t)) return "Eucalipto roliço"; return t.split(" — ")[0].slice(0, 22); }
   function tratDe(m) { var t = txt(m); if (/autoclav|CCA|CCB/i.test(t)) return /categoria de uso 5/i.test(t) ? "CCA cat. 5" : "CCA/CCB cat. 4"; return null; }
@@ -235,8 +239,8 @@
   function baseElevacao(c, D, x, y, esc0, res0) {
     /* elevação/corte da base em cruz (LG01) na escala 1:esc0; (x,y) = canto sup. esq. da área; devolve a caixa usada */
     var L = c.res.ligacoes, T = D.E.T, s = 1000 / esc0 / 1000 * 1000 / 1000;   /* mm de papel por mm real = 1/esc0 */
-    var k = 1 / esc0, b = L.base, pl = L.placaBase, P = c.res.secoes.P, lado = P.forma === "quadrado" ? P.b : P.d, aM = num(b.cruz && b.cruz.a, 0.076) * 1000;
-    var placa = pl.dimensoes_mm[0], esp = pl.espessura_mm, chH = b.comprimento * 1000, chW = b.chapa ? b.chapa.largura_mm : 193, pinoD = b.d * 1000, a1 = b.a1 * 1000, a3 = b.a3 * 1000;
+    var k = 1 / esc0, b = L.base, pl = L.placaBase, P = c.res.secoes.P, lado = ladoPilar(P), aM = aBase(L, P) * 1000;
+    var placa = pl.dimensoes_mm[0], esp = pl.espessura_mm, chH = b.comprimento * 1000, chW = chapaLarg(b, P), pinoD = b.d * 1000, a1 = b.a1 * 1000, a3 = b.a3 * 1000;
     var wC = Math.max(placa + 200, 600) * k, hC = 170 * k, xc = x + 14, yPl = y + 12 + (chH + 60) * k + hC * 0;   /* topo da placa */
     var topoY = y + 14, yPlaca = topoY + (chH + 120) * k;           /* y do topo da placa (papel) */
     var cx = xc + wC / 2;
@@ -262,14 +266,14 @@
     D.cadeia(P0, 7, vals, { semExt: true, offs: [7, 12, -12, 16], attrs: vals.map(function () { return ' data-cota="base-a1a3"'; }) });
     D.cota(cx - placa * k / 2, yPlaca + esp * k + hC + 6, cx + placa * k / 2, yPlaca + esp * k + hC + 6, -4, String(placa), { semExt: true, offs: [-8, -12] });
     D.cota(cx - aM * k, yPlaca - (chH + folga) * k - 6, cx + aM * k, yPlaca - (chH + folga) * k - 6, 4, mm(2 * aM / 1000), { semExt: true, offs: [8, 12] });
-    D.cota(xc - 3, yPlaca, xc - 3, yPlaca + esp * k, -6, String(esp), { semExt: true });
+    if (esc0 <= 5) D.cota(xc - 3, yPlaca, xc - 3, yPlaca + esp * k, -6, String(esp), { semExt: true });          /* 1:10 deixa a chapa fina demais para a cota (E4 r3) */
     /* textos */
     var xt = xc + wC + 10, yt = topoY + 2, h = T.nota * 0.9;
     var hx = D.textos(xt, yt, [
-      "BA-01 - base em cruz (LG01)",
-      "placa " + placa + "x" + placa + "x" + esp + " mm (" + (c.res.secoes.P.forma === "quadrado" ? "pilar " + I.cm(lado) + "x" + I.cm(lado) + " cm" : "pilar Ø" + I.cm(lado) + " cm") + ")",
-      "2 chapas em cruz t = " + (b.chapa ? b.chapa.t_mm : 16) + " mm x " + chW + " x " + Math.round(chH + folga) + " mm (" + Math.round(chH) + " embutidos + " + folga + " de folga), fendas de 18 mm",
-      b.n + " pinos inox Ø" + pinoD + " por chapa (" + b.nc + " colunas x " + nr + " linhas), ocultos, tampão de madeira",
+      (P.forma === "duplo" ? "BA-01 - base em garfo (LG01)" : "BA-01 - base em cruz (LG01)"),
+      "placa " + placa + "x" + placa + "x" + esp + " mm (" + (c.res.secoes.P.forma === "duplo" ? "pilar duplo, 2 peças de " + I.cm(P.b) + "x" + I.cm(P.h) + " cm" : c.res.secoes.P.forma === "quadrado" ? "pilar " + I.cm(lado) + "x" + I.cm(lado) + " cm" : "pilar Ø" + I.cm(lado) + " cm") + ")",
+      (P.forma === "duplo" ? "4 chapas externas do garfo (2 por peça) t = 12 mm x " : "2 chapas em cruz t = " + (b.chapa ? b.chapa.t_mm : 16) + " mm x ") + chW + " x " + Math.round(chH + folga) + " mm (" + Math.round(chH) + " embutidos + " + folga + " de folga)" + (P.forma === "duplo" ? "" : ", fendas de 18 mm"),
+      b.n + (P.forma === "duplo" ? " parafusos passantes inox Ø" : " pinos inox Ø") + pinoD + (P.forma === "duplo" ? " por peça (" : " por chapa (") + b.nc + " colunas x " + nr + " linhas), " + (P.forma === "duplo" ? "aparentes, ajustados" : "ocultos, tampão de madeira"),
       pl.chumbadores.total + " chumbadores M20 inox A4-70 (" + pl.chumbadores.porLado + " por lado), ancoragem química",
       "embutimento do chumbador e sistema químico: pela fundação, outra empresa (" + ponto(c, "embutimento", "LG01, E01", "Embutimento e sistema químico do chumbador M20, argamassa de nivelamento sob a placa e tolerância de locação dos chumbadores: pela fundação (outra empresa)", "", "fundação") + ")",
       "folga entre o pé do pilar e a placa (pé elevado e drenado): " + folga + " mm, adotado (" + ponto(c, "folga-pe", "LG01, E01", "Folga entre o pé do pilar e a placa de base (pé elevado e drenado): o cálculo não fixa", folga + " mm; a chapa em cruz sobe " + Math.round(chH + folga) + " mm = " + Math.round(chH) + " embutidos + " + folga + " de folga") + ")",
@@ -281,10 +285,23 @@
     return { x1: xt + 60, y1: Math.max(yPlaca + esp * k + hC + 14, yt + hx) };
   }
   function basePlanta(c, D, x, y, esc0) {
-    var L = c.res.ligacoes, k = 1 / esc0, P = c.res.secoes.P, lado = P.forma === "quadrado" ? P.b : P.d, pl = L.placaBase, placa = pl.dimensoes_mm[0], b = L.base;
-    var chW = b.chapa ? b.chapa.largura_mm : 193, aM = num(b.cruz && b.cruz.a, 0.076) * 1000, braco = placa - 100;
+    var L = c.res.ligacoes, k = 1 / esc0, P = c.res.secoes.P, lado = ladoPilar(P), pl = L.placaBase, placa = pl.dimensoes_mm[0], b = L.base;
+    var chW = chapaLarg(b, P), aM = aBase(L, P) * 1000, braco = placa - 100;
     var cx = x + placa * k / 2 + 14, cy = y + placa * k / 2 + 8;
     chapa(D, cx - placa * k / 2, cy - placa * k / 2, placa * k, placa * k, true); D.ret(cx - placa * k / 2, cy - placa * k / 2, placa * k, placa * k, "MAD-ACO");
+    if (P.forma === "duplo") {          /* garfo: 2 peças b x h com a V entre elas; cada peça entre 2 chapas externas de 12 mm soldadas na placa */
+      var Vg = c.res.secoes.V.b * 1000, Pb = P.b * 1000, Ph = P.h * 1000, tg = 12, braco2 = placa - 100;
+      [-1, 1].forEach(function (sg) {
+        var x0 = sg < 0 ? -(Vg / 2 + Pb) : Vg / 2;
+        D.ret(cx + x0 * k, cy - Ph / 2 * k, Pb * k, Ph * k, "MAD-OCULTA");
+        D.ret(cx + (x0 - tg) * k, cy - chW / 2 * k, tg * k, chW * k, "MAD-ACO"); D.ret(cx + (x0 + Pb) * k, cy - chW / 2 * k, tg * k, chW * k, "MAD-ACO");
+      });
+      var rc2 = 10 * k, ch2 = braco2 / 2 * k;
+      [-1, 1].forEach(function (sx) { [-1, 1].forEach(function (sy) { pinoVista(D, cx + sx * ch2, cy + sy * ch2, Math.max(rc2, 0.9), true); }); });
+      D.cota(cx - ch2, cy + placa * k / 2 + 2, cx + ch2, cy + placa * k / 2 + 2, -6, String(braco2), { semExt: false, offs: [-12, -18] });
+      D.cota(cx - placa * k / 2, cy - placa * k / 2 - 2, cx + placa * k / 2, cy - placa * k / 2 - 2, 6, String(placa), { semExt: false, offs: [10, 14] });
+      return { w: placa * k + 28, h: placa * k + 30 };
+    }
     D.ret(cx - lado * 1000 * k / 2, cy - lado * 1000 * k / 2, lado * 1000 * k, lado * 1000 * k, "MAD-OCULTA");
     D.ret(cx - chW * k / 2, cy - 8 * k, chW * k, 16 * k, "MAD-ACO"); D.ret(cx - 8 * k, cy - chW * k / 2, 16 * k, chW * k, "MAD-ACO");
     var rc = 10 * k, ch = braco / 2 * k;
@@ -301,7 +318,7 @@
     I.tituloVista(D, a.x + 4, a.y + 2, "PLANTA DE LOCAÇÃO DAS BASES", "ESC 1:" + esc0);
     var caixa = [f3([X[0].v, y1])[0], f3([X[0].v, y1])[1], f3([X[X.length - 1].v, Y[0].v])[0], f3([X[0].v, Y[0].v])[1]];
     eixosEmPlanta(c, f3, X, Y, caixa, 14);
-    var L = c.res.ligacoes, placa = L.placaBase.dimensoes_mm[0] / 1000, P = c.res.secoes.P, lado = P.forma === "quadrado" ? P.b : P.d;
+    var L = c.res.ligacoes, placa = L.placaBase.dimensoes_mm[0] / 1000, P = c.res.secoes.P, lado = ladoPilar(P);
     d.reac.linhas.forEach(function (ln) {
       var C = f3([ln.x, ln.y]), w = placa * s, wp = lado * s;
       D.ret(C[0] - w / 2, C[1] - w / 2, w, w, "MAD-ACO", ' data-base="' + ln.no + '"');
@@ -333,7 +350,7 @@
     var tb = D.tabela(xq, yq + hT, cols, lin, { fs: T.tabela, hl: 5.2 });
     var yy = yq + hT + tb.h + 3;
     yy += D.textos(xq, yy, [
-      "Valores de CÁLCULO (combinações últimas, NBR 8681), na base de cada pilar; N > 0 compressão, N < 0 arrancamento. Base engastada: o momento M entra no bloco/sapata. Pilaretes dos decks fora desta tabela (cargas leves: conferir com o projetista da fundação).",
+      "Valores de CÁLCULO (combinações últimas, NBR 8681), na base de cada pilar; N > 0 compressão, N < 0 arrancamento. Base engastada: o momento M entra no bloco/sapata. Pilaretes baixos dos decks fora desta tabela (cargas leves: conferir com o projetista da fundação); os pilares ALTOS do deck inferior (DQ, contraventados em X) têm N, H e M na folha D06 do caderno do deck.",
       { t: "Decomposição característica G / Q / vento (a ser pedida pela fundação): o motor devolve só a envoltória de cálculo (" + ponto(c, "reacoes-carac", "E01", "Decomposição característica das reações em G / Q / vento: o motor devolve só a envoltória de cálculo", "reações de cálculo da tabela; a fundação pede a decomposição ao calculista", "RT") + ").", attr: ' data-pend="reacoes-caracteristicas"' },
       "Tolerância de locação dos chumbadores e de nível da placa: definir com a fundação (" + ponto(c, "embutimento", "LG01, E01", "", "") + ")."
     ], T.nota * 0.9, { wmax: 560 });
@@ -424,7 +441,7 @@
     yy += D.textos(xr, yy, [
       "TI-01 - " + fita.length + " trechos de fita metálica perfurada em X (60 x 2,0 mm, galvanizada a fogo ou inox) sobre as terças, sob o lambri, com tensor.",
       "N de cálculo na fita = " + I.br(fl.N_d, 2) + " kN; η = " + I.br(fl.eta, 3) + (fl.ok ? " (VERIFICADA)" : " (NÃO ATENDE)") + ". " + fl.parafusosPorPonta + " parafusos 5x50 por ponta.",
-      { t: "Rk do parafuso 5x50 (" + I.br(fl.Rk_parafuso, 2) + " kN) vem da R02, sem fonte de catálogo/ETA (" + ponto(c, "fita-rk", "LG10", "Rk do parafuso 5x50 (" + I.br(fl.Rk_parafuso, 2) + " kN) vem da R02 sem fonte: informar o valor do catálogo/ETA", "Rk = " + I.br(fl.Rk_parafuso, 2) + " kN (R02)", "fabricante") + ").", attr: ' data-pend="fita-rk"' },
+      { t: "Rk do parafuso 5x50 = " + I.br(fl.Rk_parafuso, 2) + " kN: " + (fl.fonteRk || "adotado pelo RT (24/10/2026)") + ".", attr: ' data-fonte="fita-rk"' },
       "ES - " + d.por(/^ES\d/).length + " escoras (mão-francesa) de MLC da terça à borda de baixo da V: " + es.especificacao + ".",
       "N de cálculo na escora = " + I.br(es.N_d, 2) + " kN; η = " + I.br(es.eta, 3) + (es.ok ? " (VERIFICADA)" : " (NÃO ATENDE)") + ".",
       "Bloqueadores BQ (travam a borda de baixo da terça na sucção do vento): " + L.bloqueador.especificacao + "; η = " + I.br(L.bloqueador.eta, 3) + "."
@@ -440,18 +457,21 @@
     var vs = lista.filter(function (p) { return /^(DS-V|DI-V|ESC-L)/.test(p.id); }), bs = lista.filter(function (p) { return /^(DS-B|DI-B|ESC-D)/.test(p.id); }), ps = lista.filter(function (p) { return /^(DS-P|DI-P)/.test(p.id); });
     var iB = desenharLista(D, c, bs, f3, function () { return "MAD-FINA"; }), iV = desenharLista(D, c, vs, f3, function () { return "MAD-PRINCIPAL"; }), iP = desenharLista(D, c, ps, f3, function () { return "MAD-CORTE"; });
     iP.forEach(function (it) { D.cheio(it.poly, PRETO); });
+    var iM = desenharLista(D, c, lista.filter(function (p) { return /^D[SI]-MU\d/.test(p.id); }), f3, function () { return "MAD-CONTEXTO"; }), iC = desenharLista(D, c, lista.filter(function (p) { return /^D[SI]-CV\d/.test(p.id); }), f3, function () { return "MAD-LIG"; });      /* r11: muretas da fundação (contexto) e diagonais do contraventamento em X (DY) */
+    rotular(c, iC, T.marcaDensa, { umaPorMarca: true, raio: 34 });
     rotular(c, iV, T.marca, { raio: 22 });
     rotular(c, iB, T.marcaDensa, { umaPorMarca: true, raio: 26 });
     rotular(c, iP, T.marcaDensa, { umaPorMarca: true, raio: 30 });
     var xr = a.x + a.w - 158, yy = a.y + 18;
-    yy += legenda(D, xr, yy, [{ tipo: "ret", cam: "MAD-PRINCIPAL", t: "vigas DV, DW e longarinas EL" }, { tipo: "ret", cam: "MAD-FINA", t: "barrotes DB, DC e degraus ED" }, { tipo: "ret", cam: "MAD-CORTE", t: "pilaretes DP e pilares DQ (cortados, preenchidos)" }, { tipo: "ret", cam: "MAD-PEND", t: "peça com pendência da auditoria" }], T.nota * 0.9) + 5;
+    yy += legenda(D, xr, yy, [{ tipo: "ret", cam: "MAD-PRINCIPAL", t: "vigas DV, DW e longarinas EL" }, { tipo: "ret", cam: "MAD-FINA", t: "barrotes DB, DC e degraus ED" }, { tipo: "ret", cam: "MAD-CORTE", t: "pilaretes DP e pilares DQ (cortados, preenchidos)" }, { tipo: "ret", cam: "MAD-LIG", t: "diagonais do contraventamento em X DY (pilares altos)" }, { tipo: "ret", cam: "MAD-CONTEXTO", t: "muretas da fundação (outra empresa)" }, { tipo: "ret", cam: "MAD-PEND", t: "peça com pendência da auditoria" }], T.nota * 0.9) + 5;
     var nota = ["Deck superior: " + I.br((c.res.t7 && c.res.t7.areas && c.res.t7.areas.DS) || 0, 1) + " m2; deck inferior: " + I.br((c.res.t7 && c.res.t7.areas && c.res.t7.areas.DI) || 0, 1) + " m2.",
       "Pilaretes do deck superior agrupados em faixas de 10 cm de comprimento (corte pelo terreno); a tabela E10 traz o volume exato da fonte.",
       "Mãos-francesas (DS-MF), tábuas, apoios em bloco e guarda-corpo: quantidades na folha E10/E11; detalhe de apoio e de guarda-corpo na folha E06C.",
-      { t: "Deck sem verificação estrutural no cálculo (E1 só gera a lista de peças): verificar vigas, barrotes e pilaretes antes de executar (" + ponto(c, "lig-sem-verif", "LG03c, LG12, LG13, E02", "Ligações sem verificação de resistência no cálculo: travessa, pendural, apoio do deck, guarda-corpo e as vigas, barrotes e pilaretes do deck", "desenhadas com o que o orçamento traz; verificar antes de executar", "RT") + ").", attr: ' data-pend="deck-sem-verificacao"' }];
+      c.res.deck ? { t: "Deck, escada e guarda-corpo verificados pelo cálculo (T7, NBR 7190-1:2022, classe de umidade " + c.res.deck.umidade + "): η máximo " + I.br(c.res.deck.etaMax, 2) + " entre tábuas, barrotes, vigas, pilaretes, mãos-francesas e guarda-corpo; memorial T7 no pacote." }
+        : { t: "Deck e guarda-corpo sem verificação estrutural neste cálculo (rode o T7): verificar vigas, barrotes, pilaretes e a fixação do guarda-corpo antes de executar (" + ponto(c, "lig-sem-verif", "LG03c, LG12, LG13, E02", "Ligações do deck e do guarda-corpo sem verificação de resistência neste cálculo", "desenhadas com o que o orçamento traz; verificar antes de executar", "RT") + ").", attr: ' data-pend="deck-sem-verificacao"' }];
     Object.keys(c.pend).forEach(function (k) { if (lista.some(function (p) { return p.id === k; })) nota.push({ t: "Auditoria: " + c.pend[k], cor: VERMELHO, attr: ' data-pend="auditoria-' + k + '"' }); });
     yy += D.textos(xr, yy, nota, T.nota * 0.9, { wmax: 155 }) + 3;
-    tabMarcas(c, xr, yy, ["DV", "DB", "DP", "DW", "DC", "DQ", "EL", "ED"], "QUADRO DE MARCAS DOS DECKS", 150);
+    tabMarcas(c, xr, yy, ["DV", "DB", "DP", "DW", "DC", "DQ", "DY", "EL", "ED"], "QUADRO DE MARCAS DOS DECKS", 150);
     return { escala: "1:" + pl.esc0 };
   }
 
@@ -462,7 +482,8 @@
     if (!V || !V.perfil) { D.texto(a.x + 10, a.y + 20, "Sem viga de altura variável na fonte.", T.titulo); return { escala: "INDICADA" }; }
     var perf = V.perfil, ys = perf.map(function (q) { return q[0]; }), zs = perf.map(function (q) { return q[1]; });
     var y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys), z0 = 8.7, zT = Math.max.apply(null, zs) + 0.55;
-    var pils = d.pilares.filter(function (p) { return Math.abs(p.p0[0] - V.p0[0]) < 0.05; });
+    var P0s = c.res.secoes.P, tolP = P0s.forma === "duplo" ? c.res.secoes.V.b / 2 + P0s.b / 2 + 0.05 : 0.05;      /* garfo: as duas peças ficam a ± (V/2 + b/2) do eixo da V */
+    var pils = d.pilares.filter(function (p) { return Math.abs(p.p0[0] - V.p0[0]) < tolP; });
     var ex = I.escolher(PADRAO_ENG.escalas.porticos, function (e) { return (y1 - y0) * 1000 / e + 70 <= a.w; }), s = 1000 / ex;
     var ox = a.x + 38, oy = a.y + 40, f3 = planoYZ(s, ox, oy, y0, zT);
     I.tituloVista(D, a.x + 4, a.y + 2, "ELEVAÇÃO DA VIGA V (VL-01) - PÓRTICO LATERAL", "ESC 1:" + ex);
@@ -489,7 +510,7 @@
     var itT = terr.map(function (p) { var g = cascoDe(p, f3); D.poli(g, "MAD-PECA", true, ' data-peca="' + p.id + '" data-marca="' + p.marca + '"'); return { g: g, p: p }; });
     /* topo e fundo da V: níveis nas pontas e nos apoios */
     function topoEm(y) { var best = null; for (var i = 0; i < perf.length; i++) { var A = perf[i], B = perf[(i + 1) % perf.length]; if (Math.abs(A[0] - B[0]) < 1e-9) continue; var lo = Math.min(A[0], B[0]), hi = Math.max(A[0], B[0]); if (y < lo - 1e-9 || y > hi + 1e-9) continue; var z = A[1] + (B[1] - A[1]) * (y - A[0]) / (B[0] - A[0]); if (best === null) best = [z, z]; best[0] = Math.max(best[0], z); best[1] = Math.min(best[1], z); } return best; }
-    var apoios = pils.map(function (p) { return p.p0[1]; }).sort(function (p, q) { return p - q; });
+    var apoios = pils.map(function (p) { return p.p0[1]; }).sort(function (p, q) { return p - q; }).filter(function (v, k, ar) { return k === 0 || Math.abs(v - ar[k - 1]) > 1e-6; });      /* garfo: duas peças por pilar na mesma posição = um apoio */
     var pontos = [{ y: y1, nome: "A" }, { y: y0, nome: "B" }];
     function nivelPonto(y, lado) { var t = topoEm(y); return t ? t : [0, 0]; }
     var yMaxTopo = Math.min.apply(null, itT.map(function (q) { return Math.min.apply(null, q.g.map(function (pt) { return pt[1]; })); }));
@@ -568,14 +589,14 @@
   }
   function linhaEspacos(q) { return q.map(function (x) { return x.nome + " = " + Math.round(x.real) + " | " + I.br(x.min, 0) + (x.ok ? "" : " NÃO ATENDE"); }).join("; "); }
   function gruposPinos(c) {
-    var L = c.res.ligacoes, P = c.res.secoes.P, a = num(L.base.cruz && L.base.cruz.a, 0.076) * 1000, VG = c.res.secoes.VG, out = [];
+    var L = c.res.ligacoes, P = c.res.secoes.P, a = aBase(L, P) * 1000, VG = c.res.secoes.VG, out = [];
     function G(nome, g, extra) { var o = { nome: nome, d: g.d * 1000, a1: g.a1 * 1000, a3: g.a3 * 1000, alfa: g.alfa, n: g.n, nc: g.nc, nr: g.nr, eta: g.eta, ok: g.ok !== false }; for (var k in extra) o[k] = extra[k]; return o; }
-    var lado = P.forma === "quadrado" ? P.b : P.d * 0.85;
+    var lado = P.forma === "quadrado" ? P.b : (P.forma === "duplo" ? P.h : P.d * 0.85);
     out.push(G("LG01 base (por chapa)", L.base, { a2: 2 * a, a4t: lado * 500 - a, a4c: lado * 500 - a, a3c: L.base.a3 * 1000 }));
     out.push(G("LG02 topo, no pilar", L.topo, { a2: 2 * a, a4t: lado * 500 - a, a4c: lado * 500 - a, a3c: L.topo.a3 * 1000 }));
-    out.push(G("LG02 topo, na V", L.topoV, { a2: 100 }));
-    out.push(G("LG03 verga, pinos na fenda", L.verga.pinos, { a2: 2 * (VG.h / 2 - 4 * 0.012) * 1000, a4t: 4 * 12, a4c: 4 * 12 }));
-    if (L.verga.naV) { var gv = vergaVGeom(c); out.push({ nome: "LG03 verga, parafusos Ø16 na V", d: gv.d, a1: gv.a1, a2: gv.a2, a4t: gv.he, alfa: gv.alfa, n: gv.n, nc: 2, nr: gv.nCol, eta: gv.eta, ok: gv.ok }); }          // A1: os valores DESENHADOS (do motor), contra o mínimo da Tab. 14 no ângulo real
+    if (L.topoV) out.push(G("LG02 topo, na V", L.topoV, { a2: 100 }));          /* o garfo não tem topoV */
+    if (VG && L.verga) out.push(G("LG03 verga, pinos na fenda", L.verga.pinos, { a2: 2 * (VG.h / 2 - 4 * 0.012) * 1000, a4t: 4 * 12, a4c: 4 * 12 }));
+    if (VG && L.verga && L.verga.naV) { var gv = vergaVGeom(c); out.push({ nome: "LG03 verga, parafusos Ø16 na V", d: gv.d, a1: gv.a1, a2: gv.a2, a4t: gv.he, alfa: gv.alfa, n: gv.n, nc: 2, nr: gv.nCol, eta: gv.eta, ok: gv.ok }); }          // A1: os valores DESENHADOS (do motor), contra o mínimo da Tab. 14 no ângulo real
     return out;
   }
 
@@ -620,7 +641,16 @@
     V.cadV = function (Zs, X, off, vals, o) { var P = Zs.map(function (z) { return [sx(X), sy(z)]; }); if (off < 0) D.cadeia(P.slice().reverse(), -off, vals.slice().reverse(), o || {}); else D.cadeia(P, off, vals, o || {}); };   /* Zs de cima para baixo; off < 0 = esquerda */
     V.niv = function (X, Z, val, lado) { D.nivel(sx(X), sy(Z), val, lado || 1, ' data-nivel="1"'); };
     V.bal = function (X, Z, dx, dy, n) {
-      var p = sx(X), q = sy(Z), rb = D.raioBalao(String(n)), Lh = Math.sqrt(dx * dx + dy * dy) || 1;
+      var p = sx(X), q = sy(Z), rb = D.raioBalao(String(n)), L0 = Math.sqrt(dx * dx + dy * dy) || 10, a0 = Math.atan2(dy, dx), cands = [[dx, dy]], ar = c.geo && c.geo.area, f, k, g, ok = false;
+      /* E4 r4: se o círculo cair em cima de traço/texto, sair da área da folha ou a chamada cortar texto, tenta outros afastamentos (giros de 30 graus, cada vez mais longe); sem lugar livre, fica o pedido */
+      for (f = 0; f < 5; f++) for (k = 0; k < 12; k++) { g = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 6; cands.push([Math.cos(g) * L0 * (1 + 0.6 * f), Math.sin(g) * L0 * (1 + 0.6 * f)]); }
+      for (k = 0; k < cands.length && !ok; k++) {
+        var cx = p + cands[k][0], cy = q + cands[k][1], dd = Math.sqrt(cands[k][0] * cands[k][0] + cands[k][1] * cands[k][1]) || 1;
+        if (ar && (cx - rb < ar.x + 0.5 || cx + rb > ar.x + ar.w - 0.5 || cy - rb < ar.y + 0.5 || cy + rb > ar.y + ar.h - 0.5)) continue;
+        if (!D.livre([cx - rb, cy - rb, cx + rb, cy + rb], 0.5) || D.cortaTexto(p, q, cx - cands[k][0] / dd * rb, cy - cands[k][1] / dd * rb)) continue;
+        dx = cands[k][0]; dy = cands[k][1]; ok = true;
+      }
+      var Lh = Math.sqrt(dx * dx + dy * dy) || 1;
       D.linha(p, q, p + dx - dx / Lh * rb, q + dy - dy / Lh * rb, "MAD-FINA"); D.ponto(p, q, 0.45); D.balao(p + dx, q + dy, String(n), ' data-bal="' + n + '"');
     };
     V.tx = function (X, Z, s, h, o) { D.texto(sx(X), sy(Z), s, h || D.E.T.nota, o || {}); };
@@ -677,8 +707,8 @@
 
   /* ---------------------------------------------------------------- LG01 — BASE DE PILAR EM CRUZ (BA-01) */
   function lg01(c) {
-    var L = c.res.ligacoes, b = L.base, pl = L.placaBase, lado = (c.res.secoes.P.b || c.res.secoes.P.d) * 1000, placa = pl.dimensoes_mm[0], tp = pl.espessura_mm,
-      chW = b.chapa ? b.chapa.largura_mm : 193, tc = b.chapa ? b.chapa.t_mm : 16, emb = Math.round(b.comprimento * 1000), a = Math.round(num(b.cruz && b.cruz.a, 0.076) * 1000),
+    var L = c.res.ligacoes, b = L.base, pl = L.placaBase, lado = ladoPilar(c.res.secoes.P) * 1000, placa = pl.dimensoes_mm[0], tp = pl.espessura_mm,
+      chW = chapaLarg(b, c.res.secoes.P), tc = b.chapa ? b.chapa.t_mm : 16, emb = Math.round(b.comprimento * 1000), a = Math.round(aBase(L, c.res.secoes.P) * 1000),
       d = Math.round(b.d * 1000), a1 = Math.round(b.a1 * 1000), a3 = Math.round(b.a3 * 1000), nr = b.nr, br = placa - 100, fe = FOLGA_PE, fenda = 18, chT = emb + fe, zPe = tp + fe, zTopo = tp + chT;
     var pFolga = ponto(c, "folga-pe", "LG01, E01", "Folga entre o pé do pilar e a placa de base (pé elevado e drenado): o cálculo não fixa", fe + " mm; a chapa em cruz sobe " + chT + " mm = " + emb + " embutidos + " + fe + " de folga");
     var pEmb = ponto(c, "embutimento", "LG01, E01", "Embutimento e sistema químico do chumbador M20, argamassa de nivelamento sob a placa e tolerância de locação dos chumbadores: pela fundação (outra empresa)", "", "fundação");
@@ -691,8 +721,9 @@
     var zs = []; for (var j = 0; j < nr; j++) zs.push(zPe + a3 + j * a1);
     var grp = gruposPinos(c)[0];
     function v1(cc, r) {
-      var V = vista(cc, r, { x0: -215, x1: 215, z0: -100, z1: zTopo + 60 }, [13, 22, 3, 14], [5, 10]), zq = zTopo + 40;
-      V.conc(-215, -100, 430, 100);
+      var hw = Math.max(215, placa / 2 + 20);          /* E4 r4: a extensão acompanha a PLACA (no garfo ela tem 660 mm e passava da moldura da folha com os balões para fora); na cruz (400) segue ±215 */
+      var V = vista(cc, r, { x0: -hw, x1: hw, z0: -100, z1: zTopo + 60 }, [13, 22, 3, 14], [5, 10]), zq = zTopo + 40;
+      V.conc(-hw, -100, 2 * hw, 100);
       V.fundo(-lado / 2, zPe, lado, zq - zPe); V.mad(-lado / 2, zPe, lado, zq - zPe, { horiz: false }); V.quebra(-lado / 2 - 3, zq, lado + 6);
       V.aco(-chW / 2, tp, chW, chT);
       zs.forEach(function (z) { [-1, 1].forEach(function (sg) { V.pino(sg * a, z, d, true); }); });
@@ -703,10 +734,10 @@
         V.vis(X - 18.5, tp, 37, 3, "MAD-LIG"); V.vis(X - 15, tp + 3, 30, 16, "MAD-LIG");
         V.lin(X - 10, tp + 19, X - 10, tp + 27); V.lin(X + 10, tp + 19, X + 10, tp + 27); V.lin(X - 10, tp + 27, X + 10, tp + 27);
       });
-      V.niv(196, tp, "+0,000m", 1); V.niv(196, zTopo, nv(zTopo - tp), 1);
-      V.cv(zTopo, zPe, -215, -6, String(emb), { semExt: true });
+      V.niv(hw - 19, tp, "+0,000m", 1); V.niv(hw - 19, zTopo, nv(zTopo - tp), 1);
+      V.cv(zTopo, zPe, -hw, -6, String(emb), { semExt: true });
       V.ch(-placa / 2, placa / 2, -100, -6, String(placa), { semExt: true }); V.ch(-br / 2, br / 2, -100, -12, String(br), { semExt: true });
-      V.bal(-placa / 2 + 4, tp / 2, -15, -6, 1); V.bal(-chW / 2, zs[Math.min(5, nr - 1)], -24, 0, 2); V.bal(-a, zs[Math.min(2, nr - 1)], -32, 0, 3);          /* balão 3 numa fileira que NÃO é a do meio (a cota do comprimento da chapa fica no meio) */ V.bal(-br / 2 - 14, tp + 9, -18, -42, 4);
+      V.bal(-placa / 2 + 4, tp / 2, -15, -6, 1); V.bal(-chW / 2, zs[Math.min(5, nr - 1)], -24, 0, 2); V.bal(-a, zs[Math.abs(2 - (nr - 1) / 2) < 0.1 ? nr - 2 : Math.min(2, nr - 1)], -32, 0, 3);          /* balão 3 numa fileira que NÃO é a do meio (a cota do comprimento da chapa fica no meio) */ V.bal(-br / 2 - 14, tp + 9, -18, -42, 4);
       return V;
     }
     function v2(cc, r) {
@@ -732,8 +763,24 @@
       return V;
     }
     function D2c(V, X, Z, dd) { V.D.circ(V.X(X), V.Y(Z), dd * V.k / 2, "MAD-FINA"); }
+    var PG = c.res.secoes.P, duplo = PG.forma === "duplo", VbG = c.res.secoes.V ? c.res.secoes.V.b * 1000 : 0, PbG = PG.b * 1000, PhG = PG.h * 1000;
+    function v2g(cc, r) {          /* planta do garfo (corte na fileira de parafusos): 2 peças com a V entre elas, 4 chapas externas de 12 mm, parafusos ajustados atravessando chapa-madeira-chapa */
+      var V = vista(cc, r, { x0: -placa / 2 - 6, x1: placa / 2 + 6, z0: -placa / 2 - 6, z1: placa / 2 + 6 }, [16, 16, 12, 12], [5, 10]);
+      V.fundo(-placa / 2, -placa / 2, placa, placa); V.acoV(-placa / 2, -placa / 2, placa, placa);
+      [-1, 1].forEach(function (sx) { [-1, 1].forEach(function (sz) { var X = sx * br / 2, Z = sz * br / 2; V.furo(X, Z, 22, false); D2c(V, X, Z, 37); V.hex(X, Z, 30); V.furo(X, Z, 20, true); }); });
+      [-1, 1].forEach(function (sg) {
+        var x0 = sg < 0 ? -(VbG / 2 + PbG) : VbG / 2;
+        V.fundo(x0, -PhG / 2, PbG, PhG); V.mad(x0, -PhG / 2, PbG, PhG, { horiz: false });
+        V.aco(x0 - tc, -chW / 2, tc, chW); V.aco(x0 + PbG, -chW / 2, tc, chW);
+        [-1, 1].forEach(function (sy) { V.vis(x0 - tc, sy * a - d / 2, PbG + 2 * tc, d, "MAD-LIG"); });
+      });
+      V.ch(-VbG / 2, VbG / 2, PhG / 2, 5, String(Math.round(VbG)), { semExt: true }); V.ch(VbG / 2, VbG / 2 + PbG, PhG / 2, 11, String(Math.round(PbG)), { semExt: true });
+      V.ch(-placa / 2, placa / 2, placa / 2, 17, String(placa), { semExt: true }); V.ch(-br / 2, br / 2, -placa / 2, -6, String(br), { semExt: true });
+      V.bal(-placa / 2, -placa / 2 + 12, -9, 8, 1); V.bal(VbG / 2 + PbG + tc / 2, chW / 2, 6, -9, 2); V.bal(VbG / 2 + PbG / 2, a, 0, -9, 3); V.bal(br / 2, br / 2, 12, -16, 4);
+      return V;
+    }
     function v3(cc, r) {
-      var V = vista(cc, r, { x0: -8, x1: chT + 8, z0: -chW / 2, z1: chW / 2 }, [14, 16, 12, 18], [5, 10]), xs = [fe];
+      var V = vista(cc, r, { x0: -8, x1: chT + 8, z0: -chW / 2, z1: chW / 2 }, [14, 16, 19, 18], [5, 10]), xs = [fe];
       V.acoV(0, -chW / 2, chT, chW);
       zs.forEach(function (z, i) { var X = z - tp; xs.push(X); [-1, 1].forEach(function (sg) { V.furo(X, sg * a, d + 1, true); }); });
       V.lin(fe, -chW / 2 - 3, fe, chW / 2 + 3, "MAD-OCULTA"); xs.push(chT);
@@ -741,7 +788,7 @@
       V.cadH(xs, -chW / 2, -6, vals, { semExt: true });
       V.ch(0, chT, chW / 2, 5, String(chT), { semExt: true }); V.cv(chW / 2, -chW / 2, 0, -6, String(chW), { semExt: true });
       V.cadV([chW / 2, a, -a, -chW / 2], chT, 6, [mmt(chW / 2 - a), String(2 * a), mmt(chW / 2 - a)], { semExt: true });
-      V.bal(chT - 40, chW / 2, 8, -12, 2); V.bal(zs[2] - tp, a, 0, 7.6, 3); V.bal(0, chW / 2, -8, -10, 7);
+      V.bal(chT - 40, chW / 2, 8, -12, 2); V.bal(zs[2] - tp, a, 0, 7.6, 3); V.bal(chT * 0.12, chW / 2, 7, -9, 7);
       return V;
     }
     var n = [
@@ -761,7 +808,12 @@
       etaLinha(sb.eta != null ? sb : null, "LG01-solda", "Solda chapa-placa (" + (penet ? "penetração total" : "filete") + ", NBR 8800 6.2.5):"),
       "Lamela ilustrativa de " + LAM + " mm (" + pLam + ")."
     ];
-    return { cod: "LG01", titulo: "BASE DE PILAR (CRUZ)", layout: "T", fracW: 0.40, frac: [0.43, 0.22], vistas: [{ t: "CORTE VERTICAL", fn: v1 }, { t: "PLANTA (corte na fileira de pinos)", fn: v2 }, { t: "CHAPA CM-02 (peça isolada)", fn: v3 }], notas: n };
+    if (duplo) {
+      n[0] = "BA-01 (LG01): base em GARFO do pilar duplo PL-01 (2 peças de " + I.cm(PbG / 1000) + "x" + I.cm(PhG / 1000) + " cm com a V entre elas, " + c.classe + "), pé elevado e drenado. A madeira não toca o concreto.";
+      n[2] = "2 - CM-02 chapas externas do garfo, 4 x t " + tc + " x " + chW + " x " + chT + " mm (" + emb + " embutidos + " + fe + " de folga), 2 por peça (uma de cada lado de cada peça de " + Math.round(PbG) + " mm); solda na placa conforme o item 7.";
+      n[3] = "3 - " + (2 * b.n) + " parafusos passantes inox A4 Ø" + d + " AJUSTADOS (furo = Ø" + d + ", sem folga) x " + Math.round(PbG + 2 * tc) + " mm (" + b.n + " por peça: " + b.nc + " colunas x " + nr + " linhas), aparentes, com arruela e porca.";
+    }
+    return { cod: "LG01", titulo: duplo ? "BASE DE PILAR (GARFO)" : "BASE DE PILAR (CRUZ)", layout: "T", fracW: 0.40, frac: [0.43, 0.22], vistas: [{ t: duplo ? "ELEVAÇÃO (VISTA DA FACE DA CHAPA)" : "CORTE VERTICAL", fn: v1 }, { t: duplo ? "PLANTA (corte na fileira de parafusos)" : "PLANTA (corte na fileira de pinos)", fn: duplo ? v2g : v2 }, { t: "CHAPA CM-02 (peça isolada)", fn: v3 }], notas: n };
   }
 
 
@@ -963,7 +1015,7 @@
   function lg03c(c) {
     var T = c.res.secoes.T, bT = T.b * 1000, hT = T.h * 1000, VG = c.res.secoes.VG, tr = pecaPor(c, /^TR/), pd = pecaPor(c, /^PD/), Ltr = tr ? Math.round(tr.comp * 1000) : 804, bTr = tr ? Math.round(tr.b * 1000) : 80, hTr = tr ? Math.round(tr.h * 1000) : 200,
       Lpd = pd ? Math.round(pd.comp * 1000) : 527, bPd = pd ? Math.round(pd.b * 1000) : 60, hPd = pd ? Math.round(pd.h * 1000) : 120, bG = VG.b * 1000, hG = VG.h * 1000, d = 12, bd = bordas(d / 1000, 0), a1 = Math.ceil(bd.a1 * 1000 - 1e-6), a3 = Math.ceil(bd.a3t * 1000 - 1e-6), xm = bT + Ltr / 2;     /* a1 e a3 = mínimos da Tab. 14 pelo motor de ligações (força ∥ fibra: (4+3)d e 7d), nunca valor fixo */
-    var pSv = ponto(c, "lig-sem-verif", "LG03c, LG12, LG13, E02", "Ligações sem verificação de resistência no cálculo: travessa, pendural, apoio do deck, guarda-corpo e as vigas, barrotes e pilaretes do deck", "desenhadas com o que o orçamento traz; verificar antes de executar", "RT");
+    var pSv = ponto(c, "lig-sem-verif", "LG03c, LG12, LG13, E02", c.res.deck ? "Travessa e pendural verificados desde a R02; deck, apoio do deck e guarda-corpo verificados no T7: ligações conferidas no cálculo" : "Ligações do deck, do apoio do deck e do guarda-corpo sem verificação de resistência neste cálculo (travessa e pendural são verificados desde a R02)", c.res.deck ? "verificadas" : "desenhadas com o que o orçamento traz; verificar antes de executar", "RT");
     var pPos = ponto(c, "pend-pos", "LG03c", "Estribo inox da travessa e posição dos 2 parafusos Ø12 por ponta do pendural (o cálculo traz só o número)", "travessa com a face inferior alinhada à da terça; parafusos a1 = " + a1 + ", a3 = " + a3 + " (mínimos de Ø12 pelo motor de ligações, Tab. 14: a1 = " + I.br(bd.a1 * 1000, 0) + " e a3,t = " + I.br(bd.a3t * 1000, 0) + ")", "RT");
     function v1(cc, r) {
       var V = vista(cc, r, { x0: -8, x1: bT * 2 + Ltr + 8, z0: -Lpd - bG - 4, z1: hT + 6 }, [14, 14, 6, 8], [10, 20]);
@@ -1084,7 +1136,7 @@
   function lg10b(c) {
     var ff = c.res.ligacoes.fita, T = c.res.secoes.T, bT = T.b * 1000, hT = T.h * 1000, fx = pecaPor(c, /^FX\d/), Lf = fx ? Math.round(fx.comp * 1000) : 2775, bF = 60, tF = 2, np = ff.parafusosPorPonta, dP = 5, Lp = 50, pit = 25, cl = 12.5, dx = 0;
     var th = fx ? Math.atan2(Math.abs(fx.p1[0] - fx.p0[0]), Math.abs(fx.p1[1] - fx.p0[1])) : Math.PI / 4;
-    var pFita = ponto(c, "fita-pos", "LG10", "Furação da fita (posição e Ø dos 9 furos por ponta), cabeça do parafuso 5x50 e tensor", "furos Ø5,5 em 2 colunas alternadas (a2 = " + (2 * cl) + " mm, passo de " + pit + " mm por coluna alternada = a1 de " + (2 * pit) + " mm); tensor a definir", "fabricante/RT"), pRk = ponto(c, "fita-rk", "LG10", "Rk do parafuso 5x50 (" + I.br(ff.Rk_parafuso, 2) + " kN) vem da R02 sem fonte: informar o valor do catálogo/ETA", "Rk = " + I.br(ff.Rk_parafuso, 2) + " kN (R02)", "fabricante");
+    var pFita = ponto(c, "fita-pos", "LG10", "Furação da fita (posição e Ø dos " + np + " furos por ponta), cabeça do parafuso 5x50 e tensor", "furos Ø5,5 em 2 colunas alternadas (a2 = " + (2 * cl) + " mm, passo de " + pit + " mm por coluna alternada = a1 de " + (2 * pit) + " mm); tensor a definir", "fabricante/RT"), pRk = "Rk = " + I.br(ff.Rk_parafuso, 2) + " kN, " + (ff.fonteRk || "adotado pelo RT (24/10/2026)");
     function pos(i) { return { u: 20 + i * pit, v: (i % 2 ? 1 : -1) * cl }; }
     function v1(cc, r) {
       var V = vista(cc, r, { x0: -170, x1: 170, z0: -250, z1: 250 }, [14, 22, 8, 8], [5, 10]), co = Math.cos(th), si = Math.sin(th);
@@ -1166,7 +1218,10 @@
   /* ---------------------------------------------------------------- LG12 — APOIO DA VIGA DO DECK (acrescentado ao Padrão na v2.11) */
   function lg12(c) {
     var vd = pecaPor(c, /^DS-V/), bV = vd ? Math.round(vd.b * 1000) : 120, hV = vd ? Math.round(vd.h * 1000) : 240, tU = 6, folga = 6, hF = 120, tn = 5, lP = 160, dCh = 12, yc = bV / 2 + folga + tU + 33, wP = 2 * yc + 2 * 33, zV = tU + tn, hMur = 110;
-    var pSv = ponto(c, "lig-sem-verif", "", "", ""), pU = ponto(c, "apoio-deck", "LG12", "Geometria do apoio do deck: o orçamento traz só 'chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene' (33 apoios)", "folga de " + folga + " mm por lado, abas de " + hF + " mm, base " + wP + "x" + lP + "x" + tU + ", calço de neoprene de " + tn + " mm, furos Ø14", "RT");
+    /* E4 r12: a quantidade de apoios vem das peças DS-APOIO do resultado (a folha dizia "33 apoios" fixo, contra 4 un na tabela de ferragens) */
+    var nAp = 0; ((c.d && c.d.fonteTodos) || []).forEach(function (p) { if (p.id === "DS-APOIO") nAp += p.qtd == null ? 1 : p.qtd; });
+    var txAp = nAp > 0 ? nAp + (nAp === 1 ? " apoio" : " apoios") : "quantidade na tabela de ferragens (E11)";
+    var pSv = ponto(c, "lig-sem-verif", "", "", ""), pU = ponto(c, "apoio-deck", "LG12", "Geometria do apoio do deck: o orçamento traz só 'chapa inox em U 6 mm + 2 chumbadores M12 + calço de neoprene' (" + txAp + ")", "folga de " + folga + " mm por lado, abas de " + hF + " mm, base " + wP + "x" + lP + "x" + tU + ", calço de neoprene de " + tn + " mm, furos Ø14", "RT");
     var pEmb = ponto(c, "embutimento", "", "", "");
     function v1(cc, r) {
       var V = vista(cc, r, { x0: -wP / 2 - 30, x1: wP / 2 + 30, z0: -hMur, z1: zV + hV + 6 }, [14, 18, 8, 8], [5, 10]);
@@ -1196,7 +1251,7 @@
       return V;
     }
     var n = [
-      { t: "LG12 (Padrão v2.11): apoio direto da viga do deck DV-01 (" + I.cm(bV / 1000) + "x" + I.cm(hV / 1000) + " cm, tratada em autoclave) no bloco/mureta da fundação (outra empresa); 33 apoios." },
+      { t: "LG12 (Padrão v2.11): apoio direto da viga do deck DV-01 (" + I.cm(bV / 1000) + "x" + I.cm(hV / 1000) + " cm, tratada em autoclave) no bloco/mureta da fundação (outra empresa); " + txAp + "." },
       "1 - CM-06 chapa inox AISI 316 em U de " + tU + " mm (base " + wP + "x" + lP + ", duas abas de " + hF + " mm), folga de " + folga + " mm por lado; 2 - abas do U; 3 - calço de neoprene de " + tn + " mm entre a viga e a chapa; 4 - 2 chumbadores M12 A4-70 com arruela e porca, furo Ø14.",
       "Geometria adotada: " + pU + ". Embutimento e sistema do chumbador, e o nível da mureta: pela fundação (" + pEmb + ").",
       "A madeira não toca a chapa nem o concreto (calço de neoprene); topo da viga protegido; água escoa pela folga das abas.",
@@ -1209,7 +1264,7 @@
   function lg13(c) {
     var vd = pecaPor(c, /^DS-V/), bV = vd ? Math.round(vd.b * 1000) : 120, hV = vd ? Math.round(vd.h * 1000) : 240, bM = 90, hGc = 1100, tU = 6, folga = 3, hF = 100, lP = 220, wP = bM + 2 * folga + 2 * tU, lF = 120, yb = 80, tCor = 40, bCor = 140, zTopo = hGc - tCor;
     var pSv = ponto(c, "lig-sem-verif", "", "", ""), pG = ponto(c, "guarda-geom", "LG13", "Geometria do suporte do montante e fixação do corrimão: o orçamento traz só 'montante 9x9 a cada 1,20 m em suporte inox em U (2 Ø12 passantes); corrimão 4x14'", "base " + lP + "x" + wP + "x" + tU + "; abas " + lF + "x" + hF + "x" + tU + "; passantes M12 a " + yb + " mm do eixo do montante; altura de " + hGc + " mm medida do topo da viga DV (o nível do piso do deck não vem do cálculo); fixação do corrimão por parafuso inox a definir", "RT");
-    var pCarga = ponto(c, "guarda-carga", "LG13", "Carga horizontal de 1,0 kN/m no corrimão e a flexão do montante na base (NBR 14718): sem verificação", "", "RT");
+    var pCarga = ponto(c, "guarda-carga", "LG13", c.res.deck ? "Carga horizontal do corrimão e flexão do montante na base verificadas no T7 (NBR 14718, Tab. 1, p. 6; NBR 6120, Tab. 12)" : "Carga horizontal de 1,0 kN/m no corrimão e a flexão do montante na base (NBR 14718): sem verificação neste cálculo", c.res.deck ? "verificadas" : "", "RT");
     function v1(cc, r) {
       var V = vista(cc, r, { x0: -150, x1: 150, z0: -hV - 6, z1: hGc + 8 }, [10, 16, 6, 6], [10, 20]);
       V.fundo(-bV / 2, -hV, bV, hV); V.mad(-bV / 2, -hV, bV, hV, { horiz: true });
@@ -1245,13 +1300,52 @@
       { t: "LG13 (Padrão v2.11): guarda-corpo de madeira, h = " + hGc + " mm, montantes " + I.cm(bM / 1000) + "x" + I.cm(bM / 1000) + " cm a cada 1200 mm presos à viga do deck DV-01 por suporte inox em U; corrimão " + I.cm(tCor / 1000) + "x" + I.cm(bCor / 1000) + " cm." },
       "1 - corrimão (4 x 14 cm); 2 - montante (9 x 9 cm); 3 - CM-07 suporte inox AISI 316 em U de " + tU + " mm (base " + lP + "x" + wP + ", abas de " + hF + " mm); 4 - 2 parafusos passantes M12 A4-70 com arruela e porca, atravessando a base e a viga.",
       "Geometria adotada: " + pG + ".",
-      "Carga horizontal e flexão do montante: " + pCarga + ". Sem verificação de resistência no cálculo: " + pSv + ".",
+      "Carga horizontal e flexão do montante: " + pCarga + ". " + (c.res.deck && c.res.deck.guardaCorpo ? "" : "Sem verificação de resistência neste cálculo: " + pSv + "."),
+      c.res.deck && c.res.deck.guardaCorpo ? "VERIFICADO (T7): " + c.res.deck.guardaCorpo.dados.c.linha + "; montante η = " + I.br(c.res.deck.guardaCorpo.montante.eta, 2) + ", deslocamento do topo " + I.br(c.res.deck.guardaCorpo.deslocamento.mm, 1) + " mm (limite 25 mm, 5.1.1); fixação: tração de " + I.br(c.res.deck.guardaCorpo.fixacao.T, 1) + " kN no parafuso de cima, " + (c.res.deck.guardaCorpo.fixacao.lado === "3d" ? "arruela 3d" : "chapa de apoio " + Math.round(c.res.deck.guardaCorpo.fixacao.lado * 1000) + "x" + Math.round(c.res.deck.guardaCorpo.fixacao.lado * 1000) + "x8 mm do lado oposto da viga") + ", bloqueio entre barrotes com " + c.res.deck.guardaCorpo.fixacao.bloqueio.n + " parafusos de rosca total, η da fixação " + I.br(c.res.deck.guardaCorpo.fixacao.eta, 2) + "." : "",
       "Montante e corrimão com tratamento em autoclave quando de madeira serrada; topo protegido; corrimão sem aresta viva."
-    ];
+    ].filter(Boolean);
     return { cod: "LG13", titulo: "GUARDA-CORPO", layout: "G", vistas: [{ t: "CORTE (perpendicular à viga)", fn: v1 }, { t: "ELEVAÇÃO (ao longo da viga)", fn: v2 }, { t: "SUPORTE CM-07 (planta, peça isolada)", fn: v3 }], notas: n };
   }
 
-  var DETALHES = { LG01: lg01, LG02: lg02, LG03: lg03, LG03b: lg03b, LG03c: lg03c, LG06: lg06, LG10a: lg10a, LG10b: lg10b, LG11: lg11, LG12: lg12, LG13: lg13 };
+  /* ---------------------------------------------------------------- LG02 (GARFO) — TOPO DO PILAR DUPLO: V ENTRE AS PEÇAS, PARAFUSOS PASSANTES (madeira-madeira) */
+  function lg02g(c) {
+    var L = c.res.ligacoes, t = L.topo, P = c.res.secoes.P, V0 = c.res.secoes.V, Vb = V0.b * 1000, Pb = P.b * 1000, Ph = P.h * 1000, d = Math.round(t.d * 1000), a1 = Math.round(t.a1 * 1000), a3 = Math.round(t.a3 * 1000), nr = t.nr, nc = t.nc || 2,
+      a = Math.round((P.h / 2 - 4 * t.d) * 1000), hV = numDe(L.reforcoV && L.reforcoV.especificacao, /h = (\d+) mm/, 600), nRef = (L.reforcoV && L.reforcoV.parafusos) || 0, comp = Math.round((nr - 1) * a1 + 2 * a3);
+    var grp = gruposPinos(c)[1];
+    var pFuro = ponto(c, "furos-aco", "LG01, LG02, LG03, LG10", "Folga dos furos nas chapas (Ø do furo = d + folga do fabricante)", "d + 1 mm nos furos dos pinos (Ø17 para Ø16, Ø13 para Ø12); Ø22 para M20 na placa", "fabricante");
+    function v1(cc, r) {
+      var V = vista(cc, r, { x0: -(Vb / 2 + Pb + 30), x1: Vb / 2 + Pb + 30, z0: -Ph / 2 - 30, z1: Ph / 2 + 30 }, [16, 16, 12, 12], [5, 10]);
+      V.fundo(-Vb / 2, -Ph / 2, Vb, Ph); V.mad(-Vb / 2, -Ph / 2, Vb, Ph, { horiz: true });
+      [-1, 1].forEach(function (sg) { var x0 = sg < 0 ? -(Vb / 2 + Pb) : Vb / 2; V.fundo(x0, -Ph / 2, Pb, Ph); V.mad(x0, -Ph / 2, Pb, Ph, { horiz: false }); });
+      [-1, 1].forEach(function (sy) { V.vis(-(Vb / 2 + Pb) - 4, sy * a - d / 2, Vb + 2 * Pb + 8, d, "MAD-LIG"); V.vis(-(Vb / 2 + Pb) - 5, sy * a - 18, 5, 36, "MAD-LIG"); V.vis(Vb / 2 + Pb, sy * a - 18, 5, 36, "MAD-LIG"); V.eixoV(0, -Ph / 2 - 6, Ph / 2 + 6); });
+      V.ch(-(Vb / 2 + Pb), -Vb / 2, Ph / 2, 5, String(Math.round(Pb)), { semExt: true }); V.ch(-Vb / 2, Vb / 2, Ph / 2, 11, String(Math.round(Vb)), { semExt: true }); V.ch(Vb / 2, Vb / 2 + Pb, Ph / 2, 5, String(Math.round(Pb)), { semExt: true });
+      V.bal(-(Vb / 2 + Pb / 2), Ph / 2 - 12, -9, 8, 1); V.bal(0, a, 0, -9, 2); V.bal(Vb / 2 + Pb / 2, -a, 9, 0, 3);
+      return V;
+    }
+    function v2(cc, r) {
+      var zb = -(comp + 40), V = vista(cc, r, { x0: -Ph / 2 - 40, x1: Ph / 2 + 40, z0: zb, z1: 90 }, [16, 18, 12, 14], [5, 10]);
+      V.fundo(-Ph / 2, zb + 40, Ph, comp); V.mad(-Ph / 2, zb + 40, Ph, comp, { horiz: false });
+      var zs = []; for (var j = 0; j < nr; j++) zs.push(-(a3 + j * a1));
+      V.fundo(-Ph / 2, 0, Ph, 80); V.mad(-Ph / 2, 0, Ph, 80, { horiz: true }); V.quebra(-Ph / 2 - 3, 80, Ph + 6);
+      zs.forEach(function (z) { [-1, 1].forEach(function (sg) { V.pino(sg * a, z, d, true); }); });
+      V.cv(0, -a3, -Ph / 2, -6, String(a3), { semExt: true });
+      V.ch(-a, a, 80, 6, String(2 * a), { semExt: true });          /* acima da quebra (a cota 312 ficava em cima do zigue-zague, E4 r3) */
+      V.bal(-a, zs[Math.min(2, nr - 1)], -14, 0, 3); V.bal(0, 40, 0, 8, 2);
+      return V;
+    }
+    var n = [
+      "BA-01/TOPO (LG02): topo do pilar duplo em GARFO — a viga V (" + I.cm(Vb / 1000) + " cm) passa ENTRE as duas peças do pilar (" + I.cm(Pb / 1000) + "x" + I.cm(Ph / 1000) + " cm, " + c.classe + "): o garfo natural trava a torção da V. Ligação madeira-madeira.",
+      "1 - " + t.n + " parafusos passantes inox A4 Ø" + d + " AJUSTADOS (furo = Ø" + d + ", sem folga) atravessando peça-V-peça (" + nc + " colunas x " + nr + " linhas), com arruela 3d e porca (" + pFuro + ").",
+      "2 - parafusos de rosca total SFS WT-T 8,2 x 300 de reforço à tração normal na V: " + nRef + " no total, metade de cada lado (Ft,90 da NBR 7190-1:2022, 7.1.1).",
+      "3 - V com h = " + hV + " mm sobre o pilar; a V apoia por contato no topo da face de fixação das peças; separador de EPDM entre madeira e aço.",
+      "Espaçamentos real | mínimo (mm): " + esp2(grp) + ". Mínimo: " + FONTE_MIN + ".",
+      etaLinha(t, "LG02", "Parafusos Ø" + d + " peça-V-peça (modo h: embutimento da V, NBR 7190-1:2022, 7.2, Tab. 19):"),
+      etaLinha(L.reforcoV, "LG02-reforco", "Reforço à tração normal (F90):")
+    ];
+    return { cod: "LG02", titulo: "TOPO: V ENTRE AS PEÇAS DO GARFO", layout: "T", fracW: 0.40, frac: [0.45, 0.22], vistas: [{ t: "PLANTA (corte na fileira de parafusos)", fn: v1 }, { t: "ELEVAÇÃO DA PEÇA (VISTA DA FACE)", fn: v2 }], notas: n };
+  }
+  function lg02x(c) { return c.res.secoes.P.forma === "duplo" ? lg02g(c) : lg02(c); }
+  var DETALHES = { LG01: lg01, LG02: lg02x, LG03: lg03, LG03b: lg03b, LG03c: lg03c, LG06: lg06, LG10a: lg10a, LG10b: lg10b, LG11: lg11, LG12: lg12, LG13: lg13 };
 
 
   /* ---------------------------------------------------------------- quadro a1–a4 e as folhas E06A/B/C */
@@ -1325,14 +1419,22 @@
   function ferragens(c) {
     var L = c.res.ligacoes, itens = [], pecas = c.d.fonteTodos;
     function fq(id) { var p = pecas.filter(function (x) { return x.id === id; })[0]; return p ? p.qtd : null; }
-    var nBases = c.d.pilares.length, P = c.res.secoes.P;
+    var nums = {}; c.d.pilares.forEach(function (p) { var m = /^P([0-9]+)/.exec(p.id); if (m) nums[m[1]] = 1; });
+    var nBases = Object.keys(nums).length || c.d.pilares.length, P = c.res.secoes.P;          /* E4: no pilar duplo (garfo) são 2 peças + espaçadores por pilar — a base é UMA por pilar */
     var pbd = L.placaBase.dimensoes_mm, pbe = L.placaBase.espessura_mm, pbs = L.placaBase.solda || {};
     itens.push({ ferr: "Placa de base " + pbd[0] + "x" + pbd[1] + "x" + pbe + " mm, aço A36 galv. a fogo" + (pbs.tipo === "penetracao-total" ? " (solda chapa-placa de penetração total)" : ""), cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo (NBR 6323)", qtd: nBases, kg: nBases * pbd[0] / 1000 * pbd[1] / 1000 * pbe / 1000 * 7850, est: true, lig: "LG01", pend: true });
-    itens.push({ ferr: "Chapa em cruz t = 16 mm (" + (L.base.chapa ? L.base.chapa.largura_mm : 193) + " x " + Math.round(L.base.comprimento * 1000 + FOLGA_PE) + " mm: " + Math.round(L.base.comprimento * 1000) + " embutidos + " + FOLGA_PE + " de folga)", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo", qtd: 2 * nBases, kg: 2 * nBases * 0.016 * (L.base.chapa ? L.base.chapa.largura_mm : 193) / 1000 * (L.base.comprimento + FOLGA_PE / 1000) * 7850, est: true, lig: "LG01", pend: true });
-    itens.push({ ferr: "Pino liso inox Ø16 (base)", cod: "-", fab: "-", eta: "-", mat: "inox A4-70", qtd: 2 * L.base.n * nBases, kg: 2 * L.base.n * nBases * Math.PI * 16 * 16 / 4 * 280 * 7.9e-6 / 1, est: true, lig: "LG01", pend: true });
+    /* E4 (correção a/b): diâmetro, quantidade e kg dos pinos da base vêm do RESULTADO da ligação (L.base.d, n), nunca fixos; todos os tipos de base (cruz e garfo) e topoV pode não existir (garfo) */
+    var dB = Math.round(((L.base && L.base.d) || 0.016) * 1000), garfoB = P && P.forma === "duplo", nBase = (L.base && L.base.n) || 0, nTopo = (L.topo && L.topo.n) || 0, nTopoV = (L.topoV && L.topoV.n) || 0;
+    if (!garfoB) {
+      itens.push({ ferr: "Chapa em cruz t = 16 mm (" + (L.base.chapa ? L.base.chapa.largura_mm : 193) + " x " + Math.round(L.base.comprimento * 1000 + FOLGA_PE) + " mm: " + Math.round(L.base.comprimento * 1000) + " embutidos + " + FOLGA_PE + " de folga)", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo", qtd: 2 * nBases, kg: 2 * nBases * 0.016 * (L.base.chapa ? L.base.chapa.largura_mm : 193) / 1000 * (L.base.comprimento + FOLGA_PE / 1000) * 7850, est: true, lig: "LG01", pend: true });
+      itens.push({ ferr: "Pino liso inox Ø" + dB + " (base)", cod: "-", fab: "-", eta: "-", mat: "inox A4-70", qtd: 2 * nBase * nBases, kg: 2 * nBase * nBases * Math.PI * dB * dB / 4 * 280 * 7.9e-6 / 1, est: true, lig: "LG01", pend: true });
+    } else {
+      itens.push({ ferr: "Chapas externas t = 12 mm do garfo (4 por pilar, " + Math.round((L.base.comprimento + 0.10) * 1000) + " mm de comprimento)", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo", qtd: 4 * nBases, kg: 4 * nBases * (P.h || 0) * (L.base.comprimento + 0.10) * 0.012 * 7850, est: true, lig: "LG01", pend: true });
+      itens.push({ ferr: "Parafuso passante inox ajustado Ø" + dB + " (base do garfo)", cod: "-", fab: "-", eta: "-", mat: "inox A4-70", qtd: 2 * nBase * nBases, kg: null, est: false, lig: "LG01", pend: true });
+    }
     itens.push({ ferr: "Chumbador químico M20 A4-70", cod: "-", fab: "-", eta: "pela fundação", mat: "inox A4-70", qtd: L.placaBase.chumbadores.total * nBases, kg: null, est: false, lig: "LG01", pend: true });
-    itens.push({ ferr: "Chapa em T 16 mm com forquilha", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo", qtd: nBases, kg: null, est: false, lig: "LG02", pend: true });
-    itens.push({ ferr: "Pino inox Ø16 (topo: " + L.topo.n + " no pilar + " + L.topoV.n + " na V)", cod: "-", fab: "-", eta: "-", mat: "inox A4-70", qtd: (L.topo.n + L.topoV.n) * nBases, kg: null, est: false, lig: "LG02", pend: true });
+    if (!garfoB) itens.push({ ferr: "Chapa em T 16 mm com forquilha", cod: "-", fab: "-", eta: "-", mat: "ASTM A36 galv. fogo", qtd: nBases, kg: null, est: false, lig: "LG02", pend: true });
+    itens.push({ ferr: (garfoB ? "Parafuso passante inox Ø16 (topo: " + nTopo + " na ligação da V)" : "Pino inox Ø16 (topo: " + nTopo + " no pilar + " + nTopoV + " na V)"), cod: "-", fab: "-", eta: "-", mat: "inox A4-70", qtd: (nTopo + nTopoV) * nBases, kg: null, est: false, lig: "LG02", pend: true });
     itens.push({ ferr: "Parafuso rosca total SFS WT-T 8,2 x 300 (terça-V)", cod: "WT-T-8,2x300", fab: "SFS", eta: "ETA-12/0063", mat: "aço c/ revestimento p/ classe de serviço", qtd: fq("WT-TV"), kg: null, est: false, lig: "LG06", pend: false });
     itens.push({ ferr: "Parafuso rosca total SFS WT-T 8,2 x 300 (reforço Ft,90)", cod: "WT-T-8,2x300", fab: "SFS", eta: "ETA-12/0063", mat: "idem", qtd: fq("WT-RV"), kg: null, est: false, lig: "LG11", pend: false });
     itens.push({ ferr: "Parafuso rosca total SFS WT-T 8,2 x 190 (bloqueador, escora, pendural)", cod: "WT-T-8,2x190", fab: "SFS", eta: "ETA-12/0063", mat: "idem", qtd: fq("WT-190"), kg: null, est: false, lig: "LG03", pend: false });
@@ -1415,7 +1517,7 @@
     var imp = [];
     if (r.semSolucao) imp.push({ t: "O dimensionamento não encontrou solução: projeto NÃO EMITIDO para execução.", cor: VERMELHO });
     if (r.ligacoes && r.ligacoes.ok === false) imp.push({ t: "Há ligação que NÃO ATENDE: ver folha E06.", cor: VERMELHO });
-    imp.push({ t: "Deck, travessa, pendural, apoio do deck e guarda-corpo sem verificação de resistência no cálculo: ver o quadro 'Pontos a confirmar' (folha E06C).", cor: VERMELHO });
+    if (!r.deck && arr(r.fonte && r.fonte.pecas).some(function (p) { return /^D[SI]-/.test(p.id); })) imp.push({ t: "Deck e guarda-corpo sem verificação de resistência neste cálculo: ver o quadro 'Pontos a confirmar' (folha E06C).", cor: VERMELHO });
     arr(r.auditoria && r.auditoria.achados).slice(0, 3).forEach(function (a0) { imp.push({ t: "Auditoria: " + a0.mensagem.slice(0, 110), cor: VERMELHO }); });
     var bl = [];
     if (imp.length) bl.push({ titulo: "NÃO EMITIR PARA EXECUÇÃO", cor: VERMELHO, itens: imp });
@@ -1475,7 +1577,12 @@
     return { ok: true, folhas: folhas, avisos: avisos, tabela: ctx0.d.marcas.tab, ferragens: ferragens(ctx0), reacoes: ctx0.d.reac.linhas, marcas: ctx0.d.marcas.porId, desenhaveis: ctx0.d.pcs, celulas: ctx0.cels, pontos: ctx0.pc };
   }
 
-  var MadEngPranchas = { FAIXA: FAIXA, PADRAO_ENG: PADRAO_ENG, gerar: gerar, desenhaveis: desenhaveis, marcar: marcar, ferragens: function (res) { return ferragens({ res: res, d: contexto(res, {}) }); }, espacos: espacos, gruposPinos: function (res) { return gruposPinos({ res: res, d: contexto(res, {}) }); }, bordas: bordas, prefixoDe: prefixoDe };
+  var MadEngPranchas = { FAIXA: FAIXA, PADRAO_ENG: PADRAO_ENG, gerar: gerar, desenhaveis: desenhaveis, marcar: marcar, ferragens: function (res) { return ferragens({ res: res, d: contexto(res, {}) }); }, espacos: espacos, gruposPinos: function (res) { return gruposPinos({ res: res, d: contexto(res, {}) }); }, bordas: bordas, prefixoDe: prefixoDe,
+    /* E4 r3: utilidades internas reaproveitadas pelas pranchas da T2 (js/madengt2pranchas.js) — nada do que a T1 faz muda */
+    _p: { I: I, PR: PR, PADRAO_ENG: PADRAO_ENG, FAIXA: FAIXA, VERMELHO: VERMELHO, PRETO: PRETO, LAM: LAM, FOLGA_PE: FOLGA_PE, FONTE_MIN: FONTE_MIN, MP: MP, num: num, arr: arr, txt: txt, mm: mm, mmt: mmt, r1: r1, r2: r2, dois: dois, hoje: hoje, pct: pct, sub: sub, dot: dot, mult: mult, unit: unit,
+      desenhaveis: desenhaveis, marcar: marcar, classeDe: classeDe, tratDe: tratDe, secTxt: secTxt, planoXY: planoXY, planoXZ: planoXZ, planoYZ: planoYZ, desenharLista: desenharLista, rotular: rotular, limites: limites, caixaPontos: caixaPontos,
+      eixosEmPlanta: eixosEmPlanta, lamelas: lamelas, chapa: chapa, pinoVista: pinoVista, legenda: legenda, tabMarcas: tabMarcas, plantaPecas: plantaPeças, tipoChamada: tipoChamada, baseElevacao: baseElevacao, basePlanta: basePlanta,
+      vista: vista, celulaDet: celulaDet, ponto: ponto, etaLinha: etaLinha, espacos: espacos, linhaEspacos: linhaEspacos, esp2: esp2, quadroPontos: quadroPontos, nv: nv, lg01: lg01, ladoPilar: ladoPilar, aBase: aBase, chapaLarg: chapaLarg, ferragensT1: ferragens, folhaE10: folhaE10, hh: hh } };
   global.MadEngPranchas = MadEngPranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = MadEngPranchas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

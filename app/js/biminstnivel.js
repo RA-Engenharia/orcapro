@@ -589,9 +589,87 @@
     }
     return t0 <= t1;
   }
+  /* FLUIDEZ (25/10/2026): os obstáculos numa GRADE, para achar os de perto de cada rótulo sem passar por todos.
+     ⚠ ROTEIRO: o rotular filtrava a lista INTEIRA de obstáculos por rótulo e testava cada candidato contra todos os de
+     perto — 300 ms da 1ª planta do projeto exemplo (2.688 linhas de instalação). A grade só escolhe QUEM testar; o teste
+     é o mesmo, nos mesmos números e na mesma ordem (tools/test-hid-rotular-indice.js compara com o caminho antigo).
+     Segmento com coordenada não finita ou que cobre muitas células fica na lista "sempre" (o teste antigo o aceitava). */
+  var GRADE_MIN_OBST = 200;
+  function indiceObst(obst, passo) {
+    var cel = {}, sempre = [], bb = new Array(obst.length);
+    for (var i = 0; i < obst.length; i++) {
+      var q = obst[i].seg;
+      var x0 = Math.min(q[0], q[2]), x1 = Math.max(q[0], q[2]), y0 = Math.min(q[1], q[3]), y1 = Math.max(q[1], q[3]);
+      var fin = isFinite(x0) && isFinite(x1) && isFinite(y0) && isFinite(y1);
+      bb[i] = [x0, x1, y0, y1, fin];
+      if (!(isFinite(x0) && isFinite(x1) && isFinite(y0) && isFinite(y1))) { sempre.push(i); continue; }
+      var gx0 = Math.floor(x0 / passo), gx1 = Math.floor(x1 / passo), gy0 = Math.floor(y0 / passo), gy1 = Math.floor(y1 / passo);
+      if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 64) { sempre.push(i); continue; }
+      for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) { var k = gx + "," + gy; (cel[k] || (cel[k] = [])).push(i); }
+    }
+    return { cel: cel, sempre: sempre, bb: bb, passo: passo, marca: new Float64Array(obst.length), vez: 0 };
+  }
+  /* os obstáculos cuja caixa encosta no quadrado (cx0 ± R, cy0 ± R) — o MESMO teste do filtro antigo — na ordem da lista */
+  function pertoDe(ix, obst, cx0, cy0, R) {
+    var p = ix.passo, gx0 = Math.floor((cx0 - R) / p), gx1 = Math.floor((cx0 + R) / p), gy0 = Math.floor((cy0 - R) / p), gy1 = Math.floor((cy0 + R) / p), idx = [], i, j;
+    var tudo = !(isFinite(gx0) && isFinite(gx1) && isFinite(gy0) && isFinite(gy1)) || (gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 4096;
+    if (tudo) { for (i = 0; i < obst.length; i++) idx.push(i); }
+    else {
+      var v = ++ix.vez;
+      for (j = 0; j < ix.sempre.length; j++) { i = ix.sempre[j]; if (ix.marca[i] !== v) { ix.marca[i] = v; idx.push(i); } }
+      for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) {
+        var l = ix.cel[gx + "," + gy]; if (!l) continue;
+        for (j = 0; j < l.length; j++) { i = l[j]; if (ix.marca[i] !== v) { ix.marca[i] = v; idx.push(i); } }
+      }
+      idx.sort(function (a, b) { return a - b; });
+    }
+    var out = [], bbs = [];
+    for (var k = 0; k < idx.length; k++) {
+      var b = ix.bb[idx[k]];
+      if (!(b[1] < cx0 - R || b[0] > cx0 + R || b[3] < cy0 - R || b[2] > cy0 + R)) { out.push(obst[idx[k]]); bbs.push(b); }
+    }
+    return { l: out, bb: bbs };
+  }
   function rotular(rotulos, obst, o) {
     o = o || {};
     var h = o.h > 0 ? o.h : 0.1, lc = o.larg > 0 ? o.larg : 0.58, postos = [], out = [];
+    var OB = arr(obst), IX = null, usarGrade = o.semGrade !== true && OB.length > GRADE_MIN_OBST;
+    /* FLUIDEZ: os rótulos JÁ POSTOS também numa grade. Duas caixas cujas caixas alinhadas aos eixos não se tocam têm um
+       eixo separador (teorema do eixo separador) — o sepEixo diria "separadas"; só as que se tocam são testadas.
+       Caixa com coordenada não finita: testa contra todos, como antes. */
+    var PG = usarGrade ? { cel: {}, sempre: [], bb: [], passo: Math.max(6 * h, 1e-3), marca: [], vez: 0 } : null;
+    function aabbDe(bx) {
+      var x0 = Math.min(bx[0][0], bx[1][0], bx[2][0], bx[3][0]), x1 = Math.max(bx[0][0], bx[1][0], bx[2][0], bx[3][0]);
+      var y0 = Math.min(bx[0][1], bx[1][1], bx[2][1], bx[3][1]), y1 = Math.max(bx[0][1], bx[1][1], bx[2][1], bx[3][1]);
+      return [x0 - 1e-6, x1 + 1e-6, y0 - 1e-6, y1 + 1e-6, isFinite(x0) && isFinite(x1) && isFinite(y0) && isFinite(y1)];
+    }
+    function postoGuardar(bx) {
+      var k = postos.length; postos.push(bx);
+      if (!PG) return;
+      var b = aabbDe(bx); PG.bb[k] = b;
+      if (!b[4]) { PG.sempre.push(k); return; }
+      var p = PG.passo, gx0 = Math.floor(b[0] / p), gx1 = Math.floor(b[1] / p), gy0 = Math.floor(b[2] / p), gy1 = Math.floor(b[3] / p);
+      if ((gx1 - gx0 + 1) * (gy1 - gy0 + 1) > 256) { PG.sempre.push(k); return; }
+      for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) { var ck = gx + "," + gy; (PG.cel[ck] || (PG.cel[ck] = [])).push(k); }
+    }
+    function postoLivre(bx) {
+      var j;
+      if (!PG) { for (j = 0; j < postos.length; j++) if (!sepEixo(bx, postos[j])) return false; return true; }
+      var b = aabbDe(bx);
+      if (!b[4]) { for (j = 0; j < postos.length; j++) if (!sepEixo(bx, postos[j])) return false; return true; }
+      var p = PG.passo, gx0 = Math.floor(b[0] / p), gx1 = Math.floor(b[1] / p), gy0 = Math.floor(b[2] / p), gy1 = Math.floor(b[3] / p), v = ++PG.vez;
+      var testar = function (k) {
+        if (PG.marca[k] === v) return true; PG.marca[k] = v;
+        var q = PG.bb[k]; if (q[4] && (q[1] < b[0] || q[0] > b[1] || q[3] < b[2] || q[2] > b[3])) return true;
+        return sepEixo(bx, postos[k]);
+      };
+      for (j = 0; j < PG.sempre.length; j++) if (!testar(PG.sempre[j])) return false;
+      for (var gx = gx0; gx <= gx1; gx++) for (var gy = gy0; gy <= gy1; gy++) {
+        var l = PG.cel[gx + "," + gy]; if (!l) continue;
+        for (j = 0; j < l.length; j++) if (!testar(l[j])) return false;
+      }
+      return true;
+    }
     var lista = arr(rotulos).map(function (r, i) {
       var s = r.seg, L = s ? Math.sqrt((s[2] - s[0]) * (s[2] - s[0]) + (s[3] - s[1]) * (s[3] - s[1])) : 0;
       return { r: r, i: i, L: L };
@@ -603,7 +681,11 @@
       var s = r.seg || [r.x, r.y, r.x, r.y], A = [s[0], s[1]], B = [s[2], s[3]];
       /* os obstáculos perto (o resto não pode cruzar a caixa) */
       var R = Math.max(it.L, 0) / 2 + 6 * h + hw, cx0 = (A[0] + B[0]) / 2, cy0 = (A[1] + B[1]) / 2;
-      var perto = arr(obst).filter(function (ob) {
+      var perto, pertoBB = null;
+      if (usarGrade) {
+        if (!IX) IX = indiceObst(OB, Math.max(6 * h, 1e-3));
+        var pd = pertoDe(IX, OB, cx0, cy0, R); perto = pd.l; pertoBB = pd.bb;
+      } else perto = OB.filter(function (ob) {
         var q = ob.seg; return !(Math.max(q[0], q[2]) < cx0 - R || Math.min(q[0], q[2]) > cx0 + R || Math.max(q[1], q[3]) < cy0 - R || Math.min(q[1], q[3]) > cy0 + R);
       });
       var melhor = null, fr = it.L > 4 * hw ? [0.5, 0.35, 0.65, 0.2, 0.8] : [0.5];
@@ -618,11 +700,24 @@
         for (var ci = 0; ci < cands.length; ci++) {
           var c = [cands[ci][0], cands[ci][1]], fi = 0, lado = cands[ci][3]; fr = fr.length ? fr : [0.5]; var frc = cands[ci][2];
           var bx = caixaRot(c, u, hw, hh), livre = true;
-          for (var j = 0; j < postos.length && livre; j++) if (!sepEixo(bx, postos[j])) livre = false;
+          if (PG) livre = postoLivre(bx);
+          else for (var j = 0; j < postos.length && livre; j++) if (!sepEixo(bx, postos[j])) livre = false;
           if (!livre) continue;
           /* ⚠ cruzar TUBO (peso ≥ 10) é sempre pior que cruzar o desenho em volta: a louça tem dezenas de arestas e,
              somadas sem teto, empurravam o rótulo para cima do próprio tubo (banheiro de exemplo, 17/10/2026) */
-          var cr = 0, crT = 0; perto.forEach(function (ob) { if (segCruzaCaixa(ob.seg, c, u, hw, hh)) { if ((ob.peso || 1) >= 10) crT++; else cr++; } });
+          var cr = 0, crT = 0;
+          if (pertoBB) {
+            /* FLUIDEZ: segmento cuja caixa nem encosta na caixa (alinhada aos eixos) do rótulo não pode cruzá-lo — pula o
+               Liang-Barsky. Com coordenada não finita a comparação é falsa e o teste de sempre roda (mesmo resultado). */
+            var ex0 = Math.min(bx[0][0], bx[1][0], bx[2][0], bx[3][0]) - 1e-6, ex1 = Math.max(bx[0][0], bx[1][0], bx[2][0], bx[3][0]) + 1e-6;
+            var ey0 = Math.min(bx[0][1], bx[1][1], bx[2][1], bx[3][1]) - 1e-6, ey1 = Math.max(bx[0][1], bx[1][1], bx[2][1], bx[3][1]) + 1e-6;
+            for (var pj = 0; pj < perto.length; pj++) {
+              var bq = pertoBB[pj];
+              /* ⚠ só pula com a caixa do segmento toda FINITA: com Infinity a conta antiga dá NaN e conta como cruzando */
+              if (bq[4] && (bq[1] < ex0 || bq[0] > ex1 || bq[3] < ey0 || bq[2] > ey1)) continue;
+              var ob = perto[pj]; if (segCruzaCaixa(ob.seg, c, u, hw, hh)) { if ((ob.peso || 1) >= 10) crT++; else cr++; }
+            }
+          } else perto.forEach(function (ob) { if (segCruzaCaixa(ob.seg, c, u, hw, hh)) { if ((ob.peso || 1) >= 10) crT++; else cr++; } });
           /* parede e desenho em volta: cruzar pesa mais (12) — o rótulo prefere se afastar a ficar em cima da parede */
           var custo = crT * 1000 + Math.min(cr, 30) * 12 + anel * 40 + Math.abs(frc - 0.5) * 2 + (lado > 0 ? 0.1 : 0) + ci * 0.01;
           cr = crT * 10 + cr;
@@ -633,7 +728,7 @@
       }
       var o2 = {}; for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) o2[k] = r[k];
       if (!melhor) { o2.semLugar = true; out[it.i] = o2; return; }
-      postos.push(melhor.bx);
+      postoGuardar(melhor.bx);
       o2.x = melhor.c[0]; o2.y = melhor.c[1]; o2.cruza = melhor.cr; o2.caixa = melhor.bx;
       /* LINHA DE CHAMADA: o rótulo que não coube junto do que ele marca (foi para longe) leva o traço até a peça/trecho */
       var ax = (A[0] + B[0]) / 2, ay = (A[1] + B[1]) / 2, vx = melhor.c[0] - ax, vy = melhor.c[1] - ay, dv = Math.sqrt(vx * vx + vy * vy);

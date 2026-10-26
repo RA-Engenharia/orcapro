@@ -42,7 +42,7 @@
     _ctx: function () {
       if (A.contexto) return A.contexto;
       var b = global.BIM;
-      return b ? { avaliar: function (f, t, i) { return b.familiaAvaliar(f, t, i); }, ops: b.editarOps ? b.editarOps() : [], kitLigado: !!(global.HidKitUI && global.HidKitUI.ligado) } : {};
+      return b ? { avaliar: function (f, t, i) { return b.familiaAvaliar(f, t, i); }, ops: b.editarOps ? b.editarOps() : [], kitLigado: !!(global.HidKitUI && (global.HidKitUI._sincAuto ? global.HidKitUI._sincAuto() : global.HidKitUI.ligado)) }   /* N23: a escolha do projeto aberto */ : {};
     },
     ehInst: function (estado, id) {
       var I = estado && estado.instalacoes; if (!I || id == null) return null;

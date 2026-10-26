@@ -217,7 +217,7 @@
 .rv-cmd { position: relative; }
 
 /* ------------------------------------------------------------- CORPO 3 COLUNAS */
-.rv-corpo { display: flex; flex: 1; min-height: 0; }
+.rv-corpo { display: flex; flex: 1; min-height: 0; position: relative; }
 
 /* coluna esquerda: Propriedades em cima, Navegador embaixo */
 .rv-lateral {
@@ -230,8 +230,7 @@
 .rv-doca { display: flex; flex-direction: column; min-height: 0; }
 /* Propriedades é o painel de trabalho — leva a maior fatia. O Navegador
    guarda um piso para nunca virar uma fresta. */
-.rv-doca.rv-props { flex: 0 0 var(--rv-props-h, 62%); }
-.rv-doca.rv-nav { flex: 1 1 auto; min-height: 90px; }
+.rv-doca.rv-props, .rv-doca.rv-nav { flex: 1 1 auto; min-height: 0; }   /* a divisão é do grupo (js/bimdocaui.js), não do painel */
 .rv-doca-cab {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 8px; font-size: var(--t-micro); font-weight: var(--p-forte);
@@ -455,6 +454,10 @@
 .bim-revit[data-rv-foco="1"] .rv-abas,
 .bim-revit[data-rv-foco="1"] .rv-fita,
 .bim-revit[data-rv-foco="1"] .rv-lateral,
+.bim-revit[data-rv-foco="1"] .rv-zona:not([data-ferr="1"]),
+.bim-revit[data-rv-foco="1"] .rv-borda,
+.bim-revit[data-rv-foco="1"] .rv-alca,
+.bim-revit[data-rv-foco="1"] .rv-flut,
 .bim-revit[data-rv-foco="1"] .rv-docs,
 .bim-revit[data-rv-foco="1"] .rv-status { display: none !important; }
 /* a `rv-vistabar` FICA: ela é a barra do próprio 3D (perspectiva, sol,
@@ -672,12 +675,10 @@
 @media (max-width: 900px) { .rv-lat-aba, .rv-alca-lat { display: none !important; } }
 
 /* a janela da direita (as ferramentas abertas pela fita), ao lado do 3D */
-.rv-direita { display: none; flex: 0 0 var(--rv-dir-w, 440px); width: var(--rv-dir-w, 440px); min-width: 0; flex-direction: column; background: var(--surface, #fff); }
-.rv-alca-dir { display: none; }
+.rv-direita { display: none; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; background: var(--surface, #fff); }
 .bim-revit[data-rv-direita="1"] .rv-direita { display: flex; }
-.bim-revit[data-rv-direita="1"] .rv-alca-dir { display: block; }
 .rv-direita > #bim-drawer { position: relative !important; inset: auto !important; width: auto !important; flex: 1; min-height: 0; box-shadow: none !important; border-left: 1px solid var(--rv-linha-forte) !important; }
-.bim-revit.b4-largo-on[data-rv-direita="1"] .rv-direita { flex-basis: 72%; width: 72%; }
+.bim-revit.b4-largo-on[data-rv-direita="1"] .rv-zona-dir { --rv-dir-w: 72%; }
 /* arrastando uma alça: o 3D não rouba o ponteiro */
 .bim-revit[data-rv-arrastando="1"] .rv-palco, .bim-revit[data-rv-arrastando="1"] .rv-direita { pointer-events: none; }
 .bim-revit[data-rv-arrastando="1"] { cursor: col-resize; user-select: none; }
@@ -1035,3 +1036,230 @@ body.bim-app .modal .body input[type="text"]:not(.cell):focus-visible,
 body.bim-app .modal .body input[type="number"]:not(.cell):focus-visible { border-color: var(--aco); outline: none; box-shadow: var(--anel); }
 /* VÍNCULOS (js/bimvinculos.js, 14/10/2026): no arraste, as peças que ACOMPANHAM (o fantasma da que anda é o verde) */
 .sl-cam .sl-vinculo { stroke: #f59e0b; stroke-width: 1.6; stroke-dasharray: 6 3; fill: none; }
+
+
+/* =====================================================================
+ * PAINÉIS ENCAIXÁVEIS (25/10/2026) — js/bimdoca.js (modelo) + js/bimdocaui.js (tela).
+ * Pedido do Rogério: "arrastar qualquer aba/painel para onde eu quiser, ou
+ * recolher, para aproveitar o máximo na modelagem".
+ *
+ * O corpo da janela do BIM tem QUATRO ZONAS em volta do 3D (esquerda, direita,
+ * embaixo, em cima); cada zona guarda GRUPOS (quadros `.rv-gp`) empilhados, e
+ * cada grupo pode ter vários painéis em ABAS. Recolhido = faixa fina na borda
+ * (`.rv-borda`); clicar abre o painel POR CIMA do 3D (`.rv-sobre`), sem empurrá-lo.
+ * Janela solta = `.rv-gp-flut` na camada `.rv-flut`.
+ *
+ * ⚠ NADA de backdrop-filter em nada daqui: o ancestral com ele vira o bloco
+ *   contentor de todo `position:fixed` e o BIM já encolheu a 0 px por isso.
+ * ⚠ Nada se anima no arrasto (transform no indicador, left/top na janela solta):
+ *   mudar tamanho de zona durante o ponteiro acordaria o redimensionamento do 3D.
+ * ===================================================================== */
+.rv-guarda { display: none !important; }
+.rv-centro { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.rv-centro > .rv-area { flex: 1 1 auto; }
+
+/* ---- as zonas ---- */
+.bim-revit .rv-zona { display: flex; background: var(--rv-painel-bg); color: var(--rv-painel-tx); min-height: 0; min-width: 0; }
+.bim-revit .rv-zona[data-vazia="1"], .bim-revit .rv-alca[data-vazia="1"] { display: none; }
+.bim-revit .rv-zona-esq { flex-direction: column; width: var(--rv-lat-w, 268px); flex: 0 0 var(--rv-lat-w, 268px); border-right: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-zona-dir { flex-direction: column; width: var(--rv-dir-w, 440px); flex: 0 0 var(--rv-dir-w, 440px); }   /* sem borda: a alça de 5 px já é o divisor, e a largura do painel = a salva (a prova mede os dois) */
+.bim-revit .rv-zona-base { flex-direction: row; height: var(--rv-base-h, 200px); flex: 0 0 var(--rv-base-h, 200px); border-top: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-zona-topo { flex-direction: row; height: var(--rv-topo-h, 180px); flex: 0 0 var(--rv-topo-h, 180px); border-bottom: 1px solid var(--rv-linha-forte); }
+
+/* alças de tamanho das zonas (a esquerda e a direita eram as de sempre) */
+.bim-revit .rv-alca { flex: 0 0 5px; background: var(--rv-linha); z-index: 3; touch-action: none; }
+.bim-revit .rv-alca-esq, .bim-revit .rv-alca-dir { width: 5px; cursor: col-resize; }
+.bim-revit .rv-alca-base, .bim-revit .rv-alca-topo { height: 5px; width: auto; cursor: row-resize; }
+.bim-revit .rv-alca:hover, .bim-revit .rv-alca:focus-visible, .bim-revit .rv-split:hover, .bim-revit .rv-split:focus-visible { background: var(--rv-ativo-borda); outline: none; }
+.bim-revit .rv-alca:focus-visible, .bim-revit .rv-split:focus-visible { box-shadow: 0 0 0 2px var(--rv-foco); }
+.bim-revit .rv-split { flex: 0 0 5px; background: var(--rv-linha); touch-action: none; }
+.bim-revit .rv-split-h { cursor: row-resize; border-top: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-split-v { cursor: col-resize; border-left: 1px solid var(--rv-linha-forte); }
+
+/* ---- o quadro de um grupo: barra de título (abas + ações) e corpo ---- */
+.rv-gp { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--rv-painel-bg); color: var(--rv-painel-tx); position: relative; }
+.rv-gp-cab {
+  display: flex; align-items: stretch; flex: 0 0 auto; min-height: 26px;
+  background: var(--rv-painel-cab); border-bottom: 1px solid var(--rv-linha);
+  cursor: grab; user-select: none; touch-action: none;
+}
+.rv-gp-abas { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.rv-gp-aba {
+  appearance: none; margin: 0; padding: 0 11px; border: 0; border-top: 2px solid transparent;
+  background: transparent; color: inherit; font: inherit; font-size: var(--t-micro); font-weight: var(--p-forte);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; cursor: grab; min-height: 26px;
+}
+.rv-gp-aba:hover { background: var(--rv-hover); }
+.rv-gp-aba[aria-selected="true"] { background: var(--rv-painel-bg); border-top-color: var(--rv-aba-ativa-linha); }
+.rv-gp-aba:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+.rv-gp-abas > .rv-gp-aba:only-child { background: transparent; border-top-color: transparent; }
+.rv-gp-acoes { display: flex; align-items: center; gap: 1px; padding: 0 3px; flex: 0 0 auto; }
+.rv-gp-bt {
+  width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 3px; color: inherit; cursor: pointer; opacity: .8;
+}
+.rv-gp-bt:hover { background: var(--rv-hover); border-color: var(--rv-linha-forte); opacity: 1; }
+.rv-gp-bt:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; opacity: 1; }
+.rv-gp-corpo { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.rv-gp-corpo > .rv-doca { flex: 1 1 auto; min-height: 0; }
+.rv-pn-off { display: none !important; }
+/* o cabeçalho de sempre de Propriedades/Navegador cede lugar à barra do quadro (só na tela com encaixe) */
+.bim-revit[data-rv-doca="on"] .rv-gp-corpo > .rv-doca > .rv-doca-cab { display: none; }
+.bim-revit[data-rv-doca="off"] .rv-gp-cab { display: none; }
+/* Ferramentas: o título da ferramenta aberta já é o da aba; sobra a fileira dos botões (outra janela, minimizar, fechar) */
+.bim-revit[data-rv-doca="on"] .rv-gp-corpo > .rv-direita #bim-drawer-tit { display: none; }
+
+/* ---- faixas das bordas: um botão por painel recolhido ---- */
+.bim-revit .rv-borda { display: none; background: var(--rv-painel-cab); z-index: 4; }
+.bim-revit .rv-borda[data-n]:not([data-n="0"]):not(.rv-lat-aba) { display: flex; }
+.bim-revit .rv-borda-esq, .bim-revit .rv-borda-dir { flex: 0 0 24px; width: 24px; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 0; }
+.bim-revit .rv-borda-base, .bim-revit .rv-borda-topo { flex: 0 0 24px; height: 24px; flex-direction: row; align-items: stretch; gap: 2px; padding: 0 6px; }
+.bim-revit .rv-borda-esq { border-right: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-borda-dir { border-left: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-borda-base { border-top: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-borda-topo { border-bottom: 1px solid var(--rv-linha-forte); }
+.rv-borda-bt {
+  appearance: none; margin: 0; padding: 7px 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: transparent; color: var(--rv-painel-tx); border: 1px solid transparent; border-radius: 3px;
+  font: inherit; font-size: var(--t-mini); font-weight: var(--p-forte); cursor: pointer;
+}
+.rv-borda-esq .rv-borda-bt, .rv-borda-dir .rv-borda-bt { flex-direction: column; }
+.rv-borda-base .rv-borda-bt, .rv-borda-topo .rv-borda-bt { padding: 0 10px; flex-direction: row; }
+.rv-borda-esq .rv-borda-rot, .rv-borda-dir .rv-borda-rot { writing-mode: vertical-rl; }
+.rv-borda-seta { font-size: 8px; opacity: .7; }
+.rv-borda-bt:hover { background: var(--rv-hover); border-color: var(--rv-linha-forte); }
+.rv-borda-bt[aria-expanded="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.rv-borda-bt:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+/* a faixa da esquerda mantém as regras de sempre (.rv-lat-aba): inteira (tudo recolhido) ou parcial */
+.bim-revit .rv-lat-aba { flex: 0 0 24px; width: 24px; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 0; border-right: 1px solid var(--rv-linha-forte); }
+.bim-revit .rv-lat-aba[data-parcial="1"] { display: flex; }
+@media (max-width: 900px) { .bim-revit .rv-borda, .bim-revit .rv-alca { display: none !important; } }
+
+/* ---- painel recolhido aberto POR CIMA do 3D (não empurra nada) ---- */
+.rv-sobre { position: absolute; top: 0; bottom: 0; z-index: 30; display: flex; flex-direction: column; background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  box-shadow: 0 8px 28px var(--rv-sombra); border: 1px solid var(--rv-linha-forte); }
+.rv-sobre[data-z="esq"] { left: 24px; width: var(--rv-lat-w, 268px); }
+.rv-sobre[data-z="dir"] { right: 24px; width: var(--rv-dir-w, 440px); }
+.rv-sobre[data-z="base"] { left: 0; right: 0; top: auto; bottom: 24px; height: var(--rv-base-h, 200px); }
+.rv-sobre[data-z="topo"] { left: 0; right: 0; bottom: auto; top: 24px; height: var(--rv-topo-h, 180px); }
+.rv-sobre > .rv-gp { flex: 1 1 auto; }
+
+/* ---- janelas soltas ---- */
+.rv-flut { position: absolute; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; }
+.rv-gp-flut {
+  position: absolute; pointer-events: auto; border: 1px solid var(--rv-linha-forte); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 10px 30px var(--rv-sombra);
+}
+.rv-gp-flut > .rv-gp-cab { border-radius: 5px 5px 0 0; }
+.rv-gp-flut.rv-gp-enrolado { height: auto !important; }
+.rv-gp-flut.rv-gp-enrolado > .rv-gp-corpo { display: none; }
+.rv-gp-flut.rv-gp-arrastando { opacity: .9; box-shadow: 0 14px 38px var(--rv-sombra); }
+.rv-gp-alca { position: absolute; z-index: 4; touch-action: none; }
+.rv-gp-alca-n, .rv-gp-alca-s { left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+.rv-gp-alca-e, .rv-gp-alca-w { top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+.rv-gp-alca-n { top: 0; } .rv-gp-alca-s { bottom: 0; } .rv-gp-alca-e { right: 0; } .rv-gp-alca-w { left: 0; }
+.rv-gp-alca-ne, .rv-gp-alca-nw, .rv-gp-alca-se, .rv-gp-alca-sw { width: 12px; height: 12px; }
+.rv-gp-alca-ne { top: 0; right: 0; cursor: nesw-resize; } .rv-gp-alca-nw { top: 0; left: 0; cursor: nwse-resize; }
+.rv-gp-alca-se { bottom: 0; right: 0; cursor: nwse-resize; } .rv-gp-alca-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.rv-gp-enrolado .rv-gp-alca-n, .rv-gp-enrolado .rv-gp-alca-s, .rv-gp-enrolado .rv-gp-alca-ne, .rv-gp-enrolado .rv-gp-alca-nw,
+.rv-gp-enrolado .rv-gp-alca-se, .rv-gp-enrolado .rv-gp-alca-sw { display: none; }
+
+/* ---- arrastar: etiqueta que segue o ponteiro + a pré-visualização do destino ---- */
+.rv-ghost {
+  position: absolute; left: 0; top: 0; z-index: 70; pointer-events: none; padding: 4px 10px; border-radius: 4px;
+  background: var(--rv-titulo-bg); color: var(--rv-titulo-tx); font-size: var(--t-micro); font-weight: var(--p-forte);
+  box-shadow: 0 4px 14px var(--rv-sombra); white-space: nowrap;
+}
+.rv-alvo {
+  position: absolute; left: 0; top: 0; z-index: 65; pointer-events: none; display: none; box-sizing: border-box;
+  background: rgba(26, 108, 181, .22); border: 2px solid var(--rv-foco); border-radius: 3px;
+}
+.rv-alvo[data-tipo="flut"] { border-style: dashed; background: rgba(26, 108, 181, .10); }
+.rv-alvo::after {
+  content: attr(data-rot); position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 3px 10px; border-radius: 4px; background: var(--rv-foco); color: #fff; font-size: var(--t-micro); font-weight: var(--p-forte); white-space: nowrap;
+}
+.bim-revit[data-rv-movendo="1"] { cursor: grabbing; user-select: none; }
+.bim-revit[data-rv-movendo="1"] .rv-palco, .bim-revit[data-rv-movendo="1"] .rv-gp-corpo { pointer-events: none; }
+.bim-revit[data-rv-movendo="1"] .rv-gp-cab, .bim-revit[data-rv-movendo="1"] .rv-gp-aba { cursor: grabbing; }
+.bim-revit[data-rv-arrastando="1"][data-rv-eixo="y"] { cursor: row-resize; }
+
+/* ---- menu dos painéis ---- */
+.rv-doca-menu {
+  position: absolute; z-index: 80; min-width: 230px; max-width: 320px; padding: 4px 0; background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); border-radius: 6px; box-shadow: 0 8px 26px var(--rv-sombra); font-size: var(--t-micro);
+}
+.rv-doca-menu-tit { padding: 5px 12px 3px; font-size: var(--t-mini); font-weight: var(--p-forte); color: var(--rv-tx-fraco); }
+.rv-doca-menu-sep { height: 1px; margin: 4px 0; background: var(--rv-linha); }
+.rv-doca-menu-it {
+  appearance: none; width: 100%; display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 12px 6px 6px; border: 0;
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.rv-doca-menu-ck { width: 16px; text-align: center; flex: 0 0 16px; color: var(--rv-aba-ativa-linha); font-weight: var(--p-forte); }
+.rv-doca-menu-it:hover:not(:disabled), .rv-doca-menu-it:focus-visible { background: var(--rv-hover); outline: none; }
+.rv-doca-menu-it:focus-visible { box-shadow: inset 0 0 0 2px var(--rv-foco); }
+.rv-doca-menu-it:disabled { color: var(--rv-tx-off); cursor: default; }
+
+/* ---- a FITA recolhida: só as abas; abre POR CIMA do 3D ao clicar numa aba ---- */
+.rv-abas { overflow: visible; padding: 0 0 0 6px; }
+.rv-abas-lista { display: flex; align-items: flex-end; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.rv-abas-lista::-webkit-scrollbar { display: none; }
+.rv-abas-dir { margin-left: 0; flex: 0 0 auto; background: var(--rv-abas-bg); position: relative; z-index: 2; box-shadow: -8px 0 8px -4px var(--rv-abas-bg); }
+.rv-fita-pin {
+  appearance: none; width: 26px; height: 26px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--rv-fita-tx); border: 1px solid var(--rv-linha-forte); border-radius: 4px; cursor: pointer;
+}
+.rv-fita-pin:hover { background: var(--rv-hover); }
+.rv-fita-pin[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.rv-fita-pin[aria-pressed="true"] svg { transform: rotate(180deg); }
+.rv-fita-pin:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+.bim-revit[data-rv-fita-rec="1"] .rv-fita { display: none; }
+.bim-revit[data-rv-fita-rec="1"][data-rv-fita-sobre="1"] .rv-fita {
+  display: flex; position: absolute; left: 0; right: 0; top: var(--rv-fita-top, 70px); z-index: 35; box-shadow: 0 10px 26px var(--rv-sombra);
+  border-bottom: 1px solid var(--rv-linha-forte);
+}
+
+/* ---- modo modelagem (F11): o mini-acesso ---- */
+.rv-foco-mini {
+  position: absolute; left: 12px; top: 44px; z-index: 60; display: none; align-items: center; gap: 2px; padding: 3px;   /* à esquerda: o ViewCube mora no canto direito */
+  background: rgba(15, 39, 64, .92); border: 1px solid #24435f; border-radius: 9px;
+}
+.bim-revit[data-rv-foco="1"] .rv-foco-mini { display: inline-flex; }
+.rv-foco-mini button {
+  width: 30px; height: 28px; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: #dbe8f5; border: 1px solid transparent; border-radius: 6px; cursor: pointer;
+}
+.rv-foco-mini button:hover { background: rgba(255,255,255,.14); }
+.rv-foco-mini button:focus-visible { outline: 2px solid #8fd3ff; outline-offset: -2px; }
+.rv-qat button.rv-qat-paineis { margin-left: 4px; }
+
+/* ---- tela estreita (≤ 900 px): sem encaixe; Propriedades/Navegador e a ferramenta viram gaveta ---- */
+@media (max-width: 900px) {
+  .bim-revit .rv-zona-esq { position: absolute; left: 0; top: 0; bottom: 0; z-index: 12; width: min(300px, 88%); flex-basis: auto; box-shadow: 4px 0 18px var(--rv-sombra); transform: translateX(-102%); transition: transform .18s ease; }
+  .bim-revit[data-rv-lateral="1"] .rv-zona-esq { transform: none; }
+  .bim-revit .rv-zona-dir { position: absolute; right: 0; top: 0; bottom: 0; z-index: 13; width: min(440px, 94%); flex-basis: auto; box-shadow: -4px 0 18px var(--rv-sombra); }
+  .rv-flut, .rv-sobre { display: none !important; }
+  .rv-fita-pin { display: none; }   /* sem encaixe nem fita recolhível na tela estreita */
+}
+@media (prefers-reduced-motion: reduce) { .bim-revit .rv-zona-esq { transition: none; } }
+.rv-fita-pin { margin: 0 6px 0 4px; align-self: center; flex: 0 0 auto; }
+/* a gaveta de ferramentas é uma superfície clara do app: o texto dela é o do app, nunca o da fita escura herdado do quadro */
+.rv-gp-corpo > .rv-direita { color: var(--texto, #1a1a1a); }
+/* barra de título: o nome da obra nunca é coberto pelos ícones — o que sobra de largura é do nome */
+.rv-titulo { overflow: hidden; }
+.rv-titulo > .rv-qat:first-of-type { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.rv-titulo-nome { flex: 1 1 160px; min-width: 120px; }
+.rv-titulo > .rv-qat.rv-qa { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+.rv-titulo-nome { padding: 0 8px; box-sizing: border-box; }
+.bim-revit .rv-titulo select.rv-obra { flex: 0 1 auto; min-width: 80px; }
+
+/* toque (tablet): alvos maiores — 24 px é pouco para o dedo */
+@media (hover: none) and (pointer: coarse) {
+  .rv-gp-bt { width: 34px; height: 34px; }
+  .rv-gp-aba { min-height: 36px; padding: 0 14px; }
+  .rv-gp-cab { min-height: 36px; }
+  .rv-borda-bt { padding: 10px 0; }
+  .rv-borda-esq, .rv-borda-dir, .bim-revit .rv-lat-aba { flex-basis: 32px; width: 32px; }
+  .bim-revit .rv-alca-esq, .bim-revit .rv-alca-dir, .bim-revit .rv-split-h { flex-basis: 10px; }
+  .rv-fita-pin { width: 34px; height: 34px; }
+}

@@ -1224,7 +1224,15 @@
   }
   function pilaresDe(a, est) {
     var G = global.ArqGeo || dep("ArqGeo", "./arqgeo.js");
-    return arr(est && est.caixas).filter(function (c) { return c && c.tipo === "pilar" && dentro([num(c.cx, 0), num(c.cz, 0)], a.pts); }).map(function (c) {
+    /* ⚠ 25/10/2026: só o pilar que ocupa a ALTURA do ambiente — o pontalete do telhado (tec-*, tipo pilar, apoiado na laje) caía dentro
+       do contorno do quarto e o guarda-roupa "batia no pilar" (projeto exemplo) */
+    var br = null; arr(est && est.ambientes).forEach(function (x) { if (x && a && String(x.id) === String(a.id)) br = x; });
+    var cb = br && br.calc, ab = num(cb && cb.base, -1e9), at = cb && cb.topo != null ? num(cb.topo, 1e9) : 1e9;
+    return arr(est && est.caixas).filter(function (c) {
+      if (!c || c.tipo !== "pilar" || !dentro([num(c.cx, 0), num(c.cz, 0)], a.pts)) return false;
+      var h = num(c.altura, 0), y0 = c.basePilar != null ? num(c.basePilar, 0) : num(c.cy, h / 2) - h / 2;
+      return !(h > 0 && (y0 >= at - 0.05 || y0 + h <= ab + 0.05));
+    }).map(function (c) {
       var u = eixoU(num(c.rotY, 0)), v = eixoV(num(c.rotY, 0));
       return { id: String(c.id), fp: { c: [num(c.cx, 0), num(c.cz, 0)], u: u, v: v, hu: num(c.comprimento, 0.2) / 2, hv: num(c.espessura, 0.2) / 2 }, y0: 0, y1: 9, nome: "o pilar " + c.id };
     });

@@ -304,11 +304,12 @@
     _replantar: function () {
       var B2 = global.Bim2D; if (!B2 || !B2.plantasAbertas) return 0;
       var n = 0;
+      try { if (B2.mudou) B2.mudou(); } catch (eM) {}   /* FLUIDEZ (25/10/2026): fase trocada — o desenho de antemão deixa de valer */
       try {
         B2.plantasAbertas().forEach(function (k) {
           var c = B2._cache && B2._cache[k]; if (!c) return;
           if (B2.visivel(k)) { var vb = c.vb ? JSON.parse(JSON.stringify(c.vb)) : null; if (B2.redesenhar(k, true) && vb && B2._aplicarVb) B2._aplicarVb(k, vb); n++; }
-          else c.sujo = true;
+          else if (B2.sujar) B2.sujar(k); else c.sujo = true;
         });
       } catch (e) {}
       return n;

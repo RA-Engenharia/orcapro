@@ -68,9 +68,34 @@
           c.nuvemSdk = (dg.sdk || []).map(function (x) { return String((x && x.cod) || "").slice(0, 30) + ":" + msgSegura(x && x.msg); });
         }
       } catch (e) {}
+      /* FLUIDEZ (25/10/2026): a TROCA DE VISTA do BIM (do clique ao 2º quadro, as últimas 40: js/gestao.js _bimVxMedir),
+         as vistas 2D abertas/feitas de antemão, o segundo plano e o TAMANHO DO CACHE — o vigia de saúde
+         (RA-Central\scripts\saude-orcapro) acusa a regressão (troca lenta, cache acima do teto) sem ninguém medir à mão */
+      try {
+        var Gv = global.Gestao, tr = Gv && Gv._bimTrocas && Gv._bimTrocas.resumo ? Gv._bimTrocas.resumo() : null;
+        if (tr) { c.vistaTrocaN = tr.n; c.vistaTrocaMed = tr.mediana; c.vistaTrocaMax = tr.maior; c.vistaTrocaUlt = tr.ultimo; }
+        if (Gv && typeof Gv._bimCacheTotalB === "number") c.bimcacheMB = Math.round(Gv._bimCacheTotalB / 1048576);
+        var P2 = global.Bim2D;
+        if (P2 && P2._cache) { c.d2Abertas = Object.keys(P2._cache).length; c.d2Antes = Object.keys(P2._pre || {}).length; if (P2._fila) { c.d2Fundo = P2._fila.feitas; c.d2FundoUltMs = Math.round(P2._fila.ultMs || 0); } }
+      } catch (e) {}
+      try { if (this._armaz) { c.armazMB = this._armaz.usoMB; if (this._armaz.idbMB != null) c.armazIdbMB = this._armaz.idbMB; } this._lerArmaz(); } catch (e) {}
       try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
       try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
       return c;
+    },
+    /* o armazenamento do site (navigator.storage: IndexedDB + cache do service worker + localStorage), no máximo a cada
+       5 min — a resposta é assíncrona e entra na leitura SEGUINTE (os contadores são síncronos) */
+    _armaz: null, _armazEm: 0,
+    _lerArmaz: function () {
+      var nav = global.navigator, self = this, t = this.agora();
+      if (!nav || !nav.storage || typeof nav.storage.estimate !== "function" || (this._armazEm && t - this._armazEm < 300000)) return;
+      this._armazEm = t;
+      try {
+        nav.storage.estimate().then(function (e) {
+          var d = e && e.usageDetails;
+          self._armaz = { usoMB: Math.round(((e && e.usage) || 0) / 1048576), idbMB: d && d.indexedDB != null ? Math.round(d.indexedDB / 1048576) : null };
+        })["catch"](function () {});
+      } catch (e) {}
     },
     enviar: function (a) {
       try {

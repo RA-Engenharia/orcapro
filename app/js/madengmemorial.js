@@ -24,7 +24,9 @@
     if (!I) return { ok: false, motivo: "js/madmemorial.js não carregou.", html: "" };
     I.reset();
     if (!res || !res.ligacoes || !res.grupos) return { ok: false, motivo: "Resultado do cálculo incompleto: sem memorial.", html: "", secoes: [], tabelas: 0, avisos: [], conferencias: [] };
-    var d = new I.Doc(), esc = I.esc, br = I.br, t = I.t, td = I.td, trw = I.trw, caixa = I.caixa, sit = SA() ? SA().situacao(res) : { atende: false, itens: [] };
+    var d = new I.Doc(), esc = I.esc, br = I.br, t = I.t, td = I.td, trw = I.trw, caixa = I.caixa, sit = SA() ? SA().situacao(res) : { atende: false, itens: [], premissas: [] };
+    function clAv(a) { var S0 = SA(); return S0 && S0.classeAviso ? S0.classeAviso(typeof a === "string" ? a : (a && (a.mensagem || a.texto)) || JSON.stringify(a)).classe : "bloqueante"; }
+    function premissasHtml(st) { return st.premissas && st.premissas.length ? d.tab("Premissas adotadas (informativas: não impedem a emissão)", [I.thn("#"), "Código", "Premissa", "Por que não bloqueia"], st.premissas.map(function (x, i) { return trw([td(String(i + 1), "n"), td(I.esc(x.cod || "")), td(I.esc(x.texto)), td(I.esc(x.porque || ""))]); }), {}) : ""; }
     var ob = obj(op.obra), dc = obj(op.documento), rp = obj(op.responsavel), rev = dc.revisao || "R00", data = I.dataTxt(dc.data), nome = ob.nome || "[OBRA]";
     var c = { rp: rp, obraNome: nome, num: dc.numero || "", rev: rev };
     var M = obj(res.memoria), V = obj(M.vento), L = res.ligacoes, anexo = [];
@@ -38,7 +40,7 @@
       trw([td("Classe de resistência do MLC"), td(esc(M.classe || "mlc:GL24h"))]), trw([td("Classe de umidade"), td(esc(String(M.umidade || 3)))]), trw([td("Peso específico do MLC"), td(br(M.pesoMLC, 1) + " kN/m³")]),
       trw([td("Limite de flecha no vão / balanço"), td("L/" + br(M.limVao, 0) + " · L/" + br(M.limBalanco, 0))]), trw([td("Seções adotadas"), td(esc(JSON.stringify(res.secoes)))]),
       trw([td("Iterações de crescimento da seção"), td(br(res.iteracoes, 0))]), trw([td("Número de combinações verificadas"), td(br(res.combinacoes, 0))])], { classe: "ficha" });
-    if (sit.atende) h += caixa("<b>Situação:</b> <span class=\"ok\">atende</span> — todas as verificações desta emissão atendem e não há achado nem aviso aberto.");
+    if (sit.atende) h += caixa("<b>Situação:</b> <span class=\"ok\">atende</span> — todas as verificações desta emissão atendem e não há achado, reprovação nem pendência bloqueante" + (sit.premissas && sit.premissas.length ? "; as " + I.plural(sit.premissas.length, "premissa adotada", "premissas adotadas") + " estão na seção 9." : "."));
     else h += caixa("<b>Situação: NÃO ATENDE / COM PENDÊNCIAS</b> — " + I.plural(sit.itens.length, "item aberto", "itens abertos") + " (ver seção 9). Enquanto não forem resolvidos e o cálculo refeito, este memorial não pode ser usado para execução.", "erro");
     S.push(h);
 
@@ -67,8 +69,9 @@
 
     /* 5 análise */
     h = "<p>Análise de 2ª ordem (P-Δ) em modelo espacial de barras: pilares com mola na base (rigidez de rotação adotada), topo rotulado na V; V de altura variável; " + br(res.nTercas, 0) + " terças contínuas; escoras e bloqueadores como barras; fita só-tração; verga, travessa e pendural. Deslocamento de topo: DZ = " + br(res.DZ, 0) + ".</p>";
-    var avTodos = arr(res.avisos).concat(arr(res.avisosAnalise));
-    if (avTodos.length) h += caixa("<b>Avisos da análise (N1, N5, M1, M4, M7, M13 e os do solver):</b><ul>" + avTodos.map(function (a) { return "<li>" + esc(typeof a === "string" ? a : JSON.stringify(a)) + "</li>"; }).join("") + "</ul>", "alerta");
+    var avTodos = arr(res.avisos).concat(arr(res.avisosAnalise)), avB = avTodos.filter(function (a) { return clAv(a) === "bloqueante"; }), avP = avTodos.filter(function (a) { return clAv(a) !== "bloqueante"; }), li = function (a) { return "<li>" + esc(typeof a === "string" ? a : JSON.stringify(a)) + "</li>"; };
+    if (avB.length) h += caixa("<b>Avisos em aberto da análise (bloqueantes):</b><ul>" + avB.map(li).join("") + "</ul>", "alerta");
+    if (avP.length) h += caixa("<b>Premissas adotadas na análise (informativas, ver seção 9):</b><ul>" + avP.map(li).join("") + "</ul>", "neutra");
     S.push(h);
 
     /* 6 verificações */
@@ -119,7 +122,7 @@
     if (L.verga && L.verga.naV) { var nv = L.verga.naV; h += caixa("<b>Verga → V, fendilhamento (N2):</b> modo " + esc(nv.modoF90 || "direto") + (nv.reforcoF90 ? " — reforço de rosca total: " + esc(typeof nv.reforcoF90 === "string" ? nv.reforcoF90 : JSON.stringify(nv.reforcoF90)) : "") + (L.verga.parafusosReforcoVerga ? " — " + br(L.verga.parafusosReforcoVerga, 0) + " parafuso(s) de reforço na verga" : "") + "."); }
     if (L.rigidezBase && L.rigidezBase.Ktheta) h += caixa("<b>Rigidez da base (N6):</b> Kθ = " + br(L.rigidezBase.Ktheta, 0) + " kN·m/rad, calculada pela ligação dimensionada (" + esc(L.rigidezBase.nota || "") + "; K_u = ⅔·K_ser, NBR 7190-1:2022, 7.1.12). " + esc(L.rigidezBase.declarado || ""));
     arr(L.notas).forEach(function (a) { h += caixa("<b>Nota de especificação:</b> " + esc(a), "alerta"); });
-    arr(L.avisos).forEach(function (a) { h += caixa("<b>Aviso do motor:</b> " + esc(a), "alerta"); });
+    arr(L.avisos).forEach(function (a) { h += clAv(a) === "bloqueante" ? caixa("<b>Aviso do motor:</b> " + esc(a), "alerta") : caixa("<b>Premissa adotada:</b> " + esc(a), "neutra"); });
     S.push(h);
 
     /* 8 reações */
@@ -130,9 +133,18 @@
     /* 9 auditoria */
     h = "";
     if (sit.itens.length) {
-      h += "<p>Itens abertos (todos precisam ser resolvidos antes da emissão):</p>" + d.tab("Pendências, avisos e reprovações", [I.thn("#"), "Tipo", "O que é", "Correção"], sit.itens.map(function (x, i) { return trw([td(String(i + 1), "n"), td(esc(x.tipo)), td(esc(x.texto)), td(esc(x.correcao || ""))], "linha-falha"); }), {});
-    } else h += "<p>Nenhuma pendência, aviso ou achado aberto.</p>";
+      h += "<p>Itens abertos que BLOQUEIAM a emissão (todos precisam ser resolvidos antes):</p>" + d.tab("Pendências bloqueantes e reprovações", [I.thn("#"), "Tipo", "O que é", "Correção"], sit.itens.map(function (x, i) { return trw([td(String(i + 1), "n"), td(esc(x.tipo)), td(esc(x.texto)), td(esc(x.correcao || ""))], "linha-falha"); }), {});
+    } else h += "<p>Nenhuma pendência bloqueante, achado ou reprovação aberta.</p>";
+    h += premissasHtml(sit);
     S.push(h);
+
+    /* T7 (E4 r6): o deck calculado entra com cada conta (fórmula → números → resultado), antes da responsabilidade técnica */
+    if (res.deck && arr(res.deck.memorial).length) {
+      SEC.splice(SEC.length - 1, 0, "Deck elevado, escada e guarda-corpo (T7)");
+      h = "<p>Verificação pela NBR 7190-1:2022 (classe de umidade " + esc(res.deck.umidade) + "), NBR 6120:2019 (Tab. 10 e 12) e NBR 14718:2019 (Tab. 1). η máximo = " + br(res.deck.etaMax, 3) + ". As contas à mão do caso de referência estão em docs/madeira/T7-REFERENCIA.md.</p>" +
+        arr(res.deck.memorial).map(function (l) { return l === "" ? "" : "<p>" + esc(l) + "</p>"; }).join("");
+      S.push(h);
+    }
 
     /* 10 termo */
     h = "<p>Responsável técnico: " + I.ph(rp.abrev || rp.titulo, "TÍTULO") + " " + I.ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + ", " + esc(rp.conselho || "CREA") + " nº " + I.ph(rp.crea, "Nº DO REGISTRO") + " — " + I.ph(rp.empresa, "EMPRESA") + ".</p>" + caixa("<b>" + FAIXA + ".</b>", "alerta");

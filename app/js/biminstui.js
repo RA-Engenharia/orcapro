@@ -298,6 +298,7 @@
       var b = B(), est = b && b.editarEstado ? b.editarEstado() : null; if (!est || !BI()) return null;
       U._verif = BI().verificar(est.estado, b.familiaAvaliar);
       U._crit = U.criterios(est.estado, b.familiaAvaliar);
+      U._achados = U.achadosCorr(est);   /* N23: cada achado com o seu Corrigir (js/hidcriterios.js HidCorrigir) */
       U.abrirPainel();
       var r = U._verif, cr = U._crit;
       status((r.total ? "Verificar sistemas: " + r.total + " item(ns) — " + r.erros + " erro(s). A lista está no painel Instalações." : "Verificar sistemas: nada a corrigir (" + r.sistemas.length + " sistema(s)).") +
@@ -319,9 +320,40 @@
       status(a.titulo + ": " + a.texto);
       return true;
     };
+    /* ⚠ N23 (25/10/2026) — CORRIGIR O TRAÇADO FEITO À MÃO: os achados do Verificar e do critério de projetista com a correção que
+       mantém a intenção (js/hidcriterios.js HidCorrigir); a correção abre a prévia (js/hidkitui.js corrigirAchado: Enter aplica num
+       lote, um Ctrl+Z desfaz) e "Corrigir tudo neste ambiente" junta as do cômodo */
+    U.achadosCorr = function (est) {
+      var HC = global.HidCorrigir, b = B(); if (!HC || !est || !b) return null;
+      try { return HC.achados({ estado: est.estado, avaliarFam: b.familiaAvaliar, ops: b.editarOps ? b.editarOps() : [] }); } catch (e) { return null; }
+    };
+    function arrN(a) { return Array.isArray(a) ? a : []; }   /* N23: este escopo não tem o arr() */
+    U._achadoDe = function (origem, k) { var pre = origem + k + ":"; return arrN(U._achados).filter(function (a) { return String(a.chave).indexOf(pre) === 0; })[0] || null; };
+    U._botaoCorrigir = function (origem, k) {
+      var a = U._achadoDe(origem, k); if (!a || !a.correcao || a.correcao.tipo === "rt") return "";
+      return ' <button class="btn sm" data-inst="ach-corrigir" data-k="' + esc(a.chave) + '" title="' + esc(a.correcao.texto || "") + '">Corrigir</button>';
+    };
+    U._htmlAmbientesCorrigir = function () {
+      var HC = global.HidCorrigir, b = B(), est = b && b.editarEstado ? b.editarEstado() : null; if (!HC || !est || !arrN(U._achados).length) return "";
+      var ctx = { estado: est.estado, avaliarFam: b.familiaAvaliar }, h = "";
+      arrN(est.estado.ambientes).forEach(function (am) {
+        var n = arrN(U._achados).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante)$/.test(a.correcao.tipo) && HC._int.noAmbiente(ctx, a, am); }).length;
+        if (n) h += ' <button class="btn sm" data-inst="amb-corrigir" data-id="' + esc(am.id) + '" title="Corrige, um por um, o que se corrige sozinho neste cômodo (prévia antes; um Ctrl+Z desfaz)">Corrigir tudo neste ambiente: ' + esc(am.nome || am.id) + " (" + n + ")</button>";
+      });
+      return h ? '<div data-inst="amb-corrigir-lista" style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0">' + h + "</div>" : "";
+    };
+    U.corrigirAchado = function (chave) {
+      var K = global.HidKitUI, a = arrN(U._achados).filter(function (x) { return x.chave === chave; })[0];
+      if (!a || !K || !K.corrigirAchado) { status("Corrigir: rode o Verificar sistemas de novo (o modelo mudou)."); return null; }
+      return K.corrigirAchado(a);
+    };
     U.critCorrigir = function (i) {
       var a = U._crit && U._crit.apontamentos[i], K = global.HidKitUI, c = a && a.corrigir; if (!a || !c) return false;
       if (c.tipo === "rt") { status("Decisão do RT/estrutural: " + c.texto + " — " + a.texto); return false; }
+      /* N23: com o motor de correção, a mesma prévia do Corrigir (a luva, o passante, as ops do achado; refazer pelo Traçar) */
+      /* casa pela REGRA e pelos ids (a posição na lista muda quando o modelo muda) */
+      var idsA = arrN(a.ids).map(String).join(","), aC = arrN(U._achados).filter(function (x) { return x.origem === "criterio" && x.regra === a.regra && x.ids.join(",") === idsA; })[0] || null;
+      if (aC && aC.correcao && K && K.corrigirAchado) { K.corrigirAchado(aC); return true; }
       if (c.tipo === "juntar" && c.ids.length === 2) return U.critJuntar(c.ids[0], c.ids[1]);
       /* FRENTE H6: o Corrigir do aparelho a gás (NBR 13103) — as ops do achado num lote (Ctrl+Z desfaz) e a lista refeita */
       if (c.tipo === "ops" && Array.isArray(c.ops) && c.ops.length) {
@@ -331,14 +363,14 @@
         return okO;
       }
       /* refazer: o traçado do(s) aparelho(s) servido(s) por aquele trecho, pelo motor que já obedece às regras (prévia + Aplicar) */
-      if (K && K.tracarAuto && arr(c.aparelhos).length) { K.tracarAuto({ uids: c.aparelhos.map(function (id) { return "edit:" + id; }), todos: true }); return true; }
+      if (K && K.tracarAuto && arrN(c.aparelhos).length) { K.tracarAuto({ uids: c.aparelhos.map(function (id) { return "edit:" + id; }), todos: true }); return true; }
       status("Corrigir: " + a.titulo + " — o trecho não está ligado a um aparelho; ajuste à mão (" + c.texto + ").");
       return false;
     };
     /* luva desnecessária: os dois trechos viram um (mesmo id do primeiro), num lote só (Ctrl+Z desfaz) */
     U.critJuntar = function (ida, idb) {
       var b = B(), est = b && b.editarEstado ? b.editarEstado() : null; if (!est) return false;
-      var T = arr(est.estado.instalacoes && est.estado.instalacoes.trechos), ta = T.filter(function (t) { return t.id === ida; })[0], tb = T.filter(function (t) { return t.id === idb; })[0];
+      var T = arrN(est.estado.instalacoes && est.estado.instalacoes.trechos), ta = T.filter(function (t) { return t.id === ida; })[0], tb = T.filter(function (t) { return t.id === idb; })[0];
       if (!ta || !tb) return false;
       function dd(p, q) { return Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z); }
       var ends = [[ta.p1, tb.p2], [tb.p1, ta.p2]].sort(function (u, v) { return dd(v[0], v[1]) - dd(u[0], u[1]); })[0];
@@ -456,10 +488,10 @@
       if (U._verif) {
         var r = U._verif;
         h += '<div data-inst="verificacao" style="font-size:12px;margin:4px 0 10px"><b>Verificar sistemas</b> — ' + (r.total ? r.total + " item(ns), " + r.erros + " erro(s)" : "nada a corrigir") +
-          '<ul style="margin:4px 0;padding-left:18px">' + r.itens.slice(0, 60).map(function (i) {
+          '<ul style="margin:4px 0;padding-left:18px">' + r.itens.slice(0, 60).map(function (i, k) {
             return '<li data-inst-verif="' + esc(i.tipo) + '" style="color:' + (i.gravidade === "erro" ? "var(--vermelho,#b91c1c)" : "var(--amarelo,#b45309)") + '"><b>' + esc(i.rotuloTipo) + ":</b> " + esc(i.texto) +
-              (i.ids.length ? ' <button class="btn sm" data-inst="p12-ir" data-id="' + esc(i.ids[0]) + '">ver</button>' : "") + "</li>";
-          }).join("") + "</ul></div>";
+              (i.ids.length ? ' <button class="btn sm" data-inst="p12-ir" data-id="' + esc(i.ids[0]) + '" title="Mostrar no 3D">ver</button>' : "") + U._botaoCorrigir("v", k) + "</li>";
+          }).join("") + "</ul>" + U._htmlAmbientesCorrigir() + "</div>";
       }
       if (U._crit && U._crit.trechos) {
         var Q = U._crit, corG = { dura: "var(--vermelho,#b91c1c)", alerta: "var(--amarelo,#b45309)", sugestao: "var(--texto2,#475569)" }, rotG = { dura: "PROIBIDO", alerta: "Alerta", sugestao: "Sugestão" };
@@ -499,6 +531,8 @@
       if (a === "p12-ilum") { if (global.EletIlumUI) global.EletIlumUI.abrir(); return true; }
       if (a === "crit-ver") { U.critMostrar(Number(bt.getAttribute("data-n"))); return true; }
       if (a === "crit-corrigir") { U.critCorrigir(Number(bt.getAttribute("data-n"))); return true; }
+      if (a === "ach-corrigir") { U.corrigirAchado(bt.getAttribute("data-k")); return true; }
+      if (a === "amb-corrigir") { var Kc = global.HidKitUI; if (Kc && Kc.corrigirAmbiente) Kc.corrigirAmbiente(bt.getAttribute("data-id")); return true; }
       if (a === "p12-desc") { U.alternarDesconexoes(!U._desc); U.renderPainel(); return true; }
       if (a === "p12-cores") { U._modoCorManual = true; U.alternarModoCor(U.modoCor === "sistema" ? "material" : "sistema"); U.renderPainel(); return true; }
       if (a === "p12-avisos") { U.filtrosAviso(!U._avisos); U.renderPainel(); return true; }

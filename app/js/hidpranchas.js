@@ -377,9 +377,12 @@
         var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
         D.texto(x + K2.folgaVista, y + KI.h, tit + "  (ESC 1:" + ph.escala + ")", KI.h, { peso: 0.16, attr: ' data-titulo-corte="1"' });
         desenhar(D, d, ox, oy, chk);
-        if (d.cotaXs.length > 2) {
-          var P = d.cotaXs.map(function (xx) { return [xx + ox, d.yFundo + oy + K2.folgaCorte / 2]; }), vals = [];
-          for (var i = 0; i + 1 < d.cotaXs.length; i++) vals.push(String(Math.round((d.cotaXs[i + 1] - d.cotaXs[i]) / (1000 / ph.escala) * 100)));   // hid:ok m → cm (cota de comprimento)
+        /* a cadeia de cotas não tem trecho de menos de 4 mm de papel (7 cm a 1:25): o número não cabe entre as chamadas e saía em cima de uma cota
+           (rótulo × cota na parede hidráulica 15 do projeto exemplo, 25/10/2026) — o ponto que cai tão perto do anterior fica de fora da cadeia */
+        var cxs = d.cotaXs.filter(function (xx, i, A) { return i === 0 || xx - A[i - 1] >= 4 || i === A.length - 1; });
+        if (cxs.length > 2) {
+          var P = cxs.map(function (xx) { return [xx + ox, d.yFundo + oy + K2.folgaCorte / 2]; }), vals = [];
+          for (var i = 0; i + 1 < cxs.length; i++) vals.push(String(Math.round((cxs[i + 1] - cxs[i]) / (1000 / ph.escala) * 100)));   // hid:ok m → cm (cota de comprimento)
           var nSg = D.sg.length; D.cadeia(P, 0, vals, {});
           for (var q = nSg; q < D.sg.length; q++) chk.cotas.push(D.sg[q]);
         }
@@ -467,7 +470,10 @@
   /* a camada (layer) vai no SVG (data-cam): o DXF sai com os nomes do padrão (HID-AF-TUBO…), não por palpite da cor */
   function marcarCamadas(D) {
     var base = D.estilo;
-    D.estilo = function (cam, extra) { return base.call(this, cam, extra) + ' data-cam="' + esc(cam) + '"'; };
+    /* ⚠ 25/10/2026: o estilo de base (js/acopranchas.js) JÁ põe data-cam nas camadas MET-* (as cotas usam MET-COTA): somar o nosso repetia o atributo e o SVG
+       da folha ficava INVÁLIDO ("Attribute data-cam redefined") — o navegador parava de desenhar a folha na primeira cota (as plantas e os cortes do hidro,
+       achado ao pôr as pranchas do projeto exemplo nas abas; a mesma falha das pranchas de arquitetura). Só põe quando a base não pôs. */
+    D.estilo = function (cam, extra) { var s = base.call(this, cam, extra); return / data-cam="/.test(s) ? s : s + ' data-cam="' + esc(cam) + '"'; };
     return D;
   }
   function desenharContexto(D, ctx, s, ox, oy) {

@@ -438,12 +438,15 @@
          DN no corte não aparecia no corte até reabrir a vista */
       var ids = P.plantasAbertas();
       if (recalcular && P._cache) Object.keys(P._cache).forEach(function (k) { if (/^d2[cv]-/.test(k) && ids.indexOf(k) < 0) ids.push(k); });
+      /* FLUIDEZ (25/10/2026): o modelo mudou — o desenho de antemão das vistas que ainda não abriram deixa de valer */
+      if (recalcular && P.mudou) { try { P.mudou(); } catch (eM) {} }
       ids.forEach(function (k) {
         try {
           /* FLUIDEZ (17/10/2026): a planta ESCONDIDA (outra aba de vista na frente) não se refaz agora — fica marcada e se
-             refaz ao aparecer (Bim2D.montar). Antes cada troca de DN no 3D extraía de novo todas as plantas abertas. */
+             refaz ao aparecer (Bim2D.montar). Antes cada troca de DN no 3D extraía de novo todas as plantas abertas.
+             (25/10/2026: Bim2D.sujar marca E chama a fila de segundo plano — com a pessoa parada ela já se refaz escondida) */
           var c = P._cache && P._cache[k];
-          if (recalcular && c && c.el && P.visivel && !P.visivel(k)) { c.sujo = true; return; }
+          if (recalcular && c && c.el && P.visivel && !P.visivel(k)) { if (P.sujar) P.sujar(k); else c.sujo = true; return; }
           if (recalcular) P.atualizar(k); else P.redesenhar(k, false);
         } catch (e) {}
       });

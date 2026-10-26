@@ -191,12 +191,12 @@
     var pr = MadDim.perfilEResist(o.classe, o.perfil), p = pr.p, f = pr.f;
     var b = o.b, h = o.h, A = b * h, Wy = b * h * h / 6, Wz = h * b * b / 6;
     var N = o.N || 0, sMy = Math.abs(o.My || 0) / Wy / 1e3, sMz = Math.abs(o.Mz || 0) / Wz / 1e3;
-    var res = { verif: [], eta: 0, governa: null };
+    var res = { verif: [], eta: 0, governa: null, esbelto: false, lambda: null };
     function add(nome, eta, passos) { res.verif.push({ nome: nome, eta: eta, passos: passos }); if (eta > res.eta) { res.eta = eta; res.governa = nome; } }
     if (N < 0) {
       var c = MadDim.compressao2022({ N: -N, Mx: o.My, My: o.Mz, b: b, h: h, L0x: o.L0y, L0y: o.L0z, classe: o.classe, perfil: o.perfil });
       add("flexocompressão", c.esbelto ? Math.max(c.eta, 1.0001) : c.eta, c.passos);
-      res.lambda = c.lambda; res.kc = c.kc;
+      res.lambda = c.lambda; res.kc = c.kc; res.esbelto = !!c.esbelto;      // E4: o laço de crescimento lê ESTE campo (λ > limite), nunca o η sentinela 1,0001 acima
     } else {
       var sT = N / A / 1e3;
       var e1 = sT / f.ft0d + sMy / f.fmd + p.kM * sMz / f.fmd, e2 = sT / f.ft0d + p.kM * sMy / f.fmd + sMz / f.fmd;
@@ -344,6 +344,20 @@
     if (r > 1e6) x = Math.PI / 2;
     else { lo = 1e-9; hi = Math.PI / 2 - 1e-12; for (i = 0; i < 200; i++) { x = (lo + hi) / 2; if (x * Math.tan(x) > r) hi = x; else lo = x; } x = (lo + hi) / 2; }
     return { beta: Math.PI / x, x: x, CL_EI: r, passos: ["Pilar em balanço com mola de base C = " + br(C, 0) + " kN·m/rad: C·L/EI = " + br(r, 2) + "; x·tan x = C·L/EI ⇒ x = " + br(x, 4) + "; β = π/x = " + br(Math.PI / x, 3) + " (L0 = β·L; engaste perfeito = 2,0)."] };
+  };
+
+  /**
+   * E4 r11 — comprimento de flambagem de PILAR ENGASTADO-APOIADO: base com MOLA DE ROTAÇÃO C (a ligação real, semirrígida) e TOPO TRAVADO LATERALMENTE (contraventamento verificado; a rotação do topo fica livre).
+   * Elástica: y = A·sen kx + B·cos kx + (R/P)(L − x); y(0) = y(L) = 0; momento nulo no topo (automático); no pé, EI·y''(0) = C·y'(0)  ⇒  ν·cot ν − 1 = ν²/κ, ν = kL = π/β, κ = C·L/EI.
+   * Limites conferidos: C = 0 ⇒ ν = π (β = 1,0, biapoiado); C → ∞ ⇒ tan ν = ν, ν = 4,4934 (β = 0,699, engastado-apoiado). Sem o contraventamento verificado este modelo NÃO se aplica (usar betaFlambagemMola, topo livre).
+   * o = { C (kN·m/rad), EI (kN·m²), L (m) } → { beta, nu, CL_EI, passos[] }
+   */
+  MadDim.betaEngastadoApoiado = function (o) {
+    var C = o.C, EI = o.EI, L = o.L, k = C * L / EI, NU_MAX = 4.493409457909064, lo = Math.PI + 1e-12, hi = NU_MAX, nu, i;
+    if (!(k > 0)) return { beta: 1, nu: Math.PI, CL_EI: 0, passos: ["Base sem rigidez de rotação: pilar biapoiado, β = 1,0."] };
+    if (k > 1e9) nu = NU_MAX;
+    else { for (i = 0; i < 200; i++) { nu = (lo + hi) / 2; if (nu / Math.tan(nu) - 1 - nu * nu / k > 0) lo = nu; else hi = nu; } nu = (lo + hi) / 2; }
+    return { beta: Math.PI / nu, nu: nu, CL_EI: k, passos: ["Pilar engastado-apoiado (base semirrígida C = " + br(C, 0) + " kN·m/rad, topo travado lateralmente): C·L/EI = " + br(k, 2) + "; ν·cot ν − 1 = ν²/(C·L/EI) ⇒ ν = " + br(nu, 4) + "; β = π/ν = " + br(Math.PI / nu, 3) + " (L0 = β·L; engastado-apoiado perfeito 0,699; biapoiado 1,0)."] };
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = MadDim;

@@ -42,15 +42,21 @@
   /* os blocos da tela, na ordem padrão. `col` = onde mora: "esq" (coluna dos
      gráficos) ou "cheia" (largura inteira, depois da grade). A fila de
      decisões não está aqui: ela é a coluna da direita e não se esconde. */
+  /* ORDEM PADRÃO (25/10/2026): depois do resumo do topo (hero, atalhos e obras em
+     cartão), vêm os números do caixa e o FLUXO — o gráfico que conta a história —,
+     depois os de apoio (categorias, previsão, lucratividade, metas). "Posição de
+     hoje" e "Agenda" repetem o que o hero e a fila já dizem, por isso descem;
+     continuam aqui para quem os quer (Organizar painel). Quem já organizou o
+     painel mantém a ordem dele: só entra aqui quem não tem preferência gravada. */
   var BLOCOS = [
     { id: "tiles", nome: "Caixa (recebido, pago, resultado, saldo a faturar)", col: "esq" },
-    { id: "posicao", nome: "Posição de hoje (a receber, a pagar)", col: "esq" },
-    { id: "agenda", nome: "Agenda da semana", col: "esq" },
-    { id: "previsao", nome: "Previsão de caixa, 30 dias", col: "esq" },
     { id: "fluxo", nome: "Fluxo de caixa por mês", col: "esq" },
     { id: "composicao", nome: "Despesas por categoria e custo por obra", col: "esq" },
+    { id: "previsao", nome: "Previsão de caixa, 30 dias", col: "esq" },
     { id: "lucro", nome: "Lucratividade por mês", col: "esq" },
     { id: "metas", nome: "Metas (medidores)", col: "esq" },
+    { id: "posicao", nome: "Posição de hoje (a receber, a pagar)", col: "esq" },
+    { id: "agenda", nome: "Agenda da semana", col: "esq" },
     { id: "obras", nome: "Obras", col: "cheia" },
     { id: "orcado", nome: "Orçado × gasto", col: "cheia" },
     { id: "operacao", nome: "Operação (contadores)", col: "cheia" }
@@ -256,6 +262,64 @@
       out.terminoSuspeito = out.dias > DIAS_SUSPEITO;
       return out;
     },
+    /* ------------------------------------------------------------------
+     * PRIMEIRA TELA (25/10/2026) — o que o topo do Painel diz, sem DOM.
+     * ------------------------------------------------------------------ */
+    /* "Bom dia" de 5h às 11h59, "Boa tarde" até 17h59, "Boa noite" no resto.
+       A hora vem de fora (o motor não lê o relógio). */
+    saudacao: function (hora) {
+      var h = Number(hora);
+      if (!(h >= 0 && h < 24)) return "Olá";
+      return h >= 5 && h < 12 ? "Bom dia" : (h >= 12 && h < 18 ? "Boa tarde" : "Boa noite");
+    },
+    /* só o primeiro nome, e só de PESSOA: e-mail ou campo vazio não vira
+       "Bom dia, fulano@..." — quem nunca preencheu o nome é saudado sem nome. */
+    primeiroNome: function (nome) {
+      var s = String(nome == null ? "" : nome).replace(/^\s+|\s+$/g, "");
+      if (!s || s.indexOf("@") > -1) return "";
+      return s.split(/\s+/)[0];
+    },
+    /* Conta que ainda não tem NADA (nenhuma obra, lançamento, orçamento ou
+       diário) recebe os passos de começo, não uma tela de zeros. Qualquer um
+       dos quatro já existir tira a conta deste estado — apagar o exemplo não
+       pode devolver o convite se a pessoa já trabalhou. */
+    contaVazia: function (c) {
+      c = c || {};
+      return !(Number(c.obras) > 0 || Number(c.financeiro) > 0 || Number(c.orcamentos) > 0 || Number(c.rdo) > 0);
+    },
+    /* A linha "próximo marco" do cartão da obra. O único marco com data que o
+       Painel guarda é a ENTREGA; o texto diz isso e não finge outro. `l` é a
+       linha da obra do próprio modelo (prazo, entregue, status, fim). */
+    proximoMarco: function (l) {
+      var pz = (l && l.prazo) || {}, n, dd = "";
+      if (l && l.entregue) return { tom: "ok", texto: "Obra entregue" };
+      if (!pz.temDatas) return { tom: "neutro", texto: "Informe início e término da obra" };
+      if (pz.vencido) { n = -pz.dias; return { tom: "alerta", texto: "Prazo venceu há " + n + (n === 1 ? " dia" : " dias") }; }
+      if (pz.terminoSuspeito) return { tom: "aviso", texto: "Confira o término: fica a mais de 5 anos" };
+      if (l && /^\d{4}-\d{2}-\d{2}/.test(String(l.fim || ""))) dd = ", " + String(l.fim).slice(8, 10) + "/" + String(l.fim).slice(5, 7);
+      if (pz.dias === 0) return { tom: "aviso", texto: "Entrega hoje" };
+      if (pz.dias === 1) return { tom: "aviso", texto: "Entrega amanhã" + dd };
+      return { tom: pz.dias <= 15 ? "aviso" : "neutro", texto: "Entrega em " + pz.dias + " dias" + dd };
+    },
+    /* Quais obras viram cartão e em que ordem: em andamento primeiro, depois
+       pausada, planejamento e concluída; dentro do status, a entrega mais
+       próxima primeiro (sem data por último). Corta em `max`; o resto vira a
+       contagem do "ver todas". `semDinheiro` = quem não pode ver Financeiro. */
+    cartoesObras: function (obras, max) {
+      var ordem = { andamento: 0, pausada: 1, planejamento: 2, concluida: 3 };
+      var todas = ((obras && obras.comMovimento) || []).concat((obras && obras.semMovimento) || []);
+      var ord = todas.map(function (l, i) { return { l: l, i: i }; });
+      ord.sort(function (x, y) {
+        var sx = own(ordem, x.l.status) ? ordem[x.l.status] : 9, sy = own(ordem, y.l.status) ? ordem[y.l.status] : 9;
+        if (sx !== sy) return sx - sy;
+        var dx = (x.l.prazo && x.l.prazo.dias != null) ? x.l.prazo.dias : 1e9, dy = (y.l.prazo && y.l.prazo.dias != null) ? y.l.prazo.dias : 1e9;
+        if (dx !== dy) return dx - dy;
+        return x.i - y.i;
+      });
+      var m = max > 0 ? max : 6, lista = ord.map(function (x) { return x.l; });
+      return { itens: lista.slice(0, m), restantes: Math.max(0, lista.length - m), total: lista.length };
+    },
+
 
     /* ------------------------------------------------------------------
      * JANELA DO PERÍODO e a janela ANTERIOR (para a variação e a comparação).
@@ -503,7 +567,7 @@
           orcado = { previsto: orc.previsto, gasto: orc.gasto, consumidoPct: orc.previsto > 0 ? Math.round(orc.gasto / orc.previsto * 100) : null, estourou: orc.previsto > 0 && orc.gasto > orc.previsto };
           if (orcado.estourou) avisos.push("estouro");
         }
-        var linha = { id: o.id, nome: o.nome || "", status: o.status || "", entregue: pz.entregue, prazo: pz, avanco: semPct ? null : av, defasagem: defas, sinal: sinal,
+        var linha = { id: o.id, nome: o.nome || "", status: o.status || "", entregue: pz.entregue, prazo: pz, fim: ehISO(o.termino || o.previsaoFim) ? String(o.termino || o.previsaoFim).slice(0, 10) : "", avanco: semPct ? null : av, defasagem: defas, sinal: sinal,
           contratado: ctrPorObra[o.id] > 0 ? ctrPorObra[o.id] : 0, valorObra: num(o.valor), base: base, semContrato: !(ctrPorObra[o.id] > 0),
           recebido: a.rec, custoPago: a.custo, margem: (a.rec > 0 && a.custo > 0) ? (a.rec - a.custo) / a.rec * 100 : null,
           custoM2: (a.custo > 0 && area > 0) ? a.custo / area : null, area: area, orcado: orcado, avisos: avisos };

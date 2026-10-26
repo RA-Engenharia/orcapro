@@ -218,10 +218,14 @@
   }
 
   /* ------------------------------------------------------------------ OBSTÁCULOS: móvel FIXO (não se põe tomada atrás) e bancada */
-  var FIXO = /guarda-roupa|closet|^ra-coz-|armario|estante|^ra-banho-bancada|^ra-bancada|^hid-pia|^hid-tanque|^hid-lavatorio|^hid-cuba|^ra-lavatorio|^ra-banho-hidromassagem|^ra-lazer-churrasqueira|^hid-bacia|^ra-bacia/;
-  var BANCADA = /^ra-coz-inferior$|^ra-bancada$|^ra-banho-bancada$|^hid-lavatorio|^hid-cuba-apoio$|^ra-lavatorio/;
-  var LAVATORIO = /^hid-lavatorio|^hid-cuba-apoio$|^ra-lavatorio|^ra-banho-bancada$/;
-  var PIA = /^hid-pia-cozinha$|^ra-coz-inferior$|^ra-bancada$/;
+  /* ⚠ 25/10/2026 (projeto exemplo completo): a BANCADA DE PEDRA da Marmoraria (js/marmoraria.js — ra-marm-bancada-banho e
+     ra-marm-bancada-cozinha, a que o "Equipar ambiente" põe no padrão médio/alto) é bancada, lavatório e pia como as outras: sem ela
+     nas listas os pontos diziam "sem bancada da pia modelada" e "sem lavatório modelado" com a bancada no lugar, e a tomada da
+     pia e a do lavatório não saíam */
+  var FIXO = /guarda-roupa|closet|^ra-coz-|armario|estante|^ra-banho-bancada|^ra-bancada|^ra-marm-bancada-|^hid-pia|^hid-tanque|^hid-lavatorio|^hid-cuba|^ra-lavatorio|^ra-banho-hidromassagem|^ra-lazer-churrasqueira|^hid-bacia|^ra-bacia/;
+  var BANCADA = /^ra-coz-inferior$|^ra-bancada$|^ra-banho-bancada$|^ra-marm-bancada-|^hid-lavatorio|^hid-cuba-apoio$|^ra-lavatorio/;
+  var LAVATORIO = /^hid-lavatorio|^hid-cuba-apoio$|^ra-lavatorio|^ra-banho-bancada$|^ra-marm-bancada-banho$/;
+  var PIA = /^hid-pia-cozinha$|^ra-coz-inferior$|^ra-bancada$|^ra-marm-bancada-cozinha$/;
   var BOX = /^ra-banho-box$|^ra-banho-hidromassagem$/, CHUVEIRO = /^hid-chuveiro$|^ra-chuveiro$/;
 
   var EleRegras = {

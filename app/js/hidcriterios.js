@@ -931,8 +931,235 @@
     return "Qualidade do traçado: " + A.nota + "/100 (" + A.conceito + ") — " + c.dura + " proibido(s), " + c.alerta + " alerta(s), " + c.sugestao + " sugestão(ões).";
   }
 
+  /* =====================================================================================================================
+   * CORRIGIR O TRAÇADO FEITO À MÃO (N23, pedido do Rogério 24–25/10/2026): "se o usuário traçar errado, o sistema já sabe o que
+   * está errado e POR QUÊ" — todo achado do Verificar sistemas (js/biminst.js verificar/conectividade) e do critério de projetista
+   * (acima) ganha o seu Corrigir, que refaz AQUELE trecho mantendo a intenção do usuário: os PONTOS em planta e a rota ficam; muda
+   * só o que a regra pede (a cota, o sentido, a ponta que não chegou, a bitola, o passante). "Corrigir tudo neste ambiente" junta os
+   * achados do cômodo. O motor só PROPÕE as ops (a tela mostra a prévia, Enter aplica num lote, UM Ctrl+Z desfaz); nada é apagado
+   * sem aparecer na prévia (`apagados`), e a correção que piora o modelo (ponta nova solta, aviso novo) é recusada com o motivo.
+   *   HidCorrigir.achados(ctx) → [{ chave, origem, tipo, gravidade, titulo, texto, ids, ponto, correcao: {tipo, texto} | null }]
+   *   HidCorrigir.propor(ctx, achado) → { ok, ops, texto, mudados, apagados, motivo }
+   *   HidCorrigir.ambiente(ctx, ambienteId) → { ok, ops, textos, corrigidos, restam, motivo }
+   *   ctx = { estado, avaliarFam, ops? }
+   * ===================================================================================================================== */
+  var CORR = {
+    captura: 0.10,       // hid:ok m: a ponta solta encosta no ponto/tubo/peça do mesmo sistema até esta distância (critério de desenho)
+    iteracoes: 12        // hid:ok quantas correções em série no "Corrigir tudo neste ambiente" (cada uma no modelo já corrigido)
+  };
+  function corrBE() { return dep("BimEdit", "./bimedit.js"); }
+  function d3c(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
+  function porIdTr(estado) { var o = {}; arr(estado && estado.instalacoes && estado.instalacoes.trechos).forEach(function (t) { o[String(t.id)] = t; }); return o; }
+  function aplicarEm(ctx, ops) {
+    var BE = corrBE(); if (!BE || !BE.aplicar || !ctx.ops) return null;
+    try { return BE.aplicar(arr(ctx.ops).concat([{ op: "lote", id: "previa-corrigir", ops: JSON.parse(JSON.stringify(ops)) }])); } catch (e) { return null; }
+  }
+  /* o que o Verificar acusa num estado (para comparar antes × depois): pontas soltas, conectores sem tubo e avisos por trecho */
+  function placar(estado, avaliarFam) {
+    var B = BI(); if (!B || !estado) return null;
+    var V = null; try { V = B.verificar(estado, avaliarFam); } catch (e) { return null; }
+    var p = { ponta: 0, conector: 0, inclinacao: 0, bitola: 0, porTrecho: {} };
+    V.itens.forEach(function (i) { if (p[i.tipo] != null) p[i.tipo]++; p.total = (p.total || 0) + 1; arr(i.ids).forEach(function (id) { (p.porTrecho[id] = p.porTrecho[id] || []).push(i.tipo); }); });
+    /* REVISÃO: e o critério de projetista — nenhum PROIBIDO novo (viga, pilar, vão, laje sem passante…) por causa da correção */
+    try { var Q0 = auditar(doEstado(estado, avaliarFam)); p.dura = Q0 && Q0.contagem ? Q0.contagem.dura : 0; p.alerta = Q0 && Q0.contagem ? Q0.contagem.alerta : 0; } catch (eQ) { p.dura = 0; p.alerta = 0; }
+    return p;
+  }
+  /* a correção NÃO pode piorar: nenhuma ponta solta nova, nenhum conector sem tubo novo, nenhum aviso de inclinação/bitola novo */
+  function naoPiora(ctx, ops, alvoTipo, alvoId) {
+    var antes = placar(ctx.estado, ctx.avaliarFam), est2 = aplicarEm(ctx, ops), depois = est2 ? placar(est2, ctx.avaliarFam) : null;
+    if (!antes || !depois) return { ok: false, motivo: "não consegui conferir a correção no modelo" };
+    if (depois.ponta > antes.ponta) return { ok: false, motivo: "a correção deixaria " + (depois.ponta - antes.ponta) + " ponta(s) solta(s) nova(s)" };
+    if (depois.conector > antes.conector) return { ok: false, motivo: "a correção soltaria " + (depois.conector - antes.conector) + " ponto(s) de aparelho" };
+    if (depois.inclinacao > antes.inclinacao - (alvoTipo === "inclinacao" ? 1 : 0)) return { ok: false, motivo: "a inclinação continua (ou outra ficou) fora da mínima" };
+    if (alvoId && arr(depois.porTrecho[alvoId]).indexOf(alvoTipo) >= 0) return { ok: false, motivo: "o trecho " + alvoId + " continua com o mesmo problema" };
+    if (depois.dura > antes.dura) return { ok: false, motivo: "a correção criaria " + (depois.dura - antes.dura) + " PROIBIDO(s) de projetista (viga, pilar, vão, laje…)" };
+    if (depois.alerta > antes.alerta) return { ok: false, motivo: "a correção criaria " + (depois.alerta - antes.alerta) + " alerta(s) de projetista novo(s)" };
+    return { ok: true, estado: est2 };
+  }
+  /* ⚠ REVISÃO (25/10/2026): a op "trecho" SUBSTITUI o tubo inteiro — a correção parte da ÚLTIMA op do usuário para aquele id (todos
+     os campos dele: isolamento, fase criada/demolida, comentários, saída livre, juntas, redeParte, tomada, passantes…) e troca só a
+     geometria/DN. As marcas de GERADO (kit/ambiente) saem: o tubo refeito à mão passa a ser edição manual — o kit/ambiente pergunta
+     antes de refazer por cima (js/hidkit.js e js/hidkitui.js _ambManual contam a op "trecho"). */
+  var MARCAS_GERADO = ["kit", "kitParte", "kitAss", "kitTipo", "amb", "ambInfo"];
+  function opOriginal(ctx, id) {
+    var ult = null;
+    (function rec(L) { arr(L).forEach(function (o) { if (!o) return; if (o.op === "lote") rec(o.ops); else if (o.op === "trecho" && String(o.id) === String(id)) ult = o; else if (o.op === "acessorio" && o.novoId != null && String(o.novoId) === String(id)) ult = null; }); })(ctx && ctx.ops);
+    return ult ? JSON.parse(JSON.stringify(ult)) : null;
+  }
+  function comOriginal(ctx, o) {
+    if (!o || o.op !== "trecho") return o;
+    var base = opOriginal(ctx, o.id); if (!base) return o;
+    Object.keys(o).forEach(function (k) { base[k] = o[k]; });
+    MARCAS_GERADO.forEach(function (k) { delete base[k]; });
+    return base;
+  }
+  function opTrecho(t, p1, p2, ctx) {
+    var B = BI(), o = B && B.opDoTrecho ? B.opDoTrecho(t) : { op: "trecho", id: t.id, sistema: t.sistema, material: t.material, dn: t.dn };
+    o.p1 = { x: r4(p1.x), y: r4(p1.y), z: r4(p1.z) }; o.p2 = { x: r4(p2.x), y: r4(p2.y), z: r4(p2.z) };
+    if (arr(t.passantes).length) o.passantes = JSON.parse(JSON.stringify(t.passantes));
+    if (!ctx) return o;
+    var base = opOriginal(ctx, t.id); if (!base) return o;
+    base.p1 = o.p1; base.p2 = o.p2; base.dn = o.dn; if (o.continua != null) base.continua = o.continua; else delete base.continua;
+    if (o.pecaIni != null) base.pecaIni = o.pecaIni; else delete base.pecaIni; if (o.pecaFim != null) base.pecaFim = o.pecaFim; else delete base.pecaFim;
+    MARCAS_GERADO.forEach(function (k) { delete base[k]; });
+    return base;
+  }
+  /* as ops do BimInst.trocarDn (que monta a op pelo estado) com os campos do usuário preservados */
+  function preservar(ctx, ops) { return arr(ops).map(function (o) { return comOriginal(ctx, o); }); }
+  /* --------------------------------------------- os corretores (cada um só mexe no que a regra pede) */
+  /* INCLINAÇÃO: abaixo da mínima → a ponta de jusante e o que vem depois descem (BimInst.trocarDn com o MESMO DN — a regra do
+     sistema: quem manda é o montante); SOBE no sentido do escoamento → o traço foi desenhado AO CONTRÁRIO (do ralo para o aparelho):
+     o mesmo tubo, com p1 e p2 trocados. Fica a opção que não piora o modelo; as duas pioram → recusa com o motivo. */
+  function corrigirInclinacao(ctx, a) {
+    var B = BI(), t = porIdTr(ctx.estado)[a.ids[0]]; if (!B || !t) return { ok: false, motivo: "trecho não encontrado" };
+    var cands = [];
+    if (t.p2.y > t.p1.y + EPS) {
+      var inv = opTrecho(t, t.p2, t.p1, ctx);
+      if (inv.continua === "p1") inv.continua = "p2"; else if (inv.continua === "p2") inv.continua = "p1";
+      if (inv.pecaIni != null || inv.pecaFim != null) { var pi = inv.pecaIni; inv.pecaIni = inv.pecaFim; inv.pecaFim = pi; if (inv.pecaIni == null) delete inv.pecaIni; if (inv.pecaFim == null) delete inv.pecaFim; }
+      cands.push({ ops: [inv], texto: "o trecho " + t.id + " estava desenhado ao contrário (sobe no sentido do escoamento): mesmo tubo, sentido invertido (p1 ↔ p2)" });
+    }
+    var TD = null; try { TD = B.trocarDn(ctx.estado, ctx.avaliarFam, [t.id], t.dn); } catch (e) { TD = null; }
+    if (TD && TD.ok && TD.ops.length) cands.push({ ops: preservar(ctx, TD.ops), texto: "o trecho " + t.id + " ficou com a inclinação mínima: " + arr(TD.avisos).join("; ") });
+    var motivo = "nenhuma opção fechou";
+    for (var i = 0; i < cands.length; i++) {
+      var np = naoPiora(ctx, cands[i].ops, "inclinacao", t.id);
+      if (np.ok) return { ok: true, ops: cands[i].ops, texto: cands[i].texto, mudados: cands[i].ops.map(function (o) { return String(o.id); }), apagados: [] };
+      motivo = np.motivo;
+    }
+    return { ok: false, motivo: "inclinação de " + t.id + ": " + motivo + " — a ponta de jusante está presa (caixa/peça) e o montante também; mova a peça ou o ponto" };
+  }
+  /* PONTA SOLTA: o tubo terminou perto do ponto (do aparelho, de outro tubo ou da peça do mesmo sistema) e não chegou — a ponta vai
+     até o alvo mais perto (até CORR.captura); a outra ponta e a rota ficam */
+  function corrigirPonta(ctx, a) {
+    var B = BI(), T = porIdTr(ctx.estado), t = T[a.ids[0]]; if (!B || !t || a.ponto == null || a.ponto.x == null) return { ok: false, motivo: "ponta sem posição" };
+    var P = { x: a.ponto.x, y: a.ponto.y, z: a.ponto.z }, qual = d3c(t.p1, P) <= d3c(t.p2, P) ? "p1" : "p2", outra = qual === "p1" ? t.p2 : t.p1;
+    var alvos = [];
+    Object.keys(T).forEach(function (id) { var u = T[id]; if (id === String(t.id) || u.sistema !== t.sistema) return; [u.p1, u.p2].forEach(function (q) { alvos.push({ p: q, o: "a ponta do trecho " + id }); }); });
+    try { var R = B.rede(ctx.estado, ctx.avaliarFam); arr(R.conectoresLivres).forEach(function (k) { if (k.sistema === t.sistema) alvos.push({ p: { x: k.x, y: k.y, z: k.z }, o: "o ponto \"" + k.nome + "\" de " + k.famInst }); }); } catch (eR) {}
+    arr(ctx.estado.instalacoes && ctx.estado.instalacoes.pecas).forEach(function (k) { if (k.sistema === t.sistema && isFinite(num(k.x, NaN))) alvos.push({ p: { x: num(k.x, 0), y: num(k.y, 0), z: num(k.z, 0) }, o: "a peça " + k.id }); });
+    var melhor = null;
+    alvos.forEach(function (q) { var d = d3c(q.p, P); if (d > EPS && d <= CORR.captura && d3c(q.p, outra) > EPS && (!melhor || d < melhor.d)) melhor = { d: d, q: q }; });
+    if (!melhor) return { ok: false, motivo: "nenhum ponto, tubo ou peça do mesmo sistema a até " + fcm(CORR.captura) + " cm da ponta: termine o traço no ponto (ou use Ligar esta peça no aparelho)" };
+    var p1 = qual === "p1" ? melhor.q.p : t.p1, p2 = qual === "p2" ? melhor.q.p : t.p2, ops = [opTrecho(t, p1, p2, ctx)];
+    var np = naoPiora(ctx, ops, "ponta", null);
+    if (np.ok && placar(np.estado, ctx.avaliarFam).ponta < placar(ctx.estado, ctx.avaliarFam).ponta) return { ok: true, ops: ops, texto: "a ponta solta do trecho " + t.id + " foi até " + melhor.q.o + " (" + fcm(melhor.d) + " cm)", mudados: [String(t.id)], apagados: [] };
+    /* esgoto/pluvial: a ponta nova pode ter tirado a inclinação — junto, a mínima pela jusante */
+    var est2 = aplicarEm(ctx, ops), TD = null; try { TD = est2 ? B.trocarDn(est2, ctx.avaliarFam, [t.id], t.dn) : null; } catch (eT) { TD = null; }
+    if (TD && TD.ok && TD.ops.length) {
+      var junto = ops.concat(preservar(ctx, TD.ops)), np2 = naoPiora(ctx, junto, "ponta", null);
+      if (np2.ok) return { ok: true, ops: junto, texto: "a ponta solta do trecho " + t.id + " foi até " + melhor.q.o + " e a inclinação mínima foi refeita pela jusante", mudados: junto.map(function (o) { return String(o.id); }), apagados: [] };
+    }
+    return { ok: false, motivo: "ligar a ponta em " + melhor.q.o + " " + (np.motivo || "não fechou a ligação") };
+  }
+  /* BITOLA fora da lista comercial: o DN comercial mais perto ACIMA (nunca abaixo), com a inclinação mínima do DN novo */
+  function corrigirBitola(ctx, a) {
+    var B = BI(), t = porIdTr(ctx.estado)[a.ids[0]]; if (!B || !t) return { ok: false, motivo: "trecho não encontrado" };
+    var M = B.MATERIAIS[t.material] || {}, dns = arr(M.dns).slice().sort(function (x, y) { return x - y; }), dnC = dns.filter(function (d) { return d >= num(t.dn, 0); })[0];
+    if (dnC == null) return { ok: false, motivo: "DN " + t.dn + " acima do maior DN comercial de " + (M.nome || t.material) };
+    var TD = B.trocarDn(ctx.estado, ctx.avaliarFam, [t.id], dnC); if (!TD.ok) return { ok: false, motivo: TD.erro }; TD.ops = preservar(ctx, TD.ops);
+    var np = naoPiora(ctx, TD.ops, "bitola", t.id); if (!np.ok) return { ok: false, motivo: np.motivo };
+    return { ok: true, ops: TD.ops, texto: "trecho " + t.id + ": DN " + t.dn + " → DN " + dnC + " (bitola comercial de " + (M.nome || t.material) + ")" + (TD.avisos.length ? "; " + TD.avisos.join("; ") : ""), mudados: TD.ops.map(function (o) { return String(o.id); }), apagados: [] };
+  }
+  /* LUVA desnecessária (critério economia.luva): os dois trechos viram um, com o id do primeiro (o segundo SAI e aparece na prévia) */
+  function corrigirLuva(ctx, a) {
+    var T = porIdTr(ctx.estado), ids = arr(a.corrigir && a.corrigir.ids), ta = T[ids[0]], tb = T[ids[1]]; if (!ta || !tb) return { ok: false, motivo: "trechos da emenda não encontrados" };
+    /* as pontas que ficam levam a marca "continua" de quem as tinha (senão a espera do fim vira ponta solta) */
+    function cont(t, q) { return t.continua === "ambos" || t.continua === q; }
+    var pares = [{ a: ta.p1, b: tb.p2, ca: cont(ta, "p1"), cb: cont(tb, "p2") }, { a: tb.p1, b: ta.p2, ca: cont(tb, "p1"), cb: cont(ta, "p2") }].sort(function (u, v) { return d3c(v.a, v.b) - d3c(u.a, u.b); });
+    var e0 = pares[0], novo = opTrecho(ta, e0.a, e0.b, ctx);
+    /* os dois têm de ser o MESMO tubo (material, DN, sistema, isolamento, fase): diferente = não é emenda à toa, não junta */
+    var oa = opOriginal(ctx, ta.id) || {}, ob = opOriginal(ctx, tb.id) || {}, dif = ["sistema", "material", "dn", "isolamento", "faseCriada", "faseDemolida", "pn", "classe", "serie"].filter(function (k) { return JSON.stringify(oa[k] == null ? ta[k] : oa[k]) !== JSON.stringify(ob[k] == null ? tb[k] : ob[k]); });
+    if (dif.length) return { ok: false, motivo: "os trechos " + ta.id + " e " + tb.id + " diferem em " + dif.join(", ") + ": a emenda fica (junte à mão, se for o caso)" };
+    var pass = arr(ta.passantes).concat(arr(tb.passantes)); if (pass.length) novo.passantes = JSON.parse(JSON.stringify(pass));
+    if (e0.ca && e0.cb) novo.continua = "ambos"; else if (e0.ca) novo.continua = "p1"; else if (e0.cb) novo.continua = "p2"; else delete novo.continua;
+    var ops = [{ op: "apagar", id: String(tb.id) }, novo], np = naoPiora(ctx, ops, "luva", null);
+    if (!np.ok) return { ok: false, motivo: np.motivo };
+    return { ok: true, ops: ops, texto: "os trechos " + ta.id + " e " + tb.id + " viram um só (a emenda sai)", mudados: [String(ta.id)], apagados: [String(tb.id)] };
+  }
+  /* FURO NA LAJE sem passante (critério estrutura.laje): o passante lançado no ponto da travessia (HidCriterios.lancarPassantes —
+     a mesma conta do alerta), orçado pela SINAPI do passante */
+  function corrigirPassante(ctx, a) {
+    var T = porIdTr(ctx.estado), ops = arr(a.ids).map(function (id) { var t = T[id]; return t ? opTrecho(t, t.p1, t.p2, ctx) : null; }).filter(Boolean);
+    if (!ops.length) return { ok: false, motivo: "trecho não encontrado" };
+    var L = lancarPassantes(ops, ctx.estado, ctx.avaliarFam);
+    if (!L.n) return { ok: false, motivo: "nenhuma travessia de laje achada nesses trechos" };
+    return { ok: true, ops: ops.filter(function (o) { return arr(o.passantes).length; }), texto: L.n + " passante(s) lançado(s) na laje (" + L.trechos.join(", ") + ")", mudados: L.trechos, apagados: [] };
+  }
+  function correcaoDe(a) {
+    if (a.origem === "verificar") {
+      if (a.tipo === "inclinacao") return { tipo: "inclinacao", texto: /SOBE/.test(a.texto) ? "Corrigir o sentido/a inclinação do trecho (os pontos ficam)" : "Dar a inclinação mínima (a jusante desce, os pontos em planta ficam)" };
+      if (a.tipo === "ponta") return { tipo: "ponta", texto: "Levar a ponta até o ponto/tubo mais perto (até " + fcm(CORR.captura) + " cm)" };
+      if (a.tipo === "bitola") return { tipo: "bitola", texto: "Trocar para a bitola comercial acima" };
+      if (a.tipo === "conector") return { tipo: "ligarPeca", texto: "Ligar esta peça (o kit e a ligação, com a prévia)", famInst: a.ids[0] };
+      return null;
+    }
+    var c = a.corrigir; if (!c) return null;
+    if (a.regra === "economia.luva" && c.tipo === "juntar") return { tipo: "luva", texto: c.texto || "Juntar os dois trechos" };
+    if (a.regra === "estrutura.laje") return { tipo: "passante", texto: "Lançar o passante na laje" };
+    if (c.tipo === "ops" && arr(c.ops).length) return { tipo: "ops", texto: c.texto, ops: c.ops };
+    if (c.tipo === "refazer" && arr(c.aparelhos).length) return { tipo: "tracar", texto: "Refazer pelo Traçar automaticamente (o traçado deste aparelho é refeito, com a prévia)", aparelhos: c.aparelhos };
+    if (c.tipo === "rt") return { tipo: "rt", texto: c.texto };
+    return null;
+  }
+  function achadosCorr(ctx) {
+    var B = BI(), out = [];
+    if (!B || !ctx || !ctx.estado) return out;
+    var V = null; try { V = B.verificar(ctx.estado, ctx.avaliarFam); } catch (e) { V = null; }
+    arr(V && V.itens).forEach(function (i, k) {
+      var a = { chave: "v" + k + ":" + i.tipo + ":" + arr(i.ids).join(","), origem: "verificar", tipo: i.tipo, gravidade: i.gravidade, titulo: i.rotuloTipo, texto: i.texto, ids: arr(i.ids).map(String), ponto: i.x == null ? null : { x: i.x, y: i.y, z: i.z } };
+      a.correcao = correcaoDe(a); out.push(a);
+    });
+    var Q = null; try { Q = auditar(doEstado(ctx.estado, ctx.avaliarFam)); } catch (e2) { Q = null; }
+    arr(Q && Q.apontamentos).forEach(function (q, k) {
+      var a = { chave: "c" + k + ":" + q.regra + ":" + arr(q.ids).join(","), origem: "criterio", tipo: q.regra, regra: q.regra, gravidade: q.gravidade === "dura" ? "erro" : "aviso", titulo: q.titulo, texto: q.texto, porque: q.porque, fonte: q.fonte, ids: arr(q.ids).map(String), ponto: q.ponto || null, corrigir: q.corrigir || null, obstaculo: q.obstaculo || null };
+      a.correcao = correcaoDe(a); out.push(a);
+    });
+    return out;
+  }
+  function proporCorr(ctx, a) {
+    if (!a || !a.correcao) return { ok: false, motivo: "este achado não tem correção automática: veja no 3D e ajuste à mão" + (a && a.corrigir && a.corrigir.texto ? " (" + a.corrigir.texto + ")" : "") };
+    var c = a.correcao, r;
+    try {
+      if (c.tipo === "inclinacao") r = corrigirInclinacao(ctx, a);
+      else if (c.tipo === "ponta") r = corrigirPonta(ctx, a);
+      else if (c.tipo === "bitola") r = corrigirBitola(ctx, a);
+      else if (c.tipo === "luva") r = corrigirLuva(ctx, a);
+      else if (c.tipo === "passante") r = corrigirPassante(ctx, a);
+      else if (c.tipo === "ops") r = { ok: true, ops: JSON.parse(JSON.stringify(c.ops)), texto: c.texto, mudados: c.ops.map(function (o) { return String(o.id); }), apagados: c.ops.filter(function (o) { return o.op === "apagar"; }).map(function (o) { return String(o.id); }) };
+      else return { ok: false, tela: c.tipo, motivo: c.texto, famInst: c.famInst || null, aparelhos: c.aparelhos || null };   /* ligarPeca / tracar / rt: a tela faz (prévia do Traçar) */
+    } catch (e) { r = { ok: false, motivo: "a correção falhou: " + (e && e.message ? e.message : e) }; }
+    return r;
+  }
+  function ambDe(estado, id) { return arr(estado && estado.ambientes).filter(function (x) { return String(x.id) === String(id); })[0] || null; }
+  function noAmbiente(ctx, a, amb) {
+    var pts = arr(amb && amb.calc && amb.calc.contorno); if (pts.length < 3) return false;   // hid:ok polígono tem 3+ vértices (geometria)
+    var T = porIdTr(ctx.estado), P = a.ponto && a.ponto.x != null ? a.ponto : null;
+    if (!P && a.ids.length && T[a.ids[0]]) { var t = T[a.ids[0]]; P = { x: (t.p1.x + t.p2.x) / 2, z: (t.p1.z + t.p2.z) / 2 }; }
+    return !!P && dentroPoli({ x: P.x, z: P.z }, pts);
+  }
+  /* CORRIGIR TUDO NESTE AMBIENTE: um achado por vez, cada um no modelo já corrigido (os ids e as cotas mudam), até não sobrar nada que
+     se corrige sozinho — TODAS as ops num lote (a tela: uma prévia, um Ctrl+Z) */
+  function ambienteCorr(ctx, ambId) {
+    var amb = ambDe(ctx.estado, ambId); if (!amb) return { ok: false, motivo: "ambiente " + ambId + " não encontrado", ops: [] };
+    var ops = [], textos = [], feitos = 0, recusados = {}, c2 = { estado: ctx.estado, avaliarFam: ctx.avaliarFam, ops: arr(ctx.ops) };
+    for (var k = 0; k < CORR.iteracoes; k++) {
+      var lista = achadosCorr(c2).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante)$/.test(a.correcao.tipo) && !recusados[a.chave.replace(/^[vc]\d+:/, "")] && noAmbiente(c2, a, amb); });
+      if (!lista.length) break;
+      var a = lista[0], r = proporCorr(c2, a);
+      if (!r.ok) { recusados[a.chave.replace(/^[vc]\d+:/, "")] = r.motivo; continue; }
+      r.ops.forEach(function (o) { ops.push(o); }); textos.push(r.texto); feitos++;
+      var est2 = aplicarEm(c2, r.ops); if (!est2) break;
+      c2 = { estado: est2, avaliarFam: ctx.avaliarFam, ops: c2.ops.concat([{ op: "lote", id: "previa-corrigir-" + k, ops: JSON.parse(JSON.stringify(r.ops)) }]) };
+    }
+    var restam = achadosCorr(c2).filter(function (a) { return noAmbiente(c2, a, amb); });
+    return { ok: feitos > 0, ops: ops, textos: textos, corrigidos: feitos, restam: restam, recusados: recusados, motivo: feitos ? "" : "nada neste ambiente se corrige sozinho" + (Object.keys(recusados).length ? " (" + Object.keys(recusados).map(function (k2) { return recusados[k2]; }).join("; ") + ")" : "") };
+  }
+  var HidCorrigir = { CORR: CORR, achados: achadosCorr, propor: proporCorr, ambiente: ambienteCorr, _int: { naoPiora: naoPiora, placar: placar, noAmbiente: noAmbiente, opTrecho: opTrecho, comOriginal: comOriginal } };
+  global.HidCorrigir = HidCorrigir;
+
   var HidCriterios = {
-    VERSAO: 1, GEO: GEO, NOTA: NOTA, REGRAS: R,
+    VERSAO: 1, GEO: GEO, NOTA: NOTA, REGRAS: R, corrigir: HidCorrigir,
     auditar: auditar, doEstado: doEstado, caixasAbertura: caixasAbertura, classificarAmbiente: classificarAmbiente, resumo: resumo, lancarPassantes: lancarPassantes, travessiasLaje: travessiasLaje,
     _int: { recorte: recorte, caixaSeg: caixaSeg, segSeg3: segSeg3, dentroPoli: dentroPoli, normTrechos: normTrechos }
   };

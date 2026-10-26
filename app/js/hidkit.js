@@ -600,7 +600,7 @@
       k.manual = lista.some(function (o, i) {
         if (i <= k.ultimo || o.kit != null || o.amb != null) return false;
         var alvo = o.id != null && k.ids[o.id] ? o.id : (o.trecho != null && k.ids[o.trecho] ? o.trecho : null);
-        return alvo != null && ["instAlterar", "mover", "apagar", "acessorio", "instancia"].indexOf(o.op) >= 0;
+        return alvo != null && ["instAlterar", "mover", "apagar", "acessorio", "instancia", "trecho"].indexOf(o.op) >= 0;   /* N23: o tubo do kit refeito à mão (o Corrigir, o Trocar DN) também é edição manual */
       });
       /* acessórios do usuário vivos num tubo deste kit (removidos ao refazer, antes do tubo) */
       k.acUsuario = [];

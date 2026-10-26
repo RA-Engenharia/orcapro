@@ -117,8 +117,21 @@
     materialDeUid: function (uid) {
       var u = txt(uid); if (u.indexOf("edit:") !== 0) return null;
       var st = this.estado(); if (!st) return null;
-      var mp = M().materialDasPecas(st)[u.slice(5)];
+      /* FLUIDEZ (25/10/2026): dentro de um LOTE (o desenho de uma vista 2D) o mapa peça → material é feito UMA vez.
+         ⚠ ROTEIRO: o desenho pergunta o material de cada contorno e de cada aresta; cada pergunta percorria todas as
+         peças do modelo (materialDasPecas) — 355 ms da 1ª planta do projeto exemplo. Fora do lote, como antes. */
+      var L = this._lote, mapa;
+      if (L && L.st === st && L.mapa) mapa = L.mapa;
+      else { mapa = M().materialDasPecas(st); if (L) { L.st = st; L.mapa = mapa; } }
+      var mp = mapa[u.slice(5)];
       return mp ? M().estiloCorte(this.porId(mp)) : null;
+    },
+    /* roda fn com o mapa peça → material guardado até ela terminar (lote dentro de lote usa o de fora).
+       ⚠ Só para LEITURA: nada dentro do lote pode trocar material de peça (o desenho 2D não troca). */
+    emLote: function (fn) {
+      var dono = !this._lote;
+      if (dono) this._lote = { st: null, mapa: null };
+      try { return fn(); } finally { if (dono) this._lote = null; }
     },
     /* a massa pelo NOME do material (a mesma chave do js/bimpeso.js) */
     densidades: function () {

@@ -1830,7 +1830,7 @@ return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Previsão de caixa,
 _pnBlFluxo: function (m, c) {
 if (!c.podeFin || !c.temFin) return "";
 var meses = m.caixa.porMes || [], comparar = !!this._dashComparar && !!m.caixa.porMesAnterior;
-return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
+return '<div class="pn-card pn-graf pn-graf-principal"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
 + (m.caixa.porMesAnterior ? '<button class="pn-ctl pn-ctl-ghost pn-ctl-mini' + (comparar ? " on" : "") + '" data-gacao="dash-comparar" aria-pressed="' + (comparar ? "true" : "false") + '">' + (comparar ? "Comparando com " : "Comparar com ") + this._pnPeriodoAnterior(m.periodo) + "</button>" : "")
 + (meses.length ? this._pnSvgCombo(meses, comparar ? m.caixa.porMesAnterior : null) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
 },
@@ -1967,6 +1967,156 @@ if (op.retencao > 0) itens.push(contador("Retenção presa", e(fm(op.retencao)),
 if (!itens.length) return "";
 return '<div class="pn-sec pn-sec-solta"><h2>Operação</h2><p>' + e(this._dashEscopoRotulo(c.esc)) + '</p></div><nav class="pn-op" aria-label="Contadores de operação">' + itens.join("") + "</nav>" + (detalhes.length ? '<div class="pn-detalhes">' + detalhes.join("") + "</div>" : "");
 },
+_pnPodeMod: function (id) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(id)); },
+_pnHero: function (m, c) {
+var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); };
+var cx = m.caixa, cells = [], sd = this._pnSaudacao();
+var cel = function (o) {
+var attr = o.gacao ? 'data-gacao="' + o.gacao + '"' : 'data-view="' + o.view + '"';
+return '<li><button type="button" class="pn-hn' + (o.tom ? " pn-hn-" + o.tom : "") + '" ' + attr + (o.titulo ? ' title="' + e(o.titulo) + '"' : "") + ">"
++ '<span class="pn-hn-rot">' + o.rot + '</span><span class="pn-hn-val">' + o.val + '</span><span class="pn-hn-sub">' + o.sub + "</span></button></li>";
+};
+if (c.podeFin && c.temFin) {
+var ap = cx.aprovadoNaoPago || { n: 0, valor: 0 }, cv = cx.contasVencendo || { n: 0, valor: 0, vencidas: 0 };
+cells.push(cel({ rot: "A receber", val: e(fk(cx.aReceber)), titulo: fm(cx.aReceber), view: "financeiro",
+sub: ap.n ? "mais " + e(fk(ap.valor)) + " em " + N(ap.n, "boletim aprovado", "boletins aprovados") + " sem pagamento" : "lançado no Financeiro" }));
+cells.push(cel({ rot: "A pagar até " + this._pnDataCurta(cv.ate), val: e(fk(cv.valor)), titulo: fm(cv.valor), view: "financeiro", tom: cv.vencidas ? "alerta" : "",
+sub: cv.n ? N(cv.n, "conta", "contas") + (cv.vencidas ? ", " + N(cv.vencidas, "vencida", "vencidas") : "") : "nenhuma conta vencendo" }));
+}
+cells.push(cel({ rot: "Obras em andamento", val: String(m.obras.emAndamento), view: "obras", sub: "de " + N(m.obras.total, "obra", "obras") + (m.filtrado ? " no recorte" : "") }));
+var nd = m.decisoes.length, crit = m.decisoes.some(function (x) { return x.gravidade >= 3; });
+cells.push(cel({ rot: "Precisa de você hoje", val: String(nd), gacao: "painel-ir-fila", tom: nd ? (crit ? "alerta" : "aviso") : "ok",
+sub: nd ? (m.emJogo > 0 ? e(fk(m.emJogo)) + " em jogo, ver a fila" : "ver a fila") : "nada pendente" }));
+return '<section class="pn-hero" aria-labelledby="pn-hero-t">' + sd + '<ul class="pn-hero-nums">' + cells.join("") + "</ul></section>";
+},
+_pnSaudacao: function (msg) {
+var e = Util.esc, hora = 12, nome = "", empresa = "";
+try { hora = new Date().getHours(); } catch (eH) { hora = 12; }
+try { nome = PainelDados.primeiroNome((typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : ""); } catch (eN) { nome = ""; }
+try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (eE) { empresa = ""; }
+return '<div class="pn-hero-id">' + (empresa ? '<p class="pn-hero-emp">' + e(empresa) + "</p>" : "")
++ '<h2 id="pn-hero-t">' + PainelDados.saudacao(hora) + (nome ? ", " + e(nome) : "") + "</h2>" + (msg ? '<p class="pn-hero-msg">' + msg + "</p>" : "") + "</div>";
+},
+_pnAtalhos: function () {
+var self = this, itens = [];
+var ic = function (id) { try { return self.iconeModulo(id, 22) || ""; } catch (x) { return ""; } };
+var at = function (o) {
+return '<li><button type="button" class="pn-at" ' + o.attr + '><span class="pn-at-ic" aria-hidden="true">' + o.ic + '</span><span class="pn-at-t"><b>' + o.t + "</b><small>" + o.s + "</small></span></button></li>";
+};
+if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-acao="novo"', ic: ic("orcamentos"), t: "Novo orçamento", s: "Escopo, SINAPI e BDI" }));
+if (this._pnPodeMod("obras")) itens.push(at({ attr: 'data-view="obras"', ic: ic("obras"), t: "Abrir obra", s: "Cadastro, diário e medições" }));
+if (this._pnPodeMod("bim")) itens.push(at({ attr: 'data-view="bim"', ic: ic("bim"), t: "Modelar no BIM", s: "3D, pranchas e quantitativos" }));
+if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-view="orcamentos"', ic: (typeof Icones !== "undefined" ? Icones.get("proposta", 22) : ""), t: "Gerar proposta", s: "A partir de um orçamento pronto" }));
+if (!itens.length) return "";
+return '<nav class="pn-atalhos" aria-label="O que fazer agora"><ul>' + itens.join("") + "</ul></nav>";
+},
+_pnIniciais: function (nome) {
+var p = String(nome || "").replace(/[^A-Za-zÀ-ÿ0-9 ]/g, " ").split(/\s+/).filter(function (x) { return x.length > 1 || /\d/.test(x); });
+if (!p.length) return "";
+return (p[0].charAt(0) + (p.length > 1 ? p[1].charAt(0) : (p[0].charAt(1) || ""))).toUpperCase();
+},
+_pnObrasCartoes: function (m, c) {
+var self = this, e = Util.esc;
+if (!m.obras.total) {
+return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2></div>'
++ '<div class="pn-oc-vazio"><span class="pn-oc-vazio-ic" aria-hidden="true">' + (this.iconeModulo("obras", 28) || "") + "</span>"
++ "<div><b>Nenhuma obra cadastrada</b><p>Cadastre a primeira obra, ou gere uma a partir de um orçamento aprovado. Com a obra criada, o avanço, o prazo e o caixa dela aparecem aqui.</p></div>"
++ '<button type="button" class="pn-btn pn-btn-p" data-view="obras">Cadastrar obra</button></div></section>';
+}
+var cj = PainelDados.cartoesObras(m.obras, 3);
+if (!cj.itens.length) return "";
+var obrasPorId = {};
+lista("obras").forEach(function (o) { if (o) obrasPorId[o.id] = o; });
+var idx = null, fotos = [];
+try { if (typeof ObraVitrine !== "undefined" && ObraVitrine.indiceDiarios && c.esc && c.esc.rdo) idx = ObraVitrine.indiceDiarios(c.esc.rdo); } catch (eI) { idx = null; }
+var pill = function (l) {
+var cls = l.status === "andamento" ? "pn-pill pn-pill-and" : (l.status === "concluida" ? "pn-pill pn-pill-conc" : "pn-pill");
+return '<span class="' + cls + '">' + e(({ andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" })[l.status] || l.status) + "</span>";
+};
+var cartao = function (l) {
+var ob = obrasPorId[l.id] || null, ft = null, credito = "";
+try { if (ob && idx && ObraVitrine.foto) ft = ObraVitrine.foto(ob, idx[l.id] || null); } catch (eF) { ft = null; }
+if (ft && ft.ref) { fotos.push({ id: l.id, ref: ft.ref }); if (ft.origem === "diario" && ft.data) credito = "Foto do diário de " + self._pnDataCurta(ft.data); }
+var mk = PainelDados.proximoMarco(l);
+var ini = self._pnIniciais(l.nome);
+return '<li class="pn-oc" data-gopen="obras:' + e(l.id) + '">'
++ '<span class="pn-oc-foto" data-pn-foto="' + e(l.id) + '" data-credito="' + e(credito) + '"><span class="pn-oc-ph" aria-hidden="true">' + (ini ? "<i>" + e(ini) + "</i>" : "") + (self.iconeModulo("obras", 26) || "") + "</span></span>"
++ '<div class="pn-oc-c"><div class="pn-oc-topo">' + pill(l) + "</div>"
++ '<button type="button" class="pn-oc-nome" data-gopen="obras:' + e(l.id) + '" title="' + e(l.nome) + '">' + e(l.nome) + "</button>"
++ self._pnDupla(l)
++ '<p class="pn-oc-marco pn-oc-m-' + mk.tom + '"><small>Próximo marco</small><span>' + e(mk.texto) + "</span></p></div></li>";
+};
+var corpo = cj.itens.map(cartao).join("");
+this._pnFotosPend = fotos;
+return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2>'
++ "<p>" + (cj.restantes ? "Mostrando " + cj.itens.length + " de " + cj.total + ". " : "") + "Calendário consumido em cima, escopo medido embaixo.</p>"
++ (cj.restantes ? '<button type="button" class="pn-ctl pn-ctl-ghost pn-ctl-mini" data-view="obras">Ver todas (' + cj.total + ")</button>" : "") + "</div>"
++ '<ul class="pn-ocs-grade">' + corpo + "</ul></section>";
+},
+_pnLigarFotos: function () {
+var fotos = this._pnFotosPend || [];
+this._pnFotosPend = null;
+if (!fotos.length || typeof Fotos === "undefined" || !Fotos.dataURI || typeof document === "undefined") return;
+setTimeout(function () {
+fotos.forEach(function (f) {
+var box = document.querySelector('#main [data-pn-foto="' + String(f.id).replace(/"/g, "") + '"]');
+if (!box) return;
+Fotos.dataURI(f.ref).then(function (d) {
+if (!d || !box.parentNode || box.querySelector("img")) return;
+var im = document.createElement("img");
+im.alt = ""; im.decoding = "async"; im.src = d;
+box.insertBefore(im, box.firstChild);
+box.className += " pn-oc-tem";
+var cr = box.getAttribute("data-credito");
+if (cr) { var s = document.createElement("span"); s.className = "pn-oc-cred"; s.textContent = cr; box.appendChild(s); }
+}).catch(function () {});
+});
+}, 0);
+},
+_pnComeco: function () {
+var self = this, ic = function (id) { try { return self.iconeModulo(id, 24) || ""; } catch (x) { return ""; } };
+var podeDemo = this._obraDemoPode();
+var passo = function (n, icone, tit, txt, acoes) {
+return '<li class="pn-passo"><span class="pn-passo-n" aria-hidden="true">' + n + '</span><span class="pn-passo-ic" aria-hidden="true">' + icone + "</span>"
++ "<h3>" + tit + "</h3><p>" + txt + '</p><div class="pn-passo-ac">' + acoes + "</div></li>";
+};
+var p1 = passo(1, ic("bim"), "Veja um projeto pronto",
+"Casa térrea de 3 quartos com arquitetura, estrutura, hidrossanitário, elétrica e orçamento. Abre numa obra de exemplo, separada das suas.",
+'<button type="button" class="pn-btn pn-btn-p" data-gacao="painel-exemplo-bim">Abrir o projeto exemplo</button>');
+var p2 = passo(2, ic("orcamentos"), "Veja um orçamento pronto",
+podeDemo ? "A OBRA TESTE ORÇAPRO traz orçamento com SINAPI, diário, medições, compras e financeiro preenchidos. Você remove quando quiser, e só os dados de exemplo saem."
+: "Abra a lista de orçamentos para ver como o escopo, a base de preços e o BDI ficam organizados.",
+podeDemo ? '<button type="button" class="pn-btn pn-btn-p" data-gacao="obrademo-criar">Carregar a obra de exemplo</button>'
+: '<button type="button" class="pn-btn pn-btn-p" data-view="orcamentos">Ver orçamentos</button>');
+var p3 = passo(3, ic("obras"), "Comece o seu",
+"Monte o primeiro orçamento, ou cadastre uma obra que já está em andamento.",
+'<button type="button" class="pn-btn pn-btn-p" data-acao="novo">Novo orçamento</button><button type="button" class="pn-btn" data-view="obras">Cadastrar obra</button>');
+return '<section class="pn-hero pn-hero-vazio" aria-labelledby="pn-hero-t">' + this._pnSaudacao("Esta conta ainda não tem obra, orçamento nem lançamento. Quando tiver, esta tela mostra o caixa, os prazos e o que está pendente. Para começar, escolha um dos caminhos abaixo.") + "</section>"
++ '<section class="pn-comeco" aria-labelledby="pn-comeco-t"><div class="pn-sec"><h2 id="pn-comeco-t">Comece por aqui</h2></div>'
++ '<ol class="pn-passos">' + p1 + p2 + p3 + "</ol></section>";
+},
+painelExemploBim: function () {
+if (typeof App === "undefined" || !App.irPara) return;
+App.irPara("bim");
+var tent = 0;
+(function esperar() {
+var B = (typeof window !== "undefined") ? window.BimProjetosUI : null;
+if (B && typeof B.abrirExemplo === "function") { try { B.abrirExemplo(); } catch (e) {} return; }
+if (++tent > 40) {
+if (typeof UI !== "undefined" && UI.toast) UI.toast("O projeto exemplo não está nesta versão. O BIM está aberto na tela inicial: comece por um template.", "ok");
+return;
+}
+setTimeout(esperar, 500);
+})();
+},
+painelIrFila: function () {
+if (typeof document === "undefined") return;
+var el = document.querySelector("#main .pn-hoje");
+if (!el) return;
+try { el.scrollIntoView({ block: "start" }); } catch (e) {}
+var h = el.querySelector("h2");
+if (h) { h.setAttribute("tabindex", "-1"); try { h.focus({ preventScroll: true }); } catch (e2) { h.focus(); } }
+},
 _pnHtml: function (m, ctx) {
 var self = this, e = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
 var podeFin = ctx.podeFin, esc = ctx.esc, fin = ctx.fin;
@@ -1978,6 +2128,9 @@ var optO = '<option value="todas"' + (!selIds ? " selected" : "") + '>Todas as O
 var multi = !!this._dashMulti || !!(selIds && selIds.length > 1);
 var campoObra = multi ? '<select data-gacao="dash-obra" multiple size="5" title="Segure ' + (_ehMac() ? "Command" : "Ctrl") + ' para marcar mais de uma obra">' + optO + "</select>" : '<select data-gacao="dash-obra">' + optO + "</select>";
 var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + ">" + perRot[p] + "</option>"; }).join("");
+var _cv = { obras: obras.length, financeiro: esc.financeiro.length, rdo: esc.rdo.length, orcamentos: 0 };
+if (!_cv.obras && !_cv.financeiro && !_cv.rdo) { try { _cv.orcamentos = Store.listarOrcamentos(eid()).length; } catch (eO) { _cv.orcamentos = 0; } }
+var vazia = !m.filtrado && PainelDados.contaVazia(_cv);
 var K = kit();
 var recorte = '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
 + '<label class="pn-filtro">Obra ' + campoObra + "</label>"
@@ -1985,14 +2138,16 @@ var recorte = '<div class="pn-filtros" role="group" aria-label="Recorte do paine
 + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label></div>";
 var html = '<div class="pn">' + K.cab({
 icone: "dashboard", titulo: "Painel de Gestão",
-sub: this._pnDataExtenso(m.hoje) + ". " + N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".",
-obraHtml: recorte,
-acoes: [
+sub: this._pnDataExtenso(m.hoje) + ". " + (vazia ? "" : N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + "."),
+obraHtml: vazia ? "" : recorte,
+acoes: vazia ? [] : [
 '<button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>',
 '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>',
 podeFin ? '<button class="btn" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : ""
 ]
 });
+if (vazia) return html + this._pnComeco() + "</div>";
+html += this._pnHero(m, ctx) + this._pnAtalhos() + this._pnObrasCartoes(m, ctx);
 var blocos = PainelDados.blocosOrdenados(ctx.prefs), fn = { tiles: "_pnBlTiles", posicao: "_pnBlPosicao", agenda: "_pnBlAgenda", previsao: "_pnBlPrevisao", fluxo: "_pnBlFluxo", composicao: "_pnBlComposicao", lucro: "_pnBlLucro", metas: "_pnBlMetas", obras: "_pnBlObras", orcado: "_pnBlOrcado", operacao: "_pnBlOperacao" };
 var esq = "", cheia = "", escondidos = 0;
 blocos.forEach(function (b) {
@@ -2005,6 +2160,7 @@ if (b.col === "esq") esq += '<div class="pn-bloco" data-bloco="' + b.id + '">' +
 html += '<section class="pn-grid"><div class="pn-grid-esq">' + esq + '</div><div class="pn-grid-dir">' + this._pnBlFila(m, ctx) + "</div></section>" + cheia;
 html += '<div class="pn-fim">' + (escondidos ? "<span>" + N(escondidos, "bloco escondido", "blocos escondidos") + ' em "Organizar painel".</span>' : "") + "</div>";
 html += this._obraDemoCard();
+this._pnLigarFotos();
 return html + "</div>";
 },
 _obraDemoPode: function () {
@@ -10101,6 +10257,7 @@ var st = this._bimVxEst();
 if (id !== "3d" && !this._bimVxAchar(id)) id = "3d";
 var v = this._bimVxAchar(id);
 if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} return; }
+this._bimVxMedir(st.ativa, id);
 st.ativa = id;
 this._bimVxLayout();
 try { if (window.BimArqUI && BimArqUI.garantirContexto) BimArqUI.garantirContexto(); } catch (eCtx) {}
@@ -10113,6 +10270,13 @@ BimRibbon.setAtivo("ortogonal", id === "3d" ? b.ortogonalAtivo() : b.vistaOrtoAt
 BimShell.pintarFita();
 BimShell.repintarVista();
 } catch (e2) {}
+},
+_bimVxMedir: function (de, para) {
+if (de === para || typeof requestAnimationFrame !== "function" || !window.BimFluidez || !window.performance) return;
+var self = this, t0 = performance.now();
+if (!this._bimTrocas) this._bimTrocas = new BimFluidez.Tempos(40);
+requestAnimationFrame(function () { requestAnimationFrame(function () { try { self._bimTrocas.anotar(de, para, performance.now() - t0); } catch (e) {} }); });
+if (para === "3d") { try { if (window.Bim2D && Bim2D.agendarAntes) Bim2D.agendarAntes(); } catch (eA) {} }
 },
 _bimVxLayout: function () {
 var st = this._bimVxEst(), g = this._bimVxGrade(); if (!g) return;
@@ -16139,6 +16303,7 @@ return BimCache.aparar(Idb, emp, { obraId: obraId, protegidos: prot, emUso: emUs
 });
 }).then(function (r) {
 if (!r) return;
+if (r.ok && typeof r.total === "number") { self._bimCacheTotalB = r.total; self._bimCacheTotalEm = Date.now(); }
 self._bimApararApagados = (self._bimApararApagados || 0) + r.apagados.length;
 if (self._bimApararApagados) {
 try { console.info("[bimcache] teto: " + self._bimApararApagados + " entrada(s) antiga(s) liberada(s); guardado agora " + Math.round(r.total / 1048576) + " MB"); } catch (e2) {}
@@ -19528,6 +19693,7 @@ onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "" + (typeof Icon
 onLoaded: function (elementos) {
 self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
 try { if (window.BimShell) BimShell.repintarVista(); } catch (eRv) {}
+try { if (window.Bim2D && Bim2D.agendarAntes && Bim2D._cfg && Bim2D._cfg.obraKey === (self._bimSel || "geral") && Bim2D._cfg.niveis) Bim2D.agendarAntes(); } catch (eAA) {}
 try { self._bimFedCompararPendente(self._bimElementos); } catch (eF7) {}
 try {
 var porModelo = {};
@@ -36282,6 +36448,8 @@ case "dash-status": return this.dashTrocaStatus(dataset.value);
 case "dash-comparar": return this.dashTrocaComparar();
 case "graf-ir": return this.grafIr(dataset);
 case "painel-organizar": return this.painelOrganizar();
+case "painel-exemplo-bim": return this.painelExemploBim();
+case "painel-ir-fila": return this.painelIrFila();
 case "painel-bloco-toggle": return this.painelBlocoToggle(dataset.id);
 case "painel-bloco-sobe": return this.painelBlocoMover(dataset.id, -1);
 case "painel-bloco-desce": return this.painelBlocoMover(dataset.id, 1);
@@ -68616,9 +68784,29 @@ c.nuvemPendMaior = dg.maior ? String(dg.maior.ent || "") + ":" + (+dg.maior.tam 
 c.nuvemSdk = (dg.sdk || []).map(function (x) { return String((x && x.cod) || "").slice(0, 30) + ":" + msgSegura(x && x.msg); });
 }
 } catch (e) {}
+try {
+var Gv = global.Gestao, tr = Gv && Gv._bimTrocas && Gv._bimTrocas.resumo ? Gv._bimTrocas.resumo() : null;
+if (tr) { c.vistaTrocaN = tr.n; c.vistaTrocaMed = tr.mediana; c.vistaTrocaMax = tr.maior; c.vistaTrocaUlt = tr.ultimo; }
+if (Gv && typeof Gv._bimCacheTotalB === "number") c.bimcacheMB = Math.round(Gv._bimCacheTotalB / 1048576);
+var P2 = global.Bim2D;
+if (P2 && P2._cache) { c.d2Abertas = Object.keys(P2._cache).length; c.d2Antes = Object.keys(P2._pre || {}).length; if (P2._fila) { c.d2Fundo = P2._fila.feitas; c.d2FundoUltMs = Math.round(P2._fila.ultMs || 0); } }
+} catch (e) {}
+try { if (this._armaz) { c.armazMB = this._armaz.usoMB; if (this._armaz.idbMB != null) c.armazIdbMB = this._armaz.idbMB; } this._lerArmaz(); } catch (e) {}
 try { var A = global.Analitico; if (A) { c.analitico = !!A.carregado; c.analiticoComp = String(A.competencia || ""); } } catch (e) {}
 try { if (global.Carregar && global.Carregar._grupos) c.grupos = Object.keys(global.Carregar._grupos).join(","); } catch (e) {}
 return c;
+},
+_armaz: null, _armazEm: 0,
+_lerArmaz: function () {
+var nav = global.navigator, self = this, t = this.agora();
+if (!nav || !nav.storage || typeof nav.storage.estimate !== "function" || (this._armazEm && t - this._armazEm < 300000)) return;
+this._armazEm = t;
+try {
+nav.storage.estimate().then(function (e) {
+var d = e && e.usageDetails;
+self._armaz = { usoMB: Math.round(((e && e.usage) || 0) / 1048576), idbMB: d && d.indexedDB != null ? Math.round(d.indexedDB / 1048576) : null };
+})["catch"](function () {});
+} catch (e) {}
 },
 enviar: function (a) {
 try {
@@ -69985,5 +70173,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=1df04a4111"},{"src":"js/bim-pacote.js?v=dcc21ad85f","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=6a62f7f406"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=89ea676378"},{"src":"js/bim-pacote.js?v=8385147be7","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=79ab200776"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

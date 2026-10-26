@@ -18,6 +18,9 @@
   --sobre-navy: #dbe8f5;
   --sobre-navy-ok: #86efac;
   --sobre-navy-aviso: #fcd34d;
+  --sobre-navy-alerta: #fca5a5;   /* 7,99:1 contra #0f2740 (e 9,8:1 contra o navy da cara nova) */
+  --sobre-navy-forte: #ffffff;    /* número grande do hero: 15,17:1 */
+  --sobre-navy-fraco: #b8c9db;    /* texto de apoio sobre o navy: 8,97:1 */
   /* ⚠ ESTE AZUL ESTAVA QUASE CINZA, E ISSO E MEDIVEL: o #2e6f9e anterior
      tinha croma 0,099 em OKLab — ABAIXO do piso 0,1 a partir do qual uma cor
      deixa de ser lida como cor. E ele e a tinta mais presente do sistema
@@ -4253,3 +4256,112 @@ button.g-leg[aria-pressed="false"] b { text-decoration: line-through; }
   .mod-kpi:nth-child(odd) { border-left: 0; }
   .mod-kpi:nth-child(n+3) { border-top: 1px solid var(--linha); }
 }
+
+/* =====================================================================
+ * PAINEL — PRIMEIRA TELA (25/10/2026): hero, atalhos, obras em cartão e o
+ * estado vazio ("Comece por aqui"). Só tokens; prefixo .pn- como o resto.
+ * Pedido do Rogério: "deixa o PAINEL mais atraente, é a primeira tela que o
+ * cliente vê." Nada aqui usa degradê, vidro (backdrop-filter quebra
+ * position:fixed dentro de #main) nem animação.
+ * ⚠ O hero é NAVY nos dois temas, como a barra do topo: texto sobre ele só
+ *   com --sobre-navy* (medidos contra o navy, 8:1 ou mais).
+ * ===================================================================== */
+@media (min-width: 1700px) { .pn { max-width: 1480px; } }
+.pn-hero { background: var(--navy); color: var(--sobre-navy); border: 1px solid rgba(255, 255, 255, .1); border-radius: var(--raio-lg); padding: 22px 26px 10px; margin-bottom: 16px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pn-hero-id { display: grid; gap: 2px; }
+.pn-hero-vazio { padding-bottom: 24px; }
+[data-tema="dark"] .pn-hero { background: var(--navy-2); }
+.pn-hero-emp { font-size: var(--t-peq); color: var(--sobre-navy-fraco); }
+.pn-hero h2 { font-size: var(--t-hero); font-weight: var(--p-forte); letter-spacing: -.5px; line-height: 1.15; color: var(--sobre-navy-forte); }
+.pn-hero-msg { margin-top: 6px; max-width: 80ch; font-size: var(--t-base); color: var(--sobre-navy); }
+.pn-hero-nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 16px; border-top: 1px solid rgba(255, 255, 255, .16); }
+.pn-hn { display: grid; gap: 3px; align-content: start; width: 100%; text-align: left; padding: 14px 12px 16px; background: transparent; border: 0; border-radius: var(--raio); color: inherit; font: inherit; cursor: pointer; }
+.pn-hero-nums > li + li .pn-hn { border-left: 1px solid rgba(255, 255, 255, .16); border-radius: 0 var(--raio) var(--raio) 0; padding-left: 18px; }
+.pn-hn:hover { background: rgba(255, 255, 255, .07); }
+.pn-hn:focus-visible { outline: 2px solid var(--sobre-navy-forte); outline-offset: -3px; }
+.pn-hn-rot { font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--sobre-navy); }
+.pn-hn-val { font-size: var(--t-hero); font-weight: var(--p-forte); letter-spacing: -.5px; line-height: 1.1; color: var(--sobre-navy-forte); font-variant-numeric: tabular-nums; }
+.pn-hn-sub { font-size: var(--t-micro); color: var(--sobre-navy-fraco); line-height: 1.35; }
+.pn-hn-alerta .pn-hn-val { color: var(--sobre-navy-alerta); }
+.pn-hn-aviso .pn-hn-val { color: var(--sobre-navy-aviso); }
+.pn-hn-ok .pn-hn-val { color: var(--sobre-navy-ok); }
+
+.pn-atalhos ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 22px; }
+.pn-at { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 60px; padding: 10px 14px; text-align: left; background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); color: var(--texto); font: inherit; cursor: pointer; }
+.pn-at:hover { border-color: var(--aco); }
+.pn-at:focus-visible { outline: 2px solid var(--aco); outline-offset: 2px; }
+.pn-at-ic { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: var(--raio); background: var(--tinta-aco); color: var(--aco); }
+.pn-at-t { display: grid; gap: 1px; min-width: 0; }
+.pn-at-t b { font-size: var(--t-base); font-weight: var(--p-forte); }
+.pn-at-t small { font-size: var(--t-micro); color: var(--texto-fraco); }
+
+.pn-ocs { margin-bottom: 26px; }
+.pn-ocs .pn-sec { flex-wrap: wrap; align-items: center; }
+.pn-ocs .pn-sec .pn-ctl-mini { margin-bottom: 0; }
+.pn-ocs-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.pn-oc { display: flex; flex-direction: column; overflow: hidden; background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); box-shadow: var(--sombra); cursor: pointer; }
+.pn-oc:hover { border-color: var(--linha-forte); }
+.pn-oc-foto { position: relative; display: block; aspect-ratio: 16 / 6; overflow: hidden; background: var(--surface-3); }
+.pn-oc-foto img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.pn-oc-ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--texto-fraco); }
+.pn-oc-ph i { font-style: normal; font-size: var(--t-hero); font-weight: var(--p-forte); letter-spacing: 3px; opacity: .55; }
+.pn-oc-ph svg { position: absolute; left: 12px; top: 12px; opacity: .55; }
+.pn-oc-tem .pn-oc-ph { display: none; }
+.pn-oc-cred { position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 12px; font-size: var(--t-micro); color: var(--sobre-navy-forte); background: rgba(15, 39, 64, .8); }
+.pn-oc-c { display: grid; gap: 8px; padding: 14px 16px 16px; }
+.pn-oc-topo { display: flex; gap: 8px; align-items: center; }
+.pn-oc-nome { display: block; max-width: 100%; padding: 0; text-align: left; background: none; border: 0; font: inherit; font-size: var(--t-med); font-weight: var(--p-forte); color: var(--texto); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; border-radius: var(--raio); }
+.pn-oc-nome:focus-visible { outline: 2px solid var(--aco); outline-offset: 2px; }
+.pn-oc .pn-trilhos { margin-top: 4px; }
+.pn-oc-marco { display: grid; gap: 1px; padding-top: 8px; border-top: 1px solid var(--linha); }
+.pn-oc-marco small { font-size: var(--t-micro); color: var(--texto-fraco); }
+.pn-oc-marco span { font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto); }
+.pn-oc-m-alerta span { color: var(--graf-alerta); }
+.pn-oc-m-aviso span { color: var(--graf-aviso); }
+.pn-oc-m-ok span { color: var(--verde); }
+.pn-oc-vazio { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 18px; padding: 18px 20px; background: var(--surface); border: 1px dashed var(--linha-forte); border-radius: var(--raio-lg); }
+.pn-oc-vazio > div { flex: 1; min-width: 220px; }
+.pn-oc-vazio b { font-size: var(--t-base); font-weight: var(--p-forte); }
+.pn-oc-vazio p { margin-top: 2px; font-size: var(--t-peq); color: var(--texto-fraco); }
+.pn-oc-vazio-ic { flex: none; width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; background: var(--tinta-aco); color: var(--aco); }
+
+.pn-comeco { margin-bottom: 26px; }
+.pn-passos { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; }
+.pn-passo { position: relative; display: grid; gap: 10px; align-content: start; padding: 22px; background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); box-shadow: var(--sombra); }
+.pn-passo-n { position: absolute; top: 14px; right: 18px; font-size: var(--t-hero); font-weight: var(--p-forte); color: var(--linha); }
+.pn-passo-ic { width: 46px; height: 46px; display: grid; place-items: center; border-radius: var(--raio); background: var(--tinta-aco); color: var(--aco); }
+.pn-passo h3 { font-size: var(--t-med); font-weight: var(--p-forte); }
+.pn-passo p { font-size: var(--t-peq); color: var(--texto-fraco); line-height: 1.5; }
+.pn-passo-ac { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+/* HIERARQUIA DOS GRÁFICOS: o fluxo de caixa é o principal (título maior, mais ar);
+   os demais são de apoio (título de corpo). A diferença é de tamanho e peso, não de cor. */
+.pn-graf-principal .pn-sec h2 { font-size: var(--t-tit); }
+.pn-graf:not(.pn-graf-principal) .pn-sec h2 { font-size: var(--t-base); }
+@media (max-width: 820px) {
+  /* no celular o resumo do dia vem ANTES dos filtros: é o que a pessoa abriu o app para ver */
+  .pn { display: flex; flex-direction: column; }
+  .pn-hero { order: -3; }
+  .pn-atalhos { order: -2; }
+  .pn-hero { padding: 18px 16px 6px; }
+  .pn-hero-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pn-hero-nums > li + li .pn-hn { border-left: 0; padding-left: 12px; border-radius: var(--raio); }
+  .pn-hero-nums > li:nth-child(even) .pn-hn { border-left: 1px solid rgba(255, 255, 255, .16); padding-left: 16px; border-radius: 0 var(--raio) var(--raio) 0; }
+  .pn-hero-nums > li:nth-child(n+3) .pn-hn { border-top: 1px solid rgba(255, 255, 255, .16); }
+  .pn-hero-nums > li .pn-hn { border-radius: 0; }
+  /* o filtro de status das obras (5 botões) media 463 px num celular de 390 e empurrava a tela de lado (já era assim na 1.2.181): rola dentro dele mesmo */
+  .pn-seg { max-width: 100%; overflow-x: auto; }
+  .pn-ocs-grade { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .pn-hero h2 { font-size: var(--t-tit); }
+  .pn-hn-val { font-size: var(--t-tit); }
+  .pn-atalhos ul { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .pn-at { gap: 8px; min-height: 52px; padding: 8px 10px; }
+  .pn-at-ic { width: 34px; height: 34px; }
+  .pn-at-t b { font-size: var(--t-peq); }
+  .pn-at-t small { display: none; }
+  .pn-passo { padding: 18px; }
+}
+.pn-impresso .pn-atalhos, .pn-impresso .pn-comeco { display: none !important; }
+@media print { .pn-atalhos, .pn-comeco { display: none !important; } .pn-oc { break-inside: avoid; box-shadow: none; } }

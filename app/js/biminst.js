@@ -234,7 +234,10 @@
        "premoldado", tampa "concreto" ou "ferro"; dn "600"), com a composição SINAPI real pela profundidade e o 3D da caixa dela
        (js/hidcigeo.js + js/hidcidados.js). O produto de PVC DN300 ficou como DISPOSITIVO de inspeção (tipoCaixa "pvc300", dn
        "300"): a 8160 só o aceita fora da rede enterrada — na enterrada, o js/hides.js reprova com o Corrigir. */
-    caixa_inspecao:      { nome: "Caixa de inspeção", sistemas: ["esgoto"], dns: ["600", "300"], dn: "600", material: "pvc_esgoto", ifc: "IFCDISTRIBUTIONCHAMBERELEMENT", forma: "cil", r: 0.30, h: 0.06, prof: 0.60, captura: 0.28, profVariavel: true,
+    /* N23 (25/10/2026): também no PLUVIAL enterrado — a caixa de areia de ALVENARIA (0,60 m, profundidade da instância) na mudança de
+       direção da linha enterrada (NBR 10844 5.7.4; o js/hidap.js conta caixa_inspecao como dispositivo de inspeção). A caixa de areia de
+       PVC DN300 (hid-caixa-areia) tem a entrada no topo: em série, a 2ª ficaria 0,42 m abaixo do terreno, sem tampa à vista. */
+    caixa_inspecao:      { nome: "Caixa de inspeção", sistemas: ["esgoto", "pluvial"], dns: ["600", "300"], dn: "600", material: "pvc_esgoto", ifc: "IFCDISTRIBUTIONCHAMBERELEMENT", forma: "cil", r: 0.30, h: 0.06, prof: 0.60, captura: 0.28, profVariavel: true,
                            tipos: { alvenaria: "Caixa de alvenaria 0,60 m (tijolo maciço)", premoldado: "Caixa pré-moldada de concreto 0,60 m", pvc300: "Dispositivo de inspeção de PVC Ø 300 (só fora da rede enterrada)" },
                            tampas: { concreto: "Tampa de concreto", ferro: "Tampa de ferro fundido" } },
     registro_recalque:   { nome: "Registro de recalque (passeio)", sistemas: ["incendio"], dns: ["65"], dn: "65", material: "aco", ifc: "IFCVALVE", forma: "caixa", w: 0.40, hh: 0.40, d: 0.30, captura: 0.15, semSinapi: true }
@@ -892,6 +895,23 @@
     var conectores = conectoresDoEstado(estado, avaliarFam);
     /* P12: as duas faces de cada acessório (registro, válvula) são pontos de ligação do tubo */
     acessorios.forEach(function (a) { a.conectores.forEach(function (k) { conectores.push(k); }); });
+    /* ⚠ 25/10/2026: o QUADRO de distribuição (família com mep.peca "quadro") recebe os eletrodutos dos circuitos pela face
+       (o "Circuitos e quadro" chega com cada um num ponto do topo da caixa — um eletroduto por circuito); a família só tem
+       o conector do alimentador, e o Verificar das instalações dava cada eletroduto que chega no quadro como PONTA SOLTA
+       (projeto exemplo: 9 erros). A ponta elétrica DENTRO da caixa do quadro (2 cm de folga) está ligada a ele. */
+    var quadros = [];
+    arr(estado && estado.familias).forEach(function (f) {
+      if (!f || !/quadro/i.test(String(f.famId || "")) || typeof avaliarFam !== "function") return;
+      var av = null; try { av = avaliarFam(f.famId, f.tipoId, f.inst || {}); } catch (eQ) { av = null; }
+      if (av && av.mep && av.mep.peca === "quadro" && av.caixa && isFinite(av.caixa.x0)) quadros.push({ id: String(f.id), x: +f.x || 0, y: +f.y || 0, z: +f.z || 0, r: +f.rotY || 0, c: av.caixa });
+    });
+    function quadroEm(P) {
+      for (var i = 0; i < quadros.length; i++) {
+        var q = quadros[i], dx = P.x - q.x, dz = P.z - q.z, lx = dx * Math.cos(q.r) - dz * Math.sin(q.r), lz = dx * Math.sin(q.r) + dz * Math.cos(q.r), ly = P.y - q.y, f = 0.02;
+        if (lx >= q.c.x0 - f && lx <= q.c.x1 + f && ly >= q.c.y0 - f && ly <= q.c.y1 + f && lz >= q.c.z0 - f && lz <= q.c.z1 + f) return q;
+      }
+      return null;
+    }
     /* 1) as pontas */
     var pontas = [];
     trechos.forEach(function (t) {
@@ -986,7 +1006,9 @@
         var soQto = null;
         if (previaHidro()) juntasDaPonta(cxs, ramos, s, av).forEach(function (j) { juntas.push(j); });
         else { var cq = cxs.slice(); juntasDaPonta(cq, ramos, s, []); soQto = cq.slice(cxs.length); }
-        if (ramos.length === 1 && !con) {
+        var qdE = ramos.length === 1 && !con && grupoDe(s) === "eletrica" ? quadroEm(P) : null;
+        if (qdE) ligacoes.push({ trecho: ramos[0].trecho, alvo: qdE.id + ":quadro", famInst: qdE.id, tipo: "aparelho", x: r4(P.x), y: r4(P.y), z: r4(P.z) });
+        else if (ramos.length === 1 && !con) {
           var tc = porIdT[ramos[0].trecho], ponta = tc && tc.continua ? (dist(tc.p1, P) <= TOL ? "p1" : (dist(tc.p2, P) <= TOL ? "p2" : "")) : "";
           if (ponta && (tc.continua === "ambos" || tc.continua === ponta)) continuacoes.push({ trecho: ramos[0].trecho, ponta: ponta, x: r4(P.x), y: r4(P.y), z: r4(P.z) });
           else livres.push({ trecho: ramos[0].trecho, x: r4(P.x), y: r4(P.y), z: r4(P.z) });

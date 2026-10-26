@@ -159,6 +159,22 @@
     d.paredesPlanta(D, M, Lc.paredes, "fantasma");
     var Tl = arr(c.dados.telhados).filter(function (t) { return t.status !== "demolido"; }), res = [], sem = 0;
     Tl.forEach(function (t) { var r = desenharTelhado(D, M, t, {}); res.push(r); sem += setasCaimento(D, M, r.aguas); });
+    /* CALHA embutida (tracejada, o retângulo dela), DESCIDAS pluviais (círculo cheio = condutor), buzinote e ladrão da área técnica (quadrado), e o CAIMENTO da laje
+       descoberta (seta e %): a legenda ao lado explica cada símbolo (25/10/2026, projeto exemplo) */
+    arr(c.dados.calhas).forEach(function (k) { D.poli(k.pts.map(function (p) { return M.Pp(p); }), "ARQ-BEIRAL", true); });
+    arr(c.dados.tubosAparentes).forEach(function (t) {
+      if (Math.abs(t.a[0] - t.b[0]) > 0.02 || Math.abs(t.a[2] - t.b[2]) > 0.02 || Math.abs(t.a[1] - t.b[1]) < 0.3 || !/^(tel-calha|AP-AT-DESCIDA)/.test(t.id)) return;
+      var q = M.Pp([t.a[0], t.a[2]]); D.circ(q[0], q[1], 1.1, "ARQ-TELHADO"); D.circ(q[0], q[1], 0.45, "ARQ-TELHADO");
+    });
+    arr(c.dados.tubosAparentes).forEach(function (t) {
+      if (!/^AP-AT-(BUZINOTE|LADRAO)/.test(t.id)) return;
+      var q = M.Pp([t.a[0], t.a[2]]); D.ret(q[0] - 1.1, q[1] - 1.1, 2.2, 2.2, "ARQ-TELHADO");
+    });
+    arr(c.dados.caimentos).forEach(function (q) {
+      if (!/^AT-CAIMENTO$/.test(q.id)) return;   /* a seta da laje; as meias-canas vão na legenda */
+      var cx = (q.x0 + q.x1) / 2, cz = (q.z0 + q.z1) / 2, L = Math.min(q.x1 - q.x0, q.z1 - q.z0) * 0.4;
+      sem += setasCaimento(D, M, [{ pts: [[q.x0, q.z0], [q.x1, q.z0], [q.x1, q.z1], [q.x0, q.z1]], seta: { de: [cx - q.dir[0] * L / 2, cz - q.dir[1] * L / 2], para: [cx + q.dir[0] * L / 2, cz + q.dir[1] * L / 2] }, pct: q.pct }]);
+    });
     /* cotas do beiral: o retângulo que o telhado ocupa */
     var xs = [], zs = [];
     Tl.forEach(function (t) { (t.pBeiral || t.pts).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
@@ -175,7 +191,7 @@
       /* níveis: cumeeira e apoio */
       var yy = M.P(x1, z0)[1] - 4;
       Tl.forEach(function (t, i) {
-        var s = "CUMEEIRA " + d.nivelTxt(t.cotaCumeeira) + " m";
+        var s = (t.cumeeira > 0.05 ? "CUMEEIRA " : "PONTO MAIS ALTO ") + d.nivelTxt(t.cotaCumeeira) + " m";
         D.texto(M.P(x1, z0)[0] + 6, yy + i * 4.4, s, 2.5);
       });
     }

@@ -33,7 +33,7 @@
   var VIVO = { existente: 1, novo: 1 };
 
   /* ------------------------------------------------------------ onde passam os cortes */
-  function escolherCortes(dados, depois) {
+  function escolherCortes(dados, depois, forcar) {
     var g = G(), cx = dados.caixa, A = (depois || dados).ambientes || [], V = dados.vaos || [], cand;
     function pontua(eixo, coord) {
       var s = 0;
@@ -54,6 +54,11 @@
       return L.slice(0, 80).map(function (q) { return q.v; });
     }
     var cA = candidatos("x", cx[1], cx[3]), cB = candidatos("z", cx[0], cx[2]);
+    /* o projetista escolhe a linha do corte (opcoes.cortes = { A: z do corte AA, B: x do corte BB }): o exemplo passa os cortes pela escada e pela caixa d'água */
+    /* a linha pedida primeiro; se a planta não deixa (texto no caminho), a mais próxima, até 25 cm para cada lado */
+    function vizinhos(v) { var L = [Math.round(v * 100) / 100]; for (var k = 1; k <= 5; k++) L.push(Math.round((v + 0.05 * k) * 100) / 100, Math.round((v - 0.05 * k) * 100) / 100); return L; }
+    if (forcar && forcar.A != null && isFinite(+forcar.A)) cA = vizinhos(+forcar.A).concat(cA);
+    if (forcar && forcar.B != null && isFinite(+forcar.B)) cB = vizinhos(+forcar.B).concat(cB);
     return [
       { letra: "A", eixo: "x", coord: cA[0], cands: cA, u0: cx[0], u1: cx[2] },
       { letra: "B", eixo: "z", coord: cB[0], cands: cB, u0: cx[1], u1: cx[3] }
@@ -105,6 +110,44 @@
       });
     });
     arr((c.depois || d).forros).filter(function (f) { return VIVO[f.status]; }).forEach(function (f) { interv(ct, f.pts).forEach(function (iv) { out.forros.push({ u0: iv[0], u1: iv[1], y: f.cota, tipo: f.tipo }); }); });
+    /* FUNDAÇÃO (bloco, estaca, baldrame), vigas e pilares de concreto, madeira do telhado e da base da caixa, calha embutida, peças de aço (escada, gaiola,
+       patamar, alçapão, abrigo), a caixa d'água e o deck: o que o plano de corte atravessa, cada um no seu material (25/10/2026, projeto exemplo) */
+    out.pecas = [];
+    function alarga(y0, y1) { out.yMin = Math.min(out.yMin, y0); out.yMax = Math.max(out.yMax, y1); }
+    function cortar(pts, y0, y1, cls, status) { interv(ct, pts).forEach(function (iv) { out.pecas.push({ u0: iv[0], u1: iv[1], y0: y0, y1: y1, cls: cls, status: status || "novo" }); alarga(y0, y1); }); }
+    function quadEm(x, z, h) { return [[x - h, z - h], [x + h, z - h], [x + h, z + h], [x - h, z + h]]; }
+    arr(d.fundacoes).forEach(function (f) {
+      cortar(f.pts, f.base, f.topo, "conc", f.status);
+      arr(f.estacas).forEach(function (e) { if (f.ponta != null && f.dEstaca > 0) cortar(quadEm(e.x, e.z, f.dEstaca / 2), f.ponta, f.base, "conc", f.status); });
+    });
+    arr(d.vigas).forEach(function (v) { if (VIVO[v.status]) cortar(v.pts, v.base, v.topo, v.madeira ? "madeira" : "conc", v.status); });
+    arr(d.pilares).forEach(function (p) { if (VIVO[p.status]) cortar(p.pts, p.base, p.topo, "conc", p.status); });
+    arr(d.calhas).forEach(function (k) { cortar(k.pts, k.base, k.topo, "aco", k.status); });
+    arr(d.moveis).forEach(function (m) {
+      if (!VIVO[m.status] || !(m.h1 > m.h0)) return;
+      if (m.famId === "hid-caixa-dagua") cortar(m.pts, m.h0, m.h1, "agua", m.status);
+      else if (m.famId === "ra-pais-deck") cortar(m.pts, m.h0, m.h1, "madeira", m.status);
+    });
+    arr(d.metais).forEach(function (m) {
+      if (!VIVO[m.status]) return;
+      if (m.chapa) { cortar(m.pts, m.base, m.topo, "aco", m.status); return; }
+      var ez = ct.eixo === "x", a = m.a, b = m.b, hb = m.sb / 2, ha = m.sa / 2;
+      function nn(p) { return ez ? p[2] - ct.coord : p[0] - ct.coord; }
+      function uu(p) { return ez ? p[0] : p[2]; }
+      var na = nn(a), nb = nn(b), ua = uu(a), ub = uu(b), dy = b[1] - a[1], du = ub - ua;
+      if (Math.abs(na) <= hb + 1e-6 && Math.abs(nb) <= hb + 1e-6) {
+        /* a barra está NO plano do corte (a viga do pórtico, o montante): corta no comprimento todo */
+        var steep = Math.abs(dy) > Math.abs(du), P;
+        if (steep) P = [[Math.min(ua, ub) - hb, Math.min(a[1], b[1])], [Math.max(ua, ub) + hb, Math.min(a[1], b[1])], [Math.max(ua, ub) + hb, Math.max(a[1], b[1])], [Math.min(ua, ub) - hb, Math.max(a[1], b[1])]];
+        else P = [[ua, a[1] - ha], [ub, b[1] - ha], [ub, b[1] + ha], [ua, a[1] + ha]];
+        out.pecas.push({ poli: P, cls: "aco", status: m.status }); alarga(Math.min(a[1], b[1]) - ha, Math.max(a[1], b[1]) + ha);
+      } else if (na * nb < 0 || Math.abs(na) <= hb || Math.abs(nb) <= hb) {
+        /* a barra atravessa o plano (o degrau, o arco da gaiola, a terça): o corte dela é a seção do perfil */
+        var t = Math.abs(na - nb) < 1e-9 ? 0 : na / (na - nb); t = Math.max(0, Math.min(1, t));
+        var cu = ua + (ub - ua) * t, cy = a[1] + dy * t, hh = Math.max(hb, 0.006);
+        out.pecas.push({ u0: cu - hh, u1: cu + hh, y0: cy - hh, y1: cy + hh, cls: "aco", status: m.status }); alarga(cy - hh, cy + hh);
+      }
+    });
     arr((c.depois || d).ambientes).forEach(function (a) {
       interv(ct, a.pts).forEach(function (iv) { out.ambientes.push({ u0: iv[0], u1: iv[1], nome: a.nome, base: a.base, pe: a.pe }); });
     });
@@ -138,6 +181,15 @@
         D.linha(P[0][0], P[0][1], P[1][0], P[1][1], "ARQ-VAO"); D.linha(P[3][0], P[3][1], P[2][0], P[2][1], "ARQ-VAO");
         if (a.tipo === "janela") { var ym = (Y(a.y0) + Y(a.y1)) / 2; D.linha(P[0][0], ym, P[1][0], ym, "ARQ-ARCO"); }
       });
+    });
+    /* fundação, concreto, madeira, aço, caixa d'água: cada material com o seu preenchimento (concreto novo com a hachura da convenção) */
+    var FILL = { madeira: "#e4cfae", aco: "#9fb0c0", agua: "#cfe3f3" };
+    arr(mc.pecas).forEach(function (p) {
+      var P = p.poli ? p.poli.map(function (q) { return [U(q[0]), Y(q[1])]; }) : R(p.u0, p.y0, p.u1, p.y1);
+      if (p.cls === "conc") { poche(P, p.status === "existente" ? "existente" : "novo"); return; }
+      d.fundoPol(D, P, FILL[p.cls] || "#bdbdbd");
+      D._cam = "ARQ-VAO"; D.traco(P, true); D._cam = null;
+      D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, "ARQ-VAO", 1) + "/>");
     });
     /* telhado: a face de cima grossa e a de baixo fina */
     mc.telhado.forEach(function (t) {
@@ -181,13 +233,15 @@
     });
     void d;
   }
+  /* telhado de UMA água não tem cumeeira: o ponto mais alto é a borda alta da água (o revisor, 25/10/2026: "cumeeira" num telhado inclinado para um lado só) */
+  function cumeeiraReal(c) { return arr((c.dados || {}).telhados).some(function (t) { return num(t.cumeeira, 0) > 0.05; }); }
   function niveisCorte(c, ct, mc, F) {
     var D = c.D, d = DS(), xr = F.U(ct.u1) + 16, lista = [{ y: 0, t: "±0,00" }];
     var topo = Math.max.apply(null, [0].concat(mc.paredes.filter(function (p) { return !p.muro; }).map(function (p) { return p.yt; })));
     var cum = Math.max.apply(null, [-9].concat(mc.telhado.map(function (t) { return Math.max(t.ya, t.yb); })));
     var fv = {}; mc.forros.forEach(function (f) { if (!fv[f.y]) { fv[f.y] = 1; lista.push({ y: f.y, t: d.nivelTxt(f.y) + " forro" }); } });
     if (topo > 0.1) lista.push({ y: topo, t: d.nivelTxt(topo) + " topo da parede" });
-    if (cum > -9) lista.push({ y: cum, t: d.nivelTxt(cum) + " cumeeira" });
+    if (cum > -9) lista.push({ y: cum, t: d.nivelTxt(cum) + (cumeeiraReal(c) ? " cumeeira" : " ponto mais alto do telhado") });
     colocarNiveis(D, xr, lista, F);
   }
   function rotulosCorte(c, ct, mc, F, k) {
@@ -267,6 +321,27 @@
         });
       });
     });
+    /* o que fica FORA da casa (25/10/2026, projeto exemplo): o abrigo e a escada de marinheiro de aço, o deck, os tubos aparentes — na MESMA ordem de
+       profundidade das paredes e do telhado (antes o telhado era desenhado por último e aparecia por cima da platibanda) */
+    function ext(u0, u1, y0, y1) { uMin = Math.min(uMin, u0); uMax = Math.max(uMax, u1); yMax = Math.max(yMax, y1); yMin = Math.min(yMin, y0); }
+    arr(d.metais).filter(function (m) { return VIVO[m.status]; }).forEach(function (m) {
+      if (m.chapa) {
+        var us = m.pts.map(proj), cc = g.centroide(m.pts); items.push({ tipo: "bloco", cls: "aco", u0: Math.min.apply(null, us), u1: Math.max.apply(null, us), yb: m.base, yt: m.topo, prof: prof(cc), status: m.status });
+        ext(Math.min.apply(null, us), Math.max.apply(null, us), m.base, m.topo); return;
+      }
+      var pa = [m.a[0], m.a[2]], pb = [m.b[0], m.b[2]], ua = proj(pa), ub = proj(pb);
+      items.push({ tipo: "barra", cls: "aco", ua: ua, ya: m.a[1], ub: ub, yb: m.b[1], sa: m.sa, sb: m.sb, prof: (prof(pa) + prof(pb)) / 2, status: m.status });
+      ext(Math.min(ua, ub) - m.sb / 2, Math.max(ua, ub) + m.sb / 2, Math.min(m.a[1], m.b[1]) - m.sa / 2, Math.max(m.a[1], m.b[1]) + m.sa / 2);
+    });
+    arr(d.moveis).filter(function (m) { return VIVO[m.status] && m.h1 > m.h0 && m.famId === "ra-pais-deck"; }).forEach(function (m) {
+      var us = m.pts.map(proj); items.push({ tipo: "bloco", cls: "madeira", u0: Math.min.apply(null, us), u1: Math.max.apply(null, us), yb: m.h0, yt: m.h1, prof: prof(g.centroide(m.pts)), status: m.status });
+      ext(Math.min.apply(null, us), Math.max.apply(null, us), m.h0, m.h1);
+    });
+    arr(d.tubosAparentes).forEach(function (t) {
+      var pa = [t.a[0], t.a[2]], pb = [t.b[0], t.b[2]], ua = proj(pa), ub = proj(pb);
+      items.push({ tipo: "tubo", ua: ua, ya: t.a[1], ub: ub, yb: t.b[1], dn: t.dn / 1000, prof: (prof(pa) + prof(pb)) / 2 + 0.02, status: "novo" });
+      ext(Math.min(ua, ub) - t.dn / 2000, Math.max(ua, ub) + t.dn / 2000, Math.min(t.a[1], t.b[1]), Math.max(t.a[1], t.b[1]));
+    });
     var ordem = items.slice().sort(function (a, b) { return a.prof - b.prof; });
     var vaos = d.vaos.filter(function (q) { return VIVO[q.status]; });
     return { items: ordem, vaos: vaos, uMin: uMin, uMax: uMax, yMax: yMax, yMin: yMin, r: r, v: v, proj: proj, prof: prof };
@@ -278,7 +353,7 @@
     D.linha(U(mf.uMin - 0.9), Y(0), U(mf.uMax + 0.9), Y(0), "ARQ-TERRENO");
     for (var xx = U(mf.uMin - 0.9); xx < U(mf.uMax + 0.9); xx += 2.2) D.linha(xx, Y(0), xx - 1.6, Y(0) + 1.6, "ARQ-HACHURA");
     var nPar = 0;
-    mf.items.filter(function (it) { return it.tipo !== "agua"; }).forEach(function (it) {
+    function desenhaParede(it) {
       var P = [[U(it.u0), Y(it.yt)], [U(it.u1), Y(it.yt)], [U(it.u1), Y(it.yb)], [U(it.u0), Y(it.yb)]];
       d.fundoPol(D, P, it.tipo === "muro" ? "#ececec" : (it.status === "novo" ? "#fbefef" : "#f1f1f1"));
       D._cam = it.tipo === "muro" ? "ARQ-MURO" : "ARQ-PAREDE-" + (it.status === "novo" ? "NOVO" : "EXISTENTE"); D.traco(P, true); D._cam = null;
@@ -293,13 +368,30 @@
           if (q.tipo === "janela") { D.linha(U(u), Y(y1), U(u), Y(y0), "ARQ-ARCO"); D.linha(U(u - h), (Y(y0) + Y(y1)) / 2, U(u + h), (Y(y0) + Y(y1)) / 2, "ARQ-ARCO"); }
         });
       }
-    });
-    mf.items.filter(function (it) { return it.tipo === "agua"; }).forEach(function (it) {
+    }
+    function desenhaAgua(it) {
       var P = it.poli.map(function (q) { return [U(q[0]), Y(q[1])]; });
       if (g.areaPol(P) < 0.2) { D.linha(P[0][0], P[0][1], P[P.length - 1][0], P[P.length - 1][1], "ARQ-TELHADO"); return; }
       d.fundoPol(D, P, "#d8c2a6"); D._cam = "ARQ-TELHADO"; D.traco(P, true); D._cam = null; D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, "ARQ-TELHADO", 1) + "/>");
       /* o caimento: linhas de telha a cada 4 mm de papel */
       g.hachuraLinhas(P, 4, 0).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA"); });
+    }
+    var FILL = { madeira: "#e4cfae", aco: "#9fb0c0" };
+    function poligono(P, fill) { d.fundoPol(D, P, fill); D._cam = "ARQ-VAO"; D.traco(P, true); D._cam = null; D.add('<polygon points="' + d.pts(P) + '" fill="none"' + d.atr(D, "ARQ-VAO", 1) + "/>"); }
+    /* a barra em elevação: o paralelogramo da barra, com a espessura do perfil (na vertical se a barra é deitada, na horizontal se é em pé), no mínimo 0,35 mm no papel */
+    function espessura(m) { return Math.max(m, 0.35 / k); }
+    function desenhaBarra(it, fill, a, b) {
+      var du = it.ub - it.ua, dy = it.yb - it.ya, steep = Math.abs(dy) > Math.abs(du), P;
+      if (steep) { var h = espessura(b) / 2; P = [[U(it.ua - h), Y(it.ya)], [U(it.ua + h), Y(it.ya)], [U(it.ub + h), Y(it.yb)], [U(it.ub - h), Y(it.yb)]]; }
+      else { var v = espessura(a) / 2; P = [[U(it.ua), Y(it.ya + v)], [U(it.ub), Y(it.yb + v)], [U(it.ub), Y(it.yb - v)], [U(it.ua), Y(it.ya - v)]]; }
+      poligono(P, fill);
+    }
+    mf.items.forEach(function (it) {
+      if (it.tipo === "agua") desenhaAgua(it);
+      else if (it.tipo === "barra") desenhaBarra(it, FILL.aco, it.sa, it.sb);
+      else if (it.tipo === "tubo") desenhaBarra(it, "#6f8fb5", it.dn, it.dn);
+      else if (it.tipo === "bloco") poligono([[U(it.u0), Y(it.yt)], [U(it.u1), Y(it.yt)], [U(it.u1), Y(it.yb)], [U(it.u0), Y(it.yb)]], FILL[it.cls] || "#ccc");
+      else desenhaParede(it);
     });
     void nPar;
     return { U: U, Y: Y };
@@ -313,7 +405,7 @@
       var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
       D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
     }
-    var xr = F.U(mf.uMax) + 14, niv = [{ y: 0, t: "±0,00" }]; if (topoPar > 0.05) niv.push({ y: topoPar, t: d.nivelTxt(topoPar) }); if (cum > topoPar + 0.05) niv.push({ y: cum, t: d.nivelTxt(cum) + " cumeeira" });
+    var xr = F.U(mf.uMax) + 14, niv = [{ y: 0, t: "±0,00" }]; if (topoPar > 0.05) niv.push({ y: topoPar, t: d.nivelTxt(topoPar) }); if (cum > topoPar + 0.05) niv.push({ y: cum, t: d.nivelTxt(cum) + (cumeeiraReal(c) ? " cumeeira" : " ponto mais alto do telhado") });
     colocarNiveis(D, xr, niv, F);
     /* cota geral embaixo */
     var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cm1(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });

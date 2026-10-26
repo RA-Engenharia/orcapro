@@ -30,6 +30,12 @@
   function rd(x, n) { return Number(x.toFixed(n)); }               // arredondamento como o round() do Python (decimal correto do double)
   function norm(a, b) { return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2) + Math.pow(a[2] - b[2], 2)); }
   function arange(a, b, s) { var n = Math.ceil((b - a) / s), o = [], i; for (i = 0; i < n; i++) o.push(a + i * s); return o; }
+  /** M4 (NBR 7190-1:2022, 6.6.4): índices dos vãos (baias [x0,x1]) que levam treliça vertical/X das águas — o primeiro, o último e, entre eles, o mais afastado que respeite "pelo menos um de cada três vãos" (índices a ≤ 3 de distância) e "travamento a cada 20 m ou menos" (folga entre o fim de um vão contraventado e o início do seguinte ≤ 20 m). */
+  function baiasContraventadas(baias, limM) {
+    var lim = limM == null ? 20 : limM, ix = [0], cur = 0, last = baias.length - 1, nx, j;
+    while (cur < last) { nx = cur + 1; for (j = Math.min(last, cur + 3); j > cur; j--) { if (baias[j][0] - baias[cur][1] <= lim + 1e-9) { nx = j; break; } } ix.push(nx); cur = nx; }
+    return ix;
+  }
   function linspace(a, b, n) { var o = [], i; if (n === 1) return [a]; for (i = 0; i < n; i++) o.push(a + (b - a) * i / (n - 1)); return o; }
   function interp(x, xs, ys) { if (x <= xs[0]) return ys[0]; if (x >= xs[xs.length - 1]) return ys[ys.length - 1]; for (var i = 0; i + 1 < xs.length; i++) if (x <= xs[i + 1]) return ys[i] + (ys[i + 1] - ys[i]) * (x - xs[i]) / (xs[i + 1] - xs[i]); return ys[ys.length - 1]; }
 
@@ -42,8 +48,8 @@
         if (k.qtd == null) k.qtd = 1; if (!k.unidade) k.unidade = "peça";
         if (k.p0 && k.p1) {
           var L = norm(k.p0, k.p1); k.comprimento_m = rd(L, 3);
-          var s = k.secao, A = s.tipo === "ret" ? s.b * s.h : s.tipo === "circ" ? Math.PI * s.d * s.d / 4 : (s.area_media || 0);
-          k.volume_m3 = rd(A * L * k.qtd, 4);
+          var s = k.secao;
+          if (s) { var A = s.tipo === "ret" ? s.b * s.h : s.tipo === "circ" ? Math.PI * s.d * s.d / 4 : (s.area_media || 0); k.volume_m3 = rd(A * L * k.qtd, 4); }      /* sem seção (mureta da fundação, item de interface): sem volume de madeira */
         }
         k.p0 = k.p0 ? k.p0.map(function (v) { return rd(v, 4); }) : null; k.p1 = k.p1 ? k.p1.map(function (v) { return rd(v, 4); }) : null;
         if (k.secao === undefined) k.secao = null;
@@ -304,7 +310,7 @@
         } else i++;
       }
     });
-    var nv = 0, npil = 0, pil = [], apoiosDiretos = [], vigasPecas = [];
+    var nv = 0, nm = 0, npil = 0, pil = [], apoiosDiretos = [], vigasPecas = [];
     var bordasSet = {}; rects.forEach(function (r) { bordasSet[rd(r[0] + 0.06, 2)] = 1; bordasSet[rd(r[1] - 0.06, 2)] = 1; });
     (d.linhasExtras || []).forEach(function (v) { bordasSet[rd(v, 2)] = 1; });
     var bordas = Object.keys(bordasSet).map(Number).sort(function (a, b) { return a - b; }), linhas = [];
@@ -317,12 +323,31 @@
       while (i < ys.length) {
         if (ok[i]) {
           j = i; while (j + 1 < ys.length && ok[j + 1]) j++;
-          if (ys[j] - ys[i] > 0.5) {
-            nv++; var vp = add({ id: pre + "-V" + z(nv, 2), grupo: Dres.nome + " — vigas", descricao: "Viga do deck", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(d.viga.b * 100, 0) + "×" + rd(hv * 100, 0) + " cm",
-              secao: { tipo: "ret", b: d.viga.b, h: hv }, p0: [x, ys[i], zv], p1: [x, ys[j], zv], up: [0, 0, 1] });
-            var npts = Math.max(2, Math.ceil((ys[j] - ys[i]) / 2.5) + 1), mine = [];
-            linspace(ys[i] + 0.15, ys[j] - 0.15, npts).forEach(function (t) { var pt = [x, t]; pil.push(pt); mine.push(pt); });
-            vp.apoios_pontos = mine; vigasPecas.push(vp);
+          /* R35 (r13, M8): a mureta vale SÓ no TRECHO perto do terreno (face inferior da viga a menos de 15 cm), não na viga inteira: o trecho contínuo é cortado no ponto de folga >= 15 cm. Trecho de viga entre duas muretas com <= 0,5 m vira mureta (não há viga curta). */
+          var folgaTerr = d.muretaFolga == null ? 0.15 : d.muretaFolga, kk, nearP = [], near = [], ra, rb, dbg = 0, nSeg = j - i;
+          for (kk = i; kk <= j; kk++) nearP.push(!!d.muretaSeAbaixoDoTerreno && zfundo - d.terreno(x, ys[kk]) < folgaTerr - 1e-9);
+          for (kk = 0; kk < nSeg; kk++) near.push(nearP[kk] || nearP[kk + 1]);      /* trecho (entre dois pontos da grade) é mureta se QUALQUER ponta fica perto do terreno */
+          for (dbg = 0; dbg < 4; dbg++) { var mudou = false; ra = 0; while (ra < nSeg) { rb = ra; while (rb + 1 < nSeg && near[rb + 1] === near[ra]) rb++; if (!near[ra] && ys[i + rb + 1] - ys[i + ra] <= 0.5 && near.some(function (v) { return v; })) { for (kk = ra; kk <= rb; kk++) near[kk] = true; mudou = true; } ra = rb + 1; } if (!mudou) break; }
+          ra = 0;
+          while (ra < nSeg) {
+            rb = ra; while (rb + 1 < nSeg && near[rb + 1] === near[ra]) rb++;
+            var perto = near[ra], ia = i + ra, ib = i + rb + 1;
+            if (perto && ys[ib] - ys[ia] > 0.05) {
+              /* R35 (Casa Mar): a face inferior da viga fica a menos de 15 cm do terreno (ou abaixo dele) neste trecho: o deck apoia DIRETO numa MURETA da fundação (outra empresa: interface, com a reação informada); sem viga enterrada.
+                 Nosso: chapa de apoio inox e neoprene sob o barrote (item MC). O id DS-MU<n> entra como linha de apoio dos barrotes no maddeck. A ALTURA da mureta (do terreno ao topo) é informada à fundação. */
+              nm++; var zTopo = zv + hv / 2, tMin = 1e9, tMax = -1e9; for (kk = ia; kk <= ib; kk++) { var tz = d.terreno(x, ys[kk]); tMin = Math.min(tMin, tz); tMax = Math.max(tMax, tz); }
+              add({ id: pre + "-MU" + z(nm, 2), grupo: Dres.nome + " — muretas (fundação, outra empresa)", descricao: "Mureta de fundação sob o deck (interface com a fundação; reação informada)", material: "Concreto armado (fundação — outra empresa)",
+                especificacao: "mureta de fundação, topo na cota " + rd(zTopo, 3) + " m, altura " + rd(Math.max(0, zTopo - tMax), 2) + " a " + rd(Math.max(0, zTopo - tMin), 2) + " m acima do terreno do modelo, largura mínima 20 cm (a confirmar pela fundação); o deck apoia direto, sem viga", secao: { tipo: "ret", b: 0.20, h: 0.20 }, p0: [x, ys[ia], zTopo - 0.10], p1: [x, ys[ib], zTopo - 0.10], up: [0, 0, 1], qtd: 1, mureta: true, interface: true, nivel: 1, apoio_externo: true, apoios_externos: [[x, ys[ia]], [x, ys[ib]]], alturaMax_m: rd(Math.max(0, zTopo - tMin), 2), alturaMin_m: rd(Math.max(0, zTopo - tMax), 2) });
+              add({ id: pre + "-MC" + z(nm, 2), grupo: Dres.nome + " — muretas (fundação, outra empresa)", descricao: "Chapa de apoio inox 316 + neoprene sob os barrotes na mureta", material: "Inox 316 + neoprene",
+                especificacao: "chapa inox 316 t = 5 mm × 100 mm e manta de neoprene 100 × 10 mm ao longo da mureta (" + rd(ys[ib] - ys[ia], 2) + " m)", secao: null, qtd: rd(ys[ib] - ys[ia], 2), unidade: "m" });
+            } else if (ys[ib] - ys[ia] > 0.5) {
+              nv++; var vp = add({ id: pre + "-V" + z(nv, 2), grupo: Dres.nome + " — vigas", descricao: "Viga do deck", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(d.viga.b * 100, 0) + "×" + rd(hv * 100, 0) + " cm",
+                secao: { tipo: "ret", b: d.viga.b, h: hv }, p0: [x, ys[ia], zv], p1: [x, ys[ib], zv], up: [0, 0, 1] });
+              var npts = Math.max(2, Math.ceil((ys[ib] - ys[ia]) / 2.5) + 1), mine = [];
+              linspace(ys[ia] + 0.15, ys[ib] - 0.15, npts).forEach(function (t) { var pt = [x, t]; pil.push(pt); mine.push(pt); });
+              vp.apoios_pontos = mine; vigasPecas.push(vp);
+            }
+            ra = rb + 1;
           }
           i = j + 1;
         } else i++;
@@ -366,7 +391,27 @@
       var q = add({ id: pre + "-P" + (i + 1), grupo: Dres.nome + " — pilares", descricao: d.pilar.descricao || "Pilar do deck (fundação de outra empresa)", material: d.pilar.material || ROLICO_MAR,
         especificacao: d.pilar.especificacao || ("Ø" + rd(d.pilar.d * 100, 0) + " cm"), secao: { tipo: "circ", d: d.pilar.d }, p0: [pt[0], pt[1], d.pilar.zBase], p1: [pt[0], pt[1], zfundo], up: [1, 0, 0] });
       q.apoio_externo = true; q.pilarete = true; q.h_livre = zfundo - d.pilar.zBase; q.engastado = !!d.pilar.engastado; q.L0 = (q.engastado ? 0.7 : 1.0) * q.h_livre;
+      /* R34 (Casa Mar): mãos-francesas no TOPO do pilar, pilar–viga, nas DUAS direções: travam o topo (id DI-MF<n> casa com DI-P<n> no maddeck) */
+      if (d.pilar.maosFrancesasTopo) add({ id: pre + "-MF" + (i + 1), grupo: Dres.nome + " — contraventamento", descricao: "Mãos-francesas do topo do pilar (2, pilar–viga, nas duas direções)", material: MLC_TRAT,
+        especificacao: "MLC GL24h tratada 6×12 cm, 0,9 m, " + (d.pilar.mfParafusos || 2) + " parafusos Ø12 inox por ponta", secao: null, qtd: 2 });
     });
+    /* E4 r11 (R34): pilar ALTO (> 3 m) = CONTRAVENTAMENTO EM X entre pilares nas duas direções (um X por quadro pilar–pilar, da base à viga): diagonais de MLC (padrão) ou tirantes inox com esticador (só tração).
+       d.pilar.contraventamento = { tipo: "madeira" | "tirante", zNo0, zNo1 (afastamento do nó da base e do topo, m) }; d.pilar.cv = { b, h } (madeira) | { d } (tirante). Ids DI-CV<n> (DI-CVT<n> no tirante). */
+    var cvC = d.pilar.contraventamento, cvPecas = [];
+    if (cvC && d.pilares.length > 1) {
+      var zN0 = d.pilar.zBase + (cvC.zNo0 != null ? cvC.zNo0 : 0.40), zN1 = zfundo - (cvC.zNo1 != null ? cvC.zNo1 : 0.40), tirante = cvC.tipo === "tirante", cvS = d.pilar.cv || (tirante ? { d: 0.016 } : { b: 0.12, h: 0.20 }), quadros = [], nCV = 0;
+      function agrupa(chave, ordem) { var g = {}; d.pilares.forEach(function (pt) { var k = rd(pt[chave], 2); (g[k] = g[k] || []).push(pt); }); Object.keys(g).sort(function (a, b) { return a - b; }).forEach(function (k) { var L = g[k].sort(function (a, b) { return a[ordem] - b[ordem]; }); for (var q = 0; q + 1 < L.length; q++) quadros.push({ dir: chave === 1 ? "X" : "Y", A: L[q], B: L[q + 1] }); }); }
+      agrupa(1, 0); agrupa(0, 1);      /* quadros ao longo de X (mesmo y) e ao longo de Y (mesmo x) */
+      quadros.forEach(function (qd) {
+        [[qd.A, qd.B], [qd.B, qd.A]].forEach(function (par) {
+          nCV++; var a = par[0], b = par[1], p0 = [a[0], a[1], zN0], p1 = [b[0], b[1], zN1], ax = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]], Ln = norm(p0, p1), nh = [-ax[1], ax[0], 0], nl = Math.sqrt(nh[0] * nh[0] + nh[1] * nh[1]) || 1;
+          nh = [nh[0] / nl, nh[1] / nl, 0]; var upv = [nh[1] * ax[2] - nh[2] * ax[1], nh[2] * ax[0] - nh[0] * ax[2], nh[0] * ax[1] - nh[1] * ax[0]]; if (upv[2] < 0) upv = [-upv[0], -upv[1], -upv[2]]; var un = Math.sqrt(upv[0] * upv[0] + upv[1] * upv[1] + upv[2] * upv[2]) || 1; upv = upv.map(function (v) { return rd(v / un, 4); });
+          cvPecas.push(add(tirante
+            ? { id: pre + "-CVT" + z(nCV, 2), grupo: Dres.nome + " — contraventamento", descricao: "Tirante do contraventamento em X (quadro " + qd.dir + ", só tração)", material: INOX, especificacao: "tirante inox A4-70 Ø" + rd(cvS.d * 1000, 0) + " mm com esticador (terminal de aperto) e olhal nas duas pontas, " + rd(Ln, 2) + " m", secao: null, p0: p0, p1: p1, qtd: rd(Ln, 2), unidade: "m", contraventamento: true, quadro: qd.dir, d_tirante: cvS.d }
+            : { id: pre + "-CV" + z(nCV, 2), grupo: Dres.nome + " — contraventamento", descricao: "Diagonal do contraventamento em X (quadro " + qd.dir + ", pilar–pilar)", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(cvS.b * 100, 0) + "×" + rd(cvS.h * 100, 0) + " cm, " + rd(Ln, 2) + " m, chapa interna de aço inox t = 8 mm + pinos inox nas duas pontas", secao: { tipo: "ret", b: cvS.b, h: cvS.h }, p0: p0, p1: p1, up: upv, contraventamento: true, quadro: qd.dir }));
+        });
+      });
+    }
     var area = (d.x1 - d.x0) * (d.y1 - d.y0);
     add({ id: pre + "-TAB", grupo: Dres.nome + " — tábuas", descricao: "Tábuas do deck", material: CUMARU, especificacao: "deck 21×145 mm, fixação oculta inox", secao: null, qtd: rd(area * 1.10, 2), unidade: "m²" });
     return { area: area, apoiosDiretos: [] };
@@ -384,9 +429,11 @@
     });
     if (p.escada) {
       var e = p.escada.longarinas;
-      e.xs.forEach(function (x, i) {
-        add({ id: "ESC-L" + (i + 1), grupo: "Escada", descricao: "Longarina da escada", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(e.b * 100, 0) + "×" + rd(e.h * 100, 0) + " cm",
+      /* E4 (e): escada de CONCRETO na arquitetura (Casa Mar R05.1) — sem longarinas de madeira (longarinas: null); os degraus de cumaru seguem como item */
+      if (e) e.xs.forEach(function (x, i) {
+        var lg = add({ id: "ESC-L" + (i + 1), grupo: "Escada", descricao: "Longarina da escada", material: MLC_TRAT, especificacao: "MLC GL24h tratada " + rd(e.b * 100, 0) + "×" + rd(e.h * 100, 0) + " cm",
           secao: { tipo: "ret", b: e.b, h: e.h }, p0: [x, e.y0, e.z0], p1: [x, e.y1, e.z1], up: [0, 0, 1] });
+        if (p.escada.apoioBase !== false) lg.apoio_externo = true;          /* E4 r6: a base da longarina apoia no piso/bloco (declarado); apoioBase:false = sem apoio → o auditor acusa */
       });
       add({ id: "ESC-D", grupo: "Escada", descricao: "Degraus", material: CUMARU, especificacao: "degrau, 40 mm, antiderrapante (frisos)", secao: null, qtd: p.escada.degraus });
     }
@@ -398,6 +445,163 @@
     return { pecas: lista.pecas, areas: areas, apoiosDiretos: apoios };
   }
 
+  /* ====================================================================== T2 — casa/pavilhão de DUAS ÁGUAS (E4)
+   * Coordenadas da fonte: X ao longo da cumeeira (a), Y através (b), Z vertical. Água "F" = frente (Y baixo), "B" = fundo (Y alto).
+   * sistema "tesoura": tesouras tipo PRATT (banzos superior/inferior, montantes comprimidos e diagonais tracionadas sob gravidade) a cada sTes, terças sobre os nós do banzo superior, cumeeira = terça de topo.
+   * sistema "cumeeira": viga de cumeeira MLC sobre pilares de oitão (e intermediários) + caibros principais da cumeeira ao frechal. O EMPUXO horizontal dos caibros é resolvido por UMA das duas saídas:
+   *   assento DESLIZANTE (cumeeira portante: sem empuxo) ou assento FIXO + TIRANTE de aço (o motor liga o tirante sozinho se faltar e avisa). O auditor acusa se faltar as duas.
+   * Os membros saem como LISTA (geometria única para o solver e para a fonte): { id, g (grupo), p0, p1, nos[] (pontos intermediários), agua, ws/wp (largura de influência), pinI/pinJ, tracao }. */
+  var T2_PADRAO = {
+    a: 12, b: 8, peDireito: 3.0, baseZ: 0, incl: 0.30, beiral: { frente: 0.8, fundo: 0.8, esq: 0.8, dir: 0.8 },
+    sistema: "tesoura", vMaxPilar: 4.0, telha: { peso: 0.55, descricao: "telha cerâmica com ripas" },
+    cobertura: { sTercaMax: 1.4, caibros: false, sCaibro: 0.5, caibro: { b: 0.05, h: 0.10 } },
+    tesoura: { sTes: 4.0 }, cumeeira: { sCaibro: 1.0, pilaresIntermediarios: null, assento: "deslizante", tirante: false },
+    contraventamento: { aguas: "extremos", tipo: "madeira", fita: { b: 0.06, e: 0.002, aproveitamento: 0.75 } }, vedacaoRigida: false,
+    vergas: null, origem: { x: 0, y: 0 }, nome: "Casa de duas águas"
+  };
+  function t2Parametros(p) {
+    var q = mescla(T2_PADRAO, p || {});
+    if (q.sistema !== "tesoura" && q.sistema !== "cumeeira") throw new Error("madtipologias T2: sistema deve ser \"tesoura\" ou \"cumeeira\"");
+    if (!(q.incl > 0.05)) throw new Error("madtipologias T2: inclinação mínima de 5 % (telha)");
+    if (q.a < q.b - 1e-9) throw new Error("madtipologias T2: a cumeeira corre pela maior dimensão (a ≥ b, NBR 6123 Tabela 5): gire a planta 90°");
+    if (q.cumeeira.assento !== "deslizante" && q.cumeeira.assento !== "fixo") throw new Error("madtipologias T2: assento do caibro \"deslizante\" ou \"fixo\"");
+    q._t2 = true; return q;
+  }
+  function t2Geometria(pp) {
+    var p = pp && pp._t2 ? pp : t2Parametros(pp), a = p.a, b = p.b, Hp = p.peDireito + p.baseZ, i = p.incl, sc = Math.sqrt(1 + i * i), B = p.beiral, cob = p.cobertura, M = [], k, j;
+    var nCol = Math.max(1, Math.ceil(a / Math.min(p.vMaxPilar, p.sistema === "tesoura" ? p.tesoura.sTes : p.vMaxPilar) - 1e-9)), xs = linspace(0, a, nCol + 1);
+    var nH = Math.max(1, Math.ceil((b / 2) * sc / cob.sTercaMax - 1e-9)), dz = (b / 2) / nH, lp = dz * sc, zH = function (jj) { return jj * dz; };
+    var yT = function (z) { return z < 0 ? Hp + i * z : (z > b ? Hp + i * (b - z) : Hp + i * Math.min(z, b - z)); };
+    var m = nH; while (m > 1 && (nH % m !== 0 || m * dz > p.vMaxPilar + 1e-9)) m--;
+    var zsOit = []; for (j = 0; j <= 2 * nH; j += m) zsOit.push(j * dz);
+    var eE = B.esq, eD = B.dir, n = 0, nc = 0, tipF = B.frente * sc, tipB = B.fundo * sc;
+    function add(o) { o.p0 = o.p0.map(function (v) { return rd(v, 4); }); o.p1 = o.p1.map(function (v) { return rd(v, 4); }); M.push(o); return o; }
+    var P3 = function (x, z, y) { return [x, z, y]; }, cumeeira = p.sistema === "cumeeira";
+    /* pilares do perímetro: faces Y=0 e Y=b (esquerda/direita da NBR 6123 na convenção do motor) e oitões X=0 e X=a (frente/fundo) */
+    xs.forEach(function (x, kx) { [0, b].forEach(function (z) { add({ id: "P" + (++n), g: "P", p0: P3(x, z, p.baseZ), p1: P3(x, z, Hp), face: z === 0 ? "esquerda" : "direita", s: x, trib: (kx === 0 || kx === nCol) ? a / nCol / 2 : a / nCol, pinJ: true }); }); });
+    [0, a].forEach(function (x) {
+      zsOit.forEach(function (z, kz) {
+        if (kz === 0 || kz === zsOit.length - 1) return;
+        var central = cumeeira && Math.abs(z - b / 2) < 1e-6;
+        add({ id: (central ? "PC" : "PO") + (++nc), g: central ? "PC" : "PO", p0: P3(x, z, p.baseZ), p1: P3(x, z, cumeeira ? yT(z) : Hp), face: x === 0 ? "frente" : "fundo", s: z, trib: (zsOit[kz + 1] - zsOit[kz - 1]) / 2, pinJ: true, nos: cumeeira ? [P3(x, z, Hp)] : [] });          /* nó na cota do beiral: ancora a fita da parede do oitão */
+      });
+    });
+    var xfr;
+    if (!cumeeira) {
+      xs.forEach(function (x, kx) {
+        add({ id: "BI" + kx, g: "BI", tes: kx, p0: P3(x, 0, Hp), p1: P3(x, b, Hp), nos: linspace(0, b, 2 * nH + 1).slice(1, 2 * nH).map(function (z) { return P3(x, z, Hp); }), pinI: true, pinJ: true });
+        [["F", -1, B.frente, tipF], ["B", 1, B.fundo, tipB]].forEach(function (S) {
+          var ag = S[0], sg = S[1], z0 = sg < 0 ? 0 : b, tip = S[2], nos = tip > 0 ? [P3(x, z0, Hp)] : [], zt = sg < 0 ? -tip : b + tip;
+          for (j = 1; j < nH; j++) nos.push(P3(x, sg < 0 ? zH(j) : b - zH(j), yT(zH(j))));
+          add({ id: "BS" + ag + kx, g: "BS", agua: ag, tes: kx, p0: P3(x, zt, yT(zt)), p1: P3(x, b / 2, yT(b / 2)), nos: nos, heelPin: true });
+          for (j = 1; j <= nH; j++) {
+            var zj = sg < 0 ? zH(j) : b - zH(j);
+            if (j < nH || ag === "F") add({ id: "PD" + ag + j + "_" + kx, g: "PD", tes: kx, p0: P3(x, zj, Hp), p1: P3(x, zj, yT(zj)), pinI: true, pinJ: true });
+            if (j >= 2) add({ id: "DG" + ag + j + "_" + kx, g: "DG", tes: kx, agua: ag, p0: P3(x, sg < 0 ? zH(j - 1) : b - zH(j - 1), Hp), p1: P3(x, zj, yT(zj)), pinI: true, pinJ: true });
+          }
+        });
+      });
+      /* terças nos nós do banzo superior (ponta do beiral, 1..nH-1 de cada lado) + cumeeira no topo; a linha do beiral/heel é o frechal */
+      var linhas = [];
+      if (B.frente > 0) linhas.push(["TF0", -B.frente, "F", tipF / 2, "T"]);
+      for (j = 1; j < nH; j++) linhas.push(["TF" + j, zH(j), "F", lp, "T"]);
+      linhas.push(["CM", b / 2, "R", lp, "CM"]);
+      for (j = nH - 1; j >= 1; j--) linhas.push(["TB" + (nH - j), b - zH(j), "B", lp, "T"]);
+      if (B.fundo > 0) linhas.push(["TB" + nH, b + B.fundo, "B", tipB / 2, "T"]);
+      linhas.forEach(function (L) {
+        var zz = L[1];
+        add({ id: L[0], g: L[4], agua: L[2], p0: P3(-eE, zz, yT(zz)), p1: P3(a + eD, zz, yT(zz)), nos: xs.map(function (x) { return P3(x, zz, yT(zz)); }), ws: L[3], wp: L[3] / sc, linha: zz, artic: true });      /* artic: terça parafusada ao banzo (TS-6) = articulada na flexão horizontal (ry) em cada tesoura (E4 T2fix C3) */
+      });
+      /* E4 T2fix C2 (NBR 7190-1:2022, 6.6.4, Figura 5): linhas LONGITUDINAIS ligando continuamente, de uma extremidade a outra, os nós do BANZO INFERIOR das tesouras (os do superior são as terças). Peças de madeira articuladas
+         nos nós (esforço axial: recebem a F1d = Nd/150 e a levam ao contraventamento vertical). O comprimento de flambagem do BI fora do plano passa a ser o espaçamento REAL entre estas linhas (dz), se a rigidez K_br,1 (6.6.2) for atendida. */
+      for (j = 1; j < 2 * nH; j++) add({ id: "LB" + j, g: "LB", uni: true, p0: P3(0, zH(j), Hp), p1: P3(a, zH(j), Hp), nos: xs.slice(1, xs.length - 1).map(function (x) { return P3(x, zH(j), Hp); }), linha: zH(j) });
+      xfr = xs;
+    } else {
+      var c = p.cumeeira, nInt = c.pilaresIntermediarios == null ? Math.max(0, Math.ceil(a / p.vMaxPilar - 1e-9) - 1) : c.pilaresIntermediarios, sC = c.sCaibro, xr = [-eE];
+      /* caibros: pontos de quebra = ponta do beiral, oitões e pilares intermediários; cada intervalo é dividido em partes IGUAIS ≤ sCaibro (caibro sempre sobre o pilar, sem caibros colados) */
+      var brk = [-eE, 0].concat(linspace(0, a, nInt + 2).slice(1, nInt + 1)).concat([a, a + eD]).filter(function (x, k, v) { return k === 0 || x > v[k - 1] + 1e-9; });
+      for (k = 1; k < brk.length; k++) { var np = Math.max(1, Math.ceil((brk[k] - brk[k - 1]) / sC - 1e-9)); for (j = 1; j <= np; j++) xr.push(brk[k - 1] + (brk[k] - brk[k - 1]) * j / np); }
+      linspace(0, a, nInt + 2).slice(1, nInt + 1).forEach(function (x) { add({ id: "PC" + (++nc), g: "PC", p0: P3(x, b / 2, p.baseZ), p1: P3(x, b / 2, yT(b / 2)), face: null, s: 0, trib: 0, pinJ: true }); });
+      add({ id: "CM", g: "CM", agua: "R", p0: P3(-eE, b / 2, yT(b / 2)), p1: P3(a + eD, b / 2, yT(b / 2)), nos: xr.map(function (x) { return P3(x, b / 2, yT(b / 2)); }), ws: lp, wp: lp / sc });
+      xr.forEach(function (x, kx) {
+        var w = kx === 0 ? (xr[1] - xr[0]) / 2 : (kx === xr.length - 1 ? (xr[kx] - xr[kx - 1]) / 2 : (xr[kx + 1] - xr[kx - 1]) / 2);
+        [["F", -1, B.frente], ["B", 1, B.fundo]].forEach(function (S) {
+          var ag = S[0], sg = S[1], z0 = sg < 0 ? 0 : b, zt = sg < 0 ? -S[2] : b + S[2], nos = S[2] > 0 ? [P3(x, z0, Hp)] : [];
+          for (j = 1; j < nH; j++) nos.push(P3(x, sg < 0 ? zH(j) : b - zH(j), yT(zH(j))));
+          add({ id: "CB" + ag + kx, g: "CB", agua: ag, rf: kx, p0: P3(x, zt, yT(zt)), p1: P3(x, b / 2, yT(b / 2)), nos: nos, pinJ: true, wp: w, ws: w, assento: c.assento, oitao: Math.abs(x) < 1e-6 || Math.abs(x - a) < 1e-6 });
+        });
+        if (c.tirante || c.assento === "fixo") add({ id: "TI" + kx, g: "TI", rf: kx, p0: P3(x, 0, Hp), p1: P3(x, b, Hp), tracao: true });
+      });
+      xfr = xr;
+      /* ripas da telha (3 × 5 cm) fixas aos caibros nos nós intermediários: travam o caibro para fora do plano (L0z) — entram no MODELO (RP), não na lista de madeira estrutural */
+      [["F", -1], ["B", 1]].forEach(function (S) { for (j = 1; j < nH; j++) { var zr = S[1] < 0 ? zH(j) : p.b - zH(j); add({ id: "RP" + S[0] + j, g: "RP", p0: P3(-eE, zr, yT(zr)), p1: P3(a + eD, zr, yT(zr)), nos: xr.map(function (x) { return P3(x, zr, yT(zr)); }), pinI: true, pinJ: true }); } });
+    }
+    [0, b].forEach(function (z, iz) {
+      var tr = (iz === 0 ? B.frente : B.fundo) * sc / 2 + lp / 2;
+      add({ id: "FR" + (iz + 1), g: "FR", agua: iz === 0 ? "F" : "B", p0: P3(-eE, z, Hp), p1: P3(a + eD, z, Hp), nos: xfr.map(function (x) { return P3(x, z, Hp); }), ws: tr, wp: tr / sc, linha: z, beiral: true });
+    });
+    /* contraventamento: fita em X no plano das águas (vãos extremos ou todos) e, sem vedação rígida, nos planos das paredes (vãos extremos) */
+    var fx = 0, ct = p.contraventamento, mad = ct.tipo !== "fita", baias = [], xb = cumeeira ? xr.filter(function (x) { return x >= -1e-9 && x <= a + 1e-9; }) : xs;
+    var passo = cumeeira ? Math.max(1, Math.round(Math.min(p.vMaxPilar, a) / sC)) : 1;
+    for (k = 0; k < xb.length - 1; k += passo) baias.push([xb[k], xb[Math.min(k + passo, xb.length - 1)]]);
+    /* M4 (r14, NBR 7190-1:2022, 6.6.4, Figura 5): treliça vertical (e X das águas) em pelo menos UM de cada TRÊS vãos e travamento a cada 20 m ou menos — antes ia só nos vãos extremos (com 5 vãos, 20 m, os vãos 2 a 4 ficavam sem). Sai o primeiro e o último vão e, entre eles, o mais afastado que ainda respeite os dois limites. Cumeeira portante mantém os vãos extremos (sem treliça vertical). */
+    var selB = ct.aguas === "todos" || baias.length < 2 ? baias : (cumeeira ? [baias[0], baias[baias.length - 1]] : baiasContraventadas(baias).map(function (ix) { return baias[ix]; }));
+    /* E4 T2fix C3 (6.6.2/6.6.4): a fita agora é PAINEL A PAINEL (nó em cada terça/caibro: banzo → terça → cumeeira), nas águas dos vãos extremos; antes ia do beiral à cumeeira sem nó nas terças. */
+    selB.forEach(function (bb) {
+      [["F", 0], ["B", b]].forEach(function (S) {
+        var zl = [S[1]], jj; for (jj = 1; jj <= nH; jj++) zl.push(S[1] === 0 ? zH(jj) : b - zH(jj));
+        zl.slice(0, zl.length - 1).forEach(function (za, q) { var zb = zl[q + 1]; [[bb[0], bb[1]], [bb[1], bb[0]]].forEach(function (d) { add(mad ? { id: "DX" + (++fx), g: "DX", agua: S[0], p0: P3(d[0], za, yT(za)), p1: P3(d[1], zb, yT(zb)), tracao: true, mad: true } : { id: "FX" + (++fx), g: "FX", agua: S[0], p0: P3(d[0], za, yT(za)), p1: P3(d[1], zb, yT(zb)), tracao: true }); }); });
+      });
+    });
+    /* E4 T2fix C2 (6.6.4, Figura 5): treliças VERTICAIS entre tesouras: duas diagonais em X (fita só de tração) no plano de cada linha do banzo inferior, nos vãos extremos (pelo menos um de cada três vãos) */
+    var fv = 0;
+    if (!cumeeira) selB.forEach(function (bb) { for (k = 1; k < 2 * nH; k++) { var zk = zH(k); [[bb[0], bb[1]], [bb[1], bb[0]]].forEach(function (d) { add(mad ? { id: "DV" + (++fv), g: "DV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true, mad: true } : { id: "FV" + (++fv), g: "FV", p0: P3(d[0], zk, Hp), p1: P3(d[1], zk, yT(zk)), tracao: true }); }); } });
+    if (!p.vedacaoRigida) {
+      /* paredes: MÍNIMO de 2 painéis contraventados por fachada (primeiro e último vão; fachada de um vão só = o vão único, e o auditor avisa). Padrão: DIAGONAIS DE MADEIRA em X (DP, só tração, E4 r10);
+         tipo "fita": fita metálica FP (modelo antigo). Com vedacaoRigida (alvenaria/OSB estrutural informada pelo usuário) nada entra: a vedação tem de ser projetada para a força informada. */
+      var fxp = 0, bb2 = [[0, xs[1]], [xs[xs.length - 2], a]], zO = zsOit.length > 2 ? [[zsOit[0], zsOit[1]], [zsOit[zsOit.length - 2], zsOit[zsOit.length - 1]]] : [[zsOit[0], zsOit[1]]];
+      var diagP = function (e, plano, c) { fxp++; var A = plano === "x" ? P3(e[0], c, p.baseZ) : P3(c, e[0], p.baseZ), B = plano === "x" ? P3(e[1], c, Hp) : P3(c, e[1], Hp); return mad ? { id: "DP" + fxp, g: "DP", p0: A, p1: B, tracao: true, mad: true } : { id: "FP" + fxp, g: "FP", p0: A, p1: B, tracao: true }; };
+      [0, b].forEach(function (z) { bb2.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "x", z)); }); }); });
+      [0, a].forEach(function (x) { zO.forEach(function (d) { [[d[0], d[1]], [d[1], d[0]]].forEach(function (e) { add(diagP(e, "z", x)); }); }); });
+    }
+    return { p: p, membros: M, info: { xs: xs, nCol: nCol, nH: nH, dz: dz, lp: lp, sc: sc, Hp: Hp, zsOit: zsOit, yT: yT, eE: eE, eD: eD, tipF: tipF, tipB: tipB, a: a, b: b, incl: i, xfr: xfr } };
+  }
+
+  /** FONTE de T2: agrupa os membros iguais em marcas com quantidade. sec = { P, PO, PC, FR, BS, BI, PD, DG, T, CM, CB, TI:{d} }; ext = { classe } */
+  function t2Fonte(p, sec, ext) {
+    ext = ext || {}; var G = t2Geometria(p), lista = Lista(), add = comClasse(lista, ext.classe), M = G.membros, I = G.info, marcas = {}, ordem = [], cont = {};
+    var NOMES = { P: ["Casa — pilares", "Pilar do perímetro"], PO: ["Casa — pilares de oitão", "Pilar de oitão"], PC: ["Casa — pilares de oitão", "Pilar de cumeeira (oitão/central)"], FR: ["Casa — frechal", "Frechal (viga de respaldo)"],
+      LB: ["Contraventamento — linhas do banzo inferior", "Linha longitudinal do banzo inferior (6.6.4)"], DX: ["Contraventamento — águas (madeira)", "Diagonal de madeira em X no plano das águas (6.6.2 e 6.6.4)"], DP: ["Contraventamento — paredes (madeira)", "Diagonal de madeira em X nos painéis das paredes (pilar → frechal)"], DV: ["Contraventamento — vertical (madeira)", "Diagonal de madeira em X nos planos verticais entre tesouras (6.6.4, Figura 5)"], BS: ["Tesouras", "Banzo superior da tesoura"], BI: ["Tesouras", "Banzo inferior (tirante) da tesoura"], PD: ["Tesouras", "Montante da tesoura (comprimido sob gravidade)"], DG: ["Tesouras", "Diagonal da tesoura"],
+      T: ["Cobertura — terças", "Terça"], CM: ["Cobertura — cumeeira", "Viga de cumeeira"], CB: ["Cobertura — caibros principais", "Caibro principal (cumeeira ao frechal)"] };
+    M.forEach(function (m) {
+      if (!NOMES[m.g]) return;
+      var s = sec[m.g === "DV" ? "DX" : m.g] || {}, L = norm(m.p0, m.p1), linear = m.g === "T" || m.g === "CM" || m.g === "FR" || m.g === "LB", key = [m.g, rd(L, 3), linear ? m.id : "", JSON.stringify(s)].join("|");
+      if (!marcas[key]) { marcas[key] = { m: m, qtd: 0, sec: s }; ordem.push(key); }
+      marcas[key].qtd++;
+    });
+    ordem.forEach(function (key) {
+      var r = marcas[key], m = r.m, nm = NOMES[m.g], s = r.sec, linear = m.g === "T" || m.g === "CM" || m.g === "FR" || m.g === "LB", forma = s.forma === "circular" ? { tipo: "circ", d: s.d } : { tipo: "ret", b: s.b, h: s.h };
+      cont[m.g] = (cont[m.g] || 0) + 1;
+      var dy = m.p1[1] - m.p0[1], dz = m.p1[2] - m.p0[2], Lyz = Math.sqrt(dy * dy + dz * dz), L = norm(m.p0, m.p1), up = m.g === "DX" ? [0, (m.agua === "F" ? -1 : 1) * G.p.incl / Math.sqrt(1 + G.p.incl * G.p.incl), 1 / Math.sqrt(1 + G.p.incl * G.p.incl)] : (m.g === "DV" ? [0, 1, 0] : Lyz < 1e-6 ? [0, 0, 1] : (Lyz < 0.3 * L ? [0, 0, 1] : (Math.abs(dz) > 0.9 * L && /^(P|PO|PC)$/.test(m.g) ? [1, 0, 0] : [0, -dz / Lyz * (dy >= 0 ? 1 : -1), Math.abs(dy) / Lyz])));
+      add({ id: linear ? m.id : m.g + cont[m.g], marca: m.g, grupo: nm[0], descricao: nm[1], material: MLC, especificacao: "MLC GL24h " + (s.forma === "circular" ? "Ø" + cm(s.d) : cm(s.b) + "×" + cm(s.h)) + " cm", secao: forma, p0: m.p0, p1: m.p1, up: up, qtd: r.qtd });
+    });
+    [["FX", "Fita metálica perfurada em X no plano das águas + tensor", "Contraventamento — águas"], ["FV", "Fita metálica perfurada em X nos planos verticais entre tesouras (NBR 7190-1, 6.6.4) + tensor", "Contraventamento — vertical"], ["FP", "Fita metálica perfurada em X nos planos das paredes + tensor", "Contraventamento — paredes"]].forEach(function (cf) {
+      var fx = M.filter(function (m) { return m.g === cf[0]; }), mF = 0; fx.forEach(function (m) { mF += norm(m.p0, m.p1); });
+      if (fx.length) add({ id: cf[0], grupo: cf[2], descricao: cf[1], material: GALV, especificacao: "fita/chapa " + cm((sec.FT && sec.FT.b) || 0.06) + "0 × " + String(((sec.FT && sec.FT.e) || 0.002) * 1000).replace(".", ",") + " mm galvanizada a fogo (dimensionada pela rigidez K_br,1, NBR 7190-1, 6.6.2)", secao: null, qtd: rd(mF, 2), unidade: "m", fita: { b: (sec.FT && sec.FT.b) || 0.06, e: (sec.FT && sec.FT.e) || 0.002 } });
+    });
+    var ti = M.filter(function (m) { return m.g === "TI"; });
+    if (ti.length) add({ id: "TI", grupo: "Cobertura — tirantes", descricao: "Tirante de aço (barra roscada) no nível do frechal — resolve o empuxo dos caibros", material: INOX, especificacao: "barra roscada Ø" + ((sec.TI && sec.TI.d) || 16) + " mm, comprimento " + rd(p.b, 2) + " m, com luvas e porcas", secao: null, qtd: ti.length });
+    var cb = M.filter(function (m) { return m.g === "CB"; });
+    if (cb.length && G.p.cumeeira.assento === "deslizante") add({ id: "AD", grupo: "Ligações — assento deslizante", descricao: "Assento deslizante do caibro no frechal (chapa de apoio com folga horizontal + cinta de tração para vento)", material: GALV, especificacao: "chapa de apoio + cinta, 1 por apoio", secao: null, qtd: cb.length });
+    var nTes = M.filter(function (m) { return m.g === "BI"; }).length;
+    if (nTes) add({ id: "LIG-TES", grupo: "Ligações — tesouras", descricao: "Nós da tesoura: chapa interna de aço + pinos Ø16 (grupos dimensionados pela NBR 7190-1)", material: INOX, especificacao: "chapa t = 8 mm + pinos Ø16 inox, por nó", secao: null, qtd: nTes * (2 * I.nH * 2 + 2) });
+    var nDX = M.filter(function (m) { return m.g === "DX" || m.g === "DV" || m.g === "DP"; }).length;
+    if (nDX) add({ id: "LIG-DX", grupo: "Ligações — contraventamento", descricao: "Pontas das diagonais de madeira do contraventamento: chapa interna de aço + pinos inox (NBR 7190-1:2022, cap. 7)", material: INOX, especificacao: "chapa t = 8 mm + pinos inox, por ponta de diagonal", secao: null, qtd: nDX * 2 });
+    var pcs = M.filter(function (m) { return m.g === "PC"; }).length;
+    if (pcs) add({ id: "LIG-CUM", grupo: "Ligações — cumeeira", descricao: "Ligação cumeeira–pilar: chapa em T + pinos (cumeeira apoiada no topo do pilar de oitão/central)", material: INOX, especificacao: "chapa em T t = 12 mm + pinos Ø16 inox", secao: null, qtd: pcs });
+    return { pecas: lista.pecas, membros: M, info: I };
+  }
+
   /** soma de volumes por material (m³) de uma lista de peças */
   function volumePorMaterial(pecas) {
     var v = {}; pecas.forEach(function (q) { if (q.volume_m3) v[q.material] = (v[q.material] || 0) + q.volume_m3; });
@@ -407,6 +611,7 @@
   var MadTipologias = {
     MATERIAIS: MATERIAIS,
     T1: { padrao: T1_PADRAO, parametros: t1Parametros, geometria: t1Geometria, fonte: t1Fonte },
+    T2: { padrao: T2_PADRAO, parametros: t2Parametros, geometria: t2Geometria, fonte: t2Fonte, baiasContraventadas: baiasContraventadas },
     T7: { fonte: t7Fonte },
     volumePorMaterial: volumePorMaterial, arange: arange, linspace: linspace, rd: rd
   };

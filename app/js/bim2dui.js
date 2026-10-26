@@ -40,7 +40,7 @@
       if (typeof cfg.aoMudar === "function") this._cfg.aoMudar = cfg.aoMudar;
       if (typeof cfg.fechar === "function") this._cfg.fechar = cfg.fechar;
       if (typeof cfg.vincular === "function") this._cfg.vincular = cfg.vincular;
-      if (mudou) { this._cache = {}; this._est = null; this._cadMem = {}; }
+      if (mudou) { this._cache = {}; this._est = null; this._cadMem = {}; this._pre = {}; this._ger++; if (this._fila) this._fila.limpar(); }   /* FLUIDEZ: o de antemão é da obra que saiu */
     },
     _chave: function () { return "orcapro:bim:desenho2d:" + this._cfg.obraKey; },
     estado: function () {
@@ -56,7 +56,7 @@
       return e;
     },
     _gravar: function () { try { localStorage.setItem(this._chave(), JSON.stringify(this.estado())); } catch (x) { toast("Não consegui guardar as vistas 2D neste aparelho (armazenamento cheio).", "erro"); } },
-    _avisarMudou: function () { try { if (this._cfg.aoMudar) this._cfg.aoMudar(); } catch (e) {} },
+    _avisarMudou: function () { try { if (this._cfg.aoMudar) this._cfg.aoMudar(); } catch (e) {} try { this.agendarAntes(); } catch (eA) {} },   /* FLUIDEZ: vista nova (corte, elevação) entra no desenho de antemão */
 
     /* níveis das plantas: [{ id, nome, y }] (y = cota de MUNDO do piso) */
     niveis: function () {
@@ -361,15 +361,162 @@
       this._ligarInteracao(v, id);
       /* FLUIDEZ: a vista que ficou escondida durante uma mudança do modelo (c.sujo) se refaz ao aparecer */
       var sujo = !!c.sujo; c.sujo = false;
-      if (sujo && c.dados) { var vbS = c.vb ? clone(c.vb) : null, okS = this.redesenhar(id, true); if (okS && vbS) this._aplicarVb(id, vbS); return okS; }
-      return this.redesenhar(id, !c.dados);
+      if (sujo && c.dados) { var vbS = c.vb ? clone(c.vb) : null, okS = this._redesenhar(id, true, true); if (okS && vbS) this._aplicarVb(id, vbS); return okS; }
+      /* FLUIDEZ (25/10/2026): a vista que nunca abriu e foi DESENHADA DE ANTEMÃO (segundo plano) — o dado só vale com a
+         mesma chave (cena, vista, instalações, geração de mudança); senão extrai agora, como sempre */
+      if (!c.dados && !sujo) { var pre = this._usarAntes(id); if (pre) { c.dados = pre; c.info = pre.info; } }
+      return this._redesenhar(id, !c.dados, true);
     },
     /* FLUIDEZ: a vista está na tela (a aba dela na frente)? */
     visivel: function (id) { var c = this._cache[id]; if (!c || !c.el) return false; try { return c.el.getClientRects().length > 0; } catch (e) { return true; } },
     desmontar: function (id) { if (/^d2t-/.test(String(id)) && global.BimTabelaUI) global.BimTabelaUI.desmontar(id); /* P5 */ delete this._cache[id]; if (this._pick && this._pick.id === id) this._pick = null; },
+
+    /* =================================================================
+     * FLUIDEZ (25/10/2026) — A VISTA 2D FEITA ANTES DE SER PEDIDA
+     *
+     * ⚠ ROTEIRO (tools/medir-fluidez.js): depois de editar no 3D, voltar para a planta levava 0,4–0,8 s — a planta
+     * escondida ficava "suja" e era refeita NA HORA do clique; e a 1ª planta do projeto exemplo, 1,1–1,5 s.
+     * Agora, com a pessoa PARADA (js/bimfluidez.js Fila: sem mouse/teclado há 1 s e a câmera parada, uma tarefa por vez):
+     *  1. a vista aberta e escondida que ficou suja é refeita em segundo plano — quando a pessoa clica, já está pronta.
+     *     A camada de seleção/alças (que mede a escala na TELA) é repintada quando a vista aparece (`camadaPend`).
+     *  2. a planta de trabalho, o 1º corte e a 1ª elevação que ainda NÃO abriram têm o dado extraído de antemão
+     *     (`_pre`). ⚠ O dado só é usado se a CHAVE for a mesma da hora da extração: a assinatura da cena COM a
+     *     visibilidade e os materiais (BIM.assinaturaVista), a definição da vista, o "acima do corte", o estado das
+     *     vistas da P6 (V/G, faixa), o nível de detalhe das instalações e a GERAÇÃO de mudança (`_ger`, que sobe a cada
+     *     "o modelo mudou" — sujar, atualizar, fase). Qualquer diferença = extrai na hora, como antes.
+     * O desenho de antemão é CACHE: some quando a obra muda (configurar) e nunca é gravado.
+     * ================================================================= */
+    _ger: 0,
+    _pre: {},
+    _fila: null,
+    ANTES_MAX: 3,
+    /* o modelo mudou (alguém vai refazer as vistas): o desenho de antemão deixa de valer e a fila é chamada */
+    mudou: function () { this._ger++; this._agendarFundo(); },
+    /* a vista escondida que precisa ser refeita (js/bimambienteui.js, js/bimp10ui.js) */
+    sujar: function (id) { var c = this._cache[id]; if (c) c.sujo = true; this.mudou(); },
+    _filaObj: function () {
+      if (this._fila) return this._fila;
+      var BF = global.BimFluidez; if (!BF || !BF.Fila || typeof setTimeout !== "function") return null;
+      var self = this, doc = global.document;
+      this._fila = new BF.Fila({
+        agora: function () { return Date.now(); },
+        agendar: function (fn, ms) { return setTimeout(function () { if (typeof global.requestIdleCallback === "function") global.requestIdleCallback(fn, { timeout: 3000 }); else fn(); }, ms); },
+        cancelar: function (h) { clearTimeout(h); },
+        /* fora da tela do BIM não adianta (e a pessoa está fazendo outra coisa no app); com a câmera do 3D mexendo (giro,
+           voo, passeio — também sem mouse) espera ela parar: o desenho no meio do giro é um tranco */
+        ocupado: function () {
+          try {
+            if (doc && doc.body && !doc.body.classList.contains("bim-app")) return true;
+            var b = B(); return !!(b && b.cameraParadaMs && b.cameraParadaMs() < 600);
+          } catch (e) { return false; }
+        },
+        log: function (m, e) { try { if (global.console && console.warn) console.warn("[bim2d] " + m, e && e.message ? e.message : e || ""); } catch (x) {} }
+      });
+      if (doc && doc.addEventListener) {
+        var f = this._fila, ent = function () { f.entrada(); };
+        ["pointerdown", "pointermove", "wheel", "keydown"].forEach(function (t) { try { doc.addEventListener(t, ent, { capture: true, passive: true }); } catch (e) {} });
+      }
+      return this._fila;
+    },
+    /* as vistas que valem ser feitas de antemão: a planta de trabalho (a do comando "Planta baixa" — o 1º nível que não
+       é terreno/fundação, a mesma regra do Gestao._d2PlantaPadrao), o 1º corte e a 1ª elevação */
+    _idsAntes: function () {
+      var ids = [], L = this.niveis(), nv = L.filter(function (n) { return !/terreno|funda|sondag/i.test(n.nome || ""); })[0] || L[0];
+      if (nv) ids.push(this.idPlanta(nv.id));
+      var cs = this.estado().cortes; if (cs.length) ids.push(this.idCorte(cs[0].id));
+      var M6 = this._p6();
+      if (M6) { try { var vs = M6.estado().vistas || {}, el = Object.keys(vs).filter(function (k) { return vs[k] && vs[k].tipo === "elevacao"; })[0]; if (el) ids.push(el); } catch (e) {} }
+      return ids.slice(0, this.ANTES_MAX);
+    },
+    /* a chave do desenho de antemão — null = não dá para garantir (não guarda nem usa) */
+    _chaveAntes: function (id) {
+      var b = B(), d = this.def(id); if (!b || !b.assinaturaVista || !d) return null;
+      var sig = null; try { sig = b.assinaturaVista(); } catch (e) { sig = null; } if (!sig) return null;
+      var H = global.BimFluidez && global.BimFluidez.Hash ? new global.BimFluidez.Hash() : null; if (!H) return null;
+      try {
+        var M6 = this._p6(), U = global.BimInstUI;
+        H.txt(JSON.stringify(d)).txt(JSON.stringify(this.acimaCfg(id))).txt(JSON.stringify(this.estado().area || null));
+        /* P6: o que a extração lê da vista — a configuração EFETIVA (com o modelo de vista: V/G, faixa, recorte, nível de
+           detalhe, estilo visual) e se os estilos RA já carregaram. ⚠ Vista com FILTRO por conjunto depende das seleções
+           da obra (BimSet): não é feita de antemão (null). */
+        if (M6) {
+          var est6 = M6.estado(), vv = est6.vistas[id] || M6.vistaPadrao(/^d2c-/.test(String(id)) ? "corte" : "planta"), ef6 = M6.efetivo(vv, est6);
+          if (ef6 && ef6.filtros && Object.keys(ef6.filtros).length) return null;
+          H.txt(JSON.stringify(ef6)).txt(JSON.stringify(est6.vistas[id] || null)).num(M6.dados && M6.dados().prontos ? 1 : 0);
+        } else H.txt("-");
+        H.txt(JSON.stringify([U ? U._nivelFeito || "" : "", U && U._previaHidro ? !!U._previaHidro() : null, global.HidSombra ? global.HidSombra.ligada !== false : null, U ? U.modoCor || "" : ""]));
+      } catch (e2) { return null; }
+      return this._ger + "|" + sig + "|" + H.valor();
+    },
+    _usarAntes: function (id) {
+      var p = this._pre[id]; if (!p) return null;
+      delete this._pre[id];
+      var k = this._chaveAntes(id);
+      return k && k === p.chave ? p.dados : null;
+    },
+    /* quantas vistas estão prontas de antemão (o vigia e a e2e leem) */
+    antesProntas: function () { var self = this; return Object.keys(this._pre).filter(function (k) { return self._pre[k] && self._pre[k].chave === self._chaveAntes(k); }); },
+    soltarAntes: function () { this._pre = {}; },
+    /* chama a fila: vista suja escondida (prioridade 2) e desenho de antemão (1) */
+    _agendarFundo: function () {
+      var f = this._filaObj(); if (!f) return;
+      var self = this;
+      Object.keys(this._cache).forEach(function (k) {
+        var c = self._cache[k]; if (!c || !c.sujo || !c.el || !self.ehVista2d(k)) return;
+        f.pedir("refazer:" + k, function () { self._refazerFundo(k); }, 2);
+      });
+      this.agendarAntes();
+    },
+    agendarAntes: function () {
+      var f = this._filaObj(); if (!f) return;
+      var self = this;
+      this._idsAntes().forEach(function (k) { if (!self._cache[k]) f.pedir("antes:" + k, function () { self._antesFundo(k); }, 1); });
+    },
+    _refazerFundo: function (id) {
+      var c = this._cache[id]; if (!c || !c.sujo || !c.el || this.visivel(id)) return false;
+      c.sujo = false;
+      this._fundo = true;
+      try { this.atualizar(id); } finally { this._fundo = false; }
+      c.camadaPend = true;   /* a seleção e as alças medem a escala na tela: repintam quando a vista aparecer */
+      return true;
+    },
+    _antesFundo: function (id) {
+      if (this._cache[id]) return false;   /* abriu enquanto esperava: quem desenha é o montar */
+      var d = this.def(id); if (!d) return false;
+      var k = this._chaveAntes(id); if (!k) return false;
+      if (this._pre[id] && this._pre[id].chave === k) return false;   /* já pronto e valendo */
+      var self = this, BMU = global.BimMateriaisUI, r = null;
+      var run = function () { return self._extrair(d); };
+      r = BMU && BMU.emLote ? BMU.emLote(run) : run();
+      if (!r || !r.ok) return false;
+      /* a chave de DEPOIS: se a extração mexeu na cena (o nível de detalhe da louça vai ao máximo), vale a de depois */
+      var k2 = this._chaveAntes(id); if (!k2) return false;
+      this._pre[id] = { chave: k2, dados: r, em: Date.now() };
+      var ks = Object.keys(this._pre); if (ks.length > this.ANTES_MAX) { ks.sort(function (a, b) { return self._pre[a].em - self._pre[b].em; }); delete this._pre[ks[0]]; }
+      return true;
+    },
+    /* as camadas por cima do desenho (elástico da ferramenta, seleção e alças, marca de corte) — também depois do
+       segundo plano, quando a vista aparece */
+    _camadas: function (id) {
+      try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) global.BimPlantaModelar.aposDesenhar(id); } catch (ePM) {}   /* PLANTA: o elástico volta por cima do desenho novo */
+      try { if (global.BimSelecao && global.BimSelecao.aposDesenhar) global.BimSelecao.aposDesenhar(id); } catch (eSL) {}   /* SELECIONAR: o realce e as alças voltam por cima */
+      try { if (global.BimMarcaCorte && global.BimMarcaCorte.aposDesenhar) global.BimMarcaCorte.aposDesenhar(id); } catch (eMC) {}   /* MARCA DE CORTE selecionada: as alças voltam (js/bimmarcacorte.js) */
+    },
+
     /* refaz o SVG (e, com `recalcular`, extrai de novo do modelo) */
-    redesenhar: function (id, recalcular) {
+    redesenhar: function (id, recalcular) { return this._redesenhar(id, recalcular, false); },
+    /* interno = o montar (a vista abrindo ou voltando à grade): não é "o modelo mudou" */
+    _redesenhar: function (id, recalcular, interno) {
+      /* FLUIDEZ: pedir para extrair de novo de fora = o modelo pode ter mudado → o desenho de antemão não vale mais */
+      if (recalcular && !interno && !this._fundo) this._ger++;
+      /* FLUIDEZ: o desenho inteiro num lote dos materiais (o mapa peça → material uma vez só) */
+      var self = this, BMU = global.BimMateriaisUI;
+      if (BMU && typeof BMU.emLote === "function") return BMU.emLote(function () { return self._redesenharCorpo(id, recalcular); });
+      return this._redesenharCorpo(id, recalcular);
+    },
+    _redesenharCorpo: function (id, recalcular) {
       var d = this.def(id), c = this._cache[id]; if (!d || !c || !c.el) return false;
+      c.camadaPend = false;
       if (recalcular || !c.dados) {
         var r = this._extrair(d);
         if (!r || !r.ok) { c.el.innerHTML = '<div class="d2-vazio">' + ((r && r.erro) || "Não consegui gerar o desenho.") + "</div>"; c.dados = null; return false; }
@@ -386,9 +533,7 @@
       c.vbTotal = res.vb;
       if (vbAnt && !recalcular) this._aplicarVb(id, vbAnt); else this._aplicarVb(id, res.vb);
       if (this._pick && this._pick.id === id) c.el.setAttribute("data-d2-pick", "1");
-      try { if (global.BimPlantaModelar && global.BimPlantaModelar.aposDesenhar) global.BimPlantaModelar.aposDesenhar(id); } catch (ePM) {}   /* PLANTA: o elástico volta por cima do desenho novo */
-      try { if (global.BimSelecao && global.BimSelecao.aposDesenhar) global.BimSelecao.aposDesenhar(id); } catch (eSL) {}   /* SELECIONAR: o realce e as alças voltam por cima */
-      try { if (global.BimMarcaCorte && global.BimMarcaCorte.aposDesenhar) global.BimMarcaCorte.aposDesenhar(id); } catch (eMC) {}   /* MARCA DE CORTE selecionada: as alças voltam (js/bimmarcacorte.js) */
+      this._camadas(id);
       return true;
     },
     _aplicarVb: function (id, vb) {
@@ -417,7 +562,8 @@
       if (v._d2Ligado) return; v._d2Ligado = true;
       var self = this, arr = null;
       /* FLUIDEZ (17/10/2026): a vista marcada "suja" enquanto escondida (js/bimambienteui.js) se refaz quando aparece */
-      try { if (global.ResizeObserver) new global.ResizeObserver(function () { var c0 = self._cache[id]; if (c0 && c0.sujo && self.visivel(id)) { c0.sujo = false; self.atualizar(id); } }).observe(v); } catch (eRO) {}
+      /* FLUIDEZ (25/10/2026): refeita em segundo plano (escondida) → ao aparecer, só a camada de seleção/alças (camadaPend) */
+      try { if (global.ResizeObserver) new global.ResizeObserver(function () { var c0 = self._cache[id]; if (!c0 || !self.visivel(id)) return; if (c0.sujo) { c0.sujo = false; self._fundo = true; try { self.atualizar(id); } finally { self._fundo = false; } } else if (c0.camadaPend) { c0.camadaPend = false; self._camadas(id); } }).observe(v); } catch (eRO) {}
       v.addEventListener("wheel", function (ev) {
         var c = self._cache[id]; if (!c || !c.vb) return;
         ev.preventDefault();

@@ -1094,6 +1094,10 @@ function montar(host, opts) {
    * ficava esticado. Defeito antigo que o botão novo só tornou visível. */
   var _szRes = new THREE.Vector2();
   function resize() {
+    /* ⚠ ARRASTANDO UM PAINEL OU UMA ALÇA (js/bimdocaui.js) o palco muda de largura a cada pixel: refazer o
+       buffer WebGL (setSize) aí era um quadro perdido por pixel. Durante o arrasto o canvas só estica
+       (CSS); ao soltar, o dock pede UM redimensionamento. */
+    try { if (window.BimDocaUI && BimDocaUI.congelado && BimDocaUI.congelado()) return; } catch (_) {}
     var alvo = (S && S.host) || host;
     var w = alvo.clientWidth, h = alvo.clientHeight;
     if (!(w && h)) return;
@@ -1468,6 +1472,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderFrame(dt);
       if (SAUDE.seguidos) { SAUDE.seguidos = 0; esconderAviso3d('erro'); }
       SAUDE.nQ++; if (cameraSa()) guardarCameraBoa();
+      /* FLUIDEZ (25/10/2026): quando a câmera mexeu por último (giro, voo, passeio — com ou sem mouse). A fila de
+         segundo plano das vistas 2D (js/bim2dui.js) espera a câmera parar: um desenho de meio segundo no meio do
+         giro é o tranco que a pessoa sente */
+      var cpE = camera.matrixWorld.elements, cpU = S._camUlt || (S._camUlt = new Float64Array(16)), cpM = false;
+      for (var cpI = 0; cpI < 16; cpI++) if (cpU[cpI] !== cpE[cpI]) { cpM = true; cpU[cpI] = cpE[cpI]; }
+      if (cpM) S._camMudouEm = performance.now();
     } catch (e) { quadroFalhou(e); }
     SAUDE.tCheca += dt;
     if (SAUDE.tCheca >= 1.5) { SAUDE.tCheca = 0; try { conferirTamanho(); conferirVazio(); } catch (_) {} }
@@ -10311,7 +10321,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    *   camada 1 e a malha mesclada (fora do modelRoot) fica escondida, então o
    *   resultado é o mesmo com e sem a mescla. Tudo volta no finally.
    * ===================================================================== */
+  /* FLUIDEZ (25/10/2026): o desenho inteiro num LOTE dos materiais do projeto (js/bimmateriaisui.js emLote) — a união de
+     paredes pergunta o material de cada contorno, e cada pergunta refazia o mapa peça → material do modelo inteiro */
   function vista2d(def) {
+    var BMU = window.BimMateriaisUI;
+    if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(function () { return vista2dCorpo(def); });
+    return vista2dCorpo(def);
+  }
+  function vista2dCorpo(def) {
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     def = def || {};
@@ -12930,6 +12947,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (++famLod.quadro % 15 || !famLod.lista.length) return;
     var desenho = !S.camera.isPerspectiveCamera || (S.planta && S.planta.on) || (S.corteL && S.corteL.on);
     famLod.lista = famLod.lista.filter(function (m) {
+      if (!m.userData || !m.userData.famLod) return false;   /* FLUIDEZ: a malha da cena velha do editor (níveis já descartados) */
       var vivo = false; for (var p = m.parent; p; p = p.parent) if (p === S.scene) { vivo = true; break; }
       if (!vivo) { if (!m.parent) { (m.userData.famLod || []).forEach(function (g) { if (g !== m.geometry) try { g.dispose(); } catch (_) {} }); return false; } return true; }
       if (desenho) { famLodNivel(m, 0); return true; }
@@ -13183,6 +13201,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* ⚠ a geometria GUARDADA da peça metálica (metGeo, abaixo) não se descarta: ela volta na cena nova */
       /* FLUIDEZ: a geometria do cache das instalações (instGeoCache, js/biminstui.js) volta na cena nova — quem descarta é o cache */
       edit.modelo.grupo.traverse(function (o) { if (o.geometry && !(o.geometry.userData && (o.geometry.userData.metGeo || o.geometry.userData.instGeoCache))) o.geometry.dispose(); });
+      /* ⚠ FLUIDEZ (25/10/2026) — O MODELO VELHO FICAVA PRESO NA LISTA DO NÍVEL DE DETALHE. A malha de família com LOD
+         (famLodRegistrar) entra em famLod.lista; o laço do LOD só a soltava quando ela ficava SEM PAI — e aqui o grupo
+         inteiro sai da cena com as malhas ainda nele. Cada edição deixava o modelo antigo vivo (os vértices de todas as
+         peças: ~6 MB por edição no projeto exemplo) e as geometrias dos níveis 1 e 2 na placa (~58 por edição), igual no
+         master (tools/medir-fluidez.js --soak-acoes=editar: 105 → 228 MB em 2 min). Agora os níveis guardados são
+         descartados aqui e a malha sai da lista no próximo passo do LOD (famLod = null). */
+      edit.modelo.grupo.traverse(function (o) {
+        var gs = o.userData && o.userData.famLod; if (!gs) return;
+        gs.forEach(function (g) { if (g && g !== o.geometry && !(g.userData && (g.userData.metGeo || g.userData.instGeoCache))) { try { g.dispose(); } catch (_) {} } });
+        o.userData.famLod = null;
+      });
       edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
       var ix = S.modelos.indexOf(edit.modelo); if (ix >= 0) S.modelos.splice(ix, 1);
       edit.modelo = null;
@@ -16446,9 +16475,31 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } catch (_) { /* bônus: a camada nunca impede o desenho */ }
     return porPds;
   }
+  /* FLUIDEZ (25/10/2026, js/bimfluidez.js): a ASSINATURA BARATA da geometria da cena — grupos e malhas (id, geometria,
+     camada, posição/giro) + a versão do editor, a caixa de corte e os removidos na edição. ⚠ ROTEIRO: na creche (7.486
+     malhas) a "edificação" e o `pavimentos2d` refaziam a caixa de TODAS as malhas a cada chamada (39 ms), e uma troca
+     3D → planta chamava 3 a 8 vezes (`Bim2D.def` → `niveis`): 146 ms de troca sem desenhar nada. A assinatura custa
+     ~1 ms e diz se dá para devolver o já calculado. null = sem o motor: recalcula como antes. */
+  S._sigGeo = function () {
+    var BF = window.BimFluidez; if (!BF || !BF.assinaturaCena || !S.modelRoot) return null;
+    var cx0 = null; try { cx0 = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx0 = null; }
+    var rem = S._remEd ? Object.keys(S._remEd).filter(function (k) { return S._remEd[k]; }).sort().join(',') : '';
+    return BF.assinaturaCena(S.modelRoot, { extra: [S._partesVersao || 0, cx0 && cx0.on ? JSON.stringify([cx0.min, cx0.max]) : '-', rem, (S.modelos || []).length, (S.elementos || []).length] });
+  };
+  /* a mesma, com a VISIBILIDADE e os MATERIAIS de cada malha (o que a vista 2D enxerga: ocultar, isolar, 4D, fase) — a
+     chave do desenho de antemão das vistas 2D (js/bim2dui.js _chaveAntes) */
+  S._sigVis = function () {
+    var BF = window.BimFluidez; if (!BF || !BF.assinaturaCena || !S.modelRoot) return null;
+    var cx0 = null; try { cx0 = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx0 = null; }
+    var rem = S._remEd ? Object.keys(S._remEd).filter(function (k) { return S._remEd[k]; }).sort().join(',') : '';
+    return BF.assinaturaCena(S.modelRoot, { vis: true, extra: [S._partesVersao || 0, cx0 && cx0.on ? JSON.stringify([cx0.min, cx0.max]) : '-', rem, (S.modelos || []).length, (S.elementos || []).length, scene.visible === false ? 0 : 1] });
+  };
   function edificacaoMedir() {
     var PV = window.PranchaViva;
     if (!PV || !PV.caixaEdificacao || !S || !S.modelRoot) return null;
+    /* FLUIDEZ: a cena não mudou desde a última medida → a mesma resposta, sem as duas passadas pelas malhas */
+    var sigR = null; try { sigR = S._sigGeo(); } catch (_) { sigR = null; }
+    if (sigR && edifCache && edifCache.sigR === sigR) return edifCache;
     var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
     var cx = null; try { cx = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx = null; }
     var porUid = {}, nM = 0, bm = new THREE.Box3(), tipoDe = {};
@@ -16463,7 +16514,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     function r2(v) { return Math.round(v * 100) / 100; }
     var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z), cx && cx.on ? cx.min.map(r2).join(',') + ';' + cx.max.map(r2).join(',') : '-'].join('|');
-    if (edifCache && edifCache.sig === sig) return edifCache;
+    if (edifCache && edifCache.sig === sig) { edifCache.sigR = sigR; return edifCache; }
     var lista = [], vistos = {};
     (elementosVivos() || []).forEach(function (e) {
       var c = porUid[e.uid]; if (!c) return;
@@ -16489,7 +16540,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var r = PV.caixaEdificacao(lista, { caixaCorte: cx });
     var ativo = !!(r && r.caixa && r.criterio !== 'sem-entorno' && r.criterio !== 'vazio');
     var cota = []; try { if (ativo || r.caixa) cota = PV.pavimentosPorCota(lista, r.caixa, r.exclusoes); } catch (_) { cota = []; }
-    edifCache = { sig: sig, r: r, ativo: ativo, cota: cota, caixaModelo: { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] } };
+    edifCache = { sig: sig, sigR: sigR, r: r, ativo: ativo, cota: cota, caixaModelo: { min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] } };
     return edifCache;
   }
   /* o resultado do motor (caixa, exclusões, critério, texto) — null se o modelo está vazio */
@@ -18905,6 +18956,23 @@ window.BIM = {
   /* pavimentos do IFC com a cota de MUNDO do piso (y0) e a caixa do modelo — base das plantas e dos níveis do corte */
   pavimentos2d: function () {
     if (!S || !S.modelRoot) return { pav: [], caixa: null };
+    /* FLUIDEZ (25/10/2026): mesma geometria (S._sigGeo) = mesma resposta, sem refazer a caixa de todas as malhas.
+       ⚠ devolve uma CÓPIA: quem recebe pode mexer no objeto e não pode estragar o guardado. */
+    var BF = window.BimFluidez, sig = null;
+    if (BF && BF.Memo && S._sigGeo) {
+      try { sig = S._sigGeo(); } catch (_) { sig = null; }
+      if (!S._pav2dMemo) S._pav2dMemo = new BF.Memo();
+      var r = S._pav2dMemo.obter(sig, function () { return window.BIM._pavimentos2dCalc(); });
+      return BF.copia ? BF.copia(r) : JSON.parse(JSON.stringify(r));
+    }
+    return window.BIM._pavimentos2dCalc();
+  },
+  /* FLUIDEZ (25/10/2026): a assinatura da cena como a vista 2D enxerga (geometria + visibilidade + materiais) — null sem
+     o motor (js/bimfluidez.js) ou sem visualizador */
+  assinaturaVista: function () { return (S && S._sigVis) ? S._sigVis() : null; },
+  /* há quantos ms a câmera do {3D} está parada (Infinity = nunca mexeu / sem visualizador) */
+  cameraParadaMs: function () { return (S && S._camMudouEm) ? performance.now() - S._camMudouEm : Infinity; },
+  _pavimentos2dCalc: function () {
     var b = new THREE.Box3().setFromObject(S.modelRoot), lst = [];
     try { lst = (S._pavimentosCorte ? S._pavimentosCorte() : []).map(function (p) { return { nome: p.nome, y: p.y - 1.2 }; }); } catch (e) { lst = []; }
     var cxM = b.isEmpty() ? null : { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z] };

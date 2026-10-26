@@ -551,8 +551,7 @@
       F_d: Math.sqrt(Vy * Vy + Vz * Vz + Nvg * Nvg), pinos: lvg, parafusosNaV: vv.n, parafusosReforcoVerga: vv.reforcoF90 ? vv.reforcoF90.parafusos : 0, naV: vv, pendural_N_d: lig.pendural, eta: Math.max(lvg.eta, vv.eta), ok: lvg.ok && vv.ok, passos: lvg.passos.concat(vv.passos) };
     if (lvg.ok) { var eEc = Math.max(7 * d12, 0.08) + (lvg.nr - 1) * lvg.a1 / 2 + 0.004; L.verga.excentricidade = { e_m: eEc, M_kNm: Hvg * eEc, nota: "A8: momento da excentricidade da chapa em T — a força da V (H) atua na face da V, a e do centro do grupo de pinos Ø12 da verga; entra no momento polar do grupo. A excentricidade do lado da V (aba) não é verificada." }; L.verga.passos = L.verga.passos.concat(["A8: excentricidade e = " + br(eEc * 1000, 0) + " mm → M = H·e = " + br(Hvg * eEc) + " kN·m no grupo de pinos da verga."]); }
     var Nf = i.fitaNmax, Nfe = i.fitaNeq != null ? i.fitaNeq : Nf, Af = 60 * 2 * 0.75, Rkf = i.fitaRk != null ? i.fitaRk : 1.75, pf = Rkf * c.kmod / c.gLig, etaF = Nf / (Af * 235 / 1.1 / 1000);
-    if (i.fitaRk == null) avisos.push("M11: Rk do parafuso da fita (1,75 kN) vem da R02, SEM FONTE — informar o valor do catálogo/ETA em `fitaRk`.");
-    L.fita = { especificacao: "fita metálica perfurada 60 × 2,0 mm galvanizada a fogo (ou inox), em X, com tensor", N_d: Nf, eta: etaF, ok: etaF <= 1, parafusosPorPonta: Math.max(8, Math.ceil(Nfe / pf)), Rk_parafuso: Rkf, pendencia: i.fitaRk == null ? "Rk do parafuso 5×50 sem fonte (R02)" : null,
+    L.fita = { especificacao: "fita metálica perfurada 60 × 2,0 mm galvanizada a fogo (ou inox), em X, com tensor", N_d: Nf, eta: etaF, ok: etaF <= 1, parafusosPorPonta: Math.max(8, Math.ceil(Nfe / pf)), Rk_parafuso: Rkf, pendencia: null, fonteRk: i.fitaRk == null ? "adotado pelo RT (24/10/2026), docs/madeira/CONFIRMACAO-RT.md" : "informado pelo usuário (fitaRk)",
       passos: ["Fita 60×2,0 (área líquida 75 %): N = " + br(Nf) + " kN ≤ " + br(Af * 235 / 1.1 / 1000) + " kN → η = " + br(etaF, 3) + "."] };
     if (!i.cfg || i.cfg.kmod == null) avisos.push("C2: kmod da ligação não informado — usado o padrão 0,72 (curta × umidade 3). Passe cfg.kmod e cfg.rhok da classe (maddimensionar2.pacoteLigacoes faz isso).");
     /* 7.1.9 / 7.2 (f): a rosca total WT-T tem d = 8,2 mm < 9,5 mm (rosca soberba). A transcrição da 7.1.9 só nomeia "rosca soberba" e "parafuso passante"; o autoatarraxante aparece apenas na Tab. 17 (Kser) — o texto
@@ -580,11 +579,103 @@
     return L;
   }
 
+  /* ====================================================================== T2 (E4, rodada 2): ligações da casa de duas águas
+   * Cada ligação madeira–aço é uma CHAPA INTERNA de aço (t = 8 mm) numa fenda de 8 mm da peça + pinos inox; dimGrupo faz a Tabela 14 (a1 por pino pelo ângulo), n_ef e o d ≤ t/2 (7.2).
+   * i = { sistema, secoes, cfg, esf: { BS|BI|PD|DG|T|CM|CB: { Nt, Nc, V, NtEq, NcEq, VEq } }, reacoes: { P|PC: { Nmax, Nmin, Hmax, NminEq, HmaxEq } }, assento: { Nmax, Nmin, Hmax }, incl, fita: { N, Neq } }
+   * Esforço "Eq" = F·kmodRef/kmod (só para a madeira e os pinos, como no T1); o aço (chapa) recebe o esforço real. */
+  function pinosAxiais(c, nome, F, H, b, h, tChapa, opc) {
+    opc = opc || {}; var K9 = c.k90Tipo, ds = opc.ds || [0.016, 0.012, 0.010], melhor = null, r, nc, d, a, t1, k;
+    for (k = 0; k < ds.length; k++) for (nc = 2; nc >= 1; nc--) {
+      d = ds[k]; t1 = (b - tChapa) / 2; a = nc === 1 ? 0 : h / 2 - 4 * d;
+      if (nc === 2 && a <= 0) continue;
+      if (nc === 2 && 2 * a < bordas(d, Math.PI / 2, c.pinoTipo).a2 - 1e-9) continue;
+      r = dimGrupo({ nome: nome + " (pinos Ø" + Math.round(d * 1000) + ", " + nc + " coluna" + (nc > 1 ? "s" : "") + ")", cap: (function (dd, tt) { return function (al) { return chapaInterna(dd, tt, al, c.rhok, c.fu, K9); }; })(d, t1), nc: nc, a: a, d: d, M: 0, N: F, H: H || 0, nrMax: opc.nrMax || 16, kmod: c.kmod, gLig: c.gLig, pinoTipo: c.pinoTipo, tMadeira: t1 });
+      if (r.ok) { r.chapa = tChapa; return r; }
+      if (!melhor || (r.d || 0) > (melhor.d || 0)) melhor = r;
+    }
+    return melhor || { nome: nome, ok: false, eta: Infinity, passos: [nome + ": peça estreita demais para a chapa de " + Math.round(tChapa * 1000) + " mm com pinos (b = " + br(b * 100, 0) + " cm)."] };
+  }
+  /** chapa de aço em tração/compressão curta: Ae = t·(h − 5 cm); N,Rd = Ae·fy/γa1 */
+  function chapaTracaoRd(c, t, hp, N) { var Rd = t * hp * c.fy * 1e3 / c.gamaA1, eta = N / Rd; return { Rd: Rd, eta: eta, ok: eta <= 1 + 1e-9, t_mm: Math.round(t * 1000), largura_mm: Math.round(hp * 1000), passos: ["Chapa " + br(t * 1000, 0) + " × " + br(hp * 1000, 0) + " mm: N,Rd = t·h·fy/γa1 = " + br(Rd) + " kN ≥ N = " + br(N) + " kN → η = " + br(eta, 3) + "."] }; }
+  function pacoteT2(i) {
+    var c = cfg(i.cfg), S = i.secoes, E = i.esf || {}, L = { tipologia: "T2", sistema: i.sistema, ligacoes: {}, apoios90: {}, avisos: [], cfg: { kmod: c.kmod, rhok: c.rhok, gLig: c.gLig } }, tCh = 0.008, tg = i.incl || 0.3;
+    var WT = PARAFUSOS["WT-T-8,2"], RAX = roscaRaxd({ Rk_ref: WT.RaxK_cruzado150, lefRef: WT.lefRef, lefA: WT.lefRef * 0.8, lefB: WT.lefRef * 0.8, kmod: c.kmod }).Rd;
+    function eq(x, k) { return x && x[k + "Eq"] != null ? x[k + "Eq"] : (x && x[k]) || 0; }
+    function no(nome, F, Feq, H, Heq, sec, extra) {          /* ligação por chapa interna + pinos; F real (aço), Feq (madeira) */
+      var pn = pinosAxiais(c, nome, Feq, Heq, sec.b, sec.h, tCh), chapa = chapaTracaoRd(c, tCh, Math.max(0.03, sec.h - 0.05), Math.sqrt(F * F + H * H));
+      var o = { pinos: pn, chapa: chapa, F_d: F, F_eq: Feq, ok: pn.ok && chapa.ok, eta: Math.max(pn.eta, chapa.eta), passos: pn.passos.concat(chapa.passos) }; if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); return o;
+    }
+    /* E4 T2fix A1: (a) força ⊥ à fibra do banzo CONTÍNUO transmitida pela alma (F90, 7.1.1: F90,Rk = 14·b·√(he/(1 − he/h)); he = h/2 — pinos centrados na altura) e, se reprovar, reforço por parafusos de rosca total ⊥ (mesmo padrão
+       da V da T1: Ft,90 = (1 − 3α² + 2α³)·F90,d, Rax,d do WT-T-8,2 como na terça; comprimento efetivo a confirmar pelo RT); (b) compressão ⊥ às fibras nos apoios: σc,90 ≤ fc90,d·αn, fc90,d ≤ 0,25·fc0,d·αn (6.3.3, Tabela 6). */
+    var MAT = i.mat || null;
+    function f90(o, nome, Fperp, sec) {
+      var he = sec.h / 2, al = he / sec.h, F90k = fendilhamentoF90Rk(sec.b, he, sec.h), F90d = F90k * c.kmod / c.gLig, eta90 = Fperp / F90d, ref = null, eta = eta90, Ft = (1 - 3 * al * al + 2 * Math.pow(al, 3)) * Fperp;
+      if (eta90 > 1) { var nR = Math.max(2, Math.ceil(Ft / RAX)); nR += nR % 2; ref = { parafusos: nR, Rax_d: RAX, Ft90_d: Ft, ok: nR <= 12, eta: Ft / (nR * RAX) }; eta = ref.ok ? ref.eta : eta90; }
+      o.f90 = { F_perp_d: Fperp, F90Rk: F90k, F90Rd: F90d, he_mm: he * 1000, eta_direto: eta90, reforco: ref, eta: eta, ok: eta90 <= 1 || (ref && ref.ok) };
+      o.passos = (o.passos || []).concat([nome + ": força ⊥ à fibra do banzo F⊥,d = " + br(Fperp) + " kN; fendilhamento F90,Rd = 14·b·√(he/(1 − he/h))·kmod/γ = " + br(F90k) + " × " + br(c.kmod / c.gLig, 3) + " = " + br(F90d) + " kN (he = " + br(he * 100, 0) + " cm) → η = " + br(eta90, 3) + (ref ? "; REFORÇO por " + ref.parafusos + " parafusos de rosca total ⊥ (Ft,90 = " + br(Ft) + " kN ≤ " + ref.parafusos + " × " + br(RAX) + " kN, η = " + br(ref.eta, 3) + "; comprimento efetivo a confirmar pelo RT)" : "") + " (NBR 7190-1:2022, 7.1.1)."]);
+      o.eta = Math.max(o.eta, eta); o.ok = o.ok && o.f90.ok; return o;
+    }
+    function apoio90(nome, R, area, aCm, descr) {
+      if (!MAT || !(R > 0)) return null;
+      var an = alfaN(aCm), k90 = c.kmod / c.gLig, fc90d = Math.min(MAT.fc90k * (MAT.kmod90 != null ? MAT.kmod90 : c.kmod) / c.gLig * an, 0.25 * MAT.fc0k * (MAT.kmod90 != null ? MAT.kmod90 : c.kmod) / c.gLig * an), sg = R / area / 1000, eta = sg / fc90d;
+      return { descricao: descr, R_d: R, area_cm2: area * 1e4, sigma_c90_MPa: sg, fc90d_MPa: fc90d, alphaN: an, eta: eta, ok: eta <= 1 + 1e-9, passos: [nome + ": σc,90 = " + br(R) + " kN / " + br(area * 1e4, 0) + " cm² = " + br(sg, 3) + " MPa ≤ fc90,d·αn = " + br(fc90d, 3) + " MPa (αn = " + br(an, 2) + " para a = " + br(aCm, 1) + " cm; limite 0,25·fc0,d·αn; kmod de longa duração) → η = " + br(eta, 3) + " (NBR 7190-1:2022, 6.3.3 e Tabela 6)."] };
+    }
+    if (i.sistema === "tesoura") {
+      var NBS = Math.max(E.BS.Nt, E.BS.Nc), NBSq = Math.max(eq(E.BS, "Nt"), eq(E.BS, "Nc"));
+      L.ligacoes.noBanzoSuperior = no("nó do banzo superior (chapa interna 8 mm)", NBS, NBSq, 0, 0, S.BS, { descricao: "Banzo superior × (pendural, diagonal e banzo inferior): chapa de aço t = 8 mm em fenda, pinos inox; o banzo recebe a maior força axial de compressão/tração." });
+      L.ligacoes.noBanzoInferior = no("nó do banzo inferior (tirante da tesoura)", E.BI.Nt, eq(E.BI, "Nt"), 0, 0, S.BI, { descricao: "Banzo inferior: emenda e ligação ao apoio por chapa interna 8 mm + pinos inox; tração." });
+      var PDq = Math.max(eq(E.PD, "Nt"), eq(E.PD, "Nc")), cosT = 1 / Math.sqrt(1 + tg * tg);
+      var fp = i.f90Perp;      /* M5 (r14): F⊥ = resultante das forças das almas (PD, DG) perpendicular ao banzo, por combinação (maddimensionar2); sem ela, o montante sozinho (a favor da segurança) */
+      f90(L.ligacoes.noBanzoSuperior, "nó do banzo superior" + (fp ? " (resultante das almas)" : ""), fp ? fp.BS : PDq * cosT, S.BS); f90(L.ligacoes.noBanzoInferior, "nó do banzo inferior" + (fp ? " (resultante das almas)" : ""), fp ? fp.BI : PDq, S.BI);
+      L.ligacoes.noPendural = no("nó do pendural", Math.max(E.PD.Nt, E.PD.Nc), Math.max(eq(E.PD, "Nt"), eq(E.PD, "Nc")), 0, 0, S.PD, { descricao: "Pendural/montante: chapa interna 8 mm + pinos nas duas pontas." });
+      L.ligacoes.noDiagonal = no("nó da diagonal", Math.max(E.DG.Nt, E.DG.Nc), Math.max(eq(E.DG, "Nt"), eq(E.DG, "Nc")), 0, 0, S.DG, { descricao: "Diagonal: chapa interna 8 mm + pinos nas duas pontas." });
+      var WpP = (i.pesoPilar && i.pesoPilar.P) || 0, up = Math.max(0, -(i.reacoes.P.Nmin) + WpP), upEq = Math.max(0, -eq(i.reacoes.P, "Nmin") + WpP), Hp = i.reacoes.P.Hmax, HpEq = eq(i.reacoes.P, "Hmax"), Pp = S.P;
+      L.ligacoes.tesouraPilar = no("tesoura × pilar (garfo no topo)", Math.max(up, 0.001), Math.max(upEq, 0.001), Hp, HpEq, { b: Pp.b, h: Pp.h }, { apoioCompressao_kN: i.reacoes.P.Nmax, descricao: "Apoio da tesoura no topo do pilar com chapa em T/garfo (2 abas) e pinos inox: resiste ao arrancamento do vento (N < 0) e à reação horizontal; a compressão apoia por contato." });
+      L.ligacoes.tercaTesoura = tercaApoio(c, "terça × banzo da tesoura", E.T, tg, RAX, 4);
+      if (i.contrav && i.contrav.F1d) { var F1 = i.contrav.F1d.BS, tT = L.ligacoes.tercaTesoura, nS2 = tT.porApoio, tc2; for (; nS2 <= 24; nS2 += 2) { tc2 = roscaInclinada({ F: (tT.F_d + tT.H_d) * 1 + F1, n: nS2, anguloGraus: 45, Rax_d: RAX }); if (tc2.ok) break; }
+        tT.F1d_contraventamento = F1; if (nS2 > tT.porApoio) { tT.porApoio = nS2; tT.eta = tc2.eta; tT.ok = tc2.ok; } tT.passos = tT.passos.concat(["Contraventamento (6.6.2): força transversal F1d = Nd/150 = " + br(F1, 3) + " kN somada à reação do apoio (força em X da terça articulada ao banzo); " + nS2 + " parafusos por apoio."]); }
+      var apT = MAT ? [apoio90("TS-5a banzo inferior sobre o frechal", i.reacoes.P.Nmax, S.BI.b * S.FR.b, S.BI.b * 100, "Compressão ⊥ às fibras do frechal sob o banzo inferior da tesoura (apoio da tesoura)"),
+        apoio90("TS-5b frechal sobre o pilar", i.reacoes.P.Nmax, S.FR.b * S.P.b, S.P.b * 100, "Compressão ⊥ às fibras do frechal sobre o topo do pilar")] : [];
+      if (apT[0]) L.apoios90.apoioTesouraFrechal = apT[0]; if (apT[1]) L.apoios90.apoioFrechalPilar = apT[1];
+    } else {
+      var Pc = i.reacoes.PC, WpC = (i.pesoPilar && i.pesoPilar.PC) || 0, upC = Math.max(0.001, -Pc.Nmin + WpC), upCq = Math.max(0.001, -eq(Pc, "Nmin") + WpC);
+      L.ligacoes.cumeeiraPilar = no("cumeeira × pilar (chapa em T + garfo)", upC, upCq, Pc.Hmax, eq(Pc, "Hmax"), { b: S.PC.b, h: S.PC.h }, { apoioCompressao_kN: Pc.Nmax, descricao: "A cumeeira apoia no topo do pilar; chapa em T com abas (garfo) e pinos inox no pilar e na cumeeira: resiste à sucção do vento e à reação horizontal; compressão por contato (verificada ⊥ à fibra)." });
+      var ap1 = apoio90("CP-1 viga de cumeeira sobre o pilar", Pc.Nmax, S.CM.b * S.PC.b, S.PC.b * 100, "Compressão ⊥ às fibras da viga de cumeeira sobre o topo do pilar (a chapa em T e o garfo não aliviam o contato)"); if (ap1) L.apoios90.apoioCumeeiraPilar = ap1;
+      L.ligacoes.caibroCumeeira = tercaApoio(c, "caibro × cumeeira", E.CB, tg, RAX, 2, "Caibros apoiados na cumeeira, fixados por parafusos de rosca total inclinados a 45° (par cruzado) contra a sucção; o apoio é por contato.");
+      var A = i.assento || { Nmax: 0, Nmin: 0, Hmax: 0 }, upA = Math.max(0.001, -A.Nmin), nA = 2, ax;
+      for (; nA <= 12; nA += 2) { ax = roscaInclinada({ F: upA, n: nA, anguloGraus: 0, Rax_d: RAX }); if (ax.ok) break; }
+      var lAp = 0.20, bFr = S.FR.b, sig = A.Nmax / (lAp * bFr) / 1000;
+      L.ligacoes.caibroFrechal = { descricao: "Assento DESLIZANTE do caibro no frechal: chapa de apoio 8 mm × 200 mm com FOLGA na direção transversal à parede (abre no plano do caibro, sem empuxo), RESTRINGE o vertical e o longitudinal; a cinta de tração (vento) é parafusada só no caibro e passa pela folga.",
+        cinta: { parafusos: nA, Rax_d: RAX, F_d: upA, eta: ax.eta, ok: ax.ok }, apoio: { sigma_c90_MPa: sig, comprimento_mm: lAp * 1000 }, longitudinal_kN: A.Hmax, ok: ax.ok, eta: ax.eta, passos: ax.passos.concat(["Apoio: σc,90 = " + br(A.Nmax) + " kN / (" + br(lAp * 100, 0) + " × " + br(bFr * 100, 0) + " cm) = " + br(sig, 3) + " MPa; folga transversal ≥ 20 mm."]) };
+      L.ligacoes.frechalPilar = no("frechal × pilar (garfo no topo)", Math.max(0.001, -i.reacoes.P.Nmin + ((i.pesoPilar && i.pesoPilar.P) || 0)), Math.max(0.001, -eq(i.reacoes.P, "Nmin") + ((i.pesoPilar && i.pesoPilar.P) || 0)), i.reacoes.P.Hmax, eq(i.reacoes.P, "Hmax"), { b: S.P.b, h: S.P.h }, { apoioCompressao_kN: i.reacoes.P.Nmax, descricao: "Frechal apoiado no topo do pilar com garfo (impede o rolamento) e pinos inox; sucção e reação horizontal." });
+    }
+    /* contraventamento em MADEIRA (decisão do coordenador): pontas das diagonais em X por chapa interna + pinos inox, pela força axial máxima (ELU e F1d = Nd/150), como as diagonais da tesoura */
+    if (S.DX && E.DX && Math.max(E.DX.Nt, E.DX.Nc) > 0) L.ligacoes.contravDiagonal = no("ponta da diagonal de madeira do contraventamento", Math.max(E.DX.Nt, E.DX.Nc), Math.max(eq(E.DX, "Nt"), eq(E.DX, "Nc")), 0, 0, S.DX, { descricao: "Diagonal de madeira em X (águas e planos verticais): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao banzo/terça por chapa e pinos (NBR 7190-1:2022, cap. 7); a diagonal trabalha à tração e à compressão (L0 = comprimento total, sem crédito do cruzamento)." });
+    if (S.DP && E.DP && Math.max(E.DP.Nt, E.DP.Nc) > 0) L.ligacoes.contravParede = no("ponta da diagonal de madeira do painel da parede", Math.max(E.DP.Nt, E.DP.Nc), Math.max(eq(E.DP, "Nt"), eq(E.DP, "Nc")), 0, 0, S.DP, { descricao: "Diagonal de madeira em X no painel da parede (pilar → frechal): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao pilar e ao frechal (NBR 7190-1:2022, cap. 7); trabalha só à tração no modelo (sem crédito de compressão nem do cruzamento)." });
+    /* M3 (r14): ligação da linha de travamento LB ao banzo inferior (CV-3): a LB leva ao contraventamento o vento do oitão (ELU) somado à F1d = Nd/150 do banzo (6.6.4); chapa interna + pinos inox, como as pontas das diagonais */
+    if (S.LB && E.LB && Math.max(E.LB.Nt, E.LB.Nc) > 0) L.ligacoes.contravLB = no("ligação da linha de travamento LB ao banzo inferior", Math.max(E.LB.Nt, E.LB.Nc), Math.max(eq(E.LB, "Nt"), eq(E.LB, "Nc")), 0, 0, S.LB, { descricao: "Linha de travamento LB (peça de madeira entre os banzos inferiores das tesouras): chapa interna de aço t = 8 mm em fenda + pinos inox nas duas pontas, presa ao banzo inferior da tesoura (NBR 7190-1:2022, 6.6.4 e cap. 7); a força é o ELU do vento do oitão somado à F1d = Nd/150 do banzo." });
+    /* A1 (r13): o n de pinos da ponta da diagonal pode ser ELEVADO pela RIGIDEZ (K_br,1 com o deslizamento dos pinos, 7.1.12), não só pela força: S.DX.nMin / S.DP.nMin vêm do laço da T2 */
+    [["contravDiagonal", S.DX], ["contravParede", S.DP]].forEach(function (x) { var lg = L.ligacoes[x[0]]; if (lg && x[1] && x[1].nMin && lg.pinos && (lg.pinos.n || 0) < x[1].nMin) { lg.pinos.n = x[1].nMin; lg.pinos.nPorRigidez = true; lg.passos = (lg.passos || []).concat(["n de pinos por ponta elevado a " + x[1].nMin + " pela RIGIDEZ do contraventamento (K_br,1 com o deslizamento Ku dos pinos, NBR 7190-1:2022 6.6.2 e 7.1.12), não só pela força."]); } });
+    if (i.sistema !== "tesoura" && L.ligacoes.caibroFrechal && L.ligacoes.caibroFrechal.apoio && MAT) { var apF = apoio90("CP-3 caibro sobre o frechal (assento)", (i.assento || {}).Nmax, 0.20 * S.FR.b, 20, "Compressão ⊥ às fibras do frechal sob a chapa de apoio do caibro (200 mm)"); if (apF) { L.apoios90.apoioCaibroFrechal = apF; L.ligacoes.caibroFrechal.apoio.eta = apF.eta; } }
+    if (i.fita && i.fita.N != null && i.fita.N > 0) { var Af = (i.fita.b != null ? i.fita.b : 0.06) * 1000 * (i.fita.e != null ? i.fita.e : 0.002) * 1000 * 0.75, pf = 1.75 * c.kmod / c.gLig, etaF = i.fita.N / (Af * 235 / 1.1 / 1000); L.ligacoes.fita = { N_d: i.fita.N, eta: etaF, ok: etaF <= 1, parafusosPorPonta: Math.max(8, Math.ceil((i.fita.Neq != null ? i.fita.Neq : i.fita.N) / pf)), descricao: "Fita metálica perfurada 60 × 2,0 mm em X (águas e paredes) com tensor.", passos: ["Fita 60×2,0 (área líquida 75 %): N = " + br(i.fita.N) + " kN ≤ " + br(Af * 235 / 1.1 / 1000) + " kN → η = " + br(etaF, 3) + "."] }; }
+    L.verificacoes = Object.keys(L.ligacoes).map(function (k) { return { nome: k, eta: L.ligacoes[k].eta, ok: L.ligacoes[k].ok !== false && L.ligacoes[k].eta <= 1 + 1e-9 }; }).concat(Object.keys(L.apoios90).map(function (k) { return { nome: k, eta: L.apoios90[k].eta, ok: L.apoios90[k].ok !== false && L.apoios90[k].eta <= 1 + 1e-9 }; }));      /* apoios ⊥ às fibras (6.3.3): verificação, sem detalhe próprio */
+    L.eta = Math.max.apply(null, L.verificacoes.map(function (v) { return v.eta; })); L.ok = L.verificacoes.every(function (v) { return v.ok; });
+    L.passos = []; Object.keys(L.ligacoes).forEach(function (k) { if (L.ligacoes[k].passos) L.passos = L.passos.concat(L.ligacoes[k].passos); }); Object.keys(L.apoios90).forEach(function (k) { L.passos = L.passos.concat(L.apoios90[k].passos); });
+    L.normaFonte = { exemplarLicenciado: false, itens: NORMA };
+    return L;
+  }
+  /** apoio de terça/caibro sobre o banzo/cumeeira: parafusos de rosca total a 45° (par cruzado) contra o arrancamento (sucção) e o deslocamento lateral (componente do peso na água) */
+  function tercaApoio(c, nome, e, tg, RAX, nMin, descr) {
+    var V = e.V, Veq = e.VEq != null ? e.VEq : e.V, H = Veq * tg, nS, tc;
+    for (nS = nMin; nS <= 24; nS += 2) { tc = roscaInclinada({ F: Veq + H, n: nS, anguloGraus: 45, Rax_d: RAX }); if (tc.ok) break; }
+    return { descricao: descr || "Terça apoiada no banzo superior da tesoura por cantoneira e parafusos de rosca total inclinados a 45° (par cruzado).", parafuso: "SFS WT-T-8,2 × 300 (ETA-12/0063)", porApoio: nS, Rax_d: RAX, F_d: V, H_d: H, eta: tc.eta, ok: tc.ok, passos: ["Reação do apoio = " + br(V) + " kN; componente ao longo da água H = V·tgθ = " + br(H) + " kN (T + H na mesma verificação)."].concat(tc.passos) };
+  }
+
   var MadLig = {
-    PARAFUSOS: PARAFUSOS, PADRAO: PADRAO, fh0: fh0, fhAlfa: fhAlfa, MyRk: MyRk,
+    cfg: cfg, PARAFUSOS: PARAFUSOS, PADRAO: PADRAO, fh0: fh0, fhAlfa: fhAlfa, MyRk: MyRk,
     chapaInterna: chapaInterna, chapasExternas: chapasExternas, madeiraMadeira: madeiraMadeira, bordas: bordas,
     grupoPinos: grupoPinos, nefFator: nefFator, dimGrupo: dimGrupo, chapaMpl: chapaMpl, chumbadorFtRd: chumbadorFtRd, chumbadorFvRd: chumbadorFvRd, placaBase: placaBase,
-    roscaRaxd: roscaRaxd, roscaInclinada: roscaInclinada, reforcoTracaoNormal: reforcoTracaoNormal, pacoteT1: pacoteT1,
+    roscaRaxd: roscaRaxd, roscaInclinada: roscaInclinada, reforcoTracaoNormal: reforcoTracaoNormal, pacoteT1: pacoteT1, pacoteT2: pacoteT2, pinosAxiais: pinosAxiais,
     chapaFinaCorteSimples: chapaFinaCorteSimples, chapaCorteSimples: chapaCorteSimples, madeiraMadeiraSimples: madeiraMadeiraSimples, classeChapa: classeChapa, k90De: k90De,
     kserPino: kserPino, kuPino: kuPino, somaR2: somaR2, kthetaChumbadores: kthetaChumbadores, emSerie: emSerie, alfaN: alfaN, rigidezBase: rigidezBase, fendilhamentoF90Rk: fendilhamentoF90Rk, vergaNaV: vergaNaV, NORMA: NORMA, NOTA_ACO_Z: NOTA_ACO_Z
   };

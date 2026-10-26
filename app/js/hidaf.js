@@ -70,8 +70,28 @@
     var HB = dep("HidBiblioteca", "./biminstbiblioteca.js");
     if (HB && HB.ehEscritorio(famId)) return HB.aparelho(famId);
     var f = familiaHid(famId);
-    if (!f || !f.aparelhoPrograma) return null;
-    return NORMA_DA_FAMILIA[famId] || NORMA_DO_PROGRAMA[f.aparelhoPrograma] || null;
+    if (f && f.aparelhoPrograma) return NORMA_DA_FAMILIA[famId] || NORMA_DO_PROGRAMA[f.aparelhoPrograma] || null;
+    return aparelhoDoKit(famId);
+  }
+  /* N23 (25/10/2026) — o APARELHO DE NORMA das famílias do CATÁLOGO (bancada de pedra com cuba, tanque com gabinete…): o kit do
+     hidro (dados-fonte/hidro/kits/kits.json → js/hidkitdados.js) já declara qual aparelho cada família é (`familias` do kit e
+     `aparelhoNorma`). O Traçar automaticamente lançava o kit da bancada como LAVATÓRIO/PIA e o Dimensionar não sabia: a bancada
+     ficava "sem aparelho de norma" (UHC e peso pendentes em toda a rede a jusante) e a descida vertical do ramal dela era lida
+     como TUBO DE QUEDA ("sem ventilação primária no topo"). Agora o cálculo lê o MESMO dado do Traçar. Só os nomes que são linha
+     das tabelas (af.aparelhos / es.aparelhos) — o mictório depende da instância (tipo de descarga) e fica com a família hid-*. */
+  var NORMA_DO_KIT = { bacia_caixa_acoplada: 1, bacia_valvula: 1, lavatorio: 1, chuveiro: 1, pia_cozinha: 1, tanque: 1 };
+  var KIT_DA_FAM = null;
+  function aparelhoDoKit(famId) {
+    if (!KIT_DA_FAM) {
+      KIT_DA_FAM = {};
+      var D = dep("HidKitDados", "./hidkitdados.js"), K = (D && D.kits) || {};
+      Object.keys(K).forEach(function (k) {
+        var ap = (K[k] && K[k].aparelhoNorma) || k;
+        if (!NORMA_DO_KIT[ap]) return;
+        arr(K[k] && K[k].familias).forEach(function (fid) { if (KIT_DA_FAM[fid] == null) KIT_DA_FAM[fid] = ap; });
+      });
+    }
+    return KIT_DA_FAM[famId] || null;
   }
   /* grupo do quadro de aparelhos mínimos (HidPrograma): "bacia", "lavatorio"… ou null se a família não é aparelho */
   function grupoDaFamilia(famId) {

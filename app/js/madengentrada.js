@@ -60,10 +60,13 @@
   var OPCAO_PADRAO = function (id, nome, forma) {
     return { id: id, nome: nome, classe: "mlc:GL24h", pilar: forma === "circular" ? { forma: "circular", d: 0.32 } : forma === "duplo" ? { forma: "duplo", b: 0.14, h: 0.44 } : { forma: "quadrado", b: 0.28, h: 0.28 },
       T: { b: 0.12, h: 0.36 }, V: { b: 0.26 }, VG: { b: 0.16, h: 0.36 }, limites: { T: { hMax: 0.36, bMax: 0.24 }, V: { bMax: 0.28 }, VG: { hMax: 0.48 } },
-      base: forma === "duplo" ? "garfo" : "oculta", krBaseManual: "", deckPilarete: forma === "circular" ? { forma: "circ", d: 0.16 } : { forma: "ret", b: 0.14 },
+      t2: { sistema: "", pilarB: 0.28 },
+      base: forma === "duplo" ? "garfo" : "oculta", krBaseManual: "", deckVigaB: "", deckPilarete: forma === "circular" ? { forma: "circ", d: 0.16 } : { forma: "ret", b: 0.14 },
       materiais: { casa: "MLC GL24h aplainada", deck: "MLC GL24h tratada (autoclave)", pilaresDeck: "Eucalipto roliço autoclavado", telha: "Telha termoacústica PIR 30 mm", forro: "Lambri de pinus tratado 25 mm" } };
   };
   function estadoPadrao() {
+    var op = [OPCAO_PADRAO("A", "Pilar quadrado, base em cruz oculta", "quadrado"), OPCAO_PADRAO("B", "Pilar duplo, base em garfo aparente", "duplo"), OPCAO_PADRAO("C", "Pilar circular, base em cruz", "circular")];
+    op[1].t2.pilarB = 0.32; op[2].t2.sistema = "outro";
     return {
       v: VERSAO,
       obra: { nome: "", local: "", lat: null, lon: null, v0: null, s1tipo: "plano", s1: 1.0, categoria: "II", grupoS3: 2, umidade: 3, usoCat: 4,
@@ -71,14 +74,25 @@
       tip: "T1",
       t1: { p1x: 0, p1y: 0, vao: 6, comp: 6, cotaPiso: 0, peDireito: 2.4, altDisp: 0.7, incl: 4.8, beiral: { esq: 1.0, dir: 1.0, frente: 1.0, fundo: 1.0 }, afast: { esq: 0.18, dir: 0.18, frente: 0.2, fundo: 0.2 },
         vAltVar: true, hPonta: 0.30, hPontaMax: null, lambri: 0.025, sTerca: 0.95, hParedeTopo: null, telhaPeso: 0.12, lambriPeso: 6.0 },
-      t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, guardaCorpo: "" },
-      opcoes: [OPCAO_PADRAO("A", "Pilar quadrado, base em cruz oculta", "quadrado"), OPCAO_PADRAO("B", "Pilar duplo, base em garfo aparente", "duplo"), OPCAO_PADRAO("C", "Pilar circular, base em cruz", "circular")],
+      t2: { vao: 8, comp: 12, peDireito: 3.0, incl: 30, cotaPiso: 0, beiral: { esq: 0.8, dir: 0.8, frente: 0.8, fundo: 0.8 }, sistema: "tesoura", sTes: 4.0, sCaibro: 1.0, vMaxCumeeira: 4.0, sTercaMax: 1.4,
+        telhaPeso: 0.55, telhaDescricao: "telha cerâmica com ripas", assento: "deslizante", vergasVidro: false },
+      t7: { ativo: false, terrenoConst: 0, terrenoPts: "", decks: [], escada: null, escadaMat: "", guardaCorpo: "" },
+      deck: { guardaCorpo: { regiao: "", h: "1.10" }, cargas: { sobrecarga: "2.5" }, lateral: { vento: "", topoTravado: false }, estab: "" },
+      opcoes: op,
       ativa: "A",
       extras: { porta138: 0, porta108: 0, portao: 0, ripado: 0, condutoresM: 8, diariasMunck: 4, prazoSemanas: 8 },
       precos: {}, bdi: 0.2624, passo: { largura: 0.02, altura: 0.04 }, limVao: 300, limBalanco: 150
     };
   }
   function deckSuperiorPadrao() { return { id: "DS", nome: "Deck superior", modo: "mascara", contorno: "", rects: "", recortes: "", linhasExtras: "", cota: 3.0, tabua: 0.021, barrote: { b: 0.06, h: 0.16, passo: 0.50 }, viga: { b: 0.12, h: 0.24, espacamento: 2.0 } }; }
+  /** E4 r11 (R34): pilar ALTO (> 3 m) do deck retangular = CONTRAVENTAMENTO EM X entre pilares (padrão: diagonais de MLC; opção: tirantes inox com esticador; "nenhum" é aceito mas o auditor BLOQUEIA). Pilar baixo: sem contraventamento no deck retangular. */
+  function contravDeck(d) {
+    var hP = num(d.cota, 0) - num(d.tabua, 0.021) - num(d.barrote && d.barrote.h, 0.2) - num(d.vigaH, 0.48) - num(d.zBase, 0), t = d.contrav || "auto";
+    if (t === "auto") t = hP > 3.0 ? "madeira" : "nenhum";
+    if (t === "nenhum") return {};
+    return t === "tirante" ? { contraventamento: { tipo: "tirante" }, cv: { d: 0.016 } } : { contraventamento: { tipo: "madeira" }, cv: { b: 0.12, h: 0.20 } };
+  }
+  function ext2(a, b) { Object.keys(b || {}).forEach(function (k) { a[k] = b[k]; }); return a; }
   function deckRetanguloPadrao() { return { id: "DI", nome: "Deck inferior", modo: "retangulo", x0: 0, x1: 4, y0: 0, y1: 3, cota: 1.5, tabua: 0.021, vigasYs: "0.15 2.85", vigaB: 0.20, vigaH: 0.48, barrote: { b: 0.06, h: 0.20, passo: 0.50, inicio: 0.15 }, pilares: "", pilarD: 0.30, zBase: 0 }; }
 
   /** migração versionada do estado salvo: nunca apaga o que a pessoa digitou */
@@ -130,8 +144,8 @@
         if (!pil.length) erros.push(d.nome + ": informe os pilares (um por linha: x y).");
         decks.push({ id: d.id, nome: d.nome, modo: "retangulo", x0: num(d.x0, 0), x1: num(d.x1, 0), y0: num(d.y0, 0), y1: num(d.y1, 0), cota: num(d.cota, 0), tabua: num(d.tabua, 0.021),
           vigas: { ys: lerLista(d.vigasYs, 1).reduce(function (a, l) { return a.concat(l); }, []), b: num(d.vigaB, 0.2), h: num(d.vigaH, 0.48) }, barrote: { b: num(d.barrote.b, 0.06), h: num(d.barrote.h, 0.2), passo: num(d.barrote.passo, 0.5), inicio: num(d.barrote.inicio, 0.15) },
-          pilares: pil.map(function (q) { return [q[0], q[1]]; }), pilar: { d: num(d.pilarD, 0.3), zBase: num(d.zBase, 0), engastado: true,
-            material: "Eucalipto roliço autoclavado CCA, categoria de uso 5 (água salgada — NBR 16143)", especificacao: "eucalipto roliço autoclavado Ø" + Math.round(num(d.pilarD, 0.3) * 100) + " cm, categoria 5 (água salgada), topo com chapéu de proteção" } });
+          pilares: pil.map(function (q) { return [q[0], q[1]]; }), pilar: ext2({ d: num(d.pilarD, 0.3), zBase: num(d.zBase, 0), engastado: true,
+            material: "Eucalipto roliço autoclavado CCA, categoria de uso 5 (água salgada — NBR 16143)", especificacao: "eucalipto roliço autoclavado Ø" + Math.round(num(d.pilarD, 0.3) * 100) + " cm, categoria 5 (água salgada), topo com chapéu de proteção" }, contravDeck(d)) });
       } else {
         var rects = lerLista(d.rects, 4).map(function (q) { return [q[0], q[1], q[2], q[3]]; });
         if (!rects.length && String(d.contorno || "").trim()) {
@@ -140,22 +154,60 @@
         if (!rects.length) erros.push(d.nome + ": informe o contorno (pontos x y) ou os retângulos (x0 x1 y0 y1).");
         var rec = lerLista(d.recortes, 4).map(function (q) { return [q[0], q[1], q[2], q[3]]; });
         decks.push({ id: d.id, nome: d.nome, modo: "mascara", rects: rects, recortes: rec, linhasExtras: lerLista(d.linhasExtras, 1).reduce(function (a, l) { return a.concat(l); }, []),
-          areaRecortes: rec.reduce(function (s, q) { return s + (q[1] - q[0]) * (q[3] - q[2]); }, 0), cota: num(d.cota, 0), tabua: num(d.tabua, 0.021), terreno: terr,
-          barrote: { b: num(d.barrote.b, 0.06), h: num(d.barrote.h, 0.16), passo: num(d.barrote.passo, 0.5) }, viga: { b: num(d.viga.b, 0.12), h: num(d.viga.h, 0.24), espacamento: num(d.viga.espacamento, 2) },
+          areaRecortes: rec.reduce(function (s, q) { return s + (q[1] - q[0]) * (q[3] - q[2]); }, 0), cota: num(d.cota, 0), tabua: num(d.tabua, 0.021), terreno: terr, muretaSeAbaixoDoTerreno: !!terr && !d.semMureta,      /* E4 r10 (R35): com terreno informado, viga com a face inferior a menos de 15 cm do terreno vai para mureta da fundação */
+          barrote: { b: num(d.barrote.b, 0.06), h: num(d.barrote.h, 0.16), passo: num(d.barrote.passo, 0.5) }, viga: { b: num(o.deckVigaB, 0) > 0 ? num(o.deckVigaB, 0) : num(d.viga.b, 0.12), h: num(d.viga.h, 0.24), espacamento: num(d.viga.espacamento, 2) },
           pilarete: o.deckPilarete.forma === "circ" ? { forma: "circ", d: num(o.deckPilarete.d, 0.16) } : { forma: "ret", b: num(o.deckPilarete.b, 0.14) }, baseTipo: o.base === "garfo" ? "garfo" : "oculta" });
       }
     });
     var p = { decks: decks, guardaCorpo: [], erros: erros };
-    if (t7.escada) {
+    /* E4 r8: a escada tem campo PRÓPRIO — "madeira" (longarinas), "outro" (concreto/alvenaria: só os degraus de cumaru entram) ou "nenhuma"; sem a escolha (estado antigo) deduz como antes */
+    var matE = t7.escadaMat || (t7.escada ? (lerLista(t7.escada.xs, 1).length ? "madeira" : "outro") : "nenhuma");
+    if (t7.escada && matE !== "nenhuma") {
       var e = t7.escada, xs = lerLista(e.xs, 1).reduce(function (a, l) { return a.concat(l); }, []);
-      p.escada = { longarinas: { xs: xs, y0: num(e.y0, 0), y1: num(e.y1, 0), z0: num(e.z0, 0), z1: num(e.z1, 0), b: num(e.b, 0.06), h: num(e.h, 0.28) }, degraus: Math.round(num(e.degraus, 0)) };
+      if (matE === "madeira" && !xs.length) erros.push("Escada de madeira: informe o X das longarinas (ou escolha \"outro material\" / \"nenhuma\").");
+      p.escada = { longarinas: matE !== "madeira" || !xs.length ? null : { xs: xs, y0: num(e.y0, 0), y1: num(e.y1, 0), z0: num(e.z0, 0), z1: num(e.z1, 0), b: num(e.b, 0.06), h: num(e.h, 0.28) }, degraus: Math.round(num(e.degraus, 0)), material: matE, vao: { y0: num(e.y0, 0), y1: num(e.y1, 0), z0: num(e.z0, 0), z1: num(e.z1, 0) } };
     }
-    String(t7.guardaCorpo || "").split(/\n+/).forEach(function (ln) { var m = /^(.*?)[;|]\s*([\d.,]+)\s*$/.exec(ln.trim()); if (m) p.guardaCorpo.push({ onde: m[1].trim(), L: num(m[2], 0) }); });
+    /* E4 r12: o trecho de guarda-corpo é do DECK que o texto nomeia ("deck inferior frente; 6,54" → DI). Sem o deck, o motor (maddeck.gcDoDeck) aplicava TODOS os trechos a TODOS os decks: o pilar do deck inferior levava o guarda-corpo de 13,12 m do deck superior (η 0,54 e 8×M12 em vez de 0,43 e 6×M12). Texto que não nomeia deck algum continua valendo para todos (a favor da segurança) */
+    function semAcento(x) { return String(x || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim(); }
+    String(t7.guardaCorpo || "").split(/\n+/).forEach(function (ln) {
+      var m = /^(.*?)[;|]\s*([\d.,]+)\s*$/.exec(ln.trim()); if (!m) return;
+      var onde = m[1].trim(), g = { onde: onde, L: num(m[2], 0) }, no = semAcento(onde), alvo = decks.filter(function (d) { var nm = semAcento(d.nome); return nm && no.indexOf(nm) === 0; });
+      if (alvo.length === 1) g.deck = alvo[0].id;
+      p.guardaCorpo.push(g);
+    });
     return p;
+  }
+
+  /* ------------------------------------------------------------ T2 (casa/pavilhão de duas águas): o estado da tela → entrada do maddimensionar2.projetarT2 */
+  function sistemaT2(est, o) {
+    var base = est.t2.sistema === "cumeeira" ? "cumeeira" : "tesoura", s = o && o.t2 && o.t2.sistema;
+    if (s === "outro") return base === "tesoura" ? "cumeeira" : "tesoura";
+    return s === "tesoura" || s === "cumeeira" ? s : base;
+  }
+  function t2Params(est, o) {
+    var t = est.t2, be = t.beiral || {}, sis = sistemaT2(est, o);
+    return { nome: est.obra.nome || "Casa de duas águas", a: num(t.comp, 12), b: num(t.vao, 8), peDireito: num(t.peDireito, 3), baseZ: num(t.cotaPiso, 0), incl: r(num(t.incl, 30) / 100, 5),
+      beiral: { frente: num(be.frente, 0.8), fundo: num(be.fundo, 0.8), esq: num(be.esq, 0.8), dir: num(be.dir, 0.8) }, sistema: sis, vMaxPilar: num(t.vMaxCumeeira, 4),
+      telha: { peso: num(t.telhaPeso, 0.55), descricao: t.telhaDescricao || "telha com ripas" }, cobertura: { sTercaMax: num(t.sTercaMax, 1.4) }, tesoura: { sTes: num(t.sTes, 4) },
+      cumeeira: { sCaibro: num(t.sCaibro, 1), pilaresIntermediarios: null, assento: t.assento === "fixo" ? "fixo" : "deslizante", tirante: false }, vergas: null };
+  }
+  function secoesPartidaT2(est, o, sis) {
+    var b = Math.max(0.16, num(o.t2 && o.t2.pilarB, 0.2)), P = { forma: "quadrado", b: b, h: b };
+    function c(x) { return JSON.parse(JSON.stringify(x)); }
+    if (sis === "tesoura") return { P: c(P), PO: c(P), PC: c(P), FR: { b: 0.12, h: 0.24 }, BS: { b: 0.10, h: 0.20 }, BI: { b: 0.10, h: 0.20 }, PD: { b: 0.08, h: 0.12 }, DG: { b: 0.08, h: 0.12 }, T: { b: 0.08, h: 0.20 }, CM: { b: 0.10, h: 0.24 } };
+    return { P: c(P), PO: c(P), PC: c(P), FR: { b: 0.12, h: 0.24 }, CM: { b: 0.12, h: 0.30 }, CB: { b: 0.06, h: 0.20 }, TI: { d: 0.016 } };
+  }
+  function toProjT2(est, id) {
+    var o = opcaoDe(est, id), ob = est.obra, sis = sistemaT2(est, o), params = t2Params(est, o);
+    var proj = { params: params, vento: { local: { lat: num(ob.lat, null), lon: num(ob.lon, null), descricao: ob.local || "" }, s1: { tipo: ob.s1tipo === "plano" ? "plano" : ob.s1tipo, valor: num(ob.s1, 1) }, categoria: ob.categoria, grupoS3: num(ob.grupoS3, 2), faces: copia(ob.faces) },
+      classe: o.classe, umidade: num(ob.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined, opcao: o.id, pesoMLC: 5.0 };
+    var oT2 = copia(o); oT2.nome = "Pilar " + Math.round(num(o.t2 && o.t2.pilarB, 0.28) * 100) + " cm, " + (sis === "tesoura" ? "tesouras" : "cumeeira portante") + ", " + String(o.classe || "").replace("mlc:", "");
+    return { proj: proj, partida: secoesPartidaT2(est, o, sis), t7: null, opcao: oT2, extras: copia(est.extras), nome: ob.nome, t2: true, sistema: sis };
   }
 
   /** a opção `id` do estado → tudo que o worker e as saídas precisam (serializável: o terreno vai como função só dentro do t7, que o worker refaz) */
   function toProj(est, id) {
+    if (est.tip === "T2") return toProjT2(est, id);
     var o = opcaoDe(est, id), params = t1Params(est);
     var proj = { params: params, vento: ventoEntrada(est, params), classe: o.classe, umidade: num(est.obra.umidade, 3), limVao: est.limVao, limBalanco: est.limBalanco, krBase: num(o.krBaseManual, 0) > 0 ? num(o.krBaseManual, 0) : undefined,
       limites: copia(o.limites), passo: copia(est.passo), cargas: { telha: num(est.t1.telhaPeso, 0.12), lambriPeso: num(est.t1.lambriPeso, 6), outros: 0.03 }, opcao: o.id, pesoMLC: 5.0 };
@@ -166,7 +218,19 @@
   function validar(est) {
     var f = [], t = est.t1, ob = est.obra;
     var so7 = est.tip === "T7";
+    if (est.tip === "T2") {
+      var u = est.t2;
+      if (ob.lat == null || ob.lon == null) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
+      if (!(num(u.vao, 0) > 1) || !(num(u.comp, 0) > 1)) f.push({ passo: 2, texto: "Informe o vão (largura) e o comprimento da casa." });
+      else if (num(u.comp, 0) < num(u.vao, 0)) f.push({ passo: 2, texto: "A cumeeira corre pela maior dimensão: o comprimento deve ser maior ou igual ao vão (gire a planta)." });
+      if (!(num(u.incl, 0) >= 5)) f.push({ passo: 2, texto: "Inclinação mínima de 5 % para telha." });
+      if (!(num(u.peDireito, 0) > 1)) f.push({ passo: 2, texto: "Informe o pé-direito." });
+      if (!(num(u.telhaPeso, 0) > 0)) f.push({ passo: 2, texto: "Informe o peso da telha (kN/m²)." });
+      if (!est.opcoes.some(function (o) { return o.id === est.ativa; })) f.push({ passo: 3, texto: "Escolha a opção." });
+      return { ok: f.length === 0, falta: f };
+    }
     if (!so7 && (ob.lat == null || ob.lon == null)) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas) para achar o V0." });
+    if (so7 && (ob.lat == null || ob.lon == null) && !(num(est.deck && est.deck.lateral && est.deck.lateral.vento, 0) > 0)) f.push({ passo: 1, texto: "Informe a cidade da obra (ou as coordenadas): o vento do deck (NBR 6123) sai do V0 do local." });
     if (!so7 && (!(num(t.vao, 0) > 1) || !(num(t.comp, 0) > 1))) f.push({ passo: 2, texto: "Informe o vão e o comprimento da cobertura." });
     if (!so7 && !(num(t.incl, 0) >= 0)) f.push({ passo: 2, texto: "A inclinação não pode ser negativa." });
     if (!so7 && !(num(t.peDireito, 0) > 1)) f.push({ passo: 2, texto: "Informe o pé-direito." });
@@ -188,17 +252,22 @@
     ds.rects = "123.03 124.03 97.639 112.042\n122.03 123.03 97.639 112.042\n120.03 121.03 95.789 111.909\n124.03 125.03 97.639 112.042\n125.03 126.03 97.639 112.042\n127.03 128.03 97.639 112.042\n128.03 129.03 97.639 112.042\n129.03 130.03 97.639 105.042\n130.03 131.03 97.639 105.042\n131.03 132.03 97.639 104.042\n132.03 133.03 97.639 104.042\n133.03 134.03 97.639 104.042\n126.03 127.03 97.639 112.042\n118.03 119.03 95.789 108.909\n121.03 122.03 95.789 111.909\n119.03 120.03 95.789 111.909";
     ds.recortes = "118.767 127.042 99.205 107.442\n122.0 124.6 107.442 109.30"; ds.linhasExtras = "118.687 127.122"; ds.cota = 8.481;
     var di = deckRetanguloPadrao(); di.x0 = 117.084; di.x1 = 123.622; di.y0 = 92.139; di.y1 = 95.794; di.cota = 6.602; di.vigasYs = "92.29 95.29";
-    di.pilares = "117.245 92.286\n123.316 92.286\n117.245 95.286\n123.316 95.286\n123.316 96.786";
+    di.pilares = "117.245 92.286\n123.316 92.286\n117.245 95.286\n123.316 95.286";   /* R31 (R05.2): o 5º pilar (ao lado da escada de concreto) saiu */
+    /* r13 (R05.6): cotaBaseDI = cota da BASE dos pilares do deck inferior. 0 = como o modelo da arquitetura (pilares de 5,86 m, X, Ø26, 6 × M12). O terreno do modelo ali vale 5,35–5,50 m: se o RT confirmar que o solo/rocha está a ~5,40 m, a alternativa é
+       cotaBaseDI = 5.40 (pilares curtos de ~0,5 m sobre a rocha, sem X e sem vento a 7,7 m) — ver CASAMAR-R05.md, R05.6. ESTE valor segue 0 até o RT confirmar o terreno. */
+    var cotaBaseDI = 0; di.zBase = cotaBaseDI;
+    di.vigaH = 0.52; di.pilarD = 0.26; ds.viga.b = 0.16;   /* R29 (R05.2): viga inferior 20×52; R34 (r11): pilar de 6 m com contraventamento em X (parte de Ø26, o laço cresce até fechar); viga superior 16×24 (opções A/B) */
     e.t7 = { ativo: true, terrenoConst: 5.5, terrenoPts: CASAMAR_TERRENO, decks: [ds, di],
-      escada: { xs: "122.38 123.35", y0: 94.30, y1: 97.35, z0: 6.502, z1: 8.381, b: 0.06, h: 0.28, degraus: 9 },
-      guardaCorpo: "deck inferior frente; 6.54\ndeck inferior lado esquerdo; 3.66\ndeck inferior lado direito; 2.60\ndeck superior frente (x 118–122); 4.0\ndeck superior frente (x 122–134); 10.97\ndeck superior lado esquerdo; 13.12\nescada (lado livre); 3.3" };
+      escadaMat: "outro", escada: { xs: "", y0: 94.30, y1: 97.35, z0: 6.502, z1: 8.381, b: 0.06, h: 0.28, degraus: 9 },   /* R05.1: escada de concreto — sem longarinas de madeira */
+      guardaCorpo: "deck inferior frente; 6.54\ndeck inferior lado esquerdo; 3.66\ndeck inferior lado direito; 2.60\ndeck superior frente (x 118–122); 4.0\ndeck superior frente (x 122–134); 10.97\ndeck superior lado esquerdo; 13.12" };
+    e.deck = { guardaCorpo: { regiao: "", h: "1.10" }, cargas: { sobrecarga: "2.5" }, lateral: { vento: "", topoTravado: false }, estab: "" };          /* R32 (r8): o vento do deck NÃO é mais pressão fixa — o motor calcula q pela NBR 6123 (V0, S1, S2 na cota do topo do guarda-corpo/pilarete, categoria e S3 desta obra), Ca = 1,0 a validar pelo RT */
     e.extras = { porta138: 1, porta108: 2, portao: 1, ripado: 10.92, condutoresM: 8, diariasMunck: 4, prazoSemanas: 8, areaAndaime: 160, horasEngenheiro: 70 };
-    e.opcoes[1].deckPilarete = { forma: "ret", b: 0.14 };
+    e.opcoes[1].deckPilarete = { forma: "ret", b: 0.14 }; e.opcoes[2].deckVigaB = 0.14;      /* R28: a viga do deck superior da opção C é 14×24 — agora um CAMPO da opção (tela e lib iguais) */
     return e;
   }
 
   var MadEngEntrada = { VERSAO: VERSAO, estadoPadrao: estadoPadrao, migrar: migrar, toProj: toProj, validar: validar, lerLista: lerLista, contornoParaRetangulos: contornoParaRetangulos, terrenoFn: terrenoFn,
-    exemploCasaMar: exemploCasaMar, deckSuperiorPadrao: deckSuperiorPadrao, deckRetanguloPadrao: deckRetanguloPadrao, opcaoPadrao: OPCAO_PADRAO, opcaoDe: opcaoDe, t1Params: t1Params, copia: copia, num: num, r: r };
+    exemploCasaMar: exemploCasaMar, deckSuperiorPadrao: deckSuperiorPadrao, deckRetanguloPadrao: deckRetanguloPadrao, opcaoPadrao: OPCAO_PADRAO, opcaoDe: opcaoDe, t1Params: t1Params, t2Params: t2Params, sistemaT2: sistemaT2, copia: copia, num: num, r: r };
   if (typeof module !== "undefined" && module.exports) module.exports = MadEngEntrada;
   else global.MadEngEntrada = MadEngEntrada;
 })(typeof window !== "undefined" ? window : (typeof self !== "undefined" ? self : this));

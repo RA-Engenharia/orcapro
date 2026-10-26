@@ -28,7 +28,6 @@
 
   var U = {
     VERSAO: 1, MAX_AVISOS: 8,   // hid:ok quantos avisos o painel mostra (o resto fica no resultado)
-    ligado: (function () { try { return localStorage.getItem(LS) !== "0"; } catch (e) { return true; } })(),
     _vistos: null, _len: null, _ignorar: {}, _agendado: false, _ocupado: false, ultimo: null, perguntar: null,
     /* VIGA BALDRAME: "por_baixo" (padrão) ou "atravessar"; sem viga no modelo, o parâmetro { altura, largura, topo } (m) */
     modoBaldrame: lsLer(LSB, "por_baixo") === "atravessar" ? "atravessar" : "por_baixo",
@@ -113,7 +112,8 @@
       U._len = len;
       var novos = ids.filter(function (id) { return U._vistos.indexOf(id) < 0; });
       U._vistos = ids;
-      if (!U.ligado) return null;
+      U._sincAuto();   /* N23: a escolha "Lançar a instalação automaticamente" do projeto aberto */
+      if (!U.ligado) { if (novos.length) U._avisoManual(c, novos); return null; }
       var acoes = K.reconciliar({ estado: c.estado, avaliarFam: c.avaliarFam, ops: c.ops, novos: novos, vizinhos: U._vizinhos(c.estado) }).filter(function (a) {
         if (a.acao === "gerar") return true;
         var fi = fams.filter(function (f) { return String(f.id) === a.famInst; })[0], ass = fi ? K.assinatura(fi) : "apagado";
@@ -211,7 +211,7 @@
     _ambManual: function (ops, ambId) {
       var K = dep("HidKit"), lista = K.achatar(ops), ids = {}, ultimo = -1;
       lista.forEach(function (o, i) { if (o.amb === ambId && o.op !== "apagar" && o.id != null) { ids[o.id] = 1; ultimo = i; } });
-      return lista.some(function (o, i) { return i > ultimo && o.kit == null && o.amb == null && ((o.id != null && ids[o.id]) || (o.trecho != null && ids[o.trecho])) && ["instAlterar", "mover", "apagar", "acessorio"].indexOf(o.op) >= 0; });
+      return lista.some(function (o, i) { return i > ultimo && o.kit == null && o.amb == null && ((o.id != null && ids[o.id]) || (o.trecho != null && ids[o.trecho])) && ["instAlterar", "mover", "apagar", "acessorio", "trecho"].indexOf(o.op) >= 0; });   /* N23: "trecho" = o tubo refeito à mão (Corrigir) */
     },
     _redesenhar: function () { try { var H = dep("HidCalcUI"); if (H && H.redesenhar) H.redesenhar(); } catch (e) {} },
 
@@ -356,7 +356,93 @@
       U.baldrameParam = Object.keys(p).length ? p : null; lsGravar(LSB + ":param", JSON.stringify(U.baldrameParam));
       return true;
     },
-    alternar: function (on) { U.ligado = !!on; try { localStorage.setItem(LS, on ? "1" : "0"); } catch (e) {} U._redesenhar(); },
+    /* ⚠ N23 (25/10/2026) — "LANÇAR A INSTALAÇÃO AUTOMATICAMENTE" (liga/desliga), pedido do Rogério: lembrado POR USUÁRIO E PROJETO
+       (empresa + usuário + obra do BIM). Antes a chave era uma só no navegador: desligar numa obra desligava em todas. Sem chave do
+       projeto ainda (antes do login/da obra), vale a escolha antiga do navegador (orcapro:hidkit:auto) e, sem ela, LIGADO — como hoje.
+       DESLIGADO: a peça entra sozinha (sem kit, sem ligar o ambiente, sem a prévia do barrilete da caixa); a instalação só nasce
+       quando a pessoa pede: "Ligar esta peça" (Propriedades da peça e botão direito) ou o Traçar automaticamente. */
+    chaveAuto: function () {
+      var emp = "", usr = "", obra = "";
+      try { if (global.Auth && Auth.empresaId) emp = String(Auth.empresaId() || ""); } catch (e) {}
+      try { var u0 = global.Auth && Auth._usuario; if (u0) usr = String(u0.id || u0.uid || u0.email || u0.login || ""); } catch (e2) {}
+      /* o projeto: a mesma chave de obra das outras telas do BIM (js/bimmateriaisui.js obraKey) — a obra do BIM, o projeto aberto ou "geral" */
+      try { var g = global.Gestao, b0 = global.BIM; obra = String((g && g._bimSel) || (b0 && b0.obraAtual && b0.obraAtual()) || "geral"); } catch (e3) { obra = "geral"; }
+      return LS + ":" + emp + ":" + usr + ":" + obra;
+    },
+    _chaveVista: null,   /* _sincAuto (relê a escolha quando o projeto muda) e o `ligado` (getter/setter) ficam no fim do arquivo */
+    alternar: function (on) { U.ligado = !!on; var k = U.chaveAuto(); U._chaveVista = k; lsGravar(k, on ? "1" : "0"); U._redesenhar(); status(on ? "Lançar a instalação automaticamente: LIGADO neste projeto — ao colocar a peça, o kit e a ligação nascem junto." : "Lançar a instalação automaticamente: DESLIGADO neste projeto — a peça entra sozinha; use “Ligar esta peça” ou o Traçar automaticamente."); },
+    /* "LIGAR ESTA PEÇA": a instalação de UMA peça, quando a pessoa pede (com o automático desligado, ou para refazer). Caixa d'água →
+       a prévia do barrilete; aparelho/aquecedor/equipamento → o Traçar automaticamente só dela (kit, caixa sifonada, ventilação e a
+       ligação do ambiente). Sempre a prévia antes (Enter aplica, Esc cancela) e UM Ctrl+Z desfaz o lote. */
+    _ehLigavel: function (c, id) {
+      var K = dep("HidKit"), f = arr(c && c.estado && c.estado.familias).filter(function (x) { return String(x.id) === String(id); })[0]; if (!f) return null;
+      if (U.RESERVATORIO.test(String(f.famId))) return "caixa";
+      if (K && K.tipoDaFamilia(f.famId, f.tipoId)) return "aparelho";
+      var HAQ = dep("HidAQTraco"); try { if (HAQ && HAQ.aquecedores && HAQ.aquecedores(c.estado, c.avaliarFam).some(function (a) { return String(a.f && a.f.id) === String(id); })) return "aquecedor"; } catch (eA) {}
+      return null;
+    },
+    /* a peça ligável que entrou com o automático desligado: diz o que fazer (nunca calado) */
+    _avisoManual: function (c, novos) {
+      var lig = arr(novos).filter(function (id) { return U._ehLigavel(c, id); });
+      if (lig.length) status((lig.length === 1 ? "Peça " + lig[0] + " posta" : lig.length + " peças postas") + " sem instalação (Lançar automaticamente desligado neste projeto). Para ligar: Propriedades › Ligar esta peça, botão direito › Ligar esta peça, ou Traçar automaticamente.");
+      return lig;
+    },
+    ligarPeca: function (id) {
+      var c = U._ctx(); if (!c || id == null) return null;
+      id = String(id).replace(/^edit:/, "");
+      var tipo = U._ehLigavel(c, id);
+      if (!tipo) { status("Ligar esta peça: " + id + " não é aparelho, equipamento nem caixa d'água do hidrossanitário."); return null; }
+      if (tipo === "caixa") return U.montarBarrilete({ caixa: id });
+      return U.tracarAuto({ uids: ["edit:" + id] });
+    },
+    /* ⚠ N23 (25/10/2026) — CORRIGIR O TRAÇADO FEITO À MÃO (js/hidcriterios.js HidCorrigir): a correção de UM achado (ou de todos os do
+       ambiente) abre a MESMA prévia do Traçar (cartão + tubos translúcidos): "Muda:" o que cada correção faz e "Sai do modelo:" o que
+       ela apaga — nada some sem aparecer aqui. Enter aplica num lote (UM Ctrl+Z desfaz), Esc cancela. O que a tela resolve (ponto de
+       aparelho sem tubo, refazer pelo Traçar) vai para o "Ligar esta peça" / Traçar, também com prévia. */
+    _planoCorrigir: function (c, r, titulo) {
+      var ops = arr(r.ops), resumo = U._resumo(c, ops);
+      resumo.kits = 0; resumo.ambientes = 0; resumo.reaproveitadas = []; resumo.caixasNovas = []; resumo.piscinas = 0;
+      var textos = arr(r.textos).length ? arr(r.textos) : [r.texto].filter(Boolean);
+      var avisos = textos.map(function (t) { return { texto: "Muda: " + t, elementos: arr(r.mudados) }; });
+      if (arr(r.apagados).length) avisos.unshift({ texto: "Sai do modelo (Ctrl+Z volta): " + r.apagados.join(", "), elementos: arr(r.apagados) });
+      arr(r.restam).forEach(function (a) { avisos.push({ texto: "Fica para ajustar à mão: " + a.titulo + " — " + a.texto, elementos: arr(a.ids) }); });
+      return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: [], criterios: null, opcoes: 1, indice: 0, escopo: { tipo: "corrigir" }, ambientes: [], redes: [], kits: [], piscinas: [],
+               opsNaProposta: c.ops.length, titulo: titulo || "Corrigir", prefixo: "hidcorrigir", textos: textos, apagados: arr(r.apagados) };
+    },
+    corrigirAchado: function (a) {
+      var HC = dep("HidCorrigir"), c = U._ctx(); if (!HC || !c || !a) return null;
+      var r = HC.propor({ estado: c.estado, avaliarFam: c.avaliarFam, ops: c.ops }, a);
+      if (!r.ok) {
+        if (r.tela === "ligarPeca" && r.famInst) return U.ligarPeca(r.famInst);
+        if (r.tela === "tracar" && arr(r.aparelhos).length) return U.tracarAuto({ uids: r.aparelhos.map(function (id) { return "edit:" + id; }), todos: true });
+        U.ultimo = { ok: false, erro: "Corrigir: " + (r.motivo || "sem correção automática") }; status(U.ultimo.erro); U._redesenhar();
+        return r;
+      }
+      var P = U._planoCorrigir(c, r, "Corrigir — " + (a.titulo || "achado"));
+      U._plano = P; U._planoUids = []; U._previa(P.ops); U._cardMostrar(P);
+      status("Prévia da correção: " + r.texto + ". Enter aplica, Esc cancela; um Ctrl+Z desfaz.");
+      return P;
+    },
+    corrigirAmbiente: function (ambId) {
+      var HC = dep("HidCorrigir"), c = U._ctx(); if (!HC || !c || ambId == null) return null;
+      var r = HC.ambiente({ estado: c.estado, avaliarFam: c.avaliarFam, ops: c.ops }, String(ambId).replace(/^edit:/, ""));
+      if (!r.ok) { U.ultimo = { ok: false, erro: "Corrigir tudo neste ambiente: " + r.motivo }; status(U.ultimo.erro); U._redesenhar(); return r; }
+      var amb = arr(c.estado.ambientes).filter(function (x) { return String(x.id) === String(ambId); })[0];
+      var P = U._planoCorrigir(c, r, "Corrigir tudo — " + ((amb && amb.nome) || ambId));
+      U._plano = P; U._planoUids = []; U._previa(P.ops); U._cardMostrar(P);
+      status("Prévia: " + r.corrigidos + " correção(ões) no ambiente" + (r.restam.length ? ", " + r.restam.length + " para ajustar à mão" : "") + ". Enter aplica, Esc cancela; um Ctrl+Z desfaz.");
+      return P;
+    },
+    /* a seção das Propriedades da peça (js/bimpropsui.js): o botão "Ligar esta peça" e o estado do automático neste projeto */
+    secaoPaleta: function (ids) {
+      if (arr(ids).length !== 1) return null;
+      var c = U._ctx(); if (!c) return null;
+      var id = String(ids[0]).replace(/^edit:/, ""), tipo = U._ehLigavel(c, id); if (!tipo) return null;
+      U._sincAuto();
+      return { nome: "Instalação hidrossanitária", params: [
+        { id: "hid:ligar-peca", rotulo: tipo === "caixa" ? "Barrilete da caixa" : "Instalação da peça", tipo: "botao", rotuloBotao: "Ligar esta peça", fn: function () { U.ligarPeca(id); } },
+        { id: "hid:auto", rotulo: "Lançar automaticamente", leitura: true, valor: U.ligado ? "ligado neste projeto" : "desligado neste projeto (Instalações › Projeto inteligente)" }] };
+    },
 
     /* =========================================================================================================
      * TRAÇAR AUTOMATICAMENTE (18/10/2026). Pergunta do Rogério: "Já coloquei no ambiente a caixa sifonada, o vaso, o
@@ -690,6 +776,8 @@
     aoColocarFamilia: function (d) {
       if (!d || !U.RESERVATORIO.test(String(d.famId)) || U._plano) return null;
       var c = U._ctx(); if (!c) return null;
+      /* N23: com o automático DESLIGADO a caixa entra sozinha — o barrilete só com "Ligar esta peça" (ou Montar barrilete / Traçar) */
+      if (!U._sincAuto()) { status("Caixa d'água posta sem instalação (Lançar automaticamente desligado neste projeto): selecione e use Ligar esta peça, ou o Traçar automaticamente."); return "manual"; }
       var P = U.planejarBarrilete({ caixa: String(d.id) });
       if (P && P.ok) { U._plano = P; U._planoUids = []; U._previa(P.ops); U._cardMostrar(P); status("Caixa d'água posta: a prévia do barrilete (" + P.resumo.tubos + " tubo(s)). Enter aplica, Esc cancela."); return "barrilete"; }
       if (U._aparelhosDe(c).length) { var T = U.tracarAuto({ todos: true }); return T && T.ok ? "tracar" : "nada"; }
@@ -742,14 +830,15 @@
         "\n\nCorrija o modelo (mova o aparelho, a janela/porta ou use outra opção com Tab) e trace de novo.\n\nAplicar mesmo assim? (decisão do RT)")) { status("Traçado NÃO aplicado: há " + Qd + " proibido(s) de projetista na prévia."); return null; }
       if (c.ops.length !== P.opsNaProposta) { U.cancelarTracado(); status("O modelo mudou depois da prévia: clique Traçar automaticamente de novo."); return null; }
       U._previa(null); U._cardFechar();
-      var ok = U._gravar(c, P.ops, "hidtracar");
+      var ok = U._gravar(c, P.ops, P.prefixo || "hidtracar");
       U._plano = null;
       U.ultimo = { ok: ok, resumo: { kits: P.kits, removidos: [], ambientes: P.ambientes, redes: P.redes }, quando: new Date().getTime(), tracado: P.resumo, criterios: P.criterios || null };
       /* a PISCINA no mesmo clique: o bloco Piscina passa a mostrar este lançamento (sem relançar: a casa de máquinas fica
          "aceita" onde o plano pôs) e o documento único (memorial + lista de material + pranchas) abre junto */
       if (ok && arr(P.piscinas).length) { try { var PU = dep("HidPiscinaUI"); if (PU && PU.aposTracar) PU.aposTracar(P.piscinas); } catch (eP) {} }
       /* CRITÉRIO DE PROJETISTA depois do traçado: o painel Instalações já traz a lista do modelo inteiro (Mostrar no 3D / Corrigir) */
-      try { var BUi = global.BimInstUI, c3 = U._ctx(); if (ok && BUi && BUi.criterios && c3) BUi._crit = BUi.criterios(c3.estado, c3.avaliarFam); } catch (eCr) {}
+      try { var BUi = global.BimInstUI, c3 = U._ctx(); if (ok && BUi && BUi.criterios && c3) { BUi._crit = BUi.criterios(c3.estado, c3.avaliarFam); if (BUi.achadosCorr) BUi._achados = BUi.achadosCorr({ estado: c3.estado }); } } catch (eCr) {}
+      if (P.escopo && P.escopo.tipo === "corrigir") { status(ok ? "Correção aplicada: " + arr(P.textos).join("; ") + ". Ctrl+Z desfaz tudo." : "O editor recusou a correção."); try { var BUc = global.BimInstUI; if (ok && BUc && BUc.verificarSistemas) BUc.verificarSistemas(); } catch (eV) {} U._redesenhar(); return U.ultimo; }
       status(ok ? "Traçado aplicado: " + P.resumo.tubos + " tubo(s) (" + String(P.resumo.metros).replace(".", ",") + " m), " + P.resumo.conexoes + " conexão(ões), " + P.resumo.kits + " kit(s), " + P.resumo.ambientes + " ambiente(s)" + (P.resumo.pontasNovas.length ? " — " + P.resumo.pontasNovas.length + " ponta(s) solta(s)" : ", nenhuma ponta solta") + ". Ctrl+Z desfaz tudo." : "O editor recusou o traçado.");
       U._redesenhar();
       return U.ultimo;
@@ -843,7 +932,7 @@
     },
     _cardHtml: function (P) {
       var NOMES = { esgoto: "Esgoto", agua_fria: "Água fria", agua_quente: "Água quente", ventilacao: "Ventilação", pluvial: "Pluvial" };
-      var h = '<div class="hidtr-cab"><b>Traçar automaticamente</b><button type="button" data-hid-tr="cancelar" title="Cancelar (Esc)" aria-label="Fechar">×</button></div>';
+      var h = '<div class="hidtr-cab"><b>' + esc(P.titulo || "Traçar automaticamente") + '</b><button type="button" data-hid-tr="cancelar" title="Cancelar (Esc)" aria-label="Fechar">×</button></div>';
       if (!P.ok) return h + '<p class="hidtr-erro" data-hid-tr-erro>' + esc(P.erro) + '</p><div class="hidtr-bt"><button type="button" class="btn sm" data-hid-tr="cancelar">Fechar</button></div>';
       var R = P.resumo;
       h += '<p data-hid-tr-resumo><b>' + R.tubos + "</b> tubo(s) · " + String(R.metros).replace(".", ",") + " m · <b>" + R.conexoes + "</b> conexão(ões)" + (R.kits ? " · " + R.kits + " kit(s)" : "") + " · " + R.ambientes + " ambiente(s)</p>";
@@ -1034,7 +1123,7 @@
       o = o || {};
       var c = U._ctx(); if (!c) return [];
       var cxM = o.uid ? U._caixaSel(c, [String(o.uid)]) : null;   /* FRENTE H8: botão direito na caixa d'água */
-      if (cxM) return [{ id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }];
+      if (cxM) return [{ id: "hid-ligar-peca", rotulo: "Ligar esta peça (barrilete)", fn: function () { U.ligarPeca(cxM); } }, { id: "hid-montar-barrilete", rotulo: "Montar barrilete", fn: function () { U.montarBarrilete({ caixa: cxM }); } }];
       if (!U._aparelhosDe(c).length) return [];
       var K = dep("HidKit"), uid = o.uid ? String(o.uid) : null, alvo = null;
       if (uid) { var e1 = U.escopo(c, [uid]); if (!e1.erro) alvo = [uid]; }
@@ -1042,7 +1131,14 @@
       if (!alvo && !p && o.ev && c.b.precisao) { try { var api = c.b.precisao(), q = api && api.planoPonto ? api.planoPonto(o.ev.clientX, o.ev.clientY) : null; if (q) p = { x: q.x, z: q.z }; } catch (eP) {} }
       if (!alvo && p) { var a = K._int.ambienteDe(c.estado, p); if (a && !U.escopo(c, ["edit:" + a.id]).erro) alvo = ["edit:" + a.id]; }
       if (!alvo) return [];
-      return [{ id: "hid-tracar-auto", rotulo: "Traçar automaticamente (TA)", fn: function () { U.tracarAuto({ uids: alvo }); } }];
+      var itens = [{ id: "hid-tracar-auto", rotulo: "Traçar automaticamente (TA)", fn: function () { U.tracarAuto({ uids: alvo }); } }];
+      /* N23: botão direito numa PEÇA ligável — "Ligar esta peça" (a instalação só dela, com a prévia) */
+      var idP = uid ? uid.replace(/^edit:/, "") : null;
+      if (idP && U._ehLigavel(c, idP)) itens.unshift({ id: "hid-ligar-peca", rotulo: "Ligar esta peça", fn: function () { U.ligarPeca(idP); } });
+      /* N23: botão direito no AMBIENTE — "Corrigir tudo neste ambiente" (o traçado feito à mão, com a prévia) */
+      var ambA = alvo.length === 1 ? String(alvo[0]).replace(/^edit:/, "") : null;
+      if (ambA && dep("HidCorrigir") && arr(c.estado.ambientes).some(function (x) { return String(x.id) === ambA; })) itens.push({ id: "hid-corrigir-ambiente", rotulo: "Corrigir tudo neste ambiente", fn: function () { U.corrigirAmbiente(ambA); } });
+      return itens;
     },
     /* o botão grande no topo do painel Instalações (js/hidcalcui.js) */
     htmlTopo: function () {
@@ -1053,9 +1149,10 @@
 
     /* ---------------- o bloco no painel Instalações (js/hidcalcui.js) */
     html: function () {
+      try { U._sincAuto(); } catch (eS) {}
       var u = U.ultimo, h = '<div data-hid="kit" style="margin-top:12px;border-top:1px solid rgba(127,127,127,.25);padding-top:8px"><b>Projeto inteligente</b>';
       h += '<p class="muted" style="font-size:11.5px;margin:2px 0 6px">Posicione o aparelho e o kit nasce junto (válvula com a prumada até a laje, registro, pontos e esperas pelas alturas da Tigre e do catálogo da louça). Com o 2º aparelho do cômodo, o ambiente se liga sozinho: caixa sifonada, ventilação pela NBR 8160 e ramal DN 100.</p>';
-      h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" data-hid="kit-auto"' + (U.ligado ? " checked" : "") + "> Kit automático ao posicionar e ligar o ambiente</label>";
+      h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" data-hid="kit-auto"' + (U.ligado ? " checked" : "") + "> Lançar a instalação automaticamente <span class=\"muted\">(o kit, a ligação do ambiente e o barrilete da caixa nascem ao colocar a peça — lembrado neste projeto; desligado, use “Ligar esta peça” ou o Traçar automaticamente)</span></label>";
       h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><button class="btn sm" data-hid="kit-ligar" title="Liga o cômodo do aparelho selecionado (ou do último colocado)">Ligar ambiente</button>' +
            '<button class="btn sm ghost" data-hid="kit-gerar" title="Gera o kit dos aparelhos que já estavam no modelo">Gerar kits dos aparelhos</button></div>';
       /* LINHA DA REDE + viga baldrame */
@@ -1131,6 +1228,11 @@
       return out;
     }
   };
+  /* N23: `ligado` com getter/setter — quem grava direto (a tela antiga, as e2e) marca a escolha como a do projeto aberto; o `_sincAuto`
+     relê do armazenamento só quando o projeto (a chave) muda */
+  var _lig = (function () { try { return localStorage.getItem(LS) !== "0"; } catch (e) { return true; } })();
+  try { Object.defineProperty(U, "ligado", { enumerable: true, configurable: true, get: function () { return _lig; }, set: function (v) { _lig = !!v; try { U._chaveVista = U.chaveAuto(); } catch (e) {} } }); } catch (eD) { U.ligado = _lig; }
+  U._sincAuto = function () { var k = U.chaveAuto(); if (k === U._chaveVista) return _lig; U._chaveVista = k; _lig = lsLer(k, lsLer(LS, "1")) !== "0"; return _lig; };
   global.HidKitUI = U;
   if (global.document && global.setTimeout) global.setTimeout(function () { U._registrarTarde(); }, 0);   /* TRAÇAR AUTOMATICAMENTE: a fita já montada */
   if (typeof module !== "undefined" && module.exports) module.exports = U;

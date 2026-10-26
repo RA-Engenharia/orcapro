@@ -580,11 +580,18 @@
       if (!s.length) { var t = "Selecione um ou mais elementos primeiro (clique; Ctrl+clique soma; arraste em janela)" + (o ? " e use " + o : "") + "."; status(t); toast(t, "aviso"); }
       return s;
     },
+    /* Propriedades À VISTA: fora do recolhimento, na aba da frente do grupo, desenrolada se solta (js/bimdocaui.js) */
+    _garantirProps: function () {
+      var s = SH(); if (!s || !s._raiz) return;
+      var dk = s.doca && s.doca();
+      if (dk && dk.mostrar) { dk.mostrar("props"); return; }
+      try { if (s._raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false); } catch (e) {}
+      s._raiz.removeAttribute("data-fx-sem-props");
+    },
     /* foca um campo de Propriedades (o tubo: material e DN) — a edição é a que já existe lá */
     _focarProp: function (ids, texto) {
       var s = SH(), d = doc();
-      try { if (s && s.alternarLateralFixa && s._raiz && s._raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false); } catch (e) {}
-      if (s && s._raiz) s._raiz.removeAttribute("data-fx-sem-props");
+      this._garantirProps();
       var alvo = null;
       for (var i = 0; d && i < ids.length && !alvo; i++) alvo = d.querySelector('.rv-props [data-rv-p="' + ids[i] + '"]');
       if (!alvo) return false;
@@ -608,6 +615,14 @@
       };
       a["fx-propriedades"] = function () {
         var s = SH(); if (!s || !s._raiz) return false;
+        var dk = s.doca && s.doca();
+        if (dk) {
+          /* com os painéis encaixáveis: recolhe na borda (a aba fina traz de volta) ou fixa de volta */
+          var rec = !!(dk.layout() && dk.layout().rec.props);
+          if (rec) dk.mostrar("props"); else dk.recolher("props", true);
+          status(rec ? "Propriedades à vista." : "Propriedades recolhida na borda (a aba traz de volta; o botão também).");
+          return true;
+        }
         var off = s._raiz.getAttribute("data-rv-lateral-off") === "1" || s._raiz.getAttribute("data-fx-sem-props") === "1";
         if (off) { s._raiz.removeAttribute("data-fx-sem-props"); if (s._raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false); }
         else { s._raiz.setAttribute("data-fx-sem-props", "1"); if (s._raiz.getAttribute("data-fx-sem-nav") === "1") s.alternarLateralFixa(true); }
@@ -684,8 +699,8 @@
         var st = self._vx(), v = null, g = G(), s = SH();
         if (st) st.lista.forEach(function (x) { if (x.id === st.ativa && x.tipo === "folha") v = x; });
         if (v) {
-          try { if (s._raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false); s._raiz.removeAttribute("data-fx-sem-props"); } catch (e) {}
-          status("Carimbo da folha \"" + (v.nome || "") + "\": os campos estão em Propriedades (à esquerda).");
+          try { self._garantirProps(); } catch (e) {}
+          status("Carimbo da folha \"" + (v.nome || "") + "\": os campos estão em Propriedades.");
           return true;
         }
         try { if (g && g.bimPranchas) g.bimPranchas(); } catch (e2) {}
@@ -1210,27 +1225,40 @@
     },
     menuInterface: function () {
       var self = this, s = SH(); if (!s || !s._raiz) return false;
-      var raiz = s._raiz, latOff = raiz.getAttribute("data-rv-lateral-off") === "1";
-      var nav = !latOff && raiz.getAttribute("data-fx-sem-nav") !== "1", props = !latOff && raiz.getAttribute("data-fx-sem-props") !== "1", st = raiz.getAttribute("data-fx-sem-status") !== "1";
-      var trocar = function (attr, ligado) {
-        if (ligado) { raiz.setAttribute(attr, "1"); }
-        else { raiz.removeAttribute(attr); if (raiz.getAttribute("data-rv-lateral-off") === "1" && attr !== "data-fx-sem-status") s.alternarLateralFixa(false); }
-        /* sem Navegador e sem Propriedades, a coluna inteira recolhe (sobra a aba com a seta) */
-        if (raiz.getAttribute("data-fx-sem-nav") === "1" && raiz.getAttribute("data-fx-sem-props") === "1") { raiz.removeAttribute("data-fx-sem-nav"); raiz.removeAttribute("data-fx-sem-props"); s.alternarLateralFixa(true); }
+      var raiz = s._raiz, dk = s.doca && s.doca(), Lm = dk && dk.layout ? dk.layout() : null;
+      var st = raiz.getAttribute("data-fx-sem-status") !== "1";
+      /* com os painéis encaixáveis (js/bimdocaui.js) "esconder" = recolher na borda: a aba fina traz de volta */
+      var vis = function (id) { return Lm ? !Lm.rec[id] : !(raiz.getAttribute("data-rv-lateral-off") === "1" || raiz.getAttribute("data-fx-sem-" + id) === "1"); };
+      var alterna = function (id, rot) {
+        var ver = vis(id);
+        if (dk) { if (ver) dk.recolher(id, true); else dk.mostrar(id); }
+        else { if (ver) raiz.setAttribute("data-fx-sem-" + id, "1"); else raiz.removeAttribute("data-fx-sem-" + id); }
+        status(ver ? rot + " recolhido na borda (a aba traz de volta)." : rot + " à vista.");
         self._relayout();
       };
-      this._abrirMenu(this._ancora("fx-interface"), [
+      var itens = [
         { tit: "Interface do usuário" },
-        { id: "nav", rot: "Navegador de projeto", check: nav, fn: function () { trocar("data-fx-sem-nav", nav); status(nav ? "Navegador de projeto escondido." : "Navegador de projeto à vista."); } },
-        { id: "props", rot: "Propriedades", check: props, fn: function () { trocar("data-fx-sem-props", props); status(props ? "Propriedades escondida." : "Propriedades à vista."); } },
-        { id: "status", rot: "Barra de status", check: st, fn: function () { trocar("data-fx-sem-status", st); } },
+        { id: "nav", rot: "Navegador de projeto", check: vis("nav"), fn: function () { alterna("nav", "Navegador de projeto"); } },
+        { id: "props", rot: "Propriedades", check: vis("props"), fn: function () { alterna("props", "Propriedades"); } },
+        { id: "status", rot: "Barra de status", check: st, fn: function () { if (st) raiz.setAttribute("data-fx-sem-status", "1"); else raiz.removeAttribute("data-fx-sem-status"); self._relayout(); } },
         { sep: true }].concat(arr((R().comando("fx-interface") || {}).itens).map(function (it) {
           var al = it.tipo === "alterna";
           return { id: it.id, rot: str(it.rotulo).replace(/\s*\n\s*/g, " "), check: al ? R().ativo(it.id) : null, fn: function () { self._exec(it.id); } };
-        })).concat([
-        { id: "atalhos", rot: "Atalhos do teclado e do mouse", dir: "?", fn: function () { self._exec("atalhos"); } },
-        { id: "padrao-ui", rot: "Tudo à vista de novo", fn: function () { raiz.removeAttribute("data-fx-sem-nav"); raiz.removeAttribute("data-fx-sem-props"); raiz.removeAttribute("data-fx-sem-status"); if (raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false); self._relayout(); } }
-      ]), "interface");
+        }));
+      if (dk) {
+        /* arrastar qualquer painel pela barra de título; layouts prontos; fita só com as abas; modo modelagem */
+        itens.push({ sep: true }); itens.push({ tit: "Layouts prontos (arraste os painéis pela barra para onde quiser)" });
+        arr(global.BimDoca && global.BimDoca.PRONTOS).forEach(function (p) { itens.push({ id: "layout-" + p.id, rot: p.rotulo, fn: function () { dk.pronto(p.id); } }); });
+        itens.push({ id: "fita-rec", rot: "Fita só com as abas (Ctrl+F1)", check: !!(Lm && Lm.fita.rec), fn: function () { dk.fitaRec(); } });
+        itens.push({ id: "modo-modelagem", rot: "Modo modelagem: só a vista (F11)", fn: function () { s.alternarFoco(); } });
+      }
+      itens.push({ id: "atalhos", rot: "Atalhos do teclado e do mouse", dir: "?", fn: function () { self._exec("atalhos"); } });
+      itens.push({ id: "padrao-ui", rot: "Tudo à vista de novo (layout padrão)", fn: function () {
+        raiz.removeAttribute("data-fx-sem-nav"); raiz.removeAttribute("data-fx-sem-props"); raiz.removeAttribute("data-fx-sem-status");
+        if (dk) dk.restaurar(); else if (raiz.getAttribute("data-rv-lateral-off") === "1") s.alternarLateralFixa(false);
+        self._relayout();
+      } });
+      this._abrirMenu(this._ancora("fx-interface"), itens, "interface");
       return true;
     },
     _relayout: function () {

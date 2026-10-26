@@ -3129,7 +3129,7 @@
     _pnBlFluxo: function (m, c) {
       if (!c.podeFin || !c.temFin) return "";
       var meses = m.caixa.porMes || [], comparar = !!this._dashComparar && !!m.caixa.porMesAnterior;
-      return '<div class="pn-card pn-graf"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
+      return '<div class="pn-card pn-graf pn-graf-principal"><div class="pn-sec"><h2>Fluxo de caixa</h2><p>' + this._pnPeriodoRotulo(m.periodo) + ", por mês. Barras: recebido e pago. Linha: saldo acumulado.</p></div>"
         + (m.caixa.porMesAnterior ? '<button class="pn-ctl pn-ctl-ghost pn-ctl-mini' + (comparar ? " on" : "") + '" data-gacao="dash-comparar" aria-pressed="' + (comparar ? "true" : "false") + '">' + (comparar ? "Comparando com " : "Comparar com ") + this._pnPeriodoAnterior(m.periodo) + "</button>" : "")
         + (meses.length ? this._pnSvgCombo(meses, comparar ? m.caixa.porMesAnterior : null) : '<p class="pn-vazio">Sem lançamentos pagos no período.</p>') + "</div>";
     },
@@ -3268,6 +3268,186 @@
       return '<div class="pn-sec pn-sec-solta"><h2>Operação</h2><p>' + e(this._dashEscopoRotulo(c.esc)) + '</p></div><nav class="pn-op" aria-label="Contadores de operação">' + itens.join("") + "</nav>" + (detalhes.length ? '<div class="pn-detalhes">' + detalhes.join("") + "</div>" : "");
     },
 
+    /* ================= PRIMEIRA TELA (25/10/2026) =================
+     * "Deixa o PAINEL mais atraente, é a primeira tela que o cliente vê."
+     * Três peças novas por cima dos blocos de sempre — NENHUM número novo:
+     * tudo sai do mesmo modelo (`m`) e das mesmas réguas.
+     *   · `_pnHero`: saudação, empresa e os quatro números do dia (a receber,
+     *     a pagar, obras em andamento, fila "Precisa de você hoje");
+     *   · `_pnAtalhos`: o que fazer agora, com o ícone do menu lateral;
+     *   · `_pnObrasCartoes`: a obra como cartão (foto, avanço, próximo marco).
+     * E o ESTADO VAZIO (`_pnComeco`): conta sem obra, lançamento, orçamento
+     * nem diário recebe os passos de começo, nunca uma tela de zeros.
+     * ⚠ O hero é navy nos DOIS temas (como a barra do topo): as cores de texto
+     *   sobre ele são `--sobre-navy*`, medidas contra o navy — não use
+     *   --verde/--graf-* ali, que são do tema e somem.
+     * ⚠ Sem `backdrop-filter` e sem degradê: o Painel mora dentro de #main e
+     *   o vidro quebra os filhos `position:fixed` (orcapro-cara-nova-prototipo). */
+    _pnPodeMod: function (id) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(id)); },
+    _pnHero: function (m, c) {
+      var self = this, e = Util.esc, fk = function (v) { return self._fmtK(v); }, fm = Util.fmtMoeda, N = function (n, a, b) { return self._pnN(n, a, b); };
+      var cx = m.caixa, cells = [], sd = this._pnSaudacao();
+      var cel = function (o) {
+        var attr = o.gacao ? 'data-gacao="' + o.gacao + '"' : 'data-view="' + o.view + '"';
+        return '<li><button type="button" class="pn-hn' + (o.tom ? " pn-hn-" + o.tom : "") + '" ' + attr + (o.titulo ? ' title="' + e(o.titulo) + '"' : "") + ">"
+          + '<span class="pn-hn-rot">' + o.rot + '</span><span class="pn-hn-val">' + o.val + '</span><span class="pn-hn-sub">' + o.sub + "</span></button></li>";
+      };
+      if (c.podeFin && c.temFin) {
+        var ap = cx.aprovadoNaoPago || { n: 0, valor: 0 }, cv = cx.contasVencendo || { n: 0, valor: 0, vencidas: 0 };
+        cells.push(cel({ rot: "A receber", val: e(fk(cx.aReceber)), titulo: fm(cx.aReceber), view: "financeiro",
+          sub: ap.n ? "mais " + e(fk(ap.valor)) + " em " + N(ap.n, "boletim aprovado", "boletins aprovados") + " sem pagamento" : "lançado no Financeiro" }));
+        cells.push(cel({ rot: "A pagar até " + this._pnDataCurta(cv.ate), val: e(fk(cv.valor)), titulo: fm(cv.valor), view: "financeiro", tom: cv.vencidas ? "alerta" : "",
+          sub: cv.n ? N(cv.n, "conta", "contas") + (cv.vencidas ? ", " + N(cv.vencidas, "vencida", "vencidas") : "") : "nenhuma conta vencendo" }));
+      }
+      cells.push(cel({ rot: "Obras em andamento", val: String(m.obras.emAndamento), view: "obras", sub: "de " + N(m.obras.total, "obra", "obras") + (m.filtrado ? " no recorte" : "") }));
+      var nd = m.decisoes.length, crit = m.decisoes.some(function (x) { return x.gravidade >= 3; });
+      cells.push(cel({ rot: "Precisa de você hoje", val: String(nd), gacao: "painel-ir-fila", tom: nd ? (crit ? "alerta" : "aviso") : "ok",
+        sub: nd ? (m.emJogo > 0 ? e(fk(m.emJogo)) + " em jogo, ver a fila" : "ver a fila") : "nada pendente" }));
+      return '<section class="pn-hero" aria-labelledby="pn-hero-t">' + sd + '<ul class="pn-hero-nums">' + cells.join("") + "</ul></section>";
+    },
+    /* o bloco "empresa + Bom dia, Fulano" do topo (hero e estado vazio). Sem nome
+       de pessoa cadastrado, a saudação vai sem nome: nunca cumprimenta o e-mail. */
+    _pnSaudacao: function (msg) {
+      var e = Util.esc, hora = 12, nome = "", empresa = "";
+      try { hora = new Date().getHours(); } catch (eH) { hora = 12; }
+      try { nome = PainelDados.primeiroNome((typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : ""); } catch (eN) { nome = ""; }
+      try { empresa = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? String(Empresa.nomeDoc() || "") : ""; } catch (eE) { empresa = ""; }
+      return '<div class="pn-hero-id">' + (empresa ? '<p class="pn-hero-emp">' + e(empresa) + "</p>" : "")
+        + '<h2 id="pn-hero-t">' + PainelDados.saudacao(hora) + (nome ? ", " + e(nome) : "") + "</h2>" + (msg ? '<p class="pn-hero-msg">' + msg + "</p>" : "") + "</div>";
+    },
+    _pnAtalhos: function () {
+      var self = this, itens = [];
+      var ic = function (id) { try { return self.iconeModulo(id, 22) || ""; } catch (x) { return ""; } };
+      var at = function (o) {
+        return '<li><button type="button" class="pn-at" ' + o.attr + '><span class="pn-at-ic" aria-hidden="true">' + o.ic + '</span><span class="pn-at-t"><b>' + o.t + "</b><small>" + o.s + "</small></span></button></li>";
+      };
+      if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-acao="novo"', ic: ic("orcamentos"), t: "Novo orçamento", s: "Escopo, SINAPI e BDI" }));
+      if (this._pnPodeMod("obras")) itens.push(at({ attr: 'data-view="obras"', ic: ic("obras"), t: "Abrir obra", s: "Cadastro, diário e medições" }));
+      if (this._pnPodeMod("bim")) itens.push(at({ attr: 'data-view="bim"', ic: ic("bim"), t: "Modelar no BIM", s: "3D, pranchas e quantitativos" }));
+      if (this._pnPodeMod("orcamentos")) itens.push(at({ attr: 'data-view="orcamentos"', ic: (typeof Icones !== "undefined" ? Icones.get("proposta", 22) : ""), t: "Gerar proposta", s: "A partir de um orçamento pronto" }));
+      if (!itens.length) return "";
+      return '<nav class="pn-atalhos" aria-label="O que fazer agora"><ul>' + itens.join("") + "</ul></nav>";
+    },
+    /* iniciais para o cartão sem foto: duas letras do nome da obra */
+    _pnIniciais: function (nome) {
+      var p = String(nome || "").replace(/[^A-Za-zÀ-ÿ0-9 ]/g, " ").split(/\s+/).filter(function (x) { return x.length > 1 || /\d/.test(x); });
+      if (!p.length) return "";
+      return (p[0].charAt(0) + (p.length > 1 ? p[1].charAt(0) : (p[0].charAt(1) || ""))).toUpperCase();
+    },
+    _pnObrasCartoes: function (m, c) {
+      var self = this, e = Util.esc;
+      if (!m.obras.total) {
+        return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2></div>'
+          + '<div class="pn-oc-vazio"><span class="pn-oc-vazio-ic" aria-hidden="true">' + (this.iconeModulo("obras", 28) || "") + "</span>"
+          + "<div><b>Nenhuma obra cadastrada</b><p>Cadastre a primeira obra, ou gere uma a partir de um orçamento aprovado. Com a obra criada, o avanço, o prazo e o caixa dela aparecem aqui.</p></div>"
+          + '<button type="button" class="pn-btn pn-btn-p" data-view="obras">Cadastrar obra</button></div></section>';
+      }
+      var cj = PainelDados.cartoesObras(m.obras, 3);
+      if (!cj.itens.length) return "";
+      var obrasPorId = {};
+      lista("obras").forEach(function (o) { if (o) obrasPorId[o.id] = o; });
+      var idx = null, fotos = [];
+      try { if (typeof ObraVitrine !== "undefined" && ObraVitrine.indiceDiarios && c.esc && c.esc.rdo) idx = ObraVitrine.indiceDiarios(c.esc.rdo); } catch (eI) { idx = null; }
+      var pill = function (l) {
+        var cls = l.status === "andamento" ? "pn-pill pn-pill-and" : (l.status === "concluida" ? "pn-pill pn-pill-conc" : "pn-pill");
+        return '<span class="' + cls + '">' + e(({ andamento: "Em andamento", planejamento: "Planejamento", pausada: "Pausada", concluida: "Concluída" })[l.status] || l.status) + "</span>";
+      };
+      var cartao = function (l) {
+        var ob = obrasPorId[l.id] || null, ft = null, credito = "";
+        try { if (ob && idx && ObraVitrine.foto) ft = ObraVitrine.foto(ob, idx[l.id] || null); } catch (eF) { ft = null; }
+        if (ft && ft.ref) { fotos.push({ id: l.id, ref: ft.ref }); if (ft.origem === "diario" && ft.data) credito = "Foto do diário de " + self._pnDataCurta(ft.data); }
+        var mk = PainelDados.proximoMarco(l);
+        var ini = self._pnIniciais(l.nome);
+        return '<li class="pn-oc" data-gopen="obras:' + e(l.id) + '">'
+          + '<span class="pn-oc-foto" data-pn-foto="' + e(l.id) + '" data-credito="' + e(credito) + '"><span class="pn-oc-ph" aria-hidden="true">' + (ini ? "<i>" + e(ini) + "</i>" : "") + (self.iconeModulo("obras", 26) || "") + "</span></span>"
+          + '<div class="pn-oc-c"><div class="pn-oc-topo">' + pill(l) + "</div>"
+          + '<button type="button" class="pn-oc-nome" data-gopen="obras:' + e(l.id) + '" title="' + e(l.nome) + '">' + e(l.nome) + "</button>"
+          + self._pnDupla(l)
+          + '<p class="pn-oc-marco pn-oc-m-' + mk.tom + '"><small>Próximo marco</small><span>' + e(mk.texto) + "</span></p></div></li>";
+      };
+      var corpo = cj.itens.map(cartao).join("");
+      this._pnFotosPend = fotos;
+      return '<section class="pn-ocs" aria-labelledby="pn-ocs-t"><div class="pn-sec"><h2 id="pn-ocs-t">Suas obras</h2>'
+        + "<p>" + (cj.restantes ? "Mostrando " + cj.itens.length + " de " + cj.total + ". " : "") + "Calendário consumido em cima, escopo medido embaixo.</p>"
+        + (cj.restantes ? '<button type="button" class="pn-ctl pn-ctl-ghost pn-ctl-mini" data-view="obras">Ver todas (' + cj.total + ")</button>" : "") + "</div>"
+        + '<ul class="pn-ocs-grade">' + corpo + "</ul></section>";
+    },
+    /* a foto vem do IndexedDB (Promise): entra depois do HTML na tela, como na
+       lista de Obras. Foto que não chega fica com as iniciais, nunca um ícone
+       de imagem quebrada. `setTimeout(0)` porque o HTML ainda vai ser inserido. */
+    _pnLigarFotos: function () {
+      var fotos = this._pnFotosPend || [];
+      this._pnFotosPend = null;
+      if (!fotos.length || typeof Fotos === "undefined" || !Fotos.dataURI || typeof document === "undefined") return;
+      setTimeout(function () {
+        fotos.forEach(function (f) {
+          var box = document.querySelector('#main [data-pn-foto="' + String(f.id).replace(/"/g, "") + '"]');
+          if (!box) return;
+          Fotos.dataURI(f.ref).then(function (d) {
+            if (!d || !box.parentNode || box.querySelector("img")) return;
+            var im = document.createElement("img");
+            im.alt = ""; im.decoding = "async"; im.src = d;
+            box.insertBefore(im, box.firstChild);
+            box.className += " pn-oc-tem";
+            var cr = box.getAttribute("data-credito");
+            if (cr) { var s = document.createElement("span"); s.className = "pn-oc-cred"; s.textContent = cr; box.appendChild(s); }
+          }).catch(function () {});
+        });
+      }, 0);
+    },
+    /* ESTADO VAZIO: os passos de começo. Três caminhos curtos, na ordem em que
+       costumam servir a quem acabou de entrar: ver pronto (BIM), ver pronto
+       (orçamento), fazer o seu. */
+    _pnComeco: function () {
+      var self = this, ic = function (id) { try { return self.iconeModulo(id, 24) || ""; } catch (x) { return ""; } };
+      var podeDemo = this._obraDemoPode();
+      var passo = function (n, icone, tit, txt, acoes) {
+        return '<li class="pn-passo"><span class="pn-passo-n" aria-hidden="true">' + n + '</span><span class="pn-passo-ic" aria-hidden="true">' + icone + "</span>"
+          + "<h3>" + tit + "</h3><p>" + txt + '</p><div class="pn-passo-ac">' + acoes + "</div></li>";
+      };
+      var p1 = passo(1, ic("bim"), "Veja um projeto pronto",
+        "Casa térrea de 3 quartos com arquitetura, estrutura, hidrossanitário, elétrica e orçamento. Abre numa obra de exemplo, separada das suas.",
+        '<button type="button" class="pn-btn pn-btn-p" data-gacao="painel-exemplo-bim">Abrir o projeto exemplo</button>');
+      var p2 = passo(2, ic("orcamentos"), "Veja um orçamento pronto",
+        podeDemo ? "A OBRA TESTE ORÇAPRO traz orçamento com SINAPI, diário, medições, compras e financeiro preenchidos. Você remove quando quiser, e só os dados de exemplo saem."
+          : "Abra a lista de orçamentos para ver como o escopo, a base de preços e o BDI ficam organizados.",
+        podeDemo ? '<button type="button" class="pn-btn pn-btn-p" data-gacao="obrademo-criar">Carregar a obra de exemplo</button>'
+          : '<button type="button" class="pn-btn pn-btn-p" data-view="orcamentos">Ver orçamentos</button>');
+      var p3 = passo(3, ic("obras"), "Comece o seu",
+        "Monte o primeiro orçamento, ou cadastre uma obra que já está em andamento.",
+        '<button type="button" class="pn-btn pn-btn-p" data-acao="novo">Novo orçamento</button><button type="button" class="pn-btn" data-view="obras">Cadastrar obra</button>');
+      return '<section class="pn-hero pn-hero-vazio" aria-labelledby="pn-hero-t">' + this._pnSaudacao("Esta conta ainda não tem obra, orçamento nem lançamento. Quando tiver, esta tela mostra o caixa, os prazos e o que está pendente. Para começar, escolha um dos caminhos abaixo.") + "</section>"
+        + '<section class="pn-comeco" aria-labelledby="pn-comeco-t"><div class="pn-sec"><h2 id="pn-comeco-t">Comece por aqui</h2></div>'
+        + '<ol class="pn-passos">' + p1 + p2 + p3 + "</ol></section>";
+    },
+    /* "Abrir o projeto exemplo": entra no BIM e chama o exemplo assim que o
+       módulo (carregado sob demanda) estiver de pé. ⚠ Se esta versão não
+       tiver o exemplo, diz isso e deixa a pessoa na tela inicial do BIM: nunca
+       fica calado nem promete o que não abriu. */
+    painelExemploBim: function () {
+      if (typeof App === "undefined" || !App.irPara) return;
+      App.irPara("bim");
+      var tent = 0;
+      (function esperar() {
+        var B = (typeof window !== "undefined") ? window.BimProjetosUI : null;
+        if (B && typeof B.abrirExemplo === "function") { try { B.abrirExemplo(); } catch (e) {} return; }
+        if (++tent > 40) {
+          if (typeof UI !== "undefined" && UI.toast) UI.toast("O projeto exemplo não está nesta versão. O BIM está aberto na tela inicial: comece por um template.", "ok");
+          return;
+        }
+        setTimeout(esperar, 500);
+      })();
+    },
+    /* leva o olho à fila "Precisa de você hoje" e põe o foco nela (teclado) */
+    painelIrFila: function () {
+      if (typeof document === "undefined") return;
+      var el = document.querySelector("#main .pn-hoje");
+      if (!el) return;
+      try { el.scrollIntoView({ block: "start" }); } catch (e) {}
+      var h = el.querySelector("h2");
+      if (h) { h.setAttribute("tabindex", "-1"); try { h.focus({ preventScroll: true }); } catch (e2) { h.focus(); } }
+    },
+
     _pnHtml: function (m, ctx) {
       var self = this, e = Util.esc, N = function (n, a, b) { return self._pnN(n, a, b); };
       var podeFin = ctx.podeFin, esc = ctx.esc, fin = ctx.fin;
@@ -3286,6 +3466,13 @@
          "Mais" (mesmo botão, mesmo `data-gacao`). Os blocos abaixo são o
          produto e não mudam. ⚠ O título continua "Painel de Gestão": é o nome
          que o relatório impresso (`painelImprimir`) e a ajuda usam. */
+      /* PRIMEIRA TELA (25/10/2026): conta sem nada recebe os passos de começo;
+         com dados, entram o hero, os atalhos e as obras em cartão ANTES dos blocos.
+         `contaVazia` só consulta orçamentos (JSON grande) quando o resto já está
+         vazio, e nunca com recorte de obra ativo (recorte ≠ conta nova). */
+      var _cv = { obras: obras.length, financeiro: esc.financeiro.length, rdo: esc.rdo.length, orcamentos: 0 };
+      if (!_cv.obras && !_cv.financeiro && !_cv.rdo) { try { _cv.orcamentos = Store.listarOrcamentos(eid()).length; } catch (eO) { _cv.orcamentos = 0; } }
+      var vazia = !m.filtrado && PainelDados.contaVazia(_cv);
       var K = kit();
       var recorte = '<div class="pn-filtros" role="group" aria-label="Recorte do painel">'
         + '<label class="pn-filtro">Obra ' + campoObra + "</label>"
@@ -3293,14 +3480,16 @@
         + '<label class="pn-filtro">Período <select data-gacao="dash-periodo">' + optP + "</select></label></div>";
       var html = '<div class="pn">' + K.cab({
         icone: "dashboard", titulo: "Painel de Gestão",
-        sub: this._pnDataExtenso(m.hoje) + ". " + N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + ".",
-        obraHtml: recorte,
-        acoes: [
+        sub: this._pnDataExtenso(m.hoje) + ". " + (vazia ? "" : N(m.obras.emAndamento, "obra em andamento", "obras em andamento") + " de " + m.obras.total + (m.filtrado ? ", no recorte escolhido" : "") + "."),
+        obraHtml: vazia ? "" : recorte,
+        acoes: vazia ? [] : [
           '<button class="btn" data-gacao="painel-imprimir" title="Abre o painel numa janela de impressão; salve como PDF">Relatório</button>',
           '<button class="btn" data-gacao="painel-organizar" title="Escolher quais blocos aparecem e em que ordem">Organizar painel</button>',
           podeFin ? '<button class="btn" data-gacao="dash-metas" title="Definir a margem saudável, a meta de PPC, a meta de recebimento e o aviso de contas a vencer">Metas</button>' : ""
         ]
       });
+      if (vazia) return html + this._pnComeco() + "</div>";
+      html += this._pnHero(m, ctx) + this._pnAtalhos() + this._pnObrasCartoes(m, ctx);
       var blocos = PainelDados.blocosOrdenados(ctx.prefs), fn = { tiles: "_pnBlTiles", posicao: "_pnBlPosicao", agenda: "_pnBlAgenda", previsao: "_pnBlPrevisao", fluxo: "_pnBlFluxo", composicao: "_pnBlComposicao", lucro: "_pnBlLucro", metas: "_pnBlMetas", obras: "_pnBlObras", orcado: "_pnBlOrcado", operacao: "_pnBlOperacao" };
       var esq = "", cheia = "", escondidos = 0;
       blocos.forEach(function (b) {
@@ -3313,6 +3502,7 @@
       html += '<section class="pn-grid"><div class="pn-grid-esq">' + esq + '</div><div class="pn-grid-dir">' + this._pnBlFila(m, ctx) + "</div></section>" + cheia;
       html += '<div class="pn-fim">' + (escondidos ? "<span>" + N(escondidos, "bloco escondido", "blocos escondidos") + ' em "Organizar painel".</span>' : "") + "</div>";
       html += this._obraDemoCard();
+      this._pnLigarFotos();
       return html + "</div>";
     },
 
@@ -15024,6 +15214,9 @@
       if (id !== "3d" && !this._bimVxAchar(id)) id = "3d";
       var v = this._bimVxAchar(id);
       if (v && v.janela && !v.janela.closed) { try { v.janela.focus(); } catch (e) {} return; }
+      /* FLUIDEZ (25/10/2026): o tempo da troca (do clique até o 2º quadro: o desenho refeito ao aparecer cai dentro) vai
+         para o vigia da memória (js/memvigia.js → diag/) — a regressão aparece no vigia de saúde sem ninguém medir à mão */
+      this._bimVxMedir(st.ativa, id);
       st.ativa = id;
       this._bimVxLayout();
       /* S8: a regra do topo da viga é da vista na frente (planta estrutural × piso/3D) */
@@ -15040,6 +15233,14 @@
         BimShell.pintarFita();
         BimShell.repintarVista();
       } catch (e2) {}
+    },
+    _bimVxMedir: function (de, para) {
+      if (de === para || typeof requestAnimationFrame !== "function" || !window.BimFluidez || !window.performance) return;
+      var self = this, t0 = performance.now();
+      if (!this._bimTrocas) this._bimTrocas = new BimFluidez.Tempos(40);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { try { self._bimTrocas.anotar(de, para, performance.now() - t0); } catch (e) {} }); });
+      /* de volta ao 3D: a fila de segundo plano prepara as vistas 2D (a suja escondida e as de antemão) */
+      if (para === "3d") { try { if (window.Bim2D && Bim2D.agendarAntes) Bim2D.agendarAntes(); } catch (eA) {} }
     },
     _bimVxLayout: function () {
       var st = this._bimVxEst(), g = this._bimVxGrade(); if (!g) return;
@@ -22204,6 +22405,8 @@
           });
         }).then(function (r) {
           if (!r) return;
+          /* FLUIDEZ (25/10/2026): o tamanho do cache depois da passada vai para o vigia (js/memvigia.js bimcacheMB) */
+          if (r.ok && typeof r.total === "number") { self._bimCacheTotalB = r.total; self._bimCacheTotalEm = Date.now(); }
           self._bimApararApagados = (self._bimApararApagados || 0) + r.apagados.length;
           if (self._bimApararApagados) {
             try { console.info("[bimcache] teto: " + self._bimApararApagados + " entrada(s) antiga(s) liberada(s); guardado agora " + Math.round(r.total / 1048576) + " MB"); } catch (e2) {}
@@ -26556,6 +26759,10 @@
             onLoaded: function (elementos) {
               self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
               try { if (window.BimShell) BimShell.repintarVista(); } catch (eRv) {}
+              /* FLUIDEZ (25/10/2026): as peças chegaram — com a pessoa parada, a planta de trabalho, o 1º corte e a 1ª elevação
+                 são extraídos de antemão (js/bim2dui.js agendarAntes; só valem se a cena for a mesma na hora de abrir) */
+              /* ⚠ só se o Bim2D já é desta obra: configurar daqui trocaria a obra dele fora de hora (fecha as vistas da outra) */
+              try { if (window.Bim2D && Bim2D.agendarAntes && Bim2D._cfg && Bim2D._cfg.obraKey === (self._bimSel || "geral") && Bim2D._cfg.niveis) Bim2D.agendarAntes(); } catch (eAA) {}
               /* B7: as peças chegaram — é AQUI que a comparação entre versões
                  pode acontecer, e não no `onModeloCarregado`, que roda antes.
                  Guarda a fotografia de cada modelo aberto para a próxima
@@ -51995,6 +52202,8 @@ renderFolha: function () {
         case "dash-comparar": return this.dashTrocaComparar();
         case "graf-ir": return this.grafIr(dataset);
         case "painel-organizar": return this.painelOrganizar();
+        case "painel-exemplo-bim": return this.painelExemploBim();
+        case "painel-ir-fila": return this.painelIrFila();
         case "painel-bloco-toggle": return this.painelBlocoToggle(dataset.id);
         case "painel-bloco-sobe": return this.painelBlocoMover(dataset.id, -1);
         case "painel-bloco-desce": return this.painelBlocoMover(dataset.id, 1);

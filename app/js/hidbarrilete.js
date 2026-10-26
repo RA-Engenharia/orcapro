@@ -170,11 +170,21 @@
     var H = HR(), o = H && H.obstaculosDoBim ? H.obstaculosDoBim(estado, null) : { lajes: [], paredes: [], vigas: [] };
     return { lajes: arr(o.lajes), paredes: arr(o.paredes).map(function (w) { return { id: w.id, p1: w.p1, p2: w.p2, esp: num(w.espessura, 0), base: num(w.base, 0), topo: num(w.base, 0) + num(w.altura, 0) }; }), vigas: arr(o.vigas) };
   }
-  function suporte(Ap, a, b, r, teto) {
+  function suporte(Ap, a, b, r, teto, comParapeito) {
     var s = -Infinity, x0 = Math.min(a.x, b.x) - r, x1 = Math.max(a.x, b.x) + r, z0 = Math.min(a.z, b.z) - r, z1 = Math.max(a.z, b.z) + r;
     Ap.lajes.forEach(function (L) { if (L.topo <= teto + EPS && x1 >= L.x0 && x0 <= L.x1 && z1 >= L.z0 && z0 <= L.z1) s = Math.max(s, L.topo); });
-    Ap.paredes.forEach(function (w) { if (w.topo > teto + EPS) return; if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: w.p1.x, y: 0, z: w.p1.z }, { x: w.p2.x, y: 0, z: w.p2.z }) <= w.esp / 2 + r) s = Math.max(s, w.topo); });
-    Ap.vigas.forEach(function (v) { if (v.topo > teto + EPS) return; if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: v.p1.x, y: 0, z: v.p1.z }, { x: v.p2.x, y: 0, z: v.p2.z }) <= num(v.largura, 0) / 2 + r) s = Math.max(s, v.topo); });
+    var sLaje = s;
+    /* ⚠ N23 (25/10/2026) — PLATIBANDA NÃO É APOIO. A parede que NASCE sobre a laje do trecho e sobe acima dela (platibanda, mureta, peitoril
+       da área técnica) é atravessada com passante, como o barrilete já fazia quando a caixa ficava abaixo do topo dela. Antes, com a caixa
+       ELEVADA acima da platibanda (o Corrigir da pressão baixa), o topo da platibanda virava o "apoio" do barrilete: ele corria em cima dela,
+       sem carga estática (6.9.3), e o Traçar pedia subir a caixa DE NOVO — a base do projeto exemplo foi a 3,7 m. Parede do ático (sem laje
+       por baixo do trecho, ou que desce além da laje) continua apoio, como antes. */
+    var TOL_PAR = 0.05;   // hid:ok 5 cm: a base da parede "na" laje (geometria, não norma)
+    Ap.paredes.forEach(function (w) { if (w.topo > teto + EPS) return; if (!comParapeito && sLaje > -Infinity && w.base >= sLaje - TOL_PAR && w.topo > sLaje + TOL_PAR) return;
+      if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: w.p1.x, y: 0, z: w.p1.z }, { x: w.p2.x, y: 0, z: w.p2.z }) <= w.esp / 2 + r) s = Math.max(s, w.topo); });
+    /* idem a peça ACIMA da laje (terça, pontalete, viga da estrutura do telhado, com a face de baixo acima do topo da laje): o barrilete
+       passa POR BAIXO dela, apoiado na laje — antes ela virava o apoio quando a caixa elevada punha o teto acima dela */
+    Ap.vigas.forEach(function (v) { if (v.topo > teto + EPS) return; if (!comParapeito && sLaje > -Infinity && num(v.altura, null) != null && v.topo - num(v.altura, 0) > sLaje + TOL_PAR) return; if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: v.p1.x, y: 0, z: v.p1.z }, { x: v.p2.x, y: 0, z: v.p2.z }) <= num(v.largura, 0) / 2 + r) s = Math.max(s, v.topo); });
     return s;
   }
   /* a caixa do prédio (paredes + lajes) em planta: para o lado de FORA do extravasor e da limpeza */
@@ -810,7 +820,7 @@
     /* a SAÍDA virada para o centro das esperas (o local +x da família é a saída) */
     var ux = cg.x - pos.x, uz = cg.z - pos.z, rot = Math.abs(ux) + Math.abs(uz) > EPS ? Math.atan2(-uz, ux) : 0;
     /* ALTURA: apoiada no que estiver embaixo (laje/forro, topo das paredes), subindo o que o barrilete e a pressão pedirem */
-    var Ap = apoios(estado), R0 = num(esc.av.valores.Diametro, 0) / 2, sup = suporte(Ap, { x: pos.x - R0, z: pos.z }, { x: pos.x + R0, z: pos.z }, R0, Infinity);
+    var Ap = apoios(estado), R0 = num(esc.av.valores.Diametro, 0) / 2, sup = suporte(Ap, { x: pos.x - R0, z: pos.z }, { x: pos.x + R0, z: pos.z }, R0, Infinity, true);   /* N23: a CAIXA apoia em tudo o que está embaixo dela (a platibanda/terça pulada vale só para o tubo do barrilete) */
     var yTopEsp = Math.max.apply(null, ESP.map(function (s) { return s.y; }));
     var yb = r4(sup > -Infinity ? sup : yTopEsp), id = "caixa1", nId = 1;
     while (arr(estado.familias).some(function (f) { return String(f.id) === id; })) { nId++; id = "caixa" + nId; }

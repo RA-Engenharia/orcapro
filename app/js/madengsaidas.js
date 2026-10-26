@@ -134,14 +134,48 @@
   /** linhas do comparativo A/B/C: cada item { id, nome, volume, pecas, ferragensKg, etaMax, preco } */
   function comparativo(itens) { return (itens || []).map(function (o) { return { id: o.id, nome: o.nome, volume: o.volume, pecas: o.pecas, ferragens: o.ferragens, etaMax: o.etaMax, preco: o.preco, ok: o.ok }; }); }
 
-  /** SITUAÇÃO do cálculo (E3): lê o resultado de forma GENÉRICA — achados do auditor, ligação reprovada (ok === false ou η > 1), grupo com η > 1, falta de solução e
-   *  qualquer aviso/recusa que o motor devolver (resultado.avisos, avisosAnalise, ligacoes.avisos, memoria.vento.avisos, motivo/erro). Nunca "atende" com item aberto.
-   *  → { atende, itens: [{ tipo, texto, peca?, correcao? }] } */
+  /** CLASSIFICAÇÃO DOS AVISOS (E4 r5) — UM lugar só. O que o motor devolve em `avisos` é de dois tipos:
+   *   BLOQUEANTE (impede emitir): grupo/ligação com η > 1, recusa, achado do auditor, falta de dado obrigatório, e QUALQUER aviso que não esteja na tabela abaixo
+   *     (regra de segurança: aviso novo do motor nasce bloqueante até alguém decidir, com motivo, que é só premissa).
+   *   INFORMATIVO / PREMISSA ADOTADA: nota de norma, rigidez da base calculada pela ligação, rosca soberba pela ETA, M4/M13 como premissas — declarado, não reprova nada.
+   *  Cada linha: cod (rótulo curto), re (casa o INÍCIO do texto), porque (o motivo de ser só premissa). Casa só avisos (tipo "aviso"): achado, ligação, grupo e recusa são sempre bloqueantes. */
+  var PREMISSAS = [
+    { cod: "7.1.9", re: /^7\.1\.9/, porque: "rosca soberba d ≥ 9,5 mm: o WT-T-8,2 (d = 8,2 mm, abaixo de 9,5 mm) foi ADOTADO pela ETA do fabricante — A CONFIRMAR PELO RT (não confirmado: a transcrição da norma não esclarece o autoatarraxante de rosca total; terça TS-6 e caibro CP-2 dependem só dele)" },
+    { cod: "M2", re: /^M2:/, porque: "Kθ da base calculado pela ligação (pinos em série com os chumbadores), sem a fundação: declarado, a fundação do projeto informa o Kθ real" },
+    { cod: "N6", re: /^N6: rigidez da base (= \d+ .*CALCULADA|\d+ kN.*convergida)/, porque: "rigidez da base CALCULADA pela ligação dimensionada e convergida (não é premissa informada nem diagnóstico com base rígida)" },
+    { cod: "M4", re: /^M4:/, porque: "abertura dominante em face de sucção montada como excepcional: premissa adotada, a favor da segurança" },
+    { cod: "M13", re: /^M13:/, porque: "torção por excentricidade do vento (NBR 6123, 6.6) montada como binário: premissa adotada" },
+    { cod: "M6", re: /^M6: a base em cruz reprovava/, porque: "base em cruz resolvida com pino menor, sem aumentar o pilar: decisão do motor, registrada" },
+    { cod: "N-incl", re: /^Inclinação abaixo de 5 %/, porque: "nota de norma (NBR 6120:2019, Anexo D): verificar o empoçamento" },
+    { cod: "N-dinam", re: /^efeitos dinâmicos \(cap\. 9\)/, porque: "nota de norma (NBR 6123, cap. 9): T1 ≤ 1 s, a resposta flutuante já está no S2" },
+    { cod: "N-cob1", re: /^cobertura de uma água: θ/, porque: "nota de norma (NBR 6123, Tabela 6): adotado θ = 5°" },
+    { cod: "N-t6", re: /^Tabela 6:/, porque: "nota de norma (NBR 6123, Tabela 6): vento oblíquo declarado" },
+    { cod: "N-t5", re: /^Tabela 5, /, porque: "nota de norma (NBR 6123, Tabela 5): valor mantido a favor da segurança" },
+    { cod: "N-beiral", re: /^beiral: /, porque: "nota de norma (NBR 6123, Tabela 5, nota a)" },
+    { cod: "N-obliquo2", re: /^vento oblíquo na cobertura de duas águas/, porque: "nota de norma (NBR 6123, Tabela 5): caso oblíquo declarado" },
+    { cod: "T2-nm", re: /^T2: (não modelados|vergas de vidro)/, porque: "escopo declarado da T2 (vergas de vidro e caibros secundários; a torção do frechal 6.6 já é modelada, M13, e o oblíquo é declarado à parte): entra como premissa do memorial" },
+    { cod: "T2-v", re: /^T2: vento com a cobertura/, porque: "vento de duas águas pela Tabela 5: premissa declarada" },
+    { cod: "T7-escada", re: /^T7: escada de OUTRO material/, porque: "escopo declarado: a escada de concreto é de outro projeto; só os degraus de madeira entram como item" },
+    { cod: "T7-concentrada", re: /^T7: a NBR 6120:2019 \(Tab\. 10, p\. 18\) não fixa carga concentrada/, porque: "a Tab. 10 não dá carga concentrada para varandas; Qk de 1 kN adotada por analogia com a cobertura (6.4) — o RT confirma" },
+    { cod: "T7-vento", re: /^T7: vento sobre o deck/, porque: "vento no deck e no guarda-corpo vazado fica como premissa declarada (informar a pressão para incluir)" },
+    { cod: "T7-adotado", re: /^T7: adotado \(a confirmar pelo RT\)/, porque: "classe do roliço D40, do cumaru D60 e fu = 500 MPa são adoções a favor da segurança, declaradas no memorial: o RT confirma com o fornecedor/laudo" },
+    { cod: "T7-vento-nbr", re: /^T7: vento no deck calculado pela NBR 6123/, porque: "vento do deck calculado pela NBR 6123 na cota do topo (V0, S1, S2, S3 da obra); Ca = 1,0 (conservador) e ψ0 = 0,6 são adoções declaradas — o RT confirma" },
+    { cod: "T7-vento-informado", re: /^T7: vento no deck com a pressão informada/, porque: "pressão do vento informada pelo usuário, Ca = 1,0 e ψ0 adotados a favor da segurança — o RT confirma" },
+    { cod: "T7-R35", re: /^T7: R35 /, porque: "regra R35 (decisão do coordenador): vigas a menos de 15 cm do terreno apoiam em MURETA da fundação (outra empresa); declarada, nunca silenciosa — confirmar com a fundação; pode ser desligada na entrada do deck" },
+    { cod: "T2-topo", re: /^E4 r11: /, porque: "crédito de topo travado do pilar da T2: só quando o K_br,1 da cobertura e das paredes atende; o motor diz se aplicou ou não — premissa declarada, a validar pelo RT" },
+    { cod: "T7-regiao", re: /^T7: (região do país|guarda-corpo calculado com a carga da região V)/, porque: "região da NBR 10821-2 não informada: adotada a V (a mais severa), a favor da segurança — informar a região da obra" }
+  ];
+  /** classe de um aviso: "informativo" (premissa adotada) ou "bloqueante" (padrão) */
+  function classeAviso(texto) { var t = String(texto || ""); for (var i = 0; i < PREMISSAS.length; i++) if (PREMISSAS[i].re.test(t)) return { classe: "informativo", cod: PREMISSAS[i].cod, porque: PREMISSAS[i].porque }; return { classe: "bloqueante" }; }
+
+  /** SITUAÇÃO do cálculo (E3; E4 r5 separa bloqueantes e premissas): lê o resultado de forma GENÉRICA — achados do auditor, ligação reprovada (ok === false ou η > 1), grupo com η > 1, falta de solução e
+   *  qualquer aviso/recusa que o motor devolver (resultado.avisos, avisosAnalise, ligacoes.avisos, memoria.vento.avisos, motivo/erro). Nunca "atende" com bloqueante aberto.
+   *  → { atende, itens: [BLOQUEANTES { tipo, texto, peca?, correcao? }], premissas: [INFORMATIVOS { tipo:"premissa", cod, texto, porque }] } — "atende" quando não há bloqueante. */
   function situacao(res) {
-    var it = [];
+    var it = [], pr = [];
     function txtOf(a) { return typeof a === "string" ? a : (a && (a.mensagem || a.texto || a.msg || a.aviso)) || JSON.stringify(a); }
-    function add(tipo, a, extra) { var t = txtOf(a); if (!t) return; var o = { tipo: tipo, texto: t }; if (extra) for (var k in extra) o[k] = extra[k]; it.push(o); }
-    if (!res) return { atende: false, itens: [{ tipo: "recusa", texto: "Sem resultado de cálculo." }] };
+    function add(tipo, a, extra) { var t = txtOf(a); if (!t) return; if (tipo === "aviso") { var c = classeAviso(t); if (c.classe === "informativo") { if (!pr.some(function (x) { return x.texto === t; })) pr.push({ tipo: "premissa", cod: c.cod, texto: t, porque: c.porque }); return; } } var o = { tipo: tipo, texto: t }; if (extra) for (var k in extra) o[k] = extra[k]; it.push(o); }
+    if (!res) return { atende: false, itens: [{ tipo: "recusa", texto: "Sem resultado de cálculo." }], premissas: [] };
     if (res.semSolucao) add("recusa", "O dimensionamento não encontrou solução dentro dos limites: ajustar a tipologia ou os limites de seção.");
     ["motivo", "erro"].forEach(function (k) { if (res[k]) add("recusa", res[k]); });
     (res.auditoria && res.auditoria.achados || []).forEach(function (a) { add("achado", a.mensagem, { peca: a.peca, correcao: a.correcao, regra: a.regra }); });
@@ -162,10 +196,10 @@
     (res.avisos || []).forEach(function (a) { add("aviso", a); });
     (res.avisosAnalise || []).forEach(function (a) { add("aviso", a); });
     var v = res.memoria && res.memoria.vento; if (v) (v.avisos || []).forEach(function (a) { add("aviso", a); });
-    return { atende: it.length === 0, itens: it };
+    return { atende: it.length === 0, itens: it, premissas: pr };
   }
 
-  var MadEngSaidas = { situacao: situacao, corpoPeca: corpoPeca, volumesDaFonte: volumesDaFonte, gerarIfc: gerarIfc, opsBim: opsBim, linhasPecas: linhasPecas, resumoMadeira: resumoMadeira, xlsxCotacao: xlsxCotacao,
+  var MadEngSaidas = { situacao: situacao, classeAviso: classeAviso, PREMISSAS: PREMISSAS, corpoPeca: corpoPeca, volumesDaFonte: volumesDaFonte, gerarIfc: gerarIfc, opsBim: opsBim, linhasPecas: linhasPecas, resumoMadeira: resumoMadeira, xlsxCotacao: xlsxCotacao,
     reacoesFundacao: reacoesFundacao, comparativo: comparativo, secaoTxt: secaoTxt, matCurto: matCurto, br: br };
   if (typeof module !== "undefined" && module.exports) module.exports = MadEngSaidas;
   else global.MadEngSaidas = MadEngSaidas;

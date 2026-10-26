@@ -171,7 +171,7 @@
     var B = [];
     if (def.tipo === "demolir") B.push({ titulo: "LEGENDA", legenda: legendaFases(), itens: [] });
     if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas: ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ").", "AA e BB: planos de corte (folha " + c.numeroDe("cortes") + ")."] });
-    if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."] });
+    if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."].concat(arr(c.dados.calhas).length ? ["Retângulo tracejado junto à platibanda: calha embutida. Círculo cheio: descida pluvial. Quadrado: buzinote e ladrão da área técnica (laje descoberta com caimento de 1 % para eles)."] : []) });
     if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
     if (def.tipo === "piso") B.push({ titulo: "LEGENDA", itens: ["Linha cheia: peça inteira. Linha vermelha: peça cortada.", "Quantidade com reserva de 10 % (receita da paginação do ambiente)."] });
     if (def.tipo === "situacao") B.push({ titulo: "LEGENDA", itens: ["Linha traço-ponto: divisa do lote.", "Hachura verde: área permeável (solo natural).", "Cobertura vista de cima, edificação tracejada por baixo."] });
@@ -217,7 +217,7 @@
 
     /* contexto comum das folhas */
     var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo }, cfg: cfg, avisos: avisos, avisosFolha: {},
-      plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
+      plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
 
     /* a lista de folhas */
     var defs = [], pavs = dados.pavimentos, cj = cfg.conjuntos;

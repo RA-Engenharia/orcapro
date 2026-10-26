@@ -64,7 +64,7 @@
     baseCarregada: function () { return !!(global.Analitico && Analitico.carregado); },
     base: function () {
       if (!this.baseCarregada() || !global.OrcModelo) return null;
-      var prop = { obter: function (c) { var x = null; try { x = global.Bases && Bases.obter ? Bases.obter("PROPRIA", c) : null; } catch (e) { x = null; } return x || (global.PropriasRA ? PropriasRA.obter(c) : null); } };   /* composição própria (PROP-…): a do cliente; faltando, a de fábrica RA (js/propriasra.js) */
+      var prop = { obter: function (c) { var x = null; try { x = global.Bases && Bases.obter ? Bases.obter("PROPRIA", c) : null; } catch (e) { x = null; } return x || (global.PropriasRA ? PropriasRA.obter(c) : null) || (global.MetalOrc && MetalOrc.Propria && MetalOrc.Propria.obter ? MetalOrc.Propria.obter(c) : null); } };   /* 25/10/2026: e as da Metálica (PROP-MET-90xx, js/metalorc.js) — o perfil do abrigo orçado por kg na peça */   /* composição própria (PROP-…): a do cliente; faltando, a de fábrica RA (js/propriasra.js) */
       return OrcModelo.baseComPreco(Analitico, global.Sinapi && Sinapi.obter ? Sinapi : null, prop);
     },
     rotuloBase: function () {

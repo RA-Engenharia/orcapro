@@ -93,7 +93,10 @@
         var r = o.apply(this, arguments); this._cam = null; return r;
       };
     });
-    D.estilo = function (cam, extra) { return oEst.call(this, cam, extra) + ' data-cam="' + esc(cam || "") + '"'; };
+    /* ⚠ 25/10/2026: o estilo de base (js/acopranchas.js) JÁ põe data-cam nas camadas MET-* (as cotas da arquitetura usam MET-COTA):
+       somar o nosso repetia o atributo e o SVG da folha ficava INVÁLIDO ("Attribute data-cam redefined") — o navegador parava de
+       desenhar a folha na primeira cota (projeto exemplo, ARQ-02). Só põe quando a base não pôs. */
+    D.estilo = function (cam, extra) { var s = oEst.call(this, cam, extra); return / data-cam="/.test(s) ? s : s + ' data-cam="' + esc(cam || "") + '"'; };
     /* "livre" olha só os traços que são obstáculo de verdade: hachura, paginação e a mancha de grama não impedem o texto */
     ["livre", "livreQ"].forEach(function (nome) {
       var o = D[nome];
@@ -233,12 +236,15 @@
         D.linha(q1[0], q1[1], q2[0], q2[1], camB); D.linha(q3[0], q3[1], q4[0], q4[1], camB);
         var s1 = Q(-h, e2), s2 = Q(h, e2); D.linha(s1[0], s1[1], s2[0], s2[1], camB);
       } else {
-        var lado = v.abreFora ? -1 : 1, H = Q(-h, 0), tip = Q(-h, lado * v.largura), fim = Q(h, 0);
+        /* o lado e a mão da família (js/familiasra.js, o mesmo do 3D e do js/simboloporta.js): Abre_para_fora → a folha abre
+           para +z local (a normal nv); Mao_direita → a dobradiça em +x local. Até 25/10/2026 o arco saía do lado −z e sempre
+           com a dobradiça em −x: na prancha as portas dos quartos abriam para a circulação e a de entrada para a rua, ao
+           contrário do modelo */
+        var lado = v.abreFora ? 1 : -1, sH = v.maoDireita ? 1 : -1, H = Q(sH * h, 0), tip = Q(sH * h, lado * v.largura);
         D.linha(H[0], H[1], tip[0], tip[1], camB);   /* a folha aberta a 90° */
         var arc = [];
-        for (var i = 0; i <= 14; i++) { var t = i / 14 * Math.PI / 2, pa = Q(-h + v.largura * Math.sin(t), lado * v.largura * Math.cos(t)); arc.push(pa); }
+        for (var i = 0; i <= 14; i++) { var t = i / 14 * Math.PI / 2, pa = Q(sH * (h - v.largura * Math.sin(t)), lado * v.largura * Math.cos(t)); arc.push(pa); }
         D.poli(arc, camA, false);
-        void fim;
       }
     });
   }
@@ -291,6 +297,9 @@
     W.forEach(function (w) { w.pts.forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
     var bx0 = Math.min.apply(null, xs), bx1 = Math.max.apply(null, xs), bz0 = Math.min.apply(null, zs), bz1 = Math.max.apply(null, zs), tol = 0.04, qtd = 0;
     function horiz(w) { return Math.abs(Math.sin(w.rotY)) < 0.02; }
+    /* a cota TOTAL fica 9 mm por fora da cadeia: quando a cadeia foi para o afastamento de reserva (11 + 7 = 18 mm), a total
+       nos 20 mm de sempre ficava com o número em cima da linha da cadeia (o "1240" do projeto exemplo, 25/10/2026) */
+    function offTotal(ofCadeia) { return typeof ofCadeia === "number" && isFinite(ofCadeia) ? Math.max(K.offCota2, Math.abs(ofCadeia) + 9) : K.offCota2; }
     var lados = [
       { id: "topo", eixo: "x", z: bz0, dir: 1 }, { id: "base", eixo: "x", z: bz1, dir: -1 },
       { id: "esq", eixo: "z", x: bx0, dir: -1 }, { id: "dir", eixo: "z", x: bx1, dir: 1 }
@@ -312,8 +321,8 @@
         P = podar(P, M.k); tot = [P[0], P[P.length - 1]];
         var pp = P.map(function (x) { return M.P(x, ld.z); }), vals = [];
         for (var i = 0; i + 1 < P.length; i++) vals.push(cm1(P[i + 1] - P[i]));
-        D.cadeia(pp, ld.dir * K.offCota1, vals, { offs: [ld.dir * (K.offCota1 + 7)], desde: pp.map(function () { return 0.6; }) }); qtd++;
-        D.cota(M.P(tot[0], ld.z)[0], M.P(tot[0], ld.z)[1], M.P(tot[1], ld.z)[0], M.P(tot[1], ld.z)[1], ld.dir * K.offCota2, cm1(tot[1] - tot[0]), { desde: [0.6, 0.6] }); qtd++;
+        var ofX = D.cadeia(pp, ld.dir * K.offCota1, vals, { offs: [ld.dir * (K.offCota1 + 4.5), ld.dir * (K.offCota1 + 7)], desde: pp.map(function () { return 0.6; }) }); qtd++;
+        D.cota(M.P(tot[0], ld.z)[0], M.P(tot[0], ld.z)[1], M.P(tot[1], ld.z)[0], M.P(tot[1], ld.z)[1], ld.dir * offTotal(ofX), cm1(tot[1] - tot[0]), { desde: [0.6, 0.6] }); qtd++;
       } else {
         W.forEach(function (w) {
           var b = G.bbox(w.pts);
@@ -330,8 +339,8 @@
         tot = [P[0], P[P.length - 1]];
         var qq = P.map(function (z) { return M.P(ld.x, z); }), vs = [], sgn = ld.id === "esq" ? 1 : -1;   /* n = à esquerda do sentido (para cima): + = esquerda do papel */
         for (var j = 0; j + 1 < P.length; j++) vs.push(cm1(P[j] - P[j + 1]));
-        D.cadeia(qq, sgn * K.offCota1, vs, { offs: [sgn * (K.offCota1 + 7)], desde: qq.map(function () { return 0.6; }) }); qtd++;
-        D.cota(M.P(ld.x, tot[0])[0], M.P(ld.x, tot[0])[1], M.P(ld.x, tot[1])[0], M.P(ld.x, tot[1])[1], sgn * K.offCota2, cm1(tot[0] - tot[1]), { desde: [0.6, 0.6] }); qtd++;
+        var ofZ = D.cadeia(qq, sgn * K.offCota1, vs, { offs: [sgn * (K.offCota1 + 4.5), sgn * (K.offCota1 + 7)], desde: qq.map(function () { return 0.6; }) }); qtd++;
+        D.cota(M.P(ld.x, tot[0])[0], M.P(ld.x, tot[0])[1], M.P(ld.x, tot[1])[0], M.P(ld.x, tot[1])[1], sgn * offTotal(ofZ), cm1(tot[0] - tot[1]), { desde: [0.6, 0.6] }); qtd++;
       }
     });
     return qtd;

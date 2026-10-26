@@ -507,11 +507,43 @@
     var TOL_ANG = 1, TOL_DEC = 1e-6;
     /* hid:fisica-fim */
     var precisa = {}, horiz = function (eid) { return !G.arestas[eid].vertical; };
+    /* ⚠ N23 (25/10/2026) — a regra 5.7.5 é a do PÉ do condutor vertical: a água DESCE pelo vertical e SEGUE pelo condutor horizontal
+       (o rótulo é "vertical → horizontal"; tools/test-hid-ap.js: "falta no pé de CV1"). O motor olhava só "nó com tubo vertical e
+       horizontal", sem o sentido, e reprovava também a ENTRADA do condutor vertical — o buzinote que atravessa a platibanda e o
+       desvio curto sob o bocal da calha embutida (vertical do bocal → atravessa a platibanda → desce pela fachada), que o próprio
+       "Rufos, calhas e descidas" lança: o Traçar gerava e o Dimensionar reprovava, sem dispositivo de inspeção possível no ar.
+       Agora, pelo SENTIDO do escoamento (dir): no nó onde todo horizontal CHEGA e todo vertical SAI descendo (a boca do condutor),
+       ou onde o horizontal que sai só leva a outro vertical que desce (o desvio da descida, que não é condutor horizontal), a 5.7.5
+       não se aplica; dois ou mais horizontais ali continuam "conexão de condutores (5.7.3)". O pé (vertical chega, horizontal sai
+       para o destino) continua exigindo a inspeção/caixa de areia, como antes. */
+    var DESVIO_MAX = 1.0;   // hid:ok m: o desvio da descida (atravessar a platibanda/parede) — critério de desenho, não norma; mais longo é condutor horizontal
+    function soDesceDepois(eid) {
+      var m = dir[eid] && dir[eid].para; if (m == null || !G.nos[m]) return false;
+      if (!(num(G.arestas[eid].comprimento, Infinity) <= DESVIO_MAX)) return false;
+      var sai = G.nos[m].arestas.filter(function (x) { return x !== eid && dir[x] && dir[x].de === m; });
+      return sai.length > 0 && sai.every(function (x) { return !horiz(x); });
+    }
+    /* REVISÃO (25/10/2026): só peça CURTA. O horizontal que CHEGA na boca tem de ter até DESVIO_MAX (o buzinote que atravessa a
+       platibanda) — um condutor horizontal longo chegando no topo continua exigindo a inspeção; e o desvio só vale logo sob o
+       BOCAL: o vertical que chega no nó também é curto e começa solto (a saída da calha), senão é o PÉ de um condutor (que exige) */
+    function curto(eid) { return num(G.arestas[eid].comprimento, Infinity) <= DESVIO_MAX; }
+    function comecaSolto(eid) { var m = dir[eid] && dir[eid].de; return m != null && G.nos[m] && G.nos[m].arestas.length === 1; }
+    function bocaDoVertical(n, H, V) {
+      var vSaiDescendo = V.every(function (x) { return dir[x] && dir[x].de === n; });
+      var vChegaDoBocal = V.every(function (x) { return dir[x] && dir[x].para === n && curto(x) && comecaSolto(x); });
+      var hOk = H.every(function (x) { return dir[x] && (dir[x].para === n ? (vSaiDescendo && curto(x)) : (dir[x].de === n && vChegaDoBocal && soDesceDepois(x))); });
+      return hOk && (vSaiDescendo || vChegaDoBocal);
+    }
+    var premissaBoca = false;
     G.ordemN.forEach(function (n) {
       var es = G.nos[n].arestas, H = es.filter(horiz), V = es.filter(function (x) { return !horiz(x); });
       if (!H.length) return;
       var porque = null;
-      if (V.length) porque = "ligação condutor vertical → horizontal (5.7.5)";
+      if (V.length && bocaDoVertical(n, H, V)) {
+        if (H.length >= 2) porque = "conexão de condutores (5.7.3)";   // hid:ok 2 horizontais na boca = conexão (contagem)
+        else if (!premissaBoca) { premissaBoca = true; out.premissas.push({ item: "inspeção na ligação vertical → horizontal (NBR 10844 5.7.5)", valor: "exigida no PÉ do condutor vertical; dispensada na boca (horizontal de até " + DESVIO_MAX + " m que entra no condutor) e no desvio de até " + DESVIO_MAX + " m logo sob o bocal da calha — leitura do motor, o texto da norma não está na biblioteca: confirmar com o RT", origem: "padrao_motor" }); }
+      }
+      else if (V.length) porque = "ligação condutor vertical → horizontal (5.7.5)";
       else if (H.length >= 3) porque = "conexão de condutores (5.7.3)";   // hid:ok 3 trechos no nó = conexão (contagem, não norma)
       else if (H.length === 2) {
         var e1 = G.arestas[H[0]], e2 = G.arestas[H[1]], dv = GrM.desvio(GrM.dirSaindo(e1, n), GrM.dirSaindo(e2, n));

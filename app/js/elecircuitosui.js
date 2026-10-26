@@ -141,6 +141,26 @@
     status(ok ? "Pranchas elétricas: " + r.folhas.length + " folha(s) — " + nome + (r.avisos.length ? " · " + r.avisos.length + " aviso(s)" : "") : "Não consegui gerar o arquivo das pranchas.");
     return r;
   }
+  /* as pranchas elétricas (quadro de cargas + unifilar e a planta de pontos e eletrodutos) nas ABAS DE FOLHA do BIM, sem baixar arquivo:
+     um registro só por obra (gerar de novo SUBSTITUI as folhas — idempotente), como as pranchas de arquitetura e do hidro. Devolve
+     { ok, folhas, verificacao, registro } ou { ok: false, motivo }. Usado pelo "Projeto exemplo completo" (js/bimprojetosui.js). */
+  function pranchasNasAbas() {
+    var BF = global.BimFolhaUI, P = global.ElePranchas;
+    if (!liberada()) return { ok: false, motivo: TRANCADA };
+    if (!BF || !BF.salvarRegistro || !P) return { ok: false, motivo: "as abas de folha do BIM não estão abertas" };
+    var A = analiseAtual(); if (!A) return { ok: false, motivo: "O editor 3D não está aberto." };
+    if (!A.ok) return { ok: false, motivo: A.motivo };
+    if (!A.projetoGravado) return { ok: false, motivo: "Rode \"Circuitos e quadro\" antes das pranchas (o projeto fica gravado no quadro)." };
+    var c = ctxCarimbo(), r = P.gerar(A, c); if (!r.ok) return { ok: false, motivo: arr(r.avisos).join(" ") };
+    var obra = String((global.Gestao && global.Gestao._bimSel) || ""), exist = arr(BF.registros()).filter(function (x) { return x && x.origem === "ele"; })[0] || null;
+    var reg = { nome: "Pranchas da elétrica", origem: "ele", formato: r.folhas[0] ? r.folhas[0].formato : "A1", orientacao: "paisagem", carimbo: { modelo: "RA" }, obraId: obra,
+                folhas: r.folhas.map(function (f, i) { return { id: "ele-" + f.id, conteudo: f.numero + " - " + f.titulo, escala: f.escala, blocos: [], imagemInteira: "elesvg:" + f.id, n: i + 1 }; }) };
+    if (exist && exist.id) { reg.id = exist.id; reg.criadoEm = exist.criadoEm; }
+    var salvo = BF.salvarRegistro(reg); if (!salvo) return { ok: false, motivo: "não consegui salvar as folhas" };
+    BF._imagensExternas = BF._imagensExternas || {};
+    r.folhas.forEach(function (f) { BF._imagensExternas["elesvg:" + f.id] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(f.svg); });
+    return { ok: true, folhas: r.folhas.length, verificacao: r.verificacao || null, registro: salvo.id };
+  }
   function memorial() {
     if (trancou("Memorial elétrico")) return;
     var A = analiseAtual(), P = global.ElePranchas; if (!A || !P || !A.ok) { status(A && A.motivo ? A.motivo : "O editor 3D não está aberto."); return; }
@@ -187,7 +207,7 @@
       reg["ele-circ-criterios"] = function () { criteriosTela(); return true; };
       return true;
     },
-    lancar: lancar, auditar: auditar, pranchas: pranchas, memorial: memorial, criterios: criteriosTela, liberada: liberada
+    lancar: lancar, auditar: auditar, pranchas: pranchas, pranchasNasAbas: pranchasNasAbas, memorial: memorial, criterios: criteriosTela, liberada: liberada
   };
   global.EleCircuitosUI = EleCircuitosUI;
   if (typeof module !== "undefined" && module.exports) module.exports = EleCircuitosUI;

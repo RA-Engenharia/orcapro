@@ -61,7 +61,7 @@
     if (/^V\d|^VG|-V\d|vigas/i.test(p.id) || /vigas|vergas do vidro/i.test(p.grupo || "") && /^VG/.test(p.id)) return 1;
     return 2;
   }
-  function eSecundaria(p) { return /contraventamento/i.test(p.grupo || "") || /-esp$/.test(p.id) || /^FX/.test(p.id); }
+  function eSecundaria(p) { return /contraventamento/i.test(p.grupo || "") || /-esp$/.test(p.id) || /^(FX|DX|DV)/.test(p.id); }
 
   function achado(regra, peca, mensagem, correcao, gravidade) { return { regra: regra, peca: peca, mensagem: mensagem, correcao: correcao, gravidade: gravidade || "alta" }; }
 
@@ -173,7 +173,8 @@
     var out = [];
     if (typeof E.terreno !== "function") return out;
     E.pecas.filter(ehLinear).forEach(function (p) {
-      if (p.secao.tipo === "perfil") return;
+      if (p.secao.tipo === "perfil" || p.mureta) return;      /* R35: a mureta da fundação (outra empresa) é, por definição, enterrada */
+      if (p.contraventamento) return;      /* E4 r11: o X entre pilares segue a altura do PILAR (a base do pilar do DI está em z = 0, com o terreno do modelo em 5,50 m: inconsistência de dado declarada no relatório da rodada 11, não da diagonal) */
       var zt0 = E.terreno(p.p0[0], p.p0[1]), zt1 = E.terreno(p.p1[0], p.p1[1]);
       if (p.p0[2] < zt0 - op.tolTerreno && p.p1[2] < zt1 - op.tolTerreno) out.push(achado("peca-abaixo-do-terreno", p.id, "A peça " + p.id + " fica toda abaixo do terreno do modelo (cota " + Math.max(p.p0[2], p.p1[2]).toFixed(2).replace(".", ",") + " m contra terreno " + Math.min(zt0, zt1).toFixed(2).replace(".", ",") + " m).", "Conferir o terreno/aterro; trocar por apoio em mureta ou bloco; madeira em contato com o solo pede categoria de uso 4 e drenagem."));
     });
@@ -250,7 +251,90 @@
     return { achados: achados, porRegra: porRegra, ok: achados.length === 0, regras: lista };
   }
 
-  var MadAuditor = { auditar: auditar, REGRAS: Object.keys(REGRAS), PADRAO: PADRAO, distSeg: distSeg };
+
+  /* ---------- T2 (casa de duas águas, E4) ---------- */
+  function qtdPeca(pecas, re) { var n = 0; pecas.forEach(function (p) { if (re.test(p.id)) n += (p.qtd == null ? 1 : p.qtd); }); return n; }
+  /**
+   * T2: E = { pecas, params (T2), ligacoes, dim }. Regras:
+   *   empuxo-sem-tirante            cumeeira: assento FIXO dos caibros sem tirante (ou assento deslizante sem a peça "AD") = empuxo horizontal sem saída; tesoura sem banzo inferior (BI) = empuxo na tesoura
+   *   cumeeira-sem-apoio            viga de cumeeira sem pilares de oitão/central (PC) nos extremos
+   *   tesoura-sem-contraventamento  tesoura (ou caibros) sem a fita em X no plano das águas (FX): a cobertura vira mecanismo
+   *   parede-sem-contraventamento   sem vedação rígida e sem as diagonais (DP) ou a fita (FP) nos planos das paredes
+   *   tesoura-sem-linhas-banzo-inferior / tesoura-sem-contraventamento-vertical   (T2fix C2, 6.6.4) sem as linhas LB nos nós do banzo inferior / sem as diagonais verticais FV
+   *   dimensionamento               o laço não fechou
+   *   peca-duplicada                mesmo id repetido
+   */
+  function auditarT2(E) {
+    var pc = E.pecas || [], p = E.params || {}, out = [], cum = p.sistema === "cumeeira", ids = {};
+    if (cum) {
+      var nTI = qtdPeca(pc, /^TI$/), nAD = qtdPeca(pc, /^AD$/), nCB = qtdPeca(pc, /^CB[0-9]*$/);
+      if (!nTI && !nAD) out.push(achado("empuxo-sem-tirante", "CB", "Caibros da cumeeira sem tirante e sem assento deslizante: o empuxo horizontal dos caibros não tem saída (abre as paredes).", "Ligar o tirante de aço no nível do frechal (assento fixo) ou usar assento deslizante com a cumeeira portante.", "critico"));
+      if (nCB && !nTI && nAD < nCB) out.push(achado("empuxo-sem-tirante", "AD", "Assentos deslizantes (" + nAD + ") menos que os apoios dos caibros (" + nCB + "): os apoios restantes ficam fixos, sem tirante.", "Um assento deslizante por apoio do caibro, ou tirante.", "critico"));
+      var aT = p.a || 0, vMx = p.vMaxPilar || 4, nPC = qtdPeca(pc, /^PC[0-9]*$/), nPCmin = 2 + (p.cumeeira && p.cumeeira.pilaresIntermediarios != null ? p.cumeeira.pilaresIntermediarios : Math.max(0, Math.ceil(aT / vMx - 1e-9) - 1));
+      if (nPC >= 2 && nPC < nPCmin) out.push(achado("cumeeira-sem-apoio", "CM", "Viga de cumeeira com vão maior que o máximo entre apoios (" + nPC + " pilares para " + aT + " m; mínimo " + nPCmin + ").", "Pilares intermediários sob a cumeeira a cada " + vMx + " m, no máximo.", "critico"));
+      if (qtdPeca(pc, /^PC[0-9]*$/) < 2) out.push(achado("cumeeira-sem-apoio", "CM", "Viga de cumeeira sem pilares de oitão/central nos dois extremos.", "Pilares de oitão (ou central) sob a cumeeira, ligação cumeeira-pilar.", "critico"));
+    } else if (!qtdPeca(pc, /^BI[0-9]*$/)) out.push(achado("empuxo-sem-tirante", "BI", "Tesoura sem banzo inferior: o empuxo da água não fica retido (tirante da tesoura).", "Banzo inferior contínuo (ou tirante de aço) em todas as tesouras.", "critico"));
+    if (!qtdPeca(pc, /^(FX|DX[0-9]*)$/)) out.push(achado("tesoura-sem-contraventamento", cum ? "CB" : "BS", cum ? "Caibros da cumeeira sem fita em X no plano das águas." : "Tesouras sem contraventamento no plano das águas (fita em X): a cobertura é mecanismo.", "Fita em X nos vãos extremos (ou em todos) entre as tesouras/caibros.", "critico"));
+    if (!cum && qtdPeca(pc, /^BI[0-9]*$/)) {      /* E4 T2fix C2 (NBR 7190-1:2022, 6.6.4, Figura 5): linhas longitudinais nos nós do banzo inferior + treliças verticais entre tesouras */
+      if (!qtdPeca(pc, /^LB[0-9]+$/)) out.push(achado("tesoura-sem-linhas-banzo-inferior", "BI", "Tesouras sem as linhas longitudinais nos nós do banzo inferior (6.6.4): o banzo inferior fica sem travamento fora do plano (comprimido na sucção).", "Linhas longitudinais (LB) em todos os nós internos do banzo inferior, de uma extremidade a outra.", "critico"));
+      if (!qtdPeca(pc, /^(FV|DV[0-9]*)$/)) out.push(achado("tesoura-sem-contraventamento-vertical", "BI", "Tesouras sem treliças verticais de contraventamento entre elas (duas diagonais em pelo menos um de cada três vãos, 6.6.4, Figura 5).", "Fita em X nos planos verticais das linhas do banzo inferior, nos vãos extremos.", "critico"));
+      else {      /* M4 (r14, 6.6.4): ao menos um de cada três vãos com treliça vertical e travamento a cada 20 m ou menos — mesma regra de madtipologias.baiasContraventadas (vãos iguais) */
+        var nBI = qtdPeca(pc, /^BI[0-9]*$/), nLBl = qtdPeca(pc, /^LB[0-9]+$/), nDVp = qtdPeca(pc, /^(FV|DV[0-9]*)$/), nBaias = nBI - 1;
+        if (nBaias >= 4 && nLBl && p.contraventamento && p.contraventamento.aguas !== "todos") {
+          var wB = (p.a || 0) / nBaias, ixr = [0], cu = 0, jx, nxx; while (cu < nBaias - 1) { nxx = cu + 1; for (jx = Math.min(nBaias - 1, cu + 3); jx > cu; jx--) { if ((jx - cu - 1) * wB <= 20 + 1e-9) { nxx = jx; break; } } ixr.push(nxx); cu = nxx; }
+          var temB = Math.round(nDVp / (2 * nLBl));
+          if (temB < ixr.length) out.push(achado("tesoura-contraventamento-vertical-insuficiente", "DV", "Treliças verticais em " + temB + " dos " + nBaias + " vãos entre tesouras; a 6.6.4 (Figura 5) pede ao menos um de cada três vãos e travamento a cada 20 m ou menos (" + ixr.length + " vãos contraventados).", "Treliça vertical (e X das águas) também nos vãos intermediários, no máximo a cada três vãos e a cada 20 m.", "critico"));
+        }
+      }
+    }
+    if (!p.vedacaoRigida && !qtdPeca(pc, /^(FP|DP[0-9]*)$/)) out.push(achado("parede-sem-contraventamento", "P", "Sem vedação rígida e sem diagonais (madeira ou fita) nos painéis das paredes.", "Diagonais de madeira em X nas paredes (mínimo de 2 painéis por fachada) ou vedação rígida (alvenaria/OSB estrutural projetada para a força informada).", "critico"));
+    pc.forEach(function (q) { if (ids[q.id]) out.push(achado("peca-duplicada", q.id, "Id repetido na lista de peças.", "Unificar com a quantidade.", "critico")); ids[q.id] = 1; });
+    if (E.ligacoesT2) Object.keys(E.ligacoesT2.ligacoes || {}).forEach(function (k) { var l = E.ligacoesT2.ligacoes[k]; if (l.ok === false || (l.eta != null && l.eta > 1 + 1e-9)) out.push(achado("ligacao-reprovada", k, "Ligação \"" + k + "\" reprova (η = " + (l.eta == null ? "?" : l.eta.toFixed(2)) + ").", "Aumentar a seção da peça (largura para os pinos/chapa), o diâmetro/número de pinos ou a chapa.", "critico")); });
+    out = out.concat(regraDimensionamento(E));
+    var porRegra = {}; out.forEach(function (a) { porRegra[a.regra] = (porRegra[a.regra] || 0) + 1; });
+    return { achados: out, porRegra: porRegra, ok: out.length === 0 };
+  }
+
+  /* ---------- T7 (deck elevado + escada + guarda-corpo, E4 rodada 6) ----------
+   * E = { pecas, params, deck (resultado do MadDeck), ligacoes, terreno, dim }. Regras próprias:
+   *   deck-sem-estabilidade     deck sem mão-francesa, sem base engastada e sem amarração à edificação (a horizontal não tem saída)
+   *   pilarete-sem-travamento   pilarete rotulado sem travamento (mesma regra da T1; vem do auditar)
+   *   guarda-corpo-sem-fixacao  guarda-corpo sem a fixação do montante verificada, ou com η > 1 (o ponto que reprovou na revisão da R01), altura < 1,10 m ou vão de régua > 0,11 m
+   *   escada-sem-apoio          escada de madeira sem apoio no topo/na base, ou com a ligação da longarina reprovada
+   *   deck-grupo-reprovado      tábua, barrote, viga, pilarete ou mão-francesa com η > 1 (dimensionamento)
+   * e, vindas do auditar: balanco-barrote, peca-abaixo-do-terreno, peca-sem-apoio, cadeia-de-apoio, peca-duplicada. */
+  function auditarT7(E) {
+    var base = auditar({ pecas: E.pecas, params: null, ligacoes: null, terreno: E.terreno }, { regras: ["peca-sem-apoio", "balanco-barrote", "pilarete-sem-travamento", "peca-abaixo-do-terreno", "cadeia-de-apoio", "peca-duplicada"], limiteBalancoBarrote: E.limiteBalanco }), out = base.achados.slice(), R = E.deck || {}, P = E.params || {};
+    Object.keys(R.decks || {}).forEach(function (id) {
+      var dv = R.decks[id];
+      if (!dv.estabilidade || !dv.estabilidade.tipo) out.push(achado("deck-sem-estabilidade", id, "O deck " + id + " não tem estabilidade lateral: sem mão-francesa, sem base engastada e sem amarração à edificação, a força horizontal (guarda-corpo, vento) vira mecanismo.", "Escolher UMA saída: mãos-francesas nos pilaretes, bases engastadas (pilar maior) ou amarração do deck à edificação.", "critico"));
+      if (dv.pilaretes.some(function (x) { return x.tipo === "rotulado sem travamento"; }) && dv.estabilidade && dv.estabilidade.tipo && !dv.estabilidade.amarrado && !dv.estabilidade.maosFrancesas && !dv.estabilidade.engastado) { /* já coberto por deck-sem-estabilidade */ }
+      /* E4 r11 (R34): pilar ALTO (> 3 m) sem contraventamento em X entre pilares nas duas direções (nem amarração à edificação) = mecanismo/balanço de 2·h: BLOQUEIA */
+      var hAlto = dv.pilaretes.reduce(function (m, x) { return Math.max(m, x.h || 0); }, 0);
+      if (hAlto > (E.alturaPilarAlto == null ? 3.0 : E.alturaPilarAlto) + 1e-9 && !dv.contraventamento && !(dv.estabilidade && dv.estabilidade.amarrado)) out.push(achado("deck-pilar-alto-sem-contraventamento", id, "Deck " + id + ": pilar de " + hAlto.toFixed(2).replace(".", ",") + " m (> 3 m) sem contraventamento em X entre pilares nas duas direções (nem amarração à edificação): a horizontal vira balanço de 2·h, com momento e flambagem desproporcionais.", "Contraventar com X (diagonais de MLC ou tirantes inox) nos quadros pilar–viga–pilar das duas direções; mão-francesa só vale para pilaretes baixos (≤ 1,5 m).", "critico"));
+      [["tabua", "tábua"], ["barrote", "barrote"], ["viga", "viga"], ["pilar", "pilarete/pilar"], ["mf", "mão-francesa"], ["cv", "contraventamento"]].forEach(function (k) { var x = dv.pior[k[0]]; if (x && x.eta > 1 + 1e-9) out.push(achado("deck-grupo-reprovado", x.id || id, "Deck " + id + ": " + k[1] + " " + (x.id || "") + " com η = " + x.eta.toFixed(2).replace(".", ",") + " (> 1).", "Aumentar a seção, reduzir o vão ou apoiar/travar e recalcular.", "critico")); });
+      dv.barrotes.forEach(function (b) { if (b.motivo) out.push(achado("peca-sem-apoio", b.id, "Barrote " + b.id + ": " + b.motivo + ".", "Pôr viga sob o barrote em pelo menos 2 pontos.", "critico")); });
+      dv.vigas.forEach(function (v) { if (v.motivo) out.push(achado("peca-sem-apoio", v.id, "Viga " + v.id + ": " + v.motivo + ".", "Pôr pilarete/bloco sob a viga em pelo menos 2 pontos.", "critico")); });
+    });
+    var gc = R.guardaCorpo;
+    if ((P.guardaCorpo || []).length) {
+      if (!gc || !gc.fixacao) out.push(achado("guarda-corpo-sem-fixacao", "GC", "O guarda-corpo não tem a fixação do montante verificada (NBR 14718, 4.4.3.1).", "Verificar a ligação do montante (parafusos, chapa de apoio, bloqueio entre barrotes).", "critico"));
+      else {
+        if (!gc.fixacao.ok) out.push(achado("guarda-corpo-sem-fixacao", "GC", "A fixação do montante na viga de borda reprova (η = " + (isFinite(gc.fixacao.eta) ? gc.fixacao.eta.toFixed(2).replace(".", ",") : "sem solução") + "): " + (gc.fixacao.passos[1] || ""), "Chapa de apoio maior do lado oposto da viga, mais parafusos ou bloqueio entre barrotes.", "critico"));
+        if (!gc.montante.ok) out.push(achado("guarda-corpo-sem-fixacao", "GC", "Montante do guarda-corpo reprovado (η = " + gc.montante.eta.toFixed(2).replace(".", ",") + ").", "Aumentar a seção do montante ou reduzir o passo.", "critico"));
+        if (!gc.deslocamento.ok) out.push(achado("guarda-corpo-sem-fixacao", "GC", "Deslocamento do topo com a carga de uso acima de 25 mm (NBR 14718, 5.1.1).", "Montante mais rígido ou passo menor.", "alta"));
+        if (!gc.corrimao.ok) out.push(achado("guarda-corpo-sem-fixacao", "GC", "Corrimão reprovado (η = " + gc.corrimao.eta.toFixed(2).replace(".", ",") + ").", "Aumentar a seção do corrimão ou reduzir o passo dos montantes.", "alta"));
+        if (!gc.reguas.ok || !gc.reguas.alturaOk) out.push(achado("guarda-corpo-sem-fixacao", "GC", "Guarda-corpo fora da geometria da NBR 14718: altura mínima 1,10 m (4.4.1.1) e vão livre das réguas até 0,11 m (4.4.2.1).", "Ajustar a altura e o passo das réguas.", "alta"));
+      }
+    }
+    var es = R.escada;
+    if (es && es.tipo === "madeira" && (!es.apoios || !es.ligacaoTopo || !es.ligacaoTopo.ok || es.apoioBase.eta > 1 + 1e-9)) out.push(achado("escada-sem-apoio", "ESC", "Escada de madeira sem apoio verificado no topo (ligação ao deck) e na base (piso/bloco).", "Apoiar as longarinas na viga de borda com parafusos verificados e no piso/bloco com a área de apoio necessária.", "critico"));
+    out = out.concat(regraDimensionamento(E));
+    var porRegra = {}; out.forEach(function (a) { porRegra[a.regra] = (porRegra[a.regra] || 0) + 1; });
+    return { achados: out, porRegra: porRegra, ok: out.length === 0 };
+  }
+
+  var MadAuditor = { auditar: auditar, auditarT2: auditarT2, auditarT7: auditarT7, REGRAS: Object.keys(REGRAS), PADRAO: PADRAO, distSeg: distSeg };
   if (typeof module !== "undefined" && module.exports) module.exports = MadAuditor;
   else global.MadAuditor = MadAuditor;
 })(typeof window !== "undefined" ? window : this);

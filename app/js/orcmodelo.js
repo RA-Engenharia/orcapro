@@ -331,6 +331,12 @@
       lx.status = "unidade"; lx.avisos = ["a família não tem mais o serviço \"" + k + "\""]; linhas.push(lx);
     });
     extras.forEach(function (s, i) {
+      /* 25/10/2026: "un" = a CONTAGEM da peça (1 por peça × fator) — a composição em UN numa família medida em m² (a bancada de pedra
+         em m² orçada pela composição SINAPI da bancada com cuba, por unidade); sem isto a camada saía "unidade" e a peça sem preço */
+      if (s.medida === "un") {
+        var lu = orcar({ id: "inst" + i, codigo: s.codigo, unidade: "un", quantidade: num(s.fator, 1), rotulo: s.rotulo || "Peça (contagem)" }, base, opcoes);
+        lu.codigoOrigem = "instancia"; lu.medida = "un"; lu.fator = num(s.fator, 1); linhas.push(lu); return;
+      }
       if (s.medida !== "quantidade") {
         var lx = orcar({ id: "inst" + i, codigo: s.codigo, unidade: "", quantidade: 0 }, null, opcoes);
         lx.status = "unidade"; lx.avisos = ["família colocada só aceita a medida \"quantidade da família\" ou um serviço dela"]; linhas.push(lx); return;
@@ -342,6 +348,13 @@
        vigas, tablado em m/m²) não tem composição na unidade dela; com um serviço orçado, a linha principal "sem código" não é falta de
        orçamento (ela ficava em "Fora do orçamento" com a base inteira paga pelos serviços). Sem nenhum serviço orçado, ela fica e diz. */
     if (q.porServicos && linhas[0] && linhas[0].status === "sem-codigo" && linhas.slice(1).some(function (l) { return l.status === "ok"; })) linhas.shift();
+    /* ⚠ 25/10/2026: a família SEM código no quantitativo que recebeu a composição pela INSTÂNCIA (Propriedades › Orçamento: a
+       "Camada por código", o serviço da família com o código da peça) — é o único jeito de dar código a uma família sem código, e é
+       como o "Portas e janelas automáticas" (a janela com 94570) e a caixa d'água do barrilete (102607) gravam: a linha principal
+       "sem código" ficava em "Fora do orçamento" com a peça JÁ orçada (projeto exemplo: 9 janelas e a caixa d'água). Com ao menos
+       uma linha da instância orçada, a principal sai; sem nenhuma, ela fica e diz (nada some calado). */
+    else if (linhas[0] && linhas[0].status === "sem-codigo" && linhas[0].servico === "principal" && arr(servicosInst).length &&
+             linhas.slice(1).some(function (l) { return l.status === "ok" && l.codigoOrigem === "instancia"; })) linhas.shift();
     linhas.forEach(arredLinha);
     return { linhas: linhas, resumo: resumir(linhas, opcoes), peso: pesoSolidos(av.solidos) };
   }
@@ -609,7 +622,13 @@
       return { linhas: [{ codigo: "", descricao: nm, unidade: "", unidadeQto: "", quantidade: 0, status: "sem-codigo", avisos: ["dê uma composição à peça em Propriedades › Orçamento"], horas: [], servico: "principal" }],
                resumo: null, peso: tipo === "forro" ? false : { ok: false, kg: null, motivo: "sem serviço (dê um código à peça)" } };
     }
+    /* ⚠ 25/10/2026: a PEÇA da estrutura do telhado (o "Estrutura do telhado" gera terças, vigas e pontaletes com c.cob.telhado) entra
+       pela composição do TELHADO quando ele está orçado — trama de terças e pontaletes da SINAPI são por m² de telhado (92543,
+       100382: a 100382 já traz as vigas 6×16 e 6×12 do pontaleteamento). Antes cada peça saía "sem composição" em "Fora do
+       orçamento" (projeto exemplo: 76 peças) com a estrutura já paga pelo telhado. Telhado SEM serviço: as peças seguem aparecendo. */
+    var telOrc = {}; arr(estado && estado.telhados).forEach(function (t) { if (t && t.id != null && arr(t.servicos).length) telOrc[String(t.id)] = 1; });
     arr(estado && estado.caixas).forEach(function (c) {
+      if (!arr(c.servicos).length && c.cob && c.cob.telhado != null && telOrc[String(c.cob.telhado)]) return;
       if (!arr(c.servicos).length) { somar(c.id, (c.tipo || "elemento") + " " + c.id, semServico(c, c.tipo)); return; }
       somar(c.id, (c.tipo || "elemento") + " " + c.id, daElemento(c, vaos[c.id] ? vaos[c.id].areaVaos : 0, base, opcoes, pecaDe(c.id)));
     });
@@ -859,7 +878,19 @@
         var a = analitico && analitico.obter ? analitico.obter(cod) : null;
         /* COMPOSIÇÃO PRÓPRIA (PROP-…, ex.: o armário planejado PROP-MOB-90xx): a base PRÓPRIA do app tem os insumos e o preço dela */
         if (!a && propria && propria.obter && /^PROP-/i.test(String(cod))) { var pp = propria.obter(cod); if (pp) { var cp = {}; Object.keys(pp).forEach(function (k) { cp[k] = pp[k]; }); cp._precoFonte = "propria"; return cp; } }
-        if (!a) return null;
+        if (!a) {
+          /* ⚠ 25/10/2026: o INSUMO SINAPI (não é composição) que o mapa das instalações usa de propósito — o prolongador da caixa
+             sifonada 11735 (js/biminst.js PROLONGADOR_CS, "insumos conferidos"): só existe no sintético/no índice de insumos do
+             analítico, e ficava "pendente" com o código certo. Vira linha de FORNECIMENTO (material) pelo preço oficial do insumo —
+             código e preço da base, nada inventado; a mão de obra é a da peça onde ele entra (o ralo / a caixa sifonada). */
+          var si = sintetico && sintetico.obter ? sintetico.obter(cod) : null, ins = null;
+          if (si && /insumo/i.test(String(si.tipo || si.tipoItem || "")) && num(si.custoUnitario, 0) > 0) ins = { descricao: si.descricao, unidade: si.unidade, custoUnitario: num(si.custoUnitario, 0), categoria: si.categoria, origem: "sintético da UF" };
+          else if (analitico && analitico.insumo) { var ia = analitico.insumo(cod); if (ia && num(ia.custoUnitario, 0) > 0) ins = { descricao: ia.descricao, unidade: ia.unidade, custoUnitario: num(ia.custoUnitario, 0), categoria: ia.categoria, origem: ia.origemPreco === "SP" ? "analítico (preço de SP atribuído pela CAIXA)" : "analítico" }; }
+          if (!ins) return null;
+          var catI = String(ins.categoria || "").toUpperCase(), cuI = ins.custoUnitario, moI = /M[ÃA]O/.test(catI) ? cuI : 0, eqI = /EQUIP/.test(catI) ? cuI : 0;
+          return { codigo: String(cod), descricao: ins.descricao, unidade: ins.unidade, custoUnitario: cuI, custoMO: moI, custoMAT: moI || eqI ? 0 : cuI, custoEQ: eqI, insumos: [], tipoItem: "insumo",
+                   _precoFonte: "insumo", _precoAviso: "insumo SINAPI " + cod + " (não é composição): só o fornecimento, pelo preço do insumo (" + ins.origem + ")" };
+        }
         var s = sintetico && sintetico.obter ? sintetico.obter(cod) : null, cu = s ? num(s.custoUnitario, NaN) : NaN;
         if (!s || !isFinite(cu) || Math.abs(cu - num(a.custoUnitario)) < 0.005) return a;
         var t = num(a.custoMO) + num(a.custoMAT) + num(a.custoEQ), c = {};

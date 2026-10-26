@@ -493,22 +493,8 @@ html[data-visual="nova"] .bim-revit[data-rv-disc-on]:not(.bim-pele-revit) .rv-fi
 html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-disc-sel { border-radius: 99px; border-left-width: 1px; padding-left: 9px; }
 html[data-visual="nova"] .bim-revit:not(.bim-pele-revit) .rv-disc-menu { border-radius: 14px; }
 
-/* ENCAIXE DA COLUNA (B1): Propriedades/Navegador à direita — a ordem do flex
-   inverte (o 3D primeiro, depois a janela da direita, depois a coluna), sem
-   mexer no DOM que as e2e e o resto da casca conhecem. */
-@media (min-width: 901px) {
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-area { order: 1; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-alca-dir { order: 2; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-direita { order: 3; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-alca-lat { order: 4; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-lateral { order: 5; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-corpo > .rv-lat-aba { order: 6; border-radius: 12px 0 0 12px; }
-  html[data-visual="nova"] .bim-revit[data-rv-lat-lado="dir"] .rv-lat-aba-seta { transform: rotate(180deg); }
-}
-html[data-visual="nova"] .bim-revit .rv-lateral .rv-doca-cab { cursor: grab; }
-html[data-visual="nova"] .bim-revit[data-rv-lat-alvo] .rv-lateral .rv-doca-cab { cursor: grabbing; }
-html[data-visual="nova"] .bim-revit[data-rv-lat-alvo="dir"] .rv-area { box-shadow: inset -6px 0 0 var(--rv-foco, #2d6a9c); }
-html[data-visual="nova"] .bim-revit[data-rv-lat-alvo="esq"] .rv-area { box-shadow: inset 6px 0 0 var(--rv-foco, #2d6a9c); }
+/* ENCAIXE (25/10/2026): o lado de Propriedades/Navegador e de qualquer outro painel é do gerenciador de painéis
+   (js/bimdocaui.js, css/bim-revit.css); as regras de `order` do antigo encaixe só da coluna saíram. */
 
 /* campos dentro do BIM escuro (busca do Navegador, valores de Propriedades) */
 html[data-visual="nova"] .bim-revit[data-rv-tema="escuro"]:not(.bim-pele-revit) input:not([type="checkbox"]):not([type="radio"]),

@@ -89,18 +89,33 @@
       raiz.appendChild(el("div", "rv-fita"));
 
       var corpo = el("div", "rv-corpo");
-      corpo.appendChild(this._lateral());
-      /* a lateral recolhida vira só uma ABA com a seta, na borda esquerda —
-         clicar nela traz Propriedades e Navegador de volta */
-      var abaLat = el("button", "rv-lat-aba");
-      abaLat.type = "button"; abaLat.title = "Mostrar Propriedades e Navegador de projeto";
-      abaLat.innerHTML = '<span class="rv-lat-aba-seta">▶</span><span class="rv-lat-aba-rot">Propriedades</span>';
-      abaLat.onclick = function () { self.alternarLateralFixa(false); };
-      corpo.appendChild(abaLat);
-      var alcaLat = el("div", "rv-alca rv-alca-lat");
-      alcaLat.title = "Arraste para alargar ou estreitar a coluna";
-      corpo.appendChild(alcaLat);
+      /* PAINÉIS ENCAIXÁVEIS (25/10/2026, js/bimdoca.js + js/bimdocaui.js): o corpo tem quatro ZONAS
+         (esquerda, direita, embaixo, em cima) em volta do 3D, uma faixa fina por zona para os painéis
+         RECOLHIDOS, uma alça de tamanho por zona e uma camada de janelas SOLTAS. Quem preenche as
+         zonas é o BimDocaUI — os painéis (Propriedades, Navegador, Ferramentas) são nós que ele MOVE.
+         As classes de sempre ficam: .rv-lateral (zona esquerda), .rv-lat-aba (faixa da esquerda),
+         .rv-alca-lat / .rv-alca-dir (alças), .rv-split-h (divisória), .rv-direita (painel Ferramentas). */
+      var Z = {}, B = {}, AL = {};
+      ["esq", "dir", "base", "topo"].forEach(function (z) {
+        var zn = el("div", "rv-zona rv-zona-" + z + (z === "esq" ? " rv-lateral" : ""));
+        zn.setAttribute("data-z", z); zn.setAttribute("data-vazia", "1"); Z[z] = zn;
+        var bd = el("div", "rv-borda rv-borda-" + z + (z === "esq" ? " rv-lat-aba" : ""));
+        bd.setAttribute("data-z", z); bd.setAttribute("data-n", "0"); B[z] = bd;
+        var al = el("div", "rv-alca rv-alca-" + z + (z === "esq" ? " rv-alca-lat" : z === "dir" ? " rv-alca-dir" : " rv-alca-h"));
+        al.setAttribute("data-z", z); al.setAttribute("data-vazia", "1"); al.setAttribute("role", "separator"); al.tabIndex = 0;
+        al.setAttribute("aria-orientation", z === "esq" || z === "dir" ? "vertical" : "horizontal");
+        al.title = z === "esq" || z === "dir" ? "Arraste para alargar ou estreitar o painel (setas do teclado também)" : "Arraste para mudar a altura do painel (setas do teclado também)";
+        AL[z] = al;
+      });
+      var pns = this._lateral();           /* { props, nav } */
+      var dir = el("div", "rv-direita rv-doca rv-ferr");
+      this._direita = dir;
+      var guarda = el("div", "rv-guarda");
+      guarda.setAttribute("aria-hidden", "true");
+      guarda.appendChild(pns.props); guarda.appendChild(pns.nav); guarda.appendChild(dir);
+      var flutEl = el("div", "rv-flut");
 
+      var centro = el("div", "rv-centro");
       var area = el("div", "rv-area");
       area.appendChild(this._docs());
       var palco = el("div", "rv-palco");
@@ -113,35 +128,25 @@
       palco.appendChild(selo);
       area.appendChild(palco);
       area.appendChild(this._vistabar());
-      corpo.appendChild(area);
-
-      /* A JANELA DA DIREITA: as ferramentas abertas pela fita (Sondagem,
-         Projeto estrutural, Pontos de vista…) entram aqui, AO LADO do 3D —
-         não por cima dele — com o nome no alto e a borda arrastável. */
-      var alcaDir = el("div", "rv-alca rv-alca-dir");
-      alcaDir.title = "Arraste para alargar ou estreitar o painel";
-      corpo.appendChild(alcaDir);
-      var dir = el("div", "rv-direita");
-      corpo.appendChild(dir);
-      this._direita = dir;
+      centro.appendChild(B.topo); centro.appendChild(Z.topo); centro.appendChild(AL.topo);
+      centro.appendChild(area);
+      centro.appendChild(AL.base); centro.appendChild(Z.base); centro.appendChild(B.base);
+      corpo.appendChild(B.esq); corpo.appendChild(Z.esq); corpo.appendChild(AL.esq);
+      corpo.appendChild(centro);
+      corpo.appendChild(AL.dir); corpo.appendChild(Z.dir); corpo.appendChild(B.dir);
+      corpo.appendChild(flutEl);
+      corpo.appendChild(guarda);
       raiz.appendChild(corpo);
+      this._zonas = Z;
 
       raiz.appendChild(this._status());
 
-      /* preferência de quem já escondeu a lateral antes — ver `alternarLateralFixa` */
-      try { if (localStorage.getItem("orcapro:bim:lateral-off") === "1") raiz.setAttribute("data-rv-lateral-off", "1"); } catch (e) {}
-      /* larguras lembradas (lateral, divisória Propriedades/Navegador) e o tamanho da interface */
+      /* o tamanho da interface (letras e botões) é lembrado à parte — nunca mexe no 3D */
       try {
-        var lw = +localStorage.getItem("orcapro:bim:lateral-w"); if (lw >= 200 && lw <= 700) raiz.style.setProperty("--rv-lat-w", lw + "px");
-        var ph = +localStorage.getItem("orcapro:bim:props-h"); if (ph >= 15 && ph <= 85) raiz.style.setProperty("--rv-props-h", ph + "%");
         var ui = +localStorage.getItem("orcapro:bim:escala-ui"); if (ui >= 0.7 && ui <= 1.3) raiz.style.setProperty("--rv-ui", String(ui));
       } catch (eL) {}
-      this._ligarAlcas(raiz, alcaLat, alcaDir);
       /* pele do BIM na cara nova: "revit" = cinza clássico (Vista › Janelas › Estilo clássico) */
       try { if (localStorage.getItem("orcapro:bim:pele") === "revit") raiz.classList.add("bim-pele-revit"); } catch (eP) {}
-      /* lado da coluna Propriedades/Navegador (cara nova): arrastar o cabeçalho encaixa na outra borda */
-      try { if (localStorage.getItem("orcapro:bim:lateral-lado") === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); } catch (eL2) {}
-      this._ligarEncaixe(raiz);
       /* com disciplina escolhida, abre numa aba que tenha ferramenta DELA
          (e não na Arquitetura de sempre, que fora do civil só tem as comuns) */
       try {
@@ -154,6 +159,29 @@
 
       container.innerHTML = "";
       container.appendChild(raiz);
+
+      /* os painéis encaixáveis — depois de a casca estar no documento (mede o corpo) */
+      this._doca = null;
+      if (global.BimDocaUI && global.BimDoca) {
+        this._doca = global.BimDocaUI.montar(raiz, {
+          zonas: Z, bordas: B, alcas: AL, corpo: corpo, centro: centro, flutEl: flutEl, guarda: guarda,
+          paineis: { props: { el: pns.props }, nav: { el: pns.nav }, ferr: { el: dir } },
+          usuario: function () { try { return (global.Auth && Auth._usuario && (Auth._usuario._usuarioId || Auth._usuario.uid || Auth._usuario.email)) || ""; } catch (e) { return ""; } },
+          rotulo: function (id) {
+            if (id === "ferr") { var t = document.getElementById("bim-drawer-tit"); return (t && t.textContent && t.textContent.trim()) || "Ferramentas"; }
+            return "";
+          },
+          visivel: function (id) { return id !== "ferr" || raiz.getAttribute("data-rv-direita") === "1"; },
+          largFerr: function () { return self._dirLarg || 0; },
+          salvarLargFerr: function (px) {
+            self._dirLarg = px;
+            try { localStorage.setItem("orcapro:bim:direita-w:" + (self._dirChave || ""), String(px)); } catch (e) {}
+          },
+          status: function (t) { self.status(t); },
+          foco: function () { self.alternarFoco(); },
+          onLayout: function () { if (self._opts && typeof self._opts.onLayout === "function") self._opts.onLayout(); }
+        });
+      }
 
       this.pintarFita();
       this.pintarProps(null);
@@ -176,6 +204,9 @@
            aqui é o que faz valer o "um Esc, uma ação" que a nota acima promete. */
         /* foco TRAVADO (janela do 3D, ver `travarFoco`): o Esc não sai do
            foco — segue para cancelar a ferramenta, como fora do foco */
+        /* F11 = MODO MODELAGEM (tela cheia do 3D, só a vista e o mini-acesso); Ctrl+F1 = fita só com as abas */
+        if (ev.key === "F11" && !ev.ctrlKey && !ev.altKey && !ev.metaKey) { self.alternarFoco(); ev.preventDefault(); ev.stopPropagation(); return; }
+        if (ev.key === "F1" && ev.ctrlKey && !ev.altKey && !ev.metaKey && self._doca) { self._doca.fitaRec(); ev.preventDefault(); return; }
         if (ev.key === "Escape" && !self._focoTravado && self.focoAtivo()) { self.alternarFoco(false); ev.preventDefault(); ev.stopPropagation(); return; }
         if (ev.key === "Escape") { var n = CMD() && CMD().cancelar(); if (n) { self.pintarFita(); ev.preventDefault(); } }
         else if (ev.key === "Enter") { var c = CMD(); if (c && c.ultimo()) { c.repetir(); self.pintarFita(); ev.preventDefault(); } }
@@ -213,68 +244,21 @@
       }
       return !!(this._raiz && this._raiz.classList.contains("bim-pele-revit"));
     },
-    /* ENCAIXE (B1, 07/10/2026): pegar o cabeçalho de Propriedades ou do
-       Navegador e soltar perto da outra borda leva a coluna inteira para lá.
-       Enquanto arrasta, a borda de destino acende (data-rv-lat-alvo). Só com a
-       cara nova; o clique simples no cabeçalho continua sendo clique (o
-       arrasto só conta depois de 40 px). */
-    _ligarEncaixe: function (raiz) {
-      var self = this;
-      raiz.addEventListener("pointerdown", function (e) {
-        if (e.button !== 0) return;
-        if (document.documentElement.getAttribute("data-visual") !== "nova") return;
-        var cab = e.target && e.target.closest ? e.target.closest(".rv-lateral .rv-doca-cab") : null;
-        if (!cab || e.target.closest("button,input,select,a")) return;
-        var x0 = e.clientX, mexeu = false;
-        function mv(ev) {
-          if (!mexeu && Math.abs(ev.clientX - x0) < 40) return;
-          mexeu = true;
-          var r = raiz.getBoundingClientRect();
-          raiz.setAttribute("data-rv-lat-alvo", ev.clientX > r.left + r.width / 2 ? "dir" : "esq");
-        }
-        function up(ev) {
-          document.removeEventListener("pointermove", mv); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", up);
-          var alvo = raiz.getAttribute("data-rv-lat-alvo");
-          raiz.removeAttribute("data-rv-lat-alvo");
-          if (!mexeu || !alvo) return;
-          self.ladoLateral(alvo);
-        }
-        document.addEventListener("pointermove", mv); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
-      });
-    },
+    /* ENCAIXE (25/10/2026): o antigo "pegar o cabeçalho e soltar perto da outra borda" virou o
+       arrastar de QUALQUER painel para qualquer borda (js/bimdocaui.js). Estas duas continuam
+       existindo — a fita e as provas as chamam — e falam com o gerenciador. */
     /* lado da coluna Propriedades/Navegador: "esq" (padrão) ou "dir" */
     ladoLateral: function (lado) {
-      var raiz = this._raiz;
-      if (lado === "esq" || lado === "dir") {
-        if (raiz) { if (lado === "dir") raiz.setAttribute("data-rv-lat-lado", "dir"); else raiz.removeAttribute("data-rv-lat-lado"); }
-        try { localStorage.setItem("orcapro:bim:lateral-lado", lado); } catch (e) {}
-        this.status(lado === "dir" ? "Propriedades e Navegador encaixados à direita." : "Propriedades e Navegador encaixados à esquerda.");
-        if (this._opts && typeof this._opts.onLayout === "function") this._opts.onLayout();
-        if (this._opts && typeof this._opts.onLayoutVivo === "function") this._opts.onLayoutVivo();
-      }
-      return raiz && raiz.getAttribute("data-rv-lat-lado") === "dir" ? "dir" : "esq";
+      if (this._doca) return this._doca.ladoLateral(lado);
+      return "esq";
     },
-    /* Organizar painéis: tudo de volta ao lugar e ao tamanho padrão — a lateral
-       aberta, larguras e a divisória Propriedades/Navegador esquecidas. */
+    /* Organizar painéis: o layout padrão — tudo no lugar, no tamanho e à vista de novo. */
     organizarPaineis: function () {
-      try { localStorage.removeItem("orcapro:bim:lateral-lado"); } catch (eLd) {}
-      if (this._raiz) this._raiz.removeAttribute("data-rv-lat-lado");
-      var raiz = this._raiz;
-      try {
-        var tira = [];
-        for (var i = 0; i < localStorage.length; i++) {
-          var k = localStorage.key(i);
-          if (k === "orcapro:bim:lateral-w" || k === "orcapro:bim:props-h" || k === "orcapro:bim:lateral-off" || String(k).indexOf("orcapro:bim:direita-w:") === 0) tira.push(k);
-        }
-        tira.forEach(function (k) { localStorage.removeItem(k); });
-      } catch (e) {}
-      if (raiz) {
-        raiz.removeAttribute("data-rv-lateral-off");
-        raiz.style.removeProperty("--rv-lat-w"); raiz.style.removeProperty("--rv-props-h");
-        if (this._direita) this._direita.style.removeProperty("width");
-      }
+      if (this._doca) { this._doca.restaurar(); this._dirLarg = 0; }
       return true;
     },
+    /* o gerenciador de painéis (para a fita, o menu "Painéis" e as provas) */
+    doca: function () { return this._doca || null; },
 
     _emBreve: function (c) {
       var rot = String(c.rotulo || "").split(String.fromCharCode(10)).join(" ");
@@ -292,7 +276,9 @@
          `if (novo && !this._btnSairFoco)` fica falsa para sempre e o botão de sair
          do foco aponta para uma raiz já descartada: da 2ª visita em diante o
          usuário entra em tela cheia e NÃO TEM COMO SAIR pelo botão. */
-      this._raiz = null; this._palco = null; this._btnSairFoco = null;
+      this._raiz = null; this._palco = null; this._btnSairFoco = null; this._focoMini = null;
+      try { if (this._doca && global.BimDocaUI) global.BimDocaUI.desmontar(); } catch (eDo) {}
+      this._doca = null;
     },
     palco: function () { return this._palco; },
     raiz: function () { return this._raiz; },
@@ -398,6 +384,14 @@
         });
         dir.appendChild(ac);
       }
+      /* PAINÉIS: mostrar/recolher cada painel, layouts prontos (Modelar, Documentar, Instalações, Modelagem ampla),
+         fita só com as abas, modo modelagem e "Restaurar layout padrão" */
+      var bPn = el("button", "rv-qat-paineis");
+      bPn.type = "button"; bPn.setAttribute("data-rv-qat", "paineis"); bPn.title = "Painéis e layouts: arraste qualquer painel pela barra de título para encaixar onde quiser, ou recolha";
+      bPn.setAttribute("aria-label", "Painéis e layouts"); bPn.setAttribute("aria-haspopup", "menu");
+      bPn.innerHTML = ico("camadas", 15);
+      bPn.onclick = function () { self.menuPaineis(bPn); };
+      dir.appendChild(bPn);
       var bTema = el("button");
       bTema.type = "button"; bTema.title = "Alternar tema claro/escuro";
       bTema.innerHTML = ico("tema", 15);
@@ -420,8 +414,19 @@
       if (!r) return d;
       /* o SELETOR DE DISCIPLINA vem antes do Arquivo (js/bimdisciplinas.js) */
       if (D()) d.appendChild(this._seletorDisc());
-      this._listaAbas(r).forEach(function (a) { d.appendChild(self._botaoAba(a)); });
+      /* ⚠ as abas rolam NUMA lista própria; os botões rápidos e o da fita ficam FIXOS à direita.
+         Antes tudo rolava junto e, em 1366 px, "Arquivo da obra / Órbita / Voo / Enquadrar / Ultra"
+         ficavam fora da tela (achado da crítica de 25/10/2026) */
+      var lista = el("div", "rv-abas-lista");
+      this._listaAbas(r).forEach(function (a) { lista.appendChild(self._botaoAba(a)); });
+      d.appendChild(lista);
       this._assinAbas = this._assinaturaAbas(this._listaAbas(r));
+      /* a FITA recolhe: só as abas; clicar numa aba abre por cima do 3D (Ctrl+F1 também) */
+      var pin = el("button", "rv-fita-pin");
+      pin.type = "button"; pin.setAttribute("aria-label", "Recolher a fita"); pin.setAttribute("aria-pressed", "false");
+      pin.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
+      pin.title = "Recolher a fita (só as abas; clique numa aba para abrir por cima do 3D) — Ctrl+F1";
+      d.appendChild(pin);
       d.appendChild(this._rapidos());
       return d;
     },
@@ -451,7 +456,7 @@
     _sincAbas: function () {
       var self = this, r = R();
       if (!this._raiz || !r) return;
-      var barra = this._raiz.querySelector(".rv-abas");
+      var barra = this._raiz.querySelector(".rv-abas-lista") || this._raiz.querySelector(".rv-abas");
       if (!barra) return;
       var lista = this._listaAbas(r);
       if (lista.length && !lista.some(function (a) { return a.id === r.abaAtiva(); })) {
@@ -465,8 +470,7 @@
       }
       this._assinAbas = assin;
       barra.querySelectorAll("[data-rv-aba]").forEach(function (x) { x.parentNode.removeChild(x); });
-      var antes = barra.querySelector(".rv-abas-dir");
-      lista.forEach(function (a) { barra.insertBefore(self._botaoAba(a), antes); });
+      lista.forEach(function (a) { barra.appendChild(self._botaoAba(a)); });
     },
 
     /* --------------------------------------------- SELETOR DE DISCIPLINA
@@ -707,6 +711,11 @@
       if (!c) return;
       var res = c.executar(id);
       this.pintarFita();
+      /* fita recolhida e aberta por cima: depois do comando (que não seja um menu) ela volta a se esconder */
+      try {
+        var cm = R() && R().comando ? R().comando(id) : null;
+        if (this._doca && this._doca.fitaSobre() && !(cm && cm.tipo === "menu")) { this._doca.fitaAbrirSobre(false); }
+      } catch (eFs) {}
       if (!res.ok && res.motivo) {
         try { if (global.UI && UI.toast) UI.toast(res.motivo, res.bloqueado || res.semAcao ? "erro" : "erro"); } catch (e) {}
       }
@@ -716,12 +725,12 @@
 
     /* -------------------------------------------- PROPRIEDADES E ÁRVORE */
     _lateral: function () {
-      var lat = el("div", "rv-lateral");
-
       var props = el("div", "rv-doca rv-props");
       var cabP = el("div", "rv-doca-cab");
       cabP.appendChild(el("span", null, "Propriedades"));
-      /* recolher a coluna inteira: sobra a aba com a seta na borda esquerda */
+      /* recolher a coluna inteira (Propriedades + Navegador): sobra a faixa fina com a seta.
+         Com os painéis encaixáveis o botão que vale é o da barra de cada painel; este continua
+         no nó (a tela estreita, sem encaixe, mostra o cabeçalho de sempre) */
       var bRec = el("button", "rv-x rv-recolher", "◀");
       bRec.type = "button"; bRec.title = "Recolher Propriedades e Navegador (fica a aba com a seta para trazer de volta)";
       bRec.onclick = (function (self) { return function () { self.alternarLateralFixa(true); }; })(this);
@@ -734,11 +743,6 @@
       bAp.onclick = (function (self) { return function () { self._aplicarProps(); }; })(this);
       pe.appendChild(bAp);
       props.appendChild(pe);
-      lat.appendChild(props);
-      var split = el("div", "rv-split-h");
-      split.title = "Arraste para dividir o espaço entre Propriedades e Navegador";
-      lat.appendChild(split);
-      this._split = split;
 
       var nav = el("div", "rv-doca rv-nav");
       var cabN = el("div", "rv-doca-cab");
@@ -747,13 +751,12 @@
       var busca = el("div", "rv-busca");
       busca.innerHTML = ico("buscar", 13);
       var inp = el("input");
-      inp.type = "search"; inp.placeholder = "Pesquisar";
+      inp.type = "search"; inp.placeholder = "Pesquisar"; inp.setAttribute("aria-label", "Pesquisar no Navegador de projeto");
       inp.oninput = (function (self) { return function () { self._filtrarArvore(this.value); }; })(this);
       busca.appendChild(inp);
       nav.appendChild(busca);
       nav.appendChild(el("div", "rv-doca-corpo"));
-      lat.appendChild(nav);
-      return lat;
+      return { props: props, nav: nav };
     },
 
     /* Propriedades dirigidas por ESQUEMA: o mesmo componente serve para
@@ -1214,7 +1217,7 @@
 
       var bFoco = el("button", "rv-vb");
       bFoco.type = "button";
-      bFoco.title = "Modo foco: só o modelo e a ferramenta (Esc sai)";
+      bFoco.title = "Modo modelagem: só a vista e a ferramenta (F11; Esc sai)";
       bFoco.setAttribute("aria-label", bFoco.title);
       bFoco.setAttribute("data-rv-vb", "foco");
       bFoco.innerHTML = ico("expandir", 14);
@@ -1297,8 +1300,14 @@
      * A preferência é lembrada: quem escondeu não quer escolher de novo a
      * cada abertura.
      * ================================================================ */
+    /* o menu "Painéis" (barra de título, fita › Vista › Interface do usuário e modo modelagem) */
+    menuPaineis: function (ancora) {
+      if (this._doca) return this._doca.menuGeral(ancora);
+      return null;
+    },
     alternarLateralFixa: function (on) {
       if (!this._raiz) return false;
+      if (this._doca) return this._doca.lateralFixa(on);
       var atual = this._raiz.getAttribute("data-rv-lateral-off") === "1";
       var novo = on == null ? !atual : !!on;
       this._raiz.setAttribute("data-rv-lateral-off", novo ? "1" : "0");
@@ -1308,8 +1317,9 @@
     },
 
     /* ================================================================
-     * A JANELA DA DIREITA (doca) E AS ALÇAS DE ARRASTAR
-     * A largura da doca é lembrada POR FERRAMENTA: a Sondagem pede largura
+     * O PAINEL "FERRAMENTAS" (a gaveta onde abrem Instalações, Famílias,
+     * Pranchas, Render…) — um painel como os outros: vive onde o usuário o
+     * encaixar. A largura é lembrada POR FERRAMENTA: a Sondagem pede largura
      * (perfil ao lado do boletim), Pontos de vista cabe estreito — uma
      * largura só não serviria às duas.
      * ================================================================ */
@@ -1328,56 +1338,21 @@
         var salvo = 0;
         try { salvo = +localStorage.getItem("orcapro:bim:direita-w:" + this._dirChave) || 0; } catch (e) {}
         var w = salvo || preferida || 440;
-        r.style.setProperty("--rv-dir-w", this._limitarDir(w) + "px");
+        this._dirLarg = this._limitarDir(w);
+        r.style.setProperty("--rv-dir-w", this._dirLarg + "px");
       }
       var antes = r.getAttribute("data-rv-direita") === "1";
       r.setAttribute("data-rv-direita", abrir ? "1" : "0");
+      /* a gaveta abriu ou fechou: o painel entra ou sai da zona onde mora */
+      if (this._doca) {
+        if (antes !== abrir) this._doca.sincronizar(abrir);
+        else if (abrir) this._doca.aplicarTamanhos();
+      }
       if (antes !== abrir && typeof this._opts.onLayout === "function") this._opts.onLayout();
     },
     _limitarDir: function (w) {
       var tot = (this._raiz && this._raiz.clientWidth) || (window.innerWidth || 1400);
       return Math.round(Math.max(280, Math.min(w, tot * 0.75)));
-    },
-    _ligarAlcas: function (raiz, alcaLat, alcaDir) {
-      var self = this;
-      function arrastar(alca, aoMover, aoSoltar) {
-        alca.addEventListener("pointerdown", function (e) {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          var x0 = e.clientX, y0 = e.clientY;
-          try { alca.setPointerCapture(e.pointerId); } catch (_) {}
-          raiz.setAttribute("data-rv-arrastando", "1");
-          function mv(ev) { aoMover(ev.clientX - x0, ev.clientY - y0, ev); }
-          function up(ev) {
-            alca.removeEventListener("pointermove", mv); alca.removeEventListener("pointerup", up); alca.removeEventListener("pointercancel", up);
-            raiz.removeAttribute("data-rv-arrastando");
-            if (aoSoltar) aoSoltar();
-            if (typeof self._opts.onLayout === "function") self._opts.onLayout();
-          }
-          alca.addEventListener("pointermove", mv); alca.addEventListener("pointerup", up); alca.addEventListener("pointercancel", up);
-          alca._w0 = null;
-        });
-      }
-      var lat = raiz.querySelector(".rv-lateral"), lw0 = 0, dw0 = 0, ph0 = 0;
-      arrastar(alcaLat, function (dx) {
-        if (!lw0) lw0 = lat.getBoundingClientRect().width;
-        /* coluna encaixada à DIREITA (cara nova): puxar para a esquerda alarga */
-        var sinal = raiz.getAttribute("data-rv-lat-lado") === "dir" ? -1 : 1;
-        var w = Math.max(200, Math.min(700, lw0 + sinal * dx));
-        raiz.style.setProperty("--rv-lat-w", Math.round(w) + "px");
-        if (self._opts.onLayoutVivo) self._opts.onLayoutVivo();
-      }, function () { lw0 = 0; try { localStorage.setItem("orcapro:bim:lateral-w", String(parseInt(raiz.style.getPropertyValue("--rv-lat-w"), 10) || "")); } catch (e) {} });
-      arrastar(alcaDir, function (dx) {
-        if (!dw0) dw0 = self._direita.getBoundingClientRect().width;
-        raiz.style.setProperty("--rv-dir-w", self._limitarDir(dw0 - dx) + "px");
-        if (self._opts.onLayoutVivo) self._opts.onLayoutVivo();
-      }, function () { dw0 = 0; try { localStorage.setItem("orcapro:bim:direita-w:" + (self._dirChave || ""), String(parseInt(raiz.style.getPropertyValue("--rv-dir-w"), 10) || "")); } catch (e) {} });
-      if (this._split) arrastar(this._split, function (dx, dy) {
-        var lr = lat.getBoundingClientRect();
-        if (!ph0) { var pr = lat.querySelector(".rv-props").getBoundingClientRect(); ph0 = pr.height; }
-        var pct = Math.max(15, Math.min(85, (ph0 + dy) / Math.max(1, lr.height) * 100));
-        raiz.style.setProperty("--rv-props-h", pct.toFixed(1) + "%");
-      }, function () { ph0 = 0; try { localStorage.setItem("orcapro:bim:props-h", String(parseFloat(raiz.style.getPropertyValue("--rv-props-h")) || "")); } catch (e) {} });
     },
     /* o tamanho da interface (letras e botões), sem mexer no 3D */
     escalaUi: function (f) {
@@ -1422,6 +1397,21 @@
         this._raiz.appendChild(b);
         this._btnSairFoco = b;
         this._pintarSairFoco();
+        /* MINI-ACESSO do modo modelagem: o que se usa o tempo todo, sem trazer a tela de volta */
+        var mini = el("div", "rv-foco-mini");
+        mini.setAttribute("role", "toolbar"); mini.setAttribute("aria-label", "Acesso rápido do modo modelagem");
+        [{ ico: "voltar", dica: "Desfazer (Ctrl+Z)", fn: function () { self.executar("desfazer"); } },
+         { ico: "avancar", dica: "Refazer (Ctrl+Y)", fn: function () { self.executar("refazer"); } },
+         { ico: "camadas", dica: "Abrir Propriedades, Navegador ou a ferramenta por cima do 3D", menu: true }
+        ].forEach(function (q) {
+          var bt = el("button");
+          bt.type = "button"; bt.title = q.dica; bt.setAttribute("aria-label", q.dica);
+          bt.innerHTML = ico(q.ico, 15);
+          bt.onclick = function () { if (q.menu) { if (self._doca) self._doca.menuGeral(bt, true); } else q.fn(); };
+          mini.appendChild(bt);
+        });
+        this._raiz.appendChild(mini);
+        this._focoMini = mini;
       }
       if (this._opts && typeof this._opts.onLayout === "function") this._opts.onLayout();
       return novo;

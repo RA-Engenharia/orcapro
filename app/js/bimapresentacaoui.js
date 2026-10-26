@@ -227,12 +227,12 @@
    * cresce); os painéis do próprio 3D (barra, cubo, dicas) ficam transparentes. No fim tudo volta NA MESMA TAREFA do parar()
    * (o layout primeiro, a animação de volta depois) — assim o renderer volta ao tamanho exato que tinha. */
   var CSS_AP =
-    /* tudo o que não é o palco da vista: o que vem antes do corpo (título, abas, fita, barras de contexto), as colunas ao lado e as barras debaixo da vista */
-    ".bim-revit[data-ap-ui]>:not(.rv-corpo),.bim-revit[data-ap-ui] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui] .rv-disc-selo{transition:opacity .35s ease}" +
-    ".bim-revit[data-ap-ui=saindo]>:not(.rv-corpo),.bim-revit[data-ap-ui=saindo] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui=saindo] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=saindo] .rv-disc-selo{opacity:0}" +
-    ".bim-revit[data-ap-ui='1']>:not(.rv-corpo),.bim-revit[data-ap-ui='1'] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui='1'] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui='1'] .rv-disc-selo{display:none!important}" +
+    /* tudo o que não é o palco da vista (desde 25/10/2026 o corpo tem o .rv-centro em volta da .rv-area, e as zonas/alças/bordas dos painéis encaixáveis ficam ao lado dele): o que vem antes do corpo (título, abas, fita, barras de contexto), as colunas ao lado e as barras debaixo da vista */
+    ".bim-revit[data-ap-ui]>:not(.rv-corpo),.bim-revit[data-ap-ui] .rv-corpo>:not(.rv-area):not(.rv-centro),.bim-revit[data-ap-ui] .rv-centro>:not(.rv-area),.bim-revit[data-ap-ui] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui] .rv-disc-selo{transition:opacity .35s ease}" +
+    ".bim-revit[data-ap-ui=saindo]>:not(.rv-corpo),.bim-revit[data-ap-ui=saindo] .rv-corpo>:not(.rv-area):not(.rv-centro),.bim-revit[data-ap-ui=saindo] .rv-centro>:not(.rv-area),.bim-revit[data-ap-ui=saindo] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=saindo] .rv-disc-selo{opacity:0}" +
+    ".bim-revit[data-ap-ui='1']>:not(.rv-corpo),.bim-revit[data-ap-ui='1'] .rv-corpo>:not(.rv-area):not(.rv-centro),.bim-revit[data-ap-ui='1'] .rv-centro>:not(.rv-area),.bim-revit[data-ap-ui='1'] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui='1'] .rv-disc-selo{display:none!important}" +
     ".bim-revit[data-ap-ui='1'] .rv-corpo{padding:0}" +
-    ".bim-revit[data-ap-ui=voltando]>:not(.rv-corpo),.bim-revit[data-ap-ui=voltando] .rv-corpo>:not(.rv-area),.bim-revit[data-ap-ui=voltando] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=voltando] .rv-disc-selo{animation:apVolta .45s ease both}" +
+    ".bim-revit[data-ap-ui=voltando]>:not(.rv-corpo),.bim-revit[data-ap-ui=voltando] .rv-corpo>:not(.rv-area):not(.rv-centro),.bim-revit[data-ap-ui=voltando] .rv-centro>:not(.rv-area),.bim-revit[data-ap-ui=voltando] .rv-area>:not(.rv-palco),.bim-revit[data-ap-ui=voltando] .rv-disc-selo{animation:apVolta .45s ease both}" +
     "@keyframes apVolta{from{opacity:0}to{opacity:1}}" +
     "[data-ap-oculto]{opacity:0!important;pointer-events:none!important;transition:opacity .3s ease}" +
     /* a camada da apresentação na vista */
