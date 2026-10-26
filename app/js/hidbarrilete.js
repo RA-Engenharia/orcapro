@@ -10,7 +10,9 @@
  * água fria numa ESPERA que desce do forro/laje ("ponto do barrilete"), e o barrilete ficava pendente (predio.barrilete).
  *
  * O QUE ESTE MOTOR FAZ (critério de projeto da RA — docs/hidro/PADROES-PROJETO-RA.md, seção C3; fontes em cada item):
- *  1. SAÍDA DA CAIXA: do conector "saida" um toco na direção radial com o REGISTRO DE GAVETA (NBR 5626:2020 6.5.12.4 a:
+ *  0. N23 (26/10/2026, docs/hidro/PADROES-PROJETO-RA.md R-B4a): registros de ESFERA de PVC (aparente); a VÁLVULA DE DESCARGA numa 2ª
+ *     saída com coluna exclusiva; o extravasor entra na linha da limpeza depois do registro; os adaptadores no DN real (instância).
+ *  1. SAÍDA DA CAIXA: do conector "saida" um toco na direção radial com o REGISTRO (NBR 5626:2020 6.5.12.4 a:
  *     no abastecimento indireto, em cada trecho que liga o barrilete ao reservatório) e, depois do registro, a
  *     VENTILAÇÃO DO BARRILETE subindo acima do topo da caixa (Tigre, Manual Técnico 2025 p.72-73: "ligado à coluna,
  *     após o registro de passagem; extremidade aberta; acima do nível máximo d'água; diâmetro ≥ ao da coluna" — fonte
@@ -100,6 +102,19 @@
     descidaMin: 0.05,       // hid:ok N23: o barrilete só desce pela tomada vertical se ganhar mais que isto (abaixo, já está no apoio)
     zDesvios: [2, 4, 6]     // hid:ok passos da grade dos desvios em "Z" (os do js/hidaqtraco.js)
   };
+  /* a 2ª saída (coluna exclusiva da válvula de descarga): a espera com DN a partir deste é a da válvula (a de lavatório, pia, chuveiro e
+     caixa acoplada é 20/25); os ângulos tentados a partir da saída principal, na ordem (o lado oposto é o da entrada da boia) */
+  var DN_VALVULA = 40;   // hid:ok DN 40 = 1 1/4", a menor bitola de válvula de descarga
+  var ANG_SAIDA2 = [-Math.PI / 2, Math.PI / 2, -Math.PI / 3, Math.PI / 3, -2 * Math.PI / 3, 2 * Math.PI / 3];   // hid:ok 90°, 60° e 120° para cada lado
+  /* a caixa com a saída girada de `ang` em torno do centro (mesma cota e DN do conector): o furo da 2ª saída */
+  function saidaGirada(cx, ang) {
+    var o = {}; Object.keys(cx).forEach(function (k) { o[k] = cx[k]; });
+    var dx = cx.S.x - cx.c.x, dz = cx.S.z - cx.c.z, c = Math.cos(ang), s = Math.sin(ang), S2 = {};
+    Object.keys(cx.S).forEach(function (k) { S2[k] = cx.S[k]; });
+    S2.x = r4(cx.c.x + dx * c + dz * s); S2.z = r4(cx.c.z - dx * s + dz * c); S2.cid = "saida2";
+    o.S = S2;
+    return o;
+  }
   /* SINAPI (MG 06/2026 — data/sinapi-MG-2026-06.json): os itens da CAIXA que o modelo não desenha. tools/test-hid-barrilete.js
      confere cada código e o começo da descrição na base. Chave = bitola de rosca (BimInst.BITOLA_REF) ou DN (mm) em texto. */
   var SINAPI_CAIXA = {
@@ -245,7 +260,37 @@
     ESP.forEach(function (s) { var best = null; todas.forEach(function (c) { if (!best || d2(s, c.c) < d2(s, best.c) - EPS) best = c; }); if (best) (porCx[best.id] = porCx[best.id] || []).push(s); });
     CX.forEach(function (cx) {
       var lista = porCx[cx.id] || []; if (!lista.length) return;
-      var R = montarCaixa(e, cx, lista, opsAch);
+      /* N23 (26/10/2026, "o nosso barrilete está saindo com 50 ou 60 mm"): a espera da VÁLVULA DE DESCARGA é DN 40/50 (1 1/4"–1 1/2") e
+         o barrilete pegava o maior DN a jusante — um banheiro com válvula engordava a saída e o tronco inteiros. Como se executa: a
+         válvula tem SAÍDA e COLUNA EXCLUSIVAS na caixa (Tigre/Deca) e o consumo dos outros aparelhos sai em 25/32. Critério da espera da
+         válvula: DN ≥ 40 num ambiente (a do prédio e a do aquecedor não entram). Sem lugar para a 2ª saída: uma saída só, como antes (aviso). */
+      var lV = lista.filter(function (s) { return num(s.dn, 0) >= DN_VALVULA && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
+      var sec = null, ang2 = null, R = null, reserva = null;
+      /* o lado da 2ª saída: o 1º em que ela liga todas as válvulas E a principal fecha sem esbarrar nela (coluna, caminho, respiro do
+         boiler); sem lado limpo, o 1º em que as duas fecham (com as pendências de esbarrar, que dizem o que lançar à mão) */
+      function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
+      if (lV.length && lC.length && cx.S) {
+        for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
+          var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });   // hid:ok ids da 2ª saída a partir de 500
+          if (!(Rv.ok && Rv.ligadas === lV.length)) continue;
+          var Rp = montarCaixa(e, cx, lC, opsAch, { obst: Rv.novos.map(function (o) { return { a: o.a, b: o.b, r: o.r, sistema: o.sistema, id: "2ª saída · " + o.id }; }), saida2: { dn: Rv.dnSaida, ang: ANG_SAIDA2[ia] } });
+          if (!Rp.ok) continue;
+          if (!esbarra(Rp) && !esbarra(Rv)) { sec = Rv; ang2 = ANG_SAIDA2[ia]; R = Rp; }
+          else if (!reserva) reserva = { sec: Rv, ang: ANG_SAIDA2[ia], R: Rp };
+        }
+        if (!sec && reserva) { sec = reserva.sec; ang2 = reserva.ang; R = reserva.R; }
+      }
+      if (!R) {
+        R = montarCaixa(e, cx, lista, opsAch);
+        if (lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": não houve lugar para a 2ª saída (coluna exclusiva da válvula de descarga) — a válvula saiu da saída do consumo e o barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
+      }
+      if (sec) {
+        sec.ops.forEach(function (o) { out.ops.push(o); });
+        sec.avisos.forEach(function (a) { out.avisos.push(a); });
+        sec.pendencias.forEach(function (p) { out.pendencias.push(p); });
+        sec.decisoes.forEach(function (d) { out.decisoes.push(d); });
+        out.ligadas += sec.ligadas; out.esperasLigadas = out.esperasLigadas.concat(sec.esperasLigadas);
+      }
       R.ops.forEach(function (o) { out.ops.push(o); });
       R.avisos.forEach(function (a) { out.avisos.push(a); });
       R.pendencias.forEach(function (p) { out.pendencias.push(p); });
@@ -269,12 +314,13 @@
   }
 
   /* ---------------------------------------------- o barrilete de UMA caixa */
-  function montarCaixa(e, cx, lista, opsAch) {
+  function montarCaixa(e, cx, lista, opsAch, opc) {
+    opc = opc || {};
     var estado = e.estado || {}, avaliarFam = e.avaliarFam, par = e.parametros || {}, B = BI(), K = HK(), H = HR(), G = H.GEO;
     var res = { ok: false, ops: [], avisos: [], pendencias: [], decisoes: [], ligadas: 0, esperasLigadas: [], respiros: [], subir: null, barInfo: null };
     function pend(chave, texto, els, acao) { res.pendencias.push({ chave: chave, texto: texto, motivo: texto, elementos: arr(els).map(String), acao: acao || null }); }
     function aviso(texto, els, acao) { res.avisos.push({ texto: texto, elementos: arr(els).map(String), acao: acao || null }); }
-    var nome = "Caixa d'água " + cx.id;
+    var nome = "Caixa d'água " + cx.id + (opc.secundaria ? " (2ª saída: coluna exclusiva da válvula de descarga)" : "");
     if (!cx.S) { pend("bar.saida", nome + ": a família não tem o ponto de saída (consumo) — use a família hid-caixa-dagua do catálogo", [cx.id]); return res; }
     var folga = num(par.folga, G.folga), mNo = num(par.margemNo, G.margemNo), passo = G.passo, Lr = B.ACESSORIO_PADRAO, TOL = B.TOL;
     var decl0 = num(par.declividadeBarrilete, GEO_BAR.declividade);
@@ -282,12 +328,15 @@
     var hRedeM = (function () { var Nn0 = NN(), Hh0 = HHi(); try { var c0 = Nn0 ? Nn0.consulta("af.pressao.dinamica_minima_rede", null, "valor") : null; return c0 && c0.ok && Hh0 ? Hh0.kpaParaM(num(c0.valor, 0)) : 0; } catch (eR) { return 0; } })();
     var matAF = B.SISTEMAS.agua_fria.material, dnsAF = arr((B.MATERIAIS[matAF] || {}).dns), dnPad = (B.MATERIAIS[matAF] || {}).dn;
     function comercial(dn) { var ok = dnsAF.filter(function (d) { return d >= dn - EPS; }); return ok.length ? ok[0] : (dnsAF.length ? dnsAF[dnsAF.length - 1] : dn); }
-    var tipoRg = B.varianteAuto ? B.varianteAuto("registro_gaveta", { sistema: "agua_fria", material: matAF, aplicacao: "reservacao" }) : "bruto";
+    /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério): o registro APARENTE da caixa e do barrilete é o de ESFERA de PVC soldável — a
+       regra do próprio catálogo (js/biminst.js ACESSORIOS: "APARENTE (barrilete, cavalete...) = registro de esfera"); antes saía o de
+       gaveta de latão bruto, que é o do embutido */
+    var RG_FAM = "ra-registro-esfera", tipoRg = B.varianteAuto ? B.varianteAuto("registro_esfera", { sistema: "agua_fria", material: matAF, aplicacao: "reservacao" }) : "soldavel";
     var Ap = apoios(estado), teto = cx.S.y;
     var obst = H.obstaculosDoBim(estado, avaliarFam), vols = arr(obst.familias);
-    var existentes = arr(estado.instalacoes && estado.instalacoes.trechos).map(function (t) { return { a: t.p1, b: t.p2, r: raio(t.dn), sistema: t.sistema, id: String(t.id) }; });
+    var existentes = arr(estado.instalacoes && estado.instalacoes.trechos).map(function (t) { return { a: t.p1, b: t.p2, r: raio(t.dn), sistema: t.sistema, id: String(t.id) }; }).concat(arr(opc.obst));
     var novos = [];
-    var nOp = 0;
+    var nOp = num(opc.nOp0, 0);   /* a 2ª saída começa em 500: os ids das duas não se cruzam */
     function novoId(parte) { nOp++; return "bar-" + cx.id + "-" + parte + "-" + nOp; }
     var marca = { bar: cx.id };
     function T(parte, sis, dn, p1, p2, extra) {
@@ -503,7 +552,7 @@
         var nF = Pl.folhas.length, nSC = Pl.semCaminho.length, nCF = Pl.colunasFora.length;
         var Pl2 = planejarCom(yAlvo, baseTopo.concat([{ a: At, b: Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
         /* o plano baixo só vale se liga as MESMAS esperas, sem caminho perdido e na declividade cheia */
-        if (!Pl2.baixa && !Pl2.colunaFalha && Pl2.folhas.length === nF && Pl2.semCaminho.length <= nSC && Pl2.colunasFora.length <= nCF && !(Pl2.faltaMax > EPS)) { Pl = Pl2; tomada = { a: At, b: Ab }; }
+        if (!Pl2.baixa && !Pl2.colunaFalha && Pl2.folhas.length === nF && Pl2.semCaminho.length <= nSC && Pl2.colunasFora.length <= nCF && !(Pl2.faltaMax > 1 / CASAS)) { Pl = Pl2; tomada = { a: At, b: Ab }; }   /* N23: a falta medida em cotas arredondadas a 0,1 mm (r4): 0,000005 m não é falta */
       } else aviso(nome + ": a descida do barrilete até a laje (tomada vertical na saída) esbarra em " + cT.com + " — o barrilete ficou na cota da saída (sem os 5 kPa da NBR 5626:2020 6.9.3); gire a caixa (a saída para o lado livre) e trace de novo", [cx.id, cT.com],
         { tipo: "ops", ops: [{ op: "instancia", id: cx.id, rotY: r4(cx.rot + Math.PI / 2) }], texto: "girar a caixa 90° (a saída para outro lado)" });   // hid:ok um quarto de volta
     }
@@ -539,7 +588,7 @@
     var tS = T("saida", "agua_fria", dnSaida, S0, P3(A.x, yA, A.z), { aplicacao: "reservacao" });
     ops.push(tS);
     var gUp = BIC() && BIC().giroPara ? BIC().giroPara({ x: u.x, y: 0, z: u.z }, { x: 0, y: 1, z: 0 }) : 0;
-    var rgS = { op: "acessorio", id: novoId("rg-saida"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tS.id, novoId: tS.id + "b", x: r4(S0.x + u.x * GEO_BAR.tocoSaida / 2), y: r4((S0.y + yA) / 2), z: r4(S0.z + u.z * GEO_BAR.tocoSaida / 2), comprimento: Lr, bar: cx.id, barParte: "registro_saida" };
+    var rgS = { op: "acessorio", id: novoId("rg-saida"), famId: RG_FAM, tipoId: tipoRg, trecho: tS.id, novoId: tS.id + "b", x: r4(S0.x + u.x * GEO_BAR.tocoSaida / 2), y: r4((S0.y + yA) / 2), z: r4(S0.z + u.z * GEO_BAR.tocoSaida / 2), comprimento: Lr, bar: cx.id, barParte: "registro_saida" };
     if (gUp) rgS.giro = gUp;
     ops.push(rgS);
     if (tomada) ops.push(T("tomada", "agua_fria", dnSaida, P3(A.x, yA, A.z), P3(A.x, yDe(iR), A.z), { aplicacao: "reservacao" }));
@@ -563,7 +612,7 @@
       var gV = BIC() && BIC().giroPara ? BIC().giroPara({ x: 0, y: -1, z: 0 }, { x: uA.x, y: 0, z: uA.z }) : 0;
       var yc = r4(yT - mNo - Lr / 2);
       if (yc - Lr / 2 - TOL >= Math.max(yBaixo + folga, l.y + TOL)) {
-        var rgc = { op: "acessorio", id: novoId("rg-coluna"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tc.id, novoId: tc.id + "b", x: l.x, y: yc, z: l.z, comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
+        var rgc = { op: "acessorio", id: novoId("rg-coluna"), famId: RG_FAM, tipoId: tipoRg, trecho: tc.id, novoId: tc.id + "b", x: l.x, y: yc, z: l.z, comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
         if (gV) rgc.giro = gV;
         ops.push(rgc); return;
       }
@@ -572,7 +621,7 @@
       var tb = filhos(n).length ? null : porNoBar[n];
       if (tb && d3(tb.p1, tb.p2) >= Lr + 2 * TOL + mNo) {
         var ub = { x: (tb.p1.x - tb.p2.x) / d3(tb.p1, tb.p2), y: (tb.p1.y - tb.p2.y) / d3(tb.p1, tb.p2), z: (tb.p1.z - tb.p2.z) / d3(tb.p1, tb.p2) }, k = mNo + Lr / 2;
-        var rgb = { op: "acessorio", id: novoId("rg-coluna"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tb.id, novoId: tb.id + "b", x: r4(tb.p2.x + ub.x * k), y: r4(tb.p2.y + ub.y * k), z: r4(tb.p2.z + ub.z * k), comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
+        var rgb = { op: "acessorio", id: novoId("rg-coluna"), famId: RG_FAM, tipoId: tipoRg, trecho: tb.id, novoId: tb.id + "b", x: r4(tb.p2.x + ub.x * k), y: r4(tb.p2.y + ub.y * k), z: r4(tb.p2.z + ub.z * k), comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
         var gH = BIC() && BIC().giroPara ? BIC().giroPara({ x: -ub.x, y: 0, z: -ub.z }, { x: 0, y: 1, z: 0 }) : 0; if (gH) rgb.giro = gH;
         porNoBar[n] = null;   /* o trecho já foi dividido por este registro */
         ops.push(rgb); return;
@@ -581,6 +630,13 @@
     });
     if (!res.ligadas) return res;
     res.ok = true;
+    /* a 2ª SAÍDA (coluna exclusiva da válvula de descarga) só tem o toco, o registro, a ventilação e a coluna dela: extravasor, limpeza,
+       boia, respiro e o orçamento da caixa são da saída principal (que recebe o DN e o ângulo desta para o adaptador e o furo) */
+    if (opc.secundaria) {
+      res.dnSaida = dnSaida; res.novos = novos;
+      res.decisoes.unshift({ id: "bar.saida2", texto: nome + ": saída DN " + dnSaida + " só para a(s) válvula(s) de descarga (" + res.ligadas + " coluna(s)), com registro de esfera e ventilação logo depois dele — a válvula pede DN grande e vazão alta de uma vez; na mesma saída do consumo ela engordava o barrilete inteiro (prática Tigre/Deca: coluna exclusiva da válvula). O consumo dos outros aparelhos sai pela saída principal." });
+      return res;
+    }
 
     /* ---------- 6) EXTRAVASOR e LIMPEZA (saídas livres) e a ALIMENTAÇÃO (boia) */
     var dnE = cx.E && num(cx.E.dn, 0) > 0 ? comercial(num(cx.E.dn, 0)) : dnPad;
@@ -593,7 +649,8 @@
     var bb = contornoObra(Ap), dirs = [{ x: 1, z: 0 }, { x: -1, z: 0 }, { x: 0, z: 1 }, { x: 0, z: -1 }];
     function longeDe(d, w) { return !w || d.x * w.x + d.z * w.z < Math.SQRT1_2; }
     function distFace(d) { if (!bb) return 0; return d.x > 0 ? bb.x1 - cx.c.x : (d.x < 0 ? cx.c.x - bb.x0 : (d.z > 0 ? bb.z1 - cx.c.z : cx.c.z - bb.z0)); }
-    var cand = dirs.filter(function (d) { return longeDe(d, u) && longeDe(d, ue); }).sort(function (d1, d2b) { return distFace(d1) - distFace(d2b); });
+    var u2 = opc.saida2 ? { x: u.x * Math.cos(opc.saida2.ang) + u.z * Math.sin(opc.saida2.ang), z: -u.x * Math.sin(opc.saida2.ang) + u.z * Math.cos(opc.saida2.ang) } : null;
+    var cand = dirs.filter(function (d) { return longeDe(d, u) && longeDe(d, ue) && longeDe(d, u2); }).sort(function (d1, d2b) { return distFace(d1) - distFace(d2b); });
     if (!cand.length) cand = dirs.filter(function (d) { return longeDe(d, u); });
     /* o tubo nasce na FACE do volume da família (o corpo com a tampa): o furo e o adaptador ficam no corpo, o tubo não passa por dentro */
     var Rface = Math.max(cx.R, num(cx.av && cx.av.valores && cx.av.valores.Diametro, 0) / 2) + FOLGA_LIMITE * 3;   // hid:ok 3 mm além da face
@@ -611,19 +668,41 @@
     }
     var yX = cx.E && sep != null ? r4(cx.E.y - sep - rE - rX) : r4(cx.yb + cx.H * 0.8);   // hid:ok sem a entrada/a tabela: 80 % da altura (com a pendência abaixo)
     if (!cx.E || sep == null) pend("bar.extravasor_cota", nome + ": a cota do extravasor saiu de 80 % da altura (sem o ponto de entrada da família ou sem a Tabela 1 da separação atmosférica, NBR 5626:2020 6.15) — confira com o fabricante", [cx.id]);
-    var X = saidaLivre("extravasor", yX, rX, dnX, "extravasor da caixa " + cx.id, decl);
+    /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério): o EXTRAVASOR (ladrão) sai pelo mesmo lado da limpeza, desce e entra num tê
+       da linha da limpeza DEPOIS do registro dela — uma saída livre só, como se executa. Depois do registro: fechar a limpeza nunca
+       bloqueia o ladrão. Sem lugar para o tê (limpeza curta, tubo no caminho): o extravasor sai sozinho, como antes. */
     var yL = r4(cx.yb + rL2 + APOIO), Lp = saidaLivre("limpeza", yL, rL2, dnL, "limpeza da caixa " + cx.id, 0);
+    var kRegL = Lp ? Math.min(GEO_BAR.folgaCorpo + Lr / 2, d3(Lp.t1.p1, Lp.t1.p2) / 2) : 0;
+    function ladraoNaLimpeza() {
+      if (!Lp || Lp.d == null) return null;
+      var d = Lp.d, kJ = kRegL + Lr / 2 + mNo + rX + GEO_BAR.folgaCorpo, Lt = d3(Lp.t1.p1, Lp.t1.p2);
+      if (kJ > Lt - mNo - rL2) return null;
+      var Q = P3(Lp.t1.p1.x + d.x * kJ, Lp.t1.p1.y, Lp.t1.p1.z + d.z * kJ), Rf = Rface + rX;
+      var X0 = P3(cx.c.x + d.x * Rf, yX, cx.c.z + d.z * Rf), Lh = d2(X0, Q), X1 = P3(Q.x, r4(yX - decl * Lh), Q.z);
+      if (X1.y - Q.y < mNo + rX + rL2 || Lh < mNo) return null;
+      if (conflito(X0, X1, rX, ignCaixa) || conflito(X1, Q, rX, function (Tq) { return Tq.id === Lp.t1.id; })) return null;
+      /* o tê: a linha da limpeza vira dois trechos no ponto Q (o registro fica no primeiro) */
+      var p2v = Lp.t1.p2, t1b = T("limpeza", "agua_fria", dnL, Q, p2v, { aplicacao: "reservacao" });
+      Lp.t1.p2 = Q; Lp.t1b = t1b;
+      novos.forEach(function (nv) { if (nv.id === Lp.t1.id) nv.b = Q; });
+      novos.push({ a: Q, b: p2v, r: rL2, sistema: "agua_fria", id: t1b.id });
+      var x1 = T("extravasor", "agua_fria", dnX, X0, X1, { aplicacao: "reservacao", continua: "p1", saidaLivre: "extravasor da caixa " + cx.id + " (entra na limpeza)" }), x2 = T("extravasor", "agua_fria", dnX, X1, Q, { aplicacao: "reservacao" });
+      novos.push({ a: X0, b: X1, r: rX, sistema: "agua_fria", id: x1.id }); novos.push({ a: X1, b: Q, r: rX, sistema: "agua_fria", id: x2.id });
+      Lp.t2.saidaLivre = "limpeza e extravasor da caixa " + cx.id;
+      return { t1: x1, t2: x2, d: d, fim: Lp.fim, junto: true };
+    }
+    var X = ladraoNaLimpeza() || saidaLivre("extravasor", yX, rX, dnX, "extravasor da caixa " + cx.id, decl);
     if (X) { ops.push(X.t1); ops.push(X.t2); }
     else pend("bar.extravasor", nome + ": o extravasor não acha saída livre para fora da edificação (tubo ou equipamento no caminho) — lance à mão (DN ≥ " + dnE + ", saída visível; Tigre p.74/79)", [cx.id]);
     if (Lp) {
-      ops.push(Lp.t1); ops.push(Lp.t2);
-      var kL = Math.min(GEO_BAR.folgaCorpo + Lr / 2, d3(Lp.t1.p1, Lp.t1.p2) / 2), dL = Lp.d;
-      var rgL = { op: "acessorio", id: novoId("rg-limpeza"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: Lp.t1.id, novoId: Lp.t1.id + "b", x: r4(Lp.t1.p1.x + dL.x * kL), y: Lp.t1.p1.y, z: r4(Lp.t1.p1.z + dL.z * kL), comprimento: Lr, bar: cx.id, barParte: "registro_limpeza" };
+      ops.push(Lp.t1); if (Lp.t1b) ops.push(Lp.t1b); ops.push(Lp.t2);
+      var kL = kRegL, dL = Lp.d;   /* medido antes do tê do extravasor (a linha inteira da limpeza) */
+      var rgL = { op: "acessorio", id: novoId("rg-limpeza"), famId: RG_FAM, tipoId: tipoRg, trecho: Lp.t1.id, novoId: Lp.t1.id + "b", x: r4(Lp.t1.p1.x + dL.x * kL), y: Lp.t1.p1.y, z: r4(Lp.t1.p1.z + dL.z * kL), comprimento: Lr, bar: cx.id, barParte: "registro_limpeza" };
       var gL = BIC() && BIC().giroPara ? BIC().giroPara({ x: dL.x, y: 0, z: dL.z }, { x: 0, y: 1, z: 0 }) : 0; if (gL) rgL.giro = gL;
       ops.push(rgL);
     } else pend("bar.limpeza", nome + ": a limpeza não acha saída livre (tubo ou equipamento no caminho junto da base) — lance à mão com registro perto da saída (NBR 5626:2020 6.5.9.1)", [cx.id]);
-    if (X || Lp) pend("bar.descarga", nome + ": extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
-      [X ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
+    if (X || Lp) pend("bar.descarga", nome + ": extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
+      [X && !X.junto ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
     /* ALIMENTAÇÃO: o toco da entrada (registro) e a espera do alimentador predial */
     var opsAl = [];
     if (cx.E) {
@@ -636,7 +715,7 @@
         if (E1.y - E2.y < TOL) { tE.continua = "p1"; tE.saidaLivre = "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)"; }
         opsAl.push(tE);
         var gE = BIC() && BIC().giroPara ? BIC().giroPara({ x: -ve.x, y: 0, z: -ve.z }, { x: 0, y: 1, z: 0 }) : 0;
-        var rgE = { op: "acessorio", id: novoId("rg-alimentacao"), famId: "ra-registro-gaveta", tipoId: tipoRg, trecho: tE.id, novoId: tE.id + "b", x: r4((E0.x + E1.x) / 2), y: E0.y, z: r4((E0.z + E1.z) / 2), comprimento: Lr, bar: cx.id, barParte: "registro_alimentacao" };
+        var rgE = { op: "acessorio", id: novoId("rg-alimentacao"), famId: RG_FAM, tipoId: tipoRg, trecho: tE.id, novoId: tE.id + "b", x: r4((E0.x + E1.x) / 2), y: E0.y, z: r4((E0.z + E1.z) / 2), comprimento: Lr, bar: cx.id, barParte: "registro_alimentacao" };
         if (gE) rgE.giro = gE;
         opsAl.push(rgE);
         opsAl.forEach(function (o) { ops.push(o); });
@@ -661,6 +740,11 @@
       var pR1 = P3(topo.p.x, topo.p.y, topo.p.z), pR2 = P3(topo.p.x, nivelMax + acima, topo.p.z), rR = raio(topo.o.dn);
       if (pR2.y <= pR1.y + mNo) { aviso("Respiro do " + Aq.nome + " " + hid + ": o ponto mais alto da água quente já está acima do nível máximo da caixa + " + f2(acima) + " m — o respiro não é necessário pela regra do manual", [hid]); return; }
       var cR = conflito(pR1, pR2, rR, function (Tq) { return Tq.id === String(topo.o.id); });
+      /* N23 (26/10/2026): a subida esbarrou — tenta os OUTROS nós na mesma cota mais alta da água quente (o respiro sai de qualquer
+         um deles; com a 2ª saída da válvula o barrilete principal pode passar por cima do primeiro) */
+      if (cR) sai.forEach(function (o) { [o.p1, o.p2].forEach(function (p) { if (!cR || Math.abs(p.y - topo.p.y) > EPS || (Math.abs(p.x - pR1.x) < EPS && Math.abs(p.z - pR1.z) < EPS)) return;
+        var q1 = P3(p.x, p.y, p.z), q2 = P3(p.x, pR2.y, p.z), c2 = conflito(q1, q2, raio(o.dn), function (Tq) { return Tq.id === String(o.id); });
+        if (!c2) { cR = null; pR1 = q1; pR2 = q2; rR = raio(o.dn); topo = { p: p, o: o }; } }); });
       if (cR) { pend("bar.respiro", "Respiro do " + Aq.nome + " " + hid + ": a subida esbarra em " + cR.com + " — lance à mão do ponto mais alto da água quente até " + f2(pR2.y) + " m", [hid, cR.com]); return; }
       var tr = T("respiro", "agua_quente", topo.o.dn, pR1, pR2, { material: topo.o.material, aplicacao: "reservacao", continua: "p2", isolamento: true, saidaLivre: "respiro do " + Aq.nome + " " + hid });
       ops.push(tr); novos.push({ a: pR1, b: pR2, r: rR, sistema: "agua_quente", id: tr.id });
@@ -669,8 +753,14 @@
     });
 
     /* ---------- 8) ORÇAMENTO da caixa (serviços da instância; os da pessoa ficam) */
-    var orc = orcamentoCaixa(cx, { dnSaida: dnSaida, dnX: X ? dnX : null, dnL: Lp ? dnL : null, dnE: cx.E ? dnE : null });
+    var orc = orcamentoCaixa(cx, { dnSaida: dnSaida, dnX: X ? dnX : null, dnL: Lp ? dnL : null, dnE: cx.E ? dnE : null, dnSaida2: opc.saida2 ? opc.saida2.dn : null });
     if (orc.op) ops.push(orc.op);
+    /* N23: os ADAPTADORES COM FLANGE desenhados no DN real (js/hidlouca.js geoReservatorio; antes Ø 52 mm fixo): a instância da caixa
+       guarda DN, ângulo (a partir da saída, no eixo da família) e cota de cada furo. Traçar de novo regrava tudo (o que sumiu volta a 0). */
+    function angLocal(d) { if (!d) return 0; var a = Math.atan2(-d.z, d.x) - cx.rot; while (a > Math.PI) a -= 2 * Math.PI; while (a <= -Math.PI) a += 2 * Math.PI; return r4(a); }
+    ops.push({ op: "instancia", id: cx.id, inst: { Ad_entrada: cx.E ? dnE : 0, Ad_saida: dnSaida, Ad_saida2: opc.saida2 ? opc.saida2.dn : 0, Ang_saida2: opc.saida2 ? r4(opc.saida2.ang) : 0,
+      Ad_extravasor: X ? dnX : 0, Ang_extravasor: X ? angLocal(X.d) : 0, Y_extravasor: X ? r4(X.t1.p1.y - cx.yb) : 0,
+      Ad_limpeza: Lp ? dnL : 0, Ang_limpeza: Lp ? angLocal(Lp.d) : 0, Y_limpeza: Lp ? r4(Lp.t1.p1.y - cx.yb) : 0 }, bar: cx.id, barParte: "adaptadores" });
     orc.pendencias.forEach(function (p) { pend(p.chave, p.texto, [cx.id]); });
 
     var nCol = folhas.filter(function (l) { return res.esperasLigadas.indexOf(l.trecho) >= 0; }).length;
@@ -692,8 +782,8 @@
     else out.pendencias.push({ chave: "bar.orc_caixa", texto: "Caixa d'água " + cx.id + ": sem a composição SINAPI do tipo (família sem ficha do fabricante) — use a hid-caixa-dagua do catálogo ou escolha a composição em Propriedades › Orçamento" });
     function adaptador(dn, onde) { if (dn == null) return; var c = SINAPI_CAIXA.adaptador.cod[String(dn)]; if (c) add(c, "adaptador com flange DN " + dn + " (" + onde + ")", 1); else out.pendencias.push({ chave: "bar.orc_adaptador", texto: "Caixa d'água " + cx.id + ": adaptador com flange DN " + dn + " (" + onde + ") sem composição SINAPI conferida" }); }
     function furo(dn, onde) { if (dn == null) return; var ks = Object.keys(SINAPI_CAIXA.furo.cod).map(Number).sort(function (a, b) { return a - b; }).filter(function (k) { return k >= dn; }); if (ks.length) add(SINAPI_CAIXA.furo.cod[String(ks[0])], "furo Ø " + ks[0] + " mm na caixa (" + onde + ")", 1); else out.pendencias.push({ chave: "bar.orc_furo", texto: "Caixa d'água " + cx.id + ": furo para DN " + dn + " (" + onde + ") sem composição SINAPI" }); }
-    adaptador(d.dnSaida, "saída"); adaptador(d.dnX, "extravasor"); adaptador(d.dnL, "limpeza");
-    furo(d.dnSaida, "saída"); furo(d.dnX, "extravasor"); furo(d.dnL, "limpeza"); furo(d.dnE, "entrada da boia");
+    adaptador(d.dnSaida, "saída"); adaptador(d.dnSaida2, "2ª saída, válvula de descarga"); adaptador(d.dnX, "extravasor"); adaptador(d.dnL, "limpeza");
+    furo(d.dnSaida, "saída"); furo(d.dnSaida2, "2ª saída, válvula de descarga"); furo(d.dnX, "extravasor"); furo(d.dnL, "limpeza"); furo(d.dnE, "entrada da boia");
     if (d.dnE != null) { var bE = bit[String(d.dnE)], cb = bE ? SINAPI_CAIXA.boia.cod[bE] : null; if (cb) add(cb, "torneira de boia " + bE + "\"", 1); else out.pendencias.push({ chave: "bar.orc_boia", texto: "Caixa d'água " + cx.id + ": torneira de boia para DN " + d.dnE + " sem composição SINAPI conferida" }); }
     var deles = arr(cx.f && cx.f.servicos).filter(function (s) { return txt(s.rotulo).indexOf(PREFIXO_ORC) !== 0; });
     out.itens = itens;

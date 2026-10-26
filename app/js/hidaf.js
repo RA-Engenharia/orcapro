@@ -499,10 +499,13 @@
     var tomada = {};
     (function () {
       if (rede) return;
-      var n0 = src, toco = 0, desceu = false, cand = [], guarda = 0;
       function comConsumo(nid) { return (filhos[nid] || []).filter(function (eid) { return acc[G.arestas[eid].para] && acc[G.arestas[eid].para].nPontos > 0; }); }
+      /* N23 (26/10/2026): a caixa com 2ª SAÍDA (coluna exclusiva da válvula de descarga, js/hidbarrilete.js) tem DOIS ramos com consumo
+         saindo da fonte — cada saída é a sua tomada (antes a cadeia parava na fonte e nenhuma das duas era isenta). Com uma saída, igual. */
+      comConsumo(src).forEach(function (eid0) {
+      var n0 = src, toco = 0, desceu = false, cand = [], guarda = 0, prox = eid0;
       while (guarda++ <= G.ordemA.length) {
-        var fs = comConsumo(n0); if (fs.length !== 1) break;
+        var fs = prox != null ? [prox] : comConsumo(n0); prox = null; if (fs.length !== 1) break;
         var e1 = G.arestas[fs[0]], dy = G.nos[e1.para].y - G.nos[e1.de].y;
         if (e1.tipo === "acessorio") { /* o registro na tomada: passa */ }
         else if (e1.vertical && dy < 0) desceu = true;
@@ -513,6 +516,7 @@
       }
       /* n0 = o 1º nó FORA da tomada (o início do barrilete): os de antes dele são tomada — desde que a cadeia tenha descido */
       if (desceu) cand.forEach(function (c) { if (c.no !== src) tomada[c.no] = 1; });
+      });
     })();
     /* ⚠ SEM o nível d'água informado, o nível adotado é a própria cota da saída (o mais desfavorável): no toco DEITADO nessa cota a
        "pressão" sai menos a perda de entrada (alguns milímetros) — artefato da premissa (com o nível na saída a saída nem trabalha

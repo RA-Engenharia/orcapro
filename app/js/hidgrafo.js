@@ -106,7 +106,7 @@
       var ix = idxT[trechoId]; if (!ix) return null;
       return noDe[dist(pts[ix[0]].p, q) <= dist(pts[ix[1]].p, q) ? ix[0] : ix[1]];
     }
-    var pecaDe = {}, aparelhoDe = {}, faces = {}, pecaFam = {}, pecaFamDim = {}, equipNo = {};
+    var pecaDe = {}, aparelhoDe = {}, faces = {}, pecaFam = {}, pecaFamDim = {}, equipNo = {}, saida2De = {};
     /* PRESSURIZAÇÃO (js/hidpressao.js, 18/10/2026): bomba e união são EQUIPAMENTO EM LINHA — os dois bocais viram uma
        ARESTA (com ganho da curva, no HidAF), nunca dois "aparelhos" soltos que consumiriam água */
     var HPZ = dep("HidPressao", "./hidpressao.js");
@@ -115,10 +115,16 @@
       var pf = lg.tipo === "aparelho" ? pecaDaFamilia(famId[lg.famInst], tipoDe[lg.famInst]) : null;
       if (pf) { pecaFam[lg.famInst] = pf; pecaFamDim[lg.famInst] = dimDaFamilia(famId[lg.famInst], tipoDe[lg.famInst]); if (pecaDe[lg.famInst] == null) pecaDe[lg.famInst] = n; else une(pecaDe[lg.famInst], n); }
       else if (lg.tipo === "peca") { if (pecaDe[lg.alvo] == null) pecaDe[lg.alvo] = n; else une(pecaDe[lg.alvo], n); }
+      else if (lg.tipo === "aparelho" && /:saida2$/.test(String(lg.alvo))) (saida2De[lg.famInst] = saida2De[lg.famInst] || []).push(n);
       else if (lg.tipo === "aparelho" && HPZ && HPZ.equipamento(famId[lg.famInst])) (equipNo[lg.famInst] = equipNo[lg.famInst] || {})[String(lg.alvo).slice(String(lg.famInst).length + 1)] = n;
       else if (lg.tipo === "aparelho") aparelhoDe[n] = { conector: lg.alvo, famInst: lg.famInst, famId: famId[lg.famInst] || null, cid: String(lg.alvo).slice(String(lg.famInst).length + 1) };
       else if (lg.tipo === "acessorio") (faces[lg.famInst] = faces[lg.famInst] || []).push({ no: n, face: String(lg.alvo).slice(-1) });
     });
+
+    /* N23 (26/10/2026): a 2ª SAÍDA da caixa (coluna exclusiva da válvula de descarga, js/hidbarrilete.js) sai da MESMA lâmina d'água
+       que a saída: o nó dela é o da saída (a fonte do cálculo continua uma só e a perda entre as duas é zero — é a própria caixa) */
+    Object.keys(saida2De).forEach(function (fi) { var ns = Object.keys(aparelhoDe).filter(function (k) { return aparelhoDe[k].famInst === fi && aparelhoDe[k].cid === "saida"; })[0];
+      if (ns != null) saida2De[fi].forEach(function (n2) { une(Number(ns), n2); }); });
 
     /* 2) nós finais */
     var NOS = {}, ordemN = [];

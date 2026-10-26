@@ -483,6 +483,10 @@
         { id: "entrada", nome: "Entrada (alimentação, no corpo)", sistema: "agua_fria", dn: "DN_entrada", x: "-(" + r.R + "*" + r.kE + " + 0.056)", y: "(" + r.B + ")*0.86", z: "0" },   /* hid:ok adaptador desenhado */
         { id: "saida", nome: "Saída (consumo, na base)", sistema: "agua_fria", dn: "DN_saida", x: r.R + " + 0.026", y: "0.03", z: "0" }   /* hid:ok adaptador desenhado */
       ];
+      /* N23 (26/10/2026): a 2ª saída (coluna exclusiva da válvula de descarga) — só existe quando o Traçar a grava (Ad_saida2 > 0), no
+         mesmo raio e cota da saída, girada de Ang_saida2. O cálculo a trata como o mesmo nó da saída (js/hidgrafo.js) */
+      if (e.id !== "hid-cisterna") e.conectores.push({ id: "saida2", nome: "2ª saída (válvula de descarga)", sistema: "agua_fria", dn: "Ad_saida2", visivel: "Ad_saida2 > 0",
+        x: "(" + r.R + " + 0.026)*cos(Ang_saida2*57.2957795)", y: "0.03", z: "-(" + r.R + " + 0.026)*sen(Ang_saida2*57.2957795)" });   /* hid:ok rad → graus (as fórmulas da família usam graus) */
     });
   })();
 
@@ -828,6 +832,15 @@
   function DESC(re, sim, nao) { return function (it) { return { v: re.test(txt(it.descricao)) ? sim : nao, origem: "catalogo" }; }; }
   var METAIS = X("Com_metais", "simnao", true, "Instalação", "Desenha os metais, a válvula, o sifão e os engates (desligue quando a torneira/o sifão for outra família)");
   var TAMPA = X("Tampa_aberta", "simnao", true, "Instalação", "Tampa do assento levantada (padrão: sim — a vista de cima mostra a abertura do assento, não um bloco)");
+  /* N23 (26/10/2026): os ADAPTADORES COM FLANGE da caixa no DN real (antes Ø 52 mm fixo). Quem grava é o Traçar automaticamente
+     (js/hidbarrilete.js); 0 = DN 25 na entrada/saída e a peça não desenhada no extravasor, na limpeza e na 2ª saída. Ângulo em
+     radianos a partir da saída (o eixo +X da família); cota em m acima da base. */
+  var GA = "Adaptadores (Traçar)";
+  var ADAPT_X = [X("Ad_entrada", "numero", 0, GA, "DN do adaptador da entrada (boia), mm"), X("Ad_saida", "numero", 0, GA, "DN do adaptador da saída, mm"),
+    X("Ad_saida2", "numero", 0, GA, "DN da 2ª saída (coluna exclusiva da válvula de descarga), mm; 0 = sem"), X("Ang_saida2", "numero", 0, GA, "Ângulo da 2ª saída (rad, a partir da 1ª)"),
+    X("Ad_extravasor", "numero", 0, GA, "DN do adaptador do extravasor (ladrão), mm; 0 = sem"), X("Ang_extravasor", "numero", 0, GA, "Ângulo do extravasor (rad, a partir da saída)"), X("Y_extravasor", "numero", 0, GA, "Cota do eixo do extravasor acima da base (m)"),
+    X("Ad_limpeza", "numero", 0, GA, "DN do adaptador da limpeza, mm; 0 = sem"), X("Ang_limpeza", "numero", 0, GA, "Ângulo da limpeza (rad, a partir da saída)"), X("Y_limpeza", "numero", 0, GA, "Cota do eixo da limpeza acima da base (m)")];
+  ADAPT_X.forEach(function (x) { x.instancia = true; });   /* de cada caixa (o Traçar grava na instância), não do tipo */
   /* cada família → { g: gerador, p: {chave: fórmula}, env: caixa de reserva, x: parâmetros extras } */
   var GERADA = {
     "hid-bacia-caixa-acoplada": { g: "bacia_caixa", p: { L: "Largura", C: "Comprimento", Hb: "Altura_borda", Ht: "Altura_total", Pc: "Prof_caixa", Ep: "Esgoto_parede", Aa: "Agua_altura", Al: "Agua_lateral", aberta: "Tampa_aberta", metais: "Com_metais" },
@@ -866,13 +879,13 @@
     "hid-caixa-gordura": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
     "hid-caixa-inspecao": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
     "hid-caixa-areia": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
-    "hid-caixa-dagua": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "Diametro_corpo", Db: "Diametro_base", Dt: "0", tipo: "0" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
-      x: [G("Altura_corpo", 0, [0.2, 4], N("altura_sem_tampa_mm"), "Altura sem a tampa (B da ficha); 0 = proporção do 1000 L"), G("Diametro_corpo", 0, [0.3, 4], N("diametro_sem_tampa_mm"), "Diâmetro sem a tampa (D da ficha); 0 = proporção"),
-        G("Diametro_base", 0, [0.3, 4], N("diametro_base_mm"), "Diâmetro da base (E da ficha); 0 = proporção")] },
+    "hid-caixa-dagua": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "Diametro_corpo", Db: "Diametro_base", Dt: "0", tipo: "0", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
+      x: ADAPT_X.concat([G("Altura_corpo", 0, [0.2, 4], N("altura_sem_tampa_mm"), "Altura sem a tampa (B da ficha); 0 = proporção do 1000 L"), G("Diametro_corpo", 0, [0.3, 4], N("diametro_sem_tampa_mm"), "Diâmetro sem a tampa (D da ficha); 0 = proporção"),
+        G("Diametro_base", 0, [0.3, 4], N("diametro_base_mm"), "Diâmetro da base (E da ficha); 0 = proporção")]) },
     "hid-cisterna": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "1" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
       x: [G("Altura_corpo", 0, [0.2, 4], N("altura_corpo_mm"), "Altura do corpo sem a tampa; 0 = proporção"), G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")] },
-    "hid-reservatorio-tanque": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "0", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "2" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
-      x: [G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_inspecao_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")] },
+    "hid-reservatorio-tanque": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "0", Dc: "0", Db: "0", Dt: "Diametro_tampa", tipo: "2", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
+      x: ADAPT_X.concat([G("Diametro_tampa", 0, [0.1, 2], N("diametro_tampa_inspecao_mm"), "Diâmetro da tampa de inspeção; 0 = proporção")]) },
     "hid-bomba": { g: "bomba", p: { C: "Comprimento", W: "Largura", H: "Altura" }, env: ["0", "0", "0", "Comprimento", "Altura", "Largura"], x: [] },
     "hid-base-caixa": { g: "base_caixa", p: { L: "Lado", H: "Altura", sp: "Secao_pilar", bv: "Base_viga", hv: "Altura_viga", bb: "Base_barrote", hb: "Altura_barrote", nb: "N_barrotes", et: "Espessura_tablado", met: "se(Metalica; 1; 0)" },
       env: ["0", "0", "0", "Lado", "Altura", "Lado"], x: [] },
@@ -1137,7 +1150,7 @@
       var def = g.def, r = g.le ? lerParam(g, null, e.id, "") : null;
       if (r && r.v != null && (g.grupo === "Instalação" || g.ehDN)) def = r.v;               /* padrão da família = valor da regra de instalação do catálogo */
       if (seen[g.nome]) return; seen[g.nome] = 1;
-      ps.push({ nome: g.nome, tipoDado: g.tipoDado, escopo: g.grupo === "Instalação" ? "instancia" : "tipo", valor: def, grupo: g.grupo, descricao: g.desc });
+      ps.push({ nome: g.nome, tipoDado: g.tipoDado, escopo: g.grupo === "Instalação" || g.instancia ? "instancia" : "tipo", valor: def, grupo: g.grupo, descricao: g.desc });
       if (g.semConferir && g.grupo === "Dimensões") ps[ps.length - 1].soNumaOrientacao = true;   /* FRENTE H6: a cota do boiler que só vale no vertical (Altura) ou no horizontal (Comprimento) — o tipo da outra orientação não a tem */
     });
     arr(e.extraDados).forEach(function (x) { ps.push({ nome: x[0], tipoDado: "numero", escopo: "tipo", valor: 0, grupo: GRUPO, descricao: x[2] + " (0 = o catálogo não informa)" }); });

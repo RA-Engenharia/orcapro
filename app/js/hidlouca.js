@@ -902,10 +902,22 @@
     }
     partes.unshift(co, tp);
     /* conexões: adaptador com flange na saída (embaixo, lado +X) e na entrada (em cima, lado −X) */
-    var cn = parte("conexoes", "Adaptadores com flange", PVC, true), rf = 0.026;
-    var cil = tipo === 1 || tipo === 2, rS = cil ? R * 0.96 : Rb * 1.03, rE = cil ? R * 0.96 : R * 0.97;
-    torno(cn.m, [[0.032, 0], [0.032, 0.01], [rf, 0.012], [rf, R - rS + 0.03]], q.n, { c: [rS - 0.004, rf + 0.004, 0], eixo: [1, 0, 0] });
-    torno(cn.m, [[0.028, 0], [0.028, 0.01], [0.02, 0.012], [0.02, 0.06]], q.n, { c: [-rE + 0.004, B * 0.86, 0], eixo: [-1, 0, 0] });
+    /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério: "o nosso está saindo com 50 ou 60 mm"): o adaptador era desenhado com
+       Ø 52 mm fixo em qualquer caixa. Agora o corpo e a flange seguem o DN que o Traçar automaticamente (js/hidbarrilete.js) grava na
+       instância (Ad_*; 0 = o DN 25 da entrada/saída padrão, e extravasor/limpeza/2ª saída não desenhados). A flange fica encostada na
+       parede da caixa e o corpo sai até a face externa (onde o tubo começa). */
+    var cn = parte("conexoes", "Adaptadores com flange", PVC, true);
+    var cil = tipo === 1 || tipo === 2, rS = cil ? R * 0.96 : Rb * 1.03, rE = cil ? R * 0.96 : R * 0.97, Rext = C / 2 + 0.004;
+    function adapt(dn, ang, y, r0, r1) {
+      var rb = dn / 2000 + 0.0035, rfl = rb + 0.008, c = Math.cos(ang), s = -Math.sin(ang);   // hid:ok parede do adaptador e aba da flange (desenho)
+      torno(cn.m, [[rfl, 0], [rfl, 0.008], [rb, 0.01], [rb, Math.max(0.03, r1 - r0)]], q.n, { c: [c * (r0 - 0.004), y, s * (r0 - 0.004)], eixo: [c, 0, s] });
+    }
+    var dS = P.aS > 0 ? P.aS : 25, dE = P.aE > 0 ? P.aE : 25;   // hid:ok DN 25 (3/4") = o padrão da entrada e da saída sem o Traçar
+    adapt(dS, 0, 0.03, rS, R + 0.03);   // hid:ok 0,03 = a cota do conector "saida" (js/hidfamilias.js)
+    adapt(dE, Math.PI, B * 0.86, rE, rE + 0.06);
+    if (P.a2 > 0) adapt(P.a2, P.g2 || 0, 0.03, rS, R + 0.03);   // hid:ok a 2ª saída na cota da 1ª
+    if (P.aX > 0 && P.yX > 0) adapt(P.aX, P.gX || 0, P.yX, R * 0.96, Rext);
+    if (P.aL > 0 && P.yL > 0) adapt(P.aL, P.gL || 0, P.yL, cil ? R * 0.96 : Rb, Rext);
     partes.push(cn);
     return partes;
   }
