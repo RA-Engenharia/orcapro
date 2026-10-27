@@ -129,6 +129,7 @@
     sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>',
     avancar: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
     elevar: '<path d="M12 17V4"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/>',   /* ELEVAR (js/bimelevarui.js): a seta sobe da linha do nível */
+    apoiar: '<path d="M12 3v10"/><path d="m8 9 4 4 4-4"/><path d="M3 21h18"/><path d="M5 17h14"/>',   /* APOIAR EM… (js/bimapoiarui.js): a seta desce até a superfície */
     copiar: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
 
     /* ---------------------------------------------------------------

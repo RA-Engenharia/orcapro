@@ -3653,6 +3653,106 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { p: [pl.x, pl.y, pl.z], uid: uid, chave: el ? (el.chave || '') : '', nome: el ? (el.familia || el.nome || el.tipo || '') : '', tipo: ud.tipo || '' };
   }
   S._pontoNaTela = pontoNaTela;
+
+  /* =====================================================================
+   * APOIAR EM… (js/bimapoiar.js + js/bimapoiarui.js, 27/10/2026) — a CENA para a conta do motor puro.
+   * Pedido do Rogério: clicar na caixa d'água, clicar onde ela apoia, e ela desce (ou sobe) até esse apoio.
+   *   · apoiarCaixa(uids) .. a caixa 3D da peça, pela MALHA (a que se vê), em coordenadas do modelo: { min, max, n };
+   *   · apoiarRaios(pts) ... raios VERTICAIS para baixo em cada (x, z): tudo o que atravessam, do alto para o baixo —
+   *                          [{ x, z, hits: [{ y, uid }] }]. Quem escolhe o elemento é o motor (só o clicado conta);
+   *   · fantasma ........... a silhueta da peça (as mesmas malhas, num material translúcido) deslocada de dy, na prévia.
+   * ⚠ O raio testa as DUAS faces: o telhado e o forro do editor nem sempre têm a normal virada para cima, e um raio de cima
+   *   que "atravessa" a água do telhado sem acertar daria a cota da laje de baixo — a peça entraria no telhado. O lado do material
+   *   é trocado só durante a chamada e devolvido (nada é desenhado nesse meio tempo).
+   * ===================================================================== */
+  var _apRay = new THREE.Raycaster(), apoGrp = new THREE.Group(), apoMat = null, apoLin = null;
+  apoGrp.userData.marcador = true; scene.add(apoGrp);
+  function apoMalhas(filtro) {
+    var out = [];
+    cadaMalha(function (m) {
+      if (!m || !m.isMesh || !m.geometry || (m.userData && m.userData.marcador)) return;
+      if (!visivelParaRaio(m)) return;
+      if (filtro && !filtro(m)) return;
+      out.push(m);
+    });
+    return out;
+  }
+  /* a caixa de uma malha em coordenadas do MODELO (a matriz da malha já inclui o modelRoot: desfaz-se com a inversa dele) */
+  function apoCaixaMalha(m, inv) {
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    if (!m.geometry.boundingBox) return null;
+    m.updateWorldMatrix(true, false);
+    return new THREE.Box3().copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+  }
+  S._apoiarCaixa = function (uids) {
+    if (!S || !S.alive || !modelRoot) return null;
+    modelRoot.updateMatrixWorld(true);
+    var set = {}; (uids || []).forEach(function (u) { set[u] = 1; });
+    var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), bx = new THREE.Box3(), n = 0;
+    apoMalhas(function (m) { return set[uidDeMalha(m)]; }).forEach(function (m) {
+      var b = apoCaixaMalha(m, inv); if (!b || b.isEmpty() || !isFinite(b.min.y) || !isFinite(b.max.y)) return;
+      bx.union(b); n++;
+    });
+    return n ? { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z], n: n } : null;
+  };
+  /* pts = [{x, z}] (modelo); o.soUid = só as malhas desse elemento (a prévia, que já sabe qual é a superfície) */
+  S._apoiarRaios = function (pts, o) {
+    o = o || {};
+    if (!S || !S.alive || !modelRoot) return [];
+    modelRoot.updateMatrixWorld(true);
+    var so = o.soUid || null, alvos = apoMalhas(function (m) { return !so || uidDeMalha(m) === so; });
+    var vazio = (pts || []).map(function (p) { return { x: p.x, z: p.z, hits: [] }; });
+    if (!alvos.length) return vazio;
+    var mw = modelRoot.matrixWorld, inv = new THREE.Matrix4().copy(mw).invert(), topo = -Infinity;
+    alvos.forEach(function (m) { var b = apoCaixaMalha(m, inv); if (b && !b.isEmpty() && b.max.y > topo) topo = b.max.y; });
+    if (!isFinite(topo)) return vazio;
+    var yTopo = topo + 1, baixo = new THREE.Vector3(0, -1, 0).transformDirection(mw), troca = [];
+    alvos.forEach(function (m) { (Array.isArray(m.material) ? m.material : [m.material]).forEach(function (mt) { if (mt && mt.side !== THREE.DoubleSide) { troca.push([mt, mt.side]); mt.side = THREE.DoubleSide; } }); });
+    try {
+      return (pts || []).map(function (p) {
+        _apRay.set(new THREE.Vector3(p.x, yTopo, p.z).applyMatrix4(mw), baixo); _apRay.far = 1e5; _apRay.layers.mask = ray.layers.mask;
+        var hits = [];
+        _apRay.intersectObjects(alvos, false).forEach(function (h) { hits.push({ y: h.point.clone().applyMatrix4(inv).y, uid: uidDeMalha(h.object) }); });
+        return { x: p.x, z: p.z, hits: hits };
+      });
+    } finally { troca.forEach(function (t) { t[0].side = t[1]; }); }
+  };
+  S._apoiarInfo = function () { return { filhos: apoGrp.children.length, visivel: apoGrp.visible, dyMundo: apoGrp.position.y }; };
+  S._apoiarLimpar = function () {
+    while (apoGrp.children.length) { var c = apoGrp.children[0]; apoGrp.remove(c); if (c.userData && c.userData.proprio && c.geometry) c.geometry.dispose(); }
+    apoGrp.position.set(0, 0, 0); apoGrp.visible = true; apoGrp.updateMatrix();
+  };
+  /* a silhueta da peça (mesma geometria, material de realce criado uma vez) + o contorno da caixa; dy chega depois, a cada movimento */
+  S._apoiarFantasma = function (uids) {
+    S._apoiarLimpar();
+    if (!S || !S.alive || !modelRoot) return 0;
+    modelRoot.updateMatrixWorld(true);
+    if (!apoMat) { apoMat = new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); apoLin = new THREE.LineBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.95 }); }
+    var set = {}; (uids || []).forEach(function (u) { set[u] = 1; });
+    var ms = apoMalhas(function (m) { return set[uidDeMalha(m)]; }).slice(0, 300);
+    ms.forEach(function (m) {
+      m.updateWorldMatrix(true, false);
+      var c = new THREE.Mesh(m.geometry, apoMat);
+      c.matrixAutoUpdate = false; c.matrix.copy(m.matrixWorld); c.renderOrder = 998; c.raycast = function () {}; c.userData.marcador = true; c.frustumCulled = false;
+      apoGrp.add(c);
+    });
+    var cx = S._apoiarCaixa(uids);
+    if (cx) {
+      var eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(cx.max[0] - cx.min[0], cx.max[1] - cx.min[1], cx.max[2] - cx.min[2])), ln = new THREE.LineSegments(eg, apoLin);
+      ln.position.set((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2); ln.updateMatrix();
+      ln.matrix.premultiply(modelRoot.matrixWorld); ln.matrixAutoUpdate = false; ln.renderOrder = 999; ln.raycast = function () {}; ln.userData.marcador = true; ln.userData.proprio = true; ln.frustumCulled = false;
+      apoGrp.add(ln);
+    }
+    apoGrp.visible = false;   /* só aparece quando o cursor está sobre um apoio (S._apoiarDy) */
+    return ms.length;
+  };
+  /* dy no referencial do MODELO (m): o grupo anda o equivalente no mundo (o modelRoot pode ter escala) */
+  S._apoiarDy = function (dy) {
+    var v = +dy; if (!isFinite(v)) { apoGrp.visible = false; return; }   /* sem apoio sob o cursor: a silhueta some */
+    apoGrp.visible = true;
+    var mw = modelRoot.matrixWorld, a = new THREE.Vector3(0, 0, 0).applyMatrix4(mw), b = new THREE.Vector3(0, v, 0).applyMatrix4(mw);
+    apoGrp.position.copy(b.sub(a)); apoGrp.updateMatrix(); apoGrp.updateMatrixWorld(true);
+  };
   /* COLETOR DE CLIQUES — "vou clicando nas peças e o sistema vai juntando"
    * (relatório de peso, e depois o içamento). Diferente do `_aoTocar`, que é
    * de UM toque: o coletor fica ligado até quem ligou desligar.
@@ -6845,6 +6945,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (medir.on || area.on || ang.on || ctec.ativo || cota.on) return false;
     if (S.edit && S.edit.on && S.edit.sub) return false;
     if (S._aoClicarPeca || S._aoMarcarPonto || S._aoTocar) return false;
+    if (S._apoiando) return false;   /* APOIAR EM… (js/bimapoiarui.js): o esquerdo é a escolha do apoio; Esc e Delete não são da seleção */
     return !(fly.on || (xr && xr.on));
   }
   /* FLUIDEZ (17/10/2026): A PEÇA DE INSTALAÇÃO SELECIONADA (tubo, conexão, caixa, acessório). O desenho de precisão
@@ -13619,6 +13720,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     atualizarHud(); notifyModelos(); editSt();
     if (S._prec) S._prec.aposRebuild(st);   /* B3: seleção, cotas temporárias, alças e cotas permanentes */
     try { if (window.BimVaoArr && BimVaoArr.aposRebuild) BimVaoArr.aposRebuild(); } catch (_) {}   /* PORTAS E JANELAS: as cotas da abertura acompanham a op/o desfazer */
+    /* CONECTORES À VISTA (js/biminstcon.js): os "+" e a alça do tubo eram calculados SÓ ao selecionar — depois de Elevar/Apoiar/Mover/Ctrl+Z ficavam no ar, na posição antiga (print do Rogério, 27/10/2026). Refaz a cada reconstrução. */
+    try { if (window.BimInstCon && BimInstCon.atualizar && BimInstCon._uid) BimInstCon.atualizar(); } catch (_) {}
     if (S._selInstRefazer) S._selInstRefazer();   /* FLUIDEZ: o realce da peça de instalação selecionada volta na malha nova */
     if (S._p2d) S._p2d.aposRebuild(st);   /* P2-D: volume do ambiente no 3D, planta 2D e Navegador acompanham */
     if (S._mat) S._mat.aposRebuild(st, edit.modelo);   /* MATERIAIS: a cor e a transparência do material do projeto (js/bimmateriaisui.js) — antes da fase, que meio-tona por cima */
@@ -18895,6 +18998,15 @@ window.BIM = {
   painelXRAberto: function () { return !!(S && S.xrPanel && S.xrPanel.style.display === 'flex'); },
   /* ---- API do visitante (js/rvvisor.js) ---- */
   pontoNaTela: function (x, y) { return S && S._pontoNaTela ? S._pontoNaTela(x, y) : null; },
+  /* ---- APOIAR EM… (js/bimapoiarui.js): a cena para o motor (js/bimapoiar.js) ---- */
+  apoiarCaixa: function (uids) { return S && S._apoiarCaixa ? S._apoiarCaixa(uids) : null; },
+  apoiarRaios: function (pts, o) { return S && S._apoiarRaios ? S._apoiarRaios(pts, o) : []; },
+  apoiarFantasma: function (uids) { return S && S._apoiarFantasma ? S._apoiarFantasma(uids) : 0; },
+  apoiarDy: function (dy) { if (S && S._apoiarDy) S._apoiarDy(dy); },
+  apoiarLimpar: function () { if (S && S._apoiarLimpar) S._apoiarLimpar(); },
+  apoiarInfo: function () { return S && S._apoiarInfo ? S._apoiarInfo() : null; },   /* e2e e suporte: a silhueta está na cena? quanto desloca? */
+  _apoiando: function (on) { if (S) S._apoiando = !!on; },
+  apoiarCanvas: function () { return S && S.renderer ? S.renderer.domElement : null; },
   aoTocar: function (fn) { if (S) S._aoTocar = typeof fn === 'function' ? fn : null; },
   /* coletor de cliques (peso/içamento): fn({uid, chave, nome, tipo, p}) a cada
      clique simples numa peça — ou {uid:''} no vazio — até `coletarCliques(null)` */

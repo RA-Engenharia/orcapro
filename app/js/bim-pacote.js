@@ -2550,6 +2550,90 @@ for (var i = 0; uid && i < els.length; i++) if (els[i].uid === uid) { el = els[i
 return { p: [pl.x, pl.y, pl.z], uid: uid, chave: el ? (el.chave || '') : '', nome: el ? (el.familia || el.nome || el.tipo || '') : '', tipo: ud.tipo || '' };
 }
 S._pontoNaTela = pontoNaTela;
+var _apRay = new THREE.Raycaster(), apoGrp = new THREE.Group(), apoMat = null, apoLin = null;
+apoGrp.userData.marcador = true; scene.add(apoGrp);
+function apoMalhas(filtro) {
+var out = [];
+cadaMalha(function (m) {
+if (!m || !m.isMesh || !m.geometry || (m.userData && m.userData.marcador)) return;
+if (!visivelParaRaio(m)) return;
+if (filtro && !filtro(m)) return;
+out.push(m);
+});
+return out;
+}
+function apoCaixaMalha(m, inv) {
+if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+if (!m.geometry.boundingBox) return null;
+m.updateWorldMatrix(true, false);
+return new THREE.Box3().copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+}
+S._apoiarCaixa = function (uids) {
+if (!S || !S.alive || !modelRoot) return null;
+modelRoot.updateMatrixWorld(true);
+var set = {}; (uids || []).forEach(function (u) { set[u] = 1; });
+var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), bx = new THREE.Box3(), n = 0;
+apoMalhas(function (m) { return set[uidDeMalha(m)]; }).forEach(function (m) {
+var b = apoCaixaMalha(m, inv); if (!b || b.isEmpty() || !isFinite(b.min.y) || !isFinite(b.max.y)) return;
+bx.union(b); n++;
+});
+return n ? { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z], n: n } : null;
+};
+S._apoiarRaios = function (pts, o) {
+o = o || {};
+if (!S || !S.alive || !modelRoot) return [];
+modelRoot.updateMatrixWorld(true);
+var so = o.soUid || null, alvos = apoMalhas(function (m) { return !so || uidDeMalha(m) === so; });
+var vazio = (pts || []).map(function (p) { return { x: p.x, z: p.z, hits: [] }; });
+if (!alvos.length) return vazio;
+var mw = modelRoot.matrixWorld, inv = new THREE.Matrix4().copy(mw).invert(), topo = -Infinity;
+alvos.forEach(function (m) { var b = apoCaixaMalha(m, inv); if (b && !b.isEmpty() && b.max.y > topo) topo = b.max.y; });
+if (!isFinite(topo)) return vazio;
+var yTopo = topo + 1, baixo = new THREE.Vector3(0, -1, 0).transformDirection(mw), troca = [];
+alvos.forEach(function (m) { (Array.isArray(m.material) ? m.material : [m.material]).forEach(function (mt) { if (mt && mt.side !== THREE.DoubleSide) { troca.push([mt, mt.side]); mt.side = THREE.DoubleSide; } }); });
+try {
+return (pts || []).map(function (p) {
+_apRay.set(new THREE.Vector3(p.x, yTopo, p.z).applyMatrix4(mw), baixo); _apRay.far = 1e5; _apRay.layers.mask = ray.layers.mask;
+var hits = [];
+_apRay.intersectObjects(alvos, false).forEach(function (h) { hits.push({ y: h.point.clone().applyMatrix4(inv).y, uid: uidDeMalha(h.object) }); });
+return { x: p.x, z: p.z, hits: hits };
+});
+} finally { troca.forEach(function (t) { t[0].side = t[1]; }); }
+};
+S._apoiarInfo = function () { return { filhos: apoGrp.children.length, visivel: apoGrp.visible, dyMundo: apoGrp.position.y }; };
+S._apoiarLimpar = function () {
+while (apoGrp.children.length) { var c = apoGrp.children[0]; apoGrp.remove(c); if (c.userData && c.userData.proprio && c.geometry) c.geometry.dispose(); }
+apoGrp.position.set(0, 0, 0); apoGrp.visible = true; apoGrp.updateMatrix();
+};
+S._apoiarFantasma = function (uids) {
+S._apoiarLimpar();
+if (!S || !S.alive || !modelRoot) return 0;
+modelRoot.updateMatrixWorld(true);
+if (!apoMat) { apoMat = new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, opacity: 0.42, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }); apoLin = new THREE.LineBasicMaterial({ color: 0xff8a00, depthTest: false, transparent: true, opacity: 0.95 }); }
+var set = {}; (uids || []).forEach(function (u) { set[u] = 1; });
+var ms = apoMalhas(function (m) { return set[uidDeMalha(m)]; }).slice(0, 300);
+ms.forEach(function (m) {
+m.updateWorldMatrix(true, false);
+var c = new THREE.Mesh(m.geometry, apoMat);
+c.matrixAutoUpdate = false; c.matrix.copy(m.matrixWorld); c.renderOrder = 998; c.raycast = function () {}; c.userData.marcador = true; c.frustumCulled = false;
+apoGrp.add(c);
+});
+var cx = S._apoiarCaixa(uids);
+if (cx) {
+var eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(cx.max[0] - cx.min[0], cx.max[1] - cx.min[1], cx.max[2] - cx.min[2])), ln = new THREE.LineSegments(eg, apoLin);
+ln.position.set((cx.min[0] + cx.max[0]) / 2, (cx.min[1] + cx.max[1]) / 2, (cx.min[2] + cx.max[2]) / 2); ln.updateMatrix();
+ln.matrix.premultiply(modelRoot.matrixWorld); ln.matrixAutoUpdate = false; ln.renderOrder = 999; ln.raycast = function () {}; ln.userData.marcador = true; ln.userData.proprio = true; ln.frustumCulled = false;
+apoGrp.add(ln);
+}
+apoGrp.visible = false;
+return ms.length;
+};
+S._apoiarDy = function (dy) {
+var v = +dy; if (!isFinite(v)) { apoGrp.visible = false; return; }
+apoGrp.visible = true;
+var mw = modelRoot.matrixWorld, a = new THREE.Vector3(0, 0, 0).applyMatrix4(mw), b = new THREE.Vector3(0, v, 0).applyMatrix4(mw);
+apoGrp.position.copy(b.sub(a)); apoGrp.updateMatrix(); apoGrp.updateMatrixWorld(true);
+};
 var _ultColeta = null;
 function cliqueColetor(e) {
 var p = pontoNaTela(e.clientX, e.clientY);
@@ -5046,6 +5130,7 @@ function semFerramenta3d() {
 if (medir.on || area.on || ang.on || ctec.ativo || cota.on) return false;
 if (S.edit && S.edit.on && S.edit.sub) return false;
 if (S._aoClicarPeca || S._aoMarcarPonto || S._aoTocar) return false;
+if (S._apoiando) return false;
 return !(fly.on || (xr && xr.on));
 }
 var selInst = [], selInstGrp = new THREE.Group(), selInstMat = null, selInstLin = null;
@@ -10312,6 +10397,7 @@ over.style.display = (S.modelos.length || st.anotacoes.length || (st.eixos && st
 atualizarHud(); notifyModelos(); editSt();
 if (S._prec) S._prec.aposRebuild(st);
 try { if (window.BimVaoArr && BimVaoArr.aposRebuild) BimVaoArr.aposRebuild(); } catch (_) {}
+try { if (window.BimInstCon && BimInstCon.atualizar && BimInstCon._uid) BimInstCon.atualizar(); } catch (_) {}
 if (S._selInstRefazer) S._selInstRefazer();
 if (S._p2d) S._p2d.aposRebuild(st);
 if (S._mat) S._mat.aposRebuild(st, edit.modelo);
@@ -14391,6 +14477,14 @@ restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis()
 abrirXR: function () { if (S && S._toggleXR) S._toggleXR(); },
 painelXRAberto: function () { return !!(S && S.xrPanel && S.xrPanel.style.display === 'flex'); },
 pontoNaTela: function (x, y) { return S && S._pontoNaTela ? S._pontoNaTela(x, y) : null; },
+apoiarCaixa: function (uids) { return S && S._apoiarCaixa ? S._apoiarCaixa(uids) : null; },
+apoiarRaios: function (pts, o) { return S && S._apoiarRaios ? S._apoiarRaios(pts, o) : []; },
+apoiarFantasma: function (uids) { return S && S._apoiarFantasma ? S._apoiarFantasma(uids) : 0; },
+apoiarDy: function (dy) { if (S && S._apoiarDy) S._apoiarDy(dy); },
+apoiarLimpar: function () { if (S && S._apoiarLimpar) S._apoiarLimpar(); },
+apoiarInfo: function () { return S && S._apoiarInfo ? S._apoiarInfo() : null; },
+_apoiando: function (on) { if (S) S._apoiando = !!on; },
+apoiarCanvas: function () { return S && S.renderer ? S.renderer.domElement : null; },
 aoTocar: function (fn) { if (S) S._aoTocar = typeof fn === 'function' ? fn : null; },
 coletarCliques: function (fn) { if (S) S._aoClicarPeca = typeof fn === 'function' ? fn : null; return !!(S && S._aoClicarPeca); },
 coletandoCliques: function () { return !!(S && S._aoClicarPeca); },

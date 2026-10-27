@@ -14707,7 +14707,8 @@ modificar: [
 { id: "desafixar", sub: "desafixar", rotulo: "Desafixar", icone: "destravado", dica: "Solta a peça fixada (atalho UP)." },
 { id: "criar-similar", sub: "similar", rotulo: "Criar\nsimilar", icone: "editar", dica: "Clique numa peça e desenhe outra igual (mesmo tipo e parâmetros): parede e viga com dois cliques, pilar e família com um (atalho CS)." },
 { id: "escala", sub: "escala", rotulo: "Escala", icone: "expandir", dica: "Paredes e vigas: digite o fator na barra de opções, selecione e clique o ponto base — as pontas vão para base + fator × distância (atalho RE)." },
-{ id: "elevar", sub: null, rotulo: "Elevar", icone: "elevar", dica: "Sobe ou desce o que está selecionado: X metros (negativo desce), a base ou o topo num nível com deslocamento, ou o topo da viga no topo do pilar em que ela apoia. As ligadas acompanham (Alt: só a seleção); um Ctrl+Z desfaz (atalho EL)." }
+{ id: "elevar", sub: null, rotulo: "Elevar", icone: "elevar", dica: "Sobe ou desce o que está selecionado: X metros (negativo desce), a base ou o topo num nível com deslocamento, ou o topo da viga no topo do pilar em que ela apoia. As ligadas acompanham (Alt: só a seleção); um Ctrl+Z desfaz (atalho EL)." },
+{ id: "apoiar", sub: null, rotulo: "Apoiar em…", icone: "apoiar", dica: "Clique a peça (ou use a seleção) e depois a superfície onde ela apoia — laje, forro, telhado, piso, estrado, terreno ou outra peça: ela sobe ou desce até a face de baixo encostar, sem mexer em X e Z. No telhado inclinado vale o ponto mais alto sob a peça. A prévia mostra a cota; Esc cancela; um Ctrl+Z desfaz (atalho AE)." }
 ],
 geometria: [
 { id: "juntas-parede", sub: "juntas", rotulo: "Juntas de\nparede", icone: "parede", dica: "Escolha Topo, Meia-esquadria ou Esquadrar na barra de opções e clique perto do canto de duas paredes." },
@@ -75852,6 +75853,7 @@ if (est.acessorios[o.id] && o.id != null) {
 if (o.op === "instAlterar") {
 var ac0 = copia(est.acessorios[o.id]);
 if (o.tipoId !== undefined) ac0.tipoId = txt(o.tipoId);
+if (o.dy !== undefined && isFinite(Number(o.dy)) && ac0.centro) ac0.centro = { x: ac0.centro.x, y: Math.round((ac0.centro.y + Number(o.dy)) * 1e6) / 1e6, z: ac0.centro.z };
 if (o.giro !== undefined) { var gA = ((num(o.giro, 0) % 360) + 360) % 360; if (gA) ac0.giro = gA; else delete ac0.giro; }
 if (!normAcessorio(ac0)) return false;
 est.acessorios[o.id] = ac0; return true;
@@ -141314,6 +141316,7 @@ if (global.MarcenariaUI) global.MarcenariaUI.registrar(reg, self);
 if (global.MarmorariaUI) global.MarmorariaUI.registrar(reg, self);
 if (global.BimIfcConvUI) global.BimIfcConvUI.registrar(reg, self);
 if (global.BimFecharUI) global.BimFecharUI.registrar(reg, self);
+if (global.BimApoiarUI) global.BimApoiarUI.registrar(reg, self);
 if (global.BimElevarUI) global.BimElevarUI.registrar(reg, self);
 function ferr(sub) {
 return function (e) {
@@ -149930,7 +149933,7 @@ var ABA_MODIFICAR = [
 { nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "fechar-cantos", "alternar-uniao"] },
 { nome: "IFC importado", ids: ["converter-ifc"] },
 { nome: "Modificar", ids: ["alinhar", "deslocamento", "espelhar", "mover-preciso", "copiar", "girar",
-"aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "snaps-editor"] },
+"aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "apoiar", "snaps-editor"] },
 { nome: "Ocultar e isolar", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
 { nome: "Similar e grupos", grande: true, ids: ["criar-similar", "criar-grupo", "editar-grupo", "desagrupar", "colar-niveis"] },
 { nome: "Caixa de seleção", ids: ["fx-caixa-selecao"] }
@@ -154153,6 +154156,415 @@ global.BimElevarUI = BimElevarUI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimElevarUI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimapoiar.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) {} }
+return null;
+}
+function EL() { return dep("BimElevar", "./bimelevar.js"); }
+function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function br(v) { return (Math.round(num(v, 0) * 100) / 100).toFixed(2).replace(".", ","); }
+var TOL_INCL = 0.02;
+var TOL_JA = 0.0005;
+var AVISO_INCLINADO = "apoio inclinado: apoiada no ponto mais alto da pegada";
+function pontosPegada(cx, n) {
+if (!cx || !arr(cx.min).length || !arr(cx.max).length) return [];
+var x0 = num(cx.min[0], NaN), x1 = num(cx.max[0], NaN), z0 = num(cx.min[2], NaN), z1 = num(cx.max[2], NaN);
+if (!(fin(x0) && fin(x1) && fin(z0) && fin(z1))) return [];
+n = Math.max(3, Math.min(9, Math.round(num(n, 5))));
+function passos(a, b) { if (b - a < 0.02) return [r4((a + b) / 2)]; var o = [], v; for (var i = 0; i < n; i++) { v = r4(a + (b - a) * i / (n - 1)); if (o.indexOf(v) < 0) o.push(v); } return o; }
+var xs = passos(x0, x1), zs = passos(z0, z1), xm = r4((x0 + x1) / 2), zm = r4((z0 + z1) / 2), out = [{ x: xm, z: zm }];
+xs.forEach(function (x) { zs.forEach(function (z) { if (x === xm && z === zm) return; out.push({ x: x, z: z }); }); });
+return out;
+}
+function pontosFinos(cx, passo) {
+var base = pontosPegada(cx, 9);
+if (!base.length) return base;
+var x0 = Number(cx.min[0]), x1 = Number(cx.max[0]), z0 = Number(cx.min[2]), z1 = Number(cx.max[2]);
+var per = 2 * ((x1 - x0) + (z1 - z0)), pa = Math.max(num(passo, 0.01), per / 1500), vistos = {}, out = base.slice();
+base.forEach(function (p) { vistos[p.x + "|" + p.z] = 1; });
+function add(x, z) { var q = { x: r4(x), z: r4(z) }, k = q.x + "|" + q.z; if (!vistos[k]) { vistos[k] = 1; out.push(q); } }
+var nx = Math.max(1, Math.ceil((x1 - x0) / pa)), nz = Math.max(1, Math.ceil((z1 - z0) / pa)), i;
+for (i = 0; i <= nx; i++) { var x = x0 + (x1 - x0) * i / nx; add(x, z0); add(x, z1); }
+for (i = 0; i <= nz; i++) { var z = z0 + (z1 - z0) * i / nz; add(x0, z); add(x1, z); }
+return out;
+}
+function vizinhos(melhor, passo, cx) {
+var x0 = Number(cx.min[0]), x1 = Number(cx.max[0]), z0 = Number(cx.min[2]), z1 = Number(cx.max[2]), out = [], i, j;
+for (i = -2; i <= 2; i++) for (j = -2; j <= 2; j++) {
+if (!i && !j) continue;
+var x = Math.min(x1, Math.max(x0, melhor.x + i * passo / 2)), z = Math.min(z1, Math.max(z0, melhor.z + j * passo / 2));
+out.push({ x: r4(x), z: r4(z) });
+}
+return { pontos: out, passo: passo / 2 };
+}
+function amostrar(raios, o) {
+o = o || {};
+var fora = {}; arr(o.excluir).forEach(function (u) { fora[String(u)] = 1; });
+var alvo = o.alvo == null ? null : String(o.alvo);
+return arr(raios).map(function (r) {
+var hs = arr(r && r.hits).filter(function (h) { return h && fin(num(h.y, NaN)); }).slice().sort(function (a, b) { return b.y - a.y; });
+var ach = null;
+for (var i = 0; i < hs.length && !ach; i++) {
+var u = String(hs[i].uid == null ? "" : hs[i].uid);
+if (fora[u]) continue;
+if (alvo != null && u !== alvo) continue;
+ach = hs[i];
+}
+return { x: r && r.x, z: r && r.z, y: ach ? r4(ach.y) : null, uid: ach ? String(ach.uid) : null };
+});
+}
+function cotaApoio(amostras, o) {
+o = o || {};
+var ys = arr(amostras).filter(function (a) { return a && fin(a.y); }).map(function (a) { return a.y; });
+var sem = arr(amostras).length - ys.length;
+if (!ys.length) {
+if (fin(num(o.yClique, NaN))) return { ok: true, cota: r4(Number(o.yClique)), usados: 0, sem: sem, spread: 0, inclinado: false, deClique: true, avisos: ["nenhum raio achou a superfície sob a pegada: usei a cota do ponto clicado"], erro: null };
+return { ok: false, cota: null, usados: 0, sem: sem, spread: 0, inclinado: false, deClique: false, avisos: [], erro: "Não achei a superfície sob a peça: clique numa laje, forro, telhado, piso ou outra peça." };
+}
+var ymax = Math.max.apply(null, ys), ymin = Math.min.apply(null, ys), spread = r4(ymax - ymin), inc = spread > TOL_INCL, avisos = [];
+if (inc) avisos.push(AVISO_INCLINADO);
+if (sem > 0 && ys.length) avisos.push(sem + (sem === 1 ? " ponto da pegada fica fora da superfície" : " pontos da pegada ficam fora da superfície"));
+return { ok: true, cota: r4(ymax), usados: ys.length, sem: sem, ymin: r4(ymin), ymax: r4(ymax), spread: spread, inclinado: inc, deClique: false, avisos: avisos, erro: null };
+}
+function rotulo(base, cota) {
+if (!fin(base) || !fin(cota)) return "";
+var dy = r4(cota - base), t = "base a " + br(cota) + " m";
+if (Math.abs(dy) <= TOL_JA) return t + " (já apoiada)";
+return t + " (" + (dy > 0 ? "sobe " : "desce ") + br(Math.abs(dy)) + ")";
+}
+function expandir(estado, ids) {
+var out = [], na = {};
+arr(ids).forEach(function (x) { var s = String(x).replace(/^edit:/, ""); if (!na[s]) { na[s] = 1; out.push(s); } });
+var chaves = {};
+arr(estado && estado.caixas).forEach(function (c) { if (c && c.pronta != null && na[String(c.id)]) chaves[String(c.pronta)] = 1; });
+var n0 = out.length;
+arr(estado && estado.caixas).forEach(function (c) { if (c && c.pronta != null && chaves[String(c.pronta)] && !na[String(c.id)]) { na[String(c.id)] = 1; out.push(String(c.id)); } });
+return { ids: out, expandiu: out.length - n0 };
+}
+function caixaDoEstado(estado, ids) {
+var min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity], n = 0;
+function pt(x, y, z) { min[0] = Math.min(min[0], x); min[1] = Math.min(min[1], y); min[2] = Math.min(min[2], z); max[0] = Math.max(max[0], x); max[1] = Math.max(max[1], y); max[2] = Math.max(max[2], z); }
+var que = {}; arr(ids).forEach(function (i) { que[String(i).replace(/^edit:/, "")] = 1; });
+arr(estado && estado.caixas).forEach(function (c) {
+if (!c || !que[String(c.id)]) return;
+var L = num(c.comprimento, 0) / 2, E = num(c.espessura, 0) / 2, t = num(c.rotY, 0), co = Math.cos(t), si = Math.sin(t);
+var hx = Math.abs(L * co) + Math.abs(E * si), hz = Math.abs(L * si) + Math.abs(E * co), cy = num(c.cy, 0), h = num(c.altura, 0) / 2;
+pt(num(c.cx, 0) - hx, cy - h, num(c.cz, 0) - hz); pt(num(c.cx, 0) + hx, cy + h, num(c.cz, 0) + hz); n++;
+});
+arr(estado && estado.familias).forEach(function (f) {
+if (!f || !que[String(f.id)]) return;
+pt(num(f.x, 0), num(f.y, 0), num(f.z, 0)); n++;
+});
+return n ? { min: min.map(r4), max: max.map(r4), n: n, aproximada: true } : null;
+}
+function planejar(estado, ids, cota, base) {
+var E = EL();
+if (!E) return { ok: false, erro: "O motor do Elevar (js/bimelevar.js) não carregou." };
+if (!fin(num(cota, NaN)) || !fin(num(base, NaN))) return { ok: false, erro: "Sem a cota do apoio ou da base da peça." };
+var ex = expandir(estado, ids), dy = r4(Number(cota) - Number(base));
+if (!ex.ids.length) return { ok: false, erro: "Selecione a peça que vai subir ou descer." };
+var rot = rotulo(Number(base), Number(cota));
+if (Math.abs(dy) <= TOL_JA) return { ok: false, ja: true, dy: 0, ids: ex.ids, rotulo: rot, erro: "A peça já está apoiada nessa cota (base a " + br(cota) + " m)." };
+var plano = E.planoDelta(estado, ex.ids, dy);
+return { ok: !!plano.ok, dy: dy, ids: ex.ids, expandiu: ex.expandiu, plano: plano, rotulo: rot, erro: plano.ok ? null : (plano.erro || "Nada se moveu.") };
+}
+function levarRede(estado, ids, dy, ctx) {
+var out = { ops: [], ajustados: 0, esticados: 0, deslocados: 0, acessorios: 0, avisos: [] }, movidos = {};
+var I = ctx && ctx.I, trechos = arr(estado && estado.instalacoes && estado.instalacoes.trechos);
+if (!I || !fin(dy) || Math.abs(dy) < 1e-6 || !trechos.length) return out;
+var que = {}; arr(ids).forEach(function (x) { que[String(x).replace(/^edit:/, "")] = 1; });
+var TOLC = (num(I.TOL, 0.01) + num(I.TOL_CONECTOR, 0)) * 2, TOL = Math.max(num(I.TOL, 0.01), 0.005), MIN = 0.05, VERT = 0.02;
+function d3(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
+var G = {};
+trechos.forEach(function (t) { G[t.id] = { t: t, p1: { x: t.p1.x, y: t.p1.y, z: t.p1.z }, p2: { x: t.p2.x, y: t.p2.y, z: t.p2.z }, mudou: false, feito: false, pontas: {} }; });
+function vertical(t) { return Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.z - t.p1.z, 2)) <= VERT && Math.abs(t.p2.y - t.p1.y) > VERT; }
+var fila = [];
+arr(estado && estado.familias).forEach(function (f) {
+if (!f || !que[String(f.id)] || !f.famId) return;
+var cs = []; try { cs = I.conectoresDe(ctx.avaliar ? ctx.avaliar(f.famId, f.tipoId, f.inst) : null, { id: f.id, x: f.x, y: f.y, z: f.z, rotY: f.rotY }) || []; } catch (e) { cs = []; }
+cs.forEach(function (k) { fila.push({ x: k.x, y: k.y, z: k.z, tol: TOLC }); });
+});
+function noMeio(q, a, b) {
+var ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }, L2 = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z; if (!(L2 > 1e-12)) return false;
+var s = ((q.x - a.x) * ab.x + (q.y - a.y) * ab.y + (q.z - a.z) * ab.z) / L2, L = Math.sqrt(L2);
+if (s * L <= TOL || (1 - s) * L <= TOL) return false;
+return d3(q, { x: a.x + ab.x * s, y: a.y + ab.y * s, z: a.z + ab.z * s }) <= TOL;
+}
+function andar(t) {
+var g = G[t.id]; if (g.feito) return;
+g.p1 = { x: t.p1.x, y: r4(t.p1.y + dy), z: t.p1.z }; g.p2 = { x: t.p2.x, y: r4(t.p2.y + dy), z: t.p2.z };
+g.pontas.p1 = g.pontas.p2 = true; g.mudou = true; g.feito = true; out.deslocados++; out.ajustados++;
+[t.p1, t.p2].forEach(function (q) {
+fila.push({ x: q.x, y: q.y, z: q.z, tol: TOL });
+trechos.forEach(function (u) {
+var gu = G[u.id]; if (gu.feito || u === t) return;
+if (noMeio(q, u.p1, u.p2)) {
+var yMin = Math.min(u.p1.y, u.p2.y), yMax = Math.max(u.p1.y, u.p2.y), yN = q.y + dy;
+if (vertical(u) && yN > yMin + 0.02 && yN < yMax - 0.02) return;
+andar(u);
+}
+});
+});
+trechos.forEach(function (v) {
+if (G[v.id].feito || v === t) return;
+["p1", "p2"].forEach(function (k) { if (noMeio(v[k], t.p1, t.p2)) fila.push({ x: v[k].x, y: v[k].y, z: v[k].z, tol: TOL }); });
+});
+}
+arr(estado.familias).forEach(function (f) {
+if (!f || !que[String(f.id)]) return;
+var id = String(f.id).replace(/[^A-Za-z0-9_-]/g, "\\$&"), re = new RegExp("^(extravasor|limpeza) da caixa " + id + "(\\W|$)");
+trechos.forEach(function (t) { if (re.test(String(t.saidaLivre || ""))) andar(t); });
+});
+while (fila.length) {
+var n = fila.shift(), tolN = n.tol || TOL;
+arr(estado.instalacoes.acessorios).forEach(function (a) {
+if (!a || movidos[a.id] || !a.a || !a.b) return;
+if (d3(a.a, n) > tolN && d3(a.b, n) > tolN) return;
+movidos[a.id] = 1; out.acessorios++;
+out.ops.push({ op: "instAlterar", id: a.id, dy: dy });
+fila.push({ x: a.a.x, y: a.a.y, z: a.a.z, tol: TOL }); fila.push({ x: a.b.x, y: a.b.y, z: a.b.z, tol: TOL });
+});
+trechos.forEach(function (t) {
+var g = G[t.id], vert = vertical(t);
+if (g.feito && !vert) return;
+["p1", "p2"].forEach(function (k) {
+if ((g.feito && !vert) || g.pontas[k] || d3(t[k], n) > tolN) return;
+var outro = k === "p1" ? "p2" : "p1";
+if (vert) {
+if (g.pontas[outro]) { g[k] = { x: t[k].x, y: r4(t[k].y + dy), z: t[k].z }; g.pontas[k] = true; return; }
+var novoY = t[k].y + dy, comp = Math.abs(novoY - t[outro].y), mesmoLado = (novoY - t[outro].y) * (t[k].y - t[outro].y) > 0;
+if (comp >= MIN && (mesmoLado || /^agua/.test(String(t.sistema)))) {
+g[k] = { x: t[k].x, y: r4(novoY), z: t[k].z }; g.pontas[k] = true; g.mudou = true; g.feito = true; out.esticados++; out.ajustados++; return;
+}
+out.avisos.push("a prumada " + t.id + " ficaria com menos de 5 cm: anda inteira");
+}
+andar(t);
+});
+});
+}
+trechos.forEach(function (t) {
+var g = G[t.id]; if (!g.mudou) return;
+var o = I.opDoTrecho(t); o.p1 = { x: r4(g.p1.x), y: r4(g.p1.y), z: r4(g.p1.z) }; o.p2 = { x: r4(g.p2.x), y: r4(g.p2.y), z: r4(g.p2.z) };
+["juntaIni", "juntaFim", "juntaMotivo", "comentarios", "faseCriada", "faseDemolida", "saidaLivre", "predio", "piscLinha", "tomada", "aparente", "passantes"].forEach(function (k) { if (t[k] != null && t[k] !== "") o[k] = t[k]; });
+out.ops.push(o);
+});
+return out;
+}
+var BimApoiar = {
+TOL_INCL: TOL_INCL, TOL_JA: TOL_JA, AVISO_INCLINADO: AVISO_INCLINADO,
+pontosPegada: pontosPegada, pontosFinos: pontosFinos, vizinhos: vizinhos, amostrar: amostrar, cotaApoio: cotaApoio, rotulo: rotulo,
+expandir: expandir, caixaDoEstado: caixaDoEstado, planejar: planejar, levarRede: levarRede
+};
+global.BimApoiar = BimApoiar;
+if (typeof module !== "undefined" && module.exports) module.exports = BimApoiar;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimapoiarui.js ==== */
+try {
+(function (global) {
+"use strict";
+function B() { return global.BIM || null; }
+function AP() { return global.BimApoiar || null; }
+function EU() { return global.BimElevarUI || null; }
+function arr(v) { return Array.isArray(v) ? v : []; }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) {} }
+var LIMIAR_CLIQUE = 10;
+var INTERVALO_PREVIA = 220;
+var BimApoiarUI = {
+levarRede: true,
+_on: false, _passo: null, _ids: [], _uids: [], _excluir: [], _caixa: null, _down: null, _tPrev: 0, _rot: null, _fn: null, _ultimo: null, _hoverUid: null,
+estado: function () { var b = B(), e = null; try { e = b && b.editarEstado ? b.editarEstado() : null; } catch (x) { e = null; } return e ? e.estado : null; },
+ativo: function () { return this._on; },
+passo: function () { return this._passo; },
+iniciar: function () {
+var b = B(), st = this.estado(), M = AP();
+if (!M || !b || !st || !b.apoiarCanvas || !b.apoiarCanvas()) { status("Abra o editor do modelo (3D) para usar o Apoiar em…."); return false; }
+if (this._on) this._desarmar();
+var eu = EU(), ids = eu && eu.selecao ? eu.selecao() : [];
+this._armar();
+if (ids.length && this._escolher(ids)) return true;
+this._passo = "peca";
+status("Apoiar em…: clique a peça que vai subir ou descer (Esc cancela).");
+return true;
+},
+_escolher: function (ids) {
+var M = AP(), b = B(), st = this.estado();
+var ex = M.expandir(st, ids), uids = ex.ids.map(function (i) { return "edit:" + i; });
+var cx = b.apoiarCaixa(uids);
+if (!cx) { status("Apoiar em…: não achei a peça no 3D (ela está oculta?). Clique outra peça."); return false; }
+this._ids = ex.ids; this._uids = uids; this._caixa = cx;
+var fora = uids.slice(), presos = this._presos(st, ex.ids);
+presos.forEach(function (t) { fora.push("edit:" + t); });
+this._excluir = fora;
+b.apoiarFantasma(uids);
+this._passo = "apoio";
+status("Apoiar em…: clique a superfície onde a peça vai apoiar — laje, forro, telhado, piso ou outra peça (Esc cancela)." + (ex.expandiu ? " O componente vai inteiro (" + ex.ids.length + " partes)." : ""));
+return true;
+},
+_presos: function (st, ids) {
+var AI = global.BimAlinharInst, out = {};
+if (!AI || !AI.alinhar) return [];
+arr(st && st.familias).forEach(function (f) {
+if (!f || ids.indexOf(String(f.id)) < 0 || !f.famId) return;
+try { var inf = AI.alinhar(st, String(f.id), { x: 0, z: 0 }, f); (inf && inf.presos ? inf.presos : []).forEach(function (t) { out[String(t)] = 1; }); } catch (e) {}
+});
+return Object.keys(out);
+},
+avaliar: function (x, y) {
+var b = B(), M = AP(), st = this.estado();
+var p = b.pontoNaTela ? b.pontoNaTela(x, y) : null;
+if (!p || !p.uid) return { ok: false, vazio: true, erro: "Clique numa superfície do modelo." };
+if (this._excluir.indexOf(p.uid) >= 0) return { ok: false, uid: p.uid, erro: "A peça não pode apoiar em si mesma (nem nos tubos ligados a ela): clique em outra superfície." };
+var cx = this._caixa, alvo = { alvo: p.uid, excluir: this._excluir };
+var am = M.amostrar(b.apoiarRaios(M.pontosFinos(cx), { soUid: p.uid }), alvo);
+var r = M.cotaApoio(am, { yClique: p.p && p.p.length > 1 ? p.p[1] : null });
+if (r.ok && !r.deClique && r.spread > M.TOL_INCL) {
+var passo = Math.max(cx.max[0] - cx.min[0], cx.max[2] - cx.min[2]) / 8, volta, melhor;
+for (volta = 0; volta < 4; volta++) {
+melhor = am.filter(function (a) { return a.y === r.cota; })[0]; if (!melhor) break;
+var v = M.vizinhos(melhor, passo, cx); passo = v.passo;
+am = am.concat(M.amostrar(b.apoiarRaios(v.pontos, { soUid: p.uid }), alvo)); r = M.cotaApoio(am, { yClique: r.cota });
+}
+}
+if (!r.ok) return { ok: false, uid: p.uid, erro: r.erro };
+var pl = M.planejar(st, this._ids, r.cota, this._caixa.min[1]);
+return { ok: pl.ok, ja: !!pl.ja, uid: p.uid, nome: p.nome, r: r, pl: pl, texto: pl.rotulo, avisos: r.avisos, erro: pl.ok ? null : pl.erro };
+},
+aplicar: function (x, y, evento) {
+var av = this.avaliar(x, y);
+if (!av.ok) { status("Apoiar em…: " + (av.erro || "não deu para apoiar.")); if (!av.vazio && !av.ja) toast(av.erro || "Não deu para apoiar.", "aviso"); return av; }
+var eu = EU(), E = global.BimElevar, b = B(), st0 = this.estado(), antes = this._presos(st0, this._ids), VU = global.BimVinculosUI;
+var solto = !!(VU && (!VU.ligado() || VU.sozinho(evento)));
+var f = E.opFinal(st0, av.pl.plano, { solto: solto, novoId: eu.novoId, pedido: "Apoiar em…" });
+if (!f.op) { status("Apoiar em…: o editor recusou a mudança."); return { ok: false, erro: "sem op" }; }
+var rede = this.levarRede ? AP().levarRede(st0, this._ids, av.pl.dy, { I: global.BimInst, avaliar: function (a, t, i) { return b.familiaAvaliar(a, t, i); } }) : { ops: [], ajustados: 0, esticados: 0, deslocados: 0, acessorios: 0, avisos: [] };
+var base = f.op.op === "lote" ? f.op.ops.slice() : [f.op], lote = { op: "lote", id: eu.novoId("l"), origem: "modificar", pedido: ("Apoiar em…" + (av.nome ? " " + av.nome : "")).slice(0, 300), ops: base.concat(rede.ops) };
+if (!b.editarLote(lote)) { status("Apoiar em…: o editor recusou a mudança."); return { ok: false, erro: "recusado" }; }
+var res = { ok: true };
+var depois = this._presos(this.estado(), this._ids), pra = antes.filter(function (t) { return depois.indexOf(t) < 0; });
+var nTubos = rede.ops.filter(function (o) { return o.op === "trecho"; }).length;
+var partes = [av.texto + " — Ctrl+Z desfaz"];
+if (nTubos) partes.push(nTubos + (nTubos === 1 ? " tubo ajustado" : " tubos ajustados") + " (" + rede.esticados + " esticaram para absorver o desnível, " + rede.deslocados + " andaram com a peça" + (rede.acessorios ? ", " + rede.acessorios + (rede.acessorios === 1 ? " registro junto" : " registros juntos") : "") + ")");
+if (av.avisos.length) partes.push(av.avisos.join("; "));
+if (pra.length) partes.push(pra.length === 1 ? "1 tubo ligado à peça ficou onde estava" : pra.length + " tubos ligados à peça ficaram onde estavam");
+if (pra.length) partes[partes.length - 1] += ": refaça com o Traçar automaticamente (TA) — o Hidro acusa a ligação até lá";
+var txt = partes.join(" · ") + ".";
+status(txt); if (av.avisos.length || pra.length) toast(txt, "aviso");
+this._ultimo = { ok: true, dy: av.pl.dy, cota: av.r.cota, texto: txt, avisos: av.avisos.slice(), tubosParaTras: pra, tubosAjustados: nTubos, rede: { esticados: rede.esticados, deslocados: rede.deslocados, acessorios: rede.acessorios }, inclinado: av.r.inclinado, uid: av.uid, ids: this._ids.slice() };
+this._desarmar();
+return this._ultimo;
+},
+_armar: function () {
+var self = this, W = global, cv = B().apoiarCanvas();
+this._on = true; this._down = null; this._hoverUid = null;
+try { if (global.BIM && global.BIM._apoiando) global.BIM._apoiando(true); } catch (e0) {}
+this._fn = {
+down: function (e) {
+if (e.button !== 0 || e.target !== cv) return;
+self._down = { x: e.clientX, y: e.clientY, id: e.pointerId };
+e.stopPropagation(); e.preventDefault();
+},
+up: function (e) {
+var d = self._down; if (!d || e.button !== 0 || e.pointerId !== d.id) return;
+self._down = null; e.stopPropagation(); e.preventDefault();
+var dx = e.clientX - d.x, dy = e.clientY - d.y;
+if (dx * dx + dy * dy > LIMIAR_CLIQUE * LIMIAR_CLIQUE) return;
+self._clique(e);
+},
+move: function (e) {
+if (e.target !== cv) { self._esconderRot(); return; }
+var t = Date.now(); if (t - self._tPrev < INTERVALO_PREVIA) { self._seguirRot(e); return; }
+self._tPrev = t; self._previa(e);
+},
+dbl: function (e) { if (e.target === cv) { e.stopPropagation(); e.preventDefault(); } },
+tecla: function (e) {
+if (e.key !== "Escape") return;
+var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
+e.preventDefault(); e.stopPropagation(); self.cancelar();
+}
+};
+W.addEventListener("pointerdown", this._fn.down, true);
+W.addEventListener("pointerup", this._fn.up, true);
+W.addEventListener("pointermove", this._fn.move, true);
+W.addEventListener("dblclick", this._fn.dbl, true);
+W.addEventListener("keydown", this._fn.tecla, true);
+try { cv.style.cursor = "crosshair"; } catch (e1) {}
+},
+_desarmar: function () {
+var W = global, f = this._fn, cv = null;
+try { cv = B() && B().apoiarCanvas ? B().apoiarCanvas() : null; } catch (e0) {}
+if (f) {
+W.removeEventListener("pointerdown", f.down, true); W.removeEventListener("pointerup", f.up, true); W.removeEventListener("pointermove", f.move, true);
+W.removeEventListener("dblclick", f.dbl, true); W.removeEventListener("keydown", f.tecla, true);
+}
+this._fn = null; this._on = false; this._passo = null; this._down = null; this._hoverUid = null;
+try { if (global.BIM && global.BIM._apoiando) global.BIM._apoiando(false); } catch (e1) {}
+try { if (B() && B().apoiarLimpar) B().apoiarLimpar(); } catch (e2) {}
+this._esconderRot();
+try { if (cv) cv.style.cursor = ""; } catch (e3) {}
+},
+cancelar: function () {
+if (!this._on) return false;
+this._desarmar(); status("Apoiar em…: nada mudou."); return true;
+},
+_clique: function (e) {
+var b = B();
+if (this._passo === "peca") {
+var p = b.pontoNaTela ? b.pontoNaTela(e.clientX, e.clientY) : null;
+if (!p || !p.uid) { status("Apoiar em…: clique sobre a peça que vai subir ou descer."); return; }
+if (!/^edit:/.test(p.uid)) { status("Apoiar em…: só as peças criadas no OrçaPRO se movem (esta é do IFC importado)."); toast("Esta peça é do IFC importado e não se move aqui.", "aviso"); return; }
+var id = p.uid.replace(/^edit:/, "");
+try { b.selecionar([p.uid], "trocar"); } catch (e1) {}
+this._escolher([id]);
+return;
+}
+if (this._passo === "apoio") this.aplicar(e.clientX, e.clientY, e);
+},
+_previa: function (e) {
+if (this._passo !== "apoio") { this._esconderRot(); return; }
+var b = B(), av;
+try { av = this.avaliar(e.clientX, e.clientY); } catch (x) { av = { ok: false, erro: "" }; }
+if (av.ok) {
+b.apoiarDy(av.pl.dy);
+this._rotulo(e, av.texto + (av.avisos.length ? "\n" + av.avisos[0] : ""), false);
+} else {
+b.apoiarDy(NaN);
+this._rotulo(e, av.ja ? av.erro : (av.vazio ? "" : av.erro), true);
+}
+},
+_rotulo: function (e, texto, aviso) {
+if (!texto) { this._esconderRot(); return; }
+var d = global.document; if (!d || !d.body) return;
+if (!this._rot) {
+this._rot = d.createElement("div"); this._rot.setAttribute("data-bapo", "rotulo");
+this._rot.style.cssText = "position:fixed;z-index:70;pointer-events:none;background:#0b3b5c;color:#fff;font:600 12px/1.35 sans-serif;padding:4px 8px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.35);white-space:pre;max-width:360px";
+d.body.appendChild(this._rot);
+}
+this._rot.textContent = texto; this._rot.style.background = aviso ? "#8a1c1c" : "#0b3b5c"; this._rot.style.display = "block";
+this._seguirRot(e);
+},
+_seguirRot: function (e) { if (this._rot && this._rot.style.display !== "none") { this._rot.style.left = (e.clientX + 16) + "px"; this._rot.style.top = (e.clientY + 18) + "px"; } },
+_esconderRot: function () { if (this._rot) this._rot.style.display = "none"; },
+registrar: function (reg, G) {
+var self = this;
+reg.apoiar = function () { return self.iniciar(); };
+try { var P = global.BimPrecisao; if (P) { P.ATALHOS_CMD = P.ATALHOS_CMD || {}; if (!P.ATALHOS_CMD.AE) P.ATALHOS_CMD.AE = "apoiar"; } } catch (eA) {}
+return true;
+}
+};
+global.BimApoiarUI = BimApoiarUI;
+if (typeof module !== "undefined" && module.exports) module.exports = BimApoiarUI;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimselinst.js ==== */
 try {
 (function (global) {
@@ -154501,6 +154913,7 @@ var acoes = [
 { a: "mover", r: "Mover", tecla: "MV", off: !(ed && mod) },
 { a: "copiar", r: "Copiar", tecla: "CO", off: !(ed && mod) },
 { a: "elevar", r: "Elevar…", tecla: "EL", n: alvosN, off: !(ed && mod && global.BimElevarUI) },
+{ a: "apoiar", r: "Apoiar em…", tecla: "AE", n: alvosN, off: !(ed && mod && global.BimApoiarUI) },
 { a: "props", r: "Propriedades" + (alvosN > 1 ? " em lote" : "") },
 { a: "trocar-tipo", r: "Trocar tipo/perfil…", off: !ed },
 { a: "inv-fora", r: "Inverter dentro/fora", tecla: "Espaço", off: !(invs.fora) },
@@ -154555,6 +154968,7 @@ if (a === "mostrar") return this.mostrarTodos();
 if (a === "mover") return this.comando("mover-preciso");
 if (a === "copiar") return this.comando("copiar");
 if (a === "elevar") return this.comando("elevar");
+if (a === "apoiar") return this.comando("apoiar");
 if (a === "props") return this.propriedades();
 if (a === "trocar-tipo") return this.trocarTipo();
 if ((a === "inv-fora" || a === "inv-mao") && uidAlvo && global.BimVaoArr && global.BimVaoArr.inverter) return global.BimVaoArr.inverter(a === "inv-fora" ? "fora" : "mao", String(uidAlvo).replace(/^edit:/, ""));

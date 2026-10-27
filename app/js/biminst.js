@@ -494,6 +494,8 @@
       if (o.op === "instAlterar") {
         var ac0 = copia(est.acessorios[o.id]);
         if (o.tipoId !== undefined) ac0.tipoId = txt(o.tipoId);
+        /* APOIAR EM… (js/bimapoiar.js): o registro anda na vertical junto com o tubo em que está (dy em metros, soma na cota do centro) */
+        if (o.dy !== undefined && isFinite(Number(o.dy)) && ac0.centro) ac0.centro = { x: ac0.centro.x, y: Math.round((ac0.centro.y + Number(o.dy)) * 1e6) / 1e6, z: ac0.centro.z };
         if (o.giro !== undefined) { var gA = ((num(o.giro, 0) % 360) + 360) % 360; if (gA) ac0.giro = gA; else delete ac0.giro; }   /* COLOCAÇÃO (js/biminstcolocar.js): Espaço gira o volante em torno do tubo */
         if (!normAcessorio(ac0)) return false;
         est.acessorios[o.id] = ac0; return true;

@@ -1287,7 +1287,9 @@
       { id: "escala", sub: "escala", rotulo: "Escala", icone: "expandir", dica: "Paredes e vigas: digite o fator na barra de opções, selecione e clique o ponto base — as pontas vão para base + fator × distância (atalho RE)." },
       /* ELEVAR (js/bimelevar.js + js/bimelevarui.js, 15/10/2026): um diálogo, não uma ferramenta de clique — o
          js/bimelevarui.js registra o reg.elevar por cima do "armar" genérico */
-      { id: "elevar", sub: null, rotulo: "Elevar", icone: "elevar", dica: "Sobe ou desce o que está selecionado: X metros (negativo desce), a base ou o topo num nível com deslocamento, ou o topo da viga no topo do pilar em que ela apoia. As ligadas acompanham (Alt: só a seleção); um Ctrl+Z desfaz (atalho EL)." }
+      { id: "elevar", sub: null, rotulo: "Elevar", icone: "elevar", dica: "Sobe ou desce o que está selecionado: X metros (negativo desce), a base ou o topo num nível com deslocamento, ou o topo da viga no topo do pilar em que ela apoia. As ligadas acompanham (Alt: só a seleção); um Ctrl+Z desfaz (atalho EL)." },
+      /* APOIAR EM… (js/bimapoiar.js + js/bimapoiarui.js, 27/10/2026): clica a peça e depois a superfície onde ela apoia (laje, forro, telhado, piso, outra peça) — ela sobe ou desce até encostar. Também um comando, não uma ferramenta de clique do editor */
+      { id: "apoiar", sub: null, rotulo: "Apoiar em…", icone: "apoiar", dica: "Clique a peça (ou use a seleção) e depois a superfície onde ela apoia — laje, forro, telhado, piso, estrado, terreno ou outra peça: ela sobe ou desce até a face de baixo encostar, sem mexer em X e Z. No telhado inclinado vale o ponto mais alto sob a peça. A prévia mostra a cota; Esc cancela; um Ctrl+Z desfaz (atalho AE)." }
     ],
     /* P4 — unir geometria e juntas de parede (js/bimarq.js, frentes A e B) */
     geometria: [

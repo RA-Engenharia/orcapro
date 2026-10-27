@@ -201,7 +201,7 @@
     { nome: "Geometria", ids: ["unir-geometria", "desunir-geometria", "juntas-parede", "fechar-cantos", "alternar-uniao"] },
     { nome: "IFC importado", ids: ["converter-ifc"] },
     { nome: "Modificar", ids: ["alinhar", "deslocamento", "espelhar", "mover-preciso", "copiar", "girar",
-      "aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "snaps-editor"] },
+      "aparar-canto", "aparar-varios", "dividir-elemento", "matriz", "escala", "fixar", "desafixar", "fx-excluir", "elevar", "apoiar", "snaps-editor"] },
     { nome: "Ocultar e isolar", ids: ["fx-ocultar", "fx-isolar", "fx-restaurar-temp", "fx-sobrepor"] },
     { nome: "Similar e grupos", grande: true, ids: ["criar-similar", "criar-grupo", "editar-grupo", "desagrupar", "colar-niveis"] },
     { nome: "Caixa de seleção", ids: ["fx-caixa-selecao"] }

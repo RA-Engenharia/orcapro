@@ -318,6 +318,7 @@
       if (global.MarmorariaUI) global.MarmorariaUI.registrar(reg, self);   /* MARMORARIA: bancadas de pedra + executivo (js/marmorariaui.js) */
       if (global.BimIfcConvUI) global.BimIfcConvUI.registrar(reg, self);   /* CONVERTER O IFC GENÉRICO: Modificar › IFC importado (js/bimifcconvui.js) */
       if (global.BimFecharUI) global.BimFecharUI.registrar(reg, self);   /* UNIÃO DE CANTO: Geometria › Fechar cantos abertos (js/bimfecharui.js) */
+      if (global.BimApoiarUI) global.BimApoiarUI.registrar(reg, self);   /* APOIAR EM…: Modificar › Apoiar em… e o atalho AE (js/bimapoiarui.js) */
       if (global.BimElevarUI) global.BimElevarUI.registrar(reg, self);   /* ELEVAR: Modificar › Elevar e o atalho EL (js/bimelevarui.js) — depois do laço da FITA, que armaria o genérico */
       function ferr(sub) {
         return function (e) {
