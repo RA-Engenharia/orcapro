@@ -106,7 +106,7 @@
       if (nome === "text") {
         if (!fecha) { emTexto = { a: a, g: herda(a), t: "" }; if (auto) emTexto = null; continue; }
         if (!emTexto) continue;
-        var tg = emTexto.g, ta = emTexto.a, conteudo = desEsc(emTexto.t).replace(/\s+/g, " ").trim(); emTexto = null;
+        var tg = emTexto.g, ta = emTexto.a, conteudo = /white-space:\s*pre/.test(txt(ta.style)) ? desEsc(emTexto.t).replace(/[\r\n\t]/g, " ") : desEsc(emTexto.t).replace(/\s+/g, " ").trim(); emTexto = null;   /* style="white-space:pre" (título espaçado do quadro de legendas, "Q U A D R O   D E …"): as palavras ficam separadas */
         if (!conteudo) continue;
         var corpo = num(tg.fs, 3), neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(conteudo, corpo, neg), anc = tg.anchor || "start";
         var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0), y = num(ta.y, 0), rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;

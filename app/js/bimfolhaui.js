@@ -774,6 +774,7 @@
       /* PRANCHA VIVA: a folha → o 3D no ponto tocado (o comando da fita, com a trava do módulo) */
       if (global.PranchaVivaUI) filhos.unshift({ id: "fl:viva", rotulo: "Prancha Viva (folha → 3D)", icone: "prancha", acao: "prancha-viva" });
       if (global.ArqPranchasUI) filhos.splice(1, 0, { id: "fl:gerar-arq", rotulo: "Gerar pranchas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrir(); } });
+      if (global.ArqPranchasUI && global.ArqPranchasUI.abrirArranjo) filhos.splice(2, 0, { id: "fl:arranjo-arq", rotulo: "Arranjo das folhas de arquitetura…", icone: "prancha", fn: function () { global.ArqPranchasUI.abrirArranjo(); } });
       filhos.push({ id: "fl:nova", rotulo: "+ Nova folha", icone: "prancha", fn: function () { self.novaFolha(); } });
       return { id: "folhas", rotulo: "Folhas (todas)", icone: "prancha", n: n, aberto: true, filhos: filhos };
     },

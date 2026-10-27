@@ -275,11 +275,14 @@
     var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, [50, 75, 100, 125, 150, 200], ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
     mcs.forEach(function (mc, i) {
       var ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
-      d.escalaCota(D, el.escala); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala, i + 1);
-      var X = x + 24 + 0.9 * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;   /* Yb = o papel da cota mc.yMin */
-      var Fi = desenharCorte(c, ct, mc, X, Yb, k);
-      cotasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
-      sem = sem.concat(rotulosCorte(c, ct, mc, Fi, k));
+      /* c.bloco (js/arqdiagrama.js): cada corte é um BLOCO que o motor de diagramação põe onde couber */
+      (c.bloco || function (nome, fn) { return fn(); })("corte-" + ct.letra + ct.letra, function () {
+        d.escalaCota(D, el.escala); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala, i + 1);
+        var X = x + 24 + 0.9 * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;   /* Yb = o papel da cota mc.yMin */
+        var Fi = desenharCorte(c, ct, mc, X, Yb, k);
+        cotasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
+        sem = sem.concat(rotulosCorte(c, ct, mc, Fi, k));
+      }, "CORTE " + ct.letra + ct.letra);
       if (el.modo === "lado") x += wm; else y += hm;
     });
     if (el.estourou) c.avisos.push("ARQ-07: os cortes não cabem em 1:" + el.escala + " nesta folha: aumente o formato.");
@@ -423,10 +426,12 @@
     if (!ch) { ch = 200; k = 5; c.avisos.push("ARQ-08: as fachadas não cabem em 1:200 nesta folha: aumente o formato."); }
     mfs.forEach(function (mf, i) {
       var col = i % 2, lin = Math.floor(i / 2), cx0 = A.x + 4 + col * (A.w / 2), cy0 = A.y + 2 + lin * (A.h / 2);
-      d.escalaCota(D, ch); d.titulo(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch, i + 1);
-      var X = cx0 + 14 + 0.9 * k, Yb = cy0 + 14 + (mf.yMax - mf.yMin) * k + 4;
-      var F = desenharFachada(c, vvs[i], mf, X, Yb, k);
-      cotasFachada(c, vvs[i], mf, F, k);
+      (c.bloco || function (nome, fn) { return fn(); })("fachada-" + (i + 1), function () {
+        d.escalaCota(D, ch); d.titulo(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch, i + 1);
+        var X = cx0 + 14 + 0.9 * k, Yb = cy0 + 14 + (mf.yMax - mf.yMin) * k + 4;
+        var F = desenharFachada(c, vvs[i], mf, X, Yb, k);
+        cotasFachada(c, vvs[i], mf, F, k);
+      }, vvs[i].nome);
     });
     return { escala: "1:" + ch };
   }

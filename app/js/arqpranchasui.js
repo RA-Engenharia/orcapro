@@ -30,7 +30,7 @@
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 
   var CHAVE = "orcapro:arq:pranchas:";
-  var ULTIMO = { r: null, ctx: null };
+  var ULTIMO = { r: null, ctx: null, cfg: null };
 
   /* ------------------------------------------------------------ puro */
   function chave(obraKey) { return CHAVE + (txt(obraKey) || "geral"); }
@@ -47,7 +47,7 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = AQ().normalizarConfig(cfg);
     var o = { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
-      interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
+      arranjo: c.arranjo, fixos: c.fixos, arranjoFormato: c.arranjoFormato, interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
       empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
       obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
     if (ctx && ctx.contornoLote) o.contornoLote = ctx.contornoLote;
@@ -86,7 +86,7 @@
     var A = AQ(), em = ctx.empresa || {}, ob = ctx.obra || {}, L = cfg.limites || {}, mun = IX().MUNICIPIOS;
     var h = '<div data-arq="tela" data-modal-largo="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Folha e escala</b></legend>' +
-      '<label>Folha <select data-arq="formato">' + A.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (a menor que cabe)" : f) + "</option>"; }).join("") + "</select></label><br>" +
+      '<label>Folha <select data-arq="formato">' + A.FORMATOS.map(function (f) { return '<option value="' + f + '"' + (cfg.formato === f ? " selected" : "") + ">" + (f === "AUTO" ? "Automática (menos folhas, ocupação ≥ 55 %)" : f) + "</option>"; }).join("") + "</select></label><br>" +
       '<label>Escala da planta <select data-arq="escala">' + ["auto", "50", "75", "100"].map(function (e) { return '<option value="' + e + '"' + (String(cfg.escala) === e ? " selected" : "") + ">" + (e === "auto" ? "Automática (1:50 se couber)" : "1:" + e) + "</option>"; }).join("") + "</select></label><br>" +
       '<label><input type="checkbox" data-arq="cotasint"' + marcado(cfg.cotasInternas) + "> Cotas internas dos ambientes</label></fieldset>";
     h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Numeração e revisão</b></legend>' +
@@ -150,7 +150,7 @@
     if (!A) return { ok: false, avisos: ["js/arqpranchas.js não carregou."] };
     if (!ctx || !ctx.modelo || !ctx.modelo.estado) return { ok: false, avisos: ["Abra o modelo da obra no BIM: sem modelo não há o que apresentar."] };
     var c = A.normalizarConfig(cfg), r = A.gerar(ctx.modelo, opcoesDe(ctx, c));
-    ULTIMO.r = r; ULTIMO.ctx = ctx;
+    ULTIMO.r = r; ULTIMO.ctx = ctx; ULTIMO.cfg = c;
     if (!r || !r.ok) return r || { ok: false, avisos: [] };
     gravarMemoria(ctx.obraKey, c);
     var nome = (r.prefixo || "ARQ") + "-" + (r.revisao || "R00") + " projeto de arquitetura";
@@ -173,6 +173,54 @@
     try { if (BF.ativo && BF.ativo()) BF.abrir(id); } catch (e) { /* sem a casca do BIM: fica no registro */ }
     return { registro: salvo.id, primeira: id, folhas: r.folhas.length };
   }
+
+  /* ------------------------------------------------------------ ARRANJO: mover bloco, soltar, reorganizar (js/arqdiagrama.js) */
+  /* o usuário move um bloco de folha ou de posição (x, y em mm da área útil): ele fica FIXADO e o resto é re-empacotado em volta */
+  function moverBloco(ctx, cfg, id, destino, saida) {
+    var c = AQ().normalizarConfig(cfg), r0 = ULTIMO.r;
+    c.fixos = c.fixos || {};
+    c.fixos[id] = { folha: Math.max(1, Math.round(+destino.folha || 1)), x: +destino.x || 0, y: +destino.y || 0 };
+    if (r0 && r0.diagrama && r0.diagrama.formato) c.arranjoFormato = r0.diagrama.formato;
+    return gerar(ctx, c, saida || { pdf: false, dxf: false, abas: true });
+  }
+  function soltarBloco(ctx, cfg, id, saida) { var c = AQ().normalizarConfig(cfg); delete c.fixos[id]; return gerar(ctx, c, saida || { pdf: false, dxf: false, abas: true }); }
+  /* "Reorganizar": solta tudo e refaz o arranjo automático */
+  function reorganizar(ctx, cfg, saida) { var c = AQ().normalizarConfig(cfg); c.fixos = {}; c.arranjoFormato = null; return gerar(ctx, c, saida || { pdf: false, dxf: false, abas: true }); }
+  function htmlArranjo(r, cfg) {
+    var d = r && r.diagrama, h = '<div data-arq="arranjo" style="font-size:12.5px"><div class="muted">Formato ' + esc(d ? d.formato : "") + " · ocupação média " + (d ? Math.round(d.ocupacaoMedia * 100) : 0) + ' % · x e y em mm a partir do canto da área útil da folha. Bloco marcado "fixar" fica onde você pôs; o resto se re-organiza.</div><table style="width:100%;margin-top:6px"><tr><th align="left">Desenho</th><th>Folha</th><th>X</th><th>Y</th><th>Fixar</th></tr>';
+    arr(d && d.folhas).forEach(function (f, i) {
+      arr(f.blocos).forEach(function (b) {
+        h += '<tr data-arq-bloco="' + esc(b.id) + '"><td>' + esc(b.titulo || b.id) + ' <span class="muted">(' + esc(f.numero) + ")</span></td>" +
+          '<td><input data-k="folha" value="' + (i + 1) + '" size="3"></td><td><input data-k="x" value="' + Math.round(b.x) + '" size="5"></td><td><input data-k="y" value="' + Math.round(b.y) + '" size="5"></td>' +
+          '<td><input type="checkbox" data-k="fixo"' + (b.fixo || (cfg.fixos && cfg.fixos[b.id]) ? " checked" : "") + "></td></tr>";
+      });
+    });
+    return h + "</table></div>";
+  }
+  function fixosDaTela(raiz) {
+    var f = {};
+    Array.prototype.forEach.call(raiz.querySelectorAll("[data-arq-bloco]"), function (tr) {
+      var v = function (k) { return tr.querySelector('[data-k="' + k + '"]'); };
+      if (v("fixo") && v("fixo").checked) f[tr.getAttribute("data-arq-bloco")] = { folha: +v("folha").value, x: +v("x").value, y: +v("y").value };
+    });
+    return f;
+  }
+  /* a tela "Arranjo das folhas": move blocos de folha/posição e reorganiza (também aberta pelo menu da folha do BIM) */
+  function abrirArranjo(ctx) {
+    var U = global.UI; if (!U || !U.modal) return false;
+    ctx = ctx || ULTIMO.ctx || ctxAtual();
+    var r = ULTIMO.r; if (!r || !r.diagrama) { toast("Gere as pranchas de arquitetura primeiro: o arranjo sai delas.", "aviso"); return false; }
+    var cfg = ULTIMO.cfg || lerMemoria(ctx.obraKey);
+    U.modal("Arranjo das folhas de arquitetura", htmlArranjo(r, cfg), [
+      { texto: "Fechar", classe: "ghost", onClick: function () { U.fecharModal(); } },
+      { texto: "Reorganizar", onClick: function () { var r2 = reorganizar(ctx, cfg); U.fecharModal(); toast("Arranjo refeito: " + (r2 && r2.folhas ? r2.folhas.length : 0) + " folha(s).", "ok"); } },
+      { texto: "Aplicar", classe: "primary", onClick: function () {
+        var raiz = global.document.querySelector('[data-arq="arranjo"]').parentNode, c = AQ().normalizarConfig(cfg); c.fixos = fixosDaTela(raiz); c.arranjoFormato = r.diagrama.formato;
+        var r2 = gerar(ctx, c, { pdf: false, dxf: false, abas: true }); U.fecharModal(); toast("Arranjo aplicado: " + (r2 && r2.folhas ? r2.folhas.length : 0) + " folha(s).", "ok");
+      } }
+    ]);
+    return true;
+  }
   /* o contexto da tela a partir do que está aberto */
   function ctxAtual() {
     var B = global.BIM, st = null; try { st = B && B.editarEstado ? B.editarEstado() : null; } catch (e) { st = null; }
@@ -190,6 +238,7 @@
     var cfg = lerMemoria(ctx.obraKey);
     U.modal("Gerar pranchas de arquitetura — reforma e ampliação", html(ctx, cfg), [
       { texto: "Cancelar", classe: "ghost", onClick: function () { U.fecharModal(); } },
+      { texto: "Arranjo…", classe: "ghost", onClick: function () { U.fecharModal(); abrirArranjo(ctx); } },
       { texto: "Padrão", onClick: function () { gravarMemoria(ctx.obraKey, AQ().configPadrao()); U.fecharModal(); abrir(ctx); } },
       { texto: "Gerar pranchas", classe: "primary", onClick: function () {
         var raiz = global.document.querySelector('[data-arq="tela"]').parentNode, c = configDaTela(raiz, cfg), msg = raiz.querySelector('[data-arq="msg"]');
@@ -204,7 +253,7 @@
     return true;
   }
 
-  var ArqPranchasUI = { abrir: abrir, gerar: gerar, ultimo: function () { return ULTIMO; },
+  var ArqPranchasUI = { abrir: abrir, gerar: gerar, abrirArranjo: abrirArranjo, moverBloco: moverBloco, soltarBloco: soltarBloco, reorganizar: reorganizar, ultimo: function () { return ULTIMO; },
     _int: { chave: chave, lerMemoria: lerMemoria, gravarMemoria: gravarMemoria, opcoesDe: opcoesDe, registroFolhas: registroFolhas, configDaTela: configDaTela, html: html, ctxAtual: ctxAtual, abrirNasAbas: abrirNasAbas } };
   global.ArqPranchasUI = ArqPranchasUI;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqPranchasUI;

@@ -454,6 +454,7 @@
     var D = c.D, d = DS(), S = ES(), G = GEO(), A = c.A, amb = an.amb, dados = c.dados, avisos = [];
     var bb = amb.bbox || G.bbox(amb.pts), W = [bb[0] - JANELA_M, bb[1] - JANELA_M, bb[2] + JANELA_M, bb[3] + JANELA_M];
     var es = escolherEscalaPlanta(A, W, opt), k = es.k;
+    if (c.escForcada) { es = { escala: c.escForcada, k: 1000 / c.escForcada }; k = es.k; }   /* retentativa do arranjo: a planta sem lugar livre para cotas e marcadores sobe de escala (mais folga no papel) */
     if (es.estourou) avisos.push("o ambiente não cabe em 1:75 na folha A3: usei 1:100");
     var ox = A.x + 8 + (opt.esq || 0) + (A.w - 16 - (opt.esq || 0) - (W[2] - W[0]) * k) / 2, oy = A.y + 18 + (opt.topo || 0), M = d.mapa(W, ox, oy, k);
     d.escalaCota(D, es.escala);
@@ -479,35 +480,67 @@
     var pp = ut.map(function (u) { return M.P(ed.A[0] + ed.r[0] * (u + ed.uMin), ed.A[1] + ed.r[1] * (u + ed.uMin)); }), vals = [];
     for (var i = 0; i + 1 < ut.length; i++) vals.push(d.cotaTxt(ut[i + 1] - ut[i]));
     var ux = pp[pp.length - 1][0] - pp[0][0], uz = pp[pp.length - 1][1] - pp[0][1], Ln = hip(ux, uz) || 1, nx = uz / Ln, nz = -ux / Ln, sg = (nx * -ed.d[0] + nz * -ed.d[1]) > 0 ? 1 : -1;
-    /* a linha de cota e as de chamada não podem passar por cima de um texto já escrito (a cota da outra parede, o rótulo): o afastamento anda até achar lugar */
-    var cands = [afMm, afMm + 4.5, afMm + 9, afMm + 13.5, afMm + 18, afMm - 3], of = sg * afMm;
-    for (var ci = 0; ci < cands.length; ci++) {
-      var o2 = sg * cands[ci], livre = true;
-      pp.forEach(function (p) { if (livre && D.cortaTexto(p[0], p[1], p[0] + nx * o2, p[1] + nz * o2)) livre = false; });
-      if (livre && D.cortaTexto(pp[0][0] + nx * o2, pp[0][1] + nz * o2, pp[pp.length - 1][0] + nx * o2, pp[pp.length - 1][1] + nz * o2)) livre = false;
-      if (livre) { of = o2; break; }
+    /* a linha de cota e as de chamada não podem passar por cima de um texto já escrito (a cota da outra parede, o rótulo), e os NÚMEROS da cadeia não podem cair
+       sobre traço (marcador de vista/corte, outra cota): o afastamento anda, para fora, até achar lugar. 1ª rodada: exigente (linhas + textos); 2ª: só texto. */
+    var ux1 = ux / Ln, uz1 = uz / Ln, hN = d.S.alturaCota(D.escCota || 25), bN = hN * 0.76 + 3.2;
+    var ex0 = c.cadeiaExtra || 0, cands = [], of = null;
+    for (var q0 = 0; q0 < 28; q0++) cands.push(afMm + ex0 + q0 * 4.5);
+    cands.push(afMm - 3);
+    
+    function textoLivre(o2) {
+      for (var i2 = 0; i2 + 1 < pp.length; i2++) {
+        var mx = (pp[i2][0] + pp[i2 + 1][0]) / 2 + nx * o2, mz = (pp[i2][1] + pp[i2 + 1][1]) / 2 + nz * o2, hw = d.largTexto(vals[i2], hN) / 2 + 0.6;
+        var q = [[mx - ux1 * hw - nx * bN, mz - uz1 * hw - nz * bN], [mx + ux1 * hw - nx * bN, mz + uz1 * hw - nz * bN], [mx + ux1 * hw + nx * bN, mz + uz1 * hw + nz * bN], [mx - ux1 * hw + nx * bN, mz - uz1 * hw + nz * bN]];
+        if (!D.livreQ(q, 0.1)) return false;
+      }
+      return true;
     }
-    D.cadeia(pp, of, vals, { offs: [of + sg * 4.5, of + sg * 9] });
+    for (var rodada = 0; rodada < 2 && of == null; rodada++) {
+      for (var ci = 0; ci < cands.length; ci++) {
+        var o2 = sg * cands[ci], livre = true;
+        [0, 4.5, 9].forEach(function (ex) { var o4 = o2 + sg * ex; pp.forEach(function (p) { if (livre && D.cortaTexto(p[0], p[1], p[0] + nx * o4, p[1] + nz * o4)) livre = false; }); });   /* as chamadas de cada ponto até a linha e as duas fileiras */
+        [0, 4.5, 9].forEach(function (ex) { var o3 = o2 + sg * ex; if (livre && D.cortaTexto(pp[0][0] + nx * o3 - ux1 * 9, pp[0][1] + nz * o3 - uz1 * 9, pp[pp.length - 1][0] + nx * o3 + ux1 * 9, pp[pp.length - 1][1] + nz * o3 + uz1 * 9)) livre = false; });   /* a linha de cota e as duas fileiras de chamada */
+        if (livre && rodada === 0 && !textoLivre(o2)) livre = false;
+        if (livre) { of = o2; break; }
+      }
+    }
+    /* sem lugar do lado de dentro (um texto no caminho de toda chamada): a cadeia vai para FORA, do outro lado da parede, com as chamadas — nunca por cima */
+    for (var qf = 0; qf < 14 && of == null; qf++) {
+      var o5 = -sg * (4 + qf * 4.5), livre5 = true;
+      [0, 4.5, 9].forEach(function (ex) {
+        var o6 = o5 - sg * ex; pp.forEach(function (p) { if (livre5 && D.cortaTexto(p[0], p[1], p[0] + nx * o6, p[1] + nz * o6)) livre5 = false; });
+        if (livre5 && D.cortaTexto(pp[0][0] + nx * o6 - ux1 * 9, pp[0][1] + nz * o6 - uz1 * 9, pp[pp.length - 1][0] + nx * o6 + ux1 * 9, pp[pp.length - 1][1] + nz * o6 + uz1 * 9)) livre5 = false;
+      });
+      if (livre5 && textoLivre(o5)) of = o5;
+    }
+    var fora = of != null && of * sg < 0;
+    if (of == null) of = sg * afMm;
+    var sgo = of * sg < 0 ? -sg : sg;
+    D.cadeia(pp, of, vals, { offs: [of + sgo * 4.5, of + sgo * 9] });
     return true;
   }
   function marcadorA(c, ctx, v, pr, avisos) {
     var D = c.D, S = ES(), amb = ctx.amb, M = ctx.M, k = ctx.k, ed = v.ed;
     var us = (v.itens.length ? v.itens.map(function (it) { return (it.u0 + it.u1) / 2; }) : v.pontos.map(function (p) { return p.u; })), umid = us.reduce(function (a, b) { return a + b; }, 0) / us.length;
-    var ang = (Math.atan2(ed.d[0], -ed.d[1]) * 180) / Math.PI, achou = null, med = { hu: 7.5 / k, ap: 7.9 / k, tr: 7.2 / k };
+    var ang = (Math.atan2(ed.d[0], -ed.d[1]) * 180) / Math.PI, achou = null, med = null;
+    /* 1ª rodada: a caixa livre é a do marcador inteiro (a barra tem 22 mm, com o PR nn abaixo); 2ª: só o corpo (15 mm) quando o ambiente é apertado */
+    [{ hu: 11.5 / k, ap: 8.5 / k, tr: 9 / k }, { hu: 7.5 / k, ap: 7.9 / k, tr: 7.2 / k }, { hu: 7.5 / k, ap: 7.9 / k, tr: 7.2 / k, solto: true }].forEach(function (md) { if (achou) return; med = md; busca(); });
+    function busca() {
     var profA = Math.max.apply(null, [0].concat(v.itens.map(function (it) { return it.prof; }))) * k;
-    for (var s = Math.max(11, profA + 10); s <= profA + 70 && !achou; s += 2) {
+    for (var s = Math.max(11, profA + 10); s <= profA + 120 && !achou; s += 2) {
       for (var dl = 0; dl <= (v.L * k) / 2 && !achou; dl += 3) {
         [1, -1].forEach(function (sg2) {
           if (achou) return;
           var sd = s / k, u = umid + sg2 * dl / k;
-          if (u < med.hu || u > v.L - med.hu) return;
+          if (!med.solto && (u < med.hu || u > v.L - med.hu)) return;
           var cm = [ed.A[0] + ed.r[0] * (u + ed.uMin) + ed.nIn[0] * sd, ed.A[1] + ed.r[1] * (u + ed.uMin) + ed.nIn[1] * sd];
           var Q = quadOrient(cm, ed.r, ed.nIn, med.hu, med.ap, med.tr);
-          if (!Q.every(function (p) { return dentro(amb.pts, p); })) return;
+          if (!(med.solto ? dentro(amb.pts, cm) : Q.every(function (p) { return dentro(amb.pts, p); }))) return;   /* 3ª rodada: só o ponto do marcador precisa estar no ambiente (parede curta) */
           var QP = Q.map(function (p) { return M.P(p[0], p[1]); });
           if (D.livreQ([QP[0], QP[1], QP[2], QP[3]], 0.5)) achou = cm;
         });
       }
+    }
     }
     if (!achou) { avisos.push("sem lugar livre para o marcador da vista " + v.letra); achou = [ed.A[0] + ed.r[0] * (umid + ed.uMin) + ed.nIn[0] * 0.5, ed.A[1] + ed.r[1] * (umid + ed.uMin) + ed.nIn[1] * 0.5]; }
     var pm = M.P(achou[0], achou[1]);
@@ -542,6 +575,10 @@
     void B; void hu;
     ct.uMarc = achou.u;
   }
+  function baixoDaTinta(D) {
+    var m = -Infinity; D.sg.forEach(function (g) { m = Math.max(m, g[1], g[3]); }); D.tb.forEach(function (t) { m = Math.max(m, t[3]); });
+    return m;
+  }
   function desenharPlanta(c, an, numPR, numPRcorte) {
     var D = c.D, d = DS(), S = ES(), amb = an.amb, avisos = [];
     var ctx = baseDaPlanta(c, an, { numero: "01", nome: "MÓVEIS - PLANTA BAIXA" });
@@ -567,7 +604,7 @@
     if (semLugar.length) avisos.push("sem lugar livre para a cota interna de " + semLugar.join(", "));
     var sl = d.rotulosAmbientes(D, M, [amb], { completo: false });
     if (sl.length) avisos.push("sem lugar livre para o rótulo de " + sl.join(", "));
-    var yb = M.oy + M.alt + 10;
+    var yb = Math.max(M.oy + M.alt + 10, baixoDaTinta(D) + 5);   /* a escala gráfica e o norte ficam abaixo de tudo (as cotas da marcenaria descem além da planta) */
     d.escalaGrafica(D, c.A.x + 6, yb + 4, k, k * 5 >= 12 ? 5 : 10);
     d.norte(D, c.A.x + 82, yb + 2, c.dados.terreno ? c.dados.terreno.norte : 0, 6);
     return { escala: "1:" + ctx.es.escala, avisos: avisos, M: M };
@@ -711,8 +748,193 @@
     return { itens: itens, avisos: avisos };
   }
 
+  /* ------------------------------------------------------------ MONTAR EM BLOCOS (js/arqdiagrama.js)
+     O QUE ESCOLHI PARA O CADERNO DE INTERIORES (27/10/2026): continua uma série de folhas POR AMBIENTE e por DISCIPLINA — as folhas de um ambiente
+     não dividem papel com as de outro, e móveis, elétrico e luminotécnico não se misturam — de modo que o "NN/MM" do carimbo e o "PR nn" dos marcadores
+     continuam valendo (NN = a folha do ambiente onde a vista caiu). Dentro de cada ambiente e disciplina os desenhos (planta, cada vista, cada corte)
+     são BLOCOS e o motor os distribui no menos de folhas do formato (A3 por padrão): uma vista de parede curta já não ocupa uma folha sozinha.
+     O título de cada folha diz o que ela traz ("SALA - MÓVEIS - PLANTA BAIXA, VISTAS A E B"). */
+  function listaE(letras, sing, plur) { if (!letras.length) return ""; return letras.length === 1 ? sing + " " + letras[0] : plur + " " + letras.slice(0, -1).join(", ") + " E " + letras[letras.length - 1]; }
+  function medirVistas(A, vistas, avisos, nomeAmb) {
+    vistas.forEach(function (v) {
+      var med = medirVista(v, 40);
+      if (med.w > A.w - 2 || med.h > A.h) {
+        var m2 = medirVista(v, 20);
+        avisos.push(nomeAmb + ": a vista " + v.letra + " não cabe em 1:25 na folha A3 (parede de " + r3(v.L) + " m): saiu em 1:50, divergente do padrão");
+        med = m2;
+      }
+      v._med = med;
+    });
+  }
+  function montarBlocos(c, cfgInt, geoI, E, o) {
+    o = o || {};
+    var DG = dep("ArqDiagrama", "./arqdiagrama.js"), d = DS(), avisos = [], sel = cfgInt && arr(cfgInt.ambientes).length ? cfgInt.ambientes.map(String) : null, FL = flagsDe(cfgInt), Xt = X(), fixos = o.fixos || {};
+    var amis = arr((c.depois || c.dados).ambientes).filter(function (a) { return a && VIVO[a.status]; });
+    var escolhidos = amis.filter(function (a) {
+      if (sel) return sel.indexOf(String(a.id)) >= 0;
+      return arr(c.dados.moveis).some(function (m) { return movelNoAmbiente(m, a) && movelGatilho(m); });
+    });
+    if (!DG) return { itens: [], avisos: ["O motor de diagramação (js/arqdiagrama.js) não carregou."], blocos: [] };
+    if (!escolhidos.length) { avisos.push("Caderno de interiores: nenhum ambiente com mobiliário ou marcenaria (ou nenhum escolhido)."); return { itens: [], avisos: avisos, blocos: [] }; }
+    var prefixo = txt(cfgInt && cfgInt.prefixo) || "INT", A = geoI.area, areaWH = { w: A.w, h: A.h };
+    var cI = {}; Object.keys(c).forEach(function (k) { cI[k] = c[k]; }); cI.geo = geoI; cI.A = A;
+    var depurar = c.depurar === false ? false : true;
+    function novoCtx2(def) { var cc = {}; Object.keys(cI).forEach(function (k) { cc[k] = cI[k]; }); cc.D = d.novo(E, depurar); cc.def = def; return cc; }
+    var ordemGlobal = 0, mensagens = [];   /* mensagens: avisos que levam o número da folha, que só existe depois de empacotar */
+    /* cria um bloco: id estável, grupo = ambiente|disciplina (a folha é desse grupo), desenho capturado */
+    function criar(grupo, id, tipo, fn) {
+      var cc = novoCtx2({ tipo: tipo }), res = null, cap = null;
+      try { cap = DG.capturar(cc.D, function () { res = fn(cc); return res; }); }
+      catch (e) {
+        mensagens.push({ blocoId: id, t: e && e.message ? e.message : String(e) });
+        cc.D.texto(A.x + 10, A.y + 20, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: VERMELHO });
+        cap = DG.recorte(cc.D, { s: 0, sg: 0, tb: 0, cx: 0 }, DG.marca(cc.D));
+      }
+      if (!cap.box) return null;
+      return { id: id, grupo: grupo, ordem: ordemGlobal++, w: cap.box[2] - cap.box[0], h: cap.box[3] - cap.box[1], bloco: cap, D: cc.D, tipo: tipo, escala: (res && res.escala) || "INDICADA", res: res || {}, fixo: fixos[id] || null };
+    }
+
+    /* o PR nn provisório da 1ª passada leva o dígito MAIS LARGO da fonte (o número final tem de caber onde o provisório coube) */
+    var provisorio = 0; (function () { var w = -1; for (var dg = 0; dg < 10; dg++) { var ww = ES().largTexto("PR " + dg + dg, 3); if (ww > w) { w = ww; provisorio = dg * 10 + dg; } } })();
+    /* ---- as peças de cada ambiente */
+    var planos = escolhidos.map(function (amb) {
+      var an = analisar(cI, amb), nome = nomeFolha(amb);
+      an.avisos.forEach(function (a) { avisos.push(nome + ": " + a); });
+      var vistas = FL.vistas ? an.vistas : [], cortes = FL.cortes && Xt ? an.cortes : [], vistasEle = FL.eletrico && Xt ? an.vistasEle : [];
+      medirVistas(A, vistas, avisos, nome);
+      if (FL.cortes && Xt) Xt.empacotarCortes(A, an.cortes, avisos, nome);
+      medirVistas(A, vistasEle, avisos, nome + " (elétrico)");
+      var temEle = FL.eletrico && Xt && an.eletricos.length > 0, temLuz = FL.luminotecnico && Xt && an.luzes.length > 0;
+      vistas.concat(cortes).concat(vistasEle).forEach(function (x) { x._folha = provisorio; });
+      if (FL.eletrico && Xt && !an.eletricos.length) avisos.push(nome + ": o modelo não tem ponto elétrico (tomada, interruptor ou caixa) neste ambiente: folhas de elétrico não geradas.");
+      if (FL.luminotecnico && Xt && !an.luzes.length) avisos.push(nome + ": o modelo não tem luminária neste ambiente: folha de luminotécnico não gerada.");
+      if (FL.cortes && Xt && !an.cortes.length && an.vistas.length) avisos.push(nome + ": nenhum módulo de marcenaria com profundidade a partir de 30 cm: sem cortes.");
+      return { amb: amb, an: an, nome: nome, vistas: vistas, cortes: cortes, vistasEle: vistasEle, temEle: temEle, temLuz: temLuz, blocos: { mov: [], ele: [], luz: [] } };
+    });
+    var numPR = function (v) { return dois(v._folha); }, numPRc = function (ct) { return dois(ct._folha || 0); };
+    /* a planta sai em 1:25; se nada deste ambiente sobrepõe nada, fica; senão tenta 1:20, 1:15, 1:10 (a mesma planta com mais folga no papel) e fica a primeira sem sobreposição */
+    function semSobreposicao(b) { if (!b) return 0; var r = d.conferir(b.D, [A.x - 1, A.y - 1, A.x + A.w + 1, A.y + A.h + 1]); return r.textoTexto.length + r.textoLinha.length + r.foraJanela.length + (b.w > A.w - 4 || b.h > A.h - 4 ? 99 : 0); }
+    function retentar(grupo, id, tipo, desenho, nome) {
+      var melhor = null, mp = Infinity, escs = [null, 20, 15, 12, 10], extras = [0, 12];
+      for (var i = 0; i < escs.length && mp > 0; i++) {
+        for (var j = 0; j < extras.length && mp > 0; j++) {
+          var e = escs[i], ex = extras[j], b = criar(grupo, id, tipo, function (cc) { cc.escForcada = e; cc.cadeiaExtra = ex; return desenho(cc); }), p = semSobreposicao(b); if (process.env.DBGP_X) console.log('TENT', id, e, ex, p, b && b.w.toFixed(0), b && b.h.toFixed(0));
+          if (b && p < mp) { melhor = b; mp = p; melhor.escalaAjustada = e; }
+        }
+      }
+      if (melhor && melhor.escalaAjustada) avisos.push(nome + ": a planta saiu em 1:" + melhor.escalaAjustada + " (em 1:25 não havia lugar livre para todas as cotas e marcadores)");
+      return melhor;
+    }
+    function blocoPlanta(pl) { return retentar(pl.amb.id + "|mov", "int:" + pl.amb.id + ":planta", "int-planta", function (cc) { return desenharPlanta(cc, pl.an, numPR, numPRc); }, pl.nome); }
+    function blocoElePlanta(pl) { return retentar(pl.amb.id + "|ele", "int:" + pl.amb.id + ":ele-planta", "int-ele-planta", function (cc) { return Xt.eletricoPlanta(cc, pl.an, numPR, I()); }, pl.nome + " (elétrico)"); }
+    function desenhoVista(pl, v) {
+      return function (cc) {
+        var med = v._med, r = desenharVista(cc, v, A.x + 4 + med.nt.wE + med.cotaW, A.y + 2, med, "01", pl.an);
+        return { escala: "1:" + Math.round(1000 / med.k), semLugar: r.semLugar, semAlt: r.semAlt };
+      };
+    }
+    /* 1ª passada: tudo, com "PR 00" provisório */
+    planos.forEach(function (pl) {
+      var amb = pl.amb, b;
+      if (FL.planta) { b = blocoPlanta(pl); if (b) pl.blocos.mov.push(b); }
+      pl.vistas.forEach(function (v) { b = criar(amb.id + "|mov", "int:" + amb.id + ":vista-" + v.letra, "int-vistas", desenhoVista(pl, v)); if (b) { b.vista = v; pl.blocos.mov.push(b); } });
+      pl.cortes.forEach(function (ct) { b = criar(amb.id + "|mov", "int:" + amb.id + ":corte-" + ct.letra, "int-cortes", function (cc) { return Xt.desenharCortes(cc, [ct], pl.an, I()); }); if (b) { b.corte = ct; pl.blocos.mov.push(b); } });
+      if (pl.temEle) { b = blocoElePlanta(pl); if (b) pl.blocos.ele.push(b); }
+      pl.vistasEle.forEach(function (v) { b = criar(amb.id + "|ele", "int:" + amb.id + ":ele-vista-" + v.letra, "int-ele-vistas", desenhoVista(pl, v)); if (b) { b.vista = v; pl.blocos.ele.push(b); } });
+      if (pl.temLuz) { b = criar(amb.id + "|luz", "int:" + amb.id + ":luz", "int-luz", function (cc) { return Xt.luminotecnico(cc, pl.an, I()); }); if (b) pl.blocos.luz.push(b); }
+    });
+
+    /* ---- empacotar cada (ambiente, disciplina); depois os "PR nn" (a folha do ambiente onde a vista/corte caiu) e a 2ª passada das plantas */
+    function empacotarGrupo(lista) {
+      return DG.empacotar(lista.map(function (b) { return { id: b.id, w: b.w, h: b.h, grupo: b.grupo, ordem: b.ordem, fixo: b.fixo }; }), areaWH);
+    }
+    function numerar(pl) {
+      pl.res = {}; pl.porId = {}; pl.sheets = [];
+      ["mov", "ele", "luz"].forEach(function (disc) {
+        var lista = pl.blocos[disc]; if (!lista.length) return;
+        lista.forEach(function (b) { pl.porId[b.id] = b; });
+        var res = empacotarGrupo(lista); pl.res[disc] = res;
+        res.folhas.forEach(function (f, k) { pl.sheets.push({ disc: disc, k: k + 1, folha: f, blocos: f.itens.map(function (q) { return pl.porId[q.id]; }) }); });
+      });
+      pl.sheets.forEach(function (s, i) { s.nn = i + 1; s.blocos.forEach(function (b) { if (b.vista) b.vista._folha = s.nn; if (b.corte) b.corte._folha = s.nn; }); });
+    }
+    planos.forEach(function (pl) {
+      numerar(pl);
+      for (var volta = 0; volta < 3; volta++) {
+        var mudou = false;
+        ["mov", "ele"].forEach(function (disc) {
+          var id = "int:" + pl.amb.id + (disc === "mov" ? ":planta" : ":ele-planta"), ip = pl.blocos[disc].map(function (b) { return b.id; }).indexOf(id);
+          if (ip < 0) return;
+          var antigo = pl.blocos[disc][ip], novo = disc === "mov" ? blocoPlanta(pl) : blocoElePlanta(pl);
+          if (!novo) return;
+          if (Math.abs(novo.w - antigo.w) > 0.05 || Math.abs(novo.h - antigo.h) > 0.05) mudou = true;
+          novo.ordem = antigo.ordem; pl.blocos[disc][ip] = novo;
+        });
+        numerar(pl);
+        if (!mudou) break;
+      }
+    });
+
+    /* ---- as folhas: pedras (geral), depois por ambiente (imagens 00, móveis, elétrico, luminotécnico) */
+    var itens = [], seq = 0, blocosMeta = [];
+    function item(def, bl, cm, escala, res) { itens.push({ def: def, D: cm.D, escala: escala || "INDICADA", res: res || {}, blocos: bl, colocados: cm.col, conf: cm.conf }); }
+    function novaFolha(tipo, tipos, titulo, amb, carimbo, ids) { seq++; var rot = dois(seq); return { id: tipo + "-" + (amb ? amb.id : "geral") + "-" + rot, tipo: tipo, tipos: tipos, pav: amb ? amb.pav : null, titulo: titulo, rotulo: rot, numero: prefixo + "-" + rot, carimboFolha: carimbo, ambienteId: amb ? amb.id : null, blocos: ids || [] }; }
+    function compor(folhaPack, lista) {
+      var mapa = {}; lista.forEach(function (b) { mapa[b.id] = b.bloco; });
+      var D = d.novo(E, depurar), cp = DG.compor(D, folhaPack, mapa, A);
+      return { D: D, col: cp.colocados, conf: DG.conferir(cp.colocados, A) };
+    }
+    function escalasDe(bl) { var u = []; bl.forEach(function (b) { var e = txt(b.escala); if (e && u.indexOf(e) < 0) u.push(e); }); return u.length ? u.join(" / ") : "INDICADA"; }
+    function mensagensDe(bl, folha) { mensagens.forEach(function (m) { if (bl.some(function (b) { return b.id === m.blocoId; })) avisos.push(folha.numero + ": " + m.t); }); }
+
+    if (FL.pedras && Xt) {
+      var bP = criar("pedras", "int:pedras", "int-pedras", function (cc) { return Xt.pedras(cc, { tipo: "int-pedras" }); });
+      if (bP && bP.res && bP.res.vazia) avisos.push("Caderno de interiores: nenhuma bancada ou peça de pedra no modelo: a folha de pedras não foi gerada.");
+      else if (bP) {
+        var rp = DG.empacotar([{ id: bP.id, w: bP.w, h: bP.h, ordem: 0, fixo: bP.fixo }], areaWH);
+        var defP = novaFolha("int-pedras", ["int-pedras"], "PEDRAS - BANCADAS, SOLEIRAS E PEITORIS", null, "01/01", [bP.id]), cmP = compor(rp.folhas[0], [bP]);
+        arr(bP.res.avisos).forEach(function (a) { avisos.push(defP.numero + ": " + a); });
+        item(defP, [bP], cmP, bP.res.escala, bP.res); blocosMeta.push({ folha: defP.numero, grupo: "pedras", res: rp, blocos: [bP] });
+      }
+    }
+    planos.forEach(function (pl) {
+      var amb = pl.amb, nome = pl.nome, nTot = pl.sheets.length;
+      if (FL.imagens && Xt) {
+        var bI = criar(amb.id + "|img", "int:" + amb.id + ":imagens", "int-imagens", function (cc) { return Xt.imagens(cc, { tipo: "int-imagens" }, amb, cfgInt && cfgInt.renders) || {}; });
+        if (bI) {
+          var rI = DG.empacotar([{ id: bI.id, w: bI.w, h: bI.h, ordem: 0, fixo: bI.fixo }], areaWH), defI = novaFolha("int-imagens", ["int-imagens"], nome + " - 00 IMAGENS ILUSTRATIVAS", amb, "00/" + dois(nTot), [bI.id]);
+          item(defI, [bI], compor(rI.folhas[0], [bI]), "SEM ESCALA", bI.res); blocosMeta.push({ folha: defI.numero, grupo: amb.id + "|img", res: rI, blocos: [bI] });
+        }
+      }
+      pl.sheets.forEach(function (s) {
+        var bl = s.blocos, ids = bl.map(function (b) { return b.id; }), tipos = [], partes = [], letras = [], letrasC = [], titulo;
+        bl.forEach(function (b) { if (tipos.indexOf(b.tipo) < 0) tipos.push(b.tipo); if (b.vista) letras.push(b.vista.letra); if (b.corte) letrasC.push(b.corte.letra); });
+        if (s.disc === "mov") {
+          if (ids.indexOf("int:" + amb.id + ":planta") >= 0) partes.push("PLANTA BAIXA");
+          if (letras.length) partes.push(listaE(letras, "VISTA", "VISTAS")); if (letrasC.length) partes.push(listaE(letrasC, "CORTE", "CORTES"));
+          titulo = nome + " - MÓVEIS - " + partes.join(", ");
+        } else if (s.disc === "ele") {
+          if (ids.indexOf("int:" + amb.id + ":ele-planta") >= 0) partes.push("PLANTA BAIXA");
+          if (letras.length) partes.push(listaE(letras, "VISTA", "VISTAS"));
+          titulo = nome + " - ELÉTRICO - " + partes.join(", ");
+        } else titulo = nome + " - LUMINOTÉCNICO - PLANTA BAIXA";
+        var def = novaFolha(tipos[0], tipos, titulo, amb, dois(s.nn) + "/" + dois(nTot), ids);
+        mensagensDe(bl, def);
+        bl.forEach(function (b) {
+          arr(b.res && b.res.avisos).forEach(function (a) { avisos.push(def.numero + ": " + a); });
+          if (b.res && arr(b.res.semLugar).length && b.vista) avisos.push(def.numero + ": sem lugar livre para a nota de material de " + b.res.semLugar.join(", "));
+          if (b.res && arr(b.res.semAlt).length) avisos.push(def.numero + ": ponto elétrico sem altura de montagem no modelo (" + b.res.semAlt.join(", ") + "): não cotado na vista");
+        });
+        if (s.disc === "mov" && !letras.length && !letrasC.length && !pl.an.vistas.length && !pl.an.avisos.length) avisos.push(def.numero + ": " + nome + " não tem móvel nem marcenaria encostada em parede: só a planta de móveis foi gerada.");
+        item(def, bl, compor(s.folha, bl), escalasDe(bl), { blocos: ids });
+        blocosMeta.push({ folha: def.numero, grupo: amb.id + "|" + s.disc, res: pl.res[s.disc], blocos: bl, k: s.k });
+      });
+    });
+    return { itens: itens, avisos: avisos, blocos: blocosMeta };
+  }
+
   function I() { return ArqInteriores._int; }
-  var ArqInteriores = { VERSAO: 2, listarAmbientes: listarAmbientes, montar: montar, analisar: analisar, linhasNota: linhasNota, ehMarcenaria: ehMarcenaria, GANCHOS: GANCHOS, FOLHAS_PADRAO: FOLHAS_PADRAO, flagsDe: flagsDe,
+  var ArqInteriores = { VERSAO: 2, listarAmbientes: listarAmbientes, montar: montar, montarBlocos: montarBlocos, analisar: analisar, linhasNota: linhasNota, ehMarcenaria: ehMarcenaria, GANCHOS: GANCHOS, FOLHAS_PADRAO: FOLHAS_PADRAO, flagsDe: flagsDe,
     _int: { arestas: arestas, limpar: limpar, recortarRet: recortarRet, colocarNotas: colocarNotas, medirVista: medirVista, empacotar: empacotar, quebrarNota: quebrarNota, rodapeAltura: rodapeAltura, niveisVerticais: niveisVerticais, niveisHorizontais: niveisHorizontais,
       desenharVista: desenharVista, desenharPlanta: desenharPlanta, marcadorA: marcadorA, baseDaPlanta: baseDaPlanta, cadeiaParede: cadeiaParede, simboloPonto: simboloPonto, varianteAltura: varianteAltura, quadOrient: quadOrient, RE_TAMPO: RE_TAMPO, ehNotaPedra: null, movelNoAmbiente: movelNoAmbiente,
       Ue: Ue, Dep: Dep, JANELA_M: JANELA_M, VERMELHO: VERMELHO, VIVO: VIVO, dentro: dentro, dois: dois, r3: r3, txt: txt, arr: arr, num: num, hip: hip } };

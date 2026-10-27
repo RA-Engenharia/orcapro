@@ -1,10 +1,10 @@
 {
  "gerador": "tools/construir-pacotes-js.js",
- "fonte": "c376d3735c3d62cb2b4a0822cefd2578",
+ "fonte": "daca8c7c4a5395d9549796ae8b55963c",
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=8e5fdd79b6",
+  "js/pacotes/bim.js?v=858017c9cb",
   "js/bim-pacote.js?v=1ab195c5f2",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
   "js/pacotes/hidro.js?v=d8d0f1e5e6"
