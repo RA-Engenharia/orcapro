@@ -901,14 +901,15 @@
         var px = p1 && p2 ? Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) : 100;
         return 1 / Math.max(px, 1);
       },
-      iniciar: function (vista, uid, ev) {
+      /* opc.copia (CTRL + ARRASTAR, #86, 26/10/2026): soltar grava uma CÓPIA da abertura no lugar novo; a original fica */
+      iniciar: function (vista, uid, ev, opc) {
         var b = B(); if (!b || !this.pode(uid)) return false;
         var id = String(uid).slice(5), E = this._est(); if (!E) return false;
         try { var sel = (b.selecao().uids || []); if (sel.length !== 1 || sel[0] !== uid) b.selecionar([uid], "trocar"); } catch (e) {}
         var I = info(E, this._aval(), id); if (!I) return false;
         this._fecharCampo();
         this._id = id;
-        this._a = { vista: vista, uid: uid, id: id, E: E, par: I.parede, paredeId: I.parede.id, yRef: I.base + I.peitoril + I.altura / 2, res: null, cc: null, ev: null, agarre: 0 };
+        this._a = { vista: vista, uid: uid, id: id, E: E, par: I.parede, paredeId: I.parede.id, yRef: I.base + I.peitoril + I.altura / 2, res: null, cc: null, ev: null, agarre: 0, copia: !!(opc && opc.copia) };
         var p0 = this._ponto(ev);
         if (!p0) { this._a = null; return false; }
         this._a.p0 = p0;
@@ -916,7 +917,7 @@
         this._a.agarre = (I.t + I.desl) - t0;
         this._a.cc = cotas(E, this._aval(), id, { modos: this.modos() });
         this._teclas(true);
-        status("Arrastando a abertura na parede — solte para aplicar; Esc cancela. As cotas mostram as distâncias.");
+        status(this._a.copia ? "Copiando a abertura na parede — solte para criar a cópia (a original fica); Esc cancela." : "Arrastando a abertura na parede — solte para aplicar; Esc cancela. As cotas mostram as distâncias.");
         this.desenhar();
         return true;
       },
@@ -962,10 +963,22 @@
         if (!r) { this.atualizar(); status("Nada foi movido."); return true; }
         if (!r.ok || !r.op) { this.atualizar(); status("Arrastar: " + (r.erro || "não deu para aplicar") + " Nada foi aplicado."); return true; }
         var I = info(a.E, this._aval(), a.id);
-        if (I && r.paredeId === I.parede.id && Math.abs(r.t - I.t) < 1e-5) { this.atualizar(); status("Nada foi movido."); return true; }
+        if (I && r.paredeId === I.parede.id && Math.abs(r.t - I.t) < 1e-5) { this.atualizar(); status(a.copia ? "Nada foi copiado." : "Nada foi movido."); return true; }
+        if (a.copia) return this._soltarCopia(a, r);
         var ok = b.b2Op(r.op);
         this.atualizar();
         status(ok ? "Abertura movida" + (r.trocou ? " para a parede " + r.paredeId : "") + (this._cc && this._cc.esq ? ": ← " + fmt(this._cc.esq.valor) + " m" : "") + (this._cc && this._cc.dir ? " · " + fmt(this._cc.dir.valor) + " m →" : "") + " (Ctrl+Z desfaz)." : "Não foi possível gravar o arraste.");
+        return true;
+      },
+      /* CTRL + ARRASTAR (#86): a MESMA op do Copiar (transformar com copia, sem deslocamento: a cópia nasce idêntica, hospedada na
+         mesma parede) e, no mesmo lote, o `mover` do arraste aplicado à CÓPIA — um Ctrl+Z desfaz a cópia inteira. A original não é tocada. */
+      _soltarCopia: function (a, r) {
+        var b = B(), novo = "fc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), mv = JSON.parse(JSON.stringify(r.op)), novos = {};
+        mv.id = novo; novos[a.id] = novo;
+        var ok = b.editarLote({ op: "lote", id: "vao-copia-" + novo, origem: "ctrl-copia", pedido: "Copiar abertura", ops: [{ op: "transformar", ids: [a.id], T: { tipo: "mover", dx: 0, dz: 0 }, copia: true, novos: novos }, mv] });
+        this.atualizar();
+        if (ok) { try { b.selecionar(["edit:" + novo], "trocar"); } catch (e) {} }
+        status(ok ? "Abertura copiada" + (r.trocou ? " para a parede " + r.paredeId : "") + " (a original fica; Ctrl+Z desfaz)." : "Não foi possível copiar a abertura.");
         return true;
       },
       arrastando: function () { return !!this._a; },

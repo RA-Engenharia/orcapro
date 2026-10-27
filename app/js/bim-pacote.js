@@ -5070,7 +5070,7 @@ var ult = outros.length ? S.meshPorUid[outros[outros.length - 1]] : null;
 if (ult) { S.selected = ult; S.prevMat = ult.material; ult.material = selMat; contornoSelecao(ult); }
 var o = (S && S.opts) || opts, m0 = novo.length ? S.meshPorUid[novo[0]] : null;
 if (o.onPick) { try { o.onPick(m0 ? propsDe(m0.userData.mid != null ? m0.userData.mid : S.modelID, m0.userData.expressID, m0.userData.tipo) : null); } catch (_) {} }
-if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover; Delete apaga; Esc limpa.');
+if (novo.length > 1) S._hint(novo.length + ' peças selecionadas. Arraste uma delas para mover (com Ctrl, copia); Delete apaga; Esc limpa.');
 else if (eds.length === 1) S._hint('Selecionada. Arraste a peça para mover; as alças esticam a ponta; Delete apaga; Esc limpa.');
 try { if (SL && SL.mudou) SL.mudou(); } catch (_) {}
 try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalComponenteUI.aoSelecionar(novo); } catch (_) {}
@@ -5151,6 +5151,16 @@ var hit = raycastEm(e.clientX, e.clientY), u = uidDeMalha(hit && hit.object), mo
 var a = SL.acao({ botao: 0, vista: '3d', alvo: u ? 'peca' : 'vazio', editavel: !!(u && /^edit:/.test(u)), modelador: mod, ctrl: !!(e.ctrlKey || e.metaKey), shift: e.shiftKey });
 sel3 = { x: e.clientX, y: e.clientY, u: u, acao: a, ctrl: !!(e.ctrlKey || e.metaKey), modo: null, id: e.pointerId, tipo: e.pointerType, hp: hit && hit.point ? { x: hit.point.x, y: hit.point.y, z: hit.point.z } : null, hits: _ultimosHits.slice() };
 });
+function ctrlCopiaIniciar(s) {
+var ev = { clientX: s.x, clientY: s.y, pointerType: s.tipo };
+if (window.BimVaoArr && BimVaoArr.pode && BimVaoArr.pode(s.u)) { s.copia = true; return BimVaoArr.iniciar('3d', s.u, ev, { copia: true }) ? 'vao' : 'nada'; }
+if ((window.BimInstArr && BimInstArr.pode && BimInstArr.pode(s.u)) || (window.BimTelhadoPecaArr && BimTelhadoPecaArr.pode && BimTelhadoPecaArr.pode(s.u, s.hits))) {
+S._hint('Esta peça não se copia arrastando (a peça do telhado vem da cobertura; o tubo copiado solto quebraria as ligações).'); return 'nada';
+}
+if (selAtual().indexOf(s.u) < 0) selAplicar(compExp(s.u), 'trocar');
+s.copia = true;
+return (S._prec.arrastoIniciar && S._prec.arrastoIniciar(ev, { copia: true })) ? 'mover' : 'nada';
+}
 canvasEl.addEventListener('pointermove', function (e) {
 var s = sel3; if (!s || e.pointerId !== s.id) return;
 var SL = SLx(); if (!SL) return;
@@ -5158,6 +5168,9 @@ if (!s.modo) {
 if (!SL.arrastou({ x: s.x, y: s.y }, { x: e.clientX, y: e.clientY })) return;
 s.modo = 'nada';
 if (s.acao === 'janela') s.modo = 'janela';
+else if (s.acao === 'alternar' && s.ctrl && s.u && /^edit:/.test(s.u) && modeladorOn() && S._prec) {
+s.modo = ctrlCopiaIniciar(s);
+}
 else if (s.acao === 'peca-mover' && s.u && !s.ctrl && window.BimVaoArr && BimVaoArr.pode && BimVaoArr.pode(s.u)) {
 if (BimVaoArr.iniciar('3d', s.u, { clientX: s.x, clientY: s.y })) s.modo = 'vao';
 }

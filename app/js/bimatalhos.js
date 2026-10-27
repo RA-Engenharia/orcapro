@@ -111,7 +111,9 @@
       ["Roda", "Aproxima/afasta na direção do cursor, sem travar perto da peça"],
       ["Botões laterais do mouse", rotulo("abaAnterior") + " / " + rotulo("abaProxima").toLowerCase()],
       ["Duplo clique no vazio", "Enquadra tudo"],
-      ["Clique esquerdo", "Seleciona"]
+      ["Clique esquerdo", "Seleciona"],
+      ["Ctrl + clique", "Soma a peça à seleção (ou tira, se já estava)"],
+      ["Ctrl + arrastar a peça", "Copia: a cópia acompanha o mouse e a original fica (snap e distância digitada valem como no Mover; Esc cancela; um Ctrl+Z desfaz). Vale para parede, laje, pilar, viga, família, porta e janela; tubo e peça do telhado não se copiam arrastando (decisão: a peça do telhado vem da cobertura e o tubo solto quebraria as ligações)"]   /* #86, 26/10/2026 */
     ] });
 
     /* CONTROLE: os contínuos (fixos) + os botões (mapa) */

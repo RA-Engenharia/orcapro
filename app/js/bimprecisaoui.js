@@ -1127,17 +1127,19 @@
         /* SELECIONAR (09/10/2026, js/bimselecao.js): ARRASTAR a peça selecionada no 3D move — o
            ponto com o snap do que não está andando e o ortogonal/incrementos da barra de opções
            (a configuração de "Mover"); o fantasma é o do Mover; soltar grava UMA op transformar. */
-        arrastoIniciar: function (e) {
+        /* CTRL + ARRASTAR COPIA (#86, 26/10/2026): `opc.copia` — o mesmo arrasto, mas soltar grava a CÓPIA (op transformar com
+           copia, a mesma do Copiar) e a original fica onde está. Peça fixada pode ser copiada (a cópia nasce solta). */
+        arrastoIniciar: function (e, opc) {
           if (!ativo() || ferramenta() || !pr.sel.length || !global.BimSelecao) return false;
-          var st0 = estado();
-          if (pr.sel.some(function (id) { return Pr().fixado(st0, id); })) { hint("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return false; }
+          var st0 = estado(), copia = !!(opc && opc.copia);
+          if (!copia && pr.sel.some(function (id) { return Pr().fixado(st0, id); })) { hint("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return false; }
           var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return false;
           var geoT = Pr().geometria(st0, { avaliar: api.avaliar }), s = {}; pr.sel.forEach(function (id) { s[id] = 1; });
           var geoSel = { els: geoT.els.filter(function (g) { return s[g.id]; }), segs: geoT.segs.filter(function (g) { return s[g.id]; }), pontos: geoT.pontos.filter(function (g) { return s[g.id]; }) };
           var cur = { x: pl.x, z: pl.z }, sn0 = Pr().snap(cur, geoSel, { tol: tolM(e), tipos: { fim: true, meio: true, centro: true, intersecao: true } });
           var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
-          pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0 };
-          if (VUI()) VUI().preparar(st0);   /* VÍNCULOS: a topologia de antes, uma vez por arraste */
+          pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0, copia: copia };
+          if (VUI() && !copia) VUI().preparar(st0);   /* VÍNCULOS: a topologia de antes, uma vez por arraste (a cópia nasce solta: não leva nada) */
           camadaDom.style.display = "none";   /* as alças e cotas temporárias somem enquanto a peça anda */
           return true;
         },
@@ -1153,8 +1155,9 @@
           var lf = segs(ar, matFant, edit.base + 0.03); if (lf) grp.add(lf);
           var lb = segs([[m.base, r.p]], matLinha, edit.base + 0.02); if (lb) grp.add(lb);
           /* VÍNCULOS: as que acompanham, em laranja, e quantas na barra de estado */
-          var rv = (Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
-          if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
+          var rv = (!m.copia && Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
+          if (m.copia) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status("Copiando " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m (a original fica; Esc cancela)."); } catch (eC) {} }
+          else if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
           caixaMostrar(e, m.base, r.p);
           try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(pr.sel.length === 1 ? pr.sel[0] : null, T.dx, T.dz); } catch (eVP) {}   /* PAREDE: as cotas ao vivo */
           return true;
@@ -1166,6 +1169,7 @@
           if (!m) return null;
           var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
           if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
+          if (m.copia) return self.api.copiarDesloc(dx, dz, e);
           return self.api.mover(dx, dz, e);
         },
         arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
@@ -1236,6 +1240,15 @@
             if (!r || r.erro) { if (VUI()) VUI().soltar(); hint((r && r.erro) || "Não deu para mover."); return { ok: false, erro: r && r.erro }; }
             var res = gravarOp(r.op, "Movido " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m", e);
             return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
+          },
+          /* CTRL + ARRASTAR (#86): a MESMA op do Copiar (transformar com copia); a cópia fica selecionada, para copiar de novo */
+          copiarDesloc: function (dx, dz, e) {
+            var r = Pr().opTransformar(estado(), pr.sel, { tipo: "mover", dx: Math.round(dx * 10000) / 10000, dz: Math.round(dz * 10000) / 10000 }, true, nid);
+            if (!r || r.erro) { hint((r && r.erro) || "Não deu para copiar."); return { ok: false, erro: r && r.erro }; }
+            var novos = []; Object.keys(r.op.novos || {}).forEach(function (k) { novos.push(r.op.novos[k]); });
+            if (!aplicarResultado(r, "Copiado " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m")) return { ok: false };
+            selDefinir(novos);
+            return { ok: true, copia: true, novos: novos };
           },
           esticar: function (id, ponta, p, e) {
             if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };

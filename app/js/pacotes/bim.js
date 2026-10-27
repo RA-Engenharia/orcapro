@@ -15713,17 +15713,17 @@ var ja = pr.sel.indexOf(id) >= 0;
 selDefinir(e && (e.ctrlKey || e.metaKey || e.shiftKey) ? (ja ? pr.sel.filter(function (x) { return x !== id; }) : pr.sel.concat([id])) : [id]);
 if (pr.sel.length === 1 && pr.cotasTmp.length) hint("Clique numa cota para mudar a distância; arraste as alças para esticar. Delete apaga; CO copia, MV move, RO gira, MM espelha.");
 },
-arrastoIniciar: function (e) {
+arrastoIniciar: function (e, opc) {
 if (!ativo() || ferramenta() || !pr.sel.length || !global.BimSelecao) return false;
-var st0 = estado();
-if (pr.sel.some(function (id) { return Pr().fixado(st0, id); })) { hint("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return false; }
+var st0 = estado(), copia = !!(opc && opc.copia);
+if (!copia && pr.sel.some(function (id) { return Pr().fixado(st0, id); })) { hint("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return false; }
 var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return false;
 var geoT = Pr().geometria(st0, { avaliar: api.avaliar }), s = {}; pr.sel.forEach(function (id) { s[id] = 1; });
 var geoSel = { els: geoT.els.filter(function (g) { return s[g.id]; }), segs: geoT.segs.filter(function (g) { return s[g.id]; }), pontos: geoT.pontos.filter(function (g) { return s[g.id]; }) };
 var cur = { x: pl.x, z: pl.z }, sn0 = Pr().snap(cur, geoSel, { tol: tolM(e), tipos: { fim: true, meio: true, centro: true, intersecao: true } });
 var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
-pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0 };
-if (VUI()) VUI().preparar(st0);
+pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0, copia: copia };
+if (VUI() && !copia) VUI().preparar(st0);
 camadaDom.style.display = "none";
 return true;
 },
@@ -15738,8 +15738,9 @@ var T = { tipo: "mover", dx: r.p.x - m.base.x, dz: r.p.z - m.base.z }, ar = [];
 m.geoSel.segs.forEach(function (sg) { if (sg.k !== "eixo") ar.push([Pr().ponto(sg.a, T), Pr().ponto(sg.b, T)]); });
 var lf = segs(ar, matFant, edit.base + 0.03); if (lf) grp.add(lf);
 var lb = segs([[m.base, r.p]], matLinha, edit.base + 0.02); if (lb) grp.add(lb);
-var rv = (Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
-if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
+var rv = (!m.copia && Math.abs(T.dx) + Math.abs(T.dz) > 1e-4) ? previaVinc(m.st, { op: "transformar", ids: pr.sel.slice(), T: T, copia: false }, e, pr.sel) : null;
+if (m.copia) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status("Copiando " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m (a original fica; Esc cancela)."); } catch (eC) {} }
+else if (VUI()) { var tv = VUI().textoPrevia(rv, e); try { if (tv && global.BimShell && global.BimShell.status) global.BimShell.status("Movendo " + fmt(Math.sqrt(T.dx * T.dx + T.dz * T.dz)) + " m · " + tv + " (Esc cancela)."); } catch (eS) {} }
 caixaMostrar(e, m.base, r.p);
 try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(pr.sel.length === 1 ? pr.sel[0] : null, T.dx, T.dz); } catch (eVP) {}
 return true;
@@ -15751,6 +15752,7 @@ camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEscond
 if (!m) return null;
 var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
 if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
+if (m.copia) return self.api.copiarDesloc(dx, dz, e);
 return self.api.mover(dx, dz, e);
 },
 arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
@@ -15811,6 +15813,14 @@ var r = Pr().opTransformar(estado(), pr.sel, { tipo: "mover", dx: Math.round(dx 
 if (!r || r.erro) { if (VUI()) VUI().soltar(); hint((r && r.erro) || "Não deu para mover."); return { ok: false, erro: r && r.erro }; }
 var res = gravarOp(r.op, "Movido " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m", e);
 return { ok: true, acompanharam: res ? res.acompanharam.slice() : [], avisos: res ? res.avisos.slice() : [] };
+},
+copiarDesloc: function (dx, dz, e) {
+var r = Pr().opTransformar(estado(), pr.sel, { tipo: "mover", dx: Math.round(dx * 10000) / 10000, dz: Math.round(dz * 10000) / 10000 }, true, nid);
+if (!r || r.erro) { hint((r && r.erro) || "Não deu para copiar."); return { ok: false, erro: r && r.erro }; }
+var novos = []; Object.keys(r.op.novos || {}).forEach(function (k) { novos.push(r.op.novos[k]); });
+if (!aplicarResultado(r, "Copiado " + fmt(Math.sqrt(dx * dx + dz * dz)) + " m")) return { ok: false };
+selDefinir(novos);
+return { ok: true, copia: true, novos: novos };
 },
 esticar: function (id, ponta, p, e) {
 if (!p || !isFinite(p.x) || !isFinite(p.z) || !existe(id)) return { ok: false };
@@ -93906,14 +93916,14 @@ var p1 = pj.f({ x: par.cx, y: y, z: par.cz }), p2 = pj.f({ x: par.cx + u.x, y: y
 var px = p1 && p2 ? Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) : 100;
 return 1 / Math.max(px, 1);
 },
-iniciar: function (vista, uid, ev) {
+iniciar: function (vista, uid, ev, opc) {
 var b = B(); if (!b || !this.pode(uid)) return false;
 var id = String(uid).slice(5), E = this._est(); if (!E) return false;
 try { var sel = (b.selecao().uids || []); if (sel.length !== 1 || sel[0] !== uid) b.selecionar([uid], "trocar"); } catch (e) {}
 var I = info(E, this._aval(), id); if (!I) return false;
 this._fecharCampo();
 this._id = id;
-this._a = { vista: vista, uid: uid, id: id, E: E, par: I.parede, paredeId: I.parede.id, yRef: I.base + I.peitoril + I.altura / 2, res: null, cc: null, ev: null, agarre: 0 };
+this._a = { vista: vista, uid: uid, id: id, E: E, par: I.parede, paredeId: I.parede.id, yRef: I.base + I.peitoril + I.altura / 2, res: null, cc: null, ev: null, agarre: 0, copia: !!(opc && opc.copia) };
 var p0 = this._ponto(ev);
 if (!p0) { this._a = null; return false; }
 this._a.p0 = p0;
@@ -93921,7 +93931,7 @@ var u = eixoU(I.parede.rotY), t0 = dot(sub(p0, P(I.parede.cx, I.parede.cz)), u);
 this._a.agarre = (I.t + I.desl) - t0;
 this._a.cc = cotas(E, this._aval(), id, { modos: this.modos() });
 this._teclas(true);
-status("Arrastando a abertura na parede — solte para aplicar; Esc cancela. As cotas mostram as distâncias.");
+status(this._a.copia ? "Copiando a abertura na parede — solte para criar a cópia (a original fica); Esc cancela." : "Arrastando a abertura na parede — solte para aplicar; Esc cancela. As cotas mostram as distâncias.");
 this.desenhar();
 return true;
 },
@@ -93967,10 +93977,20 @@ this._ultimo = { vista: a.vista, agarre: a.agarre, inicio: a.p0 || null, fim: a.
 if (!r) { this.atualizar(); status("Nada foi movido."); return true; }
 if (!r.ok || !r.op) { this.atualizar(); status("Arrastar: " + (r.erro || "não deu para aplicar") + " Nada foi aplicado."); return true; }
 var I = info(a.E, this._aval(), a.id);
-if (I && r.paredeId === I.parede.id && Math.abs(r.t - I.t) < 1e-5) { this.atualizar(); status("Nada foi movido."); return true; }
+if (I && r.paredeId === I.parede.id && Math.abs(r.t - I.t) < 1e-5) { this.atualizar(); status(a.copia ? "Nada foi copiado." : "Nada foi movido."); return true; }
+if (a.copia) return this._soltarCopia(a, r);
 var ok = b.b2Op(r.op);
 this.atualizar();
 status(ok ? "Abertura movida" + (r.trocou ? " para a parede " + r.paredeId : "") + (this._cc && this._cc.esq ? ": ← " + fmt(this._cc.esq.valor) + " m" : "") + (this._cc && this._cc.dir ? " · " + fmt(this._cc.dir.valor) + " m →" : "") + " (Ctrl+Z desfaz)." : "Não foi possível gravar o arraste.");
+return true;
+},
+_soltarCopia: function (a, r) {
+var b = B(), novo = "fc" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), mv = JSON.parse(JSON.stringify(r.op)), novos = {};
+mv.id = novo; novos[a.id] = novo;
+var ok = b.editarLote({ op: "lote", id: "vao-copia-" + novo, origem: "ctrl-copia", pedido: "Copiar abertura", ops: [{ op: "transformar", ids: [a.id], T: { tipo: "mover", dx: 0, dz: 0 }, copia: true, novos: novos }, mv] });
+this.atualizar();
+if (ok) { try { b.selecionar(["edit:" + novo], "trocar"); } catch (e) {} }
+status(ok ? "Abertura copiada" + (r.trocou ? " para a parede " + r.paredeId : "") + " (a original fica; Ctrl+Z desfaz)." : "Não foi possível copiar a abertura.");
 return true;
 },
 arrastando: function () { return !!this._a; },
@@ -145966,13 +145986,13 @@ var r = pontoArrasto(d.base, P(p[0], p[1]), d.geo, 12 / this._escala(id), this._
 d.dest = r.p; d.sn = r.sn;
 var dd = dist(d.base, d.dest);
 var VU = global.BimVinculosUI, opV = null, tv = "";
-if (VU && d.st && dd > 1e-4) {
+if (VU && d.st && dd > 1e-4 && !d.copia) {
 if (d.modo === "mover") opV = { op: "transformar", ids: (d.sel || []).slice(), T: { tipo: "mover", dx: d.dest.x - d.base.x, dz: d.dest.z - d.base.z }, copia: false };
 else if (typeof d.alca.k === "string") opV = { op: "esticar", id: d.alca.id, ponta: d.alca.k, x: d.dest.x, z: d.dest.z };
 d.vinc = opV ? VU.previa(d.st, opV, ev) : null; tv = VU.textoPrevia(d.vinc, ev);
 } else d.vinc = null;
 try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(d.modo === "mover" && d.sel && d.sel.length === 1 ? d.sel[0] : null, d.dest.x - d.base.x, d.dest.z - d.base.z); } catch (eVP) {}
-status((d.modo === "mover" ? "Movendo: " : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
+status((d.modo === "mover" ? (d.copia ? "Copiando (a original fica): " : "Movendo: ") : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
 }
 this.desenhar(id);
 return true;
@@ -145981,10 +146001,13 @@ _comecar: function (d) {
 var a = d.acao, prc = this._precisao();
 d.modo = "nada";
 if (a === "janela") { d.modo = "janela"; return; }
+var copia = a === "alternar" && !!d.ctrl && !!d.u && /^edit:/.test(d.u) && !!prc && (!!d.planta || !!(global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(d.u)));
+if (copia) a = "peca-mover";
 if (a === "peca-mover" && d.u && global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(d.u)) {
-if (global.BimVaoArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y })) d.modo = "vao";
+if (global.BimVaoArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y }, copia ? { copia: true } : undefined)) d.modo = "vao";
 return;
 }
+if (copia && d.u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(d.u)) { status("Esta peça não se copia arrastando (o tubo copiado solto quebraria as ligações)."); return; }
 if (a === "peca-mover" && d.u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(d.u)) {
 if (global.BimInstArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y }, null)) d.modo = "inst";
 return;
@@ -146003,7 +146026,7 @@ var ed = d.u.slice(5);
 if (this.uids().indexOf(d.u) < 0) this.selecionar(this._comp(d.u), "trocar");
 var sel = (prc.selecao ? prc.selecao() : []), est2 = this._estado(), R2 = Pr();
 if (!sel.length || !R2) return;
-var fixa = sel.filter(function (x) { return R2.fixado(est2, x); });
+var fixa = copia ? [] : sel.filter(function (x) { return R2.fixado(est2, x); });
 if (fixa.length) { status("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return; }
 if (sel.indexOf(ed) < 0) return;
 var geoT = R2.geometria(est2, { avaliar: this._avaliar() }), s = {}; sel.forEach(function (x) { s[x] = 1; });
@@ -146012,7 +146035,7 @@ var cur = P(d.p0[0], d.p0[1]), sn0 = R2.snap(cur, d.geoSel, { tol: 12 / this._es
 d.base = sn0 ? P(sn0.p.x, sn0.p.z) : cur; d.dest = d.base;
 d.geo = R2.geometria(est2, { excluir: sel, avaliar: this._avaliar() });
 d.modo = "mover";
-d.st = est2; d.sel = sel.slice(); if (global.BimVinculosUI) global.BimVinculosUI.preparar(est2);
+d.st = est2; d.sel = sel.slice(); d.copia = copia; if (global.BimVinculosUI && !copia) global.BimVinculosUI.preparar(est2);
 }
 },
 up2d: function (id, ev, p, cancelou) {
@@ -146038,7 +146061,7 @@ try { if (global.BimInstJanela && global.BimInstJanela.aposJanela) global.BimIns
 status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
 } else if (d.modo === "mover" && prc && d.dest && d.base) {
 var dx = r4(d.dest.x - d.base.x), dz = r4(d.dest.z - d.base.z);
-if (Math.abs(dx) + Math.abs(dz) > 1e-4 && prc.mover) prc.mover(dx, dz, ev);
+if (Math.abs(dx) + Math.abs(dz) > 1e-4) { if (d.copia && prc.copiarDesloc) prc.copiarDesloc(dx, dz, ev); else if (prc.mover) prc.mover(dx, dz, ev); }
 } else if (d.modo === "alca" && prc && d.dest && d.base && dist(d.dest, d.base) > 1e-4 && prc.esticar) {
 prc.esticar(d.alca.id, d.alca.k, d.dest, ev);
 }
@@ -146707,7 +146730,9 @@ out.push({ id: "mouse", titulo: "Mouse no BIM", cab: ["Ação", "O que faz"], li
 ["Roda", "Aproxima/afasta na direção do cursor, sem travar perto da peça"],
 ["Botões laterais do mouse", rotulo("abaAnterior") + " / " + rotulo("abaProxima").toLowerCase()],
 ["Duplo clique no vazio", "Enquadra tudo"],
-["Clique esquerdo", "Seleciona"]
+["Clique esquerdo", "Seleciona"],
+["Ctrl + clique", "Soma a peça à seleção (ou tira, se já estava)"],
+["Ctrl + arrastar a peça", "Copia: a cópia acompanha o mouse e a original fica (snap e distância digitada valem como no Mover; Esc cancela; um Ctrl+Z desfaz). Vale para parede, laje, pilar, viga, família, porta e janela; tubo e peça do telhado não se copiam arrastando (decisão: a peça do telhado vem da cobertura e o tubo solto quebraria as ligações)"]
 ] });
 var cl = [["Direcional esquerdo", "Desloca a vista · no passeio: anda"], ["Direcional direito", "Gira o modelo · no passeio: olha em volta"],
 ["LT / RT", "Zoom (de leve devagar, com força rápido) · no passeio: desce / sobe"]];

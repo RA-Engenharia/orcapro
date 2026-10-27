@@ -452,13 +452,13 @@
         var dd = dist(d.base, d.dest);
         /* VÍNCULOS (js/bimvinculosui.js): o que acompanha, em tempo real (laranja no desenho) */
         var VU = global.BimVinculosUI, opV = null, tv = "";
-        if (VU && d.st && dd > 1e-4) {
+        if (VU && d.st && dd > 1e-4 && !d.copia) {
           if (d.modo === "mover") opV = { op: "transformar", ids: (d.sel || []).slice(), T: { tipo: "mover", dx: d.dest.x - d.base.x, dz: d.dest.z - d.base.z }, copia: false };
           else if (typeof d.alca.k === "string") opV = { op: "esticar", id: d.alca.id, ponta: d.alca.k, x: d.dest.x, z: d.dest.z };
           d.vinc = opV ? VU.previa(d.st, opV, ev) : null; tv = VU.textoPrevia(d.vinc, ev);
         } else d.vinc = null;
         try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(d.modo === "mover" && d.sel && d.sel.length === 1 ? d.sel[0] : null, d.dest.x - d.base.x, d.dest.z - d.base.z); } catch (eVP) {}   /* PAREDE: as cotas ao vivo */
-        status((d.modo === "mover" ? "Movendo: " : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
+        status((d.modo === "mover" ? (d.copia ? "Copiando (a original fica): " : "Movendo: ") : "Esticando: ") + fmt(dd) + " m" + (r.sn && r.sn.tipo ? " · snap " + r.sn.tipo : "") + (tv ? " · " + tv : "") + " (Esc cancela; Shift solta o ângulo).");
       }
       this.desenhar(id);
       return true;
@@ -467,10 +467,15 @@
       var a = d.acao, prc = this._precisao();
       d.modo = "nada";
       if (a === "janela") { d.modo = "janela"; return; }
+      /* CTRL + ARRASTAR COPIA (#86, 26/10/2026): Ctrl apertado no começo + passou do limiar = o arrasto do mover grava uma CÓPIA
+         (a mesma op do Copiar) e a original fica; Ctrl+clique sem arrastar segue somando. Tubo/conexão não têm op de copiar. */
+      var copia = a === "alternar" && !!d.ctrl && !!d.u && /^edit:/.test(d.u) && !!prc && (!!d.planta || !!(global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(d.u)));   /* fora da planta (corte/elevação) só a abertura se arrasta */
+      if (copia) a = "peca-mover";
       if (a === "peca-mover" && d.u && global.BimVaoArr && global.BimVaoArr.pode && global.BimVaoArr.pode(d.u)) {
-        if (global.BimVaoArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y })) d.modo = "vao";
+        if (global.BimVaoArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y }, copia ? { copia: true } : undefined)) d.modo = "vao";
         return;
       }
+      if (copia && d.u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(d.u)) { status("Esta peça não se copia arrastando (o tubo copiado solto quebraria as ligações)."); return; }
       if (a === "peca-mover" && d.u && global.BimInstArr && global.BimInstArr.pode && global.BimInstArr.pode(d.u)) {
         if (global.BimInstArr.iniciar(d.id, d.u, { clientX: d.x, clientY: d.y }, null)) d.modo = "inst";
         return;
@@ -489,7 +494,7 @@
         if (this.uids().indexOf(d.u) < 0) this.selecionar(this._comp(d.u), "trocar");   /* M5: o componente inteiro */
         var sel = (prc.selecao ? prc.selecao() : []), est2 = this._estado(), R2 = Pr();
         if (!sel.length || !R2) return;
-        var fixa = sel.filter(function (x) { return R2.fixado(est2, x); });
+        var fixa = copia ? [] : sel.filter(function (x) { return R2.fixado(est2, x); });   /* a cópia de peça fixada pode (nasce solta) */
         if (fixa.length) { status("Elemento fixado: use Desafixar antes (a peça fixada não anda)."); return; }
         if (sel.indexOf(ed) < 0) return;
         var geoT = R2.geometria(est2, { avaliar: this._avaliar() }), s = {}; sel.forEach(function (x) { s[x] = 1; });
@@ -499,7 +504,7 @@
         d.base = sn0 ? P(sn0.p.x, sn0.p.z) : cur; d.dest = d.base;
         d.geo = R2.geometria(est2, { excluir: sel, avaliar: this._avaliar() });
         d.modo = "mover";
-        d.st = est2; d.sel = sel.slice(); if (global.BimVinculosUI) global.BimVinculosUI.preparar(est2);   /* VÍNCULOS */
+        d.st = est2; d.sel = sel.slice(); d.copia = copia; if (global.BimVinculosUI && !copia) global.BimVinculosUI.preparar(est2);   /* VÍNCULOS (a cópia nasce solta: não leva nada) */
       }
     },
     up2d: function (id, ev, p, cancelou) {
@@ -525,7 +530,7 @@
         status(ids.length ? ids.length + " peça(s) selecionada(s) pela janela (" + (d.j.modo === "dentro" ? "só o que está inteiro dentro" : "o que a janela toca") + ")." : "A janela não pegou nenhuma peça.");
       } else if (d.modo === "mover" && prc && d.dest && d.base) {
         var dx = r4(d.dest.x - d.base.x), dz = r4(d.dest.z - d.base.z);
-        if (Math.abs(dx) + Math.abs(dz) > 1e-4 && prc.mover) prc.mover(dx, dz, ev);   /* ev: Alt segurado = só esta peça (vínculos) */
+        if (Math.abs(dx) + Math.abs(dz) > 1e-4) { if (d.copia && prc.copiarDesloc) prc.copiarDesloc(dx, dz, ev); else if (prc.mover) prc.mover(dx, dz, ev); }   /* ev: Alt segurado = só esta peça (vínculos) */
       } else if (d.modo === "alca" && prc && d.dest && d.base && dist(d.dest, d.base) > 1e-4 && prc.esticar) {
         prc.esticar(d.alca.id, d.alca.k, d.dest, ev);
       }
