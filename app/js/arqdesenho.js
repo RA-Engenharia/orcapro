@@ -26,7 +26,8 @@
   }
   function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
   function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
-  function D2() { return dep("Desenho2D", "./desenho2d.js"); }
+  function ES() { return dep("ArqEstilo", "./arqestilo.js"); }
+  function BP() { return dep("BimPlanta", "./bimplanta.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
   function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
@@ -34,49 +35,58 @@
   function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function hip(x, y) { return Math.sqrt(x * x + y * y); }
 
-  /* CONVENÇÃO DE REFORMA: a mesma tabela do Desenho2D (o teste confere); a cópia só vale sem ele */
-  var CONV_RESERVA = {
-    novo:      { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
-    demolido:  { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
-    existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
-  };
-  function conv() { var d = D2(); return (d && d.CONV_REFORMA) || CONV_RESERVA; }
+  /* O ESTILO (penas, cores, textos, cotas) vem de js/arqestilo.js = chave `arquitetura_interiores` do Padrão RA (v2.13). Aqui não há número de estilo solto:
+     o que a chave não cobre (terreno, telhado, humanizada) fica com a pena da casa, dito em cada linha. */
+  var S = ES();
+  if (!S) throw new Error("js/arqestilo.js não carregou (vem antes de js/arqdesenho.js)");
+  /* CONVENÇÃO DE REFORMA DAS PRANCHAS: demolir amarelo e construir vermelho, parede cortada com preenchimento chapado (padrão, chave `cores`) */
+  function conv() { return S.CONVENCAO; }
 
-  /* penas e geometria de desenho (mm de papel) — não são valores de norma */
+  var PN = S.PENAS;
   var K = {
-    pena: { corte: 0.5, vista: 0.25, fina: 0.18, cota: 0.13, hachura: 0.09, divisa: 0.35, tabela: 0.25, titulo: 0.35, moldura: 0.5, telhado: 0.25, cumeeira: 0.5 },
-    hLetra: { rotulo: 2.8, rotuloMenor: 2.2, vao: 2.2, nota: 2.5 },
-    passoHachura: 1.6, offCota1: 11, offCota2: 20, margemCotas: 28,
-    cinzaLouca: "#7a7a7a", cinzaMovel: "#8c8c8c", pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
-    tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: "3 1.5"
+    pena: { corte: PN.parede_cortada, vista: PN.folha_de_esquadria, fina: PN.marcenaria_em_vista, cota: PN.linha_de_cota, hachura: PN.hachura, titulo: PN.sublinhado_titulo, moldura: PN.moldura_da_folha,
+            movel: PN.mobiliario_em_planta, leader: PN.leader_de_nota, luminaria: PN.simbolo_luminotecnico,
+            /* sem papel no padrão de interiores: pena da casa */
+            divisa: 0.35, tabela: 0.25, telhado: 0.25, cumeeira: 0.5 },
+    hLetra: { rotulo: S.TEXTOS.legenda, rotuloMenor: 2.2, vao: S.TEXTOS.legenda, nota: S.TEXTOS.nota_de_material },
+    passoHachura: 1.6, margemCotas: 28,
+    cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
+    tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: S.TRACEJADO
   };
 
   /* ------------------------------------------------------------ ESTILO (camadas ARQ-* sobre o estilo da casa) */
   function estilo(padrao) {
-    var A = AP(), E = A.estilo(padrao), C = conv();
-    function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || "#000" }; }
-    cam("ARQ-PAREDE", K.pena.corte, "#000"); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, C.existente.cor);
-    cam("ARQ-PAREDE-NOVO", K.pena.corte, C.novo.cor); cam("ARQ-PAREDE-DEMOLIDO", 0.35, C.demolido.cor, C.demolido.tracejado.join(" "));
-    cam("ARQ-VAO", K.pena.vista, "#000"); cam("ARQ-VAO-EXISTENTE", K.pena.vista, C.existente.cor); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, C.demolido.cor, C.demolido.tracejado.join(" "));
-    cam("ARQ-ARCO", K.pena.cota, "#444"); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, C.demolido.cor, C.demolido.tracejado.join(" "));
-    cam("ARQ-MOVEL", K.pena.fina, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.fina, K.cinzaLouca);
-    cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.hachura); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
-    cam("ARQ-DIVISA", K.pena.divisa, "#000", K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, "#000", K.tracoEixo); cam("ARQ-OCULTA", K.pena.fina, "#555", K.tracoOculta);
-    cam("ARQ-TELHADO", K.pena.telhado, "#000"); cam("ARQ-CUMEEIRA", K.pena.cumeeira, "#000"); cam("ARQ-ESPIGAO", 0.35, "#000"); cam("ARQ-BEIRAL", K.pena.fina, "#000", K.tracoOculta);
-    cam("ARQ-CORTE", 0.35, "#000", K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, "#000"); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a");
-    cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.cota, "#000"); cam("ARQ-SIMBOLO", K.pena.fina, "#000");
-    cam("ARQ-FORRO", 0.35, "#000"); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.fina, "#000"); cam("ARQ-SANCA", K.pena.fina, "#444", K.tracoOculta);
-    cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, "#000"); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
-    cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, "#000"); cam("ARQ-MOLDURA", K.pena.moldura, "#000");
+    var A = AP(), E = A.estilo(padrao), C = conv(), PRETO = S.CORES.preto, cEx = C.existente.cor;
+    function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || PRETO }; }
+    /* parede cortada: contorno 0,30 preto por cima do preenchimento (cor da convenção) */
+    cam("ARQ-PAREDE", K.pena.corte, PRETO); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, cEx);
+    cam("ARQ-PAREDE-NOVO", K.pena.corte, PRETO); cam("ARQ-PAREDE-DEMOLIDO", K.pena.corte, PRETO);
+    /* esquadria: batente 0,30 (bancada_e_batente), folha 0,09, arco de giro em cabelo; novo em vermelho, demolido tracejado, existente na cor do existente */
+    cam("ARQ-BATENTE", PN.bancada_e_batente, PRETO); cam("ARQ-BATENTE-EXISTENTE", PN.bancada_e_batente, cEx); cam("ARQ-BATENTE-NOVO", PN.bancada_e_batente, C.novo.cor); cam("ARQ-BATENTE-DEMOLIDO", PN.bancada_e_batente, PRETO, S.TRACEJADO);
+    cam("ARQ-VAO", K.pena.vista, PRETO); cam("ARQ-VAO-EXISTENTE", K.pena.vista, cEx); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, PRETO, S.TRACEJADO);
+    cam("ARQ-ARCO", K.pena.cota, PRETO); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, PRETO, S.TRACEJADO);
+    cam("ARQ-MOVEL", K.pena.movel, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.movel, K.cinzaLouca);
+    cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.cor); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
+    cam("ARQ-DIVISA", K.pena.divisa, PRETO, K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, PRETO, K.tracoEixo); cam("ARQ-OCULTA", K.pena.cota, PRETO, K.tracoOculta);
+    cam("ARQ-TELHADO", K.pena.telhado, PRETO); cam("ARQ-CUMEEIRA", K.pena.cumeeira, PRETO); cam("ARQ-ESPIGAO", 0.35, PRETO); cam("ARQ-BEIRAL", K.pena.cota, PRETO, K.tracoOculta);
+    cam("ARQ-CORTE", 0.35, PRETO, K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, PRETO); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a"); cam("ARQ-FINA", K.pena.fina, PRETO);
+    cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.leader, PRETO); cam("ARQ-SIMBOLO", K.pena.fina, PRETO);
+    cam("ARQ-FORRO", 0.35, PRETO); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.luminaria, S.CORES.luminotecnico); cam("ARQ-SANCA", K.pena.cota, PRETO, K.tracoOculta);
+    cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, PRETO); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
+    cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, PRETO); cam("ARQ-MOLDURA", K.pena.moldura, PRETO);
+    cam("ARQ-QUADRO", PN.moldura_interna, PRETO); cam("ARQ-QUADRO-DIV", PN.linha_de_cota, PRETO);
     E.camadas["MET-MOLDURA"] = E.camadas["ARQ-MOLDURA"]; E.camadas["MET-TABELA"] = E.camadas["ARQ-TABELA"];
+    /* o que o desenho herda do estilo da casa e o padrão de interiores define: a cota (linha e marca em cabelo), o sublinhado do título, o traço fino */
+    E.camadas["MET-COTA"] = { mm: K.pena.cota, dash: null, cor: PRETO }; E.camadas["MET-TITULO"] = { mm: K.pena.titulo, dash: null, cor: PRETO }; E.camadas["MET-FINA"] = { mm: K.pena.fina, dash: null, cor: PRETO };
     return E;
   }
 
   /* ------------------------------------------------------------ O DESENHO (AcoPranchas.Desenho + marcas para a conferência) */
-  var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO)/;
+  var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO|ARQ-QUADRO)/;
   function novo(E, depurar) {
     var A = AP(), caixas = depurar === false ? null : [], D = new A.Desenho(E, caixas);
     D.sgc = []; D._cam = null; D.K = K; D.fundoCam = {};
+    S.aplicar(D);   /* texto em Verdana, cota com ponto + cruz, nota de material (js/arqestilo.js) */
     var oLinha = D.linha, oTraco = D.traco, oEst = D.estilo;
     D.traco = function (lista, fechado) {
       var n0 = this.sg.length; oTraco.call(this, lista, fechado);
@@ -133,14 +143,19 @@
   }
   function polyPapel(M, ptsM) { return ptsM.map(function (p) { return M.Pp(p); }); }
 
+  /* ------------------------------------------------------------ TÍTULO DE DESENHO ("01 PLANTA BAIXA" / ESCALA 1/50) — ver ArqEstilo.titulo.
+     escala: "ESC 1:50" | "1:50" | "SEM ESCALA"; numero: o do desenho na folha (01, 02…). Devolve a altura que o título ocupa. */
+  function titulo(D, x, y, nome, escala, numero) { return S.titulo(D, x, y, numero == null ? "01" : numero, nome, escala); }
+
   /* ------------------------------------------------------------ TEXTO: números e blocos */
   function br(v, c) {
     if (v == null || !isFinite(v)) return "-";
     return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ",");
   }
-  function cm1(vm) { var v = Math.round(vm * 1000) / 10; return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : br(v, 1); }
+  /* o número de uma COTA (metros): o formato do padrão (".79", "1.52"), trocável em ArqEstilo.formatoNumero; `cm1` é o nome antigo (centímetros) e hoje dá o mesmo */
+  function cotaTxt(vm) { return S.numeroCota(vm); }
   function nivelTxt(z) { return (z > 0.0005 ? "+" : (z < -0.0005 ? "-" : "±")) + br(Math.abs(z), 2); }
-  function largTexto(s, h) { return AP().largTexto(s, h); }
+  function largTexto(s, h) { return S.largTexto(s, h); }
   /* bloco de linhas de texto centrado no lugar livre mais perto de pref (D.procura): devolve o centro ou null */
   function rotuloBloco(D, pref, linhas, area, o) {
     o = o || {};
@@ -178,7 +193,7 @@
   function estiloParede(modo, status) {
     var C = conv();
     if (modo === "demolir") {
-      if (status === "novo") return { cam: "ARQ-PAREDE-NOVO", fill: C.novo.fill, hach: "ARQ-HACHURA-NOVO", fator: 2 };
+      if (status === "novo") return { cam: "ARQ-PAREDE-NOVO", fill: C.novo.fill, hach: null, fator: 2 };
       if (status === "demolido") return { cam: "ARQ-PAREDE-DEMOLIDO", fill: C.demolido.fill, hach: null, fator: 2 };
       return { cam: "ARQ-PAREDE-EXISTENTE", fill: C.existente.fill, hach: null, fator: 2 };
     }
@@ -226,7 +241,8 @@
       var gap = [Q(-h, -e2), Q(h, -e2), Q(h, e2), Q(-h, e2)];
       fundoPol(D, gap, "#fff");
       var camB = camVao(modo, v.status, "ARQ-VAO"), camA = v.status === "novo" && modo === "demolir" ? "ARQ-ARCO-NOVO" : (v.status === "demolido" && modo === "demolir" ? "ARQ-ARCO-DEMOLIDO" : "ARQ-ARCO");
-      D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camB); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camB);
+      var camJ = camVao(modo, v.status, "ARQ-BATENTE");   /* o batente em pena de bancada/batente; a folha e as linhas da janela em pena de esquadria */
+      D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camJ); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camJ);
       var corre = /correr/i.test(v.famId);
       if (v.tipo === "janela") {
         [-e2 / 3, e2 / 3].forEach(function (b) { var a1 = Q(-h, b), a2 = Q(h, b); D.linha(a1[0], a1[1], a2[0], a2[1], camB); });
@@ -276,7 +292,7 @@
     });
   }
 
-  /* ------------------------------------------------------------ COTAS */
+  /* ------------------------------------------------------------ COTAS (padrão `cota`: marca em ponto + cruz, texto a 1,04 mm da linha, número ".79") */
   function unicos(vs, tol) {
     var v = vs.slice().sort(function (a, b) { return a - b; }), out = [];
     v.forEach(function (x) { if (!out.length || x - out[out.length - 1] > tol) out.push(x); });
@@ -289,79 +305,91 @@
     for (var i = 1; i < P.length; i++) { if (P[i] - out[out.length - 1] >= min || i === P.length - 1) { if (P[i] - out[out.length - 1] < min && out.length > 1) out.pop(); out.push(P[i]); } }
     return out;
   }
-  /* cotas externas: cadeia de fora a fora (faces das paredes que chegam à divisa da planta + vãos das paredes de fora) e o total */
+  /* o denominador da escala do mapa (1:50 → 50): dele vêm a altura do texto e o afastamento entre cadeias */
+  function escDe(M) { return Math.round(1000 / M.k); }
+  function escalaCota(D, den) { D.escCota = den > 0 ? den : 50; return D.escCota; }
+  function tabelaParedes(paredes) { var m = {}; paredes.forEach(function (w) { m[w.id] = w; }); return m; }
+  /* COTAS EXTERNAS DA PRANCHA = a regra do BIM (js/bimplanta.js ladosPlanta), só da EDIFICAÇÃO: por lado, os cantos de fora + as faces das paredes
+     internas que chegam à fachada, e o total por fora; muro, divisa e parede solta no terreno ficam de fora (paredesDaEdificacao, com os ambientes
+     em o.ambientes). A CADEIA DE VÃOS da fachada (as esquadrias da parede de fora) fica mais perto da parede; só a mais próxima leva linha de chamada
+     (curta); as outras flutuam, só com as marcas (como no caderno de referência). Parede fora de esquadro não entra (como no BIM). */
   function cotasExternas(D, M, paredes, vaos, o) {
     o = o || {};
-    var G = GEO(), W = paredes.filter(ortogonal); if (!W.length) return 0;
-    var xs = [], zs = [];
-    W.forEach(function (w) { w.pts.forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
-    var bx0 = Math.min.apply(null, xs), bx1 = Math.max.apply(null, xs), bz0 = Math.min.apply(null, zs), bz1 = Math.max.apply(null, zs), tol = 0.04, qtd = 0;
-    function horiz(w) { return Math.abs(Math.sin(w.rotY)) < 0.02; }
-    /* a cota TOTAL fica 9 mm por fora da cadeia: quando a cadeia foi para o afastamento de reserva (11 + 7 = 18 mm), a total
-       nos 20 mm de sempre ficava com o número em cima da linha da cadeia (o "1240" do projeto exemplo, 25/10/2026) */
-    function offTotal(ofCadeia) { return typeof ofCadeia === "number" && isFinite(ofCadeia) ? Math.max(K.offCota2, Math.abs(ofCadeia) + 9) : K.offCota2; }
-    var lados = [
-      { id: "topo", eixo: "x", z: bz0, dir: 1 }, { id: "base", eixo: "x", z: bz1, dir: -1 },
-      { id: "esq", eixo: "z", x: bx0, dir: -1 }, { id: "dir", eixo: "z", x: bx1, dir: 1 }
-    ];
-    lados.forEach(function (ld) {
-      var P = [], tot;
-      if (ld.eixo === "x") {
-        W.forEach(function (w) {
-          var b = G.bbox(w.pts);
-          if (horiz(w)) { if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) < tol) P.push(b[0], b[2]); }
-          else if ((ld.id === "topo" && b[1] <= ld.z + tol) || (ld.id === "base" && b[3] >= ld.z - tol)) P.push(b[0], b[2]);
-        });
-        arr(vaos).forEach(function (v) {
-          var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || !horiz(w)) return;
-          var b = G.bbox(w.pts); if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) > tol) return;
-          P.push(v.x - v.largura / 2, v.x + v.largura / 2);
-        });
-        P = unicos(P, tol); if (P.length < 2) return;
-        P = podar(P, M.k); tot = [P[0], P[P.length - 1]];
-        var pp = P.map(function (x) { return M.P(x, ld.z); }), vals = [];
-        for (var i = 0; i + 1 < P.length; i++) vals.push(cm1(P[i + 1] - P[i]));
-        var ofX = D.cadeia(pp, ld.dir * K.offCota1, vals, { offs: [ld.dir * (K.offCota1 + 4.5), ld.dir * (K.offCota1 + 7)], desde: pp.map(function () { return 0.6; }) }); qtd++;
-        D.cota(M.P(tot[0], ld.z)[0], M.P(tot[0], ld.z)[1], M.P(tot[1], ld.z)[0], M.P(tot[1], ld.z)[1], ld.dir * offTotal(ofX), cm1(tot[1] - tot[0]), { desde: [0.6, 0.6] }); qtd++;
-      } else {
-        W.forEach(function (w) {
-          var b = G.bbox(w.pts);
-          if (!horiz(w)) { if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) < tol) P.push(b[1], b[3]); }
-          else if ((ld.id === "esq" && b[0] <= ld.x + tol) || (ld.id === "dir" && b[2] >= ld.x - tol)) P.push(b[1], b[3]);
-        });
-        arr(vaos).forEach(function (v) {
-          var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || horiz(w)) return;
-          var b = G.bbox(w.pts); if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) > tol) return;
-          P.push(v.z - v.largura / 2, v.z + v.largura / 2);
-        });
-        P = unicos(P, tol); if (P.length < 2) return;
-        P = podar(P, M.k); P.reverse();   /* de baixo para cima: o número da cota vertical é lido de baixo para cima */
-        tot = [P[0], P[P.length - 1]];
-        var qq = P.map(function (z) { return M.P(ld.x, z); }), vs = [], sgn = ld.id === "esq" ? 1 : -1;   /* n = à esquerda do sentido (para cima): + = esquerda do papel */
-        for (var j = 0; j + 1 < P.length; j++) vs.push(cm1(P[j] - P[j + 1]));
-        var ofZ = D.cadeia(qq, sgn * K.offCota1, vs, { offs: [sgn * (K.offCota1 + 4.5), sgn * (K.offCota1 + 7)], desde: qq.map(function () { return 0.6; }) }); qtd++;
-        D.cota(M.P(ld.x, tot[0])[0], M.P(ld.x, tot[0])[1], M.P(ld.x, tot[1])[0], M.P(ld.x, tot[1])[1], sgn * offTotal(ofZ), cm1(tot[0] - tot[1]), { desde: [0.6, 0.6] }); qtd++;
-      }
+    var G = GEO(), B = BP(), W = paredes.filter(ortogonal);
+    if (!W.length || !B || !B.ladosPlanta) return 0;
+    var den = escalaCota(D, escDe(M)), a1 = S.afastamento1(), entre = S.entreCadeias(den), pid = tabelaParedes(paredes), qtd = 0, tol = 0.05;
+    var aabb = W.map(function (w) { var b = G.bbox(w.pts); return { minx: b[0], minz: b[1], maxx: b[2], maxz: b[3], w: w }; }), lista = aabb;
+    var amb = arr(o.ambientes).filter(function (a) { return a && arr(a.pts).length >= 3; }).map(function (a) { return { pts: a.pts.map(function (p) { return { x: p[0], z: p[1] }; }) }; });
+    if (amb.length && B.paredesDaEdificacao) { var ed = B.paredesDaEdificacao(aabb, amb, 0.3); if (ed.paredes.length) lista = ed.paredes; }
+    var LD = B.ladosPlanta(lista, {}), SG = { topo: 1, base: -1, esq: 1, dir: -1 };
+    ["topo", "base", "esq", "dir"].forEach(function (lado) {
+      var C = LD[lado]; if (!C || !C.ticks || C.ticks.length < 2) return;
+      var face = LD.faces[lado], horiz = lado === "topo" || lado === "base", sg = SG[lado], U = C.ticks.slice(), u0 = U[0], u1 = U[U.length - 1], vs = [], cadeias = [];
+      arr(vaos).forEach(function (v) {
+        var w = pid[v.parede]; if (!w || (Math.abs(Math.sin(w.rotY)) < 0.02) !== horiz) return;
+        var b = G.bbox(w.pts), coord = horiz ? (lado === "topo" ? b[1] : b[3]) : (lado === "esq" ? b[0] : b[2]), c = horiz ? v.x : v.z;
+        if (Math.abs(coord - face) > tol) return;
+        vs.push(c - v.largura / 2, c + v.largura / 2);
+      });
+      var uv = unicos([u0, u1].concat(vs.filter(function (x) { return x > u0 + 0.02 && x < u1 - 0.02; })), 0.04);
+      if (vs.length && uv.length > 2) cadeias.push(uv);
+      if (U.length > 2) cadeias.push(U);
+      cadeias.push([u0, u1]);
+      var of = a1 * sg;
+      cadeias.forEach(function (P0, i) {
+        var P = podar(P0, M.k); if (P.length < 2) return;
+        var pp, vals = [];
+        if (horiz) { pp = P.map(function (u) { return M.P(u, face); }); for (var a = 0; a + 1 < P.length; a++) vals.push(cotaTxt(P[a + 1] - P[a])); }
+        else { P = P.slice().reverse(); pp = P.map(function (u) { return M.P(face, u); }); for (var b2 = 0; b2 + 1 < P.length; b2++) vals.push(cotaTxt(P[b2] - P[b2 + 1])); }   /* de baixo para cima: o número da cota vertical se lê de baixo para cima */
+        var r = D.cadeia(pp, of, vals, { offs: [of + sg * 4.5, of + sg * 7], semExt: i > 0, desde: pp.map(function () { return S.COTA.linha_de_chamada.do_objeto_mm; }) });
+        of = (typeof r === "number" ? r : of) + sg * entre; qtd++;
+      });
     });
     return qtd;
   }
-  /* cotas internas: largura e profundidade (face a face) de cada ambiente retangular, em linhas curtas no canto — só se houver lugar livre */
-  function cotasInternas(D, M, ambientes) {
-    var G = GEO(), q = 0;
-    ambientes.forEach(function (a) {
-      var b = a.bbox || G.bbox(a.pts); if (!b) return;
-      var P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]), w = b[2] - b[0], d = b[3] - b[1];
-      var retangular = Math.abs(G.areaPol(a.pts) - w * d) < 0.05;
-      if (!retangular) return;
-      /* horizontal: perto da base do ambiente */
-      var poss = [P1[1] - 3.2, P1[1] - 6.5, P0[1] + 3.2, P0[1] + 6.5];
-      for (var i = 0; i < poss.length; i++) {
-        if (D.livre([P0[0] + 0.5, poss[i] - 3, P1[0] - 0.5, poss[i] + 1], 0.2)) { D.cota(P0[0], poss[i], P1[0], poss[i], 0, cm1(w), { desde: [false, false], semExt: true }); q++; break; }
-      }
-      var possx = [P0[0] + 3.2, P0[0] + 6.5, P1[0] - 3.2, P1[0] - 6.5];
-      for (var j = 0; j < possx.length; j++) {
-        if (D.livre([possx[j] - 3, P0[1] + 0.5, possx[j] + 1, P1[1] - 0.5], 0.2)) { D.cota(possx[j], P1[1], possx[j], P0[1], 0, cm1(d), { desde: [false, false], semExt: true }); q++; break; }
-      }
+  /* duas caixas [x0, y0, x1, y1] se tocam (folga g) */
+  function cruzaCaixa(a, b, g) { return a[0] < b[2] + g && a[2] > b[0] - g && a[1] < b[3] + g && a[3] > b[1] - g; }
+  /* COTAS INTERNAS: em todo ambiente, DENTRO, o vão livre face a face (o do BIM: BimPlanta.cotasInternas mede de verdade e desvia de móvel e louça; vale
+     para o ortogonal em L/T). A linha é flutuante (só as marcas); se o número não couber no lugar escolhido, a linha anda dentro do ambiente retangular
+     até achar lugar livre. o.moveis = o que está no chão (obstáculo); o.semLugar (lista) recebe os ambientes que ficaram sem cota e o.cruza os que só acharam lugar com a linha por cima de móvel. */
+  function cotasInternas(D, M, ambientes, o) {
+    o = o || {};
+    var G = GEO(), B = BP(), q = 0;
+    if (!B || !B.cotasInternas) return 0;
+    var den = escalaCota(D, escDe(M)), h = S.alturaCota(den), sobe = S.COTA.texto_acima_da_linha_mm, k = M.k, lado = S.COTA.texto_ao_lado_vertical_mm;
+    var margem = Math.max(0.25, (h * 0.76 + sobe + 0.8) / k);
+    var obst = arr(o.moveis).map(function (m) { var b = G.bbox(m.pts); return b ? { minx: b[0], minz: b[1], maxx: b[2], maxz: b[3] } : null; }).filter(function (x) { return !!x; });
+    arr(ambientes).forEach(function (a) {
+      var pts = arr(a.pts); if (pts.length < 3) return;
+      var R = B.cotasInternas([{ nome: a.nome, pts: pts.map(function (p) { return { x: p[0], z: p[1] }; }) }], { obstaculos: obst, margem: margem });
+      var bb = a.bbox || G.bbox(pts), retang = !!bb && Math.abs(G.areaPol(pts) - (bb[2] - bb[0]) * (bb[3] - bb[1])) < 0.05, feitas = 0;
+      var feitasAmb = [];   /* decide as duas cotas do ambiente ANTES de desenhar (uma não conta como obstáculo da outra: cruzam-se no vão) */
+      R.cotas.forEach(function (c) {
+        var val = cotaTxt(c.v), tw = S.largTexto(val, h), horiz = c.tipo === "larg", lo = horiz ? bb[1] : bb[0], hi = horiz ? bb[3] : bb[2], melhor = null, segundo = null;
+        if (tw + 1.0 > c.v * k) return;
+        /* a linha do BIM primeiro; depois, no ambiente retangular, as paralelas de 5 em 5 cm, da mais perto para a mais longe */
+        var desl = [0]; if (retang) { for (var j = 1; j <= 60; j++) desl.push(0.05 * j, -0.05 * j); }
+        for (var i = 0; i < desl.length && !melhor; i++) {
+          var f = c.fixo + desl[i]; if (f < lo + margem - 1e-6 || f > hi - margem + 1e-6) continue;
+          var A0 = horiz ? M.P(c.a, f) : M.P(f, c.b), A1 = horiz ? M.P(c.b, f) : M.P(f, c.a), mid = [(A0[0] + A1[0]) / 2, (A0[1] + A1[1]) / 2], box, tira;
+          if (horiz) { box = [mid[0] - tw / 2 - 0.3, A0[1] - sobe - h * 0.76 - 0.2, mid[0] + tw / 2 + 0.3, A0[1] + 0.5]; tira = [A0[0] + 0.6, A0[1] - 0.3, A1[0] - 0.6, A0[1] + 0.3]; }
+          else { box = [A0[0] - lado - h * 0.76 - 0.2, mid[1] - tw / 2 - 0.3, A0[0] + 0.5, mid[1] + tw / 2 + 0.3]; tira = [A0[0] - 0.3, A1[1] + 0.6, A0[0] + 0.3, A0[1] - 0.6]; }
+          if (!D.livre(box, 0.2)) continue;
+          /* a outra cota do mesmo ambiente (ainda não desenhada): nem o número de uma sobre a linha da outra */
+          var choca = feitasAmb.some(function (f) { return cruzaCaixa(f.tira, box, 0.2) || cruzaCaixa(tira, f.box, 0.2); });
+          if (choca) continue;
+          var cand = { A0: A0, A1: A1, box: box, tira: tira };
+          if (D.livre(tira, 0.05)) melhor = cand; else if (!segundo) segundo = cand;   /* segundo: o número livre, mas a linha cruza móvel */
+        }
+        var esc1 = melhor || segundo;
+        if (!esc1) return;
+        feitasAmb.push({ c: esc1, val: val, cruza: !melhor, box: esc1.box, tira: esc1.tira });
+      });
+      feitasAmb.forEach(function (f) {
+        D.cota(f.c.A0[0], f.c.A0[1], f.c.A1[0], f.c.A1[1], 0, f.val, { desde: [false, false], semExt: true }); q++; feitas++;
+        if (f.cruza && o.cruza && o.cruza.indexOf(a.nome) < 0) o.cruza.push(a.nome);
+      });
+      if (!feitas && o.semLugar) o.semLugar.push(a.nome);
     });
     return q;
   }
@@ -372,7 +400,7 @@
     ambientes.forEach(function (a) {
       var c = M.P(a.cx, a.cz), b = a.bbox || GEO().bbox(a.pts), P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]);
       var area = [P0[0] + 0.5, P0[1] + 0.5, P1[0] - 0.5, P1[1] - 0.5];
-      var nome = { t: txt(a.nome).toUpperCase(), h: 2.8, peso: 0.05 }, ar = { t: "A = " + br(a.area, 2) + " m²" }, piso = { t: "Piso: " + a.piso }, pe = { t: "PD = " + br(a.pe, 2) + " m" };
+      var nome = { t: txt(a.nome).toUpperCase(), h: K.hLetra.rotulo }, ar = { t: "A = " + br(a.area, 2) + " m²" }, piso = { t: "Piso: " + a.piso }, pe = { t: "PD = " + br(a.pe, 2) + " m" };
       var jogos = [];
       if (o.completo) jogos.push([nome, ar, a.piso ? piso : null, pe]);
       jogos.push([nome, ar], [nome]);
@@ -448,43 +476,41 @@
   }
 
   /* ------------------------------------------------------------ COLUNA DE NOTAS, MOLDURA, CARIMBO */
+  /* a coluna de notas (padrão `fonte` + `legendas`): Verdana em MAIÚSCULAS (títulos, legendas e notas); `quadro` é o QUADRO DE LEGENDAS do demolir/construir
+     (b.quadro = { itens: [{ t, fill }] }), que traz o título espaçado, as amostras e a OBS. */
   function colunaNotas(D, g, blocos) {
-    var col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, yMax = car.y - 3, yMin = col.y + 4, T = D.E.T, A = AP();
-    var tent = [T.nota, T.nota * 0.92, T.nota * 0.84, T.nota * 0.76, T.nota * 0.68].filter(function (hh) { return hh >= T.minimo - 1e-9; }), esc0 = null, coube = true;
+    var col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, yMax = car.y - 3, yMin = col.y + 4, T = D.E.T, hBase = S.TEXTOS.legenda;
+    var tent = [hBase, hBase * 0.92, hBase * 0.84, hBase * 0.76, hBase * 0.68].filter(function (hh) { return hh >= T.minimo - 1e-9; }), esc0 = null, coube = true;
     if (tent[tent.length - 1] > T.minimo + 1e-9) tent.push(T.minimo);
-    function itemTxt(it) { return (it && typeof it === "object") ? it.t : it; }
-    function medir(h, hq) {
+    var hq = S.TEXTOS.legenda_titulo, Lg = S.LEGENDAS.demolir_construir;
+    function itemTxt(it) { return S.maiusc((it && typeof it === "object") ? it.t : it); }
+    function medir(h) {
       var tot = 0;
       blocos.forEach(function (b) {
+        if (b.quadro) { tot += Lg.linha_titulo + arr(b.quadro.itens).length * Lg.linha + Lg.obs_abaixo + hBase * 0.76 + 0.8 + 3.5; return; }
         tot += hq * 0.76 + hq * 0.55 + 1.5;
-        if (b.legenda) tot += b.legenda.length * (Math.max(h, 3.2) * 1.5);
         arr(b.itens).forEach(function (it, i) {
-          var pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
-          tot += A.quebrar(itemTxt(it), h, wmax - rec).length * h * 1.42 + 0.7;
+          var pre = b.numerar ? (i + 1) + "- " : "- ", rec = S.largTexto(pre, h);
+          tot += S.quebrar(itemTxt(it), h, wmax - rec).length * h * 1.42 + 0.7;
         });
         tot += 3.5;
       });
       return tot;
     }
-    for (var i = 0; i < tent.length; i++) { var hq = Math.min(T.quadro, tent[i] * 3); if (medir(tent[i], hq) <= yMax - yMin) { esc0 = [tent[i], hq]; break; } }
-    if (!esc0) { esc0 = [tent[tent.length - 1], Math.min(T.quadro, tent[tent.length - 1] * 3)]; coube = false; }
-    var h = esc0[0], hq0 = esc0[1], y = yMax - medir(h, hq0);
+    for (var i = 0; i < tent.length; i++) { if (medir(tent[i]) <= yMax - yMin) { esc0 = tent[i]; break; } }
+    if (!esc0) { esc0 = tent[tent.length - 1]; coube = false; }
+    var h = esc0, y = yMax - medir(h);
     D.linha(col.x, col.y, col.x, car.y, "ARQ-MOLDURA");
     blocos.forEach(function (b) {
-      D.texto(x0, y + hq0 * 0.76, b.titulo, hq0, { peso: 0.28 });
-      y += hq0 * 0.76 + hq0 * 0.55 + 1.5;
-      /* LEGENDA com amostra (cor, traço) à esquerda do texto: b.legenda = [{ t, fill, cor, tracejado, hachura }] */
-      arr(b.legenda).forEach(function (l) {
-        var hh = Math.max(h, 3.2) * 1.5, sw = 9, sh = Math.min(3.6, hh - 0.8), ys = y + (hh - sh) / 2;
-        if (l.fill) D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="' + l.fill + '" stroke="none"/>');
-        if (l.hachura) GEO().hachuraLinhas([[x0, ys], [x0 + sw, ys], [x0 + sw, ys + sh], [x0, ys + sh]], 1.2, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA-NOVO"); });
-        if (l.cam) { D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="none"' + atr(D, l.cam, 1.4) + "/>"); }
-        D.texto(x0 + sw + 2.2, ys + sh / 2, l.t, h, { meio: true });
-        y += hh;
-      });
+      if (b.quadro) {
+        var r = S.quadroLegendas(D, x0, y, Math.min(Lg.largura, wmax), b.quadro.itens, {});
+        y += r.h + 3.5; return;
+      }
+      D.texto(x0, y + hq * 0.76, S.maiusc(b.titulo), hq);
+      y += hq * 0.76 + hq * 0.55 + 1.5;
       arr(b.itens).forEach(function (it, i) {
-        var o = (it && typeof it === "object") ? it : { t: txt(it) }, pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
-        var ls = A.quebrar(o.t, h, wmax - rec);
+        var o = (it && typeof it === "object") ? it : { t: txt(it) }, pre = b.numerar ? (i + 1) + "- " : "- ", rec = S.largTexto(pre, h);
+        var ls = S.quebrar(S.maiusc(o.t), h, wmax - rec);
         D.texto(x0, y + h * 0.76, pre, h, { cor: o.cor });
         ls.forEach(function (s) { D.texto(x0 + rec, y + h * 0.76, s, h, { cor: o.cor }); y += h * 1.42; });
         y += 0.7;
@@ -526,10 +552,10 @@
     return out;
   }
 
-  var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cm1: cm1, nivelTxt: nivelTxt, esc: esc, n: n,
+  var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cotaTxt: cotaTxt, cm1: cotaTxt, escalaCota: escalaCota, titulo: titulo, nivelTxt: nivelTxt, esc: esc, n: n,
     rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
     rotulosAmbientes: rotulosAmbientes, etiquetasVaos: etiquetasVaos, norte: norte, escalaGrafica: escalaGrafica, marcaCorte: marcaCorte, escolherLinhaCorte: escolherLinhaCorte, colunaNotas: colunaNotas, conferir: conferir,
-    estiloParede: estiloParede, conv: conv, CONV_RESERVA: CONV_RESERVA, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
+    estiloParede: estiloParede, conv: conv, S: S, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
   global.ArqDesenho = ArqDesenho;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqDesenho;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

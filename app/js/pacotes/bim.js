@@ -167330,6 +167330,300 @@ global.ArqIndices = ArqIndices;
 if (typeof module !== "undefined" && module.exports) module.exports = ArqIndices;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/arqestilo.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function n(v) { return (typeof v === "number" && isFinite(v)) ? String(Math.round(v * 1000) / 1000) : "NaN"; }
+function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+function hip(x, y) { return Math.sqrt(x * x + y * y); }
+var ES = {};
+ES.VERSAO = "arquitetura_interiores v2.13";
+ES.FONTE = {
+padrao: "Verdana", marcador: "Verdana Bold", reserva: "DejaVu Sans", reserva2: "Arial",
+css: "Verdana, 'DejaVu Sans', Arial, sans-serif",
+caixa: "MAIÚSCULAS em notas, legendas, títulos e OBS.; números de cota como medidos"
+};
+ES.PENAS = {
+parede_cortada: 0.3, piso_teto_em_vista: 0.3, bancada_e_batente: 0.3,
+marcenaria_em_vista: 0.09, folha_de_esquadria: 0.09, moldura_interna: 0.09, sublinhado_titulo: 0.09,
+mobiliario_em_planta: 0.05, linha_de_cota: 0.05, marca_de_cota: 0.05, hachura: 0.05,
+leader_de_nota: 0.21, simbolo_luminotecnico: 0.25, moldura_da_folha: 0.3,
+barra_marcador_vista: 0.45,
+tracejado: { traco: 2.0, espaco: 1.0, pena: 0.05 }
+};
+ES.TRACEJADO = ES.PENAS.tracejado.traco + " " + ES.PENAS.tracejado.espaco;
+ES.CORES = { construir: "#D61B0A", demolir: "#F5E642", luminotecnico: "#D61B0A", texto_secundario: "#BABABA", vidro_reflexo: "#DBDBDB", preto: "#000" };
+ES.TEXTOS = {
+cota: { "1:50": 3.3, "1:25": 2.48, "1:20": 2.2, "1:10": 2.2, minimo: 2.0 },
+nota_de_material: 2.75, legenda: 2.75, obs: 2.15,
+titulo_numero: 11.0, titulo_nome: 5.5, titulo_escala: 2.75,
+marcador_letra: 4.13, marcador_prancha: 2.75,
+legenda_titulo: 3.44
+};
+ES.ALTURA_MAIUSCULA = 0.727;
+ES.COTA = {
+marca_ponto_diametro: 0.64, marca_cruz: 2.0,
+texto_acima_da_linha_mm: 1.04, texto_ao_lado_vertical_mm: 1.08,
+afastamento_1a_cadeia_mm: 5.0,
+entre_cadeias_mm: { "1:50": 5.3, "1:25": 4.4 },
+linha_passa_da_ultima_marca_mm: 1.0,
+linha_de_chamada: { alem_da_linha_mm: 1.0, do_objeto_mm: 1.0 }
+};
+ES.NOTA_MATERIAL = { seta_recuo_mm: 1.7, seta_meia_abertura_mm: 1.75, baseline_acima_da_linha_mm: 0.8, entrelinha_mm: 3.4 };
+ES.MARCADOR_VISTA = {
+A: { base: 15.0, altura: 7.87, barra: 22.0, barra_da_base: 1.31, letra_baseline: 1.78, prancha_abaixo_da_barra: 2.75 },
+B: { base: 10.0, altura: 5.25, barra: [30.0, 36.0], barra_da_base: 1.14, prancha_ao_lado_da_barra: 2.9 }
+};
+ES.TITULO = { folga_numero_nome: 0.95, nome_acima_do_sublinhado: 1.19, escala_abaixo_do_sublinhado: 3.13 };
+ES.LEGENDAS = {
+demolir_construir: { titulo: "QUADRO DE LEGENDAS", linha_titulo: 6.4, linha: 9.0, amostra_w: 6.0, amostra_h: 5.0, amostra_da_borda: 5.0, texto_x: 13.5,
+largura: 94.8, obs: "OBS: CHECAR MEDIDAS NO LOCAL", obs_abaixo: 3.4 }
+};
+ES.OBS_PADRAO = [
+"OBS.: 1 - A ALTURA DOS INTERRUPTORES SERÁ IGUAL A 1.10m, EXCETO QUANDO MARCADO (NESTE CASO A ALTURA ESTÁ INDICADA EM PLANTA OU NA VISTA);",
+"OBS.: 2 - OBSERVAR ATENTAMENTE ALTURA DE TOMADAS EM VISTA;",
+"OBS.: 3 - AS MEDIDAS DE COTAS E ALTURAS DOS PONTOS SÃO DADAS DE EIXO A EIXO;",
+"OBS.: 4 - SEGUIR MEDIDAS PELAS COTAS EM M, DÚVIDAS LIGAR PARA O RESPONSÁVEL TÉCNICO;"
+];
+ES.CONVENCAO = {
+novo: { rotulo: "CONSTRUIR PAREDE", cor: ES.CORES.construir, fill: ES.CORES.construir, hachura: null, tracejado: null },
+demolido: { rotulo: "DEMOLIR", cor: ES.CORES.demolir, fill: ES.CORES.demolir, hachura: null, tracejado: null },
+existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
+};
+ES.formatoNumero = "ponto";
+ES.numeroCota = function (vm) {
+if (typeof vm !== "number" || !isFinite(vm)) return "-";
+var neg = vm < -0.0049, a = Math.abs(Math.round(vm * 100) / 100), s = a.toFixed(2);
+if (ES.formatoNumero === "virgula") return (neg ? "-" : "") + s.replace(".", ",");
+if (a < 1) s = s.replace(/^0/, "");
+return (neg ? "-" : "") + s;
+};
+ES.escalaTxt = function (e) {
+var s = txt(e), m = /1\s*[:\/]\s*(\d+)/.exec(s);
+if (m) return "1/" + m[1];
+if (typeof e === "number" && isFinite(e) && e > 0) return "1/" + Math.round(e);
+return s;
+};
+function interp(den, pts) {
+if (!(den > 0)) den = 50;
+if (den <= pts[0][0]) return pts[0][1];
+if (den >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+for (var i = 0; i + 1 < pts.length; i++) {
+if (den <= pts[i + 1][0]) { var t = (den - pts[i][0]) / (pts[i + 1][0] - pts[i][0]); return pts[i][1] + t * (pts[i + 1][1] - pts[i][1]); }
+}
+return pts[pts.length - 1][1];
+}
+ES.alturaCota = function (den) {
+var T = ES.TEXTOS.cota, v = interp(den, [[10, T["1:10"]], [20, T["1:20"]], [25, T["1:25"]], [50, T["1:50"]]]);
+return Math.max(T.minimo, Math.round(v * 100) / 100);
+};
+ES.entreCadeias = function (den) { var E = ES.COTA.entre_cadeias_mm; return Math.round(interp(den, [[25, E["1:25"]], [50, E["1:50"]]]) * 100) / 100; };
+ES.afastamento1 = function () { return ES.COTA.afastamento_1a_cadeia_mm; };
+var LARG = [352,394,459,818,636,1076,727,269,454,454,636,818,364,454,364,454,636,636,636,636,636,636,636,636,636,636,454,454,818,818,818,545,
+1000,684,686,698,771,632,575,775,751,421,455,693,557,843,748,787,603,787,695,684,616,732,684,989,685,615,685,454,454,454,818,636,
+636,601,623,521,623,596,352,623,633,274,344,592,274,973,633,607,623,623,427,521,394,633,592,818,592,592,525,635,454,635,818,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+352,394,636,636,636,636,454,636,636,1000,545,645,818,454,1000,636,542,818,542,542,636,642,636,364,636,542,545,645,1000,1000,1000,545,
+684,684,684,684,684,684,984,698,632,632,632,632,421,421,421,421,775,748,787,787,787,787,787,818,787,732,732,732,732,615,605,620,
+601,601,601,601,601,601,955,521,596,596,596,596,274,274,274,274,612,633,607,607,607,607,607,818,607,633,633,633,633,592,623,592];
+var FOLGA_LARG = 1.02;
+ES.largTexto = function (s, h) {
+s = txt(s); var w = 0;
+for (var i = 0; i < s.length; i++) {
+var c = s.charCodeAt(i), v = c >= 32 && c < 256 ? LARG[c - 32] : 0;
+if (!v) v = (c === 8212 || c === 8230) ? 1000 : ((c === 8211) ? 636 : ((c === 8804 || c === 8805 || c === 8594) ? 818 : 760));
+w += v;
+}
+return w / 1000 * h * FOLGA_LARG;
+};
+ES.quebrar = function (s, h, wmax) {
+var pal = txt(s).split(/\s+/), linhas = [], at = "";
+pal.forEach(function (p) {
+if (!p) return;
+var t = at ? at + " " + p : p;
+if (at && ES.largTexto(t, h) > wmax) { linhas.push(at); at = p; } else at = t;
+});
+if (at) linhas.push(at);
+return linhas;
+};
+ES.maiusc = function (s) { return txt(s).toUpperCase(); };
+ES.espacado = function (s) { return txt(s).split(" ").map(function (p) { return p.split("").join(" "); }).join("   "); };
+ES.caixaTexto = function (x, y, s, h, o) {
+o = o || {};
+var al = o.al || "E", w = ES.largTexto(txt(s), h), yb = o.meio ? y + 0.37 * h : y, a = (o.rot || 0) * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+var x0 = al === "C" ? -w / 2 : (al === "D" ? -w : 0);
+return [[x0, -0.76 * h], [x0 + w, -0.76 * h], [x0 + w, 0.18 * h], [x0, 0.18 * h]].map(function (p) { return [x + p[0] * c - p[1] * sn, yb + p[0] * sn + p[1] * c]; });
+};
+ES.marca = function (D, x, y) {
+var r = ES.COTA.marca_ponto_diametro / 2, b = ES.COTA.marca_cruz / 2, at = D.estilo("MET-COTA");
+D.add('<line x1="' + n(x - b) + '" y1="' + n(y) + '" x2="' + n(x + b) + '" y2="' + n(y) + '"' + at + "/>");
+D.add('<line x1="' + n(x) + '" y1="' + n(y - b) + '" x2="' + n(x) + '" y2="' + n(y + b) + '"' + at + "/>");
+D.add('<circle cx="' + n(x) + '" cy="' + n(y) + '" r="' + n(r) + '" fill="' + ES.CORES.preto + '"' + at + ' data-marca="1"/>');
+};
+ES.aplicar = function (D) {
+if (D._estiloArq) return D;
+D._estiloArq = true; D.escCota = D.escCota || 50;
+D.larg = ES.largTexto;
+D.texto = function (x, y, s, h, o) {
+o = o || {}; s = txt(s);
+if (!s) return 0;
+var al = o.al || "E", anc = al === "C" ? "middle" : (al === "D" ? "end" : "start"), yb = o.meio ? y + 0.37 * h : y, rot = o.rot || 0, w = ES.largTexto(s, h);
+this.s.push('<text x="' + n(x) + '" y="' + n(yb) + '" font-size="' + n(h) + '"' + (anc !== "start" ? ' text-anchor="' + anc + '"' : "") +
+(rot ? ' transform="rotate(' + n(rot) + " " + n(x) + " " + n(yb) + ')"' : "") + (o.cor ? ' fill="' + o.cor + '"' : "") + (o.negrito ? ' font-weight="bold"' : "") + (/\s\s/.test(s) ? ' style="white-space:pre"' : "") + (o.attr || "") + ">" + esc(s) + "</text>");
+var x0 = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), a = rot * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+var q = [[x0, -0.76 * h], [x0 + w, -0.76 * h], [x0 + w, 0.18 * h], [x0, 0.18 * h]].map(function (p) { return [x + p[0] * c - p[1] * sn, yb + p[0] * sn + p[1] * c]; });
+this.tb.push([Math.min(q[0][0], q[1][0], q[2][0], q[3][0]), Math.min(q[0][1], q[1][1], q[2][1], q[3][1]), Math.max(q[0][0], q[1][0], q[2][0], q[3][0]), Math.max(q[0][1], q[1][1], q[2][1], q[3][1])]);
+if (this.caixas && !o.semCaixa) this.caixas.push({ s: s, p: q });
+return w;
+};
+D.tique = function (x, y) { ES.marca(this, x, y); };
+D.cadeia = function (P, off, valores, o) {
+o = o || {};
+if (P.length < 2) return;
+var self = this, h = o.h || ES.alturaCota(this.escCota), C = ES.COTA, nseg = P.length - 1;
+var p0 = P[0], pn = P[nseg], L = hip(pn[0] - p0[0], pn[1] - p0[1]);
+if (L < 1e-6) return;
+var ux = (pn[0] - p0[0]) / L, uy = (pn[1] - p0[1]) / L, nx = uy, ny = -ux;
+var ang = Math.atan2(uy, ux) * 180 / Math.PI, rx = ux, ry = uy;
+if (ang > 90.01 || ang < -90.01) { ang = ang > 0 ? ang - 180 : ang + 180; rx = -ux; ry = -uy; }
+var tnx = ry, tny = -rx, vertical = Math.abs(Math.abs(ang) - 90) < 1, acima = vertical ? C.texto_ao_lado_vertical_mm : C.texto_acima_da_linha_mm, passa = C.linha_passa_da_ultima_marca_mm;
+function plano(of) {
+var Q = P.map(function (p) { return [p[0] + nx * of, p[1] + ny * of]; }), alt = 0, ext0 = passa, ext1 = passa, txs = [];
+function compr(j) { return j < 0 || j >= nseg ? 0 : hip(Q[j + 1][0] - Q[j][0], Q[j + 1][1] - Q[j][1]); }
+function folgaVizinho(j, w0) { var v2 = valores[j], L2 = compr(j), w2 = v2 == null || v2 === "" ? 0 : ES.largTexto(v2, h); return L2 > 0 && w2 + 1.0 <= L2 && (L2 - w2) / 2 >= w0 + 2.4; }
+for (var i = 0; i < nseg; i++) {
+var v = valores[i]; if (v == null || v === "") continue;
+var a = Q[i], b = Q[i + 1], seg = hip(b[0] - a[0], b[1] - a[1]), w = ES.largTexto(v, h), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, sobe = acima;
+if (w + 1.0 > seg) {
+if (i === 0 && nseg > 1) { var dd = w / 2 + 1.6; mx = a[0] - ux * dd; my = a[1] - uy * dd; ext0 = Math.max(ext0, w + 2.4); }
+else if (i === nseg - 1 && nseg > 1) { var de = w / 2 + 1.6; mx = b[0] + ux * de; my = b[1] + uy * de; ext1 = Math.max(ext1, w + 2.4); }
+else if (folgaVizinho(i + 1, w)) { mx = b[0] + ux * (w / 2 + 1.6); my = b[1] + uy * (w / 2 + 1.6); alt = 0; }
+else if (folgaVizinho(i - 1, w)) { mx = a[0] - ux * (w / 2 + 1.6); my = a[1] - uy * (w / 2 + 1.6); alt = 0; }
+else if (nseg > 1) { alt++; sobe = acima + h * (alt % 2 ? 1.25 : 2.5); }
+} else alt = 0;
+if (o.evitar && o.evitar.length) {
+var meia = w / 2 + 0.9, ts = o.evitar.map(function (p) { return (p[0] - mx) * ux + (p[1] - my) * uy; });
+var livre = function (dl) { return ts.every(function (t) { return Math.abs(t - dl) >= meia; }); };
+if (!livre(0)) {
+var cands = []; ts.forEach(function (t) { cands.push(t - meia, t + meia); });
+cands = cands.filter(livre).sort(function (p, q) { return Math.abs(p) - Math.abs(q); });
+if (cands.length) { mx += ux * cands[0]; my += uy * cands[0]; }
+}
+}
+txs.push([mx + tnx * sobe, my + tny * sobe, v, o.attrs ? o.attrs[i] : "", i]);
+}
+return { of: of, Q: Q, txs: txs, ext0: ext0, ext1: ext1 };
+}
+var pl = plano(off);
+if (o.offs && o.offs.length) {
+var tenta = [off].concat(o.offs), achou = null;
+for (var k = 0; k < tenta.length && !achou; k++) {
+var pk = plano(tenta[k]);
+if (pk.txs.every(function (t) { return self.livreQ(ES.caixaTexto(t[0], t[1], t[2], h, { al: "C", rot: ang }), 0.3); })) achou = pk;
+}
+if (achou) pl = achou;
+}
+var Q = pl.Q, sg = pl.of >= 0 ? 1 : -1, gIni = this.s.length, dc = C.linha_de_chamada;
+if (!o.semExt) P.forEach(function (p, i) {
+if (o.desde && o.desde[i] === false) return;
+var g0 = o.desde && o.desde[i] != null ? o.desde[i] : dc.do_objeto_mm;
+if (Math.abs(pl.of) - g0 < 0.6) return;
+self.linha(p[0] + nx * g0 * sg, p[1] + ny * g0 * sg, Q[i][0] + nx * dc.alem_da_linha_mm * sg, Q[i][1] + ny * dc.alem_da_linha_mm * sg, "MET-COTA");
+});
+this.linha(Q[0][0] - ux * pl.ext0, Q[0][1] - uy * pl.ext0, Q[nseg][0] + ux * pl.ext1, Q[nseg][1] + uy * pl.ext1, "MET-COTA");
+Q.forEach(function (q) { self.tique(q[0], q[1], ux, uy); });
+pl.txs.forEach(function (t) {
+var wt = ES.largTexto(t[2], h), si = Math.min(t[4], nseg - 1), seg = hip(Q[si + 1][0] - Q[si][0], Q[si + 1][1] - Q[si][1]);
+if (!self.livreQ(ES.caixaTexto(t[0], t[1], t[2], h, { al: "C", rot: ang }), 0.2)) {
+var lim = Math.max(seg, wt) / 2 + wt / 2 + 1.0, ds = [];
+for (var d = 0.5; d <= lim; d += 0.5) ds.push(d, -d);
+for (var m = 0; m < ds.length; m++) {
+var xx = t[0] + ux * ds[m], yy = t[1] + uy * ds[m];
+if (self.livreQ(ES.caixaTexto(xx, yy, t[2], h, { al: "C", rot: ang }), 0.2)) { t[0] = xx; t[1] = yy; break; }
+}
+}
+self.texto(t[0], t[1], t[2], h, { al: "C", rot: ang, attr: t[3] });
+});
+this.grupoCota("cadeia", P, pl.of, pl.txs.map(function (t) { return t[4]; }), gIni, P.map(function (p, i) {
+if (o.semExt || (o.desde && o.desde[i] === false)) return "x";
+var g0 = o.desde && o.desde[i] != null ? o.desde[i] : dc.do_objeto_mm;
+return Math.abs(pl.of) - g0 < 0.6 ? "x" : n(g0);
+}), pl.ext0, pl.ext1);
+return pl.of;
+};
+D.chamada = function (px, py, tx, ty, linhas, o) {
+o = o || {};
+var dir = o.dir || (tx >= px ? 1 : -1), ls = arr(linhas).map(function (l) { return (l && typeof l === "object") ? l : { t: txt(l) }; }).filter(function (l) { return !!l.t; });
+var w = 0; ls.forEach(function (l) { w = Math.max(w, ES.largTexto(ES.maiusc(l.t), ES.TEXTOS.nota_de_material)); });
+return ES.notaMaterial(this, px, py, px + dir * (Math.abs(tx - px) + w), ls, o);
+};
+return D;
+};
+ES.titulo = function (D, x, y, numero, nome, escala, o) {
+o = o || {};
+var T = ES.TEXTOS, K = ES.TITULO, num = typeof numero === "number" ? ("0" + numero).slice(-2) : txt(numero || "01"), nm = ES.maiusc(nome);
+var yB = y + T.titulo_numero * ES.ALTURA_MAIUSCULA + 0.2, yU = yB - K.escala_abaixo_do_sublinhado, wn = ES.largTexto(num, T.titulo_numero);
+var xn = x + wn + K.folga_numero_nome, wNome = ES.largTexto(nm, T.titulo_nome);
+D.texto(x, yB, num, T.titulo_numero, { attr: ' data-titulo-numero="1"' });
+D.texto(xn, yU - K.nome_acima_do_sublinhado, nm, T.titulo_nome, { attr: ' data-titulo="1"' });
+D.linha(xn, yU, xn + wNome, yU, "MET-TITULO");
+var esc0 = ES.escalaTxt(escala), semNum = !/^1\//.test(esc0);
+if (semNum) { if (txt(esc0)) D.texto(xn, yB, ES.maiusc(esc0), T.titulo_escala); }
+else { D.texto(xn, yB, "ESCALA", T.titulo_escala); D.texto(xn + wNome, yB, esc0, T.titulo_escala, { al: "D" }); }
+return (yB + 0.9 - y) + 1.0;
+};
+ES.marcadorVista = function (D, x, y, letra, prancha, ang, tipo) {
+var M = ES.MARCADOR_VISTA, T = ES.TEXTOS, tp = tipo === "B" ? "B" : "A", m = M[tp], a = (ang || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+function P(u, v) { return [x + u * c - v * s, y + u * s + v * c]; }
+var tri = [P(-m.base / 2, 0), P(m.base / 2, 0), P(0, -m.altura)];
+D.poli(tri, "ARQ-SIMBOLO", true);
+var b0 = m.barra_da_base, e = ES.PENAS.barra_marcador_vista, Lb = tp === "A" ? m.barra : m.barra[0];
+var u0 = tp === "A" ? -Lb / 2 : -m.base / 2, u1 = u0 + Lb;
+D.cheio([P(u0, b0), P(u1, b0), P(u1, b0 + e), P(u0, b0 + e)], ES.CORES.preto);
+var lp = P(0, -(tp === "A" ? m.letra_baseline : m.altura * 0.2));
+D.texto(lp[0], lp[1], ES.maiusc(letra), T.marcador_letra, { al: "C", rot: ang || 0, negrito: true, attr: ' data-marcador="' + esc(letra) + '"' });
+if (prancha != null && txt(prancha) !== "") {
+var tx = "PR " + txt(prancha), q = tp === "A" ? P(0, b0 + e + m.prancha_abaixo_da_barra) : P(u0 + Lb / 2, b0 + e + m.prancha_ao_lado_da_barra + T.marcador_prancha * ES.ALTURA_MAIUSCULA);
+D.texto(q[0], q[1], tx, T.marcador_prancha, { al: "C", rot: ang || 0 });
+}
+return { w: Math.max(m.base, Lb), h: m.altura + b0 + e + 2.75 + T.marcador_prancha };
+};
+ES.notaMaterial = function (D, px, py, xt, linhas, o) {
+o = o || {};
+var N = ES.NOTA_MATERIAL, h = o.h || ES.TEXTOS.nota_de_material, ls = arr(linhas).map(function (l) { return (l && typeof l === "object") ? { t: ES.maiusc(l.t), cor: l.cor, attr: l.attr } : { t: ES.maiusc(l) }; }).filter(function (l) { return !!l.t; });
+if (!ls.length) return null;
+var esq = xt < px, yl = py, pen = "ARQ-LIDER";
+D.linha(xt, yl, px, yl, pen);
+var sg = esq ? 1 : -1;
+D.linha(px, py, px - sg * N.seta_recuo_mm, py - N.seta_meia_abertura_mm, pen);
+D.linha(px, py, px - sg * N.seta_recuo_mm, py + N.seta_meia_abertura_mm, pen);
+var y = yl - N.baseline_acima_da_linha_mm;
+for (var i = ls.length - 1; i >= 0; i--) { D.texto(xt, y, ls[i].t, h, { al: esq ? "E" : "D", cor: ls[i].cor, attr: ls[i].attr }); y -= N.entrelinha_mm; }
+return { h: ls.length * N.entrelinha_mm };
+};
+ES.quadroLegendas = function (D, x, y, w, itens, o) {
+o = o || {};
+var Lg = ES.LEGENDAS.demolir_construir, hT = Lg.linha_titulo, hL = Lg.linha, ls = arr(itens), ww = w || Lg.largura, H = hT + ls.length * hL, hl = ES.TEXTOS.legenda;
+D.ret(x, y, ww, H, "ARQ-QUADRO");
+D.texto(x + ww / 2, y + hT / 2, ES.espacado(Lg.titulo), ES.TEXTOS.legenda_titulo, { al: "C", meio: true });
+D.linha(x, y + hT, x + ww, y + hT, "ARQ-QUADRO-DIV");
+ls.forEach(function (it, i) {
+var y0 = y + hT + i * hL, ys = y0 + (hL - Lg.amostra_h) / 2;
+if (i) D.linha(x, y0, x + ww, y0, "ARQ-QUADRO-DIV");
+D.add('<rect x="' + n(x + Lg.amostra_da_borda) + '" y="' + n(ys) + '" width="' + n(Lg.amostra_w) + '" height="' + n(Lg.amostra_h) + '" fill="' + (it.fill || "#fff") + '"' + D.estilo("ARQ-QUADRO") + "/>");
+D.texto(x + Lg.texto_x, y0 + hL / 2, ES.maiusc(it.t), hl, { meio: true });
+});
+var yo = y + H + Lg.obs_abaixo;
+D.texto(x + 1.0, yo + ES.TEXTOS.legenda * 0.76, Lg.obs, hl);
+return { w: ww, h: H + Lg.obs_abaixo + hl * 0.76 + 0.8 };
+};
+global.ArqEstilo = ES;
+if (typeof module !== "undefined" && module.exports) module.exports = ES;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/arqdesenho.js ==== */
 try {
 (function (global) {
@@ -167341,49 +167635,54 @@ return null;
 }
 function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
 function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
-function D2() { return dep("Desenho2D", "./desenho2d.js"); }
+function ES() { return dep("ArqEstilo", "./arqestilo.js"); }
+function BP() { return dep("BimPlanta", "./bimplanta.js"); }
 function arr(v) { return Array.isArray(v) ? v : []; }
 function txt(v) { return v == null ? "" : String(v); }
 function num(v, d) { var x = Number(v); return v != null && v !== "" && isFinite(x) ? x : d; }
 function n(v) { return (typeof v === "number" && isFinite(v)) ? String(Math.round(v * 1000) / 1000) : "NaN"; }
 function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function hip(x, y) { return Math.sqrt(x * x + y * y); }
-var CONV_RESERVA = {
-novo: { rotulo: "A CONSTRUIR", cor: "#d00000", fill: "#f6c9c9", hachura: "#d00000", tracejado: null },
-demolido: { rotulo: "A DEMOLIR", cor: "#f0a800", fill: "#fff2b8", hachura: null, tracejado: [1.5, 1] },
-existente: { rotulo: "EXISTENTE A MANTER", cor: "#1a1a1a", fill: "#bdbdbd", hachura: null, tracejado: null }
-};
-function conv() { var d = D2(); return (d && d.CONV_REFORMA) || CONV_RESERVA; }
+var S = ES();
+if (!S) throw new Error("js/arqestilo.js não carregou (vem antes de js/arqdesenho.js)");
+function conv() { return S.CONVENCAO; }
+var PN = S.PENAS;
 var K = {
-pena: { corte: 0.5, vista: 0.25, fina: 0.18, cota: 0.13, hachura: 0.09, divisa: 0.35, tabela: 0.25, titulo: 0.35, moldura: 0.5, telhado: 0.25, cumeeira: 0.5 },
-hLetra: { rotulo: 2.8, rotuloMenor: 2.2, vao: 2.2, nota: 2.5 },
-passoHachura: 1.6, offCota1: 11, offCota2: 20, margemCotas: 28,
-cinzaLouca: "#7a7a7a", cinzaMovel: "#8c8c8c", pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
-tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: "3 1.5"
+pena: { corte: PN.parede_cortada, vista: PN.folha_de_esquadria, fina: PN.marcenaria_em_vista, cota: PN.linha_de_cota, hachura: PN.hachura, titulo: PN.sublinhado_titulo, moldura: PN.moldura_da_folha,
+movel: PN.mobiliario_em_planta, leader: PN.leader_de_nota, luminaria: PN.simbolo_luminotecnico,
+divisa: 0.35, tabela: 0.25, telhado: 0.25, cumeeira: 0.5 },
+hLetra: { rotulo: S.TEXTOS.legenda, rotuloMenor: 2.2, vao: S.TEXTOS.legenda, nota: S.TEXTOS.nota_de_material },
+passoHachura: 1.6, margemCotas: 28,
+cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
+tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: S.TRACEJADO
 };
 function estilo(padrao) {
-var A = AP(), E = A.estilo(padrao), C = conv();
-function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || "#000" }; }
-cam("ARQ-PAREDE", K.pena.corte, "#000"); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, C.existente.cor);
-cam("ARQ-PAREDE-NOVO", K.pena.corte, C.novo.cor); cam("ARQ-PAREDE-DEMOLIDO", 0.35, C.demolido.cor, C.demolido.tracejado.join(" "));
-cam("ARQ-VAO", K.pena.vista, "#000"); cam("ARQ-VAO-EXISTENTE", K.pena.vista, C.existente.cor); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, C.demolido.cor, C.demolido.tracejado.join(" "));
-cam("ARQ-ARCO", K.pena.cota, "#444"); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, C.demolido.cor, C.demolido.tracejado.join(" "));
-cam("ARQ-MOVEL", K.pena.fina, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.fina, K.cinzaLouca);
-cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.hachura); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
-cam("ARQ-DIVISA", K.pena.divisa, "#000", K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, "#000", K.tracoEixo); cam("ARQ-OCULTA", K.pena.fina, "#555", K.tracoOculta);
-cam("ARQ-TELHADO", K.pena.telhado, "#000"); cam("ARQ-CUMEEIRA", K.pena.cumeeira, "#000"); cam("ARQ-ESPIGAO", 0.35, "#000"); cam("ARQ-BEIRAL", K.pena.fina, "#000", K.tracoOculta);
-cam("ARQ-CORTE", 0.35, "#000", K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, "#000"); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a");
-cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.cota, "#000"); cam("ARQ-SIMBOLO", K.pena.fina, "#000");
-cam("ARQ-FORRO", 0.35, "#000"); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.fina, "#000"); cam("ARQ-SANCA", K.pena.fina, "#444", K.tracoOculta);
-cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, "#000"); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
-cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, "#000"); cam("ARQ-MOLDURA", K.pena.moldura, "#000");
+var A = AP(), E = A.estilo(padrao), C = conv(), PRETO = S.CORES.preto, cEx = C.existente.cor;
+function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || PRETO }; }
+cam("ARQ-PAREDE", K.pena.corte, PRETO); cam("ARQ-PAREDE-EXISTENTE", K.pena.corte, cEx);
+cam("ARQ-PAREDE-NOVO", K.pena.corte, PRETO); cam("ARQ-PAREDE-DEMOLIDO", K.pena.corte, PRETO);
+cam("ARQ-BATENTE", PN.bancada_e_batente, PRETO); cam("ARQ-BATENTE-EXISTENTE", PN.bancada_e_batente, cEx); cam("ARQ-BATENTE-NOVO", PN.bancada_e_batente, C.novo.cor); cam("ARQ-BATENTE-DEMOLIDO", PN.bancada_e_batente, PRETO, S.TRACEJADO);
+cam("ARQ-VAO", K.pena.vista, PRETO); cam("ARQ-VAO-EXISTENTE", K.pena.vista, cEx); cam("ARQ-VAO-NOVO", K.pena.vista, C.novo.cor); cam("ARQ-VAO-DEMOLIDO", K.pena.vista, PRETO, S.TRACEJADO);
+cam("ARQ-ARCO", K.pena.cota, PRETO); cam("ARQ-ARCO-NOVO", K.pena.cota, C.novo.cor); cam("ARQ-ARCO-DEMOLIDO", K.pena.cota, PRETO, S.TRACEJADO);
+cam("ARQ-MOVEL", K.pena.movel, K.cinzaMovel); cam("ARQ-LOUCA", K.pena.movel, K.cinzaLouca);
+cam("ARQ-HACHURA", K.pena.hachura, "#9a9a9a"); cam("ARQ-HACHURA-NOVO", K.pena.hachura, C.novo.cor); cam("ARQ-HACHURA-EXISTENTE", K.pena.hachura, "#666");
+cam("ARQ-DIVISA", K.pena.divisa, PRETO, K.tracoEixo); cam("ARQ-EIXO", K.pena.cota, PRETO, K.tracoEixo); cam("ARQ-OCULTA", K.pena.cota, PRETO, K.tracoOculta);
+cam("ARQ-TELHADO", K.pena.telhado, PRETO); cam("ARQ-CUMEEIRA", K.pena.cumeeira, PRETO); cam("ARQ-ESPIGAO", 0.35, PRETO); cam("ARQ-BEIRAL", K.pena.cota, PRETO, K.tracoOculta);
+cam("ARQ-CORTE", 0.35, PRETO, K.tracoEixo); cam("ARQ-NIVEL", K.pena.fina, PRETO); cam("ARQ-CONTEXTO", K.pena.cota, "#8a8a8a"); cam("ARQ-FINA", K.pena.fina, PRETO);
+cam("ARQ-PISO", K.pena.hachura, "#555"); cam("ARQ-PISO-RECORTE", 0.13, "#c00000"); cam("ARQ-LIDER", K.pena.leader, PRETO); cam("ARQ-SIMBOLO", K.pena.fina, PRETO);
+cam("ARQ-FORRO", 0.35, PRETO); cam("ARQ-FORRO-DET", K.pena.fina, "#444"); cam("ARQ-LUMINARIA", K.pena.luminaria, S.CORES.luminotecnico); cam("ARQ-SANCA", K.pena.cota, PRETO, K.tracoOculta);
+cam("ARQ-HACHURA-PERM", K.pena.hachura, "#3c7a2a"); cam("ARQ-TERRENO", 0.35, "#5a4a3a"); cam("ARQ-MURO", 0.35, PRETO); cam("ARQ-PERMEAVEL", K.pena.fina, "#3c7a2a");
+cam("ARQ-HUM", 0.18, "#555"); cam("ARQ-HUM-PISO", 0.09, "#c9c2b2"); cam("ARQ-HUM-MADEIRA", 0.09, "#9c7446"); cam("ARQ-HUM-AGUA", 0.09, "#3f9fd1"); cam("ARQ-TABELA", K.pena.tabela, PRETO); cam("ARQ-MOLDURA", K.pena.moldura, PRETO);
+cam("ARQ-QUADRO", PN.moldura_interna, PRETO); cam("ARQ-QUADRO-DIV", PN.linha_de_cota, PRETO);
 E.camadas["MET-MOLDURA"] = E.camadas["ARQ-MOLDURA"]; E.camadas["MET-TABELA"] = E.camadas["ARQ-TABELA"];
+E.camadas["MET-COTA"] = { mm: K.pena.cota, dash: null, cor: PRETO }; E.camadas["MET-TITULO"] = { mm: K.pena.titulo, dash: null, cor: PRETO }; E.camadas["MET-FINA"] = { mm: K.pena.fina, dash: null, cor: PRETO };
 return E;
 }
-var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO)/;
+var CAM_SEM_OBSTACULO = /^(ARQ-HACHURA|ARQ-PISO|ARQ-TABELA|MET-TABELA|ARQ-MOLDURA|MET-MOLDURA|ARQ-LIDER|ARQ-HUM|MET-TITULO|ARQ-QUADRO)/;
 function novo(E, depurar) {
 var A = AP(), caixas = depurar === false ? null : [], D = new A.Desenho(E, caixas);
 D.sgc = []; D._cam = null; D.K = K; D.fundoCam = {};
+S.aplicar(D);
 var oLinha = D.linha, oTraco = D.traco, oEst = D.estilo;
 D.traco = function (lista, fechado) {
 var n0 = this.sg.length; oTraco.call(this, lista, fechado);
@@ -167431,13 +167730,14 @@ larg: (caixa[2] - caixa[0]) * k, alt: (caixa[3] - caixa[1]) * k
 };
 }
 function polyPapel(M, ptsM) { return ptsM.map(function (p) { return M.Pp(p); }); }
+function titulo(D, x, y, nome, escala, numero) { return S.titulo(D, x, y, numero == null ? "01" : numero, nome, escala); }
 function br(v, c) {
 if (v == null || !isFinite(v)) return "-";
 return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ",");
 }
-function cm1(vm) { var v = Math.round(vm * 1000) / 10; return Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : br(v, 1); }
+function cotaTxt(vm) { return S.numeroCota(vm); }
 function nivelTxt(z) { return (z > 0.0005 ? "+" : (z < -0.0005 ? "-" : "±")) + br(Math.abs(z), 2); }
-function largTexto(s, h) { return AP().largTexto(s, h); }
+function largTexto(s, h) { return S.largTexto(s, h); }
 function rotuloBloco(D, pref, linhas, area, o) {
 o = o || {};
 var hs = o.alturas || [], hLin = o.h || 2.4, entre = 1.3, tent = [];
@@ -167470,7 +167770,7 @@ function ordemFase(s) { return s === "existente" ? 0 : (s === "demolido" ? 1 : 2
 function estiloParede(modo, status) {
 var C = conv();
 if (modo === "demolir") {
-if (status === "novo") return { cam: "ARQ-PAREDE-NOVO", fill: C.novo.fill, hach: "ARQ-HACHURA-NOVO", fator: 2 };
+if (status === "novo") return { cam: "ARQ-PAREDE-NOVO", fill: C.novo.fill, hach: null, fator: 2 };
 if (status === "demolido") return { cam: "ARQ-PAREDE-DEMOLIDO", fill: C.demolido.fill, hach: null, fator: 2 };
 return { cam: "ARQ-PAREDE-EXISTENTE", fill: C.existente.fill, hach: null, fator: 2 };
 }
@@ -167516,7 +167816,8 @@ function Q(a, b) { return M.P(v.x + u[0] * a + nv[0] * b, v.z + u[1] * a + nv[1]
 var gap = [Q(-h, -e2), Q(h, -e2), Q(h, e2), Q(-h, e2)];
 fundoPol(D, gap, "#fff");
 var camB = camVao(modo, v.status, "ARQ-VAO"), camA = v.status === "novo" && modo === "demolir" ? "ARQ-ARCO-NOVO" : (v.status === "demolido" && modo === "demolir" ? "ARQ-ARCO-DEMOLIDO" : "ARQ-ARCO");
-D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camB); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camB);
+var camJ = camVao(modo, v.status, "ARQ-BATENTE");
+D.linha(Q(-h, -e2)[0], Q(-h, -e2)[1], Q(-h, e2)[0], Q(-h, e2)[1], camJ); D.linha(Q(h, -e2)[0], Q(h, -e2)[1], Q(h, e2)[0], Q(h, e2)[1], camJ);
 var corre = /correr/i.test(v.famId);
 if (v.tipo === "janela") {
 [-e2 / 3, e2 / 3].forEach(function (b) { var a1 = Q(-h, b), a2 = Q(h, b); D.linha(a1[0], a1[1], a2[0], a2[1], camB); });
@@ -167570,74 +167871,80 @@ var out = [P[0]], min = 2.6 / k;
 for (var i = 1; i < P.length; i++) { if (P[i] - out[out.length - 1] >= min || i === P.length - 1) { if (P[i] - out[out.length - 1] < min && out.length > 1) out.pop(); out.push(P[i]); } }
 return out;
 }
+function escDe(M) { return Math.round(1000 / M.k); }
+function escalaCota(D, den) { D.escCota = den > 0 ? den : 50; return D.escCota; }
+function tabelaParedes(paredes) { var m = {}; paredes.forEach(function (w) { m[w.id] = w; }); return m; }
 function cotasExternas(D, M, paredes, vaos, o) {
 o = o || {};
-var G = GEO(), W = paredes.filter(ortogonal); if (!W.length) return 0;
-var xs = [], zs = [];
-W.forEach(function (w) { w.pts.forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
-var bx0 = Math.min.apply(null, xs), bx1 = Math.max.apply(null, xs), bz0 = Math.min.apply(null, zs), bz1 = Math.max.apply(null, zs), tol = 0.04, qtd = 0;
-function horiz(w) { return Math.abs(Math.sin(w.rotY)) < 0.02; }
-function offTotal(ofCadeia) { return typeof ofCadeia === "number" && isFinite(ofCadeia) ? Math.max(K.offCota2, Math.abs(ofCadeia) + 9) : K.offCota2; }
-var lados = [
-{ id: "topo", eixo: "x", z: bz0, dir: 1 }, { id: "base", eixo: "x", z: bz1, dir: -1 },
-{ id: "esq", eixo: "z", x: bx0, dir: -1 }, { id: "dir", eixo: "z", x: bx1, dir: 1 }
-];
-lados.forEach(function (ld) {
-var P = [], tot;
-if (ld.eixo === "x") {
-W.forEach(function (w) {
-var b = G.bbox(w.pts);
-if (horiz(w)) { if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) < tol) P.push(b[0], b[2]); }
-else if ((ld.id === "topo" && b[1] <= ld.z + tol) || (ld.id === "base" && b[3] >= ld.z - tol)) P.push(b[0], b[2]);
-});
+var G = GEO(), B = BP(), W = paredes.filter(ortogonal);
+if (!W.length || !B || !B.ladosPlanta) return 0;
+var den = escalaCota(D, escDe(M)), a1 = S.afastamento1(), entre = S.entreCadeias(den), pid = tabelaParedes(paredes), qtd = 0, tol = 0.05;
+var aabb = W.map(function (w) { var b = G.bbox(w.pts); return { minx: b[0], minz: b[1], maxx: b[2], maxz: b[3], w: w }; }), lista = aabb;
+var amb = arr(o.ambientes).filter(function (a) { return a && arr(a.pts).length >= 3; }).map(function (a) { return { pts: a.pts.map(function (p) { return { x: p[0], z: p[1] }; }) }; });
+if (amb.length && B.paredesDaEdificacao) { var ed = B.paredesDaEdificacao(aabb, amb, 0.3); if (ed.paredes.length) lista = ed.paredes; }
+var LD = B.ladosPlanta(lista, {}), SG = { topo: 1, base: -1, esq: 1, dir: -1 };
+["topo", "base", "esq", "dir"].forEach(function (lado) {
+var C = LD[lado]; if (!C || !C.ticks || C.ticks.length < 2) return;
+var face = LD.faces[lado], horiz = lado === "topo" || lado === "base", sg = SG[lado], U = C.ticks.slice(), u0 = U[0], u1 = U[U.length - 1], vs = [], cadeias = [];
 arr(vaos).forEach(function (v) {
-var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || !horiz(w)) return;
-var b = G.bbox(w.pts); if (Math.abs((ld.id === "topo" ? b[1] : b[3]) - ld.z) > tol) return;
-P.push(v.x - v.largura / 2, v.x + v.largura / 2);
+var w = pid[v.parede]; if (!w || (Math.abs(Math.sin(w.rotY)) < 0.02) !== horiz) return;
+var b = G.bbox(w.pts), coord = horiz ? (lado === "topo" ? b[1] : b[3]) : (lado === "esq" ? b[0] : b[2]), c = horiz ? v.x : v.z;
+if (Math.abs(coord - face) > tol) return;
+vs.push(c - v.largura / 2, c + v.largura / 2);
 });
-P = unicos(P, tol); if (P.length < 2) return;
-P = podar(P, M.k); tot = [P[0], P[P.length - 1]];
-var pp = P.map(function (x) { return M.P(x, ld.z); }), vals = [];
-for (var i = 0; i + 1 < P.length; i++) vals.push(cm1(P[i + 1] - P[i]));
-var ofX = D.cadeia(pp, ld.dir * K.offCota1, vals, { offs: [ld.dir * (K.offCota1 + 4.5), ld.dir * (K.offCota1 + 7)], desde: pp.map(function () { return 0.6; }) }); qtd++;
-D.cota(M.P(tot[0], ld.z)[0], M.P(tot[0], ld.z)[1], M.P(tot[1], ld.z)[0], M.P(tot[1], ld.z)[1], ld.dir * offTotal(ofX), cm1(tot[1] - tot[0]), { desde: [0.6, 0.6] }); qtd++;
-} else {
-W.forEach(function (w) {
-var b = G.bbox(w.pts);
-if (!horiz(w)) { if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) < tol) P.push(b[1], b[3]); }
-else if ((ld.id === "esq" && b[0] <= ld.x + tol) || (ld.id === "dir" && b[2] >= ld.x - tol)) P.push(b[1], b[3]);
+var uv = unicos([u0, u1].concat(vs.filter(function (x) { return x > u0 + 0.02 && x < u1 - 0.02; })), 0.04);
+if (vs.length && uv.length > 2) cadeias.push(uv);
+if (U.length > 2) cadeias.push(U);
+cadeias.push([u0, u1]);
+var of = a1 * sg;
+cadeias.forEach(function (P0, i) {
+var P = podar(P0, M.k); if (P.length < 2) return;
+var pp, vals = [];
+if (horiz) { pp = P.map(function (u) { return M.P(u, face); }); for (var a = 0; a + 1 < P.length; a++) vals.push(cotaTxt(P[a + 1] - P[a])); }
+else { P = P.slice().reverse(); pp = P.map(function (u) { return M.P(face, u); }); for (var b2 = 0; b2 + 1 < P.length; b2++) vals.push(cotaTxt(P[b2] - P[b2 + 1])); }
+var r = D.cadeia(pp, of, vals, { offs: [of + sg * 4.5, of + sg * 7], semExt: i > 0, desde: pp.map(function () { return S.COTA.linha_de_chamada.do_objeto_mm; }) });
+of = (typeof r === "number" ? r : of) + sg * entre; qtd++;
 });
-arr(vaos).forEach(function (v) {
-var w = paredes.filter(function (q) { return q.id === v.parede; })[0]; if (!w || horiz(w)) return;
-var b = G.bbox(w.pts); if (Math.abs((ld.id === "esq" ? b[0] : b[2]) - ld.x) > tol) return;
-P.push(v.z - v.largura / 2, v.z + v.largura / 2);
-});
-P = unicos(P, tol); if (P.length < 2) return;
-P = podar(P, M.k); P.reverse();
-tot = [P[0], P[P.length - 1]];
-var qq = P.map(function (z) { return M.P(ld.x, z); }), vs = [], sgn = ld.id === "esq" ? 1 : -1;
-for (var j = 0; j + 1 < P.length; j++) vs.push(cm1(P[j] - P[j + 1]));
-var ofZ = D.cadeia(qq, sgn * K.offCota1, vs, { offs: [sgn * (K.offCota1 + 4.5), sgn * (K.offCota1 + 7)], desde: qq.map(function () { return 0.6; }) }); qtd++;
-D.cota(M.P(ld.x, tot[0])[0], M.P(ld.x, tot[0])[1], M.P(ld.x, tot[1])[0], M.P(ld.x, tot[1])[1], sgn * offTotal(ofZ), cm1(tot[0] - tot[1]), { desde: [0.6, 0.6] }); qtd++;
-}
 });
 return qtd;
 }
-function cotasInternas(D, M, ambientes) {
-var G = GEO(), q = 0;
-ambientes.forEach(function (a) {
-var b = a.bbox || G.bbox(a.pts); if (!b) return;
-var P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]), w = b[2] - b[0], d = b[3] - b[1];
-var retangular = Math.abs(G.areaPol(a.pts) - w * d) < 0.05;
-if (!retangular) return;
-var poss = [P1[1] - 3.2, P1[1] - 6.5, P0[1] + 3.2, P0[1] + 6.5];
-for (var i = 0; i < poss.length; i++) {
-if (D.livre([P0[0] + 0.5, poss[i] - 3, P1[0] - 0.5, poss[i] + 1], 0.2)) { D.cota(P0[0], poss[i], P1[0], poss[i], 0, cm1(w), { desde: [false, false], semExt: true }); q++; break; }
+function cruzaCaixa(a, b, g) { return a[0] < b[2] + g && a[2] > b[0] - g && a[1] < b[3] + g && a[3] > b[1] - g; }
+function cotasInternas(D, M, ambientes, o) {
+o = o || {};
+var G = GEO(), B = BP(), q = 0;
+if (!B || !B.cotasInternas) return 0;
+var den = escalaCota(D, escDe(M)), h = S.alturaCota(den), sobe = S.COTA.texto_acima_da_linha_mm, k = M.k, lado = S.COTA.texto_ao_lado_vertical_mm;
+var margem = Math.max(0.25, (h * 0.76 + sobe + 0.8) / k);
+var obst = arr(o.moveis).map(function (m) { var b = G.bbox(m.pts); return b ? { minx: b[0], minz: b[1], maxx: b[2], maxz: b[3] } : null; }).filter(function (x) { return !!x; });
+arr(ambientes).forEach(function (a) {
+var pts = arr(a.pts); if (pts.length < 3) return;
+var R = B.cotasInternas([{ nome: a.nome, pts: pts.map(function (p) { return { x: p[0], z: p[1] }; }) }], { obstaculos: obst, margem: margem });
+var bb = a.bbox || G.bbox(pts), retang = !!bb && Math.abs(G.areaPol(pts) - (bb[2] - bb[0]) * (bb[3] - bb[1])) < 0.05, feitas = 0;
+var feitasAmb = [];
+R.cotas.forEach(function (c) {
+var val = cotaTxt(c.v), tw = S.largTexto(val, h), horiz = c.tipo === "larg", lo = horiz ? bb[1] : bb[0], hi = horiz ? bb[3] : bb[2], melhor = null, segundo = null;
+if (tw + 1.0 > c.v * k) return;
+var desl = [0]; if (retang) { for (var j = 1; j <= 60; j++) desl.push(0.05 * j, -0.05 * j); }
+for (var i = 0; i < desl.length && !melhor; i++) {
+var f = c.fixo + desl[i]; if (f < lo + margem - 1e-6 || f > hi - margem + 1e-6) continue;
+var A0 = horiz ? M.P(c.a, f) : M.P(f, c.b), A1 = horiz ? M.P(c.b, f) : M.P(f, c.a), mid = [(A0[0] + A1[0]) / 2, (A0[1] + A1[1]) / 2], box, tira;
+if (horiz) { box = [mid[0] - tw / 2 - 0.3, A0[1] - sobe - h * 0.76 - 0.2, mid[0] + tw / 2 + 0.3, A0[1] + 0.5]; tira = [A0[0] + 0.6, A0[1] - 0.3, A1[0] - 0.6, A0[1] + 0.3]; }
+else { box = [A0[0] - lado - h * 0.76 - 0.2, mid[1] - tw / 2 - 0.3, A0[0] + 0.5, mid[1] + tw / 2 + 0.3]; tira = [A0[0] - 0.3, A1[1] + 0.6, A0[0] + 0.3, A0[1] - 0.6]; }
+if (!D.livre(box, 0.2)) continue;
+var choca = feitasAmb.some(function (f) { return cruzaCaixa(f.tira, box, 0.2) || cruzaCaixa(tira, f.box, 0.2); });
+if (choca) continue;
+var cand = { A0: A0, A1: A1, box: box, tira: tira };
+if (D.livre(tira, 0.05)) melhor = cand; else if (!segundo) segundo = cand;
 }
-var possx = [P0[0] + 3.2, P0[0] + 6.5, P1[0] - 3.2, P1[0] - 6.5];
-for (var j = 0; j < possx.length; j++) {
-if (D.livre([possx[j] - 3, P0[1] + 0.5, possx[j] + 1, P1[1] - 0.5], 0.2)) { D.cota(possx[j], P1[1], possx[j], P0[1], 0, cm1(d), { desde: [false, false], semExt: true }); q++; break; }
-}
+var esc1 = melhor || segundo;
+if (!esc1) return;
+feitasAmb.push({ c: esc1, val: val, cruza: !melhor, box: esc1.box, tira: esc1.tira });
+});
+feitasAmb.forEach(function (f) {
+D.cota(f.c.A0[0], f.c.A0[1], f.c.A1[0], f.c.A1[1], 0, f.val, { desde: [false, false], semExt: true }); q++; feitas++;
+if (f.cruza && o.cruza && o.cruza.indexOf(a.nome) < 0) o.cruza.push(a.nome);
+});
+if (!feitas && o.semLugar) o.semLugar.push(a.nome);
 });
 return q;
 }
@@ -167647,7 +167954,7 @@ var semLugar = [];
 ambientes.forEach(function (a) {
 var c = M.P(a.cx, a.cz), b = a.bbox || GEO().bbox(a.pts), P0 = M.P(b[0], b[1]), P1 = M.P(b[2], b[3]);
 var area = [P0[0] + 0.5, P0[1] + 0.5, P1[0] - 0.5, P1[1] - 0.5];
-var nome = { t: txt(a.nome).toUpperCase(), h: 2.8, peso: 0.05 }, ar = { t: "A = " + br(a.area, 2) + " m²" }, piso = { t: "Piso: " + a.piso }, pe = { t: "PD = " + br(a.pe, 2) + " m" };
+var nome = { t: txt(a.nome).toUpperCase(), h: K.hLetra.rotulo }, ar = { t: "A = " + br(a.area, 2) + " m²" }, piso = { t: "Piso: " + a.piso }, pe = { t: "PD = " + br(a.pe, 2) + " m" };
 var jogos = [];
 if (o.completo) jogos.push([nome, ar, a.piso ? piso : null, pe]);
 jogos.push([nome, ar], [nome]);
@@ -167714,41 +168021,38 @@ if (!D.cortaTexto(a[0], a[1], b[0], b[1]) && !D.cortaTexto(a[0], a[1], a[0] + nx
 return pick;
 }
 function colunaNotas(D, g, blocos) {
-var col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, yMax = car.y - 3, yMin = col.y + 4, T = D.E.T, A = AP();
-var tent = [T.nota, T.nota * 0.92, T.nota * 0.84, T.nota * 0.76, T.nota * 0.68].filter(function (hh) { return hh >= T.minimo - 1e-9; }), esc0 = null, coube = true;
+var col = g.coluna, car = g.carimbo, x0 = col.x + 4, wmax = col.w - 7, yMax = car.y - 3, yMin = col.y + 4, T = D.E.T, hBase = S.TEXTOS.legenda;
+var tent = [hBase, hBase * 0.92, hBase * 0.84, hBase * 0.76, hBase * 0.68].filter(function (hh) { return hh >= T.minimo - 1e-9; }), esc0 = null, coube = true;
 if (tent[tent.length - 1] > T.minimo + 1e-9) tent.push(T.minimo);
-function itemTxt(it) { return (it && typeof it === "object") ? it.t : it; }
-function medir(h, hq) {
+var hq = S.TEXTOS.legenda_titulo, Lg = S.LEGENDAS.demolir_construir;
+function itemTxt(it) { return S.maiusc((it && typeof it === "object") ? it.t : it); }
+function medir(h) {
 var tot = 0;
 blocos.forEach(function (b) {
+if (b.quadro) { tot += Lg.linha_titulo + arr(b.quadro.itens).length * Lg.linha + Lg.obs_abaixo + hBase * 0.76 + 0.8 + 3.5; return; }
 tot += hq * 0.76 + hq * 0.55 + 1.5;
-if (b.legenda) tot += b.legenda.length * (Math.max(h, 3.2) * 1.5);
 arr(b.itens).forEach(function (it, i) {
-var pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
-tot += A.quebrar(itemTxt(it), h, wmax - rec).length * h * 1.42 + 0.7;
+var pre = b.numerar ? (i + 1) + "- " : "- ", rec = S.largTexto(pre, h);
+tot += S.quebrar(itemTxt(it), h, wmax - rec).length * h * 1.42 + 0.7;
 });
 tot += 3.5;
 });
 return tot;
 }
-for (var i = 0; i < tent.length; i++) { var hq = Math.min(T.quadro, tent[i] * 3); if (medir(tent[i], hq) <= yMax - yMin) { esc0 = [tent[i], hq]; break; } }
-if (!esc0) { esc0 = [tent[tent.length - 1], Math.min(T.quadro, tent[tent.length - 1] * 3)]; coube = false; }
-var h = esc0[0], hq0 = esc0[1], y = yMax - medir(h, hq0);
+for (var i = 0; i < tent.length; i++) { if (medir(tent[i]) <= yMax - yMin) { esc0 = tent[i]; break; } }
+if (!esc0) { esc0 = tent[tent.length - 1]; coube = false; }
+var h = esc0, y = yMax - medir(h);
 D.linha(col.x, col.y, col.x, car.y, "ARQ-MOLDURA");
 blocos.forEach(function (b) {
-D.texto(x0, y + hq0 * 0.76, b.titulo, hq0, { peso: 0.28 });
-y += hq0 * 0.76 + hq0 * 0.55 + 1.5;
-arr(b.legenda).forEach(function (l) {
-var hh = Math.max(h, 3.2) * 1.5, sw = 9, sh = Math.min(3.6, hh - 0.8), ys = y + (hh - sh) / 2;
-if (l.fill) D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="' + l.fill + '" stroke="none"/>');
-if (l.hachura) GEO().hachuraLinhas([[x0, ys], [x0 + sw, ys], [x0 + sw, ys + sh], [x0, ys + sh]], 1.2, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], "ARQ-HACHURA-NOVO"); });
-if (l.cam) { D.add('<rect x="' + n(x0) + '" y="' + n(ys) + '" width="' + n(sw) + '" height="' + n(sh) + '" fill="none"' + atr(D, l.cam, 1.4) + "/>"); }
-D.texto(x0 + sw + 2.2, ys + sh / 2, l.t, h, { meio: true });
-y += hh;
-});
+if (b.quadro) {
+var r = S.quadroLegendas(D, x0, y, Math.min(Lg.largura, wmax), b.quadro.itens, {});
+y += r.h + 3.5; return;
+}
+D.texto(x0, y + hq * 0.76, S.maiusc(b.titulo), hq);
+y += hq * 0.76 + hq * 0.55 + 1.5;
 arr(b.itens).forEach(function (it, i) {
-var o = (it && typeof it === "object") ? it : { t: txt(it) }, pre = b.numerar ? (i + 1) + "- " : "- ", rec = largTexto(pre, h);
-var ls = A.quebrar(o.t, h, wmax - rec);
+var o = (it && typeof it === "object") ? it : { t: txt(it) }, pre = b.numerar ? (i + 1) + "- " : "- ", rec = S.largTexto(pre, h);
+var ls = S.quebrar(S.maiusc(o.t), h, wmax - rec);
 D.texto(x0, y + h * 0.76, pre, h, { cor: o.cor });
 ls.forEach(function (s) { D.texto(x0 + rec, y + h * 0.76, s, h, { cor: o.cor }); y += h * 1.42; });
 y += 0.7;
@@ -167786,10 +168090,10 @@ if (janela && (b[0] < janela[0] - 0.01 || b[1] < janela[1] - 0.01 || b[2] > jane
 out.total = out.textoTexto.length + out.textoLinha.length + out.foraJanela.length;
 return out;
 }
-var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cm1: cm1, nivelTxt: nivelTxt, esc: esc, n: n,
+var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cotaTxt: cotaTxt, cm1: cotaTxt, escalaCota: escalaCota, titulo: titulo, nivelTxt: nivelTxt, esc: esc, n: n,
 rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
 rotulosAmbientes: rotulosAmbientes, etiquetasVaos: etiquetasVaos, norte: norte, escalaGrafica: escalaGrafica, marcaCorte: marcaCorte, escolherLinhaCorte: escolherLinhaCorte, colunaNotas: colunaNotas, conferir: conferir,
-estiloParede: estiloParede, conv: conv, CONV_RESERVA: CONV_RESERVA, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
+estiloParede: estiloParede, conv: conv, S: S, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
 global.ArqDesenho = ArqDesenho;
 if (typeof module !== "undefined" && module.exports) module.exports = ArqDesenho;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -167822,7 +168126,7 @@ ambientes: arr((base || d).ambientes).filter(function (a) { return pav == null |
 };
 }
 function porId(L) { var m = {}; L.forEach(function (w) { m[w.id] = w; }); return m; }
-function titulo(c, x, y, tit, escala) { return AP().tituloVista(c.D, x, y, tit, escala); }
+function titulo(c, x, y, tit, escala) { return DS().titulo(c.D, x, y, tit, escala, 1); }
 function planta(c, o) {
 var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), modo = o.modo, Lc = listas(c, modo, o.pav);
 var hT = titulo(c, A.x + 4, A.y + 2, o.titulo, "ESC 1:" + pl.escala), semLugar = [];
@@ -167831,8 +168135,11 @@ d.pilaresPlanta(D, M, Lc.pilares, modo);
 if (modo === "layout") d.moveisPlanta(D, M, Lc.moveis);
 d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), modo);
 var nCotas = 0;
-if (o.cotas !== false) nCotas = d.cotasExternas(D, M, Lc.paredes, Lc.vaos.filter(function (v) { return v.status !== "demolido" || modo !== "layout"; }), {});
-if (o.cotasInt) nCotas += d.cotasInternas(D, M, Lc.ambientes);
+if (o.cotas !== false) nCotas = d.cotasExternas(D, M, Lc.paredes, Lc.vaos.filter(function (v) { return v.status !== "demolido" || modo !== "layout"; }), { ambientes: Lc.ambientes });
+var semCota = [], cruzaCota = [];
+if (o.cotasInt) nCotas += d.cotasInternas(D, M, Lc.ambientes, { moveis: modo === "layout" ? Lc.moveis : [], semLugar: semCota, cruza: cruzaCota });
+if (semCota.length) c.avisos.push("Folha " + o.titulo + ": sem lugar livre para a cota interna de " + semCota.join(", ") + ".");
+if (cruzaCota.length) c.avisos.push("Folha " + o.titulo + ": a cota interna de " + cruzaCota.join(", ") + " passa por cima de móvel (não havia linha livre).");
 if (o.cortes && c.cortes) {
 c.cortes.forEach(function (ct) {
 var ext = 27 / pl.k;
@@ -167910,7 +168217,7 @@ D.seta(p1[0], p1[1], -ux / hip(ux, uy), -uy / hip(ux, uy), 2.0);
 var tx = (a.pcts != null ? a.pcts : a.pct), s = Math.round(tx) + " %";
 var nx = -uy / hip(ux, uy), ny = ux / hip(ux, uy), cands = [[1, 0], [-1, 0], [1, 1.6], [-1, 1.6]].map(function (q) { var f = q[0] * (3.4 + 1.3 * q[1]); return [(p0[0] + p1[0]) / 2 + nx * f, (p0[1] + p1[1]) / 2 + ny * f]; }), ok = false;
 for (var i = 0; i < cands.length && !ok; i++) {
-var w = AP().largTexto(s, 2.3);
+var w = DS().largTexto(s, 2.3);
 if (D.livre([cands[i][0] - w / 2, cands[i][1] - 1.7, cands[i][0] + w / 2, cands[i][1] + 0.6], 0.2)) { D.texto(cands[i][0], cands[i][1], s, 2.3, { al: "C" }); ok = true; }
 }
 if (!ok) semLugar++;
@@ -167920,7 +168227,7 @@ return semLugar;
 }
 function cobertura(c) {
 var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", null), g = G();
-titulo(c, A.x + 4, A.y + 2, "PLANTA DE COBERTURA", "ESC 1:" + pl.escala);
+titulo(c, A.x + 4, A.y + 2, "PLANTA DE COBERTURA", "ESC 1:" + pl.escala); d.escalaCota(D, pl.escala);
 d.paredesPlanta(D, M, Lc.paredes, "fantasma");
 var Tl = arr(c.dados.telhados).filter(function (t) { return t.status !== "demolido"; }), res = [], sem = 0;
 Tl.forEach(function (t) { var r = desenharTelhado(D, M, t, {}); res.push(r); sem += setasCaimento(D, M, r.aguas); });
@@ -167942,12 +168249,12 @@ var xs = [], zs = [];
 Tl.forEach(function (t) { (t.pBeiral || t.pts).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
 if (xs.length) {
 var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
-D.cota(M.P(x0, z0)[0], M.P(x0, z0)[1], M.P(x1, z0)[0], M.P(x1, z0)[1], d.K.offCota1, d.cm1(x1 - x0), { desde: [0.6, 0.6] });
-D.cota(M.P(x0, z1)[0], M.P(x0, z1)[1], M.P(x0, z0)[0], M.P(x0, z0)[1], d.K.offCota1, d.cm1(z1 - z0), { desde: [0.6, 0.6] });
+D.cota(M.P(x0, z0)[0], M.P(x0, z0)[1], M.P(x1, z0)[0], M.P(x1, z0)[1], d.S.afastamento1(), d.cotaTxt(x1 - x0), { desde: [1.0, 1.0] });
+D.cota(M.P(x0, z1)[0], M.P(x0, z1)[1], M.P(x0, z0)[0], M.P(x0, z0)[1], d.S.afastamento1(), d.cotaTxt(z1 - z0), { desde: [1.0, 1.0] });
 Tl.forEach(function (t) {
 if (!(t.beiral > 0) || !t.pBeiral) return;
 var b = g.bbox(t.pts), bb = g.bbox(t.pBeiral);
-if (Math.abs((b[0] - bb[0]) - t.beiral) < 0.01) D.cota(M.P(bb[0], (z0 + z1) / 2)[0], M.P(bb[0], (z0 + z1) / 2)[1], M.P(b[0], (z0 + z1) / 2)[0], M.P(b[0], (z0 + z1) / 2)[1], -d.K.offCota1 * 0.5, d.cm1(t.beiral), { desde: [false, false], semExt: true });
+if (Math.abs((b[0] - bb[0]) - t.beiral) < 0.01) D.cota(M.P(bb[0], (z0 + z1) / 2)[0], M.P(bb[0], (z0 + z1) / 2)[1], M.P(b[0], (z0 + z1) / 2)[0], M.P(b[0], (z0 + z1) / 2)[1], -d.S.afastamento1(), d.cotaTxt(t.beiral), { desde: [false, false], semExt: true });
 });
 var yy = M.P(x1, z0)[1] - 4;
 Tl.forEach(function (t, i) {
@@ -168046,7 +168353,7 @@ function dentroDe(P, pt) { return G().pontoEmPol(pt, P); }
 function situacao(c) {
 var D = c.D, d = DS(), A = c.A, g = G(), idx = c.idx, T = c.dados.terreno, lote = idx.terreno.contorno || (T.divisa && T.divisa.pts) || null, sem = [];
 var wQuadro = Math.min(176, Math.max(140, A.w * 0.34)), wDes = A.w - wQuadro - 8;
-titulo(c, A.x + 4, A.y + 2, "SITUAÇÃO E IMPLANTAÇÃO", "ESC 1:" + c.escalaSit);
+titulo(c, A.x + 4, A.y + 2, "SITUAÇÃO E IMPLANTAÇÃO", "ESC 1:" + c.escalaSit); d.escalaCota(D, c.escalaSit);
 if (!lote) {
 D.texto(A.x + 10, A.y + 30, "SEM DIVISA DO LOTE NO MODELO: modele a divisa (linha de propriedade) ou informe o contorno do lote.", 3.2, { cor: "#c00000" });
 c.avisos.push("ARQ-01: sem a divisa do lote — a folha sai sem a implantação.");
@@ -168069,7 +168376,8 @@ var n = lote.length;
 for (var i = 0; i < n; i++) {
 var a = lote[i], b = lote[(i + 1) % n], pa = M.Pp(a), pb = M.Pp(b), L = hip(b[0] - a[0], b[1] - a[1]), ux = (pb[0] - pa[0]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1), uy = (pb[1] - pa[1]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1);
 var mid = [(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], dentro = g.pontoEmPol([(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], P);
-D.cota(pa[0], pa[1], pb[0], pb[1], dentro ? -9 : 9, d.br(L, 2), { desde: [1.0, 1.0] });
+var of9 = (dentro ? -1 : 1) * d.S.afastamento1() * 1.8, ofs = [of9 * 1.5, of9 * 2, -of9 * 0.6, -of9 * 1.1];
+D.cota(pa[0], pa[1], pb[0], pb[1], of9, d.cotaTxt(L), { desde: [1.0, 1.0], offs: ofs });
 void mid;
 }
 var edif = []; Lc.paredes.concat(Lc.pilares).forEach(function (w) { edif.push(w.pts); }); arr(Lc.lajes).forEach(function (l) { edif.push(l.pts); });
@@ -168081,7 +168389,7 @@ if (!best) return;
 var ex = r.para[0] - r.de[0], ez = r.para[1] - r.de[1], L = hip(ex, ez) || 1, t = ((best[0] - r.de[0]) * ex + (best[1] - r.de[1]) * ez) / (L * L), foot = [r.de[0] + ex * t, r.de[1] + ez * t];
 var p0 = M.Pp(best), p1 = M.Pp(foot), Lp = hip(p1[0] - p0[0], p1[1] - p0[1]);
 if (Lp < 9) { sem.push("recuo " + r.nome); return; }
-recuoCota(D, p0, p1, d.br(r.recuo, 2));
+recuoCota(D, p0, p1, d.cotaTxt(r.recuo));
 r._p = [p0, p1];
 });
 var fi = idx.ladoFrente; if (fi != null && fi >= 0) {
@@ -168102,21 +168410,24 @@ c._sitM = M; c._sitDes = { wDes: wDes };
 return { escala: "1:" + c.escalaSit, semLugar: sem };
 }
 function recuoCota(D, p0, p1, valor) {
-var L = hip(p1[0] - p0[0], p1[1] - p0[1]), ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L, h = 2.5, w = AP().largTexto(valor, h);
+var d = DS(), S = d.S, L = hip(p1[0] - p0[0], p1[1] - p0[1]), ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L, h0 = S.alturaCota(D.escCota);
 D.linha(p0[0], p0[1], p1[0], p1[1], "MET-COTA"); D.tique(p0[0], p0[1], ux, uy); D.tique(p1[0], p1[1], ux, uy);
-var horiz = Math.abs(uy) < 0.2, ts = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, -0.5, 1.5], ok = false;
+var horiz = Math.abs(uy) < 0.2, ts = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, -0.5, 1.5], ok = false, hs = [h0, Math.max(S.TEXTOS.cota.minimo, h0 * 0.8), S.TEXTOS.cota.minimo], ac = S.COTA.texto_acima_da_linha_mm, la = S.COTA.texto_ao_lado_vertical_mm;
+for (var ih = 0; ih < hs.length && !ok; ih++) {
+var h = hs[ih], w = d.largTexto(valor, h);
 for (var i = 0; i < ts.length && !ok; i++) {
 var x = p0[0] + (p1[0] - p0[0]) * ts[i], y = p0[1] + (p1[1] - p0[1]) * ts[i];
 [1, -1].forEach(function (sg) {
 if (ok) return;
-var bx = horiz ? [x - w / 2, y + (sg > 0 ? -h - 0.8 : 0.8), x + w / 2, y + (sg > 0 ? -0.8 : h + 0.8)] : [x + (sg > 0 ? -h - 0.8 : 0.8), y - w / 2, x + (sg > 0 ? -0.8 : h + 0.8), y + w / 2];
+var bx = horiz ? [x - w / 2, y + (sg > 0 ? -ac - h * 0.76 : 0.6), x + w / 2, y + (sg > 0 ? -0.6 : ac + h * 0.76 + 0.5)] : [x + (sg > 0 ? -la - h * 0.76 : 0.6), y - w / 2, x + (sg > 0 ? -0.6 : la + h * 0.76 + 0.5), y + w / 2];
 if (!D.livre(bx, 0.25)) return;
-if (horiz) D.texto(x, y + (sg > 0 ? -1.0 : h + 0.6), valor, h, { al: "C" });
-else D.texto(x + (sg > 0 ? -1.0 : h + 0.6), y, valor, h, { al: "C", rot: -90 });
+if (horiz) D.texto(x, y + (sg > 0 ? -ac : ac + h * 0.76), valor, h, { al: "C" });
+else D.texto(x + (sg > 0 ? -la : la + h * 0.76), y, valor, h, { al: "C", rot: -90 });
 ok = true;
 });
 }
-if (!ok) { var xm = (p0[0] + p1[0]) / 2, ym = (p0[1] + p1[1]) / 2; D.texto(xm, ym - 1, valor, h, { al: "C", rot: horiz ? 0 : -90 }); }
+}
+if (!ok) { var xm = (p0[0] + p1[0]) / 2, ym = (p0[1] + p1[1]) / 2; D.texto(xm, ym - ac, valor, hs[2], { al: "C", rot: horiz ? 0 : -90 }); }
 }
 function d_permeavel(s) { return /(grama|gramado|jardim|canteiro|terra|solo|vegeta|seixo)/i.test(txt(s.material)) || /(grama|jardim|canteiro)/i.test(txt(s.nome)); }
 var PALETA = { madeira: "#c8a070", ceramica: "#e6dfd0", grama: "#9ccc7a", agua: "#6ec3ea", pedra: "#cfcfcf", padrao: "#efe9de", azulejo: "#d9e6ee", deck: "#b98a5a" };
@@ -168405,14 +168716,14 @@ mc.paredes.forEach(function (p) { if (!p.muro) ys.push(p.yt); });
 mc.telhado.forEach(function (t) { ys.push(Math.max(t.ya, t.yb)); });
 var vs = ys.sort(function (a, b) { return a - b; }).filter(function (y, i, A) { return i === 0 || y - A[i - 1] > 0.02; });
 if (vs.length >= 2) {
-var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cotaTxt(vs[i + 1] - vs[i]));
 D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
-D.cota(X0 - 8, F.Y(vs[0]), X0 - 8, F.Y(vs[vs.length - 1]), 0, d.cm1(vs[vs.length - 1] - vs[0]), { desde: [false, false], semExt: true });
+D.cota(X0 - d.S.entreCadeias(D.escCota), F.Y(vs[0]), X0 - d.S.entreCadeias(D.escCota), F.Y(vs[vs.length - 1]), 0, d.cotaTxt(vs[vs.length - 1] - vs[0]), { desde: [false, false], semExt: true });
 }
 var us = [ct.u0]; mc.paredes.forEach(function (p) { us.push(p.u0, p.u1); }); us.push(ct.u1);
 us = us.sort(function (a, b) { return a - b; }).filter(function (u, i, A) { return i === 0 || u - A[i - 1] > 0.02; });
 if (us.length >= 2) {
-var yL = F.Y(mc.yMin) + 11, Q = us.map(function (u) { return [F.U(u), yL]; }), vv = []; for (var j = 0; j + 1 < us.length; j++) vv.push(d.cm1(us[j + 1] - us[j]));
+var yL = F.Y(mc.yMin) + 11, Q = us.map(function (u) { return [F.U(u), yL]; }), vv = []; for (var j = 0; j + 1 < us.length; j++) vv.push(d.cotaTxt(us[j + 1] - us[j]));
 D.cadeia(Q, 0, vv, { offs: [-4.5], desde: Q.map(function () { return false; }), semExt: true });
 }
 }
@@ -168442,7 +168753,7 @@ mc.ambientes.forEach(function (a) {
 var yb = a.base + 0.15, yt = a.base + Math.max(a.pe, 2.2), P0 = [F.U(a.u0) + 1.2, F.Y(yt)], P1 = [F.U(a.u1) - 1.2, F.Y(yb)];
 if (P1[0] - P0[0] < 6) return;
 var cen = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2];
-var jogos = [[{ t: txt(a.nome).toUpperCase(), h: 2.8 }, { t: "PD = " + d.br(a.pe, 2) + " m" }], [{ t: txt(a.nome).toUpperCase(), h: 2.4 }]];
+var jogos = [[{ t: txt(a.nome).toUpperCase(), h: d.K.hLetra.rotulo }, { t: "PD = " + d.br(a.pe, 2) + " m" }], [{ t: txt(a.nome).toUpperCase(), h: 2.4 }]];
 if (!d.rotuloBloco(D, cen, null, [P0[0], P0[1], P1[0], P1[1]], { jogos: jogos })) sem.push(a.nome);
 });
 return sem;
@@ -168464,7 +168775,7 @@ var ex = { fx: 24 + 36 + 40, fy: 14 + 6 + 20 };
 var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, [50, 75, 100, 125, 150, 200], ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
 mcs.forEach(function (mc, i) {
 var ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
-AP().tituloVista(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala);
+d.escalaCota(D, el.escala); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala, i + 1);
 var X = x + 24 + 0.9 * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;
 var Fi = desenharCorte(c, ct, mc, X, Yb, k);
 cotasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
@@ -168584,15 +168895,15 @@ mf.items.forEach(function (it) { if (it.tipo === "parede") topoPar = Math.max(to
 if (topoPar > 0.05) ys.push(topoPar); if (cum > topoPar + 0.05) ys.push(cum);
 var vs = ys.sort(function (a, b) { return a - b; });
 if (vs.length >= 2) {
-var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cotaTxt(vs[i + 1] - vs[i]));
 D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
 }
 var xr = F.U(mf.uMax) + 14, niv = [{ y: 0, t: "±0,00" }]; if (topoPar > 0.05) niv.push({ y: topoPar, t: d.nivelTxt(topoPar) }); if (cum > topoPar + 0.05) niv.push({ y: cum, t: d.nivelTxt(cum) + (cumeeiraReal(c) ? " cumeeira" : " ponto mais alto do telhado") });
 colocarNiveis(D, xr, niv, F);
-var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cm1(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });
+var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cotaTxt(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });
 }
 function fachadas(c) {
-var D = c.D, A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
+var D = c.D, d = DS(), A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
 var ws = mfs.map(function (m) { return m.uMax - m.uMin + 1.8; }), hs = mfs.map(function (m) { return m.yMax - m.yMin + 0.3; });
 var cel = { w: A.w / 2 - 4, h: A.h / 2 - 2 }, ex = { fx: 14 + 30, fy: 14 + 18 };
 var esc = [50, 75, 100, 125, 150, 200], k = 0.005, ch = null;
@@ -168604,7 +168915,7 @@ if (ok) { ch = esc[i]; k = kk; }
 if (!ch) { ch = 200; k = 5; c.avisos.push("ARQ-08: as fachadas não cabem em 1:200 nesta folha: aumente o formato."); }
 mfs.forEach(function (mf, i) {
 var col = i % 2, lin = Math.floor(i / 2), cx0 = A.x + 4 + col * (A.w / 2), cy0 = A.y + 2 + lin * (A.h / 2);
-AP().tituloVista(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch);
+d.escalaCota(D, ch); d.titulo(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch, i + 1);
 var X = cx0 + 14 + 0.9 * k, Yb = cy0 + 14 + (mf.yMax - mf.yMin) * k + 4;
 var F = desenharFachada(c, vvs[i], mf, X, Yb, k);
 cotasFachada(c, vvs[i], mf, F, k);
@@ -168707,6 +169018,7 @@ return null;
 function PR() { return dep("Prancha", "./prancha.js"); }
 function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
 function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
+function ES() { return dep("ArqEstilo", "./arqestilo.js"); }
 function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
 function IX() { return dep("ArqIndices", "./arqindices.js"); }
 function PL() { return dep("ArqPlantas", "./arqplantas.js"); }
@@ -168724,7 +169036,7 @@ function n(v) { return (typeof v === "number" && isFinite(v)) ? String(Math.roun
 function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function dois(k) { return ("0" + k).slice(-2); }
 function hoje() { var dt = new Date(); return dois(dt.getDate()) + "/" + dois(dt.getMonth() + 1) + "/" + dt.getFullYear(); }
-var FONTE = "RomanS, ISOCPEUR, Arial, Helvetica, sans-serif";
+var FONTE = ES() ? ES().FONTE.css : "Verdana, Arial, sans-serif";
 var VERMELHO = "#c00000";
 var CONJUNTOS = ["situacao", "existente", "demolir", "layout", "cobertura", "forro", "cortes", "fachadas", "piso", "quadros", "humanizada"];
 var ROTULO_CONJUNTO = { situacao: "Situação e implantação (índices, recuos, norte)", existente: "Planta existente (cotada)", demolir: "Planta de demolir / construir (convenção de reforma)",
@@ -168825,16 +169137,16 @@ return esc[esc.length - 1];
 }
 function legendaFases() {
 var C = DS().conv();
-return [{ t: "A CONSTRUIR", fill: C.novo.fill, hachura: true, cam: "ARQ-PAREDE-NOVO" }, { t: "A DEMOLIR (tracejado)", fill: C.demolido.fill, cam: "ARQ-PAREDE-DEMOLIDO" }, { t: "EXISTENTE A MANTER", fill: C.existente.fill, cam: "ARQ-PAREDE-EXISTENTE" }];
+return [{ t: C.demolido.rotulo, fill: C.demolido.fill }, { t: C.novo.rotulo, fill: C.novo.fill }, { t: C.existente.rotulo, fill: C.existente.fill }];
 }
 var NOTAS_GERAIS = [
-"Cotas em centímetros; níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
+"Cotas, níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
 "Prevalecem as cotas sobre o desenho. Conferir no local todas as medidas existentes antes de executar.",
 "Representação conforme a NBR 6492 (projetos de arquitetura); simbologia da RA Engenharia."
 ];
 function blocosNotas(c, def) {
 var B = [];
-if (def.tipo === "demolir") B.push({ titulo: "LEGENDA", legenda: legendaFases(), itens: [] });
+if (def.tipo === "demolir") B.push({ quadro: { itens: legendaFases() } });
 if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas: ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ").", "AA e BB: planos de corte (folha " + c.numeroDe("cortes") + ")."] });
 if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."].concat(arr(c.dados.calhas).length ? ["Retângulo tracejado junto à platibanda: calha embutida. Círculo cheio: descida pluvial. Quadrado: buzinote e ladrão da área técnica (laje descoberta com caimento de 1 % para eles)."] : []) });
 if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
@@ -168897,8 +169209,8 @@ cc.D = D; cc.def = def; cc.avisos = avisos;
 var nAv = avisos.length;
 try {
 if (def.tipo === "situacao") res = desenharSituacao(cc, def);
-else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
-else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
+else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
+else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
 else if (def.tipo === "layout") res = desenharLayout(cc, def);
 else if (def.tipo === "cobertura") res = Pl.cobertura(cc);
 else if (def.tipo === "forro") res = desenharForro(cc, def);
@@ -168962,7 +169274,7 @@ return r;
 }
 function desenharQuadros(c, def, defs, feitas) {
 var Qd = QD(), D = c.D, A = c.A, T = D.E.T, y = A.y + 4, w = A.w - 8;
-AP().tituloVista(D, A.x + 4, A.y + 2, def.titulo, "SEM ESCALA"); y += 14;
+DS().titulo(D, A.x + 4, A.y + 2, def.titulo, "SEM ESCALA", 1); y += 14;
 var t1 = Qd.quadroEsquadrias(D, A.x + 4, y, w, c.dados.esquadrias); y += t1.h + 10;
 var t2 = Qd.quadroAcabamentos(D, A.x + 4, y, w, c.depois.ambientes); y += t2.h + 10;
 var linhas = defs.map(function (d) { return [d.numero, d.titulo, c.formatoNome, (feitas[d.id] && feitas[d.id].escala) || "SEM ESCALA"]; });

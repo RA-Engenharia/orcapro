@@ -33,6 +33,7 @@
   function PR() { return dep("Prancha", "./prancha.js"); }
   function AP() { return dep("AcoPranchas", "./acopranchas.js"); }
   function DS() { return dep("ArqDesenho", "./arqdesenho.js"); }
+  function ES() { return dep("ArqEstilo", "./arqestilo.js"); }
   function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
   function IX() { return dep("ArqIndices", "./arqindices.js"); }
   function PL() { return dep("ArqPlantas", "./arqplantas.js"); }
@@ -50,7 +51,7 @@
   function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
   function dois(k) { return ("0" + k).slice(-2); }
   function hoje() { var dt = new Date(); return dois(dt.getDate()) + "/" + dois(dt.getMonth() + 1) + "/" + dt.getFullYear(); }
-  var FONTE = "RomanS, ISOCPEUR, Arial, Helvetica, sans-serif";
+  var FONTE = ES() ? ES().FONTE.css : "Verdana, Arial, sans-serif";   /* Verdana, com reserva DejaVu Sans / Arial (padrão arquitetura_interiores); o carimbo RA leva a fonte dele */
   var VERMELHO = "#c00000";
 
   var CONJUNTOS = ["situacao", "existente", "demolir", "layout", "cobertura", "forro", "cortes", "fachadas", "piso", "quadros", "humanizada"];
@@ -158,18 +159,19 @@
   }
 
   /* ------------------------------------------------------------ NOTAS E LEGENDAS DA COLUNA */
+  /* o QUADRO DE LEGENDAS do padrão (js/arqestilo.js): DEMOLIR e CONSTRUIR PAREDE, mais o existente que fica (a planta tem parede cinza) */
   function legendaFases() {
     var C = DS().conv();
-    return [{ t: "A CONSTRUIR", fill: C.novo.fill, hachura: true, cam: "ARQ-PAREDE-NOVO" }, { t: "A DEMOLIR (tracejado)", fill: C.demolido.fill, cam: "ARQ-PAREDE-DEMOLIDO" }, { t: "EXISTENTE A MANTER", fill: C.existente.fill, cam: "ARQ-PAREDE-EXISTENTE" }];
+    return [{ t: C.demolido.rotulo, fill: C.demolido.fill }, { t: C.novo.rotulo, fill: C.novo.fill }, { t: C.existente.rotulo, fill: C.existente.fill }];
   }
   var NOTAS_GERAIS = [
-    "Cotas em centímetros; níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
+    "Cotas, níveis e áreas em metros / metros quadrados. Níveis referidos ao piso acabado do térreo (±0,00).",
     "Prevalecem as cotas sobre o desenho. Conferir no local todas as medidas existentes antes de executar.",
     "Representação conforme a NBR 6492 (projetos de arquitetura); simbologia da RA Engenharia."
   ];
   function blocosNotas(c, def) {
     var B = [];
-    if (def.tipo === "demolir") B.push({ titulo: "LEGENDA", legenda: legendaFases(), itens: [] });
+    if (def.tipo === "demolir") B.push({ quadro: { itens: legendaFases() } });
     if (def.tipo === "layout" || def.tipo === "existente" || def.tipo === "demolir") B.push({ titulo: "SÍMBOLOS", itens: ["P1, P2… portas e J1, J2… janelas: ver o quadro de esquadrias (folha " + c.numeroDe("quadros") + ").", "AA e BB: planos de corte (folha " + c.numeroDe("cortes") + ")."] });
     if (def.tipo === "cobertura") B.push({ titulo: "LEGENDA", itens: ["Linha grossa: cumeeira. Linha média: espigão e rincão. Tracejado: beiral e projeção das paredes.", "Seta e %: sentido e inclinação do caimento de cada água."].concat(arr(c.dados.calhas).length ? ["Retângulo tracejado junto à platibanda: calha embutida. Círculo cheio: descida pluvial. Quadrado: buzinote e ladrão da área técnica (laje descoberta com caimento de 1 % para eles)."] : []) });
     if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
@@ -243,8 +245,8 @@
       var nAv = avisos.length;
       try {
         if (def.tipo === "situacao") res = desenharSituacao(cc, def);
-        else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
-        else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false });
+        else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
+        else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
         else if (def.tipo === "layout") res = desenharLayout(cc, def);
         else if (def.tipo === "cobertura") res = Pl.cobertura(cc);
         else if (def.tipo === "forro") res = desenharForro(cc, def);
@@ -312,7 +314,7 @@
   }
   function desenharQuadros(c, def, defs, feitas) {
     var Qd = QD(), D = c.D, A = c.A, T = D.E.T, y = A.y + 4, w = A.w - 8;
-    AP().tituloVista(D, A.x + 4, A.y + 2, def.titulo, "SEM ESCALA"); y += 14;
+    DS().titulo(D, A.x + 4, A.y + 2, def.titulo, "SEM ESCALA", 1); y += 14;
     var t1 = Qd.quadroEsquadrias(D, A.x + 4, y, w, c.dados.esquadrias); y += t1.h + 10;
     var t2 = Qd.quadroAcabamentos(D, A.x + 4, y, w, c.depois.ambientes); y += t2.h + 10;
     /* lista de folhas */

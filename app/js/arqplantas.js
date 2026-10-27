@@ -46,7 +46,7 @@
     };
   }
   function porId(L) { var m = {}; L.forEach(function (w) { m[w.id] = w; }); return m; }
-  function titulo(c, x, y, tit, escala) { return AP().tituloVista(c.D, x, y, tit, escala); }
+  function titulo(c, x, y, tit, escala) { return DS().titulo(c.D, x, y, tit, escala, 1); }
 
   /* ================================================================ PLANTAS (02, 03, 04) */
   function planta(c, o) {
@@ -57,8 +57,11 @@
     if (modo === "layout") d.moveisPlanta(D, M, Lc.moveis);
     d.vaosPlanta(D, M, Lc.vaos, porId(Lc.paredes), modo);
     var nCotas = 0;
-    if (o.cotas !== false) nCotas = d.cotasExternas(D, M, Lc.paredes, Lc.vaos.filter(function (v) { return v.status !== "demolido" || modo !== "layout"; }), {});
-    if (o.cotasInt) nCotas += d.cotasInternas(D, M, Lc.ambientes);
+    if (o.cotas !== false) nCotas = d.cotasExternas(D, M, Lc.paredes, Lc.vaos.filter(function (v) { return v.status !== "demolido" || modo !== "layout"; }), { ambientes: Lc.ambientes });
+    var semCota = [], cruzaCota = [];
+    if (o.cotasInt) nCotas += d.cotasInternas(D, M, Lc.ambientes, { moveis: modo === "layout" ? Lc.moveis : [], semLugar: semCota, cruza: cruzaCota });
+    if (semCota.length) c.avisos.push("Folha " + o.titulo + ": sem lugar livre para a cota interna de " + semCota.join(", ") + ".");
+    if (cruzaCota.length) c.avisos.push("Folha " + o.titulo + ": a cota interna de " + cruzaCota.join(", ") + " passa por cima de móvel (não havia linha livre).");
     /* marcas de corte AA e BB (a planta proposta): depois das cotas, para a linha desviar do número delas */
     if (o.cortes && c.cortes) {
       c.cortes.forEach(function (ct) {
@@ -143,7 +146,7 @@
       var tx = (a.pcts != null ? a.pcts : a.pct), s = Math.round(tx) + " %";
       var nx = -uy / hip(ux, uy), ny = ux / hip(ux, uy), cands = [[1, 0], [-1, 0], [1, 1.6], [-1, 1.6]].map(function (q) { var f = q[0] * (3.4 + 1.3 * q[1]); return [(p0[0] + p1[0]) / 2 + nx * f, (p0[1] + p1[1]) / 2 + ny * f]; }), ok = false;
       for (var i = 0; i < cands.length && !ok; i++) {
-        var w = AP().largTexto(s, 2.3);
+        var w = DS().largTexto(s, 2.3);
         if (D.livre([cands[i][0] - w / 2, cands[i][1] - 1.7, cands[i][0] + w / 2, cands[i][1] + 0.6], 0.2)) { D.texto(cands[i][0], cands[i][1], s, 2.3, { al: "C" }); ok = true; }
       }
       if (!ok) semLugar++;
@@ -155,7 +158,7 @@
   /* ================================================================ ARQ-05 COBERTURA */
   function cobertura(c) {
     var D = c.D, d = DS(), A = c.A, pl = c.plano, M = d.mapa(pl.caixa, A.x + 4 + d.K.margemCotas, A.y + 16 + d.K.margemCotas, pl.k), Lc = listas(c, "fantasma", null), g = G();
-    titulo(c, A.x + 4, A.y + 2, "PLANTA DE COBERTURA", "ESC 1:" + pl.escala);
+    titulo(c, A.x + 4, A.y + 2, "PLANTA DE COBERTURA", "ESC 1:" + pl.escala); d.escalaCota(D, pl.escala);
     d.paredesPlanta(D, M, Lc.paredes, "fantasma");
     var Tl = arr(c.dados.telhados).filter(function (t) { return t.status !== "demolido"; }), res = [], sem = 0;
     Tl.forEach(function (t) { var r = desenharTelhado(D, M, t, {}); res.push(r); sem += setasCaimento(D, M, r.aguas); });
@@ -180,13 +183,13 @@
     Tl.forEach(function (t) { (t.pBeiral || t.pts).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); });
     if (xs.length) {
       var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), z0 = Math.min.apply(null, zs), z1 = Math.max.apply(null, zs);
-      D.cota(M.P(x0, z0)[0], M.P(x0, z0)[1], M.P(x1, z0)[0], M.P(x1, z0)[1], d.K.offCota1, d.cm1(x1 - x0), { desde: [0.6, 0.6] });
-      D.cota(M.P(x0, z1)[0], M.P(x0, z1)[1], M.P(x0, z0)[0], M.P(x0, z0)[1], d.K.offCota1, d.cm1(z1 - z0), { desde: [0.6, 0.6] });
+      D.cota(M.P(x0, z0)[0], M.P(x0, z0)[1], M.P(x1, z0)[0], M.P(x1, z0)[1], d.S.afastamento1(), d.cotaTxt(x1 - x0), { desde: [1.0, 1.0] });
+      D.cota(M.P(x0, z1)[0], M.P(x0, z1)[1], M.P(x0, z0)[0], M.P(x0, z0)[1], d.S.afastamento1(), d.cotaTxt(z1 - z0), { desde: [1.0, 1.0] });
       /* o beiral: a distância do beiral à parede (cota curta) */
       Tl.forEach(function (t) {
         if (!(t.beiral > 0) || !t.pBeiral) return;
         var b = g.bbox(t.pts), bb = g.bbox(t.pBeiral);
-        if (Math.abs((b[0] - bb[0]) - t.beiral) < 0.01) D.cota(M.P(bb[0], (z0 + z1) / 2)[0], M.P(bb[0], (z0 + z1) / 2)[1], M.P(b[0], (z0 + z1) / 2)[0], M.P(b[0], (z0 + z1) / 2)[1], -d.K.offCota1 * 0.5, d.cm1(t.beiral), { desde: [false, false], semExt: true });
+        if (Math.abs((b[0] - bb[0]) - t.beiral) < 0.01) D.cota(M.P(bb[0], (z0 + z1) / 2)[0], M.P(bb[0], (z0 + z1) / 2)[1], M.P(b[0], (z0 + z1) / 2)[0], M.P(b[0], (z0 + z1) / 2)[1], -d.S.afastamento1(), d.cotaTxt(t.beiral), { desde: [false, false], semExt: true });
       });
       /* níveis: cumeeira e apoio */
       var yy = M.P(x1, z0)[1] - 4;
@@ -294,7 +297,7 @@
   function situacao(c) {
     var D = c.D, d = DS(), A = c.A, g = G(), idx = c.idx, T = c.dados.terreno, lote = idx.terreno.contorno || (T.divisa && T.divisa.pts) || null, sem = [];
     var wQuadro = Math.min(176, Math.max(140, A.w * 0.34)), wDes = A.w - wQuadro - 8;
-    titulo(c, A.x + 4, A.y + 2, "SITUAÇÃO E IMPLANTAÇÃO", "ESC 1:" + c.escalaSit);
+    titulo(c, A.x + 4, A.y + 2, "SITUAÇÃO E IMPLANTAÇÃO", "ESC 1:" + c.escalaSit); d.escalaCota(D, c.escalaSit);
     if (!lote) {
       D.texto(A.x + 10, A.y + 30, "SEM DIVISA DO LOTE NO MODELO: modele a divisa (linha de propriedade) ou informe o contorno do lote.", 3.2, { cor: "#c00000" });
       c.avisos.push("ARQ-01: sem a divisa do lote — a folha sai sem a implantação.");
@@ -322,7 +325,8 @@
         var a = lote[i], b = lote[(i + 1) % n], pa = M.Pp(a), pb = M.Pp(b), L = hip(b[0] - a[0], b[1] - a[1]), ux = (pb[0] - pa[0]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1), uy = (pb[1] - pa[1]) / (hip(pb[0] - pa[0], pb[1] - pa[1]) || 1);
         var mid = [(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], dentro = g.pontoEmPol([(pa[0] + pb[0]) / 2 + uy * 0.5, (pa[1] + pb[1]) / 2 - ux * 0.5], P);
         /* n = (uy, -ux) é a esquerda do sentido; o desvio + vai para lá — se aí for dentro do lote, vira o sinal */
-        D.cota(pa[0], pa[1], pb[0], pb[1], dentro ? -9 : 9, d.br(L, 2), { desde: [1.0, 1.0] });
+        var of9 = (dentro ? -1 : 1) * d.S.afastamento1() * 1.8, ofs = [of9 * 1.5, of9 * 2, -of9 * 0.6, -of9 * 1.1];
+        D.cota(pa[0], pa[1], pb[0], pb[1], of9, d.cotaTxt(L), { desde: [1.0, 1.0], offs: ofs });
         void mid;
       }
       /* recuos: do ponto mais perto da edificação até a divisa */
@@ -335,7 +339,7 @@
         var ex = r.para[0] - r.de[0], ez = r.para[1] - r.de[1], L = hip(ex, ez) || 1, t = ((best[0] - r.de[0]) * ex + (best[1] - r.de[1]) * ez) / (L * L), foot = [r.de[0] + ex * t, r.de[1] + ez * t];
         var p0 = M.Pp(best), p1 = M.Pp(foot), Lp = hip(p1[0] - p0[0], p1[1] - p0[1]);
         if (Lp < 9) { sem.push("recuo " + r.nome); return; }
-        recuoCota(D, p0, p1, d.br(r.recuo, 2));
+        recuoCota(D, p0, p1, d.cotaTxt(r.recuo));
         r._p = [p0, p1];
       });
       /* a rua: duas linhas paralelas fora da divisa da frente */
@@ -358,21 +362,25 @@
   }
   /* a cota do recuo: linha com traços nas pontas e o número no primeiro ponto livre ao longo dela (a linha cruza o beiral e a divisa) */
   function recuoCota(D, p0, p1, valor) {
-    var L = hip(p1[0] - p0[0], p1[1] - p0[1]), ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L, h = 2.5, w = AP().largTexto(valor, h);
+    var d = DS(), S = d.S, L = hip(p1[0] - p0[0], p1[1] - p0[1]), ux = (p1[0] - p0[0]) / L, uy = (p1[1] - p0[1]) / L, h0 = S.alturaCota(D.escCota);
     D.linha(p0[0], p0[1], p1[0], p1[1], "MET-COTA"); D.tique(p0[0], p0[1], ux, uy); D.tique(p1[0], p1[1], ux, uy);
-    var horiz = Math.abs(uy) < 0.2, ts = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, -0.5, 1.5], ok = false;
-    for (var i = 0; i < ts.length && !ok; i++) {
-      var x = p0[0] + (p1[0] - p0[0]) * ts[i], y = p0[1] + (p1[1] - p0[1]) * ts[i];
-      [1, -1].forEach(function (sg) {
-        if (ok) return;
-        var bx = horiz ? [x - w / 2, y + (sg > 0 ? -h - 0.8 : 0.8), x + w / 2, y + (sg > 0 ? -0.8 : h + 0.8)] : [x + (sg > 0 ? -h - 0.8 : 0.8), y - w / 2, x + (sg > 0 ? -0.8 : h + 0.8), y + w / 2];
-        if (!D.livre(bx, 0.25)) return;
-        if (horiz) D.texto(x, y + (sg > 0 ? -1.0 : h + 0.6), valor, h, { al: "C" });
-        else D.texto(x + (sg > 0 ? -1.0 : h + 0.6), y, valor, h, { al: "C", rot: -90 });
-        ok = true;
-      });
+    var horiz = Math.abs(uy) < 0.2, ts = [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, -0.5, 1.5], ok = false, hs = [h0, Math.max(S.TEXTOS.cota.minimo, h0 * 0.8), S.TEXTOS.cota.minimo], ac = S.COTA.texto_acima_da_linha_mm, la = S.COTA.texto_ao_lado_vertical_mm;
+    /* o número do recuo no primeiro ponto livre ao longo da linha (a linha cruza o beiral e a divisa); se a altura da escala não couber, encolhe até o mínimo do padrão (2,0) */
+    for (var ih = 0; ih < hs.length && !ok; ih++) {
+      var h = hs[ih], w = d.largTexto(valor, h);
+      for (var i = 0; i < ts.length && !ok; i++) {
+        var x = p0[0] + (p1[0] - p0[0]) * ts[i], y = p0[1] + (p1[1] - p0[1]) * ts[i];
+        [1, -1].forEach(function (sg) {
+          if (ok) return;
+          var bx = horiz ? [x - w / 2, y + (sg > 0 ? -ac - h * 0.76 : 0.6), x + w / 2, y + (sg > 0 ? -0.6 : ac + h * 0.76 + 0.5)] : [x + (sg > 0 ? -la - h * 0.76 : 0.6), y - w / 2, x + (sg > 0 ? -0.6 : la + h * 0.76 + 0.5), y + w / 2];
+          if (!D.livre(bx, 0.25)) return;
+          if (horiz) D.texto(x, y + (sg > 0 ? -ac : ac + h * 0.76), valor, h, { al: "C" });
+          else D.texto(x + (sg > 0 ? -la : la + h * 0.76), y, valor, h, { al: "C", rot: -90 });
+          ok = true;
+        });
+      }
     }
-    if (!ok) { var xm = (p0[0] + p1[0]) / 2, ym = (p0[1] + p1[1]) / 2; D.texto(xm, ym - 1, valor, h, { al: "C", rot: horiz ? 0 : -90 }); }
+    if (!ok) { var xm = (p0[0] + p1[0]) / 2, ym = (p0[1] + p1[1]) / 2; D.texto(xm, ym - ac, valor, hs[2], { al: "C", rot: horiz ? 0 : -90 }); }
   }
   function d_permeavel(s) { return /(grama|gramado|jardim|canteiro|terra|solo|vegeta|seixo)/i.test(txt(s.material)) || /(grama|jardim|canteiro)/i.test(txt(s.nome)); }
 

@@ -209,16 +209,16 @@
     mc.telhado.forEach(function (t) { ys.push(Math.max(t.ya, t.yb)); });
     var vs = ys.sort(function (a, b) { return a - b; }).filter(function (y, i, A) { return i === 0 || y - A[i - 1] > 0.02; });
     if (vs.length >= 2) {
-      var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+      var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cotaTxt(vs[i + 1] - vs[i]));
       D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
       /* a altura total */
-      D.cota(X0 - 8, F.Y(vs[0]), X0 - 8, F.Y(vs[vs.length - 1]), 0, d.cm1(vs[vs.length - 1] - vs[0]), { desde: [false, false], semExt: true });
+      D.cota(X0 - d.S.entreCadeias(D.escCota), F.Y(vs[0]), X0 - d.S.entreCadeias(D.escCota), F.Y(vs[vs.length - 1]), 0, d.cotaTxt(vs[vs.length - 1] - vs[0]), { desde: [false, false], semExt: true });
     }
     /* cadeia horizontal em baixo: as faces das paredes e das aberturas ao longo da linha do corte */
     var us = [ct.u0]; mc.paredes.forEach(function (p) { us.push(p.u0, p.u1); }); us.push(ct.u1);
     us = us.sort(function (a, b) { return a - b; }).filter(function (u, i, A) { return i === 0 || u - A[i - 1] > 0.02; });
     if (us.length >= 2) {
-      var yL = F.Y(mc.yMin) + 11, Q = us.map(function (u) { return [F.U(u), yL]; }), vv = []; for (var j = 0; j + 1 < us.length; j++) vv.push(d.cm1(us[j + 1] - us[j]));
+      var yL = F.Y(mc.yMin) + 11, Q = us.map(function (u) { return [F.U(u), yL]; }), vv = []; for (var j = 0; j + 1 < us.length; j++) vv.push(d.cotaTxt(us[j + 1] - us[j]));
       D.cadeia(Q, 0, vv, { offs: [-4.5], desde: Q.map(function () { return false; }), semExt: true });
     }
   }
@@ -250,7 +250,7 @@
       var yb = a.base + 0.15, yt = a.base + Math.max(a.pe, 2.2), P0 = [F.U(a.u0) + 1.2, F.Y(yt)], P1 = [F.U(a.u1) - 1.2, F.Y(yb)];
       if (P1[0] - P0[0] < 6) return;
       var cen = [(P0[0] + P1[0]) / 2, (P0[1] + P1[1]) / 2];
-      var jogos = [[{ t: txt(a.nome).toUpperCase(), h: 2.8 }, { t: "PD = " + d.br(a.pe, 2) + " m" }], [{ t: txt(a.nome).toUpperCase(), h: 2.4 }]];
+      var jogos = [[{ t: txt(a.nome).toUpperCase(), h: d.K.hLetra.rotulo }, { t: "PD = " + d.br(a.pe, 2) + " m" }], [{ t: txt(a.nome).toUpperCase(), h: 2.4 }]];
       if (!d.rotuloBloco(D, cen, null, [P0[0], P0[1], P1[0], P1[1]], { jogos: jogos })) sem.push(a.nome);
     });
     return sem;
@@ -275,7 +275,7 @@
     var el = escolherEscala(ws, hs, { x: A.x, y: A.y, w: A.w - 4, h: A.h - 4 }, [50, 75, 100, 125, 150, 200], ex), k = el.k, sem = [], x = A.x + 4, y = A.y + 2;
     mcs.forEach(function (mc, i) {
       var ct = cts[i], wm = ws[i] * k + ex.fx, hm = hs[i] * k + ex.fy;
-      AP().tituloVista(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala);
+      d.escalaCota(D, el.escala); d.titulo(D, x, y, "CORTE " + ct.letra + ct.letra, "ESC 1:" + el.escala, i + 1);
       var X = x + 24 + 0.9 * k, Yb = y + 14 + 6 + (mc.yMax - mc.yMin) * k;   /* Yb = o papel da cota mc.yMin */
       var Fi = desenharCorte(c, ct, mc, X, Yb, k);
       cotasCorte(c, ct, mc, Fi, k); niveisCorte(c, ct, mc, Fi);
@@ -402,16 +402,16 @@
     if (topoPar > 0.05) ys.push(topoPar); if (cum > topoPar + 0.05) ys.push(cum);
     var vs = ys.sort(function (a, b) { return a - b; });
     if (vs.length >= 2) {
-      var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cm1(vs[i + 1] - vs[i]));
+      var P = vs.map(function (y) { return [X0, F.Y(y)]; }), vals = []; for (var i = 0; i + 1 < vs.length; i++) vals.push(d.cotaTxt(vs[i + 1] - vs[i]));
       D.cadeia(P, 0, vals, { offs: [4.5], desde: P.map(function () { return false; }), semExt: true });
     }
     var xr = F.U(mf.uMax) + 14, niv = [{ y: 0, t: "±0,00" }]; if (topoPar > 0.05) niv.push({ y: topoPar, t: d.nivelTxt(topoPar) }); if (cum > topoPar + 0.05) niv.push({ y: cum, t: d.nivelTxt(cum) + (cumeeiraReal(c) ? " cumeeira" : " ponto mais alto do telhado") });
     colocarNiveis(D, xr, niv, F);
     /* cota geral embaixo */
-    var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cm1(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });
+    var yL = F.Y(0) + 9; D.cota(F.U(mf.uMin), yL, F.U(mf.uMax), yL, 0, d.cotaTxt(mf.uMax - mf.uMin), { desde: [false, false], semExt: true });
   }
   function fachadas(c) {
-    var D = c.D, A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
+    var D = c.D, d = DS(), A = c.A, vvs = vetoresVista(c.idx), mfs = vvs.map(function (vv) { return modeloFachada(c, vv); });
     var ws = mfs.map(function (m) { return m.uMax - m.uMin + 1.8; }), hs = mfs.map(function (m) { return m.yMax - m.yMin + 0.3; });
     var cel = { w: A.w / 2 - 4, h: A.h / 2 - 2 }, ex = { fx: 14 + 30, fy: 14 + 18 };
     var esc = [50, 75, 100, 125, 150, 200], k = 0.005, ch = null;
@@ -423,7 +423,7 @@
     if (!ch) { ch = 200; k = 5; c.avisos.push("ARQ-08: as fachadas não cabem em 1:200 nesta folha: aumente o formato."); }
     mfs.forEach(function (mf, i) {
       var col = i % 2, lin = Math.floor(i / 2), cx0 = A.x + 4 + col * (A.w / 2), cy0 = A.y + 2 + lin * (A.h / 2);
-      AP().tituloVista(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch);
+      d.escalaCota(D, ch); d.titulo(D, cx0, cy0, vvs[i].nome, "ESC 1:" + ch, i + 1);
       var X = cx0 + 14 + 0.9 * k, Yb = cy0 + 14 + (mf.yMax - mf.yMin) * k + 4;
       var F = desenharFachada(c, vvs[i], mf, X, Yb, k);
       cotasFachada(c, vvs[i], mf, F, k);
