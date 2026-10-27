@@ -56,6 +56,10 @@
   };
   var ORDEM_CAT = ["tubo", "conexao", "acessorio", "aparelho", "equipamento"];
   var MAX_RECENTES = 8;
+  /* CATEGORIAS DE OUTROS MÓDULOS (27/10/2026): Porta, Janela e Componente (js/bimarqtipos.js) usam o MESMO seletor e a MESMA lista
+     (pesquisar, recentes, rodapé). O módulo registra { rotulo, catalogo(), contexto(esquema), aplicar(tipo, ctx), esquecer() }; as
+     categorias dele NÃO entram em ORDEM_CAT (atalhos, testes de ícone e filtro de cálculo das instalações seguem iguais). */
+  var PROV = {};
 
   /* ------------------------------------------------------------- TUBOS
    * id estável · nome (convenção) · sistema (o do prefixo) · material do biminst · pn (série do PPR) ·
@@ -217,7 +221,10 @@
     CATEGORIAS: CATEGORIAS, ORDEM_CAT: ORDEM_CAT, TUBOS: TUBOS, ATALHOS_PADRAO: ATALHOS_PADRAO, ACOES: ACOES, FITA: FITA, NIVEL: NIVEL, MAX_RECENTES: MAX_RECENTES,
 
     /* ============================================================ CATÁLOGO */
+    registrarCategoria: function (cat, def) { if (!cat || !def || typeof def.catalogo !== "function") return false; PROV[cat] = def; CATEGORIAS[cat] = def.rotulo || cat; return true; },
+    categoriaExterna: function (cat) { return !!PROV[cat]; },
     catalogo: function (cat) {
+      if (PROV[cat]) return PROV[cat].catalogo();
       var L = _cache[cat];
       if (!L) {
         L = cat === "tubo" ? catTubos() : cat === "conexao" ? catConexoes() : cat === "acessorio" ? catAcessorios() : cat === "aparelho" ? catAparelhos() : cat === "equipamento" ? catEquipamentos() : [];
@@ -234,7 +241,7 @@
       var l = []; try { l = global.FamiliaUI && global.FamiliaUI.biblioteca ? global.FamiliaUI.biblioteca().filter(function (f) { return f && f.importada; }) : []; } catch (e) { l = []; }
       _fonte = l; _fonteT = agora; return l;
     },
-    esquecerFonte: function () { _fonte = null; _fonteT = 0; },
+    esquecerFonte: function () { _fonte = null; _fonteT = 0; Object.keys(PROV).forEach(function (k) { try { if (PROV[k].esquecer) PROV[k].esquecer(); } catch (e) {} }); },
     limparCache: function () { _cache = {}; _escCache = {}; _fonte = null; _fonteT = 0; },
     tipo: function (id) {
       var cat = txt(id).split(":")[0];
@@ -246,7 +253,7 @@
       if (filtro && b) L = b.aplicarFiltro(L, filtro);
       if (!n) return L.slice();
       var pal = n.split(/\s+/);
-      return L.filter(function (t) { var s = norm(t.nome + " " + (t.familia || "") + " " + (t.material || "")); return pal.every(function (p) { return s.indexOf(p) >= 0; }); });
+      return L.filter(function (t) { var s = norm(t.nome + " " + (t.familia || "") + " " + (t.material || "") + " " + (t.grupo || "")); return pal.every(function (p) { return s.indexOf(p) >= 0; }); });
     },
     /* o filtro que a lista abre: o gravado POR USUÁRIO; projeto com memorial de cálculo abre em "Só as que entram no cálculo" */
     filtroAtual: function () { var b = HB(); if (!b) return { origem: "todas", soCalculo: false }; return b.lerFiltro(null, b.memorialDoProjeto()); },
@@ -361,6 +368,7 @@
     ".rv-tlist-it{display:flex;align-items:center;gap:8px;padding:3px 7px;cursor:pointer;border:1px solid transparent}.rv-tlist-it:hover,.rv-tlist-it.foco{background:var(--rv-hover,rgba(127,127,127,.14))}" +
     ".rv-tlist-it.atual{border-color:var(--rv-ativo-borda,#4a90d9);font-weight:600}.rv-tlist-it[aria-disabled=true]{opacity:.45;cursor:not-allowed}" +
     ".rv-tlist-it img,.rv-tlist-it .sem{width:34px;height:28px;object-fit:contain;background:#fff;border-radius:2px;flex:none}" +
+    ".rv-tlist-grupo{position:sticky;top:0;padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;opacity:.75;background:var(--rv-painel-bg,#2b303b);border-bottom:1px solid var(--rv-linha,#3a4150)}" +
     ".rv-tlist-rec{border-top:1px solid var(--rv-linha-forte,#566);padding:4px 0;max-height:190px;overflow:auto}.rv-tlist-rec h4{margin:2px 7px 3px;font-size:12px}" +
     ".rv-tlist-rec div{padding:3px 7px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rv-tlist-rec div:hover{background:var(--rv-hover,rgba(127,127,127,.14))}" +
     "body.bim-linha-fina .d2-vista-tela svg [stroke]{stroke-width:.6px!important}";
@@ -374,6 +382,7 @@
 
   /* o CONTEXTO de Propriedades: a categoria, o tipo atual e o alvo (o que a troca muda) */
   BimInstTipos.contexto = function (esquema) {
+    if (esquema && esquema.arqCat && PROV[esquema.arqCat]) return PROV[esquema.arqCat].contexto ? PROV[esquema.arqCat].contexto(esquema) : null;   /* Porta, Janela, Componente */
     var U = UIi(), I = BI(); if (!U || !I) return null;
     var uid = esquema && esquema.uid, st = estadoInst(), ins = st && st.instalacoes;
     if (uid && /^edit:/.test(String(uid)) && ins) {
@@ -426,22 +435,39 @@
     var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
     m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
     /* FILTRO (18/10/2026): Todas | OrçaPRO | Escritório + "Só as que entram no cálculo" (a escolha fica gravada por usuário) */
-    var hb = ctx.cat === "tubo" ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
+    var hb = ctx.cat === "tubo" || PROV[ctx.cat] ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
     m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") +
       '<div class="rv-tlist-itens" role="listbox"></div><div class="rv-tlist-rec"></div>';
     var inp = m.querySelector("input"), lista = m.querySelector(".rv-tlist-itens"), rec = m.querySelector(".rv-tlist-rec"), barra = m.querySelector(".rv-tlist-fil"), foco = -1, vis = [];
-    var MAX_POR_ORIGEM = 300;   /* a biblioteca real do escritório tem milhares de tipos: a lista mostra os primeiros de CADA origem (as do escritório não somem atrás das nativas) e pede para refinar */
+    var MAX_POR_ORIGEM = 300;   /* a biblioteca real do escritório tem milhares de tipos: a lista mostra os primeiros de CADA origem ou subgrupo (Componente) (as do escritório não somem atrás das nativas) e pede para refinar */
     function pintarBarra() { if (barra && hb) barra.innerHTML = hb.htmlControles(filtro, hb.contagens(self.catalogo(ctx.cat), filtro), memorial); }
     function pintar() {
       vis = self.pesquisar(ctx.cat, inp.value, filtro);
-      var porO = {}, corte = vis.filter(function (t) { var o = t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+      var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+      var grupoAnt = null;
       lista.innerHTML = corte.map(function (t, i) {
-        return '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
+        var cab = ""; if (t.grupo && t.grupo !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(t.grupo) + "</div>"; grupoAnt = t.grupo || null;
+        return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
           (t.indisponivel ? ' aria-disabled="true" title="' + esc(t.indisponivel) + '"' : "") + ">" +
-          (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '">' : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
+          (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
       }).join("") + (vis.length > corte.length ? '<div style="padding:8px;opacity:.7">Mostrando ' + corte.length + " de " + vis.length + ": refine a pesquisa ou escolha a origem.</div>" : "") ||
         '<div style="padding:8px;opacity:.7">Nenhum tipo' + (inp.value ? ' com "' + esc(inp.value) + '"' : "") + (filtro && (filtro.soCalculo || filtro.origem !== "todas") ? " neste filtro" : "") + ".</div>";
       vis = corte;
+      miniaturas();
+    }
+    /* miniatura desenhada da própria peça (mobiliário): aos poucos, 4 por vez, só as da lista que está na tela */
+    var _mt = null;
+    function miniaturas() {
+      if (_mt) { clearTimeout(_mt); _mt = null; }
+      var pend = vis.filter(function (t) { return t.miniatura && !t._miniFeita; });
+      (function passo() {
+        if (!self._lista) return;
+        pend.splice(0, 4).forEach(function (t) {
+          t._miniFeita = true;
+          try { var src = t.miniatura(); if (src) { var im = lista.querySelector('img[data-mini="' + t.id.replace(/"/g, "") + '"]'); if (im) im.src = src; } } catch (e) {}
+        });
+        if (pend.length) _mt = setTimeout(passo, 16);
+      })();
     }
     if (barra) {
       barra.addEventListener("click", function (ev) {
@@ -475,6 +501,7 @@
 
   /* APLICAR o tipo escolhido: no elemento selecionado (troca) ou na ferramenta (o próximo traço); sem nenhum dos dois, arma a ferramenta */
   BimInstTipos.aplicar = function (t, ctx) {
+    if (t && PROV[t.cat]) { this.usar(t); return !!PROV[t.cat].aplicar(t, ctx || {}); }   /* Porta, Janela, Componente */
     var U = UIi(), I = BI(), b = B(); if (!t || !U || !I) return false;
     ctx = ctx || {}; var al = ctx.alvo || {};
     this.usar(t);

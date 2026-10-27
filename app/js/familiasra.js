@@ -243,13 +243,13 @@
     }
   ];
 
-  /* família com `previa: "modelador"` só aparece com a prévia do modelador
-     ligada (js/bimprevia.js) — recurso novo do B5 não muda a biblioteca de
-     quem não ligou a prévia. `todas: true` lista tudo (testes). */
+  /* LIBERADO (27/10/2026, OK do Rogério): as famílias com `previa: "modelador"` (143 de 155) aparecem para TODOS os clientes,
+     sem ligar a prévia. O campo `previa` continua nas famílias como marca de origem; o que ainda for prévia de verdade
+     (outro valor que não "modelador") segue pedindo BimPrevia[previa]() ligada. `todas: true` lista tudo (testes). */
   function visivel(f, todas) {
-    if (!f.previa || todas) return true;
+    if (!f.previa || todas || f.previa === "modelador") return true;
     var BP = global.BimPrevia;
-    return !!(BP && BP.modelador && f.previa === "modelador" && BP.modelador());
+    return !!(BP && typeof BP[f.previa] === "function" && BP[f.previa]());
   }
   /* =====================================================================
    * BIBLIOTECA RA AMPLIADA (B6, 08/10/2026 — PLANO-BIM-MODELADOR.md)

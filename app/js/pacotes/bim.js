@@ -64297,9 +64297,9 @@ quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao
 }
 ];
 function visivel(f, todas) {
-if (!f.previa || todas) return true;
+if (!f.previa || todas || f.previa === "modelador") return true;
 var BP = global.BimPrevia;
-return !!(BP && BP.modelador && f.previa === "modelador" && BP.modelador());
+return !!(BP && typeof BP[f.previa] === "function" && BP[f.previa]());
 }
 var TATAJUBA = { Especie: "Tatajuba (Bagassa guianensis)", Massa_especifica: 1000 };
 var PINUS = { Especie: "Pinus elliottii tratado em autoclave (CCA)", Massa_especifica: 600 };
@@ -91928,6 +91928,7 @@ aparelho: "Aparelhos sanitários", equipamento: "Equipamento mecânico"
 };
 var ORDEM_CAT = ["tubo", "conexao", "acessorio", "aparelho", "equipamento"];
 var MAX_RECENTES = 8;
+var PROV = {};
 var TUBOS = [
 { id: "af-soldavel", nome: "AF_Tubo Marrom Soldável", sistema: "agua_fria", material: "pvc_soldavel" },
 { id: "af-roscavel", nome: "AF_Tubo Branco Roscável", sistema: "agua_fria", material: "pvc_roscavel",
@@ -92065,7 +92066,10 @@ function ler(chave) { try { var s = global.localStorage ? global.localStorage.ge
 function gravar(chave, v) { try { if (global.localStorage) global.localStorage.setItem(chave, JSON.stringify(v)); return true; } catch (e) { return false; } }
 var BimInstTipos = {
 CATEGORIAS: CATEGORIAS, ORDEM_CAT: ORDEM_CAT, TUBOS: TUBOS, ATALHOS_PADRAO: ATALHOS_PADRAO, ACOES: ACOES, FITA: FITA, NIVEL: NIVEL, MAX_RECENTES: MAX_RECENTES,
+registrarCategoria: function (cat, def) { if (!cat || !def || typeof def.catalogo !== "function") return false; PROV[cat] = def; CATEGORIAS[cat] = def.rotulo || cat; return true; },
+categoriaExterna: function (cat) { return !!PROV[cat]; },
 catalogo: function (cat) {
+if (PROV[cat]) return PROV[cat].catalogo();
 var L = _cache[cat];
 if (!L) {
 L = cat === "tubo" ? catTubos() : cat === "conexao" ? catConexoes() : cat === "acessorio" ? catAcessorios() : cat === "aparelho" ? catAparelhos() : cat === "equipamento" ? catEquipamentos() : [];
@@ -92079,7 +92083,7 @@ var agora = Date.now(); if (_fonte && agora - _fonteT < 2000) return _fonte;
 var l = []; try { l = global.FamiliaUI && global.FamiliaUI.biblioteca ? global.FamiliaUI.biblioteca().filter(function (f) { return f && f.importada; }) : []; } catch (e) { l = []; }
 _fonte = l; _fonteT = agora; return l;
 },
-esquecerFonte: function () { _fonte = null; _fonteT = 0; },
+esquecerFonte: function () { _fonte = null; _fonteT = 0; Object.keys(PROV).forEach(function (k) { try { if (PROV[k].esquecer) PROV[k].esquecer(); } catch (e) {} }); },
 limparCache: function () { _cache = {}; _escCache = {}; _fonte = null; _fonteT = 0; },
 tipo: function (id) {
 var cat = txt(id).split(":")[0];
@@ -92090,7 +92094,7 @@ var n = norm(q).trim(), L = this.catalogo(cat), b = HB();
 if (filtro && b) L = b.aplicarFiltro(L, filtro);
 if (!n) return L.slice();
 var pal = n.split(/\s+/);
-return L.filter(function (t) { var s = norm(t.nome + " " + (t.familia || "") + " " + (t.material || "")); return pal.every(function (p) { return s.indexOf(p) >= 0; }); });
+return L.filter(function (t) { var s = norm(t.nome + " " + (t.familia || "") + " " + (t.material || "") + " " + (t.grupo || "")); return pal.every(function (p) { return s.indexOf(p) >= 0; }); });
 },
 filtroAtual: function () { var b = HB(); if (!b) return { origem: "todas", soCalculo: false }; return b.lerFiltro(null, b.memorialDoProjeto()); },
 definirFiltro: function (parcial) { var b = HB(); if (!b) return { origem: "todas", soCalculo: false }; return b.gravarFiltro(null, parcial, b.memorialDoProjeto()); },
@@ -92185,6 +92189,7 @@ var CSS = ".rv-tsel{display:flex;gap:8px;align-items:center;padding:6px 8px;bord
 ".rv-tlist-it{display:flex;align-items:center;gap:8px;padding:3px 7px;cursor:pointer;border:1px solid transparent}.rv-tlist-it:hover,.rv-tlist-it.foco{background:var(--rv-hover,rgba(127,127,127,.14))}" +
 ".rv-tlist-it.atual{border-color:var(--rv-ativo-borda,#4a90d9);font-weight:600}.rv-tlist-it[aria-disabled=true]{opacity:.45;cursor:not-allowed}" +
 ".rv-tlist-it img,.rv-tlist-it .sem{width:34px;height:28px;object-fit:contain;background:#fff;border-radius:2px;flex:none}" +
+".rv-tlist-grupo{position:sticky;top:0;padding:3px 7px;font-size:11px;font-weight:600;letter-spacing:.02em;text-transform:uppercase;opacity:.75;background:var(--rv-painel-bg,#2b303b);border-bottom:1px solid var(--rv-linha,#3a4150)}" +
 ".rv-tlist-rec{border-top:1px solid var(--rv-linha-forte,#566);padding:4px 0;max-height:190px;overflow:auto}.rv-tlist-rec h4{margin:2px 7px 3px;font-size:12px}" +
 ".rv-tlist-rec div{padding:3px 7px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rv-tlist-rec div:hover{background:var(--rv-hover,rgba(127,127,127,.14))}" +
 "body.bim-linha-fina .d2-vista-tela svg [stroke]{stroke-width:.6px!important}";
@@ -92196,6 +92201,7 @@ function UIi() { return global.BimInstUI || null; }
 function B() { return global.BIM || null; }
 function estadoInst() { try { var b = B(), e = b && b.editarEstado ? b.editarEstado() : null; return e && e.estado ? e.estado : null; } catch (e) { return null; } }
 BimInstTipos.contexto = function (esquema) {
+if (esquema && esquema.arqCat && PROV[esquema.arqCat]) return PROV[esquema.arqCat].contexto ? PROV[esquema.arqCat].contexto(esquema) : null;
 var U = UIi(), I = BI(); if (!U || !I) return null;
 var uid = esquema && esquema.uid, st = estadoInst(), ins = st && st.instalacoes;
 if (uid && /^edit:/.test(String(uid)) && ins) {
@@ -92243,7 +92249,7 @@ var r = ancora && ancora.getBoundingClientRect ? ancora.getBoundingClientRect() 
 var m = doc.createElement("div"); m.className = "rv-tlist"; m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
 var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
 m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
-var hb = ctx.cat === "tubo" ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
+var hb = ctx.cat === "tubo" || PROV[ctx.cat] ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
 m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") +
 '<div class="rv-tlist-itens" role="listbox"></div><div class="rv-tlist-rec"></div>';
 var inp = m.querySelector("input"), lista = m.querySelector(".rv-tlist-itens"), rec = m.querySelector(".rv-tlist-rec"), barra = m.querySelector(".rv-tlist-fil"), foco = -1, vis = [];
@@ -92251,14 +92257,30 @@ var MAX_POR_ORIGEM = 300;
 function pintarBarra() { if (barra && hb) barra.innerHTML = hb.htmlControles(filtro, hb.contagens(self.catalogo(ctx.cat), filtro), memorial); }
 function pintar() {
 vis = self.pesquisar(ctx.cat, inp.value, filtro);
-var porO = {}, corte = vis.filter(function (t) { var o = t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
+var grupoAnt = null;
 lista.innerHTML = corte.map(function (t, i) {
-return '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
+var cab = ""; if (t.grupo && t.grupo !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(t.grupo) + "</div>"; grupoAnt = t.grupo || null;
+return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
 (t.indisponivel ? ' aria-disabled="true" title="' + esc(t.indisponivel) + '"' : "") + ">" +
-(t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '">' : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
+(t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
 }).join("") + (vis.length > corte.length ? '<div style="padding:8px;opacity:.7">Mostrando ' + corte.length + " de " + vis.length + ": refine a pesquisa ou escolha a origem.</div>" : "") ||
 '<div style="padding:8px;opacity:.7">Nenhum tipo' + (inp.value ? ' com "' + esc(inp.value) + '"' : "") + (filtro && (filtro.soCalculo || filtro.origem !== "todas") ? " neste filtro" : "") + ".</div>";
 vis = corte;
+miniaturas();
+}
+var _mt = null;
+function miniaturas() {
+if (_mt) { clearTimeout(_mt); _mt = null; }
+var pend = vis.filter(function (t) { return t.miniatura && !t._miniFeita; });
+(function passo() {
+if (!self._lista) return;
+pend.splice(0, 4).forEach(function (t) {
+t._miniFeita = true;
+try { var src = t.miniatura(); if (src) { var im = lista.querySelector('img[data-mini="' + t.id.replace(/"/g, "") + '"]'); if (im) im.src = src; } } catch (e) {}
+});
+if (pend.length) _mt = setTimeout(passo, 16);
+})();
 }
 if (barra) {
 barra.addEventListener("click", function (ev) {
@@ -92290,6 +92312,7 @@ var at = lista.querySelector(".atual"); if (at && at.scrollIntoView) at.scrollIn
 return m;
 };
 BimInstTipos.aplicar = function (t, ctx) {
+if (t && PROV[t.cat]) { this.usar(t); return !!PROV[t.cat].aplicar(t, ctx || {}); }
 var U = UIi(), I = BI(), b = B(); if (!t || !U || !I) return false;
 ctx = ctx || {}; var al = ctx.alvo || {};
 this.usar(t);
@@ -92404,6 +92427,149 @@ S.__tiposLigado = true; this.instalar(); return true;
 if (typeof module !== "undefined" && module.exports) module.exports = BimInstTipos;
 global.BimInstTipos = BimInstTipos;
 if (typeof window !== "undefined") { try { BimInstTipos.ligar(); } catch (e) {} }
+})(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimarqtipos.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function BIT() { return dep("BimInstTipos", "./biminsttipos.js"); }
+function status(t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} }
+function toast(t, k) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info"); } catch (e) {} }
+var CATS = {
+porta: { rotulo: "Porta", familias: ["porta"], dica: "clique numa parede criada aqui: o vão abre sozinho." },
+janela: { rotulo: "Janela", familias: ["janela"], dica: "clique numa parede criada aqui: o vão abre sozinho, com o peitoril." },
+componente: { rotulo: "Componente", familias: ["mobiliario", "loucas", "cozinha", "banho", "lazer", "luminaria", "paisagismo", "equipamento", "generico", "guarda_corpo"],
+dica: "clique no lugar no modelo; a barra de espaço gira 90°." }
+};
+var ORDEM = ["porta", "janela", "componente"];
+var GRUPOS = [["mobiliario", "Mobiliário"], ["planejado", "Planejado"], ["cozinha", "Cozinha"], ["banho", "Banho"], ["loucas", "Louças e metais"],
+["lazer", "Lazer e área gourmet"], ["luminaria", "Luminária"], ["paisagismo", "Paisagismo"], ["equipamento", "Equipamento"],
+["guarda_corpo", "Guarda-corpo"], ["generico", "Genérico"]];
+var ROT_GRUPO = {}, ORDEM_GRUPO = GRUPOS.map(function (g) { return g[0]; }); GRUPOS.forEach(function (g) { ROT_GRUPO[g[0]] = g[1]; });
+function svg(corpo) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 52"><rect width="64" height="52" fill="#fff"/>' + corpo + "</svg>"); }
+var ICONES = {
+porta: svg('<rect x="20" y="6" width="24" height="42" fill="none" stroke="#5b6573" stroke-width="2.5"/><rect x="24" y="10" width="16" height="38" fill="#d9c3a3" stroke="#8a6d45" stroke-width="1.5"/><circle cx="37" cy="30" r="1.6" fill="#5b6573"/>'),
+janela: svg('<rect x="14" y="10" width="36" height="32" fill="#dcecf7" stroke="#5b6573" stroke-width="2.5"/><line x1="32" y1="10" x2="32" y2="42" stroke="#5b6573" stroke-width="2"/><line x1="14" y1="26" x2="50" y2="26" stroke="#5b6573" stroke-width="2"/>'),
+componente: svg('<rect x="12" y="20" width="40" height="18" rx="2" fill="#c9b79c" stroke="#7a6446" stroke-width="2"/><rect x="16" y="38" width="4" height="8" fill="#7a6446"/><rect x="44" y="38" width="4" height="8" fill="#7a6446"/><rect x="16" y="10" width="32" height="10" rx="2" fill="#dccdb6" stroke="#7a6446" stroke-width="2"/>')
+};
+var BimArqTipos = {
+CATS: CATS, ORDEM: ORDEM, GRUPOS: GRUPOS, _atual: {},
+host: null,
+configurar: function (host) { this.host = host || null; this.esquecer(); return this; },
+fontes: function () {
+if (this.host && this.host.fontes) return this.host.fontes();
+try { if (global.FamiliaUI && global.FamiliaUI.biblioteca) return global.FamiliaUI.biblioteca(); } catch (e) {}
+var RA = dep("FamiliasRA", "./familiasra.js");
+return RA ? RA.lista() : [];
+},
+grupoDe: function (f) {
+if (/^ra-plan-/.test(txt(f && f.id))) return "planejado";
+return txt(f && f.categoria);
+},
+_cache: {},
+esquecer: function () { this._cache = {}; },
+catalogo: function (cat) {
+var def = CATS[cat]; if (!def) return [];
+var agora = Date.now(), c = this._cache[cat];
+if (c && agora - c.t < 2000) return c.lista;
+var self = this, FM = global.FamiliasMob, out = [];
+arr(this.fontes()).forEach(function (f) {
+if (!f || !f.id || def.familias.indexOf(f.categoria) < 0) return;
+var gk = self.grupoDe(f); if (!ROT_GRUPO[gk]) gk = "generico";
+var grupo = cat === "componente" ? ROT_GRUPO[gk] : null, ordemG = cat === "componente" ? ORDEM_GRUPO.indexOf(gk) : 0;
+var tipos = arr(f.tipos).length ? f.tipos : [{ id: "", nome: "Padrão" }];
+tipos.forEach(function (t) {
+var it = { id: cat + ":" + f.id + ":" + txt(t.id), cat: cat, nome: txt(f.nome) + " : " + txt(t.nome || t.id), familia: txt(f.nome), famId: f.id, tipoId: txt(t.id),
+origem: "familia", grupo: grupo, ordemGrupo: ordemG, daRA: /^ra-/.test(f.id) ? 0 : 1, icone: ICONES[cat] };
+if (FM && FM.miniatura && f.geometria === "mob" && global.document) it.miniatura = function () { return FM.miniatura(f.id, txt(t.id)); };
+out.push(it);
+});
+});
+out.sort(function (a, b) { return (a.ordemGrupo - b.ordemGrupo) || (a.daRA - b.daRA) || a.nome.localeCompare(b.nome); });
+this._cache[cat] = { t: agora, lista: out };
+return out;
+},
+atual: function (cat) {
+var id = this._atual[cat], B = BIT(), t = id && B ? B.tipo(id) : null;
+if (t && t.miniatura) { try { var m = t.miniatura(); if (m) { var c = {}; Object.keys(t).forEach(function (k) { c[k] = t[k]; }); c.icone = m; return c; } } catch (e) {} }
+return t || null;
+},
+esquema: function (cat) {
+var def = CATS[cat], self = this; if (!def) return null;
+var at = this.atual(cat);
+return { titulo: def.rotulo, icone: "familia", arqCat: cat, semEditarTipo: true,
+secoes: [{ nome: "Colocação", params: [
+{ id: "arq:como", rotulo: "Como", leitura: true, valor: at ? "Está armado: " + def.dica : "Escolha o tipo acima; depois, " + def.dica },
+{ id: "arq:bib", rotulo: "Biblioteca", tipo: "botao", rotuloBotao: "Abrir a biblioteca de famílias", fn: function () { self.abrirBiblioteca(); } }
+] }] };
+},
+abrirBiblioteca: function () {
+if (this.host && this.host.biblioteca) return this.host.biblioteca();
+try { if (global.Gestao && global.Gestao._famSync && global.Gestao._famAbrir) { global.Gestao._famSync(); global.Gestao._famAbrir("biblioteca"); return true; } } catch (e) {}
+return false;
+},
+contexto: function (esquema) {
+var cat = esquema && esquema.arqCat; if (!CATS[cat]) return null;
+return { cat: cat, atual: this.atual(cat), alvo: { arq: true } };
+},
+_pintar: function (cat) { try { if (global.BimShell && global.BimShell.pintarProps) global.BimShell.pintarProps(this.esquema(cat)); } catch (e) {} },
+aplicar: function (t) {
+if (!t || !CATS[t.cat]) return false;
+var f = null; arr(this.fontes()).forEach(function (x) { if (x && x.id === t.famId) f = x; });
+if (!f) { toast("Família não encontrada na biblioteca: " + txt(t.familia), "aviso"); return false; }
+var ok = false;
+try {
+if (this.host && this.host.colocar) ok = this.host.colocar(f, t.tipoId) !== false;
+else if (global.FamiliaUI && global.FamiliaUI._ctx && global.FamiliaUI._ctx.colocar) { global.FamiliaUI._ctx.colocar(f, t.tipoId); ok = true; }
+} catch (e) { ok = false; }
+if (!ok) { toast("Não consegui armar " + txt(t.nome) + ".", "aviso"); return false; }
+this._atual[t.cat] = t.id;
+this._pintar(t.cat);
+return true;
+},
+abrir: function (cat) {
+var def = CATS[cat], B = BIT(); if (!def || !B) return false;
+try { if (this.host && this.host.preparar) this.host.preparar(); else if (global.Gestao && global.Gestao._famSync) global.Gestao._famSync(); } catch (e) {}
+this.esquecer(); if (B.esquecerFonte) B.esquecerFonte();
+var L = this.catalogo(cat);
+if (!L.length) { toast("Não há família de " + def.rotulo.toLowerCase() + " na biblioteca.", "aviso"); return false; }
+var rec = B.recentes(cat)[0] || null;
+if (!rec && cat === "componente") {
+this._pintar(cat);
+status("Componente: escolha o tipo em Propriedades.");
+try {
+var d = global.document, anc = d && d.querySelector ? d.querySelector(".rv-props .rv-tsel") : null;
+if (anc && B.abrirLista) B.abrirLista(anc, { cat: cat, atual: null, alvo: { arq: true } });
+} catch (e2) {}
+return true;
+}
+return this.aplicar(rec || L[0]);
+}
+};
+BimArqTipos.registrar = function () {
+var B = BIT(); if (!B || !B.registrarCategoria) return false;
+ORDEM.forEach(function (cat) {
+B.registrarCategoria(cat, {
+rotulo: CATS[cat].rotulo,
+catalogo: function () { return BimArqTipos.catalogo(cat); },
+contexto: function (esq) { return BimArqTipos.contexto(esq); },
+aplicar: function (t) { return BimArqTipos.aplicar(t); },
+esquecer: function () { BimArqTipos.esquecer(); }
+});
+});
+return true;
+};
+if (typeof module !== "undefined" && module.exports) module.exports = BimArqTipos;
+global.BimArqTipos = BimArqTipos;
+try { BimArqTipos.registrar(); } catch (e) {}
 })(typeof window !== "undefined" ? window : globalThis);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/biminstcon.js ==== */

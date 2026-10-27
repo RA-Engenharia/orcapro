@@ -7043,7 +7043,8 @@ if (!pid) { UI.toast("Abra um modelo primeiro: a planta é cortada dele.", "avis
 self._d2Abrir(pid, (Bim2D.def(pid) || {}).nome || "Planta baixa");
 return true;
 };
-reg["familias-param"] = reg.componente = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
+reg["familias-param"] = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
+reg.componente = function () { if (window.BimArqTipos) return window.BimArqTipos.abrir("componente"); self._famSync(); self._famAbrir("biblioteca"); return true; };
 reg["editor-familia"] = function () { self._famSync(); self._famAbrir("editor"); return true; };
 reg["aplicar-ambiente"] = function (e) {
 var b = B(); if (!b || !b.editarArmar) return false;
@@ -10095,6 +10096,7 @@ else { FamiliaUI._modo = "biblioteca"; FamiliaUI.render(); }
 },
 _famColocarCategoria: function (cat) {
 if (!this._famConfig()) return false;
+if (window.BimArqTipos && window.BimArqTipos.CATS[cat]) return window.BimArqTipos.abrir(cat);
 var f = FamiliaUI.biblioteca().filter(function (x) { return x.categoria === cat; })[0];
 if (!f) { UI.toast("Não há família de " + cat + " na biblioteca.", "aviso"); return false; }
 this._famAbrir("biblioteca");
@@ -70428,5 +70430,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=160de2c31b"},{"src":"js/bim-pacote.js?v=5773993775","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=faff88a076"},{"src":"js/bim-pacote.js?v=5773993775","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

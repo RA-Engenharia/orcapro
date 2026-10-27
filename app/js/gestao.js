@@ -11234,7 +11234,9 @@
       };
       /* MODELAGEM e FAMÍLIAS (07/10/2026): porta, janela e cobertura deixam de ser
          "em breve" na fita nova; viga e componente (família) entram */
-      reg["familias-param"] = reg.componente = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
+      reg["familias-param"] = function () { self._famSync(); self._famAbrir("biblioteca"); return true; };
+      /* Componente: o seletor FINO em Propriedades (js/bimarqtipos.js); a tela grande de Famílias fica no botão próprio (Biblioteca) */
+      reg.componente = function () { if (window.BimArqTipos) return window.BimArqTipos.abrir("componente"); self._famSync(); self._famAbrir("biblioteca"); return true; };
       reg["editor-familia"] = function () { self._famSync(); self._famAbrir("editor"); return true; };
       /* P2-C — ACABAMENTO POR AMBIENTE (prévia do modelador): o comando arma o clique
          "dentro do cômodo" do editor (js/bim.js, gancho P2-C); o clique cai em _ambClique */
@@ -15050,9 +15052,11 @@
       if (modo === "editor") FamiliaUI.editar(fam || Familia.nova("Família nova", "generico"), !!(fam && fam._origem !== "ra") || !fam);
       else { FamiliaUI._modo = "biblioteca"; FamiliaUI.render(); }
     },
-    /* Porta/Janela da fita: arma a 1ª família da categoria e abre a biblioteca para trocar o tipo */
+    /* Porta/Janela da fita: o seletor FINO em Propriedades (js/bimarqtipos.js) arma o último tipo usado (ou o 1º da categoria);
+       sem ele, o jeito antigo: arma a 1ª família da categoria e abre a tela grande da biblioteca */
     _famColocarCategoria: function (cat) {
       if (!this._famConfig()) return false;
+      if (window.BimArqTipos && window.BimArqTipos.CATS[cat]) return window.BimArqTipos.abrir(cat);
       var f = FamiliaUI.biblioteca().filter(function (x) { return x.categoria === cat; })[0];
       if (!f) { UI.toast("Não há família de " + cat + " na biblioteca.", "aviso"); return false; }
       this._famAbrir("biblioteca");
