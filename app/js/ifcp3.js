@@ -165,7 +165,7 @@
        extrudado, perfilPoli, circulo, retangulo, forma, brepFaces, pintar, ligarMaterial, ligarCodigos,
        origemPset, pset, qto, nivelDaPeca, cena2ifc, avisos */
     escrever: function (api, st) {
-      var A = api, out = { telhados: 0, aguas: 0, bordas: 0, fundacoes: 0, estacas: 0 };
+      var A = api, out = { telhados: 0, aguas: 0, bordas: 0, fundacoes: 0, estacas: 0, platibandas: 0 };
 
       /* ================= TELHADO: IfcRoof + IfcSlab ROOF por água ================= */
       arr(st.telhados).forEach(function (t) {
@@ -247,6 +247,28 @@
         A.pset(el, "OrcaPRO_Borda", [["Tipo", "IFCLABEL", info.rotulo], ["Telhado", "IFCIDENTIFIER", String(b.telhado)]]);
         A.ligarCodigos(el, arr(b.servicos).map(function (s) { return s.codigo; })); A.origemPset(el, [["Modelador", "IFCLABEL", "P3"]]);
         el.comprimento = b.comprimento; out.bordas++;
+      });
+
+      /* ================= PLATIBANDA do telhado (js/bimcobertura.js): IfcWall, um sólido por trecho, com o material e a fase.
+         A fase (Pset "Fases") e a marca saem do registro de parâmetros (js/bimparam.js, categoria platibanda), como nas demais peças. ================= */
+      arr(st.platibandas).forEach(function (p) {
+        if (!p || p.id == null || !p.ok) return;
+        var nv = A.nivelDaPeca({ nivelId: p.telhadoNivelId }, num(p.base, 0)), pl = A.placement(nv.pl, [0, 0, 0]), itens = [], H = num(p.topo, 0) - num(p.base, 0);
+        var mat = arr(p.camadas).length ? String((arr(p.camadas).filter(function (k) { return k && k.face === "nucleo"; })[0] || p.camadas[0]).material || "Alvenaria") : "Alvenaria";
+        if (!(H > 1e-6)) { A.avisos.push("platibanda " + p.id + ": sem altura — ficou de fora do IFC"); return; }
+        arr(p.segs).forEach(function (sg) {
+          if (!sg || !sg.quad || sg.quad.length < 3) return;
+          var pts = sg.quad.map(function (q) { return [q.x, -q.z]; });
+          var s = A.extrudado(A.perfilPoli(pts, null, null, "platibanda " + p.id), A.pos3([0, 0, num(p.base, 0) - nv.elevacao]), H);
+          A.pintar(s, mat); itens.push(s);
+        });
+        if (!itens.length) { A.avisos.push("platibanda " + p.id + ": sem trecho para desenhar — ficou de fora do IFC"); return; }
+        var el = A.peca(p.id, "IFCWALL", "Platibanda " + p.id, "Platibanda " + Math.round(num(p.espessuraEf, 0.15) * 100) + " cm", pl, A.forma(itens, "SweptSolid"), [A.E("PARAPET")], 0, nv, { mapa: "platibanda" });
+        A.ligarMaterial(el, mat);
+        A.qto(el, "Qto_WallBaseQuantities", [["Length", "L", p.comprimento], ["Width", "L", p.espessuraEf], ["Height", "L", H], ["NetSideArea", "A", p.area], ["NetVolume", "V", p.volume]]);
+        A.pset(el, "OrcaPRO_Platibanda", [["Telhado", "IFCIDENTIFIER", String(p.telhado)], ["FaseCriada", "IFCLABEL", String(p.faseCriada || "Construção nova")]]);
+        A.origemPset(el, [["Modelador", "IFCLABEL", "P3"]]);
+        el.comprimento = p.comprimento; out.platibandas++;
       });
 
       /* ================= FUNDAÇÃO ================= */

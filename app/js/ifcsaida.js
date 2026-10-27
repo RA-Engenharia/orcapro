@@ -1955,7 +1955,7 @@
       }
     }
     /* ================= P3 — TELHADO, BORDAS e FUNDAÇÃO (o escritor é o js/ifcp3.js) ================= */
-    var nP3 = arr(st.telhados).length + arr(st.bordas).length + arr(st.fundacoes).length, IP3 = nP3 ? dep("IfcP3", "./ifcp3.js") : null;
+    var nP3 = arr(st.telhados).length + arr(st.bordas).length + arr(st.fundacoes).length + arr(st.platibandas).filter(function (p) { return p && p.ok; }).length, IP3 = nP3 ? dep("IfcP3", "./ifcp3.js") : null;
     if (nP3 && IP3 && IP3.escrever) IP3.escrever({ w: w, ref: ref, S: S, E: E, L: L, R: R, G: G, OH: OH, dep: dep, peca: peca, placement: placement, pos3: pos3, extrudado: extrudado, perfilPoli: perfilPoli,
       circulo: circulo, retangulo: retangulo, forma: forma, brepFaces: brepFaces, pintar: pintar, ligarMaterial: ligarMaterial, ligarCodigos: ligarCodigos, origemPset: origemPset,
       pset: pset, qto: qto, nivelDaPeca: nivelDaPeca, avisos: avisos }, st);

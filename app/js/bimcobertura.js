@@ -802,6 +802,7 @@
   }
 
   /* ============================================================ QUANTITATIVO */
+  function faseExistente(p) { return txt(p && p.faseCriada).trim().toLowerCase() === "existente"; }
   function item(grupo, nome, un, qtd, sinapi, obs, extra) {
     var o = { grupo: grupo, item: nome, un: un, qtd: r4(qtd), sinapi: sinapi || null, orcarAParte: !sinapi, obs: obs || null };
     if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
@@ -828,6 +829,8 @@
     });
     arr(estado && estado.platibandas).forEach(function (p) {
       if (!p || !p.ok) return;
+      /* FASE: a platibanda EXISTENTE não orça construção (a reforma sai pelo modelo; a demolida vai ao serviço de demolição do BimFases) */
+      if (faseExistente(p)) { avisos.push("Platibanda " + p.id + ": fase Existente — fora do orçamento de construção."); return; }
       if (p.herdar && arr(p.camadas).length) {
         /* N23: a platibanda é a continuação da parede de baixo — as MESMAS camadas (núcleo e acabamento de cada face), em m², com o serviço de cada uma */
         p.camadas.forEach(function (k) {
@@ -837,6 +840,7 @@
       } else itens.push(item("Platibanda", "Platibanda de alvenaria, e = " + virg(p.espessuraEf * 100, 0) + " cm", "m²", p.area, null, "altura " + virg(p.altura) + " m, " + virg(p.comprimento) + " m de comprimento, " + virg(p.volume, 3) + " m³; a alvenaria e o revestimento das duas faces (" + virg(p.areaFaces) + " m²) saem da composição de parede da obra", { platibanda: p.id }));
       if (p.rufoCapa) itens.push(item("Platibanda", "Rufo de capa (chapim) — " + p.rufoCapa.obs, "m", p.rufoCapa.comprimento, p.rufoCapa.sinapi, null, { platibanda: p.id }));
       if (p.contraRufo) itens.push(item("Platibanda", "Contra-rufo — " + p.contraRufo.obs, "m", p.contraRufo.comprimento, p.contraRufo.sinapi, null, { platibanda: p.id }));
+    /* a pintura da platibanda entra pelo orçamento do modelo (js/orcmodelo.js ← BimPintar.servicosOrc), não aqui: nada cobrado duas vezes */
     });
     arr(estado && estado.calhasEmbutidas).forEach(function (c) {
       if (!c || !c.ok) return;
@@ -1712,7 +1716,10 @@
     if (o.rufoCapa != null && typeof o.rufoCapa !== "boolean") return false;
     if (o.contraRufo != null && typeof o.contraRufo !== "boolean") return false;
     if (o.herdar != null && typeof o.herdar !== "boolean") return false;   /* N23: herda tipo, espessura e posição da parede de baixo */
-    return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar"].some(function (k) { return o[k] !== undefined; });
+    /* FASE (27/10/2026): como as paredes, faseCriada/faseDemolida (a fase "Existente" não orça construção; ver BimFases) */
+    if (o.faseCriada != null && (typeof o.faseCriada !== "string" || o.faseCriada.length > 40)) return false;
+    if (o.faseDemolida != null && (typeof o.faseDemolida !== "string" || o.faseDemolida.length > 40)) return false;
+    return ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar", "faseCriada", "faseDemolida"].some(function (k) { return o[k] !== undefined; });
   }
   function validaCalha(o) {
     if (!idOk(o.id)) return false;
@@ -1745,7 +1752,7 @@
     if (o.op === "rufo") return validaRufo(o);
     return undefined;
   }
-  var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar"],
+  var CAMPOS = { plat: ["telhado", "arestas", "espessura", "altura", "topo", "base", "rufoCapa", "contraRufo", "abaRufo", "folgaCalha", "herdar", "faseCriada", "faseDemolida"],
                  calha: ["telhado", "arestas", "largura", "altura", "declividadePct", "laminaMm", "cotaAuto"],
                  cond: ["calha", "pos", "dn", "trecho"], rufo: ["telhado", "material", "corteRufo", "corteContra", "folga"] };
   function aplicarOp(o, ctx) {

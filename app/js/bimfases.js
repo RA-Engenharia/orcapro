@@ -98,6 +98,7 @@
   var FONTE_MAPA = "SINAPI 06/2026 (data/sinapi-MG-2026-06.json) — conferido em tools/test-bimfases.js";
   var MAPA_DEMOLICAO = {
     parede: { codigo: "97622", unidade: "M3", medida: "volume", descricao: "DEMOLIÇÃO DE ALVENARIA DE BLOCO FURADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023", quando: "alvenaria" },
+    platibanda: { codigo: "97622", unidade: "M3", medida: "volume", descricao: "DEMOLIÇÃO DE ALVENARIA DE BLOCO FURADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023", quando: "alvenaria" },
     laje: { codigo: "97628", unidade: "M3", medida: "volume", descricao: "DEMOLIÇÃO DE LAJES, EM CONCRETO ARMADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023", quando: "concreto" },
     pilar: { codigo: "97626", unidade: "M3", medida: "volume", descricao: "DEMOLIÇÃO DE PILARES E VIGAS EM CONCRETO ARMADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023", quando: "concreto" },
     viga: { codigo: "97626", unidade: "M3", medida: "volume", descricao: "DEMOLIÇÃO DE PILARES E VIGAS EM CONCRETO ARMADO, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023", quando: "concreto" },
@@ -108,8 +109,8 @@
     "forro:leve": { codigo: "97640", unidade: "M2", medida: "area", descricao: "REMOÇÃO DE FORROS DE DRYWALL, PVC E FIBROMINERAL, DE FORMA MANUAL, SEM REAPROVEITAMENTO. AF_09/2023" }
   };
   /* a medida da quantidade quando o código vem do PROJETO (op fases.demolicao) */
-  var MEDIDA_CAT = { parede: "volume", laje: "volume", pilar: "volume", viga: "volume", escada: "volume", guarda: "comprimento", cobertura: "area", forro: "area", porta: "area", janela: "area", volume: "volume", generico: "un" };
-  var NOME_CAT = { parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", cobertura: "Cobertura", forro: "Forro", porta: "Porta", janela: "Janela", volume: "Volume", generico: "Família" };
+  var MEDIDA_CAT = { platibanda: "volume", parede: "volume", laje: "volume", pilar: "volume", viga: "volume", escada: "volume", guarda: "comprimento", cobertura: "area", forro: "area", porta: "area", janela: "area", volume: "volume", generico: "un" };
+  var NOME_CAT = { platibanda: "Platibanda", parede: "Parede", laje: "Laje", pilar: "Pilar", viga: "Viga", escada: "Escada", guarda: "Guarda-corpo", cobertura: "Cobertura", forro: "Forro", porta: "Porta", janela: "Janela", volume: "Volume", generico: "Família" };
 
   /* ------------------------------------------------------------ fases */
   function lista(estado) {
@@ -151,6 +152,8 @@
     arr(estado && estado.telhados).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "telhado", categoria: "cobertura", el: c }); });
     arr(estado && estado.bordas).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "borda", categoria: "cobertura", el: c }); });
     arr(estado && estado.fundacoes).forEach(function (c) { if (c && c.id != null) out.push({ id: String(c.id), origem: "fundacao", categoria: "fundacao", el: c }); });
+    /* a platibanda do telhado (js/bimcobertura.js) também tem fase: a op marcar grava nela (bimparam alvo()) */
+    arr(estado && estado.platibandas).forEach(function (c) { if (c && c.id != null && c.ok) out.push({ id: String(c.id), origem: "platibanda", categoria: "platibanda", el: c }); });
     arr(estado && estado.familias).forEach(function (c) {
       if (!c || c.id == null) return;
       var k = catFam ? catFam(c.famId) : null;
@@ -286,7 +289,7 @@
       var constr = function (x) { var s = S[String(x.id)]; return !s || s === "novo" || s === "temporario"; };
       var est = {};
       Object.keys(estado).forEach(function (k) { est[k] = estado[k]; });
-      ["caixas", "coberturas", "forros", "volumes", "familias"].forEach(function (k) { if (Array.isArray(estado[k])) est[k] = estado[k].filter(function (x) { return !x || x.id == null || constr(x); }); });
+      ["caixas", "coberturas", "forros", "volumes", "familias", "platibandas"].forEach(function (k) { if (Array.isArray(estado[k])) est[k] = estado[k].filter(function (x) { return !x || x.id == null || constr(x); }); });
       var demolir = [], existentes = [], fora = [];
       pecas(estado, deps).forEach(function (p) {
         var s = S[p.id], it = { id: p.id, categoria: p.categoria, origem: p.origem, status: s, el: p.el, rotulo: (NOME_CAT[p.categoria] || "Peça") + " " + p.id };

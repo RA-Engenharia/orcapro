@@ -63,8 +63,12 @@
     var V = AV(); if (!V) return;
     V.CATALOGO.forEach(function (e) { if (e.grupo === "fachada" || e.grupo === "metal") MATERIAIS.push({ id: e.id, rotulo: e.rotulo, cor: e.cor }); });
   })();
-  var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"] };
-  var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior" };
+  /* PILAR (27/10/2026): 4 faces nomeadas pelo giro (rotY) do próprio pilar — frente = o lado +w do pilar, direita = +u; o pilar de AÇO tem
+     acabamento próprio (js/metalacab.js) e não entra. PLATIBANDA (a do telhado, js/bimcobertura.js): face externa e interna, sem faixas. */
+  var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"], pilar: ["frente", "fundo-pilar", "direita", "esquerda"], platibanda: ["fora", "dentro"] };
+  var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior", frente: "Face da frente", "fundo-pilar": "Face de trás", direita: "Face da direita", esquerda: "Face da esquerda" };
+  function tipoDe(c) { return c && (c.tipo || (c.telhado != null && !c.contorno && !c.tipoBorda ? "platibanda" : null)); }
+  function existente(c) { return String(c && c.faseCriada == null ? "" : c.faseCriada).trim().toLowerCase() === "existente"; }
   var OPS = ["pintar", "removerPintura", "dividirFace"];
   var MAX_CORTES = 8;
 
@@ -75,7 +79,7 @@
     var h = 0; for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) % 360;   /* outro nome: uma cor estável pelo nome */
     return "hsl(" + h + ", 35%, 70%)";
   }
-  function faceOk(c, face) { return !!c && !!FACES[c.tipo] && FACES[c.tipo].indexOf(face) >= 0; }
+  function faceOk(c, face) { var t = tipoDe(c); return !!c && !!FACES[t] && FACES[t].indexOf(face) >= 0 && !(t === "pilar" && c.material === "aco"); }
   function alturasOk(l) {
     if (!Array.isArray(l) || l.length > MAX_CORTES) return false;
     for (var i = 0; i < l.length; i++) { if (!fin(l[i]) || l[i] <= 0 || l[i] > 30) return false; if (i && !(l[i] > l[i - 1] + 1e-6)) return false; }
@@ -98,6 +102,8 @@
   function aplicarOp(o, ctx) {
     if (!o || OPS.indexOf(o.op) < 0 || validaOp(o) !== true) return false;
     var c = ctx && ctx.caixas && ctx.caixas[o.id];
+    var plat = !c && ctx && ctx.cob && ctx.cob.plat && ctx.cob.plat[o.id];
+    if (plat) return aplicarPlat(o, plat);
     if (!faceOk(c, o.face)) return false;
     var reg = o.regiao == null ? 0 : o.regiao, k = o.face + "|" + reg;
     if (o.op === "pintar") {
@@ -126,6 +132,18 @@
       if (!Object.keys(c.pinturas).length) delete c.pinturas;
     }
     return true;
+  }
+  /* a platibanda do telhado (ctx.cob.plat[id], js/bimcobertura.js): só a face inteira (regiao 0); a pintura fica na própria fonte da platibanda */
+  function aplicarPlat(o, p) {
+    if (FACES.platibanda.indexOf(o.face) < 0 || (o.regiao != null && o.regiao !== 0) || o.op === "dividirFace") return false;
+    var k = o.face + "|0";
+    if (o.op === "pintar") {
+      var q = { material: o.material.trim() };
+      if (o.codigo != null && String(o.codigo).trim()) q.codigo = String(o.codigo).trim();
+      (p.pinturas = p.pinturas || {})[k] = q; return true;
+    }
+    if (!p.pinturas || !p.pinturas[k]) return false;
+    delete p.pinturas[k]; if (!Object.keys(p.pinturas).length) delete p.pinturas; return true;
   }
   function registrar(BE) {
     if (!BE || typeof BE.estender !== "function") return false;
@@ -170,20 +188,44 @@
   }
   /* todas as regiões pintadas de uma peça: [{ face, regiao, rotuloFace,
      material, codigo, cor, area, ya, yb }] — `aceitos` = vãos da parede */
-  function regioes(c, aceitos) {
+  /* PILAR: a área exposta de uma face = largura da face x altura - o que a parede unida cobre (o cortesFace da parede, com = id do pilar).
+     A face que a parede toca é a de maior alinhamento com a direção pilar -> parede; sem dado nenhum de encosto, vale a LATERAL INTEIRA e a
+     região diz isso (premissa visível no orçamento). */
+  function normalPilar(c, face) {
+    var f = A().frameDe(c);
+    return { frente: [f.si, f.co], "fundo-pilar": [-f.si, -f.co], direita: [f.co, -f.si], esquerda: [-f.co, f.si] }[face];
+  }
+  function areaPilar(c, face, estado) {
+    var f = A().frameDe(c), larg = (face === "frente" || face === "fundo-pilar") ? f.L : f.t, bruta = larg * f.H, desc = 0, achou = false;
+    arr(estado && estado.caixas).forEach(function (w) {
+      if (!w || w.tipo !== "parede") return;
+      arr(w.cortesFace).forEach(function (ct) {
+        if (String(ct.com) !== String(c.id)) return;
+        achou = true;
+        var d = [num(w.cx, 0) - num(c.cx, 0), num(w.cz, 0) - num(c.cz, 0)], melhor = null, mv = -Infinity;
+        ["frente", "fundo-pilar", "direita", "esquerda"].forEach(function (k) { var n = normalPilar(c, k), v = n[0] * d[0] + n[1] * d[1]; if (v > mv) { mv = v; melhor = k; } });
+        if (melhor === face) desc += Math.max(num(ct.fora, 0), num(ct.dentro, 0));
+      });
+    });
+    return { area: Math.max(0, bruta - desc), bruta: bruta,
+             premissa: achou ? "área da lateral descontando o encosto das paredes unidas (cortes de face da parede)" : "lateral inteira: sem dado de encosto em parede (premissa — confira se há parede encostada)" };
+  }
+  function regioes(c, aceitos, estado) {
     if (!c || !c.pinturas) return [];
     var out = [];
     Object.keys(c.pinturas).sort().forEach(function (k) {
       var pr = k.split("|"), face = pr[0], reg = Number(pr[1]) || 0, p = c.pinturas[k];
       if (!faceOk(c, face)) return;
-      var area = 0, ya = null, yb = null;
-      if (c.tipo === "parede") { var fx = faixa(c, face, reg); ya = fx[0]; yb = fx[1]; area = areaFaixaParede(c, face, fx[0], fx[1], aceitos); }
+      var area = 0, ya = null, yb = null, premissa = "";
+      if (tipoDe(c) === "pilar") { var ap = areaPilar(c, face, estado); area = ap.area; premissa = ap.premissa; }
+      else if (tipoDe(c) === "platibanda") { area = num(c.area, 0); }   /* a área de UMA face = comprimento x altura */
+      else if (c.tipo === "parede") { var fx = faixa(c, face, reg); ya = fx[0]; yb = fx[1]; area = areaFaixaParede(c, face, fx[0], fx[1], aceitos); }
       else {
         var X = c._exato; area = X && fin(X.area) ? X.area : num(c.area, 0);
       }
       var cortes = arr(c.divFaces && c.divFaces[face]).length;
       out.push({ face: face, regiao: reg, rotuloFace: ROTULO_FACE[face] + (cortes ? " (faixa " + (reg + 1) + " de " + (cortes + 1) + ")" : ""),
-                 material: txt(p.material), codigo: p.codigo ? txt(p.codigo) : "", cor: corDe(p.material), area: area,
+                 material: txt(p.material), codigo: p.codigo ? txt(p.codigo) : "", cor: corDe(p.material), area: area, premissa: premissa,
                  ya: ya != null && ya > -1e8 ? r6(ya) : null, yb: yb != null && yb < 1e8 ? r6(yb) : null });
     });
     return out;
@@ -192,13 +234,23 @@
   function servicosOrc(estado, vaos) {
     var out = [];
     var CAT = PC();   /* 27/10/2026 (js/bimpintarcat.js): o material do catálogo novo diz se é pintura ou revestimento e se está "a orçar" (sem composição) */
+    function rotuloPeca(c) { return c.tipo === "laje" ? "laje" : (c.tipo === "pilar" ? "pilar" : "parede"); }
+    /* a platibanda do telhado pintada: uma linha por face; a fase "Existente" não orça construção (nem a pintura dela) */
+    arr(estado && estado.platibandas).forEach(function (p) {
+      if (!p || !p.ok || !p.pinturas || existente(p)) return;
+      regioes(p, null, estado).forEach(function (r) {
+        var sv = CAT && CAT.servicoDe ? CAT.servicoDe(r.material) : null;
+        out.push({ servicoTipo: sv ? sv.servico : "", aOrcar: !!(sv && sv.aOrcar && !r.codigo), id: p.id + ":pintura:" + r.face + ":0", peca: p.id, face: r.face, regiao: 0, codigo: r.codigo, material: r.material, unidade: "m2",
+                   quantidade: r4(r.area), exato: r.area, premissa: "", rotulo: r.material + " — " + r.rotuloFace.toLowerCase() + " (platibanda " + p.id + ")" });
+      });
+    });
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || !c.pinturas) return;
       var ac = vaos && vaos[c.id] ? vaos[c.id].aceitos : null;
-      regioes(c, ac).forEach(function (r) {
+      regioes(c, ac, estado).forEach(function (r) {
         var sv = CAT && CAT.servicoDe ? CAT.servicoDe(r.material) : null;
         out.push({ servicoTipo: sv ? sv.servico : "", aOrcar: !!(sv && sv.aOrcar && !r.codigo), id: c.id + ":pintura:" + r.face + ":" + r.regiao, peca: c.id, face: r.face, regiao: r.regiao, codigo: r.codigo, material: r.material, unidade: "m2",
-                   quantidade: r4(r.area), exato: r.area, rotulo: r.material + " — " + r.rotuloFace.toLowerCase() + " (" + (c.tipo === "laje" ? "laje" : "parede") + " " + c.id + ")" });
+                   quantidade: r4(r.area), exato: r.area, premissa: r.premissa || "", rotulo: r.material + " — " + r.rotuloFace.toLowerCase() + " (" + rotuloPeca(c) + " " + c.id + ")" });
       });
     });
     return out;
@@ -206,6 +258,25 @@
   /* a face clicada: o ponto do 3D (x, y, z) → { face, regiao } da peça */
   function faceDoPonto(c, p) {
     var Ar = A(); if (!c || !p || !Ar) return null;
+    if (tipoDe(c) === "pilar") {
+      if (c.material === "aco") return null;
+      var fp = Ar.frameDe(c), lp = Ar.aLocal(fp, num(p.x, 0), num(p.z, 0)), ru = lp[0] / Math.max(fp.L / 2, 1e-6), rw = lp[1] / Math.max(fp.t / 2, 1e-6);
+      return { face: Math.abs(rw) >= Math.abs(ru) ? (rw > 0 ? "frente" : "fundo-pilar") : (ru > 0 ? "direita" : "esquerda"), regiao: 0 };
+    }
+    if (tipoDe(c) === "platibanda") {
+      var best = null, bd = Infinity;
+      arr(c.segs).forEach(function (s) {
+        var qq = s.quad; if (!qq) return;
+        var mx = qq[0].x - qq[3].x, mz = qq[0].z - qq[3].z, ml = Math.sqrt(mx * mx + mz * mz) || 1, hx = mx / ml * ml / 2, hz = mz / ml * ml / 2;   /* a LINHA DO MEIO da espessura: o trecho mais perto dela */
+        var ax = s.a.x - hx, az = s.a.z - hz, bx = s.b.x - hx, bz = s.b.z - hz, dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1e-9;
+        var t = Math.max(0, Math.min(1, ((num(p.x, 0) - ax) * dx + (num(p.z, 0) - az) * dz) / L2)), ex = ax + t * dx - num(p.x, 0), ez = az + t * dz - num(p.z, 0), d = ex * ex + ez * ez;
+        if (d < bd) { bd = d; best = s; }
+      });
+      if (!best || !best.quad) return null;
+      var q = best.quad, nx = q[0].x - q[3].x, nz = q[0].z - q[3].z, ln = Math.sqrt(nx * nx + nz * nz) || 1; nx /= ln; nz /= ln;
+      var dot = (num(p.x, 0) - best.a.x) * nx + (num(p.z, 0) - best.a.z) * nz;
+      return { face: dot > -num(c.espessuraEf, 0.15) / 2 ? "dentro" : "fora", regiao: 0 };
+    }
     if (c.tipo === "laje") return { face: num(p.y, 0) >= num(c.cy, 0) ? "topo" : "fundo", regiao: 0 };
     if (c.tipo !== "parede") return null;
     var f = Ar.frameDe(c), l = Ar.aLocal(f, num(p.x, 0), num(p.z, 0)), s = l[1] < 0 ? -1 : 1;
@@ -218,6 +289,12 @@
      face (o 3D desloca 3 mm para fora) e os vãos como furos */
   function desenhoRegiao(c, face, reg, aceitos) {
     var Ar = A(); if (!Ar || !c) return null;
+    if (tipoDe(c) === "pilar") {   /* a face do pilar como uma parede de 1 face: o mesmo desenho (frame + w) do 3D */
+      var fq = Ar.frameDe(c), ang = { frente: 0, "fundo-pilar": Math.PI, direita: Math.PI / 2, esquerda: -Math.PI / 2 }[face], lado = (face === "frente" || face === "fundo-pilar");
+      var ps = { id: c.id, tipo: "parede", cx: c.cx, cz: c.cz, cy: c.cy, altura: c.altura, rotY: num(c.rotY, 0) + ang, comprimento: lado ? fq.L : fq.t, espessura: lado ? fq.t : fq.L };
+      return desenhoRegiao(ps, "dentro", 0, null);
+    }
+    if (tipoDe(c) === "platibanda") return null;   /* a platibanda tem o seu desenho (quadsPlatibanda) */
     var f = Ar.frameDe(c);
     if (c.tipo === "laje") return { laje: true, y: face === "topo" ? f.y1 + 0.003 : f.y0 - 0.003 };
     var fx = faixa(c, face, reg), inv = !!c.inverterFaces, s = (face === "dentro") !== inv ? 1 : -1, w = s * (f.t / 2 + 0.003), un = c.uniao || {};
@@ -236,7 +313,19 @@
     return { w: w, poli: poli, furos: furos, frame: f };
   }
 
+  /* a película de uma face da platibanda: um quadrilátero 3D por trecho, 3 mm para fora da face */
+  function quadsPlatibanda(p, face) {
+    var out = [];
+    arr(p && p.segs).forEach(function (s) {
+      var q = s.quad; if (!q || q.length < 4) return;
+      var nx = q[0].x - q[3].x, nz = q[0].z - q[3].z, ln = Math.sqrt(nx * nx + nz * nz) || 1; nx /= ln; nz /= ln;
+      var e = 0.003, A0 = face === "dentro" ? q[0] : q[3], B0 = face === "dentro" ? q[1] : q[2], k = face === "dentro" ? e : -e;
+      out.push([[A0.x + nx * k, p.base, A0.z + nz * k], [B0.x + nx * k, p.base, B0.z + nz * k], [B0.x + nx * k, p.topo, B0.z + nz * k], [A0.x + nx * k, p.topo, A0.z + nz * k]]);
+    });
+    return out;
+  }
   var BimPintar = {
+    quadsPlatibanda: quadsPlatibanda, areaPilar: areaPilar, normalPilar: normalPilar, tipoDe: tipoDe,
     MATERIAIS: MATERIAIS, FACES: FACES, ROTULO_FACE: ROTULO_FACE, OPS: OPS, MAX_CORTES: MAX_CORTES,
     corDe: corDe, validaOp: validaOp, aplicarOp: aplicarOp, registrar: registrar,
     faixa: faixa, areaFaixaParede: areaFaixaParede, regioes: regioes, servicosOrc: servicosOrc, faceDoPonto: faceDoPonto, desenhoRegiao: desenhoRegiao

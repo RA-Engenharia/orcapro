@@ -355,6 +355,16 @@
     teEspessura: function (x) { var t = el(x).tipoTelhado; return t && fin(t.espessura) ? t.espessura : null; },
     teEstrutura: function (x) { var t = el(x).tipoTelhado; return t ? arr(t.camadas).map(function (k) { return txt(k.rotulo) + " " + mm(num(k.e, 0)) + " mm"; }).join(" + ") : null; },
     teMaterial: function (x) { var t = el(x).tipoTelhado, k = t && arr(t.camadas)[0]; return k && k.material ? txt(k.material) : "<Por categoria>"; },
+    /* PLATIBANDA (27/10/2026, js/bimcobertura.js): derivada do telhado; o registro dá Propriedades, fase, material, espessura, altura e base */
+    plMaterial: function (x) { var p = el(x), k = arr(p.camadas).filter(function (c) { return c && c.face === "nucleo"; })[0] || arr(p.camadas)[0]; return k && k.material ? txt(k.material) : (p.herdar ? "Da parede de baixo" : "Alvenaria"); },
+    plEspessura: function (x) { return el(x).espessuraEf != null ? el(x).espessuraEf : null; },
+    plAltura: function (x) { var p = el(x); return fin(p.topo) && fin(p.base) ? p.topo - p.base : null; },
+    plBase: function (x) { return el(x).base != null ? el(x).base : null; },
+    plTopo: function (x) { return el(x).topo != null ? el(x).topo : null; },
+    plComprimento: function (x) { return el(x).comprimento != null ? el(x).comprimento : null; },
+    plArea: function (x) { return el(x).area != null ? el(x).area : null; },
+    plVolume: function (x) { return el(x).volume != null ? el(x).volume : null; },
+    plTelhado: function (x) { return el(x).telhado != null ? txt(el(x).telhado) : null; },
     boTipo: function (x) { var R = { calha: "Calha", rufo: "Rufo", testeira: "Testeira", intradorso: "Intradorso (forro do beiral)" }; return R[el(x).tipoBorda] || null; },
     boTelhado: function (x) { return el(x).telhado != null ? txt(el(x).telhado) : null; },
     boArestas: function (x) { return arr(el(x).arestas).map(function (k) { return String(Number(k) + 1); }).join(", ") || null; },
@@ -992,6 +1002,20 @@
         P(T, "Materiais e acabamentos", "Material", "RA_TELHADO_MATERIAL", "material", { calc: "teMaterial" })
       ]
     },
+    platibanda: {
+      nome: "Platibandas", ifc: "IFCWALL", inventario: null, familia: "Platibanda", prefixo: "PL", comum: true, semTipo: true,
+      defs: [
+        P(I, "Construção", "Material", "RA_PLATIBANDA_MATERIAL", "texto", { calc: "plMaterial", ifc: Q("OrcaPRO_Platibanda", "Material") }),
+        P(I, "Outros", "ID de hospedeiro", "HOST_ID_PARAM", "texto", { calc: "plTelhado" }),
+        P(I, "Cotas", "Espessura", "RA_PLATIBANDA_ESPESSURA", "comprimento", { calc: "plEspessura", escrita: "platibanda.espessura", leitura: false, ifc: Q("OrcaPRO_Platibanda", "Espessura") }),
+        P(I, "Cotas", "Altura", "RA_PLATIBANDA_ALTURA", "comprimento", { calc: "plAltura", escrita: "platibanda.altura", leitura: false, ifc: Q("OrcaPRO_Platibanda", "Altura") }),
+        P(I, "Restrições", "Cota da base", "RA_PLATIBANDA_BASE", "comprimento", { calc: "plBase", escrita: "platibanda.base", leitura: false, ifc: Q("OrcaPRO_Platibanda", "CotaBase") }),
+        P(I, "Cotas", "Cota do topo", "RA_PLATIBANDA_TOPO", "comprimento", { calc: "plTopo", escrita: "platibanda.topo", leitura: false, ifc: Q("OrcaPRO_Platibanda", "CotaTopo") }),
+        P(I, "Cotas", "Comprimento", "CURVE_ELEM_LENGTH", "comprimento", { calc: "plComprimento", ifc: Q("Qto_WallBaseQuantities", "Length"), orc: O("comprimento") }),
+        P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "plArea", ifc: Q("Qto_WallBaseQuantities", "NetSideArea"), orc: O("area") }),
+        P(I, "Cotas", "Volume", "HOST_VOLUME_COMPUTED", "volume", { calc: "plVolume", ifc: Q("Qto_WallBaseQuantities", "NetVolume"), orc: O("volume") })
+      ]
+    },
     borda: {
       nome: "Bordas do telhado", ifc: "IFCCOVERING", inventario: null, familia: null, prefixo: "BT", comum: true, semTipo: true,
       defs: [
@@ -1573,6 +1597,7 @@
     /* P3: telhados, bordas e fundações (js/bimtelhado.js, js/bimfundacao.js), já derivados no replay */
     arr(estado && estado.telhados).forEach(function (t) { if (t) out.push({ id: String(t.id), categoria: "telhado", origem: "telhado", el: t }); });
     arr(estado && estado.bordas).forEach(function (b) { if (b) out.push({ id: String(b.id), categoria: "borda", origem: "borda", el: b }); });
+    arr(estado && estado.platibandas).forEach(function (p) { if (p && p.ok) out.push({ id: String(p.id), categoria: "platibanda", origem: "platibanda", el: p }); });   /* a platibanda do telhado vira peça: Propriedades, fase, IFC */
     arr(estado && estado.fundacoes).forEach(function (f) { if (f) out.push({ id: String(f.id), categoria: "fundacao", origem: "fundacao", el: f }); });
     arr(estado && estado.familias).forEach(function (f) { if (f) out.push({ id: String(f.id), categoria: catFamilia(f, deps), origem: "familia", el: f }); });
     /* P2-A: os ambientes (js/bimambiente.js) — só existem quando há op de ambiente */
@@ -1610,6 +1635,7 @@
     /* P3: o telhado pelo tipo (camadas); a borda pelo tipo de borda; a fundação pelo tipo e as medidas (um IfcFootingType por medida) */
     if (cat === "telhado") return c.tipoTelhado && c.tipoTelhado.id ? String(c.tipoTelhado.id) : (c.tipoId ? String(c.tipoId) : "auto:telhado");
     if (cat === "borda") return "auto:borda:" + txt(c.tipoBorda);
+    if (cat === "platibanda") return "auto:platibanda";
     if (cat === "fundacao") return "auto:" + txt(c.tipoFundacao) + "|" + nomeFundacao(c);
     return "auto:" + cat;
   }
@@ -1630,6 +1656,7 @@
     if (cat === "forro") return c.tipoForro && c.tipoForro.rotulo ? txt(c.tipoForro.rotulo) : "Forro";   /* P2-B */
     if (cat === "rampa") { var rp = c.rampa && c.rampa.par; return "Rampa " + String(num(rp && rp.inclinacao, 8.33)).replace(".", ",") + " %"; }   /* P9 */
     if (cat === "telhado") return c.tipoTelhado && c.tipoTelhado.rotulo ? txt(c.tipoTelhado.rotulo) : "Telhado";   /* P3 */
+    if (cat === "platibanda") return "Platibanda";
     if (cat === "borda") return ({ calha: "Calha", rufo: "Rufo", testeira: "Testeira", intradorso: "Intradorso" })[c.tipoBorda] || "Borda";
     if (cat === "fundacao") return (c.rotuloTipo || "Fundação") + " " + nomeFundacao(c);
     return cat;
@@ -1691,8 +1718,8 @@
 
   /* ===================================================== as ops (replay) */
   function alvo(ctx, id) { return (ctx.caixas && ctx.caixas[id]) || (ctx.fams && ctx.fams[id]) || (ctx.cobs && ctx.cobs[id]) || (ctx.vols && ctx.vols[id]) || (ctx.forros && ctx.forros[id]) || (ctx.p11 && ctx.p11.el[id]) ||
-    (ctx.telhados && ctx.telhados[id]) || (ctx.bordas && ctx.bordas[id]) || (ctx.fundacoes && ctx.fundacoes[id]) || null; }   /* P2-B: forros; P11: terreno */
-  function catDoAlvo(c) { if (!c) return null; if (c.planos) return "cobertura"; if (c.tipo === "forro" || c.tipo === "telhado" || c.tipo === "borda" || c.tipo === "fundacao") return c.tipo; return CAT_CAIXA[c.tipo] || null; }
+    (ctx.telhados && ctx.telhados[id]) || (ctx.bordas && ctx.bordas[id]) || (ctx.fundacoes && ctx.fundacoes[id]) || (ctx.cob && ctx.cob.plat && ctx.cob.plat[id]) || null; }   /* a platibanda (js/bimcobertura.js): fase e pintura gravadas nela */   /* P2-B: forros; P11: terreno */
+  function catDoAlvo(c) { if (!c) return null; if (c.planos) return "cobertura"; if (!c.tipo && c.telhado != null && !c.contorno && !c.tipoBorda && !c.arestasCalha) return "platibanda"; if (c.tipo === "forro" || c.tipo === "telhado" || c.tipo === "borda" || c.tipo === "fundacao") return c.tipo; return CAT_CAIXA[c.tipo] || null; }
   var CAMPOS_MARCAR = ["marca", "comentarios", "imagem", "faseCriada", "faseDemolida", "materialProj"];   /* MATERIAIS: materialProj (o id do material do projeto) */
   var LIM_TXT = { marca: 24, comentarios: 300, imagem: 300, faseCriada: 40, faseDemolida: 40, materialProj: 60 };
 

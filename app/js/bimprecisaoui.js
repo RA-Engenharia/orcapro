@@ -736,7 +736,7 @@
          a face pintada do js/bimpintar.js. */
       function irPara(passo) { pr.passo = passo; hint(ROT_FERR[ferramenta()] + ": " + DICA[passo]); pintarOpcoes(); }
       function pontoDoHit() { var h = api.hits() && api.hits()[0]; return h && h.point ? { x: h.point.x, y: h.point.y, z: h.point.z } : null; }
-      function caixaDe(st, id) { return (st.caixas || []).filter(function (c) { return c.id === id; })[0] || null; }
+      function caixaDe(st, id) { return (st.caixas || []).filter(function (c) { return c.id === id; })[0] || (st.platibandas || []).filter(function (p) { return p && p.ok && String(p.id) === String(id); })[0] || null; }   /* a platibanda do telhado também se pinta */
       function aplicarP4(r, msg, ficar) {
         if (!r || r.erro) { hint((r && r.erro) || "Não deu para aplicar."); return false; }
         api.op(r.op); hint(msg + " (Ctrl+Z desfaz.)"); api.fechou();
@@ -900,10 +900,10 @@
       function desenharPinturas(st) {
         limparGrupo(pintGrp);
         var BP = Pt(); if (!previa() || !BP || !global.BimArq) return;
-        var cxs = (st.caixas || []).filter(function (c) { return c && c.pinturas; }); if (!cxs.length) return;
+        var cxs = (st.caixas || []).filter(function (c) { return c && c.pinturas; }), pls = (st.platibandas || []).filter(function (p) { return p && p.ok && p.pinturas; }); if (!cxs.length && !pls.length) return;
         var vz = {}; try { vz = global.BimEdit.vaosDasParedes(st, api.avaliar) || {}; } catch (eV) { vz = {}; }
         cxs.forEach(function (c) {
-          BP.regioes(c, vz[c.id] ? vz[c.id].aceitos : null).forEach(function (r) {
+          BP.regioes(c, vz[c.id] ? vz[c.id].aceitos : null, st).forEach(function (r) {
             var d = BP.desenhoRegiao(c, r.face, r.regiao, vz[c.id] ? vz[c.id].aceitos : null); if (!d) return;
             var mat = materialAcab(r.material, r.cor, true);
             var g = null;
@@ -921,6 +921,22 @@
             }
             g.computeVertexNormals(); g.computeBoundingSphere();
             var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: c.id, face: r.face, regiao: r.regiao }; m.raycast = function () {};
+            pintGrp.add(m);
+            if (api.acabRegistrar) api.acabRegistrar(m);
+          });
+        });
+        /* a platibanda pintada: um quadrilátero por trecho, 3 mm fora da face (externa ou interna) */
+        pls.forEach(function (p) {
+          BP.regioes(p, null, st).forEach(function (r) {
+            var mat = materialAcab(r.material, r.cor, true), pos = [], idx = [], uv = [];
+            BP.quadsPlatibanda(p, r.face).forEach(function (q) {
+              var b0 = pos.length / 3, lq = Math.sqrt(Math.pow(q[1][0] - q[0][0], 2) + Math.pow(q[1][2] - q[0][2], 2)), hq = q[3][1] - q[0][1];
+              q.forEach(function (v) { pos.push(v[0], v[1], v[2]); }); uv.push(0, 0, lq, 0, lq, hq, 0, hq);   /* UV em metros: a textura da biblioteca escala por metro */
+              idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+            });
+            if (!idx.length) return;
+            var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); g.computeBoundingSphere();
+            var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: p.id, face: r.face, regiao: 0 }; m.raycast = function () {};
             pintGrp.add(m);
             if (api.acabRegistrar) api.acabRegistrar(m);
           });

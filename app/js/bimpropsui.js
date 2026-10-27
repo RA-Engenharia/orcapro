@@ -385,7 +385,7 @@
           else if (v !== null && m[2] !== "rotularMestras") v = Number(v);
           o[m[2]] = v; ops.push(o);
         });
-      } else if ((m = /^(telhado|borda|fundacao)\.(\w+)$/.exec(e))) {
+      } else if ((m = /^(telhado|borda|fundacao|platibanda)\.(\w+)$/.exec(e))) {
         /* P3: telhado, borda e fundação (js/bimtelhado.js, js/bimfundacao.js) se alteram pela própria op, campo a campo;
            vazio volta ao padrão (null). Texto: o nível, o telhado unido e a inclinação por aresta. */
         var TXT3 = { nivelId: 1, unir: 1, inclinacoes: 1 };

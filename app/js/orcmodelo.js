@@ -667,6 +667,7 @@
       l.medida = "pintura"; l.face = s.face; l.regiao = s.regiao; l.material = s.material;
       if (s.aOrcar) l.aOrcar = true;   /* catálogo do Pintar (js/bimpintarcat.js): sem composição conhecida; o orçamento trata pela regra do sistema */
       if (s.servicoTipo) l.servicoTipo = s.servicoTipo;
+      if (s.premissa) { l.premissa = s.premissa; (l.avisos = l.avisos || []).push("Premissa: " + s.premissa); }   /* pilar: a área exposta diz de onde veio */
       somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
     });
     /* EMBREVE — GRAUTE E ARMADURA (js/bimgraute.js): cada parede de alvenaria
