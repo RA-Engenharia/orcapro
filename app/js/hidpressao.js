@@ -313,6 +313,16 @@
     var P0 = (D().perdas || {})[conexao]; if (!P0 || (P0.material && P0.material !== material)) return null;
     var pol = null, dp = D().dnDaPol || {}; Object.keys(dp).forEach(function (k) { if (dp[k] === num(dn, -1)) pol = k; });
     var v = pol != null && P0.leq_m_por_pol ? P0.leq_m_por_pol[pol] : null;
+    if (v == null && P0.leq_m_por_pol) {
+      /* N23 (26/10/2026, revisão do barrilete): o DN 20 (1/2") não tem linha nesta tabela do fabricante (Schneider 2026-09, p. 88 — só
+         3/4" a 2"), e o registro de esfera DN 20 dos ramais do banheiro ficava SEM perda localizada: o trecho virava "pendente" e o
+         dimensionamento não podia subir o DN (o chuveiro ficou a -5,86 kPa sem reprovar). Adota-se o Leq do DN IMEDIATAMENTE MAIOR que
+         tem valor (conservador: mais perda) e a adoção sai como PREMISSA visível no cálculo (`premissa`). A tabela do Tigre
+         (af.perda.localizada.leq, registro_gaveta DE 20) traz 0,1 m, mas a decisão do coordenador é o do DN maior. */
+      var cand = null; Object.keys(dp).forEach(function (k) { if (dp[k] > num(dn, -1) && P0.leq_m_por_pol[k] != null && (cand == null || dp[k] < cand.dn)) cand = { dn: dp[k], pol: k, v: P0.leq_m_por_pol[k] }; });
+      if (cand && num(dn, -1) > 0) return { leq_m: Number(cand.v), fonte: D().perdas.fonte, linha: P0.linha, pol: cand.pol,
+        premissa: { item: conexao + " DN " + dn + ": comprimento equivalente", valor: "Leq do DN " + cand.dn + " (" + String(cand.v).replace(".", ",") + " m) adotado — a fonte (Schneider/Franklin, Tabela de Seleção 2026-09, p. 88) não traz DN " + dn } };
+    }
     return v == null ? null : { leq_m: Number(v), fonte: D().perdas.fonte, linha: P0.linha, pol: pol };
   }
   /* cfg = { R (BimInst.rede), trecho (id), s1 (m de p1 até a derivação de entrada), modelo, n, lado (+1|−1), yPiso, pref, origemPiso } */

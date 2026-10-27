@@ -796,8 +796,8 @@
           }
           var pE0 = { x: r4(base.x + tg.x * tE0), z: r4(base.z + tg.z * tE0) }, tE = K._int.tetoDe(estado, { x: r4(pE0.x - nW.x * geo(par, "embutir")), z: r4(pE0.z - nW.z * geo(par, "embutir")) }, piso);
           esperaAF = { x: pE0.x, y: colKit ? r4(Math.max(colKit.p1.y, colKit.p2.y)) : r4(tE.y - geo(par, "folga")), z: pE0.z };
-          /* a prumada exclusiva da válvula e a do ramal do banheiro se juntam sob a laje num ponto de espera ÚNICO do
-             barrilete/coluna (um tê no topo da espera do banheiro): a válvula continua com ramal próprio (6.14.5) */
+          /* a prumada exclusiva da válvula (6.14.5) termina em espera PRÓPRIA, separada da do consumo do banheiro
+             (N23, 26/10/2026: antes se juntavam num tê — ver o "-afb" mais abaixo) */
           if (colKit) juntar = { de: { x: colKit.p1.x, y: esperaAF.y, z: colKit.p1.z }, tg: tg, dn: Math.max(num(colKit.dn, 0), B.MATERIAIS.pvc_soldavel.dn) };
           tetoA = tE;
           destinos.agua_fria = destinoAF(esperaAF);
@@ -1213,14 +1213,27 @@
            da caixa) chegam ao usuário — antes só as pendências passavam e o "avisa quantos cm" ficava calado no Traçar automaticamente */
         arr(op.problemas).forEach(function (a) { if (a && a.chave === "rota.cota_fluxo") aviso(a.texto, a.elementos, a.acao); });
         if (juntar && esperaAF) {
-          /* o topo da espera do banheiro deixa de ser a ponta (vira tê no meio do barrilete curto) */
-          novas.forEach(function (o) { if (o.op === "trecho" && o.sistema === "agua_fria" && o.continua) ["p1", "p2"].forEach(function (k) { if (d3(o[k], esperaAF) <= B.TOL) { o.continua = o.continua === "ambos" ? (k === "p1" ? "p2" : "p1") : (o.continua === k ? "" : o.continua); if (!o.continua) delete o.continua; } }); });
-          /* da prumada da válvula, PASSANDO pelo topo da espera do banheiro (tê), até a espera única logo depois */
+          /* N23 (defeito de 26/10/2026, 1.2.184): a válvula de descarga tem alimentação EXCLUSIVA desde a caixa (NBR 5626; prática
+             Fortlev/Tigre) — a descarga não pode derrubar a pressão do chuveiro. Antes a prumada dela e o tronco do banheiro se
+             juntavam num tê sob a laje (uma espera única, DN 50): o barrilete mandava o banheiro inteiro pela coluna "exclusiva".
+             Agora são DUAS esperas, cada uma com o seu ramal: a do consumo (o tronco do banheiro, que termina no toco "-afc") e a da válvula
+             (este "-afb", marcado `valvula`, que o barrilete leva à 2ª saída). Ficam afastadas: a da válvula só sai até a lateral da
+             prumada (no máximo meia distância do vão), sem passar pelo topo do tronco do consumo. */
           var dj = d2(juntar.de, esperaAF) || 1, uj = { x: (esperaAF.x - juntar.de.x) / dj, z: (esperaAF.z - juntar.de.z) / dj };
-          var fimB = { x: r4(esperaAF.x + uj.x * geo(par, "lateralEntradaAF")), y: esperaAF.y, z: r4(esperaAF.z + uj.z * geo(par, "lateralEntradaAF")) };
-          /* FRENTE B (19/10/2026, D-04): no sentido da água — da espera única (p1, a ponta aberta) para a prumada da válvula (p2) */
-          novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimB, p2: juntar.de, continua: "p1", amb: ambId, ambParte: "espera_agua" });
-          decide("amb.agua", "A prumada da válvula e a do banheiro se juntam sob a laje num ponto de espera único em (" + f2(fimB.x) + "; " + f2(fimB.z) + ").");
+          /* a espera do CONSUMO continua onde sempre ficou (a lateral além do topo do tronco: as outras esperas do pavimento foram
+             afastadas dela) — um toco com o DN do tronco; a da VÁLVULA fica do lado da prumada dela, no sentido da água */
+          var troncoC = novas.filter(function (o) { return o.op === "trecho" && o.sistema === "agua_fria" && o.continua && ["p1", "p2"].some(function (k) { return d3(o[k], esperaAF) <= B.TOL; }); })[0];
+          if (troncoC) {
+            ["p1", "p2"].forEach(function (k) { if (d3(troncoC[k], esperaAF) <= B.TOL) { troncoC.continua = troncoC.continua === "ambos" ? (k === "p1" ? "p2" : "p1") : (troncoC.continua === k ? "" : troncoC.continua); if (!troncoC.continua) delete troncoC.continua; } });
+            var fimC = { x: r4(esperaAF.x + uj.x * geo(par, "lateralEntradaAF")), y: esperaAF.y, z: r4(esperaAF.z + uj.z * geo(par, "lateralEntradaAF")) };
+            novas.push({ op: "trecho", id: ambId + "-afc", sistema: "agua_fria", material: troncoC.material, dn: troncoC.dn, p1: fimC, p2: { x: esperaAF.x, y: esperaAF.y, z: esperaAF.z }, continua: "p1", amb: ambId, ambParte: "espera_agua" });
+          }
+          var fimCx = troncoC ? fimC : esperaAF;
+          var lj = Math.min(geo(par, "lateralEntradaAF") / 2, dj / 2);
+          var fimV = { x: r4(juntar.de.x + uj.x * lj), y: esperaAF.y, z: r4(juntar.de.z + uj.z * lj) };
+          /* no sentido da água — da espera da válvula (p1, a ponta aberta) para a prumada dela (p2) */
+          novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimV, p2: juntar.de, continua: "p1", valvula: true, amb: ambId, ambParte: "espera_agua" });
+          decide("amb.agua", "Duas esperas de água fria sob a laje: a do consumo em (" + f2(fimCx.x) + "; " + f2(fimCx.z) + ") e a EXCLUSIVA da válvula de descarga em (" + f2(fimV.x) + "; " + f2(fimV.z) + ") — cada uma com o seu ramal até a caixa.");
         }
         /* a PROFUNDIDADE da caixa de inspeção do usuário: o tubo mais fundo que chega nela + folga (a peça é refeita no lote) */
         var ciIds = {}; novas.concat(op.ops).forEach(function (o) { if (o.op === "peca" && o.peca === "caixa_inspecao" && o.ambParte === "reaproveitada") ciIds[o.id] = o; });

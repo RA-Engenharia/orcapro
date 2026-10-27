@@ -1413,8 +1413,14 @@ r.v = dist.v; r.J = dist.J; r.hfDist = e.tipo === "tubo" ? dist.hf : 0; r.passos
 var cxs = e.tipo === "acessorio" ? [e.conexao] : conexoesNaSaida(e), loc = 0, okL = true;
 cxs.forEach(function (cx) {
 var ex = e.tipo === "acessorio" && HPZ && HPZ.leqExtra && !NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: cx, dn: r.dn }, "leq_m").ok ? HPZ.leqExtra(cx, e.material, r.dn) : null;
-var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cx, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null);
-if (pl) { r.conexoes.push(pl); loc += pl.perda_m; } else okL = false;
+var cxL = cx;
+if (!ex && e.tipo === "acessorio" && cx === "registro_esfera" && !NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: cx, dn: r.dn }, "leq_m").ok
+&& NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: "registro_gaveta", dn: r.dn }, "leq_m").ok) {
+cxL = "registro_gaveta"; premissa("registro de esfera DN " + r.dn + ": comprimento equivalente", "Leq do registro de gaveta da tabela do Tigre adotado — a linha de registro de esfera do fabricante (Schneider/Franklin 2026-09, p. 88) só vai até DN 60");
+}
+var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cxL, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null);
+if (pl && cxL !== cx) pl.tipo = cx;
+if (pl) { r.conexoes.push(pl); loc += pl.perda_m; if (ex && ex.premissa) premissa(ex.premissa.item, ex.premissa.valor); } else okL = false;
 });
 if (!okL) r.pendH.push("perda localizada");
 r.hfLoc = loc; r.hf = r.hfDist + loc;
@@ -6703,11 +6709,18 @@ novas.forEach(function (o) { if (o.op !== "trecho" || o.sistema !== w.s) return;
 op.pendencias.forEach(function (p) { if (p.chave !== "rota.coluna_ventilacao") pend(p.chave, p.motivo || p.texto, p.elementos, p.acao); });
 arr(op.problemas).forEach(function (a) { if (a && a.chave === "rota.cota_fluxo") aviso(a.texto, a.elementos, a.acao); });
 if (juntar && esperaAF) {
-novas.forEach(function (o) { if (o.op === "trecho" && o.sistema === "agua_fria" && o.continua) ["p1", "p2"].forEach(function (k) { if (d3(o[k], esperaAF) <= B.TOL) { o.continua = o.continua === "ambos" ? (k === "p1" ? "p2" : "p1") : (o.continua === k ? "" : o.continua); if (!o.continua) delete o.continua; } }); });
 var dj = d2(juntar.de, esperaAF) || 1, uj = { x: (esperaAF.x - juntar.de.x) / dj, z: (esperaAF.z - juntar.de.z) / dj };
-var fimB = { x: r4(esperaAF.x + uj.x * geo(par, "lateralEntradaAF")), y: esperaAF.y, z: r4(esperaAF.z + uj.z * geo(par, "lateralEntradaAF")) };
-novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimB, p2: juntar.de, continua: "p1", amb: ambId, ambParte: "espera_agua" });
-decide("amb.agua", "A prumada da válvula e a do banheiro se juntam sob a laje num ponto de espera único em (" + f2(fimB.x) + "; " + f2(fimB.z) + ").");
+var troncoC = novas.filter(function (o) { return o.op === "trecho" && o.sistema === "agua_fria" && o.continua && ["p1", "p2"].some(function (k) { return d3(o[k], esperaAF) <= B.TOL; }); })[0];
+if (troncoC) {
+["p1", "p2"].forEach(function (k) { if (d3(troncoC[k], esperaAF) <= B.TOL) { troncoC.continua = troncoC.continua === "ambos" ? (k === "p1" ? "p2" : "p1") : (troncoC.continua === k ? "" : troncoC.continua); if (!troncoC.continua) delete troncoC.continua; } });
+var fimC = { x: r4(esperaAF.x + uj.x * geo(par, "lateralEntradaAF")), y: esperaAF.y, z: r4(esperaAF.z + uj.z * geo(par, "lateralEntradaAF")) };
+novas.push({ op: "trecho", id: ambId + "-afc", sistema: "agua_fria", material: troncoC.material, dn: troncoC.dn, p1: fimC, p2: { x: esperaAF.x, y: esperaAF.y, z: esperaAF.z }, continua: "p1", amb: ambId, ambParte: "espera_agua" });
+}
+var fimCx = troncoC ? fimC : esperaAF;
+var lj = Math.min(geo(par, "lateralEntradaAF") / 2, dj / 2);
+var fimV = { x: r4(juntar.de.x + uj.x * lj), y: esperaAF.y, z: r4(juntar.de.z + uj.z * lj) };
+novas.push({ op: "trecho", id: ambId + "-afb", sistema: "agua_fria", material: "pvc_soldavel", dn: juntar.dn, p1: fimV, p2: juntar.de, continua: "p1", valvula: true, amb: ambId, ambParte: "espera_agua" });
+decide("amb.agua", "Duas esperas de água fria sob a laje: a do consumo em (" + f2(fimCx.x) + "; " + f2(fimCx.z) + ") e a EXCLUSIVA da válvula de descarga em (" + f2(fimV.x) + "; " + f2(fimV.z) + ") — cada uma com o seu ramal até a caixa.");
 }
 var ciIds = {}; novas.concat(op.ops).forEach(function (o) { if (o.op === "peca" && o.peca === "caixa_inspecao" && o.ambParte === "reaproveitada") ciIds[o.id] = o; });
 if (ciUser && ciUser.peca && !ciIds[ciUser.id]) ciIds[ciUser.id] = { op: "peca", id: ciUser.id, peca: "caixa_inspecao", sistema: "esgoto", dn: ciUser.peca.dn, x: ciUser.x, y: ciUser.y, z: ciUser.z, prof: ciUser.prof, existente: true };
@@ -9010,6 +9023,11 @@ function leqExtra(conexao, material, dn) {
 var P0 = (D().perdas || {})[conexao]; if (!P0 || (P0.material && P0.material !== material)) return null;
 var pol = null, dp = D().dnDaPol || {}; Object.keys(dp).forEach(function (k) { if (dp[k] === num(dn, -1)) pol = k; });
 var v = pol != null && P0.leq_m_por_pol ? P0.leq_m_por_pol[pol] : null;
+if (v == null && P0.leq_m_por_pol) {
+var cand = null; Object.keys(dp).forEach(function (k) { if (dp[k] > num(dn, -1) && P0.leq_m_por_pol[k] != null && (cand == null || dp[k] < cand.dn)) cand = { dn: dp[k], pol: k, v: P0.leq_m_por_pol[k] }; });
+if (cand && num(dn, -1) > 0) return { leq_m: Number(cand.v), fonte: D().perdas.fonte, linha: P0.linha, pol: cand.pol,
+premissa: { item: conexao + " DN " + dn + ": comprimento equivalente", valor: "Leq do DN " + cand.dn + " (" + String(cand.v).replace(".", ",") + " m) adotado — a fonte (Schneider/Franklin, Tabela de Seleção 2026-09, p. 88) não traz DN " + dn } };
+}
 return v == null ? null : { leq_m: Number(v), fonte: D().perdas.fonte, linha: P0.linha, pol: pol };
 }
 function instalacao(cfg) {
@@ -26011,7 +26029,6 @@ iteracoesOferta: 3,
 descidaMin: 0.05,
 zDesvios: [2, 4, 6]
 };
-var DN_VALVULA = 40;
 var ANG_SAIDA2 = [-Math.PI / 2, Math.PI / 2, -Math.PI / 3, Math.PI / 3, -2 * Math.PI / 3, 2 * Math.PI / 3];
 function saidaGirada(cx, ang) {
 var o = {}; Object.keys(cx).forEach(function (k) { o[k] = cx[k]; });
@@ -26057,7 +26074,9 @@ if (!t || o.bar != null || o.saidaLivre) return;
 var predio = /prédio/.test(String(e.motivo)) && o.predioParte === "af_barrilete";
 if (!predio && !/^espera de alimentação \(barrilete\/coluna\)/.test(String(e.motivo))) return;
 out.push({ trecho: String(e.trecho), ponta: e.ponta, x: num(e.x, 0), y: num(e.y, 0), z: num(e.z, 0), dn: num(t.dn, 0), material: t.material, predio: predio ? String(o.predio || "") : null,
-aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null });
+aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null,
+valvula: o.valvula === true || (/-afb$/.test(String(e.trecho)) && trs[String(o.amb) + "-afc"] != null),
+antiga: /-afb$/.test(String(e.trecho)) && o.valvula !== true && trs[String(o.amb) + "-afc"] == null });
 });
 return out;
 }
@@ -26134,24 +26153,34 @@ var todas = caixas(estado, avaliarFam), porCx = {};
 ESP.forEach(function (s) { var best = null; todas.forEach(function (c) { if (!best || d2(s, c.c) < d2(s, best.c) - EPS) best = c; }); if (best) (porCx[best.id] = porCx[best.id] || []).push(s); });
 CX.forEach(function (cx) {
 var lista = porCx[cx.id] || []; if (!lista.length) return;
-var lV = lista.filter(function (s) { return num(s.dn, 0) >= DN_VALVULA && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
+var lV = lista.filter(function (s) { return s.valvula && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
 var sec = null, ang2 = null, R = null, reserva = null;
+lista.forEach(function (s) { if (s.antiga) out.avisos.push({ texto: "Este banheiro foi traçado numa versão anterior: use Traçar automaticamente de novo para a válvula ter coluna exclusiva (a espera " + s.trecho + " é do banheiro inteiro e foi ligada como consumo).", elementos: [s.trecho], acao: null }); });
 function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
 if (lV.length && lC.length && cx.S) {
 for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
 var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });
 if (!(Rv.ok && Rv.ligadas === lV.length)) continue;
 var Rp = montarCaixa(e, cx, lC, opsAch, { obst: Rv.novos.map(function (o) { return { a: o.a, b: o.b, r: o.r, sistema: o.sistema, id: "2ª saída · " + o.id }; }), saida2: { dn: Rv.dnSaida, ang: ANG_SAIDA2[ia] } });
-if (!Rp.ok) continue;
+if (!Rp.ok || Rp.semTomada) continue;
 if (!esbarra(Rp) && !esbarra(Rv)) { sec = Rv; ang2 = ANG_SAIDA2[ia]; R = Rp; }
 else if (!reserva) reserva = { sec: Rv, ang: ANG_SAIDA2[ia], R: Rp };
 }
 if (!sec && reserva) { sec = reserva.sec; ang2 = reserva.ang; R = reserva.R; }
 }
-if (!R) {
-R = montarCaixa(e, cx, lista, opsAch);
-if (lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": não houve lugar para a 2ª saída (coluna exclusiva da válvula de descarga) — a válvula saiu da saída do consumo e o barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
+var motivoUma = null;
+if (!sec && lV.length && lC.length && cx.S) motivoUma = "nenhum lado deixa a saída principal descer até a laje com a 2ª saída";
+if (sec) {
+var R1 = montarCaixa(e, cx, lista, opsAch);
+if (!R1.semTomada && !esbarra(R1) && (esbarra(R) || esbarra(sec))) motivoUma = "a 2ª saída só fechava com interferência a lançar à mão, e a de uma saída não";
+else if (e.pressao !== false && R1.ok) {
+var pA = pressaoDaConfig(e, out.ops.concat(sec.ops, R.ops), cx), p1 = pressaoDaConfig(e, out.ops.concat(R1.ops), cx);
+if (pA.baixa && (!p1.baixa || pA.subir > p1.subir + EPS)) motivoUma = "com a 2ª saída a pressão " + (p1.baixa ? "faltaria mais" : "faltaria") + " no ponto mais desfavorável (subir " + f2(pA.subir) + " m contra " + (p1.baixa ? f2(p1.subir) + " m" : "nada") + " com uma saída só)";
 }
+if (motivoUma) { sec = null; ang2 = null; R = R1; }
+}
+if (!R) R = montarCaixa(e, cx, lista, opsAch);
+if (!sec && lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": " + (motivoUma || "não houve lugar para a 2ª saída da caixa") + "; ficou UMA saída com a coluna exclusiva da válvula de descarga (a regra de projeto é a coluna exclusiva, que se mantém desde o barrilete). O barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Para a 2ª saída, gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
 if (sec) {
 sec.ops.forEach(function (o) { out.ops.push(o); });
 sec.avisos.forEach(function (a) { out.avisos.push(a); });
@@ -26178,6 +26207,12 @@ arr(Pz.achados).forEach(function (a) { out.pendencias.push(a); });
 });
 }
 return out;
+}
+function pressaoDaConfig(e, ops, cx) {
+var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2._semBase = true;
+var Pz = null; try { Pz = conferirPressao(e2, ops, cx); } catch (eP) { Pz = null; }
+var baixa = !!Pz && arr(Pz.achados).some(function (a) { return a.chave === "bar.pressao_baixa"; });
+return { baixa: baixa, subir: baixa ? num(Pz.subir, 0) : 0 };
 }
 function montarCaixa(e, cx, lista, opsAch, opc) {
 opc = opc || {};
@@ -26383,6 +26418,7 @@ if (!Pl2.baixa && !Pl2.colunaFalha && Pl2.folhas.length === nF && Pl2.semCaminho
 } else aviso(nome + ": a descida do barrilete até a laje (tomada vertical na saída) esbarra em " + cT.com + " — o barrilete ficou na cota da saída (sem os 5 kPa da NBR 5626:2020 6.9.3); gire a caixa (a saída para o lado livre) e trace de novo", [cx.id, cT.com],
 { tipo: "ops", ops: [{ op: "instancia", id: cx.id, rotY: r4(cx.rot + Math.PI / 2) }], texto: "girar a caixa 90° (a saída para outro lado)" });
 }
+res.semTomada = !!(PlR && !tomada);
 if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);
 Pl.colunasFora.forEach(function (cf) { pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]); });
 Pl.semCaminho.forEach(function (s) { pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático; ligue à mão", [s.trecho, cx.id]); });

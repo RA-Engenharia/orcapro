@@ -104,7 +104,6 @@
   };
   /* a 2ª saída (coluna exclusiva da válvula de descarga): a espera com DN a partir deste é a da válvula (a de lavatório, pia, chuveiro e
      caixa acoplada é 20/25); os ângulos tentados a partir da saída principal, na ordem (o lado oposto é o da entrada da boia) */
-  var DN_VALVULA = 40;   // hid:ok DN 40 = 1 1/4", a menor bitola de válvula de descarga
   var ANG_SAIDA2 = [-Math.PI / 2, Math.PI / 2, -Math.PI / 3, Math.PI / 3, -2 * Math.PI / 3, 2 * Math.PI / 3];   // hid:ok 90°, 60° e 120° para cada lado
   /* a caixa com a saída girada de `ang` em torno do centro (mesma cota e DN do conector): o furo da 2ª saída */
   function saidaGirada(cx, ang) {
@@ -148,7 +147,9 @@
 
   /* ================================================ AS ESPERAS DE ÁGUA FRIA QUE O BARRILETE RECEBE
      a ponta "continua" de cima da rede de água fria (o forro/laje dos ambientes, a alimentação do aquecedor) e a espera da
-     coluna do prédio (af_barrilete). A espera de alimentação do KIT (a lateral do chuveiro, que o ramal do ambiente recebe),
+     coluna do prédio (af_barrilete). N23 (26/10/2026): `valvula` = a espera EXCLUSIVA da válvula de descarga (o "-afb" do traçado novo, com o
+     "-afc" do consumo do mesmo ambiente); `antiga` = "-afb" de um projeto da 1.2.184, em que ele era a espera do banheiro INTEIRO (sem
+     "-afc"): vale como consumo. A espera de alimentação do KIT (a lateral do chuveiro, que o ramal do ambiente recebe),
      a da piscina e as saídas livres da própria caixa não entram. */
   function esperas(estado, avaliarFam, ops) {
     var B = BI(); if (!B || !B.conectividade) return [];
@@ -162,7 +163,9 @@
       var predio = /prédio/.test(String(e.motivo)) && o.predioParte === "af_barrilete";
       if (!predio && !/^espera de alimentação \(barrilete\/coluna\)/.test(String(e.motivo))) return;
       out.push({ trecho: String(e.trecho), ponta: e.ponta, x: num(e.x, 0), y: num(e.y, 0), z: num(e.z, 0), dn: num(t.dn, 0), material: t.material, predio: predio ? String(o.predio || "") : null,
-                 aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null });
+                 aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null,
+                 valvula: o.valvula === true || (/-afb$/.test(String(e.trecho)) && trs[String(o.amb) + "-afc"] != null),
+                 antiga: /-afb$/.test(String(e.trecho)) && o.valvula !== true && trs[String(o.amb) + "-afc"] == null });
     });
     return out;
   }
@@ -263,27 +266,49 @@
       /* N23 (26/10/2026, "o nosso barrilete está saindo com 50 ou 60 mm"): a espera da VÁLVULA DE DESCARGA é DN 40/50 (1 1/4"–1 1/2") e
          o barrilete pegava o maior DN a jusante — um banheiro com válvula engordava a saída e o tronco inteiros. Como se executa: a
          válvula tem SAÍDA e COLUNA EXCLUSIVAS na caixa (Tigre/Deca) e o consumo dos outros aparelhos sai em 25/32. Critério da espera da
-         válvula: DN ≥ 40 num ambiente (a do prédio e a do aquecedor não entram). Sem lugar para a 2ª saída: uma saída só, como antes (aviso). */
-      var lV = lista.filter(function (s) { return num(s.dn, 0) >= DN_VALVULA && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
+         válvula: a MARCADA pelo traçado do ambiente (`valvula`, o "-afb" — js/hidambiente.js), não o DN. Defeito de 26/10/2026 (1.2.184):
+         o critério era DN ≥ 40 por AMBIENTE e o ambiente deixava UMA espera só (o tronco do banheiro inteiro, DN 50 porque tem válvula),
+         então bacia, lavatório e chuveiro desciam pela "coluna exclusiva" da válvula. Agora o banheiro deixa DUAS esperas (consumo e
+         válvula) e só a da válvula vai à 2ª saída. Sem lugar para a 2ª saída: uma saída só, como antes (aviso).
+         A regra é COLUNA exclusiva da válvula (não necessariamente saída exclusiva): a 2ª saída só vale se não piora a descida/pressão
+         da principal (abaixo). NÃO vale para prédio: lá a válvula segue a coluna do prédio (`predio` != null fica fora de `lV`). */
+      var lV = lista.filter(function (s) { return s.valvula && s.predio == null && !s.aq; }), lC = lista.filter(function (s) { return lV.indexOf(s) < 0; });
       var sec = null, ang2 = null, R = null, reserva = null;
+      /* projeto da 1.2.184 (o "-afb" era a espera do banheiro inteiro): vale como consumo e o usuário é avisado */
+      lista.forEach(function (s) { if (s.antiga) out.avisos.push({ texto: "Este banheiro foi traçado numa versão anterior: use Traçar automaticamente de novo para a válvula ter coluna exclusiva (a espera " + s.trecho + " é do banheiro inteiro e foi ligada como consumo).", elementos: [s.trecho], acao: null }); });
       /* o lado da 2ª saída: o 1º em que ela liga todas as válvulas E a principal fecha sem esbarrar nela (coluna, caminho, respiro do
-         boiler); sem lado limpo, o 1º em que as duas fecham (com as pendências de esbarrar, que dizem o que lançar à mão) */
+         boiler) E a principal ainda DESCE (a tomada vertical); sem lado limpo, o 1º em que as duas fecham com a descida (com as
+         pendências de esbarrar, que dizem o que lançar à mão). O lado em que a principal não desce NUNCA vale: o barrilete ficaria na
+         cota da saída e a pressão faltaria (defeito de 26/10/2026, cenário de 2 banheiros) */
       function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
       if (lV.length && lC.length && cx.S) {
         for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
           var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });   // hid:ok ids da 2ª saída a partir de 500
           if (!(Rv.ok && Rv.ligadas === lV.length)) continue;
           var Rp = montarCaixa(e, cx, lC, opsAch, { obst: Rv.novos.map(function (o) { return { a: o.a, b: o.b, r: o.r, sistema: o.sistema, id: "2ª saída · " + o.id }; }), saida2: { dn: Rv.dnSaida, ang: ANG_SAIDA2[ia] } });
-          if (!Rp.ok) continue;
+          if (!Rp.ok || Rp.semTomada) continue;
           if (!esbarra(Rp) && !esbarra(Rv)) { sec = Rv; ang2 = ANG_SAIDA2[ia]; R = Rp; }
           else if (!reserva) reserva = { sec: Rv, ang: ANG_SAIDA2[ia], R: Rp };
         }
         if (!sec && reserva) { sec = reserva.sec; ang2 = reserva.ang; R = reserva.R; }
       }
-      if (!R) {
-        R = montarCaixa(e, cx, lista, opsAch);
-        if (lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": não houve lugar para a 2ª saída (coluna exclusiva da válvula de descarga) — a válvula saiu da saída do consumo e o barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
+      /* N23 (revisão, 26/10/2026): a regra de projeto é COLUNA exclusiva da válvula, não necessariamente SAÍDA exclusiva da caixa. Monta-se
+         também a configuração de UMA saída só (cada espera já tem a sua coluna desde o barrilete) e a 2ª saída só fica se não piora:
+         a principal desce e a pressão não falta onde a de uma saída atende. Prédio (espera `predio`) não entra: a válvula segue a coluna
+         do prédio. */
+      var motivoUma = null;
+      if (!sec && lV.length && lC.length && cx.S) motivoUma = "nenhum lado deixa a saída principal descer até a laje com a 2ª saída";
+      if (sec) {
+        var R1 = montarCaixa(e, cx, lista, opsAch);
+        if (!R1.semTomada && !esbarra(R1) && (esbarra(R) || esbarra(sec))) motivoUma = "a 2ª saída só fechava com interferência a lançar à mão, e a de uma saída não";
+        else if (e.pressao !== false && R1.ok) {
+          var pA = pressaoDaConfig(e, out.ops.concat(sec.ops, R.ops), cx), p1 = pressaoDaConfig(e, out.ops.concat(R1.ops), cx);
+          if (pA.baixa && (!p1.baixa || pA.subir > p1.subir + EPS)) motivoUma = "com a 2ª saída a pressão " + (p1.baixa ? "faltaria mais" : "faltaria") + " no ponto mais desfavorável (subir " + f2(pA.subir) + " m contra " + (p1.baixa ? f2(p1.subir) + " m" : "nada") + " com uma saída só)";
+        }
+        if (motivoUma) { sec = null; ang2 = null; R = R1; }
       }
+      if (!R) R = montarCaixa(e, cx, lista, opsAch);
+      if (!sec && lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": " + (motivoUma || "não houve lugar para a 2ª saída da caixa") + "; ficou UMA saída com a coluna exclusiva da válvula de descarga (a regra de projeto é a coluna exclusiva, que se mantém desde o barrilete). O barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Para a 2ª saída, gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
       if (sec) {
         sec.ops.forEach(function (o) { out.ops.push(o); });
         sec.avisos.forEach(function (a) { out.avisos.push(a); });
@@ -311,6 +336,14 @@
       });
     }
     return out;
+  }
+
+  /* a pressão de UMA configuração do barrilete (sem as bases de apoio: só o "falta/quanto subir"), para escolher entre 1 e 2 saídas */
+  function pressaoDaConfig(e, ops, cx) {
+    var e2 = {}; Object.keys(e).forEach(function (k) { e2[k] = e[k]; }); e2._semBase = true;
+    var Pz = null; try { Pz = conferirPressao(e2, ops, cx); } catch (eP) { Pz = null; }
+    var baixa = !!Pz && arr(Pz.achados).some(function (a) { return a.chave === "bar.pressao_baixa"; });
+    return { baixa: baixa, subir: baixa ? num(Pz.subir, 0) : 0 };
   }
 
   /* ---------------------------------------------- o barrilete de UMA caixa */
@@ -556,6 +589,9 @@
       } else aviso(nome + ": a descida do barrilete até a laje (tomada vertical na saída) esbarra em " + cT.com + " — o barrilete ficou na cota da saída (sem os 5 kPa da NBR 5626:2020 6.9.3); gire a caixa (a saída para o lado livre) e trace de novo", [cx.id, cT.com],
         { tipo: "ops", ops: [{ op: "instancia", id: cx.id, rotY: r4(cx.rot + Math.PI / 2) }], texto: "girar a caixa 90° (a saída para outro lado)" });   // hid:ok um quarto de volta
     }
+    /* a descida era possível (o plano baixo existe) e não coube: o barrilete ficou na cota da saída — quem escolhe o lado da 2ª saída
+       (montar) usa isto para tentar outro, em vez de aceitar um lado em que a coluna do consumo cruza a da válvula (N23, 26/10/2026) */
+    res.semTomada = !!(PlR && !tomada);
     if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);   /* sem a descida: o plano da cota da saída, como antes (o estado das folhas volta) */
     Pl.colunasFora.forEach(function (cf) { pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]); });
     Pl.semCaminho.forEach(function (s) { pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático; ligue à mão", [s.trecho, cx.id]); });

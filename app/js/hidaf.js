@@ -444,8 +444,19 @@
                 /* PRESSURIZAÇÃO: registro de ESFERA de PVC sem linha na tabela principal → a linha "registro de gaveta ou esfera
                    aberto" da tabela do fabricante (js/hidpressao.js, fonte com página); a tabela principal, quando tem, ganha */
                 var ex = e.tipo === "acessorio" && HPZ && HPZ.leqExtra && !NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: cx, dn: r.dn }, "leq_m").ok ? HPZ.leqExtra(cx, e.material, r.dn) : null;
-                var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cx, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null);
-                if (pl) { r.conexoes.push(pl); loc += pl.perda_m; } else okL = false;
+                /* N23 (revisão, 26/10/2026): a tabela do fabricante do registro de esfera só vai até DN 60 (2"); o DN 75 do tronco do barrilete
+                   de 2 banheiros ficava SEM perda localizada → trecho "pendente" → o ponto inteiro virava "pendente" (sem reprovar) e o laço não
+                   subia o DN (bchu a 6,4 kPa). Fora dessa tabela, o registro de esfera aberto usa a linha do registro de GAVETA da tabela principal
+                   (Tigre, por DE) — a própria fonte do fabricante diz seguir a tabela do Tigre para PVC e os valores coincidem de 3/4" a 1 1/2" —
+                   como PREMISSA visível. */
+                var cxL = cx;
+                if (!ex && e.tipo === "acessorio" && cx === "registro_esfera" && !NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: cx, dn: r.dn }, "leq_m").ok
+                    && NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: "registro_gaveta", dn: r.dn }, "leq_m").ok) {
+                  cxL = "registro_gaveta"; premissa("registro de esfera DN " + r.dn + ": comprimento equivalente", "Leq do registro de gaveta da tabela do Tigre adotado — a linha de registro de esfera do fabricante (Schneider/Franklin 2026-09, p. 88) só vai até DN 60");
+                }
+                var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cxL, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null);
+                if (pl && cxL !== cx) pl.tipo = cx;
+                if (pl) { r.conexoes.push(pl); loc += pl.perda_m; if (ex && ex.premissa) premissa(ex.premissa.item, ex.premissa.valor); } else okL = false;
               });
               if (!okL) r.pendH.push("perda localizada");
               r.hfLoc = loc; r.hf = r.hfDist + loc;
