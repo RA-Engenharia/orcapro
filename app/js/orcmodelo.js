@@ -795,6 +795,7 @@
         l = { codigo: "REF-MERC:" + rm.id, descricao: s.rotulo + " — " + rm.texto, unidade: (rm.unidade || "UN").toUpperCase(), unidadeQto: s.unidade, quantidade: qm, status: "ok", horas: [], servico: s.id,
               unitario: r2(num(rm.valor)), custo: { mo: 0, mat: vt, eq: 0, total: vt }, codigoOrigem: "mercado", referenciaMercado: rm,
               avisos: ["sem composição SINAPI (" + s.motivo + "): " + rm.texto + " — " + rm.criterio] };
+        if (rm.provisorio) l.provisorio = { motivo: rm.motivo || "provisório — cotar com o fornecedor" };   /* extintor do Hidro: o preço provisório da família inc-extintor vai MARCADO */
       }
       else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
       somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });

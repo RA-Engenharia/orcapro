@@ -52,7 +52,7 @@
   function legenda() {
     var R = global.IncRegras; if (!R) return "";
     return '<p style="margin:4px 0 6px;font-size:12px">' + ["A", "N", "C", "X"].map(function (k) { return selo(k) + " " + esc(R.NIVEIS[k]); }).join(" &nbsp; ") + "</p>" +
-      '<p data-inc-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px">Em MG vale a <b>IT do CBMMG</b> (Decreto 47.998/2020): IT 01 v10.5, IT 08, IT 09, IT 13, IT 15, IT 16 — PDFs oficiais. A NBR 9077 da biblioteca (1993/2001) está cancelada e <b>não é usada</b>. NBR 10898: MG adota a 2013 (sem texto); os valores de lux e autonomia são da 2023 em cópia <b>não licenciada</b> e saem como "conferir".</p>';
+      '<p data-inc-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px">Em MG vale a <b>IT do CBMMG</b> (Decreto 47.998/2020): IT 01 v10.5, IT 08, IT 09, IT 13, IT 15, IT 16 — PDFs oficiais. A NBR 9077 da biblioteca (1993/2001) está cancelada e <b>não é usada</b>. NBR 10898: a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir; os valores de lux e autonomia são da 2023 em cópia <b>não licenciada</b> e saem como "conferir".</p>';
   }
   function cabecalho(K) {
     if (!K) return "";
@@ -68,10 +68,13 @@
     var res = IA.gerar({ estado: st, avaliarFam: avaliar(), dados: lerDados() });
     if (!res.ok) { janela("Extintores, placas e luminárias", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return; }
     var aplicado = res.lote ? aplicar(res.lote, DISC_INC) : false, z = res.resumo;
+    /* "o que existe já atende" só quando o auditor concorda (27/10/2026): sem nada a lançar mas com erro/aviso (capacidade B, extintor sem rótulo...), a tela diz o que falta */
+    var pendAud = null;
+    if (!res.lote && global.IncAuditor) { try { var ra = global.IncAuditor.auditar({ estado: st, avaliarFam: avaliar(), dados: lerDados() }); if (ra.resumo.erros + ra.resumo.avisos > 0) pendAud = ra.resumo; } catch (e) { pendAud = null; } }
     var ROT = { extintor: "Extintor", placa: "Placa", luminaria: "Luminária de emergência" };
     var linhas = res.itens.map(function (x) { return "<tr><td>" + esc(x.id) + "</td><td>" + esc(x.ambienteNome) + "</td><td>" + esc(ROT[x.tipo] || x.tipo) + " · " + esc(x.tipoId) + " · " + f2(x.altura) + " m</td><td style=\"font-size:12px\">" + arr(x.regras).map(esc).join("<br>") + "</td></tr>"; }).join("");
     var html = legenda() + cabecalho(res.classe) + "<p><b>" + z.extintores + "</b> extintor(es), <b>" + z.placas + "</b> placa(s) e <b>" + z.luminarias + "</b> luminária(s) de emergência" +
-      (aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": nada a lançar (o que existe já atende).")) + "</p>" +
+      (aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": " + (pendAud ? "nada a lançar automaticamente, mas o auditor ainda aponta <b>" + pendAud.erros + "</b> erro(s) e <b>" + pendAud.avisos + "</b> aviso(s) — rode <b>Auditar incêndio</b>." : "nada a lançar (o que existe já atende)."))) + "</p>" +
       (linhas ? '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th>Peça</th><th>Ambiente</th><th>O quê</th><th>Regras aplicadas</th></tr></thead><tbody>' + linhas + "</tbody></table>" : "") +
       '<p style="font-size:12px;margin-top:8px">Orçamento: ' + selo("A") + " extintor de água/PQS BC/CO2 e luminária pela composição SINAPI 06/2026 do tipo; " + selo("C") + " extintor de pó ABC e placas pelo <b>maior preço público lido</b>, marcado PROVISÓRIO (cotar com o fornecedor) — a SINAPI não tem composição deles.</p>" +
       lista("Pendências", res.pendencias.map(function (p) { return p.texto; })) + lista("Avisos", res.avisos);
@@ -122,13 +125,15 @@
     var R = global.IncRegras; if (!R) return;
     var d = lerDados(), divs = R.divisoes(), ats = d.divisao ? R.atividades(d.divisao) : [];
     function chk(k, rot) { return '<label style="display:block;margin:2px 0"><input type="checkbox" data-inc-d="' + k + '"' + (d[k] ? " checked" : "") + "> " + esc(rot) + "</label>"; }
+    /* uso público: marcado por padrão nas divisões abertas ao público (comercial, serviços, saúde, educação, reunião...) e desmarcado em residencial; a escolha do usuário (inclusive desmarcar) fica gravada */
+    function chkU(k, rot, div) { var marcado = d[k] != null ? !!d[k] : !!(div && R.usoPublicoPadrao && R.usoPublicoPadrao(div)); return '<label style="display:block;margin:2px 0"><input type="checkbox" data-inc-d="' + k + '"' + (marcado ? " checked" : "") + "> " + esc(rot) + "</label>"; }
     function nm(k, rot, dica) { return '<label style="display:inline-block;margin:2px 12px 2px 0">' + esc(rot) + ' <input type="number" step="0.01" data-inc-d="' + k + '" value="' + (d[k] != null && d[k] !== "" ? esc(d[k]) : "") + '" placeholder="' + esc(dica) + '" style="width:90px"></label>'; }
     var html = legenda() +
       '<p><label>Divisão de ocupação (Decreto 47.998/2020, Anexo) <select data-inc-d="divisao"><option value="">— escolha —</option>' + divs.map(function (x) { return '<option value="' + esc(x.divisao) + '"' + (d.divisao === x.divisao ? " selected" : "") + ">" + esc(x.divisao + " — " + x.descricao) + "</option>"; }).join("") + "</select></label>" + (d.divisao === "A-1" ? '<br><span data-inc-a1 style="font-size:12px">Residência unifamiliar: <b>isenta</b> das medidas de segurança contra incêndio (CBMMG IT 01 A.4.1) — não depende de área nem de altura. Áreas comuns de condomínio (guarita, salão de festas) seguem a regra normal.</span>' : "") + "</p>" +
       '<p><label>Atividade (IT 09 Tabela A.1 → carga de incêndio) <select data-inc-d="atividade"><option value="">— a maior carga da divisão (lado seguro) —</option>' + ats.map(function (x) { return '<option value="' + x.i + '"' + (String(d.atividade) === String(x.i) ? " selected" : "") + ">" + esc(x.descricao + (x.qfi != null ? " — " + x.qfi + " MJ/m²" : " — método do Anexo B/C")) + "</option>"; }).join("") + "</select></label></p>" +
       "<p>" + nm("altura", "Altura (m)", "do modelo") + nm("area", "Área total (m²)", "do modelo") + nm("populacao", "População", "IT 08 T4") + nm("qfi", "Carga (MJ/m²)", "da atividade") + "</p>" +
       '<div style="display:flex;gap:24px;flex-wrap:wrap"><div>' + chk("trrf", "TRRF (estrutura com resistência ao fogo — IT 06)") + chk("compartimentacaoVertical", "Compartimentação vertical completa (IT 07)") + chk("chuveiros", "Chuveiros automáticos (IT 18)") + chk("deteccao", "Detecção de incêndio (IT 14)") + chk("hidraulico", "Há projeto de sistema hidráulico (hidrantes/chuveiros)") + "</div><div>" +
-      chk("ate2005", "Construída até 01/07/2005 (IT 01 A.2)") + chk("subsoloComUso", "Subsolo com uso diferente de estacionamento") + chk("patrimonio", "Patrimônio histórico cultural") + chk("acessivel", "Projeto acessível (NBR 9050), mesmo se não obrigatório") + chk("usoPublico", "Uso PÚBLICO (administração pública: corredor 1,50 m)") + "</div></div>" +
+      chk("ate2005", "Construída até 01/07/2005 (IT 01 A.2)") + chk("subsoloComUso", "Subsolo com uso diferente de estacionamento") + chk("patrimonio", "Patrimônio histórico cultural") + chk("acessivel", "Projeto acessível (NBR 9050), mesmo se não obrigatório") + chkU("usoPublico", "Uso PÚBLICO — aberto ao público em geral, propriedade pública ou privada (NBR 9050:2020 3.1.37): corredor 1,50 m. Padrão por critério RA (o Decreto 47.998 não define uso público): marque quando a sala atende o público", d.divisao) + "</div></div>" +
       '<p style="font-size:12px">Vazio = medido no modelo (altura pelos pavimentos, área pela soma dos ambientes, população pela IT 08 Tabela 4). Fica neste aparelho, por obra.</p>' +
       '<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-inc-salvar>Salvar</button><button type="button" class="btn ghost sm" data-inc-limpar>Limpar</button></div>';
     var ov = janela("Dados da edificação (incêndio e acessibilidade)", html); if (!ov) return;
@@ -136,7 +141,7 @@
       var o = {};
       arr(ov.querySelectorAll("[data-inc-d]")).forEach(function (i) {
         var k = i.getAttribute("data-inc-d");
-        if (i.type === "checkbox") { if (i.checked) o[k] = true; return; }
+        if (i.type === "checkbox") { if (i.checked) o[k] = true; else if (k === "usoPublico") o[k] = false; return; }   /* desmarcar o uso público é escolha (o padrão da divisão é marcado) */
         var v = String(i.value || "").trim(); if (v === "") return;
         if (i.type === "number") { var n = parseFloat(v.replace(",", ".")); if (isFinite(n)) o[k] = n; } else o[k] = k === "atividade" ? Number(v) : v;
       });

@@ -753,7 +753,12 @@
     }
     function opPeca(id, peca, p, pv, yRel) {
       var y = num(pv.cota, 0) + (yRel == null ? 0 : yRel);
-      return { op: "peca", id: id, peca: peca, sistema: SIS, x: Math.round(p.x * L_POR_M3) / L_POR_M3, y: Math.round(y * L_POR_M3) / L_POR_M3, z: Math.round(p.z * L_POR_M3) / L_POR_M3 };
+      var oP = { op: "peca", id: id, peca: peca, sistema: SIS, x: Math.round(p.x * L_POR_M3) / L_POR_M3, y: Math.round(y * L_POR_M3) / L_POR_M3, z: Math.round(p.z * L_POR_M3) / L_POR_M3 };
+      /* a capacidade que o PROPRIO Hidro calculou para o risco (EX.tipoSugerido.capacidadeExigida, IT 16 Tabelas 4 e 5) vai gravada na peca: o auditor e o
+         lancador do incendio (js/incauto.js, js/incauditor.js) contam o extintor como po ABC dessa capacidade (revisao 27/10/2026: sem ela a peca perdeu a
+         cobertura e o lancador punha outro ao lado) */
+      if (peca === "extintor" && EX && EX.tipoSugerido && EX.tipoSugerido.capacidadeExigida) oP.capacidade = String(EX.tipoSugerido.capacidadeExigida);
+      return oP;
     }
 
     /* ----------------------------- rede: 2 jatos mais desfavoráveis, perdas, DN, fonte */

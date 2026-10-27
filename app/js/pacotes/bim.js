@@ -64851,7 +64851,7 @@ P("Funcao", "texto", "aclaramento", "Elétrica", "aclaramento · balizamento"),
 P("Sistema", "texto", "bloco autonomo", "Elétrica", "bloco autônomo · centralizado"),
 P("Tensao_V", "numero", 30, "Elétrica", "Tensão nas lâmpadas (V). IT 13 5.5: ≤ 30 V abaixo de 2,5 m (ou DR 30 mA + 10 A). Bloco autônomo de LED: conferir na ficha"),
 P("Fluxo_lm", "numero", 0, "Fotometria", "Fluxo luminoso (lm). 0 = não declarado pela base de preço: conferir na ficha (NBR 10898:2023 6.1.2.4: ≥ 300 lm ou estudo luminotécnico — cópia não licenciada)"),
-P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h). 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; MG adota a 2013)"),
+P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h). 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)"),
 P("Largura", "comprimento", 0.30, "Dimensões", "Medida de desenho"), P("Altura", "comprimento", 0.07, "Dimensões", "Medida de desenho"), P("Profundidade", "comprimento", 0.05, "Dimensões", "Medida de desenho"),
 P("Altura_montagem", "comprimento", 2.30, "Restrições", "Do piso ao centro da luminária", "instancia")
 ].concat(PRECO),
@@ -64888,6 +64888,7 @@ F("Conforme", "numero", "se(Altura_alca <= 1.6 + 0.000001 e Base >= 0.2 - 0.0000
 tipos: [
 ext("abc4", "Pó ABC 4 kg — 2-A:20-B:C", "Pó ABC", "4 kg", "2-A:20-B:C", "ABC", "", "", [352.90, "PROVISÓRIO: maior preço público lido em 21/10/2026 — varejo (Magazine Luiza, extintor pó ABC 4 kg Resil Gold 2A:20BC) R$ 352,90; IOPES-ES 05/2026 160607 (ABC 2A-20B:C 4 kg com suporte) R$ 185,71; SUDECAP-BH 04/2026 73.55.33 (ABC 4 kg 2-A:20-B:C) R$ 146,92", "INC-EXT-ABC4"]),
 ext("abc6-3a", "Pó ABC 6 kg — 3-A:20-B:C (risco médio/alto)", "Pó ABC", "6 kg", "3-A:20-B:C", "ABC", "", "", [352.90, "PROVISÓRIO: maior preço público lido para o ABC 6 kg: ORSE-SE 01511 R$ 226,94; GOINFRA 04/2026 085006 R$ 225,27 (lida em orcamentor.com, fonte secundária); SETOP-MG ED-50193 R$ 212,44; IOPES-ES 160605 R$ 198,82. Nenhum varejo de 6 kg foi lido, e o de 4 kg custa R$ 352,90 (Magazine Luiza, 21/10/2026): adotado esse piso, porque o 6 kg não custa menos que o 4 kg (incerto = preço mais alto); rótulo 3-A:20-B:C: ficha de fabricante (AECweb) — conferir no produto comprado e cotar", "INC-EXT-ABC6-3A"]),
+ext("abc-40b", "Extintor classe B ≥ 40-B (especificar fabricante) — risco médio/alto em garagem", "Pó ABC", "a especificar", "3-A:40-B:C = exigência das Tabelas 4 e 5 da IT 16, não rótulo de produto — especificar fabricante", "ABC", "", "", [352.90, "PROVISÓRIO — cotar com fornecedor: maior preço público lido para extintor de pó (varejo Magazine Luiza, 21/10/2026, ABC 4 kg R$ 352,90; SINAPI MG 06/2026 101911 PQS 12 kg BC R$ 276,55 e 101910 8 kg R$ 241,93 são menores). 3-A:40-B:C = exigência das Tabelas 4 e 5 da IT 16 (Tabela 5: PDF p.7), não rótulo de produto: nenhum com 40-B declarado foi achado em fonte", "INC-EXT-ABC-40B"]),
 ext("pqs4bc", "Pó BC 4 kg (SINAPI 101908)", "Pó BC", "4 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101908", "SINAPI 06/2026 101908 — EXTINTOR PQS 4 KG CLASSE BC"),
 ext("pqs6bc", "Pó BC 6 kg (SINAPI 101909)", "Pó BC", "6 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101909", "SINAPI 06/2026 101909"),
 ext("pqs8bc", "Pó BC 8 kg (SINAPI 101910)", "Pó BC", "8 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101910", "SINAPI 06/2026 101910"),
@@ -64903,7 +64904,25 @@ solidos: [
 ],
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Extintor de incêndio portátil" }
 }]);
-global.FamiliasInc = { ids: ["inc-placa", "inc-luminaria", "inc-extintor"], DATA_PRECO: DATA };
+FR.registrar([{
+id: "acs-barra", nome: "Barra de apoio do sanitário acessível (NBR 9050)", categoria: "equipamento", hospedagem: "livre",
+descricao: "Barra de apoio reta de aço inox fixada na parede (sanitário acessível). Origem na face da parede, no piso; o +Z local aponta para DENTRO do ambiente. Horizontal: eixo a Altura_eixo (0,75 m); vertical: base a Altura_eixo (0,85 m). Medida de desenho.",
+parametros: [
+P("Comprimento", "comprimento", 0.80, "Dimensões", "Comprimento da barra (NBR 9050:2020 7.7.2.2: horizontais ≥ 0,80 m; vertical ≥ 0,70 m)"),
+P("Vertical", "inteiro", 0, "Dimensões", "1 = barra vertical; 0 = horizontal"),
+P("Altura_eixo", "comprimento", 0.75, "Restrições", "Do piso ao eixo da barra horizontal (0,75 m) ou à BASE da vertical (0,85 m = 0,10 m acima da horizontal) — NBR 9050:2020 7.7.2.2.1, p.90, Figuras 106 e 107, p.91-92", "instancia")
+].concat(PRECO),
+tipos: [
+{ id: "reta-80", nome: "Barra reta inox 80 cm (SINAPI 100868)", codigo: "100868", fonte: "SINAPI 06/2026 100868 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 80 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.80, Vertical: 0 } },
+{ id: "reta-70", nome: "Barra reta inox 70 cm, vertical (SINAPI 100867)", codigo: "100867", fonte: "SINAPI 06/2026 100867 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.70, Vertical: 1 } }
+],
+solidos: [
+{ id: "barra-h", nome: "Barra horizontal", forma: "caixa", visivel: "Vertical = 0", x: "0", y: "Altura_eixo - 0.02", z: "0.06", dx: "Comprimento", dy: "0.04", dz: "0.04", material: "Inox" },
+{ id: "barra-v", nome: "Barra vertical", forma: "caixa", visivel: "Vertical = 1", x: "0", y: "Altura_eixo", z: "0.06", dx: "0.04", dy: "Comprimento", dz: "0.04", material: "Inox" }
+],
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Barra de apoio reta em aço inox, fixada na parede" }
+}]);
+global.FamiliasInc = { ids: ["inc-placa", "inc-luminaria", "inc-extintor", "acs-barra"], DATA_PRECO: DATA };
 if (typeof module !== "undefined" && module.exports) module.exports = global.FamiliasInc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
@@ -72810,6 +72829,7 @@ var rm = s.referenciaMercado, qm = r4(s.quantidade), vt = r2(num(rm.valor) * qm)
 l = { codigo: "REF-MERC:" + rm.id, descricao: s.rotulo + " — " + rm.texto, unidade: (rm.unidade || "UN").toUpperCase(), unidadeQto: s.unidade, quantidade: qm, status: "ok", horas: [], servico: s.id,
 unitario: r2(num(rm.valor)), custo: { mo: 0, mat: vt, eq: 0, total: vt }, codigoOrigem: "mercado", referenciaMercado: rm,
 avisos: ["sem composição SINAPI (" + s.motivo + "): " + rm.texto + " — " + rm.criterio] };
+if (rm.provisorio) l.provisorio = { motivo: rm.motivo || "provisório — cotar com o fornecedor" };
 }
 else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
 somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
@@ -74426,6 +74446,7 @@ var sis = P.sistemas.indexOf(o.sistema) >= 0 ? o.sistema : P.sistemas[0];
 var mat = P.materiais ? (P.materiais.indexOf(o.material) >= 0 ? o.material : P.material) : P.material;
 var dn = P.dns.indexOf(txt(o.dn)) >= 0 ? txt(o.dn) : P.dn;
 var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
+if (o.peca === "extintor" && txt(o.capacidade)) k.capacidade = txt(o.capacidade).slice(0, 40);
 if (P.sistemas[0] === "eletrica") {
 k.alturaPiso = num(o.alturaPiso, null);
 k.aplicacao = o.peca === "caixa_octogonal" ? (o.aplicacao === "forro" ? "forro" : "laje") : alturaCaixa(k.alturaPiso);
@@ -75036,11 +75057,32 @@ observacao: "metro de isolamento = metro de tubo × " + ISOLAMENTO_AQ.coeficient
 }
 function refMercado(it) {
 var PM = global.HidPrecoMercado || null;
+if (it && it.mercadoDireto) return it.mercadoDireto;
 if (!PM || !it) return null;
 if (it.mercadoSoma) return PM.soma(it.mercadoSoma, it.mercadoRotulo);
 return it.mercado && PM.ref ? PM.ref(it.mercado) : null;
 }
-function itemPeca(k) {
+function tipoExtintorDe(cap) {
+var mA = /(\d+)\s*-\s*A/i.exec(txt(cap)), mB = /(\d+)\s*-\s*B/i.exec(txt(cap)), a = mA ? Number(mA[1]) : 2, b = mB ? Number(mB[1]) : 20;
+return b >= 40 ? "abc-40b" : (a >= 3 ? "abc6-3a" : "abc4");
+}
+function extintorDoHidro(k, avaliarFam, it) {
+var tipo = tipoExtintorDe(k.capacidade), av = null;
+try { av = typeof avaliarFam === "function" ? avaliarFam("inc-extintor", tipo, {}) : null; } catch (e) { av = null; }
+var v = av && av.valores ? av.valores : null, pu = v ? num(v.Preco_unitario, 0) : 0;
+if (!v || !(pu > 0)) return;
+it.nome = "Extintor portátil de pó ABC (Hidro) — " + tipo + " " + (txt(v.Capacidade_extintora) || "");
+it.chaveExtra = tipo;
+var fonte = txt(v.Fonte_preco) + (txt(v.Data_preco) ? " (" + txt(v.Data_preco) + ")" : "");
+it.mercadoDireto = { id: txt(v.Peca_catalogo) || ("INC-EXT-" + tipo), valor: pu, unidade: "un", texto: fonte, data: txt(v.Data_preco), url: "", provisorio: v.Preco_provisorio === true,
+motivo: txt(v.Motivo_preco), criterio: "mesmo preço da família inc-extintor (" + tipo + "): maior preço público lido, fornecimento sem montagem" + (k.capacidade ? "" : "; peça sem capacidade gravada (projeto antigo): 2-A:20-B:C") };
+}
+function extintorDuplicado(k, estado) {
+return arr(estado && estado.familias).some(function (f) {
+return f && /inc-extintor/.test(txt(f.famId)) && Math.abs(num(f.x, 0) - k.x) <= 0.5 && Math.abs(num(f.z, 0) - k.z) <= 0.5 && Math.abs(num(f.y, 0) - k.y) <= 2.5;
+});
+}
+function itemPeca(k, avaliarFam) {
 var it = { peca: k.peca, sistema: k.sistema, material: k.material, aplicacao: k.aplicacao, dn: k.dn };
 if (k.peca === "caixa_inspecao") {
 var CI = dep("HidCI", "./hidcigeo.js"), oc = CI && CI.orcamento ? CI.orcamento(k) : null;
@@ -75052,6 +75094,7 @@ if (oc.mercadoSoma) { it.mercadoSoma = oc.mercadoSoma; it.mercadoRotulo = oc.mer
 return it;
 }
 if ((PECAS[k.peca] || {}).semSinapi) it.semTabela = "a SINAPI 06/2026 não tem composição mapeada para " + PECAS[k.peca].nome.toLowerCase() + " — pendente (nunca a parecida)";
+if (k.peca === "extintor") extintorDoHidro(k, avaliarFam, it);
 return it;
 }
 function qto(estado, avaliarFam) {
@@ -75079,7 +75122,8 @@ ordC.push(k);
 g.n++; g.ids.push(c.id); sis(c.sistema).conexoes++;
 });
 R.pecas.forEach(function (p) {
-var itp = itemPeca(p), k = [p.peca, p.sistema, p.material, p.dn, p.aplicacao, itp.chaveExtra || ""].join("|");
+if (p.peca === "extintor" && extintorDuplicado(p, estado)) return;
+var itp = itemPeca(p, avaliarFam), k = [p.peca, p.sistema, p.material, p.dn, p.aplicacao, itp.chaveExtra || ""].join("|");
 var g = pcs[k];
 if (!g) {
 g = pcs[k] = { peca: p.peca, nome: itp.nome || PECAS[p.peca].nome, sistema: p.sistema, material: p.material, dn: p.dn, aplicacao: p.aplicacao, n: 0, ids: [], sinapi: itp.composicoes ? itp.composicoes[0] : sinapiDe(itp) };
@@ -75171,7 +75215,8 @@ var it = itemConexao(c);
 linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
 });
 R.pecas.forEach(function (p) {
-var it = itemPeca(p);
+if (p.peca === "extintor" && extintorDuplicado(p, estado)) return;
+var it = itemPeca(p, avaliarFam);
 if (it.composicoes) { it.composicoes.forEach(function (cp) { linha(p.id, it, cp.qtd != null ? cp.qtd : 1, cp.unidadeQto || "un", cp); }); return; }
 linha(p.id, it, 1, "un", sinapiDe(it));
 var pl = prolongadorDe(p); if (pl) linha(p.id, pl.item, pl.n, "un", pl.sinapi);
@@ -159485,7 +159530,7 @@ function numBRexato(s) { var t = txt(s).trim().replace(/\./g, "").replace(",", "
 function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
 var NIVEIS = {
 A: "lido no texto oficial (IT do CBMMG, decreto ou NBR da biblioteca)",
-N: "NBR 10898:2023 em cópia NÃO licenciada à RA (só valor e item; MG adota a edição 2013 pela Portaria 71/2023 — conferir)",
+N: "NBR 10898:2023 em cópia NÃO licenciada à RA (só valor e item; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)",
 C: "critério RA (editável)",
 X: "sem fonte — pendência (nunca vira \"atende\")"
 };
@@ -159504,6 +159549,8 @@ return tab("in.it01.classificacao_ocupacao").dados.map(function (d) { return { d
 }
 function divisaoValida(div) { return divisoes().some(function (d) { return d.divisao === div; }); }
 function grupoDe(div) { return txt(div).charAt(0).toUpperCase(); }
+var USO_COMUM_PADRAO = { "D-1": 1, "G-1": 1, "H-4": 1, "H-5": 1 };
+function usoPublicoPadrao(div) { var d = txt(div).toUpperCase(); return "BCDEFGH".indexOf(grupoDe(div)) >= 0 && grupoDe(div) !== "" && !USO_COMUM_PADRAO[d]; }
 function casaDivisao(espec, div, grupo) {
 var s = txt(espec).trim(); if (!s || s === "-" || /^qualquer$/i.test(s)) return true;
 return s.split(/\s*,\s*/).some(function (p) {
@@ -159667,7 +159714,7 @@ distancia: function () { return V("in.it13.iluminacao_emergencia", "distancia_ma
 tensao: function () { return V("in.it13.iluminacao_emergencia", "tensao_maxima_luminaria_baixa"); },
 alturaTensao: { valor: 2.5, fonte: "CBMMG IT 13 5.5 (luminária a menos de 2,5 m: até 30 V)", nivel: "A" },
 nbr10898: {
-norma: "ABNT NBR 10898:2023", exemplarLicenciado: false, adotadaEmMG: "NBR 10898:2013 (Portaria 71/2023) — texto não disponível",
+norma: "ABNT NBR 10898:2023", exemplarLicenciado: false, adotadaEmMG: "conferir — a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999",
 autonomiaMin_h: { valor: 2, item: "4.9", nivel: "N" },
 iluminanciaPlano_lx: { valor: 3, item: "5.1.2 (aclaramento)", nivel: "N" },
 iluminanciaEscadaDesnivel_lx: { valor: 5, item: "5.1.2.1 (escadas, mudança de nível, primeiros socorros, equipamentos de combate)", nivel: "N" },
@@ -159798,7 +159845,7 @@ return { obrigatoria: true, motivo: "edificação de uso público ou coletivo ("
 }
 var IncRegras = {
 NIVEIS: NIVEIS, rotuloNivel: rotuloNivel, divisoes: divisoes, divisaoValida: divisaoValida, grupoDe: grupoDe, casaDivisao: casaDivisao,
-atividades: atividades, risco: risco, extintor: extintor, capacidadeMinimaABC: capacidadeMinimaABC, nivelRisco: nivelRisco, pscip: pscip,
+atividades: atividades, risco: risco, extintor: extintor, usoPublicoPadrao: usoPublicoPadrao, capacidadeMinimaABC: capacidadeMinimaABC, nivelRisco: nivelRisco, pscip: pscip,
 medida: medida, regraPopulacao: regraPopulacao, populacao: populacao, capacidade: capacidade, UP: UP, larguraMinima: larguraMinima,
 larguraRestrita: larguraRestrita, unidades: unidades, portaVao: portaVao, duasFolhasAcima: duasFolhasAcima, distanciaEntreSaidas: distanciaEntreSaidas,
 distanciaMaxima: distanciaMaxima, tipoEdificacao: tipoEdificacao, saidas: saidas, ILUM: ILUM, SIN: SIN, placaAreaMinima: placaAreaMinima,
@@ -160008,7 +160055,8 @@ else if (fid === "inc-luminaria" || /emergencia|emergência/i.test(fid)) { base.
 arr(estado && estado.instalacoes && estado.instalacoes.pecas).forEach(function (k) {
 if (!k || !ehExtintor("", k.peca)) return;
 var p = [num(k.x, 0), num(k.z, 0)], pav = pavDe(num(k.y, 0)), amb = ambDe(p, pav);
-L.extintores.push({ id: String(k.id), famId: "peca:extintor", p: p, y: num(k.y, 0), pav: pav, rotY: num(k.rotY, 0), dir: [Math.sin(num(k.rotY, 0)), Math.cos(num(k.rotY, 0))], va: {}, amb: amb ? amb.id : null, alca: null, baseExt: num(k.alturaPiso, null), cap: "", agente: "", classe: "", peca: true });
+L.extintores.push({ id: String(k.id), famId: "peca:extintor", p: p, y: num(k.y, 0), pav: pav, rotY: num(k.rotY, 0), dir: [Math.sin(num(k.rotY, 0)), Math.cos(num(k.rotY, 0))], va: {}, amb: amb ? amb.id : null, alca: null, baseExt: num(k.alturaPiso, null),
+cap: txt(k.capacidade) || R.capacidadeMinimaABC(), agente: "Pó ABC", classe: "ABC", peca: true, legado: !txt(k.capacidade) });
 });
 L.saidas = {}; L.redes = {};
 pavs.forEach(function (pv, ip) {
@@ -160139,6 +160187,9 @@ if (K.isentaA1) return { ok: true, lote: null, ops: [], itens: [], avisos: ["Res
 var pavsAlvo = o.pav != null ? [Number(o.pav)] : med.pavimentos;
 var rk = K.risco.risco, extA = R.extintor(rk, "A"), extB = R.extintor(rk === "alto" ? "alto" : rk, "B");
 var tipoExt = rk === "baixo" ? "abc4" : "abc6-3a";
+function capAx(e) { var m = /(\d+)\s*-\s*A/i.exec(txt(e.cap)); return m ? Number(m[1]) : null; }
+function capBx(e) { var m = /(\d+)\s*-\s*B/i.exec(txt(e.cap)); return m ? Number(m[1]) : null; }
+var capBmin = Number((/(\d+)/.exec(extB.capacidade) || [0, 0])[1]);
 var entradaMax = R.EXT.entrada().valor, alca = CRIT.alcaExtintor.valor;
 var faixaExt = [alca - 0.55, R.SIN.equipamento().valor + 0.20];
 function placaPara(L0) { var A = R.placaAreaMinima(L0).area; return A <= 0.26 * 0.13 + 1e-9 ? "26x13" : "40x20"; }
@@ -160156,7 +160207,8 @@ var sai = arr(L.saidas[ip]), nomePav = L.pavs[ip] ? L.pavs[ip].nome : "pavimento
 var ambPor = {}; L.ambientes.forEach(function (a) { ambPor[a.id] = a; });
 var celAmb = Rd.lista.filter(function (c) { var a = ambPor[Rd.amb[c]]; return !!a; });
 if (quer("extintor") && K.exige.extintores.exige) {
-var ex = L.extintores.filter(function (e) { return e.pav === ip; }).map(function (e) { return add(e.p, e.dir, 0.15); });
+var exTodos = L.extintores.filter(function (e) { return e.pav === ip; });
+var ex = exTodos.map(function (e) { return add(e.p, e.dir, 0.15); });
 var naoEscada = function (a) { return a.tipo.id !== "escada" && a.tipo.id !== "banheiro" && a.tipo.id !== "lavabo" && !a.especial; };
 var cands = candidatos(L, est, aval, ip, naoEscada, faixaExt[0], faixaExt[1]);
 var pesoCirc = function (c) { return c.amb.tipo.id === "circulacao" ? 1.25 : 1; };
@@ -160170,15 +160222,17 @@ var best = null, bd = Infinity;
 cands.forEach(function (c) { var cl = G.celula(Rd, c.dentro, 0.6); if (!cl) return; var d = dS[cl.i]; if (d <= entradaMax && d < bd) { bd = d; best = c; } });
 if (best) novos.push(best); else avisos.push("Sem parede livre a ≤ " + entradaMax + " m da entrada " + s.id + " para o extintor (" + nomePav + ").");
 });
-var temGaragem = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; }), raio = temGaragem ? Math.min(extA.distancia, extB.distancia) : extA.distancia;
-var cob = cobrir(Rd, celAmb, ex.concat(novos.map(function (c) { return c.dentro; })), cands, raio, { peso: pesoCirc });
+var temGaragem = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; }), exigeB = temGaragem && rk !== "baixo", raio = temGaragem ? Math.min(extA.distancia, extB.distancia) : extA.distancia;
+var exCob = exTodos.filter(function (e) { var ca = capAx(e); return ca != null && ca > 0 && (!exigeB || (capBx(e) || 0) >= capBmin); }).map(function (e) { return add(e.p, e.dir, 0.15); });
+var cob = cobrir(Rd, celAmb, exCob.concat(novos.map(function (c) { return c.dentro; })), cands, raio, { peso: pesoCirc });
 novos = novos.concat(cob.escolhidos);
 if (!ex.length && !novos.length && cands.length) novos.push(cands[0]);
 if (cob.descobertas.length) avisos.push(nomePav + ": " + cob.descobertas.length + " célula(s) sem extintor a ≤ " + raio + " m de percurso mesmo depois do lançamento (sem parede livre perto) — confira no auditor.");
 novos.forEach(function (c) {
 var id = novoId("inc-ext"), pt = add(c.P, c.dir, 0.005);
-ops.push({ op: "familia", id: id, famId: "inc-extintor", tipoId: tipoExt, x: r4(pt[0]), y: r4(c.amb.base), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_alca: alca } });
-itens.push({ id: id, tipo: "extintor", tipoId: tipoExt, ambiente: c.amb.id, ambienteNome: c.amb.nome, altura: alca, regras: ["IT 16 Tabela " + (temGaragem ? "4/5" : "4") + ": risco " + K.risco.rotulo.toLowerCase() + " → " + (tipoExt === "abc4" ? "2-A" : "3-A") + ", ≤ " + raio + " m de percurso", "IT 16 6.2.1: pó ABC por pavimento", "alça " + f2(alca) + " m (≤ 1,60, IT 16 5.2.2.2; critério RA)"] });
+var tipoN = exigeB ? "abc-40b" : tipoExt;
+ops.push({ op: "familia", id: id, famId: "inc-extintor", tipoId: tipoN, x: r4(pt[0]), y: r4(c.amb.base), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_alca: alca } });
+itens.push({ id: id, tipo: "extintor", tipoId: tipoN, ambiente: c.amb.id, ambienteNome: c.amb.nome, altura: alca, regras: ["IT 16 Tabela " + (temGaragem ? "4/5" : "4") + ": risco " + K.risco.rotulo.toLowerCase() + " → " + (tipoExt === "abc4" ? "2-A" : "3-A") + (exigeB ? " e classe B ≥ " + extB.capacidade + " (garagem; especificar o fabricante)" : "") + ", ≤ " + raio + " m de percurso", "IT 16 6.2.1: pó ABC por pavimento", "alça " + f2(alca) + " m (≤ 1,60, IT 16 5.2.2.2; critério RA)"] });
 if (K.exige.sinalizacao.exige) opPlaca(c, "extintor-20x20", R.SIN.equipamento().valor, 4, {}, "IT 15 6.1.4: placa E5 com a base a 1,80 m acima do extintor");
 if (c.amb.tipo.id === "garagem") {
 var idp = novoId("inc-pl"), pp = add(c.P, c.dir, 0.02);
@@ -160251,7 +160305,7 @@ itens.push({ id: id, tipo: "luminaria", tipoId: "led30-2w", ambiente: c.amb.id, 
 if (cobL.descobertas.length) avisos.push(nomePav + ": " + cobL.descobertas.length + " célula(s) sem luminária a ≤ " + f2(CRIT.raioLuminaria.valor) + " m — confira no auditor.");
 if (novasL.length || lumEx.length) {
 var N10 = R.ILUM.nbr10898;
-pend.push({ codigo: "INC_ILUM_NBR10898", texto: "Iluminância (3 lx plano / 5 lx escada e desnível), autonomia (≥ " + N10.autonomiaMin_h.valor + " h), fluxo do bloco (≥ " + N10.fluxoBlocoMin_lm.valor + " lm) e comutação: NBR 10898 — MG adota a 2013 (sem texto); os números são da 2023 em cópia não licenciada: conferir no exemplar antes de afirmar \"atende\".", fonte: "CBMMG IT 13 (Portaria 71/2023); " + N10.norma + " " + N10.autonomiaMin_h.item + ", " + N10.iluminanciaPlano_lx.item + ", " + N10.fluxoBlocoMin_lm.item });
+pend.push({ codigo: "INC_ILUM_NBR10898", texto: "Iluminância (3 lx plano / 5 lx escada e desnível), autonomia (≥ " + N10.autonomiaMin_h.valor + " h), fluxo do bloco (≥ " + N10.fluxoBlocoMin_lm.valor + " lm) e comutação: NBR 10898 — a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir; os números são da 2023 em cópia não licenciada: conferir no exemplar antes de afirmar \"atende\".", fonte: "CBMMG IT 13 (1ª ed., Portaria 5/2005); " + N10.norma + " " + N10.autonomiaMin_h.item + ", " + N10.iluminanciaPlano_lx.item + ", " + N10.fluxoBlocoMin_lm.item });
 }
 }
 });
@@ -160293,6 +160347,7 @@ P.forEach(function (p) { var s = dot(p, u), t = dot(p, v); s0 = Math.min(s0, s);
 var A = s1 - s0, B = t1 - t0;
 return { largura: Math.min(A, B), comprimento: Math.max(A, B), irregular: num(a.area, A * B) / Math.max(1e-6, A * B) < 0.85 };
 }
+function capB(s) { var m = /(\d+)\s*-\s*B/i.exec(txt(s)); return m ? Number(m[1]) : null; }
 function capA(s) { var m = /(\d+)\s*-\s*A/i.exec(txt(s)); if (m) return Number(m[1]); return /B\s*:?\s*C|-B/i.test(txt(s)) ? 0 : null; }
 function auditar(o) {
 o = o || {};
@@ -160422,20 +160477,52 @@ var opsExt = null, opsE = function () { if (!opsExt) opsExt = gerar(["extintor"]
 if (!exP.length) p("INC_EXT_AUSENTE_PAVIMENTO", "critico", "A", nomePav(ip) + " sem extintor", "Cada pavimento deve ter no mínimo uma unidade extintora de pó ABC que atenda à distância máxima e à capacidade.", "CBMMG IT 16 6.2.1", L.ambientes.filter(function (a) { return a.pav === ip; }).map(function (a) { return a.id; }).slice(0, 3), [{ id: "lancar", texto: "Lançar os extintores do pavimento", ops: opsE() }]);
 else {
 var rk = K.risco.risco, tA = R.extintor(rk, "A"), tB = R.extintor(rk, "B"), capMin = Number((/(\d+)/.exec(tA.capacidade) || [0, 2])[1]);
-var fontes = [], baixos = [];
+var fontes = [], baixos = [], semCap = [], legados = [];
+var temGar = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; }), exigeB = temGar && rk !== "baixo";
+var alcanceB = function (cb) { if (cb == null) return null; var al = tB.alternativas.filter(function (x) { return Number((/(\d+)/.exec(x.capacidade) || [0, 0])[1]) <= cb; }); return al.length ? Math.max.apply(null, al.map(function (x) { return x.distancia; })) : null; };
 exP.forEach(function (e) {
+if (e.legado) { legados.push(e); fontes.push({ e: e, alc: tA.distancia, alcB: null }); return; }
 var ca = capA(e.cap), alc = tA.distancia;
+if (ca == null) { semCap.push(e); return; }
 if (ca != null && ca > 0) { var alt = tA.alternativas.filter(function (x) { return Number((/(\d+)/.exec(x.capacidade) || [0, 0])[1]) <= ca; }); if (alt.length) alc = Math.max.apply(null, alt.map(function (x) { return x.distancia; })); else { baixos.push(e); return; } }
 if (ca === 0) { baixos.push(e); return; }
-fontes.push({ e: e, alc: alc });
+fontes.push({ e: e, alc: alc, alcB: exigeB ? alcanceB(capB(e.cap)) : null });
 });
-var temGar = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; });
-var cobertas = {}; fontes.forEach(function (f) { var cl = G.celula(Rd, add(f.e.p, f.e.dir, 0.15), 0.6); if (!cl) return; var a = Math.min(f.alc, temGar ? tB.distancia : f.alc), d = G.distancias(Rd, [cl], a); celAmb.forEach(function (c) { if (d[c] <= a) cobertas[c] = 1; }); });
+var cobertas = {}, cobertasB = {};
+fontes.forEach(function (f) {
+var cl = G.celula(Rd, add(f.e.p, f.e.dir, 0.15), 0.6); if (!cl) return;
+var a = Math.min(f.alc, temGar ? tB.distancia : f.alc), d = G.distancias(Rd, [cl], f.alc);
+celAmb.forEach(function (c) {
+var gar = exigeB && ambPor[Rd.amb[c]].tipo.id === "garagem", lim = a;
+if (gar && f.alcB != null) { lim = Math.min(f.alc, f.alcB); if (d[c] <= lim) cobertasB[c] = 1; }
+if (d[c] <= lim) cobertas[c] = 1;
+});
+});
 var desc = celAmb.filter(function (c) { return !cobertas[c]; });
 if (desc.length) {
 var porA = {}; desc.forEach(function (c) { porA[Rd.amb[c]] = (porA[Rd.amb[c]] || 0) + 1; });
 p("INC_EXT_DISTANCIA", "critico", "A", nomePav(ip) + ": " + f2(desc.length * Rd.h * Rd.h) + " m² sem extintor a ≤ " + (temGar ? Math.min(tA.distancia, tB.distancia) : tA.distancia) + " m de percurso", "Risco " + K.risco.rotulo.toLowerCase() + " (" + (K.qfi != null ? K.qfi + " MJ/m², " : "") + K.risco.fonte + "): classe A " + tA.capacidade + " a ≤ " + tA.distancia + " m" + (temGar ? "; classe B " + tB.capacidade + " a ≤ " + tB.distancia + " m na garagem" : "") + ", medida pelo PERCURSO real (contornando paredes). Descobertos: " + Object.keys(porA).map(function (id) { return "\"" + (ambPor[id] || {}).nome + "\""; }).join(", ") + ".", tA.fonte + (temGar ? "; " + tB.fonte : ""), Object.keys(porA), [{ id: "lancar", texto: "Lançar os extintores que faltam", ops: opsE() }]);
 }
+if (exigeB) {
+var garSemB = celAmb.filter(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem" && !cobertasB[c]; });
+if (garSemB.length) {
+var porG = {}; garSemB.forEach(function (c) { porG[Rd.amb[c]] = 1; });
+var fracos = fontes.filter(function (f) { return f.alcB == null; }).map(function (f) { return f.e; });
+p("INC_EXT_CAPACIDADE_B", "critico", "A", nomePav(ip) + ": garagem sem extintor de capacidade B suficiente (" + tB.capacidade + ")", "Risco " + K.risco.rotulo.toLowerCase() + ": a garagem é risco de classe B e pede " + tB.alternativas.map(function (x) { return x.capacidade + " a ≤ " + x.distancia + " m"; }).join(" ou ") + " — não basta a distância. Extintor(es) sem essa capacidade B: " + (fracos.length ? fracos.map(function (e) { return e.id + " (" + (e.cap || "?") + ")"; }).join(", ") : "nenhum a alcance") + ". Ambientes: " + Object.keys(porG).map(function (id) { return "\"" + (ambPor[id] || {}).nome + "\""; }).join(", ") + ".", tB.fonte, fracos.map(function (e) { return e.id; }).concat(Object.keys(porG)),
+fracos.filter(function (e) { return e.famId === "inc-extintor"; }).length ? [{ id: "capB", texto: "Trocar por extintor de pó com classe B ≥ " + tB.alternativas[0].capacidade + " (especificar o fabricante)", ops: fracos.filter(function (e) { return e.famId === "inc-extintor"; }).map(function (e) { return { op: "instancia", id: e.id, tipoId: "abc-40b" }; }) }] : [{ id: "lancar", texto: "Lançar os extintores com classe B ≥ " + tB.alternativas[0].capacidade + " na garagem", ops: opsE() }]);
+}
+}
+if (exP.some(function (e) { return /especificar/i.test(e.cap); }))
+p("INC_EXT_ESPECIFICAR", "medio", "A", nomePav(ip) + ": extintor de classe B ≥ 40-B com fabricante e capacidade ainda por especificar", "O tipo \"classe B ≥ 40-B (especificar fabricante)\" leva a exigência das Tabelas 4 e 5 da IT 16 (3-A:40-B:C; classe B " + tB.capacidade + "), não o rótulo de um produto: especificar o fabricante. Escolha o extintor de pó com a capacidade B declarada no rótulo/INMETRO e troque o tipo. O preço é provisório (o maior preço público de extintor de pó lido) — cotar com o fornecedor.", tB.fonte, exP.filter(function (e) { return /especificar/i.test(e.cap); }).map(function (e) { return e.id; }), [nota("espec", "Especifique o extintor (capacidade B declarada ≥ " + tB.alternativas[0].capacidade + ") e cote com o fornecedor.")]);
+legados.forEach(function (e) {
+var am = ambPor[e.amb], cs = A.candidatos(L, est, aval, ip, function (b) { return !am || b.id === am.id; }, 0.95, 2.0).sort(function (x, y) { return dist(x.P, e.p) - dist(y.P, e.p); }), c = cs[0];
+var pt = c ? add(c.P, c.dir, 0.005) : e.p, tipoN = exigeB ? "abc-40b" : (rk === "baixo" ? "abc4" : "abc6-3a");
+p("INC_EXT_LEGADO", "medio", "A", "Extintor " + e.id + " (peça do Hidro) sem capacidade gravada", "Peça de um projeto antigo, sem a capacidade extintora: conta como pó ABC de " + R.capacidadeMinimaABC() + " (Tabela 1) pela distância, mas a Tabela 4/5 do risco " + K.risco.rotulo.toLowerCase() + " pode pedir mais. Troque pela família inc-extintor (capacidade no rótulo) ou rode o Hidro de novo.", tA.fonte, [e.id],
+[{ id: "trocar", texto: "Trocar pela família inc-extintor (" + tipoN + ")", ops: [{ op: "apagar", id: e.id }, { op: "familia", id: "inc-ext-" + e.id + "-f", famId: "inc-extintor", tipoId: tipoN, x: Math.round(pt[0] * 10000) / 10000, y: c ? Math.round(num(c.amb.base, 0) * 10000) / 10000 : num(e.y, 0), z: Math.round(pt[1] * 10000) / 10000, rotY: c ? c.rotY : e.rotY, inst: { Altura_alca: 1.5 } }] }]);
+});
+semCap.forEach(function (e) {
+p("INC_EXT_SEM_CAPACIDADE", "medio", "A", "Extintor " + e.id + ": sem capacidade declarada", "Sem a capacidade extintora do rótulo (ex.: 2-A:20-B:C) não se sabe se o extintor atende à Tabela 4/5: ele NÃO conta como cobertura de classe A até ser declarado.", tA.fonte, [e.id], [nota("semcap", "Declare a capacidade extintora do rótulo no extintor (ou troque por um tipo da biblioteca).")]);
+});
 if (!exP.some(function (e) { return /ABC/i.test(e.classe + " " + e.agente + " " + e.cap); }) && !(exP.some(function (e) { return capA(e.cap) > 0 && !/BC/i.test(e.classe); }) && exP.some(function (e) { return /BC/i.test(e.classe); }))) {
 var alvoE = exP.filter(function (e) { return e.famId === "inc-extintor"; })[0];
 p("INC_EXT_ABC_PAVIMENTO", "alto", "A", nomePav(ip) + ": sem extintor de pó ABC", "Cada pavimento precisa de ≥ 1 unidade de pó ABC (ou o par classe A + classe B/C); garagem e edificação sem brigada: pó ABC obrigatório.", "CBMMG IT 16 6.2.1, 6.2.1.2", exP.map(function (e) { return e.id; }),
@@ -160505,9 +160592,9 @@ if (l.h < R.ILUM.alturaTensao.valor - 1e-6 && (l.tensao == null || l.tensao > R.
 p("INC_ILUM_TENSAO", "medio", "A", "Luminária " + l.id + " a " + f2(l.h) + " m: tensão " + (l.tensao == null ? "não declarada" : l.tensao + " V"), "Abaixo de 2,5 m de altura a luminária trabalha com até 30 V (ou DR 30 mA + disjuntor 10 A).", R.ILUM.tensao().fonte, [l.id], l.famId === "inc-luminaria" ? [{ id: "tens", texto: "Luminária de " + R.ILUM.tensao().valor + " V", ops: [{ op: "instancia", id: l.id, inst: { Tensao_V: R.ILUM.tensao().valor } }] }] : [nota("tens", "Especifique luminária de 30 V ou preveja DR de 30 mA + disjuntor de 10 A no circuito.")]);
 });
 var semFluxo = lum.filter(function (l) { return l.fluxo < R.ILUM.nbr10898.fluxoBlocoMin_lm.valor; }), fluxoNaoDecl = semFluxo.every(function (l) { return !l.fluxo; });
-if (semFluxo.length) p("INC_ILUM_FLUXO", fluxoNaoDecl ? "pendente" : "medio", "N", nomePav(ip) + ": " + semFluxo.length + " luminária(s) " + (fluxoNaoDecl ? "sem fluxo declarado" : "com fluxo < " + R.ILUM.nbr10898.fluxoBlocoMin_lm.valor + " lm"), "Bloco autônomo com fluxo ≥ " + R.ILUM.nbr10898.fluxoBlocoMin_lm.valor + " lm, ou estudo luminotécnico que comprove a iluminância mínima (" + R.ILUM.nbr10898.fluxoBlocoMin_lm.item + "). A composição da SINAPI (97599) não declara o fluxo: " + semFluxo.map(function (l) { return l.id + (l.fluxo ? " " + l.fluxo + " lm" : ""); }).join(", ") + ".", R.ILUM.nbr10898.norma + " (cópia não licenciada; MG adota a 2013 — conferir)", semFluxo.map(function (l) { return l.id; }), [nota("flx", "Confira o fluxo na ficha do produto comprado (ou faça o estudo luminotécnico) e informe em Propriedades › Fluxo_lm.")]);
+if (semFluxo.length) p("INC_ILUM_FLUXO", fluxoNaoDecl ? "pendente" : "medio", "N", nomePav(ip) + ": " + semFluxo.length + " luminária(s) " + (fluxoNaoDecl ? "sem fluxo declarado" : "com fluxo < " + R.ILUM.nbr10898.fluxoBlocoMin_lm.valor + " lm"), "Bloco autônomo com fluxo ≥ " + R.ILUM.nbr10898.fluxoBlocoMin_lm.valor + " lm, ou estudo luminotécnico que comprove a iluminância mínima (" + R.ILUM.nbr10898.fluxoBlocoMin_lm.item + "). A composição da SINAPI (97599) não declara o fluxo: " + semFluxo.map(function (l) { return l.id + (l.fluxo ? " " + l.fluxo + " lm" : ""); }).join(", ") + ".", R.ILUM.nbr10898.norma + " (cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)", semFluxo.map(function (l) { return l.id; }), [nota("flx", "Confira o fluxo na ficha do produto comprado (ou faça o estudo luminotécnico) e informe em Propriedades › Fluxo_lm.")]);
 var N10 = R.ILUM.nbr10898;
-if (ip === med.pavimentos[0]) p("INC_ILUM_NBR10898", "pendente", "N", "Iluminância e autonomia: conferir na NBR 10898", "Os números 3 lx (plano) / 5 lx (escada, desnível, equipamento), autonomia ≥ " + N10.autonomiaMin_h.valor + " h e comutação ≤ " + N10.comutacaoMax_s.valor + " s são da NBR 10898:2023 (cópia não licenciada; MG adota a de 2013, sem texto). O motor não afirma \"atende\" nisso.", "CBMMG IT 13 (Portaria 71/2023); " + N10.norma + " " + [N10.iluminanciaPlano_lx.item, N10.autonomiaMin_h.item].join(", "), [], [nota("10898", "Obter o exemplar (convênio Confea) e conferir com a ficha das luminárias.")]);
+if (ip === med.pavimentos[0]) p("INC_ILUM_NBR10898", "pendente", "N", "Iluminância e autonomia: conferir na NBR 10898", "Os números 3 lx (plano) / 5 lx (escada, desnível, equipamento), autonomia ≥ " + N10.autonomiaMin_h.valor + " h e comutação ≤ " + N10.comutacaoMax_s.valor + " s são da NBR 10898:2023 (cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir). O motor não afirma \"atende\" nisso.", "CBMMG IT 13 (1ª ed., Portaria 5/2005); " + N10.norma + " " + [N10.iluminanciaPlano_lx.item, N10.autonomiaMin_h.item].join(", "), [], [nota("10898", "Obter o exemplar (convênio Confea) e conferir com a ficha das luminárias.")]);
 }
 }
 }
@@ -160651,7 +160738,7 @@ cands.sort(function (x, y) { return x.d - y.d; });
 var c = cands[0]; if (!c) return [];
 return [{ op: "familia", id: "inc-saida-" + c.b.id, famId: "ra-porta-giro", tipoId: "p90", host: { id: c.w.id, t: r4(c.t) }, inst: { Abre_para_fora: c.tr.lado === -1, Mao_direita: false } }];
 }
-var IncAuditor = { auditar: auditar, dimensoes: dimensoes, capA: capA, portasDe: portasDe, portaNova: portaNova, opsCorrimao: opsCorrimao, solucaoDegrau: solucaoDegrau };
+var IncAuditor = { auditar: auditar, dimensoes: dimensoes, capA: capA, capB: capB, portasDe: portasDe, portaNova: portaNova, opsCorrimao: opsCorrimao, solucaoDegrau: solucaoDegrau };
 global.IncAuditor = IncAuditor;
 if (typeof module !== "undefined" && module.exports) module.exports = IncAuditor;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -160705,7 +160792,7 @@ var L = A.leitura(est, aval, dados), comum = ob.obrigatoria === "comum" && !flag
 var ambPor = {}; L.ambientes.forEach(function (a) { ambPor[a.id] = a; });
 function noEscopo(a) { if (!a || FORA[a.tipo.id]) return false; if (!comum) return true; return !!COMUM[a.tipo.id] || /\b(comum|portaria|hall|salao|recepcao|lazer)\b/.test(a.norm); }
 var escopo = L.ambientes.filter(noEscopo);
-var publico = !!dados.usoPublico;
+var publico = dados.usoPublico != null ? !!dados.usoPublico : R.usoPublicoPadrao(div);
 var pavs = {}; L.ambientes.forEach(function (a) { pavs[a.pav] = 1; });
 var nPav = Object.keys(pavs).length;
 var vaoMin = R.ACS.vaoLivre(), esp = R.ACS.espacoMacaneta();
@@ -160737,7 +160824,7 @@ p("ACS_PORTA_ESPACO", "alto", "Porta " + v.id + ": falta espaço ao lado da maç
 });
 escopo.filter(function (a) { return a.tipo.id === "circulacao"; }).forEach(function (a) {
 var dm = AU.dimensoes(a), req = R.ACS.corredor(dm.comprimento, publico);
-if (dm.largura < req.valor - 0.005) p("ACS_CIRCULACAO_LARGURA", "critico", "\"" + a.nome + "\": largura " + f2(dm.largura) + " m (mínimo " + f2(req.valor) + " m para " + f2(dm.comprimento) + " m de extensão)", "Corredor de uso " + (publico ? "público: 1,50 m" : "comum: 0,90 m até 4 m, 1,20 m até 10 m, 1,50 m acima de 10 m") + "." + (dm.irregular ? " Forma irregular: largura pela caixa do lado mais longo — conferir." : "") + " Existente impraticável: bolsão de giro 180° a cada 15 m e largura ≥ 0,90 m (6.11.1.1).", req.fonte, [a.id], [nota("larg", "Alargue o corredor para " + f2(req.valor) + " m (mova a parede).")]);
+if (dm.largura < req.valor - 0.005) p("ACS_CIRCULACAO_LARGURA", "critico", "\"" + a.nome + "\": largura " + f2(dm.largura) + " m (mínimo " + f2(req.valor) + " m para " + f2(dm.comprimento) + " m de extensão)", "Corredor de uso " + (publico ? "público (aberto ao público em geral, 3.1.37): 1,50 m" : "comum: 0,90 m até 4 m, 1,20 m até 10 m, 1,50 m acima de 10 m") + "." + (dm.irregular ? " Forma irregular: largura pela caixa do lado mais longo — conferir." : "") + " Existente impraticável: bolsão de giro 180° a cada 15 m e largura ≥ 0,90 m (6.11.1.1).", req.fonte, [a.id], [nota("larg", "Alargue o corredor para " + f2(req.valor) + " m (mova a parede).")]);
 });
 var rampas = arr(est && est.caixas).filter(function (c) { return c && c.tipo === "rampa" && c.rampa; });
 var dLivre = R.ACS.desnivelLivre(), dCh = R.ACS.desnivelChanfro();
@@ -160799,6 +160886,42 @@ if (livre) achou = c;
 }
 return !!achou;
 }
+function opsBarras(a) {
+var jaTem = arr(est && est.familias).some(function (f) { return f && /barra/i.test(txt(f.famId)) && E.dentro([num(f.x, 0), num(f.z, 0)], a.pts); });
+if (jaTem) return [];
+var obst = obstDe(a), bacia = obst.filter(function (m) { return /bacia|vaso/i.test(txt(m.famId) + " " + txt(m.nome)); })[0];
+var alvo = bacia ? [num(bacia.x, 0), num(bacia.z, 0)] : [(bbox(a.pts)[0] + bbox(a.pts)[2]) / 2, (bbox(a.pts)[1] + bbox(a.pts)[3]) / 2];
+var usados = {}; arr(est && est.familias).forEach(function (f) { if (f) usados[String(f.id)] = 1; });
+function novoId() { var k = 1; while (usados["acs-barra-" + k]) k++; usados["acs-barra-" + k] = 1; return "acs-barra-" + k; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function livre(c, t, meio) {
+if (t - meio < c.tr.t0 + 0.05 || t + meio > c.tr.t1 - 0.05) return false;
+if (L.vaos.some(function (v) { return v.parede === c.w.id && Math.abs(t - v.t) < v.largura / 2 + meio + 0.05; })) return false;
+return [t - meio, t, t + meio].every(function (tt) { return !A.naVarredura(L, E.ptParede(c.w, tt, c.tr.lado * c.w.espessura / 2), a.pav); });
+}
+var cs = A.candidatos(L, est, aval, a.pav, function (b) { return b.id === a.id; }, 0.70, 0.85).filter(function (c) { return livre(c, c.t, 0.40); });
+cs.sort(function (x, y) { return dist(x.P, alvo) - dist(y.P, alvo); });
+var fundo = cs[0]; if (!fundo) return [];
+var lat = cs.filter(function (c) { return c.w.id !== fundo.w.id; })[0];
+var ops = [];
+function barra(c, t, tipo) {
+var P0 = E.ptParede(c.w, t, c.tr.lado * c.w.espessura / 2), pt = add(P0, c.dir, 0.005);
+ops.push({ op: "familia", id: novoId(), famId: "acs-barra", tipoId: tipo, x: r4(pt[0]), y: r4(num(a.base, 0)), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_eixo: 0.75 } });
+}
+barra(fundo, fundo.t, "reta-80");
+if (lat) barra(lat, lat.t, "reta-80");
+if (lat && bacia && arr(bacia.pts).length) {
+var frente = 0; bacia.pts.forEach(function (q) { frente = Math.max(frente, dot(sub(q, fundo.P), fundo.dir)); });
+var alvoD = frente + 0.30, melhor = null, bd = Infinity;
+for (var tv = lat.tr.t0 + 0.15; tv <= lat.tr.t1 - 0.15 + 1e-9; tv += 0.05) {
+if (!livre(lat, tv, 0.05)) continue;
+var dd = Math.abs(dot(sub(E.ptParede(lat.w, tv, lat.tr.lado * lat.w.espessura / 2), fundo.P), fundo.dir) - alvoD);
+if (dd < bd) { bd = dd; melhor = tv; }
+}
+if (melhor != null && bd <= 0.15) { barra(lat, melhor, "reta-70"); ops[ops.length - 1].inst.Altura_eixo = 0.85; }
+}
+return ops;
+}
 function opsMarcarAcessivel(lista) {
 var cs = lista.filter(function (a) { var ob2 = obstDe(a); return cabeGiro(a, ob2) && !ob2.some(function (m) { return /lavatorio-coluna|lavatorio_coluna/.test(txt(m.famId)); }); }).sort(function (a, b) { return b.area - a.area; });
 if (!cs.length) return null;
@@ -160807,13 +160930,14 @@ portas.forEach(function (v) {
 var tr = ladosDaPorta(v).filter(function (x) { return x.a.id === a.id; })[0]; if (!tr || v.correr) return;
 if ((v.abreFora ? 1 : -1) === tr.tr.lado) ops.push({ op: "instancia", id: v.id, inst: { Abre_para_fora: !v.abreFora } });
 });
-return { ambiente: a, ops: ops };
+var nBar = opsBarras(a); ops = ops.concat(nBar);
+return { ambiente: a, ops: ops, barras: nBar.length };
 }
 Object.keys(porPav).forEach(function (pv) {
 if (!porPav[pv].some(function (a) { return a.acessivel; })) {
 var mk = opsMarcarAcessivel(porPav[pv]);
 p("ACS_SANIT_QUANTIDADE", "critico", (L.pavs[pv] ? L.pavs[pv].nome : "Pavimento") + ": nenhum sanitário acessível", "Pelo menos um sanitário acessível (5 % de cada peça, mínimo 1; uso público novo: 1 por sexo por pavimento, com entrada independente). Nenhum dos " + porPav[pv].length + " banheiro(s) do pavimento está marcado como acessível (PNE/PcD no nome).", R.ACS.sanitarioQuantidade().fonte + "; Decreto 5.296/2004 art. 22; Lei 10.098 art. 11", porPav[pv].map(function (a) { return a.id; }),
-mk ? [{ id: "pne", texto: "Marcar \"" + mk.ambiente.nome + "\" como sanitário acessível (PNE)", muda: "O giro de Ø 1,50 m cabe; " + (mk.ops.length > 1 ? "a porta passa a abrir para fora." : "a porta já abre para fora."), ops: mk.ops }] : [nota("q", "Projete um sanitário acessível (giro Ø 1,50 m, transferência, barras, porta de 0,80 abrindo para fora) e nomeie-o \"Banheiro PNE\".")]);
+mk ? [{ id: "pne", texto: "Marcar \"" + mk.ambiente.nome + "\" como sanitário acessível (PNE)", muda: "O giro de Ø 1,50 m cabe; a porta " + (mk.ops.some(function (o) { return o.op === "instancia"; }) ? "passa a abrir para fora" : "já abre para fora") + "; " + (mk.barras ? mk.barras + " barra(s) de apoio entram no modelo e no orçamento (SINAPI 100868 e 100867). Conferir a posição e a transferência (aviso ACS_SANIT_PECAS)." : "nenhuma parede livre para as barras: especifique-as."), ops: mk.ops }] : [nota("q", "Projete um sanitário acessível (giro Ø 1,50 m, transferência, barras, porta de 0,80 abrindo para fora) e nomeie-o \"Banheiro PNE\".")]);
 }
 });
 if (!banhos.length && ob.obrigatoria === true) p("ACS_SANIT_QUANTIDADE", "alto", "Nenhum sanitário modelado", "A lei pede ao menos um banheiro acessível na edificação de uso coletivo.", "Lei 10.098/2000 art. 11, parágrafo único", [], [nota("q0", "Modele o sanitário acessível.")]);
@@ -160828,7 +160952,9 @@ if (abreLado === tr.tr.lado) p("ACS_SANIT_PORTA", "alto", "Porta " + v.id + " do
 var lav = obst.filter(function (m) { return /lavatorio-coluna|lavatorio_coluna/.test(txt(m.famId)); });
 if (lav.length) p("ACS_SANIT_LAVATORIO", "alto", "\"" + a.nome + "\": lavatório com coluna", "No sanitário acessível o lavatório é sem coluna (ou coluna suspensa, ou sobre tampo), superfície a 0,78–0,80 m e torneira de alavanca/sensor.", "NBR 9050:2020 7.5 d), e), 7.8", lav.map(function (m) { return m.id; }), [nota("lav", "Troque pelo lavatório suspenso (Hidráulica › Aparelho › Lavatório suspenso).")]);
 var barras = arr(est && est.familias).filter(function (f) { return f && /barra/i.test(txt(f.famId)) && E.dentro([num(f.x, 0), num(f.z, 0)], a.pts); });
-p("ACS_SANIT_PECAS", "pendente", "\"" + a.nome + "\": conferir bacia, barras e alarme", (barras.length ? barras.length + " barra(s) modelada(s); " : "Barras de apoio não modeladas; ") + "bacia a 0,43–0,45 m sem abertura frontal, barras lateral (≥ 0,80 m a 0,75 m) e vertical (≥ 0,70 m), barra do fundo (≥ 0,80 m), alarme a 0,40 m do piso — o modelo não traz essas cotas para o motor medir.", "NBR 9050:2020 7.7.1, 7.7.2.2, 5.6.4.1", [a.id], [nota("pec", "Especifique as barras (SINAPI 100868 reta inox 80 cm; 100867 reta 70 cm) e a bacia na altura da norma; confira o alarme.")]);
+var opsB = barras.length ? [] : opsBarras(a);
+p("ACS_SANIT_PECAS", "medio", "\"" + a.nome + "\": conferir bacia, barras, transferência e alarme", (barras.length ? barras.length + " barra(s) modelada(s); " : "Barras de apoio não modeladas; ") + "área de transferência 0,80 × 1,20 m ao lado da bacia e entrada independente (Decreto 5.296/2004 art. 22); bacia a 0,43–0,45 m sem abertura frontal, barras lateral (≥ 0,80 m a 0,75 m) e vertical (≥ 0,70 m), barra do fundo (≥ 0,80 m), alarme a 0,40 m do piso — o modelo não traz essas cotas para o motor medir: o aviso fica até o responsável técnico conferir. A barra vertical (base a 0,85 m, a 0,30 m da borda frontal da bacia, na parede lateral — 7.7.2.2.1, Figuras 106 e 107) só é lançada com a bacia modelada.", "NBR 9050:2020 7.7.1, 7.7.2.2, 5.6.4.1; Decreto 5.296/2004 art. 22", [a.id],
+(opsB.length ? [{ id: "barras", texto: "Lançar as barras de apoio (" + opsB.length + " peça(s), SINAPI 100868/100867)", muda: "Entram no modelo e no orçamento; posição indicativa — conferir.", ops: opsB }] : []).concat([nota("pec", "Especifique a bacia na altura da norma e o lavatório sem coluna; confira a transferência, a entrada independente e o alarme.")]));
 });
 var saidasT = arr(L.saidas[0]).filter(function (s) { return s.v; });
 var ini = {}; saidasT.forEach(function (s) { var vl = (s.v.correr ? s.v.largura : s.v.folha) - desconto; if (vl >= vaoMin.valor - 0.02 - 1e-6) ini[s.amb.id] = 1; });
@@ -160920,7 +161046,7 @@ function selo(n) { var k = String(n || "X").charAt(0), R = global.IncRegras; ret
 function legenda() {
 var R = global.IncRegras; if (!R) return "";
 return '<p style="margin:4px 0 6px;font-size:12px">' + ["A", "N", "C", "X"].map(function (k) { return selo(k) + " " + esc(R.NIVEIS[k]); }).join(" &nbsp; ") + "</p>" +
-'<p data-inc-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px">Em MG vale a <b>IT do CBMMG</b> (Decreto 47.998/2020): IT 01 v10.5, IT 08, IT 09, IT 13, IT 15, IT 16 — PDFs oficiais. A NBR 9077 da biblioteca (1993/2001) está cancelada e <b>não é usada</b>. NBR 10898: MG adota a 2013 (sem texto); os valores de lux e autonomia são da 2023 em cópia <b>não licenciada</b> e saem como "conferir".</p>';
+'<p data-inc-aviso-norma style="margin:0 0 8px;padding:6px 8px;border-radius:6px;background:rgba(30,90,122,.10);font-size:12px">Em MG vale a <b>IT do CBMMG</b> (Decreto 47.998/2020): IT 01 v10.5, IT 08, IT 09, IT 13, IT 15, IT 16 — PDFs oficiais. A NBR 9077 da biblioteca (1993/2001) está cancelada e <b>não é usada</b>. NBR 10898: a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir; os valores de lux e autonomia são da 2023 em cópia <b>não licenciada</b> e saem como "conferir".</p>';
 }
 function cabecalho(K) {
 if (!K) return "";
@@ -160934,10 +161060,12 @@ var st = estado(), IA = global.IncAuto; if (!st || !IA) { status("O editor 3D n�
 var res = IA.gerar({ estado: st, avaliarFam: avaliar(), dados: lerDados() });
 if (!res.ok) { janela("Extintores, placas e luminárias", "<p>" + esc(res.motivo) + "</p>"); status(res.motivo); return; }
 var aplicado = res.lote ? aplicar(res.lote, DISC_INC) : false, z = res.resumo;
+var pendAud = null;
+if (!res.lote && global.IncAuditor) { try { var ra = global.IncAuditor.auditar({ estado: st, avaliarFam: avaliar(), dados: lerDados() }); if (ra.resumo.erros + ra.resumo.avisos > 0) pendAud = ra.resumo; } catch (e) { pendAud = null; } }
 var ROT = { extintor: "Extintor", placa: "Placa", luminaria: "Luminária de emergência" };
 var linhas = res.itens.map(function (x) { return "<tr><td>" + esc(x.id) + "</td><td>" + esc(x.ambienteNome) + "</td><td>" + esc(ROT[x.tipo] || x.tipo) + " · " + esc(x.tipoId) + " · " + f2(x.altura) + " m</td><td style=\"font-size:12px\">" + arr(x.regras).map(esc).join("<br>") + "</td></tr>"; }).join("");
 var html = legenda() + cabecalho(res.classe) + "<p><b>" + z.extintores + "</b> extintor(es), <b>" + z.placas + "</b> placa(s) e <b>" + z.luminarias + "</b> luminária(s) de emergência" +
-(aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": nada a lançar (o que existe já atende).")) + "</p>" +
+(aplicado ? " — aplicado num lote (Ctrl+Z desfaz)." : (res.lote ? " — <b>não aplicado</b>." : ": " + (pendAud ? "nada a lançar automaticamente, mas o auditor ainda aponta <b>" + pendAud.erros + "</b> erro(s) e <b>" + pendAud.avisos + "</b> aviso(s) — rode <b>Auditar incêndio</b>." : "nada a lançar (o que existe já atende)."))) + "</p>" +
 (linhas ? '<table class="tbl" style="width:100%;border-collapse:collapse"><thead><tr><th>Peça</th><th>Ambiente</th><th>O quê</th><th>Regras aplicadas</th></tr></thead><tbody>' + linhas + "</tbody></table>" : "") +
 '<p style="font-size:12px;margin-top:8px">Orçamento: ' + selo("A") + " extintor de água/PQS BC/CO2 e luminária pela composição SINAPI 06/2026 do tipo; " + selo("C") + " extintor de pó ABC e placas pelo <b>maior preço público lido</b>, marcado PROVISÓRIO (cotar com o fornecedor) — a SINAPI não tem composição deles.</p>" +
 lista("Pendências", res.pendencias.map(function (p) { return p.texto; })) + lista("Avisos", res.avisos);
@@ -160987,13 +161115,14 @@ function dadosTela() {
 var R = global.IncRegras; if (!R) return;
 var d = lerDados(), divs = R.divisoes(), ats = d.divisao ? R.atividades(d.divisao) : [];
 function chk(k, rot) { return '<label style="display:block;margin:2px 0"><input type="checkbox" data-inc-d="' + k + '"' + (d[k] ? " checked" : "") + "> " + esc(rot) + "</label>"; }
+function chkU(k, rot, div) { var marcado = d[k] != null ? !!d[k] : !!(div && R.usoPublicoPadrao && R.usoPublicoPadrao(div)); return '<label style="display:block;margin:2px 0"><input type="checkbox" data-inc-d="' + k + '"' + (marcado ? " checked" : "") + "> " + esc(rot) + "</label>"; }
 function nm(k, rot, dica) { return '<label style="display:inline-block;margin:2px 12px 2px 0">' + esc(rot) + ' <input type="number" step="0.01" data-inc-d="' + k + '" value="' + (d[k] != null && d[k] !== "" ? esc(d[k]) : "") + '" placeholder="' + esc(dica) + '" style="width:90px"></label>'; }
 var html = legenda() +
 '<p><label>Divisão de ocupação (Decreto 47.998/2020, Anexo) <select data-inc-d="divisao"><option value="">— escolha —</option>' + divs.map(function (x) { return '<option value="' + esc(x.divisao) + '"' + (d.divisao === x.divisao ? " selected" : "") + ">" + esc(x.divisao + " — " + x.descricao) + "</option>"; }).join("") + "</select></label>" + (d.divisao === "A-1" ? '<br><span data-inc-a1 style="font-size:12px">Residência unifamiliar: <b>isenta</b> das medidas de segurança contra incêndio (CBMMG IT 01 A.4.1) — não depende de área nem de altura. Áreas comuns de condomínio (guarita, salão de festas) seguem a regra normal.</span>' : "") + "</p>" +
 '<p><label>Atividade (IT 09 Tabela A.1 → carga de incêndio) <select data-inc-d="atividade"><option value="">— a maior carga da divisão (lado seguro) —</option>' + ats.map(function (x) { return '<option value="' + x.i + '"' + (String(d.atividade) === String(x.i) ? " selected" : "") + ">" + esc(x.descricao + (x.qfi != null ? " — " + x.qfi + " MJ/m²" : " — método do Anexo B/C")) + "</option>"; }).join("") + "</select></label></p>" +
 "<p>" + nm("altura", "Altura (m)", "do modelo") + nm("area", "Área total (m²)", "do modelo") + nm("populacao", "População", "IT 08 T4") + nm("qfi", "Carga (MJ/m²)", "da atividade") + "</p>" +
 '<div style="display:flex;gap:24px;flex-wrap:wrap"><div>' + chk("trrf", "TRRF (estrutura com resistência ao fogo — IT 06)") + chk("compartimentacaoVertical", "Compartimentação vertical completa (IT 07)") + chk("chuveiros", "Chuveiros automáticos (IT 18)") + chk("deteccao", "Detecção de incêndio (IT 14)") + chk("hidraulico", "Há projeto de sistema hidráulico (hidrantes/chuveiros)") + "</div><div>" +
-chk("ate2005", "Construída até 01/07/2005 (IT 01 A.2)") + chk("subsoloComUso", "Subsolo com uso diferente de estacionamento") + chk("patrimonio", "Patrimônio histórico cultural") + chk("acessivel", "Projeto acessível (NBR 9050), mesmo se não obrigatório") + chk("usoPublico", "Uso PÚBLICO (administração pública: corredor 1,50 m)") + "</div></div>" +
+chk("ate2005", "Construída até 01/07/2005 (IT 01 A.2)") + chk("subsoloComUso", "Subsolo com uso diferente de estacionamento") + chk("patrimonio", "Patrimônio histórico cultural") + chk("acessivel", "Projeto acessível (NBR 9050), mesmo se não obrigatório") + chkU("usoPublico", "Uso PÚBLICO — aberto ao público em geral, propriedade pública ou privada (NBR 9050:2020 3.1.37): corredor 1,50 m. Padrão por critério RA (o Decreto 47.998 não define uso público): marque quando a sala atende o público", d.divisao) + "</div></div>" +
 '<p style="font-size:12px">Vazio = medido no modelo (altura pelos pavimentos, área pela soma dos ambientes, população pela IT 08 Tabela 4). Fica neste aparelho, por obra.</p>' +
 '<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-inc-salvar>Salvar</button><button type="button" class="btn ghost sm" data-inc-limpar>Limpar</button></div>';
 var ov = janela("Dados da edificação (incêndio e acessibilidade)", html); if (!ov) return;
@@ -161001,7 +161130,7 @@ function ler() {
 var o = {};
 arr(ov.querySelectorAll("[data-inc-d]")).forEach(function (i) {
 var k = i.getAttribute("data-inc-d");
-if (i.type === "checkbox") { if (i.checked) o[k] = true; return; }
+if (i.type === "checkbox") { if (i.checked) o[k] = true; else if (k === "usoPublico") o[k] = false; return; }
 var v = String(i.value || "").trim(); if (v === "") return;
 if (i.type === "number") { var n = parseFloat(v.replace(",", ".")); if (isFinite(n)) o[k] = n; } else o[k] = k === "atividade" ? Number(v) : v;
 });

@@ -67,7 +67,8 @@
     var ambPor = {}; L.ambientes.forEach(function (a) { ambPor[a.id] = a; });
     function noEscopo(a) { if (!a || FORA[a.tipo.id]) return false; if (!comum) return true; return !!COMUM[a.tipo.id] || /\b(comum|portaria|hall|salao|recepcao|lazer)\b/.test(a.norm); }
     var escopo = L.ambientes.filter(noEscopo);
-    var publico = !!dados.usoPublico;
+    /* uso público (NBR 9050:2020 3.1.37): vale o que o usuário marcou/desmarcou; sem escolha, o padrão da divisão (loja = público, 1,50 m) */
+    var publico = dados.usoPublico != null ? !!dados.usoPublico : R.usoPublicoPadrao(div);
     var pavs = {}; L.ambientes.forEach(function (a) { pavs[a.pav] = 1; });
     var nPav = Object.keys(pavs).length;
 
@@ -104,7 +105,7 @@
     /* ---------------- CIRCULAÇÃO: largura pelo comprimento (6.11.1) */
     escopo.filter(function (a) { return a.tipo.id === "circulacao"; }).forEach(function (a) {
       var dm = AU.dimensoes(a), req = R.ACS.corredor(dm.comprimento, publico);
-      if (dm.largura < req.valor - 0.005) p("ACS_CIRCULACAO_LARGURA", "critico", "\"" + a.nome + "\": largura " + f2(dm.largura) + " m (mínimo " + f2(req.valor) + " m para " + f2(dm.comprimento) + " m de extensão)", "Corredor de uso " + (publico ? "público: 1,50 m" : "comum: 0,90 m até 4 m, 1,20 m até 10 m, 1,50 m acima de 10 m") + "." + (dm.irregular ? " Forma irregular: largura pela caixa do lado mais longo — conferir." : "") + " Existente impraticável: bolsão de giro 180° a cada 15 m e largura ≥ 0,90 m (6.11.1.1).", req.fonte, [a.id], [nota("larg", "Alargue o corredor para " + f2(req.valor) + " m (mova a parede).")]);
+      if (dm.largura < req.valor - 0.005) p("ACS_CIRCULACAO_LARGURA", "critico", "\"" + a.nome + "\": largura " + f2(dm.largura) + " m (mínimo " + f2(req.valor) + " m para " + f2(dm.comprimento) + " m de extensão)", "Corredor de uso " + (publico ? "público (aberto ao público em geral, 3.1.37): 1,50 m" : "comum: 0,90 m até 4 m, 1,20 m até 10 m, 1,50 m acima de 10 m") + "." + (dm.irregular ? " Forma irregular: largura pela caixa do lado mais longo — conferir." : "") + " Existente impraticável: bolsão de giro 180° a cada 15 m e largura ≥ 0,90 m (6.11.1.1).", req.fonte, [a.id], [nota("larg", "Alargue o corredor para " + f2(req.valor) + " m (mova a parede).")]);
     });
 
     /* ---------------- DESNÍVEL entre ambientes ligados por porta (6.3.4) */
@@ -174,6 +175,50 @@
       }
       return !!achou;
     }
+    /* BARRAS DE APOIO do sanitário acessível (NBR 9050:2020 7.7.2.2): lança as peças da família "acs-barra" (SINAPI 100868 ×2 horizontais de 0,80 m, na
+       parede do fundo e na lateral da bacia; SINAPI 100867 ×1 vertical de 0,70 m) para entrarem no modelo e no orçamento. Revisão 27/10/2026: o Corrigir só
+       renomeava o banheiro. As posições são INDICATIVAS (parede livre mais próxima da bacia): a área de transferência, o lado da bacia e a cota da vertical
+       ficam no aviso ACS_SANIT_PECAS até serem conferidos. Sem parede livre para uma barra, ela não é lançada (e o aviso diz). Bacia na altura 0,43–0,45 m e
+       lavatório sem coluna: sem família que o motor troque com segurança — ficam no aviso. */
+    function opsBarras(a) {
+      var jaTem = arr(est && est.familias).some(function (f) { return f && /barra/i.test(txt(f.famId)) && E.dentro([num(f.x, 0), num(f.z, 0)], a.pts); });
+      if (jaTem) return [];
+      var obst = obstDe(a), bacia = obst.filter(function (m) { return /bacia|vaso/i.test(txt(m.famId) + " " + txt(m.nome)); })[0];
+      var alvo = bacia ? [num(bacia.x, 0), num(bacia.z, 0)] : [(bbox(a.pts)[0] + bbox(a.pts)[2]) / 2, (bbox(a.pts)[1] + bbox(a.pts)[3]) / 2];
+      var usados = {}; arr(est && est.familias).forEach(function (f) { if (f) usados[String(f.id)] = 1; });
+      function novoId() { var k = 1; while (usados["acs-barra-" + k]) k++; usados["acs-barra-" + k] = 1; return "acs-barra-" + k; }
+      function r4(v) { return Math.round(v * 10000) / 10000; }
+      function livre(c, t, meio) {   /* a faixa [t − meio, t + meio] da parede, dentro do trecho do ambiente, sem vão nem varredura de porta */
+        if (t - meio < c.tr.t0 + 0.05 || t + meio > c.tr.t1 - 0.05) return false;
+        if (L.vaos.some(function (v) { return v.parede === c.w.id && Math.abs(t - v.t) < v.largura / 2 + meio + 0.05; })) return false;
+        return [t - meio, t, t + meio].every(function (tt) { return !A.naVarredura(L, E.ptParede(c.w, tt, c.tr.lado * c.w.espessura / 2), a.pav); });
+      }
+      var cs = A.candidatos(L, est, aval, a.pav, function (b) { return b.id === a.id; }, 0.70, 0.85).filter(function (c) { return livre(c, c.t, 0.40); });
+      cs.sort(function (x, y) { return dist(x.P, alvo) - dist(y.P, alvo); });
+      var fundo = cs[0]; if (!fundo) return [];
+      var lat = cs.filter(function (c) { return c.w.id !== fundo.w.id; })[0];
+      var ops = [];
+      function barra(c, t, tipo) {
+        var P0 = E.ptParede(c.w, t, c.tr.lado * c.w.espessura / 2), pt = add(P0, c.dir, 0.005);
+        ops.push({ op: "familia", id: novoId(), famId: "acs-barra", tipoId: tipo, x: r4(pt[0]), y: r4(num(a.base, 0)), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_eixo: 0.75 } });
+      }
+      barra(fundo, fundo.t, "reta-80");
+      if (lat) barra(lat, lat.t, "reta-80");
+      /* BARRA VERTICAL (NBR 9050:2020 7.7.2.2.1, p.90, e Figuras 106 e 107, p.91-92): comprimento >= 0,70 m, BASE 0,10 m ACIMA da horizontal (horizontal a 0,75 m ->
+         vertical a partir de 0,85 m), a 0,30 m da borda frontal da bacia, na PAREDE LATERAL (Figura 106 c) — nao na do fundo. Sem a bacia modelada nao ha borda frontal
+         para medir: a vertical nao e lancada (o aviso ACS_SANIT_PECAS diz). A borda frontal = o ponto da bacia mais afastado da parede do fundo. */
+      if (lat && bacia && arr(bacia.pts).length) {
+        var frente = 0; bacia.pts.forEach(function (q) { frente = Math.max(frente, dot(sub(q, fundo.P), fundo.dir)); });
+        var alvoD = frente + 0.30, melhor = null, bd = Infinity;
+        for (var tv = lat.tr.t0 + 0.15; tv <= lat.tr.t1 - 0.15 + 1e-9; tv += 0.05) {
+          if (!livre(lat, tv, 0.05)) continue;
+          var dd = Math.abs(dot(sub(E.ptParede(lat.w, tv, lat.tr.lado * lat.w.espessura / 2), fundo.P), fundo.dir) - alvoD);
+          if (dd < bd) { bd = dd; melhor = tv; }
+        }
+        if (melhor != null && bd <= 0.15) { barra(lat, melhor, "reta-70"); ops[ops.length - 1].inst.Altura_eixo = 0.85; }
+      }
+      return ops;
+    }
     /* Corrigir de "nenhum sanitário acessível": marca como acessível (nome "… PNE") o banheiro do pavimento onde o giro JÁ cabe e que não tem
        lavatório de coluna, e vira para fora as portas dele que abrem para dentro — assim a marcação não faz nascer outro erro. Sem banheiro que
        sirva, fica a nota (aumentar o ambiente é decisão de projeto). */
@@ -185,13 +230,14 @@
         var tr = ladosDaPorta(v).filter(function (x) { return x.a.id === a.id; })[0]; if (!tr || v.correr) return;
         if ((v.abreFora ? 1 : -1) === tr.tr.lado) ops.push({ op: "instancia", id: v.id, inst: { Abre_para_fora: !v.abreFora } });
       });
-      return { ambiente: a, ops: ops };
+      var nBar = opsBarras(a); ops = ops.concat(nBar);
+      return { ambiente: a, ops: ops, barras: nBar.length };
     }
     Object.keys(porPav).forEach(function (pv) {
       if (!porPav[pv].some(function (a) { return a.acessivel; })) {
         var mk = opsMarcarAcessivel(porPav[pv]);
         p("ACS_SANIT_QUANTIDADE", "critico", (L.pavs[pv] ? L.pavs[pv].nome : "Pavimento") + ": nenhum sanitário acessível", "Pelo menos um sanitário acessível (5 % de cada peça, mínimo 1; uso público novo: 1 por sexo por pavimento, com entrada independente). Nenhum dos " + porPav[pv].length + " banheiro(s) do pavimento está marcado como acessível (PNE/PcD no nome).", R.ACS.sanitarioQuantidade().fonte + "; Decreto 5.296/2004 art. 22; Lei 10.098 art. 11", porPav[pv].map(function (a) { return a.id; }),
-          mk ? [{ id: "pne", texto: "Marcar \"" + mk.ambiente.nome + "\" como sanitário acessível (PNE)", muda: "O giro de Ø 1,50 m cabe; " + (mk.ops.length > 1 ? "a porta passa a abrir para fora." : "a porta já abre para fora."), ops: mk.ops }] : [nota("q", "Projete um sanitário acessível (giro Ø 1,50 m, transferência, barras, porta de 0,80 abrindo para fora) e nomeie-o \"Banheiro PNE\".")]);
+          mk ? [{ id: "pne", texto: "Marcar \"" + mk.ambiente.nome + "\" como sanitário acessível (PNE)", muda: "O giro de Ø 1,50 m cabe; a porta " + (mk.ops.some(function (o) { return o.op === "instancia"; }) ? "passa a abrir para fora" : "já abre para fora") + "; " + (mk.barras ? mk.barras + " barra(s) de apoio entram no modelo e no orçamento (SINAPI 100868 e 100867). Conferir a posição e a transferência (aviso ACS_SANIT_PECAS)." : "nenhuma parede livre para as barras: especifique-as."), ops: mk.ops }] : [nota("q", "Projete um sanitário acessível (giro Ø 1,50 m, transferência, barras, porta de 0,80 abrindo para fora) e nomeie-o \"Banheiro PNE\".")]);
       }
     });
     if (!banhos.length && ob.obrigatoria === true) p("ACS_SANIT_QUANTIDADE", "alto", "Nenhum sanitário modelado", "A lei pede ao menos um banheiro acessível na edificação de uso coletivo.", "Lei 10.098/2000 art. 11, parágrafo único", [], [nota("q0", "Modele o sanitário acessível.")]);
@@ -206,7 +252,10 @@
       var lav = obst.filter(function (m) { return /lavatorio-coluna|lavatorio_coluna/.test(txt(m.famId)); });
       if (lav.length) p("ACS_SANIT_LAVATORIO", "alto", "\"" + a.nome + "\": lavatório com coluna", "No sanitário acessível o lavatório é sem coluna (ou coluna suspensa, ou sobre tampo), superfície a 0,78–0,80 m e torneira de alavanca/sensor.", "NBR 9050:2020 7.5 d), e), 7.8", lav.map(function (m) { return m.id; }), [nota("lav", "Troque pelo lavatório suspenso (Hidráulica › Aparelho › Lavatório suspenso).")]);
       var barras = arr(est && est.familias).filter(function (f) { return f && /barra/i.test(txt(f.famId)) && E.dentro([num(f.x, 0), num(f.z, 0)], a.pts); });
-      p("ACS_SANIT_PECAS", "pendente", "\"" + a.nome + "\": conferir bacia, barras e alarme", (barras.length ? barras.length + " barra(s) modelada(s); " : "Barras de apoio não modeladas; ") + "bacia a 0,43–0,45 m sem abertura frontal, barras lateral (≥ 0,80 m a 0,75 m) e vertical (≥ 0,70 m), barra do fundo (≥ 0,80 m), alarme a 0,40 m do piso — o modelo não traz essas cotas para o motor medir.", "NBR 9050:2020 7.7.1, 7.7.2.2, 5.6.4.1", [a.id], [nota("pec", "Especifique as barras (SINAPI 100868 reta inox 80 cm; 100867 reta 70 cm) e a bacia na altura da norma; confira o alarme.")]);
+      /* AVISO contado (peso "medio"), não só informação, até o RT conferir: a área de transferência 0,80 × 1,20 m ao lado da bacia e a entrada independente (Decreto 5.296/2004 art. 22) o motor não mede (revisão 27/10/2026) */
+      var opsB = barras.length ? [] : opsBarras(a);
+      p("ACS_SANIT_PECAS", "medio", "\"" + a.nome + "\": conferir bacia, barras, transferência e alarme", (barras.length ? barras.length + " barra(s) modelada(s); " : "Barras de apoio não modeladas; ") + "área de transferência 0,80 × 1,20 m ao lado da bacia e entrada independente (Decreto 5.296/2004 art. 22); bacia a 0,43–0,45 m sem abertura frontal, barras lateral (≥ 0,80 m a 0,75 m) e vertical (≥ 0,70 m), barra do fundo (≥ 0,80 m), alarme a 0,40 m do piso — o modelo não traz essas cotas para o motor medir: o aviso fica até o responsável técnico conferir. A barra vertical (base a 0,85 m, a 0,30 m da borda frontal da bacia, na parede lateral — 7.7.2.2.1, Figuras 106 e 107) só é lançada com a bacia modelada.", "NBR 9050:2020 7.7.1, 7.7.2.2, 5.6.4.1; Decreto 5.296/2004 art. 22", [a.id],
+        (opsB.length ? [{ id: "barras", texto: "Lançar as barras de apoio (" + opsB.length + " peça(s), SINAPI 100868/100867)", muda: "Entram no modelo e no orçamento; posição indicativa — conferir.", ops: opsB }] : []).concat([nota("pec", "Especifique a bacia na altura da norma e o lavatório sem coluna; confira a transferência, a entrada independente e o alarme.")]));
     });
 
     /* ---------------- ROTA ACESSÍVEL: do acesso a todos os ambientes do escopo, por portas de vão ≥ 0,80 sem degrau */

@@ -6,11 +6,11 @@
  * e, quando a fonte só dá texto ("1 pessoa por 7,0 m2"), o número sai do TEXTO — mudou a pesquisa, muda a regra.
  *
  * Em MG vale a IT do CBMMG (Decreto 47.998/2020 art. 5 §1: na falta da IT, a NBR). A NBR 9077 da biblioteca (1993/2001) está CANCELADA e
- * NÃO é usada; a vigente (2025) não foi lida (pendência). A NBR 10898 adotada pela IT 13 (Portaria 71/2023) é a de 2013, sem texto: os
+ * NÃO é usada; a vigente (2025) não foi lida (pendência). A IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; a edição adotada em MG: conferir. Os
  * valores de lux/autonomia vêm da 2023 em CÓPIA NÃO LICENCIADA (só valor e item; exemplarLicenciado:false) e saem marcados "conferir".
  *
  * NÍVEIS: A = lido no texto oficial (IT do CBMMG, decreto, NBR da biblioteca) · N = NBR 10898:2023 em cópia não licenciada (só valor e
- *         item; MG adota a 2013 — conferir) · C = critério RA (editável) · X = sem fonte (pendência, nunca "ok").
+ *         item; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir) · C = critério RA (editável) · X = sem fonte (pendência, nunca "ok").
  *
  *   IncRegras.classificar(dados, modelo) → { divisao, grupo, altura, area, populacao, qfi, risco, nivel, pscip, isentaA1, exige{…}, pendencias[], premissas[] }
  *   IncRegras.populacao(divisao, ambiente) · capacidade(divisao) · larguraMinima(divisao) · portaVao(N) · distanciaMaxima(o) · saidas(divisao, H)
@@ -30,7 +30,7 @@
 
   var NIVEIS = {
     A: "lido no texto oficial (IT do CBMMG, decreto ou NBR da biblioteca)",
-    N: "NBR 10898:2023 em cópia NÃO licenciada à RA (só valor e item; MG adota a edição 2013 pela Portaria 71/2023 — conferir)",
+    N: "NBR 10898:2023 em cópia NÃO licenciada à RA (só valor e item; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)",
     C: "critério RA (editável)",
     X: "sem fonte — pendência (nunca vira \"atende\")"
   };
@@ -54,6 +54,14 @@
   }
   function divisaoValida(div) { return divisoes().some(function (d) { return d.divisao === div; }); }
   function grupoDe(div) { return txt(div).charAt(0).toUpperCase(); }
+  /* USO PÚBLICO (NBR 9050:2020 3.1.37, p.20): "disponível ao público em geral, propriedade pública OU privada" — não é só administração pública.
+     Revisão 27/10/2026: o rótulo antigo ("administração pública") deixava a loja (C) com corredor de 0,90 m em vez de 1,50 m (6.11.1 c, p.68).
+     O Decreto 47.998/2020 NÃO define "uso público": o padrão abaixo é CRITÉRIO RA (nível C), pela divisão: abertas ao público = B hospedagem, C comércio,
+     D serviços (exceto D-1), E educação, F reunião de público, G (exceto G-1), H saúde (exceto H-4 e H-5); uso COMUM por padrão em A residencial,
+     I industrial, J depósito, L, M, e em D-1 (escritórios: o próprio exemplo de uso comum da NBR 9050 3.1.36, p.20), G-1 (estacionamento sem acesso de
+     público, Decreto, p.19), H-4 e H-5. O usuário marca quando a sala atende o público (Dados da edificação). */
+  var USO_COMUM_PADRAO = { "D-1": 1, "G-1": 1, "H-4": 1, "H-5": 1 };
+  function usoPublicoPadrao(div) { var d = txt(div).toUpperCase(); return "BCDEFGH".indexOf(grupoDe(div)) >= 0 && grupoDe(div) !== "" && !USO_COMUM_PADRAO[d]; }
   /* expande "A-1, A-2" · "E-1 a E-4" · "-" (todo o grupo) · "D" · "C, D, E, F, G-3" em teste de pertinência */
   function casaDivisao(espec, div, grupo) {
     var s = txt(espec).trim(); if (!s || s === "-" || /^qualquer$/i.test(s)) return true;
@@ -244,9 +252,9 @@
     distancia: function () { return V("in.it13.iluminacao_emergencia", "distancia_maxima_pontos_aclaramento"); },
     tensao: function () { return V("in.it13.iluminacao_emergencia", "tensao_maxima_luminaria_baixa"); },
     alturaTensao: { valor: 2.5, fonte: "CBMMG IT 13 5.5 (luminária a menos de 2,5 m: até 30 V)", nivel: "A" },
-    /* NBR 10898:2023 — cópia NÃO licenciada à RA: só os valores, com o item. MG adota a edição de 2013 (IT 13, Portaria 71/2023): conferir. */
+    /* NBR 10898:2023 — cópia NÃO licenciada à RA: só os valores, com o item. a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir. */
     nbr10898: {
-      norma: "ABNT NBR 10898:2023", exemplarLicenciado: false, adotadaEmMG: "NBR 10898:2013 (Portaria 71/2023) — texto não disponível",
+      norma: "ABNT NBR 10898:2023", exemplarLicenciado: false, adotadaEmMG: "conferir — a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999",
       autonomiaMin_h: { valor: 2, item: "4.9", nivel: "N" },
       iluminanciaPlano_lx: { valor: 3, item: "5.1.2 (aclaramento)", nivel: "N" },
       iluminanciaEscadaDesnivel_lx: { valor: 5, item: "5.1.2.1 (escadas, mudança de nível, primeiros socorros, equipamentos de combate)", nivel: "N" },
@@ -397,7 +405,7 @@
 
   var IncRegras = {
     NIVEIS: NIVEIS, rotuloNivel: rotuloNivel, divisoes: divisoes, divisaoValida: divisaoValida, grupoDe: grupoDe, casaDivisao: casaDivisao,
-    atividades: atividades, risco: risco, extintor: extintor, capacidadeMinimaABC: capacidadeMinimaABC, nivelRisco: nivelRisco, pscip: pscip,
+    atividades: atividades, risco: risco, extintor: extintor, usoPublicoPadrao: usoPublicoPadrao, capacidadeMinimaABC: capacidadeMinimaABC, nivelRisco: nivelRisco, pscip: pscip,
     medida: medida, regraPopulacao: regraPopulacao, populacao: populacao, capacidade: capacidade, UP: UP, larguraMinima: larguraMinima,
     larguraRestrita: larguraRestrita, unidades: unidades, portaVao: portaVao, duasFolhasAcima: duasFolhasAcima, distanciaEntreSaidas: distanciaEntreSaidas,
     distanciaMaxima: distanciaMaxima, tipoEdificacao: tipoEdificacao, saidas: saidas, ILUM: ILUM, SIN: SIN, placaAreaMinima: placaAreaMinima,

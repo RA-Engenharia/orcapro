@@ -84,7 +84,7 @@
       P("Sistema", "texto", "bloco autonomo", "Elétrica", "bloco autônomo · centralizado"),
       P("Tensao_V", "numero", 30, "Elétrica", "Tensão nas lâmpadas (V). IT 13 5.5: ≤ 30 V abaixo de 2,5 m (ou DR 30 mA + 10 A). Bloco autônomo de LED: conferir na ficha"),
       P("Fluxo_lm", "numero", 0, "Fotometria", "Fluxo luminoso (lm). 0 = não declarado pela base de preço: conferir na ficha (NBR 10898:2023 6.1.2.4: ≥ 300 lm ou estudo luminotécnico — cópia não licenciada)"),
-      P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h). 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; MG adota a 2013)"),
+      P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h). 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)"),
       P("Largura", "comprimento", 0.30, "Dimensões", "Medida de desenho"), P("Altura", "comprimento", 0.07, "Dimensões", "Medida de desenho"), P("Profundidade", "comprimento", 0.05, "Dimensões", "Medida de desenho"),
       P("Altura_montagem", "comprimento", 2.30, "Restrições", "Do piso ao centro da luminária", "instancia")
     ].concat(PRECO),
@@ -123,6 +123,12 @@
     tipos: [
       ext("abc4", "Pó ABC 4 kg — 2-A:20-B:C", "Pó ABC", "4 kg", "2-A:20-B:C", "ABC", "", "", [352.90, "PROVISÓRIO: maior preço público lido em 21/10/2026 — varejo (Magazine Luiza, extintor pó ABC 4 kg Resil Gold 2A:20BC) R$ 352,90; IOPES-ES 05/2026 160607 (ABC 2A-20B:C 4 kg com suporte) R$ 185,71; SUDECAP-BH 04/2026 73.55.33 (ABC 4 kg 2-A:20-B:C) R$ 146,92", "INC-EXT-ABC4"]),
       ext("abc6-3a", "Pó ABC 6 kg — 3-A:20-B:C (risco médio/alto)", "Pó ABC", "6 kg", "3-A:20-B:C", "ABC", "", "", [352.90, "PROVISÓRIO: maior preço público lido para o ABC 6 kg: ORSE-SE 01511 R$ 226,94; GOINFRA 04/2026 085006 R$ 225,27 (lida em orcamentor.com, fonte secundária); SETOP-MG ED-50193 R$ 212,44; IOPES-ES 160605 R$ 198,82. Nenhum varejo de 6 kg foi lido, e o de 4 kg custa R$ 352,90 (Magazine Luiza, 21/10/2026): adotado esse piso, porque o 6 kg não custa menos que o 4 kg (incerto = preço mais alto); rótulo 3-A:20-B:C: ficha de fabricante (AECweb) — conferir no produto comprado e cotar", "INC-EXT-ABC6-3A"]),
+      /* GARAGEM em risco médio/alto (revisão 27/10/2026): IT 16 Tabela 5 (PDF p.7) pede classe B 40-B (médio, 15 m; alto, 40-B a 10 m ou 80-B a 15 m).
+         NENHUM produto com capacidade B declarada foi achado em fonte (SINAPI 06/2026 101908–101911 descreve só "PQS ... classe BC", sem 20-B/40-B; catálogo/INMETRO
+         não lidos): por isso o tipo leva a EXIGÊNCIA (40-B) como capacidade declarada e "especificar fabricante" — o auditor emite AVISO (INC_EXT_ESPECIFICAR) enquanto
+         o tipo não for trocado por um produto real. Preço = o maior preço público de extintor de pó do sistema (R$ 352,90, varejo, igual ao ABC 6 kg; o PQS 12 kg BC da
+         SINAPI MG 101911 custa R$ 276,55 — menor), PROVISÓRIO: cotar com fornecedor. */
+      ext("abc-40b", "Extintor classe B ≥ 40-B (especificar fabricante) — risco médio/alto em garagem", "Pó ABC", "a especificar", "3-A:40-B:C = exigência das Tabelas 4 e 5 da IT 16, não rótulo de produto — especificar fabricante", "ABC", "", "", [352.90, "PROVISÓRIO — cotar com fornecedor: maior preço público lido para extintor de pó (varejo Magazine Luiza, 21/10/2026, ABC 4 kg R$ 352,90; SINAPI MG 06/2026 101911 PQS 12 kg BC R$ 276,55 e 101910 8 kg R$ 241,93 são menores). 3-A:40-B:C = exigência das Tabelas 4 e 5 da IT 16 (Tabela 5: PDF p.7), não rótulo de produto: nenhum com 40-B declarado foi achado em fonte", "INC-EXT-ABC-40B"]),
       ext("pqs4bc", "Pó BC 4 kg (SINAPI 101908)", "Pó BC", "4 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101908", "SINAPI 06/2026 101908 — EXTINTOR PQS 4 KG CLASSE BC"),
       ext("pqs6bc", "Pó BC 6 kg (SINAPI 101909)", "Pó BC", "6 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101909", "SINAPI 06/2026 101909"),
       ext("pqs8bc", "Pó BC 8 kg (SINAPI 101910)", "Pó BC", "8 kg", "conferir no rótulo (mínimo 20-B:C)", "BC", "101910", "SINAPI 06/2026 101910"),
@@ -138,6 +144,28 @@
     ],
     quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Extintor de incêndio portátil" }
   }]);
-  global.FamiliasInc = { ids: ["inc-placa", "inc-luminaria", "inc-extintor"], DATA_PRECO: DATA };
+  /* ------------------------------------------------------------------ BARRA DE APOIO (sanitário acessível) */
+  /* Revisão 27/10/2026: o "Corrigir" de "nenhum sanitário acessível" só renomeava o banheiro; as barras (NBR 9050:2020 7.7.2.2) ficavam fora do modelo e do orçamento.
+     Orçamento pela composição SINAPI 06/2026 do tipo (preço da base vigente na hora da conta, js/orcmodelo.js): 100868 barra reta inox 80 cm; 100867 barra reta inox 70 cm.
+     Medida de desenho (seção 4 × 4 cm, afastada 4 cm da parede) — conferir no fabricante. */
+  FR.registrar([{
+    id: "acs-barra", nome: "Barra de apoio do sanitário acessível (NBR 9050)", categoria: "equipamento", hospedagem: "livre",
+    descricao: "Barra de apoio reta de aço inox fixada na parede (sanitário acessível). Origem na face da parede, no piso; o +Z local aponta para DENTRO do ambiente. Horizontal: eixo a Altura_eixo (0,75 m); vertical: base a Altura_eixo (0,85 m). Medida de desenho.",
+    parametros: [
+      P("Comprimento", "comprimento", 0.80, "Dimensões", "Comprimento da barra (NBR 9050:2020 7.7.2.2: horizontais ≥ 0,80 m; vertical ≥ 0,70 m)"),
+      P("Vertical", "inteiro", 0, "Dimensões", "1 = barra vertical; 0 = horizontal"),
+      P("Altura_eixo", "comprimento", 0.75, "Restrições", "Do piso ao eixo da barra horizontal (0,75 m) ou à BASE da vertical (0,85 m = 0,10 m acima da horizontal) — NBR 9050:2020 7.7.2.2.1, p.90, Figuras 106 e 107, p.91-92", "instancia")
+    ].concat(PRECO),
+    tipos: [
+      { id: "reta-80", nome: "Barra reta inox 80 cm (SINAPI 100868)", codigo: "100868", fonte: "SINAPI 06/2026 100868 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 80 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.80, Vertical: 0 } },
+      { id: "reta-70", nome: "Barra reta inox 70 cm, vertical (SINAPI 100867)", codigo: "100867", fonte: "SINAPI 06/2026 100867 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.70, Vertical: 1 } }
+    ],
+    solidos: [
+      { id: "barra-h", nome: "Barra horizontal", forma: "caixa", visivel: "Vertical = 0", x: "0", y: "Altura_eixo - 0.02", z: "0.06", dx: "Comprimento", dy: "0.04", dz: "0.04", material: "Inox" },
+      { id: "barra-v", nome: "Barra vertical", forma: "caixa", visivel: "Vertical = 1", x: "0", y: "Altura_eixo", z: "0.06", dx: "0.04", dy: "Comprimento", dz: "0.04", material: "Inox" }
+    ],
+    quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Barra de apoio reta em aço inox, fixada na parede" }
+  }]);
+  global.FamiliasInc = { ids: ["inc-placa", "inc-luminaria", "inc-extintor", "acs-barra"], DATA_PRECO: DATA };
   if (typeof module !== "undefined" && module.exports) module.exports = global.FamiliasInc;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

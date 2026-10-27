@@ -445,6 +445,7 @@
     var mat = P.materiais ? (P.materiais.indexOf(o.material) >= 0 ? o.material : P.material) : P.material;
     var dn = P.dns.indexOf(txt(o.dn)) >= 0 ? txt(o.dn) : P.dn;
     var k = { id: o.id, peca: o.peca, sistema: sis, material: mat, dn: dn, x: x, y: y, z: z, rotY: num(o.rotY, 0) };
+    if (o.peca === "extintor" && txt(o.capacidade)) k.capacidade = txt(o.capacidade).slice(0, 40);   /* capacidade extintora calculada pelo Hidro (ex.: "3-A:20-B:C"); o incendio a le */
     if (P.sistemas[0] === "eletrica") {
       k.alturaPiso = num(o.alturaPiso, null);
       /* LIGAÇÃO ELÉTRICA (21/10/2026, js/eletilum.js): o ponto de luz do ambiente com forro é a caixa octogonal SOBRE o forro */
@@ -1218,11 +1219,37 @@
      composição SINAPI que tem preço público levantado (o maior de 3 lojas) — sem o módulo carregado, nada muda (pendente) */
   function refMercado(it) {
     var PM = global.HidPrecoMercado || null;
+    if (it && it.mercadoDireto) return it.mercadoDireto;   /* extintor do Hidro: o preco da familia inc-extintor (extintorDoHidro) */
     if (!PM || !it) return null;
     if (it.mercadoSoma) return PM.soma(it.mercadoSoma, it.mercadoRotulo);
     return it.mercado && PM.ref ? PM.ref(it.mercado) : null;
   }
-  function itemPeca(k) {
+  /* EXTINTOR DO HIDRO no orcamento (27/10/2026, regra RA: 100 % orcado): a peca "extintor" nao tem composicao SINAPI (semSinapi), mas o extintor lancado
+     pelo Hidro e po ABC com a capacidade gravada na peca (js/hidinc.js, opPeca). Orca com o MESMO preco da familia inc-extintor do tipo correspondente
+     (abc4 = 2-A:20-B:C; abc6-3a = 3-A; abc-40b = classe B >= 40-B); projeto antigo, sem capacidade, e o abc4 (2-A:20-B:C, IT 16 Tabela 1).
+     Uma linha por extintor; o que tem familia inc-extintor no mesmo ponto conta so uma vez (extintorDuplicado). */
+  function tipoExtintorDe(cap) {
+    var mA = /(\d+)\s*-\s*A/i.exec(txt(cap)), mB = /(\d+)\s*-\s*B/i.exec(txt(cap)), a = mA ? Number(mA[1]) : 2, b = mB ? Number(mB[1]) : 20;
+    return b >= 40 ? "abc-40b" : (a >= 3 ? "abc6-3a" : "abc4");
+  }
+  function extintorDoHidro(k, avaliarFam, it) {
+    var tipo = tipoExtintorDe(k.capacidade), av = null;
+    try { av = typeof avaliarFam === "function" ? avaliarFam("inc-extintor", tipo, {}) : null; } catch (e) { av = null; }
+    var v = av && av.valores ? av.valores : null, pu = v ? num(v.Preco_unitario, 0) : 0;
+    if (!v || !(pu > 0)) return;                       /* sem a familia carregada: continua pendente (nunca inventa preco) */
+    it.nome = "Extintor portátil de pó ABC (Hidro) — " + tipo + " " + (txt(v.Capacidade_extintora) || "");
+    it.chaveExtra = tipo;
+    var fonte = txt(v.Fonte_preco) + (txt(v.Data_preco) ? " (" + txt(v.Data_preco) + ")" : "");
+    it.mercadoDireto = { id: txt(v.Peca_catalogo) || ("INC-EXT-" + tipo), valor: pu, unidade: "un", texto: fonte, data: txt(v.Data_preco), url: "", provisorio: v.Preco_provisorio === true,
+      motivo: txt(v.Motivo_preco), criterio: "mesmo preço da família inc-extintor (" + tipo + "): maior preço público lido, fornecimento sem montagem" + (k.capacidade ? "" : "; peça sem capacidade gravada (projeto antigo): 2-A:20-B:C") };
+  }
+  /* a peca do Hidro e a familia inc-extintor no mesmo ponto (<= 0,5 m na planta, mesmo piso) sao UM extintor: orca-se so a familia */
+  function extintorDuplicado(k, estado) {
+    return arr(estado && estado.familias).some(function (f) {
+      return f && /inc-extintor/.test(txt(f.famId)) && Math.abs(num(f.x, 0) - k.x) <= 0.5 && Math.abs(num(f.z, 0) - k.z) <= 0.5 && Math.abs(num(f.y, 0) - k.y) <= 2.5;
+    });
+  }
+  function itemPeca(k, avaliarFam) {
     var it = { peca: k.peca, sistema: k.sistema, material: k.material, aplicacao: k.aplicacao, dn: k.dn };
     /* PENDÊNCIAS FINAIS: a caixa de inspeção pela profundidade (a composição real, mais a tampa) ou o dispositivo de PVC
        (sem SINAPI: a soma das referências de mercado) — js/hidcigeo.js (só no grupo "hidro"); sem ele, pendente */
@@ -1236,6 +1263,7 @@
       return it;
     }
     if ((PECAS[k.peca] || {}).semSinapi) it.semTabela = "a SINAPI 06/2026 não tem composição mapeada para " + PECAS[k.peca].nome.toLowerCase() + " — pendente (nunca a parecida)";   /* F3 incêndio */
+    if (k.peca === "extintor") extintorDoHidro(k, avaliarFam, it);
     return it;
   }
 
@@ -1267,7 +1295,8 @@
       g.n++; g.ids.push(c.id); sis(c.sistema).conexoes++;
     });
     R.pecas.forEach(function (p) {
-      var itp = itemPeca(p), k = [p.peca, p.sistema, p.material, p.dn, p.aplicacao, itp.chaveExtra || ""].join("|");
+      if (p.peca === "extintor" && extintorDuplicado(p, estado)) return;   /* a familia inc-extintor no mesmo ponto ja conta */
+      var itp = itemPeca(p, avaliarFam), k = [p.peca, p.sistema, p.material, p.dn, p.aplicacao, itp.chaveExtra || ""].join("|");
       var g = pcs[k];
       if (!g) {
         g = pcs[k] = { peca: p.peca, nome: itp.nome || PECAS[p.peca].nome, sistema: p.sistema, material: p.material, dn: p.dn, aplicacao: p.aplicacao, n: 0, ids: [], sinapi: itp.composicoes ? itp.composicoes[0] : sinapiDe(itp) };
@@ -1374,7 +1403,8 @@
       linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
     });
     R.pecas.forEach(function (p) {
-      var it = itemPeca(p);
+      if (p.peca === "extintor" && extintorDuplicado(p, estado)) return;   /* a familia inc-extintor no mesmo ponto ja conta */
+      var it = itemPeca(p, avaliarFam);
       /* a peça com MAIS de uma composição (a caixa de inspeção: a caixa + a tampa de ferro, ou o poço + a tampa) */
       if (it.composicoes) { it.composicoes.forEach(function (cp) { linha(p.id, it, cp.qtd != null ? cp.qtd : 1, cp.unidadeQto || "un", cp); }); return; }   /* o PV: acréscimo e chaminé em metro */
       linha(p.id, it, 1, "un", sinapiDe(it));

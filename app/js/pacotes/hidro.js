@@ -11175,7 +11175,9 @@ aviso("erro", nome + ": nenhum " + rotulo + " a até " + f2(raio) + " m de um ac
 }
 function opPeca(id, peca, p, pv, yRel) {
 var y = num(pv.cota, 0) + (yRel == null ? 0 : yRel);
-return { op: "peca", id: id, peca: peca, sistema: SIS, x: Math.round(p.x * L_POR_M3) / L_POR_M3, y: Math.round(y * L_POR_M3) / L_POR_M3, z: Math.round(p.z * L_POR_M3) / L_POR_M3 };
+var oP = { op: "peca", id: id, peca: peca, sistema: SIS, x: Math.round(p.x * L_POR_M3) / L_POR_M3, y: Math.round(y * L_POR_M3) / L_POR_M3, z: Math.round(p.z * L_POR_M3) / L_POR_M3 };
+if (peca === "extintor" && EX && EX.tipoSugerido && EX.tipoSugerido.capacidadeExigida) oP.capacidade = String(EX.tipoSugerido.capacidadeExigida);
+return oP;
 }
 function redeHidrantes() {
 var rd = ent.rede;

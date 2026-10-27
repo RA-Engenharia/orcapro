@@ -80,7 +80,10 @@
     arr(estado && estado.instalacoes && estado.instalacoes.pecas).forEach(function (k) {
       if (!k || !ehExtintor("", k.peca)) return;
       var p = [num(k.x, 0), num(k.z, 0)], pav = pavDe(num(k.y, 0)), amb = ambDe(p, pav);
-      L.extintores.push({ id: String(k.id), famId: "peca:extintor", p: p, y: num(k.y, 0), pav: pav, rotY: num(k.rotY, 0), dir: [Math.sin(num(k.rotY, 0)), Math.cos(num(k.rotY, 0))], va: {}, amb: amb ? amb.id : null, alca: null, baseExt: num(k.alturaPiso, null), cap: "", agente: "", classe: "", peca: true });
+      L.extintores.push({ id: String(k.id), famId: "peca:extintor", p: p, y: num(k.y, 0), pav: pav, rotY: num(k.rotY, 0), dir: [Math.sin(num(k.rotY, 0)), Math.cos(num(k.rotY, 0))], va: {}, amb: amb ? amb.id : null, alca: null, baseExt: num(k.alturaPiso, null),
+        /* extintor lancado pelo Hidro: po ABC com a capacidade que o Hidro calculou e gravou na peca. Projeto ANTIGO (sem o campo): conta pela distancia como po ABC
+           da menor capacidade da IT 16 Tabela 1 e o auditor avisa com Corrigir "trocar pela familia inc-extintor" (revisao 27/10/2026) */
+        cap: txt(k.capacidade) || R.capacidadeMinimaABC(), agente: "Pó ABC", classe: "ABC", peca: true, legado: !txt(k.capacidade) });
     });
     /* SAÍDAS de cada pavimento: no mais baixo, as portas em parede EXTERNA (saída para o exterior); nos de cima, a escada */
     L.saidas = {}; L.redes = {};
@@ -243,6 +246,10 @@
     var pavsAlvo = o.pav != null ? [Number(o.pav)] : med.pavimentos;
     var rk = K.risco.risco, extA = R.extintor(rk, "A"), extB = R.extintor(rk === "alto" ? "alto" : rk, "B");
     var tipoExt = rk === "baixo" ? "abc4" : "abc6-3a";
+    /* capacidade do rótulo: A ("2-A", "3-A") e B ("40-B"). CO2/pó BC não têm A (0); sem rótulo = desconhecida (null) — nenhum dos dois cobre a classe A (IT 16 Tabela 4; revisão 27/10/2026) */
+    function capAx(e) { var m = /(\d+)\s*-\s*A/i.exec(txt(e.cap)); return m ? Number(m[1]) : null; }
+    function capBx(e) { var m = /(\d+)\s*-\s*B/i.exec(txt(e.cap)); return m ? Number(m[1]) : null; }
+    var capBmin = Number((/(\d+)/.exec(extB.capacidade) || [0, 0])[1]);
     var entradaMax = R.EXT.entrada().valor, alca = CRIT.alcaExtintor.valor;
     /* a faixa da parede que o extintor ocupa: do pé do cilindro (alça − 0,55 m, altura de desenho da família) ao topo da placa E5 (1,80 + 0,20) */
     var faixaExt = [alca - 0.55, R.SIN.equipamento().valor + 0.20];
@@ -265,7 +272,8 @@
 
       /* ---------- EXTINTORES */
       if (quer("extintor") && K.exige.extintores.exige) {
-        var ex = L.extintores.filter(function (e) { return e.pav === ip; }).map(function (e) { return add(e.p, e.dir, 0.15); });
+        var exTodos = L.extintores.filter(function (e) { return e.pav === ip; });
+        var ex = exTodos.map(function (e) { return add(e.p, e.dir, 0.15); });
         var naoEscada = function (a) { return a.tipo.id !== "escada" && a.tipo.id !== "banheiro" && a.tipo.id !== "lavabo" && !a.especial; };
         var cands = candidatos(L, est, aval, ip, naoEscada, faixaExt[0], faixaExt[1]);
         var pesoCirc = function (c) { return c.amb.tipo.id === "circulacao" ? 1.25 : 1; };
@@ -281,15 +289,18 @@
           if (best) novos.push(best); else avisos.push("Sem parede livre a ≤ " + entradaMax + " m da entrada " + s.id + " para o extintor (" + nomePav + ").");
         });
         /* 2) cobertura: todo ponto a ≤ distância máxima (classe A pelo risco; B em garagem) */
-        var temGaragem = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; }), raio = temGaragem ? Math.min(extA.distancia, extB.distancia) : extA.distancia;
-        var cob = cobrir(Rd, celAmb, ex.concat(novos.map(function (c) { return c.dentro; })), cands, raio, { peso: pesoCirc });
+        var temGaragem = celAmb.some(function (c) { return ambPor[Rd.amb[c]].tipo.id === "garagem"; }), exigeB = temGaragem && rk !== "baixo", raio = temGaragem ? Math.min(extA.distancia, extB.distancia) : extA.distancia;
+        /* a cobertura de classe A só conta extintor com "n-A" no rótulo (CO2/BC e sem rótulo não contam) e, com garagem em risco médio/alto, com classe B ≥ a da Tabela 5 */
+        var exCob = exTodos.filter(function (e) { var ca = capAx(e); return ca != null && ca > 0 && (!exigeB || (capBx(e) || 0) >= capBmin); }).map(function (e) { return add(e.p, e.dir, 0.15); });
+        var cob = cobrir(Rd, celAmb, exCob.concat(novos.map(function (c) { return c.dentro; })), cands, raio, { peso: pesoCirc });
         novos = novos.concat(cob.escolhidos);
         if (!ex.length && !novos.length && cands.length) novos.push(cands[0]);   /* 6.2.1: ≥ 1 por pavimento */
         if (cob.descobertas.length) avisos.push(nomePav + ": " + cob.descobertas.length + " célula(s) sem extintor a ≤ " + raio + " m de percurso mesmo depois do lançamento (sem parede livre perto) — confira no auditor.");
         novos.forEach(function (c) {
           var id = novoId("inc-ext"), pt = add(c.P, c.dir, 0.005);
-          ops.push({ op: "familia", id: id, famId: "inc-extintor", tipoId: tipoExt, x: r4(pt[0]), y: r4(c.amb.base), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_alca: alca } });
-          itens.push({ id: id, tipo: "extintor", tipoId: tipoExt, ambiente: c.amb.id, ambienteNome: c.amb.nome, altura: alca, regras: ["IT 16 Tabela " + (temGaragem ? "4/5" : "4") + ": risco " + K.risco.rotulo.toLowerCase() + " → " + (tipoExt === "abc4" ? "2-A" : "3-A") + ", ≤ " + raio + " m de percurso", "IT 16 6.2.1: pó ABC por pavimento", "alça " + f2(alca) + " m (≤ 1,60, IT 16 5.2.2.2; critério RA)"] });
+          var tipoN = exigeB ? "abc-40b" : tipoExt;   /* garagem em risco médio/alto: classe B ≥ 40-B (IT 16 Tabela 5, PDF p.7) — o tipo leva a exigência, fabricante a especificar */
+          ops.push({ op: "familia", id: id, famId: "inc-extintor", tipoId: tipoN, x: r4(pt[0]), y: r4(c.amb.base), z: r4(pt[1]), rotY: c.rotY, inst: { Altura_alca: alca } });
+          itens.push({ id: id, tipo: "extintor", tipoId: tipoN, ambiente: c.amb.id, ambienteNome: c.amb.nome, altura: alca, regras: ["IT 16 Tabela " + (temGaragem ? "4/5" : "4") + ": risco " + K.risco.rotulo.toLowerCase() + " → " + (tipoExt === "abc4" ? "2-A" : "3-A") + (exigeB ? " e classe B ≥ " + extB.capacidade + " (garagem; especificar o fabricante)" : "") + ", ≤ " + raio + " m de percurso", "IT 16 6.2.1: pó ABC por pavimento", "alça " + f2(alca) + " m (≤ 1,60, IT 16 5.2.2.2; critério RA)"] });
           if (K.exige.sinalizacao.exige) opPlaca(c, "extintor-20x20", R.SIN.equipamento().valor, 4, {}, "IT 15 6.1.4: placa E5 com a base a 1,80 m acima do extintor");
           if (c.amb.tipo.id === "garagem") {
             var idp = novoId("inc-pl"), pp = add(c.P, c.dir, 0.02);
@@ -368,7 +379,7 @@
         if (cobL.descobertas.length) avisos.push(nomePav + ": " + cobL.descobertas.length + " célula(s) sem luminária a ≤ " + f2(CRIT.raioLuminaria.valor) + " m — confira no auditor.");
         if (novasL.length || lumEx.length) {
           var N10 = R.ILUM.nbr10898;
-          pend.push({ codigo: "INC_ILUM_NBR10898", texto: "Iluminância (3 lx plano / 5 lx escada e desnível), autonomia (≥ " + N10.autonomiaMin_h.valor + " h), fluxo do bloco (≥ " + N10.fluxoBlocoMin_lm.valor + " lm) e comutação: NBR 10898 — MG adota a 2013 (sem texto); os números são da 2023 em cópia não licenciada: conferir no exemplar antes de afirmar \"atende\".", fonte: "CBMMG IT 13 (Portaria 71/2023); " + N10.norma + " " + N10.autonomiaMin_h.item + ", " + N10.iluminanciaPlano_lx.item + ", " + N10.fluxoBlocoMin_lm.item });
+          pend.push({ codigo: "INC_ILUM_NBR10898", texto: "Iluminância (3 lx plano / 5 lx escada e desnível), autonomia (≥ " + N10.autonomiaMin_h.valor + " h), fluxo do bloco (≥ " + N10.fluxoBlocoMin_lm.valor + " lm) e comutação: NBR 10898 — a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir; os números são da 2023 em cópia não licenciada: conferir no exemplar antes de afirmar \"atende\".", fonte: "CBMMG IT 13 (1ª ed., Portaria 5/2005); " + N10.norma + " " + N10.autonomiaMin_h.item + ", " + N10.iluminanciaPlano_lx.item + ", " + N10.fluxoBlocoMin_lm.item });
         }
       }
     });
