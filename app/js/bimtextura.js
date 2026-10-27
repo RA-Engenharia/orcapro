@@ -269,6 +269,8 @@
     { re: /nogueira|walnut/, slug: "madeira_nogueira" },
     { re: /\bmdf\b.{0,12}(carvalho|oak)|(carvalho|oak).{0,12}(folhead|veneer)|folhead.{0,12}(carvalho|oak)/, slug: "madeira_carvalho" },
     { re: /imbuia|mogno|\bipe\b|cumaru|jatoba|tabaco|nogueira|walnut|mahogany|dark wood|madeira escura|wenge|cerejeira|cherry/, slug: "madeira_escura_imbuia" },
+    /* ANDAIME (27/10/2026): "madeira pinus" é o pranchão laranja-mel das fotos de produto, com veio — não o pinus claro e liso do freijo (a regra de baixo casava `pinus`) */
+    { re: /madeira pinus|pranchao|madeira eucalipto|calco de madeira/, slug: "madeira_angelim_pedra" },
     { re: /freijo|carvalho|\boak\b|marfim|madeira clara|light wood|\bmdf\b|compensado|plywood|\bosb\b|birch|maple|betula|pinus|\bpine\b/, slug: "madeira_clara_freijo" },
     { re: /madeira|angelim|eucalipto|\bwood|timber/, slug: "madeira_angelim_pedra" },
     { re: /bloco.{0,15}concreto|concrete block|\bcmu\b|cinder ?block|bloco estrutural|blocket/, slug: "bloco_concreto" },

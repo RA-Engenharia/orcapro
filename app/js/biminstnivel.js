@@ -122,7 +122,8 @@
   }
   /* a família do catálogo que o nível alcança (categoria do js/familia.js) → classe; null = não é instalação */
   var CAT_CLASSE = { loucas: "aparelho", equipamento: "equipamento", acessorio_tubo: "acessorio", conexao_tubo: "conexao", conexao_duto: "conexao",
-                     conexao_eletroduto: "conexao", dispositivo_eletrico: "equipamento", luminaria: "equipamento", equipamento_eletrico: "equipamento" };
+                     conexao_eletroduto: "conexao", dispositivo_eletrico: "equipamento", luminaria: "equipamento", equipamento_eletrico: "equipamento",
+                     andaime: "andaime" };   /* E7: as peças do andaime (js/familiasandaime.js) seguem o nível da vista: o Baixo (eixo e ponto no nó) vem da própria família; o contorno de caixa não vale para elas */
   function classeDaCategoria(cat) { return CAT_CLASSE[cat] || null; }
 
   function estiloSistema(sis) {

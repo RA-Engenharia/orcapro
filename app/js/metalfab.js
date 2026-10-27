@@ -115,6 +115,12 @@
     var pecas = [], parafusos = [], avisos = [];
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c) return;
+      /* ⚠ ANDAIME (js/andaime.js, 26/10/2026): o tubo de locação NÃO é aço fabricado — não se numera, não se corta, não vai para a folha
+         de fabricação nem para o orçamento por kg. Roteiro do defeito que isto impede: sem o pulo, cada tubo do andaime entrava aqui como
+         "perfil HSS48.3X3.0" e o andaime aparecia no orçamento do aço como COMPRA de estrutura por kg (dinheiro errado). A marca é
+         `caixa.andaime`, posta pelo gerador do tipo. O orçamento (metalorc), as folhas (metalfabdes) e o plano de corte (metalcorte) leem
+         daqui — este é o ponto único; os três ainda conferem a marca por conta própria. */
+      if (c.andaime) return;
       var n0 = pecas.length;
       pecaFab1(c, pecas, parafusos, avisos);
       /* ACABAMENTO POR PEÇA (js/metalacab.js): a peça leva o dela (cor e tipo); sem acab próprio, nada muda */

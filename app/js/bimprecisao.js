@@ -1087,6 +1087,16 @@
   function aplicarT(ctx, ids, T, copia, novos) {
     var feitos = 0, dentro = {};
     ids.forEach(function (id) { dentro[id] = 1; });
+    /* PEÇA PRONTA COPIADA = COMPONENTE NOVO (andaime E5.1): a cópia que leva a CABEÇA do componente (a peça com prontaInfo) ganha um grupo
+       `pronta` novo — determinístico (grupo~id novo da cabeça), senão o original e a cópia viram um grupo só e "editar" refaz os dois. Cópia
+       parcial (sem a cabeça) continua no grupo de antes. */
+    var gidNovo = null;
+    if (copia && novos) ids.forEach(function (src) { var h = ctx.caixas[src]; if (h && h.pronta && h.prontaInfo && novos[src] != null) { gidNovo = gidNovo || {}; gidNovo[String(h.pronta)] = String(h.pronta) + "~" + String(novos[src]); } });
+    function novoGrupo(k, el) {
+      if (!gidNovo) return;
+      if (k === "caixa" && el.pronta != null && gidNovo[String(el.pronta)]) { var g = gidNovo[String(el.pronta)]; el.pronta = g; if (el.prontaInfo) { el.prontaInfo = JSON.parse(JSON.stringify(el.prontaInfo)); el.prontaInfo.id = g; } }
+      else if (k === "familia" && el.inst && el.inst.pronta != null && gidNovo[String(el.inst.pronta)]) { el.inst = JSON.parse(JSON.stringify(el.inst)); el.inst.pronta = gidNovo[String(el.inst.pronta)]; }
+    }
     /* duas passadas: primeiro o que não é hospedado (as paredes nascem), depois portas e janelas */
     [false, true].forEach(function (hosp) {
       ids.forEach(function (src) {
@@ -1099,7 +1109,7 @@
           var t2 = transformarEl(a.k, a.el, T);
           /* P4: a cópia não leva a união com as peças de fora da cópia (nem o canto alternado) */
           if (copia) { delete t2.fixo; delete t2.geoUnioes; delete t2.unioes; }
-          if (copia) { if (novos && novos[src] != null && !achar(ctx, novos[src])) { inserir(ctx, a.k, novos[src], t2); feitos++; } }
+          if (copia) { if (novos && novos[src] != null && !achar(ctx, novos[src])) { novoGrupo(a.k, t2); inserir(ctx, a.k, novos[src], t2); feitos++; } }
           else { t2.id = src; ({ caixa: ctx.caixas, cobertura: ctx.cobs, familia: ctx.fams, cota: cotasCtx(ctx), anotacao: ctx.anot })[a.k][src] = t2; feitos++; }
           return;
         }

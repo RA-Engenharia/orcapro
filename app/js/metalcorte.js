@@ -234,7 +234,8 @@
   function planoBarras(n, cfg0) {
     var cfg = cfgBarras(cfg0), grupos = {}, ordem = [];
     arr(n && n.grupos).forEach(function (g) {
-      var p = g.rep; if (!p || p.kind !== "perfil") return;
+      /* ⚠ ANDAIME: tubo de locação não se corta (vem em barra comercial) — fora do plano de corte; o pulo principal é BimMetalFab.pecasFab */
+      var p = g.rep; if (!p || p.kind !== "perfil" || p.andaime) return;
       var k = p.nomePerfil + "|" + p.aco;
       if (!grupos[k]) { grupos[k] = { perfil: p.nomePerfil, aco: p.aco, kgm: num(p.kgm, 0), itens: [] }; ordem.push(k); }
       grupos[k].itens.push({ marca: g.marca, L: comprimentoCorte(p), Leixo: r1(num(p.L, 0)), qtd: g.ids.length, acab: acabamento(p) });

@@ -159,6 +159,7 @@
     c("ctx-inspetor", "Inspetor de\nsistema", "buscar", "Confere o sistema da seleção: inclinação mínima, desconexões, diâmetros e o que falta (o mesmo de Instalações › Verificar sistemas).", { grande: true, alias: "verificar-sistemas" }),
     c("ctx-cotar-tubo", "Cotar\ntubo", "regua", "Cota o tubo selecionado (diâmetro, inclinação e comprimento) — o mesmo de Instalações › Rede.", { grande: true, alias: "cota" }),
     c("ctx-sel-tipo", "Selecionar\ndo tipo", "lista", "Seleciona no projeto todos os elementos do mesmo tipo do selecionado.", { grande: true }),
+    c("ctx-andaime-pranchas", "Pranchas\nexecutivas", "grade", "Gera o jogo completo de pranchas (AND-01..05, A1) do andaime selecionado: PDF para imprimir e DXF com o carimbo RA. Só vale para uma peça de andaime.", { grande: true }),
     c("ctx-sel-cat", "Selecionar\na categoria", "categorias", "Seleciona no projeto todos os elementos da mesma categoria do selecionado.", { grande: true })
   ];
 
@@ -279,6 +280,7 @@
     { nome: "Peças prontas", ids: ["met-pronta-trelica", "met-pronta-escada", "met-pronta-mezanino", "met-pronta-rolamento", "met-pronta-rack", "met-pronta-skid", "met-pronta-editar"] },
     { nome: "Acessos", ids: ["met-ac-escolher", "met-ac-galeria", "met-ac-escada", "met-ac-escada-linha", "met-ac-marinheiro", "met-ac-helicoidal", "met-ac-rampa",
       "met-ac-plataforma", "met-ac-anelar", "met-ac-passarela", "met-ac-guarda", "met-ac-corrimao", "met-ac-piso", "met-ac-verificar"] },
+    { nome: "Andaime", ids: ["met-andaime", "met-andaime-contorno", "met-andaime-pranchas", "met-andaime-ifc"] },
     { nome: "Tanques", ids: ["met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular"] },
     { nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-cype", "met-calc-normas"] },
     { nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-ifc", "met-pacote", "met-fontes"] },

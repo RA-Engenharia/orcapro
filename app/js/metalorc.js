@@ -605,6 +605,8 @@
     var st = estado || (global.BimMetalUI && BimMetalUI.estado ? BimMetalUI.estado() : null), o = {};
     arr(st && st.caixas).forEach(function (c) {
       if (!c) return;
+      /* ⚠ ANDAIME: tubo de locação não é aço fabricado — o agente da EAP não pode medi-lo por kg (ver js/metalfab.js pecasFab) */
+      if (c.andaime) return;
       var aco = (c.tipo === "metal" && c.metal) || ((c.tipo === "viga" || c.tipo === "pilar") && c.perfil && (c.material === "aco" || /^(I|U|L|tubo-ret|tubo-circ)$/.test(c.perfil.forma)));
       if (aco) o["edit:" + c.id] = 1;
     });

@@ -91,7 +91,9 @@
     escada: [{ k: "y", campo: "desnivel", rotulo: "Desnível (altura)", min: 0.5, max: 8 }],
     rampa: [{ k: "y", campo: "desnivel", rotulo: "Desnível (altura)", min: 0.1, max: 6 }],
     marinheiro: [{ k: "y", campo: "altura", rotulo: "Altura", min: 1, max: 30 }],
-    helicoidal: [{ k: "y", campo: "altura", rotulo: "Altura", min: 1, max: 30 }]
+    helicoidal: [{ k: "y", campo: "altura", rotulo: "Altura", min: 1, max: 30 }],
+    /* ANDAIME (js/andaime.js): a altura do piso de trabalho; o comprimento só quando o andaime é um trecho reto (com caminho ou contorno o traçado manda) */
+    andaime: [{ k: "y", campo: "altura", rotulo: "Altura do piso", min: 0.5, max: 60 }, { k: "u", campo: "comprimento", rotulo: "Comprimento", min: 1, max: 200 }]
   };
   /* caixa = { mn: [x,y,z], mx: [x,y,z] } das peças do componente no mundo (a tela mede; o teste também) */
   function alcas(tipo, par, caixa) {
@@ -109,6 +111,10 @@
           else { var qm = cm[0]; a.p = H.add(F.O, [qm[0], p.alturaGuarda, qm[1]]); a.dir = [0, 1, 0]; }
         } else if (d.k === "u") { a.p = F.W([p.comprimento + (num(p.retornoFim, 0) > 0.05 ? 0 : 0), 0, 0]); a.dir = F.D([1, 0, 0]); }
         else { a.p = F.W([p.comprimento / 2, p.alturaGuarda, 0]); a.dir = [0, 1, 0]; }
+      } else if (tipo === "andaime") {
+        if (d.k === "u" && (String(p.caminho || "").trim() || String(p.contorno || "").trim())) return;   /* com caminho/contorno a alça de comprimento não existe */
+        if (d.k === "u") { a.p = F.W([p.comprimento, p.altura, 0]); a.dir = F.D([1, 0, 0]); }
+        else { a.p = top != null && cx ? [cx[0], top, cx[1]] : F.W([0, a.valor, 0]); a.dir = [0, 1, 0]; }
       } else if (tipo === "passarela") { a.p = F.W([p.comprimento, p.altura, p.largura / 2]); a.dir = F.D([1, 0, 0]); }
       else if (tipo === "corrimaoparede") { a.p = F.W([p.comprimento, p.alturaSup, 0]); a.dir = F.D([1, 0, 0]); }
       else if (tipo === "plataforma" || tipo === "piso") {

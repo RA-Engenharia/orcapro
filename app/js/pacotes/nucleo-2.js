@@ -12700,6 +12700,9 @@ _pesoResumo: function () {
 if (!window.BimPeso || !window.BIM) return null;
 var els = [], mods = "";
 try { els = BIM.elementos || []; } catch (e) { els = []; }
+try {
+if (BIM.familiaCategoria) els = els.filter(function (e) { return !(e && e.familia && e.familia.famId && BIM.familiaCategoria(e.familia.famId) === "andaime"); });
+} catch (e3) {}
 try { mods = (BIM.modelos || []).map(function (m) { return m.mid + "/" + m.n; }).join(","); } catch (e2) {}
 var ass = els.length + "|" + mods + "|" + this._pesoEst().ver;
 if (this._pesoMemo && this._pesoMemo.ass === ass) return this._pesoMemo;
@@ -70430,5 +70433,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=778441dade"},{"src":"js/bim-pacote.js?v=0bb554c4e7","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=1457bed756"},{"src":"js/bim-pacote.js?v=8323ded92c","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

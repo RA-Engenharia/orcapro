@@ -540,6 +540,8 @@
       var p = []; for (i = 0; i <= 14; i++) { var t = Math.PI * 2 * i / 14; p.push([tr.x + Math.cos(t) * tr.r, tr.z + Math.sin(t) * tr.r]); }
       poli(p); seg(tr.x - tr.r * 1.7, tr.z, tr.x + tr.r * 1.7, tr.z); seg(tr.x, tr.z - tr.r * 1.7, tr.x, tr.z + tr.r * 1.7);
     });
+    /* SEGMENTOS PRONTOS (js/familiasandaime.js): a peça que já desenha o próprio símbolo (círculo do tubo, hachura da madeira) entrega `linhas` = [x1, z1, x2, z2, …] locais */
+    if (sim && sim.linhas) for (j = 0; j + 3 < sim.linhas.length; j += 4) seg(sim.linhas[j], sim.linhas[j + 1], sim.linhas[j + 2], sim.linhas[j + 3]);
     var f = sim && sim.faixa;
     if (f) {
       var a2 = f.larg / 2, b2 = f.prof / 2, x0 = f.x - a2, x1 = f.x + a2, z0 = f.z - b2, z1 = f.z + b2;

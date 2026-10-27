@@ -321,6 +321,9 @@
     var naFab = {}; todos.forEach(function (u) { naFab[u] = 1; });
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || c.tipo !== "metal" || naFab["edit:" + c.id]) return;
+      /* ⚠ ANDAIME (js/andaime.js): tubo de locação não é peça de estrutura e não se iça como tal — nem na lista de "fora da numeração".
+         O peso do modelo continua contando (a massa é real); só o plano de içamento/montagem o deixa de fora. */
+      if (c.andaime) return;
       var fech = /telha|rufo|cumeeira|calha|fechamento|tapamento|cobertura de/.test(semAcento(papel(c.id))) && !/viga|terca|travessa|pilar/.test(semAcento(papel(c.id)));
       us.push({ id: String(c.id), uids: ["edit:" + c.id], nome: nome(c.id), papel: papel(c.id), kg: kg(c.id),
         foraMotivo: fech ? "fechamento (telha, rufo, cumeeira): não é peça da estrutura — sobe com a montagem do fechamento, à parte" : "a fabricação não reconhece esta peça (fora da numeração e do orçamento por peso) — confira o perfil" });

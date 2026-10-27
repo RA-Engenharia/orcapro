@@ -420,6 +420,15 @@
   <!-- METÁLICA › ACESSOS (14/10/2026, js/acoacessos.js + js/metalacessos.js): regras de norma (NR-12 Anexo III, NBR 9050, NPT/IT, NBR 14718, NBR 6120), verificador, dimensionamento e memorial; marinheiro, plataforma, anelar, passarela, guarda-corpo e piso — motores puros -->
   <script src="js/acoacessos.js"></script>
   <script src="js/metalacessos.js"></script>
+  <!-- ANDAIME (26/10/2026, js/andaime.js): andaime tubo-roll paramétrico — motor puro + o tipo "andaime" das Peças prontas + o botão da fita; as peças levam caixa.andaime e ficam FORA do orçamento e das folhas do aço -->
+  <script src="js/andaime.js"></script>
+  <!-- ANDAIME › E3 (27/10/2026, js/andaimedocs.js): lista de locação (+ .xlsx), plano de montagem, checklist, aprovação/liberação (prontaInfo.aprovacao), cartão A5 e esqueleto do memorial — motor puro -->
+  <script src="js/andaimedocs.js"></script>
+  <!-- ANDAIME › E4 (27/10/2026, js/andaimecalc.js): cálculo de segurança (montante NBR 8800, travessa, transversal, pranchão, guarda-corpo NR-18, abraçadeira, base, apoio, ancoragem NBR 6123, estabilidade) e simulação por peça — motor puro; reaproveita acodim8800/acovento/acoisopletas -->
+  <script src="js/andaimecalc.js"></script>
+  <!-- ANDAIME › E5 (27/10/2026, js/andaimetela.js + js/andaimeui.js): a TELA — modo de traçado com prévia subindo até a altura, Montar inteligente, painel com abas (resumo, cálculo, simulação pintada, locação, montagem, checklist, aprovação, documentos); lógica pura em andaimetela.js -->
+  <script src="js/andaimetela.js"></script>
+  <script src="js/andaimeui.js"></script>
   <!-- METÁLICA › S6 (14/10/2026, js/metalescadalinha.js): escada puxada por linha com a altura a vencer, abertura no piso de chegada e fixação dimensionada nas pontas — motor puro -->
   <script src="js/metalescadalinha.js"></script>
   <!-- METÁLICA › M5 (14/10/2026): MODELOS PARAMÉTRICOS de guarda-corpo (preenchimento: barras, tela, chapa perfurada, vidro; cancela; corrimão duplo) e de escada (js/metalguardas.js), a GALERIA (js/metalmodelos.js) e o COMPONENTE único — seleção, Tab, alças, fixação por montante (js/metalcomponente.js) — motores puros -->
@@ -490,6 +499,13 @@
   <script src="js/mobgeo.js"></script>
   <script src="js/familiasmob.js"></script>
   <script src="js/familiasmobcoz.js"></script>
+  <!-- ANDAIME (E7, 27/10/2026): as 15 famílias ra-andaime-* (cotas geradas de docs/andaime/familias-cotas.json; tools/gerar-familiasandaime-dados.js) e o InstancedMesh por tipo de peça no 3D -->
+  <script src="js/familiasandaimedados.js"></script>
+  <script src="js/familiasandaime.js"></script>
+  <script src="js/andaime3d.js"></script>
+  <!-- ANDAIME › E8 (27/10/2026, js/andaimepranchas.js + js/andaimememorial.js): template de prancha (A3 única ou 4 A1: planta, elevações, isométrico com linhas ocultas removidas, detalhes, relação de materiais, memorial resumido) e memorial completo — motores puros; usam AcoPranchas/Prancha (carimbo RA) e PranchasDxf -->
+  <script src="js/andaimepranchas.js"></script>
+  <script src="js/andaimememorial.js"></script>
   <script src="js/marmorariadados.js"></script>   <!-- MARMORARIA: catálogo de cubas, torneiras, pedras e chapas (GERADO por tools/gerar-marmoraria-dados.js) -->
   <script src="js/marmoraria.js"></script>   <!-- MARMORARIA: bancada de pedra + cuba + torneira (família geometria "marmoraria") -->
   <script src="js/marmprecos.js"></script>   <!-- MARMORARIA: tabela de preços do marmorista e o orçamento dele -->

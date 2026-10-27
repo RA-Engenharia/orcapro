@@ -408,6 +408,9 @@
     var so = op.marcas ? op.marcas : null, defs = [];
     n.grupos.forEach(function (g) {
       if (so && so.indexOf(g.marca) < 0) return;
+      /* ⚠ ANDAIME: tubo de locação não tem folha de fabricação. O pulo de verdade está em BimMetalFab.pecasFab (a numeração já vem sem ele);
+         esta conferência cobre a numeração que alguém monte de outro jeito. */
+      if (g.rep && g.rep.andaime) return;
       var p = g.rep, alvo = p.soldadaEm && n.marcaDe[p.soldadaEm] ? n.marcaDe[p.soldadaEm] : "", o = { marca: g.marca, soldadaEm: alvo, avisos: avisos };
       defs.push({ id: "marca-" + g.marca, marca: g.marca, titulo: "FABRICAÇÃO - MARCA " + g.marca + " (" + (p.kind === "perfil" ? perfilTxt(p.nomePerfil) : (p.kind === "chapa" ? (p.dobras ? "CHAPA DOBRADA" : "CHAPA") : txt(p.papel).toUpperCase())) + ")",
         desenhar: function (D, geo) {

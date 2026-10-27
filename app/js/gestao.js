@@ -18392,6 +18392,12 @@
       if (!window.BimPeso || !window.BIM) return null;
       var els = [], mods = "";
       try { els = BIM.elementos || []; } catch (e) { els = []; }
+      /* o andaime NAO entra no cartao de icamento: as pecas dele (familia de categoria "andaime") sao
+         provisorias, nao sao carga da construcao a icar; somadas inflariam o peso e escolheriam
+         guindaste errado. Filtra antes do BimPeso.resumo. */
+      try {
+        if (BIM.familiaCategoria) els = els.filter(function (e) { return !(e && e.familia && e.familia.famId && BIM.familiaCategoria(e.familia.famId) === "andaime"); });
+      } catch (e3) {}
       try { mods = (BIM.modelos || []).map(function (m) { return m.mid + "/" + m.n; }).join(","); } catch (e2) {}
       var ass = els.length + "|" + mods + "|" + this._pesoEst().ver;
       if (this._pesoMemo && this._pesoMemo.ass === ass) return this._pesoMemo;

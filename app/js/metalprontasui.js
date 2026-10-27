@@ -180,7 +180,7 @@
     caixas: function () { var st = this.estado(); return (st && st.caixas) || []; },
     selecao: function () { var U = global.BimMetalUI; return U && U.selecao ? U.selecao() : []; },
     selCaixas: function () { var ids = this.selecao().map(String), por = {}; this.caixas().forEach(function (c) { por[String(c.id)] = c; }); return ids.map(function (id) { return por[id]; }).filter(Boolean); },
-    prontas: function () { return MP() ? MP().prontas(this.caixas()) : []; },
+    prontas: function () { var st = this.estado(); return MP() ? MP().prontas(this.caixas(), (st && st.familias) || []) : []; },   /* ANDAIME (DUVIDAS H15): com as famílias, o refazer apaga também braçadeiras/bases/escadas — sem elas ficavam órfãs */
     pronta: function (id) { return this.prontas().filter(function (p) { return p.id === String(id); })[0] || null; },
     /* a peça pronta da seleção (a 1ª peça selecionada que tem a marca) */
     prontaSelecionada: function () { var c = this.selCaixas().filter(function (x) { return x.pronta; })[0]; return c ? this.pronta(c.pronta) : null; },
@@ -224,6 +224,8 @@
       var M = MP(); if (!M || !global.UI) return false;
       css();
       o = o || {};
+      /* ANDAIME (js/andaimeui.js, E5): o duplo clique / Editar de um andaime abre o PAINEL com abas; o diálogo antigo (todos os parâmetros) fica em «Parâmetros avançados» (o.direto) */
+      if (tipo === "andaime" && o.alvo && !o.direto) { try { var AUI = global.AndaimeUI; if (AUI && AUI.abrirPainel && AUI.abrirPainel(o.alvo.id)) return true; } catch (eA) {} }
       var self = this, alvo = o.alvo || null, T = M.TIPOS[tipo];
       var par = alvo ? M.parParaRefazer(alvo) : (o.par ? (function () { var b = M.padrao(tipo); Object.keys(o.par).forEach(function (k) { b[k] = clone(o.par[k]); }); return b; })() : (this._ultimoPar && this._ultimoPar[tipo] ? clone(this._ultimoPar[tipo]) : M.padrao(tipo)));
       if (!alvo && tipo !== "rolamento") { var y = this.cota(); par.y0 = y; }
@@ -400,6 +402,8 @@
       if (s.pts.length < nMin) { status(MP().TIPOS[s.tipo].rotulo + ": clique pelo menos " + nMin + " pontos antes do Enter."); return false; }
       var a = s.pts[0]; s.par.x0 = Math.round(a[0] * 1e4) / 1e4; s.par.y0 = Math.round(a[1] * 1e4) / 1e4; s.par.z0 = Math.round(a[2] * 1e4) / 1e4; s.par.giro = 0;
       if (mdF === "contorno") s.par.contorno = this.caminhoDe(s.pts); else s.par.caminho = this.caminhoDe(s.pts);
+      /* DUVIDAS 21 (andaime): "caminho" e "contorno" ao mesmo tempo — vale o contorno; o campo NÃO usado vai vazio, senão o antigo "volta" */
+      if (s.tipo === "andaime") { if (mdF === "contorno") { s.par.caminho = ""; s.par.fechado = true; } else { s.par.contorno = ""; s.par.fechado = false; } }
       this._pos = null;
       var b = B(); try { if (b && b.editarArmar) b.editarArmar(null); } catch (e) {}
       return this.colocar(s.tipo, s.par, s.ctx, null);
@@ -487,6 +491,7 @@
       this.ultimo = { tipo: tipo, resumo: r.resumo, prontaId: gid, atualizou: !!alvo, n: Object.keys(r.finais).length, avisos: r.avisos.concat(r.avisosLigacoes || []) };
       var t = (alvo ? "Atualizada no lugar — " : "") + r.resumo + " Ctrl+Z desfaz" + (alvo ? " (volta a anterior)." : ".");
       status(t); toast(t, "ok", 9000);
+      if (tipo === "andaime") { try { if (global.AndaimeUI && AndaimeUI.atualizar) AndaimeUI.atualizar(); } catch (eP) {} }
       if (!(op && op.semEnquadrar)) this.enquadrar(r);   /* M5: esticar pela alça não mexe na câmera */
       return r;
     },
@@ -601,6 +606,7 @@
         hint: function (t) { api.hint(t); },
         estado: function () { return { ativo: ativo(), tipo: self._pos ? self._pos.tipo : null, modo: self._pos ? modoPos(self._pos) : null, pts: self._pos ? self._pos.pts.length : 0, previa: grp.children.length, cur: st.cur, resumo: st.resumo || null, giro: self._pos ? self._pos.par.giro : null }; },
         telaDe: function (x, y, z) { return api.telaDe ? api.telaDe(x, y, z) : null; },
+        cena: function () { return { THREE: THREE, scene: api.scene }; },   /* ANDAIME (E5): o overlay da simulação pintada e do «Mostrar no 3D» */
         _resolver: function (cx, cy) { var r = resolver({ clientX: cx, clientY: cy }); return r ? { p: r.p, tipo: r.sn ? r.sn.tipo : null } : null; }
       };
       this._3d = api3;

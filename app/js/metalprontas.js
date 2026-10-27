@@ -983,7 +983,7 @@
     if (!K.pecas.length) return { ok: false, motivo: "Nenhuma peça foi criada." + (K.avisos.length ? " " + K.avisos.join("; ") : "") };
     if (tipo === "rolamento") { p.pilares = r.medidas.pilares.slice(); p.lado = r.medidas.lado; }
     var avL = []; K.ligs.forEach(function (l) { l.avisos.forEach(function (a) { if (avL.indexOf(a) < 0) avL.push(a); }); });
-    var massa = 0; K.ops.forEach(function (o) { if (o.op === "criar" && o.caixa) massa += num(o.caixa.massa, 0); });
+    var massa = 0; K.ops.forEach(function (o) { if (o.op === "criar" && o.caixa) massa += num(o.caixa.massa, 0); else if (o.op === "familia" && o.inst) massa += num(o.inst.Massa_kg, 0); });   /* E7: instância de família (andaime) leva a massa do catálogo em inst.Massa_kg */
     /* as caixas finais (depois dos ajustes das ligações) */
     var finais = {}; K.ops.forEach(function (o) { if (o.op === "criar" && o.caixa) finais[o.id] = o.caixa; });
     return { ok: true, tipo: tipo, op: { op: "lote", id: String(novoId()), origem: "metal-pronta", pedido: TIPOS[tipo].rotulo, ops: K.ops }, pecas: K.pecas, finais: finais, contagem: K.cont, ligacoes: K.ligs,
@@ -1001,9 +1001,22 @@
     (function marcar(ops) { arr(ops).forEach(function (o) {
       if (!o) return;
       if (o.op === "criar" && o.caixa) { o.caixa.pronta = gid; if (primeiraId == null && o.caixa.metal && o.caixa.metal.kind !== "parafuso") primeiraId = o.id; }
+      if (o.op === "familia" && o.inst) o.inst.pronta = gid;   /* E7: a instância de família do conjunto leva a mesma marca (refazer no lugar apaga junto — prontas(caixas, familias)) */
       if (o.op === "lote") marcar(o.ops);
     }); })(r.op.ops);
     var pr = r.finais && r.finais[primeiraId], inf = clone(info || {}); inf.id = gid;
+    /* ⚠ ANDAIME (27/10/2026): a aprovação/liberação mora em prontaInfo.aprovacao e SOBREVIVE ao refazer — mas o andaime refeito
+       com parâmetro diferente perde a liberação (em_revisao + cartão vermelho + o campo mudado no histórico). Sem isto a edição
+       apagava a aprovação (perde-se o histórico) ou, pior, a mantinha verde num andaime que não é mais o que foi inspecionado
+       (NR-18 18.12.4). Sem o motor (js/andaimedocs.js) a aprovação antiga vai para revisão do mesmo jeito, por precaução. */
+    var antiga = alvo && alvo.info && alvo.info.aprovacao;
+    if (antiga) {
+      var AD = dep("AndaimeDocs", "./andaimedocs.js");
+      if (AD && AD.Aprovacao) inf.aprovacao = AD.Aprovacao.aoAlterar(clone(antiga), inf.par);
+      else { inf.aprovacao = clone(antiga); if (inf.aprovacao.estado === "aprovado" || inf.aprovacao.estado === "liberado") { inf.aprovacao.estado = "em_revisao"; inf.aprovacao.cartao = "vermelho"; inf.aprovacao.motivo = "andaime refeito sem o módulo de aprovação: reinspecionar"; inf.aprovacao.parHash = null; if (Array.isArray(inf.aprovacao.historico)) inf.aprovacao.historico.push({ quando: new Date().toISOString(), quem: "sistema (alteração no editor)", acao: "alteracao_cancela_liberacao", de: antiga.estado, para: "em_revisao", obs: "liberação cancelada: andaime refeito" }); } }
+    }
+    /* ANDAIME (E5): o cabeçalho dos documentos e a lista de mudanças do Montar inteligente também sobrevivem ao refazer (qualquer caminho: painel ou diálogo) */
+    if (alvo && alvo.info && alvo.info.andaimeTela && !inf.andaimeTela) inf.andaimeTela = clone(alvo.info.andaimeTela);
     if (pr) inf.ref = { id: primeiraId, cx: pr.cx, cy: pr.cy, cz: pr.cz };
     (function info2(ops) { arr(ops).forEach(function (o) { if (o && o.op === "criar" && o.id === primeiraId) o.caixa.prontaInfo = clone(inf); if (o && o.op === "lote") info2(o.ops); }); })(r.op.ops);
     if (alvo && arr(alvo.pecas).length) {
@@ -1014,12 +1027,17 @@
     return r;
   }
   /* as peças prontas do modelo, agrupadas pela marca */
-  function prontas(caixas) {
+  function prontas(caixas, familias) {
     var por = {}, ordem = [];
     arr(caixas).forEach(function (c) {
       if (!c || !c.pronta) return; var g = String(c.pronta);
       if (!por[g]) { por[g] = { id: g, pecas: [], info: null }; ordem.push(g); }
       por[g].pecas.push(String(c.id)); if (c.prontaInfo) { por[g].info = c.prontaInfo; por[g].refAgora = { cx: c.cx, cy: c.cy, cz: c.cz }; }
+    });
+    /* E7: as instâncias de família do conjunto (braçadeiras, bases, escadas do andaime) entram na lista de peças do conjunto — o "apagar" do replay vale para elas */
+    arr(familias).forEach(function (fi) {
+      if (!fi || !fi.inst || !fi.inst.pronta) return; var g = String(fi.inst.pronta);
+      if (por[g]) por[g].pecas.push(String(fi.id));
     });
     return ordem.map(function (g) { var o = por[g]; o.n = o.pecas.length; o.tipo = o.info ? o.info.tipo : null; return o; });
   }

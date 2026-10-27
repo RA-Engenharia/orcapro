@@ -1120,6 +1120,7 @@
 
   /* ============================================================ API */
   var MetalCalcLivreUI = {
+    localObra: localObra,   /* ANDAIME (E5.1): o local da obra (cadastro ou assistente do galpão) para o V0 do painel de traçado */
     /* #57 (2): o fck da fundação informado na tela (Bases dos pilares) — para a ligação analisada sem o resultado do cálculo */
     fckFundacao: function () { var e = estado(); return e && e.apoios ? e.apoios.fckFundacao : null; },
     abrir: function (passo) { estado(); garantir(); if (U.jd) { U.jd.focar(); } U.modo = "passos"; if (passo) U.passo = Math.max(1, Math.min(3, +passo)); lerModelo(); render(); return true; },

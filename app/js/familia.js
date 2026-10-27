@@ -669,6 +669,11 @@
       var FMb = global.FamiliasMob || (typeof require === "function" ? (function () { try { return require("./familiasmob.js"); } catch (eR) { return null; } })() : null);
       if (FMb) FMb.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador de mobiliário (js/familiasmob.js) não carregou"); }
     }
+    /* ANDAIME (js/familiasandaime.js, E7): as 15 peças do andaime tubo-roll, com a malha nos 3 níveis de detalhe e a massa do catálogo */
+    if (fam.geometria === "andaime") {
+      var FAn = global.FamiliasAndaime || (typeof require === "function" ? (function () { try { return require("./familiasandaime.js"); } catch (eR) { return null; } })() : null);
+      if (FAn) FAn.completar(fam, tipo, inst, saida); else { saida.ok = false; saida.erros.push("o gerador do andaime (js/familiasandaime.js) não carregou"); }
+    }
     /* MARMORARIA (js/marmoraria.js): bancada de pedra com a cuba e a torneira — a pedra recortada, os pontos do hidro e o quantitativo */
     if (fam.geometria === "marmoraria") {
       var MM = global.Marmoraria || (typeof require === "function" ? (function () { try { return require("./marmoraria.js"); } catch (eR) { return null; } })() : null);

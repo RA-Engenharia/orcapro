@@ -18,7 +18,8 @@
     "AGUA-COR": "Água: transparente, com a cor vinda da absorção, que cresce do azul para o vermelho (Pope, R. M.; Fry, E. S. (1997), Applied Optics 36(33), 8710–8723). A distância de atenuação é calibração visual RA para piscina.",
     "SHEEN-TECIDO": "Brilho de tecido (sheen) do modelo de material físico (glTF KHR_materials_sheen; Estevez, A. C.; Kulla, C. (2017), Production Friendly Microfacet Sheen BRDF). Intensidade e rugosidade por calibração visual RA.",
     "CC0-TEXTURA": "Textura fotográfica CC0 (domínio público) da biblioteca já empacotada em img/texturas (ambientCG e Poly Haven) — a fonte e a licença de cada uma estão em img/texturas/ORIGEM.txt. Tamanho físico de uma repetição como lá.",
-    "PROC-RA": "Textura PROCEDURAL gerada no próprio aplicativo (peça, rejunte e variação de tom entre peças): nenhuma imagem de terceiro. Tamanho da peça lido do nome do material (\"60x60\", \"30 x 60 cm\") ou o padrão do material."
+    "PROC-RA": "Textura PROCEDURAL gerada no próprio aplicativo (peça, rejunte e variação de tom entre peças): nenhuma imagem de terceiro. Tamanho da peça lido do nome do material (\"60x60\", \"30 x 60 cm\") ou o padrão do material.",
+    "FOTO-ANDAIME": "Cor lida de FOTO DE PRODUTO dos catálogos de andaime (docs/andaime/FAMILIAS-COTAS.md, campo `acabamento` de cada peça: tubo e base galvanizados cinza-prata, abraçadeira e luva em aço preto oxidado com porcas e U zincados bicromatizados amarelo-dourados, pranchão de madeira laranja-mel, tela de polietileno verde ou laranja). O hex é ESTIMADO da foto (a cor de um zincado bicromatizado varia de lote; a madeira, de tábua), não medido com colorímetro: troque na tela de conferência se a peça em mãos for outra."
   },
   "porClasse": {
     "IFCWINDOW": { "transparente": "vidro_incolor", "opaco": "aluminio_anodizado" },
@@ -444,6 +445,36 @@
       "cor": "#ffffff", "corDoModelo": "nunca", "rugosidade": 0.02, "metalicidade": 0, "ior": 1.333, "transmissao": 1, "espessura_m": 1.4,
       "atenuacao": { "cor": "#4fb3c9", "distancia_m": 3.0 },
       "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0, "textura": null, "semTextura": "água: não há textura de imagem; as ondas e a refração são do efeito de água (frente de efeitos), não de um mapa",
-      "fontes": { "otica": "IOR-AGUA", "superficie": "CAL-RA", "cor": "AGUA-COR" } }
+      "fontes": { "otica": "IOR-AGUA", "superficie": "CAL-RA", "cor": "AGUA-COR" } },
+    { "id": "aco_zincado_bicromatizado", "nome": "Aço zincado bicromatizado (parafuso, porca, arruela de andaime)", "categoria": "metal",
+      "termos": ["aco zincado bicromatizado", "zincado bicromatizado", "bicromatizado", "passivado amarelo"],
+      "cor": "#c9a227", "corDoModelo": "nunca", "rugosidade": 0.38, "metalicidade": 1, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0.1, "textura": { "tipo": "cc0", "slug": "aco_galvanizado" },
+      "fontes": { "otica": "F0-METAIS", "superficie": "CAL-RA", "cor": "F0-METAIS", "corFoto": "FOTO-ANDAIME", "textura": "CC0-TEXTURA" } },
+    { "id": "aco_preto_oxidado", "nome": "Aço preto oxidado / pavonado (corpo da abraçadeira e da luva; camada de óxido: dielétrico escuro, não metal polido)", "categoria": "metal",
+      "termos": ["aco preto oxidado", "aco oxidado", "oxidado preto", "pavonado"],
+      "cor": "#1e1e1e", "corDoModelo": "nunca", "rugosidade": 0.55, "metalicidade": 0, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0.2, "clearcoat_rugosidade": 0.3, "relevo": 0.15, "textura": { "tipo": "cc0", "slug": "metal_preto_fosco" },
+      "fontes": { "otica": "IOR-DIELETRICO", "superficie": "BRILHO-ISO2813", "cor": "FOTO-ANDAIME", "textura": "CC0-TEXTURA" } },
+    { "id": "aco_grafite", "nome": "Aço grafite metálico (calha da abraçadeira de andaime)", "categoria": "metal",
+      "termos": ["aco grafite", "grafite metalico"],
+      "cor": "#5a5d61", "corDoModelo": "nunca", "rugosidade": 0.5, "metalicidade": 1, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0.15, "textura": { "tipo": "cc0", "slug": "metal_preto_fosco" },
+      "fontes": { "otica": "F0-METAIS", "superficie": "CAL-RA", "cor": "F0-METAIS", "corFoto": "FOTO-ANDAIME", "textura": "CC0-TEXTURA" } },
+    { "id": "madeira_pinus_andaime", "nome": "Madeira do pranchão de andaime (pinus, laranja-mel)", "categoria": "madeira",
+      "termos": ["madeira pinus", "pranchao de madeira", "pranchao", "tabua de andaime"],
+      "cor": "#d9964a", "corDoModelo": "nunca", "rugosidade": 0.7, "metalicidade": 0, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0.5, "textura": { "tipo": "cc0", "slug": "madeira_angelim_pedra" },
+      "fontes": { "otica": "IOR-DIELETRICO", "superficie": "CAL-RA", "cor": "FOTO-ANDAIME", "textura": "CC0-TEXTURA" } },
+    { "id": "madeira_eucalipto_andaime", "nome": "Madeira do calço de andaime (eucalipto)", "categoria": "madeira",
+      "termos": ["madeira eucalipto", "calco de madeira"],
+      "cor": "#b07a4a", "corDoModelo": "nunca", "rugosidade": 0.7, "metalicidade": 0, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0.5, "textura": { "tipo": "cc0", "slug": "madeira_angelim_pedra" },
+      "fontes": { "otica": "IOR-DIELETRICO", "superficie": "CAL-RA", "cor": "CAL-RA", "textura": "CC0-TEXTURA" } },
+    { "id": "tela_pe", "nome": "Tela de proteção de polietileno (andaime, tapume)", "categoria": "plastico",
+      "termos": ["tela pe", "tela de protecao", "tela de fachada", "tela de tapume", "tela laranja"],
+      "cor": "#5b8c3a", "corDoModelo": "se_definida", "rugosidade": 0.8, "metalicidade": 0, "ior": 1.5, "transmissao": 0,
+      "clearcoat": 0, "clearcoat_rugosidade": 0, "relevo": 0, "textura": null, "semTextura": "tela de fio fino de polietileno: o desenho da malha vem da geometria da família (fios de 0,8 mm a cada 25 mm), não de imagem",
+      "fontes": { "otica": "IOR-DIELETRICO", "superficie": "CAL-RA", "cor": "FOTO-ANDAIME" } }
   ]
 }

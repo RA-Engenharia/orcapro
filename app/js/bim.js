@@ -11068,7 +11068,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           return sisOculto[sis];
         };
         if (instVet.usado === 'baixo') (edit.estado.familias || []).forEach(function (fi) {
-          var fam = famReg.lista[fi.famId], cls = fam ? NVi.classeDaCategoria(fam.categoria) : null; if (!cls) return;
+          var fam = famReg.lista[fi.famId], cls = fam ? NVi.classeDaCategoria(fam.categoria) : null; if (!cls || cls === 'andaime') return;   /* andaime: o símbolo de planta da família (js/andaime3d.js) */
           var av = famAval(fi.famId, fi.tipoId, fi.inst); if (!av || !av.caixa) return;
           NVi.contornoFamilia(av.caixa, fi, { id: fi.id, louca: cls === 'aparelho', ifc: FAM_IFC[fam.categoria] || 'IFCFLOWTERMINAL' }).forEach(function (q) { segsI.push(q); });
         });
@@ -13115,7 +13115,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     'mdf off-white': { cor: 0xe8e4da, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf grafite': { cor: 0x3a3d40, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf preto': { cor: 0x1f2023, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 },
     'mdf verde': { cor: 0x4f6a52, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'mdf azul': { cor: 0x3f5f82, rug: 0.4, met: 0, cc: 0.2, ccr: 0.3 }, 'metal branco': { cor: 0xe9e9e6, rug: 0.4, met: 0.6 },
     'metal cobre': { cor: 0xb87333, rug: 0.35, met: 1 }, 'metal dourado': { cor: 0xc9a24a, rug: 0.3, met: 1 }, 'vidro': { cor: 0xc6dde6, rug: 0.05, met: 0, op: 0.3 },
-    'palha natural': { cor: 0xc9b17f, rug: 0.9, met: 0 }, 'rattan natural': { cor: 0xb99b6b, rug: 0.85, met: 0 }, 'concreto': { cor: 0x9c9b97, rug: 0.85, met: 0 }
+    'palha natural': { cor: 0xc9b17f, rug: 0.9, met: 0 }, 'rattan natural': { cor: 0xb99b6b, rug: 0.85, met: 0 }, 'concreto': { cor: 0x9c9b97, rug: 0.85, met: 0 },
+    /* ANDAIME (js/familiasandaime.js, E7, 27/10/2026): cor das FOTOS de produto dos catálogos (fonte de cada uma no cabeçalho do arquivo da família; tools/test-familiasandaime.js
+       confere que esta linha é igual à tabela PBR de lá). O galvanizado é o APAR.aco_galvanizado do js/biminstgeo.js. */
+    'aço galvanizado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'aço zincado bicromatizado': { cor: 0xc9a227, rug: 0.38, met: 0.85, cc: 0.3, ccr: 0.2 }, 'aço preto oxidado': { cor: 0x1e1e1e, rug: 0.55, met: 0.6 }, 'aço grafite': { cor: 0x5a5d61, rug: 0.5, met: 0.6 },
+    'madeira pinus': { cor: 0xd9964a, rug: 0.7, met: 0 }, 'madeira eucalipto': { cor: 0xb07a4a, rug: 0.7, met: 0 }, 'borracha': { cor: 0x1a1a1a, rug: 0.9, met: 0 },
+    'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 }
   };
   function famMatPBR(k, nome) {
     var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
@@ -13153,7 +13158,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                   conexao_tubo: 'IFCPIPEFITTING', conexao_duto: 'IFCDUCTFITTING', conexao_eletroduto: 'IFCCABLECARRIERFITTING' };  /* FAMIMPORT: conexões importadas do Revit */
   /* sólidos avaliados → malhas soltas, já na posição da instância (matriz aplicada) */
   function famMalhas(av, inst, matSobre) {
-    var out = [], M = new THREE.Matrix4().compose(new THREE.Vector3(inst.x, inst.y, inst.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, inst.rotY || 0, 0)), new THREE.Vector3(1, 1, 1));
+    /* ANDAIME E9: a escada de mão fica INCLINADA (50°–75°, NR-18 18.8.2 b). A instância só guarda rotY; a inclinação (rad, em torno do eixo X da peça, depois o giro rotY) vem em inst.inst.Inclinacao_rad — ausente = vertical, como todas as outras famílias */
+    var inclRad = inst && inst.inst && isFinite(Number(inst.inst.Inclinacao_rad)) ? Number(inst.inst.Inclinacao_rad) : 0;
+    var out = [], M = new THREE.Matrix4().compose(new THREE.Vector3(inst.x, inst.y, inst.z), new THREE.Quaternion().setFromEuler(new THREE.Euler(inclRad, inst.rotY || 0, 0, 'YXZ')), new THREE.Vector3(1, 1, 1));
     (av.solidos || []).forEach(function (s) {
       var g = null, m, matProprio = null;
       try {
@@ -13220,6 +13227,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { cls: cls, nivel: NV.norm(BimInstUI.nivelCena(), 'alto') };
   }
   function famMalhasNivel(av, fi, fam) {
+    if (fam && fam.categoria === 'andaime') return [];   /* ANDAIME: as instâncias dividem InstancedMesh (js/andaime3d.js) — nunca uma malha por peça */
     var fn = famNivelDe(fam), NV = window.BimInstNivel;
     if (fn && fn.nivel === 'baixo' && av.caixa && BimInstUI._malhaG && BimInstUI._matLinha) {
       var segs = NV.contornoFamilia(av.caixa, fi, { id: fi.id, louca: fn.cls === 'aparelho' }), est = NV.estiloSeg({ papel: 'contorno' });
@@ -13638,11 +13646,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (nFo && S._p2bForros) S._p2bForros(st, mo, addMesh);   /* P2-B: forros */
       if (nP11) S._p11.desenhar(st, mo, addMesh);   /* P11: topossólido, sub-região, plataforma, divisa, componentes */
       if (nP3) S._p3.malhas(st, mo, addMesh);   /* P3: telhados, bordas e fundações */
+      if (S._andaime3d) S._andaime3d.ini();
       st.familias.forEach(function (fi) {
         var av = famAval(fi.famId, fi.tipoId, fi.inst), fam = famReg.lista[fi.famId];
         var ifc = fam ? (FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY') : 'IFCBUILDINGELEMENTPROXY';
-        var malhas = av && av.solidos && av.solidos.length ? famMalhasNivel(av, fi, fam) : [];   /* NÍVEL DE DETALHE: louça/equipamento em contorno no Baixo */
-        if (!malhas.length) {   /* família que não está na biblioteca deste aparelho: um marcador honesto, não some calado */
+        /* ANDAIME (E7): a peça do andaime não ganha malha própria — vai para o InstancedMesh do tipo dela (js/andaime3d.js, abaixo do laço) */
+        var viaInst = !!(fam && fam.categoria === 'andaime' && S._andaime3d && av && av.solidos && av.solidos.length && S._andaime3d.coletar(fi, av, fam));
+        var malhas = viaInst ? [] : (av && av.solidos && av.solidos.length ? famMalhasNivel(av, fi, fam) : []);   /* NÍVEL DE DETALHE: louça/equipamento em contorno no Baixo */
+        if (!malhas.length && !viaInst) {   /* família que não está na biblioteca deste aparelho: um marcador honesto, não some calado */
           var mx = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), editMat('sel'));
           mx.position.set(fi.x, fi.y + 0.2, fi.z); malhas = [mx];
         }
@@ -13652,13 +13663,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           inst: { x: fi.x, y: fi.y, z: fi.z, rotY: fi.rotY || 0 }, partes: av.partesMoveis, fracao: av.estadoPartes ? av.estadoPartes.fracao : 0 });   /* PARTES MÓVEIS: abrem no clique */
         mo.tipos[ifc] = (mo.tipos[ifc] || 0) + 1;
         var qf = av && av.quantitativo ? av.quantitativo : { unidade: 'un', quantidade: 1 };
-        mo.qto[fi.id] = { contagem: 1, unidade: qf.unidade, quantidade: qf.quantidade, volume: qf.unidade === 'm3' ? qf.quantidade : undefined, area: qf.unidade === 'm2' ? qf.quantidade : undefined, comprimento: qf.unidade === 'm' ? qf.quantidade : undefined };
+        mo.qto[fi.id] = { contagem: 1, unidade: qf.unidade, quantidade: qf.quantidade, volume: qf.unidade === 'm3' ? qf.quantidade : undefined, area: qf.unidade === 'm2' ? qf.quantidade : undefined, comprimento: qf.unidade === 'm' ? qf.quantidade : undefined, massa: av && av.massa > 0 ? av.massa : undefined };   /* massa: a peça do andaime leva a do catálogo (o peso do modelo, js/bimpeso.js, lê qto.massa) */
         mo.elementos.push({ id: fi.id, uid: 'edit:' + fi.id, mid: 'edit', arquivo: mo.nome, tipo: ifc,
           nome: (fam ? fam.nome : 'Família não carregada (' + fi.famId + ')') + (av && av.tipo ? ' : ' + av.tipo.nome : ''), etapa: null, codOrc: qf.codigo || null, qto: mo.qto[fi.id],
           disciplina: fam && (fam.categoria === 'pilar' || fam.categoria === 'viga' || fam.categoria === 'estrutural') ? 'estrutura' : (fam && (fam.categoria === 'loucas' || fam.categoria === 'equipamento' || fam.categoria === 'acessorio_tubo' || fam.categoria === 'conexao_tubo' || fam.categoria === 'conexao_duto') ? 'hidraulica' : (fam && /^(dispositivo_eletrico|luminaria|equipamento_eletrico|conexao_eletroduto)$/.test(fam.categoria) ? 'eletrica' : 'arquitetura')),   /* P12: famílias MEP; FAMIMPORT: conexões importadas */
           familia: { famId: fi.famId, tipoId: fi.tipoId, hospedada: !!fi.host } });
         mo.nEl++;
       });
+      if (S._andaime3d) { try { S._andaime3d.fim(mo); } catch (eAnd) { try { console.warn('[andaime3d]', eAnd); } catch (_) {} } }   /* ANDAIME (E7): um InstancedMesh por tipo de peça */
       instEls.forEach(function (ie) {
         ie.malhas.forEach(function (mi) { addMesh(mi, ie.id, ie.ifc || 'IFCBUILDINGELEMENTPROXY', mi.material); });
         if (ie.marcador) return;   /* o ponto de ligação é parte da família (já listada) */
@@ -13847,12 +13859,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var els = [];
     try { els = BimInstUI.malhas(st, famAval, THREE); } catch (eIn) { els = []; }
     els.forEach(function (ie) { ie.malhas.forEach(function (mi) { addI(mi, ie.id, ie.ifc || 'IFCBUILDINGELEMENTPROXY'); }); });
+    if (S._andaime3d) S._andaime3d.ini();
     (st.familias || []).forEach(function (fi) {
       var fam = famReg.lista[fi.famId]; if (!famNivelDe(fam)) return;
       var av = famAval(fi.famId, fi.tipoId, fi.inst); if (!(av && av.solidos && av.solidos.length)) return;
+      if (fam.categoria === 'andaime' && S._andaime3d && S._andaime3d.coletar(fi, av, fam)) return;   /* ANDAIME: o InstancedMesh do tipo, montado abaixo */
       var ifc = FAM_IFC[fam.categoria] || 'IFCBUILDINGELEMENTPROXY';
       famMalhasNivel(av, fi, fam).forEach(function (mf) { addI(mf, fi.id, ifc); });
     });
+    if (S._andaime3d) { try { S._andaime3d.fim(mo); } catch (eAnd2) { try { console.warn('[andaime3d]', eAnd2); } catch (_) {} } }
     modelRoot.updateMatrixWorld(true);
     agregarModelo(mo);
     if (window.BimSelInst && BimSelInst.aposRebuild) { try { BimSelInst.aposRebuild(); } catch (eSI) {} }   /* o que foi ocultado na vista continua oculto */
@@ -14953,6 +14968,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }) : null;
   /* ALVENARIA ASSENTADA — GANCHO (20/10/2026, js/alvassentamento3d.js): a parede crua mostra os blocos como
      assentados (fiadas, juntas, amarração, verga), por instancing e com nível de detalhe pela distância. */
+  /* ANDAIME (E7): as peças da família ra-andaime-* dividem InstancedMesh por tipo (js/andaime3d.js) */
+  S._andaime3d = (window.Andaime3D && Andaime3D.montar3d) ? Andaime3D.montar3d({ THREE: THREE, famAval: famAval, famMat: famMat,
+    nivel: function (fam) { var fn = famNivelDe(fam); return fn ? fn.nivel : 'alto'; },
+    planta: function (sim) { return window.FamiliasMob && FamiliasMob.linhasPlanta ? FamiliasMob.linhasPlanta(sim) : []; } }) : null;
   S._alv = (window.AlvAssentamento3D && AlvAssentamento3D.montar3d) ? AlvAssentamento3D.montar3d({
     THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
   }) : null;
@@ -15217,7 +15236,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if ((c.tipo === 'pilar' || c.tipo === 'viga') && c.perfil) {
       var s = A.secao(c.perfil); if (!s.ok) return null;
-      var mp = c.acab && window.BimMetalAcab && BimMetalAcab.ehAcoArq(c) ? b2MatAcab(c.acab, BimMetalAcab.acoDe(c)) : (c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat));   /* ACABAMENTO E COR (js/metalacab.js) no pilar/viga de aço do modelador */
+      var mp = c.acab && window.BimMetalAcab && BimMetalAcab.ehAcoArq(c) ? b2MatAcab(c.acab, BimMetalAcab.acoDe(c)) : (c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? (c.madeiraMat && FAM_PBR[c.madeiraMat] ? famMat(c.madeiraMat) : b2Mat('madeira')) : mat));   /* ACABAMENTO E COR (js/metalacab.js) no pilar/viga de aço do modelador; ANDAIME (E7): pranchão/rodapé = 'madeira pinus', calço = 'madeira eucalipto' (js/bimtextura.js) */
       var co = Math.cos(c.rotY), si = Math.sin(c.rotY), g;
       /* P9 — GANCHO: viga com justificação/inclinação/extensão e pilar inclinado (js/bimestrut.js);
          sem campo P9 o mapa é null e a peça sai como sempre */
@@ -19292,6 +19311,16 @@ window.BIM = {
   instNivelRefazer: function () { return (S && S._instNivelRefazer) ? S._instNivelRefazer() : { ok: false, erro: 'Visualizador não montado.' }; },
   instMedir: function () { return (S && S._instMedir) ? S._instMedir() : { malhas: 0, tri: 0, porPapel: {} }; },
   _instCtx: function () { return (S && S._instCtx) ? S._instCtx() : null; },
+  _andaime3d: function () { return (S && S._andaime3d) ? S._andaime3d.resumo() : null; },   // gancho de teste: o que o js/andaime3d.js montou (tipos, malhas, instâncias, triângulos, nível)
+  _malhaEdit: function (id) { return (S && S.meshPorUid) ? (S.meshPorUid['edit:' + id] || null) : null; },   // gancho de teste (e2e-andaime-encaixe): a malha de uma peça criada aqui (o tubo do andaime)
+  _andaimeObjetos: function () { var o = []; if (S && S.scene) S.scene.traverse(function (m) { if (m.isInstancedMesh && m.userData && m.userData.andaime3d) o.push(m); }); return o; },   // gancho de teste (e2e-andaime-encaixe): os InstancedMesh do andaime, com a matriz real de cada instância
+  _grade: function (liga) { if (!S || !S.scene) return 0; var n = 0; S.scene.traverse(function (o) { if (o.isGridHelper || (o.type === "GridHelper")) { o.visible = !!liga; n++; } }); return n; },   // gancho de teste: a GRADE do chão (GridHelper) é a das linhas horizontais longas da cena
+  _olharPara: function (pos, alvo) {   // gancho de teste (prints do andaime): câmera e alvo no referencial do modelo
+    if (!S || !S.camera || !S.orbit) return false;
+    var P = new THREE.Vector3(pos[0], pos[1], pos[2]), A2 = new THREE.Vector3(alvo[0], alvo[1], alvo[2]);
+    if (S.modelRoot) { S.modelRoot.updateMatrixWorld(true); P.applyMatrix4(S.modelRoot.matrixWorld); A2.applyMatrix4(S.modelRoot.matrixWorld); }
+    S.camera.position.copy(P); S.orbit.target.copy(A2); S.orbit.update(); return true;
+  },
   /* gancho de teste (só leitura): a cor (sRGB, hex) da malha de uma peça criada aqui */
   _corMalha: function (id) { var m = S && S.meshPorUid['edit:' + id]; return m && m.material && m.material.color ? m.material.color.getHexString() : null; },
   /* a família avaliada como o viewer a vê (o mesmo cache do desenho) — para o orçamento do modelo */

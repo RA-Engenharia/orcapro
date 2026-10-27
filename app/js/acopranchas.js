@@ -2559,7 +2559,9 @@
     /* partes (teste e tela) */
     extrair: extrair, ligacoes: ligacoes, esforcos: esforcos, listaMateriais: listaMateriais, casosReacao: casosReacao,
     /* o MESMO desenho (penas, letra, cotas, solda AWS A2.4, tabela) e o MESMO carimbo RA para os desenhos de fabricação (js/metalfabdes.js) */
-    Desenho: Desenho, estilo: estilo, carimbo: carimbo, tituloVista: tituloVista, quebrar: quebrar, espChapa: espChapa, FONTE: FONTE, VERMELHO: VERMELHO };
+    Desenho: Desenho, estilo: estilo, carimbo: carimbo, tituloVista: tituloVista, quebrar: quebrar, espChapa: espChapa, FONTE: FONTE, VERMELHO: VERMELHO,
+    /* a coluna de notas (acima do carimbo) e a tabela de camadas MET-* → layer EST-* do DXF: reaproveitadas pelas pranchas do andaime (js/andaimepranchas.js) */
+    colunaNotas: colunaNotas };
   global.AcoPranchas = AcoPranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = AcoPranchas;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -141,6 +141,8 @@
       var TQ = global.MetalTanqueUI && global.MetalTanque && global.AcoTanque ? global.MetalTanqueUI : null;
       /* METÁLICA › ACESSOS (14/10/2026, js/metalacessosui.js): o grupo entra logo depois das Peças prontas — só se os motores carregaram */
       var AU = PP && global.MetalAcessosUI && global.MetalAcessosUI.pronto && global.MetalAcessosUI.pronto() ? global.MetalAcessosUI : null;
+      /* METÁLICA › ANDAIME (26/10/2026, js/andaime.js): o grupo entra logo depois dos Acessos — só se o motor e as Peças prontas carregaram */
+      var AN = PP && global.Andaime && global.Andaime.UI && global.Andaime.UI.pronto() ? global.Andaime.UI : null;
       /* METÁLICA › L (14/10/2026, js/metalligsugui.js): o grupo "Ligação inteligente" entra antes de "Ligações" */
       var LSU = global.MetalLigSugUI && global.AcoLigSugere && global.AcoLigCalc2 && global.AcoLigTipos ? global.MetalLigSugUI : null;
       Object.keys(this.COMANDOS).forEach(function (pn) {
@@ -149,9 +151,10 @@
         if (pn === "Galpão" && PO) R.acrescentar("metalica", "Metálica & Mecânica", "Pórticos", PO.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && PP) R.acrescentar("metalica", "Metálica & Mecânica", "Peças prontas", PP.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && AU) R.acrescentar("metalica", "Metálica & Mecânica", "Acessos", AU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
+        if (pn === "Galpão" && AN) R.acrescentar("metalica", "Metálica & Mecânica", "Andaime", AN.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica, emBreve: !!c.emBreve, requer: c.requer }; }));
         if (pn === "Galpão" && TQ) R.acrescentar("metalica", "Metálica & Mecânica", "Tanques", TQ.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));   /* METÁLICA › T */
       });
-      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PO ? PO.ids() : []).concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
+      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PO ? PO.ids() : []).concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(AN ? AN.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
       /* METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026, js/metalcatalogoui.js): o grupo "Catálogo" entra depois da Fabricação; o painel é uma consulta (aços, chapas, pintura, cores) e não mexe no modelo */
       var CAT = global.MetalCatalogoUI && global.AcoCatalogoInd ? global.MetalCatalogoUI : null;
       if (CAT) {
@@ -185,6 +188,7 @@
       /* METÁLICA › T — TANQUES (14/10/2026, js/metaltanqueui.js) */
       if (TQ && TQ.registrar) { try { TQ.registrar(reg); } catch (eT) { toast("Metálica (tanques): " + (eT && eT.message ? eT.message : eT), "erro", 8000); } }
       if (AU && AU.registrar) { try { AU.registrar(reg); } catch (eA) { toast("Metálica (acessos): " + (eA && eA.message ? eA.message : eA), "erro", 8000); } }   /* METÁLICA › ACESSOS (14/10/2026) */
+      if (AN && AN.registrar) { try { AN.registrar(reg); } catch (eN) { toast("Metálica (andaime): " + (eN && eN.message ? eN.message : eN), "erro", 8000); } }   /* METÁLICA › ANDAIME (26/10/2026) */
       if (CAT && CAT.registrar) { try { CAT.registrar(reg); } catch (eK) { toast("Metálica (catálogo industrial): " + (eK && eK.message ? eK.message : eK), "erro", 8000); } }   /* METÁLICA › CATÁLOGO INDUSTRIAL (js/metalcatalogoui.js) */
       if (LSU && LSU.registrar) { try { LSU.registrar(reg); } catch (eL) { toast("Metálica (ligação inteligente): " + (eL && eL.message ? eL.message : eL), "erro", 8000); } }
       /* criar clicando e a referência (plano, eixos, cotas, níveis): js/metalcriarui.js */
