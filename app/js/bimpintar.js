@@ -65,8 +65,8 @@
   })();
   /* PILAR (27/10/2026): 4 faces nomeadas pelo giro (rotY) do próprio pilar — frente = o lado +w do pilar, direita = +u; o pilar de AÇO tem
      acabamento próprio (js/metalacab.js) e não entra. PLATIBANDA (a do telhado, js/bimcobertura.js): face externa e interna, sem faixas. */
-  var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"], pilar: ["frente", "fundo-pilar", "direita", "esquerda"], platibanda: ["fora", "dentro"] };
-  var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior", frente: "Face da frente", "fundo-pilar": "Face de trás", direita: "Face da direita", esquerda: "Face da esquerda" };
+  var FACES = { parede: ["fora", "dentro"], laje: ["topo", "fundo"], pilar: ["frente", "fundo-pilar", "direita", "esquerda"], viga: ["fundo-viga", "lateral-a", "lateral-b", "cabeceira-ini", "cabeceira-fim"], platibanda: ["fora", "dentro"] };
+  var ROTULO_FACE = { fora: "Face externa", dentro: "Face interna", topo: "Face superior", fundo: "Face inferior", "fundo-viga": "Fundo da viga", "lateral-a": "Lateral A da viga", "lateral-b": "Lateral B da viga", "cabeceira-ini": "Cabeceira do início", "cabeceira-fim": "Cabeceira do fim", frente: "Face da frente", "fundo-pilar": "Face de trás", direita: "Face da direita", esquerda: "Face da esquerda" };
   function tipoDe(c) { return c && (c.tipo || (c.telhado != null && !c.contorno && !c.tipoBorda ? "platibanda" : null)); }
   function existente(c) { return String(c && c.faseCriada == null ? "" : c.faseCriada).trim().toLowerCase() === "existente"; }
   var OPS = ["pintar", "removerPintura", "dividirFace"];
@@ -79,7 +79,7 @@
     var h = 0; for (var k = 0; k < s.length; k++) h = (h * 31 + s.charCodeAt(k)) % 360;   /* outro nome: uma cor estável pelo nome */
     return "hsl(" + h + ", 35%, 70%)";
   }
-  function faceOk(c, face) { var t = tipoDe(c); return !!c && !!FACES[t] && FACES[t].indexOf(face) >= 0 && !(t === "pilar" && c.material === "aco"); }
+  function faceOk(c, face) { var t = tipoDe(c); return !!c && !!FACES[t] && FACES[t].indexOf(face) >= 0 && !((t === "pilar" || t === "viga") && c.material === "aco"); }
   function alturasOk(l) {
     if (!Array.isArray(l) || l.length > MAX_CORTES) return false;
     for (var i = 0; i < l.length; i++) { if (!fin(l[i]) || l[i] <= 0 || l[i] > 30) return false; if (i && !(l[i] > l[i - 1] + 1e-6)) return false; }
@@ -195,18 +195,39 @@
     var f = A().frameDe(c);
     return { frente: [f.si, f.co], "fundo-pilar": [-f.si, -f.co], direita: [f.co, -f.si], esquerda: [-f.co, f.si] }[face];
   }
-  function areaPilar(c, face, estado) {
-    var f = A().frameDe(c), larg = (face === "frente" || face === "fundo-pilar") ? f.L : f.t, bruta = larg * f.H, desc = 0, achou = false;
+  /* o que a parede unida cobre de uma face lateral de peça linear (pilar e viga): o cortesFace da parede (com = id da peça) vai para a face
+     horizontal de maior alinhamento com a direção peça → parede; `normal(k)` dá a normal de cada face; achou = havia dado de encosto */
+  function descEncosto(c, face, faces, normal, estado) {
+    var desc = 0, achou = false;
     arr(estado && estado.caixas).forEach(function (w) {
       if (!w || w.tipo !== "parede") return;
       arr(w.cortesFace).forEach(function (ct) {
         if (String(ct.com) !== String(c.id)) return;
         achou = true;
         var d = [num(w.cx, 0) - num(c.cx, 0), num(w.cz, 0) - num(c.cz, 0)], melhor = null, mv = -Infinity;
-        ["frente", "fundo-pilar", "direita", "esquerda"].forEach(function (k) { var n = normalPilar(c, k), v = n[0] * d[0] + n[1] * d[1]; if (v > mv) { mv = v; melhor = k; } });
+        faces.forEach(function (k) { var n = normal(c, k), v = n[0] * d[0] + n[1] * d[1]; if (v > mv) { mv = v; melhor = k; } });
         if (melhor === face) desc += Math.max(num(ct.fora, 0), num(ct.dentro, 0));
       });
     });
+    return { desc: desc, achou: achou };
+  }
+  /* VIGA (concreto e arquitetura; a de aço tem acabamento próprio): fundo = comprimento x largura; lateral = comprimento x altura; cabeceira = largura x altura.
+     A face de CIMA não se pinta (laje apoiada / apoio). Desconta o encosto de parede (cortesFace); sem esse dado vale a área exposta típica
+     (fundo + 2 laterais) e a região diz isso (premissa visível no orçamento). */
+  var FACES_VIGA_H = ["lateral-a", "lateral-b", "cabeceira-ini", "cabeceira-fim"];
+  function normalViga(c, face) {
+    var f = A().frameDe(c);
+    return { "lateral-a": [f.si, f.co], "lateral-b": [-f.si, -f.co], "cabeceira-ini": [-f.co, f.si], "cabeceira-fim": [f.co, -f.si] }[face];
+  }
+  function areaViga(c, face, estado) {
+    var f = A().frameDe(c), bruta = face === "fundo-viga" ? f.L * f.t : ((face === "lateral-a" || face === "lateral-b") ? f.L * f.H : f.t * f.H), e = { desc: 0, achou: false };
+    if (face !== "fundo-viga") e = descEncosto(c, face, FACES_VIGA_H, normalViga, estado);
+    return { area: Math.max(0, bruta - e.desc), bruta: bruta,
+             premissa: e.achou ? "área exposta descontando o encosto das paredes unidas (cortes de face da parede); a face de cima (laje apoiada) não se pinta"
+                               : "área exposta típica (fundo + 2 laterais): sem dado de encosto em parede, pilar ou laje apoiada (premissa — confira o que encosta)" };
+  }
+  function areaPilar(c, face, estado) {
+    var f = A().frameDe(c), larg = (face === "frente" || face === "fundo-pilar") ? f.L : f.t, bruta = larg * f.H, e = descEncosto(c, face, ["frente", "fundo-pilar", "direita", "esquerda"], normalPilar, estado), desc = e.desc, achou = e.achou;
     return { area: Math.max(0, bruta - desc), bruta: bruta,
              premissa: achou ? "área da lateral descontando o encosto das paredes unidas (cortes de face da parede)" : "lateral inteira: sem dado de encosto em parede (premissa — confira se há parede encostada)" };
   }
@@ -218,6 +239,7 @@
       if (!faceOk(c, face)) return;
       var area = 0, ya = null, yb = null, premissa = "";
       if (tipoDe(c) === "pilar") { var ap = areaPilar(c, face, estado); area = ap.area; premissa = ap.premissa; }
+      else if (tipoDe(c) === "viga") { var av = areaViga(c, face, estado); area = av.area; premissa = av.premissa; }
       else if (tipoDe(c) === "platibanda") { area = num(c.area, 0); }   /* a área de UMA face = comprimento x altura */
       else if (c.tipo === "parede") { var fx = faixa(c, face, reg); ya = fx[0]; yb = fx[1]; area = areaFaixaParede(c, face, fx[0], fx[1], aceitos); }
       else {
@@ -234,7 +256,7 @@
   function servicosOrc(estado, vaos) {
     var out = [];
     var CAT = PC();   /* 27/10/2026 (js/bimpintarcat.js): o material do catálogo novo diz se é pintura ou revestimento e se está "a orçar" (sem composição) */
-    function rotuloPeca(c) { return c.tipo === "laje" ? "laje" : (c.tipo === "pilar" ? "pilar" : "parede"); }
+    function rotuloPeca(c) { return c.tipo === "laje" ? "laje" : (c.tipo === "pilar" ? "pilar" : (c.tipo === "viga" ? "viga" : "parede")); }
     /* a platibanda do telhado pintada: uma linha por face; a fase "Existente" não orça construção (nem a pintura dela) */
     arr(estado && estado.platibandas).forEach(function (p) {
       if (!p || !p.ok || !p.pinturas || existente(p)) return;
@@ -262,6 +284,12 @@
       if (c.material === "aco") return null;
       var fp = Ar.frameDe(c), lp = Ar.aLocal(fp, num(p.x, 0), num(p.z, 0)), ru = lp[0] / Math.max(fp.L / 2, 1e-6), rw = lp[1] / Math.max(fp.t / 2, 1e-6);
       return { face: Math.abs(rw) >= Math.abs(ru) ? (rw > 0 ? "frente" : "fundo-pilar") : (ru > 0 ? "direita" : "esquerda"), regiao: 0 };
+    }
+    if (tipoDe(c) === "viga") {
+      if (c.material === "aco") return null;
+      var fv = Ar.frameDe(c), lv = Ar.aLocal(fv, num(p.x, 0), num(p.z, 0)), rU = lv[0] / Math.max(fv.L / 2, 1e-6), rW = lv[1] / Math.max(fv.t / 2, 1e-6);
+      if (num(p.y, 1e9) <= fv.y0 + 0.02) return { face: "fundo-viga", regiao: 0 };
+      return { face: Math.abs(rU) >= Math.abs(rW) ? (rU > 0 ? "cabeceira-fim" : "cabeceira-ini") : (rW > 0 ? "lateral-a" : "lateral-b"), regiao: 0 };
     }
     if (tipoDe(c) === "platibanda") {
       var best = null, bd = Infinity;
@@ -293,6 +321,12 @@
       var fq = Ar.frameDe(c), ang = { frente: 0, "fundo-pilar": Math.PI, direita: Math.PI / 2, esquerda: -Math.PI / 2 }[face], lado = (face === "frente" || face === "fundo-pilar");
       var ps = { id: c.id, tipo: "parede", cx: c.cx, cz: c.cz, cy: c.cy, altura: c.altura, rotY: num(c.rotY, 0) + ang, comprimento: lado ? fq.L : fq.t, espessura: lado ? fq.t : fq.L };
       return desenhoRegiao(ps, "dentro", 0, null);
+    }
+    if (tipoDe(c) === "viga") {   /* laterais e cabeceiras: a face como uma parede de 1 face; o fundo: a película horizontal sob a viga */
+      var fg = Ar.frameDe(c);
+      if (face === "fundo-viga") return { laje: true, y: fg.y0 - 0.003 };
+      var angV = { "lateral-a": 0, "lateral-b": Math.PI, "cabeceira-fim": Math.PI / 2, "cabeceira-ini": -Math.PI / 2 }[face], ladoV = (face === "lateral-a" || face === "lateral-b");
+      return desenhoRegiao({ id: c.id, tipo: "parede", cx: c.cx, cz: c.cz, cy: c.cy, altura: c.altura, rotY: num(c.rotY, 0) + angV, comprimento: ladoV ? fg.L : fg.t, espessura: ladoV ? fg.t : fg.L }, "dentro", 0, null);
     }
     if (tipoDe(c) === "platibanda") return null;   /* a platibanda tem o seu desenho (quadsPlatibanda) */
     var f = Ar.frameDe(c);
