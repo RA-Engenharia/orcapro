@@ -80,6 +80,11 @@
   ],
   "repositorio": [
     {
+      "arquivo": "telhas-catalogo.json",
+      "usadoPor": "tools/gerar-telhas-catalogo.js, tools/test-telhas-catalogo.js",
+      "motivo": "fonte dos números de catálogo das telhas (galga, sobreposição, comprimento, com a fonte de cada um); o app usa a tabela já embutida em js/bimtelhado.js (ENCAIXE)"
+    },
+    {
       "arquivo": "perfis-gerdau.json",
       "usadoPor": "tools/gerar-perfisaco.js, tools/test-p9-estrutura.js",
       "motivo": "fonte da tabela Gerdau; o app usa a tabela já embutida em js/perfisaco.js"

@@ -316,6 +316,25 @@
     n.telha.fonteCatalogo = F_CAT + " — id " + n.id;
     TELHAS[n.id] = n.telha;
   });
+  /* ENCAIXE NA RIPA (frente "telhas-catalogo", 27/10/2026) — data/telhas-catalogo.json é a tabela com a fonte de cada número.
+     A telha de cerâmica/concreto PENDURA na ripa pela garra (o "dente") do topo e a ponta de baixo apoia na telha da fiada de
+     baixo: cada fiada tem o topo na ripa + meia largura + garra; o comprimento da peça e a galga do fabricante dão a sobreposição
+     (comprimento − galga). comprimentoPeca/galgaMin/galgaMax vêm do catálogo; garraM é VALOR DE PARTIDA (nenhuma ficha traz a
+     distância da garra à borda de cima) — conferir com o fabricante. */
+  var F_GARRA = "VALOR DE PARTIDA — conferir com o fabricante: nenhuma ficha consultada traz a distância da garra (dente) à borda de cima da telha";
+  var ENCAIXE = {
+    "cer-romana-eurotop-toptelha": { comprimentoPeca: 0.445, comprimentoFonte: F_TOPTELHA + ": comprimento 44,5 cm", galgaMin: null, galgaMax: 0.382, galgaFonte: F_TOPTELHA + ": galga máxima 38,2 cm (sem mínima na ficha: o gerador usa a máxima fixa e arremata na cumeeira)", garraM: 0.02, garraFonte: F_GARRA },
+    "cer-portuguesa-faulim": { comprimentoPeca: 0.43, comprimentoPartida: true, comprimentoFonte: "DERIVADO pela RA — conferir: a ficha da Faulim não traz o comprimento; galga mínima 33 cm + sobreposição mínima de 10 cm (" + F_SINAPI_TEL + ", p. 23)", galgaMin: 0.33, galgaMax: null, galgaFonte: F_FAULIM + ": galga mínima 33 cm (sem máxima na ficha)", garraM: 0.02, garraFonte: F_GARRA },
+    "cer-capa-canal-vogel": { comprimentoPeca: 0.505, comprimentoFonte: F_VOGEL + ": comprimento 50,5 cm", galgaMin: null, galgaMax: 0.405, galgaPartida: true, galgaFonte: "DERIVADO pela RA — conferir: comprimento 50,5 cm − sobreposição mínima de 10 cm (" + F_SINAPI_TEL + ", p. 23); a ficha da Vogel não traz a galga", garraM: 0.02, garraFonte: F_GARRA },
+    "con-tradicao-tegula": { comprimentoPeca: 0.42, comprimentoFonte: F_TEGULA + ": comprimento 42 cm", galgaMin: null, galgaMax: 0.32, galgaInicialM: 0.29, galgaInicialFonte: F_TEGULA + ": galga inicial 29 cm (face de cima da 2ª ripa à face de baixo da testeira); testeira 2 cm mais alta que a ripa", galgaFonte: F_TEGULA + ": galga até 32 cm (nunca maior); sobreposição 10 cm", garraM: 0.02, garraFonte: F_GARRA }
+  };
+  Object.keys(ENCAIXE).forEach(function (k) { if (TELHAS[k]) { TELHAS[k].encaixe = ENCAIXE[k]; if (!fin(TELHAS[k].comprimentoPeca)) TELHAS[k].comprimentoPeca = ENCAIXE[k].comprimentoPeca; } });
+  /* a face de baixo que se VÊ da telha de acabamento embaixo (sanduíche): a do produto, não a de cima */
+  ["kingspan-isotelha-trapezoidal-pir-ap"].forEach(function (k) {
+    TELHAS[k].faceInferior = { acabamento: "filme de alumínio branco liso", textura: "pintura_lisa", corRgb: [0.93, 0.93, 0.91], verificado: true,
+      fonte: F_KPIR + "; data/telhado-catalogo.json (id " + k + "): filme de alumínio branco na face inferior; guia do fabricante: acabamento interno em filme de alumínio branco ou aço galvalume pré-pintado" };
+    TELHAS[k].faceSuperior = { acabamento: "aço galvalume pré-pintado", textura: "aco_pintado_liso", fonte: F_KPIR };
+  });
   /* as telhas que já estavam (frente "cob") ganham a forma e o perfil para o gerador */
   TELHAS["fibrocimento-6"].forma = "ondulada";
   TELHAS["fibrocimento-6"].perfil = { passo: 0.177, altura: 0.051, esp: 0.006, partida: true, fonte: "valor de partida — conferir: perfil da ondulada 6 mm (o catálogo Brasilit consultado não traz passo/altura da onda)" };

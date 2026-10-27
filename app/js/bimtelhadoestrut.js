@@ -786,6 +786,61 @@
     return out;
   }
 
+  /* ---- FIADAS DA TELHA NA RIPA (frente "telhas-catalogo", 27/10/2026) -------------------------------------------------
+     Telha de cerâmica/concreto com encaixe (tel.encaixe): cada fiada PENDURA numa ripa pela garra do topo e a ponta de baixo
+     apoia na telha da fiada de baixo. Tudo em metros ao longo do caimento (s = 0 na ponta do beiral):
+       topo da fiada k = centro da ripa k + meia largura da ripa + garra;  ponta de baixo = topo − comprimento da peça;
+       galga = distância entre ripas (a do catálogo; sobreposição = comprimento − galga);
+       a 1ª fiada tem a ponta no beiral (s = 0) e o topo em s = comprimento; a última, o topo a 2 cm da cumeeira.
+     GALGA: com mínima E máxima no catálogo a ripa divide a água em partes iguais dentro da faixa; com só uma delas (ou nenhuma
+     folga) a galga é a FIXA do fabricante e a fiada da cumeeira é a arrematada (cortada), como o catálogo manda.
+     ALTURA da face de baixo (em metros VERTICAIS, espV = espessura da telha · f): no topo = a face de cima da ripa; desce reta até a
+     ponta, que apoia na telha de baixo (a mesma altura dela + a espessura): é o encaixe — sem brecha e sem entrar na de baixo.
+     RIPA DUPLA do beiral: a ponta da 1ª fiada não tem telha embaixo; apoia numa ripa dobrada (2 × h) a 4 cm da ponta.
+     Devolve null sem encaixe/ripa/galga (o gerador volta ao desenho antigo). */
+  function fiadasTelha(tel, rampa, sR, f, espV) {
+    var en = tel && tel.encaixe; if (!en || !sR || !(rampa > 0) || !fin(f)) return null;
+    var Lc = en.comprimentoPeca, dg = fin(en.garraM) ? en.garraM : 0.02, b = sR.b, hV = sR.h * f;
+    var gmax = fin(en.galgaMax) ? en.galgaMax : null, gmin = fin(en.galgaMin) ? en.galgaMin : null, G0 = gmax != null ? gmax : gmin;
+    if (!fin(Lc) || G0 == null) return null;
+    var off = b / 2 + dg, topEnd = rampa - 0.02, tops = [], modo, G = G0, arremate = 0;
+    /* a 1ª fiada: o topo em Lc (a ponta no beiral) ou, quando o catálogo dá a galga inicial (Tegula: 29 cm da testeira à face de
+       cima da 2ª ripa), a ripa da garra a essa distância — a ponta passa do beiral (a malha é cortada no contorno da água) */
+    var top0 = fin(en.galgaInicialM) ? en.galgaInicialM + dg : Lc;
+    if (topEnd <= top0 + 1e-6) { tops.push(Math.max(topEnd, off + 0.01)); modo = "uma-fiada"; }
+    else {
+      var span = topEnd - top0;
+      if (gmin != null && gmax != null && gmax - gmin > 1e-9) {
+        var n1 = Math.max(1, Math.ceil(span / gmax - 1e-9)); G = span / n1; modo = "variavel";
+        if (G < gmin - 1e-9) { n1 = Math.max(1, Math.floor(span / gmin + 1e-9)); G = span / n1; if (G > gmax + 1e-9) { G = gmax; modo = "fixa"; } }
+        if (modo === "variavel") for (var k = 0; k <= n1; k++) tops.push(top0 + k * G);
+      } else modo = "fixa";
+      if (modo === "fixa") {
+        G = G0; var m = Math.floor(span / G + 1e-6), rem = span - m * G;
+        for (var k2 = 0; k2 <= m; k2++) tops.push(top0 + k2 * G);
+        if (rem > 0.005) {
+          if (rem < 0.06 && gmax == null) tops[m] = topEnd;      /* galga mínima: pode esticar a última */
+          else if (rem <= 0.08) arremate = rem;                  /* sobra até 8 cm: a capa da cumeeira (abas de 16 cm) cobre, sem ripa a menos de 8 cm da outra */
+          else { tops.push(topEnd); arremate = rem; }             /* galga máxima: a última é a arrematada (mais curta) */
+        } else tops[m] = topEnd;
+      }
+    }
+    var n = tops.length, lows = [], ups = [], ripas = [], Ls = [], L = [];
+    tops.forEach(function (tp, k) { var lo = tp - Lc, up = tp - dg; lows.push(lo); ups.push(up); ripas.push(up - b / 2); Ls.push(Math.max(1e-6, up - lo)); });
+    /* reta da ponta (L) até 0 na borda de cima da ripa, e segue na mesma reta até o topo da telha (a garra, 1–2 mm abaixo: ali não há ripa) */
+    function U(k, s) { if (k < 0 || s < lows[k] - 1e-12) return 0; return L[k] * (1 - (s - lows[k]) / Ls[k]); }
+    /* ripa dupla do beiral e a altura da ponta da 1ª fiada */
+    var sT = 0.04, sU = sT + b / 2, dupla = null;
+    if (sU < ups[0] - 0.05) { L.push(hV / (1 - (sU - lows[0]) / Ls[0])); dupla = { s: sT, hV: 2 * hV, topo: hV }; }   /* altura acima do topo da ripa simples */
+    else L.push(espV * Ls[0] / Math.max(G, 0.1));
+    for (var k3 = 1; k3 < n; k3++) {
+      var nest = U(k3 - 1, lows[k3]) + espV, ov = tops[k3 - 1] - lows[k3], den = 1 - ov / Ls[k3];
+      L.push(Math.max(nest, den > 0.05 ? espV / den : 0));
+    }
+    return { n: n, modo: modo, galga: G, arremate: arremate, tops: tops, lows: lows, ups: ups, ripas: ripas, L: L, comprimentoPeca: Lc, garra: dg, dupla: dupla,
+             galgaMedia: n > 1 ? (tops[n - 1] - tops[0]) / (n - 1) : G, sobe: function (k, s) { return U(k, s); } };
+  }
+
   /* ============================================================ MODELAR */
   function aguasInclinadas(t) {
     return arr(t.aguasCalc).filter(function (ag) { var p = ag.plano || {}; return Math.sqrt((p.bx || 0) * (p.bx || 0) + (p.bz || 0) * (p.bz || 0)) > 1e-6; });
@@ -1551,7 +1606,7 @@
       else prem.push("Galga das ripas " + virg(galga, 3) + " m — " + (tel.galga.partida ? "VALOR DE PARTIDA — conferir: " : "") + tel.galga.fonte);
     }
     var nCruzRC = 0, nCruzCT = 0, nCruzTA = 0, compRipaPorAgua = [];
-    var aguasInfo = [];
+    var aguasInfo = [], fiadasInfo = [];
     ags.forEach(function (ag, ia) {
       var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f, e = ag.aresta >= 0 ? arr(t.arestasCalc)[ag.aresta] : null;
       var CA = camadasDe(f), baseT = CA.tercas, baseC = CA.caibros, baseR = CA.ripas;   /* T3: as camadas DESTA água */
@@ -1644,8 +1699,23 @@
           /* a galga é a distância MÁXIMA: ripas em partes iguais da água. Galga MÍNIMA do fabricante (galgaMinima, ex.: Faulim
              "galga mínima 33 cm"): partes iguais dariam menos que o mínimo e a telha não encaixa — ripas na galga a partir do
              beiral e a última na cumeeira (a fiada de cima é a ajustada, como na obra) (revisor T1, 20/10/2026) */
-          var urs = [];
-          if (galgaMinima) {
+          var urs = [], FI = fiadasTelha(tel, (umax - umin) * f, sR, f, pfT.esp * f);
+          if (FI) {
+            /* encaixe na ripa (fiadasTelha): as ripas nas posições do catálogo, a última a 2 cm da cumeeira + a ripa DUPLA do beiral */
+            FI.ripas.forEach(function (s) { urs.push(umin + s / f); });
+            fiadasInfo.push({ agua: ia, n: FI.n, modo: FI.modo, galga: FI.galga, galgaMedia: FI.galgaMedia, arremate: FI.arremate, rampa: (umax - umin) * f, dupla: !!FI.dupla, comprimentoPeca: FI.comprimentoPeca, garra: FI.garra, ripas: FI.ripas.slice(), duplaS: FI.dupla ? FI.dupla.s : null });
+            if (FI.dupla) {
+              var urD = umin + FI.dupla.s / f;
+              cordasU(Q, urD, d, td).forEach(function (c) {
+                if (c[1] - c[0] < 0.1) return;
+                pc("ripa", P3u(urD, c[0], baseR), P3u(urD, c[1], baseR), up, sR, { agua: ia, beiral: true });
+                pc("ripa", P3u(urD, c[0], baseR + sR.h * f), P3u(urD, c[1], baseR + sR.h * f), up, sR, { agua: ia, beiral: true, dupla: true });
+                compRipa += 2 * (c[1] - c[0]);
+                nCruzRC += 2 * Math.max(1, Math.round((c[1] - c[0]) / espCb) + 1);
+              });
+            }
+          }
+          else if (galgaMinima) {
             for (var ug = r0; ug < r1 - 1e-6; ug += galga / f) urs.push(ug);
             if ((r1 - urs[urs.length - 1]) * f < 0.06 && urs.length > 1) urs[urs.length - 1] = r1; else urs.push(r1);
           }
@@ -1662,7 +1732,9 @@
         if (M.osb) placas.push({ agua: ia, pts: Q.map(function (q) { return [r4(q[0]), r4(q[1])]; }), base: r4(baseR), e: eOSB });
         compRipaPorAgua.push(compRipa);
         /* nTercas = as fileiras de terça MODELADAS nesta água (a fixação da telha em chapa conta por elas) */
-        aguasInfo.push({ agua: ia, umin: umin, umax: umax, uW: uW, tmin: tmn, tmax: tmx, rampa: (umax - umin) * f, nCaibros: nCb, nTercas: tercas.length });
+        aguasInfo.push({ agua: ia, umin: umin, umax: umax, uW: uW, tmin: tmn, tmax: tmx, rampa: (umax - umin) * f, nCaibros: nCb, nTercas: tercas.length,
+                         areaInc: Math.abs(Q.reduce(function (s, q, i) { var q2 = Q[(i + 1) % Q.length]; return s + q[0] * q2[1] - q2[0] * q[1]; }, 0)) / 2 * f,
+                         fiadas: FI ? { n: FI.n, galgaMedia: FI.galgaMedia, galga: FI.galga, modo: FI.modo } : null });
       });
     });
     /* ---- 3b) (revisor T1, 20/10/2026) a CUMEEIRA levava DUAS terças (a última de cada água, a 12 cm uma da outra) e dois
@@ -1812,7 +1884,7 @@
     Object.keys(med).forEach(function (k) { med[k] = r4(med[k]); });
     return { ok: true, modelo: t.modelo, medidas: med, placas: placas, rotulo: M.rotulo, material: mat, pecas: pecas, contagem: cont, nTesouras: nTes, apoios: apoios.map(function (a) { return { t: r4(a.t), tipo: a.tipo, parede: a.parede }; }),
              paredes: Object.keys(anexar), camadas: { tercas: r4(baseT), caibros: r4(baseC), ripas: r4(baseR), telha: r4(baseTel) }, camadasAgua: camAg, telhaEsp: r4(espTel / f0), espessura: espPacote, cotaTopo: r4(maxY), topoPlatibanda: tp,
-             espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo,
+             espacamentos: { tercas: espT, caibros: sC ? espCb : null, galga: sR ? galga : null, apoios: espApoio.m }, aguas: aguasInfo, fiadas: fiadasInfo,
              quantitativo: Q.itens, premissas: prem, avisos: avisos,
              removidas: ed.removidas, editadas: ed.editadas, problemas: ed.problemas, sobreporOrfas: ed.orfas };
   }
@@ -2002,7 +2074,15 @@
     /* a fixação da telha só é detalhamento quando a composição a inclui (fibrocimento, aço); na cerâmica a amarração é à parte */
     var detFix = compTel && compTel.inclui.indexOf("fixacao") >= 0 ? detTel : null;
     var nTel = null, obsTel = null, partTel = false, lu = larguraUtilDe(tel);
-    if (tel && fin(tel.pecasM2)) { nTel = tel.pecasM2 * A; obsTel = virg(tel.pecasM2, 1) + " peças/m² × " + virg(A) + " m² inclinados (" + (tel.galga && tel.galga.fonte ? "" : "") + (tel.fonteCatalogo || "") + "; sem perdas)"; }
+    var fiadasQ = x.aguasInfo.filter(function (ai) { return ai.fiadas; });
+    if (tel && fin(tel.pecasM2) && fiadasQ.length === x.aguasInfo.length && fiadasQ.length && fin(tel.galga && tel.galga.m)) {
+      /* telhas pela GALGA REAL: peças/m² do catálogo × (galga do catálogo ÷ galga da água) — a largura útil sai do próprio rendimento
+         (1 ÷ (peças/m² × galga do catálogo)); fiadas = as da água (a última arrematada conta inteira) */
+      var luD = 1 / (tel.pecasM2 * tel.galga.m); nTel = 0;
+      x.aguasInfo.forEach(function (ai) { nTel += ai.fiadas.n * ((ai.areaInc || 0) / Math.max(ai.rampa, 1e-6)) / luD; });
+      obsTel = "pela galga REAL do modelo: " + fiadasQ.map(function (ai) { return ai.fiadas.n + " fiadas (galga " + virg(ai.fiadas.galgaMedia * 100, 1) + " cm)"; }).join(" + ") + " × largura útil derivada " + virg(luD * 100, 1) + " cm (1 ÷ (" + virg(tel.pecasM2, 1) + " peças/m² × galga do catálogo " + virg(tel.galga.m * 100, 1) + " cm)) (" + (tel.fonteCatalogo || "") + "; sem perdas)";
+    }
+    else if (tel && fin(tel.pecasM2)) { nTel = tel.pecasM2 * A; obsTel = virg(tel.pecasM2, 1) + " peças/m² × " + virg(A) + " m² inclinados (" + (tel.galga && tel.galga.fonte ? "" : "") + (tel.fonteCatalogo || "") + "; sem perdas)"; }
     else if (lu) {
       nTel = 0;
       x.aguasInfo.forEach(function (ai) {
@@ -2108,6 +2188,12 @@
        entre as duas chapas — material próprio, espessura do catálogo */
     var nucTipo = sand ? nucleoTipo(tel, t) : null;
     var faceMad = arr(t.tipoTelhado && t.tipoTelhado.camadas).some(function (c) { return /madeira/i.test(c.material || ""); });
+    /* telha de ACABAMENTO EMBAIXO (sanduíche/forro de telha): a face de baixo é a do produto (tel.faceInferior) e a de cima a do
+       catálogo (tel.faceSuperior) — texturas próprias, não a mesma chapa nas duas */
+    var fInf = tel && tel.faceInferior ? tel.faceInferior : null, fSup = tel && tel.faceSuperior ? tel.faceSuperior : null;
+    var baixoMad = faceMad || !!(fInf && fInf.textura === "madeira"), baixoTex = !baixoMad && sand && fInf && fInf.textura ? fInf : null;
+    var cimaTex = sand && fSup && fSup.textura ? fSup : null;
+    var ripaSec = arr(pk.pecas).filter(function (o) { return o.p === "ripa"; })[0] || null;   /* a ripa do pacote (largura e altura) para as fiadas */
     var cristas = [];   /* por peça de água: o topo da crista da telha num ponto (para a capa do espigão/cumeeira assentar) */
     aguasInclinadas(t).forEach(function (ag, ia) {
       var S = sistemaDe(ag), d = S.d, td = S.td, f = S.f;
@@ -2119,8 +2205,11 @@
         var Lp = tel && fin(tel.galga && tel.galga.m) ? tel.galga.m : (tel && fin(tel.comprimentoPeca) ? tel.comprimentoPeca - 0.1 : null), rampa = (umax - umin) * f;
         if (!Lp) { var cm = arr(tel && tel.comprimentos).length ? Math.max.apply(null, tel.comprimentos) : num(tel && tel.comprimentoMaxM, 12); Lp = rampa <= cm ? rampa : cm - recobLong(tel, 10); }
         var nRow = Math.max(1, Math.ceil(rampa / Lp - 1e-9));
+        /* encaixe na ripa: a fiada pendura na ripa do catálogo (fiadasTelha); sem ripa/encaixe, o desenho antigo (fileiras iguais) */
+        var FIg = ripaSec && pk.espacamentos && pk.espacamentos.galga != null ? fiadasTelha(tel, rampa, { b: ripaSec.w, h: ripaSec.h }, f, pf.esp * f) : null;
+        if (FIg) nRow = FIg.n;
         /* teto: amostras por passo e, se ainda passar, fileiras juntas */
-        var porPasso = amostrasPorPasso(tel), nCol = function (pp) { return Math.ceil((tmx - tmn) / pf.passo * pp) + 2; };
+        var porPasso = amostrasPorPasso(tel), nCol = function (pp) { return Math.ceil((tmx - tmn) / pf.passo * (pp + (tel && tel.forma === "capa-canal" ? 2 : 0))) + 2; };   /* capa e canal: + os 2 nós exatos por onda */
         /* T4: a telha com CORPO — além de cima e de baixo, cada fileira fecha a frente (2 por coluna), a última o topo e as
            pontas: ~6 triângulos por célula; os topos que o contorno corta (espigão, rincão) entram enquanto couber no teto */
         var est = function (pp, nr) { return nr * nCol(pp) * 6 + 2 * nCol(pp) + nr * 4; };
@@ -2128,14 +2217,30 @@
            canal de um 20×30 saía PLANA (h(0) = h(½) = 0,45·A) e a romana sem a crista; o trapézio usa as 4 quinas sempre */
         var minPP = tel && tel.forma === "plana" ? 1 : 4;
         while (est(porPasso, nRow) > teto && porPasso > minPP) porPasso--;
-        var junta = 1; while (est(porPasso, Math.ceil(nRow / junta)) > teto && junta < nRow) junta++;
+        if (FIg && est(porPasso, nRow) > teto) { FIg = null; nRow = Math.max(1, Math.ceil(rampa / Lp - 1e-9)); }   /* não cabe no teto de triângulos: desenho antigo */
+        var junta = 1; if (!FIg) while (est(porPasso, Math.ceil(nRow / junta)) > teto && junta < nRow) junta++;
         nRow = Math.ceil(nRow / junta);
-        var gT = { chave: "telha-" + ia, material: "telha", agua: ia, pos: [], nTri: 0, nBorda: 0 }, gB = { chave: "telha-baixo-" + ia, material: faceMad ? "telha-madeira" : "telha", agua: ia, pos: [], nTri: 0 };
+        var gT = { chave: "telha-" + ia, material: "telha", agua: ia, pos: [], nTri: 0, nBorda: 0 }, gB = { chave: "telha-baixo-" + ia, material: baixoMad ? "telha-madeira" : "telha", agua: ia, pos: [], nTri: 0 };
+        if (cimaTex) { gT.textura = cimaTex.textura; }
+        if (baixoTex) { gB.textura = baixoTex.textura; gB.corRgb = baixoTex.corRgb || null; }
         /* as bordas: na telha comum, na malha de cima (mesmo material — uma malha a menos); na sanduíche, o núcleo */
         var gW = sand ? { chave: "telha-nucleo-" + ia, material: "telha-nucleo", nucleo: nucTipo, nucleoMm: nucleo * 1000, agua: ia, pos: [], nTri: 0, nBorda: 0 } : gT;
         var orcW = Math.max(0, teto - est(porPasso, nRow)), extraW = 0;
         var base = pk.camadasAgua && pk.camadasAgua[ia] ? pk.camadasAgua[ia].telha : pk.camadas.telha, esp = pf.esp,   /* T3: o fundo da telha pelo plano desta água */
          lift = (esp + 0.004) * (tel && /ceramica|concreto/.test(tel.familia) ? 3 : 1);
+        /* as FILEIRAS: ua..ubx (u da ponta de baixo e do topo) e a altura da face de baixo acima do apoio por u (metros verticais) */
+        var RW = [];
+        if (FIg) for (var kf = 0; kf < FIg.n; kf++) {
+          /* a face de baixo é UMA reta por fiada (da ponta, mais alta, até tocar a borda de cima da ripa) */
+          var sobeK = (function (k0) { return function (u) { return FIg.sobe(k0, (u - umin) * f); }; })(kf), uaK = umin + Math.max(0, FIg.lows[kf]) / f, ubK = umin + FIg.tops[kf] / f;
+          RW.push({ ua: uaK, ubx: ubK, sobe: sobeK });
+          /* a última fiada para 2 cm (ou até 10 cm) antes do fim da água: o resto até a cumeeira é uma faixa plana (a capa cobre) */
+          if (kf === FIg.n - 1 && umax > ubK + 1e-6) RW.push({ ua: ubK, ubx: umax, sobe: function () { return -0.0008; }, cont: true });
+        }
+        else for (var kr = 0; kr < nRow; kr++) {
+          var uaR = umin + (umax - umin) * kr / nRow, ubR = umin + (umax - umin) * (kr + 1) / nRow, ubxR = kr + 1 < nRow ? ubR + Math.min(0.1, (ubR - uaR) * 0.25) : ubR, liftR = kr > 0 ? lift : 0;
+          RW.push({ ua: uaR, ubx: ubxR, sobe: (function (ua0, ubx0, lf0) { return function (u) { return lf0 * (ubx0 - u) / Math.max(1e-9, ubx0 - ua0); }; })(uaR, ubxR, liftR) });
+        }
         function tri(g, p, q, r) { g.pos.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]); g.nTri++; }
         function parede(g, p, q, r2, s2) {
           var d1 = Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]), d2 = Math.abs(p[0] - s2[0]) + Math.abs(p[1] - s2[1]) + Math.abs(p[2] - s2[2]);
@@ -2148,32 +2253,31 @@
         var ts = [tmn];
         if (tel && tel.forma === "trapezoidal" && pf.passo) pontosTrap(tel, tmn, tmx).forEach(function (q) { ts.push(q); });
         else { var dtc = pf.passo / porPasso, k0 = Math.ceil(tmn / dtc + 1e-9); for (var kk = k0; kk * dtc < tmx - 1e-9; kk++) ts.push(kk * dtc); }
+        /* capa e canal: o fundo do canal (x = ¼ do passo) e o alto da capa (¾) são nós EXATOS — com menos amostras por passo (teto de
+           triângulos) o canal saía até ~5 mm acima da ripa */
+        if (tel && tel.forma === "capa-canal" && pf.passo) for (var kc2 = Math.floor(tmn / pf.passo) - 1; kc2 <= Math.ceil(tmx / pf.passo) + 1; kc2++) [0.25, 0.75].forEach(function (fr) { var xq = (kc2 + fr) * pf.passo; if (xq > tmn + 1e-9 && xq < tmx - 1e-9) ts.push(xq); });
         ts.push(tmx);
-        (function (Qc, Sc, dc, umn, umx, nR, base0, lift0, fc, hm) {
-          var bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity, du = (umx - umn) / nR;
+        ts.sort(function (a, b2) { return a - b2; });
+        for (var iu = ts.length - 1; iu > 0; iu--) if (ts[iu] - ts[iu - 1] < 1e-9) ts.splice(iu, 1);
+        (function (Qc, Sc, dc, RWc, base0, fc, hm) {
+          var bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
           Qc.forEach(function (q) { bx0 = Math.min(bx0, q[0]); bx1 = Math.max(bx1, q[0]); bz0 = Math.min(bz0, q[1]); bz1 = Math.max(bz1, q[1]); });
           cristas.push({ Q: Qc, cx: [bx0 - 1e-6, bx1 + 1e-6, bz0 - 1e-6, bz1 + 1e-6], top: function (x, z) {
-            var u = dc[0] * x + dc[1] * z, best = null, rk = du > 0 ? Math.floor((u - umn) / du) : 0;
-            /* só a fileira de u e a de antes (a sobreposição de até 10 cm da anterior): o mesmo resultado do laço em todas */
-            for (var rr2 = Math.max(0, rk - 1); rr2 <= Math.min(nR - 1, rk + 1); rr2++) {
-              var ua2 = umn + (umx - umn) * rr2 / nR, ub2 = umn + (umx - umn) * (rr2 + 1) / nR, ubx2 = rr2 + 1 < nR ? ub2 + Math.min(0.1, (ub2 - ua2) * 0.25) : ub2;
-              if (u < ua2 - 1e-6 || u > ubx2 + 1e-6) continue;
-              var la = rr2 > 0 ? lift0 : 0, sb = la * (ubx2 - u) / Math.max(1e-9, ubx2 - ua2);
-              var y = Sc.y(x, z) + base0 + sb + (sand ? nucleo : 0) + hm * fc + pf.esp * fc;
+            var u = dc[0] * x + dc[1] * z, best = null;
+            for (var rr2 = 0; rr2 < RWc.length; rr2++) {
+              var R2 = RWc[rr2]; if (u < R2.ua - 1e-6 || u > R2.ubx + 1e-6) continue;
+              var y = Sc.y(x, z) + base0 + R2.sobe(u) + (sand ? nucleo : 0) + hm * fc + pf.esp * fc;
               if (best == null || y > best) best = y;
             }
             return best;
           } });
-        })(Q, S, d, umin, umax, nRow, base, lift, f, ts.reduce(function (m, tt) { return Math.max(m, h(tt)); }, 0));   /* a crista DESENHADA (as amostras da onda), não a teórica */
+        })(Q, S, d, RW, base, f, ts.reduce(function (m, tt) { return Math.max(m, h(tt)); }, 0));   /* a crista DESENHADA (as amostras da onda), não a teórica */
         var faixaU = ts.map(function (tt, i) {
           var t2 = i === 0 ? tt + 1e-4 : (i === ts.length - 1 ? tt - 1e-4 : tt), cc = cordasT(Q, t2, d, td);
           return cc.length ? [cc[0][0], cc[cc.length - 1][1]] : null;
         });
-        for (var r = 0; r < nRow; r++) {
-          var ua = umin + (umax - umin) * r / nRow, ub = umin + (umax - umin) * (r + 1) / nRow;
-          var ubx = r + 1 < nRow ? ub + Math.min(0.1, (ub - ua) * 0.25) : ub;   /* a de cima cobre a de baixo (recobrimento) */
-          var liftA = r > 0 ? lift : 0;
-          var sobe = function (u) { return liftA * (ubx - u) / Math.max(1e-9, ubx - ua); };
+        for (var r = 0; r < RW.length; r++) {
+          var ua = RW[r].ua, ubx = RW[r].ubx, sobe = RW[r].sobe;   /* a de cima cobre a de baixo (recobrimento / encaixe) */
           var topo = function (u, tt) { return P3(u, tt, sobe(u) + (sand ? nucleo : 0) + h(tt) * f + esp * f); };
           var fundo = sand ? function (u, tt) { return P3(u, tt, sobe(u)); } : function (u, tt) { return P3(u, tt, sobe(u) + h(tt) * f); };
           for (var c = 0; c + 1 < ts.length; c++) {
@@ -2190,8 +2294,8 @@
             tri(gB, C0, D1, D0); tri(gB, C0, C1, D1);
             /* T4 — o CORPO: a frente da fileira (o degrau/beiral e o corte do contorno), o topo da última (e onde o contorno
                corta) e as pontas. Os vértices são os MESMOS da face de cima e da de baixo: a fileira fecha sem fresta */
-            parede(gW, A0, B0, D0, C0);
-            if (r === nRow - 1) parede(gW, A1, B1, D1, C1);
+            if (!RW[r].cont) parede(gW, A0, B0, D0, C0);
+            if (r === RW.length - 1) parede(gW, A1, B1, D1, C1);
             else if ((h0 < ubx - 1e-6 || h1 < ubx - 1e-6) && extraW + 2 <= orcW) { parede(gW, A1, B1, D1, C1); extraW += 2; }
             if (c === 0) parede(gW, A0, A1, C1, C0);
             if (c + 2 === ts.length) parede(gW, B0, B1, D1, D0);

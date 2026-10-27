@@ -865,6 +865,17 @@
         M[k] = mw;
         return M[k];
       }
+      if (/^tex:/.test(k)) {
+        /* face de telha com a textura própria do produto (telha de acabamento embaixo: filme branco liso embaixo, aço pré-pintado em cima):
+           a COR da biblioteca (sRGB) e, com "Materiais realistas", o mapa; sem a biblioteca, a cor do catálogo (corRgb) */
+        var pT = k.slice(4).split(":"), slugT = pT[0], BTt = global.BimTextura, libT = BTt && BTt.BIB && BTt.BIB[slugT];
+        var rgbT = pT[1] ? pT[1].split(",").map(Number) : (libT && libT.media ? libT.media : [0.8, 0.8, 0.8]);
+        var mx = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(rgbT[0], rgbT[1], rgbT[2], THREE.SRGBColorSpace), metalness: 0.05, roughness: 0.55, side: THREE.DoubleSide });
+        mx.userData.corLin = mx.color.clone(); mx.userData.rgba = [rgbT[0], rgbT[1], rgbT[2], 1];
+        if (libT && (!BTt.existe || BTt.existe(slugT))) { mx.userData.tex = { slug: slugT, escala: libT.m, asp: libT.asp || 1, fonte: "telha", classe: "", material: slugT }; mx.userData.corIfc = [rgbT[0], rgbT[1], rgbT[2]]; }
+        M[k] = mx;
+        return M[k];
+      }
       M[k] = new THREE.MeshStandardMaterial({ color: cores[k] || 0xa9b0b8, metalness: k === "chapa" || k === "metalica" ? 0.4 : 0.03, roughness: /^nucleo/.test(k) ? 0.95 : 0.85, side: THREE.DoubleSide });
       /* T4 — a TEXTURA da telha (biblioteca do js/bimtextura.js; com "Materiais realistas" vira mapa de verdade, tingido para a
          cor da telha): cerâmica = terracota (a foto das telhas na escala da onda modelada, ~19 peças por repetição), concreto =
@@ -915,7 +926,7 @@
           if (G && G.grupos.length) {
             var tlx = TM().telha(t.tipoId), fam = tlx ? tlx.familia : "";
             G.grupos.forEach(function (g) {
-              var mk = g.material === "madeira" ? "madeiraEstr" : (g.material === "aco" ? "chapa" : (g.material === "telha-madeira" ? "madeira" : (g.material === "telha-nucleo" ? "nucleo-" + String(g.nucleo || "EPS").toLowerCase() : (fam === "fibrocimento" ? "fibrocimento" : (fam === "metalica" || fam === "sanduiche" ? "metalica" : (fam === "concreto" ? "concretoTelha" : "ceramica"))))));
+              var mk = g.textura ? "tex:" + g.textura + (g.corRgb ? ":" + g.corRgb.join(",") : "") : g.material === "madeira" ? "madeiraEstr" : (g.material === "aco" ? "chapa" : (g.material === "telha-madeira" ? "madeira" : (g.material === "telha-nucleo" ? "nucleo-" + String(g.nucleo || "EPS").toLowerCase() : (fam === "fibrocimento" ? "fibrocimento" : (fam === "metalica" || fam === "sanduiche" ? "metalica" : (fam === "concreto" ? "concretoTelha" : "ceramica"))))));
               var mt = self._mat(THREE, mk), me = new THREE.Mesh(self._geo(THREE, g.pos), mt);
               me.userData.telhadoGrupo = g.chave;   /* T5: o clique sabe se caiu na estrutura ou na telha (BimTelhadoPecaUI) */
               addMesh(me, t.id, "IFCROOF", mt);
