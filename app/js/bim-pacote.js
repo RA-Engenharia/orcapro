@@ -7474,53 +7474,139 @@ plantaCfg.innerHTML =
 '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-q="esc" class="inp" style="width:130px"><option value="50" selected>1:50</option><option value="75">1:75</option><option value="100">1:100</option><option value="200">1:200</option></select></label>' +
 '<label style="display:flex;gap:6px;align-items:center"><input data-q="cotas" type="checkbox" checked> Cotas automáticas nas paredes</label>' +
 '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade abaixo do corte <input data-q="prof" class="inp" type="number" min="0.5" step="0.5" value="3" style="width:64px"> m</label>' +
-'<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena.</div>' +
+'<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Cotas externas: uma cadeia por lado, só com os cantos e as paredes internas que encostam na fachada, mais o total. Cotas internas: largura e profundidade de cada ambiente retangular. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena.</div>' +
 '<div style="display:flex;gap:6px"><button class="btn sm primary" data-q="gerar" style="flex:1">Gerar</button><button class="btn sm" data-q="cancelar" style="flex:1">Cancelar</button></div>';
 host.appendChild(plantaCfg);
 S.plantaCfg = plantaCfg;
-function desenharCotas(g2, cad, geo) {
+function desenharCotas(g2, cad, geo, int) {
 var mmpx = 96 / 25.4;
 function mm(v) { return Math.round(v * mmpx); }
 function px(x) { return geo.padL + (x - geo.x0) * geo.pxM; }
 function py(z) { return (z - geo.z0) * geo.pxM; }
-function tick(x, y) { g2.beginPath(); g2.moveTo(x - 3.5, y + 3.5); g2.lineTo(x + 3.5, y - 3.5); g2.stroke(); }
+function ponto(x, y, r) { g2.beginPath(); g2.arc(x, y, r || 2.4, 0, Math.PI * 2); g2.fill(); }
 g2.lineWidth = 1;
-if (cad.x) {
-var y1 = geo.H + mm(6), y2 = geo.H + mm(12);
+function cadH(c, borda, sinal) {
+var y1 = borda + sinal * mm(12), y2 = y1 + sinal * mm(8);
+if (c.segs.length === 1) y2 = y1;
 g2.strokeStyle = '#888';
-cad.x.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(px(t), geo.H + 2); g2.lineTo(px(t), y2 + mm(1.5)); g2.stroke(); });
+c.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(px(t), borda + sinal * 2); g2.lineTo(px(t), y2 + sinal * mm(1.5)); g2.stroke(); });
 g2.strokeStyle = '#111'; g2.fillStyle = '#111';
-g2.beginPath(); g2.moveTo(px(cad.x.total.a) - 6, y1); g2.lineTo(px(cad.x.total.b) + 6, y1); g2.stroke();
-cad.x.ticks.forEach(function (t) { tick(px(t), y1); });
-cad.x.segs.forEach(function (s) {
+g2.beginPath(); g2.moveTo(px(c.total.a) - 6, y1); g2.lineTo(px(c.total.b) + 6, y1); g2.stroke();
+c.ticks.forEach(function (t) { ponto(px(t), y1); });
+if (c.segs.length > 1) c.segs.forEach(function (s) {
 var w = px(s.b) - px(s.a), t = BimPlanta.fmtM(s.v);
 g2.font = '10px Arial'; var tw = g2.measureText(t).width;
 if (tw > w - 4) { g2.font = '8px Arial'; tw = g2.measureText(t).width; if (tw > w - 2) return; }
 g2.fillText(t, (px(s.a) + px(s.b)) / 2 - tw / 2, y1 - 3);
 });
-g2.beginPath(); g2.moveTo(px(cad.x.total.a) - 6, y2); g2.lineTo(px(cad.x.total.b) + 6, y2); g2.stroke();
-tick(px(cad.x.total.a), y2); tick(px(cad.x.total.b), y2);
-g2.font = 'bold 11px Arial'; var tt = BimPlanta.fmtM(cad.x.total.v), ttw = g2.measureText(tt).width;
-g2.fillText(tt, (px(cad.x.total.a) + px(cad.x.total.b)) / 2 - ttw / 2, y2 - 3);
+g2.beginPath(); g2.moveTo(px(c.total.a) - 6, y2); g2.lineTo(px(c.total.b) + 6, y2); g2.stroke();
+ponto(px(c.total.a), y2); ponto(px(c.total.b), y2);
+g2.font = 'bold 11px Arial'; var tt = BimPlanta.fmtM(c.total.v), ttw = g2.measureText(tt).width;
+g2.fillText(tt, (px(c.total.a) + px(c.total.b)) / 2 - ttw / 2, y2 - 3);
 }
-if (cad.z) {
-var x1 = geo.padL - mm(6), x2 = geo.padL - mm(12);
+function cadV(c, borda, sinal) {
+var x1 = borda + sinal * mm(12), x2 = x1 + sinal * mm(8), dx = sinal > 0 ? 11 : -3;
+if (c.segs.length === 1) x2 = x1;
 g2.strokeStyle = '#888';
-cad.z.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(geo.padL - 2, py(t)); g2.lineTo(x2 - mm(1.5), py(t)); g2.stroke(); });
+c.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(borda + sinal * 2, py(t)); g2.lineTo(x2 + sinal * mm(1.5), py(t)); g2.stroke(); });
 g2.strokeStyle = '#111'; g2.fillStyle = '#111';
-g2.beginPath(); g2.moveTo(x1, py(cad.z.total.a) - 6); g2.lineTo(x1, py(cad.z.total.b) + 6); g2.stroke();
-cad.z.ticks.forEach(function (t) { tick(x1, py(t)); });
-cad.z.segs.forEach(function (s) {
+g2.beginPath(); g2.moveTo(x1, py(c.total.a) - 6); g2.lineTo(x1, py(c.total.b) + 6); g2.stroke();
+c.ticks.forEach(function (t) { ponto(x1, py(t)); });
+if (c.segs.length > 1) c.segs.forEach(function (s) {
 var h = py(s.b) - py(s.a), t = BimPlanta.fmtM(s.v);
 g2.font = '10px Arial'; var tw = g2.measureText(t).width;
 if (tw > h - 4) { g2.font = '8px Arial'; tw = g2.measureText(t).width; if (tw > h - 2) return; }
-g2.save(); g2.translate(x1 - 3, (py(s.a) + py(s.b)) / 2 + tw / 2); g2.rotate(-Math.PI / 2); g2.fillText(t, 0, 0); g2.restore();
+g2.save(); g2.translate(x1 + dx, (py(s.a) + py(s.b)) / 2 + tw / 2); g2.rotate(-Math.PI / 2); g2.fillText(t, 0, 0); g2.restore();
 });
-g2.beginPath(); g2.moveTo(x2, py(cad.z.total.a) - 6); g2.lineTo(x2, py(cad.z.total.b) + 6); g2.stroke();
-tick(x2, py(cad.z.total.a)); tick(x2, py(cad.z.total.b));
-g2.save(); g2.font = 'bold 11px Arial'; var tz = BimPlanta.fmtM(cad.z.total.v), tzw = g2.measureText(tz).width;
-g2.translate(x2 - 3, (py(cad.z.total.a) + py(cad.z.total.b)) / 2 + tzw / 2); g2.rotate(-Math.PI / 2); g2.fillText(tz, 0, 0); g2.restore();
+g2.beginPath(); g2.moveTo(x2, py(c.total.a) - 6); g2.lineTo(x2, py(c.total.b) + 6); g2.stroke();
+ponto(x2, py(c.total.a)); ponto(x2, py(c.total.b));
+g2.save(); g2.font = 'bold 11px Arial'; var tz = BimPlanta.fmtM(c.total.v), tzw = g2.measureText(tz).width;
+g2.translate(x2 + dx, (py(c.total.a) + py(c.total.b)) / 2 + tzw / 2); g2.rotate(-Math.PI / 2); g2.fillText(tz, 0, 0); g2.restore();
 }
+if (cad) {
+if (cad.topo) cadH(cad.topo, py(cad.faces.topo), -1);
+if (cad.base) cadH(cad.base, py(cad.faces.base), 1);
+if (cad.esq) cadV(cad.esq, px(cad.faces.esq), -1);
+if (cad.dir) cadV(cad.dir, px(cad.faces.dir), 1);
+}
+if (int && int.cotas) {
+g2.lineWidth = 0.8;
+int.cotas.forEach(function (c) {
+var t = BimPlanta.fmtM(c.v);
+g2.strokeStyle = '#111'; g2.fillStyle = '#111'; g2.font = '9px Arial';
+var tw = g2.measureText(t).width;
+if (c.tipo === 'larg') {
+var ya = py(c.fixo), xa = px(c.a), xb = px(c.b);
+g2.beginPath(); g2.moveTo(xa, ya); g2.lineTo(xb, ya); g2.stroke();
+ponto(xa, ya, 2); ponto(xb, ya, 2);
+var tx = (xa + xb) / 2 - tw / 2, ty = ya - 3;
+g2.save(); g2.strokeStyle = '#fff'; g2.lineWidth = 3; g2.strokeText(t, tx, ty); g2.restore(); g2.fillText(t, tx, ty);
+} else {
+var xp = px(c.fixo), za = py(c.a), zb = py(c.b);
+g2.beginPath(); g2.moveTo(xp, za); g2.lineTo(xp, zb); g2.stroke();
+ponto(xp, za, 2); ponto(xp, zb, 2);
+g2.save(); g2.translate(xp - 3, (za + zb) / 2 + tw / 2); g2.rotate(-Math.PI / 2);
+g2.strokeStyle = '#fff'; g2.lineWidth = 3; g2.strokeText(t, 0, 0); g2.fillText(t, 0, 0); g2.restore();
+}
+});
+}
+}
+function ambientesDaPlanta(yCorte, visivelEl) {
+var lista = [], fonte = '';
+try {
+var UI = window.BimAmbienteUI, AM = window.BimAmbiente;
+var st = UI && UI.estado ? UI.estado() : null;
+if (st && AM && AM.calcular && st.ambientes && st.ambientes.length) {
+var r = AM.calcular(st, { regra: 'face', niveis: UI.niveisObra ? UI.niveisObra() : [] });
+st.ambientes.forEach(function (a) {
+var c = r.porId[a.id];
+if (!c || c.estado !== 'delimitado' || !c.contorno || c.contorno.length < 3) return;
+if (typeof c.base === 'number' && typeof c.topo === 'number' && !(c.base - 0.01 <= yCorte && yCorte <= c.topo + 0.01)) return;
+lista.push({ nome: a.nome || ('Ambiente ' + (lista.length + 1)), pts: c.contorno });
+});
+if (lista.length) fonte = 'ambientes do editor';
+}
+} catch (eA) { lista = []; }
+if (lista.length) return { lista: lista, fonte: fonte };
+S.modelos.forEach(function (mo) {
+if (mo.visivel === false) return;
+(mo.elementos || []).forEach(function (el) {
+if (!el.aabb || String(el.tipo).toUpperCase() !== 'IFCSPACE' || !visivelEl(el)) return;
+var a = el.aabb;
+if (!(a.min[1] < yCorte && a.max[1] > yCorte)) return;
+var m = S.meshPorUid[el.uid], retang = !!m, vv = new THREE.Vector3();
+if (m) {
+m.updateWorldMatrix(true, true);
+m.traverse(function (o) {
+if (!retang || !o.isMesh || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return;
+var pos = o.geometry.attributes.position;
+for (var i = 0; i < pos.count; i++) {
+vv.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+var nx = Math.min(Math.abs(vv.x - a.min[0]), Math.abs(vv.x - a.max[0])), nz = Math.min(Math.abs(vv.z - a.min[2]), Math.abs(vv.z - a.max[2]));
+if (nx > 0.03 || nz > 0.03) { retang = false; return; }
+}
+});
+}
+var nm = el.nome || el.name || el.tag || ('Ambiente ' + (lista.length + 1));
+if (retang) lista.push({ nome: nm, pts: [{ x: a.min[0], z: a.min[2] }, { x: a.max[0], z: a.min[2] }, { x: a.max[0], z: a.max[2] }, { x: a.min[0], z: a.max[2] }] });
+else lista.push({ nome: nm, pts: [{ x: a.min[0], z: a.min[2] }, { x: a.max[0], z: a.max[2] }, { x: a.min[0], z: a.max[2] }] });
+});
+});
+return { lista: lista, fonte: lista.length ? 'espaços do modelo (IfcSpace)' : '' };
+}
+function obstaculosDaPlanta(yCorte, visivelEl) {
+var out = [], re = /FURNISH|SANITARY|FLOWSTORAGE|BUILDINGELEMENTPROXY|ELECTRICAPPLIANCE|FLOWTERMINAL/i;
+S.modelos.forEach(function (mo) {
+if (mo.visivel === false) return;
+(mo.elementos || []).forEach(function (el) {
+if (!el.aabb || !re.test(String(el.tipo)) || !visivelEl(el)) return;
+var a = el.aabb;
+if (!(a.min[1] < yCorte)) return;
+if (!(isFinite(a.min[0]) && isFinite(a.max[0]) && isFinite(a.min[2]) && isFinite(a.max[2]))) return;
+out.push({ minx: a.min[0] - 0.03, maxx: a.max[0] + 0.03, minz: a.min[2] - 0.03, maxz: a.max[2] + 0.03 });
+});
+});
+return out;
 }
 function gerarPlantaTec(o) {
 if (S._famLodTudo0) S._famLodTudo0();
@@ -7614,7 +7700,7 @@ renderer.clippingPlanes = prevClip; renderer.localClippingEnabled = prevLocal;
 renderer.setClearColor(prevClear, prevAlpha); renderer.toneMapping = prevTone;
 }
 if (!buf) return null;
-var cad = null;
+var cad = null, cotInt = null;
 if (o.cotas && typeof BimPlanta !== 'undefined') {
 var els = [];
 S.modelos.forEach(function (mo) {
@@ -7626,23 +7712,40 @@ if (!m || !m.visible || !cadeiaVisivel(m)) return;
 els.push({ tipo: el.tipo, aabb: el.aabb });
 });
 });
-cad = BimPlanta.cadeias(BimPlanta.paredesDoCorte(els, o.y));
+var visEl = function (el) { var m = S.meshPorUid[el.uid]; return !!m && m.visible && cadeiaVisivel(m); };
+var amb = ambientesDaPlanta(o.y, visEl);
+var pcorte = BimPlanta.paredesDoCorte(els, o.y), foraEdif = 0, semAmb = !amb.lista.length;
+if (!semAmb) { var ed = BimPlanta.paredesDaEdificacao(pcorte, amb.lista, 0.3); pcorte = ed.paredes; foraEdif = ed.fora; }
+cad = BimPlanta.ladosPlanta(pcorte);
+cad.foraEdificacao = foraEdif; cad.semAmbientes = semAmb;
+cotInt = BimPlanta.cotasInternas(amb.lista, { obstaculos: obstaculosDaPlanta(o.y, visEl), margem: Math.max(0.25, escalaEf / 1000 * 8) });
+cotInt.fonte = amb.fonte;
 }
-var temCotas = !!(cad && (cad.x || cad.z));
+var temCotas = !!(cad && (cad.topo || cad.base || cad.esq || cad.dir));
 var avisos = [];
+if (cad && cad.semAmbientes) avisos.push('Sem ambientes no corte: a cota externa usa TODAS as paredes (inclui muro/divisa se houver)');
 if (cad && cad.diagonais) avisos.push('⚠ ' + cad.diagonais + ' parede(s) fora de esquadro/curtas sem cota automática — meça com a trena');
 if (o.cotas && !temCotas) avisos.push('' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Nenhuma parede reta atravessa o corte — sem cotas automáticas');
+if (cotInt) {
+if (cotInt.pulados) avisos.push('Cotas internas: ' + cotInt.pulados + ' ambiente(s) curvo(s) ou diagonal(is) sem cota interna — meça com a trena');
+if (cotInt.semLugar) avisos.push('Cotas internas: ' + cotInt.semLugar + ' ambiente(s) sem vão livre de 0,60 m para a cota interna');
+if (!cotInt.total && !cotInt.fonte) avisos.push('Cotas internas: nenhum ambiente no corte (crie os ambientes ou use o IfcSpace do projeto)');
+}
 var padTop = avisos.length ? (avisos.length * 15 + 8) : 0;
-var padL = (cad && cad.z) ? Math.round(17 * PPM96) : 0;
-var padB = (cad && cad.x) ? Math.round(17 * PPM96) : 0;
-var faixa = 46, totalW = padL + W, totalH = padTop + H + padB + faixa, yBase = padTop + H + padB;
+var needC = Math.round((12 + 8) * PPM96) + 16, gx0 = minX - margem, gz0 = minZ - margem;
+function faltaPad(dist) { return Math.max(0, Math.ceil(needC - dist)); }
+var padCT = (cad && cad.topo) ? faltaPad((cad.faces.topo - gz0) * pxM) : 0;
+var padL = (cad && cad.esq) ? faltaPad((cad.faces.esq - gx0) * pxM) : 0;
+var padR = (cad && cad.dir) ? faltaPad(W - (cad.faces.dir - gx0) * pxM) : 0;
+var padB = (cad && cad.base) ? faltaPad(H - (cad.faces.base - gz0) * pxM) : 0;
+var faixa = 46, totalW = padL + W + padR, totalH = padTop + padCT + H + padB + faixa, yBase = padTop + padCT + H + padB;
 var cnv = document.createElement('canvas'); cnv.width = totalW; cnv.height = totalH;
 var g2 = cnv.getContext('2d');
 g2.fillStyle = '#fff'; g2.fillRect(0, 0, totalW, totalH);
 var img = g2.createImageData(W, H);
 for (var y2f = 0; y2f < H; y2f++) { var srcY = (H - 1 - y2f) * W * 4; img.data.set(buf.subarray(srcY, srcY + W * 4), y2f * W * 4); }
-g2.putImageData(img, padL, padTop);
-if (cad) { g2.save(); g2.translate(0, padTop); desenharCotas(g2, cad, { padL: padL, H: H, pxM: pxM, x0: minX - margem, z0: minZ - margem }); g2.restore(); }
+g2.putImageData(img, padL, padTop + padCT);
+if (cad) { g2.save(); g2.translate(0, padTop + padCT); desenharCotas(g2, cad, { padL: padL, H: H, W: W, pxM: pxM, x0: minX - margem, z0: minZ - margem }, cotInt); g2.restore(); }
 if (avisos.length) {
 g2.font = '11px Arial'; g2.fillStyle = '#b45309';
 for (var ai = 0; ai < avisos.length; ai++) g2.fillText(avisos[ai], 8, 16 + ai * 15);
@@ -7658,7 +7761,7 @@ g2.font = 'bold ' + fs + 'px Arial';
 while (fs > 8 && g2.measureText(titulo).width > livre) { fs--; g2.font = 'bold ' + fs + 'px Arial'; }
 if (g2.measureText(titulo).width > livre) { titulo = 'ESC 1:' + escalaEf + (ajustada ? ' (aj.)' : ''); g2.font = 'bold 11px Arial'; }
 g2.fillStyle = '#111'; g2.fillText(titulo, 10, yBase + 29);
-return { url: cnv.toDataURL('image/png'), w: totalW, h: totalH, escala: escalaEf, pxPorMetro: pxM, ajustada: ajustada, cotas: temCotas, diagonais: cad ? cad.diagonais : 0, larguraMM: totalW / 96 * 25.4, alturaMM: totalH / 96 * 25.4 };
+return { url: cnv.toDataURL('image/png'), w: totalW, h: totalH, escala: escalaEf, pxPorMetro: pxM, ajustada: ajustada, cotas: temCotas, foraEdificacao: cad ? cad.foraEdificacao : 0, lados: cad ? { topo: !!cad.topo, base: !!cad.base, esq: !!cad.esq, dir: !!cad.dir } : null, cotasInternas: cotInt ? cotInt.cotas.length : 0, ambientesPulados: cotInt ? cotInt.pulados : 0, ambientesSemLugar: cotInt ? cotInt.semLugar : 0, diagonais: cad ? cad.diagonais : 0, larguraMM: totalW / 96 * 25.4, alturaMM: totalH / 96 * 25.4 };
 }
 S._gerarPlantaTec = gerarPlantaTec;
 function acimaItens(acimaGr, acimaOrd, telaX, telaY) {
