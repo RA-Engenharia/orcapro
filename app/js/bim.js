@@ -6845,12 +6845,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var u = S.selected ? uidDeMalha(S.selected) : null; if (u && r.indexOf(u) < 0) r.push(u);
     return r;
   }
+  /* #85: o desenho de precisão (BimPrecisao.tipoNoEstado) conhece esse id? Sem estado ainda, diz que sim (o caminho de sempre). */
+  function precConhece(id) {
+    try { var Pr = window.BimPrecisao, e = S.edit && S.edit.estado; return !(Pr && Pr.tipoNoEstado && e) || !!Pr.tipoNoEstado(e, id); } catch (_) { return true; }
+  }
   /* a seleção única: uids ('edit:e3', '0:1234'); modo 'trocar' | 'somar' | 'alternar' */
   function selAplicar(uids, modo) {
     var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
     novo = novo.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); });
     var mod = modeladorOn() && S._prec && S._prec.api;
-    var insts = mod ? novo.filter(function (u) { return /^edit:/.test(u) && ehInstUid(u); }) : [];   /* FLUIDEZ: tubo/peça de instalação */
+    /* DELETE PARA QUALQUER PEÇA (#85, 26/10/2026): o desenho de precisão só guarda parede, família, cobertura, cota e anotação
+       (BimPrecisao.tipoNoEstado). Volume, eixo, terreno, telhado, forro e ambiente apareciam na lista mas a seleção ficava VAZIA
+       (sem realce e sem alvo para o Delete): agora ficam na mesma lista da peça de instalação, com o mesmo realce. */
+    var insts = mod ? novo.filter(function (u) { return /^edit:/.test(u) && (ehInstUid(u) || !precConhece(u.slice(5))); }) : [];   /* FLUIDEZ: tubo/peça de instalação; #85: o que o desenho de precisão não guarda */
     var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u) && insts.indexOf(u) < 0; }).map(function (u) { return u.slice(5); }) : [];
     var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
     selInst = insts; realcarInst();
@@ -7041,6 +7048,45 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return true;
   };
   canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3 && sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); });
+  /* DELETE PARA QUALQUER PEÇA (#85, 26/10/2026): "selecionar qualquer peça e apertar o Delete deletar, para qualquer tipo de coisa".
+     Apaga a seleção inteira num lote só (um Ctrl+Z desfaz tudo): a peça criada no editor vira op `apagar`; a do IFC importado vira
+     `apagarIfc` — a MESMA op do Modificar › Apagar (a peça fica oculta e marcada como removida; o arquivo não muda). A fixada não
+     sai (Desafixar antes); a parte de uma peça pronta pergunta antes (js/bimselinst.js). Devolve true se tratou a tecla. */
+  S._opsApagarIfc = function (uids) {
+    var ops = [];
+    (uids || []).forEach(function (u) {
+      if (/^edit:/.test(u)) return;
+      var m = S.meshPorUid && S.meshPorUid[u]; if (!m || !m.userData) return;
+      var mid = m.userData.mid != null ? m.userData.mid : S.modelID, eid = m.userData.expressID;
+      var mo = S.modelos.filter(function (x) { return x.mid === mid; })[0];
+      ops.push({ op: 'apagarIfc', uid: mid + ':' + eid, arq: mo ? mo.nome : null, eid: eid });   /* arq+eid = a identidade que sobrevive a F5 (o mid é da sessão) */
+    });
+    return ops;
+  };
+  S._apagarSelecao = function () {
+    var uids = selAtual(); if (!uids.length) return false;
+    var est = S.edit && S.edit.estado, Pr = window.BimPrecisao, ops = [], eds = [], nFix = 0;
+    uids.forEach(function (u) {
+      if (!/^edit:/.test(u)) return;
+      var id = u.slice(5);
+      if (Pr && Pr.fixado && est && Pr.fixado(est, id)) { nFix++; return; }
+      ops.push({ op: 'apagar', id: id }); eds.push(u);
+    });
+    try { if (eds.length && window.BimSelInst && BimSelInst.interceptarApagar && BimSelInst.interceptarApagar(eds)) {   /* parte de peça pronta: pergunta antes */
+      /* decisão do coordenador (26/10/2026): a pergunta vem primeiro e só trata as peças do editor; o resto da seleção NÃO é apagado nesta tecla — diz quantas e por quê */
+      var nFora = uids.length - eds.length;
+      if (nFora > 0) S._hint(nFora + (nFora === 1 ? ' peça da seleção NÃO foi apagada' : ' peças da seleção NÃO foram apagadas') + ': a pergunta da peça pronta vem primeiro e vale só para as peças do editor. Responda e aperte Delete de novo.');
+      return true;
+    } } catch (_) {}
+    var nIfc = 0;
+    S._opsApagarIfc(uids).forEach(function (o) { ops.push(o); nIfc++; });
+    if (!ops.length) { S._hint(nFix ? nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : 'Nada para apagar na seleção.'); return true; }
+    var lote = { op: 'lote', id: 'dl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: 'delete', pedido: 'Apagar ' + ops.length + (ops.length === 1 ? ' elemento' : ' elementos'), ops: ops };
+    selAplicar([], 'trocar');
+    var ok = !!(window.BIM && BIM.editarLote && BIM.editarLote(lote));
+    S._hint(ok ? ops.length + (ops.length === 1 ? ' elemento apagado' : ' elementos apagados') + (nIfc ? ' (' + nIfc + ' do IFC importado: ficam ocultos e marcados como removidos; o arquivo não muda)' : '') + ' — Ctrl+Z desfaz' + (ops.length > 1 ? ' de uma vez' : '') + '.' + (nFix ? ' ' + nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : '') : 'O editor recusou o apagar.');
+    return true;
+  };
   /* Esc limpa a seleção (e cancela o arrasto); Delete apaga a do editor. Na CAPTURA da JANELA: roda antes
      do Esc do desenho de precisão e do Esc de sempre (que fecharia o editor) — e só para a tecla quando a
      usou. Digitando num campo, ou com ferramenta armada, segue o caminho de sempre. */
@@ -7063,8 +7109,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       e.preventDefault(); e.stopPropagation(); return;
     }
     if (!semFerramenta3d()) return;
+    /* #85: a seleção tem o que o desenho de precisão NÃO apaga (tubo/conexão, volume, eixo, terreno, telhado… ou a peça do IFC
+       importado): o Delete é daqui, num lote só (um Ctrl+Z) com o que o editor também tiver. Só parede/laje/família/cobertura/cota/
+       anotação seguem o caminho de sempre do desenho de precisão. */
+    if (selInst.length || S.selected) {
+      if (S._apagarSelecao()) { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
     var temEd = !!(S._prec && S._prec.api && S._prec.api.selecao().length);
-    if (!temEd && S.selected) { S._hint('A peça do IFC importado não sai pelo Delete: use Modificar › Apagar (ela fica oculta e marcada como removida; o arquivo não muda).'); return; }
     if (temEd) setTimeout(function () { if (S && S.alive) selAplicar(selAtual(), 'trocar'); }, 0);   /* o desenho de precisão apaga; Propriedades acompanha */
   };
   window.addEventListener('keydown', S._selTeclas, true);
@@ -18660,6 +18712,8 @@ window.BIM = {
      (alças, Delete, arrastar); a do IFC, para o realce de sempre. Propriedades mostram a primeira. */
   selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
+  /* #85 (26/10/2026): a op do Modificar › Apagar para a peça do IFC importado (oculta + marcada como removida); o arquivo não muda */
+  opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
   /* SELECIONAR TODAS AS INSTÂNCIAS (js/bimselinst.js): a peça sob o ponto da tela, o visível na vista 3D e o ocultar temporário */
   uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
   uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },

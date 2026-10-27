@@ -146687,7 +146687,7 @@ tl.push(["O", "Abrir portas (liga/desliga o modo: o clique numa porta, portão, 
 tl.push(["Ctrl+Z / Ctrl+Y", "Desfazer / refazer (Ctrl+Shift+Z também refaz)"]);
 tl.push(["Enter", "Repete o último comando"]);
 tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
-tl.push(["Delete", "Apaga as peças selecionadas do editor"]);
+tl.push(["Delete", "Apaga o que está selecionado, de qualquer tipo (um Ctrl+Z desfaz tudo; a peça do IFC importado fica oculta e marcada como removida, o arquivo não muda)"]);
 tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a régua antes × depois)"]);
 tl.push(["?", "Abre esta tela de atalhos"]);
 out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,
@@ -146849,7 +146849,7 @@ c("fx-filtro-selecao", "Filtro", "categorias", "Filtro de seleção: com vários
 c("fx-copiar-area", "Copiar", "copiar", "Copia os elementos selecionados para a área de transferência. Colar pede o ponto base e o destino."),
 c("fx-colar", "Colar", "importar", "Cola o que foi copiado: os elementos ficam selecionados e a ferramenta Copiar pede o ponto base e o destino — dá para colar várias vezes."),
 c("fx-colar-alinhado", "Colar alinhado", "niveis", "Cola o grupo copiado alinhado aos níveis escolhidos, na mesma posição em planta (crie o grupo antes: Modificar › Criar › Criar grupo)."),
-c("fx-excluir", "Excluir", "lixeira", "Apaga os elementos selecionados (um Ctrl+Z desfaz tudo). Peça fixada não sai; parte de peça pronta pergunta antes."),
+c("fx-excluir", "Excluir", "lixeira", "Apaga os elementos selecionados (um Ctrl+Z desfaz tudo). Peça fixada não sai; parte de peça pronta pergunta antes; a peça do IFC importado fica oculta e marcada como removida (o arquivo não muda)."),
 c("fx-ocultar", "Ocultar elemento", "olhoFechado", "Oculta temporariamente os selecionados nesta vista. Redefinir traz de volta."),
 c("fx-isolar", "Isolar elemento", "olho", "Isola temporariamente os selecionados: o resto do modelo some. Redefinir traz de volta."),
 c("fx-restaurar-temp", "Redefinir temporário", "ciclo", "Desfaz o ocultar/isolar temporário: tudo volta a aparecer."),
@@ -151292,7 +151292,7 @@ if (!alvo.editavel) {
 st.grupo = { uids: ifc, crit: crit };
 try { b.selecionar([uidAlvo], "trocar"); } catch (eI) {}
 feitos = ifc;
-status(textoStatus(ifc.length, crit) + " — peças do IFC importado: Ocultar, Isolar e Ocultar categoria valem para elas; apagar é pelo Modificar › Apagar.");
+status(textoStatus(ifc.length, crit) + " — peças do IFC importado: Ocultar, Isolar e Ocultar categoria e Apagar (oculta e marca como removida) valem para elas.");
 } else {
 st.grupo = null;
 try { feitos = b.selecionar(ed, somar ? "somar" : "trocar") || []; } catch (eS) { feitos = []; }
@@ -151352,7 +151352,7 @@ apagar: function (uids, escolha) {
 uids = arr(uids); var self = this;
 if (!uids.length) { status("Nada selecionado para apagar."); return { ok: false }; }
 var itens = this.itens(null), pl = planoApagar(uids, itens);
-if (!pl.livres.length && !pl.fixas.length) { status("A peça do IFC importado não sai pelo Delete: use Modificar › Apagar (ela fica oculta e marcada como removida; o arquivo não muda)."); return { ok: false, ifc: pl.ifc.length }; }
+if (!pl.livres.length && !pl.fixas.length && !pl.ifc.length) { status("Nada selecionado para apagar."); return { ok: false, ifc: 0 }; }
 if (pl.parciais.length && !escolha) { this._dlgPronta(uids, pl); return { ok: false, pergunta: "pronta" }; }
 if (pl.fixas.length && escolha !== "livres" && escolha !== "inteira-livres") { this._dlgFixas(uids, pl, escolha); return { ok: false, pergunta: "fixas" }; }
 var ids = pl.livres.slice();
@@ -151360,10 +151360,12 @@ if (escolha === "inteira" || escolha === "inteira-livres") {
 var por = this._porUid(itens);
 pl.parciais.forEach(function (p) { p.resto.forEach(function (u) { if (por[u] && !por[u].fixo && ids.indexOf(u) < 0) ids.push(u); }); });
 }
-return this._executarApagar(ids, pl.fixas.length);
+return this._executarApagar(ids, pl.fixas.length, pl.ifc);
 },
-_executarApagar: function (ids, nFixas) {
-var b = B(), lote = opsApagar(ids, (++st.seq) + "-" + Date.now().toString(36));
+_executarApagar: function (ids, nFixas, ifcUids) {
+var b = B(), lote = opsApagar(ids, (++st.seq) + "-" + Date.now().toString(36)), opsI = [];
+try { opsI = ifcUids && ifcUids.length && b && b.opsApagarIfc ? arr(b.opsApagarIfc(ifcUids)) : []; } catch (eI) { opsI = []; }
+if (opsI.length) { lote = lote || { op: "lote", id: "si-" + (++st.seq) + "-" + Date.now().toString(36), origem: "selecionar-instancias", pedido: "Apagar", ops: [] }; lote.ops = lote.ops.concat(opsI); lote.pedido = "Apagar " + lote.ops.length + (lote.ops.length === 1 ? " elemento" : " elementos"); ids = ids.concat(ifcUids); }
 if (!lote || !b || !b.editarLote) return { ok: false };
 try { b.selecionar([], "trocar"); } catch (e) {}
 var ok = !!b.editarLote(lote);
@@ -151459,7 +151461,7 @@ h += '<div class="bsi-dica">Ctrl + clique soma à seleção.</div></div></div>';
 var ed = alvo.editavel, mod = modelador(), nIfc = !ed, invs = {};
 try { if (alvosN === 1 && /^edit:/.test(String(alvo.uid)) && global.BimVaoArr && global.BimVaoArr.acoes) global.BimVaoArr.acoes(String(alvo.uid).slice(5)).forEach(function (q) { invs[q.id] = 1; }); } catch (eIv) {}
 var acoes = [
-{ a: "apagar", r: "Apagar", n: alvosN, tecla: "Delete", off: nIfc },
+{ a: "apagar", r: "Apagar", n: alvosN, tecla: "Delete" },
 { a: "ocultar", r: "Ocultar na vista", n: alvosN },
 { a: "isolar", r: "Isolar na vista", n: alvosN },
 { a: "ocultar-cat", r: "Ocultar categoria · " + alvo.catNome },

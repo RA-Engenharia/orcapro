@@ -33,7 +33,8 @@
  * PEÇA DO IFC IMPORTADO: a seleção do 3D guarda UMA peça do IFC por vez. O
  * critério escolhido numa peça do IFC vira um GRUPO (a barra de status mostra
  * "N selecionados (critério)") que Ocultar/Isolar/Ocultar categoria usam;
- * apagar peça do IFC continua sendo pelo Modificar › Apagar.
+ * apagar peça do IFC (menu, Delete) faz o mesmo do Modificar › Apagar: oculta e
+ * marca como removida, o arquivo não muda (#85, 26/10/2026).
  *
  * OCULTAR/ISOLAR: temporário, a mesma visibilidade do painel Visibilidade
  * (malha escondida; "Mostrar todos" ou "Restaurar tudo" traz de volta). As
@@ -244,7 +245,7 @@
         st.grupo = { uids: ifc, crit: crit };
         try { b.selecionar([uidAlvo], "trocar"); } catch (eI) {}
         feitos = ifc;
-        status(textoStatus(ifc.length, crit) + " — peças do IFC importado: Ocultar, Isolar e Ocultar categoria valem para elas; apagar é pelo Modificar › Apagar.");
+        status(textoStatus(ifc.length, crit) + " — peças do IFC importado: Ocultar, Isolar e Ocultar categoria e Apagar (oculta e marca como removida) valem para elas.");
       } else {
         st.grupo = null;
         try { feitos = b.selecionar(ed, somar ? "somar" : "trocar") || []; } catch (eS) { feitos = []; }
@@ -310,7 +311,8 @@
       uids = arr(uids); var self = this;
       if (!uids.length) { status("Nada selecionado para apagar."); return { ok: false }; }
       var itens = this.itens(null), pl = planoApagar(uids, itens);
-      if (!pl.livres.length && !pl.fixas.length) { status("A peça do IFC importado não sai pelo Delete: use Modificar › Apagar (ela fica oculta e marcada como removida; o arquivo não muda)."); return { ok: false, ifc: pl.ifc.length }; }
+      /* #85 (26/10/2026): a peça do IFC importado também sai: a MESMA ação do Modificar › Apagar (oculta e marcada como removida; o arquivo não muda) */
+      if (!pl.livres.length && !pl.fixas.length && !pl.ifc.length) { status("Nada selecionado para apagar."); return { ok: false, ifc: 0 }; }
       if (pl.parciais.length && !escolha) { this._dlgPronta(uids, pl); return { ok: false, pergunta: "pronta" }; }
       if (pl.fixas.length && escolha !== "livres" && escolha !== "inteira-livres") { this._dlgFixas(uids, pl, escolha); return { ok: false, pergunta: "fixas" }; }
       var ids = pl.livres.slice();
@@ -318,10 +320,12 @@
         var por = this._porUid(itens);
         pl.parciais.forEach(function (p) { p.resto.forEach(function (u) { if (por[u] && !por[u].fixo && ids.indexOf(u) < 0) ids.push(u); }); });
       }
-      return this._executarApagar(ids, pl.fixas.length);
+      return this._executarApagar(ids, pl.fixas.length, pl.ifc);
     },
-    _executarApagar: function (ids, nFixas) {
-      var b = B(), lote = opsApagar(ids, (++st.seq) + "-" + Date.now().toString(36));
+    _executarApagar: function (ids, nFixas, ifcUids) {
+      var b = B(), lote = opsApagar(ids, (++st.seq) + "-" + Date.now().toString(36)), opsI = [];
+      try { opsI = ifcUids && ifcUids.length && b && b.opsApagarIfc ? arr(b.opsApagarIfc(ifcUids)) : []; } catch (eI) { opsI = []; }
+      if (opsI.length) { lote = lote || { op: "lote", id: "si-" + (++st.seq) + "-" + Date.now().toString(36), origem: "selecionar-instancias", pedido: "Apagar", ops: [] }; lote.ops = lote.ops.concat(opsI); lote.pedido = "Apagar " + lote.ops.length + (lote.ops.length === 1 ? " elemento" : " elementos"); ids = ids.concat(ifcUids); }
       if (!lote || !b || !b.editarLote) return { ok: false };
       try { b.selecionar([], "trocar"); } catch (e) {}
       var ok = !!b.editarLote(lote);
@@ -429,7 +433,7 @@
         var ed = alvo.editavel, mod = modelador(), nIfc = !ed, invs = {};
         try { if (alvosN === 1 && /^edit:/.test(String(alvo.uid)) && global.BimVaoArr && global.BimVaoArr.acoes) global.BimVaoArr.acoes(String(alvo.uid).slice(5)).forEach(function (q) { invs[q.id] = 1; }); } catch (eIv) {}
         var acoes = [
-          { a: "apagar", r: "Apagar", n: alvosN, tecla: "Delete", off: nIfc },
+          { a: "apagar", r: "Apagar", n: alvosN, tecla: "Delete" },
           { a: "ocultar", r: "Ocultar na vista", n: alvosN },
           { a: "isolar", r: "Isolar na vista", n: alvosN },
           { a: "ocultar-cat", r: "Ocultar categoria · " + alvo.catNome },

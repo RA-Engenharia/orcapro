@@ -86,7 +86,7 @@
     tl.push(["Ctrl+Z / Ctrl+Y", "Desfazer / refazer (Ctrl+Shift+Z também refaz)"]);
     tl.push(["Enter", "Repete o último comando"]);
     tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
-    tl.push(["Delete", "Apaga as peças selecionadas do editor"]);
+    tl.push(["Delete", "Apaga o que está selecionado, de qualquer tipo (um Ctrl+Z desfaz tudo; a peça do IFC importado fica oculta e marcada como removida, o arquivo não muda)"]);   /* #85, 26/10/2026 */
     tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a régua antes × depois)"]);
     tl.push(["?", "Abre esta tela de atalhos"]);
     out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,

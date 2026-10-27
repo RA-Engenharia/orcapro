@@ -5051,11 +5051,14 @@ selInst.forEach(function (u) { if (r.indexOf(u) < 0) r.push(u); });
 var u = S.selected ? uidDeMalha(S.selected) : null; if (u && r.indexOf(u) < 0) r.push(u);
 return r;
 }
+function precConhece(id) {
+try { var Pr = window.BimPrecisao, e = S.edit && S.edit.estado; return !(Pr && Pr.tipoNoEstado && e) || !!Pr.tipoNoEstado(e, id); } catch (_) { return true; }
+}
 function selAplicar(uids, modo) {
 var SL = SLx(), novo = SL ? SL.combinar(selAtual(), uids || [], modo || 'trocar') : (uids || []).slice();
 novo = novo.filter(function (u) { return !!(S.meshPorUid && S.meshPorUid[u]); });
 var mod = modeladorOn() && S._prec && S._prec.api;
-var insts = mod ? novo.filter(function (u) { return /^edit:/.test(u) && ehInstUid(u); }) : [];
+var insts = mod ? novo.filter(function (u) { return /^edit:/.test(u) && (ehInstUid(u) || !precConhece(u.slice(5))); }) : [];
 var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u) && insts.indexOf(u) < 0; }).map(function (u) { return u.slice(5); }) : [];
 var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
 selInst = insts; realcarInst();
@@ -5228,6 +5231,40 @@ S._hint(ids.length ? ids.length + ' peça(s) selecionada(s) pela janela (' + (SL
 return true;
 };
 canvasEl.addEventListener('pointercancel', function () { if (sel3 && sel3.modo === 'mover' && S._prec && S._prec.arrastoCancelar) S._prec.arrastoCancelar(); if (sel3 && sel3.modo === 'inst' && window.BimInstArr) BimInstArr.cancelar(); if (sel3 && sel3.modo === 'vao' && window.BimVaoArr) BimVaoArr.cancelar(); if (sel3 && sel3.modo === 'telpeca' && window.BimTelhadoPecaArr) BimTelhadoPecaArr.cancelar(); sel3 = null; selRetTirar(); });
+S._opsApagarIfc = function (uids) {
+var ops = [];
+(uids || []).forEach(function (u) {
+if (/^edit:/.test(u)) return;
+var m = S.meshPorUid && S.meshPorUid[u]; if (!m || !m.userData) return;
+var mid = m.userData.mid != null ? m.userData.mid : S.modelID, eid = m.userData.expressID;
+var mo = S.modelos.filter(function (x) { return x.mid === mid; })[0];
+ops.push({ op: 'apagarIfc', uid: mid + ':' + eid, arq: mo ? mo.nome : null, eid: eid });
+});
+return ops;
+};
+S._apagarSelecao = function () {
+var uids = selAtual(); if (!uids.length) return false;
+var est = S.edit && S.edit.estado, Pr = window.BimPrecisao, ops = [], eds = [], nFix = 0;
+uids.forEach(function (u) {
+if (!/^edit:/.test(u)) return;
+var id = u.slice(5);
+if (Pr && Pr.fixado && est && Pr.fixado(est, id)) { nFix++; return; }
+ops.push({ op: 'apagar', id: id }); eds.push(u);
+});
+try { if (eds.length && window.BimSelInst && BimSelInst.interceptarApagar && BimSelInst.interceptarApagar(eds)) {
+var nFora = uids.length - eds.length;
+if (nFora > 0) S._hint(nFora + (nFora === 1 ? ' peça da seleção NÃO foi apagada' : ' peças da seleção NÃO foram apagadas') + ': a pergunta da peça pronta vem primeiro e vale só para as peças do editor. Responda e aperte Delete de novo.');
+return true;
+} } catch (_) {}
+var nIfc = 0;
+S._opsApagarIfc(uids).forEach(function (o) { ops.push(o); nIfc++; });
+if (!ops.length) { S._hint(nFix ? nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : 'Nada para apagar na seleção.'); return true; }
+var lote = { op: 'lote', id: 'dl' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), origem: 'delete', pedido: 'Apagar ' + ops.length + (ops.length === 1 ? ' elemento' : ' elementos'), ops: ops };
+selAplicar([], 'trocar');
+var ok = !!(window.BIM && BIM.editarLote && BIM.editarLote(lote));
+S._hint(ok ? ops.length + (ops.length === 1 ? ' elemento apagado' : ' elementos apagados') + (nIfc ? ' (' + nIfc + ' do IFC importado: ficam ocultos e marcados como removidos; o arquivo não muda)' : '') + ' — Ctrl+Z desfaz' + (ops.length > 1 ? ' de uma vez' : '') + '.' + (nFix ? ' ' + nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : '') : 'O editor recusou o apagar.');
+return true;
+};
 S._selTeclas = function (e) {
 if (!S || S !== Sm || !S.alive) return;
 var k = e.key; if (k !== 'Escape' && k !== 'Delete' && k !== 'Del') return;
@@ -5245,8 +5282,11 @@ selAplicar([], 'trocar'); S._hint('Seleção limpa.');
 e.preventDefault(); e.stopPropagation(); return;
 }
 if (!semFerramenta3d()) return;
+if (selInst.length || S.selected) {
+if (S._apagarSelecao()) { e.preventDefault(); e.stopPropagation(); }
+return;
+}
 var temEd = !!(S._prec && S._prec.api && S._prec.api.selecao().length);
-if (!temEd && S.selected) { S._hint('A peça do IFC importado não sai pelo Delete: use Modificar › Apagar (ela fica oculta e marcada como removida; o arquivo não muda).'); return; }
 if (temEd) setTimeout(function () { if (S && S.alive) selAplicar(selAtual(), 'trocar'); }, 0);
 };
 window.addEventListener('keydown', S._selTeclas, true);
@@ -14202,6 +14242,7 @@ selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y);
 _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); },
 selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
 selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
+opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
 uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
 uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },
 pisoIfcEm: function (x, z, yTopo) { return (S && S.alive && S._pisoIfcEm) ? S._pisoIfcEm(x, z, yTopo) : null; },

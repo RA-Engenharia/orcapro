@@ -110,7 +110,7 @@
     c("fx-colar", "Colar", "importar", "Cola o que foi copiado: os elementos ficam selecionados e a ferramenta Copiar pede o ponto base e o destino — dá para colar várias vezes."),
     c("fx-colar-alinhado", "Colar alinhado", "niveis", "Cola o grupo copiado alinhado aos níveis escolhidos, na mesma posição em planta (crie o grupo antes: Modificar › Criar › Criar grupo)."),
     /* Modificar */
-    c("fx-excluir", "Excluir", "lixeira", "Apaga os elementos selecionados (um Ctrl+Z desfaz tudo). Peça fixada não sai; parte de peça pronta pergunta antes."),
+    c("fx-excluir", "Excluir", "lixeira", "Apaga os elementos selecionados (um Ctrl+Z desfaz tudo). Peça fixada não sai; parte de peça pronta pergunta antes; a peça do IFC importado fica oculta e marcada como removida (o arquivo não muda)."),
     /* Vista (temporário) */
     c("fx-ocultar", "Ocultar elemento", "olhoFechado", "Oculta temporariamente os selecionados nesta vista. Redefinir traz de volta."),
     c("fx-isolar", "Isolar elemento", "olho", "Isola temporariamente os selecionados: o resto do modelo some. Redefinir traz de volta."),
