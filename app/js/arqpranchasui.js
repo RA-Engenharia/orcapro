@@ -22,6 +22,8 @@
   }
   function AQ() { return dep("ArqPranchas", "./arqpranchas.js"); }
   function IX() { return dep("ArqIndices", "./arqindices.js"); }
+  function INT() { return dep("ArqInteriores", "./arqinteriores.js"); }
+  function MD() { return dep("ArqModelo", "./arqmodelo.js"); }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function txt(v) { return v == null ? "" : String(v); }
   function esc(s) { return txt(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -45,7 +47,7 @@
   function opcoesDe(ctx, cfg) {
     var em = (ctx && ctx.empresa) || {}, ob = (ctx && ctx.obra) || {}, c = AQ().normalizarConfig(cfg);
     var o = { pavimentos: arr(ctx && ctx.pavimentos), formato: c.formato, escala: c.escala, prefixo: c.prefixo, revisao: c.revisao, descricaoRevisao: c.descricaoRevisao, conjuntos: c.conjuntos,
-      municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
+      interiores: c.interiores, municipio: c.municipio, limites: c.limites, rua: c.rua, cotasInternas: c.cotasInternas, beiralNaProjecao: c.beiralNaProjecao, fatores: c.fatores,
       empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
       obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
     if (ctx && ctx.contornoLote) o.contornoLote = ctx.contornoLote;
@@ -64,6 +66,16 @@
 
   /* ------------------------------------------------------------ tela */
   function marcado(v) { return v ? " checked" : ""; }
+  /* a lista de ambientes do caderno de interiores (checkboxes); sem modelo ou sem o motor, uma frase */
+  function ambientesInt(ctx, cfg) {
+    var I = INT(), M = MD(), lista = [], sel = cfg.interiores && Array.isArray(cfg.interiores.ambientes) ? cfg.interiores.ambientes.map(String) : null;
+    try { if (I && M && ctx && ctx.modelo) lista = I.listarAmbientes(M.extrair(ctx.modelo, { pavimentos: ctx.pavimentos })); } catch (e) { lista = []; }
+    if (!lista.length) return '<span class="muted" style="font-size:12px">Nenhum ambiente com mobiliário ou marcenaria no modelo.</span>';
+    return lista.map(function (a) {
+      var on = sel ? sel.indexOf(String(a.id)) >= 0 : a.padrao;
+      return '<label style="display:block"><input type="checkbox" data-arq-int-amb="' + esc(a.id) + '"' + marcado(on) + "> " + esc(a.nome) + ' <span class="muted">(' + a.nMoveis + " móvel(is), " + a.nMarcenaria + " de marcenaria)</span></label>";
+    }).join("");
+  }
   function html(ctx, cfg) {
     var A = AQ(), em = ctx.empresa || {}, ob = ctx.obra || {}, L = cfg.limites || {}, mun = IX().MUNICIPIOS;
     var h = '<div data-arq="tela" data-modal-largo="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;font-size:13px">';
@@ -90,6 +102,9 @@
       '<div class="muted" style="font-size:12px">Carimbo RA com o cadastro da empresa e da obra:<br>' + esc(em.nome || "(empresa sem nome no cadastro)") + " · RT " + esc(em.responsavel || "—") + " " + esc(em.crea || "") + "<br>Obra: " + esc(ob.nome || "(sem obra selecionada)") + "</div>" +
       '<label style="display:block"><input type="checkbox" data-arq-out="pdf" checked> PDF vetorial</label><label style="display:block"><input type="checkbox" data-arq-out="dxf" checked> DXF com carimbo</label>' +
       '<label style="display:block"><input type="checkbox" data-arq-out="abas" checked> Abrir nas abas de folha do BIM</label></fieldset>';
+    h += '<fieldset style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:8px"><legend><b>Caderno de interiores</b></legend>' +
+      '<label style="display:block"><input type="checkbox" data-arq-int="ativo"' + marcado(cfg.interiores && cfg.interiores.ativo) + "> Gerar o caderno de interiores (planta de móveis + vistas por ambiente, folhas A3)</label>" +
+      '<div class="muted" style="font-size:12px;margin:4px 0">Ambientes (marcados: os que têm mobiliário ou marcenaria):</div>' + ambientesInt(ctx, cfg) + "</fieldset>";
     return h + '</div><div data-arq="msg" class="muted" style="margin-top:8px;font-size:12.5px"></div>';
   }
   /* lê a tela → configuração (puro sobre um "leitor" de elementos; no navegador é o document) */
@@ -108,6 +123,8 @@
     var l = { nome: "", ocupacaoMax: v("ocup"), permeavelMin: v("perm"), aproveitamentoMax: v("ca"), conferir: false };
     ["ocupacaoMax", "permeavelMin", "aproveitamentoMax"].forEach(function (k) { l[k] = l[k] == null || String(l[k]).trim() === "" ? null : +String(l[k]).replace(",", "."); });
     c.limites = l;
+    var ci = q('[data-arq-int="ativo"]'), ams = qa("[data-arq-int-amb]");
+    if (ci) { c.interiores = { ativo: !!ci.checked, ambientes: ams.length ? ams.filter(function (e) { return e.checked; }).map(function (e) { return e.getAttribute("data-arq-int-amb"); }) : null, prefixo: (base && base.interiores && base.interiores.prefixo) || "INT" }; }
     c.conjuntos = c.conjuntos || {}; qa("[data-arq-cj]").forEach(function (e) { c.conjuntos[e.getAttribute("data-arq-cj")] = !!e.checked; });
     return AQ().normalizarConfig(c);
   }

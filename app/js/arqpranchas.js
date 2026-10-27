@@ -39,6 +39,7 @@
   function PL() { return dep("ArqPlantas", "./arqplantas.js"); }
   function CT() { return dep("ArqCortes", "./arqcortes.js"); }
   function QD() { return dep("ArqQuadros", "./arqquadros.js"); }
+  function INT() { return dep("ArqInteriores", "./arqinteriores.js"); }
   function GEO() { return dep("ArqGeo", "./arqgeo.js"); }
   function FS() { return dep("BimFases", "./bimfases.js"); }
   function BE() { return dep("BimEdit", "./bimedit.js"); }
@@ -64,7 +65,7 @@
 
   function configPadrao() {
     var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
-    return { formato: "AUTO", escala: "auto", prefixo: "ARQ", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO", conjuntos: cj,
+    return { formato: "AUTO", escala: "auto", prefixo: "ARQ", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO", conjuntos: cj, interiores: { ativo: false, ambientes: null, prefixo: "INT" },
       municipio: "", limites: { nome: "", ocupacaoMax: null, permeavelMin: null, aproveitamentoMax: null, conferir: false }, rua: "", cotasInternas: true, beiralNaProjecao: false, fatores: { deckVazado: 1 } };
   }
   function normalizarConfig(c) {
@@ -75,6 +76,9 @@
     r.revisao = (txt(o.revisao).trim() || p.revisao).toUpperCase();
     r.descricaoRevisao = txt(o.descricaoRevisao).trim() || p.descricaoRevisao;
     r.conjuntos = {}; CONJUNTOS.forEach(function (k) { r.conjuntos[k] = !o.conjuntos || o.conjuntos[k] !== false; });
+    /* CADERNO DE INTERIORES (js/arqinteriores.js): fora da série padrão; `ambientes` = ids escolhidos (null = os que têm mobiliário ou marcenaria) */
+    var oi = o.interiores && typeof o.interiores === "object" ? o.interiores : {};
+    r.interiores = { ativo: oi.ativo === true, ambientes: Array.isArray(oi.ambientes) ? oi.ambientes.map(String) : null, prefixo: (txt(oi.prefixo).trim() || "INT").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 12) || "INT" };
     r.municipio = txt(o.municipio).trim();
     var L = o.limites && typeof o.limites === "object" ? o.limites : {};
     r.limites = { nome: txt(L.nome), ocupacaoMax: L.ocupacaoMax != null && L.ocupacaoMax !== "" && isFinite(+L.ocupacaoMax) ? +L.ocupacaoMax : null, permeavelMin: L.permeavelMin != null && L.permeavelMin !== "" && isFinite(+L.permeavelMin) ? +L.permeavelMin : null,
@@ -177,6 +181,8 @@
     if (def.tipo === "forro") B.push({ titulo: "LEGENDA", itens: ["Círculo com cruz: luminária de teto.", "Linha tracejada interna: sanca (recuo de 15 cm do contorno do forro).", "Nível: face de baixo do forro acabado."] });
     if (def.tipo === "piso") B.push({ titulo: "LEGENDA", itens: ["Linha cheia: peça inteira. Linha vermelha: peça cortada.", "Quantidade com reserva de 10 % (receita da paginação do ambiente)."] });
     if (def.tipo === "situacao") B.push({ titulo: "LEGENDA", itens: ["Linha traço-ponto: divisa do lote.", "Hachura verde: área permeável (solo natural).", "Cobertura vista de cima, edificação tracejada por baixo."] });
+    if (def.tipo === "int-planta") B.push({ titulo: "SÍMBOLOS", itens: ["Marcador de vista: a letra é a vista e PR nn é a folha onde ela está.", "Linha tracejada: armário aéreo em projeção.", "Cotas de posição: da parede até a marcenaria, a partir do canto."] });
+    if (def.tipo === "int-vistas") B.push({ titulo: "NOTAS DE MATERIAL", itens: ["Cada nota sai dos parâmetros de material da família do móvel.", "Texto em vermelho: dado que o modelo não traz; informar antes de emitir."] });
     if (def.tipo === "humanizada") B.push({ titulo: "APRESENTAÇÃO", itens: ["Planta ilustrativa para apresentação ao cliente; não substitui as pranchas executivas."] });
     B.push({ titulo: "NOTAS GERAIS", numerar: true, itens: NOTAS_GERAIS });
     var pend = arr(c.avisosFolha[def.id]).concat(def.tipo === "situacao" ? arr(c.idx.avisos) : []);
@@ -190,8 +196,8 @@
     F.ret(M.x, M.y, M.w, M.h, "ARQ-MOLDURA");
     var coube = DS().colunaNotas(F, geo, blocosNotas(c, def));
     if (!coube) c.avisos.push(def.numero + ": as notas não cabem na coluna com a letra mínima do padrão: conferir.");
-    A.carimbo(F, pr, fl, geo, c.empObj, c.op.logo || null, rotulo + "/" + dois(c.total));
-    var numero = c.prefixo + "-" + rotulo;
+    A.carimbo(F, pr, fl, geo, c.empObj, c.op.logo || null, def.carimboFolha || (rotulo + "/" + dois(c.total)));   /* interiores: "NN/MM" do ambiente */
+    var numero = def.numero || (c.prefixo + "-" + rotulo);
     return '<svg xmlns="http://www.w3.org/2000/svg" width="' + n(W) + 'mm" height="' + n(H) + 'mm" viewBox="0 0 ' + n(W) + " " + n(H) + '" font-family="' + FONTE + '" data-folha="' + def.id + '" data-numero="' + esc(numero) + '">' +
       "<title>" + esc(numero + " - " + def.titulo + " - " + c.rev) + "</title>" + '<rect x="0" y="0" width="' + n(W) + '" height="' + n(H) + '" fill="#fff"/>' +
       '<g data-corpo="1">' + D.svg() + '</g><g data-folha-moldura="1">' + F.svg() + "</g></svg>";
@@ -232,10 +238,22 @@
       if (tipo === "existente" || tipo === "demolir" || tipo === "layout" || tipo === "forro" || tipo === "piso" || tipo === "humanizada") { for (var i = 0; i < pavs.length; i++) add(tipo, i); }
       else add(tipo, null);
     });
-    if (!defs.length) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhuma folha marcada para gerar."]) };
+    if (!defs.length && !cfg.interiores.ativo) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhuma folha marcada para gerar."]) };
     defs.forEach(function (d, i) { d.rotulo = dois(i + 1); d.numero = codigo + "-" + d.rotulo; });
     c.total = defs.length;
     c.numeroDe = function (tipo) { for (var i = 0; i < defs.length; i++) if (defs[i].tipo === tipo) return codigo + "-" + defs[i].rotulo; return "(não gerada)"; };
+
+    /* CADERNO DE INTERIORES (opcional, folhas A3 depois da série): INT-01… com a planta de móveis e as vistas de cada ambiente */
+    var itensInt = [], geoI = null;  /* montado ANTES do desenho da série: a lista de folhas do quadro (ARQ-10) leva as INT */
+    if (cfg.interiores && cfg.interiores.ativo) {
+      if (!INT()) avisos.push("O motor do caderno de interiores (js/arqinteriores.js) não carregou.");
+      else {
+        geoI = P.geometria("A3", "paisagem", "RA"); c.depurar = op.depurar;
+        try { var ri = INT().montar(c, cfg.interiores, geoI, E); itensInt = ri.itens; ri.avisos.forEach(function (a) { avisos.push(a); }); }
+        catch (eI) { avisos.push("Caderno de interiores: " + (eI && eI.message ? eI.message : String(eI))); }
+      }
+    }
+    c.intItens = itensInt;
 
     /* desenha cada folha (os quadros por último: a lista de folhas leva as escalas) */
     var Pl = PL(), Ct = CT(), Qd = QD(), feitas = {}, ordemDes = defs.filter(function (d) { return d.tipo !== "quadros"; }).concat(defs.filter(function (d) { return d.tipo === "quadros"; }));
@@ -279,6 +297,24 @@
       if (op.depurar) o.caixasTexto = f.D.caixas;
       return o;
     });
+    if (itensInt.length) {
+      var codI = cfg.interiores.prefixo, cI = {}; Object.keys(c).forEach(function (k) { cI[k] = c[k]; }); cI.geo = geoI; cI.A = geoI.area; cI.prefixo = codI; cI.total = itensInt.length; cI.avisosFolha = {};
+      var prI = P.normalizar({ id: "arqinteriores", nome: "Arquitetura - caderno de interiores", formato: "A3", orientacao: "paisagem", origem: "arquitetura",
+        carimbo: { modelo: "RA", empresa: emp0, responsavel: txt(op.responsavel), registro: txt(op.registro), titulo: txt(op.tituloProfissional), obra: txt(op.obra), proprietario: txt(op.proprietario),
+                   contratante: txt(op.contratante), local: txt(op.local), codigo: codI, data: data, revisoes: [[revNum, cfg.descricaoRevisao, data]] },
+        folhas: itensInt.map(function (it, i) { return { id: it.def.id, n: i + 1, conteudo: it.def.titulo, escala: it.escala, numero: codI + " " + rev }; }) });
+      var AI = geoI.area, janI = [AI.x - 1, AI.y - 1, AI.x + AI.w + 1, AI.y + AI.h + 1];
+      itensInt.forEach(function (it, i) {
+        var conf = DS().conferir(it.D, janI);
+        verificacao.textoTexto += conf.textoTexto.length; verificacao.textoLinha += conf.textoLinha.length; verificacao.foraJanela += conf.foraJanela.length; verificacao.total += conf.total;
+        verificacao.porFolha.push({ numero: it.def.numero, textoTexto: conf.textoTexto, textoLinha: conf.textoLinha, foraJanela: conf.foraJanela });
+        cI.avisosFolha[it.def.id] = avisos.filter(function (a) { return a.indexOf(it.def.numero) === 0; });
+        var svgI = montarFolha(cI, it.def, it.D, it.res, prI, prI.folhas[i], it.def.rotulo, geoI, E);
+        var oI = { id: it.def.id, tipo: it.def.tipo, rotulo: it.def.rotulo, numero: it.def.numero, titulo: it.def.titulo, formato: "A3", escala: it.escala, svg: svgI, ambienteId: it.def.ambienteId, carimboFolha: it.def.carimboFolha };
+        if (op.depurar) oI.caixasTexto = it.D.caixas;
+        folhas.push(oI);
+      });
+    }
     folhas.forEach(function (f) { if (/NaN|undefined/.test(f.svg)) avisos.push("Folha " + f.numero + ": há valor inválido (NaN/undefined) no desenho."); });
     var lista = folhas.map(function (f) { return { numero: f.numero, titulo: f.titulo, formato: f.formato, escala: f.escala }; });
     return { ok: true, folhas: folhas, formato: fe.formato, escalaPlanta: fe.escala, indices: idx, lista: lista, avisos: avisos, verificacao: verificacao, prefixo: codigo, revisao: rev };
@@ -319,6 +355,7 @@
     var t2 = Qd.quadroAcabamentos(D, A.x + 4, y, w, c.depois.ambientes); y += t2.h + 10;
     /* lista de folhas */
     var linhas = defs.map(function (d) { return [d.numero, d.titulo, c.formatoNome, (feitas[d.id] && feitas[d.id].escala) || "SEM ESCALA"]; });
+    arr(c.intItens).forEach(function (it) { linhas.push([it.def.numero, it.def.titulo, "A3", it.escala]); });   /* as folhas do caderno de interiores (A3) */
     var cols = [{ t: "FOLHA", f: 1.2, al: "E" }, { t: "TÍTULO", f: 6, al: "E" }, { t: "FORMATO", f: 1.2 }, { t: "ESCALA", f: 1.2 }];
     Qd.tabela(D, A.x + 4, y, Math.min(w, 300), "LISTA DE FOLHAS", cols, linhas);
     void T;

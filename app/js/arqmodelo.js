@@ -113,6 +113,28 @@
     return { id: String(c.id), chapa: false, a: pa, b: pb, sa: r4(Math.max(a, b)), sb: r4(Math.min(a, b)), status: st };
   }
   function G0() { return GEO(); }
+  /* a caixa local (x0..x1 largura, y0..y1 altura, z0..z1 profundidade) de UM sólido da família avaliada: o mesmo critério do Familia.avaliar (caixaDe), por peça.
+     Serve à ELEVAÇÃO dos interiores (js/arqinteriores.js): cada peça do móvel (porta, gaveta, tampo, painel) vira um retângulo na vista. */
+  function caixaSolido(s) {
+    var b = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+    function p(x, y, z) { if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y; if (z < b.z0) b.z0 = z; if (z > b.z1) b.z1 = z; }
+    var x = num(s.x, 0), y = num(s.y, 0), z = num(s.z, 0);
+    if (s.forma === "caixa") { p(x - num(s.dx, 0) / 2, y, z - num(s.dz, 0) / 2); p(x + num(s.dx, 0) / 2, y + num(s.dy, 0), z + num(s.dz, 0) / 2); }
+    else if (s.forma === "cilindro") {
+      var r = num(s.raio, 0), h = num(s.altura, 0);
+      if (s.eixo === "x") { p(x, y - r, z - r); p(x + h, y + r, z + r); }
+      else if (s.eixo === "z") { p(x - r, y - r, z); p(x + r, y + r, z + h); }
+      else { p(x - r, y, z - r); p(x + r, y + h, z + r); }
+    } else if (s.forma === "malha" && arr(s.v).length >= 3) {
+      for (var i = 0; i + 2 < s.v.length; i += 3) p(x + s.v[i], y + s.v[i + 1], z + s.v[i + 2]);
+    } else if (arr(s.contorno).length) {
+      arr(s.contorno).forEach(function (q) {
+        if (s.plano === "frente") { p(x + q[0], y + q[1], z); p(x + q[0], y + q[1], z + num(s.altura, 0)); }
+        else { p(x + q[0], y, z + q[1]); p(x + q[0], y + num(s.altura, 0), z + q[1]); }
+      });
+    }
+    return b.x0 === Infinity ? null : b;
+  }
   function agruparBases(valores, tol) {
     var v = valores.slice().sort(function (a, b) { return a - b; }), out = [], g = [];
     v.forEach(function (x) { if (g.length && x - g[g.length - 1] > tol) { out.push(g.reduce(function (s, q) { return s + q; }, 0) / g.length); g = []; } g.push(x); });
@@ -216,7 +238,13 @@
       if (cat === "pilar" || cat === "viga" || cat === "dispositivo_eletrico" || cat === "equipamento_eletrico") return;
       if (!pts) return;
       var matsM = []; arr(av && av.solidos).forEach(function (so) { var mm = txt(so && so.material); if (mm && matsM.indexOf(mm) < 0 && matsM.length < 8) matsM.push(mm); });
-      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, h0: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y0, 0)), h1: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y1, 0)), mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
+      /* INTERIORES: as peças do móvel (uma caixa local por sólido), os valores dos parâmetros e quais são MATERIAL (a nota de material da vista sai deles) */
+      var pecasM = [], regF = null; try { regF = FR() && FR().obter ? FR().obter(f.famId) : null; } catch (eR) { regF = null; }
+      arr(av && av.solidos).slice(0, 160).forEach(function (so) { var bx = caixaSolido(so); if (bx) pecasM.push({ x0: r4(bx.x0), x1: r4(bx.x1), y0: r4(bx.y0), y1: r4(bx.y1), z0: r4(bx.z0), z1: r4(bx.z1), mat: txt(so.material || so.nome) }); });
+      var valM = {}; Object.keys((av && av.valores) || {}).forEach(function (kv) { var vv = av.valores[kv]; if (typeof vv === "string" || typeof vv === "number" || typeof vv === "boolean") valM[kv] = vv; });
+      var parMat = arr(regF && regF.parametros).filter(function (pp) { return pp && pp.tipoDado === "material"; }).map(function (pp) { return pp.nome; });
+      var temEstado = arr(regF && regF.parametros).some(function (pp) { return pp && pp.nome === "Aberto"; });
+      out.moveis.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), nome: nomeFam(f.famId, av), categoria: cat, pts: pts, pecas: pecasM, valores: valM, parMat: parMat, temEstado: temEstado, inst: f.inst || {}, caixaLocal: (av && av.caixa) || null, h0: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y0, 0)), h1: r4(num(f.y, 0) + num(av && av.caixa && av.caixa.y1, 0)), mats: matsM, simbolo: (av && av.simboloPlanta) || null, x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), rotY: num(f.rotY, 0), status: st, pav: pavDe(pavs, num(f.y, 0)),
         solidos: arr(av && av.solidos).slice(0, 40).map(function (s) { return { forma: s.forma, x: s.x, y: s.y, z: s.z, dx: s.dx, dy: s.dy, dz: s.dz, raio: s.raio, altura: s.altura, eixo: s.eixo, material: s.material, cor: s.cor }; }) });
     });
     /* marcas P1, P2… J1, J2…: um código por TIPO de vão (família + tipo + tamanho), na ordem em que aparecem */
@@ -283,7 +311,7 @@
     return out;
   }
 
-  var ArqModelo = { extrair: extrair, categoriaFam: categoriaFam, ehMuro: ehMuro, pegadaFamilia: pegadaFamilia, DIM_PADRAO: DIM_PADRAO, TOL_PAV: TOL_PAV, TOL_TERREO: TOL_TERREO };
+  var ArqModelo = { extrair: extrair, caixaSolido: caixaSolido, categoriaFam: categoriaFam, ehMuro: ehMuro, pegadaFamilia: pegadaFamilia, DIM_PADRAO: DIM_PADRAO, TOL_PAV: TOL_PAV, TOL_TERREO: TOL_TERREO };
   global.ArqModelo = ArqModelo;
   if (typeof module !== "undefined" && module.exports) module.exports = ArqModelo;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
