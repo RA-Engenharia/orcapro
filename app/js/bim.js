@@ -2064,11 +2064,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var sz = b.getSize(new THREE.Vector3()), fol = Math.max(0.05, sz.length() * 0.01);
         cx.box.copy(b).expandByScalar(fol);
         atualizar();
-        rr.clippingPlanes = cx.planos.slice(); rr.localClippingEnabled = false;
+        rr.clippingPlanes = cx.susp ? [] : cx.planos.slice(); rr.localClippingEnabled = false;
       } else {
         if (rr.clippingPlanes && rr.clippingPlanes.length === 6 && rr.clippingPlanes[0] === cx.planos[0]) rr.clippingPlanes = [];
       }
       return cx.on;
+    };
+    /* A CAIXA É DO 3D (27/10/2026): com uma vista 2D na frente (planta, corte, fachada, prancha) os planos saem do renderer
+       e a caixa fica guardada (cx.box); ao voltar ao 3D os mesmos planos voltam, no mesmo tamanho. */
+    cx.suspender = function (sim) {
+      cx.susp = !!sim;
+      var rr = ctx.renderer(); if (!cx.on || !rr) return;
+      if (cx.susp) { if (rr.clippingPlanes && rr.clippingPlanes[0] === cx.planos[0]) rr.clippingPlanes = []; }
+      else if (!rr.clippingPlanes || !rr.clippingPlanes.length) { atualizar(); rr.clippingPlanes = cx.planos.slice(); rr.localClippingEnabled = false; }
     };
     /* as setas ficam do mesmo tamanho na tela, perto ou longe */
     cx.desenhar = function (rr, cam) {
@@ -2095,7 +2103,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return h.length ? h[0].object.userData.face : null;
     }
     function pintarHover(f) { if (hover === f) return; hover = f; cx.setas.forEach(function (g, k) { g.children.forEach(function (c) { c.material = k === f ? setaMatHover : setaMat; }); }); ctx.canvas().style.cursor = f == null ? '' : 'move'; }
+    /* ⚠ SOLTAR A SETA (27/10/2026, "a caixa de corte trava"): o arraste só terminava no `pointerup`. Se o navegador CANCELA o
+       ponteiro no meio (gesto do sistema, toque, a janela perdendo o foco), não vem `pointerup`: `arr` ficava preso, a órbita
+       desligada (orbit.enabled=false) e a caixa passava a seguir o mouse sem botão — a vista "travava" até selecionar de novo.
+       Agora `pointercancel`, `lostpointercapture` e um `pointermove` sem botão também soltam, pela mesma função. */
+    cx.soltar = function (e) {
+      if (!arr) return;
+      if (e && e.pointerId != null && arr.id != null && e.pointerId !== arr.id) return;
+      var id = arr.id; arr = null;
+      var orb = ctx.orbit(); if (orb) orb.enabled = ctx.orbitLivre ? ctx.orbitLivre() : true;
+      try { if (id != null) ctx.canvas().releasePointerCapture(id); } catch (_) {}
+    };
     cx.onDown = function (e) {
+      if (arr) { if (arr.id != null && e.pointerId !== arr.id) return; cx.soltar(null); }   /* arraste velho que ficou preso: acabou */
       if (!cx.on || e.button !== 0) return;
       var f = setaSob(e); if (f == null) return;
       e.stopImmediatePropagation(); e.preventDefault();
@@ -2106,13 +2126,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var a = ctr.clone().project(cam), b = ctr.clone().add(um).project(cam);
       var px = { x: (b.x - a.x) * r.width / 2, y: -(b.y - a.y) * r.height / 2 };
       var l2 = px.x * px.x + px.y * px.y;
-      arr = { f: f, eixo: eixo, lado: lado, x0: e.clientX, y0: e.clientY, v0: lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo], px: px, l2: Math.max(l2, 1e-6) };
+      arr = { id: e.pointerId, f: f, eixo: eixo, lado: lado, x0: e.clientX, y0: e.clientY, v0: lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo], px: px, l2: Math.max(l2, 1e-6) };
       var orb = ctx.orbit(); if (orb) orb.enabled = false;
       try { cv.setPointerCapture(e.pointerId); } catch (_) {}
     };
     cx.onMove = function (e) {
       if (!cx.on) return;
       if (!arr) { pintarHover(setaSob(e)); return; }
+      if (e.pointerType === 'mouse' && e.buttons === 0) { cx.soltar(e); return; }   /* o botão já tinha sido solto sem o pointerup chegar */
       e.stopImmediatePropagation();
       var dx = e.clientX - arr.x0, dy = e.clientY - arr.y0;
       var dm = (dx * arr.px.x + dy * arr.px.y) / arr.l2;
@@ -2123,14 +2144,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     };
     cx.onUp = function (e) {
       if (!arr) return;
-      arr = null; e.stopImmediatePropagation();
-      var orb = ctx.orbit(); if (orb) orb.enabled = ctx.orbitLivre ? ctx.orbitLivre() : true;
-      try { ctx.canvas().releasePointerCapture(e.pointerId); } catch (_) {}
+      if (e.pointerId != null && arr.id != null && e.pointerId !== arr.id) return;
+      e.stopImmediatePropagation();
+      cx.soltar(e);
     };
     cx.ligarEventos = function (cv) {
       cv.addEventListener('pointerdown', cx.onDown, true);
       cv.addEventListener('pointermove', cx.onMove, true);
       cv.addEventListener('pointerup', cx.onUp, true);
+      cv.addEventListener('pointercancel', cx.soltar, true);
+      cv.addEventListener('lostpointercapture', cx.soltar, true);
+      /* ⚠ A SETA POR BAIXO DAS COTAS DA EDIÇÃO (27/10/2026, "a caixa de corte trava"): com uma peça selecionada, as cotas temporárias
+         e as alças de esticar (camada `.bp-camada`, js/bimprecisaoui.js — botões de DOM por cima do canvas) engolem o clique: quando
+         uma delas cobre a seta, o `pointerdown` nem chega ao canvas e a seta "não responde" (medido na e2e: o elemento sob a seta era
+         um `button.bp-cota-tmp`). A seta da caixa vence a cota: o ouvinte de CAPTURA no pai do canvas a pega antes do botão. */
+      var pai = cv.parentNode;
+      if (pai && pai.addEventListener) pai.addEventListener('pointerdown', function (e) {
+        if (!cx.on || e.target === cv || !e.target || !e.target.closest || !e.target.closest('.bp-camada')) return;
+        cx.onDown(e);
+      }, true);
     };
     cx.estado = function () { return { on: cx.on, min: cx.box.min.toArray(), max: cx.box.max.toArray() }; };
     return cx;
@@ -16751,7 +16783,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var sigR = null; try { sigR = S._sigGeo(); } catch (_) { sigR = null; }
     if (sigR && edifCache && edifCache.sigR === sigR) return edifCache;
     var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
-    var cx = null; try { cx = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx = null; }
+    /* ⚠ A CAIXA DE CORTE É DO 3D (27/10/2026): a edificação (e com ela o desenho de planta/corte/fachada) NUNCA é recortada por ela.
+       Antes a caixa ligada entrava aqui (critério "caixa-de-corte") e a planta escondia as paredes de fora da caixa. */
+    var cx = null;
     var porUid = {}, nM = 0, bm = new THREE.Box3(), tipoDe = {};
     cadaMalha(function (m) {
       var ud = m.userData || {}; if (!m.geometry || ud.expressID == null) return;
@@ -16763,7 +16797,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       else { o.min[0] = Math.min(o.min[0], bm.min.x); o.min[1] = Math.min(o.min[1], bm.min.y); o.min[2] = Math.min(o.min[2], bm.min.z); o.max[0] = Math.max(o.max[0], bm.max.x); o.max[1] = Math.max(o.max[1], bm.max.y); o.max[2] = Math.max(o.max[2], bm.max.z); }
     });
     function r2(v) { return Math.round(v * 100) / 100; }
-    var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z), cx && cx.on ? cx.min.map(r2).join(',') + ';' + cx.max.map(r2).join(',') : '-'].join('|');
+    var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z)].join('|');
     if (edifCache && edifCache.sig === sig) { edifCache.sigR = sigR; return edifCache; }
     var lista = [], vistos = {};
     (elementosVivos() || []).forEach(function (e) {
@@ -19484,7 +19518,7 @@ window.BIM = {
      propósito: aquele é o que o ponto de vista GRAVA */
   camPlanos: function () { return (S && S._camPlanos) ? S._camPlanos() : null; },
   irParaInicio: function () { if (S && S._irInicio) { S._irInicio(); return true; } return false; },
-  principalOculta: function (on) { if (S) { S._principalOculta = !!on; if (!on && S._resize) S._resize(); } },
+  principalOculta: function (on) { if (S) { S._principalOculta = !!on; if (S._cxMain) S._cxMain.suspender(!!on); if (!on && S._resize) S._resize(); } },
   vistaNova: function (cont, nome) { return (S && S._novaVista && cont) ? S._novaVista(cont, nome) : null; },
   vistaFechar: function (id) { return !!(S && S._fecharVista && S._fecharVista(id)); },
   vistaMover: function (id, cont) { return !!(S && S._moverVista && S._moverVista(id, cont)); },

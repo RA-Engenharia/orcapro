@@ -1338,11 +1338,17 @@ if (b.isEmpty()) { cx.on = false; return false; }
 var sz = b.getSize(new THREE.Vector3()), fol = Math.max(0.05, sz.length() * 0.01);
 cx.box.copy(b).expandByScalar(fol);
 atualizar();
-rr.clippingPlanes = cx.planos.slice(); rr.localClippingEnabled = false;
+rr.clippingPlanes = cx.susp ? [] : cx.planos.slice(); rr.localClippingEnabled = false;
 } else {
 if (rr.clippingPlanes && rr.clippingPlanes.length === 6 && rr.clippingPlanes[0] === cx.planos[0]) rr.clippingPlanes = [];
 }
 return cx.on;
+};
+cx.suspender = function (sim) {
+cx.susp = !!sim;
+var rr = ctx.renderer(); if (!cx.on || !rr) return;
+if (cx.susp) { if (rr.clippingPlanes && rr.clippingPlanes[0] === cx.planos[0]) rr.clippingPlanes = []; }
+else if (!rr.clippingPlanes || !rr.clippingPlanes.length) { atualizar(); rr.clippingPlanes = cx.planos.slice(); rr.localClippingEnabled = false; }
 };
 cx.desenhar = function (rr, cam) {
 if (!cx.on) return;
@@ -1364,7 +1370,15 @@ var h = ray.intersectObjects(cx.setas, true);
 return h.length ? h[0].object.userData.face : null;
 }
 function pintarHover(f) { if (hover === f) return; hover = f; cx.setas.forEach(function (g, k) { g.children.forEach(function (c) { c.material = k === f ? setaMatHover : setaMat; }); }); ctx.canvas().style.cursor = f == null ? '' : 'move'; }
+cx.soltar = function (e) {
+if (!arr) return;
+if (e && e.pointerId != null && arr.id != null && e.pointerId !== arr.id) return;
+var id = arr.id; arr = null;
+var orb = ctx.orbit(); if (orb) orb.enabled = ctx.orbitLivre ? ctx.orbitLivre() : true;
+try { if (id != null) ctx.canvas().releasePointerCapture(id); } catch (_) {}
+};
 cx.onDown = function (e) {
+if (arr) { if (arr.id != null && e.pointerId !== arr.id) return; cx.soltar(null); }
 if (!cx.on || e.button !== 0) return;
 var f = setaSob(e); if (f == null) return;
 e.stopImmediatePropagation(); e.preventDefault();
@@ -1375,13 +1389,14 @@ var cv = ctx.canvas(), r = cv.getBoundingClientRect();
 var a = ctr.clone().project(cam), b = ctr.clone().add(um).project(cam);
 var px = { x: (b.x - a.x) * r.width / 2, y: -(b.y - a.y) * r.height / 2 };
 var l2 = px.x * px.x + px.y * px.y;
-arr = { f: f, eixo: eixo, lado: lado, x0: e.clientX, y0: e.clientY, v0: lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo], px: px, l2: Math.max(l2, 1e-6) };
+arr = { id: e.pointerId, f: f, eixo: eixo, lado: lado, x0: e.clientX, y0: e.clientY, v0: lado < 0 ? cx.box.min[eixo] : cx.box.max[eixo], px: px, l2: Math.max(l2, 1e-6) };
 var orb = ctx.orbit(); if (orb) orb.enabled = false;
 try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 };
 cx.onMove = function (e) {
 if (!cx.on) return;
 if (!arr) { pintarHover(setaSob(e)); return; }
+if (e.pointerType === 'mouse' && e.buttons === 0) { cx.soltar(e); return; }
 e.stopImmediatePropagation();
 var dx = e.clientX - arr.x0, dy = e.clientY - arr.y0;
 var dm = (dx * arr.px.x + dy * arr.px.y) / arr.l2;
@@ -1392,14 +1407,21 @@ atualizar();
 };
 cx.onUp = function (e) {
 if (!arr) return;
-arr = null; e.stopImmediatePropagation();
-var orb = ctx.orbit(); if (orb) orb.enabled = ctx.orbitLivre ? ctx.orbitLivre() : true;
-try { ctx.canvas().releasePointerCapture(e.pointerId); } catch (_) {}
+if (e.pointerId != null && arr.id != null && e.pointerId !== arr.id) return;
+e.stopImmediatePropagation();
+cx.soltar(e);
 };
 cx.ligarEventos = function (cv) {
 cv.addEventListener('pointerdown', cx.onDown, true);
 cv.addEventListener('pointermove', cx.onMove, true);
 cv.addEventListener('pointerup', cx.onUp, true);
+cv.addEventListener('pointercancel', cx.soltar, true);
+cv.addEventListener('lostpointercapture', cx.soltar, true);
+var pai = cv.parentNode;
+if (pai && pai.addEventListener) pai.addEventListener('pointerdown', function (e) {
+if (!cx.on || e.target === cv || !e.target || !e.target.closest || !e.target.closest('.bp-camada')) return;
+cx.onDown(e);
+}, true);
 };
 cx.estado = function () { return { on: cx.on, min: cx.box.min.toArray(), max: cx.box.max.toArray() }; };
 return cx;
@@ -12787,7 +12809,7 @@ if (!PV || !PV.caixaEdificacao || !S || !S.modelRoot) return null;
 var sigR = null; try { sigR = S._sigGeo(); } catch (_) { sigR = null; }
 if (sigR && edifCache && edifCache.sigR === sigR) return edifCache;
 var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return null;
-var cx = null; try { cx = S._cxMain ? S._cxMain.estado() : null; } catch (_) { cx = null; }
+var cx = null;
 var porUid = {}, nM = 0, bm = new THREE.Box3(), tipoDe = {};
 cadaMalha(function (m) {
 var ud = m.userData || {}; if (!m.geometry || ud.expressID == null) return;
@@ -12799,7 +12821,7 @@ if (!o) { porUid[u] = { min: [bm.min.x, bm.min.y, bm.min.z], max: [bm.max.x, bm.
 else { o.min[0] = Math.min(o.min[0], bm.min.x); o.min[1] = Math.min(o.min[1], bm.min.y); o.min[2] = Math.min(o.min[2], bm.min.z); o.max[0] = Math.max(o.max[0], bm.max.x); o.max[1] = Math.max(o.max[1], bm.max.y); o.max[2] = Math.max(o.max[2], bm.max.z); }
 });
 function r2(v) { return Math.round(v * 100) / 100; }
-var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z), cx && cx.on ? cx.min.map(r2).join(',') + ';' + cx.max.map(r2).join(',') : '-'].join('|');
+var sig = [nM, r2(box.min.x), r2(box.min.y), r2(box.min.z), r2(box.max.x), r2(box.max.y), r2(box.max.z)].join('|');
 if (edifCache && edifCache.sig === sig) { edifCache.sigR = sigR; return edifCache; }
 var lista = [], vistos = {};
 (elementosVivos() || []).forEach(function (e) {
@@ -14814,7 +14836,7 @@ grade: function (on) { return (S && S._grade) ? S._grade(on) : null; },
 ortogonalAtivo: function () { return !!(S && S._ortoEstado && S._ortoEstado()); },
 camPlanos: function () { return (S && S._camPlanos) ? S._camPlanos() : null; },
 irParaInicio: function () { if (S && S._irInicio) { S._irInicio(); return true; } return false; },
-principalOculta: function (on) { if (S) { S._principalOculta = !!on; if (!on && S._resize) S._resize(); } },
+principalOculta: function (on) { if (S) { S._principalOculta = !!on; if (S._cxMain) S._cxMain.suspender(!!on); if (!on && S._resize) S._resize(); } },
 vistaNova: function (cont, nome) { return (S && S._novaVista && cont) ? S._novaVista(cont, nome) : null; },
 vistaFechar: function (id) { return !!(S && S._fecharVista && S._fecharVista(id)); },
 vistaMover: function (id, cont) { return !!(S && S._moverVista && S._moverVista(id, cont)); },
