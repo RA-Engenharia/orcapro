@@ -92,10 +92,16 @@
      proporção do desenho do js/hidlouca.js) e o ponto caía DENTRO dela (a frente das louças anotou). Lá o ponto fica
      abaixo do fundo + a válvula e o sifão de copo (VALV_SIFAO); a Tabela 3 do Deca dá 205–460 mm por produto Deca — os
      tipos do catálogo são Celite, então o valor sai "interpretado" e a conferir. */
+  var APOIO_TAB3 = 0.35;   /* hid:ok Deca p.115 tabela 3: cuba de apoio, ponto de esgoto abaixo do tampo — o maior da classe (reserva da js/marmoraria.js) */
   var VALV_SIFAO = 0.11, SEMI_FUNDO = 0.55, CUBA_H = { def: 0.13, min: 0.08, max: 0.3 };   /* hid:ok geometria (válvula 3 cm + sifão de copo até a saída 8 cm; proporção do desenho; faixa do Altura_cuba) */
   function ESGOTO_CUBA(it) {
     var base = DECADADO(D_CUBA, "esgotoCubaValvulaOculta_abaixoDoTampo_mm")();
     var d = txt(it && it.descricao), mod = /APOIO/i.test(d) ? 0 : (/SEMI/i.test(d) ? 2 : 1);
+    /* N23 EMBUTIDO (revisão adversarial, 26/10/2026): os 160 mm da Deca (p.116) são SÓ da cuba de apoio com VÁLVULA OCULTA ("Cuba de apoio
+       (exceto cuba com válvula oculta)", dados-fonte/hidro/catalogos/deca-instalacao-loucas.json); a cuba de apoio comum vai pela Tabela 3
+       (p.115), o maior da classe — 350 mm (a mesma leitura do js/marmoraria.js REGRA.esgoto.apoio): o sifão alcança o ponto mais alto
+       encurtando o tubo, o mais baixo não. Agora que a saída do sifão vai até a parede, a altura importa. */
+    if (mod === 0 && !/OCULTA/i.test(d)) { var Mm = carregar("Marmoraria", "marmoraria.js"), ap = Mm && Mm.REGRA && Mm.REGRA.esgoto ? Mm.REGRA.esgoto.apoio : null; return { v: typeof ap === "number" && ap > 0 ? ap : APOIO_TAB3, origem: "interpretado" }; }
     if (!base || mod === 0) return base;
     var hc = it && it.dim ? L("C")(it) : null, h = hc && hc.v >= CUBA_H.min && hc.v <= CUBA_H.max ? hc.v : CUBA_H.def;
     var fundo = mod === 1 ? h : h * SEMI_FUNDO;
@@ -229,7 +235,7 @@
         G("Largura", 0.45, [0.25, 0.8], L("A"), "Largura (letra A da ficha)"),                                       /* hid:ok geometria */
         G("Profundidade", 0.4, [0.2, 0.65], L("B"), "Profundidade (letra B; ficha de cuba redonda só traz A e B)"),   /* hid:ok geometria */
         G("Altura_cuba", 0.13, [0.08, 0.3], L("C"), "Altura da cuba (letra C)"),                                     /* hid:ok geometria */
-        I("Esgoto_abaixo_tampo", 0, ESGOTO_CUBA, "Ponto de esgoto abaixo do tampo (apoio: regra Deca da válvula oculta; embutir/semi-encaixe: abaixo da bacia + válvula + sifão, a conferir)"),
+        I("Esgoto_abaixo_tampo", 0, ESGOTO_CUBA, "Ponto de esgoto abaixo do tampo (apoio: Deca p.115 tabela 3, 350 mm — 160 mm só com válvula oculta, p.116; embutir/semi-encaixe: abaixo da bacia + válvula + sifão, a conferir)"),
         DN("DN_esgoto", null, "DN do esgoto")
       ],
       solidos: [{ id: "cuba", nome: "Cuba", forma: "caixa", x: "0", y: "0", z: "0", dx: "Largura", dy: "Altura_cuba", dz: "Profundidade", material: "Material" }],
@@ -238,8 +244,8 @@
          família". Agora os pontos de água da TORNEIRA da cuba ficam na PAREDE atrás dela (Distancia_parede, que o Traçar
          automaticamente mede): mesa = 220 mm abaixo do tampo, parede = 220 mm acima (Deca p.116, a mesma leitura do js/marmoraria.js);
          água quente só com misturador (Agua_quente). Parâmetros e o engate flexível no bloco de geometria (adiante). */
-      conectores: [{ id: "esgoto", nome: "Esgoto (válvula/sifão)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "0" },
-        { id: "af", nome: "Água fria (torneira da cuba)", sistema: "agua_fria", dn: "DN_agua", x: "se(Agua_quente; Agua_afastamento/2; 0)", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede" },
+      conectores: [{ id: "esgoto", nome: "Esgoto (saída do sifão, na parede)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "se(Distancia_parede > Profundidade/2; -Distancia_parede; 0)" },
+        { id: "af", nome: "Água fria (torneira da cuba)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede" },
         { id: "aq", nome: "Água quente (misturador da cuba)", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede", visivel: "Agua_quente" }],
       material: "Louça branca" },
 
@@ -851,7 +857,7 @@
       env: ["0", "0", "0", "Largura", "Altura_borda", "Profundidade"], x: [METAIS] },
     "hid-lavatorio-suspenso": { g: "lavatorio", p: { W: "Largura", P: "Profundidade", Hb: "Altura_borda", Hc: "Altura_cuba", Rc: "0.055", Aa: "Agua_altura", Ea: "Esgoto_altura", Af: "Agua_afastamento", suspenso: "1", metais: "Com_metais" },
       env: ["0", "Altura_borda - Altura_cuba", "0", "Largura", "Altura_cuba", "Profundidade"], x: [METAIS] },
-    "hid-cuba-apoio": { g: "cuba", p: { W: "Largura", P: "Profundidade", Hc: "Altura_cuba", Ea: "Esgoto_abaixo_tampo", modelo: "Modelo_cuba", ret: "Retangular", metais: "Com_metais" },
+    "hid-cuba-apoio": { g: "cuba", p: { W: "Largura", P: "Profundidade", Hc: "Altura_cuba", Ea: "Esgoto_abaixo_tampo", Dp: "Distancia_parede", modelo: "Modelo_cuba", ret: "Retangular", metais: "Com_metais" },
       env: ["0", "0", "0", "Largura", "Altura_cuba", "Profundidade"],
       x: [METAIS, X("Modelo_cuba", "inteiro", 0, "Forma 3D", "0 = de apoio (sobre o tampo), 1 = de embutir/sobrepor (a cuba que não diz \"de apoio\" nem \"semi-encaixe\" é de embutir), 2 = de semi-encaixe — lido da descrição do catálogo", function (it) { var d = txt(it.descricao); return { v: /APOIO/i.test(d) ? 0 : (/SEMI/i.test(d) ? 2 : 1), origem: "catalogo" }; }),
         X("Retangular", "simnao", false, "Forma 3D", "Cuba retangular/quadrada (lido da descrição do catálogo); não = oval/redonda", DESC(/RETANG|QUADRAD|QR?\s*\d/i, 1, 0))] },
@@ -1083,11 +1089,11 @@
     if (e.id !== "hid-cuba-apoio") return;
     var yA = "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", vis = "Distancia_parede > Profundidade/2";
     e.solidos = e.solidos.concat([
-      { id: "engate-af", nome: "Engate flexível da água fria (do ponto na parede à torneira)", forma: "cilindro", eixo: "z", x: "se(Agua_quente; Agua_afastamento/2; 0)", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: vis },
-      { id: "engate-aq", nome: "Engate flexível da água quente (do ponto na parede ao misturador)", forma: "cilindro", eixo: "z", x: "-Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ")" }]);
+      { id: "engate-af", nome: "Engate flexível da água fria (do ponto na parede à torneira)", forma: "cilindro", eixo: "z", x: "Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: vis, naParede: true },
+      { id: "engate-aq", nome: "Engate flexível da água quente (do ponto na parede ao misturador)", forma: "cilindro", eixo: "z", x: "-Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ")", naParede: true }]);
     e.geo.push(
       X("Torneira_de_parede", "simnao", false, "Instalação", "Torneira de PAREDE (o ponto de água sobe para 220 mm acima do tampo, Deca p.116); desligado = torneira de MESA (ponto 220 mm abaixo do tampo)"),
-      X("Agua_quente", "simnao", false, "Instalação", "Misturador (água fria + quente): dois pontos a ±Agua_afastamento/2 do eixo; desligado = torneira só de água fria (um ponto, no eixo)"),
+      X("Agua_quente", "simnao", false, "Instalação", "Misturador (água fria + quente): dois pontos a ±Agua_afastamento/2 do eixo; desligado = torneira só de água fria (um ponto, a Agua_afastamento/2 do eixo: o esgoto da cuba entra na parede no eixo e a água não cruza com ele — critério RA R-C3, N23 26/10/2026)"),
       I("Distancia_parede", 0.275, null, "Do eixo da cuba à face da parede atrás dela (m). Padrão = a bancada de 0,55 m com a cuba centrada (js/marmoraria.js); o Traçar automaticamente mede a parede e acerta"),
       I("Agua_abaixo_tampo", num0(MMR.aguaAbaixoTampo) || 0.22, null, "Ponto de água da torneira de MESA abaixo da face do tampo — Deca p.116 (220 mm)"),
       I("Agua_acima_tampo", num0(MMR.metalParedeAcimaTampo) || 0.22, null, "Ponto de água da torneira de PAREDE acima da face do tampo — Deca p.116 (170 a 220 mm; adotado 220)"),

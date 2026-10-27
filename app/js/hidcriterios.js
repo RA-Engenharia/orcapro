@@ -121,6 +121,12 @@
   regra("parede.fina", { gravidade: "alerta", custo: 2.0, titulo: "Parede fina para o tubo",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "A parede não cobre o tubo com argamassa dos dois lados: trinca, aparece ou exige rasgo que atravessa a parede.",
     fonte: "critério de projeto (DE do tubo + cobrimento de cada lado)", corrigir: "Refazer por outra parede (ou prever shaft/enchimento)" });
+  /* N23 EMBUTIDO (26/10/2026, print do Rogério: o esgoto da cuba descendo no ar): água e esgoto dentro do cômodo correm embutidos
+     (parede, piso, forro, shaft); aparente só por escolha (a opção "Instalação aparente" do aparelho/ambiente). A classificação é a do
+     js/biminstembutido.js (a mesma do traçado). motor: false — o traçado já embute; aqui é o achado do modelo (à mão ou antigo). */
+  regra("instalacao.aparente", { gravidade: "alerta", custo: 0, motor: false, titulo: "Tubo aparente sem motivo",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "Na obra o tubo de água e de esgoto do ambiente corre embutido na parede, no piso, no forro ou no shaft; solto no ar ele fica à vista, leva pancada e não tem onde fixar. Aparente só em área técnica ou reforma, escolhido no aparelho (Instalação aparente).",
+    fonte: "critério de projeto (RA, 26/10/2026: o ramal que sai do aparelho junto à parede entra na parede ou no shaft)", corrigir: "Embutir o trecho (vai para a parede atrás, com um toco em cada ponta)" });
   regra("parede.drywall", { gravidade: "alerta", custo: 1.0, titulo: "Tubo em parede de drywall",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Drywall não é rasgado: o tubo corre entre os montantes, com fixação e furo de passagem previsto no montante (kit do fabricante).",
     fonte: "critério de projeto (sistema drywall: instalações entre montantes)", corrigir: "Conferir a fixação entre montantes" });
@@ -375,6 +381,19 @@
     });
     return { n: n, trechos: ids };
   }
+  /* N23 EMBUTIDO: o Corrigir da PAREDE FINA — o enchimento (bloco de 9 cm) ou o shaft de drywall na face do lado do tubo, ao longo do
+     pedaço dele na parede (± a folga), do pé da parede até o ponto mais alto + a folga, orçado (js/biminstembutido.js) */
+  function enchimentoPara(w, t, rc) {
+    var HEc = dep("HidEmbutido", "./biminstembutido.js"); if (!HEc || !HEc.enchimento || !HEc.opsEnchimento) return { tipo: "refazer", ids: [t.id], texto: R["parede.fina"].corrigir };
+    var sol = HEc.enchimento({ id: w.id, esp: w.espessura }, t.de); if (!sol.precisa) return { tipo: "refazer", ids: [t.id], texto: R["parede.fina"].corrigir };
+    var A = ptEm(t.p1, t.p2, rc.t0), B = ptEm(t.p1, t.p2, rc.t1), la = local(w, A.x, A.z), lb = local(w, B.x, B.z), lado = (la.v + lb.v) / 2 >= 0 ? 1 : -1;
+    var folga = HEc.GEO.folgaEnchimento, u0 = Math.min(la.u, lb.u) - folga - t.r, u1 = Math.max(la.u, lb.u) + folga + t.r;
+    var face = function (u) { return { x: w.cx + w.ux * u + (-w.uz) * lado * w.hw, z: w.cz + w.uz * u + w.ux * lado * w.hw }; };
+    var n = { x: -(-w.uz) * lado, z: -w.ux * lado }, base = num(w.y0, 0), topo = Math.max(A.y, B.y) + t.r + folga;
+    var ops = HEc.opsEnchimento("ench-" + t.id, { id: w.id }, face(u0), face(u1), n, r4(base), r4(Math.min(num(w.y1, topo), topo)), sol);
+    if (!ops.length) return { tipo: "refazer", ids: [t.id], texto: R["parede.fina"].corrigir };
+    return { tipo: "ops", ids: [t.id], ops: ops, texto: "Lançar " + (sol.solucao === "shaft" ? "o shaft de drywall" : "o enchimento") + " de " + fcm(sol.espessura) + " cm na face da parede " + w.id + " (SINAPI " + sol.sinapi.codigo + ")" };
+  }
   function auditar(E) {
     E = E || {};
     var G = geo(E.parametros), O = E.obstaculos || {}, N = normas(), out = [], vistos = {};
@@ -480,7 +499,7 @@
         var Ldentro = (rc.t1 - rc.t0) * t.L, embutido = t.vert ? Ldentro > G.embutidoMin : Ldentro > w.espessura + G.embutidoMin;
         if (!embutido) return;
         var P = ptEm(t.p1, t.p2, (rc.t0 + rc.t1) / 2);
-        if (w.espessura + EPS < t.de + 2 * G.cobrimentoParede) add("parede.fina", [t.id], P, "A parede " + w.id + " tem " + fcm(w.espessura) + " cm e o tubo de " + quem(t) + " pede " + fcm(t.de + 2 * G.cobrimentoParede) + " cm (DE " + Math.round(t.de * 1000) + " mm + " + Math.round(G.cobrimentoParede * 1000) + " mm de cada lado).", { obstaculo: w.id });
+        if (w.espessura + EPS < t.de + 2 * G.cobrimentoParede) add("parede.fina", [t.id], P, "A parede " + w.id + " tem " + fcm(w.espessura) + " cm e o tubo de " + quem(t) + " pede " + fcm(t.de + 2 * G.cobrimentoParede) + " cm (DE " + Math.round(t.de * 1000) + " mm + " + Math.round(G.cobrimentoParede * 1000) + " mm de cada lado).", { obstaculo: w.id, corrigir: enchimentoPara(w, t, rc) });
         if (w.drywall) add("parede.drywall", [t.id], P, "O tubo de " + quem(t) + " está na parede de drywall " + w.id + ": entre montantes, com fixação.", { obstaculo: w.id, corrigir: { tipo: "rt", ids: [t.id], texto: R["parede.drywall"].corrigir } });
         if (w.divisa) add("parede.divisa", [t.id], P, "O tubo de " + quem(t) + " está embutido na parede de divisa " + w.id + ".", { obstaculo: w.id });
         if (t.sistema === "esgoto" || t.sistema === "ventilacao") {
@@ -492,6 +511,13 @@
           });
         }
       });
+    });
+
+    /* ---------- N23 EMBUTIDO: o tubo no AR dentro do cômodo (fora de parede, piso, forro, shaft, louça e da ligação do aparelho) */
+    arr(E.aparentes).forEach(function (q) {
+      var t = porId[String(q.id)]; if (!t) return;
+      add("instalacao.aparente", [t.id], q.ponto, "O tubo de " + quem(t) + " corre " + fcm(q.comprimento) + " cm APARENTE no cômodo (" + (q.vertical ? "a descida/subida fora da parede" : "fora da parede, do piso e do forro") + ", em (" + f2(q.ponto.x) + "; " + f2(q.ponto.y) + "; " + f2(q.ponto.z) + ")).",
+        { corrigir: { tipo: "embutir", ids: [t.id], texto: R["instalacao.aparente"].corrigir } });
     });
 
     /* ---------- FORRO: esgoto horizontal na zona do teto de ambiente seco (sob a laje de cima) */
@@ -921,7 +947,10 @@
       if (ct && ct.hS != null && B.PECAS[k.peca]) B.PECAS[k.peca].dns.forEach(function (dn) { if (String(dn) === String(k.dn)) return; var c2 = HGc.cotasPeca({ peca: k.peca, dn: dn }); if (c2 && c2.hS != null && c2.dnS === ct.dnS && c2.hS < ct.hS) alts.push({ dn: String(dn), rotulo: B.PECAS[k.peca].nome.toLowerCase() + " " + dn, base: r4(num(k.corpo.base, 0) + (ct.hS - c2.hS) / 1000) }); });
       corpos.push({ id: String(k.id), peca: k.peca, x: k.x, y: k.y, z: k.z, base: k.corpo.base, prolongador: k.corpo.prolongador, alternativas: alts.sort(function (a, b) { return b.base - a.base; }) });
     }); } catch (eR) { corpos = []; } }
-    return { trechos: trechos, acessorios: acessorios, pecas: pecas, caixas: caixas, aparelhos: aparelhos, obstaculos: obst, ambientes: obst.ambientes || [], escopo: extra.escopo || null, parametros: extra.parametros || {}, piso: extra.piso, gas: gas, corpos: corpos };
+    /* N23 EMBUTIDO: os trechos no AR dentro do cômodo (js/biminstembutido.js — a mesma classificação do traçado e do Corrigir) */
+    var HEd = dep("HidEmbutido", "./biminstembutido.js"), aparentesE = [];
+    if (HEd && HEd.aparentes && typeof avaliarFam === "function") { try { aparentesE = HEd.aparentes(estado, avaliarFam); } catch (eA) { aparentesE = []; } }
+    return { trechos: trechos, acessorios: acessorios, pecas: pecas, caixas: caixas, aparelhos: aparelhos, obstaculos: obst, ambientes: obst.ambientes || [], escopo: extra.escopo || null, parametros: extra.parametros || {}, piso: extra.piso, gas: gas, corpos: corpos, aparentes: aparentesE };
   }
 
   /* texto curto para o memorial / painel */
@@ -945,7 +974,8 @@
    * ===================================================================================================================== */
   var CORR = {
     captura: 0.10,       // hid:ok m: a ponta solta encosta no ponto/tubo/peça do mesmo sistema até esta distância (critério de desenho)
-    iteracoes: 12        // hid:ok quantas correções em série no "Corrigir tudo neste ambiente" (cada uma no modelo já corrigido)
+    iteracoes: 12,       // hid:ok quantas correções em série no "Corrigir tudo neste ambiente" (cada uma no modelo já corrigido)
+    raioAparelho: 1.5    // hid:ok N23 EMBUTIDO: o tubo aparente a até 1,5 m do ponto de um aparelho é refeito pelo Traçar dele
   };
   function corrBE() { return dep("BimEdit", "./bimedit.js"); }
   function d3c(a, b) { return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2) + Math.pow(a.z - b.z, 2)); }
@@ -1086,6 +1116,21 @@
     if (!L.n) return { ok: false, motivo: "nenhuma travessia de laje achada nesses trechos" };
     return { ok: true, ops: ops.filter(function (o) { return arr(o.passantes).length; }), texto: L.n + " passante(s) lançado(s) na laje (" + L.trechos.join(", ") + ")", mudados: L.trechos, apagados: [] };
   }
+  /* N23 EMBUTIDO — TUBO APARENTE SEM MOTIVO: o vertical no ar vai para o eixo embutido da parede atrás (js/biminstembutido.js
+     correcaoEmbutir: as pontas ficam, um toco em cada uma; esgoto com a declividade mínima nos tocos). O que não é vertical: o Traçar
+     do aparelho mais perto refaz embutido (a tela, com a prévia); sem aparelho perto: o motivo (à mão). */
+  function corrigirEmbutir(ctx, a) {
+    var HEc = dep("HidEmbutido", "./biminstembutido.js"), t = porIdTr(ctx.estado)[a.ids[0]]; if (!HEc || !t) return { ok: false, motivo: "trecho não encontrado" };
+    var r = HEc.correcaoEmbutir(ctx.estado, ctx.avaliarFam, t, { ops: ctx.ops });
+    if (!r.ok) {
+      var B = BI(), ap = null, dm = INF;
+      try { B.conectoresDoEstado(ctx.estado, ctx.avaliarFam).forEach(function (k) { var d = Math.min(d3c(k, t.p1), d3c(k, t.p2)); if (d < dm) { dm = d; ap = String(k.famInst); } }); } catch (eC) {}
+      if (ap && dm <= CORR.raioAparelho) return { ok: false, tela: "tracar", aparelhos: [ap], motivo: r.motivo };
+      return { ok: false, motivo: r.motivo };
+    }
+    var np = naoPiora(ctx, r.ops, "embutir", null); if (!np.ok) return { ok: false, motivo: "embutir " + t.id + ": " + np.motivo };
+    return { ok: true, ops: r.ops, texto: r.texto, mudados: r.ops.map(function (o) { return String(o.id); }), apagados: [] };
+  }
   function correcaoDe(a) {
     if (a.origem === "verificar") {
       if (a.tipo === "inclinacao") return { tipo: "inclinacao", texto: /SOBE/.test(a.texto) ? "Corrigir o sentido/a inclinação do trecho (os pontos ficam)" : "Dar a inclinação mínima (a jusante desce, os pontos em planta ficam)" };
@@ -1097,6 +1142,7 @@
     var c = a.corrigir; if (!c) return null;
     if (a.regra === "economia.luva" && c.tipo === "juntar") return { tipo: "luva", texto: c.texto || "Juntar os dois trechos" };
     if (a.regra === "estrutura.laje") return { tipo: "passante", texto: "Lançar o passante na laje" };
+    if (a.regra === "instalacao.aparente" && c.tipo === "embutir") return { tipo: "embutir", texto: c.texto };
     if (c.tipo === "ops" && arr(c.ops).length) return { tipo: "ops", texto: c.texto, ops: c.ops };
     if (c.tipo === "refazer" && arr(c.aparelhos).length) return { tipo: "tracar", texto: "Refazer pelo Traçar automaticamente (o traçado deste aparelho é refeito, com a prévia)", aparelhos: c.aparelhos };
     if (c.tipo === "rt") return { tipo: "rt", texto: c.texto };
@@ -1126,6 +1172,7 @@
       else if (c.tipo === "bitola") r = corrigirBitola(ctx, a);
       else if (c.tipo === "luva") r = corrigirLuva(ctx, a);
       else if (c.tipo === "passante") r = corrigirPassante(ctx, a);
+      else if (c.tipo === "embutir") r = corrigirEmbutir(ctx, a);
       else if (c.tipo === "ops") r = { ok: true, ops: JSON.parse(JSON.stringify(c.ops)), texto: c.texto, mudados: c.ops.map(function (o) { return String(o.id); }), apagados: c.ops.filter(function (o) { return o.op === "apagar"; }).map(function (o) { return String(o.id); }) };
       else return { ok: false, tela: c.tipo, motivo: c.texto, famInst: c.famInst || null, aparelhos: c.aparelhos || null };   /* ligarPeca / tracar / rt: a tela faz (prévia do Traçar) */
     } catch (e) { r = { ok: false, motivo: "a correção falhou: " + (e && e.message ? e.message : e) }; }
@@ -1144,7 +1191,7 @@
     var amb = ambDe(ctx.estado, ambId); if (!amb) return { ok: false, motivo: "ambiente " + ambId + " não encontrado", ops: [] };
     var ops = [], textos = [], feitos = 0, recusados = {}, c2 = { estado: ctx.estado, avaliarFam: ctx.avaliarFam, ops: arr(ctx.ops) };
     for (var k = 0; k < CORR.iteracoes; k++) {
-      var lista = achadosCorr(c2).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante)$/.test(a.correcao.tipo) && !recusados[a.chave.replace(/^[vc]\d+:/, "")] && noAmbiente(c2, a, amb); });
+      var lista = achadosCorr(c2).filter(function (a) { return a.correcao && /^(inclinacao|ponta|bitola|luva|passante|embutir)$/.test(a.correcao.tipo) && !recusados[a.chave.replace(/^[vc]\d+:/, "")] && noAmbiente(c2, a, amb); });
       if (!lista.length) break;
       var a = lista[0], r = proporCorr(c2, a);
       if (!r.ok) { recusados[a.chave.replace(/^[vc]\d+:/, "")] = r.motivo; continue; }

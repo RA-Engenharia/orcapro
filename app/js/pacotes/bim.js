@@ -74350,6 +74350,7 @@ if (o.serie != null && o.serie !== "") t.serie = txt(o.serie);
 if (o.linha === "liquido" || o.linha === "succao") t.linha = o.linha;
 if (o.continua === "p1" || o.continua === "p2" || o.continua === "ambos") t.continua = o.continua;
 if (o.isolamento === true && o.sistema === "agua_quente") t.isolamento = true;
+if (o.aparente === true) t.aparente = true;
 if (Array.isArray(o.passantes) && o.passantes.length) {
 var psL = o.passantes.filter(function (q) { return q && q.laje != null && q.laje !== "" && isFinite(num(q.x, NaN)) && isFinite(num(q.z, NaN)); }).slice(0, 12)
 .map(function (q) { return { laje: txt(q.laje).slice(0, 80), x: r4(num(q.x, 0)), y: r4(num(q.y, 0)), z: r4(num(q.z, 0)) }; })
@@ -75096,6 +75097,12 @@ if (!g) { g = pss[k] = { peca: "passante_laje", nome: sp.rotulo, sistema: t.sist
 g.n++; g.quantidade++; g.ids.push(t.id); if (g.lajes.indexOf(q.laje) < 0) g.lajes.push(q.laje);
 });
 });
+var rsg = {}, ordR = [], HEq = dep("HidEmbutido", "./biminstembutido.js");
+if (HEq && HEq.rasgos) { try { HEq.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) {
+var k = sp.chave + "|" + r.dn, g = rsg[k];
+if (!g) { g = rsg[k] = { peca: "rasgo_alvenaria", nome: sp.rotulo || sp.chave, sistema: r.sistema, dn: r.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", ids: [], sinapi: sp }; ordR.push(k); }
+g.n++; g.metros = r4(g.metros + r.metros); g.quantidade = g.metros; g.ids.push(r.id);
+}); }); } catch (eR) {} }
 var acs = {}, ordA = [], dsp = {}, ordD = [];
 arr(R.acessorios).forEach(function (a) {
 var it = itemAcessorio(a), k = [a.acessorio, a.sistema, it.material, it.aplicacao, it.dn].join("|");
@@ -75120,6 +75127,7 @@ acessorios: ordA.map(function (k) { return acs[k]; }),
 dispositivos: ordD.map(function (k) { return dsp[k]; }),
 isolamentos: ordI.map(function (k) { return isos[k]; }),
 passantes: ordPs.map(function (k) { return pss[k]; }),
+rasgos: ordR.map(function (k) { return rsg[k]; }),
 prolongadores: ordPl.map(function (k) { return prol[k]; }),
 tubos: ordT.map(function (k) { return tubos[k]; }),
 conexoes: ordC.map(function (k) { return cxs[k]; }),
@@ -75146,6 +75154,8 @@ R.trechos.forEach(function (t) { var it = itemTrecho(t), q = quantidadeTrecho(t)
 if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));
 arr(t.passantes).forEach(function () { linha(t.id, { peca: "passante_laje", sistema: t.sistema, material: t.material, dn: t.dn }, 1, "un", passanteDe(dnPassante(t))); });
 });
+var HEo = dep("HidEmbutido", "./biminstembutido.js");
+if (HEo && HEo.rasgos) { try { HEo.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) { linha(r.id, { peca: "rasgo_alvenaria", sistema: r.sistema, material: r.material, dn: r.dn }, r.metros, "m", sp); }); }); } catch (eO) {} }
 R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
 var it = itemConexao(c);
 linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
@@ -77946,6 +77956,290 @@ TETO_CONEXAO: 2000, TETO_CONEXAO_GRANDE: 2800, tetoConexao: tetoConexao, TETO_PR
 };
 global.HidGeo = HidGeo;
 if (typeof module !== "undefined" && module.exports) module.exports = HidGeo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/biminstembutido.js ==== */
+try {
+(function (global) {
+"use strict";
+function dep(nome, arq) { if (global[nome]) return global[nome]; if (typeof require === "function") { try { return require(arq); } catch (e) {} } return null; }
+function BI() { return dep("BimInst", "./biminst.js"); }
+function HR() { return dep("HidRota", "./hidrota.js"); }
+function HC() { return dep("HidCriterios", "./hidcriterios.js"); }
+function HK() { return dep("HidKit", "./hidkit.js"); }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function txt(v) { return v == null ? "" : String(v); }
+var EPS = 1e-6;
+var CASAS = 10000;
+function r4(v) { return Math.round(v * CASAS) / CASAS; }
+function f2(v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); }
+function fcm(v) { return String(Math.round(v * 100)); }
+function cmAcima(v) { return Math.ceil(v * 100 - EPS) / 100; }
+var GEO = {
+amostra: 0.05,
+tolFace: 0.005,
+alcanceCasa: 15,
+ladosCasa: 3,
+tolPonto: 0.02,
+inclLigacao: 0.15,
+blocoEnchimento: 0.09,
+folgaEnchimento: 0.10,
+cosTravessia: 0.70,
+ligacaoEquip: 0.50,
+ligacaoCurta: 0.30,
+cavidadeDrywall: 0.09
+};
+function g(op, k) {
+if (op && op[k] != null && isFinite(Number(op[k]))) return Number(op[k]);
+if (k === "cobrimento") { var C = HC(); return C && C.GEO && C.GEO.cobrimentoParede != null ? C.GEO.cobrimentoParede : 0.015; }
+if (k === "embutir") { var R = HR(); return R && R.GEO && R.GEO.embutir != null ? R.GEO.embutir : 0.05; }
+if (k === "alcance") { var A = dep("HidAmbiente", "./hidambiente.js"); return A && A.GEO_AMB && A.GEO_AMB.paredeAtrasMax != null ? A.GEO_AMB.paredeAtrasMax : 0.60; }
+if (k === "alturaForro") { var C2 = HC(); return C2 && C2.GEO && C2.GEO.alturaForro != null ? C2.GEO.alturaForro : 2.0; }
+return GEO[k];
+}
+var SINAPI_EMB = {
+rasgo40: ["90443", "M", "RASGO LINEAR MANUAL EM ALVENARIA, PARA RAMAIS/ DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS, DIÂMETROS MENORES OU IGUAIS A 40 MM. AF_09/2023"],
+rasgo75: ["91222", "M", "RASGO LINEAR MANUAL EM ALVENARIA, PARA RAMAIS/ DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS, DIÂMETROS MAIORES QUE 40 MM E MENORES OU IGUAIS A 75 MM. AF_09/2023"],
+rasgo100: ["90446", "M", "RASGO LINEAR MECANIZADO EM CONTRAPISO, PARA RAMAIS/ DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS, DIÂMETROS MAIORES QUE 75 MM E MENORES OU IGUAIS A 100 MM. AF_09/2023_PS"],
+chumb40: ["90466", "M", "CHUMBAMENTO LINEAR EM ALVENARIA PARA RAMAIS/DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS COM DIÂMETROS MENORES OU IGUAIS A 40 MM. AF_09/2023"],
+chumb75: ["90467", "M", "CHUMBAMENTO LINEAR EM ALVENARIA PARA RAMAIS/DISTRIBUIÇÃO DE INSTALAÇÕES HIDRÁULICAS COM DIÂMETROS MAIORES QUE 40 MM E MENORES OU IGUAIS A 75 MM. AF_09/2023"],
+alvenaria9: ["103329", "M2", "ALVENARIA DE VEDAÇÃO DE BLOCOS CERÂMICOS FURADOS NA HORIZONTAL DE 9X19X19 CM (ESPESSURA 9 CM) E ARGAMASSA DE ASSENTAMENTO COM PREPARO MANUAL. AF_12/2021"],
+drywallFace: ["96370", "M2", "PAREDE COM SISTEMA EM CHAPAS DE GESSO PARA DRYWALL, USO INTERNO, COM UMA FACE SIMPLES E ESTRUTURA METÁLICA COM GUIAS SIMPLES, SEM VÃOS. AF_07/2023_PS"]
+};
+var DN_RASGO = [40, 75, 100];
+function linhaSinapi(k, extra) { var s = SINAPI_EMB[k], o = { status: "ok", chave: "embutido|" + k, codigo: s[0], unidade: s[1], descricao: s[2], rotulo: s[2].split(",")[0].replace(/\. AF_.*$/, "").toLowerCase(), alternativas: 0 }; Object.keys(extra || {}).forEach(function (x) { o[x] = extra[x]; }); return o; }
+function rasgoDe(dn) {
+var d = num(dn, 0);
+if (d <= DN_RASGO[0] + EPS) return [linhaSinapi("rasgo40"), linhaSinapi("chumb40")];
+if (d <= DN_RASGO[1] + EPS) return [linhaSinapi("rasgo75"), linhaSinapi("chumb75")];
+var obs = "PROVISÓRIO: a SINAPI 06/2026 não tem rasgo/chumbamento em alvenaria para DN " + d + " — adotada a de maior custo entre as linhas de rasgo/chumbamento desse diâmetro na base SP 06/2026 (conferir; troque por composição própria)";
+if (d <= DN_RASGO[2] + EPS) return [linhaSinapi("rasgo100", { provisorio: true, observacao: obs }), linhaSinapi("chumb75", { provisorio: true, observacao: obs })];
+return [{ status: "pendente", chave: "embutido|rasgo|" + d, rotulo: "Rasgo e chumbamento em alvenaria DN " + d, motivo: "DN " + d + " embutido em alvenaria: a SINAPI 06/2026 não tem composição acima de 100 mm (tubo desse DN vai em shaft, não em rasgo)" }];
+}
+function ehDrywall(c) {
+var tp = c && c.tipoParede, nuc = tp && arr(tp.camadas).filter(function (k) { return k && k.face === "nucleo"; })[0];
+return !!(c && c.drywall) || /drywall|gesso acartonado|steel ?frame/i.test(txt(tp && tp.rotulo) + " " + txt(nuc && (nuc.material + " " + nuc.rotulo)));
+}
+function paredes(estado) {
+return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede"; }).map(function (c) {
+var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, alt = num(c.altura, 0);
+var p1 = { x: num(c.cx, 0) - h * cs, z: num(c.cz, 0) + h * sn }, p2 = { x: num(c.cx, 0) + h * cs, z: num(c.cz, 0) - h * sn };
+var L = 2 * h; if (!(L > EPS)) return null;
+return { id: String(c.id), p1: p1, p2: p2, u: { x: (p2.x - p1.x) / L, z: (p2.z - p1.z) / L }, L: L, esp: num(c.espessura, 0), hw: num(c.espessura, 0) / 2,
+base: num(c.cy, 0) - alt / 2, topo: num(c.cy, 0) + alt / 2, drywall: ehDrywall(c), enchimento: !!c.enchimento };
+}).filter(Boolean);
+}
+function local(w, p) { var dx = p.x - w.p1.x, dz = p.z - w.p1.z; return { s: dx * w.u.x + dz * w.u.z, v: -dx * w.u.z + dz * w.u.x }; }
+function dentroDe(w, p, folga) { var l = local(w, p); return l.s >= -EPS && l.s <= w.L + EPS && Math.abs(l.v) <= w.hw + num(folga, 0) + EPS && p.y >= w.base - EPS && p.y <= w.topo + EPS; }
+function paredeAtras(estado, p, n, opcoes) {
+opcoes = opcoes || {};
+var nx = num(n && n.x, 0), nz = num(n && n.z, 0), Ln = Math.sqrt(nx * nx + nz * nz); if (!(Ln > EPS)) return null;
+nx /= Ln; nz /= Ln;
+var alc = g(opcoes, "alcance"), melhor = null, Ws = opcoes.paredes || paredes(estado), y = num(p.y, 0);
+Ws.forEach(function (w) {
+if (y < w.base - EPS || y > w.topo + EPS) return;
+var nw = { x: -w.u.z, z: w.u.x }, dn = nx * nw.x + nz * nw.z; if (Math.abs(dn) < 0.9) return;
+var l = local(w, p), t = -l.v / dn, face = t - w.hw / Math.abs(dn);
+if (face < -w.hw - EPS || t < -EPS || face > alc + EPS) return;
+var sAt = l.s + t * (nx * w.u.x + nz * w.u.z); if (sAt < -EPS || sAt > w.L + EPS) return;
+var f0 = Math.max(0, face);
+if (!melhor || f0 < melhor.face - EPS) melhor = { w: w, face: r4(f0), eixo: r4(Math.max(0, t)), esp: w.esp, n: { x: r4(nx), z: r4(nz) } };
+});
+if (melhor && melhor.w.enchimento && !opcoes._semSoma) {
+var tras = { x: p.x + nx * (melhor.face + melhor.esp + 0.005), y: y, z: p.z + nz * (melhor.face + melhor.esp + 0.005) };
+var W2 = paredeAtras(estado, tras, { x: nx, z: nz }, { paredes: Ws, alcance: 0.01, _semSoma: true });
+if (W2 && W2.w.id !== melhor.w.id) melhor.esp = r4(melhor.esp + W2.esp + W2.face);
+}
+return melhor;
+}
+function encaixe(esp, de, opcoes) {
+var c = g(opcoes, "cobrimento"), e = g(opcoes, "embutir"), r = num(de, 0) / 2, E = num(esp, 0), precisa = r4(2 * r + 2 * c);
+var cabe = E + EPS >= precisa, prof = cabe ? Math.min(Math.max(e, c + r), E - c - r) : E / 2;
+return { cabe: cabe, profundidade: r4(prof), precisa: precisa, esp: r4(E), falta: cabe ? 0 : r4(cmAcima(precisa - E)), cobrimento: c };
+}
+function enchimento(w, de, opcoes) {
+var E = encaixe(w ? w.esp : 0, de, opcoes); if (E.cabe) return { precisa: false, encaixe: E };
+var Y = E.falta, alv = Y <= g(opcoes, "blocoEnchimento") + EPS, esp = alv ? g(opcoes, "blocoEnchimento") : Y;
+var s = alv ? SINAPI_EMB.alvenaria9 : SINAPI_EMB.drywallFace;
+return { precisa: true, encaixe: E, falta: Y, espessura: r4(esp), solucao: alv ? "enchimento" : "shaft",
+rotulo: alv ? "enchimento de alvenaria (bloco cerâmico de 9 cm)" : "shaft de drywall (face simples)", sinapi: { codigo: s[0], unidade: s[1], descricao: s[2] } };
+}
+function opsEnchimento(id, w, faceA, faceB, n, base, topo, sol, marcas) {
+var BE = dep("BimEdit", "./bimedit.js"); if (!BE || !BE.parede || !sol || !sol.precisa) return [];
+var e = sol.espessura, nx = num(n.x, 0), nz = num(n.z, 0);
+var a = { x: r4(faceA.x - nx * e / 2), z: r4(faceA.z - nz * e / 2) }, b = { x: r4(faceB.x - nx * e / 2), z: r4(faceB.z - nz * e / 2) };
+var cx = BE.parede(a, b, e, r4(topo - base), base); if (!cx) return [];
+cx.enchimento = { de: w ? w.id : null, solucao: sol.solucao, falta: sol.falta };
+var Lf = Math.sqrt(Math.pow(b.x - a.x, 2) + Math.pow(b.z - a.z, 2)), fator = sol.solucao === "shaft" && Lf > EPS ? r4((Lf + 2 * e) / Lf) : 1;
+if (sol.solucao === "shaft") cx.drywall = true;
+var o1 = { op: "criar", id: id, caixa: cx }, o2 = { op: "orcar", id: id, servicos: [{ codigo: sol.sinapi.codigo, medida: "area", fator: fator, rotulo: (sol.solucao === "shaft" ? "Shaft de drywall" : "Enchimento hidráulico") + " (" + fcm(e) + " cm)" }] };
+Object.keys(marcas || {}).forEach(function (k) { o1[k] = marcas[k]; o2[k] = marcas[k]; });
+return [o1, o2];
+}
+var CHAVE_APARENTE = "Instalacao_aparente";
+function aparente(fi) { var v = fi && fi.inst ? fi.inst[CHAVE_APARENTE] : null; return v === true || v === 1 || v === "1" || v === "sim"; }
+var SISTEMAS_EMB = { esgoto: 1, ventilacao: 1, agua_fria: 1, agua_quente: 1 };
+function contexto(estado, avaliarFam, opcoes) {
+var B = BI(), Ws = paredes(estado), vols = [], pts = [];
+try { vols = B && B.volumesFamilias ? B.volumesFamilias(estado, avaliarFam) : []; } catch (e) { vols = []; }
+try { if (B && typeof avaliarFam === "function") B.conectoresDoEstado(estado, avaliarFam).forEach(function (k) { pts.push({ x: k.x, y: k.y, z: k.z, famInst: String(k.famInst), sistema: k.sistema }); }); } catch (e2) {}
+var famPor = {}; arr(estado && estado.familias).forEach(function (f) { famPor[String(f.id)] = f; });
+var lajes = []; try { var O = HR() && HR().obstaculosDoBim ? HR().obstaculosDoBim(estado, avaliarFam) : null; lajes = O ? arr(O.lajes) : []; } catch (e3) {}
+return { Ws: Ws, vols: vols, pts: pts, famPor: famPor, lajes: lajes, opcoes: opcoes || {} };
+}
+function noVolume(v, p, r) {
+var dx = p.x - num(v.cx, 0), dz = p.z - num(v.cz, 0), u = dx * num(v.ux, 1) + dz * num(v.uz, 0), w = -dx * num(v.uz, 0) + dz * num(v.ux, 1);
+return Math.abs(u) <= num(v.hl, 0) - r + EPS && Math.abs(w) <= num(v.hw, 0) - r + EPS && p.y >= num(v.y0, 0) + r - EPS && p.y <= num(v.y1, 0) - r + EPS;
+}
+function cercado(C, p) {
+var dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]], lados = 0, piso = -Infinity, alc = g(C.opcoes, "alcanceCasa");
+dirs.forEach(function (d) {
+var melhor = null;
+C.Ws.forEach(function (w) {
+if (p.y < w.base - EPS || p.y > w.topo + EPS) return;
+var ex = w.p2.x - w.p1.x, ez = w.p2.z - w.p1.z, den = d[0] * ez - d[1] * ex; if (Math.abs(den) < EPS) return;
+var qx = w.p1.x - p.x, qz = w.p1.z - p.z, t = (qx * ez - qz * ex) / den, s = (qx * d[1] - qz * d[0]) / den;
+if (t < -EPS || t > alc || s < -EPS || s > 1 + EPS) return;
+if (!melhor || t < melhor.t) melhor = { t: t, w: w };
+});
+if (melhor) { lados++; piso = Math.max(piso, melhor.w.base); }
+});
+return { dentro: lados >= g(C.opcoes, "ladosCasa"), piso: piso };
+}
+function pontoDeAparelho(C, q) { return C.pts.filter(function (k) { return Math.abs(k.x - q.x) <= g(C.opcoes, "tolPonto") && Math.abs(k.z - q.z) <= g(C.opcoes, "tolPonto") && Math.abs(k.y - q.y) <= g(C.opcoes, "tolPonto"); })[0] || null; }
+function deTubo(t) {
+var Gm = dep("HidGeo", "./biminstgeo.js");
+try { var c = Gm && Gm.cotasTubo ? Gm.cotasTubo(t.material, t.dn) : null; if (c && c.de > 0) return c.de / 1000; } catch (e) {}
+return num(t.dn, 0) / 1000;
+}
+function classificarTrecho(C, t) {
+var p1 = t.p1, p2 = t.p2, dx = p2.x - p1.x, dy = p2.y - p1.y, dz = p2.z - p1.z, L = Math.sqrt(dx * dx + dy * dy + dz * dz), Lh = Math.sqrt(dx * dx + dz * dz);
+var out = { id: String(t.id), sistema: t.sistema, dn: t.dn, material: t.material, L: r4(L), partes: { parede: 0, piso: 0, forro: 0, volume: 0, ligacao: 0, fora: 0, ar: 0 }, ar: [], paredes: {}, alvenaria: {}, aparente: t.aparente === true };
+if (!(L > EPS)) return out;
+var r = deTubo(t) / 2, N = Math.max(1, Math.ceil(L / g(C.opcoes, "amostra"))), dL = L / N;
+var noPonto = pontoDeAparelho(C, p1) || pontoDeAparelho(C, p2);
+var ligacao = !!noPonto && ((Lh > EPS && Math.abs(dy) <= g(C.opcoes, "inclLigacao") * Lh + EPS && Lh <= g(C.opcoes, "alcance") + 0.30) ||
+L <= g(C.opcoes, "ligacaoCurta"));
+for (var i = 0; i < N; i++) {
+var s = (i + 0.5) / N, p = { x: p1.x + dx * s, y: p1.y + dy * s, z: p1.z + dz * s }, onde = null;
+var w = C.Ws.filter(function (x) { return dentroDe(x, p, g(C.opcoes, "tolFace")); })[0];
+if (w) {
+onde = "parede"; out.paredes[w.id] = r4((out.paredes[w.id] || 0) + dL);
+var atravessa = L > EPS && Math.abs((dx * -w.u.z + dz * w.u.x) / L) > g(C.opcoes, "cosTravessia");
+if (!w.drywall && !atravessa) out.alvenaria[w.id] = r4((out.alvenaria[w.id] || 0) + dL);
+}
+else if (C.vols.some(function (v) { return noVolume(v, p, 0); })) onde = "volume";
+else if (ligacao) onde = "ligacao";
+else {
+var cc = cercado(C, p);
+if (!cc.dentro) onde = p.y < 0 ? "piso" : "fora";
+else if (p.y + r <= cc.piso + EPS) onde = "piso";
+else if (p.y - r >= cc.piso + g(C.opcoes, "alturaForro") - EPS) onde = "forro";
+else if (C.lajes.some(function (l) { var tp = num(l.topo, NaN), e = num(l.espessura, 0); return isFinite(tp) && p.x >= Math.min(l.x0, l.x1) - EPS && p.x <= Math.max(l.x0, l.x1) + EPS && p.z >= Math.min(l.z0, l.z1) - EPS && p.z <= Math.max(l.z0, l.z1) + EPS && p.y <= tp + EPS && p.y >= tp - e - EPS; })) onde = "piso";
+else onde = "ar";
+}
+out.partes[onde] = r4(out.partes[onde] + dL);
+if (onde === "ar") out.ar.push({ x: r4(p.x), y: r4(p.y), z: r4(p.z) });
+}
+return out;
+}
+function trechosDe(estado, opcoes) {
+var ids = opcoes && opcoes.ids ? {} : null; if (ids) arr(opcoes.ids).forEach(function (id) { ids[String(id)] = 1; });
+return arr(estado && estado.instalacoes && estado.instalacoes.trechos).filter(function (t) { return t && t.p1 && t.p2 && (!ids || ids[String(t.id)]); });
+}
+function classificar(estado, avaliarFam, opcoes) {
+var C = contexto(estado, avaliarFam, opcoes);
+return trechosDe(estado, opcoes).map(function (t) { return classificarTrecho(C, t); });
+}
+function ligacoesEquip(C, trs) {
+var HF = dep("HidFamilias", "./hidfamilias.js"), lim = g(C.opcoes, "ligacaoEquip"), tol = g(C.opcoes, "tolPonto"), out = {};
+function perto(a, b) { return Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol && Math.abs(a.z - b.z) <= tol; }
+function Lt(t) { return Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.y - t.p1.y, 2) + Math.pow(t.p2.z - t.p1.z, 2)); }
+C.pts.forEach(function (k) {
+var fi = C.famPor[k.famInst], F = fi && HF && HF.porId ? HF.porId(fi.famId) : null; if (!F || F.categoria !== "equipamento") return;
+var fila = [{ p: k, L: 0 }], vistos = {};
+while (fila.length) {
+var q = fila.shift();
+trs.forEach(function (t) {
+if (vistos[t.id] || t.sistema !== k.sistema) return;
+var lado = perto(t.p1, q.p) ? t.p2 : (perto(t.p2, q.p) ? t.p1 : null); if (!lado) return;
+var L = q.L + Lt(t); if (L > lim + EPS) return;
+vistos[t.id] = 1; out[String(t.id)] = 1; fila.push({ p: lado, L: L });
+var par2 = /b$/.test(String(t.id)) ? String(t.id).slice(0, -1) : String(t.id) + "b", tb = trs.filter(function (x) { return String(x.id) === par2; })[0];
+if (tb && !vistos[tb.id]) { var Lb2 = L + Lt(tb); if (Lb2 <= lim + EPS) { vistos[tb.id] = 1; out[String(tb.id)] = 1; [tb.p1, tb.p2].forEach(function (pp) { fila.push({ p: pp, L: Lb2 }); }); } }
+});
+}
+});
+return out;
+}
+function aparentes(estado, avaliarFam, opcoes) {
+var C = contexto(estado, avaliarFam, opcoes), out = [];
+var apar = {}; arr(estado && estado.familias).forEach(function (f) { if (aparente(f)) apar[String(f.id)] = 1; });
+var equip = ligacoesEquip(C, trechosDe(estado, {}));
+trechosDe(estado, opcoes).forEach(function (t) {
+if (!SISTEMAS_EMB[t.sistema] || t.aparente === true || equip[String(t.id)]) return;
+if ([t.p1, t.p2].some(function (q) { var k = pontoDeAparelho(C, q); return k && apar[k.famInst]; })) return;
+var c = classificarTrecho(C, t);
+if (!(c.partes.ar > g(C.opcoes, "amostra") + EPS)) return;
+var meio = c.ar[Math.floor(c.ar.length / 2)];
+out.push({ id: c.id, sistema: c.sistema, dn: c.dn, comprimento: c.partes.ar, L: c.L, ponto: meio, vertical: Math.abs(t.p2.y - t.p1.y) >= 0.95 * c.L });
+});
+return out;
+}
+function correcaoEmbutir(estado, avaliarFam, t, opcoes) {
+opcoes = opcoes || {};
+var B = BI(); if (!t || !t.p1 || !t.p2) return { ok: false, motivo: "trecho não encontrado" };
+var L = Math.sqrt(Math.pow(t.p2.x - t.p1.x, 2) + Math.pow(t.p2.y - t.p1.y, 2) + Math.pow(t.p2.z - t.p1.z, 2));
+if (t.sistema === "ventilacao") return { ok: false, motivo: "a ventilação " + t.id + " sobe no ar: refaça pelo Traçar automaticamente (o ramal de ventilação tem o aclive da NBR 8160, não a descida do esgoto)" };
+if (!(Math.abs(t.p2.y - t.p1.y) >= 0.95 * L)) return { ok: false, motivo: "o trecho " + t.id + " não é vertical: refaça pelo Traçar automaticamente (o traçado do aparelho é refeito embutido)" };
+var Ws = paredes(estado), cima = t.p1.y >= t.p2.y ? t.p1 : t.p2, baixo = cima === t.p1 ? t.p2 : t.p1, meio = { x: (t.p1.x + t.p2.x) / 2, y: (t.p1.y + t.p2.y) / 2, z: (t.p1.z + t.p2.z) / 2 };
+var melhor = null;
+[[1, 0], [-1, 0], [0, 1], [0, -1]].concat(Ws.map(function (w) { return [-w.u.z, w.u.x]; }), Ws.map(function (w) { return [w.u.z, -w.u.x]; })).forEach(function (d) {
+var P = paredeAtras(estado, meio, { x: d[0], z: d[1] }, { paredes: Ws, alcance: g(opcoes, "alcance") });
+if (P && (!melhor || P.face < melhor.face)) melhor = P;
+});
+if (!melhor) return { ok: false, motivo: "nenhuma parede a até " + fcm(g(opcoes, "alcance")) + " cm do trecho " + t.id + ": leve o tubo à parede (ou faça um shaft) e trace de novo" };
+var de = deTubo(t), E = encaixe(melhor.esp, de, opcoes), prof = melhor.face + E.profundidade;
+var ax = r4(meio.x + melhor.n.x * prof), az = r4(meio.z + melhor.n.z * prof), i = t.sistema === "esgoto" && B && B.declMinDn ? B.declMinDn("esgoto", t.dn) / 100 : 0;
+var yTop = Math.floor((cima.y - i * prof) * CASAS - EPS) / CASAS, yBot = Math.ceil((baixo.y + i * prof) * CASAS + EPS) / CASAS;
+if (!(yTop > yBot + EPS)) return { ok: false, motivo: "o trecho " + t.id + " é curto demais para ir à parede com a declividade" };
+var base = null; (function rec(Lo) { arr(Lo).forEach(function (o) { if (!o) return; if (o.op === "lote") rec(o.ops); else if (o.op === "trecho" && String(o.id) === String(t.id)) base = o; }); })(opcoes.ops);
+function op(id, a, b, eh) {
+var o = base ? JSON.parse(JSON.stringify(base)) : (B && B.opDoTrecho ? B.opDoTrecho(t) : { op: "trecho", sistema: t.sistema, material: t.material, dn: t.dn });
+["kit", "kitParte", "kitAss", "kitTipo", "amb", "ambInfo", "passantes"].forEach(function (k) { delete o[k]; });
+if (!eh) delete o.continua;
+o.op = "trecho"; o.id = id; o.p1 = { x: r4(a.x), y: r4(a.y), z: r4(a.z) }; o.p2 = { x: r4(b.x), y: r4(b.y), z: r4(b.z) }; return o;
+}
+var A1 = { x: ax, y: yTop, z: az }, A2 = { x: ax, y: yBot, z: az }, desceP1 = t.p1 === cima, ops;
+if (desceP1) ops = [op(t.id + "-e1", cima, A1), op(t.id, A1, A2, true), op(t.id + "-e2", A2, baixo)];
+else ops = [op(t.id + "-e1", baixo, A2), op(t.id, A2, A1, true), op(t.id + "-e2", A1, cima)];
+var cont = base && base.continua; if (cont) { ops[1].continua = undefined; delete ops[1].continua; if (cont === "p1" || cont === "ambos") ops[0].continua = "p1"; if (cont === "p2" || cont === "ambos") ops[2].continua = "p2"; }
+return { ok: true, ops: ops, parede: melhor.w.id, texto: "o trecho " + t.id + " (" + fcm(L) + " cm) vai para dentro da parede " + melhor.w.id + " (eixo a " + fcm(E.profundidade) + " cm da face), com um toco em cada ponta até onde ele ligava" + (E.cabe ? "" : " — a parede tem " + fcm(melhor.esp) + " cm e o tubo pede " + fcm(E.precisa) + ": veja o enchimento") };
+}
+function rasgos(estado, avaliarFam) {
+var C = contexto(estado, avaliarFam, {}), out = [];
+trechosDe(estado, {}).forEach(function (t) {
+if (!SISTEMAS_EMB[t.sistema] && t.sistema !== "pluvial") return;
+var c = classificarTrecho(C, t), m = 0;
+Object.keys(c.alvenaria).forEach(function (k) {
+var w = C.Ws.filter(function (x) { return x.id === k; })[0];
+if (w && w.enchimento) return;
+m += c.alvenaria[k];
+});
+if (!(m > g({}, "amostra") + EPS)) return;
+out.push({ id: c.id, sistema: t.sistema, material: t.material, dn: t.dn, metros: r4(m), linhas: rasgoDe(t.dn) });
+});
+return out;
+}
+var HidEmbutido = {
+VERSAO: 1, GEO: GEO, SINAPI: SINAPI_EMB, CHAVE_APARENTE: CHAVE_APARENTE,
+paredes: paredes, paredeAtras: paredeAtras, encaixe: encaixe, enchimento: enchimento, opsEnchimento: opsEnchimento,
+classificar: classificar, aparentes: aparentes, correcaoEmbutir: correcaoEmbutir, rasgos: rasgos, rasgoDe: rasgoDe, aparente: aparente,
+_int: { cercado: cercado, contexto: contexto, classificarTrecho: classificarTrecho, local: local, g: g }
+};
+global.HidEmbutido = HidEmbutido;
+if (typeof module !== "undefined" && module.exports) module.exports = HidEmbutido;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/biminstnivel.js ==== */

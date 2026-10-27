@@ -552,12 +552,14 @@
       var zT = mod === 1 ? zB - 0.05 : zB + Math.min(0.08, Pp * 0.2), yT = mod === 1 ? 0 : yTopo, alt = mod === 1 ? 0.18 : Math.max(0.16, Hc * 1.2);
       torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), q, true);
       valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, q);
-      /* sifão de copo: a saída termina no CONECTOR de esgoto (0, −Esgoto_abaixo_tampo, 0) */
-      var yE = -Ea, zc = zv + 0.05;
+      /* sifão de copo: a saída termina no CONECTOR de esgoto — N23 EMBUTIDO (26/10/2026): com a parede atrás (Distancia_parede além do
+         fundo da cuba) a saída do sifão vai até a PAREDE, com a canopla (o tubo de saída do sifão entra no ponto de esgoto da parede);
+         sem parede (ilha), no eixo (0, −Esgoto_abaixo_tampo, 0), como antes */
+      var yE = -Ea, zc = zv + 0.05, naParede = num(P.Dp, 0) > Pp / 2, zS = naParede ? -num(P.Dp, 0) : 0;
       if (yb - 0.03 > yE + 0.07) {
         tubo(mt.m, [[0, yb - 0.03, zv], [0, yE + 0.075, zv], [0, yE + 0.06, zc]], 0.0155, q.n, { rc: 0.02, arco: q.arco });
-        sifaoCopo(mt.m, [0, yE + 0.06, zc], [0, yE, 0], q, true);
-      } else tubo(mt.m, [[0, yb - 0.03, zv], [0, yE, zv], [0, yE, 0]], 0.0155, q.n, { rc: 0.02, arco: q.arco });
+        sifaoCopo(mt.m, [0, yE + 0.06, zc], [0, yE, zS], q, !naParede);
+      } else tubo(mt.m, [[0, yb - 0.03, zv], [0, yE, zv], [0, yE, zS]], 0.0155, q.n, { rc: 0.02, arco: q.arco });
       partes.push(mt);
     }
     return partes;

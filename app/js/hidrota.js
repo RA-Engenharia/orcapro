@@ -279,6 +279,10 @@
            (print do Rogério). `ponta` = o ponto real; x/z passam a ser o eixo embutido. */
         var n = c.parede, nx = n ? num(n.x, NaN) : NaN, nz = n ? num(n.z, NaN) : NaN, L = Math.sqrt(nx * nx + nz * nz);
         var e = P.embutir + Math.max(0, num(n && n.d, 0));   /* medido da FACE da parede (o ponto pode estar uns mm à frente dela) */
+        /* N23 EMBUTIDO (26/10/2026, js/biminstembutido.js encaixe): a parede que não comporta o eixo a `embutir` da face (fina para o DE +
+           cobrimento) manda a profundidade do eixo — `prof` = do ponto até o eixo; parede comum não traz `prof` (o de sempre) */
+        /* (prof < 0 = a instalação APARENTE escolhida pelo usuário: o eixo à FRENTE da face, o tubo sobreposto à parede) */
+        if (n && n.prof != null && isFinite(num(n.prof, NaN)) && num(n.prof, 0) !== 0) e = num(n.prof, 0);
         if (P.embutir > 0 && L > EPS) { o.ponta = { x: p.x, y: p.y, z: p.z }; o.x = r4(p.x + nx / L * e); o.z = r4(p.z + nz / L * e); }
         return o;
       }).filter(Boolean);
@@ -1831,7 +1835,8 @@
       if (!c || c.id == null) return;
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2;
       var p1 = { x: c.cx - h * cs, z: c.cz + h * sn }, p2 = { x: c.cx + h * cs, z: c.cz - h * sn }, alt = num(c.altura, 0);
-      if (c.tipo === "parede") { var w = { id: c.id, p1: p1, p2: p2, espessura: c.espessura, base: c.cy - alt / 2, altura: alt }; if (c.tipoParede) w.tipoParede = c.tipoParede; out.paredes.push(w); porId[c.id] = { c: c, cs: cs, sn: sn }; }
+      if (c.tipo === "parede" && !c.shaft) {   /* N23: o fechamento do SHAFT (js/hidpredio.js) não é parede para o traçado: os tubos passam dentro dele */
+       var w = { id: c.id, p1: p1, p2: p2, espessura: c.espessura, base: c.cy - alt / 2, altura: alt }; if (c.tipoParede) w.tipoParede = c.tipoParede; out.paredes.push(w); porId[c.id] = { c: c, cs: cs, sn: sn }; }
       else if (c.tipo === "viga") out.vigas.push({ id: c.id, p1: p1, p2: p2, largura: c.espessura, altura: alt, topo: c.cy + alt / 2 });
       else if (c.tipo === "pilar") out.pilares.push({ id: c.id, x: c.cx, z: c.cz, largura: c.comprimento, profundidade: c.espessura, rotY: c.rotY, base: c.cy - alt / 2, altura: alt });
       else if (c.tipo === "laje") {

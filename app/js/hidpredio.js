@@ -86,7 +86,7 @@
 
   /* ---------------------------------------------------------- PAVIMENTOS */
   function paredesTodas(estado) {
-    return arr(estado.caixas).filter(function (c) { return c && c.tipo === "parede"; }).map(function (c) {
+    return arr(estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.shaft; })   /* N23: o fechamento do shaft não é parede do pavimento */.map(function (c) {
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, alt = num(c.altura, 0);
       return { id: c.id, p1: { x: c.cx - h * cs, z: c.cz + h * sn }, p2: { x: c.cx + h * cs, z: c.cz - h * sn }, espessura: num(c.espessura, 0), base: r4(c.cy - alt / 2), altura: alt, topo: r4(c.cy + alt / 2) };
     });
@@ -159,7 +159,7 @@
   /* ---------------------------------------------------------- LIMPEZA (refazer = idempotente) */
   function apagadosDepois(lista) { var a = {}; lista.forEach(function (o, i) { if (o && (o.op === "apagar" || o.op === "desanotar") && o.id != null) a[o.id] = i; }); return a; }
   function limpeza(ops, id) {
-    var K = HK(), lista = K.achatar(ops), apag = apagadosDepois(lista), copiados = {}, ambs = {}, vivos = {}, ordem = { acessorio: 0, trecho: 1, peca: 2, familia: 3, anotar: 4 }, out = [];   // hid:ok ordem de remoção
+    var K = HK(), lista = K.achatar(ops), apag = apagadosDepois(lista), copiados = {}, ambs = {}, vivos = {}, ordem = { acessorio: 0, trecho: 1, peca: 2, familia: 3, anotar: 4, criar: 5 }, out = [];   // hid:ok ordem de remoção (criar = o shaft das prumadas, N23)
     lista.forEach(function (o, i) { if (o && o.predio === id && o.predioParte === "copia" && o.op === "familia" && !(apag[o.id] > i)) { copiados[String(o.id)] = 1; ambs["amb" + o.id] = 1; } });
     lista.forEach(function (o, i) {
       if (!o || o.id == null || o.op === "apagar" || o.op === "desanotar" || ordem[o.op] == null || apag[o.id] > i) return;
@@ -305,6 +305,41 @@
       var F = G.sh.af, dnAF = pvcAf.dn, yAF0 = r4(terreno + geo(par, "afBase"));
       var opAF = { op: "trecho", id: pid + "-af", sistema: "agua_fria", material: "pvc_soldavel", dn: dnAF, p1: { x: F.x, y: topoObra, z: F.z }, p2: { x: F.x, y: yAF0, z: F.z }, continua: "p1", predio: id, predioParte: "af" };
       novas.push(opAF);
+      /* N23 EMBUTIDO (26/10/2026): o SHAFT das prumadas MODELADO e ORÇADO — antes o tubo de queda, a coluna de ventilação e a de água
+         fria subiam soltas no canto do banheiro (o "shaft" era só o lugar escolhido). Em cada pavimento, um fechamento de drywall de
+         face simples (SINAPI 96370, js/biminstembutido.js) do pé da parede até o fundo da laje de cima, cobrindo as três prumadas com a
+         folga, encostado na parede de trás (e na lateral, quando ela está a menos da folga). Marca `predio` (refazer = o mesmo). */
+      var HEs = dep("HidEmbutido", "./biminstembutido.js"), BEs = BE();
+      if (HEs && BEs && BEs.parede && G.sh.atras) (function () {
+        var b = G.sh.atras, Lb = Math.sqrt(b.x * b.x + b.z * b.z); if (!(Lb > EPS)) return;
+        b = { x: b.x / Lb, z: b.z / Lb };
+        var fr = { x: -b.x, z: -b.z }, u = { x: -b.z, z: b.x }, fol = HEs.GEO.folgaEnchimento;
+        var GBs = dep("HidGeo", "./biminstgeo.js");
+        function rr(mat, dn) { try { var c = GBs && GBs.cotasTubo ? GBs.cotasTubo(mat, dn) : null; if (c && c.de > 0) return c.de / 2000; } catch (eC) {} return dn / 2000; }   // hid:ok DE mm → raio m
+        var pts = [{ p: S, r: rr("pvc_esgoto", dnTQ) }, { p: C, r: rr("pvc_esgoto", dnCV) }, { p: F, r: rr("pvc_soldavel", dnAF) }];
+        function loc(q) { var dx = q.x - S.x, dz = q.z - S.z; return { s: dx * u.x + dz * u.z, f: dx * fr.x + dz * fr.z }; }
+        var s0 = Infinity, s1 = -Infinity, f0 = Infinity, f1 = -Infinity;
+        pts.forEach(function (q) { var l = loc(q.p); s0 = Math.min(s0, l.s - q.r - fol); s1 = Math.max(s1, l.s + q.r + fol); f0 = Math.min(f0, l.f - q.r - fol); f1 = Math.max(f1, l.f + q.r + fol); });
+        pavs.forEach(function (yb, k) {
+          var yM = r4(yb + geo(par, "margemNo") * 4), Pt = HEs.paredeAtras(st, { x: S.x, y: yM, z: S.z }, b, { alcance: f1 - f0 + 1 });   // hid:ok procura até a profundidade do shaft + 1 m
+          if (!Pt) return;
+          var ff0 = -Pt.face, ss0 = s0, ss1 = s1, lat = { "1": false, "-1": false };
+          [1, -1].forEach(function (sg) { var Pl = HEs.paredeAtras(st, { x: S.x, y: yM, z: S.z }, { x: u.x * sg, z: u.z * sg }, { alcance: Math.abs(sg > 0 ? s1 : s0) + fol }); if (Pl) { lat[String(sg)] = true; if (sg > 0) ss1 = Pl.face; else ss0 = -Pl.face; } });
+          var T = K._int.tetoDe(st, { x: S.x, z: S.z }, yb), topo = r4(T.y);
+          if (!(topo > yb + geo(par, "margemNo"))) return;
+          var sm = (ss0 + ss1) / 2, esp = r4(ss1 - ss0), prof = f1 - ff0;
+          var a0 = { x: r4(S.x + u.x * sm + fr.x * ff0), z: r4(S.z + u.z * sm + fr.z * ff0) }, a1 = { x: r4(S.x + u.x * sm + fr.x * f1), z: r4(S.z + u.z * sm + fr.z * f1) };
+          var cx = BEs.parede(a0, a1, esp, r4(topo - yb), yb); if (!cx) return;
+          cx.drywall = true; cx.shaft = { prumada: pid, faces: 1 + (lat["1"] ? 0 : 1) + (lat["-1"] ? 0 : 1) };
+          /* o orçamento: as faces que ficam para o cômodo (a da frente + as laterais sem parede), em m² de face simples de drywall —
+             a medida "area" da caixa é comprimento (a profundidade) × altura; o fator leva às faces de verdade */
+          var faces = esp + (lat["1"] ? 0 : prof) + (lat["-1"] ? 0 : prof), fator = r4(faces / Math.max(prof, EPS));
+          var sid = pid + "-shaft-p" + k, sp = HEs.SINAPI.drywallFace;
+          novas.push({ op: "criar", id: sid, caixa: cx, predio: id, predioParte: "shaft" });
+          novas.push({ op: "orcar", id: sid, servicos: [{ codigo: sp[0], medida: "area", fator: fator, rotulo: "Shaft das prumadas " + pid + " (drywall, face simples)" }], predio: id, predioParte: "shaft" });
+        });
+        D("predio.shaft", "Shaft das prumadas " + pid + " (tubo de queda, ventilação e água fria) fechado em drywall de face simples em cada pavimento (SINAPI " + HEs.SINAPI.drywallFace[0] + ": " + HEs.SINAPI.drywallFace[2].split(",")[0].toLowerCase() + "), com " + Math.round(fol * 100) + " cm de folga em volta dos tubos — o tubo não fica aparente no cômodo.");
+      })();
       G.prumada = { id: pid, tq: pid + "-tq", vp: pid + "-vp", cv: pid + "-cv", af: pid + "-af", opAF: opAF, dnTQ: dnTQ, dnCV: dnCV, dnAF: dnAF, uhc: uhc, pavimentos: np, x: S.x, z: S.z, yPe: yPe, yTopo: yTopo, espera: { x: r4(E.x), z: r4(E.z) } };
       D("predio.tubo_queda", "Tubo de queda " + pid + " DN " + dnTQ + " (NBR 8160 Tabela 6: " + uhc + " UHC em " + np + " pavimento(s), linha '" + (lin.pavimentos_max === "*" ? "mais de " : "até ") + (lin.pavimentos_max === "*" ? "3" : lin.pavimentos_max) + " pavimentos'; ≥ o maior ramal DN " + dnMax + "), do pé a " + f2(yPe) + " m ao terminal a " + f2(yTopo) + " m (" + topoV.origem + "): esgoto até acima do piso do último pavimento (" + f2(yVP) + " m) e, acima, o ventilador primário DN " + dnTQ + "; pé na horizontal a " + f2(iPe * 100) + " % até a espera em (" + f2(E.x) + "; " + f2(E.z) + ") — a linha da rede leva a uma caixa de inspeção.");
       D("predio.coluna_ventilacao", "Coluna de ventilação " + pid + "-cv DN " + dnCV + " (Tabela 2: TQ DN " + lin.dn + ", " + uhc + " UHC, " + f2(Lcv) + " m), ligada ao TQ a " + f2(yJ) + " m — abaixo do ramal mais baixo — e com terminal próprio acima da cobertura; os ventiladores de cada unidade chegam nela sob o teto.");

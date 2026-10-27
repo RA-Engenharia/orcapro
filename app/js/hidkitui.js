@@ -439,9 +439,32 @@
       var c = U._ctx(); if (!c) return null;
       var id = String(ids[0]).replace(/^edit:/, ""), tipo = U._ehLigavel(c, id); if (!tipo) return null;
       U._sincAuto();
-      return { nome: "Instalação hidrossanitária", params: [
+      /* N23 EMBUTIDO (26/10/2026): a instalação APARENTE é escolha (área técnica, reforma) — por aparelho ou para o cômodo inteiro; o padrão é
+         embutida (parede, piso, forro, shaft). O Traçar respeita e o auditor não acusa o que foi escolhido. */
+      var fiA = arr(c.estado.familias).filter(function (f) { return String(f.id) === id; })[0], HEu = dep("HidEmbutido"), apA = !!(HEu && fiA && HEu.aparente(fiA));
+      var ps = [
         { id: "hid:ligar-peca", rotulo: tipo === "caixa" ? "Barrilete da caixa" : "Instalação da peça", tipo: "botao", rotuloBotao: "Ligar esta peça", fn: function () { U.ligarPeca(id); } },
-        { id: "hid:auto", rotulo: "Lançar automaticamente", leitura: true, valor: U.ligado ? "ligado neste projeto" : "desligado neste projeto (Instalações › Projeto inteligente)" }] };
+        { id: "hid:auto", rotulo: "Lançar automaticamente", leitura: true, valor: U.ligado ? "ligado neste projeto" : "desligado neste projeto (Instalações › Projeto inteligente)" }];
+      if (HEu && tipo !== "caixa") {
+        ps.push({ id: "hid:aparente", rotulo: "Instalação aparente", tipo: "botao", rotuloBotao: apA ? "Aparente — voltar a embutir" : "Embutida — marcar aparente", fn: function () { U.marcarAparente([id], !apA); } });
+        ps.push({ id: "hid:aparente-amb", rotulo: "Neste ambiente", tipo: "botao", rotuloBotao: apA ? "Embutir o ambiente inteiro" : "Ambiente inteiro aparente", fn: function () { U.marcarAparente(U._doAmbiente(c, id), !apA); } });
+      }
+      return { nome: "Instalação hidrossanitária", params: ps };
+    },
+    /* os aparelhos do cômodo do aparelho `id` (os mesmos membros do Traçar) */
+    _doAmbiente: function (c, id) {
+      var A = dep("HidAmbiente"), M = null; try { M = A && A.membros ? A.membros(c.estado, c.avaliarFam, c.ops, id, null) : null; } catch (e) { M = null; }
+      var ids = M ? arr(M.fams).map(function (f) { return String(f.id); }) : []; if (ids.indexOf(String(id)) < 0) ids.push(String(id));
+      return ids;
+    },
+    /* grava a escolha (um lote, um Ctrl+Z) — o próximo Traçar automaticamente refaz os tubos do aparelho na face da parede (ou embutidos) */
+    marcarAparente: function (ids, on) {
+      var c = U._ctx(), HEu = dep("HidEmbutido"); if (!c || !HEu || !arr(ids).length) return false;
+      var ops = arr(ids).map(function (id) { var inst = {}; inst[HEu.CHAVE_APARENTE] = !!on; return { op: "instancia", id: String(id), inst: inst }; }), ok = false;
+      try { ok = c.b.editarLote({ op: "lote", id: "hidaparente-" + String(new Date().getTime()), ops: ops }); } catch (e) { ok = false; }
+      if (ok) status((on ? "Instalação APARENTE" : "Instalação EMBUTIDA") + " em " + ids.join(", ") + " — rode o Traçar automaticamente para refazer os tubos" + (on ? " na face da parede (o auditor não acusa)." : " dentro da parede."));
+      try { if (global.BimPropsUI && BimPropsUI.render) BimPropsUI.render(); } catch (eR) {}
+      return ok;
     },
 
     /* =========================================================================================================
@@ -772,7 +795,8 @@
         } catch (eLP) { pendencias.push({ chave: "ta.passantes", texto: "Passantes: não consegui conferir as travessias de laje (" + (eLP && eLP.message ? eLP.message : eLP) + ") — confira à mão", elementos: [] }); }
       }
       if (HCr) { try { crit = HCr.auditar(HCr.doEstado(BE.aplicar(c.ops.concat([{ op: "lote", id: "previa", ops: ops }])), c.avaliarFam, { escopo: resumo.ids })); } catch (eC) { crit = null; } }
-      ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (!/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto)) avisos.push({ texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }); }); });
+      /* N23 EMBUTIDO: o aviso do ambiente com a correção pronta (o enchimento/shaft da parede fina) leva o Corrigir ao cartão */
+      ambs.forEach(function (R) { arr(R.avisos).forEach(function (a) { if (/SINAPI|adaptadores|orce à parte|DUPLICADO/i.test(a.texto) && !(a.acao && a.acao.tipo === "ops")) return; var av = { texto: "Ambiente " + R.ambiente.id + ": " + a.texto, elementos: arr(a.elementos) }; if (a.acao && a.acao.tipo === "ops" && arr(a.acao.ops).length) av.acao = a.acao; avisos.push(av); }); });
       resumo.piscinas = piscinas.length;
       /* ⚠ REVISÃO H4 (21/10/2026): ÁGUA QUENTE — a REDE DE SEGURANÇA depois do traçado da H5 (e2): o ponto de AQ que ficou sem tubo. Com o aquecedor no modelo, os
          pontos de AQ das 2 cubas da bancada (e de qualquer aparelho) ficavam SEM TUBO sem pendência nenhuma — e o auditor, que só

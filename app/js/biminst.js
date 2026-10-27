@@ -352,6 +352,9 @@
     /* REVISÃO H5 (21/10/2026): o trecho de água quente que corre FORA do ambiente aquecido (o entreforro do js/hidaqtraco.js) leva o
        ISOLAMENTO TÉRMICO (NBR 5626:2020 6.12.3) — vai ao levantamento (ISOLAMENTO_AQ) */
     if (o.isolamento === true && o.sistema === "agua_quente") t.isolamento = true;
+    /* N23 EMBUTIDO (26/10/2026): o tubo APARENTE por escolha (a opção "Instalação aparente" do aparelho/ambiente — área técnica, reforma):
+       o auditor não o acusa de "aparente sem motivo" (js/biminstembutido.js) */
+    if (o.aparente === true) t.aparente = true;
     /* N23 (24/10/2026): os PASSANTES que o traçado lançou onde o tubo atravessa uma laje (HidCriterios.lancarPassantes) — a laje e o
        ponto da travessia; vão ao levantamento (PASSANTE_LAJE) e o auditor aceita a travessia com eles. Lista de objetos (a nuvem aceita) */
     if (Array.isArray(o.passantes) && o.passantes.length) {
@@ -1295,6 +1298,14 @@
         g.n++; g.quantidade++; g.ids.push(t.id); if (g.lajes.indexOf(q.laje) < 0) g.lajes.push(q.laje);
       });
     });
+    /* N23 EMBUTIDO (26/10/2026): o RASGO e o CHUMBAMENTO do tubo embutido em ALVENARIA (js/biminstembutido.js rasgos: o comprimento que
+       corre dentro da parede de alvenaria — não drywall, não o enchimento levantado em volta do tubo), pela SINAPI do DN */
+    var rsg = {}, ordR = [], HEq = dep("HidEmbutido", "./biminstembutido.js");
+    if (HEq && HEq.rasgos) { try { HEq.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) {
+      var k = sp.chave + "|" + r.dn, g = rsg[k];
+      if (!g) { g = rsg[k] = { peca: "rasgo_alvenaria", nome: sp.rotulo || sp.chave, sistema: r.sistema, dn: r.dn, n: 0, metros: 0, quantidade: 0, unidade: "m", ids: [], sinapi: sp }; ordR.push(k); }
+      g.n++; g.metros = r4(g.metros + r.metros); g.quantidade = g.metros; g.ids.push(r.id);
+    }); }); } catch (eR) {} }
     /* P12: acessórios de tubo (registro, válvula) e dispositivos elétricos (família com `mep`) */
     var acs = {}, ordA = [], dsp = {}, ordD = [];
     arr(R.acessorios).forEach(function (a) {
@@ -1323,6 +1334,7 @@
       dispositivos: ordD.map(function (k) { return dsp[k]; }),
       isolamentos: ordI.map(function (k) { return isos[k]; }),
       passantes: ordPs.map(function (k) { return pss[k]; }),
+      rasgos: ordR.map(function (k) { return rsg[k]; }),
       prolongadores: ordPl.map(function (k) { return prol[k]; }),
       tubos: ordT.map(function (k) { return tubos[k]; }),
       conexoes: ordC.map(function (k) { return cxs[k]; }),
@@ -1354,6 +1366,9 @@
       if (t.isolamento) linha(t.id, it, r4(t.comprimento * ISOLAMENTO_AQ.coeficiente), "m", isolamentoDe(t));   /* revisão H5: o isolamento térmico da AQ */
       arr(t.passantes).forEach(function () { linha(t.id, { peca: "passante_laje", sistema: t.sistema, material: t.material, dn: t.dn }, 1, "un", passanteDe(dnPassante(t))); });   /* N23: o passante de cada travessia de laje */
     });
+    /* N23 EMBUTIDO: o rasgo e o chumbamento do trecho embutido em alvenaria (o metro que corre dentro dela), pela SINAPI do DN */
+    var HEo = dep("HidEmbutido", "./biminstembutido.js");
+    if (HEo && HEo.rasgos) { try { HEo.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) { linha(r.id, { peca: "rasgo_alvenaria", sistema: r.sistema, material: r.material, dn: r.dn }, r.metros, "m", sp); }); }); } catch (eO) {} }
     R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
       var it = itemConexao(c);
       linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));

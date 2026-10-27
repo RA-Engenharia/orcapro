@@ -170,7 +170,7 @@
    * piso = a base do aparelho de piso (caixa y0 ≈ 0 na origem); senão a base da parede onde ele encosta; senão o
    * ambiente do BIM que o contém; senão a base do aparelho de piso mais perto. Sem nada: pendência. */
   function paredes(estado) {
-    return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede"; }).map(function (c) {
+    return arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "parede" && !c.shaft; })   /* N23: o fechamento do shaft não hospeda ponto nem é a parede do aparelho */.map(function (c) {
       var cs = Math.cos(num(c.rotY, 0)), sn = Math.sin(num(c.rotY, 0)), h = num(c.comprimento, 0) / 2, alt = num(c.altura, 0);
       return { id: c.id, c: c, p1: { x: c.cx - h * cs, z: c.cz + h * sn }, p2: { x: c.cx + h * cs, z: c.cz - h * sn }, esp: num(c.espessura, 0), base: c.cy - alt / 2, topo: c.cy + alt / 2 };
     });
@@ -358,7 +358,15 @@
     /* ponto de parede de referência: a normal que ENTRA na parede (do conector, ou da pose) */
     var refPt = cs.filter(function (k) { return k.parede; })[0] || null;
     var n = refPt ? { x: refPt.parede.x, z: refPt.parede.z } : normalParede(fi);
-    function emb(k) { return e0 + Math.max(0, num(k && k.parede && k.parede.d, 0)); }
+    /* N23 EMBUTIDO (26/10/2026): o eixo embutido se mede da parede DE VERDADE (js/biminstembutido.js paredeAtras) — com a louça a uns cm da
+       parede, o "embutido" a 5 cm do fundo dela ficava no ar; encostada, a conta é a de sempre (a face da louça = a face da parede) */
+    var HEk = dep("HidEmbutido", "./biminstembutido.js"), ALC_K = 0.60;   // hid:ok a mesma procura do js/hidambiente.js (paredeAtrasMax)
+    function faceReal(k, nn) {
+      var d0 = Math.max(0, num(k && k.parede && k.parede.d, 0)); if (!HEk || !HEk.paredeAtras || !k || !nn) return d0;
+      var Pw = HEk.paredeAtras(estado, k, nn, { alcance: d0 + ALC_K }); if (!Pw || Math.abs(Pw.face - d0) <= geo(par, "tolParedeCuba")) return d0;
+      return Pw.face;
+    }
+    function emb(k) { return e0 + (k && k.parede ? faceReal(k, k.parede) : 0); }
     var P = pisoDe(estado, avaliarFam, fi, refPt);
     if (!P.ok) { pend("kit.piso", P.motivo, { tipo: "parametro", campo: "piso" }); return out; }
     var piso = P.y, yRamalAlt = altura("RG");
@@ -514,7 +522,11 @@
         }
         var d = dnEsgoto(ctx, aparelhoNorma, esg, out.pendencias);
         if (d) {
-          esperaEsgoto(K, "es", esg, esg.parede ? { x: esg.parede.x, z: esg.parede.z } : null, emb(esg), piso, d.dn);
+          /* N23 EMBUTIDO: a saída de PAREDE com o ponto fora da face (a saída do sifão no meio da peça, família do catálogo) entra na
+             parede atrás dela (a normal da pose) — nunca desce no ar; sem parede perto, desce no ponto (o Traçar avisa) */
+          var nEs = esg.parede ? { x: esg.parede.x, z: esg.parede.z } : null, eEs = emb(esg);
+          if (!nEs && E0.tipo === "saida_parede" && HEk && HEk.paredeAtras) { var Pes = HEk.paredeAtras(estado, esg, normalParede(fi), { alcance: ALC_K }); if (Pes) { nEs = Pes.n; eEs = e0 + Pes.face; } }
+          esperaEsgoto(K, "es", esg, nEs, eEs, piso, d.dn);
           if (tipo === "bacia_valvula" || tipo === "bacia_caixa_acoplada") decide("kit.esgoto.bacia", "DN " + d.dn + " (" + (d.fonte && d.fonte.norma ? d.fonte.norma : (d.fonte && d.fonte.doc) || "") + ").");
           else if (E0.destino === "caixa_gordura") decide("kit.esgoto.caixa_gordura");
           else if (E0.destino === "caixa_sifonada") decide("kit.esgoto.caixa_sifonada", "Ramal de descarga DN " + d.dn + ".");
