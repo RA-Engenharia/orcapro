@@ -622,6 +622,8 @@
     tipoC("linear-centro", "Linear com centro - 2,5 mm Arial", "Linear", { centro: true }),
     /* COTAS (js/bimcotas.js, 13/10/2026): a cota da METÁLICA — milímetro inteiro, como na fábrica */
     tipoC("linear-mm", "Linear - 2,5 mm Arial (mm)", "Linear", { unidade: "mm", casas: 0 }),
+    /* COTAS AUTOMÁTICAS (27/10/2026, js/bimcotas.js cotarPlantaArq): a cota do projeto de arquitetura — metro com 2 casas, marca em PONTO */
+    tipoC("linear-ponto", "Linear - 2,5 mm Arial (ponto)", "Linear", { marca: "ponto" }),
     tipoC("angular", "Angular - 2,5 mm Arial", "Angular", { casas: 2 }),
     tipoC("radial", "Radial - 2,5 mm Arial", "Radial", { marca: "seta", prefixo: "R " }),
     tipoC("diametro", "Diâmetro - 2,5 mm Arial", "Diametro", { marca: "seta", prefixo: "Ø " }),

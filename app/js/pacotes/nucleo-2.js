@@ -7001,7 +7001,7 @@ reg["compartilhar"] = function () { self.acao("bim-qr-rv", {}); return true; };
 reg["curva-s"] = function () { self._bimAbrirPainel("4d"); return true; };
 reg["insumos-modelo"] = function () { self._bimAbrirPainel("qto"); return true; };
 reg["rastrear"] = function () { self.acao("bimeap-abrir", {}); return true; };
-reg["cotas-auto"] = function () { var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
+reg["cotas-auto"] = function () { if (window.BimCotasUI && BimCotasUI.calcularCotasArq && (BimCotasUI.calcularCotasArq() || { ops: [] }).ops.length) return BimCotasUI.cotasAutomaticas(); var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
 reg["modular"] = reg["junta"] = function () { self._bimConferirAlvenaria(); return true; };
 reg["tipos-parede"] = function () {
 if (!window.AlvTipos || !window.BimShell) return false;
@@ -70430,5 +70430,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=faff88a076"},{"src":"js/bim-pacote.js?v=5773993775","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=a837e54334"},{"src":"js/bim-pacote.js?v=5773993775","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

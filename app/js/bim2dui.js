@@ -131,7 +131,14 @@
         this.estado().estilos[id] = e;
       }
       var en = D2().normEstilo(e), M6 = this._p6();
-      return M6 ? M6.sobreporEstilo(id, en) : en;   /* P6: a escala da vista (ou do modelo de vista ligado) */
+      var fim = M6 ? M6.sobreporEstilo(id, en) : en;   /* P6: a escala da vista (ou do modelo de vista ligado) */
+      /* COTAS AUTOMÁTICAS (27/10/2026): vista com cota do motor novo (arq-*) mostra SÓ ela — as nativas do desenho saem.
+         Calculado do estado: o Ctrl+Z do lote devolve as nativas junto. */
+      try {
+        var eA = B() && B().editarEstado ? B().editarEstado() : null, BCa = global.BimCotas;
+        if (eA && eA.estado && BCa && BCa.vistaTemCotasArq && BCa.vistaTemCotasArq(eA.estado, id)) { var cp = {}; Object.keys(fim).forEach(function (k) { cp[k] = fim[k]; }); cp.cotas = false; fim = cp; }
+      } catch (eNat) { /* sem o motor: o desenho segue com as cotas nativas */ }
+      return fim;
     },
 
     /* ----------------------------------------------------------- dados */

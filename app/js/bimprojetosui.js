@@ -454,7 +454,7 @@
     },
     criado: function (g, info) {
       var self = this;
-      this._proj = { id: uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null };
+      this._proj = { id: uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null, cotasAutoNovo: true };
       g._bimCenaObra = info.obraId;
       this.esconderInicio();
       this.pintarTitulo();

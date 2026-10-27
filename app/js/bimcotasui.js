@@ -227,6 +227,97 @@
       if (ok) status("Vista cotada" + (r.resumo && r.resumo.length ? ": " + r.resumo.join("; ") : "") + ". Cotar de novo refaz (não empilha); Ctrl+Z desfaz.");
       return ok;
     },
+    /* ------------------------------------------------ COTAS AUTOMÁTICAS (27/10/2026)
+     * Um clique: as cotas de TODAS as plantas, cortes e fachadas do projeto passam a ser as do padrão técnico
+     * (js/bimcotas.js cotarVistaArq, regras em REGRAS_COTA_ARQ), substituindo as que existem. Um lote só:
+     * um Ctrl+Z desfaz tudo. Rodar de novo não empilha. */
+    _vistasArq: function () {
+      var P = P2(), out = [], vistos = {}, M = null, vs = {};
+      if (!P) return out;
+      try { M = global.BimModeloVista && global.BimModeloVista.ativo && global.BimModeloVista.ativo() ? global.BimModeloVista : null; vs = M ? (M.estado().vistas || {}) : {}; } catch (e) { vs = {}; }
+      var ids = [];
+      (P.niveis() || []).forEach(function (n) { ids.push(P.idPlanta(n.id)); });
+      (P.cortes() || []).forEach(function (c) { ids.push(P.idCorte(c.id)); });
+      Object.keys(vs).forEach(function (k) { var t = vs[k] && vs[k].tipo; if (t === "planta" || t === "corte" || t === "elevacao") ids.push(k); });
+      ids.forEach(function (id) {
+        if (vistos[id]) return; vistos[id] = 1;
+        var d = P.def(id), pj = d ? projVista(id) : null; if (!d || !pj) return;
+        var v = vs[id] || null;
+        if (pj.tipo === "planta") {
+          if (d.p6 && d.p6 !== "planta") return;   /* forro, estrutural e detalhe não levam a cota de arquitetura */
+          out.push({ id: id, tipoVista: "planta", proj: pj, nome: d.nome, nivelY: d.nivel ? d.nivel.y : 0, altura: d.altura });
+        } else if (d.p6 === "chamada") return;
+        else out.push({ id: id, tipoVista: d.p6 === "elevacao" && v && !v.interior ? "fachada" : "corte", proj: pj, nome: d.nome });
+      });
+      return out;
+    },
+    _opcArq: function (v) {
+      var E = global.BimEdit, temNiv = !!(E && E.niveisAtuais && (E.niveisAtuais() || []).length), P = P2(), o = { tipoVista: v.tipoVista };
+      try { var es = P.estilo(v.id); if (es && isFinite(+es.escala) && +es.escala > 0) o.escala = +es.escala; } catch (eE) {}
+      if (!temNiv) o.niveis = (P.niveis() || []).map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.y }; });
+      if (v.tipoVista === "planta") { o.nivelY = v.nivelY; if (v.altura != null && isFinite(+v.altura)) o.yCorte = v.nivelY + (+v.altura); }
+      try { if (global.BimAmbienteUI && global.BimAmbienteUI.niveisObra) o.niveisObra = global.BimAmbienteUI.niveisObra(); } catch (eN) {}
+      return o;
+    },
+    /* calcula tudo (puro, sem gravar) → { ops, itens:[{v, r}], tot } */
+    calcularCotasArq: function () {
+      var C = BC(), e = estado(); if (!C || !C.cotarVistaArq || !e) return null;
+      var self = this, ops = [], itens = [], tot = { vistas: 0, plantas: 0, cortes: 0, fachadas: 0, auto: 0, manuais: 0, ext: 0, int: 0, niv: 0, pulados: 0, declarado: [], semResultado: [] };
+      this._vistasArq().forEach(function (v) {
+        var r; try { r = C.cotarVistaArq(e, v.id, v.proj, self._opcArq(v)); } catch (x) { r = { ok: false, motivo: String(x && x.message || x) }; }
+        if (!r || !r.ok) { tot.semResultado.push((v.nome || v.id) + ": " + ((r && r.motivo) || "sem resultado")); return; }
+        ops = ops.concat(r.ops); itens.push({ v: v, r: r });
+        var s = r.resumo || {};
+        tot.vistas++; tot[v.tipoVista === "planta" ? "plantas" : v.tipoVista === "fachada" ? "fachadas" : "cortes"]++;
+        tot.auto += (s.apagadas || {}).auto || 0; tot.manuais += (s.apagadas || {}).manuais || 0;
+        tot.ext += (s.criadas || {}).ext || 0; tot.int += (s.criadas || {}).int || 0; tot.niv += (s.criadas || {}).niv || 0; tot.pulados += s.pulados || 0;
+        (s.declarado || []).forEach(function (t) { tot.declarado.push((v.nome || v.id) + ": " + t); });
+      });
+      return { ops: ops, itens: itens, tot: tot };
+    },
+    cotasAutomaticas: function () {
+      var self = this, c = this.calcularCotasArq();
+      if (!c) { toast("Abra o editor do modelo primeiro.", "aviso"); return false; }
+      var t = c.tot;
+      if (!c.ops.length) { toast(t.semResultado.length ? "Nada a cotar: " + t.semResultado[0] : "Nenhuma planta, corte ou fachada com paredes para cotar.", "aviso"); return false; }
+      function aplicarTudo() {
+        var ok = aplicar(c.ops, "Cotas automáticas");
+        if (!ok) { toast("Não consegui aplicar as cotas automáticas.", "erro"); return false; }
+        self._ultimoArq = t;
+        var partes = [];
+        if (t.plantas) partes.push(t.plantas + (t.plantas === 1 ? " planta" : " plantas"));
+        if (t.cortes) partes.push(t.cortes + (t.cortes === 1 ? " corte" : " cortes"));
+        if (t.fachadas) partes.push(t.fachadas + (t.fachadas === 1 ? " fachada" : " fachadas"));
+        status("Cotas automáticas: " + partes.join(", ") + ". Substituídas " + (t.auto + t.manuais) + " (" + t.manuais + " à mão), criadas " + (t.ext + t.int + t.niv) +
+          " (externas " + t.ext + ", internas " + t.int + ", níveis " + t.niv + ")" + (t.pulados ? ", " + t.pulados + " ambiente(s) sem cota interna" : "") +
+          (t.declarado.length ? ". " + t.declarado.length + " item(ns) sem dado no modelo" : "") + ". Ctrl+Z desfaz tudo.");
+        setTimeout(function () { try { self._redesenhar2d(); } catch (eR) {} }, 150);
+        return true;
+      }
+      if (t.manuais > 0 && global.UI && global.UI.modal) {
+        global.UI.modal("Cotas automáticas",
+          "<p>Vai substituir <b>" + (t.auto + t.manuais) + "</b> cotas (<b>" + t.manuais + "</b> feitas à mão) em <b>" + t.vistas + "</b> vistas (" + t.plantas + " plantas, " + t.cortes + " cortes, " + t.fachadas + " fachadas). Ctrl+Z desfaz.</p>",
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
+           { texto: "Substituir", classe: "primary", onClick: function () { global.UI.fecharModal(); aplicarTudo(); } }]);
+        return true;
+      }
+      return aplicarTudo();
+    },
+    /* projeto NOVO: a planta que o usuário abre já nasce com as cotas automáticas (só na sessão em que o projeto nasceu;
+       projeto que já existia só muda com o clique) */
+    cotarNovaPlanta: function (id) {
+      var C = BC(), e = estado(), PU = global.BimProjetosUI;
+      if (!C || !e || !PU || !PU._proj || !PU._proj.cotasAutoNovo) return false;
+      PU._proj.cotasAutoFeito = PU._proj.cotasAutoFeito || {};
+      if (PU._proj.cotasAutoFeito[id]) return false;
+      var v = this._vistasArq().filter(function (x) { return x.id === id && x.tipoVista === "planta"; })[0]; if (!v) return false;
+      if (global.BimAnotP7 && global.BimAnotP7.itensDaVista && global.BimAnotP7.itensDaVista(e, id).length) { PU._proj.cotasAutoFeito[id] = 1; return false; }
+      var r = C.cotarVistaArq(e, id, v.proj, this._opcArq(v)); if (!r || !r.ok) return false;
+      PU._proj.cotasAutoFeito[id] = 1;
+      var ok = aplicar(r.ops, "Cotas automáticas (projeto novo)");
+      if (ok) status("Planta cotada no padrão automático (projeto novo). Ctrl+Z desfaz; Anotar › Cotas automáticas refaz todas as vistas.");
+      return ok;
+    },
     furacao: function (id) {
       var C = BC(), e = estado(); if (!C || !e) return false;
       var ids = id ? [id] : selecionados().concat(this._3d ? this._3d.coleta() : []);
@@ -286,6 +377,7 @@
       Rb.acrescentar("anotar", "Anotar", "Cotas", [
         { id: "cotar-selecao", rotulo: "Cotar\nseleção", icone: "regua", grande: true, dica: "Selecione pilares, eixos, paredes, perfis, vigas ou tubos (Ctrl + clique soma) e clique: sai a cadeia de cotas + o total na direção dominante, e a perpendicular quando há duas filas. No 3D ou na vista 2D ativa. Sem seleção no 3D, clique as peças (eixos e tubos também) e Enter." },
         { id: "cotar-vista", rotulo: "Cotar a\nvista", icone: "planta", grande: true, dica: "Cota a vista inteira de uma vez: na planta, os eixos e os vãos (ou os pilares); no corte, os níveis, as alturas entre eles e os eixos que o corte cruza; no 3D, os eixos e os níveis. Cotar de novo refaz sem empilhar." },
+        { id: "cotas-automaticas", rotulo: "Cotas\nautomáticas", icone: "regua", grande: true, dica: "Um clique refaz as cotas de TODAS as plantas, cortes e fachadas do projeto no padrão técnico: cadeia por lado da edificação mais o total, cota interna face a face, níveis, pé-direito e esquadrias, com marca em ponto. Substitui as cotas lineares automáticas e as feitas à mão (nível, ângulo e raio ficam). Um Ctrl+Z desfaz tudo." },
         { id: "cota-furacao", rotulo: "Furação\nde chapa", icone: "alvo", dica: "Selecione uma chapa com furos: a cadeia dos furos a partir da BORDA, nas duas direções da chapa, em mm (como a fábrica fura)." },
         { id: "cotas-padrao", rotulo: "Arredondamento", icone: "ajustes", dica: "O padrão do valor das cotas: automático (mm na metálica, cm no resto), sempre mm ou sempre cm. Cada cota pode mudar em Propriedades." }
       ]);
@@ -293,7 +385,7 @@
       try {
         var ab = Rb.aba("anotar"), pn = ab ? ab.paineis.filter(function (p) { return p.nome === "Cotas"; })[0] : null;
         if (pn) {
-          var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
+          var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
                      "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "cotas-padrao", "p7-tipos"];
           pn.comandos.sort(function (a, b) { var ia = ORD.indexOf(a.id), ib = ORD.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
         }
@@ -307,6 +399,7 @@
       }
       reg["cotar-selecao"] = function () { self.cotarSelecao(); return true; };
       reg["cotar-vista"] = function () { self.cotarVista(); return true; };
+      reg["cotas-automaticas"] = function () { return self.cotasAutomaticas(); };
       reg["cota-furacao"] = function () { self.furacao(); return true; };
       reg["cotas-padrao"] = function () { self.dialogoPadrao(); return true; };
       reg["met-cotas"] = function () { self.irParaCotas(); return true; };
@@ -339,6 +432,14 @@
       var U = U2(), self = this; if (!U || U._cotGancho) return;
       U._cotGancho = true;
       var c2 = U.clique2d;
+      try {
+        var P = P2();
+        if (P && !P._cotAbrirGancho) {
+          P._cotAbrirGancho = true;
+          var ab = P.abrir;
+          P.abrir = function (id) { var r = ab.apply(this, arguments); if (/^d2[pv]-/.test(String(id))) setTimeout(function () { try { self.cotarNovaPlanta(id); } catch (eN) {} }, 700); return r; };
+        }
+      } catch (eAb) {}
       U.clique2d = function (id, ev, p) {
         var t3 = self._3d;
         if (!this._f && t3 && t3.armado() && t3.cmd() && R() && R().ativo(t3.cmd()) && CMD_MODO[t3.cmd()]) {
@@ -364,6 +465,10 @@
       D.item("cotar-vista", { titulo: "Cotar a vista", oQueE: "A vista inteira cotada de uma vez.", ondeUsa: "Planta: eixos e vãos. Corte: níveis, alturas entre níveis e eixos que o corte cruza. 3D: eixos e níveis.",
         dica: "Cotar de novo refaz as automáticas (não empilha).",
         svg: S('<path d="M40 70V20M100 70V20M160 70V20" stroke-dasharray="6 3 1 3" style="stroke:var(--texto-fraco,#8494a6)"/>' + cot(40, 100, 84, "6,00") + cot(100, 160, 84, "6,00")) });
+      D.item("cotas-automaticas", { titulo: "Cotas automáticas", oQueE: "Um clique cota todas as plantas, cortes e fachadas do projeto no padrão técnico, no lugar das cotas que existem.",
+        ondeUsa: "Planta: cadeia por lado da edificação + total e cota interna de cada ambiente. Corte: níveis, cadeia vertical, esquadrias, pé-direito e faces das paredes. Fachada: níveis, alturas e largura.",
+        dica: "Cota de nível, ângulo e raio feitas por você ficam. Os números (afastamentos, liga/desliga) estão em REGRAS_COTA_ARQ. Ctrl+Z desfaz tudo.",
+        svg: S(pil(40) + pil(100) + pil(160) + cot(40, 100, 26, "6,00") + cot(100, 160, 26, "6,00") + cot(40, 160, 12, "12,00")) });
       D.item("cota-coordenada", { titulo: "Cota por coordenada", oQueE: "Cada ponto com a distância até uma ORIGEM (cota ordenada).", ondeUsa: "Furação, locação de pilares e inserts — sem acumular erro de cadeia.",
         dica: "Clique a origem, depois os pontos; Enter termina.",
         svg: S('<path d="M30 70H180" style="stroke:var(--aco,#0d6ebd)"/><path d="M30 70V30M90 70V30M150 70V30" style="stroke:var(--aco,#0d6ebd)"/><text x="30" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">0</text><text x="90" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">600</text><text x="150" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">1200</text>') });

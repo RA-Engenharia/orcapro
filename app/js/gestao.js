@@ -11169,7 +11169,7 @@
       reg["curva-s"] = function () { self._bimAbrirPainel("4d"); return true; };
       reg["insumos-modelo"] = function () { self._bimAbrirPainel("qto"); return true; };
       reg["rastrear"] = function () { self.acao("bimeap-abrir", {}); return true; };
-      reg["cotas-auto"] = function () { var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
+      reg["cotas-auto"] = function () { if (window.BimCotasUI && BimCotasUI.calcularCotasArq && (BimCotasUI.calcularCotasArq() || { ops: [] }).ops.length) return BimCotasUI.cotasAutomaticas(); var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
       /* alvenaria: os motores já entregam isto pronto */
       reg["modular"] = reg["junta"] = function () { self._bimConferirAlvenaria(); return true; };
       reg["tipos-parede"] = function () {

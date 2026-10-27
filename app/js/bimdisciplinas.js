@@ -78,7 +78,7 @@
   var ENXUTA_MARM = {};
   ["novo-projeto", "abrir-opbim", "salvar-opbim", "salvar-modelo", "arquivo-obra", "niveis",
    "mover-preciso", "copiar", "espelhar", "girar", "alinhar", "deslocamento", "aparar-canto",
-   "medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
+   "medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
    "planta-2d", "home", "orbita", "ortogonal", "estilo", "materiais", "vistas", "lado-a-lado", "tamanho-ui", "atalhos"].forEach(function (id) { ENXUTA_MARM[id] = 1; });
   /* a licença deste aparelho é só a da marmoraria? (js/marmmodulo.js) — então a área enxuta é a única */
   function soMarm() { try { var MM = global.MarmModulo; return !!(MM && MM.soMarmoraria && MM.soMarmoraria()); } catch (e) { return false; } }
@@ -111,7 +111,7 @@
     /* Anotar */
     "medir", "area", "angulo", "snap", "limpar-medidas", "cotas-auto", "anotacao", "foto", "pranchas",
     /* COTAS (js/bimcotasui.js): o grupo Anotar › Cotas vale em toda disciplina */
-    "cotar-selecao", "cotar-vista", "cota-coordenada", "cota-furacao", "cotas-padrao",
+    "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "cota-furacao", "cotas-padrao",
     "identificar-categoria", "identificar-todos",
     "p7-cota-alinhada", "p7-cota-linear", "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco",
     "p7-cota-elevacao", "p7-cota-inclinacao", "p7-tipos", "p7-texto", "p7-simbolo", "p7-nota-chave",

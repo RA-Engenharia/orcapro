@@ -292,6 +292,6 @@ var BimPlanta = (function () {
     return { cotas: cotas, pulados: pulados, semLugar: semLugar, total: total };
   }
 
-  return { fmtM: fmtM, paredesDoCorte: paredesDoCorte, cadeias: cadeias, ladosPlanta: ladosPlanta, paredesDaEdificacao: paredesDaEdificacao, cotasInternas: cotasInternas, _weld: weld };
+  return { fmtM: fmtM, paredesDoCorte: paredesDoCorte, cadeias: cadeias, ladosPlanta: ladosPlanta, paredesDaEdificacao: paredesDaEdificacao, cotasInternas: cotasInternas, sobreposicao: sobreposicao, _weld: weld };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = BimPlanta;

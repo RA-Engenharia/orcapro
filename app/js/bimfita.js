@@ -304,7 +304,7 @@
   ];
   var ABA_ANOTAR = [
     { nome: "Medir", ids: ["medir", "area", "angulo", "snap", "fx-medir-longo", "limpar-medidas"] },
-    { nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "p7-cota-linear"] },
+    { nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-linear"] },
     { nome: "Cotas especiais", ids: ["p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-coordenada", "cota-furacao"] },
     { nome: "Padrão das cotas", ids: ["cotas-padrao", "p7-tipos"] },
     { nome: "Texto e símbolos", ids: ["p7-texto", "p7-simbolo", "p7-nota-chave"] },

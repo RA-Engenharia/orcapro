@@ -59998,6 +59998,7 @@ tipoC("linear", "Linear - 2,5 mm Arial", "Linear"),
 tipoC("linear-cm", "Linear - 2,5 mm Arial (cm)", "Linear", { texto: 2.5, unidade: "cm", casas: 0 }),
 tipoC("linear-centro", "Linear com centro - 2,5 mm Arial", "Linear", { centro: true }),
 tipoC("linear-mm", "Linear - 2,5 mm Arial (mm)", "Linear", { unidade: "mm", casas: 0 }),
+tipoC("linear-ponto", "Linear - 2,5 mm Arial (ponto)", "Linear", { marca: "ponto" }),
 tipoC("angular", "Angular - 2,5 mm Arial", "Angular", { casas: 2 }),
 tipoC("radial", "Radial - 2,5 mm Arial", "Radial", { marca: "seta", prefixo: "R " }),
 tipoC("diametro", "Diâmetro - 2,5 mm Arial", "Diametro", { marca: "seta", prefixo: "Ø " }),
@@ -62037,6 +62038,475 @@ if (rc.ok) ops.push(rc.op);
 if (ops.length === nAntes) return { ok: false, motivo: "Não há eixos nem níveis para cotar no 3D.", ops: [] };
 return { ok: true, ops: ops };
 }
+var REGRAS_COTA_ARQ = {
+marca: "linear-ponto",
+livre: { ligado: true },
+planta: { ligado: true, alturaCorte: 1.2, distEdificacao: 0.3,
+externas: { ligado: true, afast: 0.8, afastTotal: 1.4 },
+internas: { ligado: true, minVao: 0.6, margem: 0.25 } },
+corte: { ligado: true,
+niveis: { ligado: true, afast: 2.6 },
+cadeiaVertical: { ligado: true, afast: 1.0, afastTotal: 1.7 },
+esquadrias: { ligado: true, afast: 0.45 },
+cadeiaHorizontal: { ligado: true, afastMm: 12, afastTotalMm: 24 },
+peDireito: { ligado: true, minAltura: 1.5, folga: 0.35 } },
+fachada: { ligado: true, faixaFrente: 0.6, vaosPrincipais: 2, vaos: true,
+niveis: { ligado: true, afast: 2.6 },
+cadeiaVertical: { ligado: true, afast: 1.0, afastTotal: 1.7 },
+largura: { ligado: true, afastMm: 12, afastTotalMm: 24 } }
+};
+function mesclar(base, extra) {
+var o = clone(base);
+(function rec(d, e) {
+Object.keys(e || {}).forEach(function (k) {
+if (e[k] && typeof e[k] === "object" && !Array.isArray(e[k]) && d[k] && typeof d[k] === "object") rec(d[k], e[k]); else d[k] = e[k];
+});
+})(o, extra);
+return o;
+}
+function regrasArq(opc) { return mesclar(REGRAS_COTA_ARQ, opc && opc.regras); }
+var LINEARES = { linear: 1, alinhada: 1, coordenada: 1 };
+function apagarAntigas(estado, vista) {
+var A = P7(), ops = [], auto = 0, man = 0;
+arr(A && A.itensDaVista ? A.itensDaVista(estado, vista) : []).forEach(function (it) {
+if (!it || it.tipo !== "cota") return;
+var au = txt(it.auto);
+if (/^vista|^arq/.test(au)) { ops.push({ op: "apagar", id: it.id }); auto++; return; }
+if ((au === "" || au === "selecao") && LINEARES[it.cota || "linear"]) { ops.push({ op: "apagar", id: it.id }); man++; }
+});
+return { ops: ops, auto: auto, manuais: man };
+}
+function ptsDaCaixa(c) {
+var th = num(c.rotY, 0), L = num(c.comprimento, 0) / 2, E = num(c.espessura, 0) / 2, cx = num(c.cx, 0), cz = num(c.cz, 0);
+var u = [Math.cos(th), -Math.sin(th)], n = [Math.sin(th), Math.cos(th)];
+return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(function (k) { return { x: cx + u[0] * L * k[0] + n[0] * E * k[1], z: cz + u[1] * L * k[0] + n[1] * E * k[1] }; });
+}
+function paredesDoEstado(estado) {
+var out = [], diag = 0;
+arr(estado && estado.caixas).forEach(function (c) {
+if (!c || c.tipo !== "parede" || c.id == null) return;
+var H = num(c.altura, 0), L = num(c.comprimento, 0), E = num(c.espessura, 0); if (!(H > 0 && L > 0 && E > 0)) return;
+var q = num(c.rotY, 0) / (Math.PI / 2), orto = Math.abs(q - Math.round(q)) < 0.002;
+var pts = ptsDaCaixa(c), xs = pts.map(function (p) { return p.x; }), zs = pts.map(function (p) { return p.z; });
+var p = { id: String(c.id), pts: pts, orto: orto, base: num(c.cy, 0) - H / 2, topo: num(c.cy, 0) + H / 2,
+minx: Math.min.apply(null, xs), maxx: Math.max.apply(null, xs), minz: Math.min.apply(null, zs), maxz: Math.max.apply(null, zs) };
+if (!orto) diag++;
+out.push(p);
+});
+return { lista: out, diag: diag };
+}
+function ambientesDe(estado, opc) {
+if (Array.isArray(opc && opc.ambientes)) return opc.ambientes;
+var AM = dep("BimAmbiente", "./bimambiente.js");
+if (!AM || !AM.calcular || !arr(estado && estado.ambientes).length) return [];
+var out = [];
+try {
+var nv = (opc && opc.niveisObra) || niveisDe(opc).map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.y }; });
+var r = AM.calcular(estado, { regra: "face", niveis: nv });
+arr(estado.ambientes).forEach(function (a) {
+var c = r && r.porId ? r.porId[a.id] : null;
+if (!c || c.estado !== "delimitado" || !c.contorno || c.contorno.length < 3) return;
+out.push({ nome: a.nome || ("Ambiente " + (out.length + 1)), pts: c.contorno, base: c.base, topo: c.topo });
+});
+} catch (e) { return []; }
+return out;
+}
+function opLinear(estado, proj, vista, nid, refs, orient, q, auto, R, opc) {
+var A = P7(), r = A.opCota({ id: nid(), vista: vista, cota: "linear", orient: orient, refs: refs, off: 0.6, tipoCota: R.marca, auto: auto });
+if (!r.ok) return null;
+r.op.off = A.offsetPara(estado, r.op, q, { corte: proj && proj.tipo === "corte", proj: proj, niveis: opc && opc.niveis });
+return r.op;
+}
+function pontoRef(estado, proj, id, P) {
+var r3 = refDaFace(estado, id, P);
+return r3 ? refParaP7(estado, r3, proj) : null;
+}
+function solta(proj, P) { var J = projetor(proj), v = J.p(P); return { x: r6(v[0]), y: r6(v[1]) }; }
+function paredePorBorda(ps, eixo, val, alvo, exige, tol) {
+var best = null;
+ps.forEach(function (p) {
+if (!p.orto) return;
+var a0 = eixo === "x" ? p.minx : p.minz, a1 = eixo === "x" ? p.maxx : p.maxz, b0 = eixo === "x" ? p.minz : p.minx, b1 = eixo === "x" ? p.maxz : p.maxx;
+var d = Math.min(Math.abs(a0 - val), Math.abs(a1 - val)); if (d > tol) return;
+var dentro = alvo >= b0 - 0.05 && alvo <= b1 + 0.05; if (exige && !dentro) return;
+var al = Math.max(b0, Math.min(b1, alvo)), dd = Math.abs(al - alvo);
+if (!best || d < best.d - 1e-6 || (Math.abs(d - best.d) <= 1e-6 && dd < best.dd)) {
+var borda = Math.abs(a0 - val) <= Math.abs(a1 - val) ? a0 : a1;
+best = { p: p, d: d, dd: dd, P: eixo === "x" ? [borda, al] : [al, borda] };
+}
+});
+return best;
+}
+function cotarPlantaArq(estado, vista, proj, opc) {
+opc = opc || {};
+var A = P7(), BP = dep("BimPlanta", "./bimplanta.js");
+if (!A) return { ok: false, motivo: "A anotação 2D não carregou." };
+if (!BP) return { ok: false, motivo: "O motor da planta (js/bimplanta.js) não carregou." };
+if (!proj || proj.tipo !== "planta") return { ok: false, motivo: "Esta vista não é uma planta." };
+var R = regrasArq(opc), RP = R.planta;
+if (!RP.ligado) return { ok: false, motivo: "As cotas automáticas de planta estão desligadas nas regras." };
+var yC = fin(+opc.yCorte) ? +opc.yCorte : num(opc.nivelY, 0) + RP.alturaCorte;
+var PD = paredesDoEstado(estado), cortadas = PD.lista.filter(function (p) { return p.orto && p.base < yC && p.topo > yC; });
+var amb = ambientesDe(estado, opc).filter(function (a) { return !(fin(a.base) && fin(a.topo)) || (a.base - 0.01 <= yC && yC <= a.topo + 0.01); });
+var fora = 0, paredes = cortadas;
+if (amb.length) { var ed = BP.paredesDaEdificacao(cortadas, amb, RP.distEdificacao); paredes = ed.paredes; fora = ed.fora; }
+var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7a"), J = projetor(proj);
+var cr = { ext: 0, int: 0 }, soltas = 0, decl = [];
+if (!paredes.length) decl.push("sem parede cortada a " + fmtNum(yC, 2) + " m");
+var cad = BP.ladosPlanta(paredes);
+function refTick(eixo, val, alvo, exige) {
+var h = paredePorBorda(paredes, eixo, val, alvo, exige, 0.03);
+if (h) { var P = eixo === "x" ? [h.P[0], yC, h.P[1]] : [h.P[0], yC, h.P[1]]; var r = pontoRef(estado, proj, h.p.id, P); if (r) return r; }
+soltas++;
+return solta(proj, eixo === "x" ? [val, yC, alvo] : [alvo, yC, val]);
+}
+if (RP.externas.ligado && paredes.length) {
+["topo", "base", "esq", "dir"].forEach(function (nome) {
+var c = cad[nome]; if (!c) return;
+var horiz = nome === "topo" || nome === "base", face = cad.faces[nome], sg = (nome === "topo" || nome === "esq") ? -1 : 1;
+var tk = podarVals(c.ticks, opc), med = (tk[0] + tk[tk.length - 1]) / 2;
+var refs = tk.map(function (v) { return horiz ? refTick("x", v, face, false) : refTick("z", v, face, false); });
+function linha(rs, dist, auto) {
+var q = horiz ? [med, face + sg * dist] : [face + sg * dist, med];
+var op = opLinear(estado, proj, vista, nid, rs, horiz ? "h" : "v", q, auto, R, opc); if (op) { ops.push(op); cr.ext++; }
+}
+if (refs.length >= 3) { linha(refs, RP.externas.afast, "arq-ext"); linha([refs[0], refs[refs.length - 1]], RP.externas.afastTotal, "arq-ext-total"); }
+else linha(refs, RP.externas.afast, "arq-ext-total");
+});
+}
+var internas = { pulados: 0, semLugar: 0 };
+if (RP.internas.ligado && amb.length) {
+var ci = BP.cotasInternas(amb, { obstaculos: opc.obstaculos || [], margem: RP.internas.margem, minVao: RP.internas.minVao });
+internas.pulados = ci.pulados; internas.semLugar = ci.semLugar;
+ci.cotas.forEach(function (k) {
+var horiz = k.tipo === "larg", e1 = horiz ? "x" : "z";
+var rs = [refTick(e1, k.a, k.fixo, true), refTick(e1, k.b, k.fixo, true)];
+var q = horiz ? [(k.a + k.b) / 2, k.fixo] : [k.fixo, (k.a + k.b) / 2];
+var op = opLinear(estado, proj, vista, nid, rs, horiz ? "h" : "v", q, "arq-int", R, opc); if (op) { ops.push(op); cr.int++; }
+});
+} else if (RP.internas.ligado) decl.push("sem ambientes delimitados: sem cota interna");
+if (!ops.length) return { ok: false, motivo: "Nada a cotar nesta planta.", ops: [] };
+return { ok: true, ops: ops, resumo: { tipo: "planta", apagadas: { auto: ap.auto, manuais: ap.manuais }, criadas: { ext: cr.ext, int: cr.int, niv: 0 },
+pulados: internas.pulados + internas.semLugar, soltas: soltas, foraEdificacao: fora, diagonais: PD.diag, declarado: decl } };
+}
+function trechosNoPoligono(pts, A, B) {
+var dx = B[0] - A[0], dz = B[1] - A[1], L = Math.sqrt(dx * dx + dz * dz); if (!(L > 1e-9)) return [];
+var d = [dx / L, dz / L], n = [d[1], -d[0]], ts = [], i, m = pts.length;
+function lado(p) { return (p.x - A[0]) * n[0] + (p.z - A[1]) * n[1] - 1e-7; }
+for (i = 0; i < m; i++) {
+var p = pts[i], q = pts[(i + 1) % m], sp = lado(p), sq = lado(q);
+if ((sp > 0) !== (sq > 0)) { var k = sp / (sp - sq); ts.push(((p.x + (q.x - p.x) * k) - A[0]) * d[0] + ((p.z + (q.z - p.z) * k) - A[1]) * d[1]); }
+}
+ts.sort(function (a, b) { return a - b; });
+var out = [];
+for (i = 0; i + 1 < ts.length; i += 2) { var t0 = Math.max(0, ts[i]), t1 = Math.min(L, ts[i + 1]); if (t1 - t0 > 1e-3) out.push([t0, t1]); }
+return out;
+}
+function ysUnicos(L, tol) {
+var s = L.slice().sort(function (a, b) { return a - b; }), o = [];
+s.forEach(function (y) { if (!o.length || y - o[o.length - 1] > tol) o.push(y); });
+return o;
+}
+function nivelEm(ns, y) { for (var i = 0; i < ns.length; i++) if (Math.abs(ns[i].y - y) < 0.015) return ns[i]; return null; }
+function refY(ns, x, y) { var n = nivelEm(ns, y); return n ? { r: "nivelc", nivel: n.id, x: r6(x), y: r6(-n.y) } : { x: r6(x), y: r6(-y) }; }
+function mesmaLista(a, b) { if (a.length !== b.length) return false; for (var i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 0.02) return false; return true; }
+function secaoDe(estado, proj, fachada, R, ns, amb) {
+var J = projetor(proj), A = [J.ax, J.az], B = [proj.bx, proj.bz], L = Math.sqrt(Math.pow(B[0] - A[0], 2) + Math.pow(B[1] - A[1], 2)) || 1;
+var dv = [(B[0] - A[0]) / L, (B[1] - A[1]) / L];
+var d = [-J.nz, J.nx], sg = (d[0] * dv[0] + d[1] * dv[1]) >= 0 ? 1 : -1, lo = sg > 0 ? 0 : -L, hi = sg > 0 ? L : 0;
+function conv(iv) { return sg > 0 ? iv : [-iv[1], -iv[0]]; }
+var S = { paredes: [], lajes: [], cobs: [], vaos: [], diag: 0, A: A, d: d, n: [J.nx, J.nz], L: L, sg: sg, lo: lo, hi: hi };
+function prof(p) { return (p.x - A[0]) * J.nx + (p.z - A[1]) * J.nz; }
+function tl(p) { return (p.x - A[0]) * d[0] + (p.z - A[1]) * d[1]; }
+var PD = paredesDoEstado(estado); S.diag = PD.diag;
+var BPe = dep("BimPlanta", "./bimplanta.js"), listaP = PD.lista.filter(function (p) { return p.orto; });
+S.foraEdificacao = 0;
+if (BPe && arr(amb).length) { var edf = BPe.paredesDaEdificacao(listaP, amb, R.planta.distEdificacao); listaP = edf.paredes; S.foraEdificacao = edf.fora; }
+listaP.forEach(function (p) {
+if (!p.orto) return;
+if (!fachada) {
+trechosNoPoligono(p.pts, A, B).map(conv).forEach(function (iv) { S.paredes.push({ id: p.id, s0: iv[0], s1: iv[1], base: p.base, topo: p.topo, p: p }); });
+} else {
+var ts = p.pts.map(tl), ds = p.pts.map(prof), cen = { x: (p.minx + p.maxx) / 2, z: (p.minz + p.maxz) / 2 };
+if (!J.visivel([cen.x, 0, cen.z])) return;
+S.paredes.push({ id: p.id, s0: Math.max(lo, Math.min.apply(null, ts)), s1: Math.min(hi, Math.max.apply(null, ts)), base: p.base, topo: p.topo, prof: Math.min.apply(null, ds), p: p });
+}
+});
+if (fachada && S.paredes.length) {
+var pf = Math.min.apply(null, S.paredes.map(function (w) { return w.prof; }));
+S.paredes = S.paredes.filter(function (w) { return w.prof <= pf + R.fachada.faixaFrente && w.s1 - w.s0 > 1e-3; });
+}
+var pm = null;
+arr(ns).forEach(function (n) { if (pm == null && S.paredes.some(function (w) { return w.base <= n.y + 0.05 && w.topo > n.y + 0.2; })) pm = n.y; });
+if (pm == null && S.paredes.length) pm = Math.min.apply(null, S.paredes.map(function (w) { return w.base; }));
+S.pisoMin = pm;
+if (pm != null) {
+S.paredes = S.paredes.filter(function (w) { return w.topo > pm + 0.05; }).map(function (w) { var o = {}; Object.keys(w).forEach(function (k) { o[k] = w[k]; }); if (o.base < pm) o.base = pm; return o; });
+}
+arr(estado && estado.caixas).forEach(function (c) {
+if (!c || c.tipo !== "laje") return;
+var H = num(c.altura, 0); if (!(H > 0)) return;
+var pts = Array.isArray(c.contorno) && c.contorno.length >= 3 ? c.contorno.map(function (q) { return { x: num(q.x, 0), z: num(q.z, 0) }; }) : (num(c.comprimento, 0) > 0 && num(c.espessura, 0) > 0 ? ptsDaCaixa(c) : null);
+if (!pts) return;
+var ivs = fachada ? (pts.some(function (q) { return J.visivel([q.x, 0, q.z]); }) ? [[Math.max(lo, Math.min.apply(null, pts.map(tl))), Math.min(hi, Math.max.apply(null, pts.map(tl)))]] : []) : trechosNoPoligono(pts, A, B).map(conv);
+var lyb = num(c.cy, 0) - H / 2, lyt = num(c.cy, 0) + H / 2;
+if (pm != null && lyt <= pm + 0.02) return;
+ivs.forEach(function (iv) { S.lajes.push({ id: String(c.id), s0: iv[0], s1: iv[1], yb: pm != null ? Math.max(lyb, pm) : lyb, yt: lyt }); });
+});
+arr(estado && estado.coberturas).forEach(function (c) {
+if (!c || c.id == null || !fin(+c.x0) || !fin(+c.z0) || !fin(+c.x1) || !fin(+c.z1)) return;
+var topo = fin(+c.cumeeira) ? +c.cumeeira : (fin(+c.base) ? +c.base : null); if (topo == null) return;
+var pts = [{ x: +c.x0, z: +c.z0 }, { x: +c.x1, z: +c.z0 }, { x: +c.x1, z: +c.z1 }, { x: +c.x0, z: +c.z1 }];
+var ivs = fachada ? (pts.some(function (q) { return J.visivel([q.x, 0, q.z]); }) ? [[Math.max(lo, Math.min.apply(null, pts.map(tl))), Math.min(hi, Math.max.apply(null, pts.map(tl)))]] : []) : trechosNoPoligono(pts, A, B).map(conv);
+ivs.forEach(function (iv) { S.cobs.push({ id: String(c.id), s0: iv[0], s1: iv[1], base: fin(+c.base) ? +c.base : topo, topo: topo }); });
+});
+arr(estado && estado.familias).forEach(function (f) {
+if (!f || !f.host) return;
+var g = geom({ k: "familia", o: f }); if (!g || !g.vao) return;
+var hw = S.paredes.filter(function (w) { return w.id === String(f.host.id); }); if (!hw.length) return;
+var c0 = { x: g.vao.c0[0], z: g.vao.c0[2] }, c1 = { x: g.vao.c1[0], z: g.vao.c1[2] };
+if (fachada) {
+var a0 = tl(c0), a1 = tl(c1);
+S.vaos.push({ id: String(f.id), s0: Math.min(a0, a1), s1: Math.max(a0, a1), y0: g.vao.y0, y1: g.vao.y1, host: hw[0] });
+} else {
+var sd = (B[0] - A[0]) * (c1.z - c0.z) - (B[1] - A[1]) * (c1.x - c0.x); if (Math.abs(sd) < 1e-9) return;
+var tt = ((c0.x - A[0]) * (c1.z - c0.z) - (c0.z - A[1]) * (c1.x - c0.x)) / sd, uu = ((c0.x - A[0]) * (B[1] - A[1]) - (c0.z - A[1]) * (B[0] - A[0])) / sd;
+if (uu < 0 || uu > 1 || tt < 0 || tt > 1) return;
+var t = sg * tt * L, w = hw.filter(function (q) { return t >= q.s0 - 0.02 && t <= q.s1 + 0.02; })[0]; if (!w) return;
+S.vaos.push({ id: String(f.id), s0: w.s0, s1: w.s1, y0: g.vao.y0, y1: g.vao.y1, host: w });
+}
+});
+return S;
+}
+function escolherX(BP, cands, yb, yt, obst, livre) {
+if (!livre) return cands[0];
+var best = null;
+cands.forEach(function (c) {
+var so = BP.sobreposicao(-yt, -yb, "x", c, obst);
+if (!best || so < best.so - 1e-6) best = { c: c, so: so };
+});
+return best ? best.c : cands[0];
+}
+function obstaculosDaVista(estado, vista, opc) {
+var A = P7(), out = arr(opc && opc.obstaculos).slice();
+arr(A && A.itensDaVista ? A.itensDaVista(estado, vista) : []).forEach(function (it) {
+if (!it || (it.tipo !== "texto" && it.tipo !== "notaChave") || !fin(+it.x) || !fin(+it.y)) return;
+var w = Math.max(0.6, 0.11 * txt(it.texto).length);
+out.push({ minx: +it.x - w / 2, maxx: +it.x + w / 2, minz: +it.y - 0.3, maxz: +it.y + 0.05 });
+});
+return out;
+}
+function mmM(mm, opc) { return num(mm, 0) * num(opc && opc.escala, 50) / 1000; }
+function idxPodar(vals, opc) {
+var min = Math.max(0.01, mmM(2.6, opc)), n = vals.length, idx = n ? [0] : [];
+for (var i = 1; i < n; i++) {
+var d = vals[i] - vals[idx[idx.length - 1]];
+if (d >= min || i === n - 1) { if (d < min && idx.length > 1) idx.pop(); idx.push(i); }
+}
+return idx;
+}
+function podarVals(vals, opc) { return idxPodar(vals, opc).map(function (i) { return vals[i]; }); }
+function podarPares(vals, refs, opc) { var ix = idxPodar(vals, opc); return { vals: ix.map(function (i) { return vals[i]; }), refs: ix.map(function (i) { return refs[i]; }) }; }
+function resumoVazio(tipo, ap) { return { tipo: tipo, apagadas: { auto: ap.auto, manuais: ap.manuais }, criadas: { ext: 0, int: 0, niv: 0 }, pulados: 0, declarado: [] }; }
+function cotarCorteArq(estado, vista, proj, opc) {
+opc = opc || {};
+var A = P7(), BP = dep("BimPlanta", "./bimplanta.js");
+if (!A || !BP) return { ok: false, motivo: "O motor de cotas não carregou." };
+if (!proj || proj.tipo !== "corte") return { ok: false, motivo: "Esta vista não é um corte." };
+var R = regrasArq(opc), RC = R.corte, livre = R.livre.ligado !== false;
+if (!RC.ligado) return { ok: false, motivo: "As cotas automáticas de corte estão desligadas nas regras." };
+var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7k"), res = resumoVazio("corte", ap), decl = res.declarado;
+var ns = niveisDe(opc), amb = ambientesDe(estado, opc), S = secaoDe(estado, proj, false, R, ns, amb), J = projetor(proj);
+if (!S.paredes.length) {
+if (!ops.length) return { ok: false, motivo: "O corte não atravessa parede.", ops: [] };
+decl.push("o corte não atravessa parede: só as cotas antigas saíram"); return { ok: true, ops: ops, resumo: res };
+}
+var xE = Math.min.apply(null, S.paredes.map(function (w) { return w.s0; })), xD = Math.max.apply(null, S.paredes.map(function (w) { return w.s1; }));
+var yMax = Math.max.apply(null, S.paredes.map(function (w) { return w.topo; }));
+S.lajes.forEach(function (l) { if (l.yt > yMax) yMax = l.yt; }); S.cobs.forEach(function (c) { if (c.topo > yMax) yMax = c.topo; });
+var obst = [];
+function obstaculo(x0, x1, y0, y1) { obst.push({ minx: x0, maxx: x1, minz: -y1, maxz: -y0 }); }
+S.vaos.forEach(function (v) { obstaculo(v.s0, v.s1, v.y0, v.y1); });
+obstaculosDaVista(estado, vista, opc).forEach(function (o) { obst.push(o); });
+var pisos = ns.filter(function (n) { return S.paredes.some(function (w) { return w.base <= n.y + 0.05 && w.topo > n.y + 0.2; }); });
+function cobre(x0, x1, lado) { return lado === "esq" ? x0 <= xE + 0.6 : x1 >= xD - 0.6; }
+if (RC.niveis.ligado) {
+if (!ns.length) decl.push("sem níveis no projeto: sem símbolo de nível");
+var xT = xE - RC.niveis.afast;
+pisos.forEach(function (n) {
+var rr = A.opCota({ id: nid(), vista: vista, cota: "elevacao", refs: [{ r: "nivelc", nivel: n.id, x: r6(xT), y: r6(-n.y) }], lx: r6(xT + 0.25), ly: r6(-n.y - 0.45), prefixo: n.nome + " ", tipoCota: "elevacao", auto: "arq-niv" });
+if (rr.ok) { ops.push(rr.op); res.criadas.niv++; }
+});
+}
+if (RC.cadeiaVertical.ligado) {
+var cadeiaDoLado = function (lado) {
+var ws = S.paredes.filter(function (w) { return lado === "esq" ? w.s0 <= xE + 0.05 : w.s1 >= xD - 0.05; });
+var ys = [];
+pisos.forEach(function (n) { if (ws.some(function (w) { return w.base <= n.y + 0.05 && w.topo > n.y + 0.2; })) ys.push(n.y); });
+S.lajes.forEach(function (l) { if (cobre(l.s0, l.s1, lado)) { ys.push(l.yb, l.yt); } });
+ys.push(Math.max.apply(null, ws.map(function (w) { return w.topo; })));
+S.cobs.forEach(function (c) { if (cobre(c.s0, c.s1, lado)) ys.push(c.base, c.topo); });
+return ysUnicos(ys, 0.02);
+};
+var yl = { esq: cadeiaDoLado("esq"), dir: cadeiaDoLado("dir") }, lados = mesmaLista(yl.esq, yl.dir) ? ["esq"] : ["esq", "dir"];
+lados.forEach(function (lado) {
+var Y = podarVals(yl[lado], opc), sg = lado === "esq" ? -1 : 1, xr = lado === "esq" ? xE : xD;
+if (Y.length < 2) { decl.push("lado " + (lado === "esq" ? "esquerdo" : "direito") + ": sem altura suficiente para a cadeia vertical"); return; }
+var refs = Y.map(function (y) { return refY(ns, xr, y); }), ym = (Y[0] + Y[Y.length - 1]) / 2;
+if (Y.length >= 3) {
+var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xr + sg * RC.cadeiaVertical.afast, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; }
+var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xr + sg * RC.cadeiaVertical.afastTotal, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; }
+} else { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xr + sg * RC.cadeiaVertical.afast, -ym], "arq-ext-total", R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
+});
+if (!S.lajes.length && !S.cobs.length) decl.push("o corte não corta laje nem cobertura: a cadeia vertical tem só piso e topo de parede");
+}
+if (RC.cadeiaHorizontal.ligado) {
+var yTopo = -S.pisoMin + mmM(RC.cadeiaHorizontal.afastMm, opc), yTot = -S.pisoMin + mmM(RC.cadeiaHorizontal.afastTotalMm, opc), refsH = null, tks = null;
+var cruz = arr(estado && estado.eixos).map(function (e) { var xe = J.eixo(e); return xe == null ? null : { e: e, x: xe }; }).filter(Boolean).sort(function (a, b) { return a.x - b.x; });
+if (cruz.length >= 2) { tks = cruz.map(function (c) { return c.x; }); refsH = cruz.map(function (c) { return { el: c.e.id, r: "p3", k: "eixo", x: r6(c.x), y: r6(-S.pisoMin) }; }); }
+else {
+tks = BP._weld(S.paredes.reduce(function (a, w) { a.push(w.s0, w.s1); return a; }, []), 0.012);
+refsH = tks.map(function (t) {
+var w = S.paredes.filter(function (q) { return Math.abs(q.s0 - t) < 0.03 || Math.abs(q.s1 - t) < 0.03; })[0], ym = w ? (w.base + w.topo) / 2 : 0;
+var P = [S.A[0] + S.d[0] * t, ym, S.A[1] + S.d[1] * t], r = w ? pontoRef(estado, proj, w.id, P) : null;
+return r || { x: r6(t), y: r6(-ym) };
+});
+}
+var pH = podarPares(tks, refsH, opc); tks = pH.vals; refsH = pH.refs;
+if (tks.length >= 2) {
+var xm = (tks[0] + tks[tks.length - 1]) / 2;
+if (tks.length >= 3) {
+var h1 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], "arq-ext", R, opc); if (h1) { ops.push(h1); res.criadas.ext++; }
+var h2 = opLinear(estado, proj, vista, nid, [refsH[0], refsH[refsH.length - 1]], "h", [xm, yTot], "arq-ext-total", R, opc); if (h2) { ops.push(h2); res.criadas.ext++; }
+} else { var h3 = opLinear(estado, proj, vista, nid, refsH, "h", [xm, yTopo], "arq-ext-total", R, opc); if (h3) { ops.push(h3); res.criadas.ext++; } }
+}
+}
+var ivA = [];
+amb.forEach(function (a) {
+if (!a || !a.pts || a.pts.length < 3) return;
+trechosNoPoligono(a.pts.map(function (p) { return { x: p.x, z: p.z }; }), S.A, [proj.bx, proj.bz]).map(function (iv) { return S.sg > 0 ? iv : [-iv[1], -iv[0]]; }).forEach(function (iv) { ivA.push({ a: a, s0: iv[0], s1: iv[1] }); });
+});
+function lajeAcima(s, y) {
+var best = null;
+S.lajes.forEach(function (l) { if (s >= l.s0 - 0.02 && s <= l.s1 + 0.02 && l.yb >= y - 0.01 && (!best || l.yb < best.yb)) best = l; });
+return best;
+}
+if (RC.esquadrias.ligado) {
+var visto = {};
+S.vaos.forEach(function (v) {
+var w = v.host, chave = w.id + ":" + Math.round(w.s0 * 100); if (visto[chave]) return; visto[chave] = 1;
+var forro = lajeAcima((w.s0 + w.s1) / 2, v.y1), tp = forro ? forro.yb : w.topo;
+var Y = podarVals(ysUnicos([w.base, v.y0, v.y1, tp], 0.02), opc); if (Y.length < 3) { decl.push("vão " + v.id + ": sem altura para peitoril, vão e verga"); return; }
+var sala = ivA.filter(function (r) { return Math.abs(r.s1 - w.s0) < 0.05 || Math.abs(r.s0 - w.s1) < 0.05; })[0];
+var esq = sala ? Math.abs(sala.s1 - w.s0) < 0.05 : ((w.s0 + w.s1) / 2) > (xE + xD) / 2;
+var sg = esq ? -1 : 1, xf = esq ? w.s0 : w.s1, cands = [];
+for (var k = 0; k < 8; k++) cands.push(xf + sg * (RC.esquadrias.afast + k * 0.1));
+var xc = escolherX(BP, cands, Y[0], Y[Y.length - 1], obst, livre);
+var op = opLinear(estado, proj, vista, nid, Y.map(function (y) { return refY(ns, xf, y); }), "v", [xc, -(Y[0] + Y[Y.length - 1]) / 2], "arq-int", R, opc);
+if (op) { ops.push(op); res.criadas.int++; obstaculo(xc - 0.3, xc + 0.1, Y[0], Y[Y.length - 1]); }
+});
+}
+if (RC.peDireito.ligado) {
+if (!ivA.length) decl.push("sem ambientes no corte: sem pé-direito");
+ivA.forEach(function (r) {
+var nome = r.a.nome || "ambiente", sm = (r.s0 + r.s1) / 2, base = fin(+r.a.base) ? +r.a.base : null;
+if (base == null) { var nb = pisos.filter(function (n) { return n.y <= (fin(+r.a.topo) ? +r.a.topo : 1e9); }).pop(); base = nb ? nb.y : null; }
+if (base == null) { decl.push(nome + ": sem piso conhecido para o pé-direito"); return; }
+var forro = null;
+S.lajes.forEach(function (l) { if (sm >= l.s0 - 0.02 && sm <= l.s1 + 0.02 && l.yb >= base + RC.peDireito.minAltura && (!forro || l.yb < forro.yb)) forro = l; });
+if (!forro) { decl.push(nome + ": sem laje nem forro acima no corte, pé-direito não cotado"); return; }
+var lo = r.s0 + RC.peDireito.folga, hi = r.s1 - RC.peDireito.folga;
+if (hi < lo) { decl.push(nome + ": ambiente estreito demais para a cota de pé-direito"); return; }
+var cands = [], mid = (lo + hi) / 2;
+for (var k = 0; k <= Math.ceil((hi - lo) / 0.1); k++) { var a1 = mid + k * 0.1, a2 = mid - k * 0.1; if (a1 <= hi + 1e-9) cands.push(a1); if (k && a2 >= lo - 1e-9) cands.push(a2); }
+var xc = escolherX(BP, cands, base, forro.yb, obst, livre);
+var op = opLinear(estado, proj, vista, nid, [refY(ns, xc, base), refY(ns, xc, forro.yb)], "v", [xc, -(base + forro.yb) / 2], "arq-int", R, opc);
+if (op) { ops.push(op); res.criadas.int++; obstaculo(xc - 0.3, xc + 0.1, base, forro.yb); }
+});
+}
+res.diagonais = S.diag; res.foraEdificacao = S.foraEdificacao;
+return { ok: true, ops: ops, resumo: res };
+}
+function cotarFachadaArq(estado, vista, proj, opc) {
+opc = opc || {};
+var A = P7(), BP = dep("BimPlanta", "./bimplanta.js");
+if (!A || !BP) return { ok: false, motivo: "O motor de cotas não carregou." };
+if (!proj || proj.tipo !== "corte") return { ok: false, motivo: "Esta vista não é uma fachada." };
+var R = regrasArq(opc), RF = R.fachada;
+if (!RF.ligado) return { ok: false, motivo: "As cotas automáticas de fachada estão desligadas nas regras." };
+var ap = apagarAntigas(estado, vista), ops = ap.ops.slice(), nid = opc.novoId || novoIdF("n7f"), res = resumoVazio("fachada", ap), decl = res.declarado;
+var ns = niveisDe(opc), amb = ambientesDe(estado, opc), S = secaoDe(estado, proj, true, R, ns, amb);
+if (!S.paredes.length) {
+if (!ops.length) return { ok: false, motivo: "Não há parede à frente desta fachada.", ops: [] };
+decl.push("sem parede à frente da fachada: só as cotas antigas saíram"); return { ok: true, ops: ops, resumo: res };
+}
+var xE = Math.min.apply(null, S.paredes.map(function (w) { return w.s0; })), xD = Math.max.apply(null, S.paredes.map(function (w) { return w.s1; }));
+var yMin = S.pisoMin, yTopoP = Math.max.apply(null, S.paredes.map(function (w) { return w.topo; }));
+var cumeeira = null; S.cobs.forEach(function (c) { if (c.topo > yTopoP + 0.05 && (cumeeira == null || c.topo > cumeeira)) cumeeira = c.topo; });
+var vaosF = S.vaos;
+var pisos = ns.filter(function (n) { return n.y >= yMin - 0.01 && n.y < yTopoP - 0.2; });
+if (RF.niveis.ligado) {
+if (!ns.length) decl.push("sem níveis no projeto: sem símbolo de nível");
+var xT = xE - RF.niveis.afast;
+pisos.forEach(function (n) {
+var rr = A.opCota({ id: nid(), vista: vista, cota: "elevacao", refs: [{ r: "nivelc", nivel: n.id, x: r6(xT), y: r6(-n.y) }], lx: r6(xT + 0.25), ly: r6(-n.y - 0.45), prefixo: n.nome + " ", tipoCota: "elevacao", auto: "arq-niv" });
+if (rr.ok) { ops.push(rr.op); res.criadas.niv++; }
+});
+}
+if (RF.cadeiaVertical.ligado) {
+var ys = [pisos.length ? pisos[0].y : yMin, yTopoP];
+if (cumeeira != null) ys.push(cumeeira); else if (!S.cobs.length) decl.push("a fachada não tem cobertura no modelo: sem cota de cumeeira");
+var grupos = {};
+vaosF.forEach(function (v) { var k = Math.round(v.y0 * 100) + ":" + Math.round(v.y1 * 100); if (!grupos[k]) grupos[k] = { y0: v.y0, y1: v.y1, larg: 0 }; grupos[k].larg += v.s1 - v.s0; });
+Object.keys(grupos).map(function (k) { return grupos[k]; }).sort(function (a, b) { return b.larg - a.larg; }).slice(0, RF.vaosPrincipais).forEach(function (g) { ys.push(g.y0, g.y1); });
+var Y = podarVals(ysUnicos(ys, 0.02), opc);
+if (Y.length < 2) decl.push("fachada sem altura para a cadeia vertical");
+else {
+var refs = Y.map(function (y) { return refY(ns, xE, y); }), ym = (Y[0] + Y[Y.length - 1]) / 2;
+if (Y.length >= 3) {
+var o1 = opLinear(estado, proj, vista, nid, refs, "v", [xE - RF.cadeiaVertical.afast, -ym], "arq-ext", R, opc); if (o1) { ops.push(o1); res.criadas.ext++; }
+var o2 = opLinear(estado, proj, vista, nid, [refs[0], refs[refs.length - 1]], "v", [xE - RF.cadeiaVertical.afastTotal, -ym], "arq-ext-total", R, opc); if (o2) { ops.push(o2); res.criadas.ext++; }
+} else { var o3 = opLinear(estado, proj, vista, nid, refs, "v", [xE - RF.cadeiaVertical.afast, -ym], "arq-ext-total", R, opc); if (o3) { ops.push(o3); res.criadas.ext++; } }
+}
+}
+if (RF.largura.ligado) {
+var yBase = -S.pisoMin;
+function refParede(t) {
+var w = S.paredes.filter(function (q) { return Math.abs(q.s0 - t) < 0.03 || Math.abs(q.s1 - t) < 0.03; })[0], ym = w ? (w.base + w.topo) / 2 : 0;
+var P = [S.A[0] + S.d[0] * t + S.n[0] * (w ? w.prof : 0), ym, S.A[1] + S.d[1] * t + S.n[1] * (w ? w.prof : 0)], r = w ? pontoRef(estado, proj, w.id, P) : null;
+return r || { x: r6(t), y: r6(-ym) };
+}
+var rE = refParede(xE), rD = refParede(xD), xm = (xE + xD) / 2, tem = false;
+if (RF.vaos && vaosF.length) {
+var us = vaosF.slice().sort(function (a, b) { return a.s0 - b.s0; }), cur = xE, refsV = [rE], ok = 0;
+us.forEach(function (v) {
+if (v.s0 < cur + 0.02) return;
+var r0 = refPeca(estado, v.id, "vao0"), r1 = refPeca(estado, v.id, "vao1"); if (!r0 || !r1) return;
+refsV.push(refParaP7(estado, r0, proj), refParaP7(estado, r1, proj)); cur = v.s1; ok++;
+});
+if (ok) {
+refsV.push(rD);
+refsV = refsV.filter(function (r) { return r && fin(+r.x); }).sort(function (a, b) { return a.x - b.x; });
+var pV = podarPares(refsV.map(function (r) { return +r.x; }), refsV, opc); refsV = pV.refs;
+var oV = opLinear(estado, proj, vista, nid, refsV, "h", [xm, yBase + mmM(RF.largura.afastMm, opc)], "arq-ext", R, opc); if (oV) { ops.push(oV); res.criadas.ext++; }
+var oT = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yBase + mmM(RF.largura.afastTotalMm, opc)], "arq-ext-total", R, opc); if (oT) { ops.push(oT); res.criadas.ext++; tem = true; }
+} else decl.push("fachada: vãos sem abertura no modelo, só a largura total");
+}
+if (!tem) { var oW = opLinear(estado, proj, vista, nid, [rE, rD], "h", [xm, yBase + mmM(RF.largura.afastMm, opc)], "arq-ext-total", R, opc); if (oW) { ops.push(oW); res.criadas.ext++; } }
+}
+res.diagonais = S.diag;
+return { ok: true, ops: ops, resumo: res };
+}
+function vistaTemCotasArq(estado, vista) {
+var A = P7();
+return arr(A && A.itensDaVista ? A.itensDaVista(estado, vista) : []).some(function (it) { return it && it.tipo === "cota" && /^arq/.test(txt(it.auto)); });
+}
+function cotarVistaArq(estado, vista, proj, opc) {
+var t = (opc && opc.tipoVista) || (proj && proj.tipo === "planta" ? "planta" : "corte");
+if (t === "planta") return cotarPlantaArq(estado, vista, proj, opc);
+if (t === "fachada") return cotarFachadaArq(estado, vista, proj, opc);
+return cotarCorteArq(estado, vista, proj, opc);
+}
 var BimCotas = {
 REFS: REFS, ROT_REF: ROT_REF, PADROES: PADROES, TIPOS3: TIPOS3, CLASSE: CLASSE,
 ehOp: function (nome) { return !!OPS[nome]; },
@@ -62050,6 +62520,7 @@ projetor: projetor, resolverP7: resolverP7, refParaP7: refParaP7, candidatosVist
 fonteFamilias: function (fn) { _avalFam = typeof fn === "function" ? fn : null; return true; }, aberturaDe: aberturaDe, tracosVao: tracosVao,
 candidatosDesenho: candidatosDesenho, encaixeDesenho: encaixeDesenho, linhaDesenho: linhaDesenho, refDoDesenho: refDoDesenho, refLinhaDesenho: refLinhaDesenho, desprojetar: desprojetar, noSeg: noSeg,
 furacao: furacao, furacaoVista: furacaoVista, cotarVista: cotarVista, cotarVista3d: cotarVista3d,
+REGRAS_COTA_ARQ: REGRAS_COTA_ARQ, regrasArq: regrasArq, cotarPlantaArq: cotarPlantaArq, cotarCorteArq: cotarCorteArq, cotarFachadaArq: cotarFachadaArq, cotarVistaArq: cotarVistaArq, vistaTemCotasArq: vistaTemCotasArq, podarCadeia: idxPodar,
 itens: function (estado) { return arr(estado && estado.cotas3d); },
 item: function (estado, id) { return arr(estado && estado.cotas3d).filter(function (x) { return String(x.id) === String(id); })[0] || null; }
 };
@@ -80707,7 +81178,7 @@ if (vv) cotas.push({ amb: nome, tipo: 'prof', a: vv.a, b: vv.b, fixo: vv.fixo, v
 });
 return { cotas: cotas, pulados: pulados, semLugar: semLugar, total: total };
 }
-return { fmtM: fmtM, paredesDoCorte: paredesDoCorte, cadeias: cadeias, ladosPlanta: ladosPlanta, paredesDaEdificacao: paredesDaEdificacao, cotasInternas: cotasInternas, _weld: weld };
+return { fmtM: fmtM, paredesDoCorte: paredesDoCorte, cadeias: cadeias, ladosPlanta: ladosPlanta, paredesDaEdificacao: paredesDaEdificacao, cotasInternas: cotasInternas, sobreposicao: sobreposicao, _weld: weld };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = BimPlanta;
 } catch (e) { setTimeout(function () { throw e; }); }
@@ -81927,7 +82398,7 @@ var MARM = "marmoraria";
 var ENXUTA_MARM = {};
 ["novo-projeto", "abrir-opbim", "salvar-opbim", "salvar-modelo", "arquivo-obra", "niveis",
 "mover-preciso", "copiar", "espelhar", "girar", "alinhar", "deslocamento", "aparar-canto",
-"medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
+"medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
 "planta-2d", "home", "orbita", "ortogonal", "estilo", "materiais", "vistas", "lado-a-lado", "tamanho-ui", "atalhos"].forEach(function (id) { ENXUTA_MARM[id] = 1; });
 function soMarm() { try { var MM = global.MarmModulo; return !!(MM && MM.soMarmoraria && MM.soMarmoraria()); } catch (e) { return false; } }
 var MAPA = {};
@@ -81943,7 +82414,7 @@ def(COMUM, [
 "fases", "filtro-fase", "opcoes-projeto", "selecionar-id", "localizar-substituir", "advertencias", "limpar-nao-usados", "vista-inicial",
 "extrusao", "revolucao", "varredura", "unir", "subtrair", "empurrar",
 "medir", "area", "angulo", "snap", "limpar-medidas", "cotas-auto", "anotacao", "foto", "pranchas",
-"cotar-selecao", "cotar-vista", "cota-coordenada", "cota-furacao", "cotas-padrao",
+"cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "cota-furacao", "cotas-padrao",
 "identificar-categoria", "identificar-todos",
 "p7-cota-alinhada", "p7-cota-linear", "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco",
 "p7-cota-elevacao", "p7-cota-inclinacao", "p7-tipos", "p7-texto", "p7-simbolo", "p7-nota-chave",
@@ -85626,8 +86097,8 @@ if (!cx || !e.cotas) return out;
 var ehInstC = function (c) { return !!(c && (c.inst || (c.k && String(c.k).indexOf("|inst:") >= 0))); };
 if ((d.cortes || []).some(ehInstC)) { var d0 = d; d = {}; Object.keys(d0).forEach(function (kk) { d[kk] = d0[kk]; }); d.cortes = (d0.cortes || []).filter(function (c) { return !ehInstC(c); }); }
 var k = e.escala / 1000, passo = 7 * k, folga = 9 * k;
-function cadeia(eixo, posicoes, base, sentido, fila, min, max) {
-var linha = base + sentido * (folga + passo * fila);
+function cadeia(eixo, posicoes, base, sentido, fila, min, max, folgaPapel) {
+var linha = base + sentido * ((folgaPapel != null ? folgaPapel * k : folga) + passo * fila);
 if (posicoes.length >= 3 && e.cotaParcial && posicoes.length <= 80) {
 for (var i = 0; i + 1 < posicoes.length; i++) {
 var a = posicoes[i], b = posicoes[i + 1];
@@ -85639,12 +86110,15 @@ linha = base + sentido * (folga + passo * (fila + 1));
 if (max - min > 0.02) out.push({ eixo: eixo, a: min, b: max, base: base, linha: linha, valor: max - min, parcial: false });
 }
 if (d.tipo === "corte") {
+var yPiso = null;
+(d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= cx.y1 + 0.01 && (yPiso == null || n.y > yPiso)) yPiso = n.y; });
+var yb = yPiso != null ? yPiso : cx.y1;
 var xs = [cx.x0, cx.x1];
-cadeia("h", agrupar(xs, 0.015), cx.y1, +1, 0, cx.x0, cx.x1);
-var ys = facesCortadas(d, "y", "dir", 1.5);
-(d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= cx.y1 + 0.01) ys.push(n.y); });
-ys = agrupar(ys.concat([cx.y0, cx.y1]), 0.03);
-cadeia("v", ys, cx.x1, +1, 0, cx.y0, cx.y1);
+cadeia("h", agrupar(xs, 0.015), yb, +1, 0, cx.x0, cx.x1, yPiso != null ? 12 : null);
+var ys = facesCortadas(d, "y", "dir", 1.5).filter(function (y) { return y <= yb + 0.01; });
+(d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= yb + 0.01) ys.push(n.y); });
+ys = agrupar(ys.concat([cx.y0, yb]), 0.03);
+cadeia("v", ys, cx.x1, +1, 0, cx.y0, yb);
 } else {
 var grupos = construcoes(d.cortes || []);
 if (grupos.length <= 1) {
@@ -86577,7 +87051,12 @@ e.escala = Math.min(e.escala || 50, lI <= 4 ? 25 : 50);
 this.estado().estilos[id] = e;
 }
 var en = D2().normEstilo(e), M6 = this._p6();
-return M6 ? M6.sobreporEstilo(id, en) : en;
+var fim = M6 ? M6.sobreporEstilo(id, en) : en;
+try {
+var eA = B() && B().editarEstado ? B().editarEstado() : null, BCa = global.BimCotas;
+if (eA && eA.estado && BCa && BCa.vistaTemCotasArq && BCa.vistaTemCotasArq(eA.estado, id)) { var cp = {}; Object.keys(fim).forEach(function (k) { cp[k] = fim[k]; }); cp.cotas = false; fim = cp; }
+} catch (eNat) { }
+return fim;
 },
 _extrair: function (d) {
 var r = this._extrairModelo(d);
@@ -142611,6 +143090,90 @@ if (ok && v) setTimeout(function () { try { var P = P2(); P.redesenhar(v, false)
 if (ok) status("Vista cotada" + (r.resumo && r.resumo.length ? ": " + r.resumo.join("; ") : "") + ". Cotar de novo refaz (não empilha); Ctrl+Z desfaz.");
 return ok;
 },
+_vistasArq: function () {
+var P = P2(), out = [], vistos = {}, M = null, vs = {};
+if (!P) return out;
+try { M = global.BimModeloVista && global.BimModeloVista.ativo && global.BimModeloVista.ativo() ? global.BimModeloVista : null; vs = M ? (M.estado().vistas || {}) : {}; } catch (e) { vs = {}; }
+var ids = [];
+(P.niveis() || []).forEach(function (n) { ids.push(P.idPlanta(n.id)); });
+(P.cortes() || []).forEach(function (c) { ids.push(P.idCorte(c.id)); });
+Object.keys(vs).forEach(function (k) { var t = vs[k] && vs[k].tipo; if (t === "planta" || t === "corte" || t === "elevacao") ids.push(k); });
+ids.forEach(function (id) {
+if (vistos[id]) return; vistos[id] = 1;
+var d = P.def(id), pj = d ? projVista(id) : null; if (!d || !pj) return;
+var v = vs[id] || null;
+if (pj.tipo === "planta") {
+if (d.p6 && d.p6 !== "planta") return;
+out.push({ id: id, tipoVista: "planta", proj: pj, nome: d.nome, nivelY: d.nivel ? d.nivel.y : 0, altura: d.altura });
+} else if (d.p6 === "chamada") return;
+else out.push({ id: id, tipoVista: d.p6 === "elevacao" && v && !v.interior ? "fachada" : "corte", proj: pj, nome: d.nome });
+});
+return out;
+},
+_opcArq: function (v) {
+var E = global.BimEdit, temNiv = !!(E && E.niveisAtuais && (E.niveisAtuais() || []).length), P = P2(), o = { tipoVista: v.tipoVista };
+try { var es = P.estilo(v.id); if (es && isFinite(+es.escala) && +es.escala > 0) o.escala = +es.escala; } catch (eE) {}
+if (!temNiv) o.niveis = (P.niveis() || []).map(function (n) { return { id: n.id, nome: n.nome, elevacao: n.y }; });
+if (v.tipoVista === "planta") { o.nivelY = v.nivelY; if (v.altura != null && isFinite(+v.altura)) o.yCorte = v.nivelY + (+v.altura); }
+try { if (global.BimAmbienteUI && global.BimAmbienteUI.niveisObra) o.niveisObra = global.BimAmbienteUI.niveisObra(); } catch (eN) {}
+return o;
+},
+calcularCotasArq: function () {
+var C = BC(), e = estado(); if (!C || !C.cotarVistaArq || !e) return null;
+var self = this, ops = [], itens = [], tot = { vistas: 0, plantas: 0, cortes: 0, fachadas: 0, auto: 0, manuais: 0, ext: 0, int: 0, niv: 0, pulados: 0, declarado: [], semResultado: [] };
+this._vistasArq().forEach(function (v) {
+var r; try { r = C.cotarVistaArq(e, v.id, v.proj, self._opcArq(v)); } catch (x) { r = { ok: false, motivo: String(x && x.message || x) }; }
+if (!r || !r.ok) { tot.semResultado.push((v.nome || v.id) + ": " + ((r && r.motivo) || "sem resultado")); return; }
+ops = ops.concat(r.ops); itens.push({ v: v, r: r });
+var s = r.resumo || {};
+tot.vistas++; tot[v.tipoVista === "planta" ? "plantas" : v.tipoVista === "fachada" ? "fachadas" : "cortes"]++;
+tot.auto += (s.apagadas || {}).auto || 0; tot.manuais += (s.apagadas || {}).manuais || 0;
+tot.ext += (s.criadas || {}).ext || 0; tot.int += (s.criadas || {}).int || 0; tot.niv += (s.criadas || {}).niv || 0; tot.pulados += s.pulados || 0;
+(s.declarado || []).forEach(function (t) { tot.declarado.push((v.nome || v.id) + ": " + t); });
+});
+return { ops: ops, itens: itens, tot: tot };
+},
+cotasAutomaticas: function () {
+var self = this, c = this.calcularCotasArq();
+if (!c) { toast("Abra o editor do modelo primeiro.", "aviso"); return false; }
+var t = c.tot;
+if (!c.ops.length) { toast(t.semResultado.length ? "Nada a cotar: " + t.semResultado[0] : "Nenhuma planta, corte ou fachada com paredes para cotar.", "aviso"); return false; }
+function aplicarTudo() {
+var ok = aplicar(c.ops, "Cotas automáticas");
+if (!ok) { toast("Não consegui aplicar as cotas automáticas.", "erro"); return false; }
+self._ultimoArq = t;
+var partes = [];
+if (t.plantas) partes.push(t.plantas + (t.plantas === 1 ? " planta" : " plantas"));
+if (t.cortes) partes.push(t.cortes + (t.cortes === 1 ? " corte" : " cortes"));
+if (t.fachadas) partes.push(t.fachadas + (t.fachadas === 1 ? " fachada" : " fachadas"));
+status("Cotas automáticas: " + partes.join(", ") + ". Substituídas " + (t.auto + t.manuais) + " (" + t.manuais + " à mão), criadas " + (t.ext + t.int + t.niv) +
+" (externas " + t.ext + ", internas " + t.int + ", níveis " + t.niv + ")" + (t.pulados ? ", " + t.pulados + " ambiente(s) sem cota interna" : "") +
+(t.declarado.length ? ". " + t.declarado.length + " item(ns) sem dado no modelo" : "") + ". Ctrl+Z desfaz tudo.");
+setTimeout(function () { try { self._redesenhar2d(); } catch (eR) {} }, 150);
+return true;
+}
+if (t.manuais > 0 && global.UI && global.UI.modal) {
+global.UI.modal("Cotas automáticas",
+"<p>Vai substituir <b>" + (t.auto + t.manuais) + "</b> cotas (<b>" + t.manuais + "</b> feitas à mão) em <b>" + t.vistas + "</b> vistas (" + t.plantas + " plantas, " + t.cortes + " cortes, " + t.fachadas + " fachadas). Ctrl+Z desfaz.</p>",
+[{ texto: "Cancelar", classe: "ghost", onClick: function () { global.UI.fecharModal(); } },
+{ texto: "Substituir", classe: "primary", onClick: function () { global.UI.fecharModal(); aplicarTudo(); } }]);
+return true;
+}
+return aplicarTudo();
+},
+cotarNovaPlanta: function (id) {
+var C = BC(), e = estado(), PU = global.BimProjetosUI;
+if (!C || !e || !PU || !PU._proj || !PU._proj.cotasAutoNovo) return false;
+PU._proj.cotasAutoFeito = PU._proj.cotasAutoFeito || {};
+if (PU._proj.cotasAutoFeito[id]) return false;
+var v = this._vistasArq().filter(function (x) { return x.id === id && x.tipoVista === "planta"; })[0]; if (!v) return false;
+if (global.BimAnotP7 && global.BimAnotP7.itensDaVista && global.BimAnotP7.itensDaVista(e, id).length) { PU._proj.cotasAutoFeito[id] = 1; return false; }
+var r = C.cotarVistaArq(e, id, v.proj, this._opcArq(v)); if (!r || !r.ok) return false;
+PU._proj.cotasAutoFeito[id] = 1;
+var ok = aplicar(r.ops, "Cotas automáticas (projeto novo)");
+if (ok) status("Planta cotada no padrão automático (projeto novo). Ctrl+Z desfaz; Anotar › Cotas automáticas refaz todas as vistas.");
+return ok;
+},
 furacao: function (id) {
 var C = BC(), e = estado(); if (!C || !e) return false;
 var ids = id ? [id] : selecionados().concat(this._3d ? this._3d.coleta() : []);
@@ -142666,13 +143229,14 @@ var self = this, Rb = R();
 Rb.acrescentar("anotar", "Anotar", "Cotas", [
 { id: "cotar-selecao", rotulo: "Cotar\nseleção", icone: "regua", grande: true, dica: "Selecione pilares, eixos, paredes, perfis, vigas ou tubos (Ctrl + clique soma) e clique: sai a cadeia de cotas + o total na direção dominante, e a perpendicular quando há duas filas. No 3D ou na vista 2D ativa. Sem seleção no 3D, clique as peças (eixos e tubos também) e Enter." },
 { id: "cotar-vista", rotulo: "Cotar a\nvista", icone: "planta", grande: true, dica: "Cota a vista inteira de uma vez: na planta, os eixos e os vãos (ou os pilares); no corte, os níveis, as alturas entre eles e os eixos que o corte cruza; no 3D, os eixos e os níveis. Cotar de novo refaz sem empilhar." },
+{ id: "cotas-automaticas", rotulo: "Cotas\nautomáticas", icone: "regua", grande: true, dica: "Um clique refaz as cotas de TODAS as plantas, cortes e fachadas do projeto no padrão técnico: cadeia por lado da edificação mais o total, cota interna face a face, níveis, pé-direito e esquadrias, com marca em ponto. Substitui as cotas lineares automáticas e as feitas à mão (nível, ângulo e raio ficam). Um Ctrl+Z desfaz tudo." },
 { id: "cota-furacao", rotulo: "Furação\nde chapa", icone: "alvo", dica: "Selecione uma chapa com furos: a cadeia dos furos a partir da BORDA, nas duas direções da chapa, em mm (como a fábrica fura)." },
 { id: "cotas-padrao", rotulo: "Arredondamento", icone: "ajustes", dica: "O padrão do valor das cotas: automático (mm na metálica, cm no resto), sempre mm ou sempre cm. Cada cota pode mudar em Propriedades." }
 ]);
 try {
 var ab = Rb.aba("anotar"), pn = ab ? ab.paineis.filter(function (p) { return p.nome === "Cotas"; })[0] : null;
 if (pn) {
-var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
+var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
 "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "cotas-padrao", "p7-tipos"];
 pn.comandos.sort(function (a, b) { var ia = ORD.indexOf(a.id), ib = ORD.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
@@ -142685,6 +143249,7 @@ try { if (global.BimDisciplinas && global.BimDisciplinas.declarar) global.BimDis
 }
 reg["cotar-selecao"] = function () { self.cotarSelecao(); return true; };
 reg["cotar-vista"] = function () { self.cotarVista(); return true; };
+reg["cotas-automaticas"] = function () { return self.cotasAutomaticas(); };
 reg["cota-furacao"] = function () { self.furacao(); return true; };
 reg["cotas-padrao"] = function () { self.dialogoPadrao(); return true; };
 reg["met-cotas"] = function () { self.irParaCotas(); return true; };
@@ -142712,6 +143277,14 @@ _ganchos2d: function () {
 var U = U2(), self = this; if (!U || U._cotGancho) return;
 U._cotGancho = true;
 var c2 = U.clique2d;
+try {
+var P = P2();
+if (P && !P._cotAbrirGancho) {
+P._cotAbrirGancho = true;
+var ab = P.abrir;
+P.abrir = function (id) { var r = ab.apply(this, arguments); if (/^d2[pv]-/.test(String(id))) setTimeout(function () { try { self.cotarNovaPlanta(id); } catch (eN) {} }, 700); return r; };
+}
+} catch (eAb) {}
 U.clique2d = function (id, ev, p) {
 var t3 = self._3d;
 if (!this._f && t3 && t3.armado() && t3.cmd() && R() && R().ativo(t3.cmd()) && CMD_MODO[t3.cmd()]) {
@@ -142736,6 +143309,10 @@ svg: S(pil(40) + pil(100) + pil(160) + cot(40, 100, 26, "6,00") + cot(100, 160, 
 D.item("cotar-vista", { titulo: "Cotar a vista", oQueE: "A vista inteira cotada de uma vez.", ondeUsa: "Planta: eixos e vãos. Corte: níveis, alturas entre níveis e eixos que o corte cruza. 3D: eixos e níveis.",
 dica: "Cotar de novo refaz as automáticas (não empilha).",
 svg: S('<path d="M40 70V20M100 70V20M160 70V20" stroke-dasharray="6 3 1 3" style="stroke:var(--texto-fraco,#8494a6)"/>' + cot(40, 100, 84, "6,00") + cot(100, 160, 84, "6,00")) });
+D.item("cotas-automaticas", { titulo: "Cotas automáticas", oQueE: "Um clique cota todas as plantas, cortes e fachadas do projeto no padrão técnico, no lugar das cotas que existem.",
+ondeUsa: "Planta: cadeia por lado da edificação + total e cota interna de cada ambiente. Corte: níveis, cadeia vertical, esquadrias, pé-direito e faces das paredes. Fachada: níveis, alturas e largura.",
+dica: "Cota de nível, ângulo e raio feitas por você ficam. Os números (afastamentos, liga/desliga) estão em REGRAS_COTA_ARQ. Ctrl+Z desfaz tudo.",
+svg: S(pil(40) + pil(100) + pil(160) + cot(40, 100, 26, "6,00") + cot(100, 160, 26, "6,00") + cot(40, 160, 12, "12,00")) });
 D.item("cota-coordenada", { titulo: "Cota por coordenada", oQueE: "Cada ponto com a distância até uma ORIGEM (cota ordenada).", ondeUsa: "Furação, locação de pilares e inserts — sem acumular erro de cadeia.",
 dica: "Clique a origem, depois os pontos; Enter termina.",
 svg: S('<path d="M30 70H180" style="stroke:var(--aco,#0d6ebd)"/><path d="M30 70V30M90 70V30M150 70V30" style="stroke:var(--aco,#0d6ebd)"/><text x="30" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">0</text><text x="90" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">600</text><text x="150" y="24" font-size="10" text-anchor="middle" stroke="none" style="fill:var(--aco,#0d6ebd)">1200</text>') });
@@ -147393,7 +147970,7 @@ var ABA_TERRENO = [
 ];
 var ABA_ANOTAR = [
 { nome: "Medir", ids: ["medir", "area", "angulo", "snap", "fx-medir-longo", "limpar-medidas"] },
-{ nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "p7-cota-linear"] },
+{ nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-linear"] },
 { nome: "Cotas especiais", ids: ["p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-coordenada", "cota-furacao"] },
 { nome: "Padrão das cotas", ids: ["cotas-padrao", "p7-tipos"] },
 { nome: "Texto e símbolos", ids: ["p7-texto", "p7-simbolo", "p7-nota-chave"] },
@@ -175920,7 +176497,7 @@ g._bimCenaObra = obraId;
 },
 criado: function (g, info) {
 var self = this;
-this._proj = { id: uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null };
+this._proj = { id: uid(), nome: info.nome, obraId: info.obraId, obraNome: info.obraNome || obraNome(info.obraId), criadoEm: agora(), salvoEm: "", base: null, salvo: info.foto || null, cotasAutoNovo: true };
 g._bimCenaObra = info.obraId;
 this.esconderInicio();
 this.pintarTitulo();

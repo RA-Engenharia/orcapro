@@ -219,8 +219,8 @@
     var ehInstC = function (c) { return !!(c && (c.inst || (c.k && String(c.k).indexOf("|inst:") >= 0))); };
     if ((d.cortes || []).some(ehInstC)) { var d0 = d; d = {}; Object.keys(d0).forEach(function (kk) { d[kk] = d0[kk]; }); d.cortes = (d0.cortes || []).filter(function (c) { return !ehInstC(c); }); }
     var k = e.escala / 1000, passo = 7 * k, folga = 9 * k;   /* 7 mm do desenho à 1ª linha; 7 mm entre linhas */
-    function cadeia(eixo, posicoes, base, sentido, fila, min, max) {
-      var linha = base + sentido * (folga + passo * fila);
+    function cadeia(eixo, posicoes, base, sentido, fila, min, max, folgaPapel) {
+      var linha = base + sentido * ((folgaPapel != null ? folgaPapel * k : folga) + passo * fila);
       if (posicoes.length >= 3 && e.cotaParcial && posicoes.length <= 80) {
         for (var i = 0; i + 1 < posicoes.length; i++) {
           var a = posicoes[i], b = posicoes[i + 1];
@@ -232,13 +232,19 @@
       if (max - min > 0.02) out.push({ eixo: eixo, a: min, b: max, base: base, linha: linha, valor: max - min, parcial: false });
     }
     if (d.tipo === "corte") {
+      /* COTA DE ARQUITETURA (27/10/2026): a cota do corte vai do PISO ACABADO MAIS BAIXO até o topo. O que está abaixo dele
+         (estaca, bloco, baldrame, sapata, tubo enterrado) não entra na cota: a cadeia de baixo fica logo abaixo do piso
+         (12 mm no papel) e a vertical termina no piso. Sem nível no desenho, vale a caixa inteira como antes. */
+      var yPiso = null;
+      (d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= cx.y1 + 0.01 && (yPiso == null || n.y > yPiso)) yPiso = n.y; });
+      var yb = yPiso != null ? yPiso : cx.y1;
       var xs = [cx.x0, cx.x1];
-      cadeia("h", agrupar(xs, 0.015), cx.y1, +1, 0, cx.x0, cx.x1);
+      cadeia("h", agrupar(xs, 0.015), yb, +1, 0, cx.x0, cx.x1, yPiso != null ? 12 : null);
       /* alturas: faces horizontais cortadas da faixa da direita (laje, piso, verga…) + os níveis */
-      var ys = facesCortadas(d, "y", "dir", 1.5);
-      (d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= cx.y1 + 0.01) ys.push(n.y); });
-      ys = agrupar(ys.concat([cx.y0, cx.y1]), 0.03);
-      cadeia("v", ys, cx.x1, +1, 0, cx.y0, cx.y1);
+      var ys = facesCortadas(d, "y", "dir", 1.5).filter(function (y) { return y <= yb + 0.01; });
+      (d.niveis || []).forEach(function (n) { if (n.y >= cx.y0 - 0.01 && n.y <= yb + 0.01) ys.push(n.y); });
+      ys = agrupar(ys.concat([cx.y0, yb]), 0.03);
+      cadeia("v", ys, cx.x1, +1, 0, cx.y0, yb);
     } else {
       /* fachada de cima e lateral esquerda: a parede de fora, vão a vão */
       /* mede o que foi CORTADO (as paredes), com a linha de cota por fora de tudo.
