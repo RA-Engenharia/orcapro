@@ -1335,6 +1335,12 @@
         c.tipoLaje = { id: String(campos.tipoLaje.id || ""), rotulo: String(campos.tipoLaje.rotulo || "") };
         c.altura = e; c.cy = r4(topo - e / 2); mudou = true;
       }
+      /* CONTORNO LIVRE (js/bimcontorno.js): editar o contorno de uma laje por contorno (vértice, aresta, inserir, tirar).
+         Só contorno reto e válido; laje com aresta em arco não entra (a edição do arco é outra ferramenta) */
+      if (campos.contorno && c.tipo === "laje" && arr(c.contorno).length && !(Curva() && Curva().temArco(c.contorno))) {
+        var vc = this.validarPoligono(campos.contorno);
+        if (vc.ok) { c.contorno = vc.pts.map(ptObj); this.recalcLaje(c); mudou = true; }
+      }
       if (campos.perfil && (c.tipo === "pilar" || c.tipo === "viga") && secao(campos.perfil).ok) { c.perfil = clone(campos.perfil); mudou = true; }
       if (campos.material && (c.tipo === "pilar" || c.tipo === "viga") && MATERIAIS[campos.material]) { c.material = campos.material; mudou = true; }
       if (campos.escada && c.tipo === "escada" && c.escada && c.escada.par) {

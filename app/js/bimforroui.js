@@ -75,12 +75,13 @@
       if (arqui && arqui._secNivel) secs.push(arqui._secNivel());
       secs.push({ nome: "Forro", params: [
         { id: "b2f:fo:tipoId", rotulo: "Tipo", tipo: "lista", valor: t.id, opcoes: M.TIPOS.map(function (x) { return { id: x.id, rotulo: x.rotulo }; }) },
-        { id: "b2f:fo:modo", rotulo: "Desenho", tipo: "lista", valor: cfg.modo, opcoes: [{ id: "automatico", rotulo: "Automático — clique dentro da sala" }, { id: "contorno", rotulo: "Contorno — clique os cantos" }] },
+        { id: "b2f:fo:modo", rotulo: "Desenho", tipo: "lista", valor: cfg.modo, opcoes: [{ id: "automatico", rotulo: "Automático — clique dentro da sala" }, { id: "contorno", rotulo: "Contorno — clique os cantos" }].concat(global.BimContornoUI ? global.BimContornoUI.OPC_MODO : []) },
+      ].concat(global.BimContornoUI ? global.BimContornoUI.paramsAlinhar("forro", cfg.modo) : []).concat([
         { id: "b2f:fo:deslocNivel", rotulo: "Altura do deslocamento do nível", unidade: "m", tipo: "numero", passo: "0.01", valor: cfg.deslocNivel },
         { id: "b2f:fo:inclinacao", rotulo: "Inclinação (0 = plano)", unidade: "graus", tipo: "numero", passo: "1", valor: cfg.inclinacao },
         { id: "b2f:fo:dirInclinacao", rotulo: "Direção da subida (0 = +X, 90 = +Z)", unidade: "graus", tipo: "numero", passo: "15", valor: cfg.dirInclinacao },
         ro("b2f:fo:esp", "Espessura (soma das camadas)", n2(t.espessura * 1000, 1) + " mm")
-      ] });
+      ]) });
       secs.push({ nome: "Camadas", params: t.camadas.map(function (k, i) { return ro("b2f:fo:cam" + i, k.rotulo + (k.material ? " · " + k.material : ""), n2(k.e * 1000, 1) + " mm"); }) });
       return { titulo: "Ferramenta: Forro", icone: "camadas", semEditarTipo: true, secoes: secs,
                onMudar: function (pid, valor) { return self.mudar(pid, valor, arqui); } };
@@ -88,8 +89,9 @@
     mudar: function (pid, valor, arqui) {
       var k = String(pid).replace(/^b2f:/, ""), M = F();
       if (k === "nivel" && arqui && arqui.mudarFerramenta) return arqui.mudarFerramenta("forro", pid, valor);
+      if (global.BimContornoUI && global.BimContornoUI.mudar("forro", k, valor)) return this.esquema(arqui);   /* CONTORNO LIVRE: Alinhar em */
       if (k === "fo:tipoId" && M && M.tipo(valor).id === String(valor)) cfg.tipoId = String(valor);
-      else if (k === "fo:modo") cfg.modo = valor === "contorno" ? "contorno" : "automatico";
+      else if (k === "fo:modo") cfg.modo = valor === "contorno" || valor === "paredes" || valor === "edificacao" ? valor : "automatico";
       else if (k === "fo:deslocNivel") { var dv = num(valor, cfg.deslocNivel); if (Math.abs(dv) <= 200) cfg.deslocNivel = dv; }
       else if (k === "fo:inclinacao") { var iv = num(valor, 0); cfg.inclinacao = Math.max(0, Math.min(60, iv)); }
       else if (k === "fo:dirInclinacao") cfg.dirInclinacao = num(valor, 0);

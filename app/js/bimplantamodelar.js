@@ -244,6 +244,7 @@
     /* as ferramentas que desenham por forma (as lineares e as de contorno); o forro automático é um clique */
     aceitaForma: function (sub) {
       if (!FORMA_SUBS[sub]) return false;
+      try { if (global.BimContornoUI && global.BimContornoUI.modoNovo(sub)) return false; } catch (e0) {}   /* CONTORNO LIVRE: escolher paredes / edificação não desenham forma */
       if (sub === "forro") { try { if (global.BimForroUI && global.BimForroUI.cfg().modo !== "contorno") return false; } catch (e) {} }
       return true;
     },

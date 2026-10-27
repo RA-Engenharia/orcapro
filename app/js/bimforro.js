@@ -216,9 +216,10 @@
     }
     return true;
   }
-  function regiaoFechada(paredes, ponto) {
-    var P0 = pt(ponto);
-    if (!fin(P0[0]) || !fin(P0[1])) return { ok: false, motivo: "Ponto inválido." };
+  /* O GRAFO DA UNIÃO DAS PAREDES (extraído de regiaoFechada para o js/bimcontorno.js usar o mesmo
+     caminho): devolve as laçadas (cada uma com sua área COM SINAL: positiva = anti-horária) e o teste
+     "este ponto está dentro de uma parede". Sem laçada devolve { ok:false, motivo }. */
+  function montarLacos(paredes) {
     var RS = arr(paredes).filter(function (c) { return c && num(c.comprimento, 0) > 0.01 && num(c.espessura, 0) > 0; });
     /* CURVA: a parede curva (e a reta com ponta em arco) entra pela pegada do js/bimcurva.js — cordas
        numa grade comum por círculo, cada corda com o arco dela (a área exata sai no calcular) */
@@ -237,7 +238,6 @@
       for (var j = 0; j < polis.length; j++) if (dentro(p, polis[j]) && !polis[j].some(function (q, k) { return distSeg(p, q, polis[j][(k + 1) % polis[j].length]) < 1e-9; })) return true;   /* CURVA */
       return false;
     }
-    if (naUniao(P0)) return { ok: false, motivo: "O ponto caiu em cima de uma parede: clique dentro da sala." };
     /* 1. arestas e cortes */
     var E = [];
     RS.forEach(function (R) { for (var i = 0; i < 4; i++) E.push([R[i], R[(i + 1) % 4]]); });
@@ -273,7 +273,7 @@
         vistos[ch] = 1; segs.push([p, q]);
       }
     });
-    if (!segs.length) return { ok: false, motivo: "O ponto não está numa região fechada por paredes." };
+    if (!segs.length) return { ok: false, motivo: "O ponto não está numa região fechada por paredes.", naUniao: naUniao };
     /* 3. grafo plano: vértices (ímã de 1 µm) e semi-arestas */
     var V = [], saem = [];
     function vert(p) {
@@ -299,6 +299,15 @@
       }
       if (pts.length >= 3) lacos.push({ pts: pts, area: areaSinal(pts) });
     });
+    return { ok: true, lacos: lacos, naUniao: naUniao, arcos: arcosF, temCurva: curvas.length > 0 };
+  }
+  function regiaoFechada(paredes, ponto) {
+    var P0 = pt(ponto);
+    if (!fin(P0[0]) || !fin(P0[1])) return { ok: false, motivo: "Ponto inválido." };
+    var ml = montarLacos(paredes);
+    if (ml.naUniao && ml.naUniao(P0)) return { ok: false, motivo: "O ponto caiu em cima de uma parede: clique dentro da sala." };
+    if (!ml.ok) return ml;
+    var lacos = ml.lacos, arcosF = ml.arcos, curvas = { length: ml.temCurva ? 1 : 0 };
     /* 4. o contorno: a menor laçada anti-horária que contém o ponto */
     var pos = lacos.filter(function (l) { return l.area > 1e-9; });
     var cand = pos.filter(function (l) { return dentro(P0, l.pts); }).sort(function (a, b) { return a.area - b.area; });
@@ -523,6 +532,7 @@
     tipo: function (id) { return tipoCatalogo(id) || normTipo(TIPOS[0]); },
     normTipo: normTipo,
     regiaoFechada: regiaoFechada,
+    montarLacos: montarLacos, retangulo: retangulo, semColineares: semColineares,
     paredesNaCota: paredesNaCota,
     calcular: calcular,
     cotaEm: cotaEm,

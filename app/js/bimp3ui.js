@@ -261,8 +261,9 @@
         titulo = "Ferramenta: Telhado";
         secs.push({ nome: "Telhado", params: [
           { id: "b2f:te:tipoId", rotulo: "Tipo", tipo: "lista", valor: t.id, opcoes: T.TIPOS.map(function (x) { return { id: x.id, rotulo: x.rotulo }; }) },
-          { id: "b2f:te:modo", rotulo: "Desenho", tipo: "lista", valor: c.modo, opcoes: [{ id: "retangulo", rotulo: "Retângulo — dois cantos" }, { id: "linha", rotulo: "Linha — início, fim e o lado do caimento" }, { id: "corte", rotulo: "Por corte — perfil, começo e fim" }, { id: "contorno", rotulo: "Perímetro — clique os cantos" }, { id: "extrusao", rotulo: "Extrusão — base e comprimento" }] },
+          { id: "b2f:te:modo", rotulo: "Desenho", tipo: "lista", valor: c.modo, opcoes: [{ id: "retangulo", rotulo: "Retângulo — dois cantos" }, { id: "linha", rotulo: "Linha — início, fim e o lado do caimento" }, { id: "corte", rotulo: "Por corte — perfil, começo e fim" }, { id: "contorno", rotulo: "Perímetro — clique os cantos" }, { id: "paredes", rotulo: "Escolher paredes — o contorno sai das faces" }, { id: "edificacao", rotulo: "Contorno da edificação — 1 clique" }, { id: "extrusao", rotulo: "Extrusão — base e comprimento" }] },
           { id: "b2f:te:aguas", rotulo: "Águas", tipo: "lista", valor: String(c.aguas), opcoes: [{ id: "4", rotulo: "Várias águas (4 águas / espigão)" }, { id: "2", rotulo: "2 águas" }, { id: "1", rotulo: "1 água" }] },
+        ].concat(global.BimContornoUI ? global.BimContornoUI.paramsAlinhar("telhado", c.modo) : []).concat([
           { id: "b2f:te:ref", rotulo: "A linha desenhada é (Linha)", tipo: "lista", valor: c.ref, opcoes: [{ id: "beiral", rotulo: "o beiral (pé da água)" }, { id: "cumeeira", rotulo: "a cumeeira (topo)" }] },
           ro("b2f:te:seguirEf", "Seguir inclinação de (1 água)", c.seguir && c.aguas === 1 ? c.seguir.rotulo + " — " + n2(c.seguir.inclinacao, 1) + " %" : "—"),
           { id: "b2f:te:modelo", rotulo: "Modelo (estrutura e telhas)", tipo: "lista", valor: c.modelo || "nenhum", opcoes: self.opcoesModelo() },
@@ -272,7 +273,7 @@
           { id: "b2f:te:beiral", rotulo: "Beiral (projeção na parede)", unidade: "m", tipo: "numero", passo: "0.05", valor: self.beiralEf(c) },
           { id: "b2f:te:deslocBase", rotulo: "Deslocamento da base do nível (vazio = pé-direito)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.deslocBase == null ? "" : c.deslocBase },
           ro("b2f:te:esp", "Espessura (soma das camadas)", n2(t.espessura * 1000, 0) + " mm")
-        ] });
+        ])});
       } else if (sub === "fundacao") {
         var f = cfg.fundacao, tf = f.tipoFundacao;
         titulo = "Ferramenta: Fundação";
@@ -306,6 +307,7 @@
     mudar: function (sub, pid, valor, arqui) {
       var k = String(pid).replace(/^b2f:/, ""), T = TM();
       if (k === "nivel" && arqui && arqui.mudarFerramenta) return arqui.mudarFerramenta(sub, pid, valor);
+      if (global.BimContornoUI && global.BimContornoUI.mudar(sub, k, valor)) return this.esquema(sub, arqui);   /* CONTORNO LIVRE: Alinhar em */
       var m = /^(te|fu|bo):(\w+)$/.exec(k); if (!m) return this.esquema(sub, arqui);
       var alvo = m[1] === "te" ? cfg.telhado : (m[1] === "fu" ? cfg.fundacao : cfg.borda), c = m[2];
       if (c === "tipoId") {
@@ -316,7 +318,7 @@
         }
       }
       else if (c === "modelo") { var ME = ESM(); alvo.modelo = valor === "auto" || valor === "nenhum" || (ME && ME.MODELOS && ME.MODELOS[valor]) ? String(valor) : alvo.modelo; }
-      else if (c === "modo") alvo.modo = valor === "contorno" || valor === "extrusao" || valor === "linha" || valor === "corte" ? valor : "retangulo";
+      else if (c === "modo") alvo.modo = valor === "contorno" || valor === "paredes" || valor === "edificacao" || valor === "extrusao" || valor === "linha" || valor === "corte" ? valor : "retangulo";
       else if (c === "ref") alvo.ref = valor === "cumeeira" ? "cumeeira" : "beiral";
       else if (c === "aguas") alvo.aguas = valor === "1" || valor === 1 ? 1 : (valor === "2" || valor === 2 ? 2 : 4);
       else if (c === "tipoFundacao") { if (ROT_FUND[valor]) alvo.tipoFundacao = valor; }
@@ -378,7 +380,15 @@
          clicado no 3D ou a da peça seguida; o deslocamento da base sai dela */
       if (fin(dados.inclinacao)) d.inclinacao = dados.inclinacao;
       if (fin(dados.cotaApoio)) d.deslocBase = Math.round((dados.cotaApoio - d.base) * 1e6) / 1e6;
-      if (dados.contorno) d.contorno = dados.contorno;
+      if (dados.contorno) {
+        d.contorno = dados.contorno;
+        /* CONTORNO LIVRE: o atalho "uma água / duas águas / várias águas" vale também para o contorno qualquer
+           (uma água: só a aresta do beiral define a inclinação; as outras viram oitão). O telhado de retângulo e
+           as outras vias seguem como antes. */
+        var BC = global.BimContorno;
+        if (BC && dados.aguasContorno !== false && (c.aguas === 1 || c.aguas === 2) && dados.contorno.length >= 3 && !dados.contorno.some(function (q) { return q && (q.d === false || q.i != null); }))
+          d.contorno = BC.aguasContorno(dados.contorno, c.aguas === 1 ? "uma" : "duas", dados.arestaSobe);
+      }
       else if (dados.p1 && dados.p2 && !dados.p3) {
         var x0 = Math.min(dados.p1.x, dados.p2.x), x1 = Math.max(dados.p1.x, dados.p2.x), z0 = Math.min(dados.p1.z, dados.p2.z), z1 = Math.max(dados.p1.z, dados.p2.z);
         if (!(x1 - x0 > 0.3 && z1 - z0 > 0.3)) return { ok: false, motivo: "Retângulo pequeno demais para o telhado." };
@@ -776,6 +786,13 @@
           return out;
         },
         estado: function () { return { pts: pts.map(function (q) { return { x: q.x, y: q.y, z: q.z }; }), pegando: segPick, segAuto: segAuto, cursor: cur, previa: grp.children.length }; },
+        /* CONTORNO LIVRE (js/bimcontornoui.js): o contorno já achado (paredes / edificação) vira o telhado pelo mesmo caminho do "Perímetro" */
+        criarPorContorno: function (C, o) {
+          if (!edit || !edit.on || edit.sub !== "telhado") return false;
+          cancelar();
+          var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { return { x: q.x, z: q.z }; }), arestaSobe: o && o.arestaSobe }, nivel(), edit.base);
+          return r.ok ? feito(r) && true : (api.hint(r.motivo), false);
+        },
         fechar: function () {
           var sub = edit && edit.sub; if (!SUBS[sub] || pts.length < 3) return false;
           var C = pts.map(function (q) { return { x: q.x, z: q.z }; });

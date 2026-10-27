@@ -10605,7 +10605,8 @@ unir: 'Unir: clique o volume ALVO.', subtrair: 'Subtrair: clique o volume que va
 empurrar: 'Empurrar/puxar: clique numa FACE de um volume criado aqui.',
 volprops: 'Clique num volume para ele ficar com a categoria e o material do painel.',
 ambiente: 'Aplicar por ambiente: clique DENTRO de um cômodo fechado por paredes — o ambiente nasce (ou é escolhido) e os acabamentos ficam em Propriedades.' };
-var hb = (edit.sub && edit.b2 && S._b2Hint) ? S._b2Hint(edit.sub) : '';
+var hb = (edit.sub && S._ctr) ? S._ctr.dica(edit.sub) : '';
+if (!hb) hb = (edit.sub && edit.b2 && S._b2Hint) ? S._b2Hint(edit.sub) : '';
 if (!hb && edit.sub && S._p2d) hb = S._p2d.dica(edit.sub);
 if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);
 if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);
@@ -10641,6 +10642,7 @@ var sub = edit.sub;
 if (p && !(e && e._planta) && window.BimPlantaModelar && BimPlantaModelar.cliqueForma && BimPlantaModelar.cliqueForma(sub, { x: p.x, z: p.z }, e)) return;
 if (S._p2d && S._p2d.clique(sub, e, hit, p)) return;
 if (S._p11 && S._p11.clique(sub, e, hit, p)) return;
+if (S._ctr && S._ctr.clique(sub, e, hit, p)) return;
 if (S._p3 && S._p3.clique(sub, e, hit, p)) return;
 if (S._emb && S._emb.clique(sub, e, hit, p)) return;
 if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;
@@ -11262,6 +11264,40 @@ THREE: THREE, S: S, edit: edit, scene: scene, op: editOp, hint: function (t) { S
 planoPonto: editPontoPlano, telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; },
 marca: pontoMarca, limparMarca: limparMarca, reescalar: rescaleObj,
 alvo: function () { var h = _ultimosHits[0]; return h && h.object && h.object.userData.mid === 'edit' ? h.object.userData.expressID : null; }
+}) : null;
+S._ctr = (window.BimContornoUI && BimContornoUI.montar3d) ? BimContornoUI.montar3d({
+THREE: THREE, S: S, edit: edit, scene: scene, op: editOp, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+host: function () { return S.host || host; },
+telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; },
+planoEm: function (cx, cy, y) {
+var rc = canvasEl.getBoundingClientRect();
+mouse.x = ((cx - rc.left) / rc.width) * 2 - 1; mouse.y = -((cy - rc.top) / rc.height) * 2 + 1;
+ray.setFromCamera(mouse, camera);
+var alvo = new THREE.Vector3();
+return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), alvo) ? { x: alvo.x, z: alvo.z } : null;
+},
+alvo: function () { var h = _ultimosHits[0]; return h && h.object && h.object.userData.mid === 'edit' ? h.object.userData.expressID : null; },
+alvos: function () { return _ultimosHits.filter(function (h) { return h && h.object && h.object.userData.mid === 'edit'; }).map(function (h) { return h.object.userData.expressID; }); },
+selecao: function () { return S._selAtual ? S._selAtual() : []; },
+nivel: function () { return edit.b2 && edit.b2.nivel ? edit.b2.nivel : null; },
+base: function () { return edit.base; },
+modoDe: function (sub) {
+if (sub === 'laje') return edit.b2 ? edit.b2.lajeModo : '';
+if (sub === 'forro') return window.BimForroUI ? BimForroUI.cfg().modo : '';
+if (sub === 'telhado') return window.BimP3UI ? BimP3UI.cfg('telhado').modo : '';
+return '';
+},
+aguasTelhado: function () { return window.BimP3UI ? BimP3UI.cfg('telhado').aguas : 4; },
+criar: function (sub, contornos, extra) {
+var feitos = 0;
+if (sub === 'telhado') { contornos.forEach(function (C) { if (S._p3 && S._p3.criarPorContorno && S._p3.criarPorContorno(C, extra)) feitos++; }); return feitos; }
+contornos.forEach(function (C) {
+edit.b2pts = C.map(function (q) { return new THREE.Vector3(q.x, edit.base, q.z); });
+if (S._b2FecharExt && S._b2FecharExt()) feitos++;
+});
+edit.b2pts = [];
+return feitos;
+}
 }) : null;
 S._mat = (window.BimMateriaisUI && BimMateriaisUI.montar3d) ? BimMateriaisUI.montar3d({ THREE: THREE, S: S, edit: edit }) : null;
 S._emb = (window.BimEmBreveUI && BimEmBreveUI.montar3d) ? BimEmBreveUI.montar3d({
@@ -14371,6 +14407,9 @@ selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y);
 _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); },
 selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
 selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
+contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
+contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
+contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
 opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
 uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
 uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },

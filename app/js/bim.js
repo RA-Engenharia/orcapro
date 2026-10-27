@@ -13938,7 +13938,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
               volprops: 'Clique num volume para ele ficar com a categoria e o material do painel.',
               /* P2-C */
               ambiente: 'Aplicar por ambiente: clique DENTRO de um cômodo fechado por paredes — o ambiente nasce (ou é escolhido) e os acabamentos ficam em Propriedades.' };
-    var hb = (edit.sub && edit.b2 && S._b2Hint) ? S._b2Hint(edit.sub) : '';   /* B2: a dica da ferramenta do modelador */
+    var hb = (edit.sub && S._ctr) ? S._ctr.dica(edit.sub) : '';   /* CONTORNO LIVRE: a dica dos modos novos */
+    if (!hb) hb = (edit.sub && edit.b2 && S._b2Hint) ? S._b2Hint(edit.sub) : '';   /* B2: a dica da ferramenta do modelador */
     if (!hb && edit.sub && S._p2d) hb = S._p2d.dica(edit.sub);   /* P2-D: Ambiente / Separador */
     if (!hb && edit.sub && S._p11) hb = S._p11.dica(edit.sub);   /* P11: terreno */
     if (!hb && edit.sub && S._p3) hb = S._p3.dica(edit.sub);   /* P3: telhado, bordas, unir, fundação */
@@ -13989,6 +13990,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (p && !(e && e._planta) && window.BimPlantaModelar && BimPlantaModelar.cliqueForma && BimPlantaModelar.cliqueForma(sub, { x: p.x, z: p.z }, e)) return;
     if (S._p2d && S._p2d.clique(sub, e, hit, p)) return;   /* P2-D: Ambiente e Separador de ambiente (js/bimambienteui.js) */
     if (S._p11 && S._p11.clique(sub, e, hit, p)) return;   /* P11: as ferramentas do terreno (js/bimterrenoui.js) */
+    if (S._ctr && S._ctr.clique(sub, e, hit, p)) return;   /* CONTORNO LIVRE: escolher paredes / contorno da edificação (js/bimcontornoui.js) */
     if (S._p3 && S._p3.clique(sub, e, hit, p)) return;   /* P3: telhado, bordas, unir telhado e fundação (js/bimp3ui.js) */
     if (S._emb && S._emb.clique(sub, e, hit, p)) return;   /* EMBREVE: plano de trabalho por face, por peça e por linha (js/bimembreveui.js) */
     if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;   /* B2: as ferramentas do modelador (prévia) */
@@ -14729,6 +14731,44 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     planoPonto: editPontoPlano, telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; },
     marca: pontoMarca, limparMarca: limparMarca, reescalar: rescaleObj,
     alvo: function () { var h = _ultimosHits[0]; return h && h.object && h.object.userData.mid === 'edit' ? h.object.userData.expressID : null; }
+  }) : null;
+  /* CONTORNO LIVRE — GANCHO (27/10/2026, js/bimcontornoui.js + js/bimcontorno.js): laje/piso, forro e telhado por
+     "Escolher paredes" e "Contorno da edificação" (1 clique) e o "Editar contorno" de uma peça pronta (alças).
+     Sem a prévia do modelador S._ctr é null e o editor fica como estava. */
+  S._ctr = (window.BimContornoUI && BimContornoUI.montar3d) ? BimContornoUI.montar3d({
+    THREE: THREE, S: S, edit: edit, scene: scene, op: editOp, hint: function (t) { S._hint(t); }, fechou: marcarFechamento,
+    host: function () { return S.host || host; },
+    telaDe: function (x, y, z) { return S._telaDe ? S._telaDe(x, y, z) : null; },
+    planoEm: function (cx, cy, y) {
+      var rc = canvasEl.getBoundingClientRect();
+      mouse.x = ((cx - rc.left) / rc.width) * 2 - 1; mouse.y = -((cy - rc.top) / rc.height) * 2 + 1;
+      ray.setFromCamera(mouse, camera);
+      var alvo = new THREE.Vector3();
+      return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -y), alvo) ? { x: alvo.x, z: alvo.z } : null;
+    },
+    alvo: function () { var h = _ultimosHits[0]; return h && h.object && h.object.userData.mid === 'edit' ? h.object.userData.expressID : null; },
+    /* todos os objetos do editor que o raio do clique atravessou (o telhado por cima da parede não esconde a parede) */
+    alvos: function () { return _ultimosHits.filter(function (h) { return h && h.object && h.object.userData.mid === 'edit'; }).map(function (h) { return h.object.userData.expressID; }); },
+    selecao: function () { return S._selAtual ? S._selAtual() : []; },
+    nivel: function () { return edit.b2 && edit.b2.nivel ? edit.b2.nivel : null; },
+    base: function () { return edit.base; },
+    modoDe: function (sub) {
+      if (sub === 'laje') return edit.b2 ? edit.b2.lajeModo : '';
+      if (sub === 'forro') return window.BimForroUI ? BimForroUI.cfg().modo : '';
+      if (sub === 'telhado') return window.BimP3UI ? BimP3UI.cfg('telhado').modo : '';
+      return '';
+    },
+    aguasTelhado: function () { return window.BimP3UI ? BimP3UI.cfg('telhado').aguas : 4; },
+    criar: function (sub, contornos, extra) {
+      var feitos = 0;
+      if (sub === 'telhado') { contornos.forEach(function (C) { if (S._p3 && S._p3.criarPorContorno && S._p3.criarPorContorno(C, extra)) feitos++; }); return feitos; }
+      contornos.forEach(function (C) {
+        edit.b2pts = C.map(function (q) { return new THREE.Vector3(q.x, edit.base, q.z); });
+        if (S._b2FecharExt && S._b2FecharExt()) feitos++;
+      });
+      edit.b2pts = [];
+      return feitos;
+    }
   }) : null;
   /* MATERIAIS — GANCHO (09/10/2026, js/bimmateriaisui.js): a peça com material do projeto
      ganha a cor e a transparência dele no 3D (material trocado por cópia); o THREE daqui
@@ -18865,6 +18905,10 @@ window.BIM = {
      (alças, Delete, arrastar); a do IFC, para o realce de sempre. Propriedades mostram a primeira. */
   selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
+  /* CONTORNO LIVRE: o botão "Editar contorno" (js/bimcontornoui.js) — a peça selecionada ganha alças nos vértices e nas arestas */
+  contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
+  contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
+  contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
   /* #85 (26/10/2026): a op do Modificar › Apagar para a peça do IFC importado (oculta + marcada como removida); o arquivo não muda */
   opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
   /* SELECIONAR TODAS AS INSTÂNCIAS (js/bimselinst.js): a peça sob o ponto da tela, o visível na vista 3D e o ocultar temporário */

@@ -1162,9 +1162,10 @@
         if (o.op === "furo") return o.id != null && Array.isArray(o.furo) && o.furo.length >= 3 && o.furo.every(function (p) { return !!p && fin(p.x) && fin(p.z); });
         if (o.op === "ajustar") return o.id != null && !!o.campos && typeof o.campos === "object" && !Array.isArray(o.campos) && Object.keys(o.campos).length > 0 &&
           Object.keys(o.campos).every(function (k) { return ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes",
-            "linhaLoc", "virar", "uniao", "estrut", "rampa"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
+            "linhaLoc", "virar", "uniao", "estrut", "rampa", "contorno"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
           /* P1-B: restrições por nível — um objeto (nível = texto/null, medida = número/null) */
-          (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes)));
+          (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes))) &&
+          (o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z); })));   /* CONTORNO LIVRE: laje */
         if (o.op === "ajustarTipo" || o.op === "marcar") return BimEdit.opParamValida(o);   /* P1-A */
         /* P4: unir/desunir/alternar ordem de união de geometria — duas peças diferentes (a forma fica aqui: o sanear não perde a op sem o js/bimarq.js) */
         if (o.op === "unirGeometria" || o.op === "desunirGeometria" || o.op === "alternarUniao") return ["a", "b"].every(function (k) { return (typeof o[k] === "string" && o[k].length > 0) || fin(o[k]); }) && String(o.a) !== String(o.b);

@@ -308,6 +308,7 @@
       ], "alvenaria");
       ["eixo", "furo-laje", "escada", "guarda-corpo", "viga"].forEach(function (k) { if (R._EXCLUSIVOS.indexOf(k) < 0) R._EXCLUSIVOS.push(k); });
       if (global.BimForroUI) global.BimForroUI.registrar(reg, self);   /* P2-B: comando Forro (js/bimforroui.js) */
+      if (global.BimContornoUI) global.BimContornoUI.registrar(reg, self);   /* CONTORNO LIVRE: Editar contorno (js/bimcontornoui.js) */
       if (global.BimTerrenoUI) global.BimTerrenoUI.registrar(reg, self);   /* P11: aba Massa e terreno (js/bimterrenoui.js) */
       if (global.BimEstrutUI) global.BimEstrutUI.registrar(reg, self);   /* P9 — GANCHO: Rampa, Escada em U, Treliça (js/bimestrutui.js) */
       if (global.BimP3UI) global.BimP3UI.registrar(reg, self);   /* P3: telhado, bordas, unir telhado e fundação (js/bimp3ui.js) */
@@ -414,7 +415,8 @@
         if (tp) secs.push({ nome: "Camadas (de fora para dentro)", params: tp.camadas.map(function (c, i) { return ro("b2f:cam" + i, c.rotulo + " · " + c.face, n2(c.e * 1000, 0) + " mm"); }) });
       } else if (sub === "laje" || sub === "furo") {
         if (sub === "laje") ps.push({ id: "b2f:tipoLaje", rotulo: "Tipo de laje", tipo: "lista", valor: cfg.tipoLajeId, opcoes: Ar.TIPOS_LAJE.map(function (t) { return { id: t.id, rotulo: t.rotulo }; }) });
-        ps.push({ id: "b2f:lajeModo", rotulo: "Desenho", tipo: "lista", valor: cfg.lajeModo, opcoes: [{ id: "contorno", rotulo: "Contorno (clique os cantos)" }, { id: "retangulo", rotulo: "Retângulo (dois cantos)" }] });
+        ps.push({ id: "b2f:lajeModo", rotulo: "Desenho", tipo: "lista", valor: cfg.lajeModo, opcoes: [{ id: "contorno", rotulo: "Contorno (clique os cantos)" }, { id: "retangulo", rotulo: "Retângulo (dois cantos)" }].concat(sub === "laje" && global.BimContornoUI ? global.BimContornoUI.OPC_MODO : []) });
+        if (sub === "laje" && global.BimContornoUI) ps = ps.concat(global.BimContornoUI.paramsAlinhar("laje", cfg.lajeModo));   /* CONTORNO LIVRE: Alinhar em */
         secs.push({ nome: sub === "laje" ? "Laje" : "Furo", params: ps });
       } else if (sub === "pilar") {
         ps = this._paramsPerfil("b2f:pp:", cfg.perfilPilar, cfg.materialPilar);
@@ -478,7 +480,8 @@
       else if (k === "anexarTopo" || k === "unir") cfg[k] = !!valor;
       else if (k === "juntaCanto") cfg.juntaCanto = valor === "esquadria" ? "esquadria" : "topo";
       else if (k === "tipoLaje") cfg.tipoLajeId = valor;
-      else if (k === "lajeModo") cfg.lajeModo = valor === "retangulo" ? "retangulo" : "contorno";
+      else if (k === "lajeModo") cfg.lajeModo = valor === "retangulo" || valor === "paredes" || valor === "edificacao" ? valor : "contorno";
+      else if (global.BimContornoUI && global.BimContornoUI.mudar(sub, k, valor)) { /* CONTORNO LIVRE: Alinhar em */ }
       else if (k === "giroPilar") cfg.giroPilar = isFinite(num) ? num : 0;
       else if (k.indexOf("pp:") === 0 || k.indexOf("pv:") === 0) {
         var pil = k.indexOf("pp:") === 0, r = this._mudarPerfil(pil ? cfg.perfilPilar : cfg.perfilViga, pil ? cfg.materialPilar : cfg.materialViga, k.slice(3), valor);
