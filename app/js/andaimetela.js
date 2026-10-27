@@ -385,8 +385,20 @@
   }
   /* o cabeçalho dos documentos: o que a pessoa já preencheu; o resto vira placeholder vermelho nos documentos */
   function cabPadrao(cab) {
-    var c = clone(cab || {}); ["obra", "local", "andaime", "revisao", "data", "responsavel"].forEach(function (k) { if (c[k] == null) c[k] = ""; });
+    var c = clone(cab || {}); ["obra", "local", "andaime", "revisao", "data", "responsavel", "empresa", "registro", "art", "tituloProfissional", "proprietario"].forEach(function (k) { if (c[k] == null) c[k] = ""; });
     if (c.reserva == null || c.reserva === "") c.reserva = 0; return c;
+  }
+  /* O CABEÇALHO que vale AGORA (carimbo das pranchas, memorial, cartão). Campo vazio é preenchido, nesta ordem:
+     1) registro/ART da APROVAÇÃO do projeto (ap.projeto, NR-18 18.12.2); 2) o cadastro da empresa do usuário (Empresa.dados: nome, responsável,
+     título, CREA) — a mesma fonte das pranchas da Metálica. Nunca inventa: sem fonte, fica vazio (o carimbo mostra o campo em branco).
+     Por quê: o RT informava CREA/ART só na aprovação e o carimbo das 5 folhas saía sem eles. */
+  function cabPreenchido(cab, ap, empresa) {
+    var c = cabPadrao(cab), pj = (ap && ap.projeto) || {}, e = empresa || {};
+    function vazio(k) { return String(c[k] == null ? "" : c[k]).trim() === ""; }
+    function pega(k, v) { if (vazio(k) && v != null && String(v).trim() !== "") c[k] = String(v).trim(); }
+    pega("registro", pj.registro); pega("art", pj.art);
+    pega("empresa", e.nome); pega("responsavel", e.responsavel); pega("tituloProfissional", e.titulo); pega("registro", e.crea);
+    return c;
   }
   /* o estado de cada item do checklist «antes»: {id, resposta, obs} cruzando a lista do AndaimeDocs com as respostas gravadas */
   function checklistComRespostas(modelo, par, ap) {
@@ -408,7 +420,7 @@
     resultado: resultado, recalcular: recalcular, calcDe: calcDe, mudancasLista: mudancasLista, desfazerMudanca: desfazerMudanca,
     pendenciasRT: pendenciasRT, aplicarPendencia: aplicarPendencia, v0DoLocal: v0DoLocal, aplicarLocalVento: aplicarLocalVento, reagirAoDado: reagirAoDado, verificacoes: verificacoes, problemas: problemas, aplicarCorrecao: aplicarCorrecao,
     pintura: pintura, primitivas: primitivas, caixaDe: caixaDe,
-    cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, checklistComRespostas: checklistComRespostas
+    cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas
   };
   global.AndaimeTela = AndaimeTela;
   if (typeof module !== "undefined" && module.exports) module.exports = AndaimeTela;

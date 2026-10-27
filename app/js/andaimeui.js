@@ -297,6 +297,20 @@
   function msgHtml() { if (!P || !P.msg) return ""; return '<div class="andui-msg ' + (P.msg.erro ? "erro" : "ok") + '" role="' + (P.msg.erro ? "alert" : "status") + '" data-andui="msg">' + esc(P.msg.t) + "</div>"; }
   function dizer(t, erro) { if (P) P.msg = { t: t, erro: !!erro }; if (erro) toast(t, "aviso", 9000); }
 
+  /* ---------------------------------------------------------------- responsável técnico e obra */
+  function empresaApp() { var d = {}; try { if (global.Empresa && global.Empresa.dados) d = global.Empresa.dados() || {}; } catch (e) {} return d; }
+  /* o cabeçalho que vale agora: o que foi digitado + (se vazio) a aprovação + o cadastro da empresa — a mesma conta para a tela, as pranchas e o memorial */
+  function cabDe(D) { return T().cabPreenchido(D.tela.cab, D.ap, empresaApp()); }
+  var CAMPOS_RT = [["empresa", "Empresa"], ["responsavel", "Responsável técnico (nome)"], ["tituloProfissional", "Título profissional (Eng. Civil / Eng. Mecânico…)"], ["registro", "Registro CREA/CAU"], ["art", "ART nº"],
+    ["proprietario", "Contratante / Proprietário"], ["obra", "Obra"], ["local", "Local"], ["andaime", "Código do andaime"], ["revisao", "Revisão"], ["data", "Data"]];
+  function camposCabHtml(cab) { return CAMPOS_RT.map(function (x) { return '<label>' + x[1] + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off"></label>'; }).join(""); }
+  /* o MESMO bloco em Documentos e Resumo (e na Locação): grava em D.tela.cab pelo handler de data-andui-cab */
+  function blocoRT(D) {
+    var cab = cabDe(D);
+    return '<div data-andui="bloco-rt"><h3>Responsável técnico e obra</h3><p class="andui-mut">Estes dados vão para o carimbo das pranchas e para o memorial. Campo vazio usa a aprovação do projeto e o cadastro da empresa; o que não existe fica em branco, nunca inventado.</p>' +
+      '<div class="andui-form" data-andui="cab-rt">' + camposCabHtml(cab) + "</div></div>";
+  }
+
   /* ---------------------------------------------------------------- abas */
   function abaResumo(D, res) {
     var M = res.modelo.medidas, c = res.calc, ver = T().verificacoes(c), nF = ver.filter(function (v) { return v.estado === "falha"; }).length, nA = ver.filter(function (v) { return v.estado === "atencao"; }).length, nN = ver.filter(function (v) { return v.estado === "nao_verificado"; }).length;
@@ -318,6 +332,7 @@
         return '<div class="andui-mud' + (m.desfeita ? " desfeita" : "") + '" data-andui-mud="' + esc(m.id) + '"><div><b>' + esc(m.texto) + "</b><small>" + esc(m.motivo) + "</small></div>" +
           (m.desfeita ? '<span class="andui-mut">desfeita</span>' : '<button type="button" class="andui-bt" data-andui-acao="desfazer" data-k="' + esc(m.id) + '">Desfazer</button>') + "</div>";
       }).join("");
+    h += blocoRT(D);
     /* pendências do RT */
     if (D.tela.fonteV0) h += '<p class="andui-mut" data-andui="fonte-v0">V0 — fonte: ' + esc(D.tela.fonteV0) + ".</p>";
     h += '<div class="andui-rt" data-andui="pendencias-rt"><h3>Pendências do responsável técnico</h3><p class="andui-mut">O sistema não tem estes dados e não os inventa. Sem eles a verificação correspondente fica NÃO VERIFICADA (cinza) — nunca verde.</p>';
@@ -363,8 +378,8 @@
   }
 
   function abaLocacao(D, res) {
-    var cab = T().cabPadrao(D.tela.cab), lista = AD().listaLocacao(res.modelo, cab), h = "";
-    h += '<div class="andui-form" data-andui="cab">' + [["obra", "Obra"], ["local", "Local"], ["andaime", "Nome / código do andaime"], ["revisao", "Revisão"], ["data", "Data"], ["responsavel", "Responsável técnico"]].map(function (x) { return '<label>' + x[1] + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off"></label>'; }).join("") +
+    var cab = cabDe(D), lista = AD().listaLocacao(res.modelo, cab), h = "";
+    h += '<div class="andui-form" data-andui="cab">' + camposCabHtml(cab) +
       '<label>Reserva (% a mais)<input data-andui-cab="reserva" inputmode="decimal" value="' + esc(cab.reserva) + '"></label></div>';
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="xlsx">Baixar a lista (.xlsx)</button></p>';
     if (!lista.ok) return h + "<p>" + esc(lista.motivo) + "</p>";
@@ -426,7 +441,7 @@
 
   function abaDocumentos(D, res) {
     var P1 = global.AndaimePranchas && typeof global.AndaimePranchas.gerar === "function", M1 = global.AndaimeMemorial && typeof global.AndaimeMemorial.gerar === "function";
-    var h = '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>';
+    var h = blocoRT(D) + '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>';
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-pranchas"' + (P1 ? "" : ' disabled aria-disabled="true"') + ">Gerar pranchas executivas</button> " + (P1 ? "" : '<span class="andui-mut" data-andui="pranchas-prep">em preparação</span>') + "</p>";
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-memorial"' + (M1 ? "" : ' disabled aria-disabled="true"') + ">Memorial</button> " + (M1 ? "" : '<span class="andui-mut" data-andui="memorial-prep">em preparação</span>') + "</p>";
     h += '<p><button type="button" class="andui-bt" data-andui-acao="xlsx">Lista de locação (.xlsx)</button> <button type="button" class="andui-bt" data-andui-acao="imprimir-cartao">Cartão do andaime (A5)</button></p>';
@@ -520,8 +535,17 @@
     } else if (t.getAttribute && t.getAttribute("data-andui-f") === "quem") { P.quem = String(t.value).trim(); }
   }
 
+  /* o que as pranchas e o memorial recebem (um só lugar: carimbo e memorial nunca divergem) */
+  function opcoesDocumento(cab) {
+    return { obra: cab.obra, local: cab.local, codigo: cab.andaime || "ANDAIME", revisao: cab.revisao, data: cab.data, responsavel: cab.responsavel, registro: cab.registro, art: cab.art,
+             tituloProfissional: cab.tituloProfissional, empresa: cab.empresa, proprietario: cab.proprietario, contratante: cab.proprietario };
+  }
+  function avisoRT(cab) { return (!String(cab.responsavel || "").trim() || !String(cab.registro || "").trim()) ? "Responsável técnico / CREA em branco no carimbo — preencha em Documentos" : ""; }
+
   /* ================================================================ A API */
   var AndaimeUI = {
+    /* ganchos de teste: o MESMO bloco/opcoes que as abas e os botoes usam (testados sem DOM) */
+    _blocoRT: blocoRT, _abaLocacao: abaLocacao, _opcoesDocumento: opcoesDocumento, _avisoRT: avisoRT, _cabDe: cabDe,
     MODO: MODO, COMANDOS: COMANDOS, ultimaPrevia: null,
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
     pronto: function () { return !!(MP() && PU() && AN() && AN().registrado && AN().registrado() && T() && previa()); },
@@ -740,7 +764,7 @@
     },
     imprimirCartao: function () {
       var D = lerDoModelo(); if (!D || !P || !P.res || !P.res.ok) return false;
-      var cab = T().cabPadrao(D.tela.cab), html = T().cartaoHtmlDe(D.ap, P.res.modelo, D.par, cab, { qServ: P.res.calc && P.res.calc.parametros ? P.res.calc.parametros.qServ : null });
+      var cab = cabDe(D), html = T().cartaoHtmlDe(D.ap, P.res.modelo, D.par, cab, { qServ: P.res.calc && P.res.calc.parametros ? P.res.calc.parametros.qServ : null });
       this.ultimoCartao = html; return this.imprimir(html);
     },
     /* E10: o JOGO EXECUTIVO (5 folhas A1) do andaime selecionado/aberto: monta o modelo do painel, gera as folhas, abre a impressão (PDF) e baixa o DXF com o carimbo RA */
@@ -749,8 +773,8 @@
       if (!D) { var u0 = PU(), alvo0 = u0 && u0.prontaSelecionada ? u0.prontaSelecionada() : null; if (alvo0 && alvo0.tipo === "andaime" && prontaDe(alvo0.id)) { this.abrirPainel(prontaDe(alvo0.id).id); D = lerDoModelo(); } }
       if (!D || !P || !P.res || !P.res.ok) { toast("Selecione um andaime (ou abra o painel dele) para gerar as pranchas executivas.", "aviso", 6000); return false; }
       var AP0 = global.AndaimePranchas; if (!AP0 || typeof AP0.gerar !== "function") { dizer("Pranchas: o motor de pranchas do andaime não carregou.", true); renderizar(); return false; }
-      var cab = T().cabPadrao(D.tela.cab), r = null;
-      try { r = AP0.gerar(P.res.modelo, P.res.calc, {}, { jogo: "completo", obra: cab.obra, local: cab.local, codigo: cab.andaime || "ANDAIME", revisao: cab.revisao, data: cab.data, responsavel: cab.responsavel, registro: cab.registro, art: cab.art, empresa: cab.empresa }); }
+      var cab = cabDe(D), r = null, op0 = opcoesDocumento(cab); op0.jogo = "completo";  /* jogo: "completo" */
+      try { r = AP0.gerar(P.res.modelo, P.res.calc, {}, op0); }
       catch (e) { dizer("Pranchas executivas: " + (e && e.message ? e.message : e), true); renderizar(); return false; }
       if (!r || !r.ok) { dizer("Pranchas executivas: " + ((r && r.avisos && r.avisos[0]) || "não foi possível gerar."), true); renderizar(); return false; }
       this.ultimoJogo = r;
@@ -762,7 +786,8 @@
         if (PX && Z && Z.zipEscrever && d) { var arq = PX.arquivos(r); if (arq && arq.nomes && arq.nomes.length) { var blob = new Blob([Z.zipEscrever(arq.arquivos)], { type: "application/zip" }), u = URL.createObjectURL(blob), a = d.createElement("a"); a.href = u; a.download = (cab.andaime || "andaime") + "-pranchas-dxf.zip"; d.body.appendChild(a); a.click(); setTimeout(function () { try { a.remove(); URL.revokeObjectURL(u); } catch (e3) {} }, 3000); dxfOk = true; } }
       } catch (eD) { dizer("DXF das pranchas: " + (eD && eD.message ? eD.message : eD), true); }
       this.imprimir(html);
-      dizer(r.folhas.length + " pranchas A1 geradas (" + (r.liberado ? "projeto liberável" : r.faixa) + "). PDF: na janela de impressão escolha «Salvar como PDF»." + (dxfOk ? " O DXF (carimbo RA, layers do Padrão RA) foi baixado em .zip." : " (DXF indisponível neste ambiente.)"), false); renderizar();
+      var avRT = avisoRT(cab); if (avRT) toast(avRT, "aviso", 9000);
+      dizer((avRT ? avRT + ". " : "") + r.folhas.length + " pranchas A1 geradas (" + (r.liberado ? "projeto liberável" : r.faixa) + "). PDF: na janela de impressão escolha «Salvar como PDF»." + (dxfOk ? " O DXF (carimbo RA, layers do Padrão RA) foi baixado em .zip." : " (DXF indisponível neste ambiente.)"), false); renderizar();
       return r;
     },
     documento: function (qual) {
@@ -770,8 +795,14 @@
       if (qual === "pranchas") return this.pranchasExecutivas();
       var M = qual === "pranchas" ? global.AndaimePranchas : global.AndaimeMemorial;
       if (!M || typeof M.gerar !== "function") { dizer((qual === "pranchas" ? "Pranchas" : "Memorial") + ": em preparação.", true); renderizar(); return false; }
-      var ctx = { modelo: P.res.modelo, par: D.alvo.info.par, calc: P.res.calc, cab: T().cabPadrao(D.tela.cab), aprovacao: D.ap, mudancas: arr(D.tela.mudancas), pendenciasRT: T().pendenciasRT(D.par) };
-      try { var r = M.gerar(ctx); dizer((qual === "pranchas" ? "Pranchas" : "Memorial") + " gerado.", false); renderizar(); return r || true; }
+      var cabM = cabDe(D), opM = opcoesDocumento(cabM); opM.cab = cabM;
+      try {
+        var r = M.gerar(P.res.modelo, P.res.calc, {}, opM);
+        if (!r || !r.ok) { dizer("Memorial: " + ((r && r.motivo) || "não foi possível gerar."), true); renderizar(); return false; }
+        this.ultimoMemorialHtml = r.html; this.imprimir(r.html);
+        var avM = avisoRT(cabM); if (avM) toast(avM, "aviso", 9000);
+        dizer((avM ? avM + ". " : "") + "Memorial gerado. PDF: na janela de impressão escolha «Salvar como PDF».", false); renderizar(); return r;
+      }
       catch (e) { dizer((qual === "pranchas" ? "Pranchas" : "Memorial") + ": " + (e && e.message ? e.message : e), true); renderizar(); return false; }
     }
   };
