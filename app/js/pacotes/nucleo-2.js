@@ -9629,6 +9629,7 @@ html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;p
 '<div id="bim-famop" style="display:none"><div id="bim-famop-corpo"></div></div>' +
 '<div id="bim-orcmod" style="display:none"><div id="bim-orcmod-corpo"></div></div>' +
 '<div id="bim-inst" style="display:none"><div id="bim-inst-corpo"></div></div>' +
+'<div id="bim-componentes" style="display:none"><div id="bim-componentes-corpo"></div></div>' +
 '<div id="bim-render" style="display:none"><div id="bim-render-corpo"></div></div>' +
 '<div id="bim-materiais" style="display:none"><div id="bim-materiais-corpo"></div></div>' +
 '<div id="bim-familias" style="display:none">' +
@@ -9686,7 +9687,7 @@ return html;
 _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], famop: ["bim-famop", "Famílias paramétricas"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
 peso: ["bim-peso", "Peso das peças"], icamento: ["bim-icamento", "Plano de içamento"],
 sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
-params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"], inst: ["bim-inst", "Instalações"], render: ["bim-render", "Render"], materiais: ["bim-materiais", "Materiais do projeto"] },
+params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"], inst: ["bim-inst", "Instalações"], componentes: ["bim-componentes", "Componentes"], render: ["bim-render", "Render"], materiais: ["bim-materiais", "Materiais do projeto"] },
 _bimAbrirPainel: function (chave) {
 var mapa = this._BIM_PAINEIS;
 var alvo = mapa[chave]; if (!alvo) return;
@@ -70433,5 +70434,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=bf461fad8a"},{"src":"js/bim-pacote.js?v=8323ded92c","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=d8d0f1e5e6"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=682b8468f6"},{"src":"js/bim-pacote.js?v=8323ded92c","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=a298885903"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

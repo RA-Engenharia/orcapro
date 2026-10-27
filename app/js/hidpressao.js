@@ -154,6 +154,18 @@
     P("Arquivo_ficha", "texto", "", "PDF do fabricante (biblioteca técnica)"), P("Link_ficha", "texto", "", "Endereço público da ficha"), P("Pagina_curva", "inteiro", 0, "Página da tabela de seleção"),
     P("Pagina_cotas", "inteiro", 0, "Página do desenho dimensional"), P("Conferir", "texto", "", "O que conferir na ficha"), P("A_conferir", "simnao", true, "Partes da volumetria lidas do desenho")
   ];
+  /* direção de saída do tubo no bocal (papel/dir — frente 2, 27/10/2026): a ficha traz "dir" ("-x", "+y"…) em 12 dos 19 modelos; nos demais fica
+     o padrão do desenho (sucção no eixo −X, recalque para cima) e a pendência vai em aConferir. Convenção local do js/familia.js. */
+  function dirDoBocal(t, padrao) {
+    var m = /^([+-])([xyz])$/.exec(txt(t)), o = { x: 0, y: 0, z: 0 };
+    if (!m) o[padrao.eixo] = padrao.sinal; else o[m[2]] = m[1] === "-" ? -1 : 1;
+    return { dir: o, lido: !!m };
+  }
+  function conectorBocal(id, rotulo, b, papel, padrao) {
+    var d = dirDoBocal(b.dir, padrao);
+    return { id: id, nome: rotulo + txt(b.rosca), sistema: "agua_fria", dn: String(dnDaPol(b.pol) || 0), x: S(num(b.x, 0) / MM), y: S(num(b.y, 0) / MM), z: S(num(b.z, 0) / MM),
+             papel: papel, dir: d.dir, origemPos: "catalogo", aConferir: d.lido ? "" : "a ficha não diz a direção do bocal: padrão do desenho (sucção no eixo −X, recalque para cima)" };
+  }
   function familiaBomba(m) {
     var cs = m.conexoes || {}, s = cs.succao || {}, r = cs.recalque || {}, el = m.eletrica || {}, cat0 = m.curva && m.curva.fonte ? m.catalogosDoItem[m.curva.fonte.catalogo] : null;
     var valores = { Fabricante: m.fabricante, Modelo: m.modelo, Codigo: txt(m.codigo || m.modelo), Pagina_ficha: num(m.curva && m.curva.fonte && m.curva.fonte.pagina, 0), Tipo_controle: txt(m.controle && m.controle.tipo || m.tipo), Potencia_cv: num(el.potencia_cv, 0), Potencia_W: num(el.potencia_W, 0),
@@ -167,8 +179,7 @@
       avisos: [txt(m.partesOrigem)], sistemas: ["agua_fria"], parametros: copia(PARAMS_BOMBA),
       tipos: [{ id: "t-" + m.id, nome: m.fabricante + " " + m.modelo, valores: valores, fonte: fonteTxt(m, m.curva && m.curva.fonte), avisos: [], conferir: [txt(m.partesOrigem)] }],
       solidos: arr(m.partes).reduce(function (l, p) { return l.concat(solidosDaParte(p)); }, []),
-      conectores: [{ id: "succao", nome: "Sucção " + txt(s.rosca), sistema: "agua_fria", dn: String(dnDaPol(s.pol) || 0), x: S(num(s.x, 0) / MM), y: S(num(s.y, 0) / MM), z: S(num(s.z, 0) / MM) },
-                   { id: "recalque", nome: "Recalque " + txt(r.rosca), sistema: "agua_fria", dn: String(dnDaPol(r.pol) || 0), x: S(num(r.x, 0) / MM), y: S(num(r.y, 0) / MM), z: S(num(r.z, 0) / MM) }],
+      conectores: [conectorBocal("succao", "Sucção ", s, "succao", { eixo: "x", sinal: -1 }), conectorBocal("recalque", "Recalque ", r, "recalque", { eixo: "y", sinal: 1 })],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Pressurizador " + m.fabricante + " " + m.modelo },
       pressurizador: { modelo: m.id }
     };
@@ -195,7 +206,8 @@
     var porca = { id: "porca", nome: "Porca", forma: "cilindro", eixo: e, x: vertical ? "0" : "Comprimento*" + (1 - UNIAO_PORCA) / 2, y: vertical ? "Comprimento*" + (1 - UNIAO_PORCA) / 2 : "0", z: "0", raio: "DN/1000*" + UNIAO_FATOR_D + "/2", altura: "Comprimento*" + UNIAO_PORCA, material: corDe("pvc_roscavel").material };
     return { id: PREF + "uniao-" + (vertical ? "v" : "h"), nome: "União roscável (" + (vertical ? "vertical" : "horizontal") + ")", categoria: "acessorio_tubo", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
              descricao: decisao("pz.uniao"), avisos: [], sistemas: ["agua_fria"], parametros: ps, tipos: [{ id: "t-generico", nome: "União roscável", valores: {}, fonte: "", avisos: [], conferir: [] }], solidos: [corpo, porca],
-             conectores: [{ id: "a", nome: "Face 1", sistema: "agua_fria", dn: "DN", x: "0", y: "0", z: "0" }, { id: "b", nome: "Face 2", sistema: "agua_fria", dn: "DN", x: vertical ? "0" : "Comprimento", y: vertical ? "Comprimento" : "0", z: "0" }],
+             conectores: [{ id: "a", nome: "Face 1 (entrada)", sistema: "agua_fria", dn: "DN", x: "0", y: "0", z: "0", papel: "entrada", dir: vertical ? { x: 0, y: -1, z: 0 } : { x: -1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade" },
+                          { id: "b", nome: "Face 2 (saída)", sistema: "agua_fria", dn: "DN", x: vertical ? "0" : "Comprimento", y: vertical ? "Comprimento" : "0", z: "0", papel: "saida", dir: vertical ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade" }],
              quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "União roscável" } };
   }
   function familiaPontoForca() {

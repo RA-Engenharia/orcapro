@@ -25,8 +25,9 @@
     var it = D().itens[txt(id)]; if (!it) return null;
     var o = copia(it);
     o.texto = it.estimativa ? "ESTIMATIVA de mercado (" + textoData(it.data) + ", teto conservador: o preço de " + it.estimativaDe + ")" : "referência de mercado (" + textoData(it.data) + ", " + it.loja + ")";
+    /* FRENTE 1g: preço de UMA fonte só entra, mas MARCADO "1 fonte — conferir" (aparece no orçamento) */
     o.criterio = it.estimativa ? it.nota + "; só fornecimento, sem mão de obra"
-      : "o maior de " + it.nFontes + " preço(s) público(s) de varejo (regra RA: na incerteza, o mais alto)" + (it.menosQueMinimo ? " — menos de " + D().minFontes + " fontes: " + it.nota : "") + "; só fornecimento, sem mão de obra";
+      : (!it.estimativa && it.nFontes === 1 ? "1 fonte — conferir: " : "") + "o maior de " + it.nFontes + " preço(s) público(s) de varejo (regra RA: na incerteza, o mais alto)" + (it.menosQueMinimo ? " — menos de " + D().minFontes + " fontes: " + it.nota : "") + "; só fornecimento, sem mão de obra";
     o.textoLongo = o.texto + " — " + moeda(it.valor) + "/" + it.unidade + "; " + o.criterio + "; " + it.url;
     return o;
   }

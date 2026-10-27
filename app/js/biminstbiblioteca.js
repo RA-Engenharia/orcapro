@@ -50,6 +50,10 @@
     te:              { rotulo: "Tê", classe: "conexao", pecaGrafo: "conexao" },
     juncao:          { rotulo: "Junção simples", classe: "conexao", pecaGrafo: "conexao" },
     juncao_dupla:    { rotulo: "Junção dupla", classe: "conexao", pecaGrafo: "conexao" },
+    /* 27/10/2026 (frente 1b): as portas de cada tipo estão em js/biminstportas.js. A de redução é a junção com o ramal de DN menor; a
+       INVERTIDA tem o ramal contra o fluxo (uso só em ventilação — o motor nunca a deduz sozinho). */
+    juncao_reducao:  { rotulo: "Junção de redução", classe: "conexao", pecaGrafo: "conexao" },
+    juncao_invertida:{ rotulo: "Junção invertida (ventilação)", classe: "conexao", pecaGrafo: "conexao" },
     luva:            { rotulo: "Luva", classe: "conexao", pecaGrafo: "conexao" },
     reducao:         { rotulo: "Redução / bucha", classe: "conexao", pecaGrafo: "conexao" },
     cap:             { rotulo: "Cap / tampão", classe: "conexao", pecaGrafo: "conexao" },
@@ -105,6 +109,8 @@
     { motor: "caixa_inspecao", re: /(caixa|\bcx\b).*(inspe(c|ç)ao|inspeccion)|\bci\b/, cats: QUALQUER },
     { motor: "ralo_sifonado", re: /^(?!.*pisc).*ralo.*sif/, cats: QUALQUER },
     { motor: "ralo_seco", re: /^(?!.*pisc).*\bralo\b/, cats: QUALQUER },
+    { motor: "juncao_invertida", re: /juncao ?invertida|inverted (y|wye)/, cats: QUALQUER },
+    { motor: "juncao_reducao", re: /juncao.*reducao|reducao.*juncao/, cats: QUALQUER },
     { motor: "juncao_dupla", re: /juncao ?dupla|juncao[ _]?x\b|double (y|wye|junction)/, cats: QUALQUER },
     { motor: "juncao", re: /juncao|\bwye\b/, cats: QUALQUER },
     { motor: "te", re: /(^|[^a-z])tes?([^a-z]|$)|\btee\b/, cats: FIT },
@@ -116,6 +122,7 @@
     { motor: "flexivel", re: /flexivel|engate/, cats: QUALQUER },
     { motor: "joelho", re: /joelho|cotovelo|\bcurvar?\b|elbow|\bbend\b/, cats: QUALQUER },
     { motor: "uniao", re: /\buniao\b|adaptador|\bniple\b|conector|bujao|\bflange\b|contraporca|\bporca\b|tubete/, cats: FIT },
+    { motor: "reducao", re: /luva.*reducao|reducao.*luva/, cats: QUALQUER },   /* a luva de redução é redução, não luva (frente 1b) */
     { motor: "luva", re: /\bluva\b|coupling/, cats: QUALQUER },
     { motor: "reducao", re: /reducao|reducer|\bbucha\b/, cats: QUALQUER },
     { motor: "cap", re: /\bcap\b|tampao|\bplug\b/, cats: FIT },

@@ -47,6 +47,25 @@
 
   /* ACABAMENTO (geometria fiel, 17/10/2026): tubos de entrada e de saída como cilindros que saem da parede até 0,2 m
      (o raio é o DN/2; sem DN, raio de reserva 0,05 m) — o conector fica na face da parede, na geratriz inferior do tubo */
+  /* PORTAS (papel/dir — frente 2, 27/10/2026): vetor unitário de saída do tubo em coordenadas locais (js/familia.js: Y cima, Z para fora da parede). O
+     motor ainda não lê papel/dir/opcional (frente 1b); o auditor tools/hid-auditar-portas.js cobra. */
+  var DIRS = { esq: [-1, 0, 0], dir: [1, 0, 0], cima: [0, 1, 0], frente: [0, 0, 1], parede: [0, 0, -1] };
+  function dv(n) { var a = DIRS[n]; return { x: a[0], y: a[1], z: a[2] }; }
+  /* As cinco tubulações do reservatório de ÁGUA (alimentação = a "entrada", as outras quatro novas). A "saída" antiga fica na cota do nível útil
+     (lâmina do tanque de tratamento) — não é a distribuição, que sai perto do fundo, acima dele. Cotas das portas novas = PROPORÇÃO sobre as
+     cotas da família (nada de cota de catálogo: o tanque é paramétrico) e ficam em aConferir. Ventilação opcional. */
+  function portasReservatorio(xDist, rFace, zExt) {
+    return [
+      { id: "distribuicao", nome: "Distribuição (perto do fundo, acima dele)", sistema: "agua_fria", dn: "DN_distribuicao", x: xDist, y: "Espessura_fundo + Profundidade_util * 0.1", z: "0",
+        porta: "distribuicao", papel: "saida", dir: dv("dir"), origemPos: "desenho", aConferir: "tanque paramétrico: altura = 10% da lâmina útil acima do fundo (para não puxar sedimento); o RT define" },
+      { id: "extravasor", nome: "Extravasor (acima do nível máximo)", sistema: "agua_fria", dn: "DN_extravasor", x: "0", y: "Cota_entrada + Altura_livre / 2", z: zExt,
+        porta: "extravasor", papel: "saida", dir: dv("frente"), origemPos: "desenho", aConferir: "tanque paramétrico: entre a entrada e a laje (metade da folga livre); o RT define" },
+      { id: "limpeza", nome: "Limpeza (no fundo)", sistema: "agua_fria", dn: "DN_limpeza", x: "0", y: "Espessura_fundo", z: "-" + zExt,
+        porta: "limpeza", papel: "saida", dir: dv("parede"), origemPos: "desenho", aConferir: "tanque paramétrico: rente ao fundo interno; o RT define" },
+      { id: "ventilacao", nome: "Ventilação (no topo, opcional)", sistema: "ventilacao", dn: "DN_ventilacao", x: "0", y: "Altura_total", z: "0",
+        porta: "ventilacao", papel: "respiro", dir: dv("cima"), opcional: true, origemPos: "desenho", aConferir: "opcional (a tampa já respira); no topo do tanque" }
+    ];
+  }
   var R_ENT = "se(DN_entrada > 0; DN_entrada / 2000; 0.05)", R_SAI = "se(DN_saida > 0; DN_saida / 2000; 0.05)";
   function tubo(id, nome, x, cota, rExpr) {
     return { id: id, nome: nome, forma: "cilindro", eixo: "x", x: x, y: cota + " + " + rExpr, z: "0", raio: rExpr, altura: "0.2", material: "PVC" };
@@ -76,6 +95,10 @@
       P("DN_tubo_guia", "numero", "instancia", 0, HID, "DN do tubo-guia de limpeza (mm) — vem do motor; 0 = sem"),
       P("DN_entrada", "numero", "instancia", 0, HID, "DN da entrada (mm). 0 = o dimensionamento (HidES) define"),
       P("DN_saida", "numero", "instancia", 0, HID, "DN da saída (mm). 0 = o dimensionamento (HidES) define"),
+      P("DN_distribuicao", "numero", "instancia", 0, HID, "DN da distribuição (mm) — reservatório de água. 0 = o dimensionamento define"),
+      P("DN_extravasor", "numero", "instancia", 0, HID, "DN do extravasor (mm) — reservatório de água. 0 = o dimensionamento define"),
+      P("DN_limpeza", "numero", "instancia", 0, HID, "DN da limpeza (mm) — reservatório de água. 0 = o dimensionamento define"),
+      P("DN_ventilacao", "numero", "instancia", 0, HID, "DN da ventilação (mm) — opcional. 0 = o dimensionamento define"),
       P("Espessura_fundo", "comprimento", "tipo", 0.15, EST, "Laje de fundo — GEOMETRIA DE RESERVA (o cálculo estrutural define)"),       /* hid:ok geometria de reserva */
       P("Espessura_tampa", "comprimento", "tipo", 0.1, EST, "Laje de tampa — GEOMETRIA DE RESERVA (o cálculo estrutural define)"),        /* hid:ok geometria de reserva */
       P("Espessura_fundo_falso", "comprimento", "tipo", 0.08, EST, "Laje perfurada do fundo falso — GEOMETRIA DE RESERVA"),              /* hid:ok geometria de reserva */
@@ -127,9 +150,10 @@
       descricao: "Tanque moldado no local que se dimensiona pela vazão e pelo tempo de detenção (fórmulas). Origem = centro do fundo externo. [Gerada por HidTanques — não editar à mão.]",
       parametros: ps, tipos: [{ id: "t-padrao", nome: "Moldado no local", valores: {} }], solidos: sol,
       conectores: [
-        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Comprimento_externo / 2", y: "Cota_entrada", z: "0" },
-        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Comprimento_externo / 2", y: "Cota_saida", z: "0" }
-      ],
+        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Comprimento_externo / 2", y: "Cota_entrada", z: "0", porta: sistema === "esgoto" ? "" : "alimentacao", papel: "entrada", dir: dv("esq"), origemPos: "desenho" },
+        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Comprimento_externo / 2", y: "Cota_saida", z: "0", papel: "saida", dir: dv("dir"), origemPos: "desenho",
+          aConferir: sistema === "esgoto" ? "" : "saída na cota do nível útil (lâmina), não a distribuição de reservatório" }
+      ].concat(sistema === "esgoto" ? [] : portasReservatorio("Comprimento_externo / 2", "", "Largura_externa / 2")),
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Tanque retangular moldado no local" },
       servicos: [
         { id: "escavacao", descricao: "Escavação", unidade: "m3", quantidade: "Comprimento_externo * Largura_externa * Altura_total" },
@@ -167,9 +191,10 @@
         tubo("tubo-sai", "Tubo de saída", "Diametro_externo / 2", "Cota_saida", R_SAI)
       ],
       conectores: [
-        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Diametro_externo / 2", y: "Cota_entrada", z: "0" },
-        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Diametro_externo / 2", y: "Cota_saida", z: "0" }
-      ],
+        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Diametro_externo / 2", y: "Cota_entrada", z: "0", porta: sistema === "esgoto" ? "" : "alimentacao", papel: "entrada", dir: dv("esq"), origemPos: "desenho" },
+        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Diametro_externo / 2", y: "Cota_saida", z: "0", papel: "saida", dir: dv("dir"), origemPos: "desenho",
+          aConferir: sistema === "esgoto" ? "" : "saída na cota do nível útil (lâmina), não a distribuição de reservatório" }
+      ].concat(sistema === "esgoto" ? [] : portasReservatorio("Diametro_externo / 2", "", "Diametro_externo / 2")),
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Tanque cilíndrico" }
     };
   }
@@ -203,7 +228,7 @@
         { id: "tampa", nome: "Tampa de inspeção", forma: "cilindro", eixo: "y", x: "0", y: "Altura_total", z: "0", raio: "(Diametro / 2 + Espessura_parede) * 0.35", altura: "0.06", material: "Ferro fundido" },
         tubo("tubo-ent", "Tubo de entrada", "-(Diametro / 2 + Espessura_parede) - 0.2", "Cota_entrada", R_ENT)
       ],
-      conectores: [{ id: "entrada", nome: "Entrada", sistema: "esgoto", dn: "DN_entrada", x: "-(Diametro / 2 + Espessura_parede)", y: "Cota_entrada", z: "0" }],
+      conectores: [{ id: "entrada", nome: "Entrada", sistema: "esgoto", dn: "DN_entrada", x: "-(Diametro / 2 + Espessura_parede)", y: "Cota_entrada", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "desenho" }],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Sumidouro" },
       servicos: [{ id: "escavacao", descricao: "Escavação", unidade: "m3", quantidade: "pi() * (Diametro / 2 + Espessura_parede) ^ 2 * Altura_total" }]
     };
@@ -227,7 +252,7 @@
       ],
       tipos: [{ id: "t-padrao", nome: "Vala", valores: {} }],
       solidos: [{ id: "vala", nome: "Vala (brita)", forma: "caixa", x: "0", y: "0", z: "0", dx: "Comprimento", dy: "Altura", dz: "Largura", material: "Material" }],
-      conectores: [{ id: "entrada", nome: "Entrada", sistema: "esgoto", dn: "DN_distribuicao", x: "-Comprimento / 2", y: "Altura", z: "0" }],
+      conectores: [{ id: "entrada", nome: "Entrada", sistema: "esgoto", dn: "DN_distribuicao", x: "-Comprimento / 2", y: "Altura", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "desenho" }],
       quantitativo: { unidade: "m", quantidade: "Comprimento", codigo: "", fonte: "", descricao: "Vala de infiltração" }
     };
   }

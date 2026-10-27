@@ -272,9 +272,12 @@
 
   /* diâmetro interno: tabela de norma do material → tubo do catálogo (DE − 2e) → pendência */
   function diAQ(material, dn, uso, registrar, ctx, cfg, out) {
-    var c = NR().consulta("materiais.diametro_interno", { material: material, dn: dn }, "di_mm");
+    /* PPR na água quente: o catálogo tem a classe PN escolhida (cfg.classePPR); a tabela de norma do PPR é UMA classe por DN, adotada para a água fria
+       (SINAPI) — não pode passar na frente da classe que o projetista escolheu. Sem o tubo no catálogo, vale a tabela. */
+    var doCatalogo = material === "ppr" ? tuboCatalogo(material, dn, cfg) : null;
+    var c = doCatalogo ? { ok: false } : NR().consulta("materiais.diametro_interno", { material: material, dn: dn }, "di_mm");
     if (c.ok) { ctx.consulta("materiais.diametro_interno", { material: material, dn: dn }, "di_mm", uso); return num(c.valor, null) / MM; }
-    var t = tuboCatalogo(material, dn, cfg);
+    var t = doCatalogo || tuboCatalogo(material, dn, cfg);
     if (t) {
       var F = CAT().fonte(t);
       if (!out.catalogos.some(function (x) { return x.json === F.json; })) out.catalogos.push({ json: F.json, texto: F.texto, fabricante: F.fabricante, linha: F.linha, url: F.url, edicao: F.edicao, uso: "diâmetro interno = DE − 2e dos tubos" + (material === "ppr" ? " (classe PN" + cfg.classePPR + ")" : "") });

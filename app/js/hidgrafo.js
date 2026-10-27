@@ -112,12 +112,16 @@
     var HPZ = dep("HidPressao", "./hidpressao.js");
     arr(R && R.ligacoes).forEach(function (lg) {
       var n = ponta(lg.trecho, lg); if (n == null) return;
+      /* 27/10/2026 (frente 1b-ii, D9): extravasor e limpeza do reservatório são DESCARGA para a atmosfera (porta de serviço), não parte da rede pressurizada:
+         ligados ao nó do reservatório fechavam um anel (saída → extravasor → limpeza → fundo) e o cálculo via "ciclo" e "contra o fluxo". O tubo deles continua
+         existindo no modelo (quantitativo, 3D, auditor de conectividade) mas fica fora do grafo de cálculo. */
+      if (lg.tipo === "aparelho" && /:(extravasor|limpeza)$/.test(String(lg.alvo))) return;
       var pf = lg.tipo === "aparelho" ? pecaDaFamilia(famId[lg.famInst], tipoDe[lg.famInst]) : null;
       if (pf) { pecaFam[lg.famInst] = pf; pecaFamDim[lg.famInst] = dimDaFamilia(famId[lg.famInst], tipoDe[lg.famInst]); if (pecaDe[lg.famInst] == null) pecaDe[lg.famInst] = n; else une(pecaDe[lg.famInst], n); }
       else if (lg.tipo === "peca") { if (pecaDe[lg.alvo] == null) pecaDe[lg.alvo] = n; else une(pecaDe[lg.alvo], n); }
       else if (lg.tipo === "aparelho" && /:saida2$/.test(String(lg.alvo))) (saida2De[lg.famInst] = saida2De[lg.famInst] || []).push(n);
       else if (lg.tipo === "aparelho" && HPZ && HPZ.equipamento(famId[lg.famInst])) (equipNo[lg.famInst] = equipNo[lg.famInst] || {})[String(lg.alvo).slice(String(lg.famInst).length + 1)] = n;
-      else if (lg.tipo === "aparelho") aparelhoDe[n] = { conector: lg.alvo, famInst: lg.famInst, famId: famId[lg.famInst] || null, cid: String(lg.alvo).slice(String(lg.famInst).length + 1) };
+      else if (lg.tipo === "aparelho") aparelhoDe[n] = { conector: lg.alvo, famInst: lg.famInst, famId: famId[lg.famInst] || null, cid: String(lg.alvo).slice(String(lg.famInst).length + 1), pontoAgua: lg.pontoAgua || null };   /* M2 (frente 1c): a peça do ponto de água (joelho/luva com bucha) para a perda localizada */
       else if (lg.tipo === "acessorio") (faces[lg.famInst] = faces[lg.famInst] || []).push({ no: n, face: String(lg.alvo).slice(-1) });
     });
 
@@ -185,6 +189,7 @@
       var eid = "ac:" + ac.id;
       var fa = fs[0].face === "e" ? ac.a : ac.b, fb = fs[0].face === "e" ? ac.b : ac.a;
       ARESTAS[eid] = { id: eid, trecho: null, acessorio: ac.id, conexao: ac.acessorio, variante: ac.variante || null, tipo: "acessorio", a: na.id, b: nb.id, sistema: ac.sistema,
+                       noFaceE: fs[0].face === "e" ? na.id : nb.id,   /* D5b (27/10/2026): o nó da face 1 (ENTRADA) — a válvula de retenção só passa de 1 → 2 */
                        material: ac.material, dn: ac.dn, pa: fa, pb: fb, comprimento: dist(fa, fb), desnivel: fa.y - fb.y, vertical: ac.vertical, dir: unit(fa, fb) };
       ordemA.push(eid); na.arestas.push(eid); nb.arestas.push(eid);
     });

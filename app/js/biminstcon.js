@@ -33,14 +33,17 @@
     var id = String(uid || "").replace(/^edit:/, ""), R = I.rede(estado, avaliarFam), out = [];
     var trechos = (estado.instalacoes || {}).trechos || [], pecas = (estado.instalacoes || {}).pecas || [];
     var livresCon = {}; R.conectoresLivres.forEach(function (k) { livresCon[k.id] = 1; });
+    /* D5 (27/10/2026): a porta OPCIONAL sem tubo não está em conectoresLivres (não é desconexão), mas continua livre para o "+" começar o tubo */
+    var ligadosCon = {}; R.ligacoes.forEach(function (l) { ligadosCon[l.alvo] = 1; });
     /* 1) família (louça, equipamento): os conectores dela */
     var fam = arr(estado.familias).filter(function (f) { return String(f.id) === id; })[0];
     if (fam) {
       I.conectoresDoEstado(estado, avaliarFam).filter(function (k) { return String(k.famInst) === id; }).forEach(function (k) {
         var nome = String(k.id).split(":").pop(), grav = I.SISTEMAS[k.sistema] && I.SISTEMAS[k.sistema].gravidade;
-        var fluxo = /entrada|alim|succao/.test(nome) ? "entrada" : (/saida|recalque/.test(nome) ? "saida" : (grav ? "saida" : "entrada"));
+        /* D5b (27/10/2026): o fluxo vem do PAPEL que a família declara (entrada | succao | saida | recalque | respiro); o nome do conector só vale para família sem papel */
+        var fluxo = k.papel ? (/^(entrada|succao)$/.test(k.papel) ? "entrada" : "saida") : (/entrada|alim|succao/.test(nome) ? "entrada" : (/saida|recalque/.test(nome) ? "saida" : (grav ? "saida" : "entrada")));
         var dir = k.parede ? { x: -k.parede.x, y: 0, z: -k.parede.z } : (grav && k.y <= fam.y + 0.02 ? { x: 0, y: -1, z: 0 } : { x: 0, y: 0, z: 1 });
-        out.push({ tipo: "conector", x: k.x, y: k.y, z: k.z, dir: dir, sistema: k.sistema, dn: k.dn, fluxo: fluxo, livre: !!livresCon[k.id], nome: k.nome, famInst: k.famInst, parede: k.parede || null });
+        out.push({ tipo: "conector", x: k.x, y: k.y, z: k.z, dir: dir, sistema: k.sistema, dn: k.dn, fluxo: fluxo, livre: !!livresCon[k.id] || (!!k.opcional && !ligadosCon[k.id]), nome: k.nome, famInst: k.famInst, parede: k.parede || null });
       });
       return out;
     }

@@ -259,6 +259,20 @@
              prazoParaleloDias: fh.duracaoDias, funcaoCritica: fh.funcaoCritica, prazoSequencialDias: r2(seq), horasDia: fh.horasDia,
              linhasOk: nOk, problemas: prob.length };
   }
+  /* FRENTE 1g (27/10/2026): a MÃO DE OBRA de instalação da peça que a SINAPI só tem como INSUMO (material) ou que só tem referência de MERCADO (material):
+     a parcela de mão de obra (e as horas) da composição SINAPI da peça ANÁLOGA (mesmo material, DN igual ou o imediatamente acima), escolhida por tools/gerar-biminst-sinapi.js.
+     Linha própria ("MO-ANAL:<composição>"): só MO, sem material — o material já está na linha do insumo/da referência de mercado (nada é cobrado duas vezes). Composição
+     fora da base carregada: pendente com o motivo (nunca se inventa MO). */
+  function linhaMoAnaloga(s, base, opcoes) {
+    var m = s.moDe, q = r4(num(s.quantidade, 0));
+    var c = orcar({ id: s.id, codigo: m.codigo, unidade: "UN", quantidade: q, descricao: m.descricao, rotulo: s.rotulo }, base, opcoes);
+    if (c.status !== "ok" || !c.unitario) return { codigo: "", descricao: "Mão de obra de instalação — " + txt(s.rotulo), unidade: "", unidadeQto: s.unidade, quantidade: q, status: "pendente", horas: [], servico: s.id,
+      avisos: ["instalação: a composição análoga " + m.codigo + " (" + txt(m.observacao) + ") não está na base carregada — só o material entra; confira a mão de obra"] };
+    var mo = num(c.unitario.mo, 0);
+    return { codigo: "MO-ANAL:" + m.codigo, descricao: "Mão de obra de instalação pela composição SINAPI " + m.codigo + " (peça análoga) — " + txt(c.descricao), unidade: "UN", unidadeQto: s.unidade, quantidade: q, status: "ok",
+      horas: c.horas, horasTotal: c.horasTotal, duracaoDias: c.duracaoDias, funcaoCritica: c.funcaoCritica, servico: s.id, unitario: { mo: mo, mat: 0, eq: 0, total: mo }, custo: { mo: mo * q, mat: 0, eq: 0, total: mo * q },
+      codigoOrigem: "mo-analoga", moAnaloga: m, avisos: ["instalação de " + txt(s.rotulo) + ": só a mão de obra da composição " + m.codigo + " (" + txt(m.observacao) + "); o material está na linha da peça"] };
+  }
   function arredLinha(l) {
     if (l.custo) l.custo = { mo: r2(l.custo.mo), mat: r2(l.custo.mat), eq: r2(l.custo.eq), total: r2(l.custo.total) };
     return l;
@@ -811,7 +825,11 @@
     var BI = dep("BimInst", "./biminst.js");
     if (BI && BI.servicosOrc && estado && estado.instalacoes) BI.servicosOrc(estado, avaliarFam).forEach(function (s) {
       var l;
-      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, descricao: s.descricao, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "mapa"; }
+      var linhasS = null;
+      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, descricao: s.descricao, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "mapa";
+        /* FRENTE 1g: insumo SINAPI (só material) + a MO da composição análoga — o aviso diz as duas coisas; sem análoga, a pendência fica NA linha */
+        if (s.moDe) { linhasS = [l, arredLinha(linhaMoAnaloga(s, base, opcoes))]; (l.avisos = l.avisos || []).push(s.observacao); }
+        else if (s.moFalta) (l.avisos = l.avisos || []).push(s.moFalta); }
       else if (s.referenciaMercado && num(s.referenciaMercado.valor) > 0) {
         /* HIDRO (pendências finais, 18/10/2026 — só com o js/hidprecomercado.js, da prévia hidro): sem SINAPI, a REFERÊNCIA DE
            MERCADO — o maior preço público de varejo (regra RA: 100 % orçado, na incerteza o mais alto), com data e loja; nunca vira
@@ -821,9 +839,12 @@
               unitario: r2(num(rm.valor)), custo: { mo: 0, mat: vt, eq: 0, total: vt }, codigoOrigem: "mercado", referenciaMercado: rm,
               avisos: ["sem composição SINAPI (" + s.motivo + "): " + rm.texto + " — " + rm.criterio] };
         if (rm.provisorio) l.provisorio = { motivo: rm.motivo || "provisório — cotar com o fornecedor" };   /* extintor do Hidro: o preço provisório da família inc-extintor vai MARCADO */
+        /* FRENTE 1g: a referência de mercado de 1 só fonte entra, MARCADA "1 fonte — conferir" (vai ao orçamento como pendência de preço); + a MO da peça análoga */
+        if (!l.provisorio && num(rm.nFontes, 0) === 1) l.provisorio = { motivo: "1 fonte — conferir" };
+        if (s.moDe) linhasS = [l, arredLinha(linhaMoAnaloga(s, base, opcoes))]; else if (s.moFalta) l.avisos.push(s.moFalta);
       }
       else l = { codigo: "", descricao: s.rotulo, unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "pendente", avisos: [s.motivo], horas: [], servico: s.id };
-      somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
+      somar(s.id, s.rotulo, { linhas: linhasS || [l], resumo: null, peso: false });
     });
     /* CIRCUITOS ELÉTRICOS (frente E2, js/elecircuitos.js): o que só o projeto dos circuitos sabe — cabo por seção (a cor vai no
        rótulo), disjuntores, DR e DPS. Eletroduto, caixa de passagem e quadro já vêm acima (instalações); dispositivo e caixa do ponto
@@ -950,6 +971,8 @@
         if (g.bloco === "demolicao") it.bloco = "demolicao";   /* P10: bloco */
         /* hidro (pendências finais): a referência de mercado vai como item PRÓPRIO com o preço e a fonte "MERCADO" (não é SINAPI) */
         if (/^REF-MERC:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MERCADO" };
+        /* FRENTE 1g: a MO da peça análoga (só mão de obra) vai como item próprio, fonte "SINAPI-MO"; o material está no insumo/na referência de mercado */
+        if (/^MO-ANAL:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), custoMO: r2(g.custo.mo / g.quantidade), baseFonte: "SINAPI-MO" };
         if (it.mercado && g.provisorio) it.mercado.provisorio = { motivo: g.provisorio.motivo };   /* revisão A1: vai marcado ao orçamento */
         /* bancada pela tabela da marmoraria: item próprio com o preço da tabela da empresa (nunca procurado na SINAPI) */
         if (/^MARM:/.test(String(g.codigo)) && g.custo && g.quantidade > 0) it.mercado = { custoUnitario: r2(g.custo.total / g.quantidade), baseFonte: "MARMORARIA" };
@@ -964,7 +987,7 @@
   var OrcModelo = {
     VERSAO: 1,
     unidadeChave: unidadeChave, mesmaUnidade: mesmaUnidade, funcaoDe: funcaoDe, chaveFuncao: chaveFuncao,
-    orcar: orcar, daFamilia: daFamilia, daMarmoraria: daMarmoraria, daElemento: daElemento, daAmbiente: daAmbiente, doModelo: doModelo, resumir: resumir,
+    orcar: orcar, linhaMoAnaloga: linhaMoAnaloga, daFamilia: daFamilia, daMarmoraria: daMarmoraria, daElemento: daElemento, daAmbiente: daAmbiente, doModelo: doModelo, resumir: resumir,
     medidasDaCategoria: medidasDaCategoria, pecaRegistro: pecaRegistro,
     volumeSolido: volumeSolido, pesoSolidos: pesoSolidos, pesoPorDescricao: pesoPorDescricao,
     baseComPreco: baseComPreco, paraOrcamento: paraOrcamento

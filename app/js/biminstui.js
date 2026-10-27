@@ -78,6 +78,7 @@
         { id: "tabela-mep", rotulo: "Tabela de\npeças", icone: "tabela", grande: true, dica: "Tabela de peças das instalações (tubos, conexões, acessórios, dispositivos): sistema, tamanho, comprimento e código SINAPI — e o .xlsx." }
       ]);
       ["acessorio-tubo", "eletrocalha", "desconexoes", "legenda-mep"].forEach(function (k) { if (R._EXCLUSIVOS && R._EXCLUSIVOS.indexOf(k) < 0 && (k === "acessorio-tubo" || k === "eletrocalha")) R._EXCLUSIVOS.push(k); });
+      reg["componentes"] = function (e) { if (!global.HidComponentesUI) return false; return HidComponentesUI.alternar(e, U._G); };   /* frente 3: o painel Componentes */
       reg["acessorio-tubo"] = function (e) { if (e && e.ligado === false) { var b = B(); if (b && b.editarArmar) b.editarArmar(null); U.cfg = null; return true; } return U.armar("acessorio", { famId: U._p12.acFam, tipoId: U._p12.acTipo }); };
       reg["eletrocalha"] = function (e) { if (e && e.ligado === false) { var b = B(); if (b && b.editarArmar) b.editarArmar(null); U.cfg = null; return true; } return U.armar("eletrocalha"); };
       reg["dispositivo-eletrico"] = function () { return U.colocarFamilia("ra-tomada", "t10"); };
@@ -166,6 +167,58 @@
           ro("i:ac-regra", "Como entra", "divide o tubo", "O tubo some debaixo do corpo do acessório e as duas metades ficam ligadas nas faces dele. Desfazer devolve o tubo inteiro; apagar o registro emenda.") ] },
           { nome: "Orçamento", params: [ro("i:ac-sinapi", "SINAPI", "pelo mapa", "Latão e bronze são roscáveis: o DN do tubo vira a bitola de rosca pela ABNT NBR 5648 (PVC soldável). Outro material, ou sem composição: pendente com o motivo. Os adaptadores soldável × rosca não são deduzidos.")] }],
         onMudar: function (id, valor) { self.mudarCfg(id, valor); if (id === "i:famId" || id === "i:tipoId") { U._p12.acFam = self.cfg.famId; U._p12.acTipo = self.cfg.tipoId; } return self.esquemaFerramenta(); } };
+    };
+
+    /* ------------------------------------------------ CONEXÃO MANUAL (frente 3, 27/10/2026)
+     * O botão Inserir de uma conexão no painel Componentes arma este modo: o projetista clica num NÓ da rede e a conexão escolhida fica
+     * gravada como peça FORÇADA daquele nó (pecaIni/pecaFim do trecho — HidComponentes.opsForcar). A regra de honrar ou não é do motor
+     * (BimInst.decidir): serve ao nó → entra; não serve → fica a automática e o aviso diz por quê. */
+    U.armarConexaoManual = function (tipo, material) {
+      var I = BI(), b = B(), H = global.HidComponentes;
+      if (!I || !b || !b.editarArmar || !H) { toast("O visualizador 3D ainda não abriu.", "aviso"); return false; }
+      if (!I.PECAS_LINHA || !global.HidPortas || !global.HidPortas.info(tipo)) { toast("Conexão desconhecida: " + tipo + ".", "aviso"); return false; }
+      return U.armar("conexao-manual", { tipo: tipo, material: material || "" });
+    };
+    U.dicaConexaoManual = function () {
+      var c = U.cfg, I = BI();
+      return "Conexão manual — " + I.nomeConexao(c.tipoConexao, c.matConexao) + ": clique NUM NÓ da rede (onde dois ou mais tubos se encontram). A escolha fica gravada no nó; se não servir (bocas, ângulo ou DN fora do catálogo) o OrçaPRO mantém a automática e avisa o porquê. Esc encerra.";
+    };
+    U.esquemaConexaoManual = function () {
+      var c = U.cfg, I = BI();
+      return { icone: "link", semEditarTipo: true, titulo: "Conexão manual",
+        secoes: [{ nome: "Conexão", params: [ro("i:cm-tipo", "Peça", I.nomeConexao(c.tipoConexao, c.matConexao)),
+          ro("i:cm-mat", "Material do catálogo", (I.MATERIAIS[c.matConexao] || {}).nome || "—", "O DN é o dos tubos do nó; a peça precisa existir nesse DN no catálogo do material."),
+          ro("i:cm-como", "Como entra", "grava no nó", "Clique num nó: a peça fica FORÇADA ali. Na Propriedade do nó, \"Voltar ao automático\" desfaz. Ctrl+Z também.")] }] };
+    };
+    U.cliqueConexaoManual = function (ctx, p) {
+      var c = U.cfg, I = BI(), H = global.HidComponentes, ed = ctx.edit, est = ed.estado;
+      if (!H || !c) return;
+      if (!p) { ctx.hint("Não achei o ponto — clique em cima de um nó da rede."); return; }
+      var R = null; try { R = I.rede(est, ctx.famAval); } catch (e) { R = null; }
+      var no = H.noEm(R, p);
+      if (!no) { ctx.hint("Clique EM CIMA de um nó (onde dois ou mais tubos se encontram, a até 25 cm em planta)."); return; }
+      var r = H.opsForcar(est, no, c.tipoConexao);
+      if (!r.ok) { ctx.hint(r.motivo); return; }
+      ctx.op(r.op);
+      var msg = I.nomeConexao(c.tipoConexao, no.material) + " gravada no nó " + no.id + ".";
+      try {
+        var R2 = I.rede(ctx.edit.estado, ctx.famAval), no2 = H.noEm(R2, no, 0.05), avs = (R2.avisos || []).filter(function (a) { return a.x != null && Math.abs(a.x - no.x) < 0.05 && Math.abs(a.z - no.z) < 0.05 && Math.abs(a.y - no.y) < 0.05; });
+        if (no2 && no2.tipo === c.tipoConexao) msg = I.nomeConexao(c.tipoConexao, no.material) + " aplicada no nó " + no.id + ".";
+        else if (avs.length) msg = avs[avs.length - 1].texto;
+      } catch (e2) {}
+      ctx.hint(msg + " Clique em outro nó, ou Esc.");
+      ctx.marcar();
+    };
+    /* o que a Propriedade do nó mostra e faz: "Voltar ao automático" apaga a escolha (um Ctrl+Z desfaz) */
+    U.voltarAoAutomatico = function (cxId) {
+      var b = B(), I = BI(), H = global.HidComponentes, est = b && b.editarEstado ? b.editarEstado() : null;
+      if (!est || !H) return { ok: false, motivo: "O 3D ainda não abriu." };
+      var R = U._ultimaRede, no = R && R.conexoes ? R.conexoes.filter(function (x) { return x.id === cxId; })[0] : null;
+      if (!no) return { ok: false, motivo: "Não achei o nó." };
+      var r = H.opsAutomatico(est.estado, no);
+      if (!r.ok) { status(r.motivo); return r; }
+      b.instOp(r.op); status("Nó " + cxId + ": voltou à conexão automática.");
+      return r;
     };
 
     /* ------------------------------------------------ Propriedades: acessório e trecho */
@@ -764,8 +817,9 @@
     armar: function (ferr, par) {
       var I = BI(), b = B(); if (!I || !b || !b.editarArmar) { toast("O visualizador 3D ainda não abriu.", "aviso"); return false; }
       var ant = this.cfg;
-      this.cfg = this._cfgPadrao(ferr === "acessorio" ? "tubo" : ferr, par);
+      this.cfg = this._cfgPadrao(ferr === "acessorio" || ferr === "conexao-manual" ? "tubo" : ferr, par);
       if (ferr === "acessorio") { this.cfg.ferramenta = "acessorio"; this.cfg.famId = (par && par.famId) || "ra-registro-gaveta"; this.cfg.tipoId = (par && par.tipoId) || ""; }   /* P12 */
+      if (ferr === "conexao-manual") { this.cfg.ferramenta = "conexao-manual"; this.cfg.tipoConexao = (par && par.tipo) || ""; this.cfg.matConexao = (par && par.material) || ""; }   /* frente 3 */
       /* trocar de ferramenta guarda o sistema/DN de antes quando cabe */
       if (ant && ferr === "tubo" && ant.ferramenta === "tubo") { ["sistema", "material", "dn", "pn", "classe", "iso", "cota", "cotaAuto", "inclinacao", "aplicacao", "angulo"].forEach(function (k) { this.cfg[k] = ant[k]; }, this); }
       /* pedido explícito de sistema (armar("tubo", { sistema })) vence o de antes */
@@ -786,6 +840,7 @@
       var I = BI(), S = I.SISTEMAS[c.sistema];
       var t;
       if (c.ferramenta === "acessorio") t = this.dicaAcessorio();   /* P12 */
+      else if (c.ferramenta === "conexao-manual") t = this.dicaConexaoManual();   /* frente 3 */
       else if (c.ferramenta === "peca") t = I.PECAS[c.peca].nome + ": clique onde colocar" + (S.grupo === "eletrica" ? " (altura do piso em Propriedades)" : " (no piso)") + ". Esc encerra.";
       else if (!this._previaHidro()) t = S.nome + " " + (I.MATERIAIS[c.material] && I.MATERIAIS[c.material].secao === "retangular" ? Math.round(c.larg * 100) + "×" + Math.round(c.alt * 100) + " cm" : "DN " + c.dn) +   /* P8: a dica do master */
         ": clique o INÍCIO e os pontos seguintes (cota inicial " + fmt(c.cota, 2) + " m" + (S.gravidade ? ", descendo " + fmt(c.inclinacao, 2) + "%" : "") + "). Clique num ponto de aparelho, na ponta ou no meio de outro tubo para ligar. Esc encerra.";
@@ -863,6 +918,7 @@
 
     /* ------------------------------------------------ CLIQUE no 3D */
     clique: function (ctx, p, ev) {
+      if (this.cfg && this.cfg.ferramenta === "conexao-manual") { this.cliqueConexaoManual(ctx, p); return; }   /* frente 3 */
       if (!this._previaHidro()) return this._cliqueMaster(ctx, p);   /* P8: sem a prévia hidro, o traço do master */
       var c = this.cfg, I = BI(); if (!c || !ctx || !I) return;
       if (!p) { ctx.hint("Não achei o ponto — clique no plano de trabalho ou no modelo."); return; }
@@ -1038,7 +1094,7 @@
       var ctx = this._ctx(), c = this.cfg; if (!ctx) return false;
       var ed = ctx.edit, q = { x: p[0], y: p[1] }, flags = { _corte: true, altKey: !!(ev && ev.altKey), shiftKey: !!(ev && ev.shiftKey) };
       /* sem o motor novo (ou peça/acessório): o ponto no plano do corte, como antes */
-      if (!K.pickCorte || c.ferramenta === "peca" || c.ferramenta === "acessorio") { var w0 = K.doDesenho(def, q); if (!w0) return false; this.clique(ctx, w0, flags); return true; }
+      if (!K.pickCorte || c.ferramenta === "peca" || c.ferramenta === "acessorio" || c.ferramenta === "conexao-manual") { var w0 = K.doDesenho(def, q); if (!w0) return false; this.clique(ctx, w0, flags); return true; }
       /* MODELAR PARTINDO DA PEÇA (18/10/2026): a peça sob o cursor NA PROJEÇÃO DO CORTE — o desenho começa (ou termina)
          nela e a PROFUNDIDADE do plano de trabalho passa a ser a do eixo dela */
       var est = ed.estado || { instalacoes: { trechos: [], pecas: [] }, familias: [] };
@@ -1401,6 +1457,7 @@
     esquemaFerramenta: function () {
       var c = this.cfg, I = BI(); if (!c || !I) return null;
       if (c.ferramenta === "acessorio") return this.esquemaAcessorio();   /* P12 */
+      if (c.ferramenta === "conexao-manual") return this.esquemaConexaoManual();   /* frente 3 */
       var self = this, S = I.SISTEMAS[c.sistema], M = I.MATERIAIS[c.material];
       var grupos = c.ferramenta === "eletroduto" ? ["eletrica", "ar", "bandeja"] : (c.ferramenta === "eletrocalha" ? ["bandeja"] : (c.ferramenta === "peca" ? null : ["agua_fria", "agua_quente", "esgoto", "ventilacao", "pluvial"]));   /* P12: eletrocalha */
       var ro = function (id, rot, v, motivo) { return { id: id, rotulo: rot, leitura: true, valor: v, motivo: motivo }; };
@@ -1869,28 +1926,34 @@
           if (kk != null && kk > 0 && kk < L - 0.01) { var key = p.trecho + ":" + p.lado; recuos[key] = Math.max(recuos[key] || 0, kk); }
         });
       });
-      /* PONTO DE ÁGUA: o tubo de PVC soldável de água que chega num aparelho termina no JOELHO 90° COM BUCHA DE LATÃO
-         (o azul), com a rosca virada para fora da parede (para o aparelho). O vértice fica no ponto de ligação; a
-         boca de rosca sai na direção do aparelho. ⚠ É peça de acabamento da ligação: o biminst ainda não a deduz no
-         quantitativo — o nome diz isso. */
+      /* PONTO DE ÁGUA: o tubo de PVC soldável de água que chega num aparelho termina no JOELHO 90° COM BUCHA DE LATÃO (o azul, a rosca virada para fora da
+         parede) ou, com o tubo chegando de frente para a saída do ponto, no ADAPTADOR SOLDÁVEL CURTO. ⚠ A DECISÃO É DO MOTOR (js/biminst.js pontoAguaDe →
+         ligacao.pontoAgua): o 3D só desenha o que o quantitativo conta (27/10/2026, frente 1b-ii — antes o joelho era sempre desenhado e nunca contado). A boca de
+         rosca sai na direção do aparelho (pontoAgua.saida). Aparelho sem rosca na tabela, válvula, CPVC/PPR: sem peça desenhada. */
       var pontosAgua = [];
       if (G && !baixo) R.ligacoes.forEach(function (l) {
-        if (l.tipo !== "aparelho") return;
+        var pa = l.pontoAgua; if (l.tipo !== "aparelho" || !pa || pa.material !== "pvc_soldavel") return;
         var t = porId[l.trecho]; if (!t || t.material !== "pvc_soldavel" || !/^agua_/.test(t.sistema)) return;
         var d1 = Math.hypot(t.p1.x - l.x, t.p1.y - l.y, t.p1.z - l.z), d2 = Math.hypot(t.p2.x - l.x, t.p2.y - l.y, t.p2.z - l.z), lado = d1 <= d2 ? 0 : 1;
         var E = lado ? t.p2 : t.p1, F = lado ? t.p1 : t.p2, u = [F.x - E.x, F.y - E.y, F.z - E.z], Lu = Math.hypot(u[0], u[1], u[2]); if (!(Lu > 0.05)) return;
         u = [u[0] / Lu, u[1] / Lu, u[2] / Lu];
-        var k = R.conectores.filter(function (q) { return q.id === l.alvo; })[0], fr = null;
-        if (k && k.parede) fr = [-k.parede.x, 0, -k.parede.z];
-        else { var fi = (st.familias || []).filter(function (f) { return String(f.id) === String(l.famInst); })[0]; if (fi) { var ry = num(fi.rotY, 0); fr = [Math.sin(ry), 0, Math.cos(ry)]; } }   /* Z local da família = para fora da parede (convenção do js/familia.js) */
-        if (!fr) return;
+        var cj = G.cotasConexao("pvc_soldavel", "luva", t.dn), reg = (((global.HidGeoDados || {}).conexoes || {}).pvc_soldavel || {})[pa.tipo] || {}, kk = pa.chave && reg[pa.chave] ? pa.chave : null;
+        var key = t.id + ":" + lado;
+        if (pa.tipo === "adaptador" || pa.tipo === "luva_bucha") {
+          var La = kk ? reg[kk].L : (pa.tipo === "luva_bucha" ? cj.pb * 2 + 6 : G.PROP.z90(cj.de, cj.pb) * 2), FcA = [E.x + u[0] * La / 1000, E.y + u[1] * La / 1000, E.z + u[2] * La / 1000], gA = null;
+          try { gA = G.pecaSimples(pa.tipo, "pvc_soldavel", t.dn, FcA, [-u[0], -u[1], -u[2]], { lod: lod }); } catch (eA) { gA = null; }
+          if (!gA) return;
+          recuos[key] = Math.max(recuos[key] || 0, (La - cj.pb) / 1000);
+          pontosAgua.push({ id: "pa:" + l.alvo, g: gA, sistema: t.sistema, rot: (pa.tipo === "luva_bucha" ? "Luva soldável com bucha de latão " : "Adaptador soldável curto ") + (kk ? kk.replace("x", " × ") + "\"" : "DN " + t.dn + " (cota a conferir)") });
+          return;
+        }
+        var fr = pa.saida ? [pa.saida[0], pa.saida[1], pa.saida[2]] : null; if (!fr) return;
         var dt = fr[0] * u[0] + fr[1] * u[1] + fr[2] * u[2]; fr = [fr[0] - u[0] * dt, fr[1] - u[1] * dt, fr[2] - u[2] * dt];
         var Lf = Math.hypot(fr[0], fr[1], fr[2]); if (!(Lf > 1e-3)) return; fr = [fr[0] / Lf, fr[1] / Lf, fr[2] / Lf];
-        var cj = G.cotasConexao("pvc_soldavel", "luva", t.dn), reg = (((global.HidGeoDados || {}).conexoes || {}).pvc_soldavel || {}).joelho_bucha || {}, kk = Object.keys(reg).filter(function (x) { return x.split("x")[0] === String(t.dn); })[0];
         var z = kk ? reg[kk].z : G.PROP.z90(cj.de, cj.pb), Fc = [E.x + u[0] * z / 1000, E.y + u[1] * z / 1000, E.z + u[2] * z / 1000];
         var gj = null; try { gj = G.pecaSimples("joelho_bucha", "pvc_soldavel", t.dn, Fc, [-u[0], -u[1], -u[2]], { saida: fr, lod: lod }); } catch (eJ) { gj = null; }
         if (!gj) return;
-        var key = t.id + ":" + lado; recuos[key] = Math.max(recuos[key] || 0, (z - cj.pb) / 1000);
+        recuos[key] = Math.max(recuos[key] || 0, (z - cj.pb) / 1000);
         pontosAgua.push({ id: "pa:" + l.alvo, g: gj, sistema: t.sistema, rot: kk ? "Joelho 90° soldável com bucha de latão " + kk.replace("x", " × ") + "\"" : "Joelho 90° soldável com bucha de latão DN " + t.dn + " (cota a conferir)" });
       });
       var livres = {};
@@ -2041,10 +2104,16 @@
       } else {
         var cx = this._ultimaRede ? this._ultimaRede.conexoes.filter(function (x) { return x.id === id; })[0] : null;
         if (!cx) return null;
-        titulo = cx.nome + " (automática)";
+        titulo = cx.nome + (cx.forcada ? " (escolhida)" : " (automática)");
         sp = cx.material && /^duto_/.test(cx.material) ? { status: "pendente", motivo: "conexão de duto é orçada em m² de chapa" } : I.sinapiDe({ peca: cx.tipo, sistema: cx.sistema, material: cx.material, aplicacao: cx.aplicacao, dn: cx.dn, dn2: cx.dn2 });
         sec.push({ nome: "Identidade", params: [ro("ic:tipo", "Conexão", cx.nome), ro("ic:dn", "DN", cx.dn + (cx.dn2 ? " × " + cx.dn2 : "")), ro("ic:mat", "Material", (I.MATERIAIS[cx.material] || {}).nome),
           ro("ic:ramos", "Trechos", cx.ramos.join(", "), "A conexão é deduzida da geometria: mude os trechos, ela muda junto. Não se apaga à parte.")] });
+        /* frente 3: a conexão escolhida pelo projetista (Componentes > Conexão manual) e o caminho de volta */
+        var escol = global.HidComponentes && cx.sistema ? global.HidComponentes.escolhaDoNo(st, cx) : null;
+        sec.push({ nome: "Escolha da conexão", params: [ro("ic:escolha", "Conexão", cx.forcada ? cx.nome + " (escolhida)" : (escol ? cx.nome + " (automática — a escolha \"" + escol + "\" não serve a este nó; veja os avisos)" : cx.nome + " (automática)"),
+          "Escolha outra conexão no painel Componentes (grupo Conexões) e clique neste nó. O motor só honra a peça que serve ao nó."),
+          { id: "ic:auto", rotulo: "Escolha", tipo: "botao", rotuloBotao: "Voltar ao automático", fn: function () { self.voltarAoAutomatico(cx.id); } },
+          { id: "ic:outra", rotulo: "Outra conexão", tipo: "botao", rotuloBotao: "Escolher no painel Componentes", fn: function () { if (global.HidComponentesUI) HidComponentesUI.abrir(self._G, { grupo: "Conexões" }); } }] });
       }
       /* QUALIDADE VISUAL 1 (juntas): a junta onde a conexão de esgoto entrega PONTA — luva (padrão), bolsa do
          próprio tubo ou luva invertida (contra o fluxo, com o motivo registrado) */
@@ -2244,7 +2313,11 @@
       var I = BI(), b = B(), est = b && b.editarEstado ? b.editarEstado() : null;
       if (!I || !est) { corpo.innerHTML = '<p class="muted">Abra o BIM para ver as instalações.</p>'; return; }
       var q = I.qto(est.estado, b.familiaAvaliar), h = "";
-      function sp(g) { return g.sinapi.status === "ok" ? '<span title="' + esc(g.sinapi.descricao) + '">' + esc(g.sinapi.codigo) + "</span>" : '<span class="muted" title="' + esc(g.sinapi.motivo) + '">pendente</span>'; }
+      function sp(g) {
+        /* FRENTE 1g: insumo SINAPI (+ MO da composição análoga) e referência de mercado (+ MO) mostram a origem de cada parcela; a pendência de instalação fica visível */
+        if (g.sinapi.status === "ok" && g.sinapi.insumo) return '<span title="' + esc(g.sinapi.descricao + " — " + (g.sinapi.observacao || "")) + '">' + esc(g.sinapi.codigo) + " (insumo" + (g.moFalta ? "; instalação pendente" : " + MO análoga") + ")</span>";
+        if (g.sinapi.status !== "ok" && g.mercado && g.mercado.valor > 0) return '<span title="' + esc((g.mercado.textoLongo || g.mercado.texto || "") + (g.moDe ? "; instalação: mão de obra da composição " + g.moDe.codigo + " (" + g.moDe.observacao + ")" : (g.moFalta ? "; PENDÊNCIA: " + g.moFalta : ""))) + '">ref. de mercado' + (g.mercado.nFontes === 1 ? " (1 fonte — conferir)" : "") + (g.moFalta ? " (instalação pendente)" : "") + "</span>";
+        return g.sinapi.status === "ok" ? '<span title="' + esc(g.sinapi.descricao) + '">' + esc(g.sinapi.codigo) + "</span>" : '<span class="muted" title="' + esc(g.sinapi.motivo) + '">pendente</span>'; }
       function cor(s) { return '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + I.SISTEMAS[s].cor + ';margin-right:5px"></span>'; }
       h += '<div data-inst="resumo" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">';
       q.porSistema.forEach(function (s) { h += '<div style="border:1px solid rgba(127,127,127,.35);border-radius:9px;padding:6px 9px;font-size:12px">' + cor(s.sistema) + "<b>" + esc(s.nome) + "</b><br>" + fmt(s.metros, 2) + " m · " + s.conexoes + " conexões" + (s.pecas ? " · " + s.pecas + " peças" : "") + "</div>"; });

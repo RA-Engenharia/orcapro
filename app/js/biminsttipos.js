@@ -94,7 +94,7 @@
   /* prefixo e sufixo do nome das CONEXÕES por material */
   var CX_MAT = { pvc_soldavel: ["AF_", "Soldável"], ppr: ["AQ_", "PPR"], cpvc: ["AQ_", "CPVC"], cobre: ["AQ_", "Cobre"],
                  pvc_esgoto: ["ESG_", "Série Normal"], pvc_serie_r: ["ESG_", "Série Reforçada"] };
-  var CX_TIPO = { joelho90: "Joelho 90°", joelho45: "Joelho 45°", te: "Tê", te_reducao: "Tê de redução", juncao: "Junção", luva: "Luva", reducao: "Redução" };
+  var CX_TIPO = { joelho90: "Joelho 90°", joelho45: "Joelho 45°", te: "Tê", te_reducao: "Tê de redução", juncao: "Junção", juncao_reducao: "Junção de redução", curva90: "Curva 90° longa", curva45: "Curva 45° longa", luva: "Luva", reducao: "Redução" };
   /* prefixo dos aparelhos e equipamentos pelo uso */
   function prefFam(id, cat) { if (/clim/.test(id)) return "CLIM_"; if (/hidrante|extintor|sprinkler/.test(id)) return "INC_"; if (/caixa-sifonada|ralo|gordura|inspecao|areia/.test(id)) return "ESG_"; if (/caixa-dagua|cisterna|reservatorio|bomba|aquecedor/.test(id)) return "AF_"; return cat === "aparelho" ? "LOU_" : "EQ_"; }
   function iconeFam(id) { return "fam-" + String(id).replace(/^hid-/, "").replace(/^ra-/, ""); }
@@ -200,14 +200,15 @@
    *   SL da proposta = "Dividir" no editor → Inclinação vira IC;
    *   RE da proposta = "Escala" no editor → Rótulo vira TG (identificar, o costume de mercado). */
   var ATALHOS_PADRAO = { PI: "tubo", PF: "conexao", PA: "acessorio", PX: "aparelho", ME: "equipamento", CX: "caixa-sifonada",
-                         DE: "deslocamento", IC: "inclinacao", VV: "visibilidade", TL: "linha-fina", TG: "rotulo" };
+                         DE: "deslocamento", IC: "inclinacao", VV: "visibilidade", TL: "linha-fina", TG: "rotulo",
+                         CM: "componentes" };   /* frente 3 (27/10/2026): CM = CoMponentes. "CO" já é Copiar no editor (js/bimprecisao.js) */
   var ACOES = {
     tubo: "Tubo", conexao: "Conexão (lista e tipo)", acessorio: "Acessório de tubo", aparelho: "Aparelho sanitário",
     equipamento: "Equipamento", "caixa-sifonada": "Caixa sifonada", deslocamento: "Deslocamento (foca o campo da altura)",
-    inclinacao: "Inclinação (foca o campo)", visibilidade: "Visibilidade/Gráficos", "linha-fina": "Linha fina (liga/desliga)", rotulo: "Rótulo (identificar por categoria)"
+    inclinacao: "Inclinação (foca o campo)", componentes: "Componentes (painel único de peças)", visibilidade: "Visibilidade/Gráficos", "linha-fina": "Linha fina (liga/desliga)", rotulo: "Rótulo (identificar por categoria)"
   };
   /* o comando da fita de cada ação (para o tooltip mostrar o atalho) */
-  var FITA = { tubo: "tubo", conexao: "conexao", acessorio: "acessorio-tubo", aparelho: "aparelho", visibilidade: "vg-vista", rotulo: "identificar-categoria" };
+  var FITA = { tubo: "tubo", conexao: "conexao", acessorio: "acessorio-tubo", aparelho: "aparelho", componentes: "componentes", visibilidade: "vg-vista", rotulo: "identificar-categoria" };
   var NIVEL = [["Alt+1", "Nível de detalhe Baixo"], ["Alt+2", "Nível de detalhe Médio"], ["Alt+3", "Nível de detalhe Alto"]];
 
   function usuario() {
@@ -321,6 +322,11 @@
     atalhos: function () {
       var u = ler(this.chaveAtalhos());
       if (u && this.validarAtalhos(u).ok) return u;
+      /* frente 3: o atalho novo (CM = Componentes) não invalida o mapa que a pessoa já tinha gravado: entra por cima, se a letra está livre */
+      if (u && !Object.keys(u).some(function (k) { return u[k] === "componentes"; }) && !u.CM && !this.ocupados().CM) {
+        var u2 = {}; Object.keys(u).forEach(function (k) { u2[k] = u[k]; }); u2.CM = "componentes";
+        if (this.validarAtalhos(u2).ok) return u2;
+      }
       var o = {}; Object.keys(ATALHOS_PADRAO).forEach(function (k) { o[k] = ATALHOS_PADRAO[k]; }); return o;
     },
     salvarAtalhos: function (mapa) { var v = this.validarAtalhos(mapa); if (!v.ok) return v; gravar(this.chaveAtalhos(), mapa); return v; },
@@ -558,6 +564,7 @@
     var U = UIi(), S = global.BimShell, self = this;
     if (!U || !U.ativo || !U.ativo()) return false;
     if (acao === "tubo") return U.armar("tubo");
+    if (acao === "componentes") { var CU = global.HidComponentesUI; return !!(CU && CU.abrir(U._G)); }   /* frente 3 */
     if (acao === "conexao") { U.comando("conexao", null, U._G); return true; }
     if (acao === "acessorio") return U.armar("acessorio", { famId: (U._p12 && U._p12.acFam) || "ra-registro-gaveta", tipoId: "" });
     if (acao === "aparelho") return U.comando("aparelho", null, U._G);

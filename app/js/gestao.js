@@ -14459,6 +14459,8 @@
         '<div id="bim-orcmod" style="display:none"><div id="bim-orcmod-corpo"></div></div>' +
         /* INSTALAÇÕES (js/biminstui.js, B5): quantitativo por sistema, material e DN */
         '<div id="bim-inst" style="display:none"><div id="bim-inst-corpo"></div></div>' +
+        /* COMPONENTES (frente 3, 27/10/2026): o catálogo único do hidrossanitário — js/biminstcomponentesui.js */
+        '<div id="bim-componentes" style="display:none"><div id="bim-componentes-corpo"></div></div>' +
         /* RENDER (09/10/2026): o painel do render físico — tela e lógica em js/bimrender.js */
         '<div id="bim-render" style="display:none"><div id="bim-render-corpo"></div></div>' +
         /* MATERIAIS (09/10/2026): os materiais do projeto — tela e lógica em js/bimmateriaisui.js */
@@ -14545,7 +14547,7 @@
     _BIM_PAINEIS: { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], famop: ["bim-famop", "Famílias paramétricas"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"], disc: ["bim-disc", "Disciplinas e etapas construtivas"], estrut: ["bim-estrut", "Projeto estrutural no canteiro"],
                    peso: ["bim-peso", "Peso das peças"], icamento: ["bim-icamento", "Plano de içamento"],
                    sondagem: ["bim-sondagem", "Sondagem 3D"], pranchas: ["bim-pranchas", "Pranchas do projeto"],
-                   params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"], inst: ["bim-inst", "Instalações"], render: ["bim-render", "Render"], materiais: ["bim-materiais", "Materiais do projeto"] },   /* RENDER; MATERIAIS */
+                   params: ["bim-params", "Parâmetros do elemento"], orcmod: ["bim-orcmod", "Orçamento do modelo"], inst: ["bim-inst", "Instalações"], componentes: ["bim-componentes", "Componentes"], render: ["bim-render", "Render"], materiais: ["bim-materiais", "Materiais do projeto"] },   /* RENDER; MATERIAIS */
     _bimAbrirPainel: function (chave) {
       var mapa = this._BIM_PAINEIS;
       var alvo = mapa[chave]; if (!alvo) return;

@@ -534,7 +534,7 @@
         /* hidro (pendências finais, 18/10/2026): a REFERÊNCIA DE MERCADO entra como item próprio (fonte "MERCADO"), com o preço
            de varejo levantado — só material; nunca procurada na SINAPI */
         if (it.mercado) {
-          Orcamento.addItem(orc, etapa.id, { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: it.mercado.custoUnitario, custoMO: 0, custoMAT: it.mercado.custoUnitario, custoEQ: 0, baseFonte: it.mercado.baseFonte || "MERCADO" }, it.quantidade);
+          Orcamento.addItem(orc, etapa.id, { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: it.mercado.custoUnitario, custoMO: it.mercado.custoMO || 0, custoMAT: it.mercado.custoMO ? 0 : it.mercado.custoUnitario, custoEQ: 0, baseFonte: it.mercado.baseFonte || "MERCADO" }, it.quantidade);
           var nvM = etapa.itens[etapa.itens.length - 1]; if (nvM) nvM.bimElementos = (it.elementos || []).slice(0, 200);
           if (nvM && it.mercado.provisorio) nvM.precoProvisorio = { motivo: it.mercado.provisorio.motivo, desde: "modelo" };   /* revisão A1: pendência de preço (cotar com o fornecedor) */
           return;

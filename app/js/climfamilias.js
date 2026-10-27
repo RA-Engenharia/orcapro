@@ -67,18 +67,27 @@
   var QUARTO = 4;                    /* clim:ok divisor: o conector fica a 1/4 da largura */
 
   /* ---------------------------------------------------------- ESPECIFICAÇÕES */
-  function C(id, nome, sistema, dn, x, y, z) { return { id: id, nome: nome, sistema: sistema, dn: dn, x: x, y: y, z: z }; }
+  /* PORTAS (papel/dir — frente 2, 27/10/2026): `papel` entrada | saida (o lado da peça: dreno e líquido que sai da condensadora = saída; linha de
+     sucção = o gás que volta à condensadora entra nela e sai da evaporadora) e `dir` = para onde o tubo SAI da peça (vetor unitário local, +Z = a
+     frente da família). O catálogo não cota a saída dos tubos: a direção e a posição seguem o desenho e ficam em aConferir (AV_CONECTOR). O motor
+     ainda não lê papel/dir (frente 1b); o auditor tools/hid-auditar-portas.js cobra. */
+  var DIRS = { esq: [-1, 0, 0], dir: [1, 0, 0], cima: [0, 1, 0], piso: [0, -1, 0], frente: [0, 0, 1], parede: [0, 0, -1] };
+  function C(id, nome, sistema, dn, x, y, z, papel, dirNome) {
+    var o = { id: id, nome: nome, sistema: sistema, dn: dn, x: x, y: y, z: z };
+    if (papel) { var a = DIRS[dirNome]; o.papel = papel; o.dir = { x: a[0], y: a[1], z: a[2] }; o.origemPos = "extremidade"; o.aConferir = "o catálogo não traz a saída dos tubos: posição e direção do desenho"; }
+    return o;
+  }
   var LIN = "-Largura/" + QUARTO, FUNDO = "-Profundidade/2", BAIXO = "-Altura/2";
   var CON_EVAP = [
-    C("liquido", "Linha de líquido", "frigorigeno", "DN_liquido", LIN, BAIXO, FUNDO),
-    C("succao", "Linha de sucção", "frigorigeno", "DN_succao", LIN + " + Afast_linhas", BAIXO, FUNDO),
-    C("dreno", "Dreno de condensado", "dreno", "DN_dreno", "Largura/" + QUARTO, BAIXO, FUNDO),
-    C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "0", FUNDO)
+    C("liquido", "Linha de líquido", "frigorigeno", "DN_liquido", LIN, BAIXO, FUNDO, "entrada", "parede"),
+    C("succao", "Linha de sucção", "frigorigeno", "DN_succao", LIN + " + Afast_linhas", BAIXO, FUNDO, "saida", "parede"),
+    C("dreno", "Dreno de condensado", "dreno", "DN_dreno", "Largura/" + QUARTO, BAIXO, FUNDO, "saida", "parede"),
+    C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "0", FUNDO, "entrada", "dir")
   ];
   var CON_COND = [
-    C("liquido", "Válvula de líquido", "frigorigeno", "DN_liquido", "Largura/2", BAIXO + " + Altura/" + QUARTO, "0"),
-    C("succao", "Válvula de sucção", "frigorigeno", "DN_succao", "Largura/2", BAIXO + " + Altura/" + QUARTO + " + Afast_linhas", "0"),
-    C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "Altura/" + QUARTO, "0")
+    C("liquido", "Válvula de líquido", "frigorigeno", "DN_liquido", "Largura/2", BAIXO + " + Altura/" + QUARTO, "0", "saida", "dir"),
+    C("succao", "Válvula de sucção", "frigorigeno", "DN_succao", "Largura/2", BAIXO + " + Altura/" + QUARTO + " + Afast_linhas", "0", "entrada", "dir"),
+    C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "Altura/" + QUARTO, "0", "entrada", "dir")
   ];
   function caixa(nome) { return [{ id: "corpo", nome: nome, forma: "caixa", x: "0", y: "0", z: "0", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }]; }
 
@@ -90,10 +99,10 @@
     { id: "ra-clim-evap-cassete", nome: "Evaporadora cassete", papel: "evaporadora", tipoClim: "cassete", res: "cassete", conectores: CON_EVAP, sistemas: ["frigorigeno", "dreno", "eletrica"],
       descricao: "Evaporadora cassete embutida no forro. Origem = centro do corpo (a face de baixo fica no plano do forro)." },
     { id: "ra-clim-evap-duto", nome: "Evaporadora dutada (built-in)", papel: "evaporadora", tipoClim: "duto", res: "duto", sistemas: ["frigorigeno", "dreno", "eletrica", "ar"],
-      conectores: CON_EVAP.concat([C("insuflamento", "Boca de insuflamento", "ar", "0", "0", "0", "Profundidade/2"), C("retorno", "Boca de retorno", "ar", "0", "0", "0", FUNDO)]),
+      conectores: CON_EVAP.concat([C("insuflamento", "Boca de insuflamento", "ar", "0", "0", "0", "Profundidade/2", "saida", "frente"), C("retorno", "Boca de retorno", "ar", "0", "0", "0", FUNDO, "entrada", "parede")]),
       descricao: "Evaporadora dutada no plenum do forro. O duto é o sistema ar do biminst; as bocas ficam em +Z (insuflamento) e −Z (retorno)." },
     { id: "ra-clim-janela", nome: "Ar-condicionado de janela", papel: null, res: "janela", sistemas: ["eletrica", "dreno"],
-      conectores: [C("dreno", "Dreno de condensado", "dreno", "DN_dreno", "0", BAIXO, FUNDO), C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "0", FUNDO)],
+      conectores: [C("dreno", "Dreno de condensado", "dreno", "DN_dreno", "0", BAIXO, FUNDO, "saida", "parede"), C("eletrica", "Alimentação elétrica", "eletrica", "0", "Largura/2", "0", FUNDO, "entrada", "dir")],
       descricao: "Aparelho de janela (compacto, sem linha frigorígena). Sem produto no catálogo: tipo genérico." },
     { id: "ra-clim-condensadora", nome: "Condensadora (split)", papel: "condensadora", res: "cond", conectores: CON_COND, sistemas: ["frigorigeno", "eletrica"],
       descricao: "Condensadora individual. Origem = centro do corpo; +Z = face da descarga de ar." },
@@ -102,13 +111,13 @@
     { id: "ra-clim-suporte-condensadora", nome: "Suporte (mão-francesa) da condensadora", papel: null, res: "suporte", sistemas: [], conectores: [],
       descricao: "Par de mãos-francesas da condensadora de fachada (NBR 16655-1: cada uma resiste a N × o maior entre o peso e o peso mínimo, lidos do HidNormas). O parâmetro CargaPorMaoFrancesa_kg é preenchido pela verificação." },
     { id: "ra-clim-bomba-dreno", nome: "Bomba de dreno de condensado", papel: null, res: "bomba", sistemas: ["dreno", "eletrica"],
-      conectores: [C("entrada", "Entrada do dreno", "dreno", "DN_dreno", "-Largura/2", "0", "0"), C("saida", "Recalque", "dreno", "DN_dreno", "Largura/2", "Altura/2", "0"), C("eletrica", "Alimentação elétrica", "eletrica", "0", "0", BAIXO, "0")],
+      conectores: [C("entrada", "Entrada do dreno", "dreno", "DN_dreno", "-Largura/2", "0", "0", "entrada", "esq"), C("saida", "Recalque", "dreno", "DN_dreno", "Largura/2", "Altura/2", "0", "saida", "cima"), C("eletrica", "Alimentação elétrica", "eletrica", "0", "0", BAIXO, "0", "entrada", "piso")],
       descricao: "Bomba de condensado para quando o dreno não chega ao ponto de esgoto/pluvial por gravidade. Sem produto no catálogo: tipo genérico." },
     { id: "ra-clim-sifao-dreno", nome: "Sifão do dreno de condensado", papel: null, res: "sifao", sistemas: ["dreno"],
-      conectores: [C("entrada", "Entrada", "dreno", "DN_dreno", "0", "Altura/2", "0"), C("saida", "Saída", "dreno", "DN_dreno", "0", BAIXO, "0")],
+      conectores: [C("entrada", "Entrada", "dreno", "DN_dreno", "0", "Altura/2", "0", "entrada", "cima"), C("saida", "Saída", "dreno", "DN_dreno", "0", BAIXO, "0", "saida", "piso")],
       descricao: "Sifão (fecho hídrico) do dreno de condensado ligado ao esgoto, contra o retorno de odor." },
     { id: "ra-clim-grelha-difusor", nome: "Grelha / difusor de ar (genérico)", papel: null, res: "grelha", sistemas: ["ar"],
-      conectores: [C("duto", "Ligação ao duto", "ar", "0", "0", "0", "-Profundidade/2")],
+      conectores: [C("duto", "Ligação ao duto", "ar", "0", "0", "0", "-Profundidade/2", "entrada", "parede")],
       descricao: "Grelha ou difusor de ar. Sem catálogo de fabricante nesta fase: cotas de reserva, a conferir. A vazão vai no parâmetro Vazao_m3h (instância)." }
   ];
 

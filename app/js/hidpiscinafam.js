@@ -434,7 +434,35 @@
       caixaSimples("hid-pisc-emergencia", "Botão de parada de emergência", "dispositivo_eletrico", [], RES.emergencia, [cil("botao", "Botão", "z", "0", "Altura - 0.08", "Profundidade / 2", "0.03", "0.02", "Vermelho")], [], "Botão de parada de emergência do sistema de circulação (NBR 10339 5.4.4.13), em pedestal, a ≥ 2 m da borda.", "Inox"),
       caixaSimples("hid-pisc-acionador", "Acionador pneumático da hidro", "dispositivo_eletrico", [], RES.acionador, [], [], "Botão pneumático na borda que liga a bomba da hidromassagem (sem eletricidade junto à água).", "Inox")
     ];
+    CACHE.forEach(anotarPortas);
     return CACHE;
+  }
+  /* PORTAS (papel/dir — frente 2, 27/10/2026): quem entra e quem sai de cada peça da piscina, e para onde o tubo sai da peça (vetor unitário local,
+     convenção do js/familia.js: Y cima, Z para fora da parede). O dispositivo da piscina é visto pelo lado da TUBULAÇÃO: retorno/hidro/reposição
+     recebem a água (entrada); skimmer, ralo e aspiração a levam à bomba (saída). O catálogo cota só o corpo; a direção do tubo é a do desenho
+     (aConferir). O motor ainda não lê papel/dir (frente 1b); o auditor tools/hid-auditar-portas.js cobra. */
+  var DIRS = { esq: [-1, 0, 0], dir: [1, 0, 0], cima: [0, 1, 0], piso: [0, -1, 0], frente: [0, 0, 1], parede: [0, 0, -1] };
+  var PORTAS = {
+    "hid-pisc-filtro": { entrada: ["entrada", "esq"], saida: ["saida", "dir"], descarte: ["saida", "frente"] },
+    "hid-pisc-bomba": { succao: ["succao", "esq"], recalque: ["recalque", "cima"] },
+    "hid-pisc-bomba-hidro": { succao: ["succao", "esq"], recalque: ["recalque", "cima"] },
+    "hid-pisc-bomba-aquec": { succao: ["succao", "esq"], recalque: ["recalque", "cima"] },
+    "hid-pisc-skimmer": { ligacao: ["saida", "piso"] }, "hid-pisc-ralo": { ligacao: ["saida", "dir"] },
+    "hid-pisc-derivacao": { a: ["entrada", "esq"], b: ["saida", "dir"], c: ["saida", "frente"] },
+    "hid-pisc-caixa-descarte": { chegada: ["entrada", "cima"], chegada_dreno: ["entrada", "cima"], saida: ["saida", "frente"] },
+    "hid-pisc-caixa-descarte-esgoto": { chegada: ["entrada", "cima"], chegada_dreno: ["entrada", "cima"], saida: ["saida", "frente"] },
+    "hid-pisc-poco-drenagem": { recalque: ["recalque", "cima"] }, "hid-pisc-reposicao": { entrada: ["entrada", "parede"] },
+    "hid-pisc-retorno": { ligacao: ["entrada", "parede"] }, "hid-pisc-hidro": { ligacao: ["entrada", "parede"] },
+    "hid-pisc-aspiracao": { ligacao: ["saida", "parede"] }, "hid-pisc-succao-hidro": { ligacao: ["saida", "parede"] },
+    "hid-pisc-bomba-calor": { entrada: ["entrada", "esq"], saida: ["saida", "esq"] }, "hid-pisc-coletor": { entrada: ["entrada", "esq"], saida: ["saida", "dir"] }
+  };
+  function anotarPortas(f) {
+    var t = PORTAS[f.id] || {};
+    arr(f.conectores).forEach(function (c) {
+      var r = t[c.id]; if (!r) return;
+      var a = DIRS[r[1]]; c.papel = r[0]; c.dir = { x: a[0], y: a[1], z: a[2] }; c.origemPos = "desenho";
+      c.aConferir = "o catálogo cota só o corpo: posição e direção do bocal são as do desenho";
+    });
   }
   function porId(id) { var t = todas(); for (var i = 0; i < t.length; i++) if (t[i].id === id) return t[i]; return null; }
 

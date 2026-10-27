@@ -96,6 +96,7 @@
     tocoEntrada: 0.20,      // hid:ok a entrada (boia) sai da caixa até a descida do alimentador; o registro no meio
     descidaEntrada: 0.40,   // hid:ok a espera do alimentador desce isto abaixo da entrada (ou até a laje/forro)
     folgaCorpo: 0.15,       // hid:ok o registro da limpeza fica a isto do corpo da caixa (a mão alcança)
+    dnMinExtravasor: 50,    // hid:ok decisão do Rogério 27/10/2026: extravasor no mínimo DN 50 — a vazão que chega pela boia nunca maior que a que o ladrão escoa
     passoSubir: 0.05,       // hid:ok o "subir a caixa X m" sai em múltiplo de 5 cm
     margemSubir: 0.05,      // hid:ok e com 5 cm de sobra sobre a conta (arredondamento das perdas)
     iteracoesOferta: 3,     // hid:ok tentativas de altura da caixa proposta (barrilete → pressão → barrilete)
@@ -676,7 +677,9 @@
 
     /* ---------- 6) EXTRAVASOR e LIMPEZA (saídas livres) e a ALIMENTAÇÃO (boia) */
     var dnE = cx.E && num(cx.E.dn, 0) > 0 ? comercial(num(cx.E.dn, 0)) : dnPad;
-    var dnX = dnE, dnL = dnE;   /* Tigre p.74: extravasor = DN da entrada; limpeza ≥ DN da entrada */
+    /* Tigre p.74: extravasor ≥ DN da entrada; limpeza ≥ DN da entrada. Regra RA (Rogério 27/10/2026): extravasor no mínimo DN 50.
+       A limpeza acompanha o extravasor: o ladrão desce e entra na linha dela depois do registro — a linha nunca mais fina que o ladrão. */
+    var dnX = Math.max(GEO_BAR.dnMinExtravasor, dnE), dnL = dnX;
     var rE = raio(dnE), rX = raio(dnX), rL2 = raio(dnL);
     var sep = null, Nn = NN();
     if (Nn) { try { var lin = (Nn.linhas("af2020.separacao_atmosferica") || []).filter(function (x) { return x.d_max_mm === "*" || num(x.d_max_mm, -1) >= dnE; }).sort(function (a, b) { return (a.d_max_mm === "*" ? Infinity : a.d_max_mm) - (b.d_max_mm === "*" ? Infinity : b.d_max_mm); })[0];
@@ -729,7 +732,7 @@
     }
     var X = ladraoNaLimpeza() || saidaLivre("extravasor", yX, rX, dnX, "extravasor da caixa " + cx.id, decl);
     if (X) { ops.push(X.t1); ops.push(X.t2); }
-    else pend("bar.extravasor", nome + ": o extravasor não acha saída livre para fora da edificação (tubo ou equipamento no caminho) — lance à mão (DN ≥ " + dnE + ", saída visível; Tigre p.74/79)", [cx.id]);
+    else pend("bar.extravasor", nome + ": o extravasor não acha saída livre para fora da edificação (tubo ou equipamento no caminho) — lance à mão (DN ≥ " + dnX + ", saída visível; Tigre p.74/79)", [cx.id]);
     if (Lp) {
       ops.push(Lp.t1); if (Lp.t1b) ops.push(Lp.t1b); ops.push(Lp.t2);
       var kL = kRegL, dL = Lp.d;   /* medido antes do tê do extravasor (a linha inteira da limpeza) */
@@ -737,7 +740,13 @@
       var gL = BIC() && BIC().giroPara ? BIC().giroPara({ x: dL.x, y: 0, z: dL.z }, { x: 0, y: 1, z: 0 }) : 0; if (gL) rgL.giro = gL;
       ops.push(rgL);
     } else pend("bar.limpeza", nome + ": a limpeza não acha saída livre (tubo ou equipamento no caminho junto da base) — lance à mão com registro perto da saída (NBR 5626:2020 6.5.9.1)", [cx.id]);
-    if (X || Lp) pend("bar.descarga", nome + ": extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
+    /* 27/10/2026: DN do extravasor/limpeza = o maior entre o mínimo RA (DN 50, decisão do Rogério) e o da entrada. Só quando a entrada já é
+       ≥ o mínimo o ladrão fica IGUAL à entrada — aí a pendência pede conferir a vazão (o HidNormas não tem regra de dimensionamento) */
+    if (X || Lp) {
+      if (dnX > dnE) res.decisoes.push({ id: "bar.extravasor_dn", texto: nome + ": extravasor" + (Lp ? " e limpeza" : "") + " DN " + dnX + " (mínimo RA; maior que a entrada DN " + dnE + ": o ladrão escoa mais do que a boia deixa entrar)" });
+      else pend("bar.extravasor_dn", nome + ": extravasor" + (Lp ? " e limpeza" : "") + " DN " + dnX + " = DN da entrada — confira que o extravasor escoa a vazão da boia (prática Tigre p.74: extravasor ≥ entrada)", [cx.id]);
+    }
+    if (X || Lp) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
       [X && !X.junto ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
     /* ALIMENTAÇÃO: o toco da entrada (registro) e a espera do alimentador predial */
     var opsAl = [];

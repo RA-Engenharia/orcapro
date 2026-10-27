@@ -252,7 +252,20 @@
   }
 
   var NOMES_CONEXAO = { joelho90: "Joelho 90°", joelho45: "Joelho 45°", te: "Tê", te_reducao: "Tê de redução", juncao: "Junção simples", luva: "Luva", reducao: "Redução", cruzeta: "Cruzeta",
-                        uniao: "União", te_inspecao: "Tê de inspeção" };
+                        uniao: "União", te_inspecao: "Tê de inspeção",
+                        /* 27/10/2026 (frente 1b): os tipos do catálogo dos fabricantes que o motor passa a deduzir ou a reconhecer (js/biminstportas.js
+                           tem as portas de cada um) */
+                        curva90: "Curva 90° longa", curva90_curta: "Curva 90° curta", curva45: "Curva 45° longa", curva45_curta: "Curva 45° curta",
+                        curva_pe_coluna: "Curva de pé de coluna", curva_transposicao: "Curva de transposição",
+                        joelho90_reducao: "Joelho 90° de redução", joelho90_bolsa_curta: "Joelho 90° com bolsa curta", joelho90_anel_labial: "Joelho 90° com anel labial",
+                        joelho90_az_anel: "Joelho 90° com anel de vedação", joelho90_visita: "Joelho 90° com visita", joelho45_misto: "Joelho 45° misto",
+                        te_bucha: "Tê com bucha de latão", te_rosca: "Tê com rosca", te_transicao: "Tê de transição",
+                        juncao_reducao: "Junção de redução", juncao_dupla: "Junção dupla", juncao_invertida: "Junção invertida",
+                        luva_correr: "Luva de correr", luva_reducao: "Luva de redução", luva_rosca: "Luva com rosca", luva_bucha: "Luva com bucha de latão",
+                        uniao_mista: "União mista", uniao_flangeada: "União flangeada", transicao: "Peça de transição",
+                        adaptador: "Adaptador soldável curto", adaptador_caixa: "Adaptador para caixa d'água (flange)", adaptador_anel_labial: "Adaptador com anel labial",
+                        bucha: "Bucha de redução", bucha_longa: "Bucha de redução longa", joelho_bucha: "Joelho 90° com bucha de latão", joelho_rosca: "Joelho 90° com rosca",
+                        cap: "Cap", plug: "Plug", terminal_ventilacao: "Terminal de ventilação" };
   /* PENDÊNCIAS FINAIS (18/10/2026): a PEÇA EM LINHA escolhida pelo projetista num nó de dois tubos alinhados e de mesmo
      DN (no lugar da luva que a rede deduziria): a UNIÃO (água: desmontar sem cortar — bomba, aquecedor, hidrômetro) e o
      TÊ DE INSPEÇÃO (esgoto/pluvial/ventilação aparente: NBR 8160 4.2.5.5, "tubulação aparente … com inspeção"). Grava-se
@@ -261,6 +274,15 @@
   /* a peça em linha só nos materiais que a fabricam e, no tê de inspeção, só nos DN que EXISTEM (decisão da coordenação,
      18/10/2026, noite: o DN 50 não existe nas linhas Tigre/Amanco/Krona): a cota da ficha (js/biminstgeodados.js), uma
      composição SINAPI da peça ou uma referência de mercado — nada disso, o nó fica com a luva e o aviso */
+  /* ===== FRENTE 3 (27/10/2026) — CONEXÃO MANUAL: bloco isolado ===================================================================
+     O projetista clica num NÓ (Componentes > Conexão manual) e escolhe um tipo de HidPortas; fica gravado como peça FORÇADA na ponta do trecho
+     (pecaIni/pecaFim, o mesmo campo da união/tê de inspeção, agora aceitando qualquer tipo). decidir() a honra SE ela serve ao nó
+     (nº de bocas, deflexão e DN no catálogo do material — conferirPortas e conexaoNoCatalogo); senão mantém a dedução e avisa o porquê. */
+  var GRUPOS_FORCA = { agua: 1, esgoto: 1, ventilacao: 1, pluvial: 1 };
+  function tipoForcavel(tipo, grupo) {
+    var HP = dep("HidPortas", "./biminstportas.js");
+    return typeof tipo === "string" && !!GRUPOS_FORCA[grupo] && !!HP && !!HP.info(tipo);
+  }
   var PECAS_LINHA_MAT = { uniao: { pvc_soldavel: 1, cpvc: 1 }, te_inspecao: { pvc_esgoto: 1, pvc_serie_r: 1 } };
   function pecaLinhaExiste(tipo, material, dn) {
     if (!PECAS_LINHA_MAT[tipo] || !PECAS_LINHA_MAT[tipo][material]) return false;
@@ -274,6 +296,8 @@
   function nomeConexao(tipo, material) {
     if (material === "eletrocalha") return { joelho90: "Curva 90° de eletrocalha", te: "Tê 90° de eletrocalha", reducao: "Redução de eletrocalha" }[tipo] || (NOMES_CONEXAO[tipo] || tipo) + " de eletrocalha";   /* P12 */
     if (/^elet_/.test(material || "") && (tipo === "joelho90" || tipo === "joelho45")) return tipo === "joelho90" ? "Curva 90°" : "Curva 135° (desvio de 45°)";
+    /* a redução do ESGOTO e do PLUVIAL é a EXCÊNTRICA (geratriz superior alinhada — regra RA de 20/10/2026, js/biminstgeo.js); na água fica "Redução" */
+    if (tipo === "reducao" && (material === "pvc_esgoto" || material === "pvc_serie_r" || material === "pvc_esgoto_enterrado")) return "Redução excêntrica";
     return NOMES_CONEXAO[tipo] || tipo;
   }
 
@@ -383,7 +407,7 @@
     if (JUNTAS[o.juntaFim]) t.juntaFim = o.juntaFim;
     if (o.juntaMotivo) t.juntaMotivo = txt(o.juntaMotivo).slice(0, 200);
     /* PENDÊNCIAS FINAIS: a peça em linha na ponta (união / tê de inspeção), só no grupo de sistema que a usa */
-    ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; });
+    ["pecaIni", "pecaFim"].forEach(function (kp) { var pl = PECAS_LINHA[o[kp]]; if (pl && pl.indexOf(s.grupo) >= 0) t[kp] = o[kp]; else if (!pl && tipoForcavel(o[kp], s.grupo)) t[kp] = o[kp]; });   /* frente 3: conexão manual (qualquer tipo de HidPortas) */
     camposObra(o, t);   /* FLUIDEZ: comentários e fase da instância */
     if (s.grupo === "esgoto" && (o.redeParte === "coletor" || o.redeParte === "saida")) t.redeParte = o.redeParte;   /* o coletor e a saída da rede externa (js/hidrede.js): o HidES os trata como coletor mesmo sem tubo de queda */
     var apls = APLICACOES[s.grupo] || {};
@@ -605,6 +629,16 @@
       /* d = quanto o ponto está À FRENTE da face de trás do corpo (a louça encosta na parede pelo corpo): o eixo embutido
          se mede da face da parede, e todos os pontos da mesma parede caem na mesma linha */
       if (temFace && Math.abs(lz - z0F) <= FACE_TOL) o.parede = { x: r4(-s), z: r4(-c), d: r4(Math.max(0, lz - z0F)) };
+      /* ENTRADA E SAÍDA ASSERTIVAS (27/10/2026, frente 1b-ii): o que a família DECLARA no conector (js/familia.js repassa) segue para o mundo —
+         papel (entrada | saida | respiro | succao | recalque), porta, opcional (sem tubo não é desconexão), bidirecional e `rosca` (bitola do ponto).
+         `dirTubo` = para onde o tubo sai da peça, no MUNDO (o `dir` local girado como o ponto); `rotY` guarda o giro para a reserva (Z local = fora da parede). */
+      if (k.papel) o.papel = txt(k.papel);
+      if (k.porta) o.porta = txt(k.porta);
+      if (k.opcional === true) o.opcional = true;
+      if (k.bidirecional === true || k.bidirecional === false) o.bidirecional = k.bidirecional;
+      if (k.rosca) o.rosca = txt(k.rosca);
+      if (k.dir && typeof k.dir === "object") { var dx0 = num(k.dir.x, 0), dy0 = num(k.dir.y, 0), dz0 = num(k.dir.z, 0); o.dirTubo = { x: r4(dx0 * c + dz0 * s), y: r4(dy0), z: r4(-dx0 * s + dz0 * c) }; }
+      o.rotY = rot;
       out.push(o);
     });
     return out;
@@ -807,8 +841,86 @@
     return Math.sqrt(dx * dx + dz * dz) <= h.r + 1e-9 && q.y <= h.yTop + 1e-9 && q.y >= h.yBot - 1e-9;
   }
 
+  /* 27/10/2026 (frente 1b): a peça existe no catálogo do fabricante para o material e a chave de DN ("100x50", "100")? Vale a cota lida
+     (HidGeoDados.conexoes) ou só a presença da ficha com as letras ainda não lidas (conexoesBrutas): o produto EXISTE, mesmo sem cota. */
+  function conexaoNoCatalogo(material, tipo, chave) {
+    var GD = dep("HidGeoDados", "./biminstgeodados.js"), k = txt(chave);
+    if (!GD) return false;
+    /* M7 (frente 1c): a peça SEM COTA (a ficha lista, sem tabela dimensional) também existe no catálogo — a junção de redução 75×50 (Amanco 11705) é assim */
+    return ["conexoes", "conexoesBrutas"].some(function (q) { var m = GD[q] && GD[q][material]; return !!(m && m[tipo] && m[tipo][k]); }) ||
+           arr(GD.semCota).some(function (r) { return !!r && r.material === material && r.tipo === tipo && txt(r.dn) === k; });
+  }
+  function vet(d) { return d && d.length === 3 ? { x: +d[0], y: +d[1], z: +d[2] } : d; }
+  /* ⚠ CONFERÊNCIA DE PORTAS (frente 1b, 27/10/2026): a peça escolhida tem as bocas que o nó tem? (a) o nº de ramos ligados = o nº de bocas
+     que ligam tubo (js/biminstportas.js: a tampa nunca; a rosca de aparelho só com o conector do aparelho); (b) nas peças de 2 bocas não
+     lineares, o desvio medido bate com a deflexão da peça (45° ± 10, 90° ± 10 — a mesma janela do motor). no = { tipo, ramos:[{dir,...}],
+     conector: bool }. Devolve { ok, itens: [{ tipo: "contagem"|"deflexao"|"invertida", texto }] }. Sem HidPortas ou tipo sem porta: ok (não afirma). */
+  function conferirPortas(no) {
+    var HP = dep("HidPortas", "./biminstportas.js"), itens = [];
+    if (!HP || !no || !no.tipo || !HP.info(no.tipo)) return { ok: true, itens: itens, semDados: true };
+    var inf = HP.info(no.tipo), ps = inf.portas, nome = nomeConexao(no.tipo, no.material), ramos = arr(no.ramos);
+    var ligam = ps.filter(function (p) { return p.papel !== "tampa" && (p.papel !== "ponto" || no.conector); });
+    var ids = ligam.map(function (p) { return p.id; }).join(", ");
+    var tem = ramos.length + (no.conector ? 1 : 0);   /* o conector do aparelho é uma boca ligada (a rosca `ponto`, ou a boca da redução) */
+    if (tem !== ligam.length) itens.push({ tipo: "contagem", texto: nome + ": o nó tem " + tem + " bocas ligadas, mas a peça tem " + ligam.length + " que ligam tubo (portas " + ids + ")" });
+    if (inf.naoDeduzir) itens.push({ tipo: "invertida", texto: nome + ": ramal contra o fluxo — uso só em ventilação, nunca deduzida automaticamente; confira" });
+    if (ps.length === 2 && ramos.length === 2 && ramos[0].dir && ramos[1].dir) {
+      var defl = HP.deflexao(no.tipo), dv = desvio(vet(ramos[0].dir), vet(ramos[1].dir));
+      if (defl > 1 && Math.abs(dv - defl) > 10) itens.push({ tipo: "deflexao", texto: nome + ": o desvio medido no nó é " + Math.round(dv) + "°, mas a deflexão entre as portas " + ps[0].id + " e " + ps[1].id + " da peça é " + Math.round(defl) + "°" });
+    }
+    return { ok: !itens.length, itens: itens };
+  }
+
+  /* ===== FRENTE 3 — a peça forçada no nó (ver o bloco acima) ===== */
+  function forcadaDoNo(ramos, sistema) {
+    var g = grupoDe(sistema), M0 = MATERIAIS[(ramos[0] || {}).material] || {};
+    if (!GRUPOS_FORCA[g] || M0.larguras || M0.flexivel) return null;
+    for (var i = 0; i < ramos.length; i++) { var pl = ramos[i].pecaLinha; if (pl && !PECAS_LINHA[pl] && tipoForcavel(pl, g)) return pl; }
+    return null;
+  }
+  function decidirForcada(tipo, ramos, sistema, conector, avisos) {
+    var av0 = [], base = decidirBase(ramos, sistema, conector, av0), HP = dep("HidPortas", "./biminstportas.js");
+    var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0], dnM = Math.round(maior.dn), dnm = Math.round(Math.min.apply(null, ramos.map(function (r) { return r.dn; })));
+    var nome = nomeConexao(tipo, maior.material), mat = maior.material, motivo = null, aviso = [];
+    var chave = dnM === dnm ? txt(dnM) : dnM + "x" + dnm;
+    var cf = conferirPortas({ tipo: tipo, material: mat, ramos: ramos, conector: !!conector });
+    cf.itens.forEach(function (it) {
+      if (it.tipo === "invertida") aviso.push(it.texto);
+      else if (!motivo) {
+        if (it.tipo === "deflexao") {
+          var dv = ramos.length === 2 ? Math.round(desvio(vet(ramos[0].dir), vet(ramos[1].dir))) : null, df = HP.deflexao(tipo);
+          motivo = nome + " não serve num nó de " + (dv == null ? "?" : dv) + "°: a peça muda a direção em " + Math.round(df) + "°";
+        } else motivo = it.texto;
+      }
+    });
+    if (!motivo && !conexaoNoCatalogo(mat, tipo, chave)) motivo = nome + " DN " + chave.replace("x", " × ") + " não existe no catálogo de " + ((MATERIAIS[mat] || {}).nome || mat);
+    if (motivo) {
+      av0.forEach(function (t) { avisos.push(t); });
+      avisos.push("conexão escolhida não aplicada — " + motivo + ". Ficou a conexão automática" + (base.length ? " (" + nomeConexao(base[0].tipo, base[0].material) + ")" : "") + "; use \"Voltar ao automático\" ou escolha outra peça");
+      return base;
+    }
+    av0.forEach(function (t) { if (/^transição de material/.test(t)) avisos.push(t); });
+    aviso.forEach(function (t) { avisos.push(t); });
+    return [{ tipo: tipo, sistema: sistema, material: mat, aplicacao: maior.aplicacao, dn: dnM, dn2: dnM === dnm ? 0 : dnm, forcada: true }];
+  }
   /* decide a conexão de UM nó de UM sistema. ramos = [{trecho, dir, dn, material, aplicacao, passante}] */
   function decidir(ramos, sistema, conector, avisos) {
+    var forca = forcadaDoNo(ramos, sistema);
+    if (forca) return decidirForcada(forca, ramos, sistema, conector, avisos);   /* frente 3: peça forçada pelo projetista */
+    var out = decidirBase(ramos, sistema, conector, avisos);
+    /* frente 1b: a peça escolhida tem as bocas (e a deflexão) que o nó tem? Eletrocalha/flexível não têm portas aqui. */
+    var M0 = MATERIAIS[ramos[0].material] || {};
+    if (ramos.length >= 2 && out.length && !M0.larguras && !M0.flexivel) {
+      var pr = out.filter(function (c) { return c.tipo !== "reducao"; })[0] || out[0];
+      var jaDesvio = avisos.some(function (t) { return /^mudança de direção de/.test(t); });
+      conferirPortas({ tipo: pr.tipo, material: pr.material, ramos: ramos, conector: !!conector }).itens.forEach(function (it) {
+        if (it.tipo === "deflexao" && jaDesvio) return;   /* o aviso de "fora de 45°/90°" já diz */
+        avisos.push(it.texto);
+      });
+    }
+    return out;
+  }
+  function decidirBase(ramos, sistema, conector, avisos) {
     var out = [];
     var mat = ramos[0].material, M = MATERIAIS[mat] || {};
     var mats = {}; ramos.forEach(function (r) { mats[r.material] = 1; });
@@ -842,8 +954,17 @@
         /* PENDÊNCIAS FINAIS: a peça em linha pedida pelo projetista (união / tê de inspeção) no lugar da luva */
         var pl0 = [a.pecaLinha, b.pecaLinha].filter(function (x) { return PECAS_LINHA[x] && PECAS_LINHA[x].indexOf(grupoDe(sistema)) >= 0; })[0];
         if (pl0 && !pecaLinhaExiste(pl0, mat, dnM)) { avisos.push(NOMES_CONEXAO[pl0] + " DN " + dnM + " de " + (M.nome || mat) + " não existe no catálogo dos fabricantes: ficou a luva (escolha outro DN ou outra peça)"); pl0 = null; }
-        if (pl0 && Math.abs(a.dn - b.dn) < 0.5) { cx(pl0, dnM); return out; }
+        if (pl0 && Math.abs(a.dn - b.dn) < 0.5) { cx(pl0, dnM, 0, { forcada: true }); return out; }   /* frente 3: "(escolhida)" na Propriedade do nó */
         if (pl0) avisos.push(NOMES_CONEXAO[pl0] + " pedida num nó com DN " + dnm + " × " + dnM + ": a peça é de um DN só — ficou a redução (confira)");
+        /* ⚠ REDUÇÃO CONTRA O FLUXO (frente 1b, 27/10/2026): no esgoto/pluvial o DN não pode diminuir a jusante (NBR 8160) — se o trecho de
+           DN maior é o MONTANTE (o que desce para o nó; a mesma lógica de jusante da junção: a que mais desce, senão a que COMEÇA no nó), avisa.
+           A redução continua deduzida: não se esconde o defeito do traçado. */
+        if ((sistema === "esgoto" || sistema === "pluvial") && Math.abs(a.dn - b.dn) >= 0.5) {
+          var dyA = a.dir.y - b.dir.y, jusA = Math.abs(dyA) > EPS_FLUXO ? (dyA < 0 ? a : b) : (a.jus && !b.jus ? a : (b.jus && !a.jus ? b : null));
+          var monA = jusA ? (jusA === a ? b : a) : null;
+          if (jusA && monA.dn > jusA.dn + 0.5)
+            avisos.push("o diâmetro diminui no sentido do escoamento (trecho " + monA.trecho + " DN " + monA.dn + " → trecho " + jusA.trecho + " DN " + jusA.dn + "): na rede de " + SISTEMAS[sistema].nome.toLowerCase() + " o DN não pode reduzir a jusante — corrija");
+        }
         if (Math.abs(a.dn - b.dn) < 0.5) cx("luva", dnM); else cx("reducao", dnM, dnm);
         return out;
       }
@@ -852,6 +973,22 @@
       if (!((dv >= 35 && dv <= 55) || (dv >= 80 && dv <= 100))) avisos.push("mudança de direção de " + Math.round(dv) + "°: fora de 45°/90° — conexão de " + (tipo === "joelho45" ? "45°" : "90°") + " assumida, confira o traçado");
       if (tipo === "joelho90" && (sistema === "esgoto" || sistema === "pluvial") && !a.vertical && !b.vertical)
         avisos.push("joelho de 90° no trecho horizontal de " + SISTEMAS[sistema].nome.toLowerCase() + ": a NBR 8160 pede, no horizontal, peças de ângulo central até 45° — confira");
+      /* ⚠ BASE DO TUBO DE QUEDA (frente 1b, 27/10/2026): a mudança vertical ↔ horizontal de 90° no esgoto/pluvial é CURVA de raio longo
+         (curva90), não joelho — o joelho de raio curto na base do tubo de queda trava o escoamento. Só se a curva existe no catálogo do
+         material e do DN; senão fica o joelho e o aviso. Na água continua joelho. */
+      if (tipo === "joelho90" && (sistema === "esgoto" || sistema === "pluvial") && !!a.vertical !== !!b.vertical) {
+        if (!conexaoNoCatalogo(maior.material, "curva90", dnM)) avisos.push("curva de raio longo DN " + dnM + " não está no catálogo do material: ficou joelho 90°");
+        else {
+          /* ⚠ A CURVA LONGA CABE? a perna da curva de raio longo é ~3× a do joelho (DN 100: 344 mm × 111 mm, cotas do produto): um trecho
+             curto (a descida de 20–30 cm do aparelho, o toco do ramal) não a comporta — as bolsas se sobreporiam. Cada ramo tem de ter
+             pelo menos a perna da curva; senão fica o joelho e o aviso diz por quê. Sem o comprimento (nó sintético) vale a regra. */
+          var HGc2 = dep("HidGeo", "./biminstgeo.js"), cc2 = null; try { cc2 = HGc2 && HGc2.cotasConexao ? HGc2.cotasConexao(maior.material, "curva90", dnM) : null; } catch (eC2) { cc2 = null; }
+          var perna = cc2 && cc2.z > 0 ? cc2.z / 1000 : 0;
+          var curto = perna > 0 && [a, b].filter(function (r) { return isFinite(r.comprimento) && r.comprimento + 1e-6 < perna; })[0];
+          if (curto) avisos.push("curva de raio longo DN " + dnM + " não cabe no trecho " + curto.trecho + " (" + Math.round(curto.comprimento * 100) + " cm < perna da curva " + Math.round(perna * 100) + " cm): ficou joelho 90°");
+          else tipo = "curva90";
+        }
+      }
       cx(tipo, dnM);
       if (Math.abs(a.dn - b.dn) >= 0.5) cx("reducao", dnM, dnm);
       return out;
@@ -882,7 +1019,16 @@
       if (!gravidade && beta < 70) avisos.push("derivação a " + Math.round(beta) + "° da linha: na água e na elétrica o tê é de 90° — confira");
       var dnB = rc.dn;
       if (dnB > dnRun + 0.5) { cx(ehJuncao ? "juncao" : "te", dnB); cx("reducao", dnB, dnRun); }
-      else if (dnB < dnRun - 0.5) cx(ehJuncao ? "juncao" : "te_reducao", dnRun, dnB);
+      else if (dnB < dnRun - 0.5) {
+        /* ⚠ JUNÇÃO DE REDUÇÃO (frente 1b, 27/10/2026): derivação de DN menor que a linha, no esgoto/pluvial/ventilação, é UMA peça
+           (juncao_reducao DN "linha x derivação") quando o catálogo do fabricante a tem; sem ela fica a junção do DN da linha e o aviso
+           (a redução entra à parte, no orçamento da junção composta). O tê de redução segue como sempre. */
+        if (ehJuncao) {
+          var chJ = txt(dnRun) + "x" + txt(dnB);
+          if (conexaoNoCatalogo(maior.material, "juncao_reducao", chJ)) cx("juncao_reducao", dnRun, dnB);
+          else { cx("juncao", dnRun, dnB); avisos.push("junção de redução DN " + dnRun + "x" + dnB + " não existe no catálogo: ficou a junção simples DN " + dnRun + " (a redução do ramal NÃO é contada à parte — orce-a)"); }
+        } else cx("te_reducao", dnRun, dnB);
+      }
       else cx(ehJuncao ? "juncao" : "te", dnRun);
       return out;
     }
@@ -893,6 +1039,126 @@
     }
     avisos.push("nó com " + n + " trechos: desdobre a ligação — nenhuma conexão foi deduzida");
     return out;
+  }
+
+  /* ================================================================ PONTO DE ÁGUA, REGISTRO ROSCÁVEL, RESERVATÓRIO, TERMINAL
+   * (27/10/2026, frente 1b-ii — decisões D1 a D4 da coordenação). Estas peças são deduzidas SÓ NA CONTAGEM (soQto, como a luva da ponta):
+   * o 3D do ponto de água as desenha pelo MESMO resultado (ligacao.pontoAgua, js/biminstui.js) e as outras não têm peça própria na tela.
+   *   D1  ponto de água de aparelho, tubo de PVC soldável: o tubo chega PARALELO à saída do ponto (|cos| > cos 45° com o eixo da saída) →
+   *       ADAPTADOR soldável curto; senão → JOELHO 90° com BUCHA DE LATÃO. A bitola da rosca é a que o conector da família declara; senão a tabela
+   *       RA (dados-fonte/hidro/pecas/rosca-ponto.json, "prática RA", confirmada pelo Rogério 27/10). A rosca adotada vira PREMISSA. CPVC/PPR:
+   *       a peça de transição do material, se o catálogo tem ficha; senão aviso. Válvula/equipamento (sem rosca de aparelho): nada.
+   *   D2  registro/válvula ROSCÁVEL em tubo soldável: 2 adaptadores (DN do tubo × rosca da tabela do catálogo para o DN).
+   *   D3  tubo soldável ligado a porta de reservatório: ADAPTADOR COM FLANGE para caixa d'água, uma por porta (menos a da boia, que tem a torneira).
+   *   D4  a ponta MAIS ALTA de um trecho vertical de ventilação: TERMINAL DE VENTILAÇÃO do DN, se o catálogo o tem. */
+  var COS45 = Math.SQRT1_2;   // bim:geo cos 45°
+  var NOMES_PONTO = { joelho_bucha: "Joelho 90° soldável com bucha de latão", luva_bucha: "Luva soldável com bucha de latão", adaptador: "Adaptador soldável curto com rosca", adaptador_caixa: "Adaptador soldável com flange para caixa d'água",
+                      terminal_ventilacao: "Terminal de ventilação", transicao: "Peça de transição para rosca", joelho90_transicao: "Joelho 90° de transição para rosca" };
+  function roscaNum(r) {
+    var n = 0; txt(r).replace(/"/g, "").trim().split(/\s+/).forEach(function (p) { var m = p.split("/"); n += m.length === 2 ? Number(m[0]) / Number(m[1]) : Number(m[0]); });
+    return isFinite(n) ? n : 0;
+  }
+  /* o DN nominal (mm) de cada bitola de rosca em polegada (NBR 5626: DN 15 = 1/2″, DN 20 = 3/4″ … DN 100 = 4″) — a torneira "DN 15" é a de rosca 1/2″ */
+  var DN_DA_ROSCA = { "1/2": 15, "3/4": 20, "1": 25, "1 1/4": 32, "1 1/2": 40, "2": 50, "2 1/2": 65, "3": 80, "4": 100 };   // hid:ok DN nominal × polegada (NBR 5626)
+  function dnDaRosca(r) { return DN_DA_ROSCA[txt(r).replace(/"/g, "").replace(/\s+/g, " ").trim()] || 0; }
+  /* M3 (frente 1c): o ponto de água sem rosca (torneira longa, termostático, boia, aquecedor, bomba…) fica visível: a pendência diz qual aparelho e o que falta */
+  function textoPontoSemRosca(p) {
+    var HF = dep("HidFamilias", "./hidfamilias.js"), F = HF && HF.porId ? HF.porId(p.famId) : null;
+    return "ponto de " + ((F && F.nome) || txt(p.famId) || "aparelho") + " (" + txt(p.famInst) + ") sem rosca padrão — peça de ligação a definir (nem a família nem a tabela RA declaram a bitola)";
+  }
+  /* as chaves "DNxROSCA" do tipo no catálogo do material (cotas lidas, letras brutas e peças sem cota) */
+  function chavesDoCatalogo(material, tipo) {
+    var GD = dep("HidGeoDados", "./biminstgeodados.js"), out = {};
+    if (!GD) return [];
+    ["conexoes", "conexoesBrutas"].forEach(function (q) { var m = GD[q] && GD[q][material]; if (m && m[tipo]) Object.keys(m[tipo]).forEach(function (k) { out[k] = 1; }); });
+    arr(GD.semCota).forEach(function (r) { if (r && r.material === material && r.tipo === tipo && r.dn != null) out[txt(r.dn)] = 1; });
+    return Object.keys(out);
+  }
+  /* a chave do catálogo para (DN do tubo, rosca): exata; senão a de MESMO DN com a rosca mais próxima (exata = false); senão null */
+  function pecaDoCatalogo(material, tipo, dn, rosca) {
+    var ks = chavesDoCatalogo(material, tipo).filter(function (k) { return k.split("x")[0] === txt(dn); });
+    if (!ks.length) return null;
+    var want = txt(dn) + "x" + txt(rosca);
+    if (rosca != null && ks.indexOf(want) >= 0) return { chave: want, rosca: txt(rosca), exata: true };
+    /* FRENTE 1c: sem a rosca exata, a MAIS PRÓXIMA ACIMA (rosca maior serve ao metal menor com a bucha; a menor não encaixa) — só sem nenhuma acima vai a mais próxima abaixo */
+    var alvo = roscaNum(rosca), rn = function (k) { return roscaNum(k.split("x")[1]); };
+    var acima = ks.filter(function (k) { return rn(k) >= alvo - 1e-9; }).sort(function (a, b) { return rn(a) - rn(b); }), abaixo = ks.filter(function (k) { return rn(k) < alvo - 1e-9; }).sort(function (a, b) { return rn(b) - rn(a); });
+    var melhor = (acima.length ? acima : abaixo)[0];
+    return { chave: melhor, rosca: melhor.split("x")[1] || "", exata: rosca == null };
+  }
+  function roscaPontoTabela() { var PC = dep("HidPecas", "./hidpecas.js"); return PC && PC.roscaPonto ? PC.roscaPonto() : null; }
+  /* o aparelho do conector na tabela RA: pela família; senão pelo nome do tipo escolhido (torneira/misturador "para lavatório", "para tanque"…) */
+  function aparelhoDaFamilia(T, fi) {
+    if (!T || !fi) return null;
+    if (T.familias && T.familias[fi.famId]) return T.familias[fi.famId];
+    var HF = dep("HidFamilias", "./hidfamilias.js"), F = HF && HF.porId ? HF.porId(fi.famId) : null, tp = F ? arr(F.tipos).filter(function (x) { return x.id === fi.tipoId; })[0] : null, nome = tp ? txt(tp.nome) : "";
+    var achou = null; arr(T.porNomeDoTipo).forEach(function (r) { if (!achou && new RegExp(r.re, "i").test(nome)) achou = r.aparelho; });
+    return achou;
+  }
+  /* B5 (frente 1c): o CPVC com o tubo perpendicular também é joelho de transição (a SINAPI tem 89640/89644/89645); sem ficha no catálogo, a decisão cai na peça reta (abaixo) */
+  var TIPO_TRANSICAO = { ppr: { reto: "transicao", curva: "joelho90_transicao" }, cpvc: { reto: "transicao", curva: "joelho90_transicao" } };
+  /* decide o ponto de água do conector `con` onde chega o ramo `ramo` (um tubo). Devolve null (nada a deduzir) ou
+     { semRosca } | { semTransicao, avisos } | { tipo, material, dn, rosca, chave, saida:[x,y,z], paralelo, premissa, avisos:[], semFicha } */
+  function pontoAguaDe(con, ramo, estado) {
+    var mat = ramo.material; if (mat !== "pvc_soldavel" && mat !== "ppr" && mat !== "cpvc") return null;
+    var fi = arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(con.famInst); })[0];
+    if (!fi || con.origem === "acessorio" || !/^agua_/.test(con.sistema)) return null;
+    /* A3 (frente 1c): a família de categoria `acessorio_tubo` (registro de pressão/gaveta, misturador DBC, união) NÃO é ponto de utilização — o registro de passagem não tem
+       rosca de aparelho, e antes ganhava um joelho com bucha em CADA face e a premissa "rosca do ponto de água (chuveiro)" no memorial */
+    var HFa = dep("HidFamilias", "./hidfamilias.js"), Fa = HFa && HFa.porId ? HFa.porId(fi.famId) : null;
+    if (Fa && Fa.categoria === "acessorio_tubo") return null;
+    var T = roscaPontoTabela(), sem = T && T.semPontoDeRosca ? arr(T.semPontoDeRosca.familias) : [];
+    if (sem.indexOf(fi.famId) >= 0) return null;                                    /* válvula de descarga, mictório…: a rosca é do acessório */
+    if (RESERV_FAM.test(fi.famId)) return null;                                     /* reservatório: adaptador com flange (D3) */
+    var rosca = con.rosca ? txt(con.rosca) : null, origem = rosca ? "declarada pela família" : "", ap = null;
+    if (!rosca) {
+      ap = aparelhoDaFamilia(T, fi);
+      if (ap && T.aparelhos && T.aparelhos[ap]) { rosca = txt(T.aparelhos[ap].rosca); origem = "tabela RA (" + T.aparelhos[ap].nome + "), " + txt(T.meta && T.meta.fonte); }
+    }
+    if (!rosca) return { semRosca: true, famId: fi.famId };                         /* sem rosca declarada nem na tabela: não se inventa */
+    /* o eixo de saída: para onde o TUBO sai do ponto (a declaração da família, girada); sem ela, a normal da parede; sem ela, o giro da instância (Z local = fora da parede) */
+    var w = con.dirTubo ? [con.dirTubo.x, con.dirTubo.y, con.dirTubo.z] : (con.parede ? [con.parede.x, 0, con.parede.z] : [-Math.sin(num(con.rotY, 0)), 0, -Math.cos(num(con.rotY, 0))]);
+    var cosT = Math.abs(w[0] * ramo.dir.x + w[1] * ramo.dir.y + w[2] * ramo.dir.z), paralelo = cosT > COS45;
+    var avisos = [], dn = txt(Math.round(num(ramo.dn, 0)));
+    var o = { material: mat, dn: dn, saida: [-w[0], -w[1], -w[2]], paralelo: paralelo, avisos: avisos, rosca: rosca };
+    if (mat === "pvc_soldavel") {
+      /* A4 (frente 1c, decisão da coordenação): o ponto de utilização recebe o engate, o braço do chuveiro ou a torneira numa rosca FÊMEA. O adaptador soldável curto tem rosca MACHO
+         (a SINAPI o chama "para registro"): o tubo que chega PARALELO à saída leva a LUVA SOLDÁVEL COM BUCHA DE LATÃO; o PERPENDICULAR continua o joelho com bucha. */
+      o.tipo = paralelo ? "luva_bucha" : "joelho_bucha";
+      var pc = pecaDoCatalogo(mat, o.tipo, dn, rosca);
+      if (pc) { o.chave = pc.chave; o.rosca = pc.rosca; if (!pc.exata) avisos.push("ponto de água: " + NOMES_PONTO[o.tipo].toLowerCase() + " " + dn + " × " + rosca + "\" não existe no catálogo; usada a de mesmo DN mais próxima (" + pc.chave.replace("x", " × ") + "\") — confira a rosca do metal"); }
+      else { o.chave = dn + "x" + rosca; o.semFicha = true; avisos.push("ponto de água: " + NOMES_PONTO[o.tipo].toLowerCase() + " DN " + dn + " não existe no catálogo dos fabricantes — a peça fica na lista sem ficha; confira o diâmetro do tubo"); }
+    } else {
+      var t0 = TIPO_TRANSICAO[mat][paralelo ? "reto" : "curva"], pc2 = pecaDoCatalogo(mat, t0, dn, rosca);
+      if (!pc2 && t0 !== "transicao") { t0 = "transicao"; pc2 = pecaDoCatalogo(mat, t0, dn, rosca); }
+      if (!pc2) return { semTransicao: true, material: mat, dn: dn, avisos: ["ponto de água em " + (MATERIAIS[mat] || {}).nome + ": peça de transição sem ficha — conferir"] };
+      o.tipo = t0; o.chave = pc2.chave; o.rosca = pc2.rosca;
+      if (!pc2.exata) avisos.push("ponto de água em " + (MATERIAIS[mat] || {}).nome + ": transição " + dn + " × " + rosca + "\" não existe no catálogo; usada " + pc2.chave.replace("x", " × ") + "\" — confira a rosca do metal");
+    }
+    o.premissa = "rosca do ponto de água " + (ap ? "(" + ap.replace(/_/g, " ") + ") " : "") + fi.id + " (" + fi.famId + "): " + o.rosca + "\" — " + (origem || "prática RA") + (o.rosca !== rosca ? "; pedida " + rosca + "\", usada a do catálogo" : "") + (/conferir/i.test(origem) ? "" : ". Conferir com o metal escolhido");
+    return o;
+  }
+  /* a conexão "só na contagem" que o ponto produz (mesmo formato de uma conexão da rede) */
+  function itemExtra(tipo, base, extra) {
+    var c = { tipo: tipo, nome: NOMES_PONTO[tipo] || nomeConexao(tipo, base.material), sistema: base.sistema, material: base.material, aplicacao: base.aplicacao, dn: base.dn, dn2: base.dn2 || 0, soQto: true, extra: true };
+    Object.keys(extra || {}).forEach(function (k) { c[k] = extra[k]; });
+    return c;
+  }
+  var RESERV_FAM = /(^|-)(caixa-dagua|cisterna|reservatorio|tanque-ret-agua|tanque-cil-agua)/;
+  /* o adaptador com flange que o Traçar do barrilete JÁ põe nos serviços da caixa (js/hidbarrilete.js orcamentoCaixa, rótulo "Barrilete · adaptador com flange DN …") */
+  function incluidoNaCaixa(fi, dn, cid, pool) {
+    /* M6 (frente 1c): o adaptador "incluso" casa pela PORTA/FURO, não pelo DN do rótulo. O barrilete põe nos serviços da caixa 1 adaptador por furo (saída, 2ª saída, extravasor, limpeza) e SOMA no
+       mesmo serviço os de mesmo código (mesmo DN: viram UM serviço com fator = nº de furos e o rótulo do 1º). Então: o pool é a lista dos serviços "Barrilete · adaptador com flange DN …" da
+       INSTÂNCIA (qualquer DN); cada porta ligada consome 1 (o serviço de DN igual primeiro, senão o primeiro com saldo) — 1 adaptador por furo, nunca 2, mesmo que o DN do tubo tenha sido trocado
+       depois do barrilete (aí o aviso diz que o serviço da caixa ficou em outro DN). A porta que passa do saldo (furo a mais, posto à mão) é cobrada à parte. */
+    if (!{ saida: 1, saida2: 1, extravasor: 1, limpeza: 1 }[cid]) return null;
+    var k = txt(fi && fi.id);
+    if (pool[k] == null) pool[k] = arr(fi && fi.servicos).filter(function (s) { return txt(s.rotulo).indexOf("Barrilete · adaptador com flange DN ") === 0; })
+      .map(function (s) { var m = /flange DN (\d+)/.exec(txt(s.rotulo)); return { s: s, rest: num(s.fator, 1), dn: m ? m[1] : "" }; });
+    var L = pool[k], pick = L.filter(function (x) { return x.rest >= 1 - 1e-9 && x.dn === txt(dn); })[0] || L.filter(function (x) { return x.rest >= 1 - 1e-9; })[0];
+    if (!pick) return null;
+    pick.rest--;
+    return { rotulo: pick.s.rotulo, codigo: pick.s.codigo, dnServico: pick.dn, diverge: pick.dn !== txt(dn) };
   }
 
   function rede(estado, avaliarFam) {
@@ -935,8 +1201,20 @@
         if (grupo[j] == null && dist(pontas[i].p, pontas[j].p) <= TOL) { grupo[j] = g; nos[g].pontas.push(j); }
       }
     });
-    var conexoes = [], ligacoes = [], livres = [], continuacoes = [], avisosRede = [], usadosCon = {}, ligPeca = {}, nosRamos = [], juntas = [], luvasQto = [];
+    var conexoes = [], ligacoes = [], livres = [], continuacoes = [], avisosRede = [], usadosCon = {}, ligPeca = {}, nosRamos = [], juntas = [], luvasQto = [], extrasQto = [], pontosSemRosca = [], poolIncl = {};
     var porIdT = {}; trechos.forEach(function (t) { porIdT[t.id] = t; });
+    /* A2: há outro tubo/ponta/conector da ventilação PERTO no prolongamento do trecho na ponta P, ou o esgoto encosta nela? (a regra de esperaPermitida) */
+    function tvPerto(tc, P) {
+      var q = dist(tc.p1, P) <= TOL ? tc.p2 : tc.p1;
+      function enc(e) { var de = dist(e, P); if (de > PERTO_ESPERA || dist(e, q) <= TOL) return false; if (de <= TOL) return true; var u = unit(q, P), w = unit(P, e); return u.x * w.x + u.y * w.y + u.z * w.z >= ALINHADO_ESPERA; }
+      var perto = trechos.some(function (o) {
+        if (o.id === tc.id) return false;
+        if (o.sistema === tc.sistema) { if (enc(o.p1) || enc(o.p2)) return true; var d = noInterior(P, o.p1, o.p2); return d != null && d <= PERTO_ESPERA; }
+        if (o.sistema === "esgoto") { if (dist(o.p1, P) <= TOL || dist(o.p2, P) <= TOL) return true; var de = noInterior(P, o.p1, o.p2); return de != null && de <= TOL; }
+        return false;
+      });
+      return perto || conectores.some(function (c) { return !usadosCon[c.id] && c.sistema === tc.sistema && enc(c); });
+    }
     nos.forEach(function (no, k) {
       var p0 = pontas[no.pontas[0]].p, P = { x: 0, y: 0, z: 0 };
       no.pontas.forEach(function (i) { P.x += pontas[i].p.x; P.y += pontas[i].p.y; P.z += pontas[i].p.z; });
@@ -945,7 +1223,7 @@
       var porSis = {};
       no.pontas.forEach(function (i) {
         var pa = pontas[i], s = pa.t.sistema;
-        (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical,
+        (porSis[s] = porSis[s] || []).push({ trecho: pa.t.id, dir: pa.dir, dn: pa.t.dn || 0, material: pa.t.material, aplicacao: pa.t.aplicacao, vertical: pa.t.vertical, comprimento: pa.t.comprimento,
                                              lado: pa.lado, jus: pa.lado === 0, junta: pa.lado === 0 ? pa.t.juntaIni : pa.t.juntaFim, juntaMotivo: pa.t.juntaMotivo,
                                              pecaLinha: pa.lado === 0 ? pa.t.pecaIni : pa.t.pecaFim });
       });
@@ -955,8 +1233,8 @@
         if (porSis[t.sistema].some(function (r) { return r.trecho === t.id; })) return;
         var d = noInterior(P, t.p1, t.p2);
         if (d != null && d <= TOL) {
-          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: true });
-          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, passante: true, jus: false });
+          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p1, t.p2), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, comprimento: t.comprimento, passante: true, jus: true });
+          porSis[t.sistema].push({ trecho: t.id, dir: unit(t.p2, t.p1), dn: t.dn || 0, material: t.material, aplicacao: t.aplicacao, vertical: t.vertical, comprimento: t.comprimento, passante: true, jus: false });
         }
       });
       /* a ventilação que SAI DO MEIO de um ramal de esgoto, marcada "continua" (o tê da ventilação do ambiente,
@@ -1004,8 +1282,48 @@
         var con = null;
         if (ramos.length === 1) conectores.forEach(function (c) { if (!con && !usadosCon[c.id] && dist(c, P) <= TOL_CONECTOR) con = c; });
         if (con && con.sistema !== s) { av.push("tubo de " + SISTEMAS[s].nome.toLowerCase() + " no ponto de " + SISTEMAS[con.sistema].nome.toLowerCase() + " do aparelho"); con = null; }
-        if (con) { usadosCon[con.id] = 1; ligacoes.push({ trecho: ramos[0].trecho, alvo: con.id, famInst: con.famInst, tipo: con.origem === "acessorio" ? "acessorio" : "aparelho", x: con.x, y: con.y, z: con.z }); }
+        var ligCon = null;
+        if (con) { usadosCon[con.id] = 1; ligCon = { trecho: ramos[0].trecho, alvo: con.id, famInst: con.famInst, tipo: con.origem === "acessorio" ? "acessorio" : "aparelho", x: con.x, y: con.y, z: con.z }; ligacoes.push(ligCon); }
         var cxs = decidir(ramos, s, con, av);
+        /* D1 / D3 (27/10/2026, frente 1b-ii): o ponto de água do aparelho e o adaptador com flange do reservatório — só na contagem; o 3D lê ligCon.pontoAgua */
+        if (con && ramos.length === 1 && con.origem !== "acessorio" && /^agua_/.test(s)) {
+          var fiC = arr(estado && estado.familias).filter(function (f) { return String(f.id) === String(con.famInst); })[0], cidC = txt(con.id).split(":").slice(1).join(":");
+          var baseC = { sistema: s, material: ramos[0].material, aplicacao: ramos[0].aplicacao, dn: ramos[0].dn }, exC = { id: "pa:" + con.id, ramos: [ramos[0].trecho], x: r4(P.x), y: r4(P.y), z: r4(P.z) };
+          if (fiC && RESERV_FAM.test(fiC.famId)) {
+            if (ramos[0].material === "pvc_soldavel" && !/^(entrada|alimentacao)/.test(cidC) && con.porta !== "alimentacao") {
+              var pcR = pecaDoCatalogo("pvc_soldavel", "adaptador_caixa", txt(Math.round(num(ramos[0].dn, 0))), null);
+              if (pcR) {
+                var incl = incluidoNaCaixa(fiC, txt(Math.round(num(ramos[0].dn, 0))), cidC, poolIncl);
+                exC.id = "ac:" + con.id; exC.dn2 = pcR.rosca;
+                if (incl && incl.diverge) av.push("o serviço da caixa " + fiC.id + " tem o adaptador com flange DN " + incl.dnServico + " e o tubo desta porta está em DN " + baseC.dn + " — refaça o Montar barrilete para o serviço acompanhar o tubo (o orçamento não cobra o adaptador duas vezes)");
+                /* o adaptador com flange é SEMPRE reservação, qualquer que seja a aplicação do tubo que chega (a SINAPI só o tem em reservação) */
+                extrasQto.push(itemExtra("adaptador_caixa", Object.assign({}, baseC, { aplicacao: "reservacao" }), Object.assign(exC, incl ? { incluso: "já contado nos serviços da caixa " + fiC.id + " (\"" + txt(incl.rotulo) + "\", SINAPI " + txt(incl.codigo) + "): a lista mostra a peça, o orçamento não a soma outra vez", inclusoCodigo: txt(incl.codigo) } : {})));
+              } else av.push("adaptador com flange DN " + baseC.dn + " (reservatório " + fiC.id + ") não existe no catálogo dos fabricantes — confira o diâmetro do tubo");
+            } else if (ramos[0].material === "pvc_soldavel" && (/^(entrada|alimentacao)/.test(cidC) || con.porta === "alimentacao")) {
+              /* M5 (frente 1c): a ENTRADA do reservatório (a torneira de boia) também leva o adaptador soldável curto × rosca da boia — o orçamento da caixa (barrilete) só traz a boia e a fita;
+                 contado AQUI, uma vez por entrada ligada (a rede e o barrilete passam pelo mesmo nó). A bitola da boia = a de referência do DN do tubo (NBR 5648), a mesma do barrilete. */
+              var dnBo = txt(Math.round(num(ramos[0].dn, 0))), pcB = pecaDoCatalogo("pvc_soldavel", "adaptador", dnBo, BITOLA_REF.pvc_soldavel[dnBo] || null);
+              if (pcB) {
+                exC.id = "ab:" + con.id; exC.dn2 = pcB.rosca; exC.chave = pcB.chave;
+                exC.premissa = "adaptador soldável curto × rosca da torneira de boia de " + fiC.id + ": DN " + dnBo + " × " + pcB.rosca + "\" — a bitola da boia é a de referência do DN (NBR 5648); conferir com a boia escolhida";
+                extrasQto.push(itemExtra("adaptador", Object.assign({}, baseC, { aplicacao: "reservacao" }), exC));
+              } else av.push("adaptador soldável × rosca da torneira de boia DN " + dnBo + " (reservatório " + fiC.id + ") não existe no catálogo dos fabricantes — confira o diâmetro do tubo");
+            }
+          } else {
+            var paD = pontoAguaDe(con, ramos[0], estado);
+            if (paD && paD.semRosca) pontosSemRosca.push({ famInst: con.famInst, famId: paD.famId, conector: con.id, x: r4(P.x), y: r4(P.y), z: r4(P.z) });
+            else if (paD && paD.semTransicao) paD.avisos.forEach(function (t) { av.push(t); });
+            else if (paD) {
+              paD.avisos.forEach(function (t) { av.push(t); });
+              /* M1 (frente 1c): a peça do ponto (luva/joelho com bucha DN do tubo × rosca) JÁ faz a transição do tubo ao aparelho: a redução que o conector pediria (torneira DN 15 em tubo 25 →
+                 "redução 25×15", que nem existe em PVC soldável) não entra — só quando o DN do conector cabe na bitola da rosca adotada */
+              cxs = cxs.filter(function (c) { return !(c.tipo === "reducao" && num(con.dn, 0) > 0 && num(con.dn, 0) <= dnDaRosca(paD.rosca)); });
+              if (ligCon) ligCon.pontoAgua = { tipo: paD.tipo, material: paD.material, dn: Number(paD.dn), rosca: paD.rosca, chave: paD.chave, saida: paD.saida, paralelo: paD.paralelo, semFicha: !!paD.semFicha };
+              exC.dn2 = paD.rosca; exC.premissa = paD.premissa; exC.chave = paD.chave; exC.semFicha = !!paD.semFicha;
+              extrasQto.push(itemExtra(paD.tipo, baseC, exC));
+            }
+          }
+        }
         /* QV1: a luva onde a conexão entrega PONTA. Decisão da coordenação (18/10/2026, noite): a luva faltava no ORÇAMENTO —
            correção de erro de quantitativo, vale para TODOS; sem a prévia hidro ela entra SÓ na contagem (luvasQto: qto e
            orçamento), sem peça no 3D, sem junta no tubo e sem aviso — a geometria nova segue atrás da prévia (P8) */
@@ -1017,7 +1335,22 @@
         else if (ramos.length === 1 && !con) {
           var tc = porIdT[ramos[0].trecho], ponta = tc && tc.continua ? (dist(tc.p1, P) <= TOL ? "p1" : (dist(tc.p2, P) <= TOL ? "p2" : "")) : "";
           if (ponta && (tc.continua === "ambos" || tc.continua === ponta)) continuacoes.push({ trecho: ramos[0].trecho, ponta: ponta, x: r4(P.x), y: r4(P.y), z: r4(P.z) });
-          else livres.push({ trecho: ramos[0].trecho, x: r4(P.x), y: r4(P.y), z: r4(P.z) });
+          else {
+            /* D4 (27/10/2026): a ponta MAIS ALTA de um trecho VERTICAL de ventilação (o prolongamento acima da cobertura) fecha com o TERMINAL DE VENTILAÇÃO do DN,
+               se o catálogo do material o tem; senão fica ponta solta e o aviso diz por quê. Esgoto e água NÃO ganham cap: ponta livre deles é desconexão. */
+            /* A2 (frente 1c, revisão adversarial): o terminal SÓ fecha onde a ponta é espera permitida — a MESMA regra de esperaPermitida (conectividade): nenhum outro
+               tubo, ponta ou conector da ventilação PERTO no prolongamento (um tubo que parou 5 cm antes da coluna continua ponta solta, nunca "terminal") e a ponta
+               não encosta em esgoto. Antes, toda ponta vertical de ventilação deixada solta virava terminal cobrado e sumia de pontasLivres. */
+            var tvD = s === "ventilacao" && ramos[0].vertical && ramos[0].dir.y < -0.5 && !tvPerto(tc, P), fechou = false;
+            if (tvD) {
+              var dnTv = txt(Math.round(num(ramos[0].dn, 0))), pcT = pecaDoCatalogo(ramos[0].material, "terminal_ventilacao", dnTv, null);
+              if (pcT) {
+                fechou = true;
+                extrasQto.push(itemExtra("terminal_ventilacao", { sistema: s, material: ramos[0].material, aplicacao: "ventilacao", dn: Number(dnTv) }, { id: "tv:" + ramos[0].trecho + ":" + (dist(tc.p1, P) <= TOL ? "p1" : "p2"), ramos: [ramos[0].trecho], x: r4(P.x), y: r4(P.y), z: r4(P.z) }));
+              } else av.push("ponta de ventilação sem terminal: o terminal de ventilação DN " + dnTv + " de " + ((MATERIAIS[ramos[0].material] || {}).nome || ramos[0].material) + " não existe no catálogo — escolha outro DN/material ou orce à parte");
+            }
+            if (!fechou) livres.push({ trecho: ramos[0].trecho, x: r4(P.x), y: r4(P.y), z: r4(P.z) });
+          }
         }
         cxs.forEach(function (c, m) {
           c.id = "cx" + k + (sisNo.length > 1 ? s.slice(0, 2) : "") + (cxs.length > 1 ? "-" + m : "");
@@ -1034,8 +1367,35 @@
         av.forEach(function (a) { avisosRede.push({ x: r4(P.x), y: r4(P.y), z: r4(P.z), texto: a }); });
       });
     });
+    /* D2 (27/10/2026, frente 1b-ii): registro/válvula ROSCÁVEL (variante `rosca: true`) em tubo de PVC SOLDÁVEL → 2 adaptadores soldável × rosca (um por face),
+       DN do tubo × a rosca que o catálogo dá para o DN; sem peça nesse DN, a do DN mais próximo e o aviso. Variante soldável: nada. */
+    var porIdTr = {}; trechos.forEach(function (t) { porIdTr[t.id] = t; });
+    acessorios.forEach(function (a) {
+      var Aa = ACESSORIOS[a.acessorio], Va = Aa && Aa.variantes[a.variante];
+      if (!Va || !Va.rosca || a.material !== "pvc_soldavel") return;
+      /* M4 (frente 1c): só a face com TUBO ligado leva adaptador (acessório solto, sem tubo, não gera nenhum); a válvula de pé com crivo tem 1 só rosca ligada (o crivo fica na água) */
+      var facesA = [["ad1", a.a, a.id + ":e"], ["ad2", a.b, a.id + ":s"]].filter(function (f) { return usadosCon[f[2]]; });
+      if (a.variante === "pe_crivo") facesA = facesA.slice(0, 1);
+      if (!facesA.length) return;
+      /* a rosca do registro = a bitola de referência do DN (BITOLA_REF, NBR 5648: 25 → 3/4", 50 → 1 1/2"…), que é a rosca do registro de latão/PVC do DN */
+      var dnA = txt(Math.round(num(a.dn, 0))), pcA = pecaDoCatalogo("pvc_soldavel", "adaptador", dnA, BITOLA_REF.pvc_soldavel[dnA] || null), nota = null;
+      if (!pcA) {
+        var dnsA = chavesDoCatalogo("pvc_soldavel", "adaptador").map(function (k) { return k.split("x")[0]; }).filter(function (v, i, q) { return q.indexOf(v) === i; })
+          .sort(function (x, y) { return Math.abs(Number(x) - num(a.dn, 0)) - Math.abs(Number(y) - num(a.dn, 0)); });
+        if (dnsA.length) { pcA = pecaDoCatalogo("pvc_soldavel", "adaptador", dnsA[0], null); nota = "o adaptador soldável × rosca DN " + dnA + " não existe no catálogo; usado o de DN " + dnsA[0] + " (mais próximo) — confira"; }
+      }
+      if (!pcA) { avisosRede.push({ x: a.centro.x, y: a.centro.y, z: a.centro.z, texto: Aa.nome.toLowerCase() + " " + a.id + ": adaptadores soldável × rosca DN " + dnA + " sem peça no catálogo — orce à parte" }); return; }
+      if (nota) avisosRede.push({ x: a.centro.x, y: a.centro.y, z: a.centro.z, texto: Aa.nome.toLowerCase() + " " + a.id + ": " + nota });
+      var tA = a.trecho != null ? porIdTr[a.trecho] : null, baseA = { sistema: a.sistema, material: "pvc_soldavel", aplicacao: (tA && tA.aplicacao) || aplicacaoAuto(a.sistema, !!a.vertical), dn: num(a.dn, 0) };
+      facesA.forEach(function (f) {
+        extrasQto.push(itemExtra("adaptador", baseA, { id: a.id + ":" + f[0], ramos: [], x: f[1].x, y: f[1].y, z: f[1].z, dn2: pcA.rosca, chave: pcA.chave,
+          premissa: "adaptadores do " + Aa.nome.toLowerCase() + " " + a.id + " (" + Va.rot + "): DN " + dnA + " × " + pcA.rosca + "\" — a rosca do catálogo para o DN do tubo; conferir com o registro escolhido" }));
+      });
+    });
     /* pontos de aparelho sem tubo: o projeto ainda não ligou aquele aparelho */
-    var semLigacao = conectores.filter(function (c) { return !usadosCon[c.id]; });
+    /* D5 (27/10/2026, frente 1b-ii): a porta que a família declara `opcional` (ventilação do reservatório, bocas extras da caixa sifonada) sem tubo NÃO é
+       desconexão nem pendência — só a porta opcional LIGADA entra na rede (usadosCon), como as outras */
+    var semLigacao = conectores.filter(function (c) { return !usadosCon[c.id] && !c.opcional; });
     /* QUALIDADE VISUAL 2: o que a vista de problemas MARCA no 3D — o ponto sem tubo de um sistema que o
        projeto nem traçou (água quente do lavatório numa casa sem aquecimento, o ponto do aparelho antes de
        qualquer tubo) é estado do projeto, não defeito: fica na lista, sem marca vermelha em cima da louça */
@@ -1057,7 +1417,7 @@
       });
     }
     return { trechos: trechos, pecas: pecas, conectores: conectores, conexoes: conexoes, ligacoes: ligacoes, pontasLivres: livres, continuacoes: continuacoes,
-             conectoresLivres: semLigacao, conectoresMarcar: marcar, ligacoesPeca: ligPeca, avisos: avisosRede, acessorios: acessorios, nosRamos: nosRamos, juntas: juntas, luvasQto: luvasQto };
+             conectoresLivres: semLigacao, conectoresMarcar: marcar, ligacoesPeca: ligPeca, avisos: avisosRede, acessorios: acessorios, nosRamos: nosRamos, juntas: juntas, luvasQto: luvasQto, extrasQto: extrasQto, pontosSemRosca: pontosSemRosca };
   }
 
   /* ================================================ JUNTAS NA PONTA (QV1, pedido do Rogério, 17/10/2026)
@@ -1106,11 +1466,18 @@
      ventilação usa a do esgoto ("prumada de esgoto sanitário OU ventilação").
      Ralo, caixa sifonada e caixa elétrica já são separados pela peça. */
   var GRUPO_TABELA = { agua: "agua", esgoto: "esgoto", ventilacao: "esgoto", pluvial: "pluvial", eletrica: "eletrica" };
+  /* FRENTE 1c (27/10/2026): a bucha, a bucha longa e a luva de redução são a MESMA composição SINAPI da redução (o gerador já as classifica como `reducao`,
+     BUCHA DE REDUÇÃO e LUVA DE REDUÇÃO); a junção de redução idem com a junção. A rosca em polegada normaliza "1.1/4" → "1 1/4" (a SINAPI escreve de um jeito,
+     o catálogo de outro). O ADAPTADOR COM FLANGE é SEMPRE reservação, seja qual for a aplicação do tubo que chega (a SINAPI só tem o flange em reservação). */
+  var APELIDO_CHAVE = { juncao_reducao: "juncao", bucha: "reducao", bucha_longa: "reducao", luva_reducao: "reducao" };
   function chaveSinapi(item) {
-    var dnk = item.peca === "tubo" && item.material === "duto_chapa" ? "-" : txt(item.dn) + (item.dn2 ? "x" + item.dn2 : "");
-    var ap = item.aplicacao, gt = GRUPO_TABELA[grupoDe(item.sistema)];
+    var dn2k = item.dn2 ? txt(item.dn2).replace(/\./g, " ").replace(/\s+/g, " ").trim() : "";
+    var dnk = item.peca === "tubo" && item.material === "duto_chapa" ? "-" : txt(item.dn) + (dn2k ? "x" + dn2k : "");
+    var ap = item.peca === "adaptador_caixa" ? "reservacao" : item.aplicacao, gt = GRUPO_TABELA[grupoDe(item.sistema)];
     if (!PECAS[item.peca] && !ACESSORIOS[item.peca] && !DISPOSITIVOS[item.peca] && gt) ap = gt + ":" + ap;
-    return [item.peca, item.material, ap, dnk].join("|");
+    /* ⚠ a SINAPI chama a junção de redução de "JUNÇÃO SIMPLES … DN 100 X 50 MM": é a MESMA peça, na chave "juncao" com o DN composto
+       (a tabela já a tem). Sem este apelido a junção de redução deduzida (frente 1b, 27/10/2026) saía "pendente" do orçamento. */
+    return [APELIDO_CHAVE[item.peca] || item.peca, item.material, ap, dnk].join("|");
   }
   function rotuloItem(item) {
     if (ACESSORIOS[item.peca] || DISPOSITIVOS[item.peca]) return rotuloP12(item);   /* P12 */
@@ -1125,13 +1492,56 @@
     var g = grupoDe(item.sistema), a = (APLICACOES[g] || {})[item.aplicacao];
     return a ? " — " + a.toLowerCase() + " (" + (SISTEMAS[item.sistema] ? SISTEMAS[item.sistema].nome.toLowerCase() : "") + ")" : "";
   }
+  var SUBSTITUTO_SINAPI = { curva90: "joelho90", curva45: "joelho45" };
+  /* B3 (frente 1c): o sufixo da referência de mercado é o do SISTEMA da curva (o pluvial série R não é o esgoto série normal) */
+  /* FRENTE 1g (27/10/2026): a chave "<tipo>|<material>|<DN[xDN2]>" é a que a tabela de insumos (js/biminstsinapi.js, `insumos`) e a referência de mercado das
+     peças sem composição usam. A curva de ESGOTO/PLUVIAL segue com o id da coleta ("curva90_esgoto|150"); a curva soldável de ÁGUA (PVC soldável, CPVC) NUNCA pega o
+     preço de curva de esgoto (colisão B3 apontada pela coleta): usa a chave genérica, que só existe se alguém coletar o preço dela. */
+  var MAT_ESGOTO_CURVA = { pvc_esgoto: 1, pvc_serie_r: 1, pvc_esgoto_enterrado: 1 };
+  function dnChave(item) { var dn2k = item.dn2 ? txt(item.dn2).replace(/\./g, " ").replace(/\s+/g, " ").trim() : ""; return txt(item.dn) + (dn2k ? "x" + dn2k : ""); }
+  function chaveMat(item) { return [item.peca, item.material, dnChave(item)].join("|"); }
+  function idMercadoCurva(item) {
+    if (item.material && !MAT_ESGOTO_CURVA[item.material]) return chaveMat(item);
+    return item.peca + "_" + (item.sistema === "pluvial" ? "pluvial" : "esgoto") + "|" + txt(item.dn);
+  }
+  /* a MÃO DE OBRA da composição SINAPI da peça ANÁLOGA (escolhida pelo gerador: mesmo material, DN igual ou o imediatamente acima, mesma aplicação) para o item que
+     leva insumo ou referência de mercado. null = o item não está na lista; { falta: true } = está, mas não há composição análoga (pendência visível) */
+  function moAnalogaDe(item) {
+    var T = tabela(); if (!T || !T.insumos || !item || !item.peca || !item.material) return null;
+    var e = T.insumos[chaveMat(item)]; if (!e) return null;
+    var gt = GRUPO_TABELA[grupoDe(item.sistema)], m = e.mo ? e.mo[gt + ":" + item.aplicacao] : null;
+    if (!m) return { falta: true, texto: "instalação sem composição análoga (a SINAPI não tem peça análoga de DN igual ou acima em " + gt + ":" + item.aplicacao + ")" };
+    return { codigo: m[0], descricao: m[1], observacao: m[2], texto: "mão de obra da composição " + m[0] + " (" + m[2] + ")" };
+  }
+  /* FRENTE 1g: o INSUMO SINAPI exato (material) + a MO da composição análoga — "ok" com `insumo: true` e `moDe`; sem análoga, só o material e `moFalta` */
+  function insumoDe(item, T, rot, k) {
+    var e = T.insumos ? T.insumos[chaveMat(item)] : null; if (!e || !e.i) return null;
+    var mo = moAnalogaDe(item), r = { status: "ok", chave: k, rotulo: rot, codigo: e.i[0], unidade: e.i[1], descricao: e.i[2], alternativas: 0, insumo: true }, tx = "material: insumo SINAPI " + e.i[0];
+    if (mo && !mo.falta) { r.moDe = { codigo: mo.codigo, descricao: mo.descricao, observacao: mo.observacao }; r.observacao = tx + "; instalação: " + mo.texto; }
+    else { r.moFalta = true; r.observacao = tx + "; PENDÊNCIA: " + (mo ? mo.texto : "instalação sem composição análoga") + " — só o material entra no orçamento"; }
+    return r;
+  }
   function sinapiDe(item) {
     var T = tabela(), k = chaveSinapi(item), rot = rotuloItem(item);
     if (!T || !T.chaves) return { status: "pendente", chave: k, rotulo: rot, motivo: "a tabela SINAPI das instalações (js/biminstsinapi.js) não carregou" };
-    var c = arr(T.chaves[k]).slice();
+    var c = arr(T.chaves[k]).slice(), substDe = null;
     if (item.semTabela) return { status: "pendente", chave: k, rotulo: rot, motivo: item.semTabela };   /* P12: o item já sabe que não tem chave (bitola de rosca, altura da eletrocalha…) */
+    /* ⚠ SUBSTITUTO DECLARADO (frente 1b, 27/10/2026; corrigido na 1c): a SINAPI TEM a curva longa 90° de esgoto série normal DN 40–100 (89730, 89735/89804,
+       89743/89808, 89750/89812/89853 — lista explícita do gerador) e a curva 45°/90° soldável de água: essas chaves casam ACIMA, com o código próprio.
+       O joelho do mesmo ângulo, DN e aplicação só vale ONDE NÃO HÁ curva na SINAPI (DN 150 longa, curva 45° de esgoto, curva soldável sem composição no DN) — e o item
+       sai com a observação dizendo isso (o preço do fabricante da curva pode ser maior). Para voltar ao "pendente", esvazie SUBSTITUTO_SINAPI. */
+    /* D8 (27/10/2026, frente 1b-ii): ANTES do substituto, a referência de MERCADO da curva longa (dados-fonte/hidro/precos-mercado, id "curva90_esgoto|<DN>"),
+       se existir: a curva usa o preço dela e não o do joelho. Sem mercado, o substituto declarado continua (a decisão de dinheiro é do Rogério). */
+    var mercadoCurva = SUBSTITUTO_SINAPI[item.peca] ? refMercado({ mercado: idMercadoCurva(item) }) : null;
+    if (!c.length && SUBSTITUTO_SINAPI[item.peca] && !mercadoCurva) {
+      var it2 = {}; Object.keys(item).forEach(function (q) { it2[q] = item[q]; }); it2.peca = SUBSTITUTO_SINAPI[item.peca];
+      var k2 = chaveSinapi(it2), c2 = arr(T.chaves[k2]).slice();
+      if (c2.length) { c = c2; substDe = SUBSTITUTO_SINAPI[item.peca]; }
+    }
     var ext = item.peca === "tubo" ? ["pn", "classe", "iso", "bitola"] : (EXTRAS_P12[item.peca] || []);
     ext.forEach(function (e) { if (item[e] != null && item[e] !== "") c = c.filter(function (x) { return !x[3] || x[3][e] == null || x[3][e] === txt(item[e]); }); });
+    /* FRENTE 1g: sem composição exata (e sem a chave filtrada por extras), o INSUMO SINAPI exato da lista conferida (material) + a MO da composição análoga */
+    if (!c.length && !arr(T.chaves[k]).length) { var insR = insumoDe(item, T, rot, k); if (insR) return insR; }
     if (!c.length) {
       var porque = arr(T.chaves[k]).length ? " com " + ext.filter(function (e) { return item[e]; }).map(function (e) { return e.toUpperCase() + " " + item[e]; }).join(", ") : "";
       return { status: "pendente", chave: k, rotulo: rot, motivo: "sem composição SINAPI (" + (T.fonte ? T.fonte.mes : "") + ") para " + rot + porque + " — pendente (nunca a parecida)" };
@@ -1145,6 +1555,7 @@
     /* a observação do substituto / da aplicação irmã (tools/gerar-biminst-sinapi.js: ORÇAMENTO 100%) vai com o item */
     var r0 = { status: "ok", chave: k, rotulo: rot, codigo: cod, unidade: c[0][1], descricao: c[0][2], alternativas: c.length - 1 };
     if (c[0][3] && c[0][3].obs) r0.observacao = c[0][3].obs;
+    if (substDe) { r0.substituto = substDe; r0.observacao = (r0.observacao ? r0.observacao + " · " : "") + "a SINAPI não tem a " + nomeConexao(item.peca, item.material).toLowerCase() + ": vale a composição do " + nomeConexao(substDe, item.material).toLowerCase() + " (peça equivalente de mesmo ângulo) — confira o preço do fabricante"; }
     return r0;
   }
 
@@ -1171,6 +1582,8 @@
     if (M.larguras && c.aplicacao === "vertical") it.semTabela = "curva/tê VERTICAL de eletrocalha: a SINAPI 06/2026 só tem as peças horizontais — pendente (orce à parte)";
     /* PENDÊNCIAS FINAIS: o tê de inspeção de ESGOTO não tem composição SINAPI (só o do pluvial série R): a referência de mercado */
     if (c.tipo === "te_inspecao" && c.material === "pvc_esgoto") it.mercado = "te_inspecao_esgoto|" + c.dn;
+    if (SUBSTITUTO_SINAPI[c.tipo]) it.mercado = idMercadoCurva(it);   /* D8: a curva longa, a referência de mercado antes do substituto */
+    else if (!it.mercado) it.mercado = chaveMat(it);   /* FRENTE 1g: cap, luva de correr, redução, tê, junção, união mista, transição… coletados em dados-fonte/hidro/precos-mercado */
     return it;
   }
   /* ISOLAMENTO TÉRMICO DA ÁGUA QUENTE (revisão H5, 21/10/2026): o insumo SINAPI "TUBO DE ESPUMA DE POLIETILENO EXPANDIDO FLEXIVEL
@@ -1284,14 +1697,19 @@
       g.n++; g.metros = r4(g.metros + t.comprimento); g.quantidade = r4(g.quantidade + q.quantidade); g.trechos.push(t.id);
       sis(t.sistema).metros = r4(sis(t.sistema).metros + t.comprimento);
     });
-    R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {   /* + a luva na ponta (só contagem, sem a prévia) */
-      var k = [c.sistema, c.material, c.tipo, c.dn, c.dn2 || "", c.aplicacao].join("|");
+    R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c) {   /* + a luva na ponta e o ponto de água/adaptador/terminal (só contagem, sem a prévia) */
+      var k = [c.sistema, c.material, c.tipo, c.dn, c.dn2 || "", c.aplicacao, c.incluso ? "incl" : ""].join("|");
       var g = cxs[k];
       if (!g) {
         var it = itemConexao(c);
         g = cxs[k] = { tipo: c.tipo, nome: c.nome, sistema: c.sistema, material: c.material, dn: c.dn, dn2: c.dn2, aplicacao: c.aplicacao, n: 0, ids: [],
-                       sinapi: it.semTabela ? { status: "pendente", chave: chaveSinapi(it), rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it) };
-        if (g.sinapi.status !== "ok") { var rmC = refMercado(it); if (rmC) g.mercado = rmC; }
+                       sinapi: c.incluso ? { status: "ok", chave: chaveSinapi(it), rotulo: rotuloItem(it), codigo: c.inclusoCodigo, unidade: "UN", descricao: "orçado nos serviços da caixa d'água (Barrilete)", alternativas: 0, incluso: true, observacao: c.incluso } : (it.semTabela ? { status: "pendente", chave: chaveSinapi(it), rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it)) };
+        if (c.premissa) g.premissa = c.premissa;
+        if (c.incluso) g.incluso = c.incluso;
+        if (c.chave) g.chave = c.chave;
+        if (g.sinapi.status !== "ok") { var rmC = refMercado(it); if (rmC) { g.mercado = rmC; var moC = moAnalogaDe(it); if (moC) { if (moC.falta) g.moFalta = moC.texto; else g.moDe = moC; } } }
+        if (g.sinapi.status === "ok" && g.sinapi.moDe) g.moDe = g.sinapi.moDe;
+        if (g.sinapi.status === "ok" && g.sinapi.moFalta) g.moFalta = g.sinapi.observacao;
         ordC.push(k);
       }
       g.n++; g.ids.push(c.id); sis(c.sistema).conexoes++;
@@ -1369,6 +1787,10 @@
       prolongadores: ordPl.map(function (k) { return prol[k]; }),
       tubos: ordT.map(function (k) { return tubos[k]; }),
       conexoes: ordC.map(function (k) { return cxs[k]; }),
+      /* as PREMISSAS que a dedução assumiu (a rosca do ponto de água, a rosca do adaptador do registro): vão para a lista de material e o memorial */
+      premissas: ordC.map(function (k) { return cxs[k]; }).filter(function (g) { return g.premissa; }).map(function (g) { return { item: g.nome + " " + g.dn + (g.dn2 ? " × " + g.dn2 + "\"" : ""), valor: g.premissa, n: g.n }; }),
+      /* M3 (frente 1c): o ponto de água sem rosca padrão NÃO some do total em silêncio — vira pendência visível (orçamento, lista de material, planilha, memorial) */
+      pontosSemRosca: arr(R.pontosSemRosca).map(function (p) { var o = {}; Object.keys(p).forEach(function (k) { o[k] = p[k]; }); o.texto = textoPontoSemRosca(p); return o; }),
       pecas: ordP.map(function (k) { return pcs[k]; }),
       porSistema: Object.keys(porSis).map(function (k) { return porSis[k]; }),
       ligacoes: R.ligacoes.length, pontasLivres: R.pontasLivres.length, conectoresLivres: R.conectoresLivres.length,
@@ -1386,10 +1808,11 @@
     var R = rede(estado, avaliarFam), out = [];
     function linha(id, it, q, un, sp) {
       var o = { id: id, rotulo: sp.rotulo || rotuloItem(it), unidade: un, quantidade: q };
-      if (sp.status === "ok") { o.codigo = sp.codigo; o.descricao = sp.descricao; o.alternativas = sp.alternativas; if (sp.observacao) o.observacao = sp.observacao; }
+      if (sp.status === "ok") { o.codigo = sp.codigo; o.descricao = sp.descricao; o.alternativas = sp.alternativas; if (sp.observacao) o.observacao = sp.observacao;
+        if (sp.moDe) o.moDe = sp.moDe; if (sp.moFalta) o.moFalta = sp.observacao; }   /* FRENTE 1g: insumo + MO da composição análoga */
       else {
         o.codigo = ""; o.motivo = sp.motivo;
-        var rm = refMercado(it); if (rm) o.referenciaMercado = rm;   /* pendências finais: o preço de varejo levantado, nunca "a cotar" */
+        var rm = refMercado(it); if (rm) { o.referenciaMercado = rm; var moL = moAnalogaDe(it); if (moL) { if (moL.falta) o.moFalta = moL.texto; else o.moDe = moL; } }   /* pendências finais: o preço de varejo levantado, nunca "a cotar"; 1g: + a MO análoga */
       }
       out.push(o);
     }
@@ -1400,10 +1823,13 @@
     /* N23 EMBUTIDO: o rasgo e o chumbamento do trecho embutido em alvenaria (o metro que corre dentro dela), pela SINAPI do DN */
     var HEo = dep("HidEmbutido", "./biminstembutido.js");
     if (HEo && HEo.rasgos) { try { HEo.rasgos(estado, avaliarFam).forEach(function (r) { r.linhas.forEach(function (sp) { linha(r.id, { peca: "rasgo_alvenaria", sistema: r.sistema, material: r.material, dn: r.dn }, r.metros, "m", sp); }); }); } catch (eO) {} }
-    R.conexoes.concat(arr(R.luvasQto)).forEach(function (c) {
+    R.conexoes.concat(arr(R.luvasQto), arr(R.extrasQto)).forEach(function (c) {
+      if (c.incluso) return;   /* o adaptador com flange que os serviços da caixa já orçam (js/hidbarrilete.js): não soma duas vezes */
       var it = itemConexao(c);
       linha(c.id, it, 1, "un", it.semTabela ? { status: "pendente", rotulo: rotuloItem(it), motivo: it.semTabela } : sinapiDe(it));
     });
+    /* M3 (frente 1c): uma linha PENDENTE por ponto de água sem rosca padrão (peça de ligação a definir) — nunca "a cotar" calado */
+    arr(R.pontosSemRosca).forEach(function (p) { out.push({ id: txt(p.famInst) + ":" + txt(p.conector), rotulo: "Peça de ligação do ponto de água (" + txt(p.famId) + ")", unidade: "un", quantidade: 1, codigo: "", motivo: textoPontoSemRosca(p) }); });
     R.pecas.forEach(function (p) {
       if (p.peca === "extintor" && extintorDuplicado(p, estado)) return;   /* a familia inc-extintor no mesmo ponto ja conta */
       var it = itemPeca(p, avaliarFam);
@@ -1618,7 +2044,8 @@
     out.conectores = [{ id: o.id + ":e", famInst: o.id, origem: "acessorio", nome: A.nome + " (face 1)", sistema: o.sistema, dn: dn, x: a.x, y: a.y, z: a.z },
                       { id: o.id + ":s", famInst: o.id, origem: "acessorio", nome: A.nome + " (face 2)", sistema: o.sistema, dn: dn, x: b.x, y: b.y, z: b.z }];
     if (A.sistemas.indexOf(o.sistema) < 0) out.avisos.push(nm + " num tubo de " + S.nome.toLowerCase() + ": confira (o acessório é de água)");
-    if (V.rosca && MATERIAIS[o.material] && !MATERIAIS[o.material].flexivel) out.avisos.push("adaptadores soldável × rosca nas duas faces não são deduzidos — orce à parte");
+    /* 27/10/2026 (D2): em tubo de PVC soldável os 2 adaptadores soldável × rosca JÁ são deduzidos (rede); nos outros materiais continua "orce à parte" */
+    if (V.rosca && MATERIAIS[o.material] && !MATERIAIS[o.material].flexivel && o.material !== "pvc_soldavel") out.avisos.push("adaptadores soldável × rosca nas duas faces não são deduzidos — orce à parte");
     return out;
   }
   /* coloca o acessório; com `trecho`, DIVIDE o trecho: [p1, face 1] fica com o
@@ -2071,7 +2498,7 @@
       var catT = CAT_REGISTRO[grupoDe(c.sistema)]; if (!catT) return;
       var e = base(c.id, c.sistema, arr(c.ramos)[0]);
       e._mep = { tipoId: "mep:" + c.tipo + ":" + c.material, tipoNome: c.nome, familia: c.nome };
-      e.dn = c.dn; e.tamanho = c.dn + (c.dn2 ? " × " + c.dn2 : ""); e.angulo = c.tipo === "joelho90" ? 90 : (c.tipo === "joelho45" ? 45 : null);
+      e.dn = c.dn; e.tamanho = c.dn + (c.dn2 ? " × " + c.dn2 : ""); e.angulo = /^(joelho|curva)90/.test(c.tipo) ? 90 : (/^(joelho|curva)45/.test(c.tipo) ? 45 : null);
       e.tipoConexao = c.nome; e.ramos = arr(c.ramos).join(", "); e.elevIni = c.y; e.avisos = [];
       out.push({ id: String(c.id), categoria: CAT_REGISTRO_CX[catT], el: e });
     });
@@ -2091,8 +2518,8 @@
     COR_CAIXA_ELETRICA: COR_CAIXA_ELETRICA, NOMES_CONEXAO: NOMES_CONEXAO, TOL: TOL, TOL_CONECTOR: TOL_CONECTOR,
     inclinacaoMinima: inclinacaoMinima, abaixoDaMinima: abaixoDaMinima, CASAS_INCLINACAO: CASAS_INCLINACAO, geometria: geometria, tracar: tracar, aplicacaoAuto: aplicacaoAuto, alturaCaixa: alturaCaixa,
     normTrecho: normTrecho, normPeca: normPeca, JUNTAS: JUNTAS, juntasDaPonta: juntasDaPonta, novoEstado: novoEstado, aplicarOp: aplicarOp, fechar: fechar, opValida: opValida,
-    conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio,
-    chaveSinapi: chaveSinapi, sinapiDe: sinapiDe, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
+    conectoresDe: conectoresDe, conectoresDoEstado: conectoresDoEstado, volumesFamilias: volumesFamilias, cortaVolume: cortaVolume, trocarDn: trocarDn, declMinDn: declMinDn, opDoTrecho: opDoTrecho, moverCota: moverCota, dividirTrecho: dividirTrecho, tuboEmVolume: tuboEmVolume, FACE_TOL: FACE_TOL, rede: rede, decidir: decidir, desvio: desvio, conferirPortas: conferirPortas, conexaoNoCatalogo: conexaoNoCatalogo,
+    chaveSinapi: chaveSinapi, chaveMat: chaveMat, moAnalogaDe: moAnalogaDe, sinapiDe: sinapiDe, idMercadoCurvaDe: idMercadoCurva, rotuloItem: rotuloItem, nomeConexao: nomeConexao,
     quantidadeTrecho: quantidadeTrecho, qto: qto, servicosOrc: servicosOrc, planta: planta,
     /* P12 */
     ACESSORIOS: ACESSORIOS, ACESSORIO_DA_FAM: ACESSORIO_DA_FAM, DISPOSITIVOS: DISPOSITIVOS, BITOLA_REF: BITOLA_REF, TIPOS_VERIF: TIPOS_VERIF,

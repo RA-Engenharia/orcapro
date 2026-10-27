@@ -170,8 +170,8 @@
          da louça, e a água fria da caixa acoplada na parede do fundo. Posição
          típica de catálogo — ajuste na família se a louça for outra. */
       conectores: [
-        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: 100, x: "0", y: "0", z: "0" },
-        { id: "af", nome: "Água fria (caixa acoplada)", sistema: "agua_fria", dn: 20, x: "-0.15", y: "0.20", z: "-Comprimento*0.32 - 0.09" }
+        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: 100, x: "0", y: "0", z: "0", papel: "saida", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "saída pelo piso (família sem opção de saída pela parede)" },
+        { id: "af", nome: "Água fria (caixa acoplada)", sistema: "agua_fria", dn: 20, x: "-0.15", y: "0.20", z: "-Comprimento*0.32 - 0.09", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", aConferir: "posição típica de catálogo; ajustar na família se a louça for outra" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Bacia sanitária com caixa acoplada" }
     },
@@ -196,8 +196,13 @@
       ],
       /* B5: a SAÍDA de consumo perto do fundo e a ENTRADA (boia) perto do topo */
       conectores: [
-        { id: "saida", nome: "Saída (consumo)", sistema: "agua_fria", dn: 25, x: "Diametro/2", y: "0.08", z: "0" },
-        { id: "entrada", nome: "Entrada (alimentação)", sistema: "agua_fria", dn: 20, x: "-Diametro/2", y: "Altura - 0.10", z: "0" }
+        /* AS CINCO TUBULAÇÕES (27/10/2026): alimentação, distribuição, extravasor, limpeza e ventilação (opcional). Os ids antigos (entrada/saida)
+           ficam; `porta` é o nome padrão. DN do extravasor/limpeza/ventilação = 0: o dimensionamento define (sem cota de catálogo, a conferir). */
+        { id: "saida", nome: "Saída (consumo)", sistema: "agua_fria", dn: 25, x: "Diametro/2", y: "0.08", z: "0", porta: "distribuicao", papel: "saida", dir: { x: 1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "furo de 8 cm acima do fundo (não puxa sedimento): posição típica, conferir no modelo" },
+        { id: "entrada", nome: "Entrada (alimentação)", sistema: "agua_fria", dn: 20, x: "-Diametro/2", y: "Altura - 0.10", z: "0", porta: "alimentacao", papel: "entrada", dir: { x: -1, y: 0, z: 0 }, origemPos: "catalogo", aConferir: "perto do topo, com a boia: posição típica" },
+        { id: "extravasor", nome: "Extravasor (acima do nível máximo)", sistema: "agua_fria", dn: 0, x: "0", y: "Altura - 0.05", z: "Diametro/2", porta: "extravasor", papel: "saida", dir: { x: 0, y: 0, z: 1 }, origemPos: "desenho", aConferir: "5 cm abaixo da tampa, acima da alimentação; posição e DN sem cota de catálogo" },
+        { id: "limpeza", nome: "Limpeza (no fundo)", sistema: "agua_fria", dn: 0, x: "0", y: "0", z: "-Diametro/2", porta: "limpeza", papel: "saida", dir: { x: 0, y: 0, z: -1 }, origemPos: "desenho", aConferir: "rente ao fundo; posição e DN sem cota de catálogo" },
+        { id: "ventilacao", nome: "Ventilação (no topo, opcional)", sistema: "ventilacao", dn: 0, x: "0", y: "Altura", z: "0", porta: "ventilacao", papel: "respiro", dir: { x: 0, y: 1, z: 0 }, opcional: true, origemPos: "desenho", aConferir: "opcional: a tampa da caixa de polietileno já tem respiro" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Caixa d'água de polietileno" }
     },
@@ -219,8 +224,8 @@
         { id: "cu", nome: "Cuba", forma: "caixa", x: "0", y: "Altura_borda - 0.16", z: "0", dx: "Largura", dy: "0.16", dz: "Profundidade", material: "Material" }
       ],
       conectores: [
-        { id: "esgoto", nome: "Esgoto (sifão)", sistema: "esgoto", dn: 40, x: "0", y: "0.50", z: "-Profundidade/2" },
-        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: 20, x: "0.10", y: "0.60", z: "-Profundidade/2" }
+        { id: "esgoto", nome: "Esgoto (sifão)", sistema: "esgoto", dn: 40, x: "0", y: "0.50", z: "-Profundidade/2", papel: "saida", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", foraDoCorpo: "o ponto é a saída do SIFÃO, abaixo da cuba (14 cm com a cuba padrão): fica fora da caixa do corpo de propósito", aConferir: "posição típica de catálogo" },
+        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: 20, x: "0.10", y: "0.60", z: "-Profundidade/2", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", aConferir: "posição típica de catálogo" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Lavatório de louça suspenso" }
     },
@@ -237,7 +242,7 @@
         { id: "cb", nome: "Crivo", forma: "cilindro", eixo: "y", x: "0", y: "Altura_ponto - 0.10", z: "0", raio: "0.08", altura: "0.06", material: "Material" }
       ],
       conectores: [
-        { id: "af", nome: "Água (chuveiro)", sistema: "agua_fria", dn: 20, x: "0", y: "Altura_ponto", z: "-0.30" }
+        { id: "af", nome: "Água (chuveiro)", sistema: "agua_fria", dn: 20, x: "0", y: "Altura_ponto", z: "-0.30", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", aConferir: "posição típica de catálogo; só água fria (sem ponto de água quente nesta família)" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Chuveiro" }
     }
@@ -523,8 +528,10 @@
         { id: "corpo", nome: "Corpo", forma: "cilindro", eixo: "x", x: "-Comprimento/2", y: "0", z: "0", raio: "DN/1000*0.85", altura: "Comprimento", material: "Material" }
       ].concat(corpo || []),
       conectores: [
-        { id: "e", nome: "Face 1", sistema: "agua_fria", dn: "DN", x: "-Comprimento/2", y: "0", z: "0" },
-        { id: "s", nome: "Face 2", sistema: "agua_fria", dn: "DN", x: "Comprimento/2", y: "0", z: "0" }
+        /* registro de gaveta, esfera e pressão: o fluxo passa nos dois sentidos (bidirecional); válvula de retenção e de pé com crivo: SÓ de e → s
+           (bidirecional: false). Frente 2, 27/10/2026 — o motor ainda não lê estes campos (frente 1b). */
+        { id: "e", nome: "Face 1 (entrada)", sistema: "agua_fria", dn: "DN", x: "-Comprimento/2", y: "0", z: "0", papel: "entrada", dir: { x: -1, y: 0, z: 0 }, bidirecional: !/retencao/.test(id), origemPos: "catalogo", aConferir: /retencao/.test(id) ? "sentido do fluxo: só passa da entrada para a saída; na de pé com crivo a entrada é a ponta do crivo" : "" },
+        { id: "s", nome: "Face 2 (saída)", sistema: "agua_fria", dn: "DN", x: "Comprimento/2", y: "0", z: "0", papel: "saida", dir: { x: 1, y: 0, z: 0 }, bidirecional: !/retencao/.test(id), origemPos: "catalogo", aConferir: /retencao/.test(id) ? "sentido do fluxo: só passa da entrada para a saída" : "" }
       ],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: nome }
     };
@@ -560,7 +567,7 @@
         { id: "t10x2", nome: "2P+T 10 A, 2 módulos", valores: { Modulos: 2 } }
       ],
       solidos: [{ id: "placa", nome: "Placa 4×2", forma: "caixa", x: "0", y: "Altura_montagem - 0.06", z: "0", dx: "0.075", dy: "0.12", dz: "0.01", material: "Material" }],
-      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem", z: "-0.03" }],
+      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem", z: "-0.03", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", aConferir: "eletroduto (fora do escopo hidrossanitário): o tubo chega por dentro da parede" }],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Tomada 2P+T de embutir" }
     },
     {
@@ -593,7 +600,7 @@
         { id: "b1", nome: "Bipolar, 1 módulo", valores: { Tipo_interruptor: "bipolar" } }
       ],
       solidos: [{ id: "placa", nome: "Placa 4×2", forma: "caixa", x: "0", y: "Altura_montagem - 0.06", z: "0", dx: "0.075", dy: "0.12", dz: "0.01", material: "Material" }],
-      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem", z: "-0.03" }],
+      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem", z: "-0.03", papel: "entrada", dir: { x: 0, y: 0, z: -1 }, origemPos: "catalogo", aConferir: "eletroduto (fora do escopo hidrossanitário): o tubo chega por dentro da parede" }],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Interruptor de embutir" }
     },
     {
@@ -629,7 +636,7 @@
         { id: "p60e", nome: "Painel LED 60 × 60, de embutir", valores: { Modelo: "painel_60x60", Potencia_W: "-", Lado: 0.60, Fluxo_lm: 3200 } }
       ],
       solidos: [{ id: "corpo", nome: "Corpo", forma: "caixa", x: "0", y: "Altura_montagem", z: "0", dx: "Lado", dy: "0.03", dz: "Lado", material: "Material" }],
-      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem + 0.03", z: "0" }],
+      conectores: [{ id: "el", nome: "Eletroduto", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem + 0.03", z: "0", papel: "entrada", dir: { x: 0, y: 1, z: 0 }, origemPos: "catalogo", aConferir: "eletroduto (fora do escopo hidrossanitário): o tubo chega por cima" }],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Luminária de teto" }
     },
     {
@@ -652,7 +659,7 @@
         { id: "aco24e", nome: "Aço galvanizado de embutir, 24 disjuntores, 100 A", valores: { Material_quadro: "aco", Disjuntores: 24, Corrente: "100A", Largura: 0.40, Altura: 0.50, Profundidade: 0.12, Material: "Aço galvanizado" } }
       ],
       solidos: [{ id: "caixa", nome: "Caixa", forma: "caixa", x: "0", y: "Altura_montagem - Altura/2", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
-      conectores: [{ id: "el", nome: "Eletroduto (entrada)", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem + Altura/2", z: "Profundidade/2" }],
+      conectores: [{ id: "el", nome: "Eletroduto (entrada)", sistema: "eletrica", dn: 25, x: "0", y: "Altura_montagem + Altura/2", z: "Profundidade/2", papel: "entrada", dir: { x: 0, y: 1, z: 0 }, origemPos: "catalogo", aConferir: "eletroduto (fora do escopo hidrossanitário): o tubo chega por cima" }],
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Quadro de distribuição" }
     }
   );

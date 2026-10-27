@@ -618,7 +618,19 @@
     /* REVISÃO H5 (21/10/2026): o conector pode ter `visivel` (fórmula, como o sólido): o chuveiro ELÉTRICO não tem o ponto de
        água quente da ducha com misturador. Sem `visivel` = sempre (nada muda nas outras famílias) */
     var conectores = arr(fam.conectores).filter(function (k) { return k && k.sistema && (k.visivel == null || f(k.visivel, 1)); }).map(function (k, i) {
-      return { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
+      var o = { id: txt(k.id) || ("c" + (i + 1)), nome: txt(k.nome), sistema: txt(k.sistema), dn: f(k.dn, 0), x: f(k.x, 0), y: f(k.y, 0), z: f(k.z, 0) };
+      /* ENTRADA E SAÍDA ASSERTIVAS (27/10/2026): o conector pode DECLARAR o papel (entrada | saida | respiro | succao | recalque), a direção em que o
+         tubo sai da peça (dir = vetor unitário LOCAL), a porta de reservatório, se a porta é opcional (sem tubo não é desconexão) e se o fluxo é
+         bidirecional. Só repassa o que a família declarou; quem LÊ é o motor (js/biminst.js — frente 1b). Família sem estes campos: nada muda. */
+      if (k.papel) o.papel = txt(k.papel);
+      if (k.dir && typeof k.dir === "object") o.dir = { x: Number(k.dir.x) || 0, y: Number(k.dir.y) || 0, z: Number(k.dir.z) || 0 };
+      if (k.porta) o.porta = txt(k.porta);
+      if (k.opcional === true) o.opcional = true;
+      if (k.bidirecional === true || k.bidirecional === false) o.bidirecional = k.bidirecional;
+      if (k.aConferir) o.aConferir = txt(k.aConferir);
+      if (k.origemPos) o.origemPos = txt(k.origemPos);
+      if (k.foraDoCorpo) o.foraDoCorpo = txt(k.foraDoCorpo);
+      return o;
     });
     var abertura = null;
     if (fam.hospedagem === "parede" && fam.abertura) {

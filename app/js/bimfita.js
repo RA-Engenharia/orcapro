@@ -259,7 +259,7 @@
     { nome: "Pintar", ids: ["pintar-face", "dividir-face", "remover-pintura"] }
   ];
   var ABA_INSTALACOES = [
-    { nome: "Hidrossanitário", ids: ["tubo", "conexao", "aparelho", "acessorio-tubo"] },
+    { nome: "Hidrossanitário", ids: ["componentes", "tubo", "conexao", "aparelho", "acessorio-tubo"] },
     { nome: "Projeto inteligente", ids: ["tracar-auto", "montar-barrilete", "hid-equipar", "hid-equipar-auditar"] },
     { nome: "Rede de tubos", ids: ["cota", { grupo: "gm-cota-rede", rotulo: "Cotar a\nrede", icone: "regua", disc: "hidraulica", grande: true,
         dica: "Cota e numera a rede de uma vez: os trechos iguais ao último tocado, a rede inteira à vista, a numeração R01-T001…, a planilha por ramal e a limpeza das cotas.",

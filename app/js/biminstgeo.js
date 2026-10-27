@@ -828,8 +828,18 @@
     varrer(m, reta(add(pv(P), mul(dir, s0 * MM)), dir), escala([[0, pe.furo || ext[0][1] * 0.9]].concat(ext).concat([[L, pe.furo || ext[0][1] * 0.9]])), segs, true);
     return { partes: [cascaSaida(m)], recuo: zFace * MM, cotas: { produto: true, chave: pl.familia }, aConferir: false };
   }
+  /* ⚠ TIPOS NOVOS DA FRENTE 1b (27/10/2026): onde a geometria não tem perfil nem cota próprios, a peça cai no desenho do tipo-base
+     (a junção de redução é a junção com o ramal de DN menor — o ramal já sai com o DN do trecho; a curva curta/de pé de coluna, o
+     joelho/curva do mesmo ângulo; a união mista/flangeada, a união; o plug, o cap; a luva de correr, a luva). Nada de peça sumida
+     nem de NaN: o que não tem base cai na conexão simbólica do nó, como antes. js/biminstportas.js tem as portas de cada um. */
+  var BASE_GEO = { juncao_reducao: "juncao", juncao_dupla: "juncao", juncao_invertida: "juncao", curva90_curta: "joelho90", curva45_curta: "joelho45", curva_pe_coluna: "curva90",
+                   joelho90_reducao: "joelho90", joelho90_bolsa_curta: "joelho90", joelho90_anel_labial: "joelho90", joelho90_az_anel: "joelho90", joelho90_visita: "joelho90",
+                   joelho45_misto: "joelho45", te_bucha: "te_reducao", te_rosca: "te_reducao", te_transicao: "te_reducao", uniao_mista: "uniao", uniao_flangeada: "uniao",
+                   plug: "cap", luva_correr: "luva", luva_reducao: "reducao", bucha_longa: "bucha" };
+  function tipoBaseGeo(tipo) { return BASE_GEO[tipo] || tipo; }
   function conexaoBruta(c, eixos, o) {
     o = o || {};
+    if (c && BASE_GEO[c.tipo]) { var cb = {}; Object.keys(c).forEach(function (k) { cb[k] = c[k]; }); cb.tipo = BASE_GEO[c.tipo]; c = cb; }
     /* ⚠ JOELHO/CURVA ENTRE DOIS TUBOS QUE SAEM DO NÓ PARA O MESMO LADO (24/10/2026, obra 176 teste): os drenos de dois
        ar-condicionados desciam pela MESMA prumada e terminavam no mesmo ponto — o "joelho" entre eles dobraria 180°. A
        tangente da curva é R·tan(180°/2) = R·1,6·10¹⁶: a peça saiu com 15 trilhões de metros e y = 1,85·10¹⁴ m, e foi ela
@@ -1144,6 +1154,7 @@
   }
   /* a conexão sai de fábrica com PONTA a jusante? (o biminst usa para deduzir a luva) */
   function temPonta(material, tipo, dn) {
+    tipo = tipoBaseGeo(tipo);   /* a junção de redução tem a ponta da junção do DN da linha */
     if (JUNTA[material] !== "anel") return false;
     if (tipo === "reducao") { var PRr = material === "pvc_esgoto" ? produto() : null; return !!(PRr && PRr.reducao && Object.keys(PRr.reducao).some(function (k) { return k.split("x")[0] === String(dn); })); }
     try { return cotasConexao(material, tipo, dn).ponta != null; } catch (e) { return false; }
@@ -1552,11 +1563,19 @@
     } else if (tipo === "luva_correr") {
       cot = cotasConexao(material, "luva_correr", dn);
       varrer(m, reta(Fv, d), escala(perfilDuasBocas(cot.L, cot, cot, cot.od / 2 * 0.96)), segsDe(o.lod, cot.de), false); parts.push(cascaSaida(m));
-    } else if (tipo === "adaptador" || tipo === "joelho_bucha") {
+    } else if (tipo === "adaptador" || tipo === "joelho_bucha" || tipo === "luva_bucha") {
       var C = (dados().conexoes || {})[material] || {}, k = Object.keys(C[tipo] || {}).filter(function (x) { return x.split("x")[0] === String(dn); })[0];
       var reg = k ? C[tipo][k] : null, base0 = cotasConexao(material, "luva", dn);
       cot = { de: base0.de, e: base0.e, pb: base0.pb, od: reg ? reg.od : base0.od, junta: "soldavel", origem: { od: reg ? "catalogo" : "proporcao" }, aConferir: !reg, rosca: reg ? reg.rosca : null };
-      if (tipo === "adaptador") {
+      if (tipo === "luva_bucha") {
+        /* A4 (frente 1c): a LUVA SOLDÁVEL COM BUCHA DE LATÃO do ponto de utilização (rosca FÊMEA): a silhueta da luva (duas bocas) em azul, a bucha de latão no fundo da boca da rosca. A ficha do
+           fabricante (conexoesBrutas) ainda não tem as letras lidas: cota em proporção declarada (aConferir). */
+        var Lb = base0.pb * 2 + 6, F2b = add(Fv, mul(d, Lb * MM)), riL = rIn(cot.de, "soldavel"), recL = Math.min(cot.pb * 0.85, Math.max(4, 0.55 * cot.de)), rBL = Math.min(riL - 2, 20.9 / 2 * 0.86);
+        varrer(m, reta(Fv, d), escala(perfilDuasBocas(Lb, cot, cot, cot.od / 2 * 0.96)), seg, false);
+        varrer(mk, reta(F2b, mul(d, -1)), escala([[recL - 5, rBL], [recL - 5, riL - 0.12], [recL - 0.3, riL - 0.12], [recL - 0.3, rBL]]), seg, true);
+        parts.push(cascaSaida(m, "azul")); parts.push(cascaSaida(mk, "latao"));
+        cot.aConferir = true; cot.L = Lb;
+      } else if (tipo === "adaptador") {
         var La = reg ? reg.L : base0.pb * 2 + 6, q = [];
         boca(q, 0, +1, cot); q.push([cot.pb + 2, cot.od / 2 * 0.975], [cot.pb + 2, cot.od / 2 * 1.08], [cot.pb + 8, cot.od / 2 * 1.08], [cot.pb + 8, cot.de / 2 * 0.98], [La, cot.de / 2 * 0.98], [La, 0]);
         varrer(m, reta(Fv, d), escala(q), seg, false); parts.push(cascaSaida(m));

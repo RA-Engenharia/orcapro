@@ -470,6 +470,7 @@
   Ribbon.NOVOS = {
     "viga": { id: "viga", rotulo: "Viga", icone: "estrutura", grande: true, dica: "Viga de dois cliques, seção 14 × 40, com o topo no topo da parede. Dá para digitar o comprimento. Volume e forma no quantitativo." },
     "fundacao": B("fundacao", "Fundação", "laje", "Sapata, bloco e estaca — fase B2 do modelador."),
+    "componentes": { id: "componentes", rotulo: "Componentes", icone: "lista", grande: true, previa: "modelador", tipo: "alterna", dica: "Tudo do hidrossanitário num só lugar: tubos, conexões, registros e válvulas, louças, ralos e caixas, reservatórios, equipamentos e templates — com busca, ficha técnica, portas (entrada/saída, DN, junta) e Inserir. Atalho CM. Para forçar uma conexão num nó, escolha-a aqui e clique no nó." },
     "tubo": B("tubo", "Tubo", "link", "Tubo por diâmetro e material, com inclinação — fase B5."),
     "conexao": B("conexao", "Conexão", "ciclo", "Joelho, tê e redução automáticos — fase B5."),
     "aparelho": B("aparelho", "Aparelho\nsanitário", "ambiente", "Louças, ralos e caixas — fase B5."),
@@ -563,7 +564,7 @@
       { nome: "Elementos", ids: ["pilar", "viga", "fundacao"] },
       { nome: "Projeto", ids: ["estrutural", "detalhe-peca", "sondagem"] }] },
     { id: "instalacoes", rotulo: "Instalações", paineis: [
-      { nome: "Modelar", ids: ["tubo", "conexao", "aparelho", "eletroduto"] },
+      { nome: "Modelar", ids: ["componentes", "tubo", "conexao", "aparelho", "eletroduto"] },
       { nome: "Rede (tubos)", ids: ["cota", "cota-iguais", "cota-todas", "cota-numerar", "cota-planilha", "cota-limpar"] }] },
     { id: "volume", rotulo: "Modelar volume", paineis: [
       { nome: "Criar", ids: ["extrusao", "revolucao", "varredura"] },

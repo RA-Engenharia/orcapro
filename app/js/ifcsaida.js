@@ -208,7 +208,7 @@
   var PECA_IFC = { ralo_sifonado: "FLOORTRAP", ralo_seco: "FLOORWASTE", caixa_sifonada: "GULLYTRAP", caixa_4x2: "POWER", caixa_4x4: "POWER", caixa_octogonal: "POWER" };
   /* conexão deduzida → PredefinedType: tubo e duto (IfcPipeFittingTypeEnum =
      IfcDuctFittingTypeEnum) e eletroduto (IfcCableCarrierFittingTypeEnum) */
-  var CONEXAO_TUBO = { joelho90: "BEND", joelho45: "BEND", te: "JUNCTION", te_reducao: "JUNCTION", juncao: "JUNCTION", cruzeta: "JUNCTION", luva: "CONNECTOR", reducao: "TRANSITION" };
+  var CONEXAO_TUBO = { joelho90: "BEND", joelho45: "BEND", te: "JUNCTION", te_reducao: "JUNCTION", juncao: "JUNCTION", juncao_reducao: "JUNCTION", curva90: "BEND", curva45: "BEND", cruzeta: "JUNCTION", luva: "CONNECTOR", reducao: "TRANSITION" };
   var CONEXAO_ELET = { joelho90: "BEND", joelho45: "BEND", te: "TEE", te_reducao: "TEE", juncao: "TEE", cruzeta: "CROSS", reducao: "REDUCER" };
 
   /* ----------------------------------------- CLASSE IFC ↔ CATEGORIA DO REVIT

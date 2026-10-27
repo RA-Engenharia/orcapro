@@ -345,10 +345,21 @@
     var out = [], NSIS = {};
     arr(obj(q).porSistema).forEach(function (s) { NSIS[s.sistema] = s.nome; });
     function sis(s) { return NSIS[s] || s || ""; }
-    function sin(x) { var s = obj(x); return { codigo: s.status === "ok" && s.codigo ? String(s.codigo) : "", desc: s.status === "ok" ? (s.descricao || "") : "", un: s.unidade || "", sit: s.status === "ok" ? "código da tabela" : (s.status === "pendente" ? "PENDENTE" : "sem composição"), mot: s.status === "pendente" ? (s.motivo || "") : "" }; }
+    /* B2 (frente 1c): o adaptador com flange que os serviços da caixa já orçam (sinapi.incluso) NÃO leva o código na linha — quem somar a coluna "Código SINAPI" não o conta duas vezes;
+       a situação e a observação dizem em qual serviço ele está (a peça continua listada, com a quantidade, para a lista de material) */
+    function sin(x, g) {
+      var s = obj(x), gg = obj(g);
+      /* FRENTE 1g (27/10/2026): insumo SINAPI (material) + MO da composição análoga, ou referência de mercado (+ MO): diz a origem de cada parcela e a pendência da instalação */
+      if (s.status === "ok" && s.insumo && s.codigo) return { codigo: String(s.codigo), desc: s.descricao || "", un: s.unidade || "", sit: s.moFalta ? "insumo SINAPI (instalação PENDENTE)" : "insumo SINAPI + mão de obra análoga", mot: s.observacao || "" };
+      if (s.status !== "ok" && gg.mercado && gg.mercado.valor > 0) return { codigo: "", desc: "", un: s.unidade || gg.mercado.unidade || "", sit: gg.moFalta ? "referência de mercado (instalação PENDENTE)" : (gg.mercado.nFontes === 1 ? "referência de mercado — 1 fonte, conferir" : "referência de mercado"),
+        mot: "material: " + (gg.mercado.textoLongo || (gg.mercado.texto + " — " + gg.mercado.criterio)) + (gg.moDe ? "; instalação: mão de obra da composição " + gg.moDe.codigo + " (" + gg.moDe.observacao + ")" : (gg.moFalta ? "; PENDÊNCIA: " + gg.moFalta : "")) };
+      if (s.incluso) return { codigo: "", desc: "", un: s.unidade || "", sit: "incluso nos serviços da caixa", mot: (s.observacao || "já orçado nos serviços da caixa d'água") + (s.codigo ? " (código " + s.codigo + " lá, não somar aqui)" : ""), incluso: true };
+      return { codigo: s.status === "ok" && s.codigo ? String(s.codigo) : "", desc: s.status === "ok" ? (s.descricao || "") : "", un: s.unidade || "", sit: s.status === "ok" ? "código da tabela" : (s.status === "pendente" ? "PENDENTE" : "sem composição"), mot: s.status === "pendente" ? (s.motivo || "") : (s.observacao || "") };
+    }
     arr(q.tubos).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Tubo", desc: "Tubo " + (g.material || ""), dn: g.dn, dn2: "", qtd: g.quantidade, un: g.unidade || "m", n: g.n, s: sin(g.sinapi) }); });
-    arr(q.conexoes).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Conexão", desc: g.nome || g.tipo, dn: g.dn, dn2: g.dn2 || "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
-    arr(q.pecas).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Peça", desc: g.nome || g.peca, dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
+    arr(q.conexoes).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Conexão", desc: g.nome || g.tipo, dn: g.dn, dn2: g.dn2 || "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi, g) }); });
+    arr(q.pontosSemRosca).forEach(function (p) { out.push({ sistema: "agua_fria", material: "", item: "Pendência", desc: "Peça de ligação do ponto de água (" + (p.famId || "aparelho") + ")", dn: "", dn2: "", qtd: 1, un: "un", n: 1, s: { codigo: "", desc: "", un: "un", sit: "PENDENTE", mot: p.texto || "ponto de água sem rosca padrão — peça de ligação a definir" } }); });   /* M3 (frente 1c) */
+    arr(q.pecas).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Peça", desc: g.nome || g.peca, dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi, g) }); });
     arr(q.acessorios).forEach(function (g) { out.push({ sistema: sis(g.sistema), material: g.material, item: "Acessório", desc: (g.nome || g.acessorio) + (g.variante ? " (" + g.variante + ")" : ""), dn: g.dn, dn2: "", qtd: g.n, un: "un", n: g.n, s: sin(g.sinapi) }); });
     /* a placa sem composição SINAPI única (mista / intermediário de vários módulos — js/biminst.js composInterruptor) é orçada por
        PARCELAS: uma linha por composição, com a quantidade dela (antes saía só a 1ª — a planilha não fechava com o orçamento) */
@@ -376,7 +387,7 @@
       row.getCell(7).value = x.qtd; row.getCell(7).numFmt = x.un === "un" ? INT : NUM; row.getCell(8).value = x.un;
       row.getCell(9).value = x.s.codigo; row.getCell(10).value = txt(x.s.desc); row.getCell(11).value = x.s.sit; row.getCell(12).value = txt(x.s.mot);
       row.getCell(12).alignment = { wrapText: true, vertical: "top" };
-      corpoLinha(row, x.s.codigo ? null : "pendente", N); l++;
+      corpoLinha(row, x.s.codigo || x.s.incluso ? null : "pendente", N); l++;
     });
     var ult = l - 1;
     if (!lin.length) { ws.mergeCells(l, 1, l, N); ws.getCell(l, 1).value = "O quantitativo veio vazio (sem tubos, conexões ou peças)."; l++; }
@@ -480,7 +491,7 @@
     bloco("Verificações pendentes ou que não atendem", ["Situação", "Sistema / alvo", "Verificação", "Passos", "Fonte"], vs.filter(function (v) { return v.status !== "ok"; }).map(function (v) { return { v: [statusTxt(v.status), (v.sistema || "") + " / " + (v.alvo || ""), v.nome + (v.status === "pendente" ? " — não verificado" : ""), arr(v.passos).join(" | "), fonteTxt(v.fonte)], st: v.status }; }), "Todas as verificações do resultado atendem.");
     var pr = [];
     if (q && typeof q === "object") {
-      lin: { linhasQto(q).filter(function (x) { return !x.s.codigo; }).forEach(function (x) { pr.push({ v: ["SEM CÓDIGO", x.sistema + " / " + x.item + " DN " + x.dn, x.desc, x.s.mot || x.s.sit, ""], st: "pendente" }); }); }
+      lin: { linhasQto(q).filter(function (x) { return !x.s.codigo && !x.s.incluso; }).forEach(function (x) { pr.push({ v: ["SEM CÓDIGO", x.sistema + " / " + x.item + " DN " + x.dn, x.desc, x.s.mot || x.s.sit, ""], st: "pendente" }); }); }
     } else pr.push({ v: ["NÃO VERIFICADO", "Quantitativo", "Quantitativo não informado ao gerar as planilhas", "", ""], st: "pendente" });
     if (!r.recalque) pr.push({ v: ["NÃO ABRANGIDO", "Recalque", "Cálculo executado sem dados de recalque", "", ""], st: null });
     if (!r.programa) pr.push({ v: ["NÃO ABRANGIDO", "Programa de necessidades", "Cálculo executado sem programa (população, consumo, reservação)", "", ""], st: null });

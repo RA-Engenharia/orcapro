@@ -46,7 +46,7 @@
       if (o.$ != null && Object.keys(o).length === 1) return exp(copia(com[o.$]));
       var r = {}; Object.keys(o).forEach(function (k) { r[k] = exp(o[k]); }); return r;
     }
-    var out = { meta: (d && d.meta) || {}, fontes: (d && d.fontes) || {}, sinapi: sin, fichas: [], porId: {} };
+    var out = { meta: (d && d.meta) || {}, fontes: (d && d.fontes) || {}, sinapi: sin, roscaPonto: (d && d.roscaPonto) || null, fichas: [], porId: {} };
     arr(d && d.fichas).forEach(function (f0) {
       var f = exp(f0), cm = f.comercial || {};
       /* fabricante [fab, código, página, fonte] → objeto (a descrição volta do catálogo pelo código) */
@@ -110,6 +110,8 @@
     var pl = (fc.hidraulica || {}).perdaLocal || {};
     if (pl.semValorTabelado) return { peca: resumo(fc), semValorTabelado: true, premissa: pl.premissa };
     var us = pl.usos || {}, chave = us[conexao0] ? conexao0 : null;
+    /* D6 (27/10/2026): o joelho com bucha de latão usa a linha do joelho 90° (a ficha traz só `joelho90` e a premissa) */
+    if (!chave && fc.classe === "conexao" && Object.keys(us).length === 1 && pl.premissa) chave = Object.keys(us)[0];
     /* acessório: a ficha da variante diz qual singularidade ela é (pé com crivo ≠ retenção comum) */
     if (!chave && fc.classe === "acessorio") chave = Object.keys(us)[0] || null;
     if (!chave || !us[chave] || !us[chave].ref) return { peca: resumo(fc), pendente: pl.pendente ? pl : null };
@@ -213,6 +215,7 @@
     var pl = H.perdaLocal || {};
     Object.keys(pl.usos || {}).forEach(function (u) { var x = pl.usos[u]; if (x) v((x.grandeza === "k" ? "K " : "Leq ") + u.replace(/_/g, " "), x, x.grandeza === "k" ? "" : " m"); });
     if (pl.semValorTabelado) out.push({ rotulo: "perda localizada", texto: "desprezada (premissa declarada: sem valor tabelado)" });
+    else if (pl.premissa) out.push({ rotulo: "premissa", texto: pl.premissa });
     if (pl.pendente) out.push({ rotulo: "perda localizada", texto: "pendente — falta " + pl.fonteNecessaria, pendente: true });
     v("Di", H.diametroInterno, " mm");
     if (H.pressaoServico && H.pressaoServico.max) v("pressão máx. de serviço", H.pressaoServico.max, " kPa");
@@ -226,7 +229,20 @@
     var out = [], op = opcoes || {};
     q = q || {};
     arr(q.tubos).forEach(function (g) { out.push(linha(tubo(g.material, g.dn), { classe: "tubo", descricao: "Tubo " + g.material + " DN " + g.dn, unidade: g.unidade || "m", dn: g.dn, quantidade: g.quantidade, sistema: g.sistema, aplicacao: g.aplicacao })); });
-    arr(q.conexoes).forEach(function (g) { out.push(linha(conexao(g.tipo, g.material, g.dn), { classe: "conexao", descricao: g.nome || g.tipo, unidade: "un", dn: g.dn, dn2: g.dn2, quantidade: g.n, sistema: g.sistema, aplicacao: g.aplicacao })); });
+    /* peça de rosca/composta (ponto de água "25 × 1/2\"", adaptador do registro): a ficha é da chave "DNxROSCA"; a premissa da dedução (a rosca adotada) vai na linha */
+    arr(q.conexoes).forEach(function (g) {
+      var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF);
+      var l = linha(fcx, { classe: "conexao", descricao: g.nome || g.tipo, unidade: "un", dn: g.dn, dn2: g.dn2, quantidade: g.n, sistema: g.sistema, aplicacao: g.aplicacao });
+      if (g.premissa) l.premissas = [g.premissa];
+      if (g.incluso) { l.incluso = g.incluso; l.total = null; l.preco = { pendente: false, valor: null, incluso: true, criterio: g.incluso }; }
+      out.push(l);
+    });
+    /* M3 (frente 1c): o ponto de água sem rosca padrão aparece na lista como PENDÊNCIA (peça de ligação a definir) — não some do levantamento */
+    arr(q.pontosSemRosca).forEach(function (p) {
+      var l = linha(null, { classe: "pendencia", descricao: "Peça de ligação do ponto de água (" + (p.famId || "aparelho") + ")", unidade: "un", quantidade: 1, sistema: "agua_fria" });
+      l.premissas = [p.texto || "ponto de água sem rosca padrão — peça de ligação a definir"]; l.preco = { pendente: true, valor: null, criterio: l.premissas[0] }; l.pendencia = true;
+      out.push(l);
+    });
     arr(q.acessorios).forEach(function (g) { out.push(linha(acessorio(g.acessorio || g.peca, g.variante, g.dnTubo || g.dn), { classe: "acessorio", descricao: g.nome || g.acessorio, unidade: "un", quantidade: g.n, sistema: g.sistema })); });
     arr(q.pecas).forEach(function (g) { out.push(linha(peca(g.peca, g.dn), { classe: "peca", descricao: g.nome || g.peca, unidade: "un", dn: g.dn, quantidade: g.n, sistema: g.sistema, aplicacao: g.sistema === "pluvial" ? "pluvial" : "esgoto" })); });
     /* louças, metais e equipamentos: uma linha por família × produto (o código do fabricante é do tipo escolhido) */
@@ -274,7 +290,8 @@
         "<td>" + (typeof l.quantidade === "number" ? br(l.quantidade, l.unidade === "m" ? 2 : 0) + " " + esc(l.unidade) : "—") + "</td>" +
         "<td>" + (arr(l.fabricante).length ? arr(l.fabricante).map(esc).join("<br>") : "—") + "</td><td>" + sin + "</td>" +
         "<td>" + (l.norma ? esc(l.norma) : (l.normaPendente ? '<span class="pend">não consta no catálogo</span>' : "—")) + "</td>" +
-        "<td>" + (arr(l.coeficientes).length ? arr(l.coeficientes).map(function (c) { return esc(c.rotulo) + ": " + (c.pendente ? '<span class="pend">' + esc(c.texto) + "</span>" : "<b>" + esc(c.texto) + "</b>" + (c.fonte ? ' <small>(' + esc(c.fonte) + ")</small>" : "")); }).join("<br>") : "—") + "</td></tr>";
+        "<td>" + (arr(l.coeficientes).length ? arr(l.coeficientes).map(function (c) { return esc(c.rotulo) + ": " + (c.pendente ? '<span class="pend">' + esc(c.texto) + "</span>" : "<b>" + esc(c.texto) + "</b>" + (c.fonte ? ' <small>(' + esc(c.fonte) + ")</small>" : "")); }).join("<br>") : "—") +
+        (arr(l.premissas).length ? "<br><small><b>Premissa:</b> " + arr(l.premissas).map(esc).join("<br>") + "</small>" : "") + "</td></tr>";
     });
     return h + "</tbody></table>";
   }
@@ -287,6 +304,7 @@
     icone: icone, icones: icones, carregarIcones: carregarIcones, iconesEmCache: iconesEmCache,
     precoPara: precoPara, coeficientes: coeficientes, listaMaterial: listaMaterial, doResultado: doResultado, htmlCatalogo: htmlCatalogo,
     fonte: fonteDe, fonteCurta: fonteCurta, dataTxt: dataTxt,
+    roscaPonto: function () { return base().roscaPonto; },   /* tabela RA de rosca do ponto de água (dados-fonte/hidro/pecas/rosca-ponto.json) */
     meta: function () { return base().meta; }, sinapi: function (cod) { return base().sinapi[cod] || null; }
   };
   global.HidPecas = HidPecas;

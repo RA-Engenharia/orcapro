@@ -240,6 +240,13 @@
       var e = G.arestas[eid];
       aviso(out.avisos, SIS, "aviso", "o trecho " + (e.trecho || e.acessorio) + " fecha um anel na rede de " + NOME + ": rede em malha não é calculada nesta fase (o trecho fica sem dimensionar)", [e.trecho || e.acessorio], { texto: "abrir o anel (rede ramificada) ou dimensionar o trecho à mão" });
     });
+    /* D5b (27/10/2026, frente 1b-ii): a válvula de retenção / pé com crivo é UNIDIRECIONAL (face 1 = entrada, face 2 = saída): se o escoamento a partir da
+       alimentação chega pela face 2 (o nó de jusante é o da ENTRADA), ela foi instalada ao contrário — o motor não a vira sozinho */
+    G.ordemA.forEach(function (eid) {
+      var e = G.arestas[eid];
+      if (e.tipo === "acessorio" && e.conexao === "valvula_retencao" && e.de && e.noFaceE && e.para === e.noFaceE)
+        aviso(out.avisos, SIS, "aviso", "válvula de retenção instalada ao contrário (" + e.acessorio + "): o escoamento chega pela face de SAÍDA — gire a válvula (a seta aponta para o consumo)", [e.acessorio]);
+    });
     var soltos = G.ordemA.filter(function (eid) { return !G.arestas[eid].de && !anel[eid]; });
     if (soltos.length) aviso(out.avisos, SIS, "aviso", soltos.length + " trecho(s) de " + NOME + " sem ligação com a alimentação: não foram calculados", soltos.map(function (eid) { return G.arestas[eid].trecho || G.arestas[eid].acessorio; }), { texto: "ligar os trechos à rede alimentada" });
 
@@ -383,10 +390,11 @@
     var PD = HP().criar(ctx, fluido, formula, premissa);
     function formulaMat(m) { return PD.formulaMat(m); }
     function perdaDistribuida(q, d, L, material, uso) { return PD.distribuida(q, d, L, material, uso); }
-    function perdaLocal(conexao, material, dn, J, v, uso, variante) { return PD.local(conexao, material, dn, J, v, uso, variante); }
+    function perdaLocal(conexao, material, dn, J, v, uso, variante, extra) { return PD.local(conexao, material, dn, J, v, uso, variante, extra); }
     /* as conexões que a aresta "e" atravessa ao sair do nó de montante */
     function conexoesNaSaida(e) {
       var n = e.de, pe = pai[n], lista = [];
+      lista.extra = [];   /* contexto de topologia por conexão (DN de montante, tê de redução central) — só o K do fabricante (PPR) o lê; a Leq ignora */
       if (n === src) { if (!rede) lista.push("entrada_normal"); return lista; }
       if (!pe) return lista;
       var ep = G.arestas[pe];
@@ -395,16 +403,22 @@
       if (outs.length === 1) {
         var avs = [], cx = B.decidir([{ dir: dIn, dn: dnIn, material: ep.material, aplicacao: ep.aplicacao, vertical: ep.vertical },
                                       { dir: Gr.dirSaindo(e, n), dn: dnE, material: e.material, aplicacao: e.aplicacao, vertical: e.vertical }], SIS, null, avs);
-        cx.forEach(function (c) { lista.push(c.tipo === "te_reducao" ? "reducao" : c.tipo); });
+        cx.forEach(function (c) { lista.push(c.tipo === "te_reducao" ? "reducao" : c.tipo); lista.extra.push({ dnMont: dnIn }); });
         return lista;
       }
       if (outs.length === 2) {
         var o1 = G.arestas[outs[0]], o2 = G.arestas[outs[1]], d1 = Gr.dirSaindo(o1, n), d2 = Gr.dirSaindo(o2, n);
         var a1 = Gr.desvio(dIn, d1), a2 = Gr.desvio(dIn, d2), a12 = Gr.desvio(d1, d2);
-        if (a12 < a1 && a12 < a2) lista.push("te_saida_bilateral");                           /* a entrada é a derivação */
+        var dnO1 = E[o1.id].dn, dnO2 = E[o2.id].dn, bilat = a12 < a1 && a12 < a2, redCentral;
+        /* tê de REDUÇÃO CENTRAL (tabela do fabricante): a derivação é menor que a corrida — na saída bilateral a derivação é a ENTRADA */
+        redCentral = bilat ? dnIn < Math.max(dnO1, dnO2) : Math.min(dnO1, dnO2) < dnIn;
+        if (bilat) lista.push("te_saida_bilateral");                           /* a entrada é a derivação */
         else lista.push((e.id === o1.id ? a1 <= a2 : a2 < a1) ? "te_passagem_direta" : "te_saida_lateral");
-      } else lista.push("te_saida_lateral");                                                    /* 4+ ramos: cruzeta (aviso abaixo) */
-      if (Math.abs(dnE - dnIn) > 0) lista.push("reducao");
+        lista.extra.push({ dnMont: dnIn, reducaoCentral: redCentral });
+        if (Math.abs(dnE - dnIn) > 0) { lista.push("reducao"); lista.extra.push({ dnMont: dnIn, jaNoTe: redCentral }); }
+        return lista;
+      } else { lista.push("te_saida_lateral"); lista.extra.push({ dnMont: dnIn }); }               /* 4+ ramos: cruzeta (aviso abaixo) */
+      if (Math.abs(dnE - dnIn) > 0) { lista.push("reducao"); lista.extra.push({ dnMont: dnIn }); }
       return lista;
     }
     var Hn, pendNo;
@@ -439,8 +453,13 @@
             if (!dist) r.pendH.push("parâmetro da fórmula " + formulaMat(e.material));
             else {
               r.v = dist.v; r.J = dist.J; r.hfDist = e.tipo === "tubo" ? dist.hf : 0; r.passosH = dist.passos.slice(); r.Re = dist.Re;
-              var cxs = e.tipo === "acessorio" ? [e.conexao] : conexoesNaSaida(e), loc = 0, okL = true;
-              cxs.forEach(function (cx) {
+              var cxs = e.tipo === "acessorio" ? [e.conexao] : conexoesNaSaida(e), exsCx = cxs.extra || [], loc = 0, okL = true;
+              /* M2 (frente 1c, revisão adversarial): a peça do PONTO DE ÁGUA (joelho 90° com bucha, luva com bucha — js/biminst.js pontoAguaDe → ligacao.pontoAgua) está no FIM da última aresta, e
+                 conexoesNaSaida só olha a conexão no INÍCIO de cada aresta: a perda do joelho do ponto nunca entrava na pressão. Agora a aresta que termina num ponto com a peça soma a perda dela
+                 (joelho = Leq do joelho 90° do DN do sub-ramal; luva = sem valor tabelado, premissa declarada). Só PVC soldável (Leq) e o material com K próprio do joelho com bucha na tabela (PPR: joelho com inserto metálico, Amanco); CPVC não tem linha. */
+              var paF = e.tipo === "tubo" && G.nos[e.para] && G.nos[e.para].aparelho ? G.nos[e.para].aparelho.pontoAgua : null;
+              if (paF && (paF.material === "pvc_soldavel" || (paF.tipo === "joelho_bucha" && NR().consulta("af.perda.localizada.k", { material: paF.material, conexao: paF.tipo }, "k").ok)) && (paF.tipo === "joelho_bucha" || paF.tipo === "luva_bucha") && !(filhos[e.para] && filhos[e.para].length)) cxs = cxs.concat([paF.tipo]);
+              cxs.forEach(function (cx, ixCx) {
                 /* PRESSURIZAÇÃO: registro de ESFERA de PVC sem linha na tabela principal → a linha "registro de gaveta ou esfera
                    aberto" da tabela do fabricante (js/hidpressao.js, fonte com página); a tabela principal, quando tem, ganha */
                 var ex = e.tipo === "acessorio" && HPZ && HPZ.leqExtra && !NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: cx, dn: r.dn }, "leq_m").ok ? HPZ.leqExtra(cx, e.material, r.dn) : null;
@@ -454,7 +473,7 @@
                     && NR().consulta("af.perda.localizada.leq", { material: e.material, conexao: "registro_gaveta", dn: r.dn }, "leq_m").ok) {
                   cxL = "registro_gaveta"; premissa("registro de esfera DN " + r.dn + ": comprimento equivalente", "Leq do registro de gaveta da tabela do Tigre adotado — a linha de registro de esfera do fabricante (Schneider/Franklin 2026-09, p. 88) só vai até DN 60");
                 }
-                var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cxL, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null);
+                var pl = ex ? { tipo: cx, leq_m: ex.leq_m, perda_m: ex.leq_m * dist.J, fonteFicha: ex.fonte } : perdaLocal(cxL, e.material, r.dn, dist.J, dist.v, uso, e.tipo === "acessorio" ? e.variante : null, exsCx[ixCx]);
                 if (pl && cxL !== cx) pl.tipo = cx;
                 if (pl) { r.conexoes.push(pl); loc += pl.perda_m; if (ex && ex.premissa) premissa(ex.premissa.item, ex.premissa.valor); } else okL = false;
               });

@@ -11,7 +11,9 @@
  * Q L/s, d mm) e a forma SI do artigo original quando não. "darcy", "fwh" e
  * "hw" forçam a fórmula.
  * Perda localizada: comprimento equivalente (material, conexão, DN) e, se a
- * linha faltar, K (conexão). Luva e redução sem valor tabelado: desprezadas
+ * linha faltar, K (conexão). MATERIAL COM K PRÓPRIO NA TABELA (linhas com a
+ * coluna material — hoje o PPR, método do fabricante Amanco: Δh = ΣR·v²/2g):
+ * vale SÓ o K dele; nunca vira comprimento equivalente e nunca cai na Leq do PVC. Luva e redução sem valor tabelado: desprezadas
  * como PREMISSA declarada (nunca em silêncio).
  * ===================================================================== */
 (function (global) {
@@ -30,7 +32,11 @@
   var LS = 1000;   /* L por m³ */
   var MM = 1000;   /* mm por m */
   /* conexões que as tabelas de comprimento equivalente da prática não trazem */
-  var SEM_PERDA_TABELADA = { luva: 1, reducao: 1, uniao: 1 };   /* pendências finais (18/10/2026): a união, como a luva — sem valor tabelado */
+  var SEM_PERDA_TABELADA = { luva: 1, reducao: 1, uniao: 1,   /* pendências finais (18/10/2026): a união, como a luva — sem valor tabelado */
+    /* 27/10/2026 (frente 1b-ii, D6): a tabela de comprimento equivalente (Tigre 2025) só tem joelho 90/45, tê, entrada/saída e registros/válvulas. As peças novas de
+       passagem (adaptador, bucha, luva de redução/de correr, cap, plug, transição, união mista) são tratadas como a LUVA: desprezadas, com a premissa declarada.
+       Curva 90/45 na água NÃO entra aqui: sem linha na tabela é PENDÊNCIA honesta (no esgoto não há perda de carga). */
+    adaptador: 1, luva_bucha: 1, adaptador_caixa: 1, bucha: 1, bucha_longa: 1, luva_reducao: 1, luva_correr: 1, cap: 1, plug: 1, transicao: 1, uniao_mista: 1 };
   var LISOS = { pvc_soldavel: 1, ppr: 1, cpvc: 1, cobre: 1 };
 
   /* criar(ctx, fluido, formula, premissa) — premissa(item, valor) registra o que o motor assumiu */
@@ -100,7 +106,15 @@
     /* comprimento equivalente (por material e DN) e, se a linha faltar, o K
        (por conexão). Só vira pendência quando NENHUM dos dois responde — e a
        pendência registrada é a do comprimento equivalente, a tabela preferida. */
-    function local(conexao, material, dn, J, v, uso, variante) {
+    function local(conexao, material, dn, J, v, uso, variante, extra) {
+      /* D6 (27/10/2026): o JOELHO COM BUCHA DE LATÃO é o joelho 90° da tabela do mesmo DN (a mesma passagem) — premissa declarada, resultado marcado com o tipo real */
+      var rk = localK(conexao, material, dn, v, uso, extra);
+      if (rk !== undefined) return rk;   /* material com K próprio (PPR): o K do fabricante, sem ficha, sem Leq */
+      if (conexao === "joelho_bucha") {
+        premissa("perda localizada do joelho com bucha de latão", "joelho com bucha de latão = joelho 90° da tabela (mesma passagem)");
+        var rj = local("joelho90", material, dn, J, v, uso, variante, extra); if (rj) rj.tipo = "joelho_bucha";
+        return rj;
+      }
       var fLeq = { material: material, conexao: conexao, dn: dn };
       /* ⚠ FICHA DA PEÇA (js/hidpecas.js, docs/hidro/CONTRATO.md §7): a peça REAL do nó (joelho 90 de PVC soldável
          DE 25, válvula de PÉ com crivo…) diz qual linha da tabela é a dela; o valor sai da tabela carregada pela
@@ -116,14 +130,69 @@
       if (r && fx && fx.peca) r.peca = fx.peca;   /* luva/redução (sem valor ou K da tabela) e pendência: a peça vai junto do mesmo jeito */
       return r;
     }
+    /* ---- K DO FABRICANTE POR MATERIAL (af.perda.localizada.k com a coluna material; PPR: Amanco, Δh = K·v²/2g) ----
+       Devolve undefined quando o material não tem K próprio (segue o caminho da Leq); null = pendência visível (sem extrapolar);
+       objeto = a perda. extra = { dnMont, reducaoCentral, jaNoTe } dada por quem conhece a topologia (hidaf). */
+    function kDoMaterial(material) {
+      if (!tabK) return [];
+      return NR().linhas("af.perda.localizada.k", { material: material });
+    }
+    function serieDn(material) {
+      var ds = NR().linhas("materiais.diametro_interno", { material: material }).map(function (x) { return num(x.dn, null); }).filter(function (x) { return x != null; });
+      if (ds.length < 2) { var BI = dep("BimInst", "./biminst.js"), m = BI && BI.MATERIAIS ? BI.MATERIAIS[material] : null; ds = m && m.dns ? m.dns.slice() : []; }
+      return ds.sort(function (a, b) { return a - b; });
+    }
+    function localK(conexao, material, dn, v, uso, extra) {
+      var todas = kDoMaterial(material); if (!todas.length) return undefined;
+      extra = extra || {};
+      var rs = todas.filter(function (x) { return x.conexao === conexao; });
+      if (!rs.length) {
+        var semValor = !!SEM_PERDA_TABELADA[conexao]; if (semValor) return undefined;   /* luva/união/adaptador… sem linha: a regra de sempre (desprezada com premissa) */
+        ctx.consulta("af.perda.localizada.k", { material: material, conexao: conexao }, "k", uso);   /* pendência visível: o manual do fabricante não traz essa peça */
+        return null;
+      }
+      var comDn = rs.filter(function (x) { return x.dn != null && x.dn !== ""; });
+      if (comDn.length) {                                       /* registro: valor por DN, sem interpolar nem extrapolar */
+        rs = comDn.filter(function (x) { return num(x.dn, null) === num(dn, null); });
+        if (!rs.length) { ctx.consulta("af.perda.localizada.k", { material: material, conexao: conexao, dn: dn }, "k", uso); return null; }
+      }
+      if (conexao === "reducao" && extra.jaNoTe) {              /* o R do tê de redução central já contém a redução */
+        premissa("perda localizada de redução ao lado do tê de redução central", "o R do tê de redução central do fabricante já inclui a redução: não somada de novo");
+        return { tipo: conexao, k: 0, perda_m: 0, incluidaNoTe: true };
+      }
+      var lin = null, nomeVar = null;
+      if (rs.some(function (x) { return x.passos_max != null && x.passos_max !== ""; }) || rs.length > 1) {
+        var comP = rs.filter(function (x) { return x.passos_max != null && x.passos_max !== ""; }).sort(function (a, b) { return a.passos_max - b.passos_max; }),
+            semP = rs.filter(function (x) { return x.passos_max == null || x.passos_max === ""; });
+        if (comP.length) {
+          var ds = serieDn(material), i1 = ds.indexOf(num(extra.dnMont, null)), i2 = ds.indexOf(num(dn, null)), passos = i1 >= 0 && i2 >= 0 ? Math.abs(i1 - i2) : null;
+          if (passos != null) lin = comP.filter(function (x) { return passos <= x.passos_max; })[0] || semP[0] || null;
+          else { lin = semP[0] || comP[comP.length - 1]; premissa("redução de " + material + ": número de bitolas", "DN de montante ou série de bitolas desconhecidos: adotada a linha de maior R (a favor da segurança)"); }
+        } else {
+          nomeVar = extra.reducaoCentral ? "reducao_central" : (extra.dnMont != null && num(extra.dnMont, null) !== num(dn, null) ? "com_reducao" : "padrao");
+          lin = rs.filter(function (x) { return x.variante === nomeVar; })[0] || rs.filter(function (x) { return x.variante === "padrao"; })[0] || null;
+        }
+      } else lin = rs[0];
+      if (!lin) { ctx.consulta("af.perda.localizada.k", { material: material, conexao: conexao, variante: nomeVar || "?" }, "k", uso); return null; }
+      var f = { material: material, conexao: conexao, variante: lin.variante }; if (lin.dn != null && lin.dn !== "") f.dn = lin.dn;
+      var c = ctx.consulta("af.perda.localizada.k", f, "k", uso), kv = num(c.valor, 0);
+      if (lin.premissa) premissa("perda localizada de " + conexao + (lin.variante !== "padrao" ? " (" + String(lin.variante).replace(/_/g, " ") + ")" : "") + " de " + material, lin.premissa);
+      return { tipo: conexao, k: kv, perda_m: H.perdaK(kv, v), variante: lin.variante, fonteK: c.fonte };
+    }
     function localTabela(conexao, fLeq, J, v, uso) {
       if (tabLeq && J != null && NR().consulta("af.perda.localizada.leq", fLeq, "leq_m").ok) {
         var c = ctx.consulta("af.perda.localizada.leq", fLeq, "leq_m", uso);
         return { tipo: conexao, leq_m: num(c.valor, 0), perda_m: H.perdaLeq(J, num(c.valor, 0)) };
       }
-      if (tabK && NR().consulta("af.perda.localizada.k", { conexao: conexao }, "k").ok) {
-        var k2 = ctx.consulta("af.perda.localizada.k", { conexao: conexao }, "k", uso);
-        return { tipo: conexao, k: num(k2.valor, 0), perda_m: H.perdaK(num(k2.valor, 0), v) };
+      /* K genérico: tabela SEM coluna material (fixture/antiga) vale para todos; com a coluna, só a linha do material (ou "*"). A linha de material próprio (PPR) é tratada em localK
+         e nunca serve de reserva para outro material. */
+      if (tabK) {
+        var kTemMat = NR().linhas("af.perda.localizada.k").some(function (x) { return x.material != null && x.material !== ""; }),
+            fK = kTemMat ? { conexao: conexao, material: fLeq.material } : { conexao: conexao };
+        if (NR().consulta("af.perda.localizada.k", fK, "k").ok) {
+          var k2 = ctx.consulta("af.perda.localizada.k", fK, "k", uso);
+          return { tipo: conexao, k: num(k2.valor, 0), perda_m: H.perdaK(num(k2.valor, 0), v) };
+        }
       }
       /* luva e redução: sem valor tabelado, 0 COMO PREMISSA declarada — senão toda
          emenda reta deixava a rede inteira pendente */

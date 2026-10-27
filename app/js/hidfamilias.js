@@ -52,6 +52,12 @@
   function r4(v) { return Math.round(v * 10000) / 10000; }                    /* hid:ok arredondamento */
   var PSET = "RA_Hidro";
   var GRUPO = PSET;
+  /* DIREÇÃO DE SAÍDA DO TUBO (papel/dir de cada conector — 27/10/2026, frente 2 "de onde é a entrada e a saída"): vetor unitário em
+     coordenadas LOCAIS da família (convenção do js/familia.js: Y para cima, Z para FORA da parede). Ponto de parede → −Z (para dentro da
+     parede); ponto de piso → −Y. O motor (js/biminst.js) ainda NÃO lê papel/dir/opcional/bidirecional: a leitura é da frente 1b; o auditor
+     tools/hid-auditar-portas.js cobra que todo conector os declare. */
+  var DIRS = { parede: [0, 0, -1], piso: [0, -1, 0], cima: [0, 1, 0], esq: [-1, 0, 0], dir: [1, 0, 0], frente: [0, 0, 1] };
+  function dv(nome) { var a = DIRS[nome]; return { x: a[0], y: a[1], z: a[2] }; }
 
   /* ------------------------------------------------ leitores de cota */
   /* letra do desenho da ficha: sem legenda em texto → INTERPRETAÇÃO (a conferir) */
@@ -161,8 +167,8 @@
         { id: "caixa", nome: "Caixa acoplada", forma: "caixa", x: "0", y: "Altura_borda", z: "-Esgoto_parede + Prof_caixa/2", dx: "Largura", dy: "Altura_total - Altura_borda", dz: "Prof_caixa", material: "Material" }
       ],
       conectores: [
-        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "0" },
-        { id: "af", nome: "Água fria (caixa)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_lateral", y: "Agua_altura", z: "-Esgoto_parede" }
+        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "0", papel: "saida", dir: dv("piso"), origemPos: "regra", aConferir: "saída pelo PISO (a família não tem opção de saída pela parede)" },
+        { id: "af", nome: "Água fria (caixa)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_lateral", y: "Agua_altura", z: "-Esgoto_parede", papel: "entrada", dir: dv("parede"), origemPos: "regra" }
       ], material: "Louça branca" },
 
     { id: "hid-bacia-convencional", nome: "Bacia sanitária convencional (válvula de descarga)", categoria: "loucas", sistemas: ["esgoto", "agua_fria"], tipos: ["bacia_convencional"],
@@ -180,8 +186,8 @@
       ],
       solidos: [{ id: "corpo", nome: "Bacia", forma: "caixa", x: "0", y: "0", z: "-Esgoto_parede + Comprimento/2", dx: "Largura", dy: "Altura_borda", dz: "Comprimento", material: "Material" }],
       conectores: [
-        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "0" },
-        { id: "af", nome: "Água fria (tubo de ligação)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_lateral", y: "Agua_altura", z: "-Esgoto_parede" }
+        { id: "esgoto", nome: "Saída de esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "0", papel: "saida", dir: dv("piso"), origemPos: "regra", aConferir: "saída pelo PISO (a família não tem opção de saída pela parede)" },
+        { id: "af", nome: "Água fria (tubo de ligação)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_lateral", y: "Agua_altura", z: "-Esgoto_parede", papel: "entrada", dir: dv("parede"), origemPos: "regra" }
       ], material: "Louça branca" },
 
     { id: "hid-lavatorio-coluna", nome: "Lavatório com coluna", categoria: "loucas", sistemas: ["esgoto", "agua_fria", "agua_quente"], tipos: ["lavatorio_coluna"],
@@ -203,9 +209,9 @@
         { id: "coluna", nome: "Coluna", forma: "cilindro", eixo: "y", x: "0", y: "0", z: "-Profundidade/2 + Raio_coluna", raio: "Raio_coluna", altura: "Altura_borda - Altura_cuba", material: "Material" }
       ],
       conectores: [
-        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2" },
-        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2" },
-        { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2" }
+        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2", papel: "saida", dir: dv("parede"), origemPos: "regra" },
+        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "regra" },
+        { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "regra" }
       ], material: "Louça branca" },
 
     { id: "hid-lavatorio-suspenso", nome: "Lavatório suspenso (coluna suspensa)", categoria: "loucas", sistemas: ["esgoto", "agua_fria", "agua_quente"], tipos: ["lavatorio_suspenso"],
@@ -223,9 +229,9 @@
       ],
       solidos: [{ id: "cuba", nome: "Lavatório", forma: "caixa", x: "0", y: "Altura_borda - Altura_cuba", z: "0", dx: "Largura", dy: "Altura_cuba", dz: "Profundidade", material: "Material" }],
       conectores: [
-        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2" },
-        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2" },
-        { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2" }
+        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2", papel: "saida", dir: dv("parede"), origemPos: "regra" },
+        { id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "regra" },
+        { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "Agua_altura", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "regra" }
       ], material: "Louça branca" },
 
     { id: "hid-cuba-apoio", nome: "Cuba / lavatório de bancada", categoria: "loucas", sistemas: ["esgoto", "agua_fria", "agua_quente"], tipos: ["cuba"],
@@ -244,9 +250,9 @@
          família". Agora os pontos de água da TORNEIRA da cuba ficam na PAREDE atrás dela (Distancia_parede, que o Traçar
          automaticamente mede): mesa = 220 mm abaixo do tampo, parede = 220 mm acima (Deca p.116, a mesma leitura do js/marmoraria.js);
          água quente só com misturador (Agua_quente). Parâmetros e o engate flexível no bloco de geometria (adiante). */
-      conectores: [{ id: "esgoto", nome: "Esgoto (saída do sifão, na parede)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "se(Distancia_parede > Profundidade/2; -Distancia_parede; 0)" },
-        { id: "af", nome: "Água fria (torneira da cuba)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede" },
-        { id: "aq", nome: "Água quente (misturador da cuba)", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede", visivel: "Agua_quente" }],
+      conectores: [{ id: "esgoto", nome: "Esgoto (saída do sifão, na parede)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Esgoto_abaixo_tampo", z: "se(Distancia_parede > Profundidade/2; -Distancia_parede; 0)", papel: "saida", dir: dv("parede"), origemPos: "regra", aConferir: "cota do esgoto abaixo do tampo varia por produto (Deca p.115 tabela 3)" },
+        { id: "af", nome: "Água fria (torneira da cuba)", sistema: "agua_fria", dn: "DN_agua", x: "Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede", papel: "entrada", dir: dv("parede"), origemPos: "regra" },
+        { id: "aq", nome: "Água quente (misturador da cuba)", sistema: "agua_quente", dn: "DN_agua", x: "-Agua_afastamento/2", y: "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", z: "-Distancia_parede", visivel: "Agua_quente", papel: "entrada", dir: dv("parede"), origemPos: "regra" }],
       material: "Louça branca" },
 
     { id: "hid-pia-cozinha", nome: "Pia de cozinha", categoria: "mobiliario", sistemas: ["esgoto"], tipos: [], generico: true,
@@ -261,7 +267,7 @@
       solidos: [{ id: "cuba", nome: "Pia", forma: "caixa", x: "0", y: "-Altura_cuba", z: "0", dx: "Largura", dy: "Altura_cuba", dz: "Profundidade", material: "Material" }],
       /* QUALIDADE VISUAL 2 (rodada 2): o ponto de esgoto é a SAÍDA do sifão sanfonado, na parede de trás (6 cm abaixo do
          fundo da cuba, como o js/hidlouca.js o desenha) — antes ficava na válvula, acima do sifão. Sem ficha de pia: a conferir */
-      conectores: [{ id: "esgoto", nome: "Esgoto (saída do sifão, na parede)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Altura_cuba - 0.06", z: "-Profundidade/2" }], material: "Aço inox" },   /* hid:ok geometria do sifão desenhado */
+      conectores: [{ id: "esgoto", nome: "Esgoto (saída do sifão, na parede)", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "-Altura_cuba - 0.06", z: "-Profundidade/2", papel: "saida", dir: dv("parede"), origemPos: "desenho", aConferir: "sem ficha de pia no catálogo: posição do desenho do sifão" }], material: "Aço inox" },   /* hid:ok geometria do sifão desenhado */
 
     { id: "hid-tanque-lavar", nome: "Tanque de lavar roupa", categoria: "loucas", sistemas: ["esgoto"], tipos: ["tanque"],
       descricao: "Tanque de louça (laundry sink). Origem no piso, centro do aparelho; a parede fica em Z = −Profundidade/2.",
@@ -273,7 +279,7 @@
         DN("DN_esgoto", null, "DN do esgoto")
       ],
       solidos: [{ id: "corpo", nome: "Tanque", forma: "caixa", x: "0", y: "0", z: "0", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
-      conectores: [{ id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "-Profundidade/2" }], material: "Louça branca" },
+      conectores: [{ id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "0", z: "-Profundidade/2", papel: "saida", dir: dv("parede"), origemPos: "extremidade", aConferir: "altura do esgoto do tanque sem cota na ficha (colocado no piso, na parede de trás)" }], material: "Louça branca" },
 
     { id: "hid-mictorio", nome: "Mictório", categoria: "loucas", sistemas: ["agua_fria", "esgoto"], tipos: ["mictorio"],
       descricao: "Mictório de louça. Origem na base do aparelho, centro; a parede fica em Z = −Profundidade/2.",
@@ -295,8 +301,8 @@
       ],
       solidos: [{ id: "corpo", nome: "Mictório", forma: "caixa", x: "0", y: "0", z: "0", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }],
       conectores: [
-        { id: "af", nome: "Água fria (válvula)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "Agua_altura", z: "-Profundidade/2" },
-        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2" }
+        { id: "af", nome: "Água fria (válvula)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "Agua_altura", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "interpretado" },
+        { id: "esgoto", nome: "Esgoto", sistema: "esgoto", dn: "DN_esgoto", x: "0", y: "Esgoto_altura", z: "-Profundidade/2", papel: "saida", dir: dv("parede"), origemPos: "interpretado" }
       ], material: "Louça branca" }
   ];
 
@@ -316,16 +322,16 @@
       conectores: conectores, material: "Metal cromado"
     };
   }
-  var CON_AF = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" }];
-  var CON_AF_AQ = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0.04", y: "0", z: "0" },       /* hid:ok afastamento entre pontos do misturador: a conferir */
-                   { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-0.04", y: "0", z: "0" }];  /* hid:ok idem */
+  var CON_AF = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "o catálogo Docol não traz cotas de instalação: ponto na origem da família, tubo chegando pela parede" }];
+  var CON_AF_AQ = [{ id: "af", nome: "Água fria", sistema: "agua_fria", dn: "DN_agua", x: "0.04", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "afastamento entre os pontos de AF e AQ sem cota no catálogo Docol" },       /* hid:ok afastamento entre pontos do misturador: a conferir */
+                   { id: "aq", nome: "Água quente", sistema: "agua_quente", dn: "DN_agua", x: "-0.04", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "afastamento entre os pontos de AF e AQ sem cota no catálogo Docol" }];  /* hid:ok idem */
   /* ⚠ REVISÃO H5 (21/10/2026, ALTO): o chuveiro só tinha o ponto de ÁGUA FRIA — com aquecedor no modelo, a ducha (o principal ponto
      de água quente da casa) ficava sem água quente e o Traçar não via nada a traçar. Agora a DUCHA (não elétrica: a metálica do
      catálogo Docol, que não aquece) tem o ponto de ÁGUA QUENTE do misturador de parede (registros de AF e AQ separados): na altura do
      registro de pressão (RP), ao lado do eixo do braço. O chuveiro ELÉTRICO (Eletrico = sim) aquece a água: só a água fria.
      Desnível = CH − RP da tabela da Tigre (Manual Técnico 2025, p.40: CH 2,20 m, RP 1,10 m — dados-fonte/hidro/kits/alturas-pontos.json);
      o afastamento lateral entre os registros não tem cota no catálogo (a conferir, aviso da família). */
-  var CON_CHUVEIRO = [CON_AF[0], { id: "aq", nome: "Água quente (misturador de parede, na altura do RP)", sistema: "agua_quente", dn: "DN_agua", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "0", visivel: "1 - Eletrico" }];
+  var CON_CHUVEIRO = [CON_AF[0], { id: "aq", nome: "Água quente (misturador de parede, na altura do RP)", sistema: "agua_quente", dn: "DN_agua", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "0", visivel: "1 - Eletrico", papel: "entrada", dir: dv("parede"), origemPos: "interpretado", aConferir: "afastamento lateral entre os registros sem cota no catálogo (desnível CH − RP da Tigre p.40)" }];
   ESPECS.push(metal("hid-chuveiro", "Chuveiro / ducha", ["chuveiro"], ["agua_fria", "agua_quente"], CON_CHUVEIRO, "Chuveiro e ducha de parede ou de teto (Docol). A ducha recebe água fria e água quente pelo misturador de parede (dois registros); o chuveiro elétrico, só água fria.",
     ["Afastamento lateral entre o registro de água fria e o de água quente do misturador sem cota no catálogo: conferir."]));
   ESPECS[ESPECS.length - 1].geo.push(
@@ -351,8 +357,8 @@
       ],
       solidos: [{ id: "corpo", nome: "Corpo do registro", forma: "caixa", x: "0", y: "-Altura/2", z: "0", dx: "Comprimento", dy: "Altura", dz: "Profundidade", material: "Material" }],
       conectores: [
-        { id: "a", nome: "Ponta A", sistema: "agua_fria", dn: "DN_agua", x: "-Comprimento/2", y: "0", z: "0" },
-        { id: "b", nome: "Ponta B", sistema: "agua_fria", dn: "DN_agua", x: "Comprimento/2", y: "0", z: "0" }
+        { id: "a", nome: "Ponta A (entrada)", sistema: "agua_fria", dn: "DN_agua", x: "-Comprimento/2", y: "0", z: "0", papel: "entrada", dir: dv("esq"), bidirecional: true, origemPos: "extremidade", aConferir: "comprimento do corpo é de reserva (o catálogo não cota)" },
+        { id: "b", nome: "Ponta B (saída)", sistema: "agua_fria", dn: "DN_agua", x: "Comprimento/2", y: "0", z: "0", papel: "saida", dir: dv("dir"), bidirecional: true, origemPos: "extremidade", aConferir: "comprimento do corpo é de reserva (o catálogo não cota)" }
       ], material: "Metal"
     };
   }
@@ -375,8 +381,8 @@
     /* ⚠ a SAÍDA (descarga para a bacia) é um conector de verdade (frente A, 19/10/2026 — D-02 do diagnóstico): sem ele a
        descida do kit começava no ar, abaixo da válvula, marcada "continua" para o verificador não acusar a ponta solta.
        Posição no volume envolvente esquemático (AV_ESQ): abaixo da entrada, no mesmo prumo */
-    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" },
-                 { id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.4", z: "0" }], material: "Metal"   /* hid:ok geometria do volume esquemático */
+    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "a ficha Deca só dá o acionamento; ponto na origem, tubo pela parede" },
+                 { id: "descarga", nome: "Saída para a bacia (descarga)", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "-Altura*0.4", z: "0", papel: "saida", dir: dv("piso"), origemPos: "desenho", aConferir: "posição do volume esquemático (sem cota no catálogo)" }], material: "Metal"   /* hid:ok geometria do volume esquemático */
   });
   ESPECS.push({
     id: "hid-caixa-descarga-embutida", nome: "Caixa de descarga embutida", categoria: "equipamento", sistemas: ["agua_fria"], tipos: ["caixa_descarga_embutida"], volume: true,
@@ -389,11 +395,28 @@
       DN("DN_agua", function (it) { var m = /DN\s*(\d+)/i.exec(txt(it.dados.registroIntegrado)); return m ? { v: parseInt(m[1], 10), origem: "catalogo" } : null; }, "DN do registro integrado") /* hid:ok base decimal */
     ],
     solidos: [{ id: "corpo", nome: "Caixa embutida", forma: "caixa", x: "0", y: "0", z: "-Espessura/2", dx: "Largura", dy: "Altura", dz: "Espessura", material: "Material" }],
-    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0" }], material: "Plástico"
+    conectores: [{ id: "af", nome: "Entrada de água", sistema: "agua_fria", dn: "DN_agua", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("parede"), origemPos: "extremidade", aConferir: "ponto de entrada sem cota no catálogo (caixa embutida: o tubo chega pela parede)" }], material: "Plástico"
   });
 
   /* --- caixas e ralos: origem no piso acabado, corpo para baixo (Y negativo) --- */
   var CX_CORPO = [{ id: "corpo", nome: "Corpo", forma: "caixa", x: "0", y: "-Altura", z: "0", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Material" }];
+  /* CAIXA SIFONADA: N BOCAS DE ENTRADA + 1 de saída. O catálogo Amanco diz quantas entradas o modelo tem (parâmetro Entradas: 1, 3, 5 ou 7); a
+     1ª fica sempre (id "entrada", como antes) e as demais aparecem pelo parâmetro (visivel). A ficha NÃO cota onde cada boca fica no corpo:
+     distribuição pelas faces menos a da saída (+X), marcada "a conferir". Entrada além da 1ª que não recebe tubo é boca TAMPADA — por isso
+     `opcional: true` (o motor deve honrar: não é desconexão). Tigre/sem número de entradas: só a 1ª. */
+  var ENTRADAS_SIFONADA = [
+    { id: "entrada", nome: "Entrada 1", sistema: "esgoto", dn: "DN_entrada", x: "-Largura/2", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha" }
+  ];
+  (function () {
+    var slots = [   /* [x, z, dir] — fração da Largura/Profundidade; a saída fica na face +X */
+      ["0", "Profundidade/2", "frente"], ["0", "-Profundidade/2", "parede"], ["-Largura/4", "Profundidade/2", "frente"],
+      ["-Largura/4", "-Profundidade/2", "parede"], ["Largura/4", "Profundidade/2", "frente"], ["Largura/4", "-Profundidade/2", "parede"]
+    ], k;
+    for (k = 0; k < slots.length; k++) {
+      ENTRADAS_SIFONADA.push({ id: "entrada" + (k + 2), nome: "Entrada " + (k + 2), sistema: "esgoto", dn: "DN_entrada", x: slots[k][0], y: "0", z: slots[k][1], visivel: "Entradas >= " + (k + 2),
+        papel: "entrada", dir: dv(slots[k][2]), opcional: true, origemPos: "extremidade", aConferir: "posição das bocas de entrada não cotada na ficha; boca não usada fica tampada" });
+    }
+  })();
   ESPECS.push({
     id: "hid-caixa-sifonada", nome: "Caixa sifonada / caixa seca", categoria: "equipamento", sistemas: ["esgoto"], tipos: ["caixa_sifonada", "caixa_seca"],
     descricao: "Caixa sifonada ou seca de PVC (Amanco, Tigre). Origem = piso acabado, centro da caixa; o corpo desce Altura abaixo do piso.",
@@ -406,10 +429,9 @@
     ],
     extraDados: [["Fecho_hidrico_mm", "fechoHidrico_mm", "Fecho hídrico"], ["Entradas", "entradas", "Número de entradas"]],
     solidos: CX_CORPO,
-    conectores: [
-      { id: "entrada", nome: "Entrada", sistema: "esgoto", dn: "DN_entrada", x: "-Largura/2", y: "0", z: "0" },
-      { id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "Largura/2", y: "-Altura", z: "0" }
-    ], material: "PVC"
+    conectores: ENTRADAS_SIFONADA.concat([
+      { id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "Largura/2", y: "-Altura", z: "0", papel: "saida", dir: dv("dir"), origemPos: "extremidade", aConferir: "a ficha não cota onde a saída fica no corpo: lado oposto à 1ª entrada, no fundo" }
+    ]), material: "PVC"
   });
   ESPECS.push({
     id: "hid-ralo", nome: "Ralo", categoria: "equipamento", sistemas: ["esgoto"], tipos: ["ralo"],
@@ -423,7 +445,7 @@
     ],
     extraDados: [["Fecho_hidrico_mm", "fechoHidrico_mm", "Fecho hídrico"]],
     solidos: CX_CORPO,
-    conectores: [{ id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "0", y: "-Altura", z: "0" }], material: "PVC"
+    conectores: [{ id: "saida", nome: "Saída", sistema: "esgoto", dn: "DN_saida", x: "0", y: "-Altura", z: "0", papel: "saida", dir: dv("piso"), origemPos: "extremidade", aConferir: "saída pelo fundo do corpo; ralo seco e sifonado têm a mesma saída (DN da ficha)" }], material: "PVC"
   });
   function caixaCil(id, nome, tipo, altLetra, descr, sistema) {
     sistema = sistema || "esgoto";
@@ -439,8 +461,8 @@
       extraDados: [["Volume_retencao_L", "volumeRetencaoCaixaGordura_L", "Volume de retenção"]],
       solidos: [{ id: "corpo", nome: "Corpo", forma: "cilindro", eixo: "y", x: "0", y: "-Altura", z: "0", raio: "Diametro/2", altura: "Altura", material: "Material" }],
       conectores: [
-        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Diametro/2", y: "0", z: "0" },
-        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Diametro/2", y: "-Altura", z: "0" }
+        { id: "entrada", nome: "Entrada", sistema: sistema, dn: "DN_entrada", x: "-Diametro/2", y: "0", z: "0", papel: "entrada", dir: dv("esq"), origemPos: "extremidade", aConferir: "cota da entrada: letras do desenho da ficha, sem legenda em texto" },
+        { id: "saida", nome: "Saída", sistema: sistema, dn: "DN_saida", x: "Diametro/2", y: "-Altura", z: "0", papel: "saida", dir: dv("dir"), origemPos: "extremidade", aConferir: "cota da saída: no fundo do corpo (abaixo da entrada); a ficha só dá letras do desenho" }
       ], material: "PVC"
     };
   }
@@ -485,13 +507,44 @@
     };
     ESPECS.forEach(function (e) {
       var r = RES[e.id]; if (!r) return;
+      /* AS CINCO TUBULAÇÕES DO RESERVATÓRIO (27/10/2026): alimentação (com a boia, perto do topo), distribuição (perto do fundo, ACIMA dele
+         para não puxar sedimento), extravasor (acima do nível máximo), limpeza (no fundo) e ventilação (no topo, OPCIONAL: a tampa da caixa
+         de polietileno já respira). `porta` = o nome padrão; os ids antigos (entrada/saida/saida2) ficam, as portas novas usam o próprio
+         nome. A ficha Fortlev diz que a posição e o DN de extravasor/limpeza "a ficha só dá orientação em desenho": as alturas abaixo são a
+         PROPORÇÃO do desenho do corpo, a conferir; o DN delas fica 0 = o dimensionamento define. Azimutes: alimentação −X, distribuição +X,
+         extravasor +Z, limpeza −Z, sucção da cisterna a 45°. O sistema das portas de serviço (extravasor, limpeza) é agua_fria só para o
+         motor tratá-las como linha de água; a destinação (visível/pluvial, NBR 5626) é do traçado — a conferir. */
       e.conectores = [
-        { id: "entrada", nome: "Entrada (alimentação, no corpo)", sistema: "agua_fria", dn: "DN_entrada", x: "-(" + r.R + "*" + r.kE + " + 0.056)", y: "(" + r.B + ")*0.86", z: "0" },   /* hid:ok adaptador desenhado */
-        { id: "saida", nome: "Saída (consumo, na base)", sistema: "agua_fria", dn: "DN_saida", x: r.R + " + 0.026", y: "0.03", z: "0" }   /* hid:ok adaptador desenhado */
+        { id: "entrada", nome: "Entrada (alimentação, no corpo)", sistema: "agua_fria", dn: "DN_entrada", x: "-(" + r.R + "*" + r.kE + " + 0.056)", y: "(" + r.B + ")*0.86", z: "0",   /* hid:ok adaptador desenhado */
+          porta: "alimentacao", papel: "entrada", dir: dv("esq"), origemPos: "desenho", aConferir: "furo feito na obra (a ficha Fortlev não cota): altura = proporção do desenho, com a boia" },
+        { id: "saida", nome: "Saída (consumo, na base)", sistema: "agua_fria", dn: "DN_saida", x: r.R + " + 0.026", y: "0.03", z: "0",   /* hid:ok adaptador desenhado */
+          porta: "distribuicao", papel: "saida", dir: dv("dir"), origemPos: "desenho", aConferir: "furo feito na obra: 3 cm acima do fundo (não puxa sedimento); a ficha não cota" },
+        { id: "extravasor", nome: "Extravasor (acima do nível máximo)", sistema: "agua_fria", dn: "DN_extravasor", x: "0", y: "(" + r.B + ")*0.93", z: r.R,   /* hid:ok proporção do desenho */  /* o Traçar (barrilete) grava Ad/Ang/Y_extravasor: o conector SEGUE o furo e o tubo (27/10/2026, frente 1b-ii D9) — ver o ajuste logo abaixo do ESPECS.forEach */
+          porta: "extravasor", papel: "saida", dir: dv("frente"), origemPos: "desenho", aConferir: "posição e DN do extravasor: a ficha Fortlev só dá orientação em desenho; altura = proporção do desenho acima da alimentação; furo na parede do corpo (o 3D ainda não desenha o adaptador dele)" },
+        { id: "limpeza", nome: "Limpeza (no fundo)", sistema: "agua_fria", dn: "DN_limpeza", x: "0", y: "0", z: "-(" + r.R + ")",
+          porta: "limpeza", papel: "saida", dir: dv("parede"), origemPos: "desenho", aConferir: "posição e DN da limpeza: a ficha só dá orientação em desenho; no fundo do corpo" },
+        { id: "ventilacao", nome: "Ventilação (no topo, opcional)", sistema: "ventilacao", dn: "DN_ventilacao", x: "0", y: "(" + r.B + ")", z: "0",
+          porta: "ventilacao", papel: "respiro", dir: dv("cima"), opcional: true, origemPos: "desenho", aConferir: "opcional: a tampa da caixa de polietileno já tem respiro; posição no topo, a ficha não cota" }
       ];
+      e.geo.push(DN("DN_extravasor", null, "DN do extravasor"), DN("DN_limpeza", null, "DN da limpeza"), DN("DN_ventilacao", null, "DN da ventilação (opcional)"));
+      e.avisos = e.avisos.map(function (a) { return a.replace(" Extravasor e limpeza não estão modelados nesta versão.", " Extravasor, limpeza e ventilação: posição e DN a conferir (a ficha Fortlev só dá orientação em desenho)."); });
+      /* 27/10/2026 (frente 1b-ii, D9): o barrilete lança o extravasor e a limpeza e grava na instância o DN (Ad_), o ângulo a partir da saída (Ang_, rad) e a
+         cota do eixo (Y_, m acima da base) de cada furo — o MESMO que o desenho do adaptador usa. O conector da porta passa a seguir esse furo (raio + 3 mm de folga do barrilete + o raio do tubo = Ad_/2000, o mesmo ponto onde o
+         tubo nasce); sem o Traçar (Ad_ = 0) fica a posição de desenho de antes. Cisterna não tem esses parâmetros (o barrilete não a monta). */
+      if (e.id !== "hid-cisterna") e.conectores.forEach(function (k) {
+        if (k.id !== "extravasor" && k.id !== "limpeza") return;
+        var A = "Ad_" + k.id, G2 = "Ang_" + k.id, Y2 = "Y_" + k.id;
+        /* o raio de onde o barrilete tira o tubo = o MAIOR entre o corpo e o diâmetro nominal (js/hidbarrilete.js Rface), não a proporção 0,993 do desenho */
+        var RF = e.id === "hid-caixa-dagua" ? "se(Diametro_corpo > Diametro; Diametro_corpo; Diametro)/2" : r.R;
+        k.x = "se(" + A + " > 0; (" + RF + " + 0.003 + " + A + "/2000)*cos(" + G2 + "*57.2957795); " + k.x + ")";   /* hid:ok rad → graus; 0,003 = a folga que o barrilete deixa da face; Ad_/2000 = raio do tubo */
+        k.y = "se(" + A + " > 0; " + Y2 + "; " + k.y + ")";
+        k.z = "se(" + A + " > 0; -(" + RF + " + 0.003 + " + A + "/2000)*sen(" + G2 + "*57.2957795); " + k.z + ")";   /* hid:ok idem */
+      });
+      if (e.id === "hid-cisterna") e.conectores.push({ id: "succao", nome: "Sucção da bomba", sistema: "agua_fria", dn: "DN_succao", x: "(" + r.R + ")*0.7071", y: "0.05", z: "(" + r.R + ")*0.7071",   /* hid:ok furo a 45° na parede do corpo */
+        porta: "succao", papel: "succao", dir: dv("dir"), origemPos: "desenho", aConferir: "sucção da bomba da cisterna: posição e DN de reserva (o dimensionamento da bomba define)" }), e.geo.push(DN("DN_succao", null, "DN da sucção da bomba (cisterna)"));
       /* N23 (26/10/2026): a 2ª saída (coluna exclusiva da válvula de descarga) — só existe quando o Traçar a grava (Ad_saida2 > 0), no
          mesmo raio e cota da saída, girada de Ang_saida2. O cálculo a trata como o mesmo nó da saída (js/hidgrafo.js) */
-      if (e.id !== "hid-cisterna") e.conectores.push({ id: "saida2", nome: "2ª saída (válvula de descarga)", sistema: "agua_fria", dn: "Ad_saida2", visivel: "Ad_saida2 > 0",
+      if (e.id !== "hid-cisterna") e.conectores.push({ id: "saida2", nome: "2ª saída (válvula de descarga)", sistema: "agua_fria", dn: "Ad_saida2", visivel: "Ad_saida2 > 0", porta: "distribuicao", papel: "saida", dir: dv("dir"), origemPos: "desenho", aConferir: "a direção acompanha Ang_saida2 (aqui, no ângulo 0)",
         x: "(" + r.R + " + 0.026)*cos(Ang_saida2*57.2957795)", y: "0.03", z: "-(" + r.R + " + 0.026)*sen(Ang_saida2*57.2957795)" });   /* hid:ok rad → graus (as fórmulas da família usam graus) */
     });
   })();
@@ -512,8 +565,8 @@
     ],
     solidos: [],
     conectores: [
-      { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "0.03 + Largura/2", z: "0" },
-      { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + Comprimento*0.3", y: "Altura", z: "0" }
+      { id: "succao", nome: "Sucção", sistema: "agua_fria", dn: "DN_succao", x: "-Comprimento/2", y: "0.03 + Largura/2", z: "0", papel: "succao", dir: dv("esq"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" },
+      { id: "recalque", nome: "Recalque", sistema: "agua_fria", dn: "DN_recalque", x: "-Comprimento/2 + Comprimento*0.3", y: "Altura", z: "0", papel: "recalque", dir: dv("cima"), origemPos: "desenho", aConferir: "bomba genérica: bocais de reserva" }
     ], material: "Azul" });
   /* N23 (23/10/2026): BASE DE APOIO da caixa d'água elevada — pedido do Rogério: "se a pressão não atende, sugere elevar a caixa com base
      de apoio, madeira ou metálica, estrutura + caixa em cima, peso cheio no cálculo do apoio, orçada". As cotas e as seções vêm do
@@ -556,7 +609,7 @@
       DN("DN_ramal", null, "DN da ligação do registro")
     ],
     solidos: [],
-    conectores: [{ id: "entrada", nome: "Entrada do registro", sistema: "incendio", dn: "DN_ramal", x: "-Largura*0.25", y: "Altura*0.35", z: "-Profundidade/2" }], material: "Vermelho" });
+    conectores: [{ id: "entrada", nome: "Entrada do registro", sistema: "incendio", dn: "DN_ramal", x: "-Largura*0.25", y: "Altura*0.35", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "desenho", aConferir: "abrigo genérico: posição do registro de reserva" }], material: "Vermelho" });
   ESPECS.push({
     id: "hid-extintor", nome: "Extintor portátil", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
     descricao: "Extintor portátil. Origem = piso, centro do cilindro. Sem conector: não liga a rede.",
@@ -576,7 +629,7 @@
       DN("DN_ramal", null, "DN da rosca de ligação")
     ],
     solidos: [],
-    conectores: [{ id: "entrada", nome: "Rosca de ligação", sistema: "incendio", dn: "DN_ramal", x: "0", y: "0", z: "0" }], material: "Metal cromado" });
+    conectores: [{ id: "entrada", nome: "Rosca de ligação", sistema: "incendio", dn: "DN_ramal", x: "0", y: "0", z: "0", papel: "entrada", dir: dv("cima"), origemPos: "extremidade", aConferir: "sprinkler genérico: pendente, o ramal chega por cima" }], material: "Metal cromado" });
 
   /* ============================================================ GEOMETRIA FIEL
    * (pedido do Rogério, 17/10/2026: "equipamentos modelados como nos catálogos".)
@@ -926,8 +979,8 @@
     ],
     solidos: [],
     conectores: [
-      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45" },
-      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45" }
+      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45", papel: "entrada", dir: dv("piso"), origemPos: "interpretado", aConferir: "ligações na base do aparelho (a ficha não cota; AF à direita, AQ à esquerda de quem olha)" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45", papel: "saida", dir: dv("piso"), origemPos: "interpretado", aConferir: "ligações na base do aparelho (a ficha não cota; AF à direita, AQ à esquerda de quem olha)" }
     ], material: "Branco" });
   /* FRENTE H6 (21/10/2026): NBR 13103:2020 — o TIPO quanto à exaustão (Anexo A), a POTÊNCIA e o duto viram parâmetros do tipo, lidos da
      ficha. "B23 (exaustão forçada)" (Rinnai) = B23; "Forçada" sem dizer onde está o ventilador (Komeco) = "B22/B23" (as regras dos dois
@@ -989,8 +1042,8 @@
     ],
     solidos: [],
     conectores: [
-      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45" },
-      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45" }
+      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Largura/4", y: "0", z: "Profundidade*0.45", papel: "entrada", dir: dv("piso"), origemPos: "interpretado", aConferir: "ligações na base do aparelho (a ficha não cota; AF à direita, AQ à esquerda de quem olha)" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Largura/4", y: "0", z: "Profundidade*0.45", papel: "saida", dir: dv("piso"), origemPos: "interpretado", aConferir: "ligações na base do aparelho (a ficha não cota; AF à direita, AQ à esquerda de quem olha)" }
     ], material: "Branco" });
   /* AQUECEDOR ELÉTRICO DE ACUMULAÇÃO (boiler de parede, vertical ou horizontal): Cumulus (manual rev. out/2004) e Albacete (manual
      08/07/2021). A VÁLVULA DE SEGURANÇA de pressão faz parte do conjunto: o manual Cumulus (p.8) manda instalá-la na ENTRADA DE ÁGUA
@@ -1016,8 +1069,8 @@
     extraDados: [["Volume_L", "volume_L", "Volume nominal (L)"]],
     solidos: [],
     conectores: [
-      { id: "af", nome: "Entrada de água fria (ponta da válvula de segurança)", sistema: "agua_fria", dn: "DN_agua", x: "se(Horizontal; Comprimento/4; Diametro/4)", y: "se(Valvula_seguranca; -Valvula_altura; 0)", z: "Diametro/2" },
-      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-se(Horizontal; Comprimento/4; Diametro/4)", y: "0", z: "Diametro/2" }
+      { id: "af", nome: "Entrada de água fria (ponta da válvula de segurança)", sistema: "agua_fria", dn: "DN_agua", x: "se(Horizontal; Comprimento/4; Diametro/4)", y: "se(Valvula_seguranca; -Valvula_altura; 0)", z: "Diametro/2", papel: "entrada", dir: dv("piso"), origemPos: "catalogo", aConferir: "sentido do tubo (para baixo) assumido pela posição das conexões do manual" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-se(Horizontal; Comprimento/4; Diametro/4)", y: "0", z: "Diametro/2", papel: "saida", dir: dv("piso"), origemPos: "catalogo", aConferir: "sentido do tubo (para baixo) assumido pela posição das conexões do manual" }
     ], material: "Branco" });
   /* AQUECEDOR A GÁS DE ACUMULAÇÃO (boiler de piso): Orbis (ficha HTML do site oficial; o manual só sai com cadastro — não baixado).
      A ficha não cota as conexões: água fria e água quente no TOPO (o padrão do tipo; a conferir), chaminé no centro do topo. A válvula
@@ -1034,8 +1087,8 @@
     extraDados: [["Volume_L", "volume_L", "Volume nominal (L)"]],
     solidos: [],
     conectores: [
-      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Diametro/4", y: "Altura", z: "Diametro/2" },
-      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Diametro/4", y: "Altura", z: "Diametro/2" }
+      { id: "af", nome: "Entrada de água fria", sistema: "agua_fria", dn: "DN_agua", x: "Diametro/4", y: "Altura", z: "Diametro/2", papel: "entrada", dir: dv("cima"), origemPos: "interpretado", aConferir: "ligações no topo (a ficha Orbis não cota)" },
+      { id: "aq", nome: "Saída de água quente", sistema: "agua_quente", dn: "DN_agua", x: "-Diametro/4", y: "Altura", z: "Diametro/2", papel: "saida", dir: dv("cima"), origemPos: "interpretado", aConferir: "ligações no topo (a ficha Orbis não cota)" }
     ], material: "Branco" });
   /* registros embutidos: a canopla (Ø) e o castelo com o volante são o volume envolvente de reserva */
   /* reservas pelas FICHAS COTADAS (QV3, rodada final): acabamento DocolBase (canopla Ø 58, projeção 64,9 da parede + 50 de
