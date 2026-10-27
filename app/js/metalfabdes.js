@@ -369,7 +369,10 @@
     if (arr(p.furos).length) n.push("Furo-padrão = Ø do parafuso + 1,5 mm (NBR 8800); oblongo: largura x comprimento.");
     n = n.concat(extra || []);
     n.push("Soldas: eletrodo E70XX, simbologia AWS A2.4 (lado da seta embaixo da linha de referência).");
-    n.push({ t: "Pintura: preparo e sistema conforme a especificação da obra [PENDENTE].", cor: V });
+    /* ACABAMENTO E COR por peça (js/metalacab.js): a peça com acabamento próprio leva o dele na nota; sem ele, a pendência de pintura de sempre */
+    var ACm = dep("BimMetalAcab", "./metalacab.js"), temAc = !!(p.acab && ACm), pinta = !temAc || p.acab.tipo === "pintura" || p.acab.tipo === "duplex";
+    if (temAc) n.push("Acabamento: " + ACm.rotulo(p.acab) + (p.acab.tipo === "pintura" || p.acab.tipo === "duplex" ? (p.acab.sistema ? " - sistema " + p.acab.sistema : "") + (p.acab.brilho === "acetinado" ? " - acetinado" : " - fosco") : "") + ".");
+    if (pinta) n.push({ t: "Pintura: preparo e sistema conforme a especificação da obra [PENDENTE].", cor: V });
     n.push("Modelagem e detalhamento - não é cálculo estrutural: dimensões de partida a conferir pelo projeto.");
     return n;
   }

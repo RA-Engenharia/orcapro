@@ -837,10 +837,15 @@
       if (!sols.length) { avisos.push("peça metálica " + c.id + " sem geometria — ficou de fora"); return; }
       var yb = num(c.cy, 0) - num(c.altura, 0) / 2, nv = nivelDe(yb), itens = [], tipos = {};
       var temFuroInterno = sols.some(function (s) { return arr(s.furos).length; });
+      /* ACABAMENTO E COR por peça (js/metalacab.js): IfcSurfaceStyle com a cor do acabamento (RAL, zincado, inox) e o IfcMaterial com o nome dele */
+      var ACm = dep("BimMetalAcab", "./metalacab.js"), acN = c.acab && ACm ? ACm.normalizar(c.acab, m.aco) : null;
+      var matN = ("Aço " + (m.aco || (m.kind === "parafuso" ? ((BimNormaClasse(m.classe) || {}).nome || m.classe) : ""))).trim() + (acN ? " — " + ACm.rotulo(acN) : "");
+      var corAc = acN ? parseInt(String(acN.cor).slice(1), 16) : null;
       sols.forEach(function (sd) {
         if (sd.cisalha && temFuroInterno) avisos.push("peça metálica " + c.id + ": tubo com corte inclinado foi como prisma reto no IFC (o corte está no DSTV)");
         var r = metalSolido(sd, nv, !temFuroInterno); if (!r || !r.item) return;
-        pintar(r.item, "Aço"); itens.push(r.item); tipos[r.tipo] = 1;
+        if (acN) pintar(r.item, matN, corAc); else pintar(r.item, "Aço");
+        itens.push(r.item); tipos[r.tipo] = 1;
       });
       if (!itens.length) { avisos.push("peça metálica " + c.id + ": o sólido não fechou — ficou de fora"); return; }
       var tipoRep = Object.keys(tipos).length === 1 ? Object.keys(tipos)[0] : "SolidModel";
@@ -854,9 +859,9 @@
         extra = [E(pre)];
       } else { ent = "IFCDISCRETEACCESSORY"; extra = [E("USERDEFINED")]; }
       var el = peca(c.id, ent, nome, objType, pl, forma(itens, tipoRep), extra, yb, nv, { marca: c.marca || null });
-      var matN = "Aço " + (m.aco || (m.kind === "parafuso" ? ((BimNormaClasse(m.classe) || {}).nome || m.classe) : ""));
-      ligarMaterial(el, matN.trim());
+      ligarMaterial(el, matN);
       var ps = [["Funcao", "IFCLABEL", m.papel], ["Aco", "IFCLABEL", m.aco || ""], ["Massa", "IFCMASSMEASURE", c.massa], ["Ligacao", "IFCIDENTIFIER", m.lig || ""]];
+      if (acN) ps.push(["Acabamento", "IFCLABEL", ACm.tipoNome(acN.tipo)], ["CorAcabamento", "IFCLABEL", ACm.corRotulo(acN)]); if (acN && acN.ral) ps.push(["CorRAL", "IFCLABEL", "RAL " + acN.ral]);
       if (m.kind === "chapa") ps.push(["Espessura", "IFCPOSITIVELENGTHMEASURE", m.t]);
       if (m.kind === "perfil") ps.push(["Perfil", "IFCLABEL", m.perfilRotulo || (m.perfil && (m.perfil.cat || m.perfil.forma))], ["Comprimento", "IFCPOSITIVELENGTHMEASURE", m.L]);
       if (m.kind === "parafuso") ps.push(["Classe", "IFCLABEL", m.classe], ["Comprimento", "IFCPOSITIVELENGTHMEASURE", num(m.Lmm, 0) / 1000], ["Aperto", "IFCPOSITIVELENGTHMEASURE", m.aperto]);

@@ -11329,6 +11329,19 @@ poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
 }
 return b2Mats[k];
 }
+var b2MatsAcab = {};
+function b2MatAcab(acab, aco) {
+var AC = window.BimMetalAcab, a = AC ? AC.normalizar(acab, aco) : null;
+if (!a) return b2Mat('aco');
+var k = AC.chave(a);
+if (!b2MatsAcab[k]) {
+var d = AC.pbr(a), m = new THREE.MeshStandardMaterial({ color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide });
+m.userData.acabMetal = k; m.userData.corLin = m.color.clone(); m.userData.nomeMaterial = AC.rotulo(a);
+b2MatsAcab[k] = m;
+}
+return b2MatsAcab[k];
+}
+S._b2MatAcab = b2MatAcab;
 function b2Geo(poli, furos, z0, z1, mapa) {
 var V2 = function (q) { return new THREE.Vector2(q[0], q[1]); };
 var cont = poli.map(V2), fur = (furos || []).map(function (f) { return f.map(V2); });
@@ -11437,7 +11450,7 @@ return { qto: { comprimento: vd.comprimento != null ? vd.comprimento : mdV.compr
 }
 if (c.tipo === 'metal' && c.metal) {
 if (!window.BimMetal) return null;
-var mM = b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
+var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
 var chM = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY]), enM = metGeo.mapa[c.id];
 if (!enM || enM.chave !== chM || !metGeo.ligado) {
 if (enM) metGeoDescartar(enM);

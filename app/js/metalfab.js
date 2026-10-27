@@ -51,6 +51,7 @@
   function Peso() { return dep("BimPeso", "./bimpeso.js"); }
   function Planif() { return dep("BimMetalPlanif", "./metalplanif.js"); }
   function Corte() { return dep("BimMetalCorte", "./metalcorte.js"); }
+  function AC() { return dep("BimMetalAcab", "./metalacab.js"); }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function arr(v) { return Array.isArray(v) ? v : []; }
   function r1(v) { return Math.round(v * 10) / 10; }
@@ -114,6 +115,15 @@
     var pecas = [], parafusos = [], avisos = [];
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c) return;
+      var n0 = pecas.length;
+      pecaFab1(c, pecas, parafusos, avisos);
+      /* ACABAMENTO POR PEÇA (js/metalacab.js): a peça leva o dela (cor e tipo); sem acab próprio, nada muda */
+      if (c.tipo === "metal" && c.acab && AC()) { var an = AC().normalizar(c.acab, c.metal && c.metal.aco); if (an) for (var i0 = n0; i0 < pecas.length; i0++) pecas[i0].acab = an; }
+    });
+    return { pecas: pecas, parafusos: parafusos, avisos: avisos };
+  }
+  function pecaFab1(c, pecas, parafusos, avisos) {
+    {
       if (c.tipo === "metal" && c.metal) {
         var k = c.metal.kind;
         if (k === "chapa") pecas.push(chapaFab(c));
@@ -122,8 +132,7 @@
         else if (k === "parafuso") parafusos.push({ id: c.id, papel: c.metal.papel, idP: c.metal.id, Lmm: c.metal.Lmm, classe: c.metal.classe, sistema: c.metal.sistema, arruelas: num(c.metal.arrCabeca, 0) + num(c.metal.arrPorca, 0), porcas: 1, massa: num(c.massa, 0), lig: c.metal.lig || "" });
         else if (k === "mecanica") pecas.push({ id: c.id, kind: "mec", papel: c.metal.papel, tipoMec: c.metal.tipoMec, D: mm(c.metal.D), d: mm(c.metal.d), L: mm(c.metal.L), aco: c.metal.aco, massa: num(c.massa, 0), area: num(c.area, 0), soldadaEm: c.metal.soldadaEm || null, ifc: c.ifc, marcaAtual: c.marca || "", nome: M().nome(c) });
       } else if (ehAcoArq(c)) { var pa = perfilFab(c); if (pa) pecas.push(pa); else avisos.push("peça " + c.id + " (" + (c.tipo === "pilar" ? "pilar" : "viga") + " de aço): perfil não reconhecido — ficou de fora da fabricação (sem marca, sem .nc1)"); }
-    });
-    return { pecas: pecas, parafusos: parafusos, avisos: avisos };
+    }
   }
 
   /* ======================================================= ASSINATURA
@@ -180,6 +189,11 @@
     return v.sort()[0];
   }
   function assinatura(p) {
+    /* o acabamento próprio separa a marca (duas vigas iguais, uma galvanizada e outra pintada, são marcas diferentes na fábrica) */
+    var base = assinatura0(p);
+    return p.acab && AC() ? base + "|AC:" + AC().chave(p.acab) : base;
+  }
+  function assinatura0(p) {
     if (p.kind === "perfil") return variantes(p).map(function (vt) { return assinaturaPerfil(p, vt); }).sort()[0];
     if (p.kind === "chapa") return ["CH", q5(p.t), p.aco, canonChapa(p.contorno, p.furos, p.recortes)].join("|") + (p.dobras ? "|D" + assinDobras(p.dobras) : "");
     return ["M", p.tipoMec, q5(p.D), q5(p.d), q5(p.L), p.aco].join("|");
@@ -490,7 +504,8 @@
     var pecas = n.grupos.map(function (g) {
       var p = g.rep, kg = pesoKg(p), area = num(p.area, 0);
       return { marca: g.marca, tipo: p.kind === "perfil" ? "Perfil" : (p.kind === "chapa" ? "Chapa" : "Mecânica"), papel: p.papel, descricao: descricao(p), perfil: p.kind === "perfil" ? p.nomePerfil : (p.kind === "chapa" ? "Chapa " + br(p.t, 1) + " mm" : p.tipoMec),
-               comprimento: Math.round(num(p.L, 0)), quantidade: g.ids.length, aco: p.aco, pesoUnit: r2(kg), pesoTotal: r2(kg * g.ids.length), pinturaUnit: r3(area), pinturaTotal: r3(area * g.ids.length), furos: arr(p.furos).length, conjunto: n.conjuntoDe[g.ids[0]] || "" };
+               comprimento: Math.round(num(p.L, 0)), quantidade: g.ids.length, aco: p.aco, pesoUnit: r2(kg), pesoTotal: r2(kg * g.ids.length), pinturaUnit: r3(area), pinturaTotal: r3(area * g.ids.length), furos: arr(p.furos).length, conjunto: n.conjuntoDe[g.ids[0]] || "",
+               acabamento: p.acab && AC() ? AC().tipoNome(p.acab.tipo) : "", cor: p.acab && AC() ? AC().corCodigo(p.acab) : "" };
     });
     var conjuntos = n.conjuntos.map(function (c) {
       var rep = c.conjuntos[0], kg = 0, area = 0;
@@ -550,7 +565,7 @@
     }
     var somaP = 0; L.pecas.forEach(function (p) { somaP += p.pesoTotal; });
     aba("Peças", [["marca", "Marca", 8], ["tipo", "Tipo", 10], ["papel", "Função", 24], ["perfil", "Perfil / chapa", 22], ["comprimento", "Comprimento (mm)", 16, "0"], ["quantidade", "Qtd", 6, "0"], ["aco", "Aço", 18],
-      ["pesoUnit", "Peso unit. (kg)", 14, "#,##0.00"], ["pesoTotal", "Peso total (kg)", 14, "#,##0.00"], ["pinturaUnit", "Pintura unit. (m²)", 16, "#,##0.000"], ["pinturaTotal", "Pintura total (m²)", 16, "#,##0.000"], ["furos", "Furos", 7], ["conjunto", "Conjunto", 10]],
+      ["pesoUnit", "Peso unit. (kg)", 14, "#,##0.00"], ["pesoTotal", "Peso total (kg)", 14, "#,##0.00"], ["pinturaUnit", "Pintura unit. (m²)", 16, "#,##0.000"], ["pinturaTotal", "Pintura total (m²)", 16, "#,##0.000"], ["furos", "Furos", 7], ["conjunto", "Conjunto", 10], ["acabamento", "Acabamento", 24], ["cor", "Cor (RAL)", 14]],
       L.pecas, { marca: "TOTAL", pesoTotal: r2(somaP), pinturaTotal: r3(L.pecas.reduce(function (s, p) { return s + p.pinturaTotal; }, 0)) });
     aba("Conjuntos", [["marca", "Conjunto", 10], ["principal", "Peça principal", 14], ["descricao", "Descrição", 30], ["partes", "Partes soldadas", 34], ["quantidade", "Qtd", 6, "0"], ["pesoUnit", "Peso unit. (kg)", 14, "#,##0.00"], ["pesoTotal", "Peso total (kg)", 14, "#,##0.00"], ["pinturaTotal", "Pintura (m²)", 14, "#,##0.000"]],
       L.conjuntos.map(function (c) { var o = {}; Object.keys(c).forEach(function (k) { if (k !== "ids") o[k] = c[k]; }); return o; }), { marca: "TOTAL", pesoTotal: r2(L.conjuntos.reduce(function (s, c) { return s + c.pesoTotal; }, 0)) });

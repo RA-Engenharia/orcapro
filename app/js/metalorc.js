@@ -64,6 +64,7 @@
   }
   function Fab() { return dep("BimMetalFab", "./metalfab.js"); }
   function Pint() { return dep("BimMetalPintura", "./metalpintura.js"); }
+  function Acab() { return dep("BimMetalAcab", "./metalacab.js"); }
   function Peso() { return dep("BimPeso", "./bimpeso.js"); }
   function Norma() { return dep("BimMetalNorma", "./metalnorma.js"); }
   function Aco() { return dep("PerfisAco", "./perfisaco.js"); }
@@ -332,11 +333,27 @@
     /* PINTURA: a área pela geometria real (a mesma do js/metalpintura.js) */
     var PI = Pint(), area = 0, pint = null;
     if (PI && PI.calcular) { pint = PI.calcular(n, { bordas: !!op.bordas }); area = pint.total.m2; }
+    /* ACABAMENTO POR PEÇA (js/metalacab.js): a estrutura repartida por acabamento (tipo + sistema de pintura) — a soma das partes é o total
+       (kg da estrutura e m² de pintura). A peça sem acabamento próprio cai no do projeto, então o particionamento nunca perde nem repete peça. */
+    var AC = Acab(), porAcab = {}, temAcab = !!(AC && AC.temAcabProprio(estado)), caixaPorId = {};
+    if (temAcab) arr(estado && estado.caixas).forEach(function (c) { if (c) caixaPorId[String(c.id)] = c; });
+    if (AC && PI && PI.areaPeca) {
+      var proj = { galv: !!(op.galvanizacao && op.galvanizacao.usar), duplex: !!(op.galvanizacao && op.galvanizacao.duplex), sistema: op.pintura && op.pintura.sistema }, cfgA = PI.cfgDe ? PI.cfgDe({ bordas: !!op.bordas }) : { bordas: !!op.bordas };
+      n.grupos.forEach(function (g) {
+        var p = g.rep, kg = pesoKg(p), m2 = PI.areaPeca(p, cfgA).m2;
+        g.ids.forEach(function (id) {
+          var ef = AC.efetivo(caixaPorId[String(id)] || null, proj), k = ef.tipo + "|" + ef.sistema;
+          var x = porAcab[k] || (porAcab[k] = { tipo: ef.tipo, sistema: ef.sistema, pecas: 0, kg: 0, m2: 0, ids: [], idsPeso: [], proprias: 0 });
+          x.pecas++; x.kg += kg > 0 ? kg : 0; x.m2 += m2; x.ids.push(id); if (kg > 0) x.idsPeso.push(id); if (ef.proprio) x.proprias++;
+        });
+      });
+      Object.keys(porAcab).forEach(function (k) { var x = porAcab[k]; x.kgBruto = x.kg; x.m2Bruto = x.m2; x.kg = r2(x.kg); x.m2 = r3(x.m2); });   /* kg/m2 = para mostrar; kgBruto/m2Bruto = a conta (a soma das partes fecha com o total) */
+    }
     function fechar(o) { Object.keys(o).forEach(function (k) { var x = o[k]; ["kg", "area", "comprimento"].forEach(function (f) { if (x[f] != null) x[f] = f === "kg" ? r2(x[f]) : r3(x[f]); }); if (x.marcas) x.marcas = x.marcas.sort().join(", "); if (x.papeis) x.papeis = x.papeis.join(", "); }); return o; }
     var lista = Object.keys(fechar(perfis)).sort().map(function (k) { return perfis[k]; }), listaCh = Object.keys(fechar(chapas)).sort().map(function (k) { return chapas[k]; });
     Object.keys(porComp).forEach(function (k) { porComp[k].kg = r2(porComp[k].kg); });
     return { ok: true, numeracao: n, porComposicao: porComp, perfis: lista, chapas: listaCh, parafusos: par, chumbadores: chumb, tirantes: tir, pintura: pint,
-             area_m2: r3(area), kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
+             area_m2: r3(area), porAcabamento: porAcab, temAcabamentoProprio: temAcab, kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
   }
 
   /* ================================================================ IÇAMENTO PELO PLANO */
@@ -438,37 +455,85 @@
     /* 3. PROTEÇÃO */
     var G = op.galvanizacao || {}, P0 = op.pintura || {}, PI = Pint(), A = lev.area_m2;
     var pintar = !G.usar || !!G.duplex, sis = P0.sistema || PREMISSAS.sistema;
-    if (G.usar) {
+    var galvKgReal = G.usar ? r2(lev.kgEstrutura + lev.kgParafusos) : 0, galvIdsReal = lev.ids;
+    function lancarGalv(kgG, memG, idsG) {
       /* revisor 21/10/2026: galvaniza a estrutura E os parafusos (o A325 da SICRO é preto; o chumbador SINAPI 39746 já é galvanizado).
          Sem a cotação, a composição própria PROVISÓRIA (maior preço público) — o orçamento nunca fica bloqueado nem com item sem preço. */
-      var pk = num(G.precoKg, 0), kgG = r2(lev.kgEstrutura + lev.kgParafusos), memG = "galvanização de " + br(kgG, 2) + " kg (" + br(lev.kgEstrutura, 2) + " kg de estrutura + " + br(lev.kgParafusos, 2) + " kg de parafusos; o chumbador já é galvanizado)";
-      if (pk > 0 && txt(G.fonte).trim()) add("Proteção", "PROP-MET-9031-COT", "COTACAO", kgG, memG, lev.ids,
+      var pk = num(G.precoKg, 0);
+      if (pk > 0 && txt(G.fonte).trim()) add("Proteção", "PROP-MET-9031-COT", "COTACAO", kgG, memG, idsG,
         { descricao: "GALVANIZACAO A FOGO POR IMERSAO A QUENTE (NBR 6323) DA ESTRUTURA METALICA — COTACAO " + txt(G.fonte).trim().toUpperCase() + (txt(G.data) ? " DE " + txt(G.data) : ""), unidade: "kg", unitario: pk, mat: pk, mo: 0, eq: 0, cotacao: { fonte: txt(G.fonte).trim(), data: txt(G.data) } });
       else {
-        add("Proteção", "PROP-MET-9031", "PROPRIA", kgG, memG + " — preço PROVISÓRIO: o maior público derivado (SINAPI), até a cotação do galvanizador", lev.ids);
+        add("Proteção", "PROP-MET-9031", "PROPRIA", kgG, memG + " — preço PROVISÓRIO: o maior público derivado (SINAPI), até a cotação do galvanizador", idsG);
         problemas.push({ tipo: "galv-sem-preco", gravidade: "aviso", titulo: "Galvanização com preço provisório",
           texto: "O serviço de galvanização a fogo não tem preço público. O orçamento saiu com a composição própria PROP-MET-9031 pelo maior preço público derivável (diferencial galvanizado − preto da SINAPI, R$ " + br(INS["PROP-9417"].custoUnitario, 2) + "/kg), marcada provisória — informe a cotação do galvanizador para fechar o preço.",
-          solucoes: [{ id: "galv-preco", texto: "Informar o preço por kg e de quem é a cotação" }, { id: "galv-pintura", texto: "Proteger com pintura em vez de galvanizar" }], pecas: lev.ids.slice(0, 200) });
+          solucoes: [{ id: "galv-preco", texto: "Informar o preço por kg e de quem é a cotação" }, { id: "galv-pintura", texto: "Proteger com pintura em vez de galvanizar" }], pecas: idsG.slice(0, 200) });
       }
     }
-    if (pintar && sis !== "nenhuma" && A > 0) {
-      var demaos = arr(P0.demaos).length ? arr(P0.demaos) : (PI ? PI.CONFIG.demaos : []), cont = {};
-      if (P0.preparo !== "nenhum" && !G.usar) {
-        var grau = txt(P0.grau);
-        add("Proteção", SINAPI.jateamento, "SINAPI", A, "preparo de superfície em " + br(A, 2) + " m² (área de pintura pela geometria, a mesma do js/metalpintura.js)" + (/^St/i.test(grau) ? " — sistema pede " + grau + " (limpeza mecânica): adotado o jateamento, o de maior preço" : ""), lev.ids,
+    var memGv = "galvanização de " + br(r2(lev.kgEstrutura + lev.kgParafusos), 2) + " kg (" + br(lev.kgEstrutura, 2) + " kg de estrutura + " + br(lev.kgParafusos, 2) + " kg de parafusos; o chumbador já é galvanizado)";
+    if (G.usar && !lev.temAcabamentoProprio) lancarGalv(r2(lev.kgEstrutura + lev.kgParafusos), memGv, lev.ids);
+    if (lev.temAcabamentoProprio) {
+      /* ACABAMENTO POR PEÇA (js/metalacab.js): a proteção é lançada POR ACABAMENTO — galvanizado e duplex por kg, pintura e duplex por m² × demãos.
+         A peça sem acabamento próprio entra pelo do projeto, então nenhuma peça fica de fora nem conta duas vezes (a soma das partes é o levantamento). */
+      var ac = lev.porAcabamento, kgGv = 0, idsGv = [], m2Jat = 0, idsJat = [], gruposP = {}, nBruto = 0, nInox = 0, kgSemProt = 0;
+      Object.keys(ac).forEach(function (k) {
+        var x = ac[k];
+        if (x.tipo === "galvanizado" || x.tipo === "duplex") { kgGv += x.kgBruto; idsGv = idsGv.concat(x.idsPeso); }
+        if (x.tipo === "pintura") { m2Jat += x.m2Bruto; idsJat = idsJat.concat(x.idsPeso); }
+        if (x.tipo === "pintura" || x.tipo === "duplex") { var g = gruposP[x.sistema] || (gruposP[x.sistema] = { sistema: x.sistema, m2: 0, ids: [] }); g.m2 += x.m2Bruto; g.ids = g.ids.concat(x.idsPeso); }
+        if (x.tipo === "bruto") { nBruto += x.pecas; kgSemProt += x.kgBruto; }
+        if (x.tipo === "inox") nInox += x.pecas;
+      });
+      var nGv = 0; Object.keys(ac).forEach(function (k) { if (ac[k].tipo === "galvanizado" || ac[k].tipo === "duplex") nGv += ac[k].pecas; });
+      var kgParGalv = G.usar ? lev.kgParafusos : 0, kgGvT = r2(kgGv + kgParGalv);
+      galvKgReal = kgGvT; galvIdsReal = idsGv;
+      if (kgGvT > 0) lancarGalv(kgGvT, "galvanização de " + br(kgGvT, 2) + " kg (" + nGv + " peça(s) com acabamento galvanizado ou duplex = " + br(kgGv, 2) + " kg de estrutura" + (kgParGalv > 0 ? " + " + br(kgParGalv, 2) + " kg de parafusos, galvanizados pela opção do projeto" : "") + "; o chumbador já é galvanizado)", idsGv);
+      var jatArea = r3(m2Jat), temPint = false;
+      if (P0.preparo !== "nenhum" && jatArea > 0) {
+        var grau0 = txt(P0.grau);
+        add("Proteção", SINAPI.jateamento, "SINAPI", jatArea, "preparo de superfície em " + br(jatArea, 2) + " m² (só as peças com acabamento de pintura; a galvanizada e a duplex dispensam o jateamento aqui)" + (/^St/i.test(grau0) ? " — sistema pede " + grau0 + " (limpeza mecânica): adotado o jateamento, o de maior preço" : ""), idsJat,
           { descricao: "JATEAMENTO ABRASIVO COM GRANALHA DE AÇO EM PERFIL METÁLICO EM FÁBRICA", unidade: "M2" });
       }
-      demaos.forEach(function (d, i) {
-        var m = PI && PI.composicaoDaDemao ? PI.composicaoDaDemao(d, i, demaos.length, sis) : { codigo: "100727" };
-        var c = cont[m.codigo] || (cont[m.codigo] = { n: 0, nomes: [], prov: null, avisos: [] });
-        c.n++; c.nomes.push(txt(d.nome) || "demão " + (i + 1)); if (m.provisorio) c.prov = m.provisorio; if (m.aviso && c.avisos.indexOf(m.aviso) < 0) c.avisos.push(m.aviso);
+      var contA = {};
+      Object.keys(gruposP).sort().forEach(function (sk) {
+        var gp = gruposP[sk], areaG = r3(gp.m2); if (!(areaG > 0)) return;
+        var demaosG = arr(P0.demaos).length ? arr(P0.demaos) : (PI ? PI.CONFIG.demaos : []);
+        demaosG.forEach(function (d, i) {
+          var m = PI && PI.composicaoDaDemao ? PI.composicaoDaDemao(d, i, demaosG.length, sk) : { codigo: "100727" };
+          var c = contA[m.codigo] || (contA[m.codigo] = { area: 0, nomes: [], prov: null, avisos: [], ids: [], sis: [] });
+          c.area += areaG; c.ids = c.ids.concat(gp.ids); if (c.sis.indexOf(sk) < 0) c.sis.push(sk);
+          var nm = txt(d.nome) || "demão " + (i + 1); if (c.nomes.indexOf(nm) < 0) c.nomes.push(nm);
+          if (m.provisorio) c.prov = m.provisorio; if (m.aviso && c.avisos.indexOf(m.aviso) < 0) c.avisos.push(m.aviso);
+        });
       });
-      Object.keys(cont).forEach(function (cod) {
-        var c = cont[cod];
-        add("Proteção", cod, "SINAPI", A * c.n, br(A, 2) + " m² × " + c.n + " demão(ões) (" + c.nomes.join("; ") + ") — a tinta está na composição por demão (os litros do js/metalpintura.js não viram linha: cobrariam em dobro)" + (c.avisos.length ? ". " + c.avisos.join(" ") : ""), lev.ids,
+      Object.keys(contA).forEach(function (cod) {
+        var c = contA[cod]; temPint = true;
+        add("Proteção", cod, "SINAPI", r3(c.area), br(c.area, 2) + " m² de peças com pintura/duplex (sistema: " + c.sis.join(", ") + "; demãos: " + c.nomes.join("; ") + ") — a tinta está na composição por demão (os litros do js/metalpintura.js não viram linha: cobrariam em dobro)" + (c.avisos.length ? ". " + c.avisos.join(" ") : ""), c.ids,
           c.prov ? { provisorio: { motivo: c.prov } } : null);
       });
-    } else if (!G.usar && sis === "nenhuma") avisos.push("Sem pintura e sem galvanização: a estrutura sai sem proteção contra corrosão — confirme que é aço patinável ou peça interna seca.");
+      void temPint;
+      if (nBruto) avisos.push(nBruto + " peça(s) (" + br(kgSemProt, 2) + " kg) sem proteção contra corrosão (acabamento bruto, ou o projeto sem pintura): confirme que é aço patinável ou peça interna seca.");
+      if (nInox) avisos.push(nInox + " peça(s) em inox: sem pintura e sem galvanização, o acabamento é o do próprio material.");
+    } else {
+    if (pintar && sis !== "nenhuma" && A > 0) {
+        var demaos = arr(P0.demaos).length ? arr(P0.demaos) : (PI ? PI.CONFIG.demaos : []), cont = {};
+        if (P0.preparo !== "nenhum" && !G.usar) {
+          var grau = txt(P0.grau);
+          add("Proteção", SINAPI.jateamento, "SINAPI", A, "preparo de superfície em " + br(A, 2) + " m² (área de pintura pela geometria, a mesma do js/metalpintura.js)" + (/^St/i.test(grau) ? " — sistema pede " + grau + " (limpeza mecânica): adotado o jateamento, o de maior preço" : ""), lev.ids,
+            { descricao: "JATEAMENTO ABRASIVO COM GRANALHA DE AÇO EM PERFIL METÁLICO EM FÁBRICA", unidade: "M2" });
+        }
+        demaos.forEach(function (d, i) {
+          var m = PI && PI.composicaoDaDemao ? PI.composicaoDaDemao(d, i, demaos.length, sis) : { codigo: "100727" };
+          var c = cont[m.codigo] || (cont[m.codigo] = { n: 0, nomes: [], prov: null, avisos: [] });
+          c.n++; c.nomes.push(txt(d.nome) || "demão " + (i + 1)); if (m.provisorio) c.prov = m.provisorio; if (m.aviso && c.avisos.indexOf(m.aviso) < 0) c.avisos.push(m.aviso);
+        });
+        Object.keys(cont).forEach(function (cod) {
+          var c = cont[cod];
+          add("Proteção", cod, "SINAPI", A * c.n, br(A, 2) + " m² × " + c.n + " demão(ões) (" + c.nomes.join("; ") + ") — a tinta está na composição por demão (os litros do js/metalpintura.js não viram linha: cobrariam em dobro)" + (c.avisos.length ? ". " + c.avisos.join(" ") : ""), lev.ids,
+            c.prov ? { provisorio: { motivo: c.prov } } : null);
+        });
+      } else if (!G.usar && sis === "nenhuma") avisos.push("Sem pintura e sem galvanização: a estrutura sai sem proteção contra corrosão — confirme que é aço patinável ou peça interna seca.");
+    }
+
     /* 4. IÇAMENTO */
     var alt = 0; lev.numeracao.pecas.forEach(function (p) { if (p.kind === "perfil" && /pilar/i.test(txt(p.papel))) alt = Math.max(alt, num(p.L, 0) / 1000); });
     var ic = icamentoDoPlano(op.plano, lev, { alturaMax: alt || 6 }), kgNoPlano = 0;
@@ -495,7 +560,7 @@
     }
     if (t > 0) add("Transporte", SINAPI.cargaDescarga, "SINAPI", r4(t), br(t, 3) + " t (estrutura + parafusos + chumbadores)", lev.ids, { descricao: "CARGA, MANOBRA E DESCARGA DE PERFIL METÁLICO COM GUINDAUTO (MUNCK) 42,3 TM", unidade: "T" });
     /* galvanizado: a estrutura faz UMA viagem a mais (fábrica → galvanizadora) — premissa: a galvanizadora à mesma distância da obra */
-    var tG = G.usar ? r2(lev.kgEstrutura + lev.kgParafusos) / 1000 : 0;
+    var tG = galvKgReal / 1000;
     if (tG > 0 && dmt > 0) {
       add("Transporte", SINAPI.frete30, "SINAPI", r4(tG * Math.min(dmt, 30)), br(tG, 3) + " t × " + br(Math.min(dmt, 30), 1) + " km — viagem da fábrica à galvanizadora (premissa: mesma distância da obra, " + br(dmt, 1) + " km; ajusta-se com a galvanizadora escolhida)", lev.ids, { descricao: "TRANSPORTE COM CAMINHÃO CARROCERIA COM GUINDAUTO (MUNCK) 42,3 TM, DMT ATÉ 30 KM", unidade: "TXKM" });
       if (dmt > 30) add("Transporte", SINAPI.freteExc, "SINAPI", r4(tG * (dmt - 30)), br(tG, 3) + " t × " + br(dmt - 30, 1) + " km além dos 30 km — viagem à galvanizadora", lev.ids, { descricao: "TRANSPORTE COM MUNCK 42,3 TM, ADICIONAL DMT EXCEDENTE A 30 KM", unidade: "TXKM" });

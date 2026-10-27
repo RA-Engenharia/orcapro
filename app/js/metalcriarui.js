@@ -381,10 +381,69 @@
       var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
       cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
       sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+      var sAcL = this._secAcab(pre, cs); if (sAcL) sec.push(sAcL);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ELEVAR (js/bimelevarui.js): a mesma seção, com ‹vários› e o mesmo delta para todas (um Ctrl+Z) */
       try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
       return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
         onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self.propsPeca(info, G); } };
+    },
+    /* ACABAMENTO E COR POR PEÇA (js/metalacab.js): o grupo "Acabamento" das Propriedades (uma peça ou a seleção inteira) */
+    _secAcab: function (pre, cs) {
+      var AC = global.BimMetalAcab; if (!AC || !cs.length) return null;
+      var VAR = "‹vários›", ac = cs.map(function (c) { return c.acab ? AC.normalizar(c.acab, c.metal && c.metal.aco) : null; });
+      function comum(f) { var v0 = f(ac[0]); return ac.every(function (a) { return f(a) === v0; }) ? v0 : "__var"; }
+      var todosInox = cs.every(function (c) { return AC.ehInox(c.metal && c.metal.aco); });
+      var tipo = comum(function (a) { return a ? a.tipo : ""; });
+      var opT = [{ id: "", rotulo: "Herdar do projeto" }].concat(AC.ACABAMENTOS.filter(function (x) { return x.id !== "inox" || todosInox; }).map(function (x) { return { id: x.id, rotulo: x.nome }; }));
+      if (tipo === "__var") opT.unshift({ id: "__var", rotulo: VAR });
+      var ps = [{ id: pre + "acabTipo", rotulo: "Acabamento", tipo: "lista", valor: tipo, opcoes: opT,
+                  motivo: "Vale só para esta(s) peça(s); sem acabamento próprio, vale a proteção do projeto (Orçamento › Proteção). Inox só para aço inox." }];
+      if (tipo === "pintura" || tipo === "duplex") {
+        var ral = comum(function (a) { return a ? (a.ral || (a.cor ? "outra" : "")) : ""; });
+        var opC = AC.RAL.map(function (r) { return { id: r.ral, rotulo: "RAL " + r.ral + " — " + r.nome }; }).concat([{ id: "outra", rotulo: "Outra (hex livre)" }]);
+        if (ral === "__var") opC.unshift({ id: "__var", rotulo: VAR });
+        ps.push({ id: pre + "acabCor", rotulo: "Cor", tipo: "lista", valor: ral, opcoes: opC });
+        if (ral === "outra") ps.push({ id: pre + "acabHex", rotulo: "Cor (hex #rrggbb)", tipo: "texto", valor: comum(function (a) { return a ? a.cor : ""; }) === "__var" ? "" : ac[0].cor });
+        var sis = comum(function (a) { return a ? String(a.sistema || "") : ""; }), opS = AC.SISTEMAS.map(function (x) { return { id: x.id, rotulo: x.nome }; });
+        if (sis === "__var") opS.unshift({ id: "__var", rotulo: VAR });
+        ps.push({ id: pre + "acabSis", rotulo: "Sistema de pintura", tipo: "lista", valor: sis, opcoes: opS, motivo: "Herda o do projeto (Orçamento › Proteção); troque aqui só se esta peça leva outro." });
+        var br0 = comum(function (a) { return a ? a.brilho : ""; }), opB = AC.BRILHOS.map(function (x) { return { id: x.id, rotulo: x.nome }; });
+        if (br0 === "__var") opB.unshift({ id: "__var", rotulo: VAR });
+        ps.push({ id: pre + "acabBrilho", rotulo: "Brilho", tipo: "lista", valor: br0, opcoes: opB });
+      } else if (tipo === "galvanizado") ps.push({ id: pre + "acabCorFixa", rotulo: "Cor", leitura: true, valor: "Cinza zincado (fixa)" });
+      else if (tipo === "inox") ps.push({ id: pre + "acabCorFixa", rotulo: "Cor", leitura: true, valor: "Inox natural (fixa)" });
+      else if (tipo === "bruto") ps.push({ id: pre + "acabCorFixa", rotulo: "Cor", leitura: true, valor: "Aço natural (sem proteção)" });
+      return { nome: "Acabamento", params: ps };
+    },
+    /* uma mudança do grupo Acabamento → UMA op por acabamento resultante, num lote só (um Ctrl+Z desfaz a seleção inteira) */
+    _mudarAcab: function (ids, k, v) {
+      var AC = global.BimMetalAcab; if (!AC) return false;
+      v = v == null ? "" : String(v); if (v === "__var") return true;
+      var grupos = {}, ordem = [], recusadas = 0, n = 0;
+      ids.forEach(function (id) {
+        var c = caixaDe(id); if (!c || !c.metal) return;
+        var a0 = c.acab ? AC.normalizar(c.acab, c.metal.aco) : null, a1 = a0 ? JSON.parse(JSON.stringify(a0)) : null;
+        if (k === "acabTipo") {
+          if (v === "") a1 = null;
+          else a1 = { tipo: v, ral: a0 ? a0.ral : "", cor: a0 ? a0.cor : "", sistema: a0 ? a0.sistema : null, brilho: a0 ? a0.brilho : "fosco" };
+        } else {
+          if (!a1 || (a1.tipo !== "pintura" && a1.tipo !== "duplex")) return;
+          if (k === "acabCor") { if (v === "outra") { a1.ral = ""; } else { a1.ral = v; a1.cor = ""; } }
+          else if (k === "acabHex") { if (!/^#[0-9a-fA-F]{6}$/.test(v.trim())) return; a1.ral = ""; a1.cor = v.trim().toLowerCase(); }
+          else if (k === "acabSis") a1.sistema = v === "epoxi" || v === "alquidico" ? v : null;
+          else if (k === "acabBrilho") a1.brilho = v;
+          else return;
+        }
+        if (a1) { a1 = AC.normalizar(a1, c.metal.aco); if (!a1) { recusadas++; return; } }
+        var ch = a1 ? AC.chave(a1) : "(herdar)"; n++;
+        if (!grupos[ch]) { grupos[ch] = { acab: a1, ids: [] }; ordem.push(ch); }
+        grupos[ch].ids.push(String(id));
+      });
+      if (!ordem.length) { status(recusadas ? "O acabamento Inox só vale para peça de aço inox." : "Nada mudou."); return false; }
+      var ops = ordem.map(function (ch) { return AC.opAcabamento(grupos[ch].ids, grupos[ch].acab); });
+      if (!enviarLote(ops, "Acabamento e cor — " + n + " peça(s) metálica(s)")) { status("O editor recusou a mudança."); return false; }
+      status(n + " peça(s) metálica(s) com o acabamento atualizado (Ctrl+Z desfaz de uma vez)" + (recusadas ? "; " + recusadas + " recusaram (inox só em aço inox)" : "") + ".");
+      return true;
     },
     _buscaLote: null,
     mudarLote: function (ids, pid, v) {
@@ -392,6 +451,7 @@
       var M = MC(), k = String(pid).replace(/^mcrl:/, ""), mud = {};
       if (!M) return false;
       if (k === "busca") { this._buscaLote = String(v || "").slice(0, 60); return true; }
+      if (/^acab/.test(k)) return this._mudarAcab(ids, k, v);   /* ACABAMENTO E COR (js/metalacab.js) */
       if (k === "cat") { if (!v) return false; mud.cat = String(v); }
       else if (k === "aco") { if (!v) return false; mud.aco = String(v); }
       else if (k === "giro") { var n = num(v, NaN); if (!fin(n)) { status("Valor inválido."); return false; } mud.giro = n; }
@@ -482,6 +542,7 @@
         ] });
         sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: m.aco, opcoes: ACOS_CHAPA.concat(ACOS_CHAPA.indexOf(m.aco) < 0 ? [m.aco] : []).map(function (a) { return { id: a, rotulo: a }; }) }] });
       }
+      var sAc = this._secAcab(pre, [c]); if (sAc) sec.push(sAc);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       var md = c.medidas || {};
       sec.push({ nome: "Quantidades", params: [ro("massa", "Peso", br(c.massa, 2) + " kg"), ro("area", "Área de pintura", br(md.area, 3) + " m²"), ro("vol", "Volume", br(md.volume, 5) + " m³")] });
       var extra = [];
@@ -512,6 +573,7 @@
       if (/^elev:/.test(String(pid)) && global.BimElevarUI) return global.BimElevarUI.mudarCampo([id], pid, v).ok;   /* ELEVAR */
       var k = String(pid).replace(/^mcrp:/, ""), mud = {};
       if (k === "busca") { this._buscaPeca = { id: id, texto: String(v || "").slice(0, 60) }; return true; }
+      if (/^acab/.test(k)) return this._mudarAcab([id], k, v);   /* ACABAMENTO E COR (js/metalacab.js) */
       if (k === "vinc:a" || k === "vinc:b") {   /* VÍNCULOS: a op do motor, um Ctrl+Z */
         var BV = global.BimVinculos, rv = BV ? BV.opPonta(estado(), id, k.slice(5), !v) : { erro: "O motor dos vínculos (js/bimvinculos.js) não carregou." };
         if (rv.erro) { status(rv.erro); return false; }

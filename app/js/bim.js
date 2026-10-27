@@ -14834,6 +14834,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     return b2Mats[k];
   }
+  /* ACABAMENTO E COR por peça metálica (js/metalacab.js): material PBR por acabamento+cor, guardado (uma malha por chave).
+     Cor em sRGB de verdade (new THREE.Color com o ColorManagement ligado, como o FAM_PBR): galvanizado = cinza zincado metálico fosco,
+     inox = metálico claro, pintura = cor fosca ou acetinada. Sem estMarcarMat de propósito: a textura do dicionário "aço" não tinge a cor escolhida. */
+  var b2MatsAcab = {};
+  function b2MatAcab(acab, aco) {
+    var AC = window.BimMetalAcab, a = AC ? AC.normalizar(acab, aco) : null;
+    if (!a) return b2Mat('aco');
+    var k = AC.chave(a);
+    if (!b2MatsAcab[k]) {
+      var d = AC.pbr(a), m = new THREE.MeshStandardMaterial({ color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide });
+      m.userData.acabMetal = k; m.userData.corLin = m.color.clone(); m.userData.nomeMaterial = AC.rotulo(a);
+      b2MatsAcab[k] = m;
+    }
+    return b2MatsAcab[k];
+  }
+  S._b2MatAcab = b2MatAcab;   /* o teste e2e confere a cor da malha */
   /* polígono 2D (com furos) extrudado de z0 a z1 (z1 número ou um por
      vértice do contorno — o topo inclinado da parede sob o telhado); `mapa`
      leva (a, b, z) do local ao mundo. Vértices NÃO compartilhados (normal
@@ -14969,7 +14985,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        (com furos) extrudado pelo mapa da peça; o corte inclinado vem no mapa (as duas pontas). Desenho = corte = lista. */
     if (c.tipo === 'metal' && c.metal) {
       if (!window.BimMetal) return null;
-      var mM = b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
+      var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ⚠ GEOMETRIA GUARDADA POR PEÇA (12/10/2026). Cada op refaz a cena inteira, e a triangulação
          das peças metálicas era a maior parte do tempo: apagar 300 peças de um galpão de 920 levava
          0,58 s, 0,31 s só refazendo a malha das 620 que NÃO mudaram. A peça igual (mesmos dados e
