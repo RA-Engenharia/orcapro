@@ -26091,10 +26091,41 @@
        IFC sobe "em Compartilhar na nuvem", não ao abrir este modal. */
     bimQRImersivo: function () {
       var self = this;
+      self._rvComModelos(function (modelos) { self._bimQRImersivo(modelos); });
+    },
+    /* A CASA MODELADA NO ORÇAPRO VAI NO LINK (pedido do Rogério, 26/10/2026: "modelei a casa aqui e não consigo
+       gerar; ele fala que tem que carregar um modelo IFC"). O link só levava os .ifc importados (BIM.bytesModelos):
+       o modelado (paredes, lajes, telhado, famílias, instalações) não tem arquivo e o botão ficava travado. Agora
+       ele vira o IFC4 do próprio app — o MESMO do "Exportar IFC do modelado" (BIM.ifcSaida → js/ifcsaida.js, mesma
+       semente "obra:<id>", então os GUIDs são os do arquivo exportado) — e vai junto como mais um modelo.
+       O hash do texto entra na assinatura do link guardado: modelo editado nunca reaproveita o link velho.
+       Nada modelado, ou o IFC falhou: segue só com os importados (a mensagem de antes). */
+    _rvComModelos: function (cb) {
+      var self = this;
+      var mods = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      if (typeof BIM === "undefined" || !BIM.ifcSaida || typeof TextEncoder === "undefined") { cb(mods); return; }
+      var obra = null; try { obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null; } catch (e) { obra = null; }
+      var nome = (obra && obra.nome) || "Projeto OrçaPRO", p;
+      var niv = []; try { niv = self._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: Number(n.elevacao) }; }); } catch (eN) { niv = []; }
+      try { p = BIM.ifcSaida({ niveis: niv, projeto: nome, semente: "obra:" + (self._bimSel || "geral"), versaoApp: (typeof CONFIG !== "undefined" && CONFIG.versao) || "" }); }
+      catch (eS) { cb(mods); return; }
+      Promise.resolve(p).then(function (r) {
+        if (!r || !r.ok || !r.texto) { cb(mods); return; }
+        cb(mods.concat([{ nome: nome + " (modelado no OrçaPRO).ifc", disc: "", bytes: new TextEncoder().encode(r.texto), arquivoId: "", nativo: true, hash: self._rvHash(r.texto) }]));
+      }, function () { cb(mods); });
+    },
+    /* FNV-1a do IFC SEM o cabeçalho de data (FILE_NAME e IFCOWNERHISTORY mudam a cada geração) */
+    _rvHash: function (texto) {
+      var t = String(texto || "").replace(/^FILE_NAME\(.*$/m, "").replace(/^#\d+=\s*IFCOWNERHISTORY\(.*$/gm, ""), h = 0x811c9dc5;
+      for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+      return h.toString(16);
+    },
+    _bimQRImersivo: function (modelos) {
+      var self = this;
       var I = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
-      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      modelos = modelos || [];
       var semArq = (typeof BIM !== "undefined" && BIM.modelosSemArquivo) ? BIM.modelosSemArquivo() : [];
       var op = self._rvOpcoes();
       var salvo = self._rvLinkSalvo(modelos, base, op);
@@ -26168,7 +26199,7 @@
           if (bip && lan) { var u = bip.getAttribute("data-rvip"); lan.urls = [u].concat(lan.urls.filter(function (x) { return x !== u; })); abrir(lan); var d = document.querySelector('#rv-qr-ov [data-rv="lan"]'); if (d) d.open = true; return; }
           var b = e.target.closest("[data-rv]"); if (!b || b.tagName === "DETAILS" || b.tagName === "DIV") return; var k = b.getAttribute("data-rv");
           if (k === "fechar") ov.remove();
-          else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(op); } }
+          else if (k === "nuvem") { if (!trava) { ov.remove(); self._compartilharNuvemRV(op, null, modelos); } }
           else if (k === "meus") { ov.remove(); self._rvMeusLinks(); }
           else if (k === "placa") { if (self._rvPodePlaca()) { ov.remove(); self._rvPlaca(); } }
           else if (k === "lan-copiar") { try { navigator.clipboard.writeText(lan.urls[0]); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
@@ -26275,7 +26306,7 @@
        validade/outro conteúdo, e o link velho deixa de ser oferecido. */
     _rvAssinatura: function (modelos, base, op) {
       op = op || {};
-      return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || ""); }).join("|") +
+      return String(base || "") + "|" + (modelos || []).map(function (m) { return m.nome + ":" + (m.bytes ? m.bytes.length : 0) + ":" + (m.disc || "") + (m.hash ? ":" + m.hash : ""); }).join("|") +
         "|" + [op.dias, op.marca ? 1 : 0, op.vistas ? 1 : 0, op.crono ? 1 : 0, this._bimSel || ""].join(",") +
         /* ⚠ PRANCHA VIVA (23/10/2026): a assinatura das FOLHAS e do modelo entra junto — sem ela, a prancha mudada (vista nova,
            folha apagada, modelo editado) reaproveitava o link guardado e o cliente recebia o pacote velho */
@@ -26343,8 +26374,10 @@
     // Honesto: o link vale o prazo escolhido e só quem tem ele acessa.
     /* extra.placa = {slug?, senha?, dias?, cronograma, apontamentos}: o mesmo
        envio, mas o link vira o modelo da PLACA DA OBRA (e não um QR avulso) */
-    _compartilharNuvemRV: function (op, extra) {
+    _compartilharNuvemRV: function (op, extra, mods) {
       var self = this;
+      /* `mods`: os modelos já montados (importados + o modelado, _rvComModelos); a PLACA chama sem eles */
+      if (!mods) { self._rvComModelos(function (m) { self._compartilharNuvemRV(op, extra, m); }); return; }
       op = op || self._rvOpcoes();
       var placa = extra && extra.placa ? extra.placa : null, semValores = 0;
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
@@ -26352,7 +26385,7 @@
       if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
       if (!chave) { UI.toast("O link para qualquer celular é da versão ativada (🔑 Licença). No teste grátis o projeto não sai do computador.", "erro"); return; }
       if (typeof RvNuvem === "undefined") { UI.toast("O módulo do link (js/rvnuvem.js) não carregou. Recarregue o app.", "erro"); return; }
-      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      var modelos = mods;
       /* ⚠ MODELO RESTAURADO DO CACHE NÃO TEM O ARQUIVO. O cache guarda a
          geometria convertida, nunca o .ifc (é o que impede o inchaço de
          memória do D6) — então ele aparece na cena e some daqui. Sem este
@@ -26670,15 +26703,17 @@
         self._rvPlacaTela(p);
       }).catch(function (e) { UI.toast("Não consegui ler as placas: " + e.message + ". Confira a internet.", "erro"); });
     },
-    _rvPlacaTela: function (p, info) {
+    _rvPlacaTela: function (p, info, mods) {
       var self = this; info = info || {};
       if (!self._rvPodePlaca()) { UI.toast(self._rvMotivoSemPlaca(), "erro"); return; }
+      /* a casa modelada no OrçaPRO também vai na placa (_rvComModelos), não só o .ifc importado */
+      if (!mods) { self._rvComModelos(function (m) { self._rvPlacaTela(p, info, m); }); return; }
       var I = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
       var extra = self._rvExtrasDisponiveis();
-      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      var modelos = mods;
       var opDias = function (sel) { return RvNuvem.PLACA_DIAS.map(function (d) { return '<option value="' + d + '"' + (d === sel ? " selected" : "") + '>' + d + ' dias</option>'; }).join("") + '<option value="outro">outro…</option>'; };
       var caixa = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:480px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + I("obra") + ' Placa da obra</b><button class="btn sm" data-pl="fechar">' + I("fechar") + '</button></div>';
@@ -26746,7 +26781,7 @@
           if (er) { UI.toast(er, "erro"); q("senha").focus(); return; }
           if (!d) { UI.toast("Diga por quantos dias a placa fica publicada (1 a " + RvNuvem.PLACA_DIAS_MAX + ").", "erro"); return; }
           ov.remove();
-          return self._compartilharNuvemRV(op(), { placa: { senha: sn, dias: d, cronograma: op().crono, apontamentos: !!q("notas").checked } });
+          return self._compartilharNuvemRV(op(), { placa: { senha: sn, dias: d, cronograma: op().crono, apontamentos: !!q("notas").checked } }, modelos);
         }
         if (!p) return;
         if (k === "copiar") { try { navigator.clipboard.writeText(p.url); UI.toast("Endereço copiado.", "ok"); } catch (_) { UI.toast(p.url, "info"); } return; }
@@ -26772,7 +26807,7 @@
         if (k === "atualizar") {
           if (!confirm("Enviar o modelo aberto agora para a placa?\n\nO QR impresso continua o mesmo; quem já entrou vê o modelo novo sem se cadastrar de novo.")) return;
           ov.remove();
-          return self._compartilharNuvemRV(op(), { placa: { slug: p.slug, cronograma: p.cronograma, apontamentos: p.apontamentos } });
+          return self._compartilharNuvemRV(op(), { placa: { slug: p.slug, cronograma: p.cronograma, apontamentos: p.apontamentos } }, modelos);
         }
         if (k === "apagar") {
           if (!confirm('Apagar a placa "' + (p.nome || "obra") + '"?\n\nO QR impresso deixa de abrir (vai dizer "placa não encontrada") e o modelo sai do servidor. Isso não tem volta.')) return;
