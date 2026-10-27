@@ -38,6 +38,7 @@
   function r3(v) { return Math.round(v * 1000) / 1000; }
   function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
 
+  function AC() { return dep("BimMetalAcab", "./metalacab.js"); }
   function Cat() { return dep("AcoCatalogoInd", "./acocatalogoind.js"); }   /* catálogo industrial (js/acocatalogoind.js): opcional */
 
   /* ⚠ DEMÃOS: de 1 a 4 (MAX_DEMAOS). `rendimento` é m²/L de cada demão.
@@ -102,7 +103,8 @@
       g.ids.forEach(function (id) { porPeca.push({ id: id, marca: g.marca, kg: r2(kg), m2: r3(a.m2) }); });
       var tp = tipoDe(p);
       porMarca.push({ marca: g.marca, tipo: tp, papel: txt(p.papel), perfil: p.kind === "perfil" ? p.nomePerfil : (p.kind === "chapa" ? "Chapa " + br(p.t, 1) + " mm" : txt(p.tipoMec)), qtd: q,
-                      kgUnit: r2(kg), kgTotal: r2(kg * q), m2Unit: r3(a.m2), m2Total: r3(a.m2 * q), m2kg: kg > 0 ? r3(a.m2 / kg * 1000) : 0, fonte: a.fonte });
+                      kgUnit: r2(kg), kgTotal: r2(kg * q), m2Unit: r3(a.m2), m2Total: r3(a.m2 * q), m2kg: kg > 0 ? r3(a.m2 / kg * 1000) : 0, fonte: a.fonte,
+                      acabamento: p.acab && AC() ? AC().tipoNome(p.acab.tipo) : "", cor: p.acab && AC() ? AC().corCodigo(p.acab) : "" });   /* ACABAMENTO por peça (js/metalacab.js); vazio = o do projeto */
       tot.kg += kg * q; tot.m2 += a.m2 * q; tot.pecas += q;
       porTipo[tp] = porTipo[tp] || { tipo: tp, kg: 0, m2: 0, pecas: 0 }; porTipo[tp].kg += kg * q; porTipo[tp].m2 += a.m2 * q; porTipo[tp].pecas += q;
     });

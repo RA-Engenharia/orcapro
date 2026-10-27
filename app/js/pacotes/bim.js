@@ -17896,6 +17896,13 @@ qto(el, nomeQ, [["CrossSectionArea", "A", c.secaoArea], ["OuterSurfaceArea", "A"
 pset(el, "OrcaPRO_Perfil", [["Forma", "IFCLABEL", c.perfil.forma], ["Perfil", "IFCLABEL", c.perfilRotulo], ["Material", "IFCLABEL", c.material], ["Massa", "IFCMASSMEASURE", c.massa],
 ["AreaForma", "IFCAREAMEASURE", c.areaForma]]);
 }
+function acabIfc(c, nomeBase) {
+var ACm = dep("BimMetalAcab", "./metalacab.js"), a = c.acab && ACm && ACm.ehAcoArq(c) ? ACm.normalizar(c.acab, ACm.acoDe(c)) : null;
+if (!a) return { nome: nomeBase, cor: null, ps: [] };
+var ps = [["Acabamento", "IFCLABEL", ACm.tipoNome(a.tipo)], ["CorAcabamento", "IFCLABEL", ACm.corRotulo(a)]];
+if (a.ral) ps.push(["CorRAL", "IFCLABEL", "RAL " + a.ral]);
+return { nome: nomeBase + " — " + ACm.rotulo(a), cor: parseInt(String(a.cor).slice(1), 16), ps: ps };
+}
 function pilarB2(c) {
 var H = num(c.altura, 0), yb = c.cy - H / 2, th = num(c.rotY, 0), dir = [Math.cos(th), Math.sin(th), 0];
 var nv = nivelDaPeca(c, yb), O = W2I([c.cx, yb, c.cz], nv);
@@ -17903,11 +17910,12 @@ var pl = placement(nv.pl, O, [0, 0, 1], dir);
 var E9 = dep("BimEstrut", "./bimestrut.js");
 if (E9 && E9.inclinado(c) && BA) { var gp = E9.geomPilar(c, BA.secao(c.perfil)); H = gp.Lax; pl = placement(nv.pl, W2I(gp.B, nv), cena2ifc(gp.T), cena2ifc(gp.U)); }
 var sol = extrudado(perfilIfc(c.perfil, c.perfilRotulo), pos3([0, 0, H], [0, 0, -1], [1, 0, 0]), H);
-var matN = matPerfil(c); pintar(sol, matN);
+var acR = acabIfc(c, matPerfil(c)), matN = acR.nome; if (acR.cor != null) pintar(sol, matN, acR.cor); else pintar(sol, matN);
 var tipoRef = "Pilar " + (c.perfilRotulo || c.perfil.forma);
 var ep = peca(c.id, "IFCCOLUMN", "Pilar " + c.id, tipoRef, pl, forma([sol], "SweptSolid"), [E("COLUMN")], yb, nv);
 ligarMaterial(ep, matN);
 pset(ep, "Pset_ColumnCommon", [["Reference", "IFCIDENTIFIER", tipoRef]]);
+if (acR.ps.length) pset(ep, "OrcaPRO_Fabricacao", acR.ps);
 qtoPerfil(ep, c, "Qto_ColumnBaseQuantities", num(c.comprimentoPilar, H));
 ligarCodigos(ep, arr(c.servicos).map(function (s) { return s.codigo; })); origemPset(ep, [["Modelador", "IFCLABEL", "B2"]]);
 ep.volume = r6(c.volume);
@@ -17923,11 +17931,12 @@ var gv = E9.geomViga(c, BA.secao(c.perfil)), S0 = [gv.C[0] + gv.T[0] * gv.s0, gv
 Lv = gv.s1 - gv.s0; pl = placement(nv.pl, W2I(S0, nv), cena2ifc(gv.N), cena2ifc(gv.T));
 }
 var sol = extrudado(perfilIfc(c.perfil, c.perfilRotulo), pos3([Lv, 0, 0], [-1, 0, 0], [0, -1, 0]), Lv);
-var matN = matPerfil(c); pintar(sol, matN);
+var acR = acabIfc(c, matPerfil(c)), matN = acR.nome; if (acR.cor != null) pintar(sol, matN, acR.cor); else pintar(sol, matN);
 var tipoRef = "Viga " + (c.perfilRotulo || c.perfil.forma);
 var ev = peca(c.id, "IFCBEAM", "Viga " + c.id, tipoRef, pl, forma([sol], "SweptSolid"), [E("BEAM")], yt, nv);
 ligarMaterial(ev, matN);
 pset(ev, "Pset_BeamCommon", [["Reference", "IFCIDENTIFIER", tipoRef]]);
+if (acR.ps.length) pset(ev, "OrcaPRO_Fabricacao", acR.ps);
 qtoPerfil(ev, c, "Qto_BeamBaseQuantities", num(c.comprimentoViga, Lv));
 ligarCodigos(ev, arr(c.servicos).map(function (s) { return s.codigo; })); origemPset(ev, [["Modelador", "IFCLABEL", "B2"]]);
 ev.volume = r6(c.volume);
@@ -31926,7 +31935,7 @@ arr(estado && estado.caixas).forEach(function (c) {
 if (!c) return;
 var n0 = pecas.length;
 pecaFab1(c, pecas, parafusos, avisos);
-if (c.tipo === "metal" && c.acab && AC()) { var an = AC().normalizar(c.acab, c.metal && c.metal.aco); if (an) for (var i0 = n0; i0 < pecas.length; i0++) pecas[i0].acab = an; }
+if (c.acab && AC() && AC().ehPecaMetal(c)) { var an = AC().normalizar(c.acab, AC().acoDe(c)); if (an) for (var i0 = n0; i0 < pecas.length; i0++) pecas[i0].acab = an; }
 });
 return { pecas: pecas, parafusos: parafusos, avisos: avisos };
 }
@@ -33043,6 +33052,7 @@ function txt(v) { return v == null ? "" : String(v); }
 function r2(v) { return Math.round(v * 100) / 100; }
 function r3(v) { return Math.round(v * 1000) / 1000; }
 function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+function AC() { return dep("BimMetalAcab", "./metalacab.js"); }
 function Cat() { return dep("AcoCatalogoInd", "./acocatalogoind.js"); }
 var MAX_DEMAOS = 4;
 var CONFIG = { demaos: [{ nome: "Fundo (primer)", rendimento: 10 }, { nome: "Acabamento", rendimento: 10 }], perda: 0, bordas: false, perdaModo: "acrescimo" };
@@ -33096,7 +33106,8 @@ var p = g.rep, a = areaPeca(p, cfg), kg = pesoKg(p), q = g.ids.length;
 g.ids.forEach(function (id) { porPeca.push({ id: id, marca: g.marca, kg: r2(kg), m2: r3(a.m2) }); });
 var tp = tipoDe(p);
 porMarca.push({ marca: g.marca, tipo: tp, papel: txt(p.papel), perfil: p.kind === "perfil" ? p.nomePerfil : (p.kind === "chapa" ? "Chapa " + br(p.t, 1) + " mm" : txt(p.tipoMec)), qtd: q,
-kgUnit: r2(kg), kgTotal: r2(kg * q), m2Unit: r3(a.m2), m2Total: r3(a.m2 * q), m2kg: kg > 0 ? r3(a.m2 / kg * 1000) : 0, fonte: a.fonte });
+kgUnit: r2(kg), kgTotal: r2(kg * q), m2Unit: r3(a.m2), m2Total: r3(a.m2 * q), m2kg: kg > 0 ? r3(a.m2 / kg * 1000) : 0, fonte: a.fonte,
+acabamento: p.acab && AC() ? AC().tipoNome(p.acab.tipo) : "", cor: p.acab && AC() ? AC().corCodigo(p.acab) : "" });
 tot.kg += kg * q; tot.m2 += a.m2 * q; tot.pecas += q;
 porTipo[tp] = porTipo[tp] || { tipo: tp, kg: 0, m2: 0, pecas: 0 }; porTipo[tp].kg += kg * q; porTipo[tp].m2 += a.m2 * q; porTipo[tp].pecas += q;
 });
@@ -33315,7 +33326,7 @@ return { cor: cor, rug: a.brilho === "acetinado" ? 0.38 : 0.7, met: 0.05 };
 }
 function efetivo(c, proj) {
 proj = proj || {};
-var a = c && c.acab ? normalizar(c.acab, c.metal && c.metal.aco) : null;
+var a = c && c.acab ? normalizar(c.acab, acoDe(c)) : null;
 if (a) {
 var sis = a.sistema || (proj.sistema && proj.sistema !== "nenhuma" ? proj.sistema : "auto");
 return { tipo: a.tipo, sistema: a.tipo === "pintura" || a.tipo === "duplex" ? sis : "", proprio: true, acab: a };
@@ -33324,8 +33335,10 @@ var ps = proj.sistema || "auto";
 if (proj.galv) return { tipo: proj.duplex ? "duplex" : "galvanizado", sistema: proj.duplex ? ps : "", proprio: false, acab: null };
 return { tipo: ps === "nenhuma" ? "bruto" : "pintura", sistema: ps === "nenhuma" ? "" : ps, proprio: false, acab: null };
 }
-function ehPecaMetal(c) { return !!(c && c.tipo === "metal" && c.metal); }
-function temAcabProprio(estado) { return arr(estado && estado.caixas).some(function (c) { return ehPecaMetal(c) && !!c.acab && !!normalizar(c.acab, c.metal.aco); }); }
+function ehAcoArq(c) { return !!(c && (c.tipo === "viga" || c.tipo === "pilar") && c.perfil && (c.material === "aco" || /^(I|U|L|tubo-ret|tubo-circ)$/.test(c.perfil.forma))); }
+function ehPecaMetal(c) { return !!(c && ((c.tipo === "metal" && c.metal) || ehAcoArq(c))); }
+function acoDe(c) { return c && c.tipo === "metal" ? (c.metal && c.metal.aco) : (c && c.aco) || "ASTM A572 Gr.50"; }
+function temAcabProprio(estado) { return arr(estado && estado.caixas).some(function (c) { return ehPecaMetal(c) && !!c.acab && !!normalizar(c.acab, acoDe(c)); }); }
 var extensao = {
 nome: "metalAcab",
 valida: function (o) {
@@ -33338,7 +33351,7 @@ var feitas = 0;
 o.ids.forEach(function (id) {
 var c = ctx.caixas[id]; if (!ehPecaMetal(c)) return;
 if (o.acab === null) { if (c.acab) { delete c.acab; feitas++; } else feitas++; return; }
-var n = normalizar(o.acab, c.metal.aco); if (!n) return;
+var n = normalizar(o.acab, acoDe(c)); if (!n) return;
 c.acab = n; feitas++;
 });
 return feitas > 0;
@@ -33349,7 +33362,7 @@ function opAcabamento(ids, acab) { return { op: "metalAcabamento", ids: arr(ids)
 var BimMetalAcab = {
 ACABAMENTOS: ACABAMENTOS, RAL: RAL, SISTEMAS: SISTEMAS, BRILHOS: BRILHOS, ZINCADO: ZINCADO,
 normalizar: normalizar, corRotulo: corRotulo, corCodigo: corCodigo, rotulo: rotulo, tipoNome: tipoNome, chave: chave, pbr: pbr,
-efetivo: efetivo, temAcabProprio: temAcabProprio, ehInox: ehInox, ehPecaMetal: ehPecaMetal, opAcabamento: opAcabamento, extensao: extensao
+efetivo: efetivo, temAcabProprio: temAcabProprio, ehInox: ehInox, ehPecaMetal: ehPecaMetal, ehAcoArq: ehAcoArq, acoDe: acoDe, opAcabamento: opAcabamento, extensao: extensao
 };
 global.BimMetalAcab = BimMetalAcab;
 if (typeof module !== "undefined" && module.exports) module.exports = BimMetalAcab;
@@ -33599,7 +33612,7 @@ var d = num(p.dims && p.dims.h, 0), k = classeD(d); var x = tir[k] || (tir[k] = 
 });
 var PI = Pint(), area = 0, pint = null;
 if (PI && PI.calcular) { pint = PI.calcular(n, { bordas: !!op.bordas }); area = pint.total.m2; }
-var AC = Acab(), porAcab = {}, temAcab = !!(AC && AC.temAcabProprio(estado)), caixaPorId = {};
+var AC = Acab(), porAcab = {}, kgParGalv = 0, idsParGalv = [], temAcab = !!(AC && AC.temAcabProprio(estado)), caixaPorId = {};
 if (temAcab) arr(estado && estado.caixas).forEach(function (c) { if (c) caixaPorId[String(c.id)] = c; });
 if (AC && PI && PI.areaPeca) {
 var proj = { galv: !!(op.galvanizacao && op.galvanizacao.usar), duplex: !!(op.galvanizacao && op.galvanizacao.duplex), sistema: op.pintura && op.pintura.sistema }, cfgA = PI.cfgDe ? PI.cfgDe({ bordas: !!op.bordas }) : { bordas: !!op.bordas };
@@ -33611,13 +33624,18 @@ var x = porAcab[k] || (porAcab[k] = { tipo: ef.tipo, sistema: ef.sistema, pecas:
 x.pecas++; x.kg += kg > 0 ? kg : 0; x.m2 += m2; x.ids.push(id); if (kg > 0) x.idsPeso.push(id); if (ef.proprio) x.proprias++;
 });
 });
+n.parafusos.forEach(function (b) {
+if (/chumbador/i.test(txt(b.papel))) return;
+var ef = AC.efetivo(caixaPorId[String(b.id)] || null, proj);
+if (ef.tipo === "galvanizado" || ef.tipo === "duplex") { kgParGalv += num(b.massa, 0); idsParGalv.push(String(b.id)); }
+});
 Object.keys(porAcab).forEach(function (k) { var x = porAcab[k]; x.kgBruto = x.kg; x.m2Bruto = x.m2; x.kg = r2(x.kg); x.m2 = r3(x.m2); });
 }
 function fechar(o) { Object.keys(o).forEach(function (k) { var x = o[k]; ["kg", "area", "comprimento"].forEach(function (f) { if (x[f] != null) x[f] = f === "kg" ? r2(x[f]) : r3(x[f]); }); if (x.marcas) x.marcas = x.marcas.sort().join(", "); if (x.papeis) x.papeis = x.papeis.join(", "); }); return o; }
 var lista = Object.keys(fechar(perfis)).sort().map(function (k) { return perfis[k]; }), listaCh = Object.keys(fechar(chapas)).sort().map(function (k) { return chapas[k]; });
 Object.keys(porComp).forEach(function (k) { porComp[k].kg = r2(porComp[k].kg); });
 return { ok: true, numeracao: n, porComposicao: porComp, perfis: lista, chapas: listaCh, parafusos: par, chumbadores: chumb, tirantes: tir, pintura: pint,
-area_m2: r3(area), porAcabamento: porAcab, temAcabamentoProprio: temAcab, kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
+area_m2: r3(area), porAcabamento: porAcab, kgParafusosGalv: kgParGalv, idsParafusosGalv: idsParGalv, temAcabamentoProprio: temAcab, kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
 }
 function capacidadeEq(eq) {
 if (!eq) return null;
@@ -33730,9 +33748,9 @@ if (x.tipo === "bruto") { nBruto += x.pecas; kgSemProt += x.kgBruto; }
 if (x.tipo === "inox") nInox += x.pecas;
 });
 var nGv = 0; Object.keys(ac).forEach(function (k) { if (ac[k].tipo === "galvanizado" || ac[k].tipo === "duplex") nGv += ac[k].pecas; });
-var kgParGalv = G.usar ? lev.kgParafusos : 0, kgGvT = r2(kgGv + kgParGalv);
-galvKgReal = kgGvT; galvIdsReal = idsGv;
-if (kgGvT > 0) lancarGalv(kgGvT, "galvanização de " + br(kgGvT, 2) + " kg (" + nGv + " peça(s) com acabamento galvanizado ou duplex = " + br(kgGv, 2) + " kg de estrutura" + (kgParGalv > 0 ? " + " + br(kgParGalv, 2) + " kg de parafusos, galvanizados pela opção do projeto" : "") + "; o chumbador já é galvanizado)", idsGv);
+var kgParGalv = lev.kgParafusosGalv, kgGvT = r2(kgGv + kgParGalv);
+idsGv = idsGv.concat(lev.idsParafusosGalv); galvKgReal = kgGvT; galvIdsReal = idsGv;
+if (kgGvT > 0) lancarGalv(kgGvT, "galvanização de " + br(kgGvT, 2) + " kg (" + nGv + " peça(s) com acabamento galvanizado ou duplex = " + br(kgGv, 2) + " kg de estrutura" + (kgParGalv > 0 ? " + " + br(kgParGalv, 2) + " kg de parafusos, galvanizados — o parafuso segue o acabamento próprio ou, sem ele, a opção do projeto" : "") + "; o chumbador já é galvanizado)", idsGv);
 var jatArea = r3(m2Jat), temPint = false;
 if (P0.preparo !== "nenhum" && jatArea > 0) {
 var grau0 = txt(P0.grau);
@@ -33946,6 +33964,14 @@ _render: function () {
 var self = this, r = this.calcular(), el = document.querySelector('[data-mo="res"]'); if (!r || !el) return r;
 if (!r.ok) { el.innerHTML = '<p style="color:var(--vermelho)">' + esc(r.erro) + "</p>"; return r; }
 var PC = global.ProblemaCard, probs = r.problemas.length && PC ? PC.lista(r.problemas, { titulo: "Para fechar o orçamento", acoes: { "galv-preco": "Informar o preço da cotação", "galv-pintura": "Proteger com pintura", "carregar-base": "Carregar a base SINAPI", "sem-peso-props": "Mostrar a peça e abrir as Propriedades" } }) : "";
+function acabTab(rr) {
+var lv = rr.levantamento, pa = lv && lv.porAcabamento; if (!lv || !lv.temAcabamentoProprio || !pa) return "";
+var AC = Acab(), nomes = { pintura: "Pintura", galvanizado: "Galvanizado a fogo", duplex: "Galvanizado + pintura (duplex)", bruto: "Sem proteção (bruto)", inox: "Inox" };
+var ls = Object.keys(pa).sort().map(function (k) { var x = pa[k]; return "<tr><td>" + esc((AC && AC.tipoNome(x.tipo)) || nomes[x.tipo] || x.tipo) + (x.sistema ? " — " + esc(x.sistema) : "") + '</td><td class="num">' + x.pecas + '</td><td class="num">' + br(x.kg, 1) + '</td><td class="num">' + br(x.m2, 2) + '</td><td class="muted">' + (x.proprias ? x.proprias + " com acabamento próprio" : "do projeto") + "</td></tr>"; });
+return '<table class="tbl tbl-compacta" data-mo="tab-acab" style="margin:0 0 8px"><thead><tr><th>Acabamento</th><th class="num">Peças</th><th class="num">kg</th><th class="num">m²</th><th>Origem</th></tr></thead><tbody>' + ls.join("") +
+'<tr style="font-weight:600"><td>Total</td><td class="num">' + F_n(lv) + '</td><td class="num">' + br(lv.kgEstrutura, 1) + '</td><td class="num">' + br(lv.area_m2, 2) + "</td><td></td></tr></tbody></table>";
+}
+function F_n(lv) { var t = 0; Object.keys(lv.porAcabamento).forEach(function (k) { t += lv.porAcabamento[k].pecas; }); return t; }
 var grupos = ["Estrutura", "Ligações", "Proteção", "Içamento", "Transporte"], linhas = "";
 grupos.forEach(function (gN) {
 var ls = r.linhas.filter(function (l) { return l.grupo === gN; }); if (!ls.length) return;
@@ -33956,6 +33982,7 @@ linhas += '<tr data-mo-cod="' + esc(l.codigo) + '"><td>' + esc(l.codigo) + '</td
 });
 });
 el.innerHTML = probs + '<p style="font-size:13px;margin:4px 0 8px"><b data-mo="total">' + moeda(r.total) + "</b> de custo direto (sem BDI) · <b>" + br(r.kg.estrutura, 1) + " kg</b> de estrutura + " + br(r.kg.parafusos + r.kg.chumbadores, 1) + " kg de parafusos e chumbadores · " + br(r.area_m2, 1) + " m² de pintura · " + moeda(r.kgPorTonelada) + " por tonelada</p>" +
+acabTab(r) +
 '<div style="max-height:340px;overflow:auto"><table class="tbl tbl-compacta" data-mo="tab"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
 (r.pendenciasPreco.length ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Preço provisório em ' + r.pendenciasPreco.length + " item(ns): é o maior preço público achado (fonte na aba Composições do .xlsx) — cotar com o fornecedor antes de fechar.</p>" : "") +
 (r.avisos.length ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">' + r.avisos.map(esc).join("<br>") + "</p>" : "");
@@ -117305,9 +117332,9 @@ var r = PI().calcular(this.numeracao(), cc);
 this.ultimo = { tipo: "pintura", r: r };
 var el = q('[data-mf="res-pintura"]'); if (!el) return r;
 var S2 = r.sistema, tintaTxt = r.tinta.map(function (t) { return esc(t.demao) + " " + br(t.litros, 1) + " L" + (t.litrosFaixa && Math.abs(t.litrosFaixa[1] - t.litrosFaixa[0]) > 0.05 ? " (" + br(t.litrosFaixa[0], 1) + "–" + br(t.litrosFaixa[1], 1) + ")" : ""); }).join(" · ");
-el.innerHTML = '<table class="tbl tbl-compacta" data-mf="tab-pintura"><thead><tr><th>Marca</th><th>Tipo</th><th>Perfil / chapa</th><th class="num">Qtd</th><th class="num">Peso total (kg)</th><th class="num">Pintura total (m²)</th><th>Como foi medido</th></tr></thead><tbody>' +
-r.porMarca.map(function (m) { return "<tr><td>" + esc(m.marca) + "</td><td>" + esc(m.tipo) + "</td><td>" + esc(nomeP(m.perfil)) + '</td><td class="num">' + m.qtd + '</td><td class="num">' + br(m.kgTotal, 1) + '</td><td class="num">' + br(m.m2Total, 2) + '</td><td class="muted" style="font-size:11px">' + esc(m.fonte) + "</td></tr>"; }).join("") +
-'<tr style="font-weight:600"><td>Total</td><td></td><td></td><td class="num">' + r.total.pecas + '</td><td class="num" data-mf="kg">' + br(r.total.kg, 1) + '</td><td class="num" data-mf="m2">' + br(r.total.m2, 2) + "</td><td>" + br(r.total.m2t, 1) + " m²/t</td></tr></tbody></table>" +
+el.innerHTML = '<table class="tbl tbl-compacta" data-mf="tab-pintura"><thead><tr><th>Marca</th><th>Tipo</th><th>Perfil / chapa</th><th class="num">Qtd</th><th class="num">Peso total (kg)</th><th class="num">Pintura total (m²)</th><th>Acabamento / cor</th><th>Como foi medido</th></tr></thead><tbody>' +
+r.porMarca.map(function (m) { return "<tr><td>" + esc(m.marca) + "</td><td>" + esc(m.tipo) + "</td><td>" + esc(nomeP(m.perfil)) + '</td><td class="num">' + m.qtd + '</td><td class="num">' + br(m.kgTotal, 1) + '</td><td class="num">' + br(m.m2Total, 2) + '</td><td data-mf="acab">' + (m.acabamento ? esc(m.acabamento) + (m.cor && m.cor !== m.acabamento ? " — " + esc(m.cor) : "") : '<span class="muted">do projeto</span>') + '</td><td class="muted" style="font-size:11px">' + esc(m.fonte) + "</td></tr>"; }).join("") +
+'<tr style="font-weight:600"><td>Total</td><td></td><td></td><td class="num">' + r.total.pecas + '</td><td class="num" data-mf="kg">' + br(r.total.kg, 1) + '</td><td class="num" data-mf="m2">' + br(r.total.m2, 2) + "</td><td></td><td>" + br(r.total.m2t, 1) + " m²/t</td></tr></tbody></table>" +
 (S2 ? '<div data-mf="sis-res" style="font-size:12px;margin:8px 0 0"><b>Sistema ' + esc(S2.id) + "</b> (" + esc(S2.ambiente) + ", durabilidade " + esc(S2.durabilidade) + ") — <b>preparo de superfície:</b> " + esc(S2.preparoGrau ? S2.preparoGrau + " (ISO 8501-1)" : (S2.preparo || "conforme a ficha do primer")) + " em " + br(r.total.m2, 2) + " m²" +
 (S2.epsTotal_um != null ? " — EPS total " + br(S2.epsTotal_um, 0) + " µm" : "") + (S2.conferir ? ' <span class="muted">(conferir: ' + esc(S2.pendencia || "ver a fonte") + ")</span>" : "") + (S2.viaEquivalencia ? " — sistema de " + esc(S2.viaEquivalencia) + " por equivalência da ISO 12944-5" : "") + "</div>" : "") +
 '<p style="font-size:12px;margin:8px 0 0" data-mf="tinta"><b>Tinta:</b> ' + tintaTxt + " — total " + br(r.litros, 1) + " L" + (r.litrosFaixa && r.completo !== false && Math.abs(r.litrosFaixa[1] - r.litrosFaixa[0]) > 0.05 ? " (faixa pelo SV das fichas: " + br(r.litrosFaixa[0], 1) + "–" + br(r.litrosFaixa[1], 1) + " L)" : "") + "</p>" +
@@ -118198,6 +118225,7 @@ function PR() { return global.BimPrecisao || null; }
 function PM() { return global.BimPlantaModelar || null; }
 function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
 function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(",", ".")); return isFinite(n) ? n : d; }
+function arr(v) { return Array.isArray(v) ? v : []; }
 function fin(v) { return typeof v === "number" && isFinite(v); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
 function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
@@ -118467,13 +118495,13 @@ this.pintarBarra();
 },
 ehPecaMetal: function (uid) {
 if (!previa() || !/^edit:/.test(String(uid || ""))) return false;
-var c = caixaDe(String(uid).slice(5)); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa"));
+var c = caixaDe(String(uid).slice(5)); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa" || c.metal.kind === "parafuso" || c.metal.kind === "mecanica"));
 },
 _selMetal: function (id) {
 var b = B(), sel = [];
 try { sel = b && b.precisao && b.precisao() ? b.precisao().selecao().map(String) : []; } catch (e) { sel = []; }
 if (sel.indexOf(String(id)) < 0) return [];
-return sel.filter(function (x) { var c = caixaDe(x); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa")); });
+return sel.filter(function (x) { var c = caixaDe(x); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa" || c.metal.kind === "parafuso" || c.metal.kind === "mecanica")); });
 },
 propsLote: function (info, G, ids) {
 var self = this, M = MC(), cs = ids.map(caixaDe).filter(Boolean), pre = "mcrl:", VAR = "‹vários›";
@@ -118495,7 +118523,7 @@ sec.push({ nome: "Posição da seção", params: [{ id: pre + "giro", rotulo: "G
 }
 var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
 cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
-sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+if (cs.every(function (c) { return c.metal.kind === "perfil" || c.metal.kind === "chapa"; })) sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
 var sAcL = this._secAcab(pre, cs); if (sAcL) sec.push(sAcL);
 try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
 return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
@@ -118503,9 +118531,9 @@ onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimProp
 },
 _secAcab: function (pre, cs) {
 var AC = global.BimMetalAcab; if (!AC || !cs.length) return null;
-var VAR = "‹vários›", ac = cs.map(function (c) { return c.acab ? AC.normalizar(c.acab, c.metal && c.metal.aco) : null; });
+var VAR = "‹vários›", ac = cs.map(function (c) { return c.acab ? AC.normalizar(c.acab, AC.acoDe(c)) : null; });
 function comum(f) { var v0 = f(ac[0]); return ac.every(function (a) { return f(a) === v0; }) ? v0 : "__var"; }
-var todosInox = cs.every(function (c) { return AC.ehInox(c.metal && c.metal.aco); });
+var todosInox = cs.every(function (c) { return AC.ehInox(AC.acoDe(c)); });
 var tipo = comum(function (a) { return a ? a.tipo : ""; });
 var opT = [{ id: "", rotulo: "Herdar do projeto" }].concat(AC.ACABAMENTOS.filter(function (x) { return x.id !== "inox" || todosInox; }).map(function (x) { return { id: x.id, rotulo: x.nome }; }));
 if (tipo === "__var") opT.unshift({ id: "__var", rotulo: VAR });
@@ -118533,8 +118561,8 @@ var AC = global.BimMetalAcab; if (!AC) return false;
 v = v == null ? "" : String(v); if (v === "__var") return true;
 var grupos = {}, ordem = [], recusadas = 0, n = 0;
 ids.forEach(function (id) {
-var c = caixaDe(id); if (!c || !c.metal) return;
-var a0 = c.acab ? AC.normalizar(c.acab, c.metal.aco) : null, a1 = a0 ? JSON.parse(JSON.stringify(a0)) : null;
+var c = caixaDe(id); if (!c || !AC.ehPecaMetal(c)) return;
+var a0 = c.acab ? AC.normalizar(c.acab, AC.acoDe(c)) : null, a1 = a0 ? JSON.parse(JSON.stringify(a0)) : null;
 if (k === "acabTipo") {
 if (v === "") a1 = null;
 else a1 = { tipo: v, ral: a0 ? a0.ral : "", cor: a0 ? a0.cor : "", sistema: a0 ? a0.sistema : null, brilho: a0 ? a0.brilho : "fosco" };
@@ -118546,7 +118574,7 @@ else if (k === "acabSis") a1.sistema = v === "epoxi" || v === "alquidico" ? v : 
 else if (k === "acabBrilho") a1.brilho = v;
 else return;
 }
-if (a1) { a1 = AC.normalizar(a1, c.metal.aco); if (!a1) { recusadas++; return; } }
+if (a1) { a1 = AC.normalizar(a1, AC.acoDe(c)); if (!a1) { recusadas++; return; } }
 var ch = a1 ? AC.chave(a1) : "(herdar)"; n++;
 if (!grupos[ch]) { grupos[ch] = { acab: a1, ids: [] }; ordem.push(ch); }
 grupos[ch].ids.push(String(id));
@@ -118570,7 +118598,7 @@ else if (k === "giro") { var n = num(v, NaN); if (!fin(n)) { status("Valor invá
 else return false;
 var ops = [], erros = 0;
 ids.forEach(function (id) {
-var c = caixaDe(id); if (!c || !c.metal) return;
+var c = caixaDe(id); if (!c || !c.metal || (c.metal.kind !== "perfil" && c.metal.kind !== "chapa")) return;
 if ((mud.cat != null || mud.giro != null) && c.metal.kind !== "perfil") return;
 var r = M.editar(c, mud); if (!r || r.erro) { erros++; return; }
 ops.push(M.opAjustar(id, r.caixa));
@@ -118586,6 +118614,7 @@ var self = this, id = String(info.uid).slice(5), c = caixaDe(id), M = MC(), BMe 
 if (!c || !M || !BMe) return null;
 var selM = this._selMetal(id);
 if (selM.length > 1) return this.propsLote(info, G, selM);
+if (c.metal.kind === "parafuso" || c.metal.kind === "mecanica") return this._propsSimples(info, G, id, c);
 var m = c.metal, pre = "mcrp:", sec = [], ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
 var lig = (m.lig ? 1 : 0) + ((c.metalFuros || []).length ? 1 : 0) + (estado().caixas || []).filter(function (x) { return x.metal && String(x.metal.soldadaEm) === String(id); }).length;
 sec.push({ nome: "Identidade", params: [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "(sem marca — Fabricação › Numerar)"), ro("id", "Identificador", id)]
@@ -118672,6 +118701,26 @@ out.push(ro("vp" + k, k === "a" ? "Ponta inicial" : "Ponta final", (nomeP[tp] ||
 if (vp.calc && (vp.calc.ini === "rotulada" || vp.calc.fim === "rotulada")) out.push(ro("vpRot", "Cálculo", "nesta emenda a viga deixa de ser contínua: a ponta é rótula (biapoiada no pilar)"));
 out.push(ro("vpNo", "Nó do cálculo", "no eixo do pilar (a linha vai de eixo a eixo; o sólido para na face)"));
 return out;
+},
+_propsSimples: function (info, G, id, c) {
+var self = this, m = c.metal, pre = "mcrp:", ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+var id1 = [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "—"), ro("id", "Identificador", id)];
+if (m.kind === "parafuso") id1.push(ro("par", "Parafuso", (m.id || "") + (m.Lmm ? " × " + m.Lmm + " mm" : "") + (m.classe ? " — classe " + m.classe : "")));
+else id1.push(ro("mec", "Peça mecânica", (m.tipoMec || "") + (m.D ? " Ø" + br(m.D * 1000, 1) + " mm" : "")));
+var sec = [{ nome: "Identidade", params: id1 }], sAc = this._secAcab(pre, [c]);
+if (sAc) sec.push(sAc);
+sec.push({ nome: "Quantidades", params: [ro("massa", "Peso", br(c.massa, 2) + " kg")] });
+return { daPeca: true, uid: info.uid, semEditarTipo: true, titulo: BM() ? BM().nome(c) : "Peça metálica", icone: "estrutura", secoes: sec,
+onMudar: function (pid, v) { var k = String(pid).replace(/^mcrp:/, ""); if (/^acab/.test(k)) self._mudarAcab([id], k, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self._propsSimples(info, G, id, caixaDe(id) || c); } };
+},
+secaoPaleta: function (ids) {
+var AC = global.BimMetalAcab; if (!AC || !previa()) return null;
+var cs = arr(ids).map(function (x) { return caixaDe(x); });
+if (!cs.length || !cs.every(function (c) { return AC.ehAcoArq(c); })) return null;
+var self = this, idsS = cs.map(function (c) { return String(c.id); }), sec = this._secAcab("mcra:", cs);
+if (!sec) return null;
+sec.params.forEach(function (p) { if (!p.leitura) { var k = String(p.id).replace(/^mcra:/, ""); p.aoMudar = function (v) { self._mudarAcab(idsS, k, v); }; } });
+return sec;
 },
 mudarPeca: function (id, pid, v) {
 var c = caixaDe(id), M = MC(); if (!c || !M) return false;
@@ -141911,6 +141960,7 @@ raiz.appendChild(this._linhaFiltro(doc, ctx, md));
 var tb = el(doc, "table", "rv-params bp1-params"), rec = this._recolhidos();
 md.secoes.forEach(function (s) { tb.appendChild(self._grupo(doc, ctx, md, s, !!rec[s.grupo])); });
 try { var EU = global.BimElevarUI, sEl = EU && EU.secaoPaleta ? EU.secaoPaleta(md.ids) : null; if (sEl) tb.appendChild(self._grupoExtra(doc, sEl, !!rec["extra:" + sEl.nome])); } catch (eEl) {}
+try { var MCu = global.MetalCriarUI, sAc = MCu && MCu.secaoPaleta ? MCu.secaoPaleta(md.ids) : null; if (sAc) tb.appendChild(self._grupoExtra(doc, sAc, !!rec["extra:" + sAc.nome])); } catch (eAc) {}
 try { var HKu = global.HidKitUI, sHk = HKu && HKu.secaoPaleta ? HKu.secaoPaleta(md.ids) : null; if (sHk) tb.appendChild(self._grupoExtra(doc, sHk, !!rec["extra:" + sHk.nome])); } catch (eHk) {}
 if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) { tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
 raiz.appendChild(tb);

@@ -335,7 +335,7 @@
     if (PI && PI.calcular) { pint = PI.calcular(n, { bordas: !!op.bordas }); area = pint.total.m2; }
     /* ACABAMENTO POR PEÇA (js/metalacab.js): a estrutura repartida por acabamento (tipo + sistema de pintura) — a soma das partes é o total
        (kg da estrutura e m² de pintura). A peça sem acabamento próprio cai no do projeto, então o particionamento nunca perde nem repete peça. */
-    var AC = Acab(), porAcab = {}, temAcab = !!(AC && AC.temAcabProprio(estado)), caixaPorId = {};
+    var AC = Acab(), porAcab = {}, kgParGalv = 0, idsParGalv = [], temAcab = !!(AC && AC.temAcabProprio(estado)), caixaPorId = {};
     if (temAcab) arr(estado && estado.caixas).forEach(function (c) { if (c) caixaPorId[String(c.id)] = c; });
     if (AC && PI && PI.areaPeca) {
       var proj = { galv: !!(op.galvanizacao && op.galvanizacao.usar), duplex: !!(op.galvanizacao && op.galvanizacao.duplex), sistema: op.pintura && op.pintura.sistema }, cfgA = PI.cfgDe ? PI.cfgDe({ bordas: !!op.bordas }) : { bordas: !!op.bordas };
@@ -347,13 +347,19 @@
           x.pecas++; x.kg += kg > 0 ? kg : 0; x.m2 += m2; x.ids.push(id); if (kg > 0) x.idsPeso.push(id); if (ef.proprio) x.proprias++;
         });
       });
+      /* os PARAFUSOS (não os chumbadores, já galvanizados) com acabamento galvanizado/duplex, próprio ou do projeto */
+      n.parafusos.forEach(function (b) {
+        if (/chumbador/i.test(txt(b.papel))) return;
+        var ef = AC.efetivo(caixaPorId[String(b.id)] || null, proj);
+        if (ef.tipo === "galvanizado" || ef.tipo === "duplex") { kgParGalv += num(b.massa, 0); idsParGalv.push(String(b.id)); }
+      });
       Object.keys(porAcab).forEach(function (k) { var x = porAcab[k]; x.kgBruto = x.kg; x.m2Bruto = x.m2; x.kg = r2(x.kg); x.m2 = r3(x.m2); });   /* kg/m2 = para mostrar; kgBruto/m2Bruto = a conta (a soma das partes fecha com o total) */
     }
     function fechar(o) { Object.keys(o).forEach(function (k) { var x = o[k]; ["kg", "area", "comprimento"].forEach(function (f) { if (x[f] != null) x[f] = f === "kg" ? r2(x[f]) : r3(x[f]); }); if (x.marcas) x.marcas = x.marcas.sort().join(", "); if (x.papeis) x.papeis = x.papeis.join(", "); }); return o; }
     var lista = Object.keys(fechar(perfis)).sort().map(function (k) { return perfis[k]; }), listaCh = Object.keys(fechar(chapas)).sort().map(function (k) { return chapas[k]; });
     Object.keys(porComp).forEach(function (k) { porComp[k].kg = r2(porComp[k].kg); });
     return { ok: true, numeracao: n, porComposicao: porComp, perfis: lista, chapas: listaCh, parafusos: par, chumbadores: chumb, tirantes: tir, pintura: pint,
-             area_m2: r3(area), porAcabamento: porAcab, temAcabamentoProprio: temAcab, kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
+             area_m2: r3(area), porAcabamento: porAcab, kgParafusosGalv: kgParGalv, idsParafusosGalv: idsParGalv, temAcabamentoProprio: temAcab, kgEstrutura: r2(kgEst), kgParafusos: r2(kgPar), kgChumbadores: r2(kgChumb), kgTotal: r2(kgEst + kgPar + kgChumb), pecas: pecasEst, ids: ids, semPeso: semPeso, avisos: arr(n.avisos).concat(avisosLig) };
   }
 
   /* ================================================================ IÇAMENTO PELO PLANO */
@@ -484,9 +490,9 @@
         if (x.tipo === "inox") nInox += x.pecas;
       });
       var nGv = 0; Object.keys(ac).forEach(function (k) { if (ac[k].tipo === "galvanizado" || ac[k].tipo === "duplex") nGv += ac[k].pecas; });
-      var kgParGalv = G.usar ? lev.kgParafusos : 0, kgGvT = r2(kgGv + kgParGalv);
-      galvKgReal = kgGvT; galvIdsReal = idsGv;
-      if (kgGvT > 0) lancarGalv(kgGvT, "galvanização de " + br(kgGvT, 2) + " kg (" + nGv + " peça(s) com acabamento galvanizado ou duplex = " + br(kgGv, 2) + " kg de estrutura" + (kgParGalv > 0 ? " + " + br(kgParGalv, 2) + " kg de parafusos, galvanizados pela opção do projeto" : "") + "; o chumbador já é galvanizado)", idsGv);
+      var kgParGalv = lev.kgParafusosGalv, kgGvT = r2(kgGv + kgParGalv);
+      idsGv = idsGv.concat(lev.idsParafusosGalv); galvKgReal = kgGvT; galvIdsReal = idsGv;
+      if (kgGvT > 0) lancarGalv(kgGvT, "galvanização de " + br(kgGvT, 2) + " kg (" + nGv + " peça(s) com acabamento galvanizado ou duplex = " + br(kgGv, 2) + " kg de estrutura" + (kgParGalv > 0 ? " + " + br(kgParGalv, 2) + " kg de parafusos, galvanizados — o parafuso segue o acabamento próprio ou, sem ele, a opção do projeto" : "") + "; o chumbador já é galvanizado)", idsGv);
       var jatArea = r3(m2Jat), temPint = false;
       if (P0.preparo !== "nenhum" && jatArea > 0) {
         var grau0 = txt(P0.grau);
@@ -719,6 +725,15 @@
       var self = this, r = this.calcular(), el = document.querySelector('[data-mo="res"]'); if (!r || !el) return r;
       if (!r.ok) { el.innerHTML = '<p style="color:var(--vermelho)">' + esc(r.erro) + "</p>"; return r; }
       var PC = global.ProblemaCard, probs = r.problemas.length && PC ? PC.lista(r.problemas, { titulo: "Para fechar o orçamento", acoes: { "galv-preco": "Informar o preço da cotação", "galv-pintura": "Proteger com pintura", "carregar-base": "Carregar a base SINAPI", "sem-peso-props": "Mostrar a peça e abrir as Propriedades" } }) : "";
+      /* ACABAMENTO POR PEÇA (js/metalacab.js): a estrutura repartida por acabamento — a soma das linhas é o total do levantamento */
+      function acabTab(rr) {
+        var lv = rr.levantamento, pa = lv && lv.porAcabamento; if (!lv || !lv.temAcabamentoProprio || !pa) return "";
+        var AC = Acab(), nomes = { pintura: "Pintura", galvanizado: "Galvanizado a fogo", duplex: "Galvanizado + pintura (duplex)", bruto: "Sem proteção (bruto)", inox: "Inox" };
+        var ls = Object.keys(pa).sort().map(function (k) { var x = pa[k]; return "<tr><td>" + esc((AC && AC.tipoNome(x.tipo)) || nomes[x.tipo] || x.tipo) + (x.sistema ? " — " + esc(x.sistema) : "") + '</td><td class="num">' + x.pecas + '</td><td class="num">' + br(x.kg, 1) + '</td><td class="num">' + br(x.m2, 2) + '</td><td class="muted">' + (x.proprias ? x.proprias + " com acabamento próprio" : "do projeto") + "</td></tr>"; });
+        return '<table class="tbl tbl-compacta" data-mo="tab-acab" style="margin:0 0 8px"><thead><tr><th>Acabamento</th><th class="num">Peças</th><th class="num">kg</th><th class="num">m²</th><th>Origem</th></tr></thead><tbody>' + ls.join("") +
+          '<tr style="font-weight:600"><td>Total</td><td class="num">' + F_n(lv) + '</td><td class="num">' + br(lv.kgEstrutura, 1) + '</td><td class="num">' + br(lv.area_m2, 2) + "</td><td></td></tr></tbody></table>";
+      }
+      function F_n(lv) { var t = 0; Object.keys(lv.porAcabamento).forEach(function (k) { t += lv.porAcabamento[k].pecas; }); return t; }
       var grupos = ["Estrutura", "Ligações", "Proteção", "Içamento", "Transporte"], linhas = "";
       grupos.forEach(function (gN) {
         var ls = r.linhas.filter(function (l) { return l.grupo === gN; }); if (!ls.length) return;
@@ -729,6 +744,7 @@
         });
       });
       el.innerHTML = probs + '<p style="font-size:13px;margin:4px 0 8px"><b data-mo="total">' + moeda(r.total) + "</b> de custo direto (sem BDI) · <b>" + br(r.kg.estrutura, 1) + " kg</b> de estrutura + " + br(r.kg.parafusos + r.kg.chumbadores, 1) + " kg de parafusos e chumbadores · " + br(r.area_m2, 1) + " m² de pintura · " + moeda(r.kgPorTonelada) + " por tonelada</p>" +
+        acabTab(r) +
         '<div style="max-height:340px;overflow:auto"><table class="tbl tbl-compacta" data-mo="tab"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         (r.pendenciasPreco.length ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Preço provisório em ' + r.pendenciasPreco.length + " item(ns): é o maior preço público achado (fonte na aba Composições do .xlsx) — cotar com o fornecedor antes de fechar.</p>" : "") +
         (r.avisos.length ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">' + r.avisos.map(esc).join("<br>") + "</p>" : "");

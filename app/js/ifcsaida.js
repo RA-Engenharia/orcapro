@@ -1254,6 +1254,15 @@
        que, com a altura para CIMA, é espelhado. O sólido nasce no TOPO e desce
        (eixo −Z local): aí o perfil cai no mesmo lado da tela, sem espelho
        (a cantoneira L e o U não são simétricos — o teste confere o centroide). */
+    /* ACABAMENTO E COR por peça (js/metalacab.js) no pilar/viga de aço do modelador: o nome do IfcMaterial leva o acabamento,
+       o IfcSurfaceStyle a cor, e a peça a propriedade Acabamento (Pset OrcaPRO_Fabricacao) — a mesma saída da peça metálica */
+    function acabIfc(c, nomeBase) {
+      var ACm = dep("BimMetalAcab", "./metalacab.js"), a = c.acab && ACm && ACm.ehAcoArq(c) ? ACm.normalizar(c.acab, ACm.acoDe(c)) : null;
+      if (!a) return { nome: nomeBase, cor: null, ps: [] };
+      var ps = [["Acabamento", "IFCLABEL", ACm.tipoNome(a.tipo)], ["CorAcabamento", "IFCLABEL", ACm.corRotulo(a)]];
+      if (a.ral) ps.push(["CorRAL", "IFCLABEL", "RAL " + a.ral]);
+      return { nome: nomeBase + " — " + ACm.rotulo(a), cor: parseInt(String(a.cor).slice(1), 16), ps: ps };
+    }
     function pilarB2(c) {
       var H = num(c.altura, 0), yb = c.cy - H / 2, th = num(c.rotY, 0), dir = [Math.cos(th), Math.sin(th), 0];
       var nv = nivelDaPeca(c, yb), O = W2I([c.cx, yb, c.cz], nv);
@@ -1262,11 +1271,12 @@
       var E9 = dep("BimEstrut", "./bimestrut.js");
       if (E9 && E9.inclinado(c) && BA) { var gp = E9.geomPilar(c, BA.secao(c.perfil)); H = gp.Lax; pl = placement(nv.pl, W2I(gp.B, nv), cena2ifc(gp.T), cena2ifc(gp.U)); }
       var sol = extrudado(perfilIfc(c.perfil, c.perfilRotulo), pos3([0, 0, H], [0, 0, -1], [1, 0, 0]), H);
-      var matN = matPerfil(c); pintar(sol, matN);
+      var acR = acabIfc(c, matPerfil(c)), matN = acR.nome; if (acR.cor != null) pintar(sol, matN, acR.cor); else pintar(sol, matN);
       var tipoRef = "Pilar " + (c.perfilRotulo || c.perfil.forma);
       var ep = peca(c.id, "IFCCOLUMN", "Pilar " + c.id, tipoRef, pl, forma([sol], "SweptSolid"), [E("COLUMN")], yb, nv);
       ligarMaterial(ep, matN);
       pset(ep, "Pset_ColumnCommon", [["Reference", "IFCIDENTIFIER", tipoRef]]);
+      if (acR.ps.length) pset(ep, "OrcaPRO_Fabricacao", acR.ps);
       qtoPerfil(ep, c, "Qto_ColumnBaseQuantities", num(c.comprimentoPilar, H));
       ligarCodigos(ep, arr(c.servicos).map(function (s) { return s.codigo; })); origemPset(ep, [["Modelador", "IFCLABEL", "B2"]]);
       ep.volume = r6(c.volume);
@@ -1288,11 +1298,12 @@
       }
       /* local Y do IFC = −w da cena: o perfil x vai para +w = (0, −1, 0) local */
       var sol = extrudado(perfilIfc(c.perfil, c.perfilRotulo), pos3([Lv, 0, 0], [-1, 0, 0], [0, -1, 0]), Lv);
-      var matN = matPerfil(c); pintar(sol, matN);
+      var acR = acabIfc(c, matPerfil(c)), matN = acR.nome; if (acR.cor != null) pintar(sol, matN, acR.cor); else pintar(sol, matN);
       var tipoRef = "Viga " + (c.perfilRotulo || c.perfil.forma);
       var ev = peca(c.id, "IFCBEAM", "Viga " + c.id, tipoRef, pl, forma([sol], "SweptSolid"), [E("BEAM")], yt, nv);
       ligarMaterial(ev, matN);
       pset(ev, "Pset_BeamCommon", [["Reference", "IFCIDENTIFIER", tipoRef]]);
+      if (acR.ps.length) pset(ev, "OrcaPRO_Fabricacao", acR.ps);
       qtoPerfil(ev, c, "Qto_BeamBaseQuantities", num(c.comprimentoViga, Lv));
       ligarCodigos(ev, arr(c.servicos).map(function (s) { return s.codigo; })); origemPset(ev, [["Modelador", "IFCLABEL", "B2"]]);
       ev.volume = r6(c.volume);

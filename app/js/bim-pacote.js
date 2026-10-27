@@ -11534,7 +11534,7 @@ return { qto: { comprimento: c.perimetro, area: c.area, volume: c.volume, contag
 }
 if ((c.tipo === 'pilar' || c.tipo === 'viga') && c.perfil) {
 var s = A.secao(c.perfil); if (!s.ok) return null;
-var mp = c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat);
+var mp = c.acab && window.BimMetalAcab && BimMetalAcab.ehAcoArq(c) ? b2MatAcab(c.acab, BimMetalAcab.acoDe(c)) : (c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat));
 var co = Math.cos(c.rotY), si = Math.sin(c.rotY), g;
 var m9 = window.BimEstrut ? (c.tipo === 'pilar' ? BimEstrut.malhaPilar(c, s) : BimEstrut.malhaViga(c, s)) : null;
 var vc9 = c.tipo === 'viga' && c.arco && window.BimCurva ? BimCurva.vigaPlanta(c) : null;

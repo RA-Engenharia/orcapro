@@ -118,7 +118,7 @@
       var n0 = pecas.length;
       pecaFab1(c, pecas, parafusos, avisos);
       /* ACABAMENTO POR PEÇA (js/metalacab.js): a peça leva o dela (cor e tipo); sem acab próprio, nada muda */
-      if (c.tipo === "metal" && c.acab && AC()) { var an = AC().normalizar(c.acab, c.metal && c.metal.aco); if (an) for (var i0 = n0; i0 < pecas.length; i0++) pecas[i0].acab = an; }
+      if (c.acab && AC() && AC().ehPecaMetal(c)) { var an = AC().normalizar(c.acab, AC().acoDe(c)); if (an) for (var i0 = n0; i0 < pecas.length; i0++) pecas[i0].acab = an; }
     });
     return { pecas: pecas, parafusos: parafusos, avisos: avisos };
   }

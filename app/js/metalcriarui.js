@@ -45,6 +45,7 @@
   function PM() { return global.BimPlantaModelar || null; }
   function previa() { try { return !!(global.BimPrevia && global.BimPrevia.modelador()); } catch (e) { return false; } }
   function num(v, d) { if (v == null || v === "") return d; var n = Number(String(v).replace(",", ".")); return isFinite(n) ? n : d; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
   function fin(v) { return typeof v === "number" && isFinite(v); }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
   function br(v, c) { c = c == null ? 2 : c; return (Math.round(num(v, 0) * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
@@ -349,14 +350,14 @@
     /* ------------------------------------------------- PROPRIEDADES da peça metálica (gancho em Gestao._bimPropsPeca) */
     ehPecaMetal: function (uid) {
       if (!previa() || !/^edit:/.test(String(uid || ""))) return false;
-      var c = caixaDe(String(uid).slice(5)); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa"));
+      var c = caixaDe(String(uid).slice(5)); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa" || c.metal.kind === "parafuso" || c.metal.kind === "mecanica"));   /* parafuso e peça mecânica: só o Acabamento */
     },
     /* SELECIONAR INSTÂNCIAS (14/10/2026, js/bimselinst.js): as peças metálicas selecionadas junto com esta */
     _selMetal: function (id) {
       var b = B(), sel = [];
       try { sel = b && b.precisao && b.precisao() ? b.precisao().selecao().map(String) : []; } catch (e) { sel = []; }
       if (sel.indexOf(String(id)) < 0) return [];
-      return sel.filter(function (x) { var c = caixaDe(x); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa")); });
+      return sel.filter(function (x) { var c = caixaDe(x); return !!(c && c.tipo === "metal" && c.metal && (c.metal.kind === "perfil" || c.metal.kind === "chapa" || c.metal.kind === "parafuso" || c.metal.kind === "mecanica")); });
     },
     /* PROPRIEDADES EM LOTE: "N selecionados"; o que é igual em todas aparece, o diferente fica ‹vários›;
        mudar aplica a todas num lote só (um Ctrl+Z) — perfil (troca de perfil em lote), giro e aço */
@@ -380,7 +381,7 @@
       }
       var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
       cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
-      sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+      if (cs.every(function (c) { return c.metal.kind === "perfil" || c.metal.kind === "chapa"; })) sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
       var sAcL = this._secAcab(pre, cs); if (sAcL) sec.push(sAcL);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ELEVAR (js/bimelevarui.js): a mesma seção, com ‹vários› e o mesmo delta para todas (um Ctrl+Z) */
       try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
@@ -390,9 +391,9 @@
     /* ACABAMENTO E COR POR PEÇA (js/metalacab.js): o grupo "Acabamento" das Propriedades (uma peça ou a seleção inteira) */
     _secAcab: function (pre, cs) {
       var AC = global.BimMetalAcab; if (!AC || !cs.length) return null;
-      var VAR = "‹vários›", ac = cs.map(function (c) { return c.acab ? AC.normalizar(c.acab, c.metal && c.metal.aco) : null; });
+      var VAR = "‹vários›", ac = cs.map(function (c) { return c.acab ? AC.normalizar(c.acab, AC.acoDe(c)) : null; });
       function comum(f) { var v0 = f(ac[0]); return ac.every(function (a) { return f(a) === v0; }) ? v0 : "__var"; }
-      var todosInox = cs.every(function (c) { return AC.ehInox(c.metal && c.metal.aco); });
+      var todosInox = cs.every(function (c) { return AC.ehInox(AC.acoDe(c)); });
       var tipo = comum(function (a) { return a ? a.tipo : ""; });
       var opT = [{ id: "", rotulo: "Herdar do projeto" }].concat(AC.ACABAMENTOS.filter(function (x) { return x.id !== "inox" || todosInox; }).map(function (x) { return { id: x.id, rotulo: x.nome }; }));
       if (tipo === "__var") opT.unshift({ id: "__var", rotulo: VAR });
@@ -421,8 +422,8 @@
       v = v == null ? "" : String(v); if (v === "__var") return true;
       var grupos = {}, ordem = [], recusadas = 0, n = 0;
       ids.forEach(function (id) {
-        var c = caixaDe(id); if (!c || !c.metal) return;
-        var a0 = c.acab ? AC.normalizar(c.acab, c.metal.aco) : null, a1 = a0 ? JSON.parse(JSON.stringify(a0)) : null;
+        var c = caixaDe(id); if (!c || !AC.ehPecaMetal(c)) return;
+        var a0 = c.acab ? AC.normalizar(c.acab, AC.acoDe(c)) : null, a1 = a0 ? JSON.parse(JSON.stringify(a0)) : null;
         if (k === "acabTipo") {
           if (v === "") a1 = null;
           else a1 = { tipo: v, ral: a0 ? a0.ral : "", cor: a0 ? a0.cor : "", sistema: a0 ? a0.sistema : null, brilho: a0 ? a0.brilho : "fosco" };
@@ -434,7 +435,7 @@
           else if (k === "acabBrilho") a1.brilho = v;
           else return;
         }
-        if (a1) { a1 = AC.normalizar(a1, c.metal.aco); if (!a1) { recusadas++; return; } }
+        if (a1) { a1 = AC.normalizar(a1, AC.acoDe(c)); if (!a1) { recusadas++; return; } }
         var ch = a1 ? AC.chave(a1) : "(herdar)"; n++;
         if (!grupos[ch]) { grupos[ch] = { acab: a1, ids: [] }; ordem.push(ch); }
         grupos[ch].ids.push(String(id));
@@ -458,7 +459,7 @@
       else return false;
       var ops = [], erros = 0;
       ids.forEach(function (id) {
-        var c = caixaDe(id); if (!c || !c.metal) return;
+        var c = caixaDe(id); if (!c || !c.metal || (c.metal.kind !== "perfil" && c.metal.kind !== "chapa")) return;
         if ((mud.cat != null || mud.giro != null) && c.metal.kind !== "perfil") return;
         var r = M.editar(c, mud); if (!r || r.erro) { erros++; return; }
         ops.push(M.opAjustar(id, r.caixa));
@@ -474,6 +475,7 @@
       if (!c || !M || !BMe) return null;
       var selM = this._selMetal(id);
       if (selM.length > 1) return this.propsLote(info, G, selM);
+      if (c.metal.kind === "parafuso" || c.metal.kind === "mecanica") return this._propsSimples(info, G, id, c);
       var m = c.metal, pre = "mcrp:", sec = [], ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
       var lig = (m.lig ? 1 : 0) + ((c.metalFuros || []).length ? 1 : 0) + (estado().caixas || []).filter(function (x) { return x.metal && String(x.metal.soldadaEm) === String(id); }).length;
       sec.push({ nome: "Identidade", params: [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "(sem marca — Fabricação › Numerar)"), ro("id", "Identificador", id)]
@@ -566,6 +568,29 @@
       if (vp.calc && (vp.calc.ini === "rotulada" || vp.calc.fim === "rotulada")) out.push(ro("vpRot", "Cálculo", "nesta emenda a viga deixa de ser contínua: a ponta é rótula (biapoiada no pilar)"));
       out.push(ro("vpNo", "Nó do cálculo", "no eixo do pilar (a linha vai de eixo a eixo; o sólido para na face)"));
       return out;
+    },
+    /* PARAFUSO e PEÇA MECÂNICA (js/metalpeca.js): sem geometria editável aqui — a identidade em leitura e o Acabamento (op metalAcabamento) */
+    _propsSimples: function (info, G, id, c) {
+      var self = this, m = c.metal, pre = "mcrp:", ro = function (k, r, v) { return { id: pre + k, rotulo: r, leitura: true, valor: v == null || v === "" ? "—" : v }; };
+      var id1 = [ro("papel", "Peça", m.papel), ro("marca", "Marca", c.marca || "—"), ro("id", "Identificador", id)];
+      if (m.kind === "parafuso") id1.push(ro("par", "Parafuso", (m.id || "") + (m.Lmm ? " × " + m.Lmm + " mm" : "") + (m.classe ? " — classe " + m.classe : "")));
+      else id1.push(ro("mec", "Peça mecânica", (m.tipoMec || "") + (m.D ? " Ø" + br(m.D * 1000, 1) + " mm" : "")));
+      var sec = [{ nome: "Identidade", params: id1 }], sAc = this._secAcab(pre, [c]);
+      if (sAc) sec.push(sAc);
+      sec.push({ nome: "Quantidades", params: [ro("massa", "Peso", br(c.massa, 2) + " kg")] });
+      return { daPeca: true, uid: info.uid, semEditarTipo: true, titulo: BM() ? BM().nome(c) : "Peça metálica", icone: "estrutura", secoes: sec,
+        onMudar: function (pid, v) { var k = String(pid).replace(/^mcrp:/, ""); if (/^acab/.test(k)) self._mudarAcab([id], k, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self._propsSimples(info, G, id, caixaDe(id) || c); } };
+    },
+    /* PILAR e VIGA DE AÇO do MODELADOR: o grupo Acabamento entra na paleta de Propriedades deles (js/bimpropsui.js, com uma ou várias peças).
+       Cada parâmetro leva a PRÓPRIA ação (aoMudar), como os do material — a paleta do registro não conhece estes campos. */
+    secaoPaleta: function (ids) {
+      var AC = global.BimMetalAcab; if (!AC || !previa()) return null;
+      var cs = arr(ids).map(function (x) { return caixaDe(x); });
+      if (!cs.length || !cs.every(function (c) { return AC.ehAcoArq(c); })) return null;
+      var self = this, idsS = cs.map(function (c) { return String(c.id); }), sec = this._secAcab("mcra:", cs);
+      if (!sec) return null;
+      sec.params.forEach(function (p) { if (!p.leitura) { var k = String(p.id).replace(/^mcra:/, ""); p.aoMudar = function (v) { self._mudarAcab(idsS, k, v); }; } });
+      return sec;
     },
     /* uma mudança nas Propriedades da peça → a peça refeita → op metalAjustar (um Ctrl+Z) */
     mudarPeca: function (id, pid, v) {

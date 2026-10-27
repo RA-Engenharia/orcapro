@@ -15089,7 +15089,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }
     if ((c.tipo === 'pilar' || c.tipo === 'viga') && c.perfil) {
       var s = A.secao(c.perfil); if (!s.ok) return null;
-      var mp = c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat);
+      var mp = c.acab && window.BimMetalAcab && BimMetalAcab.ehAcoArq(c) ? b2MatAcab(c.acab, BimMetalAcab.acoDe(c)) : (c.material === 'aco' ? b2Mat('aco') : (c.material === 'madeira' ? b2Mat('madeira') : mat));   /* ACABAMENTO E COR (js/metalacab.js) no pilar/viga de aço do modelador */
       var co = Math.cos(c.rotY), si = Math.sin(c.rotY), g;
       /* P9 — GANCHO: viga com justificação/inclinação/extensão e pilar inclinado (js/bimestrut.js);
          sem campo P9 o mapa é null e a peça sai como sempre */

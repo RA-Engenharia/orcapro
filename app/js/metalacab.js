@@ -118,7 +118,7 @@
    * proj = { galv: bool, duplex: bool, sistema: "auto"|"epoxi"|"alquidico"|"nenhuma" } (as opções de js/metalorc.js orcar) */
   function efetivo(c, proj) {
     proj = proj || {};
-    var a = c && c.acab ? normalizar(c.acab, c.metal && c.metal.aco) : null;
+    var a = c && c.acab ? normalizar(c.acab, acoDe(c)) : null;
     if (a) {
       var sis = a.sistema || (proj.sistema && proj.sistema !== "nenhuma" ? proj.sistema : "auto");
       return { tipo: a.tipo, sistema: a.tipo === "pintura" || a.tipo === "duplex" ? sis : "", proprio: true, acab: a };
@@ -127,8 +127,11 @@
     if (proj.galv) return { tipo: proj.duplex ? "duplex" : "galvanizado", sistema: proj.duplex ? ps : "", proprio: false, acab: null };
     return { tipo: ps === "nenhuma" ? "bruto" : "pintura", sistema: ps === "nenhuma" ? "" : ps, proprio: false, acab: null };
   }
-  function ehPecaMetal(c) { return !!(c && c.tipo === "metal" && c.metal); }
-  function temAcabProprio(estado) { return arr(estado && estado.caixas).some(function (c) { return ehPecaMetal(c) && !!c.acab && !!normalizar(c.acab, c.metal.aco); }); }
+  /* pilar e viga de aço do MODELADOR (a mesma regra do js/metalfab.js): também levam acabamento */
+  function ehAcoArq(c) { return !!(c && (c.tipo === "viga" || c.tipo === "pilar") && c.perfil && (c.material === "aco" || /^(I|U|L|tubo-ret|tubo-circ)$/.test(c.perfil.forma))); }
+  function ehPecaMetal(c) { return !!(c && ((c.tipo === "metal" && c.metal) || ehAcoArq(c))); }
+  function acoDe(c) { return c && c.tipo === "metal" ? (c.metal && c.metal.aco) : (c && c.aco) || "ASTM A572 Gr.50"; }
+  function temAcabProprio(estado) { return arr(estado && estado.caixas).some(function (c) { return ehPecaMetal(c) && !!c.acab && !!normalizar(c.acab, acoDe(c)); }); }
 
   /* ================================================================ OP DO REPLAY */
   var extensao = {
@@ -143,7 +146,7 @@
       o.ids.forEach(function (id) {
         var c = ctx.caixas[id]; if (!ehPecaMetal(c)) return;
         if (o.acab === null) { if (c.acab) { delete c.acab; feitas++; } else feitas++; return; }
-        var n = normalizar(o.acab, c.metal.aco); if (!n) return;   /* inox em aço carbono: recusado nessa peça */
+        var n = normalizar(o.acab, acoDe(c)); if (!n) return;   /* inox em aço carbono: recusado nessa peça */
         c.acab = n; feitas++;
       });
       return feitas > 0;
@@ -156,7 +159,7 @@
   var BimMetalAcab = {
     ACABAMENTOS: ACABAMENTOS, RAL: RAL, SISTEMAS: SISTEMAS, BRILHOS: BRILHOS, ZINCADO: ZINCADO,
     normalizar: normalizar, corRotulo: corRotulo, corCodigo: corCodigo, rotulo: rotulo, tipoNome: tipoNome, chave: chave, pbr: pbr,
-    efetivo: efetivo, temAcabProprio: temAcabProprio, ehInox: ehInox, ehPecaMetal: ehPecaMetal, opAcabamento: opAcabamento, extensao: extensao
+    efetivo: efetivo, temAcabProprio: temAcabProprio, ehInox: ehInox, ehPecaMetal: ehPecaMetal, ehAcoArq: ehAcoArq, acoDe: acoDe, opAcabamento: opAcabamento, extensao: extensao
   };
   global.BimMetalAcab = BimMetalAcab;
   if (typeof module !== "undefined" && module.exports) module.exports = BimMetalAcab;

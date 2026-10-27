@@ -775,6 +775,8 @@
       /* ELEVAR (js/bimelevarui.js, 15/10/2026): Elevação da base/do topo (e o nível de referência) da peça que NÃO está
          presa a nível — também com várias peças (‹vários›; mudar move todas pelo mesmo tanto, um Ctrl+Z) */
       try { var EU = global.BimElevarUI, sEl = EU && EU.secaoPaleta ? EU.secaoPaleta(md.ids) : null; if (sEl) tb.appendChild(self._grupoExtra(doc, sEl, !!rec["extra:" + sEl.nome])); } catch (eEl) {}
+      /* ACABAMENTO E COR (js/metalacab.js): pilar e viga de aço do modelador — também com várias peças (‹vários›, um Ctrl+Z) */
+      try { var MCu = global.MetalCriarUI, sAc = MCu && MCu.secaoPaleta ? MCu.secaoPaleta(md.ids) : null; if (sAc) tb.appendChild(self._grupoExtra(doc, sAc, !!rec["extra:" + sAc.nome])); } catch (eAc) {}
       /* N23 (25/10/2026): a peça do hidrossanitário — "Ligar esta peça" (js/hidkitui.js), com o automático desligado ou para refazer */
       try { var HKu = global.HidKitUI, sHk = HKu && HKu.secaoPaleta ? HKu.secaoPaleta(md.ids) : null; if (sHk) tb.appendChild(self._grupoExtra(doc, sHk, !!rec["extra:" + sHk.nome])); } catch (eHk) {}
       if (md.ids.length === 1 && md.pecas[0].id === String(this._tela.uid).slice(5)) arr(typeof this._tela.extras === "function" ? this._tela.extras() : this._tela.extras).forEach(function (s) {   /* P2-C: extras pode ser função (fresca a cada pintura) */ tb.appendChild(self._grupoExtra(doc, s, !!rec["extra:" + s.nome])); });
