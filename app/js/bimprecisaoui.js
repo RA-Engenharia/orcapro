@@ -1169,6 +1169,8 @@
           var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
           pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0, copia: copia };
           if (VUI() && !copia) VUI().preparar(st0);   /* VÍNCULOS: a topologia de antes, uma vez por arraste (a cópia nasce solta: não leva nada) */
+          /* ARRASTE ORTOGONAL NO 3D (27/10/2026, js/bimeixo.js): o eixo (X, Z ou Y) sai dos primeiros ~8 px do mouse e fica travado */
+          if (global.BimEixo && global.BIM && global.BIM.telaDe && e.clientX != null) { pr.mov.p0px = { x: e.clientX, y: e.clientY }; pr.mov.eixo = null; pr.mov.shiftAnt = false; pr.mov.dy = 0; pr.mov.vet = global.BimEixo.vetores(function (x, y, z) { return global.BIM.telaDe(x, y, z); }, { x: base.x, y: edit.base, z: base.z }); }
           camadaDom.style.display = "none";   /* as alças e cotas temporárias somem enquanto a peça anda */
           return true;
         },
@@ -1176,7 +1178,25 @@
           var m = pr.mov; if (!m) return false;
           var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return true;
           var cfg = global.BimBarraOpcoes && global.BimBarraOpcoes.cfg ? global.BimBarraOpcoes.cfg("mover") : null;
-          var r = global.BimSelecao.pontoArrasto(m.base, { x: pl.x, z: pl.z }, m.geo, tolM(e), cfg, !!e.shiftKey);
+          var EX = m.p0px && m.vet ? global.BimEixo : null, mt = 0, b3 = { x: m.base.x, y: edit.base, z: m.base.z };
+          if (EX) {
+            var mov = { x: e.clientX - m.p0px.x, y: e.clientY - m.p0px.y }, sh = !!e.shiftKey;
+            if (sh && !m.shiftAnt && m.eixo) m.eixo = EX.proximo(m.eixo);
+            m.shiftAnt = sh;
+            if (!m.eixo) m.eixo = EX.escolher(mov, m.vet);
+            if (!m.eixo) { m.dest = m.base; m.dy = 0; EX.esconderGuia(); return true; }   /* ainda nos primeiros ~8 px */
+            mt = EX.distancia(mov, m.vet[m.eixo]);
+            if (m.eixo === "y") {   /* sobe/desce: soltar grava a op elevar (a mesma do Elevar) */
+              m.dest = m.base; m.dy = Math.round(mt * 10000) / 10000;
+              EX.mostrarGuia("y", b3, { x: b3.x, y: b3.y + m.dy, z: b3.z }, m.dy);
+              try { if (global.BimShell && global.BimShell.status) global.BimShell.status((m.copia ? "Copiar na vertical não existe: solte e use Ctrl+Z, ou troque o eixo com Shift." : (m.dy >= 0 ? "Subindo " : "Descendo ") + fmt(Math.abs(m.dy)) + " m (eixo Y; Shift troca o eixo; Esc cancela).")); } catch (eY) {}
+              return true;
+            }
+            m.dy = 0;
+            pl = { x: m.base.x + (m.eixo === "x" ? mt : 0), z: m.base.z + (m.eixo === "z" ? mt : 0) };
+          }
+          var r = global.BimSelecao.pontoArrasto(m.base, { x: pl.x, z: pl.z }, m.geo, tolM(e), cfg, EX ? false : !!e.shiftKey);
+          if (EX) { r = { p: { x: m.base.x + (m.eixo === "x" ? r.p.x - m.base.x : 0), z: m.base.z + (m.eixo === "z" ? r.p.z - m.base.z : 0) }, sn: r.sn }; EX.mostrarGuia(m.eixo, b3, { x: r.p.x, y: b3.y, z: r.p.z }, m.eixo === "x" ? r.p.x - m.base.x : r.p.z - m.base.z); }
           m.dest = r.p;
           mostrarMarca({ p: r.p, sn: r.sn, malha: false });
           var T = { tipo: "mover", dx: r.p.x - m.base.x, dz: r.p.z - m.base.z }, ar = [];
@@ -1195,13 +1215,20 @@
           var m = pr.mov; pr.mov = null;
           try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {}
           camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder();
+          if (global.BimEixo) global.BimEixo.esconderGuia();
           if (!m) return null;
+          if (m.dy && Math.abs(m.dy) >= 1e-4 && !m.copia) {   /* ARRASTE ORTOGONAL, eixo Y: sobe/desce com a op elevar (um Ctrl+Z desfaz) */
+            if (VUI()) VUI().soltar();
+            var okE = !!(global.BIM && global.BIM.editarLote && global.BIM.editarLote({ op: "lote", id: "arry" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), origem: "arrastar-y", pedido: "Subir/descer arrastando", ops: [{ op: "elevar", ids: pr.sel.slice(), dy: m.dy }] }));
+            hint(okE ? (m.dy > 0 ? "Subiu " : "Desceu ") + fmt(Math.abs(m.dy)) + " m (Ctrl+Z desfaz)." : "Não deu para subir/descer.");
+            posicionar(); return { ok: okE };
+          }
           var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
           if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
           if (m.copia) return self.api.copiarDesloc(dx, dz, e);
           return self.api.mover(dx, dz, e);
         },
-        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
+        arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; if (global.BimEixo) global.BimEixo.esconderGuia(); try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
         /* o modelo foi refeito (op nova, desfazer, refazer, reabrir) */
         aposRebuild: function (st) {
           pr.geo = null; pr.ciclo = {};

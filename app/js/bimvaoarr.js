@@ -190,6 +190,19 @@
     return { ok: true, op: opMover(par, id, tVao - I.desl), t: r6(tVao - I.desl), tVao: r6(tVao), paredeId: par.id };
   }
 
+  /* AS SETAS DO TECLADO (27/10/2026, js/bimsetas.js): o deslocamento (dx, dz) do mundo vira o deslocamento AO LONGO da parede
+     hospedeira (o resto é ignorado: a abertura nunca sai da parede). A mesma `posicionar` do arraste valida (não sai da parede,
+     não entra na que cruza, não sobrepõe outra abertura, fixada não anda). { ok, op, t } | { ok, nada } | { ok:false, erro } */
+  function moverPorDelta(estado, avaliar, id, dx, dz) {
+    var I = info(estado, avaliar, id); if (!I) return { ok: false, erro: "Não é uma abertura hospedada em parede reta." };
+    if (I.fixo) return { ok: false, erro: "Elemento fixado: use Desafixar antes." };
+    var u = eixoU(I.parede.rotY), dt = num(dx, 0) * u.x + num(dz, 0) * u.z;
+    if (Math.abs(dt) < 1e-6) return { ok: true, nada: true };
+    var r = posicionar(estado, avaliar, id, I.parede.id, I.t + I.desl + dt);
+    if (!r.ok || !r.op) return { ok: false, erro: r.erro || "Não deu para aplicar." };
+    return { ok: true, op: r.op, t: r.t };
+  }
+
   /* ------------------------------------------------------------ digitar a cota */
   /* "0,05" / "0.05" = metros; "5" (inteiro, sem vírgula) = 5 cm (a convenção da cota de boneca/peitoril: o pedreiro
      fala em centímetro); "5 cm", "50 mm", "0,05 m" respeitam a unidade escrita. null se não for número. */
@@ -436,7 +449,7 @@
   var BimVaoArr = {
     VERSAO: 1, naPlanta: naPlanta,
     cotasParede: cotasParede, opDaCotaParede: opDaCotaParede, moverParede: moverParede, deslocPorCotaPermanente: deslocPorCotaPermanente, aberturasRuins: aberturasRuins, MODOS: MODOS, ROT_MODO: ROT_MODO,
-    info: info, referencias: referencias, cotas: cotas, validar: validar, posicionar: posicionar,
+    info: info, referencias: referencias, cotas: cotas, validar: validar, posicionar: posicionar, moverPorDelta: moverPorDelta,
     opDaCota: opDaCota, opPeitoril: opPeitoril, arrastar: arrastar, ligadas: ligadas, lerCota: lerCota, fmt: fmt
   };
 
@@ -980,6 +993,15 @@
         if (ok) { try { b.selecionar(["edit:" + novo], "trocar"); } catch (e) {} }
         status(ok ? "Abertura copiada" + (r.trocou ? " para a parede " + r.paredeId : "") + " (a original fica; Ctrl+Z desfaz)." : "Não foi possível copiar a abertura.");
         return true;
+      },
+      /* AS SETAS DO TECLADO (27/10/2026, js/bimsetas.js): a abertura anda (dx, dz) do mundo SÓ ao longo da parede hospedeira
+         (moverPorDelta, a mesma `posicionar` do arraste) e grava a mesma op `mover`. */
+      moverDelta: function (uid, dx, dz) {
+        var b = B(), E = this._est(), id = String(uid || "").slice(5); if (!b || !E) return { ok: false, erro: "Sem editor." };
+        var r = moverPorDelta(E, this._aval(), id, dx, dz);
+        if (!r.ok || r.nada) return r;
+        var ok = b.b2Op(r.op);
+        return ok ? { ok: true, t: r.t } : { ok: false, erro: "Não foi possível gravar o mover." };
       },
       arrastando: function () { return !!this._a; },
       /* e2e e suporte (só leitura) */

@@ -535,7 +535,151 @@
     return out;
   }
 
-  var BimInstArr = { VERSAO: 1, arrastar: arrastar, encaixe: encaixe, _interior: interior };
+  /* =================================================================================================================
+   * TUBO COM REGISTRO (27/10/2026): o registro/válvula mora NO EIXO do tubo e DIVIDE o trecho em duas metades (a de antes
+   * termina na face 1, a de depois começa na face 2). Mover uma metade deixava a ponta presa no registro (o tubo girava em
+   * torno dele). Agora, quando o movimento afeta um trecho que tem registro, o arraste pergunta:
+   *   "junto"  — o registro ANDA com o tubo, na mesma posição relativa (tira o registro, junta as metades, move o tubo inteiro
+   *              e põe o registro de volta no mesmo ponto proporcional do eixo);
+   *   "lugar"  — o registro FICA; a metade movida desgruda da face e uma perna nova (trecho) religa a face à ponta nova — as
+   *              conexões (joelhos/tês) nascem da geometria, pelo motor do hidro (BimInst.rede), nada fica solto;
+   *   (cancelar é da tela: nada muda).
+   * Tudo no MESMO lote do arraste (um Ctrl+Z desfaz o movimento, as pernas e o registro).
+   * ================================================================================================================= */
+  function idsDe(alvos) { return arr(alvos).map(function (a) { return txt(a).replace(/^edit:/, ""); }); }
+  function tolReg(I) { return (I.TOL || 0.001) + 0.002; }
+  function estadoCom(estado, trechos, acessorios) {
+    var E1 = {}; Object.keys(estado || {}).forEach(function (k) { E1[k] = estado[k]; });
+    var ins = {}; Object.keys((estado && estado.instalacoes) || {}).forEach(function (k) { ins[k] = estado.instalacoes[k]; });
+    if (trechos) ins.trechos = trechos;
+    if (acessorios) { if (acessorios.length) ins.acessorios = acessorios; else delete ins.acessorios; }
+    E1.instalacoes = ins; return E1;
+  }
+  /* os registros cujas metades o arraste move: [{ id, nome, sistema, lados: {a, b}, antes, depois }] */
+  function registrosAfetados(estado, alvos) {
+    var I = BI(); if (!I) return [];
+    var ins = (estado && estado.instalacoes) || {}, ids = idsDe(alvos), TS = arr(ins.trechos), tol = tolReg(I), out = [];
+    arr(ins.acessorios).forEach(function (a) {
+      if (!a || !a.a || !a.b) return;
+      var ant = null, dep = null;
+      TS.forEach(function (t) {
+        if (t.sistema !== a.sistema) return;
+        if (!ant && dist(t.p2, a.a) <= tol && dist(t.p1, a.a) > tol) ant = t;   /* a metade de ANTES termina na face 1 */
+        if (!dep && dist(t.p1, a.b) <= tol && dist(t.p2, a.b) > tol) dep = t;   /* a de DEPOIS começa na face 2 */
+      });
+      var lados = { a: ant && ids.indexOf(ant.id) >= 0 ? ant.id : null, b: dep && ids.indexOf(dep.id) >= 0 ? dep.id : null };
+      if (lados.a || lados.b) out.push({ id: a.id, nome: a.nome || "registro", sistema: a.sistema, lados: lados, antes: ant ? ant.id : null, depois: dep ? dep.id : null });
+    });
+    return out;
+  }
+  function falhaReg(e) { return { ok: false, erro: e, ops: [], avisos: [], conflitos: [], corrigir: [], curtos: [], quebras: [], trocas: [], mudaram: [], pontes: [] }; }
+  function opDoResultado(r, id) { return arr(r.ops).filter(function (o) { return o.op === "trecho" && o.id === id; })[0] || null; }
+
+  function moverJunto(estado, avaliarFam, alvos, d, opts, regs) {
+    var I = BI(), ins = estado.instalacoes, tol = tolReg(I), acs = arr(ins.acessorios);
+    var TS = arr(ins.trechos).map(function (t) { var c = {}; Object.keys(t).forEach(function (k) { c[k] = t[k]; }); return c; }), mapa = {};
+    function res(id) { while (mapa[id] != null) id = mapa[id]; return id; }
+    function tr(id) { return TS.filter(function (t) { return t.id === id; })[0] || null; }
+    var lista = regs.map(function (r) { return { r: r, acc: acs.filter(function (x) { return x.id === r.id; })[0] }; }).filter(function (q) { return q.acc && q.r.antes && q.r.depois; });
+    if (lista.length !== regs.length) return falhaReg("Não deu para juntar as metades do tubo ao redor do registro.");
+    var u0 = lista[0].acc.dir;
+    lista.sort(function (p, q) { return dot(p.acc.centro, u0) - dot(q.acc.centro, u0); });
+    var raizes = {};
+    lista.forEach(function (q) {
+      var ant = tr(res(q.r.antes)), dep = tr(res(q.r.depois));
+      if (!ant || !dep || ant.id === dep.id) return;
+      ant.p2 = { x: dep.p2.x, y: dep.p2.y, z: dep.p2.z }; mapa[dep.id] = ant.id; TS.splice(TS.indexOf(dep), 1);
+    });
+    lista.forEach(function (q) {
+      var raiz = tr(res(q.r.antes)); if (!raiz) return;
+      var L0 = dist(raiz.p1, raiz.p2), u = unit(raiz.p1, raiz.p2);
+      q.raiz = raiz.id; q.frac = L0 > 1e-9 ? dot(sub(q.acc.centro, raiz.p1), u) / L0 : 0.5;
+      raizes[raiz.id] = 1;
+    });
+    var ids = []; idsDe(alvos).forEach(function (a) { var x = res(a); if (ids.indexOf(x) < 0) ids.push(x); });
+    var E1 = estadoCom(estado, TS, []);
+    var r = arrastar(E1, avaliarFam, ids, d, opts);
+    if (!r.ok) return r;
+    var apagar = [], repor = [];
+    for (var i = lista.length - 1; i >= 0; i--) apagar.push({ op: "apagar", id: lista[i].acc.id });   /* de trás para frente: cada apagar emenda a metade seguinte */
+    for (var j = 0; j < lista.length; j++) {
+      var q2 = lista[j], a2 = q2.acc, rt = opDoResultado(r, q2.raiz) || (function () { var t0 = tr(q2.raiz); return { p1: t0.p1, p2: t0.p2 }; })();
+      var Ln = dist(rt.p1, rt.p2), un = unit(rt.p1, rt.p2), sn = q2.frac * Ln, Lr = a2.comprimento;
+      if (sn - Lr / 2 < tol * 2 || sn + Lr / 2 > Ln - tol * 2) return falhaReg("O registro " + a2.id + " não cabe no tubo depois deste movimento (sobraria menos tubo que o corpo dele). Mova menos ou escolha \"Deixar no lugar\".");
+      var c = add(rt.p1, mul(un, sn));
+      var o = { op: "acessorio", id: a2.id, famId: a2.famId, tipoId: a2.tipoId, x: r4(c.x), y: r4(c.y), z: r4(c.z), comprimento: a2.comprimento, trecho: q2.r.antes, novoId: q2.r.depois };
+      if (a2.giro) o.giro = a2.giro;
+      repor.push(o);
+    }
+    var out = {}; Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+    out.ops = apagar.concat(arr(r.ops), repor);
+    out.avisos = arr(r.avisos).concat(lista.map(function (q) { return "o registro " + q.acc.id + " andou junto com o tubo"; }));
+    out.registroModo = "junto"; out.registros = regs;
+    return out;
+  }
+
+  function deixarNoLugar(estado, avaliarFam, alvos, d, opts, regs) {
+    var I = BI(), ins = estado.instalacoes, tol = tolReg(I), acs = arr(ins.acessorios);
+    var tira = {}; regs.forEach(function (r) { tira[r.id] = 1; });
+    var E1 = estadoCom(estado, null, acs.filter(function (a) { return !tira[a.id]; }));   /* sem o registro a ponta do tubo é solta: anda paralela, não gira em torno dele */
+    var r = arrastar(E1, avaliarFam, alvos, d, opts);
+    if (!r.ok) return r;
+    var ops = arr(r.ops).slice(), seq = 0, novos = [], falhou = null;
+    function idPerna(base) { var id; do { id = base + "-rg" + (++seq); } while (arr(ins.trechos).some(function (t) { return t.id === id; }) || ops.some(function (o) { return o.id === id; }) || novos.some(function (o) { return o.id === id; })); return id; }
+    var LIMPAR = ["continua", "juntaIni", "juntaFim", "juntaMotivo", "comentarios", "pecaIni", "pecaFim", "tomada", "faseCriada", "faseDemolida"];
+    function perna(opMeia, p1, p2) {
+      var o = {}; Object.keys(opMeia).forEach(function (k) { o[k] = opMeia[k]; });
+      LIMPAR.forEach(function (k) { delete o[k]; });
+      o.id = idPerna(opMeia.id); o.p1 = r4p(p1); o.p2 = r4p(p2); return o;
+    }
+    /* a religação: um TOCO reto saindo da face do registro (no eixo dele) + a perna até a ponta nova do tubo; a ponta do tubo
+       encurta o tamanho do toco, para a perna fechar certinho. Assim há tubo reto entre a face e a curva: os dois joelhos
+       (face -> perna e perna -> tubo) nascem da geometria, pelo motor (BimInst.rede). Movimento só ao longo do eixo: uma perna reta. */
+    function trocar(o) { for (var q = 0; q < ops.length; q++) if (ops[q].id === o.id && ops[q].op === "trecho") { ops[q] = o; return; } }
+    for (var i = 0; i < regs.length; i++) {
+      var rg = regs[i], acc = acs.filter(function (x) { return x.id === rg.id; })[0]; if (!acc) continue;
+      var Ls = Math.max(0.10, 3 * num(acc.dn, 25) / 1000);
+      [{ lado: "b", face: acc.b, k: "p1", sinal: 1 }, { lado: "a", face: acc.a, k: "p2", sinal: -1 }].forEach(function (z) {
+        var id = rg.lados[z.lado]; if (!id) return;
+        var o0 = opDoResultado(r, id); if (!o0 || dist(o0[z.k], z.face) <= tol) return;
+        var o = {}; Object.keys(o0).forEach(function (kk) { o[kk] = o0[kk]; });
+        var v = sub(o[z.k], z.face), reto = len(v) > 1e-9 && len({ x: v.y * acc.dir.z - v.z * acc.dir.y, y: v.z * acc.dir.x - v.x * acc.dir.z, z: v.x * acc.dir.y - v.y * acc.dir.x }) <= 1e-4 * len(v) + 1e-6;
+        if (reto) {   /* o tubo só correu ao longo do eixo do registro: uma perna reta basta (não precisa de curva) */
+          if (dot(v, acc.dir) * z.sinal < 0) { falhou = "O tubo entraria no corpo do registro " + rg.id + "."; return; }
+          novos.push(z.sinal > 0 ? perna(o0, z.face, o[z.k]) : perna(o0, o[z.k], z.face)); return;
+        }
+        var outra = z.k === "p1" ? "p2" : "p1", u = unit(o[z.k], o[outra]), Lo = dist(o.p1, o.p2);
+        if (Lo < Ls + 0.10) { falhou = "O trecho " + id + " ficaria curto demais para religar o registro " + rg.id + " (precisa de ao menos " + fmt((Ls + 0.10) * 100, 0) + " cm)."; return; }
+        var ponta = add(o[z.k], mul(u, Ls)), S = add(z.face, mul(acc.dir, z.sinal * Ls));
+        o[z.k] = r4p(ponta); trocar(o);
+        if (z.sinal > 0) { novos.push(perna(o0, z.face, S)); novos.push(perna(o0, S, ponta)); }
+        else { novos.push(perna(o0, ponta, S)); novos.push(perna(o0, S, z.face)); }
+      });
+    }
+    if (falhou) return falhaReg(falhou);
+    ops = ops.concat(novos);
+    /* a conferência: depois disto nenhuma face do registro pode ficar sem tubo ligado nela */
+    var tNovos = arr(ins.trechos).map(function (t) { var o = opDoResultado({ ops: ops }, t.id); return o ? (I.normTrecho(o) || t) : t; });
+    novos.forEach(function (o) { var n = I.normTrecho(o); if (n) tNovos.push(n); });
+    var R2 = I.rede(estadoCom(estado, tNovos, null), avaliarFam), soltas = [];
+    regs.forEach(function (rg) { arr(R2.conectoresLivres).forEach(function (c) { if (c && (c.famInst === rg.id || String(c.id || "").indexOf(rg.id + ":") === 0)) soltas.push(c.id); }); });
+    if (soltas.length) return falhaReg("Deixar o registro no lugar deixaria a face dele solta (" + soltas.join(", ") + "): nada foi aplicado.");
+    var out = {}; Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+    out.ops = ops;
+    out.avisos = arr(r.avisos).concat(regs.map(function (g) { return "o registro " + g.id + " ficou no lugar; " + novos.length + " perna(s) de tubo religam as faces dele"; }));
+    out.registroModo = "lugar"; out.registros = regs; out.pernas = novos.map(function (o) { return o.id; });
+    return out;
+  }
+  /* o arraste que conhece o registro. opts.registro = "junto" | "lugar"; sem a escolha devolve { ok:false, pergunta:true, registros } */
+  function arrastarComRegistro(estado, avaliarFam, alvos, d, opts) {
+    opts = opts || {};
+    var I = BI(), regs = I && !opts.ponta ? registrosAfetados(estado, alvos) : [];
+    if (!regs.length) return arrastar(estado, avaliarFam, alvos, d, opts);
+    if (opts.registro !== "junto" && opts.registro !== "lugar") { var f = falhaReg("O trecho tem registro (" + regs.map(function (g) { return g.nome; }).join(", ") + "): escolha mover junto ou deixar no lugar."); f.pergunta = true; f.registros = regs; return f; }
+    return opts.registro === "junto" ? moverJunto(estado, avaliarFam, alvos, d, opts, regs) : deixarNoLugar(estado, avaliarFam, alvos, d, opts, regs);
+  }
+
+  var BimInstArr = { VERSAO: 1, arrastar: arrastar, encaixe: encaixe, _interior: interior, registrosAfetados: registrosAfetados, arrastarComRegistro: arrastarComRegistro };
 
   /* ================================================================ A TELA (navegador) */
   if (typeof document !== "undefined") {
@@ -574,12 +718,15 @@
         if (sel.indexOf(uid) < 0) { b.selecionar([uid], "trocar"); sel = [uid]; }
         var E = this._est(); if (!E) return false;
         var id = uid.slice(5), t = arr(E.instalacoes && E.instalacoes.trechos).filter(function (x) { return x.id === id; })[0];
+        this._regEscolha = null;   /* TUBO COM REGISTRO: cada arraste pergunta de novo */
         this._a = { vista: vista, uid: uid, alvos: sel.slice(), E: E, y0: 0, base: null, d: { x: 0, y: 0, z: 0 }, dig: "", res: null, ponta: null, t: t, ev: null };
         var a = this._a;
         a.y0 = P && isFinite(P.y) ? P.y : (t ? (t.p1.y + t.p2.y) / 2 : 0);
         var base = vista === "3d" ? (P ? { x: P.x, y: a.y0, z: P.z } : this._ponto(ev)) : this._ponto(ev);
         if (!base) { this._a = null; return false; }
         a.base = base;
+        /* ARRASTE ORTOGONAL NO 3D (27/10/2026, js/bimeixo.js): o eixo (X, Z ou Y) se escolhe nos primeiros ~8 px do mouse e fica travado */
+        if (vista === "3d" && ev && ev.clientX != null && global.BimEixo) { a.p0px = { x: ev.clientX, y: ev.clientY }; a.eixo = null; a.shiftAnt = false; a.vet = global.BimEixo.vetores(function (x, y, z) { return b.telaDe(x, y, z); }, base); }
         /* PONTA: um tubo só, pegado perto da ponta → estica/encurta só ele */
         if (t && sel.length === 1) {
           var L = dist(t.p1, t.p2), lim = Math.max(0.12, 0.15 * L), pl = vista === "3d" || this._def(vista) && this._def(vista).tipo === "planta";
@@ -593,7 +740,7 @@
       /* o deslocamento do mouse, com a trava (paralelo ao tubo), o encaixe e a distância digitada */
       _desloc: function (P, livre) {
         var a = this._a, d = sub(P, a.base), t = a.t;
-        if (a.vista === "3d" || (this._def(a.vista) && this._def(a.vista).tipo === "planta")) d.y = 0;
+        if ((a.vista === "3d" && !a.eixo) || (a.vista !== "3d" && this._def(a.vista) && this._def(a.vista).tipo === "planta")) d.y = 0;
         else if (!livre) { var h = Math.sqrt(d.x * d.x + d.z * d.z); if (h < 0.35 * Math.abs(d.y)) { d.x = 0; d.z = 0; } else if (Math.abs(d.y) < 0.35 * h) d.y = 0; }
         if (t && !a.ponta && a.vista !== "3d" && !(this._def(a.vista) && this._def(a.vista).tipo === "planta")) { /* corte: como está */ }
         else if (t && !a.ponta && hlen(t.p1, t.p2) > 0.02 && !livre) {
@@ -608,6 +755,22 @@
         }
         var Ld = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
         if (a.dig && Ld > 1e-6) { var v = num(a.dig.replace(",", "."), NaN); if (isFinite(v) && v > 0) d = mul(d, v / Ld); }
+        return { d: d, guia: guia, distParede: dp };
+      },
+      /* ARRASTE ORTOGONAL NO 3D (27/10/2026): o deslocamento SEMPRE sobre um eixo do mundo. Os ~8 px primeiros escolhem o eixo
+         (o que mais se alinha com o mouse na tela); Shift troca; o encaixe magnético vale nos eixos horizontais e o resultado é
+         reprojetado no eixo (nunca sai dele); a distância digitada vale ao longo dele. A linha-guia colorida mostra eixo e metros. */
+      _deslocEixo: function (a) {
+        var E = global.BimEixo, mov = { x: a.ev.clientX - a.p0px.x, y: a.ev.clientY - a.p0px.y };
+        var sh = !!a.ev.shiftKey; if (sh && !a.shiftAnt && a.eixo) a.eixo = E.proximo(a.eixo); a.shiftAnt = sh;
+        if (!a.eixo) a.eixo = E.escolher(mov, a.vet);
+        if (!a.eixo) { E.esconderGuia(); return { d: { x: 0, y: 0, z: 0 }, guia: null, distParede: null }; }
+        var m = E.distancia(mov, a.vet[a.eixo]), u = E.UNIT[a.eixo], d = { x: u.x * m, y: u.y * m, z: u.z * m }, guia = null, dp = null;
+        if (a.eixo !== "y" && !a.ev.altKey && len(d) > 1e-6) { var en = encaixe(a.E, a.alvos, d, { tol: 12 * this._pxM() }); d = E.travar(en.d, a.eixo); guia = en.guia; dp = en.distParede; }
+        var Ld = len(d);
+        if (a.dig && Ld > 1e-6) { var v = num(a.dig.replace(",", "."), NaN); if (isFinite(v) && v > 0) d = mul(d, v / Ld); }
+        m = d.x * u.x + d.y * u.y + d.z * u.z;
+        E.mostrarGuia(a.eixo, a.base, add(a.base, d), m);
         return { d: d, guia: guia, distParede: dp };
       },
       /* metros por pixel na vista do arraste (o encaixe é de ~12 px) */
@@ -627,8 +790,9 @@
       },
       _calcular: function () {
         var a = this._a, b = B(); if (!a || !a.ev) return;
-        var P = this._ponto(a.ev); if (!P) return;
-        var r = this._desloc(P, a.ev.shiftKey || a.ev.altKey);
+        var r;
+        if (a.p0px && a.vista === "3d" && !a.ponta) r = this._deslocEixo(a);
+        else { var P = this._ponto(a.ev); if (!P) return; r = this._desloc(P, a.ev.shiftKey || a.ev.altKey); }
         a.d = r.d; a.guia = r.guia; a.distParede = r.distParede;
         /* a prévia sem as opções do Corrigir (elas rodam o traçado automático: só no soltar) */
         a.res = len(a.d) > 1e-4 ? arrastar(a.E, this._aval(), a.alvos, a.d, { ponta: a.ponta, _semCorrigir: true }) : null;
@@ -662,7 +826,7 @@
       },
       cancelar: function () {
         var a = this._a, b = B(); if (!a) return false;
-        this._a = null; this._teclas(false); this._tirarRotulo();
+        this._a = null; this._teclas(false); this._tirarRotulo(); if (global.BimEixo) global.BimEixo.esconderGuia();
         try { b.editarPreviaInst([]); } catch (e) {}
         status("Arraste cancelado.");
         return true;
@@ -671,16 +835,54 @@
       soltar: function (ev) {
         var a = this._a, b = B(); if (!a) return false;
         if (ev && ev.clientX != null) { a.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey }; this._calcular(); }
-        this._a = null; this._teclas(false); this._tirarRotulo();
+        this._a = null; this._teclas(false); this._tirarRotulo(); if (global.BimEixo) global.BimEixo.esconderGuia();
         try { b.editarPreviaInst([]); } catch (e) {}
         if (len(a.d) < 1e-4) { status("Nada foi movido."); return true; }
-        var r = arrastar(a.E, this._aval(), a.alvos, a.d, { ponta: a.ponta });
-        var info = { alvos: a.alvos, d: a.d, ponta: a.ponta, x: a.ev ? a.ev.clientX : 200, y: a.ev ? a.ev.clientY : 200 };
-        if (r.ok) { this.aplicar(r.ops, r.avisos, info); return true; }
-        if (r.conflitos && r.conflitos.length) { this.painel(r, info); return true; }
-        if (r.confirmar) { this.painel(r, info); return true; }
-        status("Arrastar: " + r.erro);
+        var info = { alvos: a.alvos, d: a.d, ponta: a.ponta, x: a.ev ? a.ev.clientX : 200, y: a.ev ? a.ev.clientY : 200 }, self = this;
+        /* TUBO COM REGISTRO (27/10/2026): se o movimento afeta um trecho que tem registro, pergunta antes (junto / no lugar / cancelar) */
+        this._resolver(a.E, a.alvos, a.d, { ponta: a.ponta }, info, function (r) {
+          if (r.ok) { self.aplicar(r.ops, r.avisos, info); return; }
+          if (r.conflitos && r.conflitos.length) { self.painel(r, info); return; }
+          if (r.confirmar) { self.painel(r, info); return; }
+          status("Arrastar: " + r.erro);
+        });
         return true;
+      },
+      /* TUBO COM REGISTRO (27/10/2026): "O trecho tem registro (<nome>). Mover o registro junto?" — [Mover junto] [Deixar no lugar]
+         [Cancelar]. A escolha vale para o arraste inteiro e para as setas; toques seguidos (até 2,5 s entre um e outro) não
+         perguntam de novo; um arraste novo pergunta de novo. cont(resultado do motor) só roda se não cancelou. */
+      _regEscolha: null,
+      _regVale: function () { var m = this._regEscolha; if (m && Date.now() - m.t < 2500) { m.t = Date.now(); return m.v; } return null; },
+      _resolver: function (E, alvos, d, opts, info, cont) {
+        var regs = opts && opts.ponta ? [] : registrosAfetados(E, alvos), self = this;
+        if (!regs.length) { cont(arrastar(E, this._aval(), alvos, d, opts)); return; }
+        function com(esc) {
+          self._regEscolha = { v: esc, t: Date.now() };
+          var o = {}; Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; }); o.registro = esc;
+          cont(arrastarComRegistro(E, self._aval(), alvos, d, o));
+        }
+        var v = this._regVale(); if (v) { com(v); return; }
+        this._perguntarRegistro(regs, info && info.x, info && info.y, function (esc) { if (!esc) { status("Cancelado: nada mudou."); return; } com(esc); });
+      },
+      _perguntarRegistro: function (regs, x, y, cb) {
+        this._fecharPerguntaReg();
+        var self = this, w = document.createElement("div"), nomes = regs.map(function (g) { return g.nome + (g.id ? " " + g.id : ""); }).join(", ");
+        w.className = "bim-inst-arr-registro"; w.setAttribute("role", "dialog"); w.setAttribute("data-bim", "registro-pergunta");
+        w.style.cssText = "position:fixed;z-index:63;left:50%;bottom:64px;transform:translateX(-50%);max-width:560px;background:#fff;border:2px solid #0b3b5c;border-radius:8px;padding:10px 12px;font:13px/1.35 sans-serif;color:#222;box-shadow:0 4px 18px rgba(0,0,0,.3)";
+        w.innerHTML = '<div style="font-weight:700;margin-bottom:6px" data-reg-texto>O trecho tem registro (' + nomes.replace(/[<>&]/g, "") + '). Mover o registro junto?</div>' +
+          '<div style="color:#555;font-size:12px;margin-bottom:8px">Junto: o registro anda com o tubo. No lugar: o registro fica e o tubo se religa nas faces dele, com as conexões.</div>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="btn sm" data-reg-op="junto">Mover junto</button><button type="button" class="btn sm" data-reg-op="lugar">Deixar no lugar</button><button type="button" class="btn sm" data-reg-op="cancelar">Cancelar</button></div>';
+        document.body.appendChild(w); this._perguntaReg = w;
+        function fim(esc) { self._fecharPerguntaReg(); cb(esc); }
+        w.addEventListener("click", function (e) { var bt = e.target && e.target.closest ? e.target.closest("[data-reg-op]") : null; if (!bt) return; var k = bt.getAttribute("data-reg-op"); fim(k === "junto" || k === "lugar" ? k : null); });
+        this._kReg = function (e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fim(null); } };
+        document.addEventListener("keydown", this._kReg, true);
+        status("O trecho tem registro (" + nomes + "): mover junto, deixar no lugar ou cancelar?");
+      },
+      _fecharPerguntaReg: function () {
+        if (this._perguntaReg && this._perguntaReg.parentNode) this._perguntaReg.parentNode.removeChild(this._perguntaReg);
+        this._perguntaReg = null;
+        if (this._kReg) { document.removeEventListener("keydown", this._kReg, true); this._kReg = null; }
       },
       aplicar: function (ops, avisos, info) {
         var b = B(); if (!ops || !ops.length) { status("Nada mudou."); return false; }
@@ -755,6 +957,27 @@
         function up(e) { document.removeEventListener("pointermove", mv, true); document.removeEventListener("pointerup", up, true); self.soltar(e); }
         document.addEventListener("pointermove", mv, true); document.addEventListener("pointerup", up, true);
         return true;
+      },
+      /* AS SETAS DO TECLADO (27/10/2026, js/bimsetas.js): a MESMA op do arraste (`arrastar`, com o encaixe e as ligações), com o
+         deslocamento d = { x, y, z } em metros. Se o arraste pediria confirmação ou tem conflito, as setas não decidem: pedem o arraste. */
+      moverDelta: function (uids, d) {
+        var b = B(), U = global.BimInstUI, E = this._est(); if (!b || !U || !E) return { ok: false, erro: "Sem editor." };
+        var alvos = arr(uids).filter(function (u) { return /^edit:/.test(u) && !/^edit:ac\d/.test(u) && U.ehInst(u); });
+        if (!alvos.length) return { ok: false, erro: "Nada para andar." };
+        var self = this, dd = { x: d.x, y: d.y, z: d.z }, regs = registrosAfetados(E, alvos), r;
+        if (regs.length) {   /* TUBO COM REGISTRO: a mesma pergunta do arraste; a escolha vale para os toques seguidos */
+          var v = this._regVale();
+          if (!v) {
+            this._perguntarRegistro(regs, 200, 200, function (esc) { if (!esc) { status("Cancelado: nada mudou."); return; } self._regEscolha = { v: esc, t: Date.now() }; self.moverDelta(uids, d); });
+            return { ok: false, erro: "o trecho tem registro: responda à pergunta na tela (mover junto, deixar no lugar ou cancelar)." };
+          }
+          r = arrastarComRegistro(E, this._aval(), alvos, dd, { ponta: null, registro: v });
+        } else r = arrastar(E, this._aval(), alvos, dd, { ponta: null });
+        if (!r.ok) return { ok: false, erro: (r.conflitos && r.conflitos.length) || r.confirmar ? "O tubo pede decisão (conflito ou ligação): use o arraste." : (r.erro || "Não deu para mover o tubo.") };
+        if (!r.ops || !r.ops.length) return { ok: false, erro: "Nada mudou." };
+        var ok = b.editarLote({ op: "lote", id: "hid-seta-" + Date.now() + "-" + Math.random().toString(36).slice(2, 5), origem: "hidarrastar", ops: JSON.parse(JSON.stringify(r.ops)) });
+        if (ok) { try { b.selecionar(alvos, "trocar"); } catch (e) {} }
+        return ok ? { ok: true } : { ok: false, erro: "Não foi possível gravar." };
       },
       arrastando: function () { return !!this._a; }
     };

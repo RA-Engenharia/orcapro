@@ -5300,6 +5300,27 @@ var ok = !!(window.BIM && BIM.editarLote && BIM.editarLote(lote));
 S._hint(ok ? ops.length + (ops.length === 1 ? ' elemento apagado' : ' elementos apagados') + (nIfc ? ' (' + nIfc + ' do IFC importado: ficam ocultos e marcados como removidos; o arquivo não muda)' : '') + ' — Ctrl+Z desfaz' + (ops.length > 1 ? ' de uma vez' : '') + '.' + (nFix ? ' ' + nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : '') : 'O editor recusou o apagar.');
 return true;
 };
+S._setasCtx = function () {
+if (!S || S !== Sm || !S.alive) return null;
+var h = S.host || host, raiz = h && h.closest ? (h.closest('.bim-revit') || h) : h;
+if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return null;
+var r = { ocupado: !semFerramenta3d(), forward: null, mPorPx: null };
+try {
+var cam = S.camera, d = new THREE.Vector3(); cam.getWorldDirection(d);
+var f = { x: d.x, z: d.z };
+if (Math.abs(d.y) > 0.85) { var up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion); f = { x: up.x, z: up.z }; }
+r.forward = f;
+var box = new THREE.Box3(), n = 0;
+selAtual().forEach(function (u) { var m = S.meshPorUid && S.meshPorUid[u]; if (m) { box.expandByObject(m); n++; } });
+var hpx = (S.renderer && S.renderer.domElement && S.renderer.domElement.clientHeight) || 600;
+if (cam.isPerspectiveCamera) {
+var c = (n && !box.isEmpty()) ? box.getCenter(new THREE.Vector3()) : S.orbit.target.clone();
+var prof = Math.max(0.05, c.sub(cam.position).dot(d));
+r.mPorPx = 2 * prof * Math.tan(cam.fov * Math.PI / 360) / hpx;
+} else r.mPorPx = (cam.top - cam.bottom) / (cam.zoom || 1) / hpx;
+} catch (_) {}
+return r;
+};
 S._selTeclas = function (e) {
 if (!S || S !== Sm || !S.alive) return;
 var k = e.key; if (k !== 'Escape' && k !== 'Delete' && k !== 'Del') return;
@@ -14432,6 +14453,7 @@ selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] };
 contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
 contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
 contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
+setasCtx: function () { return (S && S._setasCtx) ? S._setasCtx() : null; },
 opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
 uidEm: function (x, y) { return (S && S.alive && S._uidEm) ? S._uidEm(x, y) : null; },
 uidsNaVista3d: function () { return (S && S._uidsNaVista3d) ? S._uidsNaVista3d() : []; },

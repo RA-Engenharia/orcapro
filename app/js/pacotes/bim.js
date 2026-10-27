@@ -15752,6 +15752,7 @@ var cur = { x: pl.x, z: pl.z }, sn0 = Pr().snap(cur, geoSel, { tol: tolM(e), tip
 var base = sn0 ? { x: sn0.p.x, z: sn0.p.z } : cur;
 pr.mov = { base: base, dest: base, geoSel: geoSel, geo: Pr().geometria(st0, { excluir: pr.sel.slice(), avaliar: api.avaliar }), st: st0, copia: copia };
 if (VUI() && !copia) VUI().preparar(st0);
+if (global.BimEixo && global.BIM && global.BIM.telaDe && e.clientX != null) { pr.mov.p0px = { x: e.clientX, y: e.clientY }; pr.mov.eixo = null; pr.mov.shiftAnt = false; pr.mov.dy = 0; pr.mov.vet = global.BimEixo.vetores(function (x, y, z) { return global.BIM.telaDe(x, y, z); }, { x: base.x, y: edit.base, z: base.z }); }
 camadaDom.style.display = "none";
 return true;
 },
@@ -15759,7 +15760,25 @@ arrastoMover: function (e) {
 var m = pr.mov; if (!m) return false;
 var pl = api.planoPonto(e.clientX, e.clientY); if (!pl) return true;
 var cfg = global.BimBarraOpcoes && global.BimBarraOpcoes.cfg ? global.BimBarraOpcoes.cfg("mover") : null;
-var r = global.BimSelecao.pontoArrasto(m.base, { x: pl.x, z: pl.z }, m.geo, tolM(e), cfg, !!e.shiftKey);
+var EX = m.p0px && m.vet ? global.BimEixo : null, mt = 0, b3 = { x: m.base.x, y: edit.base, z: m.base.z };
+if (EX) {
+var mov = { x: e.clientX - m.p0px.x, y: e.clientY - m.p0px.y }, sh = !!e.shiftKey;
+if (sh && !m.shiftAnt && m.eixo) m.eixo = EX.proximo(m.eixo);
+m.shiftAnt = sh;
+if (!m.eixo) m.eixo = EX.escolher(mov, m.vet);
+if (!m.eixo) { m.dest = m.base; m.dy = 0; EX.esconderGuia(); return true; }
+mt = EX.distancia(mov, m.vet[m.eixo]);
+if (m.eixo === "y") {
+m.dest = m.base; m.dy = Math.round(mt * 10000) / 10000;
+EX.mostrarGuia("y", b3, { x: b3.x, y: b3.y + m.dy, z: b3.z }, m.dy);
+try { if (global.BimShell && global.BimShell.status) global.BimShell.status((m.copia ? "Copiar na vertical não existe: solte e use Ctrl+Z, ou troque o eixo com Shift." : (m.dy >= 0 ? "Subindo " : "Descendo ") + fmt(Math.abs(m.dy)) + " m (eixo Y; Shift troca o eixo; Esc cancela).")); } catch (eY) {}
+return true;
+}
+m.dy = 0;
+pl = { x: m.base.x + (m.eixo === "x" ? mt : 0), z: m.base.z + (m.eixo === "z" ? mt : 0) };
+}
+var r = global.BimSelecao.pontoArrasto(m.base, { x: pl.x, z: pl.z }, m.geo, tolM(e), cfg, EX ? false : !!e.shiftKey);
+if (EX) { r = { p: { x: m.base.x + (m.eixo === "x" ? r.p.x - m.base.x : 0), z: m.base.z + (m.eixo === "z" ? r.p.z - m.base.z : 0) }, sn: r.sn }; EX.mostrarGuia(m.eixo, b3, { x: r.p.x, y: b3.y, z: r.p.z }, m.eixo === "x" ? r.p.x - m.base.x : r.p.z - m.base.z); }
 m.dest = r.p;
 mostrarMarca({ p: r.p, sn: r.sn, malha: false });
 var T = { tipo: "mover", dx: r.p.x - m.base.x, dz: r.p.z - m.base.z }, ar = [];
@@ -15777,13 +15796,20 @@ arrastoSoltar: function (e) {
 var m = pr.mov; pr.mov = null;
 try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {}
 camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder();
+if (global.BimEixo) global.BimEixo.esconderGuia();
 if (!m) return null;
+if (m.dy && Math.abs(m.dy) >= 1e-4 && !m.copia) {
+if (VUI()) VUI().soltar();
+var okE = !!(global.BIM && global.BIM.editarLote && global.BIM.editarLote({ op: "lote", id: "arry" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), origem: "arrastar-y", pedido: "Subir/descer arrastando", ops: [{ op: "elevar", ids: pr.sel.slice(), dy: m.dy }] }));
+hint(okE ? (m.dy > 0 ? "Subiu " : "Desceu ") + fmt(Math.abs(m.dy)) + " m (Ctrl+Z desfaz)." : "Não deu para subir/descer.");
+posicionar(); return { ok: okE };
+}
 var dx = Math.round((m.dest.x - m.base.x) * 10000) / 10000, dz = Math.round((m.dest.z - m.base.z) * 10000) / 10000;
 if (Math.abs(dx) + Math.abs(dz) < 1e-4) { if (VUI()) VUI().soltar(); posicionar(); return null; }
 if (m.copia) return self.api.copiarDesloc(dx, dz, e);
 return self.api.mover(dx, dz, e);
 },
-arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
+arrastoCancelar: function () { if (!pr.mov) return false; pr.mov = null; if (global.BimEixo) global.BimEixo.esconderGuia(); try { if (global.BimVaoArr && global.BimVaoArr.arrasteParede) global.BimVaoArr.arrasteParede(null); } catch (eVP) {} if (VUI()) VUI().soltar(); camadaDom.style.display = ""; limparGrupo(grp); api.marcaEsconder(); caixaEsconder(); posicionar(); return true; },
 aposRebuild: function (st) {
 pr.geo = null; pr.ciclo = {};
 var n0 = pr.sel.length;
@@ -94833,7 +94859,131 @@ if (c2) { var del2 = (Q2.x - c2.l.a.x) * c2.n.x + (Q2.z - c2.l.a.z) * c2.n.z; ou
 if (c1.l.tipo === "face") out.distParede = r4(de / 2);
 return out;
 }
-var BimInstArr = { VERSAO: 1, arrastar: arrastar, encaixe: encaixe, _interior: interior };
+function idsDe(alvos) { return arr(alvos).map(function (a) { return txt(a).replace(/^edit:/, ""); }); }
+function tolReg(I) { return (I.TOL || 0.001) + 0.002; }
+function estadoCom(estado, trechos, acessorios) {
+var E1 = {}; Object.keys(estado || {}).forEach(function (k) { E1[k] = estado[k]; });
+var ins = {}; Object.keys((estado && estado.instalacoes) || {}).forEach(function (k) { ins[k] = estado.instalacoes[k]; });
+if (trechos) ins.trechos = trechos;
+if (acessorios) { if (acessorios.length) ins.acessorios = acessorios; else delete ins.acessorios; }
+E1.instalacoes = ins; return E1;
+}
+function registrosAfetados(estado, alvos) {
+var I = BI(); if (!I) return [];
+var ins = (estado && estado.instalacoes) || {}, ids = idsDe(alvos), TS = arr(ins.trechos), tol = tolReg(I), out = [];
+arr(ins.acessorios).forEach(function (a) {
+if (!a || !a.a || !a.b) return;
+var ant = null, dep = null;
+TS.forEach(function (t) {
+if (t.sistema !== a.sistema) return;
+if (!ant && dist(t.p2, a.a) <= tol && dist(t.p1, a.a) > tol) ant = t;
+if (!dep && dist(t.p1, a.b) <= tol && dist(t.p2, a.b) > tol) dep = t;
+});
+var lados = { a: ant && ids.indexOf(ant.id) >= 0 ? ant.id : null, b: dep && ids.indexOf(dep.id) >= 0 ? dep.id : null };
+if (lados.a || lados.b) out.push({ id: a.id, nome: a.nome || "registro", sistema: a.sistema, lados: lados, antes: ant ? ant.id : null, depois: dep ? dep.id : null });
+});
+return out;
+}
+function falhaReg(e) { return { ok: false, erro: e, ops: [], avisos: [], conflitos: [], corrigir: [], curtos: [], quebras: [], trocas: [], mudaram: [], pontes: [] }; }
+function opDoResultado(r, id) { return arr(r.ops).filter(function (o) { return o.op === "trecho" && o.id === id; })[0] || null; }
+function moverJunto(estado, avaliarFam, alvos, d, opts, regs) {
+var I = BI(), ins = estado.instalacoes, tol = tolReg(I), acs = arr(ins.acessorios);
+var TS = arr(ins.trechos).map(function (t) { var c = {}; Object.keys(t).forEach(function (k) { c[k] = t[k]; }); return c; }), mapa = {};
+function res(id) { while (mapa[id] != null) id = mapa[id]; return id; }
+function tr(id) { return TS.filter(function (t) { return t.id === id; })[0] || null; }
+var lista = regs.map(function (r) { return { r: r, acc: acs.filter(function (x) { return x.id === r.id; })[0] }; }).filter(function (q) { return q.acc && q.r.antes && q.r.depois; });
+if (lista.length !== regs.length) return falhaReg("Não deu para juntar as metades do tubo ao redor do registro.");
+var u0 = lista[0].acc.dir;
+lista.sort(function (p, q) { return dot(p.acc.centro, u0) - dot(q.acc.centro, u0); });
+var raizes = {};
+lista.forEach(function (q) {
+var ant = tr(res(q.r.antes)), dep = tr(res(q.r.depois));
+if (!ant || !dep || ant.id === dep.id) return;
+ant.p2 = { x: dep.p2.x, y: dep.p2.y, z: dep.p2.z }; mapa[dep.id] = ant.id; TS.splice(TS.indexOf(dep), 1);
+});
+lista.forEach(function (q) {
+var raiz = tr(res(q.r.antes)); if (!raiz) return;
+var L0 = dist(raiz.p1, raiz.p2), u = unit(raiz.p1, raiz.p2);
+q.raiz = raiz.id; q.frac = L0 > 1e-9 ? dot(sub(q.acc.centro, raiz.p1), u) / L0 : 0.5;
+raizes[raiz.id] = 1;
+});
+var ids = []; idsDe(alvos).forEach(function (a) { var x = res(a); if (ids.indexOf(x) < 0) ids.push(x); });
+var E1 = estadoCom(estado, TS, []);
+var r = arrastar(E1, avaliarFam, ids, d, opts);
+if (!r.ok) return r;
+var apagar = [], repor = [];
+for (var i = lista.length - 1; i >= 0; i--) apagar.push({ op: "apagar", id: lista[i].acc.id });
+for (var j = 0; j < lista.length; j++) {
+var q2 = lista[j], a2 = q2.acc, rt = opDoResultado(r, q2.raiz) || (function () { var t0 = tr(q2.raiz); return { p1: t0.p1, p2: t0.p2 }; })();
+var Ln = dist(rt.p1, rt.p2), un = unit(rt.p1, rt.p2), sn = q2.frac * Ln, Lr = a2.comprimento;
+if (sn - Lr / 2 < tol * 2 || sn + Lr / 2 > Ln - tol * 2) return falhaReg("O registro " + a2.id + " não cabe no tubo depois deste movimento (sobraria menos tubo que o corpo dele). Mova menos ou escolha \"Deixar no lugar\".");
+var c = add(rt.p1, mul(un, sn));
+var o = { op: "acessorio", id: a2.id, famId: a2.famId, tipoId: a2.tipoId, x: r4(c.x), y: r4(c.y), z: r4(c.z), comprimento: a2.comprimento, trecho: q2.r.antes, novoId: q2.r.depois };
+if (a2.giro) o.giro = a2.giro;
+repor.push(o);
+}
+var out = {}; Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+out.ops = apagar.concat(arr(r.ops), repor);
+out.avisos = arr(r.avisos).concat(lista.map(function (q) { return "o registro " + q.acc.id + " andou junto com o tubo"; }));
+out.registroModo = "junto"; out.registros = regs;
+return out;
+}
+function deixarNoLugar(estado, avaliarFam, alvos, d, opts, regs) {
+var I = BI(), ins = estado.instalacoes, tol = tolReg(I), acs = arr(ins.acessorios);
+var tira = {}; regs.forEach(function (r) { tira[r.id] = 1; });
+var E1 = estadoCom(estado, null, acs.filter(function (a) { return !tira[a.id]; }));
+var r = arrastar(E1, avaliarFam, alvos, d, opts);
+if (!r.ok) return r;
+var ops = arr(r.ops).slice(), seq = 0, novos = [], falhou = null;
+function idPerna(base) { var id; do { id = base + "-rg" + (++seq); } while (arr(ins.trechos).some(function (t) { return t.id === id; }) || ops.some(function (o) { return o.id === id; }) || novos.some(function (o) { return o.id === id; })); return id; }
+var LIMPAR = ["continua", "juntaIni", "juntaFim", "juntaMotivo", "comentarios", "pecaIni", "pecaFim", "tomada", "faseCriada", "faseDemolida"];
+function perna(opMeia, p1, p2) {
+var o = {}; Object.keys(opMeia).forEach(function (k) { o[k] = opMeia[k]; });
+LIMPAR.forEach(function (k) { delete o[k]; });
+o.id = idPerna(opMeia.id); o.p1 = r4p(p1); o.p2 = r4p(p2); return o;
+}
+function trocar(o) { for (var q = 0; q < ops.length; q++) if (ops[q].id === o.id && ops[q].op === "trecho") { ops[q] = o; return; } }
+for (var i = 0; i < regs.length; i++) {
+var rg = regs[i], acc = acs.filter(function (x) { return x.id === rg.id; })[0]; if (!acc) continue;
+var Ls = Math.max(0.10, 3 * num(acc.dn, 25) / 1000);
+[{ lado: "b", face: acc.b, k: "p1", sinal: 1 }, { lado: "a", face: acc.a, k: "p2", sinal: -1 }].forEach(function (z) {
+var id = rg.lados[z.lado]; if (!id) return;
+var o0 = opDoResultado(r, id); if (!o0 || dist(o0[z.k], z.face) <= tol) return;
+var o = {}; Object.keys(o0).forEach(function (kk) { o[kk] = o0[kk]; });
+var v = sub(o[z.k], z.face), reto = len(v) > 1e-9 && len({ x: v.y * acc.dir.z - v.z * acc.dir.y, y: v.z * acc.dir.x - v.x * acc.dir.z, z: v.x * acc.dir.y - v.y * acc.dir.x }) <= 1e-4 * len(v) + 1e-6;
+if (reto) {
+if (dot(v, acc.dir) * z.sinal < 0) { falhou = "O tubo entraria no corpo do registro " + rg.id + "."; return; }
+novos.push(z.sinal > 0 ? perna(o0, z.face, o[z.k]) : perna(o0, o[z.k], z.face)); return;
+}
+var outra = z.k === "p1" ? "p2" : "p1", u = unit(o[z.k], o[outra]), Lo = dist(o.p1, o.p2);
+if (Lo < Ls + 0.10) { falhou = "O trecho " + id + " ficaria curto demais para religar o registro " + rg.id + " (precisa de ao menos " + fmt((Ls + 0.10) * 100, 0) + " cm)."; return; }
+var ponta = add(o[z.k], mul(u, Ls)), S = add(z.face, mul(acc.dir, z.sinal * Ls));
+o[z.k] = r4p(ponta); trocar(o);
+if (z.sinal > 0) { novos.push(perna(o0, z.face, S)); novos.push(perna(o0, S, ponta)); }
+else { novos.push(perna(o0, ponta, S)); novos.push(perna(o0, S, z.face)); }
+});
+}
+if (falhou) return falhaReg(falhou);
+ops = ops.concat(novos);
+var tNovos = arr(ins.trechos).map(function (t) { var o = opDoResultado({ ops: ops }, t.id); return o ? (I.normTrecho(o) || t) : t; });
+novos.forEach(function (o) { var n = I.normTrecho(o); if (n) tNovos.push(n); });
+var R2 = I.rede(estadoCom(estado, tNovos, null), avaliarFam), soltas = [];
+regs.forEach(function (rg) { arr(R2.conectoresLivres).forEach(function (c) { if (c && (c.famInst === rg.id || String(c.id || "").indexOf(rg.id + ":") === 0)) soltas.push(c.id); }); });
+if (soltas.length) return falhaReg("Deixar o registro no lugar deixaria a face dele solta (" + soltas.join(", ") + "): nada foi aplicado.");
+var out = {}; Object.keys(r).forEach(function (k) { out[k] = r[k]; });
+out.ops = ops;
+out.avisos = arr(r.avisos).concat(regs.map(function (g) { return "o registro " + g.id + " ficou no lugar; " + novos.length + " perna(s) de tubo religam as faces dele"; }));
+out.registroModo = "lugar"; out.registros = regs; out.pernas = novos.map(function (o) { return o.id; });
+return out;
+}
+function arrastarComRegistro(estado, avaliarFam, alvos, d, opts) {
+opts = opts || {};
+var I = BI(), regs = I && !opts.ponta ? registrosAfetados(estado, alvos) : [];
+if (!regs.length) return arrastar(estado, avaliarFam, alvos, d, opts);
+if (opts.registro !== "junto" && opts.registro !== "lugar") { var f = falhaReg("O trecho tem registro (" + regs.map(function (g) { return g.nome; }).join(", ") + "): escolha mover junto ou deixar no lugar."); f.pergunta = true; f.registros = regs; return f; }
+return opts.registro === "junto" ? moverJunto(estado, avaliarFam, alvos, d, opts, regs) : deixarNoLugar(estado, avaliarFam, alvos, d, opts, regs);
+}
+var BimInstArr = { VERSAO: 1, arrastar: arrastar, encaixe: encaixe, _interior: interior, registrosAfetados: registrosAfetados, arrastarComRegistro: arrastarComRegistro };
 if (typeof document !== "undefined") {
 var B = function () { return global.BIM || null; };
 var status = function (t) { try { if (global.BimShell && global.BimShell.status) global.BimShell.status(t); } catch (e) {} };
@@ -94867,12 +95017,14 @@ var sel = (b.selecao().uids || []).filter(function (u) { return /^edit:/.test(u)
 if (sel.indexOf(uid) < 0) { b.selecionar([uid], "trocar"); sel = [uid]; }
 var E = this._est(); if (!E) return false;
 var id = uid.slice(5), t = arr(E.instalacoes && E.instalacoes.trechos).filter(function (x) { return x.id === id; })[0];
+this._regEscolha = null;
 this._a = { vista: vista, uid: uid, alvos: sel.slice(), E: E, y0: 0, base: null, d: { x: 0, y: 0, z: 0 }, dig: "", res: null, ponta: null, t: t, ev: null };
 var a = this._a;
 a.y0 = P && isFinite(P.y) ? P.y : (t ? (t.p1.y + t.p2.y) / 2 : 0);
 var base = vista === "3d" ? (P ? { x: P.x, y: a.y0, z: P.z } : this._ponto(ev)) : this._ponto(ev);
 if (!base) { this._a = null; return false; }
 a.base = base;
+if (vista === "3d" && ev && ev.clientX != null && global.BimEixo) { a.p0px = { x: ev.clientX, y: ev.clientY }; a.eixo = null; a.shiftAnt = false; a.vet = global.BimEixo.vetores(function (x, y, z) { return b.telaDe(x, y, z); }, base); }
 if (t && sel.length === 1) {
 var L = dist(t.p1, t.p2), lim = Math.max(0.12, 0.15 * L), pl = vista === "3d" || this._def(vista) && this._def(vista).tipo === "planta";
 var dd = function (q) { return pl ? hlen(base, q) : dist(base, q); };
@@ -94884,7 +95036,7 @@ return true;
 },
 _desloc: function (P, livre) {
 var a = this._a, d = sub(P, a.base), t = a.t;
-if (a.vista === "3d" || (this._def(a.vista) && this._def(a.vista).tipo === "planta")) d.y = 0;
+if ((a.vista === "3d" && !a.eixo) || (a.vista !== "3d" && this._def(a.vista) && this._def(a.vista).tipo === "planta")) d.y = 0;
 else if (!livre) { var h = Math.sqrt(d.x * d.x + d.z * d.z); if (h < 0.35 * Math.abs(d.y)) { d.x = 0; d.z = 0; } else if (Math.abs(d.y) < 0.35 * h) d.y = 0; }
 if (t && !a.ponta && a.vista !== "3d" && !(this._def(a.vista) && this._def(a.vista).tipo === "planta")) { }
 else if (t && !a.ponta && hlen(t.p1, t.p2) > 0.02 && !livre) {
@@ -94899,6 +95051,19 @@ d = en.d; guia = en.guia; dp = en.distParede;
 }
 var Ld = Math.sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
 if (a.dig && Ld > 1e-6) { var v = num(a.dig.replace(",", "."), NaN); if (isFinite(v) && v > 0) d = mul(d, v / Ld); }
+return { d: d, guia: guia, distParede: dp };
+},
+_deslocEixo: function (a) {
+var E = global.BimEixo, mov = { x: a.ev.clientX - a.p0px.x, y: a.ev.clientY - a.p0px.y };
+var sh = !!a.ev.shiftKey; if (sh && !a.shiftAnt && a.eixo) a.eixo = E.proximo(a.eixo); a.shiftAnt = sh;
+if (!a.eixo) a.eixo = E.escolher(mov, a.vet);
+if (!a.eixo) { E.esconderGuia(); return { d: { x: 0, y: 0, z: 0 }, guia: null, distParede: null }; }
+var m = E.distancia(mov, a.vet[a.eixo]), u = E.UNIT[a.eixo], d = { x: u.x * m, y: u.y * m, z: u.z * m }, guia = null, dp = null;
+if (a.eixo !== "y" && !a.ev.altKey && len(d) > 1e-6) { var en = encaixe(a.E, a.alvos, d, { tol: 12 * this._pxM() }); d = E.travar(en.d, a.eixo); guia = en.guia; dp = en.distParede; }
+var Ld = len(d);
+if (a.dig && Ld > 1e-6) { var v = num(a.dig.replace(",", "."), NaN); if (isFinite(v) && v > 0) d = mul(d, v / Ld); }
+m = d.x * u.x + d.y * u.y + d.z * u.z;
+E.mostrarGuia(a.eixo, a.base, add(a.base, d), m);
 return { d: d, guia: guia, distParede: dp };
 },
 _pxM: function () {
@@ -94917,8 +95082,9 @@ return true;
 },
 _calcular: function () {
 var a = this._a, b = B(); if (!a || !a.ev) return;
-var P = this._ponto(a.ev); if (!P) return;
-var r = this._desloc(P, a.ev.shiftKey || a.ev.altKey);
+var r;
+if (a.p0px && a.vista === "3d" && !a.ponta) r = this._deslocEixo(a);
+else { var P = this._ponto(a.ev); if (!P) return; r = this._desloc(P, a.ev.shiftKey || a.ev.altKey); }
 a.d = r.d; a.guia = r.guia; a.distParede = r.distParede;
 a.res = len(a.d) > 1e-4 ? arrastar(a.E, this._aval(), a.alvos, a.d, { ponta: a.ponta, _semCorrigir: true }) : null;
 try { b.editarPreviaInst(a.res && a.res.ops.length ? a.res.ops : []); } catch (e) {}
@@ -94949,7 +95115,7 @@ if (on) document.addEventListener("keydown", this._tk, true); else document.remo
 },
 cancelar: function () {
 var a = this._a, b = B(); if (!a) return false;
-this._a = null; this._teclas(false); this._tirarRotulo();
+this._a = null; this._teclas(false); this._tirarRotulo(); if (global.BimEixo) global.BimEixo.esconderGuia();
 try { b.editarPreviaInst([]); } catch (e) {}
 status("Arraste cancelado.");
 return true;
@@ -94957,16 +95123,50 @@ return true;
 soltar: function (ev) {
 var a = this._a, b = B(); if (!a) return false;
 if (ev && ev.clientX != null) { a.ev = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: !!ev.shiftKey, altKey: !!ev.altKey }; this._calcular(); }
-this._a = null; this._teclas(false); this._tirarRotulo();
+this._a = null; this._teclas(false); this._tirarRotulo(); if (global.BimEixo) global.BimEixo.esconderGuia();
 try { b.editarPreviaInst([]); } catch (e) {}
 if (len(a.d) < 1e-4) { status("Nada foi movido."); return true; }
-var r = arrastar(a.E, this._aval(), a.alvos, a.d, { ponta: a.ponta });
-var info = { alvos: a.alvos, d: a.d, ponta: a.ponta, x: a.ev ? a.ev.clientX : 200, y: a.ev ? a.ev.clientY : 200 };
-if (r.ok) { this.aplicar(r.ops, r.avisos, info); return true; }
-if (r.conflitos && r.conflitos.length) { this.painel(r, info); return true; }
-if (r.confirmar) { this.painel(r, info); return true; }
+var info = { alvos: a.alvos, d: a.d, ponta: a.ponta, x: a.ev ? a.ev.clientX : 200, y: a.ev ? a.ev.clientY : 200 }, self = this;
+this._resolver(a.E, a.alvos, a.d, { ponta: a.ponta }, info, function (r) {
+if (r.ok) { self.aplicar(r.ops, r.avisos, info); return; }
+if (r.conflitos && r.conflitos.length) { self.painel(r, info); return; }
+if (r.confirmar) { self.painel(r, info); return; }
 status("Arrastar: " + r.erro);
+});
 return true;
+},
+_regEscolha: null,
+_regVale: function () { var m = this._regEscolha; if (m && Date.now() - m.t < 2500) { m.t = Date.now(); return m.v; } return null; },
+_resolver: function (E, alvos, d, opts, info, cont) {
+var regs = opts && opts.ponta ? [] : registrosAfetados(E, alvos), self = this;
+if (!regs.length) { cont(arrastar(E, this._aval(), alvos, d, opts)); return; }
+function com(esc) {
+self._regEscolha = { v: esc, t: Date.now() };
+var o = {}; Object.keys(opts || {}).forEach(function (k) { o[k] = opts[k]; }); o.registro = esc;
+cont(arrastarComRegistro(E, self._aval(), alvos, d, o));
+}
+var v = this._regVale(); if (v) { com(v); return; }
+this._perguntarRegistro(regs, info && info.x, info && info.y, function (esc) { if (!esc) { status("Cancelado: nada mudou."); return; } com(esc); });
+},
+_perguntarRegistro: function (regs, x, y, cb) {
+this._fecharPerguntaReg();
+var self = this, w = document.createElement("div"), nomes = regs.map(function (g) { return g.nome + (g.id ? " " + g.id : ""); }).join(", ");
+w.className = "bim-inst-arr-registro"; w.setAttribute("role", "dialog"); w.setAttribute("data-bim", "registro-pergunta");
+w.style.cssText = "position:fixed;z-index:63;left:50%;bottom:64px;transform:translateX(-50%);max-width:560px;background:#fff;border:2px solid #0b3b5c;border-radius:8px;padding:10px 12px;font:13px/1.35 sans-serif;color:#222;box-shadow:0 4px 18px rgba(0,0,0,.3)";
+w.innerHTML = '<div style="font-weight:700;margin-bottom:6px" data-reg-texto>O trecho tem registro (' + nomes.replace(/[<>&]/g, "") + '). Mover o registro junto?</div>' +
+'<div style="color:#555;font-size:12px;margin-bottom:8px">Junto: o registro anda com o tubo. No lugar: o registro fica e o tubo se religa nas faces dele, com as conexões.</div>' +
+'<div style="display:flex;flex-wrap:wrap;gap:6px"><button type="button" class="btn sm" data-reg-op="junto">Mover junto</button><button type="button" class="btn sm" data-reg-op="lugar">Deixar no lugar</button><button type="button" class="btn sm" data-reg-op="cancelar">Cancelar</button></div>';
+document.body.appendChild(w); this._perguntaReg = w;
+function fim(esc) { self._fecharPerguntaReg(); cb(esc); }
+w.addEventListener("click", function (e) { var bt = e.target && e.target.closest ? e.target.closest("[data-reg-op]") : null; if (!bt) return; var k = bt.getAttribute("data-reg-op"); fim(k === "junto" || k === "lugar" ? k : null); });
+this._kReg = function (e) { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); fim(null); } };
+document.addEventListener("keydown", this._kReg, true);
+status("O trecho tem registro (" + nomes + "): mover junto, deixar no lugar ou cancelar?");
+},
+_fecharPerguntaReg: function () {
+if (this._perguntaReg && this._perguntaReg.parentNode) this._perguntaReg.parentNode.removeChild(this._perguntaReg);
+this._perguntaReg = null;
+if (this._kReg) { document.removeEventListener("keydown", this._kReg, true); this._kReg = null; }
 },
 aplicar: function (ops, avisos, info) {
 var b = B(); if (!ops || !ops.length) { status("Nada mudou."); return false; }
@@ -95037,6 +95237,25 @@ function mv(e) { self.mover(e); }
 function up(e) { document.removeEventListener("pointermove", mv, true); document.removeEventListener("pointerup", up, true); self.soltar(e); }
 document.addEventListener("pointermove", mv, true); document.addEventListener("pointerup", up, true);
 return true;
+},
+moverDelta: function (uids, d) {
+var b = B(), U = global.BimInstUI, E = this._est(); if (!b || !U || !E) return { ok: false, erro: "Sem editor." };
+var alvos = arr(uids).filter(function (u) { return /^edit:/.test(u) && !/^edit:ac\d/.test(u) && U.ehInst(u); });
+if (!alvos.length) return { ok: false, erro: "Nada para andar." };
+var self = this, dd = { x: d.x, y: d.y, z: d.z }, regs = registrosAfetados(E, alvos), r;
+if (regs.length) {
+var v = this._regVale();
+if (!v) {
+this._perguntarRegistro(regs, 200, 200, function (esc) { if (!esc) { status("Cancelado: nada mudou."); return; } self._regEscolha = { v: esc, t: Date.now() }; self.moverDelta(uids, d); });
+return { ok: false, erro: "o trecho tem registro: responda à pergunta na tela (mover junto, deixar no lugar ou cancelar)." };
+}
+r = arrastarComRegistro(E, this._aval(), alvos, dd, { ponta: null, registro: v });
+} else r = arrastar(E, this._aval(), alvos, dd, { ponta: null });
+if (!r.ok) return { ok: false, erro: (r.conflitos && r.conflitos.length) || r.confirmar ? "O tubo pede decisão (conflito ou ligação): use o arraste." : (r.erro || "Não deu para mover o tubo.") };
+if (!r.ops || !r.ops.length) return { ok: false, erro: "Nada mudou." };
+var ok = b.editarLote({ op: "lote", id: "hid-seta-" + Date.now() + "-" + Math.random().toString(36).slice(2, 5), origem: "hidarrastar", ops: JSON.parse(JSON.stringify(r.ops)) });
+if (ok) { try { b.selecionar(alvos, "trocar"); } catch (e) {} }
+return ok ? { ok: true } : { ok: false, erro: "Não foi possível gravar." };
 },
 arrastando: function () { return !!this._a; }
 };
@@ -95229,6 +95448,15 @@ if (I.fixo) return { ok: false, erro: "Elemento fixado: use Desafixar antes." };
 var par = acharCaixa(estado, paredeId); if (!ehParedeReta(par)) return { ok: false, erro: "Parede não encontrada." };
 var v = validar(estado, avaliar, id, paredeId, tVao); if (!v.ok) return v;
 return { ok: true, op: opMover(par, id, tVao - I.desl), t: r6(tVao - I.desl), tVao: r6(tVao), paredeId: par.id };
+}
+function moverPorDelta(estado, avaliar, id, dx, dz) {
+var I = info(estado, avaliar, id); if (!I) return { ok: false, erro: "Não é uma abertura hospedada em parede reta." };
+if (I.fixo) return { ok: false, erro: "Elemento fixado: use Desafixar antes." };
+var u = eixoU(I.parede.rotY), dt = num(dx, 0) * u.x + num(dz, 0) * u.z;
+if (Math.abs(dt) < 1e-6) return { ok: true, nada: true };
+var r = posicionar(estado, avaliar, id, I.parede.id, I.t + I.desl + dt);
+if (!r.ok || !r.op) return { ok: false, erro: r.erro || "Não deu para aplicar." };
+return { ok: true, op: r.op, t: r.t };
 }
 function lerCota(s) {
 var t = String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, "");
@@ -95441,7 +95669,7 @@ return { desl: r6(kk), dx: r6(nW.x * kk), dz: r6(nW.z * kk), atual: r6(atual) };
 var BimVaoArr = {
 VERSAO: 1, naPlanta: naPlanta,
 cotasParede: cotasParede, opDaCotaParede: opDaCotaParede, moverParede: moverParede, deslocPorCotaPermanente: deslocPorCotaPermanente, aberturasRuins: aberturasRuins, MODOS: MODOS, ROT_MODO: ROT_MODO,
-info: info, referencias: referencias, cotas: cotas, validar: validar, posicionar: posicionar,
+info: info, referencias: referencias, cotas: cotas, validar: validar, posicionar: posicionar, moverPorDelta: moverPorDelta,
 opDaCota: opDaCota, opPeitoril: opPeitoril, arrastar: arrastar, ligadas: ligadas, lerCota: lerCota, fmt: fmt
 };
 if (typeof document !== "undefined") {
@@ -95946,6 +96174,13 @@ this.atualizar();
 if (ok) { try { b.selecionar(["edit:" + novo], "trocar"); } catch (e) {} }
 status(ok ? "Abertura copiada" + (r.trocou ? " para a parede " + r.paredeId : "") + " (a original fica; Ctrl+Z desfaz)." : "Não foi possível copiar a abertura.");
 return true;
+},
+moverDelta: function (uid, dx, dz) {
+var b = B(), E = this._est(), id = String(uid || "").slice(5); if (!b || !E) return { ok: false, erro: "Sem editor." };
+var r = moverPorDelta(E, this._aval(), id, dx, dz);
+if (!r.ok || r.nada) return r;
+var ok = b.b2Op(r.op);
+return ok ? { ok: true, t: r.t } : { ok: false, erro: "Não foi possível gravar o mover." };
 },
 arrastando: function () { return !!this._a; },
 estado: function () {
@@ -148646,6 +148881,266 @@ global.BimSelecao = BimSelecao;
 if (typeof module !== "undefined" && module.exports) module.exports = BimSelecao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimeixo.js ==== */
+try {
+(function (global) {
+"use strict";
+var LIMIAR_PX = 8;
+var COR = { x: "#e03c31", y: "#2ea043", z: "#1f6feb" };
+var NOME = { x: "X (lado)", y: "Y (sobe/desce)", z: "Z (frente/trás)" };
+var ORDEM = ["x", "z", "y"];
+var UNIT = { x: { x: 1, y: 0, z: 0 }, y: { x: 0, y: 1, z: 0 }, z: { x: 0, y: 0, z: 1 } };
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function dot2(a, b) { return a.x * b.x + a.y * b.y; }
+function len2(a) { return Math.sqrt(dot2(a, a)); }
+function escolher(mov, vet) {
+if (!mov || !vet || len2(mov) < LIMIAR_PX) return null;
+var cand = [], m = len2(mov), ms = -1;
+["x", "z", "y"].forEach(function (k) {
+var v = vet[k]; if (!v || !fin(v.x) || !fin(v.y)) return;
+var L = len2(v); if (L < 1e-6) return;
+var c = Math.abs(dot2(mov, v)) / (m * L);
+cand.push({ k: k, c: c, L: L }); if (c > ms) ms = c;
+});
+var melhor = null, mL = -1;
+cand.forEach(function (q) { if (q.c >= ms - 0.05 && q.L > mL) { mL = q.L; melhor = q.k; } });
+return melhor;
+}
+function distancia(mov, v) {
+if (!mov || !v) return 0; var d = dot2(v, v); if (!(d > 1e-12)) return 0;
+return dot2(mov, v) / d;
+}
+function proximo(eixo) { var i = ORDEM.indexOf(eixo); return ORDEM[(i + 1) % ORDEM.length]; }
+function vetores(telaDe, P) {
+var o = telaDe(P.x, P.y, P.z); if (!o) return null;
+var H = 0.05;
+function d(ax) { var q = telaDe(P.x + ax.x * H, P.y + ax.y * H, P.z + ax.z * H); return q ? { x: (q.x - o.x) / H, y: (q.y - o.y) / H } : null; }
+return { x: d(UNIT.x), y: d(UNIT.y), z: d(UNIT.z) };
+}
+function travar(d, eixo) {
+var u = UNIT[eixo]; if (!u || !d) return { x: 0, y: 0, z: 0 };
+var t = d.x * u.x + d.y * u.y + d.z * u.z;
+return { x: u.x * t, y: u.y * t, z: u.z * t };
+}
+var gEl = null;
+function esconderGuia() { if (gEl) gEl.style.display = "none"; }
+function mostrarGuia(eixo, de, ate, metros) {
+var B = global.BIM, doc = global.document; if (!doc || !B || !B.telaDe || !COR[eixo]) return;
+var p1 = B.telaDe(de.x, de.y, de.z), p2 = B.telaDe(ate.x, ate.y, ate.z); if (!p1 || !p2) return;
+if (!gEl) {
+gEl = doc.createElementNS("http://www.w3.org/2000/svg", "svg"); gEl.setAttribute("data-bim", "eixo-guia");
+gEl.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:62;overflow:visible";
+gEl.innerHTML = '<line stroke-width="3" stroke-linecap="round"></line><circle r="4"></circle><text font-size="12" font-weight="700" font-family="sans-serif"></text>';
+doc.body.appendChild(gEl);
+}
+var ln = gEl.childNodes[0], c = gEl.childNodes[1], tx = gEl.childNodes[2];
+ln.setAttribute("x1", p1.x); ln.setAttribute("y1", p1.y); ln.setAttribute("x2", p2.x); ln.setAttribute("y2", p2.y); ln.setAttribute("stroke", COR[eixo]);
+c.setAttribute("cx", p1.x); c.setAttribute("cy", p1.y); c.setAttribute("fill", COR[eixo]);
+tx.setAttribute("x", p2.x + 8); tx.setAttribute("y", p2.y - 8); tx.setAttribute("fill", COR[eixo]);
+tx.textContent = eixo.toUpperCase() + " " + (Math.round(Math.abs(metros) * 1000) / 10) + " cm";
+gEl.setAttribute("data-eixo", eixo); gEl.setAttribute("data-m", String(Math.round(metros * 10000) / 10000));
+gEl.style.display = "block";
+}
+global.BimEixo = { LIMIAR_PX: LIMIAR_PX, COR: COR, NOME: NOME, ORDEM: ORDEM, UNIT: UNIT, escolher: escolher, distancia: distancia, proximo: proximo, vetores: vetores, travar: travar, mostrarGuia: mostrarGuia, esconderGuia: esconderGuia };
+if (typeof module !== "undefined" && module.exports) module.exports = global.BimEixo;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimsetas.js ==== */
+try {
+(function (global) {
+"use strict";
+var CFG = {
+SERIE: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5],
+pxBase: 5,
+pxFino: 1,
+fatorShift: 10,
+minM: 0.001,
+janelaMs: 600
+};
+var TECLAS = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, PageUp: 1, PageDown: 1 };
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function r6(v) { return Math.round(v * 1e6) / 1e6; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function redondo(m) {
+var s = CFG.SERIE, melhor = s[0], dm = Infinity;
+if (!(m > 0)) return s[0];
+for (var i = 0; i < s.length; i++) { var d = Math.abs(Math.log(s[i] / m)); if (d < dm) { dm = d; melhor = s[i]; } }
+return melhor;
+}
+function passos(mPorPx) {
+var mp = fin(mPorPx) && mPorPx > 0 ? mPorPx : 0.01;
+var base = redondo(mp * CFG.pxBase), fino = Math.min(base, Math.max(CFG.minM, redondo(mp * CFG.pxFino)));
+return { base: base, fino: fino, grande: r6(base * CFG.fatorShift) };
+}
+function num2(v) { var t = String(Math.round(v * 100) / 100); return t.replace(".", ","); }
+function fmtPasso(m) {
+if (m < 0.01 - 1e-9) return num2(m * 1000) + " mm";
+if (m < 1 - 1e-9) return num2(m * 100) + " cm";
+return num2(m) + " m";
+}
+function textoPassos(p) { return "Seta: " + fmtPasso(p.base) + " (Ctrl: " + fmtPasso(p.fino) + " · Shift: " + fmtPasso(p.grande) + ")"; }
+function eixoMaisProximo(v) {
+if (!v || !fin(v.x) || !fin(v.z) || (Math.abs(v.x) < 1e-9 && Math.abs(v.z) < 1e-9)) return null;
+return Math.abs(v.x) >= Math.abs(v.z) ? { x: v.x < 0 ? -1 : 1, z: 0 } : { x: 0, z: v.z < 0 ? -1 : 1 };
+}
+var TELA = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+function direcao(ctx, tecla) {
+if (tecla === "PageUp") return { x: 0, y: 1, z: 0 };
+if (tecla === "PageDown") return { x: 0, y: -1, z: 0 };
+var s = TELA[tecla]; if (!s) return { erro: "Tecla sem direção." };
+if (ctx.vista === "3d") {
+var f = eixoMaisProximo(ctx.forward); if (!f) return { erro: "Não achei a direção da câmera." };
+var r = { x: -f.z, z: f.x };
+var k = tecla === "ArrowUp" ? [1, 0] : tecla === "ArrowDown" ? [-1, 0] : tecla === "ArrowRight" ? [0, 1] : [0, -1];
+return { x: f.x * k[0] + r.x * k[1], y: 0, z: f.z * k[0] + r.z * k[1] };
+}
+if (ctx.vista === "corte") {
+if (s[0] === 0) return { x: 0, y: s[1] < 0 ? 1 : -1, z: 0 };
+var al = ctx.along && fin(ctx.along.x) && fin(ctx.along.z) ? eixoUnit(ctx.along) : null;
+if (!al) return { erro: "Nesta vista as setas ← → não têm o plano do corte: use ↑ ↓ ou a planta." };
+var sg = ctx.ctm && fin(ctx.ctm.a) && ctx.ctm.a < 0 ? -1 : 1;
+return { x: al.x * s[0] * sg, y: 0, z: al.z * s[0] * sg };
+}
+var m = ctx.ctm || { a: 1, b: 0, c: 0, d: 1 }, det = m.a * m.d - m.b * m.c;
+if (!fin(det) || Math.abs(det) < 1e-12) return { erro: "Vista sem escala." };
+var px = (m.d * s[0] - m.c * s[1]) / det, pz = (-m.b * s[0] + m.a * s[1]) / det, q = eixoMaisProximo({ x: px, z: pz });
+return q ? { x: q.x, y: 0, z: q.z } : { erro: "Vista sem escala." };
+}
+function eixoUnit(v) { var L = Math.sqrt(v.x * v.x + v.z * v.z); return L > 1e-12 ? { x: v.x / L, z: v.z / L } : null; }
+var ult = null;
+function reiniciar() { ult = null; }
+function chaveDe(tecla, uids, ev, ctx) {
+return [ctx.vista, tecla, ev.ctrlKey || ev.metaKey ? "c" : "", ev.shiftKey ? "s" : "", uids.slice().sort().join(",")].join("|");
+}
+function moverGrupos(G, d, amb) {
+var falhas = [], nada = false, movidos = 0, ids;
+var h = Math.abs(d.x) + Math.abs(d.z) > 1e-9, v = Math.abs(d.y) > 1e-9;
+if (G.editor.length) {
+ids = G.editor.concat(G.vao);
+if (h) { var r = amb.moverEditor(d.x, d.z); if (r && r.ok) movidos += ids.length; else falhas.push((r && r.erro) || "O editor recusou o mover."); }
+if (v && (!h || movidos)) { var e = amb.elevar(ids, d.y); if (e && e.ok) { if (!h) movidos += ids.length; } else falhas.push((e && e.erro) || "O editor recusou o subir/descer."); }
+} else if (G.vao.length) {
+if (h) G.vao.forEach(function (u) { var r2 = amb.moverVao(u, d.x, d.z); if (r2 && r2.ok && !r2.nada) movidos++; else if (r2 && r2.ok) nada = true; else falhas.push((r2 && r2.erro) || "A abertura não pôde andar."); });
+if (v) { var e2 = amb.elevar(G.vao, d.y); if (e2 && e2.ok) movidos += G.vao.length; else falhas.push((e2 && e2.erro) || "A abertura não pôde subir/descer."); }
+}
+if (G.inst.length) {
+var r3 = amb.moverInst(G.inst, d);
+if (r3 && r3.ok) movidos += G.inst.length; else falhas.push((r3 && r3.erro) || "O tubo não pôde andar.");
+}
+return { movidos: movidos, falhas: falhas, nada: nada };
+}
+function executar(ev, amb) {
+var tecla = ev && ev.key; if (!TECLAS[tecla] || ev.altKey) return false;
+var uids = arr(amb.uids()); if (!uids.length) { reiniciar(); return false; }
+var ctx = amb.contexto(); if (!ctx || ctx.ocupado) return false;
+var G = { editor: [], vao: [], inst: [], outro: [] };
+uids.forEach(function (u) { var t = amb.tipo(u); (G[t] || G.outro).push(u); });
+var P = passos(ctx.mPorPx), pt = textoPassos(P);
+if (!G.editor.length && !G.vao.length && !G.inst.length) { amb.status(pt + " — esta peça não se move pelas setas (a peça do IFC importado não tem op de mover)."); return true; }
+var fix = uids.filter(function (u) { return amb.fixo(u); });
+if (fix.length) { reiniciar(); amb.status(pt + " — " + fix.length + " peça(s) fixada(s) não andam: use Desafixar antes."); return true; }
+var dir = direcao(ctx, tecla);
+if (dir.erro) { amb.status(pt + " — " + dir.erro); return true; }
+var passo = ev.ctrlKey || ev.metaKey ? P.fino : ev.shiftKey ? P.grande : P.base;
+var d = { x: r6(dir.x * passo), y: r6(dir.y * passo), z: r6(dir.z * passo) };
+var agora = amb.agora(), chave = chaveDe(tecla, uids, ev, ctx), h0 = amb.histTam();
+var agrupa = !!(ult && ult.chave === chave && agora - ult.t <= CFG.janelaMs && ult.h1 === h0 && h0 > ult.h0);
+var soma = agrupa ? { x: r6(ult.soma.x + d.x), y: r6(ult.soma.y + d.y), z: r6(ult.soma.z + d.z) } : d, hBase = agrupa ? ult.h0 : h0;
+if (agrupa) { while (amb.histTam() > hBase) { if (!amb.desfazer()) break; } }
+var res = moverGrupos(G, soma, amb);
+if (!res.movidos && agrupa && res.falhas.length) {
+moverGrupos(G, ult.soma, amb);
+ult.t = agora; ult.h1 = amb.histTam();
+amb.status(pt + " — " + res.falhas[0]);
+return true;
+}
+if (!res.movidos) { reiniciar(); amb.status(pt + " — " + (res.falhas[0] || (res.nada ? "A porta/janela anda só ao longo da parede: use a seta na direção dela." : "Nada andou."))); return true; }
+ult = { chave: chave, t: agora, soma: soma, h0: hBase, h1: amb.histTam() };
+var tot = Math.sqrt(soma.x * soma.x + soma.y * soma.y + soma.z * soma.z);
+amb.status(pt + " — movido " + fmtPasso(tot < 0.01 ? Math.max(tot, CFG.minM) : tot) + (G.outro.length ? " (" + G.outro.length + " peça(s) da seleção não andam pelas setas)" : "") + (res.falhas.length ? " · " + res.falhas[0] : "") + " (Ctrl+Z desfaz).");
+return true;
+}
+function B() { return global.BIM || null; }
+function estadoEd() { var b = B(), e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.estado : null; }
+function tela() { var d = global.document; return d && d.querySelector ? d.querySelector('.bim-tela[data-ativa="1"]') : null; }
+function vista2d() {
+var t = tela(), id = t ? t.getAttribute("data-vista") : null, D = global.Bim2D;
+return id && D && D.ehVista2d && D.ehVista2d(id) ? id : null;
+}
+var ambienteReal = {
+uids: function () { var b = B(), s = b && b.selecao ? b.selecao() : null; return (s && s.uids) || []; },
+agora: function () { return Date.now(); },
+histTam: function () { var b = B(), e = b && b.editarEstado ? b.editarEstado() : null; return e ? e.ops : 0; },
+desfazer: function () { var b = B(); return !!(b && b.desfazer && b.desfazer()); },
+status: function (m) {
+try { if (global.BimShell && global.BimShell.status) { global.BimShell.status(m); return; } } catch (e) {}
+try { var b = B(); if (b && b.dica) b.dica(m); } catch (e2) {}
+},
+contexto: function () {
+var b = B(), c3 = b && b.setasCtx ? b.setasCtx() : null; if (!c3) return null;
+var SL = global.BimSelecao;
+var id = vista2d(), ctx = { ocupado: !!c3.ocupado, vista: "3d", mPorPx: c3.mPorPx, forward: c3.forward };
+if (id) {
+var D = global.Bim2D, c = D && D._cache ? D._cache[id] : null, sv = c && (c.svg || (c.el && c.el.querySelector ? c.el.querySelector("svg") : null));
+var m = sv && sv.getScreenCTM ? sv.getScreenCTM() : null, def = D.def ? D.def(id) : null;
+if (!m || !(Math.abs(m.a) > 0)) return null;
+ctx.ctm = { a: m.a, b: m.b, c: m.c, d: m.d }; ctx.mPorPx = 1 / Math.abs(m.a);
+ctx.vista = def && def.tipo === "planta" ? "planta" : "corte";
+if (ctx.vista === "corte") {
+var ln = def && (def.corte || def.linha || (def.p6 && def.p6.linha)) || null;
+if (ln) {
+var A = ln.a || { x: ln.ax, z: ln.az }, Bp = ln.b || { x: ln.bx, z: ln.bz };
+if (A && Bp && fin(A.x) && fin(A.z) && fin(Bp.x) && fin(Bp.z)) ctx.along = { x: Bp.x - A.x, z: Bp.z - A.z };
+}
+}
+try { if (SL && SL.ferramenta2d && SL.ferramenta2d()) ctx.ocupado = true; } catch (eF) {}
+}
+return ctx;
+},
+tipo: function (u) {
+var b = B(); if (!/^edit:/.test(u)) return "outro";
+var V = global.BimVaoArr, I = global.BimInstArr, Pr = global.BimPrecisao, st = estadoEd();
+if (V && V.pode && V.pode(u)) return "vao";
+if (I && I.pode && I.pode(u)) return "inst";
+if (Pr && Pr.tipoNoEstado && st && Pr.tipoNoEstado(st, u.slice(5))) return "editor";
+return "outro";
+},
+fixo: function (u) {
+var Pr = global.BimPrecisao, st = estadoEd(); if (!/^edit:/.test(u) || !Pr || !Pr.fixado || !st) return false;
+return !!Pr.fixado(st, u.slice(5));
+},
+moverEditor: function (dx, dz) { var b = B(), p = b && b.precisao ? b.precisao() : null; if (!p || !p.mover) return { ok: false, erro: "Sem editor." }; return p.mover(dx, dz, null); },
+moverVao: function (u, dx, dz) { var V = global.BimVaoArr; return V && V.moverDelta ? V.moverDelta(u, dx, dz) : { ok: false, erro: "Sem o mover de abertura." }; },
+moverInst: function (uids, d) { var I = global.BimInstArr; return I && I.moverDelta ? I.moverDelta(uids, d) : { ok: false, erro: "Sem o mover de tubo." }; },
+elevar: function (ids, dy) {
+var b = B(); if (!b || !b.editarLote) return { ok: false, erro: "Sem editor." };
+var lim = ids.map(function (u) { return String(u).replace(/^edit:/, ""); });
+var ok = b.editarLote({ op: "lote", id: "seta" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), origem: "setas", pedido: "Subir/descer com as setas", ops: [{ op: "elevar", ids: lim, dy: r6(dy) }] });
+return ok ? { ok: true } : { ok: false, erro: "O editor recusou o subir/descer." };
+}
+};
+var DONOS = '[role="menu"],[role="listbox"],[role="tablist"],[role="slider"],[role="dialog"],[role="combobox"],dialog,[aria-modal="true"],.modal,.rv-doca-menu';
+function focoEhDeOutro(t) {
+if (!t) return false;
+if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return true;
+try { if (t.closest && t.closest(DONOS)) return true; } catch (e) {}
+try { var s = global.BimSelInst; if (s && s.menuAberto && s.menuAberto()) return true; } catch (e2) {}
+return false;
+}
+function aoTeclar(e) {
+if (!TECLAS[e.key] || e.defaultPrevented || e.isComposing || e.altKey) return;
+if (focoEhDeOutro(e.target)) return;
+var t = tela(); if (t && !(t.getClientRects && t.getClientRects().length)) return;
+var usou = false;
+try { usou = executar(e, ambienteReal); } catch (err) { usou = false; try { if (global.console) console.warn("[bimsetas]", err); } catch (x) {} }
+if (usou) { e.preventDefault(); e.stopPropagation(); }
+}
+if (global.addEventListener && global.document) global.addEventListener("keydown", aoTeclar, true);
+var BimSetas = { CFG: CFG, redondo: redondo, passos: passos, fmtPasso: fmtPasso, textoPassos: textoPassos, direcao: direcao, eixoMaisProximo: eixoMaisProximo, executar: executar, reiniciar: reiniciar, ambienteReal: ambienteReal, _aoTeclar: aoTeclar };
+global.BimSetas = BimSetas;
+if (typeof module !== "undefined" && module.exports) module.exports = BimSetas;
+})(typeof window !== "undefined" ? window : (typeof globalThis !== "undefined" ? globalThis : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimcontrole.js ==== */
 try {
 (function (global) {
@@ -149191,6 +149686,7 @@ tl.push(["Ctrl+Z / Ctrl+Y", "Desfazer / refazer (Ctrl+Shift+Z também refaz)"]);
 tl.push(["Enter", "Repete o último comando"]);
 tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
 tl.push(["Delete", "Apaga o que está selecionado, de qualquer tipo (um Ctrl+Z desfaz tudo; a peça do IFC importado fica oculta e marcada como removida, o arquivo não muda)"]);
+tl.push(["← → ↑ ↓", "Move o que está selecionado (qualquer peça): ~5 px da tela por toque, então mais zoom = passo menor; Ctrl = ajuste fino (~1 px, mínimo 1 mm); Shift = 10 vezes. No 3D anda pelo eixo mais próximo da câmera; PageUp / PageDown sobem e descem. Porta e janela andam só na parede. Toques seguidos viram um Ctrl+Z"]);
 tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a régua antes × depois)"]);
 tl.push(["?", "Abre esta tela de atalhos"]);
 out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,
@@ -149212,6 +149708,7 @@ out.push({ id: "mouse", titulo: "Mouse no BIM", cab: ["Ação", "O que faz"], li
 ["Duplo clique no vazio", "Enquadra tudo"],
 ["Clique esquerdo", "Seleciona"],
 ["Ctrl + clique", "Soma a peça à seleção (ou tira, se já estava)"],
+["Arrastar a peça (3D)", "Anda SEMPRE num eixo só: nos primeiros ~8 px o sistema escolhe o que mais se alinha com o mouse (lado X vermelho, frente/trás Z azul, sobe/desce Y verde) e trava até soltar. Uma linha colorida e a distância mostram o eixo. Shift (apertar) troca de eixo. O snap vale; porta e janela só correm na parede. Tubo com registro: pergunta se o registro vai junto."],
 ["Ctrl + arrastar a peça", "Copia: a cópia acompanha o mouse e a original fica (snap e distância digitada valem como no Mover; Esc cancela; um Ctrl+Z desfaz). Vale para parede, laje, pilar, viga, família, porta e janela; tubo e peça do telhado não se copiam arrastando (decisão: a peça do telhado vem da cobertura e o tubo solto quebraria as ligações)"]
 ] });
 var cl = [["Direcional esquerdo", "Desloca a vista · no passeio: anda"], ["Direcional direito", "Gira o modelo · no passeio: olha em volta"],

@@ -7137,6 +7137,31 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     S._hint(ok ? ops.length + (ops.length === 1 ? ' elemento apagado' : ' elementos apagados') + (nIfc ? ' (' + nIfc + ' do IFC importado: ficam ocultos e marcados como removidos; o arquivo não muda)' : '') + ' — Ctrl+Z desfaz' + (ops.length > 1 ? ' de uma vez' : '') + '.' + (nFix ? ' ' + nFix + ' fixado(s) ficou(aram): use Desafixar antes.' : '') : 'O editor recusou o apagar.');
     return true;
   };
+  /* SETAS MOVEM A SELEÇÃO (27/10/2026, js/bimsetas.js): o que o 3D sabe e a tela de 2D não — se o BIM está na tela, se há
+     ferramenta armada (as setas são dela), para onde a câmera olha (o eixo do modelo mais próximo: ↑ = para longe da câmera;
+     de cima, o "para cima" da tela) e quantos metros vale 1 px na distância da peça selecionada (perspectiva: pelo fov;
+     ortográfica: pelo zoom). Só leitura: nenhuma op é gravada aqui. */
+  S._setasCtx = function () {
+    if (!S || S !== Sm || !S.alive) return null;
+    var h = S.host || host, raiz = h && h.closest ? (h.closest('.bim-revit') || h) : h;
+    if (!raiz || !raiz.isConnected || !raiz.getClientRects().length) return null;
+    var r = { ocupado: !semFerramenta3d(), forward: null, mPorPx: null };
+    try {
+      var cam = S.camera, d = new THREE.Vector3(); cam.getWorldDirection(d);
+      var f = { x: d.x, z: d.z };
+      if (Math.abs(d.y) > 0.85) { var up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion); f = { x: up.x, z: up.z }; }
+      r.forward = f;
+      var box = new THREE.Box3(), n = 0;
+      selAtual().forEach(function (u) { var m = S.meshPorUid && S.meshPorUid[u]; if (m) { box.expandByObject(m); n++; } });
+      var hpx = (S.renderer && S.renderer.domElement && S.renderer.domElement.clientHeight) || 600;
+      if (cam.isPerspectiveCamera) {
+        var c = (n && !box.isEmpty()) ? box.getCenter(new THREE.Vector3()) : S.orbit.target.clone();
+        var prof = Math.max(0.05, c.sub(cam.position).dot(d));
+        r.mPorPx = 2 * prof * Math.tan(cam.fov * Math.PI / 360) / hpx;
+      } else r.mPorPx = (cam.top - cam.bottom) / (cam.zoom || 1) / hpx;
+    } catch (_) {}
+    return r;
+  };
   /* Esc limpa a seleção (e cancela o arrasto); Delete apaga a do editor. Na CAPTURA da JANELA: roda antes
      do Esc do desenho de precisão e do Esc de sempre (que fecharia o editor) — e só para a tecla quando a
      usou. Digitando num campo, ou com ferramenta armada, segue o caminho de sempre. */
@@ -18943,6 +18968,7 @@ window.BIM = {
   contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
   contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
   contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
+  setasCtx: function () { return (S && S._setasCtx) ? S._setasCtx() : null; },   /* js/bimsetas.js: contexto das setas (câmera, escala, ferramenta) */
   /* #85 (26/10/2026): a op do Modificar › Apagar para a peça do IFC importado (oculta + marcada como removida); o arquivo não muda */
   opsApagarIfc: function (uids) { return (S && S._opsApagarIfc) ? S._opsApagarIfc(uids || []) : []; },
   /* SELECIONAR TODAS AS INSTÂNCIAS (js/bimselinst.js): a peça sob o ponto da tela, o visível na vista 3D e o ocultar temporário */

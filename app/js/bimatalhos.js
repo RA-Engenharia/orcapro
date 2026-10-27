@@ -87,6 +87,7 @@
     tl.push(["Enter", "Repete o último comando"]);
     tl.push(["Esc", "Cancela a ferramenta ou limpa a seleção (no modo foco, sai do foco primeiro)"]);
     tl.push(["Delete", "Apaga o que está selecionado, de qualquer tipo (um Ctrl+Z desfaz tudo; a peça do IFC importado fica oculta e marcada como removida, o arquivo não muda)"]);   /* #85, 26/10/2026 */
+    tl.push(["← → ↑ ↓", "Move o que está selecionado (qualquer peça): ~5 px da tela por toque, então mais zoom = passo menor; Ctrl = ajuste fino (~1 px, mínimo 1 mm); Shift = 10 vezes. No 3D anda pelo eixo mais próximo da câmera; PageUp / PageDown sobem e descem. Porta e janela andam só na parede. Toques seguidos viram um Ctrl+Z"]);   /* 27/10/2026, js/bimsetas.js */
     tl.push(["Alt+1 … Alt+4", "Reforma (modelo com fases): Antes · Obra · Depois · Comparar (a régua antes × depois)"]);
     tl.push(["?", "Abre esta tela de atalhos"]);
     out.push({ id: "teclado", titulo: "Teclado no BIM", cab: ["Tecla", "O que faz"], linhas: tl,
@@ -113,6 +114,7 @@
       ["Duplo clique no vazio", "Enquadra tudo"],
       ["Clique esquerdo", "Seleciona"],
       ["Ctrl + clique", "Soma a peça à seleção (ou tira, se já estava)"],
+      ["Arrastar a peça (3D)", "Anda SEMPRE num eixo só: nos primeiros ~8 px o sistema escolhe o que mais se alinha com o mouse (lado X vermelho, frente/trás Z azul, sobe/desce Y verde) e trava até soltar. Uma linha colorida e a distância mostram o eixo. Shift (apertar) troca de eixo. O snap vale; porta e janela só correm na parede. Tubo com registro: pergunta se o registro vai junto."],
       ["Ctrl + arrastar a peça", "Copia: a cópia acompanha o mouse e a original fica (snap e distância digitada valem como no Mover; Esc cancela; um Ctrl+Z desfaz). Vale para parede, laje, pilar, viga, família, porta e janela; tubo e peça do telhado não se copiam arrastando (decisão: a peça do telhado vem da cobertura e o tubo solto quebraria as ligações)"]   /* #86, 26/10/2026 */
     ] });
 
