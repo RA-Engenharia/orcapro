@@ -78,7 +78,8 @@
     r.conjuntos = {}; CONJUNTOS.forEach(function (k) { r.conjuntos[k] = !o.conjuntos || o.conjuntos[k] !== false; });
     /* CADERNO DE INTERIORES (js/arqinteriores.js): fora da série padrão; `ambientes` = ids escolhidos (null = os que têm mobiliário ou marcenaria) */
     var oi = o.interiores && typeof o.interiores === "object" ? o.interiores : {};
-    r.interiores = { ativo: oi.ativo === true, ambientes: Array.isArray(oi.ambientes) ? oi.ambientes.map(String) : null, prefixo: (txt(oi.prefixo).trim() || "INT").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 12) || "INT" };
+    var fl = {}; Object.keys(oi.folhas && typeof oi.folhas === "object" ? oi.folhas : {}).forEach(function (kf) { fl[kf] = !!oi.folhas[kf]; });
+    r.interiores = { ativo: oi.ativo === true, ambientes: Array.isArray(oi.ambientes) ? oi.ambientes.map(String) : null, folhas: fl, prefixo: (txt(oi.prefixo).trim() || "INT").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 12) || "INT" };
     r.municipio = txt(o.municipio).trim();
     var L = o.limites && typeof o.limites === "object" ? o.limites : {};
     r.limites = { nome: txt(L.nome), ocupacaoMax: L.ocupacaoMax != null && L.ocupacaoMax !== "" && isFinite(+L.ocupacaoMax) ? +L.ocupacaoMax : null, permeavelMin: L.permeavelMin != null && L.permeavelMin !== "" && isFinite(+L.permeavelMin) ? +L.permeavelMin : null,
@@ -183,6 +184,11 @@
     if (def.tipo === "situacao") B.push({ titulo: "LEGENDA", itens: ["Linha traço-ponto: divisa do lote.", "Hachura verde: área permeável (solo natural).", "Cobertura vista de cima, edificação tracejada por baixo."] });
     if (def.tipo === "int-planta") B.push({ titulo: "SÍMBOLOS", itens: ["Marcador de vista: a letra é a vista e PR nn é a folha onde ela está.", "Linha tracejada: armário aéreo em projeção.", "Cotas de posição: da parede até a marcenaria, a partir do canto."] });
     if (def.tipo === "int-vistas") B.push({ titulo: "NOTAS DE MATERIAL", itens: ["Cada nota sai dos parâmetros de material da família do móvel.", "Texto em vermelho: dado que o modelo não traz; informar antes de emitir."] });
+    if (def.tipo === "int-cortes") B.push({ titulo: "CORTES 1:20", itens: ["Seção da peça no plano do marcador de corte; a parede fica ao fundo.", "Cotas verticais: todas as alturas internas. Horizontais: profundidade e espessuras.", "Espessura de chapa: a da família; vermelho = informar."] });
+    if (def.tipo === "int-ele-planta" || def.tipo === "int-ele-vistas") B.push({ titulo: "ELÉTRICO", itens: ["Pontos do modelo (tomadas, interruptores e caixas); altura do piso ao centro da caixa.", "Cotas de posição de eixo a eixo. Vistas: cota de altura de cada ponto."] });
+    if (def.tipo === "int-luz") B.push({ titulo: "LUMINOTÉCNICO", itens: ["Luminárias, fitas e interruptores do modelo em vermelho.", "A letra junto do ponto é o circuito ou o comando; cotas de eixo a eixo."] });
+    if (def.tipo === "int-pedras") B.push({ titulo: "PEDRAS", itens: ["Bancadas de pedra do modelo; o material sai da família (vermelho = informar)."] });
+    if (def.tipo === "int-imagens") B.push({ titulo: "IMAGENS", itens: ["Espaço reservado para os renders do ambiente."] });
     if (def.tipo === "humanizada") B.push({ titulo: "APRESENTAÇÃO", itens: ["Planta ilustrativa para apresentação ao cliente; não substitui as pranchas executivas."] });
     B.push({ titulo: "NOTAS GERAIS", numerar: true, itens: NOTAS_GERAIS });
     var pend = arr(c.avisosFolha[def.id]).concat(def.tipo === "situacao" ? arr(c.idx.avisos) : []);
@@ -307,7 +313,7 @@
       itensInt.forEach(function (it, i) {
         var conf = DS().conferir(it.D, janI);
         verificacao.textoTexto += conf.textoTexto.length; verificacao.textoLinha += conf.textoLinha.length; verificacao.foraJanela += conf.foraJanela.length; verificacao.total += conf.total;
-        verificacao.porFolha.push({ numero: it.def.numero, textoTexto: conf.textoTexto, textoLinha: conf.textoLinha, foraJanela: conf.foraJanela });
+        verificacao.porFolha.push({ numero: it.def.numero, textoTexto: conf.textoTexto, textoLinha: conf.textoLinha, foraJanela: conf.foraJanela, detalhe: conf.detalhe || [] });
         cI.avisosFolha[it.def.id] = avisos.filter(function (a) { return a.indexOf(it.def.numero) === 0; });
         var svgI = montarFolha(cI, it.def, it.D, it.res, prI, prI.folhas[i], it.def.rotulo, geoI, E);
         var oI = { id: it.def.id, tipo: it.def.tipo, rotulo: it.def.rotulo, numero: it.def.numero, titulo: it.def.titulo, formato: "A3", escala: it.escala, svg: svgI, ambienteId: it.def.ambienteId, carimboFolha: it.def.carimboFolha };

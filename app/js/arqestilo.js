@@ -325,16 +325,16 @@
   /* ------------------------------------------------------------ MARCADOR DE VISTA (A) E DE CORTE (B) — chave `marcador_de_vista` (fase 2)
    * (x, y) = o meio da base do triângulo; o ápice aponta para onde se olha (ang em graus: 0 = para cima no papel, horário). A letra fica
    * dentro do triângulo (Verdana Bold 4,13), a barra cheia (0,45 mm) corre sob a base, e "PR nn" (nº da prancha da vista) sai abaixo. */
-  ES.marcadorVista = function (D, x, y, letra, prancha, ang, tipo) {
+  ES.marcadorVista = function (D, x, y, letra, prancha, ang, tipo, opc) {
     var M = ES.MARCADOR_VISTA, T = ES.TEXTOS, tp = tipo === "B" ? "B" : "A", m = M[tp], a = (ang || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
     function P(u, v) { return [x + u * c - v * s, y + u * s + v * c]; }   /* u ao longo da base (para a direita), v para baixo no marcador sem giro (o ápice está em v < 0) */
     var tri = [P(-m.base / 2, 0), P(m.base / 2, 0), P(0, -m.altura)];
     D.poli(tri, "ARQ-SIMBOLO", true);
-    var b0 = m.barra_da_base, e = ES.PENAS.barra_marcador_vista, Lb = tp === "A" ? m.barra : m.barra[0];
+    var b0 = m.barra_da_base, e = ES.PENAS.barra_marcador_vista, Lb = tp === "A" ? m.barra : (opc && opc.barra >= m.barra[0] && opc.barra <= m.barra[1] ? opc.barra : m.barra[0]);   /* corte: a barra tem de 30 a 36 mm; o gerador escolhe pela profundidade da peça */
     var u0 = tp === "A" ? -Lb / 2 : -m.base / 2, u1 = u0 + Lb;
     D.cheio([P(u0, b0), P(u1, b0), P(u1, b0 + e), P(u0, b0 + e)], ES.CORES.preto);
     var lp = P(0, -(tp === "A" ? m.letra_baseline : m.altura * 0.2));
-    D.texto(lp[0], lp[1], ES.maiusc(letra), T.marcador_letra, { al: "C", rot: ang || 0, negrito: true, attr: ' data-marcador="' + esc(letra) + '"' });
+    D.texto(lp[0], lp[1], ES.maiusc(letra), tp === "A" ? T.marcador_letra : T.marcador_prancha, { al: "C", rot: ang || 0, negrito: true, attr: ' data-marcador="' + esc(letra) + '"' });
     if (prancha != null && txt(prancha) !== "") {
       var tx = "PR " + txt(prancha), q = tp === "A" ? P(0, b0 + e + m.prancha_abaixo_da_barra) : P(u0 + Lb / 2, b0 + e + m.prancha_ao_lado_da_barra + T.marcador_prancha * ES.ALTURA_MAIUSCULA);
       D.texto(q[0], q[1], tx, T.marcador_prancha, { al: "C", rot: ang || 0 });

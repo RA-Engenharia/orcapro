@@ -375,6 +375,8 @@
           if (horiz) { box = [mid[0] - tw / 2 - 0.3, A0[1] - sobe - h * 0.76 - 0.2, mid[0] + tw / 2 + 0.3, A0[1] + 0.5]; tira = [A0[0] + 0.6, A0[1] - 0.3, A1[0] - 0.6, A0[1] + 0.3]; }
           else { box = [A0[0] - lado - h * 0.76 - 0.2, mid[1] - tw / 2 - 0.3, A0[0] + 0.5, mid[1] + tw / 2 + 0.3]; tira = [A0[0] - 0.3, A1[1] + 0.6, A0[0] + 0.3, A0[1] - 0.6]; }
           if (!D.livre(box, 0.2)) continue;
+          /* a linha da cota nunca atravessa um texto já escrito (rótulo, marcador, número de outra cota): com `segundo` ela só cruza traço de móvel */
+          if (arr(D.tb).some(function (tb) { return cruzaCaixa(tb, tira, 0.1); })) continue;
           /* a outra cota do mesmo ambiente (ainda não desenhada): nem o número de uma sobre a linha da outra */
           var choca = feitasAmb.some(function (f) { return cruzaCaixa(f.tira, box, 0.2) || cruzaCaixa(tira, f.box, 0.2); });
           if (choca) continue;

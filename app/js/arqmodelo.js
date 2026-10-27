@@ -215,7 +215,7 @@
     });
 
     /* ---- famílias: vãos, móveis, luminárias */
-    out.vaos = []; out.moveis = []; out.luminarias = [];
+    out.vaos = []; out.moveis = []; out.luminarias = []; out.eletricos = [];
     var parPorId = {}; out.paredes.forEach(function (w) { parPorId[w.id] = w; });
     arr(est.familias).forEach(function (f) {
       if (!f || f.id == null) return;
@@ -234,7 +234,22 @@
         return;
       }
       var pts = pegadaFamilia(av, f);
-      if (cat === "luminaria") { out.luminarias.push({ id: String(f.id), x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), nome: txt(f.famId), status: st, pav: pavDe(pavs, num(f.y, 0)) }); return; }
+      if (cat === "luminaria") {
+        /* INTERIORES (luminotécnico): a família, o tipo, o tipo de luz e o circuito/comando que a instância traz */
+        var regL = null; try { regL = FR() && FR().obter ? FR().obter(f.famId) : null; } catch (eL) { regL = null; }
+        var vl = (av && av.valores) || {}, tpL = null; arr(regL && regL.tipos).forEach(function (tq) { if (tq && tq.id === f.tipoId) tpL = tq; });
+        out.luminarias.push({ id: String(f.id), x: num(f.x, 0), z: num(f.z, 0), y: num(f.y, 0), nome: txt(f.famId), status: st, pav: pavDe(pavs, num(f.y, 0)), famId: f.famId, tipoId: txt(f.tipoId), nomeFam: nomeFam(f.famId, av), nomeTipo: tpL ? txt(tpL.nome) : "",
+          kind: txt(regL && regL.luz) || (/^ra-ilum-/.test(txt(f.famId)) ? txt(f.famId).replace(/^ra-ilum-/, "").replace(/-/g, "_") : (/spot/.test(txt(vl.Modelo)) ? "spot_embutir" : "plafon")), modelo: txt(vl.Modelo), rotY: num(f.rotY, 0), alt: isFinite(+vl.Altura_montagem) ? +vl.Altura_montagem : null, comando: txt(vl.Comando), circuito: txt(vl.Circuito), circuitoQuadro: txt(vl.Circuito_quadro),
+          comprimento: isFinite(+vl.Comprimento) ? +vl.Comprimento : null, largura: isFinite(+vl.Largura) ? +vl.Largura : (isFinite(+vl.Lado) ? +vl.Lado : null) });
+        return;
+      }
+      if (cat === "dispositivo_eletrico") {
+        /* INTERIORES (elétrico): tomadas e interruptores do modelo, com a Altura de montagem (do piso ao centro da caixa) que a família traz */
+        var vd = (av && av.valores) || {}, altD = isFinite(+vd.Altura_montagem) ? +vd.Altura_montagem : null;
+        out.eletricos.push({ id: String(f.id), famId: f.famId, tipoId: txt(f.tipoId), tipo: /interruptor/.test(txt(f.famId)) ? "interruptor" : (/tomada/.test(txt(f.famId)) ? "tomada" : "dispositivo"), nome: nomeFam(f.famId, av),
+          x: num(f.x, 0), z: num(f.z, 0), alt: altD, rotY: num(f.rotY, 0), modulos: num(vd.Modulos, 1), sub: txt(vd.Tipo_interruptor || (vd.Corrente_A ? "2P+T " + vd.Corrente_A + " A" : "")), comandos: txt(vd.Comandos), status: st, pav: pavDe(pavs, num(f.y, 0)), origem: "familia" });
+        return;
+      }
       if (cat === "pilar" || cat === "viga" || cat === "dispositivo_eletrico" || cat === "equipamento_eletrico") return;
       if (!pts) return;
       var matsM = []; arr(av && av.solidos).forEach(function (so) { var mm = txt(so && so.material); if (mm && matsM.indexOf(mm) < 0 && matsM.length < 8) matsM.push(mm); });
@@ -293,6 +308,17 @@
     out.tubosAparentes = arr(est.instalacoes && est.instalacoes.trechos).filter(function (t) {
       return t && t.p1 && t.p2 && /^(tel-calha|AP-AT-|AF-ALIM-|VE-PRIM-|bar-caixa1-(extravasor|limpeza))/.test(String(t.id)) && Math.max(num(t.p1.y, 0), num(t.p2.y, 0)) > 0.05;
     }).map(function (t) { return { id: String(t.id), sistema: txt(t.sistema), dn: num(t.dn, 50), a: [num(t.p1.x, 0), num(t.p1.y, 0), num(t.p1.z, 0)], b: [num(t.p2.x, 0), num(t.p2.y, 0), num(t.p2.z, 0)] }; });
+
+    /* caixas elétricas das instalações (caixa 4×2 e 4×4 da parede) que NÃO coincidem com um dispositivo já lido (a 6 cm): ponto do modelo sem a família do dispositivo */
+    arr(est.instalacoes && est.instalacoes.pecas).forEach(function (pc) {
+      if (!pc || pc.sistema !== "eletrica" || !/^caixa_4x[24]$/.test(txt(pc.peca))) return;
+      var px = num(pc.x, NaN), pz = num(pc.z, NaN); if (!isFinite(px) || !isFinite(pz)) return;
+      if (out.eletricos.some(function (e) { return Math.abs(e.x - px) < 0.06 && Math.abs(e.z - pz) < 0.06; })) return;
+      var altC = isFinite(+pc.alturaPiso) && pc.alturaPiso !== null ? +pc.alturaPiso : num(pc.y, NaN);
+      out.eletricos.push({ id: String(pc.id), famId: "", tipoId: "", tipo: "caixa", nome: txt(pc.peca) === "caixa_4x4" ? "Caixa 4x4" : "Caixa 4x2", x: px, z: pz, alt: isFinite(altC) ? altC : null, rotY: num(pc.rotY, 0), modulos: 1, sub: "", comandos: "", status: "novo", pav: pavDe(pavs, num(pc.y, 0)), origem: "instalacao" });
+    });
+    /* sancas dos forros (o recuo e a profundidade vêm do forro de drywall): o detalhe 1:10 do luminotécnico só existe quando há sanca */
+    out.sancas = arr(est.sancas).filter(function (sa) { return sa && sa.ok; }).map(function (sa) { return { id: String(sa.id), forro: String(sa.forro), recuo: num(sa.recuoEf, num(sa.recuo, 0)), profundidade: num(sa.profundidade, 0), comprimento: num(sa.comprimento, 0), luz: !!sa.luz }; });
 
     /* ---- terreno */
     var T = est.terreno || {}, dv = arr(T.divisas).filter(function (d) { return d && d.ok !== false && arr(d.contorno).length >= 3; })[0] || null;
