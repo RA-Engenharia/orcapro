@@ -15064,6 +15064,11 @@ if (e.key === "Tab") { e.preventDefault(); var vis = [inComp, inAng].filter(func
 if (e.key === "Enter") { e.preventDefault(); confirmarDigitado(); return; }
 if (e.key === "Escape") { e.preventDefault(); caixaEsconder(); cancelarPasso(); }
 });
+(function () {
+var PC = global.BimPintarCat; if (!PC) return;
+try { PC.registrar(); } catch (eP) {}
+PC.host = { escolher: function (t) { pr.p4.material = t.material; pr.p4.codigo = t.codigo || ""; pintarOpcoes(); hint("Pintar: " + t.material + (t.codigo ? " (composição " + t.codigo + ")" : t.aOrcar ? " (a orçar)" : "") + " — clique na face."); } };
+})();
 function pintarOpcoes() {
 var f = ferramenta();
 if (!ativo() || !f) { opcoes.style.display = "none"; return; }
@@ -15081,9 +15086,11 @@ if (f === "deslocar") h += '<label>Distância <input data-bpo="desl" inputmode="
 if (f === "juntas") h += '<label>Junta <select data-bpo="juntaModo">' + MODOS_JUNTA.map(function (m) { return '<option value="' + m[0] + '"' + (q.juntaModo === m[0] ? " selected" : "") + '>' + m[1] + '</option>'; }).join("") + '</select></label>';
 if (f === "escala") h += '<label>Fator <input data-bpo="fator" inputmode="decimal" value="' + esc(String(q.fator).replace(".", ",")) + '"></label>';
 if (f === "pintar") {
-var mats = Pt() ? Pt().MATERIAIS : [], tem = mats.some(function (m) { return m.rotulo === q.material; });
-h += '<label>Material <select data-bpo="material">' + mats.map(function (m) { return '<option' + (m.rotulo === q.material ? " selected" : "") + '>' + esc(m.rotulo) + '</option>'; }).join("") +
-(tem ? "" : '<option selected>' + esc(q.material) + '</option>') + '</select></label>' +
+var mats = Pt() ? Pt().MATERIAIS : [], tem = mats.some(function (m) { return m.rotulo === q.material; }), PCt = global.BimPintarCat, itP = PCt ? PCt.porNome(q.material) : null;
+h += (PCt && global.BimInstTipos ? '<label>Material <button type="button" class="bp-mat" data-bpo-abrir="material" title="Escolher o material: grupos, pesquisa e recentes" style="display:inline-flex;align-items:center;gap:6px;max-width:26em">' +
+(itP ? '<img alt="" width="22" height="18" style="object-fit:contain;background:#fff" src="' + esc(itP.icone) + '">' : "") + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(q.material) + '</span> &#9662;</button></label>'
+: '<label>Material <select data-bpo="material">' + mats.map(function (m) { return '<option' + (m.rotulo === q.material ? " selected" : "") + '>' + esc(m.rotulo) + '</option>'; }).join("") +
+(tem ? "" : '<option selected>' + esc(q.material) + '</option>') + '</select></label>') +
 '<label>Composição <input data-bpo="codigo" inputmode="numeric" placeholder="código SINAPI (opcional)" value="' + esc(q.codigo) + '" style="width:9em"></label>';
 }
 if (f === "dividir-face") h += '<label>Altura do barrado <input data-bpo="barrado" inputmode="decimal" value="' + esc(fmt(q.barrado)) + '"> m</label>';
@@ -15105,6 +15112,11 @@ else if (k === "fator") { var fv = parseFloat(String(e.target.value).replace(","
 else if (k === "material") pr.p4.material = e.target.value;
 else if (k === "codigo") pr.p4.codigo = String(e.target.value || "").trim().slice(0, 24);
 else if (k === "barrado") { var bv = Pr().lerNumero(e.target.value); if (bv != null && bv > 0 && bv <= 30) pr.p4.barrado = bv; e.target.value = fmt(pr.p4.barrado); }
+});
+opcoes.addEventListener("click", function (e) {
+var b = e.target && e.target.closest ? e.target.closest("[data-bpo-abrir]") : null; if (!b || b.getAttribute("data-bpo-abrir") !== "material") return;
+var PC = global.BimPintarCat, BT = global.BimInstTipos; if (!PC || !BT) return;
+BT.abrirLista(b, { cat: "pintura", atual: PC.porNome(pr.p4.material), alvo: { pintura: true } });
 });
 opcoes.addEventListener("keydown", function (e) { e.stopPropagation(); });
 function pintarPainel() {
@@ -15971,6 +15983,7 @@ function txt(v) { return v == null ? "" : String(v); }
 function r4(v) { return Math.round(v * 10000) / 10000; }
 function r6(v) { return Math.round(v * 1e6) / 1e6; }
 function AV() { return global.BimAcabVis || (typeof require === "function" ? (function () { try { return require("./bimacabvis.js"); } catch (e) { return null; } })() : null); }
+function PC() { return global.BimPintarCat || (typeof require === "function" ? (function () { try { return require("./bimpintarcat.js"); } catch (e) { return null; } })() : null); }
 function A() { return global.BimArq || (typeof require === "function" ? (function () { try { return require("./bimarq.js"); } catch (e) { return null; } })() : null); }
 var MATERIAIS = [
 { id: "pintura-acrilica", rotulo: "Pintura acrílica", cor: "#e4ddcc" },
@@ -16097,11 +16110,13 @@ return out;
 }
 function servicosOrc(estado, vaos) {
 var out = [];
+var CAT = PC();
 arr(estado && estado.caixas).forEach(function (c) {
 if (!c || !c.pinturas) return;
 var ac = vaos && vaos[c.id] ? vaos[c.id].aceitos : null;
 regioes(c, ac).forEach(function (r) {
-out.push({ id: c.id + ":pintura:" + r.face + ":" + r.regiao, peca: c.id, face: r.face, regiao: r.regiao, codigo: r.codigo, material: r.material, unidade: "m2",
+var sv = CAT && CAT.servicoDe ? CAT.servicoDe(r.material) : null;
+out.push({ servicoTipo: sv ? sv.servico : "", aOrcar: !!(sv && sv.aOrcar && !r.codigo), id: c.id + ":pintura:" + r.face + ":" + r.regiao, peca: c.id, face: r.face, regiao: r.regiao, codigo: r.codigo, material: r.material, unidade: "m2",
 quantidade: r4(r.area), exato: r.area, rotulo: r.material + " — " + r.rotuloFace.toLowerCase() + " (" + (c.tipo === "laje" ? "laje" : "parede") + " " + c.id + ")" });
 });
 });
@@ -73380,12 +73395,33 @@ if (!arr(c.servicos).length) { somar(c.id, (c.tipo || "elemento") + " " + c.id, 
 somar(c.id, (c.tipo || "elemento") + " " + c.id, daElemento(c, vaos[c.id] ? vaos[c.id].areaVaos : 0, base, opcoes, pecaDe(c.id)));
 });
 var BPt = dep("BimPintar", "./bimpintar.js");
+var refClasse = {};
+function maiorDaClasse(classe) {
+if (refClasse.hasOwnProperty(classe)) return refClasse[classe];
+var SM = dep("SinapiMapa", "./sinapimapa.js"), melhor = null;
+if (SM && SM.porClasse && SM.porClasse[classe] && base && typeof base.obter === "function") {
+SM.porClasse[classe].forEach(function (cod) {
+var c = base.obter(cod); if (!c || !mesmaUnidade(c.unidade, "m2")) return;
+var cu = num(c.custoUnitario, num(c.custoMO) + num(c.custoMAT) + num(c.custoEQ));
+if (cu > 0 && (!melhor || cu > melhor.cu)) melhor = { codigo: cod, cu: cu };
+});
+}
+return (refClasse[classe] = melhor);
+}
 if (BPt && BPt.servicosOrc) BPt.servicosOrc(estado, vaos).forEach(function (s) {
-var l;
-if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura"; }
-else l = { codigo: "", descricao: "Pintura \"" + s.material + "\" sem composição", unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "sem-codigo", horas: [], servico: s.id,
-avisos: ["escolha a composição na barra de opções do Pintar (ou pinte de novo a face com o código)"] };
+var l, ref = !s.codigo && s.aOrcar ? maiorDaClasse(s.servicoTipo === "Pintura" ? "pintura_parede" : "revestimento_parede") : null;
+if (ref) {
+l = arredLinha(orcar({ id: s.id, codigo: ref.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura-referencia";
+l.provisorio = { motivo: "PROVISÓRIO — composição de referência " + ref.codigo + " (maior preço público da classe); cotar o material " + s.material };
+(l.avisos = l.avisos || []).push(l.provisorio.motivo);
+}
+else if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura"; }
+else l = { codigo: "", descricao: (s.servicoTipo || "Pintura") + " \"" + s.material + "\" sem composição", unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "sem-codigo", horas: [], servico: s.id,
+avisos: [s.aOrcar ? "a orçar: o sistema ainda não tem composição própria para este acabamento — informe o código na barra de opções do Pintar ou oriente pela regra do orçamento (maior preço público, marcado provisório)"
+: "escolha a composição na barra de opções do Pintar (ou pinte de novo a face com o código)"] };
 l.medida = "pintura"; l.face = s.face; l.regiao = s.regiao; l.material = s.material;
+if (s.aOrcar) l.aOrcar = true;
+if (s.servicoTipo) l.servicoTipo = s.servicoTipo;
 somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
 });
 var BGr = dep("BimGraute", "./bimgraute.js");
@@ -92863,6 +92899,7 @@ var CSS = ".rv-tsel{display:flex;gap:8px;align-items:center;padding:6px 8px;bord
 ".rv-tsel-seta{flex:none;font-size:10px;opacity:.7}" +
 ".rv-tlist{position:fixed;z-index:9000;background:var(--rv-painel-bg,#2b303b);color:var(--rv-painel-tx,#e6e8ec);border:1px solid var(--rv-linha-forte,#566);box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;flex-direction:column;font-size:12px}" +
 ".rv-tlist-busca{display:flex;align-items:center;gap:6px;padding:5px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-busca input{flex:1;min-width:0;background:transparent;border:0;color:inherit;font-size:12px;outline:none}" +
+".rv-tlist-abas{display:flex;flex-wrap:wrap;gap:3px;padding:4px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-abas button{background:transparent;color:inherit;border:1px solid var(--rv-linha,#3a4150);border-radius:10px;padding:1px 8px;font-size:11px;cursor:pointer}.rv-tlist-abas button.ativa{background:var(--rv-ativo-borda,#4a90d9);border-color:var(--rv-ativo-borda,#4a90d9);color:#fff}" +
 ".rv-tlist-fil{padding:2px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-fil .fil-barra{margin:3px 0}" +
 ".rv-tlist-itens{overflow:auto;flex:1;min-height:80px}" +
 ".rv-tlist-it{display:flex;align-items:center;gap:8px;padding:3px 7px;cursor:pointer;border:1px solid transparent}.rv-tlist-it:hover,.rv-tlist-it.foco{background:var(--rv-hover,rgba(127,127,127,.14))}" +
@@ -92928,18 +92965,20 @@ var r = ancora && ancora.getBoundingClientRect ? ancora.getBoundingClientRect() 
 var m = doc.createElement("div"); m.className = "rv-tlist"; m.setAttribute("role", "dialog"); m.setAttribute("aria-label", CATEGORIAS[ctx.cat]);
 var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
 m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
+var abasDef = PROV[ctx.cat] && arr(PROV[ctx.cat].abas).length ? PROV[ctx.cat].abas : null, aba = "todos";
 var hb = ctx.cat === "tubo" || PROV[ctx.cat] ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
-m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") +
+m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") + (abasDef ? '<div class="rv-tlist-abas" role="tablist"></div>' : "") +
 '<div class="rv-tlist-itens" role="listbox"></div><div class="rv-tlist-rec"></div>';
 var inp = m.querySelector("input"), lista = m.querySelector(".rv-tlist-itens"), rec = m.querySelector(".rv-tlist-rec"), barra = m.querySelector(".rv-tlist-fil"), foco = -1, vis = [];
 var MAX_POR_ORIGEM = 300;
 function pintarBarra() { if (barra && hb) barra.innerHTML = hb.htmlControles(filtro, hb.contagens(self.catalogo(ctx.cat), filtro), memorial); }
 function pintar() {
 vis = self.pesquisar(ctx.cat, inp.value, filtro);
+if (abasDef && aba !== "todos") vis = vis.filter(function (t) { return t.grupoId === aba; });
 var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
 var grupoAnt = null;
 lista.innerHTML = corte.map(function (t, i) {
-var cab = ""; if (t.grupo && t.grupo !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(t.grupo) + "</div>"; grupoAnt = t.grupo || null;
+var gh = t.grupo ? t.grupo + (t.sub ? " · " + t.sub : "") : null, cab = ""; if (gh && gh !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(gh) + "</div>"; grupoAnt = gh;
 return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
 (t.indisponivel ? ' aria-disabled="true" title="' + esc(t.indisponivel) + '"' : "") + ">" +
 (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
@@ -92971,6 +93010,15 @@ if (!ev.target || !ev.target.hasAttribute || !ev.target.hasAttribute("data-fil-c
 filtro = self.definirFiltro({ soCalculo: !!ev.target.checked }); foco = -1; pintarBarra(); pintar();
 });
 pintarBarra();
+}
+var barraAbas = m.querySelector(".rv-tlist-abas");
+function pintarAbas() {
+if (!barraAbas) return;
+barraAbas.innerHTML = [{ id: "todos", rotulo: "Todos" }].concat(abasDef).map(function (a) { return '<button type="button" role="tab" data-aba="' + esc(a.id) + '"' + (a.id === aba ? ' class="ativa" aria-selected="true"' : "") + ">" + esc(a.rotulo) + "</button>"; }).join("");
+}
+if (barraAbas) {
+barraAbas.addEventListener("click", function (ev) { var b = ev.target.closest ? ev.target.closest("[data-aba]") : null; if (!b) return; aba = b.getAttribute("data-aba"); foco = -1; pintarAbas(); pintar(); });
+pintarAbas();
 }
 var recs = this.recentes(ctx.cat);
 rec.innerHTML = "<h4>Tipos mais recentemente utilizados</h4>" + (recs.length ? recs.map(function (t) { return '<div data-tid="' + esc(t.id) + '">' + esc(CATEGORIAS[ctx.cat]) + " : " + esc(t.nome) + "</div>"; }).join("") : '<div style="opacity:.6;cursor:default">(nenhum ainda)</div>');
@@ -93107,6 +93155,259 @@ if (typeof module !== "undefined" && module.exports) module.exports = BimInstTip
 global.BimInstTipos = BimInstTipos;
 if (typeof window !== "undefined") { try { BimInstTipos.ligar(); } catch (e) {} }
 })(typeof window !== "undefined" ? window : globalThis);
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimpintarcat.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function txt(v) { return v == null ? "" : String(v); }
+function dep(nome, arq) {
+if (global[nome]) return global[nome];
+if (typeof require === "function") { try { return require(arq); } catch (e) { } }
+return null;
+}
+function AV() { return dep("BimAcabVis", "./bimacabvis.js"); }
+function PT() { return dep("BimPintar", "./bimpintar.js"); }
+function BIT() { return dep("BimInstTipos", "./biminsttipos.js"); }
+function norm(s) { return txt(s).normalize ? txt(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase() : txt(s).toLowerCase(); }
+var CAT = "pintura";
+var GRUPOS = [
+{ id: "padrao", rotulo: "Padrão RA" },
+{ id: "tintas", rotulo: "Tintas" },
+{ id: "ceramicos", rotulo: "Cerâmicos e porcelanato" },
+{ id: "pedras", rotulo: "Pedras" },
+{ id: "madeira", rotulo: "Madeira e MDF" },
+{ id: "metais", rotulo: "Metais" },
+{ id: "outros", rotulo: "Outros" }
+];
+var ROT_GRUPO = {}, ORD_GRUPO = {};
+GRUPOS.forEach(function (g, i) { ROT_GRUPO[g.id] = g.rotulo; ORD_GRUPO[g.id] = i; });
+var CARTELA = [
+["C01", "Branco neve", "#f5f4f0"], ["C02", "Branco gelo", "#ebe8e0"], ["C03", "Off-white", "#e7e2d6"], ["C04", "Creme", "#eadfc2"],
+["C05", "Palha", "#dccfa8"], ["C06", "Areia", "#d4c3a0"], ["C07", "Bege", "#cdb99a"], ["C08", "Camurça", "#b99a73"],
+["C09", "Terracota", "#b5694a"], ["C10", "Telha", "#9c4f36"], ["C11", "Ocre", "#d1a23c"], ["C12", "Verde sálvia", "#a9b59a"],
+["C13", "Verde musgo", "#6f7a56"], ["C14", "Azul névoa", "#b9cbd6"], ["C15", "Azul petróleo", "#3f6877"], ["C16", "Azul marinho", "#26364f"],
+["C17", "Cinza claro", "#d3d3d0"], ["C18", "Cinza médio", "#9a9c9d"], ["C19", "Cinza chumbo", "#5c5f62"], ["C20", "Grafite", "#3b3e42"],
+["C21", "Preto", "#1f2022"], ["C22", "Rosa antigo", "#d8b4a6"], ["C23", "Vinho", "#5e2a33"], ["C24", "Marrom café", "#4b3a2f"]
+];
+var RUG_ACAB = { fosco: 0.92, acetinado: 0.6, semibrilho: 0.35 };
+var TIPOS_TINTA = [
+{ id: "acrilica", rotulo: "Tinta acrílica", acabs: ["fosco", "acetinado", "semibrilho"], slug: "pintura_lisa", codigo: "88489" },
+{ id: "latex", rotulo: "Tinta látex", acabs: ["fosco"], slug: "pintura_lisa", codigo: "88489" },
+{ id: "esmalte", rotulo: "Esmalte sintético", acabs: ["fosco", "acetinado", "semibrilho"], slug: "pintura_lisa", codigo: "" },
+{ id: "textura", rotulo: "Textura acrílica", acabs: ["fosco"], slug: "reboco_rustico_offwhite", codigo: "95305" },
+{ id: "grafiato", rotulo: "Grafiato", acabs: ["fosco"], slug: "reboco_rustico_offwhite", codigo: "", rugBase: 0.97 }
+];
+var CERAMICOS = [
+["porc-60-polido-branco", "Porcelanato 60x60 polido branco", "#e9e8e3", "porcelanato_branco_60", 0.25, 0, { sub: "Porcelanato", pad: "grade60" }],
+["porc-60-acet-areia", "Porcelanato 60x60 acetinado areia", "#d9ccb1", "porcelanato_acetinado_claro", 0.45, 0, { sub: "Porcelanato", pad: "grade60" }],
+["porc-60-rustico-cinza", "Porcelanato 60x60 rústico cinza", "#9a958c", "porcelanato_antiderrapante_externo", 0.8, 0, { sub: "Porcelanato", pad: "grade60" }],
+["porc-60-acet-grafite", "Porcelanato 60x60 acetinado grafite", "#4b4e52", "porcelanato_grafite", 0.45, 0, { sub: "Porcelanato", pad: "grade60" }],
+["porc-60-cimento", "Porcelanato 60x60 efeito cimento queimado", "#9c9a95", "cimento_queimado", 0.7, 0, { sub: "Porcelanato", pad: "grade60" }],
+["porc-120-polido-branco", "Porcelanato 60x120 polido branco", "#ecebe6", "porcelanato_branco_60", 0.22, 0, { sub: "Porcelanato", pad: "grade120" }],
+["porc-120-acet-cinza", "Porcelanato 60x120 acetinado cinza", "#b6b4ae", "porcelanato_branco_60", 0.45, 0, { sub: "Porcelanato", pad: "grade120" }],
+["porc-120-marmore", "Porcelanato 60x120 efeito mármore", "#e6e7ea", "marmore_branco", 0.2, 0, { sub: "Porcelanato", pad: "veio" }],
+["porc-20x120-carvalho", "Porcelanato 20x120 amadeirado carvalho", "#b58a55", "piso_laminado_claro", 0.5, 0, { sub: "Porcelanato", pad: "madeira" }],
+["porc-20x120-nogueira", "Porcelanato 20x120 amadeirado nogueira", "#6e4a31", "madeira_nogueira", 0.5, 0, { sub: "Porcelanato", pad: "madeira" }],
+["porc-20x120-escuro", "Porcelanato 20x120 amadeirado escuro", "#4a3224", "madeira_escura_imbuia", 0.5, 0, { sub: "Porcelanato", pad: "madeira" }],
+["cer-30x60-acet-branca", "Cerâmica 30x60 acetinada branca", "#f1f1ee", "azulejo_porcelanato_bwc", 0.35, 0, { sub: "Cerâmica", pad: "grade30" }],
+["cer-30x60-brilho-branca", "Cerâmica 30x60 brilhante branca", "#f4f4f1", "azulejo_porcelanato_bwc", 0.15, 0, { sub: "Cerâmica", pad: "grade30" }],
+["cer-30x60-acet-cinza", "Cerâmica 30x60 acetinada cinza", "#b9b9b6", "azulejo_porcelanato_bwc", 0.35, 0, { sub: "Cerâmica", pad: "grade30" }],
+["cer-30x60-acet-bege", "Cerâmica 30x60 acetinada bege", "#d8cbb2", "azulejo_porcelanato_bwc", 0.35, 0, { sub: "Cerâmica", pad: "grade30" }],
+["cer-20x20-branca", "Cerâmica esmaltada 20x20 branca", "#f1f1ee", "azulejo_porcelanato_bwc", 0.2, 0, { sub: "Cerâmica", pad: "grade20", codigo: "87265" }],
+["cer-25x35-branca", "Cerâmica esmaltada 25x35 branca", "#f1f1ee", "azulejo_porcelanato_bwc", 0.2, 0, { sub: "Cerâmica", pad: "grade30", codigo: "87269" }],
+["cer-33x45-branca", "Cerâmica esmaltada 33x45 branca", "#f1f1ee", "azulejo_porcelanato_bwc", 0.2, 0, { sub: "Cerâmica", pad: "grade30", codigo: "87273" }],
+["cer-60x60-branca", "Cerâmica esmaltada 60x60 acetinada branca", "#eeeeeb", "azulejo_porcelanato_bwc", 0.4, 0, { sub: "Cerâmica", pad: "grade60", codigo: "104611" }],
+["subway-branco-brilho", "Subway 7,5x15 branco brilhante", "#f3f3f0", "azulejo_porcelanato_bwc", 0.12, 0, { sub: "Subway 7,5x15", pad: "subway" }],
+["subway-branco-acet", "Subway 7,5x15 branco acetinado", "#eeeeea", "azulejo_porcelanato_bwc", 0.4, 0, { sub: "Subway 7,5x15", pad: "subway" }],
+["subway-cinza", "Subway 7,5x15 cinza claro", "#b7bab9", "azulejo_porcelanato_bwc", 0.15, 0, { sub: "Subway 7,5x15", pad: "subway" }],
+["subway-grafite", "Subway 7,5x15 grafite", "#44484b", "azulejo_porcelanato_bwc", 0.15, 0, { sub: "Subway 7,5x15", pad: "subway" }],
+["subway-verde", "Subway 7,5x15 verde", "#5f7f6c", "azulejo_porcelanato_bwc", 0.15, 0, { sub: "Subway 7,5x15", pad: "subway" }],
+["pastilha-porcelana-25", "Pastilha de porcelana 2,5x2,5", "#d9dedf", "pastilha_vidro", 0.25, 0, { sub: "Pastilha e hidráulico", pad: "mosaico", codigo: "104616" }],
+["pastilha-porcelana-5", "Pastilha de porcelana 5x5", "#d9dedf", "pastilha_vidro", 0.25, 0, { sub: "Pastilha e hidráulico", pad: "mosaico", codigo: "104615" }],
+["pastilha-vidro", "Pastilha de vidro", "#7fb2bd", "pastilha_vidro", 0.15, 0, { sub: "Pastilha e hidráulico", pad: "mosaico" }],
+["ladrilho-hidraulico", "Ladrilho hidráulico", "#a2835a", "ladrilho_hidraulico", 0.55, 0, { sub: "Pastilha e hidráulico", pad: "mosaico" }]
+];
+var PEDRAS = [
+["granito-sao-gabriel", "Granito preto São Gabriel", "#1d1e20", "granito_preto", 0.2, 0, { sub: "Granitos", pad: "veio" }],
+["granito-itaunas", "Granito branco Itaúnas", "#d8d6d0", "granito_cinza", 0.25, 0, { sub: "Granitos", pad: "veio" }],
+["granito-ubatuba", "Granito verde Ubatuba", "#2f3b33", "", 0.22, 0, { sub: "Granitos", pad: "veio" }],
+["granito-andorinha", "Granito cinza Andorinha", "#a1a2a3", "granito_cinza", 0.25, 0, { sub: "Granitos", pad: "veio" }],
+["quartzo-branco", "Quartzo branco", "#f1f0ec", "", 0.18, 0, { sub: "Quartzo e nanoglass", pad: "liso" }],
+["nanoglass", "Nanoglass branco", "#f4f4f0", "", 0.08, 0, { sub: "Quartzo e nanoglass", pad: "liso" }],
+["marmore-carrara", "Mármore Carrara", "#e4e5e8", "marmore_branco", 0.22, 0, { sub: "Mármores", pad: "veio" }]
+];
+var MADEIRA = [
+["mdf-carvalho", "MDF carvalho natural", "#b58a55", "piso_laminado_claro", 0.5, 0, { pad: "madeira" }],
+["mdf-nogueira", "MDF nogueira", "#6e4a31", "madeira_nogueira", 0.5, 0, { pad: "madeira" }],
+["mdf-freijo", "MDF freijó", "#c4a073", "madeira_clara_freijo", 0.5, 0, { pad: "madeira" }],
+["mdf-cinza", "MDF cinza", "#8d8a85", "plastico_liso_branco", 0.5, 0, { pad: "liso" }],
+["mdf-branco-tx", "MDF branco TX", "#f1f1ef", "plastico_liso_branco", 0.47, 0, { pad: "madeira" }],
+["mdf-louro", "MDF louro", "#c9a46a", "madeira_clara_freijo", 0.5, 0, { pad: "madeira" }],
+["mdf-amendoa", "MDF amêndoa", "#c8a77f", "madeira_tabua_vertical_avela", 0.5, 0, { pad: "madeira" }]
+];
+var METAIS = [
+["metal-inox-escovado", "Inox escovado", "#c4c8cc", "inox_escovado", 0.38, 0.85, { pad: "metal" }],
+["metal-aluminio-natural", "Alumínio natural", "#d2d5d8", "aluminio_escovado", 0.4, 0.9, { pad: "metal" }],
+["metal-aluminio-branco", "Alumínio branco", "#f1f1ef", "", 0.4, 0.7, { pad: "liso" }],
+["metal-aluminio-preto", "Alumínio preto", "#1d1f21", "", 0.4, 0.7, { pad: "liso" }],
+["metal-dourado", "Metal dourado", "#c9a24b", "", 0.28, 0.95, { pad: "metal" }],
+["metal-champanhe", "Metal champanhe", "#cdb892", "", 0.3, 0.9, { pad: "metal" }],
+["metal-corten", "Aço corten", "#8a4b2a", "", 0.72, 0.55, { pad: "liso" }]
+];
+var OUTROS = [
+["vidro-incolor", "Vidro incolor", "#dcebe8", "", 0.02, 0, { sub: "Vidros", pad: "vidro", op: 0.25 }],
+["vidro-fume", "Vidro fumê", "#5f6766", "", 0.02, 0, { sub: "Vidros", pad: "vidro", op: 0.5 }],
+["espelho-prata", "Espelho prata", "#e6e8ea", "", 0.02, 0.95, { sub: "Vidros", pad: "metal" }],
+["tijolinho-palha", "Tijolinho aparente palha", "#d6b98f", "tijolo_macico_colonial_palha", 0.9, 0, { sub: "Alvenaria e concreto", pad: "tijolo" }],
+["tijolinho-laranja", "Tijolinho aparente laranja", "#b86b43", "tijolinho_laranja", 0.9, 0, { sub: "Alvenaria e concreto", pad: "tijolo" }],
+["cimento-queimado", "Cimento queimado", "#9d9b96", "cimento_queimado", 0.7, 0, { sub: "Alvenaria e concreto", pad: "liso" }],
+["concreto-liso", "Concreto aparente liso", "#b9b7b1", "concreto_liso_claro", 0.8, 0, { sub: "Alvenaria e concreto", pad: "liso" }],
+["papel-liso", "Papel de parede liso", "#d9cfc0", "pintura_lisa", 0.8, 0, { sub: "Papel de parede", pad: "liso" }],
+["papel-texturizado", "Papel de parede texturizado", "#cfc3ad", "reboco_rustico_offwhite", 0.85, 0, { sub: "Papel de parede", pad: "linho" }]
+];
+function svg(corpo) { return "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 52">' + corpo + "</svg>"); }
+function sombra(cor, k) {
+var m = /^#([0-9a-f]{6})$/i.exec(cor); if (!m) return "#888888";
+var n = parseInt(m[1], 16), c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (v) { v = Math.round(v + (k > 0 ? (255 - v) * k : v * k)); return Math.max(0, Math.min(255, v)); });
+return "#" + c.map(function (v) { return (v < 16 ? "0" : "") + v.toString(16); }).join("");
+}
+function miniatura(cor, pad) {
+var jn = sombra(cor, -0.18), cl = sombra(cor, 0.35), c = '<rect width="64" height="52" fill="' + cor + '"/>', i;
+if (pad === "grade60" || pad === "grade20" || pad === "grade30" || pad === "grade120" || pad === "mosaico") {
+var nx = pad === "grade20" ? 5 : (pad === "mosaico" ? 8 : (pad === "grade120" ? 2 : 3)), ny = pad === "grade20" ? 4 : (pad === "mosaico" ? 7 : (pad === "grade120" ? 3 : 3));
+for (i = 1; i < nx; i++) c += '<line x1="' + (64 * i / nx) + '" y1="0" x2="' + (64 * i / nx) + '" y2="52" stroke="' + jn + '" stroke-width="1.2"/>';
+for (i = 1; i < ny; i++) c += '<line x1="0" y1="' + (52 * i / ny) + '" x2="64" y2="' + (52 * i / ny) + '" stroke="' + jn + '" stroke-width="1.2"/>';
+} else if (pad === "subway" || pad === "tijolo") {
+var h = pad === "tijolo" ? 8.6 : 10.4, w = pad === "tijolo" ? 16 : 21;
+for (i = 1; i * h < 52; i++) {
+c += '<line x1="0" y1="' + (i * h) + '" x2="64" y2="' + (i * h) + '" stroke="' + jn + '" stroke-width="1.2"/>';
+for (var x = (i % 2 ? w / 2 : 0); x < 64; x += w) if (x > 0) c += '<line x1="' + x + '" y1="' + ((i - 1) * h) + '" x2="' + x + '" y2="' + (i * h) + '" stroke="' + jn + '" stroke-width="1.2"/>';
+}
+} else if (pad === "madeira") {
+for (i = 1; i < 6; i++) c += '<line x1="0" y1="' + (i * 8.6) + '" x2="64" y2="' + (i * 8.6) + '" stroke="' + jn + '" stroke-width="1"/>';
+for (i = 0; i < 6; i++) c += '<path d="M0 ' + (i * 8.6 + 4) + ' C20 ' + (i * 8.6 + 1) + ' 40 ' + (i * 8.6 + 7) + ' 64 ' + (i * 8.6 + 4) + '" fill="none" stroke="' + cl + '" stroke-width="0.8" opacity=".7"/>';
+} else if (pad === "veio") {
+c += '<path d="M-2 40 C14 28 26 44 40 24 S58 10 66 14" fill="none" stroke="' + jn + '" stroke-width="1.4" opacity=".75"/><path d="M6 52 C20 38 30 40 44 30" fill="none" stroke="' + cl + '" stroke-width="1" opacity=".8"/>';
+} else if (pad === "metal") {
+c += '<defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="' + cl + '"/><stop offset=".5" stop-color="' + cor + '"/><stop offset="1" stop-color="' + jn + '"/></linearGradient></defs><rect width="64" height="52" fill="url(#g)"/>';
+} else if (pad === "vidro") {
+c = '<rect width="64" height="52" fill="#ffffff"/><rect x="6" y="6" width="52" height="40" fill="' + cor + '" opacity=".75" stroke="' + jn + '" stroke-width="1.5"/><path d="M14 40 L30 12" stroke="#ffffff" stroke-width="3" opacity=".7"/>';
+} else if (pad === "linho") {
+for (i = 1; i < 13; i++) c += '<line x1="' + (i * 5) + '" y1="0" x2="' + (i * 5) + '" y2="52" stroke="' + jn + '" stroke-width=".7" opacity=".6"/>';
+}
+return svg(c + '<rect x=".5" y=".5" width="63" height="51" fill="none" stroke="#00000033"/>');
+}
+var _lista = null, _porNome = null, _porId = null;
+function nova(g, id, rotulo, cor, slug, rug, met, ex) {
+ex = ex || {};
+var cod = txt(ex.codigo);
+return { id: CAT + ":" + id, cat: CAT, idVis: "pc-" + id, nome: rotulo, material: rotulo, grupoId: g, grupo: ROT_GRUPO[g], ordemGrupo: ORD_GRUPO[g], sub: ex.sub || null,
+cor: cor, slug: slug || "", rug: rug, met: met || 0, op: ex.op || 0, codigo: cod, aOrcar: !cod, servico: ex.servico || "Revestimento",
+familia: txt(ex.busca), icone: miniatura(cor, ex.pad || "liso"), origem: "pintura" };
+}
+function construir() {
+var out = [], ant = antigos();
+ant.forEach(function (m) {
+var tinta = /pintura|textura|reboco|verniz/i.test(m.rotulo);
+out.push({ id: CAT + ":" + m.id, cat: CAT, idVis: null, nome: m.rotulo, material: m.rotulo, grupoId: "padrao", grupo: ROT_GRUPO.padrao, ordemGrupo: 0, sub: null,
+cor: m.cor, slug: m.slug || "", rug: m.rug == null ? 0.8 : m.rug, met: m.met || 0, op: 0, codigo: "", aOrcar: false, servico: tinta ? "Pintura" : "Revestimento",
+familia: "", icone: miniatura(m.cor, "liso"), origem: "pintura", antigo: true });
+});
+TIPOS_TINTA.forEach(function (t) {
+t.acabs.forEach(function (ac) {
+CARTELA.forEach(function (c) {
+var rug = t.rugBase || RUG_ACAB[ac];
+var it = nova("tintas", t.id + "-" + ac + "-" + c[0].toLowerCase(), t.rotulo + " " + ac + " — " + c[1] + " (RA-" + c[0] + ")", c[2], t.slug, rug, 0,
+{ sub: t.rotulo + " · " + ac, codigo: t.codigo, servico: "Pintura", pad: t.id === "textura" || t.id === "grafiato" ? "linho" : "liso",
+busca: t.rotulo + " " + ac + " " + c[1] + " RA-" + c[0] + " " + c[2] + (t.id === "latex" ? " latex" : "") });
+out.push(it);
+});
+});
+});
+[["ceramicos", CERAMICOS], ["pedras", PEDRAS], ["madeira", MADEIRA], ["metais", METAIS], ["outros", OUTROS]].forEach(function (par) {
+par[1].forEach(function (d) {
+var ex = d[6] || {}, cp = {}; Object.keys(ex).forEach(function (k) { cp[k] = ex[k]; });
+cp.busca = d[1] + " " + d[2] + (cp.codigo ? " SINAPI " + cp.codigo : "");
+out.push(nova(par[0], d[0], d[1], d[2], d[3], d[4], d[5], cp));
+});
+});
+return out;
+}
+function antigos() {
+var P = PT(), V = AV(), out = [];
+arr(P && P.MATERIAIS).forEach(function (m) {
+var e = V && V.porNome ? V.porNome(m.rotulo) : null;
+out.push({ id: m.id, rotulo: m.rotulo, cor: m.cor, slug: e ? e.slug : "", rug: e ? e.rug : undefined, met: e ? e.met : 0 });
+});
+return out;
+}
+var BimPintarCat = {
+CAT: CAT, GRUPOS: GRUPOS, CARTELA: CARTELA, TIPOS_TINTA: TIPOS_TINTA, host: null, ultimo: null,
+itens: function () {
+if (_lista) return _lista;
+_lista = construir(); _porNome = {}; _porId = {};
+_lista.forEach(function (t) { if (!_porNome[norm(t.material)]) _porNome[norm(t.material)] = t; _porId[t.id] = t; });
+return _lista;
+},
+esquecer: function () { _lista = null; _porNome = null; _porId = null; },
+registrarVisual: function () {
+var V = AV(); if (!V || !V.registrar) return 0;
+var novos = this.itens().filter(function (t) { return t.idVis; }).map(function (t) {
+var e = { id: t.idVis, rotulo: t.material, grupo: t.grupoId === "metais" ? "metal" : "fachada", cor: t.cor, slug: t.slug, rug: t.rug, met: t.met };
+if (t.op) e.op = t.op;
+return e;
+});
+V.registrar(novos); return novos.length;
+},
+porNome: function (texto) { this.itens(); return _porNome[norm(texto)] || null; },
+porId: function (id) { this.itens(); return _porId[id] || null; },
+grupoItens: function (grupoId) { return this.itens().filter(function (t) { return t.grupoId === grupoId; }); },
+contagem: function () {
+var por = {}, tot = 0;
+this.itens().forEach(function (t) { por[t.grupoId] = (por[t.grupoId] || 0) + 1; tot++; });
+return { total: tot, porGrupo: por };
+},
+pesquisar: function (q, grupoId) {
+var n = norm(q).trim(), pal = n ? n.split(/\s+/) : [];
+return this.itens().filter(function (t) {
+if (grupoId && grupoId !== "todos" && t.grupoId !== grupoId) return false;
+if (!pal.length) return true;
+var s = norm(t.nome + " " + t.familia + " " + t.grupo + " " + (t.sub || ""));
+return pal.every(function (p) { return s.indexOf(p) >= 0; });
+});
+},
+opcoesDe: function (t) { return { material: t.material, codigo: t.codigo || "" }; },
+servicoDe: function (material) {
+var t = this.porNome(material); if (!t || t.antigo) return null;
+return { servico: t.servico, aOrcar: t.aOrcar, grupo: t.grupoId };
+},
+aplicar: function (t) {
+if (!t) return false;
+this.ultimo = t;
+if (this.host && this.host.escolher) { try { this.host.escolher(t); } catch (e) { return false; } }
+return true;
+},
+registrar: function () {
+var B = BIT(); if (!B || !B.registrarCategoria) return false;
+var self = this;
+B.registrarCategoria(CAT, {
+rotulo: "Material do Pintar",
+abas: GRUPOS.filter(function (g) { return true; }),
+catalogo: function () { return self.itens(); },
+contexto: function () { return { cat: CAT, atual: self.ultimo, alvo: { pintura: true } }; },
+aplicar: function (t) { return self.aplicar(t); },
+esquecer: function () { }
+});
+return true;
+}
+};
+BimPintarCat.registrarVisual();
+try { BimPintarCat.registrar(); } catch (eR) { }
+if (typeof module !== "undefined" && module.exports) module.exports = BimPintarCat;
+global.BimPintarCat = BimPintarCat;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimarqtipos.js ==== */
 try {

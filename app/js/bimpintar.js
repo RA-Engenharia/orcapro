@@ -41,6 +41,7 @@
   function r4(v) { return Math.round(v * 10000) / 10000; }
   function r6(v) { return Math.round(v * 1e6) / 1e6; }
   function AV() { return global.BimAcabVis || (typeof require === "function" ? (function () { try { return require("./bimacabvis.js"); } catch (e) { return null; } })() : null); }
+  function PC() { return global.BimPintarCat || (typeof require === "function" ? (function () { try { return require("./bimpintarcat.js"); } catch (e) { return null; } })() : null); }
   function A() { return global.BimArq || (typeof require === "function" ? (function () { try { return require("./bimarq.js"); } catch (e) { return null; } })() : null); }
 
   /* materiais de acabamento da RA (nome + cor do desenho). O usuário pode
@@ -190,11 +191,13 @@
   /* o que vai para o orçamento: uma linha por região pintada (m²) */
   function servicosOrc(estado, vaos) {
     var out = [];
+    var CAT = PC();   /* 27/10/2026 (js/bimpintarcat.js): o material do catálogo novo diz se é pintura ou revestimento e se está "a orçar" (sem composição) */
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || !c.pinturas) return;
       var ac = vaos && vaos[c.id] ? vaos[c.id].aceitos : null;
       regioes(c, ac).forEach(function (r) {
-        out.push({ id: c.id + ":pintura:" + r.face + ":" + r.regiao, peca: c.id, face: r.face, regiao: r.regiao, codigo: r.codigo, material: r.material, unidade: "m2",
+        var sv = CAT && CAT.servicoDe ? CAT.servicoDe(r.material) : null;
+        out.push({ servicoTipo: sv ? sv.servico : "", aOrcar: !!(sv && sv.aOrcar && !r.codigo), id: c.id + ":pintura:" + r.face + ":" + r.regiao, peca: c.id, face: r.face, regiao: r.regiao, codigo: r.codigo, material: r.material, unidade: "m2",
                    quantidade: r4(r.area), exato: r.area, rotulo: r.material + " — " + r.rotuloFace.toLowerCase() + " (" + (c.tipo === "laje" ? "laje" : "parede") + " " + c.id + ")" });
       });
     });

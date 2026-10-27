@@ -363,6 +363,7 @@
     ".rv-tsel-seta{flex:none;font-size:10px;opacity:.7}" +
     ".rv-tlist{position:fixed;z-index:9000;background:var(--rv-painel-bg,#2b303b);color:var(--rv-painel-tx,#e6e8ec);border:1px solid var(--rv-linha-forte,#566);box-shadow:0 8px 24px rgba(0,0,0,.35);display:flex;flex-direction:column;font-size:12px}" +
     ".rv-tlist-busca{display:flex;align-items:center;gap:6px;padding:5px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-busca input{flex:1;min-width:0;background:transparent;border:0;color:inherit;font-size:12px;outline:none}" +
+    ".rv-tlist-abas{display:flex;flex-wrap:wrap;gap:3px;padding:4px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-abas button{background:transparent;color:inherit;border:1px solid var(--rv-linha,#3a4150);border-radius:10px;padding:1px 8px;font-size:11px;cursor:pointer}.rv-tlist-abas button.ativa{background:var(--rv-ativo-borda,#4a90d9);border-color:var(--rv-ativo-borda,#4a90d9);color:#fff}" +
     ".rv-tlist-fil{padding:2px 7px;border-bottom:1px solid var(--rv-linha,#3a4150)}.rv-tlist-fil .fil-barra{margin:3px 0}" +
     ".rv-tlist-itens{overflow:auto;flex:1;min-height:80px}" +
     ".rv-tlist-it{display:flex;align-items:center;gap:8px;padding:3px 7px;cursor:pointer;border:1px solid transparent}.rv-tlist-it:hover,.rv-tlist-it.foco{background:var(--rv-hover,rgba(127,127,127,.14))}" +
@@ -435,18 +436,21 @@
     var larg = Math.max(300, r.width || 300), alt = Math.min(560, (doc.documentElement.clientHeight || 800) - r.bottom - 12);
     m.style.left = Math.round(r.left) + "px"; m.style.top = Math.round(r.bottom) + "px"; m.style.width = larg + "px"; m.style.height = Math.max(260, alt) + "px";
     /* FILTRO (18/10/2026): Todas | OrçaPRO | Escritório + "Só as que entram no cálculo" (a escolha fica gravada por usuário) */
+    /* ABAS por grupo (Pintar, 27/10/2026): a categoria externa que declara `abas` ganha uma fileira de grupos; "Todos" não filtra */
+    var abasDef = PROV[ctx.cat] && arr(PROV[ctx.cat].abas).length ? PROV[ctx.cat].abas : null, aba = "todos";
     var hb = ctx.cat === "tubo" || PROV[ctx.cat] ? null : HB(), memorial = hb ? hb.memorialDoProjeto() : false, filtro = hb ? self.filtroAtual() : null;
-    m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") +
+    m.innerHTML = '<div class="rv-tlist-busca"><span aria-hidden="true">⌕</span><input type="search" placeholder="Pesquisar" aria-label="Pesquisar tipo"></div>' + (hb ? '<div class="rv-tlist-fil"></div>' : "") + (abasDef ? '<div class="rv-tlist-abas" role="tablist"></div>' : "") +
       '<div class="rv-tlist-itens" role="listbox"></div><div class="rv-tlist-rec"></div>';
     var inp = m.querySelector("input"), lista = m.querySelector(".rv-tlist-itens"), rec = m.querySelector(".rv-tlist-rec"), barra = m.querySelector(".rv-tlist-fil"), foco = -1, vis = [];
     var MAX_POR_ORIGEM = 300;   /* a biblioteca real do escritório tem milhares de tipos: a lista mostra os primeiros de CADA origem ou subgrupo (Componente) (as do escritório não somem atrás das nativas) e pede para refinar */
     function pintarBarra() { if (barra && hb) barra.innerHTML = hb.htmlControles(filtro, hb.contagens(self.catalogo(ctx.cat), filtro), memorial); }
     function pintar() {
       vis = self.pesquisar(ctx.cat, inp.value, filtro);
+      if (abasDef && aba !== "todos") vis = vis.filter(function (t) { return t.grupoId === aba; });
       var porO = {}, corte = vis.filter(function (t) { var o = t.grupo || t.origemFam || "x"; porO[o] = (porO[o] || 0) + 1; return porO[o] <= MAX_POR_ORIGEM; });
       var grupoAnt = null;
       lista.innerHTML = corte.map(function (t, i) {
-        var cab = ""; if (t.grupo && t.grupo !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(t.grupo) + "</div>"; grupoAnt = t.grupo || null;
+        var gh = t.grupo ? t.grupo + (t.sub ? " · " + t.sub : "") : null, cab = ""; if (gh && gh !== grupoAnt) cab = '<div class="rv-tlist-grupo" role="presentation">' + esc(gh) + "</div>"; grupoAnt = gh;
         return cab + '<div class="rv-tlist-it' + (ctx.atual && ctx.atual.id === t.id ? " atual" : "") + (i === foco ? " foco" : "") + '" role="option" data-tid="' + esc(t.id) + '"' +
           (t.indisponivel ? ' aria-disabled="true" title="' + esc(t.indisponivel) + '"' : "") + ">" +
           (t.icone ? '<img alt="" loading="lazy" src="' + esc(t.icone) + '"' + (t.miniatura ? ' data-mini="' + esc(t.id) + '"' : "") + ">" : '<span class="sem"></span>') + "<span>" + esc(t.nome) + "</span>" + (hb ? hb.htmlSelos(t) : "") + "</div>";
@@ -479,6 +483,15 @@
         filtro = self.definirFiltro({ soCalculo: !!ev.target.checked }); foco = -1; pintarBarra(); pintar();
       });
       pintarBarra();
+    }
+    var barraAbas = m.querySelector(".rv-tlist-abas");
+    function pintarAbas() {
+      if (!barraAbas) return;
+      barraAbas.innerHTML = [{ id: "todos", rotulo: "Todos" }].concat(abasDef).map(function (a) { return '<button type="button" role="tab" data-aba="' + esc(a.id) + '"' + (a.id === aba ? ' class="ativa" aria-selected="true"' : "") + ">" + esc(a.rotulo) + "</button>"; }).join("");
+    }
+    if (barraAbas) {
+      barraAbas.addEventListener("click", function (ev) { var b = ev.target.closest ? ev.target.closest("[data-aba]") : null; if (!b) return; aba = b.getAttribute("data-aba"); foco = -1; pintarAbas(); pintar(); });
+      pintarAbas();
     }
     var recs = this.recentes(ctx.cat);
     rec.innerHTML = "<h4>Tipos mais recentemente utilizados</h4>" + (recs.length ? recs.map(function (t) { return '<div data-tid="' + esc(t.id) + '">' + esc(CATEGORIAS[ctx.cat]) + " : " + esc(t.nome) + "</div>"; }).join("") : '<div style="opacity:.6;cursor:default">(nenhum ainda)</div>');

@@ -637,12 +637,36 @@
        encostos e do que a peça unida tirou. Sem composição: "sem composição"
        com os m² (aparece em Fora do orçamento, nunca some). Mesmas três regras. */
     var BPt = dep("BimPintar", "./bimpintar.js");
+    /* "A ORÇAR" do catálogo do Pintar (js/bimpintarcat.js): regra RA 100 % orçado, incerto = o MAIOR preço público, marcado PROVISÓRIO.
+       A referência é a composição de maior preço (em m²) da mesma classe do mapa SINAPI — revestimento_parede para revestimento,
+       pintura_parede para tinta — na base carregada. Sem base ou sem classe: segue "sem composição" (nunca se chuta código). */
+    var refClasse = {};
+    function maiorDaClasse(classe) {
+      if (refClasse.hasOwnProperty(classe)) return refClasse[classe];
+      var SM = dep("SinapiMapa", "./sinapimapa.js"), melhor = null;
+      if (SM && SM.porClasse && SM.porClasse[classe] && base && typeof base.obter === "function") {
+        SM.porClasse[classe].forEach(function (cod) {
+          var c = base.obter(cod); if (!c || !mesmaUnidade(c.unidade, "m2")) return;
+          var cu = num(c.custoUnitario, num(c.custoMO) + num(c.custoMAT) + num(c.custoEQ));
+          if (cu > 0 && (!melhor || cu > melhor.cu)) melhor = { codigo: cod, cu: cu };
+        });
+      }
+      return (refClasse[classe] = melhor);
+    }
     if (BPt && BPt.servicosOrc) BPt.servicosOrc(estado, vaos).forEach(function (s) {
-      var l;
-      if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura"; }
-      else l = { codigo: "", descricao: "Pintura \"" + s.material + "\" sem composição", unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "sem-codigo", horas: [], servico: s.id,
-                 avisos: ["escolha a composição na barra de opções do Pintar (ou pinte de novo a face com o código)"] };
+      var l, ref = !s.codigo && s.aOrcar ? maiorDaClasse(s.servicoTipo === "Pintura" ? "pintura_parede" : "revestimento_parede") : null;
+      if (ref) {
+        l = arredLinha(orcar({ id: s.id, codigo: ref.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura-referencia";
+        l.provisorio = { motivo: "PROVISÓRIO — composição de referência " + ref.codigo + " (maior preço público da classe); cotar o material " + s.material };
+        (l.avisos = l.avisos || []).push(l.provisorio.motivo);
+      }
+      else if (s.codigo) { l = arredLinha(orcar({ id: s.id, codigo: s.codigo, unidade: s.unidade, quantidade: s.quantidade, rotulo: s.rotulo }, base, opcoes)); l.codigoOrigem = "pintura"; }
+      else l = { codigo: "", descricao: (s.servicoTipo || "Pintura") + " \"" + s.material + "\" sem composição", unidade: "", unidadeQto: s.unidade, quantidade: r4(s.quantidade), status: "sem-codigo", horas: [], servico: s.id,
+                 avisos: [s.aOrcar ? "a orçar: o sistema ainda não tem composição própria para este acabamento — informe o código na barra de opções do Pintar ou oriente pela regra do orçamento (maior preço público, marcado provisório)"
+                                   : "escolha a composição na barra de opções do Pintar (ou pinte de novo a face com o código)"] };
       l.medida = "pintura"; l.face = s.face; l.regiao = s.regiao; l.material = s.material;
+      if (s.aOrcar) l.aOrcar = true;   /* catálogo do Pintar (js/bimpintarcat.js): sem composição conhecida; o orçamento trata pela regra do sistema */
+      if (s.servicoTipo) l.servicoTipo = s.servicoTipo;
       somar(s.id, s.rotulo, { linhas: [l], resumo: null, peso: false });
     });
     /* EMBREVE — GRAUTE E ARMADURA (js/bimgraute.js): cada parede de alvenaria

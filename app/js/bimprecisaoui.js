@@ -403,6 +403,12 @@
       });
 
       /* ------------------------------------------- barra de opções */
+      /* PINTAR (27/10/2026, js/bimpintarcat.js): o material sai do seletor fino (grupos, pesquisa, recentes); escolher grava o nome e a composição */
+      (function () {
+        var PC = global.BimPintarCat; if (!PC) return;
+        try { PC.registrar(); } catch (eP) {}
+        PC.host = { escolher: function (t) { pr.p4.material = t.material; pr.p4.codigo = t.codigo || ""; pintarOpcoes(); hint("Pintar: " + t.material + (t.codigo ? " (composição " + t.codigo + ")" : t.aOrcar ? " (a orçar)" : "") + " — clique na face."); } };
+      })();
       function pintarOpcoes() {
         var f = ferramenta();
         if (!ativo() || !f) { opcoes.style.display = "none"; return; }
@@ -421,9 +427,11 @@
         if (f === "juntas") h += '<label>Junta <select data-bpo="juntaModo">' + MODOS_JUNTA.map(function (m) { return '<option value="' + m[0] + '"' + (q.juntaModo === m[0] ? " selected" : "") + '>' + m[1] + '</option>'; }).join("") + '</select></label>';
         if (f === "escala") h += '<label>Fator <input data-bpo="fator" inputmode="decimal" value="' + esc(String(q.fator).replace(".", ",")) + '"></label>';
         if (f === "pintar") {
-          var mats = Pt() ? Pt().MATERIAIS : [], tem = mats.some(function (m) { return m.rotulo === q.material; });
-          h += '<label>Material <select data-bpo="material">' + mats.map(function (m) { return '<option' + (m.rotulo === q.material ? " selected" : "") + '>' + esc(m.rotulo) + '</option>'; }).join("") +
-               (tem ? "" : '<option selected>' + esc(q.material) + '</option>') + '</select></label>' +
+          var mats = Pt() ? Pt().MATERIAIS : [], tem = mats.some(function (m) { return m.rotulo === q.material; }), PCt = global.BimPintarCat, itP = PCt ? PCt.porNome(q.material) : null;
+          h += (PCt && global.BimInstTipos ? '<label>Material <button type="button" class="bp-mat" data-bpo-abrir="material" title="Escolher o material: grupos, pesquisa e recentes" style="display:inline-flex;align-items:center;gap:6px;max-width:26em">' +
+                 (itP ? '<img alt="" width="22" height="18" style="object-fit:contain;background:#fff" src="' + esc(itP.icone) + '">' : "") + '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(q.material) + '</span> &#9662;</button></label>'
+               : '<label>Material <select data-bpo="material">' + mats.map(function (m) { return '<option' + (m.rotulo === q.material ? " selected" : "") + '>' + esc(m.rotulo) + '</option>'; }).join("") +
+                 (tem ? "" : '<option selected>' + esc(q.material) + '</option>') + '</select></label>') +
                '<label>Composição <input data-bpo="codigo" inputmode="numeric" placeholder="código SINAPI (opcional)" value="' + esc(q.codigo) + '" style="width:9em"></label>';
         }
         if (f === "dividir-face") h += '<label>Altura do barrado <input data-bpo="barrado" inputmode="decimal" value="' + esc(fmt(q.barrado)) + '"> m</label>';
@@ -446,6 +454,11 @@
         else if (k === "material") pr.p4.material = e.target.value;
         else if (k === "codigo") pr.p4.codigo = String(e.target.value || "").trim().slice(0, 24);
         else if (k === "barrado") { var bv = Pr().lerNumero(e.target.value); if (bv != null && bv > 0 && bv <= 30) pr.p4.barrado = bv; e.target.value = fmt(pr.p4.barrado); }
+      });
+      opcoes.addEventListener("click", function (e) {
+        var b = e.target && e.target.closest ? e.target.closest("[data-bpo-abrir]") : null; if (!b || b.getAttribute("data-bpo-abrir") !== "material") return;
+        var PC = global.BimPintarCat, BT = global.BimInstTipos; if (!PC || !BT) return;
+        BT.abrirLista(b, { cat: "pintura", atual: PC.porNome(pr.p4.material), alvo: { pintura: true } });
       });
       opcoes.addEventListener("keydown", function (e) { e.stopPropagation(); });
 
