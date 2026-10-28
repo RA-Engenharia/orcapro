@@ -152,9 +152,10 @@
         if (pn === "Galpão" && PP) R.acrescentar("metalica", "Metálica & Mecânica", "Peças prontas", PP.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && AU) R.acrescentar("metalica", "Metálica & Mecânica", "Acessos", AU.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));
         if (pn === "Galpão" && AN) R.acrescentar("metalica", "Metálica & Mecânica", "Andaime", AN.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica, emBreve: !!c.emBreve, requer: c.requer }; }));
+        if (pn === "Galpão" && AN && AN.COMANDOS_MULTI) R.acrescentar("metalica", "Metálica & Mecânica", "Andaime multidirecional", AN.COMANDOS_MULTI.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));   /* M4-A: botão do multidirecional (fora de COMANDOS: o contrato do tubo-roll não muda) */
         if (pn === "Galpão" && TQ) R.acrescentar("metalica", "Metálica & Mecânica", "Tanques", TQ.COMANDOS.map(function (c) { return { id: c.id, rotulo: c.rotulo, icone: c.icone, grande: c.grande, dica: c.dica }; }));   /* METÁLICA › T */
       });
-      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PO ? PO.ids() : []).concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(AN ? AN.ids() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
+      if (global.BimDisciplinas && global.BimDisciplinas.declarar) { try { global.BimDisciplinas.declarar(this.ids().concat(PO ? PO.ids() : []).concat(PP ? PP.ids() : []).concat(AU ? AU.ids() : []).concat(AN ? AN.ids() : []).concat(AN && AN.idsMulti ? AN.idsMulti() : []).concat(TQ ? TQ.ids() : []).concat(LSU ? LSU.ids() : []), "metalica"); } catch (e) {} }
       /* METÁLICA › CATÁLOGO INDUSTRIAL (14/10/2026, js/metalcatalogoui.js): o grupo "Catálogo" entra depois da Fabricação; o painel é uma consulta (aços, chapas, pintura, cores) e não mexe no modelo */
       var CAT = global.MetalCatalogoUI && global.AcoCatalogoInd ? global.MetalCatalogoUI : null;
       if (CAT) {

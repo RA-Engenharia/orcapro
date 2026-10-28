@@ -778,6 +778,8 @@
   var DEFAULT_TEXT = { Eixo: "y", Montagem: "vertical" };
   function completar(fam, tipo, inst, saida) {
     var id = fam.andaime || fam.id, g = GER[id];
+    /* M2: o js/familia.js despacha toda `geometria: "andaime"` para cá; as ra-andaime-m-* (multidirecional) são do js/familiasandaimem.js */
+    if (!g && String(id).indexOf("ra-andaime-m-") === 0) { var M2 = global.FamiliasAndaimeM || dep("FamiliasAndaimeM", "familiasandaimem.js"); if (M2 && M2.completar) return M2.completar(fam, tipo, inst, saida); }
     if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de andaime \"" + id + "\" não carregou"]); return saida; }
     var v = {}, vals = saida.valores || {};
     Object.keys(vals).forEach(function (n) { v[n] = vals[n]; });
@@ -816,7 +818,12 @@
   }
 
   registrarNoRA();
+  /* M2 (27/10/2026): as primitivas e o kit de transformações ficam à disposição de js/familiasandaimem.js (o multidirecional) — uma só implementação de tubo oco,
+     setor, porca, varredura… para as duas linhas de famílias. Nenhuma cota passa por aqui: cada família lê as dela do seu próprio módulo de dados. */
+  var PRIM = { Kit: Kit, tri: tri, rotM: rotM, mulM: mulM, aplM: aplM, colsM: colsM, caixa: caixa, cilindro: cilindro, tuboOco: tuboOco, setor: setor, prismaConvexo: prismaConvexo, retArredondado: retArredondado, porca: porca, varrer: varrer,
+    densificar: densificar, toroY: toroY, torno: torno, linhaFina: linhaFina, octaedro: octaedro, nivelDe: nivelDe, segs: segs, circ: circ, ret: ret, hachura: hachura, LIN_R: LIN_R, PBR: PBR, MAT: MAT };
   var FamiliasAndaime = {
+    _prim: PRIM,
     IDS: LISTA.map(function (f) { return f.id; }), PBR: PBR, MAT: MAT, lista: function () { return clonar(LISTA); },
     completar: completar, miniatura: miniatura, cota: cota, _dados: function () { return Dados; },
     /* o ponto de entrada para quem não passa pelo js/familia.js (js/andaime.js, o teste e as pranchas): avalia a família com os parâmetros dados */

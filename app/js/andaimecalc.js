@@ -16,6 +16,9 @@
  * longitudinais) → longitudinal = viga contínua nos montantes com RÓTULA em cada luva (luvaRigida=false) → reações nos montantes.
  * Tudo resolvido por um solver de viga (elementos finitos de Euler-Bernoulli) deste arquivo, com envoltória de Q alternado por vão.
  *
+ * M3 (27/10/2026): com modelo.sistema === "multidirecional" o calcular/simulacao/corrigir/montarInteligente DESPACHAM para js/andaimemulticalc.js, que recebe daqui (AndaimeCalc._int) o
+ * vento, o solver de viga, o autovalor, a NBR 8800 e a tabela da base. O caminho do tubo-roll não mudou (golden-calc-tuboroll-7d7d23b7.json).
+ *
  * Reaproveita: js/acodim8800.js (compressao, flexao), js/acosecao.js, js/perfisaco.js, js/acovento.js (S1, S2, S3) e
  * js/acoisopletas.js (V0 pelo local). Unidades: kN, kN·m, m, MPa; mostra kN e kgf. Teste: node tools/test-andaimecalc.js
  * ===================================================================== */
@@ -279,12 +282,33 @@
     return { ok: true, V0: v0, fonteV0: fonte, textoV0: texto, S1: s1.valor, S3: s3.valor, s2de: s2de, qDe: qDe, categoria: catEf, classe: "A", grupoS3: grupoEf };
   }
 
+  /* NBR 6123:1988 Fig. 6, p. 27 (= NBR 6123:2023 Fig. 12, p. 55): Ca(φ) lido do gráfico; cf na área bruta = Ca·φ, Ca interpolado linear (M3: subiu de dentro do calcular, corpo idêntico) */
+  function cfTelaDeFi(f) {
+    var T = [[0, 2.0], [0.1, 1.9], [0.2, 1.8], [0.3, 1.7], [0.5, 1.6], [0.7, 1.6], [0.9, 1.8], [1.0, 2.0]], ca = T[T.length - 1][1];
+    if (f <= 0) return 0;
+    for (var i = 0; i + 1 < T.length; i++) if (f <= T[i + 1][0] + 1e-9) { ca = T[i][1] + (T[i + 1][1] - T[i][1]) * (f - T[i][0]) / (T[i + 1][0] - T[i][0]); break; }
+    return ca * Math.min(f, 1);
+  }
+
   /* ================================================================ O CÁLCULO */
+  function MC() { return dep("AndaimeMultiCalc", "./andaimemulticalc.js"); }   /* M3: verificações próprias do multidirecional (js/andaimemulticalc.js) */
+  var PEND_MULTI = "Cálculo do multidirecional: etapa M3 (em preparação)";
+  function resultadoMultiSemCalculo(modelo, out) {
+    var v = { id: "multidirecional", tipo: "multidirecional", pecas: [], titulo: "Cálculo do andaime multidirecional (etapa M3)", formula: "", valores: {}, texto: PEND_MULTI, solicitante: "", resistente: "", uso: null, estado: "nao_verificado", fonte: "", confirmarRT: [], ressalvas: [PEND_MULTI], porPeca: {}, corrigir: [] };
+    arr(modelo.barras).forEach(function (b) { v.pecas.push(b.id); v.porPeca[b.id] = { estado: "nao_verificado", uso: null }; });
+    out.verificacoes = [v]; out.pendencias = [PEND_MULTI]; out.ressalvas.push(PEND_MULTI);
+    (modelo.pendencias || []).forEach(function (t) { out.pendencias.push(t); });
+    out.ok = true; out.resumo = resumir(out.verificacoes);
+    return out;
+  }
   function calcular(modelo, par, opt) {
     opt = opt || {};
     var P = normalizar(par), A = AN(), d88 = D88(), SC = SEC(), PA = PAC();
     var out = { ok: false, verificacoes: [], reacoes: [], montantes: [], caminho: { transversais: [], longitudinais: [] }, naoVerificado: [], ressalvas: [], avisos: [], resumo: "", parametros: P, vento: null, parametrosInvalidos: [] };
     if (!modelo || !modelo.ok) { out.erro = "Sem modelo de andaime montado."; out.resumo = out.erro; return out; }
+    /* MULTIDIRECIONAL (M3): o cálculo é de js/andaimemulticalc.js (mesmo formato de saída). Rede de segurança do M1: se esse módulo não carregar, NENHUMA
+       verificação pode sair "ok" — o guarda antigo (resultadoMultiSemCalculo) devolve tudo nao_verificado. */
+    if (modelo.sistema === "multidirecional") { var mcM = MC(); return mcM && mcM.calcular ? mcM.calcular(modelo, par, opt, INTERNOS) : resultadoMultiSemCalculo(modelo, out); }
     out.parametrosInvalidos = parametrosInvalidos(P);
     if (!(P.qServ > 0)) { out.erro = "qServ deve ser maior que zero."; out.resumo = out.erro; return out; }
     var perfil = null; try { perfil = PA && PA.obter ? PA.obter(modelo.par.tubo) : null; } catch (e0) { perfil = null; }
@@ -324,12 +348,7 @@
     /* ---------- vento: q(z) por faixa de altura e coeficiente de força por camada (C6, M5) */
     /* entradas de vento: o que não foi informado vira o PIOR CASO com a pendência visível (E4.3, item 8) */
     var catEf = P.categoria || "I", phiTela = P.telaSombreamento != null ? P.telaSombreamento : 0.75, s3Reduzido = P.s3Temporaria && P.s3Justificativa.length > 0, grupoEf = s3Reduzido ? 5 : 3;
-    function cfDeFi(f) {   /* NBR 6123:1988 Fig. 6, p. 27 (= NBR 6123:2023 Fig. 12, p. 55): Ca(φ) lido do gráfico; cf na área bruta = Ca·φ, Ca interpolado linear */
-      var T = [[0, 2.0], [0.1, 1.9], [0.2, 1.8], [0.3, 1.7], [0.5, 1.6], [0.7, 1.6], [0.9, 1.8], [1.0, 2.0]], ca = T[T.length - 1][1];
-      if (f <= 0) return 0;
-      for (var i = 0; i + 1 < T.length; i++) if (f <= T[i + 1][0] + 1e-9) { ca = T[i][1] + (T[i + 1][1] - T[i][1]) * (f - T[i][0]) / (T[i + 1][0] - T[i][0]); break; }
-      return ca * Math.min(f, 1);
-    }
+    var cfDeFi = cfTelaDeFi;   /* M3: a função subiu para o nível do módulo (o multidirecional usa a mesma) — corpo idêntico */
     var cfTelaEf = P.cfTela != null && P.cfTela > 0 ? P.cfTela : cfDeFi(phiTela);
     out.pendencias = [];
     if (P.categoria == null || (modelo.par && modelo.par.tela && P.telaSombreamento == null && P.cfTela == null)) out.pendencias.push("categoria/tela não informadas — usando o pior caso (categoria " + catEf + ", sombreamento da tela " + brf(phiTela, 2) + ", cf " + brf(cfTelaEf, 2) + "); informe para um andaime mais leve.");
@@ -1368,6 +1387,7 @@
     return c;
   }
   function corrigirDe(modelo, parCalc, P, v, cache) {
+    if (modelo.sistema === "multidirecional") { var mcC = MC(); return mcC && mcC.corrigir ? mcC.corrigir(modelo, parCalc, P, v, cache, INTERNOS) : []; }
     var AnM = AN(), res = [], cands = candidatos(modelo, P, v), melhor = null, segundo = null;
     for (var i = 0; i < cands.length && !melhor; i++) {
       var par2 = clone(modelo.par); Object.keys(cands[i].par).forEach(function (k) { par2[k] = cands[i].par[k]; });
@@ -1404,6 +1424,7 @@
   function simulacao(modelo, calc) {
     var mapa = {};
     if (!modelo || !modelo.ok || !calc || !calc.ok) return mapa;
+    if (modelo.sistema === "multidirecional") { var mcS = MC(); if (mcS && mcS.simulacao) return mcS.simulacao(modelo, calc); }
     var porTipo = {}; calc.verificacoes.forEach(function (v) { (porTipo[v.tipo] = porTipo[v.tipo] || []).push(v); });
     function poe(id, v) {
       var o = v.porPeca[id]; if (!o) return false;
@@ -1448,6 +1469,15 @@
     opcoes = opcoes || {};
     var An = AN(), calcP = opcoes.calc || {}, maxIt = opcoes.maxIter || 8, cache = {}, mudancas = [];
     if (!An) return { passou: false, erro: "módulo andaime.js indisponível", mudancas: [], falhas: [], pendencias: [] };
+    /* MULTIDIRECIONAL (M1): sem cálculo não há o que corrigir — devolve o modelo sem mudanças e a pendência da etapa M3 */
+    if (par && par.sistema === "multidirecional") {
+      var mcI = MC(); if (mcI && mcI.montarInteligente) return mcI.montarInteligente(par, opcoes, INTERNOS);
+      var prM = An.normalizar(par), mM = null; try { mM = An.montar(prM); } catch (eM) { mM = null; }
+      if (!mM || !mM.ok) return { passou: false, erro: "o andaime não monta com estes parâmetros" + (mM && mM.erro ? ": " + mM.erro : ""), par: prM, mudancas: [], falhas: [], pendencias: [] };
+      var cM = calcular(mM, opcoes.calc || {}, { semCorrigir: true });
+      return { faltam: [PEND_MULTI], par: prM, parOriginal: clone(prM), modelo: mM, calc: cM, mudancas: [], historico: [], iteracoes: 0, passou: false, falhas: [], atencao: [], pendenciasTexto: [PEND_MULTI],
+        pendencias: [{ id: "multidirecional", titulo: "Cálculo do andaime multidirecional (etapa M3)", motivo: PEND_MULTI }], maiorUso: 0, maiorUsoEm: null };
+    }
     var pr = An.normalizar(par || {}), parOrig = clone(pr);
     function avaliar(p2) {
       var k = JSON.stringify(p2); if (cache[k]) return cache[k];
@@ -1573,7 +1603,13 @@
     };
   }
 
+  /* M3: o que o multidirecional reaproveita do tubo-roll (revisado 3×) — nada é copiado, tudo vem daqui */
+  var INTERNOS = { dep: dep, AN: AN, D88: D88, SEC: SEC, PAC: PAC, num: num, arr: arr, clone: clone, brf: brf, clamp: clamp, GRAV: GRAV, KGF_POR_KN: KGF_POR_KN, kgf: kgf, kN: kN, nkn: nkn,
+    PADRAO: PADRAO, normalizar: normalizar, parametrosInvalidos: parametrosInvalidos, TABELA_BASE_KGF: TABELA_BASE_KGF, capBase: capBase, estadoDe: estadoDe, ORDEM_ESTADO: ORDEM_ESTADO, piorEstado: piorEstado,
+    viga: viga, ncrColuna: ncrColuna, luFatorar: luFatorar, luResolver: luResolver, resolverSistema: resolverSistema, ventoDe: ventoDe, cfTelaDeFi: cfTelaDeFi, resumir: resumir, pontuar: pontuar, melhor: melhor,
+    calcular: function (m, p, o) { return calcular(m, p, o); } };
   var AndaimeCalc = {
+    _int: INTERNOS,
     versao: "E4.1", PADRAO: PADRAO, TABELA_BASE_KGF: TABELA_BASE_KGF, capBase: capBase, estadoDe: estadoDe, normalizar: normalizar, parametrosInvalidos: parametrosInvalidos,
     viga: viga, ncrColuna: ncrColuna, calcular: calcular, simulacao: simulacao, montarInteligente: montarInteligente, KGF_POR_KN: KGF_POR_KN
   };

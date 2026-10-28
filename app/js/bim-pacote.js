@@ -9880,7 +9880,8 @@ var FAM_PBR = {
 'palha natural': { cor: 0xc9b17f, rug: 0.9, met: 0 }, 'rattan natural': { cor: 0xb99b6b, rug: 0.85, met: 0 }, 'concreto': { cor: 0x9c9b97, rug: 0.85, met: 0 },
 'aço galvanizado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'aço zincado bicromatizado': { cor: 0xc9a227, rug: 0.38, met: 0.85, cc: 0.3, ccr: 0.2 }, 'aço preto oxidado': { cor: 0x1e1e1e, rug: 0.55, met: 0.6 }, 'aço grafite': { cor: 0x5a5d61, rug: 0.5, met: 0.6 },
 'madeira pinus': { cor: 0xd9964a, rug: 0.7, met: 0 }, 'madeira eucalipto': { cor: 0xb07a4a, rug: 0.7, met: 0 }, 'borracha': { cor: 0x1a1a1a, rug: 0.9, met: 0 },
-'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 }
+'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 },
+'aço galvanizado perfurado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'alumínio do alçapão': { cor: 0xaeaeae, rug: 0.4, met: 0.85 }
 };
 function famMatPBR(k, nome) {
 var d = FAM_PBR[k], o = { color: new THREE.Color(d.cor), roughness: d.rug, metalness: d.met, side: THREE.DoubleSide };
@@ -9898,7 +9899,7 @@ vermelho: 0xc62828, azul: 0x2c6fbf, preto: 0x24262a, 'cinza escuro': 0x5a5f66, '
 function famMat(nome) {
 var k = String(nome || '').toLowerCase().trim();
 if (famMats[k]) return famMats[k];
-if (FAM_PBR[k]) return (famMats[k] = famMatPBR(k, nome));
+if (FAM_PBR[k]) { var mPBR = famMatPBR(k, nome); if (k === 'aço galvanizado perfurado' && window.FamiliasAndaimeM && FamiliasAndaimeM.materialPerfurado) FamiliasAndaimeM.materialPerfurado(THREE, mPBR); return (famMats[k] = mPBR); }
 var acE = acabEnt(nome);
 if (acE) return (famMats[k] = acabMat(acE, false));
 var cor = FAM_CORES[k];
@@ -11452,7 +11453,8 @@ THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEd
 }) : null;
 S._andaime3d = (window.Andaime3D && Andaime3D.montar3d) ? Andaime3D.montar3d({ THREE: THREE, famAval: famAval, famMat: famMat,
 nivel: function (fam) { var fn = famNivelDe(fam); return fn ? fn.nivel : 'alto'; },
-planta: function (sim) { return window.FamiliasMob && FamiliasMob.linhasPlanta ? FamiliasMob.linhasPlanta(sim) : []; } }) : null;
+planta: function (sim) { return window.FamiliasMob && FamiliasMob.linhasPlanta ? FamiliasMob.linhasPlanta(sim) : []; },
+uv: function (nome) { return window.FamiliasAndaimeM && String(nome).toLowerCase() === FamiliasAndaimeM.MATERIAL_PERFURADO ? FamiliasAndaimeM.uvPerfurado : null; } }) : null;
 S._alv = (window.AlvAssentamento3D && AlvAssentamento3D.montar3d) ? AlvAssentamento3D.montar3d({
 THREE: THREE, S: S, edit: edit, scene: scene, vaos: function (st) { return BimEdit.vaosDasParedes(st, famAval); }
 }) : null;

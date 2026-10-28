@@ -50,7 +50,7 @@
     return { grupos: grupos, nTri: Math.round(nTri), nMalhas: nMalhas, nInstancias: arr(itens).length - sem.length, semForma: sem };
   }
 
-  /* montar(THREE, agr, opc): opc = { mat(nome) → material, planta(simboloPlanta) → segmentos [x1,z1,x2,z2…] locais }.
+  /* montar(THREE, agr, opc): opc = { mat(nome) → material, planta(simboloPlanta) → segmentos [x1,z1,x2,z2…] locais, uv?(nomeMaterial) → função(posições) → uv | null }.
      Devolve { objetos: [Object3D], malhas, instancias, triangulos }. As malhas levam sem2d (a vista 2D não lê a geometria-base) e
      instFam (a troca de nível as descarta); a malha-carregadora leva o símbolo de planta no mundo (mobPlanta) como as famílias de mobiliário. */
   function montar(THREE, agr, opc) {
@@ -61,6 +61,7 @@
       g.av.solidos.forEach(function (s) {
         var geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.Float32BufferAttribute(s.v, 3)); geo.setIndex(s.f); geo.computeVertexNormals();
+        var uvf = opc.uv ? opc.uv(s.material) : null; if (uvf) geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvf(s.v), 2));   /* M2: o piso furado por textura de recorte precisa de UV plano (o motor devolve u, v por vértice) */
         var im = new THREE.InstancedMesh(geo, opc.mat ? opc.mat(s.material) : new THREE.MeshStandardMaterial(), n);
         g.itens.forEach(function (it, i) { e.set(num(it.inst && it.inst.Inclinacao_rad, 0), num(it.rotY, 0), 0, "YXZ"); q.setFromEuler(e); p.set(num(it.x, 0), num(it.y, 0), num(it.z, 0)); M.compose(p, q, s1); im.setMatrixAt(i, M); });
         im.instanceMatrix.needsUpdate = true; im.frustumCulled = false;   /* a esfera de limite é a da geometria-base (na origem), não a das instâncias */
@@ -101,7 +102,7 @@
       if (!itens.length) { ultimo = null; return null; }
       var nv = nivelAtual(itens[0].fam), agr = agrupar(itens, api.famAval, nv), adaptou = false;
       if (nv === "alto" && agr.nTri > TETO.triangulos) { agr = agrupar(itens, api.famAval, "medio"); adaptou = true; nv = "medio"; }
-      var r = montar(api.THREE, agr, { mat: api.famMat, planta: api.planta });
+      var r = montar(api.THREE, agr, { mat: api.famMat, planta: api.planta, uv: api.uv });
       r.objetos.forEach(function (o) { o.userData.instNivel = nv; if (api.registrar) api.registrar(o, mo); else mo.grupo.add(o); });
       ultimo = { nivel: nv, adaptouAoTeto: adaptou, tipos: agr.grupos.length, malhas: r.malhas, instancias: r.instancias, triangulos: r.triangulos, semForma: agr.semForma.length };
       itens = [];

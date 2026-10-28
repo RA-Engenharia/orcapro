@@ -162,15 +162,24 @@
     diagCada: 5, diagTransv: true,
     ancoragem: "tubo", ancH: 6.0, ancV: 4.0,
     base: "regulavel", roscaBase: 0.10, calco: true, acesso: "auto", acessoPos: 0, conexoes3d: true,
-    travaTopo: true, posteGuarda: false, ancTopo: true, abracDupla: "", faceAte: null
+    travaTopo: true, posteGuarda: false, ancTopo: true, abracDupla: "", faceAte: null,
+    /* ANDAIME MULTIDIRECIONAL (M1, 27/10/2026): `sistema` escolhe o motor. "tuboroll" (padrão) = este arquivo, nada muda; "multidirecional" = js/andaimemulti.js.
+       As 4 chaves seguintes só valem no multidirecional (linha do catálogo, largura do módulo = uma travessa da linha, nível do estrado em relação ao nó, curso máximo da rosca da base) */
+    sistema: "tuboroll", linha: "roseta", larguraModulo: 0.80, offPiso: 0, regulagemMax: 0.25
   };
   var NUMS = ["comprimento", "altura", "afastamento", "nPranchas", "largura", "vaoMax", "levanteMax", "hVarredor", "guarda", "intermediaria", "rodape", "rodapeEsp",
-    "pontaMin", "pontaMax", "diagCada", "ancH", "ancV", "acessoPos", "roscaBase"];
+    "pontaMin", "pontaMax", "diagCada", "ancH", "ancV", "acessoPos", "roscaBase", "larguraModulo", "offPiso", "regulagemMax"];
   var BOOLS = ["nr34Montantes", "fechado", "guardaInterno", "tela", "diagTransv", "calco", "conexoes3d", "travaTopo", "posteGuarda", "ancTopo"];
+
+  /* ---- despacho para o multidirecional (M1): módulo preguiçoso; sem ele, erro claro (nunca cai no tubo-roll em silêncio) ---- */
+  var ERRO_MULTI = "módulo do multidirecional não carregou (js/andaimemulti.js).";
+  function Multi() { return dep("AndaimeMulti", "./andaimemulti.js"); }
+  function ehMulti(x) { return !!x && String(x.sistema) === "multidirecional"; }
 
   function padrao() { return clone(PADRAO); }
   function bool(v) { return !(v === false || v === "false" || v === 0 || v === "0" || v === "nao" || v === "não"); }
   function normalizar(par) {
+    if (ehMulti(par)) { var Mn = Multi(); if (Mn) return Mn.normalizar(par); }
     var p = clone(PADRAO);
     Object.keys(par || {}).forEach(function (k) { if (par[k] != null && par[k] !== "") p[k] = clone(par[k]); });
     NUMS.forEach(function (k) { p[k] = num(p[k], PADRAO[k]); });
@@ -223,6 +232,7 @@
     return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
   }
   function validar(par) {
+    if (ehMulti(par)) { var Mv = Multi(); return Mv ? Mv.validar(par) : ERRO_MULTI; }
     var p = normalizar(par), g = caminhoDe(p), cam = g.cam;
     var txtC = String(p.caminho || "").trim(), txtK = String(p.contorno || "").trim(), cm0 = lerCaminho(p.caminho), ck0 = lerCaminho(p.contorno);
     if (txtK && ck0.length < 3) return "Andaime: o contorno precisa de 3 pontos ou mais (x z; x z…).";
@@ -330,6 +340,7 @@
 
   /* ================================================================ MONTAR */
   function montar(par) {
+    if (ehMulti(par)) { var Mm = Multi(); return Mm ? Mm.montar(par) : { ok: false, erro: ERRO_MULTI, avisos: [] }; }
     var p = normalizar(par), erro = validar(par);
     if (erro) return { ok: false, erro: erro, avisos: [] };
     var T = tuboInfo(p.tubo), D = T.D, R = PARAMETROS_RT;
@@ -1171,6 +1182,7 @@
   var NOME_TUBO = { montante: "Pontalete", travessa: "Longitudinal", varredor: "Longitudinal", guarda: "Longitudinal", intermediaria: "Longitudinal", transversal: "Transversal", diagonal: "Diagonal", diagonalTransv: "Diagonal", ancoragem: "Tubo de Amarração", travaTopo: "Longitudinal", transversalTopo: "Transversal", posteGuarda: "Poste de Guarda-corpo" };
   function pecasLocacao(modelo) {
     if (!modelo || !modelo.ok) return [];
+    if (ehMulti(modelo)) { var Ml = Multi(); return Ml ? Ml.pecasLocacao(modelo) : []; }
     var out = [], T = modelo.tubo || tuboInfo(CATALOGO.tubo.cat), P = modelo.par || PADRAO;
     function linha(cod, peca, dimensoes, qtd, L, area, extra) {
       var c = CATALOGO.pecas[cod], dimP = cod === "rodapeMadeira" ? { a: P.rodape, e: P.rodapeEsp } : (cod === "alcapao" ? { a: 0.60, e: CATALOGO.pecas.pranchaMadeira.esp } : null), pu = cod === "tubo" ? (T.kgm != null && L != null ? r3(T.kgm * L) : null) : pesoDaPeca(cod, L, dimP);
@@ -1221,6 +1233,7 @@
   }
   /* a relação de materiais pronta para a prancha/planilha: colunas + linhas + total geral */
   function tabelaLocacao(modelo) {
+    if (ehMulti(modelo)) { var Mt = Multi(); if (Mt) return Mt.tabelaLocacao(modelo); }
     var l = pecasLocacao(modelo), pt = 0, ar = 0, qt = 0;
     var linhas = l.map(function (r) {
       if (r.pesoTotal != null) pt += r.pesoTotal; if (r.area != null) ar += r.area; qt += r.cod === "tela" ? 0 : r.qtd;
@@ -1239,6 +1252,7 @@
   /* ⚠ teto de conexões desenhadas com as famílias: a medida que sustenta o número está no bloco [desempenho] de tools/test-familiasandaime.js */
   var TETO_CONEXOES_FAM = 6000;
   function gerar(p, K, novoId, ctx, H) {
+    if (ehMulti(p)) { var Mg = Multi(); return Mg ? Mg.gerar(p, K, novoId, ctx, H) : { erro: ERRO_MULTI }; }
     var mod = montar(p);
     if (!mod.ok) return { erro: mod.erro };
     var BA = dep("BimArq", "./bimarq.js"), F = K.F, yOff = mod.yOffCalco, n0 = K.pecas.length, W3 = function (q) { return F.W([q[0], q[1] + yOff, q[2]]); };
@@ -1468,7 +1482,9 @@
   var Andaime = {
     PADRAO: PADRAO, NUMS: NUMS, BOOLS: BOOLS, CATALOGO: CATALOGO, PARAMETROS_RT: PARAMETROS_RT,
     padrao: padrao, normalizar: normalizar, validar: validar, montar: montar, pecasLocacao: pecasLocacao, todos: todos, tabelaLocacao: tabelaLocacao, COLUNAS_LOCACAO: COLUNAS_LOCACAO, lerCaminho: lerCaminho, lerLista: lerLista, pesoDaPeca: pesoDaPeca, tuboInfo: tuboInfo,
-    registrado: function () { return registrado; }, registrar: registrar
+    registrado: function () { return registrado; }, registrar: registrar,
+    /* auxiliares PUROS de geometria, reaproveitados pelo multidirecional (js/andaimemulti.js) — o comportamento deles não muda */
+    _geo: { lerCaminho: lerCaminho, lerLista: lerLista, caminhoDe: caminhoDe, areaAssinada: areaAssinada, pisosDe: pisosDe, tuboInfo: tuboInfo }
   };
   global.Andaime = Andaime;
   if (typeof module !== "undefined" && module.exports) module.exports = Andaime;

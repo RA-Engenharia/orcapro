@@ -13,6 +13,9 @@
  *   3. DUPLO CLIQUE no componente reabre o painel (gancho em MetalProntasUI.dialogo); alterar parâmetro refaz no lugar e a
  *      aprovação passa por Aprovacao.aoAlterar (volta para «em revisão»); cópia do componente = rascunho.
  *   4. Pranchas e Memorial: botões que chamam AndaimePranchas.gerar / AndaimeMemorial.gerar quando existirem (E8).
+ *   5. (M4-A, 27/10/2026) MULTIDIRECIONAL: botão «Andaime multidirecional» na fita (COMANDOS_MULTI — fora de COMANDOS para o tubo-roll não mudar) e o seletor
+ *      «Sistema: Tubo-roll · Multidirecional (roseta) · Multidirecional (estribo)» no traçado e no Resumo; trocar o sistema de um andaime existente
+ *      refaz no lugar e a aprovação volta para «em revisão». As 8 abas valem para os dois sistemas; as pendências do RT são desenhadas de forma genérica.
  *
  * ⚠ Nada é aplicado em silêncio: cada mudança do Montar inteligente aparece na lista com o seu desfazer. Dado que o sistema
  * não tem (V0, categoria, tela, faceAte, tensão do solo, ancoragem) é PENDÊNCIA do RT, em destaque — nunca um verde.
@@ -48,6 +51,10 @@
     { id: "met-andaime-pranchas", tipo: "andaime", modo: null, acao: "pranchas", requer: "selecao", rotulo: "Pranchas\nexecutivas", icone: "grade", grande: true, dica: "Gera o JOGO COMPLETO de pranchas do andaime selecionado (A1): AND-01 planta e cortes A-A/B-B · AND-02 elevações · AND-03 isométrico e detalhes · AND-04 relação de peças, pesos, reações e ancoragens · AND-05 memorial, checklist e liberação. Sai em PDF (imprimir → salvar como PDF) e em DXF com o carimbo RA." },
     { id: "met-andaime-ifc", tipo: "andaime", modo: null, emBreve: true, rotulo: "A partir de\nvolumetria IFC", icone: "bloco", grande: true, dica: "Em breve (E6): monta o andaime em volta de um volume do modelo (tanque cilíndrico, caixa) lendo o contorno e a altura do topo." }
   ];
+  /* M4-A: o botão do multidirecional fica FORA de COMANDOS (o contrato do tubo-roll — 4 botões, ids e ordem — não muda); metalui e bimfita o acrescentam num grupo próprio */
+  var COMANDOS_MULTI = [
+    { id: "met-andaime-multi", tipo: "andaime", modo: "polilinha", sistema: "multidirecional", linha: "roseta", rotulo: "Andaime\nmultidirecional", icone: "grade", grande: true, dica: "Andaime multidirecional (postes com roseta a cada 0,50 m, travessas com cunha, piso metálico com alçapão e escada). Trace a linha da face a trabalhar e digite a ALTURA: o andaime sobe em arame até ela e, ao fechar (Enter), já nasce montado — postes, travessas, diagonais, bases, pisos, guarda-corpo, rodapé, alçapões, ancoragens — com o Montar inteligente e o painel de cálculo, locação, montagem (sequência do manual do fabricante), checklist e aprovação. Escolha a linha (roseta ou estribo) no painel do traçado. Tab troca o lado." }
+  ];
   /* campos do diálogo antigo (Peças prontas) — seguem valendo como «Parâmetros avançados» do painel */
   function camposDe() {
     var sel = function (id, rot, ops) { return [id, rot, "sel", ops]; };
@@ -59,6 +66,7 @@
       ["pisos", "Pisos de trabalho: topo, todos ou alturas (2,0; 4,0)", "txt"], sel("piso", "Piso", [["madeira", "Prancha de madeira 0,24 × 0,045 m"], ["metalico", "Piso metálico com gancho 0,37 m"]]),
       ["guarda", "Guarda-corpo: travessão superior (m) — NR-18 18.9.4.2 a)", "num"], ["intermediaria", "Travessão intermediário (m) — NR-18 18.9.4.2 b)", "num"], ["rodape", "Rodapé: altura (m) — NR-18 18.9.4.2 c): mínimo 0,15", "num"], ["rodapeEsp", "Rodapé: espessura (m) — confirmar RT", "num"],
       ["guardaInterno", "Guarda-corpo também na linha interna (face)", "check"], ["tela", "Tela na face externa (NR-18 18.12.15)", "check"],
+      sel("sistema", "Sistema do andaime", [["tuboroll", "Tubo-roll (tubo equipado)"], ["multidirecional", "Multidirecional (roseta ou estribo)"]]), sel("linha", "Linha do multidirecional", [["roseta", "Roseta"], ["estribo", "Estribo"]]), ["larguraModulo", "Largura do módulo do multidirecional (m) — uma travessa da linha", "num"],
       ["tubo", "Tubo", "cat", ["HSSC"]], ["barras", "Comprimentos comerciais dos tubos (m)", "txt"], ["diagCada", "Diagonal de fachada a cada N vãos — confirmar RT", "int"], ["diagTransv", "Diagonal transversal", "check"],
       sel("ancoragem", "Ancoragem", [["tubo", "Tubo de amarração + olhal na face"], ["nenhuma", "Nenhuma (só anel fechado ou torre que passa no 4×)"]]), ["ancH", "Ancoragem: espaçamento horizontal (m) — SEM FONTE, RT define", "num"], ["ancV", "Ancoragem: espaçamento vertical (m) — SEM FONTE, RT define", "num"],
       sel("base", "Base", [["regulavel", "Regulável 120 × 120"], ["fixa", "Fixa"], ["rodizio", "Rodízio com trava"]]), ["calco", "Calço de madeira sob a base", "check"],
@@ -100,14 +108,14 @@
   /* ================================================================ MODO DE TRAÇADO */
   var _sess = null;     /* a sessão ativa (AndaimeTela.novo) */
   var _arma = null;     /* o que o botão pediu antes de o editor criar a sessão: { modo, altura } */
-  var _ultAltura = null, _ultInteligente = true;
+  var _ultAltura = null, _ultInteligente = true, _ultSistema = "tuboroll";
   var _anim = { t: 0, ativo: false };
   function sess(s) {
     if (!s) return _sess;
     if (s.and) { s.and.pts = s.pts; _sess = s.and; }   /* o Esc do editor troca a lista (pts = []): religa a MESMA lista */
     if (!s.and) {
       var a = _arma || { modo: "polilinha" }, base = {};
-      s.and = T().novo({ modo: a.modo, altura: a.altura != null ? a.altura : (_ultAltura != null ? _ultAltura : AN().PADRAO.altura), inteligente: _ultInteligente, y0: PU() ? PU().cota() : 0, par: a.par || {} });
+      s.and = T().novo({ sistema: a.sistema, linha: a.linha, modo: a.modo, altura: a.altura != null ? a.altura : (_ultAltura != null ? _ultAltura : AN().PADRAO.altura), inteligente: _ultInteligente, y0: PU() ? PU().cota() : 0, par: a.par || {} });
       s.and.pts = s.pts;   /* a MESMA lista: Backspace/cancelar do editor valem para a sessão */
       _sess = s.and;
     }
@@ -125,6 +133,7 @@
       el.innerHTML = '<div class="andui-traco-txt" data-andui="traco-txt" role="status"></div>' +
         '<div class="andui-traco-ctl">' +
         '<label>Altura a vencer (m) <input data-andui="altura" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Altura do piso de trabalho em metros"></label>' +
+        '<label>Sistema <select data-andui="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '">' + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label>" +
         '<label>Lado <select data-andui="lado" aria-label="Lado do andaime"></select></label>' +
         '<label class="andui-ck"><input type="checkbox" data-andui="intel"> Montar inteligente</label>' +
         '<button type="button" class="andui-bt pri" data-andui-acao="traco-fechar">Fechar (Enter)</button>' +
@@ -148,6 +157,7 @@
           painelTraco(null, s); return;
         }
         if (t.getAttribute("data-andui") === "altura") { var er = T().setAltura(s, t.value); el.querySelector('[data-andui="traco-erro"]').textContent = er || ""; if (!er) _ultAltura = s.altura; else t.value = br(s.altura, 2); AndaimeUI.redesenhar(); }
+        else if (t.getAttribute("data-andui") === "sistema") { T().setSistema(s, t.value); _ultSistema = t.value; AndaimeUI.redesenhar(); status("Sistema: " + T().ROT_SISTEMA[t.value] + "."); }
         else if (t.getAttribute("data-andui") === "lado") { s.lado = t.value; s.hVis = 0; AndaimeUI.redesenhar(); }
         else if (t.getAttribute("data-andui") === "intel") { s.inteligente = !!t.checked; _ultInteligente = s.inteligente; }
       });
@@ -160,6 +170,7 @@
       if (sl && sl.getAttribute("data-modo") !== s.modo) { sl.setAttribute("data-modo", s.modo); sl.innerHTML = L.map(function (l) { return '<option value="' + l + '">' + esc(l.charAt(0).toUpperCase() + l.slice(1)) + "</option>"; }).join(""); }
       if (sl) sl.value = s.lado;
       var ic = el.querySelector('[data-andui="intel"]'); if (ic) ic.checked = !!s.inteligente;
+      var ss = el.querySelector('[data-andui="sistema"]'); if (ss) ss.value = T().sistemaDe(s);
     }
     if (s) {   /* Local e vento: o V0 sai sozinho do local da obra (AcoIsopletas) quando há coordenada; a fonte é dita */
       var dv = T().v0DoLocal(localObra()), iv = el.querySelector('[data-andui-v="V0"]'), nv = el.querySelector('[data-andui="vento-nota"]'), vt = s.vento || {};
@@ -278,6 +289,7 @@
       ".andui-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px 10px;margin:6px 0}.andui-form label{display:flex;flex-direction:column;gap:2px;font-size:11.5px}.andui-form input,.andui-form select,.andui-form textarea{min-height:28px}" +
       ".andui-chk{border:1px solid var(--linha);border-radius:8px;padding:6px 8px;margin:5px 0}.andui-chk .rb{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap;align-items:center}.andui-chk .rb .andui-bt[aria-pressed=true]{background:var(--aco);color:#fff}.andui-chk.nc{border-color:var(--vermelho)}.andui-chk small{color:var(--texto-fraco);font-size:11px}" +
       ".andui-cartao{border-radius:10px;padding:12px;text-align:center;font-weight:800;font-size:15px;color:#fff;margin:6px 0}.andui-cartao.verde{background:#1f7a3d}.andui-cartao.amarelo{background:#d9a400}.andui-cartao.vermelho{background:#b3261e}.andui-cartao.nulo{background:#5b6673}" +
+      ".andui-sis{border:1px solid var(--linha);border-radius:10px;padding:8px 10px;margin:8px 0}.andui-sis h3{margin:0 0 6px}.andui-form .ck{flex-direction:row;align-items:center;gap:6px}" +
       ".andui-hist{list-style:none;padding:0;margin:0;font-size:12px}.andui-hist li{border-left:3px solid var(--linha);padding:2px 0 2px 8px;margin:3px 0}" +
       "@media (max-width:760px){.andui-painel{top:0;width:100vw}.andui-traco{bottom:8px}}";
     d.head.appendChild(s);
@@ -312,13 +324,58 @@
   }
 
   /* ---------------------------------------------------------------- abas */
+  /* as pendências do RT: lista GENÉRICA (a tela não conhece os campos: lê o que o cálculo do sistema manda em calc.pendenciasRT) */
+  function blocoPendencias(D, res) {
+    var h = "";
+    if (D.tela.fonteV0) h += '<p class="andui-mut" data-andui="fonte-v0">V0 — fonte: ' + esc(D.tela.fonteV0) + ".</p>";
+    h += '<div class="andui-rt" data-andui="pendencias-rt"><h3>Pendências do responsável técnico</h3><p class="andui-mut">O sistema não tem estes dados e não os inventa. Sem eles a verificação correspondente fica NÃO VERIFICADA (cinza) — nunca verde.</p>';
+    T().pendenciasRT(D.par, res && res.calc).forEach(function (p) {
+      if (p.tipo === "marca") {   /* C-T1.1: caixa + justificativa do RT (mesmo padrão: Aplicar → AndaimeUI.informar → reagirAoDado) */
+        h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + "</label>";
+        h += '<label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"' + (p.valor ? " checked" : "") + '> ' + esc(p.campo === "ventoParaleloRT" ? "Vento paralelo à fachada conferido pelo RT" : (p.rotuloMarca || "Conferido pelo RT")) + '</label>';
+        h += '<input data-andui-pj="' + esc(p.campo) + '" placeholder="Justificativa do RT (mín. 15 caracteres)" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="Justificativa do RT: ' + esc(p.rotulo) + '">';
+        h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button><small>' + esc(p.dica) + "</small></div>";
+        return;
+      }
+      var v = p.valor == null ? "" : (p.tipo === "num" ? br(p.valor, p.campo === "telaSombreamento" ? 2 : 2) : p.valor);
+      h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + "</label>";
+      if (p.tipo === "sel") h += '<select id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"><option value="">—</option>' + p.ops.map(function (o) { return '<option value="' + o + '"' + (String(p.valor) === o ? " selected" : "") + ">" + o + "</option>"; }).join("") + "</select>";
+      else h += '<input id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '" inputmode="decimal" value="' + esc(v) + '" autocomplete="off">';
+      h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>';
+      if (p.confirma) h += '<small><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" data-andui-pc="' + esc(p.campo) + '"' + (p.confirmado ? " checked" : "") + '> Confirmo como RT (preciso confirmar para a verificação contar)</label></small>';
+      h += "<small>" + esc(p.dica) + "</small></div>";
+    });
+    h += "</div>";
+    return h;
+  }
+
+  /* o seletor de sistema e o formulário do multidirecional (M4-A) */
+  function blocoSistema(D) {
+    var cur = T().sistemaDe(D.par), multi = cur !== "tuboroll", h = '<div class="andui-sis" data-andui="sistema-bloco"><h3>Sistema do andaime</h3>';
+    h += '<div class="andui-form"><label>Sistema<select data-andui-f="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label></div>";
+    h += '<p><button type="button" class="andui-bt" data-andui-acao="sistema-trocar">Trocar o sistema</button> <span class="andui-mut">Refaz o andaime no lugar com o mesmo traçado e a mesma altura; os parâmetros voltam ao padrão do sistema novo e a aprovação volta para «em revisão».</span></p>';
+    if (multi) {
+      h += '<h3 style="margin-top:10px">Parâmetros do multidirecional</h3><div class="andui-form" data-andui="param-multi">';
+      T().PARAMETROS_MULTI.forEach(function (d) {
+        var v = D.par[d.id], id = 'andmp-' + d.id;
+        if (d.tipo === "check") h += '<label class="ck" for="' + id + '"><input type="checkbox" id="' + id + '" data-andui-mp="' + d.id + '"' + (v === false || v === "false" ? "" : " checked") + "> " + esc(d.rotulo) + "</label>";
+        else if (d.id === "larguraModulo") h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + T().largurasDaLinha(D.par.linha).map(function (w) { return '<option value="' + w + '"' + (Math.abs(num(v, 0) - w) < 1e-6 ? " selected" : "") + ">" + br(w, 2) + " m</option>"; }).join("") + "</select></label>";
+        else if (d.tipo === "sel") { var cv = d.id === "pisos" ? (String(v) === "todos" ? "todos" : "topo") : String(v); h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + d.ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cv ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></label>"; }
+        else h += '<label>' + esc(d.rotulo) + '<input id="' + id + '" data-andui-mp="' + d.id + '" inputmode="decimal" value="' + esc(br(v, d.int ? 0 : 2)) + '" autocomplete="off"></label>';
+      });
+      h += '</div><p><button type="button" class="andui-bt pri" data-andui-acao="multi-aplicar">Aplicar os parâmetros</button> <span class="andui-mut">Guarda-corpo do multidirecional: travessão a 1,00 m e intermediário a 0,50 m (NR-18 18.12.15.2). A altura se muda em «Altura a vencer».</span></p>';
+      h += '<ul class="andui-mut">' + T().PARAMETROS_MULTI.map(function (d) { return "<li><b>" + esc(d.rotulo.split(" — ")[0]) + ":</b> " + esc(d.dica) + "</li>"; }).join("") + "</ul>";
+    }
+    return h + "</div>";
+  }
+
   function abaResumo(D, res) {
     var M = res.modelo.medidas, c = res.calc, ver = T().verificacoes(c), nF = ver.filter(function (v) { return v.estado === "falha"; }).length, nA = ver.filter(function (v) { return v.estado === "atencao"; }).length, nN = ver.filter(function (v) { return v.estado === "nao_verificado"; }).length;
     var passou = nF === 0, h = "";
     h += "<h3>Situação</h3>";
     h += '<p>' + (passou ? chipEstado(nN || nA ? "atencao" : "ok", nN || nA ? "passou, com pendências" : "passou em tudo") : chipEstado("falha", "NÃO passou")) + " <span class=\"andui-mut\">" + (nF ? nF + " verificação(ões) reprovada(s). " : "") + (nA ? nA + " em atenção. " : "") + (nN ? nN + " não verificada(s) por falta de dado do RT." : "") + "</span></p>";
     h += '<p class="andui-mut" data-andui="aviso-calculo">' + esc(c.resumo || "") + "</p>";
-    h += '<div class="andui-med">' + [["Comprimento", br(M.comprimento) + " m"], ["Largura", br(M.largura) + " m"], ["Piso mais alto", br(M.alturaPiso) + " m"], ["Vãos × levantes", M.nVaos + " × " + M.nLevantes], ["Pisos de trabalho", M.nPisos], ["Prumadas", M.nMontantes], ["Ancoragens", M.nAncoragens], ["Área de piso", br(M.areaPiso) + " m²"], ["Peso do conjunto", br(M.pesoTotal, 0) + " kg"], ["Tubos", M.nTubos], ["Conexões", M.nConexoesTotal], ["Tela", br(res.modelo.tela ? res.modelo.tela.area : 0) + " m²"]].map(function (x) { return "<div><small>" + esc(x[0]) + "</small><b>" + esc(x[1]) + "</b></div>"; }).join("") + "</div>";
+    h += '<div class="andui-med">' + [["Comprimento", br(M.comprimento) + " m"], ["Largura", br(M.largura) + " m"], ["Piso mais alto", br(M.alturaPiso) + " m"], ["Vãos × levantes", M.nVaos + " × " + M.nLevantes], ["Pisos de trabalho", M.nPisos], [res.modelo.sistema === "multidirecional" ? "Postes" : "Prumadas", res.modelo.sistema === "multidirecional" ? M.nPostes : M.nMontantes], ["Ancoragens", M.nAncoragens], ["Área de piso", br(M.areaPiso != null ? M.areaPiso : M.areaForrada) + " m²"], ["Peso do conjunto", br(M.pesoTotal, 0) + " kg"], ["Tubos", M.nTubos], ["Conexões", M.nConexoesTotal], ["Tela", br(res.modelo.tela ? res.modelo.tela.area : 0) + " m²"]].map(function (x) { return "<div><small>" + esc(x[0]) + "</small><b>" + esc(x[1]) + "</b></div>"; }).join("") + "</div>";
     /* altura */
     h += "<h3>Altura a vencer</h3>" + '<div class="andui-form"><label>Altura do piso de trabalho (m)<input data-andui-f="altura" inputmode="decimal" value="' + esc(br(D.par.altura, 2)) + '"></label></div>' +
       '<p><button type="button" class="andui-bt pri" data-andui-acao="altura-aplicar">Aplicar a altura</button> <button type="button" class="andui-bt" data-andui-acao="reinteligente" title="Roda de novo o gerador que corrige o andaime e lista o que mudou">Refazer com Montar inteligente</button> <button type="button" class="andui-bt" data-andui-acao="param-dialogo">Parâmetros avançados…</button></p>' +
@@ -333,26 +390,8 @@
           (m.desfeita ? '<span class="andui-mut">desfeita</span>' : '<button type="button" class="andui-bt" data-andui-acao="desfazer" data-k="' + esc(m.id) + '">Desfazer</button>') + "</div>";
       }).join("");
     h += blocoRT(D);
-    /* pendências do RT */
-    if (D.tela.fonteV0) h += '<p class="andui-mut" data-andui="fonte-v0">V0 — fonte: ' + esc(D.tela.fonteV0) + ".</p>";
-    h += '<div class="andui-rt" data-andui="pendencias-rt"><h3>Pendências do responsável técnico</h3><p class="andui-mut">O sistema não tem estes dados e não os inventa. Sem eles a verificação correspondente fica NÃO VERIFICADA (cinza) — nunca verde.</p>';
-    T().pendenciasRT(D.par).forEach(function (p) {
-      if (p.tipo === "marca") {   /* C-T1.1: caixa + justificativa do RT (mesmo padrão: Aplicar → AndaimeUI.informar → reagirAoDado) */
-        h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + "</label>";
-        h += '<label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"' + (p.valor ? " checked" : "") + '> Vento paralelo à fachada conferido pelo RT</label>';
-        h += '<input data-andui-pj="' + esc(p.campo) + '" placeholder="Justificativa do RT (mín. 15 caracteres)" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="Justificativa do RT para o vento paralelo">';
-        h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button><small>' + esc(p.dica) + "</small></div>";
-        return;
-      }
-      var v = p.valor == null ? "" : (p.tipo === "num" ? br(p.valor, p.campo === "telaSombreamento" ? 2 : 2) : p.valor);
-      h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + "</label>";
-      if (p.tipo === "sel") h += '<select id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"><option value="">—</option>' + p.ops.map(function (o) { return '<option value="' + o + '"' + (String(p.valor) === o ? " selected" : "") + ">" + o + "</option>"; }).join("") + "</select>";
-      else h += '<input id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '" inputmode="decimal" value="' + esc(v) + '" autocomplete="off">';
-      h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>';
-      if (p.confirma) h += '<small><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" data-andui-pc="' + esc(p.campo) + '"' + (p.confirmado ? " checked" : "") + '> Confirmo como RT (preciso confirmar para a verificação contar)</label></small>';
-      h += "<small>" + esc(p.dica) + "</small></div>";
-    });
-    h += "</div>";
+    h += blocoSistema(D);
+    h += blocoPendencias(D, res);
     if (arr(res.pendenciasTexto).length) h += '<h3>Hipóteses em uso</h3><ul class="andui-mut">' + res.pendenciasTexto.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
     return h;
   }
@@ -365,6 +404,7 @@
     if (probs.length && global.ProblemaCard) h += "<h3>O que não passa</h3>" + global.ProblemaCard.lista(probs, { acoes: function (sol) { return sol.texto ? true : false; }, mostrar: true });
     else if (!probs.length) h += '<p class="andui-mut">Nenhuma verificação reprovada ou em atenção.</p>';
     var nao = arr(res.calc.naoVerificado); if (nao.length) h += "<h3>Não verificado</h3><ul class=\"andui-mut\">" + nao.slice(0, 12).map(function (t) { return "<li>" + esc(typeof t === "string" ? t : (t.texto || t.titulo || JSON.stringify(t))) + "</li>"; }).join("") + "</ul>";
+    h += blocoPendencias(D, res);
     return h;
   }
 
@@ -384,8 +424,8 @@
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="xlsx">Baixar a lista (.xlsx)</button></p>';
     if (!lista.ok) return h + "<p>" + esc(lista.motivo) + "</p>";
     var res0 = lista.reserva > 0;
-    h += '<table class="andui-tab" data-andui="locacao"><thead><tr><th class="n">Qnt</th>' + (res0 ? '<th class="n">Trazer</th>' : "") + "<th>Peça</th><th>Un</th><th class=\"n\">Peso (kg)</th></tr></thead><tbody>" +
-      lista.linhas.map(function (l) { return '<tr><td class="n">' + br(l.qtd, l.un === "m²" ? 2 : 0) + "</td>" + (res0 ? '<td class="n"><b>' + br(l.trazer, l.un === "m²" ? 2 : 0) + "</b></td>" : "") + "<td>" + esc(l.nome) + (l.confirmarRT ? ' <span class="andui-mut">(confirmar RT)</span>' : "") + '<br><span class="andui-mut">' + esc(l.oQueE) + "</span></td><td>" + esc(l.un) + '</td><td class="n">' + (l.pesoTotal == null ? "—" : br(l.pesoTotal)) + "</td></tr>"; }).join("") + "</tbody></table>";
+    h += '<table class="andui-tab" data-andui="locacao"><thead><tr><th class="n">Qnt</th>' + (res0 ? '<th class="n">Trazer</th>' : "") + "<th>Peça</th>" + (lista.temRef ? "<th>Ref. catálogo</th>" : "") + "<th>Un</th><th class=\"n\">Peso (kg)</th></tr></thead><tbody>" +
+      lista.linhas.map(function (l) { return '<tr><td class="n">' + br(l.qtd, l.un === "m²" ? 2 : 0) + "</td>" + (res0 ? '<td class="n"><b>' + br(l.trazer, l.un === "m²" ? 2 : 0) + "</b></td>" : "") + "<td>" + esc(l.nome) + (l.confirmarRT ? ' <span class="andui-mut">(confirmar RT)</span>' : "") + '<br><span class="andui-mut">' + esc(l.oQueE) + "</span></td>" + (lista.temRef ? "<td>" + esc(l.refCatalogo || "") + "</td>" : "") + "<td>" + esc(l.un) + '</td><td class="n">' + (l.pesoTotal == null ? "—" : br(l.pesoTotal)) + "</td></tr>"; }).join("") + "</tbody></table>";
     h += '<p class="andui-mut">' + lista.totais.pecas + " peças (sem a tela)" + (res0 ? ", " + lista.totais.pecasTrazer + " com a reserva" : "") + " · " + br(lista.totais.pesoKg) + " kg · tela " + br(lista.totais.m2Tela) + " m². Sem preço (custo é outra etapa).</p>";
     return h;
   }
@@ -393,7 +433,12 @@
   function abaMontagem(D, res) {
     var pl = AD().planoMontagem(res.modelo, res.modelo.par), h = "";
     if (!pl.ok) return "<p>" + esc(pl.motivo) + "</p>";
-    h += '<ol data-andui="passos" style="padding-left:18px">' + pl.passos.map(function (p) { return "<li><b>" + esc(p.titulo) + "</b><br>" + esc(p.fazer) + (p.quantidades ? '<br><span class="andui-mut">' + esc(p.quantidades) + "</span>" : "") + "</li>"; }).join("") + "</ol>";
+    h += '<ol data-andui="passos" style="padding-left:18px">' + pl.passos.map(function (p) {
+      /* multidirecional: a ordem DENTRO do levante (subir os postes → travessas → pisos → guarda-corpo → diagonais → ancoragens) é o que o manual manda; o tubo-roll segue como era */
+      var et = pl.sistema === "multidirecional" && arr(p.etapas).length ? '<div class="andui-mut" data-andui="etapas">' + p.etapas.map(function (e, i) { return "<div>" + (i + 1) + ". <b>" + esc(e.titulo) + ":</b> " + esc(e.fazer) + "</div>"; }).join("") + "</div>" : "";
+      return "<li><b>" + esc(p.titulo) + "</b><br>" + esc(p.fazer) + (p.quantidades ? '<br><span class="andui-mut">' + esc(p.quantidades) + "</span>" : "") + et + "</li>";
+    }).join("") + "</ol>";
+    if (pl.sistema === "multidirecional") h = '<p class="andui-mut" data-andui="aviso-plano">' + esc(pl.aviso) + "</p>" + h;
     if (pl.desmontagem && arr(pl.desmontagem.passos).length) h += "<details><summary>Desmontagem (ordem inversa)</summary><ol style=\"padding-left:18px\">" + pl.desmontagem.passos.map(function (p) { return "<li><b>" + esc(p.titulo) + "</b><br>" + esc(p.fazer) + "</li>"; }).join("") + "</ol></details>";
     if (arr(pl.requisitos).length) h += "<h3>Requisitos de quem monta</h3><ul>" + pl.requisitos.map(function (r) { return "<li>" + esc(r.texto) + ' <span class="andui-mut">(' + esc(r.fonte) + ")</span></li>"; }).join("") + "</ul>";
     return h;
@@ -457,6 +502,7 @@
     var corpo = r0.querySelector('[data-andui="corpo"]'), top = corpo.scrollTop, h = "";
     /* os campos digitados (nome, registro, ART, observação…) sobrevivem ao refazer da tela — uma recusa não pode apagar o que a pessoa escreveu */
     P.form = P.form || {}; [].forEach.call(corpo.querySelectorAll("[data-andui-f]"), function (e) { var k = e.getAttribute("data-andui-f"); if (k !== "altura" && String(e.value) !== "") P.form[k] = e.value; });
+    var tt = r0.querySelector('[data-andui="titulo"]'); if (tt) tt.textContent = "Andaime " + (D.par.sistema === "multidirecional" ? "multidirecional (" + (D.par.linha === "estribo" ? "estribo" : "roseta") + ")" : "tubo-roll");
     r0.querySelector('[data-andui="sub"]').textContent = (res.ok ? res.modelo.medidas.nVaos + " vãos × " + res.modelo.medidas.nLevantes + " levantes · piso a " + br(res.modelo.medidas.alturaPiso) + " m · " : "") + ({ verde: "liberado (cartão verde)", amarelo: "liberado com restrição (cartão amarelo)", vermelho: "NÃO USAR (cartão vermelho)" }[AD().Aprovacao.cartaoEfetivo(D.ap, D.par).cor] || "sem liberação");
     r0.querySelectorAll("[data-andui-aba]").forEach(function (b) { b.setAttribute("aria-selected", b.getAttribute("data-andui-aba") === P.aba ? "true" : "false"); });
     if (!res.ok) { corpo.innerHTML = msgHtml() + '<p class="andui-msg erro">' + esc(res.erro) + "</p>"; return; }
@@ -517,6 +563,8 @@
     else if (a === "altura-aplicar") AndaimeUI.aplicarAltura(fval("altura"));
     else if (a === "reinteligente") AndaimeUI.reinteligente();
     else if (a === "param-dialogo") AndaimeUI.parametrosAvancados();
+    else if (a === "sistema-trocar") { var ss = raiz().querySelector('[data-andui-f="sistema"]'); AndaimeUI.trocarSistema(ss ? ss.value : "tuboroll"); }
+    else if (a === "multi-aplicar") { var vv = {}; [].forEach.call(raiz().querySelectorAll("[data-andui-mp]"), function (e) { vv[e.getAttribute("data-andui-mp")] = e.type === "checkbox" ? !!e.checked : e.value; }); AndaimeUI.aplicarParametrosMulti(vv); }
     else if (a === "pend-aplicar") { var c = el.getAttribute("data-campo"), r0 = raiz(), inp = r0.querySelector('[data-andui-p="' + c + '"]'), ck = r0.querySelector('[data-andui-pc="' + c + '"]'), jj = r0.querySelector('[data-andui-pj="' + c + '"]'); if (inp && inp.type === "checkbox") AndaimeUI.informar(c, inp.checked ? "true" : "", false, jj ? jj.value : ""); else AndaimeUI.informar(c, inp ? inp.value : "", ck ? !!ck.checked : false); }
     else if (a === "sim-toggle") { P.sim = !P.sim; limparGrupo("andaime-destaque"); renderizar(); }
     else if (a === "xlsx") AndaimeUI.exportarXlsx();
@@ -545,9 +593,10 @@
   /* ================================================================ A API */
   var AndaimeUI = {
     /* ganchos de teste: o MESMO bloco/opcoes que as abas e os botoes usam (testados sem DOM) */
-    _blocoRT: blocoRT, _abaLocacao: abaLocacao, _opcoesDocumento: opcoesDocumento, _avisoRT: avisoRT, _cabDe: cabDe,
-    MODO: MODO, COMANDOS: COMANDOS, ultimaPrevia: null,
+    _blocoRT: blocoRT, _blocoSistema: blocoSistema, _blocoPendencias: blocoPendencias, _abaLocacao: abaLocacao, _opcoesDocumento: opcoesDocumento, _avisoRT: avisoRT, _cabDe: cabDe,
+    MODO: MODO, COMANDOS: COMANDOS, COMANDOS_MULTI: COMANDOS_MULTI, ultimaPrevia: null,
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
+    idsMulti: function () { return COMANDOS_MULTI.map(function (c) { return c.id; }); },
     pronto: function () { return !!(MP() && PU() && AN() && AN().registrado && AN().registrado() && T() && previa()); },
     registrar: function (reg) {
       if (!this.pronto()) return false;
@@ -555,6 +604,9 @@
       PU().registrarCampos("andaime", camposDe());
       PU().registrarModo(MODO, modo());
       reg["ctx-andaime-pranchas"] = function () { try { self.pranchasExecutivas(); } catch (e) { toast("Andaime: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
+      COMANDOS_MULTI.forEach(function (c) {
+        reg[c.id] = function () { try { self.comando(c.modo, { sistema: c.sistema, linha: c.linha }); } catch (e) { toast("Andaime: " + (e && e.message ? e.message : e), "erro", 8000); } return true; };
+      });
       COMANDOS.forEach(function (c) {
         reg[c.id] = function () {
           try { if (c.emBreve) { toast("A partir de volumetria IFC: em breve (E6).", "info", 6000); return true; } if (c.acao === "pranchas") { self.pranchasExecutivas(); return true; } self.comando(c.modo); }
@@ -562,19 +614,21 @@
           return true;
         };
       });
-      try { var Dr = global.DicaRica; if (Dr && Dr.item && Dr.registrar) { var d = MP().dica("andaime"); if (d) { Dr.item("andaime", d); Dr.registrar("met-andaime", "andaime"); Dr.registrar("met-andaime-contorno", "andaime"); } } } catch (eD) {}
+      try { var Dr = global.DicaRica; if (Dr && Dr.item && Dr.registrar) { var d = MP().dica("andaime"); if (d) { Dr.item("andaime", d); Dr.registrar("met-andaime", "andaime"); Dr.registrar("met-andaime-contorno", "andaime"); Dr.registrar("met-andaime-multi", "andaime"); } } } catch (eD) {}
       this._ligarTeclas();
       return true;
     },
     /* o botão: com um andaime selecionado abre o painel dele; senão arma o traçado */
-    comando: function (modoT) {
+    comando: function (modoT, opc) {
       var u = PU(), alvo = u ? u.prontaSelecionada() : null;
       if (alvo && alvo.tipo === "andaime") { var a2 = prontaDe(alvo.id); if (a2) return this.abrirPainel(a2.id); }
-      return this.armar(modoT || "polilinha");
+      return this.armar(modoT || "polilinha", opc);
     },
     armar: function (modoT, opc) {
       var u = PU(), M = MP(); if (!u || !M) return false;
-      opc = opc || {}; _arma = { modo: modoT === "contorno" ? "contorno" : "polilinha", altura: opc.altura, par: opc.par };
+      opc = opc || {}; var sis = opc.sistema === "multidirecional" ? (opc.linha === "estribo" ? "multi-estribo" : "multi-roseta") : "tuboroll";
+      _arma = { modo: modoT === "contorno" ? "contorno" : "polilinha", altura: opc.altura, par: opc.par, sistema: opc.sistema === "multidirecional" ? "multidirecional" : null, linha: opc.sistema === "multidirecional" ? (opc.linha === "estribo" ? "estribo" : "roseta") : null };
+      _ultSistema = sis;
       _sess = null;
       var par = M.padrao("andaime"); par.y0 = u.cota();
       var ok = u.posicionar("andaime", par, {}, MODO);
@@ -643,7 +697,7 @@
       var r0 = raiz();
       if (!r0) {
         r0 = d.createElement("aside"); r0.className = "andui-painel"; r0.setAttribute("data-andui", "painel"); r0.setAttribute("role", "dialog"); r0.setAttribute("aria-label", "Painel do andaime");
-        r0.innerHTML = '<div class="andui-cab"><div><b>Andaime tubo-roll</b><small data-andui="sub"></small></div><button type="button" class="andui-bt pri andui-x" data-andui-acao="pranchas-exec" title="Gera as 5 pranchas A1 do projeto: planta e cortes, elevações, isométrico e detalhes, tabelas e memorial">Gerar pranchas executivas</button><button type="button" class="andui-bt" data-andui-acao="fechar-painel" aria-label="Fechar o painel do andaime">Fechar</button></div>' +
+        r0.innerHTML = '<div class="andui-cab"><div><b data-andui="titulo">Andaime tubo-roll</b><small data-andui="sub"></small></div><button type="button" class="andui-bt pri andui-x" data-andui-acao="pranchas-exec" title="Gera as 5 pranchas A1 do projeto: planta e cortes, elevações, isométrico e detalhes, tabelas e memorial">Gerar pranchas executivas</button><button type="button" class="andui-bt" data-andui-acao="fechar-painel" aria-label="Fechar o painel do andaime">Fechar</button></div>' +
           '<div class="andui-abas" role="tablist">' + ABAS.map(function (a) { return '<button type="button" role="tab" class="andui-aba" data-andui-aba="' + a[0] + '" aria-selected="false">' + a[1] + "</button>"; }).join("") + "</div>" +
           '<div class="andui-corpo" data-andui="corpo" role="tabpanel"></div>';
         d.body.appendChild(r0);
@@ -693,7 +747,7 @@
     },
     informar: function (campo, valor, confirmado, justificativa) {
       var D = lerDoModelo(); if (!D) return false;
-      var r = T().aplicarPendencia(D.par, campo, valor, confirmado, justificativa); if (!r.ok) { dizer(r.erro, true); renderizar(); return false; }
+      var r = T().aplicarPendencia(D.par, campo, valor, confirmado, justificativa, T().defsRT(D.par, P && P.res ? P.res.calc : null)); if (!r.ok) { dizer(r.erro, true); renderizar(); return false; }
       /* ⚠ dado novo pode reprovar o que antes estava «não verificado»: recalcula e, se falhar, roda o Montar inteligente sobre o par atual — nunca calado */
       var inte = D.tela.inteligente !== false, g = T().reagirAoDado(r.par, D.tela.mudancas, { inteligente: inte });
       if (!g.ok) { dizer(g.erro, true); renderizar(); return false; }
@@ -729,6 +783,22 @@
         if (!r.ok) { dizer(r.erro, true); renderizar(); return false; } ap = r.ap;
       }
       var ok = persistirAp(D, ap, idsItens.length + " itens respondidos (" + resposta + ")."); renderizar(); return ok;
+    },
+    /* M4-A: troca o sistema do andaime no lugar (mesmo traçado e altura); a aprovação volta para «em revisão» pelo Aprovacao.aoAlterar do refazer */
+    trocarSistema: function (destino) {
+      var D = lerDoModelo(); if (!D) return false;
+      if (T().sistemaDe(D.par) === destino) { dizer("O andaime já é " + T().ROT_SISTEMA[destino] + ".", false); renderizar(); return false; }
+      var novoPar = T().trocarSistema(D.par, destino), res = T().resultado(novoPar, { inteligente: D.tela.inteligente !== false });
+      if (!res.ok) { dizer("Não consegui trocar para " + T().ROT_SISTEMA[destino] + ": " + res.erro, true); renderizar(); return false; }
+      var ok = aplicarPar(D, res.par, "Sistema trocado para " + T().ROT_SISTEMA[destino] + ": o andaime foi refeito no lugar" + (res.mudancas.length ? " (Montar inteligente: " + res.mudancas.length + " mudança(s))" : "") + ".", function (inf) {
+        inf.andaimeTela = inf.andaimeTela || {}; inf.andaimeTela.mudancas = res.mudancas;
+      });
+      renderizar(); return ok;
+    },
+    aplicarParametrosMulti: function (vals) {
+      var D = lerDoModelo(); if (!D) return false;
+      var r = T().aplicarParametrosMulti(D.par, vals); if (!r.ok) { dizer(r.erro, true); renderizar(); return false; }
+      var ok = aplicarPar(D, r.par, "Parâmetros do multidirecional aplicados: o andaime foi refeito no lugar."); renderizar(); return ok;
     },
     /* abre o diálogo antigo das Peças prontas (todos os parâmetros) */
     parametrosAvancados: function () { var u = PU(), a = P ? prontaDe(P.gid) : null; if (!u || !a) return false; return u.dialogo("andaime", { alvo: a, direto: true }); },

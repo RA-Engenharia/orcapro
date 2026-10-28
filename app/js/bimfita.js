@@ -281,6 +281,7 @@
     { nome: "Acessos", ids: ["met-ac-escolher", "met-ac-galeria", "met-ac-escada", "met-ac-escada-linha", "met-ac-marinheiro", "met-ac-helicoidal", "met-ac-rampa",
       "met-ac-plataforma", "met-ac-anelar", "met-ac-passarela", "met-ac-guarda", "met-ac-corrimao", "met-ac-piso", "met-ac-verificar"] },
     { nome: "Andaime", ids: ["met-andaime", "met-andaime-contorno", "met-andaime-pranchas", "met-andaime-ifc"] },
+    { nome: "Andaime multidirecional", ids: ["met-andaime-multi"] },
     { nome: "Tanques", ids: ["met-tq-novo", "met-tq-modelos", "met-tq-editar", "met-tq-calcular"] },
     { nome: "Cálculo do aço", ids: ["met-calc-assistente", "met-calc-livre", "met-calc-modelos", "met-calc-calcular", "met-calc-resultados", "met-calc-memorial", "met-calc-pranchas", "met-calc-cype", "met-calc-normas"] },
     { nome: "Fabricação", ids: ["met-numerar", "met-desenho", "met-corte", "met-dobrada", "met-planif", "met-nesting", "met-pintura", "met-dstv", "met-dxf", "met-listas", "met-ifc", "met-pacote", "met-fontes"] },

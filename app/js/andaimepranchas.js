@@ -22,7 +22,11 @@
  *      à mão). Sem isso o isométrico vira um novelo ilegível.
  *   5. O carimbo é o RA, INTOCADO (AcoPranchas.carimbo → Prancha.carimboRA): a folha só preenche os campos.
  *   6. Detalhes típicos usam as cotas das famílias (FamiliasAndaime.cota ← docs/andaime/familias-cotas.json); o que é estimado lá continua estimado aqui.
- * Teste: node tools/test-andaimepranchas.js
+ *   7. M4-B (27/10/2026): o MESMO jogo serve ao ANDAIME MULTIDIRECIONAL (modelo.sistema === "multidirecional", linhas roseta e estribo): postes com os NÓS a cada 0,50 m,
+ *      piso metálico com hachura PRÓPRIA (cruzada, nunca a 45° da madeira), alçapão com escada incorporada, peça base + base regulável, gancho de ancoragem, detalhes
+ *      típicos do multi (cotas de docs/andaime-multi/familias-m-cotas.json, grau estimado marcado com *), AND-04/AND-05 com as verificações do AndaimeMultiCalc. A relação de
+ *      materiais é a de AndaimeMulti.tabelaLocacao (via Andaime.pecasLocacao, que despacha). O TUBO-ROLL não muda: tudo que é do multi fica atrás de `MULTI`/`C.multi`.
+ * Teste: node tools/test-andaimepranchas.js (tubo-roll) · node tools/test-andaimemulti-pranchas.js (multidirecional)
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -64,6 +68,18 @@
 
   var VERMELHO = "#c00000", VERDE = "#1e6b2f";
 
+  /* ---- MULTIDIRECIONAL (M4-B). `MULTI` vale durante UMA chamada de gerar/isometricoSvg/dadosProjeto (síncrono); o tubo-roll nunca o liga. */
+  var MULTI = false, LINHA_MULTI = "roseta", ESTIMADAS = {};
+  function ehMulti(m) { return !!m && String(m.sistema) === "multidirecional"; }
+  function MU() { return dep("AndaimeMulti", "./andaimemulti.js"); }
+  function FMD() { return dep("FamiliasAndaimeMDados", "./familiasandaimemdados.js"); }
+  /* cota (mm) de uma família do multi, com o grau: estimada ('e') entra em ESTIMADAS e leva * no desenho */
+  function cotaM(fam, nome, padrao) {
+    try { var D = FMD(), c = D && D.pecas && D.pecas[fam] && D.pecas[fam].cotas && D.pecas[fam].cotas[nome]; if (!c || typeof c.v !== "number") return padrao; if (c.g === "e") ESTIMADAS[fam + "." + nome] = 1; return c.v; } catch (e) { return padrao; }
+  }
+  function estM(fam, nome) { try { var D = FMD(), c = D.pecas[fam].cotas[nome]; return c && c.g === "e" ? "*" : ""; } catch (e) { return ""; } }
+  function txM(fam, nome, padrao, dec) { var v = cotaM(fam, nome, padrao); return (dec ? br(v, dec) : String(Math.round(v))) + estM(fam, nome); }
+
   /* ================================================================ PADRÃO (espelho da chave `andaime` do Padrão RA v2.12) */
   var PADRAO_AND = {
     versao: "2.14", chave: "andaime", data: "27/10/2026",
@@ -79,6 +95,11 @@
     conferencia: ["quantidades da relação = do modelo", "cada vista tem as cotas de vão, levante, largura e guarda-corpo", "um balão por tipo de peça; todo ITEM aparece em alguma vista ou detalhe",
                   "quadro de verificações sem falha; não verificado listado", "nenhum texto sobre outro", "carimbo RA intocado; campo de liberação e de ART presentes"]
   };
+  /* MULTIDIRECIONAL: marcas e códigos de peça (a relação sai de AndaimeMulti.pecasLocacao: poste, travessa, diagonal, piso, pisoAlcapao, rodape, pecaBase, baseRegulavel, calco, emenda, gancho…) */
+  var MARCAS_MULTI = { PO: "poste com roseta (nó a cada 0,50 m)", TV: "travessa de cunha (longitudinal, transversal e guarda-corpo)", DM: "diagonal articulada", PM: "piso metálico com garra e trava", AL: "piso com alçapão e escada incorporada",
+    RM: "rodapé metálico de encaixe", PB: "peça base", BR: "base regulável", CL: "calço de madeira", PN: "pino trava do espigão", GA: "gancho de ancoragem", TA: "tubo de amarração", AF: "abraçadeira fixa", OL: "parafuso olhal", CH: "chumbador", ES: "escada externa" };
+  var MARCA_COD_MULTI = { poste: "PO", travessa: "TV", diagonal: "DM", piso: "PM", pisoAlcapao: "AL", rodape: "RM", pecaBase: "PB", baseRegulavel: "BR", baseArticulada: "BR", calco: "CL", emenda: "PN", ganchoCurto: "GA", ganchoLongo: "GA", tuboAnc: "TA", abracFixa: "AF", olhal: "OL", chumbador: "CH", escadaExterna: "ES", tela: "" };
+  function marcasAtivas() { return MULTI ? MARCAS_MULTI : PADRAO_AND.marcas; }
   var NOME_TUBO = { montante: "Pontalete", travessa: "Longitudinal", varredor: "Longitudinal", guarda: "Longitudinal", intermediaria: "Longitudinal", transversal: "Transversal", diagonal: "Diagonal",
     diagonalTransv: "Diagonal", ancoragem: "Tubo de Amarração", travaTopo: "Longitudinal", transversalTopo: "Transversal", posteGuarda: "Poste de Guarda-corpo" };   /* o mesmo mapa de Andaime.pecasLocacao */
   var MARCA_TUBO = { "Pontalete": "PT", "Longitudinal": "LG", "Transversal": "TR", "Diagonal": "DG", "Tubo de Amarração": "AN", "Poste de Guarda-corpo": "PT", "Tubo": "" };
@@ -109,31 +130,45 @@
     return ix;
   }
   function cenaDe(modelo, lista, ti) {
-    var B = baseDe(modelo, ti), P = B.P, ix = indiceItens(lista), par = modelo.par || {}, M = modelo.medidas || {}, TD = An0().todos(modelo);
+    var B = baseDe(modelo, ti), P = B.P, ix = indiceItens(lista), par = modelo.par || {}, M = modelo.medidas || {}, TD = An0().todos(modelo), multi = ehMulti(modelo);
     function itemTubo(b) { var nm = NOME_TUBO[b.papel] || "Tubo"; return ix["tubo|" + nm + "|" + (Math.round(b.L * 100) / 100).toFixed(2)]; }
-    var C = { B: B, ix: ix, tubos: [], pranchas: [], rodapes: [], bases: [], calcos: [], ancs: [], acessos: [], conexoes: [], par: par, M: M, modelo: modelo, lista: lista };
+    /* multi: o item da relação é achado pelo código de catálogo + comprimento (a mesma agregação de AndaimeMulti.pecasLocacao) */
+    function itemMulti(cod, L, cat) {
+      var f = null;
+      lista.forEach(function (l) { if (f != null || l.cod !== cod) return; if (L != null && l.comp != null && Math.abs(l.comp - L) > 0.006) return; if (cat && l.refCatalogo && l.refCatalogo !== cat) return; f = l.item; });
+      return f;
+    }
+    var C = { B: B, ix: ix, tubos: [], pranchas: [], rodapes: [], bases: [], calcos: [], ancs: [], acessos: [], conexoes: [], par: par, M: M, modelo: modelo, lista: lista, multi: multi, linha: multi ? String(modelo.linha || par.linha || "roseta") : null, nos: [], espigoes: [] };
     TD.barras.forEach(function (b) {
-      C.tubos.push({ id: b.id, papel: b.papel, a: P(b.a), b: P(b.b), L: b.L, nivel: b.nivel, poste: b.poste, linha: b.linha, item: itemTubo(b), torre: !!b.torre, patamar: !!b.patamar });
+      C.tubos.push({ id: b.id, papel: multi && b.papel === "poste" ? "montante" : b.papel, papel0: b.papel, a: P(b.a), b: P(b.b), L: b.L, nivel: b.nivel, poste: b.poste, linha: b.linha, torre: !!b.torre, patamar: !!b.patamar,
+        item: multi ? (itemMulti(b.cod, b.L, b.codCat) || (b.papel === "ancoragem" ? itemMulti("tuboAnc", null) : null)) : itemTubo(b) });
     });
     TD.pranchas.forEach(function (p) {
-      var cod = p.tipo === "metalico" ? "pisoMetalico" : (p.tipo === "alcapao" ? "alcapao" : "pranchaMadeira");
+      var cod = multi ? (p.tipo === "alcapao" ? "pisoAlcapao" : "piso") : (p.tipo === "metalico" ? "pisoMetalico" : (p.tipo === "alcapao" ? "alcapao" : "pranchaMadeira"));
       C.pranchas.push({ id: p.id, tipo: p.tipo, a: P(p.a), b: P(p.b), larg: p.larg, esp: p.esp, yTopo: p.yTopo, nivel: p.nivel, L: p.L, item: ix[chaveItem(cod, p.L)], torre: !!p.torre, patamar: !!p.patamar, lance: p.lance });
     });
-    arr(modelo.rodapes).forEach(function (r) { C.rodapes.push({ id: r.id, a: P(r.a), b: P(r.b), alt: r.alt, esp: r.esp, yTopo: r.yTopo, nivel: r.nivel, L: r.L, item: ix[chaveItem("rodapeMadeira", r.L)] }); });
+    arr(modelo.rodapes).forEach(function (r) { C.rodapes.push({ id: r.id, a: P(r.a), b: P(r.b), alt: r.alt, esp: r.esp, yTopo: r.yTopo, nivel: r.nivel, L: r.L, item: ix[chaveItem(multi ? "rodape" : "rodapeMadeira", r.L)] }); });
     TD.bases.forEach(function (b) { C.bases.push({ id: b.id, cod: b.cod, pos: P(b.pos), y0: b.y0, h: b.h, rosca: b.rosca, item: ix[chaveItem(b.cod, null)], torre: !!b.torre }); });
+    C.itemPecaBase = multi ? itemMulti("pecaBase", null) : null; C.itemAbrac = multi ? itemMulti("abracFixa", null) : null; C.itemChumb = multi ? itemMulti("chumbador", null) : null;
     TD.calcos.forEach(function (c) {
       var u = c.u || [1, 0], uu = [B.e1[0] * u[0] + B.e1[1] * u[1], B.e2[0] * u[0] + B.e2[1] * u[1]];
       C.calcos.push({ id: c.id, pos: P(c.pos), L: c.L, larg: c.larg, esp: c.esp, u: uu, item: ix[chaveItem("calco", 0.5)] });
     });
-    arr(modelo.ancoragens).forEach(function (a) { C.ancs.push({ id: a.id, y: a.y, nivel: a.nivel, topo: !!a.topo, pos: P(a.olhal && a.olhal.pos ? a.olhal.pos : [0, a.y, 0]), item: ix[chaveItem("olhal", null)] }); });
-    TD.acessos.forEach(function (a) { var u0 = a.u || [1, 0]; C.acessos.push({ id: a.id, tipo: a.tipo, cod: a.cod, a: P(a.a), b: P(a.b), u: [B.e1[0] * u0[0] + B.e1[1] * u0[1], B.e2[0] * u0[0] + B.e2[1] * u0[1]], larg: a.larg, L: a.L, nivel: a.nivel, lance: a.lance, dir: a.dir, angulo: a.angulo, nDegraus: a.nDegraus, externa: a.externa, torre: !!a.torre, item: ix[chaveItem(a.cod, a.L)] }); });
+    arr(modelo.ancoragens).forEach(function (a) { C.ancs.push({ id: a.id, y: a.y, nivel: a.nivel, topo: !!a.topo, pos: P(a.olhal && a.olhal.pos ? a.olhal.pos : [0, a.y, 0]), item: ix[chaveItem("olhal", null)], gancho: a.gancho, itemGancho: multi ? itemMulti(a.gancho === "tubo" ? "tuboAnc" : a.gancho, null) : null }); });
+    TD.acessos.forEach(function (a) {
+      var u0 = a.u || [1, 0], itA = multi ? (a.incorporada ? itemMulti("pisoAlcapao", null) : itemMulti("escadaExterna", null)) : ix[chaveItem(a.cod, a.L)];
+      C.acessos.push({ id: a.id, tipo: a.tipo, cod: a.cod, a: P(a.a), b: P(a.b), u: [B.e1[0] * u0[0] + B.e1[1] * u0[1], B.e2[0] * u0[0] + B.e2[1] * u0[1]], larg: a.larg, L: a.L, nivel: a.nivel, lance: a.lance, dir: a.dir, angulo: a.angulo, nDegraus: a.nDegraus, externa: a.externa, incorporada: !!a.incorporada, torre: !!a.torre, item: itA });
+    });
     C.ti = ti || 0; C.torre = !!modelo.torre; C.acessoModo = modelo.acessoInfo ? modelo.acessoInfo.modo : null;
     arr(modelo.conexoes).forEach(function (c) {
+      if (multi) { if (c.tipo === "espigao") C.espigoes.push({ id: c.id, pos: P(c.pos), item: itemMulti("emenda", null) }); return; }
       var cod = { fixa: "bracFixa", giratoria: "bracGiratoria", luva: "luva", rodape: "abracRodape", prancha: "presilhaPrancha" }[c.tipo];
       if (!cod) return;
       C.conexoes.push({ id: c.id, tipo: c.tipo, pos: P(c.pos), item: ix[chaveItem(cod, null)] });
     });
     C.itemTela = ix[chaveItem("tela", null)];
+    /* guarda-corpo, intermediário e rodapé: no multi são os do modelo (1,00 / 0,50 / 0,20 — NR-18 18.12.15.2); no tubo-roll, os parâmetros */
+    C.gd = multi ? { g: num(M.guardaReal, 1.0), it: num(M.guardaReal, 1.0) / 2, rd: num(arr(modelo.rodapes)[0] && modelo.rodapes[0].alt, 0.2) } : { g: num(par.guarda, 1.2), it: num(par.intermediaria, 0.7), rd: num(par.rodape, 0.2) };
     /* caixa do conjunto (m) e níveis */
     var bx = { x0: 1e9, x1: -1e9, y0: 0, y1: 0, z0: 1e9, z1: -1e9 };
     function pt(p) { bx.x0 = Math.min(bx.x0, p[0]); bx.x1 = Math.max(bx.x1, p[0]); bx.y1 = Math.max(bx.y1, p[1]); bx.z0 = Math.min(bx.z0, p[2]); bx.z1 = Math.max(bx.z1, p[2]); }
@@ -149,7 +184,7 @@
     nv.forEach(function (v) { var y = v.yPiso != null ? v.yPiso : null; if (y != null) yp.push(y); });
     if (!yp.length) yp.push(num(M.alturaPiso, 2));
     C.yPisos = yp; C.yTopo = yp[yp.length - 1];
-    C.yMax = Math.max(bx.y1, C.yTopo + num(par.guarda, 1.2), modelo.tela && modelo.tela.area > 0 ? C.yTopo + num(modelo.tela.altura, 2) : 0);
+    C.yMax = Math.max(bx.y1, C.yTopo + C.gd.g, (C.telaY = modelo.tela && modelo.tela.area > 0 ? { y0: multi ? yp[0] : C.yTopo, y1: multi ? C.yTopo + 2.0 : C.yTopo + num(modelo.tela.altura, 2) } : null) ? C.telaY.y1 : 0);
     /* posições X dos eixos dos montantes (únicas, ordenadas, a 1 mm) e Y das duas linhas */
     var xs = [], ys = [];
     arr(modelo.postes).forEach(function (q) { var p = P([q.x, 0, q.z]); xs.push(p[0]); ys.push(p[2]); });
@@ -165,6 +200,18 @@
     } catch (e) { cam = null; }
     if (!cam) cam = [[0, 0], [num(par.comprimento, num(M.comprimento, 6)), 0]];
     C.face = cam.map(function (q) { var p = P([q[0], 0, q[1]]); return [p[0], p[2]]; }); C.faceFechada = fechado;
+    /* os NÓS do multi: um por (poste, y) a cada passo (0,50 m) a partir do 1º nó (modelo.vertical) */
+    if (multi) {
+      var Vm = modelo.vertical || {}, y0n = num(Vm.y0, 0), psn = num(Vm.passo, 0.5), vis = {};
+      C.tubos.forEach(function (t) {
+        if (t.papel0 !== "poste") return;
+        var ya = Math.min(t.a[1], t.b[1]), yb = Math.max(t.a[1], t.b[1]);
+        for (var k = Math.ceil((ya - y0n) / psn - 1e-6); y0n + k * psn <= yb + 1e-6; k++) {
+          var yy = Math.round((y0n + k * psn) * 1000) / 1000, key = Math.round(t.a[0] * 1000) + "," + Math.round(t.a[2] * 1000) + "," + Math.round(yy * 1000);
+          if (vis[key]) continue; vis[key] = 1; C.nos.push({ p: [t.a[0], yy, t.a[2]], k: k });
+        }
+      });
+    }
     return C;
   }
 
@@ -329,6 +376,37 @@
       if (t && (t[1] - t[0]) * hip(b[0] - a[0], b[1] - a[1]) > 0.4) D.linha(a[0] + (b[0] - a[0]) * t[0], a[1] + (b[1] - a[1]) * t[0], a[0] + (b[0] - a[0]) * t[1], a[1] + (b[1] - a[1]) * t[1], cam || "MET-HACHURA");
     }
   }
+  /* MULTI: hachura em UM sentido (inv inverte a direção); o piso metálico leva as DUAS (cruzada) — a madeira é só a 45° "/" */
+  function hachuraDir(D, poly, passo, cam, inv) {
+    var xs = poly.map(function (p) { return p[0]; }), ys = poly.map(function (p) { return p[1]; });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys), pl = planosPoli(poly);
+    passo = Math.max(passo || 1.5, 0.9);
+    for (var c = x0 - (y1 - y0) + passo / 2; c < x1 + (y1 - y0); c += passo) {
+      var a = inv ? [c, y0] : [c, y1], b = inv ? [c + (y1 - y0), y1] : [c + (y1 - y0), y0], t = clipConvexo(a, b, pl);
+      if (t && (t[1] - t[0]) * hip(b[0] - a[0], b[1] - a[1]) > 0.4) D.linha(a[0] + (b[0] - a[0]) * t[0], a[1] + (b[1] - a[1]) * t[0], a[0] + (b[0] - a[0]) * t[1], a[1] + (b[1] - a[1]) * t[1], cam || "MET-HACHURA");
+    }
+  }
+  function hachuraMetal(D, poly, passo, cam) { hachuraDir(D, poly, passo || 2.2, cam, false); hachuraDir(D, poly, passo || 2.2, cam, true); }
+  /* piso/rodapé metálico visto de perfil (fino demais para hachura): contorno + linha da dobra no meio + as duas garras nas pontas */
+  function perfilMetal(D, poly) {
+    var xs = poly.map(function (p) { return p[0]; }), ys = poly.map(function (p) { return p[1]; });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs), y0 = Math.min.apply(null, ys), y1 = Math.max.apply(null, ys);
+    if (x1 - x0 > 3 && y1 - y0 > 0.9) { D.linha(x0, (y0 + y1) / 2, x1, (y0 + y1) / 2, "MET-FINA"); D.linha(x0 + 0.9, y0, x0 + 0.9, y1, "MET-FINA"); D.linha(x1 - 0.9, y0, x1 - 0.9, y1, "MET-FINA"); }
+  }
+  function hachPiso(C, D, poly, passo) { if (C.multi) perfilMetal(D, poly); else hachuraPoli(D, poly, passo); }
+  /* o NÓ do multi: roseta = disco Ø124 visto de lado/cima → círculo com cruz; estribo = laço quadrado com ponto */
+  function marcaNo(D, x, y, linha, s) {
+    var r = Math.max(0.6, Math.min(1.5, 0.062 * s));
+    if (linha === "estribo") { D.ret(x - r * 0.8, y - r * 0.8, r * 1.6, r * 1.6, "MET-FINA"); D.ponto(x, y, 0.25); }
+    else { D.circ(x, y, r, "MET-FINA"); D.linha(x - r, y, x + r, y, "MET-FINA"); D.linha(x, y - r, x, y + r, "MET-FINA"); }
+  }
+  /* base regulável do multi vista de lado: haste (rosca) + peça base até o 1º nó */
+  function baseMulti(ctx, C, D, cx, b, s, V, reg) {
+    var rw = 0.019 * s, rh = Math.max(num(b.h, 0.25), 0.05), yb = b.y0 + 0.008, yTopoHaste = b.y0 + rh, y1n = num((ctx.modelo.vertical || {}).y0, yTopoHaste + 0.065), r2 = 0.0242 * s;
+    D.linha(cx - rw, V(yb), cx - rw, V(yTopoHaste), "MET-FINA"); D.linha(cx + rw, V(yb), cx + rw, V(yTopoHaste), "MET-FINA");
+    D.linha(cx - r2, V(yTopoHaste), cx - r2, V(y1n), "MET-SECUNDARIO"); D.linha(cx + r2, V(yTopoHaste), cx + r2, V(y1n), "MET-SECUNDARIO");
+    reg(C.itemPecaBase, cx, V((yTopoHaste + y1n) / 2));
+  }
   /* retângulo orientado (papel): centro, direção, meio-comprimento, meia-largura */
   function retOrient(cx, cy, ux, uy, hl, hw) { var nx = -uy, ny = ux; return [[cx - ux * hl - nx * hw, cy - uy * hl - ny * hw], [cx + ux * hl - nx * hw, cy + uy * hl - ny * hw], [cx + ux * hl + nx * hw, cy + uy * hl + ny * hw], [cx - ux * hl + nx * hw, cy - uy * hl + ny * hw]]; }
 
@@ -349,7 +427,7 @@
     o = o || {};
     var tipo = o.tipo || nome, Cv = o.C || ctx.C, e = extVista(tipo, Cv, s);
     this.C = Cv; this.tipo = tipo; this.lat = tipo === "lateral" || tipo === "corte"; this.flip = !!o.flip; this.titulo = o.titulo || null;
-    this.ctx = ctx; this.nome = nome; this.s = s; this.e = e; this.x = x; this.y = y; this.x0 = x + e.m.l; this.y0 = y + e.m.t; this.anc = {}; this.ded = new Dedup(); this.dedC = { fixa: new Dedup(), giratoria: new Dedup(), luva: new Dedup(), rodape: new Dedup(), prancha: new Dedup() };
+    this.ctx = ctx; this.nome = nome; this.s = s; this.e = e; this.x = x; this.y = y; this.x0 = x + e.m.l; this.y0 = y + e.m.t; this.anc = {}; this.ded = new Dedup(); this.dedN = new Dedup(); this.dedE = new Dedup(); this.dedC = { fixa: new Dedup(), giratoria: new Dedup(), luva: new Dedup(), rodape: new Dedup(), prancha: new Dedup() };
     this.rect = [x, y, x + e.w, y + e.h];
   }
   Vista.prototype.reg = function (item, px, py) { if (item == null) return; (this.anc[item] = this.anc[item] || []).push([px, py]); };
@@ -379,7 +457,7 @@
     }
     /* tela de proteção (tracejada) */
     if (!lat && ctx.modelo.tela && ctx.modelo.tela.area > 0) {
-      var yt0 = C.yTopo, yt1 = C.yTopo + num(ctx.modelo.tela.altura, 2);
+      var yt0 = C.telaY ? C.telaY.y0 : C.yTopo, yt1 = C.telaY ? C.telaY.y1 : C.yTopo + num(ctx.modelo.tela.altura, 2);
       D.poli([[xL, v.V(yt0)], [xR, v.V(yt0)], [xR, v.V(yt1)], [xL, v.V(yt1)]], "MET-OCULTA", true);
       D.texto((xL + xR) / 2, v.V((yt0 + yt1) / 2), "TELA DE PROTEÇÃO", ctx.E.T.nota, { al: "C", meio: true });
       v.reg(C.itemTela, xL + (xR - xL) * 0.18, v.V(yt0 + (yt1 - yt0) * 0.3));
@@ -393,13 +471,14 @@
       v.reg(c.item, cx, ry + h / 2);
     });
     C.bases.forEach(function (b) {
-      var cx = Hh(b.pos), w = 0.12 * s, y0 = b.y0, esp = 0.008;
+      var cx = Hh(b.pos), w = (C.multi ? 0.15 : 0.12) * s, y0 = b.y0, esp = 0.008;
       if (!v.ded.novo(cx, v.V(y0), cx + 1, v.V(y0))) return;
       D.ret(cx - w / 2, v.V(y0 + esp), w, Math.max(esp * s, 0.4), "MET-PRINCIPAL");
       v.reg(b.item, cx, v.V(y0 + esp / 2));
+      if (C.multi) baseMulti(ctx, C, D, cx, b, s, function (yy) { return v.V(yy); }, function (it, px, py) { v.reg(it, px, py); });
     });
     /* olhal de ancoragem na face (o tubo de amarração vem na direção da vista em um dos dois cortes) */
-    C.ancs.forEach(function (a) { v.reg(a.item, lat ? v.H(0) : v.H(a.pos[0]), v.V(a.y)); });
+    C.ancs.forEach(function (a) { v.reg(a.item, lat ? v.H(0) : v.H(a.pos[0]), v.V(a.y)); if (C.multi) { v.reg(C.itemChumb, lat ? v.H(0) : v.H(a.pos[0]), v.V(a.y)); v.reg(a.itemGancho, lat ? v.H(0) : v.H(a.pos[0]), v.V(a.y)); } });
     /* tubos */
     C.tubos.forEach(function (t) {
       var x1 = Hh(t.a), y1 = Vv(t.a), x2 = Hh(t.b), y2 = Vv(t.b);
@@ -411,20 +490,25 @@
       D.linha(x1, y1, x2, y2, "MET-SECUNDARIO");
       v.reg(t.item, (x1 + x2) / 2, (y1 + y2) / 2);
     });
-    /* madeira: pranchões (de perfil), alçapão, rodapés (hachurados) */
+    /* multi: os NÓS (roseta/estribo) nos postes e o pino trava de cada emenda */
+    if (C.multi) {
+      C.nos.forEach(function (nn) { var nx = Hh(nn.p), ny = Vv(nn.p); if (!v.dedN.novo(nx, ny, nx + 0.01, ny + 0.01)) return; marcaNo(D, nx, ny, C.linha, s); });
+      C.espigoes.forEach(function (e) { var ex = Hh(e.pos), ey = Vv(e.pos); if (!v.dedE.novo(ex, ey, ex + 0.02, ey + 0.02)) return; D.linha(ex - 1.6, ey, ex + 1.6, ey, "MET-PRINCIPAL"); v.reg(e.item, ex, ey); });
+    }
+    /* madeira: pranchões (de perfil), alçapão, rodapés (hachurados) — no multi, piso e rodapé são METÁLICOS (perfil, sem a hachura da madeira) */
     C.pranchas.forEach(function (p) {
       var y1 = p.yTopo, y0 = p.yTopo - p.esp;
       if (!lat) {
         var xa = v.H(p.a[0]), xb = v.H(p.b[0]); if (xa > xb) { var tm = xa; xa = xb; xb = tm; }
         if (!v.ded.novo(xa, v.V(y1), xb, v.V(y0))) return;
-        var h = Math.max(p.esp * s, 0.5); D.ret(xa, v.V(y1), xb - xa, h, "MET-SECUNDARIO"); if (h > 1.1 && xb - xa > 2) hachuraPoli(D, [[xa, v.V(y1)], [xb, v.V(y1)], [xb, v.V(y1) + h], [xa, v.V(y1) + h]], 1.2);
+        var h = Math.max(p.esp * s, 0.5); D.ret(xa, v.V(y1), xb - xa, h, "MET-SECUNDARIO"); if (h > 1.1 && xb - xa > 2) hachPiso(C, D, [[xa, v.V(y1)], [xb, v.V(y1)], [xb, v.V(y1) + h], [xa, v.V(y1) + h]], 1.2);
         v.reg(p.item, (xa + xb) / 2, v.V(y1));
       } else {
         var d = [p.b[0] - p.a[0], p.b[2] - p.a[2]], Ld = hip(d[0], d[1]) || 1, sx = -d[1] / Ld, sz = d[0] / Ld;   /* largura na direção (sx,sz) */
         var Y1 = p.a[2] - sz * p.larg / 2, Y2 = p.a[2] + sz * p.larg / 2; if (Y1 > Y2) { var t2 = Y1; Y1 = Y2; Y2 = t2; }
         var xa2 = v.H(Y1), xb2 = v.H(Y2);
         if (!v.ded.novo(xa2, v.V(y1), xb2, v.V(y0))) return;
-        var h2 = Math.max(p.esp * s, 0.5); D.ret(xa2, v.V(y1), xb2 - xa2, h2, "MET-SECUNDARIO"); if (h2 > 1.1 && xb2 - xa2 > 2) hachuraPoli(D, [[xa2, v.V(y1)], [xb2, v.V(y1)], [xb2, v.V(y1) + h2], [xa2, v.V(y1) + h2]], 1.2);
+        var h2 = Math.max(p.esp * s, 0.5); D.ret(xa2, v.V(y1), xb2 - xa2, h2, "MET-SECUNDARIO"); if (h2 > 1.1 && xb2 - xa2 > 2) hachPiso(C, D, [[xa2, v.V(y1)], [xb2, v.V(y1)], [xb2, v.V(y1) + h2], [xa2, v.V(y1) + h2]], 1.2);
         v.reg(p.item, (xa2 + xb2) / 2, v.V(y1));
       }
     });
@@ -433,7 +517,7 @@
       if (!lat) {
         var xa = v.H(r.a[0]), xb = v.H(r.b[0]); if (xa > xb) { var tm = xa; xa = xb; xb = tm; }
         if (!v.ded.novo(xa, v.V(y1), xb, v.V(y0)) || xb - xa < 0.5) return;
-        D.ret(xa, v.V(y1), xb - xa, r.alt * s, "MET-SECUNDARIO"); hachuraPoli(D, [[xa, v.V(y1)], [xb, v.V(y1)], [xb, v.V(y0)], [xa, v.V(y0)]], 1.4);
+        D.ret(xa, v.V(y1), xb - xa, r.alt * s, "MET-SECUNDARIO"); hachPiso(C, D, [[xa, v.V(y1)], [xb, v.V(y1)], [xb, v.V(y0)], [xa, v.V(y0)]], 1.4);
         v.reg(r.item, (xa + xb) / 2, (v.V(y1) + v.V(y0)) / 2);
       } else {
         var cx = v.H((r.a[2] + r.b[2]) / 2);
@@ -509,12 +593,12 @@
       D.cadeia(pa, 33, ta, { attrs: ta.map(function () { return ' data-cota="malha-v"'; }) });
     }
     /* guarda-corpo, intermediário e rodapé (à direita), medidos do piso do topo */
-    var yT = C.yTopo, g = num(par.guarda, 1.2), it = num(par.intermediaria, 0.7), rd = num(par.rodape, 0.2);
+    var yT = C.yTopo, g = C.gd.g, it = C.gd.it, rd = C.gd.rd;
     D.cota(xR, v.V(yT), xR, v.V(yT + rd), -20, mmTxt(rd), { attrs: [' data-cota="rodape"'] });
     D.cota(xR, v.V(yT), xR, v.V(yT + it), -27, mmTxt(it), { attrs: [' data-cota="intermediario"'] });
     D.cota(xR, v.V(yT), xR, v.V(yT + g), -34, mmTxt(g), { attrs: [' data-cota="guarda-corpo"'] });
     /* níveis em m */
-    var xN = xR + 39, niv = [0].concat(yp).concat([yT + g]);
+    var xN = xR + 39, niv = [0].concat(C.multi && num((C.modelo.vertical || {}).y0, 0) > 0.01 ? [num(C.modelo.vertical.y0, 0)] : []).concat(yp).concat([yT + g]);
     niv.forEach(function (y) { D.linha(xR + 2, v.V(y), xN, v.V(y), "MET-FINA"); D.nivel(xN, v.V(y), nivelTxt(y), 1); });
   }
 
@@ -534,6 +618,7 @@
       var ux = (bxp - ax) / L, uy = (byp - ay) / L, poly = retOrient((ax + bxp) / 2, (ay + byp) / 2, ux, uy, L / 2, p.larg * s / 2);
       D.poli(poly, "MET-SECUNDARIO", true);
       if (p.tipo === "alcapao") { D.linha(poly[0][0], poly[0][1], poly[2][0], poly[2][1], "MET-FINA"); D.linha(poly[1][0], poly[1][1], poly[3][0], poly[3][1], "MET-FINA"); }
+      else if (C.multi) hachuraMetal(D, poly, 2.2);
       else hachuraPoli(D, poly, 1.6);
       v.reg(p.item, (ax + bxp) / 2, (ay + byp) / 2);
     });
@@ -555,6 +640,14 @@
       if (t.papel !== "montante") return;
       var cx = H(t.a), cy = Vp(t.a); if (!v.ded.novo(cx, cy, cx + 0.01, cy)) return;
       var r = Math.max(0.0241 * s, 0.55); D.circ(cx, cy, r, "MET-PRINCIPAL"); D.ponto(cx, cy, r * 0.8); v.reg(t.item, cx, cy);
+      if (C.multi) D.circ(cx, cy, Math.max(0.062 * s, r + 0.5), "MET-FINA");   /* o disco da roseta (Ø124) em volta do poste */
+    });
+    /* multi: o gancho de ancoragem (tubo curto do poste até a face), em qualquer nível */
+    if (C.multi) C.tubos.forEach(function (t) {
+      if (t.papel0 !== "ancoragem") return;
+      var x1 = H(t.a), y1 = Vp(t.a), x2 = H(t.b), y2 = Vp(t.b); if (hip(x2 - x1, y2 - y1) < 0.4 || !v.ded.novo(x1, y1, x2, y2)) return;
+      D.linha(x1, y1, x2, y2, "MET-PRINCIPAL"); v.reg(t.item, (x1 + x2) / 2, (y1 + y2) / 2);
+      D.ret(x1 - 1.3, y1 - 1.3, 2.6, 2.6, "MET-FINA"); v.reg(C.itemAbrac, x1, y1);   /* abraçadeira fixa no poste */
     });
     /* escadas de acesso: a pegada de cada lance (a inclinada vista de cima é um retângulo com o sentido de subida); os lances de baixo, tracejados */
     C.acessos.forEach(function (a) {
@@ -569,7 +662,7 @@
     /* ancoragens: olhal na parede */
     C.ancs.forEach(function (a) {
       var cx = v.H(a.pos[0]), cy = v.V(a.pos[2]); if (!v.ded.novo(cx, cy, cx + 0.07, cy)) return;
-      D.circ(cx, cy, 1.3, "MET-FINA"); D.linha(cx - 2, cy, cx + 2, cy, "MET-FINA"); D.linha(cx, cy - 2, cx, cy + 2, "MET-FINA"); v.reg(a.item, cx, cy);
+      D.circ(cx, cy, 1.3, "MET-FINA"); D.linha(cx - 2, cy, cx + 2, cy, "MET-FINA"); D.linha(cx, cy - 2, cx, cy + 2, "MET-FINA"); v.reg(a.item, cx, cy); if (C.multi) v.reg(C.itemChumb, cx, cy);
     });
     /* cotas: vãos (embaixo), malha de ancoragem (em cima), afastamento e largura (à direita) */
     var iCota = D.sg.length, xs = C.xsPostes, yB = v.V(bx.z1), xR = v.x0 + v.e.bw, yT = v.V(bx.z0);
@@ -682,7 +775,7 @@
       caixa(c, d, L / 2, p.larg / 2, p.esp / 2, dono);
       if (p.tipo === "alcapao") return;
       /* hachura na face de cima: linhas na largura, passo ~ 2 mm de papel (calculado depois pela escala: guarda o necessário) */
-      segs.push({ hach: true, c: c, d: d, hl: L / 2, hw: p.larg / 2, yTop: p.yTopo, dono: dono });
+      segs.push({ hach: true, c: c, d: d, hl: L / 2, hw: p.larg / 2, yTop: p.yTopo, dono: dono, cruz: !!C.multi });
     });
     C.rodapes.forEach(function (r) {
       var dx = r.b[0] - r.a[0], dz = r.b[2] - r.a[2], L = hip(dx, dz); if (L < 1e-6) return;
@@ -726,6 +819,13 @@
       for (var i = 1; i < nL; i++) {
         var t = -sg.hl + 2 * sg.hl * i / nL, px = sg.c[0] + sg.d[0] * t, pz = sg.c[2] + sg.d[1] * t;
         segs.push({ a: pr([px - sx * sg.hw, sg.yTop, pz - sz * sg.hw]), b: pr([px + sx * sg.hw, sg.yTop, pz + sz * sg.hw]), r: 0, dono: sg.dono, cam: "MET-HACHURA", attr: "" });
+      }
+      if (sg.cruz) {   /* piso metálico: também as linhas ao longo do comprimento (grelha), no passo da largura/3 */
+        var nW = 3;
+        for (var iw = 1; iw < nW; iw++) {
+          var tw = -sg.hw + 2 * sg.hw * iw / nW;
+          segs.push({ a: pr([sg.c[0] - sg.d[0] * sg.hl + sx * tw, sg.yTop, sg.c[2] - sg.d[1] * sg.hl + sz * tw]), b: pr([sg.c[0] + sg.d[0] * sg.hl + sx * tw, sg.yTop, sg.c[2] + sg.d[1] * sg.hl + sz * tw]), r: 0, dono: sg.dono, cam: "MET-HACHURA", attr: "" });
+        }
       }
     });
     var folga = 1.0, occ = [];
@@ -928,11 +1028,179 @@
     { n: 5, titulo: "GUARDA-CORPO, INTERMEDIÁRIO E RODAPÉ", esc: 10, fn: detGuarda, ext: [[-230, 200], [-70, 1280]] }, { n: 6, titulo: "PISO - PRANCHÕES E EMENDA POR JUSTAPOSIÇÃO", esc: 10, fn: detPiso, ext: [[-440, 440], [-400, 400]] },
     { n: 7, titulo: "ACESSO - ESCADA / TORRE / MARINHEIRO", esc: 30, fn: detAcesso, ext: [[-340, 1560], [-60, 3400]] }
   ];
+
+  /* ================================================================ DETALHES TÍPICOS DO MULTIDIRECIONAL (M4-B)
+   * Cotas de docs/andaime-multi/familias-m-cotas.json (via js/familiasandaimemdados.js); cota de grau ESTIMADO leva * e o aviso da nota (conferir com a peça real). */
+  var FM = { poste: "ra-andaime-m-poste", trav: "ra-andaime-m-travessa", piso: "ra-andaime-m-piso", alc: "ra-andaime-m-alcapao", rod: "ra-andaime-m-rodape", pb: "ra-andaime-m-peca-base", br: "ra-andaime-m-base-regulavel",
+    gan: "ra-andaime-m-gancho-ancoragem", estr: "ra-andaime-m-estribo-no", pinca: "ra-andaime-m-pinca-chaveta", pino: "ra-andaime-m-pino-trava" };
+  Det.prototype.circ = function (cx, cy, d, cam) { this.D.circ(this.X(cx), this.Y(cy), d / 2 * this.k, cam || "MET-SECUNDARIO"); };
+  Det.prototype.poli = function (pts, cam, fechado) { var self = this; this.D.poli(pts.map(function (q) { return [self.X(q[0]), self.Y(q[1])]; }), cam || "MET-SECUNDARIO", fechado !== false); };
+  Det.prototype.hachM = function (poly, passo) { hachuraMetal(this.D, poly, passo || 2.0); };
+  function notaEst(txt0) { return txt0 + (Object.keys(ESTIMADAS).length ? " * = cota estimada (grau «e» do catálogo): conferir com a peça real." : ""); }
+  function detNoM(det) {   /* DET. 1 — nó: poste + roseta + cabeça da travessa + cunha (ou laço + pinça + chaveta no estribo) */
+    if (det.ctx.C.linha === "estribo") return detNoEstribo(det);
+    var d = cotaM(FM.poste, "diametroExterno", 48.3), e = d / 2, dR = cotaM(FM.poste, "roseta_diametroExterno", 124), tR = cotaM(FM.poste, "roseta_espessura", 9);
+    var hC = cotaM(FM.trav, "cabecaAltura", 72), cC = cotaM(FM.trav, "cabecaComprimento", 50), lC = cotaM(FM.trav, "cunhaComprimento", 140), wT = cotaM(FM.trav, "cunhaLarguraNoTopo", 27), wP = cotaM(FM.trav, "cunhaLarguraNaPonta", 10);
+    var yR = e + 1, xc = e + 30, yTop = hC / 2 + 24, yBot = yTop - lC;
+    det.linha(-e, -112, -e, 126, "MET-SECUNDARIO"); det.linha(e, -112, e, 126, "MET-SECUNDARIO");
+    det.ret(-dR / 2, yR - tR / 2, dR / 2, yR + tR / 2, "MET-PRINCIPAL");
+    det.ret(e, -hC / 2, e + cC, hC / 2, "MET-PRINCIPAL");
+    det.tuboH(e + cC, 235, 0, d, "MET-SECUNDARIO");
+    det.poli([[xc - wT / 2, yTop], [xc + wT / 2, yTop], [xc + wP / 2, yBot], [xc - wP / 2, yBot]], "MET-PRINCIPAL", true);
+    det.cotaH(-dR / 2, dR / 2, -hC / 2 - 4, -9, "Ø" + txM(FM.poste, "roseta_diametroExterno", 124));
+    det.cotaV(-dR / 2 - 4, yR - tR / 2, yR + tR / 2, 8, txM(FM.poste, "roseta_espessura", 9));
+    det.cotaV(e + cC + 2, -hC / 2, hC / 2, -9, txM(FM.trav, "cabecaAltura", 72));
+    det.cotaV(xc + wT / 2 + 3, yBot, yTop, -15, txM(FM.trav, "cunhaComprimento", 140));
+    det.cotaH(e, e + cC, -hC / 2 - 20, -9, txM(FM.trav, "cabecaComprimento", 50));
+    det.marca(-e, 100, -100, 118, ["PO - POSTE"]); det.marca(-dR / 2 + 6, yR, -118, 12, ["RS - ROSETA"]); det.marca(e + cC / 2, hC / 2, 85, 78, ["TV - CABEÇA DA TRAVESSA"]);
+    det.marca(xc, yTop - 6, 62, 116, ["CU - CUNHA"]); det.marca(190, -e, 170, -62, ["TV - TRAVESSA"]);
+    det.nota([notaEst("Travessa encaixada na roseta por cunha batida até o fim (M02 p.14); a cunha trava a cabeça ao disco."), "Eixo do tubo da travessa abaixo do plano da roseta (piso assenta por cima)."]);
+  }
+  function detNoEstribo(det) {
+    var d = cotaM(FM.estr, "posteDiametro", 48.2), e = d / 2, lw = cotaM(FM.estr, "lacoLargura", 32), lp = cotaM(FM.estr, "lacoProjecaoAlemDoTubo", 38), la = cotaM(FM.estr, "lacoAlturaAoLongoDoPoste", 41), rl = cotaM(FM.estr, "lacoRasgoLargura", 12), ra = cotaM(FM.estr, "lacoRasgoAltura", 8);
+    var pw = cotaM(FM.pinca, "pincaLargura", 30), pp = cotaM(FM.pinca, "pincaProfundidade", 26), cL = cotaM(FM.pinca, "chavetaComprimento", 120), cW = cotaM(FM.pinca, "chavetaLargura", 11);
+    det.linha(-e, -112, -e, 126, "MET-SECUNDARIO"); det.linha(e, -112, e, 126, "MET-SECUNDARIO");
+    det.ret(e, -la / 2, e + lp, la / 2, "MET-PRINCIPAL"); det.ret(e + (lp - rl) / 2, -ra / 2, e + (lp + rl) / 2, ra / 2, "MET-FINA");
+    det.ret(e + lp, -pp / 2, e + lp + pw, pp / 2, "MET-PRINCIPAL");
+    det.tuboH(e + lp + pw, 235, 0, d, "MET-SECUNDARIO");
+    det.ret(e + lp / 2 - cW / 2, -cL / 2, e + lp / 2 + cW / 2, cL / 2, "MET-PRINCIPAL");
+    det.cotaV(e + lp / 2 + 22, -la / 2, la / 2, -9, txM(FM.estr, "lacoAlturaAoLongoDoPoste", 41));
+    det.cotaH(e, e + lp, -cL / 2 - 4, -9, txM(FM.estr, "lacoProjecaoAlemDoTubo", 38));
+    det.cotaV(-e - 6, -cL / 2, cL / 2, 8, txM(FM.pinca, "chavetaComprimento", 120));
+    det.cotaH(e + lp, e + lp + pw, -cL / 2 - 22, -9, txM(FM.pinca, "pincaLargura", 30));
+    det.marca(-e, 100, -100, 118, ["PO - POSTE"]); det.marca(e + lp / 2, la / 2, 40, 80, ["NÓ - LAÇO DO ESTRIBO"]); det.marca(e + lp + pw / 2, pp / 2, 110, 70, ["PINÇA"]); det.marca(e + lp / 2, cL / 2, 40, 110, ["CHAVETA"]); det.marca(190, -e, 170, -62, ["TV - TRAVESSA"]);
+    det.nota([notaEst("Travessa engata no laço do estribo pela pinça e é travada pela chaveta (M01 p.4)."), "Quatro estribos por nó."]);
+  }
+  function detEmendaM(det) {   /* DET. 2 — emenda do poste: espigão + soquete + pino trava */
+    var d = cotaM(FM.poste, "diametroExterno", 48.3), e = d / 2, dR = cotaM(FM.poste, "roseta_diametroExterno", 124), tR = cotaM(FM.poste, "roseta_espessura", 9), esp = cotaM(FM.poste, "espigaoComprimentoLivre", 175), dEsp = cotaM(FM.poste, "espigaoDiametroExterno", 38);
+    var fp = cotaM(FM.poste, "espigaoFuroPosicao", 35), fd = cotaM(FM.poste, "espigaoFuroPinoDiametro", 13), soq = cotaM(FM.poste, "soqueteInferiorComprimento", 165), rom = cotaM(FM.poste, "distanciaUltimaRosetaAteOmbroDoEspigao", 100), pd = cotaM(FM.pino, "arameDiametro", 9);
+    det.tuboV(0, -192, 0, d, "MET-SECUNDARIO"); det.tuboV(0, 0, 212, d, "MET-SECUNDARIO");
+    det.linha(-e, 0, e, 0, "MET-FINA");
+    det.ret(-dR / 2, -rom - tR / 2, dR / 2, -rom + tR / 2, "MET-PRINCIPAL");
+    det.tuboV(0, 0, esp, dEsp, "MET-OCULTA"); det.linha(-e, soq, e, soq, "MET-FINA");
+    var yP = esp - fp;
+    det.ret(-46, yP - pd / 2, 46, yP + pd / 2, "MET-PRINCIPAL"); det.circ(58, yP, 20, "MET-PRINCIPAL");
+    det.cotaV(-e - 4, -rom, 0, 8, txM(FM.poste, "distanciaUltimaRosetaAteOmbroDoEspigao", 100));
+    det.cotaV(e + 2, 0, esp, -9, txM(FM.poste, "espigaoComprimentoLivre", 175));
+    det.cotaV(e + 2, yP, esp, -26, txM(FM.poste, "espigaoFuroPosicao", 35));
+    det.cotaV(-e - 4, 0, soq, 8, txM(FM.poste, "soqueteInferiorComprimento", 165));
+    det.marca(0, -150, 70, -165, ["PO - POSTE DE BAIXO"]); det.marca(e, 196, 70, 205, ["PO - POSTE DE CIMA (SOQUETE)"]); det.marca(0, esp * 0.45, 80, 70, ["ESPIGÃO Ø" + txM(FM.poste, "espigaoDiametroExterno", 38)]);
+    det.marca(58, yP, 84, yP - 26, ["PN - PINO TRAVA"]); det.marca(dR / 2 - 6, -rom, 84, -rom + 24, ["RS - ROSETA"]);
+    det.nota([notaEst("Pino trava obrigatório em toda união de postes (M02 p.17); emendas desencontradas: interno 2,00 m e externo 3,00 m."), "Furo do pino Ø" + txM(FM.poste, "espigaoFuroPinoDiametro", 13) + "."]);
+  }
+  function detBaseM(det) {   /* DET. 3 — calço + base regulável + peça base (corte) */
+    var M = det.ctx.C.M, cL = 500, cE = 38, pL = cotaM(FM.br, "placaLado", 150), pE = cotaM(FM.br, "placaEspessura", 8), hd = cotaM(FM.br, "hasteDiametroDaRosca", 38), nE = cotaM(FM.br, "porcaBorboletaDiametro", 205), nH = cotaM(FM.br, "porcaBorboletaAltura", 32);
+    var lim = cotaM(FM.br, "limiteDeRegulagem", 250), pbH = cotaM(FM.pb, "alturaTotal", 235), pbR = cotaM(FM.pb, "posicaoDaRosetaAPartirDaBase", 65), luD = cotaM(FM.pb, "luvaDiametro", 57), luL = cotaM(FM.pb, "luvaComprimento", 80), dR = cotaM(FM.poste, "roseta_diametroExterno", 124), tR = cotaM(FM.poste, "roseta_espessura", 9), d = 48.3;
+    var rosca = Math.min(lim, Math.max(20, Math.round(num(M.regulagemBase, 0.1) * 1000))), yPl = cE + pE, yb = yPl + rosca, gx = cL / 2 + 22;
+    det.linha(-gx, 0, gx, 0, "MET-PRINCIPAL");
+    var polC = det.ret(-cL / 2, 0, cL / 2, cE, "MET-SECUNDARIO"); det.hach(polC, 1.2);
+    det.ret(-pL / 2, cE, pL / 2, yPl, "MET-PRINCIPAL");
+    det.tuboV(0, yPl, yb, hd, "MET-SECUNDARIO");
+    for (var f = yPl + 8; f < yb - 40; f += 14) det.linha(-hd / 2, f, hd / 2, f + 4, "MET-FINA");
+    det.ret(-nE / 2, yb - nH, nE / 2, yb, "MET-PRINCIPAL");
+    det.ret(-luD / 2, yb, luD / 2, yb + luL, "MET-PRINCIPAL");
+    det.tuboV(0, yb + luL, yb + pbH, d, "MET-SECUNDARIO"); det.tuboV(0, yb + pbH, yb + pbH + 130, d, "MET-SECUNDARIO");
+    det.ret(-dR / 2, yb + pbR - tR / 2, dR / 2, yb + pbR + tR / 2, "MET-PRINCIPAL");
+    det.cotaH(-cL / 2, cL / 2, -12, -9, String(cL));
+    det.cotaV(-gx + 4, 0, cE, 8, String(cE));
+    det.cotaV(-nE / 2 - 14, yPl, yb, 8, String(rosca));
+    det.cotaV(luD / 2 + 12, yb, yb + pbH, -9, txM(FM.pb, "alturaTotal", 235));
+    det.cotaV(luD / 2 + 12, yb, yb + pbR, -30, txM(FM.pb, "posicaoDaRosetaAPartirDaBase", 65));
+    det.cotaH(-pL / 2, pL / 2, yPl + 2, 9, txM(FM.br, "placaLado", 150));
+    det.marca(cL / 2 - 8, cE / 2, gx - 6, 120, ["CL - CALÇO"]); det.marca(pL / 2, cE + pE / 2, 150, 90, ["BR - BASE REGULÁVEL"]);
+    det.marca(luD / 2, yb + luL / 2, 150, yb + 150, ["PB - PEÇA BASE"]); det.marca(dR / 2 - 4, yb + pbR, 160, yb + pbR + 40, ["RS - 1ª ROSETA (1º NÓ)"]);
+    det.nota([notaEst("Rosca exposta de projeto " + br(rosca / 1000, 2) + " m; curso máximo " + br(lim / 1000, 2) + " m (M02 p.10; checklist item 15). Calço de madeira sem compensado.")]);
+  }
+  function detAncoragemM(det) {   /* DET. 4 — ancoragem: chumbador + parafuso olhal + gancho + abraçadeira fixa (planta) */
+    var C = det.ctx.C, af = Math.round(num(C.par.afastamento, 0.15) * 1000), d = 48.3, e = d / 2, a0 = arr(C.modelo.ancoragens)[0] || {}, Lg = a0.gancho === "ganchoLongo" ? 500 : 250;
+    var fD = cotaM(FM.gan, "chumbadorFuroDiametro", 20), fP = cotaM(FM.gan, "chumbadorFuroProfundidade", 70), cD = cotaM(FM.gan, "chumbadorDiametroNominal", 15.9), oA = cotaM(FM.gan, "olhalAbertura", 23), oB = cotaM(FM.gan, "olhalBarraDiametro", 8), gB = cotaM(FM.gan, "ganchoBarraDiametro", 18);
+    var bw = cotaF("ra-andaime-abracadeira-fixa", "larguraCalhaAoLongoDoTubo_forjada", 37), oD = oA + 2 * oB;
+    var polP = det.ret(-150, -90, 0, 90, "MET-SECUNDARIO"); det.hach(polP, 2);
+    det.ret(-fP, -fD / 2, 0, fD / 2, "MET-FINA"); det.ret(-fP + 4, -cD / 2, 6, cD / 2, "MET-SECUNDARIO");
+    det.ret(6, -6, 22, 6, "MET-SECUNDARIO"); det.circ(22 + oD / 2, 0, oD, "MET-PRINCIPAL"); det.circ(22 + oD / 2, 0, oA, "MET-FINA");
+    det.tuboH(22 + oD / 2, 22 + Lg, 0, gB, "MET-SECUNDARIO");
+    det.tuboH(22 + Lg - 140, 22 + Lg, 0, d, "MET-SECUNDARIO");
+    det.secao(af, 0, d, 3);
+    det.ret(af - bw / 2, -e - 5, af + bw / 2, e + 5, "MET-PRINCIPAL");
+    det.cotaH(0, af, -e - 22, -9, String(af));
+    det.cotaH(22, 22 + Lg, e + 18, 9, String(Lg));
+    det.cotaV(-fP - 8, -fD / 2, fD / 2, 8, "Ø" + txM(FM.gan, "chumbadorFuroDiametro", 20)); det.cotaH(-fP, 0, -fD / 2 - 10, -9, txM(FM.gan, "chumbadorFuroProfundidade", 70));
+    det.marca(-fP / 2, 0, -100, 62, ["CH - CHUMBADOR 5/8\""]); det.marca(30, oD / 2, 12, 70, ["OL - OLHAL"]); det.marca(22 + oD + 40, 0, 120, -62, ["GA - GANCHO " + Lg]); det.marca(af, e + 5, af + 40, 80, ["AF - ABRAÇ. FIXA"]); det.marca(af + e, -e, af + 120, 40, ["PO - POSTE"]);
+    det.nota([notaEst("Gancho preso ao poste por abraçadeira fixa; olhal no chumbador PBI 5/8\" em furo Ø" + txM(FM.gan, "chumbadorFuroDiametro", 20) + " × " + txM(FM.gan, "chumbadorFuroProfundidade", 70) + " (M02 p.22). Afastamento acima de 0,45 m: tubo de 1,00 m + 2 abraçadeiras fixas."), "Resistência e ensaio de arrancamento: RT."]);
+  }
+  function detGuardaM(det) {   /* DET. 5 — guarda-corpo 1,00/0,50 e rodapé metálico (corte transversal) */
+    var C = det.ctx.C, g = Math.round(C.gd.g * 1000), it = Math.round(C.gd.it * 1000), rd = Math.round(C.gd.rd * 1000), W = Math.round(num(C.M.largura, 0.8) * 1000), pw = cotaM(FM.piso, "largura", 320), rp = cotaM(FM.rod, "perfilProfundidade", 30);
+    var d = 48.3, e = d / 2, xp = W / 2, ph = cotaM(FM.piso, "alturaDoPerfil", 76);
+    [[-pw, 0], [0, pw]].forEach(function (q) { var pol = det.ret(q[0], -ph, q[1], 0, "MET-SECUNDARIO"); det.linha(q[0], -ph + 12, q[1], -ph + 12, "MET-FINA"); });
+    det.tuboV(xp, -120, g + 80, d, "MET-SECUNDARIO"); det.tuboV(-xp, -120, 40, d, "MET-SECUNDARIO");
+    det.circ(xp, -e - 1, d, "MET-PRINCIPAL"); det.circ(-xp, -e - 1, d, "MET-PRINCIPAL");
+    det.circ(xp, g, d, "MET-PRINCIPAL"); det.circ(xp, it, d, "MET-PRINCIPAL");
+    var polR = det.ret(xp + e + 2, 0, xp + e + 2 + rp, rd, "MET-PRINCIPAL"); det.linha(xp + e + 2 + rp / 2, 0, xp + e + 2 + rp / 2, rd, "MET-FINA");
+    det.cotaV(-xp - e - 30, 0, rd, 8, String(rd)); det.cotaV(-xp - e - 44, 0, it, 8, String(it)); det.cotaV(-xp - e - 58, 0, g, 8, String(g));
+    det.cotaH(-pw, pw, -ph - 20, -9, String(Math.round(2 * pw))); det.cotaH(-xp, xp, -ph - 20, -18, String(W));
+    det.marca(xp, g + e, xp + 90, g + 90, ["TV - TRAVESSÃO"]); det.marca(xp, it + e, xp + 90, it + 70, ["TV - INTERMEDIÁRIO"]); det.marca(xp + e + 2 + rp, rd * 0.7, xp + 110, 150, ["RM - RODAPÉ METÁLICO"]);
+    det.marca(pw / 2, -ph / 2, pw / 2 + 40, -ph - 80, ["PM - PISO"]); det.marca(xp, -e - 1, xp + 60, -90, ["TV - TRAVESSA"]);
+    det.nota(["Guarda-corpo do multi: travessão a " + br(g / 1000, 2) + " m e intermediário a " + br(it / 1000, 2) + " m do piso, rodapé de " + br(rd / 1000, 2) + " m (NR-18 18.12.15.2); encaixados nas rosetas antes de estender os postes."]);
+  }
+  function detPisoM(det) {   /* DET. 6 — piso metálico: garras, trava e perfuração (planta) */
+    var C = det.ctx.C, vao = Math.round(arr(C.modelo.barras).filter(function (b) { return b.papel === "travessa"; })[0] ? C.modelo.barras.filter(function (b) { return b.papel === "travessa"; })[0].L * 1000 : 800);
+    var pw = cotaM(FM.piso, "largura", 320), menos = cotaM(FM.piso, "comprimentoDoPisoMenosNominal", 42), gL = cotaM(FM.piso, "garraLarguraNaPlanta", 35), gR = cotaM(FM.piso, "garraRecuoNaLateral", 32), tL = cotaM(FM.piso, "travaLargura", 10), tC = cotaM(FM.piso, "travaComprimento", 40);
+    var pp1 = cotaM(FM.piso, "perfuracaoPassoNaLargura", 24.7), pp2 = cotaM(FM.piso, "perfuracaoPassoNoComprimento", 19.6), pd = cotaM(FM.piso, "perfuracaoDiametroDoFuro", 15), d = 48.3;
+    var Lp = vao - menos, x0 = menos / 2, x1 = vao - menos / 2, hw = pw / 2, i, j;
+    det.tuboV(0, -hw - 60, hw + 60, d, "MET-SECUNDARIO"); det.tuboV(vao, -hw - 60, hw + 60, d, "MET-SECUNDARIO");
+    det.ret(x0, -hw, x1, hw, "MET-PRINCIPAL");
+    [-1, 1].forEach(function (sg) {
+      var yy = sg < 0 ? -hw + gR : hw - gR - gL;
+      det.ret(x0 - 14, yy, x0 + 4, yy + gL, "MET-PRINCIPAL"); det.ret(x1 - 4, yy, x1 + 14, yy + gL, "MET-PRINCIPAL");
+    });
+    det.ret(x1 - 22, -tC / 2, x1 - 22 + tL, tC / 2, "MET-PRINCIPAL");
+    for (i = 0; i < 6; i++) for (j = 0; j < 4; j++) det.circ(x0 + 40 + i * pp2, -hw + 36 + j * pp1, pd, "MET-FINA");
+    det.cotaV(x1 + 34, -hw, hw, -9, txM(FM.piso, "largura", 320));
+    det.cotaH(x0, x1, hw + 62, 9, String(Lp)); det.cotaH(0, vao, hw + 90, 9, String(vao));
+    det.cotaH(x0 + 40, x0 + 40 + pp2, -hw + 36 + 3 * pp1 + 22, -9, txM(FM.piso, "perfuracaoPassoNoComprimento", 19.6, 1)); det.cotaV(x0 + 36, -hw + 36, -hw + 36 + pp1, 8, txM(FM.piso, "perfuracaoPassoNaLargura", 24.7, 1));
+    det.marca(x0 + 40 + 2 * pp2, -hw + 36 + pp1, x0 + 200, -hw + 70, ["PERFURAÇÃO Ø" + txM(FM.piso, "perfuracaoDiametroDoFuro", 15)]); det.marca(x0 - 5, hw - gR - gL / 2, 40, hw - 130, ["GARRA " + txM(FM.piso, "garraLarguraNaPlanta", 35)]);
+    det.marca(x1 - 22 + tL / 2, tC / 2, x1 - 150, 20, ["TRAVA CONTRA LEVANTAMENTO"]); det.marca(vao, hw + 40, vao - 120, hw + 40, ["TV - TRANSVERSAL"]);
+    det.nota([notaEst("Piso = travessa nominal − " + Math.round(menos) + " mm; engata com as garras na travessa e a trava impede o levantamento (M02 p.18). A perfuração cobre toda a chapa (só um trecho desenhado).")]);
+  }
+  function detAcessoM(det) {   /* DET. 7 — alçapão com escada incorporada (ou escada externa), corte lateral */
+    var C = det.ctx.C, a1 = arr(C.modelo.acessos)[0] || {}, lev = Math.round(num(arr(C.yPisos)[0], 2) * 1000);
+    if (a1.incorporada === false) {
+      var eL = 400, hw = eL / 2, H = lev + 1000, esp = 275;
+      det.tuboV(-hw, 0, H, 31.75, "MET-SECUNDARIO"); det.tuboV(hw, 0, H, 31.75, "MET-SECUNDARIO");
+      for (var yy = esp * 0.6; yy < H; yy += esp) det.linha(-hw, yy, hw, yy, "MET-FINA");
+      det.hach(det.ret(-900, lev - 45, -hw - 100, lev, "MET-PRINCIPAL"), 1.4);
+      det.cotaH(-hw, hw, -14, -9, String(eL)); det.cotaV(hw + 40, 0, lev, -9, String(lev)); det.cotaV(hw + 40, lev, H, -9, "1000");
+      det.marca(hw, H * 0.6, hw + 250, H * 0.6, ["ES - ESCADA EXTERNA Ø48"]);
+      det.nota(["Escada externa por levante, ultrapassando o piso em 1,00 m (NR-18 18.12.14); alçapão não usado neste projeto."]);
+      return;
+    }
+    var aberT = cotaM(FM.alc, "aberturaDaTampaComprimento", 710), eC = cotaM(FM.alc, "escada_comprimento", 2230), eP = cotaM(FM.alc, "escada_passoDosDegraus", 280), eLg = cotaM(FM.alc, "escada_largura", 300), th = Math.asin(Math.min(0.97, lev / eC)), ps = 45;
+    var x0 = 200, x1 = x0 + aberT, xt = (x0 + x1) / 2, xf = xt + lev / Math.tan(th), nE = Math.floor(eC / eP);
+    det.hachM(det.ret(-300, -ps, x0, 0, "MET-PRINCIPAL"), 1.6); det.hachM(det.ret(x1, -ps, x1 + 900, 0, "MET-PRINCIPAL"), 1.6);
+    det.hachM(det.ret(-300, lev - ps, x0, lev, "MET-PRINCIPAL"), 1.6); det.hachM(det.ret(x1, lev - ps, x1 + 900, lev, "MET-PRINCIPAL"), 1.6);
+    det.linha(x0, lev - ps, x1, lev, "MET-FINA"); det.linha(x0, lev, x1, lev - ps, "MET-FINA");
+    det.linha(xf, 0, xt, lev, "MET-PRINCIPAL"); det.linha(xf + 40, 0, xt + 40, lev, "MET-SECUNDARIO");
+    for (var q = 1; q < nE; q++) { var f = q / nE; det.linha(xf + (xt - xf) * f, lev * f, xf + (xt - xf) * f + 40, lev * f, "MET-FINA"); }
+    det.cotaV(-340, 0, lev, 9, String(lev)); det.cotaH(x0, x1, lev + 120, 9, txM(FM.alc, "aberturaDaTampaComprimento", 710));
+    det.cotaV(x1 + 950, 0, lev, -9, String(lev));
+    det.marca(xf + (xt - xf) * 0.5, lev * 0.5, x1 + 520, lev * 0.55, ["AL - ESCADA " + txM(FM.alc, "escada_comprimento", 2230) + " (" + nE + " DEGRAUS" + estM(FM.alc, "escada_numeroDeDegraus") + ")"]); det.marca(xt, lev - ps / 2, -230, lev + 400, ["AL - ALÇAPÃO " + txM(FM.alc, "aberturaDaTampaComprimento", 710)]);
+    det.nota([notaEst("Piso com alçapão e escada incorporada (PI07): alçapões alternados nos níveis, tampa fechada após a passagem (M02 p.18; NR-18 18.12.14)."), "Passo dos degraus " + txM(FM.alc, "escada_passoDosDegraus", 280) + ", largura da escada " + txM(FM.alc, "escada_largura", 300) + "."]);
+  }
+  var DETALHES_M = [
+    { n: 1, titulo: function (c) { return c && c.linha === "estribo" ? "NÓ DE ESTRIBO - LAÇO, PINÇA E CHAVETA" : "NÓ DE ROSETA - POSTE, CABEÇA E CUNHA"; }, esc: 5, fn: detNoM, ext: [[-150, 300], [-115, 130]] },
+    { n: 2, titulo: "EMENDA DO POSTE - ESPIGÃO E PINO TRAVA", esc: 5, fn: detEmendaM, ext: [[-130, 170], [-200, 225]] },
+    { n: 3, titulo: "BASE - CALÇO, BASE REGULÁVEL E PEÇA BASE", esc: 10, fn: detBaseM, ext: [[-280, 340], [-30, 640]] },
+    { n: 4, titulo: "ANCORAGEM - GANCHO, ABRAÇADEIRA FIXA E OLHAL", esc: 5, fn: detAncoragemM, ext: [[-170, 300], [-95, 105]] },
+    { n: 5, titulo: "GUARDA-CORPO 1,00 / 0,50 E RODAPÉ METÁLICO", esc: 20, fn: detGuardaM, ext: [[-560, 520], [-130, 1160]] },
+    { n: 6, titulo: "PISO METÁLICO - GARRA, TRAVA E PERFURAÇÃO", esc: 10, fn: detPisoM, ext: [[-30, 840], [-250, 270]] },
+    { n: 7, titulo: "ACESSO - ALÇAPÃO COM ESCADA / ESCADA EXTERNA", esc: 30, fn: detAcessoM, ext: [[-360, 1900], [-60, 2250]] }
+  ];
+  function detalhesAtivos() { return MULTI ? DETALHES_M : DETALHES; }
   function desenharDetalhes(ctx, area, cols) {
-    var D = ctx.D, A = AP(), nL = Math.ceil(DETALHES.length / cols), gw = 4, cw = (area[2] - gw * (cols - 1)) / cols, ch = area[3] / nL;
-    DETALHES.forEach(function (dt, i) {
+    var D = ctx.D, A = AP(), LD = detalhesAtivos(), nL = Math.ceil(LD.length / cols), gw = 4, cw = (area[2] - gw * (cols - 1)) / cols, ch = area[3] / nL;
+    LD.forEach(function (dt, i) {
       var c = i % cols, r = Math.floor(i / cols), x = area[0] + c * (cw + gw), y = area[1] + r * ch;
-      var hT = A.tituloVista(D, x + 2, y, dt.titulo, "ESC 1:" + dt.esc, dt.n);
+      var hT = A.tituloVista(D, x + 2, y, typeof dt.titulo === "function" ? dt.titulo(ctx.C) : dt.titulo, "ESC 1:" + dt.esc, dt.n);
       D.ret(x, y, cw, ch - 3, "MET-FINA");
       var det = new Det(ctx, x, y + hT, cw, ch - 3 - hT, 1 / dt.esc, dt.ext);
       try { dt.fn(det); } catch (e) { ctx.avisos.push("Detalhe " + dt.n + ": " + (e && e.message ? e.message : e)); D.texto(x + 6, y + hT + 12, "ERRO AO DESENHAR ESTE DETALHE", ctx.E.T.nota, { cor: VERMELHO }); }
@@ -1020,17 +1288,29 @@
     { re: /luva|capLuva/i, campo: "capLuva: capacidade da luva à flexão (kN.m)", norma: "NR-18 18.12 - ligação do fabricante" },
     { re: /guardaLaudo|laudo/i, campo: "laudo do guarda-corpo (carga de 350 N)", norma: "NR-18 18.9.4.2; NBR 6494 3.2.1" }
   ];
+  /* campos do RT do MULTIDIRECIONAL (AndaimeMultiCalc): ficam na frente do mapa quando o modelo é multi; a pendência pode vir como texto OU como objeto {campo, tipo, rotulo|texto, fonte} */
+  var PEND_MAPA_M = [
+    { re: /capLigAxialKgf|ligacaoAxialRT/i, campo: "capLigAxialKgf: capacidade axial da ligação travessa-roseta (kgf), da tabela do fabricante", norma: "catálogo do fabricante do locador (M01/M02) - confirmado pelo RT" },
+    { re: /capNoKgf|ligação travessa.roseta/i, campo: "capNoKgf: carga admissível da ligação travessa-roseta por ponta (kgf), da tabela do fabricante", norma: "catálogo do fabricante do locador (M01/M02) - confirmado pelo RT" },
+    { re: /capDiagKgf/i, campo: "capDiagKgf: carga axial admissível da diagonal e da ligação (kgf)", norma: "catálogo do fabricante do locador (M01/M02) - confirmado pelo RT" },
+    { re: /capBaseMultiKgf|base regul/i, campo: "capBaseMultiKgf: carga admissível da base regulável/peça base (kgf)", norma: "catálogo do fabricante (M02 p.10) - confirmado pelo RT" },
+    { re: /espigaoTracaoRT|espigão|pino trava/i, campo: "espigaoTracaoRT (tração do espigão/pino trava) e justificativa do RT", norma: "fabricante do locador; sem fonte pública" },
+    { re: /cunhaContinua/i, campo: "cunhaContinua + justificativa do RT (rigidez da ligação pela cunha)", norma: "tabela do fabricante da ligação" },
+    { re: /paraleloInternoRT/i, campo: "paraleloInternoRT + justificativa do RT (flambagem paralela da linha interna)", norma: "NBR 8800 - conferência do RT" }
+  ];
   function pendenciasRT(calc, modelo) {
-    var c = calcDe(calc).c, out = [], vistos = {};
-    function add(texto) {
-      var m = null; PEND_MAPA.forEach(function (p) { if (!m && p.re.test(texto)) m = p; });
-      var chave = m ? m.campo : texto.slice(0, 60); if (vistos[chave]) return; vistos[chave] = 1;
-      out.push({ texto: texto, campo: m ? m.campo : "decisão do responsável técnico (descrita ao lado)", norma: m ? m.norma : "ver a verificação no memorial" });
+    var c = calcDe(calc).c, out = [], vistos = {}, mapa = ehMulti(modelo) ? PEND_MAPA_M.concat(PEND_MAPA) : PEND_MAPA;
+    function add(item) {
+      var o = (item && typeof item === "object") ? item : null, texto = o ? txt(o.rotulo || o.texto || o.titulo || o.motivo || o.campo) : txt(item), m = null;
+      mapa.forEach(function (p) { if (!m && p.re.test(texto + (o ? " " + txt(o.campo) : ""))) m = p; });
+      var campo = o && o.campo ? txt(o.campo) + (o.tipo === "numero" ? " (número)" : (o.tipo === "marca" ? " (marcar + justificativa)" : (o.tipo === "confirma" ? " (confirmar)" : ""))) : (m ? m.campo : "decisão do responsável técnico (descrita ao lado)");
+      var chave = o && o.campo ? txt(o.campo) : (m ? m.campo : texto.slice(0, 60)); if (vistos[chave]) return; vistos[chave] = 1;
+      out.push({ texto: texto, campo: campo, norma: o && o.fonte ? txt(o.fonte) : (m ? m.norma : "ver a verificação no memorial") });
     }
     if (!c) return out;
     arr(c.verificacoes).forEach(function (v) { if (v.estado === "nao_verificado") add(txt(arr(v.ressalvas)[0] || v.texto || v.titulo || v.id)); });
-    arr(c.pendencias).forEach(function (t) { add(txt(t)); });
-    arr(modelo && modelo.pendencias).forEach(function (t) { add(txt(t)); });
+    arr(c.pendencias).forEach(function (t) { add(t); });
+    arr(modelo && modelo.pendencias).forEach(function (t) { add(t); });
     return out;
   }
   function situacao(calc, modelo) {
@@ -1064,7 +1344,34 @@
     var pis = opcoes && opcoes.pisosCarregados != null ? opcoes.pisosCarregados : (c && c.parametros ? c.parametros.pisosCarregados : null);
     return { q: q, kgf: q == null ? null : q * 101.9716, pisos: pis };
   }
+  /* premissas do RT que o multi guarda: números informados + toda «…Justificativa» preenchida (nada inventado: o que não foi informado não aparece aqui, aparece em COMO LIBERAR) */
+  var RT_NUM_MULTI = [["capNoKgf", "Ligação travessa-roseta (capNoKgf)", "kgf"], ["capLigAxialKgf", "Ligação axial travessa-roseta (capLigAxialKgf)", "kgf"], ["capDiagKgf", "Diagonal e ligação (capDiagKgf)", "kgf"], ["capBaseMultiKgf", "Base regulável (capBaseMultiKgf)", "kgf"], ["espigaoTracaoRT", "Espigão/pino trava à tração (espigaoTracaoRT)", ""]];
+  function premissasRT(P) {
+    var out = [];
+    RT_NUM_MULTI.forEach(function (q) { if (P[q[0]] != null && isFinite(P[q[0]]) && Number(P[q[0]]) > 0) out.push(q[1] + ": " + br(P[q[0]], 1) + (q[2] ? " " + q[2] : "") + " (informado pelo RT)"); });
+    Object.keys(P).forEach(function (k) { if (k.charAt(0) !== "_" && typeof P[k] === "string" && /Justificativa$/.test(k) && txt(P[k]).trim()) out.push(k.replace(/Justificativa$/, "") + ": " + txt(P[k]).trim()); });
+    return out;
+  }
+  function dadosProjetoMulti(ctx) {
+    var M = ctx.M, c = calcDe(ctx.calc).c, P = (c && c.parametros) || {}, ct = cargaTrabalho(ctx.calc, ctx.opcoes), v = c && c.vento, out = [], mo = ctx.modelo, V = mo.vertical || {}, par = ctx.C.par;
+    out.push(["Tipo", "andaime multidirecional, linha " + (mo.linha === "estribo" ? "estribo (laço, pinça e chaveta)" : "roseta (disco a cada 0,50 m, travessa de cunha)") + "; peças de catálogo do locador"]);
+    out.push(["Dimensões", "comprimento " + br(M.comprimento, 2) + " m; módulo (entre eixos) " + br(M.largura, 2) + " m; piso do topo a " + br(M.alturaPiso, 2) + " m"]);
+    out.push(["Vãos / levantes / pisos", M.nVaos + " / " + M.nLevantes + " / " + (M.nLevantes)]);
+    out.push(["Nós do poste", "passo " + br(num(V.passo, 0.5), 2) + " m; 1º nó a " + br(num(V.y0, 0), 3) + " m (calço + base regulável + peça base)"]);
+    out.push(["Carga de trabalho admissível (NBR 6494 3.1.4)", ct.q == null ? { t: "[CARGA DE SERVIÇO - definir no cálculo]", cor: VERMELHO } : br(ct.q, 2) + " kN/m² (" + br(ct.kgf, 0) + " kgf/m²) por piso; " + textoPisos(ct.pisos)]);
+    out.push(["Vento (NBR 6123:2023)", v && v.ok ? "V0 = " + br(v.V0, 0) + " m/s; categoria " + txt(v.categoria) + "; S1 = " + br(v.S1, 2) + "; S3 = " + br(v.S3, 2) : { t: "não informado - vento NÃO VERIFICADO (V0 da obra)", cor: VERMELHO }]);
+    out.push(["Aço do tubo", P.fy ? "fy = " + br(P.fy, 0) + " MPa; fu = " + br(P.fu, 0) + " MPa" : "-"]);
+    out.push(["Ancoragem", "gancho (ou tubo de amarração com 2 abraçadeiras fixas) + olhal + chumbador 5/8\"; malha " + br(par.ancH, 2) + " x " + br(par.ancV, 2) + " m; capacidade adotada " + br(P.capAncoragem, 2) + " kN (confirmar pelo RT)"]);
+    out.push(["Apoio", P.sigmaSolo != null ? "tensão admissível do solo " + br(P.sigmaSolo, 0) + " kPa" + (P.sigmaSoloConfirmado ? " (confirmada pelo RT)" : " (NÃO confirmada)") : { t: "tensão admissível do solo NÃO informada", cor: VERMELHO }]);
+    out.push(["Tela de proteção", mo.tela && mo.tela.area > 0 ? br(mo.tela.area, 2) + " m²" : "sem tela no projeto"]);
+    var pt = ctx.tabela.total.pesoTotal;
+    out.push(["Peso do andaime (lista de locação)", pt == null ? { t: "peso total sem fonte em alguma peça (ver a relação); " + ctx.tabela.total.qtd + " peças", cor: VERMELHO } : br(pt, 0) + " kg; " + ctx.tabela.total.qtd + " peças"]);
+    var pr = premissasRT(P);
+    out.push(["Premissas do RT", pr.length ? pr.join(" | ") : { t: "nenhuma informada (ver COMO LIBERAR)", cor: VERMELHO }]);
+    return out;
+  }
   function dadosProjeto(ctx) {
+    if (ehMulti(ctx.modelo)) return dadosProjetoMulti(ctx);
     var M = ctx.M, par = ctx.C.par, c = calcDe(ctx.calc).c, P = (c && c.parametros) || {}, ct = cargaTrabalho(ctx.calc, ctx.opcoes), v = c && c.vento, out = [];
     out.push(["Tipo", "tubo-roll / tubo equipado (tubo e abraçadeira), " + txt(ctx.modelo.tubo && ctx.modelo.tubo.rotulo ? ctx.modelo.tubo.rotulo : "Tubo Ø48,3 × 3,0 mm")]);
     out.push(["Dimensões", "comprimento " + br(M.comprimento, 2) + " m; largura " + br(M.largura, 2) + " m; piso do topo a " + br(M.alturaPiso, 2) + " m"]);
@@ -1081,6 +1388,7 @@
   function textoDado(d) { return (d[1] && typeof d[1] === "object") ? d[1].t : d[1]; }
   function dimPeca(ctx, l) {
     var P = ctx.C.par, cat = AN() && AN().CATALOGO ? AN().CATALOGO.pecas : {};
+    if (ctx.C.multi) return txt(l.dimensoes).replace(/×/g, "x") + (l.refCatalogo ? " (ref. " + l.refCatalogo + ")" : "");
     if (l.cod === "tubo") return "Tubo Ø48,3x3,0 - L=" + mmTxt(l.comp);
     if (l.cod === "pranchaMadeira") { var pm = cat.pranchaMadeira || { largura: 0.3, esp: 0.038 }; return "Pranchão " + br(l.comp, 2) + " x " + br(pm.largura, 2) + " x " + br(pm.esp, 3) + " m"; }
     if (l.cod === "rodapeMadeira") return "Rodapé " + br(l.comp, 2) + " x " + br(P.rodape, 2) + " x " + br(P.rodapeEsp, 3) + " m";
@@ -1090,7 +1398,7 @@
     if (l.cod === "escadaMao") return "Escada " + br(l.comp, 2) + " x 0,40 m";
     return txt(l.dimensoes).replace(/×/g, "x");
   }
-  function marcaDe(l) { return l.cod === "tubo" ? (MARCA_TUBO[l.papelTubo] || "") : (MARCA_COD[l.cod] || ""); }
+  function marcaDe(l) { if (MULTI) return MARCA_COD_MULTI[l.cod] || ""; return l.cod === "tubo" ? (MARCA_TUBO[l.papelTubo] || "") : (MARCA_COD[l.cod] || ""); }
   function linhasRelacao(ctx) {
     var rows = [], somaComp = 0, semPeso = false;
     ctx.lista.forEach(function (l) {
@@ -1138,13 +1446,16 @@
       : "Carga de trabalho admissível: " + br(ct.q, 2) + " kN/m² (" + br(ct.kgf, 0) + " kgf/m²) por piso, " + textoPisos(ct.pisos) + " (NBR 6494 3.1.4). Não empilhar material.");
     notas.push("Montagem e desmontagem por trabalhadores capacitados, com SPIQ, ferramentas amarradas e área isolada e sinalizada (NR-18 18.12.6); nunca um montador só (NBR 6494 3.3.5).");
     notas.push("Uso somente após o registro formal de liberação assinado (NR-18 18.12.4) e cartão verde no acesso.");
-    notas.push("Andaime tipo " + txt(ctx.opcoes.tipo || "tubo-roll") + ": tubo Ø48,3 x " + br(AN() && AN().CATALOGO ? AN().CATALOGO.tubo.paredeNominalMm : 3, 1) + " mm, abraçadeiras forjadas/prensadas conforme catálogo do locador.");
+    if (ctx.C.multi) {
+      notas.push("Andaime multidirecional (linha " + ctx.C.linha + "): peças de catálogo do locador; travessa encaixada em cada nó por cunha batida até o fim (nós a cada 0,50 m); pino trava em toda emenda de poste; nunca trocar peça por tubo comum.");
+      notas.push("Guarda-corpo: travessão a " + br(ctx.C.gd.g, 2) + " m e intermediário a " + br(ctx.C.gd.it, 2) + " m do piso, rodapé de " + br(ctx.C.gd.rd, 2) + " m (NR-18 18.12.15.2); montar o do nível de cima antes de estender os postes.");
+    } else notas.push("Andaime tipo " + txt(ctx.opcoes.tipo || "tubo-roll") + ": tubo Ø48,3 x " + br(AN() && AN().CATALOGO ? AN().CATALOGO.tubo.paredeNominalMm : 3, 1) + " mm, abraçadeiras forjadas/prensadas conforme catálogo do locador.");
     notas.push("Ancoragens conforme planta, no máximo 6,00 m entre si e uma a cada 36 m² (NBR 6494 4.5.2); não retirar ancoragem antes de desmontar o levante de cima.");
     if (!sit.liberado) notas.push({ t: "ANDAIME NÃO LIBERADO (" + sit.motivo + "). Não montar nem usar até o responsável técnico corrigir o projeto e refazer o cálculo.", cor: VERMELHO });
     var pend = arr(calcDe(ctx.calc).c && calcDe(ctx.calc).c.pendencias);
     if (pend.length) notas.push({ t: "Pendências do cálculo para o responsável técnico: ver " + (ctx.compacto ? "o quadro COMO LIBERAR" : "AND-05 / memorial") + " (" + pend.length + ").", cor: VERMELHO });
     notas.push("Marca CONFIRMAR PELO RESPONSÁVEL TÉCNICO em valores de fonte secundária (peso e capacidade de peça de locador, apostilas).");
-    var marcas = Object.keys(PADRAO_AND.marcas).map(function (k) { return k + " " + PADRAO_AND.marcas[k]; }).join("; ") + ".";
+    var marcas = Object.keys(marcasAtivas()).map(function (k) { return k + " " + marcasAtivas()[k]; }).join("; ") + ".";
     var dd = dadosProjeto(ctx);
     if (ctx.compacto) dd = dd.filter(function (d) { return /^(Dimensões|Vãos|Peso)/.test(d[0]) || (!(ctx.sit.pendencias && ctx.sit.pendencias.length) && /^(Vento|Apoio)/.test(d[0])); });   /* a A3 única não tem o memorial resumido: só o essencial na coluna */
     var dados = dd.map(function (d) { var tt = textoDado(d); return (d[1] && typeof d[1] === "object") ? { t: d[0] + ": " + tt, cor: d[1].cor } : d[0] + ": " + tt; });
@@ -1336,7 +1647,11 @@
     D.texto(hf - tf / 2, Vy(C.yMax * 0.5), "FACE DA ESTRUTURA EXISTENTE", T.nota * 0.9, { al: "C", rot: -90, meio: true });
     /* calços e bases (os do pórtico que fica por trás do corte) */
     C.calcos.forEach(function (c) { if (c.torre || !dentroJanela(c.pos[0])) return; var cy = Hy(c.pos[2]), w = Math.max(c.larg * s, 1), h = Math.max(c.esp * s, 0.6); D.ret(cy - w / 2, Vy(c.esp), w, h, "MET-SECUNDARIO"); hachuraPoli(D, [[cy - w / 2, Vy(c.esp)], [cy + w / 2, Vy(c.esp)], [cy + w / 2, Vy(c.esp) + h], [cy - w / 2, Vy(c.esp) + h]], 1.2); });
-    C.bases.forEach(function (b) { if (b.torre || !dentroJanela(b.pos[0])) return; var cy = Hy(b.pos[2]), w = 0.12 * s, y0 = b.y0; D.ret(cy - w / 2, Vy(y0 + 0.008), w, Math.max(0.008 * s, 0.5), "MET-PRINCIPAL"); D.linha(cy - 0.012 * s, Vy(y0 + 0.008), cy - 0.012 * s, Vy(y0 + b.h), "MET-FINA"); D.linha(cy + 0.012 * s, Vy(y0 + 0.008), cy + 0.012 * s, Vy(y0 + b.h), "MET-FINA"); });
+    C.bases.forEach(function (b) {
+      if (b.torre || !dentroJanela(b.pos[0])) return; var cy = Hy(b.pos[2]), w = (C.multi ? 0.15 : 0.12) * s, y0 = b.y0; D.ret(cy - w / 2, Vy(y0 + 0.008), w, Math.max(0.008 * s, 0.5), "MET-PRINCIPAL");
+      if (C.multi) { baseMulti(ctx, C, D, cy, b, s, Vy, function () {}); return; }
+      D.linha(cy - 0.012 * s, Vy(y0 + 0.008), cy - 0.012 * s, Vy(y0 + b.h), "MET-FINA"); D.linha(cy + 0.012 * s, Vy(y0 + 0.008), cy + 0.012 * s, Vy(y0 + b.h), "MET-FINA");
+    });
     /* tubos: montantes (vista), transversais e ancoragens (vista, deitados), diagonal da largura (vista), longitudinais e diagonais da fachada (cortados) */
     C.tubos.forEach(function (t) {
       if (t.torre) return;
@@ -1357,6 +1672,8 @@
       var f = (sc - t.a[0]) / (t.b[0] - t.a[0]), yc = yA + (yB - yA) * f, Yc = YA + (YB - YA) * f, rc = Math.max(D0 / 2 * s, 0.7), cxm = Hy(Yc), cym = Vy(yc);
       D.circ(cxm, cym, rc, "MET-PRINCIPAL"); D.ponto(cxm, cym, rc * 0.75);
     });
+    /* multi: os nós dos postes que aparecem no corte */
+    if (C.multi) C.nos.forEach(function (nn) { if (!dentroJanela(nn.p[0])) return; marcaNo(D, Hy(nn.p[2]), Vy(nn.p[1]), C.linha, s); });
     /* madeira cortada: pranchões, portinhola e rodapés (a seção hachurada; a portinhola sem hachura, com as diagonais) */
     var vaoCorte = null;
     C.pranchas.forEach(function (p) {
@@ -1364,15 +1681,15 @@
       var xa = Math.min(p.a[0], p.b[0]), xb = Math.max(p.a[0], p.b[0]); if (sc < xa - 1e-6 || sc > xb + 1e-6) return;
       var Y0 = p.a[2] - p.larg / 2, Y1 = p.a[2] + p.larg / 2, hh = Math.max(p.esp * s, 0.6), x1 = Hy(Y0), x2 = Hy(Y1), yT = Vy(p.yTopo);
       D.ret(x1, yT, x2 - x1, hh, "MET-SECUNDARIO");
-      if (p.tipo === "alcapao") { D.linha(x1, yT, x2, yT + hh, "MET-FINA"); D.linha(x1, yT + hh, x2, yT, "MET-FINA"); } else hachuraPoli(D, [[x1, yT], [x2, yT], [x2, yT + hh], [x1, yT + hh]], 1.1);
+      if (p.tipo === "alcapao") { D.linha(x1, yT, x2, yT + hh, "MET-FINA"); D.linha(x1, yT + hh, x2, yT, "MET-FINA"); } else hachPiso(C, D, [[x1, yT], [x2, yT], [x2, yT + hh], [x1, yT + hh]], 1.1);
     });
     C.rodapes.forEach(function (r) {
       var xa = Math.min(r.a[0], r.b[0]), xb = Math.max(r.a[0], r.b[0]); if (sc < xa - 1e-6 || sc > xb + 1e-6) return;
-      var x1 = Hy(r.a[2] - r.esp / 2), x2 = Hy(r.a[2] + r.esp / 2), yT = Vy(r.yTopo), hh = Math.max(r.alt * s, 0.8); D.ret(x1, yT, Math.max(x2 - x1, 0.8), hh, "MET-SECUNDARIO"); hachuraPoli(D, [[x1, yT], [x1 + Math.max(x2 - x1, 0.8), yT], [x1 + Math.max(x2 - x1, 0.8), yT + hh], [x1, yT + hh]], 1.0);
+      var x1 = Hy(r.a[2] - r.esp / 2), x2 = Hy(r.a[2] + r.esp / 2), yT = Vy(r.yTopo), hh = Math.max(r.alt * s, 0.8); D.ret(x1, yT, Math.max(x2 - x1, 0.8), hh, "MET-SECUNDARIO"); hachPiso(C, D, [[x1, yT], [x1 + Math.max(x2 - x1, 0.8), yT], [x1 + Math.max(x2 - x1, 0.8), yT + hh], [x1, yT + hh]], 1.0);
     });
     /* tela de proteção (tracejada) na linha externa, da 1ª plataforma até 2 m acima da última */
     var yOut = -1e9; C.ysPostes.forEach(function (Y) { yOut = Math.max(yOut, Y); });
-    if (ctx.modelo.tela && ctx.modelo.tela.area > 0) { var yt0 = C.yPisos[0], yt1 = C.yTopo + num(ctx.modelo.tela.altura, 2); D.linha(Hy(yOut + 0.03), Vy(yt0), Hy(yOut + 0.03), Vy(yt1), "MET-OCULTA"); D.texto(Hy(yOut + 0.03) + 2.2, Vy((yt0 + yt1) / 2), "TELA", T.nota * 0.9, { rot: -90, al: "C", meio: true }); }
+    if (ctx.modelo.tela && ctx.modelo.tela.area > 0) { var yt0 = C.yPisos[0], yt1 = C.telaY ? C.telaY.y1 : C.yTopo + num(ctx.modelo.tela.altura, 2); D.linha(Hy(yOut + 0.03), Vy(yt0), Hy(yOut + 0.03), Vy(yt1), "MET-OCULTA"); D.texto(Hy(yOut + 0.03) + 2.2, Vy((yt0 + yt1) / 2), "TELA", T.nota * 0.9, { rot: -90, al: "C", meio: true }); }
     /* acesso (B-B): os banzos do lance (a escada se inclina ao longo do andaime: na seção ficam verticais) e a portinhola de cada piso */
     if (o.tag === "BB") C.acessos.forEach(function (a) {
       if (a.torre) return;
@@ -1381,7 +1698,10 @@
       for (var q = 1; q < ne; q++) { var f = q / ne; D.linha(x1 + dx * f - nx * 1.4, yA + dy * f - ny * 1.4, x1 + dx * f + nx * 1.4, yA + dy * f + ny * 1.4, "MET-FINA"); }
     });
     var iCota = D.sg.length; cotasElevacao(ctx, v); v.cotaSg = D.sg.slice(iCota);
-    if (o.tag === "BB") { var xyz = C.yPisos[0]; D.texto(xR - 1, Vy(xyz) - 3, "PORTINHOLA", T.nota * 0.9, { al: "D" }); }
+    if (o.tag === "BB") {
+      var xyz = C.yPisos[0], acB = C.acessos.filter(function (a) { return !a.torre; })[0];
+      D.texto(xR - 1, Vy(xyz) - 3, C.multi ? (acB && acB.incorporada ? "ALÇAPÃO COM ESCADA" : "ESCADA EXTERNA") : "PORTINHOLA", T.nota * 0.9, { al: "D" });
+    }
     desenharTitulo(ctx, v, o.titulo || "CORTE");
   }
   /* as marcas do plano de corte na planta: linha traço-ponto de ponta a ponta, com a letra e a seta de observação */
@@ -1423,6 +1743,7 @@
     return melhor;
   }
   var ESC_PLANTA = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500], ESC_CORTE = [20, 25];
+  var ESC_VISTA_M = [20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500];   /* multi: o poste de 7+ m não cabe a 1:25 e a 1:50 sobra folha: 1:30 e 1:40 entram só nas elevações do multi */
   /* a posição do corte A-A (vão corrente, o mais longe do acesso) e a do B-B (onde a escada do 1º levante atravessa o piso) */
   function planoAA(C, CB) {
     var xs = C.xsPostes.slice(), acc = CB.acessos.filter(function (a) { return !a.torre && a.tipo === "escada"; })[0], xAcc = acc && CB === C ? (acc.a[0] + acc.b[0]) / 2 : null, best = null, i;
@@ -1448,11 +1769,21 @@
   /* o quadro dos níveis e das medidas que os cortes mostram (cotas, levantes, guarda-corpo, afastamento) — texto da MESMA cena */
   function quadroNiveis(c) {
     var C = c.C, par = C.par, M = c.M, rows = [], yp = C.yPisos.slice(), k, prev = 0;
-    rows.push(["Apoio (topo do calço)", { t: "+0,00", al: "D" }, "-", "base regulável sobre calço de madeira"]);
-    for (k = 0; k < yp.length; k++) { rows.push(["Piso " + (k + 1) + (k === yp.length - 1 ? " (topo)" : ""), { t: nivelTxt(yp[k]).replace("m", ""), al: "D" }, { t: br(yp[k] - prev, 2), al: "D" }, "travessão em " + nivelTxt(yp[k] + num(par.guarda, 1.2)).replace("m", "")]); prev = yp[k]; }
-    rows.push(["Topo do montante / tela", { t: nivelTxt(C.yMax).replace("m", ""), al: "D" }, "-", c.modelo.tela && c.modelo.tela.area > 0 ? "tela até 2,00 m acima do último piso" : "sem tela"]);
-    var medidas = [["Afastamento da face", br(num(par.afastamento, 0.2), 2) + " m (eixo do montante interno)"], ["Largura do piso de trabalho", br(num(M.largura, 0), 2) + " m"], ["Guarda-corpo (travessão)", br(num(par.guarda, 1.2), 2) + " m acima do piso (NR-18 18.9.4.2 a)"], ["Travessão intermediário", br(num(par.intermediaria, 0.7), 2) + " m (18.9.4.2 b)"], ["Rodapé", br(num(par.rodape, 0.2), 2) + " m, mínimo 0,15 m (18.9.4.2 c)"]];
-    var info = c.modelo.acessoInfo; if (info && info.modo === "escada") medidas.push(["Escada de mão", "um lance por levante, 75°, ultrapassa o piso em ≥ 1,00 m; portinhola 0,60 m (18.8.6.13; 18.12.14)"]);
+    if (C.multi) {
+      rows.push(["Chão (apoio do calço)", { t: "+0,00", al: "D" }, "-", "calço de madeira + base regulável (até 0,25) + peça base"]);
+      rows.push(["1º nó do poste", { t: nivelTxt(num((c.modelo.vertical || {}).y0, 0)).replace("m", ""), al: "D" }, "-", "nós de roseta a cada " + br(num((c.modelo.vertical || {}).passo, 0.5), 2) + " m"]);
+    } else rows.push(["Apoio (topo do calço)", { t: "+0,00", al: "D" }, "-", "base regulável sobre calço de madeira"]);
+    for (k = 0; k < yp.length; k++) { rows.push(["Piso " + (k + 1) + (k === yp.length - 1 ? " (topo)" : ""), { t: nivelTxt(yp[k]).replace("m", ""), al: "D" }, { t: br(yp[k] - prev, 2), al: "D" }, "travessão em " + nivelTxt(yp[k] + C.gd.g).replace("m", "")]); prev = yp[k]; }
+    rows.push([C.multi ? "Topo do poste / tela" : "Topo do montante / tela", { t: nivelTxt(C.yMax).replace("m", ""), al: "D" }, "-", c.modelo.tela && c.modelo.tela.area > 0 ? "tela até 2,00 m acima do último piso" : "sem tela"]);
+    var medidas;
+    if (C.multi) {
+      medidas = [["Afastamento da face", br(num(par.afastamento, 0.15), 2) + " m (eixo do poste interno)"], ["Módulo (entre eixos) / piso útil", br(num(M.largura, 0), 2) + " m / " + br(num(M.larguraUtil, 0), 2) + " m (pisos metálicos de 0,32 m)"],
+        ["Guarda-corpo (travessão)", br(C.gd.g, 2) + " m acima do piso (NR-18 18.12.15.2)"], ["Travessão intermediário", br(C.gd.it, 2) + " m (NR-18 18.12.15.2)"], ["Rodapé metálico", br(C.gd.rd, 2) + " m de encaixe, mínimo 0,15 m (NR-18 18.9.4.2 c)"]];
+      medidas.push(c.modelo.par && c.modelo.par.acesso === "escada" ? ["Acesso", "escada externa Ø48 × 2,00 m por levante, ultrapassa o piso em 1,00 m (NR-18 18.12.14)"] : ["Acesso", "alçapão com escada incorporada em cada nível, alternados (M02 p.18; NR-18 18.12.14)"]);
+    } else {
+      medidas = [["Afastamento da face", br(num(par.afastamento, 0.2), 2) + " m (eixo do montante interno)"], ["Largura do piso de trabalho", br(num(M.largura, 0), 2) + " m"], ["Guarda-corpo (travessão)", br(num(par.guarda, 1.2), 2) + " m acima do piso (NR-18 18.9.4.2 a)"], ["Travessão intermediário", br(num(par.intermediaria, 0.7), 2) + " m (18.9.4.2 b)"], ["Rodapé", br(num(par.rodape, 0.2), 2) + " m, mínimo 0,15 m (18.9.4.2 c)"]];
+      var info = c.modelo.acessoInfo; if (info && info.modo === "escada") medidas.push(["Escada de mão", "um lance por levante, 75°, ultrapassa o piso em ≥ 1,00 m; portinhola 0,60 m (18.8.6.13; 18.12.14)"]);
+    }
     return { rows: rows, medidas: medidas };
   }
   function desenharQuadroNiveis(c, x, y, kk, medir) {
@@ -1469,9 +1800,12 @@
   var LEGENDA_CORTES = ["Hachura a 45°: madeira cortada pelo plano (pranchão, rodapé) e a face da estrutura existente.", "Círculo cheio: tubo cortado pelo plano (longitudinal, travessão, intermediário, diagonal da fachada).",
     "Linhas duplas: tubo visto no pórtico logo atrás do plano de corte (pontalete, transversal, ancoragem).", "Quadrado com diagonais: portinhola (alçapão) do piso; os banzos da escada ficam verticais porque ela se inclina ao longo do andaime.",
     "Linha tracejada: tela de proteção, da 1ª plataforma até 2,00 m acima da última (NR-18 18.12.15).", "Níveis em m (+0,00 = apoio sobre o calço); demais cotas em mm. Corte A-A no vão corrente; corte B-B no vão de acesso (planta: marcas A e B)."];
+  var LEGENDA_CORTES_M = ["Hachura a 45°: calço de madeira e a face da estrutura existente (corte).", "Círculo com cruz: nó de roseta no poste, a cada 0,50 m (estribo: quadrado com ponto).",
+    "Círculo cheio: travessa / guarda-corpo cortado pelo plano; linhas duplas: tubo visto no pórtico atrás do plano.", "Piso e rodapé METÁLICOS: contorno com a dobra no meio (sem a hachura da madeira); na planta o piso leva hachura CRUZADA.",
+    "Linha tracejada: tela de proteção, da 1ª plataforma até 2,00 m acima da última (NR-18 18.12.15.1).", "Níveis em m (+0,00 = chão); demais cotas em mm. Corte A-A no vão corrente; corte B-B no vão de acesso (planta: marcas A e B)."];
   function legendaCortes(c, x, y, medir) {
     var T = c.E.T, A = AP(), fs = T.nota * 1.15, wc = 188, gp = 6, cols = [[], [], []], hs = [0, 0, 0], i;
-    LEGENDA_CORTES.forEach(function (t, k) { var ci = k % 3, ls = A.quebrar((k + 1) + "- " + t, fs, wc); cols[ci].push(ls); hs[ci] += ls.length * fs * 1.42 + 1.6; });
+    (c.C.multi ? LEGENDA_CORTES_M : LEGENDA_CORTES).forEach(function (t, k) { var ci = k % 3, ls = A.quebrar((k + 1) + "- " + t, fs, wc); cols[ci].push(ls); hs[ci] += ls.length * fs * 1.42 + 1.6; });
     var h = Math.max.apply(null, hs) + fs * 2.2, w = 3 * wc + 2 * gp;
     if (medir) return { w: w, h: h };
     c.D.texto(x, y + fs * 0.9, "CONVENÇÕES DOS CORTES", fs * 1.2, { peso: 0.2 });
@@ -1513,7 +1847,7 @@
       vs.push({ nome: "latE", tipo: "lateral", C: C, titulo: "ELEVAÇÃO LATERAL - CABECEIRA INICIAL" });
       vs.push({ nome: "latD", tipo: "lateral", C: C, flip: true, titulo: "ELEVAÇÃO LATERAL - CABECEIRA FINAL" });
     }
-    vs.forEach(function (d) { defs.push({ nome: d.nome, grupo: "v", escalas: ESC_PLANTA, ext: function (s) { return extVista(d.tipo, d.C, s); } }); });
+    vs.forEach(function (d) { defs.push({ nome: d.nome, grupo: "v", escalas: MULTI ? ESC_VISTA_M : ESC_PLANTA, ext: function (s) { return extVista(d.tipo, d.C, s); } }); });
     var sel = escolherEscalas(area, defs, 5);
     if (!sel) { c.avisos.push("Nenhuma escala coube as elevações na A1: o andaime é maior que a folha."); return { escala: "INDICADA" }; }
     vs.forEach(function (d) { var b = sel.blocos[d.nome]; desenharBloco(c, d.nome, sel.pos[d.nome][0], sel.pos[d.nome][1], b.s, { tipo: d.tipo, C: d.C, flip: d.flip, titulo: d.titulo }); ocupar(c, sel.pos[d.nome][0], sel.pos[d.nome][1], b.w, b.h, d.nome); });
@@ -1522,7 +1856,7 @@
     return { escala: "1:" + sel.esc.v };
   }
   function folhaIsoDetalhes2(c) {
-    var area = areaUtil(c), cols = 4, nDet = DETALHES.length, nL = Math.ceil(nDet / cols), hDet = 140, hIso = area.h - nL * hDet - 6, E = c.E, T = E.T, D = c.D, A = AP(), gap = 6;
+    var area = areaUtil(c), cols = 4, nDet = detalhesAtivos().length, nL = Math.ceil(nDet / cols), hDet = 140, hIso = area.h - nL * hDet - 6, E = c.E, T = E.T, D = c.D, A = AP(), gap = 6;
     /* o isométrico ocupa a faixa de cima (toda a altura, com margem de 22 mm para os balões); ao lado dele, a tabela das MARCAS com os itens de cada uma */
     var asp = isoAspecto(c.C), pad = 22, wI = Math.min(area.w * 0.62, Math.max(area.w * 0.42, asp * (hIso - 23 - 2 * pad) + 2 * pad));
     var iso = desenharIso(c, area.x, area.y, wI, hIso, "ISOMÉTRICO - SEM ESCALA", { vista: true, pad: pad });
@@ -1531,7 +1865,7 @@
     c.lista.forEach(function (l) { var mk = marcaDe(l); if (!mk) return; if (!porMarca[mk]) { porMarca[mk] = { itens: [], qtd: 0 }; ordem.push(mk); } porMarca[mk].itens.push(l.item); porMarca[mk].qtd += l.qtd; });
     var xl = area.x + wI + gap, wl = area.w - wI - gap, fs = T.tabela, tit = T.nota * 1.15;
     var cols2 = [{ t: "MARCA", w: wl * 0.12, al: "E" }, { t: "PEÇA", w: wl * 0.40, al: "E" }, { t: "BALÕES (ITENS)", w: wl * 0.34, al: "E" }, { t: ["QNT.", "TOTAL"], w: wl * 0.14, al: "D" }];
-    var rows2 = ordem.map(function (mk) { return [mk, PADRAO_AND.marcas[mk] || "", porMarca[mk].itens.join(", "), { t: String(porMarca[mk].qtd), al: "D" }]; });
+    var rows2 = ordem.map(function (mk) { return [mk, marcasAtivas()[mk] || "", porMarca[mk].itens.join(", "), { t: String(porMarca[mk].qtd), al: "D" }]; });
     D.texto(xl, area.y + tit * 0.9, "MARCAS DAS PEÇAS E OS BALÕES DO ISOMÉTRICO", tit, { peso: 0.2 });
     var tq = tabelaQ(D, E, xl, area.y + tit * 1.5 + 1, cols2, rows2, { fs: fs });
     var yn = area.y + tit * 1.5 + 1 + tq.h + 4, nota = A.quebrar("O balão leva o número do ITEM da relação de peças (AND-04). Os itens que ficam atrás de outras peças no isométrico têm o balão nas elevações (AND-02) ou na planta (AND-01).", T.nota, wl);
@@ -1554,13 +1888,37 @@
     });
     return { linhas: ordem.map(function (k) { return o[k]; }), total: tot, semPeso: semPeso };
   }
-  function quadroAncoragens(calc) {
+  function quadroAncoragens(calc, modelo) {
     var c = calcDe(calc).c, f = arr(c && c.forcasAncoragem);
+    if (!f.length && c && c.caminho && arr(c.caminho.ancoragens).length) {   /* multi: a força de serviço por ponto está em caminho.ancoragens; uso = F / capacidade do chumbador */
+      var cap = c.parametros && c.parametros.capAncoragem, nivDe = {}; arr(modelo && modelo.ancoragens).forEach(function (a) { nivDe[a.id] = a.nivel; });
+      return c.caminho.ancoragens.map(function (x) { return { id: x.id, nivel: x.topo ? "topo" : String(nivDe[x.id] != null ? nivDe[x.id] : "-"), y: x.y, kN: x.F_kN, kgf: x.F_kN * 101.9716, uso: cap ? x.F_kN / cap : 0 }; });
+    }
     return f.map(function (x) { return { id: x.id, nivel: x.topo ? "topo" : String(x.nivel), y: x.y, kN: x.F_kN, kgf: x.F_kgf, uso: x.uso }; });
   }
+  /* AND-04 do multi: peso e nº de peças por NÍVEL (mesmos pesos unitários da relação — nenhum peso novo); o que não é de nível (ganchos, pinos, olhais, chumbadores, escadas) vai numa linha à parte */
+  function pesosPorNivelMulti(C, lista) {
+    var M = C.modelo, yp = C.yPisos, unit = {}, nivs = [], i;
+    lista.forEach(function (l) { var k0 = l.cod + "|" + (l.comp == null ? "" : l.comp.toFixed(2)) + "|"; unit[k0 + (l.refCatalogo || "")] = l.pesoUnit; unit[k0] = l.pesoUnit; });
+    function pu(cod, L, cat) { var k0 = cod + "|" + (L == null ? "" : L.toFixed(2)) + "|"; return unit[k0 + (cat || "")] != null ? unit[k0 + (cat || "")] : unit[k0]; }
+    for (i = 0; i <= yp.length; i++) nivs.push({ pecas: 0, kg: 0, sem: false });
+    function nivelDoY(y) { var k = 0; for (var q = 0; q < yp.length; q++) if (yp[q] <= y + 1e-6) k = q + 1; return k; }
+    function soma(k, cod, L, cat, qtd) { var w = pu(cod, L, cat); nivs[k].pecas += qtd; if (w == null) nivs[k].sem = true; else nivs[k].kg += w * qtd; }
+    arr(M.barras).forEach(function (b) { if (b.papel === "ancoragem") return;   /* o guarda-corpo do multi é travessa da linha e ESTÁ na lista (M4): conta no nível do piso que ele protege */
+      soma(b.papel === "guarda" || b.papel === "intermediaria" ? (b.nivel != null ? nivelDoY(Math.min(b.a[1], b.b[1]) - 0.01) : 0) : nivelDoY(Math.min(b.a[1], b.b[1])), b.cod, b.L, b.codCat, 1); });
+    arr(M.pranchas).forEach(function (p) { soma(nivelDoY(p.yTopo), p.tipo === "alcapao" ? "pisoAlcapao" : "piso", p.L, p.codCat, 1); });
+    arr(M.rodapes).forEach(function (r) { soma(nivelDoY(r.yTopo - r.alt), "rodape", r.L, r.codCat, 1); });
+    arr(M.bases).forEach(function (b) { soma(0, b.cod, null, "", 1); soma(0, "pecaBase", null, "", 1); });
+    arr(M.calcos).forEach(function (c0) { soma(0, "calco", 0.5, "", 1); });
+    var rows = nivs.map(function (n0, k) { return { titulo: k === 0 ? "APOIO E 1º NÓ (calço, base, peça base, travessas niveladas)" : "NÍVEL " + k + " (piso +" + br(yp[k - 1], 2) + ")", totalPecas: n0.pecas, pesoKg: n0.kg, sem: n0.sem }; });
+    var ex = { titulo: "ANCORAGENS, PINOS TRAVA E ESCADAS EXTERNAS", totalPecas: 0, pesoKg: 0, sem: false };
+    lista.forEach(function (l) { if (["ganchoCurto", "ganchoLongo", "tuboAnc", "abracFixa", "olhal", "chumbador", "escadaExterna", "emenda"].indexOf(l.cod) < 0) return; ex.totalPecas += l.qtd; if (l.pesoTotal == null) ex.sem = true; else ex.pesoKg += l.pesoTotal; });
+    rows.push(ex);
+    return rows;
+  }
   function folhaTabelas(c) {
-    var area = areaUtil(c), E = c.E, T = E.T, D = c.D, gap = 8, A = AP(), pt = pesoPorTipo(c.lista), rea = quadroReacoes(c.calc), an = quadroAncoragens(c.calc), plano = c.plano;
-    var lev = arr(plano.passos).filter(function (p) { return /^(levante|apoio|bases|tela|torre)/.test(p.id) && p.totalPecas != null; });
+    var area = areaUtil(c), E = c.E, T = E.T, D = c.D, gap = 8, A = AP(), pt = pesoPorTipo(c.lista), rea = quadroReacoes(c.calc), an = quadroAncoragens(c.calc, c.modelo), plano = c.plano;
+    var lev = c.C.multi ? pesosPorNivelMulti(c.C, c.lista) : arr(plano.passos).filter(function (p) { return /^(levante|apoio|bases|tela|torre)/.test(p.id) && p.totalPecas != null; });
     /* UMA escala (kk) para todas as tabelas: a maior em que as três colunas cabem na folha. A letra é T.tabela × kk (nunca menor que a do padrão). */
     function tabelas(kk, kO, desenhar, x0, y0) {
       var fs = T.tabela * kO, fsc = T.tabelaCab * kO, u = kO, out = { w1: 0, h1: 0, w2: 0, h2: 0, w3: 0, h3: 0, ok: true }, TQ = T.quadro;
@@ -1572,7 +1930,7 @@
       var rP = pt.linhas.map(function (l) { return [l.nome.length > 44 ? l.nome.slice(0, 41) + "..." : l.nome, { t: String(l.qtd), al: "D" }, { t: l.sem && !l.kg ? "sem fonte" : br(l.kg, 1) + (l.sem ? "+" : ""), al: "D", cor: l.sem ? VERMELHO : undefined }, { t: pt.total > 0 ? br(l.kg / pt.total * 100, 1) : "-", al: "D" }]; });
       rP.push({ total: ["TOTAL (peças com peso de fonte)", { t: String(pt.linhas.reduce(function (q, l) { return q + l.qtd; }, 0)), al: "D" }, { t: br(pt.total, 1), al: "D" }, { t: "100", al: "D" }] });
       var cL = C([["PASSO / LEVANTE", 92], [["PEÇAS", "(un)"], 20, "D"], [["PESO", "(kg)"], 24, "D"]]), tq = 0, tkg = 0;
-      var rL = lev.map(function (q) { tq += q.totalPecas; tkg += q.pesoKg; return [q.titulo, { t: String(q.totalPecas), al: "D" }, { t: br(q.pesoKg, 1), al: "D" }]; });
+      var rL = lev.map(function (q) { tq += q.totalPecas; tkg += q.pesoKg; return [q.titulo, { t: String(q.totalPecas), al: "D" }, { t: br(q.pesoKg, 1) + (q.sem ? "+" : ""), al: "D", cor: q.sem ? VERMELHO : undefined }]; });
       rL.push({ total: ["TOTAL MONTADO", { t: String(tq), al: "D" }, { t: br(tkg, 1), al: "D" }] });
       var cR = C([["BASE", 22], ["MONT.", 18], [["SERV.", "(kN)"], 20, "D"], [["SERV.", "(kgf)"], 22, "D"], [["ELU", "(kN)"], 20, "D"], [["ELU", "(kgf)"], 22, "D"]]);
       var rR = rea.map(function (r) { return [r.base, r.poste, { t: r.servico_kN, al: "D" }, { t: r.servico_kgf, al: "D" }, { t: r.elu_kN, al: "D" }, { t: r.elu_kgf, al: "D" }]; });
@@ -1596,7 +1954,7 @@
       out.h2 = y - y0; if (y > area.y + area.h + 1e-6) out.ok = false;
       /* coluna 3: ancoragens e plano de montagem */
       var x3 = x2 + out.w2 + gap, y3 = y0, cA = C([["PONTO", 24], ["NÍVEL", 20], [["COTA", "(m)"], 20, "D"], [["F SERV.", "(kN)"], 24, "D"], [["F SERV.", "(kgf)"], 24, "D"], ["USO", 18, "D"]]);
-      if (desenhar) D.texto(x3, y3 + tit * 0.9, "PESOS POR LEVANTE (ORDEM DE MONTAGEM)", tit, { peso: 0.2 }); y3 += tit * 1.5 + 1;
+      if (desenhar) D.texto(x3, y3 + tit * 0.9, c.C.multi ? "PESOS POR NÍVEL DE NÓ (ORDEM DE MONTAGEM)" : "PESOS POR LEVANTE (ORDEM DE MONTAGEM)", tit, { peso: 0.2 }); y3 += tit * 1.5 + 1;
       var rLv = tabelaQ(desenhar ? D : null, E, x3, y3, cL, rL, desenhar ? opT : { medir: true, fs: fs, fsc: fsc }); y3 += rLv.h + 5; out.w3 = Math.max(out.w3, rLv.w);
       if (desenhar) D.texto(x3, y3 + tit * 0.9, "FORÇAS NAS ANCORAGENS (SERVIÇO, POR PONTO)", tit, { peso: 0.2 }); y3 += tit * 1.5 + 1;
       var wA = cA.reduce(function (q, z) { return q + z.w; }, 0);
@@ -1614,6 +1972,7 @@
       y3 += 3;
       if (desenhar) D.texto(x3, y3 + tit * 0.9, "PLANO DE MONTAGEM (RESUMO)", tit, { peso: 0.2 }); y3 += tit * 1.5 + 1;
       var hh = T.nota * kk, wPl = Math.max(out.w3, wA);
+      if (c.C.multi && !arr(plano.passos).length) { A.quebrar("Sequência de montagem do multidirecional: ver o plano de montagem do sistema (Documentos) - base, postes desencontrados, pisos, guarda-corpo do nível de cima, diagonais, ancoragens e alçapões (M02 8.1-8.6).", hh, wPl - 2).forEach(function (ln) { if (desenhar) D.texto(x3, y3 + hh * 0.76, ln, hh, { cor: VERMELHO }); y3 += hh * 1.42; }); }
       arr(plano.passos).forEach(function (p3) {
         var ls = A.quebrar(p3.n + ". " + p3.titulo.toUpperCase() + (p3.totalPecas ? " (" + p3.totalPecas + " peças, " + br(p3.pesoKg, 1) + " kg)" : ""), hh, wPl - 2);
         ls.forEach(function (ln) { if (desenhar) D.texto(x3, y3 + hh * 0.76, ln, hh); y3 += hh * 1.42; }); y3 += 1.4;
@@ -1718,6 +2077,11 @@
 
   /* ================================================================ GERAR */
   function gerar(modelo, calc, docs, opcoes) {
+    var antes = MULTI;
+    MULTI = ehMulti(modelo); ESTIMADAS = {}; LINHA_MULTI = MULTI ? String(modelo.linha || (modelo.par && modelo.par.linha) || "roseta") : "roseta";
+    try { return gerarInterno(modelo, calc, docs, opcoes); } finally { MULTI = antes; }
+  }
+  function gerarInterno(modelo, calc, docs, opcoes) {
     opcoes = opcoes || {}; docs = docs || {};
     var avisos = [], A = AP(), P = PR(), An = AN(), Ad = AD();
     if (!modelo || !modelo.ok) return { ok: false, folhas: [], avisos: [(modelo && modelo.erro) || "Sem modelo de andaime montado: não há pranchas para gerar."] };
@@ -1726,7 +2090,10 @@
     /* E10: o jogo EXECUTIVO (5 folhas A1, com cortes) é o padrão para qualquer tamanho; a A3 única é o formato COMPACTO antigo, só com opcoes.jogo = "compacto" (não tem cortes) */
     var pequeno = num(M.nVaos, 99) <= 3 && num(M.nLevantes, 99) <= 3 && opcoes.jogo === "compacto";
     var formato = pequeno ? "A3" : "A1", geo = P.geometria(formato, "paisagem", "RA"), E = estilo(opcoes.padrao), C = cenaDe(modelo, lista);
-    var plano = docs.plano || (Ad ? Ad.planoMontagem(modelo, modelo.par) : { passos: [], desmontagem: { avisos: [] } }), chk = docs.checklist || (Ad ? Ad.checklist(modelo, modelo.par, {}) : { itens: [] });
+    /* multi: o plano de montagem e o checklist do multi são de js/andaimedocs.js; se esse módulo ainda não os tem, a prancha sai sem eles e DIZ (aviso) — nunca com o do tubo-roll */
+    function docSeguro(fn, vazio, rot) { try { return fn(); } catch (e) { if (!MULTI) throw e; avisos.push(rot + " do multidirecional indisponível (js/andaimedocs.js): " + (e && e.message ? e.message : e)); return vazio; } }
+    var plano = docs.plano || (Ad ? docSeguro(function () { return Ad.planoMontagem(modelo, modelo.par); }, { passos: [], desmontagem: { avisos: [] } }, "Plano de montagem") : { passos: [], desmontagem: { avisos: [] } }),
+      chk = docs.checklist || (Ad ? docSeguro(function () { return Ad.checklist(modelo, modelo.par, {}); }, { itens: [] }, "Checklist") : { itens: [] });
     var codigo = txt(opcoes.codigo).trim() || "ANDAIME", rev = (txt(opcoes.revisao).trim() || "R00").toUpperCase(), data = txt(opcoes.data).trim() || hoje();
     var emp = opcoes.empresa, empObj = emp && typeof emp === "object" ? emp : null, revNum = rev.replace(/^R/i, "") || "00", Desenho = A.Desenho;
     var defs = pequeno ? [{ id: "andaime", fn: folhaUnica, titulo: PADRAO_AND.folhas.pequeno[0] }] : [
@@ -1750,7 +2117,7 @@
     });
     semBalao = lista.map(function (l) { return l.item; }).filter(function (it) { return !baloes[it]; });   /* tem balão se QUALQUER folha do jogo o colocou */
     if (semBalao.length) avisos.push("Itens da relação sem balão em nenhuma vista: " + semBalao.join(", ") + ".");
-    var pr = P.normalizar({ id: "andaimepranchas", nome: "Andaime tubo-roll - projeto", formato: formato, orientacao: "paisagem", origem: "andaime",
+    var pr = P.normalizar({ id: "andaimepranchas", nome: MULTI ? "Andaime multidirecional - projeto" : "Andaime tubo-roll - projeto", formato: formato, orientacao: "paisagem", origem: "andaime",
       carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional), obra: txt(opcoes.obra), proprietario: txt(opcoes.proprietario),
                  contratante: txt(opcoes.contratante), local: txt(opcoes.local), codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || "EMISSÃO INICIAL - PROJETO DE ANDAIME", data]] },
       folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
@@ -1777,6 +2144,10 @@
 
   /* o isométrico sozinho (a figura do memorial): SVG pronto, mesma geometria e mesma oclusão das pranchas */
   function isometricoSvg(modelo, largura, altura, opcoes) {
+    var antes = MULTI; MULTI = ehMulti(modelo);
+    try { return isometricoSvgInterno(modelo, largura, altura, opcoes); } finally { MULTI = antes; }
+  }
+  function isometricoSvgInterno(modelo, largura, altura, opcoes) {
     var A = AP(), An = AN(); if (!A || !An || !modelo || !modelo.ok) return "";
     var E = estilo(opcoes && opcoes.padrao), lista = An.pecasLocacao(modelo), C = cenaDe(modelo, lista), D = new A.Desenho(E, null), c = { C: C, D: D, E: E };
     largura = largura || 180; altura = altura || 120;
@@ -1785,10 +2156,10 @@
   }
   function dadosProjetoPublico(modelo, calc, opcoes) {
     var An = AN(); if (!An || !modelo || !modelo.ok) return [];
-    return dadosProjeto({ M: modelo.medidas || {}, C: { par: modelo.par || {} }, modelo: modelo, calc: calc, opcoes: opcoes || {}, tabela: An.tabelaLocacao(modelo) });
+    return dadosProjeto({ M: modelo.medidas || {}, C: { par: modelo.par || {}, multi: ehMulti(modelo), linha: modelo.linha }, modelo: modelo, calc: calc, opcoes: opcoes || {}, tabela: An.tabelaLocacao(modelo) });
   }
 
-  var AndaimePranchas = { PADRAO_AND: PADRAO_AND, gerar: gerar, situacao: situacao, pendenciasRT: pendenciasRT, quadroVerificacoes: quadroVerificacoes, quadroReacoes: quadroReacoes, dadosProjeto: dadosProjetoPublico, textoDado: textoDado,
+  var AndaimePranchas = { PADRAO_AND: PADRAO_AND, MARCAS_MULTI: MARCAS_MULTI, gerar: gerar, pesosPorNivelMulti: pesosPorNivelMulti, premissasRT: premissasRT, situacao: situacao, pendenciasRT: pendenciasRT, quadroVerificacoes: quadroVerificacoes, quadroReacoes: quadroReacoes, dadosProjeto: dadosProjetoPublico, textoDado: textoDado,
     cargaTrabalho: cargaTrabalho, textoPisos: textoPisos, isometricoSvg: isometricoSvg, estilo: estilo, _i: { cenaDe: cenaDe, baseDe: baseDe, projIso: projIso, ocultarSegmentos: ocultarSegmentos, oclusorTubo: oclusorTubo, oclusorFace: oclusorFace } };
   global.AndaimePranchas = AndaimePranchas;
   if (typeof module !== "undefined" && module.exports) module.exports = AndaimePranchas;

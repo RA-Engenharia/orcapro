@@ -422,10 +422,14 @@
   <script src="js/metalacessos.js"></script>
   <!-- ANDAIME (26/10/2026, js/andaime.js): andaime tubo-roll paramétrico — motor puro + o tipo "andaime" das Peças prontas + o botão da fita; as peças levam caixa.andaime e ficam FORA do orçamento e das folhas do aço -->
   <script src="js/andaime.js"></script>
+  <!-- ANDAIME MULTIDIRECIONAL › M1 (27/10/2026, js/andaimemulti.js): catálogo (linhas roseta e estribo), motor, lista de locação e 3D provisório; o despacho sai de Andaime.* quando sistema = "multidirecional" — carregar logo depois de andaime.js -->
+  <script src="js/andaimemulti.js"></script>
   <!-- ANDAIME › E3 (27/10/2026, js/andaimedocs.js): lista de locação (+ .xlsx), plano de montagem, checklist, aprovação/liberação (prontaInfo.aprovacao), cartão A5 e esqueleto do memorial — motor puro -->
   <script src="js/andaimedocs.js"></script>
   <!-- ANDAIME › E4 (27/10/2026, js/andaimecalc.js): cálculo de segurança (montante NBR 8800, travessa, transversal, pranchão, guarda-corpo NR-18, abraçadeira, base, apoio, ancoragem NBR 6123, estabilidade) e simulação por peça — motor puro; reaproveita acodim8800/acovento/acoisopletas -->
   <script src="js/andaimecalc.js"></script>
+  <!-- ANDAIME MULTIDIRECIONAL › M3 (27/10/2026, js/andaimemulticalc.js): cálculo e simulação do multidirecional (piso, transversal, ligação, poste, espigão, diagonal, ancoragem, guarda-corpo, base) — chamado pelo AndaimeCalc quando sistema = "multidirecional" -->
+  <script src="js/andaimemulticalc.js"></script>
   <!-- ANDAIME › E5 (27/10/2026, js/andaimetela.js + js/andaimeui.js): a TELA — modo de traçado com prévia subindo até a altura, Montar inteligente, painel com abas (resumo, cálculo, simulação pintada, locação, montagem, checklist, aprovação, documentos); lógica pura em andaimetela.js -->
   <script src="js/andaimetela.js"></script>
   <script src="js/andaimeui.js"></script>
@@ -502,6 +506,9 @@
   <!-- ANDAIME (E7, 27/10/2026): as 15 famílias ra-andaime-* (cotas geradas de docs/andaime/familias-cotas.json; tools/gerar-familiasandaime-dados.js) e o InstancedMesh por tipo de peça no 3D -->
   <script src="js/familiasandaimedados.js"></script>
   <script src="js/familiasandaime.js"></script>
+  <!-- ANDAIME MULTIDIRECIONAL (M2, 27/10/2026): as 13 famílias ra-andaime-m-* (cotas geradas de docs/andaime-multi/familias-m-cotas.json; tools/gerar-familiasandaimem-dados.js) -->
+  <script src="js/familiasandaimemdados.js"></script>
+  <script src="js/familiasandaimem.js"></script>
   <script src="js/andaime3d.js"></script>
   <!-- ANDAIME › E8 (27/10/2026, js/andaimepranchas.js + js/andaimememorial.js): template de prancha (A3 única ou 4 A1: planta, elevações, isométrico com linhas ocultas removidas, detalhes, relação de materiais, memorial resumido) e memorial completo — motores puros; usam AcoPranchas/Prancha (carimbo RA) e PranchasDxf -->
   <script src="js/andaimepranchas.js"></script>

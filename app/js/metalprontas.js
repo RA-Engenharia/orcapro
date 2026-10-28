@@ -997,13 +997,14 @@
    * antiga ({ pecas }): o lote começa apagando as peças dela. */
   function identidade(r, gid, info, alvo) {
     if (!r || !r.ok) return r;
-    var primeiraId = null;
+    var primeiraId = null, qualquerId = null;
     (function marcar(ops) { arr(ops).forEach(function (o) {
       if (!o) return;
-      if (o.op === "criar" && o.caixa) { o.caixa.pronta = gid; if (primeiraId == null && o.caixa.metal && o.caixa.metal.kind !== "parafuso") primeiraId = o.id; }
+      if (o.op === "criar" && o.caixa) { o.caixa.pronta = gid; if (qualquerId == null) qualquerId = o.id; if (primeiraId == null && o.caixa.metal && o.caixa.metal.kind !== "parafuso") primeiraId = o.id; }
       if (o.op === "familia" && o.inst) o.inst.pronta = gid;   /* E7: a instância de família do conjunto leva a mesma marca (refazer no lugar apaga junto — prontas(caixas, familias)) */
       if (o.op === "lote") marcar(o.ops);
     }); })(r.op.ops);
+    if (primeiraId == null) primeiraId = qualquerId;   /* M2: o multidirecional só tem o calço de madeira como caixa (o resto são famílias): sem peça de metal, a 1ª caixa leva a identidade do conjunto */
     var pr = r.finais && r.finais[primeiraId], inf = clone(info || {}); inf.id = gid;
     /* ⚠ ANDAIME (27/10/2026): a aprovação/liberação mora em prontaInfo.aprovacao e SOBREVIVE ao refazer — mas o andaime refeito
        com parâmetro diferente perde a liberação (em_revisao + cartão vermelho + o campo mudado no histórico). Sem isto a edição

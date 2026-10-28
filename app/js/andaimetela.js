@@ -16,6 +16,9 @@
  *   4. Estado "nao_verificado" é CINZA, nunca verde: dado faltando não é aprovação.
  *   5. Os parâmetros do cálculo (V0, categoria…) moram DENTRO do par (par.calc): mudar um deles muda o hash e cancela
  *      a liberação — o cálculo que a liberação pressupõe deixou de valer.
+ *   6. (M4-A, 27/10/2026) MULTIDIRECIONAL: a sessão leva `sistema`/`linha`; a prévia, o resultado e o Montar inteligente são os MESMOS
+ *      (Andaime.validar/montar/montarInteligente despacham por par.sistema). As pendências do RT do multi são lidas de forma GENÉRICA
+ *      (calc.pendenciasRT da frente de cálculo; sem ela, a tabela de reserva PENDENCIAS_RT_MULTI daqui) — sem lista fixa na tela.
  * Teste: node tools/test-andaimeui.js
  * ===================================================================== */
 (function (global) {
@@ -44,8 +47,8 @@
   function novo(opc) {
     opc = opc || {}; var modo = opc.modo === "contorno" ? "contorno" : "polilinha";
     var lado = opc.lado && LADOS[modo].indexOf(opc.lado) >= 0 ? opc.lado : LADOS[modo][0];
-    var h = num(opc.altura, 4);
-    return { modo: modo, pts: [], lado: lado, altura: h, inteligente: opc.inteligente !== false, par: clone(opc.par || {}), hVis: 0, y0: num(opc.y0, 0), fechada: false, vento: clone(opc.vento || {}) };
+    var h = num(opc.altura, 4), multi = opc.sistema === "multidirecional";
+    return { sistema: multi ? "multidirecional" : "tuboroll", linha: multi ? (opc.linha === "estribo" ? "estribo" : "roseta") : null, modo: modo, pts: [], lado: lado, altura: h, inteligente: opc.inteligente !== false, par: clone(opc.par || {}), hVis: 0, y0: num(opc.y0, 0), fechada: false, vento: clone(opc.vento || {}) };
   }
   function nMin(s) { return s.modo === "contorno" ? 3 : 2; }
   /* o clique: ignora o duplicado (< 5 cm do anterior); devolve true se entrou */
@@ -65,6 +68,15 @@
     if (!(h >= ALTURA_MIN && h <= ALTURA_MAX)) return "Altura do piso de trabalho de " + brf(ALTURA_MIN, 1) + " a " + ALTURA_MAX + " m.";
     s.altura = h; s.hVis = 0; return null;
   }
+  /* "tuboroll" | "multi-roseta" | "multi-estribo" (o rótulo do seletor) — a prévia refaz o andaime com o outro motor */
+  function setSistema(s, v) {
+    if (!s) return false;
+    if (v === "multi-roseta" || v === "multi-estribo") { s.sistema = "multidirecional"; s.linha = v === "multi-estribo" ? "estribo" : "roseta"; }
+    else { s.sistema = "tuboroll"; s.linha = null; }
+    s.hVis = 0; return true;
+  }
+  function sistemaDe(x) { return x && String(x.sistema) === "multidirecional" ? (String(x.linha) === "estribo" ? "multi-estribo" : "multi-roseta") : "tuboroll"; }
+  var ROT_SISTEMA = { "tuboroll": "Tubo-roll", "multi-roseta": "Multidirecional (roseta)", "multi-estribo": "Multidirecional (estribo)" };
   function podeFechar(s) { return !!s && s.pts.length >= nMin(s); }
   function cancelar(s) { if (!s) return false; s.pts.length = 0; s.hVis = 0; return true; }   /* length = 0 (e não pts = []): o editor guarda a MESMA lista */
 
@@ -80,6 +92,7 @@
   function parDe(s, pts) {
     var base = clone(s.par || {}), a = pts[0];
     base.x0 = r3(a[0]); base.y0 = r3(num(a[1], s.y0)); base.z0 = r3(a[2]); base.giro = 0; base.altura = s.altura; base.lado = s.lado;
+    if (s.sistema === "multidirecional") { base.sistema = "multidirecional"; base.linha = s.linha === "estribo" ? "estribo" : "roseta"; }   /* tubo-roll: nenhuma chave nova no par (o hash dele não muda) */
     if (s.modo === "contorno") { base.contorno = caminhoTxt(pts); base.caminho = ""; base.fechado = true; }
     else { base.caminho = caminhoTxt(pts); base.contorno = ""; base.fechado = false; }
     return base;
@@ -110,7 +123,7 @@
     var hT = alturaTotal(mod), vis = Math.min(s.hVis, hT), sobe = vis < hT - 1e-6;
     var M = mod.medidas, pn = mod.par || par, alcance = Math.min(vis, s.altura);   /* o que já subiu, contado até a altura pedida */
     falta.altura = r3(Math.max(0, s.altura - alcance));
-    var t, sub = M.nVaos + (M.nVaos === 1 ? " vão" : " vãos") + " de até " + brf(pn.vaoMax, 2) + " m × " + M.nLevantes + (M.nLevantes === 1 ? " levante" : " levantes") + " de até " + brf(pn.levanteMax, 2) + " m · " + brf(M.comprimento, 2) + " m de comprimento · andaime " + ROT_LADO[s.lado] + (s.inteligente ? " · ao fechar, o Montar inteligente ajusta o que não passar" : "");
+    var t, sub = (s.sistema === "multidirecional" ? ROT_SISTEMA[sistemaDe(s)] + " · " : "") + M.nVaos + (M.nVaos === 1 ? " vão" : " vãos") + " de até " + brf(pn.vaoMax, 2) + " m × " + M.nLevantes + (M.nLevantes === 1 ? " levante" : " levantes") + " de até " + brf(pn.levanteMax, 2) + " m · " + brf(M.comprimento, 2) + " m de comprimento · andaime " + ROT_LADO[s.lado] + (s.inteligente ? " · ao fechar, o Montar inteligente ajusta o que não passar" : "");
     if (sobe && vis < s.altura - 1e-6) t = "Subindo: " + brf(alcance, 2) + " de " + brf(s.altura, 2) + " m — faltam " + brf(falta.altura, 2) + " m";
     else if (sobe) t = "Subindo o guarda-corpo e a tela (piso a " + brf(s.altura, 2) + " m já montado)";
     else t = "Pronto até " + brf(s.altura, 2) + " m: " + M.nVaos + (M.nVaos === 1 ? " vão" : " vãos") + " × " + M.nLevantes + (M.nLevantes === 1 ? " levante" : " levantes");
@@ -207,28 +220,63 @@
     /* C-T1.1: o sistema NÃO calcula o vento paralelo à fachada (atrito na tela e cabeceiras nas diagonais e giratórias): o RT confere e justifica por escrito (>= 15 caracteres não brancos) */
     { campo: "ventoParaleloRT", rotulo: "Vento paralelo à fachada conferido pelo RT", tipo: "marca", onde: "calc", justificativa: "ventoParaleloJustificativa", dica: "O sistema não calcula o atrito do vento na tela e nas cabeceiras sobre as diagonais e giratórias. Marque só depois de conferir, e escreva a justificativa (mínimo 15 caracteres): ela vai para o memorial." }
   ];
+  /* ---- MULTIDIRECIONAL: o que o RT informa (tabela de RESERVA, usada só se o cálculo do multi não trouxer a própria lista em calc.pendenciasRT).
+     Faixas = sanidade da digitação (não são valores de norma). Cada campo vale só com o dado/justificativa do RT; sem fonte pública = pendência. */
+  var JUST_MARCA = "Justificativa do RT (mínimo 15 caracteres): ela vai para o memorial.";
+  var PENDENCIAS_RT_MULTI = PENDENCIAS_RT.filter(function (d) { return d.campo !== "capAncoragem"; }).concat([
+    { campo: "capAncoragem", rotulo: "Capacidade da ancoragem (kN)", tipo: "num", min: 0.5, max: 200, onde: "calc", dica: "Do chumbador/ensaio. O padrão (6,25 kN) é referência estrangeira, não norma." },
+    { campo: "capNoKgf", rotulo: "Carga admissível da ligação travessa–roseta, vertical (kgf)", tipo: "num", min: 1, max: 100000, onde: "calc", dica: "Da tabela do fabricante do locador (sem fonte pública). Sem ela a ligação (cunha) fica NÃO VERIFICADA." },
+    { campo: "capLigAxialKgf", rotulo: "Capacidade axial da ligação travessa–roseta (kgf)", tipo: "num", min: 1, max: 100000, onde: "calc", dica: "Da tabela do fabricante do locador. Libera a travessa longitudinal e o elo transversal; sem o número a ligação nunca fica «ok»." },
+    { campo: "capDiagKgf", rotulo: "Carga axial admissível da diagonal e da ligação (kgf)", tipo: "num", min: 1, max: 100000, onde: "calc", dica: "Da tabela do fabricante do locador. Sem ela a diagonal fica NÃO VERIFICADA (o tubo é verificado)." },
+    { campo: "capBaseMultiKgf", rotulo: "Carga admissível da base regulável do multidirecional (kgf)", tipo: "num", min: 1, max: 100000, onde: "calc", dica: "Da tabela do fabricante do locador: a tabela do tubo-roll NÃO vale para outro sistema. Sem ela a base fica NÃO VERIFICADA." },
+    { campo: "cunhaContinua", rotulo: "Cunha contínua (a fiada de travessas é viga contínua)", tipo: "marca", onde: "calc", justificativa: "cunhaContinuaJustificativa", rotuloMarca: "Cunha contínua conferida pelo RT", dica: "Padrão = rótula (cada estação vale pelas próprias ancoragens). Marque só com a tabela da ligação do fabricante. " + JUST_MARCA },
+    { campo: "espigaoRigido", rotulo: "Espigão (emenda do poste) contínuo", tipo: "marca", onde: "calc", justificativa: "espigaoJustificativa", rotuloMarca: "Espigão contínuo conferido pelo RT", dica: "Padrão = rótula (sem fonte da rigidez da emenda). " + JUST_MARCA },
+    { campo: "espigaoTracaoRT", rotulo: "Capacidade do espigão/pino trava à tração", tipo: "marca", onde: "calc", justificativa: "espigaoTracaoJustificativa", rotuloMarca: "Capacidade à tração conferida pelo RT", dica: "Sem fonte pública: o RT confere a do fabricante do locador. " + JUST_MARCA },
+    { campo: "paraleloInternoRT", rotulo: "Poste interno travado no plano da fachada", tipo: "marca", onde: "calc", justificativa: "paraleloInternoJustificativa", rotuloMarca: "Travamento da linha interna conferido pelo RT", dica: "O diafragma do piso ou a diagonal interna que trava a linha interna no plano da fachada. " + JUST_MARCA }
+  ]);
+  /* um item da lista do cálculo (calc.pendenciasRT) ou da tabela de reserva → o formato que a tela lê */
+  function defNorm(d) {
+    var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; });
+    o.rotulo = d.rotulo || d.titulo || d.label || d.campo;
+    if (o.tipo === "numero") o.tipo = "num";
+    o.dica = d.dica || d.fonte || d.texto || "";
+    if (!o.onde) o.onde = "calc";
+    if (o.tipo === "marca" && !o.justificativa) o.justificativa = d.campoJustificativa || (String(d.campo).replace(/RT$/, "") + "Justificativa");
+    if (o.tipo === "confirma") { o.tipo = o.ops ? "sel" : "num"; if (!o.confirma) o.confirma = d.campo + "Confirmado"; }
+    if (o.tipo === "num") { if (o.min == null) o.min = 0; if (o.max == null) o.max = 1e9; }
+    return o;
+  }
+  function ehMulti(par) { return !!par && String(par.sistema) === "multidirecional"; }
+  /* as definições que valem para ESTE par: tubo-roll = a tabela fixa; multi = a lista do cálculo (genérica) ou, sem ela, a tabela de reserva */
+  function defsRT(par, calc) {
+    if (!ehMulti(par)) return PENDENCIAS_RT;
+    var lista = calc && Array.isArray(calc.pendenciasRT) ? calc.pendenciasRT : null;
+    if (!lista) { var MC = dep("AndaimeMultiCalc", "./andaimemulticalc.js"); try { if (MC && typeof MC.pendenciasRT === "function") lista = MC.pendenciasRT(par); } catch (e) { lista = null; } }
+    lista = arr(lista).filter(function (d) { return d && typeof d === "object" && d.campo; });
+    return (lista.length ? lista : PENDENCIAS_RT_MULTI).map(defNorm);
+  }
   function justOk(t) { return String(t == null ? "" : t).replace(/\s/g, "").length >= 15; }
   function valorPend(par, def) {
     if (def.onde === "par") return par ? par[def.campo] : null;
     var c = calcDe(par); if (def.tipo === "marca") return c[def.campo] === true ? true : null;
     return c[def.campo] != null ? c[def.campo] : null;
   }
-  function pendenciasRT(par) {
-    return PENDENCIAS_RT.map(function (d) {
+  function pendenciasRT(par, calc) {
+    return defsRT(par, calc).map(function (d) {
       var v = valorPend(par, d), inf = v != null && v !== "";
       var conf = d.confirma ? (calcDe(par)[d.confirma] === true) : true;
-      if (d.tipo === "marca") { var jt = calcDe(par)[d.justificativa] || ""; return { campo: d.campo, rotulo: d.rotulo, tipo: d.tipo, ops: null, dica: d.dica, onde: d.onde, valor: inf ? true : null, informado: inf && justOk(jt), confirma: null, confirmado: true, justificativa: jt, campoJustificativa: d.justificativa }; }
+      if (d.tipo === "marca") { var jt = calcDe(par)[d.justificativa] || ""; return { campo: d.campo, rotulo: d.rotulo, tipo: d.tipo, ops: null, dica: d.dica, onde: d.onde, valor: inf ? true : null, informado: inf && justOk(jt), confirma: null, confirmado: true, justificativa: jt, campoJustificativa: d.justificativa, rotuloMarca: d.rotuloMarca || (d.campo === "ventoParaleloRT" ? "Vento paralelo à fachada conferido pelo RT" : "Conferido pelo RT") }; }
       return { campo: d.campo, rotulo: d.rotulo, tipo: d.tipo, ops: d.ops || null, min: d.min, max: d.max, dica: d.dica, onde: d.onde, valor: inf ? v : null, informado: inf && conf, confirma: d.confirma || null, confirmado: conf };
     });
   }
   /* aplica uma pendência ao par: devolve { ok, par } ou { ok:false, erro }. Vazio limpa (volta a ser pendência). */
-  function aplicarPendencia(par, campo, valor, confirmado, justificativa) {
-    var d = PENDENCIAS_RT.filter(function (x) { return x.campo === campo; })[0];
+  function aplicarPendencia(par, campo, valor, confirmado, justificativa, defs) {
+    var d = arr(defs).map(defNorm).concat(ehMulti(par) ? PENDENCIAS_RT_MULTI : [], PENDENCIAS_RT).filter(function (x) { return x.campo === campo; })[0];
     if (!d) return { ok: false, erro: "Campo desconhecido: " + campo };
     var p = clone(par), v = valor, c = calcDe(p);
     if (d.tipo === "marca") {   /* caixa + justificativa: desmarcada limpa as duas; marcada exige a justificativa escrita */
       if (v === true || v === "true") {
-        if (!justOk(justificativa)) return { ok: false, erro: "Informe a justificativa do RT para o vento paralelo (mínimo 15 caracteres)." };
+        if (!justOk(justificativa)) return { ok: false, erro: "Informe a justificativa do RT para " + (d.campo === "ventoParaleloRT" ? "o vento paralelo" : "«" + d.rotulo + "»") + " (mínimo 15 caracteres)." };
         c[campo] = true; c[d.justificativa] = String(justificativa).trim();
       } else { delete c[campo]; delete c[d.justificativa]; }
     } else if (v === "" || v == null) {
@@ -242,6 +290,66 @@
       if (d.onde === "par") p[campo] = v; else { c[campo] = v; if (d.confirma) c[d.confirma] = confirmado === true; }
     }
     if (d.onde === "calc") { if (Object.keys(c).length) { var o = {}; Object.keys(c).sort().forEach(function (k) { o[k] = c[k]; }); p.calc = o; } else delete p.calc; }
+    return { ok: true, par: p };
+  }
+
+
+  /* ================================================================ SISTEMA E PARÂMETROS DO MULTIDIRECIONAL (M4-A)
+   * trocarSistema: o MESMO traçado (caminho, contorno, lado, altura, origem) e os dados do RT (par.calc, faceAte, tela) no outro sistema; o resto volta ao
+   * padrão do sistema novo (nada de parâmetro do tubo-roll vazando para o multi: 0,20 de afastamento do tubo-roll NÃO é o 0,15 do manual do multi). */
+  var GEO_CHAVES = ["x0", "y0", "z0", "giro", "caminho", "contorno", "fechado", "comprimento", "lado", "altura", "faceAte", "tela", "calc"];
+  function trocarSistema(par, destino) {
+    var p = clone(par || {}), o = {}, multi = destino === "multi-roseta" || destino === "multi-estribo";
+    GEO_CHAVES.forEach(function (k) { if (p[k] !== undefined && p[k] !== null && p[k] !== "") o[k] = clone(p[k]); });
+    if (multi) { o.sistema = "multidirecional"; o.linha = destino === "multi-estribo" ? "estribo" : "roseta"; }
+    else { o.sistema = "tuboroll"; }
+    return o;
+  }
+  /* os campos do formulário do multi; `onde`: chave do par. As opções de largura vêm das travessas da linha. */
+  var PARAMETROS_MULTI = [
+    { id: "larguraModulo", rotulo: "Largura do módulo (m) — uma travessa da linha", tipo: "sel", dica: "A largura sai da travessa transversal da linha; o piso de 0,32 m cobre o módulo (M02 §8.3)." },
+    { id: "vaoMax", rotulo: "Vão longitudinal máximo (m)", tipo: "num", dica: "Até 2,50 m no padrão; a carga do piso cai de 600 para 450 kgf/m² em 2,50 m e 300 kgf/m² em 3,00 m (M02 Tabela 01)." },
+    { id: "levanteMax", rotulo: "Levante máximo (m) — múltiplo de 0,50", tipo: "num", passo: 0.5, dica: "Distância entre níveis; o manual limita o andar a 2,00 m (Anexo A item 16). A roseta anda de 0,50 em 0,50 m." },
+    { id: "pisos", rotulo: "Pisos de trabalho", tipo: "sel", ops: [["todos", "Todos os níveis"], ["topo", "Só o piso de cima"]], dica: "O manual manda instalar as plataformas em todos os níveis (M02 §8.3)." },
+    { id: "acesso", rotulo: "Acesso", tipo: "sel", ops: [["alcapao", "Alçapão com escada incorporada"], ["escada", "Escada externa"], ["nenhum", "Nenhum (só piso até 1,0 m)"]], dica: "Alçapão intercalado de um nível para o outro (M02 §8.3.1); NR-18 18.12.14: escada quando o piso passa de 1,00 m." },
+    { id: "tela", rotulo: "Tela na face externa (NR-18 18.12.15)", tipo: "check", dica: "Da 1ª plataforma até 2,00 m acima da última." },
+    { id: "ancoragem", rotulo: "Ancoragem", tipo: "sel", ops: [["tubo", "Automática (gancho ou tubo pelo afastamento)"], ["nenhuma", "Nenhuma (só anel fechado ou torre que passa no 4×)"]], dica: "Pontos conforme o projeto; sem ancoragem o andaime só passa se a relação altura ÷ base ≤ 4 (NR-18 18.12.3)." },
+    { id: "diagCada", rotulo: "Torre de diagonais a cada N vãos", tipo: "num", int: true, dica: "No mínimo um conjunto de diagonais em torre a cada 5 módulos (M02 §8.5)." },
+    { id: "base", rotulo: "Base", tipo: "sel", ops: [["regulavel", "Regulável (rosca até 0,25 m)"], ["articulada", "Articulada (piso inclinado)"]], dica: "Rosca máxima de 0,25 m (M02 Anexo A item 15); piso inclinado exige base articulada travada (M02 §8.1.1)." },
+    { id: "calco", rotulo: "Calço de madeira sob a base", tipo: "check", dica: "Distribui a carga no solo e evita o deslizamento (M02 §8.1.1)." },
+    { id: "afastamento", rotulo: "Travessa a (m) da fachada", tipo: "num", dica: "O manual manda 15 cm (M02 §8.1); o vão entre a fachada e o piso tem de ficar < 0,20 m (Anexo A item 8)." }
+  ];
+  /* larguras (travessas da linha) disponíveis */
+  function largurasDaLinha(linha) {
+    var AM = dep("AndaimeMulti", "./andaimemulti.js"), L = AM && AM.linhaDe ? AM.linhaDe(linha || "roseta") : null;
+    return L ? arr(L.pecas.travessa).map(function (t) { return t.medidas.vao; }) : [];
+  }
+  /* o valor da linha de montagem do tubo-roll que o multi trocaria em silêncio (DUVIDAS-M1 3: o normalizar trata «igual ao padrão do tubo-roll» como «não passado»):
+     quando o RT digitou exatamente esse valor, vai 1 µm acima — o mesmo número para a obra, sem a troca calada. */
+  function fugirDoPadraoTubo(o, k, v) {
+    var An = AN(), P0 = An && An.PADRAO ? An.PADRAO : {};
+    if (typeof v === "number" && P0[k] != null && num(P0[k], NaN) === v) return v + 1e-6;
+    return v;
+  }
+  /* aplica o formulário do multi ao par: devolve { ok, par } ou { ok:false, erro } (a validação é a do próprio Andaime.validar) */
+  function aplicarParametrosMulti(par, v) {
+    var An = AN(), p = clone(par || {}); v = v || {};
+    if (!ehMulti(p)) return { ok: false, erro: "Este andaime não é multidirecional." };
+    var i, d, x;
+    for (i = 0; i < PARAMETROS_MULTI.length; i++) {
+      d = PARAMETROS_MULTI[i]; x = v[d.id]; if (x === undefined) continue;
+      if (d.tipo === "check") { p[d.id] = x === true || x === "true" || x === "on"; continue; }
+      if (x === "" || x == null) continue;
+      if (d.tipo === "num") {
+        var n = num(x, NaN); if (!isFinite(n)) return { ok: false, erro: d.rotulo + ": digite um número." };
+        if (d.id === "levanteMax" && Math.abs(n / 0.5 - Math.round(n / 0.5)) > 1e-6) return { ok: false, erro: "Levante máximo de " + brf(n, 2) + " m: use múltiplo de 0,50 m (a roseta anda de 0,50 em 0,50 m)." };
+        if (d.int) n = Math.round(n);
+        p[d.id] = fugirDoPadraoTubo(p, d.id, n);
+      } else if (d.id === "larguraModulo") { p.larguraModulo = num(x, NaN); }
+      else if (d.id === "pisos") { p.pisos = x === "topo" ? brf(num(p.altura, 6), 2) : "todos"; }   /* «só o de cima» = a lista de alturas com a do topo (o multi sempre inclui o piso de cima): «topo» seria trocado pelo padrão */
+      else p[d.id] = x;
+    }
+    var e = An && An.validar ? An.validar(p) : null; if (e) return { ok: false, erro: e };
     return { ok: true, par: p };
   }
 
@@ -418,7 +526,8 @@
     novo: novo, clicar: clicar, voltar: voltar, alternarLado: alternarLado, setAltura: setAltura, podeFechar: podeFechar, cancelar: cancelar, nMin: nMin,
     pontosComCursor: pontosComCursor, parDe: parDe, previa: previa, avancar: avancar, segmentos: segmentos, alturaTotal: alturaTotal,
     resultado: resultado, recalcular: recalcular, calcDe: calcDe, mudancasLista: mudancasLista, desfazerMudanca: desfazerMudanca,
-    pendenciasRT: pendenciasRT, aplicarPendencia: aplicarPendencia, v0DoLocal: v0DoLocal, aplicarLocalVento: aplicarLocalVento, reagirAoDado: reagirAoDado, verificacoes: verificacoes, problemas: problemas, aplicarCorrecao: aplicarCorrecao,
+    pendenciasRT: pendenciasRT, defsRT: defsRT, PENDENCIAS_RT_MULTI: PENDENCIAS_RT_MULTI, aplicarPendencia: aplicarPendencia,
+    setSistema: setSistema, sistemaDe: sistemaDe, ROT_SISTEMA: ROT_SISTEMA, trocarSistema: trocarSistema, PARAMETROS_MULTI: PARAMETROS_MULTI, largurasDaLinha: largurasDaLinha, aplicarParametrosMulti: aplicarParametrosMulti, v0DoLocal: v0DoLocal, aplicarLocalVento: aplicarLocalVento, reagirAoDado: reagirAoDado, verificacoes: verificacoes, problemas: problemas, aplicarCorrecao: aplicarCorrecao,
     pintura: pintura, primitivas: primitivas, caixaDe: caixaDe,
     cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas
   };

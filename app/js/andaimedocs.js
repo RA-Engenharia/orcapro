@@ -103,12 +103,15 @@
       var isTela = l.cod === "tela", t = reserva > 0 ? (isTela ? Math.ceil(Math.round(l.qtd * (100 + reserva) / 100 * 1e6) / 1e6) : trazer(l.qtd, reserva)) : null;
       if (!isTela) { pecas += l.qtd; if (t != null) pecasTrazer += t; }
       if (l.pesoTotal != null) { peso += l.pesoTotal; if (t != null && l.pesoUnit != null) pesoTrazer += l.pesoUnit * t; } else semPeso.push(l.nomeLocacao);
-      return { item: l.item, cod: l.cod, nome: l.nomeLocacao, peca: l.peca, dimensoes: l.dimensoes, oQueE: oQue(l), un: l.un, qtd: l.qtd, trazer: t, comp: l.comp, area: l.area,
+      var o = { item: l.item, cod: l.cod, nome: l.nomeLocacao, peca: l.peca, dimensoes: l.dimensoes, oQueE: oQue(l), un: l.un, qtd: l.qtd, trazer: t, comp: l.comp, area: l.area,
         pesoUnit: l.pesoUnit, pesoTotal: l.pesoTotal, pesoTrazer: t != null && l.pesoUnit != null ? r3(l.pesoUnit * t) : null, fonte: l.fonte, confirmarRT: !!l.confirmarRT };
+      if (l.refCatalogo) o.refCatalogo = l.refCatalogo;   /* M4-A: só o multidirecional traz a referência do catálogo (o tubo-roll não muda) */
+      return o;
     });
     var totais = { pecas: pecas, pesoKg: r3(peso), m2Tela: modelo.tela && modelo.tela.area > 0 ? modelo.tela.area : 0, reservaPct: reserva,
       pecasTrazer: reserva > 0 ? pecasTrazer : null, pesoTrazerKg: reserva > 0 ? r3(pesoTrazer) : null, linhasSemPeso: semPeso };
-    var r = { ok: true, cab: clone(cab), reserva: reserva, linhas: linhas, totais: totais };
+    var r = { ok: true, cab: clone(cab), reserva: reserva, linhas: linhas, totais: totais, sistema: modelo.sistema === "multidirecional" ? "multidirecional" : "tuboroll" };
+    r.temRef = linhas.some(function (x) { return !!x.refCatalogo; });
     r.html = htmlLista(r);
     return r;
   }
@@ -123,16 +126,16 @@
     ".rt{color:#a86a10;font-size:8pt} table.cab td{border:0;padding:1px 6px 1px 0} .tot td{font-weight:700;background:#f1f6fb}";
   function htmlLista(r) {
     var res = r.reserva > 0, h = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Lista de locação do andaime</title><style>' + CSS_BASE + "</style></head><body>";
-    h += "<h1>Lista de pedido de locação — andaime</h1>" + cabHtml(r.cab);
+    h += "<h1>Lista de pedido de locação — andaime" + (r.sistema === "multidirecional" ? " multidirecional" : "") + "</h1>" + cabHtml(r.cab);
     h += '<p class="nota">Sem preço (custo é outra etapa). Nome da peça como a locadora escreve; confira com o pedido real da locadora. ' + (res ? "Reserva de " + brf(r.reserva, 0) + " % sobre cada linha, arredondada para cima (coluna TRAZER)." : "Sem reserva (o responsável técnico decide).") + "</p>";
-    h += "<table><tr><th>ITEM</th><th>QNT</th>" + (res ? "<th>TRAZER</th>" : "") + "<th>PEÇA</th><th>O QUE É</th><th>UN</th><th>COMP. (m)</th><th>ÁREA (m²)</th><th>PESO UNIT (kg)</th><th>PESO TOTAL (kg)</th></tr>";
+    h += "<table><tr><th>ITEM</th><th>QNT</th>" + (res ? "<th>TRAZER</th>" : "") + "<th>PEÇA</th>" + (r.temRef ? "<th>REF. CATÁLOGO</th>" : "") + "<th>O QUE É</th><th>UN</th><th>COMP. (m)</th><th>ÁREA (m²)</th><th>PESO UNIT (kg)</th><th>PESO TOTAL (kg)</th></tr>";
     r.linhas.forEach(function (l) {
       h += "<tr><td class=\"n\">" + l.item + '</td><td class="n">' + brf(l.qtd, l.un === "m²" ? 2 : 0) + "</td>" + (res ? '<td class="n"><b>' + brf(l.trazer, l.un === "m²" ? 2 : 0) + "</b></td>" : "") +
-        "<td>" + esc(l.nome) + (l.confirmarRT ? ' <span class="rt">(confirmar RT)</span>' : "") + "</td><td>" + esc(l.oQueE) + "</td><td>" + esc(l.un) + '</td><td class="n">' + (l.comp == null ? "" : brf(l.comp, 2)) +
+        "<td>" + esc(l.nome) + (l.confirmarRT ? ' <span class="rt">(confirmar RT)</span>' : "") + "</td>" + (r.temRef ? "<td>" + esc(l.refCatalogo || "") + "</td>" : "") + "<td>" + esc(l.oQueE) + "</td><td>" + esc(l.un) + '</td><td class="n">' + (l.comp == null ? "" : brf(l.comp, 2)) +
         '</td><td class="n">' + (l.area == null ? "" : brf(l.area, 2)) + '</td><td class="n">' + (l.pesoUnit == null ? '<span class="ph">[sem peso de fonte]</span>' : brf(l.pesoUnit, 2)) +
         '</td><td class="n">' + (l.pesoTotal == null ? "" : brf(l.pesoTotal, 2)) + "</td></tr>";
     });
-    h += '<tr class="tot"><td></td><td class="n">' + r.totais.pecas + "</td>" + (res ? '<td class="n">' + r.totais.pecasTrazer + "</td>" : "") + "<td>Total geral (peças, sem a tela)</td><td></td><td></td><td></td><td></td><td></td>" +
+    h += '<tr class="tot"><td></td><td class="n">' + r.totais.pecas + "</td>" + (res ? '<td class="n">' + r.totais.pecasTrazer + "</td>" : "") + "<td>Total geral (peças, sem a tela)</td>" + (r.temRef ? "<td></td>" : "") + "<td></td><td></td><td></td><td></td><td></td>" +
       '<td class="n">' + brf(r.totais.pesoKg, 2) + "</td></tr></table>";
     h += "<p>Tela de proteção: <b>" + brf(r.totais.m2Tela, 2) + " m²</b>." + (res ? " Peso a transportar com a reserva: <b>" + brf(r.totais.pesoTrazerKg, 2) + " kg</b>." : "") + "</p>";
     if (r.totais.linhasSemPeso.length) h += '<p class="aviso">Peso sem fonte (não somado no total): ' + esc(r.totais.linhasSemPeso.join("; ")) + ".</p>";
@@ -143,10 +146,10 @@
   function construirXlsx(ExcelJS, lista, cab) {
     cab = cab || (lista && lista.cab) || {};
     var wb = new ExcelJS.Workbook(), ws = wb.addWorksheet("Lista de locação"), res = lista.reserva > 0;
-    var cols = ["ITEM", "QNT"].concat(res ? ["TRAZER"] : []).concat(["PEÇA", "O QUE É", "UN", "COMP. (m)", "ÁREA (m²)", "PESO UNIT (kg)", "PESO TOTAL (kg)"]);
-    ws.columns = cols.map(function (c, i) { return { key: "c" + i, width: c === "PEÇA" ? 46 : (c === "O QUE É" ? 56 : 13) }; });
+    var cols = ["ITEM", "QNT"].concat(res ? ["TRAZER"] : []).concat(["PEÇA"]).concat(lista.temRef ? ["REF. CATÁLOGO"] : []).concat(["O QUE É", "UN", "COMP. (m)", "ÁREA (m²)", "PESO UNIT (kg)", "PESO TOTAL (kg)"]);
+    ws.columns = cols.map(function (c, i) { return { key: "c" + i, width: c === "PEÇA" ? 46 : (c === "O QUE É" ? 56 : (c === "REF. CATÁLOGO" ? 20 : 13)) }; });
     ws.mergeCells(1, 1, 1, cols.length);
-    var t = ws.getCell(1, 1); t.value = "Lista de pedido de locação — andaime"; t.font = { bold: true, size: 13 };
+    var t = ws.getCell(1, 1); t.value = "Lista de pedido de locação — andaime" + (lista.sistema === "multidirecional" ? " multidirecional" : ""); t.font = { bold: true, size: 13 };
     var info = [["Obra", cab.obra], ["Local", cab.local], ["Andaime", cab.andaime], ["Revisão", cab.revisao], ["Data", cab.data], ["Responsável", cab.responsavel],
       ["Reserva", res ? lista.reserva + " %" : "sem reserva"]];
     var r = 2;
@@ -155,7 +158,7 @@
     var hr = ws.getRow(r); cols.forEach(function (c, i) { var cell = hr.getCell(i + 1); cell.value = c; cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F2740" } }; });
     r++;
     lista.linhas.forEach(function (l) {
-      var v = [l.item, l.qtd].concat(res ? [l.trazer] : []).concat([l.nome, l.oQueE, l.un, l.comp, l.area, l.pesoUnit, l.pesoTotal]), row = ws.getRow(r);
+      var v = [l.item, l.qtd].concat(res ? [l.trazer] : []).concat([l.nome]).concat(lista.temRef ? [l.refCatalogo || ""] : []).concat([l.oQueE, l.un, l.comp, l.area, l.pesoUnit, l.pesoTotal]), row = ws.getRow(r);
       v.forEach(function (x, i) { var cell = row.getCell(i + 1); cell.value = x == null ? null : x; if (typeof x === "number") cell.numFmt = "#,##0.00"; });
       r++;
     });
@@ -240,6 +243,7 @@
   function planoMontagem(modelo, p) {
     var A = AN();
     if (!A || !modelo || !modelo.ok) return { ok: false, motivo: "Sem modelo de andaime montado.", passos: [], html: "" };
+    if (modelo.sistema === "multidirecional") return planoMontagemM(modelo, p);   /* M4-A: sequência do manual do multidirecional */
     var nv = arr(modelo.niveis), nLev = Math.max(1, nv.length - 1);
     function lev(k) { return Math.max(1, Math.min(nLev, k)); }
     /* 1) cada elemento do modelo cai em UM balde (levante × grupo) — a soma dos baldes é a lista, por construção */
@@ -345,7 +349,7 @@
       return '<tr><td class="n">' + brf(x.qtd, x.un === "m²" ? 2 : 0) + "</td><td>" + esc(x.nomeLocacao) + '</td><td class="n">' + (x.comp == null ? "" : brf(x.comp, 2)) + '</td><td class="n">' + (x.pesoTotal == null ? "—" : brf(x.pesoTotal, 2)) + "</td></tr>";
     }).join("") + "</table>";
   }
-  function regraHtml(rg) { return '<li>' + esc(rg.texto) + ' <span class="nota">[' + esc(rg.fonte) + (rg.classe === "norma" ? "" : " — " + (rg.classe === "estrangeira" ? "referência estrangeira, conferir" : "fonte secundária, conferir")) + "]</span></li>"; }
+  function regraHtml(rg) { return '<li>' + esc(rg.texto) + ' <span class="nota">[' + esc(rg.fonte) + (rg.classe === "norma" ? "" : " — " + (rg.classe === "estrangeira" ? "referência estrangeira, conferir" : (rg.classe === "fabricante" ? "manual do fabricante, conferir com o locador" : "fonte secundária, conferir"))) + "]</span></li>"; }
   function htmlPlano(r, modelo) {
     var h = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Plano de montagem do andaime</title><style>' + CSS_BASE + "</style></head><body><h1>Plano de montagem e desmontagem</h1>";
     h += '<p class="nota">' + esc(r.aviso) + "</p><h2>Requisitos fixos (valem em todos os passos)</h2><ul>" + r.requisitos.map(regraHtml).join("") + "</ul>";
@@ -371,6 +375,7 @@
   function checklist(modelo, p, opc) {
     var A = AN(); opc = opc || {};
     if (!A || !modelo || !modelo.ok) return { ok: false, motivo: "Sem modelo de andaime montado.", itens: [], grupos: [], html: "" };
+    if (modelo.sistema === "multidirecional") return checklistM(modelo, p, opc);   /* M4-A: Anexo A do manual (19 itens) + NR-18 */
     p = p || modelo.par; var M = modelo.medidas, dias = num(opc.intervaloDias, INSPECAO_DIAS), resp = opc.respostas || {}, itens = [];
     var TODOS = ["antes", "periodica", "evento"], AP = ["antes"];
     function add(id, grupo, texto, fonte, momentos) { itens.push({ id: id, grupo: grupo, texto: texto, fonte: fonte, momentos: momentos || TODOS, resposta: null, obs: "" }); }
@@ -458,6 +463,221 @@
       h += "</table>";
     });
     return h + "</body></html>";
+  }
+
+  /* ================================================================ 3.2-M PLANO DE MONTAGEM E 3.3-M CHECKLIST DO MULTIDIRECIONAL (M4-A, 27/10/2026)
+   * Sequência do manual M02 (PEMAX, jul/2016) §8.1–8.6 (pp. 14–22) e §9 (p. 25); o checklist traz os 19 itens do Anexo A (p. 27) + os itens da NR-18
+   * que já valem para o tubo-roll e se aplicam aqui. A mesma regra do tubo-roll vale: CADA elemento do modelo cai em UM balde, e a soma dos baldes é a
+   * lista de locação (AndaimeMulti.pecasLocacao) — nunca uma segunda conta de quantidade. M02 é manual de FABRICANTE (classe "fabricante"): o RT confere
+   * com o locador do sistema. Nada aqui inventa valor: as medidas vêm do modelo. */
+  var M02 = "M02 — Manual \"Andaime Multidirecional\" (PEMAX), jul/2016";
+  var REGRA_M = {
+    mm01: { texto: "Base do andaime: peça base encaixada na sapata ajustável (rosca de regulagem de no máximo 0,25 m) e travessas horizontais paralelas e perpendiculares à fachada, a 15 cm dela. Inserir as cunhas SEM apertar, nivelar as travessas pela sapata com nível e só então apertar as cunhas a golpes de martelo.", fonte: M02 + ", §8.1 p.15; Anexo A itens 11 e 15 (p.27)", classe: "fabricante" },
+    mm02: { texto: "Base de distribuição de carga: verificar a resistência do piso e usar bases de distribuição adequadas (uma alternativa é o pranchão sob a sapata, que também evita o deslizamento). Em piso inclinado, base ajustável inclinável travada por pinos ou chumbador mecânico.", fonte: M02 + ", §8.1.1 p.15-16; Anexo A item 14", classe: "fabricante" },
+    mm03: { texto: "Postes encaixados no tubo de início: do lado da fachada um poste de 2,00 m e do lado de fora um de 3,00 m (emendas desencontradas). Travessa adicional perpendicular à fachada a 1,00 m da travessa de base.", fonte: M02 + ", §8.2 p.16", classe: "fabricante" },
+    mm04: { texto: "Pino trava em TODA união de postes (espigão), para evitar o desacoplamento acidental.", fonte: M02 + ", §8.2 p.17 (Fig. 09)", classe: "fabricante" },
+    mm05: { texto: "Plataforma: pranchas apoiadas nas travessas perpendiculares à fachada, instaladas em TODOS os níveis; as travas contra elevação acidental ficam travadas. Dois pisos de 0,32 m por módulo. Carga do piso de 0,32 m: 600 kgf/m² até 2,00 m de comprimento, 450 kgf/m² em 2,50 m e 300 kgf/m² em 3,00 m (concentrada 300 kgf em 0,5 m²).", fonte: M02 + ", §8.3 p.17-18 (Tabela 01); NR-18 18.12.5 (piso)", classe: "fabricante" },
+    mm06: { texto: "Alçapão: no módulo de subida usar o conjunto plataforma com alçapão e escada incorporada no lugar da plataforma, com a abertura INTERCALADA de um nível para o outro; alçapões fechados e travados após cada passagem. Para apoiar a escada, plataformas na base do módulo.", fonte: M02 + ", §8.3.1 p.18 (Fig. 11); Anexo A itens 9 e 10", classe: "fabricante" },
+    mm07: { texto: "Demais módulos e níveis: repetir a sequência acima. Em terreno irregular, começar pelo ponto mais alto e manter as travessas longitudinais contínuas; reforçar com travessas perpendiculares, transversais e diagonais. Quem monta níveis acima do solo é trabalhador em altura: treinamento específico por entidade qualificada e aptidão médica.", fonte: M02 + ", §8.4 p.18-19 (Fig. 12); NR-35 35.1.1", classe: "fabricante" },
+    mm08: { texto: "Subir de nível: PRIMEIRO fixar o guarda-corpo (travessão e intermediário) em todo o comprimento e nas extremidades frontais; SÓ DEPOIS prolongar os postes pelo espigão (com o pino trava). Em seguida as travessas de apoio das plataformas superiores a 2,00 m de altura e o guarda-corpo intermediário; por fim os rodapés e as plataformas superiores. (O manual cita proteção lateral a 1,20 m; o projeto adota a regra da NR-18 e a confere o RT.)", fonte: M02 + ", §8.4 p.19 (Fig. 13-14); NR-18 18.12.15.2", classe: "fabricante" },
+    mm09: { texto: "Diagonais de contraventamento: a cada {N} módulos do andaime, no mínimo um conjunto de barras diagonais em torre, desde a base. Variação: travessas diagonais nas torres laterais de passarelas.", fonte: M02 + ", §8.5 p.20-21 (Fig. 15-16)", classe: "fabricante" },
+    mm10: { texto: "Ancoragem: instalada CONTINUAMENTE durante a montagem e nunca retirada enquanto o andaime se instala. Pontos e elementos de fixação conforme o projeto específico; o gancho é preso ao elemento de fixação e travado no poste por abraçadeira fixa; sempre em estrutura resistente (concreto armado). Em alvenaria, usar elemento que a transpasse e trave na parte interna com arruela e porca. Chumbador mecânico de 5/8\": furo Ø20 mm × 70 mm, limpar o furo, introduzir, bater até expandir, rosquear o parafuso olhal até o fim do curso, na horizontal. Com rede de proteção depois do projeto de ancoragem, rever com o fabricante.", fonte: M02 + ", §8.6 p.21-22 (Fig. 17-20); Anexo A itens 12 e 13", classe: "fabricante" },
+    mm11: { texto: "Desmontagem: a sequência de montagem é INVERTIDA. Sinalizar a área da base; nunca desmontar níveis inferiores sem ter terminado o superior; a ancoragem só sai quando o nível acima dela estiver completamente desmontado; peça com conexão solta é desmontada na hora; peças retiradas não ficam nas áreas de passagem nem são jogadas do andaime; guardar as peças.", fonte: M02 + ", §9 p.25", classe: "fabricante" }
+  };
+  function regrasM(ids, N) { return ids.map(function (k) { var r = clone(REGRA_M[k] || REGRA[k]); if (r && N != null) r.texto = r.texto.replace("{N}", N); return r; }); }
+
+  /* o multidirecional não tem tubo nem luva: o subModelo só leva o que a AndaimeMulti.pecasLocacao lê */
+  function subModeloM(modelo, b) {
+    var nc = { espigao: 0, pinoTrava: 0, abracFixa: 0 };
+    arr(b.conexoes).forEach(function (c) { if (c.tipo === "espigao") { nc.espigao++; nc.pinoTrava++; } });
+    arr(b.ancoragens).forEach(function (a) { nc.abracFixa += (a.abracadeiras != null ? a.abracadeiras : 1); });
+    return { ok: true, sistema: "multidirecional", linha: modelo.linha, par: modelo.par, tubo: modelo.tubo, niveis: modelo.niveis, barras: arr(b.barras), bases: arr(b.bases), calcos: arr(b.calcos),
+      pranchas: arr(b.pranchas), rodapes: arr(b.rodapes), acessos: arr(b.acessos), ancoragens: arr(b.ancoragens), tela: { area: b.tela || 0 }, medidas: { nConexoes: nc } };
+  }
+  function planoMontagemM(modelo, p) {
+    var A = AN(), nv = arr(modelo.niveis), nLev = Math.max(1, nv.length - 1), N = num((modelo.par || p || {}).diagCada, 5);
+    function lev(k) { return Math.max(1, Math.min(nLev, k)); }
+    function yPisoDe(k) { var n = nv[k]; return n ? (n.yPiso != null ? n.yPiso : n.y) : 0; }
+    /* o piso mais alto (índice) em que o montador está de pé quando a peça cuja cota de baixo é y entra: yPiso ≤ y (+ 5 cm) */
+    function pisoQueSustenta(y) { var k = 0, i; for (i = 1; i < nv.length; i++) if (yPisoDe(i) <= y + 0.05) k = i; return k; }
+    var B = {}, nivBarra = {}, y0 = nv.length ? nv[0].y : 0;
+    function bal(chave) { if (!B[chave]) B[chave] = { barras: [], conexoes: [], bases: [], calcos: [], pranchas: [], rodapes: [], acessos: [], ancoragens: [], tela: 0 }; return B[chave]; }
+    function chaveL(n, g) { return "L" + n + "|" + g; }
+    modelo.barras.forEach(function (b) {
+      var k;
+      if (b.papel === "poste") {
+        var yb = Math.min(b.a[1], b.b[1]), j = pisoQueSustenta(yb);
+        if (j === 0 && yb <= y0 + 0.05) { nivBarra[b.id] = 0; bal("postes").barras.push(b); return; }
+        nivBarra[b.id] = lev(j + 1); bal(chaveL(nivBarra[b.id], "subir")).barras.push(b); return;
+      }
+      if (b.papel === "travessa" || b.papel === "transversal") {
+        if (!b.nivel) { nivBarra[b.id] = 0; bal("base").barras.push(b); return; }
+        k = lev(b.nivel); nivBarra[b.id] = k; bal(chaveL(k, "estrutura")).barras.push(b); return;
+      }
+      if (b.papel === "guarda" || b.papel === "intermediaria") { k = lev(b.nivel == null ? 1 : b.nivel); nivBarra[b.id] = k; bal(chaveL(k, "guarda")).barras.push(b); return; }
+      if (b.papel === "diagonal" || b.papel === "diagonalTransv") { k = lev(pisoQueSustenta(Math.max(b.a[1], b.b[1]) - 0.5)); nivBarra[b.id] = k; bal(chaveL(k, "contraventamento")).barras.push(b); return; }
+      if (b.papel === "ancoragem") {
+        var an = modelo.ancoragens.filter(function (x) { return x.barra === b.id; })[0];
+        k = lev(an && an.nivel != null ? an.nivel : pisoQueSustenta(b.a[1])); nivBarra[b.id] = k; bal(chaveL(k, "ancoragem")).barras.push(b); return;
+      }
+      k = lev(b.nivel == null ? 1 : b.nivel); nivBarra[b.id] = k; bal(chaveL(k, "estrutura")).barras.push(b);
+    });
+    modelo.pranchas.forEach(function (x) { bal(chaveL(lev(x.nivel), "piso")).pranchas.push(x); });
+    modelo.rodapes.forEach(function (x) { bal(chaveL(lev(x.nivel), "guarda")).rodapes.push(x); });
+    modelo.acessos.forEach(function (x) { bal(chaveL(lev(x.nivel), x.incorporada ? "piso" : "acesso")).acessos.push(x); });
+    modelo.ancoragens.forEach(function (x) { bal(chaveL(lev(x.nivel == null ? 1 : x.nivel), "ancoragem")).ancoragens.push(x); });
+    modelo.conexoes.forEach(function (c) {
+      if (c.tipo !== "espigao") return;   /* o resto (cunha, base, ancoragem) já está contado pelas barras, bases e ancoragens */
+      var ids = arr(c.barras), up = ids[ids.length - 1], k = nivBarra[up];
+      if (k === 0 || k == null) { bal("postes").conexoes.push(c); return; }
+      bal(chaveL(k, "subir")).conexoes.push(c);
+    });
+    modelo.bases.forEach(function (b) { bal("base").bases.push(b); });
+    modelo.calcos.forEach(function (c) { bal("calcos").calcos.push(c); });
+    bal("tela").tela = modelo.tela && modelo.tela.area > 0 ? modelo.tela.area : 0;
+    function lista(b) { return A.pecasLocacao(subModeloM(modelo, b)); }
+    function somaLista(l) { var q = 0, ps = 0; l.forEach(function (x) { if (x.cod !== "tela") q += x.qtd; if (x.pesoTotal != null) ps += x.pesoTotal; }); return { pecas: q, pesoKg: r3(ps) }; }
+    function uniao(chaves) {
+      var u = { barras: [], conexoes: [], bases: [], calcos: [], pranchas: [], rodapes: [], acessos: [], ancoragens: [], tela: 0 };
+      chaves.forEach(function (k) { var b = B[k]; if (!b) return; Object.keys(u).forEach(function (f) { if (f === "tela") u.tela += b.tela; else u[f] = u[f].concat(b[f]); }); });
+      return u;
+    }
+    var passos = [], n = 0;
+    function passo(id, titulo, fazer, pl, rg, extra) {
+      var l = pl ? lista(pl) : [], s = somaLista(l), o = { n: ++n, id: id, titulo: titulo, fazer: fazer, pecas: l, quantidades: resumoPecas(l), totalPecas: s.pecas, pesoKg: s.pesoKg, regras: rg };
+      if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+      passos.push(o); return o;
+    }
+    var M = modelo.medidas, gR = M.guardaReal != null ? M.guardaReal : 1.0, gI = r3(gR / 2);
+    passo("inspecao", "Inspeção do material", "Conferir cada peça da lista de locação na chegada (" + arr(modelo.barras).length + " barras do modelo): sem amassado, empeno, trinca ou corrosão; rosetas, cunhas, espigões e pinos trava íntegros; separar e sinalizar o defeituoso.", null, regras(["m01"]));
+    passo("apoio", "Apoio e base de distribuição de carga", modelo.calcos.length ? "Verificar a resistência do piso (nivelado, rígido, sem água) e posicionar " + modelo.calcos.length + " calço(s) de pranchão sob as sapatas, para distribuir a carga e evitar o deslizamento." : "Verificar a resistência do piso (nivelado, rígido, sem água): sem calço no projeto, a sapata apoia direto em concreto, aço ou asfalto duro.", B.calcos || null, regrasM(["mm02", "m02", "m02b"]));
+    var travB = (B.base ? B.base.barras : []).length;
+    passo("base", "Base do andaime", "Assentar as " + modelo.bases.length + " sapata(s) ajustável(is) com a peça base, na marcação da planta, e ligar com " + travB + " travessa(s) horizontal(is) paralelas e perpendiculares à fachada, a " + brf(num((modelo.par || {}).afastamento, 0.15), 2) + " m dela (rosca de regulagem de " + brf(M.regulagemBase != null ? M.regulagemBase : 0, 2) + " m no projeto; máximo 0,25 m). Cunhas SEM apertar; nivelar pela sapata e só então apertar.", B.base || null, regrasM(["mm01", "mm02"]));
+    passo("postes", "Postes iniciais", "Encaixar os postes no tubo de início: poste de 2,00 m do lado da fachada e de 3,00 m do lado de fora (desencontrados). Pino trava em toda união. Travessa adicional perpendicular à fachada a 1,00 m da travessa de base.", B.postes || null, regrasM(["mm03", "mm04"]));
+    var l, ETAPAS = [
+      { id: "subir", titulo: "Subir os postes (espigão + pino trava)" },
+      { id: "estrutura", titulo: "Travessas longitudinais e transversais (no nó da roseta)" },
+      { id: "piso", titulo: "Pisos com trava e alçapão com escada" },
+      { id: "guarda", titulo: "Guarda-corpo e rodapé" },
+      { id: "contraventamento", titulo: "Diagonais de contraventamento" },
+      { id: "ancoragem", titulo: "Ancoragens" },
+      { id: "acesso", titulo: "Escada de acesso externa" }
+    ];
+    var RIDS = { subir: ["mm08", "mm04"], estrutura: ["mm05", "mm07"], piso: ["mm05", "mm06", "m08", "m08b"], guarda: ["mm08"], contraventamento: ["mm09"], ancoragem: ["mm10", "m07"], acesso: ["m10"] };
+    for (l = 1; l <= nLev; l++) {
+      (function (l) {
+        var nm = nomeLevante(modelo, l), chaves = ETAPAS.map(function (x) { return chaveL(l, x.id); }).filter(function (k) { return !!B[k]; }), et = [], ids = {}, rg = [];
+        ETAPAS.forEach(function (ge) {
+          var k = chaveL(l, ge.id); if (!B[k]) return; var li = lista(B[k]); if (!li.length) return;
+          var fazer = {
+            subir: "ANTES de prolongar os postes, o guarda-corpo do piso de baixo (travessão a " + brf(gR, 2) + " m e intermediário a " + brf(gI, 2) + " m) tem de estar fechado em todo o comprimento e nas cabeceiras. Só então encaixar os postes pelo espigão e travar com o pino.",
+            estrutura: "Encaixar as travessas nas rosetas (cabeça da travessa na roseta, cunha a golpes de martelo nas DUAS pontas) e as travessas de apoio das plataformas na cota do nível. Esquadrejar e aprumar antes de apertar.",
+            piso: "Forrar o piso do nível, em TODOS os níveis, com as travas contra elevação acidental travadas" + (B[k].acessos.length ? "; o alçapão com escada incorporada é INTERCALADO de um nível para o outro e fica fechado e travado após cada passagem." : "."),
+            guarda: "Montar o travessão (" + brf(gR, 2) + " m) e o intermediário (" + brf(gI, 2) + " m) em todo o perímetro, menos a face de trabalho, e depois os rodapés (" + brf(num((modelo.par || {}).rodape, 0.2), 2) + " m).",
+            contraventamento: "Fixar as diagonais deste levante nas torres previstas (no mínimo um conjunto a cada " + N + " módulos), desde a base.",
+            ancoragem: "Ancorar este nível AGORA, antes de subir o levante de cima: a ancoragem não pode faltar durante a montagem e nunca é retirada até a desmontagem do nível acima.",
+            acesso: "Instalar a escada de acesso externa deste levante."
+          }[ge.id];
+          et.push({ grupo: ge.id, titulo: ge.titulo, fazer: fazer, pecas: li, quantidades: resumoPecas(li) });
+          (RIDS[ge.id] || []).forEach(function (r) { if (!ids[r]) { ids[r] = 1; rg = rg.concat(regrasM([r], N)); } });
+        });
+        passo("levante" + l, nm.rotulo, "Montar na ordem: postes (subir), travessas, pisos com trava, guarda-corpo e rodapé, diagonais, ancoragens — e só então subir para o próximo levante (o guarda-corpo vem ANTES de estender os postes).", uniao(chaves), rg, { levante: l, de: nm.de, ate: nm.ate, etapas: et });
+      })(l);
+    }
+    passo("tela", "Tela de proteção", modelo.tela && modelo.tela.area > 0 ? "Instalar " + brf(modelo.tela.area, 2) + " m² de tela da 1ª plataforma até 2,00 m acima da última, presa ao guarda-corpo e aos postes." : "Sem tela no projeto (confirme com o responsável técnico se a fachada exige).", B.tela, regras(["m10b"]));
+    passo("liberacao", "Inspeção final e liberação", "Percorrer o checklist (Anexo A do manual + NR-18) 'antes da liberação' (nenhum item não conforme), retirar o aviso de andaime incompleto, registrar a carga de serviço e só então liberar com o registro formal assinado e o cartão verde no acesso.", null, regras(["m11"]));
+    /* desmontagem: ordem inversa — e a ancoragem só sai depois que o nível acima foi desmontado (M02 §9) */
+    var desm = passos.slice().reverse().filter(function (x) { return x.id !== "inspecao" && x.id !== "liberacao"; }).map(function (x) {
+      var o = { n: 0, id: "d-" + x.id, titulo: "Desmontar: " + x.titulo, pecas: x.pecas, quantidades: x.quantidades, totalPecas: x.totalPecas, de: x.id };
+      if (x.etapas) {
+        var inv = x.etapas.slice().reverse();   /* a ancoragem é a ÚLTIMA etapa do levante a sair */
+        o.etapas = inv.filter(function (e) { return e.grupo !== "ancoragem"; }).concat(inv.filter(function (e) { return e.grupo === "ancoragem"; }));
+      }
+      return o;
+    });
+    desm.unshift({ id: "d-preparo", titulo: "Antes de começar a desmontar", pecas: [], quantidades: "", totalPecas: 0, de: null,
+      fazer: "Sinalizar e isolar a área da base, cartão vermelho no acesso ('andaime em desmontagem — não usar'), retirar material e ferramentas dos pisos, SPIQ e ferramentas amarradas." });
+    desm.forEach(function (x, i) { x.n = i; });
+    var desmontagem = { passos: desm, avisos: [
+      "⚠ Ordem inversa da montagem, de cima para baixo: nunca desmontar níveis inferiores sem ter terminado o superior; a ancoragem só sai quando o nível acima dela estiver completamente desmontado (M02 §9 p.25).",
+      "Peça com conexão solta é desmontada imediatamente; peça retirada não fica nas áreas de passagem nem é jogada do andaime; descer por corda, nunca um desmontador só, parar com chuva ou vento forte."
+    ], regras: regrasM(["mm11"]).concat(REQUISITOS.map(clone)) };
+    var totais = { pecas: 0, pesoKg: 0 }; passos.forEach(function (x) { totais.pecas += x.totalPecas; totais.pesoKg = r3(totais.pesoKg + x.pesoKg); });
+    var r = { ok: true, sistema: "multidirecional", aviso: "A sequência vem do manual do fabricante do sistema multidirecional (M02, §8.1 a 8.6 e §9) aplicada ao modelo deste projeto: confira com o locador. O projeto do engenheiro prevalece.",
+      requisitos: REQUISITOS.map(clone), passos: passos, desmontagem: desmontagem, totais: totais, nLevantes: nLev };
+    r.html = htmlPlano(r, modelo);
+    return r;
+  }
+
+  /* ---- checklist: os 19 itens do Anexo A do M02 (p.27) + os itens da NR-18 que se aplicam ao multidirecional */
+  function checklistM(modelo, p, opc) {
+    opc = opc || {}; p = p || modelo.par;
+    var M = modelo.medidas, dias = num(opc.intervaloDias, INSPECAO_DIAS), resp = opc.respostas || {}, itens = [];
+    var TODOS = ["antes", "periodica", "evento"], AP = ["antes"];
+    function add(id, grupo, texto, fonte, momentos, rt) { var it = { id: id, grupo: grupo, texto: texto, fonte: fonte, momentos: momentos || TODOS, resposta: null, obs: "" }; if (rt) it.confirmarRT = true; itens.push(it); }
+    function aA(n, grupo, texto, momentos) { add("a" + (n < 10 ? "0" : "") + n, grupo, texto, M02 + ", Anexo A item " + n + " (p.27)", momentos); }
+    var nv = arr(modelo.niveis), gR = M.guardaReal != null ? M.guardaReal : 1.0, gI = r3(gR / 2), afast = num((p || {}).afastamento, 0.15), nCon = M.nConexoes || {};
+    var carga = M.cargaPisoMinKgfM2 != null ? " (projeto: piso com carga mínima de " + brf(M.cargaPisoMinKgfM2, 0) + " kgf/m² conforme o vão — Tabela 01 do M02)" : "";
+    /* vão entre a fachada e a borda do piso, medido do modelo (o menor entre os pisos) */
+    var vaoF = null;
+    try {
+      arr(modelo.pranchas).forEach(function (x) {
+        var tr = modelo.trechos && modelo.trechos[x.trecho], e = tr ? arr(modelo.estacoes).filter(function (q) { return q.trecho === x.trecho; })[0] : null; if (!tr || !e) return;
+        var w = tr.wI + ((x.a[0] - e.pi[0]) * tr.ns[0] + (x.a[2] - e.pi[1]) * tr.ns[1]) - (x.larg || 0) / 2; if (vaoF == null || w < vaoF) vaoF = w;
+      });
+    } catch (eV) { vaoF = null; }
+    if (vaoF != null) vaoF = r3(vaoF);
+    /* Apoio */
+    aA(14, "Apoio", "Todas as " + modelo.bases.length + " base(s) apoiadas em base rígida de apoio" + (modelo.calcos.length ? " (" + modelo.calcos.length + " calço(s) de pranchão sob as sapatas)" : "") + ", sem água acumulada.");
+    aA(15, "Apoio", "Limite máximo da regulagem da sapata ajustável de 0,25 m respeitado (projeto: rosca de " + brf(M.regulagemBase != null ? M.regulagemBase : 0, 2) + " m).");
+    add("ap3", "Apoio", "Material conferido na chegada: nada amassado, empenado, trincado ou corroído; rosetas, cunhas, espigões e pinos trava íntegros.", "HSA 3.2.1 (checklist 1); NBR 6494 4.5.5 — conferir", AP);
+    /* Estrutura */
+    aA(11, "Estrutura", "Andaime nivelado e aprumado adequadamente (travessas niveladas pela sapata antes de apertar as cunhas; " + (M.nPostes || 0) + " poste(s)).");
+    aA(16, "Estrutura", "Altura máxima dos andares de 2,00 m respeitada (projeto: levante máximo de " + brf(num((p || {}).levanteMax, 2), 2) + " m, " + (M.nLevantes || 0) + " levante(s)).");
+    aA(17, "Estrutura", "Vigas, travessas e contraventamento bem travados: " + (M.nDiagonais || 0) + " diagonal(is) (" + (M.nDiagonaisVert || 0) + " de fachada e " + (M.nDiagonaisTransv || 0) + " transversal(is)), cunhas batidas nas duas pontas de cada travessa, nenhuma peça retirada.");
+    add("es-pino", "Estrutura", "Pino trava instalado em TODAS as " + (nCon.espigao || 0) + " emenda(s) de poste (espigão); postes de 2,00 m na fachada e de 3,00 m do lado de fora, desencontrados.", M02 + ", §8.2 p.17 (Fig. 09)");
+    add("es5", "Estrutura", "Postes e painéis com travamento contra desencaixe.", "NR-18 18.12.7");
+    add("es6", "Estrutura", "Nenhuma alteração não autorizada no andaime desde a última inspeção (peça tirada, trocada ou acrescentada).", "HSA checklist 2 (F22 p.84)", ["periodica", "evento"]);
+    add("co2", "Conexões", "Manual de montagem do fabricante/locador, em português, disponível na frente de trabalho; projeto por profissional legalmente habilitado.", "NR-18 18.12.1 a) e c), 18.12.2", AP);
+    /* Pisos */
+    aA(1, "Pisos", "A classe de carga utilizada está adequada ao trabalho exercido" + carga + ".", AP);
+    aA(5, "Pisos", "Todos os pisos presos em pelo menos dois pontos (travas contra elevação acidental travadas); " + (M.nPisos || 0) + " piso(s) metálico(s).");
+    aA(7, "Pisos", "Piso da plataforma sem frestas.");
+    aA(8, "Pisos", "Vão entre a fachada e o piso menor que 0,20 m" + (vaoF != null ? " (no modelo deste projeto: " + brf(vaoF, 2) + " m, com a travessa a " + brf(afast, 2) + " m da fachada)" : " (travessa a " + brf(afast, 2) + " m da fachada no projeto)") + ".");
+    nv.forEach(function (nvk) { if (nvk.piso) add("pi" + nvk.k, "Pisos", "Piso a " + brf(nvk.yPiso != null ? nvk.yPiso : nvk.y, 2) + " m com forração completa, antiderrapante, nivelada e travada.", "NR-18 18.12.5; NBR 6494 3.1.8.1"); });
+    add("pi-l", "Pisos", "Plataforma com largura ≥ 0,60 m (projeto: " + brf(M.largura, 2) + " m, útil " + brf(M.larguraUtil != null ? M.larguraUtil : M.largura, 2) + " m) e altura livre ≥ 1,75 m entre pisos forrados.", "NBR 6494 4.5.6", AP);
+    /* Proteção */
+    aA(6, "Proteção", "Guarda-corpos montados adequadamente: travessão a " + brf(gR, 2) + " m e intermediário a " + brf(gI, 2) + " m em todo o perímetro, menos a face de trabalho (NR-18 18.12.15.2).");
+    aA(18, "Proteção", "Andaime com rodapé completo de 0,20 m (projeto: " + brf(num((p || {}).rodape, 0.2), 2) + " m; " + (M.nRodapes || 0) + " rodapé(s)); mínimo da NR-18: 0,15 m.");
+    if (modelo.tela && modelo.tela.area > 0) add("pr3", "Proteção", "Tela de proteção (" + brf(modelo.tela.area, 2) + " m²) da 1ª plataforma até 2,00 m acima da última, malha ≤ 25 mm, presa e sem rasgo.", "NR-18 18.12.15; NBR 6494 3.2.4.1");
+    aA(19, "Proteção", "Andaime protegido contra colisão de veículos (balizas, defensas ou isolamento da área onde houver tráfego).");
+    add("pr4", "Proteção", "Carregamento conforme o projeto: sem material empilhado nem sobrecarga; número de pisos carregados ao mesmo tempo respeitado.", "NBR 6494 3.1.4; HSA checklist 2", ["periodica", "evento"]);
+    /* Acesso */
+    aA(9, "Acesso", "Alçapões nos pisos de acesso fechados e travados após cada passagem (" + (M.nAlcapoes || 0) + " alçapão(ões) no projeto).");
+    aA(10, "Acesso", "Escadas de acesso ao andaime montadas adequadamente INTERCALADAS (abertura do alçapão alternada de um nível para o outro); " + arr(modelo.acessos).length + " lance(s) no projeto.");
+    add("acx2", "Acesso", "Escada com degraus rígidos, fixa no pé e no topo (não escorrega nem tomba) e ultrapassando o piso superior; sem escada apoiada sobre alçapão.", "NR-18 18.8.6.13; 18.8.6.14; 18.8.6.15; M02 §8.3.1");
+    /* Ancoragem */
+    var anc = arr(modelo.ancoragens).length;
+    aA(12, "Ancoragem", "Pontos de ancoragem adequadamente instalados (" + anc + " no projeto): gancho preso ao parafuso olhal do chumbador (furo Ø20 × 70 mm) e travado no poste por abraçadeira fixa.");
+    aA(13, "Ancoragem", "Sistema de ancoragem de acordo com o projeto (posição, quantidade e tipo de fixação); ancoragem instalada continuamente durante a montagem.", AP);
+    if (anc) { var ens = Math.min(anc, Math.max(3, Math.ceil(anc * 0.05))); add("an3", "Ancoragem", "Ensaio de arrancamento dos olhais com 1,5 × a carga de projeto em ao menos 3 e 5 % do total (" + ens + " de " + anc + " ancoragem(ns)); sem movimento aparente. Resultados registrados.", "HSA 3.3.2 (F22 p.43) — referência estrangeira; confirmar RT", AP, true); }
+    else add("an1", "Ancoragem", "Andaime sem ancoragem: altura ÷ menor base ≤ 4 (projeto: " + (M.relacaoTorre != null ? brf(M.relacaoTorre, 2) : "conferir") + ").", "NR-18 18.12.3");
+    /* Sinalização */
+    aA(2, "Sinalização", "Andaime montado sem obstruir saídas de emergência, hidrantes e extintores.");
+    aA(3, "Sinalização", "Andaime com afastamento adequado das linhas elétricas.");
+    aA(4, "Sinalização", "Andaime devidamente aterrado.");
+    add("si1", "Sinalização", "Área de montagem isolada e sinalizada; aviso de 'andaime incompleto' retirado só após a liberação.", "NR-18 18.12.6; HSA seção 4");
+    add("si2", "Sinalização", "Cartão (verde/amarelo/vermelho) afixado no acesso, com data, quem liberou, carga de serviço e validade da inspeção. (Convenção de fornecedor; a NR-18 não exige etiqueta colorida.)", "NR-18 18.12.4 (registro formal); catálogo F43 (convenção)");
+    add("si3", "Sinalização", "Registro formal de liberação de uso assinado por profissional qualificado em segurança do trabalho ou pelo responsável pela frente/obra.", "NR-18 18.12.4", AP);
+    add("si4", "Sinalização", "Trabalhadores em altura (acima de 2,00 m) com treinamento e SPIQ.", "NR-35 35.1.1; NR-18 18.12.6");
+    add("si5", "Sinalização", "Perigos previstos para os próximos " + dias + " dias (tráfego, público, eletricidade, vento) avaliados.", "HSA checklist 2 (F22 p.84) — secundária", ["periodica", "evento"]);
+    var mom = opc.momento, todos = itens.slice(), filtrados = mom ? itens.filter(function (it) { return it.momentos.indexOf(mom) >= 0; }) : itens;
+    filtrados.forEach(function (it) { var rr = resp[mom || "antes"] && resp[mom || "antes"][it.id]; if (rr) { it.resposta = rr.resposta; it.obs = rr.obs || ""; } });
+    var grupos = GRUPOS_CHK.map(function (gn) { return { grupo: gn, itens: filtrados.filter(function (it) { return it.grupo === gn; }) }; }).filter(function (gp) { return gp.itens.length; });
+    var momentos = {}; Object.keys(MOMENTOS).forEach(function (k) { var o = clone(MOMENTOS[k]); o.rotulo = o.rotulo.replace("{dias}", dias); o.itens = todos.filter(function (it) { return it.momentos.indexOf(k) >= 0; }).length; if (k === "periodica") o.intervaloDias = dias; momentos[k] = o; });
+    var r = { ok: true, sistema: "multidirecional", itens: filtrados, grupos: grupos, momentos: momentos, momento: mom || null, intervaloDias: dias, vaoFachadaPiso: vaoF };
+    r.html = htmlChecklist(r);
+    return r;
   }
 
   /* ================================================================ 3.4 APROVAÇÃO E LIBERAÇÃO */
