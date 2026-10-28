@@ -70,6 +70,14 @@
       return '<span class="cbr-chip" title="' + esc(tip) + '">' + esc(limpar(x.nome || x.id)) + (x.fornecimento && !/pronta/.test(x.fornecimento) ? " *" : "") + "</span>";
     }).join("") + (a.length > MAX ? '<span class="cbr-sem">+' + (a.length - MAX) + " (ver)</span>" : "");
   }
+  /* telha e apoio com desenho 3D da ficha (js/metalcatpecas.js); sem a seção cotada na ficha, não há botão */
+  function CP() { return global.BimMetalCatPecas || null; }
+  function pecaTresD(it) {
+    var P = CP(); if (!P) return false;
+    if (it.tipo === "telha") { var e = P.estado(it.ref.telha); return !!(e && e.ok); }
+    if (it.tipo === "apoio") return !!(it.dado && arr(it.dado.dimensoes).length);
+    return false;
+  }
   function podeCriar(nome) { var M = global.BimMetalCriar || global.MetalCriar; try { return !!(M && M.perfilCat && M.perfilCat(nome)); } catch (e) { return false; } }
   function botoesUsar(it) {
     var h = "";
@@ -78,6 +86,9 @@
       else h += '<span class="cbr-sem">consulta</span>';
     } else if (it.tipo === "telha") {
       if (global.MetalCalcUI && global.MetalCalcUI.usarTelha) h += '<button type="button" class="cbr-usar" data-cbr-usar="telha" data-cbr-id="' + esc(it.id) + '" title="Usar esta telha na cobertura do galpão (Cálculo › Galpão)">Cobertura</button>';
+      if (pecaTresD(it)) h += '<button type="button" class="cbr-usar" data-cbr-usar="peca3d" data-cbr-id="' + esc(it.id) + '" title="Colocar a telha desenhada (perfil da ficha do fabricante) no modelo 3D">Peça 3D</button>';
+    } else if (it.tipo === "apoio") {
+      if (pecaTresD(it)) h += '<button type="button" class="cbr-usar" data-cbr-usar="peca3d" data-cbr-id="' + esc(it.id) + '" title="Colocar a placa de neoprene (medidas da ficha do fabricante) no modelo 3D">Peça 3D</button>';
     } else if (it.tipo === "parafuso") {
       if (global.MetalLigSugUI && global.MetalLigSugUI.materiais) h += arr(it.acos).map(function (a) { return '<button type="button" class="cbr-usar" data-cbr-usar="parafuso" data-cbr-classe="' + esc(a.id) + '" title="Classe do parafuso nas ligações (fub ' + esc(a.fu) + ' MPa)">' + esc(a.id.replace(/^ISO (898-1|4016) classe /, "classe ").replace(/^ASTM /, "")) + "</button>"; }).join("");
     } else if ((it.tipo === "chumbador" && !it.posInstalado) || it.tipo === "placa") {
@@ -101,6 +112,11 @@
       if (cols.length) h += '<table class="tbl"><thead><tr><th>Grandeza</th><th class="n">Valor</th><th>Origem</th></tr></thead><tbody>' + cols.map(function (k) { return "<tr><td>" + esc(k) + '</td><td class="n">' + br(o[k], Math.abs(o[k]) >= 1000 ? 0 : 2) + "</td><td>" + (org[k] === "geometria" ? "calculado pela seção" : "tabela do fabricante") + "</td></tr>"; }).join("") + "</tbody></table>";
       var cf = K ? K.conferirSecao(o, K.tolDe(it.serie)) : null;
       if (cf && cf.comparado) h += '<p class="cbr-sem">Conferência: ' + (cf.comparado === "area" ? "área" : "massa") + " da geometria " + br(cf.comparado === "area" ? cf.geo / 100 : cf.geo, 2) + " × tabela " + br(cf.comparado === "area" ? cf.tabela / 100 : cf.tabela, 2) + (cf.comparado === "area" ? " cm²" : " kg/m") + " (diferença " + br(cf.rel * 100, 2) + " %)</p>";
+    }
+    if (it.tipo === "telha" && CP()) {
+      var et = CP().estado(it.ref.telha), sv = et && et.ok ? CP().svg(it.ref.telha) : "";
+      if (sv) h += '<div class="cbr-desenho" data-cbr="desenho-telha">' + sv + '<p class="cbr-sem">Seção desenhada pela ficha do fabricante: ' + esc(limpar(et.secao.fonte.fabricante + ", " + et.secao.fonte.documento + ", p. " + et.secao.fonte.pagina)) + "</p></div>";
+      else h += '<p class="cbr-sem" data-cbr="sem-3d">Desenho 3D: a ficha do fabricante não traz a seção cotada desta telha.</p>';
     }
     if (it.tipo === "telha" && K) {
       var t = K.telha(it.ref.telha);
@@ -194,6 +210,10 @@
       U.mudarFerramenta(ferr, "mcrf:cat", it.nome);
       toast("Criar › " + (FERRS.filter(function (f) { return f[0] === ferr; })[0] || [0, ferr])[1] + ": perfil " + it.nome + ".", "ok");
       return true;
+    }
+    if (tipo === "peca3d") {
+      var ref = it ? (it.tipo === "apoio" ? "apoio:" + it.ref.apoio : it.ref.telha) : "";
+      return !!(CP() && ref && CP().colocar(ref, { L: 3, i: 0 }));
     }
     if (tipo === "telha") {
       var ok = global.MetalCalcUI && global.MetalCalcUI.usarTelha ? global.MetalCalcUI.usarTelha(it && it.ref.telha) : false;

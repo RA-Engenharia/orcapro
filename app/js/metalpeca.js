@@ -158,22 +158,62 @@
    *       aba), furos:[{face, x, y, db, tipo, ang}], papel, ifc, aco } */
   /* a seção do BimArq; a BARRA REDONDA fina (tirante, Ø < 2 cm, que o
      BimArq recusa para pilar de concreto) sai aqui, com a mesma forma */
-  /* PERFIL FORMADO A FRIO (NBR 6355, do js/perfisaco.js: forma "frio", tipoFrio "Ue" | "U", bw, bf, D, t em m):
-     contorno de parede fina com cantos vivos, na convenção do U laminado — caixa centrada na origem, alma à
-     esquerda (x = −bf/2), altura bw em y; enrijecedores de borda voltados para dentro. Área = a do contorno. */
+  /* PERFIL FORMADO A FRIO (NBR 6355, do js/perfisaco.js: forma "frio", tipoFrio "Ue" | "U" | "Z90" (Z e Ze) | "Cr" (cartola) |
+     "L" (cantoneira dobrada); bw, bf, D, t em m): contorno de parede fina com cantos vivos, centrado na caixa, as MESMAS dimensões
+     externas do js/acosecao.js formadoFrio (a das propriedades do catálogo). Área = a do contorno.
+       Ue/U   caixa centrada, alma à esquerda (x = −bf/2), altura bw em y, enrijecedores de borda voltados para dentro;
+       Z/Ze   alma vertical, a mesa de cima para +x e a de baixo para −x (simetria de 180°), bf medido da face externa da alma
+              até a ponta da mesa, enrijecedor D (Ze) na ponta de cada mesa, voltado para dentro (90°), D medido da face externa da mesa;
+       L      aba vertical bw e horizontal bf, medidas da face externa do canto;
+       Cr     cartola: chapéu de altura bw e topo externo bf, com a aba de baixo (D) para fora, a partir da linha média da perna.
+     O raio interno de dobra NÃO é desenhado: nenhuma ficha o traz (o catálogo adota ri = t só para as propriedades). */
+  function contornoDeLinha(cl, t) {
+    /* polilinha pela linha média → contorno fechado (espessura t, cantos de 90° em esquadro, pontas retas) */
+    var n = cl.length, nor = [], esq = [], dir = [], i, d, l;
+    for (i = 0; i + 1 < n; i++) { d = [cl[i + 1][0] - cl[i][0], cl[i + 1][1] - cl[i][1]]; l = Math.sqrt(d[0] * d[0] + d[1] * d[1]) || 1; nor.push([-d[1] / l, d[0] / l]); }
+    for (i = 0; i < n; i++) {
+      var q = cl[i], a = nor[Math.max(0, i - 1)], b = nor[Math.min(nor.length - 1, i)], k = 1 + a[0] * b[0] + a[1] * b[1], f = (i === 0 || i === n - 1) ? 1 : 1 / Math.max(k, 1e-6);
+      var nx = (i === 0 || i === n - 1) ? (i === 0 ? b[0] : a[0]) : (a[0] + b[0]) * f, ny = (i === 0 || i === n - 1) ? (i === 0 ? b[1] : a[1]) : (a[1] + b[1]) * f;
+      esq.push([q[0] + nx * t / 2, q[1] + ny * t / 2]); dir.push([q[0] - nx * t / 2, q[1] - ny * t / 2]);
+    }
+    return esq.concat(dir.reverse());
+  }
   function secaoFrio(p) {
-    var tipo = String(p.tipoFrio || "Ue"), bw = num(p.bw, 0), bf = num(p.bf, 0), D = tipo === "Ue" ? num(p.D, 0) : 0, t = num(p.t, 0);
-    if (!(bw > 0 && bf > 0 && t > 0) || !(2 * t < bw) || !(t < bf) || (tipo === "Ue" && !(D > t && D < bw / 2))) return { ok: false, motivo: "Perfil formado a frio " + tipo + ": bw, bf, D e t incoerentes." };
-    if (tipo !== "Ue" && tipo !== "U") return { ok: false, motivo: "Perfil formado a frio " + tipo + ": só Ue e U são desenhados." };
-    var x0 = -bf / 2, x1 = bf / 2, y0 = -bw / 2, y1 = bw / 2, c;
-    if (tipo === "Ue") c = [[x0, y0], [x1, y0], [x1, y0 + D], [x1 - t, y0 + D], [x1 - t, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1 - t, y1 - t], [x1 - t, y1 - D], [x1, y1 - D], [x1, y1], [x0, y1]];
-    else c = [[x0, y0], [x1, y0], [x1, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1, y1 - t], [x1, y1], [x0, y1]];
+    var tipo = String(p.tipoFrio || "Ue"), bw = num(p.bw, 0), bf = num(p.bf, 0), D = (tipo === "Ue" || tipo === "Z90" || tipo === "Z" || tipo === "Cr") ? num(p.D, 0) : 0, t = num(p.t, 0), c, cl;
+    if (!(bw > 0 && bf > 0 && t > 0)) return { ok: false, motivo: "Perfil formado a frio " + tipo + ": bw, bf, D e t incoerentes." };
+    if (tipo === "Ue" || tipo === "U") {
+      if (!(2 * t < bw) || !(t < bf) || (tipo === "Ue" && !(D > t && D < bw / 2))) return { ok: false, motivo: "Perfil formado a frio " + tipo + ": bw, bf, D e t incoerentes." };
+      var x0 = -bf / 2, x1 = bf / 2, y0 = -bw / 2, y1 = bw / 2;
+      if (tipo === "Ue") c = [[x0, y0], [x1, y0], [x1, y0 + D], [x1 - t, y0 + D], [x1 - t, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1 - t, y1 - t], [x1 - t, y1 - D], [x1, y1 - D], [x1, y1], [x0, y1]];
+      else c = [[x0, y0], [x1, y0], [x1, y0 + t], [x0 + t, y0 + t], [x0 + t, y1 - t], [x1, y1 - t], [x1, y1], [x0, y1]];
+    } else if (tipo === "Z90" || tipo === "Z") {
+      var H = (bw - t) / 2, B = D > 0 ? bf - t : bf - t / 2, Dl = D - t / 2;   /* bf = da face externa da alma até a ponta da mesa (Ze: até a face externa do enrijecedor) */
+      if (!(2 * t < bw) || !(t < bf) || (D > 0 && !(D > t && D < bw / 2))) return { ok: false, motivo: "Perfil formado a frio " + tipo + ": bw, bf, D e t incoerentes." };
+      cl = D > 0 ? [[B, H - Dl], [B, H], [0, H], [0, -H], [-B, -H], [-B, -H + Dl]] : [[B, H], [0, H], [0, -H], [-B, -H]];
+      c = contornoDeLinha(cl, t);
+    } else if (tipo === "L") {
+      if (!(t < bw) || !(t < bf)) return { ok: false, motivo: "Perfil formado a frio L: bw, bf e t incoerentes." };
+      c = contornoDeLinha([[0, bw - t / 2], [0, 0], [bf - t / 2, 0]], t);
+    } else if (tipo === "Cr") {
+      if (!(2 * t < bw) || !(2 * t < bf) || !(D > t)) return { ok: false, motivo: "Perfil formado a frio Cr: bw, bf, D e t incoerentes." };
+      var Bh = (bf - t) / 2, Hh = bw - t, Da = D - t / 2;
+      c = contornoDeLinha([[-Bh - Da, 0], [-Bh, 0], [-Bh, Hh], [Bh, Hh], [Bh, 0], [Bh + Da, 0]], t);
+    } else return { ok: false, motivo: "Perfil formado a frio " + tipo + ": o 3D desenha Ue, U, Z, Ze, L e cartola." };
+    /* centra na caixa (Ue/U já saem centrados; Z, L e cartola, pela caixa do contorno) */
+    var mnx = Infinity, mxx = -Infinity, mny = Infinity, mxy = -Infinity, i2;
+    for (i2 = 0; i2 < c.length; i2++) { if (c[i2][0] < mnx) mnx = c[i2][0]; if (c[i2][0] > mxx) mxx = c[i2][0]; if (c[i2][1] < mny) mny = c[i2][1]; if (c[i2][1] > mxy) mxy = c[i2][1]; }
+    var cx0 = (mnx + mxx) / 2, cy0 = (mny + mxy) / 2;
+    if (tipo !== "Ue" && tipo !== "U") c = c.map(function (q) { return [r6(q[0] - cx0), r6(q[1] - cy0)]; });
     var A = 0, P = 0;
     for (var i = 0; i < c.length; i++) { var q = c[i], r = c[(i + 1) % c.length]; A += q[0] * r[1] - r[0] * q[1]; P += Math.sqrt((r[0] - q[0]) * (r[0] - q[0]) + (r[1] - q[1]) * (r[1] - q[1])); }
-    return { ok: true, forma: "frio", contorno: c, furos: [], area: Math.abs(A) / 2, perimetro: P, larg: bf, alt: bw, rotulo: p.cat ? String(p.cat) : tipo + " " + Math.round(bw * 1000) + " × " + Math.round(bf * 1000) + (D ? " × " + Math.round(D * 1000) : "") + " × " + String(Math.round(t * 10000) / 10).replace(".", ",") };
+    if (A < 0) c = c.slice().reverse();
+    var rot = p.cat ? String(p.cat) : (tipo === "Z90" || tipo === "Z" ? (D > 0 ? "Ze " : "Z ") : (tipo === "Cr" ? "Cartola " : tipo + " ")) + Math.round(bw * 1000) + " × " + Math.round(bf * 1000) + (D ? " × " + Math.round(D * 1000) : "") + " × " + String(Math.round(t * 10000) / 10).replace(".", ",");
+    return { ok: true, forma: "frio", contorno: c, furos: [], area: Math.abs(A) / 2, perimetro: P, larg: mxx - mnx, alt: mxy - mny, rotulo: rot };
   }
   function secaoDe(p) {
     if (p && p.forma === "frio") return secaoFrio(p);
+    /* TELHA de aço (js/metalcatpecas.js): trapezoidal ou ondulada, a seção da ficha do fabricante */
+    if (p && p.forma === "telha") { var CP = dep("BimMetalCatPecas", "./metalcatpecas.js"); return CP ? CP.secao(p) : { ok: false, motivo: "O motor das telhas (js/metalcatpecas.js) não carregou." }; }
     /* CHAPA DOBRADA (js/metalplanif.js): polilinha pela linha média + espessura + raio interno */
     if (p && p.forma === "dobrada") { var PL = dep("BimMetalPlanif", "./metalplanif.js"); return PL ? PL.secao(p) : { ok: false, motivo: "O motor da chapa dobrada (js/metalplanif.js) não carregou." }; }
     if (p && p.forma === "circ" && num(p.d, 0) > 0.003 && num(p.d, 0) < 0.02) {
@@ -455,7 +495,7 @@
       var Ae = Math.PI / 4 * (m.D * m.D - num(m.d, 0) * num(m.d, 0));
       vol = Ae * m.L; area = Math.PI * m.D * m.L + 2 * Ae + (m.d ? Math.PI * m.d * m.L : 0); comp = m.L;
     }
-    massa = vol * RHO;
+    massa = vol * (num(m.rho, 0) > 0 ? num(m.rho, 0) : RHO);   /* rho: peça que não é de aço (apoio de neoprene, js/metalcatpecas.js) */
     c.volume = r6(vol); c.massa = r4(massa); c.area = r6(area);
     c.medidas = { un: 1, volume: r6(vol), area: r6(area), comprimento: r6(comp), massa: r4(massa) };
     if (estimado) c.medidas.massaEstimada = 1;
@@ -539,8 +579,9 @@
     } else if (f === "circ" || f === "tubo-circ") {
       var D = f === "circ" ? g("d") : g("D");
       F.push({ face: "v", n: "a", meio: 0, t: D, y0: -D / 2, eixoY: "b", larg: D });
-    } else if (f === "frio") {
-      /* Ue/U formado a frio: alma (v) à esquerda e as duas mesas (o em cima, u embaixo) */
+    } else if (f === "frio" && (p.tipoFrio === "Ue" || p.tipoFrio === "U")) {
+      /* Ue/U formado a frio: alma (v) à esquerda e as duas mesas (o em cima, u embaixo). Z, Ze, L e cartola: sem faces de furo
+         (a furação por face desta convenção só vale para Ue/U — o 3D delas é desenhado, a furação ainda não) */
       var bwf = g("bw"), bff = g("bf"), tf2 = g("t");
       F.push({ face: "v", n: "a", meio: -bff / 2 + tf2 / 2, t: tf2, y0: -bwf / 2, eixoY: "b", larg: bwf });
       F.push({ face: "o", n: "b", meio: bwf / 2 - tf2 / 2, t: tf2, y0: -bff / 2, eixoY: "a", larg: bff });

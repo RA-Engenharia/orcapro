@@ -84,11 +84,11 @@
   /* ================================================================ CATÁLOGO */
   function norm(t) { var s = String(t == null ? "" : t).toUpperCase(); return typeof s.normalize === "function" ? s.normalize("NFD").replace(/[̀-ͯ]/g, "") : s; }
   function compacto(t) { return norm(t).replace(/[×*]/g, "X").replace(/,/g, ".").replace(/\s+/g, ""); }
-  /* o 3D desenha a peça? (formado a frio: só Ue e U — o Z e a cantoneira dobrada ainda não) */
+  /* o 3D desenha a peça? (formado a frio: Ue, U, Z, Ze, L dobrada e cartola — js/metalpeca.js secaoFrio; Z45 não existe no catálogo) */
   function desenhavel(nome) {
     var A = Aco(); if (!A) return false;
     var p = A.paraPerfil(nome); if (!p) return false;
-    if (p.forma === "frio") return p.tipoFrio === "Ue" || p.tipoFrio === "U";
+    if (p.forma === "frio") return /^(Ue|U|Z90|Z|L|Cr)$/.test(String(p.tipoFrio));
     return true;
   }
   var _cacheCat = null;
@@ -197,7 +197,7 @@
     var F = FERRAMENTAS[o.ferr] || FERRAMENTAS.viga;
     var perfil = o.perfil && o.perfil.forma ? clone(o.perfil) : (o.cat ? A.paraPerfil(perfilCat(o.cat) || o.cat) : null);
     if (!perfil) return { erro: "Perfil não encontrado no catálogo: " + (o.cat || "?") + "." };
-    if (perfil.forma === "frio" && !(perfil.tipoFrio === "Ue" || perfil.tipoFrio === "U")) return { erro: "Perfil formado a frio " + perfil.tipoFrio + ": o 3D desenha só Ue e U." };
+    if (perfil.forma === "frio" && !/^(Ue|U|Z90|Z|L|Cr)$/.test(String(perfil.tipoFrio))) return { erro: "Perfil formado a frio " + perfil.tipoFrio + ": o 3D desenha Ue, U, Z, Ze, L e cartola." };
     var ds = dimSecao(perfil); if (!ds) return { erro: "A seção do perfil " + (perfil.cat || perfil.forma) + " não fecha." };
     var e = eixosBarra(a, b, o.giro); if (!e) return { erro: "Pontos inválidos." };
     var jy = JUST[o.just] != null ? JUST[o.just] : JUST[F.just || "centro"], jz = LADO[o.lado] != null ? LADO[o.lado] : 0;

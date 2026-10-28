@@ -15114,6 +15114,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         madeira: new THREE.MeshStandardMaterial({ color: 0xb88a5a, metalness: .02, roughness: .85, side: THREE.DoubleSide }),
         escada: new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
         parafuso: new THREE.MeshStandardMaterial({ color: 0x4a4f57, metalness: .7, roughness: .35, side: THREE.DoubleSide }),   /* METÁLICA: parafuso, porca, arruela (js/metalpeca.js) */
+        neoprene: new THREE.MeshStandardMaterial({ color: 0x1f2123, metalness: .0, roughness: .92, side: THREE.DoubleSide }),   /* METÁLICA: apoio de neoprene (js/metalcatpecas.js, metal.mat) */
         eixo: new THREE.LineDashedMaterial({ color: 0x2e6f9e, dashSize: 0.6, gapSize: 0.18, depthTest: false, transparent: true, opacity: 0.9 }),
         poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
       };
@@ -15271,7 +15272,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
        (com furos) extrudado pelo mapa da peça; o corte inclinado vem no mapa (as duas pontas). Desenho = corte = lista. */
     if (c.tipo === 'metal' && c.metal) {
       if (!window.BimMetal) return null;
-      var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');   /* ACABAMENTO E COR por peça (js/metalacab.js) */
+      var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : (c.metal.mat === 'neoprene' ? 'neoprene' : 'aco'));   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ⚠ GEOMETRIA GUARDADA POR PEÇA (12/10/2026). Cada op refaz a cena inteira, e a triangulação
          das peças metálicas era a maior parte do tempo: apagar 300 peças de um galpão de 920 levava
          0,58 s, 0,31 s só refazendo a malha das 620 que NÃO mudaram. A peça igual (mesmos dados e

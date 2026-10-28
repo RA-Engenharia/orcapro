@@ -74,10 +74,24 @@
       esp.push({ alvo: [f === "I" ? W / 4 : (xw + R) / 2, T - tf / 2], valor: o.tf, rot: "tf" });
       if (fin(o.r) && o.r > 0) extra.push("r = " + br(o.r) + " mm");
     } else if (f === "frio") {
-      ch("h", o.bf, "bf"); ch("v", o.bw, "bw");
-      var t = o.t / 1000;
-      esp.push({ alvo: [L + t / 2, 0], valor: o.t, rot: "t" });
-      if (p.tipoFrio === "Ue" && fin(o.D)) cotas.push({ eixo: "v", de: T - o.D / 1000, ate: T, valor: o.D, rot: "D", direita: true });
+      var t = o.t / 1000, tf = p.tipoFrio;
+      if (tf === "Z90" || tf === "Z") {
+        /* Z e Ze: a alma no centro, a mesa de cima para a direita e a de baixo para a esquerda; bf da face externa da alma à ponta da mesa */
+        ch("v", o.bw, "bw");
+        cotas.push({ eixo: "h", de: -t / 2, ate: -t / 2 + o.bf / 1000, valor: o.bf, rot: "bf" });
+        esp.push({ alvo: [0, 0], valor: o.t, rot: "t" });
+        if (fin(o.D) && o.D > 0) cotas.push({ eixo: "v", de: T - o.D / 1000, ate: T, valor: o.D, rot: "D", direita: true });
+      } else if (tf === "Cr") {
+        /* cartola: bf é o topo externo; D é a aba de baixo, da face interna da perna até a ponta */
+        ch("v", o.bw, "bw");
+        cotas.push({ eixo: "h", de: -o.bf / 2000, ate: o.bf / 2000, valor: o.bf, rot: "bf" });
+        if (fin(o.D)) cotas.push({ eixo: "h", de: L, ate: -o.bf / 2000 + t, valor: o.D, rot: "D", baixo: true });
+        esp.push({ alvo: [-o.bf / 2000 + t / 2, 0], valor: o.t, rot: "t" });
+      } else {
+        ch("h", o.bf, "bf"); ch("v", o.bw, "bw");
+        esp.push({ alvo: [L + t / 2, 0], valor: o.t, rot: "t" });
+        if (tf === "Ue" && fin(o.D)) cotas.push({ eixo: "v", de: T - o.D / 1000, ate: T, valor: o.D, rot: "D", direita: true });
+      }
       if (fin(o.ri) && o.ri > 0) extra.push("raio interno " + br(o.ri) + " mm");
     } else if (f === "L") {
       ch("h", o.b, "b"); ch("v", o.a, "a");
@@ -106,7 +120,8 @@
   function svg(nome, op) {
     op = op || {};
     var d = dados(nome); if (!d.ok) return "";
-    var aw = VW - ME - MD, ah = VH - MT - MB;
+    var mbx = d.cotas.some(function (c) { return c.baixo; }) ? 56 : MB;   /* cota por baixo (cartola): mais folga embaixo */
+    var aw = VW - ME - MD, ah = VH - MT - mbx;
     var esc0 = Math.min(aw / Math.max(d.larg, 1e-6), ah / Math.max(d.alt, 1e-6));
     var ox = ME + aw / 2, oy = MT + ah / 2;
     function X(x) { return r2(ox + x * esc0); }
@@ -128,8 +143,14 @@
     d.cotas.forEach(function (c) {
       var rot = esc(c.rot) + " " + esc(br(c.valor));
       if (c.eixo === "h") {
-        var yc = Y(T) - 14, xa = X(c.de), xb = X(c.ate);
-        h.push(linha(xa, Y(T) - 3, xa, yc - 4), linha(xb, Y(T) - 3, xb, yc - 4), linha(xa - 4, yc, xb + 4, yc), tique(xa, yc), tique(xb, yc), texto((xa + xb) / 2, yc - 4, rot));
+        var xa = X(c.de), xb = X(c.ate);
+        if (c.baixo) {   /* cota por baixo da seção (a aba da cartola) */
+          var yd = Y(B) + 14;
+          h.push(linha(xa, Y(B) + 3, xa, yd + 4), linha(xb, Y(B) + 3, xb, yd + 4), linha(xa - 4, yd, xb + 4, yd), tique(xa, yd), tique(xb, yd), texto((xa + xb) / 2, yd + 11, rot));
+        } else {
+          var yc = Y(T) - 14;
+          h.push(linha(xa, Y(T) - 3, xa, yc - 4), linha(xb, Y(T) - 3, xb, yc - 4), linha(xa - 4, yc, xb + 4, yc), tique(xa, yc), tique(xb, yc), texto((xa + xb) / 2, yc - 4, rot));
+        }
       } else {
         var dir = !!c.direita, xs = dir ? X(R) : X(L), xc = dir ? xs + 12 : xs - 14, ya = Y(c.ate), yb = Y(c.de), sg = dir ? 1 : -1;
         h.push(linha(xs + 3 * sg, ya, xc + 4 * sg, ya), linha(xs + 3 * sg, yb, xc + 4 * sg, yb), linha(xc, ya - 4, xc, yb + 4), tique(xc, ya), tique(xc, yb),

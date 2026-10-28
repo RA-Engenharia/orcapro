@@ -11555,6 +11555,7 @@ aco: new THREE.MeshStandardMaterial({ color: 0x8a9099, metalness: .55, roughness
 madeira: new THREE.MeshStandardMaterial({ color: 0xb88a5a, metalness: .02, roughness: .85, side: THREE.DoubleSide }),
 escada: new THREE.MeshStandardMaterial({ color: 0xb9c0c8, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
 parafuso: new THREE.MeshStandardMaterial({ color: 0x4a4f57, metalness: .7, roughness: .35, side: THREE.DoubleSide }),
+neoprene: new THREE.MeshStandardMaterial({ color: 0x1f2123, metalness: .0, roughness: .92, side: THREE.DoubleSide }),
 eixo: new THREE.LineDashedMaterial({ color: 0x2e6f9e, dashSize: 0.6, gapSize: 0.18, depthTest: false, transparent: true, opacity: 0.9 }),
 poli: new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false })
 };
@@ -11682,7 +11683,7 @@ return { qto: { comprimento: vd.comprimento != null ? vd.comprimento : mdV.compr
 }
 if (c.tipo === 'metal' && c.metal) {
 if (!window.BimMetal) return null;
-var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : 'aco');
+var mM = c.acab && window.BimMetalAcab ? b2MatAcab(c.acab, c.metal.aco) : b2Mat(c.metal.kind === 'parafuso' ? 'parafuso' : (c.metal.mat === 'neoprene' ? 'neoprene' : 'aco'));
 var chM = JSON.stringify([c.metal, c.cx, c.cy, c.cz, c.rotY]), enM = metGeo.mapa[c.id];
 if (!enM || enM.chave !== chM || !metGeo.ligado) {
 if (enM) metGeoDescartar(enM);
