@@ -184,19 +184,40 @@
       pressurizador: { modelo: m.id }
     };
   }
-  /* base de concreto do modelo: laje pelo contorno dos pés + folga, com os chumbadores nos cantos dos pés */
-  function familiaBase(m) {
+  /* BASE DE CONCRETO (a base NÃO é produto de catálogo: é a laje de concreto que o projeto põe sob o equipamento, com os chumbadores nos cantos dos pés da ficha).
+     27/10/2026 ("uma família por peça"): eram 12 famílias de mesma forma, uma por modelo; agora é UMA, `hid-pz-base`, parametrizada pelo contorno dos pés do modelo
+     (cada modelo é um TIPO "t-<id do modelo>"). As 12 antigas (`hid-pz-base-<modelo>`) continuam definidas como ALIAS (ocultas do menu) para o projeto antigo abrir —
+     a migração (js/famhidmigra.js, tabela do JSON) leva cada uma ao tipo do seu modelo, na mesma posição (a base não tem conector: a origem não se move). */
+  function pesDoModelo(m) {
     var pe = arr(m.partes).filter(function (p) { return p.id === "pes"; })[0] || { centro: { x: num(m.dimensoes && m.dimensoes.comprimento, 0) / 2, y: 0, z: 0 }, dx: num(m.dimensoes && m.dimensoes.comprimento, 0), dz: num(m.dimensoes && m.dimensoes.largura, 0) };
-    var fol = geo("baseFolga"), hB = geo("baseAltura"), dCh = geo("chumbadorDiametro");
-    var cx = num(pe.centro.x, 0) / MM, cz = num(pe.centro.z, 0) / MM, dx = num(pe.dx, 0) / MM, dz = num(pe.dz, 0) / MM;
-    var sol = [{ id: "laje", nome: "Base de concreto", forma: "caixa", x: S(cx), y: "0", z: S(cz), dx: S(dx + 2 * fol), dy: S(hB), dz: S(dz + 2 * fol), material: "Concreto" }];
+    return { cx: num(pe.centro.x, 0) / MM, cz: num(pe.centro.z, 0) / MM, dx: num(pe.dx, 0) / MM, dz: num(pe.dz, 0) / MM };
+  }
+  /* a base de UM modelo, sob o id antigo (alias oculto) */
+  function familiaBase(m) {
+    var pe = pesDoModelo(m), fol = geo("baseFolga"), hB = geo("baseAltura"), dCh = geo("chumbadorDiametro");
+    var sol = [{ id: "laje", nome: "Base de concreto", forma: "caixa", x: S(pe.cx), y: "0", z: S(pe.cz), dx: S(pe.dx + 2 * fol), dy: S(hB), dz: S(pe.dz + 2 * fol), material: "Concreto" }];
     [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(function (q, i) {
-      sol.push({ id: "chumbador" + i, nome: "Chumbador", forma: "cilindro", eixo: "y", x: S(cx + q[0] * (dx / 2 - dCh)), y: S(hB), z: S(cz + q[1] * (dz / 2 - dCh)), raio: S(dCh / 2), altura: S(dCh * 2), material: "Metal cromado" });
+      sol.push({ id: "chumbador" + i, nome: "Chumbador", forma: "cilindro", eixo: "y", x: S(pe.cx + q[0] * (pe.dx / 2 - dCh)), y: S(hB), z: S(pe.cz + q[1] * (pe.dz / 2 - dCh)), raio: S(dCh / 2), altura: S(dCh * 2), material: "Metal cromado" });
     });
-    return { id: PREF + "base-" + m.id, nome: "Base do pressurizador " + m.fabricante + " " + m.modelo, categoria: "equipamento", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
-             descricao: decisao("pz.base") + " Contorno dos pés da ficha + " + f2(fol * CASAS / CASAS) + " m de borda; altura " + f2(hB) + " m.", avisos: [], sistemas: [], parametros: [P("Modelo", "texto", m.modelo, "Equipamento apoiado")],
+    return { id: PREF + "base-" + m.id, oculta: true, substituidaPor: PREF + "base", nome: "Base do pressurizador " + m.fabricante + " " + m.modelo, categoria: "equipamento", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
+             descricao: decisao("pz.base") + " Contorno dos pés da ficha + " + f2(fol * CASAS / CASAS) + " m de borda; altura " + f2(hB) + " m. [Substituída por " + PREF + "base: tipo t-" + m.id + ".]", avisos: [], sistemas: [], parametros: [P("Modelo", "texto", m.modelo, "Equipamento apoiado")],
              tipos: [{ id: "t-generico", nome: "Base " + m.modelo, valores: { Modelo: m.modelo }, fonte: "", avisos: [], conferir: [] }], solidos: sol, conectores: [],
              quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Base de concreto para pressurizador" } };
+  }
+  /* a base ÚNICA: um tipo por modelo (contorno dos pés da ficha), laje + 4 chumbadores. Mesmos sólidos e mesmas medidas das 12 antigas. */
+  function familiaBaseUnica() {
+    var ms = modelos().filter(function (m) { return m.modelavel; }), fol = geo("baseFolga"), hB = geo("baseAltura"), dCh = geo("chumbadorDiametro");
+    var ps = [P("Modelo", "texto", "", "Equipamento apoiado", "tipo"), P("Pes_cx", "comprimento", 0, "Centro dos pés da ficha, ao longo do eixo da bomba (m)", "tipo"), P("Pes_cz", "comprimento", 0, "Centro dos pés da ficha, lateral (m)", "tipo"),
+              P("Pes_dx", "comprimento", 0, "Comprimento do contorno dos pés (ficha)", "tipo"), P("Pes_dz", "comprimento", 0, "Largura do contorno dos pés (ficha)", "tipo"),
+              P("Borda", "comprimento", fol, "Folga da laje além dos pés (decisão do projeto)", "tipo"), P("Altura_base", "comprimento", hB, "Altura da laje (decisão do projeto)", "tipo"), P("Chumbador_d", "comprimento", dCh, "Diâmetro do chumbador (decisão do projeto)", "tipo")];
+    var sol = [{ id: "laje", nome: "Base de concreto", forma: "caixa", x: "Pes_cx", y: "0", z: "Pes_cz", dx: "Pes_dx + 2*Borda", dy: "Altura_base", dz: "Pes_dz + 2*Borda", material: "Concreto" }];
+    [[-1, -1], [-1, 1], [1, -1], [1, 1]].forEach(function (q, i) {
+      sol.push({ id: "chumbador" + i, nome: "Chumbador", forma: "cilindro", eixo: "y", x: "Pes_cx " + (q[0] < 0 ? "-" : "+") + " (Pes_dx/2 - Chumbador_d)", y: "Altura_base", z: "Pes_cz " + (q[1] < 0 ? "-" : "+") + " (Pes_dz/2 - Chumbador_d)", raio: "Chumbador_d/2", altura: "Chumbador_d*2", material: "Metal cromado" });
+    });
+    return { id: PREF + "base", nome: "Base de concreto do pressurizador", categoria: "equipamento", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
+             descricao: decisao("pz.base") + " Um tipo por modelo (contorno dos pés da ficha + borda). Origem: a mesma do pressurizador (sob a boca de sucção).", avisos: [], sistemas: [], parametros: ps,
+             tipos: ms.map(function (m) { var pe = pesDoModelo(m); return { id: "t-" + m.id, nome: "Base " + m.fabricante + " " + m.modelo, valores: { Modelo: m.modelo, Pes_cx: pe.cx, Pes_cz: pe.cz, Pes_dx: pe.dx, Pes_dz: pe.dz }, fonte: fonteTxt(m, m.dimensoes && m.dimensoes.fonte), avisos: [], conferir: [] }; }),
+             solidos: sol, conectores: [], quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Base de concreto para pressurizador" } };
   }
   /* união roscável (h = eixo X; v = eixo Y): dois conectores nas faces, porca no meio */
   function familiaUniao(vertical) {
@@ -224,6 +245,7 @@
     if (CACHE_F) return CACHE_F;
     var out = [];
     modelos().forEach(function (m) { if (m.modelavel) { out.push(familiaBomba(m)); out.push(familiaBase(m)); } });
+    out.push(familiaBaseUnica());
     out.push(familiaUniao(false)); out.push(familiaUniao(true)); out.push(familiaPontoForca());
     CACHE_F = out; return out;
   }
@@ -381,7 +403,7 @@
       /* bomba: a boca de sucção cai em S1 + v·w + u·aSuc, na cota do eixo */
       var Psuc = soma({ x: S1.x, y: ys, z: S1.z }, v, w); Psuc = soma(Psuc, u, aSuc);
       var O = { x: Psuc.x - u.x * num(sc.x, 0) / MM - vL.x * num(sc.z, 0) / MM, y: yBase, z: Psuc.z - u.z * num(sc.x, 0) / MM - vL.z * num(sc.z, 0) / MM };
-      fam(pu + "-base", PREF + "base-" + m.id, "t-generico", { x: O.x, y: cfg.yPiso, z: O.z }, rot, {});
+      fam(pu + "-base", PREF + "base", "t-" + m.id, { x: O.x, y: cfg.yPiso, z: O.z }, rot, {});
       fam(pu + "-bomba", famIdDe(m), "t-" + m.id, O, rot, k === 0 && cfg.selecao ? { pzSel: cfg.selecao } : {});
       bombas.push({ id: pu + "-bomba", origem: O, reserva: k > 0 });
       /* sucção: (sobe/desce do coletor à cota do eixo), reto com o registro de entrada, união, niple até a boca */

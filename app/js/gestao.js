@@ -11824,7 +11824,7 @@
         /* JUNTAS NA PONTA (QV1, 17/10/2026, js/biminstui.js): luva / bolsa do próprio tubo / luva invertida */
         try { if (window.BimInstUI && BimInstUI.itensMenu) itNiv = itNiv.concat(BimInstUI.itensMenu({ uid: sob || uid })); } catch (eIj) {}
         /* TRAÇAR AUTOMATICAMENTE (18/10/2026, js/hidkitui.js): no ambiente (ou no aparelho) sob o cursor */
-        try { if (window.HidKitUI && HidKitUI.itensMenu) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
+        try { if (window.HidKitUI && HidKitUI.itensMenu && window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()) itNiv = itNiv.concat(HidKitUI.itensMenu({ ev: ev, ponto: extra.pontoPlanta || null, uid: sob || uid })); } catch (eTa) {}
         var SI = window.BimSelInst, temSel = false;
         try { temSel = !!(BIM.selecao().uids || []).length; } catch (eT) {}
         if (SI && SI.ativo && SI.ativo() && (sob || temSel)) {
@@ -14693,7 +14693,7 @@
         excluir: function (id) { return Store.excluir(eid(), "bim_familias", id); },
         colocar: function (f, tipoId) {
           var b = window.BIM; if (!b || !b.editarArmar) return;
-          b.familiasDefinir(FamiliaUI.biblioteca());
+          b.familiasDefinir(FamiliaUI.biblioteca({ registro: true }));
           b.editarArmar("familia", { famId: f.id, tipoId: tipoId });
           var t = (f.tipos || []).filter(function (x) { return x.id === tipoId; })[0];
           BimShell.status("Colocar \"" + f.nome + (t ? " : " + t.nome : "") + "\" — " + (f.hospedagem === "parede" ? "clique numa parede criada aqui (o vão abre sozinho)." : "clique no modelo; barra de espaço gira 90°.") + " Esc encerra.");
@@ -15015,7 +15015,7 @@
     },
     /* B6: os templates RA prontos (js/templatesra.js) — usar aqui ou baixar o .optpl */
     _optplRA: function () {
-      var self = this, lista = this._npTemplates();
+      var self = this, comHid = !!(window.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()), lista = this._npTemplates().filter(function (t) { return !t.hid || comHid; });   /* o grupo hidro carregado só para migrar família NÃO libera os templates do Hidro (função do Modela) */
       UI.modal("Templates RA", '<div data-tpl="ra">' + lista.map(function (t) {
         return '<div class="tpl-ra" style="border:1px solid var(--linha);border-radius:var(--raio-sm);padding:10px;margin:0 0 8px"><b>' + Util.esc(t.nome) + '</b><p class="muted" style="margin:4px 0 8px;font-size:12.5px">' + Util.esc(t.descricao) + "</p>" +
           '<button class="btn sm primary" data-tpl-usar="' + Util.esc(t.id) + '">Usar nesta obra</button> <button class="btn sm" data-tpl-baixar="' + Util.esc(t.id) + '">Baixar .optpl</button></div>';
@@ -15029,7 +15029,7 @@
     },
     _famSync: function () {
       if (this._famConfig() && window.BIM && BIM.familiasDefinir) {
-        try { var l = FamiliaUI.biblioteca(); BIM.familiasDefinir(l); if (window.FamiliaImportUI) FamiliaImportUI.carregarFaltantes(l); } catch (e) {}   /* FAMIMPORT: a malha das importadas vem do IndexedDB/nuvem */
+        try { var l = FamiliaUI.biblioteca({ registro: true }); BIM.familiasDefinir(l); if (window.FamiliaImportUI) FamiliaImportUI.carregarFaltantes(l); } catch (e) {}   /* FAMIMPORT: a malha das importadas vem do IndexedDB/nuvem */
       }
     },
     /* contexto da família/render por IA: a obra do BIM, quem gera e o editor de família */

@@ -222,7 +222,7 @@
     var vistos = {}, out = [];
     function juntar(lista, grupoFn, origem) {
       arr(lista).forEach(function (f) {
-        if (!f || !f.id || vistos[f.id]) return;
+        if (!f || !f.id || vistos[f.id] || f.oculta) return;   /* família SUBSTITUÍDA (js/famhidmigra.js): alias do projeto antigo, fora do menu */
         var g = grupoFn(f); if (!g) return;
         vistos[f.id] = 1; out.push(itemFamilia(f, g, origem));
       });
@@ -234,7 +234,7 @@
     try { if (PF && PF.todas) juntar(PF.todas(), function () { return "Piscina"; }, "HidPiscinaFam"); } catch (e3) {}
     try { if (CF && CF.todas) juntar(CF.todas(), function () { return "Climatização"; }, "ClimFamilias"); } catch (e4) {}
     /* as famílias RA que são do hidro (louça e caixa d'água); os registros já entram em "Registros e válvulas" pela variante */
-    try { if (FR && FR.lista) juntar(FR.lista(), function (f) { if (noAcessorio[f.id]) return null; return /^ra-(bacia|lavatorio|chuveiro|pia|tanque|torneira)/.test(f.id) ? "Louças e metais" : (/^ra-caixa-dagua/.test(f.id) ? "Reservatórios e tanques" : null); }, "FamiliasRA"); } catch (e5) {}
+    try { if (FR && FR.lista) juntar(FR.listaMenu ? FR.listaMenu() : FR.lista(), function (f) { if (noAcessorio[f.id]) return null; return /^ra-(bacia|lavatorio|chuveiro|pia|tanque|torneira)/.test(f.id) ? "Louças e metais" : (/^ra-caixa-dagua/.test(f.id) ? "Reservatórios e tanques" : null); }, "FamiliasRA"); } catch (e5) {}
     /* o que o escritório importou (FamiliaUI.biblioteca, via BimInstTipos.fontesEscritorio) — com a origem */
     var T = TI();
     try {

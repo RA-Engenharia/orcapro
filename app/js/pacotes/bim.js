@@ -55874,6 +55874,244 @@ global.Familia = Familia;
 if (typeof module !== "undefined" && module.exports) module.exports = Familia;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/famhidmigradados.js ==== */
+try {
+(function (global) {
+"use strict";
+var FamHidMigraDados = {"versao":1,"titulo":"Migração de famílias do Hidrossanitário: id antigo -> id canônico (27/10/2026, Lote 1)","regra":"A família antiga continua DEFINIDA (alias carregável) até a migração ser provada; só sai do MENU. A migração roda ao abrir o projeto (js/famhidmigra.js), troca o id e o tipo pelo equivalente do catálogo e alinha o ponto-âncora de ligação para o tubo não soltar.","limites":{"deslocamentoHorizontalMax_m":0.6,"deslocamentoVerticalMax_m":0.1,"toleranciaLigacao_m":0.01},"alias":{"ra-bacia":{"para":"hid-bacia-caixa-acoplada","ancora":"esgoto","tipos":{"conv":"t-celite-56355-56570-793","inf":"t-celite-08255-08570-08570-865"},"tipoPadrao":"conv","criterio":"tipo da Celite de caixa acoplada com Largura x Comprimento mais próximos (conv 0,38x0,65 -> 56355 0,37x0,65; inf 0,32x0,55 -> 08255 infantil 0,31x0,585)","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio":{"para":"hid-lavatorio-suspenso","ancora":"esgoto","tipos":{"l4535":"t-celite-20001-20202-812","l4030":"t-celite-20001-20202-812"},"tipoPadrao":"l4535","criterio":"menor lavatório de coluna suspensa do catálogo (0,495x0,41); o bloco antigo era 0,45x0,35 e 0,40x0,30, sem equivalente menor na Celite","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio-coluna":{"para":"hid-lavatorio-coluna","ancora":"esgoto","tipos":{"l4535":"t-celite-71001-71201-826","l5040":"t-celite-02007-02201-822","l6048":"t-celite-54005-54201-784"},"tipoPadrao":"l4535","criterio":"lavatório com coluna da Celite com Largura x Profundidade mais próximos","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-tanque":{"para":"hid-tanque-lavar","ancora":"esgoto","alinhar":"xz","tipos":{"t6052":"t-celite-51264-860"},"tipoPadrao":"t6052","criterio":"tanque G Builders 0,59x0,52 (o bloco antigo era 0,60x0,52). O tanque apoia no piso: só x/z se alinham (a saída do catálogo está no piso, a do bloco antigo a 0,49 m: o resíduo vertical vai no log). O ponto de água do tanque é a torneira (hid-torneira): o conector af do bloco antigo some e é avisado no log","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-chuveiro":{"para":"hid-chuveiro","ancora":"af","deslocamentoVerticalMax_m":3,"tipos":{"ch":"t-docol-00118406-1543"},"tipoPadrao":"ch","criterio":"chuveiro padrão (Docol Clássico); o bloco antigo era um braço e um crivo sem modelo. A origem da família nova É o ponto de água (a altura é a coordenada y da instância), por isso o limite vertical é o pé-direito","fonte":"dados-fonte/hidro/catalogos/docol-metais.json"},"ra-caixa-dagua":{"para":"hid-caixa-dagua","ancora":"origem","tipos":{"c500":"t-fortlev-0-201-000-5-1712","c1000":"t-fortlev-0-201-000-7-1714","c2000":"t-fortlev-0-202-000-1-1716"},"tipoPadrao":"c500","criterio":"mesmo volume em litros (500, 1.000, 2.000) na linha de polietileno da Fortlev. A caixa é apoiada no piso: a origem da base não se move; os tubos que já chegavam podem ficar fora do bocal novo e o log lista cada resíduo","fonte":"dados-fonte/hidro/catalogos/fortlev-reservatorios.json"},"hid-pz-base-dancor-jc19":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc19"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc19); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci30":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci30"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci30); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc9":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc9"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc9); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc12":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc12"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc12); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci40":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci40"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci40); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci55":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci55"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci55); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-tap-02c":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-tap-02c"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-tap-02c); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-smart-box":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-smart-box"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-smart-box); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"}}};
+global.FamHidMigraDados = FamHidMigraDados;
+if (typeof module !== "undefined" && module.exports) module.exports = FamHidMigraDados;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/famhidmigra.js ==== */
+try {
+(function (global) {
+"use strict";
+var VERSAO = 1;
+var CHAVE_LOG = "orcapro:famhidmigra:log";
+var TETO_LOG = 200;
+function dados() {
+if (global.FamHidMigraDados) return global.FamHidMigraDados;
+if (typeof require === "function") { try { return require("./famhidmigradados.js"); } catch (e) { return null; } }
+return null;
+}
+function tabela() { var d = dados(); return d && d.alias ? d.alias : {}; }
+function limites() { var d = dados(); return d && d.limites ? d.limites : { deslocamentoHorizontalMax_m: 0.6, deslocamentoVerticalMax_m: 0.1, toleranciaLigacao_m: 0.02 }; }
+function tem(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+function copia(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+function num(v, d) { if (v === null || v === undefined || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+function arr(a) { return Array.isArray(a) ? a : []; }
+function ehAlias(id) { return tem(tabela(), String(id)); }
+function canonico(id) { var r = tem(tabela(), String(id)) ? tabela()[String(id)] : null; return r ? r.para : String(id); }
+function aliasDe(id) { var r = [], t = tabela(); Object.keys(t).forEach(function (k) { if (t[k].para === id) r.push(k); }); return r; }
+function mundo(e, k) {
+var c = Math.cos(e.rotY), s = Math.sin(e.rotY);
+return { x: e.x + num(k.x, 0) * c + num(k.z, 0) * s, y: e.y + num(k.y, 0), z: e.z - num(k.x, 0) * s + num(k.z, 0) * c };
+}
+function dist3(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z; return Math.sqrt(dx * dx + dy * dy + dz * dz); }
+function conectorPorId(av, id) {
+var l = arr(av && av.conectores), i;
+for (i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === String(id)) return l[i];
+return null;
+}
+function referencias(ops) {
+var out = [];
+arr(ops).forEach(function (o, i) {
+if (o && o.op === "lote" && Array.isArray(o.ops)) o.ops.forEach(function (x, j) { if (x && x.op !== "lote") out.push({ op: x, lista: o.ops, i: j }); });
+else out.push({ op: o, lista: ops, i: i });
+});
+return out;
+}
+function mencoes(o, acc) {
+if (o == null) return acc;
+if (typeof o === "string" || typeof o === "number") { acc[String(o)] = 1; return acc; }
+if (Array.isArray(o)) { o.forEach(function (x) { mencoes(x, acc); }); return acc; }
+if (typeof o === "object") Object.keys(o).forEach(function (k) { if (k !== "T" && k !== "op") mencoes(o[k], acc); });
+return acc;
+}
+function tocadasPorTransformacao(refs) {
+var tocadas = {};
+refs.forEach(function (r) {
+var o = r.op; if (!o) return;
+if (o.op === "matriz" || o.op === "grupo" || (o.op === "transformar" && (o.copia || (o.T && o.T.tipo === "espelhar")))) mencoes(o, tocadas);
+});
+return tocadas;
+}
+function simular(refs) {
+var est = {}, bloqueios = {}, outras = {};
+refs.forEach(function (r) {
+var o = r.op, e;
+if (!o) return;
+if (o.op === "familia" && o.id != null && o.famId) {
+est[o.id] = { id: o.id, famId: String(o.famId), refs: [r], opsX: [r], opsY: o.y != null ? [r] : [], trocaFam: false };
+} else if (o.op === "instancia" && est[o.id]) {
+e = est[o.id]; e.refs.push(r);
+if (o.famId != null && String(o.famId) !== e.famId) e.trocaFam = true;
+if (o.y != null) e.opsY.push(r);
+if (o.x != null || o.z != null) e.opsX.push(r);
+} else if (o.op === "mover" && est[o.id]) {
+e = est[o.id]; e.refs.push(r); e.opsX.push(r);
+} else if (o.op === "apagar" && est[o.id]) {
+delete est[o.id];
+} else if (o.op === "ajustarTipo" && Array.isArray(o.ids)) {
+o.ids.forEach(function (id) { bloqueios[id] = "tipo da obra editado (ajustarTipo): os valores editados são da família antiga"; });
+} else if (o.op !== "orcar" && o.op !== "marcar" && o.op !== "familia" && o.op !== "criar") {
+var m = mencoes(o, {}); Object.keys(m).forEach(function (k) { outras[k] = 1; });
+}
+});
+return { est: est, bloqueios: bloqueios, outras: outras };
+}
+function paramsDeInstancia(def) {
+var m = {};
+arr(def && def.parametros).forEach(function (p) { if (p && p.escopo === "instancia") m[p.nome] = 1; });
+return m;
+}
+function distPtSeg(p, a, b) {
+var ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z, L2 = ux * ux + uy * uy + uz * uz, t = L2 > 0 ? ((p.x - a.x) * ux + (p.y - a.y) * uy + (p.z - a.z) * uz) / L2 : 0;
+t = Math.max(0, Math.min(1, t));
+return dist3(p, { x: a.x + ux * t, y: a.y + uy * t, z: a.z + uz * t });
+}
+function migrarOps(ops, ctx) {
+var T = tabela(), L = limites(), res = { ops: ops, mudou: false, trocas: [], adiadas: [], versao: VERSAO };
+if (!Array.isArray(ops) || !ops.length) return res;
+var refs = referencias(ops), temAlias = false, i;
+for (i = 0; i < refs.length; i++) { var q = refs[i].op; if (q && q.op === "familia" && q.famId != null && tem(T, String(q.famId))) { temAlias = true; break; } }
+if (!temAlias) return res;
+ctx = ctx || {};
+var tolMotor = typeof ctx.tolConector === "number" ? ctx.tolConector : (global.BimInst && typeof global.BimInst.TOL_CONECTOR === "number" ? global.BimInst.TOL_CONECTOR : null), tolC = tolMotor;
+var sim = simular(refs), tocadas = tocadasPorTransformacao(refs), saida = copia(ops), refsS = referencias(saida), porOp = {};
+refs.forEach(function (r, k) { porOp[k] = refsS[k]; });
+var idxRef = function (r) { return refs.indexOf(r); };
+var estado = null, aplicar = typeof ctx.aplicar === "function" ? ctx.aplicar : (global.BimEdit && typeof global.BimEdit.aplicar === "function" ? function (o) { return global.BimEdit.aplicar(o); } : null);
+if (aplicar) { try { estado = aplicar(ops); } catch (eA) { estado = null; } }
+var finais = {}, segs = [];
+if (estado) {
+arr(estado.familias).forEach(function (f) { if (f && f.id != null) finais[String(f.id)] = f; });
+var ins = estado.instalacoes || {};
+arr(ins.trechos).forEach(function (t) { if (t && t.p1 && t.p2) segs.push([t.p1, t.p2]); });
+arr(ins.acessorios).forEach(function (a2) { if (a2 && a2.a && a2.b) segs.push([a2.a, a2.b]); });
+}
+function ligadoA(P0) { for (var k = 0; k < segs.length; k++) if (distPtSeg(P0, segs[k][0], segs[k][1]) <= tolC) return true; return false; }
+var idsAlias = estado ? Object.keys(finais) : Object.keys(sim.est);
+idsAlias.forEach(function (id) {
+var fin = estado ? finais[id] : { famId: sim.est[id].famId }, regra = tem(T, String(fin.famId)) ? T[fin.famId] : null;
+if (!regra) return;
+var e = sim.est[id];
+function adiar(motivo) { res.adiadas.push({ id: id, de: fin.famId, para: regra.para, motivo: motivo }); }
+if (tocadas[id]) return adiar("a peça foi tocada por cópia, matriz, espelho ou grupo: migração manual (fica com a família antiga)");
+if (!e) return adiar("a instância não nasce de uma op de família (cópia, colagem ou grupo): fica com a família antiga");
+if (e.trocaFam) return adiar("a família foi trocada no histórico de operações (TROCAR POR…): migração manual");
+if (tolMotor == null) return adiar("sem o BimInst neste contexto (não sei a tolerância de ligação do motor): nada migra");
+if (!estado) return adiar("sem o replay do projeto neste contexto (não sei a posição final nem onde há tubo)");
+if (fin.host) return adiar("instância hospedada em parede: fora do escopo desta migração");
+if (sim.bloqueios[id] != null) return adiar(sim.bloqueios[id]);
+if (typeof ctx.avaliar !== "function") return adiar("sem o avaliador de famílias neste contexto");
+var tipoAntigo = fin.tipoId && tem(regra.tipos, fin.tipoId) ? fin.tipoId : ((fin.tipoId === "" || fin.tipoId == null) ? regra.tipoPadrao : null);
+if (tipoAntigo == null) return adiar("tipo \"" + fin.tipoId + "\" não está no mapa de tipos da família " + fin.famId);
+var tipoNovo = regra.tipos[tipoAntigo];
+var defNova = typeof ctx.familia === "function" ? ctx.familia(regra.para) : null;
+var chavesValidas = paramsDeInstancia(defNova), instNova = {}, descartadas = [], instAnt = fin.inst || {};
+Object.keys(instAnt).forEach(function (k) { if (tem(chavesValidas, k)) instNova[k] = instAnt[k]; else descartadas.push(k); });
+var avAnt = ctx.avaliar(fin.famId, tipoAntigo, instAnt), avNov = ctx.avaliar(regra.para, tipoNovo, instNova);
+if (!avAnt || avAnt.ok === false) return adiar("a família antiga " + fin.famId + " não avalia neste contexto");
+if (!avNov || avNov.ok === false) return adiar("a família nova " + regra.para + " (tipo " + tipoNovo + ") não está carregada ou não avalia");
+var extras = arr(avNov.conectores).filter(function (kn) { return !conectorPorId(avAnt, kn.id) && !kn.opcional; }).map(function (kn) { return String(kn.id); });
+if (extras.length) return adiar("a família nova tem conector que a antiga não tinha (" + extras.join(", ") + "): é outra função; fica com a família antiga");
+var antes = { id: id, x: num(fin.x, 0), y: num(fin.y, 0), z: num(fin.z, 0), rotY: num(fin.rotY, 0) }, novo = { x: antes.x, y: antes.y, z: antes.z, rotY: antes.rotY };
+var c = Math.cos(antes.rotY), s = Math.sin(antes.rotY), avisos = [];
+if (regra.ancora !== "origem") {
+var ko = conectorPorId(avAnt, regra.ancora), kn2 = conectorPorId(avNov, regra.ancora);
+if (!ko || !kn2) return adiar("âncora \"" + regra.ancora + "\" ausente em " + (!ko ? fin.famId : regra.para));
+var P = mundo(antes, ko);
+novo.x = r4(P.x - (num(kn2.x, 0) * c + num(kn2.z, 0) * s));
+novo.y = regra.alinhar === "xz" ? antes.y : r4(P.y - num(kn2.y, 0));
+novo.z = r4(P.z - (-num(kn2.x, 0) * s + num(kn2.z, 0) * c));
+}
+var dx = r4(novo.x - antes.x), dy = r4(novo.y - antes.y), dz = r4(novo.z - antes.z);
+if (Math.sqrt(dx * dx + dz * dz) > L.deslocamentoHorizontalMax_m) return adiar("deslocamento horizontal de " + r4(Math.sqrt(dx * dx + dz * dz)) + " m acima do limite de " + L.deslocamentoHorizontalMax_m + " m");
+var limV = typeof regra.deslocamentoVerticalMax_m === "number" ? regra.deslocamentoVerticalMax_m : L.deslocamentoVerticalMax_m;
+if (Math.abs(dy) > limV) return adiar("deslocamento vertical de " + dy + " m acima do limite de " + limV + " m");
+if ((dx || dy || dz) && sim.outras[id]) return adiar("a posição da peça também é alterada por outra operação (girar, esticar…): o deslocamento do ponto de ligação não se reaplica com segurança");
+var residuos = [], semEquivalente = [];
+arr(avAnt.conectores).forEach(function (ka) {
+var kb = conectorPorId(avNov, ka.id);
+if (!kb) { semEquivalente.push(String(ka.id)); return; }
+var d = dist3(mundo(antes, ka), mundo(novo, kb));
+if (d > L.toleranciaLigacao_m + 1e-9) residuos.push({ conector: String(ka.id), cm: Math.round(d * 1000) / 10 });
+});
+var presos = [];
+arr(avAnt.conectores).forEach(function (ka) {
+var sumiu = semEquivalente.indexOf(String(ka.id)) >= 0, rs = residuos.filter(function (r2) { return r2.conector === String(ka.id); })[0];
+if ((sumiu || rs) && ligadoA(mundo(antes, ka))) presos.push(String(ka.id) + (sumiu ? " (some na família nova)" : " (" + rs.cm + " cm)"));
+});
+if (presos.length) return adiar("conector ligado a tubo ficaria a mais de " + Math.round(L.toleranciaLigacao_m * 100) + " cm: " + presos.join(", ") + " (a instância fica com a família antiga)");
+function mapTipo(t) { if (t === "" || t == null) return tipoNovo; return tem(regra.tipos, t) ? regra.tipos[t] : tipoNovo; }
+function mapInst(inst) { var o = {}; Object.keys(inst || {}).forEach(function (k) { if (tem(chavesValidas, k)) o[k] = inst[k]; }); return o; }
+e.refs.forEach(function (r) {
+var o = porOp[idxRef(r)].op;
+if (o.op === "familia") { o.famId = regra.para; o.migradoDe = fin.famId; o.migracaoV = VERSAO; }
+if (o.op === "instancia" && o.famId != null) o.famId = regra.para;
+if (o.op === "familia" || o.tipoId != null) o.tipoId = mapTipo(o.tipoId);
+if (o.inst) o.inst = mapInst(o.inst);
+});
+if (dx || dz) e.opsX.forEach(function (rx) {
+var ox = porOp[idxRef(rx)].op;
+if (ox.op === "mover") { if (ox.cx != null || ox.cz != null) { ox.cx = r4(num(ox.cx, antes.x) + dx); ox.cz = r4(num(ox.cz, antes.z) + dz); } }
+else if (ox.op === "familia") { ox.x = r4(num(ox.x, 0) + dx); ox.z = r4(num(ox.z, 0) + dz); }
+else { if (ox.x != null) ox.x = r4(num(ox.x, 0) + dx); if (ox.z != null) ox.z = r4(num(ox.z, 0) + dz); }
+});
+if (dy) { var ultY = e.opsY.length ? porOp[idxRef(e.opsY[e.opsY.length - 1])].op : porOp[idxRef(e.refs[0])].op; ultY.y = novo.y; }
+if (descartadas.length) avisos.push("parâmetros de instância sem equivalente na família nova (descartados): " + descartadas.join(", "));
+if (semEquivalente.length) avisos.push("conector(es) da família antiga sem equivalente na nova: " + semEquivalente.join(", ") + " (soltos: o ponto de ligação deixa de existir)");
+res.trocas.push({ id: id, de: fin.famId, para: regra.para, tipoDe: tipoAntigo, tipoPara: tipoNovo, ancora: regra.ancora,
+deslocamento: { dx: dx, dy: dy, dz: dz }, residuos: residuos, semEquivalente: semEquivalente, instDescartada: descartadas, avisos: avisos, versao: VERSAO });
+});
+if (res.trocas.length) { res.ops = saida; res.mudou = true; }
+return res;
+}
+function chaveLinha(l) { return [l.obra || "", l.tipo, l.id, l.de, l.para, l.tipoPara || "", l.motivo || ""].join("|"); }
+function registrar(r, quando, obra) {
+var linhas = [], q = quando || new Date().toISOString();
+arr(r && r.trocas).forEach(function (t) { linhas.push({ quando: q, obra: obra || "", tipo: "troca", id: t.id, de: t.de, para: t.para, tipoDe: t.tipoDe, tipoPara: t.tipoPara, deslocamento: t.deslocamento, residuos: t.residuos, descartados: t.instDescartada, avisos: t.avisos }); });
+arr(r && r.adiadas).forEach(function (a) { linhas.push({ quando: q, obra: obra || "", tipo: "adiada", id: a.id, de: a.de, para: a.para, motivo: a.motivo }); });
+if (!linhas.length) return linhas;
+var ant = [], novas = [];
+try { if (global.localStorage) { ant = JSON.parse(global.localStorage.getItem(CHAVE_LOG) || "[]"); if (!Array.isArray(ant)) ant = []; } } catch (e1) { ant = []; }
+var vistas = {}; ant.forEach(function (l) { vistas[chaveLinha(l)] = 1; });
+linhas.forEach(function (l) { var k = chaveLinha(l); if (!vistas[k]) { vistas[k] = 1; novas.push(l); } });
+if (!novas.length) return novas;
+try { if (global.localStorage) global.localStorage.setItem(CHAVE_LOG, JSON.stringify(ant.concat(novas).slice(-TETO_LOG))); } catch (e2) { }
+try { if (global.console && global.console.info) global.console.info("[famhidmigra] " + novas.length + " linha(s) nova(s) no log", novas); } catch (e3) { }
+return novas;
+}
+function lerLog() { try { return JSON.parse((global.localStorage && global.localStorage.getItem(CHAVE_LOG)) || "[]"); } catch (e) { return []; } }
+function resumo(r) {
+var tr = arr(r && r.trocas), ad = arr(r && r.adiadas), t = [], descart = [], motivos = {};
+if (!tr.length && !ad.length) return "";
+t.push(tr.length + (tr.length === 1 ? " peça atualizada" : " peças atualizadas") + " para o catálogo; " + ad.length + (ad.length === 1 ? " mantida" : " mantidas") + " como estavam");
+tr.forEach(function (x) { arr(x.instDescartada).forEach(function (k) { if (descart.indexOf(k) < 0) descart.push(k); }); });
+ad.forEach(function (x) { var m = String(x.motivo || "").split(":")[0].slice(0, 70); motivos[m] = (motivos[m] || 0) + 1; });
+if (ad.length) t.push("mantidas por: " + Object.keys(motivos).map(function (m) { return m + " (" + motivos[m] + ")"; }).join("; "));
+if (descart.length) t.push("parâmetros descartados: " + descart.join(", "));
+t.push("detalhe no log");
+return t.join(". ") + ".";
+}
+function alvos() { var t = tabela(), o = {}; Object.keys(t).forEach(function (k) { o[t[k].para] = 1; }); return Object.keys(o); }
+function usaDestino(ops) {
+var al = alvos(), achou = false;
+referencias(ops).forEach(function (r) { var o = r.op; if (o && (o.op === "familia" || o.op === "instancia") && o.famId != null && al.indexOf(String(o.famId)) >= 0) achou = true; });
+return achou;
+}
+var FamHidMigra = {
+VERSAO: VERSAO, CHAVE_LOG: CHAVE_LOG,
+ehAlias: ehAlias, canonico: canonico, aliasDe: aliasDe, tabela: tabela, limites: limites,
+migrarOps: migrarOps, registrar: registrar, lerLog: lerLog, resumo: resumo, alvos: alvos, usaDestino: usaDestino, precisaHidro: false
+};
+global.FamHidMigra = FamHidMigra;
+if (typeof module !== "undefined" && module.exports) module.exports = FamHidMigra;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/cfb.js ==== */
 try {
 (function (global) {
@@ -73322,7 +73560,7 @@ solidos: [
 quantitativo: { unidade: "m", quantidade: "Comprimento", codigo: "", fonte: "", descricao: "Bancada de granito com gabinete" }
 },
 {
-id: "ra-bacia", nome: "Bacia sanitária com caixa acoplada", categoria: "loucas", hospedagem: "livre",
+id: "ra-bacia", oculta: true, substituidaPor: "hid-bacia-caixa-acoplada", nome: "Bacia sanitária com caixa acoplada", categoria: "loucas", hospedagem: "livre",
 descricao: "Louça simplificada em volumes (base, assento, caixa acoplada). Encostar o fundo (Z negativo) na parede.",
 parametros: [
 { nome: "Altura_assento", tipoDado: "comprimento", escopo: "tipo", valor: 0.40, grupo: "Dimensões" },
@@ -73346,7 +73584,7 @@ conectores: [
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Bacia sanitária com caixa acoplada" }
 },
 {
-id: "ra-caixa-dagua", nome: "Caixa d'água cilíndrica", categoria: "equipamento", hospedagem: "livre",
+id: "ra-caixa-dagua", oculta: true, substituidaPor: "hid-caixa-dagua", nome: "Caixa d'água cilíndrica", categoria: "equipamento", hospedagem: "livre",
 descricao: "Reservatório de polietileno, com tampa. A capacidade é parâmetro do tipo.",
 parametros: [
 { nome: "Capacidade_L", tipoDado: "inteiro", escopo: "tipo", valor: 1000, grupo: "Dados" },
@@ -73374,7 +73612,7 @@ conectores: [
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Caixa d'água de polietileno" }
 },
 {
-id: "ra-lavatorio", nome: "Lavatório suspenso", categoria: "loucas", hospedagem: "livre", previa: "modelador",
+id: "ra-lavatorio", oculta: true, substituidaPor: "hid-lavatorio-suspenso", nome: "Lavatório suspenso", categoria: "loucas", hospedagem: "livre", previa: "modelador",
 descricao: "Lavatório de louça suspenso. O fundo (Z negativo) encosta na parede; esgoto e água fria saem da parede.",
 parametros: [
 { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.45, grupo: "Dimensões" },
@@ -73396,7 +73634,7 @@ conectores: [
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Lavatório de louça suspenso" }
 },
 {
-id: "ra-chuveiro", nome: "Chuveiro", categoria: "loucas", hospedagem: "livre", previa: "modelador",
+id: "ra-chuveiro", oculta: true, substituidaPor: "hid-chuveiro", nome: "Chuveiro", categoria: "loucas", hospedagem: "livre", previa: "modelador",
 descricao: "Chuveiro de parede. O ponto de água fica na parede (Z negativo), na altura do braço.",
 parametros: [
 { nome: "Altura_ponto", tipoDado: "comprimento", escopo: "instancia", valor: 2.10, grupo: "Dimensões", descricao: "Do piso até o ponto de água" },
@@ -73511,7 +73749,7 @@ solidos: [
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Estação elevatória de esgoto BombUp 230 (Águas Claras), 2,0 HP" }
 },
 {
-id: "ra-lavatorio-coluna", previa: "modelador", nome: "Lavatório com coluna", categoria: "loucas", hospedagem: "livre",
+id: "ra-lavatorio-coluna", oculta: true, substituidaPor: "hid-lavatorio-coluna", previa: "modelador", nome: "Lavatório com coluna", categoria: "loucas", hospedagem: "livre",
 descricao: "Louça simplificada (cuba e coluna). Medidas usuais de catálogo — conferir o modelo comprado. Encostar o fundo (Z negativo) na parede.",
 parametros: [
 { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.50, grupo: "Dimensões" },
@@ -73531,7 +73769,7 @@ solidos: [
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Lavatório de louça com coluna" }
 },
 {
-id: "ra-tanque", previa: "modelador", nome: "Tanque de lavar com coluna", categoria: "loucas", hospedagem: "livre",
+id: "ra-tanque", oculta: true, substituidaPor: "hid-tanque-lavar", previa: "modelador", nome: "Tanque de lavar com coluna", categoria: "loucas", hospedagem: "livre",
 descricao: "Tanque simplificado (cuba e coluna). Medidas usuais de catálogo — conferir o modelo comprado. Encostar o fundo (Z negativo) na parede.",
 parametros: [
 { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.60, grupo: "Dimensões" },
@@ -73773,6 +74011,9 @@ quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao
 }
 );
 (function () {
+LISTA.forEach(function (f) { if (/^ra-registro-(gaveta|esfera|pressao)$/.test(f.id)) f.oculta = true; });
+})();
+(function () {
 var FP = global.FamiliasPiscina || null;
 if (!FP && typeof require === "function") { try { FP = require("./familiaspiscina.js"); } catch (eFP) { FP = null; } }
 if (FP && FP.lista) FP.lista().forEach(function (f) { LISTA.push(f); });
@@ -73833,6 +74074,7 @@ if ((b.solidos || []).map(function (s) { return String(s.id); }).sort().join(","
 return null;
 },
 lista: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas); }))); },
+listaMenu: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas) && !f.oculta; }))); },
 obter: function (id, todas) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id && visivel(LISTA[i], todas)) return JSON.parse(JSON.stringify(LISTA[i])); return null; }
 };
 global.FamiliasRA = FamiliasRA;
@@ -89225,6 +89467,8 @@ return A.variantes[v] ? v : Object.keys(A.variantes)[0];
 }
 var ACESSORIO_DA_FAM = {};
 Object.keys(ACESSORIOS).forEach(function (k) { ACESSORIO_DA_FAM[ACESSORIOS[k].fam] = k; });
+var EQUIV_HID = { "hid-registro-gaveta": "registro_gaveta", "hid-registro-pressao": "registro_pressao", "hid-registro-esfera": "registro_esfera" };
+Object.keys(EQUIV_HID).forEach(function (f) { ACESSORIO_DA_FAM[f] = EQUIV_HID[f]; });
 var BITOLA_REF = { pvc_soldavel: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 60: "2", 75: "2 1/2", 85: "3", 110: "4" },
 ppr: { 20: "1/2", 25: "3/4", 32: "1", 40: "1 1/4", 50: "1 1/2", 63: "2", 75: "2 1/2", 90: "3", 110: "4" },
 cpvc: { 15: "1/2", 22: "3/4", 28: "1", 35: "1 1/4", 42: "1 1/2", 54: "2" } };
@@ -89249,7 +89493,7 @@ var L = num(o.comprimento, ACESSORIO_PADRAO); if (!(L >= ACESSORIO_MIN - 1e-9 &&
 var S = SISTEMAS[o.sistema]; if (!S) return null;
 var variante = A.variantes[o.tipoId] ? o.tipoId : Object.keys(A.variantes)[0], V = A.variantes[variante];
 var a = p6(soma(c, d, -L / 2)), b = p6(soma(c, d, L / 2)), dn = num(o.dn, 0);
-var out = { id: o.id, famId: o.famId, tipoId: o.tipoId, acessorio: k, variante: variante, nome: A.nome, sistema: o.sistema, material: o.material, dn: dn,
+var out = { id: o.id, famId: o.famId, tipoId: o.tipoId, produto: o.produto != null ? txt(o.produto) : undefined, acessorio: k, variante: variante, nome: A.nome, sistema: o.sistema, material: o.material, dn: dn,
 centro: p6(c), dir: p6(d), comprimento: r4(L), a: a, b: b, vertical: Math.abs(d.y) > 0.95, trecho: o.trecho != null ? o.trecho : null, novoId: o.novoId != null ? o.novoId : null, avisos: [] };
 if (num(o.giro, 0) % 360) out.giro = ((num(o.giro, 0) % 360) + 360) % 360;
 var nm = A.nome.toLowerCase();
@@ -89265,6 +89509,7 @@ if (est.acessorios[o.id] || est.trechos[o.id] || est.pecas[o.id]) return false;
 var L = num(o.comprimento, ACESSORIO_PADRAO), P = pt(o);
 if (!P || !(L >= ACESSORIO_MIN && L <= ACESSORIO_MAX)) return false;
 var reg = { id: o.id, famId: o.famId, tipoId: txt(o.tipoId), comprimento: r4(L) };
+if (o.produto != null && txt(o.produto)) reg.produto = txt(o.produto);
 if (num(o.giro, 0) % 360) reg.giro = ((num(o.giro, 0) % 360) + 360) % 360;
 if (o.trecho != null) {
 var t = est.trechos[o.trecho];
@@ -102689,7 +102934,7 @@ return { id: "vistas", rotulo: "Vistas (" + (N ? N.ORGANIZACOES[org] : "todas") 
 },
 ramoFamilias: function () {
 var lista = [], porCat = {}, ordem = [];
-try { var FR = global.FamiliasRA; lista = FR && FR.lista ? arr(FR.lista()) : []; } catch (e) { lista = []; }
+try { var FR = global.FamiliasRA; lista = FR && FR.lista ? arr(FR.listaMenu ? FR.listaMenu() : FR.lista()) : []; } catch (e) { lista = []; }
 var F = global.Familia, nomes = (F && F.CATEGORIAS) || {};
 lista.forEach(function (f) { var c = f.categoria || "generico"; if (!porCat[c]) { porCat[c] = []; ordem.push(c); } porCat[c].push(f); });
 var filhos = ordem.sort().map(function (c) {
@@ -102739,30 +102984,37 @@ return true;
 var FamiliaUI = {
 _ctx: null, _el: null, _modo: "biblioteca", _edit: null, _busca: "", _tiposSel: {},
 configurar: function (ctx) { this._ctx = ctx || {}; this._ixTarefa = null; },
-biblioteca: function () {
+biblioteca: function (opts) {
 var mapa = {}, out = [];
 (global.FamiliasRA ? FamiliasRA.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
 (global.FamiliasOrc ? FamiliasOrc.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
 (global.FamiliasMarcenaria ? FamiliasMarcenaria.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
 var comHidro = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()), selfF = this;
-if (comHidro && !global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro") && !this._hidroPedido) {
+var regHid = !!(!comHidro && opts && opts.registro && global.FamHidMigra && FamHidMigra.precisaHidro);
+if ((comHidro || regHid) && !global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro") && !this._hidroPedido) {
 this._hidroPedido = true;
 Carregar.grupo("hidro").then(function () { try { selfF._sincronizarVisor(); if (selfF._el && selfF._modo === "biblioteca") selfF.render(); } catch (e) {} }, function () { selfF._hidroPedido = false; });
 }
 try { if (comHidro && global.HidFamilias) HidFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eH) {}
+try {
+if (regHid && global.HidFamilias) {
+var alvosM = {}; FamHidMigra.alvos().forEach(function (k) { alvosM[k] = 1; }); Object.keys(FamHidMigra.tabela()).forEach(function (k) { alvosM[k] = 1; });
+HidFamilias.todas().forEach(function (f) { if (alvosM[f.id]) { f._origem = "ra"; mapa[f.id] = f; } });
+}
+} catch (eHm) {}
 try { if (comHidro && global.ClimFamilias) ClimFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eC) {}
 try { if (comHidro && global.HidTanques) HidTanques.familias().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eT) {}
 try { if (comHidro && global.HidPiscinaFam) HidPiscinaFam.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eP) {}
 var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
 minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
-Object.keys(mapa).forEach(function (k) { out.push(mapa[k]); });
+Object.keys(mapa).forEach(function (k) { if (!mapa[k].oculta || (opts && opts.registro)) out.push(mapa[k]); });
 out.sort(function (a, b) { return String(a.categoria).localeCompare(String(b.categoria)) || String(a.nome).localeCompare(String(b.nome)); });
 return out;
 },
 obter: function (id) {
 var ix = this._ixTarefa;
 if (!ix) {
-ix = {}; var l = this.biblioteca();
+ix = {}; var l = this.biblioteca({ registro: true });
 for (var i = 0; i < l.length; i++) if (!Object.prototype.hasOwnProperty.call(ix, l[i].id)) ix[l[i].id] = l[i];
 this._ixTarefa = ix; var self = this;
 try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this._ixTarefa = null; }
@@ -102770,7 +103022,7 @@ try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this
 return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
 },
 _esquecerIndice: function () { this._ixTarefa = null; },
-_sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca()); } catch (e) {} },
+_sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca({ registro: true })); } catch (e) {} },
 montar: function (el) { this._el = el; this.render(); },
 render: function () {
 if (!this._el) return;
@@ -103296,7 +103548,7 @@ return null;
 if (!b) return;
 var r = M.geometriaDeTexto(texto(b)); if (r.ok) { M.registrarGeometria(ref, r.geometria); n++; }
 }, function () {}).then(function () { delete self._carregando[ref]; });
-})).then(function () { if (n) { try { if (global.BIM && BIM.familiasDefinir && global.FamiliaUI) BIM.familiasDefinir(FamiliaUI.biblioteca()); } catch (e) {} } return n; });
+})).then(function () { if (n) { try { if (global.BIM && BIM.familiasDefinir && global.FamiliaUI) BIM.familiasDefinir(FamiliaUI.biblioteca({ registro: true })); } catch (e) {} } return n; });
 },
 explicarConversao: function (fam) {
 var corpo = "<p>\"" + esc(fam.nome) + "\" entrou do <b>.rfa</b> com os tipos e os parâmetros, mas sem a forma 3D: a geometria do .rfa fica num formato fechado do Revit que só o próprio Revit lê. No lugar dela há uma <b>caixa</b> com as medidas do tipo.</p>" +
@@ -105059,10 +105311,10 @@ ro("i:faixa", "Faixa SINAPI", { baixa: "baixa (0,30 m)", media: "média (1,30 m)
 if (c.peca === "caixa_octogonal") ps.push({ id: "i:cota", rotulo: "Cota (laje)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.cota });
 secoes.push({ nome: "Peça", params: ps });
 if (c.sistema !== "eletrica") secoes.push({ nome: "Louças e caixa d'água (biblioteca RA, com ponto de ligação)", params: [
-{ id: "i:fam-bacia", rotulo: "Bacia sanitária", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-bacia", "conv"); } },
-{ id: "i:fam-lav", rotulo: "Lavatório", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-lavatorio", "l4535"); } },
-{ id: "i:fam-ch", rotulo: "Chuveiro", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-chuveiro", "ch"); } },
-{ id: "i:fam-cx", rotulo: "Caixa d'água", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-caixa-dagua", "c1000"); } }] });
+{ id: "i:fam-bacia", rotulo: "Bacia sanitária", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-bacia-caixa-acoplada", "t-celite-56355-56570-793"); } },
+{ id: "i:fam-lav", rotulo: "Lavatório", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-lavatorio-suspenso", "t-celite-20001-20202-812"); } },
+{ id: "i:fam-ch", rotulo: "Chuveiro", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-chuveiro", "t-docol-00118406-1543"); } },
+{ id: "i:fam-cx", rotulo: "Caixa d'água", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-caixa-dagua", "t-fortlev-0-201-000-7-1714"); } }] });
 if (c.sistema === "eletrica") secoes.push({ nome: "Traçar", params: [{ id: "i:ir-elet", rotulo: "Eletroduto", tipo: "botao", rotuloBotao: "Traçar eletroduto", fn: function () { self.armar("eletroduto"); } }] });
 } else {
 var trac = [
@@ -105136,7 +105388,8 @@ this._planoCota();
 this.dica();
 },
 NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição",
-"ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água" },
+"ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água",
+"hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
 colocarFamilia: function (famId, tipoId) {
 var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
 try { if (G && G._famSync) G._famSync(); } catch (e) {}
@@ -106730,7 +106983,7 @@ function itensFamilias() {
 var vistos = {}, out = [];
 function juntar(lista, grupoFn, origem) {
 arr(lista).forEach(function (f) {
-if (!f || !f.id || vistos[f.id]) return;
+if (!f || !f.id || vistos[f.id] || f.oculta) return;
 var g = grupoFn(f); if (!g) return;
 vistos[f.id] = 1; out.push(itemFamilia(f, g, origem));
 });
@@ -106741,7 +106994,7 @@ try { if (HF && HF.todas) juntar(HF.todas(), grupoHid, "HidFamilias"); } catch (
 try { if (HT && HT.familias) juntar(HT.familias(), function () { return "Reservatórios e tanques"; }, "HidTanques"); } catch (e2) {}
 try { if (PF && PF.todas) juntar(PF.todas(), function () { return "Piscina"; }, "HidPiscinaFam"); } catch (e3) {}
 try { if (CF && CF.todas) juntar(CF.todas(), function () { return "Climatização"; }, "ClimFamilias"); } catch (e4) {}
-try { if (FR && FR.lista) juntar(FR.lista(), function (f) { if (noAcessorio[f.id]) return null; return /^ra-(bacia|lavatorio|chuveiro|pia|tanque|torneira)/.test(f.id) ? "Louças e metais" : (/^ra-caixa-dagua/.test(f.id) ? "Reservatórios e tanques" : null); }, "FamiliasRA"); } catch (e5) {}
+try { if (FR && FR.lista) juntar(FR.listaMenu ? FR.listaMenu() : FR.lista(), function (f) { if (noAcessorio[f.id]) return null; return /^ra-(bacia|lavatorio|chuveiro|pia|tanque|torneira)/.test(f.id) ? "Louças e metais" : (/^ra-caixa-dagua/.test(f.id) ? "Reservatórios e tanques" : null); }, "FamiliasRA"); } catch (e5) {}
 var T = TI();
 try {
 arr(T && T.fontesEscritorio ? T.fontesEscritorio() : []).forEach(function (f) {
@@ -161010,6 +161263,7 @@ if (Lt < 2 * folga) return falha("O trecho " + t.id + " (" + fmt(Lt, 3) + " m) �
 s = Math.max(folga, Math.min(Lt - folga, s));
 var q = ponto(s);
 var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
+if (cfg.tipoId && !A.variantes[cfg.tipoId]) op.produto = String(cfg.tipoId);
 if (/registro/.test(String(chave))) { var fC = ladoJusante(estado, famAval, t, q, arr(ops).length) || ladoComodo(estado, q, famAval); if (fC) giro = ((giroPara(u, fC) + giro) % 360 + 360) % 360; }
 if (giro) op.giro = giro;
 return { ok: true, oQue: k, nome: A.nome, op: op, trecho: t.id, dn: t.dn, tipoId: tipo, ficha: fichaAc ? fichaAc.id : null, avisos: avisos, q: q, u: u,

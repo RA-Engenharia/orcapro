@@ -2001,6 +2001,11 @@
   }
   var ACESSORIO_DA_FAM = {};
   Object.keys(ACESSORIOS).forEach(function (k) { ACESSORIO_DA_FAM[ACESSORIOS[k].fam] = k; });
+  /* EQUIVALÊNCIA (27/10/2026, Lote 1a das famílias do Hidro): no MENU fica só a `hid-registro-*` (os tipos do catálogo: Docol, Tigre…); o motor a reconhece como o
+     MESMO acessório do `ra-registro-*` — divide o trecho, entra na tabela P12/SINAPI e leva a perda de carga do acessório. É TABELA de equivalência, não refatoração:
+     a variante (SINAPI, desenho no tubo) sai do lugar do tubo (varianteAuto) e o tipo do catálogo vai em `produto`, só como identificação do produto. */
+  var EQUIV_HID = { "hid-registro-gaveta": "registro_gaveta", "hid-registro-pressao": "registro_pressao", "hid-registro-esfera": "registro_esfera" };
+  Object.keys(EQUIV_HID).forEach(function (f) { ACESSORIO_DA_FAM[f] = EQUIV_HID[f]; });
   /* bitola de rosca do adaptador para o DN do tubo (mm → polegada).
      FONTE: ABNT NBR 5648 (tubo de PVC soldável — DN × referência). Os outros
      materiais ficam sem equivalência de propósito (pendente com o motivo). */
@@ -2037,7 +2042,7 @@
     var S = SISTEMAS[o.sistema]; if (!S) return null;
     var variante = A.variantes[o.tipoId] ? o.tipoId : Object.keys(A.variantes)[0], V = A.variantes[variante];
     var a = p6(soma(c, d, -L / 2)), b = p6(soma(c, d, L / 2)), dn = num(o.dn, 0);
-    var out = { id: o.id, famId: o.famId, tipoId: o.tipoId, acessorio: k, variante: variante, nome: A.nome, sistema: o.sistema, material: o.material, dn: dn,
+    var out = { id: o.id, famId: o.famId, tipoId: o.tipoId, produto: o.produto != null ? txt(o.produto) : undefined, acessorio: k, variante: variante, nome: A.nome, sistema: o.sistema, material: o.material, dn: dn,
                 centro: p6(c), dir: p6(d), comprimento: r4(L), a: a, b: b, vertical: Math.abs(d.y) > 0.95, trecho: o.trecho != null ? o.trecho : null, novoId: o.novoId != null ? o.novoId : null, avisos: [] };
     if (num(o.giro, 0) % 360) out.giro = ((num(o.giro, 0) % 360) + 360) % 360;   /* COLOCAÇÃO: giro do castelo/volante em torno do eixo (graus); 0 = o padrão */
     var nm = A.nome.toLowerCase();
@@ -2057,6 +2062,7 @@
     var L = num(o.comprimento, ACESSORIO_PADRAO), P = pt(o);
     if (!P || !(L >= ACESSORIO_MIN && L <= ACESSORIO_MAX)) return false;
     var reg = { id: o.id, famId: o.famId, tipoId: txt(o.tipoId), comprimento: r4(L) };
+    if (o.produto != null && txt(o.produto)) reg.produto = txt(o.produto);   /* o tipo do CATÁLOGO (hid-registro-*): identificação do produto, não muda a variante */
     if (num(o.giro, 0) % 360) reg.giro = ((num(o.giro, 0) % 360) + 360) % 360;   /* COLOCAÇÃO (js/biminstcolocar.js) */
     if (o.trecho != null) {
       var t = est.trechos[o.trecho];

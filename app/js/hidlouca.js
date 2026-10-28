@@ -699,6 +699,20 @@
       partes.unshift(mt);
       return partes;
     }
+    if (P.est > 0.5) {
+      /* DOCOL CLÁSSICO (catálogo geral pág. 186): flange Ø52 na parede (rosca G 1/2"), braço que sai HORIZONTAL e CURVA para baixo, crivo chato
+         Ø95,8. Cotas: 223,7 mm do fundo da parede à borda do crivo (P), 113,7 mm do eixo do braço à face do crivo (H), Ø95,8 (L). A inclinação do
+         crivo (~20° no desenho) não é modelada. O desenho vale para todo chuveiro de parede sem desenho cotado próprio (nota na família). */
+      var Rc = L / 2, zcc = Pp - Rc, yb = -(H - 0.068);
+      canopla(mt.m, [0, 0, 0], [0, 0, 1], 0.026, 0.014, q.n);
+      tubo(mt.m, [[0, 0, 0.01], [0, 0, 0.04], [0, 0, zcc], [0, yb, zcc]], 0.0105, q.n, { rc: Math.min(0.07, zcc * 0.45), arco: q.arco + 2 });
+      torno(mt.m, [[0.013, 0], [0.017, 0.008], [0.014, 0.018]], q.n, { c: [0, yb + 0.002, zcc], eixo: [0, -1, 0] });
+      torno(mt.m, [[0.02, 0.014], [Rc * 0.5, 0.020], [Rc * 0.95, 0.028], [Rc, 0.034], [Rc * 0.96, 0.038]], q.N, { c: [0, yb, zcc], eixo: [0, -1, 0] });
+      var cr3 = parte("crivo", "Face do crivo", PRETO);
+      torno(cr3.m, [[Rc * 0.9, 0], [Rc * 0.9, 0.002], [0, 0.004]], q.N, { c: [0, yb - 0.038, zcc], eixo: [0, -1, 0] });
+      partes.push(cr3); partes.unshift(mt);
+      return partes;
+    }
     tubo(mt.m, [[0, 0, 0.005], [0, 0, 0.04], [0, yc * 0.85, zc * 0.75], [0, yc, zc], [0, yc - 0.03, zc]], 0.0105, q.n, { rc: 0.045, arco: q.arco + 1 });
     {
       var R2 = L / 2;
@@ -865,6 +879,91 @@
     caixaR(tp.m, { x0: -R * 0.3, x1: R * 0.3, y0: 0, y1: 0.012, z0: -0.008, z1: 0.008, r: 0.004, rad: 0.006 }, q);
     [0.45, 0.75].forEach(function (k) { torno(tp.m, [[R * k, 0], [R * (k + 0.03), 0], [R * (k + 0.03), 0.003], [R * k, 0.003]], N, { c: [0, 0.0005, 0], fechado: true }); });
     partes.push(co, tp);
+    return partes;
+  }
+
+  /* ---------- REGISTROS E VÁLVULAS NO TUBO (27/10/2026): a peça avulsa (família ra-registro-*) desenha o MESMO que o tubo ----------
+     Quem desenha o registro/válvula no tubo é o HidGeo.registro (js/biminstgeo.js, perfis medidos nas famílias do fabricante: Deca para gaveta e pressão,
+     PVC soldável da Tigre/Amanco para a esfera, js/biminst.js ACESSORIOS para as variantes). Este gerador é só a PONTE: chama o HidGeo.registro na origem,
+     eixo do tubo em X e haste para +Y, e devolve as partes no formato do HidLouca — assim o ícone, a peça avulsa e o tubo ficam iguais.
+     P: C (face a face, m), DN (mm), ac (0 gaveta, 1 esfera, 2 pressão, 3 retenção), vi (índice da variante em REG_VAR[ac]). */
+  var REG_AC = ["registro_gaveta", "registro_esfera", "registro_pressao", "valvula_retencao"];
+  var REG_VAR = [[["bruto", "latao"], ["acabamento", "latao"]],
+    [["soldavel", "pvc_soldavel"], ["roscavel", "pvc_roscavel"], ["borboleta", "pvc_roscavel"]],
+    [["soldavel", "pvc_soldavel"], ["roscavel", "pvc_roscavel"], ["bruto", "latao"], ["acabamento", "latao"]],
+    [["bronze", "bronze"], ["pe_crivo", "bronze"], ["pvc", "pvc_soldavel"]]];
+  var REG_MAT = { latao: LATAO, corpo: PVC, cromado: "Metal cromado", volante: "Vermelho" };
+  function geoRegistroTubo(P, q) {
+    var nivel = q && q.N <= 12 ? 2 : (q && q.N <= 20 ? 1 : 0);   /* NIVEIS: N 32 / 20 / 12 */
+    var G = global.HidGeo || (typeof require === "function" ? (function () { try { return require("./biminstgeo.js"); } catch (e) { return null; } })() : null);
+    G = (global.HidGeo || G);
+    if (!G || !G.registro) throw new Error("HidGeo.registro indisponível (js/biminstgeo.js)");
+    var ac = Math.round(P.ac), vi = Math.round(P.vi), V = (REG_VAR[ac] || [])[vi];
+    if (!V) throw new Error("variante " + vi + " inexistente em " + REG_AC[ac]);
+    var r = G.registro({ centro: [0, 0, 0], dir: [1, 0, 0], comprimento: P.C, dn: P.DN, material: "pvc_soldavel", variante: V[0], acessorio: REG_AC[ac], varMaterial: V[1] }, { lod: nivel ? "longe" : "perto", frente: [0, 1, 0] });
+    var ps = r.partes || [];
+    if (nivel === 2 && ps.length > 1) {   /* nível 2 (longe): só a maior parte — a silhueta do corpo */
+      ps = [ps.reduce(function (a, b) { return b.malha.idx.length > a.malha.idx.length ? b : a; })];
+    }
+    return ps.map(function (q, i) {
+      var pt = parte(q.papel + (i ? "-" + i : ""), q.papel, REG_MAT[q.papel] || PVC, false);
+      pt.m.v = q.malha.pos.slice(); pt.m.f = q.malha.idx.slice();
+      return pt;
+    });
+  }
+
+  /* ---------- CAIXAS ENTERRADAS DE PVC DN300 — Amanco Wavin, ficha técnica FTC000003 (rev. ago/2024), págs. 7 a 10 ----------
+     (27/10/2026, "famílias iguais ao catálogo"): a de gordura, a de inspeção e a de areia eram o MESMO cilindro com outra altura. Cada uma agora
+     tem a forma do produto, com as letras do desenho da ficha (medidas aproximadas, mm):
+       GORDURA   (pág. 7)  A Ø do corpo 308 · B altura do corpo 461 · C largura com os bocais 422 · E altura total 508 (= B + G) · F lado da tampa 321 ·
+                           G espessura da tampa 47 · bocais: D1 DN100 (saída), D2 DN75 e D3 DN50/40 (entradas);
+       INSPEÇÃO  (pág. 8)  A Ø do tambor 332 · B altura 201 · C1 424 (largura nos bocais, eixo X) · C2 386 (eixo Z) · E altura total 248 (= B + G) · F 321 · G 47 ·
+                           4 bocais DN100 (D1, D2);
+       AREIA     (NBR 10844, caixa de areia = bolsão de sedimentos abaixo da geratriz do tubo): o MESMO tambor da inspeção sobre um PROLONGADOR DN300 × 200
+                           (pág. 10, cód. 70900: comprimento 200, Ø externo 307) — o bolsão de areia de ≥ 0,15 m (NBR 10844).
+     Origem: o piso acabado, no eixo; a face de cima da tampa em y = 0. A altura do bocal NÃO vem em cota da ficha (só no desenho): a posição é lida
+     do desenho, em fração do corpo — está na lista "a conferir" da família. P: D (Ø corpo), H (altura corpo), Ft/Gt (tampa), Cx/Cz (largura nos bocais),
+     Pr (prolongador, 0 = sem), Dn (DN dos bocais, mm), n3 (1 = o terceiro bocal DN50/40 da gordura). */
+  function bocalX(m, x0, x1, y, z, r, N) { tubo(m, [[x0, y, z], [x1, y, z]], r, Math.max(8, N), { rc: 0 }); }
+  function bocalZ(m, x, y, z0, z1, r, N) { tubo(m, [[x, y, z0], [x, y, z1]], r, Math.max(8, N), { rc: 0 }); }
+  function tampaQuadrada(tp, Ft, Gt, q, grelha) {
+    caixaR(tp.m, { x0: -Ft / 2, x1: Ft / 2, y0: -Gt, y1: -0.006, z0: -Ft / 2, z1: Ft / 2, r: 0.006, rad: 0.014 }, q);
+    caixaR(tp.m, { x0: -Ft * 0.44, x1: Ft * 0.44, y0: -0.007, y1: 0, z0: -Ft * 0.44, z1: Ft * 0.44, r: 0.002, rad: 0.01 }, q);
+    if (grelha) for (var i = 1; i <= 5; i++) { var z = -Ft * 0.44 + Ft * 0.88 * i / 6; caixaR(tp.m, { x0: -Ft * 0.4, x1: Ft * 0.4, y0: 0, y1: 0.004, z0: z - 0.004, z1: z + 0.004, r: 0.001, rad: 0.002 }, q); }
+  }
+  function tamborCaixa(co, R, yTop, yBase, N, nervuras) {
+    var pf = [[R * 0.97, yBase], [R, yBase + 0.01]], i;
+    for (i = 1; i <= nervuras; i++) { var y = yBase + (yTop - yBase - 0.03) * i / (nervuras + 1); pf.push([R, y - 0.01], [R * 1.012, y - 0.005], [R, y]); }
+    pf.push([R, yTop - 0.02], [R * 1.05, yTop - 0.014], [R * 1.05, yTop]);
+    torno(co.m, pf, N, { c: [0, 0, 0] });
+  }
+  function geoCaixaGordura(P, q) {
+    var R = P.D / 2, B = P.H, Gt = P.Gt, N = q.N, partes = [], co = parte("corpo", "Corpo", PVC), tp = parte("tampa", "Tampa", CLARO), bo = parte("bocais", "Bocais", PVC);
+    var yTop = -Gt, yBase = -Gt - B, rB = (P.Dn + 14) / 2000;   // bolsa = DN + 14 mm (bolsa de esgoto série normal)
+    tamborCaixa(co, R, yTop, yBase, N, 4);
+    tampaQuadrada(tp, P.Ft, Gt, q, true);
+    var L = Math.max(0.03, (P.Cx - P.D) / 2), yE = yTop - B * 0.12, ySd = yTop - B * 0.42;
+    bocalX(bo.m, R * 0.96, R + L, ySd, 0, rB, N);                                                          // D1 DN100 — saída (+X)
+    bocalX(bo.m, -R - L, -R * 0.96, yE, -R * 0.2, (75 + 14) / 2000, N);                                    // D2 DN75 — entrada (−X)
+    if (P.n3 > 0.5) bocalX(bo.m, -R - L, -R * 0.96, yE, R * 0.28, (50 + 14) / 2000, N);                    // D3 DN50/40 — entrada (−X)
+    partes.push(co, tp, bo);
+    return partes;
+  }
+  function geoCaixaInspecao(P, q) {
+    var R = P.D / 2, B = P.H, Gt = P.Gt, N = q.N, partes = [], co = parte("corpo", "Tambor", PVC), tp = parte("tampa", "Tampa", CLARO), bo = parte("bocais", "Bocais", PVC);
+    var yTop = -Gt, yBase = -Gt - B, rB = (P.Dn + 14) / 2000;
+    tamborCaixa(co, R, yTop, yBase, N, 1);
+    if (P.Pr > 0) {   // prolongador DN300: Ø externo 307, na vertical sob o tambor (pág. 10)
+      var Rp = 0.307 / 2, pf = [[Rp * 0.98, yBase - P.Pr], [Rp, yBase - P.Pr + 0.008], [Rp, yBase + 0.01], [R * 0.97, yBase + 0.01]];
+      torno(co.m, pf, N, { c: [0, 0, 0] });
+    }
+    tampaQuadrada(tp, P.Ft, Gt, q, true);
+    var y = yTop - B * 0.5, Lx = Math.max(0.02, (P.Cx - P.D) / 2), Lz = Math.max(0.02, (P.Cz - P.D) / 2);
+    bocalX(bo.m, R * 0.96, R + Lx, y, 0, rB, N);        // +X
+    bocalX(bo.m, -R - Lx, -R * 0.96, y, 0, rB, N);      // −X
+    bocalZ(bo.m, 0, y, R * 0.96, R + Lz, rB, N);        // +Z
+    bocalZ(bo.m, 0, y, -R - Lz, -R * 0.96, rB, N);      // −Z
+    partes.push(co, tp, bo);
     return partes;
   }
 
@@ -1116,6 +1215,7 @@
     lavatorio: geoLavatorio, cuba: geoCuba, pia: geoPia, tanque: geoTanque, mictorio: geoMictorio,
     chuveiro: geoChuveiro, ducha_higienica: geoDucha, torneira: geoTorneira, misturador: geoMisturador, registro: geoRegistro,
     valvula_descarga: geoValvula, caixa_descarga_embutida: geoCaixaEmbutida, caixa_sifonada: geoCaixaSifonada, ralo: geoRalo, caixa_cil: geoCaixaCil,
+    caixa_gordura: geoCaixaGordura, caixa_inspecao: geoCaixaInspecao, registro_tubo: geoRegistroTubo,
     reservatorio: geoReservatorio, bomba: geoBomba, aquecedor: geoAquecedor, boiler: geoBoiler, base_caixa: geoBaseCaixa,
     hiwall: geoHiwall, condensadora: geoCondensadora, cassete: geoCassete, pisoteto: geoPisoteto
   };
@@ -1123,11 +1223,11 @@
   var ORCAMENTO = {
     bacia_caixa: 4000, bacia_valvula: 3300, lavatorio: 4300, cuba: 2600, pia: 7000, tanque: 3300, mictorio: 1800,
     chuveiro: 1600, ducha_higienica: 1900, torneira: 1000, misturador: 1600, registro: 1250, valvula_descarga: 800, caixa_descarga_embutida: 1400,
-    caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
+    caixa_sifonada: 2300, ralo: 2200, caixa_cil: 2300, caixa_gordura: 3900, caixa_inspecao: 4000, registro_tubo: 4000, reservatorio: 3200, bomba: 6000, aquecedor: 1350, boiler: 2600, base_caixa: 9000,
     hiwall: 1400, condensadora: 4200, cassete: 2150, pisoteto: 1100
   };
   /* chaves de cota de tamanho (têm de ser > 0); OPCIONAIS: 0 = "use a proporção do desenho de referência" */
-  var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc"];
+  var POSITIVAS = ["L", "C", "Hb", "Ht", "Pc", "W", "P", "Hc", "H", "D", "E", "Rc", "Ft", "Gt", "Cx", "Cz", "Dn", "DN"];
   var OPCIONAIS = { reservatorio: ["Hc"] };
 
   /* ------------------------------------------------------------- SAÍDA */

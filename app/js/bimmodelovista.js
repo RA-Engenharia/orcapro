@@ -1411,7 +1411,7 @@
     },
     ramoFamilias: function () {
       var lista = [], porCat = {}, ordem = [];
-      try { var FR = global.FamiliasRA; lista = FR && FR.lista ? arr(FR.lista()) : []; } catch (e) { lista = []; }
+      try { var FR = global.FamiliasRA; lista = FR && FR.lista ? arr(FR.listaMenu ? FR.listaMenu() : FR.lista()) : []; } catch (e) { lista = []; }
       var F = global.Familia, nomes = (F && F.CATEGORIAS) || {};
       lista.forEach(function (f) { var c = f.categoria || "generico"; if (!porCat[c]) { porCat[c] = []; ordem.push(c); } porCat[c].push(f); });
       var filhos = ordem.sort().map(function (c) {

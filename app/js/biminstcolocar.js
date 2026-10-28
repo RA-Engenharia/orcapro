@@ -319,6 +319,7 @@
       s = Math.max(folga, Math.min(Lt - folga, s));
       var q = ponto(s);
       var op = { op: "acessorio", id: novoId("ac", usados), famId: cfg.famId, tipoId: tipo, trecho: t.id, novoId: novoId("t", usados), x: q.x, y: q.y, z: q.z, comprimento: Lff };
+      if (cfg.tipoId && !A.variantes[cfg.tipoId]) op.produto = String(cfg.tipoId);   /* tipo do catálogo (hid-registro-*): identificação do produto */
       /* FRENTE B (19/10/2026, D-01): o REGISTRO posto à mão num tubo embutido nasce com o volante para o lado do cômodo (o giro do
          Espaço soma por cima). Pedido do Rogério: "sempre para o sentido onde está o ambiente" (critério RA, R-C9). */
       /* FRENTE H2 (20/10/2026): o lado do PONTO a jusante manda; sem tubo a jusante até um ponto, o cômodo vizinho */

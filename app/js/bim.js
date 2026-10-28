@@ -13081,7 +13081,48 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function famDefinir(lista) {
     famReg.lista = {}; famReg.cache = {};
     (lista || []).forEach(function (f) { if (f && f.id) famReg.lista[f.id] = f; });
+    /* MIGRAÇÃO DE FAMÍLIAS: a instância que ficou ADIADA porque a família nova ainda não estava na biblioteca (o grupo "hidro" baixa
+       sob demanda) é tentada de novo assim que a biblioteca chega — o chamador (familiasDefinir) refaz a cena logo em seguida */
+    if (S && S._famMigPend && edit.ops.length) {
+      var rm = migrarFamiliasOps(edit.ops);
+      if (rm.mudou) { edit.ops = BimEdit.sanear(rm.ops); edit.redo = []; }   /* o refazer guardaria ops com o id antigo */
+    }
   }
+  /* MIGRAÇÃO DE FAMÍLIAS DO HIDRO (27/10/2026, js/famhidmigra.js): o projeto antigo traz a família velha (bloco `ra-*`); a lista de
+     operações é reescrita para a família equivalente do catálogo (mesmo id de instância; a velha continua DEFINIDA como alias).
+     Idempotente: sem família velha nas ops devolve a MESMA lista. Falha da migração nunca impede abrir o projeto. */
+  function migrarFamiliasOps(ops) {
+    var M = window.FamHidMigra, r;
+    if (!M || !Array.isArray(ops) || !ops.length) return { ops: ops, mudou: false, trocas: [], adiadas: [] };
+    /* o projeto usa familia antiga OU destino da migracao: o grupo hidro tem de estar no registro (mesmo com a previa desligada) */
+    try {
+      /* a flag segue o PROJETO ABERTO: liga so com familia de DESTINO nas ops (ja migrada) e desliga quando outro projeto abre */
+      var antesF = M.precisaHidro;
+      M.precisaHidro = !!M.usaDestino(ops);
+      if (!antesF && M.precisaHidro) setTimeout(function () { try { if (window.FamiliaUI && FamiliaUI._sincronizarVisor) FamiliaUI._sincronizarVisor(); } catch (eS) { /* segue */ } }, 0);
+    } catch (eU) { /* segue */ }
+    try { r = M.migrarOps(ops, { avaliar: famAval, familia: function (id) { return famReg.lista[id] || null; }, aplicar: function (o) { return BimEdit.aplicar(o); } }); }   /* UM replay por abertura */
+    catch (eM) { return { ops: ops, mudou: false, trocas: [], adiadas: [] }; }
+    if (S) {
+      S._famMigPend = r.adiadas.some(function (a) { return /não está carregada/.test(a.motivo) || /não avalia neste contexto/.test(a.motivo); });
+      var obra = ''; try { obra = String((window.Gestao && (Gestao._bimCenaObra || (Gestao._bimEdPend && Gestao._bimEdPend.id))) || ''); } catch (eO) { obra = ''; }
+      S._famMigLog = S._famMigLog || {};
+      var novas = { trocas: [], adiadas: [] };
+      r.trocas.forEach(function (t) { var k = obra + '|t|' + t.id + '|' + t.de + '|' + t.tipoPara; if (!S._famMigLog[k]) { S._famMigLog[k] = 1; novas.trocas.push(t); } });
+      r.adiadas.forEach(function (a) { var k = obra + '|a|' + a.id + '|' + a.de + '|' + a.motivo; if (!S._famMigLog[k]) { S._famMigLog[k] = 1; novas.adiadas.push(a); } });
+      if (novas.trocas.length || novas.adiadas.length) {
+        var gravadas = []; try { gravadas = M.registrar(novas, null, obra); } catch (eL) { gravadas = []; }
+        /* so avisa o usuario do que e NOVO no log (a mesma adiada nao reaparece a cada abertura) */
+        if (gravadas.length) {
+          var nT = gravadas.filter(function (l) { return l.tipo === 'troca'; }), nA = gravadas.filter(function (l) { return l.tipo === 'adiada'; });
+          var txtR = M.resumo({ trocas: novas.trocas.filter(function (t) { return nT.some(function (l) { return l.id === t.id; }); }), adiadas: novas.adiadas.filter(function (a) { return nA.some(function (l) { return l.id === a.id; }); }) });
+          try { if (txtR && window.UI && UI.toast) UI.toast(txtR, 'info'); } catch (eT) { /* aviso e cortesia */ }
+        }
+      }
+    }
+    return r;
+  }
+  S._migrarFamiliasOps = migrarFamiliasOps;
   function famAval(famId, tipoId, inst) {
     var f = famReg.lista[famId]; if (!f || !window.Familia) return null;
     var k = famId + '|' + (tipoId || '') + '|' + JSON.stringify(inst || {});
@@ -14784,7 +14825,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._editOps = function () { return edit.ops.slice(); };
   S._editAplicar = function (ops) {
     if (!S || !S.alive) return; // viewer morto (ctx perdido): rebuild apagaria o aviso de recarregar
-    edit.ops = BimEdit.sanear(ops);
+    var rmig = migrarFamiliasOps(ops); ops = rmig.ops;   // famílias antigas do Hidro -> equivalentes do catálogo (js/famhidmigra.js)
+    edit.ops = BimEdit.sanear(ops); if (rmig.mudou) edit.redo = [];
     var mx = 0;
     /* as ops de DENTRO dos lotes também (a escada e os guarda-corpos dela): senão o próximo id repetiria um deles */
     edit.ops.concat(BimEdit.achatar(edit.ops)).forEach(function (o) { var m2 = /^[eaf](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });

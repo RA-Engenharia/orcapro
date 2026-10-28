@@ -1476,10 +1476,10 @@
         if (c.peca === "caixa_octogonal") ps.push({ id: "i:cota", rotulo: "Cota (laje)", unidade: "m", tipo: "numero", passo: "0.05", valor: c.cota });
         secoes.push({ nome: "Peça", params: ps });
         if (c.sistema !== "eletrica") secoes.push({ nome: "Louças e caixa d'água (biblioteca RA, com ponto de ligação)", params: [
-          { id: "i:fam-bacia", rotulo: "Bacia sanitária", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-bacia", "conv"); } },
-          { id: "i:fam-lav", rotulo: "Lavatório", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-lavatorio", "l4535"); } },
-          { id: "i:fam-ch", rotulo: "Chuveiro", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-chuveiro", "ch"); } },
-          { id: "i:fam-cx", rotulo: "Caixa d'água", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("ra-caixa-dagua", "c1000"); } }] });
+          { id: "i:fam-bacia", rotulo: "Bacia sanitária", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-bacia-caixa-acoplada", "t-celite-56355-56570-793"); } },
+          { id: "i:fam-lav", rotulo: "Lavatório", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-lavatorio-suspenso", "t-celite-20001-20202-812"); } },
+          { id: "i:fam-ch", rotulo: "Chuveiro", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-chuveiro", "t-docol-00118406-1543"); } },
+          { id: "i:fam-cx", rotulo: "Caixa d'água", tipo: "botao", rotuloBotao: "Colocar", fn: function () { self.colocarFamilia("hid-caixa-dagua", "t-fortlev-0-201-000-7-1714"); } }] });
         if (c.sistema === "eletrica") secoes.push({ nome: "Traçar", params: [{ id: "i:ir-elet", rotulo: "Eletroduto", tipo: "botao", rotuloBotao: "Traçar eletroduto", fn: function () { self.armar("eletroduto"); } }] });
       } else {
         var trac = [
@@ -1557,7 +1557,8 @@
     /* o NOME da peça vai no recado: a tomada, a luminária e o quadro diziam "Clique onde
        colocar a louça" (auditoria de 12/10/2026) */
     NOMES_FAM: { "ra-tomada": "a tomada", "ra-luminaria": "a luminária", "ra-quadro-distribuicao": "o quadro de distribuição",
-      "ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água" },
+      "ra-bacia": "a bacia", "ra-lavatorio": "o lavatório", "ra-chuveiro": "o chuveiro", "ra-caixa-dagua": "a caixa d'água",
+      "hid-bacia-caixa-acoplada": "a bacia", "hid-lavatorio-suspenso": "o lavatório", "hid-chuveiro": "o chuveiro", "hid-caixa-dagua": "a caixa d'água" },
     colocarFamilia: function (famId, tipoId) {
       var b = B(), G = this._G; if (!b || !b.editarArmar) return false;
       try { if (G && G._famSync) G._famSync(); } catch (e) {}

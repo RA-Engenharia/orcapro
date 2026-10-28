@@ -9850,7 +9850,40 @@ var famReg = { lista: {}, cache: {} };
 function famDefinir(lista) {
 famReg.lista = {}; famReg.cache = {};
 (lista || []).forEach(function (f) { if (f && f.id) famReg.lista[f.id] = f; });
+if (S && S._famMigPend && edit.ops.length) {
+var rm = migrarFamiliasOps(edit.ops);
+if (rm.mudou) { edit.ops = BimEdit.sanear(rm.ops); edit.redo = []; }
 }
+}
+function migrarFamiliasOps(ops) {
+var M = window.FamHidMigra, r;
+if (!M || !Array.isArray(ops) || !ops.length) return { ops: ops, mudou: false, trocas: [], adiadas: [] };
+try {
+var antesF = M.precisaHidro;
+M.precisaHidro = !!M.usaDestino(ops);
+if (!antesF && M.precisaHidro) setTimeout(function () { try { if (window.FamiliaUI && FamiliaUI._sincronizarVisor) FamiliaUI._sincronizarVisor(); } catch (eS) { } }, 0);
+} catch (eU) { }
+try { r = M.migrarOps(ops, { avaliar: famAval, familia: function (id) { return famReg.lista[id] || null; }, aplicar: function (o) { return BimEdit.aplicar(o); } }); }
+catch (eM) { return { ops: ops, mudou: false, trocas: [], adiadas: [] }; }
+if (S) {
+S._famMigPend = r.adiadas.some(function (a) { return /não está carregada/.test(a.motivo) || /não avalia neste contexto/.test(a.motivo); });
+var obra = ''; try { obra = String((window.Gestao && (Gestao._bimCenaObra || (Gestao._bimEdPend && Gestao._bimEdPend.id))) || ''); } catch (eO) { obra = ''; }
+S._famMigLog = S._famMigLog || {};
+var novas = { trocas: [], adiadas: [] };
+r.trocas.forEach(function (t) { var k = obra + '|t|' + t.id + '|' + t.de + '|' + t.tipoPara; if (!S._famMigLog[k]) { S._famMigLog[k] = 1; novas.trocas.push(t); } });
+r.adiadas.forEach(function (a) { var k = obra + '|a|' + a.id + '|' + a.de + '|' + a.motivo; if (!S._famMigLog[k]) { S._famMigLog[k] = 1; novas.adiadas.push(a); } });
+if (novas.trocas.length || novas.adiadas.length) {
+var gravadas = []; try { gravadas = M.registrar(novas, null, obra); } catch (eL) { gravadas = []; }
+if (gravadas.length) {
+var nT = gravadas.filter(function (l) { return l.tipo === 'troca'; }), nA = gravadas.filter(function (l) { return l.tipo === 'adiada'; });
+var txtR = M.resumo({ trocas: novas.trocas.filter(function (t) { return nT.some(function (l) { return l.id === t.id; }); }), adiadas: novas.adiadas.filter(function (a) { return nA.some(function (l) { return l.id === a.id; }); }) });
+try { if (txtR && window.UI && UI.toast) UI.toast(txtR, 'info'); } catch (eT) { }
+}
+}
+}
+return r;
+}
+S._migrarFamiliasOps = migrarFamiliasOps;
 function famAval(famId, tipoId, inst) {
 var f = famReg.lista[famId]; if (!f || !window.Familia) return null;
 var k = famId + '|' + (tipoId || '') + '|' + JSON.stringify(inst || {});
@@ -11325,7 +11358,8 @@ S._setEditSub = setEditSub;
 S._editOps = function () { return edit.ops.slice(); };
 S._editAplicar = function (ops) {
 if (!S || !S.alive) return;
-edit.ops = BimEdit.sanear(ops);
+var rmig = migrarFamiliasOps(ops); ops = rmig.ops;
+edit.ops = BimEdit.sanear(ops); if (rmig.mudou) edit.redo = [];
 var mx = 0;
 edit.ops.concat(BimEdit.achatar(edit.ops)).forEach(function (o) { var m2 = /^[eaf](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
 edit.seq = mx;

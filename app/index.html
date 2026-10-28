@@ -459,6 +459,8 @@
   <script src="js/partesmoveis.js"></script>   <!-- porta, folha e gaveta que abrem: o movimento da parte móvel da família (motor puro) -->
   <script src="js/bimgrupomovel.js"></script>   <!-- grupo móvel: o portão feito de volumes soltos abre como porta (op movel; extensão do replay do js/bimedit.js) -->
   <script src="js/familia.js"></script>
+  <script src="js/famhidmigradados.js"></script>   <!-- MIGRAÇÃO DE FAMÍLIAS DO HIDRO: tabela id antigo -> canônico (GERADO por tools/gerar-fam-hidro-migracao.js) -->
+  <script src="js/famhidmigra.js"></script>   <!-- ... e o motor: reescreve as ops do projeto antigo ao abrir (idempotente, com log) -->
   <!-- FAMIMPORT: família importada (malha por tipo, .opfam v2 do plugin) e o leitor do .rfa (CFB/PartAtom) -->
   <script src="js/cfb.js"></script>
   <script src="js/familiamalha.js"></script>

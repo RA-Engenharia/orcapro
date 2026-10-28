@@ -149,7 +149,7 @@
       quantitativo: { unidade: "m", quantidade: "Comprimento", codigo: "", fonte: "", descricao: "Bancada de granito com gabinete" }
     },
     {
-      id: "ra-bacia", nome: "Bacia sanitária com caixa acoplada", categoria: "loucas", hospedagem: "livre",
+      id: "ra-bacia", oculta: true, substituidaPor: "hid-bacia-caixa-acoplada", nome: "Bacia sanitária com caixa acoplada", categoria: "loucas", hospedagem: "livre",
       descricao: "Louça simplificada em volumes (base, assento, caixa acoplada). Encostar o fundo (Z negativo) na parede.",
       parametros: [
         { nome: "Altura_assento", tipoDado: "comprimento", escopo: "tipo", valor: 0.40, grupo: "Dimensões" },
@@ -176,7 +176,7 @@
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Bacia sanitária com caixa acoplada" }
     },
     {
-      id: "ra-caixa-dagua", nome: "Caixa d'água cilíndrica", categoria: "equipamento", hospedagem: "livre",
+      id: "ra-caixa-dagua", oculta: true, substituidaPor: "hid-caixa-dagua", nome: "Caixa d'água cilíndrica", categoria: "equipamento", hospedagem: "livre",
       descricao: "Reservatório de polietileno, com tampa. A capacidade é parâmetro do tipo.",
       parametros: [
         { nome: "Capacidade_L", tipoDado: "inteiro", escopo: "tipo", valor: 1000, grupo: "Dados" },
@@ -208,7 +208,7 @@
     },
     /* B5 (08/10/2026): louças com ponto de ligação, para o tubo "chegar" no aparelho */
     {
-      id: "ra-lavatorio", nome: "Lavatório suspenso", categoria: "loucas", hospedagem: "livre", previa: "modelador",
+      id: "ra-lavatorio", oculta: true, substituidaPor: "hid-lavatorio-suspenso", nome: "Lavatório suspenso", categoria: "loucas", hospedagem: "livre", previa: "modelador",
       descricao: "Lavatório de louça suspenso. O fundo (Z negativo) encosta na parede; esgoto e água fria saem da parede.",
       parametros: [
         { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.45, grupo: "Dimensões" },
@@ -230,7 +230,7 @@
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Lavatório de louça suspenso" }
     },
     {
-      id: "ra-chuveiro", nome: "Chuveiro", categoria: "loucas", hospedagem: "livre", previa: "modelador",
+      id: "ra-chuveiro", oculta: true, substituidaPor: "hid-chuveiro", nome: "Chuveiro", categoria: "loucas", hospedagem: "livre", previa: "modelador",
       descricao: "Chuveiro de parede. O ponto de água fica na parede (Z negativo), na altura do braço.",
       parametros: [
         { nome: "Altura_ponto", tipoDado: "comprimento", escopo: "instancia", valor: 2.10, grupo: "Dimensões", descricao: "Do piso até o ponto de água" },
@@ -367,7 +367,7 @@
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Estação elevatória de esgoto BombUp 230 (Águas Claras), 2,0 HP" }
     },
     {
-      id: "ra-lavatorio-coluna", previa: "modelador", nome: "Lavatório com coluna", categoria: "loucas", hospedagem: "livre",
+      id: "ra-lavatorio-coluna", oculta: true, substituidaPor: "hid-lavatorio-coluna", previa: "modelador", nome: "Lavatório com coluna", categoria: "loucas", hospedagem: "livre",
       descricao: "Louça simplificada (cuba e coluna). Medidas usuais de catálogo — conferir o modelo comprado. Encostar o fundo (Z negativo) na parede.",
       parametros: [
         { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.50, grupo: "Dimensões" },
@@ -387,7 +387,7 @@
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Lavatório de louça com coluna" }
     },
     {
-      id: "ra-tanque", previa: "modelador", nome: "Tanque de lavar com coluna", categoria: "loucas", hospedagem: "livre",
+      id: "ra-tanque", oculta: true, substituidaPor: "hid-tanque-lavar", previa: "modelador", nome: "Tanque de lavar com coluna", categoria: "loucas", hospedagem: "livre",
       descricao: "Tanque simplificado (cuba e coluna). Medidas usuais de catálogo — conferir o modelo comprado. Encostar o fundo (Z negativo) na parede.",
       parametros: [
         { nome: "Largura", tipoDado: "comprimento", escopo: "tipo", valor: 0.60, grupo: "Dimensões" },
@@ -664,6 +664,14 @@
     }
   );
 
+  /* REGISTROS (27/10/2026): `ra-registro-gaveta/esfera/pressao` SAEM DO MENU (fica a hid-registro-* com os tipos do catálogo); o id continua o do motor
+     (js/biminst.js ACESSORIOS: o traçado insere sozinho) e o desenho no tubo é o HidGeo.registro. Os sólidos de bloco ficam AQUI de propósito: a exportação
+     para o Revit (js/familiarevit.js, tools/test-bim-b6.js) só entende caixa e cilindro — o gerador "registro_tubo" (js/hidlouca.js, ponte para o HidGeo)
+     existe e está testado, mas ligá-lo a esta família quebra esse contrato (decisão pendente: ensinar o exportador a levar a malha). */
+  (function () {
+    LISTA.forEach(function (f) { if (/^ra-registro-(gaveta|esfera|pressao)$/.test(f.id)) f.oculta = true; });
+  })();
+
   /* ARQUITETURA DE PISCINA E PELE DE VIDRO (19/10/2026, js/familiaspiscina.js): piscina de fibra de mercado, casa de máquinas e
      pele de vidro recolhível — o gerador devolve as famílias já no formato (previa "modelador", como as demais desta lista) */
   (function () {
@@ -742,7 +750,10 @@
       }
       return null;
     },
+    /* `oculta` (família SUBSTITUÍDA por uma do catálogo — js/famhidmigra.js): sai do MENU, mas continua DEFINIDA (alias carregável) para o projeto antigo abrir
+       e para a migração avaliar. `lista()` traz TODAS (é a biblioteca-REGISTRO que o visor usa); `listaMenu()` traz só o que o menu mostra. */
     lista: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas); }))); },
+    listaMenu: function (todas) { return JSON.parse(JSON.stringify(LISTA.filter(function (f) { return visivel(f, todas) && !f.oculta; }))); },
     obter: function (id, todas) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id && visivel(LISTA[i], todas)) return JSON.parse(JSON.stringify(LISTA[i])); return null; }
   };
   global.FamiliasRA = FamiliasRA;

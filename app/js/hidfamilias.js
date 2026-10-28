@@ -334,6 +334,7 @@
   var CON_CHUVEIRO = [CON_AF[0], { id: "aq", nome: "Água quente (misturador de parede, na altura do RP)", sistema: "agua_quente", dn: "DN_agua", x: "-Misturador_afastamento", y: "-Misturador_desnivel", z: "0", visivel: "1 - Eletrico", papel: "entrada", dir: dv("parede"), origemPos: "interpretado", aConferir: "afastamento lateral entre os registros sem cota no catálogo (desnível CH − RP da Tigre p.40)" }];
   ESPECS.push(metal("hid-chuveiro", "Chuveiro / ducha", ["chuveiro"], ["agua_fria", "agua_quente"], CON_CHUVEIRO, "Chuveiro e ducha de parede ou de teto (Docol). A ducha recebe água fria e água quente pelo misturador de parede (dois registros); o chuveiro elétrico, só água fria.",
     ["Afastamento lateral entre o registro de água fria e o de água quente do misturador sem cota no catálogo: conferir."]));
+  ESPECS[ESPECS.length - 1].avisos.push("Chuveiro de parede: forma do Docol Clássico (catálogo geral pág. 186); conferir o modelo — só o Clássico tem desenho cotado aqui. O chuveiro ELÉTRICO mantém o desenho de chuveiro elétrico.");
   ESPECS[ESPECS.length - 1].geo.push(
     X("Eletrico", "simnao", false, "Instalação", "Chuveiro elétrico (corpo com resistência) no lugar da ducha metálica — só água fria (sem o ponto de água quente)"),
     I("Misturador_desnivel", 1.1, null, "Desnível do braço (ponto CH) ao ponto de água quente do misturador (registro na altura RP): CH − RP da Tigre p.40 (2,20 − 1,10)"),   /* hid:ok geometria: CH − RP da tabela da Tigre p.40 */
@@ -901,6 +902,9 @@
     X("Ad_limpeza", "numero", 0, GA, "DN do adaptador da limpeza, mm; 0 = sem"), X("Ang_limpeza", "numero", 0, GA, "Ângulo da limpeza (rad, a partir da saída)"), X("Y_limpeza", "numero", 0, GA, "Cota do eixo da limpeza acima da base (m)")];
   ADAPT_X.forEach(function (x) { x.instancia = true; });   /* de cada caixa (o Traçar grava na instância), não do tipo */
   /* cada família → { g: gerador, p: {chave: fórmula}, env: caixa de reserva, x: parâmetros extras } */
+  var CX_INSPECAO = [G("Corpo_diametro", 0.332, [0.2, 0.5], L("A"), "Ø do tambor (letra A da ficha, pág. 8)"), G("Corpo_altura", 0.201, [0.1, 0.5], L("B"), "Altura do tambor sob a tampa (letra B, pág. 8)"),   /* hid:ok geometria: o padrão é a DN300 da ficha */
+    G("Largura_bocais", 0.424, [0.3, 0.7], L("C1"), "Largura nos bocais, eixo X (letra C1, pág. 8)"), G("Largura_bocais_z", 0.386, [0.3, 0.7], L("C2"), "Largura nos bocais, eixo Z (letra C2, pág. 8)"),   /* hid:ok geometria */
+    G("Tampa_lado", 0.321, [0.2, 0.5], L("F"), "Lado da tampa quadrada (letra F, pág. 8)"), G("Tampa_esp", 0.047, [0.02, 0.1], L("G"), "Espessura da tampa (letra G, pág. 8)")];   /* hid:ok geometria */
   var GERADA = {
     "hid-bacia-caixa-acoplada": { g: "bacia_caixa", p: { L: "Largura", C: "Comprimento", Hb: "Altura_borda", Ht: "Altura_total", Pc: "Prof_caixa", Ep: "Esgoto_parede", Aa: "Agua_altura", Al: "Agua_lateral", aberta: "Tampa_aberta", metais: "Com_metais" },
       env: ["0", "0", "-Esgoto_parede + Comprimento/2", "Largura", "Altura_total", "Comprimento"], x: [METAIS, TAMPA] },
@@ -917,8 +921,12 @@
     "hid-pia-cozinha": { g: "pia", p: { L: "Largura", P: "Profundidade", Hc: "Altura_cuba", metais: "Com_metais" }, env: ["0", "-Altura_cuba", "0", "Largura", "Altura_cuba", "Profundidade"], x: [METAIS] },
     "hid-tanque-lavar": { g: "tanque", p: { W: "Largura", P: "Profundidade", H: "Altura", metais: "Com_metais" }, env: ["0", "0", "0", "Largura", "Altura", "Profundidade"], x: [METAIS] },
     "hid-mictorio": { g: "mictorio", p: { W: "Largura", P: "Profundidade", H: "Altura", Ya: "Agua_altura", Ye: "Esgoto_altura", metais: "Com_metais" }, env: ["0", "0", "0", "Largura", "Altura", "Profundidade"], x: [METAIS] },
-    "hid-chuveiro": { g: "chuveiro", p: { L: "Largura", H: "Altura", P: "Profundidade", eletrico: "Eletrico" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"],
-      x: [X("Eletrico", "simnao", false, "Instalação", "Chuveiro elétrico (corpo com resistência) no lugar da ducha metálica")] },
+    "hid-chuveiro": { g: "chuveiro", p: { L: "se(Eletrico; Largura; Cl_diametro)", H: "se(Eletrico; Altura; Cl_queda)", P: "se(Eletrico; Profundidade; Cl_alcance)", eletrico: "Eletrico", est: "1" },
+      env: ["0", "se(Eletrico; 0; -Cl_queda)", "se(Eletrico; Profundidade; Cl_alcance)/2", "se(Eletrico; Largura; Cl_diametro)", "se(Eletrico; Altura; Cl_queda)", "se(Eletrico; Profundidade; Cl_alcance)"],
+      x: [X("Eletrico", "simnao", false, "Instalação", "Chuveiro elétrico (corpo com resistência) no lugar da ducha metálica — mantém o desenho de chuveiro elétrico"),
+        X("Cl_diametro", "comprimento", 0.0958, "Dimensões", "Ø do crivo do Docol Clássico (catálogo geral pág. 186: 95,8 mm) — chuveiro de parede NÃO elétrico"),   /* hid:ok Docol pág. 186 */
+        X("Cl_queda", "comprimento", 0.1137, "Dimensões", "Do eixo do braço à face do crivo (pág. 186: 113,7 mm)"),   /* hid:ok Docol pág. 186 */
+        X("Cl_alcance", "comprimento", 0.2237, "Dimensões", "Da parede à borda do crivo (pág. 186: 223,7 mm)")] },   /* hid:ok Docol pág. 186 */
     "hid-ducha-higienica": { g: "ducha_higienica", p: { W: "Largura", H: "Altura", P: "Profundidade" }, env: ["0", "-Altura*0.8", "Profundidade/2", "Largura", "Altura", "Profundidade"], x: [] },
     "hid-torneira": { g: "torneira", p: { W: "Largura", H: "Altura", P: "Profundidade", modelo: "Modelo_torneira" }, env: ["0", "0", "Profundidade/2", "Largura", "Altura", "Profundidade"],
       x: [X("Modelo_torneira", "inteiro", 0, "Forma 3D", "0 = de parede (origem no ponto de água da parede), 1 = de mesa (origem na base, sobre o tampo) — lido da descrição do catálogo", DESC(/MESA/i, 1, 0))] },
@@ -935,9 +943,19 @@
     "hid-caixa-sifonada": { g: "caixa_sifonada", p: { W: "Largura", P: "Profundidade", H: "Altura" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"], x: [] },
     "hid-ralo": { g: "ralo", p: { D: "min(Largura; Profundidade)", H: "Altura", quadrado: "Grelha_quadrada" }, env: ["0", "-Altura", "0", "Largura", "Altura", "Profundidade"],
       x: [X("Grelha_quadrada", "simnao", true, "Forma 3D", "Grelha quadrada (lido da descrição do catálogo: QD/QUADRADO); não = redonda", DESC(/\bQD\b|QUADRAD|\bQ\b/i, 1, 0))] },
-    "hid-caixa-gordura": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
-    "hid-caixa-inspecao": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
-    "hid-caixa-areia": { g: "caixa_cil", p: { D: "Diametro", H: "Altura" }, env: ["0", "-Altura", "0", "Diametro", "Altura", "Diametro"], x: [] },
+    /* CAIXAS ENTERRADAS (27/10/2026): cada uma tem a FORMA do produto da Amanco Wavin (FT FTC000003, págs. 7 a 10) — ver o bloco no js/hidlouca.js.
+       `Altura` (a profundidade do ponto de saída, usada pelo nivelamento e pelos conectores) NÃO muda: o desenho é que ganhou a forma do catálogo. */
+    "hid-caixa-gordura": { g: "caixa_gordura", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais", Dn: "se(DN_saida > 0; DN_saida; 100)", n3: "1" },   /* hid:ok DN100 da saída (D1 da ficha) quando o tipo não traz */
+      env: ["0", "-max(Altura; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura; Tampa_esp + Corpo_altura)", "max(Corpo_diametro; Tampa_lado)"],
+      x: [G("Corpo_diametro", 0.308, [0.2, 0.5], L("A"), "Ø do corpo (letra A da ficha, pág. 7)"), G("Corpo_altura", 0.461, [0.3, 0.8], L("B"), "Altura do corpo sob a tampa (letra B, pág. 7)"),   /* hid:ok geometria: o padrão é a DN300 da ficha */
+        G("Largura_bocais", 0.422, [0.3, 0.7], L("C"), "Largura total com os bocais (letra C, pág. 7)"), G("Tampa_lado", 0.321, [0.2, 0.5], L("F"), "Lado da tampa quadrada (letra F, pág. 7)"),   /* hid:ok geometria */
+        G("Tampa_esp", 0.047, [0.02, 0.1], L("G"), "Espessura da tampa (letra G, pág. 7)")] },   /* hid:ok geometria */
+    "hid-caixa-inspecao": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)" },   /* hid:ok DN100 dos bocais (D1/D2 da ficha) quando o tipo não traz; o prolongador DN300 (Amanco p.10) é cortado até a profundidade do ponto de saída */
+      env: ["0", "-max(Altura; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura; Tampa_esp + Corpo_altura)", "max(Largura_bocais_z; Tampa_lado)"],
+      x: CX_INSPECAO },
+    "hid-caixa-areia": { g: "caixa_inspecao", p: { D: "Corpo_diametro", H: "Corpo_altura", Ft: "Tampa_lado", Gt: "Tampa_esp", Cx: "Largura_bocais", Cz: "Largura_bocais_z", Pr: "max(0; Altura + Bolsao - Tampa_esp - Corpo_altura)", Dn: "se(DN_saida > 0; DN_saida; 100)" },   /* hid:ok DN100 dos bocais quando o tipo não traz */
+      env: ["0", "-max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "0", "max(Largura_bocais; Tampa_lado)", "max(Altura + Bolsao; Tampa_esp + Corpo_altura)", "max(Largura_bocais_z; Tampa_lado)"],
+      x: CX_INSPECAO.concat([X("Bolsao", "comprimento", 0.15, "Dimensões", "Bolsão de areia abaixo do tubo de saída (NBR 10844: ≥ 0,15 m): o tambor da inspeção sobre um prolongador DN300 cortado até a profundidade da saída + o bolsão (Amanco FT p.10, prolongador 300 × 200 ou 300 × 420)")]) },   /* hid:ok 0,15 m: mínimo da NBR 10844 */
     "hid-caixa-dagua": { g: "reservatorio", p: { D: "Diametro", H: "Altura", Hc: "Altura_corpo", Dc: "Diametro_corpo", Db: "Diametro_base", Dt: "0", tipo: "0", aS: "Ad_saida", aE: "Ad_entrada", a2: "Ad_saida2", g2: "Ang_saida2", aX: "Ad_extravasor", gX: "Ang_extravasor", yX: "Y_extravasor", aL: "Ad_limpeza", gL: "Ang_limpeza", yL: "Y_limpeza" }, env: ["0", "0", "0", "Diametro", "Altura", "Diametro"],
       x: ADAPT_X.concat([G("Altura_corpo", 0, [0.2, 4], N("altura_sem_tampa_mm"), "Altura sem a tampa (B da ficha); 0 = proporção do 1000 L"), G("Diametro_corpo", 0, [0.3, 4], N("diametro_sem_tampa_mm"), "Diâmetro sem a tampa (D da ficha); 0 = proporção"),
         G("Diametro_base", 0, [0.3, 4], N("diametro_base_mm"), "Diâmetro da base (E da ficha); 0 = proporção")]) },
@@ -1097,7 +1115,7 @@
   padrao("hid-registro-gaveta", "Altura", 0.115); padrao("hid-registro-gaveta", "Profundidade", 0.058);
   padrao("hid-registro-pressao", "Altura", 0.115); padrao("hid-registro-pressao", "Profundidade", 0.058);
   padrao("hid-bomba", "Comprimento", 0.266); padrao("hid-bomba", "Largura", 0.156); padrao("hid-bomba", "Altura", 0.202);
-  padrao("hid-chuveiro", "Altura", 0.2); padrao("hid-chuveiro", "Profundidade", 0.38);
+  padrao("hid-chuveiro", "Altura", 0.2); padrao("hid-chuveiro", "Profundidade", 0.38);   /* o chuveiro ELÉTRICO segue com estas medidas; o de parede usa as Cl_* (Docol Clássico) */
   padrao("hid-torneira", "Largura", 0.047); padrao("hid-torneira", "Altura", 0.083); padrao("hid-torneira", "Profundidade", 0.154);
   padrao("hid-misturador", "Altura", 0.2); padrao("hid-misturador", "Profundidade", 0.16);
   function solidoGerado(e, d) {

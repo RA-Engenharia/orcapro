@@ -215,7 +215,7 @@
           if (!b) return;
           var r = M.geometriaDeTexto(texto(b)); if (r.ok) { M.registrarGeometria(ref, r.geometria); n++; }
         }, function () {}).then(function () { delete self._carregando[ref]; });
-      })).then(function () { if (n) { try { if (global.BIM && BIM.familiasDefinir && global.FamiliaUI) BIM.familiasDefinir(FamiliaUI.biblioteca()); } catch (e) {} } return n; });
+      })).then(function () { if (n) { try { if (global.BIM && BIM.familiasDefinir && global.FamiliaUI) BIM.familiasDefinir(FamiliaUI.biblioteca({ registro: true })); } catch (e) {} } return n; });
     },
 
     /* o botão "Converter geometria" da família que veio do .rfa: o passo, na cara */

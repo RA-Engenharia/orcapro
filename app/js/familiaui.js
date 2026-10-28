@@ -32,7 +32,9 @@
 
     configurar: function (ctx) { this._ctx = ctx || {}; this._ixTarefa = null; },
     /* biblioteca inteira: RA + guardadas (as guardadas com o mesmo id ganham) */
-    biblioteca: function () {
+    /* `opts.registro`: a biblioteca-REGISTRO, com as famílias SUBSTITUÍDAS (`oculta`, alias do projeto antigo) — é o que o visor precisa para
+       desenhar e migrar; sem ela é a lista do MENU (as ocultas não aparecem). */
+    biblioteca: function (opts) {
       var mapa = {}, out = [];
       (global.FamiliasRA ? FamiliasRA.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* F1: as famílias ORÇÁVEIS (cada tipo = uma composição SINAPI real, js/familiasorc.js) — da RA, só leitura */
@@ -41,12 +43,21 @@
       (global.FamiliasMarcenaria ? FamiliasMarcenaria.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* HIDROSSANITÁRIO/CLIMATIZAÇÃO (J4/J11): só com a prévia ?previa=hidro; o grupo "hidro" baixa sob demanda e a biblioteca se refaz quando chega */
       var comHidro = !!(global.BimPrevia && BimPrevia.hidro && BimPrevia.hidro()), selfF = this;
-      if (comHidro && !global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro") && !this._hidroPedido) {
+      /* MIGRACAO DE FAMILIAS (js/famhidmigra.js): o projeto que usa uma familia migrada (ou antiga) PRECISA das destino no REGISTRO do visor mesmo com a previa do hidro
+         desligada — senao a peca ja migrada some. So as da tabela de migracao entram (e so no registro; o MENU segue como a previa manda). */
+      var regHid = !!(!comHidro && opts && opts.registro && global.FamHidMigra && FamHidMigra.precisaHidro);
+      if ((comHidro || regHid) && !global.HidFamilias && global.Carregar && Carregar.temGrupo && Carregar.temGrupo("hidro") && !this._hidroPedido) {
         this._hidroPedido = true;
         Carregar.grupo("hidro").then(function () { try { selfF._sincronizarVisor(); if (selfF._el && selfF._modo === "biblioteca") selfF.render(); } catch (e) {} }, function () { selfF._hidroPedido = false; });
       }
       /* HIDROSSANITÁRIO (js/hidfamilias.js): as famílias hid-* */
       try { if (comHidro && global.HidFamilias) HidFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eH) {}
+      try {
+        if (regHid && global.HidFamilias) {
+          var alvosM = {}; FamHidMigra.alvos().forEach(function (k) { alvosM[k] = 1; }); Object.keys(FamHidMigra.tabela()).forEach(function (k) { alvosM[k] = 1; });
+          HidFamilias.todas().forEach(function (f) { if (alvosM[f.id]) { f._origem = "ra"; mapa[f.id] = f; } });
+        }
+      } catch (eHm) {}
       /* CLIMATIZAÇÃO (js/climfamilias.js, C1b): as famílias ra-clim-* geradas do catálogo, só com o modelador ligado */
       try { if (comHidro && global.ClimFamilias) ClimFamilias.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eC) {}
       /* TRATAMENTO (js/hidtanques.js): tanques, sumidouro e vala, só com o modelador ligado */
@@ -55,7 +66,7 @@
       try { if (comHidro && global.HidPiscinaFam) HidPiscinaFam.todas().forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; }); } catch (eP) {}
       var minhas = []; try { minhas = (this._ctx && this._ctx.listar) ? this._ctx.listar() : []; } catch (e) { minhas = []; }
       minhas.forEach(function (f) { if (f && f.id) mapa[f.id] = f; });
-      Object.keys(mapa).forEach(function (k) { out.push(mapa[k]); });
+      Object.keys(mapa).forEach(function (k) { if (!mapa[k].oculta || (opts && opts.registro)) out.push(mapa[k]); });
       out.sort(function (a, b) { return String(a.categoria).localeCompare(String(b.categoria)) || String(a.nome).localeCompare(String(b.nome)); });
       return out;
     },
@@ -67,7 +78,7 @@
     obter: function (id) {
       var ix = this._ixTarefa;
       if (!ix) {
-        ix = {}; var l = this.biblioteca();
+        ix = {}; var l = this.biblioteca({ registro: true });
         for (var i = 0; i < l.length; i++) if (!Object.prototype.hasOwnProperty.call(ix, l[i].id)) ix[l[i].id] = l[i];
         this._ixTarefa = ix; var self = this;
         try { setTimeout(function () { self._ixTarefa = null; }, 0); } catch (eT) { this._ixTarefa = null; }
@@ -75,7 +86,7 @@
       return Object.prototype.hasOwnProperty.call(ix, id) ? ix[id] : null;
     },
     _esquecerIndice: function () { this._ixTarefa = null; },
-    _sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca()); } catch (e) {} },
+    _sincronizarVisor: function () { try { if (global.BIM && BIM.familiasDefinir) BIM.familiasDefinir(this.biblioteca({ registro: true })); } catch (e) {} },
 
     montar: function (el) { this._el = el; this.render(); },
     render: function () {
