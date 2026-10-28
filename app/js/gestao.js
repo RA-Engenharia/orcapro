@@ -15405,7 +15405,8 @@
       var nome = id === "3d" ? "{3D}" : (v ? v.nome : "{3D}");
       var temModelo = false;
       try { temModelo = !!((b && b.elementos && b.elementos.length) || (this._bimElementos && this._bimElementos.length)); } catch (eT) {}
-      var caixa = false, orto = false;
+      var caixa = false, orto = false, fundoAtual = "padrao", gradeAtual = true;
+      try { var fe = b && b.fundoEstado ? b.fundoEstado() : null; if (fe) { fundoAtual = fe.fundo; gradeAtual = !!fe.grade; } } catch (eFu) {}
       try { caixa = id === "3d" ? b.caixaCorteAtiva() : b.vistaCaixaAtiva(id); orto = id === "3d" ? b.ortogonalAtivo() : b.vistaOrtoAtivo(id); } catch (e) {}
       var ret = {
         daVista: true, semEditarTipo: true, titulo: "Vista 3D: " + nome, icone: "quadrado",
@@ -15414,7 +15415,10 @@
             { id: "vista-nome", rotulo: "Nome da vista", leitura: true, valor: nome },
             { id: "vista-orto", rotulo: "Ortogonal", tipo: "sim-nao", valor: orto, leitura: !temModelo, motivo: "Abra um modelo primeiro" },
             /* CORES POR CATEGORIA (js/bimcorescatui.js): o mesmo interruptor da barra de baixo */
-            { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" } ]
+            { id: "cc:on", rotulo: "Cores por categoria", tipo: "sim-nao", valor: !!(window.BimCoresCatUI && BimCoresCatUI.ligada(id)), leitura: !temModelo, motivo: "Abra um modelo primeiro" },
+            /* FUNDO E GRADE (js/bimfundo.js): material de venda sai sem grade e com fundo branco ou preto; vale ao reabrir */
+            { id: "vista-fundo", rotulo: "Fundo", tipo: "lista", valor: fundoAtual, opcoes: (window.BimFundo ? BimFundo.MODOS : []).map(function (m) { return { id: m.id, rotulo: m.rotulo }; }) },
+            { id: "vista-grade", rotulo: "Mostrar grade", tipo: "sim-nao", valor: gradeAtual } ]
               /* NÍVEL DE DETALHE (js/biminstui.js): Baixo / Médio / Alto desta vista 3D — o mesmo menu da barra de baixo */
               .concat((function () { try { var pN = window.BimInstUI && BimInstUI.paramNivel3d ? BimInstUI.paramNivel3d(id) : null; return pN ? [pN] : []; } catch (eN) { return []; } })()) },
           { nome: "Extensões", params: [
@@ -15430,6 +15434,8 @@
           try {
             if (pid === "vista-caixa") { on = id === "3d" ? b.caixaCorte(!!valor) : b.vistaCaixaCorte(id, !!valor); BimRibbon.setAtivo("caixa-corte", !!on); }
             if (pid === "vista-orto") { on = id === "3d" ? b.ortogonal(!!valor) : b.vistaOrtogonal(id, !!valor); BimRibbon.setAtivo("ortogonal", !!on); }
+            if (pid === "vista-fundo" && b.fundo) b.fundo(String(valor));
+            if (pid === "vista-grade" && b.grade) b.grade(valor === true || valor === "true");
             if (pid === "cc:on" && window.BimCoresCatUI) BimCoresCatUI.mudarVista(id, pid, valor);
             if (pid === "nd3d" && window.BimInstUI && BimInstUI.definirNivel3d) BimInstUI.definirNivel3d(id, valor);
             BimShell.pintarFita();

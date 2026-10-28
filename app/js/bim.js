@@ -812,7 +812,7 @@ function montar(host, opts) {
   function aplicarTema() {
     var T = TEMAS[temaId];
     var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
-    h2.style.background = (S && ((S._estiloOn && S._estiloOn()) || (S._linhaOn && S._linhaOn()))) ? '#fff' : T.fundo; // estilo desenho e a linha oculta seguram o branco
+    h2.style.background = BimFundo.css(fundoPref.fundo) || ((S && ((S._estiloOn && S._estiloOn()) || (S._linhaOn && S._linhaOn()))) ? '#fff' : T.fundo); // fundo escolhido (Branco/Preto) manda; estilo desenho e a linha oculta seguram o branco
     bar.style.background = T.bar;
     bar.style.color = T.texto;
     [S.editPanel, S.snapPanel, S.pavPanel, S.visPanel, S.editDist, S.p3dPanel].forEach(function (pn) {
@@ -971,7 +971,7 @@ function montar(host, opts) {
   }
 
   // aplica DEPOIS que S e todos os painéis nasceram (este bloco roda antes da criação do S)
-  setTimeout(function () { if (S && S.alive) { S._aplicarTema = aplicarTema; aplicarTema(); } }, 0);
+  setTimeout(function () { if (S && S.alive) { S._aplicarTema = aplicarTema; aplicarTema(); try { fundoAplicar(); } catch (eF) {} } }, 0);
 
   var hud = document.createElement('div');
   hud.style.cssText = 'position:absolute;right:10px;bottom:10px;z-index:3;background:rgba(15,39,64,.85);border:1px solid #24435f;border-radius:8px;padding:6px 10px;font-size:12px;color:#bcd0e4';
@@ -1054,6 +1054,22 @@ function montar(host, opts) {
   try { dir.shadow.mapSize.set(2048, 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
   var fill = new THREE.DirectionalLight(luzNum(0xbfd8ee), 0.35); fill.position.set(-40, 25, -30); scene.add(fill); // luz de preenchimento (sombra menos chapada)
   var grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.opacity = .5; grid.material.transparent = true; scene.add(grid);
+  /* ---- FUNDO (Padrão | Branco | Preto) e GRADE do 3D (27/10/2026, js/bimfundo.js) ----
+     Padrão = cena transparente sobre o fundo do tema (+ céu físico quando há sol). Branco/Preto = cor lisa na cena E no contêiner,
+     sem céu; luz, sombra e sRGB não mudam (só o fundo). A preferência vale ao reabrir (localStorage, por pessoa e aparelho). */
+  var fundoPref = (typeof BimFundo !== 'undefined') ? BimFundo.ler() : { fundo: 'padrao', grade: null };
+  function fundoAplicar() {
+    var m = fundoPref.fundo, c = BimFundo.cor(m);
+    scene.background = c === null ? null : new THREE.Color(c);
+    var h = (S && S.host) || host, css = BimFundo.css(m);
+    if (css) h.style.background = css;
+    else if (S && S._aplicarTema) S._aplicarTema();
+    grid.visible = BimFundo.gradeEfetiva(fundoPref.grade);
+    if (typeof icLocalMundo !== 'undefined' && icLocalMundo) { var cu = icLocalMundo.getObjectByName('local-ceu'); if (cu) cu.visible = m === 'padrao'; }
+    /* o contorno escuro do estilo desenho some no preto: nele fica claro */
+    if (typeof estiloD !== 'undefined' && estiloD && estiloD.matLinha) estiloD.matLinha.color.setHex(BimFundo.contorno(m, 0x111111));
+    if (typeof EST !== 'undefined' && EST && EST.mat) EST.mat.color.setHex(BimFundo.contorno(m, 0x151515));
+  }
   // ---- sombra de contato (blob radial macio sob o modelo — "assenta" o prédio no chão, barato p/ mobile) ----
   var _chaoTex = (function () {
     var c = document.createElement('canvas'); c.width = c.height = 256; var g = c.getContext('2d');
@@ -2382,7 +2398,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
   S._ortoMain = function (on) { aplicarOrto(camera, orbit, on, ortoMain); return ortoMain.on; };
   /* grade do chão liga/desliga (fita Vista › Exibir › Grade, tecla G) — cara nova, 07/10/2026 */
-  S._grade = function (on) { if (on != null) grid.visible = !!on; return grid.visible; };
+  S._grade = function (on) { if (on != null) { grid.visible = !!on; fundoPref.grade = !!on; BimFundo.gravar(fundoPref); } return grid.visible; };
+  S._fundo = function (m) {
+    if (m != null) { fundoPref.fundo = BimFundo.modo(m); BimFundo.gravar(fundoPref); fundoAplicar(); }
+    return fundoPref.fundo;
+  };
+  S._fundoEstado = function () { return { fundo: fundoPref.fundo, grade: grid.visible, gradeEscolhida: fundoPref.grade, fundoCena: scene.background ? scene.background.getHex() : null, fundoCss: ((S && S.host) || host).style.background }; };
   S._ortoEstado = function () { return ortoMain.on; };
   S._camPlanos = function () { return { near: camera.near, far: camera.far, fov: camera.fov }; };
   S._irInicio = function () { irInicio(camera, orbit, function (p, t) { voarCam(p, t, 0.6); }); };
@@ -4976,7 +4997,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* ⚠ PARADO NA ORIGEM e enorme (como o exemplo do three): o shader mede a direção a partir da ORIGEM (cameraPos = 0) e
          desenha no plano do fundo (z = w), sem corte pelo `far`. Seguir a câmera mostrava as quinas da caixa (medido na foto). */
       ceu.scale.setScalar(450000);
-      icLocalMundo.add(ceu); out.ceu = true;
+      ceu.visible = fundoPref.fundo === 'padrao'; icLocalMundo.add(ceu); out.ceu = true;
     }
     modelRoot.updateMatrixWorld(); icLocalG.matrix.copy(modelRoot.matrixWorld); icLocalG.matrixWorldNeedsUpdate = true;
     return out;
@@ -5278,7 +5299,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } catch (_) { url = null; } finally {
       camera.position.copy(bk.p); camera.up.copy(bk.up); camera.fov = bk.fov; camera.near = bk.near; camera.far = bk.far; scene.background = bk.bg;
       icMapaG.visible = true;
-      var ceuV = icLocalMundo.getObjectByName('local-ceu'); if (ceuV) ceuV.visible = true;
+      var ceuV = icLocalMundo.getObjectByName('local-ceu'); if (ceuV) ceuV.visible = fundoPref.fundo === 'padrao';
       icG3G.visible = g3C !== false;
       if (_selLn && vLn !== null) _selLn.visible = vLn;
       camera.lookAt(orbit.target); camera.updateProjectionMatrix();
@@ -5308,7 +5329,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* LUZ DE FOTO: o 3D de todo dia é claro por igual (ambiente + hemisfério + preenchimento) e a sombra some nele — medido: 1.445
          pixels mais escuros numa foto de 518 mil. Na foto o sol manda: sol × 1,7, hemisfério × 0,55, preenchimento × 0,4 e o
          reflexo do ambiente × 0,5; a grade técnica do chão sai. Tudo volta no finally. */
-      dir.intensity = luzes.d * 1.7; hemi.intensity = luzes.h * 0.55; fill.intensity = luzes.f * 0.4; grid.visible = false;
+      dir.intensity = luzes.d * 1.7; hemi.intensity = luzes.h * 0.55; fill.intensity = luzes.f * 0.4; grid.visible = fundoPref.grade === true;   /* grade só na foto se a pessoa LIGOU de propósito */
       /* o SATÉLITE no chão é material sem luz (MeshBasic): a sombra do modelo não caía nele. Na foto ele vira material com luz
          (o mesmo mapa) e recebe sombra — nas duas fotos (com e sem sombra), para a comparação medir só a sombra */
       icLocalG.children.forEach(function (m) {
@@ -5357,7 +5378,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderer.render(scene, camera);
       var mapaOk = !!(dir.shadow.map && dir.shadow.map.texture);
       var c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
-      var x2 = c2.getContext('2d'); x2.fillStyle = '#eef2f6'; x2.fillRect(0, 0, W, H);   // sem céu, o fundo do 3D é transparente
+      var x2 = c2.getContext('2d'); x2.fillStyle = BimFundo.css(fundoPref.fundo) || '#eef2f6'; x2.fillRect(0, 0, W, H);   // sem céu, o fundo do 3D é transparente
       x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
       x2.drawImage(cv, 0, 0, W * ss, H * ss, 0, 0, W, H);
       var txt = String(o.carimbo || 'OrçaPRO · modo foto · imagem ilustrativa').slice(0, 90), fs = Math.round(H / 54);
@@ -6485,7 +6506,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     var idx = new Uint32Array(Math.max(1, tot / 3));
     g.setIndex(new THREE.BufferAttribute(idx, 1)); g.setDrawRange(0, 0);
-    if (!EST.mat) EST.mat = new THREE.LineBasicMaterial({ color: 0x151515 });
+    if (!EST.mat) EST.mat = new THREE.LineBasicMaterial({ color: BimFundo.contorno(fundoPref.fundo, 0x151515) });
     var ls = new THREE.LineSegments(g, EST.mat);
     ls.position.set(orig[0], orig[1], orig[2]); ls.frustumCulled = false;
     ls.raycast = function () {};   /* aresta é desenho: nunca rouba o clique, a trena nem o encaixe */
@@ -10213,7 +10234,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
     if (on) {
       if (!estiloD.mat) estiloD.mat = new THREE.MeshBasicMaterial({ color: 0xe9e9e9, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
-      if (!estiloD.matLinha) estiloD.matLinha = new THREE.LineBasicMaterial({ color: 0x111111 });
+      if (!estiloD.matLinha) estiloD.matLinha = new THREE.LineBasicMaterial({ color: BimFundo.contorno(fundoPref.fundo, 0x111111) });
       todasMalhas(function (m) {
         if (!m.geometry) return;
         // salva o material ORIGINAL só na 1ª passada (idempotente); mas FORÇA o cinza SEMPRE que
@@ -11894,7 +11915,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var prevBg = scene.background, url;
     var vLn = _selLn ? _selLn.visible : null; // o contorno verde de seleção é overlay de UI: não sai no PNG entregável
     try {
-      scene.background = new THREE.Color(estiloD.on ? 0xffffff : 0x0d1f33); // estilo desenho: foto sai no branco
+      scene.background = new THREE.Color(BimFundo.cor(fundoPref.fundo) !== null ? BimFundo.cor(fundoPref.fundo) : (estiloD.on ? 0xffffff : 0x0d1f33)); // fundo escolhido manda; estilo desenho: foto sai no branco
       if (_selLn) _selLn.visible = false;
       renderer.render(scene, camera);
       url = cvDesenho().toDataURL('image/png');
@@ -19684,6 +19705,8 @@ window.BIM = {
   },
   ortogonal: function (on) { return (S && S._ortoMain) ? S._ortoMain(!!on) : false; },
   grade: function (on) { return (S && S._grade) ? S._grade(on) : null; },
+  fundo: function (m) { return (S && S._fundo) ? S._fundo(m) : null; },
+  fundoEstado: function () { return (S && S._fundoEstado) ? S._fundoEstado() : null; },
   ortogonalAtivo: function () { return !!(S && S._ortoEstado && S._ortoEstado()); },
   /* só leitura (near/far/fov da câmera principal) — fora do cameraAtual de
      propósito: aquele é o que o ponto de vista GRAVA */
