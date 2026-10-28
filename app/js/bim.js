@@ -13671,6 +13671,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
       var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
       st.caixas.forEach(function (c) {
+        /* PEÇA EMBUTIDA (js/bimembutido.js, Casa 487 27/10/2026): o pilar dentro da parede não aparece na arquitetura, só no estrutural */
+        if (window.BimEmbutido && typeof BimDisciplinas !== 'undefined' && BimDisciplinas.atual && BimEmbutido.oculta(c, BimDisciplinas.atual())) return;
         var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
         /* ACABAMENTO VISUAL: a parede com material pintado em alguma face leva esse acabamento no corpo também (topo, pontas e batentes dos vãos):
            sem isto o bloco (terracota, no Realista) aparecia na ponta da parede e na lateral das janelas, em volta da película */

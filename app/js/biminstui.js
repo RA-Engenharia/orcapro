@@ -2146,6 +2146,11 @@
           else if (pid === "iob:fase") o.faseCriada = String(valor);
           else if (pid === "iob:demolida") o.faseDemolida = String(valor) === "Nenhum" ? "" : String(valor);
           else if (pid === "iob:coment") o.comentarios = String(valor == null ? "" : valor).slice(0, 300);
+          else if (pid === "iob:nome") {   /* F2 (Casa 487): renomear a caixa — nome repetido é recusado (HidCaixas.renomear) */
+            var HCn = global.HidCaixas, vN = String(valor == null ? "" : valor).trim();
+            if (HCn && vN) { var rN = HCn.renomear(st, id, vN); if (!rN.ok) return self.props(uid); }
+            o.nome = vN.slice(0, 40);
+          }
           else if (pid === "itp:material" && t) { self.mudarTipo(t, String(valor)); return self.props(uid); }
           else if (String(pid).indexOf("p12:") === 0) { self.mudarP12(uid, pid, valor); return self.props(uid); }   /* P12 */
           else if (pid === "ij:junta" || pid === "ij:motivo") { if (jtP) self.mudarJunta(jtP, pid === "ij:junta" ? String(valor) : null, pid === "ij:motivo" ? String(valor) : null); return self.props(uid); }
@@ -2245,7 +2250,7 @@
         { id: "iob:fase", rotulo: "Fase criada", tipo: "lista", valor: alvo.faseCriada || "Construção nova", opcoes: fases },
         { id: "iob:demolida", rotulo: "Fase demolida", tipo: "lista", valor: alvo.faseDemolida || "Nenhum", opcoes: dem },
         { id: "iob:coment", rotulo: "Comentários", tipo: "texto", valor: alvo.comentarios || "" }
-      ] };
+      ].concat(alvo.peca ? [{ id: "iob:nome", rotulo: "Nome (renomeie)", tipo: "texto", valor: alvo.nome || "" }] : []) };   /* F2 (Casa 487): CI-01, CG-01, CP-01… — o nome da caixa/peça sai na prancha e no memorial */
     },
 
     /* ------------------------------------------------ JUNTAS NA PONTA (QV1, 17/10/2026)

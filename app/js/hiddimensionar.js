@@ -123,6 +123,12 @@
                                               : { aparelho: "aquecedor (" + entradaAF + ")" };
       if (!dem) ctx.pendencia("agua_quente.demanda", "a demanda da água quente na saída do aquecedor não foi calculada (vazão de ponto pendente): a água fria do aquecedor fica sem consumo", "água fria — aquecedor " + entradaAF);
     }
+    /* F7 (Casa 487): consumo de PONTO que a tabela da norma não tem (ex.: ducha higiênica sem linha em af.aparelhos): entrada.pontosExtraAF = { famInst: { aparelho, vazao_ls, peso, pressaoMin_kpa?, fonte } }
+       — o RT declara a premissa (ficha do fabricante); sem isto o ponto ficava sem vazão/peso e derrubava o barrilete inteiro e a pressão dinâmica. */
+    if (entrada.pontosExtraAF && typeof entrada.pontosExtraAF === "object") {
+      perfilAF = perfilAF || { pontosExtra: {} }; perfilAF.pontosExtra = perfilAF.pontosExtra || {};
+      Object.keys(entrada.pontosExtraAF).forEach(function (k) { if (!perfilAF.pontosExtra[k]) perfilAF.pontosExtra[k] = entrada.pontosExtraAF[k]; });
+    }
     var af = AF.calcular(entrada, ctx, R, perfilAF), es = ES.calcular(entrada, ctx, R);
     res.sistemas.agua_fria = af; res.sistemas.esgoto = es;
     var aq = AQ ? AQ.calcular(entrada, ctx, R, { programa: res.programa, af: af }) : null;
@@ -164,6 +170,8 @@
     }
     var INDM = dep("HidInd", "./hidind.js");
     if (INDM && entrada.industrial) { var ri = INDM.calcular(copia(entrada.industrial), ctx); res.sistemas.industrial = ri; juntar(ri); }
+    /* F3 gás (27/10/2026): a rede de GLP (js/hidgasrede.js) é o MESMO motor (NBR 15526 no HidInd), guardada em sistemas.gas — o memorial tem seção própria e a prancha, planta própria */
+    if (INDM && entrada.gas) { var rgs = INDM.calcular(copia(entrada.gas), ctx); res.sistemas.gas = rgs; juntar(rgs); }
     /* 3b) reservatórios do modelo × reservação (revisão da junção J3) */
     if (res.programa) {
       var CA = AF.CONECTOR_ALIMENTACAO || {}, reservs = [];
@@ -273,7 +281,7 @@
     /* 6) ops: DN calculado → modelo; as inversas em ordem contrária */
     var vistos = {};
     /* incêndio: as ops (hidrantes, extintores, chuveiros, DN) só entram quando o biminst aceita o sistema (aplicavel) */
-    var SIS3 = SIS2.concat(res.sistemas.incendio && res.sistemas.incendio.aplicavel ? [res.sistemas.incendio] : [], res.sistemas.industrial && res.sistemas.industrial.aplicavel ? [res.sistemas.industrial] : []);
+    var SIS3 = SIS2.concat(res.sistemas.incendio && res.sistemas.incendio.aplicavel ? [res.sistemas.incendio] : [], res.sistemas.industrial && res.sistemas.industrial.aplicavel ? [res.sistemas.industrial] : []);   /* o gás não emite ops de DN: o DN já vem dimensionado e travado de js/hidgasrede.js */
     [af, es].concat(SIS3).forEach(function (s) { arr(s && s.ops).forEach(function (o) { if (vistos[o.id]) { aviso("geral", "erro", "trecho " + o.id + " recebeu DN de dois sistemas", [o.id], null); return; } vistos[o.id] = 1; res.ops.push(o); }); });
     [af, es].concat(SIS3).forEach(function (s) { arr(s && s.opsDesfazer).forEach(function (o) { res.opsDesfazer.push(o); }); });
     res.opsDesfazer.reverse();
@@ -339,7 +347,7 @@
     /* ⚠ revisão F7 C1/A3 (decisão do gerente 17/10): ok só se NADA está pendente nem reprovado —
        inclusive o status de cada sistema e do programa (pendência de trecho/ponto que não virou
        verificação também derruba o ok). */
-    var stSis = [af.status, es.status, res.recalque ? res.recalque.status : "ok", res.programa ? res.programa.status : "ok"].concat(SIS2.map(function (s) { return s ? s.status : "ok"; })).concat(res.sistemas.incendio ? [res.sistemas.incendio.status] : []).concat(res.sistemas.tratamento ? [res.sistemas.tratamento.status] : []).concat(res.sistemas.industrial ? [res.sistemas.industrial.status] : []);
+    var stSis = [af.status, es.status, res.recalque ? res.recalque.status : "ok", res.programa ? res.programa.status : "ok"].concat(SIS2.map(function (s) { return s ? s.status : "ok"; })).concat(res.sistemas.incendio ? [res.sistemas.incendio.status] : []).concat(res.sistemas.tratamento ? [res.sistemas.tratamento.status] : []).concat(res.sistemas.industrial ? [res.sistemas.industrial.status] : []).concat(res.sistemas.gas ? [res.sistemas.gas.status] : []);
     var sisRuim = stSis.filter(function (x) { return x === "pendente" || x === "reprovado"; }).length;
     res.ok = !reprov && !erros && !res.pendencias.length && !pend && !sisRuim;
     res.resumo = { sistemasNaoOk: sisRuim, trechosAF: arr(af.trechos).length, trechosES: arr(es.trechos).length, alterados: res.ops.length, reprovadas: reprov, pendentes: pend + res.pendencias.length, erros: erros,

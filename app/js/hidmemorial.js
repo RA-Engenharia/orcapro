@@ -37,6 +37,103 @@
   "use strict";
 
   /* hid:fisica-inicio — APRESENTAÇÃO, não física: todo número deste arquivo é casa decimal, índice de coluna/célula, largura, tamanho de fonte, cor ou tolerância de comparação de ponto flutuante. Valor de norma NUNCA é escrito aqui: chega pronto no resultado do HidDimensionar (verificado por tools/test-hid-memorial.js / test-hid-planilhas.js, que comparam com o resultado). Fonte da regra de leitura: CONTRATO §5. */
+
+  /* ================================================================ LIMPEZA PARA O CLIENTE (F8, 28/10/2026)
+     O documento vai ao cliente: não carrega bastidor (nome de arquivo de código, ordem do Rogério, licença de cópia de norma,
+     TCC/apostila/blog, página de PDF). A fonte secundária fica como "referência bibliográfica secundária". */
+  var REF_SEC = "referência bibliográfica secundária";
+  var LIMPA_FONTE = [
+    [/[A-ZÀ-Ú][A-ZÀ-Ú-]{2,},\s*(?:[A-Z]\.\s*){1,3}[^|<()]*?…,\s*p\.\s*\d+\s*\(TCC p\.\s*\d+\)/g, REF_SEC],
+    [/[A-ZÀ-Ú][A-ZÀ-Ú-]{2,},\s*(?:[A-Z]\.\s*){1,3}[^|<]*?\bTCC\b[^|<]*?((?:19|20)\d\d)/g, REF_SEC + " ($1)"],
+    [/\bTCC\b,?\s*(?:[A-Z]{2,8},\s*)?(?:[A-ZÀ-Ú][\wÀ-ú]+(?: [A-ZÀ-Ú][\wÀ-ú]+)*,\s*)?((?:19|20)\d\d)/g, REF_SEC + " ($1)"],
+    [/(?:Figura|Tabela|Quadro)\s+\d+\s+do\s+TCC\s*=\s*/g, ""],
+    [/(?:Figura|Tabela|Quadro)\s+\d+\s+do\s+TCC\s*\(/g, "("],
+    [/\s*\(TCC p\.\s*\d+\)/g, ""],
+    [/NOVACAP\/DF\.[^|<]*?(?:\(R\d+\)|…)/g, REF_SEC + " (memorial de projeto de instalações hidrossanitárias de órgão público)"],
+    [/(?:Tabela|Figura|Quadro)\s+(\d+)\s+do\s+memorial\b/g, "$&"],
+    [/,?\s*p\.\s*PDF p\.\s*\d+/g, ""],
+    [/\bPDF p\.\s*\d+/g, ""],
+    [/(?:[A-ZÀ-Ú]{3,},\s*(?:[A-Z]\.\s*){1,3};?\s*)+(?=apostila|referência bibliográfica secundária)/g, ""],
+    [/\bapostila\b[^|<.;()]*(?:PUC[^|<.;()]*)?/gi, REF_SEC],
+    [/(referência bibliográfica secundária)\.?\s*PUC Goi[áa]s/g, "$1"],
+    [/(?:(?:na|no|em|da|do) )?c[óo]pia hospedada no blog[^|<.;()]*/gi, REF_SEC],
+    [/\bblog\b[^|<.;()]*/gi, REF_SEC],
+    [/;?\s*exemplar pr[óo]prio pendente[^|<]*?(?=\s*[|<]|$)/g, ""],
+    [/\(c[óo]pia n[ãa]o arquivada[^)]*\)/gi, ""],
+    [/\s*\(via TCC[^)]*\)/g, ""],
+    [/\s*\((?:parametros|opcoes|config)\.[\w.]+\)/g, ""],
+    [/\(\s*HidNormas:[^)]*\)/g, "(tabelas de norma do cálculo)"],
+    [/\bHidNormas\b/g, "acervo de normas"],
+    [/\bpadrão do motor\b/g, "padrão do cálculo"],
+    [/Decisão do RT \(gerente do hidro\)/g, "Decisão do responsável técnico"],
+    [/\bgerente do hidro\b/g, "responsável técnico"],
+    [/\s*\(valores com o item; exemplarLicenciado: false\)/g, ""],
+    [/leitura do motor, o texto/g, "leitura adotada no projeto; o texto"],
+    [/pelo motor da piscina/g, "pelo cálculo da piscina"],
+    [/informada pelo chamador/g, "informada no projeto"],
+    [/\bos motores\b/g, "o cálculo"],
+    [/\(NR-24, NR-18, MEC 2006, RDC 50\)/g, "(cada linha com a sua fonte)"],
+    [/sólido "c487-coz-inferior:\d+" do móvel \(o cooktop desenhado\)/g, "cooktop desenhado no móvel da cozinha"],
+    [/c487-parede-E-MURO-E1/g, "no muro esquerdo (E1)"],
+    [/\bfogao\b/g, "fogão"],
+    [/Os ábacos \(a\) aresta viva e \(b\) funil de saída da NBR 10844 \(Figura 5 da norma; Figura 4\.5 do UFSM\) são desenhos e não foram digitalizados em tabela\. Só há a tabela de Botelho & Ribeiro Jr\. \(secundária, do livro-texto\)\./g, "Os ábacos da NBR 10844 (aresta viva e funil de saída) não estão digitalizados em tabela; o condutor vertical foi conferido pela tabela de capacidade do livro-texto (fonte secundária)."],
+    [/(parede )?\bc487-parede-([A-Z][A-Za-z0-9-]*)/g, "parede $2"],
+    [/\bind\.dilatacao\.pontos_fixos(?:\[cobre\])?/g, "distância máxima entre pontos fixos (cobre)"],
+    [/\bap\.condutor_vertical\.abacos\b/g, "ábaco do condutor vertical"],
+    [/;\s*informe opcoes\.[\w.]+[^)|<]*/g, ""],
+    [/\s*\([a-z][a-z0-9_]+(?:\.[a-z0-9_]+){2,}\)/g, ""],
+    [/\s*\([a-z][a-z0-9]+\.[a-z0-9]*_[a-z0-9_]*\)/g, ""],
+    [/\bTCC\b/g, REF_SEC],
+    [/(?:dados-fonte|docs|tools|js)\/[\w./-]+/g, ""]
+  ];
+  /* Casa 487 (F9): chave de código (material, peça, aparelho) nunca vai ao cliente: nome em português; as demais "palavra_palavra" perdem o sublinhado */
+  var NOME_CHAVE = { pvc_soldavel: "PVC soldável", pvc_roscavel: "PVC roscável", pvc_serie_r: "PVC série reforçada", pvc_esgoto: "PVC esgoto (série normal)", pvc_esgoto_enterrado: "PVC ocre enterrado (NBR 7362)",
+    condutor_horizontal: "condutor horizontal", condutor_vertical: "condutor vertical", pia_cozinha: "pia de cozinha", bacia_caixa_acoplada: "bacia com caixa acoplada", caixa_inspecao: "caixa de inspeção",
+    maquina_lavar_roupa: "máquina de lavar roupa", ducha_higienica: "ducha higiênica", ralo_seco: "ralo seco", ralo_sifonado: "ralo sifonado", caixa_sifonada: "caixa sifonada", agua_fria: "água fria",
+    registro_gaveta: "registro de gaveta", registro_esfera: "registro de esfera", registro_pressao: "registro de pressão", gas_residencial: "gás residencial" };
+  function humanizaChaves(x) {
+    return x.replace(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g, function (m, off, str) {
+      var prev = off > 0 ? str.charAt(off - 1) : "", nxt = str.substr(off + m.length, 2);
+      if (/[\w.\/\-\[:#]/.test(prev) || /^(?:\.[A-Za-z0-9]|[\/\-\[\]])/.test(nxt)) return m;   /* parte de chave pontuada, caminho, id com hífen: fica (outro filtro cuida) */
+      return Object.prototype.hasOwnProperty.call(NOME_CHAVE, m) ? NOME_CHAVE[m] : m.replace(/_/g, " ");
+    });
+  }
+  function limpaFonte(s) {
+    var x = String(s == null ? "" : s);
+    LIMPA_FONTE.forEach(function (r) { x = x.replace(r[0], r[1]); });
+    x = humanizaChaves(x);
+    return x.replace(/\(\s*\)/g, "").replace(/,\s*,/g, ",").replace(/\s+([,.;])/g, "$1").replace(/[ \t]{2,}/g, " ");
+  }
+  /* decisão do projetista: some a frase que cita código, ferramenta, a ordem do Rogério ou o estrutural */
+  var RE_BASTIDOR = /(?:\b(?:tools|js|dados-fonte)\/|\.js\b|\bBim[A-Z]\w*\.|\bHid[A-Z]\w*\.|\bClim[A-Z]\w*\.|ordem direta|vale como regra do projeto|\(F\d\)|\bo motor\b|a ferramenta|o TA\b|\bTA punha|\bTraçar automaticamente\b|Corrigir sozinho|DECIS[ÃA]O DO ROG|ESTADO DO MODELO|AUTOCORRE[ÇC][ÃA]O|\bRogério\b|ROG[ÉE]RIO)/;
+  var RE_ESTRUTURAL = /^\s*(?:PILARES|preparo estrutural)/i;
+  function decisaoCliente(texto) {
+    var x = String(texto == null ? "" : texto).replace(/^DECIS[ÃA]O DO ROG[ÉE]RIO[^:]*:\s*/i, "");
+    if (RE_ESTRUTURAL.test(x)) return "";
+    var partes = x.split(/\s*\|\s*/).map(function (seg) {
+      var frases = seg.match(/[\s\S]+?(?:[.!?](?=\s+[A-ZÀ-Ú"(]|\s*$)|$)/g) || [];
+      return limpaFonte(frases.filter(function (f) { return !RE_BASTIDOR.test(f); }).join(" ")).trim();
+    }).filter(Boolean);
+    return partes.join(" | ");
+  }
+  /* texto do usuário/nº de conselho: "CREA 1420606204" → { conselho: "CREA", num: "1420606204" } (evita "CREA nº CREA 1420606204") */
+  function creaPartes(rp) {
+    rp = rp || {};
+    var bruto = String(rp.crea == null ? "" : rp.crea).trim(), cons = String(rp.conselho || "").trim();
+    var m = /^(CREA|CAU|CRT)(?:[\s\-\/]*(?:n[ºo°.]*))?[\s:\-]*(.*)$/i.exec(bruto);
+    if (m) { if (!cons) cons = m[1].toUpperCase(); bruto = m[2].trim(); }
+    return { conselho: cons || "CREA", num: bruto };
+  }
+  function creaTxt(rp) { var c = creaPartes(rp); return c.conselho + " nº " + (c.num || "[Nº]"); }
+  /* endereço sem repetir a cidade ("Rua X, 487 — Uberlândia/MG" + cidade "Uberlândia/MG") */
+  function enderecoTxt(ob) {
+    ob = ob || {};
+    var e = String(ob.endereco || "").trim(), c = String(ob.cidade || "").trim();
+    if (!e) return c;
+    if (c && e.toLowerCase().indexOf(c.toLowerCase()) >= 0) return e;
+    return [e, c].filter(Boolean).join(" — ");
+  }
+
   /* ================================================================ FORMATO */
   var NB = String.fromCharCode(160), MENOS = "−";
   var estado = { indefinidos: [] };
@@ -56,9 +153,11 @@
   function un(v, c, u) { return fin(v) ? br(v, c) + NB + u : "—"; }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;"); }
   /* texto que veio do motor: ponto decimal antes de unidade → vírgula; escapa e denuncia valor indefinido */
-  var RE_DEC = /(\d)\.(\d{1,3})(?=\s?(?:m|cm|mm|kPa|m\/s|L\/s|m³\/h|m³|L|h|%)(?![\wÀ-ú]))/g;
+  /* Casa 487 (F9): "1.000 L" é MIL litros, não "1,000 L" (um litro): para litros só vira vírgula com 1 ou 2 casas ("0.5 L"); as demais unidades seguem como antes */
+  var RE_DEC = /(\d)\.(\d{1,3})(?=\s?(?:m|cm|mm|kPa|m\/s|L\/s|m³\/h|m³|h|%)(?![\wÀ-ú]))|(\d)\.(\d{1,2})(?=\s?L(?![\wÀ-ú\/]))/g;
+  function viraVirgula(m, a, b, c, d) { return a != null && a !== undefined && b !== undefined ? a + "," + b : c + "," + d; }
   function t(s, onde) {
-    var x = String(s == null ? "" : s).replace(RE_DEC, "$1,$2");
+    var x = limpaFonte(s).replace(RE_DEC, viraVirgula);
     if (RE_INDEF.test(x)) { x = x.replace(RE_INDEF_G, "[valor indefinido]"); estado.indefinidos.push((onde ? onde + ": " : "") + x.slice(0, 90)); }
     return esc(x);
   }
@@ -89,10 +188,11 @@
     { id: "incendio", titulo: "Incêndio (hidrantes, extintores e reserva técnica)" },
     { id: "tratamento", titulo: "Tratamento (fossa, ETE ou ETA) e unidades cotadas" },
     { id: "industrial", titulo: "Fluidos industriais (ar comprimido, vapor, óleo, gás)" },
+    { id: "gas", titulo: "Gás combustível (GLP) — abrigo e rede embutida" },
     { id: "clima", titulo: "Climatização" },
     { id: "materiais", titulo: "Materiais e peças especificados" },
     { id: "verificacoes", titulo: "Verificações" },
-    { id: "decisoes", titulo: "Decisões automáticas do projeto" },
+    { id: "decisoes", titulo: "Decisões de projeto" },
     { id: "pendencias", titulo: "Avisos e pendências" },
     { id: "conclusao", titulo: "Conclusão" },
     { id: "referencias", titulo: "Referências" },
@@ -154,9 +254,65 @@
       inc: obj(r.sistemas).incendio && typeof r.sistemas.incendio === "object" ? r.sistemas.incendio : null,
       tr: obj(r.sistemas).tratamento && typeof r.sistemas.tratamento === "object" ? r.sistemas.tratamento : null,
       ind: obj(r.sistemas).industrial && typeof r.sistemas.industrial === "object" ? r.sistemas.industrial : null,
+      gas: obj(r.sistemas).gas && typeof r.sistemas.gas === "object" ? r.sistemas.gas : null,
       verifs: objs(r.verificacoes), fixture: r.fixture === true,
       clima: op.clima && typeof op.clima === "object" && Array.isArray(op.clima.ambientes) ? op.clima : null
     };
+  }
+  /* ITENS A CONFIRMAR (F8, 28/10/2026): o que o cálculo não fechou por falta de dado/fonte, cada um com a premissa adotada.
+     Entra na capa ("com N itens a confirmar"), na conclusão e no quadro da seção "Confirmações do responsável técnico".
+     Reprovação de cálculo NÃO é item a confirmar: continua sendo "Não atende". */
+  var ROT_CHAVE = { "af.aparelhos": "tabela de aparelhos de água fria", "es.aparelhos": "tabela de aparelhos de esgoto", "ind.dilatacao.pontos_fixos": "distância máxima entre pontos fixos (dilatação da tubulação)", "ap.condutor_vertical.abacos": "ábaco do condutor vertical", "entrada.alimentador": "alimentador predial" };
+  function chaveHumana(x) {
+    return String(x == null ? "" : x).replace(/\[([a-z_]+)=([^\]]*)\]/g, function (m, k, v) { return "(" + k.replace(/_/g, " ") + ": " + v.replace(/_/g, " ") + ")"; }).replace(/\b([a-z]{2,}(?:\.[a-z][a-z_0-9]*)+)(\[[^\]]*\])?/g, function (m, k, q) {
+      var r = ROT_CHAVE[k] || k.split(".").pop().replace(/_/g, " ");
+      return r + (q ? " (" + q.slice(1, -1).replace(/=/g, ": ").replace(/_/g, " ") + ")" : "");
+    });
+  }
+  var PREMISSA_PADRAO = "Prevalece o dimensionamento adotado no projeto; o responsável técnico confere este item antes da execução e registra a confirmação.";
+  /* premissa por tipo de item (o que o projeto ADOTA enquanto o dado/fonte não chega); sem tipo conhecido, a padrão. Nenhum valor de norma aqui. */
+  var PREMISSA_TIPO = [
+    [/ducha/i, "Adotados a vazão e o peso da ficha do fabricante da ducha higiênica instalada (valor a registrar pelo responsável técnico na compra); a rede segue dimensionada com esse ponto."],
+    [/[áa]baco|condutor vertical/i, "Condutores verticais conferidos pela tabela de capacidade disponível (fonte secundária), com folga nas verificações; o ábaco da norma é conferido pelo responsável técnico."],
+    [/pontos fixos|dilata/i, "Rede embutida em parede e piso, sem trecho aparente: a verificação é tratada como não aplicável; o responsável técnico confirma."],
+    [/alimentador/i, "Pressão mínima da rede pública e traçado do ramal a obter da concessionária; o projeto prevê a espera da boia na cota indicada e o alimentador é dimensionado com esses dados."],
+    [/press[ãa]o din[âa]mica|press[ãa]o m[íi]nima/i, "Pressão dinâmica a conferir pelo responsável técnico no ponto mais desfavorável (vazão de projeto, perdas e a carga das caixas indicada nas pranchas) antes da execução."]
+  ];
+  function premissaDe(item, dada) {
+    if (dada) return dada;
+    for (var i = 0; i < PREMISSA_TIPO.length; i++) if (PREMISSA_TIPO[i][0].test(item)) return PREMISSA_TIPO[i][1];
+    return PREMISSA_PADRAO;
+  }
+  /* Casa 487 (F9): a mesma questão aparecia 2 vezes (a pendência de fonte e a verificação não concluída): um item por TEMA, com rótulo curto */
+  var TEMAS_CONFIRMAR = [[/[áa]bacos?/i, "Condutor vertical pelo ábaco da NBR 10844"], [/pontos fixos/i, "Distância máxima entre pontos fixos da tubulação de cobre (dilatação)"],
+                         [/alimentador predial|pressão mínima da rede pública/i, "Alimentador predial: pressão mínima da rede pública e traçado do ramal (concessionária)"]];
+  /* rótulo curto do TEMA (ábaco, pontos fixos, alimentador) para a prancha: o texto cru da pendência cita fontes e figuras que não são do cliente */
+  function rotuloTema(x) { for (var ti = 0; ti < TEMAS_CONFIRMAR.length; ti++) if (TEMAS_CONFIRMAR[ti][0].test(String(x))) return TEMAS_CONFIRMAR[ti][1]; return null; }
+  function itensConfirmar(r, k) {
+    var out = [], vistos = {}, grupos = {}, temasVistos = {};
+    function add(item, motivo, premissa) {
+      var it = chaveHumana(limpaFonte(item)).replace(/\s+/g, " ").trim(); if (!it || vistos[it]) return;
+      for (var ti = 0; ti < TEMAS_CONFIRMAR.length; ti++) if (TEMAS_CONFIRMAR[ti][0].test(it)) { if (temasVistos[ti]) return; temasVistos[ti] = 1; it = TEMAS_CONFIRMAR[ti][1]; break; }
+      if (vistos[it]) return;
+      /* a mesma verificação em vários alvos ("… — gas-t1", "… — gas-t4") vira UM item com a lista dos alvos */
+      var m = /^(.*?)\s+—\s+(\S+)$/.exec(it);
+      if (m) {
+        var g = grupos[m[1] + "|" + motivo];
+        if (g) { if (g.alvos.indexOf(m[2]) < 0) g.alvos.push(m[2]); vistos[it] = 1; return; }
+        grupos[m[1] + "|" + motivo] = { alvos: [m[2]], idx: out.length };
+        vistos[it] = 1; out.push({ item: it, base: m[1], motivo: chaveHumana(limpaFonte(motivo || "")).trim(), premissa: limpaFonte(premissaDe(m[1], premissa)) }); return;
+      }
+      vistos[it] = 1; out.push({ item: it, motivo: chaveHumana(limpaFonte(motivo || "")).trim(), premissa: limpaFonte(premissaDe(it, premissa)) });
+    }
+    objs(obj(r).premissas).filter(function (p) { return p.origem === "confirmacao_rt"; }).forEach(function (p) { add(p.item, p.projeto ? "item do projeto a confirmar com o responsável técnico" : "", p.valor); });
+    objs(obj(r).pendencias).forEach(function (p) { add(p.texto || p.motivo || p.chave, "dado ou fonte não disponível", p.premissa); });
+    objs(obj(r).verificacoes).filter(function (v) { return v.status === "pendente"; }).forEach(function (v) { add(String(v.nome || v.id || "") + (v.alvo ? " — " + v.alvo : ""), "verificação não concluída por falta de dado", v.premissa); });
+    if (k) {
+      objs(k.pendencias).forEach(function (p) { add("Climatização: " + (p.texto || p.motivo || p.chave), "dado ou fonte não disponível", p.premissa); });
+      objs(k.verificacoes).filter(function (v) { return v.status === "pendente"; }).forEach(function (v) { add("Climatização: " + String(v.nome || v.id || "") + (v.alvo ? " — " + v.alvo : ""), "verificação não concluída por falta de dado", v.premissa); });
+    }
+    Object.keys(grupos).forEach(function (kk) { var g = grupos[kk], o = out[g.idx]; if (g.alvos.length > 1) o.item = o.base + " — " + g.alvos.join(", "); });
+    return out;
   }
   /* situação da climatização (resultado do ClimDimensionar), para a capa e a conclusão do memorial único */
   function climaSit(c) {
@@ -166,15 +322,15 @@
     return { rep: rep, pen: pen, fixture: k.fixture === true, ok: k.ok === true && !rep && !pen };
   }
   /* os sistemas que o resultado TRAZ (o memorial único fala deles; os ausentes saem numa linha, sem página própria) */
-  var NOMES_SIS = { af: "água fria", es: "esgoto sanitário com ventilação", recalque: "recalque", aq: "água quente", ap: "águas pluviais", incendio: "incêndio", tratamento: "tratamento de esgoto/água", industrial: "fluidos industriais", clima: "climatização" };
+  var NOMES_SIS = { af: "água fria", es: "esgoto sanitário com ventilação", recalque: "recalque", aq: "água quente", ap: "águas pluviais", incendio: "incêndio", tratamento: "tratamento de esgoto/água", industrial: "fluidos industriais", gas: "gás GLP", clima: "climatização" };
   function presentes(c) {
     var o = [];
     if (objs(c.af.trechos).length || objs(c.af.pontos).length) o.push("af");
     if (objs(c.es.trechos).length) o.push("es");
-    if (c.rc) o.push("recalque"); if (c.aq) o.push("aq"); if (c.ap) o.push("ap"); if (c.inc) o.push("incendio"); if (c.tr) o.push("tratamento"); if (c.ind) o.push("industrial"); if (c.clima) o.push("clima");
+    if (c.rc) o.push("recalque"); if (c.aq) o.push("aq"); if (c.ap) o.push("ap"); if (c.inc) o.push("incendio"); if (c.tr) o.push("tratamento"); if (c.ind) o.push("industrial"); if (c.gas) o.push("gas"); if (c.clima) o.push("clima");
     return o;
   }
-  function ausente(c, id) { var DEP = { recalque: "rc", aq: "aq", ap: "ap", incendio: "inc", tratamento: "tr", industrial: "ind", clima: "clima" }; return DEP[id] ? !c[DEP[id]] : false; }
+  function ausente(c, id) { var DEP = { recalque: "rc", aq: "aq", ap: "ap", incendio: "inc", tratamento: "tr", industrial: "ind", gas: "gas", clima: "clima" }; return DEP[id] ? !c[DEP[id]] : false; }
   function listaPt(l) { return l.length > 1 ? l.slice(0, -1).join(", ") + " e " + l[l.length - 1] : (l[0] || ""); }
   function seloFixture(c) {
     return c.fixture ? caixa("<b>TABELAS DE TESTE — NÃO É NORMA.</b> Este resultado foi calculado com tabelas de teste (fixture) e <b>não pode ser usado como memorial de projeto</b>. Os valores abaixo servem só para conferir o funcionamento do cálculo.", "erro") : "";
@@ -182,7 +338,9 @@
 
   /* ================================================================ CAPA */
   function logoBox(src, rot, alt) {
-    return '<div class="logo-box">' + (imgOk(src) ? '<img class="logo" src="' + esc(src) + '" alt="' + esc(alt) + '">' : '<div class="logo-ph"><span class="ph">[LOGO]</span></div>') + '<div class="logo-rot">' + esc(rot) + "</div></div>";
+    /* sem imagem: a RA sai com o nome por extenso; contratante/proprietário sem logo NÃO deixam caixa nem "[LOGO]" (pessoa física não tem logo) */
+    if (!imgOk(src)) return alt === "RA Engenharia" ? '<div class="logo-box"><div class="logo-txt">RA Engenharia Especial</div><div class="logo-rot">' + esc(rot) + "</div></div>" : "";
+    return '<div class="logo-box"><img class="logo" src="' + esc(src) + '" alt="' + esc(alt) + '"><div class="logo-rot">' + esc(rot) + "</div></div>";
   }
   function situacaoGeral(c) {
     var r = c.r, rep = c.verifs.filter(function (v) { return v.status === "reprovado"; }).length, pen = arr(r.pendencias).length + c.verifs.filter(function (v) { return v.status === "pendente"; }).length;
@@ -190,23 +348,27 @@
     var ks = climaSit(c);
     if (ks) { rep += ks.rep; pen += ks.pen; if (ks.fixture) return { ok: false, txt: '<span class="falha">NÃO É NORMA</span> — climatização calculada com tabelas de teste' }; }
     if (c.fixture) return { ok: false, txt: '<span class="falha">NÃO É NORMA</span> — calculado com tabelas de teste' };
-    /* ⚠ decisão do gerente (17/10/2026, revisão F7 C1): a capa NUNCA diz "Atende" com pendência —
-       reprovação/erro = "Não atende"; só pendência = "Não verificado — N pendências" */
+    /* STATUS = o cálculo real (F8, 28/10/2026): reprovação/erro de cálculo → "Não atende"; só item de fonte/confirmação →
+       "Emitido para execução — com N itens a confirmar"; nada → "Atende". Continua proibido dizer "Atende" com item a confirmar. */
+    var itens = itensConfirmar(r, c.clima);
     if (rep || erros) {
-      return { ok: false, txt: '<span class="falha">Não atende — ver seção ' + S("pendencias") + "</span>: " +
-        [rep ? plural(rep, "verificação reprovada", "verificações reprovadas") : "", pen ? plural(pen, "pendência (não verificado)", "pendências (não verificado)") : "", erros ? plural(erros, "aviso de erro", "avisos de erro") : ""].filter(Boolean).join("; ") + "." };
+      return { ok: false, tipo: "reprovado", n: itens.length, txt: '<span class="falha">Não atende — ver seção ' + S("pendencias") + "</span>: " +
+        [rep ? plural(rep, "verificação reprovada", "verificações reprovadas") : "", itens.length ? plural(itens.length, "item a confirmar", "itens a confirmar") : "", erros ? plural(erros, "aviso de erro", "avisos de erro") : ""].filter(Boolean).join("; ") + "." };
     }
-    if (pen || r.ok !== true || (ks && !ks.ok)) {
-      return { ok: false, txt: '<span class="falha">Não verificado — ' + (pen ? plural(pen, "pendência", "pendências") : "situação incompleta") + "</span> (ver seção " + S("pendencias") + ")." };
+    if (itens.length) {
+      return { ok: false, tipo: "emitido", n: itens.length, txt: '<span class="pend">Emitido para execução — com ' + plural(itens.length, "item a confirmar", "itens a confirmar") + "</span> (ver quadro na seção " + S("confirmacoes") + ")." };
     }
-    return { ok: true, txt: '<span class="ok">Atende — todas as verificações desta emissão atendem</span>; partes não abrangidas na seção ' + S("pendencias") + "." };
+    if (r.ok !== true || (ks && !ks.ok)) {
+      return { ok: false, tipo: "incompleto", n: 0, txt: '<span class="falha">Não verificado — situação incompleta</span> (ver seção ' + S("pendencias") + ")." };
+    }
+    return { ok: true, tipo: "atende", n: 0, txt: '<span class="ok">Atende — todas as verificações desta emissão atendem</span>; partes não abrangidas na seção ' + S("pendencias") + "." };
   }
   function capa(c) {
     var op = c.op, lg = obj(op.logos), ob = c.ob, rp = c.rp, g = situacaoGeral(c);
     var revs = objs(op.revisoes);
     if (!revs.length) revs = [{ rev: c.rev, data: c.data, descricao: "Emissão inicial" }];
     return '<section class="capa" id="sec-capa">' +
-      '<div class="capa-logos">' + logoBox(lg.ra, "Projeto e cálculo", "RA Engenharia") + logoBox(lg.contratante, "Contratante", "Contratante") + logoBox(lg.proprietario, "Proprietário", "Proprietário") + "</div>" +
+      '<div class="capa-logos">' + logoBox(lg.ra, "Projeto e cálculo", "RA Engenharia") + logoBox(lg.contratante, "Contratante", "Contratante") + (lg.proprietario && lg.proprietario !== lg.contratante ? logoBox(lg.proprietario, "Proprietário", "Proprietário") : "") + "</div>" +
       '<div class="capa-faixa"><span class="f1"></span><span class="f2"></span><span class="f3"></span></div>' +
       '<div class="capa-tit"><div class="sobre">MEMORIAL DE CÁLCULO</div><h1>Instalações hidrossanitárias' + (c.clima ? " e climatização" : "") + " — " + esc(c.obraNome) + "</h1>" +
       '<div class="sub">' + esc((function (l) { var x = listaPt(l.map(function (k) { return NOMES_SIS[k]; })); return x ? x.charAt(0).toUpperCase() + x.slice(1) : "Sistemas prediais"; })(presentes(c))) + "</div></div>" +
@@ -216,10 +378,10 @@
       '<table class="capa-ficha"><tbody>' +
       "<tr><td>Documento</td><td><b>" + ph(c.num, "Nº DO DOCUMENTO") + " " + esc(c.rev) + "</b> — " + esc(c.data) + "</td></tr>" +
       "<tr><td>Obra</td><td>" + ph(ob.nome, "OBRA") + "</td></tr>" +
-      "<tr><td>Endereço</td><td>" + ph([ob.endereco, ob.cidade].filter(Boolean).join(" — "), "ENDEREÇO") + "</td></tr>" +
+      "<tr><td>Endereço</td><td>" + ph(enderecoTxt(ob), "ENDEREÇO") + "</td></tr>" +
       "<tr><td>Proprietário</td><td>" + ph(ob.proprietario || ob.cliente, "PROPRIETÁRIO") + "</td></tr>" +
-      "<tr><td>Contratante</td><td>" + ph(ob.contratante, "CONTRATANTE") + "</td></tr>" +
-      "<tr><td>Responsável técnico</td><td>" + ph(rp.abrev || rp.titulo, "TÍTULO") + " " + ph(rp.nome, "NOME") + " — " + esc(rp.conselho || "CREA") + " nº " + ph(rp.crea, "Nº") + " — " + ph(rp.empresa, "EMPRESA") + (rp.cnpj ? " (CNPJ " + esc(rp.cnpj) + ")" : "") + "</td></tr>" +
+      (ob.contratante && ob.contratante !== (ob.proprietario || ob.cliente) ? "<tr><td>Contratante</td><td>" + ph(ob.contratante, "CONTRATANTE") + "</td></tr>" : "") +
+      "<tr><td>Responsável técnico</td><td>" + ph(rp.abrev || rp.titulo, "TÍTULO") + " " + ph(rp.nome, "NOME") + " — " + esc(creaTxt(rp)) + " — " + ph(rp.empresa, "EMPRESA") + (rp.cnpj ? " (CNPJ " + esc(rp.cnpj) + ")" : "") + "</td></tr>" +
       "<tr><td>Situação do cálculo</td><td" + (g.ok ? "" : ' class="sit-falha"') + ">" + g.txt + "</td></tr>" +
       "</tbody></table>" +
       '<table class="capa-rev"><caption>Quadro de revisões</caption><thead><tr><th>Rev.</th><th>Data</th><th>Descrição</th><th>Por</th></tr></thead><tbody>' +
@@ -250,23 +412,21 @@
     return h;
   }
 
+  /* Casa 487 (F9): a NR-24 é de local de TRABALHO; numa residência não se aplica — a tabela do programa de necessidades que a cita não vai à lista de normas do cliente */
+  function semNr24(ns) { return ns.filter(function (n) { return !/^\s*NR-24\b/.test(String(n && n.doc || "")); }); }
   /* ================================================================ 2 NORMAS */
   function secNormas(c, d) {
-    var r = c.r, ns = objs(r.normas), h = seloFixture(c);
+    var r = c.r, ns = semNr24(objs(r.normas)), h = seloFixture(c);
     if (!ns.length) return h + naoAbrCaixa(d, "o resultado não trouxe a lista de tabelas de norma utilizadas; nenhum valor de norma pode ser atribuído a uma fonte neste documento.", "lista de normas e tabelas utilizadas");
     var sec = ns.filter(function (n) { return n.tipo === "secundaria"; }).length, pri = ns.filter(function (n) { return n.tipo === "primaria"; }).length;
     h += "<p>Foram utilizadas " + plural(ns.length, "tabela", "tabelas") + " de norma: " + plural(pri, "de fonte primária", "de fonte primária") + " (texto da norma consultado) e " + plural(sec, "de fonte secundária", "de fonte secundária") + " (transcrição de terceiros, com página).</p>";
     if (sec) h += caixa("<b>Fonte secundária.</b> " + plural(sec, "tabela vem", "tabelas vêm") + " de transcrição de terceiros. Cada valor deve ser conferido no texto da norma antes da assinatura do projeto.", "alerta");
-    /* ⚠ RESSALVA DE EXEMPLAR (acordo de 17/10/2026, memória normas-copia-nao-licenciada): tabela conferida no TEXTO da
-       norma em cópia que não é da RA. Os valores valem; o memorial diz que falta o exemplar próprio — protege o RT de
-       assinar com edição errada ou erro de transcrição. Nunca o nome de quem tem a licença da cópia. */
-    var semEx = unicos(ns.filter(function (n) { return n.exemplarLicenciado === false; }).map(function (n) { return n.norma + (n.edicao ? ":" + n.edicao : ""); }));
-    if (semEx.length) h += caixa("<b>Ressalva — exemplar da norma.</b> Os valores de " + esc(listaPt(semEx)) + " foram conferidos no texto da norma, em cópia que não é exemplar licenciado à RA Engenharia. A emissão definitiva depende do exemplar próprio, para confirmar a edição e a transcrição.", "alerta");
-    h += d.tab("Tabelas de norma utilizadas", ["Chave", "Título", "Norma / edição", "Documento de origem", "Tabela / página", "Tipo de fonte"],
+    /* a ressalva de exemplar (cópia sem licença) é controle INTERNO da RA, não entra no documento do cliente (F8, 28/10/2026) */
+    h += d.tab("Tabelas de norma utilizadas", ["Título", "Norma / edição", "Documento de origem", "Tabela / página", "Tipo de fonte"],
       ns.map(function (n) {
-        return trw([td("<code>" + t(n.chave, "normas") + "</code>"), td(t(n.titulo, "normas")), td(t(n.norma, "normas") + (n.edicao ? ", ed. " + t(n.edicao, "normas") : "")),
+        return trw([td(t(n.titulo, "normas")), td(t(n.norma, "normas") + (n.edicao ? ", ed. " + t(n.edicao, "normas") : "")),
           td(t(n.doc, "normas")), td(t([n.tabela, n.pagina ? "p. " + n.pagina : ""].filter(Boolean).join(", ") || "—", "normas")),
-          td((n.tipo === "primaria" ? "primária" : (n.tipo === "secundaria" ? '<b class="alerta-tx">secundária</b>' : "não informado")) + (n.exemplarLicenciado === false ? '<br><small class="alerta-tx">exemplar próprio pendente</small>' : "") + linkNorma(c, n.norma))], n.tipo === "secundaria" ? "linha-alerta" : "");
+          td((n.tipo === "primaria" ? "primária" : (n.tipo === "secundaria" ? '<b class="alerta-tx">secundária</b>' : "não informado")) + linkNorma(c, n.norma))], n.tipo === "secundaria" ? "linha-alerta" : "");
       }), { classe: "normas compacta" });
     return h;
   }
@@ -280,10 +440,11 @@
 
   /* ================================================================ 3 PREMISSAS */
   function secConfirmacoes(c, d) {
-    var cf = objs(c.r.premissas).filter(function (p) { return p.origem === "confirmacao_rt"; });
-    if (!cf.length) return seloFixture(c) + naoAbrCaixa(d, "o responsável técnico não registrou confirmações (itens que o cálculo não confere e que ele assume).", "confirmações do RT");
-    return seloFixture(c) + "<p>Itens que o cálculo não verifica e que o responsável técnico confirma, com a justificativa e o nome de quem responde:</p>" +
-      d.tab("Confirmações do RT", ["Item", "Justificativa e responsável"], cf.map(function (p) { return trw([td(t(p.item, "confirmações")), td(t(p.valor, "confirmações"))]); }), { classe: "compacta" });
+    var itens = itensConfirmar(c.r, c.clima);
+    if (!itens.length) return seloFixture(c) + "<p>Nenhum item a confirmar nesta emissão: todas as verificações têm dado e fonte.</p>";
+    return seloFixture(c) + "<p>Itens que o cálculo não fecha sozinho (dado do local, da concessionária ou do fabricante, ou fonte fora do acervo). Para cada um está a premissa adotada no projeto; o responsável técnico confirma antes da execução.</p>" +
+      d.tab("Itens a confirmar, com a premissa adotada", ["#", "Item a confirmar", "Por quê", "Premissa adotada", "Confirma"],
+        itens.map(function (x, i) { return trw([td(String(i + 1)), td(t(x.item, "confirmações")), td(t(x.motivo || "—", "confirmações")), td(t(x.premissa, "confirmações")), td("Responsável técnico")], "linha-alerta"); }), { classe: "compacta" });
   }
   function secPremissas(c, d) {
     var r = c.r, h = seloFixture(c), af = c.af;
@@ -745,6 +906,37 @@
     if (ob.length) h += caixa("<b>Avisos da rede industrial:</b><ul>" + ob.map(function (a) { return "<li>" + t(a.texto, "ind") + "</li>"; }).join("") + "</ul>", "alerta");
     return h;
   }
+  /* ================================================================ GÁS GLP (F3, Casa 487, 27/10/2026) */
+  /* r.sistemas.gas = o resultado do HidInd (NBR 15526, GLP) com `projetoGas` anexado por HidGasRede.anexar (premissas, local do abrigo, rota,
+     verificações de traçado, estanqueidade, pendências de fonte). O memorial não recalcula: apresenta. */
+  function secGAS(c, d) {
+    var g = c.gas, h = seloFixture(c);
+    if (!g) return h + naoAbrCaixa(d, "o projeto não tem rede de gás.", "gás combustível");
+    var S0 = S("gas"), pj = obj(g.projetoGas), ab = obj(pj.abrigo), rd = obj(pj.rede), mm = obj(pj.memorial), fl = obj(g.fluido);
+    h += "<p>Gás <b>GLP</b> em botijões P13, " + un(fl.pressao_kPa, 2, "kPa") + " manométrica na saída do regulador; tubo de <b>cobre classe " + t(g.serie || "A", "gas") + "</b> embutido (parede e piso), dimensionado pela <b>ABNT NBR 15526</b> (Anexo B, GLP, perda ≤ 10 % da pressão). Situação: " + sit(g.status) + ".</p>";
+    h += h3(S0 + ".1 Premissas e decisões");
+    h += d.tab("Premissas do gás", ["Item", "Valor adotado", "Origem", "Conferir"], objs(pj.premissas).map(function (p) { return trw([td("<b>" + t(p.item, "gas") + "</b>"), td(t(p.valor, "gas")), td(t(p.origem, "gas")), td(t(p.conferir || "—", "gas"))]); }), { classe: "compacta", vazio: "Sem premissas registradas (<b>não verificado</b>)." });
+    h += h3(S0 + ".2 Consumidor, vazão e local do abrigo");
+    h += d.tab("Consumidor e vazão", ["Aparelho", "Potência (kcal/h)", "Potência (kW)", "Vazão (m³/h a 20 °C, 1 atm)", "PCI do GLP (kcal/m³)"],
+      objs(pj.consumidores).map(function (k) { return trw([td(t(k.id + " — " + String(k.aparelho || "").replace(/_/g, " "), "gas")), tn(br(k.kcal_h, 0)), tn(br(k.kW, 1)), tn(br(mm.vazao_m3_h, 3)), tn(br(mm.pci, 0))]); }), { classe: "compacta", vazio: "Sem consumidor (<b>não verificado</b>)." });
+    h += "<p>O abrigo de 2 botijões P13 (um em uso, um reserva) fica <b>" + t(ab.parede || "—", "gas") + "</b>, no ponto (" + br(ab.x, 2) + " ; " + br(-num0(ab.z), 2) + ") m do projeto, <b>fora da projeção da edificação</b>, ao ar livre, com área livre à frente para a troca e sem a fachada da rua à vista. Afastamento ao mais próximo (" + t(ab.afastDe || "—", "gas") + "): " + un(ab.afastamento_m, 2, "m") + ". Percurso da rede: " + un(rd.comprimento_m, 2, "m") + " até o cooktop; " + br(rd.cotovelos, 0) + " mudanças de direção (cotovelos 90°).</p>";
+    h += h3(S0 + ".3 Dimensionamento trecho a trecho (NBR 15526)");
+    h += d.tab("Rede de gás — dimensionamento por trecho", ["Trecho", thn("DN"), thn("Di (mm)"), thn("L (m)"), "Fórmula", thn("v (m/s)"), thn("Perda (kPa)"), thn("P jus. (kPa)"), "Situação"],
+      objs(g.trechos).map(function (x) { var gs = obj(x.gas); return trw([td("<b>" + t(x.id, "gas") + "</b>"), tn(t(x.dn == null ? "—" : x.dn, "gas")), tn(br(x.di_mm, 1)), tn(br(x.comprimento_m, 2)), td(t(gs.formula || "—", "gas")), tn(br(x.velocidade_ms, 2)), tn(br(x.perda_kPa, 4)), tn(br(x.pressaoJusante_kPa, 3)), td(sit(x.status) + (x.status === "pendente" && arr(x.pendencias).length ? "<br>" + faltaTxt(x.pendencias) : ""))], clsLinha(x.status)); }), { classe: "resumo", vazio: "Nenhum trecho calculado (<b>não verificado</b>)." });
+    h += d.tab("Rede de gás — passos do cálculo", ["Trecho", "Passos"], objs(g.trechos).map(function (x) { return trw([td("<b>" + t(x.id, "gas") + "</b>"), td(passosLista(x.passos, "gas trecho " + x.id))], clsLinha(x.status)); }), { classe: "compacta" });
+    h += h3(S0 + ".4 Verificações do local e do traçado");
+    h += d.tab("Local do abrigo e traçado embutido", ["Verificação", "Situação", "Como foi conferido"], objs(pj.verificacoes).map(function (v) { return trw([td(t(v.nome, "gas")), td(sit(v.status)), td(t(v.texto, "gas"))], clsLinha(v.status)); }), { classe: "compacta", vazio: "Sem verificações de traçado (<b>não verificado</b>)." });
+    var es = obj(mm.estanqueidade);
+    h += h3(S0 + ".5 Teste de estanqueidade (antes de pôr em uso)");
+    h += "<p>" + (es.etapa1 ? "<b>1ª etapa:</b> " + t(es.etapa1.regra, "gas") + " → pressão de ensaio mínima de <b>" + un(es.etapa1.pressao_kPa, 1, "kPa") + "</b>. " : "<b>1ª etapa:</b> <b>não verificado</b> (tabela de estanqueidade indisponível). ") +
+         (es.etapa2 ? "<b>2ª etapa:</b> " + t(es.etapa2.regra, "gas") + ". " : "") + "Fonte: " + t(es.fonte || "NBR 15526 8.1", "gas") + ". O ensaio é executado e registrado na obra — este memorial não o substitui.</p>";
+    var pm = objs(pj.pendencias);
+    if (pm.length) h += caixa("<b>Pendências de fonte e de conferência do gás:</b><ul>" + pm.map(function (x) { return "<li>" + t(x.texto, "gas") + "</li>"; }).join("") + "</ul>", "alerta");
+    var ob = objs(g.avisos).filter(function (a) { return a.gravidade !== "info"; });
+    if (ob.length) h += caixa("<b>Avisos do cálculo do gás:</b><ul>" + ob.map(function (a) { return "<li>" + t(a.texto, "gas") + "</li>"; }).join("") + "</ul>", "alerta");
+    return h;
+  }
+  function num0(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
   /* ================================================================ 8 VERIFICAÇÕES */
   /* ================================================================ CLIMATIZAÇÃO (memorial único) */
   function secClima(c, d, n) {
@@ -760,14 +952,29 @@
   }
 
   /* ================================================================ DECISÕES AUTOMÁTICAS */
+  /* decisão do projetista como linha limpa: "Decisão | Motivo: … | Fonte: …" (convenção do texto da config); sem a convenção, só a decisão */
+  function decisaoPartes(texto) {
+    var x = decisaoCliente(texto); if (!x) return null;
+    var m = /^(.*?)(?:\s*\|\s*Motivo:\s*(.*?))?(?:\s*\|\s*(?:Fonte|Norma)[^:]*:\s*(.*))?$/.exec(x);
+    return { decisao: (m && m[1]) || x, motivo: (m && m[2]) || "", fonte: (m && m[3]) || "" };
+  }
   function secDecisoes(c, d) {
     var da = objs(c.r.decisoesAutomaticas), h = seloFixture(c);
-    if (!da.length) return h + "<p>Nenhuma decisão automática registrada nesta emissão: os aparelhos, as caixas e a ventilação estão como foram desenhados no modelo.</p>";
-    var np = da.filter(function (x) { return objs(x.pendencias).length; }).length;
-    h += "<p>Ao posicionar os aparelhos e ligar os ambientes, o sistema decidiu os itens abaixo (kit por aparelho, caixa sifonada, ventilação, esperas). Cada decisão traz a fonte; o que ficou sem fonte está como pendência e <b>não foi adotado como valor</b>." + (np ? " " + plural(np, "elemento tem", "elementos têm") + " pendência." : "") + "</p>";
-    h += d.tab("Decisões automáticas", ["Elemento", "Decisão", "Pendências"],
-      da.map(function (x) { return trw([td(t(x.elemento, "decisões")), td(objs(x.decisoes).map(function (y) { return t(y.texto, "decisões"); }).join("<br>")), td(objs(x.pendencias).length ? objs(x.pendencias).map(function (y) { return t(y.motivo || y.chave, "decisões"); }).join("<br>") : "—")], objs(x.pendencias).length ? "linha-alerta" : ""); }),
-      { classe: "compacta" });
+    if (!da.length) return h + "<p>Nenhuma decisão registrada nesta emissão: os aparelhos, as caixas e a ventilação estão como foram desenhados no modelo.</p>";
+    var linhas = [], pend = [];
+    da.forEach(function (x) {
+      objs(x.decisoes).forEach(function (y) {
+        var p = decisaoPartes(y.texto); if (!p) return;
+        linhas.push(trw([td(t(x.elemento, "decisões")), td(t(p.decisao, "decisões")), td(t(p.motivo || y.motivo || "—", "decisões")), td(t(p.fonte || y.fonte || "—", "decisões"))]));
+      });
+      objs(x.pendencias).forEach(function (y) {
+        var m = decisaoCliente(y.motivo || y.chave); if (!m) return;
+        pend.push(trw([td(t(x.elemento, "decisões")), td(t(chaveHumana(m), "decisões"))], "linha-alerta"));
+      });
+    });
+    h += "<p>Decisões de projeto que valem para a execução, com o motivo e a norma ou fonte. O que ficou sem fonte está na tabela seguinte e <b>não foi adotado como valor</b>.</p>";
+    h += d.tab("Decisões de projeto", ["Elemento", "Decisão", "Motivo", "Norma / fonte"], linhas, { classe: "compacta", vazio: "Nenhuma decisão de projeto registrada." });
+    if (pend.length) h += d.tab("Itens em aberto das decisões de projeto", ["Elemento", "Em aberto"], pend, { classe: "compacta" });
     return h;
   }
 
@@ -783,7 +990,8 @@
     h += d.tab("Situação por sistema", ["Sistema", "Situação"], linhas, { classe: "ficha" });
     var rep = c.verifs.filter(function (v) { return v.status === "reprovado"; }).length + (ks ? ks.rep : 0);
     var pen = arr(r.pendencias).length + c.verifs.filter(function (v) { return v.status === "pendente"; }).length + (ks ? ks.pen : 0);
-    if (g.ok) h += "<p>As verificações desta emissão atendem aos critérios indicados na seção " + S("normas") + ". Os itens não abrangidos estão listados na seção " + S("pendencias") + " e não fazem parte desta conclusão.</p>";
+    if (g.tipo === "emitido") h += "<p>O projeto está <b>emitido para execução</b>: sem reprovação nos sistemas calculados. " + plural(g.n, "item depende", "itens dependem") + " de confirmação do responsável técnico, cada um com a premissa adotada (<a href=\"#sec-confirmacoes\">seção " + S("confirmacoes") + "</a>). Confirmado ou corrigido o item, a revisão seguinte registra a confirmação.</p>";
+    else if (g.ok) h += "<p>As verificações desta emissão atendem aos critérios indicados na seção " + S("normas") + ". Os itens não abrangidos estão listados na seção " + S("pendencias") + " e não fazem parte desta conclusão.</p>";
     else h += "<p>O projeto <b>não pode ser declarado conforme</b> nesta emissão: " + ([rep ? plural(rep, "verificação não atende", "verificações não atendem") : "", pen ? plural(pen, "item não verificado", "itens não verificados") : ""].filter(Boolean).join(" e ") || "a situação do cálculo está incompleta") +
       ' (<a href="#sec-pendencias">seção ' + S("pendencias") + "</a>). Corrigidos esses itens, o cálculo deve ser refeito e o memorial reemitido em nova revisão.</p>";
     return h;
@@ -808,7 +1016,9 @@
   /* ================================================================ 9 AVISOS E PENDÊNCIAS */
   function secPend(c, d) {
     var r = c.r, h = seloFixture(c);
-    var av = objs(r.avisos), pen = objs(r.pendencias);
+    /* avisos de CONTROLE INTERNO da RA (licença de exemplar de norma, convênio de compra) não vão ao cliente */
+    var RE_INTERNO_AV = /licenciad|exemplarLicenciado|conv[êe]nio Confea|comprar\/consultar a norma/i;
+    var av = objs(r.avisos).filter(function (a) { return !RE_INTERNO_AV.test(String(a.texto || "") + " " + String(a.corrigir && a.corrigir.texto || "")); }), pen = objs(r.pendencias);
     var ORD = { erro: 0, aviso: 1, info: 2 };
     av = av.slice().sort(function (a, b) { return (ORD[a.gravidade] == null ? 3 : ORD[a.gravidade]) - (ORD[b.gravidade] == null ? 3 : ORD[b.gravidade]); });
     h += h3(S("pendencias") + ".1 Avisos");
@@ -838,15 +1048,14 @@
     if (tp.length) h += d.tab("Trechos com cálculo pendente", ["Trecho", "O que falta"], tp.map(function (x) { return trw([td("<b>" + t(x.aresta || x.id, "pendências") + "</b>"), td(faltaTxt(x.pendencias) || "não verificado")], "linha-alerta"); }), { classe: "compacta" });
     h += h3(S("pendencias") + ".3 Itens não abrangidos nesta emissão");
     h += "@@NAO_ABRANGIDOS@@";
-    h += h3(S("pendencias") + ".4 Conferências internas do memorial");
-    h += "@@CONFERENCIAS@@";
+    h += "@@CONFERENCIAS@@";   /* só aparece se houver divergência (F9: a lista de conferências internas é controle da RA, não do cliente) */
     if (arr(r.ops).length) h += "<p>O cálculo propõe alterar o DN de " + plural(arr(r.ops).length, "trecho", "trechos") + " no modelo (operação desfazível): " + arr(r.ops).map(function (o) { return t(o.id, "ops") + " → DN " + br(o.dn, 0); }).join("; ") + ".</p>";
     return h;
   }
 
   /* ================================================================ 10 REFERÊNCIAS / 11 TERMO */
   function secRef(c, d) {
-    var ns = objs(c.r.normas), docs = unicos(ns.map(function (n) { return [n.norma, n.edicao ? "ed. " + n.edicao : "", n.doc].filter(Boolean).join(" — "); }));
+    var ns = semNr24(objs(c.r.normas)), docs = unicos(ns.map(function (n) { return [n.norma, n.edicao ? "ed. " + n.edicao : "", n.doc].filter(Boolean).join(" — "); }));
     var h = seloFixture(c) + "<p>Documentos de origem dos valores de norma (vindos do resultado do cálculo):</p>";
     h += docs.length ? '<ul class="refs">' + docs.map(function (x) { return "<li>" + t(x, "referências") + "</li>"; }).join("") + "</ul>" : "<p>Nenhum documento de origem informado pelo resultado (<b>não verificado</b>: fonte das tabelas).</p>";
     /* só as fórmulas que o cálculo USOU (revisão F7 B4: listava Darcy-Weisbach mesmo com FWH) */
@@ -859,12 +1068,18 @@
       "<li>Propriedades da água por temperatura" + (obj(c.af.fluido).fonte ? ": " + t(c.af.fluido.fonte, "referências") + "." : ".") + "</li></ul>";
     return h;
   }
+  /* cargo do contratante na assinatura: o informado; senão "Proprietário" quando o contratante é o próprio proprietário */
+  function assinCargo(c, ca) {
+    if (ca && ca.cargo) return String(ca.cargo);
+    var nome = (ca && ca.nome) || c.ob.contratante || c.ob.proprietario || "";
+    return nome && nome === (c.ob.proprietario || c.ob.cliente) ? "Proprietário" : "";
+  }
   function secTermo(c, d) {
     var rp = c.rp, ca = obj(c.op.contratanteAssinatura), g = situacaoGeral(c);
-    var h = seloFixture(c) + "<p>O responsável técnico declara que o cálculo acima segue os métodos e as fontes indicadas. Situação do cálculo nesta emissão: " + g.txt + " Os itens não verificados e não abrangidos (seção " + S("pendencias") + ") não estão cobertos por esta declaração.</p>";
+    var h = seloFixture(c) + "<p>O responsável técnico declara que o cálculo acima segue os métodos e as fontes indicadas. Situação do cálculo nesta emissão: " + g.txt + (g.tipo === "emitido" ? " Os itens a confirmar (seção " + S("confirmacoes") + ") seguem com a premissa registrada e serão conferidos antes da execução; os itens não abrangidos (seção " + S("pendencias") + ") não estão cobertos por esta declaração." : " Os itens não verificados e não abrangidos (seção " + S("pendencias") + ") não estão cobertos por esta declaração.") + "</p>";
     h += '<div class="assin-grade">' +
-      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + "</b></div><div>" + ph(rp.titulo, "TÍTULO") + " — " + esc(rp.conselho || "CREA") + " nº " + ph(rp.crea, "Nº") + "</div><div>" + ph(rp.empresa, "EMPRESA") + '</div><div class="assin-tit">Responsável técnico</div></div>' +
-      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(ca.nome, "NOME") + "</b></div><div>" + ph(ca.cargo, "CARGO") + "</div><div>" + ph(ca.empresa || c.ob.contratante, "CONTRATANTE") + '</div><div class="assin-tit">Contratante</div></div></div>';
+      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + "</b></div><div>" + ph(rp.titulo, "TÍTULO") + " — " + esc(creaTxt(rp)) + "</div><div>" + ph(rp.empresa, "EMPRESA") + (rp.cnpj ? " — CNPJ " + esc(rp.cnpj) : "") + '</div><div class="assin-tit">Responsável técnico</div></div>' +
+      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(ca.nome || c.ob.contratante || c.ob.proprietario, "NOME DO CONTRATANTE") + "</b></div>" + (assinCargo(c, ca) ? "<div>" + esc(assinCargo(c, ca)) + "</div>" : "") + (ca.empresa ? "<div>" + esc(ca.empresa) + "</div>" : "") + '<div class="assin-tit">Contratante</div></div></div>';
     h += '<p class="local">' + ph(c.op.local, "LOCAL") + ", " + esc(c.data) + ".</p>";
     return h;
   }
@@ -873,7 +1088,7 @@
   function css(c) {
     var rp = c.rp, A = COR.azul;
     var topoE = c.obraNome + " — Instalações hidrossanitárias" + (c.clima ? " e climatização" : "") + (c.fixture ? " — TABELAS DE TESTE" : ""), topoD = "Memorial de cálculo " + (c.num ? c.num + " " : "") + c.rev;
-    var rodE = [rp.empresa || "RA Engenharia", rp.nome ? "Resp. técnico: " + (rp.abrev ? rp.abrev + " " : "") + rp.nome + (rp.crea ? " — " + (rp.conselho || "CREA") + " " + rp.crea : "") : ""].filter(Boolean).join(" · ");
+    var rodE = [rp.empresa || "RA Engenharia", rp.nome ? "Resp. técnico: " + (rp.abrev ? rp.abrev + " " : "") + rp.nome + (rp.crea ? " — " + creaTxt(rp) : "") : ""].filter(Boolean).join(" · ");
     var mb = "font: 7.3pt 'Segoe UI', Helvetica, Arial, sans-serif; color: #5b6774;";
     return "@page { size: A4; margin: 20mm 12mm 17mm 16mm;" +
       " @top-left { content: " + cssStr(topoE) + "; " + mb + " vertical-align: bottom; padding-bottom: 3mm; border-bottom: 0.6pt solid " + COR.areia + "; }" +
@@ -908,7 +1123,7 @@
       "a { color: " + A + "; text-decoration: none; } ul.refs li { margin-bottom: 1.6mm; } ol.regras li { margin-bottom: 1.4mm; text-align: justify; }" +
       ".capa { height: 258mm; display: flex; flex-direction: column; break-after: page; }" +
       ".capa-logos { display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; } .logo-box { flex: 1; text-align: center; }" +
-      ".logo-box .logo { max-height: 24mm; max-width: 56mm; } .logo-ph { height: 20mm; display: flex; align-items: center; justify-content: center; border: 0.6pt dashed #c9b9a0; font-size: 10pt; }" +
+      ".logo-box .logo { max-height: 24mm; max-width: 56mm; } .logo-txt { font-size: 13pt; font-weight: 600; color: " + A + "; padding: 4mm 0; } .logo-ph { height: 20mm; display: flex; align-items: center; justify-content: center; border: 0.6pt dashed #c9b9a0; font-size: 10pt; }" +
       ".logo-rot { font-size: 6.8pt; letter-spacing: 0.12em; text-transform: uppercase; color: #8a7a62; margin-top: 1.2mm; }" +
       ".capa-faixa { display: flex; height: 1.3mm; margin: 5mm 0 7mm; } .capa-faixa span { display: block; height: 100%; } .capa-faixa .f1 { flex: 6; background: " + A + "; } .capa-faixa .f2 { flex: 2; background: " + COR.areia + "; } .capa-faixa .f3 { flex: 1; background: " + COR.verde + "; }" +
       ".capa-tit .sobre { font-size: 8.5pt; letter-spacing: 0.2em; color: " + COR.marrom + "; font-weight: 600; } .capa-tit .sub { color: #4a5664; font-size: 9.6pt; }" +
@@ -930,7 +1145,7 @@
     estado.indefinidos = [];
     if (!r || typeof r !== "object" || !r.sistemas) return { ok: false, motivo: "Sem resultado de cálculo para gerar o memorial.", html: "", titulo: "", secoes: [], tabelas: 0, avisos: [], conferencias: [], naoAbrangidos: [] };
     var c = contexto(r, opcoes), d = new Doc();
-    var FN = { objeto: secObjeto, normas: secNormas, premissas: secPremissas, confirmacoes: secConfirmacoes, programa: secPrograma, af: secAF, es: secES, recalque: secRecalque, aq: secAQ, ap: secAP, incendio: secIN, tratamento: secTR, industrial: secIND, clima: secClima, materiais: secMateriais, verificacoes: secVerif, decisoes: secDecisoes, pendencias: secPend, conclusao: secConclusao, referencias: secRef, termo: secTermo };
+    var FN = { objeto: secObjeto, normas: secNormas, premissas: secPremissas, confirmacoes: secConfirmacoes, programa: secPrograma, af: secAF, es: secES, recalque: secRecalque, aq: secAQ, ap: secAP, incendio: secIN, tratamento: secTR, industrial: secIND, gas: secGAS, clima: secClima, materiais: secMateriais, verificacoes: secVerif, decisoes: secDecisoes, pendencias: secPend, conclusao: secConclusao, referencias: secRef, termo: secTermo };
     var corpo = SECOES.map(function (s, i) {
       var n = i + 1, h;
       try { h = FN[s.id](c, d, n); }
@@ -945,24 +1160,27 @@
     var trAQ = c.aq ? objs(c.aq.trechos) : [], trAP = c.ap ? objs(c.ap.trechos) : [];
     if (c.aq) d.conferir("trechos-aq", trAQ.every(function (x) { return corpo.indexOf("<b>" + esc(x.aresta || x.id) + "</b>") >= 0; }), "todos os " + trAQ.length + " trechos de água quente do resultado aparecem no memorial");
     if (c.ind) d.conferir("trechos-industrial", objs(c.ind.trechos).every(function (x) { return corpo.indexOf("<b>" + esc(x.id) + "</b>") >= 0; }), "todos os " + objs(c.ind.trechos).length + " trechos da rede industrial do resultado aparecem no memorial");
+    if (c.gas) d.conferir("trechos-gas", objs(c.gas.trechos).every(function (x) { return corpo.indexOf("<b>" + esc(x.id) + "</b>") >= 0; }), "todos os " + objs(c.gas.trechos).length + " trechos da rede de gás do resultado aparecem no memorial");
     if (c.tr) d.conferir("unidades-tratamento", objs(c.tr.unidades).every(function (u) { return corpo.indexOf("<b>" + esc(u.id) + "</b>") >= 0; }), "todas as " + objs(c.tr.unidades).length + " unidades do tratamento aparecem no memorial");
     if (c.inc) d.conferir("trechos-incendio", objs(obj(c.inc.hidrantes).trechos).every(function (x) { return corpo.indexOf("<b>" + esc(x.id) + "</b>") >= 0; }), "todos os trechos da rede de incêndio do resultado aparecem no memorial");
     if (c.ap) d.conferir("trechos-ap", trAP.every(function (x) { return corpo.indexOf("<b>" + esc(x.aresta || x.id) + "</b>") >= 0; }), "todos os " + trAP.length + " condutores de pluvial do resultado aparecem no memorial");
-    d.conferir("trechos-es", trES.every(function (x) { return corpo.indexOf(esc(x.aresta || x.id)) >= 0; }), "todos os " + trES.length + " trechos de esgoto do resultado aparecem no memorial");
+    d.conferir("trechos-es", trES.every(function (x) { return corpo.indexOf(esc(x.aresta || x.id)) >= 0 || corpo.indexOf(esc(limpaFonte(x.aresta || x.id))) >= 0; }), "todos os " + trES.length + " trechos de esgoto do resultado aparecem no memorial");
     d.conferir("verificacoes", c.verifs.every(function (v) { return corpo.indexOf(esc(v.id)) >= 0; }), "todas as " + c.verifs.length + " verificações do resultado aparecem no memorial");
-    d.conferir("pendencias", objs(r.pendencias).every(function (p) { return corpo.indexOf(esc(p.chave)) >= 0; }), "toda pendência de norma do resultado aparece como 'não verificado'");
-    d.conferir("fixture", !c.fixture || corpo.indexOf("TABELAS DE TESTE") >= 0, "resultado de fixture leva o selo TABELAS DE TESTE — NÃO É NORMA");
+    d.conferir("pendencias", objs(r.pendencias).every(function (p) { return corpo.indexOf(esc(p.chave)) >= 0 || corpo.indexOf(esc(limpaFonte(p.chave))) >= 0; }), "toda pendência de norma do resultado aparece como 'não verificado'");   /* F9: a chave sai em português (limpaFonte) */
+    d.conferir("fixture", !c.fixture || corpo.indexOf("NÃO É NORMA") >= 0, "resultado calculado com tabelas de teste leva o selo de aviso na capa e nas seções");
     d.conferir("textos", estado.indefinidos.length === 0, "textos dos motores sem valor indefinido" + (estado.indefinidos.length ? ": " + estado.indefinidos.length + " ocorrência(s)" : ""));
     estado.indefinidos.forEach(function (x) { d.aviso("Texto do motor com valor indefinido — " + x); });
 
     var confHtml = '<ul class="conf">' + d.conf.map(function (k) { return "<li>" + (k.ok ? '<span class="ok">verdadeira</span>' : '<span class="falha">FALSA</span>') + " — " + esc(k.texto) + "</li>"; }).join("") + "</ul>";
     var divs = d.avisos.slice();
     confHtml += divs.length ? caixa("<b>Divergências encontradas:</b><ul>" + divs.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>", "erro") : caixa("Todas as conferências internas passaram.");
-    corpo = corpo.replace("@@CONFERENCIAS@@", confHtml);
+    corpo = corpo.replace("@@CONFERENCIAS@@", divs.length ? h3(S("pendencias") + ".4 Conferências internas do memorial") + confHtml : "");
     corpo = corpo.replace("@@NAO_ABRANGIDOS@@", d.naoAbr.length ? "<ul>" + d.naoAbr.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "<p>Nenhum.</p>");
     var titulo = "Memorial de cálculo — Instalações hidrossanitárias" + (c.clima ? " e climatização" : "") + " — " + c.obraNome;
+    function limpaHtml(h) { return h.replace(/(<style[\s\S]*?<\/style>)|>([^<]+)</g, function (m, st, tx) { return st ? st : ">" + limpaFonte(tx) + "<"; }); }
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="OrçaPRO — HidMemorial"><title>' + esc(titulo) + "</title><style>" + css(c) + "</style></head><body>" +
       capa(c) + sumario(c, d) + corpo + "</body></html>";
+    html = limpaHtml(html);
     return {
       ok: true, html: html, titulo: titulo,
       secoes: [{ id: "capa", numero: null, titulo: "Capa" }].concat(SECOES.map(function (s, i) { return { id: s.id, numero: i + 1, titulo: s.titulo }; })),
@@ -972,7 +1190,7 @@
 
   /* hid:fisica-fim */
 
-  var HidMemorial = { gerar: gerar, SECOES: SECOES, CORES: COR };
+  var HidMemorial = { rotuloTema: rotuloTema, chaveHumana: chaveHumana, itensConfirmar: itensConfirmar, gerar: gerar, SECOES: SECOES, CORES: COR, limpaFonte: limpaFonte, decisaoCliente: decisaoCliente, creaTxt: creaTxt, enderecoTxt: enderecoTxt };
   global.HidMemorial = HidMemorial;
   if (typeof module !== "undefined" && module.exports) module.exports = HidMemorial;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

@@ -1680,14 +1680,37 @@
       avaliar: function (famId, tipoId, inst) { var cs = con[inst && inst.id]; return cs ? { conectores: cs.map(function (c) { return { id: c.id, sistema: c.sistema, dn: num(c.dn, 0), x: c.x, y: c.y, z: c.z, nome: c.id }; }) } : null; }
     };
   }
+  /* 27/10/2026 (Casa 487, print do Rogério: "o modelador recusou 1 operação(ões): kf78-ch-rp" — sem dizer por quê): a CONDIÇÃO que o
+     modelador (BimInst.aplicarOp) não aceitou, em português, para a pessoa saber o que corrigir. O estado é o de ANTES da operação. */
+  function motivoRecusa(est, o) {
+    if (!o) return "operação vazia";
+    var id = o.id, rot = String(o.op || "?");
+    if (id != null && (est.trechos[id] || est.pecas[id] || (est.acessorios && est.acessorios[id]))) return "o id " + id + " já existe no modelo (repetido)";
+    if (o.op === "acessorio") {
+      if (o.trecho == null) return "registro sem o tubo em que ele entra";
+      var t = est.trechos[o.trecho];
+      if (!t) return "o tubo " + o.trecho + " em que o registro entra não existe (foi apagado ou ainda não foi lançado)";
+      if (o.novoId != null && (est.trechos[o.novoId] || est.pecas[o.novoId] || (est.acessorios && est.acessorios[o.novoId]))) return "o id " + o.novoId + " da metade nova do tubo já existe";
+      var p1 = t.p1, p2 = t.p2, L = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2) + Math.pow(p2.z - p1.z, 2)), c = num(o.comprimento, 0);
+      if (L > 0) {
+        var u = { x: (p2.x - p1.x) / L, y: (p2.y - p1.y) / L, z: (p2.z - p1.z) / L }, s = (num(o.x, 0) - p1.x) * u.x + (num(o.y, 0) - p1.y) * u.y + (num(o.z, 0) - p1.z) * u.z;
+        var qx = p1.x + u.x * s - num(o.x, 0), qy = p1.y + u.y * s - num(o.y, 0), qz = p1.z + u.z * s - num(o.z, 0);
+        if (Math.sqrt(qx * qx + qy * qy + qz * qz) > 0.05) return "o ponto do registro não está no eixo do tubo " + o.trecho;   // hid:ok mesma tolerância do modelador (5 cm)
+        if (s - c / 2 < 0.001 || s + c / 2 > L - 0.001) return "o registro (" + Math.round(c * 1000) + " mm) não cabe no tubo " + o.trecho + " (" + Math.round(L * 1000) + " mm): falta tubo de um dos lados";   // hid:ok 1 mm = TOL do modelador
+      }
+      return "o modelador não aceitou o registro (dados ou material do tubo " + o.trecho + " incompatíveis)";
+    }
+    if (o.op === "trecho" || o.op === "peca") return "o modelador não aceitou " + (o.op === "peca" ? "a peça" : "o tubo") + " (dado inválido: ponto, DN ou material)";
+    return "o modelador não aceitou a operação " + rot;
+  }
   function validar(entrada, ops) {
-    var B = BI(), est = B.novoEstado(), recusadas = [];
+    var B = BI(), est = B.novoEstado(), recusadas = [], motivos = [];
     /* op "familia" é do BimEdit (a caixa de gordura proposta): vira família com os pontos dela */
     var opsFam = arr(ops).filter(function (o) { return o && o.op === "familia"; });
-    modeloBase(entrada).concat(arr(ops).filter(function (o) { return !(o && o.op === "familia"); })).forEach(function (o) { if (!B.aplicarOp(est, o)) recusadas.push(o.id); });
-    opsFam.forEach(function (o) { if (!conectoresFamilia(o).length) recusadas.push(o.id); });
+    modeloBase(entrada).concat(arr(ops).filter(function (o) { return !(o && o.op === "familia"); })).forEach(function (o) { if (!B.aplicarOp(est, o)) { var m0 = null; try { m0 = motivoRecusa(est, o); } catch (eM) { m0 = null; } recusadas.push(o.id); motivos.push(m0); } });
+    opsFam.forEach(function (o) { if (!conectoresFamilia(o).length) { recusadas.push(o.id); motivos.push("a família " + o.famId + " não tem ponto de ligação reconhecido"); } });
     var F = familias(entrada, opsFam), estado = { instalacoes: B.fechar(est), familias: F.estado };
-    return { recusadas: recusadas, verificacao: B.verificar(estado, F.avaliar), estado: estado, avaliarFam: F.avaliar };
+    return { recusadas: recusadas, motivos: motivos, verificacao: B.verificar(estado, F.avaliar), estado: estado, avaliarFam: F.avaliar };
   }
 
   /* ===================================================== PROPOR */
@@ -1720,6 +1743,8 @@
     arr(o.divisas).forEach(function (dv) { arr(dv && dv.contorno).forEach(function (q) { moverPt(q, dx, dz); }); });
     arr(o.aberturas).forEach(function (a) { if (a && a.dobradica) moverPt(a.dobradica, dx, dz); });
     function caixaXZ(q) { if (!q) return; ["x0", "x1"].forEach(function (k) { if (isFinite(num(q[k], NaN))) q[k] = r4(num(q[k], 0) + dx); }); ["z0", "z1"].forEach(function (k) { if (isFinite(num(q[k], NaN))) q[k] = r4(num(q[k], 0) + dz); }); }
+    /* o telhado: o plano y = a + bx·x + bz·z segue a translação (a' = a − bx·dx − bz·dz) e o polígono vai junto */
+    arr(o.telhados).forEach(function (t) { arr(t && t.planos).forEach(function (pl) { pl.a = r4(num(pl.a, 0) - num(pl.bx, 0) * dx - num(pl.bz, 0) * dz); arr(pl.poligonos).forEach(function (pg) { arr(pg).forEach(function (q) { moverPt(q, dx, dz); }); }); }); });
     arr(o.shafts).forEach(caixaXZ); arr(o.lajes).forEach(function (l) { arr(l && l.passantes).forEach(caixaXZ); });
     arr(o.lajes).forEach(function (l) { if (!l) return; ["x0", "x1"].forEach(function (k) { if (isFinite(num(l[k], NaN))) l[k] = r4(num(l[k], 0) + dx); }); ["z0", "z1"].forEach(function (k) { if (isFinite(num(l[k], NaN))) l[k] = r4(num(l[k], 0) + dz); }); });
     arr(e.opsModelo).forEach(function (op) { if (!op) return; if (op.p1 || op.p2) { moverPt(op.p1, dx, dz); moverPt(op.p2, dx, dz); } else moverPt(op, dx, dz); });
@@ -1787,7 +1812,16 @@
         dV.criterios = r.violacoes; descartadas.push(dV); return;
       }
       var V = validar(entrada, r.ops), avisos = r.avisos.slice(), vistos = {};
-      if (V.recusadas.length) { descartadas.push(descarte(chave, falha("o modelador recusou " + V.recusadas.length + " operação(ões): " + V.recusadas.join(", "), V.recusadas, { tipo: "ajustar", ids: V.recusadas.slice() }))); return; }
+      if (V.recusadas.length) { descartadas.push(descarte(chave, falha("o modelador recusou " + V.recusadas.length + " operação(ões): " + V.recusadas.map(function (idR, iR) { return idR + (V.motivos[iR] ? " (" + V.motivos[iR] + ")" : ""); }).join("; "), V.recusadas, { tipo: "ajustar", ids: V.recusadas.slice() }))); return; }
+      /* 27/10/2026 (Casa 487, pedido do Rogério): NADA SOBRE O TELHADO — o tubo horizontal (água, esgoto, ventilação) fica abaixo da face de baixo da
+         cobertura; a estratégia que passa por cima da telha (ou a atravessa) sai com o porquê. O terminal da ventilação (vertical) é o que atravessa. */
+      var telObs = arr(entrada.obstaculos && entrada.obstaculos.telhados), sobreTel = [];
+      if (telObs.length) arr(r.ops).forEach(function (op) {
+        if (!op || op.op !== "trecho" || !op.p1 || !op.p2) return;
+        var st = tuboSobreTelhado(telObs, op.p1, op.p2, num(op.dn, 0) / 2000, 0);   // hid:ok DN em mm → raio em m
+        if (st) sobreTel.push({ id: String(op.id), telhado: st.id, onde: st.onde, y: st.y });
+      });
+      if (sobreTel.length) { descartadas.push(descarte(chave, falha("tubo sobre o telhado — " + sobreTel.slice(0, 2).map(function (s) { return s.id + " passa a " + f2(s.onde.y) + " m onde a face de baixo do telhado " + s.telhado + " está a " + f2(s.y) + " m"; }).join(" · ") + (sobreTel.length > 2 ? " (+" + (sobreTel.length - 2) + ")" : "") + ". A horizontal corre abaixo da cobertura (sobre a laje, ou no entreforro) e desce embutida na parede", sobreTel.map(function (s) { return s.id; }), { tipo: "ajustar", ids: sobreTel.map(function (s) { return s.id; }) }))); return; }
       V.verificacao.itens.forEach(function (it) {
         if (textosBase[it.texto] && (vistos[it.texto] = (vistos[it.texto] || 0) + 1) <= textosBase[it.texto]) return;
         var onde = it.x == null ? [] : [pt3(it.x, it.y, it.z)];
@@ -1828,8 +1862,55 @@
   /* ===================================================== ADAPTADORES DO BIM */
   /* obstáculos a partir do estado do BimEdit (caixas parede/laje/viga/pilar e
      os vãos das famílias hospedadas). Parede CURVA entra pela corda (v1). */
+  /* a face de baixo do telhado (a menor, se há águas sobrepostas) no ponto (x, z) de planta: { y, id } ou null fora de qualquer telhado */
+  function pontoNoPoligono(x, z, pg) {
+    var dentro = false;
+    for (var i = 0, j = pg.length - 1; i < pg.length; j = i++) {
+      var a = pg[i], b = pg[j];
+      if (((a.z > z) !== (b.z > z)) && (x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x)) dentro = !dentro;
+    }
+    return dentro;
+  }
+  function telhadoAbaixoDe(telhados, x, z) {
+    var melhor = null;
+    arr(telhados).forEach(function (t) {
+      arr(t && t.planos).forEach(function (pl) {
+        if (!arr(pl.poligonos).some(function (pg) { return pontoNoPoligono(x, z, pg); })) return;
+        var y = num(pl.a, 0) + num(pl.bx, 0) * x + num(pl.bz, 0) * z;
+        if (!melhor || y < melhor.y) melhor = { y: r4(y), id: String(t.id), topo: r4(y + num(t.esp, 0)) };
+      });
+    });
+    return melhor;
+  }
+  /* o tubo horizontal (a, b) de raio r fica ACIMA da face de baixo do telhado (menos a folga) em algum ponto do caminho? → { id, y, onde } ou null.
+     O trecho VERTICAL (|dy| > 90 % do comprimento: o terminal da ventilação, a coluna) não conta — é o que atravessa o telhado. A amostra é a
+     cada passo (a face do telhado é plana por água; o passo cobre a quebra na cumeeira e no polígono). */
+  var PASSO_TELHADO = 0.1;   // hid:ok passo da amostra do tubo contra o telhado (m): menor que um nó de conexão
+  function tuboSobreTelhado(telhados, a, b, r, folga) {
+    if (!arr(telhados).length) return null;
+    var dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, L = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (!(L > 0) || Math.abs(dy) > 0.9 * L) return null;   // hid:ok 90 %: acima disto o trecho é vertical
+    var n = Math.max(1, Math.ceil(L / PASSO_TELHADO)), achado = null;
+    for (var i = 0; i <= n && !achado; i++) {
+      var t = i / n, x = a.x + dx * t, y = a.y + dy * t, z = a.z + dz * t, tel = telhadoAbaixoDe(telhados, x, z);
+      if (tel && y + num(r, 0) > tel.y - num(folga, 0) + EPS) achado = { id: tel.id, y: tel.y, onde: { x: r4(x), y: r4(y), z: r4(z) } };
+    }
+    return achado;
+  }
   function obstaculosDoBim(estado, avaliarFam) {
-    var out = { paredes: [], aberturas: [], vigas: [], pilares: [], lajes: [], familias: [], ambientes: [], divisas: [] }, porId = {}, famPorId = {};
+    var out = { paredes: [], aberturas: [], vigas: [], pilares: [], lajes: [], familias: [], ambientes: [], divisas: [], telhados: [] }, porId = {}, famPorId = {};
+    /* 27/10/2026 (Casa 487): o TELHADO é obstáculo para o tubo horizontal (água, esgoto, ventilação): a horizontal corre ABAIXO da cobertura
+       (sobre a laje sob o telhado, ou no entreforro), nunca por cima da telha nem atravessando-a — só o terminal da ventilação a atravessa.
+       Aqui só os dados (a face de baixo de cada água do telhado: plano y = a + bx·x + bz·z sobre o polígono em planta); a conta é telhadoAbaixoDe. */
+    arr(estado && estado.telhados).forEach(function (t) {
+      if (!t || !t.ok && !arr(t.aguasCalc).length) return;
+      var planos = [];
+      arr(t.aguasCalc).forEach(function (ag) {
+        if (!ag || !ag.plano) return;
+        planos.push({ a: num(ag.plano.a, 0), bx: num(ag.plano.bx, 0), bz: num(ag.plano.bz, 0), poligonos: arr(ag.pecas).map(function (pc) { return arr(pc.pts).map(function (q) { return { x: num(q.x, 0), z: num(q.z, 0) }; }); }).filter(function (pg) { return pg.length >= PONTOS_CANTO; }) });
+      });
+      if (planos.length) out.telhados.push({ id: String(t.id), esp: num(t.espessura, 0), planos: planos });
+    });
     arr(estado && estado.familias).forEach(function (f) { if (f && f.id != null) famPorId[String(f.id)] = f; });
     arr(estado && estado.caixas).forEach(function (c) {
       if (!c || c.id == null) return;
@@ -1920,6 +2001,7 @@
     VERSAO: 1, GEO: GEO, PESOS: PESOS, ESTRATEGIAS: ESTRATEGIAS, ORDEM: ORDEM,
     BACIA: BACIA, RECEPTOR: RECEPTOR, PARA_CAIXA: PARA_CAIXA, SIFAO_PROPRIO: SIFAO_PROPRIO,
     propor: propor, validar: validar, obstaculosDoBim: obstaculosDoBim, entradaDoModelo: entradaDoModelo,
+    telhadoAbaixoDe: telhadoAbaixoDe, tuboSobreTelhado: tuboSobreTelhado,   /* 27/10/2026: o telhado como obstáculo (nada de tubo horizontal sobre a telha) */
     ligacaoDoProprioAparelho: ligacaoDoProprioAparelho,   /* a mesma regra no auditor (js/hidcriterios.js): motor e auditor não discordam */
     _int: { LAJE_MIN: LAJE_MIN, aEstrela: aEstrela, Grade: Grade, eixo: eixo, corta: corta, retSeg: retSeg, segSeg3: segSeg3, chanfrar: chanfrar, normObstaculos: normObstaculos, parametros: parametros }
   };

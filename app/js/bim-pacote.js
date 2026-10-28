@@ -10341,6 +10341,7 @@ mo.nTri += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.po
 }
 var NOMES_ED = { parede: 'Parede', laje: 'Laje', pilar: 'Pilar', viga: 'Viga', escada: 'Escada', guarda: 'Guarda-corpo' };
 st.caixas.forEach(function (c) {
+if (window.BimEmbutido && typeof BimDisciplinas !== 'undefined' && BimDisciplinas.atual && BimEmbutido.oculta(c, BimDisciplinas.atual())) return;
 var mat = editMat(c.tipo), vz = c.tipo === 'parede' ? vaosEd[c.id] : null;
 if (c.tipo === 'parede' && c.pinturas && estPrevia()) { var amB = acabBaseParede(c); if (amB) mat = amB; }
 var b2r = (c.b2 && S._b2Malhas) ? S._b2Malhas(c, vz, mat, addMesh) : null;

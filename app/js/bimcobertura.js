@@ -1826,6 +1826,7 @@
     opCalha: function (id, d) {
       d = d || {}; var o = { op: "calha", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, arestas: arr(d.arestas).map(Number) };
       ["largura", "altura", "declividadePct", "laminaMm", "cotaAuto"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+      if (o.cotaAuto === undefined) o.cotaAuto = true;   /* F2 (Casa 487): calha NOVA nasce na cota certa (encostada na telha, o fundo cai até o bocal); false só se o chamador pedir */
       return validaCalha(o) ? o : null;
     },
     opCondutor: function (id, d) {

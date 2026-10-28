@@ -321,7 +321,7 @@
         /* a caixa não fica mais rasa que o produto (corpo + tampa): o tubo raso entra mais alto no corpo, ainda dentro dele */
         prof = Math.max(prof, r4((fc.corpo.alt + fc.tampa.alt) * 0.001));   // hid:ok mm → m
       }
-      var opCx = { op: "peca", id: c.id, peca: "caixa_inspecao", sistema: "esgoto", x: c.x, y: yT, z: c.z, prof: prof, tipoCaixa: tipoCx, rede: redeId, redeParte: "caixa" };
+      var opCx = { op: "peca", id: c.id, peca: "caixa_inspecao", sistema: "esgoto", x: c.x, y: yT, z: c.z, prof: prof, tipoCaixa: tipoCx, rede: redeId, redeParte: "caixa", nome: "CI-" + (ci < 9 ? "0" : "") + (ci + 1) };   /* F2 (Casa 487): CI-01, CI-02… de MONTANTE para a SAÍDA (a ordem do coletor); o usuário renomeia (instAlterar nome) */   // hid:ok numeração com 2 dígitos
       if (!ehPvc) opCx.tampa = tampaCx;
       novas.unshift(opCx);
       out.caixas.push({ id: c.id, tipo: c.tipo, x: c.x, z: c.z, s: r4(c.s), prof: prof, yTampa: yT, nivel: c.nivel ? { fonte: c.nivel.fonte, origem: c.nivel.origem } : null, esperas: c.esperas.map(function (w) { return w.trecho; }) });

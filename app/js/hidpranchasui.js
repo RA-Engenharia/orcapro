@@ -32,7 +32,7 @@
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 
   var CHAVE = "orcapro:hid:pranchas:";
-  var NOME_SIS = { agua_fria: "Água fria", agua_quente: "Água quente", esgoto: "Esgoto e ventilação", pluvial: "Águas pluviais", incendio: "Incêndio", industrial: "Fluidos / gás", tratamento: "Tratamento" };
+  var NOME_SIS = { agua_fria: "Água fria", agua_quente: "Água quente", esgoto: "Esgoto e ventilação", pluvial: "Águas pluviais", incendio: "Incêndio", industrial: "Fluidos / gás", gas: "Gás GLP (abrigo e rede embutida)", tratamento: "Tratamento" };
   var ESCALAS = ["auto", "20", "25", "50", "75", "100", "125"];   // hid:ok escalas de desenho oferecidas na tela (as mesmas do K2.escalas)
   var ULTIMO = { r: null, ctx: null };
 
@@ -50,7 +50,7 @@
   /* os sistemas que o cálculo trouxe (a tela só oferece o que existe) */
   function sistemasDoResultado(r) {
     var S = (r && r.sistemas) || {}, out = ["agua_fria", "esgoto"];
-    ["agua_quente", "pluvial", "incendio", "industrial", "tratamento"].forEach(function (k) { if (S[k]) out.push(k); });
+    ["agua_quente", "pluvial", "incendio", "industrial", "gas", "tratamento"].forEach(function (k) { if (S[k]) out.push(k); });
     return out;
   }
   function ambientesDoCtx(ctx) {

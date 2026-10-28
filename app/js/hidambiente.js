@@ -296,7 +296,8 @@
     return lista.filter(function (o, i) {
       if (!o || !B.ehOp(o.op)) return false;
       var alvo = o.op === "instAlterar" || o.op === "instSistema" ? o.id : o.id;
-      return !(apag[alvo] > i) && !(o.op === "instAlterar" && o.trecho != null && apag[o.trecho] > i);
+      /* 27/10/2026 (Casa 487): o registro cujo tubo (ou a metade nova dele) foi apagado depois não é mais do modelo */
+      return !(apag[alvo] > i) && !(o.op === "instAlterar" && o.trecho != null && apag[o.trecho] > i) && !(o.op === "acessorio" && o.trecho != null && (apag[o.trecho] > i || (o.novoId != null && apag[o.novoId] > i)));
     });
   }
 
@@ -696,7 +697,7 @@
       /* ⚠ PADRÃO (docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md, correção do Rogério 18/10/2026): caixa de inspeção é da ÁREA
          EXTERNA — a que está DENTRO de um ambiente (print 21: a CI 600 no banheiro) vai para fora, junto à parede externa
          mais perto do ambiente, no mesmo lote do traçado (Ctrl+Z desfaz) */
-      if (c0 && I) {
+      if (c0 && I && !par.caixaInspecaoDentroOk) {   /* par.caixaInspecaoDentroOk: lote sem faixa externa — o projetista autoriza a CI dentro da edificação (tampa reforçada; premissa declarada no projeto) */
         var dIn = I.dentro(est, c0, { parametros: par });
         if (dIn.dentro) {
           /* o lugar da caixa de GORDURA (fora da parede da cozinha, atrás da pia) fica reservado: ela é que precisa estar ali */
@@ -966,6 +967,8 @@
       pP = alemDaPonta(csPia, pP, par);
       var peP = pP ? HI().posicaoExterna(estado, pP, { raio: 0.15, afast: num(par.afastamentoCaixaGordura, HI().GEO_IMP.afastamentoCaixaGordura), parametros: par }) : null;   // hid:ok o raio da caixa de gordura padrão (DN300) e o recuo do HidRota
       if (peP) { parR.areaTecnica = { x: peP.x, z: peP.z }; decide("amb.caixa_gordura", "Caixa de gordura proposta do lado de fora da parede da cozinha, " + peP.motivo + "."); }
+    } else if (pias.length && !cgsRota.length && par.areaTecnica && isFinite(num(par.areaTecnica.x, NaN)) && isFinite(num(par.areaTecnica.z, NaN))) {   /* F6 (Casa 487): o projetista MANDA onde fica a caixa de gordura (parametros.areaTecnica {x,z}) — lote sem faixa externa; antes o parâmetro era ignorado e a caixa caía fora da divisa */
+      parR.areaTecnica = { x: num(par.areaTecnica.x, 0), z: num(par.areaTecnica.z, 0) }; decide("amb.caixa_gordura", "Caixa de gordura no ponto indicado pelo projetista (parametros.areaTecnica).");
     }
     var R = null, esperaCG = false;
     /* FRENTE H3 (20/10/2026): no ANDAR do prédio (rebaixo; a ventilação vai à coluna do shaft) o esgoto corria colado ao piso e a
@@ -1639,7 +1642,7 @@
       function ateColuna(col) {
         return function (top) {
           var C = { x: col.p1.x, z: col.p1.z }, L1 = Math.abs(C.x - top.x), L2 = Math.abs(C.z - top.z);
-          var mid = { x: C.x, y: r4(top.y + L1 * ac), z: top.z }, fim = { x: C.x, y: r4(mid.y + L2 * ac), z: C.z };
+          var mid = { x: C.x, y: teto4(top.y + L1 * ac), z: top.z }, fim = { x: C.x, y: teto4(mid.y + L2 * ac), z: C.z };   /* F6: teto4 (para cima) — com r4 o aclive saía 0,9985 % (< 1 % mínimo) e reprovava o 4.3.9 */
           if (fim.y > col.p2.y - geo(par, "margemNo") || fim.y < col.p1.y + geo(par, "margemNo")) return null;
           var segs = []; if (L1 > EPS) segs.push({ a: top, b: mid }); if (L2 > EPS) segs.push({ a: L1 > EPS ? mid : top, b: fim });
           return { segs: segs, L: L1 + L2, fim: fim, exceto: [col], dn: col.dn != null ? num(col.dn, 0) : null };   /* o DN da coluna: o tê da chegada (o encaixe) */
@@ -1661,7 +1664,7 @@
            nível de transbordamento do aparelho mais alto + o mínimo da tabela (fonte secundária) */
         coluna = { id: CV.id, p1: { x: CV.x, y: CV.yBase, z: CV.z }, p2: { x: CV.x, y: CV.yTopo, z: CV.z } };
         var yTopoV = r4(tetoA.y - geo(par, "margemNo") * 2 - raio(dnV));
-        cands.forEach(function (c) { var b = subida(c, raio(dnV), function (qq) { return r4(yTopoV - (Math.abs(qq.x - CV.x) + Math.abs(qq.z - CV.z)) * ac); }, ateColuna(coluna)); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
+        cands.forEach(function (c) { var b = subida(c, raio(dnV), function (qq) { return chao4(yTopoV - (Math.abs(qq.x - CV.x) + Math.abs(qq.z - CV.z)) * ac); }, ateColuna(coluna)); if (b && (!melhor || b.nota < melhor.nota - EPS)) melhor = b; });
         if (!melhor) { pend("amb.ventilacao", "sem caminho livre do ramal de " + desc[0].ref + " até a coluna de ventilação " + CV.id + " — ponha à mão", ids, { tipo: "ajustar", ids: [CV.id] }); return; }
         yJunta = melhor.extra.fim.y;
         encaixePend(melhor); desvioDec(melhor);
@@ -1764,7 +1767,7 @@
         /* o ramal corre sob o teto e entra na coluna ABAIXO do topo dela (a junção precisa de coluna dos dois lados) */
         var yTopoR = r4(Math.min(tetoA.y, coluna.p2.y) - geo(par, "margemNo") * 2 - raio(dnCol)), bR = null;
         cs.forEach(function (c) {
-          var b = subida(c, raio(dnR), function (qq) { return r4(yTopoR - (Math.abs(qq.x - coluna.p1.x) + Math.abs(qq.z - coluna.p1.z)) * ac); }, ateColuna(coluna));
+          var b = subida(c, raio(dnR), function (qq) { return chao4(yTopoR - (Math.abs(qq.x - coluna.p1.x) + Math.abs(qq.z - coluna.p1.z)) * ac); }, ateColuna(coluna));
           if (b && (!bR || b.nota < bR.nota - EPS)) bR = b;
         });
         /* ⚠ FRENTE H4 (21/10/2026): 2 pias/cubas na mesma parede — o ramal de água fria corre a parede inteira na altura do ramal e

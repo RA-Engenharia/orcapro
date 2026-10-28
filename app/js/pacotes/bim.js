@@ -62824,7 +62824,65 @@ if (!Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ORC, k)) BE.MEDIDAS_ORC[k] 
 if (BE.MEDIDAS_ROTULO && !Object.prototype.hasOwnProperty.call(BE.MEDIDAS_ROTULO, k)) BE.MEDIDAS_ROTULO[k] = rot[k];
 });
 })();
+function arestaOposta(C, k) {
+var n = C.length, a = pt(C[k]), b = pt(C[(k + 1) % n]), d = sub(b, a), l = comp(d);
+if (!(l > 1e-9)) return -1;
+d = [d[0] / l, d[1] / l];
+var nn = [-d[1], d[0]], melhor = -1, mv = -1e18, ml = 0;
+for (var j = 0; j < n; j++) {
+if (j === k) continue;
+var p = pt(C[j]), q = pt(C[(j + 1) % n]), e = sub(q, p), le = comp(e);
+if (!(le > 1e-9)) continue;
+e = [e[0] / le, e[1] / le];
+if (dot(d, e) > -0.5) continue;
+var m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], dist2 = Math.abs(dot(nn, sub(m, a)));
+if (dist2 > mv + 1e-9 || (Math.abs(dist2 - mv) <= 1e-9 && le > ml)) { melhor = j; mv = dist2; ml = le; }
+}
+return melhor;
+}
+function inverterCaimento(contorno, bordas, idTelhado) {
+var C = arr(contorno);
+if (C.length < 3) return { ok: false, erro: "Telhado sem contorno." };
+var def = [];
+C.forEach(function (q, i) { if (!q || q.d !== false) def.push(i); });
+if (def.length !== 1) return { ok: false, erro: "Inverter o caimento vale para o telhado de 1 ÁGUA (uma aresta só define a inclinação); este tem " + def.length + "." };
+var de = def[0], para = arestaOposta(C, de);
+if (para < 0) return { ok: false, erro: "Não achei a aresta oposta ao beiral (contorno sem lado contrário)." };
+var ops = [], avisos = [], id = idTelhado;
+var iDe = C[de] && C[de].i != null ? C[de].i : null;
+ops.push({ op: "telhado", id: id, aresta: de, defineInclinacao: false });
+ops.push({ op: "telhado", id: id, aresta: para, defineInclinacao: true });
+if (iDe != null) { ops.push({ op: "telhado", id: id, aresta: de, inclinacaoAresta: null }); ops.push({ op: "telhado", id: id, aresta: para, inclinacaoAresta: iDe }); }
+arr(bordas).forEach(function (b) {
+if (!b || String(b.telhado) !== String(id)) return;
+var ks = arr(b.arestas).map(Number), mudou = false;
+var novo = ks.map(function (x) { if (x === de) { mudou = true; return para; } if (x === para) { mudou = true; return de; } return x; });
+if (mudou) {
+var u = []; novo.forEach(function (x) { if (u.indexOf(x) < 0) u.push(x); });
+ops.push({ op: b.op === "calha" ? "calha" : "borda", id: b.id, arestas: u });
+avisos.push("A borda " + b.id + (b.tipoBorda ? " (" + b.tipoBorda + ")" : "") + " foi da aresta " + (de + 1) + " para a " + (para + 1) + ": acompanha o novo beiral.");
+}
+});
+return { ok: true, de: de, para: para, ops: ops, avisos: avisos };
+}
+function inverterDoEstado(estado, id) {
+var t = arr(estado && estado.telhados).filter(function (x) { return x && String(x.id) === String(id); })[0];
+if (!t) return { ok: false, erro: "O telhado " + id + " não existe no modelo." };
+if (t.modo !== "perimetro" || !arr(t.contorno).length) return { ok: false, erro: "Inverter o caimento vale para o telhado por perímetro (de 1 água)." };
+var bs = arr(estado.bordas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "borda", id: b.id, telhado: b.telhado, tipoBorda: b.tipoBorda, arestas: arr(b.arestas) }; })
+.concat(arr(estado.calhasEmbutidas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "calha", id: b.id, telhado: b.telhado, tipoBorda: "calha", arestas: arr(b.arestas) }; }));
+return inverterCaimento(t.contorno.map(function (q) { var o = { x: q.x, z: q.z }; if (q.d === false) o.d = false; if (q.i != null) o.i = q.i; return o; }), bs, id);
+}
 var BimTelhado = {
+inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
+inverterDoEstado: inverterDoEstado,
+inverterNoModelo: function (id) {
+var b = global.BIM, est = b && b.editarEstado ? b.editarEstado() : null;
+var r = inverterDoEstado(est && est.estado, id);
+if (!r.ok || !b || !b.editarLote) return r;
+r.aplicado = !!b.editarLote({ op: "lote", id: "inverter-caimento-" + String(id) + "-" + String(new Date().getTime()), origem: "telhado", ops: clone(r.ops) });
+return r;
+},
 TIPOS: TIPOS, MEDIDAS_PACOTE: MEDIDAS_PACOTE, TELHAS: TELHAS, LIM: LIM, BORDAS: BORDAS, INCL_PADRAO: INCL_PADRAO, CAMPOS: CAMPOS,
 tipo: function (id) { return tipoCatalogo(id) || normTipo(TIPOS[0]); },
 telha: telhaDe, inclinacaoPadrao: inclinacaoPadrao, recobrimento: recobrimentoPara, dentro: dentro, pctGraus: pctGraus, avisosDaTelha: avisosDaTelha, comprimentoDaAgua: comprimentoDaAgua,
@@ -62880,6 +62938,7 @@ d = d || {};
 var o = { op: "borda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, tipoBorda: d.tipoBorda, arestas: arr(d.arestas).map(Number) };
 if (fin(Number(d.largura))) o.largura = Number(d.largura);
 if (fin(Number(d.altura))) o.altura = Number(d.altura);
+if (typeof d.cotaAuto === "boolean") o.cotaAuto = d.cotaAuto; else if (o.tipoBorda === "calha") o.cotaAuto = true;
 return opBordaValida(o) ? o : null;
 },
 aplicarOp: function (o, ctx) {
@@ -64627,6 +64686,7 @@ return validaPlatibanda(o) ? o : null;
 opCalha: function (id, d) {
 d = d || {}; var o = { op: "calha", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, arestas: arr(d.arestas).map(Number) };
 ["largura", "altura", "declividadePct", "laminaMm", "cotaAuto"].forEach(function (k) { if (d[k] !== undefined && d[k] !== null) o[k] = d[k]; });
+if (o.cotaAuto === undefined) o.cotaAuto = true;
 return validaCalha(o) ? o : null;
 },
 opCondutor: function (id, d) {
@@ -67151,6 +67211,43 @@ return m;
 };
 global.BimFundacao = BimFundacao;
 if (typeof module !== "undefined" && module.exports) module.exports = BimFundacao;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimembutido.js ==== */
+try {
+(function (global) {
+"use strict";
+var VEEM = { completo: 1, estrutura: 1 };
+var TIPOS = { pilar: 1, viga: 1 };
+function eEmbutido(c) { return !!(c && c.embutido === true && TIPOS[c.tipo]); }
+function oculta(c, disciplina) {
+if (!eEmbutido(c)) return false;
+var d = disciplina == null ? "" : String(disciplina);
+if (!d) return false;
+return !VEEM[d];
+}
+function filtrar(caixas, disciplina) {
+return (Array.isArray(caixas) ? caixas : []).filter(function (c) { return !oculta(c, disciplina); });
+}
+function marcar(c, hospedeiraId) {
+if (!c || !TIPOS[c.tipo]) return c;
+c.embutido = true;
+if (hospedeiraId != null) c.hospedeira = String(hospedeiraId);
+return c;
+}
+function resumo(caixas) {
+var out = { total: 0, porHospedeira: {} };
+(Array.isArray(caixas) ? caixas : []).forEach(function (c) {
+if (!eEmbutido(c)) return;
+out.total++;
+var h = c.hospedeira || "(sem hospedeira)";
+out.porHospedeira[h] = (out.porHospedeira[h] || 0) + 1;
+});
+return out;
+}
+var BimEmbutido = { VEEM: VEEM, eEmbutido: eEmbutido, oculta: oculta, filtrar: filtrar, marcar: marcar, resumo: resumo };
+global.BimEmbutido = BimEmbutido;
+if (typeof module !== "undefined" && module.exports) module.exports = BimEmbutido;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/ifcp3.js ==== */
@@ -76794,7 +76891,7 @@ c.caixa(MAT.PRETO, -we / 2 - 0.015, yb - 0.012, 0.03, 0.015, ha + 0.024, 0.02); 
 }
 }
 });
-def({
+var famBanheiraHidro = def({
 id: "ra-banho-hidromassagem", centro: true, categoria: "banho", nome: "Banheira de hidromassagem", descricao: "Banheira de acrílico retangular com aro, cuba rebaixada, jatos aparentes (principais e minijatos), ralo, ladrão e misturador de deck. Medidas dos tipos são de fichas de catálogo (ver fonte); o aro da cuba e a profundidade interna não são cotas de ficha (padrão da RA, a conferir). Os pontos de água e esgoto (hidráulica) entram na fase do hidrossanitário.",
 parametros: [P("Comprimento", "comprimento", 1.70, "Dimensões", "Comprimento externo (ficha de catálogo, ver fonte do tipo)"), P("Largura", "comprimento", 0.80, "Dimensões", "Largura externa"), P("Altura", "comprimento", 0.43, "Dimensões", "Altura externa, do piso à borda"), P("Aro", "comprimento", 0.08, "Dimensões", "Largura da borda — padrão RA, a conferir no modelo"), P("Profundidade_cuba", "comprimento", 0.33, "Dimensões", "Da borda ao fundo interno — padrão RA, a conferir no modelo"),
 P("Jatos", "inteiro", 1, "Hidromassagem", "Jatos principais"), P("Minijatos", "inteiro", 2, "Hidromassagem"), P("Com_misturador", "simnao", true, "Construção"), P("Material", "material", "acrilico branco", "Materiais")],
@@ -76825,6 +76922,12 @@ c.cil(MAT.CROMO, xm + 0.045, Ht + 0.04, -W / 2 + ar / 2 + 0.02, 0.01, 0.06, { se
 }
 }
 });
+famBanheiraHidro.conectores = [
+{ id: "af", nome: "Água fria (misturador de borda)", sistema: "agua_fria", dn: 20, x: "Comprimento/2 - Aro/2 - 0.01", y: "0.30", z: "-Largura/2 + Aro/2 + 0.02", papel: "entrada", porta: "af", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "altura BH da Tigre (30 cm) e posição do misturador de borda: conferir com o manual da banheira" },
+{ id: "aq", nome: "Água quente (misturador de borda)", sistema: "agua_quente", dn: 20, x: "Comprimento/2 - Aro/2 - 0.21", y: "0.30", z: "-Largura/2 + Aro/2 + 0.02", papel: "entrada", porta: "aq", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "afastamento de 20 cm entre fria e quente (misturador de mesa, Deca p.116): conferir com o manual da banheira" },
+{ id: "esgoto", nome: "Esgoto (válvula e ladrão, sifão)", sistema: "esgoto", dn: 40, x: "Comprimento/2 - Aro - 0.122", y: "0.05", z: "0", papel: "saida", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "saída do sifão sob a cuba (DN 40): conferir com o manual da banheira" },
+{ id: "el", nome: "Eletroduto (bomba dos jatos)", sistema: "eletrica", dn: 25, x: "-Comprimento/2 + Aro + 0.10", y: "0.15", z: "0", papel: "entrada", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "ponto de força dedicado da bomba: conferir potência e tensão na ficha do fabricante e o circuito no projeto elétrico (o eletroduto sobe pelo piso até a caixa da bomba)" }
+];
 def({
 id: "ra-banho-box", moveis: true, categoria: "banho", nome: "Box de vidro (frontal ou de canto)", descricao: "Box de vidro temperado com perfis metálicos, porta de correr ou de abrir e puxador. 'frontal' fecha o vão entre duas paredes; 'canto' faz o L em volta do ralo. A peça é encostada: o fundo do box é a parede em Z = 0 e, no canto, a parede lateral em X = −Largura/2.",
 parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou canto", "instancia"), P("Largura", "comprimento", 1.00, "Dimensões", "Frontal: vão entre paredes. Canto: lado do box. " + USUAL), P("Profundidade", "comprimento", 0.90, "Dimensões", "Distância da parede de fundo ao vidro da frente (largura do chuveiro)"), P("Altura", "comprimento", 1.90, "Dimensões", USUAL),
@@ -84827,6 +84930,30 @@ if (!e.piso) f.faceParede = e.parede;
 f.pontosAgua = { amb: e.amb, kit: e.kit, piso: !!e.piso, fonte: e.fonte, regra: "FRENTE H7 — js/familiasagua.js" };
 return f;
 }
+var SIS_HID = { agua_fria: 1, agua_quente: 1, esgoto: 1 };
+function temHidraulico(fam) { return arr(fam && fam.conectores).some(function (k) { return k && SIS_HID[k.sistema]; }); }
+function nomesDaFormula(s) { return String(s == null ? "" : s).replace(/[0-9]+(\.[0-9]+)?/g, " ").split(/[^A-Za-zÀ-ÿ_]+/).filter(function (x) { return x && !/^(se|e|ou|nao|não|min|max|abs|sen|cos|raiz)$/i.test(x); }); }
+function atualizarDoProjeto(familias) {
+var out = { familias: [], atualizadas: [], avisos: [] }, RA = dep("FamiliasRA", "./familiasra.js");
+arr(familias).forEach(function (f) {
+if (!f || !f.id || temHidraulico(f)) { out.familias.push(f); return; }
+var base = f.mob || f.id, g = null, via = "";
+if (ESPEC[base]) { g = aplicar(f); via = "pontos de água da biblioteca (js/familiasagua.js, " + base + ")"; if (g === f || !temHidraulico(g)) g = null; }
+else if (RA && RA.obter) {
+var lib = null; try { lib = RA.obter(base, true); } catch (e) { lib = null; }
+var cs = arr(lib && lib.conectores).filter(function (k) { return k && SIS_HID[k.sistema]; });
+if (cs.length) {
+var nomes = {}; arr(f.parametros).forEach(function (p) { nomes[String(p.nome).toLowerCase()] = 1; });
+var faltam = [];
+arr(lib.conectores).forEach(function (k) { ["x", "y", "z", "dn", "visivel"].forEach(function (c) { nomesDaFormula(k[c]).forEach(function (n) { if (!nomes[n.toLowerCase()] && faltam.indexOf(n) < 0) faltam.push(n); }); }); });
+if (faltam.length) out.avisos.push("Família " + f.id + ": a biblioteca (" + base + ") tem os conectores, mas a cópia do arquivo não tem o(s) parâmetro(s) " + faltam.join(", ") + " — conectores NÃO copiados.");
+else { g = copia(f); g.conectores = copia(lib.conectores); g.sistemas = (function () { var s = arr(g.sistemas).slice(); arr(lib.sistemas).concat(cs.map(function (k) { return k.sistema; })).forEach(function (x) { if (s.indexOf(x) < 0) s.push(x); }); return s; })(); via = "conectores da família da biblioteca " + base; }
+}
+}
+if (g) { out.familias.push(g); out.atualizadas.push({ id: f.id, base: base, via: via }); } else out.familias.push(f);
+});
+return out;
+}
 function completarRegistradas() {
 var RA = dep("FamiliasRA", "./familiasra.js"); if (!RA || !RA.obter || !RA.registrar) return 0;
 if (!RA._hidCubas) {
@@ -84839,7 +84966,7 @@ Object.keys(ESPEC).forEach(function (id) { var f = RA.obter(id, true); if (f && 
 return n;
 }
 function ehPecaDeAgua(famId) { return !!ESPEC[famId]; }
-var FamiliasAgua = { ESPEC: ESPEC, REGRA: regra, aplicar: aplicar, completarRegistradas: completarRegistradas, ehPecaDeAgua: ehPecaDeAgua, conectoresDe: conectores, FONTE_DECA: FONTE_DECA, FONTE_TIGRE: FONTE_TIGRE };
+var FamiliasAgua = { ESPEC: ESPEC, REGRA: regra, aplicar: aplicar, completarRegistradas: completarRegistradas, atualizarDoProjeto: atualizarDoProjeto, ehPecaDeAgua: ehPecaDeAgua, conectoresDe: conectores, FONTE_DECA: FONTE_DECA, FONTE_TIGRE: FONTE_TIGRE };
 global.FamiliasAgua = FamiliasAgua;
 completarRegistradas();
 if (typeof module !== "undefined" && module.exports) module.exports = FamiliasAgua;
@@ -89402,13 +89529,14 @@ agua_fria: { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gra
 agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
 esgoto: { nome: "Esgoto", abrev: "ES", cor: "#7B4A2A", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
 ventilacao: { nome: "Ventilação", abrev: "VE", cor: "#B08A6E", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
-pluvial: { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto"], material: "pvc_serie_r" },
+pluvial: { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },
 eletrica: { nome: "Elétrica (eletroduto)", abrev: "EL", cor: "#F2B600", grupo: "eletrica", gravidade: false, materiais: ["elet_corrugado_ref", "elet_corrugado", "elet_roscavel", "elet_soldavel"], material: "elet_corrugado_ref" },
 ar: { nome: "Ar-condicionado (duto)", abrev: "AR", cor: "#7F95A8", grupo: "ar", gravidade: false, materiais: ["duto_chapa", "duto_flex"], material: "duto_chapa" },
 frigorigeno: { nome: "Frigorígeno (cobre)", abrev: "FR", cor: "#0FA3A3", grupo: "frigorigeno", gravidade: false, materiais: ["cobre_frigorigeno"], material: "cobre_frigorigeno" },
 dreno: { nome: "Dreno de condensado", abrev: "DR", cor: "#5DADE2", grupo: "dreno", gravidade: true, materiais: ["pvc_soldavel", "pvc_esgoto"], material: "pvc_soldavel" },
 incendio: { nome: "Incêndio (hidrantes e chuveiros)", abrev: "IN", cor: "#C62828", grupo: "incendio", gravidade: false, materiais: ["aco_galvanizado", "aco_preto", "cobre"], material: "aco_galvanizado" },
 industrial: { nome: "Fluidos industriais", abrev: "IND", cor: "#6D4C41", grupo: "industrial", gravidade: false, materiais: ["aco_carbono", "inox", "cobre", "pead"], material: "aco_carbono" },
+gas: { nome: "Gás combustível (GLP)", abrev: "GAS", cor: "#C9A400", grupo: "industrial", gravidade: false, materiais: ["cobre"], material: "cobre" },
 bandeja: { nome: "Eletrocalha (bandeja de cabos)", abrev: "EC", cor: "#8A7F1F", grupo: "bandeja", gravidade: false, materiais: ["eletrocalha"], material: "eletrocalha" }
 };
 var COR_CAIXA_ELETRICA = "#F57C00";
@@ -89660,6 +89788,7 @@ return { pontos: out, trechos: trechos, cotaInicial: r4(num(o.cotaInicial, 0)), 
 desnivel: out.length ? r4(out[0].y - out[out.length - 1].y) : 0, comprimento: r4(Ltot) };
 }
 function camposObra(o, alvo) {
+if (o.nome) alvo.nome = txt(o.nome).slice(0, 40);
 if (o.comentarios) alvo.comentarios = txt(o.comentarios).slice(0, 300);
 if (o.faseCriada) alvo.faseCriada = txt(o.faseCriada).slice(0, 40);
 if (o.faseDemolida && o.faseDemolida !== "Nenhum") alvo.faseDemolida = txt(o.faseDemolida).slice(0, 40);
@@ -89711,6 +89840,7 @@ if (est.acessorios[o.id] && o.id != null) {
 if (o.op === "instAlterar") {
 var ac0 = copia(est.acessorios[o.id]);
 if (o.tipoId !== undefined) ac0.tipoId = txt(o.tipoId);
+if (o.dn !== undefined && isFinite(Number(o.dn)) && Number(o.dn) > 0) ac0.dn = Number(o.dn);
 if (o.dy !== undefined && isFinite(Number(o.dy)) && ac0.centro) ac0.centro = { x: ac0.centro.x, y: Math.round((ac0.centro.y + Number(o.dy)) * 1e6) / 1e6, z: ac0.centro.z };
 if (o.giro !== undefined) { var gA = ((num(o.giro, 0) % 360) + 360) % 360; if (gA) ac0.giro = gA; else delete ac0.giro; }
 if (!normAcessorio(ac0)) return false;
@@ -89735,7 +89865,7 @@ return true;
 if (o.op === "instAlterar" && o.id != null) {
 var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
 var novo = copia(alvo);
-["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
 if (o.continua === "") delete novo.continua;
 if (o.pecaIni === "") delete novo.pecaIni;
 if (o.pecaFim === "") delete novo.pecaFim;
@@ -89755,7 +89885,10 @@ if (est.pecas[o.id]) { est.pecas[o.id].x = r4(mx); est.pecas[o.id].z = r4(mz); r
 return false;
 }
 if (o.op === "apagar" && o.id != null) {
-if (est.trechos[o.id]) { delete est.trechos[o.id]; est.ordemT.splice(est.ordemT.indexOf(o.id), 1); return true; }
+if (est.trechos[o.id]) {
+arr(est.ordemAc).slice().forEach(function (idA) { var a = est.acessorios[idA]; if (a && (String(a.trecho) === String(o.id) || (a.novoId != null && String(a.novoId) === String(o.id)))) { delete est.acessorios[idA]; est.ordemAc.splice(est.ordemAc.indexOf(idA), 1); } });
+delete est.trechos[o.id]; est.ordemT.splice(est.ordemT.indexOf(o.id), 1); return true;
+}
 if (est.pecas[o.id]) { delete est.pecas[o.id]; est.ordemP.splice(est.ordemP.indexOf(o.id), 1); return true; }
 return false;
 }
@@ -90047,6 +90180,20 @@ var maior = ramos.slice().sort(function (a, b) { return b.dn - a.dn; })[0];
 function cx(tipo, dn, dn2, extra) {
 var o = { tipo: tipo, sistema: sistema, material: maior.material, aplicacao: maior.aplicacao, dn: dn, dn2: dn2 || 0 };
 if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+if (tipo === "reducao" && dn2 && !flexOuSemTabela(maior.material)) {
+var itT = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: dn, dn2: dn2 };
+if (sinapiDe(itT).status !== "ok") {
+var dnsM = arr((MATERIAIS[o.material] || {}).dns).filter(function (d) { return d < dn - 0.5 && d > dn2 + 0.5; }).sort(function (a, b) { return b - a; });
+for (var iK = 0; iK < dnsM.length; iK++) {
+var kk = dnsM[iK], a1 = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: dn, dn2: kk }, a2 = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: kk, dn2: dn2 };
+if (sinapiDe(a1).status === "ok" && sinapiDe(a2).status === "ok") {
+var o1 = {}, o2 = {}; Object.keys(o).forEach(function (q) { o1[q] = o[q]; o2[q] = o[q]; });
+o1.dn2 = kk; o2.dn = kk; o1.serie = o2.serie = dn + "x" + kk + "x" + dn2;
+out.push(o1); out.push(o2); return;
+}
+}
+}
+}
 out.push(o);
 }
 if (M.larguras) return decidirBandeja(ramos, sistema, conector, avisos, out, cx);
@@ -90497,6 +90644,7 @@ if (mo && !mo.falta) { r.moDe = { codigo: mo.codigo, descricao: mo.descricao, ob
 else { r.moFalta = true; r.observacao = tx + "; PENDÊNCIA: " + (mo ? mo.texto : "instalação sem composição análoga") + " — só o material entra no orçamento"; }
 return r;
 }
+function flexOuSemTabela(mat) { var Mm = MATERIAIS[mat] || {}; return !!(Mm.flexivel || Mm.semSinapi || Mm.secao || /^duto_/.test(mat)); }
 function sinapiDe(item) {
 var T = tabela(), k = chaveSinapi(item), rot = rotuloItem(item);
 if (!T || !T.chaves) return { status: "pendente", chave: k, rotulo: rot, motivo: "a tabela SINAPI das instalações (js/biminstsinapi.js) não carregou" };
@@ -91240,7 +91388,7 @@ comprimento: a.comprimento, quantidade: 1, unidade: "un", codigo: s0.codigo, sit
 });
 R.pecas.forEach(function (k) {
 var s0 = sit(k.id), P = PECAS[k.peca];
-linhas.push({ id: k.id, categoria: P.sistemas[0] === "eletrica" ? "Dispositivos elétricos" : "Peças hidrossanitárias", tipo: P.nome, sistema: SISTEMAS[k.sistema].nome, nomeSistema: "", tamanho: k.dn,
+linhas.push({ id: k.id, categoria: P.sistemas[0] === "eletrica" ? "Dispositivos elétricos" : "Peças hidrossanitárias", tipo: P.nome + (k.nome ? " " + k.nome : ""), sistema: SISTEMAS[k.sistema].nome, nomeSistema: "", tamanho: k.dn,
 comprimento: null, quantidade: 1, unidade: "un", codigo: s0.codigo, situacao: s0.situacao, motivo: s0.motivo });
 });
 dispositivosDo(estado, avaliarFam).forEach(function (d) {
@@ -93997,6 +94145,7 @@ ventilacao: { cor: "#B08A6E", mm: 0.25, pena: 4, padrao: "oculta" },
 pluvial: { cor: "#2E9E44", mm: 0.35, pena: 5, padrao: "continua" },
 incendio: { cor: "#C62828", mm: 0.35, pena: 5, padrao: "continua" },
 industrial: { cor: "#6D4C41", mm: 0.35, pena: 5, padrao: "continua" },
+gas: { cor: "#C9A400", mm: 0.35, pena: 5, padrao: "continua" },
 dreno: { cor: "#5DADE2", mm: 0.25, pena: 4, padrao: "oculta" },
 eletrica: { cor: "#F2B600", mm: 0.25, pena: 4, padrao: "continua" }
 };
@@ -107297,6 +107446,11 @@ else if (pid === "ik:tampa") o.tampa = String(valor);
 else if (pid === "iob:fase") o.faseCriada = String(valor);
 else if (pid === "iob:demolida") o.faseDemolida = String(valor) === "Nenhum" ? "" : String(valor);
 else if (pid === "iob:coment") o.comentarios = String(valor == null ? "" : valor).slice(0, 300);
+else if (pid === "iob:nome") {
+var HCn = global.HidCaixas, vN = String(valor == null ? "" : valor).trim();
+if (HCn && vN) { var rN = HCn.renomear(st, id, vN); if (!rN.ok) return self.props(uid); }
+o.nome = vN.slice(0, 40);
+}
 else if (pid === "itp:material" && t) { self.mudarTipo(t, String(valor)); return self.props(uid); }
 else if (String(pid).indexOf("p12:") === 0) { self.mudarP12(uid, pid, valor); return self.props(uid); }
 else if (pid === "ij:junta" || pid === "ij:motivo") { if (jtP) self.mudarJunta(jtP, pid === "ij:junta" ? String(valor) : null, pid === "ij:motivo" ? String(valor) : null); return self.props(uid); }
@@ -107385,7 +107539,7 @@ return { nome: "Obra", params: [
 { id: "iob:fase", rotulo: "Fase criada", tipo: "lista", valor: alvo.faseCriada || "Construção nova", opcoes: fases },
 { id: "iob:demolida", rotulo: "Fase demolida", tipo: "lista", valor: alvo.faseDemolida || "Nenhum", opcoes: dem },
 { id: "iob:coment", rotulo: "Comentários", tipo: "texto", valor: alvo.comentarios || "" }
-] };
+].concat(alvo.peca ? [{ id: "iob:nome", rotulo: "Nome (renomeie)", tipo: "texto", valor: alvo.nome || "" }] : []) };
 },
 juntaDoUid: function (id) {
 var R = this._ultimaRede, I = BI(); if (!R || !R.juntas || !I) return null;

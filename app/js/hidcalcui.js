@@ -272,6 +272,71 @@
     return true;
   }
   function aplicar() { return aplicarOps(E.resultado ? E.resultado.ops : [], "Diâmetros aplicados no modelo"); }
+  /* F2 (Casa 487, 27/10/2026) — PLUVIAL ATÉ A RUA e NOMES DAS CAIXAS. O pluvial parte das descidas que o "Rufos, calhas e descidas" deixou
+     (condutores do modelo): embute na parede ou faz shaft de drywall por fora, põe caixas CP e ralos, leva à rua e dimensiona depois pelo
+     "Dimensionar"/"Corrigir sozinho". As caixas do esgoto/gordura/pluvial recebem CI-01…, CG-01…, CP-01… de montante para jusante. Um lote cada. */
+  function pluvialAteARua() {
+    var HP = dep("HidPluvial"), b = B(), m = modelo();
+    if (!HP || !b || !b.editarLote || !m) { E.msg = { k: "erro", t: "O pluvial até a rua não está disponível (motor ou editor do BIM não carregou)." }; redesenhar(); return null; }
+    var r;
+    try { r = HP.planejar(m.estado, { avaliarFam: m.avaliarFam, parametros: {} }); } catch (e) { E.msg = { k: "erro", t: "O pluvial falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
+    if (!r.ops.length) { E.msg = { k: "aviso", t: "Pluvial: nada a traçar. " + r.pendencias.slice(0, 2).map(function (p) { return p.motivo; }).join(" · ") }; redesenhar(); return r; }
+    var ok = b.editarLote({ op: "lote", id: "hid-pluvial-" + String(new Date().getTime()), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(r.ops)) });
+    E.pluvial = r;
+    E.msg = ok ? { k: r.pendencias.length ? "aviso" : "ok", t: "Pluvial até a rua: " + r.descidas.length + " descida(s) (" + r.descidas.filter(function (d) { return d.via === "embutido"; }).length + " embutida(s), " + r.descidas.filter(function (d) { return d.via === "shaft"; }).length + " em shaft), " + r.caixas.length + " caixa(s) CP, " + r.ralos.length + " ralo(s). Pendências: " + r.pendencias.length + ". Ctrl+Z desfaz tudo." } : { k: "erro", t: "O editor recusou o pluvial." };
+    redesenhar();
+    return r;
+  }
+  function nomearCaixas() {
+    var HC = dep("HidCaixas"), b = B(), m = modelo();
+    if (!HC || !b || !b.editarLote || !m) { E.msg = { k: "erro", t: "Os nomes das caixas não estão disponíveis (motor ou editor do BIM não carregou)." }; redesenhar(); return null; }
+    var r = HC.nomear(m.estado, {});
+    if (!r.ops.length) { E.msg = { k: "info", t: "As caixas já estão nomeadas na ordem de montante para jusante (" + r.lista.length + ")." }; redesenhar(); return r; }
+    var ok = b.editarLote({ op: "lote", id: "hid-nomes-" + String(new Date().getTime()), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(r.ops)) });
+    E.msg = ok ? { k: "ok", t: "Caixas nomeadas de montante para jusante: " + r.lista.map(function (c) { return c.nome; }).join(", ") + ". Para renomear, edite o nome na caixa (Propriedades)." } : { k: "erro", t: "O editor recusou os nomes." };
+    redesenhar();
+    return r;
+  }
+  /* F2 (Casa 487): LIGAR AS CAIXAS EM ORDEM — CI-n liga em CI-n+1 e a última leva a espera da saída para a rua (lado da frente: HidPluvial.ruaDe). */
+  function ligarCaixas() {
+    var HC = dep("HidCaixas"), HP = dep("HidPluvial"), b = B(), m = modelo();
+    if (!HC || !HP || !b || !b.editarLote || !m) { E.msg = { k: "erro", t: "Ligar as caixas não está disponível (motor ou editor do BIM não carregou)." }; redesenhar(); return null; }
+    var rua = null;
+    try { var cx = HP._int.contexto(m.estado, { avaliarFam: m.avaliarFam, parametros: {} }); var cs = HC.listar(m.estado); rua = HP._int.ruaDe(cx, cs.length ? cs : [{ x: 0, z: 0 }]); } catch (e) { rua = null; }
+    var r = HC.cadeia(m.estado, { rua: rua, parametros: {} });
+    if (!r.ops.length) { E.msg = { k: "info", t: "Nada a ligar: as caixas de inspeção já estão ligadas em ordem (ou há menos de duas). " + r.pendencias.map(function (p) { return p.motivo; }).join(" · ") }; redesenhar(); return r; }
+    var ok = b.editarLote({ op: "lote", id: "hid-cadeia-" + String(new Date().getTime()), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(r.ops)) });
+    E.msg = ok ? { k: "aviso", t: "Caixas ligadas em ordem (CI-n → CI-n+1): " + r.ligacoes.filter(function (l) { return !l.existente; }).length + " trecho(s) novo(s). " + r.pendencias.map(function (p) { return p.motivo; }).join(" · ") } : { k: "erro", t: "O editor recusou a ligação das caixas." };
+    redesenhar();
+    return r;
+  }
+  /* F2 (Casa 487, 27/10/2026) — CORRIGIR SOZINHO: o dimensionamento roda, os DN do cálculo entram no modelo, roda de novo (máx. 3 voltas), o
+     Corrigir automático de inclinação/bitola é aplicado e, se o maior DN não bastar, a 2ª linha paralela. O que sobra vira pendência com o motivo.
+     Um lote por passo (cada Ctrl+Z desfaz um passo). O motor é o js/hidautocorrige.js (puro, testado). */
+  function autoCorrigir() {
+    var AC = dep("HidAutoCorrigir"), b = B();
+    if (!AC || !b || !b.editarLote) { E.msg = { k: "erro", t: "A autocorreção não está disponível (motor ou editor do BIM não carregou)." }; redesenhar(); return null; }
+    var n = 0;
+    function ctxCorr() { var m = modelo(); return m ? { estado: m.estado, avaliarFam: m.avaliarFam, ops: m.ops } : null; }
+    var io = {
+      calcular: function () { return dimensionar(); },
+      aplicarOps: function (ops, rot) {
+        if (!arr(ops).length) return false;
+        var ok = b.editarLote({ op: "lote", id: "hid-auto-" + String(new Date().getTime()) + "-" + (++n), origem: "hidrossanitario", ops: JSON.parse(JSON.stringify(ops)) });
+        return !!ok;
+      },
+      achados: function () { var c = ctxCorr(), HC = global.HidCorrigir; return c && HC ? HC.achados(c) : []; },
+      propor: function (a) { var c = ctxCorr(), HC = global.HidCorrigir; return c && HC ? HC.propor(c, a) : { ok: false, motivo: "sem o corretor" }; },
+      trecho: function (id) { var m = modelo(); return m ? arr(m.estado.instalacoes && m.estado.instalacoes.trechos).filter(function (t) { return String(t.id) === String(id); })[0] || null : null; },
+      livre: function () { return true; }
+    };
+    var out;
+    try { out = AC.rodar(io, {}); } catch (e) { E.msg = { k: "erro", t: "A autocorreção falhou: " + (e && e.message ? e.message : e) }; redesenhar(); return null; }
+    E.autoCorrecao = out;
+    E.msg = { k: out.ok ? "ok" : "aviso", t: "Corrigir sozinho: " + out.relatorio.join(" ") + (out.pendencias.length ? " Pendências: " + out.pendencias.slice(0, 3).map(function (p) { return p.motivo; }).join(" · ") + (out.pendencias.length > 3 ? " (+" + (out.pendencias.length - 3) + ")" : "") : "") };   // hid:ok quantas pendências cabem na mensagem (formatação)
+    redesenhar();
+    return out;
+  }
 
   function baixar(nome, dados, mime) {
     /* teste de 1 hora (js/testemodulo.js): entregável em teste sai com a marca; módulo vencido não sai */
@@ -1365,6 +1430,10 @@
     if (E.msg) h += '<div data-hid="msg" data-k="' + esc(E.msg.k) + '" style="border:1px solid ' + (E.msg.k === "erro" ? CORES.falha : (E.msg.k === "aviso" ? CORES.aviso : CORES.ok)) + ';border-radius:8px;padding:6px 10px;margin:8px 0;font-size:12px">' + esc(E.msg.t) + "</div>";
     var tem = !!E.resultado, nops = tem ? arr(E.resultado.ops).length : 0;
     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="btn sm primary" data-hid="dimensionar">Dimensionar</button>' +
+      '<button class="btn sm" data-hid="pluvial-rua" title="Leva a água da chuva até a rua: descida embutida na parede (ou shaft de drywall por fora), caixas CP, ralos nas áreas externas e na piscina, saída na divisa. Parte dos condutores deixados pelo Rufos, calhas e descidas. Ctrl+Z desfaz tudo.">Pluvial até a rua</button>' +
+      '<button class="btn sm" data-hid="ligar-caixas" title="Liga as caixas de inspeção em ordem de montante para jusante (CI-01 → CI-02 → …) pelo lado de fora, com a declividade mínima, e leva a última à saída para a rua.">Ligar caixas</button>' +
+      '<button class="btn sm" data-hid="nomear-caixas" title="Dá nome às caixas de inspeção, gordura e pluvial (CI-01, CG-01, CP-01…) de montante para jusante; o nome que você escreveu fica.">Nomear caixas</button>' +
+      '<button class="btn sm primary" data-hid="autocorrigir" title="Dimensiona, põe no modelo os diâmetros que o cálculo pede, refaz o cálculo (até 3 voltas), aplica o Corrigir automático de inclinação e bitola e, se o maior DN não bastar, acrescenta uma 2ª linha. O que sobra fica como pendência com o motivo.">Corrigir sozinho</button>' +
       '<button class="btn sm primary" data-hid="documentos"' + (tem ? "" : " disabled") + ' title="Memorial de cálculo único, memorial descritivo, manual de execução e uso, planilhas e pranchas — PDF, Word e HTML, num clique">Gerar documentos</button>' +
       '<button class="btn sm" data-hid="aplicar"' + (nops ? "" : " disabled") + ' title="Troca os diâmetros do modelo pelos calculados e põe as peças de incêndio propostas; Ctrl+Z desfaz tudo de uma vez">Aplicar diâmetros no modelo' + (nops ? " (" + nops + ")" : "") + "</button>" +
       '<button class="btn sm" data-hid="memorial"' + (tem ? "" : " disabled") + '>Memorial</button><button class="btn sm" data-hid="manual"' + (tem ? "" : " disabled") + ' title="Manual de execução e uso, com fonte e página; o que não tem fonte sai PENDENTE">Manual</button><button class="btn sm" data-hid="planilhas"' + (tem ? "" : " disabled") + '>Planilhas (.xlsx)</button><button class="btn sm" data-hid="pranchas"' + (tem ? "" : " disabled") + ' title="Gerar pranchas: plantas, cortes, isométricos, perspectivas 3D, esquema, detalhes e quadro (PDF, DXF e abas de folha)">Gerar pranchas</button>' +
@@ -1419,6 +1488,10 @@
       if (/^kit-/.test(a) && dep("HidKitUI")) { dep("HidKitUI").clique(a, bt); return; }   /* PROJETO INTELIGENTE (js/hidkitui.js) */
       if (/^pisc-/.test(a) && dep("HidPiscinaUI")) { dep("HidPiscinaUI").clique(a, bt); return; }   /* PISCINA (js/hidpiscinaui.js) */
       if (a === "dimensionar") dimensionar();
+      else if (a === "autocorrigir") autoCorrigir();
+      else if (a === "pluvial-rua") pluvialAteARua();
+      else if (a === "nomear-caixas") nomearCaixas();
+      else if (a === "ligar-caixas") ligarCaixas();
       else if (a === "aplicar") aplicar();
       else if (a === "tr-aplicar") aplicarTratamento();
       else if (a === "tr-trocar") trocarTipo(bt.getAttribute("data-para"));
@@ -1484,7 +1557,7 @@
   }
 
   var HidCalcUI = {
-    VERSAO: 1, estado: E,
+    VERSAO: 1, estado: E, autoCorrigir: autoCorrigir, pluvialAteARua: pluvialAteARua, nomearCaixas: nomearCaixas, ligarCaixas: ligarCaixas,
     /* o js/biminstui.js chama isto ao desenhar o painel Instalações (corpo = #bim-inst-corpo) */
     montar: function (corpo) {
       if (!corpo || !doc) return false;

@@ -363,7 +363,7 @@
     }
   });
   /* ---- banheira de hidromassagem ---- */
-  def({
+  var famBanheiraHidro = def({
     id: "ra-banho-hidromassagem", centro: true, categoria: "banho", nome: "Banheira de hidromassagem", descricao: "Banheira de acrílico retangular com aro, cuba rebaixada, jatos aparentes (principais e minijatos), ralo, ladrão e misturador de deck. Medidas dos tipos são de fichas de catálogo (ver fonte); o aro da cuba e a profundidade interna não são cotas de ficha (padrão da RA, a conferir). Os pontos de água e esgoto (hidráulica) entram na fase do hidrossanitário.",
     parametros: [P("Comprimento", "comprimento", 1.70, "Dimensões", "Comprimento externo (ficha de catálogo, ver fonte do tipo)"), P("Largura", "comprimento", 0.80, "Dimensões", "Largura externa"), P("Altura", "comprimento", 0.43, "Dimensões", "Altura externa, do piso à borda"), P("Aro", "comprimento", 0.08, "Dimensões", "Largura da borda — padrão RA, a conferir no modelo"), P("Profundidade_cuba", "comprimento", 0.33, "Dimensões", "Da borda ao fundo interno — padrão RA, a conferir no modelo"),
       P("Jatos", "inteiro", 1, "Hidromassagem", "Jatos principais"), P("Minijatos", "inteiro", 2, "Hidromassagem"), P("Com_misturador", "simnao", true, "Construção"), P("Material", "material", "acrilico branco", "Materiais")],
@@ -397,6 +397,20 @@
       }
     }
   });
+  /* F3 (27/10/2026): CONECTORES da hidromassagem — o Traçar liga AF, AQ, esgoto e o ponto de força sem o usuário pôr nada à mão.
+     Posições LOCAIS (origem no centro, no piso): o misturador é o de borda do desenho (xm, zm) e a válvula/ladrão é o ralo do desenho
+     (xi - 0,12; z = 0). ⚠ NENHUMA COTA É DE FICHA: o acervo não tem o manual da banheira — a altura dos pontos de água é a "BH" da Tigre
+     (30 cm do piso, hidkitdados.js) e o afastamento de 20 cm entre a fria e a quente é o do misturador de mesa (Deca, p.116, 200 mm); a
+     saída do sifão é DN 40 (cuba/ralo, mesma linha do lavatório). CONFERIR COM O MANUAL DA BANHEIRA ESCOLHIDA antes de executar.
+     Os pontos ficam fora da face de trás (não são de parede): a banheira em plataforma recebe os tubos por baixo, pelo piso.
+     Bomba: a da própria banheira (integrada, potência da ficha do fabricante — pendência no memorial); o ponto elétrico é o eletroduto de
+     entrada da bomba (sistema "eletrica", como as famílias elétricas); o motor da hidromassagem já está em js/eleregras.js (forcaDireta). */
+  famBanheiraHidro.conectores = [
+    { id: "af", nome: "Água fria (misturador de borda)", sistema: "agua_fria", dn: 20, x: "Comprimento/2 - Aro/2 - 0.01", y: "0.30", z: "-Largura/2 + Aro/2 + 0.02", papel: "entrada", porta: "af", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "altura BH da Tigre (30 cm) e posição do misturador de borda: conferir com o manual da banheira" },
+    { id: "aq", nome: "Água quente (misturador de borda)", sistema: "agua_quente", dn: 20, x: "Comprimento/2 - Aro/2 - 0.21", y: "0.30", z: "-Largura/2 + Aro/2 + 0.02", papel: "entrada", porta: "aq", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "afastamento de 20 cm entre fria e quente (misturador de mesa, Deca p.116): conferir com o manual da banheira" },
+    { id: "esgoto", nome: "Esgoto (válvula e ladrão, sifão)", sistema: "esgoto", dn: 40, x: "Comprimento/2 - Aro - 0.122", y: "0.05", z: "0", papel: "saida", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "saída do sifão sob a cuba (DN 40): conferir com o manual da banheira" },
+    { id: "el", nome: "Eletroduto (bomba dos jatos)", sistema: "eletrica", dn: 25, x: "-Comprimento/2 + Aro + 0.10", y: "0.15", z: "0", papel: "entrada", dir: { x: 0, y: -1, z: 0 }, origemPos: "catalogo", aConferir: "ponto de força dedicado da bomba: conferir potência e tensão na ficha do fabricante e o circuito no projeto elétrico (o eletroduto sobe pelo piso até a caixa da bomba)" }
+  ];
   /* ---- box ---- */
   def({
     id: "ra-banho-box", moveis: true, categoria: "banho", nome: "Box de vidro (frontal ou de canto)", descricao: "Box de vidro temperado com perfis metálicos, porta de correr ou de abrir e puxador. 'frontal' fecha o vão entre duas paredes; 'canto' faz o L em volta do ralo. A peça é encostada: o fundo do box é a parede em Z = 0 e, no canto, a parede lateral em X = −Largura/2.",

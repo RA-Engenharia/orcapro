@@ -442,6 +442,11 @@
           var reqF = Math.max(req, dnIn);
           if (reqF > req) r.passos.push("DN nunca diminui a jusante: " + reqF + " (montante)");
           var dnC = dns.filter(function (x) { return x >= reqF; })[0];
+          /* Casa 487 (F9): coletor HORIZONTAL acima do maior DN da série R (150) → PVC ocre de coletor enterrado (NBR 7362, junta elástica), no DN comercial dele; a troca de material vai na op */
+          if (dnC == null && !e.vertical && mat !== "pvc_esgoto_enterrado") {
+            var dnsEnt = ((B.MATERIAIS.pvc_esgoto_enterrado || {}).dns || []).slice().sort(function (a, b) { return a - b; }), dEnt = dnsEnt.filter(function (x) { return x >= reqF; })[0];
+            if (dEnt != null) { dnC = dEnt; r.matTroca = "pvc_esgoto_enterrado"; r.passos.push("DN " + reqF + " acima do maior DN de " + mat + ": coletor em PVC ocre enterrado (NBR 7362), DN " + dEnt); }
+          }
           if (dnC == null) { r.pend.push("DN " + reqF + " acima do maior DN de " + mat); ctx.pendencia("pluvial.trecho[" + e.trecho + "]", "DN " + reqF + " acima do maior DN comercial de " + mat, "trecho " + e.trecho); }
           else r.dnReq = dnC;
         }
@@ -482,13 +487,15 @@
       if (out.verificacoes.some(function (v) { return v.alvo === e.trecho && v.status === "reprovado"; })) t.status = "reprovado";
       out.trechos.push(t);
     });
-    inspecao(G, dir, E, ctx, out, verif);
+    inspecao(G, dir, E, ctx, out, verif, num(entrada && entrada.pluvial && entrada.pluvial.desvioMax, null));
     /* ops: o maior DN das partes do trecho (só trecho calculado e não travado) */
     Object.keys(G.partes).forEach(function (tid) {
       var ps = G.partes[tid].map(function (eid) { return E[eid]; }).filter(Boolean);
       if (!ps.length || ps.some(function (r) { return r.pend.length || r.dnReq == null; }) || ps[0].travado) return;
       var dnF = Math.max.apply(null, ps.map(function (r) { return r.dn; })), dn0 = ps[0].e.dn;
       if (dnF < dn0 && out.areasOrfas.length) return;   /* ⚠ C1: vazão incompleta (área órfã) nunca reduz DN */
+      var troca = ps.some(function (r) { return r.matTroca; }) ? "pvc_esgoto_enterrado" : null;
+      if (troca && ps[0].e.material !== troca) { var o1 = { op: "instAlterar", id: tid, dn: dnF, material: troca }; out.ops.push(o1); out.opsDesfazer.push({ op: "instAlterar", id: tid, dn: dn0, material: ps[0].e.material }); return; }
       if (dnF !== dn0) { out.ops.push({ op: "instAlterar", id: tid, dn: dnF }); out.opsDesfazer.push({ op: "instAlterar", id: tid, dn: dn0 }); }
     });
   }
@@ -501,7 +508,7 @@
      passagem ou peça de inspeção. Ralo, caixa sifonada, calha e bocal NÃO contam. */
   var PECA_INSPECAO = { caixa_areia: 1, caixa_inspecao: 1, caixa_passagem: 1, peca_inspecao: 1 };
   var FAMILIA_INSPECAO = "hid-caixa-areia";
-  function inspecao(G, dir, E, ctx, out, verif) {
+  function inspecao(G, dir, E, ctx, out, verif, desvioMaxProjeto) {
     var GrM = GR(), dm = ctx.consulta("ap.inspecao.distancia_max_m", null, "valor", "pluvial — inspeção");
     /* hid:fisica-inicio — tolerâncias geométricas (não é norma): desvio de 1° = mudança de direção; 1e-6 % = mudança de declividade */
     var TOL_ANG = 1, TOL_DEC = 1e-6;
@@ -516,7 +523,8 @@
        ou onde o horizontal que sai só leva a outro vertical que desce (o desvio da descida, que não é condutor horizontal), a 5.7.5
        não se aplica; dois ou mais horizontais ali continuam "conexão de condutores (5.7.3)". O pé (vertical chega, horizontal sai
        para o destino) continua exigindo a inspeção/caixa de areia, como antes. */
-    var DESVIO_MAX = 1.0;   // hid:ok m: o desvio da descida (atravessar a platibanda/parede) — critério de desenho, não norma; mais longo é condutor horizontal
+    var DESVIO_MAX = desvioMaxProjeto != null && desvioMaxProjeto > 0 ? desvioMaxProjeto : 1.0;   // F5: o projeto pode ampliar o desvio (entrada.pluvial.desvioMax = o mesmo parametros.pluvial.desvioMax do HidPluvial), declarado nas premissas
+    // hid:ok m: o desvio da descida (atravessar a platibanda/parede) — critério de desenho, não norma; mais longo é condutor horizontal
     function soDesceDepois(eid) {
       var m = dir[eid] && dir[eid].para; if (m == null || !G.nos[m]) return false;
       if (!(num(G.arestas[eid].comprimento, Infinity) <= DESVIO_MAX)) return false;
@@ -534,11 +542,21 @@
       var hOk = H.every(function (x) { return dir[x] && (dir[x].para === n ? (vSaiDescendo && curto(x)) : (dir[x].de === n && vChegaDoBocal && soDesceDepois(x))); });
       return hOk && (vSaiDescendo || vChegaDoBocal);
     }
-    var premissaBoca = false;
+    var premissaBoca = false, premissaPe = false;
     G.ordemN.forEach(function (n) {
       var es = G.nos[n].arestas, H = es.filter(horiz), V = es.filter(function (x) { return !horiz(x); });
       if (!H.length) return;
       var porque = null;
+      /* F2 (Casa 487, 27/10/2026) — PÉ DE CONDUTOR EMBUTIDO NA PAREDE: o vertical desce dentro da parede e sai pela face, rente ao piso; a caixa de
+         inspeção do pé fica do lado de FORA, encostada na parede (a caixa de 0,60 m não cabe dentro dela). Vale como inspeção do pé o horizontal
+         ÚNICO de até DESVIO_MAX que leva o vertical direto a um dispositivo de inspeção (caixa de areia/inspeção) — a mesma peça curta do desvio. */
+      if (V.length && V.every(function (x) { return dir[x] && dir[x].para === n; }) && H.length === 1 && dir[H[0]] && dir[H[0]].de === n && curto(H[0])) {
+        var mj = G.nos[dir[H[0]].para];
+        if (mj && mj.peca && PECA_INSPECAO[mj.peca.peca]) {
+          if (!premissaPe) { premissaPe = true; out.premissas.push({ item: "inspeção no pé do condutor embutido (NBR 10844 5.7.5)", valor: "o pé sai da parede por um horizontal de até " + DESVIO_MAX + " m direto a uma caixa de areia/inspeção do lado de fora, encostada na parede: a caixa é a inspeção do pé", origem: "pluvial" }); }
+          return;
+        }
+      }
       if (V.length && bocaDoVertical(n, H, V)) {
         if (H.length >= 2) porque = "conexão de condutores (5.7.3)";   // hid:ok 2 horizontais na boca = conexão (contagem)
         else if (!premissaBoca) { premissaBoca = true; out.premissas.push({ item: "inspeção na ligação vertical → horizontal (NBR 10844 5.7.5)", valor: "exigida no PÉ do condutor vertical; dispensada na boca (horizontal de até " + DESVIO_MAX + " m que entra no condutor) e no desvio de até " + DESVIO_MAX + " m logo sob o bocal da calha — leitura do motor, o texto da norma não está na biblioteca: confirmar com o RT", origem: "padrao_motor" }); }

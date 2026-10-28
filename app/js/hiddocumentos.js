@@ -40,6 +40,13 @@
     return null;
   }
   function arr(v) { return Array.isArray(v) ? v : []; }
+  /* limpeza para o cliente, identidade e itens a confirmar: vêm do js/hidmemorial.js (um lugar só); sem ele, o texto passa como veio */
+  function mem() { return dep("HidMemorial", "./hidmemorial.js") || {}; }
+  function limpa(x) { var M = mem(); return M.limpaFonte ? M.limpaFonte(x) : x; }
+  function creaTxt(rp) { var M = mem(); return M.creaTxt ? M.creaTxt(rp) : ((rp && rp.conselho) || "CREA") + " nº " + ((rp && rp.crea) || "[Nº]"); }
+  function enderecoTxt(ob) { var M = mem(); return M.enderecoTxt ? M.enderecoTxt(ob) : [ob && ob.endereco, ob && ob.cidade].filter(Boolean).join(" — "); }
+  /* só o texto entre as tags (nunca o CSS nem o atributo href) */
+  function limpaHtml(h) { return txt(h).replace(/(<style[\s\S]*?<\/style>)|>([^<]+)</g, function (m, st, tx) { return st ? st : ">" + limpa(tx) + "<"; }); }
   function obj(v) { return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
   function objs(v) { return arr(v).filter(function (x) { return x && typeof x === "object" && !Array.isArray(x); }); }
   function txt(v) { return v == null ? "" : String(v); }
@@ -53,7 +60,7 @@
   /* hid:fisica-inicio — APRESENTAÇÃO, não física: cores, tamanhos de letra e de ícone, casas decimais e margens de
      página. Nenhum valor de norma (os números técnicos chegam prontos do resultado, da ficha da peça ou do manual). */
   var COR = { azul: "#00406A", marrom: "#6F5F48", verde: "#3F7818", areia: "#A89868", falha: "#a3352b", alerta: "#9a5b12" };
-  var LADO_ICONE = 52, QR_PX = 118, CASAS_M = 2;
+  var LADO_ICONE = 52, QR_PX = 118, CASAS_M = 2, CASAS_VAZ = 3;
   function br(v, c) {
     if (!fin(v)) return "—";
     c = c == null ? CASAS_M : c;
@@ -100,7 +107,7 @@
       "a { color: #0b5cad; text-decoration: underline; text-decoration-thickness: 0.5pt; } a.volta { font-size: 7.4pt; text-decoration: none; } .links-pr { font-size: 7.8pt; margin: 0 0 2mm; }" +
       ".capa { height: 258mm; display: flex; flex-direction: column; break-after: page; }" +
       ".capa-logos { display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm; } .logo-box { flex: 1; text-align: center; } .logo-box img { max-height: 24mm; max-width: 56mm; }" +
-      ".logo-ph { height: 20mm; display: flex; align-items: center; justify-content: center; border: 0.6pt dashed #c9b9a0; font-size: 10pt; } .logo-rot { font-size: 6.8pt; letter-spacing: 0.12em; text-transform: uppercase; color: #8a7a62; margin-top: 1.2mm; }" +
+      ".logo-txt { font-size: 13pt; font-weight: 600; color: " + A + "; padding: 4mm 0; } .logo-ph { height: 20mm; display: flex; align-items: center; justify-content: center; border: 0.6pt dashed #c9b9a0; font-size: 10pt; } .logo-rot { font-size: 6.8pt; letter-spacing: 0.12em; text-transform: uppercase; color: #8a7a62; margin-top: 1.2mm; }" +
       ".capa-faixa { display: flex; height: 1.3mm; margin: 5mm 0 7mm; } .capa-faixa span { display: block; height: 100%; } .capa-faixa .f1 { flex: 6; background: " + A + "; } .capa-faixa .f2 { flex: 2; background: " + COR.areia + "; } .capa-faixa .f3 { flex: 1; background: " + COR.verde + "; }" +
       ".capa-tit .sobre { font-size: 8.5pt; letter-spacing: 0.2em; color: " + COR.marrom + "; font-weight: 600; } .capa-tit .sub { color: #4a5664; font-size: 9.6pt; } .capa-vazio { flex: 1; }" +
       ".capa-qr { display: flex; gap: 4mm; align-items: center; margin: 4mm 0; font-size: 8pt; } .capa-qr svg { width: 26mm; height: 26mm; }" +
@@ -135,18 +142,21 @@
   Links.prototype.int = function (id, html) { this.refs[id] = 1; return '<a href="#' + esc(id) + '">' + html + "</a>"; };
 
   /* ================================================================ SITUAÇÃO (a mesma regra do memorial) */
+  /* STATUS = o cálculo real (F8, 28/10/2026): reprovação/erro → "Não atende"; só item de fonte/confirmação → "Emitido para execução —
+     com N itens a confirmar"; nada → "Atende". Nunca "Atende" com item a confirmar. A lista dos itens vem do memorial (mesma regra). */
   function situacao(r, k) {
-    var vs = objs(r && r.verificacoes), rep = vs.filter(function (v) { return v.status === "reprovado"; }).length, pen = arr(r && r.pendencias).length + vs.filter(function (v) { return v.status === "pendente"; }).length;
+    var vs = objs(r && r.verificacoes), rep = vs.filter(function (v) { return v.status === "reprovado"; }).length;
     var erros = objs(r && r.avisos).filter(function (a) { return a.gravidade === "erro"; }).length, fix = !!(r && r.fixture === true);
+    var M = mem(), itens = M.itensConfirmar ? M.itensConfirmar(r, k) : [], pen = itens.length || arr(r && r.pendencias).length + vs.filter(function (v) { return v.status === "pendente"; }).length;
     if (k) {
       rep += objs(k.verificacoes).filter(function (v) { return v.status === "reprovado"; }).length + objs(k.avisos).filter(function (a) { return a.gravidade === "erro"; }).length;
-      pen += arr(k.pendencias).length + objs(k.verificacoes).filter(function (v) { return v.status === "pendente"; }).length;
       if (k.fixture === true) fix = true;
     }
-    if (fix) return { ok: false, rep: rep, pen: pen, txt: '<span class="falha">NÃO É NORMA</span> — calculado com tabelas de teste' };
-    if (rep || erros) return { ok: false, rep: rep, pen: pen, txt: '<span class="falha">Não atende</span> — ' + [rep ? rep + " verificação(ões) reprovada(s)" : "", erros ? erros + " aviso(s) de erro" : "", pen ? pen + " pendência(s)" : ""].filter(Boolean).join("; ") + " (ver o memorial de cálculo)." };
-    if (pen || !(r && r.ok === true) || (k && k.ok !== true)) return { ok: false, rep: rep, pen: pen, txt: '<span class="falha">Não verificado — ' + (pen ? pen + " pendência(s)" : "situação incompleta") + "</span> (ver o memorial de cálculo)." };
-    return { ok: true, rep: 0, pen: 0, txt: '<span class="ok">Atende — todas as verificações desta emissão atendem</span>.' };
+    if (fix) return { ok: false, tipo: "fixture", rep: rep, pen: pen, txt: '<span class="falha">NÃO É NORMA</span> — calculado com tabelas de teste' };
+    if (rep || erros) return { ok: false, tipo: "reprovado", rep: rep, pen: pen, txt: '<span class="falha">Não atende</span> — ' + [rep ? rep + " verificação(ões) reprovada(s)" : "", erros ? erros + " aviso(s) de erro" : "", pen ? pen + " item(ns) a confirmar" : ""].filter(Boolean).join("; ") + " (ver o memorial de cálculo)." };
+    if (pen) return { ok: false, tipo: "emitido", rep: 0, pen: pen, txt: '<span class="pend">Emitido para execução — com ' + pen + (pen === 1 ? " item a confirmar" : " itens a confirmar") + "</span> (ver o quadro de confirmações no memorial de cálculo)." };
+    if (!(r && r.ok === true) || (k && k.ok !== true)) return { ok: false, tipo: "incompleto", rep: 0, pen: 0, txt: '<span class="falha">Não verificado — situação incompleta</span> (ver o memorial de cálculo).' };
+    return { ok: true, tipo: "atende", rep: 0, pen: 0, txt: '<span class="ok">Atende — todas as verificações desta emissão atendem</span>.' };
   }
 
   /* ================================================================ DOCUMENTO (capa, sumário, seções) */
@@ -164,7 +174,12 @@
   function trw(cells, cls, id) { return "<tr" + (id ? ' id="' + esc(id) + '"' : "") + (cls ? ' class="' + cls + '"' : "") + ">" + cells.join("") + "</tr>"; }
   function caixa(h, tipo) { return '<div class="caixa' + (tipo ? " " + tipo : "") + '">' + h + "</div>"; }
   function ph(v, rot) { var s = txt(v).trim(); return s ? esc(s) : '<span class="ph">[' + esc(rot) + "]</span>"; }
-  function logoBox(src, rot) { var ok = typeof src === "string" && /^(data:image\/(png|jpe?g|svg\+xml|webp)[;,]|https?:\/\/)/i.test(src); return '<div class="logo-box">' + (ok ? '<img src="' + esc(src) + '" alt="' + esc(rot) + '">' : '<div class="logo-ph"><span class="ph">[LOGO]</span></div>') + '<div class="logo-rot">' + esc(rot) + "</div></div>"; }
+  /* sem imagem: a RA sai com o nome por extenso; contratante/proprietário sem logo não deixam caixa nem "[LOGO]" (F8) */
+  function logoBox(src, rot) {
+    var ok = typeof src === "string" && /^(data:image\/(png|jpe?g|svg\+xml|webp)[;,]|https?:\/\/)/i.test(src);
+    if (ok) return '<div class="logo-box"><img src="' + esc(src) + '" alt="' + esc(rot) + '"><div class="logo-rot">' + esc(rot) + "</div></div>";
+    return rot === "Projeto" ? '<div class="logo-box"><div class="logo-txt">RA Engenharia Especial</div><div class="logo-rot">' + esc(rot) + "</div></div>" : "";
+  }
   Doc.prototype.capa = function () {
     var c = this.c, op = c.op, ob = c.ob, rp = c.rp, lg = obj(op.logos), revs = c.revs, g = c.sit;
     var qr = "";
@@ -172,15 +187,15 @@
       var Q = dep("QR", "./qr.js"), svg = Q && Q.svg ? Q.svg(c.portal, { tamanhoPx: QR_PX, correcao: "M" }) : "";
       qr = '<div class="capa-qr">' + (svg || "") + "<div><b>Portal da obra</b><br>" + this.L.portal(c.portal) + "<br><span class=\"nota\">Pranchas, modelo 3D e documentos atualizados.</span></div></div>";
     }
-    return '<section class="capa" id="capa"><div class="capa-logos">' + logoBox(lg.ra, "Projeto") + logoBox(lg.contratante, "Contratante") + logoBox(lg.proprietario, "Proprietário") + "</div>" +
+    return '<section class="capa" id="capa"><div class="capa-logos">' + logoBox(lg.ra, "Projeto") + logoBox(lg.contratante, "Contratante") + (lg.proprietario && lg.proprietario !== lg.contratante ? logoBox(lg.proprietario, "Proprietário") : "") + "</div>" +
       '<div class="capa-faixa"><span class="f1"></span><span class="f2"></span><span class="f3"></span></div>' +
       '<div class="capa-tit"><div class="sobre">' + esc(this.tipo) + "</div><h1>" + esc(this.titulo) + " — " + esc(c.obraNome) + '</h1><div class="sub">' + esc(this.sub) + "</div></div>" + qr +
       '<div class="capa-vazio"></div><table class="capa-ficha"><tbody>' +
       "<tr><td>Documento</td><td><b>" + ph(c.num, "Nº DO DOCUMENTO") + " " + esc(c.rev) + "</b> — " + esc(c.data) + "</td></tr>" +
       "<tr><td>Obra</td><td>" + ph(ob.nome, "OBRA") + "</td></tr>" +
-      "<tr><td>Endereço</td><td>" + ph([ob.endereco, ob.cidade].filter(Boolean).join(" — "), "ENDEREÇO") + "</td></tr>" +
+      "<tr><td>Endereço</td><td>" + ph(enderecoTxt(ob), "ENDEREÇO") + "</td></tr>" +
       "<tr><td>Proprietário</td><td>" + ph(ob.proprietario || ob.cliente, "PROPRIETÁRIO") + "</td></tr>" +
-      "<tr><td>Responsável técnico</td><td>" + ph(rp.titulo, "TÍTULO") + " " + ph(rp.nome, "NOME") + " — " + esc(rp.conselho || "CREA") + " nº " + ph(rp.crea, "Nº") + " — " + ph(rp.empresa, "EMPRESA") + "</td></tr>" +
+      "<tr><td>Responsável técnico</td><td>" + ph(rp.titulo, "TÍTULO") + " " + ph(rp.nome, "NOME") + " — " + esc(creaTxt(rp)) + " — " + ph(rp.empresa, "EMPRESA") + (rp.cnpj ? " (CNPJ " + esc(rp.cnpj) + ")" : "") + "</td></tr>" +
       "<tr><td>Situação do cálculo</td><td" + (g.ok ? "" : ' class="sit-falha"') + ">" + g.txt + "</td></tr></tbody></table>" +
       '<table class="capa-rev"><caption>Quadro de revisões</caption><thead><tr><th>Rev.</th><th>Data</th><th>Descrição</th><th>Por</th></tr></thead><tbody>' +
       revs.map(function (x) { return "<tr><td>" + esc(x.rev) + "</td><td>" + esc(x.data) + "</td><td>" + esc(x.descricao) + "</td><td>" + esc(x.por || "") + "</td></tr>"; }).join("") + "</tbody></table></section>";
@@ -195,9 +210,10 @@
       return '<section class="sec' + (s.segue ? " segue" : "") + '" id="' + esc(s.id) + '"><h2><span class="num">' + (i + 1) + "</span>" + esc(s.titulo) + "</h2>" + s.html.replace(/@@N@@/g, String(i + 1)) + '<p class="nota"><a class="volta" href="#sumario">↑ voltar ao sumário</a></p></section>';
     }).join("");
     var titulo = this.titulo + " — " + c.obraNome;
-    var meta = { topoE: c.obraNome + " — " + this.titulo, topoD: this.tipo.charAt(0) + this.tipo.slice(1).toLowerCase() + " " + (c.num ? c.num + " " : "") + c.rev, rodE: [c.rp.empresa || "RA Engenharia", c.rp.nome ? "Resp. técnico: " + c.rp.nome + (c.rp.crea ? " — " + (c.rp.conselho || "CREA") + " " + c.rp.crea : "") : ""].filter(Boolean).join(" · ") };
+    var meta = { topoE: c.obraNome + " — " + this.titulo, topoD: this.tipo.charAt(0) + this.tipo.slice(1).toLowerCase() + " " + (c.num ? c.num + " " : "") + c.rev, rodE: [c.rp.empresa || "RA Engenharia", c.rp.nome ? "Resp. técnico: " + c.rp.nome + (c.rp.crea ? " — " + creaTxt(c.rp) : "") : ""].filter(Boolean).join(" · ") };
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="generator" content="OrçaPRO — HidDocumentos"><title>' + esc(titulo) + "</title><style>" + css(meta) + "</style></head><body>" +
       this.capa() + sum + corpo + "</body></html>";
+    html = limpaHtml(html);
     var ver = verificarLinks(html);
     return { ok: true, titulo: titulo, html: html, secoes: this.secs.map(function (s, i) { return { id: s.id, numero: i + 1, titulo: s.titulo }; }), tabelas: this.nTab,
              pendencias: this.pend.concat(this.L.falhos.map(function (f) { return { texto: "Link não conferido: " + f.url, motivo: f.onde + " — " + f.motivo }; })),
@@ -208,23 +224,29 @@
     var self = this, todas = this.pend.concat(arr(extra));
     var falhos = this.L.falhos.map(function (f) { return { texto: "Link não conferido: " + f.url, motivo: f.onde + " — " + f.motivo }; });
     todas = todas.concat(falhos);
-    this.secao(id, "Pendências deste documento", todas.length ? "<p>Os itens abaixo não têm fonte no acervo ou dependem de informação que não está no modelo. Não foram escritos de memória: ficam pendentes até a fonte existir.</p>" +
+    this.secao(id, "Pendências deste documento", todas.length ? "<p>Os itens abaixo dependem de informação do fabricante, do local ou de confirmação do responsável técnico. Não foram escritos de memória: ficam pendentes até o dado existir.</p>" +
       this.tab("Pendências", ["#", "Item", "Motivo"], todas.map(function (p, i) { return trw([td(String(i + 1)), td(esc(p.texto)), td(esc(p.motivo))], "linha-alerta"); }), { classe: "compacta" }) : "<p>Nenhuma pendência.</p>");
     void self;
   };
+  /* cargo do contratante: o informado; senão "Proprietário" quando o contratante é o próprio proprietário */
+  function cargoAssin(c, ca) {
+    if (ca && ca.cargo) return txt(ca.cargo);
+    var nome = (ca && ca.nome) || c.ob.contratante || c.ob.proprietario || "";
+    return nome && nome === (c.ob.proprietario || c.ob.cliente) ? "Proprietário" : "";
+  }
   Doc.prototype.secaoTermo = function (id, declaracao) {
     var c = this.c, rp = c.rp, ca = obj(c.op.contratanteAssinatura);
     this.secao(id, "Responsabilidade técnica", "<p>" + declaracao + "</p>" +
-      '<div class="assin-grade"><div class="assin"><div class="assin-linha"></div><div><b>' + ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + "</b></div><div>" + ph(rp.titulo, "TÍTULO") + " — " + esc(rp.conselho || "CREA") + " nº " + ph(rp.crea, "Nº") + '</div><div class="assin-tit">Responsável técnico</div></div>' +
-      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(ca.nome, "NOME") + "</b></div><div>" + ph(ca.empresa || c.ob.contratante, "CONTRATANTE") + '</div><div class="assin-tit">Contratante</div></div></div>' +
+      '<div class="assin-grade"><div class="assin"><div class="assin-linha"></div><div><b>' + ph(rp.nome, "NOME DO RESPONSÁVEL TÉCNICO") + "</b></div><div>" + ph(rp.titulo, "TÍTULO") + " — " + esc(creaTxt(rp)) + "</div>" + (rp.empresa ? "<div>" + esc(rp.empresa) + (rp.cnpj ? " — CNPJ " + esc(rp.cnpj) : "") + "</div>" : "") + '<div class="assin-tit">Responsável técnico</div></div>' +
+      '<div class="assin"><div class="assin-linha"></div><div><b>' + ph(ca.nome || c.ob.contratante || c.ob.proprietario, "NOME DO CONTRATANTE") + "</b></div>" + (cargoAssin(c, ca) ? "<div>" + esc(cargoAssin(c, ca)) + "</div>" : "") + (ca.empresa ? "<div>" + esc(ca.empresa) + "</div>" : "") + '<div class="assin-tit">Contratante</div></div></div>' +
       '<p style="text-align:center">' + ph(c.op.local, "LOCAL") + ", " + esc(c.data) + ".</p>");
   };
 
   /* ================================================================ CONTEXTO */
-  var NOME_SIS = { agua_fria: "Água fria", agua_quente: "Água quente", esgoto: "Esgoto sanitário e ventilação", pluvial: "Águas pluviais", incendio: "Incêndio", tratamento_fossa: "Tratamento de esgoto (fossa, filtro e sumidouro)", tratamento_ete: "Tratamento de esgoto (ETE)", tratamento_eta: "Tratamento de água (ETA)", tratamento_outro: "Tratamento", industrial: "Fluidos industriais", climatizacao: "Climatização" };
+  var NOME_SIS = { agua_fria: "Água fria", agua_quente: "Água quente", esgoto: "Esgoto sanitário e ventilação", pluvial: "Águas pluviais", incendio: "Incêndio", tratamento_fossa: "Tratamento de esgoto (fossa, filtro e sumidouro)", tratamento_ete: "Tratamento de esgoto (ETE)", tratamento_eta: "Tratamento de água (ETA)", tratamento_outro: "Tratamento", industrial: "Fluidos industriais", gas: "Gás GLP (abrigo e rede embutida)", climatizacao: "Climatização" };
   /* sistema do manual → sistemas do biminst (para filtrar a lista de material) e folhas das pranchas */
-  var BIMSIS = { agua_fria: ["agua_fria"], agua_quente: ["agua_quente"], esgoto: ["esgoto", "ventilacao"], pluvial: ["pluvial"], incendio: ["incendio"], industrial: ["industrial", "ar_comprimido", "vapor", "gas", "oleo"], climatizacao: ["frigorigeno", "dreno"] };
-  var FOLHA_SIS = { agua_fria: /^planta-af|esquema|^iso|detalhes/, agua_quente: /^planta-aq|^iso/, esgoto: /^planta-es|esquema|^iso|detalhes/, pluvial: /^planta-ap/, incendio: /^planta-in/, tratamento_fossa: /^tratamento/, tratamento_ete: /^tratamento/, tratamento_eta: /^tratamento/, tratamento_outro: /^tratamento/, industrial: /^planta-(ind|ar|vp|gas|ol)/, climatizacao: /^clim|^planta-cl/,
+  var BIMSIS = { agua_fria: ["agua_fria"], agua_quente: ["agua_quente"], esgoto: ["esgoto", "ventilacao"], pluvial: ["pluvial"], incendio: ["incendio"], industrial: ["industrial", "ar_comprimido", "vapor", "oleo"], gas: ["gas"], climatizacao: ["frigorigeno", "dreno"] };
+  var FOLHA_SIS = { gas: /gas|g[áa]s/i, agua_fria: /^planta-af|esquema|^iso|detalhes/, agua_quente: /^planta-aq|^iso/, esgoto: /^planta-es|esquema|^iso|detalhes/, pluvial: /^planta-ap/, incendio: /^planta-in/, tratamento_fossa: /^tratamento/, tratamento_ete: /^tratamento/, tratamento_eta: /^tratamento/, tratamento_outro: /^tratamento/, industrial: /^planta-(ind|ar|vp|gas|ol)/, climatizacao: /^clim|^planta-cl/,
     /* ambiente: as plantas de água e esgoto, o esquema e os detalhes (o isométrico de cada conjunto já está na lista do sistema) */
     ambiente: /^planta-(af|es)|esquema|detalhes/ };
   function contexto(en, op) {
@@ -232,10 +254,13 @@
     var r = obj(en.resultado), k = en.clima && typeof en.clima === "object" && Array.isArray(en.clima.ambientes) ? en.clima : null;
     var ob = obj(op.obra), rp = obj(op.responsavel), dc = obj(op.documento);
     var revs = objs(op.revisoes); if (!revs.length) revs = [{ rev: dc.revisao || "R00", data: dataTxt(dc.data), descricao: "Emissão inicial" }];
-    var HM = dep("HidManual", "./hidmanual.js"), presentes = HM ? HM.presentes(r, { clima: !!k }) : [];
+    var HM = dep("HidManual", "./hidmanual.js"), presentes = HM ? HM.presentes(r, { clima: !!k }).slice() : [];
+    /* gás GLP: o manual de base não o conhece; o memorial de cálculo traz o sistema, então os dois documentos também falam dele (F8) */
+    if (obj(obj(r.sistemas).gas).trechos && presentes.indexOf("gas") < 0) { var ic = presentes.indexOf("climatizacao"); presentes.splice(ic < 0 ? presentes.length : ic, 0, "gas"); }
     var portal = txt(obj(en.portal).url).trim();
     return { r: r, k: k, op: op, ob: ob, rp: rp, num: txt(dc.numero), rev: dc.revisao || "R00", data: dataTxt(dc.data), revs: revs, obraNome: ob.nome ? txt(ob.nome) : "[OBRA]",
-             sis: presentes, pecas: objs(en.pecas), icones: obj(en.icones), pranchas: objs(en.pranchas), arqPranchas: txt(en.arquivoPranchas) || "projeto-hidrossanitario.pdf",
+             sis: presentes, extras: objs(en.secoesExtras), pecas: objs(en.pecas), icones: obj(en.icones), pranchas: objs(en.pranchas), arqPranchas: txt(en.arquivoPranchas) || "projeto-hidrossanitario.pdf",
+             nomesAmb: obj(en.nomesAmbientes),
              portal: /^https:\/\/\S+$/i.test(portal) ? portal : "", sit: situacao(r, k), HM: HM, PC: dep("HidPecas", "./hidpecas.js"), CAT: dep("HidCatalogo", "./hidcatalogo.js") };
   }
   function nomeSis(k) { return NOME_SIS[k] || k; }
@@ -246,7 +271,7 @@
     return c.pecas.filter(function (l) { return ss.indexOf(l.sistema) >= 0; });
   }
   function loucas(c) { return c.pecas.filter(function (l) { return l.classe === "louca" || !l.sistema; }); }
-  function folhasDo(c, k) { var re = FOLHA_SIS[k]; return re ? c.pranchas.filter(function (f) { return re.test(txt(f.id)); }) : []; }
+  function folhasDo(c, k) { var re = FOLHA_SIS[k]; return re ? c.pranchas.filter(function (f) { return re.test(txt(f.id)) || (k === "gas" && re.test(txt(f.titulo))); }) : []; }
   /* a ficha técnica da peça no catálogo do fabricante: URL + página (fragmento #page do PDF) */
   function linksFicha(c, D, l, onde) {
     var fc = l.ficha && c.PC ? c.PC.ficha(l.ficha) : null, fabs = fc ? objs(obj(fc.comercial).fabricante) : [], out = [];
@@ -301,6 +326,66 @@
     return g;
   }
 
+  /* ================================================================ GÁS (GLP) — o que o cliente compra, instala, ensaia e usa
+     Tudo vem do resultado (r.sistemas.gas.projetoGas); componente sem peça no modelo sai por DESEMPENHO, sem código de fabricante
+     (nada inventado). O ensaio de estanqueidade traz regra e pressão do próprio cálculo. */
+  function gasDados(c) {
+    var g = obj(obj(c.r.sistemas).gas), pg = obj(g.projetoGas), mm = obj(pg.memorial);
+    return { g: g, pg: pg, ab: obj(pg.abrigo), rd: obj(pg.rede), mm: mm, es: obj(mm.estanqueidade), fl: obj(g.fluido), cons: objs(pg.consumidores) };
+  }
+  function gasComponentes(c, D) {
+    var G = gasDados(c), linhas = [
+      ["Abrigo dos botijões", "Abrigo para 2 botijões P13 (um em uso, um reserva), ao ar livre, fora da projeção da edificação, com ventilação permanente, porta e base nivelada, nas dimensões a definir com a distribuidora de gás (abrigo de 2 botijões P13); área livre à frente para a troca.", "dimensões e norma de abrigo a confirmar com a distribuidora"],
+      ["Regulador de pressão", "Regulador de GLP para baixa pressão, com vazão nominal igual ou maior que a vazão de projeto" + (fin(G.mm.vazao_m3_h) ? " (" + br(G.mm.vazao_m3_h, CASAS_VAZ) + " m³/h)" : "") + (fin(G.fl.pressao_kPa) ? " e pressão de saída de " + br(G.fl.pressao_kPa, CASAS_M) + " kPa" : "") + "; produto certificado, com ficha do fabricante.", "produto de referência a definir na compra"],
+      ["Registro de corte geral", "Registro de esfera para gás, de corpo em latão, DN igual ao da rede, instalado logo após o regulador, em local de acesso livre.", "produto de referência a definir na compra"],
+      ["Válvula do ponto de consumo", "Registro de bloqueio para gás no ponto de cada aparelho, de fácil acesso, antes da ligação ao aparelho.", "produto de referência a definir na compra"],
+      ["Ligação do aparelho", "Mangueira ou tubo flexível específico para gás, com validade gravada, de comprimento mínimo necessário e sem emenda; vedada a gambiarra com tubo de água ou borracha comum.", "produto de referência a definir na compra"]
+    ];
+    return "<h3>@@N@@.3 Componentes do abrigo, da regulagem e do ponto</h3><p>Os componentes abaixo não constam da lista de material do modelo; ficam especificados por desempenho, e o produto é definido na compra, com a ficha do fabricante, antes da execução.</p>" +
+      D.tab("Componentes do gás por desempenho", ["Componente", "Requisito de desempenho", "Referência"], linhas.map(function (x) { return trw([td("<b>" + esc(x[0]) + "</b>"), td(esc(x[1])), td('<span class="pend">' + esc(x[2]) + "</span>")]); }), { classe: "compacta" });
+  }
+  function gasEnsaio(c) {
+    var G = gasDados(c), es = G.es;
+    return (es.etapa1 ? "1ª etapa: " + txt(es.etapa1.regra) + (fin(es.etapa1.pressao_kPa) ? " (pressão de ensaio " + br(es.etapa1.pressao_kPa, 1) + " kPa)" : "") + ". " : "1ª etapa: valor de ensaio a confirmar (tabela de estanqueidade indisponível no cálculo). ") + (es.etapa2 ? "2ª etapa: " + txt(es.etapa2.regra) + ". " : "") + (es.fonte ? "Fonte: " + txt(es.fonte) + "." : "");
+  }
+  /* seção de gás do MANUAL: materiais, abrigo, regulador, registro, execução, ensaio e uso */
+  function gasManual(c, D) {
+    var G = gasDados(c), id = "man-gas", n = "@@N@@", h = "";
+    var ls = pecasDoSistema(c, "gas");
+    h += linksPranchas(c, D, "gas", { id: id + "-abrigo", titulo: "Gás (GLP) — abrigo e rede" });
+    h += "<p>Gás <b>GLP</b> em dois botijões P13 (um em uso, um reserva)" + (fin(G.fl.pressao_kPa) ? ", pressão " + br(G.fl.pressao_kPa, CASAS_M) + " kPa na saída do regulador" : "") + ", rede de tubo de cobre classe " + esc(G.g.serie || "A") + " embutida" + (G.cons.length ? ", para " + esc(listaPt(G.cons.map(function (x) { return txt(x.aparelho).replace(/_/g, " "); }))) : "") + ". As instruções abaixo são práticas gerais de segurança e de execução; a norma de instalação aplicável é a citada no memorial de cálculo, e o fornecedor do gás (distribuidora) tem a última palavra sobre o abrigo.</p>";
+    h += '<h3 id="' + id + '-material">' + n + ".1 Materiais</h3>" + (ls.length ? tabelaMaterial(c, D, ls, "Material — Gás (GLP)", "manual: material de gás") : '<p class="nota">O modelo não trouxe peças de gás na lista de material.</p>') + gasComponentes(c, D).replace("@@N@@.3", n + ".2");
+    h += '<h3 id="' + id + '-abrigo">' + n + ".3 Abrigo dos botijões</h3><ul>" +
+      "<li>Executar o abrigo na posição das pranchas: ao ar livre, fora da projeção da edificação, com ventilação permanente na parte baixa e na parte alta" + (G.ab.parede ? ", apoiado na parede indicada na prancha" : "") + ".</li>" +
+      (fin(G.ab.afastamento_m) ? "<li>Manter o afastamento de projeto de " + br(G.ab.afastamento_m, CASAS_M) + " m até " + esc(String(G.ab.afastDe || "").replace(/^.*?\bci-(\d+)$/i, "CI-$1") || "o ralo ou caixa de esgoto mais próximo") + "; nenhum ralo, caixa ou abertura para o interior da casa dentro desse afastamento.</li>" : "") +
+      "<li>Deixar livre a área à frente do abrigo indicada na prancha, para a troca do botijão, sem obstáculo nem material guardado.</li>" +
+      "<li>Base nivelada e firme; dimensões, ventilação e porta conforme as exigências da distribuidora de gás (abrigo de 2 botijões P13, dimensões a definir com ela).</li></ul>";
+    h += '<h3 id="' + id + '-execucao">' + n + ".4 Execução da rede, regulador e registros</h3><ul>" +
+      "<li>Instalar o regulador logo na saída do abrigo, na pressão indicada no memorial de cálculo, seguido do registro de corte geral, em local de acesso livre e identificado.</li>" +
+      "<li>Rede de cobre classe " + esc(G.g.serie || "A") + " conforme as pranchas e a lista de material; trecho embutido sem emenda dentro da parede ou do piso sempre que possível, e luvas e conexões somente onde a prancha indicar, para o ensaio e a manutenção.</li>" +
+      "<li>Proteger o tubo embutido contra o contato direto com a argamassa e com outras tubulações; manter a distância das tubulações elétricas e de esgoto exigida pela norma de instalação, conferida com a prancha.</li>" +
+      "<li>Instalar a válvula de bloqueio no ponto de cada aparelho, em local acessível, e ligar o aparelho com flexível próprio para gás, dentro da validade.</li>" +
+      "<li>Identificar a tubulação de gás nas esperas e no abrigo, e registrar as posições no cadastro como executado (as built).</li></ul>";
+    h += '<h3 id="' + id + '-ensaio">' + n + ".5 Ensaio de estanqueidade (antes de pôr em uso)</h3>" +
+      "<p>" + esc(gasEnsaio(c)) + " O ensaio é executado com a rede ainda aberta (antes do revestimento) e repetido antes de pôr o gás em uso, com registro em formulário assinado.</p>" +
+      "<p><b>Para o proprietário:</b> exija a cópia do registro do ensaio de estanqueidade assinado pelo executante antes de aceitar a instalação e de contratar a primeira carga de botijões. Não ligue o gás sem esse registro.</p>";
+    h += '<h3 id="' + id + '-uso">' + n + ".6 Uso e cuidados do proprietário</h3><ul>" +
+      "<li>Troca de botijão somente com o registro do botijão fechado, sem chama nem faísca por perto, e por pessoa que conheça o procedimento ou pelo entregador.</li>" +
+      "<li>Depois de cada troca, passar espuma de água com sabão nas conexões do regulador; se formar bolha, fechar, reapertar e repetir. Nunca testar vazamento com chama.</li>" +
+      "<li>Cheiro de gás: fechar o registro do botijão, abrir portas e janelas, não acionar interruptores, telefone nem chama, sair do ambiente e chamar o fornecedor ou a distribuidora de fora da casa.</li>" +
+      "<li>Manter livres a ventilação do abrigo e a área à frente; não guardar combustível, material inflamável nem entulho no abrigo.</li>" +
+      "<li>Fechar o registro geral nas ausências longas. Não pintar nem cobrir o regulador e os registros. Trocar o flexível antes do fim da validade gravada nele.</li>" +
+      "<li>Qualquer obra que fure parede ou piso por onde a tubulação passa: consultar as pranchas de gás antes; tubo embutido de gás não pode ser furado.</li></ul>";
+    var etapas = [{ nome: "Recebimento", itens: ["Tubo, conexões, regulador, registros e flexíveis conforme a especificação e com ficha do fabricante"] },
+      { nome: "Abrigo", itens: ["Abrigo na posição e no afastamento das pranchas, com ventilação e área livre à frente"] },
+      { nome: "Rede", itens: ["Rede de cobre conforme as pranchas, sem emenda embutida fora do previsto", "Registro de corte geral e válvula do ponto instalados e identificados"] },
+      { nome: "Ensaio", itens: ["Ensaio de estanqueidade executado e registrado antes do revestimento", "Ensaio repetido antes de pôr o gás em uso, com registro assinado entregue ao proprietário"] },
+      { nome: "Liberação", itens: ["Orientação de uso e emergência dada ao proprietário", "Cadastro como executado entregue"] }];
+    h += '<h3 id="' + id + '-checklist">' + n + ".7 Checklist de inspeção</h3>" + checklist(D, "Checklist de inspeção — Gás (GLP)", etapas) + '<div class="libera"><div>Executante</div><div>Fiscalização / responsável técnico</div><div>Data</div></div>';
+    D.secao(id, nomeSis("gas"), h);
+    D.secs[D.secs.length - 1].sub = [{ id: id + "-material", titulo: "Materiais" }, { id: id + "-abrigo", titulo: "Abrigo dos botijões" }, { id: id + "-execucao", titulo: "Execução da rede, regulador e registros" }, { id: id + "-ensaio", titulo: "Ensaio de estanqueidade" }, { id: id + "-uso", titulo: "Uso e cuidados do proprietário" }, { id: id + "-checklist", titulo: "Checklist de inspeção" }];
+  }
+
   /* ================================================================ MEMORIAL DESCRITIVO */
   function descricaoSistema(c, k) {
     var r = c.r, S = obj(r.sistemas), h = "";
@@ -313,6 +398,9 @@
     } else if (k === "esgoto" && S.esgoto) {
       var es = S.esgoto, d2 = dns(es.trechos);
       h += "<p>Rede de esgoto primário e secundário com " + objs(es.trechos).length + " trecho(s) e " + objs(es.pontos).length + " ponto(s) de contribuição; diâmetros de " + (d2.length ? "DN " + d2[0] + " a DN " + d2[d2.length - 1] : "—") + "; ventilação conforme o memorial de cálculo. Esgoto e águas pluviais em redes separadas.</p>";
+    } else if (k === "gas" && S.gas) {
+      var pg = obj(S.gas.projetoGas), ag = obj(pg.abrigo), rg = obj(pg.rede), fg = obj(S.gas.fluido), cg = objs(pg.consumidores), dg = dns(S.gas.trechos);
+      h += "<p>Gás <b>GLP</b> em botijões P13 (2 botijões, um em uso e um reserva) no abrigo ao ar livre" + (ag.parede ? ", fora da projeção da edificação" : "") + ". Rede de <b>tubo de cobre classe " + esc(S.gas.serie || "A") + "</b> embutida (parede e piso), " + (dg.length ? "DN " + dg[0] + (dg.length > 1 ? " a DN " + dg[dg.length - 1] : "") + ", " : "") + (fin(rg.comprimento_m) ? br(rg.comprimento_m, CASAS_M) + " m de percurso, " : "") + (fin(fg.pressao_kPa) ? "pressão " + br(fg.pressao_kPa, CASAS_M) + " kPa na saída do regulador, " : "") + "atendendo " + (cg.length ? esc(listaPt(cg.map(function (x) { return txt(x.aparelho).replace(/_/g, " "); }))) : "o ponto de consumo") + ".</p>";
     } else if (k === "agua_quente" && S.agua_quente) {
       h += "<p>Rede de água quente com " + objs(S.agua_quente.trechos).length + " trecho(s). Material e aquecimento conforme o memorial de cálculo e as pranchas.</p>";
     } else if (k === "pluvial" && S.pluvial) {
@@ -335,6 +423,14 @@
     if (fin(l.dn)) p.push("DN " + esc(l.dn));
     co.forEach(function (x) { p.push(esc(x.rotulo) + ": " + (x.pendente ? '<span class="pend">' + esc(x.texto) + "</span>" : esc(x.texto) + (x.fonte ? ' <span class="fonte">(' + esc(x.fonte) + ")</span>" : ""))); });
     return p.length ? p.join("<br>") : "conforme a norma do produto";
+  }
+  /* Casa 487 (F9): seções curtas do PROJETO (água quente declarada, piscina) vindas do config.documentos.secoes = [{ doc: "descritivo"|"manual", id, titulo, paragrafos: [texto] }].
+     Texto do projeto, sem número de norma no código: o que cita norma vem escrito no config, com a fonte. */
+  function secoesExtras(c, D, doc) {
+    objs(c.extras).filter(function (x) { return x.doc === doc; }).forEach(function (x) {
+      var h = arr(x.paragrafos).map(function (p) { return "<p>" + esc(p) + "</p>"; }).join("");
+      D.secao((doc === "manual" ? "man-x-" : "dsc-x-") + idSeguro(x.id), txt(x.titulo), h);
+    });
   }
   function descritivo(c) {
     var D = new Doc(c, "MEMORIAL DESCRITIVO", "Especificação de materiais e desempenho", subtitulo(c));
@@ -363,8 +459,10 @@
           eq.map(function (a) { var e = a.escolha, q = e.equipamento; return trw([td(esc(a.nome)), td(esc(e.tipo)), td(br(obj(a.carga).requerida_BTUh, 0) + " BTU/h (carga térmica requerida); capacidade nominal de referência " + br(q.capacidade_BTUh, 0) + " BTU/h"), td(esc(q.fabricante) + " " + esc(q.evaporadora) + " / " + esc(q.condensadora))]); }),
           { classe: "compacta", vazio: "Nenhum equipamento escolhido pelo cálculo (ver pendências no memorial de cálculo)." });
       } else h += '<p class="nota">O modelo não trouxe peças deste sistema na lista de material.</p>';
+      if (k === "gas") h += gasComponentes(c, D);
       D.secao("dsc-sis-" + idSeguro(k), nomeSis(k), h, { segue: i > 0 });
     });
+    secoesExtras(c, D, "descritivo");
     var lc = loucas(c);
     D.secao("dsc-aparelhos", "Louças, metais e equipamentos", lc.length ? "<p>Aparelhos sanitários, metais e equipamentos do modelo, com o produto de referência do tipo escolhido.</p>" + tabelaMaterial(c, D, lc, "Louças, metais e equipamentos", "descritivo: aparelhos") : "<p>O modelo não tem louças, metais nem equipamentos com ficha.</p>");
     D.secao("dsc-material", "Lista completa de material", c.pecas.length ? tabelaMaterial(c, D, c.pecas, "Lista de material do modelo", "descritivo: lista de material") : '<p><span class="pend">Lista de material não informada</span> (o modelo não trouxe o quantitativo).</p>');
@@ -385,6 +483,23 @@
       var m = /^Ambiente\s+(\S+)\s*\(([^)]*)\)/.exec(txt(x.elemento));
       if (m) out.push({ id: m[1], nome: "Ambiente " + m[1], aparelhos: m[2].split(/\s*,\s*/).filter(Boolean), decisoes: objs(x.decisoes).map(function (d) { return txt(d.texto); }), pendencias: objs(x.pendencias).map(function (p) { return txt(p.motivo || p.chave); }) });
     });
+    /* o mesmo aparelho em dois ambientes (decisões de rodadas diferentes) sai UMA vez: o ambiente repetido some e suas decisões vão ao primeiro (F8, M10) */
+    var vistos = {}, dono = {};
+    out = out.filter(function (a) {
+      var novos = a.aparelhos.filter(function (id) { return !vistos[id]; });
+      a.aparelhos.forEach(function (id) { if (!vistos[id]) { vistos[id] = 1; dono[id] = a; } });
+      if (!novos.length) {
+        var d0 = dono[a.aparelhos[0]]; if (d0) { a.decisoes.forEach(function (t) { if (d0.decisoes.indexOf(t) < 0) d0.decisoes.push(t); }); a.pendencias.forEach(function (t) { if (d0.pendencias.indexOf(t) < 0) d0.pendencias.push(t); }); }
+        return false;
+      }
+      a.aparelhos = novos;
+      return true;
+    });
+    var M = mem();
+    out.forEach(function (a) {
+      a.decisoes = a.decisoes.map(function (t) { return M.decisaoCliente ? M.decisaoCliente(t) : t; }).filter(Boolean);
+      a.pendencias = a.pendencias.map(function (t) { return M.decisaoCliente ? M.decisaoCliente(t) : t; }).filter(Boolean);
+    });
     var kits = {}; da.forEach(function (x) { var m = /^Kit de (\S+)\s+—\s+(.*)$/.exec(txt(x.elemento)); if (m) kits[m[1]] = { nome: m[2], decisoes: objs(x.decisoes).map(function (d) { return txt(d.texto); }), pendencias: objs(x.pendencias).map(function (p) { return txt(p.motivo || p.chave); }) }; });
     var af = obj(obj(c.r.sistemas).agua_fria), es = obj(obj(c.r.sistemas).esgoto), ap = {};
     objs(af.pontos).forEach(function (p) { if (p.famInst) { ap[p.famInst] = ap[p.famInst] || { id: p.famInst, aparelho: p.aparelho }; ap[p.famInst].af = p; } });
@@ -395,10 +510,15 @@
     }
     out.forEach(function (a, i) {
       a.itens = a.aparelhos.map(function (id) { var base = ap[id] || ap[String(id).replace(/-vd$/, "")] || { id: id }; return { id: id, aparelho: base.aparelho || "", af: base.af || ap[id + "-vd"] && ap[id + "-vd"].af || null, es: base.es || null, kit: kits[id] || null }; });
+      /* texto de modelo genérico: "0,00 m da saída da bacia" num ambiente SEM bacia não diz nada (F8, B6) */
+      if (!a.itens.some(function (x) { return /bacia/.test(txt(x.aparelho)); })) a.decisoes = a.decisoes.map(function (t) { return t.replace(/,\s*[\d.,]+\s*m da saída da bacia(?=\s*\()/g, ""); });
       /* nome legível: o id do ambiente ("ambtan") é interno; o leitor da obra reconhece o cômodo pelos aparelhos */
       if (!a.semAmbiente) {
         var tipos = unicos(a.itens.map(function (x) { return x.kit ? x.kit.nome.split(" (")[0].split(" com ")[0].split(" / ")[0].toLowerCase() : (ROT_AP[x.aparelho] || txt(x.aparelho).replace(/_/g, " ")); }).filter(Boolean));
-        a.nome = "Ambiente " + (i + 1) + (tipos.length ? " — " + listaPt(tipos) : "");
+        /* o nome do cômodo na arquitetura (Banho social, Banho suíte…), quando o projeto o tem; senão "Ambiente N" */
+        var NA = c.nomesAmb || {}, idA = String(a.id), chA = NA[idA] != null ? idA : (NA[idA.replace(/^amb/, "")] != null ? idA.replace(/^amb/, "") : Object.keys(NA).filter(function (k) { return idA.indexOf(k) >= 0; }).sort(function (x, y) { return y.length - x.length; })[0]);
+        var nomeArq = txt(chA != null ? NA[chA] : "").trim();
+        a.nome = (nomeArq || "Ambiente " + (i + 1)) + (tipos.length ? " — " + listaPt(tipos) : "");
       }
     });
     return out;
@@ -427,7 +547,8 @@
     /* 1 apresentação */
     var ap = "<p>Este manual orienta a execução, os testes, a inspeção e o uso das instalações da obra <b>" + ph(c.ob.nome, "OBRA") + "</b>. Cada instrução traz a fonte (documento e página). Instrução de fabricante vale para o produto dele e não substitui a norma; o que o acervo não cobre aparece como <span class=\"pend\">PENDENTE</span>, com o motivo, e não foi escrito de memória.</p>" +
       "<p>Os textos sublinhados são links: os internos levam à prancha, ao checklist ou ao item citado (e voltam); os externos abrem a ficha técnica do fabricante, a página da norma no catálogo da ABNT ou o vídeo oficial de instalação, conferidos em " + esc((R && R.conferidoEm) || "—") + ".</p>";
-    if (!c.sit.ok) ap += caixa("<b>Situação do cálculo: " + c.sit.txt.replace(/<[^>]+>/g, "") + "</b> Este manual traz procedimentos de execução e de uso; <b>não afirma conformidade</b> do projeto. Os itens não verificados estão no memorial de cálculo.", "alerta");
+    if (c.sit.tipo === "emitido") ap += caixa("<b>Situação do cálculo: " + c.sit.txt.replace(/<[^>]+>/g, "") + "</b> Este manual traz procedimentos de execução e de uso; os itens a confirmar, cada um com a premissa adotada, estão no quadro do memorial de cálculo e devem ser conferidos pelo responsável técnico antes da execução do item correspondente.", "alerta");
+    else if (!c.sit.ok) ap += caixa("<b>Situação do cálculo: " + c.sit.txt.replace(/<[^>]+>/g, "") + "</b> Este manual traz procedimentos de execução e de uso; <b>não afirma conformidade</b> do projeto. Os itens não verificados estão no memorial de cálculo.", "alerta");
     if (c.portal) ap += "<p>Portal da obra (pranchas, modelo 3D e documentos atualizados): " + D.L.portal(c.portal) + ".</p>";
     D.secao("man-apresentacao", "Apresentação e como usar este manual", ap);
     /* 2 sistemas */
@@ -460,6 +581,8 @@
       D.secao("man-sis-" + idSeguro(k), S.nome, h);
       D.secs[D.secs.length - 1].sub = [{ id: id + "-montagem", titulo: "Sequência de execução" }, { id: id + "-material", titulo: "Material" }, { id: id + "-ferramentas", titulo: "Ferramentas e insumos" }, { id: id + "-cuidados", titulo: "Cuidados por material" }, { id: id + "-testes", titulo: "Testes" }, { id: id + "-checklist", titulo: "Checklist de inspeção" }];
     });
+    if (obj(obj(c.r.sistemas).gas).trechos) gasManual(c, D);
+    secoesExtras(c, D, "manual");
     /* 3 por ambiente */
     var ams = ambientes(c), ha = "";
     if (ams.length) {

@@ -37,7 +37,7 @@
  *
  * ⚠ Nada de valor de norma aqui: só geometria de desenho (bloco K abaixo).
  *   Todo DN/vazão/declividade vem do RESULTADO; faltou → o texto diz
- *   "(sem cálculo)", nunca um número inventado.
+ *   "DN a confirmar", nunca um número inventado.
  * Teste: node tools/test-hid-isometrico.js
  * ===================================================================== */
 (function (global) {
@@ -74,8 +74,8 @@
   };
   /* hid:fisica-fim */
 
-  var SIGLA_SISTEMA = { agua_fria: "AF", agua_quente: "AQ", esgoto: "ES", ventilacao: "VE", pluvial: "AP", incendio: "IN", industrial: "IND" };
-  var NOME_SISTEMA = { agua_fria: "ÁGUA FRIA", agua_quente: "ÁGUA QUENTE", esgoto: "ESGOTO", ventilacao: "VENTILAÇÃO", pluvial: "ÁGUAS PLUVIAIS", incendio: "INCÊNDIO", industrial: "FLUIDO INDUSTRIAL" };
+  var SIGLA_SISTEMA = { agua_fria: "AF", agua_quente: "AQ", esgoto: "ES", ventilacao: "VE", pluvial: "AP", incendio: "IN", industrial: "IND", gas: "GAS" };
+  var NOME_SISTEMA = { agua_fria: "ÁGUA FRIA", agua_quente: "ÁGUA QUENTE", esgoto: "ESGOTO", ventilacao: "VENTILAÇÃO", pluvial: "ÁGUAS PLUVIAIS", incendio: "INCÊNDIO", industrial: "FLUIDO INDUSTRIAL", gas: "GÁS (GLP)" };
   var SIGLA_ACESSORIO = { registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" };
 
   function dep(nome, arq) {
@@ -129,7 +129,7 @@
   /* hid:fisica-fim */
   /* ------------------------------------------------------------ resultado → mapas por trecho */
   function indicesResultado(res) {
-    var ix = { agua_fria: {}, agua_quente: {}, pluvial: {}, incendio: {}, industrial: {}, esgoto: {}, ventilacao: {}, tq: {}, tqNome: {} };
+    var ix = { agua_fria: {}, agua_quente: {}, pluvial: {}, incendio: {}, industrial: {}, gas: {}, esgoto: {}, ventilacao: {}, tq: {}, tqNome: {} };
     var S = (res && res.sistemas) || {};
     arr(S.agua_fria && S.agua_fria.trechos).forEach(function (t) {
       var o = ix.agua_fria[t.id];
@@ -153,6 +153,7 @@
       else if (t.dn > o.dn) o.dn = t.dn;
     });
     arr(S.industrial && S.industrial.trechos).forEach(function (t) { ix.industrial[t.id] = { dn: t.dn, dnModelo: t.dnModelo, serie: t.serie, status: t.status }; });
+    arr(S.gas && S.gas.trechos).forEach(function (t) { ix.gas[t.id] = { dn: t.dn, dnModelo: t.dnModelo, serie: t.serie, status: t.status }; });   /* F3 gás */
     arr(S.incendio && S.incendio.hidrantes && S.incendio.hidrantes.trechos).forEach(function (t) { ix.incendio[t.id] = { dn: t.dn, dnModelo: t.dnModelo, vazao_lpm: t.vazao_lpm, status: t.status }; });
     arr(S.esgoto && S.esgoto.ventilacao).forEach(function (v) { ix.ventilacao[v.id] = { dn: v.dn, dnModelo: v.dnModelo, tipo: v.tipo, status: v.status }; });
     arr(S.esgoto && S.esgoto.tubosQueda).forEach(function (q, i) {
@@ -427,8 +428,10 @@
       /* ⚠ revisão F7 A4: trecho sem DN calculado (ou pendente) NUNCA sai como DN limpo — o
          cabeçalho promete "(sem cálculo)" e a nota da prancha diz que os DN são os do cálculo */
       var semCalc = dn == null || (inf && inf.status === "pendente");
-      if (dn == null) { dn = t.dn; avisos.push("Trecho " + t.id + ": sem resultado de cálculo; DN do modelo no desenho, marcado (sem cálculo)."); }
-      partes.push("DN " + dn + (semCalc ? " (sem cálculo)" : ""));
+      /* F8 (28/10/2026): o trecho com DN definido mostra SÓ o DN; só sem DN nenhum sai "DN a confirmar". Nunca "(sem cálculo)" no desenho do cliente. */
+      if (dn == null) { dn = t.dn; avisos.push("Trecho " + t.id + ": sem resultado de cálculo; DN do modelo no desenho" + (dn == null ? " (DN a confirmar)." : ".")); }
+      partes.push(dn == null ? "DN a confirmar" : "DN " + dn);
+      void semCalc;
       if (t.sistema === "agua_fria" && inf && inf.vazao_ls != null) partes.push(br(inf.vazao_ls, 2) + " L/s");
       /* revisão F7 M7: declividade abaixo da mínima não vira instrução — o rótulo mostra a mínima */
       if (t.sistema === "esgoto" && !t.vertical && inf && inf.declividade_pct != null) {

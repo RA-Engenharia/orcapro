@@ -71,6 +71,7 @@
     pluvial:     { cor: "#2E9E44", mm: 0.35, pena: 5, padrao: "continua" },
     incendio:    { cor: "#C62828", mm: 0.35, pena: 5, padrao: "continua" },
     industrial:  { cor: "#6D4C41", mm: 0.35, pena: 5, padrao: "continua" },
+    gas:         { cor: "#C9A400", mm: 0.35, pena: 5, padrao: "continua" },   /* F3 gás (Casa 487): a mesma pena do industrial, amarelo-escuro */
     dreno:       { cor: "#5DADE2", mm: 0.25, pena: 4, padrao: "oculta" },
     eletrica:    { cor: "#F2B600", mm: 0.25, pena: 4, padrao: "continua" }
   };

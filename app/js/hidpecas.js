@@ -225,10 +225,24 @@
     if (H.pressaoMax) v("pressão estática máx.", H.pressaoMax, " kPa");
     return out;
   }
+  /* Casa 487 (F9): nome legível na lista de material para a peça sem ficha (o id interno da família nunca vai ao cliente). Nomes = os das famílias (js/hidpiscinafam.js). */
+  var NOME_LEGIVEL = {
+    "hid-pisc-casa-maquinas": "Casa de máquinas da piscina", "hid-pisc-bomba": "Motobomba autoescorvante com pré-filtro (modelo a definir pelo fornecedor da piscina)",
+    "hid-pisc-filtro": "Filtro da piscina (modelo a definir pelo fornecedor da piscina)", "hid-pisc-quadro": "Quadro de comando da piscina", "hid-pisc-skimmer": "Coadeira (skimmer)",
+    "hid-pisc-aspiracao": "Dispositivo de aspiração", "hid-pisc-retorno": "Dispositivo de retorno", "hid-pisc-ralo": "Ralo de fundo antiaprisionamento",
+    "hid-pisc-emergencia": "Botão de parada de emergência", "hid-pisc-registro": "Registro de esfera (piscina)", "hid-pisc-reposicao": "Ponto de reposição de água (bica de descarga livre)",
+    "hid-pisc-bomba-hidro": "Motobomba da hidromassagem", "hid-pisc-hidro": "Bocal de hidromassagem", "hid-pisc-succao-hidro": "Sucção de parede da hidromassagem (grelha antiaprisionamento)",
+    "hid-pisc-refletor": "Refletor subaquático (LED)", "hid-pisc-poco-drenagem": "Poço de drenagem da casa de máquinas (bomba submersível)", "hid-pisc-derivacao": "Derivação do aquecimento (tê com registro)",
+    "ra-cat-tanque-lavanderia-gabinete": "tanque da lavanderia", "c487-coz-ilha": "ilha da cozinha", "c487-banho-bancada": "bancada do banheiro", "c487-banho-hidromassagem": "hidromassagem da suíte"
+  };
+  /* a linha do tubo sem ficha no catálogo (ex.: o coletor pluvial enterrado) não leva a chave de código do material */
+  var NOME_MATERIAL = { pvc_esgoto_enterrado: "PVC ocre para coletor enterrado (NBR 7362, junta elástica)", pvc_soldavel: "PVC soldável", pvc_roscavel: "PVC roscável", pvc_esgoto: "PVC esgoto série normal", pvc_serie_r: "PVC série reforçada" };
+  function nomeMaterial(m) { return Object.prototype.hasOwnProperty.call(NOME_MATERIAL, m) ? NOME_MATERIAL[m] : String(m == null ? "" : m).replace(/_/g, " "); }
+  function nomeLegivel(id) { return Object.prototype.hasOwnProperty.call(NOME_LEGIVEL, id) ? NOME_LEGIVEL[id] : id; }
   function listaMaterial(q, familias, opcoes) {
     var out = [], op = opcoes || {};
     q = q || {};
-    arr(q.tubos).forEach(function (g) { out.push(linha(tubo(g.material, g.dn), { classe: "tubo", descricao: "Tubo " + g.material + " DN " + g.dn, unidade: g.unidade || "m", dn: g.dn, quantidade: g.quantidade, sistema: g.sistema, aplicacao: g.aplicacao })); });
+    arr(q.tubos).forEach(function (g) { out.push(linha(tubo(g.material, g.dn), { classe: "tubo", descricao: "Tubo " + nomeMaterial(g.material) + " DN " + g.dn, unidade: g.unidade || "m", dn: g.dn, quantidade: g.quantidade, sistema: g.sistema, aplicacao: g.aplicacao })); });
     /* peça de rosca/composta (ponto de água "25 × 1/2\"", adaptador do registro): a ficha é da chave "DNxROSCA"; a premissa da dedução (a rosca adotada) vai na linha */
     arr(q.conexoes).forEach(function (g) {
       var chaveF = typeof g.dn2 === "string" && g.dn2 !== "" ? g.dn + "x" + g.dn2 : g.dn, fcx = conexao(g.tipo, g.material, g.chave || chaveF);
@@ -239,7 +253,7 @@
     });
     /* M3 (frente 1c): o ponto de água sem rosca padrão aparece na lista como PENDÊNCIA (peça de ligação a definir) — não some do levantamento */
     arr(q.pontosSemRosca).forEach(function (p) {
-      var l = linha(null, { classe: "pendencia", descricao: "Peça de ligação do ponto de água (" + (p.famId || "aparelho") + ")", unidade: "un", quantidade: 1, sistema: "agua_fria" });
+      var l = linha(null, { classe: "pendencia", descricao: "Peça de ligação do ponto de água (" + nomeLegivel(p.famId || "aparelho") + ")", unidade: "un", quantidade: 1, sistema: "agua_fria" });
       l.premissas = [p.texto || "ponto de água sem rosca padrão — peça de ligação a definir"]; l.preco = { pendente: true, valor: null, criterio: l.premissas[0] }; l.pendencia = true;
       out.push(l);
     });
@@ -257,7 +271,7 @@
     });
     ordem.forEach(function (k) {
       var g = grupos[k], prod = g.fc ? arr((g.fc.comercial || {}).produtos).filter(function (p) { return p[0] === g.tipoId; })[0] : null;
-      out.push(linha(g.fc, { classe: "louca", descricao: g.famId, unidade: "un", quantidade: g.n, produto: prod || null }));
+      out.push(linha(g.fc, { classe: "louca", descricao: nomeLegivel(g.famId), unidade: "un", quantidade: g.n, produto: prod || null }));
     });
     return out;
   }

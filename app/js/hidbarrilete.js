@@ -97,9 +97,19 @@
     descidaEntrada: 0.40,   // hid:ok a espera do alimentador desce isto abaixo da entrada (ou até a laje/forro)
     folgaCorpo: 0.15,       // hid:ok o registro da limpeza fica a isto do corpo da caixa (a mão alcança)
     dnMinExtravasor: 50,    // hid:ok decisão do Rogério 27/10/2026: extravasor no mínimo DN 50 — a vazão que chega pela boia nunca maior que a que o ladrão escoa
+    folgaTelhado: 0.05,     // hid:ok 27/10/2026 (nada sobre o telhado): o tubo horizontal do barrilete fica ao menos 5 cm abaixo da face de baixo do telhado (critério RA)
+    margemPouso: 0.30,      // hid:ok a água do extravasor cai a pelo menos 30 cm da borda do telhado (dentro dele, não escorrendo pela beira)
+    afastaL: 0.7,           // hid:ok o 1º trecho do extravasor/limpeza em "L": afasta-se 70 cm da saída/ventilação do barrilete antes de virar para o telhado
+    alcanceDescarga: 8,     // hid:ok até onde (m) a ponta do extravasor/limpeza procura um telhado abaixo, a partir da caixa
+    passoDescarga: 0.1,     // hid:ok passo (m) dessa procura
+    dnMinBarrilete: 50,     // hid:ok decisão do Rogério 27/10/2026 (prática RA): o barrilete (saída, tomada, tronco, coletor) sai DN 50 no mínimo (ou 60) — o dimensionamento pode AUMENTAR, nunca baixar disto
+    dnMinColuna: 50,        // hid:ok idem a coluna de descida: DN 50 na parede até a derivação do ambiente e SÓ então reduz para o DN que o ramal pede (a redução fica no ponto de derivação)
+    nivelGrupo: 0.30,       // hid:ok 27/10/2026: reservatórios elevados de bases a até 30 cm de diferença são "do mesmo nível" (critério de projeto RA, não é norma) e podem formar UM barrilete
+    raioGrupo: 6,           // hid:ok idem: a até 6 m em planta uma da outra, o coletor comum é curto o bastante para valer (critério RA)
     passoSubir: 0.05,       // hid:ok o "subir a caixa X m" sai em múltiplo de 5 cm
     margemSubir: 0.05,      // hid:ok e com 5 cm de sobra sobre a conta (arredondamento das perdas)
     iteracoesOferta: 3,     // hid:ok tentativas de altura da caixa proposta (barrilete → pressão → barrilete)
+    entreforroSobe: [0.15, 0.10, 0.05, 0],   // hid:ok F5 Casa 487 (27/10/2026): folgas (m) acima do mínimo da laje testadas, da MAIOR para a menor, para o plano de distribuição sobre a laje ter declividade (critério RA)
     descidaMin: 0.05,       // hid:ok N23: o barrilete só desce pela tomada vertical se ganhar mais que isto (abaixo, já está no apoio)
     zDesvios: [2, 4, 6]     // hid:ok passos da grade dos desvios em "Z" (os do js/hidaqtraco.js)
   };
@@ -146,6 +156,28 @@
     return out;
   }
 
+  /* CAIXAS INTERLIGADAS (27/10/2026, pedido do Rogério — Casa 487, duas Fortlev de 500 L): dois ou mais reservatórios elevados "do mesmo nível"
+     (base a até GEO_BAR.nivelGrupo uma da outra, a até GEO_BAR.raioGrupo m em planta) formam UM barrilete: cada caixa com SUA saída e o
+     registro dela (isolar uma para manutenção), as saídas se unem num coletor que alimenta TODAS as colunas. Agrupamento por proximidade
+     encadeada, ordenado pelo id (o resultado não depende da ordem do modelo). Uma caixa só = grupo de 1 = o comportamento de sempre. */
+  function agrupar(todas) {
+    var grupos = [], visto = {};
+    todas.slice().sort(function (a, b) { return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); }).forEach(function (c) {
+      if (visto[c.id]) return;
+      var comp = [c], fila = [c]; visto[c.id] = 1;
+      while (fila.length) {
+        var q = fila.shift();
+        todas.forEach(function (o) {
+          if (visto[o.id]) return;
+          if (Math.abs(o.yb - q.yb) <= GEO_BAR.nivelGrupo + EPS && d2(o.c, q.c) <= GEO_BAR.raioGrupo + EPS) { visto[o.id] = 1; comp.push(o); fila.push(o); }
+        });
+      }
+      comp.sort(function (a, b) { return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
+      grupos.push(comp);
+    });
+    return grupos;
+  }
+
   /* ================================================ AS ESPERAS DE ÁGUA FRIA QUE O BARRILETE RECEBE
      a ponta "continua" de cima da rede de água fria (o forro/laje dos ambientes, a alimentação do aquecedor) e a espera da
      coluna do prédio (af_barrilete). N23 (26/10/2026): `valvula` = a espera EXCLUSIVA da válvula de descarga (o "-afb" do traçado novo, com o
@@ -163,7 +195,7 @@
       if (!t || o.bar != null || o.saidaLivre) return;
       var predio = /prédio/.test(String(e.motivo)) && o.predioParte === "af_barrilete";
       if (!predio && !/^espera de alimentação \(barrilete\/coluna\)/.test(String(e.motivo))) return;
-      out.push({ trecho: String(e.trecho), ponta: e.ponta, x: num(e.x, 0), y: num(e.y, 0), z: num(e.z, 0), dn: num(t.dn, 0), material: t.material, predio: predio ? String(o.predio || "") : null,
+      out.push({ opOrig: o && o.op === "trecho" ? o : null, trecho: String(e.trecho), ponta: e.ponta, x: num(e.x, 0), y: num(e.y, 0), z: num(e.z, 0), dn: num(t.dn, 0), material: t.material, predio: predio ? String(o.predio || "") : null,
                  aq: o.aq != null ? String(o.aq) : null, kit: o.kit != null ? String(o.kit) : null, amb: o.amb != null ? String(o.amb) : null,
                  valvula: o.valvula === true || (/-afb$/.test(String(e.trecho)) && trs[String(o.amb) + "-afc"] != null),
                  antiga: /-afb$/.test(String(e.trecho)) && o.valvula !== true && trs[String(o.amb) + "-afc"] == null });
@@ -189,6 +221,8 @@
     var H = HR(), o = H && H.obstaculosDoBim ? H.obstaculosDoBim(estado, null) : { lajes: [], paredes: [], vigas: [] };
     return { lajes: arr(o.lajes), paredes: arr(o.paredes).map(function (w) { return { id: w.id, p1: w.p1, p2: w.p2, esp: num(w.espessura, 0), base: num(w.base, 0), topo: num(w.base, 0) + num(w.altura, 0) }; }), vigas: arr(o.vigas) };
   }
+  /* os telhados do modelo durante um montarCaixa (para o `suporte` não apoiar o barrilete numa parede que FURA a cobertura) */
+  var TEL_SUPORTE = [];
   function suporte(Ap, a, b, r, teto, comParapeito) {
     var s = -Infinity, x0 = Math.min(a.x, b.x) - r, x1 = Math.max(a.x, b.x) + r, z0 = Math.min(a.z, b.z) - r, z1 = Math.max(a.z, b.z) + r;
     Ap.lajes.forEach(function (L) { if (L.topo <= teto + EPS && x1 >= L.x0 && x0 <= L.x1 && z1 >= L.z0 && z0 <= L.z1) s = Math.max(s, L.topo); });
@@ -199,14 +233,26 @@
        sem carga estática (6.9.3), e o Traçar pedia subir a caixa DE NOVO — a base do projeto exemplo foi a 3,7 m. Parede do ático (sem laje
        por baixo do trecho, ou que desce além da laje) continua apoio, como antes. */
     var TOL_PAR = 0.05;   // hid:ok 5 cm: a base da parede "na" laje (geometria, não norma)
-    Ap.paredes.forEach(function (w) { if (w.topo > teto + EPS) return; if (!comParapeito && sLaje > -Infinity && w.base >= sLaje - TOL_PAR && w.topo > sLaje + TOL_PAR) return;
+    /* 27/10/2026 (nada sobre o telhado): a parede cujo topo passa da face de baixo do telhado naquele ponto FURA a cobertura (platibanda, oitão): o
+       barrilete não corre em cima dela — passa por baixo da telha, atravessando a parede com passante (avisado) */
+    var tMeio = TEL_SUPORTE.length && HR().telhadoAbaixoDe ? HR().telhadoAbaixoDe(TEL_SUPORTE, (a.x + b.x) / 2, (a.z + b.z) / 2) : null;
+    Ap.paredes.forEach(function (w) { if (w.topo > teto + EPS) return; if (tMeio && w.topo > tMeio.y - GEO_BAR.folgaTelhado) return; if (!comParapeito && sLaje > -Infinity && w.base >= sLaje - TOL_PAR && w.topo > sLaje + TOL_PAR) return;
       if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: w.p1.x, y: 0, z: w.p1.z }, { x: w.p2.x, y: 0, z: w.p2.z }) <= w.esp / 2 + r) s = Math.max(s, w.topo); });
     /* idem a peça ACIMA da laje (terça, pontalete, viga da estrutura do telhado, com a face de baixo acima do topo da laje): o barrilete
        passa POR BAIXO dela, apoiado na laje — antes ela virava o apoio quando a caixa elevada punha o teto acima dela */
-    Ap.vigas.forEach(function (v) { if (v.topo > teto + EPS) return; if (!comParapeito && sLaje > -Infinity && num(v.altura, null) != null && v.topo - num(v.altura, 0) > sLaje + TOL_PAR) return; if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: v.p1.x, y: 0, z: v.p1.z }, { x: v.p2.x, y: 0, z: v.p2.z }) <= num(v.largura, 0) / 2 + r) s = Math.max(s, v.topo); });
+    Ap.vigas.forEach(function (v) { if (v.topo > teto + EPS) return; if (tMeio && v.topo > tMeio.y - GEO_BAR.folgaTelhado) return; if (!comParapeito && sLaje > -Infinity && num(v.altura, null) != null && v.topo - num(v.altura, 0) > sLaje + TOL_PAR) return; if (segSeg({ x: a.x, y: 0, z: a.z }, { x: b.x, y: 0, z: b.z }, { x: v.p1.x, y: 0, z: v.p1.z }, { x: v.p2.x, y: 0, z: v.p2.z }) <= num(v.largura, 0) / 2 + r) s = Math.max(s, v.topo); });
     return s;
   }
   /* a caixa do prédio (paredes + lajes) em planta: para o lado de FORA do extravasor e da limpeza */
+  /* F5: o ponto (x, z) a cota y DENTRO do corpo de uma parede (o eixo da espera pode estar no miolo da parede, não só na face que o paredeDe do HidKit mede) */
+  function naParedeCorpo(Ap, x, z, y) {
+    var tolP = 0.02;   // hid:ok 2 cm de tolerância do ponto contra a espessura (critério de projeto)
+    return Ap.paredes.some(function (w) {
+      if (y < w.base - tolP || y > w.topo + tolP) return false;
+      var dx = w.p2.x - w.p1.x, dz = w.p2.z - w.p1.z, L2 = dx * dx + dz * dz, t = L2 > 0 ? ((x - w.p1.x) * dx + (z - w.p1.z) * dz) / L2 : 0; t = Math.max(0, Math.min(1, t));
+      return Math.sqrt(Math.pow(x - (w.p1.x + dx * t), 2) + Math.pow(z - (w.p1.z + dz * t), 2)) <= w.esp / 2 + tolP;
+    });
+  }
   function contornoObra(Ap) {
     var bb = null;
     function add(x, z) { if (!bb) bb = { x0: x, x1: x, z0: z, z1: z }; bb.x0 = Math.min(bb.x0, x); bb.x1 = Math.max(bb.x1, x); bb.z0 = Math.min(bb.z0, z); bb.z1 = Math.max(bb.z1, z); }
@@ -260,10 +306,29 @@
     }
     if (!CX.length) return out;
     /* cada espera vai à caixa mais perto em planta (várias caixas = um barrilete por caixa) */
-    var todas = caixas(estado, avaliarFam), porCx = {};
+    var todas = caixas(estado, avaliarFam), porCx = {}, porId = {};
+    todas.forEach(function (c) { porId[c.id] = c; });
     ESP.forEach(function (s) { var best = null; todas.forEach(function (c) { if (!best || d2(s, c.c) < d2(s, best.c) - EPS) best = c; }); if (best) (porCx[best.id] = porCx[best.id] || []).push(s); });
+    /* CAIXAS INTERLIGADAS: o grupo tem UMA principal (a de menor soma das distâncias às esperas do grupo; empate = o menor id) que recebe todas as
+       esperas e monta o barrilete; as demais (satélites) só têm a saída com o registro dela, ligada ao coletor da principal */
+    var primariaDe = {}, satsDe = {}, grupoDe = {};
+    agrupar(todas).forEach(function (g) {
+      if (g.length < 2) return;
+      var esps = []; g.forEach(function (c) { arr(porCx[c.id]).forEach(function (s) { esps.push(s); }); });
+      var prim = g.slice().sort(function (a, b) {
+        var sa = esps.reduce(function (m, s) { return m + d2(s, a.c); }, 0), sb = esps.reduce(function (m, s) { return m + d2(s, b.c); }, 0);
+        return Math.abs(sa - sb) > EPS ? sa - sb : (a.id < b.id ? -1 : 1);
+      })[0];
+      porCx[prim.id] = esps; satsDe[prim.id] = g.filter(function (c) { return c !== prim; });
+      g.forEach(function (c) { grupoDe[c.id] = g; if (c !== prim) { primariaDe[c.id] = prim.id; porCx[c.id] = []; } });
+    });
+    /* pediu UMA caixa de um grupo: monta o grupo inteiro (o barrilete é um só) */
+    if (e.caixa != null && CX.length === 1 && grupoDe[CX[0].id]) CX = grupoDe[CX[0].id].slice();
     CX.forEach(function (cx) {
+      if (primariaDe[cx.id]) return;   /* satélite: é montada junto da principal, mais abaixo */
       var lista = porCx[cx.id] || []; if (!lista.length) return;
+      var SAT = arr(satsDe[cx.id]);
+      function mc(ee, cc, ll, oa, oo) { oo = oo || {}; if (!oo.secundaria && SAT.length) oo.satelites = SAT; return montarCaixa(ee, cc, ll, oa, oo); }
       /* N23 (26/10/2026, "o nosso barrilete está saindo com 50 ou 60 mm"): a espera da VÁLVULA DE DESCARGA é DN 40/50 (1 1/4"–1 1/2") e
          o barrilete pegava o maior DN a jusante — um banheiro com válvula engordava a saída e o tronco inteiros. Como se executa: a
          válvula tem SAÍDA e COLUNA EXCLUSIVAS na caixa (Tigre/Deca) e o consumo dos outros aparelhos sai em 25/32. Critério da espera da
@@ -282,11 +347,11 @@
          pendências de esbarrar, que dizem o que lançar à mão). O lado em que a principal não desce NUNCA vale: o barrilete ficaria na
          cota da saída e a pressão faltaria (defeito de 26/10/2026, cenário de 2 banheiros) */
       function esbarra(Rx) { return Rx.pendencias.some(function (p) { return /^bar\.(respiro|coluna|caminho)$/.test(p.chave); }); }
-      if (lV.length && lC.length && cx.S) {
+      if (lV.length && lC.length && cx.S && !SAT.length) {
         for (var ia = 0; ia < ANG_SAIDA2.length && !sec; ia++) {
           var Rv = montarCaixa(e, saidaGirada(cx, ANG_SAIDA2[ia]), lV, opsAch, { secundaria: true, nOp0: 500 });   // hid:ok ids da 2ª saída a partir de 500
           if (!(Rv.ok && Rv.ligadas === lV.length)) continue;
-          var Rp = montarCaixa(e, cx, lC, opsAch, { obst: Rv.novos.map(function (o) { return { a: o.a, b: o.b, r: o.r, sistema: o.sistema, id: "2ª saída · " + o.id }; }), saida2: { dn: Rv.dnSaida, ang: ANG_SAIDA2[ia] } });
+          var Rp = mc(e, cx, lC, opsAch, { obst: Rv.novos.map(function (o) { return { a: o.a, b: o.b, r: o.r, sistema: o.sistema, id: "2ª saída · " + o.id }; }), saida2: { dn: Rv.dnSaida, ang: ANG_SAIDA2[ia] } });
           if (!Rp.ok || Rp.semTomada) continue;
           if (!esbarra(Rp) && !esbarra(Rv)) { sec = Rv; ang2 = ANG_SAIDA2[ia]; R = Rp; }
           else if (!reserva) reserva = { sec: Rv, ang: ANG_SAIDA2[ia], R: Rp };
@@ -298,9 +363,12 @@
          a principal desce e a pressão não falta onde a de uma saída atende. Prédio (espera `predio`) não entra: a válvula segue a coluna
          do prédio. */
       var motivoUma = null;
-      if (!sec && lV.length && lC.length && cx.S) motivoUma = "nenhum lado deixa a saída principal descer até a laje com a 2ª saída";
+      /* CAIXAS INTERLIGADAS: uma saída só por caixa e todas as colunas (as da válvula também) pelo coletor — com a 2ª saída exclusiva, fechar a
+         caixa que a tem cortaria a válvula de descarga, e o pedido é que a outra abasteça TUDO */
+      if (SAT.length && lV.length && lC.length) motivoUma = "caixas interligadas: todas as colunas (as da válvula de descarga também) saem pelo coletor comum, para que uma caixa fechada para manutenção não corte nenhuma coluna";
+      else if (!sec && lV.length && lC.length && cx.S) motivoUma = "nenhum lado deixa a saída principal descer até a laje com a 2ª saída";
       if (sec) {
-        var R1 = montarCaixa(e, cx, lista, opsAch);
+        var R1 = mc(e, cx, lista, opsAch);
         if (!R1.semTomada && !esbarra(R1) && (esbarra(R) || esbarra(sec))) motivoUma = "a 2ª saída só fechava com interferência a lançar à mão, e a de uma saída não";
         else if (e.pressao !== false && R1.ok) {
           var pA = pressaoDaConfig(e, out.ops.concat(sec.ops, R.ops), cx), p1 = pressaoDaConfig(e, out.ops.concat(R1.ops), cx);
@@ -308,7 +376,7 @@
         }
         if (motivoUma) { sec = null; ang2 = null; R = R1; }
       }
-      if (!R) R = montarCaixa(e, cx, lista, opsAch);
+      if (!R) R = mc(e, cx, lista, opsAch);
       if (!sec && lV.length && lC.length) out.avisos.push({ texto: "Caixa d'água " + cx.id + ": " + (motivoUma || "não houve lugar para a 2ª saída da caixa") + "; ficou UMA saída com a coluna exclusiva da válvula de descarga (a regra de projeto é a coluna exclusiva, que se mantém desde o barrilete). O barrilete ficou com o DN dela (" + lV.map(function (s) { return s.dn; }).join(", ") + "). Para a 2ª saída, gire a caixa ou libere o lado dela e trace de novo.", elementos: [cx.id], acao: null });
       if (sec) {
         sec.ops.forEach(function (o) { out.ops.push(o); });
@@ -325,6 +393,28 @@
       out.ligadas += R.ligadas; out.esperasLigadas = out.esperasLigadas.concat(R.esperasLigadas);
       out.caixas.push({ id: cx.id, ok: R.ok, ligadas: R.ligadas, subir: R.subir || null });
       if (R.barInfo) out.barInfo.push(R.barInfo);
+      /* os SATÉLITES do grupo: cada caixa com a SUA saída (toco, registro, tê da ventilação), extravasor, limpeza e boia — o coletor que as une
+         já saiu no barrilete da principal (o trecho "coletor"). Satélite que o coletor não alcançou fica com pendência e sem saída. */
+      var ligadasSat = [];
+      SAT.forEach(function (sc, iS) {
+        if (!R.ok || arr(R.satLigadas).indexOf(sc.id) < 0) {
+          pend("bar.interligacao", "Caixa d'água " + sc.id + ": não consegui ligar a saída dela ao coletor da caixa " + cx.id + " (sem caminho livre ou sem altura) — ligue à mão com registro de gaveta, ou separe as caixas (cada uma com seu barrilete)", [sc.id, cx.id]);
+          out.caixas.push({ id: sc.id, ok: false, ligadas: 0, subir: null });
+          return;
+        }
+        var Rs = montarCaixa(e, sc, [], opsAch, { satelite: { primaria: cx, decl: R.decl, dn: R.dnSaida, alim: R.alimE2 || null }, nOp0: 100 * (iS + 1), obst: arr(R.novos).filter(function (n) { return n.satDe !== sc.id; }) });   // hid:ok os ids do satélite começam em 100 × n
+        Rs.ops.forEach(function (o) { out.ops.push(o); });
+        Rs.avisos.forEach(function (a) { out.avisos.push(a); });
+        Rs.pendencias.forEach(function (p) { out.pendencias.push(p); });
+        Rs.decisoes.forEach(function (d) { out.decisoes.push(d); });
+        out.caixas.push({ id: sc.id, ok: Rs.ok, ligadas: 0, subir: null });
+        if (Rs.barInfo) out.barInfo.push(Rs.barInfo);
+        if (Rs.ok) ligadasSat.push(sc);
+      });
+      if (ligadasSat.length) {
+        var gTodas = [cx].concat(ligadasSat), vol = gTodas.reduce(function (m, c) { return m + num(c.volume, 0); }, 0);
+        out.decisoes.unshift({ id: "bar.interligadas", texto: "Caixas " + gTodas.map(function (c) { return c.id; }).join(" e ") + " interligadas: barrilete comum" + (R.coletorM ? " (coletor de " + f2(R.coletorM) + " m)" : "") + "; fechando o registro de uma, a outra abastece tudo. Cada caixa tem a sua saída com registro de gaveta, ventilação, extravasor, limpeza com registro e entrada de boia com registro; o alimentador predial chega numa espera única e se divide para as boias (registro em cada uma). Mesma base (a até " + f2(GEO_BAR.nivelGrupo) + " m) e até " + f2(GEO_BAR.raioGrupo) + " m em planta (critério RA). Volume útil = soma" + (vol > 0 ? " (" + f2(vol).replace(",00", "") + " L)" : "") + "; o nível d'água é o mesmo nas duas." });
+      }
     });
     /* PRESSÃO no ponto mais desfavorável (o mesmo cálculo do dimensionamento) — sobre a prévia com o barrilete */
     if (e.pressao !== false && out.ligadas) {
@@ -349,12 +439,18 @@
 
   /* ---------------------------------------------- o barrilete de UMA caixa */
   function montarCaixa(e, cx, lista, opsAch, opc) {
+    var Hh = HR();
+    try { TEL_SUPORTE = Hh && Hh.obstaculosDoBim ? arr(Hh.obstaculosDoBim(e.estado || {}, e.avaliarFam).telhados) : []; } catch (eT) { TEL_SUPORTE = []; }
+    try { return montarCaixa0(e, cx, lista, opsAch, opc); } finally { TEL_SUPORTE = []; }
+  }
+  function montarCaixa0(e, cx, lista, opsAch, opc) {
     opc = opc || {};
     var estado = e.estado || {}, avaliarFam = e.avaliarFam, par = e.parametros || {}, B = BI(), K = HK(), H = HR(), G = H.GEO;
-    var res = { ok: false, ops: [], avisos: [], pendencias: [], decisoes: [], ligadas: 0, esperasLigadas: [], respiros: [], subir: null, barInfo: null };
+    var res = { ok: false, ops: [], avisos: [], pendencias: [], decisoes: [], ligadas: 0, esperasLigadas: [], respiros: [], subir: null, barInfo: null, satLigadas: [] };
     function pend(chave, texto, els, acao) { res.pendencias.push({ chave: chave, texto: texto, motivo: texto, elementos: arr(els).map(String), acao: acao || null }); }
     function aviso(texto, els, acao) { res.avisos.push({ texto: texto, elementos: arr(els).map(String), acao: acao || null }); }
     var nome = "Caixa d'água " + cx.id + (opc.secundaria ? " (2ª saída: coluna exclusiva da válvula de descarga)" : "");
+    var SATELITES = arr(opc.satelites);   /* caixas interligadas a esta (a principal do grupo): as saídas delas entram na árvore como "fontes" */
     if (!cx.S) { pend("bar.saida", nome + ": a família não tem o ponto de saída (consumo) — use a família hid-caixa-dagua do catálogo", [cx.id]); return res; }
     var folga = num(par.folga, G.folga), mNo = num(par.margemNo, G.margemNo), passo = G.passo, Lr = B.ACESSORIO_PADRAO, TOL = B.TOL;
     var decl0 = num(par.declividadeBarrilete, GEO_BAR.declividade);
@@ -367,7 +463,11 @@
        gaveta de latão bruto, que é o do embutido */
     var RG_FAM = "ra-registro-esfera", tipoRg = B.varianteAuto ? B.varianteAuto("registro_esfera", { sistema: "agua_fria", material: matAF, aplicacao: "reservacao" }) : "soldavel";
     var Ap = apoios(estado), teto = cx.S.y;
-    var obst = H.obstaculosDoBim(estado, avaliarFam), vols = arr(obst.familias);
+    var obst = H.obstaculosDoBim(estado, avaliarFam), vols = arr(obst.familias), TEL = arr(obst.telhados);
+    if (TEL.length && H.telhadoAbaixoDe && !opc.secundaria) {
+      var tcx = H.telhadoAbaixoDe(TEL, cx.c.x, cx.c.z);
+      if (tcx && cx.yt > tcx.y - EPS) aviso(nome + ": o topo da caixa (" + f2(cx.yt) + " m) passa da face de baixo do telhado " + tcx.id + " (" + f2(tcx.y) + " m) — a caixa atravessa a cobertura: suba o telhado nesse trecho ou baixe a caixa (os tubos horizontais dela correm abaixo do telhado)", [cx.id, tcx.id]);
+    }
     var existentes = arr(estado.instalacoes && estado.instalacoes.trechos).map(function (t) { return { a: t.p1, b: t.p2, r: raio(t.dn), sistema: t.sistema, id: String(t.id) }; }).concat(arr(opc.obst));
     var novos = [];
     var nOp = num(opc.nOp0, 0);   /* a 2ª saída começa em 500: os ids das duas não se cruzam */
@@ -379,7 +479,10 @@
       return o;
     }
     /* conflito: folga física com os tubos (as pontas que se ligam não contam) e os volumes das famílias */
-    function conflito(a, b, r, ign) {
+    function conflito(a, b, r, ign, livreTelhado) {
+      /* NADA SOBRE O TELHADO (27/10/2026): o tubo horizontal corre abaixo da face de baixo da cobertura; o vertical (coluna, ventilação) passa. O
+         extravasor e a limpeza (saídas livres, os únicos aparentes) são avaliados à parte (livreTelhado) */
+      if (!livreTelhado && TEL.length) { var sT = H.tuboSobreTelhado ? H.tuboSobreTelhado(TEL, a, b, r, GEO_BAR.folgaTelhado) : null; if (sT) return { com: "o telhado " + sT.id + " (a face de baixo a " + f2(sT.y) + " m, o tubo a " + f2(sT.onde.y) + " m)", telhado: sT.id }; }
       var todos = existentes.concat(novos);
       for (var i = 0; i < todos.length; i++) {
         var Tq = todos[i]; if (ign && ign(Tq)) continue;
@@ -407,9 +510,12 @@
     function ignCaixa(Tq) { return Tq.volume && (Tq.id === cx.id || ehBaseDe(Tq.id, cx.id)); }
 
     /* ---------- DN: a coluna = a espera; o barrilete a montante = o maior a jusante; a saída = o maior de todos */
-    lista.forEach(function (s) { s.dnCol = comercial(Math.max(num(s.dn, 0), 0) || dnPad); });
-    var dnSaida = comercial(Math.max.apply(null, lista.map(function (s) { return s.dnCol; }).concat([dnPad])));
+    /* 27/10/2026 (decisão do Rogério): a coluna desce no DN mínimo do barrilete até a derivação (a espera do ambiente) e a redução para o DN do ramal
+       fica ali, no ponto de derivação; a saída e o tronco nunca abaixo do mínimo. A espera maior (a da válvula, 40/50) continua mandando. */
+    lista.forEach(function (s) { s.dnCol = comercial(Math.max(num(s.dn, 0), dnPad, GEO_BAR.dnMinColuna)); });
+    var dnSaida = comercial(Math.max.apply(null, lista.map(function (s) { return s.dnCol; }).concat([dnPad, GEO_BAR.dnMinBarrilete])));
     var rS = raio(dnSaida);
+    if (opc.satelite) { dnSaida = comercial(Math.max(num(opc.satelite.dn, 0), GEO_BAR.dnMinBarrilete)); rS = raio(dnSaida); }   /* o satélite sai com o mesmo DN da principal: fechada uma, a outra abastece tudo */
 
     /* ---------- 1) SAÍDA: o toco radial, o registro, o tê da ventilação (A) */
     var u = unit2(cx.S.x - cx.c.x, cx.S.z - cx.c.z) || { x: Math.cos(cx.rot), z: -Math.sin(cx.rot) };
@@ -420,6 +526,18 @@
     /* a ventilação entra nos obstáculos ANTES da árvore: o ramo que sai de A não pode correr colado nela */
     var cV = conflito(A, pV, rS, ignCaixa), comVent = !cV;
     var base0 = [{ a: S0, b: A, r: rS, sistema: "agua_fria", id: "toco" }].concat(comVent ? [{ a: A, b: pV, r: rS, sistema: "agua_fria", id: "vent" }] : []);
+    /* CAIXAS INTERLIGADAS: a saída (toco + ventilação) de cada satélite é obstáculo desde já e o PONTO dela entra na árvore como uma "fonte": o
+       coletor desce do fim do toco dela até o barrilete (o mesmo plano das esperas, sem a conta da altura das colunas — ele só precisa ficar abaixo da saída) */
+    var satFolhas = [];
+    SATELITES.forEach(function (sc) {
+      if (!sc.S) return;
+      var us = unit2(sc.S.x - sc.c.x, sc.S.z - sc.c.z) || { x: Math.cos(sc.rot), z: -Math.sin(sc.rot) };
+      var S0s = P3(sc.S.x, sc.S.y, sc.S.z), As = P3(S0s.x + us.x * GEO_BAR.tocoSaida, S0s.y, S0s.z + us.z * GEO_BAR.tocoSaida);
+      base0.push({ a: S0s, b: As, r: rS, sistema: "agua_fria", id: "toco " + sc.id, satDe: sc.id });
+      base0.push({ a: As, b: P3(As.x, r4(sc.yt + GEO_BAR.ventAcima), As.z), r: rS, sistema: "agua_fria", id: "vent " + sc.id, satDe: sc.id });
+      satFolhas.push({ fonte: true, sat: sc, trecho: "sat-" + sc.id, x: As.x, y: sc.S.y, z: As.z, dn: dnSaida, dnCol: dnSaida, predio: null, aq: null });
+    });
+    lista = lista.concat(satFolhas);
     novos = base0.slice();
     var PES = H.PESOS || {}, pesoCx = num(PES.conexao, 0);
     /* a distância do centro da caixa que contorna o corpo (com a tampa) por fora, com o tubo e a folga, arredondada à grade */
@@ -505,11 +623,13 @@
       ordem.forEach(function (n) { yMin[n] = -Infinity; });
       arestas.forEach(function (Ed) { var a = nos[Ed.a], b = nos[Ed.b], r = raio(Math.max(dnNo[Ed.a] || 0, dnNo[Ed.b] || 0) || dnSaida), s = suporte(Ap, a, b, r, teto); if (s > -Infinity) { yMin[Ed.a] = Math.max(yMin[Ed.a], s + r + APOIO); yMin[Ed.b] = Math.max(yMin[Ed.b], s + r + APOIO); } });
       var sA = suporte(Ap, { x: S0.x, z: S0.z }, { x: A.x, z: A.z }, rS, teto); if (sA > -Infinity) yMin[iR] = Math.max(yMin[iR], sA + rS + APOIO);
-      folhas.forEach(function (l) { yMin[l.n] = Math.max(yMin[l.n], l.y + mNo); });
+      /* F5 (Casa 487): modoAsc = plano de distribuição SOBRE A LAJE. A espera que fica acima do plano (forro alto, pé-direito duplo) é alcançada por uma
+         coluna que SOBE embutida na parede (l.sobe) — não pede altura sobre ela */
+      folhas.forEach(function (l) { l.sobe = !!(modoAsc && !l.fonte && l.y > teto - mNo - TOL); if (!l.fonte && !l.sobe) yMin[l.n] = Math.max(yMin[l.n], l.y + mNo); });   /* a fonte (saída de outra caixa) sobe até a caixa: não pede altura sobre a espera */
       /* N23: no barrilete BAIXO (apoiado, pela tomada vertical) a coluna é curta — sobre a espera fica ainda a altura do REGISTRO no início
          da coluna, acima do apoio (6.5.12.4 b; a mesma conta do registro mais abaixo), senão a coluna não tinha onde pôr o registro */
       if (regColuna) folhas.forEach(function (l) {
-        if (l.predio) return;
+        if (l.predio || l.fonte || l.sobe) return;
         var rLr = raio(l.dnCol), spR = suporte(Ap, l.L, l.L, rLr, teto), yB0 = spR > -Infinity ? spR + rLr : l.y;
         yMin[l.n] = Math.max(yMin[l.n], Math.max(yB0 + folga, l.y + TOL) + Lr + mNo + TOL + APOIO);
       });
@@ -532,7 +652,7 @@
         filhos(ini).forEach(function (mm) {
           var cur = mm, prev = ini;
           while (!folhaDe[cur] && filhos(cur).length === 1 && reto(nos[prev], nos[cur], nos[filhos(cur)[0]])) { prev = cur; cur = filhos(cur)[0]; }
-          cadeias.push({ ini: ini, fim: cur, prim: mm, p1: P3(nos[ini].x, Pl.yDe(ini), nos[ini].z), p2: P3(nos[cur].x, Pl.yDe(cur), nos[cur].z), dn: comercial(Math.max(dnNo[mm] || dnSaida, dnPad)) });   /* ⚠ nunca abaixo do DN padrão: a redução 50 × 20 no tê não existe na SINAPI (a 25 × 20 na descida, sim) */
+          cadeias.push({ ini: ini, fim: cur, prim: mm, p1: P3(nos[ini].x, Pl.yDe(ini), nos[ini].z), p2: P3(nos[cur].x, Pl.yDe(cur), nos[cur].z), dn: comercial(Math.max(dnNo[mm] || dnSaida, dnPad, GEO_BAR.dnMinBarrilete)) });   /* ⚠ nunca abaixo do mínimo do barrilete (DN 50 — decisão do Rogério 27/10/2026; antes o piso era o DN padrão porque a redução 50 × 20 no tê não existe na SINAPI: a redução sai na derivação da coluna e vai a pendente de preço se faltar) */
           pilha.push(cur);
         });
       }
@@ -542,12 +662,20 @@
         var l = folhas[il], yT = Pl.yDe(l.n), p1 = P3(l.x, yT, l.z), p2 = P3(l.x, l.y, l.z), rL = raio(l.dnCol);
         var cC = conflito(p1, p2, rL, function (Tq) { return Tq.id === l.trecho; });
         if (cC) { Pl.colunaFalha = { l: l, com: cC.com }; return Pl; }
+        if (l.fonte) {
+          /* a saída da outra caixa: o coletor SOBE do barrilete até o fim do toco dela; tem de ficar abaixo dessa saída (a água de lá desce até o coletor) */
+          if (yT > l.y - TOL) { Pl.colunaFalha = { l: l, com: "a saída da caixa " + l.sat.id + " (" + f2(l.y) + " m) está abaixo do coletor (" + f2(yT) + " m): as caixas não estão no mesmo nível" }; return Pl; }
+          l.p1 = P3(l.x, l.y, l.z); l.p2 = p1;   /* p1 = em cima (fim do toco da caixa), p2 = embaixo (o barrilete) */
+          novos.push({ a: p1, b: p2, r: rL, sistema: "agua_fria", id: "coletor-" + l.sat.id });
+          continue;
+        }
         /* ⚠ abaixo do apoio do barrilete a coluna só desce DENTRO de parede ou laje (embutida, como a espera): no sobrado a espera do
            térreo sob um cômodo do pavimento de cima sem parede em cima dela faria a coluna atravessar o cômodo no meio */
         var yApoio = suporte(Ap, l.L, l.L, rL, yT), fora = null;
-        if (yApoio > -Infinity) for (var ys = l.y + PASSO_COLUNA / 2; ys < yApoio - EPS && !fora; ys += PASSO_COLUNA) {
+        if (l.sobe) { /* a espera já é a prumada embutida do ambiente (será aparada no plano): nada a conferir */ }
+        else if (yApoio > -Infinity) for (var ys = l.y + PASSO_COLUNA / 2; ys < yApoio - EPS && !fora; ys += PASSO_COLUNA) {
           var naLaje = Ap.lajes.some(function (L) { return l.x >= L.x0 - EPS && l.x <= L.x1 + EPS && l.z >= L.z0 - EPS && l.z <= L.z1 + EPS && ys <= L.topo + EPS && ys >= L.topo - num(L.espessura, 0) - EPS; });
-          if (!naLaje && !K._int.paredeDe(estado, { x: l.x, z: l.z }, ys)) fora = ys;
+          if (!naLaje && !K._int.paredeDe(estado, { x: l.x, z: l.z }, ys) && !naParedeCorpo(Ap, l.x, l.z, ys)) fora = ys;
         }
         if (fora != null) { Pl.colunaFalha = { l: l, com: "um cômodo (a " + f2(fora) + " m a coluna sai da parede: o pavimento de cima não tem parede sobre a espera — use um shaft ou desloque a espera)" }; return Pl; }
         l.p1 = p1; l.p2 = p2;
@@ -555,9 +683,9 @@
       }
       return Pl;
     }
-    var regColuna = false;
-    function planejarCom(yP, base, reg) {
-      teto = yP; base0 = base; regColuna = !!reg;
+    var regColuna = false, modoAsc = false;
+    function planejarCom(yP, base, reg, asc) {
+      teto = yP; base0 = base; regColuna = !!reg; modoAsc = !!asc;
       var at = lista.slice(), P = null, pc = [];
       for (var tent = 0; tent <= lista.length; tent++) {
         P = planejarArvore(at);
@@ -568,7 +696,10 @@
       P.colunasFora = pc;
       return P;
     }
-    var baseTopo = base0.slice(), Pl = planejarCom(cx.S.y, baseTopo), tomada = null;
+    var baseTopo = base0.slice(), Pl, tomada = null;
+    /* SATÉLITE de um grupo de caixas interligadas: não tem árvore (as colunas são da principal); só a saída, o extravasor, a limpeza e a entrada */
+    if (opc.satelite) Pl = { baixa: false, folhas: [], colunasFora: [], semCaminho: [], cadeias: [], decl: num(opc.satelite.decl, decl0), y0: cx.S.y, faltaMax: -1, iR: 0, yDe: function () { return cx.S.y; }, filhos: function () { return []; } };
+    else Pl = planejarCom(cx.S.y, baseTopo);
     /* ⚠ N23 (24/10/2026) — O BARRILETE DESCE ATÉ O APOIO PELA TOMADA VERTICAL. Antes ele corria na cota da SAÍDA da caixa: os nós dele
        ficavam a poucos centímetros abaixo do nível d'água mínimo e a NBR 5626:2020, 6.9.3, pede 5 kPa "em qualquer ponto da rede"
        (só o trecho VERTICAL de tomada d'água na saída do reservatório elevado até o barrilete fica fora) — o Dimensionar reprovava 19
@@ -578,25 +709,76 @@
        da caixa (com a base de apoio) acima da laje, e elevar a caixa resolve. A descida não pode esbarrar na BASE de apoio nem em nada:
        esbarrou → o barrilete fica na cota da saída, como antes (e a pressão diz quanto falta). */
     /* a cota mais baixa possível COM o registro no início de cada coluna (o plano na cota da saída, com essa folga sobre as esperas) */
-    var PlR = !Pl.baixa && !Pl.colunaFalha && Pl.folhas.length ? planejarCom(cx.S.y, baseTopo, true) : null;
-    if (PlR && !PlR.baixa && !PlR.colunaFalha && PlR.folhas.length === Pl.folhas.length && PlR.faltaMax < -GEO_BAR.descidaMin) {
-      var yAlvo = r4(PlR.y0 + PlR.faltaMax), At = P3(A.x, cx.S.y, A.z), Ab = P3(A.x, yAlvo, A.z);
+    /* (as FONTES — saídas de outras caixas do grupo — não contam: no plano da cota da saída o coletor delas não tem altura e cai; é a tomada que as liga) */
+    function soCol(fs) { return fs.filter(function (q) { return !q.fonte; }).length; }
+    var PlR = !Pl.baixa && !Pl.colunaFalha && soCol(Pl.folhas) ? planejarCom(cx.S.y, baseTopo, true) : null;
+    /* NADA SOBRE O TELHADO (27/10/2026): com telhado no modelo o plano na cota da SAÍDA da caixa pode não ligar NENHUMA espera (o tronco, à altura da
+       caixa, ficaria sobre a telha). Aí a cota de baixo vem da conta de cada coluna (a espera + o nó + o registro), sem a árvore, e o plano baixo
+       — a tomada vertical e o tronco sob a cobertura — é tentado direto. */
+    var yAlvoEst = null;
+    if (TEL.length && !opc.satelite && !Pl.baixa && !soCol(Pl.folhas) && lista.some(function (q) { return !q.fonte; })) {
+      lista.filter(function (q) { return !q.fonte; }).forEach(function (q) {
+        var rLq = raio(q.dnCol), spq = suporte(Ap, q.L, q.L, rLq, cx.S.y), yB0q = spq > -Infinity ? spq + rLq : q.y, nq = Math.max(q.y + mNo, Math.max(yB0q + folga, q.y + TOL) + Lr + mNo + TOL + APOIO);
+        yAlvoEst = yAlvoEst == null ? nq : Math.max(yAlvoEst, nq);
+      });
+      if (yAlvoEst != null) yAlvoEst = r4(Math.ceil(yAlvoEst / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir);   /* múltiplo de 5 cm, para cima */
+    }
+    var daPlanoR = PlR && !PlR.baixa && !PlR.colunaFalha && soCol(PlR.folhas) === soCol(Pl.folhas) && PlR.faltaMax < -GEO_BAR.descidaMin;
+    if (daPlanoR || (yAlvoEst != null && yAlvoEst < cx.S.y - GEO_BAR.descidaMin)) {
+      var yAlvo = daPlanoR ? r4(PlR.y0 + PlR.faltaMax) : yAlvoEst, At = P3(A.x, cx.S.y, A.z), Ab = P3(A.x, yAlvo, A.z);
       var cT = conflito(At, Ab, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; });
       if (!cT) {
-        var nF = Pl.folhas.length, nSC = Pl.semCaminho.length, nCF = Pl.colunasFora.length;
+        var nF = soCol(Pl.folhas), nSC = Pl.semCaminho.length, nCF = Pl.colunasFora.length;
         var Pl2 = planejarCom(yAlvo, baseTopo.concat([{ a: At, b: Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), true);
-        /* o plano baixo só vale se liga as MESMAS esperas, sem caminho perdido e na declividade cheia */
-        if (!Pl2.baixa && !Pl2.colunaFalha && Pl2.folhas.length === nF && Pl2.semCaminho.length <= nSC && Pl2.colunasFora.length <= nCF && !(Pl2.faltaMax > 1 / CASAS)) { Pl = Pl2; tomada = { a: At, b: Ab }; }   /* N23: a falta medida em cotas arredondadas a 0,1 mm (r4): 0,000005 m não é falta */
+        /* o plano baixo só vale se liga as MESMAS esperas (ou MAIS: sob a cobertura ele pode ligar as que o plano da saída perdeu), sem caminho perdido e na declividade cheia */
+        if (!Pl2.baixa && !Pl2.colunaFalha && soCol(Pl2.folhas) >= Math.max(nF, daPlanoR ? 0 : 1) && Pl2.semCaminho.length <= nSC && Pl2.colunasFora.length <= nCF && !(Pl2.faltaMax > 1 / CASAS)) { Pl = Pl2; tomada = { a: At, b: Ab }; }   /* N23: a falta medida em cotas arredondadas a 0,1 mm (r4): 0,000005 m não é falta */
       } else aviso(nome + ": a descida do barrilete até a laje (tomada vertical na saída) esbarra em " + cT.com + " — o barrilete ficou na cota da saída (sem os 5 kPa da NBR 5626:2020 6.9.3); gire a caixa (a saída para o lado livre) e trace de novo", [cx.id, cT.com],
         { tipo: "ops", ops: [{ op: "instancia", id: cx.id, rotY: r4(cx.rot + Math.PI / 2) }], texto: "girar a caixa 90° (a saída para outro lado)" });   // hid:ok um quarto de volta
+    }
+    /* ⚠ F5 (Casa 487, 27/10/2026) — PLANO DE DISTRIBUIÇÃO SOBRE A LAJE. Quando a cobertura (ou os topos de parede e esperas em cotas diferentes) impede
+       o barrilete horizontal no nível da caixa e a conta de cada coluna (acima) não acha um plano único, o barrilete DESCE da caixa pela tomada
+       vertical (a coluna de distribuição, com o registro geral da saída) até o plano SOBRE A LAJE existente — topo da laje + o tubo apoiado, abaixo do
+       telhado (entreforro) — e distribui ali na horizontal; cada coluna desce embutida até a espera e, onde a espera fica ACIMA do plano (forro alto),
+       sobe embutida na parede. DN ≥ 50 até a derivação (GEO_BAR.dnMin*). Nunca por cima da telha: o plano é conferido contra a face de baixo do telhado. */
+    if (!tomada && !opc.satelite && TEL.length && lista.some(function (q) { return !q.fonte; })) {
+      var nF0 = soCol(Pl.folhas), nSC0 = Pl.semCaminho.length, nNF = lista.filter(function (q) { return !q.fonte; }).length;
+      if (nF0 < nNF) {
+        var minX = A.x, maxX = A.x, minZ = A.z, maxZ = A.z;
+        lista.forEach(function (q) { minX = Math.min(minX, q.x); maxX = Math.max(maxX, q.x); minZ = Math.min(minZ, q.z); maxZ = Math.max(maxZ, q.z); });
+        var yLaje = -Infinity;
+        Ap.lajes.forEach(function (L) { if (L.topo < cx.S.y - GEO_BAR.descidaMin && L.x1 >= minX && L.x0 <= maxX && L.z1 >= minZ && L.z0 <= maxZ) yLaje = Math.max(yLaje, L.topo); });
+        if (yLaje > -Infinity) {
+          var melhorD = null, At3 = P3(A.x, cx.S.y, A.z);
+          GEO_BAR.entreforroSobe.forEach(function (fa) {
+            if (melhorD && melhorD.todas) return;
+            var yPl = r4(yLaje + rS + APOIO + fa), Ab3 = P3(A.x, yPl, A.z);
+            novos = baseTopo.slice();   /* sem a "tomada"/árvore que uma tentativa anterior deixou nos obstáculos */
+            if (conflito(At3, Ab3, rS, function (Tq) { return Tq.volume && Tq.id === cx.id; })) return;
+            var P3p = planejarCom(yPl, baseTopo.concat([{ a: At3, b: Ab3, r: rS, sistema: "agua_fria", id: "tomada" }]), false, true);
+            var nf = soCol(P3p.folhas);
+            if (P3p.baixa || P3p.colunaFalha) return;
+            if (nf > nF0 && (!melhorD || nf > melhorD.nf)) melhorD = { P: P3p, yPl: yPl, At: At3, Ab: Ab3, nf: nf, fa: fa, todas: nf >= nNF };
+          });
+          if (melhorD) {
+            /* o plano guardado tem de ser o último calculado (as folhas guardam p1/p2/sobe): refaz com a folga escolhida */
+            Pl = planejarCom(melhorD.yPl, baseTopo.concat([{ a: melhorD.At, b: melhorD.Ab, r: rS, sistema: "agua_fria", id: "tomada" }]), false, true);
+            tomada = { a: melhorD.At, b: melhorD.Ab };
+            res.planoLaje = { y: melhorD.yPl, lajeTopo: yLaje, ligadas: melhorD.nf, de: nNF };
+            res.decisoes.push({ id: "bar.plano_laje", texto: nome + ": a cobertura impede o barrilete horizontal no nível da caixa — a saída DESCE pela coluna de distribuição (DN " + dnSaida + ", com o registro geral logo na saída) até o plano sobre a laje (topo da laje " + f2(yLaje) + " m; tubo a " + f2(melhorD.yPl) + " m, abaixo do telhado) e distribui ali; cada coluna desce embutida até a espera" + (Pl.folhas.some(function (q) { return q.sobe; }) ? " (onde a espera fica acima do plano a coluna sobe embutida na parede)" : "") + ". Ligadas " + melhorD.nf + " de " + nNF + " esperas." });
+          } else { lista.forEach(function (q) { q.sobe = false; }); }
+        }
+      }
     }
     /* a descida era possível (o plano baixo existe) e não coube: o barrilete ficou na cota da saída — quem escolhe o lado da 2ª saída
        (montar) usa isto para tentar outro, em vez de aceitar um lado em que a coluna do consumo cruza a da válvula (N23, 26/10/2026) */
     res.semTomada = !!(PlR && !tomada);
     if (PlR && !tomada) Pl = planejarCom(cx.S.y, baseTopo);   /* sem a descida: o plano da cota da saída, como antes (o estado das folhas volta) */
-    Pl.colunasFora.forEach(function (cf) { pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]); });
-    Pl.semCaminho.forEach(function (s) { pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático; ligue à mão", [s.trecho, cx.id]); });
-    if (!Pl.folhas.length || Pl.colunaFalha) return res;
+    Pl.colunasFora.forEach(function (cf) {
+      if (cf.l.fonte) { pend("bar.interligacao", nome + ": o coletor até a saída da caixa " + cf.l.sat.id + " não fecha — " + cf.com + "; essa caixa ficou fora do barrilete comum", [cf.l.sat.id, cx.id]); return; }
+      pend("bar.coluna", nome + ": a coluna até a espera " + cf.l.trecho + " esbarra em " + cf.com + " — essa espera ficou fora do barrilete; desça à mão", [cf.l.trecho, cf.com]);
+    });
+    Pl.semCaminho.forEach(function (s) { if (s.fonte) { pend("bar.interligacao", nome + ": o coletor não acha caminho livre até a saída da caixa " + s.sat.id + " — tubo, caixa ou equipamento no caminho; essa caixa ficou fora do barrilete comum", [s.sat.id, cx.id]); return; } pend("bar.caminho", nome + ": o barrilete não acha caminho livre até a espera " + s.trecho + " (" + f2(s.x) + "; " + f2(s.y) + "; " + f2(s.z) + ") — tubo, caixa ou equipamento no caminho no ático" + (TEL.length ? " (com telhado no modelo a horizontal tem de correr ABAIXO da cobertura, sobre a laje ou no entreforro: confira a altura da espera, do forro e da laje sob o telhado)" : "") + "; ligue à mão", [s.trecho, cx.id]); });
+    if (!opc.satelite && (!Pl.folhas.length || Pl.colunaFalha)) return res;
     var y0 = Pl.y0, faltaMax = Pl.faltaMax;
     if (Pl.baixa) {
       /* ⚠ a caixa está BAIXA DEMAIS para o barrilete: a saída abaixo do forro/laje ou das esperas — nada de tubo subindo (bolsa de
@@ -614,7 +796,7 @@
       return res;
     }
     var decl = Pl.decl, folhas = Pl.folhas, iR = Pl.iR, yDe = Pl.yDe, filhos = Pl.filhos;
-    if (decl < decl0 - EPS) { var subD = Math.ceil((faltaMax + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
+    if (!opc.satelite && decl < decl0 - EPS) { var subD = Math.ceil((faltaMax + GEO_BAR.margemSubir) / GEO_BAR.passoSubir - EPS) * GEO_BAR.passoSubir;
       aviso(nome + ": sem altura para a declividade de " + f2(decl0 * 100) + " % do barrilete (prática de memorial, R-C10): saiu com " + f2(decl * 100) + " % — a NBR 5626:2020 só pede evitar bolsa de ar (6.6.2): sem inflexão, o ar sai pela ventilação. Para os " + f2(decl0 * 100) + " %, suba a caixa " + f2(subD) + " m.",
         [cx.id], { tipo: "ops", ops: [{ op: "instancia", id: cx.id, y: r4(cx.yb + subD) }], texto: "subir a caixa " + f2(subD) + " m (declividade de " + f2(decl0 * 100) + " %)" }); }
 
@@ -636,7 +818,35 @@
     /* as colunas, com o registro no início (acima do apoio: no ático, à mão) */
     folhas.forEach(function (l) {
       var n = l.n, yT = yDe(n), p1 = l.p1, p2 = l.p2, rL = raio(l.dnCol);
-      var tc = T("coluna", "agua_fria", l.dnCol, p1, p2, { aplicacao: "prumada", barEspera: l.trecho });
+      /* a saída de outra caixa do grupo: o COLETOR (do fim do toco dela, em cima, até o barrilete); o registro dela é o do toco (no satélite) */
+      if (l.fonte) {
+        var tcs = T("coletor", "agua_fria", l.dnCol, p1, p2, { aplicacao: "reservacao", barSat: l.sat.id });
+        ops.push(tcs); res.satLigadas.push(l.sat.id); res.coletorM = r4((res.coletorM || 0) + d3(p1, p2));
+        return;
+      }
+      var tc;
+      if (l.sobe) {
+        /* F5: espera ACIMA do plano de distribuição. A espera é a prumada do ambiente (do aparelho até o forro): o barrilete NÃO sobe por fora dela
+           (ficaria um tubo em cima do outro) — a prumada é APARADA na cota do plano e o barrilete liga ali (tê). A parte dela acima do plano sai. */
+        var oE = l.opOrig ? JSON.parse(JSON.stringify(l.opOrig)) : null, pt = l.ponta === "p2" ? "p2" : "p1";
+        if (oE) {
+          oE[pt] = P3(l.x, yT, l.z); oE.barApara = cx.id;
+          ops.push(oE);
+          tc = { id: l.trecho, p1: p1, p2: P3(l.x, yT, l.z) };
+        } else { pend("bar.coluna", nome + ": a espera " + l.trecho + " fica acima do plano de distribuição e o trecho dela não está nas operações do modelo para aparar — apare a prumada à mão na cota " + f2(yT) + " m", [l.trecho]); return; }
+        res.decisoes.push({ id: "bar.apara_" + l.trecho, texto: nome + ": a espera " + l.trecho + " (topo a " + f2(l.y) + " m) fica acima do plano de distribuição (" + f2(yT) + " m): a prumada do ambiente foi APARADA nessa cota e o barrilete liga nela com tê (não há coluna ascendente por fora). A derivação (a redução do DN do barrilete para o da prumada) fica nesse ponto." });
+        res.ligadas++; res.esperasLigadas.push(l.trecho);
+        if (l.predio) return;
+        var tb0 = filhos(n).length ? null : porNoBar[n];
+        if (tb0 && d3(tb0.p1, tb0.p2) >= Lr + 2 * TOL + mNo) {
+          var ub0 = { x: (tb0.p1.x - tb0.p2.x) / d3(tb0.p1, tb0.p2), y: (tb0.p1.y - tb0.p2.y) / d3(tb0.p1, tb0.p2), z: (tb0.p1.z - tb0.p2.z) / d3(tb0.p1, tb0.p2) }, k0 = mNo + Lr / 2;
+          var rgb0 = { op: "acessorio", id: novoId("rg-coluna"), famId: RG_FAM, tipoId: tipoRg, trecho: tb0.id, novoId: tb0.id + "b", x: r4(tb0.p2.x + ub0.x * k0), y: r4(tb0.p2.y + ub0.y * k0), z: r4(tb0.p2.z + ub0.z * k0), comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
+          var gH0 = BIC() && BIC().giroPara ? BIC().giroPara({ x: -ub0.x, y: 0, z: -ub0.z }, { x: 0, y: 1, z: 0 }) : 0; if (gH0) rgb0.giro = gH0;
+          porNoBar[n] = null; ops.push(rgb0);
+        } else pend("bar.registro_coluna", nome + ": sem espaço para o registro da derivação da espera " + l.trecho + " (NBR 5626:2020 6.5.12.4 b) — ponha o registro à mão", [l.trecho]);
+        return;
+      }
+      tc = T("coluna", "agua_fria", l.dnCol, p1, p2, { aplicacao: "prumada", barEspera: l.trecho });
       ops.push(tc);
       res.ligadas++; res.esperasLigadas.push(l.trecho);
       /* a coluna que atravessa uma VIGA: o passante é do estrutural (o tubo não fura viga sem o projeto dele) */
@@ -647,8 +857,8 @@
       if (l.predio) return;   /* a espera do prédio já tem o registro da coluna (js/hidpredio.js) */
       var sup = suporte(Ap, l.L, l.L, rL, yT), yBaixo = sup > -Infinity ? sup + rL : l.y, uA = unit2(A.x - l.x, A.z - l.z) || { x: 1, z: 0 };
       var gV = BIC() && BIC().giroPara ? BIC().giroPara({ x: 0, y: -1, z: 0 }, { x: uA.x, y: 0, z: uA.z }) : 0;
-      var yc = r4(yT - mNo - Lr / 2);
-      if (yc - Lr / 2 - TOL >= Math.max(yBaixo + folga, l.y + TOL)) {
+      var yc = l.sobe ? r4(yT + mNo + Lr / 2) : r4(yT - mNo - Lr / 2);
+      if (l.sobe ? (yc + Lr / 2 + TOL <= l.y - TOL) : (yc - Lr / 2 - TOL >= Math.max(yBaixo + folga, l.y + TOL))) {
         var rgc = { op: "acessorio", id: novoId("rg-coluna"), famId: RG_FAM, tipoId: tipoRg, trecho: tc.id, novoId: tc.id + "b", x: l.x, y: yc, z: l.z, comprimento: Lr, bar: cx.id, barParte: "registro_coluna" };
         if (gV) rgc.giro = gV;
         ops.push(rgc); return;
@@ -665,8 +875,9 @@
       }
       pend("bar.registro_coluna", nome + ": sem espaço para o registro no início da coluna da espera " + l.trecho + " (NBR 5626:2020 6.5.12.4 b) — ponha o registro à mão", [tc.id]);
     });
-    if (!res.ligadas) return res;
+    if (!res.ligadas && !opc.satelite) return res;
     res.ok = true;
+    res.decl = decl; res.dnSaida = dnSaida;
     /* a 2ª SAÍDA (coluna exclusiva da válvula de descarga) só tem o toco, o registro, a ventilação e a coluna dela: extravasor, limpeza,
        boia, respiro e o orçamento da caixa são da saída principal (que recebe o DN e o ângulo desta para o adaptador e o furo) */
     if (opc.secundaria) {
@@ -693,18 +904,70 @@
     if (!cand.length) cand = dirs.filter(function (d) { return longeDe(d, u); });
     /* o tubo nasce na FACE do volume da família (o corpo com a tampa): o furo e o adaptador ficam no corpo, o tubo não passa por dentro */
     var Rface = Math.max(cx.R, num(cx.av && cx.av.valores && cx.av.valores.Diametro, 0) / 2) + FOLGA_LIMITE * 3;   // hid:ok 3 mm além da face
-    function saidaLivre(parte, y0s, r, dn, rotulo, decl1) {
-      for (var ic = 0; ic < cand.length; ic++) {
-        /* o tubo inteiro (com o raio) fora do volume: o critério de projetista (interferencia.louca) mede o tubo, não o eixo */
-        var d = cand[ic], Rf = Rface + r, Pc = P3(cx.c.x + d.x * Rf, y0s, cx.c.z + d.z * Rf), Lh = Math.max(GEO_BAR.saidaLivre, distFace(d) - Rf + GEO_BAR.saidaLivre);
-        var P1 = P3(Pc.x + d.x * Lh, y0s - decl1 * Lh, Pc.z + d.z * Lh), P2 = P3(P1.x, P1.y - GEO_BAR.quedaLivre, P1.z);
-        if (conflito(Pc, P1, r, ignCaixa) || conflito(P1, P2, r, null)) continue;
-        var t1 = T(parte, "agua_fria", dn, Pc, P1, { aplicacao: "reservacao", continua: "p1", saidaLivre: rotulo }), t2 = T(parte, "agua_fria", dn, P1, P2, { aplicacao: "reservacao", continua: "p2", saidaLivre: rotulo });
-        novos.push({ a: Pc, b: P1, r: r, sistema: "agua_fria", id: t1.id }); novos.push({ a: P1, b: P2, r: r, sistema: "agua_fria", id: t2.id });
-        return { t1: t1, t2: t2, d: d, fim: P2 };
+    /* EXTRAVASOR E LADRÃO são os ÚNICOS tubos aparentes (27/10/2026, pedido do Rogério): a ponta sai pela face que NÃO é a fachada da rua (prefira
+       fundos/lateral) e a água cai SOBRE um telhado/laje existente abaixo — nunca em queda livre no chão nem escorrendo em parede. Com telhado no
+       modelo a direção sai desse critério (não só da menor distância à face): para cada direção procura-se, de perto para longe, o 1º ponto cuja
+       vizinhança (a margem de pouso) está toda sobre um telhado que fica abaixo da ponta. A fachada da rua é o `ladoSaida` dos parâmetros (o
+       mesmo da rede de esgoto) ou, sem ele, o lado de y menor do projeto (z maior). Sem telhado no modelo: o critério antigo (a face mais perto). */
+    var LADO_RUA = { x1: { x: 1, z: 0 }, x0: { x: -1, z: 0 }, z1: { x: 0, z: 1 }, z0: { x: 0, z: -1 } }[par.ladoSaida] || { x: 0, z: 1 };   // hid:ok sem parâmetro: rua = y menor do projeto = z maior (z = −y)
+    function daRua(d) { return d.x * LADO_RUA.x + d.z * LADO_RUA.z > Math.SQRT1_2; }
+    function pouso(P2) {
+      /* o telhado abaixo da ponta: o ponto e a vizinhança de margemPouso inteiros sobre águas de telhado cujo TOPO fica abaixo da ponta */
+      var mg = GEO_BAR.margemPouso, pts = [[0, 0], [mg, 0], [-mg, 0], [0, mg], [0, -mg]], topoMax = -Infinity, id0 = null, i;
+      for (i = 0; i < pts.length; i++) {
+        var tq = H.telhadoAbaixoDe ? H.telhadoAbaixoDe(TEL, P2.x + pts[i][0], P2.z + pts[i][1]) : null;
+        if (!tq) return null;
+        if (tq.topo > topoMax) topoMax = tq.topo;
+        if (i === 0) id0 = tq.id;
       }
-      return null;
+      return topoMax < P2.y - FOLGA_LIMITE ? { id: id0, topo: topoMax } : null;
     }
+    function saidaLivre(parte, y0s, r, dn, rotulo, decl1) {
+      var escolha = null;
+      var dirsT = TEL.length ? dirs0() : cand;
+      for (var ic = 0; ic < dirsT.length; ic++) {
+        /* o tubo inteiro (com o raio) fora do volume: o critério de projetista (interferencia.louca) mede o tubo, não o eixo */
+        var d = dirsT[ic], Rf = Rface + r, Pc = P3(cx.c.x + d.x * Rf, y0s, cx.c.z + d.z * Rf), Lh0 = Math.max(GEO_BAR.saidaLivre, distFace(d) - Rf + GEO_BAR.saidaLivre);
+        if (!TEL.length) {
+          var P1 = P3(Pc.x + d.x * Lh0, y0s - decl1 * Lh0, Pc.z + d.z * Lh0), P2 = P3(P1.x, P1.y - GEO_BAR.quedaLivre, P1.z);
+          if (conflito(Pc, P1, r, ignCaixa, true) || conflito(P1, P2, r, null, true)) continue;
+          escolha = { d: d, Pc: Pc, P1: P1, P2: P2, tel: null };
+          break;
+        }
+        /* com telhado: de perto para longe, a 1ª ponta que pousa sobre um telhado — em linha reta pela direção `d` ou, se a reta esbarra na saída
+           do barrilete/ventilação, em "L": um trecho curto para o lado (afasta do tubo) e depois a direção `d2` perpendicular */
+        var ramos = [{ M: null, dF: d }];
+        [{ x: -d.z, z: d.x }, { x: d.z, z: -d.x }].forEach(function (d2) { ramos.push({ M: P3(Pc.x + d.x * GEO_BAR.afastaL, y0s - decl1 * GEO_BAR.afastaL, Pc.z + d.z * GEO_BAR.afastaL), dF: d2 }); });
+        ramos.forEach(function (rm) {
+          var base = rm.M || Pc, dF = rm.dF, desc0 = rm.M ? decl1 * GEO_BAR.afastaL : 0;
+          for (var Lh = rm.M ? GEO_BAR.saidaLivre : GEO_BAR.saidaLivre; Lh <= GEO_BAR.alcanceDescarga + EPS; Lh += GEO_BAR.passoDescarga) {
+            var Q1 = P3(base.x + dF.x * Lh, y0s - desc0 - decl1 * Lh, base.z + dF.z * Lh), Q2 = P3(Q1.x, Q1.y - GEO_BAR.quedaLivre, Q1.z), pz = pouso(Q2);
+            if (!pz) continue;
+            var cfD = (rm.M ? conflito(Pc, rm.M, r, ignCaixa, true) : false) || conflito(rm.M || Pc, Q1, r, rm.M ? null : ignCaixa, true) || conflito(Q1, Q2, r, null, true);
+            if (cfD) break;   /* esbarrou antes de chegar a um telhado: este ramo não serve */
+            var cd = { d: d, dF: dF, Pc: Pc, M: rm.M, P1: Q1, P2: Q2, tel: pz, rua: daRua(dF), L: Lh + (rm.M ? GEO_BAR.afastaL : 0) };
+            if (!escolha || (escolha.rua && !cd.rua) || (escolha.rua === cd.rua && cd.L < escolha.L - EPS)) escolha = cd;
+            break;
+          }
+        });
+      }
+      if (TEL.length && !escolha) {
+        /* nenhum telhado abaixo em nenhuma direção: a saída livre de sempre (a face mais perto) e a pendência diz */
+        for (var ic2 = 0; ic2 < cand.length && !escolha; ic2++) {
+          var d2c = cand[ic2], Rf2 = Rface + r, Pc2 = P3(cx.c.x + d2c.x * Rf2, y0s, cx.c.z + d2c.z * Rf2), Lh2 = Math.max(GEO_BAR.saidaLivre, distFace(d2c) - Rf2 + GEO_BAR.saidaLivre);
+          var R1 = P3(Pc2.x + d2c.x * Lh2, y0s - decl1 * Lh2, Pc2.z + d2c.z * Lh2), R2 = P3(R1.x, R1.y - GEO_BAR.quedaLivre, R1.z);
+          if (!(conflito(Pc2, R1, r, ignCaixa, true) || conflito(R1, R2, r, null, true))) escolha = { d: d2c, dF: d2c, Pc: Pc2, M: null, P1: R1, P2: R2, tel: null, semTelhado: true };
+        }
+      }
+      if (!escolha) return null;
+      var pFim1 = escolha.M || escolha.P1;
+      var t1 = T(parte, "agua_fria", dn, escolha.Pc, pFim1, { aplicacao: "reservacao", continua: "p1", saidaLivre: rotulo }), t2 = T(parte, "agua_fria", dn, escolha.P1, escolha.P2, { aplicacao: "reservacao", continua: "p2", saidaLivre: rotulo });
+      var tm = escolha.M ? T(parte, "agua_fria", dn, escolha.M, escolha.P1, { aplicacao: "reservacao" }) : null;
+      novos.push({ a: escolha.Pc, b: pFim1, r: r, sistema: "agua_fria", id: t1.id }); novos.push({ a: escolha.P1, b: escolha.P2, r: r, sistema: "agua_fria", id: t2.id });
+      if (tm) novos.push({ a: escolha.M, b: escolha.P1, r: r, sistema: "agua_fria", id: tm.id });
+      return { t1: t1, tm: tm, t2: t2, d: escolha.d, fim: escolha.P2, telhado: escolha.tel, daRua: !!escolha.rua, semTelhado: !!escolha.semTelhado };
+    }
+    function dirs0() { return dirs.filter(function (d) { return longeDe(d, ue) && longeDe(d, u2); }); }
     var yX = cx.E && sep != null ? r4(cx.E.y - sep - rE - rX) : r4(cx.yb + cx.H * 0.8);   // hid:ok sem a entrada/a tabela: 80 % da altura (com a pendência abaixo)
     if (!cx.E || sep == null) pend("bar.extravasor_cota", nome + ": a cota do extravasor saiu de 80 % da altura (sem o ponto de entrada da família ou sem a Tabela 1 da separação atmosférica, NBR 5626:2020 6.15) — confira com o fabricante", [cx.id]);
     /* N23 (26/10/2026, referências Fortlev/Tigre do Rogério): o EXTRAVASOR (ladrão) sai pelo mesmo lado da limpeza, desce e entra num tê
@@ -719,7 +982,7 @@
       var Q = P3(Lp.t1.p1.x + d.x * kJ, Lp.t1.p1.y, Lp.t1.p1.z + d.z * kJ), Rf = Rface + rX;
       var X0 = P3(cx.c.x + d.x * Rf, yX, cx.c.z + d.z * Rf), Lh = d2(X0, Q), X1 = P3(Q.x, r4(yX - decl * Lh), Q.z);
       if (X1.y - Q.y < mNo + rX + rL2 || Lh < mNo) return null;
-      if (conflito(X0, X1, rX, ignCaixa) || conflito(X1, Q, rX, function (Tq) { return Tq.id === Lp.t1.id; })) return null;
+      if (conflito(X0, X1, rX, ignCaixa, true) || conflito(X1, Q, rX, function (Tq) { return Tq.id === Lp.t1.id; }, true)) return null;
       /* o tê: a linha da limpeza vira dois trechos no ponto Q (o registro fica no primeiro) */
       var p2v = Lp.t1.p2, t1b = T("limpeza", "agua_fria", dnL, Q, p2v, { aplicacao: "reservacao" });
       Lp.t1.p2 = Q; Lp.t1b = t1b;
@@ -731,10 +994,10 @@
       return { t1: x1, t2: x2, d: d, fim: Lp.fim, junto: true };
     }
     var X = ladraoNaLimpeza() || saidaLivre("extravasor", yX, rX, dnX, "extravasor da caixa " + cx.id, decl);
-    if (X) { ops.push(X.t1); ops.push(X.t2); }
+    if (X) { ops.push(X.t1); if (X.tm) ops.push(X.tm); ops.push(X.t2); }
     else pend("bar.extravasor", nome + ": o extravasor não acha saída livre para fora da edificação (tubo ou equipamento no caminho) — lance à mão (DN ≥ " + dnX + ", saída visível; Tigre p.74/79)", [cx.id]);
     if (Lp) {
-      ops.push(Lp.t1); if (Lp.t1b) ops.push(Lp.t1b); ops.push(Lp.t2);
+      ops.push(Lp.t1); if (Lp.t1b) ops.push(Lp.t1b); if (Lp.tm) ops.push(Lp.tm); ops.push(Lp.t2);
       var kL = kRegL, dL = Lp.d;   /* medido antes do tê do extravasor (a linha inteira da limpeza) */
       var rgL = { op: "acessorio", id: novoId("rg-limpeza"), famId: RG_FAM, tipoId: tipoRg, trecho: Lp.t1.id, novoId: Lp.t1.id + "b", x: r4(Lp.t1.p1.x + dL.x * kL), y: Lp.t1.p1.y, z: r4(Lp.t1.p1.z + dL.z * kL), comprimento: Lr, bar: cx.id, barParte: "registro_limpeza" };
       var gL = BIC() && BIC().giroPara ? BIC().giroPara({ x: dL.x, y: 0, z: dL.z }, { x: 0, y: 1, z: 0 }) : 0; if (gL) rgL.giro = gL;
@@ -746,7 +1009,11 @@
       if (dnX > dnE) res.decisoes.push({ id: "bar.extravasor_dn", texto: nome + ": extravasor" + (Lp ? " e limpeza" : "") + " DN " + dnX + " (mínimo RA; maior que a entrada DN " + dnE + ": o ladrão escoa mais do que a boia deixa entrar)" });
       else pend("bar.extravasor_dn", nome + ": extravasor" + (Lp ? " e limpeza" : "") + " DN " + dnX + " = DN da entrada — confira que o extravasor escoa a vazão da boia (prática Tigre p.74: extravasor ≥ entrada)", [cx.id]);
     }
-    if (X || Lp) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
+    /* 27/10/2026: com telhado no modelo a ponta pousa SOBRE a cobertura (decisão); sem telhado abaixo em nenhuma face, a pendência diz */
+    var pouso = X && X.telhado ? X : (Lp && Lp.telhado ? Lp : null), semTel = TEL.length && ((X && X.semTelhado) || (Lp && Lp.semTelhado));
+    if (pouso && !semTel) res.decisoes.push({ id: "bar.descarga_telhado", texto: nome + ": extravasor e limpeza (os ÚNICOS tubos aparentes) saem pelo lado " + (pouso.daRua ? "da rua (nenhuma outra face tem telhado abaixo)" : "que não é a fachada da rua") + " e a ponta cai SOBRE a cobertura " + pouso.telhado.id + " (topo a " + f2(pouso.telhado.topo) + " m, a ponta a " + f2(pouso.fim.y) + " m) — nunca em queda livre no chão nem escorrendo em parede. Fachada da rua: " + (par.ladoSaida ? "lado " + par.ladoSaida + " (parâmetro)" : "o lado de y menor do projeto (premissa: informe o lado da rua nos parâmetros)") + "." });
+    if (semTel) pend("bar.descarga_sem_telhado", nome + ": extravasor sem telhado abaixo — conferir. Nenhuma face tem cobertura ou laje abaixo da ponta para receber a água: ela cairia no chão ou escorreria na parede. Ponha a descarga sobre um telhado (ou acrescente a calha/laje) — a ponta saiu em " + f2((X || Lp).fim.x) + "; " + f2((X || Lp).fim.y) + "; " + f2((X || Lp).fim.z), [cx.id]);
+    if ((X || Lp) && !(pouso && !semTel)) pend("bar.descarga", nome + ": descarga em local visível — destino a definir. Extravasor e limpeza terminam em saída LIVRE e VISÍVEL fora da edificação" + (X && X.junto ? " (o extravasor entra na linha da limpeza depois do registro dela)" : "") + (X && !X.junto ? " (extravasor em " + f2(X.fim.x) + "; " + f2(X.fim.y) + "; " + f2(X.fim.z) + ")" : "") + (Lp ? " (limpeza em " + f2(Lp.fim.x) + "; " + f2(Lp.fim.y) + "; " + f2(Lp.fim.z) + ")" : "") + " — o destino não está no modelo: confira a passagem pelo telhado/oitão e que a água caia à vista, nunca em calha, ralo, caixa de areia, condutor pluvial ou rede de esgoto (Tigre, Manual Técnico 2025, p.74 e p.79)",
       [X && !X.junto ? X.t2.id : null, Lp ? Lp.t2.id : null].filter(Boolean));
     /* ALIMENTAÇÃO: o toco da entrada (registro) e a espera do alimentador predial */
     var opsAl = [];
@@ -754,10 +1021,25 @@
       var E0 = P3(cx.E.x, cx.E.y, cx.E.z), ve = ue || { x: -u.x, z: -u.z }, E1 = P3(E0.x + ve.x * GEO_BAR.tocoEntrada, E0.y, E0.z + ve.z * GEO_BAR.tocoEntrada);
       var supE = suporte(Ap, E1, E1, rE, E0.y), yE2 = r4(Math.max(E0.y - GEO_BAR.descidaEntrada, supE > -Infinity ? supE + rE + APOIO : -Infinity));
       var E2 = P3(E1.x, yE2, E1.z);
-      if (!conflito(E1, E0, rE, ignCaixa) && (E1.y - E2.y < TOL || !conflito(E2, E1, rE, null))) {
-        if (E1.y - E2.y >= TOL) { opsAl.push(T("alimentacao", "agua_fria", dnE, E2, E1, { aplicacao: "reservacao", continua: "p1", saidaLivre: "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)" })); }
+      if (!conflito(E1, E0, rE, ignCaixa, true) && (E1.y - E2.y < TOL || !conflito(E2, E1, rE, null, true))) {
+        /* CAIXAS INTERLIGADAS: o alimentador predial chega numa ESPERA ÚNICA (a da principal) e se divide para as boias — a entrada do satélite
+           (com o registro dela) desce e vai até a espera da principal, na cota dela, em ortogonal; sem caminho, a espera do satélite fica livre */
+        var uniao = null, Ep = opc.satelite && opc.satelite.alim ? opc.satelite.alim : null;
+        if (Ep && Ep.y <= E2.y + TOL) {
+          var pts = [E2];
+          [P3(E2.x, Ep.y, E2.z), P3(Ep.x, Ep.y, E2.z), P3(Ep.x, Ep.y, Ep.z)].forEach(function (q) { if (d3(pts[pts.length - 1], q) > TOL) pts.push(q); });
+          var legs = [], livre = pts.length > 1;
+          for (var iq = 1; iq < pts.length && livre; iq++) { if (conflito(pts[iq - 1], pts[iq], rE, null, true)) livre = false; else legs.push([pts[iq - 1], pts[iq]]); }
+          if (livre && legs.length) uniao = legs;
+        }
+        if (E1.y - E2.y >= TOL) { opsAl.push(T("alimentacao", "agua_fria", dnE, E2, E1, uniao ? { aplicacao: "reservacao" } : { aplicacao: "reservacao", continua: "p1", saidaLivre: "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)" })); }
         var tE = T("alimentacao", "agua_fria", dnE, E1, E0, { aplicacao: "reservacao" });
-        if (E1.y - E2.y < TOL) { tE.continua = "p1"; tE.saidaLivre = "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)"; }
+        if (E1.y - E2.y < TOL && !uniao) { tE.continua = "p1"; tE.saidaLivre = "alimentação da caixa " + cx.id + " (o alimentador predial chega aqui)"; }
+        if (uniao) {
+          uniao.forEach(function (lg) { var tu = T("alimentacao", "agua_fria", dnE, lg[0], lg[1], { aplicacao: "reservacao" }); opsAl.push(tu); novos.push({ a: lg[0], b: lg[1], r: rE, sistema: "agua_fria", id: tu.id }); });
+          res.decisoes.push({ id: "bar.alimentacao_unica", texto: nome + ": a entrada da boia (com o registro dela) vai até a espera única do alimentador predial da caixa " + opc.satelite.primaria.id + " (" + f2(Ep.x) + "; " + f2(Ep.y) + "; " + f2(Ep.z) + "): o alimentador chega num ponto só e se divide para as boias." });
+        } else if (Ep) aviso(nome + ": a entrada da boia não achou caminho até a espera única do alimentador (caixa " + opc.satelite.primaria.id + ") — a espera dela ficou livre: ligue o alimentador à mão a um tê com a espera da outra caixa", [cx.id]);
+        if (!opc.satelite) res.alimE2 = E1.y - E2.y >= TOL ? E2 : E1;
         opsAl.push(tE);
         var gE = BIC() && BIC().giroPara ? BIC().giroPara({ x: -ve.x, y: 0, z: -ve.z }, { x: 0, y: 1, z: 0 }) : 0;
         var rgE = { op: "acessorio", id: novoId("rg-alimentacao"), famId: RG_FAM, tipoId: tipoRg, trecho: tE.id, novoId: tE.id + "b", x: r4((E0.x + E1.x) / 2), y: E0.y, z: r4((E0.z + E1.z) / 2), comprimento: Lr, bar: cx.id, barParte: "registro_alimentacao" };
@@ -765,7 +1047,7 @@
         opsAl.push(rgE);
         opsAl.forEach(function (o) { ops.push(o); });
         var hidros = arr(estado.familias).filter(function (f) { return /hidrometro|cavalete/i.test(String(f.famId)); });
-        pend("bar.alimentacao", nome + ": o alimentador predial " + (hidros.length ? "do " + hidros.map(function (f) { return f.id; }).join(", ") + " " : "") + "até a espera da boia (" + f2(E2.x) + "; " + f2(E2.y) + "; " + f2(E2.z) + ") não é traçado sozinho nesta versão — ligue o ramal predial/hidrômetro à espera; DN " + dnE + " a conferir pela reposição do consumo diário (NBR 5626:2020 6.7.2)", [opsAl[0].id, cx.id].concat(hidros.map(function (f) { return f.id; })));
+        if (!uniao) pend("bar.alimentacao", nome + ": o alimentador predial " + (hidros.length ? "do " + hidros.map(function (f) { return f.id; }).join(", ") + " " : "") + "até a espera da boia (" + f2(E2.x) + "; " + f2(E2.y) + "; " + f2(E2.z) + ") não é traçado sozinho nesta versão — ligue o ramal predial/hidrômetro à espera; DN " + dnE + " a conferir pela reposição do consumo diário (NBR 5626:2020 6.7.2)", [opsAl[0].id, cx.id].concat(hidros.map(function (f) { return f.id; })));
       } else pend("bar.alimentacao", nome + ": a entrada (boia) esbarra em outro tubo ao sair — ligue o alimentador à mão", [cx.id]);
     } else pend("bar.alimentacao", nome + ": a família não tem o ponto de entrada (boia) — use a família hid-caixa-dagua do catálogo", [cx.id]);
 
@@ -809,9 +1091,11 @@
     orc.pendencias.forEach(function (p) { pend(p.chave, p.texto, [cx.id]); });
 
     var nCol = folhas.filter(function (l) { return res.esperasLigadas.indexOf(l.trecho) >= 0; }).length;
-    res.decisoes.unshift({ id: "bar.barrilete", texto: nome + " (" + (cx.volume ? f2(cx.volume).replace(",00", "") + " L, " : "") + "base a " + f2(cx.yb) + " m): saída DN " + dnSaida + " com registro de gaveta (NBR 5626:2020 6.5.12.4 a) e ventilação do barrilete logo depois dele, subindo a " + f2(yVent) + " m (Tigre p.72-73); barrilete " + (B.MATERIAIS[matAF] || {}).nome + " no ático/sobre a laje, " + (tomada ? "descendo da saída (" + f2(cx.S.y) + " m) pela tomada vertical até " + f2(y0) + " m, apoiado (NBR 5626:2020 6.9.3: os 5 kPa valem em todo ponto da rede, fora a tomada vertical — " + f2(cx.S.y - y0) + " m de carga estática a mais no barrilete)," : "saindo a " + f2(y0) + " m") + " e descendo " + f2(decl * 100) + " % (R-C10, sem inflexão), em árvore (tê, nunca cruzeta); " + nCol + " coluna(s) descendo até as esperas, com registro no início de cada uma (6.5.12.4 b; Tigre p.71)" + (lista.some(function (l) { return l.predio; }) ? " — as colunas do prédio já têm o registro delas" : "") + ". Extravasor e limpeza DN " + dnE + " (≥ a entrada, Tigre p.74) com saída livre e visível; limpeza com registro junto da caixa (6.5.9.1); o extravasor a " + f2(yX) + " m, abaixo da entrada com a separação atmosférica" + (sep != null ? " de " + f2(sep * 1000).replace(",00", "") + " mm (Tabela 1, 6.15)" : "") + ". Alimentação pela boia com registro (6.5.8.2)." });
+    if (opc.satelite) res.decisoes.unshift({ id: "bar.satelite", texto: nome + " (" + (cx.volume ? f2(cx.volume).replace(",00", "") + " L, " : "") + "base a " + f2(cx.yb) + " m), interligada à caixa " + opc.satelite.primaria.id + ": saída DN " + dnSaida + " com registro de gaveta (isola esta caixa para manutenção) e ventilação logo depois dele, ligada ao coletor comum; extravasor DN " + dnX + " e limpeza com registro e saída livre; entrada de boia com registro. O barrilete e as colunas são os da caixa " + opc.satelite.primaria.id + "." });
+    else res.decisoes.unshift({ id: "bar.barrilete", texto: nome + " (" + (cx.volume ? f2(cx.volume).replace(",00", "") + " L, " : "") + "base a " + f2(cx.yb) + " m): saída DN " + dnSaida + " com registro de gaveta (NBR 5626:2020 6.5.12.4 a) e ventilação do barrilete logo depois dele, subindo a " + f2(yVent) + " m (Tigre p.72-73); barrilete " + (B.MATERIAIS[matAF] || {}).nome + " no ático/sobre a laje, " + (tomada ? "descendo da saída (" + f2(cx.S.y) + " m) pela tomada vertical até " + f2(y0) + " m, apoiado (NBR 5626:2020 6.9.3: os 5 kPa valem em todo ponto da rede, fora a tomada vertical — " + f2(cx.S.y - y0) + " m de carga estática a mais no barrilete)," : "saindo a " + f2(y0) + " m") + " e descendo " + f2(decl * 100) + " % (R-C10, sem inflexão), em árvore (tê, nunca cruzeta); " + nCol + " coluna(s) descendo até as esperas, com registro no início de cada uma (6.5.12.4 b; Tigre p.71)" + (lista.some(function (l) { return l.predio; }) ? " — as colunas do prédio já têm o registro delas" : "") + ". Extravasor e limpeza DN " + dnE + " (≥ a entrada, Tigre p.74) com saída livre e visível; limpeza com registro junto da caixa (6.5.9.1); o extravasor a " + f2(yX) + " m, abaixo da entrada com a separação atmosférica" + (sep != null ? " de " + f2(sep * 1000).replace(",00", "") + " mm (Tabela 1, 6.15)" : "") + ". Alimentação pela boia com registro (6.5.8.2)." });
     res.barInfo = { id: cx.id, caixa: cx.id, colunas: nCol, esperas: res.esperasLigadas.slice(), predios: lista.filter(function (l) { return l.predio && res.esperasLigadas.indexOf(l.trecho) >= 0; }).map(function (l) { return l.predio; }), decisoes: res.decisoes.slice(), pendencias: res.pendencias.map(function (p) { return { chave: p.chave, motivo: p.texto }; }) };
     var o1 = ops.filter(function (o) { return o.op === "trecho"; })[0]; if (o1) o1.barInfo = res.barInfo;
+    res.novos = novos;
     return res;
   }
 
@@ -978,7 +1262,15 @@
              acao: true, op: opF, volume: V, tipo: esc.t.id, nomeTipo: nomeT, capacidade: esc.v, sinapi: sin ? { codigo: prod[PROD_SINAPI], preco: sin.preco, data: sin.data } : null, regra: regra, premissas: premissas, subiu: subiu, ambiente: alvo ? String(alvo.id) : null };
   }
 
-  var HidBarrilete = { VERSAO: 1, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
+  /* o DN mínimo de um trecho do barrilete (pelo id "bar-<caixa>-<parte>-<n>"): saída, tomada, tronco, coletor e coluna de descida; null nos
+     demais (ventilação, extravasor, limpeza, alimentação e os ramais do ambiente seguem a norma, sem este mínimo) */
+  function dnMinimoDe(idTrecho) {
+    var m = /^bar-.+-(saida|tomada|barrilete|coletor|coluna)-\d+b?$/.exec(String(idTrecho));
+    if (!m) return null;
+    return m[1] === "coluna" ? GEO_BAR.dnMinColuna : GEO_BAR.dnMinBarrilete;
+  }
+
+  var HidBarrilete = { VERSAO: 1, dnMinimoDe: dnMinimoDe, GEO_BAR: GEO_BAR, SINAPI_CAIXA: SINAPI_CAIXA, RESERVATORIOS: RESERVATORIOS, PREFIXO_ORC: PREFIXO_ORC,
     montar: montar, caixas: caixas, esperas: esperas, anteriores: anteriores, ofertar: ofertar, conferirPressao: conferirPressao, orcamentoCaixa: orcamentoCaixa,
     _int: { suporte: suporte, apoios: apoios, respiroDoCatalogo: respiroDoCatalogo, respiroReserva: respiroReserva } };
   global.HidBarrilete = HidBarrilete;

@@ -140,6 +140,14 @@
   }
 
   /* --------------------------------------------- ALIMENTAÇÃO (nó de partida) */
+  /* as saídas de reservatório `ids` estão ligadas entre si por tubo e na mesma cota (a tolerância do grupo de caixas do barrilete)? */
+  function fontesInterligadas(G, ids) {
+    var HBRf = dep("HidBarrilete", "./hidbarrilete.js"), tolY = HBRf && HBRf.GEO_BAR ? HBRf.GEO_BAR.nivelGrupo : 0.30;   // hid:ok mesma tolerância do agrupamento das caixas
+    if (ids.some(function (id) { return Math.abs(G.nos[id].y - G.nos[ids[0]].y) > tolY + 1e-9; })) return false;   // hid:ok tolerância numérica
+    var vis = {}, fila = [ids[0]]; vis[ids[0]] = 1;
+    for (var q = 0; q < fila.length; q++) G.nos[fila[q]].arestas.forEach(function (eid) { var o = G.outro(G.arestas[eid], fila[q]); if (!vis[o]) { vis[o] = 1; fila.push(o); } });
+    return ids.every(function (id) { return vis[id]; });
+  }
   function acharFonte(G, al, avisos, SIS) {
     al = al || {};
     var ids = G.ordemN, achado = null;
@@ -150,6 +158,12 @@
     } else {
       var cands = ids.filter(function (id) { var a = G.nos[id].aparelho; return a && CONECTOR_ALIMENTACAO[a.famId] && CONECTOR_ALIMENTACAO[a.famId][a.cid] === "alimentacao"; });
       if (cands.length === 1) achado = cands[0];
+      else if (cands.length > 1 && fontesInterligadas(G, cands)) {
+        /* 27/10/2026 (Casa 487, duas caixas): reservatórios LIGADOS entre si pela rede e no MESMO nível d'água são uma fonte só (barrilete comum) —
+           o cálculo parte do de menor id e as outras saídas ficam como fontes irmãs (sem fechar anel: a árvore chega nelas pelo coletor) */
+        achado = cands.slice().sort(function (a, b) { return String(G.nos[a].aparelho.famInst) < String(G.nos[b].aparelho.famInst) ? -1 : 1; })[0];
+        aviso(avisos, SIS || "agua_fria", "info", "reservatórios interligados (" + cands.map(function (id) { return G.nos[id].aparelho.famInst; }).join(", ") + "): mesmo nível d'água, barrilete comum — a rede é calculada a partir de " + G.nos[achado].aparelho.famInst + " com todas as colunas; o volume útil é a soma", cands.map(function (id) { return G.nos[id].aparelho.famInst; }), null);
+      }
       else if (cands.length > 1) aviso(avisos, SIS || "agua_fria", "erro", "há " + cands.length + " reservatórios ligados à rede de água fria: diga qual alimenta (entrada.alimentacao.conector)", cands.map(function (id) { return G.nos[id].aparelho.famInst; }), { texto: "escolher o reservatório de alimentação" });
     }
     return achado;
@@ -199,6 +213,8 @@
       if (num(al.pressao_kpa, null) == null) { ctx.pendencia(al.chavePressao || "entrada.alimentacao.pressao_kpa", al.motivoSemPressao || "pressão disponível da rede pública não informada", NOME); out.status = "pendente"; return out; }
       Hsrc = nS.y + H.kpaParaM(num(al.pressao_kpa, 0), fluido.rho);
     } else if (num(al.nivelAgua, null) != null) Hsrc = num(al.nivelAgua, 0);
+    /* Casa 487 (F9): nível mínimo DECLARADO na cota da saída (a caixa esvazia até a saída quando falta água da rede; sem folga por boia). Premissa de projeto, não "dado faltando": sem o aviso de "não informado" */
+    else if (al.nivelMinimoNaSaida) { Hsrc = nS.y; alAviso = "nível d'água mínimo na cota da saída do reservatório (premissa de projeto: a caixa pode esvaziar até a saída)"; premissa("nível d'água mínimo", "cota da saída do reservatório (" + f2(nS.y) + " m): a caixa pode esvaziar até a saída quando falta água da rede pública; sem folga por boia"); }
     else { Hsrc = nS.y; alAviso = "nível d'água mínimo não informado: considerado na cota da saída do reservatório (o mais desfavorável)"; aviso(out.avisos, SIS, "aviso", alAviso, nS.aparelho ? [nS.aparelho.famInst] : [], { texto: "informar o nível d'água mínimo do reservatório (entrada.alimentacao.nivelAgua)" }); }
     /* ⚠ ESTÁTICA com o nível MÁXIMO (revisão F7 A2): o nível mínimo é o do cálculo dinâmico
        (conservador para a pressão que falta), mas para a pressão que SOBRA (VRP) o lado seguro é o
@@ -265,6 +281,7 @@
         return;
       }
       var a = n.aparelho, papel = CONECTOR_ALIMENTACAO[a.famId] && CONECTOR_ALIMENTACAO[a.famId][a.cid];
+      if (papel === "alimentacao" && G.nos[src].aparelho && CONECTOR_ALIMENTACAO[G.nos[src].aparelho.famId] && fontesInterligadas(G, [src, nid])) { aviso(out.avisos, SIS, "info", "a saída do reservatório " + a.famInst + " está ligada ao barrilete comum com " + G.nos[src].aparelho.famInst + " (mesmo nível d'água): fonte irmã, não é ponto de consumo", [a.famInst], null); return; }
       if (papel) { aviso(out.avisos, SIS, "aviso", "a " + (papel === "chegada" ? "entrada (boia)" : "saída") + " do reservatório " + a.famInst + " está no meio da rede alimentada por outro ponto: confira o esquema", [a.famInst], null); return; }
       var ap = aparelhosForcados[a.famInst] || aparelhoDaFamilia(a.famId);
       var pt = { no: nid, famInst: a.famInst, famId: a.famId, conector: a.conector, aparelho: ap, cota: n.y, vazao_ls: null, peso: null, pressaoMinima_kpa: null, dnMin: null,
@@ -345,7 +362,10 @@
     /* ⚠ NBR 5626:2020, 6.14.3: "não há limitação para diâmetros nominais mínimos de sub-ramais" — a
        tabela de DN mínimo (1998) deixou de ser exigência. O DN do ponto do fabricante (conector da
        família) vira só RECOMENDAÇÃO, avisada depois (decisão do RT 17/10/2026). */
-    function dnMinDe() { return 0; }
+    /* 27/10/2026 (decisão do Rogério, prática RA): o barrilete e as colunas de descida (os trechos "bar-…" do js/hidbarrilete.js) saem DN 50 no
+       mínimo — o dimensionamento pode AUMENTAR (60, 75…) mas nunca baixar disto. Os ramais e sub-ramais seguem a NBR, sem mínimo. */
+    var HBRm = dep("HidBarrilete", "./hidbarrilete.js");
+    function dnMinDe(e) { var m = HBRm && HBRm.dnMinimoDe && e && e.trecho != null ? HBRm.dnMinimoDe(e.trecho) : null; return m != null ? m : 0; }
     Object.keys(E).forEach(function (eid) {
       var r = E[eid], e = r.e;
       if (e.tipo !== "tubo" || r.travado || r.q == null) return;
@@ -546,6 +566,28 @@
       }
       /* n0 = o 1º nó FORA da tomada (o início do barrilete): os de antes dele são tomada — desde que a cadeia tenha descido */
       if (desceu) cand.forEach(function (c) { if (c.no !== src) tomada[c.no] = 1; });
+      });
+    })();
+    /* F5 (Casa 487, 27/10/2026): a FONTE IRMÃ (a outra caixa do barrilete comum) tem a tomada dela: o toco na cota da saída, o tê da ventilação e o
+       COLETOR vertical até o barrilete — a mesma isenção da tomada da fonte principal, andando do nó da irmã para a raiz (o nó de baixo do coletor, onde
+       ele chega ao barrilete, NÃO é tomada). Sem isto o toco da 2ª caixa reprovava "5 kPa já na carga estática". */
+    (function () {
+      if (rede) return;
+      G.ordemN.forEach(function (id) {
+        if (id === src) return;
+        var a2 = G.nos[id].aparelho;
+        if (!(a2 && CONECTOR_ALIMENTACAO[a2.famId] && CONECTOR_ALIMENTACAO[a2.famId][a2.cid] === "alimentacao" && fontesInterligadas(G, [src, id]))) return;
+        var n = id, desceu = false, toco = 0, guarda = 0, cand = [];
+        while (guarda++ < G.ordemA.length && pai[n] != null) {
+          var e1 = G.arestas[pai[n]], par = e1.de, dy = G.nos[par].y - G.nos[n].y;
+          cand.push(n);
+          if (e1.tipo === "acessorio") { /* o registro do toco: passa */ }
+          else if (e1.vertical && dy < 0) desceu = true;
+          else if (!desceu && !e1.vertical && Math.abs(G.nos[par].y - G.nos[id].y) <= TOMADA_TOCO_DY && (toco += num(e1.comprimento, 0)) <= TOMADA_TOCO_MAX) { /* o toco da saída lateral */ }
+          else break;
+          n = par;
+        }
+        if (desceu) cand.forEach(function (q) { tomada[q] = 1; });
       });
     })();
     /* ⚠ SEM o nível d'água informado, o nível adotado é a própria cota da saída (o mais desfavorável): no toco DEITADO nessa cota a
@@ -750,7 +792,7 @@
     ordem.forEach(function (nid) {
       if (nid === src) return;
       if (!pendNo[nid] && !tomada[nid]) { var p = pressaoKpa(nid); if (p != null && (minP == null || p < minP)) { minP = p; minNo = nid; } }
-      if (!pendNo[nid] && tomada[nid] && tocoNaSaida[nid]) { var pS0 = pressaoKpa(nid); if (pS0 != null && pS0 < 0) premissa("toco da saída do reservatório (tomada d'água)", "nível d'água mínimo não informado: no toco deitado na cota da saída a pressão calculada é só a perda de entrada (" + f2(pS0) + " kPa) — não julgada; informe o nível d'água mínimo para conferir a tomada (NBR 5626:2020, 6.9.3)"); }
+      if (!pendNo[nid] && tomada[nid] && tocoNaSaida[nid]) { var pS0 = pressaoKpa(nid); if (pS0 != null && pS0 < 0) premissa("toco da saída do reservatório (tomada d'água)", (al.nivelMinimoNaSaida ? "nível d'água mínimo na cota da saída: no toco deitado nessa cota a pressão é só a perda de entrada (" + f2(pS0) + " kPa) — não julgada neste trecho (tomada d'água; NBR 5626:2020, 6.9.3)" : "nível d'água mínimo não informado: no toco deitado na cota da saída a pressão calculada é só a perda de entrada (" + f2(pS0) + " kPa) — não julgada; informe o nível d'água mínimo para conferir a tomada (NBR 5626:2020, 6.9.3)")); }
       else if (!pendNo[nid] && tomada[nid]) { var pt0 = pressaoKpa(nid); if (pt0 != null && (minT == null || pt0 < minT)) { minT = pt0; minTNo = nid; } }
       var pe = pressaoEstKpa(nid); if (pe != null && (maxEst == null || pe > maxEst)) { maxEst = pe; maxNo = nid; }
     });
@@ -897,6 +939,13 @@
       if (dnF !== dn0) { out.ops.push({ op: "instAlterar", id: tid, dn: dnF }); out.opsDesfazer.push({ op: "instAlterar", id: tid, dn: dn0 }); }
     });
 
+    /* 10b) o DN calculado também vai ao ACESSÓRIO do tubo (registro de pressão/gaveta): a peça especificada tem de ser a que o cálculo usou (Casa 487, F9:
+       cálculo com registro de 3/4" e lista com 1/2" = a reprovação escondida atrás do aviso "troque o acessório"). Só acessório CALCULADO (o tubo e a peça têm o mesmo DN). */
+    Object.keys(E).forEach(function (eid) {
+      var r = E[eid]; if (!r || !r.e || r.e.tipo !== "acessorio" || r.dn == null || r.pend.length || (r.pendH && r.pendH.length) || r.travado) return;
+      if (r.dn !== r.e.dn) { out.ops.push({ op: "instAlterar", id: r.e.acessorio, dn: r.dn }); out.opsDesfazer.push({ op: "instAlterar", id: r.e.acessorio, dn: r.e.dn }); }
+    });
+
     if (formula === "auto") out.formulaPerda = PD.formulasUsadas() || "auto";
     /* ids próprios do perfil (a água quente não repete "af-v0" da água fria no memorial) */
     if (perfil.prefixo) { out.avisos.forEach(function (a) { a.id = String(a.id).replace(/^af-/, perfil.prefixo + "-"); a.sistema = SIS; }); out.verificacoes.forEach(function (v) { v.id = String(v.id).replace(/^af-/, perfil.prefixo + "-"); }); }
@@ -917,8 +966,12 @@
     function v(valor, limite, ok, passos, fonte) { out.verificacoes.push({ sistema: "agua_fria", alvo: "alimentador", nome: nomeV, valor: valor, limite: limite, unidade: "kPa", eta: valor && limite ? limite / valor : null, ok: ok, status: ok === null ? "pendente" : (ok ? "ok" : "reprovado"), passos: passos, fonte: fonte || null }); }
     var cH = ctx.consulta("af.alimentador.reposicao_h", { uso: uso || "" }, "horas_max", "alimentador predial");
     if (!cH.ok) { v(null, null, null, ["pendente: " + cH.motivo], null); return out; }
-    out.horas = num(cH.valor, null); out.vazao_ls = consumoL / (out.horas * HORA_S);
-    out.passos.push("Q = consumo diário ÷ (" + out.horas + " h × 3600) = " + f2(consumoL) + " L ÷ " + f2(out.horas * HORA_S) + " s = " + f3(out.vazao_ls) + " L/s");
+    out.horas = num(cH.valor, null);
+    /* Casa 487 (F9): a reposição é dimensionada pelo VOLUME INSTALADO quando ele passa do consumo diário (lado seguro: o reservatório todo volta a encher no mesmo prazo); um só valor no documento inteiro */
+    var volRep = ent ? num(ent.volumeReposicao_L, null) : null;
+    if (volRep != null && volRep > consumoL) { out.passos.push("volume a repor adotado = reservação instalada (" + f2(volRep) + " L), maior que o consumo diário (" + f2(consumoL) + " L): lado seguro"); consumoL = volRep; }
+    out.vazao_ls = consumoL / (out.horas * HORA_S);
+    out.passos.push("Q = volume a repor ÷ (" + out.horas + " h × 3600) = " + f2(consumoL) + " L ÷ " + f2(out.horas * HORA_S) + " s = " + f3(out.vazao_ls) + " L/s");
     if (!ent || num(ent.pressao_kpa, null) == null || num(ent.comprimento_m, null) == null) {
       ctx.pendencia("entrada.alimentador", "pressão mínima da rede pública e/ou traçado do alimentador (comprimento, desnível) não informados: o alimentador predial (" + f3(out.vazao_ls) + " L/s em ≤ " + out.horas + " h) não foi dimensionado", "alimentador predial");
       v(null, null, null, out.passos.concat(["pendente: informe entrada.alimentador.pressao_kpa (pressão MÍNIMA da rede pública), comprimento_m e desnivel_m"]), cH.fonte);

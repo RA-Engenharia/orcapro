@@ -51,6 +51,7 @@
     folgaValvula: 0.08,    // hid:ok vão entre o fim do tubo que chega na válvula e o começo da descida dela (corpo da válvula)
     lateralChuveiro: 0.10, // hid:ok perna lateral da espera do chuveiro (o ramal desce ao lado do tubo que sobe ao chuveiro)
     margemTopo: 0.03,      // hid:ok o tubo de espera para abaixo da laje/forro (não fura sem projeto)
+    folgaTelhado: 0.40,    // hid:ok 27/10/2026: o teto de um ponto coberto só por TELHADO fica 40 cm abaixo da face de baixo dele — cabe a espera (margem de topo), o nó, o registro da coluna e o barrilete correndo sobre ela SEM encostar na telha (critério RA, "nada sobre o telhado")
     afastRaloParede: 0.15, // hid:ok ralo do box nunca encostado na parede (porta-grelha + rodapé)
     raioRaloExistente: 0.60, // hid:ok ralo/caixa que o usuário já pôs a até 60 cm do ponto do ralo do box = o ralo do box (a área de um box)
     alcanceParedeCuba: 1.20, // hid:ok FRENTE H7: a parede atrás da cuba de bancada é procurada até 1,20 m do eixo (bancada de ilha não tem parede)
@@ -77,6 +78,14 @@
     if (TIPO_DA_FAM[famId]) return TIPO_DA_FAM[famId];
     if (tipoId != null) for (var i = 0; i < ANCORAS.length; i++) if (ANCORAS[i].familia === famId) { var t = tipoFam(famId, null, tipoId); if (t && ANCORAS[i].re.test(txt(t.nome))) return ANCORAS[i].kit; }
     return null;
+  }
+  /* F7 (Casa 487): a família do ARQUIVO do cliente é um embrulho da biblioteca (fam.mob = o id-base): ela ganha o kit da base, sem editar o kits.json
+     (o id do cliente é dele). Devolve o kit herdado ou null. */
+  function apelidarFamilia(famId, baseId) {
+    if (!famId || !baseId || famId === baseId) return null;
+    var k = tipoDaFamilia(baseId, null);
+    if (k && !TIPO_DA_FAM[famId]) TIPO_DA_FAM[famId] = k;
+    return k && TIPO_DA_FAM[famId] === k ? k : null;
   }
   /* altura do ponto (m acima do piso acabado) pela sigla da tabela da Tigre — com a fonte; sem a linha, pendência */
   function altura(sigla) {
@@ -217,6 +226,36 @@
   }
   GEO_KIT.raioAmbiente = 4.0;   // hid:ok raio para achar o piso por um aparelho vizinho (m)
   /* teto do ponto de espera: o fundo da laje logo acima; sem laje, o topo da parede; sem nada, o pé-direito do traçado */
+  /* a face de baixo do telhado do estado (BimTelhado: as águas calculadas) no ponto (x, z): { y, id } ou null */
+  function telhadoEm(estado, x, z) {
+    var melhor = null;
+    arr(estado && estado.telhados).forEach(function (t) {
+      arr(t && t.aguasCalc).forEach(function (ag) {
+        if (!ag || !ag.plano) return;
+        var dentro = arr(ag.pecas).some(function (pc) {
+          var pg = arr(pc.pts), d = false;
+          for (var i = 0, j = pg.length - 1; i < pg.length; j = i++) { var a = pg[i], b = pg[j]; if (((a.z > z) !== (b.z > z)) && (x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x)) d = !d; }
+          return d;
+        });
+        if (!dentro) return;
+        var y = num(ag.plano.a, 0) + num(ag.plano.bx, 0) * x + num(ag.plano.bz, 0) * z;
+        if (!melhor || y < melhor.y) melhor = { y: y, id: String(t.id) };
+      });
+    });
+    return melhor;
+  }
+  /* a cota do forro (base + deslocamento) que cobre o ponto (x, z): { y, id } ou null */
+  function forroEm(estado, x, z) {
+    var melhor = null;
+    arr(estado && estado.forros).forEach(function (f) {
+      var pg = arr(f && f.contorno), d = false;
+      for (var i = 0, j = pg.length - 1; i < pg.length; j = i++) { var a = pg[i], b = pg[j]; if (((a.z > z) !== (b.z > z)) && (x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x)) d = !d; }
+      if (!d) return;
+      var y = num(f.base, 0) + num(f.deslocNivel, 0);
+      if (y > 0 && (!melhor || y < melhor.y)) melhor = { y: y, id: String(f.id) };
+    });
+    return melhor;
+  }
   function tetoDe(estado, p, piso) {
     var lajes = arr(estado && estado.caixas).filter(function (c) { return c && c.tipo === "laje"; }), melhor = null;
     lajes.forEach(function (c) {
@@ -226,9 +265,21 @@
       if (p.x >= Math.min.apply(null, xs) - EPS && p.x <= Math.max.apply(null, xs) + EPS && p.z >= Math.min.apply(null, zs) - EPS && p.z <= Math.max.apply(null, zs) + EPS &&
           fundo > piso + geo(null, "peDireito") / 2 && (!melhor || fundo < melhor.y)) melhor = { y: fundo, origem: "fundo da laje " + c.id };
     });
-    if (melhor) return melhor;
+    /* 27/10/2026 (Casa 487, "nada sobre o telhado"): o ponto coberto por TELHADO (a face de baixo da água do telhado sobre ele) não tem teto
+       acima disso: o teto vira a face de baixo dele menos a folga — antes o teto era o topo da platibanda (4,47 m) e a espera da água ficava
+       POR CIMA da telha (a 3,8 m). A laje abaixo do telhado continua mandando (é mais baixa). */
+    var tel = telhadoEm(estado, p.x, p.z), yTel = tel ? r4(tel.y - geo(null, "folgaTelhado")) : null;
+    /* o ponto coberto por telhado E por forro (drywall/gesso): o forro é o teto do cômodo e o tubo corre acima dele, no entreforro, abaixo da telha —
+       a espera termina na cota do forro (assim o barrilete cabe sob a cobertura mesmo onde ela desce até o beiral) */
+    var fo = null;
+    if (tel) [[0, 0], [0.3, 0], [-0.3, 0], [0, 0.3], [0, -0.3]].forEach(function (o) { if (!fo) fo = forroEm(estado, p.x + o[0], p.z + o[1]); });   // hid:ok a espera fica na espessura da parede, junto do forro: sonda 30 cm ao redor
+    if (fo && fo.y > piso + EPS && fo.y < yTel) { tel = { y: fo.y + geo(null, "folgaTelhado"), id: tel.id, forro: fo.id }; yTel = fo.y; }
+    var rTel = tel && yTel > piso + EPS ? { y: yTel, origem: tel.forro ? "forro " + tel.forro + " (" + f2(yTel) + " m), abaixo do telhado " + tel.id + " — o tubo corre no entreforro, abaixo da cobertura" : "face de baixo do telhado " + tel.id + " (" + f2(tel.y) + " m) menos " + f2(geo(null, "folgaTelhado")) + " m — o tubo corre abaixo da cobertura" } : null;
+    if (melhor) return rTel && rTel.y < melhor.y ? rTel : melhor;
     var w = paredeDe(estado, p, piso + geo(null, "peDireito") / 2);   /* a parede DESTE pavimento (prédio) */
-    if (w && w.topo > piso + EPS) return { y: w.topo, origem: "topo da parede " + w.id };
+    var rPar = w && w.topo > piso + EPS ? { y: w.topo, origem: "topo da parede " + w.id } : null;
+    if (rTel && rPar) return rTel.y < rPar.y ? rTel : rPar;
+    if (rTel || rPar) return rTel || rPar;
     return { y: piso + geo(null, "peDireito"), origem: "pé-direito assumido de " + f2(geo(null, "peDireito")) + " m (sem laje nem parede no modelo — informe o do projeto)", assumido: true };
   }
 
@@ -604,11 +655,16 @@
       var k = kits[o.kit] || (kits[o.kit] = { famInst: String(o.kit), ids: {}, ordem: [], ass: o.kitAss, tipo: o.kitTipo, ultimo: i });
       if (o.kitAss !== k.ass) { k.ids = {}; k.ordem = []; k.ass = o.kitAss; }
       k.ultimo = i;
-      if (o.op !== "instancia") { k.ids[o.id] = { op: o.op, parte: o.kitParte, i: i }; k.ordem.push(o.id); if (o.op === "acessorio" && o.novoId != null) k.ids[o.novoId] = { op: "trecho", parte: o.kitParte, i: i, novo: true }; }
+      if (o.op !== "instancia") { k.ids[o.id] = { op: o.op, parte: o.kitParte, i: i, tr: o.op === "acessorio" ? o.trecho : null, trNovo: o.op === "acessorio" ? o.novoId : null }; k.ordem.push(o.id); if (o.op === "acessorio" && o.novoId != null) k.ids[o.novoId] = { op: "trecho", parte: o.kitParte, i: i, novo: true }; }
     });
     /* o que o usuário mexeu À MÃO depois do kit (op sem marca de kit/ambiente tocando uma peça do kit) */
     Object.keys(kits).forEach(function (f) {
-      var k = kits[f]; k.vivos = k.ordem.filter(function (id) { return !(apagados[id] > k.ids[id].i); });
+      var k = kits[f]; k.vivos = k.ordem.filter(function (id) {
+        var e = k.ids[id];
+        if (apagados[id] > e.i) return false;
+        /* 27/10/2026 (Casa 487): o registro cujo tubo foi apagado depois não é kit vivo (o kit se refaz inteiro, com o registro novo) */
+        return !(e.op === "acessorio" && e.tr != null && (apagados[e.tr] > e.i || (e.trNovo != null && apagados[e.trNovo] > e.i)));
+      });
       k.manual = lista.some(function (o, i) {
         if (i <= k.ultimo || o.kit != null || o.amb != null) return false;
         var alvo = o.id != null && k.ids[o.id] ? o.id : (o.trecho != null && k.ids[o.trecho] ? o.trecho : null);
@@ -706,7 +762,7 @@
 
   var HidKit = {
     VERSAO: 1, GEO_KIT: GEO_KIT,
-    kits: kits, tipoDaFamilia: tipoDaFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
+    kits: kits, tipoDaFamilia: tipoDaFamilia, apelidarFamilia: apelidarFamilia, aparelhoNorma: aparelhoNorma, altura: altura, alturaInstalacao: alturaInstalacao, aparelhoEsDe: aparelhoEsDe, gerar: gerar, reconciliar: reconciliar, kitsDoModelo: kitsDoModelo, achatar: achatar,
     aparelhosForcados: aparelhosForcados, paraCalculo: paraCalculo, travados: travados, decisoesDoModelo: decisoesDoModelo, assinatura: assinatura,
     _int: { pisoDe: pisoDe, tetoDe: tetoDe, paredeDe: paredeDe, paredes: paredes, conectores: conectores, deDaBitola: deDaBitola, bitolaDoTipo: bitolaDoTipo, ambienteDe: ambienteDe, geo: geo }
   };

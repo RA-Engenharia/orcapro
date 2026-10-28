@@ -53,7 +53,7 @@
     agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
     esgoto:      { nome: "Esgoto", abrev: "ES", cor: "#7B4A2A", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
     ventilacao:  { nome: "Ventilação", abrev: "VE", cor: "#B08A6E", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
-    pluvial:     { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto"], material: "pvc_serie_r" },
+    pluvial:     { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },   /* Casa 487 (F9): coletor pluvial enterrado acima do DN 150 da série R = PVC ocre NBR 7362 (DN 200) */
     eletrica:    { nome: "Elétrica (eletroduto)", abrev: "EL", cor: "#F2B600", grupo: "eletrica", gravidade: false, materiais: ["elet_corrugado_ref", "elet_corrugado", "elet_roscavel", "elet_soldavel"], material: "elet_corrugado_ref" },
     ar:          { nome: "Ar-condicionado (duto)", abrev: "AR", cor: "#7F95A8", grupo: "ar", gravidade: false, materiais: ["duto_chapa", "duto_flex"], material: "duto_chapa" },
     /* C1b climatização (17/10/2026, docs/hidro/PATCH-BIMINST-CLIMA.md): cobre frigorígeno e dreno de condensado.
@@ -67,6 +67,11 @@
     /* Fase 5 industrial (17/10/2026, docs/hidro/PATCH-BIMINST-INDUSTRIAL.md): rede de fluido industrial (ar comprimido, vapor, condensado, óleo
        térmico, água gelada/industrial, gás). Um sistema só; o FLUIDO e a SÉRIE vão no trecho. Pressurizada. */
     industrial:  { nome: "Fluidos industriais", abrev: "IND", cor: "#6D4C41", grupo: "industrial", gravidade: false, materiais: ["aco_carbono", "inox", "cobre", "pead"], material: "aco_carbono" },
+    /* F3 gás (27/10/2026, Casa 487): rede de GÁS COMBUSTÍVEL (GLP/GN) dimensionada pela NBR 15526 (js/hidgasrede.js). Trecho de cobre embutido, pressurizado.
+       grupo "industrial": herda as aplicações (linha/ramal) e o resto do tratamento do tubo pressurizado sem editar as tabelas de outros sistemas.
+       COR: o desenho usa AMARELO-ESCURO por legibilidade (sobre meio-tom cinza); a PINTURA da tubulação aparente (abrigo, ponto) segue a NBR 6493
+       (gases liquefeitos = cor-de-alumínio; gás não liquefeito = amarelo-segurança) — fonte secundária, a conferir no exemplar licenciado. */
+    gas:         { nome: "Gás combustível (GLP)", abrev: "GAS", cor: "#C9A400", grupo: "industrial", gravidade: false, materiais: ["cobre"], material: "cobre" },
     /* P12: a bandeja de cabos (eletrocalha) — cor OLIVA (família do amarelo da elétrica, mais escura) */
     bandeja:     { nome: "Eletrocalha (bandeja de cabos)", abrev: "EC", cor: "#8A7F1F", grupo: "bandeja", gravidade: false, materiais: ["eletrocalha"], material: "eletrocalha" }
   };
@@ -457,6 +462,7 @@
   /* FLUIDEZ — PROPRIEDADES COMPLETAS (17/10/2026): comentários e fase da instância (tubo e peça), editados em
      Propriedades por instAlterar (um Ctrl+Z cada). Ausente/vazio = sem o campo: o estado das obras antigas fica igual. */
   function camposObra(o, alvo) {
+    if (o.nome) alvo.nome = txt(o.nome).slice(0, 40);   /* F2 (Casa 487): o NOME da caixa/peça (CI-01, CG-01, CP-01…), renomeável por instAlterar */
     if (o.comentarios) alvo.comentarios = txt(o.comentarios).slice(0, 300);
     if (o.faseCriada) alvo.faseCriada = txt(o.faseCriada).slice(0, 40);
     if (o.faseDemolida && o.faseDemolida !== "Nenhum") alvo.faseDemolida = txt(o.faseDemolida).slice(0, 40);
@@ -518,6 +524,8 @@
       if (o.op === "instAlterar") {
         var ac0 = copia(est.acessorios[o.id]);
         if (o.tipoId !== undefined) ac0.tipoId = txt(o.tipoId);
+        /* Casa 487 (F9): o DN do acessório acompanha o do tubo quando o dimensionamento o muda (registro de pressão do chuveiro DN 20 -> 25); só valor positivo */
+        if (o.dn !== undefined && isFinite(Number(o.dn)) && Number(o.dn) > 0) ac0.dn = Number(o.dn);
         /* APOIAR EM… (js/bimapoiar.js): o registro anda na vertical junto com o tubo em que está (dy em metros, soma na cota do centro) */
         if (o.dy !== undefined && isFinite(Number(o.dy)) && ac0.centro) ac0.centro = { x: ac0.centro.x, y: Math.round((ac0.centro.y + Number(o.dy)) * 1e6) / 1e6, z: ac0.centro.z };
         if (o.giro !== undefined) { var gA = ((num(o.giro, 0) % 360) + 360) % 360; if (gA) ac0.giro = gA; else delete ac0.giro; }   /* COLOCAÇÃO (js/biminstcolocar.js): Espaço gira o volante em torno do tubo */
@@ -543,7 +551,7 @@
     if (o.op === "instAlterar" && o.id != null) {
       var alvo = est.trechos[o.id] || est.pecas[o.id]; if (!alvo) return false;
       var novo = copia(alvo);
-      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+      ["sistema", "material", "dn", "aplicacao", "pn", "classe", "iso", "larg", "alt", "bitola", "serie", "peca", "alturaPiso", "rotY", "continua", "juntaIni", "juntaFim", "juntaMotivo", "excentrica", "comentarios", "nome", "faseCriada", "faseDemolida", "pecaIni", "pecaFim", "tipoCaixa", "tampa", "prof"].forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
       if (o.continua === "") delete novo.continua;
       if (o.pecaIni === "") delete novo.pecaIni;
       if (o.pecaFim === "") delete novo.pecaFim;
@@ -563,7 +571,13 @@
       return false;
     }
     if (o.op === "apagar" && o.id != null) {
-      if (est.trechos[o.id]) { delete est.trechos[o.id]; est.ordemT.splice(est.ordemT.indexOf(o.id), 1); return true; }
+      if (est.trechos[o.id]) {
+        /* 27/10/2026 (Casa 487, "kf78-ch-rp"): apagar o tubo que o registro divide deixava o registro SOLTO no modelo (trecho/novoId que já não
+           existem) — o traçado seguinte recusava a operação e o cômodo inteiro ficava sem tubo. O registro ligado a um tubo apagado sai junto
+           (sem emendar: as duas metades vão embora; quem quer o tubo inteiro apaga o registro primeiro, como a limpeza dos kits faz) */
+        arr(est.ordemAc).slice().forEach(function (idA) { var a = est.acessorios[idA]; if (a && (String(a.trecho) === String(o.id) || (a.novoId != null && String(a.novoId) === String(o.id)))) { delete est.acessorios[idA]; est.ordemAc.splice(est.ordemAc.indexOf(idA), 1); } });
+        delete est.trechos[o.id]; est.ordemT.splice(est.ordemT.indexOf(o.id), 1); return true;
+      }
       if (est.pecas[o.id]) { delete est.pecas[o.id]; est.ordemP.splice(est.ordemP.indexOf(o.id), 1); return true; }
       return false;
     }
@@ -930,6 +944,23 @@
     function cx(tipo, dn, dn2, extra) {
       var o = { tipo: tipo, sistema: sistema, material: maior.material, aplicacao: maior.aplicacao, dn: dn, dn2: dn2 || 0 };
       if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; });
+      /* 27/10/2026 (barrilete/colunas em DN 50, decisão do Rogério): a coluna DN 50 reduz na derivação para o DN do ramal (50 → 20) e a SINAPI NÃO tem a
+         redução 50 × 20 — só as vizinhas (50 × 25, 50 × 32, 32 × 20, 25 × 20…). Sem composição para o par, a redução sai em SÉRIE por um DN intermediário em que as DUAS metades
+         têm composição (cada peça é uma composição SINAPI real, nada inventado); sem intermediário, fica como era (pendente). */
+      if (tipo === "reducao" && dn2 && !flexOuSemTabela(maior.material)) {
+        var itT = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: dn, dn2: dn2 };
+        if (sinapiDe(itT).status !== "ok") {
+          var dnsM = arr((MATERIAIS[o.material] || {}).dns).filter(function (d) { return d < dn - 0.5 && d > dn2 + 0.5; }).sort(function (a, b) { return b - a; });
+          for (var iK = 0; iK < dnsM.length; iK++) {
+            var kk = dnsM[iK], a1 = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: dn, dn2: kk }, a2 = { peca: "reducao", sistema: sistema, material: o.material, aplicacao: o.aplicacao, dn: kk, dn2: dn2 };
+            if (sinapiDe(a1).status === "ok" && sinapiDe(a2).status === "ok") {
+              var o1 = {}, o2 = {}; Object.keys(o).forEach(function (q) { o1[q] = o[q]; o2[q] = o[q]; });
+              o1.dn2 = kk; o2.dn = kk; o1.serie = o2.serie = dn + "x" + kk + "x" + dn2;
+              out.push(o1); out.push(o2); return;
+            }
+          }
+        }
+      }
       out.push(o);
     }
     if (M.larguras) return decidirBandeja(ramos, sistema, conector, avisos, out, cx);   /* P12: eletrocalha */
@@ -1521,6 +1552,7 @@
     else { r.moFalta = true; r.observacao = tx + "; PENDÊNCIA: " + (mo ? mo.texto : "instalação sem composição análoga") + " — só o material entra no orçamento"; }
     return r;
   }
+  function flexOuSemTabela(mat) { var Mm = MATERIAIS[mat] || {}; return !!(Mm.flexivel || Mm.semSinapi || Mm.secao || /^duto_/.test(mat)); }
   function sinapiDe(item) {
     var T = tabela(), k = chaveSinapi(item), rot = rotuloItem(item);
     if (!T || !T.chaves) return { status: "pendente", chave: k, rotulo: rot, motivo: "a tabela SINAPI das instalações (js/biminstsinapi.js) não carregou" };
@@ -2459,7 +2491,7 @@
     });
     R.pecas.forEach(function (k) {
       var s0 = sit(k.id), P = PECAS[k.peca];
-      linhas.push({ id: k.id, categoria: P.sistemas[0] === "eletrica" ? "Dispositivos elétricos" : "Peças hidrossanitárias", tipo: P.nome, sistema: SISTEMAS[k.sistema].nome, nomeSistema: "", tamanho: k.dn,
+      linhas.push({ id: k.id, categoria: P.sistemas[0] === "eletrica" ? "Dispositivos elétricos" : "Peças hidrossanitárias", tipo: P.nome + (k.nome ? " " + k.nome : ""), sistema: SISTEMAS[k.sistema].nome, nomeSistema: "", tamanho: k.dn,
                     comprimento: null, quantidade: 1, unidade: "un", codigo: s0.codigo, situacao: s0.situacao, motivo: s0.motivo });
     });
     dispositivosDo(estado, avaliarFam).forEach(function (d) {

@@ -137,6 +137,38 @@
     f.pontosAgua = { amb: e.amb, kit: e.kit, piso: !!e.piso, fonte: e.fonte, regra: "FRENTE H7 — js/familiasagua.js" };
     return f;
   }
+  /* ATUALIZAR AS FAMÍLIAS DE UM PROJETO ABERTO (F7 da Casa 487, 28/10/2026). POR QUE: o .opbim leva CÓPIAS das famílias (pasta familias/), feitas
+     quando o projeto foi salvo — as da Casa 487 são "embrulhos" (geometria "mob", `mob` = o id da biblioteca) feitos ANTES dos pontos de água
+     existirem: bancadas de banheiro, a ilha e a banheira de hidromassagem ficaram "sem conectores no arquivo do cliente" e o Traçar não ligava nada.
+     Regra: família do arquivo SEM nenhum conector hidráulico (água fria/quente ou esgoto) cuja base (fam.mob || fam.id) tem os pontos na biblioteca
+       (1) pela ESPEC deste arquivo (aplicar: pontos + parâmetros da torneira), ou
+       (2) pelos conectores da família da biblioteca com o MESMO id-base (ex.: ra-banho-hidromassagem, F3) — copiados, sem mexer em geometria,
+           tipos nem parâmetros escolhidos pelo cliente; só vale se TODO nome citado pela fórmula do conector existe nos parâmetros da família do arquivo;
+     recebe os pontos. Família que já tem algum conector hidráulico NÃO muda (idempotente). Devolve { familias (nova lista), atualizadas[{ id, base, via }], avisos[] }. */
+  var SIS_HID = { agua_fria: 1, agua_quente: 1, esgoto: 1 };
+  function temHidraulico(fam) { return arr(fam && fam.conectores).some(function (k) { return k && SIS_HID[k.sistema]; }); }
+  function nomesDaFormula(s) { return String(s == null ? "" : s).replace(/[0-9]+(\.[0-9]+)?/g, " ").split(/[^A-Za-zÀ-ÿ_]+/).filter(function (x) { return x && !/^(se|e|ou|nao|não|min|max|abs|sen|cos|raiz)$/i.test(x); }); }
+  function atualizarDoProjeto(familias) {
+    var out = { familias: [], atualizadas: [], avisos: [] }, RA = dep("FamiliasRA", "./familiasra.js");
+    arr(familias).forEach(function (f) {
+      if (!f || !f.id || temHidraulico(f)) { out.familias.push(f); return; }
+      var base = f.mob || f.id, g = null, via = "";
+      if (ESPEC[base]) { g = aplicar(f); via = "pontos de água da biblioteca (js/familiasagua.js, " + base + ")"; if (g === f || !temHidraulico(g)) g = null; }
+      else if (RA && RA.obter) {
+        var lib = null; try { lib = RA.obter(base, true); } catch (e) { lib = null; }
+        var cs = arr(lib && lib.conectores).filter(function (k) { return k && SIS_HID[k.sistema]; });
+        if (cs.length) {
+          var nomes = {}; arr(f.parametros).forEach(function (p) { nomes[String(p.nome).toLowerCase()] = 1; });
+          var faltam = [];
+          arr(lib.conectores).forEach(function (k) { ["x", "y", "z", "dn", "visivel"].forEach(function (c) { nomesDaFormula(k[c]).forEach(function (n) { if (!nomes[n.toLowerCase()] && faltam.indexOf(n) < 0) faltam.push(n); }); }); });
+          if (faltam.length) out.avisos.push("Família " + f.id + ": a biblioteca (" + base + ") tem os conectores, mas a cópia do arquivo não tem o(s) parâmetro(s) " + faltam.join(", ") + " — conectores NÃO copiados.");
+          else { g = copia(f); g.conectores = copia(lib.conectores); g.sistemas = (function () { var s = arr(g.sistemas).slice(); arr(lib.sistemas).concat(cs.map(function (k) { return k.sistema; })).forEach(function (x) { if (s.indexOf(x) < 0) s.push(x); }); return s; })(); via = "conectores da família da biblioteca " + base; }
+        }
+      }
+      if (g) { out.familias.push(g); out.atualizadas.push({ id: f.id, base: base, via: via }); } else out.familias.push(f);
+    });
+    return out;
+  }
   /* as que já estão registradas + as que vierem (o embrulho do registrar) */
   function completarRegistradas() {
     var RA = dep("FamiliasRA", "./familiasra.js"); if (!RA || !RA.obter || !RA.registrar) return 0;
@@ -151,7 +183,7 @@
   }
   /* o que a peça de água EXIGE (o auditor do js/hidequipar.js): os sistemas e quantas cubas, pelos valores avaliados */
   function ehPecaDeAgua(famId) { return !!ESPEC[famId]; }
-  var FamiliasAgua = { ESPEC: ESPEC, REGRA: regra, aplicar: aplicar, completarRegistradas: completarRegistradas, ehPecaDeAgua: ehPecaDeAgua, conectoresDe: conectores, FONTE_DECA: FONTE_DECA, FONTE_TIGRE: FONTE_TIGRE };
+  var FamiliasAgua = { ESPEC: ESPEC, REGRA: regra, aplicar: aplicar, completarRegistradas: completarRegistradas, atualizarDoProjeto: atualizarDoProjeto, ehPecaDeAgua: ehPecaDeAgua, conectoresDe: conectores, FONTE_DECA: FONTE_DECA, FONTE_TIGRE: FONTE_TIGRE };
   global.FamiliasAgua = FamiliasAgua;
   completarRegistradas();
   if (typeof module !== "undefined" && module.exports) module.exports = FamiliasAgua;

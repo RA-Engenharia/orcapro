@@ -1317,7 +1317,83 @@
     });
   })();
 
+  /* =====================================================================
+   * F2 (Casa 487, 27/10/2026) — INVERTER / ESPELHAR O CAIMENTO de um telhado de 1 ÁGUA.
+   * Pedido do Rogério: "espelhar/inverter o caimento do telhado para o tubo descer por dentro".
+   * No de 1 água a única aresta que define inclinação é o BEIRAL (o pé da água); a oposta é a
+   * cumeeira. Inverter = o beiral vira cumeeira e a aresta OPOSTA vira o beiral. Troca só o `d`
+   * (e a inclinação própria `i`, se houver) das duas arestas; as bordas (calha, testeira…) que
+   * estavam na aresta antiga vão para a nova — senão a calha ficaria no alto. Puro: devolve as
+   * ops (o modelador aplica); não mexe no modelo.
+   *   contorno = [{x,z,d?,i?}], bordas = [{op?:"borda"|"calha",id,telhado,tipoBorda,arestas}] (as bordas e as calhas embutidas; só as deste telhado).
+   *   → { ok, de, para, ops:[...], avisos:[...] }  ou  { ok:false, erro:"motivo" }
+   * Oposta = a aresta mais "contra" a do beiral (direções opostas, ângulo < 60°) que fica mais
+   * longe dela medindo na perpendicular; empate pelo maior comprimento.
+   * ===================================================================== */
+  function arestaOposta(C, k) {
+    var n = C.length, a = pt(C[k]), b = pt(C[(k + 1) % n]), d = sub(b, a), l = comp(d);
+    if (!(l > 1e-9)) return -1;
+    d = [d[0] / l, d[1] / l];
+    var nn = [-d[1], d[0]], melhor = -1, mv = -1e18, ml = 0;
+    for (var j = 0; j < n; j++) {
+      if (j === k) continue;
+      var p = pt(C[j]), q = pt(C[(j + 1) % n]), e = sub(q, p), le = comp(e);
+      if (!(le > 1e-9)) continue;
+      e = [e[0] / le, e[1] / le];
+      if (dot(d, e) > -0.5) continue;                       /* não é "contra" a aresta do beiral */
+      var m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], dist2 = Math.abs(dot(nn, sub(m, a)));
+      if (dist2 > mv + 1e-9 || (Math.abs(dist2 - mv) <= 1e-9 && le > ml)) { melhor = j; mv = dist2; ml = le; }
+    }
+    return melhor;
+  }
+  function inverterCaimento(contorno, bordas, idTelhado) {
+    var C = arr(contorno);
+    if (C.length < 3) return { ok: false, erro: "Telhado sem contorno." };
+    var def = [];
+    C.forEach(function (q, i) { if (!q || q.d !== false) def.push(i); });
+    if (def.length !== 1) return { ok: false, erro: "Inverter o caimento vale para o telhado de 1 ÁGUA (uma aresta só define a inclinação); este tem " + def.length + "." };
+    var de = def[0], para = arestaOposta(C, de);
+    if (para < 0) return { ok: false, erro: "Não achei a aresta oposta ao beiral (contorno sem lado contrário)." };
+    var ops = [], avisos = [], id = idTelhado;
+    var iDe = C[de] && C[de].i != null ? C[de].i : null;
+    ops.push({ op: "telhado", id: id, aresta: de, defineInclinacao: false });
+    ops.push({ op: "telhado", id: id, aresta: para, defineInclinacao: true });
+    if (iDe != null) { ops.push({ op: "telhado", id: id, aresta: de, inclinacaoAresta: null }); ops.push({ op: "telhado", id: id, aresta: para, inclinacaoAresta: iDe }); }
+    arr(bordas).forEach(function (b) {
+      if (!b || String(b.telhado) !== String(id)) return;
+      var ks = arr(b.arestas).map(Number), mudou = false;
+      var novo = ks.map(function (x) { if (x === de) { mudou = true; return para; } if (x === para) { mudou = true; return de; } return x; });
+      if (mudou) {
+        var u = []; novo.forEach(function (x) { if (u.indexOf(x) < 0) u.push(x); });
+        ops.push({ op: b.op === "calha" ? "calha" : "borda", id: b.id, arestas: u });   /* a calha de beiral (borda) e a embutida (op calha) */
+        avisos.push("A borda " + b.id + (b.tipoBorda ? " (" + b.tipoBorda + ")" : "") + " foi da aresta " + (de + 1) + " para a " + (para + 1) + ": acompanha o novo beiral.");
+      }
+    });
+    return { ok: true, de: de, para: para, ops: ops, avisos: avisos };
+  }
+
+  /* a partir do ESTADO do modelo: acha o telhado e as bordas/calhas dele e devolve o mesmo que inverterCaimento (as ops, sem aplicar) */
+  function inverterDoEstado(estado, id) {
+    var t = arr(estado && estado.telhados).filter(function (x) { return x && String(x.id) === String(id); })[0];
+    if (!t) return { ok: false, erro: "O telhado " + id + " não existe no modelo." };
+    if (t.modo !== "perimetro" || !arr(t.contorno).length) return { ok: false, erro: "Inverter o caimento vale para o telhado por perímetro (de 1 água)." };
+    var bs = arr(estado.bordas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "borda", id: b.id, telhado: b.telhado, tipoBorda: b.tipoBorda, arestas: arr(b.arestas) }; })
+      .concat(arr(estado.calhasEmbutidas).filter(function (b) { return b && String(b.telhado) === String(id); }).map(function (b) { return { op: "calha", id: b.id, telhado: b.telhado, tipoBorda: "calha", arestas: arr(b.arestas) }; }));
+    return inverterCaimento(t.contorno.map(function (q) { var o = { x: q.x, z: q.z }; if (q.d === false) o.d = false; if (q.i != null) o.i = q.i; return o; }), bs, id);
+  }
+
   var BimTelhado = {
+    inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
+    inverterDoEstado: inverterDoEstado,
+    /* O COMANDO "Inverter caimento" (F2, Casa 487): lê o modelo aberto, acha o telhado, aplica as ops num LOTE (um Ctrl+Z desfaz) e devolve o resultado.
+       Sem o editor do BIM na página devolve só as ops (quem chama aplica). */
+    inverterNoModelo: function (id) {
+      var b = global.BIM, est = b && b.editarEstado ? b.editarEstado() : null;
+      var r = inverterDoEstado(est && est.estado, id);
+      if (!r.ok || !b || !b.editarLote) return r;
+      r.aplicado = !!b.editarLote({ op: "lote", id: "inverter-caimento-" + String(id) + "-" + String(new Date().getTime()), origem: "telhado", ops: clone(r.ops) });
+      return r;
+    },
     TIPOS: TIPOS, MEDIDAS_PACOTE: MEDIDAS_PACOTE, TELHAS: TELHAS, LIM: LIM, BORDAS: BORDAS, INCL_PADRAO: INCL_PADRAO, CAMPOS: CAMPOS,
     tipo: function (id) { return tipoCatalogo(id) || normTipo(TIPOS[0]); },
     telha: telhaDe, inclinacaoPadrao: inclinacaoPadrao, recobrimento: recobrimentoPara, dentro: dentro, pctGraus: pctGraus, avisosDaTelha: avisosDaTelha, comprimentoDaAgua: comprimentoDaAgua,
@@ -1379,6 +1455,7 @@
       var o = { op: "borda", id: id, telhado: d.telhado != null ? String(d.telhado) : d.telhado, tipoBorda: d.tipoBorda, arestas: arr(d.arestas).map(Number) };
       if (fin(Number(d.largura))) o.largura = Number(d.largura);
       if (fin(Number(d.altura))) o.altura = Number(d.altura);
+      if (typeof d.cotaAuto === "boolean") o.cotaAuto = d.cotaAuto; else if (o.tipoBorda === "calha") o.cotaAuto = true;   /* F2 (Casa 487): calha de beiral NOVA nasce na cota certa */
       return opBordaValida(o) ? o : null;
     },
 

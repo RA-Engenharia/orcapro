@@ -811,6 +811,11 @@
           if (semAQ.length && !pendencias.some(function (p) { return p.chave === "ta.agua_quente"; })) pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: " + semAQ.length + " ponto(s) de água quente ficaram sem tubo até o aquecedor (" + semAQ.map(function (k) { return k.famInst + ":" + k.id; }).join(", ") + "); trace à mão", elementos: elsAQ });
         } catch (eAQ) { pendencias.push({ chave: "ta.agua_quente", texto: "Água quente: não consegui conferir os pontos de água quente (" + (eAQ && eAQ.message ? eAQ.message : eAQ) + "); confira à mão", elementos: [] }); }
       }
+      /* F3 (27/10/2026, Casa 487): a HIDROMASSAGEM — o que o kit não liga sozinho (água quente em espera tamponada sem aquecedor, bomba da ficha, cotas a conferir) entra no cartão */
+      try {
+        var HBn = dep("HidBanheira");
+        if (HBn) { var rbn = HBn.conferir({ estado: est, avaliarFam: c.avaliarFam }); arr(rbn.avisos).forEach(function (a) { avisos.push({ texto: a.texto, elementos: arr(a.elementos), acao: null }); }); arr(rbn.pendencias).forEach(function (p) { if (!pendencias.some(function (q) { return q.chave === p.chave && String(q.texto) === String(p.texto); })) pendencias.push({ chave: p.chave, texto: p.texto, elementos: arr(p.elementos) }); }); }
+      } catch (eHB) { pendencias.push({ chave: "ta.hidromassagem", texto: "Hidromassagem: não consegui conferir a banheira (" + (eHB && eHB.message ? eHB.message : eHB) + ") — confira à mão", elementos: [] }); }
       return { ok: true, ops: ops, resumo: resumo, avisos: avisos, pendencias: pendencias, criterios: crit, opcoes: nOp, indice: Math.min(iOp, nOp - 1), escopo: esc0, ambientes: ambs, redes: redes, kits: kits, piscinas: piscinas, opsNaProposta: c.ops.length };
     },
     /* as piscinas do escopo: sem seleção, todas (as já reconhecidas e os volumes "Piscina" ainda sem op — a op nasce no lote);

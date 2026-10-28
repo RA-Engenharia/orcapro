@@ -185,6 +185,9 @@
   regra("implantacao.caixaDentro", { gravidade: "alerta", custo: 3.0, titulo: "Caixa de inspeção/gordura dentro de ambiente",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "Caixa de inspeção e de gordura ficam fora da edificação: abrir dentro de casa traz odor e sujeira e exige quebrar piso.",
     fonte: "docs/hidro/PADRAO-IMPLANTACAO-ESGOTO.md (padrão de implantação das caixas) e critério de projeto", corrigir: "Refazer com a caixa fora da edificação" });
+  regra("implantacao.foraDoLote", { gravidade: "dura", custo: 0, motor: false, titulo: "Tubo ou caixa FORA do lote",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
+    porque: "A rede é do lote: tubo, caixa ou peça além da divisa invade o vizinho ou a calçada (a ligação pública é a espera na divisa, depois dela é com a concessionária).",
+    fonte: "critério de projeto (decisão do Rogério, 28/10/2026: nada fora do lote); a espera de saída (continua) na divisa é a única ponta que sai", corrigir: "Refazer o traçado por dentro do lote" });
   regra("ventilacao.terminalJanela", { gravidade: "alerta", custo: 2.0, titulo: "Terminal de ventilação perto de janela",   // hid:ok custo da regra em metros equivalentes (critério de projeto)
     porque: "A saída do tubo ventilador perto de janela devolve o gás do esgoto para dentro de casa.",
     fonte: "ABNT NBR 8160:1999, 4.3.5/4.3.6 (terminal do tubo ventilador), pelo HidNormas", corrigir: "Subir o terminal acima da verga ou afastar da janela" });
@@ -814,6 +817,22 @@
       if (A) add("implantacao.caixaDentro", [c.id], P, "A " + (c.tipo === "caixa_gordura" ? "caixa de gordura " : "caixa de inspeção ") + c.id + " está dentro de " + A.nome + ".", { obstaculo: A.id, corrigir: { tipo: "refazer", ids: [String(c.id)], texto: R["implantacao.caixaDentro"].corrigir } });
     });
 
+    /* ---------- FORA DO LOTE (F6, Casa 487): toda ponta de tubo e todo centro de caixa/peça cai dentro da divisa; só a espera de saída (continua) sai */
+    arr(O.divisas).forEach(function (dv) {
+      var c = arr(dv && dv.contorno).map(function (q) { return { x: num(q.x, NaN), z: num(q.z, NaN) }; }).filter(function (q) { return isFinite(q.x) && isFinite(q.z); });
+      if (c.length < 3) return;   // hid:ok polígono tem 3+ vértices
+      var tolL = Math.max(G.tolNo * 2, 0.05);     // hid:ok 5 cm: o tubo/peça encostado no muro da divisa (a divisa é o eixo do muro) não reprova
+      function dentroLote(p) { return dentroPoli(p, c) || c.some(function (q, i) { return ptSeg2(p, q, c[(i + 1) % c.length]).d <= tolL; }); }
+      arr(E.trechos).forEach(function (t) {
+        [["p1", "p1"], ["p2", "p2"]].forEach(function (k) {
+          var P = t[k[0]]; if (!P || !isFinite(num(P.x, NaN)) || !isFinite(num(P.z, NaN)) || t.continua === k[1]) return;
+          if (!dentroLote({ x: P.x, z: P.z })) add("implantacao.foraDoLote", [t.id], P, "O tubo " + t.id + " (" + t.sistema + ") termina fora do lote em (" + f2(P.x) + "; " + f2(P.z) + ").", { corrigir: { tipo: "refazer", ids: [String(t.id)], texto: R["implantacao.foraDoLote"].corrigir } });
+        });
+      });
+      arr(E.pecas).concat(arr(E.caixas)).forEach(function (q) { var P = { x: num(q.x, NaN), z: num(q.z, NaN) }; if (!isFinite(P.x) || !isFinite(P.z)) return;
+        if (!dentroLote(P)) add("implantacao.foraDoLote", [q.id], { x: P.x, y: num(q.y, 0), z: P.z }, "A peça " + q.id + " fica fora do lote em (" + f2(P.x) + "; " + f2(P.z) + ").", { corrigir: { tipo: "refazer", ids: [String(q.id)], texto: R["implantacao.foraDoLote"].corrigir } }); });
+    });
+
     /* ---------- INSPEÇÃO DO ESGOTO (NBR 8160 4.2.6.2, pelo HidNormas) */
     var lim10 = N.valor("es8160.inspecao", { parametro: "bacia_cg_cs_ate_inspecao_max" }, "valor", "critérios: inspeção"), lim25 = N.valor("es8160.inspecao", { parametro: "entre_dispositivos_max" }, "valor", "critérios: inspeção");
     var insp = [];
@@ -934,7 +953,7 @@
     var caixas = arr(estado && estado.familias).filter(function (f) { return FAM_CAIXA[f.famId]; }).map(function (f) { return { id: String(f.id), tipo: FAM_CAIXA[f.famId], x: f.x, y: f.y, z: f.z, r: 0 }; });
     var pecas = arr(inst.pecas).map(function (k) { var Pk = B && B.PECAS ? B.PECAS[k.peca] : null; return { id: String(k.id), peca: k.peca, sistema: k.sistema, x: k.x, y: k.y, z: k.z, r: Pk ? num(Pk.r, 0) : 0 }; });
     pecas.filter(function (k) { return k.peca === "caixa_inspecao"; }).forEach(function (k) { caixas.push({ id: k.id, tipo: "caixa_inspecao", x: k.x, y: k.y, z: k.z, r: k.r }); });
-    var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2, passantes: t.passantes }; });
+    var trechos = arr(inst.trechos).map(function (t) { return { id: t.id, sistema: t.sistema, dn: t.dn, material: t.material, fluido: t.fluido, p1: t.p1, p2: t.p2, passantes: t.passantes, continua: t.continua }; });
     var acessorios = arr(inst.acessorios).map(function (a) { return { id: a.id, acessorio: a.acessorio, sistema: a.sistema, trecho: a.trecho, centro: a.centro }; });
     /* FRENTE H6: o aparelho a gás pela NBR 13103 (js/hidgas.js), quando carregado */
     var HGs = dep("HidGas", "./hidgas.js"), gas = null;

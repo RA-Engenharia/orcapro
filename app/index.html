@@ -484,6 +484,8 @@
   <script src="js/bimtelhadoestrut.js"></script>
   <script src="js/bimforrodrywall.js"></script>
   <script src="js/bimfundacao.js"></script>
+  <!-- PEÇA EMBUTIDA (Casa 487, 27/10/2026): o pilar dentro da parede some da arquitetura e aparece na estrutura (motor puro; o gancho no desenho está descrito no cabeçalho) -->
+  <script src="js/bimembutido.js"></script>
   <script src="js/ifcp3.js"></script>
   <!-- P2-C: acabamento por ambiente (motor puro: piso, rodapé sem as portas, parede por face sem os vãos, teto) -->
   <script src="js/bimacabamento.js"></script>
@@ -601,6 +603,9 @@
   <script src="js/hidpressao.js"></script>   <!-- PRESSURIZAÇÃO: seleção na curva, Corrigir (a)–(d), famílias e instalação (motor puro) -->
   <script src="js/hidaq.js"></script>
   <script src="js/hidap.js"></script>
+  <script src="js/hidpluvial.js"></script>   <!-- F2 Casa 487: pluvial completo até a rua (descida embutida/shaft, ralos, caixas CP, rede, saída) -->
+  <script src="js/hidcaixas.js"></script>   <!-- F2 Casa 487: caixas CI/CG/CP nomeadas e em ordem de montante para jusante; liga CI-n em CI-n+1 -->
+  <script src="js/hidautocorrige.js"></script>   <!-- F2 Casa 487: autocorreção do dimensionamento (DN pelo cálculo, Corrigir automático, 2ª linha) -->
   <script src="js/hidinc.js"></script>
   <script src="js/hiddimensionar.js"></script>
   <script src="js/hidcatalogo.js"></script>
@@ -635,7 +640,10 @@
   <script src="js/hiddoclinks.js"></script>   <!-- GERAR DOCUMENTOS: links externos CONFERIDOS (GERADO por tools/hid-doc-links.js) -->
   <script src="js/hiddocumentos.js"></script>   <!-- GERAR DOCUMENTOS: memorial único, descritivo e manual com links (motor puro) -->
   <script src="js/hiddocumentosui.js"></script>   <!-- GERAR DOCUMENTOS: a tela (um clique) -->
+  <script src="js/hidbanheira.js"></script>   <!-- HIDROMASSAGEM: o que o Traçar não liga sozinho (AQ em espera sem aquecedor, bomba da ficha, ponto de força) — F3 Casa 487 -->
   <script src="js/hidgas.js"></script>   <!-- APARELHO A GÁS: conferência da NBR 13103:2020 (local, ventilação, exaustão, posição, pontos), motor puro (FRENTE H6) -->
+  <script src="js/hidgasfam.js"></script>   <!-- GÁS GLP: abrigo de 2 botijões P13, regulador, registro e ponto de consumo (F3 Casa 487) -->
+  <script src="js/hidgasrede.js"></script>   <!-- REDE DE GÁS GLP: abrigo de 2 botijões, rede embutida até o cooktop e dimensionamento (NBR 15526) — F3 Casa 487 -->
   <script src="js/hidaqtraco.js"></script>   <!-- ÁGUA QUENTE no Traçar automaticamente (aquecedor → pontos), motor puro (FRENTE H5) -->
   <script src="js/hidbarrilete.js"></script>   <!-- BARRILETE e colunas a partir da caixa d'água no Traçar automaticamente, motor puro (FRENTE H8) -->
   <script src="js/madviga.js"></script>   <!-- N23: viga contínua da madeira (a base de apoio da caixa d'água verifica tablado, barrote e viga) -->
