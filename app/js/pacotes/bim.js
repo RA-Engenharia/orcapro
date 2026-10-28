@@ -3252,7 +3252,8 @@ var DEBOUNCE_GLB = 1500;
 var INTERVALO_CAM = 150;
 var EPS_CAM = 1e-4;
 var FORA = { IFCPIPESEGMENT: 1, IFCPIPEFITTING: 1, IFCVALVE: 1, IFCWASTETERMINAL: 1 };
-var PROPRIO = { IFCWALL: 1, IFCSLAB: 1, IFCCOVERING: 1 };
+var PROPRIO = { IFCWALL: 1, IFCSLAB: 1, IFCCOVERING: 1, IFCCOLUMN: 1 };
+var ESTRUT = { IFCBEAM: 1, IFCCOLUMN: 1 };
 function baseUrl() { return String((global && global.OrcaTwURL) || URL_PADRAO).replace(/\/+$/, ""); }
 function ehLocal(loc) {
 var h = String((loc || (global && global.location) || {}).hostname || "").toLowerCase();
@@ -3265,9 +3266,9 @@ if (u.acabPiso) return "piso:" + u.acabPiso;
 if (u.p4Pintura) return "pint:" + u.p4Pintura + ":" + (u.face || "") + ":" + (u.regiao || "");
 return null;
 }
-function categoria(id, u) {
+function categoria(id, u, embutida) {
 if (FORA[u.tipo]) return null;
-if (/^e\d+$/.test(id) && (u.tipo === "IFCBEAM" || u.tipo === "IFCCOLUMN")) return null;
+if (ESTRUT[u.tipo] && embutida) return null;
 if (u.linhaDivisa) return null;
 if (u.tipo === "IFCLIGHTFIXTURE") return "luz";
 if (u.tipo === "IFCDOOR" || u.tipo === "IFCWINDOW") return "abertura";
@@ -3288,10 +3289,18 @@ var k = m0.uuid + (dono ? "|" + dono : "");
 if (cache.has(k)) return cache.get(k);
 var m = m0.clone(); m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
 }
+var paredes = [], caixaDe = function (o) { o.geometry.computeBoundingBox(); return o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); };
+origem.traverse(function (o) { if (o.isMesh && o.geometry && vivo(o) && o.userData && o.userData.tipo === "IFCWALL" && !o.isInstancedMesh) paredes.push(caixaDe(o).expandByScalar(0.02)); });
+function embutida(o) {
+if (o.isInstancedMesh) return false;
+var b = caixaDe(o);
+for (var i = 0; i < paredes.length; i++) if (paredes[i].containsBox(b)) return true;
+return false;
+}
 origem.traverse(function (o) {
 if (!o.isMesh || !o.geometry || !vivo(o)) return;
 var u = o.userData || {}, id = idDe(u); if (!id) return;
-var c = categoria(id, u); if (!c) return;
+var c = categoria(id, u, ESTRUT[u.tipo] ? embutida(o) : false); if (!c) return;
 var g = grupos[id];
 if (!g) {
 g = new THREE.Group(); g.name = id;
@@ -3398,8 +3407,8 @@ function lerEstado() {
 return get(baseUrl() + "/estado", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
 }
 function aplicarEstado(e) {
-conectado = !!(e && e.destinos_ativos > 0);
-dica = conectado ? "O Twinmotion está recebendo a fonte do OrçaPRO." : "O Direct Link está aberto, mas o Twinmotion ainda não está recebendo. Abra o Twinmotion e conecte a fonte OrçaPRO.";
+conectado = !!e;
+dica = conectado ? "Fonte \"" + ((e && e.fonte) || "OrçaPRO") + "\" publicada. No Twinmotion: Importar › Direct Link e, para a câmera, escolha \"OrçaPRO — Vista 3D\"." : "";
 pintar();
 }
 function semConexao() { conectado = false; dica = "Sem resposta do OrçaPRO Direct Link. Abra o atalho na área de trabalho."; pintar(); }

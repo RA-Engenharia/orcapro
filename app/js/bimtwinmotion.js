@@ -29,7 +29,9 @@
   var INTERVALO_CAM = 150;     /* ms entre câmeras enviadas */
   var EPS_CAM = 1e-4;
   var FORA = { IFCPIPESEGMENT: 1, IFCPIPEFITTING: 1, IFCVALVE: 1, IFCWASTETERMINAL: 1 };
-  var PROPRIO = { IFCWALL: 1, IFCSLAB: 1, IFCCOVERING: 1 };
+  /* material próprio (pintar UMA peça no Twinmotion): paredes, lajes, forros e PILARES (cada pilar pinta sozinho, inclusive o topo) */
+  var PROPRIO = { IFCWALL: 1, IFCSLAB: 1, IFCCOVERING: 1, IFCCOLUMN: 1 };
+  var ESTRUT = { IFCBEAM: 1, IFCCOLUMN: 1 };
 
   /* URL base do Direct Link: window.OrcaTwURL só existe para teste (servidor falso numa porta livre) */
   function baseUrl() { return String((global && global.OrcaTwURL) || URL_PADRAO).replace(/\/+$/, ""); }
@@ -51,9 +53,11 @@
   }
 
   /* categoria do elemento, ou null se NÃO vai para o Twinmotion */
-  function categoria(id, u) {
+  /* PILAR/VIGA: vai para o Twinmotion, a não ser que esteja EMBUTIDO numa parede (caixa dentro da caixa de uma parede, 2 cm de folga).
+     Até 28/10/2026 todo pilar/viga "e<n>" saía — os pilares do portão viravam caixa oca (só as faces de pintura) e o pergolado sumia. */
+  function categoria(id, u, embutida) {
     if (FORA[u.tipo]) return null;
-    if (/^e\d+$/.test(id) && (u.tipo === "IFCBEAM" || u.tipo === "IFCCOLUMN")) return null;
+    if (ESTRUT[u.tipo] && embutida) return null;
     if (u.linhaDivisa) return null;
     if (u.tipo === "IFCLIGHTFIXTURE") return "luz";
     if (u.tipo === "IFCDOOR" || u.tipo === "IFCWINDOW") return "abertura";
@@ -78,10 +82,19 @@
       if (cache.has(k)) return cache.get(k);
       var m = m0.clone(); m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
     }
+    /* caixas das paredes visíveis (para saber se um pilar/viga está embutido) */
+    var paredes = [], caixaDe = function (o) { o.geometry.computeBoundingBox(); return o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); };
+    origem.traverse(function (o) { if (o.isMesh && o.geometry && vivo(o) && o.userData && o.userData.tipo === "IFCWALL" && !o.isInstancedMesh) paredes.push(caixaDe(o).expandByScalar(0.02)); });
+    function embutida(o) {
+      if (o.isInstancedMesh) return false;
+      var b = caixaDe(o);
+      for (var i = 0; i < paredes.length; i++) if (paredes[i].containsBox(b)) return true;
+      return false;
+    }
     origem.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !vivo(o)) return;
       var u = o.userData || {}, id = idDe(u); if (!id) return;
-      var c = categoria(id, u); if (!c) return;
+      var c = categoria(id, u, ESTRUT[u.tipo] ? embutida(o) : false); if (!c) return;
       var g = grupos[id];
       if (!g) {
         g = new THREE.Group(); g.name = id;
@@ -204,8 +217,10 @@
       return get(baseUrl() + "/estado", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
     }
     function aplicarEstado(e) {
-      conectado = !!(e && e.destinos_ativos > 0);
-      dica = conectado ? "O Twinmotion está recebendo a fonte do OrçaPRO." : "O Direct Link está aberto, mas o Twinmotion ainda não está recebendo. Abra o Twinmotion e conecte a fonte OrçaPRO.";
+      /* "conectado" = o Direct Link respondeu (a fonte está publicada). O Datasmith não informa ao programa quando o Twinmotion recebe
+         (destinos_ativos fica 0 mesmo funcionando — visto em 28/10/2026), então ele não pode decidir o indicador. */
+      conectado = !!e;
+      dica = conectado ? "Fonte \"" + ((e && e.fonte) || "OrçaPRO") + "\" publicada. No Twinmotion: Importar › Direct Link e, para a câmera, escolha \"OrçaPRO — Vista 3D\"." : "";
       pintar();
     }
     function semConexao() { conectado = false; dica = "Sem resposta do OrçaPRO Direct Link. Abra o atalho na área de trabalho."; pintar(); }
