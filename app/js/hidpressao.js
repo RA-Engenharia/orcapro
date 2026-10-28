@@ -225,12 +225,50 @@
     var ps = [P("DN", "numero", 25, "DN do tubo (mm)", "instancia"), P("Comprimento", "comprimento", L, "Comprimento da união", "instancia")];   // hid:ok DN de partida; a instância recebe o DN real
     var corpo = { id: "corpo", nome: "Corpo da união", forma: "cilindro", eixo: e, x: "0", y: "0", z: "0", raio: "DN/1000*" + UNIAO_FATOR_D + "/2*0.8", altura: "Comprimento", material: corDe("pvc_roscavel").material };   // hid:ok proporção de desenho
     var porca = { id: "porca", nome: "Porca", forma: "cilindro", eixo: e, x: vertical ? "0" : "Comprimento*" + (1 - UNIAO_PORCA) / 2, y: vertical ? "Comprimento*" + (1 - UNIAO_PORCA) / 2 : "0", z: "0", raio: "DN/1000*" + UNIAO_FATOR_D + "/2", altura: "Comprimento*" + UNIAO_PORCA, material: corDe("pvc_roscavel").material };
-    return { id: PREF + "uniao-" + (vertical ? "v" : "h"), nome: "União roscável (" + (vertical ? "vertical" : "horizontal") + ")", categoria: "acessorio_tubo", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
+    return { id: PREF + "uniao-" + (vertical ? "v" : "h"), oculta: true, substituidaPor: PREF + "uniao", nome: "União roscável (" + (vertical ? "vertical" : "horizontal") + ")", categoria: "acessorio_tubo", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
              descricao: decisao("pz.uniao"), avisos: [], sistemas: ["agua_fria"], parametros: ps, tipos: [{ id: "t-generico", nome: "União roscável", valores: {}, fonte: "", avisos: [], conferir: [] }], solidos: [corpo, porca],
              conectores: [{ id: "a", nome: "Face 1 (entrada)", sistema: "agua_fria", dn: "DN", x: "0", y: "0", z: "0", papel: "entrada", dir: vertical ? { x: 0, y: -1, z: 0 } : { x: -1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade" },
                           { id: "b", nome: "Face 2 (saída)", sistema: "agua_fria", dn: "DN", x: vertical ? "0" : "Comprimento", y: vertical ? "Comprimento" : "0", z: "0", papel: "saida", dir: vertical ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade" }],
              quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "União roscável" } };
   }
+  /* UNIÃO ÚNICA (Lote 1b, 28/10/2026): UMA família `hid-pz-uniao`, um TIPO por DN (Ø da porca e comprimento da ficha), na horizontal ou na vertical (parâmetro de INSTÂNCIA `Vertical`).
+     Fonte: js/biminstgeodados.js conexoes.pvc_soldavel.uniao = Amanco Wavin FT FTC000001 (rev. out/2025), pág. 29 — o pedido dizia "Tigre FT pág. 29"; o dado do repositório é da Amanco Wavin.
+     O `Comprimento` (instância, o que o instalador usa) NÃO muda de significado: os conectores ficam onde estavam; a porca tem o Ø da ficha do DN. A ficha é da união SOLDÁVEL com
+     porca (a do pressurizador é roscável nos bocais, soldável no tubo): a proporção do corpo (0,78 do Ø da porca) é de desenho, a conferir. */
+  var UNIAO_COD = { 20: "11873", 25: "11874", 32: "11875", 40: "11876", 50: "11877", 60: "11878", 75: "11879", 85: "11880", 110: "11872" };   // hid:ok códigos da ficha (dados-fonte/hidro/catalogos/amanco-wavin-agua-fria-soldavel.json)
+  var UNIAO_LINK = "https://mediahub.wavin.com/m/1fdc60976edd69fd/original/FT-Soldavel-Agua-Fria.pdf";
+  function uniaoPorDN() {
+    var GD = dep("HidGeoDados", "./biminstgeodados.js"), t = GD && GD.conexoes && GD.conexoes.pvc_soldavel ? GD.conexoes.pvc_soldavel.uniao : null;
+    return t || {};
+  }
+  function familiaUniaoUnica() {
+    var tab = uniaoPorDN(), dns = Object.keys(tab).map(Number).sort(function (x, y) { return x - y; });
+    var ps = [P("DN", "numero", 25, "DN do tubo (mm)", "instancia"), P("Comprimento", "comprimento", geo("comprimentoUniao"), "Comprimento da união no tubo (o instalador define)", "instancia"),   // hid:ok DN de partida; a instância recebe o DN real
+              P("Vertical", "simnao", false, "União na vertical (eixo Y) em vez da horizontal (eixo X)", "instancia"),
+              P("Porca_od", "comprimento", 0.05, "Ø externo da porca (ficha Amanco Wavin FTC000001, pág. 29)", "tipo"), P("L_ficha", "comprimento", 0.05, "Comprimento da união da ficha (pág. 29)", "tipo"),   /* hid:ok padrões do DN 25; o tipo traz a cota da ficha */
+              P("Codigo", "texto", "", "Código do produto na ficha", "tipo"), P("Link_ficha", "texto", "", "Ficha técnica (PDF do fabricante)", "tipo"), P("Pagina_ficha", "inteiro", 0, "Página do PDF da ficha", "tipo")];   // hid:ok padrão do DN 25
+    var mat = corDe("pvc_roscavel").material;
+    /* UMA revolução: bolsa, ressalto, porca chanfrada (Ø da ficha), ressalto, bolsa — o perfil de uma união de PVC, não dois cilindros */
+    var Ro = "Porca_od/2", Rb = "Porca_od*0.78/2";   // hid:ok o Ø da porca é da ficha; a proporção do corpo é de desenho (a conferir)
+    var P0 = [[Rb + "*0.9", "0"], [Rb, "Comprimento*0.02"], [Rb, "Comprimento*0.3"], [Rb + "*1.08", "Comprimento*0.3"], [Ro + "*0.94", "Comprimento*0.34"], [Ro, "Comprimento*0.38"],
+              [Ro, "Comprimento*0.62"], [Ro + "*0.94", "Comprimento*0.66"], [Rb + "*1.08", "Comprimento*0.7"], [Rb, "Comprimento*0.7"], [Rb, "Comprimento*0.98"], [Rb + "*0.9", "Comprimento"]];   // hid:ok proporções de desenho
+    var solidos = [false, true].map(function (v) {
+      return { id: v ? "uniao-v" : "uniao-h", nome: "União (corpo e porca)", forma: "revolucao", eixo: v ? "y" : "x", x: "0", y: "0", z: "0", perfil: P0, material: mat, visivel: v ? "Vertical" : "1 - Vertical" };
+    });
+    return { id: PREF + "uniao", nome: "União roscável do pressurizador", categoria: "acessorio_tubo", hospedagem: "livre", pset: "RA_Hidro", origem: "HidPressao",
+             descricao: decisao("pz.uniao") + " Um tipo por DN (ficha Amanco Wavin FTC000001, pág. 29); horizontal ou vertical pelo parâmetro Vertical.", avisos: ["Ø da porca e comprimento: ficha Amanco Wavin FTC000001 pág. 29 (união soldável com porca); a proporção do corpo é de desenho, conferir."], sistemas: ["agua_fria"], parametros: ps,
+             tipos: dns.map(function (dn) { return { id: "t-dn" + dn, nome: "União soldável DN " + dn + " (Amanco Wavin " + (UNIAO_COD[dn] || "") + ")", valores: { Porca_od: tab[dn].odPorca / MM, L_ficha: tab[dn].L / MM, Codigo: UNIAO_COD[dn] || "", Link_ficha: UNIAO_LINK, Pagina_ficha: 29 },   // hid:ok página do PDF da ficha
+               fonte: "Amanco Wavin FT FTC000001 (rev. out/2025), pág. 29 do PDF (a pág. 28 traz a lista de códigos; as cotas A, B e D estão na 29)", avisos: [], conferir: ["proporção do corpo"] }; }),
+             solidos: solidos,
+             conectores: [
+               { id: "a", nome: "Face 1 (entrada)", sistema: "agua_fria", dn: "DN", x: "0", y: "0", z: "0", papel: "entrada", dir: { x: -1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade", visivel: "1 - Vertical" },
+               { id: "b", nome: "Face 2 (saída)", sistema: "agua_fria", dn: "DN", x: "Comprimento", y: "0", z: "0", papel: "saida", dir: { x: 1, y: 0, z: 0 }, bidirecional: true, origemPos: "extremidade", visivel: "1 - Vertical" },
+               { id: "a", nome: "Face 1 (entrada)", sistema: "agua_fria", dn: "DN", x: "0", y: "0", z: "0", papel: "entrada", dir: { x: 0, y: -1, z: 0 }, bidirecional: true, origemPos: "extremidade", visivel: "Vertical" },
+               { id: "b", nome: "Face 2 (saída)", sistema: "agua_fria", dn: "DN", x: "0", y: "Comprimento", z: "0", papel: "saida", dir: { x: 0, y: 1, z: 0 }, bidirecional: true, origemPos: "extremidade", visivel: "Vertical" }],
+             quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "União roscável" } };
+  }
+  /* o tipo da união para o DN do tubo (o da ficha; sem ficha para o DN o primeiro, e o aviso da família diz que a porca é do DN da ficha) */
+  function uniTipo(dn) { var tab = uniaoPorDN(); return tab[dn] ? "t-dn" + dn : "t-dn" + (Object.keys(tab).map(Number).sort(function (x, y) { return x - y; })[0] || 20); }   // hid:ok DN de reserva
   function familiaPontoForca() {
     var ps = [P("Tensao_V", "texto", "", "Tensão do equipamento (ficha)", "instancia"), P("Potencia_W", "numero", 0, "Potência elétrica (W; 0 = a ficha não dá)", "instancia"), P("Potencia_cv", "numero", 0, "Potência do motor (cv)", "instancia"),
               P("Corrente_A", "texto", "", "Corrente da ficha", "instancia"), P("Equipamento", "texto", "", "Equipamento atendido", "instancia")];
@@ -246,7 +284,7 @@
     var out = [];
     modelos().forEach(function (m) { if (m.modelavel) { out.push(familiaBomba(m)); out.push(familiaBase(m)); } });
     out.push(familiaBaseUnica());
-    out.push(familiaUniao(false)); out.push(familiaUniao(true)); out.push(familiaPontoForca());
+    out.push(familiaUniao(false)); out.push(familiaUniao(true)); out.push(familiaUniaoUnica()); out.push(familiaPontoForca());
     CACHE_F = out; return out;
   }
   function familia(famId) { var l = familias(); for (var i = 0; i < l.length; i++) if (l[i].id === famId) return l[i]; return null; }
@@ -256,7 +294,7 @@
   function equipamento(famId) {
     var m = modeloDoFam(famId);
     if (m && m.modelavel) return { papel: "bomba", entrada: "succao", saida: "recalque", modelo: m };
-    if (famId === PREF + "uniao-h" || famId === PREF + "uniao-v") return { papel: "passagem", entrada: "a", saida: "b" };
+    if (famId === PREF + "uniao" || famId === PREF + "uniao-h" || famId === PREF + "uniao-v") return { papel: "passagem", entrada: "a", saida: "b" };
     return null;
   }
   /* ⚠ by-pass e entrada da bomba RESERVA: registros NORMALMENTE FECHADOS — no cálculo não existem (senão o by-pass e as
@@ -411,21 +449,21 @@
       var Ua = soma(Psuc, u, -(nip + LuN));
       var hz = trecho(pu + "-sh", C0, Ua, dnS);
       acess(pu + "-rs", REG.fam, REG.tipo, hz, soma(C0, u, dist(C0, Ua) / 2));
-      fam(pu + "-us", PREF + "uniao-h", "t-generico", Ua, rot, { DN: dnS, Comprimento: LuN });
+      fam(pu + "-us", PREF + "uniao", uniTipo(dnS), Ua, rot, { DN: dnS, Comprimento: LuN, Vertical: false });
       trecho(pu + "-sn", soma(Ua, u, LuN), Psuc, dnS);
       /* recalque: bocal → niple → união → (toco) → subida com retenção e registro → coletor de saída */
       var Prec = W(O, num(rc.x, 0) / MM, num(rc.y, 0) / MM, num(rc.z, 0) / MM), topoSub;
       if (recY) {
         var Ub = soma(Prec, UP, nip);
         trecho(pu + "-rn", Prec, Ub, dnR);
-        fam(pu + "-ur", PREF + "uniao-v", "t-generico", Ub, 0, { DN: dnR, Comprimento: LuN });
+        fam(pu + "-ur", PREF + "uniao", uniTipo(dnR), Ub, 0, { DN: dnR, Comprimento: LuN, Vertical: true });
         topoSub = soma(Ub, UP, LuN);
       } else {
         var sx = dirRec === "-x" ? -1 : (dirRec === "+x" ? 1 : 0), dr = { x: u.x * sx, y: 0, z: u.z * sx };
         if (!sx) { out.motivo = "bocal de recalque com direção " + dirRec + " não suportada pelo traçado"; return out; }
         var Pn = soma(Prec, dr, nip);
         trecho(pu + "-rn", Prec, Pn, dnR);
-        fam(pu + "-ur", PREF + "uniao-h", "t-generico", sx < 0 ? soma(Pn, dr, LuN) : Pn, rot, { DN: dnR, Comprimento: LuN });
+        fam(pu + "-ur", PREF + "uniao", uniTipo(dnR), sx < 0 ? soma(Pn, dr, LuN) : Pn, rot, { DN: dnR, Comprimento: LuN, Vertical: false });
         var E0 = soma(Pn, dr, LuN + esp);
         trecho(pu + "-rt", soma(Pn, dr, LuN), E0, dnR);
         topoSub = E0;

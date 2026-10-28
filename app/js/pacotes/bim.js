@@ -56101,7 +56101,7 @@ if (typeof module !== "undefined" && module.exports) module.exports = Familia;
 try {
 (function (global) {
 "use strict";
-var FamHidMigraDados = {"versao":1,"titulo":"Migração de famílias do Hidrossanitário: id antigo -> id canônico (27/10/2026, Lote 1)","regra":"A família antiga continua DEFINIDA (alias carregável) até a migração ser provada; só sai do MENU. A migração roda ao abrir o projeto (js/famhidmigra.js), troca o id e o tipo pelo equivalente do catálogo e alinha o ponto-âncora de ligação para o tubo não soltar.","limites":{"deslocamentoHorizontalMax_m":0.6,"deslocamentoVerticalMax_m":0.1,"toleranciaLigacao_m":0.01},"alias":{"ra-bacia":{"para":"hid-bacia-caixa-acoplada","ancora":"esgoto","tipos":{"conv":"t-celite-56355-56570-793","inf":"t-celite-08255-08570-08570-865"},"tipoPadrao":"conv","criterio":"tipo da Celite de caixa acoplada com Largura x Comprimento mais próximos (conv 0,38x0,65 -> 56355 0,37x0,65; inf 0,32x0,55 -> 08255 infantil 0,31x0,585)","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio":{"para":"hid-lavatorio-suspenso","ancora":"esgoto","tipos":{"l4535":"t-celite-20001-20202-812","l4030":"t-celite-20001-20202-812"},"tipoPadrao":"l4535","criterio":"menor lavatório de coluna suspensa do catálogo (0,495x0,41); o bloco antigo era 0,45x0,35 e 0,40x0,30, sem equivalente menor na Celite","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio-coluna":{"para":"hid-lavatorio-coluna","ancora":"esgoto","tipos":{"l4535":"t-celite-71001-71201-826","l5040":"t-celite-02007-02201-822","l6048":"t-celite-54005-54201-784"},"tipoPadrao":"l4535","criterio":"lavatório com coluna da Celite com Largura x Profundidade mais próximos","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-tanque":{"para":"hid-tanque-lavar","ancora":"esgoto","alinhar":"xz","tipos":{"t6052":"t-celite-51264-860"},"tipoPadrao":"t6052","criterio":"tanque G Builders 0,59x0,52 (o bloco antigo era 0,60x0,52). O tanque apoia no piso: só x/z se alinham (a saída do catálogo está no piso, a do bloco antigo a 0,49 m: o resíduo vertical vai no log). O ponto de água do tanque é a torneira (hid-torneira): o conector af do bloco antigo some e é avisado no log","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-chuveiro":{"para":"hid-chuveiro","ancora":"af","deslocamentoVerticalMax_m":3,"tipos":{"ch":"t-docol-00118406-1543"},"tipoPadrao":"ch","criterio":"chuveiro padrão (Docol Clássico); o bloco antigo era um braço e um crivo sem modelo. A origem da família nova É o ponto de água (a altura é a coordenada y da instância), por isso o limite vertical é o pé-direito","fonte":"dados-fonte/hidro/catalogos/docol-metais.json"},"ra-caixa-dagua":{"para":"hid-caixa-dagua","ancora":"origem","tipos":{"c500":"t-fortlev-0-201-000-5-1712","c1000":"t-fortlev-0-201-000-7-1714","c2000":"t-fortlev-0-202-000-1-1716"},"tipoPadrao":"c500","criterio":"mesmo volume em litros (500, 1.000, 2.000) na linha de polietileno da Fortlev. A caixa é apoiada no piso: a origem da base não se move; os tubos que já chegavam podem ficar fora do bocal novo e o log lista cada resíduo","fonte":"dados-fonte/hidro/catalogos/fortlev-reservatorios.json"},"hid-pz-base-dancor-jc19":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc19"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc19); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci30":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci30"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci30); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc9":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc9"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc9); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc12":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc12"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc12); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci40":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci40"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci40); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci55":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci55"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci55); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-tap-02c":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-tap-02c"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-tap-02c); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-smart-box":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-smart-box"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-smart-box); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"}}};
+var FamHidMigraDados = {"versao":1,"titulo":"Migração de famílias do Hidrossanitário: id antigo -> id canônico (27/10/2026, Lote 1)","regra":"A família antiga continua DEFINIDA (alias carregável) até a migração ser provada; só sai do MENU. A migração roda ao abrir o projeto (js/famhidmigra.js), troca o id e o tipo pelo equivalente do catálogo e alinha o ponto-âncora de ligação para o tubo não soltar.","limites":{"deslocamentoHorizontalMax_m":0.6,"deslocamentoVerticalMax_m":0.1,"toleranciaLigacao_m":0.01},"alias":{"ra-bacia":{"para":"hid-bacia-caixa-acoplada","ancora":"esgoto","tipos":{"conv":"t-celite-56355-56570-793","inf":"t-celite-08255-08570-08570-865"},"tipoPadrao":"conv","criterio":"tipo da Celite de caixa acoplada com Largura x Comprimento mais próximos (conv 0,38x0,65 -> 56355 0,37x0,65; inf 0,32x0,55 -> 08255 infantil 0,31x0,585)","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio":{"para":"hid-lavatorio-suspenso","ancora":"esgoto","tipos":{"l4535":"t-celite-20001-20202-812","l4030":"t-celite-20001-20202-812"},"tipoPadrao":"l4535","criterio":"menor lavatório de coluna suspensa do catálogo (0,495x0,41); o bloco antigo era 0,45x0,35 e 0,40x0,30, sem equivalente menor na Celite","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-lavatorio-coluna":{"para":"hid-lavatorio-coluna","ancora":"esgoto","tipos":{"l4535":"t-celite-71001-71201-826","l5040":"t-celite-02007-02201-822","l6048":"t-celite-54005-54201-784"},"tipoPadrao":"l4535","criterio":"lavatório com coluna da Celite com Largura x Profundidade mais próximos","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-tanque":{"para":"hid-tanque-lavar","ancora":"esgoto","alinhar":"xz","tipos":{"t6052":"t-celite-51264-860"},"tipoPadrao":"t6052","criterio":"tanque G Builders 0,59x0,52 (o bloco antigo era 0,60x0,52). O tanque apoia no piso: só x/z se alinham (a saída do catálogo está no piso, a do bloco antigo a 0,49 m: o resíduo vertical vai no log). O ponto de água do tanque é a torneira (hid-torneira): o conector af do bloco antigo some e é avisado no log","fonte":"dados-fonte/hidro/catalogos/celite-loucas.json"},"ra-chuveiro":{"para":"hid-chuveiro","ancora":"af","deslocamentoVerticalMax_m":3,"tipos":{"ch":"t-docol-00118406-1543"},"tipoPadrao":"ch","criterio":"chuveiro padrão (Docol Clássico); o bloco antigo era um braço e um crivo sem modelo. A origem da família nova É o ponto de água (a altura é a coordenada y da instância), por isso o limite vertical é o pé-direito","fonte":"dados-fonte/hidro/catalogos/docol-metais.json"},"ra-caixa-dagua":{"para":"hid-caixa-dagua","ancora":"origem","tipos":{"c500":"t-fortlev-0-201-000-5-1712","c1000":"t-fortlev-0-201-000-7-1714","c2000":"t-fortlev-0-202-000-1-1716"},"tipoPadrao":"c500","criterio":"mesmo volume em litros (500, 1.000, 2.000) na linha de polietileno da Fortlev. A caixa é apoiada no piso: a origem da base não se move; os tubos que já chegavam podem ficar fora do bocal novo e o log lista cada resíduo","fonte":"dados-fonte/hidro/catalogos/fortlev-reservatorios.json"},"hid-pz-base-dancor-jc19":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc19"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc19); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci30":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci30"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci30); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc9":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc9"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc9); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jc12":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jc12"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jc12); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci40":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci40"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci40); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-jci55":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-jci55"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-jci55); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-bc92-s1a-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-bc92-s1a-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-bc92-s1a-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-3-4cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-3-4cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-3-4cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-dancor-camw6c-1cv":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-dancor-camw6c-1cv"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (dancor-camw6c-1cv); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-tap-02c":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-tap-02c"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-tap-02c); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-base-schneider-smart-box":{"para":"hid-pz-base","ancora":"origem","tipos":{"t-generico":"t-schneider-smart-box"},"tipoPadrao":"t-generico","criterio":"base de concreto do mesmo modelo de pressurizador: o tipo da base única é o modelo (schneider-smart-box); mesmos sólidos e medidas (conferido no teste), sem conector, origem igual: a posição não muda","fonte":"dados-fonte/hidro/catalogos/pressurizadores (contorno dos pés da ficha) + decisão pz.base"},"hid-pz-uniao-h":{"para":"hid-pz-uniao","ancora":"a","tipos":{"t-generico":"t-dn25"},"tipoPadrao":"t-generico","tipoPorInst":{"param":"DN","prefixo":"t-dn"},"instFixa":{"Vertical":false},"criterio":"união do pressurizador horizontal: o tipo do destino sai do parâmetro DN da instância (t-dn<DN>, ficha Amanco Wavin FTC000001 pág. 29); Vertical=false; a âncora é a face 1 (a mesma origem), o Comprimento da instância não muda: a face 2 não se move","fonte":"js/biminstgeodados.js conexoes.pvc_soldavel.uniao (Amanco Wavin FT FTC000001, rev. out/2025, pág. 29)"},"hid-pz-uniao-v":{"para":"hid-pz-uniao","ancora":"a","tipos":{"t-generico":"t-dn25"},"tipoPadrao":"t-generico","tipoPorInst":{"param":"DN","prefixo":"t-dn"},"instFixa":{"Vertical":true},"criterio":"união do pressurizador vertical: o tipo do destino sai do parâmetro DN da instância (t-dn<DN>, ficha Amanco Wavin FTC000001 pág. 29); Vertical=true; a âncora é a face 1 (a mesma origem), o Comprimento da instância não muda: a face 2 não se move","fonte":"js/biminstgeodados.js conexoes.pvc_soldavel.uniao (Amanco Wavin FT FTC000001, rev. out/2025, pág. 29)"}},"lote1b":{"mesmoId":{"inc-placa":"geometria e parâmetros novos; sem troca de id (fonte: fichas-1b.json)","inc-luminaria":"idem; led30-2w mantido","inc-extintor":"idem; os 10 tipos mantidos","acs-barra":"idem; reta-80 e reta-70 mantidos","hid-sprinkler":"idem; t-generico mantido"},"adiadas":{"hid-extintor":"-> inc-extintor: origem (centro do cilindro x parede) e altura (alça x base) não se convertem sem ler o projeto; cálculo e templates do Hidro citam o id","ra-bancada":"-> ra-marm-bancada-cozinha: conectores e kits próprios","ra-banho-bancada":"-> ra-marm-bancada-banho: idem","hid-pia-cozinha":"-> ra-marm-bancada-cozinha: idem"},"fonte":"dados-fonte/hidro/familias/fichas-1b.json"}};
 global.FamHidMigraDados = FamHidMigraDados;
 if (typeof module !== "undefined" && module.exports) module.exports = FamHidMigraDados;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -56233,9 +56233,17 @@ if (typeof ctx.avaliar !== "function") return adiar("sem o avaliador de família
 var tipoAntigo = fin.tipoId && tem(regra.tipos, fin.tipoId) ? fin.tipoId : ((fin.tipoId === "" || fin.tipoId == null) ? regra.tipoPadrao : null);
 if (tipoAntigo == null) return adiar("tipo \"" + fin.tipoId + "\" não está no mapa de tipos da família " + fin.famId);
 var tipoNovo = regra.tipos[tipoAntigo];
+if (regra.tipoPorInst) {
+var vp = (fin.inst || {})[regra.tipoPorInst.param];
+if (vp == null || vp === "") return adiar("a instância não traz o parâmetro " + regra.tipoPorInst.param + ", que escolhe o tipo do destino: fica com a família antiga");
+tipoNovo = String(regra.tipoPorInst.prefixo) + String(vp);
+var defDest = typeof ctx.familia === "function" ? ctx.familia(regra.para) : null;
+if (!defDest || !arr(defDest.tipos).some(function (tq) { return tq.id === tipoNovo; })) return adiar("o tipo " + tipoNovo + " (" + regra.tipoPorInst.param + " " + vp + ") não existe em " + regra.para + ": fica com a família antiga");
+}
 var defNova = typeof ctx.familia === "function" ? ctx.familia(regra.para) : null;
 var chavesValidas = paramsDeInstancia(defNova), instNova = {}, descartadas = [], instAnt = fin.inst || {};
 Object.keys(instAnt).forEach(function (k) { if (tem(chavesValidas, k)) instNova[k] = instAnt[k]; else descartadas.push(k); });
+if (regra.instFixa) Object.keys(regra.instFixa).forEach(function (k) { instNova[k] = regra.instFixa[k]; });
 var avAnt = ctx.avaliar(fin.famId, tipoAntigo, instAnt), avNov = ctx.avaliar(regra.para, tipoNovo, instNova);
 if (!avAnt || avAnt.ok === false) return adiar("a família antiga " + fin.famId + " não avalia neste contexto");
 if (!avNov || avNov.ok === false) return adiar("a família nova " + regra.para + " (tipo " + tipoNovo + ") não está carregada ou não avalia");
@@ -56269,7 +56277,7 @@ var sumiu = semEquivalente.indexOf(String(ka.id)) >= 0, rs = residuos.filter(fun
 if ((sumiu || rs) && ligadoA(mundo(antes, ka))) presos.push(String(ka.id) + (sumiu ? " (some na família nova)" : " (" + rs.cm + " cm)"));
 });
 if (presos.length) return adiar("conector ligado a tubo ficaria a mais de " + Math.round(L.toleranciaLigacao_m * 100) + " cm: " + presos.join(", ") + " (a instância fica com a família antiga)");
-function mapTipo(t) { if (t === "" || t == null) return tipoNovo; return tem(regra.tipos, t) ? regra.tipos[t] : tipoNovo; }
+function mapTipo(t) { if (regra.tipoPorInst) return tipoNovo; if (t === "" || t == null) return tipoNovo; return tem(regra.tipos, t) ? regra.tipos[t] : tipoNovo; }
 function mapInst(inst) { var o = {}; Object.keys(inst || {}).forEach(function (k) { if (tem(chavesValidas, k)) o[k] = inst[k]; }); return o; }
 e.refs.forEach(function (r) {
 var o = porOp[idxRef(r)].op;
@@ -56277,6 +56285,7 @@ if (o.op === "familia") { o.famId = regra.para; o.migradoDe = fin.famId; o.migra
 if (o.op === "instancia" && o.famId != null) o.famId = regra.para;
 if (o.op === "familia" || o.tipoId != null) o.tipoId = mapTipo(o.tipoId);
 if (o.inst) o.inst = mapInst(o.inst);
+if (o.op === "familia" && regra.instFixa) { o.inst = o.inst || {}; Object.keys(regra.instFixa).forEach(function (k) { o.inst[k] = regra.instFixa[k]; }); }
 });
 if (dx || dz) e.opsX.forEach(function (rx) {
 var ox = porOp[idxRef(rx)].op;
@@ -74133,7 +74142,8 @@ acessorioTubo("ra-registro-esfera", "Registro de esfera", "registro_esfera", "Re
 acessorioTubo("ra-registro-pressao", "Registro de pressão", "registro_pressao", "Registro de pressão (chuveiro, ducha). SINAPI: PVC soldável ou roscável, volante simples; latão bruto ou com acabamento.",
 [{ id: "soldavel", nome: "PVC soldável, volante simples", valores: {} }, { id: "roscavel", nome: "PVC roscável, volante simples", valores: {} }, { id: "bruto", nome: "Latão bruto", valores: {} }, { id: "acabamento", nome: "Latão com acabamento e canopla", valores: {} }], HASTE),
 acessorioTubo("ra-valvula-retencao", "Válvula de retenção", "valvula_retencao", "Válvula de retenção de bronze, roscável (SINAPI: horizontal ou vertical — sai pela direção do tubo — e de pé com crivo).",
-[{ id: "bronze", nome: "Bronze (horizontal ou vertical)", valores: {} }, { id: "pe_crivo", nome: "De pé com crivo", valores: {} }],
+[{ id: "bronze", nome: "Bronze (horizontal ou vertical)", valores: {} }, { id: "pe_crivo", nome: "De pé com crivo", valores: {} },
+{ id: "pvc", nome: "PVC soldável (Amanco Wavin FTC000021: DN25 e DN32)", valores: { Retencao_ficha: 1 } }],
 [{ id: "tampa", nome: "Tampa", forma: "cilindro", eixo: "y", x: "0", y: "DN/1000*0.6", z: "0", raio: "DN/1000*0.55", altura: "DN/1000*0.5", material: "Material" }]),
 {
 id: "ra-tomada", previa: "modelador", nome: "Tomada 2P+T", categoria: "dispositivo_eletrico", hospedagem: "livre", mep: { peca: "tomada" },
@@ -74238,6 +74248,11 @@ conectores: [{ id: "el", nome: "Eletroduto (entrada)", sistema: "eletrica", dn: 
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Quadro de distribuição" }
 }
 );
+LISTA.forEach(function (f) {
+if (f.id !== "ra-valvula-retencao") return;
+f.parametros.push({ nome: "Retencao_ficha", tipoDado: "inteiro", escopo: "tipo", valor: 0, grupo: "Dimensões", descricao: "1 = face a face da ficha Amanco Wavin FTC000021 (DN25 e DN32)" });
+f.parametros.forEach(function (p) { if (p.nome === "Comprimento") p.formula = "se(Retencao_ficha; se(DN > 25; 0.096; 0.0865); 0.025 + DN * 0.0014)"; });
+});
 (function () {
 LISTA.forEach(function (f) { if (/^ra-registro-(gaveta|esfera|pressao)$/.test(f.id)) f.oculta = true; });
 })();
@@ -74756,26 +74771,47 @@ P("Motivo_preco", "texto", "", "Catálogo e preço", "Por que o preço é provis
 function preco(v, pr, fonte, peca, motivo) { v.Preco_unitario = pr; v.Fonte_preco = fonte; v.Data_preco = DATA; v.Peca_catalogo = peca; v.Preco_provisorio = true; v.Motivo_preco = motivo; return v; }
 var MOT_PLACA = "a SINAPI 06/2026 só tem o INSUMO da placa (sem a fixação); valor = o maior preço público lido em MG para o tamanho";
 var placas = [
-{ id: "saida-40x20", nome: "SAÍDA (S12) acima da porta — 0,40 × 0,20 m", v: { Codigo_simbolo: "S12", Funcao: "saida", Largura: 0.40, Altura: 0.20, Cor: "#1b7a3a" },
+{ id: "saida-40x20", nome: "SAÍDA (S12) acima da porta — 0,40 × 0,20 m", v: { Codigo_simbolo: "S12", Funcao: "saida", Pictograma: 1, Largura: 0.40, Altura: 0.20, Cor: "#1b7a3a" },
 p: [27.96, "PROVISÓRIO: SINAPI MG 06/2026 insumo 37558 (placa fotoluminescente 20 × 40 cm, PVC 2 mm, NBR 16820) R$ 27,96 — o maior; SETOP-MG 08/2023 ED-50205 (S12 38 × 19 cm, com fixação) R$ 19,01", "INC-PLACA-S12-40X20"] },
-{ id: "saida-26x13", nome: "SAÍDA (S12) acima da porta — 0,26 × 0,13 m (leitura até 8 m)", v: { Codigo_simbolo: "S12", Funcao: "saida", Largura: 0.26, Altura: 0.13, Cor: "#1b7a3a" },
+{ id: "saida-26x13", nome: "SAÍDA (S12) acima da porta — 0,26 × 0,13 m (leitura até 8 m)", v: { Codigo_simbolo: "S12", Funcao: "saida", Pictograma: 1, Largura: 0.26, Altura: 0.13, Cor: "#1b7a3a" },
 p: [15.00, "PROVISÓRIO: SINAPI MG 06/2026 insumo 37539 (placa fotoluminescente 13 × 26 cm, PVC 2 mm, NBR 16820) R$ 15,00", "INC-PLACA-S12-26X13"] },
-{ id: "rota-40x20", nome: "Orientação da rota (S1/S2, seta) — 0,40 × 0,20 m", v: { Codigo_simbolo: "S1/S2", Funcao: "orientacao", Largura: 0.40, Altura: 0.20, Cor: "#1b7a3a" },
+{ id: "rota-40x20", nome: "Orientação da rota (S1/S2, seta) — 0,40 × 0,20 m", v: { Codigo_simbolo: "S1/S2", Funcao: "orientacao", Pictograma: 2, Largura: 0.40, Altura: 0.20, Cor: "#1b7a3a" },
 p: [27.96, "PROVISÓRIO: SINAPI MG 06/2026 insumo 37558 (20 × 40 cm) R$ 27,96 — o maior; SETOP-MG 08/2023 ED-50202/ED-50201 (S1/S2 38 × 19 cm, com fixação) R$ 19,01", "INC-PLACA-S1-40X20"] },
-{ id: "extintor-20x20", nome: "Extintor (E5) acima do equipamento — 0,20 × 0,20 m", v: { Codigo_simbolo: "E5", Funcao: "equipamento", Largura: 0.20, Altura: 0.20, Cor: "#c62828", Vermelha: 1 },
+{ id: "extintor-20x20", nome: "Extintor (E5) acima do equipamento — 0,20 × 0,20 m", v: { Codigo_simbolo: "E5", Funcao: "equipamento", Pictograma: 3, Largura: 0.20, Altura: 0.20, Cor: "#c62828", Vermelha: 1 },
 p: [17.35, "PROVISÓRIO: SINAPI MG 06/2026 insumo 37556 (20 × 20 cm) R$ 17,35 — o maior; SETOP-MG 08/2023 ED-50199 (E5 30 × 30 cm, com fixação) R$ 16,03", "INC-PLACA-E5-20X20"] },
-{ id: "pavimento-15x15", nome: "Número do pavimento (S17) na escada — 0,15 × 0,15 m", v: { Codigo_simbolo: "S17", Funcao: "pavimento", Largura: 0.15, Altura: 0.15, Cor: "#1b7a3a" },
+{ id: "pavimento-15x15", nome: "Número do pavimento (S17) na escada — 0,15 × 0,15 m", v: { Codigo_simbolo: "S17", Funcao: "pavimento", Pictograma: 4, Largura: 0.15, Altura: 0.15, Cor: "#1b7a3a" },
 p: [11.23, "PROVISÓRIO: SETOP-MG 08/2023 ED-29411 (S17 15 × 15 cm, com fixação) R$ 11,23 — o maior; SINAPI MG 06/2026 insumo 37557 (14 × 14 cm) R$ 8,96", "INC-PLACA-S17-15X15"] },
-{ id: "piso-E12", nome: "Sinalização de piso E12 (extintor em garagem/depósito) — 1,00 × 1,00 m", v: { Codigo_simbolo: "E12", Funcao: "piso", Largura: 1.00, Altura: 1.00, Cor: "#c62828", Altura_base_padrao: 0, No_piso: 1, Vermelha: 1 },
+{ id: "piso-E12", nome: "Sinalização de piso E12 (extintor em garagem/depósito) — 1,00 × 1,00 m", v: { Codigo_simbolo: "E12", Funcao: "piso", Pictograma: 5, Largura: 1.00, Altura: 1.00, Cor: "#c62828", Altura_base_padrao: 0, No_piso: 1, Vermelha: 1 },
 p: [66.71, "PROVISÓRIO: SETOP-MG 08/2023 ED-29395 (E12 instalada em piso, 100 × 100 cm, com fixação) R$ 66,71 — única referência lida (base de 2023: atualizar)", "INC-PLACA-E12"] }
+];
+var ZP = "0.001 + Espessura";
+var CY = "Altura_base + Altura/2";
+function pic(id, nome, cond, extra) { var o = { id: id, nome: nome, visivel: cond, material: "Branco", cor: "#f4f4f2" }; Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); return o; }
+var VERT = "No_piso = 0 e Pictograma = ";
+var solidosPlaca = [
+{ id: "placa", nome: "Placa (verde)", forma: "caixa", visivel: "Vermelha = 0", x: "0", y: "se(No_piso = 1; 0; Altura_base)", z: "se(No_piso = 1; Altura/2 + 0.05; 0.001 + Espessura/2)", dx: "Largura", dy: "se(No_piso = 1; Espessura; Altura)", dz: "se(No_piso = 1; Altura; Espessura)", material: "Branco", cor: "#1b7a3a" },
+{ id: "placa-v", nome: "Placa (vermelha)", forma: "caixa", visivel: "Vermelha = 1", x: "0", y: "se(No_piso = 1; 0; Altura_base)", z: "se(No_piso = 1; Altura/2 + 0.05; 0.001 + Espessura/2)", dx: "Largura", dy: "se(No_piso = 1; Espessura; Altura)", dz: "se(No_piso = 1; Altura; Espessura)", material: "Vermelho", cor: "#c62828" },
+pic("pic-saida-cabeca", "Pictograma saída: cabeça", VERT + "1", { forma: "cilindro", eixo: "z", x: "-Altura*0.55", y: CY + " + Altura*0.22", z: ZP, raio: "Altura*0.07", altura: "0.0005" }),
+pic("pic-saida-tronco", "Pictograma saída: tronco", VERT + "1", { forma: "caixa", x: "-Altura*0.55", y: CY + " - Altura*0.3", z: ZP + " + 0.00025", dx: "Altura*0.16", dy: "Altura*0.42", dz: "0.0005" }),
+pic("pic-saida-seta", "Pictograma saída: seta", VERT + "1", { forma: "extrusao", plano: "frente", x: "0", y: "0", z: ZP, altura: "0.0005",
+contorno: [["-Altura*0.2", CY + " + Altura*0.07"], ["Altura*0.35", CY + " + Altura*0.07"], ["Altura*0.35", CY + " + Altura*0.2"], ["Altura*0.65", CY], ["Altura*0.35", CY + " - Altura*0.2"], ["Altura*0.35", CY + " - Altura*0.07"], ["-Altura*0.2", CY + " - Altura*0.07"]] }),
+pic("pic-rota-seta", "Pictograma orientação: seta", VERT + "2", { forma: "extrusao", plano: "frente", x: "0", y: "0", z: ZP, altura: "0.0005",
+contorno: [["-Altura*0.7", CY + " + Altura*0.1"], ["Altura*0.2", CY + " + Altura*0.1"], ["Altura*0.2", CY + " + Altura*0.28"], ["Altura*0.7", CY], ["Altura*0.2", CY + " - Altura*0.28"], ["Altura*0.2", CY + " - Altura*0.1"], ["-Altura*0.7", CY + " - Altura*0.1"]] }),
+pic("pic-ext-corpo", "Pictograma equipamento: cilindro", VERT + "3", { forma: "cilindro", eixo: "y", x: "0", y: CY + " - Altura*0.36", z: ZP, raio: "Altura*0.14", altura: "Altura*0.5" }),
+pic("pic-ext-cabeca", "Pictograma equipamento: válvula", VERT + "3", { forma: "caixa", x: "Altura*0.05", y: CY + " + Altura*0.16", z: ZP + " + 0.00025", dx: "Altura*0.3", dy: "Altura*0.1", dz: "0.0005" }),
+pic("pic-pav", "Pictograma pavimento: algarismo", VERT + "4", { forma: "caixa", x: "0", y: CY + " - Altura*0.31", z: ZP + " + 0.00025", dx: "Altura*0.14", dy: "Altura*0.62", dz: "0.0005" }),
+pic("pic-piso-corpo", "Pictograma piso: cilindro", "No_piso = 1", { forma: "cilindro", eixo: "z", x: "0", y: "Espessura + Altura*0.14", z: "Altura/2 + 0.05 - Altura*0.3", raio: "Altura*0.14", altura: "Altura*0.5" })
 ];
 FR.registrar([{
 id: "inc-placa", nome: "Placa de sinalização de emergência (IT 15 CBMMG)", categoria: "equipamento", hospedagem: "livre",
-descricao: "Placa fotoluminescente de sinalização de emergência (saída, orientação, equipamento, pavimento, piso). Origem na face da parede, no piso; a placa fica com a BASE em Altura_base (IT 15: 1,80 m; a de saída acima da porta, a no máximo 0,10 m da verga). Área ≥ L²/2000 (IT 15 Anexo A).",
+descricao: "Placa fotoluminescente de sinalização de emergência (saída, orientação, equipamento, pavimento, piso). Origem na face da parede, no piso; a placa fica com a BASE em Altura_base (IT 15: 1,80 m; a de saída acima da porta, a no máximo 0,10 m da verga). Área ≥ L²/2000 (IT 15 Anexo A); espessura 2 mm (SINAPI 37558). Dimensões pela distância de leitura (IT 15 Anexo A Tabela 1, que adota a NBR 13434-2). O pictograma é esquemático (desenho), não a arte oficial do Anexo B.",
+avisos: ["Pictograma esquemático: a arte oficial (IT 15 Anexo B / NBR 13434-2) não é desenhada; o que vale é a forma, a cor, a cota e o código do símbolo."],
 parametros: [
 P("Codigo_simbolo", "texto", "S12", "Sinalização", "Código do símbolo da IT 15 (Anexo B): S12 saída, S1/S2 orientação, E5 extintor, S17 pavimento, E12 piso"),
 P("Funcao", "texto", "saida", "Sinalização", "saida · orientacao · equipamento · pavimento · piso"),
+P("Pictograma", "inteiro", 1, "Sinalização", "Desenho do símbolo: 1 saída · 2 orientação · 3 equipamento · 4 pavimento · 5 piso"),
 P("Largura", "comprimento", 0.40, "Dimensões"), P("Altura", "comprimento", 0.20, "Dimensões"),
+P("Espessura", "comprimento", 0.002, "Dimensões", "Espessura da placa: 2 mm (SINAPI 37558/37539/37556/37557: placa fotoluminescente em PVC 2 mm, NBR 16820)"),
 P("Cor", "texto", "#1b7a3a", "Materiais", "Verde (saída/orientação) ou vermelho (equipamento), fotoluminescente"),
 P("Vermelha", "inteiro", 0, "Materiais", "1 = placa de equipamento (fundo vermelho, IT 15 Anexo B)"),
 P("Altura_base_padrao", "comprimento", 1.80, "Norma", "IT 15 6.1.1 a 6.1.4: base da placa a 1,80 m do piso (a de saída fica acima da porta)"),
@@ -74785,53 +74821,86 @@ P("Distancia_leitura", "comprimento", 4.0, "Norma", "Distância de leitura L (m)
 P("Seta", "texto", "", "Sinalização", "Placa de orientação: direita / esquerda (sentido da saída visto de frente para a placa)", "instancia"),
 P("Fotoluminescente", "simnao", true, "Sinalização", "IT 15 6.3 e), f): orientação, salvamento e equipamentos fotoluminescentes"),
 F("Area_minima", "numero", "max(Distancia_leitura; 4)^2/2000", "Norma", "A ≥ L²/2000 (m²) — IT 15 Anexo A"),
-F("Conforme", "numero", "se(Largura*Altura >= Area_minima - 0.000001; 1; 0)", "Norma", "1 se a placa tem a área mínima para a distância de leitura")
+F("Conforme", "numero", "se(Largura*Altura >= Area_minima - 0.000001; 1; 0)", "Norma", "1 se a placa tem a área mínima para a distância de leitura"),
+F("Distancia_maxima", "numero", "(2000*Largura*Altura)^0.5", "Norma", "Maior distância de leitura (m) que a placa atende: L = (2000·A)^0,5 (IT 15 Anexo A nota 1)")
 ].concat(PRECO),
 tipos: placas.map(function (t) { return { id: t.id, nome: t.nome, valores: preco(JSON.parse(JSON.stringify(t.v)), t.p[0], t.p[1], t.p[2], MOT_PLACA) }; }),
-solidos: [
-{ id: "placa", nome: "Placa (verde)", forma: "caixa", visivel: "Vermelha = 0", x: "0", y: "se(No_piso = 1; 0; Altura_base)", z: "se(No_piso = 1; Altura/2 + 0.05; 0.003)", dx: "Largura", dy: "se(No_piso = 1; 0.003; Altura)", dz: "se(No_piso = 1; Altura; 0.004)", material: "Branco", cor: "#1b7a3a" },
-{ id: "placa-v", nome: "Placa (vermelha)", forma: "caixa", visivel: "Vermelha = 1", x: "0", y: "se(No_piso = 1; 0; Altura_base)", z: "se(No_piso = 1; Altura/2 + 0.05; 0.003)", dx: "Largura", dy: "se(No_piso = 1; 0.003; Altura)", dz: "se(No_piso = 1; Altura; 0.004)", material: "Vermelho", cor: "#c62828" }
-],
+solidos: solidosPlaca,
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Placa de sinalização de emergência fotoluminescente (IT 15 CBMMG)" }
 }]);
+var FICHA_LUM = "Intelbras (backend.intelbras.com): ";
 FR.registrar([{
 id: "inc-luminaria", nome: "Luminária de emergência (IT 13 CBMMG)", categoria: "luminaria", hospedagem: "livre",
-descricao: "Luminária de emergência de aclaramento (bloco autônomo). Origem na face da parede, no piso; o corpo fica a Altura_montagem. IT 13: até 15 m entre pontos; abaixo de 2,5 m, ≤ 30 V. Medidas de desenho (conferir no fabricante).",
+descricao: "Luminária de emergência de aclaramento (bloco autônomo de 30 LEDs). Origem na face da parede, no piso; o corpo fica a Altura_montagem. IT 13: até 15 m entre pontos; abaixo de 2,5 m, ≤ 30 V. Cotas do corpo: ficha Intelbras LEA 30 / LEA 31.",
+avisos: ["Balizamento (placa luminosa de saída) e luminárias de embutir/2 faróis: sem tipo nesta família (nenhuma ficha com preço lido) — ver dados-fonte/hidro/familias/fichas-1b.json."],
 parametros: [
 P("Funcao", "texto", "aclaramento", "Elétrica", "aclaramento · balizamento"),
 P("Sistema", "texto", "bloco autonomo", "Elétrica", "bloco autônomo · centralizado"),
-P("Tensao_V", "numero", 30, "Elétrica", "Tensão nas lâmpadas (V). IT 13 5.5: ≤ 30 V abaixo de 2,5 m (ou DR 30 mA + 10 A). Bloco autônomo de LED: conferir na ficha"),
-P("Fluxo_lm", "numero", 0, "Fotometria", "Fluxo luminoso (lm). 0 = não declarado pela base de preço: conferir na ficha (NBR 10898:2023 6.1.2.4: ≥ 300 lm ou estudo luminotécnico — cópia não licenciada)"),
-P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h). 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)"),
-P("Largura", "comprimento", 0.30, "Dimensões", "Medida de desenho"), P("Altura", "comprimento", 0.07, "Dimensões", "Medida de desenho"), P("Profundidade", "comprimento", 0.05, "Dimensões", "Medida de desenho"),
+P("Tensao_V", "numero", 30, "Elétrica", "Tensão nas lâmpadas (V). IT 13 5.5: ≤ 30 V abaixo de 2,5 m (ou DR 30 mA + 10 A). Bloco autônomo de LED: a bateria é de 3,7 V (ficha)"),
+P("Fluxo_lm", "numero", 0, "Fotometria", "Fluxo luminoso máximo (lm). 0 = não declarado pela base de preço (SINAPI): conferir na ficha (NBR 10898:2023 6.1.2.4: ≥ 300 lm ou estudo luminotécnico — cópia não licenciada)"),
+P("Fluxo_min_lm", "numero", 0, "Fotometria", "Fluxo luminoso mínimo (lm) da ficha; 0 = não declarado"),
+P("Autonomia_h", "numero", 0, "Elétrica", "Autonomia (h) no fluxo máximo. 0 = não declarada: conferir (NBR 10898:2023 4.9: mínimo 2 h — cópia não licenciada; a IT 13 da biblioteca (1ª ed., Portaria 5/2005) cita a NBR 10898/1999; edição adotada em MG: conferir)"),
+P("Fabricante", "texto", "", "Catálogo e preço", "Fabricante da ficha"), P("Modelo", "texto", "", "Catálogo e preço", "Modelo da ficha"),
+P("Link_ficha", "texto", "", "Catálogo e preço", "Manual ou datasheet do fabricante"), P("Pagina_ficha", "inteiro", 0, "Catálogo e preço", "Página do PDF com as cotas"),
+P("Largura", "comprimento", 0.160, "Dimensões", "Largura (L) da ficha"), P("Altura", "comprimento", 0.041, "Dimensões", "Altura (A) da ficha"), P("Profundidade", "comprimento", 0.0256, "Dimensões", "Profundidade (P) da ficha"),
 P("Altura_montagem", "comprimento", 2.30, "Restrições", "Do piso ao centro da luminária", "instancia")
 ].concat(PRECO),
 tipos: [
-{ id: "led30-2w", nome: "Bloco autônomo 30 LEDs 2 W (SINAPI 97599)", codigo: "97599", fonte: "SINAPI 06/2026 97599 — LUMINÁRIA DE EMERGÊNCIA, COM 30 LÂMPADAS LED DE 2 W, SEM REATOR - FORNECIMENTO E INSTALAÇÃO", valores: {} }
+{ id: "led30-2w", nome: "Bloco autônomo 30 LEDs 2 W (SINAPI 97599) — forma do Intelbras LEA 30", codigo: "97599", fonte: "SINAPI 06/2026 97599 — LUMINÁRIA DE EMERGÊNCIA, COM 30 LÂMPADAS LED DE 2 W, SEM REATOR - FORNECIMENTO E INSTALAÇÃO", valores: { Fabricante: "(a SINAPI não cita marca)", Modelo: "forma do Intelbras LEA 30" } },
+{ id: "lea30", nome: "Intelbras LEA 30 — 30 LEDs, 160 × 41 × 25,6 mm", codigo: "97599", fonte: "SINAPI 06/2026 97599 (composição da mesma classe: bloco autônomo de 30 LEDs; a SINAPI não cita marca) · ficha Intelbras LEA 30",
+valores: { Fabricante: "Intelbras", Modelo: "LEA 30", Link_ficha: "https://backend.intelbras.com/sites/default/files/2023-05/Manual_LEA_30_01-23_site%5B1%5D.pdf", Pagina_ficha: 1, Largura: 0.160, Altura: 0.041, Profundidade: 0.0256, Tensao_V: 3.7, Fluxo_lm: 100, Fluxo_min_lm: 55, Autonomia_h: 3 } },
+{ id: "lea31", nome: "Intelbras LEA 31 — 30 LEDs, 175 × 48 × 28 mm", codigo: "97599", fonte: "SINAPI 06/2026 97599 (composição da mesma classe: bloco autônomo de 30 LEDs; a SINAPI não cita marca) · ficha Intelbras LEA 31",
+valores: { Fabricante: "Intelbras", Modelo: "LEA 31", Link_ficha: "https://backend.intelbras.com/sites/default/files/2024-10/Datasheet%20LEA31.pdf", Pagina_ficha: 1, Largura: 0.175, Altura: 0.048, Profundidade: 0.028, Tensao_V: 3.7, Fluxo_lm: 100, Fluxo_min_lm: 50, Autonomia_h: 2 } }
 ],
 solidos: [
 { id: "corpo", nome: "Corpo", forma: "caixa", x: "0", y: "Altura_montagem - Altura/2", z: "Profundidade/2", dx: "Largura", dy: "Altura", dz: "Profundidade", material: "Branco" },
-{ id: "lente", nome: "Lente", forma: "caixa", x: "0", y: "Altura_montagem - Altura/2 - 0.004", z: "Profundidade + 0.002", dx: "Largura*0.8", dy: "Altura*0.6", dz: "0.004", material: "Vidro" }
+{ id: "lente", nome: "Faixa de LEDs", forma: "caixa", x: "0", y: "Altura_montagem - Altura*0.25", z: "Profundidade + 0.0005", dx: "Largura*0.82", dy: "Altura*0.5", dz: "0.001", material: "Vidro" },
+{ id: "teste", nome: "Botão de teste e LED de carga", forma: "cilindro", eixo: "z", x: "Largura*0.4", y: "Altura_montagem + Altura*0.3", z: "Profundidade", raio: "0.0035", altura: "0.001", material: "Vermelho" }
 ],
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Luminária de emergência" }
 }]);
 var MOT_ABC = "a SINAPI 06/2026 não tem composição de extintor de pó ABC; valor = o maior preço público lido";
+var AEC = "https://www.aecweb.com.br/produto/";
+var FICHA_EXT = {
+"abc4": { mod: "KB-P4ABC55", H: 0.445, D: 0.137, M: 6.1, cap: "2-A:20-B:C", url: AEC + "extintor-portatil-com-carga-de-po-abc-linha-convencional/38687" },
+"abc6-3a": { mod: "KB-P6ABC55", H: 0.590, D: 0.137, M: 8.7, cap: "3-A:20-B:C", url: AEC + "extintor-portatil-com-carga-de-po-abc-linha-convencional/38687" },
+"abc-40b": { mod: "KB-P12ABC55 (referência: 6-A:40-B:C)", H: 0.705, D: 0.177, M: 16, url: AEC + "extintor-portatil-com-carga-de-po-abc-linha-convencional/38687", referencia: true },
+"pqs4bc": { mod: "KB-P4BCK95", H: 0.445, D: 0.137, M: 6.1, cap: "20-B:C", url: AEC + "extintor-portatil-com-carga-de-po-bc/38681" },
+"pqs6bc": { mod: "KB-P6BCK95", H: 0.590, D: 0.137, M: 8.7, cap: "20-B:C", url: AEC + "extintor-portatil-com-carga-de-po-bc/38681" },
+"pqs8bc": { mod: "KB-P8BCK95", H: 0.525, D: 0.177, M: 11.5, cap: "40-B:C", url: AEC + "extintor-portatil-com-carga-de-po-bc/38681" },
+"pqs12bc": { mod: "KB-P12BCK95", H: 0.705, D: 0.177, M: 16, cap: "40-B:C", url: AEC + "extintor-portatil-com-carga-de-po-bc/38681" },
+"agua10": { mod: "Convencional, água 10 L", H: 0.685, D: 0.177, M: 14.3, cap: "2-A", url: AEC + "extintor-portatil-com-carga-de-agua/38682" },
+"co2-4": { mod: "KB-CO2-4", H: 0.470, D: 0.165, M: 14.1, cap: "5-B:C", url: AEC + "extintor-portatil-com-carga-de-co/38683", corneta: 1 },
+"co2-6": { mod: "KB-CO2-6", H: 0.620, D: 0.165, M: 19, cap: "5-B:C", url: AEC + "extintor-portatil-com-carga-de-co/38683", corneta: 1 }
+};
 function ext(id, nome, ag, carga, cap, classe, cod, fonte, extra) {
+var fk = FICHA_EXT[id];
+if (fk && fk.cap) cap = fk.cap;
 var t = { id: id, nome: nome, valores: { Agente: ag, Carga: carga, Capacidade_extintora: cap, Classe: classe } };
+if (fk) {
+t.valores.Fabricante = "Kidde Brasil"; t.valores.Modelo = fk.mod; t.valores.Link_ficha = fk.url; t.valores.Pagina_ficha = 1;
+t.valores.Diametro = fk.D; t.valores.Altura_total = fk.H; t.valores.Peso_kg = fk.M; t.valores.Corneta = fk.corneta || 0; t.valores.Ficha_referencia = !!fk.referencia;
+}
 if (cod) { t.codigo = cod; t.fonte = fonte; }
 if (extra) preco(t.valores, extra[0], extra[1], extra[2], MOT_ABC);
 return t;
 }
 FR.registrar([{
 id: "inc-extintor", nome: "Extintor portátil (IT 16 CBMMG)", categoria: "equipamento", hospedagem: "livre",
-descricao: "Extintor portátil de parede com suporte. Origem na face da parede, no piso; a ALÇA fica em Altura_alca (IT 16 5.2.2.2: ≤ 1,60 m) e a base do extintor ≥ 0,20 m do piso. Medidas do cilindro de desenho (as da peça extintor do js/biminst.js) — conferir no fabricante.",
+descricao: "Extintor portátil de parede com suporte. Origem na face da parede, no piso; a ALÇA fica em Altura_alca (IT 16 5.2.2.2: ≤ 1,60 m) e a base do extintor ≥ 0,20 m do piso. Cilindro, válvula, alavanca, mangueira e suporte pelas cotas da ficha Kidde Brasil do tipo (Ø e altura); o ombro do cilindro e a mangueira são desenho.",
+avisos: ["Ombro do cilindro, alavanca, mangueira e suporte: proporções de desenho; Ø, altura e peso são da ficha do tipo. A ficha dá a carga em litros para o pó."],
 parametros: [
 P("Agente", "texto", "Pó ABC", "Extintor", "Agente extintor"),
 P("Carga", "texto", "4 kg", "Extintor", "Carga nominal"),
 P("Capacidade_extintora", "texto", "2-A:20-B:C", "Extintor", "Capacidade extintora do rótulo (IT 16 Tabela 1: mínimo pó ABC 2-A:20-B:C; pó BC 20-B:C; água 2-A; CO2 5-B:C)"),
 P("Classe", "texto", "ABC", "Extintor", "Classes de fogo"),
-P("Diametro", "comprimento", 0.18, "Dimensões", "Medida de desenho (peça extintor do js/biminst.js: raio 0,09)"),
-P("Altura_total", "comprimento", 0.55, "Dimensões", "Medida de desenho, com a válvula"),
+P("Diametro", "comprimento", 0.137, "Dimensões", "Ø do cilindro (ficha Kidde Brasil do tipo)"),
+P("Altura_total", "comprimento", 0.445, "Dimensões", "Altura total com a válvula (ficha Kidde Brasil do tipo)"),
+P("Peso_kg", "numero", 6.1, "Dimensões", "Peso bruto aproximado (ficha)"),
+P("Corneta", "inteiro", 0, "Dimensões", "1 = com difusor/corneta (CO2)"),
+P("Fabricante", "texto", "", "Catálogo e preço", "Fabricante da ficha"), P("Modelo", "texto", "", "Catálogo e preço", "Modelo da ficha"),
+P("Link_ficha", "texto", "", "Catálogo e preço", "Página do produto no portal de catálogos"), P("Pagina_ficha", "inteiro", 0, "Catálogo e preço", "Página"),
+P("Ficha_referencia", "simnao", false, "Catálogo e preço", "As cotas são de um produto de referência (o tipo é uma exigência, não um produto)"),
 P("Altura_alca", "comprimento", 1.50, "Restrições", "Do piso à alça de manuseio (IT 16 5.2.2.2: no máximo 1,60 m; 1,50 m = critério RA)", "instancia"),
 F("Base", "comprimento", "Altura_alca - Altura_total", "Norma", "Do piso à parte de baixo do extintor (IT 16 5.2.2.2: ≥ 0,20 m)"),
 F("Conforme", "numero", "se(Altura_alca <= 1.6 + 0.000001 e Base >= 0.2 - 0.000001; 1; 0)", "Norma", "1 se a alça ≤ 1,60 m e a base ≥ 0,20 m (IT 16 5.2.2.2)")
@@ -74849,29 +74918,50 @@ ext("co2-4", "CO2 4 kg (SINAPI 101906)", "CO2", "4 kg", "conferir no rótulo (m�
 ext("co2-6", "CO2 6 kg (SINAPI 101907)", "CO2", "6 kg", "conferir no rótulo (mínimo 5-B:C)", "BC", "101907", "SINAPI 06/2026 101907")
 ],
 solidos: [
-{ id: "suporte", nome: "Suporte de parede", forma: "caixa", x: "0", y: "Base + Altura_total*0.45", z: "0.01", dx: "0.06", dy: "Altura_total*0.5", dz: "0.02", material: "Preto" },
-{ id: "cilindro", nome: "Cilindro", forma: "cilindro", eixo: "y", x: "0", y: "Base", z: "0.02 + Diametro/2", raio: "Diametro/2", altura: "Altura_total*0.82", material: "Vermelho" },
-{ id: "valvula", nome: "Válvula e alça", forma: "cilindro", eixo: "y", x: "0", y: "Base + Altura_total*0.82", z: "0.02 + Diametro/2", raio: "Diametro*0.16", altura: "Altura_total*0.18", material: "Preto" }
+{ id: "placa-suporte", nome: "Placa do suporte de parede", forma: "caixa", x: "0", y: "Base + Altura_total*0.45 - 0.10", z: "0.003", dx: "0.08", dy: "0.20", dz: "0.006", material: "Preto" },
+{ id: "cinta", nome: "Cinta do suporte", forma: "cilindro", eixo: "y", x: "0", y: "Base + Altura_total*0.45", z: "0.02 + Diametro/2", raio: "Diametro/2 + 0.004", altura: "0.035", material: "Preto" },
+{ id: "cilindro", nome: "Cilindro", forma: "revolucao", eixo: "y", x: "0", y: "Base", z: "0.02 + Diametro/2",
+perfil: [["Diametro/2*0.62", "0"], ["Diametro/2*0.9", "Altura_total*0.012"], ["Diametro/2", "Altura_total*0.05"], ["Diametro/2", "Altura_total*0.74"], ["Diametro/2*0.93", "Altura_total*0.80"], ["Diametro/2*0.55", "Altura_total*0.86"], ["Diametro/2*0.22", "Altura_total*0.88"]],
+material: "Vermelho" },
+{ id: "valvula", nome: "Válvula", forma: "cilindro", eixo: "y", x: "0", y: "Base + Altura_total*0.86", z: "0.02 + Diametro/2", raio: "Diametro*0.16", altura: "Altura_total*0.1", material: "Preto" },
+{ id: "alavanca", nome: "Alavanca e alça de manuseio", forma: "caixa", x: "0", y: "Base + Altura_total - 0.012", z: "0.02 + Diametro/2", dx: "0.03", dy: "0.012", dz: "Diametro*0.9", material: "Preto" },
+{ id: "mangueira", nome: "Mangueira", forma: "cilindro", eixo: "y", x: "Diametro/2*0.55", y: "Base + Altura_total*0.3", z: "0.02 + Diametro/2 + Diametro/2*0.78", raio: "0.0075", altura: "Altura_total*0.56", material: "Preto" },
+{ id: "corneta", nome: "Difusor (corneta) do CO2", forma: "revolucao", eixo: "y", visivel: "Corneta = 1", x: "Diametro/2*0.55", y: "Base + Altura_total*0.1", z: "0.02 + Diametro/2 + Diametro/2*0.78",
+perfil: [["0.0075", "Altura_total*0.2"], ["0.03", "0.0"], ["0.0075", "0.0"]], material: "Preto" }
 ],
 quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Extintor de incêndio portátil" }
 }]);
 FR.registrar([{
 id: "acs-barra", nome: "Barra de apoio do sanitário acessível (NBR 9050)", categoria: "equipamento", hospedagem: "livre",
-descricao: "Barra de apoio reta de aço inox fixada na parede (sanitário acessível). Origem na face da parede, no piso; o +Z local aponta para DENTRO do ambiente. Horizontal: eixo a Altura_eixo (0,75 m); vertical: base a Altura_eixo (0,85 m). Medida de desenho.",
+descricao: "Barra de apoio de aço inox, de seção circular, afastada 40 mm da parede (face interna), fixada por suportes nas pontas (sanitário acessível). Reta ou em L. Origem na face da parede, no piso; o +Z local aponta para DENTRO do ambiente. Horizontal: eixo a Altura_eixo (0,75 m); vertical: base a Altura_eixo (0,85 m). Em L: a perna horizontal vai a +X do canto, a vertical sobe a partir do eixo. NBR 9050:2020 4.6.5, 7.6.1, 7.6.3.",
+avisos: ["Ø de projeto (38 mm) dentro da faixa 30 a 45 mm da NBR 9050:2020 4.6.5; suportes das pontas são desenho — conferir o produto."],
 parametros: [
-P("Comprimento", "comprimento", 0.80, "Dimensões", "Comprimento da barra (NBR 9050:2020 7.7.2.2: horizontais ≥ 0,80 m; vertical ≥ 0,70 m)"),
+P("Comprimento", "comprimento", 0.80, "Dimensões", "Comprimento da barra reta, ou da perna horizontal da barra em L (NBR 9050:2020 7.7.2.2: horizontais ≥ 0,80 m; vertical ≥ 0,70 m; lavatório 7.8.1 e): vertical ≥ 0,40 m)"),
+P("Comprimento_v", "comprimento", 0, "Dimensões", "Perna vertical da barra em L (0 = barra reta); NBR 9050:2020 7.10.2: L de 0,70 × 0,70 m"),
 P("Vertical", "inteiro", 0, "Dimensões", "1 = barra vertical; 0 = horizontal"),
+P("Diametro", "comprimento", 0.038, "Dimensões", "Ø da seção (m): 30 a 45 mm — NBR 9050:2020 4.6.5, 7.6.3 e Figura 102. Valor de projeto; a SINAPI não declara"),
+P("Afastamento", "comprimento", 0.04, "Dimensões", "Da parede à FACE INTERNA da barra: ≥ 40 mm (NBR 9050:2020 4.6.5 e 7.6.1)"),
+P("Suporte_raio", "comprimento", 0.012, "Dimensões", "Raio do suporte de fixação (desenho; conferir o produto)"),
+F("Eixo_z", "comprimento", "Afastamento + Diametro/2", "Dimensões", "Da parede ao EIXO da barra"),
+F("Conforme", "numero", "se(Diametro >= 0.03 - 0.000001 e Diametro <= 0.045 + 0.000001 e Afastamento >= 0.04 - 0.000001; 1; 0)", "Norma", "1 se Ø de 30 a 45 mm e afastamento ≥ 40 mm (NBR 9050:2020 4.6.5)"),
 P("Altura_eixo", "comprimento", 0.75, "Restrições", "Do piso ao eixo da barra horizontal (0,75 m) ou à BASE da vertical (0,85 m = 0,10 m acima da horizontal) — NBR 9050:2020 7.7.2.2.1, p.90, Figuras 106 e 107, p.91-92", "instancia")
 ].concat(PRECO),
 tipos: [
 { id: "reta-80", nome: "Barra reta inox 80 cm (SINAPI 100868)", codigo: "100868", fonte: "SINAPI 06/2026 100868 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 80 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.80, Vertical: 0 } },
-{ id: "reta-70", nome: "Barra reta inox 70 cm, vertical (SINAPI 100867)", codigo: "100867", fonte: "SINAPI 06/2026 100867 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.70, Vertical: 1 } }
+{ id: "reta-70", nome: "Barra reta inox 70 cm, vertical (SINAPI 100867)", codigo: "100867", fonte: "SINAPI 06/2026 100867 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.70, Vertical: 1 } },
+{ id: "reta-40", nome: "Barra reta inox 40 cm, vertical do lavatório (SINAPI 100866, a de 60 cm)", codigo: "100866", fonte: "SINAPI 06/2026 100866 — BARRA DE APOIO RETA, EM AÇO INOX POLIDO, COMPRIMENTO 60 CM: a SINAPI não tem a de 40 cm; orça pela menor existente (NBR 9050:2020 7.8.1 e): vertical do lavatório ≥ 0,40 m, base a 0,90 m)", valores: { Comprimento: 0.40, Vertical: 1, Altura_eixo: 0.90 } },
+{ id: "l-70", nome: "Barra em L inox 70 × 70 cm (SINAPI 100863)", codigo: "100863", fonte: "SINAPI 06/2026 100863 — BARRA DE APOIO EM \"L\", EM AÇO INOX POLIDO 70 X 70 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO (NBR 9050:2020 7.10.2, Figura 118)", valores: { Comprimento: 0.70, Comprimento_v: 0.70, Vertical: 0 } },
+{ id: "l-80", nome: "Barra em L inox 80 × 80 cm (SINAPI 100864)", codigo: "100864", fonte: "SINAPI 06/2026 100864 — BARRA DE APOIO EM \"L\", EM AÇO INOX POLIDO 80 X 80 CM, FIXADA NA PAREDE - FORNECIMENTO E INSTALAÇÃO", valores: { Comprimento: 0.80, Comprimento_v: 0.80, Vertical: 0 } }
 ],
 solidos: [
-{ id: "barra-h", nome: "Barra horizontal", forma: "caixa", visivel: "Vertical = 0", x: "0", y: "Altura_eixo - 0.02", z: "0.06", dx: "Comprimento", dy: "0.04", dz: "0.04", material: "Inox" },
-{ id: "barra-v", nome: "Barra vertical", forma: "caixa", visivel: "Vertical = 1", x: "0", y: "Altura_eixo", z: "0.06", dx: "0.04", dy: "Comprimento", dz: "0.04", material: "Inox" }
+{ id: "barra-h", nome: "Barra horizontal", forma: "cilindro", eixo: "x", visivel: "Vertical = 0", x: "-Comprimento/2 - se(Comprimento_v > 0; Diametro/2; 0)", y: "Altura_eixo", z: "Eixo_z", raio: "Diametro/2", altura: "Comprimento + se(Comprimento_v > 0; Diametro/2; 0)", material: "Inox" },
+{ id: "barra-v", nome: "Barra vertical", forma: "cilindro", eixo: "y", visivel: "Vertical = 1", x: "0", y: "Altura_eixo", z: "Eixo_z", raio: "Diametro/2", altura: "Comprimento", material: "Inox" },
+{ id: "perna-v", nome: "Perna vertical da barra em L", forma: "cilindro", eixo: "y", visivel: "Vertical = 0 e Comprimento_v > 0", x: "-Comprimento/2", y: "Altura_eixo - Diametro/2", z: "Eixo_z", raio: "Diametro/2", altura: "Comprimento_v + Diametro/2", material: "Inox" },
+{ id: "sup-1", nome: "Suporte 1", forma: "cilindro", eixo: "z", x: "se(Vertical = 1; 0; -Comprimento/2 + 0.02)", y: "se(Vertical = 1; Altura_eixo + 0.04; Altura_eixo)", z: "0", raio: "Suporte_raio", altura: "Afastamento + Diametro/2", material: "Inox" },
+{ id: "sup-2", nome: "Suporte 2", forma: "cilindro", eixo: "z", x: "se(Vertical = 1; 0; Comprimento/2 - 0.02)", y: "se(Vertical = 1; Altura_eixo + Comprimento - 0.04; Altura_eixo)", z: "0", raio: "Suporte_raio", altura: "Afastamento + Diametro/2", material: "Inox" },
+{ id: "sup-3", nome: "Suporte da perna vertical", forma: "cilindro", eixo: "z", visivel: "Vertical = 0 e Comprimento_v > 0", x: "-Comprimento/2", y: "Altura_eixo + Comprimento_v - 0.04", z: "0", raio: "Suporte_raio", altura: "Afastamento + Diametro/2", material: "Inox" }
 ],
-quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Barra de apoio reta em aço inox, fixada na parede" }
+quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Barra de apoio em aço inox, fixada na parede" }
 }]);
 global.FamiliasInc = { ids: ["inc-placa", "inc-luminaria", "inc-extintor", "acs-barra"], DATA_PRECO: DATA };
 if (typeof module !== "undefined" && module.exports) module.exports = global.FamiliasInc;
@@ -93467,6 +93557,7 @@ if (mv.idx.length) partes.push(cascaSaida(mv, latao ? "volante" : "corpo"));
 if (mk.idx.length) partes.push(cascaSaida(mk, "cromado"));
 return { partes: partes, frente: fr, aConferir: true, cotas: rc0 ? { corpo: rc0.corpo, altura: rc0.altura, origem: "catalogo", fonte: fonte(rc0.f, rc0.pag), aConferir: "canopla, volante e degraus do castelo (não cotados na ficha da base)" } : null };
 }
+var RETENCAO_AMANCO = { "25": { A: 86.5, B: 65.5, cod: "98934" }, "32": { A: 96, B: 73.7, cod: "98935" } };
 function registroPvc(a, o, C, d, de, matTubo) {
 var fr = o.frente ? nrmz(pv(o.frente)) : null;
 if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));
@@ -93485,6 +93576,16 @@ varrer(mc, reta(add(Fp, mul(dirIn, (Lend - 0.5) * MM)), dirIn), escala([[0, 0], 
 });
 var Lb2 = Lff - 2 * (Lend + nut) + 2;
 varrer(mc, reta(add(C, mul(d, -Lb2 / 2 * MM)), d), escala([[0, 0], [0, rB * 0.8], [Lb2 * 0.18, rB], [Lb2 * 0.82, rB], [Lb2, rB * 0.8], [Lb2, 0]]), seg, false);
+var RA0 = a.acessorio === "valvula_retencao" ? RETENCAO_AMANCO[String(a.dn)] : null;
+if (RA0) {
+var rO = RA0.B / 2, rBd = rO * 0.83, rS = cs.od / 2 * 1.1, LA = Lff, ribs = [], kz;
+var pfR = [[0, 0], [0, rS], [LA * 0.1, rS], [LA * 0.1, rBd], [LA * 0.14, rO * 0.9]];
+for (kz = 0; kz < 7; kz++) { var z0 = LA * (0.17 + kz * 0.055); pfR.push([z0, rO], [z0 + LA * 0.03, rO], [z0 + LA * 0.03, rO * 0.955], [z0 + LA * 0.055, rO * 0.955]); }
+pfR.push([LA * 0.56, rO], [LA * 0.6, rBd], [LA * 0.78, rBd * 0.97], [LA * 0.86, rS * 1.04], [LA * 0.9, rS], [LA, rS], [LA, 0]);
+varrer(mc, reta(add(C, mul(d, -h * MM)), d), escala(pfR), seg + 8, false);
+return { partes: [cascaSaida(mc, "corpo")], frente: fr, comprimento: Lff * MM, aConferir: Math.abs(Lff - RA0.A) > 1 ? "o face a face da peça (" + Lff.toFixed(1) + " mm) não é o da ficha (" + RA0.A + " mm)" : false,
+cotas: { corpo: RA0.B, comprimento: RA0.A, origem: "catalogo", fonte: "Amanco Wavin FTC000021, pág. 4, cód. " + RA0.cod } };
+}
 if (a.acessorio === "valvula_retencao") {
 varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.75], [rB * 1.25, rB * 0.75], [rB * 1.25, 0]]), 6, false);
 return { partes: [cascaSaida(mc, "corpo")], frente: fr, aConferir: true, comprimento: Lff * MM, cotas: { corpo: rB * 2, altura: rB * 2.25, bolsa: cs.pb, origem: "proporcao", fonte: null, aConferir: "retenção de PVC: tampa em proporção declarada" } };

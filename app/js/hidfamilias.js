@@ -613,8 +613,11 @@
     conectores: [{ id: "entrada", nome: "Entrada do registro", sistema: "incendio", dn: "DN_ramal", x: "-Largura*0.25", y: "Altura*0.35", z: "-Profundidade/2", papel: "entrada", dir: dv("parede"), origemPos: "desenho", aConferir: "abrigo genérico: posição do registro de reserva" }], material: "Vermelho" });
   ESPECS.push({
     id: "hid-extintor", nome: "Extintor portátil", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
-    descricao: "Extintor portátil. Origem = piso, centro do cilindro. Sem conector: não liga a rede.",
+    descricao: "Extintor portátil. Origem = piso, centro do cilindro. Sem conector: não liga a rede. A família com fabricante, capacidade e preço por tipo é a inc-extintor (IT 16); esta fica para o Hidro (cálculo e templates).",
     avisos: [AV_GENERICA],
+    tiposFicha: [{ id: "t-kidde-kb-p4abc55", nome: "Kidde Brasil KB-P4ABC55 — pó ABC 4 kg, 445 × Ø137 mm",
+      valores: { Fabricante: "Kidde Brasil", Linha: "Convencional", Codigo: "KB-P4ABC55", Descricao_ficha: "Extintor portátil com carga de pó ABC, 2-A:20-B:C, ABNT NBR 15808", Link_ficha: "https://www.aecweb.com.br/produto/extintor-portatil-com-carga-de-po-abc-linha-convencional/38687", Edicao_ficha: "página de produto no AECweb (Kidde Brasil), lida em 28/10/2026", Pagina_ficha: 1, Pagina_cotas: 1, Cotas_ficha: "altura 445 mm; diâmetro 137 mm; peso bruto aprox. 6,1 kg", Diametro: 0.137, Altura: 0.445, A_conferir: false, Conferir: "" },   /* hid:ok cotas da ficha Kidde Brasil KB-P4ABC55 */
+      fonte: "Kidde Brasil, KB-P4ABC55, página de produto no AECweb (Convencional): altura 445 mm, Ø 137 mm" }],
     geo: [
       G("Diametro", 0.18, [0.08, 0.4], null, "Diâmetro do cilindro"),                                                      /* hid:ok geometria de reserva (peça extintor do biminst: raio 0,09) */
       G("Altura", 0.55, [0.3, 1.2], null, "Altura total com a válvula")                                                    /* hid:ok geometria de reserva (peça extintor do biminst) */
@@ -624,6 +627,9 @@
     id: "hid-sprinkler", nome: "Chuveiro automático (sprinkler pendente)", categoria: "equipamento", sistemas: ["incendio"], tipos: [], generico: true,
     descricao: "Sprinkler pendente. Origem = a rosca de ligação, no teto; o corpo desce Altura abaixo dela.",
     avisos: [AV_GENERICA, AV_CONECTOR],
+    tiposFicha: [{ id: "t-reliable-kfr56", nome: "Reliable KFR56 — pendente 1/2\" NPT, K 5,6, 57 mm, defletor Ø 24 mm",
+      valores: { Fabricante: "Reliable", Linha: "KFR56 (SIN RA3614)", Codigo: "KFR56 pendente", Descricao_ficha: "Sprinkler pendente de resposta rápida, K 5,6 (80 métrico), rosca 1/2\" NPT ou ISO7-1R1/2", Link_ficha: "https://www.reliablesprinkler.com/files/bulletins/036.pdf", Edicao_ficha: "Reliable Bulletin 036, julho/2025", Pagina_ficha: 2, Pagina_cotas: 2, Cotas_ficha: "figura 1 (p.2): altura total 2 1/4\" (57 mm), defletor 1\" (24 mm); com protetor S-1 opcional 3 1/4\" (83 mm)", Diametro: 0.024, Altura: 0.057, A_conferir: true, Conferir: "DN_ramal (DN: o dimensionamento define)" },   /* hid:ok cotas da ficha Reliable Bulletin 036 p.2 (Figura 1) */
+      fonte: "Reliable, Bulletin 036 (jul/2025), p.2, Figura 1: altura 57 mm e defletor Ø 24 mm (cotas no desenho, lidas na imagem)" }],
     geo: [
       G("Diametro", 0.06, [0.03, 0.12], null, "Diâmetro do defletor"),                                                     /* hid:ok geometria de reserva (peça chuveiro_automatico do biminst) */
       G("Altura", 0.06, [0.03, 0.15], null, "Altura da rosca ao defletor"),                                                /* hid:ok geometria de reserva (peça chuveiro_automatico do biminst) */
@@ -860,10 +866,10 @@
       cil("manometro", "Manômetro", "z", "0", H + "*0.9", "0", "0.018", R + "*0.3", CROMO)];
   };
   GEO_FAM["hid-sprinkler"] = function () {
-    return [cil("niple", "Rosca", "y", "0", "-Altura*0.3", "0", "0.011", "Altura*0.3", "Latão"),
-      cil("corpo", "Corpo", "y", "0", "-Altura*0.65", "0", "0.013", "Altura*0.35", "Latão"),
-      cxs("braco-1", "Braço (1)", "Diametro*0.2", "-Altura + 0.003", "0", "0.004", "Altura*0.4", "0.008", "Latão"),
-      cxs("braco-2", "Braço (2)", "-Diametro*0.2", "-Altura + 0.003", "0", "0.004", "Altura*0.4", "0.008", "Latão"),
+    return [cil("niple", "Rosca", "y", "0", "-Altura*0.3", "0", "0.0107", "Altura*0.3", "Latão"),   /* 1/2\" NPT: Ø externo 21,3 mm */
+      cil("corpo", "Corpo (chaves da rosca)", "y", "0", "-Altura*0.5", "0", "0.0095", "Altura*0.2", "Latão"),   /* Lote 1b: o corpo era mais largo que o defletor da ficha (Reliable KFR56: defletor Ø 24 mm, armação estreita); Ø de desenho, conferir */
+      cxs("braco-1", "Braço (1)", "Diametro*0.33", "-Altura + 0.003", "0", "0.004", "Altura*0.5", "0.008", "Latão"),
+      cxs("braco-2", "Braço (2)", "-Diametro*0.33", "-Altura + 0.003", "0", "0.004", "Altura*0.5", "0.008", "Latão"),
       cil("bulbo", "Ampola", "y", "0", "-Altura*0.9", "0", "0.003", "Altura*0.25", "Vermelho"),
       cil("defletor", "Defletor", "y", "0", "-Altura", "0", "Diametro/2", "0.003", "Latão")];
   };
@@ -1159,9 +1165,17 @@
   ESPECS.forEach(function (e) {
     if (e.id !== "hid-cuba-apoio") return;
     var yA = "se(Torneira_de_parede; Agua_acima_tampo; -Agua_abaixo_tampo)", vis = "Distancia_parede > Profundidade/2";
+    var ZT = "se(Modelo_cuba = 1; max(-Profundidade/2 - 0.05; -Distancia_parede + 0.03); -Profundidade/2 + min(0.08; Profundidade*0.2))";   /* o z da torneira de mesa: js/hidlouca.js geoCuba (zT) */
+    var YT = "se(Modelo_cuba = 1; 0; Altura_cuba*se(Modelo_cuba = 2; 0.45; 1))";   /* a base da torneira: o deck da cuba (yTopo) */
     e.solidos = e.solidos.concat([
-      { id: "engate-af", nome: "Engate flexível da água fria (do ponto na parede à torneira)", forma: "cilindro", eixo: "z", x: "Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: vis, naParede: true },
-      { id: "engate-aq", nome: "Engate flexível da água quente (do ponto na parede ao misturador)", forma: "cilindro", eixo: "z", x: "-Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "max(0.01; Distancia_parede - Profundidade/2)", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ")", naParede: true }]);
+      /* Lote 1b (28/10/2026): o engate TERMINAVA NO AR (parava na face de trás da cuba, 20 cm da torneira e 22 cm abaixo dela): a conferência da galeria achou a peça solta.
+         Agora, com a torneira de MESA, ele corre do ponto da parede até o prumo da torneira (ZT = o z da torneira do js/hidlouca.js geoCuba), segue pelo x até o eixo e SOBE até a
+         base da torneira: um tubo contínuo, sem ponta solta. Com a torneira de PAREDE o trecho da parede fica como era (a torneira de parede não é desenhada nesta família). */
+      { id: "engate-af", nome: "Engate flexível da água fria (do ponto na parede à torneira)", forma: "cilindro", eixo: "z", x: "Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "se(Torneira_de_parede; max(0.01; Distancia_parede - Profundidade/2); max(0.01; Distancia_parede + " + ZT + "))", material: "Metal cromado", visivel: vis, naParede: true },
+      { id: "engate-aq", nome: "Engate flexível da água quente (do ponto na parede ao misturador)", forma: "cilindro", eixo: "z", x: "-Agua_afastamento/2", y: yA, z: "-Distancia_parede", raio: "Engate_diametro/2", altura: "se(Torneira_de_parede; max(0.01; Distancia_parede - Profundidade/2); max(0.01; Distancia_parede + " + ZT + "))", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ")", naParede: true },
+      { id: "engate-af-x", nome: "Engate da água fria: do prumo do ponto ao eixo da torneira", forma: "cilindro", eixo: "x", x: "0", y: yA, z: ZT, raio: "Engate_diametro/2", altura: "Agua_afastamento/2", material: "Metal cromado", visivel: "(" + vis + ") e Torneira_de_parede = 0" },
+      { id: "engate-aq-x", nome: "Engate da água quente: do prumo do ponto ao eixo do misturador", forma: "cilindro", eixo: "x", x: "-Agua_afastamento/2", y: yA, z: ZT, raio: "Engate_diametro/2", altura: "Agua_afastamento/2", material: "Metal cromado", visivel: "Agua_quente e (" + vis + ") e Torneira_de_parede = 0" },
+      { id: "engate-sobe", nome: "Engate: sobe até a base da torneira", forma: "cilindro", eixo: "y", x: "0", y: yA, z: ZT, raio: "Engate_diametro/2", altura: "max(0.01; " + YT + " - (" + yA + "))", material: "Metal cromado", visivel: "(" + vis + ") e Torneira_de_parede = 0" }]);
     e.geo.push(
       X("Torneira_de_parede", "simnao", false, "Instalação", "Torneira de PAREDE (o ponto de água sobe para 220 mm acima do tampo, Deca p.116); desligado = torneira de MESA (ponto 220 mm abaixo do tampo)"),
       X("Agua_quente", "simnao", false, "Instalação", "Misturador (água fria + quente): dois pontos a ±Agua_afastamento/2 do eixo; desligado = torneira só de água fria (um ponto, a Agua_afastamento/2 do eixo: o esgoto da cuba entra na parede no eixo e a água não cruza com ele — critério RA R-C3, N23 26/10/2026)"),
@@ -1277,6 +1291,9 @@
       quantitativo: { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: e.nome }
     };
     if (e.servicos) { fam.servicos = JSON.parse(JSON.stringify(e.servicos)); fam.quantitativo.porServicos = true; }   /* N23: os serviços medidos (a base da caixa d'água) — o orçamento é por eles (js/orcmodelo.js) */
+    /* LOTE 1b (28/10/2026): tipos de FICHA escritos à mão (peça sem catálogo em dados-fonte/hidro/catalogos): vêm ANTES do genérico, que continua existindo
+       (projeto antigo grava "t-generico"). Cada um leva fabricante, documento, página e a cota lida. */
+    arr(e.tiposFicha).forEach(function (tf) { fam.tipos.push({ id: tf.id, nome: tf.nome, valores: JSON.parse(JSON.stringify(tf.valores)), fonte: tf.fonte, avisos: arr(tf.avisos).slice(), conferir: arr(tf.conferir).slice() }); });
     if (e.generico) fam.tipos.push(montarGenerico(e));
     else {
       var its = [];

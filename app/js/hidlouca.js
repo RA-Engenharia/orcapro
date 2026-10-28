@@ -548,8 +548,9 @@
     }
     partes.push(lo);
     if (P.metais > 0.5) {
+      /* Lote 1b: a torneira de embutir ficava 5 cm atrás da cuba MESMO que isso a pusesse atrás da parede (cuba funda, Distancia_parede padrão): agora para 3 cm dentro da parede */
       var mt = parte("metais", "Torneira, válvula e sifão", CROMO, true);
-      var zT = mod === 1 ? zB - 0.05 : zB + Math.min(0.08, Pp * 0.2), yT = mod === 1 ? 0 : yTopo, alt = mod === 1 ? 0.18 : Math.max(0.16, Hc * 1.2);
+      var zT = mod === 1 ? (num(P.Dp, 0) > Pp / 2 ? Math.max(zB - 0.05, -num(P.Dp, 0) + 0.03) : zB - 0.05) : zB + Math.min(0.08, Pp * 0.2), yT = mod === 1 ? 0 : yTopo, alt = mod === 1 ? 0.18 : Math.max(0.16, Hc * 1.2);
       torneiraMesa(mt.m, [0, yT, zT], alt, Math.max(0.1, zv - zT + 0.02), q, true);
       valvulaEscoamento(mt.m, [0, yF + 0.003, zv], 0.021, yb - 0.03, q);
       /* sifão de copo: a saída termina no CONECTOR de esgoto — N23 EMBUTIDO (26/10/2026): com a parede atrás (Distancia_parede além do

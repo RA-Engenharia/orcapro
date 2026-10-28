@@ -549,7 +549,8 @@
     acessorioTubo("ra-registro-pressao", "Registro de pressão", "registro_pressao", "Registro de pressão (chuveiro, ducha). SINAPI: PVC soldável ou roscável, volante simples; latão bruto ou com acabamento.",
       [{ id: "soldavel", nome: "PVC soldável, volante simples", valores: {} }, { id: "roscavel", nome: "PVC roscável, volante simples", valores: {} }, { id: "bruto", nome: "Latão bruto", valores: {} }, { id: "acabamento", nome: "Latão com acabamento e canopla", valores: {} }], HASTE),
     acessorioTubo("ra-valvula-retencao", "Válvula de retenção", "valvula_retencao", "Válvula de retenção de bronze, roscável (SINAPI: horizontal ou vertical — sai pela direção do tubo — e de pé com crivo).",
-      [{ id: "bronze", nome: "Bronze (horizontal ou vertical)", valores: {} }, { id: "pe_crivo", nome: "De pé com crivo", valores: {} }],
+      [{ id: "bronze", nome: "Bronze (horizontal ou vertical)", valores: {} }, { id: "pe_crivo", nome: "De pé com crivo", valores: {} },
+       { id: "pvc", nome: "PVC soldável (Amanco Wavin FTC000021: DN25 e DN32)", valores: { Retencao_ficha: 1 } }],
       [{ id: "tampa", nome: "Tampa", forma: "cilindro", eixo: "y", x: "0", y: "DN/1000*0.6", z: "0", raio: "DN/1000*0.55", altura: "DN/1000*0.5", material: "Material" }]),
     {
       id: "ra-tomada", previa: "modelador", nome: "Tomada 2P+T", categoria: "dispositivo_eletrico", hospedagem: "livre", mep: { peca: "tomada" },
@@ -664,9 +665,15 @@
     }
   );
 
+  /* RETENÇÃO PVC (Lote 1b): o face a face do tipo "pvc" é o A da ficha Amanco Wavin FTC000021 (pág. 4: DN25 = 86,5 mm, DN32 = 96 mm); os outros tipos seguem a fórmula de envelope. */
+  LISTA.forEach(function (f) {
+    if (f.id !== "ra-valvula-retencao") return;
+    f.parametros.push({ nome: "Retencao_ficha", tipoDado: "inteiro", escopo: "tipo", valor: 0, grupo: "Dimensões", descricao: "1 = face a face da ficha Amanco Wavin FTC000021 (DN25 e DN32)" });
+    f.parametros.forEach(function (p) { if (p.nome === "Comprimento") p.formula = "se(Retencao_ficha; se(DN > 25; 0.096; 0.0865); 0.025 + DN * 0.0014)"; });
+  });
   /* REGISTROS (27/10/2026): `ra-registro-gaveta/esfera/pressao` SAEM DO MENU (fica a hid-registro-* com os tipos do catálogo); o id continua o do motor
      (js/biminst.js ACESSORIOS: o traçado insere sozinho) e o desenho no tubo é o HidGeo.registro. Os sólidos de bloco ficam AQUI de propósito: a exportação
-     para o Revit (js/familiarevit.js, tools/test-bim-b6.js) só entende caixa e cilindro — o gerador "registro_tubo" (js/hidlouca.js, ponte para o HidGeo)
+     para o formato de família externo (js/familiarevit.js, tools/test-bim-b6.js) só entende caixa e cilindro — o gerador "registro_tubo" (js/hidlouca.js, ponte para o HidGeo)
      existe e está testado, mas ligá-lo a esta família quebra esse contrato (decisão pendente: ensinar o exportador a levar a malha). */
   (function () {
     LISTA.forEach(function (f) { if (/^ra-registro-(gaveta|esfera|pressao)$/.test(f.id)) f.oculta = true; });

@@ -170,9 +170,18 @@
       var tipoAntigo = fin.tipoId && tem(regra.tipos, fin.tipoId) ? fin.tipoId : ((fin.tipoId === "" || fin.tipoId == null) ? regra.tipoPadrao : null);
       if (tipoAntigo == null) return adiar("tipo \"" + fin.tipoId + "\" não está no mapa de tipos da família " + fin.famId);
       var tipoNovo = regra.tipos[tipoAntigo];
+      /* tipo ESCOLHIDO PELO PARAMETRO DE INSTANCIA (a uniao do pressurizador: um tipo por DN): o DN que a instancia leva escolhe o tipo do destino; sem DN valido, adia */
+      if (regra.tipoPorInst) {
+        var vp = (fin.inst || {})[regra.tipoPorInst.param];
+        if (vp == null || vp === "") return adiar("a instância não traz o parâmetro " + regra.tipoPorInst.param + ", que escolhe o tipo do destino: fica com a família antiga");
+        tipoNovo = String(regra.tipoPorInst.prefixo) + String(vp);
+        var defDest = typeof ctx.familia === "function" ? ctx.familia(regra.para) : null;
+        if (!defDest || !arr(defDest.tipos).some(function (tq) { return tq.id === tipoNovo; })) return adiar("o tipo " + tipoNovo + " (" + regra.tipoPorInst.param + " " + vp + ") não existe em " + regra.para + ": fica com a família antiga");
+      }
       var defNova = typeof ctx.familia === "function" ? ctx.familia(regra.para) : null;
       var chavesValidas = paramsDeInstancia(defNova), instNova = {}, descartadas = [], instAnt = fin.inst || {};
       Object.keys(instAnt).forEach(function (k) { if (tem(chavesValidas, k)) instNova[k] = instAnt[k]; else descartadas.push(k); });
+      if (regra.instFixa) Object.keys(regra.instFixa).forEach(function (k) { instNova[k] = regra.instFixa[k]; });   /* parametro de instancia que o destino ganha (ex.: Vertical) */
 
       var avAnt = ctx.avaliar(fin.famId, tipoAntigo, instAnt), avNov = ctx.avaliar(regra.para, tipoNovo, instNova);
       if (!avAnt || avAnt.ok === false) return adiar("a família antiga " + fin.famId + " não avalia neste contexto");
@@ -216,7 +225,7 @@
       if (presos.length) return adiar("conector ligado a tubo ficaria a mais de " + Math.round(L.toleranciaLigacao_m * 100) + " cm: " + presos.join(", ") + " (a instância fica com a família antiga)");
 
       /* reescreve as ops da instancia (na COPIA) */
-      function mapTipo(t) { if (t === "" || t == null) return tipoNovo; return tem(regra.tipos, t) ? regra.tipos[t] : tipoNovo; }
+      function mapTipo(t) { if (regra.tipoPorInst) return tipoNovo; if (t === "" || t == null) return tipoNovo; return tem(regra.tipos, t) ? regra.tipos[t] : tipoNovo; }
       function mapInst(inst) { var o = {}; Object.keys(inst || {}).forEach(function (k) { if (tem(chavesValidas, k)) o[k] = inst[k]; }); return o; }
       e.refs.forEach(function (r) {
         var o = porOp[idxRef(r)].op;
@@ -224,6 +233,7 @@
         if (o.op === "instancia" && o.famId != null) o.famId = regra.para;   /* instancia com o id ANTIGO (sem trocar de familia): vai para o destino */
         if (o.op === "familia" || o.tipoId != null) o.tipoId = mapTipo(o.tipoId);
         if (o.inst) o.inst = mapInst(o.inst);
+        if (o.op === "familia" && regra.instFixa) { o.inst = o.inst || {}; Object.keys(regra.instFixa).forEach(function (k) { o.inst[k] = regra.instFixa[k]; }); }
       });
       /* o deslocamento vai em TODAS as ops de posicao absoluta (a familia e cada mover), nao so na ultima: o que o desfazer/refazer ou um corte da lista deixar vale igual */
       if (dx || dz) e.opsX.forEach(function (rx) {

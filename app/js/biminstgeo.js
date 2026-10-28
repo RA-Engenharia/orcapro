@@ -1503,6 +1503,8 @@
      castelo (base sextavada, colar, coluna, degrau) e a haste com a CHAVE chata; a altura e o bojo da ficha da base
      (registros-base-cotas) quando há; o resto em proporção declarada (aConferir). Com acabamento, a canopla e a cruzeta
      cromadas por cima (a base embutida). */
+  /* Amanco Wavin FTC000021 (rev. fev/2025), pág. 4 — válvula de retenção soldável: A comprimento, B Ø máximo (mm) */
+  var RETENCAO_AMANCO = { "25": { A: 86.5, B: 65.5, cod: "98934" }, "32": { A: 96, B: 73.7, cod: "98935" } };
   function registroPvc(a, o, C, d, de, matTubo) {
     var fr = o.frente ? nrmz(pv(o.frente)) : null;
     if (!fr || Math.abs(dot(fr, d)) > 0.5) fr = Math.abs(d[1]) > 0.9 ? [0, 0, 1] : nrmz(cross([0, 1, 0], d));
@@ -1524,6 +1526,19 @@
     /* o bojo no meio */
     var Lb2 = Lff - 2 * (Lend + nut) + 2;
     varrer(mc, reta(add(C, mul(d, -Lb2 / 2 * MM)), d), escala([[0, 0], [0, rB * 0.8], [Lb2 * 0.18, rB], [Lb2 * 0.82, rB], [Lb2, rB * 0.8], [Lb2, 0]]), seg, false);
+    /* RETENÇÃO de PVC pela FICHA da Amanco Wavin (FTC000021, rev. fev/2025, pág. 4: DN25 e DN32 soldável; A = comprimento, B = Ø máximo): corpo tipo união com a
+       porca estriada, sem castelo. O face a face vem do `comprimento` da peça (o da família: o tubo para nele) — quando é o da ficha o desenho é exato; senão as
+       proporções axiais se escalam e vai `aConferir`. Outros DN seguem a forma de reserva abaixo. */
+    var RA0 = a.acessorio === "valvula_retencao" ? RETENCAO_AMANCO[String(a.dn)] : null;
+    if (RA0) {
+      var rO = RA0.B / 2, rBd = rO * 0.83, rS = cs.od / 2 * 1.1, LA = Lff, ribs = [], kz;
+      var pfR = [[0, 0], [0, rS], [LA * 0.1, rS], [LA * 0.1, rBd], [LA * 0.14, rO * 0.9]];
+      for (kz = 0; kz < 7; kz++) { var z0 = LA * (0.17 + kz * 0.055); pfR.push([z0, rO], [z0 + LA * 0.03, rO], [z0 + LA * 0.03, rO * 0.955], [z0 + LA * 0.055, rO * 0.955]); }
+      pfR.push([LA * 0.56, rO], [LA * 0.6, rBd], [LA * 0.78, rBd * 0.97], [LA * 0.86, rS * 1.04], [LA * 0.9, rS], [LA, rS], [LA, 0]);
+      varrer(mc, reta(add(C, mul(d, -h * MM)), d), escala(pfR), seg + 8, false);
+      return { partes: [cascaSaida(mc, "corpo")], frente: fr, comprimento: Lff * MM, aConferir: Math.abs(Lff - RA0.A) > 1 ? "o face a face da peça (" + Lff.toFixed(1) + " mm) não é o da ficha (" + RA0.A + " mm)" : false,
+               cotas: { corpo: RA0.B, comprimento: RA0.A, origem: "catalogo", fonte: "Amanco Wavin FTC000021, pág. 4, cód. " + RA0.cod } };
+    }
     /* RETENÇÃO de PVC (pressurização, 18/10/2026): o corpo é o mesmo; no lugar do castelo, a TAMPA sextavada da portinhola */
     if (a.acessorio === "valvula_retencao") {
       varrer(mc, reta(C, fr), escala([[0, 0], [0, rB * 0.75], [rB * 1.25, rB * 0.75], [rB * 1.25, 0]]), 6, false);
