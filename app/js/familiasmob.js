@@ -1084,7 +1084,14 @@
        undefined = "desligado", e o painel ripado e a TV sumiam do rack. O que a cópia não tem vem com o padrão da definição atual. */
     var atual = null;
     for (var ia = 0; ia < LISTA.length; ia++) if (LISTA[ia].id === (fam.mob || fam.id)) { atual = LISTA[ia]; break; }
-    if (atual) (atual.parametros || []).forEach(function (p) { if (!p.formula && v[p.nome] === undefined && p.valor !== undefined) v[p.nome] = p.valor; });
+    /* o valor que a OBRA deu ao tipo (ajustarTipo "fam:Nome" → inst.$tipo) vale antes do padrão: sem isso, desligar a TV do rack de
+       uma cópia antiga (Com_tv=não) não pegava — o avaliador só aplica $tipo aos parâmetros que a cópia conhece */
+    var tp = inst && inst.$tipo ? inst.$tipo : null;
+    if (atual) (atual.parametros || []).forEach(function (p) {
+      if (p.formula || v[p.nome] !== undefined) return;
+      if (tp && tp[p.nome] !== undefined) v[p.nome] = p.tipoDado === "simnao" ? (tp[p.nome] === true || tp[p.nome] === 1 || tp[p.nome] === "1" || tp[p.nome] === "sim" || tp[p.nome] === "true") : tp[p.nome];
+      else if (p.valor !== undefined) v[p.nome] = p.valor;
+    });
     try { g(c, v); } catch (e) { saida.ok = false; saida.erros = (saida.erros || []).concat(["mobiliário \"" + fam.nome + "\": " + e.message]); return saida; }
     /* aviso do gerador (ex.: o vão de eletro do armário planejado que não coube na largura total) chega a quem avalia */
     if (c.avisos && c.avisos.length) saida.avisos = (saida.avisos || []).concat(c.avisos);

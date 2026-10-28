@@ -55,8 +55,13 @@
   /* categoria do elemento, ou null se NÃO vai para o Twinmotion */
   /* PILAR/VIGA: vai para o Twinmotion, a não ser que esteja EMBUTIDO numa parede (caixa dentro da caixa de uma parede, 2 cm de folga).
      Até 28/10/2026 todo pilar/viga "e<n>" saía — os pilares do portão viravam caixa oca (só as faces de pintura) e o pergolado sumia. */
+  /* MÓVEL SOLTO e PLANTA não vão (pedido do Rogério, 28/10/2026): no Twinmotion ele usa os da biblioteca dele. Vão os fixos —
+     armários, bancadas, cozinha, banho, louças, guarda-roupa, closet, rack/painel. A família vem do sólido ("<família>:<n>"). */
+  var SOLTO = /(^|-)mob-(sofa|mesa|cadeira|poltrona|cama|criado|tapete|aparador|escrivaninha|banqueta|pufe|puff)|(^|-)lazer-(mesa|espreguic|guarda-sol|cadeira)|(^|-)pais-/;
+  function famDe(u) { return u && u.famSolido ? String(u.famSolido).split(":")[0] : ""; }
   function categoria(id, u, embutida) {
     if (FORA[u.tipo]) return null;
+    if (SOLTO.test(famDe(u))) return null;
     if (ESTRUT[u.tipo] && embutida) return null;
     if (u.linhaDivisa) return null;
     if (u.tipo === "IFCLIGHTFIXTURE") return "luz";
