@@ -2223,6 +2223,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
   /* PORTAS, PORTÕES E GAVETAS QUE ABREM (20/10/2026, js/bimabrirui.js): clique no modo "Abrir portas"/Alt/passeio, cursor de mão, tecla O e o freio do passeio */
   try { if (window.BimAbrirUI && !visitante) S._abrirUI = window.BimAbrirUI.instalar(S, THREE); } catch (_) {}
+  /* SINCRONIZAR COM TWINMOTION (28/10/2026, js/bimtwinmotion.js): câmera no quadro (_tickExtra) e GLB a cada reconstrução do editor; nasce DESLIGADO */
+  try { if (window.BimTwinmotion && !visitante) S._twinmotion = window.BimTwinmotion.instalar(S, THREE); } catch (_) {}
 
   /* =====================================================================
    * O CRISTAL ORÇAPRO (bim/cristal.js + js/bimabertura.js) — ESPEC-BIM-CUBO-LOGO.md
@@ -13776,6 +13778,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       edit.modelo = mo;
     }
     if (S._metGeoVarrer) S._metGeoVarrer();   /* METÁLICA: descarta a malha guardada da peça que não está mais na cena */
+    try { if (window.BimTwinmotion) window.BimTwinmotion.aoReconstruir(); } catch (_) {}   /* TWINMOTION: modelo mudou -> GLB com debounce (só se a sincronia estiver ligada) */
     try { if (window.BimAbrirUI) window.BimAbrirUI.atualizar(); } catch (_) {}   /* PARTES MÓVEIS: os botões da barra só aparecem quando há o que abrir */
     st.anotacoes.forEach(function (a) {
       var sp = labelSprite('📍 ' + a.texto);

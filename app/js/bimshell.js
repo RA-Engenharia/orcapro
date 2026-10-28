@@ -1186,6 +1186,8 @@
       if (global.BimApresentacaoUI && global.BimApresentacaoUI.botaoBarra) { var bAD = global.BimApresentacaoUI.botaoBarra(el, ico); if (bAD) d.appendChild(bAD); }
       /* PORTAS, PORTÕES E GAVETAS QUE ABREM (js/bimabrirui.js): o botão da mão (O), Abrir todas e Fechar todas — só aparecem quando o modelo tem o que abrir */
       if (global.BimAbrirUI && global.BimAbrirUI.botaoBarra) { var bAP = global.BimAbrirUI.botaoBarra(el, ico); if (bAP) d.appendChild(bAP); }
+      /* SINCRONIZAR COM TWINMOTION (js/bimtwinmotion.js): só aparece com o app local; liga câmera + modelo ao OrçaPRO Direct Link */
+      if (global.BimTwinmotion && global.BimTwinmotion.botaoBarra) { var bTW = global.BimTwinmotion.botaoBarra(el, ico); if (bTW) d.appendChild(bTW); }
       /* VISTA INSTALAÇÕES (js/biminstui.js): arquitetura translúcida para ver os tubos — liga sozinha na aba Instalações */
       if (global.BimInstUI && global.BimInstUI.botaoBarra) { var bVI = global.BimInstUI.botaoBarra(el, ico); if (bVI) d.appendChild(bVI); }
       /* SELECIONAR (js/bimselecao.js, 09/10/2026): o esquerdo SELECIONA; a Mão é a ferramenta explícita

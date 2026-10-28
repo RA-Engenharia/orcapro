@@ -1472,6 +1472,7 @@ S._orientarMain = function (d) { orientarPara({ cam: function () { return camera
 try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
 try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
 try { if (window.BimAbrirUI && !visitante) S._abrirUI = window.BimAbrirUI.instalar(S, THREE); } catch (_) {}
+try { if (window.BimTwinmotion && !visitante) S._twinmotion = window.BimTwinmotion.instalar(S, THREE); } catch (_) {}
 var cris = { hist: ['cubo'], congelado: null, obj: null, estado: 'cubo', t0: 0, tCarga: 0, curta: null, mo: null, c: null, escalado: null, ultimo: performance.now(), abriuEm: performance.now(), arr: null, semMov: false };
 try { cris.semMov = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (_) {}
 function crisBA() { return (typeof window !== 'undefined') ? window.BimAbertura : null; }
@@ -10438,6 +10439,7 @@ carimbarConsulta();
 edit.modelo = mo;
 }
 if (S._metGeoVarrer) S._metGeoVarrer();
+try { if (window.BimTwinmotion) window.BimTwinmotion.aoReconstruir(); } catch (_) {}
 try { if (window.BimAbrirUI) window.BimAbrirUI.atualizar(); } catch (_) {}
 st.anotacoes.forEach(function (a) {
 var sp = labelSprite('📍 ' + a.texto);

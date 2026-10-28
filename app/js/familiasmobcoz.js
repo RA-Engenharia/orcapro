@@ -63,9 +63,15 @@
     if (L / 2 - cur > 1e-4) c.caixa(mat, (cur + L / 2) / 2, y, zc, L / 2 - cur, e, D);
   }
   /* cuba inox embutida (borda rente ao tampo) + torneira gourmet */
+  /* lar × pro = o RECORTE do tampo: o corpo da cuba enche o recorte e a borda (aba de 1,5 cm, inox) apoia sobre o tampo, como a cuba
+     de embutir de verdade. Até 28/10/2026 a cuba saía 0,50 × 0,40 num recorte de 0,54 × 0,42 — fresta de 2 cm à vista em volta. */
   function cuba(c, x, z, yTopo, lar, pro) {
-    var prof = 0.20, ext = Mob.contornoRR(lar, pro, 0.03, 4), int = Mob.contornoRR(lar - 0.03, pro - 0.03, 0.02, 4);
+    var prof = 0.20, aba = 0.015, ext = Mob.contornoRR(lar, pro, 0.03, 4), int = Mob.contornoRR(lar - 0.03, pro - 0.03, 0.02, 4);
     c.bandeja(MAT.INOX, MAT.INOX, x, yTopo - prof, z, ext, int, prof, 0.01);
+    [-1, 1].forEach(function (s) {
+      c.caixa(MAT.INOX, x, yTopo, z + s * (pro / 2 + aba / 2 - 0.015), lar + 2 * aba, 0.002, aba + 0.015);
+      c.caixa(MAT.INOX, x + s * (lar / 2 + aba / 2 - 0.015), yTopo, z, aba + 0.015, 0.002, pro);
+    });
     var zt = z - pro / 2 - 0.05;
     c.cil(MAT.CROMO, x, yTopo, zt, 0.022, 0.03, { seg: 12 });
     c.cil(MAT.CROMO, x, yTopo + 0.03, zt, 0.014, 0.30, { seg: 10 });
@@ -153,7 +159,7 @@
       if (nk) furos.push({ x: xk, larg: 0.56, prof: 0.49, z: D / 2 });
       tampoFuros(c, v.Tampo, L, D, e, Ht - e, D / 2, furos);
       c.caixa(v.Tampo, 0, Ht - e - 0.05, 0.005, L, 0.15 + 0.05, 0.01);                                  // espelho/rodabancada
-      if (nc) cuba(c, furos[0].x, furos[0].z, Ht, 0.50, 0.40);
+      if (nc) cuba(c, furos[0].x, furos[0].z, Ht, furos[0].larg, furos[0].prof);
       if (nk) cooktop(c, xk, D / 2, Ht, 0.55, 0.47, 4);
     }
   });
@@ -237,7 +243,7 @@
       if (nc) furos.push({ x: nk ? -L / 4 : -L / 6, larg: 0.54, prof: 0.42, z: z0 + Dc / 2 });
       if (nk) furos.push({ x: L / 4, larg: 0.56, prof: 0.49, z: z0 + Dc / 2 });
       tampoFuros(c, v.Tampo, L, D, e, Ht - e, z0 + D / 2, furos);
-      if (nc) cuba(c, furos[0].x, furos[0].z, Ht, 0.50, 0.40);
+      if (nc) cuba(c, furos[0].x, furos[0].z, Ht, furos[0].larg, furos[0].prof);
       if (nk) cooktop(c, L / 4, z0 + Dc / 2, Ht, 0.55, 0.47, 4);
       var nb = Math.round(v.Banquetas), pas = 0.62;
       for (var i = 0; i < nb; i++) { var xb = (i - (nb - 1) / 2) * pas; c.grupo(xb, 0, D / 2 + 0.12, 0, function (k) { banquetaLeve(k, v.Altura_banqueta, 0.36, v.Tecido, MAT.PRETO); }); }

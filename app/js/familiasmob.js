@@ -1079,9 +1079,9 @@
     var g = GER[fam.mob || fam.id];
     if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de mobiliário \"" + (fam.mob || fam.id) + "\" não carregou"]); return saida; }
     var c = Mob.cena(), v = saida.valores || {};
-    /* CÓPIA ANTIGA DA FAMÍLIA (28/10/2026): a família copiada para o projeto (ex.: c487-mob-rack-tv, mob "ra-mob-rack-tv") guarda a
+    /* CÓPIA ANTIGA DA FAMÍLIA (28/10/2026): a família copiada para o projeto (mob "ra-mob-rack-tv" numa cópia com id próprio) guarda a
        lista de parâmetros do dia em que foi copiada; o parâmetro que o gerador ganhou depois (Com_painel, Com_tv no lote 3a) chegava
-       undefined = "desligado", e o painel ripado e a TV sumiram do rack da Casa 487. O que a cópia não tem vem com o padrão da definição atual. */
+       undefined = "desligado", e o painel ripado e a TV sumiam do rack. O que a cópia não tem vem com o padrão da definição atual. */
     var atual = null;
     for (var ia = 0; ia < LISTA.length; ia++) if (LISTA[ia].id === (fam.mob || fam.id)) { atual = LISTA[ia]; break; }
     if (atual) (atual.parametros || []).forEach(function (p) { if (!p.formula && v[p.nome] === undefined && p.valor !== undefined) v[p.nome] = p.valor; });
