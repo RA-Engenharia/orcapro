@@ -727,6 +727,420 @@
     });
   })();
 
+  /* =====================================================================
+   * LOTE 2 — ELÉTRICA E ARQUITETURA IGUAIS AO CATÁLOGO (28/10/2026)
+   *
+   * Tomada, interruptor, luminária de teto, quadro de distribuição, portas e janelas `ra-*`, pilar e viga deixam de ser caixa:
+   * ganham as peças do produto (caixa de embutir, suporte, placa, módulo/tecla, furos; moldura, difusor, driver; porta do quadro,
+   * trilho DIN e disjuntores; batente, guarnição, dobradiça, roseta e alavanca; marco, folhas com perfil, trilho e fecho).
+   *
+   * O QUE NÃO MUDA (projeto de cliente abre igual): id da família, id e valores dos tipos antigos, parâmetros (nome, escopo, padrão),
+   * conectores elétricos (x, y, z, DN), abertura/peitoril do vão, quantitativo, ids dos sólidos que as partes móveis e o símbolo da
+   * planta leem (fo, ma, fe, fd, f1, f2, v1, v2, mi, ms, me, md, pi, be, bd, bs, caixa) e as dimensões dos vidros (a área que abre).
+   * Só ACRESCENTA: parâmetros de tipo (códigos numéricos de modelo, Fonte_cota) e tipos novos. Os sólidos de bloco originais que
+   * estão escritos acima ficam SUBSTITUÍDOS por esta lista (a definição final é a daqui).
+   *
+   * FONTES (a cota que a ficha traz está em `Fonte_cota`, tipo a tipo; o que é prática de modelagem está dito assim):
+   *  · caixa de embutir 4″×2″ e 4″×4″: medida nominal em polegadas (101,6 × 50,8 mm; 101,6 × 101,6 mm);
+   *  · placa 4×2 = 115 × 73 mm (medida informada pelo Rogério em 28/10/2026 para Tramontina Liz e Pial Plus — o varejo publica 120 × 83;
+   *    conferir na ficha do modelo comprado); placa 4×4 = 124 × 118 mm (Pial Plus, placa cega 4×4 branca, Telhanorte 632392);
+   *  · quadro de embutir: Schneider Easy9 8 módulos = 208 × 208 × 90 mm e 16 módulos = 335 × 335 × 90 mm (Telhanorte 1456040/1456075);
+   *  · luminária de teto: Taschibra Lux (data/iluminacao-catalogo.json, js/familiasluz.js): redondo embutir Ø 220 / 15 mm, redondo sobrepor
+   *    Ø 210 / 26 mm, quadrado sobrepor 210 / 25 mm;
+   *  · portas e janelas: grade comercial de docs/arquitetura/esquadrias (Sasazaki Alumifort 120×100, 150×100, 150×120; Atlântica Fortiline
+   *    100×100; kits de porta 210 × 60–90). Espessura de perfil, de folha e de batente: prática (C), sem ficha — dito em Fonte_cota;
+   *  · pilar e viga de concreto e peça serrada de madeira: PRISMA (seção retangular constante) — é a forma real do elemento moldado
+   *    em fôrma/serrado; não há "forma de catálogo" a imitar (justificativaForma).
+   * ===================================================================== */
+  (function () {
+    function S(v) { return String(v); }
+    function cx(id, nome, x, y, z, dx, dy, dz, mat, vis) { var o = { id: id, nome: nome, forma: "caixa", x: S(x), y: S(y), z: S(z), dx: S(dx), dy: S(dy), dz: S(dz), material: mat }; if (vis) o.visivel = vis; return o; }
+    function cl(id, nome, eixo, x, y, z, raio, alt, mat, vis) { var o = { id: id, nome: nome, forma: "cilindro", eixo: eixo, x: S(x), y: S(y), z: S(z), raio: S(raio), altura: S(alt), material: mat }; if (vis) o.visivel = vis; return o; }
+    function rv(id, nome, eixo, x, y, z, perfil, mat, seg, fechar, vis) {
+      var o = { id: id, nome: nome, forma: "revolucao", eixo: eixo, x: S(x), y: S(y), z: S(z), perfil: perfil.map(function (q) { return [S(q[0]), S(q[1])]; }), segmentos: seg || 20, material: mat };
+      if (fechar) o.fechar = "perfil"; if (vis) o.visivel = vis; return o;
+    }
+    function ex(id, nome, plano, x, y, z, alt, cont, mat, vis, rot) { var o = { id: id, nome: nome, forma: "extrusao", plano: plano, x: S(x), y: S(y), z: S(z), altura: S(alt), contorno: cont.map(function (q) { return [S(q[0]), S(q[1])]; }), material: mat }; if (vis) o.visivel = vis; if (rot) o.rot = S(rot); return o; }
+    function P(nome, tipoDado, escopo, valor, grupo, descricao) { var o = { nome: nome, tipoDado: tipoDado, escopo: escopo, valor: valor, grupo: grupo }; if (descricao) o.descricao = descricao; return o; }
+    function F(nome, tipoDado, formula, grupo, descricao) { var o = { nome: nome, tipoDado: tipoDado, escopo: "tipo", formula: formula, grupo: grupo }; if (descricao) o.descricao = descricao; return o; }
+    function achar(id) { for (var i = 0; i < LISTA.length; i++) if (LISTA[i].id === id) return LISTA[i]; return null; }
+    function tipo(f, id) { for (var i = 0; i < f.tipos.length; i++) if (f.tipos[i].id === id) return f.tipos[i]; return null; }
+    function somar(f, id, v) { var t = tipo(f, id); Object.keys(v).forEach(function (k) { t.valores[k] = v[k]; }); }
+
+    /* ---------------- POSTOS DA PLACA (tomada e interruptor): 1 posto = placa 4×2 em pé; 2–3 postos = 4×2 deitada; 4–6 = 4×4 (2 linhas) ---------------- */
+    var PASSO = 0.0305, RLIN = 0.0228, COLS = "piso((Modulos + 1)/2)";
+    function linha(k) { return "piso(" + k + "/" + COLS + ")"; }
+    function postoX(k) { return "se(Modulos <= 3; (" + k + " - (Modulos - 1)/2)*" + PASSO + "; (" + k + " - " + COLS + "*" + linha(k) + " - (min(" + COLS + "; Modulos - " + COLS + "*" + linha(k) + ") - 1)/2)*" + PASSO + ")"; }
+    function postoY(k) { return "se(Modulos <= 3; 0; " + RLIN + "*(1 - 2*" + linha(k) + "))"; }
+    var PLACA_PARAMS = [
+      F("Placa_L", "comprimento", "se(Modulos <= 1; 0.073; se(Modulos <= 3; 0.115; 0.124))", "Dimensões", "Largura da placa: 4×2 em pé 73 mm, 4×2 deitada 115 mm, 4×4 124 mm"),
+      F("Placa_A", "comprimento", "se(Modulos <= 1; 0.115; se(Modulos <= 3; 0.073; 0.118))", "Dimensões", "Altura da placa: 4×2 em pé 115 mm, deitada 73 mm, 4×4 118 mm"),
+      F("Caixa_L", "comprimento", "se(Modulos <= 1; 0.0508; 0.1016)", "Dimensões", "Caixa de embutir 4″×2″ (50,8 × 101,6 mm) ou 4″×4″ (101,6 × 101,6 mm)"),
+      F("Caixa_A", "comprimento", "se(Modulos <= 1; 0.1016; se(Modulos <= 3; 0.0508; 0.1016))", "Dimensões"),
+      P("Fonte_cota", "texto", "tipo", "Placa 4×2 115×73 mm (medida informada pelo Rogério em 28/10/2026 para Tramontina Liz e Pial Plus; o varejo publica 120×83: conferir na ficha do modelo comprado). Caixa 4″×2″ = 101,6×50,8 mm e 4″×4″ = 101,6×101,6 mm (nominal em polegadas). Placa 4×4 124×118 mm (Pial Plus, varejo Telhanorte 632392). Módulo e tecla: prática de modelagem (C), sem ficha.", "Fonte", "De onde vem a cota deste tipo; o que é prática de modelagem está dito"),
+      P("Nivel_fonte", "texto", "tipo", "B", "Fonte", "A ficha lida · B varejo/medida informada · C prática de modelagem, a conferir")
+    ];
+    function parafusosPlaca() {
+      var out = [];
+      [1, -1].forEach(function (sg, i) {
+        out.push(cl("pf" + i, "Parafuso da placa " + (i + 1), "z", "se(Modulos >= 2 e Modulos <= 3; " + sg + "*(Placa_L/2 - 0.011); 0)", "Altura_montagem + se(Modulos >= 2 e Modulos <= 3; 0; " + sg + "*(Placa_A/2 - 0.011))", 0.008, 0.0035, 0.0012, "Metal cromado"));
+      });
+      return out;
+    }
+    function corpoPlaca(MAT) {
+      return [
+        cx("cx", "Caixa de embutir 4×2 / 4×4", 0, "Altura_montagem - Caixa_A/2", -0.0225, "Caixa_L", "Caixa_A", 0.045, "Plástico"),
+        cx("sup", "Suporte (garras)", 0, "Altura_montagem - (Placa_A - 0.012)/2", -0.001, "Placa_L - 0.012", "Placa_A - 0.012", 0.002, "Metal"),
+        cx("placa", "Espelho (placa)", 0, "Altura_montagem - Placa_A/2", 0.004, "Placa_L", "Placa_A", 0.008, MAT)
+      ];
+    }
+
+    /* ---------------- TOMADA 2P+T ---------------- */
+    (function () {
+      var f = achar("ra-tomada");
+      f.parametros = f.parametros.concat(PLACA_PARAMS, [P("Pino_mm", "numero", "tipo", 4.0, "Elétrica", "Diâmetro do pino do plugue: 4,0 mm (10 A) ou 4,8 mm (20 A) — NBR 14136, valor a conferir na norma (cópia sem licença)")]);
+      f.tipos.push({ id: "t20x2", nome: "2P+T 20 A, 2 módulos", valores: { Corrente_A: 20, Modulos: 2 } },
+        { id: "t10x3", nome: "2P+T 10 A, 3 módulos", valores: { Modulos: 3 } },
+        { id: "t10x4", nome: "2P+T 10 A, 4 módulos (placa 4×4)", valores: { Modulos: 4 } },
+        { id: "t20x6", nome: "2P+T 20 A, 6 módulos (placa 4×4)", valores: { Corrente_A: 20, Modulos: 6 } });
+      f.tipos.forEach(function (t) { t.valores.Pino_mm = (t.valores.Corrente_A === 20) ? 4.8 : 4.0; });
+      var s = corpoPlaca("Material");
+      for (var k = 0; k < 6; k++) {
+        var v = k === 0 ? null : "Modulos > " + k, px = postoX(k), py = "Altura_montagem + " + postoY(k);
+        s.push(cx("mod" + k, "Módulo da tomada " + (k + 1), px, py + " - 0.0127", 0.0092, 0.0254, 0.0254, 0.0024, "Material", v));
+        s.push(cl("aro" + k, "Aro da tomada " + (k + 1), "z", px, py, 0.0104, 0.0105, 0.0014, "Plástico branco", v));
+        s.push(cx("fn" + k, "Furo fase/neutro 1 (posto " + (k + 1) + ")", px + " - 0.0095", py + " + 0.0035 - Pino_mm/2000", 0.0121, "Pino_mm/1000", "Pino_mm/1000", 0.0006, "Borracha preta", v));
+        s.push(cx("fm" + k, "Furo fase/neutro 2 (posto " + (k + 1) + ")", px + " + 0.0095", py + " + 0.0035 - Pino_mm/2000", 0.0121, "Pino_mm/1000", "Pino_mm/1000", 0.0006, "Borracha preta", v));
+        s.push(cx("ft" + k, "Furo terra (posto " + (k + 1) + ")", px, py + " - 0.0075 - Pino_mm/2000", 0.0121, "Pino_mm/1000", "Pino_mm/1000", 0.0006, "Borracha preta", v));
+      }
+      f.solidos = s.concat(parafusosPlaca());
+      f.descricao += " Peças: caixa de embutir 4″×2″/4″×4″, suporte, espelho, parafusos, módulo e furos 2P+T (Ø do pino 4,0 mm a 10 A e 4,8 mm a 20 A).";
+    })();
+
+    /* ---------------- INTERRUPTOR ---------------- */
+    (function () {
+      var f = achar("ra-interruptor");
+      f.parametros = f.parametros.concat(PLACA_PARAMS, [P("Esquema", "numero", "tipo", 1, "Elétrica", "Código do esquema para o desenho da tecla: 1 simples · 2 paralelo (1 marca) · 3 intermediário (2 marcas) · 4 misto · 5 bipolar (barra)")]);
+      var cod = { simples: 1, paralelo: 2, intermediario: 3, misto: 4, bipolar: 5 };
+      f.tipos.forEach(function (t) { t.valores.Esquema = cod[t.valores.Tipo_interruptor || "simples"]; });
+      f.tipos.push({ id: "s4", nome: "Simples, 4 módulos (placa 4×4)", valores: { Modulos: 4, Esquema: 1 } },
+        { id: "p4", nome: "Paralelo (three-way), 4 módulos (placa 4×4)", valores: { Tipo_interruptor: "paralelo", Modulos: 4, Esquema: 2 } });
+      var s = corpoPlaca("Material");
+      for (var k = 0; k < 6; k++) {
+        var v = k === 0 ? null : "Modulos > " + k, px = postoX(k), py = "Altura_montagem + " + postoY(k);
+        s.push(cx("mol" + k, "Moldura do posto " + (k + 1), px, py + " - 0.0232", 0.0088, 0.0254, 0.0465, 0.0015, "Material", v));
+        s.push(cx("tec" + k, "Tecla " + (k + 1), px, py + " - 0.0207", 0.012, 0.0215, 0.0415, 0.005, "Material", v));
+        s.push(cx("ra" + k, "Ranhura da tecla " + (k + 1), px, py + " - 0.0005", 0.0148, 0.0215, 0.0008, 0.0006, "Cinza escuro", v));
+        s.push(cx("ia" + k, "Marca do esquema 1 (posto " + (k + 1) + ")", px, py + " + 0.0085", 0.0148, 0.004, 0.004, 0.0006, "Borracha preta", (k === 0 ? "Esquema = 2 ou Esquema = 3" : "(Esquema = 2 ou Esquema = 3) e Modulos > " + k)));
+        s.push(cx("ib" + k, "Marca do esquema 2 (posto " + (k + 1) + ")", px, py + " - 0.0125", 0.0148, 0.004, 0.004, 0.0006, "Borracha preta", "Esquema = 3" + (k === 0 ? "" : " e Modulos > " + k)));
+        s.push(cx("bp" + k, "Barra do bipolar (posto " + (k + 1) + ")", px, py + " - 0.0005", 0.0148, 0.0215, 0.002, 0.0006, "Borracha preta", "Esquema = 5" + (k === 0 ? "" : " e Modulos > " + k)));
+      }
+      f.solidos = s.concat(parafusosPlaca());
+      f.descricao += " Peças: caixa de embutir, suporte, espelho, parafusos, moldura e tecla de cada posto, com a marca do esquema (paralelo 1, intermediário 2, bipolar barra).";
+    })();
+
+    /* ---------------- LUMINÁRIA DE TETO ---------------- */
+    (function () {
+      var f = achar("ra-luminaria");
+      f.parametros = f.parametros.concat([
+        P("Forma_cod", "numero", "tipo", 1, "Dimensões", "Forma: 1 quadrado/painel · 2 redondo · 3 spot PAR20"),
+        P("Inst_cod", "numero", "tipo", 1, "Dimensões", "Instalação: 1 embutir · 2 sobrepor"),
+        P("Altura_corpo", "comprimento", "tipo", 0.03, "Dimensões", "Espessura da luminária acima do forro: 30 mm é o envelope da família (o conector fica no topo); os tipos de catálogo trazem a altura da ficha"),
+        F("Larg_moldura", "comprimento", "se(Lado > 0.4; 0.02; 0.012)", "Dimensões", "Largura da moldura do plafon/painel quadrado"),
+        P("Fonte_cota", "texto", "tipo", "Medida de catálogo de uso corrente (SINAPI 06/2026 orça plafon quadrado/circular, spot PAR20 e painel 60×60); espessura de moldura e driver: prática de modelagem (C), sem ficha — conferir o modelo comprado.", "Fonte"),
+        P("Nivel_fonte", "texto", "tipo", "C", "Fonte")
+      ]);
+      somar(f, "pq24s", { Inst_cod: 2 });
+      somar(f, "pc12s", { Forma_cod: 2, Inst_cod: 2 });
+      somar(f, "pc12e", { Forma_cod: 2 });
+      somar(f, "spote", { Forma_cod: 3 });
+      var TB = "https://www.taschibra.com.br/pt_BR/produto/teto/";
+      f.tipos.push(
+        { id: "lux18re", nome: "Plafon redondo LED 18 W, de embutir (Taschibra Lux Ø 220, nicho 205)", valores: { Modelo: "plafon_circular", Instalacao: "embutir", Potencia_W: "18", Lado: 0.22, Altura_corpo: 0.015, Fluxo_lm: 1260, Forma_cod: 2, Inst_cod: 1, Fonte_cota: "Taschibra painel LED 18 W Lux redondo embutir: Ø 220 mm, altura 15 mm, nicho 205 mm, 1260 lm (data/iluminacao-catalogo.json pa-tb-lux18-red-emb) " + TB + "painelplafon-embutir-led/painel-led-18w-lux-redondo-embutir-3000k/18111", Nivel_fonte: "A" } },
+        { id: "lux18rs", nome: "Plafon redondo LED 18 W, de sobrepor (Taschibra Lux Ø 210)", valores: { Modelo: "plafon_circular", Instalacao: "sobrepor", Potencia_W: "18", Lado: 0.21, Altura_corpo: 0.026, Fluxo_lm: 1260, Forma_cod: 2, Inst_cod: 2, Fonte_cota: "Taschibra painel LED 18 W Lux redondo sobrepor: Ø 210 mm, altura 26 mm, 1260 lm (data/iluminacao-catalogo.json pl-tb-lux18-red-sob) " + TB + "painelplafon-sobrepor-led/painel-led-18w-lux-redondo-sobrepor-3000k/18129", Nivel_fonte: "A" } },
+        { id: "lux18qs", nome: "Plafon quadrado LED 18 W, de sobrepor (Taschibra Lux 210)", valores: { Modelo: "plafon_quadrada", Instalacao: "sobrepor", Potencia_W: "18", Lado: 0.21, Altura_corpo: 0.025, Fluxo_lm: 1260, Forma_cod: 1, Inst_cod: 2, Fonte_cota: "Taschibra painel LED 18 W Lux quadrado sobrepor: 210 mm, altura 25 mm, 1260 lm (data/iluminacao-catalogo.json pl-tb-lux18-qua-sob) " + TB + "painelplafon-sobrepor-led/painel-led-18w-lux-quadrado-sobrepor-3000k/18137", Nivel_fonte: "A" } });
+      var Q = "Forma_cod = 1", R = "Forma_cod = 2", SP = "Forma_cod = 3", E = "Inst_cod = 1", O = "Inst_cod = 2";
+      var h = "Altura_montagem", W = "Larg_moldura", L = "Lado", U = function (d) { return "Altura_montagem + " + d; };
+      f.solidos = [
+        /* QUADRADO / PAINEL — EMBUTIR: moldura em aro, difusor, aro interno, caixa do driver, molas e prensa-cabo */
+        cx("mo_n", "Moldura (lado -Z)", 0, h, "-(Lado - Larg_moldura)/2", L, 0.006, W, "Alumínio branco", Q + " e " + E),
+        cx("mo_s", "Moldura (lado +Z)", 0, h, "(Lado - Larg_moldura)/2", L, 0.006, W, "Alumínio branco", Q + " e " + E),
+        cx("mo_e", "Moldura (lado -X)", "-(Lado - Larg_moldura)/2", h, 0, W, 0.006, "Lado - 2*Larg_moldura", "Alumínio branco", Q + " e " + E),
+        cx("mo_d", "Moldura (lado +X)", "(Lado - Larg_moldura)/2", h, 0, W, 0.006, "Lado - 2*Larg_moldura", "Alumínio branco", Q + " e " + E),
+        cx("di_q", "Difusor", 0, U(0.001), 0, "Lado - 2*Larg_moldura", 0.003, "Lado - 2*Larg_moldura", "Acrílico", Q + " e " + E),
+        cx("ai_q", "Aro interno do difusor", 0, U(0.0035), 0, "Lado - 2*Larg_moldura + 0.004", 0.002, "Lado - 2*Larg_moldura + 0.004", "Alumínio branco", Q + " e " + E),
+        cx("dr_q", "Caixa do driver", 0, U(0.006), 0, "min(0.12; Lado*0.45)", "max(Altura_corpo - 0.008; 0.004)", "min(0.07; Lado*0.35)", "Metal", Q + " e " + E),
+        cx("mola1", "Mola de fixação 1", "-(Lado/2 - Larg_moldura - 0.006)", U(0.006), 0, 0.004, "max(Altura_corpo - 0.016; 0.004)", 0.02, "Metal", Q + " e " + E),
+        cx("mola2", "Mola de fixação 2", "(Lado/2 - Larg_moldura - 0.006)", U(0.006), 0, 0.004, "max(Altura_corpo - 0.016; 0.004)", 0.02, "Metal", Q + " e " + E),
+        cl("cabo_q", "Prensa-cabo do driver", "y", 0.03, U(0.006), 0, 0.0035, "max(Altura_corpo - 0.006; 0.004)", "Borracha preta", Q + " e " + E),
+        /* QUADRADO / PAINEL — SOBREPOR: aro de acabamento, difusor, paredes do corpo, fundo e parafusos */
+        cx("ar_q", "Aro de acabamento", 0, h, 0, "Lado", 0.004, "Lado", "Alumínio branco", Q + " e " + O),
+        cx("di_qs", "Difusor", 0, U(0.001), 0, "Lado - 0.016", 0.005, "Lado - 0.016", "Acrílico", Q + " e " + O),
+        cx("pn_n", "Corpo (parede -Z)", 0, U(0.004), "-(Lado - 0.008)/2", L, "Altura_corpo - 0.004", 0.008, "Alumínio branco", Q + " e " + O),
+        cx("pn_s", "Corpo (parede +Z)", 0, U(0.004), "(Lado - 0.008)/2", L, "Altura_corpo - 0.004", 0.008, "Alumínio branco", Q + " e " + O),
+        cx("pn_e", "Corpo (parede -X)", "-(Lado - 0.008)/2", U(0.004), 0, 0.008, "Altura_corpo - 0.004", "Lado - 0.016", "Alumínio branco", Q + " e " + O),
+        cx("pn_d", "Corpo (parede +X)", "(Lado - 0.008)/2", U(0.004), 0, 0.008, "Altura_corpo - 0.004", "Lado - 0.016", "Alumínio branco", Q + " e " + O),
+        cx("fu_q", "Fundo do corpo", 0, U("Altura_corpo - 0.004"), 0, "Lado", 0.004, "Lado", "Alumínio branco", Q + " e " + O),
+        cl("pf_q", "Parafuso de fixação", "y", "Lado/2 - 0.018", U("Altura_corpo - 0.004"), "Lado/2 - 0.018", 0.0025, 0.004, "Metal cromado", Q + " e " + O),
+        /* REDONDO — EMBUTIR: moldura em disco, difusor, driver, molas, prensa-cabo (só caixa e cilindro: o exportador do Revit não leva revolução) */
+        cl("mo_r", "Moldura redonda", "y", 0, U(0.0005), 0, "Lado/2", "max(Altura_corpo - 0.0245; 0.004)", "Alumínio branco", R + " e " + E),
+        cl("di_r", "Difusor", "y", 0, h, 0, "Lado/2 - 0.011", 0.004, "Acrílico", R + " e " + E),
+        cx("dr_r", "Caixa do driver", 0, U(0.006), 0, 0.07, "max(Altura_corpo - 0.008; 0.004)", 0.05, "Metal", R + " e " + E),
+        cx("mola3", "Mola de fixação 1", "-(Lado/2 - 0.016)", U(0.006), 0, 0.004, "max(Altura_corpo - 0.016; 0.004)", 0.02, "Metal", R + " e " + E),
+        cx("mola4", "Mola de fixação 2", "(Lado/2 - 0.016)", U(0.006), 0, 0.004, "max(Altura_corpo - 0.016; 0.004)", 0.02, "Metal", R + " e " + E),
+        cl("cabo_r", "Prensa-cabo do driver", "y", 0.03, U(0.006), 0.02, 0.0035, "max(Altura_corpo - 0.006; 0.004)", "Borracha preta", R + " e " + E),
+        /* REDONDO — SOBREPOR: copo, difusor em disco e parafuso */
+        cl("cp_r", "Corpo (copo)", "y", 0, U(0.004), 0, "Lado/2", "Altura_corpo - 0.004", "Alumínio branco", R + " e " + O),
+        cl("di_rs", "Difusor", "y", 0, h, 0, "Lado/2 - 0.004", 0.005, "Acrílico", R + " e " + O),
+        cl("pf_r", "Parafuso de fixação", "y", "Lado/2 - 0.018", U("Altura_corpo - 0.004"), 0, 0.0025, 0.004, "Metal cromado", R + " e " + O),
+        cl("pf_r2", "Parafuso de fixação 2", "y", "-(Lado/2 - 0.018)", U("Altura_corpo - 0.004"), 0, 0.0025, 0.004, "Metal cromado", R + " e " + O),
+        cl("fu_r", "Fundo do copo", "y", 0, U("Altura_corpo - 0.004"), 0, "Lado/2", 0.004, "Alumínio branco", R + " e " + O),
+        cx("bo_r", "Borne de ligação", 0, U("Altura_corpo - 0.004"), 0, 0.03, 0.004, 0.02, "Metal", R + " e " + O),
+        /* SPOT PAR20 DE EMBUTIR: moldura, boca do refletor (cavidade escura), face da lâmpada, tubo do refletor, caixa de ligação */
+        cl("mo_sp", "Moldura do spot", "y", 0, U(0.001), 0, "Lado/2", 0.0035, "Alumínio branco", SP),
+        cl("re_sp", "Boca do refletor", "y", 0, U(0.0005), 0, "Lado/2 - 0.0165", 0.003, "Borracha preta", SP),
+        cl("la_sp", "Face da lâmpada", "y", 0, h, 0, "Lado/2 - 0.0345", 0.003, "Acrílico", SP),
+        cl("ref_sp", "Tubo do refletor", "y", 0, U(0.0065), 0, "Lado/2 - 0.0345", 0.0205, "Metal cromado", SP),
+        cx("cl_sp", "Caixa de ligação", 0, U(0.027), 0, 0.04, 0.003, 0.03, "Metal", SP)
+      ];
+      f.descricao += " Peças: moldura, difusor, driver e molas (embutir); aro, corpo e fundo (sobrepor); moldura, refletor e lâmpada (spot).";
+    })();
+
+    /* ---------------- QUADRO DE DISTRIBUIÇÃO ---------------- */
+    (function () {
+      var f = achar("ra-quadro-distribuicao");
+      f.parametros = f.parametros.concat([
+        P("Embutir_cod", "numero", "tipo", 1, "Dimensões", "1 = de embutir (aba/moldura em volta) · 0 = de sobrepor/QDL"),
+        P("Material_porta", "material", "tipo", "Vidro", "Materiais", "Porta transparente/fumê (linha Easy9 brasileira)"),
+        F("Cap_fileira", "inteiro", "piso((Largura - 0.05)/0.018)", "Elétrica", "Disjuntores DIN por fileira (módulo de 18 mm, 25 mm de cada lado para o canal)"),
+        P("Fonte_cota", "texto", "tipo", "Quadro PVC de embutir 6 disj. 200×250×90 mm: medida usual de catálogo (SINAPI 06/2026), conferir o modelo. Interior: trilho DIN 35 mm e disjuntor de 1 módulo (18 mm): prática de modelagem (C). Schneider Easy9 no varejo: 8 módulos 208×208×90 e 16 módulos 335×335×90 mm (Telhanorte 1456040/1456075).", "Fonte"),
+        P("Nivel_fonte", "texto", "tipo", "B", "Fonte")
+      ]);
+      somar(f, "pvc6", { Embutir_cod: 1, Fonte_cota: "Quadro de PVC de embutir, 6 disjuntores, 200 × 250 × 90 mm: medida usual de catálogo (SINAPI 06/2026 orça o QD de PVC de embutir sem barramento) — conferir o modelo comprado. Trilho DIN 35 mm e disjuntor de 1 módulo (18 mm): prática de modelagem (C).", Nivel_fonte: "B" });
+      somar(f, "qdl12", { Embutir_cod: 0, Fonte_cota: "QDL de PVC, 12 disjuntores, 320 × 300 × 90 mm: medida usual de catálogo (SINAPI 06/2026 orça o QDL de PVC) — conferir o modelo comprado. Trilho DIN 35 mm e disjuntor de 1 módulo (18 mm): prática de modelagem (C).", Nivel_fonte: "B" });
+      somar(f, "aco24e", { Embutir_cod: 1, Fonte_cota: "Quadro de chapa de aço galvanizado de embutir com barramento, 24 disjuntores, 100 A, 400 × 500 × 120 mm: medida usual de catálogo (SINAPI 06/2026 orça o QD de chapa de aço com barramento trifásico) — conferir o modelo comprado. Trilho DIN e disjuntor de 1 módulo (18 mm): prática de modelagem (C).", Nivel_fonte: "B" });
+      f.tipos.push(
+        { id: "easy9-8", nome: "Schneider Easy9 de embutir, 8 módulos, porta transparente (208 × 208 × 90)", valores: { Material_quadro: "pvc", Instalacao: "embutir", Disjuntores: 8, Largura: 0.208, Altura: 0.208, Profundidade: 0.09, Embutir_cod: 1, Fonte_cota: "Schneider Easy9 1 fila 8 módulos de embutir: 208 × 208 × 90 mm (varejo Telhanorte 1456040; conferir na ficha Schneider)", Nivel_fonte: "B" } },
+        { id: "easy9-16", nome: "Schneider Easy9 de embutir, 16 módulos, porta transparente (335 × 335 × 90)", valores: { Material_quadro: "pvc", Instalacao: "embutir", Disjuntores: 16, Largura: 0.335, Altura: 0.335, Profundidade: 0.09, Embutir_cod: 1, Fonte_cota: "Schneider Easy9 1 fila 16 módulos de embutir: 335 × 335 × 90 mm (varejo Telhanorte 1456075; conferir na ficha Schneider)", Nivel_fonte: "B" } });
+      var s = [
+        cx("caixa", "Fundo da caixa", 0, "Altura_montagem - Altura/2", 0.002, "Largura", "Altura", 0.004, "Material"),
+        cx("lat_e", "Lateral esquerda", "-(Largura - 0.003)/2", "Altura_montagem - Altura/2", "Profundidade/2", 0.003, "Altura", "Profundidade", "Material"),
+        cx("lat_d", "Lateral direita", "(Largura - 0.003)/2", "Altura_montagem - Altura/2", "Profundidade/2", 0.003, "Altura", "Profundidade", "Material"),
+        cx("topo", "Tampo da caixa", 0, "Altura_montagem + Altura/2 - 0.003", "Profundidade/2", "Largura - 0.006", 0.003, "Profundidade", "Material"),
+        cx("base", "Base da caixa", 0, "Altura_montagem - Altura/2", "Profundidade/2", "Largura - 0.006", 0.003, "Profundidade", "Material"),
+        cx("ab_n", "Aba de embutir (alto)", 0, "Altura_montagem + Altura/2 - 0.004", "Profundidade - 0.002", "Largura + 0.032", 0.02, 0.004, "Material", "Embutir_cod = 1"),
+        cx("ab_s", "Aba de embutir (baixo)", 0, "Altura_montagem - Altura/2 - 0.016", "Profundidade - 0.002", "Largura + 0.032", 0.02, 0.004, "Material", "Embutir_cod = 1"),
+        cx("ab_e", "Aba de embutir (esquerda)", "-(Largura + 0.016)/2 - 0.0", "Altura_montagem - Altura/2 - 0.0", "Profundidade - 0.002", 0.016, "Altura", 0.004, "Material", "Embutir_cod = 1"),
+        cx("ab_d", "Aba de embutir (direita)", "(Largura + 0.016)/2", "Altura_montagem - Altura/2", "Profundidade - 0.002", 0.016, "Altura", 0.004, "Material", "Embutir_cod = 1"),
+        cx("porta", "Porta do quadro", 0, "Altura_montagem - Altura/2 + 0.006", "Profundidade - 0.0015", "Largura - 0.012", "Altura - 0.012", 0.003, "Material_porta"),
+        cx("moldp", "Moldura da porta", 0, "Altura_montagem - Altura/2 + 0.002", "Profundidade - 0.0005", "Largura", "Altura", 0.001, "Material", "Embutir_cod = 0"),
+        cl("pux", "Fecho da porta", "z", "Largura/2 - 0.02", "Altura_montagem", "Profundidade", 0.007, 0.006, "Metal cromado"),
+        cx("dobr", "Dobradiça (esquerda)", "-(Largura - 0.012)/2", "Altura_montagem + Altura/2 - 0.04", "Profundidade", 0.008, 0.02, 0.003, "Metal"),
+        cx("dobr2", "Dobradiça (esquerda, baixo)", "-(Largura - 0.012)/2", "Altura_montagem - Altura/2 + 0.02", "Profundidade", 0.008, 0.02, 0.003, "Metal"),
+        cx("bar", "Barramento de neutro e terra", 0, "Altura_montagem - Altura/2 + 0.014", 0.017, "Largura - 0.06", 0.014, 0.02, "Aço galvanizado")
+      ];
+      s.push(cx("trilho0", "Trilho DIN 35 mm (fileira 1)", 0, "Altura_montagem + Altura/2 - 0.03 - 0.0825/2 - 0.0175", 0.0075, "Largura - 0.04", 0.035, 0.007, "Metal"));
+      s.push(cx("trilho1", "Trilho DIN 35 mm (fileira 2)", 0, "Altura_montagem + Altura/2 - 0.03 - 0.0825/2 - 0.0175 - 0.115", 0.0075, "Largura - 0.04", 0.035, 0.007, "Metal", "Disjuntores > Cap_fileira"));
+      for (var k = 0; k < 24; k++) {
+        var lin = "piso(" + k + "/Cap_fileira)", vis = k === 0 ? null : "Disjuntores > " + k;
+        var xk = "(" + k + " - Cap_fileira*" + lin + " - (min(Cap_fileira; Disjuntores - Cap_fileira*" + lin + ") - 1)/2)*0.018";
+        var yk = "Altura_montagem + Altura/2 - 0.03 - 0.0825 - " + lin + "*0.115";
+        s.push(cx("dj" + k, "Disjuntor " + (k + 1) + " (1 módulo DIN, 18 mm)", xk, yk, 0.04, 0.0176, 0.0825, 0.058, "Plástico branco", vis));
+        s.push(cx("al" + k, "Alavanca do disjuntor " + (k + 1), xk, yk + " + 0.0322", 0.0715, 0.008, 0.018, 0.009, "Borracha preta", vis));
+      }
+      f.solidos = s;
+      f.descricao += " Peças: fundo, laterais, tampo e base da caixa; aba de embutir; porta com fecho e dobradiças; trilho DIN, disjuntores de 1 módulo (um por posição) e barramento.";
+    })();
+
+    /* ---------------- PORTAS ---------------- */
+    var FONTE_PORTA = "Kits de porta de madeira: folha 210 × 60/70/80/90 (Dalcomad, Moldufama, Uniportas, Conejo — docs/arquitetura/esquadrias/REGRAS-PORTAS.md, nível B). Espessura da folha (35 mm), do batente (50 mm), guarnição, dobradiça e alavanca: prática de modelagem (C): a NBR 15930 não está na biblioteca. Conferir o kit comprado.";
+    var FONTE_JANELA = "Grade comercial de esquadria de alumínio: Sasazaki Alumifort correr 120×100, 150×100, 150×120; Atlântica Fortiline 100×100 (docs/arquitetura/esquadrias/REGRAS-JANELAS.md, nível B). Espessura de perfil (marco, folha, trilho): prática de modelagem (C), sem ficha de perfil — conferir a linha do fabricante.";
+    function fonteParams(txt) { return [P("Fonte_cota", "texto", "tipo", txt, "Fonte", "De onde vem a cota deste tipo; o que é prática de modelagem está dito"), P("Nivel_fonte", "texto", "tipo", "B", "Fonte", "A ficha lida · B varejo/kit publicado · C prática de modelagem, a conferir")]; }
+    /* guarnição (alizar) nos dois lados da parede: a borda de dentro alinha com a face interna do batente (Largura/2) e cobre o batente (mesma largura: a família cabe no vão) */
+    function guarnicoes(Lh, Hh) {
+      var out = [];
+      [["1", 1], ["2", -1]].forEach(function (l) {
+        var zc = "(Espessura_parede/2 + Guarnicao_esp/2)*" + l[1];
+        out.push(cx("gi_e" + l[0], "Guarnição esquerda (lado " + l[0] + ")", "-(" + Lh + "/2 + Guarnicao_larg/2)", 0, zc, "Guarnicao_larg", Hh, "Guarnicao_esp", "Material_batente"));
+        out.push(cx("gi_d" + l[0], "Guarnição direita (lado " + l[0] + ")", "(" + Lh + "/2 + Guarnicao_larg/2)", 0, zc, "Guarnicao_larg", Hh, "Guarnicao_esp", "Material_batente"));
+        out.push(cx("gi_s" + l[0], "Guarnição superior (lado " + l[0] + ")", 0, Hh, zc, Lh + " + 2*Guarnicao_larg", "Guarnicao_larg", "Guarnicao_esp", "Material_batente"));
+      });
+      return out;
+    }
+    var GUARN = [F("Guarnicao_larg", "comprimento", "Batente", "Dimensões", "Largura da guarnição (alizar) = a do batente: ela cobre o batente e NÃO passa do vão (contrato de test-bim-b6: a família cabe no vão) — prática (C)"), P("Guarnicao_esp", "comprimento", "tipo", 0.012, "Dimensões", "Espessura da guarnição: 12 mm — prática (C)")];
+
+    /* PORTA DE GIRO */
+    (function () {
+      var f = achar("ra-porta-giro");
+      f.idsLegado = ["bd,be,bs,fo,ma"];
+      f.parametros = f.parametros.concat(GUARN, fonteParams(FONTE_PORTA));
+      var zf = "Lado_folha*(Espessura_parede - Espessura_folha)/2", xh = "Sinal_mao*(-Largura/2 + 0.003)";
+      var s = [
+        cx("be", "Batente esquerdo", "-(Largura + Batente)/2", 0, 0, "Batente", "Altura + Batente", "Espessura_parede", "Material_batente"),
+        cx("bd", "Batente direito", "(Largura + Batente)/2", 0, 0, "Batente", "Altura + Batente", "Espessura_parede", "Material_batente"),
+        cx("bs", "Batente superior", 0, "Altura", 0, "Largura", "Batente", "Espessura_parede", "Material_batente")
+      ].concat(guarnicoes("Largura", "Altura"));
+      s.push(cx("fo", "Folha", 0, 0.008, zf, "Largura - 0.006", "Altura - 0.012", "Espessura_folha", "Material_folha"));
+      [0.15, 1.00, 1.85].forEach(function (yb, i) { s.push(cl("dob" + i, "Dobradiça " + (i + 1), "y", xh, yb, zf, 0.005, 0.09, "Metal cromado")); });
+      s.push(cl("mr", "Roseta (fechadura)", "z", "Sinal_mao*(Largura/2 - 0.07)", 1.05, zf + " - (Espessura_folha + 0.016)/2", 0.027, "Espessura_folha + 0.016", "Metal cromado"));
+      s.push(cl("ma", "Maçaneta (alavanca, lado 1)", "x", "Sinal_mao*(Largura/2 - 0.07) - 0.055*(1 + Sinal_mao)", 1.05, zf + " + Lado_folha*(Espessura_folha/2 + 0.016)", 0.008, 0.115, "Metal cromado"));
+      s.push(cl("mb", "Alavanca (lado 2)", "x", "Sinal_mao*(Largura/2 - 0.07) - 0.055*(1 + Sinal_mao)", 1.05, zf + " - Lado_folha*(Espessura_folha/2 + 0.016)", 0.008, 0.115, "Metal cromado"));
+      f.solidos = s;
+      f.partesMoveis[0].solidos = ["fo", "ma", "mr", "mb"];
+      f.descricao += " Peças: batente, guarnição dos dois lados, folha, 3 dobradiças, roseta e alavanca nas duas faces.";
+    })();
+
+    /* PORTA DE GIRO 2 FOLHAS */
+    (function () {
+      var f = achar("ra-porta-giro-2f");
+      f.idsLegado = ["bd,be,bs,fd,fe"];
+      f.parametros = f.parametros.concat(GUARN, fonteParams(FONTE_PORTA));
+      var s = [
+        cx("be", "Batente esquerdo", "-(Largura + Batente)/2", 0, 0, "Batente", "Altura + Batente", "Espessura_parede", "Material_batente"),
+        cx("bd", "Batente direito", "(Largura + Batente)/2", 0, 0, "Batente", "Altura + Batente", "Espessura_parede", "Material_batente"),
+        cx("bs", "Batente superior", 0, "Altura", 0, "Largura", "Batente", "Espessura_parede", "Material_batente")
+      ].concat(guarnicoes("Largura", "Altura"));
+      s.push(cx("fe", "Folha esquerda", "-Largura/4", 0.008, 0, "Largura/2 - 0.006", "Altura - 0.012", "Espessura_folha", "Material_folha"));
+      s.push(cx("fd", "Folha direita", "Largura/4", 0.008, 0, "Largura/2 - 0.006", "Altura - 0.012", "Espessura_folha", "Material_folha"));
+      [0.15, 1.00, 1.85].forEach(function (yb, i) {
+        s.push(cl("dobe" + i, "Dobradiça esquerda " + (i + 1), "y", "-Largura/2 + 0.003", yb, 0, 0.005, 0.09, "Metal cromado"));
+        s.push(cl("dobd" + i, "Dobradiça direita " + (i + 1), "y", "Largura/2 - 0.003", yb, 0, 0.005, 0.09, "Metal cromado"));
+      });
+      s.push(cl("mre", "Roseta (folha esquerda)", "z", -0.07, 1.05, "-(Espessura_folha + 0.016)/2", 0.027, "Espessura_folha + 0.016", "Metal cromado"));
+      s.push(cl("mrd", "Roseta (folha direita)", "z", 0.07, 1.05, "-(Espessura_folha + 0.016)/2", 0.027, "Espessura_folha + 0.016", "Metal cromado"));
+      s.push(cl("mae", "Alavanca (folha esquerda, lado 1)", "x", -0.125, 1.05, "Espessura_folha/2 + 0.016", 0.008, 0.115, "Metal cromado"));
+      s.push(cl("mbe", "Alavanca (folha esquerda, lado 2)", "x", -0.125, 1.05, "-(Espessura_folha/2 + 0.016)", 0.008, 0.115, "Metal cromado"));
+      s.push(cl("mad", "Alavanca (folha direita, lado 1)", "x", 0.01, 1.05, "Espessura_folha/2 + 0.016", 0.008, 0.115, "Metal cromado"));
+      s.push(cl("mbd", "Alavanca (folha direita, lado 2)", "x", 0.01, 1.05, "-(Espessura_folha/2 + 0.016)", 0.008, 0.115, "Metal cromado"));
+      f.solidos = s;
+      f.partesMoveis[0].solidos = ["fe", "mre", "mae", "mbe"];
+      f.partesMoveis[1].solidos = ["fd", "mrd", "mad", "mbd"];
+      f.descricao += " Peças: batente, guarnição dos dois lados, duas folhas, 6 dobradiças, roseta e alavanca em cada folha.";
+    })();
+
+    /* PORTA DE CORRER 2 FOLHAS (alumínio e vidro) */
+    (function () {
+      var f = achar("ra-porta-correr");
+      f.idsLegado = ["f1,f2,md,me,ms"];
+      f.parametros = f.parametros.concat([P("Perfil_folha", "comprimento", "tipo", 0.04, "Dimensões", "Largura do perfil da folha de correr — prática (C)")], fonteParams("Porta de correr 2 folhas em alumínio e vidro: vão 1,60/2,00/2,40 × 2,10 — grade da família (dimensões de obra, sem tabela de fabricante lida). Perfil da folha (40 mm), trilho e puxador: prática de modelagem (C), sem ficha — conferir a linha do fabricante."));
+      f.parametros[f.parametros.length - 1].valor = "C";
+      var s = [
+        cx("me", "Marco esquerdo", "-(Largura - Marco)/2", 0, 0, "Marco", "Altura", "Espessura_parede", "Material_marco"),
+        cx("md", "Marco direito", "(Largura - Marco)/2", 0, 0, "Marco", "Altura", "Espessura_parede", "Material_marco"),
+        cx("ms", "Marco superior", 0, "Altura - Marco", 0, "Largura - 2*Marco", "Marco", "Espessura_parede", "Material_marco"),
+        cx("f1", "Folha 1", "-Sinal_mao*(Largura - 2*Marco)/4", 0.01, "Lado_folha*Espessura_folha", "(Largura - 2*Marco)/2 + 0.04", "Altura - Marco - 0.02", "Espessura_folha", "Material_folha"),
+        cx("f2", "Folha 2", "Sinal_mao*(Largura - 2*Marco)/4", 0.01, "-Lado_folha*Espessura_folha", "(Largura - 2*Marco)/2 + 0.04", "Altura - Marco - 0.02", "Espessura_folha", "Material_folha")
+      ];
+      [["1", "-Sinal_mao*(Largura - 2*Marco)/4", "Lado_folha*Espessura_folha"], ["2", "Sinal_mao*(Largura - 2*Marco)/4", "-Lado_folha*Espessura_folha"]].forEach(function (c) {
+        var wf = "(Largura - 2*Marco)/2 + 0.04", hf = "Altura - Marco - 0.02", dz = "Espessura_folha + 0.004";
+        s.push(cx("pe" + c[0], "Perfil da folha " + c[0] + " (montante esquerdo)", c[1] + " - (" + wf + " - Perfil_folha)/2", 0.01, c[2], "Perfil_folha", hf, dz, "Material_marco"));
+        s.push(cx("pd" + c[0], "Perfil da folha " + c[0] + " (montante direito)", c[1] + " + (" + wf + " - Perfil_folha)/2", 0.01, c[2], "Perfil_folha", hf, dz, "Material_marco"));
+        s.push(cx("pi" + c[0], "Perfil da folha " + c[0] + " (travessa inferior)", c[1], 0.01, c[2], wf, "Perfil_folha", dz, "Material_marco"));
+        s.push(cx("ps" + c[0], "Perfil da folha " + c[0] + " (travessa superior)", c[1], "0.01 + " + hf + " - Perfil_folha", c[2], wf, "Perfil_folha", dz, "Material_marco"));
+        s.push(cx("pu" + c[0], "Concha da folha " + c[0], c[1] + " + Sinal_mao*" + (c[0] === "1" ? "1" : "-1") + "*((" + wf + ")/2 - Perfil_folha - 0.03)", 1.0, c[2] + " + Lado_folha*" + (c[0] === "1" ? "1" : "-1") + "*(Espessura_folha/2 + 0.003)", 0.03, 0.12, 0.006, "Metal cromado"));
+      });
+      s.push(cx("tr1", "Trilho inferior da folha 1", 0, 0, "Lado_folha*Espessura_folha", "Largura - 2*Marco", 0.012, 0.014, "Material_marco"));
+      s.push(cx("tr2", "Trilho inferior da folha 2", 0, 0, "-Lado_folha*Espessura_folha", "Largura - 2*Marco", 0.012, 0.014, "Material_marco"));
+      f.solidos = s;
+      f.partesMoveis[0].solidos = ["f1", "pe1", "pd1", "pi1", "ps1", "pu1"];
+      f.descricao += " Peças: marco, duas folhas de vidro com perfil de alumínio, trilhos inferiores e puxadores.";
+    })();
+
+    /* ---------------- JANELAS ---------------- */
+    (function () {
+      var f = achar("ra-janela-correr");
+      f.idsLegado = ["md,me,mi,ms,pi,v1,v2"];
+      f.parametros = f.parametros.concat([P("Perfil_folha", "comprimento", "tipo", 0.03, "Dimensões", "Largura do perfil da folha de correr — prática (C)")], fonteParams(FONTE_JANELA));
+      var s = [
+        cx("mi", "Marco inferior", 0, "Peitoril", 0, "Largura", "Marco", 0.08, "Material_marco"),
+        cx("ms", "Marco superior", 0, "Peitoril + Altura - Marco", 0, "Largura", "Marco", 0.08, "Material_marco"),
+        cx("me", "Marco esquerdo", "-(Largura - Marco)/2", "Peitoril", 0, "Marco", "Altura", 0.08, "Material_marco"),
+        cx("md", "Marco direito", "(Largura - Marco)/2", "Peitoril", 0, "Marco", "Altura", 0.08, "Material_marco"),
+        cx("v1", "Folha 1 (vidro)", "-Sinal_mao*(Largura - 2*Marco)/4", "Peitoril + Marco", "Lado_folha*0.015", "(Largura - 2*Marco)/2 + 0.02", "Altura - 2*Marco", 0.008, "Material_vidro"),
+        cx("v2", "Folha 2 (vidro)", "Sinal_mao*(Largura - 2*Marco)/4", "Peitoril + Marco", "-Lado_folha*0.015", "(Largura - 2*Marco)/2 + 0.02", "Altura - 2*Marco", 0.008, "Material_vidro"),
+        cx("pi", "Pingadeira", 0, "Peitoril - 0.02", "Espessura_parede/2", "Largura + 0.06", 0.02, 0.06, "Granito", "Com_pingadeira")
+      ];
+      [["1", "-Sinal_mao*(Largura - 2*Marco)/4", "Lado_folha*0.015"], ["2", "Sinal_mao*(Largura - 2*Marco)/4", "-Lado_folha*0.015"]].forEach(function (c) {
+        var wf = "(Largura - 2*Marco)/2 + 0.02", hf = "Altura - 2*Marco";
+        s.push(cx("fe" + c[0], "Perfil da folha " + c[0] + " (montante esquerdo)", c[1] + " - (" + wf + " - Perfil_folha)/2", "Peitoril + Marco", c[2], "Perfil_folha", hf, 0.02, "Material_marco"));
+        s.push(cx("fd" + c[0], "Perfil da folha " + c[0] + " (montante direito)", c[1] + " + (" + wf + " - Perfil_folha)/2", "Peitoril + Marco", c[2], "Perfil_folha", hf, 0.02, "Material_marco"));
+        s.push(cx("fi" + c[0], "Perfil da folha " + c[0] + " (travessa inferior)", c[1], "Peitoril + Marco", c[2], wf, "Perfil_folha", 0.02, "Material_marco"));
+        s.push(cx("fs" + c[0], "Perfil da folha " + c[0] + " (travessa superior)", c[1], "Peitoril + Altura - Marco - Perfil_folha", c[2], wf, "Perfil_folha", 0.02, "Material_marco"));
+      });
+      s.push(cx("tr1", "Trilho da folha 1", 0, "Peitoril + Marco", "Lado_folha*0.015", "Largura - 2*Marco", 0.012, 0.01, "Material_marco"));
+      s.push(cx("tr2", "Trilho da folha 2", 0, "Peitoril + Marco", "-Lado_folha*0.015", "Largura - 2*Marco", 0.012, 0.01, "Material_marco"));
+      s.push(cx("fc", "Fecho concha", 0, "Peitoril + Altura/2", "Lado_folha*0.027", 0.03, 0.06, 0.008, "Metal cromado"));
+      f.solidos = s;
+      f.partesMoveis[0].solidos = ["v1", "fe1", "fd1", "fi1", "fs1", "fc"];
+      f.descricao += " Peças: marco, duas folhas (vidro e perfil), trilhos, fecho e pingadeira.";
+    })();
+    (function () {
+      var f = achar("ra-janela-basculante");
+      f.idsLegado = ["md,me,mi,ms,v1,v2"];
+      f.parametros = f.parametros.concat([P("Perfil_folha", "comprimento", "tipo", 0.025, "Dimensões", "Largura do perfil da báscula — prática (C)")], fonteParams("Janela basculante / maxim-ar: 0,60×0,60 a 1,00×0,60 (grade da família); maxim-ar 1,00×1,00 Esquadrivax e Atlântica (docs/arquitetura/esquadrias/REGRAS-JANELAS.md, nível B). Espessura de perfil da báscula e do batente: prática de modelagem (C), sem ficha — conferir a linha do fabricante."));
+      var s = [
+        cx("mi", "Marco inferior", 0, "Peitoril", 0, "Largura", "Marco", 0.06, "Material_marco"),
+        cx("ms", "Marco superior", 0, "Peitoril + Altura - Marco", 0, "Largura", "Marco", 0.06, "Material_marco"),
+        cx("me", "Marco esquerdo", "-(Largura - Marco)/2", "Peitoril", 0, "Marco", "Altura", 0.06, "Material_marco"),
+        cx("md", "Marco direito", "(Largura - Marco)/2", "Peitoril", 0, "Marco", "Altura", 0.06, "Material_marco"),
+        cx("v1", "Báscula inferior", 0, "Peitoril + Marco", 0, "Largura - 2*Marco", "(Altura - 2*Marco)/2 - 0.005", 0.006, "Material_vidro"),
+        cx("v2", "Báscula superior", 0, "Peitoril + Altura/2 + 0.005", 0, "Largura - 2*Marco", "(Altura - 2*Marco)/2 - 0.005", 0.006, "Material_vidro")
+      ];
+      [["1", "Peitoril + Marco", "inferior"], ["2", "Peitoril + Altura/2 + 0.005", "superior"]].forEach(function (c) {
+        var hf = "(Altura - 2*Marco)/2 - 0.005", wf = "Largura - 2*Marco", y0 = c[1];
+        /* a moldura da báscula é EXTRUSÃO de contorno (não entra na conta da área que abre, que só olha as caixas da parte móvel) */
+        s.push(ex("be" + c[0], "Moldura da báscula " + c[2] + " (montante esquerdo)", "frente", "-(" + wf + ")/2", y0, -0.01, 0.02, [[0, 0], ["Perfil_folha", 0], ["Perfil_folha", hf], [0, hf]], "Material_marco"));
+        s.push(ex("bd" + c[0], "Moldura da báscula " + c[2] + " (montante direito)", "frente", "(" + wf + ")/2 - Perfil_folha", y0, -0.01, 0.02, [[0, 0], ["Perfil_folha", 0], ["Perfil_folha", hf], [0, hf]], "Material_marco"));
+        s.push(ex("bi" + c[0], "Moldura da báscula " + c[2] + " (travessa inferior)", "frente", "-(" + wf + ")/2 + Perfil_folha", y0, -0.01, 0.02, [[0, 0], [wf + " - 2*Perfil_folha", 0], [wf + " - 2*Perfil_folha", "Perfil_folha"], [0, "Perfil_folha"]], "Material_marco"));
+        s.push(ex("bs" + c[0], "Moldura da báscula " + c[2] + " (travessa superior)", "frente", "-(" + wf + ")/2 + Perfil_folha", y0 + " + " + hf + " - Perfil_folha", -0.01, 0.02, [[0, 0], [wf + " - 2*Perfil_folha", 0], [wf + " - 2*Perfil_folha", "Perfil_folha"], [0, "Perfil_folha"]], "Material_marco"));
+      });
+      s.push(cx("ba", "Batente de vedação", 0, "Peitoril + Altura/2 - 0.003", 0, "Largura - 2*Marco", 0.006, 0.014, "Material_marco"));
+      s.push(cl("fe", "Fecho (trinco)", "z", 0, "Peitoril + Altura/2 + 0.0", 0.012, 0.01, 0.014, "Metal cromado"));
+      f.solidos = s;
+      f.partesMoveis[0].solidos = ["v1", "be1", "bd1", "bi1", "bs1"];
+      f.partesMoveis[1].solidos = ["v2", "be2", "bd2", "bi2", "bs2"];
+      f.descricao += " Peças: marco, duas básculas com moldura de perfil, batente de vedação e fecho.";
+    })();
+
+    /* ---------------- PILAR E VIGA DE CONCRETO: prisma paramétrico, seção real, chanfro opcional ---------------- */
+    var JUST_PRISMA = "Pilar e viga de concreto moldado em fôrma são PRISMAS de seção retangular constante (NBR 6118): essa é a forma real do elemento, não um bloco genérico no lugar de um produto. Não há ficha de fabricante a imitar; a seção é de projeto (parâmetros Base e Altura/Profundidade) e o chanfro das arestas é opcional (Chanfro).";
+    (function () {
+      var f = achar("ra-pilar-ret");
+      f.justificativaForma = JUST_PRISMA;
+      f.parametros.push(P("Chanfro", "comprimento", "tipo", 0, "Dimensões", "Chanfro a 45° nas quatro arestas verticais (0 = sem chanfro). Desconta o volume e a fôrma."),
+        P("Fonte_cota", "texto", "tipo", "Seção de projeto (NBR 6118:2014, 13.2.3: lado mínimo 19 cm, até 14 cm com coeficiente de majoração). Prisma por natureza: sem ficha de fabricante.", "Fonte"), P("Nivel_fonte", "texto", "tipo", "A", "Fonte"));
+      f.parametros.forEach(function (p) {
+        if (p.nome === "Volume") p.formula = "(Base * Profundidade - 2 * Chanfro^2) * Altura";
+        if (p.nome === "Area_forma") p.formula = "(2 * (Base + Profundidade) - 8 * Chanfro + 4 * Chanfro * raiz(2)) * Altura";
+      });
+      f.tipos.push({ id: "p2525", nome: "25 × 25", valores: { Base: 0.25, Profundidade: 0.25 } }, { id: "p3030", nome: "30 × 30", valores: { Base: 0.30, Profundidade: 0.30 } },
+        { id: "p2020c", nome: "20 × 20, chanfro 2 cm", valores: { Base: 0.20, Profundidade: 0.20, Chanfro: 0.02 } });
+      f.solidos = [
+        cx("c", "Pilar", 0, 0, 0, "Base", "Altura", "Profundidade", "Material", "Chanfro = 0"),
+        ex("cc", "Pilar com chanfro", "planta", 0, 0, 0, "Altura", [["-Base/2 + Chanfro", "-Profundidade/2"], ["Base/2 - Chanfro", "-Profundidade/2"], ["Base/2", "-Profundidade/2 + Chanfro"], ["Base/2", "Profundidade/2 - Chanfro"], ["Base/2 - Chanfro", "Profundidade/2"], ["-Base/2 + Chanfro", "Profundidade/2"], ["-Base/2", "Profundidade/2 - Chanfro"], ["-Base/2", "-Profundidade/2 + Chanfro"]], "Material", "Chanfro > 0")
+      ];
+    })();
+    (function () {
+      var f = achar("ra-viga-ret");
+      f.justificativaForma = JUST_PRISMA;
+      f.parametros.push(P("Chanfro", "comprimento", "tipo", 0, "Dimensões", "Chanfro a 45° nas quatro arestas longitudinais (0 = sem chanfro). Desconta o volume."),
+        P("Fonte_cota", "texto", "tipo", "Seção de projeto (NBR 6118:2014, 13.2.2: largura mínima 12 cm). Prisma por natureza: sem ficha de fabricante.", "Fonte"), P("Nivel_fonte", "texto", "tipo", "A", "Fonte"));
+      f.parametros.forEach(function (p) { if (p.nome === "Volume") p.formula = "(Base * Altura - 2 * Chanfro^2) * Comprimento"; });
+      f.tipos.push({ id: "v1430", nome: "14 × 30", valores: { Base: 0.14, Altura: 0.30 } }, { id: "v1960", nome: "19 × 60", valores: { Base: 0.19, Altura: 0.60 } },
+        { id: "v1440c", nome: "14 × 40, chanfro 2 cm", valores: { Base: 0.14, Altura: 0.40, Chanfro: 0.02 } });
+      var oct = function (B, A, c) { return [["-(" + B + ")/2 + " + c, 0], ["(" + B + ")/2 - " + c, 0], ["(" + B + ")/2", c], ["(" + B + ")/2", A + " - " + c], ["(" + B + ")/2 - " + c, A], ["-(" + B + ")/2 + " + c, A], ["-(" + B + ")/2", A + " - " + c], ["-(" + B + ")/2", c]]; };
+      /* a viga corre em X: a seção (z, y) é uma extrusão "frente" (contorno em x, y; profundidade em z) girada 90° em torno de Y — a profundidade passa a correr em +X */
+      f.solidos = [
+        cx("c", "Viga", "Comprimento/2", "Topo - Altura", 0, "Comprimento", "Altura", "Base", "Material", "Chanfro = 0"),
+        ex("cc", "Viga com chanfro", "frente", 0, "Topo - Altura", 0, "Comprimento", oct("Base", "Altura", "Chanfro"), "Material", "Chanfro > 0", 90)
+      ];
+    })();
+    ["ra-madeira-viga", "ra-madeira-pilar"].forEach(function (id) {
+      var f = achar(id);
+      f.justificativaForma = "Peça de madeira serrada é um PRISMA de seção retangular (bitola comercial/de projeto, NBR 7190): essa é a forma real da peça; não há forma de catálogo a imitar. A seção é o tipo (Base × Altura).";
+    });
+  })();
+
   var FamiliasRA = {
     /* registrar(lista): outros arquivos da biblioteca RA (js/familiasmob.js, js/familiasmobcoz.js, js/familiaspais.js) somam as famílias deles
        a esta lista — assim biblioteca, render, vistas e templates acham tudo por lista()/obter(). Idempotente: o mesmo id substitui. */
@@ -746,7 +1160,15 @@
         var b = LISTA[i];
         /* a cópia de obra pode ter o MESMO id da biblioteca (a pele de vidro gravada no .opbim): ela herda da família de mesmo id, que tem as partes */
         if (!b.partesMoveis || b.categoria !== fam.categoria || b.hospedagem !== fam.hospedagem) continue;
-        if ((b.solidos || []).map(function (s) { return String(s.id); }).sort().join(",") === ids) return JSON.parse(JSON.stringify({ partesMoveis: b.partesMoveis, parametros: b.parametros }));
+        /* LOTE 2 (28/10/2026): a família ganhou peças (guarnição, perfil, dobradiça…) e os ids de sólido da versão antiga ficam em `idsLegado`:
+           a cópia de obra gravada com o desenho antigo continua herdando as partes (as peças novas que ela não tem saem da lista da parte) */
+        var mesma = (b.solidos || []).map(function (s) { return String(s.id); }).sort().join(",") === ids, legado = (b.idsLegado || []).indexOf(ids) >= 0;
+        if (mesma || legado) {
+          var cp = JSON.parse(JSON.stringify({ partesMoveis: b.partesMoveis, parametros: b.parametros })), meus = {};
+          (fam.solidos || []).forEach(function (s) { meus[String(s.id)] = 1; });
+          if (!mesma) cp.partesMoveis.forEach(function (pt) { pt.solidos = (pt.solidos || []).filter(function (id) { return meus[String(id)]; }); });
+          return cp;
+        }
       }
       return null;
     },

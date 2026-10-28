@@ -123,7 +123,18 @@
       if (cat !== "pilar" && cat !== "viga" && cat !== "laje") return;
       var av = null; try { av = typeof opc.avaliarFam === "function" ? opc.avaliarFam(f.famId, f.tipoId, f.inst || {}) : null; } catch (e3) { av = null; }
       var th = num(f.rotY, 0), ux = v(Math.cos(th), -Math.sin(th)), uz = v(Math.sin(th), Math.cos(th)), o = v(num(f.x, 0), num(f.z, 0));
-      var sols = arr(av && av.solidos).filter(function (sd) { return sd && sd.forma === "caixa" && num(sd.dx, 0) > 0 && num(sd.dy, 0) > 0 && num(sd.dz, 0) > 0; });
+      var sols = arr(av && av.solidos).map(function (sd) {
+        /* LOTE 2 (28/10/2026): pilar/viga com CHANFRO é uma extrusão de contorno: entra como a caixa que a envolve (girada pelo rot da extrusão) */
+        if (!sd || sd.forma !== "extrusao" || !arr(sd.contorno).length) return sd;
+        var rr = num(sd.rot, 0) * Math.PI / 180, cr = Math.cos(rr), sr = Math.sin(rr), a0 = Infinity, a1 = -Infinity, c0 = Infinity, c1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+        arr(sd.contorno).forEach(function (q) {
+          (sd.plano === "frente" ? [[q[0], q[1], 0], [q[0], q[1], sd.altura]] : [[q[0], 0, q[1]], [q[0], sd.altura, q[1]]]).forEach(function (t) {
+            var wx = num(sd.x, 0) + t[0] * cr + t[2] * sr, wz = num(sd.z, 0) - t[0] * sr + t[2] * cr, wy = num(sd.y, 0) + t[1];
+            a0 = Math.min(a0, wx); a1 = Math.max(a1, wx); c0 = Math.min(c0, wz); c1 = Math.max(c1, wz); b0 = Math.min(b0, wy); b1 = Math.max(b1, wy);
+          });
+        });
+        return { forma: "caixa", x: (a0 + a1) / 2, z: (c0 + c1) / 2, y: b0, dx: a1 - a0, dz: c1 - c0, dy: b1 - b0 };
+      }).filter(function (sd) { return sd && sd.forma === "caixa" && num(sd.dx, 0) > 0 && num(sd.dy, 0) > 0 && num(sd.dz, 0) > 0; });
       if (!sols.length) { semGeo.push(String(f.id)); if (cat === "pilar") out.push({ id: String(f.id), tipo: "pilar", cx: o.x, cz: o.z, cy: num(f.y, 0) + 1.4, altura: 2.8, comprimento: 0.2, espessura: 0.2, rotY: th, origemEstr: "família" }); return; }
       /* a família é UMA peça: a caixa que envolve os sólidos dela (no local), levada ao mundo */
       var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;

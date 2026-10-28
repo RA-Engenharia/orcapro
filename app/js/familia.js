@@ -722,9 +722,12 @@
       } else if (s.forma === "malha") {
         for (var im = 0; im + 2 < s.v.length; im += 3) p(s.x + s.v[im], s.y + s.v[im + 1], s.z + s.v[im + 2]);
       } else {
+        /* LOTE 2 (28/10/2026): a extrusão GIRADA (rot, em torno de Y, como o 3D desenha) entra na caixa já girada — a viga com chanfro corre em X */
+        var rr = (s.rot || 0) * Math.PI / 180, cr = Math.cos(rr), sr = Math.sin(rr);
+        var pg = function (qx, qy, qz) { p(s.x + qx * cr + qz * sr, s.y + qy, s.z - qx * sr + qz * cr); };
         s.contorno.forEach(function (q) {
-          if (s.plano === "frente") { p(s.x + q[0], s.y + q[1], s.z); p(s.x + q[0], s.y + q[1], s.z + s.altura); }
-          else { p(s.x + q[0], s.y, s.z + q[1]); p(s.x + q[0], s.y + s.altura, s.z + q[1]); }
+          if (s.plano === "frente") { pg(q[0], q[1], 0); pg(q[0], q[1], s.altura); }
+          else { pg(q[0], 0, q[1]); pg(q[0], s.altura, q[1]); }
         });
       }
     });
