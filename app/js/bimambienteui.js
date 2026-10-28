@@ -509,6 +509,70 @@
       return false;
     },
 
+    /* ----------------------------------------------- ações nas Propriedades (28/10/2026)
+     * Pedido do Rogério: "não consigo deletar a linha nem excluir o ambiente". O
+     * separador não tem peça no 3D para clicar (é linha fina, fora do raio): ele é
+     * apagado daqui, pelo ambiente que ele delimita ou que está perto. */
+    /* os separadores do ambiente: os que são lado do contorno e os do mesmo nível a até 0,5 m dele */
+    separadoresDoAmbiente: function (estado, a, niveis) {
+      if (!a) return [];
+      var c = a.calc || {}, ids = {}, P = arr(c.contorno).map(function (q) { return [q.x, q.z]; });
+      arr(c.lados).forEach(function (l) { if (l && l.fonte && l.fonte.tipo === "separador") ids[String(l.fonte.id)] = 1; });
+      if (!P.length && a.ponto) P = [[a.ponto.x, a.ponto.z]];
+      var x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, m = 0.5;
+      P.forEach(function (q) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); });
+      if (!c.contorno || !c.contorno.length) m = 2;
+      function perto(x, z) { return x >= x0 - m && x <= x1 + m && z >= z0 - m && z <= z1 + m; }
+      var nv = this.nivelDe(a, this._niveis(niveis));
+      return this.separadoresDoNivel(estado && estado.separadores, niveis, nv).filter(function (sp) {
+        return ids[String(sp.id)] || perto(sp.x0, sp.z0) || perto(sp.x1, sp.z1) || perto((sp.x0 + sp.x1) / 2, (sp.z0 + sp.z1) / 2);
+      });
+    },
+    /* a op que regrava o separador com o "Acompanhar paredes" trocado (as pontas CLICADAS, não as ajustadas) */
+    opAcompanhar: function (sp, sim) {
+      var k = sp.clicado || sp, o = { op: "separador", id: sp.id, x0: k.x0, z0: k.z0, x1: k.x1, z1: k.z1 };
+      if (sp.nivelId != null && sp.nivelId !== "") o.nivelId = String(sp.nivelId);
+      if (!sim) o.acompanhar = false;
+      return o;
+    },
+    secoesAcoes: function (id) {
+      var self = this, a = this.ambiente(id); if (!a) return [];
+      var seps = this.separadoresDoAmbiente(this.estado(), a, this.niveisObra()), ps = [];
+      seps.forEach(function (sp, i) {
+        var L = Math.sqrt(Math.pow(sp.x1 - sp.x0, 2) + Math.pow(sp.z1 - sp.z0, 2)), nome = "Separador " + (i + 1) + " (" + fmtNum(L, 2) + " m)";
+        ps.push({ id: "p2d-sep:acomp:" + sp.id, rotulo: nome + " — acompanhar paredes", tipo: "sim-nao", valor: sp.acompanhar !== false });
+        ps.push({ id: "p2d-sep:apagar:" + sp.id, rotulo: nome, tipo: "botao", rotuloBotao: "Apagar linha", fn: function () { self.apagarSeparador(sp.id); } });
+      });
+      var out = [];
+      if (ps.length) out.push({ nome: "Separadores de ambiente", params: ps });
+      out.push({ nome: "Excluir", params: [{ id: "p2d-amb:excluir", rotulo: "Ambiente", tipo: "botao", rotuloBotao: "Excluir ambiente", fn: function () { self.excluir(id); } }] });
+      return out;
+    },
+    mudarExtra: function (pid, valor) {
+      var m = /^p2d-sep:acomp:(.+)$/.exec(String(pid)); if (!m) return false;
+      var sp = arr((this.estado() || {}).separadores).filter(function (s) { return String(s.id) === m[1]; })[0], b = B();
+      if (!sp || !b || !b.b2Op) return false;
+      var sim = valor === true || valor === "sim" || valor === "true" || valor === 1;
+      var ok = b.b2Op(this.opAcompanhar(sp, sim));
+      status(sim ? "Separador acompanha as paredes: a ponta solta vai até a parede mais próxima." : "Separador fixo: as pontas ficam onde foram clicadas.");
+      return ok;
+    },
+    apagarSeparador: function (sid) {
+      var b = B(); if (!b || !b.b2Op) return false;
+      var ok = b.b2Op({ op: "apagar", id: String(sid) });
+      if (ok !== false) { status("Linha de separação apagada (Ctrl+Z volta)."); toast("Linha de separação apagada.", "ok"); }
+      return ok;
+    },
+    excluir: function (id) {
+      var b = B(), a = this.ambiente(id); if (!b || !b.b2Op || !a) return false;
+      var t = this.textoIdentificador(a).texto;
+      try { if (b.selecionar) b.selecionar([], "trocar"); } catch (e) {}
+      this._sel = null;
+      var ok = b.b2Op({ op: "apagar", id: String(id) });
+      if (ok !== false) { status("Ambiente " + t + " excluído (Ctrl+Z volta)."); toast("Ambiente excluído.", "ok"); }
+      return ok;
+    },
+
     /* ----------------------------------------------- Navegador */
     ramoNavegador: function () {
       if (!this.ativo()) return null;

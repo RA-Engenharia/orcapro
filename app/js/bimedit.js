@@ -869,7 +869,7 @@
        Sem lista dentro de lista (a nuvem recusa).
        {op:'ambiente', id, ponto:{x,z}, <campos>}
        {op:'ajustarAmbiente', id, campos:{<campos>}}   (null apaga o campo)
-       {op:'separador', id, x0, z0, x1, z1, nivelId?}
+       {op:'separador', id, x0, z0, x1, z1, nivelId?, acompanhar?}
        {op:'delimitar', id, delimita: true|false}
        {op:'ambienteRegra', regra: 'face'|'centro'|'nucleo'|'centroNucleo'} */
     CAMPOS_AMBIENTE: {
@@ -935,7 +935,7 @@
       if (!idOk(o.id)) return false;
       if (o.op === "delimitar") return typeof o.delimita === "boolean";
       if (o.op === "separador") return fin(o.x0) && fin(o.z0) && fin(o.x1) && fin(o.z1) && Math.sqrt(Math.pow(o.x1 - o.x0, 2) + Math.pow(o.z1 - o.z0, 2)) > 0.05 &&
-        (o.nivelId == null || typeof o.nivelId === "string" || fin(o.nivelId));
+        (o.nivelId == null || typeof o.nivelId === "string" || fin(o.nivelId)) && (o.acompanhar == null || typeof o.acompanhar === "boolean");
       if (o.op === "ambiente") {
         if (!campoOk("ponto", o.ponto)) return false;
         return Object.keys(o).every(function (k) { return k === "op" || k === "id" || (k !== "params" && campoOk(k, o[k])); });

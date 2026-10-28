@@ -67,7 +67,9 @@
  *    servicos? (P2-C: [{codigo, medida, fator, acab?}] — js/bimacabamento.js)}
  *   {op:"ajustarAmbiente", id, campos:{<os mesmos campos>, params?:{k: v}}}
  *       (null apaga o campo: volta ao automático/padrão)
- *   {op:"separador", id, x0, z0, x1, z1, nivelId?}
+ *   {op:"separador", id, x0, z0, x1, z1, nivelId?, acompanhar?:false}
+ *       (a mesma op com o mesmo id regrava o separador; acompanhar:false =
+ *        as pontas não seguem a parede — ver pontasSeparador)
  *   {op:"delimitar", id (parede ou pilar), delimita: true|false}
  *   {op:"ambienteRegra", regra: "face"|"centro"|"nucleo"|"centroNucleo"}
  *   {op:"mover", id, cx, cz} (ou dx, dz) e {op:"apagar", id} — de ambiente
@@ -227,11 +229,55 @@
         pc.arestas.forEach(function (e) { segs.push({ a: e.a, b: e.b, tag: tagDe(e.lado || 0, e.arco) }); });
       });
     });
+    var nPecas = segs.length, ajust = {};
     arr(estado && estado.separadores).forEach(function (sp) {
       if (!sp || (sp.nivelId == null ? "" : String(sp.nivelId)) !== nivelKey) return;
-      segs.push({ a: [sp.x0, sp.z0], b: [sp.x1, sp.z1], tag: { tipo: "separador", id: sp.id, s: 0, face: "separador", off: ZERO, prio: 1 } });
+      var q = pontasSeparador(sp, segs, nPecas, pegadas);
+      if (q.mudou) ajust[sp.id] = q;
+      segs.push({ a: [q.x0, q.z0], b: [q.x1, q.z1], tag: { tipo: "separador", id: sp.id, s: 0, face: "separador", off: ZERO, prio: 1 } });
     });
-    return { segs: segs, pegadas: pegadas };
+    return { segs: segs, pegadas: pegadas, separadores: ajust };
+  }
+
+  /* SEPARADOR ACOMPANHA A PAREDE (28/10/2026, pedido do Rogério: "puxei a
+   * parede do closet para 1,40 m e a linha de demarcação ficou lá"). A op
+   * guarda as pontas onde foram clicadas; no replay, a ponta que ficou SOLTA
+   * (não encosta em peça nem está dentro de parede/pilar) vai até a parede:
+   *   · a parede foi para DENTRO e a linha agora a atravessa → a ponta volta
+   *     até a face de cá da parede (até SEP_ATRAVESSA para trás);
+   *   · a parede foi para FORA → a ponta estica na mesma direção até a
+   *     primeira face (até SEP_ALCANCE).
+   * A op não muda: desfazer o movimento da parede devolve a linha. Parâmetro
+   * "Acompanhar paredes" (acompanhar:false na op) desliga, ponta a ponta fixa. */
+  var SEP_ALCANCE = 1.5, SEP_ATRAVESSA = 0.6, SEP_TOCA = 2e-3;
+  function pontasSeparador(sp, segs, nPecas, pegadas) {
+    var r = { x0: sp.x0, z0: sp.z0, x1: sp.x1, z1: sp.z1, mudou: false };
+    if (sp.acompanhar === false) return r;
+    var A = [num(sp.x0, NaN), num(sp.z0, NaN)], B2 = [num(sp.x1, NaN), num(sp.z1, NaN)];
+    if (!fin(A[0]) || !fin(A[1]) || !fin(B2[0]) || !fin(B2[1])) return r;
+    var L = Math.sqrt((B2[0] - A[0]) * (B2[0] - A[0]) + (B2[1] - A[1]) * (B2[1] - A[1])); if (!(L > 1e-6)) return r;
+    function solta(p) {
+      for (var i = 0; i < segs.length; i++) if (distSeg(p, segs[i].a, segs[i].b) <= SEP_TOCA) return false;
+      for (var j = 0; j < pegadas.length; j++) if (dentroEstrito(p, pegadas[j].pts)) return false;
+      return true;
+    }
+    function nova(E, u) {
+      var tras = null, frente = null, lim = Math.min(L / 2, SEP_ATRAVESSA);
+      for (var i = 0; i < nPecas; i++) {
+        var a = segs[i].a, d = sub(segs[i].b, a), den = cross(u, d);
+        if (Math.abs(den) < 1e-12) continue;
+        var w = sub(a, E), s = cross(w, d) / den, t = cross(w, u) / den;
+        if (t < -1e-9 || t > 1 + 1e-9) continue;
+        if (s < -SEP_TOCA && s >= -lim) { if (tras == null || s < tras) tras = s; }
+        else if (s > SEP_TOCA && s <= SEP_ALCANCE) { if (frente == null || s < frente) frente = s; }
+      }
+      var s0 = tras != null ? tras : frente;
+      return s0 == null ? null : [r6(E[0] + s0 * u[0]), r6(E[1] + s0 * u[1])];
+    }
+    var u = [(B2[0] - A[0]) / L, (B2[1] - A[1]) / L];
+    if (solta(A)) { var nA = nova(A, [-u[0], -u[1]]); if (nA) { r.x0 = nA[0]; r.z0 = nA[1]; r.mudou = true; } }
+    if (solta(B2)) { var nB = nova(B2, u); if (nB) { r.x1 = nB[0]; r.z1 = nB[1]; r.mudou = true; } }
+    return r;
   }
 
   /* ================================================== arranjo plano
@@ -463,7 +509,7 @@
     opts = opts || {};
     var regra = REGRAS[opts.regra] ? opts.regra : (estado && REGRAS[estado.ambienteRegra] ? estado.ambienteRegra : REGRA_PADRAO);
     var NV = mapaNiveis(opts.niveis), ambs = arr(estado && estado.ambientes).filter(function (a) { return a && a.id != null; });
-    var NUM = numeros(ambs), avisos = NUM.avisos.slice(), porId = {}, lista = [], planos = {}, ordemP = [], faces = {};
+    var NUM = numeros(ambs), avisos = NUM.avisos.slice(), porId = {}, lista = [], planos = {}, ordemP = [], faces = {}, seps = {};
     ambs.forEach(function (a) {
       var nk = a.nivelId == null ? "" : String(a.nivelId), av = [];
       var eBase = 0;
@@ -490,6 +536,7 @@
     });
     ordemP.forEach(function (pk) {
       var PL = planos[pk], G = montar(estado, PL.nk, PL.yc), AR = null, donos = {};
+      Object.keys(G.separadores).forEach(function (k) { if (!seps[k]) seps[k] = G.separadores[k]; });
       PL.ambs.forEach(function (a) {
         var c = porId[a.id], p = a.ponto ? [num(a.ponto.x, NaN), num(a.ponto.z, NaN)] : [NaN, NaN];
         if (!fin(p[0]) || !fin(p[1])) { c.avisos.push("O ambiente não tem ponto de colocação válido."); return; }
@@ -522,7 +569,7 @@
     });
     volumeComForros(estado, ambs, porId, faces);
     lista.forEach(function (c) { if (!c.avisos.length) delete c.avisos; });
-    return { regra: regra, porId: porId, avisos: avisos };
+    return { regra: regra, porId: porId, avisos: avisos, separadores: seps };
   }
 
   /* ================================================== FORRO × VOLUME
@@ -741,6 +788,7 @@
       if (o.op === "separador") {
         S.seps[o.id] = { id: o.id, x0: r6(o.x0), z0: r6(o.z0), x1: r6(o.x1), z1: r6(o.z1) };
         if (o.nivelId != null && o.nivelId !== "") S.seps[o.id].nivelId = String(o.nivelId);
+        if (o.acompanhar === false) S.seps[o.id].acompanhar = false;
         if (S.ordemS.indexOf(o.id) < 0) S.ordemS.push(o.id);
         return true;
       }
@@ -754,6 +802,12 @@
       saida.ambienteRegra = S.regra || REGRA_PADRAO;
       var r = calcular(saida, { regra: saida.ambienteRegra, niveis: niveis });
       saida.ambientes.forEach(function (a) { a.calc = r.porId[a.id]; });
+      /* a planta desenha o separador onde ele ficou (seguindo a parede); o clicado fica em .clicado */
+      saida.separadores.forEach(function (sp) {
+        var q = r.separadores[sp.id]; if (!q) return;
+        sp.clicado = { x0: sp.x0, z0: sp.z0, x1: sp.x1, z1: sp.z1 };
+        sp.x0 = q.x0; sp.z0 = q.z0; sp.x1 = q.x1; sp.z1 = q.z1;
+      });
       if (r.avisos.length) saida.ambientesAvisos = r.avisos;
     },
 

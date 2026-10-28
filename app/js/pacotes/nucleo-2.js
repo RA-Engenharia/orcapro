@@ -10307,8 +10307,10 @@ try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 if (window.OrcModeloUI && OrcModeloUI.ehAmbiente && OrcModeloUI.ehAmbiente(fid)) {
 return BimPropsUI.esquema(info, this, { extras: function () { var xs = []; try { xs = OrcModeloUI.secoesAmbiente(fid); } catch (eA) { xs = []; }
 try { if (window.HidPranchasUI && HidPranchasUI.secaoAmbiente) xs = xs.concat(HidPranchasUI.secaoAmbiente(fid)); } catch (eH) {}
+try { if (window.BimAmbienteUI && BimAmbienteUI.secoesAcoes) xs = xs.concat(BimAmbienteUI.secoesAcoes(fid)); } catch (eS) {}
 return xs; }, aoMudarExtra: function (pid, valor) {
 if (String(pid).indexOf("acab:") === 0 || String(pid).indexOf("orc:") === 0) OrcModeloUI.mudar(uid, pid, valor);
+else if (String(pid).indexOf("p2d-sep:") === 0 && window.BimAmbienteUI) BimAmbienteUI.mudarExtra(pid, valor);
 try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
 } });
 }
@@ -70439,5 +70441,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=c4645326aa"},{"src":"js/bim-pacote.js?v=9f1a227b38","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f4a8feecaf"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=fb20cb8c09"},{"src":"js/bim-pacote.js?v=9f1a227b38","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f4a8feecaf"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

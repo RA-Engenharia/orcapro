@@ -13438,7 +13438,7 @@ if (o.op === "ambienteRegra") return BimEdit.REGRAS_AMBIENTE.indexOf(o.regra) >=
 if (!idOk(o.id)) return false;
 if (o.op === "delimitar") return typeof o.delimita === "boolean";
 if (o.op === "separador") return fin(o.x0) && fin(o.z0) && fin(o.x1) && fin(o.z1) && Math.sqrt(Math.pow(o.x1 - o.x0, 2) + Math.pow(o.z1 - o.z0, 2)) > 0.05 &&
-(o.nivelId == null || typeof o.nivelId === "string" || fin(o.nivelId));
+(o.nivelId == null || typeof o.nivelId === "string" || fin(o.nivelId)) && (o.acompanhar == null || typeof o.acompanhar === "boolean");
 if (o.op === "ambiente") {
 if (!campoOk("ponto", o.ponto)) return false;
 return Object.keys(o).every(function (k) { return k === "op" || k === "id" || (k !== "params" && campoOk(k, o[k])); });
@@ -59738,11 +59738,44 @@ pegadas.push({ pts: pc.pts, fonte: { tipo: "parede", id: c.id } });
 pc.arestas.forEach(function (e) { segs.push({ a: e.a, b: e.b, tag: tagDe(e.lado || 0, e.arco) }); });
 });
 });
+var nPecas = segs.length, ajust = {};
 arr(estado && estado.separadores).forEach(function (sp) {
 if (!sp || (sp.nivelId == null ? "" : String(sp.nivelId)) !== nivelKey) return;
-segs.push({ a: [sp.x0, sp.z0], b: [sp.x1, sp.z1], tag: { tipo: "separador", id: sp.id, s: 0, face: "separador", off: ZERO, prio: 1 } });
+var q = pontasSeparador(sp, segs, nPecas, pegadas);
+if (q.mudou) ajust[sp.id] = q;
+segs.push({ a: [q.x0, q.z0], b: [q.x1, q.z1], tag: { tipo: "separador", id: sp.id, s: 0, face: "separador", off: ZERO, prio: 1 } });
 });
-return { segs: segs, pegadas: pegadas };
+return { segs: segs, pegadas: pegadas, separadores: ajust };
+}
+var SEP_ALCANCE = 1.5, SEP_ATRAVESSA = 0.6, SEP_TOCA = 2e-3;
+function pontasSeparador(sp, segs, nPecas, pegadas) {
+var r = { x0: sp.x0, z0: sp.z0, x1: sp.x1, z1: sp.z1, mudou: false };
+if (sp.acompanhar === false) return r;
+var A = [num(sp.x0, NaN), num(sp.z0, NaN)], B2 = [num(sp.x1, NaN), num(sp.z1, NaN)];
+if (!fin(A[0]) || !fin(A[1]) || !fin(B2[0]) || !fin(B2[1])) return r;
+var L = Math.sqrt((B2[0] - A[0]) * (B2[0] - A[0]) + (B2[1] - A[1]) * (B2[1] - A[1])); if (!(L > 1e-6)) return r;
+function solta(p) {
+for (var i = 0; i < segs.length; i++) if (distSeg(p, segs[i].a, segs[i].b) <= SEP_TOCA) return false;
+for (var j = 0; j < pegadas.length; j++) if (dentroEstrito(p, pegadas[j].pts)) return false;
+return true;
+}
+function nova(E, u) {
+var tras = null, frente = null, lim = Math.min(L / 2, SEP_ATRAVESSA);
+for (var i = 0; i < nPecas; i++) {
+var a = segs[i].a, d = sub(segs[i].b, a), den = cross(u, d);
+if (Math.abs(den) < 1e-12) continue;
+var w = sub(a, E), s = cross(w, d) / den, t = cross(w, u) / den;
+if (t < -1e-9 || t > 1 + 1e-9) continue;
+if (s < -SEP_TOCA && s >= -lim) { if (tras == null || s < tras) tras = s; }
+else if (s > SEP_TOCA && s <= SEP_ALCANCE) { if (frente == null || s < frente) frente = s; }
+}
+var s0 = tras != null ? tras : frente;
+return s0 == null ? null : [r6(E[0] + s0 * u[0]), r6(E[1] + s0 * u[1])];
+}
+var u = [(B2[0] - A[0]) / L, (B2[1] - A[1]) / L];
+if (solta(A)) { var nA = nova(A, [-u[0], -u[1]]); if (nA) { r.x0 = nA[0]; r.z0 = nA[1]; r.mudou = true; } }
+if (solta(B2)) { var nB = nova(B2, u); if (nB) { r.x1 = nB[0]; r.z1 = nB[1]; r.mudou = true; } }
+return r;
 }
 var EPS = 1e-3, EPS_V = 1e-3;
 function registro() {
@@ -59936,7 +59969,7 @@ function calcular(estado, opts) {
 opts = opts || {};
 var regra = REGRAS[opts.regra] ? opts.regra : (estado && REGRAS[estado.ambienteRegra] ? estado.ambienteRegra : REGRA_PADRAO);
 var NV = mapaNiveis(opts.niveis), ambs = arr(estado && estado.ambientes).filter(function (a) { return a && a.id != null; });
-var NUM = numeros(ambs), avisos = NUM.avisos.slice(), porId = {}, lista = [], planos = {}, ordemP = [], faces = {};
+var NUM = numeros(ambs), avisos = NUM.avisos.slice(), porId = {}, lista = [], planos = {}, ordemP = [], faces = {}, seps = {};
 ambs.forEach(function (a) {
 var nk = a.nivelId == null ? "" : String(a.nivelId), av = [];
 var eBase = 0;
@@ -59963,6 +59996,7 @@ planos[pk].ambs.push(a);
 });
 ordemP.forEach(function (pk) {
 var PL = planos[pk], G = montar(estado, PL.nk, PL.yc), AR = null, donos = {};
+Object.keys(G.separadores).forEach(function (k) { if (!seps[k]) seps[k] = G.separadores[k]; });
 PL.ambs.forEach(function (a) {
 var c = porId[a.id], p = a.ponto ? [num(a.ponto.x, NaN), num(a.ponto.z, NaN)] : [NaN, NaN];
 if (!fin(p[0]) || !fin(p[1])) { c.avisos.push("O ambiente não tem ponto de colocação válido."); return; }
@@ -59992,7 +60026,7 @@ faces[a.id] = mf.map(function (x) { return x.pts; });
 });
 volumeComForros(estado, ambs, porId, faces);
 lista.forEach(function (c) { if (!c.avisos.length) delete c.avisos; });
-return { regra: regra, porId: porId, avisos: avisos };
+return { regra: regra, porId: porId, avisos: avisos, separadores: seps };
 }
 function recortar(P, c0, gx, gz, lim, abaixo) {
 function val(q) { var v = c0 + gx * q[0] + gz * q[1] - lim; return abaixo ? -v : v; }
@@ -60154,6 +60188,7 @@ return true;
 if (o.op === "separador") {
 S.seps[o.id] = { id: o.id, x0: r6(o.x0), z0: r6(o.z0), x1: r6(o.x1), z1: r6(o.z1) };
 if (o.nivelId != null && o.nivelId !== "") S.seps[o.id].nivelId = String(o.nivelId);
+if (o.acompanhar === false) S.seps[o.id].acompanhar = false;
 if (S.ordemS.indexOf(o.id) < 0) S.ordemS.push(o.id);
 return true;
 }
@@ -60167,6 +60202,11 @@ saida.separadores = S.ordemS.map(function (id) { return clone(S.seps[id]); });
 saida.ambienteRegra = S.regra || REGRA_PADRAO;
 var r = calcular(saida, { regra: saida.ambienteRegra, niveis: niveis });
 saida.ambientes.forEach(function (a) { a.calc = r.porId[a.id]; });
+saida.separadores.forEach(function (sp) {
+var q = r.separadores[sp.id]; if (!q) return;
+sp.clicado = { x0: sp.x0, z0: sp.z0, x1: sp.x1, z1: sp.z1 };
+sp.x0 = q.x0; sp.z0 = q.z0; sp.x1 = q.x1; sp.z1 = q.z1;
+});
 if (r.avisos.length) saida.ambientesAvisos = r.avisos;
 },
 calcular: calcular,
@@ -158133,6 +158173,63 @@ this._api.enquadrar(new T.Box3(new T.Vector3(x0, y0, z0), new T.Vector3(x1, y1, 
 return true;
 }
 return false;
+},
+separadoresDoAmbiente: function (estado, a, niveis) {
+if (!a) return [];
+var c = a.calc || {}, ids = {}, P = arr(c.contorno).map(function (q) { return [q.x, q.z]; });
+arr(c.lados).forEach(function (l) { if (l && l.fonte && l.fonte.tipo === "separador") ids[String(l.fonte.id)] = 1; });
+if (!P.length && a.ponto) P = [[a.ponto.x, a.ponto.z]];
+var x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity, m = 0.5;
+P.forEach(function (q) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); });
+if (!c.contorno || !c.contorno.length) m = 2;
+function perto(x, z) { return x >= x0 - m && x <= x1 + m && z >= z0 - m && z <= z1 + m; }
+var nv = this.nivelDe(a, this._niveis(niveis));
+return this.separadoresDoNivel(estado && estado.separadores, niveis, nv).filter(function (sp) {
+return ids[String(sp.id)] || perto(sp.x0, sp.z0) || perto(sp.x1, sp.z1) || perto((sp.x0 + sp.x1) / 2, (sp.z0 + sp.z1) / 2);
+});
+},
+opAcompanhar: function (sp, sim) {
+var k = sp.clicado || sp, o = { op: "separador", id: sp.id, x0: k.x0, z0: k.z0, x1: k.x1, z1: k.z1 };
+if (sp.nivelId != null && sp.nivelId !== "") o.nivelId = String(sp.nivelId);
+if (!sim) o.acompanhar = false;
+return o;
+},
+secoesAcoes: function (id) {
+var self = this, a = this.ambiente(id); if (!a) return [];
+var seps = this.separadoresDoAmbiente(this.estado(), a, this.niveisObra()), ps = [];
+seps.forEach(function (sp, i) {
+var L = Math.sqrt(Math.pow(sp.x1 - sp.x0, 2) + Math.pow(sp.z1 - sp.z0, 2)), nome = "Separador " + (i + 1) + " (" + fmtNum(L, 2) + " m)";
+ps.push({ id: "p2d-sep:acomp:" + sp.id, rotulo: nome + " — acompanhar paredes", tipo: "sim-nao", valor: sp.acompanhar !== false });
+ps.push({ id: "p2d-sep:apagar:" + sp.id, rotulo: nome, tipo: "botao", rotuloBotao: "Apagar linha", fn: function () { self.apagarSeparador(sp.id); } });
+});
+var out = [];
+if (ps.length) out.push({ nome: "Separadores de ambiente", params: ps });
+out.push({ nome: "Excluir", params: [{ id: "p2d-amb:excluir", rotulo: "Ambiente", tipo: "botao", rotuloBotao: "Excluir ambiente", fn: function () { self.excluir(id); } }] });
+return out;
+},
+mudarExtra: function (pid, valor) {
+var m = /^p2d-sep:acomp:(.+)$/.exec(String(pid)); if (!m) return false;
+var sp = arr((this.estado() || {}).separadores).filter(function (s) { return String(s.id) === m[1]; })[0], b = B();
+if (!sp || !b || !b.b2Op) return false;
+var sim = valor === true || valor === "sim" || valor === "true" || valor === 1;
+var ok = b.b2Op(this.opAcompanhar(sp, sim));
+status(sim ? "Separador acompanha as paredes: a ponta solta vai até a parede mais próxima." : "Separador fixo: as pontas ficam onde foram clicadas.");
+return ok;
+},
+apagarSeparador: function (sid) {
+var b = B(); if (!b || !b.b2Op) return false;
+var ok = b.b2Op({ op: "apagar", id: String(sid) });
+if (ok !== false) { status("Linha de separação apagada (Ctrl+Z volta)."); toast("Linha de separação apagada.", "ok"); }
+return ok;
+},
+excluir: function (id) {
+var b = B(), a = this.ambiente(id); if (!b || !b.b2Op || !a) return false;
+var t = this.textoIdentificador(a).texto;
+try { if (b.selecionar) b.selecionar([], "trocar"); } catch (e) {}
+this._sel = null;
+var ok = b.b2Op({ op: "apagar", id: String(id) });
+if (ok !== false) { status("Ambiente " + t + " excluído (Ctrl+Z volta)."); toast("Ambiente excluído.", "ok"); }
+return ok;
 },
 ramoNavegador: function () {
 if (!this.ativo()) return null;

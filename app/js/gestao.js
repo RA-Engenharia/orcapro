@@ -15304,8 +15304,11 @@
         return BimPropsUI.esquema(info, this, { extras: function () { var xs = []; try { xs = OrcModeloUI.secoesAmbiente(fid); } catch (eA) { xs = []; }
           /* "3D do ambiente" e "Para a prancha" (js/hidpranchasui.js) quando o hidrossanitário está carregado */
           try { if (window.HidPranchasUI && HidPranchasUI.secaoAmbiente) xs = xs.concat(HidPranchasUI.secaoAmbiente(fid)); } catch (eH) {}
+          /* 28/10/2026: separadores do ambiente (acompanhar paredes / apagar linha) e Excluir ambiente (js/bimambienteui.js) */
+          try { if (window.BimAmbienteUI && BimAmbienteUI.secoesAcoes) xs = xs.concat(BimAmbienteUI.secoesAcoes(fid)); } catch (eS) {}
           return xs; }, aoMudarExtra: function (pid, valor) {
           if (String(pid).indexOf("acab:") === 0 || String(pid).indexOf("orc:") === 0) OrcModeloUI.mudar(uid, pid, valor);
+          else if (String(pid).indexOf("p2d-sep:") === 0 && window.BimAmbienteUI) BimAmbienteUI.mudarExtra(pid, valor);
           try { BimShell.pintarProps(self._bimPropsPeca(info)); } catch (eR) {}
         } });
       }
