@@ -43,6 +43,11 @@
   function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 7000); } catch (e) {} }
   function doc() { return typeof document !== "undefined" ? document : null; }
   function relogio() { return new Date().toISOString(); }
+  /* E11: TODO texto de ajuda e de diagnóstico vem de js/andaimeajuda.js — aqui só se monta o HTML (ajI = o ⓘ com tooltip, ajL = a linha curta sob o rótulo, tx = frase do dicionário) */
+  function AJ() { return dep("AndaimeAjuda", "./andaimeajuda.js"); }
+  function ajI(id, sis) { var a = AJ(); return a ? a.icone(id, sis) : ""; }
+  function ajL(id, sis) { var a = AJ(); return a ? a.linhaHtml(id, sis) : ""; }
+  function tx(k) { var a = AJ(); return a ? a.txt(k) : k; }
 
   /* ================================================================ FITA */
   var COMANDOS = [
@@ -123,6 +128,28 @@
   }
   function localObra() { try { var C = global.MetalCalcLivreUI; return C && C.localObra ? C.localObra() : null; } catch (e) { return null; } }
   function ventoFalta() { return !T().v0DoLocal(localObra()); }
+  /* o HTML do painel do traçado: cada campo leva o ⓘ (tooltip); a linha completa de cada um fica em «Ajuda dos campos» e sob os campos de «Local e vento» */
+  function tracoHtml() {
+    var sis = _sess ? T().sistemaDe(_sess) : _ultSistema;
+    return '<div class="andui-traco-txt" data-andui="traco-txt" role="status"></div>' +
+      '<div class="andui-traco-ctl">' +
+      '<label>Altura a vencer (m) ' + ajI("altura", sis) + '<input data-andui="altura" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Altura do piso de trabalho em metros"></label>' +
+      '<label>Sistema ' + ajI("sistema", sis) + '<select data-andui="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '">' + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label>" +
+      '<label>Lado ' + ajI("lado", sis) + '<select data-andui="lado" aria-label="Lado do andaime"></select></label>' +
+      '<label class="andui-ck"><input type="checkbox" data-andui="intel"> Montar inteligente ' + ajI("intel", sis) + '</label>' +
+      '<button type="button" class="andui-bt pri" data-andui-acao="traco-fechar">Fechar (Enter)</button>' +
+      '<button type="button" class="andui-bt" data-andui-acao="traco-voltar">Voltar ponto (⌫)</button>' +
+      '<button type="button" class="andui-bt" data-andui-acao="traco-cancelar">Cancelar (Esc)</button>' +
+      '<details class="andui-aj-det" data-andui="aj-traco"><summary>Ajuda</summary>' + ["altura", "sistema", "lado", "intel", "V0", "categoria", "telaSombreamento", "faceAte"].map(function (k) { return "<div><b>" + esc(AJ().campo(k, sis).rot) + "</b><br>" + ajL(k, sis) + "</div>"; }).join("") + '</details>' +
+      '</div>' +
+      '<details class="andui-vento" data-andui="vento"' + (ventoFalta() ? " open" : "") + '><summary>Local e vento</summary><div class="andui-vento-corpo">' +
+      '<label><span>V0 (m/s) ' + ajI("V0", sis) + '</span><input data-andui-v="V0" inputmode="decimal" autocomplete="off" aria-label="V0, velocidade básica do vento em metros por segundo"></label>' +
+      '<label><span>Categoria do terreno ' + ajI("categoria", sis) + '</span><select data-andui-v="categoria"><option value="">não informada (pior caso: I)</option>' + ["I", "II", "III", "IV", "V"].map(function (c) { return "<option>" + c + "</option>"; }).join("") + '</select></label>' +
+      '<label><span>Tipo de tela ' + ajI("telaSombreamento", sis) + '</span><select data-andui-v="telaSombreamento"><option value="">não informada (0,75)</option><option value="0.3">Tela aberta (30 % fechada)</option><option value="0.5">Tela 50 %</option><option value="0.75">Tela 75 %</option><option value="1">Lona (100 %)</option></select></label>' +
+      '<label><span>Face até a cota (m) ' + ajI("faceAte", sis) + '</span><input data-andui-v="faceAte" inputmode="decimal" autocomplete="off" placeholder="até o topo" aria-label="Cota até onde a face permite ancorar"></label>' +
+      '<small data-andui="vento-nota"></small></div></details>' +
+      '<div class="andui-traco-erro" data-andui="traco-erro" role="alert"></div>';
+  }
   function painelTraco(prev, sa) {
     var d = doc(); if (!d) return null;
     var el = d.querySelector('[data-andui="traco"]');
@@ -130,22 +157,7 @@
     cssGeral();
     if (!el) {
       el = d.createElement("div"); el.className = "andui-traco"; el.setAttribute("data-andui", "traco"); el.setAttribute("role", "region"); el.setAttribute("aria-label", "Traçado do andaime");
-      el.innerHTML = '<div class="andui-traco-txt" data-andui="traco-txt" role="status"></div>' +
-        '<div class="andui-traco-ctl">' +
-        '<label>Altura a vencer (m) <input data-andui="altura" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Altura do piso de trabalho em metros"></label>' +
-        '<label>Sistema <select data-andui="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '">' + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label>" +
-        '<label>Lado <select data-andui="lado" aria-label="Lado do andaime"></select></label>' +
-        '<label class="andui-ck"><input type="checkbox" data-andui="intel"> Montar inteligente</label>' +
-        '<button type="button" class="andui-bt pri" data-andui-acao="traco-fechar">Fechar (Enter)</button>' +
-        '<button type="button" class="andui-bt" data-andui-acao="traco-voltar">Voltar ponto (⌫)</button>' +
-        '<button type="button" class="andui-bt" data-andui-acao="traco-cancelar">Cancelar (Esc)</button></div>' +
-        '<details class="andui-vento" data-andui="vento"' + (ventoFalta() ? " open" : "") + '><summary>Local e vento</summary><div class="andui-vento-corpo">' +
-        '<label>V0 (m/s)<input data-andui-v="V0" inputmode="decimal" autocomplete="off" aria-label="V0, velocidade básica do vento em metros por segundo"></label>' +
-        '<label>Categoria do terreno<select data-andui-v="categoria"><option value="">não informada (pior caso: I)</option>' + ["I", "II", "III", "IV", "V"].map(function (c) { return "<option>" + c + "</option>"; }).join("") + '</select></label>' +
-        '<label>Tipo de tela<select data-andui-v="telaSombreamento"><option value="">não informada (0,75)</option><option value="0.3">Tela aberta (30 % fechada)</option><option value="0.5">Tela 50 %</option><option value="0.75">Tela 75 %</option><option value="1">Lona (100 %)</option></select></label>' +
-        '<label>Face até a cota (m)<input data-andui-v="faceAte" inputmode="decimal" autocomplete="off" placeholder="até o topo" aria-label="Cota até onde a face permite ancorar"></label>' +
-        '<small data-andui="vento-nota"></small></div></details>' +
-        '<div class="andui-traco-erro" data-andui="traco-erro" role="alert"></div>';
+      el.innerHTML = tracoHtml();
       d.body.appendChild(el);
       el.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-andui-acao]") : null; if (!b) return; var a = b.getAttribute("data-andui-acao"); if (a === "traco-fechar") AndaimeUI.fechar(); else if (a === "traco-voltar") AndaimeUI.voltarPonto(); else if (a === "traco-cancelar") AndaimeUI.cancelarTraco(); });
       el.addEventListener("change", function (ev) {
@@ -161,6 +173,7 @@
         else if (t.getAttribute("data-andui") === "lado") { s.lado = t.value; s.hVis = 0; AndaimeUI.redesenhar(); }
         else if (t.getAttribute("data-andui") === "intel") { s.inteligente = !!t.checked; _ultInteligente = s.inteligente; }
       });
+      el.addEventListener("input", function (ev) { avisoDoCampo(ev.target, _sess ? T().sistemaDe(_sess) : _ultSistema); });
       el.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target && ev.target.getAttribute && ev.target.getAttribute("data-andui") === "altura") { ev.preventDefault(); ev.stopPropagation(); ev.target.dispatchEvent(new Event("change", { bubbles: true })); ev.target.blur(); } if (ev.key === "Escape") ev.stopPropagation(); }, true);
     }
     var s = sa || _sess;
@@ -269,10 +282,10 @@
     var d = doc(); if (!d || d.getElementById("andui-css")) return;
     var s = d.createElement("style"); s.id = "andui-css";
     s.textContent =
-      ".andui-traco{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:62;width:min(860px,94vw);padding:9px 14px;border-radius:10px;font-size:13px;line-height:1.35;background:var(--surface);color:var(--texto);border:2px solid var(--linha);box-shadow:0 4px 18px rgba(0,0,0,.22)}" +
+      ".andui-traco{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:62;width:min(860px,94vw);padding:5px 14px;border-radius:10px;font-size:13px;line-height:1.35;background:var(--surface);color:var(--texto);border:2px solid var(--linha);box-shadow:0 4px 18px rgba(0,0,0,.22)}" +
       ".andui-traco.falta{border-color:var(--vermelho)}.andui-traco.ok{border-color:var(--verde)}.andui-traco-txt b{display:block}.andui-traco-txt small{display:block;color:var(--texto-fraco);font-size:11.5px;margin-top:2px}" +
-      ".andui-traco-ctl{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:8px}.andui-traco-ctl label{display:flex;gap:6px;align-items:center;font-size:12px}.andui-traco-ctl input:not([type=checkbox]){width:74px;min-height:30px;text-align:right}.andui-traco-ctl select{min-height:30px}" +
-      ".andui-vento{margin-top:6px;font-size:12px}.andui-vento summary{cursor:pointer;font-weight:700}.andui-vento-corpo{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px;margin-top:6px}.andui-vento-corpo label{display:flex;flex-direction:column;gap:2px;font-size:11.5px}.andui-vento-corpo input,.andui-vento-corpo select{min-height:28px}.andui-vento-corpo small{grid-column:1 / -1;color:var(--texto-fraco);font-size:10.5px;line-height:1.25}" +
+      ".andui-traco-ctl{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:4px}.andui-traco-ctl label{display:flex;gap:6px;align-items:center;font-size:12px}.andui-traco-ctl input:not([type=checkbox]){width:74px;min-height:30px;text-align:right}.andui-traco-ctl select{min-height:30px}" +
+      ".andui-vento{margin-top:2px;font-size:12px}.andui-vento summary{cursor:pointer;font-weight:700}.andui-vento-corpo{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px;margin-top:6px}.andui-vento-corpo label{display:flex;flex-direction:column;gap:2px;font-size:11.5px}.andui-vento-corpo input,.andui-vento-corpo select{min-height:28px}.andui-vento-corpo small{grid-column:1 / -1;color:var(--texto-fraco);font-size:10.5px;line-height:1.25}" +
       ".andui-traco-erro{color:var(--vermelho);font-size:12px;min-height:1.1em}" +
       ".andui-bt{min-height:30px;padding:3px 11px;border-radius:8px;border:1px solid var(--linha-forte,var(--linha));background:var(--surface);color:var(--texto);cursor:pointer;font-size:12.5px}.andui-bt:hover{border-color:var(--aco)}.andui-bt:focus-visible{outline:2px solid var(--aco);outline-offset:1px}.andui-bt.pri{background:var(--aco);color:#fff;border-color:var(--aco)}.andui-bt[disabled]{opacity:.55;cursor:not-allowed}.andui-bt.perigo{border-color:var(--vermelho);color:var(--vermelho)}" +
       ".andui-painel{position:fixed;top:56px;right:0;bottom:0;width:min(520px,100vw);z-index:70;display:flex;flex-direction:column;background:var(--surface);color:var(--texto);border-left:2px solid var(--linha);box-shadow:-6px 0 22px rgba(0,0,0,.2);font-size:13px}" +
@@ -291,10 +304,33 @@
       ".andui-cartao{border-radius:10px;padding:12px;text-align:center;font-weight:800;font-size:15px;color:#fff;margin:6px 0}.andui-cartao.verde{background:#1f7a3d}.andui-cartao.amarelo{background:#d9a400}.andui-cartao.vermelho{background:#b3261e}.andui-cartao.nulo{background:#5b6673}" +
       ".andui-sis{border:1px solid var(--linha);border-radius:10px;padding:8px 10px;margin:8px 0}.andui-sis h3{margin:0 0 6px}.andui-form .ck{flex-direction:row;align-items:center;gap:6px}" +
       ".andui-hist{list-style:none;padding:0;margin:0;font-size:12px}.andui-hist li{border-left:3px solid var(--linha);padding:2px 0 2px 8px;margin:3px 0}" +
+      ".andui-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:3px;border-radius:50%;border:1px solid var(--aco);color:var(--aco);font-size:10px;line-height:1;cursor:help;vertical-align:middle;user-select:none}.andui-i:focus-visible{outline:2px solid var(--aco);outline-offset:1px}" +
+      ".andui-aj{display:block;color:var(--texto-fraco);font-size:10.5px;line-height:1.28;margin-top:2px;font-weight:400}.andui-aj b{font-weight:700}.andui-aviso{display:block;color:var(--vermelho);font-size:11px;line-height:1.25;margin-top:2px}[aria-invalid=true]{border-color:var(--vermelho)!important}" +
+      ".andui-aj-det{font-size:12px;position:relative}.andui-traco .andui-aj-det[open]>div{max-width:300px}.andui-aj-det summary{cursor:pointer;font-weight:700}.andui-aj-det div{margin:4px 0}.andui-form{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))!important}.andui-form .ck{flex-wrap:wrap}.andui-form .ck .andui-aj{flex-basis:100%}" +
+      ".andui-faixa{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:2px solid #b45309;border-radius:10px;padding:8px 10px;margin:10px 0}" +
+      ".andui-diag{border:1px solid var(--linha);border-left:5px solid var(--linha);border-radius:10px;padding:9px 11px;margin:10px 0}.andui-diag.falha{border-left-color:var(--vermelho)}.andui-diag.atencao{border-left-color:#b45309}.andui-diag.nao_verificado{border-left-color:var(--texto-fraco)}.andui-diag.ok{border-left-color:var(--verde)}" +
+      ".andui-diag p{margin:5px 0}.andui-diag-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.andui-diag small{display:block;color:var(--texto-fraco);font-size:11.5px;margin:2px 0}.andui-diag .lin{display:grid;grid-template-columns:1fr 110px auto;gap:6px 8px;align-items:center;margin:6px 0}.andui-diag .lin .andui-aj{grid-column:1 / -1}.andui-diag .lin input:not([type=checkbox]),.andui-diag .lin select{min-height:28px;width:100%}" +
+      ".andui-op{border:1px solid var(--linha);border-radius:8px;padding:7px 9px;margin:6px 0}.andui-op.rec{border-color:var(--verde);background:rgba(31,157,85,.07)}.andui-op-t{margin:3px 0;font-weight:600}.andui-op .andui-bt{margin-top:5px}" +
+      ".andui-memo-det td{background:rgba(127,127,127,.06)}.andui-tab tr[data-memo]{cursor:pointer}.andui-tab tr[data-memo]:hover{background:rgba(127,127,127,.1)}" +
       "@media (max-width:760px){.andui-painel{top:0;width:100vw}.andui-traco{bottom:8px}}";
     d.head.appendChild(s);
   }
 
+  /* qual entrada do dicionário de ajuda este campo da tela usa */
+  var CHAVES_CAMPO = ["data-andui-cab", "data-andui-mp", "data-andui-p", "data-andui-pj", "data-andui-v", "data-andui-ip", "data-andui-ipj", "data-andui-f"];
+  function idDoCampo(t) {
+    if (!t || !t.getAttribute) return null;
+    for (var i = 0; i < CHAVES_CAMPO.length; i++) { var v = t.getAttribute(CHAVES_CAMPO[i]); if (v) return v; }
+    var a = t.getAttribute("data-andui"); return /^(altura|sistema|lado|intel)$/.test(a || "") ? a : null;
+  }
+  /* fora da faixa que o motor recusa → aviso ao lado do campo (role=alert via aria-invalid); NUNCA apaga o que foi digitado */
+  function avisoDoCampo(t, sis) {
+    var id = idDoCampo(t), a = AJ(); if (!id || !a || !a.campo(id) || !t.parentNode) return;
+    var msg = t.type === "checkbox" ? "" : a.validar(id, t.value, sis), host = t.parentNode, av = host.querySelector('[data-aj-aviso="' + id + '"]');
+    if (!msg) { if (av) av.remove(); t.removeAttribute("aria-invalid"); return; }
+    if (!av) { av = doc().createElement("small"); av.className = "andui-aviso"; av.setAttribute("data-aj-aviso", id); av.setAttribute("role", "alert"); t.parentNode.insertBefore(av, t.nextSibling); }
+    av.textContent = msg; t.setAttribute("aria-invalid", "true");
+  }
   function raiz() { var d = doc(); return d ? d.querySelector('[data-andui="painel"]') : null; }
   function lerDoModelo() {
     if (!P) return null;
@@ -315,7 +351,7 @@
   function cabDe(D) { return T().cabPreenchido(D.tela.cab, D.ap, empresaApp()); }
   var CAMPOS_RT = [["empresa", "Empresa"], ["responsavel", "Responsável técnico (nome)"], ["tituloProfissional", "Título profissional (Eng. Civil / Eng. Mecânico…)"], ["registro", "Registro CREA/CAU"], ["art", "ART nº"],
     ["proprietario", "Contratante / Proprietário"], ["obra", "Obra"], ["local", "Local"], ["andaime", "Código do andaime"], ["revisao", "Revisão"], ["data", "Data"]];
-  function camposCabHtml(cab) { return CAMPOS_RT.map(function (x) { return '<label>' + x[1] + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off"></label>'; }).join(""); }
+  function camposCabHtml(cab) { return CAMPOS_RT.map(function (x) { return '<label>' + x[1] + ' ' + ajI(x[0]) + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off">' + ajL(x[0]) + '</label>'; }).join(""); }
   /* o MESMO bloco em Documentos e Resumo (e na Locação): grava em D.tela.cab pelo handler de data-andui-cab */
   function blocoRT(D) {
     var cab = cabDe(D);
@@ -325,25 +361,26 @@
 
   /* ---------------------------------------------------------------- abas */
   /* as pendências do RT: lista GENÉRICA (a tela não conhece os campos: lê o que o cálculo do sistema manda em calc.pendenciasRT) */
+  function dicaPend(p, sis) { return AJ() && AJ().campo(p.campo, sis) ? ajL(p.campo, sis) : "<small>" + esc(p.dica) + "</small>"; }
   function blocoPendencias(D, res) {
-    var h = "";
+    var h = "", sis = T().sistemaDe(D.par);
     if (D.tela.fonteV0) h += '<p class="andui-mut" data-andui="fonte-v0">V0 — fonte: ' + esc(D.tela.fonteV0) + ".</p>";
     h += '<div class="andui-rt" data-andui="pendencias-rt"><h3>Pendências do responsável técnico</h3><p class="andui-mut">O sistema não tem estes dados e não os inventa. Sem eles a verificação correspondente fica NÃO VERIFICADA (cinza) — nunca verde.</p>';
     T().pendenciasRT(D.par, res && res.calc).forEach(function (p) {
       if (p.tipo === "marca") {   /* C-T1.1: caixa + justificativa do RT (mesmo padrão: Aplicar → AndaimeUI.informar → reagirAoDado) */
-        h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + "</label>";
+        h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + " " + ajI(p.campo, sis) + "</label>";
         h += '<label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"' + (p.valor ? " checked" : "") + '> ' + esc(p.campo === "ventoParaleloRT" ? "Vento paralelo à fachada conferido pelo RT" : (p.rotuloMarca || "Conferido pelo RT")) + '</label>';
         h += '<input data-andui-pj="' + esc(p.campo) + '" placeholder="Justificativa do RT (mín. 15 caracteres)" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="Justificativa do RT: ' + esc(p.rotulo) + '">';
-        h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button><small>' + esc(p.dica) + "</small></div>";
+        h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>' + dicaPend(p, sis) + "</div>";
         return;
       }
       var v = p.valor == null ? "" : (p.tipo === "num" ? br(p.valor, p.campo === "telaSombreamento" ? 2 : 2) : p.valor);
-      h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + "</label>";
+      h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + " " + ajI(p.campo, sis) + "</label>";
       if (p.tipo === "sel") h += '<select id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"><option value="">—</option>' + p.ops.map(function (o) { return '<option value="' + o + '"' + (String(p.valor) === o ? " selected" : "") + ">" + o + "</option>"; }).join("") + "</select>";
       else h += '<input id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '" inputmode="decimal" value="' + esc(v) + '" autocomplete="off">';
       h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>';
       if (p.confirma) h += '<small><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" data-andui-pc="' + esc(p.campo) + '"' + (p.confirmado ? " checked" : "") + '> Confirmo como RT (preciso confirmar para a verificação contar)</label></small>';
-      h += "<small>" + esc(p.dica) + "</small></div>";
+      h += dicaPend(p, sis) + "</div>";
     });
     h += "</div>";
     return h;
@@ -352,19 +389,18 @@
   /* o seletor de sistema e o formulário do multidirecional (M4-A) */
   function blocoSistema(D) {
     var cur = T().sistemaDe(D.par), multi = cur !== "tuboroll", h = '<div class="andui-sis" data-andui="sistema-bloco"><h3>Sistema do andaime</h3>';
-    h += '<div class="andui-form"><label>Sistema<select data-andui-f="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label></div>";
+    h += '<div class="andui-form"><label>Sistema ' + ajI("sistema", cur) + '<select data-andui-f="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select>" + ajL("sistema", cur) + "</label></div>";
     h += '<p><button type="button" class="andui-bt" data-andui-acao="sistema-trocar">Trocar o sistema</button> <span class="andui-mut">Refaz o andaime no lugar com o mesmo traçado e a mesma altura; os parâmetros voltam ao padrão do sistema novo e a aprovação volta para «em revisão».</span></p>';
     if (multi) {
       h += '<h3 style="margin-top:10px">Parâmetros do multidirecional</h3><div class="andui-form" data-andui="param-multi">';
       T().PARAMETROS_MULTI.forEach(function (d) {
         var v = D.par[d.id], id = 'andmp-' + d.id;
-        if (d.tipo === "check") h += '<label class="ck" for="' + id + '"><input type="checkbox" id="' + id + '" data-andui-mp="' + d.id + '"' + (v === false || v === "false" ? "" : " checked") + "> " + esc(d.rotulo) + "</label>";
-        else if (d.id === "larguraModulo") h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + T().largurasDaLinha(D.par.linha).map(function (w) { return '<option value="' + w + '"' + (Math.abs(num(v, 0) - w) < 1e-6 ? " selected" : "") + ">" + br(w, 2) + " m</option>"; }).join("") + "</select></label>";
-        else if (d.tipo === "sel") { var cv = d.id === "pisos" ? (String(v) === "todos" ? "todos" : "topo") : String(v); h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + d.ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cv ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></label>"; }
-        else h += '<label>' + esc(d.rotulo) + '<input id="' + id + '" data-andui-mp="' + d.id + '" inputmode="decimal" value="' + esc(br(v, d.int ? 0 : 2)) + '" autocomplete="off"></label>';
+        if (d.tipo === "check") h += '<label class="ck" for="' + id + '"><input type="checkbox" id="' + id + '" data-andui-mp="' + d.id + '"' + (v === false || v === "false" ? "" : " checked") + "> " + esc(d.rotulo) + " " + ajI(d.id, cur) + ajL(d.id, cur) + "</label>";
+        else if (d.id === "larguraModulo") h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + T().largurasDaLinha(D.par.linha).map(function (w) { return '<option value="' + w + '"' + (Math.abs(num(v, 0) - w) < 1e-6 ? " selected" : "") + ">" + br(w, 2) + " m</option>"; }).join("") + "</select>" + ajL(d.id, cur) + "</label>";
+        else if (d.tipo === "sel") { var cv = d.id === "pisos" ? (String(v) === "todos" ? "todos" : "topo") : String(v); h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + d.ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cv ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select>" + ajL(d.id, cur) + "</label>"; }
+        else h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<input id="' + id + '" data-andui-mp="' + d.id + '" inputmode="decimal" value="' + esc(br(v, d.int ? 0 : 2)) + '" autocomplete="off">' + ajL(d.id, cur) + '</label>';
       });
       h += '</div><p><button type="button" class="andui-bt pri" data-andui-acao="multi-aplicar">Aplicar os parâmetros</button> <span class="andui-mut">Guarda-corpo do multidirecional: travessão a 1,00 m e intermediário a 0,50 m (NR-18 18.12.15.2). A altura se muda em «Altura a vencer».</span></p>';
-      h += '<ul class="andui-mut">' + T().PARAMETROS_MULTI.map(function (d) { return "<li><b>" + esc(d.rotulo.split(" — ")[0]) + ":</b> " + esc(d.dica) + "</li>"; }).join("") + "</ul>";
     }
     return h + "</div>";
   }
@@ -377,7 +413,7 @@
     h += '<p class="andui-mut" data-andui="aviso-calculo">' + esc(c.resumo || "") + "</p>";
     h += '<div class="andui-med">' + [["Comprimento", br(M.comprimento) + " m"], ["Largura", br(M.largura) + " m"], ["Piso mais alto", br(M.alturaPiso) + " m"], ["Vãos × levantes", M.nVaos + " × " + M.nLevantes], ["Pisos de trabalho", M.nPisos], [res.modelo.sistema === "multidirecional" ? "Postes" : "Prumadas", res.modelo.sistema === "multidirecional" ? M.nPostes : M.nMontantes], ["Ancoragens", M.nAncoragens], ["Área de piso", br(M.areaPiso != null ? M.areaPiso : M.areaForrada) + " m²"], ["Peso do conjunto", br(M.pesoTotal, 0) + " kg"], ["Tubos", M.nTubos], ["Conexões", M.nConexoesTotal], ["Tela", br(res.modelo.tela ? res.modelo.tela.area : 0) + " m²"]].map(function (x) { return "<div><small>" + esc(x[0]) + "</small><b>" + esc(x[1]) + "</b></div>"; }).join("") + "</div>";
     /* altura */
-    h += "<h3>Altura a vencer</h3>" + '<div class="andui-form"><label>Altura do piso de trabalho (m)<input data-andui-f="altura" inputmode="decimal" value="' + esc(br(D.par.altura, 2)) + '"></label></div>' +
+    h += "<h3>Altura a vencer</h3>" + '<div class="andui-form"><label>Altura do piso de trabalho (m) ' + ajI("altura", T().sistemaDe(D.par)) + '<input data-andui-f="altura" inputmode="decimal" value="' + esc(br(D.par.altura, 2)) + '">' + ajL("altura", T().sistemaDe(D.par)) + '</label></div>' +
       '<p><button type="button" class="andui-bt pri" data-andui-acao="altura-aplicar">Aplicar a altura</button> <button type="button" class="andui-bt" data-andui-acao="reinteligente" title="Roda de novo o gerador que corrige o andaime e lista o que mudou">Refazer com Montar inteligente</button> <button type="button" class="andui-bt" data-andui-acao="param-dialogo">Parâmetros avançados…</button></p>' +
       '<p class="andui-mut">Mudar a altura (ou qualquer parâmetro) refaz o andaime no lugar. Aprovado/liberado volta para «em revisão» com o cartão vermelho.</p>';
     /* mudanças */
@@ -396,15 +432,115 @@
     return h;
   }
 
+  /* ---------------------------------------------------------------- E11: DIAGNÓSTICO COM CORREÇÃO GUIADA (aba Cálculo e Memorial na tela)
+   * Um cartão por verificação que não está ok: o que é · por que não passou (com os números) · as opções com «o que muda» e o RESULTADO PREVISTO já recalculado ·
+   * o campo do dado que falta. Quem decide é o usuário: nada é aplicado sem o clique em [Corrigir], e tudo se desfaz. Os textos vêm de js/andaimeajuda.js. */
+  var _diagCache = { k: null, v: null };
+  function diagnosticoDe(D, res) { var k = JSON.stringify(D.par); if (_diagCache.k === k) return _diagCache.v; var v = T().diagnostico(D.par, res.calc); _diagCache.k = k; _diagCache.v = v; return v; }
+  function sisDe(D) { return T().sistemaDe(D.par); }
+
+  /* o campo do dado que falta, DENTRO do cartão (atributos próprios: data-andui-ip/ipc/ipj — os do bloco de pendências seguem únicos na aba) */
+  function campoInlineHtml(p, sis, vid) {
+    var id = esc(p.campo), h = '<div class="lin" data-andui-il="' + id + '"><label>' + esc(p.rotulo) + " " + ajI(p.campo, sis) + "</label>";
+    if (p.tipo === "marca") {
+      h += '<label class="ck"><input type="checkbox" data-andui-ip="' + id + '"' + (p.valor ? " checked" : "") + "> " + esc(p.rotuloMarca || tx("confirmoRT")) + "</label>";
+      h += '<input data-andui-ipj="' + id + '" placeholder="' + esc(tx("justificativa")) + '" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="' + esc(tx("justificativa")) + '">';
+    } else if (p.tipo === "sel") {
+      h += '<select data-andui-ip="' + id + '" aria-label="' + esc(p.rotulo) + '"><option value="">—</option>' + arr(p.ops).map(function (o) { return '<option value="' + esc(o) + '"' + (String(p.valor) === o ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") + "</select>";
+    } else h += '<input data-andui-ip="' + id + '" inputmode="decimal" value="' + esc(p.valor == null ? "" : br(p.valor, 2)) + '" autocomplete="off" aria-label="' + esc(p.rotulo) + '">';
+    if (p.confirma) h += '<label class="ck"><input type="checkbox" data-andui-ipc="' + id + '"' + (p.confirmado ? " checked" : "") + "> " + esc(tx("confirmoRT")) + "</label>";
+    h += '<button type="button" class="andui-bt pri" data-andui-acao="inline-recalcular" data-campo="' + id + '" data-vid="' + esc(vid) + '">' + esc(tx("recalcular")) + "</button>" + ajL(p.campo, sis) + "</div>";
+    return h;
+  }
+  function cartaoHtml(c, sis) {
+    var A = AJ(), h = '<div class="andui-diag ' + esc(c.estado) + '" data-andui-card="' + esc(c.vid) + '">';
+    h += '<div class="andui-diag-cab"><b>' + esc(c.titulo) + "</b> " + chipEstado(c.estado) + (c.usoTxt && c.usoTxt !== "—" ? ' <span class="andui-mut">uso ' + esc(c.usoTxt) + "</span>" : "") + "</div>";
+    if (c.oQueE) h += '<p class="andui-diag-o" data-andui="o-que-e"><b>' + esc(tx("oQueE")) + ":</b> " + esc(c.oQueE) + "</p>";
+    h += '<p class="andui-diag-c" data-andui="causa"><b>' + esc(tx(c.estado === "nao_verificado" ? "falta" : (c.estado === "atencao" ? "porqueAtencao" : "porque"))) + ":</b> " + esc(c.causa) + "</p>";
+    if (c.opcoes.length) {
+      h += '<p class="andui-diag-t"><b>' + esc(tx("comoResolver")) + ":</b></p>";
+      c.opcoes.forEach(function (o, i) {
+        h += '<div class="andui-op' + (o.id === c.recomendada ? " rec" : "") + '" data-andui-op="' + esc(o.id) + '"><div><b>' + esc(tx("opcao")) + " " + (i + 1) + "</b>" + (o.id === c.recomendada ? ' <span class="andui-chip ok">' + esc(tx("recomendada")) + "</span>" : "") + "</div>" +
+          '<div class="andui-op-t">' + esc(o.texto) + "</div>" + (o.conjunto ? "<small>" + esc(tx("conjunto")) + "</small>" : "") +
+          '<small data-andui="op-muda"><b>' + esc(tx("oQueMuda")) + ":</b> " + esc(o.delta) + "</small>" +
+          '<small data-andui="op-previsto"><b>' + esc(tx("resultadoPrevisto")) + ":</b> " + esc(A.textoPrevisto(o.previsto)) + "</small>" +
+          '<button type="button" class="andui-bt pri" data-andui-acao="corrigir-opcao" data-vid="' + esc(c.vid) + '" data-op="' + esc(o.id) + '">' + esc(tx("corrigir")) + "</button></div>";
+      });
+    } else if (c.estado !== "nao_verificado") h += '<p class="andui-mut" data-andui="sem-opcao">' + esc(tx("semOpcao")) + "</p>";
+    if (c.decisaoRT.length) h += '<div class="andui-mut"><b>' + esc(tx("soRT")) + ":</b><ul>" + c.decisaoRT.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>";
+    if (c.dados.length) h += '<p class="andui-diag-t"><b>' + esc(tx("dadoInline")) + ":</b></p>" + c.dados.map(function (p) { return campoInlineHtml(p, sis, c.vid); }).join("");
+    if (c.semCampo) h += '<p class="andui-mut" data-andui="sem-campo">' + esc(c.semCampo) + "</p>";
+    if (c.pecas.length) h += '<p><button type="button" class="andui-bt" data-andui-acao="mostrar-vid" data-vid="' + esc(c.vid) + '">' + esc(tx("mostrar3d")) + "</button></p>";
+    return h + "</div>";
+  }
+  function faixaHtml(dg) {
+    if (!dg.n) return '<p class="andui-msg ok" data-andui="faixa-problemas">' + esc(tx("faixaZero")) + "</p>";
+    var c = dg.cont;
+    return '<div class="andui-faixa" data-andui="faixa-problemas"><b>' + dg.n + " " + esc(tx("faixaTitulo")) + '</b> <span class="andui-mut">(' + c.falha + " não passam · " + c.atencao + " em atenção · " + c.nao_verificado + " sem dado)</span>" +
+      (dg.nCorrigivel ? ' <button type="button" class="andui-bt pri" data-andui-acao="corrigir-tudo">' + esc(tx("corrigirTudo")) + "</button>" : "") + "</div>";
+  }
+  function restanteHtml(rest) {
+    if (!rest || !rest.length) return "";
+    return '<div data-andui="restante"><b>' + esc(tx("mesmoCorrigindo")) + ":</b><ul>" + rest.map(function (r) { return "<li><b>" + esc(r.titulo) + ":</b> " + esc(r.causa) + (arr(r.decisaoRT).length ? " <i>" + esc(tx("soRT")) + ": " + esc(r.decisaoRT[0]) + "</i>" : "") + "</li>"; }).join("") + "</ul></div>";
+  }
+  /* «Deseja corrigir? Vai mudar: …» — a lista ANTES de aplicar */
+  function previaTudoHtml(pv) {
+    if (!pv) return "";
+    if (!pv.ok) return '<div class="andui-msg erro" role="alert" data-andui="previa-tudo">' + esc(pv.erro) + "</div>";
+    var h = '<div class="andui-msg" data-andui="previa-tudo" role="region"><b>' + esc(tx("deseja")) + ":</b>";
+    if (pv.semMudancas) h += "<p>" + esc(tx("nadaMudar")) + "</p>";
+    else h += "<ul>" + pv.mudancas.map(function (m) { return "<li><b>" + esc(m.txt) + "</b><br><small>" + esc(m.motivo) + "</small></li>"; }).join("") + "</ul><small>" + esc(tx("oQueMuda")) + ": " + esc(pv.delta) + " · verificações que não passam: " + pv.falhasAntes + " → " + pv.falhasDepois + ".</small>";
+    h += restanteHtml(pv.restante) + "<p>" + (pv.semMudancas ? "" : '<button type="button" class="andui-bt pri" data-andui-acao="corrigir-tudo-aplicar">' + esc(tx("aplicar")) + "</button> ") + '<button type="button" class="andui-bt" data-andui-acao="corrigir-tudo-cancelar">' + esc(tx("cancelar")) + "</button></p></div>";
+    return h;
+  }
+  /* depois de aplicar o «Corrigir tudo»: o resumo, o Desfazer de cada mudança e o que só o RT resolve */
+  function fechamentoHtml(f, D) {
+    if (!f) return "";
+    var lista = arr(D.tela.mudancas), itens = arr(f.ids).map(function (id) { return lista.filter(function (x) { return x.id === id; })[0]; }).filter(Boolean);
+    return '<div class="andui-msg ' + (f.passou ? "ok" : "erro") + '" data-andui="fechamento-tudo" role="status"><b>Corrigido: ' + itens.length + " mudança(s).</b>" +
+      itens.map(function (m) { return '<div class="andui-mud' + (m.desfeita ? " desfeita" : "") + '" data-andui-mud-tudo="' + esc(m.id) + '"><div><b>' + esc(m.texto) + "</b><small>" + esc(m.motivo) + "</small></div>" + (m.desfeita ? '<span class="andui-mut">desfeita</span>' : '<button type="button" class="andui-bt" data-andui-acao="desfazer" data-k="' + esc(m.id) + '">' + esc(tx("desfazer")) + "</button>") + "</div>"; }).join("") + restanteHtml(f.restante) + "</div>";
+  }
+  /* depois de [Corrigir] numa opção: «Corrigido — …: uso 1,42 → 0,43 (passa)» + Desfazer */
+  function corrigidoHtml(u, D) {
+    if (!u) return "";
+    var lista = arr(D.tela.mudancas), ativos = arr(u.ids).filter(function (id) { return lista.some(function (x) { return x.id === id && !x.desfeita; }); });
+    return '<div class="andui-msg ok" data-andui="corrigido" role="status">' + esc(u.txt) + (ativos.length ? ' <button type="button" class="andui-bt" data-andui-acao="desfazer-grupo" data-ids="' + esc(ativos.join(",")) + '">' + esc(tx("desfazer")) + "</button>" : "") + "</div>";
+  }
+  function blocoDiagnostico(D, res, dg) {
+    var S = P || {}, sis = sisDe(D);
+    return corrigidoHtml(S.ultCorrecao, D) + fechamentoHtml(S.fechamentoTudo, D) + previaTudoHtml(S.previaTudo) + faixaHtml(dg) +
+      (dg.itens.length ? '<div data-andui="diagnostico">' + dg.itens.map(function (c) { return cartaoHtml(c, sis); }).join("") + "</div>" : "");
+  }
+
   function abaCalculo(D, res) {
-    var ver = T().verificacoes(res.calc), probs = T().problemas(res.calc), h = "";
+    var ver = T().verificacoes(res.calc), dg = diagnosticoDe(D, res), h = "";
     h += '<p class="andui-mut">Clique numa linha para ver as peças no 3D. Uso = solicitante ÷ resistente (1,00 é o limite).</p>';
     h += '<table class="andui-tab" data-andui="verificacoes"><thead><tr><th>Verificação</th><th class="n">Uso</th><th>Estado</th></tr></thead><tbody>' +
       ver.map(function (v) { return '<tr data-vid="' + esc(v.id) + '" tabindex="0" title="Mostrar no 3D"><td>' + esc(v.titulo) + '</td><td class="n">' + esc(v.usoTxt) + "</td><td>" + chipEstado(v.estado) + "</td></tr>"; }).join("") + "</tbody></table>";
-    if (probs.length && global.ProblemaCard) h += "<h3>O que não passa</h3>" + global.ProblemaCard.lista(probs, { acoes: function (sol) { return sol.texto ? true : false; }, mostrar: true });
-    else if (!probs.length) h += '<p class="andui-mut">Nenhuma verificação reprovada ou em atenção.</p>';
+    h += blocoDiagnostico(D, res, dg);
     var nao = arr(res.calc.naoVerificado); if (nao.length) h += "<h3>Não verificado</h3><ul class=\"andui-mut\">" + nao.slice(0, 12).map(function (t) { return "<li>" + esc(typeof t === "string" ? t : (t.texto || t.titulo || JSON.stringify(t))) + "</li>"; }).join("") + "</ul>";
     h += blocoPendencias(D, res);
+    return h;
+  }
+
+  /* o MEMORIAL NA TELA (aba Documentos): a tabela das verificações; abrir a linha mostra o cartão (corrigir aqui = o mesmo corrigir da aba Cálculo) */
+  function abaMemorial(D, res) {
+    var S = P || {}, sis = sisDe(D), dg = diagnosticoDe(D, res), rows = T().memorial(res.calc), aberto = S.memoAbertas || {}, A = AJ(), h = "";
+    var porVid = {}; dg.itens.forEach(function (c) { porVid[c.vid] = c; });
+    h += '<div data-andui="memorial"><h3>' + esc(tx("memorialTitulo")) + "</h3>";
+    h += '<p class="andui-mut" data-andui="memorial-aviso">' + esc(tx("memorialAviso")) + " " + esc(tx("memorialAbrir")) + "</p>";
+    h += '<p class="andui-mut" data-andui="memorial-resumo">' + esc(res.calc.resumo || "") + "</p>";
+    h += blocoDiagnostico(D, res, dg);
+    h += '<p><button type="button" class="andui-bt" data-andui-acao="memo-recalcular">' + esc(tx("memorialRecalcular")) + "</button></p>";
+    h += '<table class="andui-tab" data-andui="memorial-tab"><thead><tr><th>' + esc(tx("cabVerificacao")) + "</th><th>" + esc(tx("cabSolicitante")) + "</th><th>" + esc(tx("cabResistente")) + '</th><th class="n">' + esc(tx("cabUso")) + "</th><th>" + esc(tx("cabEstado")) + "</th></tr></thead><tbody>" +
+      rows.map(function (r) {
+        var ab = !!aberto[r.vid], c = porVid[r.vid], det = "";
+        if (ab) {
+          det = '<tr class="andui-memo-det" data-andui-memo-det="' + esc(r.vid) + '"><td colspan="5">' + (c ? cartaoHtml(c, sis) :
+            '<div class="andui-diag ok" data-andui-card="' + esc(r.vid) + '"><p class="andui-diag-o"><b>' + esc(tx("oQueE")) + ":</b> " + esc(A.explicacao(r.vid)) + "</p>" + (r.texto ? "<p>" + esc(r.texto) + "</p>" : "") + (r.formula ? '<p class="andui-mut">' + esc(r.formula) + "</p>" : "") + (r.fonte ? '<p class="andui-mut">' + esc(r.fonte) + "</p>" : "") + "</div>") + "</td></tr>";
+        }
+        return '<tr data-memo="' + esc(r.vid) + '" tabindex="0" aria-expanded="' + (ab ? "true" : "false") + '"><td>' + (ab ? "▾ " : "▸ ") + esc(r.titulo) + "</td><td>" + esc(r.solicitante) + "</td><td>" + esc(r.resistente) + '</td><td class="n">' + esc(r.usoTxt) + "</td><td>" + chipEstado(r.estado) + "</td></tr>" + det;
+      }).join("") + "</tbody></table></div>";
     return h;
   }
 
@@ -420,7 +556,7 @@
   function abaLocacao(D, res) {
     var cab = cabDe(D), lista = AD().listaLocacao(res.modelo, cab), h = "";
     h += '<div class="andui-form" data-andui="cab">' + camposCabHtml(cab) +
-      '<label>Reserva (% a mais)<input data-andui-cab="reserva" inputmode="decimal" value="' + esc(cab.reserva) + '"></label></div>';
+      '<label>Reserva (% a mais) ' + ajI("reserva") + '<input data-andui-cab="reserva" inputmode="decimal" value="' + esc(cab.reserva) + '">' + ajL("reserva") + '</label></div>';
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="xlsx">Baixar a lista (.xlsx)</button></p>';
     if (!lista.ok) return h + "<p>" + esc(lista.motivo) + "</p>";
     var res0 = lista.reserva > 0;
@@ -486,7 +622,7 @@
 
   function abaDocumentos(D, res) {
     var P1 = global.AndaimePranchas && typeof global.AndaimePranchas.gerar === "function", M1 = global.AndaimeMemorial && typeof global.AndaimeMemorial.gerar === "function";
-    var h = blocoRT(D) + '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>';
+    var h = blocoRT(D) + '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>' + abaMemorial(D, res);
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-pranchas"' + (P1 ? "" : ' disabled aria-disabled="true"') + ">Gerar pranchas executivas</button> " + (P1 ? "" : '<span class="andui-mut" data-andui="pranchas-prep">em preparação</span>') + "</p>";
     h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-memorial"' + (M1 ? "" : ' disabled aria-disabled="true"') + ">Memorial</button> " + (M1 ? "" : '<span class="andui-mut" data-andui="memorial-prep">em preparação</span>') + "</p>";
     h += '<p><button type="button" class="andui-bt" data-andui-acao="xlsx">Lista de locação (.xlsx)</button> <button type="button" class="andui-bt" data-andui-acao="imprimir-cartao">Cartão do andaime (A5)</button></p>';
@@ -498,7 +634,7 @@
     var D = lerDoModelo();
     if (!D) { r0.querySelector('[data-andui="corpo"]').innerHTML = '<p>O andaime não está mais no modelo.</p>'; return; }
     var res = resultadoDe(D.par);
-    P.res = res;
+    P.res = res; P.sis = T().sistemaDe(D.par);
     var corpo = r0.querySelector('[data-andui="corpo"]'), top = corpo.scrollTop, h = "";
     /* os campos digitados (nome, registro, ART, observação…) sobrevivem ao refazer da tela — uma recusa não pode apagar o que a pessoa escreveu */
     P.form = P.form || {}; [].forEach.call(corpo.querySelectorAll("[data-andui-f]"), function (e) { var k = e.getAttribute("data-andui-f"); if (k !== "altura" && String(e.value) !== "") P.form[k] = e.value; });
@@ -510,6 +646,7 @@
     corpo.innerHTML = msgHtml() + f(D, res);
     [].forEach.call(corpo.querySelectorAll("[data-andui-f]"), function (e) { var k = e.getAttribute("data-andui-f"); if (k !== "altura" && P.form[k] != null && String(e.value) === "") e.value = P.form[k]; });
     corpo.scrollTop = top;
+    [].forEach.call(corpo.querySelectorAll("input,select,textarea"), function (e) { if (e.type !== "checkbox" && String(e.value) !== "" && idDoCampo(e)) avisoDoCampo(e, P.sis); });
     if (global.ProblemaCard && corpo.querySelector('[data-pc="lista"]')) global.ProblemaCard.ligar(corpo, { corrigir: function (solId, k) { AndaimeUI.corrigir(k, solId); }, mostrar: function (ids) { AndaimeUI.mostrarIds(ids); } });
     atualizarPintura(D, res);
   }
@@ -551,10 +688,10 @@
   }
 
   function cliquePainel(ev) {
-    var t = ev.target, el = t && t.closest ? t.closest("[data-andui-acao],[data-andui-aba],tr[data-vid]") : null; if (!el || !P) return;
+    var t = ev.target, el = t && t.closest ? t.closest("[data-andui-acao],[data-andui-aba],tr[data-vid],tr[data-memo]") : null; if (!el || !P) return;
     var aba = el.getAttribute("data-andui-aba");
     if (aba) { AndaimeUI.aba(aba); return; }
-    if (el.tagName === "TR") { AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid")); return; }
+    if (el.tagName === "TR") { if (el.getAttribute("data-memo")) AndaimeUI.abrirLinha(el.getAttribute("data-memo")); else AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid")); return; }
     var a = el.getAttribute("data-andui-acao"), D = lerDoModelo();
     if (a === "fechar-painel") { AndaimeUI.fecharPainel(); return; }
     if (a === "pranchas-exec") { AndaimeUI.pranchasExecutivas(); return; }
@@ -566,6 +703,14 @@
     else if (a === "sistema-trocar") { var ss = raiz().querySelector('[data-andui-f="sistema"]'); AndaimeUI.trocarSistema(ss ? ss.value : "tuboroll"); }
     else if (a === "multi-aplicar") { var vv = {}; [].forEach.call(raiz().querySelectorAll("[data-andui-mp]"), function (e) { vv[e.getAttribute("data-andui-mp")] = e.type === "checkbox" ? !!e.checked : e.value; }); AndaimeUI.aplicarParametrosMulti(vv); }
     else if (a === "pend-aplicar") { var c = el.getAttribute("data-campo"), r0 = raiz(), inp = r0.querySelector('[data-andui-p="' + c + '"]'), ck = r0.querySelector('[data-andui-pc="' + c + '"]'), jj = r0.querySelector('[data-andui-pj="' + c + '"]'); if (inp && inp.type === "checkbox") AndaimeUI.informar(c, inp.checked ? "true" : "", false, jj ? jj.value : ""); else AndaimeUI.informar(c, inp ? inp.value : "", ck ? !!ck.checked : false); }
+    else if (a === "corrigir-opcao") AndaimeUI.corrigirOpcao(el.getAttribute("data-vid"), el.getAttribute("data-op"));
+    else if (a === "corrigir-tudo") AndaimeUI.corrigirTudoPrevia();
+    else if (a === "corrigir-tudo-aplicar") AndaimeUI.corrigirTudoAplicar();
+    else if (a === "corrigir-tudo-cancelar") AndaimeUI.corrigirTudoCancelar();
+    else if (a === "desfazer-grupo") AndaimeUI.desfazerVarios(String(el.getAttribute("data-ids") || "").split(",").filter(Boolean));
+    else if (a === "mostrar-vid") AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid"));
+    else if (a === "memo-recalcular") AndaimeUI.recalcularTudo();
+    else if (a === "inline-recalcular") { var cI = el.getAttribute("data-campo"), vI = el.getAttribute("data-vid"), bx = el.closest("[data-andui-il]"), iI = bx && bx.querySelector('[data-andui-ip="' + cI + '"]'), kI = bx && bx.querySelector('[data-andui-ipc="' + cI + '"]'), jI = bx && bx.querySelector('[data-andui-ipj="' + cI + '"]'); if (iI && iI.type === "checkbox") AndaimeUI.informarDoCartao(vI, cI, iI.checked ? "true" : "", false, jI ? jI.value : ""); else AndaimeUI.informarDoCartao(vI, cI, iI ? iI.value : "", kI ? !!kI.checked : false); }
     else if (a === "sim-toggle") { P.sim = !P.sim; limparGrupo("andaime-destaque"); renderizar(); }
     else if (a === "xlsx") AndaimeUI.exportarXlsx();
     else if (a === "chk") { var id = el.getAttribute("data-id"), ob = raiz().querySelector('[data-andui-obs="' + id + '"]'); AndaimeUI.responder(id, el.getAttribute("data-r"), ob ? ob.value : ""); }
@@ -593,6 +738,7 @@
   /* ================================================================ A API */
   var AndaimeUI = {
     /* ganchos de teste: o MESMO bloco/opcoes que as abas e os botoes usam (testados sem DOM) */
+    _cartaoHtml: cartaoHtml, _faixaHtml: faixaHtml, _previaTudoHtml: previaTudoHtml, _abaCalculo: abaCalculo, _abaMemorial: abaMemorial, _abaResumo: abaResumo, _tracoHtml: tracoHtml, _camposDe: camposDe, _diagnosticoDe: diagnosticoDe, _avisoDoCampo: avisoDoCampo, _idDoCampo: idDoCampo,
     _blocoRT: blocoRT, _blocoSistema: blocoSistema, _blocoPendencias: blocoPendencias, _abaLocacao: abaLocacao, _opcoesDocumento: opcoesDocumento, _avisoRT: avisoRT, _cabDe: cabDe,
     MODO: MODO, COMANDOS: COMANDOS, COMANDOS_MULTI: COMANDOS_MULTI, ultimaPrevia: null,
     ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
@@ -701,7 +847,7 @@
           '<div class="andui-abas" role="tablist">' + ABAS.map(function (a) { return '<button type="button" role="tab" class="andui-aba" data-andui-aba="' + a[0] + '" aria-selected="false">' + a[1] + "</button>"; }).join("") + "</div>" +
           '<div class="andui-corpo" data-andui="corpo" role="tabpanel"></div>';
         d.body.appendChild(r0);
-        r0.addEventListener("click", cliquePainel); r0.addEventListener("change", mudancaPainel);
+        r0.addEventListener("click", cliquePainel); r0.addEventListener("change", mudancaPainel); r0.addEventListener("input", function (ev) { avisoDoCampo(ev.target, P ? P.sis : null); });
         r0.addEventListener("keydown", function (e) { if (e.key === "Escape") { e.stopPropagation(); AndaimeUI.fecharPainel(); } if ((e.key === "Enter") && e.target && e.target.tagName === "TR") { cliquePainel({ target: e.target }); } });
       }
       this._sanearCopias();
@@ -711,7 +857,7 @@
     painelAberto: function () { return !!(P && raiz()); },
     estado: function () { return P ? { gid: P.gid, aba: P.aba, sim: P.sim, quem: P.quem, passou: P.res ? P.res.passou : null, pintura: P.ultPintura || null, msg: P.msg } : null; },
     /* trocar de aba tira o destaque e a pintura: o overlay não fica velho por cima de um andaime que foi refeito */
-    aba: function (nome) { if (!P) return false; P.aba = nome; P.msg = null; if (nome !== "simulacao") P.sim = false; limparGrupo("andaime-destaque"); renderizar(); return true; },
+    aba: function (nome) { if (!P) return false; P.aba = nome; P.msg = null; P.previaTudo = null; P.ultCorrecao = null; P.fechamentoTudo = null; if (nome !== "simulacao") P.sim = false; limparGrupo("andaime-destaque"); renderizar(); return true; },
     gidAtual: function () { return P ? P.gid : null; },
     andaimes: andaimes,
     parAtual: function () { var D = lerDoModelo(); return D ? D.par : null; },
@@ -768,6 +914,59 @@
         inf.andaimeTela.mudancas = l;
       });
       renderizar(); return ok;
+    },
+    /* E11: [Corrigir] numa opção do cartão — aplica o par proposto (refaz no lugar), registra cada mudança com Desfazer e mostra «uso antes → depois» MEDIDO no recálculo real */
+    corrigirOpcao: function (vid, opId) {
+      var D = lerDoModelo(); if (!D || !P || !P.res || !P.res.ok) return false;
+      var dg = diagnosticoDe(D, P.res), card = dg.itens.filter(function (c) { return c.vid === vid; })[0], op = card ? card.opcoes.filter(function (o) { return o.id === opId; })[0] : null;
+      if (!op) { dizer("Esta correção não existe mais: o cálculo mudou. Veja as opções de novo.", true); renderizar(); return false; }
+      var base = arr(D.tela.mudancas).length, novas = op.campos.map(function (x, i) { return { id: "m" + (base + i), campo: x.campo, de: x.de, para: x.para, motivo: "Corrigir — " + card.titulo, passos: 1, desfeita: false, texto: x.txt }; });
+      var ok = aplicarPar(D, op.par, "Correção aplicada: " + op.texto + ".", function (inf) { inf.andaimeTela = inf.andaimeTela || {}; inf.andaimeTela.mudancas = arr(inf.andaimeTela.mudancas).concat(novas); });
+      if (ok) {
+        var D2 = lerDoModelo(), r2 = D2 ? resultadoDe(D2.par) : null, v2 = r2 && r2.ok ? arr(r2.calc.verificacoes).filter(function (x) { return x.id === vid; })[0] : null;
+        P.ultCorrecao = { vid: vid, ids: novas.map(function (m) { return m.id; }), txt: AJ().textoCorrigido(card.titulo, card.uso, v2 ? v2.uso : null, v2 ? v2.estado : null) }; P.previaTudo = null; P.msg = null;
+      }
+      renderizar(); return ok;
+    },
+    /* E11: «Corrigir tudo» — PRIMEIRO a lista do que vai mudar (Deseja corrigir? Vai mudar: …), depois [Aplicar] / [Cancelar] */
+    corrigirTudoPrevia: function () { var D = lerDoModelo(); if (!D || !P) return false; var pv = T().corrigirTudoPrevia(D.par); P.previaTudo = pv; P.ultCorrecao = null; P.fechamentoTudo = null; P.msg = null; renderizar(); return pv; },
+    corrigirTudoCancelar: function () { if (!P) return false; P.previaTudo = null; renderizar(); return true; },
+    corrigirTudoAplicar: function () {
+      var D = lerDoModelo(); if (!D || !P) return false;
+      var pv = T().corrigirTudoPrevia(D.par); if (!pv.ok) { dizer(pv.erro, true); renderizar(); return false; }
+      if (pv.semMudancas) { P.previaTudo = null; dizer(tx("nadaMudar"), true); renderizar(); return false; }
+      var base = arr(D.tela.mudancas).length, novas = pv.mudancas.map(function (m, i) { return { id: "m" + (base + i), campo: m.campo, de: m.de, para: m.para, motivo: "Corrigir tudo — " + m.motivo, passos: 1, desfeita: false, texto: m.txt }; });
+      var ok = aplicarPar(D, pv.par, "Corrigir tudo: " + novas.length + " mudança(s) aplicada(s).", function (inf) { inf.andaimeTela = inf.andaimeTela || {}; inf.andaimeTela.mudancas = arr(inf.andaimeTela.mudancas).concat(novas); });
+      if (ok) { P.fechamentoTudo = { ids: novas.map(function (m) { return m.id; }), restante: pv.restante, passou: pv.passou }; P.previaTudo = null; P.ultCorrecao = null; P.msg = null; }
+      renderizar(); return ok;
+    },
+    /* desfaz várias mudanças de uma vez (o Desfazer da correção): uma só gravação, na ordem inversa */
+    desfazerVarios: function (ids) {
+      var D = lerDoModelo(); if (!D) return false;
+      var lista = arr(D.tela.mudancas), ms = arr(ids).map(function (id) { return lista.filter(function (x) { return x.id === id && !x.desfeita; })[0]; }).filter(Boolean); if (!ms.length) return false;
+      var p = D.par, set = {}; ms.slice().reverse().forEach(function (m) { p = T().desfazerMudanca(p, m); set[m.id] = true; });
+      var ok = aplicarPar(D, p, "Desfeito: " + ms.map(function (m) { return m.campo; }).join(", ") + " voltou ao valor de antes.", function (inf) { arr(inf.andaimeTela.mudancas).forEach(function (x) { if (set[x.id]) x.desfeita = true; }); });
+      if (P) { P.ultCorrecao = null; } renderizar(); return ok;
+    },
+    /* E11: o campo do dado que falta, dentro do cartão — aplica o dado, recalcula e diz o que aconteceu com a verificação */
+    informarDoCartao: function (vid, campo, valor, confirmado, justificativa) {
+      var D = lerDoModelo(); if (!D || !P || !P.res) return false;
+      var ef = T().efeitoDoDado(D.par, P.res.calc, vid, campo, valor, confirmado, justificativa); if (!ef.ok) { dizer(ef.erro, true); renderizar(); return false; }
+      var ok = this.informar(campo, valor, confirmado, justificativa);
+      if (ok && P) {
+        var D2 = lerDoModelo(), r2 = D2 ? resultadoDe(D2.par) : null, v2 = r2 && r2.ok ? arr(r2.calc.verificacoes).filter(function (x) { return x.id === vid; })[0] : null, antes = P.msg && P.msg.t ? P.msg.t + " " : "";
+        dizer(antes + AJ().textoEfeito(ef.titulo, ef.antes.estado, v2 ? v2.estado : ef.depois.estado, v2 ? v2.uso : ef.depois.uso), P.msg ? !!P.msg.erro : false);
+        renderizar();
+      }
+      return ok;
+    },
+    /* E11 (Memorial na tela): abrir/fechar a linha e [Recalcular] geral */
+    abrirLinha: function (vid) { if (!P) return false; P.memoAbertas = P.memoAbertas || {}; P.memoAbertas[vid] = !P.memoAbertas[vid]; renderizar(); return !!P.memoAbertas[vid]; },
+    recalcularTudo: function () {
+      var D = lerDoModelo(); if (!D || !P) return false;
+      _resCache.k = null; _diagCache.k = null; var res = resultadoDe(D.par); if (!res.ok) { dizer(res.erro, true); renderizar(); return false; }
+      var ver = T().verificacoes(res.calc), nF = ver.filter(function (v) { return v.estado === "falha"; }).length, nN = ver.filter(function (v) { return v.estado === "nao_verificado"; }).length;
+      dizer("Cálculo refeito com os parâmetros atuais: " + ver.length + " verificações, " + nF + " não passam, " + nN + " sem dado. O PDF do memorial e as pranchas saem com este cálculo.", false); renderizar(); return true;
     },
     responder: function (id, resposta, obs) {
       var D = lerDoModelo(); if (!D) return false;

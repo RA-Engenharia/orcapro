@@ -47792,6 +47792,7 @@ function defNorm(d) {
 var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; });
 o.rotulo = d.rotulo || d.titulo || d.label || d.campo;
 if (o.tipo === "numero") o.tipo = "num";
+if (o.tipo === "marca" && !o.rotuloMarca) { var fb = PENDENCIAS_RT_MULTI.filter(function (x) { return x.campo === d.campo; })[0]; if (fb && fb.rotuloMarca) o.rotuloMarca = fb.rotuloMarca; }
 o.dica = d.dica || d.fonte || d.texto || "";
 if (!o.onde) o.onde = "calc";
 if (o.tipo === "marca" && !o.justificativa) o.justificativa = d.campoJustificativa || (String(d.campo).replace(/RT$/, "") + "Justificativa");
@@ -48027,6 +48028,111 @@ o.resposta = R ? R.resposta : null; o.obsResp = R ? R.obs : ""; return o;
 var pend = A.pendencias(a, ck.itens);
 return { ok: true, itens: itens, grupos: ck.grupos, naoConformes: pend.nc.length, semResposta: pend.semResposta.length };
 }
+function AJ() { return dep("AndaimeAjuda", "./andaimeajuda.js"); }
+var _avC = { ks: [], vs: [] };
+function avaliar(par) {
+var An = AN(), Ac = AC(); if (!An || !Ac) return { ok: false, erro: "Os módulos do andaime não carregaram." };
+var k = JSON.stringify(par), i = _avC.ks.indexOf(k); if (i >= 0) return _avC.vs[i];
+var pg = parSemCalc(par), e = An.validar(pg), out;
+if (e) out = { ok: false, erro: e };
+else { var m = null; try { m = An.montar(pg); } catch (x) { m = null; } out = (!m || !m.ok) ? { ok: false, erro: (m && m.erro) || "não montou" } : { ok: true, modelo: m, calc: Ac.calcular(m, calcDe(par), { semCorrigir: true }) }; }
+_avC.ks.push(k); _avC.vs.push(out); if (_avC.ks.length > 30) { _avC.ks.shift(); _avC.vs.shift(); }
+return out;
+}
+var _miC = { ks: [], vs: [] };
+function inteligenteDe(par) {
+var k = JSON.stringify(par), i = _miC.ks.indexOf(k); if (i >= 0) return _miC.vs[i];
+var r = resultado(par, { inteligente: true });
+_miC.ks.push(k); _miC.vs.push(r); if (_miC.ks.length > 8) { _miC.ks.shift(); _miC.vs.shift(); }
+return r;
+}
+function vDe(calc, vid) { return arr(calc && calc.verificacoes).filter(function (v) { return v.id === vid; })[0] || null; }
+function usoDe(v) { return v && v.uso != null ? v.uso : null; }
+function medidasDe(modelo) { var M = (modelo && modelo.medidas) || {}; return { vaos: M.nVaos, prumadas: M.nPostes != null ? M.nPostes : M.nMontantes, tubos: M.nTubos, ancoragens: M.nAncoragens, pesoKg: M.pesoTotal, multi: !!(modelo && modelo.sistema === "multidirecional") }; }
+function deltaTxt(a, b) {
+var out = [], L = [["vaos", "vão", "vãos"], ["prumadas", b && b.multi ? "poste" : "montante", b && b.multi ? "postes" : "montantes"], ["tubos", "tubo", "tubos"], ["ancoragens", "ancoragem", "ancoragens"]];
+L.forEach(function (x) { var d = num(b && b[x[0]], 0) - num(a && a[x[0]], 0); if (d) out.push((d > 0 ? "+" : "−") + Math.abs(d) + " " + (Math.abs(d) === 1 ? x[1] : x[2])); });
+var dp = Math.round(num(b && b.pesoKg, 0) - num(a && a.pesoKg, 0)); if (dp) out.push((dp > 0 ? "+" : "−") + Math.abs(dp) + " kg");
+return out.length ? out.join(", ") : "as quantidades de peças não mudam";
+}
+function falhasIds(calc) { return arr(calc && calc.verificacoes).filter(function (v) { return v.estado === "falha"; }); }
+function previstoDe(antes, depois, vid) {
+var v2 = vDe(depois, vid), fa = falhasIds(antes).map(function (v) { return v.id; }), fd = falhasIds(depois);
+return { uso: usoDe(v2), estado: v2 ? v2.estado : null, falhasDepois: fd.length, passaTudo: fd.length === 0, novasFalhas: fd.filter(function (v) { return fa.indexOf(v.id) < 0; }).map(function (v) { return v.titulo; }) };
+}
+function difsDe(base, novo, norm) {
+var o = [];
+Object.keys(novo || {}).forEach(function (k) {
+var de = norm && norm[k] !== undefined ? norm[k] : (base ? base[k] : undefined);
+if (JSON.stringify(de) !== JSON.stringify(novo[k])) o.push({ campo: k, de: de, para: novo[k] });
+});
+return o.map(function (x) { x.txt = AJ().descreverMudanca(x); return x; });
+}
+function opcaoDeCorrecao(par, ava, v, c, i) {
+var novo = clone(par); Object.keys(c.par).forEach(function (k) { novo[k] = clone(c.par[k]); });
+var av2 = avaliar(novo); if (!av2.ok) return null;
+var campos = difsDe(par, c.par, ava.modelo && ava.modelo.par); if (!campos.length) return null;
+return { id: "c" + i, origem: "calculo", conjunto: false, texto: campos.map(function (x) { return x.txt; }).join("; "), campos: campos, delta: deltaTxt(medidasDe(ava.modelo), medidasDe(av2.modelo)), par: novo,
+previsto: previstoDe(ava.calc, av2.calc, v.id), usoMotor: c.usoRefeito == null ? null : c.usoRefeito, textoMotor: c.texto || "" };
+}
+function diagnostico(par, calc) {
+var sis = sistemaDe(par), ava = avaliar(par), pends = pendenciasRT(par, calc), A = AJ(), itens = [], cont = { falha: 0, atencao: 0, nao_verificado: 0 };
+arr(calc && calc.verificacoes).forEach(function (v) {
+if (v.estado === "ok" || !cont.hasOwnProperty(v.estado)) return;
+cont[v.estado]++;
+var card = { vid: v.id, titulo: v.titulo, estado: v.estado, uso: usoDe(v), usoTxt: A.usoTxt(usoDe(v)), oQueE: A.explicacao(v.id), pecas: arr(v.pecas).slice(0, 80), opcoes: [], decisaoRT: [], dados: [], semCampo: "", recomendada: null, confirmarRT: arr(v.confirmarRT) };
+if (v.estado === "falha" || v.estado === "atencao") {
+arr(v.corrigir).forEach(function (c, i) {
+if (c && c.par && Object.keys(c.par).length) { if (ava.ok) { var op = opcaoDeCorrecao(par, ava, v, c, i); if (op) card.opcoes.push(op); } }
+else if (c && c.texto) card.decisaoRT.push(c.texto);
+});
+var bom = card.opcoes.some(function (o) { return o.previsto.estado === "ok"; });
+if (!bom && ava.ok && (v.estado === "falha" || (v.uso != null && v.uso > 0.9))) {
+var mi = inteligenteDe(par), v2 = mi && mi.ok ? vDe(mi.calc, v.id) : null;
+if (v2 && mi.mudancas.length && (v2.estado === "ok" || (v2.estado === "atencao" && usoDe(v2) != null && usoDe(v2) < usoDe(v)))) {
+var cm = mi.mudancas.map(function (m) { return { campo: m.campo, de: m.de, para: m.para, txt: A.descreverMudanca(m), motivo: m.motivo }; });
+card.opcoes.push({ id: "mi", origem: "inteligente", conjunto: true, texto: cm.map(function (x) { return x.txt; }).join("; "), campos: cm, delta: deltaTxt(medidasDe(ava.modelo), medidasDe(mi.modelo)), par: mi.par, mudancas: mi.mudancas,
+previsto: previstoDe(ava.calc, mi.calc, v.id), usoMotor: null, textoMotor: "" });
+}
+}
+card.recomendada = (card.opcoes.filter(function (o) { return o.previsto.estado === "ok" && !o.previsto.novasFalhas.length; })[0] || card.opcoes.filter(function (o) { return o.previsto.estado === "ok"; })[0] || card.opcoes[0] || { id: null }).id;
+card.opcoes.sort(function (a, b) { return (a.id === card.recomendada ? 0 : 1) - (b.id === card.recomendada ? 0 : 1); });
+} else {
+card.dados = A.dadosDe(v.id, sis).map(function (id) { return pends.filter(function (p) { return p.campo === id; })[0]; }).filter(function (p) { return p && !p.informado; });
+card.semCampo = A.semCampoDe(v.id);
+}
+card.causa = A.causa(v, card.dados.map(function (p) { return p.rotulo; }).concat(card.semCampo ? [card.semCampo] : []));
+itens.push(card);
+});
+return { ok: true, sistema: sis, itens: itens, cont: cont, n: cont.falha + cont.atencao + cont.nao_verificado, nCorrigivel: cont.falha + cont.atencao };
+}
+function restanteDe(par, calc) {
+var sis = sistemaDe(par), pends = pendenciasRT(par, calc), A = AJ(), out = [];
+arr(calc && calc.verificacoes).forEach(function (v) {
+if (v.estado === "ok") return;
+var dados = v.estado === "nao_verificado" ? A.dadosDe(v.id, sis).map(function (id) { return pends.filter(function (p) { return p.campo === id; })[0]; }).filter(function (p) { return p && !p.informado; }) : [];
+var rt = arr(v.corrigir).filter(function (c) { return c && !c.par && c.texto; }).map(function (c) { return c.texto; });
+out.push({ vid: v.id, titulo: v.titulo, estado: v.estado, causa: A.causa(v, dados.map(function (p) { return p.rotulo; })), dados: dados.map(function (p) { return p.campo; }), decisaoRT: rt });
+});
+return out;
+}
+function corrigirTudoPrevia(par) {
+var A = AJ(), ava = avaliar(par), r = inteligenteDe(par); if (!r.ok) return { ok: false, erro: r.erro };
+var mud = arr(r.mudancas).map(function (m) { return { id: m.id, campo: m.campo, de: m.de, para: m.para, motivo: m.motivo, txt: A.descreverMudanca(m) }; });
+return { ok: true, par: r.par, mudancas: mud, passou: !!r.passou, semMudancas: !mud.length, delta: ava.ok ? deltaTxt(medidasDe(ava.modelo), medidasDe(r.modelo)) : "", falhasAntes: ava.ok ? falhasIds(ava.calc).length : null, falhasDepois: falhasIds(r.calc).length, restante: restanteDe(r.par, r.calc), resultado: r };
+}
+function efeitoDoDado(par, calc, vid, campo, valor, confirmado, justificativa) {
+var r = aplicarPendencia(par, campo, valor, confirmado, justificativa, defsRT(par, calc)); if (!r.ok) return r;
+var ava = avaliar(r.par); if (!ava.ok) return { ok: false, erro: ava.erro };
+var v0 = vDe(calc, vid), v1 = vDe(ava.calc, vid); if (!v0 || !v1) return { ok: false, erro: "Verificação desconhecida: " + vid };
+return { ok: true, par: r.par, ava: ava, antes: { estado: v0.estado, uso: usoDe(v0) }, depois: { estado: v1.estado, uso: usoDe(v1) }, mudou: v0.estado !== v1.estado, titulo: v0.titulo };
+}
+function memorial(calc) {
+return arr(calc && calc.verificacoes).map(function (v) {
+return { vid: v.id, titulo: v.titulo, solicitante: String(v.solicitante || "—"), resistente: String(v.resistente || "—"), uso: usoDe(v), usoTxt: v.uso == null ? "—" : brf(Math.min(v.uso, 99), 2), estado: v.estado, rotulo: ROT_ESTADO[v.estado] || v.estado,
+formula: v.formula || "", texto: v.texto || "", fonte: v.fonte || "", confirmarRT: arr(v.confirmarRT) };
+});
+}
 var AndaimeTela = {
 LADOS: LADOS, ROT_LADO: ROT_LADO, ALTURA_MIN: ALTURA_MIN, ALTURA_MAX: ALTURA_MAX, TRECHO_MIN: TRECHO_MIN, PENDENCIAS_RT: PENDENCIAS_RT, COR_ESTADO: COR_ESTADO, ROT_ESTADO: ROT_ESTADO, VEL_SUBIDA: VEL_SUBIDA,
 novo: novo, clicar: clicar, voltar: voltar, alternarLado: alternarLado, setAltura: setAltura, podeFechar: podeFechar, cancelar: cancelar, nMin: nMin,
@@ -48035,10 +48141,234 @@ resultado: resultado, recalcular: recalcular, calcDe: calcDe, mudancasLista: mud
 pendenciasRT: pendenciasRT, defsRT: defsRT, PENDENCIAS_RT_MULTI: PENDENCIAS_RT_MULTI, aplicarPendencia: aplicarPendencia,
 setSistema: setSistema, sistemaDe: sistemaDe, ROT_SISTEMA: ROT_SISTEMA, trocarSistema: trocarSistema, PARAMETROS_MULTI: PARAMETROS_MULTI, largurasDaLinha: largurasDaLinha, aplicarParametrosMulti: aplicarParametrosMulti, v0DoLocal: v0DoLocal, aplicarLocalVento: aplicarLocalVento, reagirAoDado: reagirAoDado, verificacoes: verificacoes, problemas: problemas, aplicarCorrecao: aplicarCorrecao,
 pintura: pintura, primitivas: primitivas, caixaDe: caixaDe,
-cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas
+cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas,
+avaliar: avaliar, diagnostico: diagnostico, restanteDe: restanteDe, corrigirTudoPrevia: corrigirTudoPrevia, efeitoDoDado: efeitoDoDado, memorial: memorial, deltaTxt: deltaTxt, medidasDe: medidasDe
 };
 global.AndaimeTela = AndaimeTela;
 if (typeof module !== "undefined" && module.exports) module.exports = AndaimeTela;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/andaimeajuda.js ==== */
+try {
+(function (global) {
+"use strict";
+function arr(v) { return Array.isArray(v) ? v : []; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function brf(v, c) { c = c == null ? 2 : c; if (v == null || !isFinite(v)) return "—"; return (Math.round(v * Math.pow(10, c)) / Math.pow(10, c)).toFixed(c).replace(".", ","); }
+function ehMulti(sis) { return /^multi/.test(String(sis || "")); }
+var NR = "o RT define";
+var CAMPOS = {
+altura: { rot: "Altura a vencer", un: "m", min: 0.5, max: 60, o: "Altura do piso de trabalho mais alto, contada do chão da base: é o que você quer alcançar com o andaime.", u: "metros (m)", t: "Sem valor fixo: é a altura do seu serviço (o sistema começa com 6,00 m). O motor aceita de 0,50 a 60 m.", f: "Do serviço a executar (projeto, fachada ou equipamento).", e: "Altura maior = mais níveis, mais peças, mais vento e mais carga na base; o cálculo diz se passa. Mudar a altura de um andaime aprovado o devolve para «em revisão»." },
+sistema: { rot: "Sistema do andaime", o: "Qual andaime você vai montar: tubo-roll (tubo equipado com braçadeiras) ou multidirecional (postes com roseta ou estribo e travessas de cunha).", u: "—", t: "Tubo-roll · Multidirecional (roseta) · Multidirecional (estribo). O que vale é o que o locador entrega na obra.", f: "Do que o locador fornece e do manual do fabricante.", e: "Trocar o sistema refaz o andaime no lugar com o mesmo traçado e altura, volta os parâmetros ao padrão do sistema novo e a aprovação volta para «em revisão»." },
+lado: { rot: "Lado do andaime", o: "De que lado da linha traçada o andaime fica, olhando do começo para o fim (esquerda ou direita; no contorno: por fora ou por dentro).", u: "—", t: "Tab troca o lado no traçado; no contorno de equipamento o padrão é por fora.", f: "De onde está a fachada ou o equipamento em relação à linha que você traçou.", e: "Lado errado põe o andaime longe da face: as ancoragens não encontram onde prender e o vão até a fachada deixa de ser o previsto." },
+intel: { rot: "Montar inteligente", o: "Quando ligado, ao fechar o traçado o sistema ajusta sozinho vão, levante e ancoragem até o andaime passar nas verificações, e lista cada mudança com Desfazer.", u: "—", t: "Ligado (é o padrão).", f: "Decisão sua; o gerador usa o mesmo cálculo da aba Cálculo.", e: "Desligado, o andaime nasce exatamente com o que foi pedido e pode nascer reprovado. Nada é mudado em silêncio nos dois casos." },
+comprimento: { rot: "Comprimento", un: "m", min: 1, max: 200, o: "Comprimento da face a cobrir quando você não traça pontos.", u: "metros (m)", t: "O motor aceita de 1 a 200 m; com o caminho traçado este campo não é usado.", f: "Da medida da fachada ou do equipamento.", e: "Comprimento errado muda o número de vãos, de peças e de ancoragens." },
+caminho: { rot: "Caminho da face", o: "Os pontos da face a trabalhar, em metros relativos ao primeiro (x z; x z…). Os cliques no desenho preenchem.", u: "metros (m)", t: "Cada trecho com pelo menos 0,30 m; encontros com ângulo de pelo menos 30° (regra do motor).", f: "Dos cliques no desenho ou da planta.", e: "Pontos quase no mesmo lugar ou ângulos fechados demais fazem o motor recusar o traçado." },
+contorno: { rot: "Contorno fechado", o: "Os cantos do contorno em volta de um equipamento (x z; x z…), com 3 pontos ou mais.", u: "metros (m)", t: "Mínimo de 3 cantos.", f: "Dos cliques no desenho ou da planta do equipamento.", e: "Com menos de 3 cantos o contorno não fecha." },
+V0: { rot: "V0 — velocidade básica do vento", un: "m/s", min: 20, max: 60, o: "Velocidade básica do vento da região da obra: a base de toda a força de vento sobre o andaime e a tela.", u: "metros por segundo (m/s)", t: "Sai sozinho do local da obra quando o cadastro tem coordenadas (mapa de isopletas da NBR 6123:2023). O campo aceita de 20 a 60 m/s.", f: "Mapa de isopletas da NBR 6123:2023 (Figura 1) pelo local da obra, ou o RT.", e: "Sem V0 o vento não entra: montante, ancoragem e vento ficam NÃO VERIFICADOS. V0 menor que o real aprova um andaime que o vento derruba." },
+categoria: { rot: "Categoria de rugosidade do terreno", o: "Quanto o terreno em volta da obra freia o vento: de I (aberto e liso) a V (muitos obstáculos altos).", u: "I a V", t: "Sem informar, o sistema usa a pior (I) e deixa a pendência visível.", f: "NBR 6123:2023 5.3.1, pela vista do entorno da obra.", e: "Categoria mais fechada que a real diminui o vento calculado; o andaime pode passar na conta e não no vento de verdade." },
+telaSombreamento: { rot: "Tela: fração fechada", un: "", min: 0.05, max: 1, o: "Quanto da área da tela é fechada: 1,00 é lona; menos é tela aberta. A tela é o que mais faz o vento empurrar o andaime.", u: "fração de 0,05 a 1,00", t: "Sem informar, vale 0,75 (pior caso). As opções do campo são 0,30 · 0,50 · 0,75 · 1,00.", f: "Ficha técnica da tela do fornecedor.", e: "Informar menos do que a tela real diminui a força nas ancoragens e nos montantes: a conta passa e a obra não." },
+faceAte: { rot: "Face até a cota", un: "m", min: 0, max: 200, o: "Até que altura existe fachada ou estrutura onde dá para prender a ancoragem.", u: "metros (m)", t: "Vazio vale «a face vai até o topo», hipótese que o RT confirma. O campo aceita de 0 a 200 m.", f: "Projeto da edificação ou vistoria do RT.", e: "Se a face acaba antes do topo, o trecho de cima fica sem ancoragem; informar mais do que existe esconde essa falta." },
+sigmaSolo: { rot: "Tensão admissível do apoio", un: "kPa", min: 1, max: 5000, o: "Quanto o chão (ou a laje) aguenta por área sob o calço ou a placa da base.", u: "quilopascal (kPa)", t: "Sem valor no sistema: " + NR + ". O campo aceita de 1 a 5000 kPa, e o RT precisa confirmar.", f: "Laudo ou sondagem do solo, ou projeto da laje.", e: "Sem ele o apoio fica NÃO VERIFICADO. Valor alto demais aprova um apoio que afunda no solo ou fissura a laje." },
+capAncoragem: { rot: "Capacidade da ancoragem", un: "kN", min: 0.5, max: 200, o: "A força que um ponto de ancoragem (chumbador ou olhal) aguenta antes de arrancar.", u: "quilonewton (kN)", t: "O sistema parte de 6,25 kN: é referência estrangeira (HSA), não norma. O campo aceita de 0,5 a 200 kN.", f: "Ensaio de arrancamento ou ficha do chumbador usado.", e: "Valor maior que o real aprova uma ancoragem que arranca; o cálculo compara a força do vento por ponto com este número." },
+ventoParaleloRT: { rot: "Vento paralelo à fachada", o: "O sistema não calcula o vento que bate de lado, paralelo à fachada (atrito na tela e cabeceiras sobre as diagonais). O RT confere por escrito.", u: "marca + justificativa de pelo menos 15 caracteres", t: "Marcar só depois de conferir; a justificativa vai para o memorial.", f: "Memória de cálculo do RT (NBR 6123:2023).", e: "Sem a marca a verificação fica NÃO VERIFICADA; marcar sem conferir passa por cima de um risco real." },
+capNoKgf: { rot: "Ligação travessa–roseta: carga vertical", un: "kgf", min: 1, max: 10000, o: "A carga vertical que a ligação da travessa na roseta (cunha) aguenta por ponta.", u: "quilograma-força (kgf)", t: "Sem fonte pública: " + NR + ". O campo aceita de 1 a 10 000 kgf.", f: "Tabela do fabricante do locador.", e: "Sem ela a ligação fica NÃO VERIFICADA; valor acima do real aprova uma ligação que pode escapar." },
+capLigAxialKgf: { rot: "Ligação travessa–roseta: carga axial", un: "kgf", min: 1, max: 10000, o: "A força ao longo da barra que a ligação da cunha aguenta (travessa longitudinal e elo transversal). Não é a carga vertical.", u: "quilograma-força (kgf)", t: "Sem fonte pública: " + NR + ". O campo aceita de 1 a 10 000 kgf.", f: "Tabela do fabricante do locador.", e: "Sem o número a ligação nunca fica «ok»; valor acima do real esconde uma ligação fraca." },
+capDiagKgf: { rot: "Diagonal e ligação: carga axial", un: "kgf", min: 1, max: 20000, o: "A carga ao longo da diagonal que o tubo e a ligação dela aguentam.", u: "quilograma-força (kgf)", t: "Sem fonte pública: " + NR + ". O campo aceita de 1 a 20 000 kgf.", f: "Tabela do fabricante do locador.", e: "O tubo da diagonal é verificado; a ligação fica NÃO VERIFICADA sem este número." },
+capBaseMultiKgf: { rot: "Base regulável do multidirecional: carga admissível", un: "kgf", min: 1, max: 20000, o: "A carga que a base regulável do multidirecional aguenta.", u: "quilograma-força (kgf)", t: "Sem fonte pública: " + NR + ". A tabela do tubo-roll NÃO vale para outro sistema. O campo aceita de 1 a 20 000 kgf.", f: "Tabela do fabricante do locador.", e: "Sem ela a base fica NÃO VERIFICADA; usar a tabela de outro sistema dá uma carga que não é a desta base." },
+espigaoTracaoRT: { rot: "Espigão: tração conferida pelo RT", o: "A capacidade à tração do espigão ou pino trava que une um poste ao seguinte, para o poste não se soltar.", u: "marca + justificativa de pelo menos 15 caracteres", t: "Sem fonte pública: " + NR + ".", f: "Tabela do fabricante do locador.", e: "Sem a marca a verificação do espigão fica NÃO VERIFICADA; marcar sem conferir libera um risco de poste soltar." },
+paraleloInternoRT: { rot: "Poste interno travado no plano da fachada", o: "A linha interna de postes não tem diagonal no plano dela; o RT declara o diafragma do piso ou a diagonal interna que a trava.", u: "marca + justificativa de pelo menos 15 caracteres", t: "Sem valor: " + NR + ".", f: "Memória do RT, pelo projeto do andaime.", e: "Sem a marca a flambagem do poste interno no plano da fachada fica sem liberação; marcar sem travamento real aprova um poste que flamba." },
+cunhaContinua: { rot: "Fiada de travessas contínua pela cunha", o: "Se a fileira de travessas funciona como viga contínua pela cunha (menos ancoragens) ou como articulada em cada estação.", u: "marca + justificativa de pelo menos 15 caracteres", t: "O padrão é articulada (rótula): cada estação vale pelas próprias ancoragens.", f: "Tabela da ligação do fabricante e justificativa do RT.", e: "Marcar sem a tabela da ligação reduz as ancoragens exigidas sem base: o cálculo passa e a travessa pode não aguentar." },
+espigaoRigido: { rot: "Espigão contínuo", o: "Se a emenda do poste transmite momento (contínua) em vez de funcionar como articulação.", u: "marca + justificativa de pelo menos 15 caracteres", t: "O padrão é articulado (rótula), por falta de fonte da rigidez da emenda.", f: "Rigidez da emenda informada pelo fabricante do poste e justificativa do RT.", e: "Marcar sem a rigidez do fabricante diminui o comprimento de flambagem do poste e aprova uma carga que ele não aguenta." },
+vaoMax: { rot: "Vão máximo", un: "m", min: 0.5, max: 3, o: "Distância entre dois montantes ao longo da fachada.", u: "metros (m)", t: "Padrão 2,00 m (painel Orguel de 2,0 m; o TG20 usa 2,4 m — fontes secundárias, o RT confirma). O motor aceita de 0,5 a 3,0 m.", f: "Ficha do fabricante ou do locador; o RT confirma.", e: "Vão maior = menos peças, mas mais carga no montante e no piso; o cálculo diz se passa.",
+multi: { min: 0.35, max: 3.5, t: "Padrão 2,50 m (adotado pela ESPEC do sistema). Cada linha só aceita vãos que são travessas dela: a roseta começa em 0,80 m e o estribo em 0,35 m; vai até 3,5 m. A carga do piso cai de 600 para 450 kgf/m² em 2,48 m (M02 p.18).", f: "Manual do fabricante (M02) e travessas da linha escolhida.", e: "Vão maior = menos peças, mas o piso admite menos carga e a ligação trabalha mais; o cálculo diz se passa." } },
+levanteMax: { rot: "Levante máximo", un: "m", min: 1, max: 3, o: "Distância vertical entre níveis (andares) do andaime.", u: "metros (m)", t: "Padrão 2,00 m (painel Orguel de 2 000 mm e TG20). O motor aceita de 1,0 a 3,0 m.", f: "Ficha do fabricante ou do locador; o RT confirma.", e: "Levante maior = menos níveis, mas montantes mais compridos entre travamentos e flambagem pior; o cálculo diz se passa.",
+multi: { passo: 0.5, t: "Padrão 2,00 m, múltiplo de 0,50 m (a roseta anda de 0,50 em 0,50 m); o manual limita o andar a 2,00 m (Anexo A item 16).", f: "Manual do fabricante (M02, Anexo A item 16).", e: "Valor que não é múltiplo de 0,50 m o motor recusa; levante maior que 2,00 m foge do manual." } },
+afastamento: { rot: "Afastamento da face", un: "m", min: 0.05, max: 0.6, o: "Distância entre a fachada e o andaime.", u: "metros (m)", t: "Padrão 0,20 m, sem fonte brasileira (o RT confirma). O motor aceita de 0,05 a 0,60 m.", f: "Medida da obra; o RT confirma.", e: "Afastamento grande abre vão entre a fachada e o piso (risco de queda) e alonga as ancoragens; pequeno demais não deixa passar a fachada.",
+multi: { t: "Padrão 0,15 m (M02 p.15); o vão entre a fachada e o piso tem de ficar abaixo de 0,20 m (Anexo A item 8). O motor aceita de 0,05 a 0,60 m.", f: "Manual do fabricante (M02 p.15 e Anexo A item 8).", e: "Acima de 0,20 m entre a fachada e o piso há risco de queda e o item do checklist do manual reprova." } },
+nPranchas: { rot: "Pranchões na largura", un: "", min: 1, max: 10, o: "Quantos pranchões lado a lado formam a largura do piso (cada um de madeira 0,30 m; o piso metálico tem 0,37 m).", u: "unidades", t: "Padrão 4 pranchões. O motor aceita de 1 a 10; a largura final precisa de pelo menos 0,60 m (NBR 6494 4.5.6).", f: "Largura de trabalho que você precisa e o piso do locador.", e: "Poucos pranchões deixam a plataforma estreita (menos de 0,60 m o motor recusa); muitos aumentam a carga nas travessas." },
+largura: { rot: "Largura forçada", un: "m", min: 0.3, max: 3, zeroOk: true, o: "Largura da plataforma digitada à mão; 0 deixa a largura sair do número de pranchões.", u: "metros (m)", t: "0 (pelos pranchões). O motor aceita de 0,30 a 3,00 m, e a plataforma precisa de pelo menos 0,60 m (NBR 6494 4.5.6).", f: "Largura de trabalho que você precisa.", e: "Largura abaixo de 0,60 m o motor recusa; largura grande demais sobrecarrega as transversais." },
+hVarredor: { rot: "Travessa de base acima da base", un: "m", min: 0.05, max: 0.5, o: "Altura da primeira travessa (varredor) acima da placa da base.", u: "metros (m)", t: "Padrão 0,15 m: a 1ª travessa o mais perto possível do pé do montante (HSA 3.2.3); a distância exata não tem fonte. O motor aceita de 0,05 a 0,50 m.", f: "Manual do locador; o RT confirma.", e: "Travessa alta demais deixa o pé do montante solto e piora a flambagem do primeiro trecho." },
+pisos: { rot: "Pisos de trabalho", o: "Em quais níveis há piso de trabalho: só no topo, em todos os níveis ou em alturas escolhidas (2,0; 4,0).", u: "topo, todos ou lista de alturas (m)", t: "Padrão: só o topo. Entre dois pisos forrados a altura livre é de pelo menos 1,75 m (NBR 6494 4.5.6).", f: "Do serviço: onde as pessoas vão trabalhar.", e: "Piso a menos de 1,75 m do outro o motor recusa; piso em todos os níveis aumenta a carga nos montantes.",
+multi: { t: "Padrão: todos os níveis (o manual manda instalar as plataformas em todos os níveis, M02 §8.3). «Só o piso de cima» é permitido.", f: "Manual do fabricante (M02 §8.3).", e: "Tirar pisos de níveis intermediários foge do que o manual manda; a altura livre entre pisos forrados continua de pelo menos 1,75 m." } },
+piso: { rot: "Tipo de piso", o: "Material da plataforma: prancha de madeira ou piso metálico com gancho.", u: "—", t: "Padrão: madeira (prancha 0,24 × 0,045 m); metálico com gancho de 0,37 m.", f: "O que o locador fornece.", e: "Piso diferente do real muda largura, peso e a verificação do piso." },
+guarda: { rot: "Guarda-corpo: travessão superior", un: "m", min: 1.2, o: "Altura do travessão superior do guarda-corpo acima do piso.", u: "metros (m)", t: "Padrão 1,20 m (NR-18 18.9.4.2 a). O motor recusa abaixo de 1,20 m.", f: "NR-18 18.9.4.2 a).", e: "Abaixo de 1,20 m o motor recusa; guarda-corpo baixo é risco de queda." },
+intermediaria: { rot: "Travessão intermediário", un: "m", min: 0.45, max: 0.8, o: "Altura do travessão do meio do guarda-corpo.", u: "metros (m)", t: "Padrão 0,70 m (NR-18 18.9.4.2 b); o motor aceita de 0,45 a 0,80 m.", f: "NR-18 18.9.4.2 b).", e: "Fora de 0,45 a 0,80 m o motor recusa; vão grande entre travessões deixa passar o corpo." },
+rodape: { rot: "Rodapé: altura", un: "m", min: 0.15, max: 0.6, o: "Altura do rodapé rente ao piso, que impede a queda de objetos e o escorregão do pé.", u: "metros (m)", t: "Padrão 0,20 m; mínimo de 0,15 m (NR-18 18.9.4.2 c). O motor aceita até 0,60 m.", f: "NR-18 18.9.4.2 c).", e: "Abaixo de 0,15 m o motor recusa; rodapé baixo deixa cair ferramenta e material." },
+rodapeEsp: { rot: "Rodapé: espessura", un: "m", min: 0.01, max: 0.06, o: "Espessura da tábua do rodapé.", u: "metros (m)", t: "Padrão 0,025 m (tábua de 1 polegada, decisão RA de 27/10/2026, sem fonte de norma; o rodapé não é peça calculada).", f: "Decisão do projeto; o RT confirma.", e: "O motor aceita de 0,01 a 0,06 m; espessura errada só muda o peso e o desenho do rodapé." },
+guardaInterno: { rot: "Guarda-corpo na linha interna", o: "Se há guarda-corpo também no lado da fachada, e não só no lado de fora.", u: "marca", t: "Padrão: desligado.", f: "Decisão do projeto, conforme o vão entre a fachada e o piso.", e: "Desligado com vão grande até a fachada deixa a borda interna sem proteção." },
+tela: { rot: "Tela de proteção", o: "Tela na face externa, da 1ª plataforma até 2,00 m acima da última (NR-18 18.12.15).", u: "marca", t: "Padrão: ligada.", f: "NR-18 18.12.15.", e: "Tirar a tela some com a proteção contra queda de material e com a força do vento sobre ela; ligar a tela aumenta a carga de vento nas ancoragens." },
+tubo: { rot: "Tubo", o: "O perfil de tubo usado nos montantes e travessas.", u: "—", t: "Padrão HSS 48,3 × 3,0 mm. A NBR 6494 (4.5.5) pede parede de pelo menos 2,65 mm e Ø de pelo menos 42,2 mm.", f: "Ficha do tubo do locador.", e: "Tubo mais fino que o mínimo o motor recusa; tubo diferente do real muda toda a resistência calculada." },
+barras: { rot: "Comprimentos comerciais dos tubos", un: "m", o: "Os comprimentos de tubo que o locador tem para alugar; o gerador usa os maiores primeiro para ter menos emendas.", u: "metros (m)", t: "Padrão: de 6,00 a 0,50 m de 0,25 em 0,25 m.", f: "Estoque do locador.", e: "Lista diferente do estoque gera uma lista de peças que o locador não tem; é preciso pelo menos um comprimento." },
+diagCada: { rot: "Diagonal a cada N vãos", un: "", min: 1, o: "De quantos em quantos vãos entra uma prumada de diagonais de contraventamento.", u: "vãos (número inteiro)", t: "Padrão 5, sem fonte brasileira (o RT confirma). Aceita 1 em diante.", f: "O RT confirma.", e: "Diagonais demais encarecem; de menos deixam o andaime frouxo para o vento lateral e para a força nocional.",
+multi: { t: "Padrão 5: no mínimo um conjunto de diagonais em torre a cada 5 módulos (M02 p.10 e p.20). Aceita 1 em diante.", f: "Manual do fabricante (M02 p.10 e p.20).", e: "Mais que 5 módulos sem torre de diagonais foge do manual e o andaime fica frouxo." } },
+diagTransv: { rot: "Diagonal transversal", o: "Se as diagonais também travam o andaime na direção da largura (no sentido da fachada para fora).", u: "marca", t: "Padrão: ligada.", f: "Decisão do projeto; o RT confirma.", e: "Desligada, o andaime depende só dos pórticos para não deformar na largura." },
+ancoragem: { rot: "Ancoragem", o: "Como o andaime é preso à fachada ou à estrutura: por tubo de amarração com olhal, ou nenhuma.", u: "—", t: "Padrão: por tubo. Sem ancoragem só passa se a altura for no máximo 4 vezes a menor base (NR-18 18.12.3).", f: "NR-18 18.12.3 e o projeto do andaime.", e: "Sem ancoragem o vento tomba o andaime acima de 4 vezes a base; o cálculo e o motor recusam.",
+multi: { t: "Automática (gancho ou tubo, conforme o afastamento). Sem ancoragem só passa em anel fechado ou torre que atende o 4× (NR-18 18.12.3).", f: "NR-18 18.12.3 e o manual do fabricante." } },
+ancH: { rot: "Ancoragem: espaçamento horizontal", un: "m", gt0: true, max: 6, o: "Distância entre pontos de ancoragem ao longo da fachada.", u: "metros (m)", t: "Padrão 6,00 m; no máximo 6,00 m (NBR 6494 4.5.2, exemplar não licenciado — conferir). O RT define o valor para a obra.", f: "NBR 6494:1990 4.5.2 e o projeto do andaime.", e: "Acima de 6,00 m, ou com área por ancoragem acima de 36 m², o motor recusa; espaçamento grande demais sobrecarrega cada ponto." },
+ancV: { rot: "Ancoragem: espaçamento vertical", un: "m", gt0: true, max: 6, o: "Distância entre pontos de ancoragem na altura.", u: "metros (m)", t: "Padrão 4,00 m; no máximo 6,00 m (NBR 6494 4.5.2). O RT define o valor para a obra.", f: "NBR 6494:1990 4.5.2 e o projeto do andaime.", e: "Acima de 6,00 m, ou com área por ancoragem acima de 36 m², o motor recusa; espaçamento grande demais sobrecarrega cada ponto." },
+base: { rot: "Base", o: "O apoio do montante no chão: regulável (rosca para nivelar), fixa ou rodízio com trava.", u: "—", t: "Padrão: regulável 120 × 120. Sobre rodízios a altura do piso fica no máximo 4 vezes a menor dimensão da base (NBR 6494 4.5.12).", f: "O que o locador fornece.", e: "Base errada muda a carga admissível do apoio e a estabilidade; o rodízio acima de 4× a base o motor recusa.",
+multi: { t: "Regulável (rosca até 0,25 m) ou articulada (piso inclinado); a linha não tem base fixa nem rodízio no catálogo. Piso inclinado exige base articulada travada (M02 §8.1.1).", f: "Manual do fabricante (M02 Anexo A item 15 e §8.1.1).", e: "Base regulável em piso inclinado desliza; a rosca acima de 0,25 m foge do manual." } },
+roscaBase: { rot: "Rosca exposta da base", un: "m", min: 0, max: 0.4, o: "Quanto da rosca da base regulável fica aparecendo para nivelar.", u: "metros (m)", t: "Padrão 0,10 m (decisão do projeto, o RT confirma). O motor aceita de 0 a 0,40 m.", f: "Apostila R1 (tabela de carga da base de 8 a 40 cm) e o RT.", e: "Quanto mais rosca aparecendo, menos carga a base aguenta; o cálculo da base mostra o limite." },
+calco: { rot: "Calço de madeira sob a base", o: "Um pedaço de pranchão sob a placa da base, para espalhar a carga no solo e não deixar deslizar.", u: "marca", t: "Padrão: ligado. O HSA 3.3.1 pede calço com ≥ 35 mm de espessura, ≥ 220 mm de largura e ≥ 1 000 cm² de área em solo.", f: "HSA 3.3.1 (fonte secundária) e o RT.", e: "Sem calço a pressão no solo sobe e o apoio pode afundar.",
+multi: { t: "Padrão: ligado.", f: "Manual do fabricante (M02 §8.1.1) e o RT.", e: "Sem calço a pressão no solo sobe e a base pode deslizar." } },
+acesso: { rot: "Acesso", o: "Como as pessoas sobem ao piso: escada de mão por lance, torre de escada, escada marinheiro ou nenhum.", u: "—", t: "Padrão: automático (escada de mão por lance quando o piso passa de 1,00 m). Sem acesso só com piso até 1,00 m (NR-18 18.12.14).", f: "NR-18 18.12.14 e 18.8.6.", e: "Sem acesso e com piso acima de 1,00 m o motor recusa; escada mal posicionada atrapalha o trabalho no piso.",
+multi: { t: "Padrão: alçapão com escada incorporada (M02 §8.3.1); escada externa ou nenhum (só com piso até 1,00 m, NR-18 18.12.14).", f: "Manual do fabricante (M02 §8.3.1) e NR-18 18.12.14." } },
+acessoPos: { rot: "Posição do acesso", un: "", min: 0, max: 1, o: "Onde ficam as escadas ao longo do caminho: 0 é no primeiro vão e 1 no último.", u: "de 0 a 1", t: "Padrão 0 (automático: primeiro vão da cabeceira).", f: "Decisão do projeto, conforme por onde as pessoas entram.", e: "Fora de 0 a 1 o motor recusa; escada longe de quem usa vira percurso longo sobre o piso." },
+nr34Montantes: { rot: "Sem tubo de 4,50 a 6,00 m como montante", o: "Evita tubos muito compridos como montante a partir do 2º lance (NR-34.11.11, naval — referência).", u: "marca", t: "Padrão: desligado; só para obra naval.", f: "NR-34.11.11 (referência).", e: "Ligado em obra comum limita os tubos usados sem necessidade." },
+conexoes3d: { rot: "Desenhar as braçadeiras no 3D", o: "Se as braçadeiras aparecem como peças no desenho 3D.", u: "marca", t: "Padrão: ligado.", f: "Preferência de visualização.", e: "Não muda o cálculo; desligado o desenho fica mais leve, mas a vistoria visual perde as conexões." },
+linha: { rot: "Linha do multidirecional", o: "Qual linha do multidirecional: roseta (travessa com cunha na roseta) ou estribo.", u: "—", t: "Padrão: roseta.", f: "O que o locador fornece.", e: "Cada linha tem as próprias travessas, pisos e diagonais; trocar de linha refaz o andaime com as peças dela." },
+larguraModulo: { rot: "Largura do módulo", un: "m", o: "A largura do andaime: é o comprimento de uma travessa da linha escolhida.", u: "metros (m)", t: "Roseta: 0,80 (padrão) · 1,14 · 1,64 · 2,14 · 2,48 · 3,14 m. Estribo: 0,35 · 0,50 · 0,70 · 1,00 (padrão) · 1,50 · 2,00 · 2,50 · 3,00 m.", f: "Catálogo da linha (M01 e M02).", e: "A largura precisa ser uma travessa da linha e o piso de 0,32 m cobre o módulo; a largura útil do piso precisa de pelo menos 0,60 m (NBR 6494 4.5.6)." },
+offPiso: { rot: "Nível do estrado em relação ao nó", un: "m", min: -0.2, max: 0, o: "Quanto o estrado fica abaixo do nó da roseta em que a travessa encaixa.", u: "metros (m), negativo é abaixo", t: "Padrão 0: o estrado encaixa na travessa no nível da roseta. O motor aceita de −0,20 a 0,00 m.", f: "Manual do fabricante e NR-18 18.12.15.2 (guarda-corpo de 1,00 a 1,20 m acima do estrado).", e: "Fora de −0,20 a 0,00 m o travessão superior sai fora de 1,00 a 1,20 m acima do estrado e o motor recusa." },
+regulagemMax: { rot: "Regulagem máxima da base", un: "m", gt0: true, max: 0.25, o: "O máximo de rosca que a base regulável pode abrir.", u: "metros (m)", t: "Padrão e máximo 0,25 m (fabricante, M02 p.10 e checklist item 15). O motor nunca passa dele.", f: "Manual do fabricante (M02 p.10).", e: "Acima de 0,25 m o motor recusa; rosca aberta demais enfraquece a base." },
+posteGuarda: { rot: "Poste de guarda-corpo no meio do vão", o: "Um tubo vertical extra no meio de cada vão, só para segurar o guarda-corpo.", u: "marca", t: "Padrão: desligado; o cálculo propõe ligar quando o montante não aguenta o guarda-corpo.", f: "Proposta do cálculo (aba Cálculo).", e: "Liga mais peças; o cálculo mostra se resolve." },
+travaTopo: { rot: "Travamento no topo da tela", o: "Travessa longitudinal e transversal no topo da tela, para o trecho acima do último nó não balançar.", u: "marca", t: "Padrão: ligado.", f: "Proposta do cálculo (aba Cálculo).", e: "Desligado, o montante do topo recebe o vento da tela sem travamento." },
+ancTopo: { rot: "Ancoragem no topo da tela", o: "Ancoragem no topo, na altura da tela.", u: "marca", t: "Padrão: ligado.", f: "Proposta do cálculo (aba Cálculo).", e: "Desligada, o trecho do topo fica sem prender na fachada." },
+empresa: { rot: "Empresa", o: "Empresa responsável pelo projeto do andaime; vai para o carimbo das pranchas e para o memorial.", u: "texto", t: "Campo vazio usa o cadastro da empresa; nunca é inventado.", f: "Cadastro da empresa do usuário.", e: "Em branco, o carimbo mostra o campo vazio (placeholder vermelho nos documentos)." },
+responsavel: { rot: "Responsável técnico (nome)", o: "Nome do engenheiro ou profissional que assina o projeto do andaime.", u: "texto", t: "Campo vazio usa o cadastro da empresa; nunca é inventado.", f: "Cadastro da empresa ou a ART.", e: "Em branco, as pranchas e o memorial saem sem assinante e o aviso de RT em branco aparece." },
+tituloProfissional: { rot: "Título profissional", o: "Como o responsável técnico se identifica (Eng. Civil, Eng. Mecânico…).", u: "texto", t: "Campo vazio usa o cadastro da empresa.", f: "Carteira do CREA/CAU.", e: "Título errado no carimbo pode invalidar o documento perante a fiscalização." },
+registro: { rot: "Registro CREA/CAU", o: "Número do registro do responsável técnico no conselho.", u: "texto", t: "Campo vazio usa o registro da aprovação do projeto ou o cadastro da empresa; nunca é inventado.", f: "Carteira do CREA/CAU.", e: "Em branco ou errado, o carimbo e a ART não batem e o documento perde valor." },
+art: { rot: "ART nº", o: "Número da Anotação de Responsabilidade Técnica do projeto do andaime (NR-18 18.12.2).", u: "texto", t: "Campo vazio usa a ART da aprovação; nunca é inventado. Pode ser «dispensada — motivo».", f: "A ART emitida no CREA/CAU.", e: "Sem ART o projeto não tem responsável registrado; número errado no carimbo atrapalha uma fiscalização." },
+proprietario: { rot: "Contratante / Proprietário", o: "Quem contratou o serviço ou é dono da obra.", u: "texto", t: "Sem valor fixo.", f: "Contrato da obra.", e: "Erro aqui só aparece no carimbo, mas pode confundir a que obra o documento pertence." },
+obra: { rot: "Obra", o: "Nome da obra, como aparece no carimbo das pranchas e no memorial.", u: "texto", t: "Sem valor fixo.", f: "Contrato ou cadastro da obra.", e: "Erro aqui só aparece no carimbo, mas pode confundir a que obra o documento pertence." },
+local: { rot: "Local", o: "Endereço ou setor da obra onde o andaime fica.", u: "texto", t: "Sem valor fixo.", f: "Endereço da obra.", e: "Local errado dificulta achar o andaime na inspeção." },
+andaime: { rot: "Código do andaime", o: "O código que identifica este andaime na obra (aparece nas pranchas e no cartão).", u: "texto", t: "Sem valor fixo; em branco o documento usa «ANDAIME».", f: "Controle da obra.", e: "Códigos repetidos entre andaimes confundem a inspeção e o cartão." },
+revisao: { rot: "Revisão", o: "O número ou letra da revisão do projeto.", u: "texto", t: "Sem valor fixo.", f: "Controle de documentos da obra.", e: "Revisão errada pode levar a obra a montar pela versão antiga." },
+data: { rot: "Data", o: "A data do projeto que vai no carimbo.", u: "data", t: "Sem valor fixo.", f: "Data da emissão.", e: "Data errada no carimbo confunde qual versão vale." },
+reserva: { rot: "Reserva (% a mais)", un: "%", min: 0, max: 100, o: "Quantos por cento de peças a mais o locador deve levar além do necessário, para quebra e troca.", u: "porcentagem (%)", t: "0 % é só o necessário. A reserva é decisão do RT ou do locador; o campo aceita de 0 a 100.", f: "Decisão do RT ou do locador.", e: "Reserva a menos pode faltar peça na montagem; a mais encarece a locação." },
+quem: { rot: "Quem está fazendo isto", o: "O nome de quem responde, assina ou aprova no momento; fica gravado no histórico.", u: "texto", t: "Seu nome.", f: "Você.", e: "Sem o nome, a ação não é gravada com responsável." }
+};
+var VERIF = {
+transversal: { o: "A travessa que atravessa a largura do andaime e segura os pranchões: ela dobra com o peso do piso e de quem trabalha, e não pode envergar demais." },
+travessa: { o: "A travessa ao longo da fachada, que amarra os montantes e sustenta o piso: ela dobra com o peso e a flecha é limitada a 1/200 do vão." },
+prancha: { o: "O pranchão do piso entre duas travessas: precisa aguentar o peso das pessoas sem dobrar demais (flecha limitada a 1/200 do vão)." },
+prancha_pontual: { o: "O pranchão sob uma carga concentrada: uma pessoa com material parada num ponto só, sem dividir o peso pelo piso." },
+montante: { o: "O montante é o tubo vertical de baixo: carrega o peso dos pisos, das pessoas e o vento na tela, e pode flambar (curvar de lado) se for comprido.", dados: ["V0"] },
+contencao: { o: "Os nós do montante precisam de travamento lateral (as travessas) que aguente a força de contenção, para o montante não flambar." },
+guarda_travessao: { o: "O travessão de cima do guarda-corpo: a NR-18 pede que aguente 90 kgf por metro sem envergar mais que 76 mm." },
+guarda_interm: { o: "O travessão do meio do guarda-corpo: precisa aguentar 66 kgf por metro." },
+guarda_pontual: { o: "Uma pessoa se apoiando no topo do guarda-corpo: carga pontual de 350 N." },
+guarda_altura: { o: "As alturas do guarda-corpo acima do estrado: travessão de 1,00 a 1,20 m e o do meio a 0,50 m (NR-18 18.12.15.2)." },
+montante_topo: { o: "O pedaço de montante acima do último nó, que segura a tela e o guarda-corpo e recebe o vento sem travamento em cima.", dados: ["V0"] },
+montante_guarda: { o: "O montante funcionando como poste do guarda-corpo: precisa aguentar a carga de 90 kgf por metro da NR-18 empurrando de lado." },
+poste_guarda: { o: "O poste extra de guarda-corpo no meio do vão: o tubo, a braçadeira e o travessão do meio sob a carga da NR-18." },
+abracadeira: { o: "A braçadeira fixa que prende a travessa no montante: não pode deslizar com a carga da travessa." },
+giratoria: { o: "A braçadeira giratória das diagonais, sob uma pequena força horizontal de segurança (força nocional) para o andaime não deformar." },
+vento_paralelo: { o: "O vento que bate de lado, paralelo à fachada (atrito na tela e cabeceiras sobre as diagonais): o sistema não calcula, o RT confere por escrito.", dados: ["ventoParaleloRT"] },
+base: { o: "A base regulável: quanto de carga ela aguenta conforme a rosca que fica aparecendo (mais rosca, menos carga)." },
+calco: { o: "O calço de madeira sob a placa da base: não pode esmagar com a carga do montante." },
+apoio: { o: "O chão: a pressão sob o calço (ou a placa) dividida pelo que o solo ou a laje aguenta.", dados: ["sigmaSolo"] },
+long_horizontal: { o: "A barra longitudinal dobrando de lado pelo vento, entre os pontos de ancoragem.", dados: ["V0"] },
+ancoragem: { o: "Cada ponto que prende o andaime na fachada recebe uma parte da força do vento e não pode arrancar.", dados: ["V0"] },
+estab_nr18: { o: "Sem ancoragem, a altura do piso não passa de 4 vezes a menor dimensão da base (NR-18 18.12.3)." },
+tombamento: { o: "Sem ancoragem, o vento não pode tombar o andaime: o peso próprio precisa segurar o momento do vento." },
+multidirecional: { o: "Verificação provisória do multidirecional (cálculo em preparação): nada é aprovado até o cálculo próprio rodar." },
+piso_multi: { o: "O piso metálico: carga admissível do fabricante para o comprimento (vão) escolhido." },
+alcapao_multi: { o: "O piso com alçapão e escada: a carga admissível dele, que o fabricante informa.", semCampo: "A carga admissível do alçapão não tem campo na tela: o locador informa e o RT registra no projeto." },
+transversal_multi: { o: "A travessa transversal que recebe os pisos: dobra com o peso e a flecha não pode passar do limite." },
+no_cunha: { o: "A ligação da travessa na roseta (cunha): a cunha precisa segurar a carga vertical de cada ponta da travessa.", dados: ["capNoKgf"] },
+poste_multi: { o: "O poste do multidirecional: carrega os pisos, as pessoas e o vento, e pode flambar (curvar de lado) se for comprido.", dados: ["V0", "paraleloInternoRT"] },
+guarda_poste: { o: "O poste sob a carga do guarda-corpo: a NR-18 pede 90 kgf por metro empurrando de lado." },
+diagonal_multi: { o: "A diagonal que trava o andaime: o tubo e a ligação dela sob a força horizontal de segurança e a compressão.", dados: ["capDiagKgf"] },
+espigao: { o: "O espigão (pino que une um poste ao seguinte): não pode soltar quando o vento levanta o andaime.", dados: ["espigaoTracaoRT"] },
+travessa_long_multi: { o: "A travessa longitudinal: dobra com o peso próprio e com o vento de lado entre as estações ancoradas, e a ligação trabalha ao longo da barra.", dados: ["capLigAxialKgf"] },
+elo_transversal: { o: "O elo transversal leva o vento do poste de fora até a ancoragem: o tubo e a ligação dele sob força ao longo da barra.", dados: ["capLigAxialKgf"] },
+base_multi: { o: "A base regulável do multidirecional: rosca de até 0,25 m e carga admissível do fabricante.", dados: ["capBaseMultiKgf"] }
+};
+var TXT = {
+oQueE: "O que é", porque: "Por que não passou", porqueAtencao: "Por que está em atenção", conjunto: "Esta opção aplica o conjunto do Montar inteligente: todas as mudanças da lista, juntas, de uma vez.", falta: "O que falta", comoResolver: "Como resolver", opcao: "Opção", recomendada: "recomendada", oQueMuda: "O que muda", resultadoPrevisto: "Resultado previsto",
+corrigir: "Corrigir", desfazer: "Desfazer", mostrar3d: "Mostrar no 3D", recalcular: "Recalcular", corrigirTudo: "Corrigir tudo", aplicar: "Aplicar", cancelar: "Cancelar",
+soRT: "Só o RT resolve", semOpcao: "O sistema não tem uma mudança automática que resolva esta: é decisão do RT.",
+faixaTitulo: "problemas encontrados", faixaZero: "Nenhum problema: tudo passa e nada falta.",
+deseja: "Deseja corrigir? Vai mudar", nadaMudar: "O gerador não encontrou o que mudar sozinho.", mesmoCorrigindo: "Mesmo corrigindo, falta",
+memorialTitulo: "Memorial de cálculo", memorialAviso: "O PDF do memorial e as pranchas saem com este cálculo.", memorialRecalcular: "Recalcular tudo", memorialAbrir: "Abrir a linha para ver a explicação e corrigir.",
+dadoInline: "Informe o dado aqui", confirmoRT: "Confirmo como RT", justificativa: "Justificativa do RT (mín. 15 caracteres)", ondeConseguir: "Onde conseguir", semDado: "O que acontece sem ele",
+cabSolicitante: "Solicitante", cabResistente: "Resistente", cabUso: "Uso", cabEstado: "Estado", cabVerificacao: "Verificação"
+};
+function campo(id, sis) {
+var c = CAMPOS[id]; if (!c) return null;
+if (!ehMulti(sis) || !c.multi) return c;
+var o = {}; Object.keys(c).forEach(function (k) { if (k !== "multi") o[k] = c[k]; }); Object.keys(c.multi).forEach(function (k) { o[k] = c.multi[k]; });
+return o;
+}
+var ITENS = [["o", "O que é"], ["u", "Unidade"], ["t", "Valor típico"], ["f", "De onde vem"], ["e", "Se errar"]];
+function itensCampo(id, sis) { var c = campo(id, sis); return c ? ITENS.map(function (x) { return { k: x[0], rot: x[1], txt: c[x[0]] }; }) : []; }
+function tooltip(id, sis) { var c = campo(id, sis); if (!c) return ""; return c.rot + "\n" + ITENS.map(function (x) { return x[1] + ": " + c[x[0]]; }).join("\n"); }
+function icone(id, sis) { var c = campo(id, sis); if (!c) return ""; return '<span class="andui-i" data-aj="' + esc(id) + '" tabindex="0" role="note" aria-label="Ajuda: ' + esc(c.rot) + '" title="' + esc(tooltip(id, sis)) + '">ⓘ</span>'; }
+function linhaHtml(id, sis) {
+var c = campo(id, sis); if (!c) return "";
+return '<small class="andui-aj" data-aj-linha="' + esc(id) + '">' + ITENS.map(function (x) { return "<b>" + esc(x[1]) + ":</b> " + esc(c[x[0]]); }).join(" · ") + "</small>";
+}
+function numDe(v) { if (typeof v === "number") return v; var s = String(v == null ? "" : v).trim().replace(",", "."); if (s === "") return NaN; var n = Number(s); return isFinite(n) ? n : NaN; }
+function validar(id, valor, sis) {
+var c = campo(id, sis); if (!c) return "";
+var s = String(valor == null ? "" : valor).trim(); if (s === "") return "";
+if (c.min == null && c.max == null && !c.gt0) return "";
+var n = numDe(valor); if (!isFinite(n)) return c.rot + ": digite um número (ex.: 1,5).";
+if (c.zeroOk && n === 0) return "";
+var un = c.un ? " " + c.un : "", faixa;
+if (c.gt0 && n <= 0) return c.rot + ": use um valor maior que zero. " + c.e;
+if (c.min != null && n < c.min - 1e-9) { faixa = c.max != null ? "de " + brf(c.min, 2) + " a " + brf(c.max, 2) + un : "pelo menos " + brf(c.min, 2) + un; return c.rot + ": " + brf(n, 2) + un + " está fora do que o sistema aceita (" + faixa + "). " + c.e; }
+if (c.max != null && n > c.max + 1e-9) { faixa = c.min != null ? "de " + brf(c.min, 2) + " a " + brf(c.max, 2) + un : "no máximo " + brf(c.max, 2) + un; return c.rot + ": " + brf(n, 2) + un + " está fora do que o sistema aceita (" + faixa + "). " + c.e; }
+if (c.passo && Math.abs(n / c.passo - Math.round(n / c.passo)) > 1e-6) return c.rot + ": use múltiplo de " + brf(c.passo, 2) + " m (a roseta anda de " + brf(c.passo, 2) + " em " + brf(c.passo, 2) + " m).";
+return "";
+}
+function verificacao(id) { return VERIF[id] || null; }
+function explicacao(id) { var v = VERIF[id]; return v ? v.o : ""; }
+function dadosDe(id, sis) { var v = VERIF[id]; if (!v) return []; return arr(ehMulti(sis) && v.multi ? v.multi : v.dados).slice(); }
+function semCampoDe(id) { var v = VERIF[id]; return v && v.semCampo ? v.semCampo : ""; }
+function valorTxt(campoId, v) {
+var c = CAMPOS[campoId];
+if (v === true) return "ligado"; if (v === false) return "desligado";
+if (v === undefined || v === null || v === "") return "(padrão)";
+if (typeof v === "number") return brf(v, Math.abs(v) < 0.1 && v !== 0 ? 3 : 2) + (c && c.un ? " " + c.un : "");
+return String(v);
+}
+function rotuloCampo(campoId) { var c = CAMPOS[campoId]; return c ? c.rot : campoId; }
+function descreverMudanca(m) { return rotuloCampo(m.campo) + ": de " + valorTxt(m.campo, m.de) + " para " + valorTxt(m.campo, m.para); }
+function causa(v, faltam) {
+if (!v) return "";
+var sol = String(v.solicitante || "").trim(), res = String(v.resistente || "").trim(), temNum = sol && sol !== "—" && res && res !== "—";
+var uso = v.uso == null ? null : v.uso, usoTxt = uso == null ? "—" : (uso >= 99 ? "acima de 99" : brf(uso, 2));
+if (v.estado === "falha") {
+var pct = uso == null ? null : Math.round((uso - 1) * 100);
+var t = temNum ? "O cálculo mostra " + sol + "; o limite é " + res + ". " : (v.texto ? v.texto + " " : "");
+return t + "Uso " + usoTxt + " (solicitante ÷ resistente; 1,00 é o limite)" + (pct != null && uso < 99 ? " — " + pct + " % acima do limite." : (uso != null ? " — muito acima do limite." : "."));
+}
+if (v.estado === "atencao") {
+if (uso != null && uso > 0.9 && uso <= 1) return "Passa, mas com menos de 10 % de folga: uso " + usoTxt + " (sobram " + Math.round((1 - uso) * 100) + " %)." + (temNum ? " " + sol + " contra " + res + "." : "");
+return "Passa com ressalva: " + (arr(v.ressalvas)[0] || v.texto || "veja o cálculo") + (uso != null ? " (uso " + usoTxt + ")" : "");
+}
+if (v.estado === "nao_verificado") {
+var fl = arr(faltam);
+if (fl.length) return "Falta o dado: " + fl.map(function (x) { return String(x).replace(/[.s]+$/, ""); }).join("; ") + ". Sem ele o sistema não verifica e não libera.";
+return (arr(v.ressalvas)[0] || v.texto || "Dado que o sistema não tem.") + " Sem o dado o sistema não verifica e não libera.";
+}
+return v.texto || "";
+}
+function usoTxt(u) { return u == null ? "—" : (u >= 99 ? "acima de 99" : brf(u, 2)); }
+var ROT_ESTADO = { ok: "passa", atencao: "atenção", falha: "NÃO passa", nao_verificado: "não verificado" };
+function textoPrevisto(p) {
+if (!p) return "";
+var t = "esta verificação " + (p.estado === "ok" ? "passa" : (p.estado === "atencao" ? "fica em atenção" : (p.estado === "falha" ? "continua sem passar" : "continua sem verificação"))) + (p.uso != null ? " (uso " + usoTxt(p.uso) + ")" : "") + ".";
+t += p.passaTudo ? " O andaime passa em todas as verificações que têm dado." : (p.falhasDepois ? " Ainda ficam " + p.falhasDepois + " verificação(ões) sem passar." : "");
+if (arr(p.novasFalhas).length) t += " Cuidado: passa a falhar também " + p.novasFalhas.join("; ") + ".";
+return t;
+}
+function textoCorrigido(titulo, antes, depois, estadoDepois) { return "Corrigido — " + titulo + ": uso " + usoTxt(antes) + " → " + usoTxt(depois) + (estadoDepois ? " (" + (ROT_ESTADO[estadoDepois] || estadoDepois) + ")" : "") + "."; }
+function textoEfeito(titulo, estAntes, estDepois, usoDepois) {
+return titulo + ": " + (ROT_ESTADO[estAntes] || estAntes) + " → " + (ROT_ESTADO[estDepois] || estDepois) + (usoDepois != null ? " (uso " + usoTxt(usoDepois) + ")" : "") + (estAntes === estDepois ? ". O estado não mudou: ainda falta algo." : ".");
+}
+var AndaimeAjuda = {
+CAMPOS: CAMPOS, VERIF: VERIF, TXT: TXT, ITENS: ITENS, NR: NR,
+campo: campo, itensCampo: itensCampo, tooltip: tooltip, icone: icone, linhaHtml: linhaHtml, validar: validar, rotuloCampo: rotuloCampo, valorTxt: valorTxt, descreverMudanca: descreverMudanca,
+usoTxt: usoTxt, textoPrevisto: textoPrevisto, textoCorrigido: textoCorrigido, textoEfeito: textoEfeito, ROT_ESTADO: ROT_ESTADO,
+verificacao: verificacao, explicacao: explicacao, dadosDe: dadosDe, semCampoDe: semCampoDe, causa: causa,
+ids: function () { return Object.keys(CAMPOS); }, idsVerificacao: function () { return Object.keys(VERIF); },
+txt: function (k) { return TXT[k] == null ? k : TXT[k]; }
+};
+global.AndaimeAjuda = AndaimeAjuda;
+if (typeof module !== "undefined" && module.exports) module.exports = AndaimeAjuda;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/andaimeui.js ==== */
@@ -48064,6 +48394,10 @@ function status(t) { try { if (global.BimShell && global.BimShell.status) global
 function toast(t, k, ms) { try { if (global.UI && global.UI.toast) global.UI.toast(t, k || "info", ms || 7000); } catch (e) {} }
 function doc() { return typeof document !== "undefined" ? document : null; }
 function relogio() { return new Date().toISOString(); }
+function AJ() { return dep("AndaimeAjuda", "./andaimeajuda.js"); }
+function ajI(id, sis) { var a = AJ(); return a ? a.icone(id, sis) : ""; }
+function ajL(id, sis) { var a = AJ(); return a ? a.linhaHtml(id, sis) : ""; }
+function tx(k) { var a = AJ(); return a ? a.txt(k) : k; }
 var COMANDOS = [
 { id: "met-andaime", tipo: "andaime", modo: "polilinha", rotulo: "Andaime\ntubo-roll", icone: "grade", grande: true, dica: "Andaime tubo-roll (tubo equipado). Trace a linha da face a trabalhar e digite a ALTURA que quer vencer: o andaime sobe em arame até ela, e ao fechar (Enter) já nasce montado — montantes, travessas, diagonais, bases, pisos, guarda-corpo, rodapé, escada, ancoragens e conexões — com o Montar inteligente ligado e o painel de cálculo, locação, montagem, checklist e aprovação. Tab troca o lado." },
 { id: "met-andaime-contorno", tipo: "andaime", modo: "contorno", rotulo: "Em volta de\nequipamento", icone: "grade", grande: true, dica: "Clique os cantos do contorno de um tanque ou equipamento e Enter fecha: o andaime nasce em volta (por fora; Tab troca para dentro), subindo até a altura digitada." },
@@ -48133,6 +48467,27 @@ return s.and;
 }
 function localObra() { try { var C = global.MetalCalcLivreUI; return C && C.localObra ? C.localObra() : null; } catch (e) { return null; } }
 function ventoFalta() { return !T().v0DoLocal(localObra()); }
+function tracoHtml() {
+var sis = _sess ? T().sistemaDe(_sess) : _ultSistema;
+return '<div class="andui-traco-txt" data-andui="traco-txt" role="status"></div>' +
+'<div class="andui-traco-ctl">' +
+'<label>Altura a vencer (m) ' + ajI("altura", sis) + '<input data-andui="altura" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Altura do piso de trabalho em metros"></label>' +
+'<label>Sistema ' + ajI("sistema", sis) + '<select data-andui="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '">' + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label>" +
+'<label>Lado ' + ajI("lado", sis) + '<select data-andui="lado" aria-label="Lado do andaime"></select></label>' +
+'<label class="andui-ck"><input type="checkbox" data-andui="intel"> Montar inteligente ' + ajI("intel", sis) + '</label>' +
+'<button type="button" class="andui-bt pri" data-andui-acao="traco-fechar">Fechar (Enter)</button>' +
+'<button type="button" class="andui-bt" data-andui-acao="traco-voltar">Voltar ponto (⌫)</button>' +
+'<button type="button" class="andui-bt" data-andui-acao="traco-cancelar">Cancelar (Esc)</button>' +
+'<details class="andui-aj-det" data-andui="aj-traco"><summary>Ajuda</summary>' + ["altura", "sistema", "lado", "intel", "V0", "categoria", "telaSombreamento", "faceAte"].map(function (k) { return "<div><b>" + esc(AJ().campo(k, sis).rot) + "</b><br>" + ajL(k, sis) + "</div>"; }).join("") + '</details>' +
+'</div>' +
+'<details class="andui-vento" data-andui="vento"' + (ventoFalta() ? " open" : "") + '><summary>Local e vento</summary><div class="andui-vento-corpo">' +
+'<label><span>V0 (m/s) ' + ajI("V0", sis) + '</span><input data-andui-v="V0" inputmode="decimal" autocomplete="off" aria-label="V0, velocidade básica do vento em metros por segundo"></label>' +
+'<label><span>Categoria do terreno ' + ajI("categoria", sis) + '</span><select data-andui-v="categoria"><option value="">não informada (pior caso: I)</option>' + ["I", "II", "III", "IV", "V"].map(function (c) { return "<option>" + c + "</option>"; }).join("") + '</select></label>' +
+'<label><span>Tipo de tela ' + ajI("telaSombreamento", sis) + '</span><select data-andui-v="telaSombreamento"><option value="">não informada (0,75)</option><option value="0.3">Tela aberta (30 % fechada)</option><option value="0.5">Tela 50 %</option><option value="0.75">Tela 75 %</option><option value="1">Lona (100 %)</option></select></label>' +
+'<label><span>Face até a cota (m) ' + ajI("faceAte", sis) + '</span><input data-andui-v="faceAte" inputmode="decimal" autocomplete="off" placeholder="até o topo" aria-label="Cota até onde a face permite ancorar"></label>' +
+'<small data-andui="vento-nota"></small></div></details>' +
+'<div class="andui-traco-erro" data-andui="traco-erro" role="alert"></div>';
+}
 function painelTraco(prev, sa) {
 var d = doc(); if (!d) return null;
 var el = d.querySelector('[data-andui="traco"]');
@@ -48140,22 +48495,7 @@ if (!prev && !sa) { if (el) el.remove(); return null; }
 cssGeral();
 if (!el) {
 el = d.createElement("div"); el.className = "andui-traco"; el.setAttribute("data-andui", "traco"); el.setAttribute("role", "region"); el.setAttribute("aria-label", "Traçado do andaime");
-el.innerHTML = '<div class="andui-traco-txt" data-andui="traco-txt" role="status"></div>' +
-'<div class="andui-traco-ctl">' +
-'<label>Altura a vencer (m) <input data-andui="altura" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Altura do piso de trabalho em metros"></label>' +
-'<label>Sistema <select data-andui="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '">' + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label>" +
-'<label>Lado <select data-andui="lado" aria-label="Lado do andaime"></select></label>' +
-'<label class="andui-ck"><input type="checkbox" data-andui="intel"> Montar inteligente</label>' +
-'<button type="button" class="andui-bt pri" data-andui-acao="traco-fechar">Fechar (Enter)</button>' +
-'<button type="button" class="andui-bt" data-andui-acao="traco-voltar">Voltar ponto (⌫)</button>' +
-'<button type="button" class="andui-bt" data-andui-acao="traco-cancelar">Cancelar (Esc)</button></div>' +
-'<details class="andui-vento" data-andui="vento"' + (ventoFalta() ? " open" : "") + '><summary>Local e vento</summary><div class="andui-vento-corpo">' +
-'<label>V0 (m/s)<input data-andui-v="V0" inputmode="decimal" autocomplete="off" aria-label="V0, velocidade básica do vento em metros por segundo"></label>' +
-'<label>Categoria do terreno<select data-andui-v="categoria"><option value="">não informada (pior caso: I)</option>' + ["I", "II", "III", "IV", "V"].map(function (c) { return "<option>" + c + "</option>"; }).join("") + '</select></label>' +
-'<label>Tipo de tela<select data-andui-v="telaSombreamento"><option value="">não informada (0,75)</option><option value="0.3">Tela aberta (30 % fechada)</option><option value="0.5">Tela 50 %</option><option value="0.75">Tela 75 %</option><option value="1">Lona (100 %)</option></select></label>' +
-'<label>Face até a cota (m)<input data-andui-v="faceAte" inputmode="decimal" autocomplete="off" placeholder="até o topo" aria-label="Cota até onde a face permite ancorar"></label>' +
-'<small data-andui="vento-nota"></small></div></details>' +
-'<div class="andui-traco-erro" data-andui="traco-erro" role="alert"></div>';
+el.innerHTML = tracoHtml();
 d.body.appendChild(el);
 el.addEventListener("click", function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-andui-acao]") : null; if (!b) return; var a = b.getAttribute("data-andui-acao"); if (a === "traco-fechar") AndaimeUI.fechar(); else if (a === "traco-voltar") AndaimeUI.voltarPonto(); else if (a === "traco-cancelar") AndaimeUI.cancelarTraco(); });
 el.addEventListener("change", function (ev) {
@@ -48171,6 +48511,7 @@ else if (t.getAttribute("data-andui") === "sistema") { T().setSistema(s, t.value
 else if (t.getAttribute("data-andui") === "lado") { s.lado = t.value; s.hVis = 0; AndaimeUI.redesenhar(); }
 else if (t.getAttribute("data-andui") === "intel") { s.inteligente = !!t.checked; _ultInteligente = s.inteligente; }
 });
+el.addEventListener("input", function (ev) { avisoDoCampo(ev.target, _sess ? T().sistemaDe(_sess) : _ultSistema); });
 el.addEventListener("keydown", function (ev) { if (ev.key === "Enter" && ev.target && ev.target.getAttribute && ev.target.getAttribute("data-andui") === "altura") { ev.preventDefault(); ev.stopPropagation(); ev.target.dispatchEvent(new Event("change", { bubbles: true })); ev.target.blur(); } if (ev.key === "Escape") ev.stopPropagation(); }, true);
 }
 var s = sa || _sess;
@@ -48271,10 +48612,10 @@ function cssGeral() {
 var d = doc(); if (!d || d.getElementById("andui-css")) return;
 var s = d.createElement("style"); s.id = "andui-css";
 s.textContent =
-".andui-traco{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:62;width:min(860px,94vw);padding:9px 14px;border-radius:10px;font-size:13px;line-height:1.35;background:var(--surface);color:var(--texto);border:2px solid var(--linha);box-shadow:0 4px 18px rgba(0,0,0,.22)}" +
+".andui-traco{position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:62;width:min(860px,94vw);padding:5px 14px;border-radius:10px;font-size:13px;line-height:1.35;background:var(--surface);color:var(--texto);border:2px solid var(--linha);box-shadow:0 4px 18px rgba(0,0,0,.22)}" +
 ".andui-traco.falta{border-color:var(--vermelho)}.andui-traco.ok{border-color:var(--verde)}.andui-traco-txt b{display:block}.andui-traco-txt small{display:block;color:var(--texto-fraco);font-size:11.5px;margin-top:2px}" +
-".andui-traco-ctl{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-top:8px}.andui-traco-ctl label{display:flex;gap:6px;align-items:center;font-size:12px}.andui-traco-ctl input:not([type=checkbox]){width:74px;min-height:30px;text-align:right}.andui-traco-ctl select{min-height:30px}" +
-".andui-vento{margin-top:6px;font-size:12px}.andui-vento summary{cursor:pointer;font-weight:700}.andui-vento-corpo{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px;margin-top:6px}.andui-vento-corpo label{display:flex;flex-direction:column;gap:2px;font-size:11.5px}.andui-vento-corpo input,.andui-vento-corpo select{min-height:28px}.andui-vento-corpo small{grid-column:1 / -1;color:var(--texto-fraco);font-size:10.5px;line-height:1.25}" +
+".andui-traco-ctl{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:4px}.andui-traco-ctl label{display:flex;gap:6px;align-items:center;font-size:12px}.andui-traco-ctl input:not([type=checkbox]){width:74px;min-height:30px;text-align:right}.andui-traco-ctl select{min-height:30px}" +
+".andui-vento{margin-top:2px;font-size:12px}.andui-vento summary{cursor:pointer;font-weight:700}.andui-vento-corpo{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px;margin-top:6px}.andui-vento-corpo label{display:flex;flex-direction:column;gap:2px;font-size:11.5px}.andui-vento-corpo input,.andui-vento-corpo select{min-height:28px}.andui-vento-corpo small{grid-column:1 / -1;color:var(--texto-fraco);font-size:10.5px;line-height:1.25}" +
 ".andui-traco-erro{color:var(--vermelho);font-size:12px;min-height:1.1em}" +
 ".andui-bt{min-height:30px;padding:3px 11px;border-radius:8px;border:1px solid var(--linha-forte,var(--linha));background:var(--surface);color:var(--texto);cursor:pointer;font-size:12.5px}.andui-bt:hover{border-color:var(--aco)}.andui-bt:focus-visible{outline:2px solid var(--aco);outline-offset:1px}.andui-bt.pri{background:var(--aco);color:#fff;border-color:var(--aco)}.andui-bt[disabled]{opacity:.55;cursor:not-allowed}.andui-bt.perigo{border-color:var(--vermelho);color:var(--vermelho)}" +
 ".andui-painel{position:fixed;top:56px;right:0;bottom:0;width:min(520px,100vw);z-index:70;display:flex;flex-direction:column;background:var(--surface);color:var(--texto);border-left:2px solid var(--linha);box-shadow:-6px 0 22px rgba(0,0,0,.2);font-size:13px}" +
@@ -48293,8 +48634,29 @@ s.textContent =
 ".andui-cartao{border-radius:10px;padding:12px;text-align:center;font-weight:800;font-size:15px;color:#fff;margin:6px 0}.andui-cartao.verde{background:#1f7a3d}.andui-cartao.amarelo{background:#d9a400}.andui-cartao.vermelho{background:#b3261e}.andui-cartao.nulo{background:#5b6673}" +
 ".andui-sis{border:1px solid var(--linha);border-radius:10px;padding:8px 10px;margin:8px 0}.andui-sis h3{margin:0 0 6px}.andui-form .ck{flex-direction:row;align-items:center;gap:6px}" +
 ".andui-hist{list-style:none;padding:0;margin:0;font-size:12px}.andui-hist li{border-left:3px solid var(--linha);padding:2px 0 2px 8px;margin:3px 0}" +
+".andui-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:3px;border-radius:50%;border:1px solid var(--aco);color:var(--aco);font-size:10px;line-height:1;cursor:help;vertical-align:middle;user-select:none}.andui-i:focus-visible{outline:2px solid var(--aco);outline-offset:1px}" +
+".andui-aj{display:block;color:var(--texto-fraco);font-size:10.5px;line-height:1.28;margin-top:2px;font-weight:400}.andui-aj b{font-weight:700}.andui-aviso{display:block;color:var(--vermelho);font-size:11px;line-height:1.25;margin-top:2px}[aria-invalid=true]{border-color:var(--vermelho)!important}" +
+".andui-aj-det{font-size:12px;position:relative}.andui-traco .andui-aj-det[open]>div{max-width:300px}.andui-aj-det summary{cursor:pointer;font-weight:700}.andui-aj-det div{margin:4px 0}.andui-form{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))!important}.andui-form .ck{flex-wrap:wrap}.andui-form .ck .andui-aj{flex-basis:100%}" +
+".andui-faixa{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:2px solid #b45309;border-radius:10px;padding:8px 10px;margin:10px 0}" +
+".andui-diag{border:1px solid var(--linha);border-left:5px solid var(--linha);border-radius:10px;padding:9px 11px;margin:10px 0}.andui-diag.falha{border-left-color:var(--vermelho)}.andui-diag.atencao{border-left-color:#b45309}.andui-diag.nao_verificado{border-left-color:var(--texto-fraco)}.andui-diag.ok{border-left-color:var(--verde)}" +
+".andui-diag p{margin:5px 0}.andui-diag-cab{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.andui-diag small{display:block;color:var(--texto-fraco);font-size:11.5px;margin:2px 0}.andui-diag .lin{display:grid;grid-template-columns:1fr 110px auto;gap:6px 8px;align-items:center;margin:6px 0}.andui-diag .lin .andui-aj{grid-column:1 / -1}.andui-diag .lin input:not([type=checkbox]),.andui-diag .lin select{min-height:28px;width:100%}" +
+".andui-op{border:1px solid var(--linha);border-radius:8px;padding:7px 9px;margin:6px 0}.andui-op.rec{border-color:var(--verde);background:rgba(31,157,85,.07)}.andui-op-t{margin:3px 0;font-weight:600}.andui-op .andui-bt{margin-top:5px}" +
+".andui-memo-det td{background:rgba(127,127,127,.06)}.andui-tab tr[data-memo]{cursor:pointer}.andui-tab tr[data-memo]:hover{background:rgba(127,127,127,.1)}" +
 "@media (max-width:760px){.andui-painel{top:0;width:100vw}.andui-traco{bottom:8px}}";
 d.head.appendChild(s);
+}
+var CHAVES_CAMPO = ["data-andui-cab", "data-andui-mp", "data-andui-p", "data-andui-pj", "data-andui-v", "data-andui-ip", "data-andui-ipj", "data-andui-f"];
+function idDoCampo(t) {
+if (!t || !t.getAttribute) return null;
+for (var i = 0; i < CHAVES_CAMPO.length; i++) { var v = t.getAttribute(CHAVES_CAMPO[i]); if (v) return v; }
+var a = t.getAttribute("data-andui"); return /^(altura|sistema|lado|intel)$/.test(a || "") ? a : null;
+}
+function avisoDoCampo(t, sis) {
+var id = idDoCampo(t), a = AJ(); if (!id || !a || !a.campo(id) || !t.parentNode) return;
+var msg = t.type === "checkbox" ? "" : a.validar(id, t.value, sis), host = t.parentNode, av = host.querySelector('[data-aj-aviso="' + id + '"]');
+if (!msg) { if (av) av.remove(); t.removeAttribute("aria-invalid"); return; }
+if (!av) { av = doc().createElement("small"); av.className = "andui-aviso"; av.setAttribute("data-aj-aviso", id); av.setAttribute("role", "alert"); t.parentNode.insertBefore(av, t.nextSibling); }
+av.textContent = msg; t.setAttribute("aria-invalid", "true");
 }
 function raiz() { var d = doc(); return d ? d.querySelector('[data-andui="painel"]') : null; }
 function lerDoModelo() {
@@ -48312,50 +48674,50 @@ function empresaApp() { var d = {}; try { if (global.Empresa && global.Empresa.d
 function cabDe(D) { return T().cabPreenchido(D.tela.cab, D.ap, empresaApp()); }
 var CAMPOS_RT = [["empresa", "Empresa"], ["responsavel", "Responsável técnico (nome)"], ["tituloProfissional", "Título profissional (Eng. Civil / Eng. Mecânico…)"], ["registro", "Registro CREA/CAU"], ["art", "ART nº"],
 ["proprietario", "Contratante / Proprietário"], ["obra", "Obra"], ["local", "Local"], ["andaime", "Código do andaime"], ["revisao", "Revisão"], ["data", "Data"]];
-function camposCabHtml(cab) { return CAMPOS_RT.map(function (x) { return '<label>' + x[1] + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off"></label>'; }).join(""); }
+function camposCabHtml(cab) { return CAMPOS_RT.map(function (x) { return '<label>' + x[1] + ' ' + ajI(x[0]) + '<input data-andui-cab="' + x[0] + '" value="' + esc(cab[x[0]]) + '" autocomplete="off">' + ajL(x[0]) + '</label>'; }).join(""); }
 function blocoRT(D) {
 var cab = cabDe(D);
 return '<div data-andui="bloco-rt"><h3>Responsável técnico e obra</h3><p class="andui-mut">Estes dados vão para o carimbo das pranchas e para o memorial. Campo vazio usa a aprovação do projeto e o cadastro da empresa; o que não existe fica em branco, nunca inventado.</p>' +
 '<div class="andui-form" data-andui="cab-rt">' + camposCabHtml(cab) + "</div></div>";
 }
+function dicaPend(p, sis) { return AJ() && AJ().campo(p.campo, sis) ? ajL(p.campo, sis) : "<small>" + esc(p.dica) + "</small>"; }
 function blocoPendencias(D, res) {
-var h = "";
+var h = "", sis = T().sistemaDe(D.par);
 if (D.tela.fonteV0) h += '<p class="andui-mut" data-andui="fonte-v0">V0 — fonte: ' + esc(D.tela.fonteV0) + ".</p>";
 h += '<div class="andui-rt" data-andui="pendencias-rt"><h3>Pendências do responsável técnico</h3><p class="andui-mut">O sistema não tem estes dados e não os inventa. Sem eles a verificação correspondente fica NÃO VERIFICADA (cinza) — nunca verde.</p>';
 T().pendenciasRT(D.par, res && res.calc).forEach(function (p) {
 if (p.tipo === "marca") {
-h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + "</label>";
+h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "conferido") : chipEstado("atencao", "pendente")) + " " + ajI(p.campo, sis) + "</label>";
 h += '<label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"' + (p.valor ? " checked" : "") + '> ' + esc(p.campo === "ventoParaleloRT" ? "Vento paralelo à fachada conferido pelo RT" : (p.rotuloMarca || "Conferido pelo RT")) + '</label>';
 h += '<input data-andui-pj="' + esc(p.campo) + '" placeholder="Justificativa do RT (mín. 15 caracteres)" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="Justificativa do RT: ' + esc(p.rotulo) + '">';
-h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button><small>' + esc(p.dica) + "</small></div>";
+h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>' + dicaPend(p, sis) + "</div>";
 return;
 }
 var v = p.valor == null ? "" : (p.tipo === "num" ? br(p.valor, p.campo === "telaSombreamento" ? 2 : 2) : p.valor);
-h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + "</label>";
+h += '<div class="lin" data-andui-pend="' + esc(p.campo) + '"><label for="andp-' + esc(p.campo) + '">' + esc(p.rotulo) + " " + (p.informado ? chipEstado("ok", "informado") : chipEstado("atencao", p.valor != null && !p.confirmado ? "confirmar" : "pendente")) + " " + ajI(p.campo, sis) + "</label>";
 if (p.tipo === "sel") h += '<select id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '"><option value="">—</option>' + p.ops.map(function (o) { return '<option value="' + o + '"' + (String(p.valor) === o ? " selected" : "") + ">" + o + "</option>"; }).join("") + "</select>";
 else h += '<input id="andp-' + esc(p.campo) + '" data-andui-p="' + esc(p.campo) + '" inputmode="decimal" value="' + esc(v) + '" autocomplete="off">';
 h += '<button type="button" class="andui-bt" data-andui-acao="pend-aplicar" data-campo="' + esc(p.campo) + '">Aplicar</button>';
 if (p.confirma) h += '<small><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" data-andui-pc="' + esc(p.campo) + '"' + (p.confirmado ? " checked" : "") + '> Confirmo como RT (preciso confirmar para a verificação contar)</label></small>';
-h += "<small>" + esc(p.dica) + "</small></div>";
+h += dicaPend(p, sis) + "</div>";
 });
 h += "</div>";
 return h;
 }
 function blocoSistema(D) {
 var cur = T().sistemaDe(D.par), multi = cur !== "tuboroll", h = '<div class="andui-sis" data-andui="sistema-bloco"><h3>Sistema do andaime</h3>';
-h += '<div class="andui-form"><label>Sistema<select data-andui-f="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select></label></div>";
+h += '<div class="andui-form"><label>Sistema ' + ajI("sistema", cur) + '<select data-andui-f="sistema" aria-label="Sistema do andaime">' + ["tuboroll", "multi-roseta", "multi-estribo"].map(function (k) { return '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + esc(T().ROT_SISTEMA[k]) + "</option>"; }).join("") + "</select>" + ajL("sistema", cur) + "</label></div>";
 h += '<p><button type="button" class="andui-bt" data-andui-acao="sistema-trocar">Trocar o sistema</button> <span class="andui-mut">Refaz o andaime no lugar com o mesmo traçado e a mesma altura; os parâmetros voltam ao padrão do sistema novo e a aprovação volta para «em revisão».</span></p>';
 if (multi) {
 h += '<h3 style="margin-top:10px">Parâmetros do multidirecional</h3><div class="andui-form" data-andui="param-multi">';
 T().PARAMETROS_MULTI.forEach(function (d) {
 var v = D.par[d.id], id = 'andmp-' + d.id;
-if (d.tipo === "check") h += '<label class="ck" for="' + id + '"><input type="checkbox" id="' + id + '" data-andui-mp="' + d.id + '"' + (v === false || v === "false" ? "" : " checked") + "> " + esc(d.rotulo) + "</label>";
-else if (d.id === "larguraModulo") h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + T().largurasDaLinha(D.par.linha).map(function (w) { return '<option value="' + w + '"' + (Math.abs(num(v, 0) - w) < 1e-6 ? " selected" : "") + ">" + br(w, 2) + " m</option>"; }).join("") + "</select></label>";
-else if (d.tipo === "sel") { var cv = d.id === "pisos" ? (String(v) === "todos" ? "todos" : "topo") : String(v); h += '<label>' + esc(d.rotulo) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + d.ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cv ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select></label>"; }
-else h += '<label>' + esc(d.rotulo) + '<input id="' + id + '" data-andui-mp="' + d.id + '" inputmode="decimal" value="' + esc(br(v, d.int ? 0 : 2)) + '" autocomplete="off"></label>';
+if (d.tipo === "check") h += '<label class="ck" for="' + id + '"><input type="checkbox" id="' + id + '" data-andui-mp="' + d.id + '"' + (v === false || v === "false" ? "" : " checked") + "> " + esc(d.rotulo) + " " + ajI(d.id, cur) + ajL(d.id, cur) + "</label>";
+else if (d.id === "larguraModulo") h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + T().largurasDaLinha(D.par.linha).map(function (w) { return '<option value="' + w + '"' + (Math.abs(num(v, 0) - w) < 1e-6 ? " selected" : "") + ">" + br(w, 2) + " m</option>"; }).join("") + "</select>" + ajL(d.id, cur) + "</label>";
+else if (d.tipo === "sel") { var cv = d.id === "pisos" ? (String(v) === "todos" ? "todos" : "topo") : String(v); h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<select id="' + id + '" data-andui-mp="' + d.id + '">' + d.ops.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cv ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select>" + ajL(d.id, cur) + "</label>"; }
+else h += '<label>' + esc(d.rotulo) + ' ' + ajI(d.id, cur) + '<input id="' + id + '" data-andui-mp="' + d.id + '" inputmode="decimal" value="' + esc(br(v, d.int ? 0 : 2)) + '" autocomplete="off">' + ajL(d.id, cur) + '</label>';
 });
 h += '</div><p><button type="button" class="andui-bt pri" data-andui-acao="multi-aplicar">Aplicar os parâmetros</button> <span class="andui-mut">Guarda-corpo do multidirecional: travessão a 1,00 m e intermediário a 0,50 m (NR-18 18.12.15.2). A altura se muda em «Altura a vencer».</span></p>';
-h += '<ul class="andui-mut">' + T().PARAMETROS_MULTI.map(function (d) { return "<li><b>" + esc(d.rotulo.split(" — ")[0]) + ":</b> " + esc(d.dica) + "</li>"; }).join("") + "</ul>";
 }
 return h + "</div>";
 }
@@ -48366,7 +48728,7 @@ h += "<h3>Situação</h3>";
 h += '<p>' + (passou ? chipEstado(nN || nA ? "atencao" : "ok", nN || nA ? "passou, com pendências" : "passou em tudo") : chipEstado("falha", "NÃO passou")) + " <span class=\"andui-mut\">" + (nF ? nF + " verificação(ões) reprovada(s). " : "") + (nA ? nA + " em atenção. " : "") + (nN ? nN + " não verificada(s) por falta de dado do RT." : "") + "</span></p>";
 h += '<p class="andui-mut" data-andui="aviso-calculo">' + esc(c.resumo || "") + "</p>";
 h += '<div class="andui-med">' + [["Comprimento", br(M.comprimento) + " m"], ["Largura", br(M.largura) + " m"], ["Piso mais alto", br(M.alturaPiso) + " m"], ["Vãos × levantes", M.nVaos + " × " + M.nLevantes], ["Pisos de trabalho", M.nPisos], [res.modelo.sistema === "multidirecional" ? "Postes" : "Prumadas", res.modelo.sistema === "multidirecional" ? M.nPostes : M.nMontantes], ["Ancoragens", M.nAncoragens], ["Área de piso", br(M.areaPiso != null ? M.areaPiso : M.areaForrada) + " m²"], ["Peso do conjunto", br(M.pesoTotal, 0) + " kg"], ["Tubos", M.nTubos], ["Conexões", M.nConexoesTotal], ["Tela", br(res.modelo.tela ? res.modelo.tela.area : 0) + " m²"]].map(function (x) { return "<div><small>" + esc(x[0]) + "</small><b>" + esc(x[1]) + "</b></div>"; }).join("") + "</div>";
-h += "<h3>Altura a vencer</h3>" + '<div class="andui-form"><label>Altura do piso de trabalho (m)<input data-andui-f="altura" inputmode="decimal" value="' + esc(br(D.par.altura, 2)) + '"></label></div>' +
+h += "<h3>Altura a vencer</h3>" + '<div class="andui-form"><label>Altura do piso de trabalho (m) ' + ajI("altura", T().sistemaDe(D.par)) + '<input data-andui-f="altura" inputmode="decimal" value="' + esc(br(D.par.altura, 2)) + '">' + ajL("altura", T().sistemaDe(D.par)) + '</label></div>' +
 '<p><button type="button" class="andui-bt pri" data-andui-acao="altura-aplicar">Aplicar a altura</button> <button type="button" class="andui-bt" data-andui-acao="reinteligente" title="Roda de novo o gerador que corrige o andaime e lista o que mudou">Refazer com Montar inteligente</button> <button type="button" class="andui-bt" data-andui-acao="param-dialogo">Parâmetros avançados…</button></p>' +
 '<p class="andui-mut">Mudar a altura (ou qualquer parâmetro) refaz o andaime no lugar. Aprovado/liberado volta para «em revisão» com o cartão vermelho.</p>';
 var mud = arr(D.tela.mudancas);
@@ -48383,15 +48745,104 @@ h += blocoPendencias(D, res);
 if (arr(res.pendenciasTexto).length) h += '<h3>Hipóteses em uso</h3><ul class="andui-mut">' + res.pendenciasTexto.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>";
 return h;
 }
+var _diagCache = { k: null, v: null };
+function diagnosticoDe(D, res) { var k = JSON.stringify(D.par); if (_diagCache.k === k) return _diagCache.v; var v = T().diagnostico(D.par, res.calc); _diagCache.k = k; _diagCache.v = v; return v; }
+function sisDe(D) { return T().sistemaDe(D.par); }
+function campoInlineHtml(p, sis, vid) {
+var id = esc(p.campo), h = '<div class="lin" data-andui-il="' + id + '"><label>' + esc(p.rotulo) + " " + ajI(p.campo, sis) + "</label>";
+if (p.tipo === "marca") {
+h += '<label class="ck"><input type="checkbox" data-andui-ip="' + id + '"' + (p.valor ? " checked" : "") + "> " + esc(p.rotuloMarca || tx("confirmoRT")) + "</label>";
+h += '<input data-andui-ipj="' + id + '" placeholder="' + esc(tx("justificativa")) + '" value="' + esc(p.justificativa || "") + '" autocomplete="off" aria-label="' + esc(tx("justificativa")) + '">';
+} else if (p.tipo === "sel") {
+h += '<select data-andui-ip="' + id + '" aria-label="' + esc(p.rotulo) + '"><option value="">—</option>' + arr(p.ops).map(function (o) { return '<option value="' + esc(o) + '"' + (String(p.valor) === o ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") + "</select>";
+} else h += '<input data-andui-ip="' + id + '" inputmode="decimal" value="' + esc(p.valor == null ? "" : br(p.valor, 2)) + '" autocomplete="off" aria-label="' + esc(p.rotulo) + '">';
+if (p.confirma) h += '<label class="ck"><input type="checkbox" data-andui-ipc="' + id + '"' + (p.confirmado ? " checked" : "") + "> " + esc(tx("confirmoRT")) + "</label>";
+h += '<button type="button" class="andui-bt pri" data-andui-acao="inline-recalcular" data-campo="' + id + '" data-vid="' + esc(vid) + '">' + esc(tx("recalcular")) + "</button>" + ajL(p.campo, sis) + "</div>";
+return h;
+}
+function cartaoHtml(c, sis) {
+var A = AJ(), h = '<div class="andui-diag ' + esc(c.estado) + '" data-andui-card="' + esc(c.vid) + '">';
+h += '<div class="andui-diag-cab"><b>' + esc(c.titulo) + "</b> " + chipEstado(c.estado) + (c.usoTxt && c.usoTxt !== "—" ? ' <span class="andui-mut">uso ' + esc(c.usoTxt) + "</span>" : "") + "</div>";
+if (c.oQueE) h += '<p class="andui-diag-o" data-andui="o-que-e"><b>' + esc(tx("oQueE")) + ":</b> " + esc(c.oQueE) + "</p>";
+h += '<p class="andui-diag-c" data-andui="causa"><b>' + esc(tx(c.estado === "nao_verificado" ? "falta" : (c.estado === "atencao" ? "porqueAtencao" : "porque"))) + ":</b> " + esc(c.causa) + "</p>";
+if (c.opcoes.length) {
+h += '<p class="andui-diag-t"><b>' + esc(tx("comoResolver")) + ":</b></p>";
+c.opcoes.forEach(function (o, i) {
+h += '<div class="andui-op' + (o.id === c.recomendada ? " rec" : "") + '" data-andui-op="' + esc(o.id) + '"><div><b>' + esc(tx("opcao")) + " " + (i + 1) + "</b>" + (o.id === c.recomendada ? ' <span class="andui-chip ok">' + esc(tx("recomendada")) + "</span>" : "") + "</div>" +
+'<div class="andui-op-t">' + esc(o.texto) + "</div>" + (o.conjunto ? "<small>" + esc(tx("conjunto")) + "</small>" : "") +
+'<small data-andui="op-muda"><b>' + esc(tx("oQueMuda")) + ":</b> " + esc(o.delta) + "</small>" +
+'<small data-andui="op-previsto"><b>' + esc(tx("resultadoPrevisto")) + ":</b> " + esc(A.textoPrevisto(o.previsto)) + "</small>" +
+'<button type="button" class="andui-bt pri" data-andui-acao="corrigir-opcao" data-vid="' + esc(c.vid) + '" data-op="' + esc(o.id) + '">' + esc(tx("corrigir")) + "</button></div>";
+});
+} else if (c.estado !== "nao_verificado") h += '<p class="andui-mut" data-andui="sem-opcao">' + esc(tx("semOpcao")) + "</p>";
+if (c.decisaoRT.length) h += '<div class="andui-mut"><b>' + esc(tx("soRT")) + ":</b><ul>" + c.decisaoRT.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>";
+if (c.dados.length) h += '<p class="andui-diag-t"><b>' + esc(tx("dadoInline")) + ":</b></p>" + c.dados.map(function (p) { return campoInlineHtml(p, sis, c.vid); }).join("");
+if (c.semCampo) h += '<p class="andui-mut" data-andui="sem-campo">' + esc(c.semCampo) + "</p>";
+if (c.pecas.length) h += '<p><button type="button" class="andui-bt" data-andui-acao="mostrar-vid" data-vid="' + esc(c.vid) + '">' + esc(tx("mostrar3d")) + "</button></p>";
+return h + "</div>";
+}
+function faixaHtml(dg) {
+if (!dg.n) return '<p class="andui-msg ok" data-andui="faixa-problemas">' + esc(tx("faixaZero")) + "</p>";
+var c = dg.cont;
+return '<div class="andui-faixa" data-andui="faixa-problemas"><b>' + dg.n + " " + esc(tx("faixaTitulo")) + '</b> <span class="andui-mut">(' + c.falha + " não passam · " + c.atencao + " em atenção · " + c.nao_verificado + " sem dado)</span>" +
+(dg.nCorrigivel ? ' <button type="button" class="andui-bt pri" data-andui-acao="corrigir-tudo">' + esc(tx("corrigirTudo")) + "</button>" : "") + "</div>";
+}
+function restanteHtml(rest) {
+if (!rest || !rest.length) return "";
+return '<div data-andui="restante"><b>' + esc(tx("mesmoCorrigindo")) + ":</b><ul>" + rest.map(function (r) { return "<li><b>" + esc(r.titulo) + ":</b> " + esc(r.causa) + (arr(r.decisaoRT).length ? " <i>" + esc(tx("soRT")) + ": " + esc(r.decisaoRT[0]) + "</i>" : "") + "</li>"; }).join("") + "</ul></div>";
+}
+function previaTudoHtml(pv) {
+if (!pv) return "";
+if (!pv.ok) return '<div class="andui-msg erro" role="alert" data-andui="previa-tudo">' + esc(pv.erro) + "</div>";
+var h = '<div class="andui-msg" data-andui="previa-tudo" role="region"><b>' + esc(tx("deseja")) + ":</b>";
+if (pv.semMudancas) h += "<p>" + esc(tx("nadaMudar")) + "</p>";
+else h += "<ul>" + pv.mudancas.map(function (m) { return "<li><b>" + esc(m.txt) + "</b><br><small>" + esc(m.motivo) + "</small></li>"; }).join("") + "</ul><small>" + esc(tx("oQueMuda")) + ": " + esc(pv.delta) + " · verificações que não passam: " + pv.falhasAntes + " → " + pv.falhasDepois + ".</small>";
+h += restanteHtml(pv.restante) + "<p>" + (pv.semMudancas ? "" : '<button type="button" class="andui-bt pri" data-andui-acao="corrigir-tudo-aplicar">' + esc(tx("aplicar")) + "</button> ") + '<button type="button" class="andui-bt" data-andui-acao="corrigir-tudo-cancelar">' + esc(tx("cancelar")) + "</button></p></div>";
+return h;
+}
+function fechamentoHtml(f, D) {
+if (!f) return "";
+var lista = arr(D.tela.mudancas), itens = arr(f.ids).map(function (id) { return lista.filter(function (x) { return x.id === id; })[0]; }).filter(Boolean);
+return '<div class="andui-msg ' + (f.passou ? "ok" : "erro") + '" data-andui="fechamento-tudo" role="status"><b>Corrigido: ' + itens.length + " mudança(s).</b>" +
+itens.map(function (m) { return '<div class="andui-mud' + (m.desfeita ? " desfeita" : "") + '" data-andui-mud-tudo="' + esc(m.id) + '"><div><b>' + esc(m.texto) + "</b><small>" + esc(m.motivo) + "</small></div>" + (m.desfeita ? '<span class="andui-mut">desfeita</span>' : '<button type="button" class="andui-bt" data-andui-acao="desfazer" data-k="' + esc(m.id) + '">' + esc(tx("desfazer")) + "</button>") + "</div>"; }).join("") + restanteHtml(f.restante) + "</div>";
+}
+function corrigidoHtml(u, D) {
+if (!u) return "";
+var lista = arr(D.tela.mudancas), ativos = arr(u.ids).filter(function (id) { return lista.some(function (x) { return x.id === id && !x.desfeita; }); });
+return '<div class="andui-msg ok" data-andui="corrigido" role="status">' + esc(u.txt) + (ativos.length ? ' <button type="button" class="andui-bt" data-andui-acao="desfazer-grupo" data-ids="' + esc(ativos.join(",")) + '">' + esc(tx("desfazer")) + "</button>" : "") + "</div>";
+}
+function blocoDiagnostico(D, res, dg) {
+var S = P || {}, sis = sisDe(D);
+return corrigidoHtml(S.ultCorrecao, D) + fechamentoHtml(S.fechamentoTudo, D) + previaTudoHtml(S.previaTudo) + faixaHtml(dg) +
+(dg.itens.length ? '<div data-andui="diagnostico">' + dg.itens.map(function (c) { return cartaoHtml(c, sis); }).join("") + "</div>" : "");
+}
 function abaCalculo(D, res) {
-var ver = T().verificacoes(res.calc), probs = T().problemas(res.calc), h = "";
+var ver = T().verificacoes(res.calc), dg = diagnosticoDe(D, res), h = "";
 h += '<p class="andui-mut">Clique numa linha para ver as peças no 3D. Uso = solicitante ÷ resistente (1,00 é o limite).</p>';
 h += '<table class="andui-tab" data-andui="verificacoes"><thead><tr><th>Verificação</th><th class="n">Uso</th><th>Estado</th></tr></thead><tbody>' +
 ver.map(function (v) { return '<tr data-vid="' + esc(v.id) + '" tabindex="0" title="Mostrar no 3D"><td>' + esc(v.titulo) + '</td><td class="n">' + esc(v.usoTxt) + "</td><td>" + chipEstado(v.estado) + "</td></tr>"; }).join("") + "</tbody></table>";
-if (probs.length && global.ProblemaCard) h += "<h3>O que não passa</h3>" + global.ProblemaCard.lista(probs, { acoes: function (sol) { return sol.texto ? true : false; }, mostrar: true });
-else if (!probs.length) h += '<p class="andui-mut">Nenhuma verificação reprovada ou em atenção.</p>';
+h += blocoDiagnostico(D, res, dg);
 var nao = arr(res.calc.naoVerificado); if (nao.length) h += "<h3>Não verificado</h3><ul class=\"andui-mut\">" + nao.slice(0, 12).map(function (t) { return "<li>" + esc(typeof t === "string" ? t : (t.texto || t.titulo || JSON.stringify(t))) + "</li>"; }).join("") + "</ul>";
 h += blocoPendencias(D, res);
+return h;
+}
+function abaMemorial(D, res) {
+var S = P || {}, sis = sisDe(D), dg = diagnosticoDe(D, res), rows = T().memorial(res.calc), aberto = S.memoAbertas || {}, A = AJ(), h = "";
+var porVid = {}; dg.itens.forEach(function (c) { porVid[c.vid] = c; });
+h += '<div data-andui="memorial"><h3>' + esc(tx("memorialTitulo")) + "</h3>";
+h += '<p class="andui-mut" data-andui="memorial-aviso">' + esc(tx("memorialAviso")) + " " + esc(tx("memorialAbrir")) + "</p>";
+h += '<p class="andui-mut" data-andui="memorial-resumo">' + esc(res.calc.resumo || "") + "</p>";
+h += blocoDiagnostico(D, res, dg);
+h += '<p><button type="button" class="andui-bt" data-andui-acao="memo-recalcular">' + esc(tx("memorialRecalcular")) + "</button></p>";
+h += '<table class="andui-tab" data-andui="memorial-tab"><thead><tr><th>' + esc(tx("cabVerificacao")) + "</th><th>" + esc(tx("cabSolicitante")) + "</th><th>" + esc(tx("cabResistente")) + '</th><th class="n">' + esc(tx("cabUso")) + "</th><th>" + esc(tx("cabEstado")) + "</th></tr></thead><tbody>" +
+rows.map(function (r) {
+var ab = !!aberto[r.vid], c = porVid[r.vid], det = "";
+if (ab) {
+det = '<tr class="andui-memo-det" data-andui-memo-det="' + esc(r.vid) + '"><td colspan="5">' + (c ? cartaoHtml(c, sis) :
+'<div class="andui-diag ok" data-andui-card="' + esc(r.vid) + '"><p class="andui-diag-o"><b>' + esc(tx("oQueE")) + ":</b> " + esc(A.explicacao(r.vid)) + "</p>" + (r.texto ? "<p>" + esc(r.texto) + "</p>" : "") + (r.formula ? '<p class="andui-mut">' + esc(r.formula) + "</p>" : "") + (r.fonte ? '<p class="andui-mut">' + esc(r.fonte) + "</p>" : "") + "</div>") + "</td></tr>";
+}
+return '<tr data-memo="' + esc(r.vid) + '" tabindex="0" aria-expanded="' + (ab ? "true" : "false") + '"><td>' + (ab ? "▾ " : "▸ ") + esc(r.titulo) + "</td><td>" + esc(r.solicitante) + "</td><td>" + esc(r.resistente) + '</td><td class="n">' + esc(r.usoTxt) + "</td><td>" + chipEstado(r.estado) + "</td></tr>" + det;
+}).join("") + "</tbody></table></div>";
 return h;
 }
 function abaSimulacao(D, res) {
@@ -48405,7 +48856,7 @@ return h;
 function abaLocacao(D, res) {
 var cab = cabDe(D), lista = AD().listaLocacao(res.modelo, cab), h = "";
 h += '<div class="andui-form" data-andui="cab">' + camposCabHtml(cab) +
-'<label>Reserva (% a mais)<input data-andui-cab="reserva" inputmode="decimal" value="' + esc(cab.reserva) + '"></label></div>';
+'<label>Reserva (% a mais) ' + ajI("reserva") + '<input data-andui-cab="reserva" inputmode="decimal" value="' + esc(cab.reserva) + '">' + ajL("reserva") + '</label></div>';
 h += '<p><button type="button" class="andui-bt pri" data-andui-acao="xlsx">Baixar a lista (.xlsx)</button></p>';
 if (!lista.ok) return h + "<p>" + esc(lista.motivo) + "</p>";
 var res0 = lista.reserva > 0;
@@ -48465,7 +48916,7 @@ return h;
 }
 function abaDocumentos(D, res) {
 var P1 = global.AndaimePranchas && typeof global.AndaimePranchas.gerar === "function", M1 = global.AndaimeMemorial && typeof global.AndaimeMemorial.gerar === "function";
-var h = blocoRT(D) + '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>';
+var h = blocoRT(D) + '<p class="andui-mut">Os documentos saem do MESMO modelo do 3D e da lista de locação — nunca um segundo cálculo de quantidade.</p>' + abaMemorial(D, res);
 h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-pranchas"' + (P1 ? "" : ' disabled aria-disabled="true"') + ">Gerar pranchas executivas</button> " + (P1 ? "" : '<span class="andui-mut" data-andui="pranchas-prep">em preparação</span>') + "</p>";
 h += '<p><button type="button" class="andui-bt pri" data-andui-acao="doc-memorial"' + (M1 ? "" : ' disabled aria-disabled="true"') + ">Memorial</button> " + (M1 ? "" : '<span class="andui-mut" data-andui="memorial-prep">em preparação</span>') + "</p>";
 h += '<p><button type="button" class="andui-bt" data-andui-acao="xlsx">Lista de locação (.xlsx)</button> <button type="button" class="andui-bt" data-andui-acao="imprimir-cartao">Cartão do andaime (A5)</button></p>';
@@ -48476,7 +48927,7 @@ var r0 = raiz(); if (!r0 || !P) return;
 var D = lerDoModelo();
 if (!D) { r0.querySelector('[data-andui="corpo"]').innerHTML = '<p>O andaime não está mais no modelo.</p>'; return; }
 var res = resultadoDe(D.par);
-P.res = res;
+P.res = res; P.sis = T().sistemaDe(D.par);
 var corpo = r0.querySelector('[data-andui="corpo"]'), top = corpo.scrollTop, h = "";
 P.form = P.form || {}; [].forEach.call(corpo.querySelectorAll("[data-andui-f]"), function (e) { var k = e.getAttribute("data-andui-f"); if (k !== "altura" && String(e.value) !== "") P.form[k] = e.value; });
 var tt = r0.querySelector('[data-andui="titulo"]'); if (tt) tt.textContent = "Andaime " + (D.par.sistema === "multidirecional" ? "multidirecional (" + (D.par.linha === "estribo" ? "estribo" : "roseta") + ")" : "tubo-roll");
@@ -48487,6 +48938,7 @@ var f = { resumo: abaResumo, calculo: abaCalculo, simulacao: abaSimulacao, locac
 corpo.innerHTML = msgHtml() + f(D, res);
 [].forEach.call(corpo.querySelectorAll("[data-andui-f]"), function (e) { var k = e.getAttribute("data-andui-f"); if (k !== "altura" && P.form[k] != null && String(e.value) === "") e.value = P.form[k]; });
 corpo.scrollTop = top;
+[].forEach.call(corpo.querySelectorAll("input,select,textarea"), function (e) { if (e.type !== "checkbox" && String(e.value) !== "" && idDoCampo(e)) avisoDoCampo(e, P.sis); });
 if (global.ProblemaCard && corpo.querySelector('[data-pc="lista"]')) global.ProblemaCard.ligar(corpo, { corrigir: function (solId, k) { AndaimeUI.corrigir(k, solId); }, mostrar: function (ids) { AndaimeUI.mostrarIds(ids); } });
 atualizarPintura(D, res);
 }
@@ -48525,10 +48977,10 @@ P.form = {}; if (q) P.form.quem = q;
 persistirAp(D, r.ap, { enviar: "Enviado para revisão.", aprovar: "Projeto aprovado.", liberar: "Andaime liberado.", restringir: "Cartão amarelo.", interditar: "Andaime interditado (cartão vermelho).", corrigido: "Correção registrada: reinspecione e aprove de novo.", reabrir: "Projeto reaberto para revisão.", solucao: "Solução do RT registrada." }[qual]);
 }
 function cliquePainel(ev) {
-var t = ev.target, el = t && t.closest ? t.closest("[data-andui-acao],[data-andui-aba],tr[data-vid]") : null; if (!el || !P) return;
+var t = ev.target, el = t && t.closest ? t.closest("[data-andui-acao],[data-andui-aba],tr[data-vid],tr[data-memo]") : null; if (!el || !P) return;
 var aba = el.getAttribute("data-andui-aba");
 if (aba) { AndaimeUI.aba(aba); return; }
-if (el.tagName === "TR") { AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid")); return; }
+if (el.tagName === "TR") { if (el.getAttribute("data-memo")) AndaimeUI.abrirLinha(el.getAttribute("data-memo")); else AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid")); return; }
 var a = el.getAttribute("data-andui-acao"), D = lerDoModelo();
 if (a === "fechar-painel") { AndaimeUI.fecharPainel(); return; }
 if (a === "pranchas-exec") { AndaimeUI.pranchasExecutivas(); return; }
@@ -48540,6 +48992,14 @@ else if (a === "param-dialogo") AndaimeUI.parametrosAvancados();
 else if (a === "sistema-trocar") { var ss = raiz().querySelector('[data-andui-f="sistema"]'); AndaimeUI.trocarSistema(ss ? ss.value : "tuboroll"); }
 else if (a === "multi-aplicar") { var vv = {}; [].forEach.call(raiz().querySelectorAll("[data-andui-mp]"), function (e) { vv[e.getAttribute("data-andui-mp")] = e.type === "checkbox" ? !!e.checked : e.value; }); AndaimeUI.aplicarParametrosMulti(vv); }
 else if (a === "pend-aplicar") { var c = el.getAttribute("data-campo"), r0 = raiz(), inp = r0.querySelector('[data-andui-p="' + c + '"]'), ck = r0.querySelector('[data-andui-pc="' + c + '"]'), jj = r0.querySelector('[data-andui-pj="' + c + '"]'); if (inp && inp.type === "checkbox") AndaimeUI.informar(c, inp.checked ? "true" : "", false, jj ? jj.value : ""); else AndaimeUI.informar(c, inp ? inp.value : "", ck ? !!ck.checked : false); }
+else if (a === "corrigir-opcao") AndaimeUI.corrigirOpcao(el.getAttribute("data-vid"), el.getAttribute("data-op"));
+else if (a === "corrigir-tudo") AndaimeUI.corrigirTudoPrevia();
+else if (a === "corrigir-tudo-aplicar") AndaimeUI.corrigirTudoAplicar();
+else if (a === "corrigir-tudo-cancelar") AndaimeUI.corrigirTudoCancelar();
+else if (a === "desfazer-grupo") AndaimeUI.desfazerVarios(String(el.getAttribute("data-ids") || "").split(",").filter(Boolean));
+else if (a === "mostrar-vid") AndaimeUI.mostrarVerificacao(el.getAttribute("data-vid"));
+else if (a === "memo-recalcular") AndaimeUI.recalcularTudo();
+else if (a === "inline-recalcular") { var cI = el.getAttribute("data-campo"), vI = el.getAttribute("data-vid"), bx = el.closest("[data-andui-il]"), iI = bx && bx.querySelector('[data-andui-ip="' + cI + '"]'), kI = bx && bx.querySelector('[data-andui-ipc="' + cI + '"]'), jI = bx && bx.querySelector('[data-andui-ipj="' + cI + '"]'); if (iI && iI.type === "checkbox") AndaimeUI.informarDoCartao(vI, cI, iI.checked ? "true" : "", false, jI ? jI.value : ""); else AndaimeUI.informarDoCartao(vI, cI, iI ? iI.value : "", kI ? !!kI.checked : false); }
 else if (a === "sim-toggle") { P.sim = !P.sim; limparGrupo("andaime-destaque"); renderizar(); }
 else if (a === "xlsx") AndaimeUI.exportarXlsx();
 else if (a === "chk") { var id = el.getAttribute("data-id"), ob = raiz().querySelector('[data-andui-obs="' + id + '"]'); AndaimeUI.responder(id, el.getAttribute("data-r"), ob ? ob.value : ""); }
@@ -48562,6 +49022,7 @@ tituloProfissional: cab.tituloProfissional, empresa: cab.empresa, proprietario: 
 }
 function avisoRT(cab) { return (!String(cab.responsavel || "").trim() || !String(cab.registro || "").trim()) ? "Responsável técnico / CREA em branco no carimbo — preencha em Documentos" : ""; }
 var AndaimeUI = {
+_cartaoHtml: cartaoHtml, _faixaHtml: faixaHtml, _previaTudoHtml: previaTudoHtml, _abaCalculo: abaCalculo, _abaMemorial: abaMemorial, _abaResumo: abaResumo, _tracoHtml: tracoHtml, _camposDe: camposDe, _diagnosticoDe: diagnosticoDe, _avisoDoCampo: avisoDoCampo, _idDoCampo: idDoCampo,
 _blocoRT: blocoRT, _blocoSistema: blocoSistema, _blocoPendencias: blocoPendencias, _abaLocacao: abaLocacao, _opcoesDocumento: opcoesDocumento, _avisoRT: avisoRT, _cabDe: cabDe,
 MODO: MODO, COMANDOS: COMANDOS, COMANDOS_MULTI: COMANDOS_MULTI, ultimaPrevia: null,
 ids: function () { return COMANDOS.map(function (c) { return c.id; }); },
@@ -48664,7 +49125,7 @@ r0.innerHTML = '<div class="andui-cab"><div><b data-andui="titulo">Andaime tubo-
 '<div class="andui-abas" role="tablist">' + ABAS.map(function (a) { return '<button type="button" role="tab" class="andui-aba" data-andui-aba="' + a[0] + '" aria-selected="false">' + a[1] + "</button>"; }).join("") + "</div>" +
 '<div class="andui-corpo" data-andui="corpo" role="tabpanel"></div>';
 d.body.appendChild(r0);
-r0.addEventListener("click", cliquePainel); r0.addEventListener("change", mudancaPainel);
+r0.addEventListener("click", cliquePainel); r0.addEventListener("change", mudancaPainel); r0.addEventListener("input", function (ev) { avisoDoCampo(ev.target, P ? P.sis : null); });
 r0.addEventListener("keydown", function (e) { if (e.key === "Escape") { e.stopPropagation(); AndaimeUI.fecharPainel(); } if ((e.key === "Enter") && e.target && e.target.tagName === "TR") { cliquePainel({ target: e.target }); } });
 }
 this._sanearCopias();
@@ -48673,7 +49134,7 @@ renderizar(); return true;
 fecharPainel: function () { var r0 = raiz(); if (r0) r0.remove(); limparGrupo("andaime-simulacao"); limparGrupo("andaime-destaque"); P = null; return true; },
 painelAberto: function () { return !!(P && raiz()); },
 estado: function () { return P ? { gid: P.gid, aba: P.aba, sim: P.sim, quem: P.quem, passou: P.res ? P.res.passou : null, pintura: P.ultPintura || null, msg: P.msg } : null; },
-aba: function (nome) { if (!P) return false; P.aba = nome; P.msg = null; if (nome !== "simulacao") P.sim = false; limparGrupo("andaime-destaque"); renderizar(); return true; },
+aba: function (nome) { if (!P) return false; P.aba = nome; P.msg = null; P.previaTudo = null; P.ultCorrecao = null; P.fechamentoTudo = null; if (nome !== "simulacao") P.sim = false; limparGrupo("andaime-destaque"); renderizar(); return true; },
 gidAtual: function () { return P ? P.gid : null; },
 andaimes: andaimes,
 parAtual: function () { var D = lerDoModelo(); return D ? D.par : null; },
@@ -48726,6 +49187,54 @@ difs.forEach(function (x, i) { l.push({ id: "m" + (base + i), campo: x.campo, de
 inf.andaimeTela.mudancas = l;
 });
 renderizar(); return ok;
+},
+corrigirOpcao: function (vid, opId) {
+var D = lerDoModelo(); if (!D || !P || !P.res || !P.res.ok) return false;
+var dg = diagnosticoDe(D, P.res), card = dg.itens.filter(function (c) { return c.vid === vid; })[0], op = card ? card.opcoes.filter(function (o) { return o.id === opId; })[0] : null;
+if (!op) { dizer("Esta correção não existe mais: o cálculo mudou. Veja as opções de novo.", true); renderizar(); return false; }
+var base = arr(D.tela.mudancas).length, novas = op.campos.map(function (x, i) { return { id: "m" + (base + i), campo: x.campo, de: x.de, para: x.para, motivo: "Corrigir — " + card.titulo, passos: 1, desfeita: false, texto: x.txt }; });
+var ok = aplicarPar(D, op.par, "Correção aplicada: " + op.texto + ".", function (inf) { inf.andaimeTela = inf.andaimeTela || {}; inf.andaimeTela.mudancas = arr(inf.andaimeTela.mudancas).concat(novas); });
+if (ok) {
+var D2 = lerDoModelo(), r2 = D2 ? resultadoDe(D2.par) : null, v2 = r2 && r2.ok ? arr(r2.calc.verificacoes).filter(function (x) { return x.id === vid; })[0] : null;
+P.ultCorrecao = { vid: vid, ids: novas.map(function (m) { return m.id; }), txt: AJ().textoCorrigido(card.titulo, card.uso, v2 ? v2.uso : null, v2 ? v2.estado : null) }; P.previaTudo = null; P.msg = null;
+}
+renderizar(); return ok;
+},
+corrigirTudoPrevia: function () { var D = lerDoModelo(); if (!D || !P) return false; var pv = T().corrigirTudoPrevia(D.par); P.previaTudo = pv; P.ultCorrecao = null; P.fechamentoTudo = null; P.msg = null; renderizar(); return pv; },
+corrigirTudoCancelar: function () { if (!P) return false; P.previaTudo = null; renderizar(); return true; },
+corrigirTudoAplicar: function () {
+var D = lerDoModelo(); if (!D || !P) return false;
+var pv = T().corrigirTudoPrevia(D.par); if (!pv.ok) { dizer(pv.erro, true); renderizar(); return false; }
+if (pv.semMudancas) { P.previaTudo = null; dizer(tx("nadaMudar"), true); renderizar(); return false; }
+var base = arr(D.tela.mudancas).length, novas = pv.mudancas.map(function (m, i) { return { id: "m" + (base + i), campo: m.campo, de: m.de, para: m.para, motivo: "Corrigir tudo — " + m.motivo, passos: 1, desfeita: false, texto: m.txt }; });
+var ok = aplicarPar(D, pv.par, "Corrigir tudo: " + novas.length + " mudança(s) aplicada(s).", function (inf) { inf.andaimeTela = inf.andaimeTela || {}; inf.andaimeTela.mudancas = arr(inf.andaimeTela.mudancas).concat(novas); });
+if (ok) { P.fechamentoTudo = { ids: novas.map(function (m) { return m.id; }), restante: pv.restante, passou: pv.passou }; P.previaTudo = null; P.ultCorrecao = null; P.msg = null; }
+renderizar(); return ok;
+},
+desfazerVarios: function (ids) {
+var D = lerDoModelo(); if (!D) return false;
+var lista = arr(D.tela.mudancas), ms = arr(ids).map(function (id) { return lista.filter(function (x) { return x.id === id && !x.desfeita; })[0]; }).filter(Boolean); if (!ms.length) return false;
+var p = D.par, set = {}; ms.slice().reverse().forEach(function (m) { p = T().desfazerMudanca(p, m); set[m.id] = true; });
+var ok = aplicarPar(D, p, "Desfeito: " + ms.map(function (m) { return m.campo; }).join(", ") + " voltou ao valor de antes.", function (inf) { arr(inf.andaimeTela.mudancas).forEach(function (x) { if (set[x.id]) x.desfeita = true; }); });
+if (P) { P.ultCorrecao = null; } renderizar(); return ok;
+},
+informarDoCartao: function (vid, campo, valor, confirmado, justificativa) {
+var D = lerDoModelo(); if (!D || !P || !P.res) return false;
+var ef = T().efeitoDoDado(D.par, P.res.calc, vid, campo, valor, confirmado, justificativa); if (!ef.ok) { dizer(ef.erro, true); renderizar(); return false; }
+var ok = this.informar(campo, valor, confirmado, justificativa);
+if (ok && P) {
+var D2 = lerDoModelo(), r2 = D2 ? resultadoDe(D2.par) : null, v2 = r2 && r2.ok ? arr(r2.calc.verificacoes).filter(function (x) { return x.id === vid; })[0] : null, antes = P.msg && P.msg.t ? P.msg.t + " " : "";
+dizer(antes + AJ().textoEfeito(ef.titulo, ef.antes.estado, v2 ? v2.estado : ef.depois.estado, v2 ? v2.uso : ef.depois.uso), P.msg ? !!P.msg.erro : false);
+renderizar();
+}
+return ok;
+},
+abrirLinha: function (vid) { if (!P) return false; P.memoAbertas = P.memoAbertas || {}; P.memoAbertas[vid] = !P.memoAbertas[vid]; renderizar(); return !!P.memoAbertas[vid]; },
+recalcularTudo: function () {
+var D = lerDoModelo(); if (!D || !P) return false;
+_resCache.k = null; _diagCache.k = null; var res = resultadoDe(D.par); if (!res.ok) { dizer(res.erro, true); renderizar(); return false; }
+var ver = T().verificacoes(res.calc), nF = ver.filter(function (v) { return v.estado === "falha"; }).length, nN = ver.filter(function (v) { return v.estado === "nao_verificado"; }).length;
+dizer("Cálculo refeito com os parâmetros atuais: " + ver.length + " verificações, " + nF + " não passam, " + nN + " sem dado. O PDF do memorial e as pranchas saem com este cálculo.", false); renderizar(); return true;
 },
 responder: function (id, resposta, obs) {
 var D = lerDoModelo(); if (!D) return false;

@@ -239,6 +239,8 @@
     var o = {}; Object.keys(d).forEach(function (k) { o[k] = d[k]; });
     o.rotulo = d.rotulo || d.titulo || d.label || d.campo;
     if (o.tipo === "numero") o.tipo = "num";
+    /* a lista do cálculo (M4-C) não traz o texto da caixa de cada marca: usa o da tabela de reserva (sem isso a caixa dizia só «Conferido pelo RT» e não dizia o QUE o RT conferiu) */
+    if (o.tipo === "marca" && !o.rotuloMarca) { var fb = PENDENCIAS_RT_MULTI.filter(function (x) { return x.campo === d.campo; })[0]; if (fb && fb.rotuloMarca) o.rotuloMarca = fb.rotuloMarca; }
     o.dica = d.dica || d.fonte || d.texto || "";
     if (!o.onde) o.onde = "calc";
     if (o.tipo === "marca" && !o.justificativa) o.justificativa = d.campoJustificativa || (String(d.campo).replace(/RT$/, "") + "Justificativa");
@@ -521,6 +523,126 @@
     return { ok: true, itens: itens, grupos: ck.grupos, naoConformes: pend.nc.length, semResposta: pend.semResposta.length };
   }
 
+  /* ================================================================ DIAGNÓSTICO COM CORREÇÃO GUIADA E MEMORIAL NA TELA (E11, 27/10/2026)
+   * Pedido do Rogério: "quando tiver um erro, você vai verificar o que é e me falar: o erro é por isso; se fizer assim, vai dar certo. Deseja corrigir?
+   * — e mostrar como vai ser corrigido." Para CADA verificação que não está ok: o que é · a causa com os números · as opções (de v.corrigir[] e, se não
+   * houver, do Montar inteligente) com o que muda e o RESULTADO PREVISTO já recalculado · o campo do dado que falta. Nada aqui altera o par: devolve
+   * propostas; quem aplica é a fiação (andaimeui.js), com Desfazer.
+   * ⚠ O cálculo NÃO muda: usa AndaimeCalc.calcular / Andaime.montar / montarInteligente como estão. O «previsto» é o recálculo REAL do par proposto
+   * (nunca a estimativa do motor sozinha) — e avisa se a correção faz OUTRA verificação passar a falhar. */
+  function AJ() { return dep("AndaimeAjuda", "./andaimeajuda.js"); }
+  var _avC = { ks: [], vs: [] };
+  /* montar + calcular SEM o corrigir (leve): o par pode ter par.calc */
+  function avaliar(par) {
+    var An = AN(), Ac = AC(); if (!An || !Ac) return { ok: false, erro: "Os módulos do andaime não carregaram." };
+    var k = JSON.stringify(par), i = _avC.ks.indexOf(k); if (i >= 0) return _avC.vs[i];
+    var pg = parSemCalc(par), e = An.validar(pg), out;
+    if (e) out = { ok: false, erro: e };
+    else { var m = null; try { m = An.montar(pg); } catch (x) { m = null; } out = (!m || !m.ok) ? { ok: false, erro: (m && m.erro) || "não montou" } : { ok: true, modelo: m, calc: Ac.calcular(m, calcDe(par), { semCorrigir: true }) }; }
+    _avC.ks.push(k); _avC.vs.push(out); if (_avC.ks.length > 30) { _avC.ks.shift(); _avC.vs.shift(); }
+    return out;
+  }
+  var _miC = { ks: [], vs: [] };
+  function inteligenteDe(par) {   /* o Montar inteligente sobre o par (com cache): é o que o «Corrigir tudo» e a opção «inteligente» usam */
+    var k = JSON.stringify(par), i = _miC.ks.indexOf(k); if (i >= 0) return _miC.vs[i];
+    var r = resultado(par, { inteligente: true });
+    _miC.ks.push(k); _miC.vs.push(r); if (_miC.ks.length > 8) { _miC.ks.shift(); _miC.vs.shift(); }
+    return r;
+  }
+  function vDe(calc, vid) { return arr(calc && calc.verificacoes).filter(function (v) { return v.id === vid; })[0] || null; }
+  function usoDe(v) { return v && v.uso != null ? v.uso : null; }
+  function medidasDe(modelo) { var M = (modelo && modelo.medidas) || {}; return { vaos: M.nVaos, prumadas: M.nPostes != null ? M.nPostes : M.nMontantes, tubos: M.nTubos, ancoragens: M.nAncoragens, pesoKg: M.pesoTotal, multi: !!(modelo && modelo.sistema === "multidirecional") }; }
+  /* «+2 montantes, +6 tubos, +42 kg»: o que muda nas quantidades entre dois modelos */
+  function deltaTxt(a, b) {
+    var out = [], L = [["vaos", "vão", "vãos"], ["prumadas", b && b.multi ? "poste" : "montante", b && b.multi ? "postes" : "montantes"], ["tubos", "tubo", "tubos"], ["ancoragens", "ancoragem", "ancoragens"]];
+    L.forEach(function (x) { var d = num(b && b[x[0]], 0) - num(a && a[x[0]], 0); if (d) out.push((d > 0 ? "+" : "−") + Math.abs(d) + " " + (Math.abs(d) === 1 ? x[1] : x[2])); });
+    var dp = Math.round(num(b && b.pesoKg, 0) - num(a && a.pesoKg, 0)); if (dp) out.push((dp > 0 ? "+" : "−") + Math.abs(dp) + " kg");
+    return out.length ? out.join(", ") : "as quantidades de peças não mudam";
+  }
+  function falhasIds(calc) { return arr(calc && calc.verificacoes).filter(function (v) { return v.estado === "falha"; }); }
+  function previstoDe(antes, depois, vid) {
+    var v2 = vDe(depois, vid), fa = falhasIds(antes).map(function (v) { return v.id; }), fd = falhasIds(depois);
+    return { uso: usoDe(v2), estado: v2 ? v2.estado : null, falhasDepois: fd.length, passaTudo: fd.length === 0, novasFalhas: fd.filter(function (v) { return fa.indexOf(v.id) < 0; }).map(function (v) { return v.titulo; }) };
+  }
+  function difsDe(base, novo, norm) {   /* os campos que a proposta troca: de (valor efetivo) → para */
+    var o = [];
+    Object.keys(novo || {}).forEach(function (k) {
+      var de = norm && norm[k] !== undefined ? norm[k] : (base ? base[k] : undefined);
+      if (JSON.stringify(de) !== JSON.stringify(novo[k])) o.push({ campo: k, de: de, para: novo[k] });
+    });
+    return o.map(function (x) { x.txt = AJ().descreverMudanca(x); return x; });
+  }
+  function opcaoDeCorrecao(par, ava, v, c, i) {
+    var novo = clone(par); Object.keys(c.par).forEach(function (k) { novo[k] = clone(c.par[k]); });
+    var av2 = avaliar(novo); if (!av2.ok) return null;
+    var campos = difsDe(par, c.par, ava.modelo && ava.modelo.par); if (!campos.length) return null;
+    return { id: "c" + i, origem: "calculo", conjunto: false, texto: campos.map(function (x) { return x.txt; }).join("; "), campos: campos, delta: deltaTxt(medidasDe(ava.modelo), medidasDe(av2.modelo)), par: novo,
+      previsto: previstoDe(ava.calc, av2.calc, v.id), usoMotor: c.usoRefeito == null ? null : c.usoRefeito, textoMotor: c.texto || "" };
+  }
+  /* o diagnóstico completo da aba Cálculo e do Memorial: um cartão por verificação que não está ok */
+  function diagnostico(par, calc) {
+    var sis = sistemaDe(par), ava = avaliar(par), pends = pendenciasRT(par, calc), A = AJ(), itens = [], cont = { falha: 0, atencao: 0, nao_verificado: 0 };
+    arr(calc && calc.verificacoes).forEach(function (v) {
+      if (v.estado === "ok" || !cont.hasOwnProperty(v.estado)) return;
+      cont[v.estado]++;
+      var card = { vid: v.id, titulo: v.titulo, estado: v.estado, uso: usoDe(v), usoTxt: A.usoTxt(usoDe(v)), oQueE: A.explicacao(v.id), pecas: arr(v.pecas).slice(0, 80), opcoes: [], decisaoRT: [], dados: [], semCampo: "", recomendada: null, confirmarRT: arr(v.confirmarRT) };
+      if (v.estado === "falha" || v.estado === "atencao") {
+        arr(v.corrigir).forEach(function (c, i) {
+          if (c && c.par && Object.keys(c.par).length) { if (ava.ok) { var op = opcaoDeCorrecao(par, ava, v, c, i); if (op) card.opcoes.push(op); } }
+          else if (c && c.texto) card.decisaoRT.push(c.texto);
+        });
+        var bom = card.opcoes.some(function (o) { return o.previsto.estado === "ok"; });
+        if (!bom && ava.ok && (v.estado === "falha" || (v.uso != null && v.uso > 0.9))) {   /* sem opção que resolva: o Montar inteligente restrito a esta verificação */
+          var mi = inteligenteDe(par), v2 = mi && mi.ok ? vDe(mi.calc, v.id) : null;
+          if (v2 && mi.mudancas.length && (v2.estado === "ok" || (v2.estado === "atencao" && usoDe(v2) != null && usoDe(v2) < usoDe(v)))) {
+            var cm = mi.mudancas.map(function (m) { return { campo: m.campo, de: m.de, para: m.para, txt: A.descreverMudanca(m), motivo: m.motivo }; });
+            card.opcoes.push({ id: "mi", origem: "inteligente", conjunto: true, texto: cm.map(function (x) { return x.txt; }).join("; "), campos: cm, delta: deltaTxt(medidasDe(ava.modelo), medidasDe(mi.modelo)), par: mi.par, mudancas: mi.mudancas,
+              previsto: previstoDe(ava.calc, mi.calc, v.id), usoMotor: null, textoMotor: "" });
+          }
+        }
+        card.recomendada = (card.opcoes.filter(function (o) { return o.previsto.estado === "ok" && !o.previsto.novasFalhas.length; })[0] || card.opcoes.filter(function (o) { return o.previsto.estado === "ok"; })[0] || card.opcoes[0] || { id: null }).id;
+        card.opcoes.sort(function (a, b) { return (a.id === card.recomendada ? 0 : 1) - (b.id === card.recomendada ? 0 : 1); });
+      } else {   /* não verificado: o dado que falta */
+        card.dados = A.dadosDe(v.id, sis).map(function (id) { return pends.filter(function (p) { return p.campo === id; })[0]; }).filter(function (p) { return p && !p.informado; });
+        card.semCampo = A.semCampoDe(v.id);
+      }
+      card.causa = A.causa(v, card.dados.map(function (p) { return p.rotulo; }).concat(card.semCampo ? [card.semCampo] : []));
+      itens.push(card);
+    });
+    return { ok: true, sistema: sis, itens: itens, cont: cont, n: cont.falha + cont.atencao + cont.nao_verificado, nCorrigivel: cont.falha + cont.atencao };
+  }
+  /* o que sobra depois de corrigir: causa e o que só o RT resolve (sem recalcular opções) */
+  function restanteDe(par, calc) {
+    var sis = sistemaDe(par), pends = pendenciasRT(par, calc), A = AJ(), out = [];
+    arr(calc && calc.verificacoes).forEach(function (v) {
+      if (v.estado === "ok") return;
+      var dados = v.estado === "nao_verificado" ? A.dadosDe(v.id, sis).map(function (id) { return pends.filter(function (p) { return p.campo === id; })[0]; }).filter(function (p) { return p && !p.informado; }) : [];
+      var rt = arr(v.corrigir).filter(function (c) { return c && !c.par && c.texto; }).map(function (c) { return c.texto; });
+      out.push({ vid: v.id, titulo: v.titulo, estado: v.estado, causa: A.causa(v, dados.map(function (p) { return p.rotulo; })), dados: dados.map(function (p) { return p.campo; }), decisaoRT: rt });
+    });
+    return out;
+  }
+  /* «Corrigir tudo»: a lista do Montar inteligente ANTES de aplicar (Deseja corrigir? Vai mudar: …) e o que sobra */
+  function corrigirTudoPrevia(par) {
+    var A = AJ(), ava = avaliar(par), r = inteligenteDe(par); if (!r.ok) return { ok: false, erro: r.erro };
+    var mud = arr(r.mudancas).map(function (m) { return { id: m.id, campo: m.campo, de: m.de, para: m.para, motivo: m.motivo, txt: A.descreverMudanca(m) }; });
+    return { ok: true, par: r.par, mudancas: mud, passou: !!r.passou, semMudancas: !mud.length, delta: ava.ok ? deltaTxt(medidasDe(ava.modelo), medidasDe(r.modelo)) : "", falhasAntes: ava.ok ? falhasIds(ava.calc).length : null, falhasDepois: falhasIds(r.calc).length, restante: restanteDe(r.par, r.calc), resultado: r };
+  }
+  /* o RT informou um dado: o que acontece com a verificação — a base do botão [Recalcular] do campo inline */
+  function efeitoDoDado(par, calc, vid, campo, valor, confirmado, justificativa) {
+    var r = aplicarPendencia(par, campo, valor, confirmado, justificativa, defsRT(par, calc)); if (!r.ok) return r;
+    var ava = avaliar(r.par); if (!ava.ok) return { ok: false, erro: ava.erro };
+    var v0 = vDe(calc, vid), v1 = vDe(ava.calc, vid); if (!v0 || !v1) return { ok: false, erro: "Verificação desconhecida: " + vid };
+    return { ok: true, par: r.par, ava: ava, antes: { estado: v0.estado, uso: usoDe(v0) }, depois: { estado: v1.estado, uso: usoDe(v1) }, mudou: v0.estado !== v1.estado, titulo: v0.titulo };
+  }
+  /* o memorial na tela: uma linha por verificação (título, solicitante, resistente, uso, estado) */
+  function memorial(calc) {
+    return arr(calc && calc.verificacoes).map(function (v) {
+      return { vid: v.id, titulo: v.titulo, solicitante: String(v.solicitante || "—"), resistente: String(v.resistente || "—"), uso: usoDe(v), usoTxt: v.uso == null ? "—" : brf(Math.min(v.uso, 99), 2), estado: v.estado, rotulo: ROT_ESTADO[v.estado] || v.estado,
+        formula: v.formula || "", texto: v.texto || "", fonte: v.fonte || "", confirmarRT: arr(v.confirmarRT) };
+    });
+  }
+
   var AndaimeTela = {
     LADOS: LADOS, ROT_LADO: ROT_LADO, ALTURA_MIN: ALTURA_MIN, ALTURA_MAX: ALTURA_MAX, TRECHO_MIN: TRECHO_MIN, PENDENCIAS_RT: PENDENCIAS_RT, COR_ESTADO: COR_ESTADO, ROT_ESTADO: ROT_ESTADO, VEL_SUBIDA: VEL_SUBIDA,
     novo: novo, clicar: clicar, voltar: voltar, alternarLado: alternarLado, setAltura: setAltura, podeFechar: podeFechar, cancelar: cancelar, nMin: nMin,
@@ -529,7 +651,8 @@
     pendenciasRT: pendenciasRT, defsRT: defsRT, PENDENCIAS_RT_MULTI: PENDENCIAS_RT_MULTI, aplicarPendencia: aplicarPendencia,
     setSistema: setSistema, sistemaDe: sistemaDe, ROT_SISTEMA: ROT_SISTEMA, trocarSistema: trocarSistema, PARAMETROS_MULTI: PARAMETROS_MULTI, largurasDaLinha: largurasDaLinha, aplicarParametrosMulti: aplicarParametrosMulti, v0DoLocal: v0DoLocal, aplicarLocalVento: aplicarLocalVento, reagirAoDado: reagirAoDado, verificacoes: verificacoes, problemas: problemas, aplicarCorrecao: aplicarCorrecao,
     pintura: pintura, primitivas: primitivas, caixaDe: caixaDe,
-    cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas
+    cartaoHtmlDe: cartaoHtmlDe, aprovacaoDaCopia: aprovacaoDaCopia, duplicarInfo: duplicarInfo, copiasDe: copiasDe, opsDeCopias: opsDeCopias, cabPadrao: cabPadrao, cabPreenchido: cabPreenchido, checklistComRespostas: checklistComRespostas,
+    avaliar: avaliar, diagnostico: diagnostico, restanteDe: restanteDe, corrigirTudoPrevia: corrigirTudoPrevia, efeitoDoDado: efeitoDoDado, memorial: memorial, deltaTxt: deltaTxt, medidasDe: medidasDe
   };
   global.AndaimeTela = AndaimeTela;
   if (typeof module !== "undefined" && module.exports) module.exports = AndaimeTela;
