@@ -112,6 +112,9 @@
         for (var i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); lista.push(new THREE.Matrix4().multiplyMatrices(o.matrixWorld, mi)); }
       } else lista.push(o.matrixWorld.clone());
       var mat0 = u._p10orig || o.material; if (!mat0) return;
+      /* TV do rack não vai (o Rogério usa a TV da biblioteca do Twinmotion, 28/10/2026): no gerador ra-mob-rack-tv a TV é a única peça
+         em preto de tela/moldura (0b0c0e); painel ripado e rack continuam */
+      if (/(^|-)mob-rack-tv/.test(famDe(u)) && [].concat(mat0).some(function (m) { return m && m.color && m.color.getHexString() === "0b0c0e"; })) return;
       var dono = (c === "piso" || c === "pintura" || PROPRIO[u.tipo]) ? id : null;
       var mats = Array.isArray(mat0) ? mat0.map(function (m, i) { return matDe(m, dono ? dono + (i ? "_" + i : "") : null); }) : matDe(mat0, dono);
       lista.forEach(function (M) {
