@@ -114,8 +114,16 @@
   function gerar(c, v) {
     var tm = String(v.Tipo_modulo).toLowerCase(), Lt = v.Largura_total, Pz = v.Profundidade, A = v.Altura, corpo = v.Corpo, fr = v.Frente, pux = v.Puxador, esp = 0.018, rod = v.Rodape;
     if (tm === "painel") {   /* painel de parede (TV/cabeceira): chapa com frisos verticais a cada ~30 cm */
-      c.caixa(fr, 0, 0, 0.009, Lt, A, 0.018);
-      var nf = Math.max(1, Math.round(Lt / 0.3)); for (var f = 1; f < nf; f++) c.caixa(MAT.PRETO, -Lt / 2 + f * Lt / nf, 0, 0.0185, 0.004, A, 0.002);
+      /* chapas de MDF 18 mm lado a lado (módulos de até 1,20 m) com aresta chanfrada, junta em V preta entre elas, friso de base e rodapé recuado; fixação por tampas de parafuso */
+      var nCh = Math.max(1, Math.ceil(Lt / 1.2 - 1e-9)), wCh = Lt / nCh, q;
+      for (q = 0; q < nCh; q++) {
+        var xq = -Lt / 2 + wCh * (q + 0.5);
+        c.caixaR(fr, xq, 0.06, 0.009, wCh - 0.004, A - 0.06, 0.018, 0.003, { k: 1 });
+        for (var py = 1; py <= 3; py++) for (var px = -1; px <= 1; px += 2) c.cil(MAT.CROMO, xq + px * (wCh / 2 - 0.05), 0.06 + py * (A - 0.12) / 4, 0.018, 0.006, 0.002, { seg: 8, rotX: 90 });
+        if (q > 0) c.caixa(MAT.PRETO, -Lt / 2 + wCh * q, 0.06, 0.0172, 0.004, A - 0.06, 0.003);
+      }
+      c.caixa(MAT.PRETO, 0, 0, 0.004, Lt - 0.02, 0.06, 0.008);
+      c.caixa(MAT.PRETO, 0, 0.055, 0.0172, Lt - 0.004, 0.004, 0.003);
       ULTIMO = { modulos: [], tampEsq: 0, tampDir: 0, reservas: [] };
       return;
     }
@@ -265,13 +273,22 @@
     id: "ra-plan-nicho", nome: "Nicho de parede planejado (MDF)", categoria: "mobiliario", semOrigem: true,
     descricao: "Nicho de parede em MDF 18 mm amadeirado/cor, 60 × 30 × 25 cm, sem fundo (composição própria RA PROP-MOB-9010, por unidade). Origem: meio da largura, fundo na parede.",
     parametros: [P("Largura", "comprimento", 0.60, "Dimensões", "60 cm (composição 9010)"), P("Altura", "comprimento", 0.30, "Dimensões"), P("Profundidade", "comprimento", 0.25, "Dimensões"),
-      P("Altura_instalacao", "comprimento", 1.40, "Dimensões", "Do piso à base do nicho", "instancia"), P("Acabamento", "material", "mdf carvalho", "Materiais", "", "instancia"),
+      P("Altura_instalacao", "comprimento", 1.40, "Dimensões", "Do piso à base do nicho", "instancia"), P("Prateleiras", "inteiro", 1, "Construção", "Prateleiras internas (MDF 18 mm, sobre pinos de metal); 0 = nicho vazio"), P("Acabamento", "material", "mdf carvalho", "Materiais", "", "instancia"),
       P("Preco_unitario", "numero", precoDe("PROP-MOB-9010").Preco_unitario, "Catálogo e preço", "R$ por unidade, sem BDI — composição própria RA"),
       P("Fonte_preco", "texto", precoDe("PROP-MOB-9010").Fonte_preco, "Catálogo e preço"), P("Data_preco", "texto", precoDe("PROP-MOB-9010").Data_preco, "Catálogo e preço"), P("Composicao_id", "texto", "PROP-MOB-9010", "Catálogo e preço")],
     tipos: [(function () { var t = T("n60", "Nicho 60 × 30 × 25 (PROP-MOB-9010)", {}); t.codigo = "PROP-MOB-9010"; return t; })()],
     gerar: function (c, v) {
       var L = v.Largura, A = v.Altura, Pz = v.Profundidade, y0 = v.Altura_instalacao, e = 0.018, m = v.Acabamento;
-      c.caixa(m, 0, y0, Pz / 2, L, e, Pz); c.caixa(m, 0, y0 + A - e, Pz / 2, L, e, Pz); c.caixa(m, -L / 2 + e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz); c.caixa(m, L / 2 - e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz);
+      /* caixa de MDF com aresta arredondada, fundo recuado de 6 mm e prateleiras sobre pinos de metal */
+      var pr = Math.max(0, Math.round(v.Prateleiras)), k;
+      c.caixaR(m, 0, y0, Pz / 2, L, e, Pz, 0.003, { k: 1 }); c.caixaR(m, 0, y0 + A - e, Pz / 2, L, e, Pz, 0.003, { k: 1 });
+      c.caixaR(m, -L / 2 + e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz, 0.003, { k: 1 }); c.caixaR(m, L / 2 - e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz, 0.003, { k: 1 });
+      c.caixa(MAT.CLARA, 0, y0 + e, 0.02, L - 2 * e, A - 2 * e, 0.006);
+      for (k = 1; k <= pr; k++) {
+        var ys = y0 + e + (A - 2 * e) * k / (pr + 1) - e / 2;
+        c.caixaR(m, 0, ys, Pz / 2 - 0.01, L - 2 * e - 0.004, e, Pz - 0.03, 0.003, { k: 1 });
+        [-1, 1].forEach(function (sx) { [0.07, Pz - 0.08].forEach(function (zz) { c.cil(MAT.CROMO, sx * (L / 2 - e - 0.004), ys - 0.006, zz, 0.003, 0.006, { seg: 6 }); }); });
+      }
     }
   });
   famN.quantitativo = { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Nicho de parede planejado (composição própria RA; fornecimento e instalação)" };

@@ -73184,6 +73184,11 @@ var xBomba = "0 - Interno_C/2 + 2*Folga_servico + Filtro_D + Bomba_A/2";
 var xHidro = "0 - Interno_C/2 + 3*Folga_servico + Filtro_D + Bomba_A + Hidro_A/2";
 sol.push(cil("filtro", "Filtro de areia " + "(catálogo)", "y", xFiltro, base, "0", "Filtro_D/2", "Filtro_H", "Equipamento azul", { visivel: "Tampa_aberta" }));
 sol.push(cx("bomba", "Motobomba de filtração", xBomba, base, "0", "Bomba_A", "Bomba_C", "Bomba_B", "Equipamento preto", { visivel: "Tampa_aberta" }));
+sol.push(cil("valvula", "Válvula seletora do filtro", "y", xFiltro, base + " + Filtro_H - 0.12", "0", "0.045", "0.12", "Equipamento preto", { visivel: "Tampa_aberta" }));
+sol.push(cil("filtro-base", "Base do filtro", "y", xFiltro, base, "0", "Filtro_D/2 + 0.01", "0.04", "Equipamento preto", { visivel: "Tampa_aberta" }));
+sol.push(cil("motor", "Motor da bomba de filtração", "y", xBomba + " + Bomba_A*0.12", base + " + 0.01", "0", "Bomba_B/2 * 0.9", "Bomba_C - 0.01", "Equipamento azul", { visivel: "Tampa_aberta" }));
+sol.push(cil("pre-filtro", "Pré-filtro da bomba", "y", xBomba + " - Bomba_A*0.3", base + " + 0.01", "0", "Bomba_B/2 * 0.8", "Bomba_C*0.8", "Equipamento preto", { visivel: "Tampa_aberta" }));
+sol.push(cx("tubo", "Tubo de recalque (barra)", "0 - Interno_C/2 + 1.5*Folga_servico + Filtro_D", base + " + Filtro_H - 0.09", "0 - Interno_L/2 + 0.05", "Folga_servico + Bomba_A*0.5", "0.05", "0.05", "Equipamento azul", { visivel: "Tampa_aberta" }));
 sol.push(cx("bomba-hidro", "Motobomba de hidromassagem", xHidro, base, "0", "Hidro_A", "Hidro_C", "Hidro_B", "Equipamento preto", { visivel: "Tampa_aberta e Com_hidro" }));
 return {
 id: "ra-casa-maquinas-piscina", nome: "Casa de máquinas da piscina (enterrada/semienterrada)", categoria: "generico", hospedagem: "livre", previa: "modelador",
@@ -76395,6 +76400,18 @@ var H = FM.H, MAT = FM.MAT, P = FM.P, T = FM.T, def = FM.def, USUAL = H.USUAL, c
 var FONTE_BANHEIRA = "Fichas de anúncio em www.madeiramadeira.com.br (Astra Capri Luxo 150×80×43 e 170×80×43; Confortare Luxo 180×90×55; Prima Maggiore 180×120×44) e Ouro Fino Cristal Duo 170×110×40 — consultadas em 19/10/2026; a altura é a externa. Conferir o modelo comprado.";
 var FONTE_GELADEIRA = "Brastemp BRE57AK 443 L: 72,5 × 184 × 70,1 cm (largura × altura × profundidade), fichas em www.buscape.com.br e www.zoom.com.br, 19/10/2026; BRE57FK 447 L: 70 × 184,5 × 75,5 cm. Conferir o manual do modelo comprado.";
 var FONTE_LAVA = "Brastemp BNO11AS/BNO11AB (lava e seca 11 kg): 60 × 85 × 64 cm, www.brastemp.com.br, 19/10/2026; LG CV3011BC4A: 60 × 85 × 56 cm. Conferir o manual do modelo comprado.";
+var FONTE_GEL_CAT = "Fichas de fabricante consultadas em 20/10/2026 (docs/arquitetura/interiores/dados/catalogo-mobiliario.json): ";
+var FONTE_GEL591 = FONTE_GEL_CAT + "Brastemp BRE85MK inverse 591 L, 83,6 × 186,8 × 79,1 cm — https://www.brastemp.com.br/geladeira-brastemp-frost-free-inverse-inox-bre85mk/p";
+var FONTE_GEL500 = FONTE_GEL_CAT + "Brastemp B-Smart BRE66AK inverse 500 L, 70,5 × 194,3 × 74 cm — https://www.brastemp.com.br/geladeira-inteligente-b--smart-brastemp-frost-free-inverse-500-litros-cor-inox-bre66ak/p";
+var FONTE_SBS431 = FONTE_GEL_CAT + "Electrolux ES40S side by side 431 L, 83,6 × 178 × 62,3 cm (sem embalagem) — https://loja.electrolux.com.br/geladeira-electrolux-frost-free-inverter-431l-autosense-bivolt-side-by-side-cor-inox-look--es40s-/p";
+var FONTE_SBS526 = FONTE_GEL_CAT + "Electrolux ES5GB side by side 526 L, 91,1 × 178 × 66,6 cm — https://loja.electrolux.com.br/geladeira-electrolux-frost-free-inverter-526l-efficient-com-autosense-side-by-side-vidro-preto-es5gb/p";
+var FONTE_SBS635 = FONTE_GEL_CAT + "LG GC-L257SLP1 side by side 635 L, 91,3 × 179 × 73,5 cm — https://www.lg.com/br/geladeiras/geladeiras-side-by-side/gc-l257slp1/";
+var FONTE_LAVA_SAM = FONTE_GEL_CAT + "Samsung WD11T lava e seca 11 kg, 60 × 85 × 65 cm — https://www.samsung.com/br/washers-and-dryers/washer-dryer-combo/wd5100t-front-loading-ai-control-air-wash-drum-clean-11kg-gray-wd11t504dbxfaz";
+var FONTE_LAVA_SAM2 = FONTE_GEL_CAT + "Samsung WW11T4040 lavadora frontal 11 kg, 60 × 85 × 55 cm — https://www.samsung.com/br/washers-and-dryers/washing-machines/ww4000t-front-loading-hygiene-steam-digital-inverter-technology-drum-clean-11kg-gray-ww11t4040cx-az";
+var FONTE_LAVA_ELX = FONTE_GEL_CAT + "Electrolux LSP11 lava e seca 11 kg, 60 × 85 × 65,9 cm (sem embalagem) — https://loja.electrolux.com.br/lava-e-seca-electrolux-11kg-branca-inverter--lsp11----cesto-dobravel-para-roupas-electrolux/p";
+var FONTE_ESP_VOR = "Voratto Frésia (espreguiçadeira de piscina, alumínio e fibra sintética): 60 × 180 × 70 cm, altura do assento 28 cm — https://www.madeiramadeira.com.br/espreguicadeira-fresia-de-piscina-em-aluminio-fibra-sintetica-e-braco-jequitiba (consultada em 20/10/2026; fonte secundária: anúncio de loja).";
+var FONTE_ESP_TID = "Tidelli 6708 Padang: 71 × 204 × 114 cm (com encosto levantado); Tidelli 3708 Caraíva: 79 × 200,5 × 60 cm — catálogo de produtos da pesquisa (docs/arquitetura/interiores/dados/catalogo-alto-padrao.json), consultada em 20/10/2026; fonte secundária: loja.";
+var FONTE_VARANDA = "Relevance CJMB40 (mesa quadrada de varanda, alumínio): 67 × 67 × 75 cm; Artesane Búzios (alumínio fundido): 100 × 100 × 71 cm — anúncios em www.madeiramadeira.com.br, catálogo de produtos da pesquisa (docs/arquitetura/interiores/dados/catalogo-mobiliario.json), consultada em 20/10/2026; fonte secundária: loja.";
 var FONTE_CHURRAS = "Begnami churrasqueiras lisas (AECweb, produto 47694): altura 2,20 m, profundidade 50 cm, boca de 51 cm, larguras 55/65/76/85 cm; coifa Largrill 100 × 60 × 70 cm (AECweb 18073); consulta de 19/10/2026. Conferir o catálogo do fabricante.";
 function tampoFuros(c, mat, L, D, e, y, zc, furos) {
 var fs = (furos || []).slice().sort(function (a, b) { return a.x - b.x; }), cur = -L / 2, z0 = zc - D / 2, z1 = zc + D / 2;
@@ -76423,14 +76440,35 @@ function cooktop(c, x, z, yTopo, lar, pro, bocas) {
 c.caixaR(MAT.TELA, x, yTopo - 0.002, z, lar, 0.006, pro, 0.003, { k: 1 });
 var pos = bocas === 5 ? [[-0.2, -0.13, 0.085], [0.2, -0.13, 0.07], [-0.2, 0.13, 0.07], [0.2, 0.13, 0.085], [0, 0, 0.055]] : [[-0.14, -0.1, 0.085], [0.14, -0.1, 0.07], [-0.14, 0.12, 0.07], [0.14, 0.12, 0.085]];
 pos.forEach(function (p) {
-c.torno(MAT.GRAFITE, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2], 0], [p[2], 0.003], [p[2] - 0.006, 0.003], [p[2] - 0.006, 0]], { seg: 24, aberto: false });
-c.torno(MAT.PRETO, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2] * 0.45, 0], [p[2] * 0.45, 0.006], [0, 0.006]], { seg: 16 });
+c.torno(MAT.GRAFITE, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2], 0], [p[2], 0.003], [p[2] - 0.006, 0.003], [p[2] - 0.006, 0]], { seg: 14, aberto: false });
+c.torno(MAT.PRETO, x + p[0] * (lar / 0.58), yTopo + 0.003, z + p[1] * (pro / 0.5), [[p[2] * 0.45, 0], [p[2] * 0.45, 0.006], [0, 0.006]], { seg: 10 });
 });
 for (var i = 0; i < 4; i++) c.cil(MAT.PRETO, x - 0.18 + i * 0.12, yTopo - 0.002, z + pro / 2 - 0.01, 0.014, 0.006, { seg: 10 });
 }
-function corpoInferior(c, L, D, Ht, e, mat, padrao, z0, miolo) {
-var rod = 0.10, hc = Ht - e - rod, nm = Math.max(1, Math.round(L / 0.6)), wm = L / nm;
-c.caixa(MAT.PRETO, 0, 0, z0 + D / 2 - 0.03, L - 0.04, rod, D - 0.08);
+function alcaV(c, mat, x, yc, z, comp, afast) {
+afast = afast || 0.03;
+c.caixa(mat, x, yc - comp / 2, z + afast, 0.014, comp, 0.014);
+[-1, 1].forEach(function (s) { c.caixa(mat, x, yc + s * (comp / 2 - 0.025) - 0.005, z + afast / 2, 0.01, 0.01, afast); });
+}
+function alcaH(c, mat, x, y, z, comp, afast) {
+afast = afast || 0.03;
+c.caixa(mat, x, y - 0.007, z + afast, comp, 0.014, 0.014);
+[-1, 1].forEach(function (s) { c.caixa(mat, x + s * (comp / 2 - 0.025), y - 0.005, z + afast / 2, 0.01, 0.01, afast); });
+}
+function painelCmd(c, x, y, z, w, h) {
+c.caixa(MAT.PRETO, x, y, z, w, h, 0.004);
+c.caixa(MAT.TELA, x, y + h * 0.5, z + 0.003, w * 0.72, h * 0.3, 0.002);
+for (var j = 0; j < 3; j++) c.cil(MAT.CROMO, x - w * 0.24 + j * w * 0.24, y + h * 0.14, z + 0.004, 0.0055, 0.003, { seg: 8, rotX: 90 });
+}
+function banquetaLeve(c, hs, d, tec, es) {
+var r = d / 2;
+c.cil(tec, 0, hs - 0.06, 0, r, 0.06, { seg: 18 }); c.cil(es, 0, hs - 0.075, 0, r * 0.82, 0.015, { seg: 12 });
+[[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(function (q) { c.tronco(es, q[0] * r * 0.6, 0, q[1] * r * 0.6, 0.032, 0.032, 0.022, 0.022, hs - 0.075, { rotX: q[1] * -5, rotZ: q[0] * 5 }); });
+c.torno(es, 0, 0.24, 0, [[r * 0.78, 0], [r * 0.78, 0.014], [r * 0.78 - 0.014, 0.014], [r * 0.78 - 0.014, 0]], { seg: 10 });
+}
+function corpoInferior(c, L, D, Ht, e, mat, padrao, z0, miolo, estiloFixo) {
+var rod = 0.10, hc = Ht - e - rod, nm = Math.max(1, Math.round(L / 0.6)), wm = L / nm, est = estiloFixo || (nm <= 5 ? "friso" : "liso");
+c.caixa(MAT.PRETO, 0, 0, z0 + D / 2 - 0.04, L - 0.04, rod, D - 0.10);
 c.caixa(miolo || mat, 0, rod, z0 + D / 2 - 0.01, L, hc, D - 0.02);
 for (var i = 0; i < nm; i++) {
 var x = -L / 2 + wm * (i + 0.5), gav = padrao === "gavetas" || (padrao === "misto" && i % 3 === 1), zf = z0 + D - 0.02;
@@ -76438,17 +76476,17 @@ if (gav) {
 var hs = [0.19, 0.27, hc - 0.19 - 0.27 - 0.03], y = rod + 0.01;
 hs.forEach(function (h, ig) {
 var yg = y;
-H.gaveta(c, "m" + (i + 1) + "gaveta" + (ig + 1), (D - 0.10) * 0.7, function () { H.porta(c, mat, x, yg, zf, wm - 0.008, h, 0.019, "liso"); H.cava(c, x, yg + h - 0.035, zf + 0.019, wm * 0.6); H.gavetaCaixa(c, MAT.CLARA, x, yg, zf, wm - 0.008, h, D - 0.10); });
+H.gaveta(c, "m" + (i + 1) + "gaveta" + (ig + 1), (D - 0.10) * 0.7, function () { H.porta(c, mat, x, yg, zf, wm - 0.008, h, 0.019, ig === 2 ? est : "liso"); alcaH(c, MAT.INOX, x, yg + h - 0.04, zf + 0.019, Math.min(0.30, wm * 0.5), 0.028); H.gavetaCaixa(c, MAT.CLARA, x, yg, zf, wm - 0.008, h, D - 0.10); });
 y += h + 0.008;
 });
 } else if (wm > 0.75) {
 [-1, 1].forEach(function (s) {
 var xd = x + s * (wm - 0.008) / 4, wd = (wm - 0.012) / 2;
-H.giro(c, "m" + (i + 1) + "porta" + (s < 0 ? "e" : "d"), xd + s * wd / 2, rod + hc / 2, zf + 0.0095, s, function () { H.porta(c, mat, xd, rod + 0.01, zf, wd, hc - 0.02, 0.019, "liso"); H.cava(c, x + s * 0.02, rod + hc - 0.05, zf + 0.019, 0.01); });
+H.giro(c, "m" + (i + 1) + "porta" + (s < 0 ? "e" : "d"), xd + s * wd / 2, rod + hc / 2, zf + 0.0095, s, function () { H.porta(c, mat, xd, rod + 0.01, zf, wd, hc - 0.02, 0.019, est); alcaV(c, MAT.INOX, xd - s * (wd / 2 - 0.05), rod + hc - 0.14, zf + 0.019, 0.16, 0.028); });
 });
 } else {
 var ladoI = i % 2 ? -1 : 1, wdI = wm - 0.008;
-H.giro(c, "m" + (i + 1) + "porta", x + ladoI * wdI / 2, rod + hc / 2, zf + 0.0095, ladoI, function () { H.porta(c, mat, x, rod + 0.01, zf, wdI, hc - 0.02, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.05), rod + hc - 0.05, zf + 0.019, 0.01); });
+H.giro(c, "m" + (i + 1) + "porta", x + ladoI * wdI / 2, rod + hc / 2, zf + 0.0095, ladoI, function () { H.porta(c, mat, x, rod + 0.01, zf, wdI, hc - 0.02, 0.019, est); alcaV(c, MAT.INOX, x - ladoI * (wdI / 2 - 0.05), rod + hc - 0.14, zf + 0.019, 0.16, 0.028); });
 }
 }
 }
@@ -76485,7 +76523,8 @@ c.caixa(v.Corpo, 0, y0, D / 2 - 0.01, L, Ht, D - 0.02);
 for (var i = 0; i < nm; i++) {
 var x = -L / 2 + wm * (i + 0.5);
 var ladoS = i % 2 ? -1 : 1, wdS = wm - 0.006;
-H.giro(c, "porta" + (i + 1), x + ladoS * wdS / 2, y0 + Ht / 2, D - 0.02 + 0.0095, ladoS, function () { H.porta(c, v.Corpo, x, y0 + 0.004, D - 0.02, wdS, Ht - 0.008, 0.019, "liso"); H.cava(c, x + (i % 2 ? 1 : -1) * (wm / 2 - 0.02), y0 + 0.03, D, 0.012); });
+H.giro(c, "porta" + (i + 1), x + ladoS * wdS / 2, y0 + Ht / 2, D - 0.02 + 0.0095, ladoS, function () { H.porta(c, v.Corpo, x, y0 + 0.004, D - 0.02, wdS, Ht - 0.008, 0.019, "friso"); alcaV(c, MAT.INOX, x - ladoS * (wdS / 2 - 0.04), y0 + 0.14, D - 0.001, 0.12, 0.025);
+});
 }
 }
 });
@@ -76494,15 +76533,28 @@ id: "ra-coz-torre-quente", moveis: true, categoria: "cozinha", nome: "Torre quen
 parametros: [P("Largura", "comprimento", 0.62, "Dimensões", "Vão de 60 cm do forno de embutir + paredes. " + USUAL), P("Profundidade", "comprimento", 0.62, "Dimensões"), P("Altura", "comprimento", 2.40, "Dimensões"), P("Cota_forno", "comprimento", 0.80, "Construção", "Do piso à base do forno"), P("Com_micro", "simnao", true, "Construção"), P("Corpo", "material", "laca grafite", "Materiais")],
 tipos: [T("tq", "Forno 60 cm + micro-ondas", {}), T("tqf", "Só forno 60 cm", { Com_micro: false })],
 gerar: function (c, v) {
-var W = v.Largura, D = v.Profundidade, Ht = v.Altura, yf = v.Cota_forno, rod = 0.10, zf = D - 0.02;
-c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.03, W - 0.04, rod, D - 0.08); c.caixa(v.Corpo, 0, rod, D / 2 - 0.01, W, Ht - rod, D - 0.02);
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, yf = v.Cota_forno, rod = 0.10, zf = D - 0.02, k;
+c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.04, W - 0.04, rod, D - 0.10); c.caixa(v.Corpo, 0, rod, D / 2 - 0.01, W, Ht - rod, D - 0.02);
 var h = yf - rod - 0.012, pG = (D - 0.10);
-H.gaveta(c, "gaveta1", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006, zf, W - 0.012, h * 0.45, pG); });
-H.gaveta(c, "gaveta2", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso"); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, pG); });
-c.caixaR(MAT.INOX, 0, yf, zf - 0.02, 0.595, 0.595, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.45, 0.004); c.cilH(MAT.INOX, 0, yf + 0.52, zf + 0.04, 0.009, 0.45, "x", { seg: 8 }); c.caixa(MAT.PRETO, 0, yf + 0.555, zf + 0.0005, 0.3, 0.025, 0.004);
+H.gaveta(c, "gaveta1", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); alcaH(c, MAT.INOX, 0, rod + 0.006 + h * 0.45 - 0.04, zf + 0.019, 0.30, 0.028); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006, zf, W - 0.012, h * 0.45, pG); });
+H.gaveta(c, "gaveta2", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso"); alcaH(c, MAT.INOX, 0, rod + 0.006 + h - 0.052, zf + 0.019, 0.30, 0.028); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, pG); });
+c.caixaR(MAT.INOX, 0, yf, zf - 0.02, 0.595, 0.595, 0.04, 0.008, { k: 1 });
+c.caixa(MAT.PRETO, 0, yf + 0.495, zf + 0.0005, 0.56, 0.088, 0.004); c.caixa(MAT.TELA, 0, yf + 0.535, zf + 0.0035, 0.16, 0.034, 0.002);
+for (k = 0; k < 4; k++) c.cil(MAT.CROMO, -0.2 + k * 0.133 + (k > 1 ? 0.0 : 0), yf + 0.512, zf + 0.0035, 0.014, 0.012, { seg: 12, rotX: 90 });
+c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.42, 0.004); c.caixa(MAT.GRAFITE, 0, yf + 0.06, zf + 0.0015, 0.5, 0.36, 0.002);
+alcaH(c, MAT.INOX, 0, yf + 0.455, zf + 0.0005, 0.45, 0.034);
+for (k = 0; k < 5; k++) c.caixa(MAT.PRETO, 0, yf + 0.012 + k * 0.009, zf + 0.0005, 0.4, 0.003, 0.003);
 var yt = yf + 0.595 + 0.012;
-if (v.Com_micro) { c.caixaR(MAT.INOX, 0, yt, zf - 0.02, 0.595, 0.38, 0.04, 0.008, { k: 1 }); c.caixa(MAT.TELA, -0.06, yt + 0.035, zf + 0.0005, 0.37, 0.31, 0.004); c.caixa(MAT.PRETO, 0.21, yt + 0.1, zf + 0.0005, 0.08, 0.17, 0.004); c.cilH(MAT.INOX, 0.255, yt + 0.19, zf + 0.04, 0.007, 0.2, "y", { seg: 8, rotX: 0 }); yt += 0.38 + 0.012; }
-var hb = Ht - yt - 0.01; if (hb > 0.2) { H.giro(c, "bagageiro", -(W - 0.012) / 2, yt + hb / 2, zf + 0.0095, -1, function () { H.porta(c, v.Corpo, 0, yt, zf, W - 0.012, hb, 0.019, "liso"); H.cava(c, 0, yt + 0.03, zf + 0.019, 0.15); }); }
+if (v.Com_micro) {
+c.caixaR(MAT.INOX, 0, yt, zf - 0.02, 0.595, 0.38, 0.04, 0.008, { k: 1 });
+c.caixa(MAT.TELA, -0.075, yt + 0.035, zf + 0.0005, 0.4, 0.31, 0.004); c.caixa(MAT.GRAFITE, -0.075, yt + 0.035, zf + 0.0015, 0.36, 0.27, 0.002);
+c.caixa(MAT.PRETO, 0.2, yt + 0.035, zf + 0.0005, 0.14, 0.31, 0.004); c.caixa(MAT.TELA, 0.2, yt + 0.27, zf + 0.0035, 0.1, 0.04, 0.002);
+for (k = 0; k < 3; k++) c.caixa(MAT.CROMO, 0.2, yt + 0.2 - k * 0.055, zf + 0.0035, 0.08, 0.03, 0.003);
+alcaV(c, MAT.INOX, 0.115, yt + 0.19, zf + 0.0005, 0.22, 0.03);
+yt += 0.38 + 0.012;
+}
+var hb = Ht - yt - 0.01;
+if (hb > 0.2) { H.giro(c, "bagageiro", -(W - 0.012) / 2, yt + hb / 2, zf + 0.0095, -1, function () { H.porta(c, v.Corpo, 0, yt, zf, W - 0.012, hb, 0.019, "friso"); alcaV(c, MAT.INOX, (W - 0.012) / 2 - 0.05, yt + 0.16, zf + 0.019, 0.16, 0.028); }); }
 }
 });
 def({
@@ -76516,7 +76568,8 @@ c.caixa(mat, 0, hv, D / 2, W, Ht - hv, D - 0.03); c.caixa(mat, 0, 0, 0.005, W, h
 var nb = 2, wb = (W + 2 * e) / nb, hb = Ht - hv - 0.02;
 for (var i = 0; i < nb; i++) {
 var x = -(W + 2 * e) / 2 + wb * (i + 0.5), wdN = wb - 0.006, ladoN = i ? 1 : -1;
-H.giro(c, "bagageiro" + (i + 1), x + ladoN * wdN / 2, hv + 0.01 + hb / 2, D - 0.015 + 0.0095, ladoN, function () { H.porta(c, mat, x, hv + 0.01, D - 0.015, wdN, hb, 0.019, "liso"); H.cava(c, x + (i ? -1 : 1) * 0.04, hv + 0.04, D + 0.004, 0.012); });
+H.giro(c, "bagageiro" + (i + 1), x + ladoN * wdN / 2, hv + 0.01 + hb / 2, D - 0.015 + 0.0095, ladoN, function () { H.porta(c, mat, x, hv + 0.01, D - 0.015, wdN, hb, 0.019, "friso"); alcaV(c, MAT.INOX, x - ladoN * (wdN / 2 - 0.04), hv + 0.15, D + 0.004, 0.12, 0.025);
+});
 }
 }
 });
@@ -76529,7 +76582,7 @@ tipos: [T("i200", "2,00 m, 2 banquetas", { Comprimento: 2.00, Banquetas: 2 }), T
 gerar: function (c, v) {
 var L = v.Comprimento, D = v.Profundidade, B = v.Balanco, Ht = v.Altura, e = v.Espessura_tampo, Dc = D - B, z0 = -D / 2, furos = [];
 var zc = z0 + Dc / 2 + 0.0;
-corpoInferior(c, L - 0.06, Dc - 0.02, Ht, e, v.Corpo, "misto", z0 + 0.01, MAT.GRAFITE);
+corpoInferior(c, L - 0.06, Dc - 0.02, Ht, e, v.Corpo, "misto", z0 + 0.01, MAT.GRAFITE, "liso");
 [-1, 1].forEach(function (s) { c.caixa(v.Corpo, s * (L / 2 - 0.015), 0.1, z0 + D / 2, 0.03, Ht - e - 0.1, D); });
 c.caixa(v.Corpo, 0, 0.1, z0 + Dc, L - 0.06, Ht - e - 0.1, 0.02);
 var nk = v.Com_cooktop && L >= 1.8, nc = v.Com_cuba && L >= 1.4;
@@ -76539,7 +76592,7 @@ tampoFuros(c, v.Tampo, L, D, e, Ht - e, z0 + D / 2, furos);
 if (nc) cuba(c, furos[0].x, furos[0].z, Ht, 0.50, 0.40);
 if (nk) cooktop(c, L / 4, z0 + Dc / 2, Ht, 0.55, 0.47, 4);
 var nb = Math.round(v.Banquetas), pas = 0.62;
-for (var i = 0; i < nb; i++) { var xb = (i - (nb - 1) / 2) * pas; c.grupo(xb, 0, D / 2 + 0.12, 0, function (k) { H.banqueta(k, v.Altura_banqueta, 0.36, v.Tecido, MAT.PRETO); }); }
+for (var i = 0; i < nb; i++) { var xb = (i - (nb - 1) / 2) * pas; c.grupo(xb, 0, D / 2 + 0.12, 0, function (k) { banquetaLeve(k, v.Altura_banqueta, 0.36, v.Tecido, MAT.PRETO); }); }
 }
 });
 def({
@@ -76547,27 +76600,37 @@ id: "ra-coz-geladeira", moveis: true, categoria: "cozinha", nome: "Geladeira", d
 parametros: [P("Largura", "comprimento", 0.725, "Dimensões", "Medida de ficha de catálogo (ver fonte do tipo)"), P("Altura", "comprimento", 1.84, "Dimensões"), P("Profundidade", "comprimento", 0.701, "Dimensões", "Sem a folga de ventilação (~5 cm atrás e 3 cm nas laterais)"),
 P("Modelo", "texto", "inverse", "Construção", "inverse, duplex, sidebyside ou frenchdoor"), P("Acabamento", "material", "inox", "Materiais")],
 tipos: [T("inv", "Frost free inverse 443 L (BRE57AK) — 72,5 × 184 × 70,1", {}, FONTE_GELADEIRA), T("inv2", "Frost free inverse 447 L (BRE57FK) — 70 × 184,5 × 75,5", { Largura: 0.70, Altura: 1.845, Profundidade: 0.755 }, FONTE_GELADEIRA),
+T("inv591", "Frost free inverse 591 L — 83,6 × 186,8 × 79,1", { Largura: 0.836, Altura: 1.868, Profundidade: 0.791 }, FONTE_GEL591), T("inv500", "Frost free inverse 500 L — 70,5 × 194,3 × 74", { Largura: 0.705, Altura: 1.943, Profundidade: 0.74 }, FONTE_GEL500),
+T("sbs431", "Side by side 431 L — 83,6 × 178 × 62,3", { Modelo: "sidebyside", Largura: 0.836, Altura: 1.78, Profundidade: 0.623 }, FONTE_SBS431), T("sbs526", "Side by side 526 L — 91,1 × 178 × 66,6", { Modelo: "sidebyside", Largura: 0.911, Altura: 1.78, Profundidade: 0.666 }, FONTE_SBS526), T("sbs635", "Side by side 635 L — 91,3 × 179 × 73,5", { Modelo: "sidebyside", Largura: 0.913, Altura: 1.79, Profundidade: 0.735 }, FONTE_SBS635),
 T("sbs", "Side by side ~0,91 × 1,79 × 0,74 (medida usual; não verificada em ficha)", { Modelo: "sidebyside", Largura: 0.91, Altura: 1.79, Profundidade: 0.74 }), T("frn", "French door ~0,91 × 1,79 × 0,74 (medida usual; não verificada em ficha)", { Modelo: "frenchdoor", Largura: 0.91, Altura: 1.79, Profundidade: 0.74 }), T("dup", "Duplex ~0,70 × 1,75 × 0,70 (medida usual; não verificada em ficha)", { Modelo: "duplex", Largura: 0.70, Altura: 1.75, Profundidade: 0.70 })],
 gerar: function (c, v) {
-var W = v.Largura, Ht = v.Altura, D = v.Profundidade, m = String(v.Modelo).toLowerCase(), ac = v.Acabamento, pe = 0.04, zf = D - 0.03;
-c.caixa(MAT.PRETO, 0, 0, D / 2, W - 0.06, pe, D - 0.1);
-c.caixaR(MAT.GRAFITE, 0, pe, D / 2 - 0.01, W, Ht - pe, D - 0.02, 0.01);
+var W = v.Largura, Ht = v.Altura, D = v.Profundidade, m = String(v.Modelo).toLowerCase(), ac = v.Acabamento, pe = 0.04, zf = D - 0.03, i;
+c.caixa(MAT.PRETO, 0, 0, D / 2 - 0.02, W - 0.08, pe, D - 0.12);
+for (i = 0; i < 3; i++) c.caixa(MAT.PRETO, 0, 0.008 + i * 0.01, D - 0.058, W * 0.6, 0.005, 0.006);
+c.caixaR(MAT.GRAFITE, 0, pe, D / 2 - 0.01, W, Ht - pe, D - 0.02, 0.014);
+c.caixa(MAT.PRETO, 0, Ht - 0.03, D - 0.045, W - 0.04, 0.004, 0.03);
 if (m === "sidebyside" || m === "frenchdoor") {
-var wL = m === "sidebyside" ? W * 0.45 : W * 0.5, hTop = m === "sidebyside" ? Ht - pe - 0.02 : (Ht - pe) * 0.66, yTop = m === "sidebyside" ? pe + 0.01 : Ht - hTop - 0.01;
+var sbs = m === "sidebyside", wL = sbs ? W * 0.45 : W * 0.5, hTop = sbs ? Ht - pe - 0.02 : (Ht - pe) * 0.66, yTop = sbs ? pe + 0.01 : Ht - hTop - 0.01;
 [-1, 1].forEach(function (s) {
-var x = s * (wL / 2 + 0.004), w = m === "sidebyside" ? (s < 0 ? wL : W - wL - 0.012) : wL - 0.008; var xx = m === "sidebyside" ? (s < 0 ? -W / 2 + wL / 2 + 0.005 : W / 2 - (W - wL - 0.012) / 2 - 0.005) : x;
-H.giro(c, "porta" + (s < 0 ? "e" : "d"), xx + s * w / 2, yTop + hTop / 2, zf + 0.015, s, function () { c.caixaR(ac, xx, yTop, zf, w, hTop, 0.03, 0.01); c.cil(MAT.PRETO, xx + s * (w / 2 - 0.035) * (m === "sidebyside" ? -1 : 1), yTop + hTop * 0.35, zf + 0.04, 0.012, hTop * 0.38, { seg: 8 }); }, 110);
+var w = sbs ? (s < 0 ? wL : W - wL - 0.012) : wL - 0.008, xx = sbs ? (s < 0 ? -W / 2 + wL / 2 + 0.005 : W / 2 - (W - wL - 0.012) / 2 - 0.005) : s * (wL / 2 + 0.004);
+H.giro(c, "porta" + (s < 0 ? "e" : "d"), xx + s * w / 2, yTop + hTop / 2, zf + 0.015, s, function () {
+c.caixaR(ac, xx, yTop, zf, w, hTop, 0.03, 0.01);
+alcaV(c, MAT.INOX, xx - s * (w / 2 - 0.04), yTop + hTop * (sbs ? 0.5 : 0.35), zf + 0.03, hTop * (sbs ? 0.42 : 0.3), 0.03);
+if (sbs && s < 0) { c.caixa(MAT.PRETO, xx, yTop + hTop * 0.55, zf + 0.0305, w * 0.62, hTop * 0.2, 0.004); c.caixa(MAT.TELA, xx, yTop + hTop * 0.62, zf + 0.0335, w * 0.46, hTop * 0.035, 0.002); c.caixa(MAT.CROMO, xx, yTop + hTop * 0.57, zf + 0.0335, w * 0.2, hTop * 0.03, 0.004); }
+}, 110);
 });
-if (m === "frenchdoor") { H.gaveta(c, "freezer", (D - 0.12) * 0.6, function () { c.caixaR(ac, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, 0.03, 0.01); c.caixa(MAT.PRETO, 0, pe + 0.01 + (Ht - pe - hTop - 0.03) * 0.8, zf + 0.03, W * 0.6, 0.02, 0.012); H.gavetaCaixa(c, MAT.LACA, 0, pe + 0.01, zf, W - 0.012, Ht - pe - hTop - 0.03, D - 0.12); }); }
+c.caixa(MAT.PRETO, 0, yTop, zf + 0.0005, 0.008, hTop, 0.02);
+if (!sbs) { H.gaveta(c, "freezer", (D - 0.12) * 0.6, function () { var hf = Ht - pe - hTop - 0.03; c.caixaR(ac, 0, pe + 0.01, zf, W - 0.012, hf, 0.03, 0.01); alcaH(c, MAT.INOX, 0, pe + 0.01 + hf * 0.8, zf + 0.03, W * 0.55, 0.03); H.gavetaCaixa(c, MAT.LACA, 0, pe + 0.01, zf, W - 0.012, hf, D - 0.12); }); }
 } else {
 var inv = m === "inverse", hF = (Ht - pe) * (inv ? 0.30 : 0.28), hR = Ht - pe - hF - 0.03;
 var yR = inv ? pe + 0.01 + hF + 0.008 : pe + 0.01, yF = inv ? pe + 0.01 : pe + 0.01 + hR + 0.008;
 H.giro(c, "porta", W / 2 - 0.006, yR + hR / 2, zf + 0.015, 1, function () {
 c.caixaR(ac, 0, yR, zf, W - 0.012, hR, 0.03, 0.01);
-c.cil(MAT.PRETO, -W / 2 + 0.06, yR + hR * 0.35, zf + 0.04, 0.012, hR * 0.45, { seg: 8 });
-c.caixa(MAT.PRETO, W / 2 - 0.09, yR + hR - 0.04, zf + 0.0305, 0.09, 0.03, 0.002);
+alcaV(c, MAT.INOX, -W / 2 + 0.055, yR + hR * 0.62, zf + 0.03, hR * 0.5, 0.03);
+painelCmd(c, W / 2 - 0.1, yR + hR - 0.075, zf + 0.0305, 0.11, 0.05);
 }, 110);
-var frente = function () { c.caixaR(ac, 0, yF, zf, W - 0.012, hF - 0.008, 0.03, 0.01); c.cilH(MAT.PRETO, 0, yF + hF - 0.05, zf + 0.04, 0.011, W * 0.75, "x", { seg: 8 }); };
+c.caixa(MAT.PRETO, 0, yF + hF - 0.004, zf + 0.0005, W - 0.01, 0.008, 0.02);
+var frente = function () { c.caixaR(ac, 0, yF, zf, W - 0.012, hF - 0.008, 0.03, 0.01); alcaH(c, MAT.INOX, 0, yF + hF - 0.065, zf + 0.03, W * 0.7, 0.028); };
 if (inv) H.gaveta(c, "freezer", (D - 0.12) * 0.6, function () { frente(); H.gavetaCaixa(c, MAT.LACA, 0, yF, zf, W - 0.012, hF - 0.008, D - 0.12); });
 else H.giro(c, "freezer", W / 2 - 0.006, yF + hF / 2, zf + 0.015, 1, frente, 110);
 }
@@ -76576,24 +76639,31 @@ else H.giro(c, "freezer", W / 2 - 0.006, yF + hF / 2, zf + 0.015, 1, frente, 110
 def({
 id: "ra-coz-lavadora", moveis: true, categoria: "cozinha", nome: "Máquina de lavar roupas", descricao: "Lavadora frontal (porta circular com vidro e painel) ou de carga superior (tampa e painel de comandos). Os tipos frontais trazem medidas de ficha de catálogo.",
 parametros: [P("Modelo", "texto", "frontal", "Construção", "frontal ou superior"), P("Largura", "comprimento", 0.60, "Dimensões"), P("Altura", "comprimento", 0.85, "Dimensões"), P("Profundidade", "comprimento", 0.64, "Dimensões"), P("Corpo", "material", "laca branca", "Materiais")],
-tipos: [T("f11", "Lava e seca frontal 11 kg — 60 × 85 × 64", {}, FONTE_LAVA), T("f11lg", "Lava e seca frontal 11 kg — 60 × 85 × 56", { Profundidade: 0.56 }, FONTE_LAVA), T("sup", "Carga superior 13 kg (~0,66 × 1,06 × 0,69; medida usual, não verificada em ficha)", { Modelo: "superior", Largura: 0.66, Altura: 1.06, Profundidade: 0.69 })],
+tipos: [T("f11", "Lava e seca frontal 11 kg — 60 × 85 × 64", {}, FONTE_LAVA), T("f11lg", "Lava e seca frontal 11 kg — 60 × 85 × 56", { Profundidade: 0.56 }, FONTE_LAVA), T("f11sam", "Lava e seca frontal 11 kg — 60 × 85 × 65", { Profundidade: 0.65 }, FONTE_LAVA_SAM), T("f11so", "Lavadora frontal 11 kg — 60 × 85 × 55", { Profundidade: 0.55 }, FONTE_LAVA_SAM2), T("f11elx", "Lava e seca frontal 11 kg — 60 × 85 × 65,9", { Profundidade: 0.659 }, FONTE_LAVA_ELX),
+T("sup", "Carga superior 13 kg (~0,66 × 1,06 × 0,69; medida usual, não verificada em ficha)", { Modelo: "superior", Largura: 0.66, Altura: 1.06, Profundidade: 0.69 })],
 gerar: function (c, v) {
 var W = v.Largura, Ht = v.Altura, D = v.Profundidade, fr = String(v.Modelo).toLowerCase() !== "superior";
 c.caixaR(v.Corpo, 0, 0.015, D / 2, W, Ht - 0.015, D, 0.012);
 [-1, 1].forEach(function (s) { c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, D - 0.05, 0.025, 0.015, { seg: 8 }); c.cil(MAT.PRETO, s * (W / 2 - 0.04), 0, 0.05, 0.025, 0.015, { seg: 8 }); });
 if (fr) {
-var yc = Ht * 0.44, r = Math.min(0.24, W * 0.4);
+var yc = Ht * 0.43, r = Math.min(0.24, W * 0.4);
+c.torno(MAT.BORRACHA, 0, yc, D + 0.001, [[r + 0.045, 0], [r + 0.045, 0.01], [r + 0.012, 0.016], [r + 0.012, 0]], { seg: 32, rotX: 90 });
 H.giro(c, "porta", -(r + 0.035), yc, D, -1, function () {
-c.torno(MAT.CROMO, 0, yc, D, [[r + 0.035, -0.012], [r + 0.035, 0.0], [r + 0.012, 0.03], [r, 0.03]], { seg: 32, rotX: 90 });
-c.torno(MAT.FUME, 0, yc, D + 0.005, [[r, 0.0], [r * 0.93, 0.03], [r * 0.7, 0.045], [0, 0.05]], { seg: 32, rotX: 90 });
+c.torno(MAT.CROMO, 0, yc, D + 0.01, [[r + 0.035, -0.012], [r + 0.035, 0.0], [r + 0.012, 0.03], [r, 0.03]], { seg: 32, rotX: 90 });
+c.torno(MAT.FUME, 0, yc, D + 0.015, [[r, 0.0], [r * 0.93, 0.03], [r * 0.7, 0.045], [0, 0.05]], { seg: 32, rotX: 90 });
 }, 110);
-c.caixa(MAT.GRAFITE, 0, Ht - 0.115, D + 0.001, W - 0.04, 0.09, 0.004);
-c.cil(MAT.CROMO, W / 2 - 0.08, Ht - 0.07, D + 0.003, 0.025, 0.014, { seg: 16, rotX: 90 });
-c.caixa(MAT.TELA, -0.05, Ht - 0.088, D + 0.0035, 0.2, 0.045, 0.002);
+c.caixa(MAT.GRAFITE, 0, Ht - 0.125, D + 0.001, W - 0.04, 0.10, 0.004);
+c.caixa(MAT.INOX, -W / 2 + 0.12, Ht - 0.125, D + 0.004, 0.15, 0.07, 0.004); c.caixa(MAT.PRETO, -W / 2 + 0.12, Ht - 0.145, D + 0.0065, 0.07, 0.008, 0.002);
+c.caixa(MAT.TELA, 0.02, Ht - 0.1, D + 0.004, 0.12, 0.04, 0.002);
+for (var q = 0; q < 3; q++) c.cil(MAT.CROMO, -0.01 + q * 0.04, Ht - 0.15, D + 0.0035, 0.009, 0.004, { seg: 10, rotX: 90 });
+c.cil(MAT.CROMO, W / 2 - 0.085, Ht - 0.125, D + 0.003, 0.027, 0.016, { seg: 20, rotX: 90 }); c.caixa(MAT.PRETO, W / 2 - 0.085, Ht - 0.1, D + 0.0195, 0.004, 0.018, 0.001);
+c.caixa(MAT.PRETO, 0, 0.03, D + 0.001, W * 0.55, 0.03, 0.003);
 } else {
 c.caixaR(MAT.GRAFITE, 0, Ht - 0.02, D / 2, W - 0.02, 0.02, D - 0.02, 0.008, { k: 1 });
-c.parte("tampa", { tipo: "basculante", eixo: [0, Ht + 0.006, D * 0.45 - D * 0.275], angulo: 100, sentido: -1 }, function () { c.caixaR(MAT.FUME, 0, Ht, D * 0.45, W * 0.62, 0.012, D * 0.55, 0.01, { k: 1 }); });
+c.parte("tampa", { tipo: "basculante", eixo: [0, Ht + 0.006, D * 0.45 - D * 0.275], angulo: 100, sentido: -1 }, function () { c.caixaR(MAT.FUME, 0, Ht, D * 0.45, W * 0.62, 0.012, D * 0.55, 0.01, { k: 1 }); c.caixaR(MAT.GRAFITE, 0, Ht, D * 0.45 - D * 0.275 + 0.01, W * 0.62 + 0.04, 0.016, 0.03, 0.006, { k: 1 }); });
 c.caixaR(MAT.GRAFITE, 0, Ht - 0.06, 0.04, W - 0.02, 0.14, 0.08, 0.012, { k: 1 }); c.caixa(MAT.TELA, 0, Ht - 0.03, 0.082, W * 0.6, 0.05, 0.003);
+painelCmd(c, W / 2 - 0.14, Ht - 0.1, 0.0825, 0.16, 0.06);
+c.cil(MAT.CROMO, -W / 2 + 0.09, Ht - 0.075, 0.082, 0.03, 0.016, { seg: 20, rotX: 90 });
 }
 }
 });
@@ -76614,11 +76684,11 @@ var x = -(L - 0.01) / 2 + wm * (i + 0.5);
 if (i % 2 === 0 && nm > 2) {
 [0, 1].forEach(function (g) {
 var hh = (hc - 0.02) / 2 - 0.004, yg = y0 + 0.008 + g * (hh + 0.008);
-H.gaveta(c, "m" + (i + 1) + "gaveta" + (g + 1), (D - 0.10) * 0.7, function () { H.porta(c, v.Corpo, x, yg, D - 0.02, wm - 0.008, hh, 0.019, "liso"); H.cava(c, x, yg + hh - 0.03, D, wm * 0.5); H.gavetaCaixa(c, MAT.CLARA, x, yg, D - 0.02, wm - 0.008, hh, D - 0.10); });
+H.gaveta(c, "m" + (i + 1) + "gaveta" + (g + 1), (D - 0.10) * 0.7, function () { H.porta(c, v.Corpo, x, yg, D - 0.02, wm - 0.008, hh, 0.019, "liso"); alcaH(c, MAT.INOX, x, yg + hh - 0.045, D - 0.001, Math.min(0.2, wm * 0.5), 0.022); H.gavetaCaixa(c, MAT.CLARA, x, yg, D - 0.02, wm - 0.008, hh, D - 0.10); });
 });
 } else {
 var ladoB = nm > 2 ? (Math.floor(i / 2) % 2 ? -1 : 1) : (i === 0 ? -1 : 1), wdB = wm - 0.008;
-H.giro(c, "m" + (i + 1) + "porta", x + ladoB * wdB / 2, y0 + hc / 2, D - 0.02 + 0.0095, ladoB, function () { H.porta(c, v.Corpo, x, y0 + 0.008, D - 0.02, wdB, hc - 0.016, 0.019, "liso"); H.cava(c, x, y0 + hc - 0.04, D, 0.01); });
+H.giro(c, "m" + (i + 1) + "porta", x + ladoB * wdB / 2, y0 + hc / 2, D - 0.02 + 0.0095, ladoB, function () { H.porta(c, v.Corpo, x, y0 + 0.008, D - 0.02, wdB, hc - 0.016, 0.019, "friso"); alcaV(c, MAT.INOX, x - ladoB * (wdB / 2 - 0.04), y0 + hc - 0.14, D - 0.001, 0.12, 0.022); });
 }
 }
 c.caixaR(v.Tampo, 0, Ht - e, D / 2, L, e, D, 0.004, { k: 1 }); c.caixa(v.Tampo, 0, Ht, 0.01, L, 0.1, 0.02);
@@ -76652,6 +76722,11 @@ for (var i = 0; i < nJ; i++) { var xj = nJ === 1 ? -L * 0.12 : -L / 2 + ar + 0.3
 for (var m = 0; m < nM; m++) jato(-xi, yj + 0.02, (m - (nM - 1) / 2) * 0.16, [0, 90], 0.025);
 c.torno(MAT.CROMO, xi - 0.12, Math.max(0.03, fd), 0, [[0.035, 0], [0.04, 0.004], [0.035, 0.008]], { seg: 20 });
 c.torno(MAT.CROMO, -xi + 0.05, Ht - 0.12, -zi, [[0.03, 0], [0.034, 0.004], [0.03, 0.008]], { seg: 16, rotX: 90 });
+var gE = 25, hE = (Ht - 0.035 - Math.max(0.03, fd)) / Math.cos(gE * Math.PI / 180);
+c.caixaR(mat, -L / 2 + ar + 0.30, Math.max(0.03, fd), 0, 0.07, hE, W - 2 * ar - 0.10, 0.02, { rotZ: gE });
+c.caixaR(MAT.LACA, -L / 2 + ar + 0.17, Ht - 0.14, 0, 0.09, 0.10, 0.34, 0.03, { rotZ: gE });
+[-1, 1].forEach(function (s2) { c.caixa(MAT.CROMO, 0, Ht + 0.004, s2 * (W / 2 - ar / 2 - 0.0), 0.34, 0.012, 0.012); c.caixa(MAT.CROMO, -0.17, Ht, s2 * (W / 2 - ar / 2), 0.014, 0.012, 0.03); c.caixa(MAT.CROMO, 0.17, Ht, s2 * (W / 2 - ar / 2), 0.014, 0.012, 0.03); });
+for (var bt = 0; bt < 3; bt++) c.cil(MAT.CROMO, L / 2 - ar / 2 - 0.01 - 0.08 - bt * 0.05, Ht, W / 2 - ar / 2, 0.014, 0.008, { seg: 10 });
 if (v.Com_misturador) {
 var xm = L / 2 - ar / 2 - 0.01;
 c.cil(MAT.CROMO, xm, Ht, -W / 2 + ar / 2 + 0.02, 0.025, 0.04, { seg: 12 }); c.cil(MAT.CROMO, xm, Ht + 0.04, -W / 2 + ar / 2 + 0.02, 0.013, 0.2, { seg: 10 });
@@ -76668,23 +76743,44 @@ servicos: [{ id: "vidro_frente", descricao: "Vidro temperado da frente do box (l
 { id: "vidro_lateral", descricao: "Vidro temperado da lateral do box de canto (profundidade × altura)", unidade: "m2", quantidade: "Profundidade * Altura", codigo: "" }],
 tipos: [T("f100", "Frontal 1,00 m, correr", {}), T("f120", "Frontal 1,20 m, correr", { Largura: 1.20 }), T("f80a", "Frontal 0,80 m, abrir", { Largura: 0.80, Porta: "abrir" }), T("c90", "De canto 0,90 × 0,90, correr", { Modelo: "canto", Largura: 0.90, Profundidade: 0.90 }), T("c120", "De canto 1,20 × 0,90, abrir", { Modelo: "canto", Largura: 1.20, Profundidade: 0.90, Porta: "abrir" })],
 gerar: function (c, v) {
-var W = v.Largura, D = v.Profundidade, Ht = v.Altura, e = v.Esp_vidro, canto = String(v.Modelo).toLowerCase() === "canto", correr = String(v.Porta).toLowerCase() === "correr", p = 0.02;
-var zf = D;
+var W = v.Largura, D = v.Profundidade, Ht = v.Altura, e = v.Esp_vidro, canto = String(v.Modelo).toLowerCase() === "canto", correr = String(v.Porta).toLowerCase() === "correr", per = v.Perfil, zf = D, yb = 0.012, q = 0.022;
 function painel(x, z, larg, alt, y, eixo) {
 if (eixo === "x") c.caixa(v.Vidro, x, y, z, larg, alt, e); else c.caixa(v.Vidro, x, y, z, e, alt, larg);
 }
-var yb = 0.01;
-if (canto) {
-c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + 0.0, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2, 0, D / 2, p, 0.02, D);
-c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
-painel(W / 2, D / 2, D, Ht - yb, yb, "z");
-if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); H.correr(c, "porta", -(W / 2 - 0.01), function () { painel(W / 4 - 0.01, zf + 0.02, W / 2, Ht - yb, yb, "x"); c.cilH(MAT.INOX, -0.05, Ht * 0.52, zf + 0.04, 0.008, 0.3, "y", { seg: 8, rotX: 0 }); }); }
-else { painel(W * 0.34, zf, W * 0.32, Ht - yb, yb, "x"); H.giro(c, "porta", -W * 0.5, Ht / 2, zf, -1, function () { painel(-W * 0.18, zf, W * 0.64, Ht - yb, yb, "x"); c.cil(MAT.INOX, W * 0.08, Ht * 0.45, zf + 0.03, 0.009, 0.4, { seg: 8 }); [0.2, 0.55, 0.9].forEach(function (f) { c.cil(v.Perfil, -W * 0.5 + 0.02, Ht * f, zf + 0.005, 0.014, 0.05, { seg: 8, rotX: 90, centro: true }); }); }, 95); }
+function folha(x, z, larg, alt, y) {
+painel(x, z, larg, alt, y, "x");
+c.caixa(per, x, y, z, larg, q, e + 0.014); c.caixa(per, x, y + alt - q, z, larg, q, e + 0.014);
+c.caixa(per, x - larg / 2 + 0.01, y, z, 0.02, alt, e + 0.014); c.caixa(per, x + larg / 2 - 0.01, y, z, 0.02, alt, e + 0.014);
+}
+function montante(x, z) { c.caixa(per, x, 0, z, 0.02, Ht, 0.024); }
+function barraPux(x, z, lado) { c.caixa(MAT.INOX, x, Ht * 0.52 - 0.22, z + lado * (e / 2 + 0.03), 0.014, 0.44, 0.014); [-1, 1].forEach(function (s) { c.caixa(MAT.INOX, x, Ht * 0.52 + s * 0.17 - 0.005, z + lado * (e / 2 + 0.015), 0.01, 0.01, 0.03); }); }
+function garra(x, z, y) { c.caixa(MAT.CROMO, x, y, z, 0.035, 0.05, e + 0.02); }
+c.caixa(per, 0, 0, zf, W, 0.028, 0.034);
+c.caixa(per, -W / 2 + 0.01, 0, D / 2, 0.02, 0.02, D);
+c.caixa(per, W / 2 - 0.01, 0, D / 2, canto ? 0.034 : 0.02, canto ? 0.028 : 0.02, D);
+montante(-W / 2 + 0.01, zf);
+if (canto) { montante(W / 2 - 0.01, zf); montante(W / 2 - 0.01, 0.012); c.caixa(per, W / 2 - 0.01, Ht, D / 2, 0.02, 0.022, D); }
+else montante(W / 2 - 0.01, zf);
+if (correr) {
+c.caixa(per, 0, Ht - 0.01, zf + 0.01, W, 0.04, 0.05);
+folha(-W / 4, zf, W / 2, Ht - yb, yb); garra(-W / 4, zf, 0.3); garra(-W / 4, zf, Ht - 0.35);
+H.correr(c, "porta", -(W / 2 - 0.01), function () {
+folha(W / 4 - 0.01, zf + 0.026, W / 2 + 0.02, Ht - yb, yb); barraPux(W / 4 - 0.01 - (W / 4 + 0.01) + 0.07, zf + 0.026, 1);
+[-1, 1].forEach(function (s) { c.caixa(MAT.CROMO, W / 4 - 0.01 + s * (W / 4 - 0.04), Ht - 0.05, zf + 0.026, 0.03, 0.025, 0.03); });
+});
 } else {
-c.caixa(v.Perfil, 0, 0, zf, W, 0.02, p); c.caixa(v.Perfil, -W / 2 + p / 2, 0, D / 2, p, 0.02, D); c.caixa(v.Perfil, W / 2 - p / 2, 0, D / 2, p, 0.02, D);
-c.caixa(v.Perfil, 0, Ht, zf, W, p, p);
-if (correr) { painel(-W / 4, zf, W / 2, Ht - yb, yb, "x"); H.correr(c, "porta", -(W / 2 - 0.01), function () { painel(W / 4 - 0.01, zf + 0.02, W / 2 + 0.02, Ht - yb, yb, "x"); c.cil(MAT.INOX, W / 4 - 0.12, Ht * 0.5, zf + 0.045, 0.008, 0.45, { seg: 8 }); }); }
-else { painel(W / 2 - (W * 0.25) / 2 - 0.02, zf, W * 0.25, Ht - yb, yb, "x"); H.giro(c, "porta", -W / 2 + 0.02, Ht / 2, zf, -1, function () { painel(-W / 2 + (W * 0.65) / 2 + 0.02, zf, W * 0.65, Ht - yb, yb, "x"); c.cilH(MAT.INOX, 0.0, Ht * 0.5, zf + 0.04, 0.008, 0.3, "y", { seg: 8 }); }, 95); }
+c.caixa(per, 0, Ht - 0.01, zf, W, 0.02, 0.03);
+var wf = W * 0.28, wp = W - wf - 0.02;
+folha(W / 2 - wf / 2 - 0.01, zf, wf, Ht - yb, yb);
+H.giro(c, "porta", -W / 2 + 0.02, Ht / 2, zf, -1, function () {
+folha(-W / 2 + 0.02 + wp / 2, zf, wp, Ht - yb, yb);
+barraPux(-W / 2 + 0.02 + wp - 0.07, zf, 1);
+[0.2, 0.55, 0.9].forEach(function (f) { c.caixa(MAT.CROMO, -W / 2 + 0.02, Ht * f - 0.03, zf, 0.034, 0.06, e + 0.02); });
+}, 95);
+}
+if (canto) {
+painel(W / 2, D / 2, D - 0.04, Ht - yb, yb, "z");
+c.caixa(per, W / 2, yb, D / 2, e + 0.014, q, D - 0.04); c.caixa(per, W / 2, Ht - q, D / 2, e + 0.014, q, D - 0.04);
 }
 }
 });
@@ -76705,6 +76801,10 @@ c.caixa(rf, 0, yb, D / 2 - 0.02, W - 2 * pil, 0.05, D - 0.1);
 c.caixa(rv, 0, yb + hb, D / 2, W, 0.2, D); c.caixa(rf, 0, yb + 0.05, 0.03, W - 2 * pil, hb - 0.05, 0.05);
 for (var i = 0; i < 9; i++) c.cilH(MAT.PRETO, -((W - 2 * pil) / 2 - 0.03) + i * (W - 2 * pil - 0.06) / 8, yb + 0.16, D / 2, 0.005, D - 0.14, "z", { seg: 6 });
 c.cilH(MAT.PRETO, 0, yb + 0.16, D - 0.09, 0.006, W - 2 * pil, "x", { seg: 6 });
+c.caixa(MAT.GRAFITE, 0, 0.05, D - 0.008, W * 0.5, yb - 0.1, 0.008); c.caixa(MAT.INOX, 0, yb - 0.1, D - 0.001, W * 0.3, 0.012, 0.003);
+[-1, 1].forEach(function (s2) { c.cilH(MAT.PRETO, s2 * (W / 2 - pil - 0.06), yb + 0.16, D - 0.05, 0.006, 0.08, "z", { seg: 5 }); });
+c.caixa(rf, 0, yb + hb - 0.02, D - 0.025, W - 2 * pil + 0.04, 0.04, 0.03); [-1, 1].forEach(function (s2) { c.caixa(rf, s2 * (W / 2 - pil), yb, D - 0.025, 0.03, hb - 0.02, 0.03); });
+c.caixa(rv, 0, Ht - 0.05, D / 2, dl + 0.08, 0.05, dl + 0.08);
 var yc = yb + hb + 0.2;
 chamine(c, rv, 0, yc, D / 2, W, D, dl, dl, Math.min(0.4, Ht - yc - 0.2), Math.max(0.1, Ht - yc - Math.min(0.4, Ht - yc - 0.2)), dl);
 }
@@ -76735,7 +76835,7 @@ chamine(c, v.Coifa, 0, yc, D / 2, B + 0.2, D, 0.4, 0.4, hh, Math.max(0.2, Ht - y
 def({
 id: "ra-lazer-mesa-gourmet", centro: true, categoria: "lazer", nome: "Mesa gourmet com bancos", descricao: "Mesa de madeira maciça com pés em X de metal e dois bancos corridos nas laterais (opcionais).",
 parametros: [P("Comprimento", "comprimento", 2.20, "Dimensões", USUAL), P("Largura", "comprimento", 0.85, "Dimensões", USUAL), P("Altura", "comprimento", 0.75, "Dimensões"), P("Bancos", "simnao", true, "Construção"), P("Altura_banco", "comprimento", 0.45, "Dimensões"), P("Tampo", "material", "madeira deck", "Materiais"), P("Estrutura", "material", "metal preto", "Materiais")],
-tipos: [T("m180", "1,80 × 0,85 (6 lugares com bancos)", { Comprimento: 1.80 }), T("m220", "2,20 × 0,85 (8 lugares com bancos)", {}), T("m260", "2,60 × 0,90 (10 lugares com bancos)", { Comprimento: 2.60, Largura: 0.90 })],
+tipos: [T("m180", "1,80 × 0,85 (6 lugares com bancos)", { Comprimento: 1.80 }), T("m220", "2,20 × 0,85 (8 lugares com bancos)", {}), T("m260", "2,60 × 0,90 (10 lugares com bancos)", { Comprimento: 2.60, Largura: 0.90 }), T("q67", "Quadrada 0,67 × 0,67 × 0,75 (sem bancos)", { Comprimento: 0.67, Largura: 0.67, Altura: 0.75, Bancos: false }, FONTE_VARANDA), T("q100", "Quadrada 1,00 × 1,00 × 0,71 (sem bancos)", { Comprimento: 1.00, Largura: 1.00, Altura: 0.71, Bancos: false }, FONTE_VARANDA)],
 gerar: function (c, v) {
 var L = v.Comprimento, W = v.Largura, Ht = v.Altura, hb = v.Altura_banco;
 c.caixaR(v.Tampo, 0, Ht - 0.05, 0, L, 0.05, W, 0.006, { k: 1 });
@@ -76756,19 +76856,39 @@ c.caixaR(v.Tampo, 0, hb - 0.045, zb, L - 0.1, 0.045, 0.34, 0.005, { k: 1 });
 def({
 id: "ra-lazer-espreguicadeira", centro: true, categoria: "lazer", nome: "Espreguiçadeira", descricao: "Espreguiçadeira com estrutura de alumínio, colchonete em três módulos (encosto reclinável, assento e apoio dos pés) e rodinhas. O ângulo do encosto é parâmetro.",
 parametros: [P("Comprimento", "comprimento", 1.95, "Dimensões", USUAL), P("Largura", "comprimento", 0.62, "Dimensões"), P("Altura_assento", "comprimento", 0.32, "Dimensões"), P("Angulo_encosto", "angulo", 30, "Construção", "Inclinação do encosto sobre o plano do assento, em graus", "instancia"), P("Estrutura", "material", "metal preto", "Materiais"), P("Colchonete", "material", "tecido bege", "Materiais")],
-tipos: [T("e195", "1,95 × 0,62", {}), T("e200l", "2,00 × 0,70 (larga)", { Comprimento: 2.00, Largura: 0.70 }), T("e195p", "Encosto reto 60°", { Angulo_encosto: 60 })],
+tipos: [T("e195", "1,95 × 0,62", {}), T("e200l", "2,00 × 0,70 (larga)", { Comprimento: 2.00, Largura: 0.70 }), T("e195p", "Encosto reto 60°", { Angulo_encosto: 60 }), T("e180f", "1,80 × 0,60 — assento a 0,28 m", { Comprimento: 1.80, Largura: 0.60, Altura_assento: 0.28, Angulo_encosto: 45 }, FONTE_ESP_VOR), T("e204", "2,04 × 0,71", { Comprimento: 2.04, Largura: 0.71, Angulo_encosto: 45 }, FONTE_ESP_TID), T("e200c", "2,005 × 0,79", { Comprimento: 2.005, Largura: 0.79, Angulo_encosto: 45 }, FONTE_ESP_TID)],
 gerar: function (c, v) {
-var L = v.Comprimento, W = v.Largura, hs = v.Altura_assento, a = v.Angulo_encosto, es = v.Estrutura, tec = v.Colchonete, Le = L * 0.38, Lp = L * 0.27, La = L - Le - Lp, z0 = -L / 2;
+var L = v.Comprimento, W = v.Largura, hs = v.Altura_assento, a = v.Angulo_encosto, es = v.Estrutura, tec = v.Colchonete, RAD = Math.PI / 180;
+var Le = L * 0.30, Lp = L * 0.22, gP = 12, sa = Math.sin(a * RAD), ca = Math.cos(a * RAD), run = Le * ca, runP = Lp * Math.cos(gP * RAD);
+var zH = -L / 2 + run, zF = zH + (L - run - runP), yR = hs - 0.045, t = 0.032, xs = W / 2 - 0.025;
+function barra(mat, x, y1, z1, y2, z2, dx, dy, extra) {
+if (z2 < z1) { var ty = y1, tz = z1; y1 = y2; z1 = z2; y2 = ty; z2 = tz; }
+var dz = z2 - z1, dyy = y2 - y1, Lb = Math.sqrt(dz * dz + dyy * dyy) + (extra || 0), g = Math.atan2(-dyy, dz) / RAD;
+c.caixaR(mat, x, (y1 + y2) / 2, (z1 + z2) / 2, dx, dy, Lb, Math.min(dx, dy) * 0.3, { k: 1, rotX: g });
+}
+var yTopo = yR + Le * sa, zCab = -L / 2, zPe = zF + runP, yPe = yR - Lp * Math.sin(gP * RAD);
 [-1, 1].forEach(function (s) {
-c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le + La / 2, 0.035, 0.035, La + 0.1);
-c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le + La + Lp / 2 + 0.02, 0.035, 0.035, Lp, { rotX: -12 });
-c.caixa(es, s * (W / 2 - 0.02), hs - 0.05, z0 + Le / 2, 0.035, 0.035, Le + 0.04, { rotX: -a });
-c.cil(es, s * (W / 2 - 0.02), 0, z0 + Le + 0.05, 0.02, hs - 0.04, { seg: 8 }); c.cil(es, s * (W / 2 - 0.02), 0, z0 + Le + La - 0.05, 0.02, hs - 0.04, { seg: 8 });
-c.cil(MAT.BORRACHA, s * (W / 2 - 0.02), 0, z0 + Le + La - 0.05, 0.04, 0.04, { seg: 12, rotZ: 90, centro: true });
+var x = s * xs;
+barra(es, x, yTopo, zCab, yR, zH, t, t, 0.02);
+barra(es, x, yR, zH, yR, zF, t, t, 0.02);
+barra(es, x, yR, zF, yPe, zPe, t, t, 0.02);
+barra(es, x, yR - 0.012, zH + 0.30, yR + Le * sa * 0.62, zH - run * 0.62, 0.022, 0.022);
+c.cil(es, x, 0.09, zH + 0.12, 0.016, yR - 0.09 + 0.01, { seg: 8 });
+c.cil(es, x, 0.04, zPe - 0.06, 0.016, yPe - 0.04 + 0.01, { seg: 8 }); c.cil(MAT.BORRACHA, x, 0, zPe - 0.06, 0.022, 0.04, { seg: 10 });
+c.caixa(es, x, 0.07, zH + 0.12, t * 0.8, 0.04, 0.09);
+c.cil(MAT.BORRACHA, x + s * 0.024, 0.0, zH + 0.12, 0.045, 0.03, { seg: 14, rotZ: 90, centro: true });
 });
-c.caixaR(tec, 0, hs - 0.015, z0 + Le + La / 2, W - 0.02, 0.07, La, 0.03);
-c.caixaR(tec, 0, hs - 0.015, z0 + Le + La + Lp / 2 + 0.02, W - 0.02, 0.07, Lp, 0.03, { rotX: -12 });
-c.caixaR(tec, 0, hs - 0.015, z0 + Le / 2, W - 0.02, 0.07, Le, 0.03, { rotX: -a });
+c.caixa(es, 0, yR - 0.016, zH + 0.12, W - 0.04, 0.03, 0.03);
+[[zH, yR], [zF, yR], [zCab + 0.02, yTopo], [zPe - 0.02, yPe]].forEach(function (p) { c.caixa(es, 0, p[1] - 0.016, p[0], W - 0.04, 0.026, 0.026); });
+c.caixa(es, 0, yR - 0.016, (zH + zF) / 2, W - 0.04, 0.026, 0.026);
+function mod(y1, z1, y2, z2, ext) {
+if (z2 < z1) { var ty = y1, tz = z1; y1 = y2; z1 = z2; y2 = ty; z2 = tz; }
+var dz = z2 - z1, dyy = y2 - y1, Lb = Math.sqrt(dz * dz + dyy * dyy), g = Math.atan2(-dyy, dz) / RAD, nz = -dyy / Lb, ny = dz / Lb;
+c.caixaR(tec, 0, (y1 + y2) / 2 + ny * 0.016, (z1 + z2) / 2 + nz * 0.016, W - 0.03, 0.06, Lb + (ext || 0), 0.03, { rotX: g });
+}
+mod(yTopo, zCab + 0.03, yR, zH, 0.02); mod(yR, zH, yR, zF, 0.02); mod(yR, zF, yPe, zPe, 0.02);
+[0.3, 0.6].forEach(function (f) { c.caixa(MAT.PRETO, 0, yR + 0.052, zH + (zF - zH) * f, W - 0.06, 0.002, 0.004); });
+c.caixaR(tec, 0, yTopo + 0.03, zCab + 0.14, W * 0.62, 0.07, 0.2, 0.03, { rotX: a });
 }
 });
 def({
@@ -76782,6 +76902,9 @@ c.cil(v.Mastro, 0, 0.1, 0, 0.026, Ht - 0.1, { seg: 12 });
 c.torno(v.Lona, 0, 0, 0, [[R, yb], [R * 0.74, yb + (Ht - yb) * 0.55], [R * 0.25, Ht - 0.06], [0.04, Ht - 0.02], [0, Ht + 0.02]], { seg: 8, aberto: true });
 c.torno(v.Lona, 0, 0, 0, [[R - 0.01, yb - 0.002], [R * 0.74, yb + (Ht - yb) * 0.55 - 0.012], [R * 0.25, Ht - 0.07], [0.03, Ht - 0.04]], { seg: 8, aberto: true, rotY: 0 });
 c.cil(MAT.PRETO, 0, Ht + 0.02, 0, 0.012, 0.05, { seg: 8 });
+for (var iv = 0; iv < 8; iv++) c.grupo(0, 0, 0, iv * 45, function (k) { k.caixa(v.Mastro, 0, yb - 0.035, R * 0.985, 0.016, 0.04, 0.016); });
+c.cil(MAT.CROMO, 0.04, 1.2, 0, 0.012, 0.02, { seg: 8, rotZ: 90 });
+c.cil(MAT.PRETO, 0, 0.07, 0, 0.032, 0.02, { seg: 10 });
 }
 });
 FM.registrar();
@@ -82128,11 +82251,11 @@ c.lamina(mat, x, y, z, cp, larg, { rotY: yaw, inclina: incl, curva: cv, seg: opt
 }
 }
 var SERRA = [0.35, 0.8, 0.5, 0.9, 0.55, 0.85, 0.5, 0.75, 0.4, 0.55, 0.25, 0.1];
-function copa(c, mats, cx, cy, cz, rx, ry, rz, n, rnd, seg) {
+function copa(c, mats, cx, cy, cz, rx, ry, rz, n, rnd, seg, esc) {
 for (var i = 0; i < n; i++) {
 var a = rnd() * Math.PI * 2, b = Math.acos(1 - 2 * rnd()), r = Math.pow(rnd(), 0.5), px = Math.sin(b) * Math.cos(a) * r * rx * 0.72, py = Math.cos(b) * r * ry * 0.72, pz = Math.sin(b) * Math.sin(a) * r * rz * 0.72;
-var s = rnd.entre(0.26, 0.42), mat = mats[Math.floor(rnd() * mats.length) % mats.length];
-c.elipsoide(mat, cx + px, cy + py, cz + pz, rx * s, ry * s * 0.8, rz * s, { seg: seg || 12, aneis: 6 });
+var s = rnd.entre(0.26, 0.42) * (esc || 1), mat = mats[Math.floor(rnd() * mats.length) % mats.length];
+c.elipsoide(mat, cx + px, cy + py, cz + pz, rx * s, ry * s * 0.8, rz * s, { seg: seg || 10, aneis: 6 });
 }
 }
 function flores(c, mat, cx, cy, cz, rx, ry, rz, n, rnd, raio) {
@@ -82150,7 +82273,7 @@ topos.push([bx + Math.cos(a * Math.PI / 180) * h * Math.sin(inc * Math.PI / 180)
 }
 }
 pdef({
-id: "ra-pais-palmeira-rafia", nome: "Palmeira-ráfia (Rhapis excelsa)", descricao: "Touceira de hastes finas e fibrosas, cada uma com um leque de folhas largas e recortadas. Vaso de jardim ou canteiro; tolera meia-sombra.",
+id: "ra-pais-palmeira-rafia", fonteGeral: "Porte da touceira: até cerca de 4 m (Wikipedia em inglês, verbete Rhapis excelsa, consultada em 28/10/2026); crescimento lento. Fonte secundária: não achei o porte em Lorenzi/Embrapa — a muda comprada manda; os tipos de 1,50, 2,20 e 3,00 m são portes de muda/touceira usuais, conferir no viveiro.", nome: "Palmeira-ráfia (Rhapis excelsa)", descricao: "Touceira de hastes finas e fibrosas, cada uma com um leque de folhas largas e recortadas. Vaso de jardim ou canteiro; tolera meia-sombra.",
 parametros: [P("Altura", "comprimento", 2.20, "Porte", "Altura da touceira. " + PORTE), P("Hastes", "inteiro", 8, "Porte", "Número de hastes"), P("Diametro_copa", "comprimento", 1.40, "Porte"), P("Semente", "inteiro", 11, "Construção", "Muda o sorteio de posições; a mesma semente dá a mesma planta", "instancia")],
 tipos: [T("r15", "Muda 1,50 m", { Altura: 1.50, Hastes: 5, Diametro_copa: 1.00 }), T("r22", "Touceira 2,20 m", {}), T("r30", "Touceira 3,00 m", { Altura: 3.00, Hastes: 11, Diametro_copa: 1.80 })],
 gerar: function (c, v) {
@@ -82162,7 +82285,7 @@ c.torno(MAT.TERRA, 0, 0, 0, [[ab * 0.75, 0], [ab * 0.75, 0.03], [ab * 0.6, 0.04]
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
 });
 pdef({
-id: "ra-pais-areca", nome: "Areca-bambu (Dypsis lutescens)", descricao: "Touceira alta de hastes anelares amareladas com folhas pinadas arqueadas. Pleno sol ou meia-sombra; comum em divisa e canteiro.",
+id: "ra-pais-areca", fonteGeral: "Porte adulto natural de 6 a 12 m e touceira de hastes eretas de até 8 m (Royal Horticultural Society, Dypsis lutescens; texto da Bahiana sobre a areca-bambu). Os tipos de 2,00, 3,50 e 5,00 m são portes de muda e de jardim, abaixo do adulto natural; o diâmetro da touceira não foi achado em fonte. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Areca-bambu (Dypsis lutescens)", descricao: "Touceira alta de hastes anelares amareladas com folhas pinadas arqueadas. Pleno sol ou meia-sombra; comum em divisa e canteiro.",
 parametros: [P("Altura", "comprimento", 3.50, "Porte", PORTE), P("Hastes", "inteiro", 11, "Porte"), P("Diametro_copa", "comprimento", 2.40, "Porte"), P("Semente", "inteiro", 5, "Construção", "", "instancia")],
 tipos: [T("a20", "Muda 2,00 m", { Altura: 2.00, Hastes: 7, Diametro_copa: 1.60 }), T("a35", "Touceira 3,50 m", {}), T("a50", "Touceira 5,00 m", { Altura: 5.00, Hastes: 15, Diametro_copa: 3.20 })],
 gerar: function (c, v) {
@@ -82171,13 +82294,13 @@ for (var i = 0; i < n; i++) {
 var a = (i / n) * 360 + rnd.entre(-15, 15), h = H * rnd.entre(0.55, 1.0), d = ab * 0.25 * rnd.entre(0.3, 1), inc = rnd.entre(2, 9), ar = a * Math.PI / 180;
 c.cil(MAT.F3, Math.cos(ar) * d * 0.4, 0, Math.sin(ar) * d * 0.4, 0.022, h, { r2: 0.016, seg: 7, rotZ: -Math.cos(ar) * inc, rotX: Math.sin(ar) * inc });
 var tx = Math.cos(ar) * d * 0.4 + Math.cos(ar) * h * Math.sin(inc * Math.PI / 180), tz = Math.sin(ar) * d * 0.4 + Math.sin(ar) * h * Math.sin(inc * Math.PI / 180);
-leque(c, MAT.F2, tx, h * Math.cos(inc * Math.PI / 180) - 0.05, tz, 5, H * 0.38, 0.22, 25, 55, 55, 85, rnd, { perfil: SERRA, seg: 8, esp: 0.004 });
+leque(c, MAT.F2, tx, h * Math.cos(inc * Math.PI / 180) - 0.05, tz, H > 4 ? 4 : 5, H * 0.38, 0.22, 25, 55, 55, 85, rnd, { perfil: SERRA, seg: H > 4 ? 6 : 8, esp: 0.004 });
 }
 },
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
 });
 pdef({
-id: "ra-pais-fenix", nome: "Palmeira-fênix (Phoenix roebelenii)", descricao: "Palmeira-anã de estipe único com bases de folha em losango e copa esférica de folhas pinadas arqueadas. Pleno sol; ideal para entrada e canteiro.",
+id: "ra-pais-fenix", fonteGeral: "Porte: 2 a 7 m, de crescimento lento (Wikipedia em inglês, verbete Phoenix roebelenii, consultada em 28/10/2026); anúncios de viveiro brasileiros citam exemplares até 3,6 a 4 m (www.mfrural.com.br, busca \"palmeiras fenix\"). Fonte secundária; conferir a muda comprada.", nome: "Palmeira-fênix (Phoenix roebelenii)", descricao: "Palmeira-anã de estipe único com bases de folha em losango e copa esférica de folhas pinadas arqueadas. Pleno sol; ideal para entrada e canteiro.",
 parametros: [P("Altura", "comprimento", 2.60, "Porte", "Altura total até o ápice da copa. " + PORTE), P("Diametro_copa", "comprimento", 2.20, "Porte"), P("Folhas", "inteiro", 26, "Porte"), P("Semente", "inteiro", 3, "Construção", "", "instancia")],
 tipos: [T("f18", "Muda 1,80 m", { Altura: 1.80, Diametro_copa: 1.60, Folhas: 18 }), T("f26", "Adulta 2,60 m", {}), T("f35", "Adulta 3,50 m", { Altura: 3.50, Diametro_copa: 2.80, Folhas: 34 })],
 gerar: function (c, v) {
@@ -82190,16 +82313,18 @@ leque(c, MAT.F2, 0, ht + 0.08, 0, 6, R * 0.8, 0.22, 68, 82, 10, 35, rnd, { perfi
 },
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [{ x: 0, z: 0, r: 0.1 }] }; }
 });
-function arvore(c, v, matFolha, matFlor, nFloresBase) {
+function arvore(c, v, matFolha, matFlor, nFloresBase, est) {
 var rnd = Mob.sorteio(v.Semente), H = v.Altura, R = v.Diametro_copa / 2, ht = v.Altura_tronco, dt = v.Diametro_tronco / 2;
 c.torno(MAT.CASCA, 0, 0, 0, [[dt * 1.35, 0], [dt * 1.1, 0.12], [dt, ht * 0.6], [dt * 0.8, ht]], { seg: 10 });
-var nb = Math.max(2, Math.round(v.Galhos));
+var nb = Math.max(2, Math.round(v.Galhos)) + (est === "vaso" ? 3 : 0);
 for (var i = 0; i < nb; i++) {
-var a = (i / nb) * Math.PI * 2 + rnd.entre(-0.3, 0.3), inc = rnd.entre(18, 34), lb = (H - ht) * 0.7;
+var a = (i / nb) * Math.PI * 2 + rnd.entre(-0.3, 0.3), inc = est === "vaso" ? rnd.entre(14, 30) : rnd.entre(18, 34), lb = (H - ht) * (est === "vaso" ? 0.85 : 0.7);
 c.cil(MAT.CASCA, Math.cos(a) * dt * 0.3, ht - 0.05, Math.sin(a) * dt * 0.3, dt * 0.55, lb, { r2: dt * 0.22, seg: 6, rotZ: -Math.cos(a) * inc, rotX: Math.sin(a) * inc });
 }
-var cy = ht + (H - ht) * 0.55;
-copa(c, matFolha, 0, cy, 0, R, (H - ht) * 0.5, R, Math.round(v.Densidade * 1.6), rnd, 12);
+var cy = ht + (H - ht) * (est === "vaso" ? 0.58 : (est === "redonda" ? 0.5 : 0.55));
+if (est === "vaso") copa(c, matFolha, 0, cy, 0, R * 0.8, (H - ht) * 0.56, R * 0.8, Math.round(v.Densidade * 1.3), rnd, 8, 0.8);
+else if (est === "redonda") copa(c, matFolha, 0, cy, 0, R * 1.05, (H - ht) * 0.42, R * 1.05, Math.round(v.Densidade * 1.2), rnd, 10, 1.15);
+else copa(c, matFolha, 0, cy, 0, R, (H - ht) * 0.5, R, Math.round(v.Densidade * 1.6), rnd, 10);
 if (v.Florada) flores(c, matFlor, 0, cy, 0, R * 0.95, (H - ht) * 0.46, R * 0.95, nFloresBase, rnd, 0.05);
 }
 var PAR_ARV = function (H, D, ht) {
@@ -82207,21 +82332,21 @@ return [P("Altura", "comprimento", H, "Porte", PORTE), P("Diametro_copa", "compr
 P("Galhos", "inteiro", 3, "Porte"), P("Densidade", "inteiro", 14, "Construção", "Massas de folhagem (mais = copa mais cheia e mais pesada)"), P("Florada", "simnao", true, "Construção", "Mostra a florada da estação"), P("Semente", "inteiro", 7, "Construção", "", "instancia")];
 };
 pdef({
-id: "ra-pais-reseda", nome: "Resedá (Lagerstroemia indica)", descricao: "Árvore pequena de copa arredondada e tronco liso, com florada rosa-lilás no verão. Boa para calçada e jardim residencial.",
+id: "ra-pais-reseda", fonteGeral: "Ficha de arborização urbana da Diputación de Cádiz (Lagerstroemia indica): 2 a 3,5 m, máximo 6 m, copa arredondada; texto argentino cita até 5 m. O diâmetro de copa dos tipos (2,00 a 4,20 m) não foi achado em fonte: é premissa de projeto. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Resedá (Lagerstroemia indica)", descricao: "Árvore pequena de copa arredondada e tronco liso, com florada rosa-lilás no verão. Boa para calçada e jardim residencial.",
 parametros: PAR_ARV(4.50, 3.20, 1.40),
 tipos: [T("r30", "Muda 3,00 m", { Altura: 3.00, Diametro_copa: 2.00, Altura_tronco: 1.10, Densidade: 10 }), T("r45", "Adulta 4,50 m", {}), T("r60", "Adulta 6,00 m", { Altura: 6.00, Diametro_copa: 4.20, Altura_tronco: 1.80, Diametro_tronco: 0.18, Densidade: 18 })],
-gerar: function (c, v) { arvore(c, v, [MAT.F2, MAT.F1, MAT.F2, MAT.F3], MAT.LILAS, 34); },
+gerar: function (c, v) { arvore(c, v, [MAT.F2, MAT.F1, MAT.F2, MAT.F3], MAT.LILAS, 34, "redonda"); },
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
 });
 pdef({
-id: "ra-pais-ipe-jardim", nome: "Ipê-de-jardim (Tecoma stans)", descricao: "Árvore pequena de várias hastes e folhagem verde-clara com cachos de flores amarelas. Pleno sol; muito usada em jardim residencial.",
+id: "ra-pais-ipe-jardim", fonteGeral: "Artigo acadêmico brasileiro (Redalyc, enraizamento de estacas de Tecoma stans): 5 a 7 m; herbário do Jardim Botânico de Nova York, exemplar do Rio de Janeiro: arbusto de cerca de 4 m. O mesmo artigo cita resolução estadual que trata a espécie como invasora nociva: conferir a legislação local antes de especificar. O diâmetro de copa dos tipos é premissa de projeto. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Ipê-de-jardim (Tecoma stans)", descricao: "Árvore pequena de várias hastes e folhagem verde-clara com cachos de flores amarelas. Pleno sol; muito usada em jardim residencial.",
 parametros: PAR_ARV(4.00, 2.80, 1.00),
 tipos: [T("i25", "Muda 2,50 m", { Altura: 2.50, Diametro_copa: 1.60, Altura_tronco: 0.70, Densidade: 9 }), T("i40", "Adulta 4,00 m", {}), T("i50", "Adulta 5,00 m", { Altura: 5.00, Diametro_copa: 3.60, Altura_tronco: 1.30, Densidade: 16 })],
-gerar: function (c, v) { arvore(c, v, [MAT.F3, MAT.F2, MAT.F3], MAT.AMARELA, 40); },
+gerar: function (c, v) { arvore(c, v, [MAT.F3, MAT.F2, MAT.F3], MAT.AMARELA, 40, "vaso"); },
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
 });
 pdef({
-id: "ra-pais-moreia", nome: "Moreia (Dietes bicolor)", descricao: "Touceira de folhas em lâmina eretas, verde-acinzentadas, com flores amarelo-claras. Pleno sol; rústica, comum em canteiros de entrada.",
+id: "ra-pais-moreia", fonteGeral: "Ficha de viveiro da Prefeitura de São Paulo (Dietes bicolor): 50 a 70 cm; NParks de Singapura: 60 a 80 cm; viveiro irlandês: 60 cm de folhagem e 80 cm até a flor, espalhamento de 50 a 60 cm. Os tipos de 0,60, 0,80 e 1,00 m ficam na faixa das fontes (o de 1,00 m é o limite superior). Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Moreia (Dietes bicolor)", descricao: "Touceira de folhas em lâmina eretas, verde-acinzentadas, com flores amarelo-claras. Pleno sol; rústica, comum em canteiros de entrada.",
 parametros: [P("Altura", "comprimento", 0.80, "Porte", PORTE), P("Diametro", "comprimento", 0.70, "Porte"), P("Folhas", "inteiro", 22, "Porte"), P("Florada", "simnao", true, "Construção"), P("Semente", "inteiro", 2, "Construção", "", "instancia")],
 tipos: [T("m60", "Touceira 0,60 m", { Altura: 0.60, Diametro: 0.50, Folhas: 16 }), T("m80", "Touceira 0,80 m", {}), T("m100", "Touceira 1,00 m", { Altura: 1.00, Diametro: 0.90, Folhas: 30 })],
 gerar: function (c, v) {
@@ -82235,7 +82360,7 @@ if (v.Florada) for (var j = 0; j < 4; j++) { var a = rnd() * 6.28, d2 = rnd() * 
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
 });
 pdef({
-id: "ra-pais-agapanto", nome: "Agapanto (Agapanthus africanus)", descricao: "Touceira de folhas em fita arqueadas e hastes florais altas com umbelas azul-violeta. Meia-sombra ou sol; clássico de borda de canteiro.",
+id: "ra-pais-agapanto", fonteGeral: "Pacific Bulb Society e Operation Wildflower (Agapanthus africanus): 25 a 70 cm; folhas em fita de cerca de 35 cm. As alturas de haste floral dos tipos não foram achadas em fonte numérica. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Agapanto (Agapanthus africanus)", descricao: "Touceira de folhas em fita arqueadas e hastes florais altas com umbelas azul-violeta. Meia-sombra ou sol; clássico de borda de canteiro.",
 parametros: [P("Altura", "comprimento", 0.50, "Porte", "Altura das folhas. " + PORTE), P("Altura_flor", "comprimento", 0.90, "Porte", "Altura das hastes florais"), P("Diametro", "comprimento", 0.60, "Porte"), P("Folhas", "inteiro", 16, "Porte"), P("Hastes_florais", "inteiro", 5, "Porte"), P("Semente", "inteiro", 4, "Construção", "", "instancia")],
 tipos: [T("g1", "Touceira média", {}), T("g2", "Touceira pequena", { Altura: 0.35, Altura_flor: 0.65, Diametro: 0.40, Folhas: 10, Hastes_florais: 3 })],
 gerar: function (c, v) {
@@ -82250,7 +82375,7 @@ c.elipsoide(MAT.AZUL, hx, hh + 0.04, hz, 0.075, 0.06, 0.075, { seg: 9, aneis: 5 
 simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
 });
 pdef({
-id: "ra-pais-clusia", nome: "Clúsia (Clusia fluminensis) — cerca viva", descricao: "Cerca viva densa de folhas grossas e verde-escuras, em trecho por comprimento. Usada para fechar divisa e dar privacidade; poda a 1,50 a 2,50 m.",
+id: "ra-pais-clusia", fonteGeral: "Herbário do Jardim Botânico de Nova York (Clusia fluminensis, Serra de Piaba, RJ): cerca de 5 m, muito ramificada desde a base; site de jardinagem: até 6 m; a altura da cerca viva é a da poda. Os tipos de 1,50, 2,00 e 2,50 m são alturas de cerca podada. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Clúsia (Clusia fluminensis) — cerca viva", descricao: "Cerca viva densa de folhas grossas e verde-escuras, em trecho por comprimento. Usada para fechar divisa e dar privacidade; poda a 1,50 a 2,50 m.",
 parametros: [P("Comprimento", "comprimento", 2.00, "Porte", "Comprimento do trecho de cerca viva"), P("Altura", "comprimento", 2.00, "Porte", PORTE), P("Largura", "comprimento", 0.80, "Porte", "Espessura da cerca"), P("Semente", "inteiro", 9, "Construção", "", "instancia")],
 tipos: [T("c15", "Cerca 1,50 m de altura", { Altura: 1.50, Largura: 0.70 }), T("c20", "Cerca 2,00 m de altura", {}), T("c25", "Cerca 2,50 m de altura", { Altura: 2.50, Largura: 0.90 })],
 unidade: "m", quantidade: "Comprimento", quantDesc: "Cerca viva de clúsia",
@@ -83883,7 +84008,9 @@ c.caixaR(corpo, 0, 0.08, Pz / 2, L, hm - 0.08, Pz, 0.004, { k: 1 });
 c.parte("porta_forno", { tipo: "basculante", eixo: [0, 0.12, Pz + 0.01], angulo: 85, sentido: 1 }, function () {
 c.caixaR(corpo, 0, 0.12, Pz + 0.0, L - 0.04, hm - 0.32, 0.02, 0.004, { k: 1 }); c.caixa(MAT.FUME, 0, 0.18, Pz + 0.016, L - 0.18, hm - 0.48, 0.008);
 c.cilH(MAT.INOX, 0, hm - 0.24, Pz + 0.06, 0.012, L - 0.16, "x", { seg: 8 });
+[-1, 1].forEach(function (s) { c.cilH(MAT.INOX, s * (L / 2 - 0.1), hm - 0.24, Pz + 0.03, 0.007, 0.06, "z", { seg: 5 }); });
 });
+c.caixa(MAT.GRAFITE, 0, 0.09, Pz + 0.001, L - 0.1, 0.03, 0.003);
 c.caixa(MAT.PRETO, 0, hm - 0.17, Pz - 0.06 + 0.07, L - 0.04, 0.13, 0.004);
 for (i = 0; i < nq + 1; i++) c.cilH(MAT.INOX, -L / 2 + 0.08 + i * (L - 0.16) / nq, hm - 0.1, Pz + 0.03, 0.02, 0.03, "z", { seg: 12 });
 mesa(hm, L - 0.02, Pz - 0.04, 0.0);
@@ -83897,11 +84024,14 @@ if (micro) {
 c.parte("porta", { tipo: "giro", eixo: [-L / 2, A / 2, Pz], angulo: 100, sentido: -1 }, function () { c.caixaR(MAT.FUME, -0.12 * L / 2 - L * 0.06 + 0.0, 0.0, Pz - 0.025, L * 0.76, A, 0.025, 0.004, { k: 1 }); c.caixa(MAT.TELA, -L * 0.1, 0.05, Pz - 0.003, L * 0.6, A - 0.1, 0.003); });
 c.caixaR(ac, L * 0.38, 0, Pz - 0.025, L * 0.24, A, 0.025, 0.004, { k: 1 });
 for (var i = 0; i < 4; i++) c.cil(MAT.PRETO, L * 0.38, A * 0.7 - i * 0.05, Pz, 0.01, 0.004, { seg: 10, rotX: 90 });
+c.caixa(MAT.TELA, L * 0.38, A * 0.85, Pz + 0.0005, L * 0.18, A * 0.1, 0.003);
+c.caixa(ac, L * 0.255, A * 0.15, Pz + 0.012, 0.014, A * 0.7, 0.014); [0.25, 0.75].forEach(function (f) { c.caixa(ac, L * 0.255, A * f - 0.005, Pz + 0.003, 0.01, 0.01, 0.012); });
 } else {
 c.caixaR(ac, 0, A - 0.11, Pz - 0.025, L, 0.11, 0.025, 0.004, { k: 1 });
 c.parte("porta", { tipo: "basculante", eixo: [0, 0.0, Pz], angulo: 85, sentido: 1 }, function () { c.caixaR(MAT.FUME, 0, 0, Pz - 0.025, L, A - 0.115, 0.025, 0.004, { k: 1 }); c.cilH(ac, 0, A - 0.16, Pz + 0.03, 0.01, L * 0.7, "x", { seg: 8 }); c.caixa(ac, -L * 0.35, A - 0.17, Pz + 0.005, 0.015, 0.02, 0.03); c.caixa(ac, L * 0.35, A - 0.17, Pz + 0.005, 0.015, 0.02, 0.03); });
 c.cilH(MAT.PRETO, -L * 0.3, A - 0.055, Pz + 0.008, 0.02, 0.02, "z", { seg: 12 }); c.cilH(MAT.PRETO, L * 0.3, A - 0.055, Pz + 0.008, 0.02, 0.02, "z", { seg: 12 });
 c.caixa(MAT.TELA, 0, A - 0.075, Pz + 0.0, 0.12, 0.04, 0.003);
+for (var kk = 0; kk < 5; kk++) c.caixa(MAT.PRETO, 0, 0.012 + kk * 0.009, Pz + 0.0, L * 0.6, 0.003, 0.004);
 }
 return "";
 };
@@ -83912,8 +84042,11 @@ c.caixaR(ac, 0, 0.08, Pz / 2, L, A - 0.08, Pz - 0.02, 0.004, { k: 1 });
 c.parte("porta", { tipo: "basculante", eixo: [0, 0.09, Pz], angulo: 85, sentido: 1 }, function () {
 c.caixaR(ac, 0, 0.09, Pz - 0.02, L - 0.01, A - 0.22, 0.02, 0.004, { k: 1 }); c.caixa(MAT.PRETO, 0, A - 0.2, Pz - 0.002, L - 0.01, 0.07, 0.004);
 c.cilH(MAT.INOX, 0, A - 0.17, Pz + 0.025, 0.008, L * 0.5, "x", { seg: 8 });
+[-1, 1].forEach(function (s) { c.cilH(MAT.INOX, s * L * 0.23, A - 0.17, Pz + 0.0125, 0.005, 0.025, "z", { seg: 5 }); });
 });
 c.caixa(MAT.TELA, L * 0.25, A - 0.1, Pz - 0.0, 0.14, 0.03, 0.003);
+for (var kb = 0; kb < 4; kb++) c.cil(MAT.CROMO, -L * 0.3 + kb * 0.05, A - 0.105, Pz, 0.009, 0.005, { seg: 10, rotX: 90 });
+for (var kv = 0; kv < 3; kv++) c.caixa(MAT.GRAFITE, 0, 0.02 + kv * 0.015, Pz - 0.0, L * 0.5, 0.006, 0.004);
 return "";
 };
 G.coifa = function (c, v) {
@@ -83925,6 +84058,10 @@ c.tronco(ac, 0, 0.05, 0.14, L, Pz * 0.56, 0.3, 0.22, hc, {});
 c.caixa(MAT.INOX, 0, 0.002, Pz / 2, L - 0.04, 0.002, Pz - 0.04);
 c.caixa(ac, 0, 0.05 + hc, 0.12, 0.28, A - 0.05 - hc, 0.24);
 c.caixa(MAT.PRETO, 0, 0.015, Pz + 0.001, L * 0.25, 0.02, 0.002);
+for (var kf = 0; kf < 7; kf++) c.caixa(MAT.GRAFITE, -L * 0.36 + kf * L * 0.12, -0.001, Pz * 0.45, L * 0.09, 0.003, Pz * 0.6);
+[-1, 1].forEach(function (s) { c.cil(MAT.LACA, s * L * 0.3, 0.0, Pz * 0.8, 0.012, 0.004, { seg: 8 }); });
+for (var kb = 0; kb < 3; kb++) c.cil(MAT.CROMO, -L * 0.1 + kb * 0.04, 0.016, Pz + 0.003, 0.007, 0.004, { seg: 8, rotX: 90 });
+c.caixa(MAT.GRAFITE, 0, 0.05 + hc + (A - 0.05 - hc) * 0.5, 0.12, 0.282, 0.004, 0.242);
 return "";
 };
 G.tv = function (c, v) {
@@ -84327,8 +84464,15 @@ H.gaveta(c, id, prof * 0.7, function () { H.porta(c, mat, x, y0, zf, w, h, 0.018
 function gerar(c, v) {
 var tm = String(v.Tipo_modulo).toLowerCase(), Lt = v.Largura_total, Pz = v.Profundidade, A = v.Altura, corpo = v.Corpo, fr = v.Frente, pux = v.Puxador, esp = 0.018, rod = v.Rodape;
 if (tm === "painel") {
-c.caixa(fr, 0, 0, 0.009, Lt, A, 0.018);
-var nf = Math.max(1, Math.round(Lt / 0.3)); for (var f = 1; f < nf; f++) c.caixa(MAT.PRETO, -Lt / 2 + f * Lt / nf, 0, 0.0185, 0.004, A, 0.002);
+var nCh = Math.max(1, Math.ceil(Lt / 1.2 - 1e-9)), wCh = Lt / nCh, q;
+for (q = 0; q < nCh; q++) {
+var xq = -Lt / 2 + wCh * (q + 0.5);
+c.caixaR(fr, xq, 0.06, 0.009, wCh - 0.004, A - 0.06, 0.018, 0.003, { k: 1 });
+for (var py = 1; py <= 3; py++) for (var px = -1; px <= 1; px += 2) c.cil(MAT.CROMO, xq + px * (wCh / 2 - 0.05), 0.06 + py * (A - 0.12) / 4, 0.018, 0.006, 0.002, { seg: 8, rotX: 90 });
+if (q > 0) c.caixa(MAT.PRETO, -Lt / 2 + wCh * q, 0.06, 0.0172, 0.004, A - 0.06, 0.003);
+}
+c.caixa(MAT.PRETO, 0, 0, 0.004, Lt - 0.02, 0.06, 0.008);
+c.caixa(MAT.PRETO, 0, 0.055, 0.0172, Lt - 0.004, 0.004, 0.003);
 ULTIMO = { modulos: [], tampEsq: 0, tampDir: 0, reservas: [] };
 return;
 }
@@ -84465,13 +84609,21 @@ var famN = def({
 id: "ra-plan-nicho", nome: "Nicho de parede planejado (MDF)", categoria: "mobiliario", semOrigem: true,
 descricao: "Nicho de parede em MDF 18 mm amadeirado/cor, 60 × 30 × 25 cm, sem fundo (composição própria RA PROP-MOB-9010, por unidade). Origem: meio da largura, fundo na parede.",
 parametros: [P("Largura", "comprimento", 0.60, "Dimensões", "60 cm (composição 9010)"), P("Altura", "comprimento", 0.30, "Dimensões"), P("Profundidade", "comprimento", 0.25, "Dimensões"),
-P("Altura_instalacao", "comprimento", 1.40, "Dimensões", "Do piso à base do nicho", "instancia"), P("Acabamento", "material", "mdf carvalho", "Materiais", "", "instancia"),
+P("Altura_instalacao", "comprimento", 1.40, "Dimensões", "Do piso à base do nicho", "instancia"), P("Prateleiras", "inteiro", 1, "Construção", "Prateleiras internas (MDF 18 mm, sobre pinos de metal); 0 = nicho vazio"), P("Acabamento", "material", "mdf carvalho", "Materiais", "", "instancia"),
 P("Preco_unitario", "numero", precoDe("PROP-MOB-9010").Preco_unitario, "Catálogo e preço", "R$ por unidade, sem BDI — composição própria RA"),
 P("Fonte_preco", "texto", precoDe("PROP-MOB-9010").Fonte_preco, "Catálogo e preço"), P("Data_preco", "texto", precoDe("PROP-MOB-9010").Data_preco, "Catálogo e preço"), P("Composicao_id", "texto", "PROP-MOB-9010", "Catálogo e preço")],
 tipos: [(function () { var t = T("n60", "Nicho 60 × 30 × 25 (PROP-MOB-9010)", {}); t.codigo = "PROP-MOB-9010"; return t; })()],
 gerar: function (c, v) {
 var L = v.Largura, A = v.Altura, Pz = v.Profundidade, y0 = v.Altura_instalacao, e = 0.018, m = v.Acabamento;
-c.caixa(m, 0, y0, Pz / 2, L, e, Pz); c.caixa(m, 0, y0 + A - e, Pz / 2, L, e, Pz); c.caixa(m, -L / 2 + e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz); c.caixa(m, L / 2 - e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz);
+var pr = Math.max(0, Math.round(v.Prateleiras)), k;
+c.caixaR(m, 0, y0, Pz / 2, L, e, Pz, 0.003, { k: 1 }); c.caixaR(m, 0, y0 + A - e, Pz / 2, L, e, Pz, 0.003, { k: 1 });
+c.caixaR(m, -L / 2 + e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz, 0.003, { k: 1 }); c.caixaR(m, L / 2 - e / 2, y0 + e, Pz / 2, e, A - 2 * e, Pz, 0.003, { k: 1 });
+c.caixa(MAT.CLARA, 0, y0 + e, 0.02, L - 2 * e, A - 2 * e, 0.006);
+for (k = 1; k <= pr; k++) {
+var ys = y0 + e + (A - 2 * e) * k / (pr + 1) - e / 2;
+c.caixaR(m, 0, ys, Pz / 2 - 0.01, L - 2 * e - 0.004, e, Pz - 0.03, 0.003, { k: 1 });
+[-1, 1].forEach(function (sx) { [0.07, Pz - 0.08].forEach(function (zz) { c.cil(MAT.CROMO, sx * (L / 2 - e - 0.004), ys - 0.006, zz, 0.003, 0.006, { seg: 6 }); }); });
+}
 }
 });
 famN.quantitativo = { unidade: "un", quantidade: "1", codigo: "", fonte: "", descricao: "Nicho de parede planejado (composição própria RA; fornecimento e instalação)" };

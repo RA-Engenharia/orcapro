@@ -268,6 +268,12 @@
     var xHidro = "0 - Interno_C/2 + 3*Folga_servico + Filtro_D + Bomba_A + Hidro_A/2";
     sol.push(cil("filtro", "Filtro de areia " + "(catálogo)", "y", xFiltro, base, "0", "Filtro_D/2", "Filtro_H", "Equipamento azul", { visivel: "Tampa_aberta" }));
     sol.push(cx("bomba", "Motobomba de filtração", xBomba, base, "0", "Bomba_A", "Bomba_C", "Bomba_B", "Equipamento preto", { visivel: "Tampa_aberta" }));
+    /* DETALHE DE PRODUTO (lote 3b, 28/10/2026): dentro do envelope do catálogo — válvula seletora e tampa do filtro, motor e pré-filtro da bomba, tubo de recalque */
+    sol.push(cil("valvula", "Válvula seletora do filtro", "y", xFiltro, base + " + Filtro_H - 0.12", "0", "0.045", "0.12", "Equipamento preto", { visivel: "Tampa_aberta" }));
+    sol.push(cil("filtro-base", "Base do filtro", "y", xFiltro, base, "0", "Filtro_D/2 + 0.01", "0.04", "Equipamento preto", { visivel: "Tampa_aberta" }));
+    sol.push(cil("motor", "Motor da bomba de filtração", "y", xBomba + " + Bomba_A*0.12", base + " + 0.01", "0", "Bomba_B/2 * 0.9", "Bomba_C - 0.01", "Equipamento azul", { visivel: "Tampa_aberta" }));
+    sol.push(cil("pre-filtro", "Pré-filtro da bomba", "y", xBomba + " - Bomba_A*0.3", base + " + 0.01", "0", "Bomba_B/2 * 0.8", "Bomba_C*0.8", "Equipamento preto", { visivel: "Tampa_aberta" }));
+    sol.push(cx("tubo", "Tubo de recalque (barra)", "0 - Interno_C/2 + 1.5*Folga_servico + Filtro_D", base + " + Filtro_H - 0.09", "0 - Interno_L/2 + 0.05", "Folga_servico + Bomba_A*0.5", "0.05", "0.05", "Equipamento azul", { visivel: "Tampa_aberta" }));
     sol.push(cx("bomba-hidro", "Motobomba de hidromassagem", xHidro, base, "0", "Hidro_A", "Hidro_C", "Hidro_B", "Equipamento preto", { visivel: "Tampa_aberta e Com_hidro" }));
     return {
       id: "ra-casa-maquinas-piscina", nome: "Casa de máquinas da piscina (enterrada/semienterrada)", categoria: "generico", hospedagem: "livre", previa: "modelador",

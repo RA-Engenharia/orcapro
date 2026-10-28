@@ -678,7 +678,9 @@
     c.parte("porta_forno", { tipo: "basculante", eixo: [0, 0.12, Pz + 0.01], angulo: 85, sentido: 1 }, function () {
       c.caixaR(corpo, 0, 0.12, Pz + 0.0, L - 0.04, hm - 0.32, 0.02, 0.004, { k: 1 }); c.caixa(MAT.FUME, 0, 0.18, Pz + 0.016, L - 0.18, hm - 0.48, 0.008);
       c.cilH(MAT.INOX, 0, hm - 0.24, Pz + 0.06, 0.012, L - 0.16, "x", { seg: 8 });
+      [-1, 1].forEach(function (s) { c.cilH(MAT.INOX, s * (L / 2 - 0.1), hm - 0.24, Pz + 0.03, 0.007, 0.06, "z", { seg: 5 }); });
     });
+    c.caixa(MAT.GRAFITE, 0, 0.09, Pz + 0.001, L - 0.1, 0.03, 0.003);   // fresta da gaveta inferior
     c.caixa(MAT.PRETO, 0, hm - 0.17, Pz - 0.06 + 0.07, L - 0.04, 0.13, 0.004);
     for (i = 0; i < nq + 1; i++) c.cilH(MAT.INOX, -L / 2 + 0.08 + i * (L - 0.16) / nq, hm - 0.1, Pz + 0.03, 0.02, 0.03, "z", { seg: 12 });
     mesa(hm, L - 0.02, Pz - 0.04, 0.0);
@@ -692,11 +694,14 @@
       c.parte("porta", { tipo: "giro", eixo: [-L / 2, A / 2, Pz], angulo: 100, sentido: -1 }, function () { c.caixaR(MAT.FUME, -0.12 * L / 2 - L * 0.06 + 0.0, 0.0, Pz - 0.025, L * 0.76, A, 0.025, 0.004, { k: 1 }); c.caixa(MAT.TELA, -L * 0.1, 0.05, Pz - 0.003, L * 0.6, A - 0.1, 0.003); });
       c.caixaR(ac, L * 0.38, 0, Pz - 0.025, L * 0.24, A, 0.025, 0.004, { k: 1 });
       for (var i = 0; i < 4; i++) c.cil(MAT.PRETO, L * 0.38, A * 0.7 - i * 0.05, Pz, 0.01, 0.004, { seg: 10, rotX: 90 });
+      c.caixa(MAT.TELA, L * 0.38, A * 0.85, Pz + 0.0005, L * 0.18, A * 0.1, 0.003);
+      c.caixa(ac, L * 0.255, A * 0.15, Pz + 0.012, 0.014, A * 0.7, 0.014); [0.25, 0.75].forEach(function (f) { c.caixa(ac, L * 0.255, A * f - 0.005, Pz + 0.003, 0.01, 0.01, 0.012); });
     } else {
       c.caixaR(ac, 0, A - 0.11, Pz - 0.025, L, 0.11, 0.025, 0.004, { k: 1 });
       c.parte("porta", { tipo: "basculante", eixo: [0, 0.0, Pz], angulo: 85, sentido: 1 }, function () { c.caixaR(MAT.FUME, 0, 0, Pz - 0.025, L, A - 0.115, 0.025, 0.004, { k: 1 }); c.cilH(ac, 0, A - 0.16, Pz + 0.03, 0.01, L * 0.7, "x", { seg: 8 }); c.caixa(ac, -L * 0.35, A - 0.17, Pz + 0.005, 0.015, 0.02, 0.03); c.caixa(ac, L * 0.35, A - 0.17, Pz + 0.005, 0.015, 0.02, 0.03); });
       c.cilH(MAT.PRETO, -L * 0.3, A - 0.055, Pz + 0.008, 0.02, 0.02, "z", { seg: 12 }); c.cilH(MAT.PRETO, L * 0.3, A - 0.055, Pz + 0.008, 0.02, 0.02, "z", { seg: 12 });
       c.caixa(MAT.TELA, 0, A - 0.075, Pz + 0.0, 0.12, 0.04, 0.003);
+      for (var kk = 0; kk < 5; kk++) c.caixa(MAT.PRETO, 0, 0.012 + kk * 0.009, Pz + 0.0, L * 0.6, 0.003, 0.004);
     }
     return "";
   };
@@ -707,8 +712,11 @@
     c.parte("porta", { tipo: "basculante", eixo: [0, 0.09, Pz], angulo: 85, sentido: 1 }, function () {
       c.caixaR(ac, 0, 0.09, Pz - 0.02, L - 0.01, A - 0.22, 0.02, 0.004, { k: 1 }); c.caixa(MAT.PRETO, 0, A - 0.2, Pz - 0.002, L - 0.01, 0.07, 0.004);
       c.cilH(MAT.INOX, 0, A - 0.17, Pz + 0.025, 0.008, L * 0.5, "x", { seg: 8 });
+      [-1, 1].forEach(function (s) { c.cilH(MAT.INOX, s * L * 0.23, A - 0.17, Pz + 0.0125, 0.005, 0.025, "z", { seg: 5 }); });
     });
     c.caixa(MAT.TELA, L * 0.25, A - 0.1, Pz - 0.0, 0.14, 0.03, 0.003);
+    for (var kb = 0; kb < 4; kb++) c.cil(MAT.CROMO, -L * 0.3 + kb * 0.05, A - 0.105, Pz, 0.009, 0.005, { seg: 10, rotX: 90 });
+    for (var kv = 0; kv < 3; kv++) c.caixa(MAT.GRAFITE, 0, 0.02 + kv * 0.015, Pz - 0.0, L * 0.5, 0.006, 0.004);
     return "";
   };
   G.coifa = function (c, v) {   /* coifa de parede (campânula + chaminé) ou depurador plano */
@@ -720,6 +728,10 @@
     c.caixa(MAT.INOX, 0, 0.002, Pz / 2, L - 0.04, 0.002, Pz - 0.04);
     c.caixa(ac, 0, 0.05 + hc, 0.12, 0.28, A - 0.05 - hc, 0.24);
     c.caixa(MAT.PRETO, 0, 0.015, Pz + 0.001, L * 0.25, 0.02, 0.002);
+    for (var kf = 0; kf < 7; kf++) c.caixa(MAT.GRAFITE, -L * 0.36 + kf * L * 0.12, -0.001, Pz * 0.45, L * 0.09, 0.003, Pz * 0.6);   // filtro de alumínio sob a campânula
+    [-1, 1].forEach(function (s) { c.cil(MAT.LACA, s * L * 0.3, 0.0, Pz * 0.8, 0.012, 0.004, { seg: 8 }); });   // luzes
+    for (var kb = 0; kb < 3; kb++) c.cil(MAT.CROMO, -L * 0.1 + kb * 0.04, 0.016, Pz + 0.003, 0.007, 0.004, { seg: 8, rotX: 90 });
+    c.caixa(MAT.GRAFITE, 0, 0.05 + hc + (A - 0.05 - hc) * 0.5, 0.12, 0.282, 0.004, 0.242);   // junta do 2º estágio (telescópico)
     return "";
   };
   G.tv = function (c, v) {   /* TV: tela, moldura fina, corpo traseiro e, se a ficha é funda, base */

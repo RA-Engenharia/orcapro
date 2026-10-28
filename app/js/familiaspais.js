@@ -52,11 +52,11 @@
   }
   var SERRA = [0.35, 0.8, 0.5, 0.9, 0.55, 0.85, 0.5, 0.75, 0.4, 0.55, 0.25, 0.1];   /* folíolos: largura que oscila */
   /* copa: blobs de elipsoide sorteados dentro de um elipsoide maior */
-  function copa(c, mats, cx, cy, cz, rx, ry, rz, n, rnd, seg) {
+  function copa(c, mats, cx, cy, cz, rx, ry, rz, n, rnd, seg, esc) {   /* seg 10 (era 12): copas de árvore grande ficam em ~4.000 triângulos */
     for (var i = 0; i < n; i++) {
       var a = rnd() * Math.PI * 2, b = Math.acos(1 - 2 * rnd()), r = Math.pow(rnd(), 0.5), px = Math.sin(b) * Math.cos(a) * r * rx * 0.72, py = Math.cos(b) * r * ry * 0.72, pz = Math.sin(b) * Math.sin(a) * r * rz * 0.72;
-      var s = rnd.entre(0.26, 0.42), mat = mats[Math.floor(rnd() * mats.length) % mats.length];
-      c.elipsoide(mat, cx + px, cy + py, cz + pz, rx * s, ry * s * 0.8, rz * s, { seg: seg || 12, aneis: 6 });
+      var s = rnd.entre(0.26, 0.42) * (esc || 1), mat = mats[Math.floor(rnd() * mats.length) % mats.length];
+      c.elipsoide(mat, cx + px, cy + py, cz + pz, rx * s, ry * s * 0.8, rz * s, { seg: seg || 10, aneis: 6 });
     }
   }
   function flores(c, mat, cx, cy, cz, rx, ry, rz, n, rnd, raio) {
@@ -76,7 +76,7 @@
 
   /* ================================================================ PALMEIRAS */
   pdef({
-    id: "ra-pais-palmeira-rafia", nome: "Palmeira-ráfia (Rhapis excelsa)", descricao: "Touceira de hastes finas e fibrosas, cada uma com um leque de folhas largas e recortadas. Vaso de jardim ou canteiro; tolera meia-sombra.",
+    id: "ra-pais-palmeira-rafia", fonteGeral: "Porte da touceira: até cerca de 4 m (Wikipedia em inglês, verbete Rhapis excelsa, consultada em 28/10/2026); crescimento lento. Fonte secundária: não achei o porte em Lorenzi/Embrapa — a muda comprada manda; os tipos de 1,50, 2,20 e 3,00 m são portes de muda/touceira usuais, conferir no viveiro.", nome: "Palmeira-ráfia (Rhapis excelsa)", descricao: "Touceira de hastes finas e fibrosas, cada uma com um leque de folhas largas e recortadas. Vaso de jardim ou canteiro; tolera meia-sombra.",
     parametros: [P("Altura", "comprimento", 2.20, "Porte", "Altura da touceira. " + PORTE), P("Hastes", "inteiro", 8, "Porte", "Número de hastes"), P("Diametro_copa", "comprimento", 1.40, "Porte"), P("Semente", "inteiro", 11, "Construção", "Muda o sorteio de posições; a mesma semente dá a mesma planta", "instancia")],
     tipos: [T("r15", "Muda 1,50 m", { Altura: 1.50, Hastes: 5, Diametro_copa: 1.00 }), T("r22", "Touceira 2,20 m", {}), T("r30", "Touceira 3,00 m", { Altura: 3.00, Hastes: 11, Diametro_copa: 1.80 })],
     gerar: function (c, v) {
@@ -88,7 +88,7 @@
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
   });
   pdef({
-    id: "ra-pais-areca", nome: "Areca-bambu (Dypsis lutescens)", descricao: "Touceira alta de hastes anelares amareladas com folhas pinadas arqueadas. Pleno sol ou meia-sombra; comum em divisa e canteiro.",
+    id: "ra-pais-areca", fonteGeral: "Porte adulto natural de 6 a 12 m e touceira de hastes eretas de até 8 m (Royal Horticultural Society, Dypsis lutescens; texto da Bahiana sobre a areca-bambu). Os tipos de 2,00, 3,50 e 5,00 m são portes de muda e de jardim, abaixo do adulto natural; o diâmetro da touceira não foi achado em fonte. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Areca-bambu (Dypsis lutescens)", descricao: "Touceira alta de hastes anelares amareladas com folhas pinadas arqueadas. Pleno sol ou meia-sombra; comum em divisa e canteiro.",
     parametros: [P("Altura", "comprimento", 3.50, "Porte", PORTE), P("Hastes", "inteiro", 11, "Porte"), P("Diametro_copa", "comprimento", 2.40, "Porte"), P("Semente", "inteiro", 5, "Construção", "", "instancia")],
     tipos: [T("a20", "Muda 2,00 m", { Altura: 2.00, Hastes: 7, Diametro_copa: 1.60 }), T("a35", "Touceira 3,50 m", {}), T("a50", "Touceira 5,00 m", { Altura: 5.00, Hastes: 15, Diametro_copa: 3.20 })],
     gerar: function (c, v) {
@@ -97,13 +97,13 @@
         var a = (i / n) * 360 + rnd.entre(-15, 15), h = H * rnd.entre(0.55, 1.0), d = ab * 0.25 * rnd.entre(0.3, 1), inc = rnd.entre(2, 9), ar = a * Math.PI / 180;
         c.cil(MAT.F3, Math.cos(ar) * d * 0.4, 0, Math.sin(ar) * d * 0.4, 0.022, h, { r2: 0.016, seg: 7, rotZ: -Math.cos(ar) * inc, rotX: Math.sin(ar) * inc });
         var tx = Math.cos(ar) * d * 0.4 + Math.cos(ar) * h * Math.sin(inc * Math.PI / 180), tz = Math.sin(ar) * d * 0.4 + Math.sin(ar) * h * Math.sin(inc * Math.PI / 180);
-        leque(c, MAT.F2, tx, h * Math.cos(inc * Math.PI / 180) - 0.05, tz, 5, H * 0.38, 0.22, 25, 55, 55, 85, rnd, { perfil: SERRA, seg: 8, esp: 0.004 });
+        leque(c, MAT.F2, tx, h * Math.cos(inc * Math.PI / 180) - 0.05, tz, H > 4 ? 4 : 5, H * 0.38, 0.22, 25, 55, 55, 85, rnd, { perfil: SERRA, seg: H > 4 ? 6 : 8, esp: 0.004 });
       }
     },
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2, estilo: "palmeira" }], tronco: [] }; }
   });
   pdef({
-    id: "ra-pais-fenix", nome: "Palmeira-fênix (Phoenix roebelenii)", descricao: "Palmeira-anã de estipe único com bases de folha em losango e copa esférica de folhas pinadas arqueadas. Pleno sol; ideal para entrada e canteiro.",
+    id: "ra-pais-fenix", fonteGeral: "Porte: 2 a 7 m, de crescimento lento (Wikipedia em inglês, verbete Phoenix roebelenii, consultada em 28/10/2026); anúncios de viveiro brasileiros citam exemplares até 3,6 a 4 m (www.mfrural.com.br, busca \"palmeiras fenix\"). Fonte secundária; conferir a muda comprada.", nome: "Palmeira-fênix (Phoenix roebelenii)", descricao: "Palmeira-anã de estipe único com bases de folha em losango e copa esférica de folhas pinadas arqueadas. Pleno sol; ideal para entrada e canteiro.",
     parametros: [P("Altura", "comprimento", 2.60, "Porte", "Altura total até o ápice da copa. " + PORTE), P("Diametro_copa", "comprimento", 2.20, "Porte"), P("Folhas", "inteiro", 26, "Porte"), P("Semente", "inteiro", 3, "Construção", "", "instancia")],
     tipos: [T("f18", "Muda 1,80 m", { Altura: 1.80, Diametro_copa: 1.60, Folhas: 18 }), T("f26", "Adulta 2,60 m", {}), T("f35", "Adulta 3,50 m", { Altura: 3.50, Diametro_copa: 2.80, Folhas: 34 })],
     gerar: function (c, v) {
@@ -118,16 +118,20 @@
   });
 
   /* ================================================================ ÁRVORES PEQUENAS */
-  function arvore(c, v, matFolha, matFlor, nFloresBase) {
+  /* est "redonda" (resedá: tronco único liso, copa larga e arredondada, florada em cachos no alto) ou "vaso" (ipê-de-jardim: várias hastes saindo da base,
+     copa mais alta e estreita, folhagem miúda); sem est = o desenho antigo */
+  function arvore(c, v, matFolha, matFlor, nFloresBase, est) {
     var rnd = Mob.sorteio(v.Semente), H = v.Altura, R = v.Diametro_copa / 2, ht = v.Altura_tronco, dt = v.Diametro_tronco / 2;
     c.torno(MAT.CASCA, 0, 0, 0, [[dt * 1.35, 0], [dt * 1.1, 0.12], [dt, ht * 0.6], [dt * 0.8, ht]], { seg: 10 });
-    var nb = Math.max(2, Math.round(v.Galhos));
+    var nb = Math.max(2, Math.round(v.Galhos)) + (est === "vaso" ? 3 : 0);
     for (var i = 0; i < nb; i++) {
-      var a = (i / nb) * Math.PI * 2 + rnd.entre(-0.3, 0.3), inc = rnd.entre(18, 34), lb = (H - ht) * 0.7;
+      var a = (i / nb) * Math.PI * 2 + rnd.entre(-0.3, 0.3), inc = est === "vaso" ? rnd.entre(14, 30) : rnd.entre(18, 34), lb = (H - ht) * (est === "vaso" ? 0.85 : 0.7);
       c.cil(MAT.CASCA, Math.cos(a) * dt * 0.3, ht - 0.05, Math.sin(a) * dt * 0.3, dt * 0.55, lb, { r2: dt * 0.22, seg: 6, rotZ: -Math.cos(a) * inc, rotX: Math.sin(a) * inc });
     }
-    var cy = ht + (H - ht) * 0.55;
-    copa(c, matFolha, 0, cy, 0, R, (H - ht) * 0.5, R, Math.round(v.Densidade * 1.6), rnd, 12);
+    var cy = ht + (H - ht) * (est === "vaso" ? 0.58 : (est === "redonda" ? 0.5 : 0.55));
+    if (est === "vaso") copa(c, matFolha, 0, cy, 0, R * 0.8, (H - ht) * 0.56, R * 0.8, Math.round(v.Densidade * 1.3), rnd, 8, 0.8);
+    else if (est === "redonda") copa(c, matFolha, 0, cy, 0, R * 1.05, (H - ht) * 0.42, R * 1.05, Math.round(v.Densidade * 1.2), rnd, 10, 1.15);
+    else copa(c, matFolha, 0, cy, 0, R, (H - ht) * 0.5, R, Math.round(v.Densidade * 1.6), rnd, 10);
     if (v.Florada) flores(c, matFlor, 0, cy, 0, R * 0.95, (H - ht) * 0.46, R * 0.95, nFloresBase, rnd, 0.05);
   }
   var PAR_ARV = function (H, D, ht) {
@@ -135,23 +139,23 @@
       P("Galhos", "inteiro", 3, "Porte"), P("Densidade", "inteiro", 14, "Construção", "Massas de folhagem (mais = copa mais cheia e mais pesada)"), P("Florada", "simnao", true, "Construção", "Mostra a florada da estação"), P("Semente", "inteiro", 7, "Construção", "", "instancia")];
   };
   pdef({
-    id: "ra-pais-reseda", nome: "Resedá (Lagerstroemia indica)", descricao: "Árvore pequena de copa arredondada e tronco liso, com florada rosa-lilás no verão. Boa para calçada e jardim residencial.",
+    id: "ra-pais-reseda", fonteGeral: "Ficha de arborização urbana da Diputación de Cádiz (Lagerstroemia indica): 2 a 3,5 m, máximo 6 m, copa arredondada; texto argentino cita até 5 m. O diâmetro de copa dos tipos (2,00 a 4,20 m) não foi achado em fonte: é premissa de projeto. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Resedá (Lagerstroemia indica)", descricao: "Árvore pequena de copa arredondada e tronco liso, com florada rosa-lilás no verão. Boa para calçada e jardim residencial.",
     parametros: PAR_ARV(4.50, 3.20, 1.40),
     tipos: [T("r30", "Muda 3,00 m", { Altura: 3.00, Diametro_copa: 2.00, Altura_tronco: 1.10, Densidade: 10 }), T("r45", "Adulta 4,50 m", {}), T("r60", "Adulta 6,00 m", { Altura: 6.00, Diametro_copa: 4.20, Altura_tronco: 1.80, Diametro_tronco: 0.18, Densidade: 18 })],
-    gerar: function (c, v) { arvore(c, v, [MAT.F2, MAT.F1, MAT.F2, MAT.F3], MAT.LILAS, 34); },
+    gerar: function (c, v) { arvore(c, v, [MAT.F2, MAT.F1, MAT.F2, MAT.F3], MAT.LILAS, 34, "redonda"); },
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
   });
   pdef({
-    id: "ra-pais-ipe-jardim", nome: "Ipê-de-jardim (Tecoma stans)", descricao: "Árvore pequena de várias hastes e folhagem verde-clara com cachos de flores amarelas. Pleno sol; muito usada em jardim residencial.",
+    id: "ra-pais-ipe-jardim", fonteGeral: "Artigo acadêmico brasileiro (Redalyc, enraizamento de estacas de Tecoma stans): 5 a 7 m; herbário do Jardim Botânico de Nova York, exemplar do Rio de Janeiro: arbusto de cerca de 4 m. O mesmo artigo cita resolução estadual que trata a espécie como invasora nociva: conferir a legislação local antes de especificar. O diâmetro de copa dos tipos é premissa de projeto. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Ipê-de-jardim (Tecoma stans)", descricao: "Árvore pequena de várias hastes e folhagem verde-clara com cachos de flores amarelas. Pleno sol; muito usada em jardim residencial.",
     parametros: PAR_ARV(4.00, 2.80, 1.00),
     tipos: [T("i25", "Muda 2,50 m", { Altura: 2.50, Diametro_copa: 1.60, Altura_tronco: 0.70, Densidade: 9 }), T("i40", "Adulta 4,00 m", {}), T("i50", "Adulta 5,00 m", { Altura: 5.00, Diametro_copa: 3.60, Altura_tronco: 1.30, Densidade: 16 })],
-    gerar: function (c, v) { arvore(c, v, [MAT.F3, MAT.F2, MAT.F3], MAT.AMARELA, 40); },
+    gerar: function (c, v) { arvore(c, v, [MAT.F3, MAT.F2, MAT.F3], MAT.AMARELA, 40, "vaso"); },
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro_copa / 2 }], tronco: [{ x: 0, z: 0, r: v.Diametro_tronco / 2 }] }; }
   });
 
   /* ================================================================ ARBUSTOS */
   pdef({
-    id: "ra-pais-moreia", nome: "Moreia (Dietes bicolor)", descricao: "Touceira de folhas em lâmina eretas, verde-acinzentadas, com flores amarelo-claras. Pleno sol; rústica, comum em canteiros de entrada.",
+    id: "ra-pais-moreia", fonteGeral: "Ficha de viveiro da Prefeitura de São Paulo (Dietes bicolor): 50 a 70 cm; NParks de Singapura: 60 a 80 cm; viveiro irlandês: 60 cm de folhagem e 80 cm até a flor, espalhamento de 50 a 60 cm. Os tipos de 0,60, 0,80 e 1,00 m ficam na faixa das fontes (o de 1,00 m é o limite superior). Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Moreia (Dietes bicolor)", descricao: "Touceira de folhas em lâmina eretas, verde-acinzentadas, com flores amarelo-claras. Pleno sol; rústica, comum em canteiros de entrada.",
     parametros: [P("Altura", "comprimento", 0.80, "Porte", PORTE), P("Diametro", "comprimento", 0.70, "Porte"), P("Folhas", "inteiro", 22, "Porte"), P("Florada", "simnao", true, "Construção"), P("Semente", "inteiro", 2, "Construção", "", "instancia")],
     tipos: [T("m60", "Touceira 0,60 m", { Altura: 0.60, Diametro: 0.50, Folhas: 16 }), T("m80", "Touceira 0,80 m", {}), T("m100", "Touceira 1,00 m", { Altura: 1.00, Diametro: 0.90, Folhas: 30 })],
     gerar: function (c, v) {
@@ -165,7 +169,7 @@
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
   });
   pdef({
-    id: "ra-pais-agapanto", nome: "Agapanto (Agapanthus africanus)", descricao: "Touceira de folhas em fita arqueadas e hastes florais altas com umbelas azul-violeta. Meia-sombra ou sol; clássico de borda de canteiro.",
+    id: "ra-pais-agapanto", fonteGeral: "Pacific Bulb Society e Operation Wildflower (Agapanthus africanus): 25 a 70 cm; folhas em fita de cerca de 35 cm. As alturas de haste floral dos tipos não foram achadas em fonte numérica. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Agapanto (Agapanthus africanus)", descricao: "Touceira de folhas em fita arqueadas e hastes florais altas com umbelas azul-violeta. Meia-sombra ou sol; clássico de borda de canteiro.",
     parametros: [P("Altura", "comprimento", 0.50, "Porte", "Altura das folhas. " + PORTE), P("Altura_flor", "comprimento", 0.90, "Porte", "Altura das hastes florais"), P("Diametro", "comprimento", 0.60, "Porte"), P("Folhas", "inteiro", 16, "Porte"), P("Hastes_florais", "inteiro", 5, "Porte"), P("Semente", "inteiro", 4, "Construção", "", "instancia")],
     tipos: [T("g1", "Touceira média", {}), T("g2", "Touceira pequena", { Altura: 0.35, Altura_flor: 0.65, Diametro: 0.40, Folhas: 10, Hastes_florais: 3 })],
     gerar: function (c, v) {
@@ -180,7 +184,7 @@
     simbolo: function (v) { return { copa: [{ x: 0, z: 0, r: v.Diametro / 2, estilo: "arbusto" }], tronco: [] }; }
   });
   pdef({
-    id: "ra-pais-clusia", nome: "Clúsia (Clusia fluminensis) — cerca viva", descricao: "Cerca viva densa de folhas grossas e verde-escuras, em trecho por comprimento. Usada para fechar divisa e dar privacidade; poda a 1,50 a 2,50 m.",
+    id: "ra-pais-clusia", fonteGeral: "Herbário do Jardim Botânico de Nova York (Clusia fluminensis, Serra de Piaba, RJ): cerca de 5 m, muito ramificada desde a base; site de jardinagem: até 6 m; a altura da cerca viva é a da poda. Os tipos de 1,50, 2,00 e 2,50 m são alturas de cerca podada. Consultada em 28/10/2026; fonte secundária (a busca não achou Lorenzi, Flora do Brasil nem Embrapa com o porte). Conferir a muda comprada.", nome: "Clúsia (Clusia fluminensis) — cerca viva", descricao: "Cerca viva densa de folhas grossas e verde-escuras, em trecho por comprimento. Usada para fechar divisa e dar privacidade; poda a 1,50 a 2,50 m.",
     parametros: [P("Comprimento", "comprimento", 2.00, "Porte", "Comprimento do trecho de cerca viva"), P("Altura", "comprimento", 2.00, "Porte", PORTE), P("Largura", "comprimento", 0.80, "Porte", "Espessura da cerca"), P("Semente", "inteiro", 9, "Construção", "", "instancia")],
     tipos: [T("c15", "Cerca 1,50 m de altura", { Altura: 1.50, Largura: 0.70 }), T("c20", "Cerca 2,00 m de altura", {}), T("c25", "Cerca 2,50 m de altura", { Altura: 2.50, Largura: 0.90 })],
     unidade: "m", quantidade: "Comprimento", quantDesc: "Cerca viva de clúsia",
