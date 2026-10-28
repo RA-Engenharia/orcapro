@@ -76517,6 +76517,9 @@ function completar(fam, tipo, inst, saida) {
 var g = GER[fam.mob || fam.id];
 if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de mobiliário \"" + (fam.mob || fam.id) + "\" não carregou"]); return saida; }
 var c = Mob.cena(), v = saida.valores || {};
+var atual = null;
+for (var ia = 0; ia < LISTA.length; ia++) if (LISTA[ia].id === (fam.mob || fam.id)) { atual = LISTA[ia]; break; }
+if (atual) (atual.parametros || []).forEach(function (p) { if (!p.formula && v[p.nome] === undefined && p.valor !== undefined) v[p.nome] = p.valor; });
 try { g(c, v); } catch (e) { saida.ok = false; saida.erros = (saida.erros || []).concat(["mobiliário \"" + fam.nome + "\": " + e.message]); return saida; }
 if (c.avisos && c.avisos.length) saida.avisos = (saida.avisos || []).concat(c.avisos);
 if (typeof c.quantidade === "number" && isFinite(c.quantidade) && saida.quantitativo) saida.quantitativo.quantidade = c.quantidade;

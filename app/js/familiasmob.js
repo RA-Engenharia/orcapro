@@ -1079,6 +1079,12 @@
     var g = GER[fam.mob || fam.id];
     if (!g || !Mob) { saida.ok = false; saida.erros = (saida.erros || []).concat(["o gerador de mobiliário \"" + (fam.mob || fam.id) + "\" não carregou"]); return saida; }
     var c = Mob.cena(), v = saida.valores || {};
+    /* CÓPIA ANTIGA DA FAMÍLIA (28/10/2026): a família copiada para o projeto (ex.: c487-mob-rack-tv, mob "ra-mob-rack-tv") guarda a
+       lista de parâmetros do dia em que foi copiada; o parâmetro que o gerador ganhou depois (Com_painel, Com_tv no lote 3a) chegava
+       undefined = "desligado", e o painel ripado e a TV sumiram do rack da Casa 487. O que a cópia não tem vem com o padrão da definição atual. */
+    var atual = null;
+    for (var ia = 0; ia < LISTA.length; ia++) if (LISTA[ia].id === (fam.mob || fam.id)) { atual = LISTA[ia]; break; }
+    if (atual) (atual.parametros || []).forEach(function (p) { if (!p.formula && v[p.nome] === undefined && p.valor !== undefined) v[p.nome] = p.valor; });
     try { g(c, v); } catch (e) { saida.ok = false; saida.erros = (saida.erros || []).concat(["mobiliário \"" + fam.nome + "\": " + e.message]); return saida; }
     /* aviso do gerador (ex.: o vão de eletro do armário planejado que não coube na largura total) chega a quem avalia */
     if (c.avisos && c.avisos.length) saida.avisos = (saida.avisos || []).concat(c.avisos);
