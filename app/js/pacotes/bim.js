@@ -15124,6 +15124,120 @@ global.BimPrecisao = BimPrecisao;
 if (typeof module !== "undefined" && module.exports) module.exports = BimPrecisao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
 } catch (e) { setTimeout(function () { throw e; }); }
+/* ==== js/bimcotarapida.js ==== */
+try {
+(function (global) {
+"use strict";
+var TOL_EIXO = 5;
+var LIMIAR_VIRAR = 20;
+function fin(v) { return typeof v === "number" && isFinite(v); }
+function num(v, d) { var n = Number(String(v == null ? "" : v).replace(",", ".")); return v == null || v === "" || !isFinite(n) ? d : n; }
+function offsetPadrao(o) {
+o = o || {};
+if (!o.vista || o.vista === "3d") return Math.round(num(o.esp3d, 0.3) * 1e4) / 1e4;
+var esc = num(o.escala, 50); if (!(esc > 0)) esc = 50;
+var mm = num(o.espPapel, 7); if (!(mm > 0)) mm = 7;
+return Math.round(mm * esc / 1000 * 1e4) / 1e4;
+}
+function direcaoAuto(a, b, plano, shift) {
+var A = vet(a), B = vet(b);
+var dx = Math.abs(B[0] - A[0]), dz = Math.abs(plano === "xy" ? B[1] - A[1] : B[2] - A[2]);
+if (shift) return "alinhada";
+var mx = Math.max(dx, dz); if (mx < 1e-9) return "h";
+if (Math.min(dx, dz) <= mx * Math.tan(TOL_EIXO * Math.PI / 180)) return dx >= dz ? "h" : "v";
+return "alinhada";
+}
+function vet(p) { return Array.isArray(p) ? [num(p[0], 0), num(p[1], 0), num(p[2], 0)] : [num(p.x, 0), num(p.y, 0), num(p.z, 0)]; }
+function unit(v) { var L = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]); return L < 1e-12 ? null : [v[0] / L, v[1] / L, v[2] / L]; }
+function ladoFora(d, medio, centro, mouse, baixo) {
+var D = unit(vet(d)) || [1, 0, 0];
+var n = Math.abs(D[1]) > 0.9 ? [1, 0, 0] : unit([-D[2], 0, D[0]]) || [1, 0, 0];
+var M = vet(medio), sinal = 0;
+function dp(alvo, deMedio) { var A = vet(alvo), r = deMedio ? [A[0] - M[0], A[1] - M[1], A[2] - M[2]] : [M[0] - A[0], M[1] - A[1], M[2] - A[2]]; return r[0] * n[0] + r[1] * n[1] + r[2] * n[2]; }
+if (centro) { var a = dp(centro, false); if (Math.abs(a) > 1e-6) sinal = a > 0 ? 1 : -1; }
+if (!sinal && mouse) { var b = dp(mouse, true); if (Math.abs(b) > 1e-6) sinal = b > 0 ? 1 : -1; }
+if (!sinal) sinal = baixo ? -1 : 1;
+return [n[0] * sinal, n[1] * sinal, n[2] * sinal];
+}
+function eixoAuto(a, b, shift) {
+if (shift) return null;
+var A = vet(a), B = vet(b), d = [Math.abs(B[0] - A[0]), Math.abs(B[1] - A[1]), Math.abs(B[2] - A[2])], mx = Math.max(d[0], d[1], d[2]);
+if (mx < 1e-9) return null;
+var i = d.indexOf(mx), t = Math.tan(TOL_EIXO * Math.PI / 180);
+for (var j = 0; j < 3; j++) if (j !== i && d[j] > mx * t) return null;
+var u = [0, 0, 0]; u[i] = 1; return u;
+}
+function angEntre(u, v) {
+var a = unit(u), b = unit(v); if (!a || !b) return 0;
+var c = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]); if (c > 1) c = 1;
+return Math.acos(c) * 180 / Math.PI;
+}
+function novaCadeia() { return { pts: [], feitas: [] }; }
+function acrescentar(cad, p, limiar) {
+var pts = (cad && cad.pts ? cad.pts : []).map(vet), P = vet(p), lim = fin(limiar) ? limiar : LIMIAR_VIRAR;
+if (!pts.length) return { acao: "inicia", pts: [P], fechada: null };
+var ult = pts[pts.length - 1], seg = [P[0] - ult[0], P[1] - ult[1], P[2] - ult[2]];
+if (!unit(seg)) return { acao: "ignora", pts: pts, fechada: null };
+if (pts.length < 2) return { acao: "estende", pts: pts.concat([P]), fechada: null };
+var dir = [ult[0] - pts[0][0], ult[1] - pts[0][1], ult[2] - pts[0][2]];
+if (angEntre(dir, seg) > lim) return { acao: "vira", pts: [ult, P], fechada: pts };
+return { acao: "estende", pts: pts.concat([P]), fechada: null };
+}
+function ang(dx, dz) { return Math.atan2(-dz, dx) * 180 / Math.PI; }
+function rotuloAng(g) {
+var m = ((Math.round(g) % 360) + 360) % 360;
+if (m === 0 || m === 180) return "Horizontal";
+if (m === 90 || m === 270) return "Vertical";
+return "45°";
+}
+function travaAngulo(ref, p, t) {
+if (!ref || !p || !t) return null;
+var dx = p.x - ref.x, dz = p.z - ref.z, L = Math.sqrt(dx * dx + dz * dz);
+var ctrl = !!t.ctrl, shift = !!t.shift;
+if (!ctrl && !shift) return null;
+if (L < 1e-9) return { p: { x: ref.x, z: ref.z }, tipo: ctrl ? (shift ? "45" : "hv") : "orto", rotulo: ctrl ? (shift ? "45°" : "Horizontal") : "Ortogonal", graus: 0 };
+if (ctrl && shift) {
+var g = ang(dx, dz), s = Math.round(g / 45) * 45, r = (g - s) * Math.PI / 180, proj = L * Math.cos(r), sr = s * Math.PI / 180;
+var q = { x: ref.x + proj * Math.cos(sr), z: ref.z - proj * Math.sin(sr) };
+if (Math.abs(q.x - ref.x) < 1e-12) q.x = ref.x; if (Math.abs(q.z - ref.z) < 1e-12) q.z = ref.z;
+return { p: q, tipo: "45", rotulo: rotuloAng(s) === "45°" ? "45°" : rotuloAng(s), graus: ((s % 360) + 360) % 360 };
+}
+if (ctrl) {
+var h = Math.abs(dx) >= Math.abs(dz);
+return { p: h ? { x: p.x, z: ref.z } : { x: ref.x, z: p.z }, tipo: "hv", rotulo: h ? "Horizontal" : "Vertical", graus: h ? (dx >= 0 ? 0 : 180) : (dz <= 0 ? 90 : 270) };
+}
+var ho = Math.abs(dx) >= Math.abs(dz);
+return { p: ho ? { x: p.x, z: ref.z } : { x: ref.x, z: p.z }, tipo: "orto", rotulo: "Ortogonal", graus: ho ? 0 : 90 };
+}
+var held = { ctrl: false, shift: false };
+function teclas() { return { ctrl: held.ctrl, shift: held.shift }; }
+function dasTeclas(e) { return { ctrl: !!(e && (e.ctrlKey || e.metaKey)) || held.ctrl, shift: !!(e && e.shiftKey) || held.shift }; }
+var ouvintes = [];
+function aoMudar(fn) { if (typeof fn === "function") ouvintes.push(fn); }
+function avisar(ev) { ouvintes.forEach(function (fn) { try { fn(ev, teclas()); } catch (e) {} }); }
+if (typeof document !== "undefined" && document.addEventListener) {
+var atualizar = function (e, down) {
+var antes = held.ctrl + ":" + held.shift;
+if (e.key === "Control" || e.key === "Meta") held.ctrl = down;
+else if (e.key === "Shift") held.shift = down;
+else { held.ctrl = !!(e.ctrlKey || e.metaKey); held.shift = !!e.shiftKey; }
+if (antes !== held.ctrl + ":" + held.shift) avisar(e);
+};
+document.addEventListener("keydown", function (e) { atualizar(e, true); }, true);
+document.addEventListener("keyup", function (e) { atualizar(e, false); }, true);
+if (typeof window !== "undefined" && window.addEventListener) window.addEventListener("blur", function () { if (held.ctrl || held.shift) { held.ctrl = held.shift = false; avisar({}); } });
+}
+var CotaRapida = {
+LIMIAR_VIRAR: LIMIAR_VIRAR,
+offsetPadrao: offsetPadrao, direcaoAuto: direcaoAuto, ladoFora: ladoFora, eixoAuto: eixoAuto,
+novaCadeia: novaCadeia, acrescentar: acrescentar, angEntre: angEntre,
+travaAngulo: travaAngulo, teclas: teclas, dasTeclas: dasTeclas, aoMudar: aoMudar,
+_setTeclas: function (c, s) { held.ctrl = !!c; held.shift = !!s; }
+};
+global.BimCotaRapida = CotaRapida;
+if (typeof module !== "undefined" && module.exports) module.exports = CotaRapida;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
+} catch (e) { setTimeout(function () { throw e; }); }
 /* ==== js/bimprecisaoui.js ==== */
 try {
 (function (global) {
@@ -15214,6 +15328,7 @@ function host() { return api.host(); }
 function cam() { return api.camera(); }
 function V3(p, y) { return new THREE.Vector3(p.x, y == null ? edit.base : y, p.z); }
 function hint(t) { if (api.hint) api.hint(t); }
+function CR() { return global.BimCotaRapida || null; }
 function nid(pre) { return pre + (++edit.seq); }
 function estado() { return edit.estado || (global.BimEdit ? global.BimEdit.aplicar(edit.ops) : { caixas: [] }); }
 function ferramenta() { return PASSOS[edit.sub] ? edit.sub : null; }
@@ -15320,7 +15435,16 @@ if (ms && ms.tipo && pr.tipos[ms.tipo] !== false) { sn = { p: { x: ms.p.x, z: ms
 else if (pr.tipos.face && !sn && hit.point) { sn = { p: { x: hit.point.x, z: hit.point.z }, tipo: "face", malha: true, obj: hit.object }; malha = true; }
 }
 var p = sn ? { x: sn.p.x, z: sn.p.z } : cur;
-if (e.shiftKey && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
+var trv = ref && CR() ? CR().travaAngulo(ref, cur, CR().dasTeclas(e)) : null;
+pr.travaRot = trv ? trv.rotulo : null;
+if (trv && trv.tipo !== "orto") {
+if (e) e._semAjuste = true;
+var ux = trv.p.x - ref.x, uz = trv.p.z - ref.z, uL = Math.sqrt(ux * ux + uz * uz);
+if (uL > 1e-9 && sn && !malha) { var lg = ((p.x - ref.x) * ux + (p.z - ref.z) * uz) / uL; p = { x: ref.x + ux / uL * lg, z: ref.z + uz / uL * lg }; }
+else p = trv.p;
+if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null };
+}
+else if ((e.shiftKey || (trv && trv.tipo === "orto")) && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
 else if (ref && ferramenta() && PASSO_TRACO[pr.passo] && BBO() && BBO().travar) {
 var aj = BBO().travar(ref, (!sn || sn.tipo === "grade") ? cur : p, { tipoSnap: sn ? sn.tipo : null });
 if (aj.travado) { p = aj.p; sn = sn && sn.tipo === "grade" ? { p: p, tipo: "grade" } : null; malha = false; }
@@ -15400,7 +15524,7 @@ caixa.querySelector('[data-bp="l-comp"]').firstChild.nodeValue = so === "ret" ? 
 var da = Pr().distAng(base, p), viv = caixa.querySelector('[data-bp="vivo"]');
 if (so === "ret") viv.textContent = fmt(Math.abs(p.x - base.x)) + " × " + fmt(Math.abs(p.z - base.z)) + " m";
 else if (ferramenta() === "girar" && pr.passo === "final" && pr.pts[1]) viv.textContent = fmt(angRel(pr.pts[0], pr.pts[1], p)) + "°";
-else viv.textContent = fmt(da.dist) + " m · " + fmt(da.graus) + "°";
+else viv.textContent = fmt(da.dist) + " m · " + fmt(da.graus) + "°" + (pr.travaRot ? " · " + pr.travaRot : "");
 caixa.style.display = "flex";
 if (!digitando && e) caixaPos(e.clientX, e.clientY);
 pr.ultBase = base; pr.ultP = p;
@@ -16056,6 +16180,12 @@ var cmdA = Pr().ATALHOS_CMD && Pr().ATALHOS_CMD[pr.tecla.slice(-2)];
 if (cmdA && global.BimShell && global.BimShell.executar) { e.preventDefault(); e.stopPropagation(); pr.tecla = ""; global.BimShell.executar(cmdA); return; }
 }
 }, true);
+if (CR() && CR().aoMudar) CR().aoMudar(function (ev, t) {
+try {
+if (!ativo() || !pr.ultE || !edit.sub || !baseAtual()) return;
+self.mover({ clientX: pr.ultE.clientX, clientY: pr.ultE.clientY, pointerType: pr.ultE.pointerType, shiftKey: !!t.shift, ctrlKey: !!t.ctrl, metaKey: false });
+} catch (eT) {}
+});
 var self = {
 ativo: ativo,
 mover: function (e) {
@@ -98898,7 +99028,7 @@ var MARM = "marmoraria";
 var ENXUTA_MARM = {};
 ["novo-projeto", "abrir-opbim", "salvar-opbim", "salvar-modelo", "arquivo-obra", "niveis",
 "mover-preciso", "copiar", "espelhar", "girar", "alinhar", "deslocamento", "aparar-canto",
-"medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-alinhada", "p7-cota-linear", "p7-texto",
+"medir", "area", "limpar-medidas", "snap", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-alinhada", "cota-continua", "p7-cota-linear", "p7-texto",
 "planta-2d", "home", "orbita", "ortogonal", "estilo", "materiais", "vistas", "lado-a-lado", "tamanho-ui", "atalhos"].forEach(function (id) { ENXUTA_MARM[id] = 1; });
 function soMarm() { try { var MM = global.MarmModulo; return !!(MM && MM.soMarmoraria && MM.soMarmoraria()); } catch (e) { return false; } }
 var MAPA = {};
@@ -98916,7 +99046,7 @@ def(COMUM, [
 "medir", "area", "angulo", "snap", "limpar-medidas", "cotas-auto", "anotacao", "foto", "pranchas",
 "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "cota-furacao", "cotas-padrao",
 "identificar-categoria", "identificar-todos",
-"p7-cota-alinhada", "p7-cota-linear", "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco",
+"p7-cota-alinhada", "cota-continua", "p7-cota-linear", "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco",
 "p7-cota-elevacao", "p7-cota-inclinacao", "p7-tipos", "p7-texto", "p7-simbolo", "p7-nota-chave",
 "p7-linha-detalhe", "p7-regiao", "p7-mascara", "p7-componente", "p7-legenda", "p7-nuvem", "p7-revisoes",
 "planta-2d", "corte-2d", "corte-tecnico", "clash", "planta", "corte", "quatro-d", "tarefas4d", "curva-s", "seis-d",
@@ -160495,6 +160625,7 @@ function novoId() { return "n7" + Date.now().toString(36) + Math.floor(Math.rand
 function hoje() { var d = new Date(), p = function (n) { return (n < 10 ? "0" : "") + n; }; return p(d.getDate()) + "/" + p(d.getMonth() + 1) + "/" + d.getFullYear(); }
 var CMDS = {
 "p7-cota-alinhada": { k: "cota", cota: "alinhada", rotulo: "Cota alinhada" },
+"cota-continua": { k: "cota", cota: "alinhada", rotulo: "Cota contínua", continua: true },
 "p7-cota-linear": { k: "cota", cota: "linear", rotulo: "Cota linear" },
 "p7-cota-angular": { k: "cota", cota: "angular", rotulo: "Cota angular" },
 "p7-cota-radial": { k: "cota", cota: "radial", rotulo: "Cota radial" },
@@ -160538,6 +160669,7 @@ var self = this, R = global.BimRibbon;
 var C = function (id, rot, ico, dica, grande, tipo) { var c = { id: id, rotulo: rot, icone: ico, dica: dica, tipo: tipo || "alterna" }; if (grande) c.grande = true; return c; };
 R.acrescentar("anotar", "Anotar", "Cotas", [
 C("p7-cota-alinhada", "Cota", "regua", "Cota: clique perto da FACE, do EIXO, da PONTA, do MEIO ou do centro de FURO de uma peça, depois da outra — mais referências fazem cadeia — e clique no vazio para posicionar a linha. O valor aparece antes do clique; Tab alterna face/eixo. A cota fica presa às peças: anda, troca de perfil e muda de nível junto. No 3D, na planta e no corte.", true),
+C("cota-continua", "Cota\ncontínua", "regua", "Cota contínua: clique o 1º ponto e depois cada ponto seguinte — cada clique acrescenta um trecho à cadeia, na mesma linha de cota, já afastada pelo Espaçamento. Se o ponto vira de direção (mais de 20°), outra cadeia começa sozinha no último ponto. Enter ou botão direito termina; Esc também (o que já foi feito fica). A tecla C liga e desliga. No 3D, na planta, no corte e na vista."),
 C("p7-cota-linear", "Cota\nlinear", "regua", "Cota linear horizontal ou vertical (Propriedades da ferramenta): mede só na direção X ou Y da vista, entre referências."),
 C("cota-coordenada", "Coordenada", "grade", "Cota por coordenada: clique a ORIGEM e depois cada ponto; Enter termina. Cada ponto mostra a distância até a origem (furação, locação de pilares, inserts). No 3D, na planta e no corte."),
 C("p7-cota-angular", "Angular", "angulo", "Cota angular: clique duas linhas (faces de parede, eixos, linhas de detalhe) e onde passa o arco."),
@@ -160592,6 +160724,7 @@ try { var nv = P.niveis()[0]; if (nv) P.abrir(P.idPlanta(nv.id)); } catch (e) {}
 }
 if (!this.vistaAtiva()) { toast("A anotação vai numa vista 2D: abra uma planta ou um corte (Analisar › Planta baixa).", "aviso"); return false; }
 this._limparPrevia();
+try { var UC = global.BimCotasUI; if (UC && UC.definirContinua && /^(p7-cota-alinhada|p7-cota-linear|cota-continua)$/.test(cmd)) UC.definirContinua(cmd === "cota-continua"); } catch (eCt) {}
 this._f = { cmd: cmd, def: def, refs: [], pts: [], fase: 0 };
 this._sel = null;
 this._marcarVistas(true);
@@ -160740,6 +160873,13 @@ return ok;
 var oVista = { corte: corte, vista: id };
 if (k === "linear" || k === "alinhada" || k === "coordenada") {
 var h = this._acharCota(st, p, tol, id, corte, null);
+if (k !== "coordenada") {
+var rn = null;
+if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) rn = h.ref;
+else if (!h) rn = { x: q.x, y: q.y };
+if (rn) { f.vista = id; return this._aposRef(id, p, st, f, d, rn, corte); }
+return true;
+}
 if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
 if (f.refs.length < 2) { f.refs.push({ x: q.x, y: q.y }); this._previa(id, p); status(this.dica()); return true; }
 var orient = k !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
@@ -160792,6 +160932,46 @@ if (f.refs.length >= 2) return criar({}) || true;
 return true;
 }
 return true;
+},
+_contCfg: function () { var U = global.BimCotasUI; return U && U.config ? U.config() : { continua: false, espPapel: 7, lado: "auto" }; },
+_aposRef: function (id, p, st, f, d, ref, corte) {
+var M = A7(), CRr = global.BimCotaRapida, cf = this._contCfg();
+if (!CRr || !cf.continua) {
+f.refs.push(ref);
+if (f.refs.length >= 2 || !CRr) { if (f.refs.length >= 2 && CRr) { var rs = f.refs.slice(0, 2); f.refs = []; this._cotaRapida(id, rs, p); return true; } }
+this._previa(id, p); status(this.dica()); return true;
+}
+var I = M.indice(st), vo = { corte: corte, vista: id };
+function pt(r) { var x = M.resolverRef(I, r, vo); return x && x.ok ? [x.p[0], x.p[1], 0] : null; }
+var pts = f.refs.map(pt).filter(function (q) { return !!q; }), np = pt(ref);
+if (!np) { toast("Não achei esse ponto na vista.", "aviso"); return true; }
+var res = CRr.acrescentar({ pts: pts }, np, cf.virar);
+if (res.acao === "ignora") return true;
+if (res.acao === "vira") {
+var ult = f.refs[f.refs.length - 1], fechar = f.refs.slice();
+f.refs = [ult, ref];
+this._cotaRapida(id, fechar, p);
+status("Virou de direção: outra cadeia começou no último ponto. Enter termina."); this._previa(id, p); return true;
+}
+f.refs.push(ref); this._previa(id, p); status(this.dica()); return true;
+},
+_cotaRapida: function (id, refs, p) {
+var f = this._f, d = f && f.def; if (!d || refs.length < 2) return false;
+var M = A7(), st = this.estado(), o = this.opcoes(), corte = /^d2c-/.test(id), CRr = global.BimCotaRapida, cf = this._contCfg(), P = P2(), cota = d.cota, orient;
+var I = M.indice(st), vo = { corte: corte, vista: id }, ra = M.resolverRef(I, refs[0], vo), rb = M.resolverRef(I, refs[1], vo);
+if (cota === "linear") orient = (o.orient === "h" || o.orient === "v") ? o.orient : this._orientAuto(st, refs, null, corte);
+else if (cota === "alinhada" && ra.ok && rb.ok) {
+var da = CRr.direcaoAuto([ra.p[0], ra.p[1], 0], [rb.p[0], rb.p[1], 0], "xy", CRr.teclas().shift);
+if (da === "h" || da === "v") { cota = "linear"; orient = da; }
+}
+var esc = 50; try { esc = P.estilo(id).escala || 50; } catch (eE) {}
+var esp = CRr.offsetPadrao({ vista: corte ? "corte" : "planta", escala: esc, espPapel: cf.espPapel });
+var b0 = { id: novoId(), vista: id, cota: cota, refs: refs, off: this._offFora(refs, cota, orient, id, esp, p, cf.lado), orient: orient, tipoCota: o.tipoCota || undefined };
+var Uc = global.BimCotasUI; if (Uc && Uc.ajustarCota2d) Uc.ajustarCota2d(b0, st, id);
+var r = M.opCota(b0); this._limparPrevia();
+if (!r.ok) { toast(r.motivo, "aviso"); return false; }
+var ok = this._op(r.op); if (ok) status(d.rotulo + " criada (Ctrl+Z desfaz). Clique a próxima, ou Esc.");
+return ok;
 },
 _mesmaRef: function (a, b) {
 if (!a || !b || a.el == null || a.el !== b.el || a.r !== b.r || a.k !== b.k || a.i !== b.i || a.el2 !== b.el2) return false;
@@ -160862,6 +161042,9 @@ return BCm.linhaDesenho(st, cand, p, tol, proj, this._optDesenho(id));
 concluir: function () {
 var f = this._f, M = A7(); if (!f || !M || !f.vista) return false;
 var d = f.def, o = this.opcoes(), id = f.vista, r = null;
+if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada") && f.refs.length >= 2 && global.BimCotaRapida) {
+var rsE = f.refs.slice(); f.refs = []; return this._cotaRapida(id, rsE, null);
+}
 if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada" || d.cota === "coordenada") && f.refs.length >= 2) {
 var orient = d.cota !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
 var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: this._offFora(f.refs, d.cota, orient, id), orient: orient, tipoCota: o.tipoCota || undefined };
@@ -160887,16 +161070,20 @@ if (!r.ok) { toast(r.motivo, "aviso"); return false; }
 var ok = this._op(r.op); if (ok) status(d.rotulo + " criada. Continue, ou Esc.");
 return ok;
 },
-_offFora: function (refs, cota, orient, id) {
+_offFora: function (refs, cota, orient, id, esp, mouse, ladoCfg) {
+esp = esp > 0 ? esp : 0.6;
 var M = A7(), st = this.estado(), P = P2(), c = P && P._cache ? P._cache[id] : null, vb = c && (c.vbTotal || c.vb);
 try {
 var m = M.medirCota(st, { tipo: "cota", cota: cota, refs: refs, orient: orient, off: 0, vista: id }, { corte: /^d2c-/.test(id), vista: id });
-if (!m.ok || !m.geo || !m.geo.t || !vb) return 0.6;
+if (!m.ok || !m.geo || !m.geo.t || !vb) return esp;
 var tt = m.geo.t, l0 = m.geo.lineT, vs = m.geo.pts.map(function (q) { return q[0] * tt[0] + q[1] * tt[1]; });
 var cen = (vb.x + vb.w / 2) * tt[0] + (vb.y + vb.h / 2) * tt[1];
-var lado = cen > l0 ? -1 : 1, ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
-return Math.round((ext - l0 + lado * 0.6) * 1e4) / 1e4;
-} catch (e) { return 0.6; }
+var lado = cen > l0 ? -1 : 1;
+if (ladoCfg === "mouse" && mouse) lado = (mouse[0] * tt[0] + mouse[1] * tt[1]) > l0 ? 1 : -1;
+else if (ladoCfg === "fixo") lado = 1;
+var ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
+return Math.round((ext - l0 + lado * esp) * 1e4) / 1e4;
+} catch (e) { return esp; }
 },
 _usuario: function () { try { var u = global.Auth && global.Auth._usuario; return (u && (u.nome || u.email)) ? String(u.nome || u.email).slice(0, 60) : ""; } catch (e) { return ""; } },
 _previa: function (id, p) {
@@ -160977,10 +161164,13 @@ this._tecla = function (ev) {
 var alvo = ev.target, campo = alvo && (alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.tagName === "SELECT" || alvo.isContentEditable);
 if (campo || !self.ativo()) return;
 if (ev.key === "Escape" && self._f) {
-if (self._f.refs.length || self._f.pts.length) { self._f.refs = []; self._f.pts = []; self._limparPrevia(); status(self.dica()); ev.stopPropagation(); ev.preventDefault(); return; }
+if (self._f.refs.length || self._f.pts.length) {
+if (self._f.def.k === "cota" && (self._f.def.cota === "linear" || self._f.def.cota === "alinhada") && self._contCfg().continua && self._f.refs.length >= 2 && self._f.vista) { var rsC = self._f.refs.slice(); self._f.refs = []; self._cotaRapida(self._f.vista, rsC, null); }
+self._f.refs = []; self._f.pts = []; self._limparPrevia(); status(self.dica()); ev.stopPropagation(); ev.preventDefault(); return;
+}
 self.desarmar(); return;
 }
-if (ev.key === "Enter" && self._f) { if (self.concluir()) { ev.stopPropagation(); ev.preventDefault(); } return; }
+if (ev.key === "Enter" && self._f) { if (self.concluir() || self._f.def.k === "cota") { ev.stopPropagation(); ev.preventDefault(); } return; }
 if (ev.key === "Tab" && self._f && self._f.def.k === "cota" && self._ultP && !ev.shiftKey) {
 var up = self._ultP, stT = self.estado(), corteT = /^d2c-/.test(up.id), tolT = self._tol(up.id), tb = self._tabC;
 if (!tb) { var lt = self._listaCota(stT, up.p, tolT, up.id, corteT, self._f.def.cota === "elevacao" && !corteT ? "topo" : null); if (lt.length > 1) tb = self._tabC = { id: up.id, p: up.p.slice(), raio: self._tol(up.id, 3), lista: lt, i: 0 }; }
@@ -161002,6 +161192,13 @@ ev.stopPropagation(); ev.preventDefault();
 }
 };
 document.addEventListener("keydown", this._tecla, true);
+var rd = null;
+document.addEventListener("pointerdown", function (e) { if (e.button === 2) rd = { x: e.clientX, y: e.clientY }; }, true);
+document.addEventListener("contextmenu", function (e) {
+var andou = rd && (Math.abs(e.clientX - rd.x) + Math.abs(e.clientY - rd.y)) > 6; rd = null;
+var f = self._f; if (!f || !self.ativo() || andou || !f.vista || f.def.k !== "cota" || !(f.def.cota === "linear" || f.def.cota === "alinhada") || !self._contCfg().continua || f.refs.length < 2) return;
+e.preventDefault(); e.stopPropagation(); var rs = f.refs.slice(); f.refs = []; self._cotaRapida(f.vista, rs, null);
+}, true);
 },
 _arrastoInicio: function (vista, ev, p) {
 var M = A7(), st = this.estado(), it = M.item(st, this._sel); if (!it || it.tipo !== "cota") return false;
@@ -161379,7 +161576,7 @@ try {
 "use strict";
 var SUB = "cota3d";
 var CHAVE = "orcapro:bim:cotas:cfg:v1";
-var CMD_MODO = { "p7-cota-alinhada": "alinhada", "p7-cota-elevacao": "nivel", "p7-cota-inclinacao": "inclinacao", "cota-coordenada": "coordenada" };
+var CMD_MODO = { "p7-cota-alinhada": "alinhada", "cota-continua": "alinhada", "p7-cota-elevacao": "nivel", "p7-cota-inclinacao": "inclinacao", "cota-coordenada": "coordenada" };
 var ROT_MODO = { alinhada: "Cota", nivel: "Cota de nível", inclinacao: "Inclinação", coordenada: "Cota por coordenada", selecionar: "Cotar seleção" };
 var PREFS = ["auto", "eixo", "face"];
 var ROT_PREF = { auto: "automático (ponto, eixo ou face)", eixo: "eixo e centro", face: "face e ponta" };
@@ -161408,11 +161605,12 @@ var CFG = null;
 function cfg() {
 if (CFG) return CFG;
 var o = null; try { o = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); } catch (e) { o = null; }
-CFG = { padrao: "auto", pref: "auto", dir: "auto", encaixe: true, tam: 1 };
+CFG = { padrao: "auto", pref: "auto", dir: "auto", encaixe: true, tam: 1, esp3d: 0.3, espPapel: 7, lado: "auto", continua: false, total: false, virar: 20 };
 if (o && typeof o === "object") Object.keys(CFG).forEach(function (k) { if (o[k] != null) CFG[k] = o[k]; });
 return CFG;
 }
 function gravar() { try { global.localStorage.setItem(CHAVE, JSON.stringify(cfg())); } catch (e) {} }
+function CRp() { return global.BimCotaRapida || null; }
 function padraoCfg() { var p = cfg().padrao; return p === "mm" || p === "cm" ? p : null; }
 function vistaAtiva() { try { return global.Gestao && global.Gestao._bimVxEst ? global.Gestao._bimVxEst().ativa : "3d"; } catch (e) { return "3d"; } }
 function vista2d() {
@@ -161444,6 +161642,10 @@ mudarCfg: function (pid, valor) {
 var k = String(pid).replace(/^bct-/, ""), c = cfg();
 if (k === "encaixe") c.encaixe = valor === true || valor === "sim" || valor === "1" || valor === 1;
 else if (k === "tam") c.tam = Math.max(0.5, Math.min(3, num(valor, 1)));
+else if (k === "continua" || k === "total") c[k] = valor === true || valor === "sim" || valor === "1" || valor === 1;
+else if (k === "virar") c.virar = Math.max(5, Math.min(80, num(valor, 20)));
+else if (k === "esp3d") c.esp3d = Math.max(0.05, Math.min(5, num(valor, 0.3)));
+else if (k === "espPapel") c.espPapel = Math.max(2, Math.min(30, num(valor, 7)));
 else if (k in c) c[k] = String(valor);
 gravar();
 if (this._3d) { this._3d.redesenhar(); this._3d.limparCache(); }
@@ -161451,6 +161653,8 @@ try { if (U2()) U2()._candCache = null; } catch (e) {}
 this._redesenhar2d();
 return true;
 },
+config: function () { return cfg(); },
+definirContinua: function (on) { cfg().continua = !!on; gravar(); },
 alternarPref: function () {
 var c = cfg(), i = PREFS.indexOf(c.pref); c.pref = PREFS[(i + 1) % PREFS.length]; gravar();
 if (this._3d) this._3d.limparCache();
@@ -161462,7 +161666,13 @@ return [
 { id: "bct-pref", rotulo: "Encaixe (Tab)", tipo: "lista", valor: c.pref, opcoes: PREFS.map(function (p) { return { id: p, rotulo: ROT_PREF[p] }; }) },
 { id: "bct-padrao", rotulo: "Arredondamento", tipo: "lista", valor: c.padrao, opcoes: [{ id: "auto", rotulo: "Automático (mm na metálica, cm no resto)" }, { id: "mm", rotulo: "Sempre mm" }, { id: "cm", rotulo: "Sempre cm (m com 2 casas)" }] },
 { id: "bct-dir", rotulo: "Direção (3D)", tipo: "lista", valor: c.dir, opcoes: [{ id: "auto", rotulo: "Alinhada (a reta dos pontos)" }, { id: "x", rotulo: "Horizontal X" }, { id: "z", rotulo: "Horizontal Z" }, { id: "y", rotulo: "Vertical" }] },
-{ id: "bct-encaixe", rotulo: "Encaixe ligado", tipo: "sim-nao", valor: c.encaixe !== false }
+{ id: "bct-encaixe", rotulo: "Encaixe ligado", tipo: "sim-nao", valor: c.encaixe !== false },
+{ id: "bct-continua", rotulo: "Cota contínua (tecla C)", tipo: "sim-nao", valor: !!c.continua },
+{ id: "bct-esp3d", rotulo: "Espaçamento no 3D", unidade: "m", tipo: "numero", passo: 0.05, valor: c.esp3d },
+{ id: "bct-espPapel", rotulo: "Espaçamento na vista", unidade: "mm no papel", tipo: "numero", passo: 0.5, valor: c.espPapel },
+{ id: "bct-lado", rotulo: "Lado da linha", tipo: "lista", valor: c.lado, opcoes: [{ id: "auto", rotulo: "Automático (por fora da peça)" }, { id: "mouse", rotulo: "Lado do mouse" }, { id: "fixo", rotulo: "Fixo (lado padrão)" }] },
+{ id: "bct-virar", rotulo: "Cadeia vira acima de", unidade: "°", tipo: "numero", passo: 5, valor: c.virar },
+{ id: "bct-total", rotulo: "Total da cadeia", tipo: "sim-nao", valor: !!c.total }
 ];
 },
 _redesenhar2d: function () {
@@ -161674,6 +161884,7 @@ return true;
 },
 armar3d: function (modo, cmd) {
 var b = B(); if (!b || !b.editarArmar || !this._3d) return false;
+try { if (cmd === "cota-continua" || cmd === "p7-cota-alinhada") { cfg().continua = cmd === "cota-continua"; gravar(); } } catch (eCt) {}
 this._3d.preparar(modo, cmd);
 var ok = b.editarArmar(SUB);
 return ok !== false;
@@ -161697,7 +161908,7 @@ Rb.acrescentar("anotar", "Anotar", "Cotas", [
 try {
 var ab = Rb.aba("anotar"), pn = ab ? ab.paineis.filter(function (p) { return p.nome === "Cotas"; })[0] : null;
 if (pn) {
-var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
+var ORD = ["p7-cota-alinhada", "cota-continua", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
 "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "cotas-padrao", "p7-tipos"];
 pn.comandos.sort(function (a, b) { var ia = ORD.indexOf(a.id), ib = ORD.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
 }
@@ -161800,10 +162011,13 @@ if (api.S && api.S._tickExtra) api.S._tickExtra.push(function () { for (var i = 
 function armado() { return previa() && edit.on && edit.sub === SUB && api.S.alive !== false; }
 function cor(nome, reserva) { var c = new THREE.Color(); try { c.set(token(nome, reserva)); } catch (e) { c.set(reserva); } return c; }
 function limpar(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } var i = sprites.indexOf(o); if (i >= 0) sprites.splice(i, 1); }); }
-function linhas(pos, cr, op, larg) {
+function linhas(pos, cr, op, larg, tracejada) {
 if (!pos.length) return null;
 var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-var l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, linewidth: larg || 1 }));
+var mat = tracejada && THREE.LineDashedMaterial ? new THREE.LineDashedMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, dashSize: 0.12, gapSize: 0.08 })
+: new THREE.LineBasicMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, linewidth: larg || 1 });
+var l = new THREE.LineSegments(g, mat);
+if (tracejada && l.computeLineDistances) l.computeLineDistances();
 l.renderOrder = 997; l.frustumCulled = false; l.raycast = function () {};
 return l;
 }
@@ -161891,7 +162105,8 @@ if (k === "inclinacao") it.graus = true;
 void C;
 return it;
 }
-function textoPrevia(r) {
+function textoPrevia(r) { if (!r) return ""; if (r._tx == null) r._tx = textoPreviaCalc(r); return r._tx; }
+function textoPreviaCalc(r) {
 var C = BC(), est = e3(), k = st.modo; if (!r) return "";
 if (k === "selecionar") return st.coleta.length + " peça(s) — clique outra; Enter cota" + (r.id != null ? " · " + (r.rotulo || "") : "");
 if (k === "nivel") { var itn = { k: "nivel", refs: [refNivel(r)] }, mn = C.medir(est, itn, { cfg: cfg() }); return mn.ok ? mn.rotulos[0].texto : ""; }
@@ -161910,15 +162125,105 @@ if (!r) return;
 var pos = [], verde = cor("--verde", "#15803d");
 st.refs.forEach(function (ref) { var p = pontoDe(ref); if (p) pos.push(p[0], p[1], p[2], r.p[0], r.p[1], r.p[2]); });
 if (st.modo === "selecionar") st.coleta.forEach(function (id) { var g = BC().geom(BC().acharPeca(e3(), id)); if (g) pos.push(g.a[0], g.a[1], g.a[2], g.b[0], g.b[1], g.b[2]); });
-var l = linhas(pos, verde, 0.95); if (l) grpPrev.add(l);
+var l = linhas(pos, verde, 0.95, 1, st.modo === "alinhada" || st.modo === "coordenada"); if (l) grpPrev.add(l);
+valorFlutuante(r);
 if (r.tipo && { fim: 1, meio: 1, centro: 1, intersecao: 1, proximo: 1 }[r.tipo]) {
 try { api.marca({ p: new THREE.Vector3(r.p[0], r.p[1], r.p[2]), tipo: r.tipo, editor: true, cor: { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", proximo: "var(--texto-fraco)" }[r.tipo] }); } catch (eM) {}
 } else { try { api.marcaEsconder(); } catch (eE) {} }
 }
+var grpVal = new THREE.Group(); grpVal.name = "cotas3d-valor"; api.scene.add(grpVal); var valSp = null, valTxt = "", valCv = null, valTex = null;
+function valorSprite(tx) {
+if (!valSp) {
+valCv = document.createElement("canvas"); valCv.width = 384; valCv.height = 64;
+valTex = new THREE.CanvasTexture(valCv); valTex.minFilter = THREE.LinearFilter; if (THREE.SRGBColorSpace) valTex.colorSpace = THREE.SRGBColorSpace;
+valSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: valTex, depthTest: false, transparent: true }));
+valSp.userData._ratio = valCv.width / valCv.height; valSp.userData._sc = 0.021 * 1.2; valSp.renderOrder = 999; valSp.raycast = function () {};
+sprites.push(valSp); grpVal.add(valSp);
+}
+if (valTxt !== tx) {
+var g = valCv.getContext("2d"), fs = 40; g.clearRect(0, 0, valCv.width, valCv.height); g.font = "600 " + fs + "px sans-serif";
+var w = Math.min(valCv.width - 4, Math.ceil(g.measureText(tx).width) + 24), x0 = (valCv.width - w) / 2;
+g.fillStyle = token("--surface", "#ffffff"); g.globalAlpha = 0.94; g.fillRect(x0, 4, w, 56); g.globalAlpha = 1;
+g.strokeStyle = token("--verde", "#15803d"); g.lineWidth = 4; g.strokeRect(x0 + 2, 6, w - 4, 52);
+g.fillStyle = token("--texto", "#14273b"); g.textBaseline = "middle"; g.fillText(tx, x0 + 12, 34);
+valTex.needsUpdate = true; valTxt = tx; valSp.userData.texto = tx;
+}
+valSp.visible = true; return valSp;
+}
+function valorFlutuante(r) {
+var ultRef = st.refs.length ? pontoDe(st.refs[st.refs.length - 1]) : null;
+if (!r || !ultRef || (st.modo !== "alinhada" && st.modo !== "coordenada")) { valorEsconder(); return; }
+var tx = textoPrevia(r); if (!tx) { valorEsconder(); return; }
+var sp = valorSprite(tx);
+sp.position.set((ultRef[0] + r.p[0]) / 2, (ultRef[1] + r.p[1]) / 2, (ultRef[2] + r.p[2]) / 2); api.reescalar(sp);
+}
+function valorEsconder() { if (valSp) { valSp.visible = false; valTxt = ""; } }
+function centroModelo() {
+var g = geo(), x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+(g.pontos || []).forEach(function (q) { var p = q.p; if (!p) return; if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[2] < z0) z0 = p[2]; if (p[2] > z1) z1 = p[2]; });
+return isFinite(x0) ? [(x0 + x1) / 2, 0, (z0 + z1) / 2] : null;
+}
+function itemRapido(refs, mouseP, shift) {
+var CRr = CRp(), c = cfg(), pa = pontoDe(refs[0]), pb = pontoDe(refs[refs.length - 1]);
+if (!CRr || !pa || !pb) return null;
+var it = itemProvisorio(refs);
+if (c.dir === "auto") {
+var p1 = pontoDe(refs[1]) || pb, ax = CRr.eixoAuto(pa, p1, shift);
+if (ax) { it.k = "linear"; it.dir = { x: ax[0], y: ax[1], z: ax[2] }; }
+else if (refs.length > 2) { var d = [p1[0] - pa[0], p1[1] - pa[1], p1[2] - pa[2]], L = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) || 1; it.k = "linear"; it.dir = { x: d[0] / L, y: d[1] / L, z: d[2] / L }; }
+else { it.k = "alinhada"; delete it.dir; }
+}
+it.off = CRr.offsetPadrao({ vista: "3d", esp3d: c.esp3d });
+if (c.lado !== "fixo") {
+var dv = it.dir ? [it.dir.x, it.dir.y, it.dir.z] : [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+var md = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2];
+var lf = CRr.ladoFora(dv, md, c.lado === "mouse" ? null : centroModelo(), mouseP || null);
+it.lado = { x: lf[0], y: lf[1], z: lf[2] };
+}
+return it;
+}
+function criarRapido(refs, mouseP, e) {
+var it = itemRapido(refs, mouseP, !!(e && e.shiftKey)); if (!it) return false;
+var ok = criar(it);
+if (ok && cfg().total && refs.length > 2) {
+var tot = itemRapido([refs[0], refs[refs.length - 1]], mouseP, !!(e && e.shiftKey)); if (tot) { tot.off = it.off * 2; criar(tot, "Total"); }
+}
+return ok;
+}
+function continuar(r, e) {
+var CRr = CRp(); if (!CRr) return;
+if (st.refs.length && JSON.stringify(st.refs[st.refs.length - 1]) === JSON.stringify(r.ref)) return;
+var pts = st.refs.map(function (x) { return pontoDe(x); }).filter(function (q) { return !!q; });
+var res = CRr.acrescentar({ pts: pts }, r.p, cfg().virar);
+if (res.acao === "ignora") return;
+if (res.acao === "vira") {
+var ultRef = st.refs[st.refs.length - 1], fechar = st.refs.slice();
+criarRapido(fechar, r.p, e);
+st.refs = [ultRef, r.ref]; marcarP1(); desenharProvisoria();
+api.hint("Virou de direção: outra cadeia começou no último ponto. Enter termina."); return;
+}
+st.refs.push(r.ref); marcarP1(); desenharProvisoria();
+api.hint(dica());
+}
+var grpProv = new THREE.Group(); grpProv.name = "cotas3d-prov"; api.scene.add(grpProv);
+function desenharProvisoria() {
+limpar(grpProv);
+if (st.modo !== "alinhada" || !cfg().continua || st.refs.length < 2) return;
+var C = BC(), it = itemRapido(st.refs, null, false); if (!it) return;
+var m = C.medir(e3(), it, { cfg: cfg() }); if (!m.ok) return;
+var pos = []; m.linhas.concat(m.marcas).forEach(function (q) { pos.push(q[0][0], q[0][1], q[0][2], q[1][0], q[1][1], q[1][2]); });
+var l = linhas(pos, cor("--aco", "#0d6ebd"), 0.9); if (l) grpProv.add(l);
+m.rotulos.forEach(function (q) { var sp = rotulo(q.texto, "--aco", cfg().tam); sp.position.set(q.p[0], q.p[1], q.p[2]); grpProv.add(sp); api.reescalar(sp); });
+}
+function terminarCadeia() {
+if (st.modo === "alinhada" && st.refs.length >= 2) { var rs = st.refs.slice(); criarRapido(rs, st.cur ? st.cur.p : null, null); }
+st.refs = []; marcarP1(); limpar(grpProv); valorEsconder();
+}
 function marcarP1() { if (st.refs.length || st.coleta.length) { var p = st.refs.length ? pontoDe(st.refs[0]) : [0, 0, 0]; if (p) edit.p1 = new THREE.Vector3(p[0], p[1], p[2]); } else edit.p1 = null; }
 function dica() {
 var k = st.modo, n = st.refs.length;
-if (k === "alinhada") return n < 2 ? "Cota: clique a " + (n ? "próxima" : "1ª") + " referência — ponta, meio, face, eixo ou furo (Tab: " + ROT_PREF[cfg().pref] + "). O valor aparece antes do clique." : "Cota: mais uma referência faz cadeia; clique no VAZIO para posicionar a linha (Enter: ao lado). Esc sai.";
+if (k === "alinhada" && cfg().continua) return n < 2 ? "Cota contínua: clique " + (n ? "o próximo ponto" : "o 1º ponto") + " (Tab: " + ROT_PREF[cfg().pref] + "). Cada clique acrescenta um trecho; virou de direção, outra cadeia começa. Enter ou botão direito termina; C volta à cota simples." : "Cota contínua: clique o próximo ponto; Enter ou botão direito termina (" + (n - 1) + " trecho(s)). Esc sai.";
+if (k === "alinhada") return n < 1 ? "Cota: clique o 1º ponto (ponta, meio, face, eixo ou furo; Tab: " + ROT_PREF[cfg().pref] + ") e depois o 2º — a cota já nasce no lugar. C liga a cota contínua." : "Cota: clique o 2º ponto — a cota já nasce afastada " + String(cfg().esp3d).replace(".", ",") + " m, por fora da peça.";
 if (k === "nivel") return "Cota de nível: clique no topo da peça (TOS no aço, TOL na laje) ou num ponto. Esc sai.";
 if (k === "inclinacao") return n ? "Inclinação: clique o 2º ponto." : "Inclinação: clique o 1º ponto (a ponta da terça, da diagonal, do tubo).";
 if (k === "coordenada") return n ? "Coordenada: clique o próximo ponto; Enter termina (" + n + " ponto(s))." : "Coordenada: clique a ORIGEM.";
@@ -161932,7 +162237,7 @@ var b = B(), ok = !!(b && b.b2Op && b.b2Op(r.op));
 if (!ok) { api.hint("O editor recusou a cota."); return false; }
 var m = C.medir(e3(), r.op, { cfg: cfg() }), tx = m.ok ? m.rotulos.map(function (q) { return q.texto; }).join(" · ") : "";
 api.hint((pedido || ROT_MODO[st.modo]) + " criada" + (tx ? ": " + tx : "") + ". Clique a próxima, ou Esc. Ctrl+Z desfaz."); status((pedido || ROT_MODO[st.modo]) + " criada" + (tx ? ": " + tx : "") + ".");
-st.refs = []; marcarP1(); limpar(grpPrev); caixa.style.display = "none";
+st.refs = []; marcarP1(); limpar(grpPrev); limpar(grpProv); valorEsconder(); caixa.style.display = "none";
 if (api.fechou) api.fechou();
 return true;
 }
@@ -161967,8 +162272,10 @@ if (k === "coordenada") {
 if (st.refs.length >= 2 && (r.vazio || r.tipo === "proximo" || r.tipo === "face")) { criar(posicionar(itemProvisorio(st.refs), r.p)); return; }
 st.refs.push(r.ref); marcarP1(); api.hint(dica()); return;
 }
-if (st.refs.length >= 2 && (r.vazio || r.tipo === "proximo" || r.tipo === "face")) { criar(posicionar(itemProvisorio(st.refs), r.p)); return; }
+if (cfg().continua) { continuar(r, e); return; }
+if (st.refs.length && JSON.stringify(st.refs[0]) === JSON.stringify(r.ref)) { api.hint("Esse é o mesmo ponto: clique o outro."); return; }
 st.refs.push(r.ref); marcarP1();
+if (st.refs.length >= 2) { criarRapido(st.refs.slice(0, 2), r.p, e); return; }
 api.hint(dica() + (r.rotulo ? " (" + r.rotulo + ")" : "")); status(dica());
 void C;
 }
@@ -161976,7 +162283,8 @@ function posNivel(it) { return it; }
 function concluir() {
 var k = st.modo;
 if (k === "selecionar") { var ids = st.coleta.slice(); if (ids.length < 2) { api.hint("Escolha pelo menos duas peças."); return true; } st.coleta = []; limpar(grpPrev); edit.p1 = null; self.cotarSelecao(ids); return true; }
-if ((k === "alinhada" || k === "coordenada") && st.refs.length >= 2) { criar(itemProvisorio(st.refs)); return true; }
+if (k === "alinhada" && st.refs.length >= 2) { terminarCadeia(); return true; }
+if (k === "coordenada" && st.refs.length >= 2) { criar(itemProvisorio(st.refs)); return true; }
 return false;
 }
 function eixoPerto(e) {
@@ -162112,12 +162420,26 @@ var mv = function (ev) { arrastoMover(ev); }, up = function () { document.remove
 document.addEventListener("pointermove", mv, true); document.addEventListener("pointerup", up, true);
 }
 }, true);
+var rd = null;
+if (canvas) {
+canvas.addEventListener("pointerdown", function (e) { if (e.button === 2) rd = { x: e.clientX, y: e.clientY }; }, true);
+canvas.addEventListener("contextmenu", function (e) {
+var andou = rd && (Math.abs(e.clientX - rd.x) + Math.abs(e.clientY - rd.y)) > 6; rd = null;
+if (!armado() || st.modo !== "alinhada" || !cfg().continua || st.refs.length < 2 || andou) return;
+e.preventDefault(); terminarCadeia(); api.hint("Cadeia gravada. Clique o 1º ponto da próxima.");
+}, true);
+}
 document.addEventListener("keydown", function (e) {
 if (!previa()) return;
 var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
 if (armado()) {
 if (e.key === "Tab") { e.preventDefault(); e.stopImmediatePropagation(); var np = self.alternarPref(); api.hint("Encaixe: " + np + ". " + dica()); status("Encaixe: " + np + "."); return; }
-if (e.key === "Enter") { if (concluir()) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+if (e.key === "Enter") { concluir(); e.preventDefault(); e.stopImmediatePropagation(); return; }
+if ((e.key === "c" || e.key === "C") && st.modo === "alinhada" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+e.preventDefault(); e.stopImmediatePropagation();
+terminarCadeia(); cfg().continua = !cfg().continua; gravar();
+api.hint(dica()); status(cfg().continua ? "Cota contínua ligada." : "Cota contínua desligada."); return;
+}
 return;
 }
 if (st.arr && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); arrastoFim(true); return; }
@@ -162151,7 +162473,11 @@ var r = resolver(e); if (!r) { api.hint("Não achei o ponto: gire a vista ou che
 aceitar(r, e);
 return true;
 },
-cancelar: function () { st.refs = []; if (st.modo !== "selecionar") st.coleta = []; limpar(grpPrev); caixa.style.display = "none"; },
+cancelar: function () {
+if (st.modo === "alinhada" && cfg().continua && st.refs.length >= 2 && !st.gravando) { st.gravando = true; try { var rs = st.refs.slice(); criarRapido(rs, null, null); } finally { st.gravando = false; } }
+st.refs = []; if (st.modo !== "selecionar") st.coleta = []; limpar(grpPrev); limpar(grpProv); valorEsconder(); caixa.style.display = "none";
+},
+terminarCadeia: terminarCadeia,
 aoSub: function (sub) {
 if (sub === SUB) { st.refs = []; st.geo = null; api.hint(dica()); try { if (global.BimShell) global.BimShell.pintarProps({ daVista: false, semEditarTipo: true, titulo: ROT_MODO[st.modo] || "Cota", icone: "regua", secoes: [{ nome: "Ferramenta", params: self.paramsFerramenta() }], onMudar: function (pid, v) { self.mudarCfg(pid, v); return null; } }); } catch (eP) {} return; }
 limpar(grpPrev); caixa.style.display = "none"; st.refs = [];
@@ -162166,7 +162492,7 @@ selecionar: selecionar,
 estado: function () {
 var C = BC(), e = e3();
 return { modo: st.modo, cmd: st.cmd, armado: armado(), refs: st.refs.length, cur: st.cur ? { tipo: st.cur.tipo, rotulo: st.cur.rotulo, p: st.cur.p, ref: st.cur.ref } : null, vivo: caixa.style.display !== "none" ? caixa.textContent : "",
-previa: grpPrev.children.length, sel: st.sel, coleta: st.coleta.slice(), pref: cfg().pref,
+previa: grpPrev.children.length, tracejada: grpPrev.children.some(function (o) { return o.material && o.material.isLineDashedMaterial; }), valorFlutuante: valSp && valSp.visible ? valTxt : "", provisoria: grpProv.children.length, sel: st.sel, coleta: st.coleta.slice(), pref: cfg().pref,
 cotas: Object.keys(st.desenho).map(function (id) { var d = st.desenho[id]; return { id: id, orfa: d.orfa, textos: d.rot.map(function (q) { return q.sp.userData.texto; }) }; }),
 n: C && e ? C.itens(e).length : 0 };
 },
@@ -166698,7 +167024,7 @@ var ABA_TERRENO = [
 ];
 var ABA_ANOTAR = [
 { nome: "Medir", ids: ["medir", "area", "angulo", "snap", "fx-medir-longo", "limpar-medidas"] },
-{ nome: "Cotas", ids: ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-linear"] },
+{ nome: "Cotas", ids: ["p7-cota-alinhada", "cota-continua", "cotar-selecao", "cotar-vista", "cotas-automaticas", "p7-cota-linear"] },
 { nome: "Cotas especiais", ids: ["p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-coordenada", "cota-furacao"] },
 { nome: "Padrão das cotas", ids: ["cotas-padrao", "p7-tipos"] },
 { nome: "Texto e símbolos", ids: ["p7-texto", "p7-simbolo", "p7-nota-chave"] },

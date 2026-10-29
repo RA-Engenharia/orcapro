@@ -41,6 +41,8 @@
   /* comando da fita → o que ele faz */
   var CMDS = {
     "p7-cota-alinhada": { k: "cota", cota: "alinhada", rotulo: "Cota alinhada" },
+    /* COTA RÁPIDA (29/10/2026): a mesma Cota, em modo CONTÍNUO — cada clique acrescenta um trecho e a cadeia vira de direção sozinha */
+    "cota-continua": { k: "cota", cota: "alinhada", rotulo: "Cota contínua", continua: true },
     "p7-cota-linear": { k: "cota", cota: "linear", rotulo: "Cota linear" },
     "p7-cota-angular": { k: "cota", cota: "angular", rotulo: "Cota angular" },
     "p7-cota-radial": { k: "cota", cota: "radial", rotulo: "Cota radial" },
@@ -92,6 +94,7 @@
          Furação e Arredondamento entram neste mesmo painel pelo js/bimcotasui.js */
       R.acrescentar("anotar", "Anotar", "Cotas", [
         C("p7-cota-alinhada", "Cota", "regua", "Cota: clique perto da FACE, do EIXO, da PONTA, do MEIO ou do centro de FURO de uma peça, depois da outra — mais referências fazem cadeia — e clique no vazio para posicionar a linha. O valor aparece antes do clique; Tab alterna face/eixo. A cota fica presa às peças: anda, troca de perfil e muda de nível junto. No 3D, na planta e no corte.", true),
+        C("cota-continua", "Cota\ncontínua", "regua", "Cota contínua: clique o 1º ponto e depois cada ponto seguinte — cada clique acrescenta um trecho à cadeia, na mesma linha de cota, já afastada pelo Espaçamento. Se o ponto vira de direção (mais de 20°), outra cadeia começa sozinha no último ponto. Enter ou botão direito termina; Esc também (o que já foi feito fica). A tecla C liga e desliga. No 3D, na planta, no corte e na vista."),
         C("p7-cota-linear", "Cota\nlinear", "regua", "Cota linear horizontal ou vertical (Propriedades da ferramenta): mede só na direção X ou Y da vista, entre referências."),
         C("cota-coordenada", "Coordenada", "grade", "Cota por coordenada: clique a ORIGEM e depois cada ponto; Enter termina. Cada ponto mostra a distância até a origem (furação, locação de pilares, inserts). No 3D, na planta e no corte."),
         C("p7-cota-angular", "Angular", "angulo", "Cota angular: clique duas linhas (faces de parede, eixos, linhas de detalhe) e onde passa o arco."),
@@ -149,6 +152,8 @@
       }
       if (!this.vistaAtiva()) { toast("A anotação vai numa vista 2D: abra uma planta ou um corte (Analisar › Planta baixa).", "aviso"); return false; }
       this._limparPrevia();
+      /* a Cota e a Cota linear são simples (2 cliques); a "Cota contínua" liga o modo cadeia — o mesmo que a tecla C */
+      try { var UC = global.BimCotasUI; if (UC && UC.definirContinua && /^(p7-cota-alinhada|p7-cota-linear|cota-continua)$/.test(cmd)) UC.definirContinua(cmd === "cota-continua"); } catch (eCt) {}
       this._f = { cmd: cmd, def: def, refs: [], pts: [], fase: 0 };
       this._sel = null;
       this._marcarVistas(true);
@@ -307,6 +312,15 @@
       var oVista = { corte: corte, vista: id };
       if (k === "linear" || k === "alinhada" || k === "coordenada") {
         var h = this._acharCota(st, p, tol, id, corte, null);
+        /* COTA RÁPIDA (29/10/2026): 1º clique = A, 2º clique = B → a cota NASCE, afastada pelo Espaçamento (cota contínua: cada
+           clique é um trecho). Coordenada continua como era. */
+        if (k !== "coordenada") {
+          var rn = null;
+          if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) rn = h.ref;
+          else if (!h) rn = { x: q.x, y: q.y };
+          if (rn) { f.vista = id; return this._aposRef(id, p, st, f, d, rn, corte); }
+          return true;
+        }
         if (h && !f.refs.some(function (r) { return BimAnot2DUI._mesmaRef(r, h.ref); })) { f.refs.push(h.ref); status(this.dica() + " (" + h.rotulo + ")"); this._previa(id, p); return true; }
         if (f.refs.length < 2) { f.refs.push({ x: q.x, y: q.y }); this._previa(id, p); status(this.dica()); return true; }
         var orient = k !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(st, f.refs, p, corte)) : undefined;
@@ -364,6 +378,48 @@
         return true;
       }
       return true;
+    },
+    _contCfg: function () { var U = global.BimCotasUI; return U && U.config ? U.config() : { continua: false, espPapel: 7, lado: "auto" }; },
+    /* a referência nova entra: cota simples cria no 2º ponto; contínua acrescenta o trecho e vira de direção sozinha */
+    _aposRef: function (id, p, st, f, d, ref, corte) {
+      var M = A7(), CRr = global.BimCotaRapida, cf = this._contCfg();
+      if (!CRr || !cf.continua) {
+        f.refs.push(ref);
+        if (f.refs.length >= 2 || !CRr) { if (f.refs.length >= 2 && CRr) { var rs = f.refs.slice(0, 2); f.refs = []; this._cotaRapida(id, rs, p); return true; } }
+        this._previa(id, p); status(this.dica()); return true;
+      }
+      var I = M.indice(st), vo = { corte: corte, vista: id };
+      function pt(r) { var x = M.resolverRef(I, r, vo); return x && x.ok ? [x.p[0], x.p[1], 0] : null; }
+      var pts = f.refs.map(pt).filter(function (q) { return !!q; }), np = pt(ref);
+      if (!np) { toast("Não achei esse ponto na vista.", "aviso"); return true; }
+      var res = CRr.acrescentar({ pts: pts }, np, cf.virar);
+      if (res.acao === "ignora") return true;
+      if (res.acao === "vira") {
+        var ult = f.refs[f.refs.length - 1], fechar = f.refs.slice();
+        f.refs = [ult, ref];
+        this._cotaRapida(id, fechar, p);
+        status("Virou de direção: outra cadeia começou no último ponto. Enter termina."); this._previa(id, p); return true;
+      }
+      f.refs.push(ref); this._previa(id, p); status(this.dica()); return true;
+    },
+    /* cria a cota: direção automática (horizontal/vertical/alinhada), lado de fora, afastamento = Espaçamento da vista */
+    _cotaRapida: function (id, refs, p) {
+      var f = this._f, d = f && f.def; if (!d || refs.length < 2) return false;
+      var M = A7(), st = this.estado(), o = this.opcoes(), corte = /^d2c-/.test(id), CRr = global.BimCotaRapida, cf = this._contCfg(), P = P2(), cota = d.cota, orient;
+      var I = M.indice(st), vo = { corte: corte, vista: id }, ra = M.resolverRef(I, refs[0], vo), rb = M.resolverRef(I, refs[1], vo);
+      if (cota === "linear") orient = (o.orient === "h" || o.orient === "v") ? o.orient : this._orientAuto(st, refs, null, corte);
+      else if (cota === "alinhada" && ra.ok && rb.ok) {
+        var da = CRr.direcaoAuto([ra.p[0], ra.p[1], 0], [rb.p[0], rb.p[1], 0], "xy", CRr.teclas().shift);
+        if (da === "h" || da === "v") { cota = "linear"; orient = da; }
+      }
+      var esc = 50; try { esc = P.estilo(id).escala || 50; } catch (eE) {}
+      var esp = CRr.offsetPadrao({ vista: corte ? "corte" : "planta", escala: esc, espPapel: cf.espPapel });
+      var b0 = { id: novoId(), vista: id, cota: cota, refs: refs, off: this._offFora(refs, cota, orient, id, esp, p, cf.lado), orient: orient, tipoCota: o.tipoCota || undefined };
+      var Uc = global.BimCotasUI; if (Uc && Uc.ajustarCota2d) Uc.ajustarCota2d(b0, st, id);
+      var r = M.opCota(b0); this._limparPrevia();
+      if (!r.ok) { toast(r.motivo, "aviso"); return false; }
+      var ok = this._op(r.op); if (ok) status(d.rotulo + " criada (Ctrl+Z desfaz). Clique a próxima, ou Esc.");
+      return ok;
     },
     /* a MESMA referência (clicar duas vezes no mesmo lugar não faz cadeia): a mesma peça e a mesma parte; o
        ponto da face (loc, do desenho) só é o mesmo se for o mesmo ponto — antes dois cantos da mesma laje
@@ -450,6 +506,9 @@
     concluir: function () {
       var f = this._f, M = A7(); if (!f || !M || !f.vista) return false;
       var d = f.def, o = this.opcoes(), id = f.vista, r = null;
+      if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada") && f.refs.length >= 2 && global.BimCotaRapida) {
+        var rsE = f.refs.slice(); f.refs = []; return this._cotaRapida(id, rsE, null);
+      }
       if (d.k === "cota" && (d.cota === "linear" || d.cota === "alinhada" || d.cota === "coordenada") && f.refs.length >= 2) {
         var orient = d.cota !== "alinhada" ? (o.orient === "h" || o.orient === "v" ? o.orient : this._orientAuto(this.estado(), f.refs, null, /^d2c-/.test(id))) : undefined;
         var b0 = { id: novoId(), vista: id, cota: d.cota, refs: f.refs, off: this._offFora(f.refs, d.cota, orient, id), orient: orient, tipoCota: o.tipoCota || undefined };
@@ -479,16 +538,21 @@
     /* Enter = a posição PADRÃO da linha: por FORA do desenho (do lado contrário ao centro da vista) e além de
        todas as referências — antes ia 0,60 para um lado fixo e a acumulada da fachada atravessava a sala
        (14/10/2026) */
-    _offFora: function (refs, cota, orient, id) {
+    _offFora: function (refs, cota, orient, id, esp, mouse, ladoCfg) {
+      esp = esp > 0 ? esp : 0.6;
       var M = A7(), st = this.estado(), P = P2(), c = P && P._cache ? P._cache[id] : null, vb = c && (c.vbTotal || c.vb);
       try {
         var m = M.medirCota(st, { tipo: "cota", cota: cota, refs: refs, orient: orient, off: 0, vista: id }, { corte: /^d2c-/.test(id), vista: id });
-        if (!m.ok || !m.geo || !m.geo.t || !vb) return 0.6;
+        if (!m.ok || !m.geo || !m.geo.t || !vb) return esp;
         var tt = m.geo.t, l0 = m.geo.lineT, vs = m.geo.pts.map(function (q) { return q[0] * tt[0] + q[1] * tt[1]; });
         var cen = (vb.x + vb.w / 2) * tt[0] + (vb.y + vb.h / 2) * tt[1];
-        var lado = cen > l0 ? -1 : 1, ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
-        return Math.round((ext - l0 + lado * 0.6) * 1e4) / 1e4;
-      } catch (e) { return 0.6; }
+        var lado = cen > l0 ? -1 : 1;
+        /* lado "do mouse": a linha vai para onde o cursor estava; "fixo": sempre o lado positivo */
+        if (ladoCfg === "mouse" && mouse) lado = (mouse[0] * tt[0] + mouse[1] * tt[1]) > l0 ? 1 : -1;
+        else if (ladoCfg === "fixo") lado = 1;
+        var ext = lado > 0 ? Math.max.apply(null, vs) : Math.min.apply(null, vs);
+        return Math.round((ext - l0 + lado * esp) * 1e4) / 1e4;
+      } catch (e) { return esp; }
     },
     _usuario: function () { try { var u = global.Auth && global.Auth._usuario; return (u && (u.nome || u.email)) ? String(u.nome || u.email).slice(0, 60) : ""; } catch (e) { return ""; } },
 
@@ -581,10 +645,15 @@
         if (campo || !self.ativo()) return;
         if (ev.key === "Escape" && self._f) {
           /* 1º Esc encerra o que está em andamento; o 2º sai da ferramenta */
-          if (self._f.refs.length || self._f.pts.length) { self._f.refs = []; self._f.pts = []; self._limparPrevia(); status(self.dica()); ev.stopPropagation(); ev.preventDefault(); return; }
+          if (self._f.refs.length || self._f.pts.length) {
+            /* Esc não apaga o que já foi feito: a cadeia contínua com 2+ pontos é gravada */
+            if (self._f.def.k === "cota" && (self._f.def.cota === "linear" || self._f.def.cota === "alinhada") && self._contCfg().continua && self._f.refs.length >= 2 && self._f.vista) { var rsC = self._f.refs.slice(); self._f.refs = []; self._cotaRapida(self._f.vista, rsC, null); }
+            self._f.refs = []; self._f.pts = []; self._limparPrevia(); status(self.dica()); ev.stopPropagation(); ev.preventDefault(); return;
+          }
           self.desarmar(); return;
         }
-        if (ev.key === "Enter" && self._f) { if (self.concluir()) { ev.stopPropagation(); ev.preventDefault(); } return; }
+        /* cota rápida: o Enter de quem já está acostumado não pode desligar a ferramenta (nada a concluir = engole) */
+        if (ev.key === "Enter" && self._f) { if (self.concluir() || self._f.def.k === "cota") { ev.stopPropagation(); ev.preventDefault(); } return; }
         /* COTAS: Tab alterna o encaixe (automático → eixo → face) */
         if (ev.key === "Tab" && self._f && self._f.def.k === "cota" && self._ultP && !ev.shiftKey) {
           /* TAB: o próximo candidato de encaixe sob o cursor (como no traçado); com um só, alterna face/eixo como antes */
@@ -608,6 +677,14 @@
         }
       };
       document.addEventListener("keydown", this._tecla, true);
+      /* botão direito (sem arrastar) na cota contínua: termina esta cadeia e deixa começar outra */
+      var rd = null;
+      document.addEventListener("pointerdown", function (e) { if (e.button === 2) rd = { x: e.clientX, y: e.clientY }; }, true);
+      document.addEventListener("contextmenu", function (e) {
+        var andou = rd && (Math.abs(e.clientX - rd.x) + Math.abs(e.clientY - rd.y)) > 6; rd = null;
+        var f = self._f; if (!f || !self.ativo() || andou || !f.vista || f.def.k !== "cota" || !(f.def.cota === "linear" || f.def.cota === "alinhada") || !self._contCfg().continua || f.refs.length < 2) return;
+        e.preventDefault(); e.stopPropagation(); var rs = f.refs.slice(); f.refs = []; self._cotaRapida(f.vista, rs, null);
+      }, true);
     },
 
     /* ----------------------------------------------- COTAS: arrastar a linha e o texto (13/10/2026)

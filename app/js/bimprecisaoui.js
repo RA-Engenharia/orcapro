@@ -127,6 +127,7 @@
       function cam() { return api.camera(); }
       function V3(p, y) { return new THREE.Vector3(p.x, y == null ? edit.base : y, p.z); }
       function hint(t) { if (api.hint) api.hint(t); }
+      function CR() { return global.BimCotaRapida || null; }
       function nid(pre) { return pre + (++edit.seq); }
       function estado() { return edit.estado || (global.BimEdit ? global.BimEdit.aplicar(edit.ops) : { caixas: [] }); }
       function ferramenta() { return PASSOS[edit.sub] ? edit.sub : null; }
@@ -268,7 +269,19 @@
           else if (pr.tipos.face && !sn && hit.point) { sn = { p: { x: hit.point.x, z: hit.point.z }, tipo: "face", malha: true, obj: hit.object }; malha = true; }
         }
         var p = sn ? { x: sn.p.x, z: sn.p.z } : cur;
-        if (e.shiftKey && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
+        /* TRAVA POR TECLAS (29/10/2026): Ctrl = horizontal/vertical; Ctrl+Shift = múltiplo de 45°; só Shift = orto de sempre.
+           Vale com o Snap ligado ou desligado: a DIREÇÃO sai do cursor e o snap só ajusta o comprimento ao longo dela. Só há
+           trava onde há ponto base (ref) — Ctrl fora de um passo de desenho continua sendo seleção múltipla. */
+        var trv = ref && CR() ? CR().travaAngulo(ref, cur, CR().dasTeclas(e)) : null;
+        pr.travaRot = trv ? trv.rotulo : null;
+        if (trv && trv.tipo !== "orto") {
+          if (e) e._semAjuste = true;   /* o Orto/incrementos da barra de baixo não desfazem a trava das teclas (js/bim.js editAjustarPonto) */
+          var ux = trv.p.x - ref.x, uz = trv.p.z - ref.z, uL = Math.sqrt(ux * ux + uz * uz);
+          if (uL > 1e-9 && sn && !malha) { var lg = ((p.x - ref.x) * ux + (p.z - ref.z) * uz) / uL; p = { x: ref.x + ux / uL * lg, z: ref.z + uz / uL * lg }; }
+          else p = trv.p;
+          if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null };
+        }
+        else if ((e.shiftKey || (trv && trv.tipo === "orto")) && ref) { p = Pr().orto(ref, p); if (sn && !malha) sn = { p: p, tipo: sn.tipo === "grade" ? "grade" : null }; }
         /* A PRECISÃO ÚNICA (14/10/2026): o 2º ponto das ferramentas daqui (destino do mover/copiar/
            matriz, eixo do espelho, direção do girar, 2º ponto da cota) anda no ORTOGONAL e nos
            incrementos da barra de baixo — o mesmo da parede. Ponto notável ganha da trava. */
@@ -361,7 +374,7 @@
         var da = Pr().distAng(base, p), viv = caixa.querySelector('[data-bp="vivo"]');
         if (so === "ret") viv.textContent = fmt(Math.abs(p.x - base.x)) + " × " + fmt(Math.abs(p.z - base.z)) + " m";
         else if (ferramenta() === "girar" && pr.passo === "final" && pr.pts[1]) viv.textContent = fmt(angRel(pr.pts[0], pr.pts[1], p)) + "°";
-        else viv.textContent = fmt(da.dist) + " m · " + fmt(da.graus) + "°";
+        else viv.textContent = fmt(da.dist) + " m · " + fmt(da.graus) + "°" + (pr.travaRot ? " · " + pr.travaRot : "");
         caixa.style.display = "flex";
         if (!digitando && e) caixaPos(e.clientX, e.clientY);
         pr.ultBase = base; pr.ultP = p;
@@ -1086,6 +1099,13 @@
       }, true);
 
       /* --------------------------------------------- o que bim.js chama */
+      /* a trava muda NA HORA ao apertar/soltar Ctrl ou Shift: refaz o último ponto do mouse com as teclas novas */
+      if (CR() && CR().aoMudar) CR().aoMudar(function (ev, t) {
+        try {
+          if (!ativo() || !pr.ultE || !edit.sub || !baseAtual()) return;
+          self.mover({ clientX: pr.ultE.clientX, clientY: pr.ultE.clientY, pointerType: pr.ultE.pointerType, shiftKey: !!t.shift, ctrlKey: !!t.ctrl, metaKey: false });
+        } catch (eT) {}
+      });
       var self = {
         ativo: ativo,
         /* pointermove do canvas: true = tratado aqui (o handler de sempre sai) */

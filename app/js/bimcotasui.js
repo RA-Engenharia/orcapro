@@ -36,7 +36,7 @@
   var SUB = "cota3d";
   var CHAVE = "orcapro:bim:cotas:cfg:v1";
   /* o comando da fita → o que a ferramenta faz no 3D */
-  var CMD_MODO = { "p7-cota-alinhada": "alinhada", "p7-cota-elevacao": "nivel", "p7-cota-inclinacao": "inclinacao", "cota-coordenada": "coordenada" };
+  var CMD_MODO = { "p7-cota-alinhada": "alinhada", "cota-continua": "alinhada", "p7-cota-elevacao": "nivel", "p7-cota-inclinacao": "inclinacao", "cota-coordenada": "coordenada" };
   var ROT_MODO = { alinhada: "Cota", nivel: "Cota de nível", inclinacao: "Inclinação", coordenada: "Cota por coordenada", selecionar: "Cotar seleção" };
   var PREFS = ["auto", "eixo", "face"];
   var ROT_PREF = { auto: "automático (ponto, eixo ou face)", eixo: "eixo e centro", face: "face e ponta" };
@@ -68,11 +68,12 @@
   function cfg() {
     if (CFG) return CFG;
     var o = null; try { o = JSON.parse(global.localStorage.getItem(CHAVE) || "null"); } catch (e) { o = null; }
-    CFG = { padrao: "auto", pref: "auto", dir: "auto", encaixe: true, tam: 1 };
+    CFG = { padrao: "auto", pref: "auto", dir: "auto", encaixe: true, tam: 1, esp3d: 0.3, espPapel: 7, lado: "auto", continua: false, total: false, virar: 20 };
     if (o && typeof o === "object") Object.keys(CFG).forEach(function (k) { if (o[k] != null) CFG[k] = o[k]; });
     return CFG;
   }
   function gravar() { try { global.localStorage.setItem(CHAVE, JSON.stringify(cfg())); } catch (e) {} }
+  function CRp() { return global.BimCotaRapida || null; }
   function padraoCfg() { var p = cfg().padrao; return p === "mm" || p === "cm" ? p : null; }
 
   /* ------------------------------------------------ a vista ativa */
@@ -110,6 +111,10 @@
       var k = String(pid).replace(/^bct-/, ""), c = cfg();
       if (k === "encaixe") c.encaixe = valor === true || valor === "sim" || valor === "1" || valor === 1;
       else if (k === "tam") c.tam = Math.max(0.5, Math.min(3, num(valor, 1)));
+      else if (k === "continua" || k === "total") c[k] = valor === true || valor === "sim" || valor === "1" || valor === 1;
+      else if (k === "virar") c.virar = Math.max(5, Math.min(80, num(valor, 20)));
+      else if (k === "esp3d") c.esp3d = Math.max(0.05, Math.min(5, num(valor, 0.3)));
+      else if (k === "espPapel") c.espPapel = Math.max(2, Math.min(30, num(valor, 7)));
       else if (k in c) c[k] = String(valor);
       gravar();
       if (this._3d) { this._3d.redesenhar(); this._3d.limparCache(); }
@@ -117,6 +122,8 @@
       this._redesenhar2d();
       return true;
     },
+    config: function () { return cfg(); },
+    definirContinua: function (on) { cfg().continua = !!on; gravar(); },
     alternarPref: function () {
       var c = cfg(), i = PREFS.indexOf(c.pref); c.pref = PREFS[(i + 1) % PREFS.length]; gravar();
       if (this._3d) this._3d.limparCache();
@@ -129,7 +136,13 @@
         { id: "bct-pref", rotulo: "Encaixe (Tab)", tipo: "lista", valor: c.pref, opcoes: PREFS.map(function (p) { return { id: p, rotulo: ROT_PREF[p] }; }) },
         { id: "bct-padrao", rotulo: "Arredondamento", tipo: "lista", valor: c.padrao, opcoes: [{ id: "auto", rotulo: "Automático (mm na metálica, cm no resto)" }, { id: "mm", rotulo: "Sempre mm" }, { id: "cm", rotulo: "Sempre cm (m com 2 casas)" }] },
         { id: "bct-dir", rotulo: "Direção (3D)", tipo: "lista", valor: c.dir, opcoes: [{ id: "auto", rotulo: "Alinhada (a reta dos pontos)" }, { id: "x", rotulo: "Horizontal X" }, { id: "z", rotulo: "Horizontal Z" }, { id: "y", rotulo: "Vertical" }] },
-        { id: "bct-encaixe", rotulo: "Encaixe ligado", tipo: "sim-nao", valor: c.encaixe !== false }
+        { id: "bct-encaixe", rotulo: "Encaixe ligado", tipo: "sim-nao", valor: c.encaixe !== false },
+        { id: "bct-continua", rotulo: "Cota contínua (tecla C)", tipo: "sim-nao", valor: !!c.continua },
+        { id: "bct-esp3d", rotulo: "Espaçamento no 3D", unidade: "m", tipo: "numero", passo: 0.05, valor: c.esp3d },
+        { id: "bct-espPapel", rotulo: "Espaçamento na vista", unidade: "mm no papel", tipo: "numero", passo: 0.5, valor: c.espPapel },
+        { id: "bct-lado", rotulo: "Lado da linha", tipo: "lista", valor: c.lado, opcoes: [{ id: "auto", rotulo: "Automático (por fora da peça)" }, { id: "mouse", rotulo: "Lado do mouse" }, { id: "fixo", rotulo: "Fixo (lado padrão)" }] },
+        { id: "bct-virar", rotulo: "Cadeia vira acima de", unidade: "°", tipo: "numero", passo: 5, valor: c.virar },
+        { id: "bct-total", rotulo: "Total da cadeia", tipo: "sim-nao", valor: !!c.total }
       ];
     },
     _redesenhar2d: function () {
@@ -359,6 +372,7 @@
     /* ------------------------------------------------ a ferramenta no 3D */
     armar3d: function (modo, cmd) {
       var b = B(); if (!b || !b.editarArmar || !this._3d) return false;
+      try { if (cmd === "cota-continua" || cmd === "p7-cota-alinhada") { cfg().continua = cmd === "cota-continua"; gravar(); } } catch (eCt) {}
       this._3d.preparar(modo, cmd);
       var ok = b.editarArmar(SUB);
       return ok !== false;
@@ -385,7 +399,7 @@
       try {
         var ab = Rb.aba("anotar"), pn = ab ? ab.paineis.filter(function (p) { return p.nome === "Cotas"; })[0] : null;
         if (pn) {
-          var ORD = ["p7-cota-alinhada", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
+          var ORD = ["p7-cota-alinhada", "cota-continua", "cotar-selecao", "cotar-vista", "cotas-automaticas", "cota-coordenada", "p7-cota-linear", "p7-cota-elevacao", "p7-cota-inclinacao", "cota-furacao",
                      "p7-cota-angular", "p7-cota-radial", "p7-cota-diametro", "p7-cota-arco", "cotas-padrao", "p7-tipos"];
           pn.comandos.sort(function (a, b) { var ia = ORD.indexOf(a.id), ib = ORD.indexOf(b.id); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
         }
@@ -497,10 +511,14 @@
       function armado() { return previa() && edit.on && edit.sub === SUB && api.S.alive !== false; }
       function cor(nome, reserva) { var c = new THREE.Color(); try { c.set(token(nome, reserva)); } catch (e) { c.set(reserva); } return c; }
       function limpar(g) { g.children.slice().forEach(function (o) { g.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } var i = sprites.indexOf(o); if (i >= 0) sprites.splice(i, 1); }); }
-      function linhas(pos, cr, op, larg) {
+      function linhas(pos, cr, op, larg, tracejada) {
         if (!pos.length) return null;
         var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-        var l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, linewidth: larg || 1 }));
+        /* TRACEJADA (29/10/2026): a linha de A até o mouse durante o comando — só a camada da cota, sem refazer a cena */
+        var mat = tracejada && THREE.LineDashedMaterial ? new THREE.LineDashedMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, dashSize: 0.12, gapSize: 0.08 })
+                                                        : new THREE.LineBasicMaterial({ color: cr, depthTest: false, transparent: true, opacity: op == null ? 1 : op, linewidth: larg || 1 });
+        var l = new THREE.LineSegments(g, mat);
+        if (tracejada && l.computeLineDistances) l.computeLineDistances();
         l.renderOrder = 997; l.frustumCulled = false; l.raycast = function () {};
         return l;
       }
@@ -599,7 +617,9 @@
         void C;
         return it;
       }
-      function textoPrevia(r) {
+      /* o texto da prévia sai UMA vez por movimento (a caixa e o valor flutuante pedem o mesmo): C.medir é o custo do quadro */
+      function textoPrevia(r) { if (!r) return ""; if (r._tx == null) r._tx = textoPreviaCalc(r); return r._tx; }
+      function textoPreviaCalc(r) {
         var C = BC(), est = e3(), k = st.modo; if (!r) return "";
         if (k === "selecionar") return st.coleta.length + " peça(s) — clique outra; Enter cota" + (r.id != null ? " · " + (r.rotulo || "") : "");
         if (k === "nivel") { var itn = { k: "nivel", refs: [refNivel(r)] }, mn = C.medir(est, itn, { cfg: cfg() }); return mn.ok ? mn.rotulos[0].texto : ""; }
@@ -619,15 +639,113 @@
         var pos = [], verde = cor("--verde", "#15803d");
         st.refs.forEach(function (ref) { var p = pontoDe(ref); if (p) pos.push(p[0], p[1], p[2], r.p[0], r.p[1], r.p[2]); });
         if (st.modo === "selecionar") st.coleta.forEach(function (id) { var g = BC().geom(BC().acharPeca(e3(), id)); if (g) pos.push(g.a[0], g.a[1], g.a[2], g.b[0], g.b[1], g.b[2]); });
-        var l = linhas(pos, verde, 0.95); if (l) grpPrev.add(l);
+        var l = linhas(pos, verde, 0.95, 1, st.modo === "alinhada" || st.modo === "coordenada"); if (l) grpPrev.add(l);
+        valorFlutuante(r);
         if (r.tipo && { fim: 1, meio: 1, centro: 1, intersecao: 1, proximo: 1 }[r.tipo]) {
           try { api.marca({ p: new THREE.Vector3(r.p[0], r.p[1], r.p[2]), tipo: r.tipo, editor: true, cor: { fim: "var(--verde)", intersecao: "var(--vermelho)", meio: "var(--amarelo)", centro: "var(--aco)", proximo: "var(--texto-fraco)" }[r.tipo] }); } catch (eM) {}
         } else { try { api.marcaEsconder(); } catch (eE) {} }
       }
+      /* o VALOR flutuando no meio da linha tracejada: sprite de frente para a câmera (fundo do token do tema). Só se refaz
+         quando o texto muda — mover o mouse só reposiciona. */
+      var grpVal = new THREE.Group(); grpVal.name = "cotas3d-valor"; api.scene.add(grpVal); var valSp = null, valTxt = "", valCv = null, valTex = null;
+      /* UM sprite só, com a textura reaproveitada (redesenha o texto; não cria canvas nem textura a cada movimento do mouse) */
+      function valorSprite(tx) {
+        if (!valSp) {
+          valCv = document.createElement("canvas"); valCv.width = 384; valCv.height = 64;
+          valTex = new THREE.CanvasTexture(valCv); valTex.minFilter = THREE.LinearFilter; if (THREE.SRGBColorSpace) valTex.colorSpace = THREE.SRGBColorSpace;
+          valSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: valTex, depthTest: false, transparent: true }));
+          valSp.userData._ratio = valCv.width / valCv.height; valSp.userData._sc = 0.021 * 1.2; valSp.renderOrder = 999; valSp.raycast = function () {};
+          sprites.push(valSp); grpVal.add(valSp);
+        }
+        if (valTxt !== tx) {
+          var g = valCv.getContext("2d"), fs = 40; g.clearRect(0, 0, valCv.width, valCv.height); g.font = "600 " + fs + "px sans-serif";
+          var w = Math.min(valCv.width - 4, Math.ceil(g.measureText(tx).width) + 24), x0 = (valCv.width - w) / 2;
+          g.fillStyle = token("--surface", "#ffffff"); g.globalAlpha = 0.94; g.fillRect(x0, 4, w, 56); g.globalAlpha = 1;
+          g.strokeStyle = token("--verde", "#15803d"); g.lineWidth = 4; g.strokeRect(x0 + 2, 6, w - 4, 52);
+          g.fillStyle = token("--texto", "#14273b"); g.textBaseline = "middle"; g.fillText(tx, x0 + 12, 34);
+          valTex.needsUpdate = true; valTxt = tx; valSp.userData.texto = tx;
+        }
+        valSp.visible = true; return valSp;
+      }
+      function valorFlutuante(r) {
+        var ultRef = st.refs.length ? pontoDe(st.refs[st.refs.length - 1]) : null;
+        if (!r || !ultRef || (st.modo !== "alinhada" && st.modo !== "coordenada")) { valorEsconder(); return; }
+        var tx = textoPrevia(r); if (!tx) { valorEsconder(); return; }
+        var sp = valorSprite(tx);
+        sp.position.set((ultRef[0] + r.p[0]) / 2, (ultRef[1] + r.p[1]) / 2, (ultRef[2] + r.p[2]) / 2); api.reescalar(sp);
+      }
+      function valorEsconder() { if (valSp) { valSp.visible = false; valTxt = ""; } }
+      /* ---------------- COTA RÁPIDA (29/10/2026): dois cliques e a cota NASCE no lugar — a linha afastada pelo Espaçamento,
+         por fora da peça, na direção que a prévia mostrou. Arrastar a linha depois continua possível. */
+      function centroModelo() {
+        var g = geo(), x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        (g.pontos || []).forEach(function (q) { var p = q.p; if (!p) return; if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[2] < z0) z0 = p[2]; if (p[2] > z1) z1 = p[2]; });
+        return isFinite(x0) ? [(x0 + x1) / 2, 0, (z0 + z1) / 2] : null;
+      }
+      function itemRapido(refs, mouseP, shift) {
+        var CRr = CRp(), c = cfg(), pa = pontoDe(refs[0]), pb = pontoDe(refs[refs.length - 1]);
+        if (!CRr || !pa || !pb) return null;
+        var it = itemProvisorio(refs);
+        if (c.dir === "auto") {
+          /* automática: cai no eixo (X, Z ou vertical) quando os pontos estão a até 5° dele; senão a reta dos pontos (Shift trava) */
+          var p1 = pontoDe(refs[1]) || pb, ax = CRr.eixoAuto(pa, p1, shift);
+          if (ax) { it.k = "linear"; it.dir = { x: ax[0], y: ax[1], z: ax[2] }; }
+          else if (refs.length > 2) { var d = [p1[0] - pa[0], p1[1] - pa[1], p1[2] - pa[2]], L = Math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]) || 1; it.k = "linear"; it.dir = { x: d[0] / L, y: d[1] / L, z: d[2] / L }; }
+          else { it.k = "alinhada"; delete it.dir; }
+        }
+        it.off = CRr.offsetPadrao({ vista: "3d", esp3d: c.esp3d });
+        if (c.lado !== "fixo") {
+          var dv = it.dir ? [it.dir.x, it.dir.y, it.dir.z] : [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+          var md = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2];
+          var lf = CRr.ladoFora(dv, md, c.lado === "mouse" ? null : centroModelo(), mouseP || null);
+          it.lado = { x: lf[0], y: lf[1], z: lf[2] };
+        }
+        return it;
+      }
+      function criarRapido(refs, mouseP, e) {
+        var it = itemRapido(refs, mouseP, !!(e && e.shiftKey)); if (!it) return false;
+        var ok = criar(it);
+        if (ok && cfg().total && refs.length > 2) {
+          var tot = itemRapido([refs[0], refs[refs.length - 1]], mouseP, !!(e && e.shiftKey)); if (tot) { tot.off = it.off * 2; criar(tot, "Total"); }
+        }
+        return ok;
+      }
+      /* cota CONTÍNUA: cada clique é um trecho; virou de direção (> 20°) → fecha esta cadeia e abre outra no último ponto */
+      function continuar(r, e) {
+        var CRr = CRp(); if (!CRr) return;
+        if (st.refs.length && JSON.stringify(st.refs[st.refs.length - 1]) === JSON.stringify(r.ref)) return;
+        var pts = st.refs.map(function (x) { return pontoDe(x); }).filter(function (q) { return !!q; });
+        var res = CRr.acrescentar({ pts: pts }, r.p, cfg().virar);
+        if (res.acao === "ignora") return;
+        if (res.acao === "vira") {
+          var ultRef = st.refs[st.refs.length - 1], fechar = st.refs.slice();
+          criarRapido(fechar, r.p, e);
+          st.refs = [ultRef, r.ref]; marcarP1(); desenharProvisoria();
+          api.hint("Virou de direção: outra cadeia começou no último ponto. Enter termina."); return;
+        }
+        st.refs.push(r.ref); marcarP1(); desenharProvisoria();
+        api.hint(dica());
+      }
+      /* a cadeia em andamento, já com a linha afastada e os valores (a "cota que já mostra") — só a camada da prévia */
+      var grpProv = new THREE.Group(); grpProv.name = "cotas3d-prov"; api.scene.add(grpProv);
+      function desenharProvisoria() {
+        limpar(grpProv);
+        if (st.modo !== "alinhada" || !cfg().continua || st.refs.length < 2) return;
+        var C = BC(), it = itemRapido(st.refs, null, false); if (!it) return;
+        var m = C.medir(e3(), it, { cfg: cfg() }); if (!m.ok) return;
+        var pos = []; m.linhas.concat(m.marcas).forEach(function (q) { pos.push(q[0][0], q[0][1], q[0][2], q[1][0], q[1][1], q[1][2]); });
+        var l = linhas(pos, cor("--aco", "#0d6ebd"), 0.9); if (l) grpProv.add(l);
+        m.rotulos.forEach(function (q) { var sp = rotulo(q.texto, "--aco", cfg().tam); sp.position.set(q.p[0], q.p[1], q.p[2]); grpProv.add(sp); api.reescalar(sp); });
+      }
+      function terminarCadeia() {
+        if (st.modo === "alinhada" && st.refs.length >= 2) { var rs = st.refs.slice(); criarRapido(rs, st.cur ? st.cur.p : null, null); }
+        st.refs = []; marcarP1(); limpar(grpProv); valorEsconder();
+      }
       function marcarP1() { if (st.refs.length || st.coleta.length) { var p = st.refs.length ? pontoDe(st.refs[0]) : [0, 0, 0]; if (p) edit.p1 = new THREE.Vector3(p[0], p[1], p[2]); } else edit.p1 = null; }
       function dica() {
         var k = st.modo, n = st.refs.length;
-        if (k === "alinhada") return n < 2 ? "Cota: clique a " + (n ? "próxima" : "1ª") + " referência — ponta, meio, face, eixo ou furo (Tab: " + ROT_PREF[cfg().pref] + "). O valor aparece antes do clique." : "Cota: mais uma referência faz cadeia; clique no VAZIO para posicionar a linha (Enter: ao lado). Esc sai.";
+        if (k === "alinhada" && cfg().continua) return n < 2 ? "Cota contínua: clique " + (n ? "o próximo ponto" : "o 1º ponto") + " (Tab: " + ROT_PREF[cfg().pref] + "). Cada clique acrescenta um trecho; virou de direção, outra cadeia começa. Enter ou botão direito termina; C volta à cota simples." : "Cota contínua: clique o próximo ponto; Enter ou botão direito termina (" + (n - 1) + " trecho(s)). Esc sai.";
+        if (k === "alinhada") return n < 1 ? "Cota: clique o 1º ponto (ponta, meio, face, eixo ou furo; Tab: " + ROT_PREF[cfg().pref] + ") e depois o 2º — a cota já nasce no lugar. C liga a cota contínua." : "Cota: clique o 2º ponto — a cota já nasce afastada " + String(cfg().esp3d).replace(".", ",") + " m, por fora da peça.";
         if (k === "nivel") return "Cota de nível: clique no topo da peça (TOS no aço, TOL na laje) ou num ponto. Esc sai.";
         if (k === "inclinacao") return n ? "Inclinação: clique o 2º ponto." : "Inclinação: clique o 1º ponto (a ponta da terça, da diagonal, do tubo).";
         if (k === "coordenada") return n ? "Coordenada: clique o próximo ponto; Enter termina (" + n + " ponto(s))." : "Coordenada: clique a ORIGEM.";
@@ -641,7 +759,7 @@
         if (!ok) { api.hint("O editor recusou a cota."); return false; }
         var m = C.medir(e3(), r.op, { cfg: cfg() }), tx = m.ok ? m.rotulos.map(function (q) { return q.texto; }).join(" · ") : "";
         api.hint((pedido || ROT_MODO[st.modo]) + " criada" + (tx ? ": " + tx : "") + ". Clique a próxima, ou Esc. Ctrl+Z desfaz."); status((pedido || ROT_MODO[st.modo]) + " criada" + (tx ? ": " + tx : "") + ".");
-        st.refs = []; marcarP1(); limpar(grpPrev); caixa.style.display = "none";
+        st.refs = []; marcarP1(); limpar(grpPrev); limpar(grpProv); valorEsconder(); caixa.style.display = "none";
         if (api.fechou) api.fechou();
         return true;
       }
@@ -677,10 +795,12 @@
           if (st.refs.length >= 2 && (r.vazio || r.tipo === "proximo" || r.tipo === "face")) { criar(posicionar(itemProvisorio(st.refs), r.p)); return; }
           st.refs.push(r.ref); marcarP1(); api.hint(dica()); return;
         }
-        /* Cota: referências; com 2 ou mais, o clique no vazio — ou "na linha"/na face, que não é ponto
-           notável — posiciona a linha (só ponta, meio, centro e cruzamento continuam a cadeia) */
-        if (st.refs.length >= 2 && (r.vazio || r.tipo === "proximo" || r.tipo === "face")) { criar(posicionar(itemProvisorio(st.refs), r.p)); return; }
+        /* COTA RÁPIDA (29/10/2026): 1º clique = A, 2º clique = B → a cota NASCE (afastada pelo Espaçamento, por fora da peça).
+           Contínua: cada clique é um trecho, a cadeia segue e vira de direção sozinha. */
+        if (cfg().continua) { continuar(r, e); return; }
+        if (st.refs.length && JSON.stringify(st.refs[0]) === JSON.stringify(r.ref)) { api.hint("Esse é o mesmo ponto: clique o outro."); return; }
         st.refs.push(r.ref); marcarP1();
+        if (st.refs.length >= 2) { criarRapido(st.refs.slice(0, 2), r.p, e); return; }
         api.hint(dica() + (r.rotulo ? " (" + r.rotulo + ")" : "")); status(dica());
         void C;
       }
@@ -688,7 +808,8 @@
       function concluir() {
         var k = st.modo;
         if (k === "selecionar") { var ids = st.coleta.slice(); if (ids.length < 2) { api.hint("Escolha pelo menos duas peças."); return true; } st.coleta = []; limpar(grpPrev); edit.p1 = null; self.cotarSelecao(ids); return true; }
-        if ((k === "alinhada" || k === "coordenada") && st.refs.length >= 2) { criar(itemProvisorio(st.refs)); return true; }
+        if (k === "alinhada" && st.refs.length >= 2) { terminarCadeia(); return true; }
+        if (k === "coordenada" && st.refs.length >= 2) { criar(itemProvisorio(st.refs)); return true; }
         return false;
       }
       /* o eixo da grade perto do cursor (no plano do nível): para o modo de escolher peças */
@@ -830,12 +951,26 @@
           document.addEventListener("pointermove", mv, true); document.addEventListener("pointerup", up, true);
         }
       }, true);
+      var rd = null;
+      if (canvas) {
+        canvas.addEventListener("pointerdown", function (e) { if (e.button === 2) rd = { x: e.clientX, y: e.clientY }; }, true);
+        canvas.addEventListener("contextmenu", function (e) {
+          var andou = rd && (Math.abs(e.clientX - rd.x) + Math.abs(e.clientY - rd.y)) > 6; rd = null;
+          if (!armado() || st.modo !== "alinhada" || !cfg().continua || st.refs.length < 2 || andou) return;
+          e.preventDefault(); terminarCadeia(); api.hint("Cadeia gravada. Clique o 1º ponto da próxima.");
+        }, true);
+      }
       document.addEventListener("keydown", function (e) {
         if (!previa()) return;
         var t = e.target || {}; if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || "") || t.isContentEditable) return;
         if (armado()) {
           if (e.key === "Tab") { e.preventDefault(); e.stopImmediatePropagation(); var np = self.alternarPref(); api.hint("Encaixe: " + np + ". " + dica()); status("Encaixe: " + np + "."); return; }
-          if (e.key === "Enter") { if (concluir()) { e.preventDefault(); e.stopImmediatePropagation(); } return; }
+          if (e.key === "Enter") { concluir(); e.preventDefault(); e.stopImmediatePropagation(); return; }
+          if ((e.key === "c" || e.key === "C") && st.modo === "alinhada" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault(); e.stopImmediatePropagation();
+            terminarCadeia(); cfg().continua = !cfg().continua; gravar();
+            api.hint(dica()); status(cfg().continua ? "Cota contínua ligada." : "Cota contínua desligada."); return;
+          }
           return;
         }
         if (st.arr && e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); arrastoFim(true); return; }
@@ -870,7 +1005,12 @@
           aceitar(r, e);
           return true;
         },
-        cancelar: function () { st.refs = []; if (st.modo !== "selecionar") st.coleta = []; limpar(grpPrev); caixa.style.display = "none"; },
+        cancelar: function () {
+          /* Esc NÃO apaga o que já foi feito: a cadeia contínua em andamento é gravada com os trechos clicados */
+          if (st.modo === "alinhada" && cfg().continua && st.refs.length >= 2 && !st.gravando) { st.gravando = true; try { var rs = st.refs.slice(); criarRapido(rs, null, null); } finally { st.gravando = false; } }
+          st.refs = []; if (st.modo !== "selecionar") st.coleta = []; limpar(grpPrev); limpar(grpProv); valorEsconder(); caixa.style.display = "none";
+        },
+        terminarCadeia: terminarCadeia,
         aoSub: function (sub) {
           if (sub === SUB) { st.refs = []; st.geo = null; api.hint(dica()); try { if (global.BimShell) global.BimShell.pintarProps({ daVista: false, semEditarTipo: true, titulo: ROT_MODO[st.modo] || "Cota", icone: "regua", secoes: [{ nome: "Ferramenta", params: self.paramsFerramenta() }], onMudar: function (pid, v) { self.mudarCfg(pid, v); return null; } }); } catch (eP) {} return; }
           limpar(grpPrev); caixa.style.display = "none"; st.refs = [];
@@ -886,7 +1026,7 @@
         estado: function () {
           var C = BC(), e = e3();
           return { modo: st.modo, cmd: st.cmd, armado: armado(), refs: st.refs.length, cur: st.cur ? { tipo: st.cur.tipo, rotulo: st.cur.rotulo, p: st.cur.p, ref: st.cur.ref } : null, vivo: caixa.style.display !== "none" ? caixa.textContent : "",
-                   previa: grpPrev.children.length, sel: st.sel, coleta: st.coleta.slice(), pref: cfg().pref,
+                   previa: grpPrev.children.length, tracejada: grpPrev.children.some(function (o) { return o.material && o.material.isLineDashedMaterial; }), valorFlutuante: valSp && valSp.visible ? valTxt : "", provisoria: grpProv.children.length, sel: st.sel, coleta: st.coleta.slice(), pref: cfg().pref,
                    cotas: Object.keys(st.desenho).map(function (id) { var d = st.desenho[id]; return { id: id, orfa: d.orfa, textos: d.rot.map(function (q) { return q.sp.userData.texto; }) }; }),
                    n: C && e ? C.itens(e).length : 0 };
         },
