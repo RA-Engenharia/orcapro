@@ -189,20 +189,22 @@
       var h = yf - rod - 0.012, pG = (D - 0.10);
       H.gaveta(c, "gaveta1", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006, zf, W - 0.012, h * 0.45, 0.019, "liso"); alcaH(c, MAT.INOX, 0, rod + 0.006 + h * 0.45 - 0.04, zf + 0.019, 0.30, 0.028); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006, zf, W - 0.012, h * 0.45, pG); });
       H.gaveta(c, "gaveta2", pG * 0.7, function () { H.porta(c, v.Corpo, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, 0.019, "liso"); alcaH(c, MAT.INOX, 0, rod + 0.006 + h - 0.052, zf + 0.019, 0.30, 0.028); H.gavetaCaixa(c, MAT.CLARA, 0, rod + 0.006 + h * 0.45 + 0.008, zf, W - 0.012, h * 0.55 - 0.014, pG); });
+      /* camadas da frente (vidro, painel, botões) a ≥ 2 mm uma da outra: com 0,5–1 mm e faces no mesmo plano o vidro e a tela
+         brigavam no Twinmotion/Unreal e o forno e o micro-ondas PISCAVAM (Rogério, 29/10/2026) */
       /* forno de embutir 60 cm (nicho 56 × 60 × 57): moldura de inox, painel de comandos no topo, vidro preto, alça de barra, frestas de ventilação */
       c.caixaR(MAT.INOX, 0, yf, zf - 0.02, 0.595, 0.595, 0.04, 0.008, { k: 1 });
-      c.caixa(MAT.PRETO, 0, yf + 0.495, zf + 0.0005, 0.56, 0.088, 0.004); c.caixa(MAT.TELA, 0, yf + 0.535, zf + 0.0035, 0.16, 0.034, 0.002);
-      for (k = 0; k < 4; k++) c.cil(MAT.CROMO, -0.2 + k * 0.133 + (k > 1 ? 0.0 : 0), yf + 0.512, zf + 0.0035, 0.014, 0.012, { seg: 12, rotX: 90 });
-      c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.42, 0.004); c.caixa(MAT.GRAFITE, 0, yf + 0.06, zf + 0.0015, 0.5, 0.36, 0.002);
+      c.caixa(MAT.PRETO, 0, yf + 0.495, zf + 0.0005, 0.56, 0.088, 0.004); c.caixa(MAT.TELA, 0, yf + 0.535, zf + 0.006, 0.16, 0.034, 0.002);
+      for (k = 0; k < 4; k++) c.cil(MAT.CROMO, -0.2 + k * 0.133 + (k > 1 ? 0.0 : 0), yf + 0.512, zf + 0.006, 0.014, 0.012, { seg: 12, rotX: 90 });
+      c.caixa(MAT.TELA, 0, yf + 0.06, zf + 0.0005, 0.55, 0.42, 0.004); c.caixa(MAT.GRAFITE, 0, yf + 0.06, zf + 0.004, 0.5, 0.36, 0.002);
       alcaH(c, MAT.INOX, 0, yf + 0.455, zf + 0.0005, 0.45, 0.034);
       for (k = 0; k < 5; k++) c.caixa(MAT.PRETO, 0, yf + 0.012 + k * 0.009, zf + 0.0005, 0.4, 0.003, 0.003);
       var yt = yf + 0.595 + 0.012;
       if (v.Com_micro) {
         /* micro-ondas de embutir: porta de vidro à esquerda, painel com visor e botões à direita, alça vertical */
         c.caixaR(MAT.INOX, 0, yt, zf - 0.02, 0.595, 0.38, 0.04, 0.008, { k: 1 });
-        c.caixa(MAT.TELA, -0.075, yt + 0.035, zf + 0.0005, 0.4, 0.31, 0.004); c.caixa(MAT.GRAFITE, -0.075, yt + 0.035, zf + 0.0015, 0.36, 0.27, 0.002);
-        c.caixa(MAT.PRETO, 0.2, yt + 0.035, zf + 0.0005, 0.14, 0.31, 0.004); c.caixa(MAT.TELA, 0.2, yt + 0.27, zf + 0.0035, 0.1, 0.04, 0.002);
-        for (k = 0; k < 3; k++) c.caixa(MAT.CROMO, 0.2, yt + 0.2 - k * 0.055, zf + 0.0035, 0.08, 0.03, 0.003);
+        c.caixa(MAT.TELA, -0.075, yt + 0.035, zf + 0.0005, 0.4, 0.31, 0.004); c.caixa(MAT.GRAFITE, -0.075, yt + 0.035, zf + 0.004, 0.36, 0.27, 0.002);
+        c.caixa(MAT.PRETO, 0.2, yt + 0.035, zf + 0.0005, 0.14, 0.31, 0.004); c.caixa(MAT.TELA, 0.2, yt + 0.27, zf + 0.006, 0.1, 0.04, 0.002);
+        for (k = 0; k < 3; k++) c.caixa(MAT.CROMO, 0.2, yt + 0.2 - k * 0.055, zf + 0.006, 0.08, 0.03, 0.003);
         alcaV(c, MAT.INOX, 0.115, yt + 0.19, zf + 0.0005, 0.22, 0.03);
         yt += 0.38 + 0.012;
       }
