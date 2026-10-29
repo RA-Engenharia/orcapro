@@ -68,7 +68,7 @@
 
   /* o canto em L: topo (união pela linha de centro — a parede criada antes passa) ou meia-esquadria */
   var OPC_CANTO = [{ id: "topo", rotulo: "Topo — a criada antes passa (padrão)" }, { id: "esquadria", rotulo: "Meia-esquadria" }];
-  var ROT_SUB = { parede: "Parede", laje: "Laje por contorno", furo: "Furo na laje", pilar: "Pilar por perfil", viga: "Viga por perfil", eixo: "Eixos", escada: "Escada", guarda: "Guarda-corpo", forro: "Forro", rampa: "Rampa", trelica: "Treliça",
+  var ROT_SUB = { parede: "Parede", laje: "Laje por contorno", furo: "Furo na laje", pilar: "Pilar por perfil", viga: "Viga por perfil", eixo: "Eixos", escada: "Escada", guarda: "Guarda-corpo", forro: "Forro", rodape: "Rodapé", rampa: "Rampa", trelica: "Treliça",
                   telhado: "Telhado", fundacao: "Fundação", "telhado-borda": "Bordas do telhado", "telhado-unir": "Unir telhado",
                   /* P11 (Massa e terreno): sem o nome aqui a barra de status e Propriedades mostravam o
                      id interno ("p11-topo — o tipo e os parâmetros…") — auditoria de 12/10/2026 */
@@ -308,6 +308,7 @@
       ], "alvenaria");
       ["eixo", "furo-laje", "escada", "guarda-corpo", "viga"].forEach(function (k) { if (R._EXCLUSIVOS.indexOf(k) < 0) R._EXCLUSIVOS.push(k); });
       if (global.BimForroUI) global.BimForroUI.registrar(reg, self);   /* P2-B: comando Forro (js/bimforroui.js) */
+      if (global.BimRodapeUI) global.BimRodapeUI.registrar(reg, self);   /* RODAPÉ 3D: botão Rodapé (js/bimrodapeui.js) */
       if (global.BimContornoUI) global.BimContornoUI.registrar(reg, self);   /* CONTORNO LIVRE: Editar contorno (js/bimcontornoui.js) */
       if (global.BimTerrenoUI) global.BimTerrenoUI.registrar(reg, self);   /* P11: aba Massa e terreno (js/bimterrenoui.js) */
       if (global.BimEstrutUI) global.BimEstrutUI.registrar(reg, self);   /* P9 — GANCHO: Rampa, Escada em U, Treliça (js/bimestrutui.js) */
@@ -399,6 +400,7 @@
     esquemaFerramenta: function (sub) {
       if (!previa() || !A()) return null;
       if (sub === "forro" && global.BimForroUI) return global.BimForroUI.esquema(this);   /* P2-B: a ferramenta do forro */
+      if (sub === "rodape" && global.BimRodapeUI) return global.BimRodapeUI.esquema(this);   /* RODAPÉ 3D: a ferramenta do rodapé */
       if (/^p11-/.test(String(sub)) && global.BimTerrenoUI) return global.BimTerrenoUI.esquema(sub, this);   /* P11: as ferramentas do terreno */
       if ((sub === "rampa" || sub === "trelica") && global.BimEstrutUI) return global.BimEstrutUI.esquema(sub, this);   /* P9 — GANCHO */
       if (/^(telhado|fundacao|telhado-borda|telhado-unir)$/.test(sub) && global.BimP3UI) return global.BimP3UI.esquema(sub, this);   /* P3 */

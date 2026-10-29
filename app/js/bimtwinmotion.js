@@ -154,6 +154,9 @@
       for (var i = 0; i < paredes.length; i++) if (paredes[i].containsBox(b)) return true;
       return false;
     }
+    /* RODAPÉ "Igual ao piso" (29/10/2026, js/bimrodape.js): o material de cada piso, por ambiente — o rodapé que encosta nele usa ESSE objeto */
+    var pisoMat = {};
+    origem.traverse(function (o) { if (o.isMesh && o.userData && o.userData.acabPiso && vivo(o) && !Array.isArray(o.material)) pisoMat[String(o.userData.acabPiso)] = o.userData._p10orig || o.material; });
     origem.traverse(function (o) {
       if (!o.isMesh || !o.geometry || !vivo(o)) return;
       var u = o.userData || {}, id = idDe(u); if (!id) return;
@@ -180,6 +183,9 @@
          em preto de tela/moldura (0b0c0e); painel ripado e rack continuam */
       if (/(^|-)mob-rack-tv/.test(famDe(u)) && [].concat(mat0).some(function (m) { return m && m.color && m.color.getHexString() === "0b0c0e"; })) return;
       var dono = (c === "piso" || c === "pintura" || PROPRIO[u.tipo]) ? id : null;
+      /* rodapé ligado ao piso: o mesmo material (mesmo objeto e mesmo nome `piso_<ambiente>__<hex>`) do piso em contato — trocar a textura do
+         piso no Twinmotion troca a do rodapé junto */
+      if (u.rodapePiso != null) { dono = "piso:" + u.rodapePiso; if (pisoMat[String(u.rodapePiso)]) mat0 = pisoMat[String(u.rodapePiso)]; }
       /* regra de material da obra (ex.: piso metálico da caixa d agua): nome FIXO, cor e acabamento definidos pela regra */
       var regra = regraDe(R, id, u.tipo); if (regra) dono = regra.nome;
       var mats = Array.isArray(mat0) ? mat0.map(function (m, i) { return matDe(m, dono ? dono + (i ? "_" + i : "") : null); }) : matDe(mat0, dono);

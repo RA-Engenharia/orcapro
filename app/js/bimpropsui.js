@@ -60,7 +60,7 @@
 
   /* a peça do estado (caixa, cobertura ou família) pelo id */
   function elDe(estado, id) {
-    var s = String(id), l = arr(estado && estado.caixas).concat(arr(estado && estado.coberturas)).concat(arr(estado && estado.familias)).concat(arr(estado && estado.forros)).concat(arr(estado && estado.ambientes));   /* P2-B: forros; P2-C: ambientes */
+    var s = String(id), l = arr(estado && estado.caixas).concat(arr(estado && estado.coberturas)).concat(arr(estado && estado.familias)).concat(arr(estado && estado.forros)).concat(arr(estado && estado.rodapes)).concat(arr(estado && estado.ambientes));   /* P2-B: forros; P2-C: ambientes */
     var T11 = estado && estado.terreno; if (T11) l = l.concat(arr(T11.topos), arr(T11.subregioes), arr(T11.plataformas), arr(T11.divisas), arr(T11.componentes));   /* P11: terreno */
     l = l.concat(arr(estado && estado.telhados)).concat(arr(estado && estado.bordas)).concat(arr(estado && estado.fundacoes));   /* P3 */
     for (var i = 0; i < l.length; i++) if (l[i] && String(l[i].id) === s) return l[i];
@@ -370,6 +370,19 @@
           var val = {}; val[m[1]] = valor;
           var r = BP.editarTipo(ctx.estado, p.categoria, p.tipoId, val, null, ctx.deps);
           if (r.ok) ops.push(r.op); else falha(r.motivo);
+        });
+      } else if ((m = /^rodape\.(altura|espessura|embutido|face|material)$/.exec(e))) {
+        /* RODAPÉ 3D (js/bimrodape.js): editar um trecho edita o CONJUNTO (a op rodape) — todos os trechos dele seguem; uma op por conjunto */
+        var BRo = global.BimRodape, vistosR = {};
+        if (!BRo) return { ok: false, erro: "O motor do rodapé (js/bimrodape.js) não carregou." };
+        ids.forEach(function (id) {
+          var kp = BRo.chavePeca(id); if (!kp || vistosR[kp.spec]) return; vistosR[kp.spec] = 1;
+          var d = {}, campo = m[1];
+          if (campo === "altura" || campo === "espessura") d[campo] = Number(valor);
+          else if (campo === "embutido") d.embutido = valor === true || valor === "true" || valor === "Sim";
+          else if (campo === "face") d.face = ({ Dentro: "dentro", Fora: "fora", Ambas: "ambas" })[txt(valor)] || txt(valor).toLowerCase();
+          else d.material = /^(|piso|igual ao piso)$/i.test(txt(valor).trim()) ? "piso" : txt(valor).trim();
+          var oR = BRo.op(kp.spec, d); if (oR) ops.push(oR); else falha("Valor inválido para o rodapé.");
         });
       } else if (e === "forro.delimitaAmbiente") {
         /* "Delimitação de ambientes" do forro: Não fica gravado; Sim volta ao padrão (null) */

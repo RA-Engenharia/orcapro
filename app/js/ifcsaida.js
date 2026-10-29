@@ -1872,6 +1872,34 @@
       if (sp) { w("IFCRELCOVERSSPACES", [G("cobre:" + f.id), OH, "$", "$", ref(sp.ent), L([ref(el.ent)])]); el.ambiente = String(f.ambienteId); }
     }));
 
+    /* ================= RODAPÉ 3D (js/bimrodape.js, 29/10/2026) =================
+     * Um IfcCovering SKIRTINGBOARD por trecho derivado das paredes: prisma da planta (os 4 cantos do trecho) extrudado na altura, na cota do
+     * piso em contato. Material = o do piso em contato ("Igual ao piso") ou o escolhido; Pset OrcaPRO_Rodape com altura, espessura, embutido,
+     * parede e ambiente. Sem categoria própria no MAPA_REVIT: vai como Modelos genéricos (a prova de ida e volta do SKIRTINGBOARD no Revit não foi feita). */
+    var BRo = dep("BimRodape", "./bimrodape.js");
+    if (BRo && st.rodapeSpecs && !st.rodapes) { try { BRo.derivar(st, vaos); } catch (eRo) { avisos.push("rodapé: não foi possível derivar os trechos (" + eRo.message + ") — ficou de fora do IFC"); } }
+    arr(st.rodapes).forEach(comMat(function (rp) {
+      if (!rp || rp.id == null || arr(rp.cantos).length < 3 || !(num(rp.altura, 0) > 0)) return;
+      var nv = nivelDe(num(rp.y0, 0)), pl = placement(nv.pl, [0, 0, num(rp.y0, 0) - nv.elevacao], [0, 0, 1], [1, 0, 0]);
+      var pts = rp.cantos.map(function (q) { return [q.x, -q.z]; }), ar = 0;
+      for (var iR = 0; iR < pts.length; iR++) { var jR = (iR + 1) % pts.length; ar += pts[iR][0] * pts[jR][1] - pts[jR][0] * pts[iR][1]; }
+      if (ar < 0) pts.reverse();
+      var solR = extrudado(perfilPoli(pts, [], "Rodapé", "rodapé " + rp.id), pos3([0, 0, 0]), num(rp.altura, 0));
+      var matR = String(rp.material || "Rodapé");
+      pintar(solR, matR);
+      var elR = peca(rp.id, "IFCCOVERING", "Rodapé " + rp.id, "Rodapé " + (rp.embutido ? "embutido" : "sobreposto"), pl, forma([solR], "SweptSolid"), [E("SKIRTINGBOARD")], num(rp.y0, 0), nv, { mapa: "generico" });
+      ligarMaterial(elR, matR);
+      pset(elR, "Pset_CoveringCommon", [["Reference", "IFCIDENTIFIER", "Rodapé"]]);
+      pset(elR, "OrcaPRO_Rodape", [["Altura", "IFCLENGTHMEASURE", rp.altura], ["Espessura", "IFCLENGTHMEASURE", rp.espessura], ["Comprimento", "IFCLENGTHMEASURE", rp.comprimento], ["Volume", "IFCVOLUMEMEASURE", rp.volume],
+        ["Embutido", "IFCBOOLEAN", !!rp.embutido], ["Parede", "IFCIDENTIFIER", String(rp.paredeId)], ["Face", "IFCLABEL", rp.face === "fora" ? "Fora" : "Dentro"], ["Ambiente", "IFCIDENTIFIER", rp.ambienteId != null ? String(rp.ambienteId) : null],
+        ["MaterialIgualAoPiso", "IFCBOOLEAN", rp.materialModo === "piso"]]);
+      qto(elR, "Qto_CoveringBaseQuantities", [["Length", QTD.L, rp.comprimento], ["Width", QTD.L, rp.altura], ["NetArea", QTD.A, rp.area]]);
+      origemPset(elR, [["Modelador", "IFCLABEL", "Rodapé"]]);
+      elR.volume = r6(num(rp.volume, 0)); elR.area = rp.area; elR.comprimento = rp.comprimento;
+      var spR = rp.ambienteId != null ? espacosIfc[String(rp.ambienteId)] : null;
+      if (spR) { w("IFCRELCOVERSSPACES", [G("cobre:" + rp.id), OH, "$", "$", ref(spR.ent), L([ref(elR.ent)])]); elR.ambiente = String(rp.ambienteId); }
+    }));
+
     /* ================= P11 — TERRENO (js/bimterreno.js) ==========     * Pelo MAPA_REVIT.topossolido: o SÓLIDO
      * TOPOGRÁFICO vai como IfcGeographicElement .TERRAIN., CONTIDO NO IfcSite
      * (o terreno é do lote, não de um pavimento), corpo IfcFacetedBrep fechado:

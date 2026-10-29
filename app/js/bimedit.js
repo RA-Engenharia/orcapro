@@ -643,6 +643,10 @@
         if (mv.comprimento != null) m.comprimento = R(mv.comprimento); else if (mv.altura != null) m.comprimento = R(mv.altura);
         return m;
       }
+      if (el.tipo === "rodape") {   /* RODAPÉ 3D (js/bimrodape.js): comprimento, área da face e volume do trecho */
+        m.un = 1; m.comprimento = r4(num(el.comprimento, 0)); m.area = r4(num(el.area, 0)); m.areaBruta = m.area; m.volume = r4(num(el.volume, 0));
+        return m;
+      }
       if (el.tipo === "forro") {   /* P2-B (js/bimforro.js): área líquida dos furos, área bruta, perímetro (tabica), volume */
         m.un = 1; m.area = r4(num(el.area, 0)); m.areaBruta = r4(num(el.areaBruta, 0)); m.comprimento = r4(num(el.perimetro, 0)); m.volume = r4(num(el.volume, 0));
         return m;

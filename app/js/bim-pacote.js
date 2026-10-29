@@ -10329,10 +10329,12 @@ var nInst = instEls.filter(function (x) { return !x.marcador; }).length;
 volMedir(st);
 var nVol = st.volumes ? st.volumes.length : 0;
 var nFo = st.forros ? st.forros.length : 0;
+if (st.rodapeSpecs && window.BimRodape) { try { BimRodape.derivar(st, BimEdit.vaosDasParedes(st, famAval)); } catch (eRo) { st.rodapes = []; } }
+var nRo = st.rodapes ? st.rodapes.length : 0;
 var nP11 = S._p11 ? S._p11.contar(st) : 0;
 var nP3 = S._p3 ? S._p3.contar(st) : 0;
-if (st.caixas.length || st.familias.length || st.coberturas.length || nInst || nVol || nFo || nP11 || nP3) {
-var nTot = st.caixas.length + st.familias.length + st.coberturas.length + nInst + nVol + nFo + nP11 + nP3;
+if (st.caixas.length || st.familias.length || st.coberturas.length || nInst || nVol || nFo || nRo || nP11 || nP3) {
+var nTot = st.caixas.length + st.familias.length + st.coberturas.length + nInst + nVol + nFo + nRo + nP11 + nP3;
 var mo = { mid: 'edit', sintetico: true, editor: true, nome: 'Criados no OrçaPRO (' + nTot + ')', disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
 mo.grupo.userData.mid = 'edit';
 var vaosEd = BimEdit.vaosDasParedes(st, famAval);
@@ -10380,6 +10382,7 @@ mo.elementos.push({ id: cb.id, uid: 'edit:' + cb.id, mid: 'edit', arquivo: mo.no
 mo.nEl++;
 });
 if (nFo && S._p2bForros) S._p2bForros(st, mo, addMesh);
+if (nRo && S._rodapes3d) S._rodapes3d(st, mo, addMesh);
 if (nP11) S._p11.desenhar(st, mo, addMesh);
 if (nP3) S._p3.malhas(st, mo, addMesh);
 if (S._andaime3d) S._andaime3d.ini();
@@ -10842,6 +10845,7 @@ if (S._p11 && S._p11.clique(sub, e, hit, p)) return;
 if (S._ctr && S._ctr.clique(sub, e, hit, p)) return;
 if (S._p3 && S._p3.clique(sub, e, hit, p)) return;
 if (S._emb && S._emb.clique(sub, e, hit, p)) return;
+if (sub === 'rodape' && S._rodapeClique && S._rodapeClique(e, hit)) return;
 if (edit.b2 && S._b2Clique && S._b2Clique(sub, e, hit, p)) return;
 if (sub === 'apagar') {
 if (!hit) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique em cima de um elemento.'); return; }
@@ -11627,6 +11631,42 @@ mo.elementos.push({ id: f.id, uid: 'edit:' + f.id, mid: 'edit', arquivo: mo.nome
 mo.nEl++;
 });
 };
+var rodapeMatNeutro = null, rodapeMatNeutroRente = null;
+function rodapeMaterial(p) {
+var AV = window.BimAcabVis, t = p.material, ent = null;
+if (AV && t) ent = p.materialModo === 'piso' ? AV.resolver(t, 'piso') : (AV.porNome(t) || AV.resolver(t, 'piso') || AV.resolver(t, 'parede'));
+if (ent) return acabMat(ent, !!p.embutido);
+if (!rodapeMatNeutro) {
+rodapeMatNeutro = new THREE.MeshStandardMaterial({ color: 0xece9e2, metalness: 0, roughness: 0.7, side: THREE.DoubleSide });
+rodapeMatNeutroRente = rodapeMatNeutro.clone(); rodapeMatNeutroRente.polygonOffset = true; rodapeMatNeutroRente.polygonOffsetFactor = -2; rodapeMatNeutroRente.polygonOffsetUnits = -40;
+}
+return p.embutido ? rodapeMatNeutroRente : rodapeMatNeutro;
+}
+S._rodapes3d = function (st, mo, addMesh) {
+(st.rodapes || []).forEach(function (p) {
+if (!p || !(p.comprimento > 0)) return;
+var mat = rodapeMaterial(p), ex = p.embutido ? 0.006 : 0.0005, o0 = p.embutido ? -p.espessura + ex : ex, o1 = p.embutido ? ex : p.espessura, oc = (o0 + o1) / 2;
+var m = new THREE.Mesh(new THREE.BoxGeometry(p.comprimento, p.altura, o1 - o0), mat);
+m.position.set((p.ax + p.bx) / 2 + p.nx * oc, p.y0 + p.altura / 2, (p.az + p.bz) / 2 + p.nz * oc);
+m.rotation.y = Math.atan2(-(p.bz - p.az), p.bx - p.ax);
+addMesh(m, p.id, 'IFCCOVERING', mat);
+m.userData.rodape = p.conjunto; if (p.pisoRef != null) m.userData.rodapePiso = p.pisoRef;
+acabRegistrar(m);
+mo.tipos.IFCCOVERING = (mo.tipos.IFCCOVERING || 0) + 1;
+mo.qto[p.id] = { comprimento: p.comprimento, area: p.area, volume: p.volume, contagem: 1 };
+mo.elementos.push({ id: p.id, uid: 'edit:' + p.id, mid: 'edit', arquivo: mo.nome, tipo: 'IFCCOVERING', nome: 'Rodapé (sintético ' + p.id + ')', etapa: null, codOrc: null, qto: mo.qto[p.id], disciplina: 'arquitetura' });
+mo.nEl++;
+});
+};
+S._rodapeClique = function (e, hit) {
+var UI = window.BimRodapeUI; if (!UI) { S._hint('A tela do rodapé (js/bimrodapeui.js) não carregou.'); return true; }
+if (UI.cfg().modo !== 'clicar') { S._hint('Rodapé: use o botão Lançar em Propriedades (ou troque o Modo para "Clicar parede a parede").'); return true; }
+var h = hit && _ultimosHits[0] ? _ultimosHits[0].object : null, id = h && h.userData && h.userData.mid === 'edit' ? h.userData.expressID : null;
+if (id == null) { S._hint('Clique em cima de uma parede.'); return true; }
+var r = UI.cliqueParede(edit.estado, String(id));
+if (!r.ok) { S._hint(r.motivo); return true; }
+editOp(r.op); S._hint(r.resumo); return true;
+};
 function p2bForroCriar(dados) {
 var b = edit.b2 || {};
 if (!window.BimForroUI) { S._hint('A tela do forro (js/bimforroui.js) não carregou.'); return false; }
@@ -11855,6 +11895,7 @@ escada: 'Escada: clique o meio do primeiro degrau e depois a direção da subida
 guarda: 'Guarda-corpo: clique os pontos do caminho e Enter para terminar — ou clique numa escada para seguir a lateral dela.',
 pilar: (edit.b2 && edit.b2.perfilPilar) ? 'Pilar por perfil: clique onde ele nasce.' : '',
 viga: (edit.b2 && edit.b2.perfilViga) ? 'Viga por perfil: clique o início e o fim (o topo fica no topo da parede).' : '',
+rodape: 'Rodapé: escolha o Modo em Propriedades — "Clicar parede a parede" (clique em cada parede; Esc termina) ou lance de uma vez com o botão.',
 forro: p2bForroAuto() ? 'Forro automático: clique DENTRO da sala fechada por paredes.' : 'Forro por contorno: clique os cantos; feche no primeiro ponto ou com Enter. Esc cancela.',
 rampa: 'Rampa: clique o meio do pé da rampa e depois a direção da subida. Segmentos e patamares pela NBR 9050 (inclinação × desnível); guarda-corpo com corrimão duplo nasce junto.',
 trelica: 'Treliça: clique os dois apoios. Banzos, montantes e diagonais viram vigas e pilares de madeira (Propriedades: tipo, altura, painéis, seções).'
@@ -14762,7 +14803,7 @@ if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'des
 if (o && window.BimGrupos && BimGrupos.redirecionar && S && S.edit && S.edit.estado) o = BimGrupos.redirecionar(o, S.edit.estado);
 if (!S || !S._editOpExterna || !o || ['ajustar', 'renomear', 'apagar', 'mover', 'eixo', 'ajustarTipo', 'marcar', 'forro', 'ambiente', 'ajustarAmbiente', 'separador', 'delimitar', 'ambienteRegra', 'fases', 'grupo', 'opcoes',
 'topossolido', 'subregiao', 'plataforma', 'divisa', 'implantacao', 'compTerreno', 'rotuloCurvas',
-'telhado', 'borda', 'fundacao', 'graute'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op)) && !(window.BimCotas && BimCotas.ehOp(o.op))) return false;
+'telhado', 'borda', 'fundacao', 'graute', 'rodape'].indexOf(o.op) < 0 && !(window.BimAnotP7 && BimAnotP7.ehOp(o.op)) && !(window.BimCotas && BimCotas.ehOp(o.op))) return false;
 if (!BimEdit.sanear([o]).length) return false;
 S._editOpExterna(o); return true;
 },

@@ -317,6 +317,20 @@
     forroDirInclinacao: function (x) { return fin(el(x).dirInclinacao) ? el(x).dirInclinacao : 0; },
     forroModo: function (x) { return el(x).modo === "automatico" ? "Automático (pelas paredes)" : "Desenhado (contorno)"; },
     forroEspessura: function (x) { var t = el(x).tipoForro; return t && fin(t.espessura) ? t.espessura : null; },
+    /* ---- RODAPÉ 3D (js/bimrodape.js): o trecho chega derivado das paredes; a escrita vai para o conjunto (rodape.*) ---- */
+    rodapeAltura: function (x) { return fin(el(x).altura) ? el(x).altura : null; },
+    rodapeEspessura: function (x) { return fin(el(x).espessura) ? el(x).espessura : null; },
+    rodapeEmbutido: function (x) { return !!el(x).embutido; },
+    rodapeFace: function (x) { var f = el(x).conjuntoFace; return f === "ambas" ? "Ambas" : (f === "fora" ? "Fora" : "Dentro"); },
+    rodapeMaterial: function (x) { var c = el(x); return c.conjuntoMaterial && c.conjuntoMaterial !== "piso" ? txt(c.conjuntoMaterial) : "Igual ao piso"; },
+    rodapeMaterialEfetivo: function (x) { var t = txt(el(x).material); return t || "<Sem piso nomeado: neutro>"; },
+    rodapeArea: function (x) { return m(x).area != null ? m(x).area : null; },
+    rodapeVolume: function (x) { return m(x).volume != null ? m(x).volume : null; },
+    rodapeComprimento: function (x) { return fin(el(x).comprimento) ? el(x).comprimento : null; },
+    rodapeFaceDaParede: function (x) { return el(x).face === "fora" ? "Fora" : "Dentro"; },
+    rodapeParede: function (x) { return txt(el(x).paredeId); },
+    rodapeAmbiente: function (x) { return el(x).ambienteId != null ? txt(el(x).ambienteId) : "—"; },
+
     forroEstrutura: function (x) {
       var t = el(x).tipoForro;
       return t ? arr(t.camadas).map(function (k) { return txt(k.rotulo) + " " + mm(num(k.e, 0)) + " mm"; }).join(" + ") : null;
@@ -951,6 +965,24 @@
        Volume e a Espessura/Estrutura do forro COMPOSTO não estão nele e
        ficam pendentes até a próxima coleta do inventário
        (que também lista os parâmetros do composto). */
+    /* RODAPÉ 3D (29/10/2026, js/bimrodape.js): IfcCovering SKIRTINGBOARD; Altura/Espessura/Embutido/Face/Material editam o CONJUNTO (a op rodape) */
+    rodape: {
+      nome: "Rodapés", ifc: "IFCCOVERING", inventario: null, familia: "Rodapé", prefixo: "RO", comum: false,
+      defs: [
+        P(I, "Cotas", "Altura", "RA_RODAPE_ALTURA", "comprimento", { calc: "rodapeAltura", escrita: "rodape.altura", leitura: false, casas: 3, faixa: { min: 0.02, max: 0.5 }, padrao: 0.07, ifc: Q("OrcaPRO_Rodape", "Altura") }),
+        P(I, "Cotas", "Espessura", "RA_RODAPE_ESPESSURA", "comprimento", { calc: "rodapeEspessura", escrita: "rodape.espessura", leitura: false, casas: 3, faixa: { min: 0.003, max: 0.1 }, padrao: 0.015, ifc: Q("OrcaPRO_Rodape", "Espessura") }),
+        P(I, "Construção", "Embutido", "RA_RODAPE_EMBUTIDO", "simnao", { calc: "rodapeEmbutido", escrita: "rodape.embutido", leitura: false, padrao: false }),
+        P(I, "Construção", "Face", "RA_RODAPE_FACE", "lista", { calc: "rodapeFace", escrita: "rodape.face", leitura: false, opcoes: ["Dentro", "Fora", "Ambas"] }),
+        P(I, "Materiais e acabamentos", "Material", "RA_RODAPE_MATERIAL", "texto", { calc: "rodapeMaterial", escrita: "rodape.material", leitura: false, filtro: false }),
+        P(I, "Materiais e acabamentos", "Material em uso neste trecho", "RA_RODAPE_MATERIAL_EF", "texto", { calc: "rodapeMaterialEfetivo", filtro: false }),
+        P(I, "Cotas", "Comprimento", "RA_RODAPE_COMPRIMENTO", "comprimento", { calc: "rodapeComprimento", ifc: Q("OrcaPRO_Rodape", "Comprimento"), orc: O("comprimento") }),
+        P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "rodapeArea", ifc: Q("Qto_CoveringBaseQuantities", "NetArea"), orc: O("area") }),
+        P(I, "Cotas", "Volume", "HOST_VOLUME_COMPUTED", "volume", { calc: "rodapeVolume", ifc: Q("OrcaPRO_Rodape", "Volume"), orc: O("volume"), revit: { bip: null, pendente: "Rodapé: peça própria do OrçaPRO" } }),
+        P(I, "Restrições", "Parede", "RA_RODAPE_PAREDE", "texto", { calc: "rodapeParede" }),
+        P(I, "Restrições", "Lado da parede", "RA_RODAPE_LADO", "texto", { calc: "rodapeFaceDaParede" }),
+        P(I, "Restrições", "Ambiente (piso em contato)", "RA_RODAPE_AMBIENTE", "texto", { calc: "rodapeAmbiente" })
+      ]
+    },
     forro: {
       nome: "Forros", ifc: "IFCCOVERING", inventario: "forro", familia: "Forro composto", prefixo: "FO", comum: true,
       defs: [
@@ -1607,6 +1639,8 @@
     arr(estado && estado.coberturas).forEach(function (c) { if (c) out.push({ id: String(c.id), categoria: "cobertura", origem: "cobertura", el: c }); });
     /* P2-B: os forros (js/bimforro.js), já derivados no replay */
     arr(estado && estado.forros).forEach(function (f) { if (f) out.push({ id: String(f.id), categoria: "forro", origem: "forro", el: f }); });
+    /* RODAPÉ 3D (js/bimrodape.js): os trechos derivados das paredes (a paleta edita o CONJUNTO a que o trecho pertence) */
+    arr(estado && estado.rodapes).forEach(function (r) { if (r && r.id != null) out.push({ id: String(r.id), categoria: "rodape", origem: "rodape", el: r }); });
     /* P3: telhados, bordas e fundações (js/bimtelhado.js, js/bimfundacao.js), já derivados no replay */
     arr(estado && estado.telhados).forEach(function (t) { if (t) out.push({ id: String(t.id), categoria: "telhado", origem: "telhado", el: t }); });
     arr(estado && estado.bordas).forEach(function (b) { if (b) out.push({ id: String(b.id), categoria: "borda", origem: "borda", el: b }); });
@@ -1649,6 +1683,7 @@
     if (cat === "telhado") return c.tipoTelhado && c.tipoTelhado.id ? String(c.tipoTelhado.id) : (c.tipoId ? String(c.tipoId) : "auto:telhado");
     if (cat === "borda") return "auto:borda:" + txt(c.tipoBorda);
     if (cat === "platibanda") return "auto:platibanda";
+    if (cat === "rodape") return "auto:rodape";
     if (cat === "fundacao") return "auto:" + txt(c.tipoFundacao) + "|" + nomeFundacao(c);
     return "auto:" + cat;
   }
@@ -1670,6 +1705,7 @@
     if (cat === "rampa") { var rp = c.rampa && c.rampa.par; return "Rampa " + String(num(rp && rp.inclinacao, 8.33)).replace(".", ",") + " %"; }   /* P9 */
     if (cat === "telhado") return c.tipoTelhado && c.tipoTelhado.rotulo ? txt(c.tipoTelhado.rotulo) : "Telhado";   /* P3 */
     if (cat === "platibanda") return "Platibanda";
+    if (cat === "rodape") return "Rodapé";
     if (cat === "borda") return ({ calha: "Calha", rufo: "Rufo", testeira: "Testeira", intradorso: "Intradorso" })[c.tipoBorda] || "Borda";
     if (cat === "fundacao") return (c.rotuloTipo || "Fundação") + " " + nomeFundacao(c);
     return cat;
@@ -1732,7 +1768,7 @@
   /* ===================================================== as ops (replay) */
   function alvo(ctx, id) { return (ctx.caixas && ctx.caixas[id]) || (ctx.fams && ctx.fams[id]) || (ctx.cobs && ctx.cobs[id]) || (ctx.vols && ctx.vols[id]) || (ctx.forros && ctx.forros[id]) || (ctx.p11 && ctx.p11.el[id]) ||
     (ctx.telhados && ctx.telhados[id]) || (ctx.bordas && ctx.bordas[id]) || (ctx.fundacoes && ctx.fundacoes[id]) || (ctx.cob && ctx.cob.plat && ctx.cob.plat[id]) || null; }   /* a platibanda (js/bimcobertura.js): fase e pintura gravadas nela */   /* P2-B: forros; P11: terreno */
-  function catDoAlvo(c) { if (!c) return null; if (c.planos) return "cobertura"; if (!c.tipo && c.telhado != null && !c.contorno && !c.tipoBorda && !c.arestasCalha) return "platibanda"; if (c.tipo === "forro" || c.tipo === "telhado" || c.tipo === "borda" || c.tipo === "fundacao") return c.tipo; return CAT_CAIXA[c.tipo] || null; }
+  function catDoAlvo(c) { if (!c) return null; if (c.planos) return "cobertura"; if (!c.tipo && c.telhado != null && !c.contorno && !c.tipoBorda && !c.arestasCalha) return "platibanda"; if (c.tipo === "forro" || c.tipo === "rodape" || c.tipo === "telhado" || c.tipo === "borda" || c.tipo === "fundacao") return c.tipo; return CAT_CAIXA[c.tipo] || null; }
   var CAMPOS_MARCAR = ["marca", "comentarios", "imagem", "faseCriada", "faseDemolida", "materialProj"];   /* MATERIAIS: materialProj (o id do material do projeto) */
   var LIM_TXT = { marca: 24, comentarios: 300, imagem: 300, faseCriada: 40, faseDemolida: 40, materialProj: 60 };
 

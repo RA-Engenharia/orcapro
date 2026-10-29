@@ -145,6 +145,10 @@
     var vaos = opts.vaos || (E && E.vaosDasParedes && typeof opts.avaliarFam === "function" ? E.vaosDasParedes(estado, opts.avaliarFam) : {});
     var caixas = {}; arr(estado && estado.caixas).forEach(function (c) { if (c && c.id != null) caixas[String(c.id)] = c; });
     var porId = {}, porFace = {}, avisos = [];
+    /* RODAPÉ 3D (js/bimrodape.js, 29/10/2026): quando o ambiente tem peça de rodapé, a PEÇA é a fonte do `rodape` (m) — o perímetro
+       calculado ali embaixo fica só como `rodapeCalculado` (nunca contar os dois). Sem peça, tudo como sempre. */
+    var BRo = estado && estado.rodapeSpecs ? dep("BimRodape", "./bimrodape.js") : null, rodAmb = {};
+    if (BRo) { try { if (!estado.rodapes) BRo.derivar(estado, vaos); rodAmb = BRo.porAmbiente(estado); } catch (eRo) { rodAmb = {}; } }
     arr(estado && estado.ambientes).forEach(function (a) {
       if (!a || a.id == null) return;
       var k = a.calc || {}, Q = { id: String(a.id), nome: txt(a.nome) || "Ambiente", estado: k.estado || "naoDelimitado", areaPiso: null, rodape: null, areaParede: null, areaTeto: null,
@@ -207,7 +211,8 @@
         pf.area += Math.max(0, L * H - vaoA); pf.comprimento += L; if (pf.ambientes.indexOf(Q.id) < 0) pf.ambientes.push(Q.id);
         pf.trechos.push({ x0: lado.x0, z0: lado.z0, x1: lado.x1, z1: lado.z1 });
       });
-      Q.perimetroParedes = r4(perim); Q.rodape = r4(rod); Q.areaParedeBruta = r4(parBruta); Q.areaParede = r4(parLiq); Q.areaVaos = r4(aVaos);
+      Q.perimetroParedes = r4(perim); Q.rodape = r4(rod);
+      if (rodAmb[Q.id]) { Q.rodapeCalculado = Q.rodape; Q.rodape = r4(rodAmb[Q.id].comprimento); Q.rodapeFonte = "peca"; Q.rodapePecas = rodAmb[Q.id].trechos; } Q.areaParedeBruta = r4(parBruta); Q.areaParede = r4(parLiq); Q.areaVaos = r4(aVaos);
       /* PAGINAÇÃO NO MODELO: as peças e a perda da paginação gravada (refeita no
          contorno de agora; desatualizada vai como aviso) */
       var BPg = a.params ? dep("BimPaginacao", "./bimpaginacao.js") : null;

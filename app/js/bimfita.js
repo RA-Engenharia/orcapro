@@ -228,7 +228,7 @@
     "home": 1, "orbita": 1, "voo": 1, "gerar-pranchas": 1, "estilo": 1 };
 
   var ABA_ARQUITETURA = [
-    { nome: "Construir", ids: ["parede", "piso", "furo-laje", "componente", "modelar-ia"] },
+    { nome: "Construir", ids: ["parede", "piso", "rodape", "furo-laje", "componente", "modelar-ia"] },
     { nome: "Tipo", ids: ["tipos-parede", "editar-tipo", "combinar"] },
     { nome: "Referência", ids: ["niveis", "nivel-atual", "eixo", "plano-trabalho"] },
     { nome: "Circulação", ids: ["escada", "escada-u", "rampa", "guarda-corpo"] },
@@ -255,7 +255,7 @@
   ];
   var ABA_ACABAMENTOS = [
     { nome: "Camadas e padrões", ids: ["parede-cebola", "presets-acabamento", "aplicar-ambiente"] },
-    { nome: "Piso e revestimento", ids: ["paginar-piso", "paginar-parede", "pranchas-paginacao"] },
+    { nome: "Piso e revestimento", ids: ["paginar-piso", "paginar-parede", "pranchas-paginacao", "rodape-acab"] },
     { nome: "Pintar", ids: ["pintar-face", "dividir-face", "remover-pintura"] }
   ];
   var ABA_INSTALACOES = [
