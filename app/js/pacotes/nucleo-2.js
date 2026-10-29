@@ -7099,6 +7099,7 @@ return true;
 };
 });
 reg["exportar-ifc"] = function () { self._ifcSaidaExportar(); return true; };
+reg["enviar-sketchup"] = function () { self._enviarSketchUp(); return true; };
 reg["corte-2d"] = function () {
 var st = self._bimVxEst(), pid = Bim2D && Bim2D.ehVista2d(st.ativa) && /^d2p-/.test(st.ativa) ? st.ativa : self._d2PlantaPadrao();
 if (!pid) { UI.toast("Abra um modelo primeiro: o corte é traçado na planta dele.", "aviso"); return true; }
@@ -9837,6 +9838,24 @@ var pe = r.resumo.porEntidade, NOMES = { IFCWALL: "parede", IFCSLAB: "laje", IFC
 var partes = Object.keys(NOMES).filter(function (k) { return pe[k]; }).map(function (k) { return pe[k] + " " + NOMES[k] + (pe[k] > 1 ? "s" : ""); });
 UI.toast("IFC4 gerado: " + partes.join(", ") + " em " + r.resumo.niveis.length + " nível(is)." + (r.resumo.avisos.length ? " Atenção: " + r.resumo.avisos.join("; ") + "." : ""), r.resumo.avisos.length ? "aviso" : "ok", 9000);
 }, function (e) { UI.toast("Não exportei o IFC: " + (e && e.message ? e.message : e), "erro"); });
+},
+_enviarSketchUp: function () {
+var self = this, b = window.BIM;
+if (!b || !b.enviarSketchUp) { UI.toast("Abra o BIM primeiro.", "aviso"); return; }
+var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+var nome = (obra && obra.nome) || "Projeto OrçaPRO";
+var arq = (window.OpFormato ? OpFormato.nomeSeguro(nome) : nome.replace(/[^\w.-]+/g, "-")) + ".orcapro-su.json";
+var r;
+try {
+r = b.enviarSketchUp({ niveis: this._nivLer().map(function (n) { return { id: n.id, nome: n.nome, elevacao: Number(n.elevacao) }; }), projeto: nome,
+semente: "obra:" + (this._bimSel || "geral"), versaoApp: (typeof CONFIG !== "undefined" && CONFIG.versao) || "" });
+} catch (e) { UI.toast("Não preparei o envio ao SketchUp: " + (e && e.message ? e.message : e), "erro"); return; }
+if (!r || !r.ok) { UI.toast("Não enviei ao SketchUp: " + ((r && r.erro) || "erro desconhecido") + ".", "aviso", 7000); return; }
+var texto = JSON.stringify(r.doc);
+self._enviarSuUltimo = { nome: arq, texto: texto, resumo: r.resumo, avisos: r.avisos };
+if (!self._opBaixar(arq, texto, "application/json")) return;
+var rs = r.resumo, mb = Math.round(texto.length / 104857.6) / 10;
+UI.toast("Arquivo do SketchUp gravado (" + String(mb).replace(".", ",") + " MB): " + rs.pecas + " peça(s), " + rs.materiais + " material(is), " + rs.definicoes + " componente(s) de família. No SketchUp: Extensões › OrçaPRO › Importar do OrçaPRO…" + (r.avisos.length ? " Atenção: " + r.avisos.join("; ") + "." : ""), r.avisos.length ? "aviso" : "ok", 11000);
 },
 _opbimSalvar: function () {
 if (!window.OpFormato || !window.BimBcf) { UI.toast("O formato .opbim não carregou.", "erro"); return; }
@@ -70455,5 +70474,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=1e43dcd2e7"},{"src":"js/bim-pacote.js?v=1ef29ac848","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f4a8feecaf"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=faa98dcc1d"},{"src":"js/bim-pacote.js?v=db4b2ed200","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f4a8feecaf"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -11314,6 +11314,53 @@ r.ok = true; r.n = n;
 return r;
 });
 };
+S._enviarSU = function (o) {
+o = o || {};
+if (!window.BimEnviarSU) return { ok: false, erro: 'o exportador do SketchUp (js/bimenviarsu.js) não carregou' };
+var mo = edit.modelo, st = edit.estado;
+if (!mo || !mo.grupo || !st) return { ok: false, erro: 'nada modelado no OrçaPRO para enviar (o IFC importado já é um IFC)' };
+modelRoot.updateMatrixWorld(true);
+var inv = new THREE.Matrix4().copy(modelRoot.matrixWorld).invert(), rel = new THREE.Matrix4(), malhas = [], pulados = 0;
+mo.grupo.updateMatrixWorld(true);
+mo.grupo.traverse(function (m) {
+if (!m.isMesh || !m.geometry || !m.geometry.attributes) return;
+if (m.isInstancedMesh) { pulados++; return; }
+var u = m.userData || {};
+if (u.expressID == null || !cadeiaVisivel(m)) return;
+var pa = m.geometry.attributes.position;
+if (!pa || pa.isInterleavedBufferAttribute || pa.count < 3) return;
+var mat = Array.isArray(m.material) ? m.material[0] : m.material;
+if (!mat || mat.visible === false || mat.colorWrite === false) return;
+var cor = (u.matOrig && u.matOrig.color && m.material === selMat) ? u.matOrig : mat;
+var op = mat.transparent ? (mat.opacity == null ? 1 : mat.opacity) : 1;
+if (op < 0.05) return;
+var cBase = (cor.map && cor.userData && cor.userData.corLin) ? cor.userData.corLin : cor.color;
+var cS = cBase ? cBase.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace) : { r: 0.8, g: 0.8, b: 0.8 };
+rel.multiplyMatrices(inv, m.matrixWorld);
+malhas.push({ id: String(u.expressID), matriz: rel.elements.slice(), pos: Array.prototype.slice.call(pa.array, 0, pa.count * 3),
+idx: m.geometry.index ? Array.prototype.slice.call(m.geometry.index.array) : null,
+cor: [cS.r, cS.g, cS.b], opacidade: op, matNome: String((cor.userData && (cor.userData.nomeMaterial || cor.userData.matNome)) || cor.name || '') });
+});
+var res = null, fb = window.BimParam;
+var semente = o.semente || 'obra:geral';
+if (fb && fb.resolver) {
+try {
+res = fb.resolver(st, { avaliarFam: famAval, categoriaFam: function (id) { var f = famReg.lista[id]; return f ? f.categoria : null; },
+nomeFam: function (id) { var f = famReg.lista[id]; return f ? f.nome : id; }, familia: function (id) { return famReg.lista[id] || null; },
+niveis: o.niveis, projeto: o.parametrosProjeto || S._paramProjeto || null, mep: true,
+ifcGuid: function (p) { return (window.IfcSaida && IfcSaida.guid) ? IfcSaida.guid(semente + '|el:' + String(p.id)) : null; } });
+} catch (eR) { res = null; }
+}
+var elementos = (mo.elementos || []).map(function (el) {
+var fa = el.familia ? famReg.lista[el.familia.famId] : null;
+return { id: el.id, tipo: el.tipo, nome: el.nome, codOrc: el.codOrc, disciplina: el.disciplina, familia: el.familia || null, volume: el.volume || null, qto: el.qto || null,
+famCategoria: fa ? fa.categoria : '', famNome: fa ? fa.nome : '',
+tipoNome: (fa && el.familia && fa.tipos) ? ((fa.tipos.filter(function (t) { return t.id === el.familia.tipoId; })[0] || {}).nome || '') : '' };
+});
+var r = BimEnviarSU.montar({ projeto: o.projeto, versaoApp: o.versaoApp, niveis: o.niveis || [], malhas: malhas, elementos: elementos, res: res, estado: st, agora: o.agora });
+if (r.ok && pulados) r.avisos.push(pulados + ' malha(s) instanciada(s) (andaime) não foram enviadas.');
+return r;
+};
 function setEditSub(sub) {
 edit.sub = (edit.sub === sub) ? null : sub;
 editGhostLimpar();
@@ -13934,7 +13981,19 @@ function malhaDoJsonOrcaPRO(j) {
 if (!j || j.formato !== 'OrcaPRO-Malha') throw new Error('o .json não é uma malha do OrçaPRO (formato "' + (j && j.formato) + '")');
 if (!(j.versao >= 1) || j.versao > 1) throw new Error('versão ' + j.versao + ' da malha não suportada; atualize o OrçaPRO');
 var gr = new THREE.Group();
+var defsSU = {}; (j.definicoes || []).forEach(function (d) { defsSU[d.nome] = d; });
+function expandirInstancia(ob) {
+var d = ob.instancia && defsSU[ob.instancia.definicao]; if (!d || !ob.instancia.matriz) return null;
+var pos = [], idx = [], W = new THREE.Matrix4().fromArray(ob.instancia.matriz), v = new THREE.Vector3();
+(d.partes || []).forEach(function (pt) {
+var M = new THREE.Matrix4().multiplyMatrices(W, new THREE.Matrix4().fromArray(pt.matriz || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])), b0 = pos.length / 3, i;
+for (i = 0; i < pt.posicoes.length; i += 3) { v.set(pt.posicoes[i], pt.posicoes[i + 1], pt.posicoes[i + 2]).applyMatrix4(M); pos.push(v.x, v.y, v.z); }
+for (i = 0; i < pt.indices.length; i++) idx.push(b0 + pt.indices[i]);
+});
+return { posicoes: pos, indices: idx };
+}
 (j.objetos || []).forEach(function (ob) {
+if (!ob.posicoes && ob.instancia) { var ex = expandirInstancia(ob); if (ex) ob = Object.assign({}, ob, ex); }
 var g = new THREE.BufferGeometry();
 g.setAttribute('position', new THREE.Float32BufferAttribute(ob.posicoes || [], 3));
 if (ob.indices && ob.indices.length) g.setIndex(ob.indices);
@@ -14774,6 +14833,7 @@ S._editOpExterna(o); return true;
 _volEstado: function () { var e = S && S.edit; return e && e.vol ? { on: !!e.on, sub: e.sub, pts: e.vol.pts.length, face: !!e.vol.face, alvo: e.vol.alvo, eixo: !!e.vol.eixo, dica: S._hintUltimo || "", mesclados: S.scene.children.filter(function (g) { return g.userData && g.userData.agregadoDe === 'edit'; }).length } : null; },
 csgCarregar: function () { return (S && S._csgCarregar) ? S._csgCarregar().then(function () { return true; }, function () { return false; }) : Promise.resolve(false); },
 ifcSaida: function (o) { return (S && S._ifcSaida) ? S._ifcSaida(o) : Promise.resolve({ ok: false, erro: 'visualizador não montado' }); },
+enviarSketchUp: function (o) { return (S && S._enviarSU) ? S._enviarSU(o) : { ok: false, erro: 'visualizador não montado' }; },
 parametrosProjeto: function (p) {
 if (!S) return null;
 if (arguments.length) S._paramProjeto = p && typeof p === 'object' ? JSON.parse(JSON.stringify(p)) : null;

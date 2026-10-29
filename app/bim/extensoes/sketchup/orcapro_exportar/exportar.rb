@@ -1,6 +1,6 @@
 # encoding: UTF-8
 # =====================================================================
-# OrçaPRO — Exportar para OrçaPRO (SketchUp 2017+)            v1.0.1
+# OrçaPRO — Exportar para OrçaPRO (SketchUp 2017+)            v1.1.0
 #
 # O .skp é formato fechado: o navegador não lê. Quem lê o .skp por inteiro é
 # o próprio SketchUp — por isso a conversão acontece AQUI, e sai um .json no
@@ -17,10 +17,11 @@
 # Peça oculta ou em etiqueta desligada NÃO vai (o resumo diz quantas ficaram).
 # =====================================================================
 require 'json'
+require File.join(File.dirname(__FILE__), 'importar')  # v1.1: "Importar do OrçaPRO" (o arquivo que o OrçaPRO grava em Enviar para › SketchUp)
 
 module OrcaPRO
   module Exportar
-    VERSAO = '1.0.1'  # igual a ext.version do registrador (orcapro_exportar.rb); tools/test-sketchup-rbz.js confere
+    VERSAO = '1.1.0'  # igual a ext.version do registrador (orcapro_exportar.rb); tools/test-sketchup-rbz.js confere
     POL_M = 0.0254  # o SketchUp guarda tudo em polegadas
 
     def self.cor_de(mat)
@@ -180,6 +181,7 @@ module OrcaPRO
     unless file_loaded?(__FILE__)
       sub = UI.menu('Extensions').add_submenu('OrçaPRO')
       sub.add_item('Exportar para OrçaPRO…') { comando }
+      sub.add_item('Importar do OrçaPRO…') { OrcaPRO::Importar.comando }
       file_loaded(__FILE__)
     end
   end

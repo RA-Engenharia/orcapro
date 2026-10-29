@@ -11,7 +11,7 @@ module OrcaPRO
       ext = SketchupExtension.new('OrçaPRO — Exportar para OrçaPRO', 'orcapro_exportar/exportar')
       ext.description = 'Exporta o modelo (grupos, componentes, etiquetas, materiais e atributos) ' \
                         'para o BIM do OrçaPRO, sem perder a identidade de cada peça.'
-      ext.version = '1.0.1'
+      ext.version = '1.1.0'
       ext.creator = 'RA Engenharia — OrçaPRO'
       ext.copyright = '2026 RA Engenharia'
       Sketchup.register_extension(ext, true)

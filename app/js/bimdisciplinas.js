@@ -95,7 +95,7 @@
   def(COMUM, [
     /* Arquivo */
     "novo-projeto", "abrir-opbim", "abrir-ifc", "arquivo-obra", "exemplo", "importar-outros", "gerar-volumetria", "p3d",
-    "salvar-opbim", "salvar-modelo", "exportar-ifc", "exportar-revit", "modelos", "remover-modelos",
+    "salvar-opbim", "salvar-modelo", "exportar-ifc", "exportar-revit", "enviar-sketchup", "modelos", "remover-modelos",
     /* referência e tipo (todo elemento de qualquer disciplina tem nível, plano e tipo) */
     "niveis", "nivel-atual", "plano-trabalho", "editar-tipo", "combinar", "componente", "eixo",
     /* Modificar (js/bimprecisao.js FITA.modificar) */

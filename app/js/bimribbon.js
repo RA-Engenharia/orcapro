@@ -486,6 +486,7 @@
     "editor-familia": { id: "editor-familia", rotulo: "Nova\nfamília", icone: "editar", grande: true, dica: "Criar uma família paramétrica: parâmetros de tipo e instância, fórmulas, tipos, geometria, vão e quantitativo." },
     "orc-modelo": { id: "orc-modelo", rotulo: "Orçamento\ndo modelo", icone: "calculadora", grande: true, dica: "O modelo já orçado: cada peça com composição SINAPI soma custo MO/MAT/EQ, horas de cada função, prazo com a equipe e peso — e o botão cria o orçamento da obra com os itens." },
     "componente": { id: "componente", rotulo: "Componente", icone: "familia", grande: true, dica: "Colocar uma família (mobiliário, louça, equipamento, pilar…). Escolha o tipo na biblioteca e clique no modelo." },
+    "enviar-sketchup": { id: "enviar-sketchup", rotulo: "SketchUp", icone: "exportar", grande: true, requer: "modelo", dica: "Enviar para o SketchUp: grava o arquivo .orcapro-su.json com o que foi modelado aqui e TUDO de cada peça (parâmetros das Propriedades, classe IFC, fase, marca, comentários, código de orçamento, nível, ambiente), materiais com cor e as famílias como componentes. No SketchUp, Extensões › OrçaPRO › Importar do OrçaPRO (extensão baixada em Importar de outros programas › SketchUp)." },
     "salvar-opbim": { id: "salvar-opbim", rotulo: "Salvar\n.opbim", icone: "salvar", grande: true, dica: "Salvar o PROJETO OrçaPRO (.opbim): o que foi modelado aqui, as famílias usadas, níveis, plantas e cortes e os IFC vinculados — um arquivo para mandar a outro usuário." },
     "abrir-opbim": { id: "abrir-opbim", rotulo: "Abrir\n.opbim", icone: "abrir", grande: true, dica: "Abrir um Projeto OrçaPRO (.opbim) recebido: entra o modelo, as famílias, os níveis e as vistas." },
     "importar-outros": { id: "importar-outros", rotulo: "Importar de\noutros programas", icone: "importar", grande: true, dica: "Revit, SketchUp, AutoCAD (DWG/DXF), glTF/GLB, OBJ, STL e IFC: o que dá para trazer de cada um e como." },
@@ -548,7 +549,8 @@
     { id: "arquivo", rotulo: "Arquivo", tipo: "backstage", paineis: [
       { nome: "Projeto", ids: ["novo-projeto", "abrir-opbim", "abrir-ifc", "arquivo-obra", "exemplo"] },
       { nome: "Gerar e importar", ids: ["importar-outros", "gerar-volumetria"] },
-      { nome: "Salvar e enviar", ids: ["salvar-opbim", "salvar-modelo", "exportar-ifc", "exportar-revit"] }] },
+      { nome: "Salvar e enviar", ids: ["salvar-opbim", "salvar-modelo", "exportar-ifc", "exportar-revit"] },
+      { nome: "Enviar para", ids: ["enviar-sketchup"] }] },
     { id: "arquitetura", rotulo: "Arquitetura", paineis: [
       { nome: "Construir", ids: ["parede", "piso", "porta", "janela", "cobertura", "componente", "editor"] },
       { nome: "Tipo", ids: ["tipos-parede", "editar-tipo", "combinar"] },

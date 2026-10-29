@@ -370,7 +370,7 @@
       /* os que abrem uma janela de arquivo ou um diálogo ficam de fora: a pessoa
          pode desistir, e a tela inicial tem de continuar ali */
       var DIALOGO = { "novo-projeto": 1, "abrir-opbim": 1, "salvar-opbim": 1, "salvar-modelo": 1, "abrir-ifc": 1, "arquivo-obra": 1,
-        "importar-outros": 1, "templates": 1, "gerar-volumetria": 1, "exportar-ifc": 1, "exportar-revit": 1 };
+        "importar-outros": 1, "templates": 1, "gerar-volumetria": 1, "exportar-ifc": 1, "exportar-revit": 1, "enviar-sketchup": 1 };
       Object.keys(reg).forEach(function (k) {
         var f = reg[k];
         if (typeof f !== "function" || DIALOGO[k]) return;
