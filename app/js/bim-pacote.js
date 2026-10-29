@@ -14733,6 +14733,19 @@ planta2d: function () { return (S && S._planta2d) ? S._planta2d : null; },
 b2Fechar: function () { return !!(S && S._b2FecharExt && S._b2FecharExt()); },
 realceTelhadoPeca: function (pos) { return (S && S._telPecaRealce) ? S._telPecaRealce(pos) : false; },
 raioEm: function (clientX, clientY) { return (S && S._raioDe) ? S._raioDe(clientX, clientY) : null; },
+_raioNaCena: function (origem, direcao, maxDist) {
+if (!S || !S.scene || !origem || !direcao) return [];
+var rc = new THREE.Raycaster(new THREE.Vector3(origem[0], origem[1], origem[2]), new THREE.Vector3(direcao[0], direcao[1], direcao[2]).normalize(), 0, maxDist || 100), hits = [];
+function vivo(m) { for (var x = m; x; x = x.parent) if (x.visible === false) return false; return true; }
+S.scene.updateMatrixWorld(true);
+S.scene.traverse(function (m) { if (m.isMesh && m.geometry && !m.isInstancedMesh && vivo(m)) THREE.Mesh.prototype.raycast.call(m, rc, hits); });
+hits.sort(function (a, b) { return a.distance - b.distance; });
+return hits.map(function (h) {
+var u = h.object.userData || {}, mt = Array.isArray(h.object.material) ? h.object.material[0] : h.object.material;
+return { d: Math.round(h.distance * 1e4) / 1e4, p: [h.point.x, h.point.y, h.point.z], id: u.p4Pintura != null ? String(u.p4Pintura) : (u.expressID != null ? String(u.expressID) : null), pelicula: u.p4Pintura != null, face: u.face || null,
+regiao: u.regiao != null ? u.regiao : null, requadro: !!u.requadro, neutro: !!u.neutro, mat: mt && mt.name ? mt.name : '', cor: mt && mt.color ? mt.color.getHexString() : '' };
+});
+},
 dica: function (msg) { if (S && S._hint) S._hint(msg); },
 b2Op: function (o) {
 if (S && S._editOpExterna && o && ['tabela', 'tabelaApagar', 'identificar', 'desidentificar'].indexOf(o.op) >= 0) { if (!BimEdit.sanear([o]).length) return false; S._editOpExterna(o); return true; }

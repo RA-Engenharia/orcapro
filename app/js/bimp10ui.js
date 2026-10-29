@@ -292,8 +292,12 @@
         var AP = global.BimApresentacao, st0 = this.estado();
         if (v.modo == null && AP && st0) v.modo = AP.modoDaVista(st0, this.fase(st0), v.filtro, v.realce);
       }
+      var escAntes = JSON.stringify(v.escolha || {});
       if (o && o.escolha) Object.keys(o.escolha).forEach(function (k) { v.escolha[k] = o.escolha[k]; });
       gravarVista(v);
+      /* OPÇÃO DE PROJETO NA VISTA (29/10/2026): trocar a opção refaz o VÃO da parede (só a janela/porta da opção visível corta) —
+         o vão mora na geometria da parede, então a cena é refeita; sem troca de escolha nada é refeito */
+      if (JSON.stringify(v.escolha || {}) !== escAntes) { try { var Bv = B(); if (Bv && Bv.editarReconstruir) Bv.editarReconstruir(); } catch (eRb) {} }
       if (this._3d) this._3d.refazer();
       this._replantar();
       try { if (global.BimShell && global.BimShell.repintarVista) global.BimShell.repintarVista(); } catch (e) {}
@@ -604,6 +608,9 @@
     }
   };
   function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+
+  /* quem pergunta "qual opção está visível?" fora desta tela (os vãos das paredes: BimEdit.vaosDasParedes) lê a escolha da vista */
+  if (global.BimOpcoes) global.BimOpcoes.escolhaVista = function () { return BimP10UI.vista().escolha; };
 
   global.BimP10UI = BimP10UI;
   if (typeof module !== "undefined" && module.exports) module.exports = BimP10UI;

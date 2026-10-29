@@ -3263,7 +3263,7 @@ function vivo(o) { for (var x = o; x; x = x.parent) if (x.visible === false) ret
 function idDe(u) {
 if (u.expressID != null) return String(u.expressID);
 if (u.acabPiso) return "piso:" + u.acabPiso;
-if (u.p4Pintura) return "pint:" + u.p4Pintura + ":" + (u.face || "") + ":" + (u.regiao || "");
+if (u.p4Pintura) return "pint:" + u.p4Pintura + ":" + (u.face || "") + ":" + (u.regiao || "") + (u.requadro ? ":requadro" : "");
 return null;
 }
 var SOLTO = /(^|-)mob-(sofa|mesa|cadeira|poltrona|cama|criado|tapete|aparador|escrivaninha|banqueta|pufe|puff)|(^|-)lazer-(mesa|espreguic|guarda-sol|cadeira)|(^|-)pais-/;
@@ -13076,6 +13076,12 @@ if (global.BimCurva) return global.BimCurva;
 if (typeof require === "function") { try { return require("./bimcurva.js"); } catch (e) {} }
 return null;
 }
+function depOpcoes(estado) {
+if (!estado || !estado.opcoes || !Array.isArray(estado.opcoes.conjuntos) || !estado.opcoes.conjuntos.length) return null;
+if (global.BimOpcoes) return global.BimOpcoes;
+if (typeof require === "function") { try { return require("./bimopcoes.js"); } catch (e) {} }
+return null;
+}
 function depForro() {
 if (global.BimForro) return global.BimForro;
 if (typeof require === "function") { try { return require("./bimforro.js"); } catch (e) {} }
@@ -13394,8 +13400,10 @@ return saida;
 vaosDasParedes: function (estado, avaliarFam) {
 var porParede = {}, out = {};
 if (typeof avaliarFam !== "function") return out;
+var BOp = depOpcoes(estado), escOp = BOp && BOp.escolhaAtual ? BOp.escolhaAtual(estado) : null;
 ((estado && estado.familias) || []).forEach(function (f) {
 if (!f.host) return;
+if (BOp && f.opcaoProjeto && !BOp.visivel(f, estado, escOp)) return;
 var av = avaliarFam(f.famId, f.tipoId, f.inst);
 if (!av || !av.abertura) return;
 (porParede[f.host.id] = porParede[f.host.id] || []).push({ id: f.id, t: f.host.t + (Number(av.abertura.deslocX) || 0), largura: av.abertura.largura, altura: av.abertura.altura, peitoril: av.abertura.peitoril });
@@ -15808,6 +15816,24 @@ pintGrp.add(m);
 if (api.acabRegistrar) api.acabRegistrar(m);
 });
 });
+if (BP.requadros) cxs.forEach(function (c) {
+var ac = vz[c.id] ? vz[c.id].aceitos : null; if (!ac || !ac.length) return;
+var porMat = {};
+BP.requadros(c, ac, st).forEach(function (q) {
+var k = q.face + "|" + q.regiao + (q.neutro ? "|n" : ""); (porMat[k] = porMat[k] || { q: q, pos: [], idx: [], uv: [] });
+var G = porMat[k], b0 = G.pos.length / 3, P = q.quad;
+P.forEach(function (p) { G.pos.push(p[0], p[1], p[2]); });
+var a = P[0], b = P[1], d = P[3], lu = Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2) + Math.pow(b[2] - a[2], 2)), lv = Math.sqrt(Math.pow(d[0] - a[0], 2) + Math.pow(d[1] - a[1], 2) + Math.pow(d[2] - a[2], 2));
+G.uv.push(0, 0, lu, 0, lu, lv, 0, lv); G.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+});
+Object.keys(porMat).forEach(function (k) {
+var G = porMat[k], mat = materialAcab(G.q.material, G.q.cor, true);
+var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(G.pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(G.uv, 2)); g.setIndex(G.idx); g.computeVertexNormals(); g.computeBoundingSphere();
+var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: c.id, face: G.q.face, regiao: G.q.regiao, requadro: true, matNome: G.q.material, neutro: !!G.q.neutro }; m.raycast = function () {};
+pintGrp.add(m);
+if (api.acabRegistrar) api.acabRegistrar(m);
+});
+});
 pls.forEach(function (p) {
 BP.regioes(p, null, st).forEach(function (r) {
 var mat = materialAcab(r.material, r.cor, true), pos = [], idx = [], uv = [];
@@ -16562,7 +16588,53 @@ out.push([[A0.x + nx * k, p.base, A0.z + nz * k], [B0.x + nx * k, p.base, B0.z +
 });
 return out;
 }
+function requadros(c, aceitos, estado) {
+var Ar = A(), out = [];
+if (!Ar || !c || c.tipo !== "parede" || c.arco || !c.pinturas || !arr(aceitos).length) return out;
+var f = Ar.frameDe(c), t = f.t, inv = !!c.inverterFaces, sD = inv ? -1 : 1, e = 0.003;
+var reg = {}; regioes(c, aceitos, estado).forEach(function (r) { reg[r.face + "|" + r.regiao] = r; });
+function regiaoEm(face, y) { var cortes = arr(c.divFaces && c.divFaces[face]), h = y - f.y0, k = 0; while (k < cortes.length && h > cortes[k]) k++; return k; }
+function cortesEm(face, ya, yb) {
+var pts = [ya]; arr(c.divFaces && c.divFaces[face]).forEach(function (h) { var y = f.y0 + h; if (y > ya + 1e-6 && y < yb - 1e-6) pts.push(y); }); pts.push(yb);
+return pts;
+}
+function Q(u1, w1, y1, u2, w2, y2) {
+function P(u, w, y) { var m = Ar.aMundo(f, u, w); return [r6(m[0]), r6(y), r6(m[1])]; }
+if (u1 === u2) return [P(u1, w1, y1), P(u1, w2, y1), P(u1, w2, y2), P(u1, w1, y2)];
+return [P(u1, w1, y1), P(u2, w1, y1), P(u2, w2, y1), P(u1, w2, y1)];
+}
+arr(aceitos).forEach(function (v) {
+var fi = arr(estado && estado.familias).filter(function (x) { return String(x.id) === String(v.id); })[0], wc = 0;
+if (fi && fin(Number(fi.x)) && fin(Number(fi.z))) wc = Math.max(-t / 2, Math.min(t / 2, Ar.aLocal(f, Number(fi.x), Number(fi.z))[1]));
+var yA = f.y0 + num(v.y0, 0), yB = f.y0 + num(v.y1, 0), x0 = num(v.x0, 0), x1 = num(v.x1, 0);
+if (!(yB - yA > 1e-3) || !(x1 - x0 > 1e-3)) return;
+[["dentro", wc, sD * t / 2], ["fora", wc, -sD * t / 2]].forEach(function (L) {
+var face = L[0], wa = Math.min(L[1], L[2]), wb = Math.max(L[1], L[2]);
+if (wb - wa < 0.002 || !faceOk(c, face)) return;
+function poe(parte, yRef, quad) {
+var k = regiaoEm(face, yRef), r = reg[face + "|" + k], neutro = false;
+if (!r) {
+var outra = face === "fora" ? "dentro" : "fora";
+if (!Object.keys(reg).some(function (q) { return q.indexOf(outra + "|") === 0; }) && !Object.keys(reg).some(function (q) { return q.indexOf(face + "|") === 0; })) return;
+if (Object.keys(reg).some(function (q) { return q.indexOf(face + "|") === 0; })) return;
+r = { material: "Reboco aparente", cor: corDe("Reboco aparente") }; neutro = true; k = 0;
+}
+out.push({ face: face, regiao: k, material: r.material, cor: r.cor, neutro: neutro, parte: parte, vao: String(v.id), quad: quad });
+}
+var ys = cortesEm(face, yA, yB);
+for (var i = 0; i + 1 < ys.length; i++) {
+var ym = (ys[i] + ys[i + 1]) / 2;
+poe("ombreira-esq", ym, Q(x0 + e, wa, ys[i], x0 + e, wb, ys[i + 1]));
+poe("ombreira-dir", ym, Q(x1 - e, wa, ys[i], x1 - e, wb, ys[i + 1]));
+}
+poe("verga", yB, Q(x0, wa, yB - e, x1, wb, yB - e));
+if (num(v.y0, 0) > 1e-6) poe("peitoril", yA, Q(x0, wa, yA + e, x1, wb, yA + e));
+});
+});
+return out;
+}
 var BimPintar = {
+requadros: requadros,
 quadsPlatibanda: quadsPlatibanda, areaPilar: areaPilar, normalPilar: normalPilar, tipoDe: tipoDe,
 MATERIAIS: MATERIAIS, FACES: FACES, ROTULO_FACE: ROTULO_FACE, OPS: OPS, MAX_CORTES: MAX_CORTES,
 corDe: corDe, validaOp: validaOp, aplicarOp: aplicarOp, registrar: registrar,
@@ -73196,6 +73268,18 @@ var cs = arr(estado && estado.opcoes && estado.opcoes.conjuntos);
 for (var i = 0; i < cs.length; i++) if (arr(cs[i].opcoes).some(function (o) { return o.id === opcaoId; })) return cs[i];
 return null;
 },
+escolhaAtual: function (estado) {
+var bruta = estado && estado.opcoesEscolha;
+if (!bruta) { try { bruta = typeof BimOpcoes.escolhaVista === "function" ? BimOpcoes.escolhaVista() : null; } catch (e) { bruta = null; } }
+var out = {}, pad = BimOpcoes.escolhaPadrao(estado);
+Object.keys(pad).forEach(function (k) { out[k] = pad[k]; });
+arr(estado && estado.opcoes && estado.opcoes.conjuntos).forEach(function (c) {
+var e = bruta && bruta[c.id];
+if (e && arr(c.opcoes).some(function (o) { return o.id === e; })) out[c.id] = e;
+});
+return out;
+},
+escolhaVista: null,
 visivel: function (el, estado, escolha) {
 if (!el || !el.opcaoProjeto) return true;
 var c = BimOpcoes.conjuntoDe(estado, el.opcaoProjeto); if (!c) return true;
@@ -157684,7 +157768,13 @@ function add(t) { if (vistos[t.id]) return; vistos[t.id] = 1; out.push(t); }
 var R = BP && BP.REGISTRO[cat], fam = R && R.familia ? R.familia : null;
 var cg = ctx.catalogos || {};
 if (cat === "porta" || cat === "janela" || cat === "generico") {
-arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", tipoFam: t.id }); });
+arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id }); });
+if (cat !== "generico" && typeof cg.familiasDaCategoria === "function") {
+arr(cg.familiasDaCategoria(cat)).forEach(function (f) {
+if (String(f.id) === String(famId)) return;
+arr(f.tipos).forEach(function (t) { add({ id: String(f.id) + "|" + t.id, nome: t.nome, familia: f.nome || String(f.id), origem: "familia", famId: String(f.id), tipoFam: t.id }); });
+});
+}
 return out;
 }
 if (cg[cat] && cg[cat].length) cg[cat].forEach(function (t) { add({ id: String(t.id), nome: t.nome, familia: fam, origem: "catalogo", campos: t.campos }); });
@@ -157699,7 +157789,22 @@ var BP = BPm(), ops = [];
 if (!item) return { ok: false, erro: "Tipo não encontrado." };
 ids = ids.filter(function (id) { var p = ctx.res.porId[id]; return p && p.categoria === cat && p.tipoId !== item.id; });
 if (!ids.length) return { ok: false, erro: "As peças já são deste tipo." };
-if (item.origem === "familia") { ids.forEach(function (id) { ops.push({ op: "instancia", id: id, tipoId: String(item.tipoFam) }); }); return { ok: true, ops: ops }; }
+if (item.origem === "familia") {
+var dpf = ctx.deps || {};
+if (item.famId != null && typeof dpf.categoriaFam === "function" && dpf.categoriaFam(item.famId) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+var fNova = item.famId != null && typeof dpf.familia === "function" ? dpf.familia(item.famId) : null;
+ids.forEach(function (id) {
+var el0 = elDe(ctx.estado, id), o = { op: "instancia", id: id, tipoId: String(item.tipoFam) };
+if (item.famId != null && el0 && String(el0.famId) !== String(item.famId)) {
+o.famId = String(item.famId);
+var manter = {}, tem = {}; arr(fNova && fNova.parametros).forEach(function (p) { if (p && p.escopo === "instancia" && !p.formula) tem[p.nome] = 1; });
+Object.keys(el0.inst || {}).forEach(function (k) { if (tem[k]) manter[k] = el0.inst[k]; });
+if (Object.keys(manter).length) o.inst = manter;
+}
+ops.push(o);
+});
+return { ok: true, ops: ops };
+}
 if (cat === "forro" && item.origem !== "projeto") {
 var BFt = global.BimForro;
 ids.forEach(function (id) { var o = BFt ? BFt.opTrocarTipo(ctx.estado, id, item.campos && item.campos.forroTipoId ? item.campos.forroTipoId : item.id) : null; if (o) ops.push(o); });
@@ -157857,6 +157962,10 @@ cat.escada = A.TIPOS_ESCADA.map(function (t) { return { id: t.id, nome: t.rotulo
 if (global.BimForro) cat.forro = global.BimForro.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { forroTipoId: t.id } }; });
 if (global.BimTelhado) cat.telhado = global.BimTelhado.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { telhadoTipoId: t.id } }; });
 cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome }; }) : []; };
+cat.familiasDaCategoria = function (categoria) {
+var l = []; try { l = FU && FU.biblioteca ? FU.biblioteca({ registro: false }) : []; } catch (eB) { l = []; }
+return arr(l).filter(function (f) { return f && f.id && f.categoria === categoria && !f.oculta && arr(f.tipos).length; });
+};
 return this.contexto(est.estado, deps, { catalogos: cat });
 },
 _idsSelecao: function (id) {
@@ -157903,7 +158012,7 @@ despachar: function (ops, rotulo) {
 var B = global.BIM; if (!B || !ops || !ops.length) return false;
 if (ops.length === 1) {
 var o = ops[0];
-if (o.op === "instancia") return B.instanciaAlterar ? B.instanciaAlterar(o.id, { tipoId: o.tipoId, inst: o.inst }) : false;
+if (o.op === "instancia") return B.instanciaAlterar ? B.instanciaAlterar(o.id, { famId: o.famId, tipoId: o.tipoId, inst: o.inst }) : false;
 if (o.op === "instAlterar" || o.op === "instSistema") return B.instOp ? B.instOp(o) : false;
 return B.b2Op ? B.b2Op(o) : false;
 }
@@ -189905,8 +190014,10 @@ v.modo = o.modo !== undefined ? o.modo : null;
 var AP = global.BimApresentacao, st0 = this.estado();
 if (v.modo == null && AP && st0) v.modo = AP.modoDaVista(st0, this.fase(st0), v.filtro, v.realce);
 }
+var escAntes = JSON.stringify(v.escolha || {});
 if (o && o.escolha) Object.keys(o.escolha).forEach(function (k) { v.escolha[k] = o.escolha[k]; });
 gravarVista(v);
+if (JSON.stringify(v.escolha || {}) !== escAntes) { try { var Bv = B(); if (Bv && Bv.editarReconstruir) Bv.editarReconstruir(); } catch (eRb) {} }
 if (this._3d) this._3d.refazer();
 this._replantar();
 try { if (global.BimShell && global.BimShell.repintarVista) global.BimShell.repintarVista(); } catch (e) {}
@@ -190193,6 +190304,7 @@ return ctl;
 }
 };
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
+if (global.BimOpcoes) global.BimOpcoes.escolhaVista = function () { return BimP10UI.vista().escolha; };
 global.BimP10UI = BimP10UI;
 if (typeof module !== "undefined" && module.exports) module.exports = BimP10UI;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
@@ -192783,7 +192895,7 @@ try {
 F.scene.traverse(function (o) {
 if (!o.isMesh || !o.userData || o.userData.p4Pintura == null || o.visible === false) return;
 var c = arr(st && st.caixas).filter(function (x) { return x.id === o.userData.p4Pintura; })[0], pt = c && c.pinturas && c.pinturas[o.userData.face + "|" + o.userData.regiao];
-var nome = txt(pt && pt.material) || "Pintura acrílica", peca = { materiais: [nome], ifc: "IFCCOVERING", alfa: 1, cor: null };
+var nome = txt(pt && pt.material) || txt(o.userData.matNome) || "Pintura acrílica", peca = { materiais: [nome], ifc: "IFCCOVERING", alfa: 1, cor: null };
 var mp = material(peca, nome), gp = grupoPara(mp.id, peca, nome);
 if (gp) X.malha(o, function () { return gp; });
 });

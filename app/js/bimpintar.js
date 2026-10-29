@@ -358,7 +358,64 @@
     });
     return out;
   }
+  /* REQUADRO DO VÃO POR FACE (29/10/2026) — "a face de fora no requadro de fora, a de dentro no de dentro".
+     As ombreiras, a verga e o peitoril de cada vão (porta/janela hospedada) são as faces da ESPESSURA da parede em volta da
+     esquadria. O PLANO DO CAIXILHO (a posição da peça hospedada na espessura: w local do centro da instância) divide o requadro:
+     da face externa até o caixilho = o acabamento pintado da face "fora"; do caixilho até a face interna = o da face "dentro"
+     (com "Inverter faces" os lados trocam, como em desenhoRegiao). A região da face é a da altura do trecho (barrado/divisão de
+     face). Face SEM pintura, com a outra face pintada: o corpo da parede leva a cor da face pintada (js/bim.js › acabBaseParede), então
+     a metade sem pintura leva o reboco neutro (`neutro: true`) — sem isto o acabamento de uma face apareceria na metade da outra.
+     Nenhuma face pintada = nada é desenhado (fica como hoje). Devolve, por trecho:
+       { face, regiao, material, cor, parte: "ombreira-esq"|"ombreira-dir"|"verga"|"peitoril", vao: id, quad: [[x,y,z]×4] }
+     A película fica 3 mm para dentro do vão (como as películas de face ficam 3 mm para fora). Parede curva: não desenha. */
+  function requadros(c, aceitos, estado) {
+    var Ar = A(), out = [];
+    if (!Ar || !c || c.tipo !== "parede" || c.arco || !c.pinturas || !arr(aceitos).length) return out;
+    var f = Ar.frameDe(c), t = f.t, inv = !!c.inverterFaces, sD = inv ? -1 : 1, e = 0.003;
+    var reg = {}; regioes(c, aceitos, estado).forEach(function (r) { reg[r.face + "|" + r.regiao] = r; });
+    function regiaoEm(face, y) { var cortes = arr(c.divFaces && c.divFaces[face]), h = y - f.y0, k = 0; while (k < cortes.length && h > cortes[k]) k++; return k; }
+    function cortesEm(face, ya, yb) {   /* [ya, yb] partido nas alturas de divisão da face */
+      var pts = [ya]; arr(c.divFaces && c.divFaces[face]).forEach(function (h) { var y = f.y0 + h; if (y > ya + 1e-6 && y < yb - 1e-6) pts.push(y); }); pts.push(yb);
+      return pts;
+    }
+    function Q(u1, w1, y1, u2, w2, y2) {   /* retângulo: (u1,w1,y1) → (u2,w2,y2) em que um dos três eixos é fixo */
+      function P(u, w, y) { var m = Ar.aMundo(f, u, w); return [r6(m[0]), r6(y), r6(m[1])]; }
+      if (u1 === u2) return [P(u1, w1, y1), P(u1, w2, y1), P(u1, w2, y2), P(u1, w1, y2)];     /* ombreira: plano u fixo */
+      return [P(u1, w1, y1), P(u2, w1, y1), P(u2, w2, y1), P(u1, w2, y1)];                      /* verga/peitoril: plano y fixo */
+    }
+    arr(aceitos).forEach(function (v) {
+      var fi = arr(estado && estado.familias).filter(function (x) { return String(x.id) === String(v.id); })[0], wc = 0;
+      if (fi && fin(Number(fi.x)) && fin(Number(fi.z))) wc = Math.max(-t / 2, Math.min(t / 2, Ar.aLocal(f, Number(fi.x), Number(fi.z))[1]));
+      var yA = f.y0 + num(v.y0, 0), yB = f.y0 + num(v.y1, 0), x0 = num(v.x0, 0), x1 = num(v.x1, 0);
+      if (!(yB - yA > 1e-3) || !(x1 - x0 > 1e-3)) return;
+      /* os dois lados da espessura: "dentro" (w do sD) e "fora" (o oposto), cada um do caixilho até a face da parede */
+      [["dentro", wc, sD * t / 2], ["fora", wc, -sD * t / 2]].forEach(function (L) {
+        var face = L[0], wa = Math.min(L[1], L[2]), wb = Math.max(L[1], L[2]);
+        if (wb - wa < 0.002 || !faceOk(c, face)) return;
+        function poe(parte, yRef, quad) {
+          var k = regiaoEm(face, yRef), r = reg[face + "|" + k], neutro = false;
+          if (!r) {   /* sem pintura nesta região: neutro só se a OUTRA face está pintada (o corpo da parede está tingido por ela) */
+            var outra = face === "fora" ? "dentro" : "fora";
+            if (!Object.keys(reg).some(function (q) { return q.indexOf(outra + "|") === 0; }) && !Object.keys(reg).some(function (q) { return q.indexOf(face + "|") === 0; })) return;
+            if (Object.keys(reg).some(function (q) { return q.indexOf(face + "|") === 0; })) return;   /* a face tem pintura em outra região: esta fica como hoje */
+            r = { material: "Reboco aparente", cor: corDe("Reboco aparente") }; neutro = true; k = 0;
+          }
+          out.push({ face: face, regiao: k, material: r.material, cor: r.cor, neutro: neutro, parte: parte, vao: String(v.id), quad: quad });
+        }
+        var ys = cortesEm(face, yA, yB);
+        for (var i = 0; i + 1 < ys.length; i++) {
+          var ym = (ys[i] + ys[i + 1]) / 2;
+          poe("ombreira-esq", ym, Q(x0 + e, wa, ys[i], x0 + e, wb, ys[i + 1]));
+          poe("ombreira-dir", ym, Q(x1 - e, wa, ys[i], x1 - e, wb, ys[i + 1]));
+        }
+        poe("verga", yB, Q(x0, wa, yB - e, x1, wb, yB - e));
+        if (num(v.y0, 0) > 1e-6) poe("peitoril", yA, Q(x0, wa, yA + e, x1, wb, yA + e));
+      });
+    });
+    return out;
+  }
   var BimPintar = {
+    requadros: requadros,
     quadsPlatibanda: quadsPlatibanda, areaPilar: areaPilar, normalPilar: normalPilar, tipoDe: tipoDe,
     MATERIAIS: MATERIAIS, FACES: FACES, ROTULO_FACE: ROTULO_FACE, OPS: OPS, MAX_CORTES: MAX_CORTES,
     corDe: corDe, validaOp: validaOp, aplicarOp: aplicarOp, registrar: registrar,

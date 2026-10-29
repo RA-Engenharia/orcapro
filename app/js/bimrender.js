@@ -341,7 +341,7 @@
         F.scene.traverse(function (o) {
           if (!o.isMesh || !o.userData || o.userData.p4Pintura == null || o.visible === false) return;
           var c = arr(st && st.caixas).filter(function (x) { return x.id === o.userData.p4Pintura; })[0], pt = c && c.pinturas && c.pinturas[o.userData.face + "|" + o.userData.regiao];
-          var nome = txt(pt && pt.material) || "Pintura acrílica", peca = { materiais: [nome], ifc: "IFCCOVERING", alfa: 1, cor: null };
+          var nome = txt(pt && pt.material) || txt(o.userData.matNome) || "Pintura acrílica", peca = { materiais: [nome], ifc: "IFCCOVERING", alfa: 1, cor: null };
           var mp = material(peca, nome), gp = grupoPara(mp.id, peca, nome);
           if (gp) X.malha(o, function () { return gp; });
         });

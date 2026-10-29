@@ -48,7 +48,7 @@
   function idDe(u) {
     if (u.expressID != null) return String(u.expressID);
     if (u.acabPiso) return "piso:" + u.acabPiso;
-    if (u.p4Pintura) return "pint:" + u.p4Pintura + ":" + (u.face || "") + ":" + (u.regiao || "");
+    if (u.p4Pintura) return "pint:" + u.p4Pintura + ":" + (u.face || "") + ":" + (u.regiao || "") + (u.requadro ? ":requadro" : "");   /* requadro do vão: nome próprio, com o material da face */
     return null;
   }
 

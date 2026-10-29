@@ -65,6 +65,13 @@
     if (typeof require === "function") { try { return require("./bimcurva.js"); } catch (e) {} }
     return null;
   }
+  /* OPÇÕES DE PROJETO (js/bimopcoes.js) — só quando o estado TEM conjuntos; senão null e nada muda */
+  function depOpcoes(estado) {
+    if (!estado || !estado.opcoes || !Array.isArray(estado.opcoes.conjuntos) || !estado.opcoes.conjuntos.length) return null;
+    if (global.BimOpcoes) return global.BimOpcoes;
+    if (typeof require === "function") { try { return require("./bimopcoes.js"); } catch (e) {} }
+    return null;
+  }
   function depForro() {
     if (global.BimForro) return global.BimForro;
     if (typeof require === "function") { try { return require("./bimforro.js"); } catch (e) {} }
@@ -537,8 +544,12 @@
     vaosDasParedes: function (estado, avaliarFam) {
       var porParede = {}, out = {};
       if (typeof avaliarFam !== "function") return out;
+      /* OPÇÃO DE PROJETO OCULTA NÃO FURA A PAREDE (29/10/2026): só a janela/porta VISÍVEL na escolha atual (a principal de cada
+         conjunto, ou a que a vista escolheu) abre vão. Peça sem opção de projeto = como sempre. */
+      var BOp = depOpcoes(estado), escOp = BOp && BOp.escolhaAtual ? BOp.escolhaAtual(estado) : null;
       ((estado && estado.familias) || []).forEach(function (f) {
         if (!f.host) return;
+        if (BOp && f.opcaoProjeto && !BOp.visivel(f, estado, escOp)) return;
         var av = avaliarFam(f.famId, f.tipoId, f.inst);
         if (!av || !av.abertura) return;
         /* FAMIMPORT (js/familiamalha.js): vão fora do centro da família (deslocX, medido no recorte real da família importada) */

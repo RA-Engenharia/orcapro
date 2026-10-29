@@ -82,6 +82,21 @@
       for (var i = 0; i < cs.length; i++) if (arr(cs[i].opcoes).some(function (o) { return o.id === opcaoId; })) return cs[i];
       return null;
     },
+    /* A ESCOLHA EM VIGOR (29/10/2026): a do estado já filtrado (opcoesEscolha) ou a da vista (a tela registra o provedor em
+       BimOpcoes.escolhaVista — js/bimp10ui.js); sem nenhuma, a principal de cada conjunto. Escolha que não existe mais no
+       conjunto é ignorada (volta à principal). */
+    escolhaAtual: function (estado) {
+      var bruta = estado && estado.opcoesEscolha;
+      if (!bruta) { try { bruta = typeof BimOpcoes.escolhaVista === "function" ? BimOpcoes.escolhaVista() : null; } catch (e) { bruta = null; } }
+      var out = {}, pad = BimOpcoes.escolhaPadrao(estado);
+      Object.keys(pad).forEach(function (k) { out[k] = pad[k]; });
+      arr(estado && estado.opcoes && estado.opcoes.conjuntos).forEach(function (c) {
+        var e = bruta && bruta[c.id];
+        if (e && arr(c.opcoes).some(function (o) { return o.id === e; })) out[c.id] = e;
+      });
+      return out;
+    },
+    escolhaVista: null,
     /* a peça aparece com a escolha dada? (fora de opção: sempre) */
     visivel: function (el, estado, escolha) {
       if (!el || !el.opcaoProjeto) return true;

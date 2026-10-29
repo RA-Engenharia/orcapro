@@ -15103,6 +15103,14 @@
       var ro = function (pid, rot, v) { return { id: pid, rotulo: rot, leitura: true, valor: v }; };
       var fmt = function (v) { return typeof v === "number" ? Util.fmtNum(v, 3) : v; };
       var inst = [], tipo = [], calc = [];
+      /* TROCAR POR QUALQUER JANELA/PORTA (29/10/2026): o seletor de tipo lista todas as famílias da mesma categoria; escolher uma de OUTRA família
+         troca a família no mesmo vão (a op `instancia` com famId). Outras categorias: só os tipos da família, como sempre. */
+      var _tiposTroca = null;
+      if ((fam.categoria === "janela" || fam.categoria === "porta") && window.FamiliaUI && FamiliaUI.biblioteca) {
+        var _lt = []; try { FamiliaUI.biblioteca({ registro: false }).forEach(function (f2) { if (f2 && f2.categoria === fam.categoria && !f2.oculta) (f2.tipos || []).forEach(function (t2) { _lt.push({ famId: f2.id, famNome: f2.nome || f2.id, id: t2.id, nome: t2.nome }); }); }); } catch (eT2) { _lt = []; }
+        _lt.sort(function (a, b) { return (a.famId === fam.id ? 0 : 1) - (b.famId === fam.id ? 0 : 1); });
+        if (_lt.length) _tiposTroca = _lt;
+      }
       (fam.parametros || []).forEach(function (p) {
         var v = av.valores[p.nome];
         if (p.formula) { calc.push(ro("fc:" + p.nome, p.nome, fmt(v))); return; }
@@ -15114,7 +15122,7 @@
       });
       var q = av.quantitativo || {};
       var secoes = [
-        { nome: "Identidade", params: [ro("fam-nome", "Família", fam.nome), { id: "fam-tipo", rotulo: "Tipo", tipo: "lista", valor: av.tipo.id, opcoes: (fam.tipos || []).map(function (t) { return { id: t.id, rotulo: t.nome }; }) },
+        { nome: "Identidade", params: [ro("fam-nome", "Família", fam.nome), { id: "fam-tipo", rotulo: "Tipo", tipo: "lista", valor: _tiposTroca ? fam.id + "|" + av.tipo.id : av.tipo.id, opcoes: _tiposTroca ? _tiposTroca.map(function (t) { return { id: t.famId + "|" + t.id, rotulo: t.famNome + " : " + t.nome }; }) : (fam.tipos || []).map(function (t) { return { id: t.id, rotulo: t.nome }; }) },
           ro("fam-cat", "Categoria", (Familia.CATEGORIAS[fam.categoria] || fam.categoria)), ro("fam-host", "Hospedada", info.instancia.host ? "Sim (parede " + info.instancia.host.id + ")" : "Não")] }
       ];
       if (inst.length) secoes.push({ nome: "Instância", params: inst });
@@ -15131,7 +15139,16 @@
         titulo: fam.nome + " : " + av.tipo.nome, icone: "familia", semEditarTipo: true, secoes: secoes,
         onMudar: function (pid, valor) {
           if (String(pid).indexOf("orc:") === 0) { if (window.OrcModeloUI) OrcModeloUI.mudar("edit:" + id, pid, valor); }
-          else if (pid === "fam-tipo") b.instanciaAlterar(id, { tipoId: valor });
+          else if (pid === "fam-tipo") {
+            var _pv = String(valor).split("|");
+            if (_pv.length === 2 && _pv[0] !== fam.id) {
+              /* outra família da categoria: no mesmo vão; só o que a nova família também tem (mesmo nome, parâmetro de instância) volta */
+              var _fn = FamiliaUI.obter(_pv[0]), _tem = {}, _man = {}, _el = info.instancia;
+              ((_fn && _fn.parametros) || []).forEach(function (p) { if (p && p.escopo === "instancia" && !p.formula) _tem[p.nome] = 1; });
+              Object.keys(_el.inst || {}).forEach(function (k) { if (_tem[k]) _man[k] = _el.inst[k]; });
+              b.instanciaAlterar(id, { famId: _pv[0], tipoId: _pv[1], inst: Object.keys(_man).length ? _man : undefined });
+            } else b.instanciaAlterar(id, { tipoId: _pv.length === 2 ? _pv[1] : valor });
+          }
           else if (pid.indexOf("fi:") === 0) { var o = {}; o[pid.slice(3)] = valor; b.instanciaAlterar(id, { inst: o }); }
           return self._famPropsInstancia(id) || true;
         }

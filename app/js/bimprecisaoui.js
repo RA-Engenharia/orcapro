@@ -925,6 +925,27 @@
             if (api.acabRegistrar) api.acabRegistrar(m);
           });
         });
+        /* REQUADRO POR FACE (29/10/2026): ombreiras, verga e peitoril de cada vão, divididos no plano do caixilho — a metade de fora leva o
+           acabamento da face "fora", a de dentro o da face "dentro" (js/bimpintar.js › requadros). Mesma marca p4Pintura das películas de
+           face (o Twinmotion e o render leem o material pelo nome da face), mais `requadro` para o nome ser próprio. */
+        if (BP.requadros) cxs.forEach(function (c) {
+          var ac = vz[c.id] ? vz[c.id].aceitos : null; if (!ac || !ac.length) return;
+          var porMat = {};
+          BP.requadros(c, ac, st).forEach(function (q) {
+            var k = q.face + "|" + q.regiao + (q.neutro ? "|n" : ""); (porMat[k] = porMat[k] || { q: q, pos: [], idx: [], uv: [] });
+            var G = porMat[k], b0 = G.pos.length / 3, P = q.quad;
+            P.forEach(function (p) { G.pos.push(p[0], p[1], p[2]); });
+            var a = P[0], b = P[1], d = P[3], lu = Math.sqrt(Math.pow(b[0] - a[0], 2) + Math.pow(b[1] - a[1], 2) + Math.pow(b[2] - a[2], 2)), lv = Math.sqrt(Math.pow(d[0] - a[0], 2) + Math.pow(d[1] - a[1], 2) + Math.pow(d[2] - a[2], 2));
+            G.uv.push(0, 0, lu, 0, lu, lv, 0, lv); G.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+          });
+          Object.keys(porMat).forEach(function (k) {
+            var G = porMat[k], mat = materialAcab(G.q.material, G.q.cor, true);
+            var g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(G.pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(G.uv, 2)); g.setIndex(G.idx); g.computeVertexNormals(); g.computeBoundingSphere();
+            var m = new THREE.Mesh(g, mat); m.renderOrder = 2; m.userData = { p4Pintura: c.id, face: G.q.face, regiao: G.q.regiao, requadro: true, matNome: G.q.material, neutro: !!G.q.neutro }; m.raycast = function () {};
+            pintGrp.add(m);
+            if (api.acabRegistrar) api.acabRegistrar(m);
+          });
+        });
         /* a platibanda pintada: um quadrilátero por trecho, 3 mm fora da face (externa ou interna) */
         pls.forEach(function (p) {
           BP.regioes(p, null, st).forEach(function (r) {

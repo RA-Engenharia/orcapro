@@ -495,7 +495,15 @@
       var R = BP && BP.REGISTRO[cat], fam = R && R.familia ? R.familia : null;
       var cg = ctx.catalogos || {};
       if (cat === "porta" || cat === "janela" || cat === "generico") {
-        arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", tipoFam: t.id }); });
+        /* a família da peça vem primeiro, com os tipos dela (como antes) */
+        arr(typeof cg.familia === "function" ? cg.familia(famId) : []).forEach(function (t) { add({ id: String(famId) + "|" + t.id, nome: t.nome, familia: t.familia || fam || "", origem: "familia", famId: String(famId), tipoFam: t.id }); });
+        /* porta e janela: TODAS as outras famílias da mesma categoria (trocar por outra mantém a peça no mesmo vão) */
+        if (cat !== "generico" && typeof cg.familiasDaCategoria === "function") {
+          arr(cg.familiasDaCategoria(cat)).forEach(function (f) {
+            if (String(f.id) === String(famId)) return;
+            arr(f.tipos).forEach(function (t) { add({ id: String(f.id) + "|" + t.id, nome: t.nome, familia: f.nome || String(f.id), origem: "familia", famId: String(f.id), tipoFam: t.id }); });
+          });
+        }
         return out;
       }
       if (cg[cat] && cg[cat].length) cg[cat].forEach(function (t) { add({ id: String(t.id), nome: t.nome, familia: fam, origem: "catalogo", campos: t.campos }); });
@@ -511,7 +519,25 @@
       if (!item) return { ok: false, erro: "Tipo não encontrado." };
       ids = ids.filter(function (id) { var p = ctx.res.porId[id]; return p && p.categoria === cat && p.tipoId !== item.id; });
       if (!ids.length) return { ok: false, erro: "As peças já são deste tipo." };
-      if (item.origem === "familia") { ids.forEach(function (id) { ops.push({ op: "instancia", id: id, tipoId: String(item.tipoFam) }); }); return { ok: true, ops: ops }; }
+      if (item.origem === "familia") {
+        var dpf = ctx.deps || {};
+        /* OUTRA FAMÍLIA (29/10/2026): a instância troca de família e fica no MESMO vão — a hospedeira, a posição na parede, o giro e o
+           peitoril não mudam (a op `instancia` com famId só troca a família; o `inst` da família velha não vale na nova, então só
+           volta o que a nova família também tem: mesmo nome de parâmetro de instância — Largura, Altura, Peitoril…) */
+        if (item.famId != null && typeof dpf.categoriaFam === "function" && dpf.categoriaFam(item.famId) !== cat) return { ok: false, erro: "Esta família não é de " + (BP && BP.REGISTRO[cat] ? BP.REGISTRO[cat].nome.toLowerCase() : cat) + "." };
+        var fNova = item.famId != null && typeof dpf.familia === "function" ? dpf.familia(item.famId) : null;
+        ids.forEach(function (id) {
+          var el0 = elDe(ctx.estado, id), o = { op: "instancia", id: id, tipoId: String(item.tipoFam) };
+          if (item.famId != null && el0 && String(el0.famId) !== String(item.famId)) {
+            o.famId = String(item.famId);
+            var manter = {}, tem = {}; arr(fNova && fNova.parametros).forEach(function (p) { if (p && p.escopo === "instancia" && !p.formula) tem[p.nome] = 1; });
+            Object.keys(el0.inst || {}).forEach(function (k) { if (tem[k]) manter[k] = el0.inst[k]; });
+            if (Object.keys(manter).length) o.inst = manter;
+          }
+          ops.push(o);
+        });
+        return { ok: true, ops: ops };
+      }
       if (cat === "forro" && item.origem !== "projeto") {   /* P2-B: o tipo do forro vai na op forro (catálogo pelo id, ou a foto das camadas); tipo do projeto = ajustarTipo, abaixo */
         var BFt = global.BimForro;
         ids.forEach(function (id) { var o = BFt ? BFt.opTrocarTipo(ctx.estado, id, item.campos && item.campos.forroTipoId ? item.campos.forroTipoId : item.id) : null; if (o) ops.push(o); });
@@ -689,6 +715,12 @@
       if (global.BimForro) cat.forro = global.BimForro.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { forroTipoId: t.id } }; });   /* P2-B */
       if (global.BimTelhado) cat.telhado = global.BimTelhado.TIPOS.map(function (t) { return { id: t.id, nome: t.rotulo, campos: { telhadoTipoId: t.id } }; });   /* P3 */
       cat.familia = function (famId) { var f = fam(famId); return f ? arr(f.tipos).map(function (t) { return { id: t.id, nome: t.nome, familia: f.nome }; }) : []; };
+      /* SELETOR DE TIPO DE VERDADE (29/10/2026): todas as famílias carregadas da MESMA categoria (biblioteca do sistema + famílias do
+         projeto), cada uma com os tipos dela — janela só troca por janela, porta por porta */
+      cat.familiasDaCategoria = function (categoria) {
+        var l = []; try { l = FU && FU.biblioteca ? FU.biblioteca({ registro: false }) : []; } catch (eB) { l = []; }
+        return arr(l).filter(function (f) { return f && f.id && f.categoria === categoria && !f.oculta && arr(f.tipos).length; });
+      };
       return this.contexto(est.estado, deps, { catalogos: cat });
     },
     /* a seleção atual: a do desenho de precisão (Ctrl+clique soma) quando ela
@@ -748,7 +780,7 @@
       var B = global.BIM; if (!B || !ops || !ops.length) return false;
       if (ops.length === 1) {
         var o = ops[0];
-        if (o.op === "instancia") return B.instanciaAlterar ? B.instanciaAlterar(o.id, { tipoId: o.tipoId, inst: o.inst }) : false;
+        if (o.op === "instancia") return B.instanciaAlterar ? B.instanciaAlterar(o.id, { famId: o.famId, tipoId: o.tipoId, inst: o.inst }) : false;
         if (o.op === "instAlterar" || o.op === "instSistema") return B.instOp ? B.instOp(o) : false;   /* P12: instalações */
         return B.b2Op ? B.b2Op(o) : false;
       }
