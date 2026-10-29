@@ -16,6 +16,12 @@
  *     compartilham, então parede, laje, forro, piso e face pintada ganham material PRÓPRIO `<id>__<hex>` — pintar UMA parede
  *     lá muda só ela, e o nome igual a cada envio faz o Twinmotion manter o que o Rogério trocou. Demais: `<nome>_<hex>`.
  *   · usa o material original da fase (`userData._p10orig`) quando houver.
+ *
+ * UMA FONTE (29/10/2026): este botão é a fonte ao vivo; o vigia por arquivo (sincronizar_twinmotion.py) fica de RESERVA e se cala
+ * enquanto o botão está ligado. Para as duas gerarem o MESMO modelo (mesmos nomes de material — senão o Twinmotion perde o material que
+ * o usuário aplicou), as regras DA OBRA vêm do Direct Link em GET /estado › regras (regras_twinmotion.json lá): o produto fica genérico.
+ *   regras = { trocas: {hex da cartela: hex final}, materiais: [{id: regex, ifc?: tipo, nome, cor, metal, rug}] } (vale a 1ª que casa).
+ *   Sem `regras` o modelo sai como antes. Regra do PRODUTO: as banquetas da ilha (família *-coz-ilha) não vão — móvel solto.
  * ⚠ NÃO muda a vista do usuário (nada de definirVista): exporta o que está visível nela.
  * ⚠ O GLTFExporter é o da MESMA versão do three do app (r150): bim/vendor/jsm/exporters/GLTFExporter.js.
  * ⚠ O estado "ligado" NÃO persiste: o app sempre abre com o botão desligado.
@@ -26,6 +32,8 @@
 
   var URL_PADRAO = "http://127.0.0.1:8892";
   var DEBOUNCE_GLB = 1500;     /* ms depois da última edição */
+  var RETRY_GLB = 3000;        /* ms para tentar de novo um POST /glb que falhou (até 3 vezes; depois fica pendente até o /estado voltar) */
+  var TENTATIVAS_GLB = 3;
   var INTERVALO_CAM = 150;     /* ms entre câmeras enviadas */
   var EPS_CAM = 1e-4;
   var FORA = { IFCPIPESEGMENT: 1, IFCPIPEFITTING: 1, IFCVALVE: 1, IFCWASTETERMINAL: 1 };
@@ -78,15 +86,65 @@
       (m.opacity < 0.99 ? "_t" + Math.round(m.opacity * 100) : "") + (m.transmission > 0 ? "_vidro" : "");
   }
 
-  /* monta uma cena NOVA só com o que vai para o Twinmotion; a cena de origem não é tocada */
-  function montarCena(THREE, origem) {
+  /* BANQUETAS DA ILHA são móvel solto (Rogério, 29/10/2026: "usa as banquetas do Twinmotion"). O gerador da ilha (ra-coz-ilha e cópias
+     *-coz-ilha) põe as banquetas no balanço (+Z local, além do corpo) e mescla os pés pretos com o rodapé numa malha só: corta os triângulos
+     além do corpo (z local > fim do tampo − 0,20; tampo = malhas com y local mínimo ≥ 0,8) e larga inteira a malha que fica toda lá (assento). */
+  var ILHA_RE = /coz-ilha/;
+  function cortarZ(THREE, g0, zc) {
+    var g = g0.index ? g0.toNonIndexed() : g0.clone(), P = g.attributes.position, keep = [];
+    for (var t = 0; t < P.count; t += 3) { var z = (P.getZ(t) + P.getZ(t + 1) + P.getZ(t + 2)) / 3; if (z <= zc) keep.push(t); }
+    if (!keep.length) return null;
+    var ng = new THREE.BufferGeometry();
+    Object.keys(g.attributes).forEach(function (n) {
+      var A = g.attributes[n], it = A.itemSize, arr = new A.array.constructor(keep.length * 3 * it), j = 0;
+      keep.forEach(function (t2) { for (var v = 0; v < 3; v++) for (var c = 0; c < it; c++) arr[j++] = A.array[(t2 + v) * it + c]; });
+      ng.setAttribute(n, new THREE.BufferAttribute(arr, it, A.normalized));
+    });
+    return ng;
+  }
+
+  /* regras da obra (vindas do Direct Link): { trocas, materiais } -> estrutura pronta; null se não houver nada */
+  function prepararRegras(regras) {
+    if (!regras || typeof regras !== "object") return null;
+    var lista = [];
+    (Array.isArray(regras.materiais) ? regras.materiais : []).forEach(function (r) {
+      if (!r || !r.id || !r.nome) return;
+      var re; try { re = new RegExp(r.id); } catch (_) { return; }
+      lista.push({ re: re, ifc: r.ifc || null, nome: String(r.nome), cor: r.cor ? parseInt(String(r.cor).replace("#", ""), 16) : null, metal: r.metal, rug: r.rug });
+    });
+    var tr = regras.trocas && typeof regras.trocas === "object" ? regras.trocas : null;
+    return (lista.length || (tr && Object.keys(tr).length)) ? { trocas: tr, materiais: lista } : null;
+  }
+  function regraDe(R, id, tipo) {
+    if (!R) return null;
+    for (var i = 0; i < R.materiais.length; i++) { var r = R.materiais[i]; if (r.re.test(id) && (!r.ifc || r.ifc === tipo)) return r; }
+    return null;
+  }
+
+  /* monta uma cena NOVA só com o que vai para o Twinmotion; a cena de origem não é tocada. `regras` = regras da obra (opcional) */
+  function montarCena(THREE, origem, regras) {
     origem.updateMatrixWorld(true);
+    var R = prepararRegras(regras);
     var cena = new THREE.Scene(), grupos = {}, cache = new Map(), nM = 0, nGrupos = 0;
     function matDe(m0, dono) {
       var k = m0.uuid + (dono ? "|" + dono : "");
       if (cache.has(k)) return cache.get(k);
-      var m = m0.clone(); m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
+      var m = m0.clone();
+      /* glTF só aceita cor/emissivo de 0 a 1, mas o three deixa passar de 1 (material de luz/"brilho"): o Direct Link recusa o GLB inteiro
+         ("_baseColorFactor 1.17 must be ... less than or equal to 1", visto em 29/10/2026) e o Twinmotion fica sem atualizar. Limita no clone. */
+      [m.color, m.emissive].forEach(function (c) { if (c && c.isColor) { c.r = Math.min(1, Math.max(0, c.r)); c.g = Math.min(1, Math.max(0, c.g)); c.b = Math.min(1, Math.max(0, c.b)); } });
+      /* troca de cor da cartela (muda a cor E o nome do material, igual ao exportador do vigia) */
+      if (R && R.trocas && m.color) { var h0 = m.color.getHexString(); if (R.trocas[h0]) m.color.set("#" + R.trocas[h0]); }
+      m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
     }
+    /* ilha: z local máximo do corpo, por elemento */
+    var ILHA = {};
+    origem.traverse(function (o) {
+      if (!o.isMesh || !o.geometry || !vivo(o)) return;
+      var u = o.userData || {}; if (u.expressID == null || !ILHA_RE.test(String(u.famSolido || ""))) return;
+      o.geometry.computeBoundingBox(); var b = o.geometry.boundingBox; if (b.min.y < 0.8) return;
+      var k = String(u.expressID); ILHA[k] = Math.max(ILHA[k] == null ? -1e9 : ILHA[k], b.max.z - 0.2);
+    });
     /* caixas das paredes visíveis (para saber se um pilar/viga está embutido) */
     var paredes = [], caixaDe = function (o) { o.geometry.computeBoundingBox(); return o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); };
     origem.traverse(function (o) { if (o.isMesh && o.geometry && vivo(o) && o.userData && o.userData.tipo === "IFCWALL" && !o.isInstancedMesh) paredes.push(caixaDe(o).expandByScalar(0.02)); });
@@ -100,6 +158,12 @@
       if (!o.isMesh || !o.geometry || !vivo(o)) return;
       var u = o.userData || {}, id = idDe(u); if (!id) return;
       var c = categoria(id, u, ESTRUT[u.tipo] ? embutida(o) : false); if (!c) return;
+      var geo = o.geometry;
+      if (ILHA[id] != null && ILHA_RE.test(famDe(u))) {
+        var zc = ILHA[id]; geo.computeBoundingBox();
+        if (geo.boundingBox.min.z > zc) return;
+        if (geo.boundingBox.max.z > zc) { geo = cortarZ(THREE, geo, zc); if (!geo) return; }
+      }
       var g = grupos[id];
       if (!g) {
         g = new THREE.Group(); g.name = id;
@@ -116,9 +180,17 @@
          em preto de tela/moldura (0b0c0e); painel ripado e rack continuam */
       if (/(^|-)mob-rack-tv/.test(famDe(u)) && [].concat(mat0).some(function (m) { return m && m.color && m.color.getHexString() === "0b0c0e"; })) return;
       var dono = (c === "piso" || c === "pintura" || PROPRIO[u.tipo]) ? id : null;
+      /* regra de material da obra (ex.: piso metálico da caixa d agua): nome FIXO, cor e acabamento definidos pela regra */
+      var regra = regraDe(R, id, u.tipo); if (regra) dono = regra.nome;
       var mats = Array.isArray(mat0) ? mat0.map(function (m, i) { return matDe(m, dono ? dono + (i ? "_" + i : "") : null); }) : matDe(mat0, dono);
+      if (regra) [].concat(mats).forEach(function (m) {
+        if (regra.cor != null && m.color) m.color.setHex(regra.cor);
+        m.name = regra.nome;
+        if (regra.metal != null && "metalness" in m) m.metalness = regra.metal;
+        if (regra.rug != null && "roughness" in m) m.roughness = regra.rug;
+      });
       lista.forEach(function (M) {
-        var c2 = new THREE.Mesh(o.geometry, mats);
+        var c2 = new THREE.Mesh(geo, mats);
         M.decompose(c2.position, c2.quaternion, c2.scale);
         c2.name = id + "|" + (u.parte || "") + "|" + (u.famSolido ? String(u.famSolido) : "") + "|" + (nM++);
         c2.userData = { ra_id: id, ra_parte: u.parte || "", ra_solido: u.famSolido ? String(u.famSolido) : "", ra_parteDe: u.parteDe || "" };
@@ -129,12 +201,26 @@
   }
 
   /* GLB binário (ArrayBuffer) da cena de origem; `GLTFExporter` é a classe do three r150 do app */
-  function exportarGLB(THREE, GLTFExporter, origem) {
-    var r = montarCena(THREE, origem);
+  function exportarGLB(THREE, GLTFExporter, origem, regras) {
+    var r = montarCena(THREE, origem, regras);
     return new Promise(function (ok, erro) {
       new GLTFExporter().parse(r.cena, function (b) { ok({ buffer: b, grupos: r.grupos, malhas: r.malhas, materiais: r.materiais }); }, erro,
         { binary: true, onlyVisible: true, maxTextureSize: 2048 });
     });
+  }
+
+  /* assinatura do que VAI para o Twinmotion (elementos visíveis + material de cada malha): rede de segurança do gatilho. O GLB sai a cada
+     reconstrução do editor, mas a vista também muda o que se vê SEM reconstruir (fase, filtro, opção de projeto, isolar/ocultar, pintura
+     desenhada depois). Se a assinatura mudar e nenhum envio estiver a caminho, agenda um. Barato: percorre a cena 1 vez por segundo. */
+  function assinatura(origem) {
+    var n = 0, h = 5381;
+    origem.traverse(function (o) {
+      if (!o.isMesh || !o.geometry) return;
+      var u = o.userData || {}, id = idDe(u); if (!id || !vivo(o)) return;
+      var m = u._p10orig || o.material, mu = Array.isArray(m) ? m.map(function (x) { return x && x.uuid; }).join(",") : (m && m.uuid), s = id + "|" + mu + "|" + (o.isInstancedMesh ? o.count : 1);
+      n++; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    });
+    return n + ":" + h;
   }
 
   /* ---------------- câmera ---------------- */
@@ -214,6 +300,8 @@
     if (win.__bimTwDispor) { try { win.__bimTwDispor(); } catch (e0) {} }
 
     var ligado = false, ligando = false, conectado = false, dica = "", ultCam = null, tCam = 0, tGlb = null, tEstado = null, enviando = false, pendente = false, vez = 0;
+    var assEnviada = null, tAss = 0, aoVista = null;
+    var regras = null, regrasJson = "", regrasEnviadas = null, tentativas = 0, tRetry = null, redePendente = false, tPendente = 0, estadoCaiu = false;
     var gltfCls = null;
     var diag = { glb: 0, cam: 0, falhas: 0 };
 
@@ -222,12 +310,17 @@
       return fetch(url, { signal: ctl ? ctl.signal : undefined }).then(function (r) { if (tm) clearTimeout(tm); return r; }, function (e) { if (tm) clearTimeout(tm); throw e; });
     }
     function lerEstado() {
-      return get(baseUrl() + "/estado", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
+      /* vivo=1: avisa o Direct Link que o botão está ligado (o vigia por arquivo se cala); vale 60 s, renovado a cada 5 s */
+      return get(baseUrl() + "/estado?vivo=1", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
     }
     function aplicarEstado(e) {
       /* "conectado" = o Direct Link respondeu (a fonte está publicada). O Datasmith não informa ao programa quando o Twinmotion recebe
          (destinos_ativos fica 0 mesmo funcionando — visto em 28/10/2026), então ele não pode decidir o indicador. */
-      conectado = !!e;
+      conectado = !!e && !redePendente;   /* com o envio recusado (pendente) o /estado vivo não esconde o problema */
+      /* regras da obra (UMA fonte): guarda as do último /estado; mudou depois de um envio -> reenvia o modelo com as novas */
+      regras = (e && e.regras) || null;
+      var rj = regras ? JSON.stringify(regras) : "";
+      if (rj !== regrasJson) { regrasJson = rj; if (ligado && regrasEnviadas !== null && rj !== regrasEnviadas) aoReconstruir(); }
       dica = conectado ? "Fonte \"" + ((e && e.fonte) || "OrçaPRO") + "\" publicada. No Twinmotion: Importar › Direct Link e, para a câmera, escolha \"OrçaPRO — Vista 3D\"." : "";
       pintar();
     }
@@ -244,13 +337,14 @@
       if (!ligado) return Promise.resolve(false);
       if (enviando) { pendente = true; return Promise.resolve(false); }
       enviando = true; pendente = false; var minha = vez;
-      return carregarExportador().then(function (GE) { return exportarGLB(THREE, GE, S.scene); }).then(function (r) {
+      return carregarExportador().then(function (GE) { regrasEnviadas = regrasJson; try { assEnviada = assinatura(S.scene); } catch (_) { assEnviada = null; } return exportarGLB(THREE, GE, S.scene, regras); }).then(function (r) {
         if (!ligado || minha !== vez) return false;
         return fetch(baseUrl() + "/glb", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: r.buffer }).then(function (resp) {
           if (!resp.ok) throw new Error("glb " + resp.status);
-          diag.glb++;
+          diag.glb++; tentativas = 0; redePendente = false;
+          if (tRetry) { clearTimeout(tRetry); tRetry = null; }
           return lerEstado().then(aplicarEstado, semConexao).then(function () { return true; });
-        });
+        }).catch(function (e) { diag.falhas++; falhouRede(); return false; });
       }).catch(function (e) { diag.falhas++; semConexao(); return false; }).then(function (x) {
         enviando = false;
         if (pendente && ligado) enviarGlb();
@@ -258,10 +352,26 @@
       });
     }
 
+    /* POST /glb que falhou (Direct Link ocupado/fora): tenta de novo em 3 s, até 3 vezes; depois fica PENDENTE e reenvia quando o /estado voltar */
+    function falhouRede() {
+      semConexao();
+      if (!ligado) return;
+      if (tentativas < TENTATIVAS_GLB) {
+        tentativas++;
+        if (tRetry) clearTimeout(tRetry);
+        tRetry = setTimeout(function () { tRetry = null; enviarGlb(); }, RETRY_GLB);
+      } else { redePendente = true; tPendente = Date.now(); estadoCaiu = false; }
+    }
+
     /* roda em todo quadro (S._tickExtra), mas só trabalha ligado e no máximo 1 vez a cada 150 ms */
     function tick() {
       if (!ligado) return;
       var agora = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      /* rede de segurança: o que se vê mudou sem reconstruir? (1 vez por segundo; só se não há envio agendado/em curso) */
+      if (agora - tAss > 1000) {
+        tAss = agora;
+        if (!tGlb && !enviando && !tRetry && !redePendente && assEnviada !== null) { try { if (assinatura(S.scene) !== assEnviada) aoReconstruir(); } catch (_) {} }
+      }
       if (agora - tCam < INTERVALO_CAM) return;
       var p = cameraPayload(THREE, S.camera, S.orbit ? S.orbit.target : null, S.renderer && S.renderer.domElement);
       if (!p || !cameraMudou(p, ultCam)) return;
@@ -270,6 +380,9 @@
       try { fetch(baseUrl() + "/camera", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }).catch(function () {}); } catch (_) {}
     }
     S._tickExtra.push(tick);
+    /* fase / filtro / opção de projeto da vista (js/bimp10ui.js › definirVista): muda o que aparece sem reconstruir o editor */
+    aoVista = function () { aoReconstruir(); };
+    try { win.addEventListener("bim:p10-vista", aoVista); } catch (_) {}
 
     /* o modelo foi reconstruído (edição, desfazer, refazer): agenda o GLB */
     function aoReconstruir() {
@@ -279,7 +392,11 @@
     }
 
     function desligar() {
-      ligado = false; vez++; pendente = false;
+      var estavaLigado = ligado;
+      ligado = false; vez++; pendente = false; tentativas = 0; redePendente = false; regrasEnviadas = null;
+      if (tRetry) { clearTimeout(tRetry); tRetry = null; }
+      /* vivo=0: o vigia por arquivo (reserva) pode voltar já, sem esperar os 60 s */
+      if (estavaLigado) { try { fetch(baseUrl() + "/estado?vivo=0").catch(function () {}); } catch (_) {} }
       if (tGlb) { clearTimeout(tGlb); tGlb = null; }
       if (tEstado) { clearInterval(tEstado); tEstado = null; }
       ultCam = null; conectado = false; pintar();
@@ -290,8 +407,16 @@
       ligando = true;
       return lerEstado().then(function (e) {
         if (!S.scene) throw new Error("sem cena");
-        ligado = true; vez++; ultCam = null; tCam = 0; aplicarEstado(e);
-        tEstado = setInterval(function () { if (ligado) lerEstado().then(aplicarEstado, semConexao); }, 5000);
+        ligado = true; vez++; ultCam = null; tCam = 0; assEnviada = null; aplicarEstado(e);
+        tEstado = setInterval(function () {
+          if (!ligado) return;
+          lerEstado().then(function (e2) {
+            aplicarEstado(e2);
+            /* o Direct Link voltou (o /estado falhou e respondeu de novo) — ou já se passaram 30 s com ele respondendo: manda o que ficou pendente.
+               (Sem o prazo, um POST recusado com o /estado vivo reenviaria a cada 5 s para sempre.) */
+            if (redePendente && ligado && (estadoCaiu || Date.now() - tPendente >= 30000)) { redePendente = false; estadoCaiu = false; tentativas = 0; enviarGlb(); }
+          }, function () { estadoCaiu = true; semConexao(); });
+        }, 5000);
         return enviarGlb().then(function () { tick(); return true; });
       }, function () {
         avisar("Abra o OrçaPRO Direct Link (atalho na área de trabalho) e tente de novo.");
@@ -301,7 +426,7 @@
 
     function alternar() { if (ligado) { desligar(); return Promise.resolve(false); } return ligar(); }
 
-    function dispor() { desligar(); if (win.__bimTwDispor === dispor) win.__bimTwDispor = null; if (inst && inst.dispor === dispor) { inst = null; pintar(); } }
+    function dispor() { desligar(); try { win.removeEventListener("bim:p10-vista", aoVista); } catch (_) {} if (win.__bimTwDispor === dispor) win.__bimTwDispor = null; if (inst && inst.dispor === dispor) { inst = null; pintar(); } }
     win.__bimTwDispor = dispor;
 
     inst = {
@@ -315,7 +440,7 @@
     URL_PADRAO: URL_PADRAO, DEBOUNCE_GLB: DEBOUNCE_GLB, INTERVALO_CAM: INTERVALO_CAM,
     ehLocal: ehLocal, baseUrl: baseUrl, idDe: idDe, categoria: categoria, nomeMaterial: nomeMaterial,
     montarCena: montarCena, exportarGLB: exportarGLB, cameraPayload: cameraPayload, cameraMudou: cameraMudou,
-    instalar: instalar, botaoBarra: botaoBarra,
+    instalar: instalar, botaoBarra: botaoBarra, assinatura: assinatura, prepararRegras: prepararRegras, cortarZ: cortarZ, RETRY_GLB: RETRY_GLB, TENTATIVAS_GLB: TENTATIVAS_GLB,
     aoReconstruir: function () { if (inst) inst.aoReconstruir(); },
     atual: function () { return inst; }
   };

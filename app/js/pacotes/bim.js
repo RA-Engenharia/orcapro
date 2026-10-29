@@ -3249,6 +3249,8 @@ try {
 "use strict";
 var URL_PADRAO = "http://127.0.0.1:8892";
 var DEBOUNCE_GLB = 1500;
+var RETRY_GLB = 3000;
+var TENTATIVAS_GLB = 3;
 var INTERVALO_CAM = 150;
 var EPS_CAM = 1e-4;
 var FORA = { IFCPIPESEGMENT: 1, IFCPIPEFITTING: 1, IFCVALVE: 1, IFCWASTETERMINAL: 1 };
@@ -3284,14 +3286,54 @@ var hex = m.color ? m.color.getHexString() : "000000";
 return (dono ? dono.replace(/[^A-Za-z0-9_-]+/g, "_") + "__" : (m.name ? m.name.replace(/[^A-Za-z0-9_]+/g, "_") + "_" : "")) + hex +
 (m.opacity < 0.99 ? "_t" + Math.round(m.opacity * 100) : "") + (m.transmission > 0 ? "_vidro" : "");
 }
-function montarCena(THREE, origem) {
+var ILHA_RE = /coz-ilha/;
+function cortarZ(THREE, g0, zc) {
+var g = g0.index ? g0.toNonIndexed() : g0.clone(), P = g.attributes.position, keep = [];
+for (var t = 0; t < P.count; t += 3) { var z = (P.getZ(t) + P.getZ(t + 1) + P.getZ(t + 2)) / 3; if (z <= zc) keep.push(t); }
+if (!keep.length) return null;
+var ng = new THREE.BufferGeometry();
+Object.keys(g.attributes).forEach(function (n) {
+var A = g.attributes[n], it = A.itemSize, arr = new A.array.constructor(keep.length * 3 * it), j = 0;
+keep.forEach(function (t2) { for (var v = 0; v < 3; v++) for (var c = 0; c < it; c++) arr[j++] = A.array[(t2 + v) * it + c]; });
+ng.setAttribute(n, new THREE.BufferAttribute(arr, it, A.normalized));
+});
+return ng;
+}
+function prepararRegras(regras) {
+if (!regras || typeof regras !== "object") return null;
+var lista = [];
+(Array.isArray(regras.materiais) ? regras.materiais : []).forEach(function (r) {
+if (!r || !r.id || !r.nome) return;
+var re; try { re = new RegExp(r.id); } catch (_) { return; }
+lista.push({ re: re, ifc: r.ifc || null, nome: String(r.nome), cor: r.cor ? parseInt(String(r.cor).replace("#", ""), 16) : null, metal: r.metal, rug: r.rug });
+});
+var tr = regras.trocas && typeof regras.trocas === "object" ? regras.trocas : null;
+return (lista.length || (tr && Object.keys(tr).length)) ? { trocas: tr, materiais: lista } : null;
+}
+function regraDe(R, id, tipo) {
+if (!R) return null;
+for (var i = 0; i < R.materiais.length; i++) { var r = R.materiais[i]; if (r.re.test(id) && (!r.ifc || r.ifc === tipo)) return r; }
+return null;
+}
+function montarCena(THREE, origem, regras) {
 origem.updateMatrixWorld(true);
+var R = prepararRegras(regras);
 var cena = new THREE.Scene(), grupos = {}, cache = new Map(), nM = 0, nGrupos = 0;
 function matDe(m0, dono) {
 var k = m0.uuid + (dono ? "|" + dono : "");
 if (cache.has(k)) return cache.get(k);
-var m = m0.clone(); m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
+var m = m0.clone();
+[m.color, m.emissive].forEach(function (c) { if (c && c.isColor) { c.r = Math.min(1, Math.max(0, c.r)); c.g = Math.min(1, Math.max(0, c.g)); c.b = Math.min(1, Math.max(0, c.b)); } });
+if (R && R.trocas && m.color) { var h0 = m.color.getHexString(); if (R.trocas[h0]) m.color.set("#" + R.trocas[h0]); }
+m.name = nomeMaterial(m, dono); cache.set(k, m); return m;
 }
+var ILHA = {};
+origem.traverse(function (o) {
+if (!o.isMesh || !o.geometry || !vivo(o)) return;
+var u = o.userData || {}; if (u.expressID == null || !ILHA_RE.test(String(u.famSolido || ""))) return;
+o.geometry.computeBoundingBox(); var b = o.geometry.boundingBox; if (b.min.y < 0.8) return;
+var k = String(u.expressID); ILHA[k] = Math.max(ILHA[k] == null ? -1e9 : ILHA[k], b.max.z - 0.2);
+});
 var paredes = [], caixaDe = function (o) { o.geometry.computeBoundingBox(); return o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld); };
 origem.traverse(function (o) { if (o.isMesh && o.geometry && vivo(o) && o.userData && o.userData.tipo === "IFCWALL" && !o.isInstancedMesh) paredes.push(caixaDe(o).expandByScalar(0.02)); });
 function embutida(o) {
@@ -3304,6 +3346,12 @@ origem.traverse(function (o) {
 if (!o.isMesh || !o.geometry || !vivo(o)) return;
 var u = o.userData || {}, id = idDe(u); if (!id) return;
 var c = categoria(id, u, ESTRUT[u.tipo] ? embutida(o) : false); if (!c) return;
+var geo = o.geometry;
+if (ILHA[id] != null && ILHA_RE.test(famDe(u))) {
+var zc = ILHA[id]; geo.computeBoundingBox();
+if (geo.boundingBox.min.z > zc) return;
+if (geo.boundingBox.max.z > zc) { geo = cortarZ(THREE, geo, zc); if (!geo) return; }
+}
 var g = grupos[id];
 if (!g) {
 g = new THREE.Group(); g.name = id;
@@ -3318,9 +3366,16 @@ for (var i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); lista.push(new THREE.M
 var mat0 = u._p10orig || o.material; if (!mat0) return;
 if (/(^|-)mob-rack-tv/.test(famDe(u)) && [].concat(mat0).some(function (m) { return m && m.color && m.color.getHexString() === "0b0c0e"; })) return;
 var dono = (c === "piso" || c === "pintura" || PROPRIO[u.tipo]) ? id : null;
+var regra = regraDe(R, id, u.tipo); if (regra) dono = regra.nome;
 var mats = Array.isArray(mat0) ? mat0.map(function (m, i) { return matDe(m, dono ? dono + (i ? "_" + i : "") : null); }) : matDe(mat0, dono);
+if (regra) [].concat(mats).forEach(function (m) {
+if (regra.cor != null && m.color) m.color.setHex(regra.cor);
+m.name = regra.nome;
+if (regra.metal != null && "metalness" in m) m.metalness = regra.metal;
+if (regra.rug != null && "roughness" in m) m.roughness = regra.rug;
+});
 lista.forEach(function (M) {
-var c2 = new THREE.Mesh(o.geometry, mats);
+var c2 = new THREE.Mesh(geo, mats);
 M.decompose(c2.position, c2.quaternion, c2.scale);
 c2.name = id + "|" + (u.parte || "") + "|" + (u.famSolido ? String(u.famSolido) : "") + "|" + (nM++);
 c2.userData = { ra_id: id, ra_parte: u.parte || "", ra_solido: u.famSolido ? String(u.famSolido) : "", ra_parteDe: u.parteDe || "" };
@@ -3329,12 +3384,22 @@ g.add(c2);
 });
 return { cena: cena, grupos: nGrupos, malhas: nM, materiais: cache.size };
 }
-function exportarGLB(THREE, GLTFExporter, origem) {
-var r = montarCena(THREE, origem);
+function exportarGLB(THREE, GLTFExporter, origem, regras) {
+var r = montarCena(THREE, origem, regras);
 return new Promise(function (ok, erro) {
 new GLTFExporter().parse(r.cena, function (b) { ok({ buffer: b, grupos: r.grupos, malhas: r.malhas, materiais: r.materiais }); }, erro,
 { binary: true, onlyVisible: true, maxTextureSize: 2048 });
 });
+}
+function assinatura(origem) {
+var n = 0, h = 5381;
+origem.traverse(function (o) {
+if (!o.isMesh || !o.geometry) return;
+var u = o.userData || {}, id = idDe(u); if (!id || !vivo(o)) return;
+var m = u._p10orig || o.material, mu = Array.isArray(m) ? m.map(function (x) { return x && x.uuid; }).join(",") : (m && m.uuid), s = id + "|" + mu + "|" + (o.isInstancedMesh ? o.count : 1);
+n++; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+});
+return n + ":" + h;
 }
 function cameraPayload(THREE, camera, alvoOrbita, canvas) {
 if (!camera || !camera.isPerspectiveCamera) return null;
@@ -3401,6 +3466,8 @@ var win = env.win || (typeof window !== "undefined" ? window : null);
 if (!win || !S || !THREE) return null;
 if (win.__bimTwDispor) { try { win.__bimTwDispor(); } catch (e0) {} }
 var ligado = false, ligando = false, conectado = false, dica = "", ultCam = null, tCam = 0, tGlb = null, tEstado = null, enviando = false, pendente = false, vez = 0;
+var assEnviada = null, tAss = 0, aoVista = null;
+var regras = null, regrasJson = "", regrasEnviadas = null, tentativas = 0, tRetry = null, redePendente = false, tPendente = 0, estadoCaiu = false;
 var gltfCls = null;
 var diag = { glb: 0, cam: 0, falhas: 0 };
 function get(url, ms) {
@@ -3408,10 +3475,13 @@ var ctl = typeof AbortController === "function" ? new AbortController() : null, 
 return fetch(url, { signal: ctl ? ctl.signal : undefined }).then(function (r) { if (tm) clearTimeout(tm); return r; }, function (e) { if (tm) clearTimeout(tm); throw e; });
 }
 function lerEstado() {
-return get(baseUrl() + "/estado", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
+return get(baseUrl() + "/estado?vivo=1", 1500).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("estado " + r.status)); });
 }
 function aplicarEstado(e) {
-conectado = !!e;
+conectado = !!e && !redePendente;
+regras = (e && e.regras) || null;
+var rj = regras ? JSON.stringify(regras) : "";
+if (rj !== regrasJson) { regrasJson = rj; if (ligado && regrasEnviadas !== null && rj !== regrasEnviadas) aoReconstruir(); }
 dica = conectado ? "Fonte \"" + ((e && e.fonte) || "OrçaPRO") + "\" publicada. No Twinmotion: Importar › Direct Link e, para a câmera, escolha \"OrçaPRO — Vista 3D\"." : "";
 pintar();
 }
@@ -3425,22 +3495,36 @@ function enviarGlb() {
 if (!ligado) return Promise.resolve(false);
 if (enviando) { pendente = true; return Promise.resolve(false); }
 enviando = true; pendente = false; var minha = vez;
-return carregarExportador().then(function (GE) { return exportarGLB(THREE, GE, S.scene); }).then(function (r) {
+return carregarExportador().then(function (GE) { regrasEnviadas = regrasJson; try { assEnviada = assinatura(S.scene); } catch (_) { assEnviada = null; } return exportarGLB(THREE, GE, S.scene, regras); }).then(function (r) {
 if (!ligado || minha !== vez) return false;
 return fetch(baseUrl() + "/glb", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: r.buffer }).then(function (resp) {
 if (!resp.ok) throw new Error("glb " + resp.status);
-diag.glb++;
+diag.glb++; tentativas = 0; redePendente = false;
+if (tRetry) { clearTimeout(tRetry); tRetry = null; }
 return lerEstado().then(aplicarEstado, semConexao).then(function () { return true; });
-});
+}).catch(function (e) { diag.falhas++; falhouRede(); return false; });
 }).catch(function (e) { diag.falhas++; semConexao(); return false; }).then(function (x) {
 enviando = false;
 if (pendente && ligado) enviarGlb();
 return x;
 });
 }
+function falhouRede() {
+semConexao();
+if (!ligado) return;
+if (tentativas < TENTATIVAS_GLB) {
+tentativas++;
+if (tRetry) clearTimeout(tRetry);
+tRetry = setTimeout(function () { tRetry = null; enviarGlb(); }, RETRY_GLB);
+} else { redePendente = true; tPendente = Date.now(); estadoCaiu = false; }
+}
 function tick() {
 if (!ligado) return;
 var agora = (typeof performance !== "undefined" ? performance.now() : Date.now());
+if (agora - tAss > 1000) {
+tAss = agora;
+if (!tGlb && !enviando && !tRetry && !redePendente && assEnviada !== null) { try { if (assinatura(S.scene) !== assEnviada) aoReconstruir(); } catch (_) {} }
+}
 if (agora - tCam < INTERVALO_CAM) return;
 var p = cameraPayload(THREE, S.camera, S.orbit ? S.orbit.target : null, S.renderer && S.renderer.domElement);
 if (!p || !cameraMudou(p, ultCam)) return;
@@ -3449,13 +3533,18 @@ diag.cam++;
 try { fetch(baseUrl() + "/camera", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }).catch(function () {}); } catch (_) {}
 }
 S._tickExtra.push(tick);
+aoVista = function () { aoReconstruir(); };
+try { win.addEventListener("bim:p10-vista", aoVista); } catch (_) {}
 function aoReconstruir() {
 if (!ligado) return;
 if (tGlb) clearTimeout(tGlb);
 tGlb = setTimeout(function () { tGlb = null; enviarGlb(); }, DEBOUNCE_GLB);
 }
 function desligar() {
-ligado = false; vez++; pendente = false;
+var estavaLigado = ligado;
+ligado = false; vez++; pendente = false; tentativas = 0; redePendente = false; regrasEnviadas = null;
+if (tRetry) { clearTimeout(tRetry); tRetry = null; }
+if (estavaLigado) { try { fetch(baseUrl() + "/estado?vivo=0").catch(function () {}); } catch (_) {} }
 if (tGlb) { clearTimeout(tGlb); tGlb = null; }
 if (tEstado) { clearInterval(tEstado); tEstado = null; }
 ultCam = null; conectado = false; pintar();
@@ -3465,8 +3554,14 @@ if (ligando) return Promise.resolve(false);
 ligando = true;
 return lerEstado().then(function (e) {
 if (!S.scene) throw new Error("sem cena");
-ligado = true; vez++; ultCam = null; tCam = 0; aplicarEstado(e);
-tEstado = setInterval(function () { if (ligado) lerEstado().then(aplicarEstado, semConexao); }, 5000);
+ligado = true; vez++; ultCam = null; tCam = 0; assEnviada = null; aplicarEstado(e);
+tEstado = setInterval(function () {
+if (!ligado) return;
+lerEstado().then(function (e2) {
+aplicarEstado(e2);
+if (redePendente && ligado && (estadoCaiu || Date.now() - tPendente >= 30000)) { redePendente = false; estadoCaiu = false; tentativas = 0; enviarGlb(); }
+}, function () { estadoCaiu = true; semConexao(); });
+}, 5000);
 return enviarGlb().then(function () { tick(); return true; });
 }, function () {
 avisar("Abra o OrçaPRO Direct Link (atalho na área de trabalho) e tente de novo.");
@@ -3474,7 +3569,7 @@ return false;
 }).then(function (r) { ligando = false; return r; }, function (e) { ligando = false; avisar("Não consegui sincronizar com o Twinmotion: " + ((e && e.message) || e)); return false; });
 }
 function alternar() { if (ligado) { desligar(); return Promise.resolve(false); } return ligar(); }
-function dispor() { desligar(); if (win.__bimTwDispor === dispor) win.__bimTwDispor = null; if (inst && inst.dispor === dispor) { inst = null; pintar(); } }
+function dispor() { desligar(); try { win.removeEventListener("bim:p10-vista", aoVista); } catch (_) {} if (win.__bimTwDispor === dispor) win.__bimTwDispor = null; if (inst && inst.dispor === dispor) { inst = null; pintar(); } }
 win.__bimTwDispor = dispor;
 inst = {
 S: S, alternar: alternar, ligar: ligar, desligar: desligar, dispor: dispor, aoReconstruir: aoReconstruir, enviarGlb: enviarGlb,
@@ -3486,7 +3581,7 @@ var BimTwinmotion = {
 URL_PADRAO: URL_PADRAO, DEBOUNCE_GLB: DEBOUNCE_GLB, INTERVALO_CAM: INTERVALO_CAM,
 ehLocal: ehLocal, baseUrl: baseUrl, idDe: idDe, categoria: categoria, nomeMaterial: nomeMaterial,
 montarCena: montarCena, exportarGLB: exportarGLB, cameraPayload: cameraPayload, cameraMudou: cameraMudou,
-instalar: instalar, botaoBarra: botaoBarra,
+instalar: instalar, botaoBarra: botaoBarra, assinatura: assinatura, prepararRegras: prepararRegras, cortarZ: cortarZ, RETRY_GLB: RETRY_GLB, TENTATIVAS_GLB: TENTATIVAS_GLB,
 aoReconstruir: function () { if (inst) inst.aoReconstruir(); },
 atual: function () { return inst; }
 };

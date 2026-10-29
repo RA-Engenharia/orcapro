@@ -9932,6 +9932,7 @@ var FAM_PBR = {
 'palha natural': { cor: 0xc9b17f, rug: 0.9, met: 0 }, 'rattan natural': { cor: 0xb99b6b, rug: 0.85, met: 0 }, 'concreto': { cor: 0x9c9b97, rug: 0.85, met: 0 },
 'aço galvanizado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'aço zincado bicromatizado': { cor: 0xc9a227, rug: 0.38, met: 0.85, cc: 0.3, ccr: 0.2 }, 'aço preto oxidado': { cor: 0x1e1e1e, rug: 0.55, met: 0.6 }, 'aço grafite': { cor: 0x5a5d61, rug: 0.5, met: 0.6 },
 'madeira pinus': { cor: 0xd9964a, rug: 0.7, met: 0 }, 'madeira eucalipto': { cor: 0xb07a4a, rug: 0.7, met: 0 }, 'borracha': { cor: 0x1a1a1a, rug: 0.9, met: 0 },
+'aço microperfurado preto': { cor: 0x1a1b1d, rug: 0.45, met: 0.6, op: 0.55 }, 'aço microperfurado grafite': { cor: 0x3a3d40, rug: 0.45, met: 0.6, op: 0.55 },
 'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 },
 'aço galvanizado perfurado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'alumínio do alçapão': { cor: 0xaeaeae, rug: 0.4, met: 0.85 }
 };
@@ -10549,6 +10550,7 @@ agregarModelo(mo);
 tR.d = performance.now();
 carimbarConsulta();
 editGanchos(st, tR);
+try { if (window.BimTwinmotion) window.BimTwinmotion.aoReconstruir(); } catch (_) {}
 if (S._ultimoRebuild) S._ultimoRebuild.parcial = true;
 return true;
 }
