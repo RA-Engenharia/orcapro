@@ -347,6 +347,9 @@
     teCotaCumeeira: function (x) { return fin(el(x).cotaCumeeira) ? el(x).cotaCumeeira : null; },
     teCotaApoio: function (x) { return fin(el(x).cotaApoio) ? el(x).cotaApoio : null; },
     teUnir: function (x) { return el(x).unir != null ? txt(el(x).unir) : null; },
+    /* TELHADO SEGUE AS PAREDES (29/10/2026): "Sim" se alguma aresta do contorno leva `pr` (a parede que ela segue) */
+    teSeguir: function (x) { var c = el(x); if (c.modo === "extrusao") return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
+    teSeguirN: function (x) { var c = el(x); if (c.modo === "extrusao") return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
     /* TELHADO PARAMÉTRICO (T1, js/bimtelhadoestrut.js): o modelo da estrutura e os AVISOS dele, à vista nas Propriedades
        (o "fase 2: meias-tesouras de espigão", pontalete sem apoio, tesoura metálica baixa…) */
     teModelo: function (x) { var pk = el(x).pacote; return pk && pk.rotulo ? txt(pk.rotulo) : (el(x).modelo ? txt(el(x).modelo) : "sem estrutura (só o telhado)"); },
@@ -981,6 +984,8 @@
         P(I, "Construção", "Beiral (projeção na parede)", "RA_TELHADO_BEIRAL", "comprimento", { calc: "teBeiral", escrita: "telhado.beiral", leitura: false, faixa: FAIXA.coberturaBeiral, ifc: Q("OrcaPRO_Telhado", "Beiral") }),
         P(I, "Construção", "Modo", "RA_TELHADO_MODO", "texto", { calc: "teModo" }),
         P(I, "Construção", "Unido ao telhado", "RA_TELHADO_UNIR", "texto", { calc: "teUnir", escrita: "telhado.unir", leitura: false, ifc: Q("OrcaPRO_Telhado", "UnidoA") }),
+        P(I, "Construção", "Seguir as paredes", "RA_TELHADO_SEGUIR", "lista", { calc: "teSeguir", escrita: "telhado.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+        P(I, "Construção", "Arestas que seguem paredes", "RA_TELHADO_SEGUIR_ARESTAS", "texto", { calc: "teSeguirN" }),
         P(I, "Construção", "Modelo (estrutura e telhas)", "RA_TELHADO_MODELO", "texto", { calc: "teModelo", filtro: false }),
         P(I, "Construção", "Avisos do modelo", "RA_TELHADO_AVISOS_MODELO", "texto", { calc: "teAvisosModelo", filtro: false }),
         P(I, "Cotas", "Inclinação", "ROOF_SLOPE", "inclinacao", { calc: "teInclinacao", escrita: "telhado.inclinacao", leitura: false, faixa: FAIXA.coberturaInclinacao, ifc: Q("OrcaPRO_Telhado", "Inclinacao") }),

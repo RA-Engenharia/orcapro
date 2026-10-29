@@ -78,12 +78,19 @@
       if (!pv || !R || !C() || !reg) return false;
       R.acrescentar("arquitetura", "Arquitetura", "Modelador", [
         { id: "editar-contorno", rotulo: "Editar\ncontorno", icone: "editar", grande: true, requer: "selecao",
-          dica: "Com a laje, o piso, o forro ou o telhado selecionado: arraste um vértice, arraste uma aresta (ela anda paralela), clique numa aresta para inserir um vértice e Delete no vértice para tirá-lo. Enter conclui (um Ctrl+Z desfaz tudo); Esc cancela. Contorno que se cruza ou aresta menor que 1 cm não grava." }
+          dica: "Com a laje, o piso, o forro ou o telhado selecionado: arraste um vértice, arraste uma aresta (ela anda paralela), clique numa aresta para inserir um vértice e Delete no vértice para tirá-lo. Enter conclui (um Ctrl+Z desfaz tudo); Esc cancela. Contorno que se cruza ou aresta menor que 1 cm não grava." },
+        { id: "ajustar-paredes", rotulo: "Ajustar às\nparedes", icone: "telhado", grande: true, requer: "selecao",
+          dica: "Com o telhado selecionado: liga cada aresta à face da parede paralela mais perto (até 1,5 m) e leva o telhado até ela. Depois disso o telhado SEGUE as paredes: esticou ou moveu a parede, ele vai junto. É o botão para o telhado de antes, que ficou para trás quando a sala cresceu. Um Ctrl+Z desfaz." }
       ]);
       reg["editar-contorno"] = function () {
         var B = global.BIM;
         if (!B || !B.contornoEditar) return false;
         return B.contornoEditar();
+      };
+      reg["ajustar-paredes"] = function () {
+        var B = global.BIM;
+        if (!B || !B.contornoAjustarParedes) return false;
+        return B.contornoAjustarParedes();
       };
       return true;
     },
@@ -95,6 +102,11 @@
       var edit = api.edit, pend = null;        /* pend: { sub, ids:[] } — as paredes escolhidas */
       var pendBeiral = null;                   /* { contorno, extra } — telhado de 1 água esperando o clique do beiral */
       var sessao = null;                       /* a edição do contorno de uma peça */
+      var concluindo = false;                  /* gravando a op: a reconstrução do editor não reabre as alças por cima */
+      /* o contorno do telhado com a inclinação por aresta (texto `inclinacoes`) fundida: regravar o contorno apaga o texto */
+      function contornoDoTelhado(te) { var BT = global.BimTelhado; return BT && BT.contornoComInclinacoes ? BT.contornoComInclinacoes(te) : clone(te.contorno); }
+      function mudouSessao() { return !!sessao && JSON.stringify(sessao.cur) !== JSON.stringify(sessao.orig); }
+      function nLig(L) { return arr(L).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; }
 
       function ligado(sub) { return !!(edit && edit.on && SUBS[sub] && edit.sub === sub); }
       function modoDe(sub) { try { return api.modoDe(sub); } catch (e) { return ""; } }
@@ -132,7 +144,9 @@
       /* cria a(s) peça(s) do(s) contorno(s) achado(s) — pelo caminho de SEMPRE de cada ferramenta (as Propriedades valem) */
       function criarDe(sub, r, extra) {
         if (!r || !r.ok) { api.hint((r && r.motivo ? r.motivo + " " : "Contorno inválido. ") + (r && r.corrigir ? r.corrigir : "")); return true; }
-        var feitos = api.criar(sub, r.contornos.map(function (c) { return c.pts; }), extra || {});
+        extra = extra || {};
+        if (sub === "telhado" && r.alinhar) extra.vincular = r.alinhar;   /* TELHADO SEGUE AS PAREDES: a aresta que veio de parede nasce ligada a ela */
+        var feitos = api.criar(sub, r.contornos.map(function (c) { return c.pts; }), extra);
         if (feitos > 0 && r.contornos.length > 1) api.hint(feitos + " peças criadas, uma por ambiente (" + r.contornos.map(function (c) { return n2(c.area) + " m²"; }).join(", ") + "). Ctrl+Z desfaz cada uma.");
         return true;
       }
@@ -210,10 +224,10 @@
         pendentes: function () { return { paredes: ids(), beiral: !!pendBeiral, sessao: !!sessao }; },
 
         /* ------------------------------------------------ EDITAR CONTORNO de uma peça pronta */
-        editar: function () {
+        editar: function (uidsDados, auto) {
           if (sessao) return true;
-          if (!edit || !edit.on || !edit.estado) { api.hint("Ligue o Editor (Modelador) e selecione a laje, o forro ou o telhado."); return false; }
-          var uids = api.selecao ? api.selecao() : [], st = edit.estado, achou = null;
+          if (!edit || !edit.on || !edit.estado) { if (!auto) api.hint("Ligue o Editor (Modelador) e selecione a laje, o forro ou o telhado."); return false; }
+          var uids = uidsDados || (api.selecao ? api.selecao() : []), st = edit.estado, achou = null;
           uids.forEach(function (u) {
             if (achou) return;
             var id = String(u).replace(/^edit:/, "");
@@ -222,16 +236,61 @@
             var fo = arr(st.forros).filter(function (f) { return String(f.id) === id && f.ok && arr(f.contorno).length >= 3; })[0];
             if (fo) { achou = { tipo: "forro", id: fo.id, pts: clone(fo.contorno), y: +fo.cota || 0, rot: "Forro" }; return; }
             var te = arr(st.telhados).filter(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; })[0];
-            if (te) achou = { tipo: "telhado", id: te.id, pts: clone(te.contorno), y: +te.cotaApoio || 0, rot: "Telhado" };
+            if (te) achou = { tipo: "telhado", id: te.id, pts: contornoDoTelhado(te), y: +te.cotaApoio || 0, rot: "Telhado" };
           });
-          if (!achou) { api.hint("Selecione uma laje por contorno, um forro ou um telhado por perímetro (clique nele) e use \"Editar contorno\"."); return false; }
-          if (achou.pts.some(function (p) { return p && p.m; })) { api.hint("Este contorno tem aresta em arco: a edição de vértices é só para contorno reto."); return false; }
-          sessao = { alvo: achou, orig: clone(achou.pts), cur: clone(achou.pts), selV: -1, drag: null, erro: null };
+          if (!achou) { if (!auto) api.hint("Selecione uma laje por contorno, um forro ou um telhado por perímetro (clique nele) e use \"Editar contorno\"."); return false; }
+          if (achou.pts.some(function (p) { return p && p.m; })) { if (!auto) api.hint("Este contorno tem aresta em arco: a edição de vértices é só para contorno reto."); return false; }
+          sessao = { alvo: achou, orig: clone(achou.pts), cur: clone(achou.pts), selV: -1, drag: null, erro: null, auto: !!auto, cota: null };
           montarCamada();
-          api.hint(achou.rot + ": arraste os vértices (quadrados) e as arestas (círculos); clique numa aresta para inserir um vértice; Delete tira o vértice escolhido. Enter conclui, Esc cancela.");
+          var nl = nLig(achou.pts);
+          if (auto && achou.tipo === "telhado") {   /* o clique abriu as alças: dica curta (a longa cobria o painel) */
+            api.hint("Telhado: arraste os vértices e as arestas. " + (nl ? "A aresta que você arrastar se solta da parede. " : "Use \"Ajustar às paredes\" para ele seguir as paredes. ") + "Enter conclui, Esc cancela.");
+            return true;
+          }
+          api.hint(achou.rot + ": arraste os vértices (quadrados) e as arestas (círculos, com seta); clique numa aresta para inserir um vértice; Delete tira o vértice escolhido. Enter conclui, Esc cancela." +
+            (achou.tipo === "telhado" ? (nl ? " " + nl + " de " + achou.pts.length + " arestas seguem as paredes: a aresta que você arrastar se solta da parede (as outras continuam seguindo)." : " Este telhado não segue as paredes: use \"Ajustar às paredes\" para ligá-lo.") : ""));
           return true;
         },
-        sessaoEstado: function () { return sessao ? { id: sessao.alvo.id, tipo: sessao.alvo.tipo, pts: clone(sessao.cur), erro: sessao.erro, selV: sessao.selV } : null; },
+        /* CLIQUE NO TELHADO = ALÇAS (29/10/2026): o telhado por perímetro selecionado (modelador ligado) mostra as alças do contorno JÁ, sem procurar
+           botão. Selecionar outra coisa conclui (se mexeu e vale) ou fecha sem gravar (se nada mudou). Chamado por js/bim.js › selAplicar. */
+        aoSelecionar: function (uids) {
+          uids = arr(uids);
+          if (concluindo) return false;
+          if (sessao) {
+            if (!sessao.auto) return false;
+            if (uids.length === 1 && uids[0] === "edit:" + sessao.alvo.id) return true;
+            if (mudouSessao() && !sessao.erro && M.validar(sessao.cur).ok) concluirSessao(); else fecharSessao();
+          }
+          if (!edit || !edit.on || edit.sub || !edit.estado || uids.length !== 1 || !/^edit:/.test(uids[0])) return false;
+          var id = uids[0].replace(/^edit:/, "");
+          var temTel = arr(edit.estado.telhados).some(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; });
+          return temTel ? self.editar(uids, true) : false;
+        },
+        /* "Ajustar às paredes agora": liga as arestas do telhado selecionado às faces de parede paralelas e grava UMA op */
+        ajustarParedes: function () {
+          if (!edit || !edit.on || !edit.estado) { api.hint("Ligue o Editor (Modelador) e selecione um telhado por perímetro."); return false; }
+          if (sessao) {
+            if (mudouSessao()) { api.hint("Conclua (Enter) ou cancele (Esc) a edição do contorno antes de ajustar às paredes."); return false; }
+            fecharSessao();
+          }
+          var st = edit.estado, uids = api.selecao ? api.selecao() : [], te = null;
+          uids.forEach(function (u) {
+            if (te) return;
+            var id = String(u).replace(/^edit:/, "");
+            te = arr(st.telhados).filter(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; })[0] || null;
+          });
+          if (!te) { api.hint("Selecione um telhado por perímetro (clique nele) e use \"Ajustar às paredes\"."); return false; }
+          var atual = contornoDoTelhado(te), v = M.vincularArestas(arr(st.caixas), atual, { alinhar: "externa" });
+          if (!v.ok) { api.hint("Telhado " + te.id + ": " + (v.motivo || "não deu para ligar às paredes.") + " " + (v.corrigir || "")); return false; }
+          if (JSON.stringify(v.contorno) === JSON.stringify(atual)) { api.hint("Telhado " + te.id + ": " + v.resumo + " Ele já está nas paredes — nada para ajustar."); return true; }
+          concluindo = true;
+          try { api.op({ op: "telhado", id: te.id, contorno: v.contorno }); if (api.fechou) api.fechou(); } finally { concluindo = false; }
+          var msgA = "Telhado " + te.id + ": " + v.resumo + " " + (v.mudou ? "O contorno foi levado até as faces das paredes e agora acompanha as paredes." : "O contorno já estava nas paredes e agora as acompanha.") + " Ctrl+Z desfaz.";
+          api.hint(msgA);
+          setTimeout(function () { try { self.aoSelecionar(api.selecao ? api.selecao() : []); } catch (e) {} api.hint(msgA); }, 0);   /* as alças reabrem sobre o telhado novo; o balão fica com o resumo */
+          return true;
+        },
+        sessaoEstado: function () { return sessao ? { id: sessao.alvo.id, tipo: sessao.alvo.tipo, pts: clone(sessao.cur), erro: sessao.erro, selV: sessao.selV, auto: !!sessao.auto, cota: sessao.cota ? clone(sessao.cota) : null, ligadas: nLig(sessao.cur), ligadasAntes: nLig(sessao.orig) } : null; },
         /* para o teste/e2e: as mesmas ações das alças, sem o mouse */
         aplicar: function (acao) { return aplicarAcao(acao); },
         concluir: function () { return concluirSessao(); },
@@ -282,6 +341,23 @@
         if (!sessao || !cam) return;
         var P = sessao.cur, n = P.length, S2 = P.map(function (q) { return pos(q.x, q.z); }), i, h = "";
         if (S2.every(Boolean)) h += '<polygon points="' + S2.map(function (q) { return q.x.toFixed(1) + "," + q.y.toFixed(1); }).join(" ") + '" fill="' + (sessao.erro ? "rgba(239,68,68,.18)" : "rgba(34,197,94,.16)") + '" stroke="' + (sessao.erro ? "#ef4444" : "#22c55e") + '" stroke-width="2.5"/>';
+        /* TELHADO SEGUE AS PAREDES: a seta de cada aresta aponta para FORA (verde = segue a parede, laranja = solta/à mão) */
+        if (sessao.alvo.tipo === "telhado") {
+          var sgn = M.areaSinal(P) < 0 ? -1 : 1;
+          for (i = 0; i < n; i++) {
+            var a0 = P[i], b0 = P[(i + 1) % n], dx0 = b0.x - a0.x, dz0 = b0.z - a0.z, L0 = Math.sqrt(dx0 * dx0 + dz0 * dz0) || 1;
+            var mx0 = (a0.x + b0.x) / 2, mz0 = (a0.z + b0.z) / 2, p0 = pos(mx0, mz0), p1 = pos(mx0 + sgn * dz0 / L0 * 0.5, mz0 - sgn * dx0 / L0 * 0.5);
+            if (!p0 || !p1) continue;
+            var ux = p1.x - p0.x, uy = p1.y - p0.y, ul = Math.sqrt(ux * ux + uy * uy) || 1; ux /= ul; uy /= ul;
+            var cor = P[i].pr != null && P[i].pr !== "" ? "#22c55e" : "#f59e0b", sx = p0.x + ux * 11, sy = p0.y + uy * 11, ex = p0.x + ux * 31, ey = p0.y + uy * 31;
+            h += '<g stroke="' + cor + '" stroke-width="2.5" stroke-linecap="round" fill="none"><line x1="' + sx.toFixed(1) + '" y1="' + sy.toFixed(1) + '" x2="' + ex.toFixed(1) + '" y2="' + ey.toFixed(1) + '"/>' +
+              '<polyline points="' + (ex - ux * 7 - uy * 5).toFixed(1) + ',' + (ey - uy * 7 + ux * 5).toFixed(1) + ' ' + ex.toFixed(1) + ',' + ey.toFixed(1) + ' ' + (ex - ux * 7 + uy * 5).toFixed(1) + ',' + (ey - uy * 7 - ux * 5).toFixed(1) + '"/></g>';
+            if (sessao.drag && sessao.drag.k === "a" && sessao.drag.i === i && sessao.cota) {
+              h += '<text x="' + (ex + ux * 8 + 4).toFixed(1) + '" y="' + (ey + uy * 8 + 4).toFixed(1) + '" fill="#fff" stroke="#0f172a" stroke-width="3" paint-order="stroke" font-size="13" font-weight="700" font-family="system-ui,sans-serif">' +
+                (sessao.cota.encaixou ? "na face da parede" : n2(sessao.cota.dd) + " m da parede") + '</text>';
+            }
+          }
+        }
         svg.innerHTML = h;
         /* as alças: reaproveita os elementos (o arrasto precisa do mesmo nó) */
         var quer = [];
@@ -297,7 +373,14 @@
           al.el.style.cssText = "position:absolute;pointer-events:auto;cursor:" + (q.k === "v" ? "move" : "pointer") + ";width:14px;height:14px;margin:-7px 0 0 -7px;box-sizing:border-box;border:2px solid #fff;background:" + (q.k === "v" ? (sel ? "#f59e0b" : "#2563eb") : "#22c55e") + ";border-radius:" + (q.k === "v" ? "2px" : "50%") + ";display:" + (q.p ? "block" : "none") + ";" + (q.p ? "left:" + q.p.x.toFixed(1) + "px;top:" + q.p.y.toFixed(1) + "px" : "");
         });
         var v = M.validar(sessao.cur);
-        painel.innerHTML = '<b>' + sessao.alvo.rot + ' — editar contorno</b><br>' + (v.ok ? n2(v.area) + ' m² · perímetro ' + n2(v.perimetro) + ' m · ' + sessao.cur.length + ' vértices' : '<span style="color:#fca5a5">' + (sessao.erro || v.motivo) + '</span>') +
+        var infoLig = "";
+        if (sessao.alvo.tipo === "telhado") {
+          var nl1 = nLig(sessao.cur), nl0 = nLig(sessao.orig);
+          infoLig = '<br><span data-ct="vinculo" style="color:' + (nl1 ? '#86efac' : '#fcd34d') + '">' + (nl1 ? nl1 + ' de ' + sessao.cur.length + ' arestas seguem as paredes' : 'Não segue as paredes (use "Ajustar às paredes")') + '</span>' +
+            (nl0 > nl1 ? '<br><span data-ct="solta" style="color:#fcd34d">' + (nl0 - nl1) + ' aresta(s) solta(s) da parede</span>' : '') +
+            (sessao.drag && sessao.drag.k === "a" && sessao.cota ? '<br><span data-ct="cota">' + (sessao.cota.encaixou ? 'Encaixada na face da parede' : 'Distância até a parede mais próxima: ' + n2(sessao.cota.dd) + ' m') + '</span>' : '');
+        }
+        painel.innerHTML = '<b>' + sessao.alvo.rot + ' — editar contorno</b><br>' + (v.ok ? n2(v.area) + ' m² · perímetro ' + n2(v.perimetro) + ' m · ' + sessao.cur.length + ' vértices' : '<span style="color:#fca5a5">' + (sessao.erro || v.motivo) + '</span>') + infoLig +
           '<div style="margin-top:6px;display:flex;gap:6px"><button type="button" data-ct="concluir" style="cursor:pointer">Concluir (Enter)</button><button type="button" data-ct="cancelar" style="cursor:pointer">Cancelar (Esc)</button></div>';
         var bc = painel.querySelector('[data-ct="concluir"]'), bx = painel.querySelector('[data-ct="cancelar"]');
         if (bc) bc.onclick = function () { concluirSessao(); }; if (bx) bx.onclick = function () { fecharSessao(); api.hint("Edição do contorno cancelada."); };
@@ -320,6 +403,18 @@
         d.moved = true;
         var q = ptDe(ev); if (!q) return;
         var r = M.editar(d.base, { tipo: d.k === "v" ? "mover" : "aresta", i: d.i, p: q });
+        /* TELHADO: a COTA da aresta que anda até a parede mais perto; a menos de 5 cm ela ENCAIXA na face (Alt solta o encaixe) */
+        sessao.cota = null;
+        if (d.k === "a" && sessao.alvo.tipo === "telhado" && edit.estado) {
+          var P1 = r.ok ? r.pts : r.bruto, fc = P1 ? M.faceDaAresta(arr(edit.estado.caixas), P1, d.i, { alinhar: "auto", tol: 1.5 }) : null;
+          if (fc) {
+            sessao.cota = { dd: fc.dd, pr: fc.pr, pf: fc.pf, encaixou: false };
+            if (fc.dd <= 0.05 && fc.dd > 1e-4 && !ev.altKey) {
+              var r2 = M.editar(d.base, { tipo: "aresta", i: d.i, p: { x: q.x - fc.s * fc.nf[0], z: q.z - fc.s * fc.nf[1] } });
+              if (r2.ok) { r = r2; sessao.cota = { dd: 0, pr: fc.pr, pf: fc.pf, encaixou: true }; }
+            }
+          }
+        }
         sessao.cur = r.ok ? r.pts : (r.bruto || d.base);
         sessao.erro = r.ok ? null : (r.motivo + " " + (r.corrigir || ""));
         desenhar();
@@ -327,27 +422,43 @@
       function soltar(ev) {
         var d = sessao && sessao.drag; if (!d) return;
         sessao.drag = null;
+        var cotaFim = sessao.cota; sessao.cota = null;
         if (!d.moved && d.k === "a") {
           var q = ptDe(ev, false);
           if (q) aplicarAcao({ tipo: "inserir", i: d.i, p: q });
-        } else desenhar();
+        } else {
+          desenhar();
+          if (d.moved && sessao.alvo.tipo === "telhado" && nLig(sessao.cur) < nLig(d.base)) {
+            api.hint("Aresta solta da parede: ela não acompanha mais a parede (as outras continuam seguindo)." + (cotaFim && cotaFim.encaixou ? " Ficou na face da parede; use \"Ajustar às paredes\" para ligá-la de novo." : "") + " Enter conclui, Esc desfaz.");
+          }
+        }
       }
       function tecla(ev) {
         if (!sessao) return;
         if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); concluirSessao(); }
-        else if (ev.key === "Escape") { ev.stopPropagation(); fecharSessao(); api.hint("Edição do contorno cancelada."); }
+        else if (ev.key === "Escape") {
+          if (sessao.auto && !mudouSessao()) { fecharSessao(); return; }   /* nada mudou: o Esc segue para limpar a seleção */
+          ev.stopPropagation(); fecharSessao(); api.hint("Edição do contorno cancelada.");
+        }
         else if ((ev.key === "Delete" || ev.key === "Backspace") && sessao.selV >= 0) { ev.preventDefault(); ev.stopPropagation(); aplicarAcao({ tipo: "remover", i: sessao.selV }); }
       }
+      function a0tipoTel() { return !!sessao && sessao.alvo.tipo === "telhado"; }
       function concluirSessao() {
         if (!sessao) return false;
         var v = M.validar(sessao.cur);
         if (!v.ok || sessao.erro) { api.hint("Não grava: " + (sessao.erro || (v.motivo + " " + v.corrigir))); return false; }
-        var a = sessao.alvo, C2 = sessao.cur.map(function (q) { var o = { x: Math.round(q.x * 1e4) / 1e4, z: Math.round(q.z * 1e4) / 1e4 }; if (q.d === false) o.d = false; if (q.i != null && fin(Number(q.i))) o.i = Number(q.i); return o; });
+        if (sessao.auto && !mudouSessao()) { fecharSessao(); return true; }   /* alças abertas pelo clique e nada mexido: não suja o desfazer */
+        var a = sessao.alvo, C2 = sessao.cur.map(function (q) {
+          var o = { x: Math.round(q.x * 1e4) / 1e4, z: Math.round(q.z * 1e4) / 1e4 }; if (q.d === false) o.d = false; if (q.i != null && fin(Number(q.i))) o.i = Number(q.i);
+          if (a0tipoTel() && q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null && fin(Number(q.po))) o.po = Number(q.po); }   /* TELHADO SEGUE AS PAREDES: a aresta ainda ligada continua ligada */
+          return o;
+        });
         var op = a.tipo === "laje" ? { op: "ajustar", id: a.id, campos: { contorno: C2.map(function (q) { return { x: q.x, z: q.z }; }) } }
           : (a.tipo === "forro" ? { op: "forro", id: a.id, contorno: C2.map(function (q) { return { x: q.x, z: q.z }; }) } : { op: "telhado", id: a.id, contorno: C2 });
         var rot = a.rot;
         fecharSessao();
-        api.op(op); if (api.fechou) api.fechou();
+        concluindo = true;
+        try { api.op(op); if (api.fechou) api.fechou(); } finally { concluindo = false; }
         api.hint(rot + ": contorno gravado (" + n2(v.area) + " m², perímetro " + n2(v.perimetro) + " m). Ctrl+Z desfaz.");
         return true;
       }

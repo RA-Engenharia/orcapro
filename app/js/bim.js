@@ -7032,6 +7032,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     try { if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.aoSelecionar) BimTelhadoPecaUI.aoSelecionar(novo); } catch (_) {}   /* T5: a peça do telhado sai junto com a seleção */
     try { if (window.BimVaoArr && BimVaoArr.aoSelecionar) BimVaoArr.aoSelecionar(novo); } catch (_) {}   /* PORTAS E JANELAS (js/bimvaoarr.js): as cotas temporárias da abertura selecionada */
     try { if (window.BimInstCon && BimInstCon.aoSelecionar) BimInstCon.aoSelecionar(novo); } catch (_) {}   /* CONECTORES À VISTA (js/biminstcon.js): o "+" de cada ponto livre da peça de instalação */
+    try { if (S._ctr && S._ctr.aoSelecionar) S._ctr.aoSelecionar(novo); } catch (_) {}   /* TELHADO SEGUE AS PAREDES (js/bimcontornoui.js): clicou no telhado por perímetro = alças do contorno já na tela */
     return novo;
   }
   S._selAplicar = selAplicar; S._selAtual = selAtual;
@@ -19163,6 +19164,7 @@ window.BIM = {
   arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
   selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
   _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); }, // hook de teste
+  _caixaMalha: function (uid) { var m = S && S.meshPorUid && S.meshPorUid[uid]; if (!m) return null; var bx = new THREE.Box3().setFromObject(m); return { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z] }; }, // hook de teste: a caixa da malha no 3D (o e2e do telhado que segue as paredes mede a malha, não só o estado)
   /* SELECIONAR (js/bimselecao.js): a seleção ÚNICA da tela (planta e 3D) — uids 'edit:e3' / '0:1234';
      modo 'trocar' | 'somar' | 'alternar'. Peça do editor vai para a seleção do desenho de precisão
      (alças, Delete, arrastar); a do IFC, para o realce de sempre. Propriedades mostram a primeira. */
@@ -19170,6 +19172,7 @@ window.BIM = {
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
   /* CONTORNO LIVRE: o botão "Editar contorno" (js/bimcontornoui.js) — a peça selecionada ganha alças nos vértices e nas arestas */
   contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
+  contornoAjustarParedes: function () { return !!(S && S._ctr && S._ctr.ajustarParedes()); },   /* TELHADO SEGUE AS PAREDES: "Ajustar às paredes agora" */
   contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
   contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
   setasCtx: function () { return (S && S._setasCtx) ? S._setasCtx() : null; },   /* js/bimsetas.js: contexto das setas (câmera, escala, ferramenta) */

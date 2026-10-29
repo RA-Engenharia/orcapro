@@ -5202,6 +5202,7 @@ try { if (window.MetalComponenteUI && MetalComponenteUI.aoSelecionar) MetalCompo
 try { if (window.BimTelhadoPecaUI && BimTelhadoPecaUI.aoSelecionar) BimTelhadoPecaUI.aoSelecionar(novo); } catch (_) {}
 try { if (window.BimVaoArr && BimVaoArr.aoSelecionar) BimVaoArr.aoSelecionar(novo); } catch (_) {}
 try { if (window.BimInstCon && BimInstCon.aoSelecionar) BimInstCon.aoSelecionar(novo); } catch (_) {}
+try { if (S._ctr && S._ctr.aoSelecionar) S._ctr.aoSelecionar(novo); } catch (_) {}
 return novo;
 }
 S._selAplicar = selAplicar; S._selAtual = selAtual;
@@ -14613,9 +14614,11 @@ disciplinaVisivel: function (chave, on) { if (S && S._disciplinaVisivel) S._disc
 arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
 selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
 _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); },
+_caixaMalha: function (uid) { var m = S && S.meshPorUid && S.meshPorUid[uid]; if (!m) return null; var bx = new THREE.Box3().setFromObject(m); return { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z] }; },
 selecionar: function (uids, modo) { return (S && S._selAplicar) ? S._selAplicar(uids || [], modo || 'trocar') : []; },
 selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
 contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
+contornoAjustarParedes: function () { return !!(S && S._ctr && S._ctr.ajustarParedes()); },
 contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
 contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
 setasCtx: function () { return (S && S._setasCtx) ? S._setasCtx() : null; },

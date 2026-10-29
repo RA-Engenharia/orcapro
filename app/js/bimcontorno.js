@@ -149,17 +149,34 @@
     return refazer(P);
   }
 
-  /* a edição inteira em uma chamada, LEVANDO as marcas de cada aresta (d = "não define inclinação", i = % da aresta):
+  /* a edição inteira em uma chamada, LEVANDO as marcas de cada aresta (d = "não define inclinação", i = % da aresta e, desde 29/10/2026,
+     pr/pf/po = a parede que a aresta segue). A aresta MEXIDA à mão se DESVINCULA da parede (as outras continuam seguindo):
+       mover vértice → as duas arestas dele · arrastar aresta → ela (as vizinhas só esticam na própria reta) · tirar vértice → a que sobra no lugar das duas
+       (se as duas seguiam a mesma parede, segue) · inserir vértice → as duas metades herdam a parede da aresta.
      a = { tipo:"mover"|"inserir"|"remover"|"aresta", i, p } */
   function editar(lista, a) {
-    var r, fl = arr(lista).map(function (q) { return { d: q && q.d, i: q && q.i }; });
+    var r, fl = arr(lista).map(function (q) { return { d: q && q.d, i: q && q.i, pr: q && q.pr, pf: q && q.pf, po: q && q.po }; }), nfl = fl.length;
+    function solta(k) { if (nfl && fl[((k % nfl) + nfl) % nfl]) { var f = fl[((k % nfl) + nfl) % nfl]; f.pr = null; f.pf = null; f.po = null; } }
     if (!a) return { ok: false, motivo: "Edição vazia.", corrigir: "Arraste um vértice ou uma aresta." };
-    if (a.tipo === "mover") r = moverVertice(lista, a.i, a.p);
-    else if (a.tipo === "inserir") { r = inserirVertice(lista, a.i, a.p); if (r.ok || r.bruto) fl.splice(Math.round(a.i) + 1, 0, { d: fl[Math.round(a.i)].d, i: fl[Math.round(a.i)].i }); }
-    else if (a.tipo === "remover") { r = removerVertice(lista, a.i); if (r.ok || r.bruto) fl.splice(Math.round(a.i), 1); }
-    else if (a.tipo === "aresta") r = moverAresta(lista, a.i, a.p);
+    if (a.tipo === "mover") { r = moverVertice(lista, a.i, a.p); if (r.ok || r.bruto) { solta(Math.round(a.i) - 1); solta(Math.round(a.i)); } }
+    else if (a.tipo === "inserir") { r = inserirVertice(lista, a.i, a.p); if (r.ok || r.bruto) fl.splice(Math.round(a.i) + 1, 0, { d: fl[Math.round(a.i)].d, i: fl[Math.round(a.i)].i, pr: fl[Math.round(a.i)].pr, pf: fl[Math.round(a.i)].pf, po: fl[Math.round(a.i)].po }); }
+    else if (a.tipo === "remover") {
+      r = removerVertice(lista, a.i);
+      if (r.ok || r.bruto) {
+        var ri = Math.round(a.i), antF = fl[(ri + nfl - 1) % nfl], atF = fl[ri];
+        var mesma = antF && atF && antF.pr != null && antF.pr !== "" && String(antF.pr) === String(atF.pr) && antF.pf === atF.pf;
+        fl.splice(ri, 1);
+        if (!mesma) solta(ri > 0 ? ri - 1 : fl.length - 1);
+      }
+    }
+    else if (a.tipo === "aresta") { r = moverAresta(lista, a.i, a.p); if (r.ok || r.bruto) solta(Math.round(a.i)); }
     else return { ok: false, motivo: "Edição desconhecida.", corrigir: "Arraste um vértice ou uma aresta." };
-    arr(r.ok ? r.pts : r.bruto).forEach(function (q, k) { var f = fl[k]; if (!f) return; if (f.d === false) q.d = false; if (f.i != null && fin(Number(f.i))) q.i = Number(f.i); });
+    arr(r.ok ? r.pts : r.bruto).forEach(function (q, k) {
+      var f = fl[k]; if (!f) return;
+      if (f.d === false) q.d = false;
+      if (f.i != null && fin(Number(f.i))) q.i = Number(f.i);
+      if (f.pr != null && f.pr !== "") { q.pr = f.pr; if (f.pf) q.pf = f.pf; if (f.po != null) q.po = f.po; }
+    });
     return r;
   }
 
@@ -356,6 +373,165 @@
     return Object.keys(vistos);
   }
 
+  /* ------------------------------------------------------------ VÍNCULO POR ARESTA (29/10/2026)
+     Pedido do Rogério: "eu aumentei o tamanho da sala e agora preciso aumentar o tamanho dele (o telhado). Eu queria que ele
+     entendesse e aumentasse o tamanho. Mas também quero poder aumentar em manual. Ele tinha que ser paramétrico e chegar até a parede."
+
+     O ponto do contorno do telhado ganha 3 campos OPCIONAIS que valem para a aresta que SAI dele (como `d` e `i`):
+       pr = id da parede · pf = face ("externa" | "eixo" | "interna") · po = afastamento em m a partir da face, para FORA do contorno.
+     Sem lista dentro de lista (Firestore). Sem `pr` em ponto nenhum = o telhado de antes, byte a byte (nada daqui roda).
+     Por que a face é calculada da CAIXA e não do retângulo do BimForro: o telhado resolve ANTES do BimArq.derivar (as paredes ainda
+     não têm `uniao`), e a face é a reta paralela ao eixo a ±espessura/2 — não depende da união dos cantos. */
+  var FACES = { externa: 1, eixo: 1, interna: 1 };
+  function paredeReta(c) {
+    if (!c || c.tipo !== "parede" || !(num(c.comprimento, 0) > 0.01) || !(num(c.espessura, 0) > 0)) return null;
+    var rot = num(c.rotY, 0), co = Math.cos(rot), si = Math.sin(rot);
+    return { id: String(c.id), c: [num(c.cx, 0), num(c.cz, 0)], u: [co, -si], n: [si, co], t: num(c.espessura, 0) / 2, L: num(c.comprimento, 0) / 2 };
+  }
+  function temVinculo(contorno) { return arr(contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }); }
+  /* a normal de FORA de cada aresta do contorno (a direita da direção se anti-horário) */
+  function normaisFora(P) {
+    var n = P.length, horario = areaSinal(P) < 0;
+    return P.map(function (a, k) {
+      var b = P[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz) || 1;
+      var nx = dz / L, nz = -dx / L;
+      return horario ? [-nx, -nz] : [nx, nz];
+    });
+  }
+  /* a reta (ponto + direção) da face `pf` da parede `w` para a aresta de normal de fora `nf`, afastada `po` para fora */
+  function retaDaFace(w, nf, pf, po) {
+    var s = (w.n[0] * nf[0] + w.n[1] * nf[1]) >= 0 ? 1 : -1, nw = [w.n[0] * s, w.n[1] * s];
+    var off = pf === "eixo" ? 0 : (pf === "interna" ? -w.t : w.t);
+    off += num(po, 0);
+    return { p: [w.c[0] + nw[0] * off, w.c[1] + nw[1] * off], d: w.u };
+  }
+
+  /* RESOLVE o contorno gravado contra as paredes de agora.
+     → { contorno:[{x,z,d?,i?,pr?,pf?,po?}], mudou, ligadas, avisos:[texto], problemas:[{motivo,corrigir}], usouGravado }
+     Nunca devolve contorno inválido: se a resolução cruzar ou zerar uma aresta, volta o gravado com o aviso (problema com solução). */
+  function resolverVinculos(caixas, contorno) {
+    var C = arr(contorno), n = C.length;
+    var saida = { contorno: C, mudou: false, ligadas: 0, avisos: [], problemas: [], usouGravado: false };
+    if (n < 3 || !temVinculo(C)) return saida;
+    var mapa = {};
+    arr(caixas).forEach(function (c) { var w = paredeReta(c); if (w) mapa[w.id] = w; });
+    var P = C.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), NF = normaisFora(P), retas = [], ligada = [], k;
+    for (k = 0; k < n; k++) {
+      var q = C[k], a = P[k], b = P[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz) || 1;
+      var reta = { p: a, d: [dx / L, dz / L] }, lig = false;
+      if (q.pr != null && q.pr !== "") {
+        var w = mapa[String(q.pr)], pf = FACES[q.pf] ? q.pf : "externa";
+        if (!w) {
+          saida.avisos.push("A parede da aresta " + (k + 1) + " do telhado não existe mais: a aresta ficou onde estava.");
+          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado foi apagada.", corrigir: "Use \"Ajustar às paredes agora\" para ligar a aresta a outra parede, ou arraste a aresta (Editar contorno)." });
+        } else if (Math.abs(w.u[0] * (dx / L) + w.u[1] * (dz / L)) < 0.7) {
+          saida.avisos.push("A parede da aresta " + (k + 1) + " girou demais em relação ao telhado: a aresta ficou onde estava.");
+          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado girou mais de 45° em relação a ela.", corrigir: "Use \"Ajustar às paredes agora\" ou arraste a aresta (Editar contorno)." });
+        } else { reta = retaDaFace(w, NF[k], pf, q.po); lig = true; }
+      }
+      retas.push(reta); ligada.push(lig);
+    }
+    if (!ligada.some(Boolean)) { saida.usouGravado = true; return saida; }
+    var N = [];
+    for (k = 0; k < n; k++) {
+      var ant = retas[(k + n - 1) % n], at = retas[k], den = ant.d[0] * at.d[1] - ant.d[1] * at.d[0], X;
+      if (Math.abs(den) < Math.sin(Math.PI / 180)) {   /* paralelas (< 1°): o ponto gravado projetado na reta que anda */
+        var rr = ligada[(k + n - 1) % n] ? ant : (ligada[k] ? at : null);
+        if (!rr) X = [P[k][0], P[k][1]];
+        else { var tt = (P[k][0] - rr.p[0]) * rr.d[0] + (P[k][1] - rr.p[1]) * rr.d[1]; X = [rr.p[0] + rr.d[0] * tt, rr.p[1] + rr.d[1] * tt]; }
+      } else X = interReta(ant.p, ant.d, at.p, at.d) || [P[k][0], P[k][1]];
+      N.push(X);
+    }
+    var longe = N.some(function (X, i) { return dist(X, P[i]) > 50; });
+    var v = longe ? { ok: false, motivo: "O telhado ficaria a mais de 50 m do desenho.", corrigir: "Confira a parede ligada." } : validar(aO(N));
+    if (!v.ok) {
+      saida.usouGravado = true;
+      saida.avisos.push("O telhado não pôde seguir as paredes: " + v.motivo + " Ficou como estava gravado. " + (v.corrigir || ""));
+      saida.problemas.push({ motivo: "Uma parede ligada ao telhado mudou demais: " + v.motivo, corrigir: "Use \"Editar contorno\" para arrumar o telhado, ou \"Seguir as paredes: Não\" para soltar todas as arestas." });
+      return saida;
+    }
+    var mudou = false;
+    var R = N.map(function (X, i) {
+      var q = C[i], o2 = { x: r6(X[0]), z: r6(X[1]) };
+      if (q.d === false) o2.d = false;
+      if (q.i != null && fin(Number(q.i))) o2.i = Number(q.i);
+      if (q.pr != null && q.pr !== "") { o2.pr = q.pr; if (q.pf) o2.pf = q.pf; if (q.po != null) o2.po = q.po; }
+      if (Math.abs(o2.x - num(q.x, 0)) > 1e-6 || Math.abs(o2.z - num(q.z, 0)) > 1e-6) mudou = true;
+      return o2;
+    });
+    saida.contorno = R; saida.mudou = mudou; saida.ligadas = ligada.filter(Boolean).length;
+    return saida;
+  }
+
+  /* a face de parede PARALELA (< 2°) mais perto da aresta k de P cujo trecho sobrepõe a aresta, até `tol`.
+     → { w, pf, dd (distância, sempre >= 0), s (assinada: > 0 = a aresta está FORA da face), ov } | null */
+  function acharFace(W, P, NF, k, alinhar, tol) {
+    var n = P.length, a = P[k], b = P[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz), melhor = null;
+    if (!(L > 1e-6)) return null;
+    var u = [dx / L, dz / L];
+    W.forEach(function (w) {
+      var cosA = Math.abs(w.u[0] * u[0] + w.u[1] * u[1]);
+      if (cosA < Math.cos(2 * Math.PI / 180)) return;   /* não é paralela (< 2°) */
+      var faces = alinhar === "auto" ? ["externa", "interna"] : [alinhar];
+      faces.forEach(function (pf) {
+        var r = retaDaFace(w, NF[k], pf, 0), M = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        var sg = (M[0] - r.p[0]) * NF[k][0] + (M[1] - r.p[1]) * NF[k][1], dd = Math.abs(sg);   /* distância entre as retas paralelas */
+        if (dd > tol + 1e-9) return;
+        /* o trecho da parede (eixo ± metade do comprimento) sobrepõe a aresta? */
+        var s0 = (w.c[0] - a[0]) * u[0] + (w.c[1] - a[1]) * u[1], lo = Math.max(0, s0 - w.L), hi = Math.min(L, s0 + w.L);
+        if (hi - lo < 0.05) return;
+        if (!melhor || dd < melhor.dd - 1e-9 || (Math.abs(dd - melhor.dd) <= 1e-9 && hi - lo > melhor.ov)) melhor = { w: w, pf: pf, dd: dd, s: sg, ov: hi - lo, nf: NF[k] };
+      });
+    });
+    return melhor;
+  }
+  /* a face mais perto da aresta k do contorno (para a COTA e o encaixe durante o arraste) → { pr, pf, dd, s, nf } | null */
+  function faceDaAresta(caixas, contorno, k, o) {
+    o = o || {};
+    var C = arr(contorno), n = C.length;
+    if (n < 3 || k < 0 || k >= n) return null;
+    var W = arr(caixas).filter(function (c) { return c && c.delimitaAmbiente !== false; }).map(paredeReta).filter(Boolean);
+    var P = C.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), m = acharFace(W, P, normaisFora(P), k, o.alinhar || "auto", fin(o.tol) ? o.tol : 1.5);
+    return m ? { pr: m.w.id, pf: m.pf, dd: m.dd, s: m.s, nf: m.nf } : null;
+  }
+
+  /* LIGA cada aresta à face de parede PARALELA (< 2°) mais próxima cujo trecho se sobrepõe à aresta, até `tol` (padrão 1,5 m).
+     alinhar: "externa" (padrão) | "eixo" | "interna" | "auto" (a mais perto das duas faces). Aresta já ligada a parede que existe fica como está.
+     → { ok, contorno (já resolvido, com pr/pf/po), ligadas:[idx], naoLigadas:[{i, motivo}], resumo } */
+  function vincularArestas(caixas, contorno, o) {
+    o = o || {};
+    var C = arr(contorno), n = C.length, tol = fin(o.tol) ? o.tol : 1.5, alinhar = FACES[o.alinhar] || o.alinhar === "auto" ? o.alinhar : "externa";
+    if (n < 3) return { ok: false, motivo: "Telhado sem contorno.", corrigir: "Selecione um telhado por perímetro." };
+    var W = arr(caixas).filter(function (c) { return c && c.delimitaAmbiente !== false; }).map(paredeReta).filter(Boolean), mapa = {};
+    W.forEach(function (w) { mapa[w.id] = w; });
+    var P = C.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), NF = normaisFora(P), ligadas = [], nao = [];
+    var N = C.map(function (q) { var o2 = { x: num(q.x, 0), z: num(q.z, 0) }; if (q.d === false) o2.d = false; if (q.i != null && fin(Number(q.i))) o2.i = Number(q.i); return o2; });
+    for (var k = 0; k < n; k++) {
+      var q = C[k];
+      if (q.pr != null && q.pr !== "" && mapa[String(q.pr)]) { N[k].pr = q.pr; if (q.pf) N[k].pf = q.pf; if (q.po != null) N[k].po = q.po; ligadas.push(k); continue; }
+      var a = P[k], b = P[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.sqrt(dx * dx + dz * dz);
+      if (!(L > 1e-6)) { nao.push({ i: k, motivo: "não tem comprimento" }); continue; }
+      var melhor = acharFace(W, P, NF, k, alinhar, tol);
+      if (!melhor) { nao.push({ i: k, motivo: "não tem parede paralela perto" }); continue; }
+      N[k].pr = melhor.w.id; N[k].pf = melhor.pf; N[k].po = 0; ligadas.push(k);
+    }
+    if (!ligadas.length) return { ok: false, motivo: "Nenhuma aresta tem parede paralela a menos de " + String(tol).replace(".", ",") + " m.", corrigir: "Chegue o telhado perto das paredes ou use \"Editar contorno\".", contorno: N, ligadas: [], naoLigadas: nao };
+    /* o contorno já com os pontos nas paredes (a edição e o fallback gravado ficam coerentes) */
+    var res = resolverVinculos(caixas, N);
+    if (res.usouGravado) return { ok: false, motivo: "Ligar às paredes deixaria o telhado inválido: " + (res.problemas[0] ? res.problemas[0].motivo : "contorno cruzado") + ".", corrigir: "Ajuste o contorno com \"Editar contorno\" e tente de novo.", contorno: N, ligadas: ligadas, naoLigadas: nao };
+    var resumo = ligadas.length + " de " + n + " arestas seguem paredes" + (nao.length ? "; " + nao.map(function (x) { return "a aresta " + (x.i + 1) + " " + x.motivo; }).join("; ") : "") + ".";
+    return { ok: true, contorno: res.contorno, ligadas: ligadas, naoLigadas: nao, resumo: resumo, mudou: res.mudou };
+  }
+  /* o contorno SOLTO das paredes ("Seguir as paredes: Não"): os pontos de agora, sem pr/pf/po */
+  function desvincular(contorno) {
+    return arr(contorno).map(function (q) { var o = { x: r6(num(q.x, 0)), z: r6(num(q.z, 0)) }; if (q.d === false) o.d = false; if (q.i != null && fin(Number(q.i))) o.i = Number(q.i); return o; });
+  }
+  /* quantas arestas seguem parede (para a tela) */
+  function resumoVinculo(contorno) {
+    var C = arr(contorno), l = C.filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length;
+    return { total: C.length, ligadas: l, seguindo: l > 0 };
+  }
+
   /* ------------------------------------------------------------ águas do telhado */
   /* tipo: "uma" | "duas" | "varias". `aresta` (uma água): o índice da aresta que define a inclinação (a que
      fica no beiral, de onde o plano sobe); sem ela vale a mais comprida. Devolve o contorno com `d:false`
@@ -403,6 +579,7 @@
     validar: validar, areaSinal: areaSinal, perimetro: perimetro,
     editar: editar, moverVertice: moverVertice, inserirVertice: inserirVertice, removerVertice: removerVertice, moverAresta: moverAresta,
     contornoDeParedes: contornoDeParedes, contornoDaEdificacao: contornoDaEdificacao, cadeiaDeParedes: cadeiaDeParedes,
+    resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
     aguasContorno: aguasContorno, arestaMaisPerto: arestaMaisPerto, verticeMaisPerto: verticeMaisPerto,
     /* o alinhamento padrão de cada peça: laje e telhado pela face externa; piso e forro pela interna */
     alinharPadrao: function (peca) { return peca === "piso" || peca === "forro" ? "interna" : "externa"; }

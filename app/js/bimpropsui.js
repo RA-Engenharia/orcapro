@@ -385,6 +385,23 @@
           else if (v !== null && m[2] !== "rotularMestras") v = Number(v);
           o[m[2]] = v; ops.push(o);
         });
+      } else if (e === "telhado.seguir") {
+        /* TELHADO SEGUE AS PAREDES (29/10/2026): Não = grava o contorno de agora SEM o vínculo (uma op); Sim = liga cada aresta à
+           face de parede paralela mais perto (BimContorno.vincularArestas) e grava UMA op. Ctrl+Z desfaz. */
+        var BCs = global.BimContorno, avS = [];
+        if (!BCs || !BCs.vincularArestas) return { ok: false, erro: "O motor do contorno (js/bimcontorno.js) não carregou." };
+        for (var is = 0; is < ids.length; is++) {
+          var ts = elDe(ctx.estado, ids[is]);
+          if (!ts || ts.modo === "extrusao" || arr(ts.contorno).length < 3) return { ok: false, erro: "Seguir as paredes vale para o telhado por perímetro." };
+          var cts = global.BimTelhado && global.BimTelhado.contornoComInclinacoes ? global.BimTelhado.contornoComInclinacoes(ts) : ts.contorno;
+          if (valor === "Não") ops.push({ op: "telhado", id: ts.id, contorno: BCs.desvincular(cts) });
+          else {
+            var vs = BCs.vincularArestas(ctx.estado.caixas, cts, { alinhar: "externa" });
+            if (!vs.ok) return { ok: false, erro: (vs.motivo || "Não deu para ligar às paredes.") + " " + (vs.corrigir || "") };
+            ops.push({ op: "telhado", id: ts.id, contorno: vs.contorno }); avS.push("Telhado " + ts.id + ": " + vs.resumo);
+          }
+        }
+        if (avS.length) return { ok: true, ops: ops, avisos: avS };
       } else if ((m = /^(telhado|borda|fundacao|platibanda)\.(\w+)$/.exec(e))) {
         /* P3: telhado, borda e fundação (js/bimtelhado.js, js/bimfundacao.js) se alteram pela própria op, campo a campo;
            vazio volta ao padrão (null). Texto: o nível, o telhado unido e a inclinação por aresta. */

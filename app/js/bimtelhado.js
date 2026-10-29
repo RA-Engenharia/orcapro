@@ -61,7 +61,9 @@
  * A OP (validada no BimEdit.sanear — gancho "P3" em js/bimedit.js —, que a
  * guarda mesmo numa tela sem este motor):
  *   {op:"telhado", id, modo?:"perimetro"|"extrusao",
- *    contorno?:[{x, z, d?:false, i?:%}…]   (d e i são da aresta que SAI do ponto),
+ *    contorno?:[{x, z, d?:false, i?:%, pr?:id, pf?:"externa"|"eixo"|"interna", po?:m}…]   (d, i, pr, pf e po são da aresta que SAI do ponto;
+ *       pr = a PAREDE que a aresta segue — telhado segue as paredes, 29/10/2026: a aresta vira a face `pf` da parede de agora, afastada `po` m
+ *       para fora; quem resolve é BimContorno.resolverVinculos no fim(); sem `pr` em ponto nenhum = o telhado de antes, byte a byte),
  *    inclinacao?:% (padrão das arestas), beiral?:m, nivelId?, base?, deslocBase?,
  *    tipoId? | tipoTelhado?:{id, rotulo, camadas:[{rotulo, material, e}]},
  *    unir?: id do outro telhado | null,
@@ -1238,6 +1240,10 @@
           if (!obj(q) || !fin(q.x) || !fin(q.z)) return false;
           if (q.d != null && typeof q.d !== "boolean") return false;
           if (q.i != null && !(fin(q.i) && q.i >= LIM.inclinacao[0] && q.i <= LIM.inclinacao[1])) return false;
+          /* TELHADO SEGUE AS PAREDES (29/10/2026): pr = id da parede, pf = face, po = afastamento (m) — da aresta que SAI do ponto */
+          if (q.pr != null && !idOk(q.pr)) return false;
+          if (q.pf != null && q.pf !== "externa" && q.pf !== "eixo" && q.pf !== "interna") return false;
+          if (q.po != null && !(fin(q.po) && Math.abs(q.po) <= 10)) return false;
         }
       }
       algum = true;
@@ -1385,6 +1391,13 @@
   var BimTelhado = {
     inverterCaimento: inverterCaimento, arestaOposta: arestaOposta,
     inverterDoEstado: inverterDoEstado,
+    /* o contorno do telhado JÁ com a inclinação por aresta do texto `inclinacoes` fundida em d/i (reescrever o contorno apaga o texto:
+       quem grava um contorno novo — Editar contorno, Seguir as paredes, Ajustar às paredes — parte deste, para não perder as águas) */
+    contornoComInclinacoes: function (t) {
+      var C = arr(t && t.contorno).map(function (q) { return clone(q); });
+      if (t && t.inclinacoes != null) inclinacoesTexto(t.inclinacoes).forEach(function (e, k) { if (!e || !C[k]) return; if (e.d === false) { C[k].d = false; delete C[k].i; } else { delete C[k].d; C[k].i = e.i; } });
+      return C;
+    },
     /* O COMANDO "Inverter caimento" (F2, Casa 487): lê o modelo aberto, acha o telhado, aplica as ops num LOTE (um Ctrl+Z desfaz) e devolve o resultado.
        Sem o editor do BIM na página devolve só as ops (quem chama aplica). */
     inverterNoModelo: function (id) {
@@ -1428,7 +1441,7 @@
         o.origem = { x: r6(num(d.origem && d.origem.x, 0)), z: r6(num(d.origem && d.origem.z, 0)) };
         ["ang", "inicio", "fim"].forEach(function (k) { if (fin(Number(d[k]))) o[k] = r6(Number(d[k])); });
       } else {
-        var C = arr(d.contorno).map(function (q) { var p = pt(q); var x = { x: r6(p[0]), z: r6(p[1]) }; if (q && q.d === false) x.d = false; if (q && fin(Number(q.i)) && q.i !== null) x.i = Number(q.i); return x; });
+        var C = arr(d.contorno).map(function (q) { var p = pt(q); var x = { x: r6(p[0]), z: r6(p[1]) }; if (q && q.d === false) x.d = false; if (q && fin(Number(q.i)) && q.i !== null) x.i = Number(q.i); if (q && q.pr != null && q.pr !== "") { x.pr = q.pr; if (q.pf) x.pf = q.pf; if (fin(Number(q.po)) && q.po !== null) x.po = Number(q.po); } return x; });
         if (d.aguas === 1 || d.aguas === 2) {
           var Ls = C.map(function (q, k) { var r = C[(k + 1) % C.length]; return Math.sqrt(Math.pow(r.x - q.x, 2) + Math.pow(r.z - q.z, 2)); });
           var mx = Math.max.apply(null, Ls);
@@ -1521,6 +1534,9 @@
         }
         dx = fin(dx) ? dx : 0; dz = fin(dz) ? dz : 0;
         if (alvo.contorno) alvo.contorno = moverPts(alvo.contorno, dx, dz);
+        /* TELHADO SEGUE AS PAREDES (29/10/2026): mover o telhado = o usuário escolheu o lugar dele; com o vínculo ele voltaria para
+           as paredes no fim(). Mover solta as arestas (se as paredes andaram junto, o lugar é o mesmo). */
+        if (dx || dz) arr(alvo.contorno).forEach(function (q) { if (q) { delete q.pr; delete q.pf; delete q.po; } });
         if (alvo.origem) alvo.origem = { x: r6(num(alvo.origem.x, 0) + dx), z: r6(num(alvo.origem.z, 0) + dz) };
         return true;
       }
@@ -1548,6 +1564,13 @@
         });
         saida.telhados = arr(ctx.ordemTe).map(function (id) {
           var fonte = ctx.telhados[id], sb0 = semB[String(id)] && fonte && fonte.modelo ? semB[String(id)] : (semBH[String(id)] || null);
+          /* TELHADO SEGUE AS PAREDES (29/10/2026): a aresta com `pr` anda com a face da parede de AGORA (as ops de parede já foram
+             aplicadas; o derivar ainda não rodou). Sem `pr` em ponto nenhum nada disto roda: o telhado de antes sai byte a byte igual. */
+          var vinc = null, BCv = fonte && fonte.modo !== "extrusao" ? dep("BimContorno", "./bimcontorno.js") : null;
+          if (BCv && BCv.temVinculo && BCv.temVinculo(fonte.contorno)) {
+            vinc = BCv.resolverVinculos(saida.caixas, fonte.contorno);
+            if (!vinc.usouGravado) fonte.contorno = vinc.contorno;
+          }
           var t = calcular(fonte, niveis, sb0 ? { semBeiral: sb0 } : null), sbFinal = sb0;
           /* REVISOR T5: a aresta encostada em parede MAIS ALTA (caixote) fica sem beiral — só no telhado com modelo */
           if (t && t.ok && fonte && fonte.modelo && sb0 !== true && num(t.beiralEf, 0) > 0) {
@@ -1577,6 +1600,11 @@
               }
               rh.avisos.forEach(function (a) { (t.avisos = t.avisos || []).push(a); });
             }
+          }
+          if (vinc && t) {
+            t.segueParedes = { ligadas: vinc.ligadas, total: arr(t.contorno).length, mudou: !!vinc.mudou, usouGravado: !!vinc.usouGravado };
+            vinc.avisos.forEach(function (a) { (t.avisos = t.avisos || []).push(a); });
+            if (vinc.problemas.length) t.problemas = (t.problemas || []).concat(vinc.problemas);
           }
           porId[String(id)] = t; return t;
         });

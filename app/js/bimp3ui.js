@@ -388,6 +388,12 @@
         var BC = global.BimContorno;
         if (BC && dados.aguasContorno !== false && (c.aguas === 1 || c.aguas === 2) && dados.contorno.length >= 3 && !dados.contorno.some(function (q) { return q && (q.d === false || q.i != null); }))
           d.contorno = BC.aguasContorno(dados.contorno, c.aguas === 1 ? "uma" : "duas", dados.arestaSobe);
+        /* TELHADO SEGUE AS PAREDES (29/10/2026): o contorno que veio de "Escolher paredes" / "Contorno da edificação" nasce com cada aresta
+           ligada à face da parede que a gerou (pr/pf): esticou ou moveu a parede, o telhado vai junto. Contorno clicado à mão: sem vínculo. */
+        if (BC && dados.vincular && BC.vincularArestas && estado && estado.caixas) {
+          var vv = BC.vincularArestas(estado.caixas, d.contorno, { alinhar: dados.vincular, tol: 0.3 });
+          if (vv.ok) d.contorno = vv.contorno;
+        }
       }
       else if (dados.p1 && dados.p2 && !dados.p3) {
         var x0 = Math.min(dados.p1.x, dados.p2.x), x1 = Math.max(dados.p1.x, dados.p2.x), z0 = Math.min(dados.p1.z, dados.p2.z), z1 = Math.max(dados.p1.z, dados.p2.z);
@@ -790,7 +796,7 @@
         criarPorContorno: function (C, o) {
           if (!edit || !edit.on || edit.sub !== "telhado") return false;
           cancelar();
-          var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { return { x: q.x, z: q.z }; }), arestaSobe: o && o.arestaSobe }, nivel(), edit.base);
+          var r = self.opTelhado(edit.estado, { contorno: C.map(function (q) { return { x: q.x, z: q.z }; }), arestaSobe: o && o.arestaSobe, vincular: o && o.vincular }, nivel(), edit.base);
           return r.ok ? feito(r) && true : (api.hint(r.motivo), false);
         },
         fechar: function () {
