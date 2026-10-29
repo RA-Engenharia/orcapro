@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.235",
+versao: "1.2.236",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -15861,6 +15861,9 @@ var acoes = "";
 if (lic.certamepro) {
 acoes += bt("lic-desconto", "Desconto linear…", "Um percentual único sobre os preços de referência do órgão");
 if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
+acoes += bt("lic-desconto-itens", "Desconto por item…", "Um percentual por item (e um padrão) sobre os preços de referência do órgão");
+if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
+acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
 acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
 ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
 : "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
@@ -55804,6 +55807,7 @@ var Orc = O();
 if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de aplicar o desconto linear." };
 var lic = this.cfg(orc);
 if (lic && lic.descontoLinear) return { ok: false, erro: "Já existe um desconto linear aplicado (" + fmtPct(lic.descontoLinear.pct) + "). Desfaça-o antes de aplicar outro." };
+if (lic && lic.descontoItens) return { ok: false, erro: "Já existe um desconto por item aplicado. Desfaça-o antes de aplicar o desconto linear." };
 var p = this.descontoPlano(orc, pct);
 if (!p.ok) return p;
 var antes = [];
@@ -55834,6 +55838,112 @@ n++;
 });
 delete lic.descontoLinear;
 return { ok: true, itens: n };
+},
+descontoItensPlano: function (orc, mapa, pctPadrao, opts) {
+opts = opts || {};
+var self = this, plano = [], semRef = 0, erro = "";
+mapa = (mapa && typeof mapa === "object") ? mapa : {};
+var padrao = (pctPadrao === undefined || pctPadrao === null || pctPadrao === "") ? 0 : num(pctPadrao);
+if (!(padrao >= 0 && padrao < 100)) return { ok: false, erro: "O percentual padrão deve estar entre 0 e 100% (100% não é permitido)." };
+if (!this.ativo(orc)) return { ok: false, erro: "Este orçamento não está em modo licitação." };
+var calc = O().calcular(orc);
+(calc.linhas || []).forEach(function (L) {
+var it = L.item;
+if (erro || L.opcional || !it) return;
+if (it.qtdPendente || !(num(it.quantidade) > 0)) return;
+var tem = Object.prototype.hasOwnProperty.call(mapa, L.itemId) && mapa[L.itemId] !== "" && mapa[L.itemId] !== null && mapa[L.itemId] !== undefined;
+var pct = tem ? num(mapa[L.itemId]) : padrao;
+if (!(pct >= 0 && pct < 100)) { erro = "O desconto do item " + (L.numero || L.itemId) + " deve estar entre 0 e 100% (100% não é permitido)."; return; }
+var ref = self.refDoItem(orc, it), base, origem;
+if (ref) { base = ref.comBdi; origem = "referencia"; }
+else { base = self._puComBdi(orc, L); origem = "propria"; semRef++; }
+if (!(pct > 0) && !(opts.incluirZero && origem === "referencia")) return;
+var alvo = tr2(base * (1 - pct / 100));
+plano.push({ etapaId: L.etapaId, itemId: L.itemId, numero: L.numero, pct: pct, base: base, baseOrigem: origem,
+alvoPU: alvo, custo: self._custoParaPU(orc, alvo), item: it });
+});
+if (erro) return { ok: false, erro: erro };
+return { ok: true, plano: plano, semReferencia: semRef, padrao: padrao };
+},
+simularDescontoItens: function (orc, mapa, pctPadrao, opts) {
+opts = opts || {};
+var p = this.descontoItensPlano(orc, mapa, pctPadrao, opts);
+if (!p.ok) return p;
+var cp = JSON.parse(JSON.stringify(orc));
+var r = this.aplicarDescontoItens(cp, mapa, pctPadrao, { permitirVazio: true, incluirZero: !!opts.incluirZero });
+if (!r.ok) return r;
+return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: this.totalProposta(orc),
+totalDepois: this.totalProposta(cp), avisos: this.avisos(cp), plano: p.plano.map(function (x) {
+return { itemId: x.itemId, numero: x.numero, pct: x.pct, base: x.base, baseOrigem: x.baseOrigem, alvoPU: x.alvoPU };
+}) };
+},
+aplicarDescontoItens: function (orc, mapa, pctPadrao, opts) {
+opts = opts || {};
+var Orc = O();
+if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de aplicar o desconto por item." };
+var lic = this.cfg(orc);
+if (lic && lic.descontoLinear) return { ok: false, erro: "Já existe um desconto linear aplicado (" + fmtPct(lic.descontoLinear.pct) + "). Desfaça-o antes de aplicar o desconto por item." };
+if (lic && lic.descontoItens) return { ok: false, erro: "Já existe um desconto por item aplicado. Desfaça-o antes de aplicar outro." };
+var p = this.descontoItensPlano(orc, mapa, pctPadrao, { incluirZero: !!opts.incluirZero });
+if (!p.ok) return p;
+if (!p.plano.length && !opts.permitirVazio) return { ok: false, erro: "Nenhum item recebeu desconto: informe um percentual padrão ou o percentual de algum item." };
+var antes = [];
+p.plano.forEach(function (x) {
+var it = x.item;
+antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUnitario), custoMO: it.custoMO, custoMAT: it.custoMAT, custoEQ: it.custoEQ,
+custoBase: it.custoBase != null ? num(it.custoBase) : null });
+});
+var antesTotal = this.totalProposta(orc);
+p.plano.forEach(function (x) { Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo }); });
+lic.descontoItens = { em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), padrao: p.padrao,
+mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal };
+return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
+},
+desfazerDescontoItens: function (orc) {
+var lic = this.cfg(orc);
+if (!lic || !lic.descontoItens) return { ok: false, erro: "Não há desconto por item para desfazer." };
+var d = lic.descontoItens, n = 0;
+d.antes.forEach(function (a) {
+var e = (orc.etapas || []).filter(function (x) { return x.id === a.etapaId; })[0];
+var it = e && (e.itens || []).filter(function (x) { return x.id === a.itemId; })[0];
+if (!it) return;
+it.custoUnitario = a.custoUnitario;
+if (a.custoMO !== undefined) it.custoMO = a.custoMO;
+if (a.custoMAT !== undefined) it.custoMAT = a.custoMAT;
+if (a.custoEQ !== undefined) it.custoEQ = a.custoEQ;
+if (a.custoBase != null) it.custoBase = a.custoBase;
+n++;
+});
+delete lic.descontoItens;
+return { ok: true, itens: n };
+},
+cenarios: function (orc, listaPct) {
+var self = this;
+var lista = (Array.isArray(listaPct) && listaPct.length) ? listaPct : [0, 5, 10, 15, 20, 25];
+if (!this.ativo(orc)) return { ok: false, erro: "Este orçamento não está em modo licitação." };
+var cp0 = JSON.parse(JSON.stringify(orc)), lic0 = this.cfg(cp0);
+if (lic0 && lic0.descontoLinear) this.desfazerDesconto(cp0);
+if (lic0 && lic0.descontoItens) this.desfazerDescontoItens(cp0);
+var custoOrig = num(O().totais(cp0).custoDireto);
+var est = num((this.cfg(orc) || {}).valorEstimado);
+var linhas = [], erro = "";
+var totAtual = this.totalProposta(cp0), avAtual = this.avisos(cp0);
+var atual = { total: totAtual, pctDoEstimado: est > 0 ? (totAtual / est) * 100 : null,
+margemSobreCusto: custoOrig > 0 ? (totAtual / custoOrig - 1) * 100 : null,
+exequivel: !avAtual.resumo.some(function (a) { return a.chave === "exeq" && a.tom === "erro"; }) };
+lista.forEach(function (p) {
+if (erro) return;
+var pct = num(p);
+var s = self.simularDescontoItens(cp0, {}, pct, { incluirZero: true });
+if (!s.ok) { erro = s.erro; return; }
+var total = s.totalDepois;
+var inex = s.avisos.resumo.some(function (a) { return a.chave === "exeq" && a.tom === "erro"; });
+linhas.push({ pct: pct, total: total, pctDoEstimado: est > 0 ? (total / est) * 100 : null,
+custoDiretoOriginal: custoOrig, margemSobreCusto: custoOrig > 0 ? (total / custoOrig - 1) * 100 : null,
+exequivel: !inex, avisos: s.avisos.resumo.filter(function (a) { return a.chave === "exeq" || a.chave === "teto"; }) });
+});
+if (erro) return { ok: false, erro: erro };
+return { ok: true, linhas: linhas, atual: atual };
 },
 _regime: function (r) {
 var t = s(r).toLowerCase();

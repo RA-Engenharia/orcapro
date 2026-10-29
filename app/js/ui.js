@@ -3691,6 +3691,9 @@
       if (lic.certamepro) {
         acoes += bt("lic-desconto", "Desconto linear…", "Um percentual único sobre os preços de referência do órgão");
         if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
+        acoes += bt("lic-desconto-itens", "Desconto por item…", "Um percentual por item (e um padrão) sobre os preços de referência do órgão");
+        if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
+        acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
         acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
           ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
           : "Permite alterar quantidade, descrição e remover itens do órgão (só quando o edital permitir)");
