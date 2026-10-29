@@ -523,8 +523,13 @@
       var BPd = ctx.param ? depParam() : null; if (BPd) BPd.antesDerivar(ctx, saida);
       /* P3: telhados (e as bordas deles) e fundações — antes do derivar: o topo da parede anexa ao telhado */
       if (ctx.telhados || ctx.bordas) { var T3 = depP3("t"); if (T3) T3.fim(ctx, saida, NIV); }
+      /* TUDO SEGUE AS PAREDES (29/10/2026): forro por contorno e laje/piso por contorno com `pr` andam com as paredes de AGORA — no mesmo ponto
+         do telhado (paredes aplicadas, antes do derivar, que refaz área/volume/furos da laje). Sem `pr` nenhum nada roda. */
+      if (ctx.forros) { var BFv = depForro(); if (BFv && BFv.vincular) BFv.vincular(ctx, saida); }
+      var BCl = global.BimContorno || null; if (!BCl && typeof require === "function") { try { BCl = require("./bimcontorno.js"); } catch (eBC) {} } if (BCl && BCl.lajesAntes) BCl.lajesAntes(saida);
       if (ctx.fundacoes) { var F3 = depP3("f"); if (F3) F3.fim(ctx, saida, NIV); }
       if (ARQ && ARQ.derivar) ARQ.derivar(saida);
+      if (BCl && BCl.lajesDepois) BCl.lajesDepois(saida);
       /* P2-B: os forros (só quando houve op de forro: o estado das ops antigas fica igual) */
       if (ctx.forros) { var BFf = depForro(); if (BFf) BFf.fim(ctx, saida, NIV); }
       /* P2-A: o contorno de cada ambiente sai das paredes JÁ unidas (depois do
@@ -1002,10 +1007,12 @@
       function obj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
       function ponto(p) { return obj(p) && fin(p.x) && fin(p.z); }
       function lista(l) { return Array.isArray(l) && l.length >= 3 && l.length <= 500 && l.every(ponto); }
+      /* TUDO SEGUE AS PAREDES: pr (id da parede), pf (face) e po (afastamento, m) da aresta que sai do ponto — opcionais */
+      function vincOk(p) { return (p.pr == null || (typeof p.pr === "string" && p.pr.length > 0 && p.pr.length <= 120) || fin(p.pr)) && (p.pf == null || p.pf === "externa" || p.pf === "eixo" || p.pf === "interna") && (p.po == null || (fin(p.po) && Math.abs(p.po) <= 10)); }
       if (!o || o.op !== "forro" || o.id == null || (typeof o.id !== "string" && !fin(o.id))) return false;
       if (o.contorno != null && o.ponto != null) return false;   /* um modo só */
       var algum = false, LIMS = { base: [-10000, 10000], deslocNivel: [-200, 200], inclinacao: [0, 60], dirInclinacao: [-3600, 3600] };
-      if (o.contorno !== undefined) { if (o.contorno !== null && !lista(o.contorno)) return false; algum = true; }
+      if (o.contorno !== undefined) { if (o.contorno !== null && !(lista(o.contorno) && o.contorno.every(vincOk))) return false; algum = true; }
       if (o.ponto !== undefined) { if (o.ponto !== null && !ponto(o.ponto)) return false; algum = true; }
       if (o.furos !== undefined) {
         if (o.furos !== null && !(Array.isArray(o.furos) && o.furos.length <= 100 && o.furos.every(function (f) { return obj(f) && lista(f.pts); }))) return false;
@@ -1176,7 +1183,7 @@
             "linhaLoc", "virar", "uniao", "estrut", "rampa", "contorno"].indexOf(k) >= 0; }) &&   /* P4: linha de localização, virar camadas, o canto com outra parede (js/bimarq.js); P9: estrut, rampa */
           /* P1-B: restrições por nível — um objeto (nível = texto/null, medida = número/null) */
           (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes))) &&
-          (o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z); })));   /* CONTORNO LIVRE: laje */
+          (o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z) && (q.pr == null || (typeof q.pr === "string" && q.pr.length > 0 && q.pr.length <= 120) || fin(q.pr)) && (q.pf == null || q.pf === "externa" || q.pf === "eixo" || q.pf === "interna") && (q.po == null || (fin(q.po) && Math.abs(q.po) <= 10)); })));   /* CONTORNO LIVRE: laje */
         if (o.op === "ajustarTipo" || o.op === "marcar") return BimEdit.opParamValida(o);   /* P1-A */
         /* P4: unir/desunir/alternar ordem de união de geometria — duas peças diferentes (a forma fica aqui: o sanear não perde a op sem o js/bimarq.js) */
         if (o.op === "unirGeometria" || o.op === "desunirGeometria" || o.op === "alternarUniao") return ["a", "b"].every(function (k) { return (typeof o[k] === "string" && o[k].length > 0) || fin(o[k]); }) && String(o.a) !== String(o.b);

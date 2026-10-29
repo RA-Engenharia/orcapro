@@ -385,6 +385,25 @@
           else if (v !== null && m[2] !== "rotularMestras") v = Number(v);
           o[m[2]] = v; ops.push(o);
         });
+      } else if (e === "forro.seguir" || e === "laje.seguir") {
+        /* TUDO SEGUE AS PAREDES (29/10/2026): o mesmo "Seguir as paredes" Sim/Não do telhado, para o forro por contorno e a laje/piso por contorno.
+           Não = grava o contorno de agora SEM o vínculo; Sim = liga cada aresta à face de parede paralela mais perto. Uma op por peça; Ctrl+Z desfaz. */
+        var BCf = global.BimContorno, avF = [], ehForro = e === "forro.seguir";
+        if (!BCf || !BCf.vincularArestas) return { ok: false, erro: "O motor do contorno (js/bimcontorno.js) não carregou." };
+        for (var iF = 0; iF < ids.length; iF++) {
+          var pF = elDe(ctx.estado, ids[iF]);
+          if (!pF || arr(pF.contorno).length < 3 || pF.modo === "automatico" || arr(pF.contorno).some(function (q) { return q && q.m; })) return { ok: false, erro: ehForro ? "Seguir as paredes vale para o forro por contorno (o automático já se refaz pelas paredes)." : "Seguir as paredes vale para a laje/piso por contorno." };
+          var RPf = BCf.ROT_PECA ? BCf.ROT_PECA[ehForro ? "forro" : "laje"] : null, alF = ehForro ? "interna" : (BCf.alinharDaLaje ? BCf.alinharDaLaje(pF) : "externa");
+          var cF = JSON.parse(JSON.stringify(pF.contorno));
+          var opF = function (C2) { var L = C2.map(function (q) { var o2 = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { o2.pr = q.pr; if (q.pf) o2.pf = q.pf; if (q.po != null) o2.po = q.po; } return o2; }); return ehForro ? { op: "forro", id: pF.id, contorno: L } : { op: "ajustar", id: pF.id, campos: { contorno: L } }; };
+          if (valor === "Não") ops.push(opF(BCf.desvincular(cF)));
+          else {
+            var vF = BCf.vincularArestas(ctx.estado.caixas, cF, { alinhar: alF, nome: RPf && RPf.nome, de: RPf && RPf.de, rot: RPf && RPf.rot });
+            if (!vF.ok) return { ok: false, erro: (vF.motivo || "Não deu para ligar às paredes.") + " " + (vF.corrigir || "") };
+            ops.push(opF(vF.contorno)); avF.push((ehForro ? "Forro " : "Laje ") + pF.id + ": " + vF.resumo);
+          }
+        }
+        if (avF.length) return { ok: true, ops: ops, avisos: avF };
       } else if (e === "telhado.seguir") {
         /* TELHADO SEGUE AS PAREDES (29/10/2026): Não = grava o contorno de agora SEM o vínculo (uma op); Sim = liga cada aresta à
            face de parede paralela mais perto (BimContorno.vincularArestas) e grava UMA op. Ctrl+Z desfaz. */

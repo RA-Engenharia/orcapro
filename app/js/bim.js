@@ -15013,7 +15013,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var feitos = 0;
       if (sub === 'telhado') { contornos.forEach(function (C) { if (S._p3 && S._p3.criarPorContorno && S._p3.criarPorContorno(C, extra)) feitos++; }); return feitos; }
       contornos.forEach(function (C) {
-        edit.b2pts = C.map(function (q) { return new THREE.Vector3(q.x, edit.base, q.z); });
+        /* TUDO SEGUE AS PAREDES (29/10/2026): o contorno que veio de "Escolher paredes" / "Contorno da edificação" nasce com cada aresta ligada à
+           face da parede que a gerou (pr/pf/po no ponto) — laje, piso e forro. Contorno clicado à mão: sem vínculo. */
+        var BCv = window.BimContorno, vv = (extra && extra.vincular && BCv && BCv.vincularArestas && edit.estado)
+          ? BCv.vincularArestas(edit.estado.caixas, C, { alinhar: extra.vincular, tol: 0.3, nome: sub === 'forro' ? 'forro' : 'laje', de: sub === 'forro' ? 'do forro' : 'da laje', rot: sub === 'forro' ? 'O forro' : 'A laje' }) : null;
+        var CV = vv && vv.ok ? vv.contorno : C;
+        edit.b2pts = CV.map(function (q) {
+          var v3 = new THREE.Vector3(q.x, edit.base, q.z);
+          if (q.pr != null && q.pr !== '') { v3.pr = q.pr; if (q.pf) v3.pf = q.pf; if (q.po != null) v3.po = q.po; }
+          return v3;
+        });
         if (S._b2FecharExt && S._b2FecharExt()) feitos++;
       });
       edit.b2pts = [];
@@ -15470,7 +15479,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var sub = edit.sub, pts = edit.b2pts || [], b = edit.b2 || {}, A = window.BimArq;
     if (!A) return false;
     if ((sub === 'laje' || sub === 'furo') && pts.length >= 3) {
-      var P = pts.map(function (q) { return { x: q.x, z: q.z }; });
+      var P = pts.map(function (q) { var o = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== '') { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null) o.po = q.po; } return o; });
       if (sub === 'laje') {
         var tl = b.tipoLaje || { id: 'macica-12', rotulo: 'Laje maciça 12 cm', espessura: 0.12 };
         var v0 = A.validarPoligono(P); if (!v0.ok) { S._hint(v0.motivo); return false; }
@@ -15494,7 +15503,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
       marcarFechamento(); return true;
     }
-    if (sub === 'forro' && pts.length >= 3) return p2bForroCriar({ contorno: pts.map(function (q) { return { x: q.x, z: q.z }; }) });   /* P2-B */
+    if (sub === 'forro' && pts.length >= 3) return p2bForroCriar({ contorno: pts.map(function (q) { var o = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== '') { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null) o.po = q.po; } return o; }) });   /* P2-B */
     if (sub === 'guarda' && pts.length >= 2) {
       var g = A.guarda(pts.map(function (q) { return { x: q.x, y: q.y, z: q.z }; }), b.guarda || {});
       if (!g) { S._hint('Caminho inválido para o guarda-corpo.'); return false; }
@@ -19175,7 +19184,8 @@ window.BIM = {
   selecao: function () { return { uids: (S && S._selAtual) ? S._selAtual() : [] }; },
   /* CONTORNO LIVRE: o botão "Editar contorno" (js/bimcontornoui.js) — a peça selecionada ganha alças nos vértices e nas arestas */
   contornoEditar: function () { return !!(S && S._ctr && S._ctr.editar()); },
-  contornoAjustarParedes: function () { return !!(S && S._ctr && S._ctr.ajustarParedes()); },   /* TELHADO SEGUE AS PAREDES: "Ajustar às paredes agora" */
+  contornoAjustarParedes: function () { return !!(S && S._ctr && S._ctr.ajustarParedes()); },
+  contornoAjustarTudo: function (o) { return !!(S && S._ctr && S._ctr.ajustarTudo(o)); },   /* TUDO SEGUE AS PAREDES: "Ajustar TUDO às paredes" (projeto antigo) */   /* TELHADO SEGUE AS PAREDES: "Ajustar às paredes agora" */
   contornoPendentes: function () { if (!S || !S._ctr) return null; var r = S._ctr.pendentes(); r.sub = S.edit && S.edit.sub; r.on = !!(S.edit && S.edit.on); r.hint = S._hintUltimo || ''; return r; },
   contornoEstado: function () { return (S && S._ctr) ? S._ctr.sessaoEstado() : null; },
   setasCtx: function () { return (S && S._setasCtx) ? S._setasCtx() : null; },   /* js/bimsetas.js: contexto das setas (câmera, escala, ferramenta) */

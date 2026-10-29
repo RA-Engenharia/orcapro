@@ -4,8 +4,8 @@
  "precache": [
   "js/pacotes/nucleo-1.js",
   "js/pacotes/nucleo-2.js",
-  "js/pacotes/bim.js?v=08f4d0644a",
-  "js/bim-pacote.js?v=e7df6b39ca",
+  "js/pacotes/bim.js?v=c75fe9f418",
+  "js/bim-pacote.js?v=9e45a64ee9",
   "js/metalcalcvista-pacote.js?v=122abc30d5",
   "js/pacotes/hidro.js?v=f4a8feecaf"
  ],

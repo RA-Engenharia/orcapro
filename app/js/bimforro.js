@@ -419,6 +419,8 @@
       if (!(th > 0)) per += kc.perimetro + kf.reduce(function (s, x) { return s + x.perimetro; }, 0);
     }
     f.contorno = C.map(ptObj); f.furos = F.map(function (q) { return { pts: q.map(ptObj) }; });
+    /* TUDO SEGUE AS PAREDES: o contorno de saída leva o pr/pf/po de cada ponto (se o validar não tirou ponto nenhum) */
+    if (f.modo === "contorno" && !arcosC && arr(fonte.contorno).length === f.contorno.length) arr(fonte.contorno).forEach(function (p, i) { if (p && p.pr != null && p.pr !== "") { f.contorno[i].pr = p.pr; if (p.pf) f.contorno[i].pf = p.pf; if (p.po != null) f.contorno[i].po = p.po; } });
     f.areaBruta = r4(aC * k); f.areaFuros = r4(aF * k); f.area = r4((aC - aF) * k);
     f.perimetro = r4(per); f.volume = r6((aC - aF) * k * t.espessura);
     var xs = C.map(function (q) { return q[0]; }), zs = C.map(function (q) { return q[1]; });
@@ -523,6 +525,8 @@
     return arr(l).map(function (p) {
       var q = pt(p), o = { x: r6(q[0]), z: r6(q[1]) };
       if (p && p.m && fin(Number(p.m.x)) && fin(Number(p.m.z))) o.m = { x: r6(Number(p.m.x)), z: r6(Number(p.m.z)) };   /* CURVA: aresta em arco */
+      /* TUDO SEGUE AS PAREDES (29/10/2026): pr/pf/po = a parede que a aresta que SAI do ponto segue (a face e o afastamento) */
+      if (p && p.pr != null && p.pr !== "") { o.pr = p.pr; if (p.pf) o.pf = p.pf; if (fin(Number(p.po)) && p.po !== null) o.po = Number(p.po); }
       return o;
     });
   }
@@ -624,9 +628,32 @@
       }
       return false;
     },
+    /* TUDO SEGUE AS PAREDES (29/10/2026): ANTES do BimArq.derivar (o mesmo ponto em que o telhado resolve — as paredes já aplicadas, sem `uniao`),
+       a aresta com `pr` do forro por contorno anda com a face da parede de AGORA (BimContorno.resolverVinculos). O fim() calcula área, perímetro,
+       volume e a sanca a partir do contorno já resolvido. Sem `pr` em nenhum forro nada disto roda: a saída fica igual à de antes. */
+    vincular: function (ctx, saida) {
+      if (!ctx || !ctx.forros || !saida) return;
+      var BC = dep("BimContorno", "./bimcontorno.js");
+      if (!BC || !BC.temVinculo) return;
+      arr(ctx.ordemFo).forEach(function (id) {
+        var f = ctx.forros[id];
+        if (!f || !arr(f.contorno).length || !BC.temVinculo(f.contorno)) return;
+        var r = BC.resolverVinculos(saida.caixas, f.contorno, BC.ROT_PECA.forro);
+        if (!r.usouGravado) f.contorno = r.contorno;
+        (ctx.vincForro || (ctx.vincForro = {}))[String(id)] = r;
+      });
+    },
     fim: function (ctx, saida, niveis) {
       if (!ctx || !ctx.forros || !saida) return saida;
-      saida.forros = arr(ctx.ordemFo).map(function (id) { return calcular(ctx.forros[id], saida, niveis); });
+      saida.forros = arr(ctx.ordemFo).map(function (id) {
+        var f = calcular(ctx.forros[id], saida, niveis), r = ctx.vincForro && ctx.vincForro[String(id)];
+        if (r && f) {
+          f.segueParedes = { ligadas: r.ligadas, total: arr(f.contorno).length, mudou: !!r.mudou, usouGravado: !!r.usouGravado };
+          if (r.avisos.length) f.avisos = arr(f.avisos).concat(r.avisos);
+          if (r.problemas.length) f.problemas = arr(f.problemas).concat(r.problemas);
+        }
+        return f;
+      });
       return saida;
     },
 

@@ -103,6 +103,16 @@
   /* ponto em qualquer forma ([x,z] ou {x,z}) → [x, z] */
   function pt(p) { return Array.isArray(p) ? [Number(p[0]), Number(p[1])] : (p ? [Number(p.x), Number(p.z)] : [NaN, NaN]); }
   function ptObj(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
+  /* TUDO SEGUE AS PAREDES (29/10/2026): os campos pr/pf/po da aresta que SAI do ponto (a parede que ela segue, a face e o afastamento) passam do
+     contorno de entrada para o validado, ponto a ponto. Se o validar tirou algum ponto (repetido), os índices não batem: sem vínculo (solta). */
+  function comVinculo(objs, origem) {
+    var O = arr(origem);
+    if (objs.length === O.length) objs.forEach(function (o, i) {
+      var q = O[i];
+      if (q && q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null) o.po = q.po; }
+    });
+    return objs;
+  }
 
   /* ------------------------------------------------ geometria plana */
   function areaSinal(pts) {
@@ -761,7 +771,7 @@
       var v = this.validarPoligono(lista); if (!v.ok) return null;
       var esp = num(o.espessura, 0.12), topo = num(o.topo, 0);
       if (!(esp >= 0.03 && esp <= 1)) return null;
-      var c = { tipo: "laje", ifc: "IFCSLAB", b2: 1, contorno: v.pts.map(ptObj), furos: [], altura: r4(esp), cy: r4(topo - esp / 2), rotY: 0 };
+      var c = { tipo: "laje", ifc: "IFCSLAB", b2: 1, contorno: comVinculo(v.pts.map(ptObj), lista), furos: [], altura: r4(esp), cy: r4(topo - esp / 2), rotY: 0 };
       if (o.tipoLaje) c.tipoLaje = { id: String(o.tipoLaje.id || ""), rotulo: String(o.tipoLaje.rotulo || "") };
       if (o.nivelId != null) c.nivelId = String(o.nivelId);
       var self = this;
@@ -1276,7 +1286,7 @@
       delete o.geoUnioes; delete o.uniaoGeo; delete o.cortesFace; delete o.fixo; delete o.pinturas; delete o.divFaces; delete o.pinturasCalc; delete o.avisosUniao;
       if (o.escada) o.escada = { par: o.escada.par };
       if (o.rampa) o.rampa = { par: o.rampa.par };   /* P9 — GANCHO */
-      delete o.marcaLocal;
+      delete o.marcaLocal; delete o.segueParedes;   /* TUDO SEGUE AS PAREDES: derivado do replay */
       if (o.guarda) { var gh = o.guarda.host; o.guarda = { par: o.guarda.par, pts: o.guarda.pts }; if (gh) o.guarda.host = gh; }
       return o;
     },
@@ -1339,7 +1349,7 @@
          Só contorno reto e válido; laje com aresta em arco não entra (a edição do arco é outra ferramenta) */
       if (campos.contorno && c.tipo === "laje" && arr(c.contorno).length && !(Curva() && Curva().temArco(c.contorno))) {
         var vc = this.validarPoligono(campos.contorno);
-        if (vc.ok) { c.contorno = vc.pts.map(ptObj); this.recalcLaje(c); mudou = true; }
+        if (vc.ok) { c.contorno = comVinculo(vc.pts.map(ptObj), campos.contorno); this.recalcLaje(c); mudou = true; }
       }
       if (campos.perfil && (c.tipo === "pilar" || c.tipo === "viga") && secao(campos.perfil).ok) { c.perfil = clone(campos.perfil); mudou = true; }
       if (campos.material && (c.tipo === "pilar" || c.tipo === "viga") && MATERIAIS[campos.material]) { c.material = campos.material; mudou = true; }
@@ -1366,6 +1376,8 @@
       if (!c || !(fin(dx) && fin(dz))) return c;
       if (c.arco && c.arco.m) { c.arco.m.x = r6(num(c.arco.m.x, 0) + dx); c.arco.m.z = r6(num(c.arco.m.z, 0) + dz); }   /* CURVA: o meio do arco anda junto */
       arr(c.contorno).forEach(function (p) { p.x = r6(p.x + dx); p.z = r6(p.z + dz); });
+      /* TUDO SEGUE AS PAREDES: mover a peça = o usuário escolheu o lugar dela; com o vínculo ela voltaria para as paredes no replay. Mover solta as arestas. */
+      if (dx || dz) arr(c.contorno).forEach(function (p) { if (p) { delete p.pr; delete p.pf; delete p.po; } });
       arr(c.contorno).forEach(function (p) { if (p.m) { p.m.x = r6(num(p.m.x, 0) + dx); p.m.z = r6(num(p.m.z, 0) + dz); } });   /* CURVA: o meio da aresta em arco */
       arr(c.furos).forEach(function (f) { arr(f && f.pts).forEach(function (p) { p.x = r6(p.x + dx); p.z = r6(p.z + dz); }); });
       if (c.escada && c.escada.par) { c.escada.par.x = r6(num(c.escada.par.x, 0) + dx); c.escada.par.z = r6(num(c.escada.par.z, 0) + dz); }

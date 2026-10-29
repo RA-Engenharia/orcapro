@@ -349,6 +349,10 @@
     teUnir: function (x) { return el(x).unir != null ? txt(el(x).unir) : null; },
     /* TELHADO SEGUE AS PAREDES (29/10/2026): "Sim" se alguma aresta do contorno leva `pr` (a parede que ela segue) */
     teSeguir: function (x) { var c = el(x); if (c.modo === "extrusao") return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
+    /* TUDO SEGUE AS PAREDES (29/10/2026): o mesmo "Seguir as paredes" do telhado para o forro por contorno e a laje/piso por contorno
+       (forro automático e laje retangular: sem contorno gravado = não se aplica, o parâmetro some) */
+    pcSeguir: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
+    pcSeguirN: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
     teSeguirN: function (x) { var c = el(x); if (c.modo === "extrusao") return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
     /* TELHADO PARAMÉTRICO (T1, js/bimtelhadoestrut.js): o modelo da estrutura e os AVISOS dele, à vista nas Propriedades
        (o "fase 2: meias-tesouras de espigão", pontalete sem apoio, tesoura metálica baixa…) */
@@ -782,6 +786,8 @@
         P(I, "Cotas", "Elevação no núcleo superior", "STRUCTURAL_ELEVATION_AT_TOP_CORE", "comprimento", { calc: "lajeTopo" }),
         P(I, "Cotas", "Elevação no núcleo inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM_CORE", "comprimento", { calc: "lajeFundo" }),
         P(I, "Cotas", "Elevação na parte inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM", "comprimento", { calc: "lajeFundo" }),
+        P(I, "Restrições", "Seguir as paredes", "RA_LAJE_SEGUIR", "lista", { calc: "pcSeguir", escrita: "laje.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+        P(I, "Restrições", "Arestas que seguem paredes", "RA_LAJE_SEGUIR_ARESTAS", "texto", { calc: "pcSeguirN" }),
         P(I, "Cotas", "Espessura", "FLOOR_ATTR_THICKNESS_PARAM", "comprimento", { calc: "lajeEspessura", ifc: Q("Qto_SlabBaseQuantities", "Width") }),
         P(I, "Cotas", "Perímetro", "HOST_PERIMETER_COMPUTED", "comprimento", { calc: "lajePerimetro", ifc: Q("Qto_SlabBaseQuantities", "Perimeter"), orc: O("comprimento") }),
         P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "lajeArea", ifc: Q("Qto_SlabBaseQuantities", "NetArea"), orc: O("area") }),
@@ -955,6 +961,8 @@
            (medido na referência de 09/10/2026: 18,6725 × 2,60 = 48,5485 m³ no lugar de × 2,80) */
         P(I, "Restrições", "Delimitação de ambientes", "WALL_ATTR_ROOM_BOUNDING", "simnao", { calc: "pecaDelimita", escrita: "forro.delimitaAmbiente", leitura: false, padrao: true }),
         P(I, "Restrições", "Contorno", "RA_FORRO_MODO", "texto", { calc: "forroModo" }),
+        P(I, "Restrições", "Seguir as paredes", "RA_FORRO_SEGUIR", "lista", { calc: "pcSeguir", escrita: "forro.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+        P(I, "Restrições", "Arestas que seguem paredes", "RA_FORRO_SEGUIR_ARESTAS", "texto", { calc: "pcSeguirN" }),
         P(I, "Cotas", "Inclinação", "ROOF_SLOPE", "angulo", { calc: "forroInclinacao", escrita: "forro.inclinacao", leitura: false, faixa: FAIXA.forroInclinacao }),
         P(I, "Cotas", "Direção da inclinação", "RA_FORRO_DIR_INCLINACAO", "angulo", { calc: "forroDirInclinacao", escrita: "forro.dirInclinacao", leitura: false }),
         P(I, "Cotas", "Perímetro", "HOST_PERIMETER_COMPUTED", "comprimento", { calc: "forroPerimetro", ifc: Q("OrcaPRO_Forro", "Perimetro"), orc: O("comprimento") }),

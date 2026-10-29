@@ -409,8 +409,9 @@
   /* RESOLVE o contorno gravado contra as paredes de agora.
      → { contorno:[{x,z,d?,i?,pr?,pf?,po?}], mudou, ligadas, avisos:[texto], problemas:[{motivo,corrigir}], usouGravado }
      Nunca devolve contorno inválido: se a resolução cruzar ou zerar uma aresta, volta o gravado com o aviso (problema com solução). */
-  function resolverVinculos(caixas, contorno) {
-    var C = arr(contorno), n = C.length;
+  function resolverVinculos(caixas, contorno, opc) {
+    var C = arr(contorno), n = C.length, DE = (opc && opc.de) || "do telhado", ROT = (opc && opc.rot) || "O telhado", rot = ROT.toLowerCase();   /* TUDO SEGUE AS PAREDES: o mesmo motor serve ao forro e à laje */
+    if (C.some(function (q) { return q && q.m; })) return { contorno: C, mudou: false, ligadas: 0, avisos: [], problemas: [], usouGravado: true };   /* aresta em arco: não segue (a edição do arco é outra ferramenta) */
     var saida = { contorno: C, mudou: false, ligadas: 0, avisos: [], problemas: [], usouGravado: false };
     if (n < 3 || !temVinculo(C)) return saida;
     var mapa = {};
@@ -422,11 +423,11 @@
       if (q.pr != null && q.pr !== "") {
         var w = mapa[String(q.pr)], pf = FACES[q.pf] ? q.pf : "externa";
         if (!w) {
-          saida.avisos.push("A parede da aresta " + (k + 1) + " do telhado não existe mais: a aresta ficou onde estava.");
-          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado foi apagada.", corrigir: "Use \"Ajustar às paredes agora\" para ligar a aresta a outra parede, ou arraste a aresta (Editar contorno)." });
+          saida.avisos.push("A parede da aresta " + (k + 1) + " " + DE + " não existe mais: a aresta ficou onde estava.");
+          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " " + DE + " foi apagada.", corrigir: "Use \"Ajustar às paredes agora\" para ligar a aresta a outra parede, ou arraste a aresta (Editar contorno)." });
         } else if (Math.abs(w.u[0] * (dx / L) + w.u[1] * (dz / L)) < 0.7) {
-          saida.avisos.push("A parede da aresta " + (k + 1) + " girou demais em relação ao telhado: a aresta ficou onde estava.");
-          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado girou mais de 45° em relação a ela.", corrigir: "Use \"Ajustar às paredes agora\" ou arraste a aresta (Editar contorno)." });
+          saida.avisos.push("A parede da aresta " + (k + 1) + " girou demais em relação ao " + (opc && opc.rot ? rot : "telhado") + ": a aresta ficou onde estava.");
+          saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " " + DE + " girou mais de 45° em relação a ela.", corrigir: "Use \"Ajustar às paredes agora\" ou arraste a aresta (Editar contorno)." });
         } else { reta = retaDaFace(w, NF[k], pf, q.po); lig = true; }
       }
       retas.push(reta); ligada.push(lig);
@@ -443,11 +444,11 @@
       N.push(X);
     }
     var longe = N.some(function (X, i) { return dist(X, P[i]) > 50; });
-    var v = longe ? { ok: false, motivo: "O telhado ficaria a mais de 50 m do desenho.", corrigir: "Confira a parede ligada." } : validar(aO(N));
+    var v = longe ? { ok: false, motivo: ROT + " ficaria a mais de 50 m do desenho.", corrigir: "Confira a parede ligada." } : validar(aO(N));
     if (!v.ok) {
       saida.usouGravado = true;
-      saida.avisos.push("O telhado não pôde seguir as paredes: " + v.motivo + " Ficou como estava gravado. " + (v.corrigir || ""));
-      saida.problemas.push({ motivo: "Uma parede ligada ao telhado mudou demais: " + v.motivo, corrigir: "Use \"Editar contorno\" para arrumar o telhado, ou \"Seguir as paredes: Não\" para soltar todas as arestas." });
+      saida.avisos.push(ROT + " não pôde seguir as paredes: " + v.motivo + " Ficou como estava gravado. " + (v.corrigir || ""));
+      saida.problemas.push({ motivo: "Uma parede ligada " + (DE === "do telhado" ? "ao telhado" : (DE === "do forro" ? "ao forro" : "à laje")) + " mudou demais: " + v.motivo, corrigir: "Use \"Editar contorno\" para arrumar " + (DE === "do telhado" ? "o telhado" : (DE === "do forro" ? "o forro" : "a laje")) + ", ou \"Seguir as paredes: Não\" para soltar todas as arestas." });
       return saida;
     }
     var mudou = false;
@@ -500,8 +501,10 @@
      → { ok, contorno (já resolvido, com pr/pf/po), ligadas:[idx], naoLigadas:[{i, motivo}], resumo } */
   function vincularArestas(caixas, contorno, o) {
     o = o || {};
+    var NOM = o.nome || "telhado", DEq = o.de || "do telhado", ROTq = o.rot || "O telhado";   /* TUDO SEGUE AS PAREDES: forro e laje usam o mesmo motor */
     var C = arr(contorno), n = C.length, tol = fin(o.tol) ? o.tol : 1.5, alinhar = FACES[o.alinhar] || o.alinhar === "auto" ? o.alinhar : "externa";
-    if (n < 3) return { ok: false, motivo: "Telhado sem contorno.", corrigir: "Selecione um telhado por perímetro." };
+    if (n < 3) return { ok: false, motivo: (NOM === "telhado" ? "Telhado" : (NOM === "forro" ? "Forro" : "Laje")) + " sem contorno.", corrigir: "Selecione " + (NOM === "telhado" ? "um telhado por perímetro" : (NOM === "forro" ? "um forro por contorno" : "uma laje por contorno")) + "." };
+    if (C.some(function (q) { return q && q.m; })) return { ok: false, motivo: "O contorno tem aresta em arco: ele não segue paredes.", corrigir: "Só o contorno reto segue as paredes." };
     var W = arr(caixas).filter(function (c) { return c && c.delimitaAmbiente !== false; }).map(paredeReta).filter(Boolean), mapa = {};
     W.forEach(function (w) { mapa[w.id] = w; });
     var P = C.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), NF = normaisFora(P), ligadas = [], nao = [];
@@ -515,10 +518,10 @@
       if (!melhor) { nao.push({ i: k, motivo: "não tem parede paralela perto" }); continue; }
       N[k].pr = melhor.w.id; N[k].pf = melhor.pf; N[k].po = 0; ligadas.push(k);
     }
-    if (!ligadas.length) return { ok: false, motivo: "Nenhuma aresta tem parede paralela a menos de " + String(tol).replace(".", ",") + " m.", corrigir: "Chegue o telhado perto das paredes ou use \"Editar contorno\".", contorno: N, ligadas: [], naoLigadas: nao };
+    if (!ligadas.length) return { ok: false, motivo: "Nenhuma aresta tem parede paralela a menos de " + String(tol).replace(".", ",") + " m.", corrigir: "Chegue " + (NOM === "telhado" ? "o telhado" : (NOM === "forro" ? "o forro" : "a laje")) + " perto das paredes ou use \"Editar contorno\".", contorno: N, ligadas: [], naoLigadas: nao };
     /* o contorno já com os pontos nas paredes (a edição e o fallback gravado ficam coerentes) */
-    var res = resolverVinculos(caixas, N);
-    if (res.usouGravado) return { ok: false, motivo: "Ligar às paredes deixaria o telhado inválido: " + (res.problemas[0] ? res.problemas[0].motivo : "contorno cruzado") + ".", corrigir: "Ajuste o contorno com \"Editar contorno\" e tente de novo.", contorno: N, ligadas: ligadas, naoLigadas: nao };
+    var res = resolverVinculos(caixas, N, { de: DEq, rot: ROTq });
+    if (res.usouGravado) return { ok: false, motivo: "Ligar às paredes deixaria " + (NOM === "telhado" ? "o telhado" : (NOM === "forro" ? "o forro" : "a laje")) + " inválid" + (NOM === "laje" ? "a" : "o") + ": " + (res.problemas[0] ? res.problemas[0].motivo : "contorno cruzado") + ".", corrigir: "Ajuste o contorno com \"Editar contorno\" e tente de novo.", contorno: N, ligadas: ligadas, naoLigadas: nao };
     var resumo = ligadas.length + " de " + n + " arestas seguem paredes" + (nao.length ? "; " + nao.map(function (x) { return "a aresta " + (x.i + 1) + " " + x.motivo; }).join("; ") : "") + ".";
     return { ok: true, contorno: res.contorno, ligadas: ligadas, naoLigadas: nao, resumo: resumo, mudou: res.mudou };
   }
@@ -530,6 +533,86 @@
   function resumoVinculo(contorno) {
     var C = arr(contorno), l = C.filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length;
     return { total: C.length, ligadas: l, seguindo: l > 0 };
+  }
+
+
+  /* ------------------------------------------------------------ TUDO SEGUE AS PAREDES: laje e "Ajustar TUDO" (29/10/2026)
+     Pedido do Rogério: "o forro, tudo que é parâmetro: quando eu puxar uma parede, ele acompanhar e ajustar as medidas dele. O telhado também.
+     Se tiver um piso no chão também." O telhado (1.2.228) já seguia; aqui entram a LAJE/PISO por contorno (caixa tipo "laje" com `contorno`)
+     e o comando que liga o projeto antigo de uma vez. O forro por contorno resolve no BimForro.fim (js/bimforro.js) com o mesmo
+     resolverVinculos; a sanca segue o forro (lê o contorno já resolvido). */
+  var ROT_PECA = {
+    telhado: { nome: "telhado", de: "do telhado", rot: "O telhado", alinhar: "externa" },
+    forro:   { nome: "forro",   de: "do forro",   rot: "O forro",   alinhar: "interna" },
+    laje:    { nome: "laje",    de: "da laje",    rot: "A laje",    alinhar: "externa" }
+  };
+  /* piso/contrapiso (laje por contorno que nasce pela face interna do ambiente) → "interna"; laje de verdade → "externa" */
+  function alinharDaLaje(c) {
+    var t = c && c.tipoLaje ? (String(c.tipoLaje.id || "") + " " + String(c.tipoLaje.rotulo || "")) : "";
+    return /piso|contrapiso/i.test(t) ? "interna" : "externa";
+  }
+  function lajeSegue(c) { return !!c && c.tipo === "laje" && arr(c.contorno).length >= 3 && temVinculo(c.contorno); }
+  /* ANTES do BimArq.derivar (as paredes já aplicadas, ainda sem `uniao`): cada laje por contorno com `pr` leva o contorno de AGORA.
+     O derivar refaz área, volume, perímetro, caixa e furos a partir dele. Sem `pr` em nenhuma laje: nada roda (saída igual à de antes). */
+  function lajesAntes(saida) {
+    if (!saida) return saida;
+    arr(saida.caixas).forEach(function (c) {
+      if (!lajeSegue(c)) return;
+      var r = resolverVinculos(saida.caixas, c.contorno, ROT_PECA.laje);
+      if (!r.usouGravado) c.contorno = r.contorno;
+      c.segueParedes = { ligadas: r.ligadas, total: arr(c.contorno).length, mudou: !!r.mudou, usouGravado: !!r.usouGravado, avisos: r.avisos.slice(), problemas: r.problemas.slice() };
+    });
+    return saida;
+  }
+  /* DEPOIS do derivar (o recalcLaje apaga `avisos`): os avisos do vínculo entram na laje e o texto interno sai */
+  function lajesDepois(saida) {
+    if (!saida) return saida;
+    arr(saida.caixas).forEach(function (c) {
+      if (!c || !c.segueParedes) return;
+      var sg = c.segueParedes;
+      if (arr(sg.avisos).length) c.avisos = arr(c.avisos).concat(sg.avisos);
+      if (arr(sg.problemas).length) c.problemas = arr(c.problemas).concat(sg.problemas);
+      delete sg.avisos; delete sg.problemas;
+    });
+    return saida;
+  }
+
+  /* "AJUSTAR TUDO ÀS PAREDES": liga (vincularArestas) TODOS os telhados por perímetro, forros por contorno e lajes por contorno do estado,
+     numa lista de ops (o chamador grava num LOTE só: um Ctrl+Z desfaz tudo). o = { nivelId (só as peças desse nível; peça sem nível entra
+     sempre), tol, contornoTelhado: function(telhado) (o contorno com a inclinação por aresta fundida) }.
+     → { ok, ops:[], pecas:[{tipo,id,ligadas,total,naoLigadas:[{i,motivo}],motivo?}], resumo, nPecas, nLigadas, nArestas, naoLigou:[texto] } */
+  function ajustarTudo(estado, o) {
+    o = o || {};
+    var cx = arr(estado && estado.caixas), ops = [], pecas = [], nLig = 0, nAre = 0, nPec = 0, nao = [], tol = fin(o.tol) ? o.tol : 1.5;
+    function doNivel(p) { return o.nivelId == null || p.nivelId == null || String(p.nivelId) === String(o.nivelId); }
+    function tratar(tipo, p, contorno, alinhar, mkOp) {
+      var R = ROT_PECA[tipo], v = vincularArestas(cx, contorno, { alinhar: alinhar, tol: tol, nome: R.nome, de: R.de, rot: R.rot });
+      var rotulo = (tipo === "telhado" ? "Telhado " : (tipo === "forro" ? "Forro " : (alinhar === "interna" ? "Piso " : "Laje "))) + p.id;
+      var item = { tipo: tipo, id: p.id, rotulo: rotulo, total: contorno.length, ligadas: 0, naoLigadas: [] };
+      nAre += contorno.length;
+      if (!v.ok) { item.motivo = v.motivo; nao.push(rotulo + ": " + (v.motivo || "não ligou")); pecas.push(item); return; }
+      item.ligadas = v.ligadas.length; item.naoLigadas = v.naoLigadas;
+      nLig += v.ligadas.length; nPec++;
+      v.naoLigadas.forEach(function (x) { nao.push(rotulo + ": a aresta " + (x.i + 1) + " " + x.motivo); });
+      if (JSON.stringify(v.contorno) !== JSON.stringify(contorno)) { ops.push(mkOp(v.contorno)); item.mudou = true; }
+      pecas.push(item);
+    }
+    arr(estado && estado.telhados).forEach(function (t) {
+      if (!t || t.modo === "extrusao" || arr(t.contorno).length < 3 || !doNivel(t)) return;
+      var C = o.contornoTelhado ? o.contornoTelhado(t) : JSON.parse(JSON.stringify(t.contorno));
+      tratar("telhado", t, C, "externa", function (c2) { return { op: "telhado", id: t.id, contorno: c2 }; });
+    });
+    arr(estado && estado.forros).forEach(function (f) {
+      if (!f || f.modo !== "contorno" || !f.ok || arr(f.contorno).length < 3 || !doNivel(f)) return;
+      if (f.contorno.some(function (q) { return q && q.m; })) return;
+      tratar("forro", f, JSON.parse(JSON.stringify(f.contorno)), "interna", function (c2) { return { op: "forro", id: f.id, contorno: c2.map(function (q) { var r = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { r.pr = q.pr; if (q.pf) r.pf = q.pf; if (q.po != null) r.po = q.po; } return r; }) }; });
+    });
+    cx.forEach(function (c) {
+      if (!c || c.tipo !== "laje" || arr(c.contorno).length < 3 || !doNivel(c) || c.contorno.some(function (q) { return q && q.m; })) return;
+      tratar("laje", c, JSON.parse(JSON.stringify(c.contorno)), alinharDaLaje(c), function (c2) { return { op: "ajustar", id: c.id, campos: { contorno: c2.map(function (q) { var r = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { r.pr = q.pr; if (q.pf) r.pf = q.pf; if (q.po != null) r.po = q.po; } return r; }) } }; });
+    });
+    var resumo = nPec + " peça" + (nPec === 1 ? "" : "s") + ", " + nLig + " de " + nAre + " arestas ligadas às paredes" + (nao.length ? ". Não ligou: " + nao.join("; ") : "") + ".";
+    return { ok: true, ops: ops, pecas: pecas, resumo: resumo, nPecas: nPec, nLigadas: nLig, nArestas: nAre, naoLigou: nao };
   }
 
   /* ------------------------------------------------------------ águas do telhado */
@@ -579,7 +662,7 @@
     validar: validar, areaSinal: areaSinal, perimetro: perimetro,
     editar: editar, moverVertice: moverVertice, inserirVertice: inserirVertice, removerVertice: removerVertice, moverAresta: moverAresta,
     contornoDeParedes: contornoDeParedes, contornoDaEdificacao: contornoDaEdificacao, cadeiaDeParedes: cadeiaDeParedes,
-    resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
+    resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, lajesAntes: lajesAntes, lajesDepois: lajesDepois, ajustarTudo: ajustarTudo, alinharDaLaje: alinharDaLaje, ROT_PECA: ROT_PECA, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
     aguasContorno: aguasContorno, arestaMaisPerto: arestaMaisPerto, verticeMaisPerto: verticeMaisPerto,
     /* o alinhamento padrão de cada peça: laje e telhado pela face externa; piso e forro pela interna */
     alinharPadrao: function (peca) { return peca === "piso" || peca === "forro" ? "interna" : "externa"; }

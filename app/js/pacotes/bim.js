@@ -13484,8 +13484,11 @@ invalidas: invalidas
 if (restr && (restr.n || restr.avisos)) { saida.restricoes = restr; saida.niveisAssinatura = ARQ.assinaturaNiveis(NIV); }
 var BPd = ctx.param ? depParam() : null; if (BPd) BPd.antesDerivar(ctx, saida);
 if (ctx.telhados || ctx.bordas) { var T3 = depP3("t"); if (T3) T3.fim(ctx, saida, NIV); }
+if (ctx.forros) { var BFv = depForro(); if (BFv && BFv.vincular) BFv.vincular(ctx, saida); }
+var BCl = global.BimContorno || null; if (!BCl && typeof require === "function") { try { BCl = require("./bimcontorno.js"); } catch (eBC) {} } if (BCl && BCl.lajesAntes) BCl.lajesAntes(saida);
 if (ctx.fundacoes) { var F3 = depP3("f"); if (F3) F3.fim(ctx, saida, NIV); }
 if (ARQ && ARQ.derivar) ARQ.derivar(saida);
+if (BCl && BCl.lajesDepois) BCl.lajesDepois(saida);
 if (ctx.forros) { var BFf = depForro(); if (BFf) BFf.fim(ctx, saida, NIV); }
 if (BAm && ctx.amb) BAm.fim(ctx, saida, NIV);
 if (saida.forros && saida.ambientes) { var BFa = depForro(); if (BFa && BFa.ligarAmbientes) BFa.ligarAmbientes(saida); }
@@ -13834,10 +13837,11 @@ function fin(v) { return typeof v === "number" && isFinite(v); }
 function obj(v) { return !!v && typeof v === "object" && !Array.isArray(v); }
 function ponto(p) { return obj(p) && fin(p.x) && fin(p.z); }
 function lista(l) { return Array.isArray(l) && l.length >= 3 && l.length <= 500 && l.every(ponto); }
+function vincOk(p) { return (p.pr == null || (typeof p.pr === "string" && p.pr.length > 0 && p.pr.length <= 120) || fin(p.pr)) && (p.pf == null || p.pf === "externa" || p.pf === "eixo" || p.pf === "interna") && (p.po == null || (fin(p.po) && Math.abs(p.po) <= 10)); }
 if (!o || o.op !== "forro" || o.id == null || (typeof o.id !== "string" && !fin(o.id))) return false;
 if (o.contorno != null && o.ponto != null) return false;
 var algum = false, LIMS = { base: [-10000, 10000], deslocNivel: [-200, 200], inclinacao: [0, 60], dirInclinacao: [-3600, 3600] };
-if (o.contorno !== undefined) { if (o.contorno !== null && !lista(o.contorno)) return false; algum = true; }
+if (o.contorno !== undefined) { if (o.contorno !== null && !(lista(o.contorno) && o.contorno.every(vincOk))) return false; algum = true; }
 if (o.ponto !== undefined) { if (o.ponto !== null && !ponto(o.ponto)) return false; algum = true; }
 if (o.furos !== undefined) {
 if (o.furos !== null && !(Array.isArray(o.furos) && o.furos.length <= 100 && o.furos.every(function (f) { return obj(f) && lista(f.pts); }))) return false;
@@ -13978,7 +13982,7 @@ if (o.op === "ajustar") return o.id != null && !!o.campos && typeof o.campos ===
 Object.keys(o.campos).every(function (k) { return ["anexarTopo", "anexarTelhado", "unir", "inverterFaces", "juntaCanto", "tipoParede", "tipoLaje", "perfil", "material", "escada", "guarda", "restricoes",
 "linhaLoc", "virar", "uniao", "estrut", "rampa", "contorno"].indexOf(k) >= 0; }) &&
 (o.campos.restricoes == null || (typeof o.campos.restricoes === "object" && !Array.isArray(o.campos.restricoes))) &&
-(o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z); })));
+(o.campos.contorno == null || (Array.isArray(o.campos.contorno) && o.campos.contorno.length >= 3 && o.campos.contorno.length <= 500 && o.campos.contorno.every(function (q) { return q && fin(q.x) && fin(q.z) && (q.pr == null || (typeof q.pr === "string" && q.pr.length > 0 && q.pr.length <= 120) || fin(q.pr)) && (q.pf == null || q.pf === "externa" || q.pf === "eixo" || q.pf === "interna") && (q.po == null || (fin(q.po) && Math.abs(q.po) <= 10)); })));
 if (o.op === "ajustarTipo" || o.op === "marcar") return BimEdit.opParamValida(o);
 if (o.op === "unirGeometria" || o.op === "desunirGeometria" || o.op === "alternarUniao") return ["a", "b"].every(function (k) { return (typeof o[k] === "string" && o[k].length > 0) || fin(o[k]); }) && String(o.a) !== String(o.b);
 if (BimEdit.opAmbiente(o.op)) return BimEdit.opAmbienteValida(o);
@@ -26070,6 +26074,14 @@ function arr(v) { return Array.isArray(v) ? v : []; }
 function clone(o) { return o == null ? o : JSON.parse(JSON.stringify(o)); }
 function pt(p) { return Array.isArray(p) ? [Number(p[0]), Number(p[1])] : (p ? [Number(p.x), Number(p.z)] : [NaN, NaN]); }
 function ptObj(p) { return { x: r6(p[0]), z: r6(p[1]) }; }
+function comVinculo(objs, origem) {
+var O = arr(origem);
+if (objs.length === O.length) objs.forEach(function (o, i) {
+var q = O[i];
+if (q && q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null) o.po = q.po; }
+});
+return objs;
+}
 function areaSinal(pts) {
 var s = 0;
 for (var i = 0, n = pts.length; i < n; i++) { var a = pts[i], b = pts[(i + 1) % n]; s += a[0] * b[1] - b[0] * a[1]; }
@@ -26553,7 +26565,7 @@ o = o || {};
 var v = this.validarPoligono(lista); if (!v.ok) return null;
 var esp = num(o.espessura, 0.12), topo = num(o.topo, 0);
 if (!(esp >= 0.03 && esp <= 1)) return null;
-var c = { tipo: "laje", ifc: "IFCSLAB", b2: 1, contorno: v.pts.map(ptObj), furos: [], altura: r4(esp), cy: r4(topo - esp / 2), rotY: 0 };
+var c = { tipo: "laje", ifc: "IFCSLAB", b2: 1, contorno: comVinculo(v.pts.map(ptObj), lista), furos: [], altura: r4(esp), cy: r4(topo - esp / 2), rotY: 0 };
 if (o.tipoLaje) c.tipoLaje = { id: String(o.tipoLaje.id || ""), rotulo: String(o.tipoLaje.rotulo || "") };
 if (o.nivelId != null) c.nivelId = String(o.nivelId);
 var self = this;
@@ -26963,7 +26975,7 @@ delete o.alturaEfetiva; delete o.avisoNivel; delete o.v1Migrado;
 delete o.geoUnioes; delete o.uniaoGeo; delete o.cortesFace; delete o.fixo; delete o.pinturas; delete o.divFaces; delete o.pinturasCalc; delete o.avisosUniao;
 if (o.escada) o.escada = { par: o.escada.par };
 if (o.rampa) o.rampa = { par: o.rampa.par };
-delete o.marcaLocal;
+delete o.marcaLocal; delete o.segueParedes;
 if (o.guarda) { var gh = o.guarda.host; o.guarda = { par: o.guarda.par, pts: o.guarda.pts }; if (gh) o.guarda.host = gh; }
 return o;
 },
@@ -27014,7 +27026,7 @@ c.altura = e; c.cy = r4(topo - e / 2); mudou = true;
 }
 if (campos.contorno && c.tipo === "laje" && arr(c.contorno).length && !(Curva() && Curva().temArco(c.contorno))) {
 var vc = this.validarPoligono(campos.contorno);
-if (vc.ok) { c.contorno = vc.pts.map(ptObj); this.recalcLaje(c); mudou = true; }
+if (vc.ok) { c.contorno = comVinculo(vc.pts.map(ptObj), campos.contorno); this.recalcLaje(c); mudou = true; }
 }
 if (campos.perfil && (c.tipo === "pilar" || c.tipo === "viga") && secao(campos.perfil).ok) { c.perfil = clone(campos.perfil); mudou = true; }
 if (campos.material && (c.tipo === "pilar" || c.tipo === "viga") && MATERIAIS[campos.material]) { c.material = campos.material; mudou = true; }
@@ -27038,6 +27050,7 @@ transladar: function (c, dx, dz) {
 if (!c || !(fin(dx) && fin(dz))) return c;
 if (c.arco && c.arco.m) { c.arco.m.x = r6(num(c.arco.m.x, 0) + dx); c.arco.m.z = r6(num(c.arco.m.z, 0) + dz); }
 arr(c.contorno).forEach(function (p) { p.x = r6(p.x + dx); p.z = r6(p.z + dz); });
+if (dx || dz) arr(c.contorno).forEach(function (p) { if (p) { delete p.pr; delete p.pf; delete p.po; } });
 arr(c.contorno).forEach(function (p) { if (p.m) { p.m.x = r6(num(p.m.x, 0) + dx); p.m.z = r6(num(p.m.z, 0) + dz); } });
 arr(c.furos).forEach(function (f) { arr(f && f.pts).forEach(function (p) { p.x = r6(p.x + dx); p.z = r6(p.z + dz); }); });
 if (c.escada && c.escada.par) { c.escada.par.x = r6(num(c.escada.par.x, 0) + dx); c.escada.par.z = r6(num(c.escada.par.z, 0) + dz); }
@@ -58418,6 +58431,8 @@ teCotaCumeeira: function (x) { return fin(el(x).cotaCumeeira) ? el(x).cotaCumeei
 teCotaApoio: function (x) { return fin(el(x).cotaApoio) ? el(x).cotaApoio : null; },
 teUnir: function (x) { return el(x).unir != null ? txt(el(x).unir) : null; },
 teSeguir: function (x) { var c = el(x); if (c.modo === "extrusao") return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
+pcSeguir: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
+pcSeguirN: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
 teSeguirN: function (x) { var c = el(x); if (c.modo === "extrusao") return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
 teModelo: function (x) { var pk = el(x).pacote; return pk && pk.rotulo ? txt(pk.rotulo) : (el(x).modelo ? txt(el(x).modelo) : "sem estrutura (só o telhado)"); },
 teAvisosModelo: function (x) { var pk = el(x).pacote; return pk && arr(pk.avisos).length ? arr(pk.avisos).join(" | ") : null; },
@@ -58782,6 +58797,8 @@ P(I, "Cotas", "Elevação no topo", "STRUCTURAL_ELEVATION_AT_TOP", "comprimento"
 P(I, "Cotas", "Elevação no núcleo superior", "STRUCTURAL_ELEVATION_AT_TOP_CORE", "comprimento", { calc: "lajeTopo" }),
 P(I, "Cotas", "Elevação no núcleo inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM_CORE", "comprimento", { calc: "lajeFundo" }),
 P(I, "Cotas", "Elevação na parte inferior", "STRUCTURAL_ELEVATION_AT_BOTTOM", "comprimento", { calc: "lajeFundo" }),
+P(I, "Restrições", "Seguir as paredes", "RA_LAJE_SEGUIR", "lista", { calc: "pcSeguir", escrita: "laje.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+P(I, "Restrições", "Arestas que seguem paredes", "RA_LAJE_SEGUIR_ARESTAS", "texto", { calc: "pcSeguirN" }),
 P(I, "Cotas", "Espessura", "FLOOR_ATTR_THICKNESS_PARAM", "comprimento", { calc: "lajeEspessura", ifc: Q("Qto_SlabBaseQuantities", "Width") }),
 P(I, "Cotas", "Perímetro", "HOST_PERIMETER_COMPUTED", "comprimento", { calc: "lajePerimetro", ifc: Q("Qto_SlabBaseQuantities", "Perimeter"), orc: O("comprimento") }),
 P(I, "Cotas", "Área", "HOST_AREA_COMPUTED", "area", { calc: "lajeArea", ifc: Q("Qto_SlabBaseQuantities", "NetArea"), orc: O("area") }),
@@ -58932,6 +58949,8 @@ P(I, "Restrições", "Nível", "LEVEL_PARAM", "nivel", { calc: "nivelNome", camp
 P(I, "Restrições", "Altura do deslocamento do nível", "CEILING_HEIGHTABOVELEVEL_PARAM", "comprimento", { calc: "forroDeslocNivel", escrita: "forro.deslocNivel", leitura: false, padrao: 2.6, faixa: FAIXA.forroDesloc }),
 P(I, "Restrições", "Delimitação de ambientes", "WALL_ATTR_ROOM_BOUNDING", "simnao", { calc: "pecaDelimita", escrita: "forro.delimitaAmbiente", leitura: false, padrao: true }),
 P(I, "Restrições", "Contorno", "RA_FORRO_MODO", "texto", { calc: "forroModo" }),
+P(I, "Restrições", "Seguir as paredes", "RA_FORRO_SEGUIR", "lista", { calc: "pcSeguir", escrita: "forro.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+P(I, "Restrições", "Arestas que seguem paredes", "RA_FORRO_SEGUIR_ARESTAS", "texto", { calc: "pcSeguirN" }),
 P(I, "Cotas", "Inclinação", "ROOF_SLOPE", "angulo", { calc: "forroInclinacao", escrita: "forro.inclinacao", leitura: false, faixa: FAIXA.forroInclinacao }),
 P(I, "Cotas", "Direção da inclinação", "RA_FORRO_DIR_INCLINACAO", "angulo", { calc: "forroDirInclinacao", escrita: "forro.dirInclinacao", leitura: false }),
 P(I, "Cotas", "Perímetro", "HOST_PERIMETER_COMPUTED", "comprimento", { calc: "forroPerimetro", ifc: Q("OrcaPRO_Forro", "Perimetro"), orc: O("comprimento") }),
@@ -60934,6 +60953,7 @@ aC = aC + kc.regiao; aF = F.reduce(function (s, q, i) { return s + Math.abs(area
 if (!(th > 0)) per += kc.perimetro + kf.reduce(function (s, x) { return s + x.perimetro; }, 0);
 }
 f.contorno = C.map(ptObj); f.furos = F.map(function (q) { return { pts: q.map(ptObj) }; });
+if (f.modo === "contorno" && !arcosC && arr(fonte.contorno).length === f.contorno.length) arr(fonte.contorno).forEach(function (p, i) { if (p && p.pr != null && p.pr !== "") { f.contorno[i].pr = p.pr; if (p.pf) f.contorno[i].pf = p.pf; if (p.po != null) f.contorno[i].po = p.po; } });
 f.areaBruta = r4(aC * k); f.areaFuros = r4(aF * k); f.area = r4((aC - aF) * k);
 f.perimetro = r4(per); f.volume = r6((aC - aF) * k * t.espessura);
 var xs = C.map(function (q) { return q[0]; }), zs = C.map(function (q) { return q[1]; });
@@ -61017,6 +61037,7 @@ function pontosObj(l) {
 return arr(l).map(function (p) {
 var q = pt(p), o = { x: r6(q[0]), z: r6(q[1]) };
 if (p && p.m && fin(Number(p.m.x)) && fin(Number(p.m.z))) o.m = { x: r6(Number(p.m.x)), z: r6(Number(p.m.z)) };
+if (p && p.pr != null && p.pr !== "") { o.pr = p.pr; if (p.pf) o.pf = p.pf; if (fin(Number(p.po)) && p.po !== null) o.po = Number(p.po); }
 return o;
 });
 }
@@ -61100,9 +61121,29 @@ return true;
 }
 return false;
 },
+vincular: function (ctx, saida) {
+if (!ctx || !ctx.forros || !saida) return;
+var BC = dep("BimContorno", "./bimcontorno.js");
+if (!BC || !BC.temVinculo) return;
+arr(ctx.ordemFo).forEach(function (id) {
+var f = ctx.forros[id];
+if (!f || !arr(f.contorno).length || !BC.temVinculo(f.contorno)) return;
+var r = BC.resolverVinculos(saida.caixas, f.contorno, BC.ROT_PECA.forro);
+if (!r.usouGravado) f.contorno = r.contorno;
+(ctx.vincForro || (ctx.vincForro = {}))[String(id)] = r;
+});
+},
 fim: function (ctx, saida, niveis) {
 if (!ctx || !ctx.forros || !saida) return saida;
-saida.forros = arr(ctx.ordemFo).map(function (id) { return calcular(ctx.forros[id], saida, niveis); });
+saida.forros = arr(ctx.ordemFo).map(function (id) {
+var f = calcular(ctx.forros[id], saida, niveis), r = ctx.vincForro && ctx.vincForro[String(id)];
+if (r && f) {
+f.segueParedes = { ligadas: r.ligadas, total: arr(f.contorno).length, mudou: !!r.mudou, usouGravado: !!r.usouGravado };
+if (r.avisos.length) f.avisos = arr(f.avisos).concat(r.avisos);
+if (r.problemas.length) f.problemas = arr(f.problemas).concat(r.problemas);
+}
+return f;
+});
 return saida;
 },
 medidas: function (f) {
@@ -61429,8 +61470,9 @@ var off = pf === "eixo" ? 0 : (pf === "interna" ? -w.t : w.t);
 off += num(po, 0);
 return { p: [w.c[0] + nw[0] * off, w.c[1] + nw[1] * off], d: w.u };
 }
-function resolverVinculos(caixas, contorno) {
-var C = arr(contorno), n = C.length;
+function resolverVinculos(caixas, contorno, opc) {
+var C = arr(contorno), n = C.length, DE = (opc && opc.de) || "do telhado", ROT = (opc && opc.rot) || "O telhado", rot = ROT.toLowerCase();
+if (C.some(function (q) { return q && q.m; })) return { contorno: C, mudou: false, ligadas: 0, avisos: [], problemas: [], usouGravado: true };
 var saida = { contorno: C, mudou: false, ligadas: 0, avisos: [], problemas: [], usouGravado: false };
 if (n < 3 || !temVinculo(C)) return saida;
 var mapa = {};
@@ -61442,11 +61484,11 @@ var reta = { p: a, d: [dx / L, dz / L] }, lig = false;
 if (q.pr != null && q.pr !== "") {
 var w = mapa[String(q.pr)], pf = FACES[q.pf] ? q.pf : "externa";
 if (!w) {
-saida.avisos.push("A parede da aresta " + (k + 1) + " do telhado não existe mais: a aresta ficou onde estava.");
-saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado foi apagada.", corrigir: "Use \"Ajustar às paredes agora\" para ligar a aresta a outra parede, ou arraste a aresta (Editar contorno)." });
+saida.avisos.push("A parede da aresta " + (k + 1) + " " + DE + " não existe mais: a aresta ficou onde estava.");
+saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " " + DE + " foi apagada.", corrigir: "Use \"Ajustar às paredes agora\" para ligar a aresta a outra parede, ou arraste a aresta (Editar contorno)." });
 } else if (Math.abs(w.u[0] * (dx / L) + w.u[1] * (dz / L)) < 0.7) {
-saida.avisos.push("A parede da aresta " + (k + 1) + " girou demais em relação ao telhado: a aresta ficou onde estava.");
-saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " do telhado girou mais de 45° em relação a ela.", corrigir: "Use \"Ajustar às paredes agora\" ou arraste a aresta (Editar contorno)." });
+saida.avisos.push("A parede da aresta " + (k + 1) + " girou demais em relação ao " + (opc && opc.rot ? rot : "telhado") + ": a aresta ficou onde estava.");
+saida.problemas.push({ motivo: "A parede da aresta " + (k + 1) + " " + DE + " girou mais de 45° em relação a ela.", corrigir: "Use \"Ajustar às paredes agora\" ou arraste a aresta (Editar contorno)." });
 } else { reta = retaDaFace(w, NF[k], pf, q.po); lig = true; }
 }
 retas.push(reta); ligada.push(lig);
@@ -61463,11 +61505,11 @@ else { var tt = (P[k][0] - rr.p[0]) * rr.d[0] + (P[k][1] - rr.p[1]) * rr.d[1]; X
 N.push(X);
 }
 var longe = N.some(function (X, i) { return dist(X, P[i]) > 50; });
-var v = longe ? { ok: false, motivo: "O telhado ficaria a mais de 50 m do desenho.", corrigir: "Confira a parede ligada." } : validar(aO(N));
+var v = longe ? { ok: false, motivo: ROT + " ficaria a mais de 50 m do desenho.", corrigir: "Confira a parede ligada." } : validar(aO(N));
 if (!v.ok) {
 saida.usouGravado = true;
-saida.avisos.push("O telhado não pôde seguir as paredes: " + v.motivo + " Ficou como estava gravado. " + (v.corrigir || ""));
-saida.problemas.push({ motivo: "Uma parede ligada ao telhado mudou demais: " + v.motivo, corrigir: "Use \"Editar contorno\" para arrumar o telhado, ou \"Seguir as paredes: Não\" para soltar todas as arestas." });
+saida.avisos.push(ROT + " não pôde seguir as paredes: " + v.motivo + " Ficou como estava gravado. " + (v.corrigir || ""));
+saida.problemas.push({ motivo: "Uma parede ligada " + (DE === "do telhado" ? "ao telhado" : (DE === "do forro" ? "ao forro" : "à laje")) + " mudou demais: " + v.motivo, corrigir: "Use \"Editar contorno\" para arrumar " + (DE === "do telhado" ? "o telhado" : (DE === "do forro" ? "o forro" : "a laje")) + ", ou \"Seguir as paredes: Não\" para soltar todas as arestas." });
 return saida;
 }
 var mudou = false;
@@ -61511,8 +61553,10 @@ return m ? { pr: m.w.id, pf: m.pf, dd: m.dd, s: m.s, nf: m.nf } : null;
 }
 function vincularArestas(caixas, contorno, o) {
 o = o || {};
+var NOM = o.nome || "telhado", DEq = o.de || "do telhado", ROTq = o.rot || "O telhado";
 var C = arr(contorno), n = C.length, tol = fin(o.tol) ? o.tol : 1.5, alinhar = FACES[o.alinhar] || o.alinhar === "auto" ? o.alinhar : "externa";
-if (n < 3) return { ok: false, motivo: "Telhado sem contorno.", corrigir: "Selecione um telhado por perímetro." };
+if (n < 3) return { ok: false, motivo: (NOM === "telhado" ? "Telhado" : (NOM === "forro" ? "Forro" : "Laje")) + " sem contorno.", corrigir: "Selecione " + (NOM === "telhado" ? "um telhado por perímetro" : (NOM === "forro" ? "um forro por contorno" : "uma laje por contorno")) + "." };
+if (C.some(function (q) { return q && q.m; })) return { ok: false, motivo: "O contorno tem aresta em arco: ele não segue paredes.", corrigir: "Só o contorno reto segue as paredes." };
 var W = arr(caixas).filter(function (c) { return c && c.delimitaAmbiente !== false; }).map(paredeReta).filter(Boolean), mapa = {};
 W.forEach(function (w) { mapa[w.id] = w; });
 var P = C.map(function (q) { return [num(q.x, 0), num(q.z, 0)]; }), NF = normaisFora(P), ligadas = [], nao = [];
@@ -61526,9 +61570,9 @@ var melhor = acharFace(W, P, NF, k, alinhar, tol);
 if (!melhor) { nao.push({ i: k, motivo: "não tem parede paralela perto" }); continue; }
 N[k].pr = melhor.w.id; N[k].pf = melhor.pf; N[k].po = 0; ligadas.push(k);
 }
-if (!ligadas.length) return { ok: false, motivo: "Nenhuma aresta tem parede paralela a menos de " + String(tol).replace(".", ",") + " m.", corrigir: "Chegue o telhado perto das paredes ou use \"Editar contorno\".", contorno: N, ligadas: [], naoLigadas: nao };
-var res = resolverVinculos(caixas, N);
-if (res.usouGravado) return { ok: false, motivo: "Ligar às paredes deixaria o telhado inválido: " + (res.problemas[0] ? res.problemas[0].motivo : "contorno cruzado") + ".", corrigir: "Ajuste o contorno com \"Editar contorno\" e tente de novo.", contorno: N, ligadas: ligadas, naoLigadas: nao };
+if (!ligadas.length) return { ok: false, motivo: "Nenhuma aresta tem parede paralela a menos de " + String(tol).replace(".", ",") + " m.", corrigir: "Chegue " + (NOM === "telhado" ? "o telhado" : (NOM === "forro" ? "o forro" : "a laje")) + " perto das paredes ou use \"Editar contorno\".", contorno: N, ligadas: [], naoLigadas: nao };
+var res = resolverVinculos(caixas, N, { de: DEq, rot: ROTq });
+if (res.usouGravado) return { ok: false, motivo: "Ligar às paredes deixaria " + (NOM === "telhado" ? "o telhado" : (NOM === "forro" ? "o forro" : "a laje")) + " inválid" + (NOM === "laje" ? "a" : "o") + ": " + (res.problemas[0] ? res.problemas[0].motivo : "contorno cruzado") + ".", corrigir: "Ajuste o contorno com \"Editar contorno\" e tente de novo.", contorno: N, ligadas: ligadas, naoLigadas: nao };
 var resumo = ligadas.length + " de " + n + " arestas seguem paredes" + (nao.length ? "; " + nao.map(function (x) { return "a aresta " + (x.i + 1) + " " + x.motivo; }).join("; ") : "") + ".";
 return { ok: true, contorno: res.contorno, ligadas: ligadas, naoLigadas: nao, resumo: resumo, mudou: res.mudou };
 }
@@ -61538,6 +61582,70 @@ return arr(contorno).map(function (q) { var o = { x: r6(num(q.x, 0)), z: r6(num(
 function resumoVinculo(contorno) {
 var C = arr(contorno), l = C.filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length;
 return { total: C.length, ligadas: l, seguindo: l > 0 };
+}
+var ROT_PECA = {
+telhado: { nome: "telhado", de: "do telhado", rot: "O telhado", alinhar: "externa" },
+forro: { nome: "forro", de: "do forro", rot: "O forro", alinhar: "interna" },
+laje: { nome: "laje", de: "da laje", rot: "A laje", alinhar: "externa" }
+};
+function alinharDaLaje(c) {
+var t = c && c.tipoLaje ? (String(c.tipoLaje.id || "") + " " + String(c.tipoLaje.rotulo || "")) : "";
+return /piso|contrapiso/i.test(t) ? "interna" : "externa";
+}
+function lajeSegue(c) { return !!c && c.tipo === "laje" && arr(c.contorno).length >= 3 && temVinculo(c.contorno); }
+function lajesAntes(saida) {
+if (!saida) return saida;
+arr(saida.caixas).forEach(function (c) {
+if (!lajeSegue(c)) return;
+var r = resolverVinculos(saida.caixas, c.contorno, ROT_PECA.laje);
+if (!r.usouGravado) c.contorno = r.contorno;
+c.segueParedes = { ligadas: r.ligadas, total: arr(c.contorno).length, mudou: !!r.mudou, usouGravado: !!r.usouGravado, avisos: r.avisos.slice(), problemas: r.problemas.slice() };
+});
+return saida;
+}
+function lajesDepois(saida) {
+if (!saida) return saida;
+arr(saida.caixas).forEach(function (c) {
+if (!c || !c.segueParedes) return;
+var sg = c.segueParedes;
+if (arr(sg.avisos).length) c.avisos = arr(c.avisos).concat(sg.avisos);
+if (arr(sg.problemas).length) c.problemas = arr(c.problemas).concat(sg.problemas);
+delete sg.avisos; delete sg.problemas;
+});
+return saida;
+}
+function ajustarTudo(estado, o) {
+o = o || {};
+var cx = arr(estado && estado.caixas), ops = [], pecas = [], nLig = 0, nAre = 0, nPec = 0, nao = [], tol = fin(o.tol) ? o.tol : 1.5;
+function doNivel(p) { return o.nivelId == null || p.nivelId == null || String(p.nivelId) === String(o.nivelId); }
+function tratar(tipo, p, contorno, alinhar, mkOp) {
+var R = ROT_PECA[tipo], v = vincularArestas(cx, contorno, { alinhar: alinhar, tol: tol, nome: R.nome, de: R.de, rot: R.rot });
+var rotulo = (tipo === "telhado" ? "Telhado " : (tipo === "forro" ? "Forro " : (alinhar === "interna" ? "Piso " : "Laje "))) + p.id;
+var item = { tipo: tipo, id: p.id, rotulo: rotulo, total: contorno.length, ligadas: 0, naoLigadas: [] };
+nAre += contorno.length;
+if (!v.ok) { item.motivo = v.motivo; nao.push(rotulo + ": " + (v.motivo || "não ligou")); pecas.push(item); return; }
+item.ligadas = v.ligadas.length; item.naoLigadas = v.naoLigadas;
+nLig += v.ligadas.length; nPec++;
+v.naoLigadas.forEach(function (x) { nao.push(rotulo + ": a aresta " + (x.i + 1) + " " + x.motivo); });
+if (JSON.stringify(v.contorno) !== JSON.stringify(contorno)) { ops.push(mkOp(v.contorno)); item.mudou = true; }
+pecas.push(item);
+}
+arr(estado && estado.telhados).forEach(function (t) {
+if (!t || t.modo === "extrusao" || arr(t.contorno).length < 3 || !doNivel(t)) return;
+var C = o.contornoTelhado ? o.contornoTelhado(t) : JSON.parse(JSON.stringify(t.contorno));
+tratar("telhado", t, C, "externa", function (c2) { return { op: "telhado", id: t.id, contorno: c2 }; });
+});
+arr(estado && estado.forros).forEach(function (f) {
+if (!f || f.modo !== "contorno" || !f.ok || arr(f.contorno).length < 3 || !doNivel(f)) return;
+if (f.contorno.some(function (q) { return q && q.m; })) return;
+tratar("forro", f, JSON.parse(JSON.stringify(f.contorno)), "interna", function (c2) { return { op: "forro", id: f.id, contorno: c2.map(function (q) { var r = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { r.pr = q.pr; if (q.pf) r.pf = q.pf; if (q.po != null) r.po = q.po; } return r; }) }; });
+});
+cx.forEach(function (c) {
+if (!c || c.tipo !== "laje" || arr(c.contorno).length < 3 || !doNivel(c) || c.contorno.some(function (q) { return q && q.m; })) return;
+tratar("laje", c, JSON.parse(JSON.stringify(c.contorno)), alinharDaLaje(c), function (c2) { return { op: "ajustar", id: c.id, campos: { contorno: c2.map(function (q) { var r = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { r.pr = q.pr; if (q.pf) r.pf = q.pf; if (q.po != null) r.po = q.po; } return r; }) } }; });
+});
+var resumo = nPec + " peça" + (nPec === 1 ? "" : "s") + ", " + nLig + " de " + nAre + " arestas ligadas às paredes" + (nao.length ? ". Não ligou: " + nao.join("; ") : "") + ".";
+return { ok: true, ops: ops, pecas: pecas, resumo: resumo, nPecas: nPec, nLigadas: nLig, nArestas: nAre, naoLigou: nao };
 }
 function aguasContorno(lista, tipo, aresta) {
 var P = aP(lista), n = P.length, C = aO(P);
@@ -61580,7 +61688,7 @@ ALINHAMENTOS: ALINHAMENTOS, ARESTA_MIN: ARESTA_MIN, _analisar: analisar, _caixaP
 validar: validar, areaSinal: areaSinal, perimetro: perimetro,
 editar: editar, moverVertice: moverVertice, inserirVertice: inserirVertice, removerVertice: removerVertice, moverAresta: moverAresta,
 contornoDeParedes: contornoDeParedes, contornoDaEdificacao: contornoDaEdificacao, cadeiaDeParedes: cadeiaDeParedes,
-resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
+resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, lajesAntes: lajesAntes, lajesDepois: lajesDepois, ajustarTudo: ajustarTudo, alinharDaLaje: alinharDaLaje, ROT_PECA: ROT_PECA, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
 aguasContorno: aguasContorno, arestaMaisPerto: arestaMaisPerto, verticeMaisPerto: verticeMaisPerto,
 alinharPadrao: function (peca) { return peca === "piso" || peca === "forro" ? "interna" : "externa"; }
 };
@@ -141389,12 +141497,19 @@ R.acrescentar("arquitetura", "Arquitetura", "Modelador", [
 { id: "editar-contorno", rotulo: "Editar\ncontorno", icone: "editar", grande: true, requer: "selecao",
 dica: "Com a laje, o piso, o forro ou o telhado selecionado: arraste um vértice, arraste uma aresta (ela anda paralela), clique numa aresta para inserir um vértice e Delete no vértice para tirá-lo. Enter conclui (um Ctrl+Z desfaz tudo); Esc cancela. Contorno que se cruza ou aresta menor que 1 cm não grava." },
 { id: "ajustar-paredes", rotulo: "Ajustar às\nparedes", icone: "telhado", grande: true, requer: "selecao",
-dica: "Com o telhado selecionado: liga cada aresta à face da parede paralela mais perto (até 1,5 m) e leva o telhado até ela. Depois disso o telhado SEGUE as paredes: esticou ou moveu a parede, ele vai junto. É o botão para o telhado de antes, que ficou para trás quando a sala cresceu. Um Ctrl+Z desfaz." }
+dica: "Com o telhado, o forro (por contorno) ou a laje/piso selecionado: liga cada aresta à face da parede paralela mais perto (até 1,5 m) e leva a peça até ela. Depois disso a peça SEGUE as paredes: esticou ou moveu a parede, ela vai junto e as medidas (área, perímetro, quantitativo, sanca) saem do contorno novo. É o botão para a peça de antes, que ficou para trás quando a sala cresceu. Um Ctrl+Z desfaz." },
+{ id: "ajustar-tudo-paredes", rotulo: "Ajustar TUDO\nàs paredes", icone: "telhado", grande: true,
+dica: "Projeto antigo: liga TODOS os telhados, forros por contorno e lajes/pisos por contorno do nível ativo às paredes de uma vez (a aresta sem parede paralela perto fica como está e o balão lista quais). Um Ctrl+Z desfaz tudo." }
 ]);
 reg["editar-contorno"] = function () {
 var B = global.BIM;
 if (!B || !B.contornoEditar) return false;
 return B.contornoEditar();
+};
+reg["ajustar-tudo-paredes"] = function () {
+var B = global.BIM;
+if (!B || !B.contornoAjustarTudo) return false;
+return B.contornoAjustarTudo();
 };
 reg["ajustar-paredes"] = function () {
 var B = global.BIM;
@@ -141411,6 +141526,21 @@ var pendBeiral = null;
 var sessao = null;
 var concluindo = false;
 function contornoDoTelhado(te) { var BT = global.BimTelhado; return BT && BT.contornoComInclinacoes ? BT.contornoComInclinacoes(te) : clone(te.contorno); }
+function pecaPorId(st, id, soSegue) {
+var cx = arr(st.caixas).filter(function (c) { return String(c.id) === id && c.tipo === "laje" && arr(c.contorno).length >= 3; })[0];
+if (cx) return { tipo: "laje", p: cx, pts: clone(cx.contorno), alinhar: M.alinharDaLaje ? M.alinharDaLaje(cx) : "externa", y: (+cx.cy || 0) + (+cx.altura || 0) / 2, rot: "Laje" };
+var fo = arr(st.forros).filter(function (f) { return String(f.id) === id && f.ok && arr(f.contorno).length >= 3 && (!soSegue || f.modo === "contorno"); })[0];
+if (fo) return { tipo: "forro", p: fo, pts: clone(fo.contorno), alinhar: "interna", y: +fo.cota || 0, rot: "Forro" };
+var te = arr(st.telhados).filter(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; })[0];
+if (te) return { tipo: "telhado", p: te, pts: contornoDoTelhado(te), alinhar: "externa", y: +te.cotaApoio || 0, rot: "Telhado" };
+return null;
+}
+function opDoContorno(tipo, id, C) {
+var L = C.map(function (q) { var o = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null && fin(Number(q.po))) o.po = Number(q.po); } return o; });
+if (tipo === "laje") return { op: "ajustar", id: id, campos: { contorno: L } };
+if (tipo === "forro") return { op: "forro", id: id, contorno: L };
+return { op: "telhado", id: id, contorno: C };
+}
 function mudouSessao() { return !!sessao && JSON.stringify(sessao.cur) !== JSON.stringify(sessao.orig); }
 function nLig(L) { return arr(L).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; }
 function ligado(sub) { return !!(edit && edit.on && SUBS[sub] && edit.sub === sub); }
@@ -141442,7 +141572,7 @@ return melhor;
 function criarDe(sub, r, extra) {
 if (!r || !r.ok) { api.hint((r && r.motivo ? r.motivo + " " : "Contorno inválido. ") + (r && r.corrigir ? r.corrigir : "")); return true; }
 extra = extra || {};
-if (sub === "telhado" && r.alinhar) extra.vincular = r.alinhar;
+if (r.alinhar) extra.vincular = r.alinhar;
 var feitos = api.criar(sub, r.contornos.map(function (c) { return c.pts; }), extra);
 if (feitos > 0 && r.contornos.length > 1) api.hint(feitos + " peças criadas, uma por ambiente (" + r.contornos.map(function (c) { return n2(c.area) + " m²"; }).join(", ") + "). Ctrl+Z desfaz cada uma.");
 return true;
@@ -141521,25 +141651,20 @@ if (!edit || !edit.on || !edit.estado) { if (!auto) api.hint("Ligue o Editor (Mo
 var uids = uidsDados || (api.selecao ? api.selecao() : []), st = edit.estado, achou = null;
 uids.forEach(function (u) {
 if (achou) return;
-var id = String(u).replace(/^edit:/, "");
-var cx = arr(st.caixas).filter(function (c) { return String(c.id) === id && c.tipo === "laje" && arr(c.contorno).length >= 3; })[0];
-if (cx) { achou = { tipo: "laje", id: cx.id, pts: clone(cx.contorno), y: (+cx.cy || 0) + (+cx.altura || 0) / 2, rot: "Laje" }; return; }
-var fo = arr(st.forros).filter(function (f) { return String(f.id) === id && f.ok && arr(f.contorno).length >= 3; })[0];
-if (fo) { achou = { tipo: "forro", id: fo.id, pts: clone(fo.contorno), y: +fo.cota || 0, rot: "Forro" }; return; }
-var te = arr(st.telhados).filter(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; })[0];
-if (te) achou = { tipo: "telhado", id: te.id, pts: contornoDoTelhado(te), y: +te.cotaApoio || 0, rot: "Telhado" };
+var pc = pecaPorId(st, String(u).replace(/^edit:/, ""), !!auto);
+if (pc) achou = { tipo: pc.tipo, id: pc.p.id, pts: pc.pts, y: pc.y, rot: pc.rot };
 });
 if (!achou) { if (!auto) api.hint("Selecione uma laje por contorno, um forro ou um telhado por perímetro (clique nele) e use \"Editar contorno\"."); return false; }
 if (achou.pts.some(function (p) { return p && p.m; })) { if (!auto) api.hint("Este contorno tem aresta em arco: a edição de vértices é só para contorno reto."); return false; }
 sessao = { alvo: achou, orig: clone(achou.pts), cur: clone(achou.pts), selV: -1, drag: null, erro: null, auto: !!auto, cota: null };
 montarCamada();
 var nl = nLig(achou.pts);
-if (auto && achou.tipo === "telhado") {
-api.hint("Telhado: arraste os vértices e as arestas. " + (nl ? "A aresta que você arrastar se solta da parede. " : "Use \"Ajustar às paredes\" para ele seguir as paredes. ") + "Enter conclui, Esc cancela.");
+if (auto) {
+api.hint(achou.rot + ": arraste os vértices e as arestas. " + (nl ? "A aresta que você arrastar se solta da parede. " : "Use \"Ajustar às paredes\" para " + (achou.tipo === "laje" ? "ela seguir" : "ele seguir") + " as paredes. ") + "Enter conclui, Esc cancela.");
 return true;
 }
 api.hint(achou.rot + ": arraste os vértices (quadrados) e as arestas (círculos, com seta); clique numa aresta para inserir um vértice; Delete tira o vértice escolhido. Enter conclui, Esc cancela." +
-(achou.tipo === "telhado" ? (nl ? " " + nl + " de " + achou.pts.length + " arestas seguem as paredes: a aresta que você arrastar se solta da parede (as outras continuam seguindo)." : " Este telhado não segue as paredes: use \"Ajustar às paredes\" para ligá-lo.") : ""));
+(nl ? " " + nl + " de " + achou.pts.length + " arestas seguem as paredes: a aresta que você arrastar se solta da parede (as outras continuam seguindo)." : " Esta peça não segue as paredes: use \"Ajustar às paredes\" para ligá-la."));
 return true;
 },
 aoSelecionar: function (uids) {
@@ -141552,30 +141677,43 @@ if (mudouSessao() && !sessao.erro && M.validar(sessao.cur).ok) concluirSessao();
 }
 if (!edit || !edit.on || edit.sub || !edit.estado || uids.length !== 1 || !/^edit:/.test(uids[0])) return false;
 var id = uids[0].replace(/^edit:/, "");
-var temTel = arr(edit.estado.telhados).some(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; });
-return temTel ? self.editar(uids, true) : false;
+return pecaPorId(edit.estado, id, true) ? self.editar(uids, true) : false;
 },
 ajustarParedes: function () {
-if (!edit || !edit.on || !edit.estado) { api.hint("Ligue o Editor (Modelador) e selecione um telhado por perímetro."); return false; }
+if (!edit || !edit.on || !edit.estado) { api.hint("Ligue o Editor (Modelador) e selecione um telhado, um forro por contorno ou uma laje."); return false; }
 if (sessao) {
 if (mudouSessao()) { api.hint("Conclua (Enter) ou cancele (Esc) a edição do contorno antes de ajustar às paredes."); return false; }
 fecharSessao();
 }
-var st = edit.estado, uids = api.selecao ? api.selecao() : [], te = null;
-uids.forEach(function (u) {
-if (te) return;
-var id = String(u).replace(/^edit:/, "");
-te = arr(st.telhados).filter(function (t) { return String(t.id) === id && t.modo !== "extrusao" && arr(t.contorno).length >= 3; })[0] || null;
-});
-if (!te) { api.hint("Selecione um telhado por perímetro (clique nele) e use \"Ajustar às paredes\"."); return false; }
-var atual = contornoDoTelhado(te), v = M.vincularArestas(arr(st.caixas), atual, { alinhar: "externa" });
-if (!v.ok) { api.hint("Telhado " + te.id + ": " + (v.motivo || "não deu para ligar às paredes.") + " " + (v.corrigir || "")); return false; }
-if (JSON.stringify(v.contorno) === JSON.stringify(atual)) { api.hint("Telhado " + te.id + ": " + v.resumo + " Ele já está nas paredes — nada para ajustar."); return true; }
+var st = edit.estado, uids = api.selecao ? api.selecao() : [], pc = null;
+uids.forEach(function (u) { if (!pc) pc = pecaPorId(st, String(u).replace(/^edit:/, ""), true); });
+if (!pc) { api.hint("Selecione um telhado por perímetro, um forro por contorno ou uma laje (clique nele) e use \"Ajustar às paredes\"."); return false; }
+var RP = M.ROT_PECA ? M.ROT_PECA[pc.tipo] : null, nome = pc.rot + " " + pc.p.id;
+var v = M.vincularArestas(arr(st.caixas), pc.pts, { alinhar: pc.alinhar, nome: RP && RP.nome, de: RP && RP.de, rot: RP && RP.rot });
+if (!v.ok) { api.hint(nome + ": " + (v.motivo || "não deu para ligar às paredes.") + " " + (v.corrigir || "")); return false; }
+if (JSON.stringify(v.contorno) === JSON.stringify(pc.pts)) { api.hint(nome + ": " + v.resumo + " Já está nas paredes — nada para ajustar."); return true; }
 concluindo = true;
-try { api.op({ op: "telhado", id: te.id, contorno: v.contorno }); if (api.fechou) api.fechou(); } finally { concluindo = false; }
-var msgA = "Telhado " + te.id + ": " + v.resumo + " " + (v.mudou ? "O contorno foi levado até as faces das paredes e agora acompanha as paredes." : "O contorno já estava nas paredes e agora as acompanha.") + " Ctrl+Z desfaz.";
+try { api.op(opDoContorno(pc.tipo, pc.p.id, v.contorno)); if (api.fechou) api.fechou(); } finally { concluindo = false; }
+var msgA = nome + ": " + v.resumo + " " + (v.mudou ? "O contorno foi levado até as faces das paredes e agora acompanha as paredes." : "O contorno já estava nas paredes e agora as acompanha.") + " Ctrl+Z desfaz.";
 api.hint(msgA);
 setTimeout(function () { try { self.aoSelecionar(api.selecao ? api.selecao() : []); } catch (e) {} api.hint(msgA); }, 0);
+return true;
+},
+ajustarTudo: function (o) {
+o = o || {};
+if (!edit || !edit.on || !edit.estado) { api.hint("Ligue o Editor (Modelador) para ajustar tudo às paredes."); return false; }
+if (sessao) {
+if (mudouSessao()) { api.hint("Conclua (Enter) ou cancele (Esc) a edição do contorno antes de ajustar tudo às paredes."); return false; }
+fecharSessao();
+}
+var niv = !o.todos && api.nivel ? api.nivel() : null;
+var r = M.ajustarTudo(edit.estado, { nivelId: niv && niv.id != null ? niv.id : null, contornoTelhado: contornoDoTelhado });
+if (!r.nPecas && !r.naoLigou.length) { api.hint("Nenhum telhado, forro por contorno ou laje por contorno" + (niv ? " neste nível" : "") + " para ajustar."); return false; }
+if (!r.ops.length) { api.hint("Ajustar tudo às paredes: " + r.resumo + " Nada mudou: as peças já estão nas paredes."); return true; }
+concluindo = true;
+try { api.op(r.ops.length === 1 ? r.ops[0] : { op: "lote", id: "ap" + Date.now().toString(36), origem: "modificar", pedido: "Ajustar TUDO às paredes", ops: r.ops }); if (api.fechou) api.fechou(); } finally { concluindo = false; }
+api.hint("Ajustar tudo às paredes: " + r.resumo + " Ctrl+Z desfaz tudo.");
+self.ultimoAjusteTudo = r;
 return true;
 },
 sessaoEstado: function () { return sessao ? { id: sessao.alvo.id, tipo: sessao.alvo.tipo, pts: clone(sessao.cur), erro: sessao.erro, selV: sessao.selV, auto: !!sessao.auto, cota: sessao.cota ? clone(sessao.cota) : null, ligadas: nLig(sessao.cur), ligadasAntes: nLig(sessao.orig) } : null; },
@@ -141626,7 +141764,7 @@ function desenhar() {
 if (!sessao || !cam) return;
 var P = sessao.cur, n = P.length, S2 = P.map(function (q) { return pos(q.x, q.z); }), i, h = "";
 if (S2.every(Boolean)) h += '<polygon points="' + S2.map(function (q) { return q.x.toFixed(1) + "," + q.y.toFixed(1); }).join(" ") + '" fill="' + (sessao.erro ? "rgba(239,68,68,.18)" : "rgba(34,197,94,.16)") + '" stroke="' + (sessao.erro ? "#ef4444" : "#22c55e") + '" stroke-width="2.5"/>';
-if (sessao.alvo.tipo === "telhado") {
+if (true) {
 var sgn = M.areaSinal(P) < 0 ? -1 : 1;
 for (i = 0; i < n; i++) {
 var a0 = P[i], b0 = P[(i + 1) % n], dx0 = b0.x - a0.x, dz0 = b0.z - a0.z, L0 = Math.sqrt(dx0 * dx0 + dz0 * dz0) || 1;
@@ -141657,7 +141795,7 @@ al.el.style.cssText = "position:absolute;pointer-events:auto;cursor:" + (q.k ===
 });
 var v = M.validar(sessao.cur);
 var infoLig = "";
-if (sessao.alvo.tipo === "telhado") {
+if (true) {
 var nl1 = nLig(sessao.cur), nl0 = nLig(sessao.orig);
 infoLig = '<br><span data-ct="vinculo" style="color:' + (nl1 ? '#86efac' : '#fcd34d') + '">' + (nl1 ? nl1 + ' de ' + sessao.cur.length + ' arestas seguem as paredes' : 'Não segue as paredes (use "Ajustar às paredes")') + '</span>' +
 (nl0 > nl1 ? '<br><span data-ct="solta" style="color:#fcd34d">' + (nl0 - nl1) + ' aresta(s) solta(s) da parede</span>' : '') +
@@ -141687,7 +141825,7 @@ d.moved = true;
 var q = ptDe(ev); if (!q) return;
 var r = M.editar(d.base, { tipo: d.k === "v" ? "mover" : "aresta", i: d.i, p: q });
 sessao.cota = null;
-if (d.k === "a" && sessao.alvo.tipo === "telhado" && edit.estado) {
+if (d.k === "a" && edit.estado) {
 var P1 = r.ok ? r.pts : r.bruto, fc = P1 ? M.faceDaAresta(arr(edit.estado.caixas), P1, d.i, { alinhar: "auto", tol: 1.5 }) : null;
 if (fc) {
 sessao.cota = { dd: fc.dd, pr: fc.pr, pf: fc.pf, encaixou: false };
@@ -141710,7 +141848,7 @@ var q = ptDe(ev, false);
 if (q) aplicarAcao({ tipo: "inserir", i: d.i, p: q });
 } else {
 desenhar();
-if (d.moved && sessao.alvo.tipo === "telhado" && nLig(sessao.cur) < nLig(d.base)) {
+if (d.moved && nLig(sessao.cur) < nLig(d.base)) {
 api.hint("Aresta solta da parede: ela não acompanha mais a parede (as outras continuam seguindo)." + (cotaFim && cotaFim.encaixou ? " Ficou na face da parede; use \"Ajustar às paredes\" para ligá-la de novo." : "") + " Enter conclui, Esc desfaz.");
 }
 }
@@ -141724,7 +141862,7 @@ ev.stopPropagation(); fecharSessao(); api.hint("Edição do contorno cancelada."
 }
 else if ((ev.key === "Delete" || ev.key === "Backspace") && sessao.selV >= 0) { ev.preventDefault(); ev.stopPropagation(); aplicarAcao({ tipo: "remover", i: sessao.selV }); }
 }
-function a0tipoTel() { return !!sessao && sessao.alvo.tipo === "telhado"; }
+function a0tipoTel() { return !!sessao; }
 function concluirSessao() {
 if (!sessao) return false;
 var v = M.validar(sessao.cur);
@@ -141735,8 +141873,7 @@ var o = { x: Math.round(q.x * 1e4) / 1e4, z: Math.round(q.z * 1e4) / 1e4 }; if (
 if (a0tipoTel() && q.pr != null && q.pr !== "") { o.pr = q.pr; if (q.pf) o.pf = q.pf; if (q.po != null && fin(Number(q.po))) o.po = Number(q.po); }
 return o;
 });
-var op = a.tipo === "laje" ? { op: "ajustar", id: a.id, campos: { contorno: C2.map(function (q) { return { x: q.x, z: q.z }; }) } }
-: (a.tipo === "forro" ? { op: "forro", id: a.id, contorno: C2.map(function (q) { return { x: q.x, z: q.z }; }) } : { op: "telhado", id: a.id, contorno: C2 });
+var op = opDoContorno(a.tipo, a.id, C2);
 var rot = a.rot;
 fecharSessao();
 concluindo = true;
@@ -157776,6 +157913,23 @@ if (v !== null && (m[2] === "nivelId" || m[2] === "nome" || m[2] === "material")
 else if (v !== null && m[2] !== "rotularMestras") v = Number(v);
 o[m[2]] = v; ops.push(o);
 });
+} else if (e === "forro.seguir" || e === "laje.seguir") {
+var BCf = global.BimContorno, avF = [], ehForro = e === "forro.seguir";
+if (!BCf || !BCf.vincularArestas) return { ok: false, erro: "O motor do contorno (js/bimcontorno.js) não carregou." };
+for (var iF = 0; iF < ids.length; iF++) {
+var pF = elDe(ctx.estado, ids[iF]);
+if (!pF || arr(pF.contorno).length < 3 || pF.modo === "automatico" || arr(pF.contorno).some(function (q) { return q && q.m; })) return { ok: false, erro: ehForro ? "Seguir as paredes vale para o forro por contorno (o automático já se refaz pelas paredes)." : "Seguir as paredes vale para a laje/piso por contorno." };
+var RPf = BCf.ROT_PECA ? BCf.ROT_PECA[ehForro ? "forro" : "laje"] : null, alF = ehForro ? "interna" : (BCf.alinharDaLaje ? BCf.alinharDaLaje(pF) : "externa");
+var cF = JSON.parse(JSON.stringify(pF.contorno));
+var opF = function (C2) { var L = C2.map(function (q) { var o2 = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { o2.pr = q.pr; if (q.pf) o2.pf = q.pf; if (q.po != null) o2.po = q.po; } return o2; }); return ehForro ? { op: "forro", id: pF.id, contorno: L } : { op: "ajustar", id: pF.id, campos: { contorno: L } }; };
+if (valor === "Não") ops.push(opF(BCf.desvincular(cF)));
+else {
+var vF = BCf.vincularArestas(ctx.estado.caixas, cF, { alinhar: alF, nome: RPf && RPf.nome, de: RPf && RPf.de, rot: RPf && RPf.rot });
+if (!vF.ok) return { ok: false, erro: (vF.motivo || "Não deu para ligar às paredes.") + " " + (vF.corrigir || "") };
+ops.push(opF(vF.contorno)); avF.push((ehForro ? "Forro " : "Laje ") + pF.id + ": " + vF.resumo);
+}
+}
+if (avF.length) return { ok: true, ops: ops, avisos: avF };
 } else if (e === "telhado.seguir") {
 var BCs = global.BimContorno, avS = [];
 if (!BCs || !BCs.vincularArestas) return { ok: false, erro: "O motor do contorno (js/bimcontorno.js) não carregou." };
