@@ -901,6 +901,361 @@
       if (atual.length || !partes.length) partes.push(atual);
       return partes;
     },
+    /* ===================================================================
+     * ⚠ PARTES ESTÁVEIS POR REGISTRO (DOC_V2, 29/10/2026) — o teto deixa de ser da entidade inteira.
+     *
+     * Roteiro do defeito: a vigia de 28–29/10 (Documents\OrcaPRO-Backups\diag\memoria-*.jsonl) viu 94 leituras com
+     * `bim_edicoes:invalid-argument:27682153` — a entidade (um registro por obra, todas as obras) chegou a 23,7 MB e a
+     * gravação em partes recusava NO APARELHO acima de TETO_LOTE (9 MiB, a lista inteira): desde então nenhuma edição do
+     * BIM subia, e o outro aparelho não recebia. Além do teto, cada salvamento reenviava a entidade INTEIRA.
+     * Agora, para o DOC_V2 acima de TETO_LOTE (abaixo disso nada muda — o aparelho de versão antiga segue lendo o `~v2`
+     * como lia):
+     *  · cada REGISTRO (com os pedaços __frag dele) vira parte(s) NOMEADA(S) pelo conteúdo:
+     *    `<ent>~v2~r~<id>~<hash>~<u>~<k>` = { v, g: id, h: hash, u, k, n, em } (u = sufixo único da subida). Mudou o registro → muda o hash → nome novo:
+     *    uma parte já referenciada pelo principal NUNCA é sobrescrita (quem lê a revisão anterior continua lendo inteira);
+     *  · o principal guarda só a lista de referências: { v: [], refs: [{ id, hash, n, u }], em, fmt: 3 };
+     *  · gravar = subir SÓ as partes que o principal da nuvem ainda não referencia (uma por vez, na faixa — `_naFaixa`),
+     *    e só DEPOIS de todas confirmadas o principal aponta para o conjunto novo num lote pequeno. Parou no meio: o
+     *    principal fica na revisão anterior, inteira; as partes já subidas são LEMBRADAS (como as revisões) e saem no
+     *    próximo commit;
+     *  · as órfãs (lembradas que o principal novo não referencia, e as partes de revisões antigas) são apagadas DEPOIS do
+     *    principal confirmado, em lotes pequenos. Nada é apagado antes de o novo estar inteiro;
+     *  · o teto vale POR GRAVAÇÃO e não por entidade: cada parte é uma requisição (no máximo TETO_PARTE_SOLO, ~5,4 MiB no
+     *    fio no pior caso, abaixo dos 10 MiB do Firestore) e o que sobe num salvamento é só o que MUDOU. A primeira subida de
+     *    uma entidade de 24 MB muda tudo (são 24 MB de partes novas), por isso o limite do conjunto novo é TETO_GRAVACAO
+     *    (só proteção contra lixo, não o 9 MiB de antes); o principal (a lista de referências) tem de caber em um documento.
+     *    A subida é retomável: a parte já confirmada e ainda não referenciada não sobe de novo na tentativa seguinte;
+     *  · LEITURA: junta pelas referências, conferindo id/hash/posição de cada parte. Faltou parte → "partes-incompletas"
+     *    e nada é aplicado (a regra de sempre);
+     *  · outro aparelho pode ter gravado o principal durante a subida: antes de apontar, o principal é lido de novo e, se
+     *    mudou, o plano é refeito uma vez (as partes que ele já referencia não sobem de novo); mudou de novo → recusa
+     *    "mudou-no-meio" e o próximo salvamento tenta outra vez.
+     *  · aparelho de versão antiga diante de um principal assim lê `v: []` (como diante de qualquer principal sem dado): une com
+     *    o que tem e, se gravar `{ v }` por cima do ponteiro, o novo vê o principal sem referências (`_nuvemSemMinhasPartes`)
+     *    e reenvia. A entidade acima de 9 MiB já nem subia no antigo (recusa dele), então nada piora.
+     * Prova: tools/test-nuvem-refs.js. =================================================================== */
+    /* ⚠ REVISÃO ADVERSARIAL (29/10/2026) — o que mudou no desenho acima, e por quê (tools/test-nuvem-refs.js [10]–[14]):
+     *  1. NOME COM SUFIXO ÚNICO POR SUBIDA: `<ent>~v2~r~<id>~<hash>~<u>~<k>`. Pelo conteúdo só, dois aparelhos geravam o MESMO nome;
+     *     o aparelho A apontava para o conjunto novo e APAGAVA as partes antigas que o principal que o B ainda ia gravar (montado
+     *     sobre a revisão anterior, o commit chegava depois) citava — todos ficavam com "partes-incompletas". Agora o reaproveitamento
+     *     é pelas REFERÊNCIAS do principal atual ({id, hash, n, u}), nunca pelo nome derivado do conteúdo, e ninguém apaga o que
+     *     outro aparelho acabou de subir.
+     *  2. O PRINCIPAL SAI NUMA TRANSAÇÃO que confere que ele não mudou desde a leitura (sem rede a transação FALHA em vez de
+     *     enfileirar: o dado fica no aparelho e o próximo sincronizar tenta de novo). Sem `runTransaction` no SDK: releitura +
+     *     lote, como antes.
+     *  3. LIMPEZA ADIADA: parte que o principal não cita só é apagada depois de GC_ATRASO (24 h) desde que este aparelho a viu sem
+     *     referência, relendo o principal do servidor imediatamente antes e pulando o que ele cita. Custo: o espaço das órfãs
+     *     fica ocupado por 24 h (e até o próximo salvamento depois disso).
+     *  4. Leitura que deu "partes-incompletas": NÃO se confia nas referências do principal na gravação seguinte (sobem de novo
+     *     as partes próprias, com sufixo novo), senão a referência quebrada se repetiria.
+     *  5. As partes subidas e AINDA NÃO CITADAS por principal nenhum ficam no localStorage (retomada entre sessões) e são
+     *     reaproveitadas por `id|hash`. Parte que algum principal já citou e o atual não cita NUNCA é reaproveitada pela memória
+     *     (2ª revisão adversarial): outro aparelho pode tê-la coletado. O aparelho antigo que grava `{ v }` por cima faz o novo
+     *     resubir as partes (custo conhecido, aceito: correção antes de economia).
+     *  6. LEITURA COM PARTE FALTANDO TENTA CONSERTAR: se a lista local tem o registro com o mesmo `id|hash` da referência quebrada,
+     *     recria SÓ aquele documento, com o MESMO nome e o mesmo conteúdo (sem regravar a lista nem o principal).
+     *  7. Antes da transação espera as gravações pendentes do SDK (`waitForPendingWrites`: a transação sai da fila de escritas e
+     *     poderia passar à frente da lápide — test-nuvem-confirma-rev [2]); a parte que este aparelho acabou de subir já fica no
+     *     cache de leitura (o próprio ouvinte não a baixa); a troca de conta é conferida dentro da transação e antes de gravar o registro.
+     *  Resíduos aceitos: (i) a janela entre a conferência da transação e a coleta de OUTRO aparelho que releu o principal antes
+     *  do nosso commit (só existe para parte já órfã há > 24 h); (ii) o localStorage guarda até REFS_MAX entradas (~100 bytes
+     *  cada, ~200 KB de um total de ~5,24 MB): acima disso as mais antigas saem e viram órfãs para sempre (só espaço);
+     *  (iii) aparelho de versão antiga que grava `{ v }` a cada abertura faz o novo reenviar só o principal (as partes
+     *  são reaproveitadas) — o custo que sobra é uma transação por abertura. */
+    REFS_MAX: 2000,
+    TETO_GRAVACAO: 100 * 1024 * 1024,
+    TETO_ESPERA_ESCRITAS: 60000,
+    GC_ATRASO: 24 * 3600 * 1000,
+        CACHE_PARTES_MAX: 64 * 1024 * 1024,
+    CHAVE_REFS: "orcapro:nuvem:refs:partes2",
+    _agora: function () { return Date.now(); },
+    _pecas: {},          // por conta+entidade: { "id|hash|u": { id, hash, u, n, c (partes confirmadas), t (desde quando sem referência; 0 = referenciada), v (já foi referenciada) } }
+    _refsCarregadas: false,
+    _incompleta: {},     // por conta+entidade: a última leitura deu partes-incompletas
+    _cachePartes: {},    // por conta+entidade: { nome: { v, b } } — partes por registro baixadas (imutáveis pelo nome)
+    _baixando: {},       // por conta+entidade: { nome: promessa } — a mesma parte não é baixada duas vezes ao mesmo tempo
+    _lendoPartes: {},    // por conta+entidade: { id, promessa } — a leitura mais nova vence
+    _seqLeitura: 0,
+    _carregarRefs: function () {
+      if (this._refsCarregadas) return;
+      this._refsCarregadas = true;
+      try {
+        var o = JSON.parse(global.localStorage.getItem(this.CHAVE_REFS) || "null");
+        if (!o || typeof o !== "object") return;
+        for (var k in o) {
+          if (!Object.prototype.hasOwnProperty.call(o, k) || !Array.isArray(o[k])) continue;
+          var m = this._pecas[k] || (this._pecas[k] = {});
+          o[k].forEach(function (e) { if (e && typeof e.id === "string" && typeof e.hash === "string" && typeof e.u === "string" && +e.n > 0) m[e.id + "|" + e.hash + "|" + e.u] = { id: e.id, hash: e.hash, u: e.u, n: +e.n, c: +e.c || 0, t: +e.t || 0, v: e.v ? 1 : 0 }; });
+        }
+      } catch (e) {}
+    },
+    _guardarRefs: function () {
+      try {
+        var o = {}, self = this, tem = false;
+        Object.keys(this._pecas).forEach(function (k) { var ps = self._pecas[k], ks = Object.keys(ps || {}); if (ks.length) { o[k] = ks.map(function (x) { return ps[x]; }); tem = true; } });
+        if (tem) global.localStorage.setItem(this.CHAVE_REFS, JSON.stringify(o));
+        else global.localStorage.removeItem(this.CHAVE_REFS);
+      } catch (e) {
+        /* ⚠ nunca fica o registro VELHO (diria "citada/não citada" errado): sem lugar para guardar, esquece tudo — o pior caso é
+           resubir partes — e avisa a vigia (js/memvigia.js lê `_sdkMsgs` pelo diag) */
+        try { global.localStorage.removeItem(this.CHAVE_REFS); } catch (e2) {}
+        try { this._sdkMsgs.push({ em: Date.now(), cod: "localstorage-refs", msg: "nao guardou as partes por registro: " + String(e && e.name || e).slice(0, 60) }); if (this._sdkMsgs.length > 6) this._sdkMsgs.shift(); } catch (e3) {}
+      }
+    },
+    /* as partes por registro que este aparelho conhece desta entidade; null = nenhuma */
+    _refsDe: function (ent) {
+      this._carregarRefs();
+      var m = this._pecas[this._chaveRev(ent)];
+      return m && Object.keys(m).length ? m : null;
+    },
+    _chavePeca: function (r) { return r.id + "|" + r.hash + "|" + r.u; },
+    _nomePeca: function (ent, r, k) { return this._nomeParteReg(ent, r.id, r.hash, r.u, k); },
+    _nomesDeRefs: function (ent, refs) {
+      var self = this, out = [];
+      (refs || []).forEach(function (r) { if (r) for (var k = 0; k < (+r.n || 0); k++) out.push(self._nomePeca(ent, r, k)); });
+      return out;
+    },
+    /* o principal que acabou de ser LIDO ou GRAVADO cita `refs`: elas viram "referenciadas"; as que o aparelho conhecia e o
+       principal não cita passam a contar o tempo de órfã (a coleta só vem GC_ATRASO depois) */
+    _atualizarReferenciadas: function (ent, refs) {
+      this._carregarRefs();
+      var k = this._chaveRev(ent), m = this._pecas[k], agora = this._agora(), mudou = false, citadas = {}, self = this;
+      (refs || []).forEach(function (r) {
+        if (!r || typeof r.id !== "string" || typeof r.hash !== "string" || typeof r.u !== "string" || !(+r.n > 0)) return;
+        var c = self._chavePeca(r); citadas[c] = 1;
+        if (!m) m = self._pecas[k] = {};
+        var e = m[c];
+        if (!e) { m[c] = { id: r.id, hash: r.hash, u: r.u, n: +r.n, c: +r.n, t: 0, v: 1 }; mudou = true; }
+        else if (e.t !== 0 || e.c !== e.n || !e.v) { e.t = 0; e.c = e.n; e.v = 1; mudou = true; }
+      });
+      if (m) Object.keys(m).forEach(function (c) { if (!citadas[c] && m[c].t === 0) { m[c].t = agora; mudou = true; } });
+      if (m) { var ks = Object.keys(m); if (ks.length > this.REFS_MAX) { ks.sort(function (a, b) { return (m[a].t || Infinity) - (m[b].t || Infinity); }).slice(0, ks.length - this.REFS_MAX).forEach(function (x) { delete m[x]; }); mudou = true; } }
+      if (mudou) this._guardarRefs();
+    },
+    /* hash de 64 bits (dois FNV-1a de 32) + tamanho: o nome da parte depende do CONTEÚDO do registro */
+    _mul32: function (a, b) { return (((a & 0xffff) * b) + ((((a >>> 16) * b) & 0xffff) << 16)) >>> 0; },
+    _hashTexto: function (s) {
+      var h1 = 0x811c9dc5, h2 = 0x9e3779b1, i, c;
+      for (i = 0; i < s.length; i++) {
+        c = s.charCodeAt(i);
+        h1 = this._mul32((h1 ^ c) >>> 0, 16777619);
+        h2 = this._mul32((h2 ^ c) >>> 0, 2246822519 >>> 0);
+        h2 = (h2 ^ (h2 >>> 15)) >>> 0;
+      }
+      var p = function (x) { return ("00000000" + x.toString(16)).slice(-8); };
+      return p(h1) + p(h2) + s.length.toString(36);
+    },
+    _novoSufixo: function () { return this._agora().toString(36) + Math.random().toString(36).slice(2, 8); },
+    _nomeParteReg: function (ent, id, hash, u, k) { return this._nomeDoc(ent) + "~r~" + encodeURIComponent(String(id)) + "~" + hash + "~" + u + "~" + k; },
+    _refParteReg: function (nome) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(nome); },
+    /* o plano de uma lista (já na forma da nuvem, com os pedaços __frag): um GRUPO por registro */
+    _planoRefs: function (vN) {
+      var self = this, grupos = [], porFrag = {}, usados = {};
+      vN.forEach(function (o) {
+        if (o && typeof o === "object" && !Array.isArray(o) && typeof o.__frag === "string") {
+          var g = porFrag[o.__frag];
+          if (!g) { g = porFrag[o.__frag] = { id: o.__frag, itens: [] }; grupos.push(g); }
+          g.itens.push(o);
+        } else {
+          var id = (o && typeof o === "object" && !Array.isArray(o)) ? (o.id !== undefined ? o.id : (o.__esc && typeof o.__esc === "object" ? o.__esc.id : undefined)) : undefined;
+          grupos.push({ id: id === undefined || id === null ? null : String(id), itens: [o] });
+        }
+      });
+      var plano = { grupos: grupos, refs: [], erro: null };
+      grupos.forEach(function (g) {
+        g.hash = self._hashTexto(self._canon(g.itens));
+        if (g.id === null) g.id = "s" + g.hash;
+        var base = g.id, c = 1;
+        while (usados[g.id]) g.id = base + "#" + (++c);   // id repetido ou ausente: a chave do nome tem de ser única
+        usados[g.id] = 1;
+        g.partes = self._fatiar(g.itens);
+        if (!g.partes) { plano.erro = "o registro \"" + base + "\" passa do tamanho de uma parte"; return; }
+        g.n = g.partes.length;
+      });
+      return plano;
+    },
+    /* o que o dado do principal diz: { refs } | { rev, n } | null (documento só / não existe) */
+    _descDoDado: function (d0) {
+      if (!d0) return null;
+      if (Array.isArray(d0.refs)) return { refs: d0.refs, rev: null, n: 0 };
+      return +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
+    },
+    _lerPrincipalDesc: function (ent, estrito) {
+      var self = this;
+      return this._doc(ent).get().then(function (s0) {
+        return self._descDoDado(s0 && s0.exists ? (s0.data() || {}) : null);
+      })["catch"](function (e) { if (estrito) throw e; return null; });
+    },
+    /* a COLETA das partes por registro órfãs: só as que este aparelho viu sem referência há GC_ATRASO, relendo o principal do
+       servidor imediatamente antes e pulando o que ele cita. Falha, conta trocada ou leitura impossível: não apaga nada. */
+    _apagarRefsOrfas: function (ent, conta) {
+      if (this.uid !== conta) return Promise.resolve();
+      var self = this, m = this._refsDe(ent);
+      if (!m || !this.db || typeof this.db.batch !== "function") return Promise.resolve();
+      var agora = this._agora();
+      var cands = Object.keys(m).filter(function (c) { return m[c].t > 0 && agora - m[c].t >= self.GC_ATRASO; });
+      if (!cands.length) return Promise.resolve();
+      return this._lerPrincipalDesc(ent, true).then(function (desc) {
+        if (self.uid !== conta) return null;
+        var citadas = {};
+        (desc && desc.refs || []).forEach(function (r) { if (r) citadas[self._chavePeca(r)] = 1; });
+        var apagar = cands.filter(function (c) { if (citadas[c]) { m[c].t = 0; return false; } return true; });
+        var nomes = []; apagar.forEach(function (c) { for (var k = 0; k < m[c].n; k++) nomes.push({ c: c, nome: self._nomePeca(ent, m[c], k) }); });
+        var lotes = [], i;
+        for (i = 0; i < nomes.length; i += 400) lotes.push(nomes.slice(i, i + 400));
+        return lotes.reduce(function (cad, lote) {
+          return cad.then(function () {
+            if (self.uid !== conta) return null;
+            var b = self.db.batch();
+            lote.forEach(function (x) { b["delete"](self._refParteReg(x.nome)); });
+            return b.commit().then(function () { lote.forEach(function (x) { delete m[x.c]; }); });
+          });
+        }, Promise.resolve()).then(function () { self._guardarRefs(); });
+      })["catch"](function () {});
+    },
+    /* decide, para cada registro, de onde vêm as partes: do principal atual (já estão lá), de uma subida anterior deste aparelho
+       (retoma de onde parou) ou novas (sufixo novo). Devolve o que falta subir. */
+    _resolverPartes: function (ent, plano, naNuvem) {
+      var self = this, chave = this._chaveRev(ent), m = this._refsDe(ent) || (this._pecas[chave] = {}), agora = this._agora();
+      var confiar = !this._incompleta[chave];
+      var daNuvem = {};
+      if (confiar && naNuvem && naNuvem.refs) naNuvem.refs.forEach(function (r) { if (r && typeof r.u === "string") daNuvem[r.id + "|" + r.hash] = r; });
+      var porIH = {};
+      Object.keys(m).forEach(function (c) { var e = m[c]; (porIH[e.id + "|" + e.hash] = porIH[e.id + "|" + e.hash] || []).push(e); });
+      var faltam = [], bytes = 0;
+      plano.grupos.forEach(function (g) {
+        var ih = g.id + "|" + g.hash, ref = null, de = 0, r = daNuvem[ih];
+        if (r && +r.n === g.n) { ref = { id: g.id, hash: g.hash, n: g.n, u: r.u }; de = g.n; }
+        else if (confiar) {
+          (porIH[ih] || []).forEach(function (e) {
+            if (ref || e.n !== g.n) return;
+            /* ⚠ SÓ parte NUNCA citada por principal nenhum (v = 0, subida por este aparelho): ninguém mais a conhece, então
+               ninguém a coletou. Parte que algum principal já citou e o atual não cita (v = 1) pode ter sido coletada por
+               OUTRO aparelho — o `t` daqui é quando ESTE aparelho percebeu a órfã, não quando ela ficou órfã — e a transação só
+               confere o principal, não a existência da parte: sobe de novo, com sufixo novo (2ª revisão adversarial, R1/R2). */
+            if (e.v) return;
+            var idade = e.t > 0 ? agora - e.t : 0;
+            if (idade < 0 || idade >= self.GC_ATRASO - 3600000) return;   // relógio que voltou = prazo vencido
+            ref = { id: g.id, hash: g.hash, n: g.n, u: e.u }; de = e.c;
+          });
+        }
+        if (!ref) {
+          ref = { id: g.id, hash: g.hash, n: g.n, u: self._novoSufixo() };
+          m[self._chavePeca(ref)] = { id: g.id, hash: g.hash, u: ref.u, n: g.n, c: 0, t: agora, v: 0 };
+        } else if (de < g.n) {
+          var e2 = m[self._chavePeca(ref)]; if (e2 && e2.t === 0) e2.t = agora;
+        }
+        g.ref = ref;
+        for (var k = de; k < g.n; k++) { faltam.push({ g: g, k: k, nome: self._nomePeca(ent, ref, k) }); bytes += self._tamanhoFirestore(g.partes[k]); }
+        plano.refs.push(ref);
+      });
+      this._guardarRefs();
+      return { faltam: faltam, bytes: bytes };
+    },
+    /* grava a lista POR REGISTRO (ver a nota acima). `naNuvem` = { refs } do principal lido logo antes (ou outra forma/null) */
+    _gravarPorRegistro: function (ent, vN, conta, em, mesmaConta, naNuvem, tentativa) {
+      var self = this, plano = this._planoRefs(vN), chave = this._chaveRev(ent);
+      var recusa = function (msg) { var e = new Error(msg); e.code = "invalid-argument"; return e; };
+      if (plano.erro) throw recusa("Document \"" + ent + "\" cannot be written because " + plano.erro + " (conferido no aparelho, sem enviar)");
+      var res = this._resolverPartes(ent, plano, naNuvem);
+      /* o que muda agora (a primeira subida muda tudo — ver a nota: o limite é só de proteção) */
+      if (res.bytes > this.TETO_GRAVACAO) throw recusa("Document \"" + ent + "\" cannot be written because the change (" + res.bytes + " bytes) exceeds the maximum allowed size of one write (conferido no aparelho, sem enviar)");
+      var principal = { v: [], refs: plano.refs, em: em, fmt: 3 }, tp = 0;
+      try { tp = this._tamanhoFirestore(principal); } catch (e0) { tp = 0; }
+      if (tp > this.TETO_UM_DOC) throw recusa("Document \"" + ent + "\" cannot be written because the list of references (" + tp + " bytes) exceeds the maximum allowed size");
+      var subidas = res.faltam.reduce(function (cad, p) {
+        return cad.then(function () {
+          var doc = { v: p.g.partes[p.k], g: p.g.id, h: p.g.hash, u: p.g.ref.u, k: p.k, n: p.g.n, em: em };
+          return self._naFaixa(function () { mesmaConta(); return self._refParteReg(p.nome).set(doc); }, conta).then(function () {
+            var e = self._pecas[chave] && self._pecas[chave][self._chavePeca(p.g.ref)];
+            if (e && e.c <= p.k) { e.c = p.k + 1; self._guardarRefs(); }   // retomável: a parte confirmada não sobe de novo
+            /* a parte que ESTE aparelho acabou de subir já está no cache de leitura: o próprio ouvinte não a baixa de novo */
+            var cc = self._cachePartes[chave] || (self._cachePartes[chave] = {}), tc = 0;
+            Object.keys(cc).forEach(function (nm) { tc += cc[nm].b; });
+            var bp = 0; try { bp = self._tamanhoFirestore(doc.v); } catch (eB) { bp = 0; }
+            if (tc + bp <= self.CACHE_PARTES_MAX) cc[p.nome] = { x: doc, b: bp };
+          });
+        });
+      }, Promise.resolve());
+      var sig = function (x) { return JSON.stringify([x && x.refs || null, x && x.rev || null]); };
+      var visto = null;
+      var mudou = function () { var eM = new Error("o principal de \"" + ent + "\" mudou na nuvem durante a gravação"); eM.code = "mudou-no-meio"; return eM; };
+      /* ⚠ o principal só aponta se NÃO mudou desde a leitura: numa transação (sem rede ela falha — o dado fica no aparelho);
+         sem `runTransaction` no SDK, releitura + lote */
+      var commitar = function () {
+        mesmaConta();
+        if (typeof self.db.runTransaction === "function") {
+          /* a transação não passa pela fila de escritas do SDK: espera as gravações pendentes (lápide, partes) */
+          /* ⚠ com TETO (3ª revisão): `waitForPendingWrites` espera TODAS as escritas pendentes da conta — uma escrita pequena presa
+             de outra entidade (cota, rede) seguraria o principal de todas as DOC_V2. Passado o teto, segue; rejeição (CANCELLED
+             na troca de usuário) também segue, e o `mesmaConta()` abaixo decide. */
+          var espera = typeof self.db.waitForPendingWrites === "function" ? self.db.waitForPendingWrites() : null;
+          var esperaComTeto = espera ? new Promise(function (resolver) {
+            var tmE = setTimeout(resolver, self.TETO_ESPERA_ESCRITAS);
+            Promise.resolve(espera).then(function () { clearTimeout(tmE); resolver(); }, function () { clearTimeout(tmE); resolver(); });
+          }) : null;
+          return Promise.resolve(esperaComTeto).then(function () {
+            mesmaConta();
+            return self.db.runTransaction(function (tx) {
+              mesmaConta();   // a função pode ser REEXECUTADA depois de a conta trocar
+              return tx.get(self._doc(ent)).then(function (s) {
+                visto = self._descDoDado(s && s.exists ? (s.data() || {}) : null);
+                if (sig(visto) !== sig(naNuvem)) throw mudou();
+                mesmaConta();
+                tx.set(self._doc(ent), principal);
+              });
+            });
+          });
+        }
+        return self._lerPrincipalDesc(ent).then(function (agora) {
+          mesmaConta();
+          visto = agora;
+          if (sig(agora) !== sig(naNuvem)) throw mudou();
+          var b = self.db.batch();
+          b.set(self._doc(ent), principal);
+          return b.commit();
+        });
+      };
+      return subidas.then(commitar).then(function () {
+        if (self.uid !== conta) return;   // outra conta: nada vai para os registros dela
+        self._incompleta[chave] = false;
+        self._atualizarReferenciadas(ent, plano.refs);
+        /* o principal está confirmado: as revisões antigas (formato de sempre) saem agora; as partes por registro órfãs, só depois de GC_ATRASO */
+        Promise.resolve(self._apagarRevsAntigas(ent, conta)).then(function () { return self._apagarRefsOrfas(ent, conta); });
+      }, function (e) {
+        /* ⚠ outro aparelho gravou o principal durante a subida: refaz o plano uma vez, sobre o que ele cita agora */
+        if (e && e.code === "mudou-no-meio" && !tentativa) {
+          mesmaConta();
+          if (visto && visto.refs) self._atualizarReferenciadas(ent, visto.refs);
+          else self._atualizarReferenciadas(ent, []);
+          if (visto && visto.rev) self._lembrarRev(ent, visto.rev, visto.n);
+          return self._gravarPorRegistro(ent, vN, conta, em, mesmaConta, visto, 1);
+        }
+        throw e;
+      });
+    },
+    /* apaga as revisões em partes (formato antigo) lembradas, depois do principal novo confirmado; falha = continua lembrada */
+    _apagarRevsAntigas: function (ent, conta) {
+      var self = this, as = this._antigasDe(ent);
+      if (!as.length) return Promise.resolve();
+      return as.reduce(function (cad, r) {
+        var ks = [], k, i, lotes = [];
+        for (k = 0; k < r.n; k++) ks.push(k);
+        for (i = 0; i < ks.length; i += 400) lotes.push(ks.slice(i, i + 400));
+        return lotes.reduce(function (c2, lote) {
+          return c2.then(function () {
+            if (self.uid !== conta) return null;
+            var bb = self.db.batch(); lote.forEach(function (kk) { bb["delete"](self._refParte(ent, r.rev, kk)); });
+            return bb.commit();
+          });
+        }, cad).then(function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m && m[r.rev] === r.n) { delete m[r.rev]; self._guardarRevs(); } });
+      }, Promise.resolve())["catch"](function () {});
+    },
+    /* as revisões em partes lembradas, como lista [{ rev, n }] */
+    _antigasDe: function (ent) {
+      var l = this._revsDe(ent) || {};
+      return Object.keys(l).map(function (r) { return { rev: r, n: +l[r] || 0 }; });
+    },
     /* grava a entidade: num documento só (como sempre) ou em partes, atômico — sempre na FILA da entidade (ver (d)).
        Devolve a promessa da confirmação do servidor, como o _setDoc. */
     /* ⚠ E A GRAVAÇÃO EM PARTES ESPERA A CONFIRMAÇÃO DA ANTERIOR, JUNTANDO AS QUE CHEGAM NO MEIO (revisão
@@ -1022,7 +1377,7 @@
       /* fila parada e entidade que nunca esteve em partes: o caminho de SEMPRE, na hora (sem leitura, sem esperar
          a vez) — inclusive o SDK lançando na hora (lista dentro de lista) cai no `catch` síncrono do push, como antes
          (prova: tools/test-nuvem-push-falha.js, CN do catch vazio) */
-      if (!fila.ativos && !this._revsDe(ent)) {
+      if (!fila.ativos && !this._revsDe(ent) && !this._refsDe(ent)) {
         var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
         /* ⚠ o documento só GRANDE (acima de TETO_DIRETO) vai pela fila e pela faixa das grandes (ver `_naFaixa`) */
         if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN)) && !this._vaiNaFaixa(ent, t0)) {
@@ -1080,27 +1435,37 @@
       /* documento só: o grande espera a vez na faixa das grandes (ver `_naFaixa`); o pequeno vai direto */
       var setDoc = function () { return self._vaiNaFaixa(ent, t) ? self._naFaixa(function () { mesmaConta(); return self._setDoc(ent, doc); }, conta) : self._setDoc(ent, doc); };
       /* (c): entidade que nunca esteve em partes neste aparelho → o caminho de sempre, sem leitura antes */
-      if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
+      if (!emPartes && ((!this._revsDe(ent) && !this._refsDe(ent)) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
       var lerAtual = this._doc(ent).get().then(function (s0) {
         var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
+        if (d0 && Array.isArray(d0.refs)) return { refs: d0.refs };
         return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
       })["catch"](function () { return null; });
       return lerAtual.then(function (naNuvem) {
         mesmaConta();
-        if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+        self._atualizarReferenciadas(ent, naNuvem && naNuvem.refs || []);
+        if (naNuvem && !naNuvem.refs) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+        /* ⚠ DOC_V2 acima de TETO_LOTE (ou ainda por registro, até cair para a metade dele): partes estáveis por registro */
+        if (DOC_V2[ent] && temBatch && Array.isArray(vN) && (t > self.TETO_LOTE || (naNuvem && naNuvem.refs && t > self.TETO_LOTE / 2))) {
+          var pR = self._gravarPorRegistro(ent, vN, conta, em, mesmaConta, naNuvem, 0);
+          return { p: pR, esperar: pR };
+        }
+        /* saiu do formato por registro (ou nunca o usou): as partes por registro lembradas saem DEPOIS do principal confirmado */
+        var limparRefs = function (p) { if (self._refsDe(ent)) Promise.resolve(p).then(function () { self._atualizarReferenciadas(ent, []); return self._apagarRefsOrfas(ent, conta); }, function () {}); return p; };
         var lembradas = self._revsDe(ent) || {};
         var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
         var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0; k < r.n; k++) b["delete"](self._refParte(ent, r.rev, k)); }); };
         var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
         var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
         if (!emPartes) {
-          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = setDoc(); return { p: pS, esperar: pS }; }
+          if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = limparRefs(setDoc()); return { p: pS, esperar: pS }; }
           /* voltou a caber num documento: o principal sem `partes` e as partes antigas apagadas, juntos */
           var pB1 = (self._vaiNaFaixa(ent, t) ? self._naFaixa : function (fn) { return fn(); }).call(self, function () {
             mesmaConta();
             var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
             return b1.commit();
           }, conta).then(esquecer);
+          limparRefs(pB1);
           return { p: pB1, esperar: pB1 };
         }
         var partes = self._fatiar(vN);
@@ -1132,21 +1497,125 @@
           apagarAntigas(b);
           return b.commit();
         }).then(esquecer);
+        limparRefs(pB);
         return { p: pB, esperar: pB };
       });
+    },
+    /* ⚠ REPARO da referência quebrada (2ª revisão adversarial): a lista local tem o grupo com o mesmo `id|hash` da referência? então
+       o documento que falta é recriado com o MESMO nome (mesmo `u`) e o mesmo conteúdo — o principal e a lista não são tocados.
+       true = tudo que faltava foi recriado. Sem lista local, ou registro diferente (hash): false e segue o `partes-incompletas`. */
+    _reparando: {},   // por conta+entidade: há um reparo em andamento
+    _dispararReparo: function (ent, conf, ps, conta) {
+      var self = this, chave = this._chaveRev(ent);
+      if (this._reparando[chave] || this.uid !== conta) return;
+      this._reparando[chave] = true;
+      var solto = false, soltar = function () { if (solto) return; solto = true; clearTimeout(tm); delete self._reparando[chave]; };
+      var tm = setTimeout(soltar, this.TETO_CONFIRMA_SYNC);   // o mesmo teto do sincronizar: a gravação presa continua na fila do SDK, mas não segura o próximo reparo
+      try { this._repararPartes(ent, conf, ps, conta).then(soltar, soltar); } catch (e) { soltar(); }
+    },
+    _repararPartes: function (ent, conf, ps, conta) {
+      var self = this, emp = this._empresaUlt;
+      if (!emp || !this.db || this.uid !== conta) return Promise.resolve(false);
+      var quebradas = [];
+      conf.forEach(function (c, i) { var x = ps[i].x; if (!x || x.g !== c.r.id || x.h !== c.r.hash || x.u !== c.r.u || +x.k !== c.k || +x.n !== +c.r.n || !Array.isArray(x.v)) quebradas.push(c); });
+      if (!quebradas.length) return Promise.resolve(false);
+      var plano;
+      try {
+        var local = lerEnt(emp, ent);
+        if (!Array.isArray(local) || naoCarregadaLocal(emp, ent) || ilegivelLocal(emp, ent)) return Promise.resolve(false);
+        plano = this._planoRefs(paraNuvem(ent, local));
+      } catch (e0) { return Promise.resolve(false); }
+      if (plano.erro) return Promise.resolve(false);
+      var porIH = {}; plano.grupos.forEach(function (g) { porIH[g.id + "|" + g.hash] = g; });
+      /* só grupos de UMA parte: com n > 1 uma versão futura que mude TETO_PARTE/_tamanhoFirestore fatiaria diferente, e a parte
+         recriada não bateria com as irmãs (o `juntarV2` falharia); esses seguem como partes-incompletas até a próxima edição re-subir */
+      var todas = quebradas.every(function (c) { var g = porIH[c.r.id + "|" + c.r.hash]; return !!g && g.n === 1 && +c.r.n === 1; });
+      if (!todas) return Promise.resolve(false);
+      var em = Date.now();
+      return quebradas.reduce(function (cad, c) {
+        return cad.then(function () {
+          var g = porIH[c.r.id + "|" + c.r.hash];
+          if (self.uid !== conta) { var eC = new Error("conta-trocou"); eC.code = "conta-trocou"; throw eC; }
+          return self._naFaixa(function () {
+            if (self.uid !== conta) { var eC2 = new Error("conta-trocou"); eC2.code = "conta-trocou"; throw eC2; }
+            return self._refParteReg(c.nome).set({ v: g.partes[c.k], g: c.r.id, h: c.r.hash, u: c.r.u, k: c.k, n: g.n, em: em });
+          }, conta);
+        });
+      }, Promise.resolve()).then(function () { return true; }, function () { return false; });
+    },
+    /* o principal por registro (ver as PARTES ESTÁVEIS POR REGISTRO): junta pelas referências, conferindo id, hash e posição de
+       cada parte; faltou ou não confere → relê o principal uma vez e, persistindo, "partes-incompletas" (nada é aplicado) */
+    _valorPorRegistro: function (ent, d, pend, jaTentou, semReparo) {
+      var self = this, refs = d.refs, chave = this._chaveRev(ent), conf = [], pedidos = [], conta0 = this.uid;
+      this._atualizarReferenciadas(ent, refs);
+      var cache = this._cachePartes[chave] || (this._cachePartes[chave] = {});
+      var voo = this._baixando[chave] || (this._baixando[chave] = {});
+      /* ⚠ CACHE POR NOME (revisão adversarial, 29/10/2026): as partes são imutáveis pelo nome, então só se baixa o que ainda não
+         se tem — antes cada salvamento de OUTRO aparelho fazia este baixar a entidade inteira (24 a 100 MB), e as leituras
+         sobrepostas voltavam ao OOM da 1.2.157. A mesma parte nunca é baixada duas vezes ao mesmo tempo (`voo`) e, de várias
+         leituras em voo, só a MAIS NOVA vale: a antiga devolve o resultado da nova (nunca aplica um estado velho). */
+      var baixar = function (nome) {
+        if (cache[nome]) return Promise.resolve({ x: cache[nome].x, pend: false });
+        if (voo[nome]) return voo[nome];
+        var p = self._refParteReg(nome).get().then(function (s) {
+          delete voo[nome];
+          var x = s && s.exists ? s.data() : null, pd = !!(s && s.metadata && s.metadata.hasPendingWrites);
+          if (x && Array.isArray(x.v) && !pd) { var b = 0; try { b = self._tamanhoFirestore(x.v); } catch (e) { b = 0; } cache[nome] = { x: x, b: b }; }
+          return { x: x, pend: pd };
+        }, function (e) { delete voo[nome]; throw e; });
+        voo[nome] = p;
+        return p;
+      };
+      refs.forEach(function (r) {
+        for (var k = 0; k < (+(r && r.n) || 0); k++) { var nome = self._nomePeca(ent, r, k); conf.push({ r: r, k: k, nome: nome }); pedidos.push(baixar(nome)); }
+      });
+      var meu = ++this._seqLeitura;
+      var prom = Promise.all(pedidos).then(function (ps) {
+        var atual = self._lendoPartes[chave];
+        if (atual && atual.id !== meu) return atual.promessa;   // superada por uma leitura mais nova: não aplica
+        if (atual && atual.id === meu) delete self._lendoPartes[chave];
+        var falta = ps.some(function (p, i) { var x = p.x, c = conf[i]; return !x || x.g !== c.r.id || x.h !== c.r.hash || x.u !== c.r.u || +x.k !== c.k || +x.n !== +c.r.n || !Array.isArray(x.v); });
+        if (falta) {
+          var naoDeu = function () {
+            self._incompleta[chave] = true;   // a gravação seguinte NÃO confia nestas referências
+            var e = new Error("a lista \"" + ent + "\" na nuvem está em partes por registro e alguma não chegou"); e.code = "partes-incompletas"; throw e;
+          };
+          if (jaTentou) {
+            /* ⚠ REPARO: este aparelho tem o registro? recria SÓ o documento que falta, com o mesmo nome e conteúdo */
+            /* ⚠ o reparo NÃO é esperado (3ª revisão): ele grava pela faixa e espera a confirmação, e a gravação que não confirma
+               (cota, rede ruim) prenderia a leitura, o sincronizar e o boot sem ouvintes (defeito de 20/10). Dispara e devolve
+               `partes-incompletas` na hora; a próxima leitura já encontra a parte. */
+            if (!semReparo) self._dispararReparo(ent, conf, ps, conta0);
+            return naoDeu();
+          }
+          return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+        }
+        self._incompleta[chave] = false;
+        /* o cache guarda só o que o principal atual cita, até CACHE_PARTES_MAX */
+        var citadas = {}; conf.forEach(function (c) { citadas[c.nome] = 1; });
+        var total = 0;
+        Object.keys(cache).forEach(function (nome) { if (!citadas[nome]) delete cache[nome]; else total += cache[nome].b; });
+        if (total > self.CACHE_PARTES_MAX) Object.keys(cache).forEach(function (nome) { if (total > self.CACHE_PARTES_MAX) { total -= cache[nome].b; delete cache[nome]; } });
+        var v = []; ps.forEach(function (p) { v = v.concat(p.x.v); });
+        return { existe: true, v: v, partes: Math.max(1, ps.length), refs: true, pend: pend || ps.some(function (p) { return p.pend; }) };
+      });
+      this._lendoPartes[chave] = { id: meu, promessa: prom };
+      return prom;
     },
     /* o valor da entidade a partir do documento principal: { existe, v, partes }. Em partes, junta as da `rev` dele.
        ⚠ (e): ver o principal num documento só NÃO faz esquecer as revisões lembradas — as partes delas podem ter
        ficado na nuvem (o aparelho antigo grava assim), e só quem lembra apaga. */
     /* `antigo` = o documento de SEMPRE de uma entidade do DOC_V2 (só leitura): não lembra a revisão (só se apaga o que se
        lembra, e o antigo nunca é apagado por este aparelho) e relê o mesmo documento antigo */
-    _valorDoSnap: function (ent, snap, jaTentou, antigo) {
+    _valorDoSnap: function (ent, snap, jaTentou, antigo, semReparo) {
       var self = this;
       if (!snap || !snap.exists) return Promise.resolve({ existe: false });
       /* `pend`: o SDK mostra a gravação AINDA NÃO CONFIRMADA deste aparelho por cima do documento (compensação de
          latência) — o que ele devolve não prova o que está no servidor (ver o "não sobe" do `_sincronizarAgora`) */
       var pend = !!(snap.metadata && snap.metadata.hasPendingWrites);
       var d = snap.data() || {}, n = +d.partes || 0;
+      if (!antigo && !Array.isArray(d.refs)) this._atualizarReferenciadas(ent, []);
+      if (!antigo && Array.isArray(d.refs)) return this._valorPorRegistro(ent, d, pend, jaTentou, semReparo);
       if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0, pend: pend });
       if (!antigo) self._lembrarRev(ent, d.rev, n);
       var pedidos = [];
@@ -1648,6 +2117,7 @@
 
     sincronizar: function (empresaId) {
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // prévia nunca sobe
+      this._empresaUlt = empresaId;
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
       return this._conferirDono(empresaId).then(function (v) {
@@ -1900,6 +2370,7 @@
     // Escuta mudanças vindas de OUTRO aparelho e atualiza o local + re-render.
     escutar: function (empresaId, onChange) {
       if (_ehPrevia(empresaId)) return;                          // nem escuta
+      this._empresaUlt = empresaId;
       var self = this;
       if (!this.ligado) return;
       /* ⚠ tenant de OUTRA empresa: não escuta. Bloquear só o `sincronizar`
@@ -2132,6 +2603,7 @@
          portao. Sem isto, o bloqueio pararia de trazer e continuaria mandando. */
       if (this.bloqueioDeDono) return;
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // nem lápide
+      this._empresaUlt = empresaId;
       var self = this;
       var mandar = function () {
         var chave = empresaId + "|" + ent, carga = "", marcou = false;
@@ -2236,7 +2708,7 @@
              continua sendo o de um documento só, e o aviso de sempre vale. */
           var emPartes = !!(self.db && typeof self.db.batch === "function") && self.TETO_LOTE > 0;
           var limiar = emPartes ? Math.round(self.TETO_LOTE * 0.8) : 900 * 1024;
-          if (carga.length > limiar && !jaAvisado) {
+          if (carga.length > limiar && !jaAvisado && !(emPartes && DOC_V2[ent])) {   /* DOC_V2: o teto é por gravação (partes por registro), não da lista */
             self._avisouTamanho[ent] = 1;
             try { global.localStorage.setItem(marcaTam, verAtual); } catch (eL2) {}
             try {

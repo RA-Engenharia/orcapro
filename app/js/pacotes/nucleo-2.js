@@ -53095,6 +53095,271 @@ if (!ok) return null;
 if (atual.length || !partes.length) partes.push(atual);
 return partes;
 },
+REFS_MAX: 2000,
+TETO_GRAVACAO: 100 * 1024 * 1024,
+TETO_ESPERA_ESCRITAS: 60000,
+GC_ATRASO: 24 * 3600 * 1000,
+CACHE_PARTES_MAX: 64 * 1024 * 1024,
+CHAVE_REFS: "orcapro:nuvem:refs:partes2",
+_agora: function () { return Date.now(); },
+_pecas: {},
+_refsCarregadas: false,
+_incompleta: {},
+_cachePartes: {},
+_baixando: {},
+_lendoPartes: {},
+_seqLeitura: 0,
+_carregarRefs: function () {
+if (this._refsCarregadas) return;
+this._refsCarregadas = true;
+try {
+var o = JSON.parse(global.localStorage.getItem(this.CHAVE_REFS) || "null");
+if (!o || typeof o !== "object") return;
+for (var k in o) {
+if (!Object.prototype.hasOwnProperty.call(o, k) || !Array.isArray(o[k])) continue;
+var m = this._pecas[k] || (this._pecas[k] = {});
+o[k].forEach(function (e) { if (e && typeof e.id === "string" && typeof e.hash === "string" && typeof e.u === "string" && +e.n > 0) m[e.id + "|" + e.hash + "|" + e.u] = { id: e.id, hash: e.hash, u: e.u, n: +e.n, c: +e.c || 0, t: +e.t || 0, v: e.v ? 1 : 0 }; });
+}
+} catch (e) {}
+},
+_guardarRefs: function () {
+try {
+var o = {}, self = this, tem = false;
+Object.keys(this._pecas).forEach(function (k) { var ps = self._pecas[k], ks = Object.keys(ps || {}); if (ks.length) { o[k] = ks.map(function (x) { return ps[x]; }); tem = true; } });
+if (tem) global.localStorage.setItem(this.CHAVE_REFS, JSON.stringify(o));
+else global.localStorage.removeItem(this.CHAVE_REFS);
+} catch (e) {
+try { global.localStorage.removeItem(this.CHAVE_REFS); } catch (e2) {}
+try { this._sdkMsgs.push({ em: Date.now(), cod: "localstorage-refs", msg: "nao guardou as partes por registro: " + String(e && e.name || e).slice(0, 60) }); if (this._sdkMsgs.length > 6) this._sdkMsgs.shift(); } catch (e3) {}
+}
+},
+_refsDe: function (ent) {
+this._carregarRefs();
+var m = this._pecas[this._chaveRev(ent)];
+return m && Object.keys(m).length ? m : null;
+},
+_chavePeca: function (r) { return r.id + "|" + r.hash + "|" + r.u; },
+_nomePeca: function (ent, r, k) { return this._nomeParteReg(ent, r.id, r.hash, r.u, k); },
+_nomesDeRefs: function (ent, refs) {
+var self = this, out = [];
+(refs || []).forEach(function (r) { if (r) for (var k = 0; k < (+r.n || 0); k++) out.push(self._nomePeca(ent, r, k)); });
+return out;
+},
+_atualizarReferenciadas: function (ent, refs) {
+this._carregarRefs();
+var k = this._chaveRev(ent), m = this._pecas[k], agora = this._agora(), mudou = false, citadas = {}, self = this;
+(refs || []).forEach(function (r) {
+if (!r || typeof r.id !== "string" || typeof r.hash !== "string" || typeof r.u !== "string" || !(+r.n > 0)) return;
+var c = self._chavePeca(r); citadas[c] = 1;
+if (!m) m = self._pecas[k] = {};
+var e = m[c];
+if (!e) { m[c] = { id: r.id, hash: r.hash, u: r.u, n: +r.n, c: +r.n, t: 0, v: 1 }; mudou = true; }
+else if (e.t !== 0 || e.c !== e.n || !e.v) { e.t = 0; e.c = e.n; e.v = 1; mudou = true; }
+});
+if (m) Object.keys(m).forEach(function (c) { if (!citadas[c] && m[c].t === 0) { m[c].t = agora; mudou = true; } });
+if (m) { var ks = Object.keys(m); if (ks.length > this.REFS_MAX) { ks.sort(function (a, b) { return (m[a].t || Infinity) - (m[b].t || Infinity); }).slice(0, ks.length - this.REFS_MAX).forEach(function (x) { delete m[x]; }); mudou = true; } }
+if (mudou) this._guardarRefs();
+},
+_mul32: function (a, b) { return (((a & 0xffff) * b) + ((((a >>> 16) * b) & 0xffff) << 16)) >>> 0; },
+_hashTexto: function (s) {
+var h1 = 0x811c9dc5, h2 = 0x9e3779b1, i, c;
+for (i = 0; i < s.length; i++) {
+c = s.charCodeAt(i);
+h1 = this._mul32((h1 ^ c) >>> 0, 16777619);
+h2 = this._mul32((h2 ^ c) >>> 0, 2246822519 >>> 0);
+h2 = (h2 ^ (h2 >>> 15)) >>> 0;
+}
+var p = function (x) { return ("00000000" + x.toString(16)).slice(-8); };
+return p(h1) + p(h2) + s.length.toString(36);
+},
+_novoSufixo: function () { return this._agora().toString(36) + Math.random().toString(36).slice(2, 8); },
+_nomeParteReg: function (ent, id, hash, u, k) { return this._nomeDoc(ent) + "~r~" + encodeURIComponent(String(id)) + "~" + hash + "~" + u + "~" + k; },
+_refParteReg: function (nome) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(nome); },
+_planoRefs: function (vN) {
+var self = this, grupos = [], porFrag = {}, usados = {};
+vN.forEach(function (o) {
+if (o && typeof o === "object" && !Array.isArray(o) && typeof o.__frag === "string") {
+var g = porFrag[o.__frag];
+if (!g) { g = porFrag[o.__frag] = { id: o.__frag, itens: [] }; grupos.push(g); }
+g.itens.push(o);
+} else {
+var id = (o && typeof o === "object" && !Array.isArray(o)) ? (o.id !== undefined ? o.id : (o.__esc && typeof o.__esc === "object" ? o.__esc.id : undefined)) : undefined;
+grupos.push({ id: id === undefined || id === null ? null : String(id), itens: [o] });
+}
+});
+var plano = { grupos: grupos, refs: [], erro: null };
+grupos.forEach(function (g) {
+g.hash = self._hashTexto(self._canon(g.itens));
+if (g.id === null) g.id = "s" + g.hash;
+var base = g.id, c = 1;
+while (usados[g.id]) g.id = base + "#" + (++c);
+usados[g.id] = 1;
+g.partes = self._fatiar(g.itens);
+if (!g.partes) { plano.erro = "o registro \"" + base + "\" passa do tamanho de uma parte"; return; }
+g.n = g.partes.length;
+});
+return plano;
+},
+_descDoDado: function (d0) {
+if (!d0) return null;
+if (Array.isArray(d0.refs)) return { refs: d0.refs, rev: null, n: 0 };
+return +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
+},
+_lerPrincipalDesc: function (ent, estrito) {
+var self = this;
+return this._doc(ent).get().then(function (s0) {
+return self._descDoDado(s0 && s0.exists ? (s0.data() || {}) : null);
+})["catch"](function (e) { if (estrito) throw e; return null; });
+},
+_apagarRefsOrfas: function (ent, conta) {
+if (this.uid !== conta) return Promise.resolve();
+var self = this, m = this._refsDe(ent);
+if (!m || !this.db || typeof this.db.batch !== "function") return Promise.resolve();
+var agora = this._agora();
+var cands = Object.keys(m).filter(function (c) { return m[c].t > 0 && agora - m[c].t >= self.GC_ATRASO; });
+if (!cands.length) return Promise.resolve();
+return this._lerPrincipalDesc(ent, true).then(function (desc) {
+if (self.uid !== conta) return null;
+var citadas = {};
+(desc && desc.refs || []).forEach(function (r) { if (r) citadas[self._chavePeca(r)] = 1; });
+var apagar = cands.filter(function (c) { if (citadas[c]) { m[c].t = 0; return false; } return true; });
+var nomes = []; apagar.forEach(function (c) { for (var k = 0; k < m[c].n; k++) nomes.push({ c: c, nome: self._nomePeca(ent, m[c], k) }); });
+var lotes = [], i;
+for (i = 0; i < nomes.length; i += 400) lotes.push(nomes.slice(i, i + 400));
+return lotes.reduce(function (cad, lote) {
+return cad.then(function () {
+if (self.uid !== conta) return null;
+var b = self.db.batch();
+lote.forEach(function (x) { b["delete"](self._refParteReg(x.nome)); });
+return b.commit().then(function () { lote.forEach(function (x) { delete m[x.c]; }); });
+});
+}, Promise.resolve()).then(function () { self._guardarRefs(); });
+})["catch"](function () {});
+},
+_resolverPartes: function (ent, plano, naNuvem) {
+var self = this, chave = this._chaveRev(ent), m = this._refsDe(ent) || (this._pecas[chave] = {}), agora = this._agora();
+var confiar = !this._incompleta[chave];
+var daNuvem = {};
+if (confiar && naNuvem && naNuvem.refs) naNuvem.refs.forEach(function (r) { if (r && typeof r.u === "string") daNuvem[r.id + "|" + r.hash] = r; });
+var porIH = {};
+Object.keys(m).forEach(function (c) { var e = m[c]; (porIH[e.id + "|" + e.hash] = porIH[e.id + "|" + e.hash] || []).push(e); });
+var faltam = [], bytes = 0;
+plano.grupos.forEach(function (g) {
+var ih = g.id + "|" + g.hash, ref = null, de = 0, r = daNuvem[ih];
+if (r && +r.n === g.n) { ref = { id: g.id, hash: g.hash, n: g.n, u: r.u }; de = g.n; }
+else if (confiar) {
+(porIH[ih] || []).forEach(function (e) {
+if (ref || e.n !== g.n) return;
+if (e.v) return;
+var idade = e.t > 0 ? agora - e.t : 0;
+if (idade < 0 || idade >= self.GC_ATRASO - 3600000) return;
+ref = { id: g.id, hash: g.hash, n: g.n, u: e.u }; de = e.c;
+});
+}
+if (!ref) {
+ref = { id: g.id, hash: g.hash, n: g.n, u: self._novoSufixo() };
+m[self._chavePeca(ref)] = { id: g.id, hash: g.hash, u: ref.u, n: g.n, c: 0, t: agora, v: 0 };
+} else if (de < g.n) {
+var e2 = m[self._chavePeca(ref)]; if (e2 && e2.t === 0) e2.t = agora;
+}
+g.ref = ref;
+for (var k = de; k < g.n; k++) { faltam.push({ g: g, k: k, nome: self._nomePeca(ent, ref, k) }); bytes += self._tamanhoFirestore(g.partes[k]); }
+plano.refs.push(ref);
+});
+this._guardarRefs();
+return { faltam: faltam, bytes: bytes };
+},
+_gravarPorRegistro: function (ent, vN, conta, em, mesmaConta, naNuvem, tentativa) {
+var self = this, plano = this._planoRefs(vN), chave = this._chaveRev(ent);
+var recusa = function (msg) { var e = new Error(msg); e.code = "invalid-argument"; return e; };
+if (plano.erro) throw recusa("Document \"" + ent + "\" cannot be written because " + plano.erro + " (conferido no aparelho, sem enviar)");
+var res = this._resolverPartes(ent, plano, naNuvem);
+if (res.bytes > this.TETO_GRAVACAO) throw recusa("Document \"" + ent + "\" cannot be written because the change (" + res.bytes + " bytes) exceeds the maximum allowed size of one write (conferido no aparelho, sem enviar)");
+var principal = { v: [], refs: plano.refs, em: em, fmt: 3 }, tp = 0;
+try { tp = this._tamanhoFirestore(principal); } catch (e0) { tp = 0; }
+if (tp > this.TETO_UM_DOC) throw recusa("Document \"" + ent + "\" cannot be written because the list of references (" + tp + " bytes) exceeds the maximum allowed size");
+var subidas = res.faltam.reduce(function (cad, p) {
+return cad.then(function () {
+var doc = { v: p.g.partes[p.k], g: p.g.id, h: p.g.hash, u: p.g.ref.u, k: p.k, n: p.g.n, em: em };
+return self._naFaixa(function () { mesmaConta(); return self._refParteReg(p.nome).set(doc); }, conta).then(function () {
+var e = self._pecas[chave] && self._pecas[chave][self._chavePeca(p.g.ref)];
+if (e && e.c <= p.k) { e.c = p.k + 1; self._guardarRefs(); }
+var cc = self._cachePartes[chave] || (self._cachePartes[chave] = {}), tc = 0;
+Object.keys(cc).forEach(function (nm) { tc += cc[nm].b; });
+var bp = 0; try { bp = self._tamanhoFirestore(doc.v); } catch (eB) { bp = 0; }
+if (tc + bp <= self.CACHE_PARTES_MAX) cc[p.nome] = { x: doc, b: bp };
+});
+});
+}, Promise.resolve());
+var sig = function (x) { return JSON.stringify([x && x.refs || null, x && x.rev || null]); };
+var visto = null;
+var mudou = function () { var eM = new Error("o principal de \"" + ent + "\" mudou na nuvem durante a gravação"); eM.code = "mudou-no-meio"; return eM; };
+var commitar = function () {
+mesmaConta();
+if (typeof self.db.runTransaction === "function") {
+var espera = typeof self.db.waitForPendingWrites === "function" ? self.db.waitForPendingWrites() : null;
+var esperaComTeto = espera ? new Promise(function (resolver) {
+var tmE = setTimeout(resolver, self.TETO_ESPERA_ESCRITAS);
+Promise.resolve(espera).then(function () { clearTimeout(tmE); resolver(); }, function () { clearTimeout(tmE); resolver(); });
+}) : null;
+return Promise.resolve(esperaComTeto).then(function () {
+mesmaConta();
+return self.db.runTransaction(function (tx) {
+mesmaConta();
+return tx.get(self._doc(ent)).then(function (s) {
+visto = self._descDoDado(s && s.exists ? (s.data() || {}) : null);
+if (sig(visto) !== sig(naNuvem)) throw mudou();
+mesmaConta();
+tx.set(self._doc(ent), principal);
+});
+});
+});
+}
+return self._lerPrincipalDesc(ent).then(function (agora) {
+mesmaConta();
+visto = agora;
+if (sig(agora) !== sig(naNuvem)) throw mudou();
+var b = self.db.batch();
+b.set(self._doc(ent), principal);
+return b.commit();
+});
+};
+return subidas.then(commitar).then(function () {
+if (self.uid !== conta) return;
+self._incompleta[chave] = false;
+self._atualizarReferenciadas(ent, plano.refs);
+Promise.resolve(self._apagarRevsAntigas(ent, conta)).then(function () { return self._apagarRefsOrfas(ent, conta); });
+}, function (e) {
+if (e && e.code === "mudou-no-meio" && !tentativa) {
+mesmaConta();
+if (visto && visto.refs) self._atualizarReferenciadas(ent, visto.refs);
+else self._atualizarReferenciadas(ent, []);
+if (visto && visto.rev) self._lembrarRev(ent, visto.rev, visto.n);
+return self._gravarPorRegistro(ent, vN, conta, em, mesmaConta, visto, 1);
+}
+throw e;
+});
+},
+_apagarRevsAntigas: function (ent, conta) {
+var self = this, as = this._antigasDe(ent);
+if (!as.length) return Promise.resolve();
+return as.reduce(function (cad, r) {
+var ks = [], k, i, lotes = [];
+for (k = 0; k < r.n; k++) ks.push(k);
+for (i = 0; i < ks.length; i += 400) lotes.push(ks.slice(i, i + 400));
+return lotes.reduce(function (c2, lote) {
+return c2.then(function () {
+if (self.uid !== conta) return null;
+var bb = self.db.batch(); lote.forEach(function (kk) { bb["delete"](self._refParte(ent, r.rev, kk)); });
+return bb.commit();
+});
+}, cad).then(function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m && m[r.rev] === r.n) { delete m[r.rev]; self._guardarRevs(); } });
+}, Promise.resolve())["catch"](function () {});
+},
+_antigasDe: function (ent) {
+var l = this._revsDe(ent) || {};
+return Object.keys(l).map(function (r) { return { rev: r, n: +l[r] || 0 }; });
+},
 _escreverEnt: function (ent, vN, tam) {
 var self = this, velhas = DOC_V2[ent] ? (this._falhas || []).filter(function (f) { return f && f.entidade === ent; }) : null;
 var p = this._escreverEntFila(ent, vN);
@@ -53171,7 +53436,7 @@ _escreverEntFila: function (ent, vN) {
 var self = this, k = this._chaveRev(ent);
 var fila = this._filaEsc[k] || (this._filaEsc[k] = { corrente: Promise.resolve(), espera: null, ativos: 0 });
 if (fila.espera) { fila.espera.vN = vN; fila.espera.juntadas++; return fila.espera.promessa; }
-if (!fila.ativos && !this._revsDe(ent)) {
+if (!fila.ativos && !this._revsDe(ent) && !this._refsDe(ent)) {
 var t0 = 0; try { t0 = this._tamanhoFirestore({ v: vN, em: 0 }); } catch (e0) { t0 = 0; }
 if (!(t0 > this.TETO_UM_DOC && Array.isArray(vN)) && !this._vaiNaFaixa(ent, t0)) {
 var p0 = this._setDoc(ent, { v: vN, em: Date.now() });
@@ -53207,26 +53472,34 @@ var t = 0; try { t = this._tamanhoFirestore(doc); } catch (e) { t = 0; }
 var temBatch = !!this.db && typeof this.db.batch === "function";
 var emPartes = t > this.TETO_UM_DOC && Array.isArray(vN) && temBatch;
 var setDoc = function () { return self._vaiNaFaixa(ent, t) ? self._naFaixa(function () { mesmaConta(); return self._setDoc(ent, doc); }, conta) : self._setDoc(ent, doc); };
-if (!emPartes && (!this._revsDe(ent) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
+if (!emPartes && ((!this._revsDe(ent) && !this._refsDe(ent)) || !temBatch)) { var pU = setDoc(); return Promise.resolve({ p: pU, esperar: pU }); }
 var lerAtual = this._doc(ent).get().then(function (s0) {
 var d0 = s0 && s0.exists ? (s0.data() || {}) : null;
+if (d0 && Array.isArray(d0.refs)) return { refs: d0.refs };
 return d0 && +d0.partes > 0 && d0.rev ? { rev: d0.rev, n: +d0.partes } : null;
 })["catch"](function () { return null; });
 return lerAtual.then(function (naNuvem) {
 mesmaConta();
-if (naNuvem) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+self._atualizarReferenciadas(ent, naNuvem && naNuvem.refs || []);
+if (naNuvem && !naNuvem.refs) self._lembrarRev(ent, naNuvem.rev, naNuvem.n);
+if (DOC_V2[ent] && temBatch && Array.isArray(vN) && (t > self.TETO_LOTE || (naNuvem && naNuvem.refs && t > self.TETO_LOTE / 2))) {
+var pR = self._gravarPorRegistro(ent, vN, conta, em, mesmaConta, naNuvem, 0);
+return { p: pR, esperar: pR };
+}
+var limparRefs = function (p) { if (self._refsDe(ent)) Promise.resolve(p).then(function () { self._atualizarReferenciadas(ent, []); return self._apagarRefsOrfas(ent, conta); }, function () {}); return p; };
 var lembradas = self._revsDe(ent) || {};
 var antigas = Object.keys(lembradas).map(function (r) { return { rev: r, n: +lembradas[r] || 0 }; });
 var apagarAntigas = function (b) { antigas.forEach(function (r) { for (var k = 0; k < r.n; k++) b["delete"](self._refParte(ent, r.rev, k)); }); };
 var esquecer = function () { var m = self._revNuvem[self._chaveRev(ent)]; if (m) antigas.forEach(function (r) { if (m[r.rev] === r.n) delete m[r.rev]; }); self._guardarRevs(); };
 var nApagar = antigas.reduce(function (a, r) { return a + r.n; }, 0);
 if (!emPartes) {
-if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = setDoc(); return { p: pS, esperar: pS }; }
+if (!antigas.length || t > self.TETO_DOC + 4096 || nApagar > 450) { var pS = limparRefs(setDoc()); return { p: pS, esperar: pS }; }
 var pB1 = (self._vaiNaFaixa(ent, t) ? self._naFaixa : function (fn) { return fn(); }).call(self, function () {
 mesmaConta();
 var b1 = self.db.batch(); b1.set(self._doc(ent), doc); apagarAntigas(b1);
 return b1.commit();
 }, conta).then(esquecer);
+limparRefs(pB1);
 return { p: pB1, esperar: pB1 };
 }
 var partes = self._fatiar(vN);
@@ -53249,14 +53522,102 @@ b.set(self._doc(ent), { v: [], partes: nP, rev: rev, em: em });
 apagarAntigas(b);
 return b.commit();
 }).then(esquecer);
+limparRefs(pB);
 return { p: pB, esperar: pB };
 });
 },
-_valorDoSnap: function (ent, snap, jaTentou, antigo) {
+_reparando: {},
+_dispararReparo: function (ent, conf, ps, conta) {
+var self = this, chave = this._chaveRev(ent);
+if (this._reparando[chave] || this.uid !== conta) return;
+this._reparando[chave] = true;
+var solto = false, soltar = function () { if (solto) return; solto = true; clearTimeout(tm); delete self._reparando[chave]; };
+var tm = setTimeout(soltar, this.TETO_CONFIRMA_SYNC);
+try { this._repararPartes(ent, conf, ps, conta).then(soltar, soltar); } catch (e) { soltar(); }
+},
+_repararPartes: function (ent, conf, ps, conta) {
+var self = this, emp = this._empresaUlt;
+if (!emp || !this.db || this.uid !== conta) return Promise.resolve(false);
+var quebradas = [];
+conf.forEach(function (c, i) { var x = ps[i].x; if (!x || x.g !== c.r.id || x.h !== c.r.hash || x.u !== c.r.u || +x.k !== c.k || +x.n !== +c.r.n || !Array.isArray(x.v)) quebradas.push(c); });
+if (!quebradas.length) return Promise.resolve(false);
+var plano;
+try {
+var local = lerEnt(emp, ent);
+if (!Array.isArray(local) || naoCarregadaLocal(emp, ent) || ilegivelLocal(emp, ent)) return Promise.resolve(false);
+plano = this._planoRefs(paraNuvem(ent, local));
+} catch (e0) { return Promise.resolve(false); }
+if (plano.erro) return Promise.resolve(false);
+var porIH = {}; plano.grupos.forEach(function (g) { porIH[g.id + "|" + g.hash] = g; });
+var todas = quebradas.every(function (c) { var g = porIH[c.r.id + "|" + c.r.hash]; return !!g && g.n === 1 && +c.r.n === 1; });
+if (!todas) return Promise.resolve(false);
+var em = Date.now();
+return quebradas.reduce(function (cad, c) {
+return cad.then(function () {
+var g = porIH[c.r.id + "|" + c.r.hash];
+if (self.uid !== conta) { var eC = new Error("conta-trocou"); eC.code = "conta-trocou"; throw eC; }
+return self._naFaixa(function () {
+if (self.uid !== conta) { var eC2 = new Error("conta-trocou"); eC2.code = "conta-trocou"; throw eC2; }
+return self._refParteReg(c.nome).set({ v: g.partes[c.k], g: c.r.id, h: c.r.hash, u: c.r.u, k: c.k, n: g.n, em: em });
+}, conta);
+});
+}, Promise.resolve()).then(function () { return true; }, function () { return false; });
+},
+_valorPorRegistro: function (ent, d, pend, jaTentou, semReparo) {
+var self = this, refs = d.refs, chave = this._chaveRev(ent), conf = [], pedidos = [], conta0 = this.uid;
+this._atualizarReferenciadas(ent, refs);
+var cache = this._cachePartes[chave] || (this._cachePartes[chave] = {});
+var voo = this._baixando[chave] || (this._baixando[chave] = {});
+var baixar = function (nome) {
+if (cache[nome]) return Promise.resolve({ x: cache[nome].x, pend: false });
+if (voo[nome]) return voo[nome];
+var p = self._refParteReg(nome).get().then(function (s) {
+delete voo[nome];
+var x = s && s.exists ? s.data() : null, pd = !!(s && s.metadata && s.metadata.hasPendingWrites);
+if (x && Array.isArray(x.v) && !pd) { var b = 0; try { b = self._tamanhoFirestore(x.v); } catch (e) { b = 0; } cache[nome] = { x: x, b: b }; }
+return { x: x, pend: pd };
+}, function (e) { delete voo[nome]; throw e; });
+voo[nome] = p;
+return p;
+};
+refs.forEach(function (r) {
+for (var k = 0; k < (+(r && r.n) || 0); k++) { var nome = self._nomePeca(ent, r, k); conf.push({ r: r, k: k, nome: nome }); pedidos.push(baixar(nome)); }
+});
+var meu = ++this._seqLeitura;
+var prom = Promise.all(pedidos).then(function (ps) {
+var atual = self._lendoPartes[chave];
+if (atual && atual.id !== meu) return atual.promessa;
+if (atual && atual.id === meu) delete self._lendoPartes[chave];
+var falta = ps.some(function (p, i) { var x = p.x, c = conf[i]; return !x || x.g !== c.r.id || x.h !== c.r.hash || x.u !== c.r.u || +x.k !== c.k || +x.n !== +c.r.n || !Array.isArray(x.v); });
+if (falta) {
+var naoDeu = function () {
+self._incompleta[chave] = true;
+var e = new Error("a lista \"" + ent + "\" na nuvem está em partes por registro e alguma não chegou"); e.code = "partes-incompletas"; throw e;
+};
+if (jaTentou) {
+if (!semReparo) self._dispararReparo(ent, conf, ps, conta0);
+return naoDeu();
+}
+return self._doc(ent).get().then(function (s2) { return self._valorDoSnap(ent, s2, true); });
+}
+self._incompleta[chave] = false;
+var citadas = {}; conf.forEach(function (c) { citadas[c.nome] = 1; });
+var total = 0;
+Object.keys(cache).forEach(function (nome) { if (!citadas[nome]) delete cache[nome]; else total += cache[nome].b; });
+if (total > self.CACHE_PARTES_MAX) Object.keys(cache).forEach(function (nome) { if (total > self.CACHE_PARTES_MAX) { total -= cache[nome].b; delete cache[nome]; } });
+var v = []; ps.forEach(function (p) { v = v.concat(p.x.v); });
+return { existe: true, v: v, partes: Math.max(1, ps.length), refs: true, pend: pend || ps.some(function (p) { return p.pend; }) };
+});
+this._lendoPartes[chave] = { id: meu, promessa: prom };
+return prom;
+},
+_valorDoSnap: function (ent, snap, jaTentou, antigo, semReparo) {
 var self = this;
 if (!snap || !snap.exists) return Promise.resolve({ existe: false });
 var pend = !!(snap.metadata && snap.metadata.hasPendingWrites);
 var d = snap.data() || {}, n = +d.partes || 0;
+if (!antigo && !Array.isArray(d.refs)) this._atualizarReferenciadas(ent, []);
+if (!antigo && Array.isArray(d.refs)) return this._valorPorRegistro(ent, d, pend, jaTentou, semReparo);
 if (!(n > 0) || !d.rev) return Promise.resolve({ existe: true, v: d.v, partes: 0, pend: pend });
 if (!antigo) self._lembrarRev(ent, d.rev, n);
 var pedidos = [];
@@ -53481,6 +53842,7 @@ return { ok: true, semProva: true };
 bloqueioDeDono: null,
 sincronizar: function (empresaId) {
 if (_ehPrevia(empresaId)) return Promise.resolve(false);
+this._empresaUlt = empresaId;
 var self = this;
 if (!this.ligado) return Promise.resolve(false);
 return this._conferirDono(empresaId).then(function (v) {
@@ -53634,6 +53996,7 @@ return true;
 },
 escutar: function (empresaId, onChange) {
 if (_ehPrevia(empresaId)) return;
+this._empresaUlt = empresaId;
 var self = this;
 if (!this.ligado) return;
 if (this.bloqueioDeDono) return;
@@ -53747,6 +54110,7 @@ _avisouTamanho: {},
 push: function (empresaId, ent) {
 if (this.bloqueioDeDono) return;
 if (_ehPrevia(empresaId)) return Promise.resolve(false);
+this._empresaUlt = empresaId;
 var self = this;
 var mandar = function () {
 var chave = empresaId + "|" + ent, carga = "", marcou = false;
@@ -53788,7 +54152,7 @@ try { jaAvisado = global.localStorage.getItem(marcaTam) === verAtual; } catch (e
 }
 var emPartes = !!(self.db && typeof self.db.batch === "function") && self.TETO_LOTE > 0;
 var limiar = emPartes ? Math.round(self.TETO_LOTE * 0.8) : 900 * 1024;
-if (carga.length > limiar && !jaAvisado) {
+if (carga.length > limiar && !jaAvisado && !(emPartes && DOC_V2[ent])) {
 self._avisouTamanho[ent] = 1;
 try { global.localStorage.setItem(marcaTam, verAtual); } catch (eL2) {}
 try {
