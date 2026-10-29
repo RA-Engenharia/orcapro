@@ -9933,6 +9933,14 @@ var FAM_PBR = {
 'aço galvanizado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'aço zincado bicromatizado': { cor: 0xc9a227, rug: 0.38, met: 0.85, cc: 0.3, ccr: 0.2 }, 'aço preto oxidado': { cor: 0x1e1e1e, rug: 0.55, met: 0.6 }, 'aço grafite': { cor: 0x5a5d61, rug: 0.5, met: 0.6 },
 'madeira pinus': { cor: 0xd9964a, rug: 0.7, met: 0 }, 'madeira eucalipto': { cor: 0xb07a4a, rug: 0.7, met: 0 }, 'borracha': { cor: 0x1a1a1a, rug: 0.9, met: 0 },
 'aço microperfurado preto': { cor: 0x1a1b1d, rug: 0.45, met: 0.6, op: 0.55 }, 'aço microperfurado grafite': { cor: 0x3a3d40, rug: 0.45, met: 0.6, op: 0.55 },
+'lâmina branco lisa': { cor: 0xf2f2f0, rug: 0.25, met: 0.1 }, 'lâmina verde john deere microperfurada': { cor: 0x367c2b, rug: 0.25, met: 0.1, op: 0.55 },
+'lâmina amarelo ral 1023 lisa': { cor: 0xf7b500, rug: 0.25, met: 0.1 }, 'lâmina azul ral 5022 microperfurada': { cor: 0x222d5a, rug: 0.25, met: 0.1, op: 0.55 },
+'lâmina azul pas10016 5010 lisa': { cor: 0x0e4c92, rug: 0.25, met: 0.1 }, 'lâmina vermelho ral 3020 lisa': { cor: 0xcc0605, rug: 0.25, met: 0.1 },
+'lâmina laranja jacto l-3000 microperfurada': { cor: 0xf28c28, rug: 0.25, met: 0.1, op: 0.55 }, 'lâmina cinza ral 7035 lisa': { cor: 0xcbd0cc, rug: 0.25, met: 0.1 },
+'lâmina prata metálico microperfurada': { cor: 0xb8bbbe, rug: 0.3, met: 0.8, op: 0.55 }, 'lâmina cinza ral 7037 lisa': { cor: 0x7d7f7d, rug: 0.25, met: 0.1 },
+'lâmina cinza ral 7024 microperfurada': { cor: 0x474a51, rug: 0.25, met: 0.1, op: 0.55 }, 'lâmina marrom cacau show lisa': { cor: 0x4a3a32, rug: 0.7, met: 0.1 },
+'lâmina marrom bronze politherm microperfurada': { cor: 0x5e4b3c, rug: 0.7, met: 0.6, op: 0.55 }, 'lâmina preto lisa': { cor: 0x1c1c1c, rug: 0.7, met: 0.1 },
+'porcelanato marmorizado branco': { cor: 0xe9e6e1, rug: 0.2, met: 0, cc: 0.4, ccr: 0.15 }, 'azulejo branco tijolinho': { cor: 0xf4f3ef, rug: 0.3, met: 0, cc: 0.3, ccr: 0.2 },
 'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 },
 'aço galvanizado perfurado': { cor: 0xaab0b4, rug: 0.45, met: 0.85 }, 'alumínio do alçapão': { cor: 0xaeaeae, rug: 0.4, met: 0.85 }
 };

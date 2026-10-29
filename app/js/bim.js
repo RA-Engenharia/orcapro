@@ -13187,6 +13187,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     'madeira pinus': { cor: 0xd9964a, rug: 0.7, met: 0 }, 'madeira eucalipto': { cor: 0xb07a4a, rug: 0.7, met: 0 }, 'borracha': { cor: 0x1a1a1a, rug: 0.9, met: 0 },
     /* PORTÃO DE ENROLAR MICROPERFURADO (Casa 487, 29/10/2026, família c487-portao-enrolar): semitransparente; o nome é o do material no GLB do Twinmotion */
     'aço microperfurado preto': { cor: 0x1a1b1d, rug: 0.45, met: 0.6, op: 0.55 }, 'aço microperfurado grafite': { cor: 0x3a3d40, rug: 0.45, met: 0.6, op: 0.55 },
+    /* LÂMINAS DO PORTÃO (Casa 487, 29/10/2026, catálogo do fornecedor, 14 amostras): microperfurada = semitransparente (op 0,55); brilhante rug 0,25, fosco 0,7, metálico met 0,6-0,8; cor = RAL/foto da amostra (07_render_unreal/r12/PORTAO-CATALOGO-CORES.md). O nome é o do material no GLB do Twinmotion */
+    'lâmina branco lisa': { cor: 0xf2f2f0, rug: 0.25, met: 0.1 }, 'lâmina verde john deere microperfurada': { cor: 0x367c2b, rug: 0.25, met: 0.1, op: 0.55 },
+    'lâmina amarelo ral 1023 lisa': { cor: 0xf7b500, rug: 0.25, met: 0.1 }, 'lâmina azul ral 5022 microperfurada': { cor: 0x222d5a, rug: 0.25, met: 0.1, op: 0.55 },
+    'lâmina azul pas10016 5010 lisa': { cor: 0x0e4c92, rug: 0.25, met: 0.1 }, 'lâmina vermelho ral 3020 lisa': { cor: 0xcc0605, rug: 0.25, met: 0.1 },
+    'lâmina laranja jacto l-3000 microperfurada': { cor: 0xf28c28, rug: 0.25, met: 0.1, op: 0.55 }, 'lâmina cinza ral 7035 lisa': { cor: 0xcbd0cc, rug: 0.25, met: 0.1 },
+    'lâmina prata metálico microperfurada': { cor: 0xb8bbbe, rug: 0.3, met: 0.8, op: 0.55 }, 'lâmina cinza ral 7037 lisa': { cor: 0x7d7f7d, rug: 0.25, met: 0.1 },
+    'lâmina cinza ral 7024 microperfurada': { cor: 0x474a51, rug: 0.25, met: 0.1, op: 0.55 }, 'lâmina marrom cacau show lisa': { cor: 0x4a3a32, rug: 0.7, met: 0.1 },
+    'lâmina marrom bronze politherm microperfurada': { cor: 0x5e4b3c, rug: 0.7, met: 0.6, op: 0.55 }, 'lâmina preto lisa': { cor: 0x1c1c1c, rug: 0.7, met: 0.1 },
+    /* BANHOS (Casa 487): revestimento de parede dos banheiros (pintura P4 das faces molhadas; o mesmo nome está em BimAcabVis, js/bimacabvis.js) */
+    'porcelanato marmorizado branco': { cor: 0xe9e6e1, rug: 0.2, met: 0, cc: 0.4, ccr: 0.15 }, 'azulejo branco tijolinho': { cor: 0xf4f3ef, rug: 0.3, met: 0, cc: 0.3, ccr: 0.2 },
     'tela pe': { cor: 0x5b8c3a, rug: 0.8, met: 0, op: 0.55 }, 'tela pe laranja': { cor: 0xf08a24, rug: 0.8, met: 0, op: 0.55 },
     /* ANDAIME MULTIDIRECIONAL (js/familiasandaimem.js, M2, 27/10/2026): o galvanizado do piso com a furação (recorte por alphaMap, ver famMat) e o alumínio da tampa/escada do alçapão
        (hex #AEAEAE da foto M02 p.6); o trinco vermelho usa a linha 'equipamento vermelho' acima. tools/test-familiasandaimem.js confere que as linhas são iguais à tabela da família. */

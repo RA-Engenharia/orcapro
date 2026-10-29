@@ -63,6 +63,8 @@
     { id: "ac-tijolinho", rotulo: "Tijolinho aparente", grupo: "fachada", cor: "#b86b43", slug: "tijolinho_laranja", rug: 0.9, met: 0 },
     { id: "ac-metal-preto", rotulo: "Metal preto fosco", grupo: "metal", cor: "#1f2123", slug: "", rug: 0.45, met: 0.5 },
     { id: "ac-azulejo-branco", rotulo: "Revestimento cerâmico branco", grupo: "fachada", cor: "#f1f1ee", slug: "azulejo_porcelanato_bwc", rug: 0.3, met: 0 },
+    { id: "ac-porcelanato-marmorizado-branco", rotulo: "Porcelanato marmorizado branco", grupo: "fachada", cor: "#e9e6e1", slug: "", rug: 0.2, met: 0 },   /* banhos da Casa 487 (29/10/2026): a mesma linha do FAM_PBR do js/bim.js */
+    { id: "ac-azulejo-branco-tijolinho", rotulo: "Azulejo branco tijolinho", grupo: "fachada", cor: "#f4f3ef", slug: "", rug: 0.3, met: 0 },
     /* ---- pisos: interno e externo ---- */
     { id: "ac-grama", rotulo: "Grama", grupo: "piso", cor: "#5e8f2e", slug: "grama", rug: 0.95, met: 0 },
     { id: "ac-deck-cumaru", rotulo: "Deck de madeira (cumaru)", grupo: "piso", cor: "#8d6a43", slug: "madeira_deck", rug: 0.7, met: 0 },
