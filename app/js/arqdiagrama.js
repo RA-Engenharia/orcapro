@@ -64,9 +64,9 @@
   }
 
   /* ------------------------------------------------------------ CAPTURAR UM DESENHO COMO BLOCO */
-  function marca(D) { return { s: D.s.length, sg: D.sg.length, tb: D.tb.length, cx: D.caixas ? D.caixas.length : 0 }; }
+  function marca(D) { return { s: D.s.length, sg: D.sg.length, tb: D.tb.length, cx: D.caixas ? D.caixas.length : 0, mk: arr(D.mascaras).length }; }
   function recorte(D, m0, m1) {
-    var b = { s: D.s.slice(m0.s, m1.s), sg: D.sg.slice(m0.sg, m1.sg), sgc: arr(D.sgc).slice(m0.sg, m1.sg), tb: D.tb.slice(m0.tb, m1.tb), caixas: D.caixas ? D.caixas.slice(m0.cx, m1.cx) : null };
+    var b = { s: D.s.slice(m0.s, m1.s), sg: D.sg.slice(m0.sg, m1.sg), sgc: arr(D.sgc).slice(m0.sg, m1.sg), tb: D.tb.slice(m0.tb, m1.tb), caixas: D.caixas ? D.caixas.slice(m0.cx, m1.cx) : null, mascaras: arr(D.mascaras).slice(m0.mk || 0, m1.mk || 0) };   /* R02: as máscaras brancas viajam com o bloco */
     b.box = caixaDoBloco(b);
     return b;
   }
@@ -78,8 +78,8 @@
   }
   /* o que ficou de fora dos blocos já capturados (faixas), como um bloco só: a tinta solta de uma folha (ex.: o aviso "erro ao desenhar") */
   function resto(D, faixas) {
-    var ord = faixas.slice().sort(function (a, b) { return a[0].s - b[0].s; }), b = { s: [], sg: [], sgc: [], tb: [], caixas: D.caixas ? [] : null }, i0 = { s: 0, sg: 0, tb: 0, cx: 0 };
-    function junta(m0, m1) { var r = recorte(D, m0, m1); b.s = b.s.concat(r.s); b.sg = b.sg.concat(r.sg); b.sgc = b.sgc.concat(r.sgc); b.tb = b.tb.concat(r.tb); if (r.caixas) b.caixas = b.caixas.concat(r.caixas); }
+    var ord = faixas.slice().sort(function (a, b) { return a[0].s - b[0].s; }), b = { s: [], sg: [], sgc: [], tb: [], caixas: D.caixas ? [] : null, mascaras: [] }, i0 = { s: 0, sg: 0, tb: 0, cx: 0, mk: 0 };
+    function junta(m0, m1) { var r = recorte(D, m0, m1); b.s = b.s.concat(r.s); b.sg = b.sg.concat(r.sg); b.sgc = b.sgc.concat(r.sgc); b.tb = b.tb.concat(r.tb); if (r.caixas) b.caixas = b.caixas.concat(r.caixas); b.mascaras = b.mascaras.concat(arr(r.mascaras)); }
     var cur = i0;
     ord.forEach(function (f) { junta(cur, f[0]); cur = f[1]; });
     junta(cur, marca(D));
@@ -108,6 +108,7 @@
     o.sg = arr(b.sg).map(function (g) { return [g[0] + dx, g[1] + dy, g[2] + dx, g[3] + dy]; });
     o.tb = arr(b.tb).map(function (t) { return [t[0] + dx, t[1] + dy, t[2] + dx, t[3] + dy]; });
     o.caixas = b.caixas ? b.caixas.map(function (c) { return { s: c.s, p: c.p.map(function (q) { return [q[0] + dx, q[1] + dy]; }) }; }) : null;
+    o.mascaras = arr(b.mascaras).map(function (t) { return [t[0] + dx, t[1] + dy, t[2] + dx, t[3] + dy]; });
     o.box = b.box ? [b.box[0] + dx, b.box[1] + dy, b.box[2] + dx, b.box[3] + dy] : null;
     return o;
   }
@@ -301,6 +302,7 @@
       s.sg.forEach(function (g, i) { D.sg.push(g); D.sgc[D.sg.length - 1] = s.sgc[i]; });
       s.tb.forEach(function (t) { D.tb.push(t); });
       if (D.caixas && s.caixas) s.caixas.forEach(function (c) { D.caixas.push(c); });
+      arr(s.mascaras).forEach(function (m) { (D.mascaras = D.mascaras || []).push(m); });
       col.push({ id: q.id, x: X, y: Y, w: q.w, h: q.h, fixo: !!q.fixo, tinta: s.box });
     });
     return { D: D, colocados: col };

@@ -51,6 +51,7 @@
       empresa: em.nome ? em : "", responsavel: txt(em.responsavel), registro: txt(em.crea), tituloProfissional: txt(em.titulo),
       obra: txt(ob.nome), proprietario: txt(ob.clienteNome), contratante: txt(ob.clienteNome), local: txt(ob.local || ob.endereco), logo: (ctx && ctx.logo) || null };
     if (ctx && ctx.contornoLote) o.contornoLote = ctx.contornoLote;
+    if (ctx && ctx.extras && typeof ctx.extras === "object") Object.keys(ctx.extras).forEach(function (k) { if (o[k] == null) o[k] = ctx.extras[k]; });   /* R02: opções do projeto (cores da fachada, rampa, caixa d'água…) */
     if (ctx && ctx.cortes) o.cortes = ctx.cortes;   /* a linha dos cortes AA (z) e BB (x) escolhida por quem projeta (o exemplo: pela escada e pela caixa d'água) */
     return o;
   }

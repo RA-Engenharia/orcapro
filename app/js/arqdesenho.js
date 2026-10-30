@@ -49,8 +49,8 @@
             /* sem papel no padrão de interiores: pena da casa */
             divisa: 0.35, tabela: 0.25, telhado: 0.25, cumeeira: 0.5 },
     hLetra: { rotulo: S.TEXTOS.legenda, rotuloMenor: 2.2, vao: S.TEXTOS.legenda, nota: S.TEXTOS.nota_de_material },
-    passoHachura: 1.6, margemCotas: 28,
-    cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: "#1f1f1f", pocheCinza: "#bdbdbd",
+    passoHachura: 1.6, margemCotas: 44 /* R01: 28 → 44 mm: cabem as cadeias até as divisas (recuos e lote inteiro) */,
+    cinzaLouca: S.CORES.preto, cinzaMovel: S.CORES.preto, pocheEscuro: "#8a8a8a" /* R01: o manual de referência (pág. GRAFICAÇÃO): parede cinza escuro RGB 138 com contorno preto 0,35 */, pocheCinza: "#bdbdbd",
     tracoEixo: "9.6 1.6 0.4 1.6", tracoOculta: S.TRACEJADO
   };
 
@@ -201,9 +201,53 @@
     if (modo === "humanizada") return { cam: "ARQ-HUM", fill: "#3a3a3a", hach: null, fator: 1 };
     return { cam: "ARQ-PAREDE", fill: K.pocheEscuro, hach: null, fator: 2 };
   }
+  /* ENCONTROS FECHADOS (R01, 29/10/2026 — pedido do Rogério na Casa 487: "os encontros das paredes precisam estar fechadinhos").
+     Cada parede chega aqui como um retângulo eixo ± meia espessura; no canto em L as duas terminam no cruzamento dos EIXOS e
+     sobra o DENTE do canto de fora (meia × meia espessura); no T que ficou 1–7 cm curto sobra uma fresta. Aqui cada ponta é
+     estendida (nunca encolhida) até onde a outra parede a cobre: L → até a face de fora da outra; T → até o eixo da outra
+     (fica dentro dela). Só estende quando o cruzamento dos eixos está a no máximo meia espessura da outra + 5 cm da ponta
+     (a mesma régua do BimUniao.encontroL). Não mexe em paralelas (< 10°). Devolve cópias com `pts` novos. */
+  function emendarParedes(paredes) {
+    var G = GEO(), L = arr(paredes), TOL = 0.05;
+    function eixo(w) { var c = Math.cos(num(w.rotY, 0)), s = -Math.sin(num(w.rotY, 0)); return { c: [num(w.cx, 0), num(w.cz, 0)], u: [c, s], h: num(w.comprimento, 0) / 2, t: num(w.espessura, 0) }; }
+    var E = L.map(eixo), ext = L.map(function () { return [0, 0]; });
+    L.forEach(function (w, i) {
+      var a = E[i];
+      if (!(a.h > 0)) return;
+      [-1, 1].forEach(function (sg, k) {
+        var P = [a.c[0] + sg * a.u[0] * a.h, a.c[1] + sg * a.u[1] * a.h], melhor = 0;
+        E.forEach(function (b, j) {
+          if (j === i || !(b.h > 0)) return;
+          var cr = a.u[0] * b.u[1] - a.u[1] * b.u[0], s = Math.abs(cr);
+          if (s < 0.17) return;
+          var rx = b.c[0] - P[0], ry = b.c[1] - P[1];
+          var lam = (rx * b.u[1] - ry * b.u[0]) / cr * sg;        /* da ponta de `a` até o cruzamento, para fora (+) ou para dentro (−) */
+          var mu = (rx * a.u[1] - ry * a.u[0]) / cr;               /* posição do cruzamento ao longo de `b`, a partir do centro dela */
+          var X = [P[0] + sg * a.u[0] * lam, P[1] + sg * a.u[1] * lam], m = (X[0] - b.c[0]) * b.u[0] + (X[1] - b.c[1]) * b.u[1];
+          void mu;
+          if (Math.abs(lam) > b.t / 2 / s + TOL) return;           /* a ponta não chega a encostar na faixa da outra */
+          if (Math.abs(m) > b.h + a.t / 2 / s + TOL) return;      /* o cruzamento cai fora do comprimento da outra */
+          var canto = Math.abs(m) >= b.h - a.t / 2 / s - TOL;      /* o cruzamento está na ponta da outra: canto em L */
+          var alvo = lam + (canto ? b.t / 2 / s : 0);
+          if (alvo > melhor) melhor = alvo;
+        });
+        ext[i][k] = melhor;
+      });
+    });
+    return L.map(function (w, i) {
+      var e0 = ext[i][0], e1 = ext[i][1];
+      if (!(e0 > 1e-4 || e1 > 1e-4)) return w;
+      var a = E[i], o = {}; Object.keys(w).forEach(function (k) { o[k] = w[k]; });
+      var comp = 2 * a.h + e0 + e1, dc = (e1 - e0) / 2;
+      o.pts = G.retCaixa(a.c[0] + a.u[0] * dc, a.c[1] + a.u[1] * dc, comp, a.t, num(w.rotY, 0));
+      o.emendada = true;
+      return o;
+    });
+  }
   /* as paredes em poché: contorno largo + miolo (a passada 2 apaga a metade de dentro do contorno e as emendas) */
   function paredesPlanta(D, M, paredes, modo) {
     var grupos = {};
+    paredes = emendarParedes(paredes);
     paredes.forEach(function (w) { (grupos[w.status] = grupos[w.status] || []).push(w); });
     Object.keys(grupos).sort(function (a, b) { return ordemFase(a) - ordemFase(b); }).forEach(function (st) {
       var es = estiloParede(modo, st), G = GEO(), L = grupos[st];
@@ -216,6 +260,28 @@
       if (es.hach) L.forEach(function (w) {
         var P = polyPapel(M, w.pts);
         G.hachuraLinhas(P, K.passoHachura, 45).forEach(function (s) { D.linha(s[0], s[1], s[2], s[3], es.hach); });
+      });
+    });
+  }
+  /* "MURO H=2,90 m" ao longo de cada muro de divisa (o manual: "MURO H=1,50m"), do lado de fora do eixo quando houver lugar livre */
+  function rotulosMuros(D, M, muros) {
+    var fmt = function (v) { return (Math.round(v * 100) / 100).toFixed(2).replace(".", ","); };
+    arr(muros).forEach(function (w) {
+      if (!(w.comprimento > 2)) return;
+      var c = Math.cos(num(w.rotY, 0)), s = -Math.sin(num(w.rotY, 0)), h = w.comprimento / 2;
+      var a = M.P(w.cx - c * h, w.cz - s * h), b = M.P(w.cx + c * h, w.cz + s * h), m = M.P(w.cx, w.cz);
+      var ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+      if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+      var rad = ang * Math.PI / 180, nx = -Math.sin(rad), ny = Math.cos(rad), tx = "MURO H=" + fmt(w.altura) + " m", ok = false;
+      var wt = largTexto(tx, 1.8);
+      [0.5, 0.3, 0.7, 0.15, 0.85].forEach(function (f) {
+        [1, -1].forEach(function (sg) {
+          if (ok) return;
+          var off = (w.espessura * M.k) / 2 + 1.6, px = a[0] + (b[0] - a[0]) * f + nx * off * sg, py = a[1] + (b[1] - a[1]) * f + ny * off * sg;
+          var cr = D.caixaTexto ? null : null; void cr;
+          var hx = Math.abs(Math.cos(rad)) * wt / 2 + Math.abs(Math.sin(rad)) * 1.4, hy = Math.abs(Math.sin(rad)) * wt / 2 + Math.abs(Math.cos(rad)) * 1.4;
+          if (D.livre([px - hx, py - hy, px + hx, py + hy], 0.3)) { D.texto(px, py, tx, 1.8, { al: "C", rot: ang, meio: true }); ok = true; }
+        });
       });
     });
   }
@@ -344,8 +410,91 @@
         var r = D.cadeia(pp, of, vals, { offs: [of + sg * 4.5, of + sg * 7], semExt: i > 0, desde: pp.map(function () { return S.COTA.linha_de_chamada.do_objeto_mm; }) });
         of = (typeof r === "number" ? r : of) + sg * entre; qtd++;
       });
+      (D._cotaLado = D._cotaLado || {})[lado] = { of: of, face: face };   /* onde a próxima cadeia (as das divisas) começa */
     });
     return qtd;
+  }
+  /* R01 — COTAS ATÉ AS DIVISAS (manual p.9: "cotas de todos os ambientes, passando de uma extremidade a outra do terreno"): depois das cadeias da edificação,
+     uma cadeia do lote à edificação e de volta ao lote (os recuos) e outra com o lote inteiro, em cada lado. lote e edif = [x0, z0, x1, z1]. */
+  function cotasDivisas(D, M, lote, edif) {
+    var L = D._cotaLado; if (!L || !lote || !edif) return 0;
+    var den = escalaCota(D, escDe(M)), entre = S.entreCadeias(den), qtd = 0;
+    [["topo", 1, true], ["base", -1, true], ["esq", 1, false], ["dir", -1, false]].forEach(function (q) {
+      var lado = q[0], sg = q[1], horiz = q[2], I = L[lado]; if (!I) return;
+      var a0 = horiz ? 0 : 1, a1 = horiz ? 2 : 3, ps = [lote[a0], edif[a0], edif[a1], lote[a1]].sort(function (x, y) { return x - y; }), of = S.afastamento1() * sg, faceL0;
+      /* a cadeia fica FORA do lote (a divisa/muro é a referência), como no manual */
+      var faceL = lado === "topo" ? lote[1] : (lado === "base" ? lote[3] : (lado === "esq" ? lote[0] : lote[2])), cx = M.caixa;
+      /* só quando a divisa/muro faz parte do quadro da planta (a margem de cotas fica junto dela); sem muro a cadeia cairia longe do desenho */
+      /* se a edificação encosta na divisa, as cadeias do lote continuam DEPOIS das dela (não se cruzam) */
+      if (Math.abs(faceL - I.face) < 1.0) of = I.of;
+      if (Math.abs(faceL - (lado === "topo" ? cx[1] : (lado === "base" ? cx[3] : (lado === "esq" ? cx[0] : cx[2])))) > 0.3) return;
+      if (lote[a0] < (horiz ? cx[0] : cx[1]) - 0.3 || lote[a1] > (horiz ? cx[2] : cx[3]) + 0.3) return;   /* o lote inteiro tem de caber no quadro da planta */
+      var cads = [unicos(ps, 0.04), [lote[a0], lote[a1]]];
+      cads.forEach(function (P0, i) {
+        var P = podar(P0, M.k); if (P.length < 2) return;
+        var fp = horiz ? M.P(0, faceL)[1] : M.P(faceL, 0)[0], disp = lado === "topo" ? fp - (M.oy - K.margemCotas) : (lado === "base" ? (M.oy + M.alt + K.margemCotas) - fp : (lado === "esq" ? fp - (M.ox - K.margemCotas) : (M.ox + M.larg + K.margemCotas) - fp));
+        if (Math.abs(of) + 9 > disp) return;   /* sem lugar na margem da folha: a cadeia não entra (nada sai da moldura nem passa por cima do título) */
+        var pp, vals = [];
+        if (horiz) { pp = P.map(function (u) { return M.P(u, faceL); }); for (var a = 0; a + 1 < P.length; a++) vals.push(cotaTxt(P[a + 1] - P[a])); }
+        else { P = P.slice().reverse(); pp = P.map(function (u) { return M.P(faceL, u); }); for (var b2 = 0; b2 + 1 < P.length; b2++) vals.push(cotaTxt(P[b2] - P[b2 + 1])); }
+        var r = D.cadeia(pp, of, vals, { offs: [of + sg * 4.5, of + sg * 7], semExt: i > 0, desde: pp.map(function () { return S.COTA.linha_de_chamada.do_objeto_mm; }) });
+        of = (typeof r === "number" ? r : of) + sg * entre; qtd++;
+      });
+    });
+    return qtd;
+  }
+  /* R01 — símbolo de NÍVEL do piso em cada ambiente (manual p.9: ▼ +0,50) e X do PÉ-DIREITO DUPLO (manual p.10: "marcação de X quando há pé-direito duplo") */
+  function niveisAmbientes(D, M, ambientes, o) {
+    o = o || {}; var sem = [], G = GEO();
+    arr(ambientes).forEach(function (a) {
+      if (!a || arr(a.pts).length < 3) return;
+      var P = a.pts.map(function (p) { return M.P(p[0], p[1]); }), bb = G.bbox(P), cen = G.centroide(P);
+      if (num(a.pe, 0) >= (o.peDuplo || 3.6)) {
+        var m = 1.2; D.linha(bb[0] + m, bb[1] + m, bb[2] - m, bb[3] - m, "ARQ-FINA"); D.linha(bb[2] - m, bb[1] + m, bb[0] + m, bb[3] - m, "ARQ-FINA");
+      }
+      var t = nivelTxt(num(a.base, 0)), w = largTexto(t, 2.2) + 4, pos = [[0, 7], [0, -7], [10, 0], [-10, 0], [0, 12], [0, -12]], ok = false;
+      for (var i = 0; i < pos.length && !ok; i++) {
+        var x = cen[0] + pos[i][0], y = cen[1] + pos[i][1];
+        if (!G.pontoEmPol([x, y], P)) continue;
+        if (D.livre([x - 4, y - 5, x + w + 8, y + 3], 0.3)) { D.nivel(x, y, t, 1); ok = true; }
+      }
+      /* R02 — último recurso (diagramar como o manual): o nível entra mesmo sem vão livre, sobre fundo branco, no ponto mais perto do centro que
+         esteja DENTRO do ambiente e não pise em outro texto; só não entra se nem assim houver lugar (ambiente minúsculo) */
+      if (!ok && o.forcar !== false) {
+        var best = null, bd = 1e9;
+        for (var gx = -14; gx <= 14 && !ok; gx += 2) for (var gy = -14; gy <= 14; gy += 2) {
+          var x2 = cen[0] + gx, y2 = cen[1] + gy, cx2 = [x2 - 4, y2 - 5, x2 + w + 8, y2 + 3];
+          if (!G.pontoEmPol([x2, y2], P) || !G.pontoEmPol([x2 + w + 6, y2], P) || !G.pontoEmPol([x2, y2 - 4], P)) continue;
+          if (arr(D.tb).some(function (tb) { return cruzaCaixa(tb, cx2, 0.1); })) continue;
+          var dd = gx * gx + gy * gy; if (dd < bd) { bd = dd; best = [x2, y2, cx2]; }
+        }
+        if (best) { mascara(D, best[2]); D.nivel(best[0], best[1], t, 1); ok = true; }
+      }
+      if (!ok) sem.push(a.nome);
+    });
+    return sem;
+  }
+  /* R02 — MÁSCARA: retângulo branco por trás de um texto que ficou sobre traço de desenho (o manual faz isso). Registra a caixa para o conferir() não contar como defeito. */
+  function mascara(D, b) {
+    D.add('<rect x="' + n(b[0]) + '" y="' + n(b[1]) + '" width="' + n(b[2] - b[0]) + '" height="' + n(b[3] - b[1]) + '" fill="#fff" stroke="none"/>');
+    (D.mascaras = D.mascaras || []).push(b);
+  }
+  /* R02 — rótulo de uma linha no lugar livre mais perto de `pt` (e dentro de `poli`, se vier); sem lugar livre entra sobre FUNDO BRANCO onde não pise em outro texto.
+     devolve true/false (false = nem assim coube). */
+  function rotuloLivre(D, pt, texto, h, poli) {
+    var G = GEO(), w = largTexto(texto, h), tentativas = [], gx, gy;
+    for (gx = -30; gx <= 30; gx += 3) for (gy = -30; gy <= 30; gy += 3) tentativas.push([gx, gy, gx * gx + gy * gy]);
+    tentativas.sort(function (a, b) { return a[2] - b[2]; });
+    function caixa(t) { var x = pt[0] + t[0], y = pt[1] + t[1]; return [x - w / 2 - 0.4, y - h * 0.9, x + w / 2 + 0.4, y + h * 0.3]; }
+    function dentro(b) { return !poli || (G.pontoEmPol([b[0], b[1]], poli) && G.pontoEmPol([b[2], b[1]], poli) && G.pontoEmPol([b[0], b[3]], poli) && G.pontoEmPol([b[2], b[3]], poli)); }
+    var i, b;
+    for (i = 0; i < tentativas.length; i++) { b = caixa(tentativas[i]); if (dentro(b) && D.livre(b, 0.2)) { D.texto(pt[0] + tentativas[i][0], pt[1] + tentativas[i][1], texto, h, { al: "C" }); return true; } }
+    for (i = 0; i < tentativas.length; i++) {
+      b = caixa(tentativas[i]); if (!dentro(b) || arr(D.tb).some(function (tb) { return cruzaCaixa(tb, b, 0.1); })) continue;
+      mascara(D, b);
+      D.texto(pt[0] + tentativas[i][0], pt[1] + tentativas[i][1], texto, h, { al: "C" }); return true;
+    }
+    return false;
   }
   /* duas caixas [x0, y0, x1, y1] se tocam (folga g) */
   function cruzaCaixa(a, b, g) { return a[0] < b[2] + g && a[2] > b[0] - g && a[1] < b[3] + g && a[3] > b[1] - g; }
@@ -364,7 +513,13 @@
       var R = B.cotasInternas([{ nome: a.nome, pts: pts.map(function (p) { return { x: p[0], z: p[1] }; }) }], { obstaculos: obst, margem: margem });
       var bb = a.bbox || G.bbox(pts), retang = !!bb && Math.abs(G.areaPol(pts) - (bb[2] - bb[0]) * (bb[3] - bb[1])) < 0.05, feitas = 0;
       var feitasAmb = [];   /* decide as duas cotas do ambiente ANTES de desenhar (uma não conta como obstáculo da outra: cruzam-se no vão) */
-      R.cotas.forEach(function (c) {
+      /* R02: ambiente aberto/sem parede dos quatro lados (garagem coberta): o BIM não acha face a face; se o contorno é quase um retângulo, a cota é a do próprio contorno (largura e altura) */
+      var lista = R.cotas;
+      if (!arr(lista).length && o.forcar !== false && bb && Math.abs(G.areaPol(pts) - (bb[2] - bb[0]) * (bb[3] - bb[1])) < 0.12 * (bb[2] - bb[0]) * (bb[3] - bb[1])) {
+        var cxm = (bb[0] + bb[2]) / 2, czm = (bb[1] + bb[3]) / 2;
+        lista = [{ tipo: "larg", a: bb[0], b: bb[2], fixo: czm, v: bb[2] - bb[0] }, { tipo: "alt", a: bb[1], b: bb[3], fixo: cxm, v: bb[3] - bb[1] }];
+      }
+      lista.forEach(function (c) {
         var val = cotaTxt(c.v), tw = S.largTexto(val, h), horiz = c.tipo === "larg", lo = horiz ? bb[1] : bb[0], hi = horiz ? bb[3] : bb[2], melhor = null, segundo = null;
         if (tw + 1.0 > c.v * k) return;
         /* a linha do BIM primeiro; depois, no ambiente retangular, as paralelas de 5 em 5 cm, da mais perto para a mais longe */
@@ -383,11 +538,28 @@
           var cand = { A0: A0, A1: A1, box: box, tira: tira };
           if (D.livre(tira, 0.05)) melhor = cand; else if (!segundo) segundo = cand;   /* segundo: o número livre, mas a linha cruza móvel */
         }
+        /* R02 — último recurso: o número entra sobre FUNDO BRANCO por cima de linha de móvel (como o manual faz), desde que não pise em outro texto
+           e a linha esteja DENTRO do ambiente (vale também para ambiente em L/T, onde só a linha do BIM era tentada) */
+        if (!melhor && !segundo && o.forcar !== false) {
+          var dl2 = [0]; for (var j2 = 1; j2 <= 80; j2++) dl2.push(0.05 * j2, -0.05 * j2);
+          for (var i2 = 0; i2 < dl2.length && !segundo; i2++) {
+            var f2 = c.fixo + dl2[i2];
+            var B0 = horiz ? [c.a, f2] : [f2, c.b], B1 = horiz ? [c.b, f2] : [f2, c.a];
+            if (!G.pontoEmPol([(B0[0] + B1[0]) / 2, (B0[1] + B1[1]) / 2], pts) || !G.pontoEmPol([B0[0] * 0.75 + B1[0] * 0.25, B0[1] * 0.75 + B1[1] * 0.25], pts) || !G.pontoEmPol([B0[0] * 0.25 + B1[0] * 0.75, B0[1] * 0.25 + B1[1] * 0.75], pts)) continue;
+            var A0b = M.P(B0[0], B0[1]), A1b = M.P(B1[0], B1[1]), mid2 = [(A0b[0] + A1b[0]) / 2, (A0b[1] + A1b[1]) / 2], box2, tira2;
+            if (horiz) { box2 = [mid2[0] - tw / 2 - 0.3, A0b[1] - sobe - h * 0.76 - 0.2, mid2[0] + tw / 2 + 0.3, A0b[1] + 0.5]; tira2 = [A0b[0] + 0.6, A0b[1] - 0.3, A1b[0] - 0.6, A0b[1] + 0.3]; }
+            else { box2 = [A0b[0] - lado - h * 0.76 - 0.2, mid2[1] - tw / 2 - 0.3, A0b[0] + 0.5, mid2[1] + tw / 2 + 0.3]; tira2 = [A0b[0] - 0.3, A1b[1] + 0.6, A0b[0] + 0.3, A0b[1] - 0.6]; }
+            if (arr(D.tb).some(function (tb) { return cruzaCaixa(tb, box2, 0.1) || cruzaCaixa(tb, tira2, 0.1); })) continue;
+            if (feitasAmb.some(function (f) { return cruzaCaixa(f.tira, box2, 0.2) || cruzaCaixa(tira2, f.box, 0.2); })) continue;
+            segundo = { A0: A0b, A1: A1b, box: box2, tira: tira2, mascara: true };
+          }
+        }
         var esc1 = melhor || segundo;
         if (!esc1) return;
         feitasAmb.push({ c: esc1, val: val, cruza: !melhor, box: esc1.box, tira: esc1.tira });
       });
       feitasAmb.forEach(function (f) {
+        if (f.c.mascara) mascara(D, f.box);
         D.cota(f.c.A0[0], f.c.A0[1], f.c.A1[0], f.c.A1[1], 0, f.val, { desde: [false, false], semExt: true }); q++; feitas++;
         if (f.cruza && o.cruza && o.cruza.indexOf(a.nome) < 0) o.cruza.push(a.nome);
       });
@@ -407,21 +579,36 @@
       if (o.completo) jogos.push([nome, ar, a.piso ? piso : null, pe]);
       jogos.push([nome, ar], [nome]);
       var cc = rotuloBloco(D, c, null, area, { jogos: jogos.map(function (j) { return j.filter(function (x) { return !!x; }); }), h: 2.4 });
+      /* R02: sem lugar livre para o bloco inteiro, o NOME entra sobre máscara dentro do ambiente (a área e o piso estão no quadro de acabamentos) */
+      if (!cc && o.forcar !== false) cc = rotuloLivre(D, c, txt(a.nome).toUpperCase(), 2.4, arr(a.pts).map(function (p) { return M.Pp(p); }));
       if (!cc) semLugar.push(a.nome);
     });
     return semLugar;
   }
   /* etiquetas P1 / J1 junto de cada vão, do lado de fora da parede se houver lugar livre */
-  function etiquetasVaos(D, M, vaos, paredesPorId) {
-    var h = K.hLetra.vao, semLugar = [];
+  function etiquetasVaos(D, M, vaos, paredesPorId, o) {
+    var h = K.hLetra.vao, semLugar = [], med = !!(o && o.medidas);
     vaos.forEach(function (v) {
       var w = paredesPorId[v.parede]; if (!w) return;
+      /* R01 (planta de esquadrias, manual p.18): a sigla leva a medida do vão ao lado, "J3  1,50 x 1,20 / 1,10" (largura x altura / peitoril) */
+      var cod0 = v.cod; if (med) { var f2 = function (z) { return (Math.round(z * 100) / 100).toFixed(2).replace(".", ","); }; var v2 = {}; Object.keys(v).forEach(function (kk) { v2[kk] = v[kk]; }); v2.cod = v.cod + " " + f2(v.largura) + "x" + f2(v.altura) + (v.tipo === "janela" ? "/" + f2(v.peitoril) : ""); v = v2; } void cod0;
       var th = num(v.rotY, w.rotY), nv = [Math.sin(th), Math.cos(th)], d = w.espessura / 2 + (h * 0.9 + 1.3) / M.k, wt = largTexto(v.cod, h);
-      var cands = [1, -1, 2, -2].map(function (s) { return M.P(v.x + nv[0] * d * (Math.abs(s) === 2 ? 1.9 : 1) * (s > 0 ? 1 : -1), v.z + nv[1] * d * (Math.abs(s) === 2 ? 1.9 : 1) * (s > 0 ? 1 : -1)); });
+      var cands = [1, -1, 2, -2].concat(med ? [3, -3, 4, -4] : []).map(function (s) { var fk = Math.abs(s) === 2 ? 1.9 : (Math.abs(s) === 3 ? 3.0 : (Math.abs(s) === 4 ? 4.2 : 1)); return M.P(v.x + nv[0] * d * fk * (s > 0 ? 1 : -1), v.z + nv[1] * d * fk * (s > 0 ? 1 : -1)); });
       var ok = false;
       for (var i = 0; i < cands.length && !ok; i++) {
         var c = cands[i];
         if (D.livre([c[0] - wt / 2, c[1] - h * 0.5, c[0] + wt / 2, c[1] + h * 0.5], 0.25)) { D.texto(c[0], c[1], v.cod, h, { al: "C", meio: true }); ok = true; }
+      }
+      /* R02 — último recurso: a sigla entra sobre fundo branco no ponto mais perto do vão (do lado de fora, depois dentro) que não pise em outro texto */
+      if (!ok && !(o && o.forcar === false)) {
+        var ord = [1, -1, 1.5, -1.5, 2.2, -2.2, 3, -3], tan = [0, 1, -1, 2, -2], oj = [];
+        ord.forEach(function (q) { tan.forEach(function (tt) { oj.push([q, tt]); }); });
+        for (var j = 0; j < oj.length && !ok; j++) {
+          var c2 = M.P(v.x + nv[0] * d * oj[j][0] + Math.cos(th) * wt / M.k * 0.55 * oj[j][1], v.z + nv[1] * d * oj[j][0] - Math.sin(th) * wt / M.k * 0.55 * oj[j][1]), bx2 = [c2[0] - wt / 2, c2[1] - h * 0.5, c2[0] + wt / 2, c2[1] + h * 0.5];
+          if (arr(D.tb).some(function (tb) { return cruzaCaixa(tb, bx2, 0.1); })) continue;
+          mascara(D, [bx2[0] - 0.2, bx2[1] - 0.1, bx2[2] + 0.2, bx2[3] + 0.1]);
+          D.texto(c2[0], c2[1], v.cod, h, { al: "C", meio: true }); ok = true;
+        }
       }
       if (!ok) semLugar.push(v.cod);
     });
@@ -453,23 +640,31 @@
   function marcaCorte(D, a, b, letra, olhar) {
     var dx = b[0] - a[0], dy = b[1] - a[1], L = hip(dx, dy), ux = dx / L, uy = dy / L, nx = -uy * olhar, ny = ux * olhar;
     D.linha(a[0], a[1], b[0], b[1], "ARQ-CORTE");
+    /* R02 — SÍMBOLO DO MANUAL (p.11): na ponta da linha, um CÍRCULO com a letra repetida (AA / BB) e a SETA CHEIA do lado que se olha;
+       o prolongamento da linha liga a ponta ao círculo. O círculo procura lugar livre ao longo do prolongamento. */
     [a, b].forEach(function (p, i) {
-      D.linha(p[0], p[1], p[0] + nx * 6, p[1] + ny * 6, "ARQ-PAREDE");
-      D.seta(p[0] + nx * 6, p[1] + ny * 6, -nx, -ny, 2.0);
-      var h = 3.4, w = largTexto(letra, h), ok = false, ds = [10, 13.5, 17, 21];
-      for (var k = 0; k < ds.length && !ok; k++) {
-        var cx = p[0] + nx * ds[k], cy = p[1] + ny * ds[k] + 1.1, bx = [cx - w / 2 - 0.4, cy - h * 0.8, cx + w / 2 + 0.4, cy + h * 0.2];
-        if (D.livre(bx, 0.3)) { D.texto(cx, cy, letra, h, { al: "C" }); ok = true; }
+      var sx = i === 0 ? -ux : ux, sy = i === 0 ? -uy : uy;   /* sentido para fora da planta, ao longo da linha */
+      D.linha(p[0], p[1], p[0] + nx * 4, p[1] + ny * 4, "ARQ-PAREDE");   /* o traço grosso da ponta (lado que se olha) */
+      var h = 2.6, w = largTexto(letra + letra, h), r = Math.max(3.4, w / 2 + 0.9), ok = false, ds = [r + 6, r + 10, r + 14, r + 18], cx = 0, cy = 0, q;
+      for (q = 0; q < ds.length && !ok; q++) {
+        cx = p[0] + sx * ds[q]; cy = p[1] + sy * ds[q];
+        if (D.livre([cx - r - 0.5, cy - r - 0.5, cx + r + 0.5, cy + r + 0.5], 0.3)) ok = true;
       }
-      if (!ok) D.texto(p[0] + nx * 10, p[1] + ny * 10 + 1.1, letra, h, { al: "C" });
-      void i;
+      if (!ok) { cx = p[0] + sx * ds[0]; cy = p[1] + sy * ds[0]; }
+      D.linha(p[0], p[1], cx - sx * r, cy - sy * r, "ARQ-CORTE");
+      D.add('<circle cx="' + n(cx) + '" cy="' + n(cy) + '" r="' + n(r) + '" fill="#fff" stroke="none"/>');
+      D.circ(cx, cy, r, "ARQ-SIMBOLO");
+      D.texto(cx, cy + h * 0.36, letra + letra, h, { al: "C" });
+      /* a seta cheia encostada no círculo, apontando para o lado que se olha */
+      var bx = cx + nx * (r + 0.2), by = cy + ny * (r + 0.2), tx = cx + nx * (r + 3.6), ty = cy + ny * (r + 3.6), hw = 1.5;
+      D.add('<polygon points="' + [tx, ty].map(function (v) { return n(v); }).join(",") + " " + [bx - ny * hw, by + nx * hw].map(function (v) { return n(v); }).join(",") + " " + [bx + ny * hw, by - nx * hw].map(function (v) { return n(v); }).join(",") + '" fill="#000" stroke="none" data-cam="ARQ-SIMBOLO"/>');
     });
   }
   /* a linha de corte de uma folha: a primeira coordenada candidata em que a linha (com as pontas) não cruza nenhum texto já escrito */
   function escolherLinhaCorte(D, M, ct, ext) {
     var cands = arr(ct.cands).length ? ct.cands : [ct.coord], pick = cands[0];
     for (var i = 0; i < cands.length; i++) {
-      var c0 = cands[i], a = ct.eixo === "x" ? M.P(ct.u0 - ext, c0) : M.P(c0, ct.u0 - ext), b = ct.eixo === "x" ? M.P(ct.u1 + ext, c0) : M.P(c0, ct.u1 + ext);
+      var q0 = ct.pu0 != null ? ct.pu0 : ct.u0, q1 = ct.pu1 != null ? ct.pu1 : ct.u1, c0 = cands[i], a = ct.eixo === "x" ? M.P(q0 - ext, c0) : M.P(c0, q0 - ext), b = ct.eixo === "x" ? M.P(q1 + ext, c0) : M.P(c0, q1 + ext);
       var ux = (b[0] - a[0]), uy = (b[1] - a[1]), L = hip(ux, uy), nx = uy / L, ny = -ux / L;
       /* as pontas inclinadas de 6 mm e o ponto da letra também não podem cair em texto */
       if (!D.cortaTexto(a[0], a[1], b[0], b[1]) && !D.cortaTexto(a[0], a[1], a[0] + nx * 22, a[1] + ny * 22) && !D.cortaTexto(b[0], b[1], b[0] + nx * 22, b[1] + ny * 22)) { pick = c0; break; }
@@ -543,6 +738,7 @@
     D.sg.forEach(function (s, i) { var cam = D.sgc[i] || "ARQ-SIMBOLO"; if (!CAM_SEM_OBSTACULO.test(cam)) obst.push({ s: s, cam: cam }); });
     cx.forEach(function (t) {
       var q = encolher(t.p, 0.12), b = bb(q);
+      if (arr(D.mascaras).some(function (m) { var cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2; return cx >= m[0] - 0.6 && cx <= m[2] + 0.6 && cy >= m[1] - 0.6 && cy <= m[3] + 0.6; })) { if (janela && (b[0] < janela[0] - 0.01 || b[1] < janela[1] - 0.01 || b[2] > janela[2] + 0.01 || b[3] > janela[3] + 0.01)) out.foraJanela.push(t.s); return; }   /* R02: texto sobre máscara branca de propósito */
       for (var i = 0; i < obst.length; i++) {
         var o = obst[i], s = o.s;
         if (Math.max(s[0], s[2]) < b[0] || Math.min(s[0], s[2]) > b[2] || Math.max(s[1], s[3]) < b[1] || Math.min(s[1], s[3]) > b[3]) continue;
@@ -555,7 +751,7 @@
   }
 
   var ArqDesenho = { K: K, estilo: estilo, novo: novo, atr: atr, pts: pts, fundoPol: fundoPol, mapa: mapa, polyPapel: polyPapel, br: br, cotaTxt: cotaTxt, cm1: cotaTxt, escalaCota: escalaCota, titulo: titulo, nivelTxt: nivelTxt, esc: esc, n: n,
-    rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
+    rotuloBloco: rotuloBloco, paredesPlanta: paredesPlanta, cotasDivisas: cotasDivisas, niveisAmbientes: niveisAmbientes, rotuloLivre: rotuloLivre, mascara: mascara, emendarParedes: emendarParedes, rotulosMuros: rotulosMuros, pilaresPlanta: pilaresPlanta, vaosPlanta: vaosPlanta, moveisPlanta: moveisPlanta, cotasExternas: cotasExternas, cotasInternas: cotasInternas,
     rotulosAmbientes: rotulosAmbientes, etiquetasVaos: etiquetasVaos, norte: norte, escalaGrafica: escalaGrafica, marcaCorte: marcaCorte, escolherLinhaCorte: escolherLinhaCorte, colunaNotas: colunaNotas, conferir: conferir,
     estiloParede: estiloParede, conv: conv, S: S, CAM_SEM_OBSTACULO: CAM_SEM_OBSTACULO, largTexto: largTexto };
   global.ArqDesenho = ArqDesenho;

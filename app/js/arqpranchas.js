@@ -67,7 +67,8 @@
     layout: "Planta proposta / layout (cotas, ambientes, esquadrias)", cobertura: "Planta de cobertura", forro: "Planta de forro", cortes: "Cortes AA e BB", fachadas: "Fachadas",
     piso: "Paginação de piso", quadros: "Quadros: esquadrias, acabamentos e lista de folhas", humanizada: "Planta humanizada (apresentação ao cliente)" };
   var TITULO = { situacao: "SITUAÇÃO E IMPLANTAÇÃO", existente: "PLANTA EXISTENTE", demolir: "PLANTA DE DEMOLIR E CONSTRUIR", layout: "PLANTA BAIXA PROPOSTA - LAYOUT", cobertura: "PLANTA DE COBERTURA",
-    forro: "PLANTA DE FORRO", cortes: "CORTES AA E BB", fachadas: "FACHADAS", piso: "PAGINAÇÃO DE PISO", quadros: "QUADRO DE ESQUADRIAS E ACABAMENTOS", humanizada: "PLANTA HUMANIZADA" };
+    forro: "PLANTA DE FORRO", cortes: "CORTES AA E BB", fachadas: "FACHADAS", piso: "PAGINAÇÃO DE PISO", quadros: "QUADRO DE ESQUADRIAS E ACABAMENTOS", humanizada: "PLANTA HUMANIZADA",
+    esquadrias: "PLANTA-BAIXA DE ESQUADRIAS" };
   var FORMATOS_OK = ["AUTO", "A0", "A1", "A2", "A3"];
 
   function configPadrao() {
@@ -86,6 +87,8 @@
     r.revisao = (txt(o.revisao).trim() || p.revisao).toUpperCase();
     r.descricaoRevisao = txt(o.descricaoRevisao).trim() || p.descricaoRevisao;
     r.conjuntos = {}; CONJUNTOS.forEach(function (k) { r.conjuntos[k] = !o.conjuntos || o.conjuntos[k] !== false; });
+    /* R01 (manual p.18): a planta-baixa de ESQUADRIAS (limpa, só paredes, vãos, siglas e medidas) é um conjunto À PARTE da série: só sai quando pedida (esquadrias: true) */
+    r.conjuntos.esquadrias = !!(o.conjuntos && o.conjuntos.esquadrias === true);
     /* CADERNO DE INTERIORES (js/arqinteriores.js): fora da série padrão; `ambientes` = ids escolhidos (null = os que têm mobiliário ou marcenaria) */
     var oi = o.interiores && typeof o.interiores === "object" ? o.interiores : {};
     var fl = {}; Object.keys(oi.folhas && typeof oi.folhas === "object" ? oi.folhas : {}).forEach(function (kf) { fl[kf] = !!oi.folhas[kf]; });
@@ -138,7 +141,7 @@
   function caixaPlano(dados) {
     var g = GEO(), xs = [], zs = [];
     function add(P) { arr(P).forEach(function (p) { xs.push(p[0]); zs.push(p[1]); }); }
-    dados.paredes.forEach(function (w) { if (!w.muro) add(w.pts); }); dados.pilares.forEach(function (w) { add(w.pts); }); dados.lajes.forEach(function (l) { add(l.pts); });
+    dados.paredes.forEach(function (w) { add(w.pts); }); /* R01: os muros de divisa também entram no quadro da planta (a planta vai de uma divisa à outra) */ dados.pilares.forEach(function (w) { add(w.pts); }); dados.lajes.forEach(function (l) { add(l.pts); });
     dados.telhados.forEach(function (t) { add(t.pBeiral || t.pts); });
     if (!xs.length) return dados.caixa;
     void g;
@@ -263,7 +266,7 @@
     var emp = op.empresa, empObj = emp && typeof emp === "object" ? emp : null;
 
     /* contexto comum das folhas */
-    var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo }, cfg: cfg, avisos: avisos, avisosFolha: {},
+    var c = { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo, estiloCorte: op.estiloCorte, passeio: op.passeio, ruaMeia: op.ruaMeia, coresFachada: op.coresFachada, situacao: op.situacao, baldrame: op.baldrame }, cfg: cfg, avisos: avisos, avisosFolha: {},
       plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fe.formato, numeroDe: function () { return "?"; } };
 
     /* a lista de folhas */
@@ -277,6 +280,7 @@
       if (tipo === "existente" || tipo === "demolir" || tipo === "layout" || tipo === "forro" || tipo === "piso" || tipo === "humanizada") { for (var i = 0; i < pavs.length; i++) add(tipo, i); }
       else add(tipo, null);
     });
+    if (cj.esquadrias) for (var ie0 = 0; ie0 < pavs.length; ie0++) add("esquadrias", ie0);   /* R01: a planta de esquadrias (opt-in) vai depois da série */
     if (!defs.length && !cfg.interiores.ativo) return { ok: false, folhas: [], avisos: avisos.concat(["Nenhuma folha marcada para gerar."]) };
     defs.forEach(function (d, i) { d.rotulo = dois(i + 1); d.numero = codigo + "-" + d.rotulo; });
     c.total = defs.length;
@@ -301,7 +305,8 @@
       cc.D = D; cc.def = def; cc.avisos = avisos;
       var nAv = avisos.length;
       try {
-        if (def.tipo === "situacao") res = desenharSituacao(cc, def);
+        if (def.tipo === "esquadrias") res = Pl.planta(cc, { modo: "layout", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false, esquadrias: true });
+        else if (def.tipo === "situacao") res = desenharSituacao(cc, def);
         else if (def.tipo === "existente") res = Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
         else if (def.tipo === "demolir") res = Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: c.cfg.cotasInternas, completo: false });
         else if (def.tipo === "layout") res = desenharLayout(cc, def);
@@ -360,7 +365,7 @@
   }
 
   /* ================================================================ O ARRANJO: blocos → folhas (js/arqdiagrama.js) */
-  var GRUPO_TIPO = { situacao: "situacao", existente: "reforma", demolir: "reforma", layout: "projeto", cortes: "projeto", fachadas: "projeto", cobertura: "complementar", forro: "complementar", piso: "complementar", quadros: "quadros", humanizada: "humanizada" };
+  var GRUPO_TIPO = { situacao: "situacao", existente: "reforma", demolir: "reforma", layout: "projeto", cortes: "projeto", fachadas: "projeto", cobertura: "complementar", forro: "complementar", piso: "complementar", quadros: "quadros", humanizada: "humanizada", esquadrias: "projeto" };
   var AVISO_FIXO = { "01": "situacao", "05": "cobertura", "06": "forro", "07": "cortes", "08": "fachadas", "09": "piso" };   /* os avisos dos desenhos citam "ARQ-05"… da série antiga: no arranjo vira o número da folha onde o conteúdo caiu */
   var LINHAS_LISTA = 30;
   function listaDefs(cfg, pavs) {
@@ -374,6 +379,7 @@
       if (tipo === "existente" || tipo === "demolir" || tipo === "layout" || tipo === "forro" || tipo === "piso" || tipo === "humanizada") { for (var i = 0; i < pavs.length; i++) add(tipo, i); }
       else add(tipo, null);
     });
+    if (cj.esquadrias) for (var ie = 0; ie < pavs.length; ie++) add("esquadrias", ie);
     return defs;
   }
   function desenharDef(c, def, defs) {
@@ -382,6 +388,7 @@
     if (def.tipo === "existente") return Pl.planta(cc, { modo: "existente", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: cc.cfg.cotasInternas, completo: false });
     if (def.tipo === "demolir") return Pl.planta(cc, { modo: "demolir", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: cc.cfg.cotasInternas, completo: false });
     if (def.tipo === "layout") return desenharLayout(cc, def);
+    if (def.tipo === "esquadrias") return Pl.planta(cc, { modo: "layout", pav: def.pav, titulo: def.titulo, cotas: true, cotasInt: false, completo: false, esquadrias: true });
     if (def.tipo === "cobertura") return Pl.cobertura(cc);
     if (def.tipo === "forro") return desenharForro(cc, def);
     if (def.tipo === "cortes") return Ct.cortes(cc);
@@ -466,7 +473,7 @@
     var ctx = { E: E, defs: defs, fixos: fixos };
     ctx.novoC = function (fmt, fe, av) {
       var geo = P.geometria(fmt, "paisagem", "RA");
-      return { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo }, cfg: cfg, avisos: av, avisosFolha: {},
+      return { E: E, geo: geo, A: geo.area, dados: dados, antes: sit.antes, depois: sit.depois, estadoDepois: sit.estadoDepois, idx: idx, op: { rua: cfg.rua, logo: op.logo, estiloCorte: op.estiloCorte, passeio: op.passeio, ruaMeia: op.ruaMeia, coresFachada: op.coresFachada, situacao: op.situacao, baldrame: op.baldrame }, cfg: cfg, avisos: av, avisosFolha: {},
         plano: { k: 1000 / fe.escala, escala: fe.escala, caixa: fe.caixa }, escalaSit: escolherEscalaSituacao(idx, geo), cortes: CT().escolherCortes(dados, sit.depois, op.cortes), prefixo: codigo, rev: rev, empObj: empObj, total: 0, formatoNome: fmt,
         numeroDe: function (tipo) { return numMap[tipo] || "(não gerada)"; }, emBlocos: true, depurar: op.depurar };
     };
