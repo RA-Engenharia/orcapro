@@ -193,6 +193,7 @@
      Cotas: de MONTANTE para JUSANTE; a saída de cada caixa fica na entrada mais baixa que chega nela (os ramais dos ambientes já gravados no
      modelo contam); o tubo desce com a declividade mínima do DN (BimInst.declMinDn). Ordem topológica: a ligação só sai depois de todas
      que chegam na caixa de montante dela. Mesmo id de trecho = refazer (idempotente: a ferramenta apaga o lote antes). */
+  function qDesce(v) { return Math.ceil(v * 10000 - 1e-9) / 10000; }   // hid:ok desnível em 4 casas, nunca abaixo do mínimo
   function ligarMapa(estado, mapa, o) {
     o = o || {}; mapa = mapa || {};
     var B = dep("BimInst", "./biminst.js"), HR = dep("HidRede", "./hidrede.js"), par = o.parametros || {}, pref = o.prefixo || "rede-pred";
@@ -225,11 +226,12 @@
       prox.forEach(function (l) {
         var a = porId[l.de], b = porId[l.para], pts = [{ x: a.x, z: a.z }].concat(arr(l.via).map(function (q) { return { x: num(q.x, 0), z: num(q.z, 0) }; })).concat([{ x: b.x, z: b.z }]), L = 0;
         for (var q = 1; q < pts.length; q++) L += d2(pts[q - 1], pts[q]);
-        var yA = saidaDe(l.de), yB = r4(yA - i * L);
+        /* R04b: o desnível arredonda PARA CIMA em 0,1 mm (r4 cortava 0,1 mm num trecho diagonal de 2,61 m e a declividade dava 0,999 %, reprovada) */
+        var yA = saidaDe(l.de), yB = r4(yA - qDesce(i * L));
         entradas[l.para].push(yB); chegou[l.para] = (chegou[l.para] || 0) + 1;
         var y = yA, n = 0;
         for (var s = 1; s < pts.length; s++) {
-          var Ls = d2(pts[s - 1], pts[s]), y2 = s === pts.length - 1 ? yB : r4(y - i * Ls);
+          var Ls = d2(pts[s - 1], pts[s]), y2 = s === pts.length - 1 ? yB : r4(y - qDesce(i * Ls));
           if (Ls < 0.01) continue;   // hid:ok ponto repetido
           out.ops.push({ op: "trecho", id: pref + "-" + l.de + "-" + l.para + "-" + (++n), sistema: "esgoto", material: "pvc_esgoto", dn: dn, p1: { x: r4(pts[s - 1].x), y: r4(y), z: r4(pts[s - 1].z) }, p2: { x: r4(pts[s].x), y: r4(y2), z: r4(pts[s].z) } });
           y = y2;

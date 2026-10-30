@@ -14745,6 +14745,11 @@
       var extras = {}, ex0 = (this._opExtras && this._opExtras.obra === obraM) ? this._opExtras.dados : {};
       Object.keys(ex0 || {}).forEach(function (k) { if (!/^cad-/.test(k)) extras[k] = ex0[k]; });
       if (d2 && d2.cad) Object.keys(d2.cad).forEach(function (nv) { (d2.cad[nv] || []).forEach(function (v) { var dd = Bim2D._cadDados(v.id); if (dd) extras["cad-" + v.id + ".json"] = dd; }); });
+      /* HIDRO-3D: as vistas "Isométrico/Planta do ambiente" (bim_vistas com hidIso) vão no arquivo: balões ligados às peças e posições arrastadas */
+      try {
+        var vhid = fonte ? [] : (Store.listar(eid(), "bim_vistas") || []).filter(function (v) { return v && v.hidIso && String(v.obraId || "") === String(this._bimSel || ""); }, this);
+        if (vhid.length) extras["hid-vistas.json"] = { versao: 1, vistas: JSON.parse(JSON.stringify(vhid)) };
+      } catch (eHv) { /* sem vistas do hidro */ }
       var obra = obraM !== "geral" ? Store.obter(eid(), "obras", obraM) : null;
       return { proj: { nome: (obra && obra.nome) || "Projeto OrçaPRO", modelo: { edicao: ops, niveis: niveis, desenho2d: d2, malhas: optsMalha, disciplinas: fontes.map(function (x) { return { nome: x.nome, disciplina: x.disciplina }; }) }, familias: familias, ifcs: ifcs, malhas: malhas, extras: extras }, semFonte: semFonte };
     },
@@ -14849,6 +14854,15 @@
         try { localStorage.setItem(Bim2D._cadChave(mc[1]), JSON.stringify(r.extras[k])); } catch (eC) {}
       });
       this._opExtras = { obra: obraId, dados: r.extras || {} };
+      /* HIDRO-3D: as vistas do hidro voltam para a obra (idempotente: o id é fixo por obra × ambiente × sistema × tipo) */
+      try {
+        var hv = r.extras && r.extras["hid-vistas.json"];
+        if (hv && Array.isArray(hv.vistas) && window.HidVistaIso) hv.vistas.forEach(function (v) {
+          if (!v || !v.hidIso) return;
+          v.obraId = obraId === "geral" ? "" : String(obraId); v.id = HidVistaIso.idDa(v.obraId, v.hidIso);
+          Store.salvar(eid(), "bim_vistas", v);
+        });
+      } catch (eHv2) { /* vistas do hidro não entram: o resto do projeto abre */ }
       var seq = Promise.resolve();
       (r.ifcs || []).forEach(function (x) {
         var disc = ((m.disciplinas || []).filter(function (d) { return d.nome === x.nome || d.nome + ".ifc" === x.nome; })[0] || {}).disciplina;
@@ -16148,6 +16162,7 @@
       var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
       /* "3D — <ambiente>" (hidrossanitário): reabre com a caixa de corte do cômodo */
       if (v.hid3d && window.HidPranchasUI && HidPranchasUI.reabrir3d) { HidPranchasUI.reabrir3d(v); return; }
+      if (v.hidIso && window.HidVistaIsoUI && HidVistaIsoUI.reabrir) { HidVistaIsoUI.reabrir(v); return; }   /* HIDRO-3D: a vista "Isométrico do ambiente" */
       /* ⚠ NA CASCA DO BIM, O PONTO DE VISTA ABRE NUMA ABA DELE (Rogério,
          30/09/2026: "abrir um ponto de vista muda todas as janelas abertas…
          quero que abra uma nova e ela mantenha como foi criada"). A vista nova

@@ -51,9 +51,9 @@
   var SISTEMAS = {
     agua_fria:   { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre"], material: "pvc_soldavel" },
     agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
-    esgoto:      { nome: "Esgoto", abrev: "ES", cor: "#7B4A2A", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
-    ventilacao:  { nome: "Ventilação", abrev: "VE", cor: "#B08A6E", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
-    pluvial:     { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },   /* Casa 487 (F9): coletor pluvial enterrado acima do DN 150 da série R = PVC ocre NBR 7362 (DN 200) */
+    esgoto:      { nome: "Esgoto", abrev: "ES", cor: "#2E9E44", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
+    ventilacao:  { nome: "Ventilação", abrev: "VE", cor: "#8C8C8C", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
+    pluvial:     { nome: "Pluvial", abrev: "AP", cor: "#00ACC1", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },   /* Casa 487 (F9): coletor pluvial enterrado acima do DN 150 da série R = PVC ocre NBR 7362 (DN 200) */
     eletrica:    { nome: "Elétrica (eletroduto)", abrev: "EL", cor: "#F2B600", grupo: "eletrica", gravidade: false, materiais: ["elet_corrugado_ref", "elet_corrugado", "elet_roscavel", "elet_soldavel"], material: "elet_corrugado_ref" },
     ar:          { nome: "Ar-condicionado (duto)", abrev: "AR", cor: "#7F95A8", grupo: "ar", gravidade: false, materiais: ["duto_chapa", "duto_flex"], material: "duto_chapa" },
     /* C1b climatização (17/10/2026, docs/hidro/PATCH-BIMINST-CLIMA.md): cobre frigorígeno e dreno de condensado.

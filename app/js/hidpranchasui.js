@@ -251,7 +251,10 @@
     var a = ambienteBim(fid); if (!a) return [];
     return [{ nome: "Hidrossanitário", params: [
       { id: "hid-3d-amb", rotulo: "3D do ambiente", tipo: "botao", rotuloBotao: "Abrir 3D do ambiente", fn: function () { abrir3dAmbiente(a, ctxAtual(), { salvar: true }); } },
-      { id: "hid-3d-prancha", rotulo: "Perspectiva", tipo: "botao", rotuloBotao: "Para a prancha", fn: function () { paraPrancha(a); } }] }];
+      { id: "hid-3d-prancha", rotulo: "Perspectiva", tipo: "botao", rotuloBotao: "Para a prancha", fn: function () { paraPrancha(a); } },
+      /* HIDRO-3D: as VISTAS salvas no sistema (a prancha só as coloca) */
+      { id: "hid-vista-iso", rotulo: "Vista", tipo: "botao", rotuloBotao: "Isométrico do ambiente", fn: function () { if (global.HidVistaIsoUI) global.HidVistaIsoUI.isometrico(a, ctxAtual()); } },
+      { id: "hid-vista-planta", rotulo: "Vista", tipo: "botao", rotuloBotao: "Planta do ambiente", fn: function () { if (global.HidVistaIsoUI) global.HidVistaIsoUI.planta(a, ctxAtual()); } }] }];
   }
 
   function abrir(ctx) {

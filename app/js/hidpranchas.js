@@ -60,10 +60,10 @@
     caixaIns: [80, 110], caixaGord: [90, 120], reserv: [150, 110],
     catMax: 4, erroX: 10, erroY: 20, vazioY: 30, parEx: 5, parAviso: 3,
     pena: { AF: 0.35, AQ: 0.35, ES: 0.5, VE: 0.25, AP: 0.35, IN: 0.35, IND: 0.35, GAS: 0.35, simbolo: 0.25, cota: 0.13, fina: 0.18, tabela: 0.25, titulo: 0.35, moldura: 0.5, contexto: 0.13, eixo: 0.13 },
-    cor: { AF: "#1E6FD9", AQ: "#D93025", ES: "#7B4A2A", VE: "#B08A6E", AP: "#2E9E44", IN: "#C62828", IND: "#6D4C41", GAS: "#C9A400" },
+    cor: { AF: "#1E6FD9", AQ: "#D93025", ES: "#2E9E44", VE: "#8C8C8C", AP: "#00ACC1", IN: "#C62828", IND: "#6D4C41", GAS: "#C9A400" },
     tracoVE: "4 1.5", tracoEixo: "9.6 1.6 0.4 1.6", vermelho: "#c00000",
     /* GERAR PRANCHAS (18/10/2026): arquitetura em meio-tom, contorno do tubo cheio, cortes, detalhes, quadro, QR */
-    arq: { preench: "#e4e4e4", contorno: "#8c8c8c", louca: "#9a9a9a", mm: 0.13 }, contornoTubo: 0.09, contornoFrac: 0.12,
+    arq: { preench: "#e4e4e4", contorno: "#8c8c8c", louca: "#9a9a9a", mm: 0.13 }, contornoTubo: 0.09, contornoFrac: 0.12, tuboFinoMm: 1.0,
     escalasCorte: [20, 25, 50, 75], cortePiso: 0.6, corteTopo: 0.3, faixaParede: 0.2, folgaCorte: 14, corteMinPontos: 1,
     qr: 30, qrTexto: 2.5, qrRot: "PORTAL DA OBRA",
     quadro: { linha: 6.2, icone: 9, col: [12, 0, 26, 12, 18], gap: 12, cab: 7.5 },
@@ -130,13 +130,8 @@
     function cam(nome, mm, cor, dash) { E.camadas[nome] = { mm: mm, dash: dash || null, cor: cor || "#000" }; }
     cam("HID-AF-TUBO", P.AF, K2.cor.AF); cam("HID-AQ-TUBO", P.AQ, K2.cor.AQ); cam("HID-ES-TUBO", P.ES, K2.cor.ES);
     cam("HID-VE-TUBO", P.VE, K2.cor.VE, K2.tracoVE); cam("HID-AP-TUBO", P.AP, K2.cor.AP); cam("HID-IN-TUBO", P.IN, K2.cor.IN); cam("HID-IND-TUBO", P.IND, K2.cor.IND); cam("HID-GAS-TUBO", P.GAS, K2.cor.GAS); cam("HID-IN-COBERTURA", P.fina, K2.cor.IN, K2.tracoVE);
-    /* o PADRÃO manda na cor, na pena (mm a 1:50) e no traço de cada sistema; sem ele, ficam as do K2 acima */
-    var PD = PAD();
-    if (PD) Object.keys(CAMADA_SIS).forEach(function (k) {
-      var s = PD.sistema(k); if (!s) return;
-      var tr = s.padrao !== "continua" ? (PD.traco(s.padrao) || []).map(function (v) { return Math.abs(v); }).join(" ") : null;
-      cam("HID-" + CAMADA_SIS[k] + "-TUBO", s.mm, s.cor, tr || null);
-    });
+    /* R01 (29/10/2026): a COR, a pena e o traço de cada sistema são os do PADRÃO RA de hidráulica v1.0 (K2.cor / K2.pena acima: ES marrom, VE marrom claro,
+       AP verde…). O template de Revit (js/biminstpadraodados.js: ES verde, VE cinza, AP lilás) pintava as pranchas da R00 com as cores trocadas e não manda mais aqui. */
     cam("HID-SIMBOLO", P.simbolo); cam("HID-COTA", P.cota); cam("HID-TEXTO", P.fina); cam("HID-EIXO", P.eixo, "#000", K2.tracoEixo);
     cam("HID-CONTEXTO", P.contexto, "#7f7f7f"); cam("HID-TABELA", P.tabela); cam("HID-TITULO", P.titulo); cam("HID-MOLDURA", P.moldura);
     cam("HID-PEND", P.simbolo, K2.vermelho, "3 1.5");
@@ -165,7 +160,7 @@
       else if (s.tipo === "caixa") D.ret(x - s.r, y - s.r, 2 * s.r, 2 * s.r, "HID-SIMBOLO");
       else if (s.tipo === "seta" && s.pts) D.cheio(s.pts.map(function (p) { return [p[0] + ox, p[1] + oy]; }), "#000");
     });
-    arr(prim.textos).forEach(function (t) { D.texto(t.x + ox, t.y + oy, t.s, t.h, { al: t.al || "C", attr: ' data-rotulo="' + esc(t.tipo) + '"' }); });
+    arr(prim.textos).forEach(function (t) { D.texto(t.x + ox, t.y + oy, t.s, t.h, { al: t.al || "C", attr: ' data-rotulo="' + esc(t.tipo) + '"' + (t.tipo === "destaque" ? ' font-style="italic"' : "") }); });   /* R02: a CHAMADA da peça especial em itálico, como na referência */
   }
 
   /* ------------------------------------------------------------ PLANTA por pavimento e sistema */
@@ -253,6 +248,7 @@
       /* no MÉDIO a caixa/ralo é a forma da peça (quadrado branco com a grade): o símbolo fica só como obstáculo */
       S.push({ tipo: l.tipo === "peca" ? "caixa" : "ponto", x: p[0], y: p[1], r: q, camada: "HID-SIMBOLO", box: [p[0] - q, p[1] - q, p[0] + q, p[1] + q], id: l.alvo, desenhado: !!(o.medio && l.tipo === "peca") });
       var nm = l.tipo === "peca" ? rotuloPecaPlanta(rede, l.alvo) : nomeAp(l.famInst || l.alvo);
+      if (nm && typeof o.textoPonto === "function") nm = o.textoPonto(l, nm);   /* R01: o caderno põe a ALTURA de cada ponto no rótulo */
       if (nm) pend.push({ s: txt(nm), h: KI.hPeq, tipo: "aparelho", camada: "HID-TEXTO", trecho: l.trecho, anchors: [p], prio: 0 });
     });
     arr(rede.acessorios).forEach(function (a) {
@@ -263,6 +259,8 @@
       S.push({ tipo: "registro", x: c[0], y: c[1], r: r, camada: "HID-SIMBOLO", box: [c[0] - r, c[1] - r, c[0] + r, c[1] + r], id: a.id, desenhado: true });
       pend.push({ s: txt(({ registro_gaveta: "RG", registro_esfera: "RE", registro_pressao: "RP", valvula_retencao: "VR" })[a.acessorio] || "RG") + " DN " + a.dn, h: KI.hPeq, tipo: "registro", camada: "HID-TEXTO", trecho: a.id, anchors: [c], prio: 1 });
     });
+    /* HIDRO-3D: a planta como VISTA do sistema (js/hidvistaiso.js): o desenho é a malha do modelo; aqui só saem as ANOTAÇÕES (rótulos, setas) sem posição, para a vista compor */
+    if (o.devolverPend) return { pend: pend, seg: seg, simbolos: S, linhas: L, textos: [], avisos: avisos, trechos: trs.map(function (t) { return t.id; }) };
     H.afastar(pend, S, L, T, seg, avisos);
     return { linhas: L, simbolos: S, textos: T, avisos: avisos, trechos: trs.map(function (t) { return t.id; }) };
   }
@@ -352,7 +350,7 @@
   function prepPlanta(c, sis, trs, pv, esc, titulo) {
     var cc = vistaCtx(c, trs, pv, sis), ex = extensaoPlanta(c, trs, pv), s2 = 1000 / esc, medio = !c.cfg || c.cfg.nivelPlanta !== "baixo";
     var fm = medio ? formasDe(cc, trs) : null;
-    var pr = plantaPrim(c.rede, c.ix, sis, trs, c.pavs, s2, { medio: medio, nome: c.nomeAp, colunas: c.colunas, obstaculos: obstaculosFormas(fm, s2), segExtra: bordasTubo(fm, s2, 0, 0), deTubo: deTubo });
+    var pr = plantaPrim(c.rede, c.ix, sis, trs, c.pavs, s2, { medio: medio, nome: c.nomeAp, colunas: c.colunas, obstaculos: obstaculosFormas(fm, s2).concat(ex.ctx.arq ? fundoArquitetura(ex.ctx.c, ex.ctx.arq, s2, 0, 0, bordasTubo(fm, s2, 0, 0)).caixas : []), segExtra: bordasTubo(fm, s2, 0, 0), deTubo: deTubo });
     arr(pr.avisos).forEach(function (m) { c.avisos.push(m); });
     var bb = bbox(pr), xs = ex.xs, zs = ex.zs;
     bb = { x0: Math.min(bb.x0, Math.min.apply(null, xs) * s2), y0: Math.min(bb.y0, Math.min.apply(null, zs) * s2), x1: Math.max(bb.x1, Math.max.apply(null, xs) * s2), y1: Math.max(bb.y1, Math.max.apply(null, zs) * s2) };
@@ -361,11 +359,27 @@
       desenhar: function (D, x, y, chk) {
         var ox = x + K2.folgaVista - bb.x0, oy = y + K2.titulo - bb.y0;
         c.AP.tituloVista(D, x + K2.folgaVista, y, tit, sub);
-        desenharContexto(D, ex.ctx, s2, ox, oy);
+        desenharContexto(D, ex.ctx, s2, ox, oy, medio ? bordasTubo(fm, s2, ox, oy) : []);
+        if (sis === "gas") rotulosGas(D, c, pv, s2, ox, oy, chk);
         if (medio) { formasPlanta(D, cc, trs, s2, ox, oy, fm); bordasTubo(fm, s2, ox, oy).forEach(function (q) { chk.tubos.push(q); }); }
         desenhar(D, pr, ox, oy, chk);
         c.prims.push(pr);
       } };
+  }
+  /* R02: na planta de GÁS aparecem o ABRIGO (contorno da família ra-gas-abrigo + legenda "ABRIGO GLP 2 x P13") e o PONTO do cooktop (cota e DN) — na R01 só o fio de cobre saía */
+  function rotulosGas(D, c, pv, s, ox, oy, chk) {
+    var est = c.modelo && c.modelo.estado, ab = null;
+    arr(est && est.familias).forEach(function (f) { if (/^ra-gas-abrigo/.test(txt(f.famId))) ab = f; });
+    var trs = arr(c.rede && c.rede.trechos).filter(function (t) { return t.sistema === "gas"; });
+    if (!trs.length) { D.texto(ox + 5, oy + 5, "REDE DE GÁS NÃO TRAÇADA NO MODELO - PENDÊNCIA", 3, { cor: K2.vermelho }); return; }
+    if (ab) {
+      try {
+        linhasLoucas(est, c.modelo.avaliarFam, [0, 1, 0], function (fi) { return fi.id === ab.id; }).forEach(function (sg) { D.linha(sg[0][0] * s + ox, sg[0][2] * s + oy, sg[1][0] * s + ox, sg[1][2] * s + oy, "HID-GAS-TUBO"); });
+      } catch (e) { c.avisos.push("Abrigo de gás: contorno não desenhado (" + (e && e.message) + ")."); }
+      D.texto(ab.x * s + ox + 9, ab.z * s + oy - 4, "ABRIGO GLP (2 x P13)", 2.3, { cor: K2.cor.GAS, peso: 0.2 });
+    }
+    var fim = null; trs.forEach(function (t) { [t.p1, t.p2].forEach(function (q) { if (!fim || q.y > fim.y) fim = q; }); });
+    if (fim) D.texto(fim.x * s + ox + 4, fim.z * s + oy + 5, "PONTO DO COOKTOP +" + br(fim.y - pv.cota, 2) + " - cobre ø15 embutido", 2.1, { cor: K2.cor.GAS });
   }
   var _D0 = null;
   function D0() { if (!_D0) _D0 = new (AP().Desenho)(estilo(), null); return _D0; }
@@ -459,6 +473,15 @@
   }
   /* as paredes perto da rede (até 1 m da caixa dos trechos) e as louças do pavimento */
   function contextoPlanta(c, xs, zs) {
+    var pv0 = c.pv || c.pavs[0], La = c.cfg && c.cfg.fundoArq === false ? null : listasArq(c, pv0);
+    if (La && La.edif.length) {
+      /* a extensão é a do pavimento inteiro (paredes da edificação + pilares), não a do tubo */
+      var ps = La.edif.concat(La.pilares), px = [], pz = [];
+      ps.forEach(function (w) { arr(w.pts).forEach(function (q) { px.push(q[0]); pz.push(q[1]); }); });
+      var loucas0 = [];
+      try { loucas0 = linhasLoucas(c.modelo.estado, c.modelo.avaliarFam, [0, 1, 0], function (fi) { return APARELHO_RE.test(txt(fi.famId)) && fi.y >= pv0.cota - HI().K.tolPiso_m - K2.cortePiso && fi.y < pv0.topo; }); } catch (e0) { loucas0 = []; }
+      return { paredes: [{ pts: [[Math.min.apply(null, px), Math.min.apply(null, pz)], [Math.max.apply(null, px), Math.max.apply(null, pz)]] }], loucas: loucas0, arq: La, c: c };
+    }
     var est = c.modelo && c.modelo.estado, pv = c.pv || c.pavs[0], m = K2.ambFolga;
     var x0 = Math.min.apply(null, xs) - m, x1 = Math.max.apply(null, xs) + m, z0 = Math.min.apply(null, zs) - m, z1 = Math.max.apply(null, zs) + m;
     /* o CÔMODO inteiro: a caixa cresce até os ambientes que a rede toca (a parede da frente do banheiro, longe dos tubos, entra) */
@@ -484,7 +507,73 @@
     D.estilo = function (cam, extra) { var s = base.call(this, cam, extra); return / data-cam="/.test(s) ? s : s + ' data-cam="' + esc(cam) + '"'; };
     return D;
   }
-  function desenharContexto(D, ctx, s, ox, oy) {
+  /* ------------------------------------------------------------ R01: FUNDO = a planta de arquitetura COMPLETA em meio-tom
+   * Pedido do Rogério (29/10/2026): "a arquitetura mostrar a arquitetura, com fundo transparente, como se eu tivesse pegado de um PDF; nela tem que ter tudo".
+   * Em vez das paredes próximas do tubo (picotadas) e das silhuetas soltas, o fundo é o MESMO desenho de planta das pranchas de arquitetura
+   * (js/arqdesenho.js: paredes inteiras, esquadrias com o arco, móveis e louças, nome e área de cada ambiente) passado para cinza. Padrão: PADRAO-HIDRO.md §3.
+   * A extensão da planta é a do PAVIMENTO inteiro (a planta de gás da R00 saía só com a janela do tubo). */
+  function ARQM() { return dep("ArqModelo", "./arqmodelo.js"); }
+  function ARQD() { return dep("ArqDesenho", "./arqdesenho.js"); }
+  K2.fundo = { parede: "#6e6e6e", paredeMm: 0.25, preench: "#e0e0e0", movel: "#a6a6a6", vao: "#8c8c8c", texto: "#7a7a7a", leve: "#b4b4b4" };
+  function cinzaDe(hex) {
+    var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex); if (!m) return hex;
+    var h = m[1].length === 3 ? m[1].replace(/(.)/g, "$1$1") : m[1], r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+    var L = (0.3 * r + 0.59 * g + 0.11 * b) / 255, v = Math.round(110 + L * 100);   /* preto → #6e6e6e, branco → fica branco */
+    if (L > 0.97) return "#ffffff"; v = Math.min(235, v); var x = ("0" + v.toString(16)).slice(-2); return "#" + x + x + x;
+  }
+  function dadosArq(c) {
+    var mo = c.modelo; if (!mo || !ARQM()) return null;
+    var chave = JSON.stringify((c.pavs || []).map(function (p) { return [p.nome, p.cota]; }));
+    if (mo._hidArqChave !== chave) {
+      mo._hidArqChave = chave; mo._hidArq = null;
+      try { mo._hidArq = ARQM().extrair({ estado: mo.estado, avaliarFam: mo.avaliarFam }, { pavimentos: (c.pavs || []).map(function (p) { return { nome: p.nome, cota: p.cota }; }) }); } catch (e) { mo._hidArq = null; }
+    }
+    return mo._hidArq;
+  }
+  /* o que a planta de arquitetura do pavimento tem (sem demolido): paredes, pilares, vãos, móveis, ambientes */
+  function listasArq(c, pv) {
+    var d = dadosArq(c); if (!d) return null;
+    var ip = 0; arr(d.pavimentos).forEach(function (p, i) { if (p.nome === pv.nome) ip = i; });
+    function ok(x) { return x && x.status !== "demolido" && x.pav === ip; }
+    var paredes = arr(d.paredes).filter(ok), edif = paredes.filter(function (w) { return !w.muro; });
+    return { dados: d, paredes: paredes, edif: edif, pilares: arr(d.pilares).filter(ok), vaos: arr(d.vaos).filter(ok), moveis: arr(d.moveis).filter(function (m) { return ok(m) && !APARELHO_RE.test(txt(m.famId)); }), ambientes: arr(d.ambientes).filter(ok) };   /* as louças e metais hidráulicos saem pelo CONTORNO REAL da malha (linhasLoucas), não pela caixa do móvel */
+  }
+  /* desenha o fundo num SVG (string) para o mapa (x, z) → [x * s + ox, z * s + oy]; devolve também as caixas dos textos (obstáculo dos rótulos do hidro) */
+  var _estiloArq = null;
+  function estiloArqCinza() {
+    if (_estiloArq) return _estiloArq;
+    var E = ARQD().estilo(), F = K2.fundo;
+    Object.keys(E.camadas).forEach(function (k) { var cm = E.camadas[k]; if (/^ARQ-/.test(k)) E.camadas[k] = { mm: cm.mm, dash: cm.dash, cor: cinzaDe(cm.cor) }; });
+    E.camadas["ARQ-CONTEXTO"] = { mm: F.paredeMm, dash: null, cor: F.parede };
+    E.camadas["ARQ-MOVEL"] = { mm: 0.05, dash: null, cor: F.movel }; E.camadas["ARQ-LOUCA"] = { mm: 0.07, dash: null, cor: F.movel };
+    E.camadas["ARQ-VAO"] = { mm: 0.09, dash: null, cor: F.vao }; E.camadas["ARQ-BATENTE"] = { mm: 0.13, dash: null, cor: F.vao }; E.camadas["ARQ-ARCO"] = { mm: 0.05, dash: null, cor: F.leve };
+    _estiloArq = E; return E;
+  }
+  function fundoArquitetura(c, L, s, ox, oy, segs) {
+    var d = ARQD(), E = estiloArqCinza(), D2 = d.novo(E, true), M = d.mapa([0, 0, 1, 1], ox, oy, s), porId = {};
+    L.paredes.forEach(function (w) { porId[w.id] = w; });
+    d.paredesPlanta(D2, M, L.paredes, "fantasma");
+    d.pilaresPlanta(D2, M, L.pilares, "fantasma");
+    d.moveisPlanta(D2, M, L.moveis);
+    d.vaosPlanta(D2, M, L.vaos, porId, "layout");
+    /* os TUBOS do hidro entram como obstáculo: o nome do ambiente procura um lugar livre (não cai em cima do tubo) */
+    arr(segs).forEach(function (q) { D2.sg.push(q); D2.sgc[D2.sg.length - 1] = "ARQ-SIMBOLO"; });
+    d.rotulosAmbientes(D2, M, L.ambientes, { completo: false });
+    var F = K2.fundo;
+    var svg = D2.svg().replace(/(stroke|fill)="(#[0-9a-fA-F]{3,6})"/g, function (m0, a, h) {
+      if (a === "fill" && /^#?(ececec|fff|ffffff)$/i.test(h.replace("#", ""))) return a + '="' + (/^#?(ececec)$/i.test(h.replace("#", "")) ? F.preench : "#ffffff") + '"';
+      if (a === "fill" && /^#(1f1f1f|000|000000)$/i.test(h)) return a + '="' + F.preench + '"';
+      return a + '="' + cinzaDe(h) + '"';
+    }).replace(/data-cam="ARQ-/g, 'data-cam="HID-ARQ-');
+    return { svg: '<g data-fundo-arq="1">' + svg + "</g>", caixas: arr(D2.tb), textos: arr(D2.caixas) };
+  }
+  function desenharContexto(D, ctx, s, ox, oy, segs) {
+    if (ctx.arq) {
+      var fa = fundoArquitetura(ctx.c, ctx.arq, s, ox, oy, segs); D.add(fa.svg);
+      if (D.caixas) fa.textos.forEach(function (b) { D.caixas.push(b); });   /* os nomes dos ambientes entram na conferência de sobreposição */
+      ctx.loucas.forEach(function (sg) { D.linha(sg[0][0] * s + ox, sg[0][2] * s + oy, sg[1][0] * s + ox, sg[1][2] * s + oy, "HID-LOUCA"); });
+      return;
+    }
     function P(q) { return [q[0] * s + ox, q[1] * s + oy]; }
     ctx.paredes.forEach(function (w) { poliCheio(D, w.pts.map(P), K2.arq.preench, null, 0, "HID-CONTEXTO"); });
     ctx.paredes.forEach(function (w) { var p = w.pts.map(P); D.poli(p, "HID-CONTEXTO", true); });
@@ -492,6 +581,7 @@
   }
   /* o nível MÉDIO do padrão na prancha: tubo CHEIO na cor do sistema (DE real, entrando na bolsa), conexão BRANCA com
      contorno, prumada = círculo do DE, caixa/ralo = quadrado branco com a grade (js/biminstnivel.js formas) */
+  function lm0(pp) { return Math.min(Math.sqrt(Math.pow(pp[1][0] - pp[0][0], 2) + Math.pow(pp[1][1] - pp[0][1], 2)), Math.sqrt(Math.pow(pp[3][0] - pp[0][0], 2) + Math.pow(pp[3][1] - pp[0][1], 2))); }
   function formasPlanta(D, c, trs, s, ox, oy, f0) {
     var f = f0 || formasDe(c, trs);
     if (!f) return;
@@ -502,7 +592,9 @@
       var fill = p.papel === "tubo" || p.papel === "prumada" ? corDe(p.sistema) : "#ffffff", pp = p.pts.map(P), sw = K2.contornoTubo;
       /* tubo fino na escala (AF ø20 na 1:50 = 0,5 mm): o contorno afina junto, senão o preto engole a cor do sistema */
       if (p.papel === "tubo" && pp.length === 4) { var lm = Math.min(Math.sqrt(Math.pow(pp[1][0] - pp[0][0], 2) + Math.pow(pp[1][1] - pp[0][1], 2)), Math.sqrt(Math.pow(pp[3][0] - pp[0][0], 2) + Math.pow(pp[3][1] - pp[0][1], 2))); sw = Math.min(sw, lm * K2.contornoFrac); }
-      poliCheio(D, pp, fill, "#000", sw, p.papel === "tubo" || p.papel === "prumada" ? "HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO" : "HID-CONEXAO");
+      /* R01: tubo mais fino que 1 mm de papel (gás ø15, AF ø20/25 na 1:50) leva o contorno na COR DO SISTEMA e na pena do padrão — o contorno preto engolia a cor e a planta de gás saía como um risco preto */
+      var finoTubo = p.papel === "tubo" && pp.length === 4 && lm0(pp) < K2.tuboFinoMm, camTubo = D.E.camadas["HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO"];
+      poliCheio(D, pp, fill, finoTubo ? fill : "#000", finoTubo ? Math.max(sw, camTubo ? camTubo.mm : sw) : sw, p.papel === "tubo" || p.papel === "prumada" ? "HID-" + (CAMADA_SIS[p.sistema] || "AF") + "-TUBO" : "HID-CONEXAO");
     });
     f.segs.forEach(function (sg) { var a = P(sg.a), b = P(sg.b); D.linha(a[0], a[1], b[0], b[1], "HID-CONEXAO"); });
   }
@@ -526,8 +618,11 @@
     var ids = {}; trs.forEach(function (t) { ids[t.id] = 1; });
     var pv = c.pv || c.pavs[0], tol = HI().K.tolPiso_m;
     var sisOk = function (x) { return x === c.sis || (c.sis === "esgoto" && x === "ventilacao"); };
+    /* R04b: sem rede pluvial (projeto complementar), os RALOS de piso do pluvial que o modelo tem aparecem na planta de esgoto (não há planta de pluvial) */
+    var semPlPluvial = c.sis === "esgoto" && !arr(c.rede.trechos).some(function (t) { return t && t.sistema === "pluvial"; });
+    var pecaOk = function (k) { return sisOk(k.sistema) || (semPlPluvial && k.sistema === "pluvial" && /ralo/.test(String(k.peca || ""))); };
     var R = { trechos: trs, conexoes: arr(c.rede.conexoes).filter(function (k) { return sisOk(k.sistema) && arr(k.ramos).some(function (id) { return ids[id]; }); }),
-              pecas: arr(c.rede.pecas).filter(function (k) { return sisOk(k.sistema) && k.y >= (pv.base != null ? pv.base : pv.cota - K2.cortePiso) - tol && k.y < (pv.sup != null ? pv.sup : pv.topo) - tol; }) };
+              pecas: arr(c.rede.pecas).filter(function (k) { return pecaOk(k) && k.y >=(pv.base != null ? pv.base : pv.cota - K2.cortePiso) - tol && k.y < (pv.sup != null ? pv.sup : pv.topo) - tol; }) };
     var f = null;
     try {
       f = NV.formas(R, "medio", [0, -1, 0], { cotasCx: function (m, t, dn) { try { return G ? G.cotasConexao(m, t, dn) : null; } catch (e) { return null; } },
@@ -630,6 +725,25 @@
     L.push({ x1: 0, y1: Y(yTop), x2: 0, y2: Y(pv.cota), camada: "HID-CONTEXTO", tipo: "parede", trecho: "parede" });
     L.push({ x1: w.L * s, y1: Y(yTop), x2: w.L * s, y2: Y(pv.cota), camada: "HID-CONTEXTO", tipo: "parede", trecho: "parede" });
     L.push({ x1: -KI.margem, y1: Y(pv.cota), x2: w.L * s + KI.margem, y2: Y(pv.cota), camada: "HID-TITULO", tipo: "piso", trecho: "piso" });
+    /* R02: a vista cotada do ambiente (caderno) mostra também a LOUÇA em meio-tom, vista do lado de quem olha (ph.louca) */
+    if (ph.louca) {
+      try {
+        var vw = [w.n[0] * ph.lado, 0, w.n[1] * ph.lado];
+        linhasLoucas(c.modelo.estado, c.modelo.avaliarFam, vw, function (fi) { var q = ph.loc(fi); return APARELHO_RE.test(txt(fi.famId)) && q.d * ph.lado >= -w.esp / 2 - 0.05 && q.d * ph.lado <= 1.2 && Math.abs(q.s) <= w.L / 2 + 0.3 && fi.y >= pv.cota - 0.7 && fi.y < pv.topo; })
+          .forEach(function (sg) {
+            var a0 = [X({ x: sg[0][0], z: sg[0][2] }), Y(sg[0][1])], b0 = [X({ x: sg[1][0], z: sg[1][2] }), Y(sg[1][1])];
+            if (Math.min(a0[0], b0[0]) < -1 || Math.max(a0[0], b0[0]) > w.L * s + 1) return;
+            L.push({ x1: a0[0], y1: a0[1], x2: b0[0], y2: b0[1], camada: "HID-LOUCA", tipo: "louca", trecho: "louca" });
+          });
+      } catch (eL) { c.avisos.push("Vista " + ph.nome + ": louças em meio-tom falharam (" + (eL && eL.message) + ")."); }
+    }
+    /* a cota vertical (alturas dos pontos) corre numa linha à esquerda da parede: os rótulos se afastam dela */
+    var cotaYs = [];
+    if (ph.cotaV) {
+      var hs = {}; ph.pts.forEach(function (l) { if (l.tipo === "aparelho") hs[Math.round((l.y - pv.cota) * 100)] = l.y; }); ph.acess.forEach(function (a0) { hs[Math.round((a0.centro.y - pv.cota) * 100)] = a0.centro.y; });
+      Object.keys(hs).map(Number).sort(function (p0, q0) { return p0 - q0; }).forEach(function (k0) { cotaYs.push(Y(hs[k0])); });
+      if (cotaYs.length) seg.push([-ph.cotaV, Math.min.apply(null, cotaYs), -ph.cotaV, Y(pv.cota)]);
+    }
     ph.trs.forEach(function (t) {
       var a = [X(t.p1), Y(t.p1.y)], b = [X(t.p2), Y(t.p2.y)], sg = SIGLA_CAM(t.sistema), inf = (c.ix[t.sistema] || {})[t.id];
       L.push({ x1: a[0], y1: a[1], x2: b[0], y2: b[1], camada: "HID-" + sg + "-TUBO", tipo: "tubo", trecho: t.id }); seg.push([a[0], a[1], b[0], b[1]]);
@@ -660,7 +774,7 @@
     /* a cota dos pontos ao longo da parede (cm), embaixo do piso: entra depois, fora do desenho */
     cot.sort(function (a, b) { return a - b; });
     var xsC = [0].concat(cot.filter(function (x, i) { return i === 0 || x - cot[i - 1] > KI.margem / 2; })).concat([w.L * s]);
-    return { linhas: L, simbolos: S, textos: T, avisos: avisos, cotaXs: xsC, yPiso: Y(pv.cota), yFundo: Y(yBot), w: w.L * s, trechos: ph.trs.map(function (t) { return t.id; }) };
+    return { linhas: L, simbolos: S, textos: T, avisos: avisos, cotaXs: xsC, cotaYs: cotaYs, yPiso: Y(pv.cota), yFundo: Y(yBot), yTopo: Y(yTop), w: w.L * s, trechos: ph.trs.map(function (t) { return t.id; }) };
   }
   /* AS CAIXAS D'ÁGUA COLOCADAS NO PROJETO (F8, 28/10/2026): volume, diâmetro e altura vêm da família colocada (valores avaliados do tipo),
      nunca do catálogo genérico. Ordem: do menor x/z ao maior, para o nome CX-1, CX-2 não mudar entre folhas. */
@@ -734,6 +848,38 @@
     it.push({ p: [g.x + g.w * 0.9, yP + 0.22 * s], t: "ESGOTO DA BACIA (DN na planta)" });
     var f = kd.alturas.fonte || {};
     it.fonte = "Alturas: " + txt(f.doc).split(",")[0] + ", p. " + txt(f.pagina) + " (" + txt(f.tipo) + ") - conferir com o metal escolhido.";
+    return it;
+  }
+  /* R04: DETALHE DA CALHA EMBUTIDA atrás da platibanda (corte esquemático, sem escala): telhado, calha de chapa metálica, manta de impermeabilização que sobe
+     pela platibanda até o contrarrufo, ladrão (extravasor) na platibanda, bocal/funil de saída, caimento e emenda. Os números vêm do memorial (por telhado). */
+  function pnCalhaEmbutida(D, g, r) {
+    var cals = arr(r && r.sistemas && r.sistemas.pluvial && r.sistemas.pluvial.calhas).filter(function (x) { return x && x.bocal; }), it = [];
+    var c0 = cals.slice().sort(function (a, b) { return (b.vazao_l_min || 0) - (a.vazao_l_min || 0); })[0] || {};
+    var ld = c0.ladrao || {}, bo = c0.bocal || {}, hU = c0.alturaUtil_mm || 120, bC = 300;
+    var dnMax = cals.reduce(function (m, x) { return Math.max(m, x.bocal && x.bocal.dn || 0); }, 0), wMax = cals.reduce(function (m, x) { return Math.max(m, x.ladrao && x.ladrao.largura_mm || 0); }, 0);
+    var y0 = g.y + g.h * 0.80, x0 = g.x + g.w * 0.06, xi = g.x + g.w * 0.62, tw = g.w * 0.16, hp = g.h * 0.66, hc = g.h * 0.24, k = hc / hU;
+    D.ret(xi, y0 - hp, tw, hp + g.h * 0.06, "HID-CONTEXTO");                                        /* platibanda (alvenaria) */
+    D.linha(x0, y0 - hc - g.h * 0.1, x0 + g.w * 0.16, y0 - hc, "HID-CONTEXTO");                       /* telhado (caimento para a calha) */
+    D.poli([[x0 + g.w * 0.16, y0 - hc], [x0 + g.w * 0.16, y0], [xi, y0], [xi, y0 - hc]], "HID-SIMBOLO", false);   /* calha: fundo e abas */
+    D.linha(x0 + g.w * 0.16 - 1.2, y0 - hc - 1.2, x0 + g.w * 0.16 - 1.2, y0 + 1.2, "HID-EIXO");
+    D.linha(x0 + g.w * 0.16 - 1.2, y0 + 1.2, xi - 1.2, y0 + 1.2, "HID-EIXO");
+    D.linha(xi - 1.2, y0 + 1.2, xi - 1.2, y0 - hp * 0.82, "HID-EIXO");                                  /* manta subindo pela platibanda */
+    D.ret(xi - 1.6, y0 - hp, tw + 3.2, 1.8, "HID-SIMBOLO");                                            /* contrarrufo / capa */
+    var ys = y0 - (ld.soleira_mm || 90) * k, hs = (ld.altura_mm || 40) * k;
+    D.ret(xi, ys - hs, tw, hs, "HID-ES-TUBO");                                                         /* ladrão (vão na platibanda) */
+    D.linha(x0 + g.w * 0.16, y0 - 2 / 3 * hU * k, xi, y0 - 2 / 3 * hU * k, "HID-EIXO");              /* lâmina de projeto (2/3 da altura útil) */
+    var xb = x0 + g.w * 0.16 + (xi - x0 - g.w * 0.16) * 0.45;
+    D.poli([[xb - 3.5, y0], [xb + 3.5, y0], [xb + 1.8, y0 + g.h * 0.08], [xb - 1.8, y0 + g.h * 0.08]], "HID-SIMBOLO", true);   /* bocal (funil) */
+    D.linha(xb, y0 + g.h * 0.08, xb, y0 + g.h * 0.16, "HID-AP-TUBO");                                  /* início do condutor */
+    D.linha(x0 + g.w * 0.16 + (xb - x0 - g.w * 0.16) * 0.25, y0 + 3, x0 + g.w * 0.16 + (xb - x0 - g.w * 0.16) * 0.25 + 4, y0 + 3, "HID-COTA");   /* emenda (traço) */
+    it.push({ p: [xi + tw * 0.5, y0 - hp], t: "CONTRARRUFO / CAPA DA PLATIBANDA" });
+    it.push({ p: [xi - 1.2, y0 - hp * 0.5], t: "MANTA DE IMPERMEABILIZAÇÃO (sobe até o contrarrufo)" });
+    it.push({ p: [xi + tw * 0.5, ys - hs / 2], t: "LADRÃO " + (wMax || "—") + " x " + (ld.altura_mm || "—") + " mm, soleira " + (ld.soleira_mm || "—") + " mm" });
+    it.push({ p: [x0 + g.w * 0.3, y0 - 2 / 3 * hU * k], t: "LÂMINA DE PROJETO ≤ 2/3 DA ALTURA ÚTIL" });
+    it.push({ p: [x0 + g.w * 0.2, y0], t: "CALHA 300 x " + hU + " mm, i = 0,5 % (chapa metálica)" });
+    it.push({ p: [xb, y0 + g.h * 0.06], t: "BOCAL / FUNIL DN " + (dnMax || "—") + " (Francis / orifício)" });
+    it.push({ p: [x0 + g.w * 0.16 + 2, y0 + 3], t: "EMENDA: SOBREPOSIÇÃO 20 mm + SELANTE" });
+    it.fonte = "Corte esquemático, sem escala. Calha de chapa metálica (n = 0,011) embutida atrás da platibanda; bocal pela fórmula de Francis e pelo orifício (o maior DN); ladrão como orifício com o bocal obstruído, abaixo do topo da impermeabilização. Valores por telhado no memorial de cálculo (verificações da calha).";
     return it;
   }
   function pnCaixaSif(D, g) {
@@ -827,12 +973,14 @@
     { id: "ci", titulo: "CAIXA DE INSPEÇÃO (corte)", cat: ["caixa_inspecao"] },
     { id: "cg", titulo: "CAIXA DE GORDURA (corte)", cat: ["caixa_gordura"] },
     { id: "bar", titulo: "BARRILETE (esquema)", cat: [] },
-    { id: "res", titulo: "RESERVATÓRIO (corte)", cat: ["reservatorio_caixa_dagua"] }
+    { id: "res", titulo: "RESERVATÓRIO (corte)", cat: ["reservatorio_caixa_dagua"] },
+    { id: "calha", titulo: "CALHA EMBUTIDA E LADRÃO (corte)", cat: [] }
   ];
   /* os painéis que o PROJETO tem (F8, M9): o detalhe da válvula de descarga só entra se houver ponto com válvula; o reservatório usa a caixa real */
   function paineisDe(r) {
     var af = r && r.sistemas && r.sistemas.agua_fria, temVD = arr(af && af.pontos).some(function (p) { return /valvula/.test(txt(p.aparelho)) && /bacia|mictorio/.test(txt(p.aparelho)); });
-    return PAINEIS.filter(function (pn) { return pn.id !== "kit" || temVD; });
+    var temCalha = arr(r && r.sistemas && r.sistemas.pluvial && r.sistemas.pluvial.calhas).some(function (x) { return x && x.bocal; });
+    return PAINEIS.filter(function (pn) { return (pn.id !== "kit" || temVD) && (pn.id !== "calha" || temCalha); });
   }
   function layoutDetalhes(geo, r) {
     var PAINEIS = paineisDe(r), a = geo.area, col = Math.max(1, Math.min(K2.detalhe.colunas, Math.floor(a.w / 110))), lin = Math.max(1, Math.min(K2.detalhe.linhas, Math.floor((a.h - K2.titulo) / 120)));   // hid:ok largura/altura mínima de um painel (mm de papel)
@@ -850,8 +998,14 @@
       if (pn.id === "kit") it = pnKitBacia(D, g);
       else if (pn.id === "cs") it = pnCaixaSif(D, g);
       else if (pn.id === "ci") it = pnCaixa(D, g, ["TAMPA", "ENTRADA", "SAÍDA", "FUNDO COM CALHA (meia-cana)", "NÍVEL: VER PLANTA"], true);
-      else if (pn.id === "cg") it = pnCaixa(D, g, ["TAMPA", "ENTRADA (cozinha)", "SAÍDA", "SEPTO / CESTO", "FUNDO"], true);
+      else if (pn.id === "cg") {
+        /* R04b: a TAMPA vem da caixa de gordura do MODELO (inst.Tampa da família, ex.: "hermética, revestida com o porcelanato do piso"); sem ela, o texto genérico */
+        var cgT = arr(c.modelo && c.modelo.estado && c.modelo.estado.familias).filter(function (f) { return f && f.famId === "hid-caixa-gordura" && f.inst && f.inst.Tampa; })
+          .map(function (f) { return String(f.inst.Nome || "CG").split(" ")[0] + ": " + String(f.inst.Tampa); });
+        it = pnCaixa(D, g, [cgT.length ? "TAMPA " + cgT.join("; ") : "TAMPA", "ENTRADA (cozinha)", "SAÍDA", "SEPTO / CESTO", "FUNDO"], true);
+      }
       else if (pn.id === "bar") it = pnBarrilete(D, g, nomesCol);
+      else if (pn.id === "calha") it = pnCalhaEmbutida(D, g, c.r);
       else if (cxsReais.length) it = pnReservatorioReal(D, g, cxsReais[0]);
       else it = pnCaixa(D, g, ["TAMPA", "ENTRADA COM BOIA", "SAÍDA (barrilete)", "NÍVEL DE OPERAÇÃO", "LIMPEZA"], false);
       var yFim = chamadas(D, it, gx + gw + cw * 0.06, gy, gy + gh, h);
@@ -859,6 +1013,7 @@
       if (it.fonte) { c.AP.quebrar(it.fonte, h, cw - 6).forEach(function (ln, q) { D.texto(px + 2, yT + q * h * K2.notaLinha, ln, h, {}); }); yT += h * K2.notaLinha * 2 + K2.notaEntre; }
       if (pn.id === "res" && cxsReais.length) tabelaCaixasReais(D, c, px + 2, yT, cw - 6, py + ch - 2, cxsReais);
       else if (pn.cat.length) tabelaCatalogo(D, c, px + 2, yT, cw - 6, pn.cat, py + ch - 2);
+      else if (pn.id === "calha") D.texto(px + 2, yT + h, "Bocal, lâmina e ladrão de cada telhado: memorial de cálculo.", h, {});
       else D.texto(px + 2, yT + h, "Registros e DN conforme o esquema vertical e a planta de água fria.", h, {});
     });
     c.prims.push({ linhas: [], simbolos: [], textos: [], trechos: [] });
@@ -1071,8 +1226,8 @@
   function circPts(c, r) { var o = []; for (var i = 0; i < 16; i++) o.push([c[0] + r * Math.cos(i * Math.PI / 8), c[1] + r * Math.sin(i * Math.PI / 8)]); return o; }   // hid:ok 16 lados do círculo
 
   /* ------------------------------------------------------------ CONFIGURAÇÃO DA TELA "GERAR PRANCHAS" */
-  var CONJUNTOS = ["plantas", "cortes", "isometricos", "perspectivas", "esquema", "detalhes", "quadro"];
-  var ROTULO_CONJUNTO = { plantas: "Plantas por pavimento e sistema", cortes: "Cortes das paredes hidráulicas", isometricos: "Isométricos por ambiente (unifilar)", perspectivas: "Perspectiva isométrica 3D por ambiente",
+  var CONJUNTOS = ["plantas", "cortes", "isometricos", "perspectivas", "ambientes", "esquema", "detalhes", "quadro"];
+  var ROTULO_CONJUNTO = { plantas: "Plantas por pavimento e sistema", cortes: "Cortes das paredes hidráulicas", isometricos: "Isométricos por ambiente (unifilar)", perspectivas: "Perspectiva isométrica 3D por ambiente", ambientes: "Isométrico por ambiente (planta, isométrico com balões, tabelas)",
                           esquema: "Esquema vertical", detalhes: "Detalhes típicos", quadro: "Quadro de materiais" };
   var SISTEMAS_FOLHA = ["agua_fria", "agua_quente", "esgoto", "pluvial", "incendio", "industrial", "gas", "tratamento"];
   var FORMATOS_OK = ["AUTO", "A0", "A1", "A2", "A3", "A4"];
@@ -1095,7 +1250,7 @@
     return K2.formatosAuto[K2.formatosAuto.length - 1];
   }
   function configPadrao() {
-    var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = true; });
+    var cj = {}; CONJUNTOS.forEach(function (k) { cj[k] = k !== "ambientes"; });   /* R01: o isométrico por ambiente (js/hidcaderno.js) só sai quando o conjunto é pedido (conjuntos.ambientes = true) */
     return { versao: 1, sistemas: [], formato: "AUTO", escala: "auto", prefixo: "HID", revisao: "R00", descricaoRevisao: "EMISSÃO INICIAL - PROJETO EXECUTIVO",
              nivelPlanta: "medio", arquitetura: true, agrupar: true, qr: "", conjuntos: cj, perspectiva: { vista: "SE", ambientes: [] } };
   }
@@ -1116,7 +1271,7 @@
     if (QUADRANTE[txt(pp.vista).toUpperCase()] != null) p.perspectiva.vista = txt(pp.vista).toUpperCase();
     p.perspectiva.ambientes = arr(pp.ambientes).map(txt).filter(function (x) { return x; });
     var cj = c.conjuntos && typeof c.conjuntos === "object" ? c.conjuntos : {};
-    CONJUNTOS.forEach(function (k) { if (cj[k] === false) p.conjuntos[k] = false; });
+    CONJUNTOS.forEach(function (k) { if (cj[k] === false) p.conjuntos[k] = false; else if (k === "ambientes" && cj[k] === true) p.conjuntos[k] = true; });
     return p;
   }
 
@@ -1161,7 +1316,7 @@
   function perspectivaDe(c, amb, pv) {
     var est = c.modelo.estado, B = BI(), G = GEO(), vista = (c.cfg && c.cfg.perspectiva && c.cfg.perspectiva.vista) || "SE", P = projetor(vista);
     var b = { x0: amb.x0, x1: amb.x1, z0: amb.z0, z1: amb.z1 }, KI = HI().K;
-    function dentro(p, f) { f = f || 0; return p.x >= b.x0 - f && p.x <= b.x1 + f && p.z >= b.z0 - f && p.z <= b.z1 + f; }
+    function dentro(p, f) { f = f || (c.grupo ? 0.12 : 0);   /* HIDRO-3D: no caderno por grupo o recorte é o MESMO da tabela (hidcaderno.dadosAmbiente, folga 0,12 m): toda linha da tabela tem a peça no isométrico */ return p.x >= b.x0 - f && p.x <= b.x1 + f && p.z >= b.z0 - f && p.z <= b.z1 + f; }
     var b0 = pv.base != null ? pv.base : pv.cota - K2.cortePiso, b1 = pv.sup != null ? pv.sup : pv.topo;
     var trs = arr(c.rede.trechos).filter(function (t) { var m = { x: (t.p1.x + t.p2.x) / 2, z: (t.p1.z + t.p2.z) / 2 }, ym = (t.p1.y + t.p2.y) / 2; return t.sistema !== "incendio" && dentro(m) && ym >= b0 - KI.tolPiso_m && ym < b1; });
     if (!trs.length) return null;
@@ -1170,7 +1325,8 @@
     /* o teto do recorte: a parede mais alta do ambiente (o ventilador que sobe à cobertura sai INTERROMPIDO nele) */
     var yTeto = pv.cota + K2.perspAltura; paredesDoPav(est, pv).forEach(function (w) { if (recortaEixo(w, b)) yTeto = Math.max(yTeto, Math.min(w.y1, pv.cota + K2.perspAlturaMax)); });
     yT = Math.min(yT, yTeto);
-    var faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
+    if (c.cortaY) yT = Math.min(yT, pv.cota + c.cortaY);   /* HIDRO-3D: detalhe por grupo - o prumo (ventilação) sai INTERROMPIDO acima desta altura do piso, como a folha da Tânia */
+    var par3d = [], faces = [], itens = [], cBox = P({ x: (b.x0 + b.x1) / 2, y: 0, z: (b.z0 + b.z1) / 2 }).d;
     /* arquitetura: piso e paredes recortadas pela caixa (até a altura do tubo mais alto + folga) */
     paredesDoPav(est, pv).forEach(function (w) {
       var r = recortaEixo(w, { x0: b.x0 - w.esp, x1: b.x1 + w.esp, z0: b.z0 - w.esp, z1: b.z1 + w.esp }); if (!r) return;
@@ -1178,12 +1334,15 @@
       if (P({ x: (r.a[0] + r.b[0]) / 2, y: 0, z: (r.a[1] + r.b[1]) / 2 }).d > cBox + K2.perspFrente) return;
       var he = w.esp / 2, pl = [[r.a[0] - w.n[0] * he, r.a[1] - w.n[1] * he], [r.b[0] - w.n[0] * he, r.b[1] - w.n[1] * he], [r.b[0] + w.n[0] * he, r.b[1] + w.n[1] * he], [r.a[0] + w.n[0] * he, r.a[1] + w.n[1] * he]];
       prisma(pl, Math.max(w.y0, pv.cota), Math.min(w.y1, yT + K2.perspTopo), P).forEach(function (f) { faces.push(f); });
+      par3d.push({ pl: pl, y0: Math.max(w.y0, pv.cota), y1: Math.min(w.y1, yT + K2.perspTopo) });   /* HIDRO-3D: a mesma parede em 3D para o render */
     });
     var piso = [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]].map(function (q) { return P({ x: q[0], y: pv.cota, z: q[1] }); });
     /* louças, metais e equipamentos: as LINHAS da malha real (silhueta e vincos vistos desta direção), em meio-tom — a louça
        é transparente e o esgoto que passa atrás dela aparece inteiro */
     var loucas = [];
     try { loucas = linhasLoucas(est, c.modelo.avaliarFam, P.viewer, function (fi) { return dentro(fi) && fi.y >= b0 - KI.tolPiso_m && fi.y < b1; }); } catch (e) { loucas = []; }
+    /* HIDRO-3D: no caderno por grupo a louça/móvel acima do recorte (chaminé da churrasqueira, armário alto) sai do enquadramento: o isométrico mostra o que está na altura da instalação */
+    if (c.grupo) loucas = loucas.filter(function (sg) { return sg[0][1] <= yT + 0.5 && sg[1][1] <= yT + 0.5; });
     /* tubos com o DE real, conexões brancas, caixas */
     trs.forEach(function (t) {
       var k = null; try { k = G ? G.cotasTubo(t.material, t.dn) : null; } catch (e) { k = null; }
@@ -1195,15 +1354,16 @@
       var c1 = em(ta), c2 = em(tb);
       var q1 = { x: c1.x, y: Math.min(c1.y, yT), z: c1.z }, q2 = { x: c2.x, y: Math.min(c2.y, yT), z: c2.z }, cortado = c1.y > yT + KI.tolPiso_m || c2.y > yT + KI.tolPiso_m;
       var a = P(q1), bb = P(q2);
-      itens.push({ tipo: "tubo", t: t, a: a, b: bb, cortado: cortado, de: (k && k.de > 0 ? k.de : +t.dn || 20) / 1000, d: (a.d + bb.d) / 2 });   // hid:ok mm → m
+      itens.push({ tipo: "tubo", t: t, a: a, b: bb, q1: q1, q2: q2, ta: ta, tb: tb, cortado: cortado, de: (k && k.de > 0 ? k.de : +t.dn || 20) / 1000, d: (a.d + bb.d) / 2 });   // hid:ok mm → m
     });
     arr(c.rede.conexoes).forEach(function (cx) {
       if (!dentro(cx) || cx.y < b0 || cx.y >= b1 || cx.y > yT + KI.tolPiso_m || cx.sistema === "incendio") return;
       var k = null; try { k = G ? G.cotasConexao(cx.material, cx.tipo, cx.dn) : null; } catch (e) { k = null; }
-      var p = P(cx); itens.push({ tipo: "conexao", p: p, r: (k && k.od > 0 ? k.od : (+cx.dn || 20) * K2.perspOd) / 2000, d: p.d + K2.perspFrente });   // hid:ok mm → m (raio)
+      var p = P(cx); itens.push({ tipo: "conexao", p: p, cx: cx, r: (k && k.od > 0 ? k.od : (+cx.dn || 20) * K2.perspOd) / 2000, d: p.d + K2.perspFrente });   // hid:ok mm → m (raio)
     });
     arr(c.rede.pecas).forEach(function (k) {
       if (!dentro(k) || k.y < b0 || k.y >= b1) return;
+      if (c.cortaY && k.y > yT + KI.tolPiso_m) return;   /* HIDRO-3D: acima do recorte do detalhe (terminal da ventilação): só na tabela, marcada */
       /* caixa sifonada / ralo: a TAMPA no piso com a grelha (como na planta), não um cubo */
       var Pc = B.PECAS[k.peca] || {}, hx = Pc.forma === "caixa" ? (Pc.w || K2.perspPeca * 2) / 2 : (Pc.r || K2.perspPeca), hz = Pc.forma === "caixa" ? (Pc.d || K2.perspPeca * 2) / 2 : (Pc.r || K2.perspPeca);
       var pl = [[k.x - hx, k.z - hz], [k.x + hx, k.z - hz], [k.x + hx, k.z + hz], [k.x - hx, k.z + hz]], gi = [];
@@ -1212,11 +1372,12 @@
     });
     var pontos = arr(c.rede.ligacoes).filter(function (l) { return l.tipo === "aparelho" && dentro(l) && l.y >= b0 && l.y < b1; });
     var acess = arr(c.rede.acessorios).filter(function (a) { return a.centro && dentro(a.centro) && a.centro.y >= b0 && a.centro.y < b1; });
-    return { faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB };
+    return { faces: faces, piso: piso, itens: itens, loucas: loucas, trs: trs, pontos: pontos, acess: acess, P: P, vista: vista, pv: pv, b: b, yB: yB, yT: yT, par3d: par3d };
   }
   function folhaPerspectiva(c) {
-    var D = c.D, a = c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
-    c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
+    var D = c.D, a = c.areaPersp || c.geo.area, T = D.E.T, KI = HI().K, pz = c.persp, h = KI.hPeq;
+    /* R01: o isométrico por ambiente (hidcaderno.js) usa esta mesma perspectiva dentro de um RETÂNGULO da folha (c.areaPersp), sem título nem legenda própria (c.semLegenda) */
+    if (!c.semLegenda) c.AP.tituloVista(D, a.x + 4, a.y + 2, c.titulo, "SEM ESCALA - isométrico 30°, vista " + pz.vista + "; alturas em m do piso acabado");
     /* enquadramento: tudo projetado a k = 1, depois a escala que cabe acima da faixa da legenda */
     var us = [], vs = [];
     function junta(p) { us.push(p.u); vs.push(p.v); }
@@ -1224,29 +1385,51 @@
     pz.itens.forEach(function (it) { if (it.pts) it.pts.forEach(junta); if (it.a) { junta(it.a); junta(it.b); } if (it.p) junta(it.p); });
     pz.loucas.forEach(function (sg) { junta(pz.P({ x: sg[0][0], y: sg[0][1], z: sg[0][2] })); });
     var u0 = Math.min.apply(null, us), u1 = Math.max.apply(null, us), v0 = Math.min.apply(null, vs), v1 = Math.max.apply(null, vs);
-    var hLeg = K2.perspLegenda, k = Math.min((a.w - 2 * K2.perspMargem) / Math.max(u1 - u0, 1e-6), (a.h - K2.titulo - hLeg - 2 * K2.perspMargem) / Math.max(v1 - v0, 1e-6), K2.perspKMax);
-    var ox = a.x + (a.w - (u1 - u0) * k) / 2 - u0 * k, oy = a.y + K2.titulo + K2.perspMargem + (a.h - K2.titulo - hLeg - 2 * K2.perspMargem - (v1 - v0) * k) / 2 - v0 * k;
+    var RA = c.raster || null;   /* HIDRO-3D: o isométrico é o RENDER do modelo 3D (js/hidrender3d.js): o raster cobre exatamente [u0,u1]x[v0,v1] */
+    if (RA) { u0 = RA.u0; u1 = RA.u1; v0 = RA.v0; v1 = RA.v1; }
+    /* HIDRO-3D: com a VISTA SALVA (c.vistaIso, js/hidvistaiso.js) as marcações são ANOTAÇÃO da vista: o desenho ocupa o miolo e as colunas dos balões ficam nas laterais */
+    var HVm = c.vistaIso && RA ? (global.HidVistaIso || (typeof require === "function" ? require("./hidvistaiso.js") : null)) : null, aMarcacao = a;
+    if (HVm) a = { x: a.x + HVm.K.colW, y: a.y, w: a.w - 2 * HVm.K.colW, h: a.h };
+    var hLeg = c.semLegenda ? 0 : K2.perspLegenda, hTit = c.semLegenda ? 0 : K2.titulo, kMax = c.perspKMax || K2.perspKMax, mg = c.semLegenda ? (c.perspMargem != null ? c.perspMargem : K2.perspMargem) : K2.perspMargem;
+    var k = Math.min((a.w - 2 * mg) / Math.max(u1 - u0, 1e-6), (a.h - hTit - hLeg - 2 * mg) / Math.max(v1 - v0, 1e-6), kMax);
+    var ox = a.x + (a.w - (u1 - u0) * k) / 2 - u0 * k, oy = a.y + hTit + mg + (a.h - hTit - hLeg - 2 * mg - (v1 - v0) * k) / 2 - v0 * k;
     function X(p) { return [p.u * k + ox, p.v * k + oy]; }
     /* 1) arquitetura translúcida (atrás de tudo) */
+    if (RA) {
+      var pI = X({ u: u0, v: v0 }), pF = X({ u: u1, v: v1 });
+      D.add('<rect x="' + n(pI[0]) + '" y="' + n(pI[1]) + '" width="' + n(pF[0] - pI[0]) + '" height="' + n(pF[1] - pI[1]) + '" fill="#ffffff" stroke="none"/>');
+      D.add('<image data-im="' + RA.key + '" x="' + n(pI[0]) + '" y="' + n(pI[1]) + '" width="' + n(pF[0] - pI[0]) + '" height="' + n(pF[1] - pI[1]) + '" preserveAspectRatio="none" href="' + RA.href + '"/>');
+      if (c.chk) c.chk.raster = (c.chk.raster || 0) + 1;
+    } else {
     D.add('<polygon points="' + pz.piso.map(function (p) { var q = X(p); return n(q[0]) + "," + n(q[1]); }).join(" ") + '" fill="' + K2.arq.preench + '" fill-opacity="0.45" stroke="' + K2.arq.contorno + '" stroke-width="' + n(K2.arq.mm) + '" data-cam="HID-CONTEXTO"/>');
     pz.faces.sort(function (p, q) { return p.d - q.d; }).forEach(function (f) {
       D.add('<polygon points="' + f.pts.map(function (p) { var q = X(p); return n(q[0]) + "," + n(q[1]); }).join(" ") + '" fill="' + (f.topo ? K2.arq.louca : K2.arq.preench) + '" fill-opacity="' + K2.perspAlfa + '" stroke="' + K2.arq.contorno + '" stroke-width="' + n(K2.arq.mm) + '" data-cam="HID-CONTEXTO"/>');
     });
     /* 2) as louças em meio-tom (linhas da malha real), atrás da tubulação: transparentes */
     pz.loucas.forEach(function (sg) { var A0 = X(pz.P({ x: sg[0][0], y: sg[0][1], z: sg[0][2] })), B0 = X(pz.P({ x: sg[1][0], y: sg[1][1], z: sg[1][2] })); D.linha(A0[0], A0[1], B0[0], B0[1], "HID-LOUCA"); });
+    }
     /* 3) instalações pela ordem de profundidade (pintor) */
-    var seg = [], L = [], S = [], Tt = [], pend = [];
+    var seg = [], L = [], S = [], Tt = [], pend = [], bal = [];
+    function tiraBal(id) { for (var ib = 0; ib < bal.length; ib++) if (bal[ib].id === id) { bal.splice(ib, 1); return; } }   /* a peça com chamada em caixa leva o código na própria chamada (sem balão duplicado) */
     function corDe(sis) { var cam = D.E.camadas["HID-" + (CAMADA_SIS[sis] || "AF") + "-TUBO"]; return cam ? cam.cor : "#000"; }
     /* caixa, ralo e conexão viram OBSTÁCULO dos rótulos (o texto não pousa em cima da peça) */
     function obst(pts) { var xs0 = pts.map(function (q) { return q[0]; }), ys0 = pts.map(function (q) { return q[1]; }); S.push({ tipo: "obst", x: 0, y: 0, r: 0, camada: "HID-SIMBOLO", box: [Math.min.apply(null, xs0), Math.min.apply(null, ys0), Math.max.apply(null, xs0), Math.max.apply(null, ys0)], id: "obst" + S.length, desenhado: true }); }
     pz.itens.sort(function (p, q) { return p.d - q.d; }).forEach(function (it) {
       if (it.tipo === "louca") { D.add('<polygon points="' + it.pts.map(function (p) { var q = X(p); return n(q[0]) + "," + n(q[1]); }).join(" ") + '" fill="#ffffff" fill-opacity="' + K2.perspAlfaLouca + '" stroke="' + K2.arq.louca + '" stroke-width="' + n(K2.contornoTubo * 1.4) + '" data-cam="HID-CONTEXTO"/>'); return; }
-      if (it.tipo === "peca") { var pp2 = it.pts.map(X); poliCheio(D, pp2, "#ffffff", "#444444", K2.contornoTubo * 1.4, "HID-CONEXAO"); arr(it.grade).forEach(function (gl) { var g0 = X(gl[0]), g1 = X(gl[1]); D.linha(g0[0], g0[1], g1[0], g1[1], "HID-CONEXAO"); }); obst(pp2); return; }
-      if (it.tipo === "conexao") { var pc = X(it.p), r = Math.max(it.r * k, K2.perspMin); obst([[pc[0] - r, pc[1] - r], [pc[0] + r, pc[1] + r]]); D.add('<circle cx="' + n(pc[0]) + '" cy="' + n(pc[1]) + '" r="' + n(r) + '" fill="#ffffff" stroke="#000" stroke-width="' + n(K2.contornoTubo) + '" data-cam="HID-CONEXAO"/>'); return; }
+      if (it.tipo === "peca") { var pp2 = it.pts.map(X); if (!RA) { poliCheio(D, pp2, "#ffffff", "#444444", K2.contornoTubo * 1.4, "HID-CONEXAO"); arr(it.grade).forEach(function (gl) { var g0 = X(gl[0]), g1 = X(gl[1]); D.linha(g0[0], g0[1], g1[0], g1[1], "HID-CONEXAO"); }); } obst(pp2);
+        var pcx = pp2.reduce(function (a0, q) { return [a0[0] + q[0] / pp2.length, a0[1] + q[1] / pp2.length]; }, [0, 0]);
+        if (c.codigoConexao && it.k) { var cod2 = c.codigoConexao(it.k); if (cod2) bal.push({ cod: cod2, p: pcx, id: it.k.id, d0: K2.perspD0 * 3 }); }
+        if (c.destaque && it.k) { var dt2 = c.destaque(it.k, "peca"); if (dt2 && c.agruparBaloes && c.codigoConexao) { var cq2 = c.codigoConexao(it.k); if (cq2) { dt2 = cq2 + "  " + dt2; tiraBal(it.k.id); } } if (dt2) pend.push({ s: dt2, h: h, tipo: "destaque", camada: "HID-TEXTO", trecho: it.k.id + "-dt", anchors: [pcx], prio: 2, chamadaMin: K2.chamadaPlanta, d0: K2.perspD0 * 5 }); }
+        return; }
+      if (it.tipo === "conexao") { var pc = X(it.p), r = Math.max(it.r * k, K2.perspMin); obst([[pc[0] - r, pc[1] - r], [pc[0] + r, pc[1] + r]]); if (!RA) D.add('<circle cx="' + n(pc[0]) + '" cy="' + n(pc[1]) + '" r="' + n(r) + '" fill="#ffffff" stroke="#000" stroke-width="' + n(K2.contornoTubo * 2) + '" data-cam="HID-CONEXAO"/>'); 
+        /* R01: o BALÃO de código da conexão (S-1, F-2…) do isométrico por ambiente: o número é o da tabela de conexões */
+        if (c.codigoConexao && it.cx) { var cod = c.codigoConexao(it.cx); if (cod) bal.push({ cod: cod, p: pc, id: it.cx.id, d0: r + K2.perspD0 }); }
+        if (c.destaque && it.cx) { var dtx = c.destaque(it.cx, "cx"); if (dtx && c.agruparBaloes && c.codigoConexao) { var cqx = c.codigoConexao(it.cx); if (cqx) { dtx = cqx + "  " + dtx; tiraBal(it.cx.id); } } if (dtx) pend.push({ s: dtx, h: h, tipo: "destaque", camada: "HID-TEXTO", trecho: it.cx.id + "-dt", anchors: [pc], prio: 2, chamadaMin: K2.chamadaPlanta, d0: r + K2.perspD0 * 4 }); }
+        return; }
       var A = X(it.a), Bp = X(it.b), dx = Bp[0] - A[0], dy = Bp[1] - A[1], Ls = Math.sqrt(dx * dx + dy * dy); if (Ls < 1e-6) return;
       var w = Math.max(it.de * k, K2.perspMin) / 2, nx = -dy / Ls * w, ny = dx / Ls * w;
       var pts = [[A[0] + nx, A[1] + ny], [Bp[0] + nx, Bp[1] + ny], [Bp[0] - nx, Bp[1] - ny], [A[0] - nx, A[1] - ny]];
-      poliCheio(D, pts, corDe(it.t.sistema), "#000", K2.contornoTubo, "HID-" + (CAMADA_SIS[it.t.sistema] || "AF") + "-TUBO");
+      if (!RA) poliCheio(D, pts, corDe(it.t.sistema), "#000", K2.contornoTubo, "HID-" + (CAMADA_SIS[it.t.sistema] || "AF") + "-TUBO");
       for (var e = 0; e < 4; e++) { var s0 = pts[e], s1 = pts[(e + 1) % 4]; seg.push([s0[0], s0[1], s1[0], s1[1]]); c.chk.tubos.push([s0[0], s0[1], s1[0], s1[1]]); }
       if (it.cortado) {   /* o símbolo de interrompido na ponta de cima */
         var top = A[1] < Bp[1] ? A : Bp, q = HI().K.quebraTam;
@@ -1254,6 +1437,25 @@
       }
       it.A = A; it.Bp = Bp; it.Ls = Ls;
     });
+    /* HIDRO-3D: balões agrupados — mesmo código e peças próximas = UM balão com a quantidade ("S-5 x3"); a meta é no máximo 15 por isométrico (como a folha da Tânia):
+       o raio de agrupamento cresce até caber. Sem c.agruparBaloes, um balão por peça (o desenho de antes). */
+    (function () {
+      var raios = c.agruparBaloes ? (c.raiosBalao || [12, 18, 26, 38, 56]) : [0], cl = [];
+      for (var ri = 0; ri < raios.length; ri++) {
+        cl = [];
+        bal.forEach(function (b) {
+          var hit = null;
+          if (raios[ri] > 0) cl.forEach(function (q) { if (!hit && q.cod === b.cod && Math.hypot(q.p[0] - b.p[0], q.p[1] - b.p[1]) <= raios[ri]) hit = q; });
+          if (hit) { hit.n++; hit.ids.push(b.id); } else cl.push({ cod: b.cod, p: b.p, n: 1, ids: [b.id], d0: b.d0 });
+        });
+        if (cl.length <= (c.maxBaloes || 15)) break;
+      }
+      c.nBaloes = cl.length; c.nBaloesPecas = bal.length;
+      cl.forEach(function (q) {
+        var tx0 = q.n > 1 ? q.cod + " x" + q.n : q.cod;
+        pend.push({ s: tx0, cod: q.cod, n: q.n, ids: q.ids, h: h, tipo: "codigo", rBox: Math.max(h * 1.15, larg(tx0, h) / 2 + 0.5), camada: "HID-TEXTO", trecho: q.ids[0], anchors: [q.p], prio: 1, chamadaMin: K2.chamadaPlanta, d0: q.d0 });
+      });
+    })();
     /* 3) rótulos: sistema + DN por corrida (o mais longo); verticais longas também */
     var rot = gruposRotulo(pz.trs, c.ix, KI), PDr = PAD();
     pz.itens.forEach(function (it) {
@@ -1280,8 +1482,26 @@
     var cantos = pz.piso.map(X).sort(function (p, q) { return q[1] - p[1]; }), cp = cantos[0];
     D.cheio([[cp[0], cp[1]], [cp[0] - K2.perspNivel, cp[1] - K2.perspNivel * 1.6], [cp[0] + K2.perspNivel, cp[1] - K2.perspNivel * 1.6]], "#000");
     pend.push({ s: "PISO ACABADO " + (pz.pv.cota > 0 ? "+" : pz.pv.cota < 0 ? "" : "±") + br(pz.pv.cota, 2), h: h, tipo: "nivel", camada: "HID-TEXTO", trecho: "piso", anchors: [[cp[0], cp[1] - K2.perspNivel]], prio: 0, d0: K2.perspD0 });
+    if (HVm) {
+      /* a VISTA manda: balões, rótulos de DN, chamadas e cotas de altura são anotação ligada à peça (auto-posicionada ou arrastada pelo usuário) */
+      var pIv = X({ u: u0, v: v0 }), pFv = X({ u: u1, v: v1 }), kVista = num(c.vistaIso.hidIso && c.vistaIso.hidIso.k, null);
+      /* R05: as colunas de balões encostam na REDE (caixa dos tubos), não no render inteiro (paredes, piso, móveis): chamada curta, como na folha da Tânia */
+      var bxR = { x0: pIv[0], y0: pIv[1], x1: pFv[0], y1: pFv[1] };
+      if (seg.length) { var sx = [], sy = []; seg.forEach(function (q) { sx.push(q[0], q[2]); sy.push(q[1], q[3]); }); bxR = { x0: Math.max(pIv[0], Math.min.apply(null, sx)), y0: Math.max(pIv[1], Math.min.apply(null, sy)), x1: Math.min(pFv[0], Math.max.apply(null, sx)), y1: Math.min(pFv[1], Math.max.apply(null, sy)) }; }
+      var rv = HVm.compor(D, c.vistaIso, { pend: pend, obst: S.filter(function (q) { return q.box; }).map(function (q) { return q.box; }), seg: seg, area: aMarcacao, bbox: bxR, larg: larg, escala: kVista ? k / kVista : 1 });
+      c.vistaRes = rv; c.kUsado = k; rv.avisos.forEach(function (m) { c.avisos.push("Vista " + (c.vistaIso.nome || "") + ": " + m); });
+    } else {
     HI().afastar(pend, S, L, Tt, seg, c.avisos);
     desenhar(D, { linhas: L, simbolos: S, textos: Tt }, 0, 0, c.chk);
+    /* R01: CHAMADA em caixa (como a referência da Tânia): moldura fina na cor-acento da casa em volta do texto da peça especial */
+    if (c.destaque) Tt.forEach(function (tx) {
+      if (tx.tipo !== "destaque") return;
+      var wd = larg(tx.s, tx.h);
+      D.add('<rect x="' + n(tx.x - wd / 2 - 1.2) + '" y="' + n(tx.y - tx.h * 0.95) + '" width="' + n(wd + 2.4) + '" height="' + n(tx.h * 1.45) + '" fill="none" stroke="#B5694A" stroke-width="0.2" data-cam="HID-CHAMADA"/>');
+    });
+    if (c.codigoConexao) Tt.forEach(function (tx) { if (tx.tipo === "codigo") D.circ(tx.x, tx.y - 0.37 * tx.h, Math.max(tx.h * 1.15, larg(tx.s, tx.h) / 2 + 0.5), "HID-SIMBOLO"); });
+    }
+    if (!c.semLegenda) {
     /* 5) legenda do ambiente: sistemas e peças com o ícone */
     var yL = a.y + a.h - hLeg + T.nota, xL = a.x + 4, sis = [], pecas = {};
     pz.trs.forEach(function (t) { if (sis.indexOf(t.sistema) < 0) sis.push(t.sistema); });
@@ -1303,6 +1523,7 @@
       if (xs + wv > a.x + a.w - 2) { xs = xL; yP += h * 2.2; }
       iconePeca(D, ic, "", xs, yP, K2.quadro.icone, h * 1.6); D.texto(xs + K2.quadro.icone + 1.5, yP + h * 1.15, nm, h, {}); xs += wv + 3;
     });
+    }
     c.prims.push({ linhas: L, simbolos: S, textos: Tt, trechos: pz.trs.map(function (t) { return t.id; }) });
     return { escala: "SEM ESCALA" };
   }
@@ -1805,6 +2026,23 @@
         });
       });
     }
+    /* R01: ISOMÉTRICO POR AMBIENTE (js/hidcaderno.js): o bloco da referência da Tânia (planta + isométrico com balões de código + tabelas), 2 por folha */
+    if (CJ.ambientes) {
+      var HCa = dep("HidCaderno", "./hidcaderno.js");
+      if (!HCa) avisos.push("O motor do isométrico por ambiente (js/hidcaderno.js) não carregou: folhas de ambiente não geradas.");
+      else pavs.forEach(function (pv) {
+        /* HIDRO-3D: um BLOCO por ambiente e grupo de sistema (água | esgoto e ventilação | pluvial | gás), 2 por folha; cada bloco parte só das peças modeladas do grupo */
+        var amL = HCa.ambientesDoModelo(ctx0, pv), nBlocos = 2, itensAm = [];
+        amL.forEach(function (am0) {
+          var gs0 = []; try { gs0 = HCa.gruposDoAmbiente(ctx0, am0, pv); } catch (eG) { gs0 = []; }
+          if (!gs0.length) itensAm.push({ am: am0, g: null }); else gs0.forEach(function (g0) { itensAm.push({ am: am0, g: g0.id, gn: g0.nome }); });
+        });
+        for (var ia = 0; ia < itensAm.length; ia += nBlocos) {
+          var gp = itensAm.slice(ia, ia + nBlocos);
+          defs.push({ id: "ambientes-" + (ia / nBlocos + 1), titulo: "ISOMÉTRICO POR AMBIENTE - " + gp.map(function (q) { return q.am.nome + (q.gn ? " (" + q.gn + ")" : ""); }).join(" E ") + (pavs.length > 1 ? " - " + pv.nome.toUpperCase() : ""), tipo: "ambientes", ambientes: gp.map(function (q) { return q.am; }), grupos: gp.map(function (q) { return q.g; }), pv: pv, numeros: gp.map(function (q, j) { return dois(ia + j + 1); }), grupo: "ambientes" });
+        }
+      });
+    }
     if (CJ.esquema) defs.push({ id: "esquema-vertical", titulo: "ESQUEMA VERTICAL - " + (caixasReais(modelo).length ? "RESERVAÇÃO, BARRILETE, " : "") + "ÁGUA FRIA E ESGOTO", tipo: "esquema", grupo: "esquema" });
     /* PRESSURIZAÇÃO (js/hidpressao.js): folha própria com o detalhe da instalação e a curva com o ponto de operação */
     var HPZp = dep("HidPressao", "./hidpressao.js");
@@ -1835,6 +2073,7 @@
         else if (df.tipo === "quadro") res = folhaQuadro(c);
         else if (df.tipo === "notas") res = folhaNotas(c);
         else if (df.tipo === "perspectiva") { c.persp = df.persp; res = folhaPerspectiva(c); }
+        else if (df.tipo === "ambientes") { c.pv = df.pv; res = dep("HidCaderno", "./hidcaderno.js").folhaAmbientes(c, df); }
         else if (df.tipo === "pressurizador") { c.modelo = c.modelo || modelo; res = dep("HidPressao", "./hidpressao.js").folhaPrancha(c); }
         else res = folhaDetalhes(c);
       } catch (e) { avisos.push("Folha " + dois(i + 1) + " (" + df.titulo + "): " + (e && e.message ? e.message : String(e))); D.texto(geo.area.x + K2.erroX, geo.area.y + K2.erroY, "ERRO AO DESENHAR ESTA FOLHA - ver avisos", E.T.titulo, { cor: K2.vermelho }); }
@@ -1845,8 +2084,8 @@
     var pr = P.normalizar({ id: "hidpranchas", nome: "Projeto hidrossanitário", formato: formato, orientacao: "paisagem", origem: "hidro",
       carimbo: { modelo: "RA", empresa: empObj ? "" : txt(emp), responsavel: txt(opcoes.responsavel), registro: txt(opcoes.registro), titulo: txt(opcoes.tituloProfissional),
                  obra: txt(opcoes.obra), proprietario: txt(opcoes.proprietario), contratante: txt(opcoes.contratante), local: txt(opcoes.local),
-                 codigo: codigo, data: data, revisoes: [[revNum, txt(opcoes.descricaoRevisao) || cfg.descricaoRevisao, data]] },
-      folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: codigo + " " + rev }; }) });
+                 codigo: codigo, data: data, revisoes: arr(opcoes.revisoesAnteriores).map(function (q) { return [txt(q[0]), txt(q[1]), txt(q[2])]; }).concat([[revNum, txt(opcoes.descricaoRevisao) || cfg.descricaoRevisao, data]]) },   /* R01: a linha da R00 fica no quadro de revisões */
+      folhas: feitas.map(function (f, i) { return { id: f.def.id, n: i + 1, conteudo: f.def.titulo, escala: f.escala, numero: prefixo + "-" + f.rotulo }; }) });   /* R01: o código do desenho é HID-nn (a revisão vai na coluna REV do carimbo), não "HID R00" */
     var nPrinc = feitas.length, verif = { folhas: [], sobreposicoes: 0, rotuloTubo: 0, rotuloCota: 0 }, nNotas = null;
     feitas.forEach(function (f) { if (f.def.tipo === "notas") nNotas = prefixo + "-" + f.rotulo; });
     var folhas = feitas.map(function (f, i) {
@@ -1894,7 +2133,24 @@
     return null;
   }
 
-  var HidPranchas = { VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
+  /* R01: o contexto-base (rede, índices do cálculo, pavimentos, ambientes) que o CADERNO (js/hidcaderno.js) e o isométrico por ambiente usam, no formato de folha escolhido */
+  function ctxBase(resultado, modelo, opcoes, formato) {
+    opcoes = opcoes || {};
+    var P = PR(), A = AP(), H = HI(), B = BI(), cfg = normalizarConfig(opcoes);
+    var rede = B.rede(modelo.estado, modelo.avaliarFam), ix = H.indicesResultado(resultado), avisos = [];
+    var pavs = arr(opcoes.pavimentos).filter(function (p) { return p && isFinite(+p.cota); }).map(function (p) { return { nome: txt(p.nome), cota: +p.cota }; }).sort(function (a, b) { return a.cota - b.cota; });
+    if (!pavs.length) pavs = [{ nome: "PISO", cota: 0 }];
+    pavs.forEach(function (p, i) { p.topo = i + 1 < pavs.length ? pavs[i + 1].cota : Infinity; p.base = i ? p.cota - K2.cortePiso : -Infinity; p.sup = i + 1 < pavs.length ? pavs[i + 1].cota - K2.cortePiso : Infinity; });
+    var geo = P.geometria(formato || "A3", "paisagem", "RA");
+    var colunas = colunasPublicas(H, arr(rede.trechos).filter(function (t) { return t.sistema === "agua_fria"; }), opcoes);
+    var ambientes = arr(opcoes.ambientes).length ? opcoes.ambientes : ambientesAuto(modelo.estado, pavs);
+    return { cfg: cfg, rede: rede, ix: ix, pavs: pavs, geo: geo, colunas: colunas, ambientes: ambientes, nomeAp: nomeAparelhoFn(modelo.estado), avisos: avisos, prims: [], modelo: modelo, r: resultado, AP: A, E: estilo() };
+  }
+  var _int = { paredesDoPav: paredesDoPav, ctxBase: ctxBase, estilo: estilo, marcarCamadas: marcarCamadas, perspectivaDe: perspectivaDe, folhaPerspectiva: folhaPerspectiva, formasDe: formasDe, formasPlanta: formasPlanta, plantaPrim: plantaPrim, desenhar: desenhar,
+    bordasTubo: bordasTubo, obstaculosFormas: obstaculosFormas, deTubo: deTubo, listasArq: listasArq, fundoArquitetura: fundoArquitetura, trechosDoPav: trechosDoPav, poliCheio: poliCheio, br: br, larg: larg, n: n, dois: dois, esc: esc,
+    CAMADA_SIS: CAMADA_SIS, NOME_SIS: NOME_SIS, NOME_SIS_Q: NOME_SIS_Q, ORD_SIS_P: ORD_SIS_P, notasDe: notasDe, legendaItens: legendaItens, simboloLeg: simboloLeg, nomeFamilia: nomeFamilia, rotuloPecaPlanta: rotuloPecaPlanta,
+    paredesDoPav: paredesDoPav, paredesHidraulicas: paredesHidraulicas, desenhoCorte: desenhoCorte, recortaEixo: recortaEixo, linhasLoucas: linhasLoucas, APARELHO_RE: APARELHO_RE, caixasReais: caixasReais, dnRotulo: dnRotulo, gruposRotulo: gruposRotulo, iconePeca: iconePeca, conferirFolha: conferirFolha, hoje: hoje, FONTE: FONTE, PAD: PAD, dist3d: dist3d };
+  var HidPranchas = { _int: _int, VERSAO: 2, K2: K2, gerar: gerar, exportar: exportar, estilo: estilo, trechosDoPav: trechosDoPav,
     configPadrao: configPadrao, normalizarConfig: normalizarConfig, ambientesAuto: ambientesAuto, paraDxf: paraDxf, conferirFolha: conferirFolha,
     CONJUNTOS: CONJUNTOS, ROTULO_CONJUNTO: ROTULO_CONJUNTO, SISTEMAS_FOLHA: SISTEMAS_FOLHA, FORMATOS: FORMATOS_OK, _segQuad: segQuad, _aciDe: aciDe };
   global.HidPranchas = HidPranchas;

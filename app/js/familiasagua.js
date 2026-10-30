@@ -84,6 +84,14 @@
     "ra-lazer-churrasqueira-tijolinho-a": { amb: "gourmet", parede: "0", tampo: "Altura_bancada", esgoto: "embutir", torneira: "mesa", quente: false, kit: "bancada_cozinha",
       cubas: [{ x: "-(Largura_bancada + Largura_forno + Largura_torre)/2 + Largura_bancada/2 - Largura_bancada*0.18", visivel: "Cuba" }],
       fonte: "js/familiaschurras.js opção A (cuba de inox na bancada, a 18 % da largura à esquerda do meio)" },
+    /* R03 (Casa 487): famílias da obra feitas por fórmula (sem `mob`), sem conectores: bancadas R14 (cuba redonda no eixo, x = 0; face do tampo em 0,855 m,
+       z = 0 é o fundo) e a gourmet R11 (cuba em x = Comp_pia/2; Alt_bancada/Alt_cuba são parâmetros da família) */
+    "c487-r14-bancada-suite": { amb: "banheiro", parede: "0", tampo: "0.855", esgoto: "apoio", cubas: [{ x: "0" }], torneira: "mesa", quente: true, kit: "bancada_banho",
+      fonte: "familia c487-r14-bancada-suite (R14): cuba redonda de apoio no eixo; tampo de granito com face a 0,855 m" },
+    "c487-r14-bancada-social": { amb: "banheiro", parede: "0", tampo: "0.855", esgoto: "apoio", cubas: [{ x: "0" }], torneira: "mesa", quente: true, kit: "bancada_banho",
+      fonte: "familia c487-r14-bancada-social (R14): cuba redonda de apoio no eixo; tampo de granito com face a 0,855 m" },
+    "c487-gourmet-churrasqueira-lenha": { amb: "gourmet", parede: "0", tampo: "Alt_bancada", esgoto: { inox: "Alt_cuba", topo: "0" }, cubas: [{ x: "Comp_pia / 2", visivel: "Com_pia" }], torneira: "mesa", quente: false, kit: "bancada_cozinha",
+      fonte: "familia c487-gourmet-churrasqueira-lenha (R11): cuba de inox em x = Comp_pia/2, fundo Alt_cuba abaixo do tampo" },
     "ra-cat-tanque-lavanderia-gabinete": { amb: "servico", parede: "0", tampo: "Altura", esgoto: { inox: "min(0.3; Altura*0.45)", topo: "0" }, torneira: "parede", quente: false, kit: "tanque_familia",
       cubas: [{ x: "0" }], fonte: "js/familiascat.js G.tanque (bacia de min(0,30; 45 % da altura) no eixo)" }
   };

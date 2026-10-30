@@ -9819,6 +9819,10 @@ var obraM = fonte ? String(fonte.obraId || "geral") : (this._bimSel || "geral");
 var extras = {}, ex0 = (this._opExtras && this._opExtras.obra === obraM) ? this._opExtras.dados : {};
 Object.keys(ex0 || {}).forEach(function (k) { if (!/^cad-/.test(k)) extras[k] = ex0[k]; });
 if (d2 && d2.cad) Object.keys(d2.cad).forEach(function (nv) { (d2.cad[nv] || []).forEach(function (v) { var dd = Bim2D._cadDados(v.id); if (dd) extras["cad-" + v.id + ".json"] = dd; }); });
+try {
+var vhid = fonte ? [] : (Store.listar(eid(), "bim_vistas") || []).filter(function (v) { return v && v.hidIso && String(v.obraId || "") === String(this._bimSel || ""); }, this);
+if (vhid.length) extras["hid-vistas.json"] = { versao: 1, vistas: JSON.parse(JSON.stringify(vhid)) };
+} catch (eHv) { }
 var obra = obraM !== "geral" ? Store.obter(eid(), "obras", obraM) : null;
 return { proj: { nome: (obra && obra.nome) || "Projeto OrçaPRO", modelo: { edicao: ops, niveis: niveis, desenho2d: d2, malhas: optsMalha, disciplinas: fontes.map(function (x) { return { nome: x.nome, disciplina: x.disciplina }; }) }, familias: familias, ifcs: ifcs, malhas: malhas, extras: extras }, semFonte: semFonte };
 },
@@ -9916,6 +9920,14 @@ Bim2D._cadMem[mc[1]] = r.extras[k];
 try { localStorage.setItem(Bim2D._cadChave(mc[1]), JSON.stringify(r.extras[k])); } catch (eC) {}
 });
 this._opExtras = { obra: obraId, dados: r.extras || {} };
+try {
+var hv = r.extras && r.extras["hid-vistas.json"];
+if (hv && Array.isArray(hv.vistas) && window.HidVistaIso) hv.vistas.forEach(function (v) {
+if (!v || !v.hidIso) return;
+v.obraId = obraId === "geral" ? "" : String(obraId); v.id = HidVistaIso.idDa(v.obraId, v.hidIso);
+Store.salvar(eid(), "bim_vistas", v);
+});
+} catch (eHv2) { }
 var seq = Promise.resolve();
 (r.ifcs || []).forEach(function (x) {
 var disc = ((m.disciplinas || []).filter(function (d) { return d.nome === x.nome || d.nome + ".ifc" === x.nome; })[0] || {}).disciplina;
@@ -10970,6 +10982,7 @@ _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) {
 _bimVistaIr: function (id) {
 var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
 if (v.hid3d && window.HidPranchasUI && HidPranchasUI.reabrir3d) { HidPranchasUI.reabrir3d(v); return; }
+if (v.hidIso && window.HidVistaIsoUI && HidVistaIsoUI.reabrir) { HidVistaIsoUI.reabrir(v); return; }
 if (this._bimModoRevit() && BIM.vistaNova && BIM.vistaTemEstado) { this._bimVxAbrirPonto(v); return; }
 var r = BIM.aplicarVista(v);
 if (!r.ok) { UI.toast("Não consegui aplicar esta vista: " + (r.erro || ""), "erro"); return; }
@@ -70974,5 +70987,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=7755be9bb4"},{"src":"js/bim-pacote.js?v=46b22a7669","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=f4a8feecaf"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=a4c7c37a65"},{"src":"js/bim-pacote.js?v=d240f17dbc","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5d244b9eae"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

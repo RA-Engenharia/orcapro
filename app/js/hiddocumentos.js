@@ -154,7 +154,7 @@
     }
     if (fix) return { ok: false, tipo: "fixture", rep: rep, pen: pen, txt: '<span class="falha">NÃO É NORMA</span> — calculado com tabelas de teste' };
     if (rep || erros) return { ok: false, tipo: "reprovado", rep: rep, pen: pen, txt: '<span class="falha">Não atende</span> — ' + [rep ? rep + " verificação(ões) reprovada(s)" : "", erros ? erros + " aviso(s) de erro" : "", pen ? pen + " item(ns) a confirmar" : ""].filter(Boolean).join("; ") + " (ver o memorial de cálculo)." };
-    if (pen) return { ok: false, tipo: "emitido", rep: 0, pen: pen, txt: '<span class="pend">Emitido para execução — com ' + pen + (pen === 1 ? " item a confirmar" : " itens a confirmar") + "</span> (ver o quadro de confirmações no memorial de cálculo)." };
+    if (pen) return { ok: false, tipo: "emitido", rep: 0, pen: pen, txt: '<span class="pend">' + (global.HidStatusEmissao || "Emitido para execução") + ' — com ' + pen + (pen === 1 ? " item a confirmar" : " itens a confirmar") + "</span> (ver o quadro de confirmações no memorial de cálculo)." };
     if (!(r && r.ok === true) || (k && k.ok !== true)) return { ok: false, tipo: "incompleto", rep: 0, pen: 0, txt: '<span class="falha">Não verificado — situação incompleta</span> (ver o memorial de cálculo).' };
     return { ok: true, tipo: "atende", rep: 0, pen: 0, txt: '<span class="ok">Atende — todas as verificações desta emissão atendem</span>.' };
   }

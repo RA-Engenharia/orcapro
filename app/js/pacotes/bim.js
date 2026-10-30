@@ -35507,11 +35507,11 @@ function pagina(svg) {
 var s = txt(svg), raiz = /<svg\b([^>]*)>/.exec(s); if (!raiz) return null;
 var ra = attrs(raiz[1]), vb = txt(ra.viewBox).split(/[\s,]+/).map(Number), W = vb.length === 4 ? vb[2] : num(ra.width, 210), H = vb.length === 4 ? vb[3] : num(ra.height, 297);
 var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
-var nTexto = 0, nTraco = 0, nPulado = 0;
+var nTexto = 0, nTraco = 0, nPulado = 0, ims = {}, clips = {}, emClip = null;
 function X(x, g) { return (x + g.tx) * PT; }
 function Y(y, g) { return (H - (y + g.ty)) * PT; }
 function herda(a) {
-var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso };
+var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
 var t = translate(a.transform); n.tx += t[0]; n.ty += t[1];
 if (a.fill != null) n.fill = a.fill; if (a.stroke != null) n.stroke = a.stroke; if (a["stroke-width"] != null) n.sw = a["stroke-width"];
 if (a["font-size"] != null) n.fs = a["font-size"]; if (a["text-anchor"] != null) n.anchor = a["text-anchor"]; if (a["font-weight"] != null) n.peso = a["font-weight"];
@@ -35537,7 +35537,17 @@ if (m[5] != null) { if (emTexto && !emTitulo) emTexto.t += m[5]; continue; }
 var fecha = m[1] === "/", nome = m[2].toLowerCase(), a = attrs(m[3]), auto = m[4] === "/";
 if (nome === "svg") continue;
 if (nome === "title" || nome === "desc") { emTitulo = !fecha && !auto; continue; }
-if (nome === "g") { if (fecha) { if (pilha.length > 1) pilha.pop(); } else if (!auto) pilha.push(herda(a)); continue; }
+if (nome === "clippath") { emClip = fecha || auto ? null : (a.id || ""); continue; }
+if (emClip != null) { if (nome === "rect" && !fecha) clips[emClip] = { x: num(a.x, 0), y: num(a.y, 0), w: num(a.width, 0), h: num(a.height, 0) }; continue; }
+if (nome === "g") {
+if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); } }
+else if (!auto) {
+var ng = herda(a), mc = /url\(\s*#([^)\s]+)\s*\)/.exec(txt(a["clip-path"])), cl = mc ? clips[mc[1]] : null;
+if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * PT) + " " + f(cl.h * PT) + " re W n"); ng.clip = true; }
+pilha.push(ng);
+}
+continue;
+}
 var g = pilha[pilha.length - 1];
 if (nome === "text") {
 if (!fecha) { emTexto = { a: a, g: herda(a), t: "" }; if (auto) emTexto = null; continue; }
@@ -35548,7 +35558,8 @@ var corpo = num(tg.fs, 3), neg = /bold|[6-9]00/.test(txt(tg.peso)), w = largura(
 var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0), y = num(ta.y, 0), rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
 var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
 ops.push(f(fc[0]) + " " + f(fc[1]) + " " + f(fc[2]) + " rg");
-ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn) + " " + f(c) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
+var it = /italic|oblique/.test(txt(ta["font-style"])) ? 0.2 : 0;
+ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
 nTexto++;
 continue;
 }
@@ -35567,9 +35578,12 @@ ops.push(P(cx + r, cy) + " m", P(cx + r, cy + k) + " " + P(cx + k, cy + r) + " "
 P(cx - r, cy - k) + " " + P(cx - k, cy - r) + " " + P(cx, cy - r) + " c", P(cx + k, cy - r) + " " + P(cx + r, cy - k) + " " + P(cx + r, cy) + " c", "h");
 pintar(a, g, true, true);
 }
-} else if (nome === "image") nPulado++;
+} else if (nome === "image") {
+var ik = txt(a["data-im"]).replace(/[^A-Za-z0-9]/g, "");
+if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * PT) + " 0 0 " + f(num(a.height, 0) * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
 }
-return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado };
+}
+return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, ims: Object.keys(ims) };
 }
 function paginas(svgs) { return (Array.isArray(svgs) ? svgs : [svgs]).map(pagina).filter(Boolean); }
 function pdf(svgs, info) {
@@ -35581,7 +35595,9 @@ objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAns
 objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
 objs.push("<< /Title (" + win1252(txt(info.titulo || "Desenho")) + ") /Producer (OrcaPRO) /Creator (OrcaPRO Modela) >>");
 var imgs = (Array.isArray(info.imagens) ? info.imagens : []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; });
-var baseImg = 6 + 2 * pgs.length;
+var baseImg = 6 + 2 * pgs.length, porChave = info.imagensPorChave || {}, chavesUsadas = [];
+pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && typeof porChave[k].jpeg === "string" && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
+var baseCh = baseImg + imgs.length;
 pgs.forEach(function (p, i) {
 var cont = p.ops.join("\n"), xo = [];
 imgs.forEach(function (im, k) {
@@ -35589,12 +35605,14 @@ if (num(im.pagina, 0) !== i) return;
 xo.push("/Im" + k + " " + (baseImg + k) + " 0 R");
 cont += "\nq " + f(num(im.w, 10) * PT) + " 0 0 " + f(num(im.h, 10) * PT) + " " + f(num(im.x, 0) * PT) + " " + f((p.h - num(im.y, 0) - num(im.h, 10)) * PT) + " cm /Im" + k + " Do Q";
 });
+(p.ims || []).forEach(function (kc) { var ix = chavesUsadas.indexOf(kc); if (ix >= 0) xo.push("/Im_" + kc + " " + (baseCh + ix) + " 0 R"); });
 objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
 objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
 });
 imgs.forEach(function (im) {
 objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
 });
+chavesUsadas.forEach(function (k) { var im = porChave[k]; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream"); });
 var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
 objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
 var xref = s.length;
@@ -86955,6 +86973,12 @@ fonte: "js/familiasmobcoz.js ra-banho-bancada (cuba de apoio: 1 no eixo ou 2 a �
 "ra-lazer-churrasqueira-tijolinho-a": { amb: "gourmet", parede: "0", tampo: "Altura_bancada", esgoto: "embutir", torneira: "mesa", quente: false, kit: "bancada_cozinha",
 cubas: [{ x: "-(Largura_bancada + Largura_forno + Largura_torre)/2 + Largura_bancada/2 - Largura_bancada*0.18", visivel: "Cuba" }],
 fonte: "js/familiaschurras.js opção A (cuba de inox na bancada, a 18 % da largura à esquerda do meio)" },
+"c487-r14-bancada-suite": { amb: "banheiro", parede: "0", tampo: "0.855", esgoto: "apoio", cubas: [{ x: "0" }], torneira: "mesa", quente: true, kit: "bancada_banho",
+fonte: "familia c487-r14-bancada-suite (R14): cuba redonda de apoio no eixo; tampo de granito com face a 0,855 m" },
+"c487-r14-bancada-social": { amb: "banheiro", parede: "0", tampo: "0.855", esgoto: "apoio", cubas: [{ x: "0" }], torneira: "mesa", quente: true, kit: "bancada_banho",
+fonte: "familia c487-r14-bancada-social (R14): cuba redonda de apoio no eixo; tampo de granito com face a 0,855 m" },
+"c487-gourmet-churrasqueira-lenha": { amb: "gourmet", parede: "0", tampo: "Alt_bancada", esgoto: { inox: "Alt_cuba", topo: "0" }, cubas: [{ x: "Comp_pia / 2", visivel: "Com_pia" }], torneira: "mesa", quente: false, kit: "bancada_cozinha",
+fonte: "familia c487-gourmet-churrasqueira-lenha (R11): cuba de inox em x = Comp_pia/2, fundo Alt_cuba abaixo do tampo" },
 "ra-cat-tanque-lavanderia-gabinete": { amb: "servico", parede: "0", tampo: "Altura", esgoto: { inox: "min(0.3; Altura*0.45)", topo: "0" }, torneira: "parede", quente: false, kit: "tanque_familia",
 cubas: [{ x: "0" }], fonte: "js/familiascat.js G.tanque (bacia de min(0,30; 45 % da altura) no eixo)" }
 };
@@ -91601,9 +91625,9 @@ return null;
 var SISTEMAS = {
 agua_fria: { nome: "Água fria", abrev: "AF", cor: "#1E6FD9", grupo: "agua", gravidade: false, materiais: ["pvc_soldavel", "ppr", "cpvc", "cobre"], material: "pvc_soldavel" },
 agua_quente: { nome: "Água quente", abrev: "AQ", cor: "#D93025", grupo: "agua", gravidade: false, materiais: ["ppr", "cpvc", "cobre"], material: "ppr" },
-esgoto: { nome: "Esgoto", abrev: "ES", cor: "#7B4A2A", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
-ventilacao: { nome: "Ventilação", abrev: "VE", cor: "#B08A6E", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
-pluvial: { nome: "Pluvial", abrev: "AP", cor: "#2E9E44", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },
+esgoto: { nome: "Esgoto", abrev: "ES", cor: "#2E9E44", grupo: "esgoto", gravidade: true, materiais: ["pvc_esgoto", "pvc_serie_r", "pvc_esgoto_enterrado"], material: "pvc_esgoto" },
+ventilacao: { nome: "Ventilação", abrev: "VE", cor: "#8C8C8C", grupo: "ventilacao", gravidade: false, materiais: ["pvc_esgoto", "pvc_serie_r"], material: "pvc_esgoto" },
+pluvial: { nome: "Pluvial", abrev: "AP", cor: "#00ACC1", grupo: "pluvial", gravidade: true, materiais: ["pvc_serie_r", "pvc_esgoto", "pvc_esgoto_enterrado"], material: "pvc_serie_r" },
 eletrica: { nome: "Elétrica (eletroduto)", abrev: "EL", cor: "#F2B600", grupo: "eletrica", gravidade: false, materiais: ["elet_corrugado_ref", "elet_corrugado", "elet_roscavel", "elet_soldavel"], material: "elet_corrugado_ref" },
 ar: { nome: "Ar-condicionado (duto)", abrev: "AR", cor: "#7F95A8", grupo: "ar", gravidade: false, materiais: ["duto_chapa", "duto_flex"], material: "duto_chapa" },
 frigorigeno: { nome: "Frigorígeno (cobre)", abrev: "FR", cor: "#0FA3A3", grupo: "frigorigeno", gravidade: false, materiais: ["cobre_frigorigeno"], material: "cobre_frigorigeno" },
@@ -96214,9 +96238,9 @@ isometrico: "baixo", desenho: "alto", chamada: "alto" };
 var ESTILO_SIS = {
 agua_fria: { cor: "#1E6FD9", mm: 0.35, pena: 5, padrao: "continua" },
 agua_quente: { cor: "#D93025", mm: 0.35, pena: 5, padrao: "continua" },
-esgoto: { cor: "#7B4A2A", mm: 0.50, pena: 6, padrao: "continua" },
-ventilacao: { cor: "#B08A6E", mm: 0.25, pena: 4, padrao: "oculta" },
-pluvial: { cor: "#2E9E44", mm: 0.35, pena: 5, padrao: "continua" },
+esgoto: { cor: "#2E9E44", mm: 0.50, pena: 6, padrao: "continua" },
+ventilacao: { cor: "#8C8C8C", mm: 0.25, pena: 4, padrao: "oculta" },
+pluvial: { cor: "#00ACC1", mm: 0.35, pena: 5, padrao: "continua" },
 incendio: { cor: "#C62828", mm: 0.35, pena: 5, padrao: "continua" },
 industrial: { cor: "#6D4C41", mm: 0.35, pena: 5, padrao: "continua" },
 gas: { cor: "#C9A400", mm: 0.35, pena: 5, padrao: "continua" },

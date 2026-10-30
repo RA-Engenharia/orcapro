@@ -264,7 +264,7 @@
   var dirs = [[0, -1], [0, 1], [1, 0], [-1, 0], [1, -1], [-1, -1], [1, 1], [-1, 1]];
   pendentes.forEach(function (it) {
     var w = largTexto(it.s, it.h), hb = it.h * K.caixaAlt, hw, hh, r0 = 0;
-    if (it.balao) { var rb = Math.max(K.rBalaoMin, w / 2 + 0.8); hw = rb; hh = rb; } else { hw = w / 2; hh = hb / 2; }
+    if (it.balao) { var rb = Math.max(K.rBalaoMin, w / 2 + 0.8); hw = rb; hh = rb; } else if (it.rBox > 0) { hw = it.rBox; hh = it.rBox; } else { hw = w / 2; hh = hb / 2; }   /* R02: rBox = raio do círculo desenhado em volta do texto (balão de código) — a caixa reservada é o CÍRCULO, nunca só o texto */
     var melhor = null, dIni = it.d0 != null ? it.d0 : K.d0;
     for (var ring = 0; ring < K.aneis && !(melhor && melhor.livre && ring > melhor.ring + 1); ring++) {
       var d = dIni + ring * K.dPasso;
@@ -287,6 +287,7 @@
     if (!melhor) { avisos.push("Rótulo \"" + it.s + "\" (" + it.trecho + ") sem lugar livre."); return; }
     ocupados.push(melhor.box); obstaculos.push(melhor.box);
     var tx = melhor.cx, tyb = melhor.box[1] + (it.balao ? (melhor.box[3] - melhor.box[1]) / 2 - it.h * K.caixaAlt / 2 : 0) + it.h * K.base;
+    if (it.rBox > 0 && !it.balao) tyb = melhor.cy + 0.37 * it.h;   /* texto centrado no círculo (o desenho do círculo usa y - 0,37 h) */
     if (it.balao) {
       var rb2 = (melhor.box[2] - melhor.box[0]) / 2;
       S.push({ tipo: "balao", x: melhor.cx, y: melhor.cy, r: rb2, camada: "HID-SIMBOLO", box: melhor.box, id: it.s, trecho: it.trecho, desenhado: true });

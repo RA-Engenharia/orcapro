@@ -15124,6 +15124,7 @@ caixasDe: function (uids) { return (S && S._caixasDe) ? S._caixasDe(uids) : {}; 
 linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
 linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
 caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },
+three: function () { return THREE; },
 materiaisRealistas: function (on) {
 if (S && S._estPrevia && S._estPrevia() && S._estiloVisual) {
 if (S._texGravarPref) S._texGravarPref(!!on);

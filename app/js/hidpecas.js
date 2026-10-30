@@ -265,13 +265,18 @@
       if (!f || !f.famId) return;
       var fc = familia(f.famId) || (op.mapeamentos && op.mapeamentos[f.famId] ? mapear(f.famId, op.mapeamentos[f.famId], f.nome) : null);
       if (!fc && !/^(hid|ra-clim)-/.test(f.famId)) return;
-      var k = f.famId + "|" + (f.tipoId || "");
-      if (!grupos[k]) { grupos[k] = { fc: fc, famId: f.famId, tipoId: f.tipoId, n: 0 }; ordem.push(k); }
+      /* Casa 487 R05 (HID-12): equipamento lançado só como RESERVA DE ESPAÇO (ex.: condensadora a definir no projeto de climatização) não é material
+         do hidro — linha própria, marcada, fora da compra (mesmo padrão do "incluso": total nulo) */
+      var reserva = /\breserva\b/i.test(txt(f.comentarios) + " " + txt(f.inst && (f.inst.Nome || f.inst.nome)));
+      var k = f.famId + "|" + (f.tipoId || "") + (reserva ? "|reserva" : "");
+      if (!grupos[k]) { grupos[k] = { fc: fc, famId: f.famId, tipoId: f.tipoId, n: 0, reserva: reserva }; ordem.push(k); }
       grupos[k].n++;
     });
     ordem.forEach(function (k) {
       var g = grupos[k], prod = g.fc ? arr((g.fc.comercial || {}).produtos).filter(function (p) { return p[0] === g.tipoId; })[0] : null;
-      out.push(linha(g.fc, { classe: "louca", descricao: nomeLegivel(g.famId), unidade: "un", quantidade: g.n, produto: prod || null }));
+      var lf = linha(g.fc, { classe: "louca", descricao: nomeLegivel(g.famId), unidade: "un", quantidade: g.n, produto: prod || null });
+      if (g.reserva) { lf.descricao = txt(lf.descricao) + " - RESERVA DE ESPAÇO (não compra no hidro)"; var crit = "reserva de espaço: equipamento a definir em projeto próprio (climatização) — não entra na compra do hidrossanitário"; lf.reserva = true; lf.incluso = crit; lf.total = null; lf.preco = { pendente: false, valor: null, incluso: true, criterio: crit }; }
+      out.push(lf);
     });
     return out;
   }

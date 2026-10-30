@@ -356,7 +356,7 @@
         [rep ? plural(rep, "verificação reprovada", "verificações reprovadas") : "", itens.length ? plural(itens.length, "item a confirmar", "itens a confirmar") : "", erros ? plural(erros, "aviso de erro", "avisos de erro") : ""].filter(Boolean).join("; ") + "." };
     }
     if (itens.length) {
-      return { ok: false, tipo: "emitido", n: itens.length, txt: '<span class="pend">Emitido para execução — com ' + plural(itens.length, "item a confirmar", "itens a confirmar") + "</span> (ver quadro na seção " + S("confirmacoes") + ")." };
+      return { ok: false, tipo: "emitido", n: itens.length, txt: '<span class="pend">' + (global.HidStatusEmissao || "Emitido para execução") + ' — com ' + plural(itens.length, "item a confirmar", "itens a confirmar") + "</span> (ver quadro na seção " + S("confirmacoes") + ")." };
     }
     if (r.ok !== true || (ks && !ks.ok)) {
       return { ok: false, tipo: "incompleto", n: 0, txt: '<span class="falha">Não verificado — situação incompleta</span> (ver seção ' + S("pendencias") + ")." };
@@ -633,7 +633,7 @@
     var tq = objs(es.tubosQueda);
     if (tq.length) h += "<p>Tubos de queda identificados: " + tq.map(function (q) { return t(typeof q === "object" ? (q.id || q.nome || JSON.stringify(q)) : q, "es"); }).join(", ") + ".</p>";
     h += h3(S("es") + ".3 Desconectores e caixas");
-    h += naoAbrCaixa(d, "o resultado não dimensiona caixas de inspeção, caixas de gordura, fossa/filtro/sumidouro nem a distância do coletor ao ponto de lançamento. Esses itens ficam para emissão posterior ou para cálculo à parte. Os avisos de desconector (distância à ventilação) constam na seção " + S("pendencias") + ".", "caixas de inspeção, caixa de gordura e destino final do esgoto");
+    h += naoAbrCaixa(d, "o resultado não dimensiona caixas de inspeção, fossa/filtro/sumidouro nem a distância do coletor ao ponto de lançamento (a caixa de gordura tem tipo e capacidade pelas decisões do projeto, NBR 8160, 5.1.5.1). Esses itens ficam para emissão posterior ou para cálculo à parte. Os avisos de desconector (distância à ventilação) constam na seção " + S("pendencias") + ".", "caixas de inspeção e destino final do esgoto (a caixa de gordura consta nas decisões do projeto)");
     return h;
   }
 
@@ -757,7 +757,7 @@
       h += d.tab("Reservatório de água de chuva — métodos", ["Método", thn("Volume (L)"), "Passos", "Situação"],
         objs(apr.metodos).map(function (m) { return trw([td(t(m.metodo, "ap")), tn(br(m.volume_L, 0)), td(passosLista(m.passos, "ap método")), td(sit(m.status))], clsLinha(m.status)); }), { classe: "compacta", vazio: "Métodos não calculados (<b>não verificado</b>)." });
     }
-    if (chs.length) d.naoAbrangido("pluvial: bocal de saída das calhas pelo ábaco da NBR 10844 (lâmina × comprimento) — ábaco não digitalizado");
+    if (chs.length && !chs.some(function (c0) { return c0 && c0.bocal; })) d.naoAbrangido("pluvial: bocal de saída das calhas pelo ábaco da NBR 10844 (lâmina × comprimento) — ábaco não digitalizado");
     d.naoAbrangido("pluvial: calhas de piso e grelhas (tabela do fabricante não transcrita)");
     return h;
   }
@@ -990,7 +990,7 @@
     h += d.tab("Situação por sistema", ["Sistema", "Situação"], linhas, { classe: "ficha" });
     var rep = c.verifs.filter(function (v) { return v.status === "reprovado"; }).length + (ks ? ks.rep : 0);
     var pen = arr(r.pendencias).length + c.verifs.filter(function (v) { return v.status === "pendente"; }).length + (ks ? ks.pen : 0);
-    if (g.tipo === "emitido") h += "<p>O projeto está <b>emitido para execução</b>: sem reprovação nos sistemas calculados. " + plural(g.n, "item depende", "itens dependem") + " de confirmação do responsável técnico, cada um com a premissa adotada (<a href=\"#sec-confirmacoes\">seção " + S("confirmacoes") + "</a>). Confirmado ou corrigido o item, a revisão seguinte registra a confirmação.</p>";
+    if (g.tipo === "emitido") h += "<p>O projeto está <b>" + (global.HidStatusEmissao ? global.HidStatusEmissao.toLowerCase() : "emitido para execução") + "</b>: sem reprovação nos sistemas calculados. " + plural(g.n, "item depende", "itens dependem") + " de confirmação do responsável técnico, cada um com a premissa adotada (<a href=\"#sec-confirmacoes\">seção " + S("confirmacoes") + "</a>). Confirmado ou corrigido o item, a revisão seguinte registra a confirmação.</p>";
     else if (g.ok) h += "<p>As verificações desta emissão atendem aos critérios indicados na seção " + S("normas") + ". Os itens não abrangidos estão listados na seção " + S("pendencias") + " e não fazem parte desta conclusão.</p>";
     else h += "<p>O projeto <b>não pode ser declarado conforme</b> nesta emissão: " + ([rep ? plural(rep, "verificação não atende", "verificações não atendem") : "", pen ? plural(pen, "item não verificado", "itens não verificados") : ""].filter(Boolean).join(" e ") || "a situação do cálculo está incompleta") +
       ' (<a href="#sec-pendencias">seção ' + S("pendencias") + "</a>). Corrigidos esses itens, o cálculo deve ser refeito e o memorial reemitido em nova revisão.</p>";

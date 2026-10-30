@@ -1011,7 +1011,8 @@
         out.dilatacao.push(dd);
         if (semGeo) { dd.status = "pendente"; verif(alvo, "distância entre pontos fixos ≤ máxima", null, dist, "m", null, dd.passos.concat(["coordenadas dos nós (x, y/cota, z) ausentes: o reto contínuo (mudanças de direção) não pode ser achado"]), null);
                       ctx.pendencia("entrada.industrial.rede.nos[coordenadas]", "nós sem coordenadas: comprimento de dilatação (reto contínuo) indeterminado", "trecho " + alvo); return; }
-        if (dist == null) { verif(alvo, "distância entre pontos fixos ≤ máxima", Lrun, null, "m", null, dd.passos.concat(["distância máxima entre pontos fixos/guias sem fonte (" + K.fixos + ") nem do RT"]), null); dd.status = "pendente";
+        if (dist == null && dT === 0) { verif(alvo, "distância entre pontos fixos ≤ máxima", Lrun, null, "m", true, dd.passos.concat(["temperatura de serviço igual à de montagem (ΔT = 0 K): ΔL = 0 mm, sem esforço de dilatação; a distância entre pontos fixos não limita este reto (R04, fluido à temperatura ambiente)"]), null); }
+        else if (dist == null) { verif(alvo, "distância entre pontos fixos ≤ máxima", Lrun, null, "m", null, dd.passos.concat(["distância máxima entre pontos fixos/guias sem fonte (" + K.fixos + ") nem do RT"]), null); dd.status = "pendente";
                             ctx.pendencia(K.fixos + "[" + ent.material + "]", "distância máxima entre pontos fixos sem fonte", "trecho " + alvo); }
         else { var okD = Lrun <= dist + TOL; verif(alvo, "distância entre pontos fixos ≤ máxima", Lrun, dist, "m", okD, dd.passos, fDist); if (!okD) { dd.status = "reprovado"; aviso("erro", "reto " + ids.join(" + ") + ": " + fx(Lrun) + " m sem ponto fixo/compensador (máx. " + fx(dist) + " m)", ids, { texto: "inserir ponto fixo intermediário e lira/junta entre eles" }); } }
         if (Math.abs(dL) > 0) {

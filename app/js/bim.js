@@ -19849,6 +19849,8 @@ window.BIM = {
   linhasOcultas: function (uids, on) { return (S && S._linhasOcultas) ? S._linhasOcultas(uids, !!on) : 0; },
   linhasOcultasEstado: function () { return (S && S._linhasOcultasEstado) ? S._linhasOcultasEstado() : { uids: [], linhas: 0 }; },
   caixaCorteEm: function (min, max, iso) { return (S && S._caixaCorteEm) ? S._caixaCorteEm(min, max, iso) : false; },
+  /* HIDRO-3D: o three do BIM (a vista "Isométrico do ambiente" é o render do modelo, js/hidvistaisoui.js, com o MESMO three) */
+  three: function () { return THREE; },
   /* MATERIAIS REALISTAS: a escolha da pessoa (guardada por aparelho); devolve
      uma Promise com o estado depois de as texturas chegarem */
   /* na prévia do estilo visual, o botão Materiais realistas é o atalho do Realista (ligado) e do Sombreado (desligado) */

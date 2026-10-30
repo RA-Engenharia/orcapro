@@ -64,6 +64,24 @@
   function manning(S, R, i, n) { return K_MANNING_LMIN * S / n * Math.pow(R, EXP_RH) * Math.pow(i, EXP_I); }
   function manningSemicircular(dMm, iPct, n) { var D = dMm / MM; return manning(Math.PI * D * D / SEMI_S, D / SEMI_RH, iPct / PCT, n); }
   function manningRetangular(bMm, aMm, iPct, n) { var b = bMm / MM, a = aMm / MM; return manning(a * b, a * b / (b + 2 * a), iPct / PCT, n); }
+  /* lâmina d'água normal (mm) de uma calha retangular para a vazão Q [L/min]: bisseção em Manning (Q cresce com a lâmina) */
+  function laminaNormalRetangular(bMm, qLmin, iPct, n) {
+    var lo = 0, hi = 5 * bMm, k;   // hid:ok bisseção (método numérico): teto de busca = 5 × largura
+    for (k = 0; k < 80; k++) { var mid = (lo + hi) / 2; if (manningRetangular(bMm, mid, iPct, n) < qLmin) lo = mid; else hi = mid; }   // hid:ok 80 iterações da bisseção (precisão numérica)
+    return (lo + hi) / 2;
+  }
+  /* hid:fisica-inicio — BOCAL (funil) e LADRÃO da calha (decisão do RT, 29/10/2026, na ausência do ábaco digitalizado da NBR 10844 Fig. 3).
+   * Vertedor circular (Francis, SI): Q = 1,838·L·H^1,5, com L = π·D (perímetro do bocal) e H = lâmina sobre o bocal [m]; Q em m³/s.
+   * Orifício: Q = Cd·A·√(2·g·H), Cd = 0,61, A = π·D²/4. O diâmetro mínimo é o MAIOR dos dois critérios.
+   * Ladrão = orifício retangular (largura W × altura h): Q = Cd·W·h·√(2·g·H), H = carga sobre o centro do vão [m]. */
+  var FRANCIS_K = 1.838, CD_ORIFICIO = 0.61, G_GRAV = 9.80665, DN_BOCAL = [50, 75, 100, 125, 150, 200];
+  function bocalMinimo(qLmin, hM) {
+    var q = qLmin / 60000, dV = q / (FRANCIS_K * Math.PI * Math.pow(hM, 1.5)), dO = Math.sqrt(4 * q / (Math.PI * CD_ORIFICIO * Math.sqrt(2 * G_GRAV * hM)));
+    var dMin = Math.max(dV, dO) * MM, dn = null; DN_BOCAL.forEach(function (x) { if (dn == null && x >= dMin) dn = x; });
+    return { dVertedor_mm: dV * MM, dOrificio_mm: dO * MM, dMin_mm: dMin, dn: dn, criterio: dV >= dO ? "vertedor (Francis)" : "orifício" };
+  }
+  function ladraoLargura(qLmin, hMm, cargaM) { return qLmin / 60000 / (CD_ORIFICIO * (hMm / MM) * Math.sqrt(2 * G_GRAV * cargaM)) * MM; }
+  /* hid:fisica-fim */
 
   /* ------------------------------------------------ 1) intensidade */
   /* postos sugeridos para cidade fora da Tabela 5: a correlação indicada pelo RT (ap.postos_vizinhos) ou, sem ela, os
@@ -154,9 +172,11 @@
     h: { vars: ["a", "b"], f: function (v) { return v.a * v.b / 2; }, txt: "A = a·b/2" }
   };
   function areaDe(x, ctx, linhasArea, premissa) {
-    var r = { id: x.id, caso: x.caso || null, destino: x.destino || null, area_m2: null, projecao_m2: null, passos: [], status: "pendente", fonte: null };
+    var r = { id: x.id, caso: x.caso || null, destino: x.destino || null, area_m2: null, projecao_m2: null, passos: [], status: "pendente", fonte: null, periodoRetorno_anos: num(x.periodoRetorno_anos, null), rotulo: x.rotulo || null };
     if (num(x.area_m2, null) != null && !x.caso) {
-      r.area_m2 = num(x.area_m2, 0); r.projecao_m2 = r.area_m2; r.status = "ok"; r.passos.push("A = " + f2(r.area_m2) + " m² (informada)");
+      r.area_m2 = num(x.area_m2, 0); r.projecao_m2 = num(x.projecao_m2, r.area_m2); r.status = "ok";
+      arr(x.memoria).forEach(function (m) { r.passos.push(m); });
+      r.passos.push("A = " + f2(r.area_m2) + " m² " + (arr(x.memoria).length ? "(contribuição adotada)" : "(informada)"));
       premissa("área " + x.id, f2(r.area_m2) + " m² informada pelo projetista (sem o caso da fórmula)", "entrada"); return r;
     }
     var C = CASOS[x.caso];
@@ -195,6 +215,14 @@
     var projTot = out.areas.reduce(function (s, a) { return a.projecao_m2 == null || s == null ? null : s + a.projecao_m2; }, out.areas.length ? 0 : null);
     out.intensidade = intensidade(cfg, ctx, projTot, premissa, out);
     var I = out.intensidade.valor_mm_h;
+    var intTcache = {};
+    function intensidadeT(T) {   /* intensidade do mesmo posto para outro período de retorno (calhas embutidas: T = 25 anos) */
+      if (intTcache.hasOwnProperty(T)) return intTcache[T];
+      var local = cfg.postoReferencia || cfg.cidade, c = local ? NR().consulta("ap.intensidade.localidade", { localidade: local, periodo_anos: T }, "intensidade_mm_h") : { ok: false };
+      if (c.ok) { ctx.consulta("ap.intensidade.localidade", { localidade: local, periodo_anos: T }, "intensidade_mm_h", "pluvial — intensidade T = " + T + " anos"); intTcache[T] = { v: num(c.valor, null), obs: num(c.linha && c.linha.periodo_observado_anos, null), local: local }; }
+      else intTcache[T] = null;
+      return intTcache[T];
+    }
     /* laje horizontal (5.4.2): declividade mínima — quando a área traz a declividade */
     arr(cfg.areas).forEach(function (x) {
       if (num(x.declividade_pct, null) == null) return;
@@ -204,8 +232,15 @@
     });
     out.areas.forEach(function (a) {
       if (a.area_m2 == null || I == null) { a.vazao_l_min = null; if (a.status === "ok") a.status = "pendente"; a.passos.push("pendente: " + (I == null ? "intensidade pluviométrica" : "área")); return; }
-      a.vazao_l_min = I * a.area_m2 / MIN_POR_H;
-      a.passos.push("Q = I·A/60 = " + f2(I) + " × " + f2(a.area_m2) + " / 60 = " + f2(a.vazao_l_min) + " L/min");
+      var Ia = I;
+      if (a.periodoRetorno_anos != null) {
+        var iT = intensidadeT(a.periodoRetorno_anos);
+        if (iT && iT.v != null) { Ia = iT.v; a.passos.push("T = " + a.periodoRetorno_anos + " anos: I = " + f2(Ia) + " mm/h (" + iT.local + ", Tabela 5 da NBR 10844" + (iT.obs != null ? "; valor entre parênteses: período de retorno real de " + iT.obs + " anos" : "") + ")"); }
+        else { a.vazao_l_min = null; if (a.status === "ok") a.status = "pendente"; a.passos.push("pendente: intensidade para T = " + a.periodoRetorno_anos + " anos"); return; }
+      }
+      a.intensidade_mm_h = Ia;
+      a.vazao_l_min = Ia * a.area_m2 / MIN_POR_H;
+      a.passos.push("Q = I·A/60 = " + f2(Ia) + " × " + f2(a.area_m2) + " / 60 = " + f2(a.vazao_l_min) + " L/min");
     });
 
     /* ⚠ revisão fase 2 C1 (decisão do RT): área cuja calha/condutor não existe, ou sem destino, é ERRO — a vazão dela não
@@ -295,9 +330,33 @@
         verif(ch.id, "capacidade da calha", qProj, cap, "L/min", okC, ["Q projeto " + f2(qProj) + " L/min " + (okC ? "≤" : ">") + " capacidade " + f2(cap) + " L/min (" + metodo + ")"], fonteCap);
         if (!okC) aviso(out.avisos, "erro", "calha " + ch.id + ": " + f2(qProj) + " L/min acima da capacidade " + f2(cap) + " L/min", [ch.id], { texto: "aumentar a seção ou a declividade da calha, ou mais saídas" });
       } else verif(ch.id, "capacidade da calha", qProj, cap, "L/min", null, ["pendente: " + (qProj == null ? "vazão" : "capacidade da seção")], fonteCap);
-      /* bocal / condutor pelo ábaco (H, L): sem o ábaco digitalizado, PENDENTE declarado */
-      var ab = ctx.consulta("ap.condutor_vertical.abacos", null, "valor", "pluvial — bocal da calha " + ch.id);
-      verif(ch.id, "bocal de saída (ábaco: lâmina na calha × comprimento do condutor)", null, null, "mm", null, ["pendente: " + ab.motivo], null);
+      /* lâmina d'água, BOCAL (funil de saída) e LADRÃO da platibanda — métodos do RT (29/10/2026), na ausência do ábaco da NBR 10844 Fig. 3 */
+      var altU = num(ch.altura_mm, null), lamMax = num(ch.lamina_mm, null), bMm = num(ch.base_mm, null);
+      if (r.secao === "retangular" && qProj != null && altU != null && lamMax != null && bMm != null && r.declividade_pct > 0 && nr) {
+        var yN = laminaNormalRetangular(bMm, qProj, r.declividade_pct, nr.n);
+        r.laminaCalculada_mm = yN; r.alturaUtil_mm = altU; r.laminaMax_mm = lamMax;
+        verif(ch.id, "lâmina d'água na calha ≤ 2/3 da altura útil (com borda livre)", yN, lamMax, "mm", yN <= lamMax, ["lâmina normal (Manning, n = " + nr.n + ", i = " + f2(r.declividade_pct) + "%, base " + bMm + " mm) para " + f2(qProj) + " L/min: " + f2(yN) + " mm " + (yN <= lamMax ? "≤" : ">") + " " + f2(lamMax) + " mm (2/3 de " + altU + " mm); borda livre " + f2(altU - yN) + " mm"], fonteCap, null, true);
+        var bo = bocalMinimo(qProj, lamMax / MM);
+        r.bocal = bo; r.bocal.H_mm = lamMax;
+        var dnSaida = null; sds.forEach(function (s0) { var tr = arr(R && R.trechos).filter(function (t) { return t.id === s0.condutor; })[0]; if (tr && tr.dn != null && (dnSaida == null || tr.dn < dnSaida)) dnSaida = tr.dn; });
+        r.bocal.dnSaida = dnSaida;
+        var passosB = ["vertedor circular (Francis): Q = 1,838·π·D·H^1,5 com H = " + f2(lamMax) + " mm → D ≥ " + f2(bo.dVertedor_mm) + " mm; orifício: Q = 0,61·(π·D²/4)·√(2·g·H) → D ≥ " + f2(bo.dOrificio_mm) + " mm; vale o maior (" + bo.criterio + "): " + f2(bo.dMin_mm) + " mm → bocal DN " + bo.dn];
+        if (dnSaida != null) {
+          var okB = dnSaida >= bo.dn;
+          verif(ch.id, "bocal (funil) de saída da calha — DN do condutor ≥ DN do bocal", dnSaida, bo.dn, "mm", okB, passosB.concat(["condutor de saída DN " + dnSaida + (okB ? " ≥ " : " < ") + "bocal DN " + bo.dn]), fonteCap, null, true);
+          if (!okB) aviso(out.avisos, "erro", "calha " + ch.id + ": bocal exige DN " + bo.dn + " e o condutor de saída é DN " + dnSaida, [ch.id], { texto: "aumentar o condutor de saída da calha " + ch.id + " para DN " + bo.dn });
+        } else verif(ch.id, "bocal (funil) de saída da calha", null, bo.dn, "mm", null, passosB.concat(["pendente: condutor de saída sem DN no modelo"]), fonteCap);
+        var ld = ch.ladrao || null;
+        if (ld && num(ld.soleira_mm, null) != null && num(ld.altura_mm, null) != null && num(ld.nivelMax_mm, null) != null) {
+          var carga = (num(ld.nivelMax_mm, 0) - (num(ld.soleira_mm, 0) + num(ld.altura_mm, 0) / 2)) / MM;
+          if (carga > 0) {
+            var wMin = ladraoLargura(r.vazao_l_min, num(ld.altura_mm, 0), carga), wAdot = Math.max(num(ld.larguraMin_mm, 100), Math.ceil(wMin / 50) * 50);   // hid:ok arredondamento a 50 mm (múltiplo construtivo)
+            var qLad = CD_ORIFICIO * (wAdot / MM) * (num(ld.altura_mm, 0) / MM) * Math.sqrt(2 * G_GRAV * carga) * 60000;   // hid:ok m³/s → L/min (1000 × 60)
+            r.ladrao = { soleira_mm: num(ld.soleira_mm, 0), altura_mm: num(ld.altura_mm, 0), largura_mm: wAdot, larguraMin_mm: wMin, nivelMax_mm: num(ld.nivelMax_mm, 0), carga_mm: carga * MM, capacidade_l_min: qLad, topoImperm_mm: num(ld.topoImperm_mm, null) };
+            verif(ch.id, "ladrão (extravasor) da platibanda — capacidade com o bocal obstruído", r.vazao_l_min, qLad, "L/min", qLad >= r.vazao_l_min, ["orifício retangular Q = Cd·W·h·√(2·g·H), Cd = 0,61: h = " + ld.altura_mm + " mm, soleira a " + ld.soleira_mm + " mm do fundo, nível máximo " + ld.nivelMax_mm + " mm (abaixo do topo da impermeabilização" + (ld.topoImperm_mm != null ? ", " + ld.topoImperm_mm + " mm" : "") + "), carga sobre o centro " + f2(carga * MM) + " mm; vazão total da calha " + f2(r.vazao_l_min) + " L/min → W ≥ " + f2(wMin) + " mm; adotado W = " + wAdot + " mm (capacidade " + f2(qLad) + " L/min)"], fonteCap);
+          }
+        }
+      }
       var stC = out.verificacoes.filter(function (v) { return v.alvo === ch.id; }).map(function (v) { return v.status; });
       r.status = stC.indexOf("reprovado") >= 0 ? "reprovado" : (stC.indexOf("pendente") >= 0 ? "pendente" : "ok");
     });
@@ -380,8 +439,7 @@
     /* ⚠ revisão fase 2 M3: a própria fonte diz que a tabela de Botelho & Ribeiro Jr. NÃO é a da norma ("serve de conferência");
        a 10844 dimensiona pelo ábaco (Q × lâmina × comprimento), não digitalizado → todo condutor vertical fica PENDENTE,
        com o DN de conferência mostrado (e reprovado se o do modelo for menor) */
-    premissa("condutor vertical", "tabela DN × vazão de Botelho & Ribeiro Jr. usada só como CONFERÊNCIA (a fonte diz que não é a tabela da norma); o dimensionamento pela NBR 10844 (ábaco) está pendente");
-    var abV = ctx.consulta("ap.condutor_vertical.abacos", null, "valor", "pluvial — condutores verticais");
+    premissa("condutor vertical", "tabela DN × vazão de Botelho & Ribeiro Jr. ADOTADA como método de dimensionamento (decisão do responsável técnico, 29/10/2026), na ausência do ábaco digitalizado da NBR 10844 (Fig. 3); vale também o diâmetro interno mínimo de 70 mm (NBR 10844, 5.6.3)", "decisao");
     ordem.forEach(function (n) {
       var qIn = (inj[n] || 0), pIn = !!injP[n], dnIn = 0;
       entra[n].forEach(function (eid) { qIn += Q[eid] || 0; pIn = pIn || !!pendQ[eid]; dnIn = Math.max(dnIn, dnAcc[eid] || 0); });
@@ -402,7 +460,7 @@
           else {
             var lin = capV.filter(function (x) { return num(x.vazao_ls, -1) >= q / S_POR_MIN; }).sort(function (a, b) { return a.dn - b.dn; })[0];
             if (!lin) { r.pend.push("vazão acima da tabela de condutor vertical"); ctx.pendencia("pluvial.trecho[" + e.trecho + "]", "vazão " + f3(q / S_POR_MIN) + " L/s acima da tabela de condutor vertical", "trecho " + e.trecho); }
-            else { req = num(lin.dn, null); r.passos.push("conferência (tabela do livro-texto, não a da norma): DN " + lin.dn + " leva " + f2(lin.vazao_ls) + " L/s ≥ " + f3(q / S_POR_MIN) + " L/s"); }
+            else { req = num(lin.dn, null); r.passos.push("tabela de Botelho & Ribeiro Jr. (método adotado na ausência do ábaco da NBR 10844): DN " + lin.dn + " leva " + f2(lin.vazao_ls) + " L/s ≥ " + f3(q / S_POR_MIN) + " L/s"); }
             if (diMinV.ok && req != null) {
               var dMin = num(diMinV.valor, 0), dnDi = dns.filter(function (x) { var di = diDe(mat, x); return di != null ? di >= dMin : x >= dMin; })[0];
               if (dnDi != null && dnDi > req) { req = dnDi; r.passos.push("diâmetro interno mínimo " + dMin + " mm (NBR 10844 5.6.3): DN " + req); }
@@ -452,8 +510,7 @@
         }
         if (e.vertical) {
           /* vertical: o DN do modelo fica (o cálculo da norma está pendente); a conferência só aponta o DN menor */
-          r.dn = e.dn; r.conferencia = true; r.pend.push("ap.condutor_vertical.abacos");
-          r.passos.push("pendente: dimensionamento pelo ábaco da NBR 10844 — " + abV.motivo);
+          r.dn = e.dn; r.conferencia = true;
           dnAcc[eid] = Math.max(dnIn, e.dn, r.dnReq || 0);
         } else {
           r.dn = travado ? e.dn : (r.dnReq != null ? r.dnReq : e.dn);
@@ -469,9 +526,8 @@
                          declividadeMin_pct: r.declividadeMin_pct == null ? null : r.declividadeMin_pct, colunaDecl_pct: r.colunaDecl_pct == null ? null : r.colunaDecl_pct, status: r.pend.length ? "pendente" : "ok", passos: r.passos, pendencias: r.pend };
       if (r.conferencia && r.dnReq != null) {
         var okC = e.dn >= r.dnReq;
-        verif(e.trecho, "DN do condutor vertical — conferência (tabela do livro-texto, não a da norma)", e.dn, r.dnReq, "mm", okC, ["DN do modelo " + e.dn + (okC ? " ≥ " : " < ") + "DN de conferência " + r.dnReq], NR().fonte("ap.condutor_vertical.capacidade"), null, true);
+        verif(e.trecho, "DN do condutor vertical (tabela de Botelho & Ribeiro Jr., método adotado na ausência do ábaco da NBR 10844)", e.dn, r.dnReq, "mm", okC, ["DN do modelo " + e.dn + (okC ? " ≥ " : " < ") + "DN de conferência " + r.dnReq], NR().fonte("ap.condutor_vertical.capacidade"), null, true);
         if (!okC) { t.status = "reprovado"; aviso(out.avisos, "erro", "condutor vertical " + e.trecho + " DN " + e.dn + " menor que o DN de conferência " + r.dnReq, [e.trecho], { texto: "aumentar o condutor " + e.trecho + " para DN " + r.dnReq, ops: r.travado ? [] : [{ op: "instAlterar", id: e.trecho, dn: r.dnReq }] }); }
-        verif(e.trecho, "condutor vertical pelo ábaco da NBR 10844", null, null, "mm", null, ["pendente: " + abV.motivo], null);
         if (r.diMin != null) {
           var diI = diInfo(e.material, e.dn), diM = diI ? diI.di : null;
           if (diM == null) { ctx.pendencia("materiais.diametro_interno[" + e.material + "]", "diâmetro interno de " + e.material + " DN " + e.dn + ": sem tabela e o catálogo não traz a espessura da parede (DE − 2e) — o Di mínimo de " + r.diMin + " mm (NBR 10844 5.6.3) não foi verificado", "trecho " + e.trecho);
@@ -701,7 +757,7 @@
     return r;
   }
 
-  var HidAP = { VERSAO: 1, CASOS: CASOS, calcular: calcular, manning: manning, manningSemicircular: manningSemicircular, manningRetangular: manningRetangular };
+  var HidAP = { VERSAO: 1, CASOS: CASOS, calcular: calcular, bocalMinimo: bocalMinimo, ladraoLargura: ladraoLargura, laminaNormalRetangular: laminaNormalRetangular, manning: manning, manningSemicircular: manningSemicircular, manningRetangular: manningRetangular };
   global.HidAP = HidAP;
   if (typeof module !== "undefined" && module.exports) module.exports = HidAP;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

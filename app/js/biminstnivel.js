@@ -66,9 +66,9 @@
   var ESTILO_SIS = {
     agua_fria:   { cor: "#1E6FD9", mm: 0.35, pena: 5, padrao: "continua" },
     agua_quente: { cor: "#D93025", mm: 0.35, pena: 5, padrao: "continua" },
-    esgoto:      { cor: "#7B4A2A", mm: 0.50, pena: 6, padrao: "continua" },
-    ventilacao:  { cor: "#B08A6E", mm: 0.25, pena: 4, padrao: "oculta" },
-    pluvial:     { cor: "#2E9E44", mm: 0.35, pena: 5, padrao: "continua" },
+    esgoto:      { cor: "#2E9E44", mm: 0.50, pena: 6, padrao: "continua" },
+    ventilacao:  { cor: "#8C8C8C", mm: 0.25, pena: 4, padrao: "oculta" },
+    pluvial:     { cor: "#00ACC1", mm: 0.35, pena: 5, padrao: "continua" },
     incendio:    { cor: "#C62828", mm: 0.35, pena: 5, padrao: "continua" },
     industrial:  { cor: "#6D4C41", mm: 0.35, pena: 5, padrao: "continua" },
     gas:         { cor: "#C9A400", mm: 0.35, pena: 5, padrao: "continua" },   /* F3 gás (Casa 487): a mesma pena do industrial, amarelo-escuro */

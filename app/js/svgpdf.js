@@ -71,11 +71,11 @@
     var s = txt(svg), raiz = /<svg\b([^>]*)>/.exec(s); if (!raiz) return null;
     var ra = attrs(raiz[1]), vb = txt(ra.viewBox).split(/[\s,]+/).map(Number), W = vb.length === 4 ? vb[2] : num(ra.width, 210), H = vb.length === 4 ? vb[3] : num(ra.height, 297);
     var ops = ["1 J 1 j"], pilha = [{ tx: 0, ty: 0, fill: null, stroke: null, sw: null, fs: null, anchor: null, peso: null }], re = /<(\/?)([a-zA-Z]+)\b([^>]*?)(\/?)>|([^<]+)/g, m, emTexto = null, emTitulo = false;
-    var nTexto = 0, nTraco = 0, nPulado = 0;
+    var nTexto = 0, nTraco = 0, nPulado = 0, ims = {}, clips = {}, emClip = null;
     function X(x, g) { return (x + g.tx) * PT; }
     function Y(y, g) { return (H - (y + g.ty)) * PT; }
     function herda(a) {
-      var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso };
+      var g = pilha[pilha.length - 1], n = { tx: g.tx, ty: g.ty, fill: g.fill, stroke: g.stroke, sw: g.sw, fs: g.fs, anchor: g.anchor, peso: g.peso, clip: false };
       var t = translate(a.transform); n.tx += t[0]; n.ty += t[1];
       if (a.fill != null) n.fill = a.fill; if (a.stroke != null) n.stroke = a.stroke; if (a["stroke-width"] != null) n.sw = a["stroke-width"];
       if (a["font-size"] != null) n.fs = a["font-size"]; if (a["text-anchor"] != null) n.anchor = a["text-anchor"]; if (a["font-weight"] != null) n.peso = a["font-weight"];
@@ -101,7 +101,19 @@
       var fecha = m[1] === "/", nome = m[2].toLowerCase(), a = attrs(m[3]), auto = m[4] === "/";
       if (nome === "svg") continue;
       if (nome === "title" || nome === "desc") { emTitulo = !fecha && !auto; continue; }
-      if (nome === "g") { if (fecha) { if (pilha.length > 1) pilha.pop(); } else if (!auto) pilha.push(herda(a)); continue; }
+      /* HIDRO-3D: <clipPath id><rect/></clipPath> + <g clip-path="url(#id)">: o recorte vira "q x y w h re W n" … "Q" (antes o <rect> do clipPath era DESENHADO como retângulo
+         preto: a planta do ambiente saía com o fundo PRETO no PDF — defeito achado na prévia de 29/10/2026) */
+      if (nome === "clippath") { emClip = fecha || auto ? null : (a.id || ""); continue; }
+      if (emClip != null) { if (nome === "rect" && !fecha) clips[emClip] = { x: num(a.x, 0), y: num(a.y, 0), w: num(a.width, 0), h: num(a.height, 0) }; continue; }
+      if (nome === "g") {
+        if (fecha) { if (pilha.length > 1) { var sai = pilha.pop(); if (sai.clip) ops.push("Q"); } }
+        else if (!auto) {
+          var ng = herda(a), mc = /url\(\s*#([^)\s]+)\s*\)/.exec(txt(a["clip-path"])), cl = mc ? clips[mc[1]] : null;
+          if (cl && cl.w > 0 && cl.h > 0) { ops.push("q " + f(X(cl.x, ng)) + " " + f(Y(cl.y + cl.h, ng)) + " " + f(cl.w * PT) + " " + f(cl.h * PT) + " re W n"); ng.clip = true; }
+          pilha.push(ng);
+        }
+        continue;
+      }
       var g = pilha[pilha.length - 1];
       if (nome === "text") {
         if (!fecha) { emTexto = { a: a, g: herda(a), t: "" }; if (auto) emTexto = null; continue; }
@@ -112,7 +124,8 @@
         var dx = anc === "middle" ? -w / 2 : (anc === "end" ? -w : 0), x = num(ta.x, 0), y = num(ta.y, 0), rt = rotate(ta.transform), ang = rt ? rt.a * Math.PI / 180 : 0;
         var c = Math.cos(ang), sn = Math.sin(ang), px = x + dx * c, py = y + dx * sn, fc = cor(tg.fill != null ? tg.fill : "#000") || [0, 0, 0];
         ops.push(f(fc[0]) + " " + f(fc[1]) + " " + f(fc[2]) + " rg");
-        ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn) + " " + f(c) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
+        var it = /italic|oblique/.test(txt(ta["font-style"])) ? 0.2 : 0;   /* itálico = inclinação de 0,2 na matriz do texto (sem fonte extra: a numeração dos objetos do PDF não muda) */
+        ops.push("BT /" + (neg ? "F2" : "F1") + " " + f(corpo * PT) + " Tf " + f(c) + " " + f(-sn) + " " + f(sn + it * c) + " " + f(c - it * sn) + " " + f(X(px, g)) + " " + f(Y(py, g)) + " Tm (" + win1252(conteudo) + ") Tj ET");
         nTexto++;
         continue;
       }
@@ -131,9 +144,13 @@
                    P(cx - r, cy - k) + " " + P(cx - k, cy - r) + " " + P(cx, cy - r) + " c", P(cx + k, cy - r) + " " + P(cx + r, cy - k) + " " + P(cx + r, cy) + " c", "h");
           pintar(a, g, true, true);
         }
-      } else if (nome === "image") nPulado++;
+      } else if (nome === "image") {
+        /* HIDRO-3D: <image data-im="chave" x y width height> = o raster (JPEG de info.imagensPorChave[chave]) desenhado NESTA ordem (atrás do que vem depois); sem data-im a imagem segue pulada */
+        var ik = txt(a["data-im"]).replace(/[^A-Za-z0-9]/g, "");
+        if (ik && num(a.width, 0) > 0 && num(a.height, 0) > 0) { ops.push("q " + f(num(a.width, 0) * PT) + " 0 0 " + f(num(a.height, 0) * PT) + " " + f(X(num(a.x, 0), g)) + " " + f(Y(num(a.y, 0) + num(a.height, 0), g)) + " cm /Im_" + ik + " Do Q"); ims[ik] = 1; } else nPulado++;
+      }
     }
-    return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado };
+    return { w: W, h: H, ops: ops, nTexto: nTexto, nTraco: nTraco, nPulado: nPulado, ims: Object.keys(ims) };
   }
   function paginas(svgs) { return (Array.isArray(svgs) ? svgs : [svgs]).map(pagina).filter(Boolean); }
   function pdf(svgs, info) {
@@ -148,7 +165,9 @@
        origem no canto de cima como no SVG), jpeg (texto binário 0–255 de um JPEG), pxW, pxH }]. Só JPEG (DCTDecode: o
        PDF lê o arquivo como está, sem decodificar nada aqui). Sem `imagens` o PDF sai byte a byte como antes. */
     var imgs = (Array.isArray(info.imagens) ? info.imagens : []).filter(function (im) { return im && typeof im.jpeg === "string" && im.jpeg.length > 4 && num(im.pxW, 0) > 0 && num(im.pxH, 0) > 0 && pgs[num(im.pagina, 0)]; });
-    var baseImg = 6 + 2 * pgs.length;
+    var baseImg = 6 + 2 * pgs.length, porChave = info.imagensPorChave || {}, chavesUsadas = [];
+    pgs.forEach(function (p) { (p.ims || []).forEach(function (k) { if (porChave[k] && typeof porChave[k].jpeg === "string" && chavesUsadas.indexOf(k) < 0) chavesUsadas.push(k); }); });
+    var baseCh = baseImg + imgs.length;
     pgs.forEach(function (p, i) {
       var cont = p.ops.join("\n"), xo = [];
       imgs.forEach(function (im, k) {
@@ -156,12 +175,14 @@
         xo.push("/Im" + k + " " + (baseImg + k) + " 0 R");
         cont += "\nq " + f(num(im.w, 10) * PT) + " 0 0 " + f(num(im.h, 10) * PT) + " " + f(num(im.x, 0) * PT) + " " + f((p.h - num(im.y, 0) - num(im.h, 10)) * PT) + " cm /Im" + k + " Do Q";
       });
+      (p.ims || []).forEach(function (kc) { var ix = chavesUsadas.indexOf(kc); if (ix >= 0) xo.push("/Im_" + kc + " " + (baseCh + ix) + " 0 R"); });
       objs.push("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + f(p.w * PT) + " " + f(p.h * PT) + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>" + (xo.length ? " /XObject << " + xo.join(" ") + " >>" : "") + " >> /Contents " + (7 + 2 * i) + " 0 R >>");
       objs.push("<< /Length " + cont.length + " >>\nstream\n" + cont + "\nendstream");
     });
     imgs.forEach(function (im) {
       objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream");
     });
+    chavesUsadas.forEach(function (k) { var im = porChave[k]; objs.push("<< /Type /XObject /Subtype /Image /Width " + Math.round(num(im.pxW, 1)) + " /Height " + Math.round(num(im.pxH, 1)) + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + im.jpeg.length + " >>\nstream\n" + im.jpeg + "\nendstream"); });
     var s = "%PDF-1.4\n%\xe2\xe3\xcf\xd3\n", offs = [];
     objs.forEach(function (o, i) { offs.push(s.length); s += (i + 1) + " 0 obj\n" + o + "\nendobj\n"; });
     var xref = s.length;
