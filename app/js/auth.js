@@ -374,6 +374,7 @@
     /* o porquê da última saída forçada (prazo vencido), para a tela de login.
        Limpa no login seguinte e no "Sair" — ver `_iniciarSessao` e `logout`. */
     _recadoSaida: "",
+    _recadoLicenca: "",   // recado fixo do login: licença de outra empresa (ver textoLicencaOutraEmpresa)
     recadoSaida: function () { return this._recadoSaida || ""; },
 
     _loginEquipe: function (login, senha) {
@@ -993,8 +994,26 @@
        diz ao servidor qual empresa e qual nuvem conferir */
     recuperacaoPorCodigoDisponivel: function () {
       try {
-        return !!(typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave() && Licenca.deviceId && this._servidorRecup());
+        return !!(typeof Licenca !== "undefined" && Licenca.deviceId && this._servidorRecup() && ((Licenca.chave && Licenca.chave()) || this._telefoneTrial()));
       } catch (e) { return false; }
+    },
+    /* ⚠ TESTE GRÁTIS NÃO TEM CHAVE (30/10/2026 — Marco/Vrahos). Sem chave o
+       resgate ficava fechado e quem testava e criava a equipe perdia o acesso
+       aos próprios dados. No teste, a prova vai pelo telefone do cadastro
+       (`orcapro:trialreg`); o servidor acha o e-mail do 1º cadastro no site e
+       só manda o código para ele (server/senha-srv.js `conferirTrial`). */
+    _telefoneTrial: function () {
+      try {
+        if (typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave()) return "";
+        var r = (typeof Telemetria !== "undefined" && Telemetria.reg) ? Telemetria.reg() : null;
+        var t = String((r && r.telefone) || "").replace(/\D/g, "");
+        return t.length >= 10 ? t : "";
+      } catch (e) { return ""; }
+    },
+    _corpoRecup: function (email) {
+      var ch = (Licenca.chave && Licenca.chave()) || "";
+      if (ch) return { chave: ch, deviceId: Licenca.deviceId(), email: email };
+      return { trial: true, telefone: this._telefoneTrial(), deviceId: Licenca.deviceId(), email: email };
     },
     _servidorRecup: function () {
       try {
@@ -1018,20 +1037,121 @@
         return Promise.resolve({ ok: false, semLicenca: true, erro: "A recuperação por código usa a licença deste aparelho, e ele está sem licença ativa. Ative a licença e tente de novo — ou fale com o suporte." });
       }
       this._recuperacao = null;               // pedir código novo invalida a liberação anterior
-      return this._postRecup("/api/senha/codigo", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo });
+      return this._postRecup("/api/senha/codigo", this._corpoRecup(alvo));
     },
     conferirCodigoSenha: function (email, codigo) {
       var self = this, alvo = String(email || "").trim().toLowerCase();
       var cod = String(codigo || "").replace(/\D/g, "");
       if (cod.length !== 6) return Promise.resolve({ ok: false, erro: "O código tem 6 dígitos. Confira o e-mail e digite os seis." });
       if (!this.recuperacaoPorCodigoDisponivel()) return Promise.resolve({ ok: false, semLicenca: true, erro: "Este aparelho ficou sem licença ativa. Ative a licença e peça um código novo." });
-      return this._postRecup("/api/senha/conferir", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo, codigo: cod })
+      var corpo = this._corpoRecup(alvo); corpo.codigo = cod;
+      return this._postRecup("/api/senha/conferir", corpo)
         .then(function (r) {
           /* ⚠ SÓ `ok === true` LIBERA. Resposta torta, 500 com corpo esquisito
              ou `ok: "sim"` não abrem a troca de senha. */
           if (r && r.ok === true) self._recuperacao = { email: alvo, ate: Date.now() + self._RECUP_JANELA_MS };
           return r || { ok: false, erro: "Sem resposta do servidor." };
         });
+    },
+    /* ⚠ LICENÇA DE OUTRA EMPRESA NESTE NAVEGADOR (30/10/2026). Quem digitava
+       um e-mail que não é admin aqui só lia "Usuário ou senha inválidos" e
+       não tinha como saber que o navegador é de OUTRA empresa. Este texto diz
+       de quem é a licença — com o e-mail MASCARADO: a tela de login é pública
+       e nunca pode entregar o e-mail inteiro do dono. */
+    mascararEmail: function (email) {
+      var e = String(email || "").trim(), i = e.indexOf("@");
+      if (i < 1) return "";
+      var loc = e.slice(0, i), dom = e.slice(i + 1);
+      return loc.slice(0, loc.length > 2 ? 2 : 1) + "***@" + dom;
+    },
+    textoLicencaOutraEmpresa: function () {
+      var em = this.mascararEmail(this._emailLicencaAtiva()), emp = "";
+      try {
+        var cs = this.contasAdminNoAparelho(), a = this._adapter();
+        for (var i = 0; i < cs.length && !emp; i++) {
+          if (cs[i].onde !== "mestre" || !a) continue;
+          var c = a.ler(cs[i].empresaId, "conta", {});
+          if (c && c.empresa) emp = String(c.empresa).trim();
+        }
+      } catch (e) { emp = ""; }
+      var de = emp ? (emp + (em ? " (" + em + ")" : "")) : (em || "");
+      if (!de) return "";
+      return "Este navegador está com a licença de " + de + ". Se a sua empresa é outra, abra o OrçaPRO em outro navegador ou perfil — cada um guarda os dados de uma empresa. Trocar a chave deste navegador é com o administrador dessa empresa, depois de entrar (⚙ → Licença).";
+    },
+    /* aviso de mistura ao trocar a licença do aparelho — o mesmo do link ?lic= */
+    /* ⚠ O RECADO "LICENÇA DE OUTRA EMPRESA" É SÓ PARA QUEM É DE FORA (30/10/2026).
+       O funcionário que erra a PRÓPRIA senha também cai em "não é admin aqui"
+       e levaria um recado que o chama de forasteiro. De fora = digitou e-mail
+       (tem "@"), não é login de equipe de lugar nenhum deste aparelho (inclui
+       o namespace "local", que `existeLoginEquipe` não olha) e não é admin aqui. */
+    ehDeForaDoAparelho: function (texto) {
+      var t = String(texto || "").trim().toLowerCase();
+      if (t.indexOf("@") < 1) return false;
+      try {
+        if (this.ehAdminNoAparelho(t)) return false;
+        if (this.existeLoginEquipe(t)) return false;
+        var eids = ["local"];
+        this.contasAdminNoAparelho().forEach(function (c) { if (eids.indexOf(c.empresaId) < 0) eids.push(c.empresaId); });
+        for (var i = 0; i < eids.length; i++) {
+          var eq = this._equipe(eids[i]);
+          for (var j = 0; j < eq.length; j++) { if (String(eq[j].login || "").trim().toLowerCase() === t) return false; }
+        }
+      } catch (e) { return false; }
+      return true;
+    },
+    avisoTrocaLicenca: function (deQuem) {
+      return "Este aparelho já está licenciado" + (deQuem || "") + ".\n\n"
+        + "O link que você abriu pertence a OUTRA licença. "
+        + "Trocar agora muda a empresa deste "
+        + "aparelho na nuvem: os dados daqui passam a se misturar com os da outra empresa — "
+        + "obras, usuários e configurações dos dois lados.\n\n"
+        + "Só continue se este aparelho realmente mudou de empresa.\n\nTrocar a licença?";
+    },
+    /* e-mail da compra da licença ATIVA deste aparelho (trim+lowercase) ou "" */
+    _emailLicencaAtiva: function () {
+      var em = "";
+      try {
+        if (typeof Licenca !== "undefined") {
+          var st = Licenca.status ? Licenca.status() : null;
+          em = (st && st.email) || "";
+          if (!em && Licenca._lerExpDe && Licenca.chave) em = (Licenca._lerExpDe(Licenca.chave()) || {}).email || "";
+        }
+      } catch (e) { em = ""; }
+      return String(em || "").trim().toLowerCase();
+    },
+    /* ⚠ O RESGATE TEM DE TER PORTA NA TELA, NÃO SÓ NA FUNÇÃO (30/10/2026).
+       A regra mora aqui, uma vez, e é usada por `aplicarSenhaRecuperada`
+       (cria a conta), pelo `renderLogin` (mostra "Esqueci a senha") e pelo
+       `redefinirSenhaUI` (leva ao código). Sem a porta, o dono trancado nem via
+       o link. Sem e-mail: só as três condições do aparelho (serve p/ mostrar o link). */
+    resgateAdminPossivel: function (email) {
+      try {
+        if (this.contasAdminNoAparelho().length !== 0) return false;
+        if (!this._temDadosLocais()) return false;
+        if (!this.recuperacaoPorCodigoDisponivel()) return false;
+        if (email === undefined) return true;
+        var alvo = String(email || "").trim().toLowerCase();
+        /* ⚠ TESTE GRÁTIS: a tela não barra pelo e-mail. O app só conhece o
+           e-mail digitado DENTRO dele (`trialreg`), e o servidor só aceita o
+           do 1º cadastro no SITE — se divergissem, cada lado mandaria usar o
+           do outro e o dono nunca passava (revisão adversarial 30/10). Quem
+           decide é o servidor: o código só sai para o e-mail do cadastro, e
+           `aplicarSenhaRecuperada` só cria a conta depois do código conferido. */
+        if (this._telefoneTrial()) return alvo.indexOf("@") > 0;
+        return !!alvo && alvo === this._emailLicencaAtiva();
+      } catch (e) { return false; }
+    },
+    /* há equipe ou qualquer dado no namespace do uso solo ("local")? */
+    _temDadosLocais: function () {
+      if (this._temEquipeLocal()) return true;
+      try {
+        var n = localStorage.length || 0;
+        for (var i = 0; i < n; i++) {
+          var k = String(localStorage.key(i) || "");
+          if (k.indexOf("orcapro:local:") === 0 && k !== "orcapro:local:conta") return true;
+        }
+      } catch (e) {}
+      return false;
     },
     aplicarSenhaRecuperada: function (email, nova) {
       var alvo = String(email || "").trim().toLowerCase();
@@ -1061,6 +1181,28 @@
           if (a.gravar(c.empresaId, "conta", conta) === false) falhou++; else gravou++;
         } catch (e2) { falhou++; }
       });
+      /* ⚠ ADMIN ANÔNIMO TRANCADO (caso real 29/10/2026). O dono usava sem
+         login (sessão anônima, e-mail ""), criou o 1º usuário da equipe e o
+         login obrigatório ligou — sem conta de administrador nenhuma (nem
+         `orcapro:usuarios`, nem `local/conta`, nem na nuvem). "Esqueci a
+         senha" caía aqui no "Não achei a conta". Resgate: nenhuma conta de
+         admin no aparelho + existe equipe/dado em "local" + o e-mail é o da
+         COMPRA da licença ativa => cria a conta mestre em "local".
+         A segurança vem do servidor: `server/senha-srv.js` só manda o código
+         ao e-mail da compra da licença quando a nuvem não tem conta de admin,
+         e esta função já exigiu `conferirCodigoSenha` ok para o MESMO e-mail
+         (`_recuperacao`). Quem não leu aquele e-mail não chega aqui. */
+      if (!gravou && !falhou && a && this.resgateAdminPossivel(alvo)) {
+        try {
+          /* nome: o do responsável técnico em prefs, se houver; senão o padrão.
+             SEM `criadoEm`: o merge de `conta` (js/nuvem.js) decide só por
+             `atualizadoEm`, e um `criadoEm` novo aqui poderia sobrescrever o da nuvem. */
+          var nomeEmp = "Minha Empresa";
+          try { var rt = (Store.lerPrefs("local") || {}).responsavelTecnico; if (rt && String(rt.nome || "").trim()) nomeEmp = String(rt.nome).trim(); } catch (eN) {}
+          var nova_conta = { id: "conta", empresa: nomeEmp, email: alvo, senhaHash: this._hashSenha(nova), atualizadoEm: agora };
+          if (a.gravar("local", "conta", nova_conta) === false) falhou++; else gravou++;
+        } catch (e3) { falhou++; }
+      }
       if (!gravou) return { ok: false, erro: falhou ? "Não consegui gravar a senha nova neste aparelho (armazenamento cheio ou bloqueado). Faça backup e fale com o suporte." : "Não achei a conta de administrador " + alvo + " neste aparelho. Abra o sistema num aparelho onde esse administrador já entrou." };
       /* uso único, como o código: a mesma conferência não troca a senha duas vezes */
       this._recuperacao = null;
@@ -1094,6 +1236,14 @@
          EQUIPE em qualquer lugar deste aparelho, existe RBAC, e RBAC exige
          login. Ver `_temEquipeLocal`. */
       if (this._temEquipeLocal()) return null;
+      /* ⚠ SEGUNDO BURACO DA MESMA GUARDA (30/10/2026). A conta MESTRE
+         sincronizada em `orcapro:local:conta` também é RBAC: existe um
+         administrador com senha. Sem esta linha, o aparelho com licença e conta
+         mestre — mas sem `orcapro:usuarios` e sem equipe — criava a sessão
+         anônima de admin a CADA F5 e mostrava o Painel da empresa até o
+         `_conectarNuvemLicenca` derrubar para o login; sem internet, nunca
+         derrubava. Aparelho virgem (sem conta) segue entrando sozinho. */
+      if (this.contaMestre("local")) return null;
       if (contas.length) {                                     // dono solo já cadastrado -> entra nele (sem senha)
         var dono = contas[0]; dono._papel = "admin";
         this._iniciarSessao(dono);
@@ -1144,6 +1294,7 @@
            `conferirAcesso` quando o registro da equipe não está no aparelho */
         acessoAte: u._acessoAte || ""
       };
+      this._recadoLicenca = "";
       this._recadoSaida = "";                   // entrou: o recado da saída anterior não vale mais
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
     },

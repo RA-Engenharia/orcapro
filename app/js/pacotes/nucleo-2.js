@@ -27915,6 +27915,11 @@ catch (e) { UI.toast("Copie manualmente.", "erro"); }
 };
 },
 novoUsuario: function () {
+var uA = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null;
+if (uA && uA.papel !== "usuario" && !uA.email && !uA.usuarioId && typeof Auth.contaMestre === "function" && !Auth.contaMestre()) {
+UI.toast("Antes de criar o primeiro usuário, defina a sua conta de administrador — senão, depois de criar, você não tem com que entrar.", "erro", 8000);
+return this.configurarAdmin();
+}
 var c = cotaUsuarios(), self = this;
 if (c.tipo === "equipe" && !c.podeCriar) return this._avisoPlanoSemUsuarios();
 if (c.tipo === "titular" && typeof Licenca !== "undefined" && Licenca.atualizarEquipe) {
@@ -56454,12 +56459,8 @@ if (!lic || typeof Licenca === "undefined") return;
 var st = Licenca.status();
 if (Licenca.chave() === lic && st && st.ativo && !st.trial) return;
 if (st && st.ativo && !st.trial && Licenca.chave() && Licenca.chave() !== lic) {
-var deQuem = st.email ? " (" + st.email + ")" : "";
-var texto = "Este aparelho já está licenciado" + deQuem + ".\n\n"
-+ "O link que você abriu pertence a OUTRA licença. Trocar agora muda a empresa deste "
-+ "aparelho na nuvem: os dados daqui passam a se misturar com os da outra empresa — "
-+ "obras, usuários e configurações dos dois lados.\n\n"
-+ "Só continue se este aparelho realmente mudou de empresa.\n\nTrocar a licença?";
+var deQuem = Auth.mascararEmail(st.email) ? " (" + Auth.mascararEmail(st.email) + ")" : "";
+var texto = Auth.avisoTrocaLicenca(deQuem);
 var segue = false;
 try { segue = window.confirm(texto); } catch (eC) { segue = false; }
 if (!segue) {
@@ -56603,9 +56604,18 @@ _temEmpresa = !!((Auth._temEquipeLocal && Auth._temEquipeLocal()) ||
 (Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().some(function (c) { return c.onde === "mestre"; })));
 } catch (eE) {}
 if (_temEmpresa) {
-UI.toast(_ehAdminAqui
-? "Senha incorreta para " + email + ". Se esqueceu, use “Esqueci a senha” logo abaixo — o código vai para o e-mail do administrador."
-: "Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta.", "erro");
+if (_ehAdminAqui) {
+UI.toast("Senha incorreta para " + email + ". Se esqueceu, use “Esqueci a senha” logo abaixo — o código vai para o e-mail do administrador.", "erro");
+return;
+}
+var _outra = ""; try { _outra = (Auth.ehDeForaDoAparelho && Auth.ehDeForaDoAparelho(email) && Auth.textoLicencaOutraEmpresa) ? Auth.textoLicencaOutraEmpresa() : ""; } catch (eO) {}
+if (_outra) {
+Auth._recadoLicenca = _outra;
+UI.toast("Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta. " + _outra, "erro", 8000);
+try { if (UI.mostrarRecadoLicenca) UI.mostrarRecadoLicenca(); } catch (eM) {}
+return;
+}
+UI.toast("Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta.", "erro");
 return;
 }
 r = Auth.registrar(empresa, email, senha);
@@ -56656,6 +56666,14 @@ if (Auth.ehAdminNoAparelho && Auth.ehAdminNoAparelho(email) && Auth.recuperacaoP
 this._recupSenhaPasso1(email.toLowerCase());
 return;
 }
+if (Auth.resgateAdminPossivel && Auth.resgateAdminPossivel(email)) {
+this._recupSenhaPasso1(email.toLowerCase());
+return;
+}
+if (Auth.resgateAdminPossivel && Auth.resgateAdminPossivel() && email.indexOf("@") > 0) {
+var _mk = Auth.mascararEmail(Auth._emailLicencaAtiva());
+if (_mk) { UI.toast("Use o e-mail com que a licença foi comprada (" + _mk + ") para receber o código.", "erro", 8000); return; }
+}
 if (email.indexOf("@") < 0 && Auth.existeLoginEquipe && (Auth.existeLoginEquipe(email) || (Auth._temEquipeLocal && Auth._temEquipeLocal()))) {
 UI.toast("A senha de usuário da equipe é trocada pelo administrador da conta, na tela Usuários. Peça a ele.", "erro"); return;
 }
@@ -56689,7 +56707,7 @@ var btn = this;
 self._recupErro("");
 self._recupOcupado(btn, true, "Enviando…");
 Auth.pedirCodigoSenha(email).then(function (r) {
-if (r && r.ok === true) { self._recupSenhaPasso2(email, r.destino || email, r.validadeMin || 15); return; }
+if (r && r.ok === true) { self._recupSenhaPasso2(email, r.destino || email, r.validadeMin || 15, r.generico === true); return; }
 self._recupOcupado(btn, false, "Enviar código");
 self._recupErro((r && r.erro) || "Não foi possível enviar o código agora.");
 });
@@ -56702,7 +56720,7 @@ UI.modal("Recuperar a senha do administrador",
 '<p id="rs-erro" role="alert" hidden style="color:var(--vermelho);font-size:13px;margin-top:10px"></p>',
 botoes);
 },
-_recupSenhaPasso2: function (email, destino, validadeMin) {
+_recupSenhaPasso2: function (email, destino, validadeMin, generico) {
 var self = this, espera = 60, relogio = null;
 function conferir() {
 var btn = document.getElementById("rs-conferir");
@@ -56724,7 +56742,9 @@ if (espera > 0) { a.textContent = "Reenviar código em " + espera + " s"; a.setA
 else { a.textContent = "Reenviar código"; a.removeAttribute("aria-disabled"); clearInterval(relogio); }
 }
 UI.modal("Digite o código",
-'<p>Enviamos o código para <b>' + Util.esc(destino) + '</b>. Confira também a caixa de spam.</p>' +
+(generico
+? '<p>Se <b>' + Util.esc(destino) + '</b> for o e-mail que você informou ao baixar o teste grátis, o código chega nele em instantes. Confira também a caixa de spam.</p><p class="muted" style="font-size:12px">Não chegou em 5 minutos? Fale com o suporte pelo WhatsApp que liberamos o seu acesso.</p>'
+: '<p>Enviamos o código para <b>' + Util.esc(destino) + '</b>. Confira também a caixa de spam.</p>') +
 '<div class="field" style="margin-top:12px"><label for="rs-codigo">Código de 6 dígitos</label>' +
 '<input id="rs-codigo" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="9" placeholder="000000" style="font-size:22px;letter-spacing:6px;text-align:center"></div>' +
 '<p style="font-size:13px"><a href="#" id="rs-reenviar" aria-disabled="true">Reenviar código em 60 s</a></p>' +

@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.241",
+versao: "1.2.242",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -4954,6 +4954,7 @@ this._recadoSaida = recado;
 return recado;
 },
 _recadoSaida: "",
+_recadoLicenca: "",
 recadoSaida: function () { return this._recadoSaida || ""; },
 _loginEquipe: function (login, senha) {
 login = String(login || "").trim().toLowerCase();
@@ -5263,8 +5264,21 @@ return this.contasAdminNoAparelho().some(function (c) { return c.email === alvo;
 },
 recuperacaoPorCodigoDisponivel: function () {
 try {
-return !!(typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave() && Licenca.deviceId && this._servidorRecup());
+return !!(typeof Licenca !== "undefined" && Licenca.deviceId && this._servidorRecup() && ((Licenca.chave && Licenca.chave()) || this._telefoneTrial()));
 } catch (e) { return false; }
+},
+_telefoneTrial: function () {
+try {
+if (typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave()) return "";
+var r = (typeof Telemetria !== "undefined" && Telemetria.reg) ? Telemetria.reg() : null;
+var t = String((r && r.telefone) || "").replace(/\D/g, "");
+return t.length >= 10 ? t : "";
+} catch (e) { return ""; }
+},
+_corpoRecup: function (email) {
+var ch = (Licenca.chave && Licenca.chave()) || "";
+if (ch) return { chave: ch, deviceId: Licenca.deviceId(), email: email };
+return { trial: true, telefone: this._telefoneTrial(), deviceId: Licenca.deviceId(), email: email };
 },
 _servidorRecup: function () {
 try {
@@ -5288,18 +5302,95 @@ if (!this.recuperacaoPorCodigoDisponivel()) {
 return Promise.resolve({ ok: false, semLicenca: true, erro: "A recuperação por código usa a licença deste aparelho, e ele está sem licença ativa. Ative a licença e tente de novo — ou fale com o suporte." });
 }
 this._recuperacao = null;
-return this._postRecup("/api/senha/codigo", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo });
+return this._postRecup("/api/senha/codigo", this._corpoRecup(alvo));
 },
 conferirCodigoSenha: function (email, codigo) {
 var self = this, alvo = String(email || "").trim().toLowerCase();
 var cod = String(codigo || "").replace(/\D/g, "");
 if (cod.length !== 6) return Promise.resolve({ ok: false, erro: "O código tem 6 dígitos. Confira o e-mail e digite os seis." });
 if (!this.recuperacaoPorCodigoDisponivel()) return Promise.resolve({ ok: false, semLicenca: true, erro: "Este aparelho ficou sem licença ativa. Ative a licença e peça um código novo." });
-return this._postRecup("/api/senha/conferir", { chave: Licenca.chave(), deviceId: Licenca.deviceId(), email: alvo, codigo: cod })
+var corpo = this._corpoRecup(alvo); corpo.codigo = cod;
+return this._postRecup("/api/senha/conferir", corpo)
 .then(function (r) {
 if (r && r.ok === true) self._recuperacao = { email: alvo, ate: Date.now() + self._RECUP_JANELA_MS };
 return r || { ok: false, erro: "Sem resposta do servidor." };
 });
+},
+mascararEmail: function (email) {
+var e = String(email || "").trim(), i = e.indexOf("@");
+if (i < 1) return "";
+var loc = e.slice(0, i), dom = e.slice(i + 1);
+return loc.slice(0, loc.length > 2 ? 2 : 1) + "***@" + dom;
+},
+textoLicencaOutraEmpresa: function () {
+var em = this.mascararEmail(this._emailLicencaAtiva()), emp = "";
+try {
+var cs = this.contasAdminNoAparelho(), a = this._adapter();
+for (var i = 0; i < cs.length && !emp; i++) {
+if (cs[i].onde !== "mestre" || !a) continue;
+var c = a.ler(cs[i].empresaId, "conta", {});
+if (c && c.empresa) emp = String(c.empresa).trim();
+}
+} catch (e) { emp = ""; }
+var de = emp ? (emp + (em ? " (" + em + ")" : "")) : (em || "");
+if (!de) return "";
+return "Este navegador está com a licença de " + de + ". Se a sua empresa é outra, abra o OrçaPRO em outro navegador ou perfil — cada um guarda os dados de uma empresa. Trocar a chave deste navegador é com o administrador dessa empresa, depois de entrar (⚙ → Licença).";
+},
+ehDeForaDoAparelho: function (texto) {
+var t = String(texto || "").trim().toLowerCase();
+if (t.indexOf("@") < 1) return false;
+try {
+if (this.ehAdminNoAparelho(t)) return false;
+if (this.existeLoginEquipe(t)) return false;
+var eids = ["local"];
+this.contasAdminNoAparelho().forEach(function (c) { if (eids.indexOf(c.empresaId) < 0) eids.push(c.empresaId); });
+for (var i = 0; i < eids.length; i++) {
+var eq = this._equipe(eids[i]);
+for (var j = 0; j < eq.length; j++) { if (String(eq[j].login || "").trim().toLowerCase() === t) return false; }
+}
+} catch (e) { return false; }
+return true;
+},
+avisoTrocaLicenca: function (deQuem) {
+return "Este aparelho já está licenciado" + (deQuem || "") + ".\n\n"
++ "O link que você abriu pertence a OUTRA licença. "
++ "Trocar agora muda a empresa deste "
++ "aparelho na nuvem: os dados daqui passam a se misturar com os da outra empresa — "
++ "obras, usuários e configurações dos dois lados.\n\n"
++ "Só continue se este aparelho realmente mudou de empresa.\n\nTrocar a licença?";
+},
+_emailLicencaAtiva: function () {
+var em = "";
+try {
+if (typeof Licenca !== "undefined") {
+var st = Licenca.status ? Licenca.status() : null;
+em = (st && st.email) || "";
+if (!em && Licenca._lerExpDe && Licenca.chave) em = (Licenca._lerExpDe(Licenca.chave()) || {}).email || "";
+}
+} catch (e) { em = ""; }
+return String(em || "").trim().toLowerCase();
+},
+resgateAdminPossivel: function (email) {
+try {
+if (this.contasAdminNoAparelho().length !== 0) return false;
+if (!this._temDadosLocais()) return false;
+if (!this.recuperacaoPorCodigoDisponivel()) return false;
+if (email === undefined) return true;
+var alvo = String(email || "").trim().toLowerCase();
+if (this._telefoneTrial()) return alvo.indexOf("@") > 0;
+return !!alvo && alvo === this._emailLicencaAtiva();
+} catch (e) { return false; }
+},
+_temDadosLocais: function () {
+if (this._temEquipeLocal()) return true;
+try {
+var n = localStorage.length || 0;
+for (var i = 0; i < n; i++) {
+var k = String(localStorage.key(i) || "");
+if (k.indexOf("orcapro:local:") === 0 && k !== "orcapro:local:conta") return true;
+}
+} catch (e) {}
+return false;
 },
 aplicarSenhaRecuperada: function (email, nova) {
 var alvo = String(email || "").trim().toLowerCase();
@@ -5323,6 +5414,14 @@ conta.atualizadoEm = agora;
 if (a.gravar(c.empresaId, "conta", conta) === false) falhou++; else gravou++;
 } catch (e2) { falhou++; }
 });
+if (!gravou && !falhou && a && this.resgateAdminPossivel(alvo)) {
+try {
+var nomeEmp = "Minha Empresa";
+try { var rt = (Store.lerPrefs("local") || {}).responsavelTecnico; if (rt && String(rt.nome || "").trim()) nomeEmp = String(rt.nome).trim(); } catch (eN) {}
+var nova_conta = { id: "conta", empresa: nomeEmp, email: alvo, senhaHash: this._hashSenha(nova), atualizadoEm: agora };
+if (a.gravar("local", "conta", nova_conta) === false) falhou++; else gravou++;
+} catch (e3) { falhou++; }
+}
 if (!gravou) return { ok: false, erro: falhou ? "Não consegui gravar a senha nova neste aparelho (armazenamento cheio ou bloqueado). Faça backup e fale com o suporte." : "Não achei a conta de administrador " + alvo + " neste aparelho. Abra o sistema num aparelho onde esse administrador já entrou." };
 this._recuperacao = null;
 return { ok: true, contas: gravou, falhou: falhou };
@@ -5336,6 +5435,7 @@ var eq = this._equipe(contas[i].empresaId);
 if (eq && eq.length) return null;
 }
 if (this._temEquipeLocal()) return null;
+if (this.contaMestre("local")) return null;
 if (contas.length) {
 var dono = contas[0]; dono._papel = "admin";
 this._iniciarSessao(dono);
@@ -5364,6 +5464,7 @@ trocarSenha: u._trocarSenha === true,
 motivoTroca: u._motivoTroca || "",
 acessoAte: u._acessoAte || ""
 };
+this._recadoLicenca = "";
 this._recadoSaida = "";
 localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
 },
@@ -14160,6 +14261,19 @@ return '' +
 '</select></div>' +
 '</div>';
 },
+_caixaRecadoLicenca: function () {
+var t = (typeof Auth !== "undefined" && Auth._recadoLicenca) ? Auth._recadoLicenca : "";
+if (!t) return "";
+return '<div class="card" id="lg-recado-lic" role="alert" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin:0 0 14px">' + Util.esc(t) +
+'</div>';
+},
+mostrarRecadoLicenca: function () {
+var f = document.getElementById("login-form"); if (!f) return;
+var ant = document.getElementById("lg-recado-lic"); if (ant && ant.parentNode) ant.parentNode.removeChild(ant);
+var h = this._caixaRecadoLicenca(); if (!h) return;
+var d = document.createElement("div"); d.innerHTML = h;
+f.insertBefore(d.firstChild, f.firstChild);
+},
 renderLogin: function () {
 var contas = (typeof Auth !== "undefined" && Auth.listarContas) ? Auth.listarContas() : [];
 var sugLogin = ""; try { sugLogin = localStorage.getItem("orcapro:login-sugerido") || ""; } catch (e) {}
@@ -14172,6 +14286,7 @@ var recadoSaida = (typeof Auth !== "undefined" && Auth.recadoSaida) ? Auth.recad
 var caixaRecado = recadoSaida
 ? '<div class="card" id="lg-recado" role="alert" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin:0 0 14px">' + Util.esc(recadoSaida) + '</div>'
 : '';
+var caixaLic = this._caixaRecadoLicenca();
 var badge = '<svg width="46" height="46" viewBox="0 0 512 512" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2=".35" y2="1"><stop offset="0" stop-color="#2d6a9c"/><stop offset="1" stop-color="#143a5e"/></linearGradient></defs><path d="M504 256 L504 354 L502 385 L500 407 L496 425 L492 440 L486 452 L480 463 L472 472 L463 480 L452 486 L440 492 L425 496 L407 500 L385 502 L354 504 L256 504 L158 504 L127 502 L105 500 L87 496 L72 492 L60 486 L49 480 L40 472 L32 463 L26 452 L20 440 L16 425 L12 407 L10 385 L8 354 L8 256 L8 158 L10 127 L12 105 L16 87 L20 72 L26 60 L32 49 L40 40 L49 32 L60 26 L72 20 L87 16 L105 12 L127 10 L158 8 L256 8 L354 8 L385 10 L407 12 L425 16 L440 20 L452 26 L463 32 L472 40 L480 49 L486 60 L492 72 L496 87 L500 105 L502 127 L504 158 Z" fill="url(#lgg)"/><path d="M502 256 L502 353 L500 384 L498 406 L494 424 L490 438 L484 450 L478 461 L470 470 L461 478 L450 484 L438 490 L424 494 L406 498 L384 500 L353 502 L256 502 L159 502 L128 500 L106 498 L88 494 L74 490 L62 484 L51 478 L42 470 L34 461 L28 450 L22 438 L18 424 L14 406 L12 384 L10 353 L10 256 L10 159 L12 128 L14 106 L18 88 L22 74 L28 62 L34 51 L42 42 L51 34 L62 28 L74 22 L88 18 L106 14 L128 12 L159 10 L256 10 L353 10 L384 12 L406 14 L424 18 L438 22 L450 28 L461 34 L470 42 L478 51 L484 62 L490 74 L494 88 L498 106 L500 128 L502 159 Z" fill="none" stroke="#fff" stroke-opacity=".14" stroke-width="3"/><g><path d="M120 306 L120 372 Q120 380 128 380 L180 380 Q188 380 188 372 L188 306 Q188 288 170 288 L138 288 Q120 288 120 306 Z" fill="#fff" fill-opacity=".42"/><path d="M222 238 L222 372 Q222 380 230 380 L282 380 Q290 380 290 372 L290 238 Q290 220 272 220 L240 220 Q222 220 222 238 Z" fill="#fff" fill-opacity=".78"/><path d="M324 170 L324 372 Q324 380 332 380 L384 380 Q392 380 392 372 L392 170 Q392 152 374 152 L342 152 Q324 152 324 170 Z" fill="#3ccf73"/><path d="M402 72 C408 100 408 100 436 106 C408 112 408 112 402 140 C396 112 396 112 368 106 C396 100 396 100 402 72 Z" fill="#9be7af"/></g></svg>';
 return '' +
 '<div class="login-wrap">' +
@@ -14190,6 +14305,7 @@ return '' +
 '<div class="slogan">Entre ou crie sua conta para começar.</div></div>' +
 '<div id="login-form">' +
 caixaRecado +
+caixaLic +
 chips +
 '<form id="lg-form" onsubmit="return false" autocomplete="on">' +
 '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="' + String(sugLogin).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
@@ -14203,7 +14319,7 @@ chips +
 '<p class="muted" style="font-size:12px;margin:0">Preencha só se esta for a primeira conta da sua empresa. Para entrar numa conta que já existe, use o e-mail ou o usuário acima.</p>' +
 '</details>' +
 '</form>' +
-((contas.length || (typeof Auth !== "undefined" && Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().length))
+((contas.length || (typeof Auth !== "undefined" && Auth.contasAdminNoAparelho && Auth.contasAdminNoAparelho().length) || (typeof Auth !== "undefined" && Auth.resgateAdminPossivel && Auth.resgateAdminPossivel()))
 ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
 : '<p class="muted mt" style="font-size:12px;text-align:center">Já usa o OrçaPRO no computador? Entre com o <b>mesmo e-mail (ou usuário) e senha</b> — não precisa criar outra conta.</p>') +
 '</div>' +

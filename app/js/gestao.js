@@ -38932,6 +38932,16 @@
       };
     },
     novoUsuario: function () {
+      /* ⚠ ADMIN ANÔNIMO NÃO PODE CRIAR O 1º USUÁRIO (caso real 29/10/2026).
+         Quem usa sem login tem sessão anônima (admin, e-mail ""). Ao criar o
+         primeiro usuário da equipe o login obrigatório liga — e o dono, sem
+         conta de administrador, fica trancado para fora dos próprios dados.
+         A guarda está na FUNÇÃO, não no botão. */
+      var uA = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null;
+      if (uA && uA.papel !== "usuario" && !uA.email && !uA.usuarioId && typeof Auth.contaMestre === "function" && !Auth.contaMestre()) {
+        UI.toast("Antes de criar o primeiro usuário, defina a sua conta de administrador — senão, depois de criar, você não tem com que entrar.", "erro", 8000);
+        return this.configurarAdmin();
+      }
       var c = cotaUsuarios(), self = this;
       if (c.tipo === "equipe" && !c.podeCriar) return this._avisoPlanoSemUsuarios();   // com vaga (usuário liberado pelo titular), segue para o formulário
       /* titular: confere a contagem com o servidor ANTES de abrir. Offline,
