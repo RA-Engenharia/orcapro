@@ -20,6 +20,28 @@
   function thin() { var s = { style: 'thin', color: { argb: 'FFCBD5E1' } }; return { top: s, left: s, bottom: s, right: s }; }
   function hStyle(c) { c.font = { bold: true, color: { argb: branco }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = thin(); }
 
+  /* Entrada do mapa de insumos montada a partir dos insumos GRAVADOS no item (composição do órgão,
+     já com o desconto da licitação) — ou null se o item não os traz. Mesmo formato do analítico:
+     { descricao, unidade, custoUnitario, custoMO/MAT/EQ, insumos:[{tipo, codigo, descricao, unidade,
+     coeficiente, custoUnitario, custoTotal, categoria}] }. Composição auxiliar (tipo COMPOSICAO) fica
+     fora das três parcelas, como no analítico. Exposta em ExcelOrc.insumosDoItem (teste e simulação). */
+  function itemInsumosParaMapa(it) {
+    if (!it || !Array.isArray(it.insumos) || !it.insumos.length) return null;
+    var mo = 0, mat = 0, eq = 0, lista = [];
+    it.insumos.forEach(function (x) {
+      if (!x || typeof x !== 'object') return;
+      var co = Number(x.coeficiente) || 0, cu = Number(x.custoUnitario) || 0, ct = co * cu;
+      var comp = String(x.tipo || '').toUpperCase() === 'COMPOSICAO';
+      var cat = String(x.categoria || '').toUpperCase();
+      if (!comp) { if (cat === 'MO') mo += ct; else if (cat === 'EQ') eq += ct; else if (cat === 'MAT') mat += ct; }
+      lista.push({ tipo: comp ? 'COMPOSICAO' : 'INSUMO', codigo: x.codigo, descricao: x.descricao, unidade: x.unidade,
+        coeficiente: co, custoUnitario: cu, custoTotal: ct, categoria: (cat === 'MO' || cat === 'MAT' || cat === 'EQ') ? cat : 'OUTROS' });
+    });
+    if (!lista.length) return null;
+    return { codigo: it.codigo, descricao: it.descricao, unidade: it.unidade, custoUnitario: Number(it.custoUnitario) || 0,
+      custoMO: mo, custoMAT: mat, custoEQ: eq, insumos: lista };
+  }
+
   /* ---- Quebra MO / MAT / EQ de UM item (custo total `ct`), na ordem de confiança:
    *  1. parcelas do PRÓPRIO item (Orcamento.repartirCusto) — é o único lugar
    *     onde o modo de custo aparece ("só mão de obra" fatura só MO);
@@ -966,7 +988,7 @@
 
     // ===================== INSUMOS (composições explodidas) =====================
     if (wins) {
-      var catNome = { MO: 'Mão de obra', MAT: 'Material', EQ: 'Equipamento' };
+      var catNome = { MO: 'Mão de obra', MAT: 'Material', EQ: 'Equipamento', OUTROS: 'Serviço (composição auxiliar)' };
       wins.columns = [{ width: 10 }, { width: 11 }, { width: 11 }, { width: 46 }, { width: 6 }, { width: 11 }, { width: 13 }, { width: 13 }, { width: 13 }];
       wins.mergeCells('A1:I1'); wins.getCell('A1').value = empresa; wins.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wins.mergeCells('A2:I2'); wins.getCell('A2').value = 'DETALHAMENTO DE COMPOSIÇÕES (INSUMOS) — ' + (orc.numero || ''); wins.getCell('A2').font = { bold: true, size: 11 };
@@ -978,7 +1000,7 @@
         (Array.isArray(et.itens) ? et.itens : []).forEach(function (it) {
           // v1.1.123 — composições PRÓPRIAS também saem explodidas (o montarMapa
           // já as coloca no insMap com a mesma estrutura)
-          if (it.origem !== 'SINAPI' && it.origem !== 'PROPRIA') return;
+          if (it.origem !== 'SINAPI' && it.origem !== 'PROPRIA' && !itemInsumosParaMapa(it)) return;
           var a = insMap[String(it.codigo)];
           if (!a || vistos[it.codigo]) return;
           vistos[it.codigo] = 1;
@@ -2030,6 +2052,7 @@
   // ---------- Camada browser ----------
   var ExcelOrc = {
     construir: construir,
+    insumosDoItem: itemInsumosParaMapa,
 
     /* ExcelJS — VENDORIZADO, offline (js/vendor/exceljs.min.js, 4.4.0).
      *
@@ -2121,6 +2144,11 @@
           var m = {};
           (orc.etapas || []).forEach(function (et) {
             (et.itens || []).forEach(function (it) {
+              /* ⚠ INSUMOS GRAVADOS NO PRÓPRIO ITEM VENCEM A BASE. Item de licitação (js/licitacao.js)
+                 carrega a composição do órgão já REESCALADA pelo desconto; abrir o analítico da base
+                 em cima dele devolveria o preço cheio e o Excel sairia sem o desconto. */
+              var mi = itemInsumosParaMapa(it);
+              if (mi) { m[String(it.codigo)] = mi; return; }
               if (Orcamento.ehSinapi(it.origem)) { var a = Analitico.obter(it.codigo); if (a) m[String(it.codigo)] = a; }
               // v1.1.123 — composição PRÓPRIA: a estrutura salva na base do
               // cliente sai na aba de insumos igual à SINAPI (entregável coerente
@@ -2163,7 +2191,7 @@
           if (global.UI) UI.toast("Aba Insumos omitida: a base analítica carregada é de " + ufAna + " e o orçamento é de " + ufOrc + ". Abra o orçamento de novo e exporte outra vez.", "aviso");
           finalizar(null); return;
         }
-        finalizar(Analitico.carregado ? montarMapa() : null);
+        finalizar((Analitico.carregado || (orc.etapas || []).some(function (et) { return (et.itens || []).some(function (it) { return !!itemInsumosParaMapa(it); }); })) ? montarMapa() : null);
       });
     }
   };

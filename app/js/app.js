@@ -2614,6 +2614,7 @@
         case "fechar-valor": this.fecharValor(); break;
         case "fechar-desfazer": this.fecharDesfazer(); break;
         case "lic-desconto": this.licitacaoDesconto(); break;
+        case "lic-pacote": this.licitacaoPacote(); break;
         case "lic-desconto-desfazer": this.licitacaoDescontoDesfazer(); break;
         case "lic-desconto-itens": this.licitacaoDescontoItens(); break;
         case "lic-desconto-itens-desfazer": this.licitacaoDescontoItensDesfazer(); break;
@@ -2781,6 +2782,30 @@
           if (prev) prev.innerHTML = '<img src="' + rd.result + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">';
         };
         rd.readAsDataURL(file);
+        return;
+      }
+      /* timbrado do pacote de licitação: reduz para no máximo 1100 px (mantém a transparência) e guarda como data URI */
+      if (e.target.id === "emp-timbradoTopo-arq" || e.target.id === "emp-timbradoFundo-arq") {
+        var tf = e.target.files && e.target.files[0];
+        if (!tf) return;
+        var chaveT = e.target.id === "emp-timbradoTopo-arq" ? "timbradoTopo" : "timbradoFundo", selfT = this;
+        if (tf.size > 8 * 1024 * 1024) { UI.toast("Imagem muito grande (máx. 8 MB).", "erro"); return; }
+        var rdT = new FileReader();
+        rdT.onload = function () {
+          var im = new Image();
+          im.onload = function () {
+            var k = Math.min(1, 1100 / Math.max(im.width, im.height)), cv = document.createElement("canvas");
+            cv.width = Math.max(1, Math.round(im.width * k)); cv.height = Math.max(1, Math.round(im.height * k));
+            cv.getContext("2d").drawImage(im, 0, 0, cv.width, cv.height);
+            var uri = ""; try { uri = cv.toDataURL("image/png"); } catch (eC) { uri = rdT.result; }
+            selfT._timbradoPend = selfT._timbradoPend || {}; selfT._timbradoPend[chaveT] = uri;
+            var pv = UI.el("emp-" + chaveT + "-prev");
+            if (pv) pv.innerHTML = '<img src="' + uri + '" style="max-height:56px;border:1px solid var(--linha);border-radius:6px;padding:3px;background:#fff">';
+          };
+          im.onerror = function () { UI.toast("Não consegui ler essa imagem.", "erro"); };
+          im.src = rdT.result;
+        };
+        rdT.readAsDataURL(tf);
         return;
       }
       // restaurar backup de orçamentos
@@ -5279,7 +5304,16 @@
     },
     salvarEmpresa: function () {
       var dados = {};
-      Empresa.campos.forEach(function (k) { var el = UI.el("emp-" + k); dados[k] = el ? el.value : ""; });
+      /* campos da proposta de licitação (js/empresa.js): se a tela não os desenhou, ficam como estavam —
+         nunca apagados por um salvar que não os viu */
+      var _novosEmp = { inscricaoMunicipal: 1, banco: 1, agencia: 1, conta: 1, socioNome: 1, socioCargo: 1, rtNome: 1, rtCrea: 1, timbradoTopo: 1, timbradoFundo: 1 };
+      var _atualEmp = Empresa.dados(), _pend = this._timbradoPend || {};
+      Empresa.campos.forEach(function (k) {
+        var el = UI.el("emp-" + k);
+        if (_novosEmp[k]) dados[k] = (_pend[k] !== undefined) ? _pend[k] : (el ? el.value : (_atualEmp[k] || ""));
+        else dados[k] = el ? el.value : "";
+      });
+      this._timbradoPend = null;
       Empresa.salvar(dados, this._logoPendente);
       // White-label dos entregáveis (créditos / marca d'água / QR)
       var elC = UI.el("emp-doc-creditos"), elQ = UI.el("emp-doc-qr"), elW = UI.el("emp-doc-wm"), elB = UI.el("emp-doc-base");
@@ -11854,19 +11888,32 @@
     licitacaoDesconto: function () {
       var self = this, orc = this.orcAtual;
       if (!orc || typeof Licitacao === "undefined") return;
+      /* "Só no material" desce nas composições auxiliares (a areia da argamassa C0171 recebe o
+         mesmo fator): para abri-las o motor precisa da base SEINFRA do projeto, a mesma que o
+         pacote da proposta usa. O Aplicar espera a carga, senão a auxiliar entraria sem desconto. */
+      var licD = Licitacao.cfg(orc) || {}, tabD = (licD.leitura && licD.leitura.tabelas) || {}, baseAux = null;
+      var basePronta = (String(tabD.seinfra || "").trim() && typeof AnaliticoBases !== "undefined" && typeof LicitacaoDocs !== "undefined")
+        ? AnaliticoBases.carregar("SEINFRA").then(function (ent) { baseAux = LicitacaoDocs.baseDe(ent && ent.pacote); return baseAux; }, function () { return null; })
+        : Promise.resolve(null);
+      var optsD = function () { return { incidencia: (UI.el("lic-desc-inc") || {}).value, base: baseAux }; };
       UI.modal("Desconto linear sobre a referência do órgão",
-        '<p style="font-size:13px;margin-top:0">Um percentual único sobre o preço de referência <b>com BDI</b> de cada item da planilha do órgão. ' +
-        'Os itens sem referência no pacote ficam como estão. É possível desfazer depois.</p>' +
+        '<p style="font-size:13px;margin-top:0">O percentual é sobre o preço de referência <b>com BDI</b> da planilha do órgão, no total da proposta. ' +
+        'Quantidade, descrição e unidade não mudam. É possível desfazer depois.</p>' +
         '<div class="field"><label>Desconto (%)</label><input id="lic-desc-pct" type="text" inputmode="decimal" placeholder="Ex.: 12,5"></div>' +
+        '<div class="field"><label>Onde o desconto incide</label><select id="lic-desc-inc">' +
+        '<option value="todos">Linear: igual em todos os itens</option><option value="MAT">Só no material</option>' +
+        '<option value="MO">Só na mão de obra</option><option value="EQ">Só no equipamento</option></select></div>' +
         '<div id="lic-desc-prev" class="muted" style="font-size:13px;min-height:54px">Informe o percentual para ver o total que resulta.</div>',
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Aplicar desconto", classe: "primary", onClick: function () {
               var pct = Util.num((UI.el("lic-desc-pct") || {}).value);
-              var r = Licitacao.aplicarDesconto(orc, pct);
-              if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-              var g = self.persistir(); UI.fecharModal(); self.render();
-              if (self._gravou(g)) UI.toast("Desconto linear de " + Util.fmtNum(r.pct, 2) + "% aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + ".", "ok");
+              basePronta.then(function () {
+                var r = Licitacao.aplicarDesconto(orc, pct, optsD());
+                if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+                var g = self.persistir(); UI.fecharModal(); self.render();
+                if (self._gravou(g)) UI.toast("Desconto linear de " + Util.fmtNum(r.pct, 2) + "% aplicado em " + r.itens + " item(ns): de " + Util.fmtMoeda(r.totalAntes) + " para " + Util.fmtMoeda(r.totalDepois) + ".", "ok");
+              });
             } }
         ]);
       var inp = UI.el("lic-desc-pct");
@@ -11875,16 +11922,67 @@
           var box = UI.el("lic-desc-prev"); if (!box) return;
           var v = Util.num(inp.value);
           if (!(v > 0)) { box.textContent = "Informe o percentual para ver o total que resulta."; return; }
-          var s = Licitacao.simularDesconto(orc, v);
+          var s = Licitacao.simularDesconto(orc, v, optsD());
           if (!s.ok) { box.textContent = s.erro; return; }
           var h = "Total da proposta: <b>" + Util.esc(Util.fmtMoeda(s.totalAntes)) + "</b> → <b>" + Util.esc(Util.fmtMoeda(s.totalDepois)) + "</b> (" + s.itens + " item(ns)" +
             (s.semReferencia ? ", " + s.semReferencia + " sem referência ficam como estão" : "") + ").";
+          if (s.fator != null) h += "<br>" + Util.esc("Fator nos insumos: " + Util.fmtNum(s.fator, 4) + " (reduz " + Util.fmtNum((1 - s.fator) * 100, 2) + "% cada um). Desconto efetivo: " + Util.fmtNum(s.efetivo, 2) + "%.");
+          if (s.semComposicao) h += "<br><b>" + s.semComposicao + " item(ns) sem composição conhecida não recebem desconto.</b>";
+          if (s.auxDescontadas) h += "<br>" + Util.esc(s.auxDescontadas + " composição(ões) auxiliar(es) recebem o mesmo fator nos insumos de dentro.");
+          if (s.auxSemComposicao && s.auxSemComposicao.length) h += "<br><b>" + Util.esc("Sem composição conhecida, ficam sem desconto as auxiliares " + s.auxSemComposicao.join(", ") + ".") + "</b>";
+          if (s.auxDivergentes && s.auxDivergentes.length) h += "<br><b>" + Util.esc("A base não explica o preço de " + s.auxDivergentes.join(", ") + " (outra tabela?): ficam sem desconto.") + "</b>";
+          if (s.baseRecusada) h += "<br><b>" + Util.esc("A base SEINFRA carregada é a " + s.baseRecusada + ", diferente da do projeto: as auxiliares ficam sem desconto.") + "</b>";
           s.avisos.resumo.forEach(function (a) { if (a.chave === "teto" || a.chave === "exeq") h += "<br><b>" + Util.esc(a.texto) + "</b>"; });
           box.innerHTML = h;
         };
         inp.addEventListener("input", prev);
+        var incSel = UI.el("lic-desc-inc");
+        if (incSel) incSel.addEventListener("change", prev);
+        /* a base chegou: a prévia refaz a conta com as auxiliares abertas */
+        basePronta.then(function () { if (UI.el("lic-desc-prev")) prev(); });
         try { inp.focus(); } catch (e) {}
       }
+    },
+
+    /* PACOTE DA PROPOSTA DE LICITAÇÃO (js/licitacaodocs.js). Antes de gerar, mostra na TELA o que falta
+       (dados da empresa, pendências da leitura do PDF do órgão): esse aviso nunca entra no PDF. O PDF é
+       o do navegador (Imprimir / Salvar PDF), com as páginas medidas por LicitacaoDocs.paginar. */
+    licitacaoPacote: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof LicitacaoDocs === "undefined" || typeof Licitacao === "undefined") return;
+      var lic = Licitacao.cfg(orc);
+      if (!lic || !lic.ativo) { UI.toast("O orçamento não está em modo licitação.", "erro"); return; }
+      var tabs = (lic.leitura && lic.leitura.tabelas) || {};
+      var pegarBase = function (cb) {
+        if (!s(tabs.seinfra) || typeof AnaliticoBases === "undefined") { cb(null); return; }
+        AnaliticoBases.carregar("SEINFRA").then(function (ent) { cb(LicitacaoDocs.baseDe(ent && ent.pacote)); }, function () { cb(null); });
+      };
+      function s(v) { return String(v == null ? "" : v).trim(); }
+      UI.toast("Montando o pacote da proposta…", "ok");
+      pegarBase(function (base) {
+        var emp = (typeof Empresa !== "undefined") ? Empresa.dados() : {};
+        try { if (typeof Empresa !== "undefined" && !emp.timbradoTopo && Empresa.logo()) emp.timbradoTopo = Empresa.logo(); } catch (e) {}
+        var opc = { base: base };
+        var pr = LicitacaoDocs.pendencias(orc, emp, opc);
+        if (!pr.ok) { UI.modal("Pacote da proposta", '<p>' + Util.esc(pr.erro) + '</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
+        var gerar = function () {
+          var r = LicitacaoDocs.gerar(orc, emp, opc);
+          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+          self._abrirPrint("Proposta — " + (orc.numero || "licitação"), r.html, "imprimir");
+          try { LicitacaoDocs.paginar(document.querySelector("#proposta-print .ld-raiz")); } catch (eP) { UI.toast("Falha ao paginar o pacote: " + eP.message, "erro"); }
+        };
+        if (!pr.total) { gerar(); return; }
+        var lista = function (tit, a) {
+          return a.length ? '<h4 style="margin:10px 0 4px;font-size:13px">' + tit + '</h4><ul style="margin:0 0 0 18px;font-size:12.5px">' + a.map(function (x) { return '<li>' + Util.esc(x) + '</li>'; }).join("") + '</ul>' : "";
+        };
+        UI.modal("Pendências de conferência",
+          '<p style="font-size:13px;margin-top:0">Estes pontos aparecem só aqui, na tela. No PDF, o dado da empresa que falta sai como <b style="color:#c00000">[PREENCHER: ...]</b> em vermelho; cronograma, BDI e encargos que não vieram do órgão saem como PENDÊNCIA.</p>' +
+          lista("Dados que faltam (⚙ Empresa e condições comerciais)", pr.preencher) +
+          lista("Apontadas na leitura do PDF do órgão", pr.conferencia) +
+          lista("Dados do pacote", pr.dados),
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+           { texto: "Gerar assim mesmo", classe: "primary", onClick: function () { UI.fecharModal(); gerar(); } }]);
+      });
     },
 
     licitacaoDescontoDesfazer: function () {
@@ -12276,6 +12374,22 @@
       return h;
     },
 
+    /* Botões do modal "Orçamento devolvido": com o endereço do certame (guardado
+       em lic.urlCertame ao importar o pacote) o principal é "Voltar ao certame";
+       sem ele, só "Fechar". Só abre http/https. */
+    _licBotoesVolta: function (orc) {
+      var lic = (typeof Licitacao !== "undefined") ? Licitacao.cfg(orc) : null;
+      var u = lic && lic.urlCertame ? String(lic.urlCertame) : "";
+      var b = [];
+      if (/^https?:\/\//i.test(u)) {
+        b.push({ texto: "Voltar ao certame", classe: "primary", onClick: function () { UI.fecharModal(); try { window.open(u, "_blank", "noopener"); } catch (e) {} } });
+        b.push({ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
+      } else {
+        b.push({ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } });
+      }
+      return b;
+    },
+
     _licEnviar: function (orc, d, blob, nome) {
       var self = this;
       var baixar = function () {
@@ -12289,8 +12403,8 @@
         baixar();
         UI.modal("Não consegui devolver ao CertamePRO",
           '<p style="font-size:13px;margin-top:0">' + Util.esc(motivo) + '</p>' +
-          '<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
-          'use <b>Receber orçamento do OrçaPRO</b> e escolha esse arquivo. Nada foi perdido neste orçamento.</p>',
+          '<p style="font-size:13px">O arquivo <b class="mono">' + Util.esc(nome) + '</b> foi <b>baixado</b> na sua pasta de Downloads. Para enviar à mão: abra o certame no CertamePRO, ' +
+          'clique em <b>Outras opções</b> e use <b>Enviar o arquivo à mão</b>, escolhendo esse arquivo. Nada foi perdido neste orçamento.</p>',
           [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
       };
       var fd;
@@ -12316,7 +12430,7 @@
           var lido = null, htmlLido = "";
           try { lido = Licitacao.lerDevolucao(j, Licitacao.totalProposta(orc)); if (lido) htmlLido = self._licHtmlDevolucao(nome, lido); } catch (eL) { lido = null; }
           if (lido && htmlLido) {
-            UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+            UI.modal("Orçamento devolvido ao CertamePRO", htmlLido, self._licBotoesVolta(orc));
             return;
           }
           var msg = (j && (j.mensagem || j.message)) ? String(j.mensagem || j.message) : "";
@@ -12332,7 +12446,7 @@
             '<p style="font-size:13px;margin-top:0">O CertamePRO recebeu <b class="mono">' + Util.esc(nome) + '</b>' + (msg ? ": " + Util.esc(msg) : ".") + '</p>' +
             (linhas ? '<ul style="font-size:13px">' + linhas + '</ul>' : "") +
             '<p class="muted" style="font-size:12px">As conferências (teto, 75% e 85%, preço acima da referência) aparecem no certame.</p>',
-            [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+            self._licBotoesVolta(orc));
         })
         .catch(function (e) {
           if (tempo) clearTimeout(tempo);

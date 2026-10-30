@@ -105,6 +105,65 @@
     return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
+  /* VALOR POR EXTENSO em reais ("um milhão oitocentos e setenta e um mil novecentos e vinte e nove reais
+     e quarenta e três centavos"). Mesma regra de palavras do `valor_por_extenso` do CertamePRO
+     (Licitacoes/app/util/extenso.py), com UMA diferença de propósito: os grupos de milhar não levam
+     vírgula entre eles — é assim que a proposta de licitação aprovada pelo cliente escreve ("um milhão
+     oitocentos e setenta e um mil novecentos e vinte e nove reais"). "cem" só no 100 exato; "e" antes do
+     último grupo quando ele é menor que 100 ou múltiplo de 100; "de reais" em milhão redondo.
+     Valor arredondado a centavo (meio para cima). Negativo ou acima de 999 trilhões → "" (nunca inventa). */
+  var _EX_UN = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze",
+    "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
+  var _EX_DZ = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+  var _EX_CT = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+  var _EX_CL = [["", ""], ["mil", "mil"], ["milhão", "milhões"], ["bilhão", "bilhões"], ["trilhão", "trilhões"]];
+  function _ex999(n) {
+    if (n === 100) return "cem";
+    var p = [], c = Math.floor(n / 100), r = n % 100;
+    if (c) p.push(_EX_CT[c]);
+    if (r) {
+      if (r < 20) p.push(_EX_UN[r]);
+      else { var d = Math.floor(r / 10), u = r % 10; p.push(_EX_DZ[d] + (u ? " e " + _EX_UN[u] : "")); }
+    }
+    return p.join(" e ");
+  }
+  function _exInteiro(n) {
+    if (n === 0) return "zero";
+    var grupos = [];
+    while (n > 0) { grupos.push(n % 1000); n = Math.floor(n / 1000); }
+    if (grupos.length > _EX_CL.length) return "";
+    var partes = [];
+    for (var i = grupos.length - 1; i >= 0; i--) {
+      var g = grupos[i];
+      if (!g) continue;
+      var t;
+      if (i === 1 && g === 1) t = "mil";
+      else if (i === 0) t = _ex999(g);
+      else t = _ex999(g) + " " + (g === 1 ? _EX_CL[i][0] : _EX_CL[i][1]);
+      partes.push({ t: t, g: g });
+    }
+    var out = partes[0].t;
+    for (var k = 1; k < partes.length; k++) {
+      var ult = (k === partes.length - 1), g2 = partes[k].g;
+      out += ((ult && (g2 < 100 || g2 % 100 === 0)) ? " e " : " ") + partes[k].t;
+    }
+    return out;
+  }
+  Util.valorExtenso = function (n) {
+    n = Util.parseNum(n);
+    if (!isFinite(n) || n < 0) return "";
+    var cent = Math.round(n * 100 + 1e-7);
+    var reais = Math.floor(cent / 100), cts = cent % 100, partes = [];
+    if (reais) {
+      var t = _exInteiro(reais);
+      if (!t) return "";
+      var de = reais >= 1000000 && reais % 1000000 === 0;
+      partes.push(t + " " + (de ? "de " : "") + (reais === 1 ? "real" : "reais"));
+    }
+    if (cts) partes.push(_exInteiro(cts) + " " + (cts === 1 ? "centavo" : "centavos"));
+    return partes.length ? partes.join(" e ") : "zero real";
+  };
+
   Util.fmtPct = function (n, casas) {
     casas = (casas == null) ? 2 : casas;
     return Util.fmtNum(n, casas) + "%";

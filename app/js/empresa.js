@@ -34,11 +34,26 @@
     /* REGIME TRIBUTÁRIO da empresa: "simples" | "presumido" | "real" | "" (não
        informado). Só o CAMPO: não entra em nenhuma conta. Vai no _meta do Excel
        e dá uma dica ao lado do BDI (impostos do BDI dependem do regime). */
-    regimeTributario: ""
+    regimeTributario: "",
+    /* DADOS DA PROPOSTA DE LICITAÇÃO (js/licitacaodocs.js) — todos OPCIONAIS: empresa já salva e
+       empresa que não disputa licitação seguem como estavam. Faltando algum, o pacote sai com
+       "[PREENCHER: ...]" em vermelho e o botão avisa antes (nunca se inventa dado da empresa). */
+    inscricaoMunicipal: "",
+    banco: "",
+    agencia: "",
+    conta: "",
+    socioNome: "",
+    socioCargo: "",
+    rtNome: "",
+    rtCrea: "",
+    /* timbrado do pacote: imagem do topo (logo) e do fundo (marca d'água), em data URI */
+    timbradoTopo: "",
+    timbradoFundo: ""
   };
 
   var Empresa = {
-    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario"],
+    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram", "gestao", "regimeTributario",
+      "inscricaoMunicipal", "banco", "agencia", "conta", "socioNome", "socioCargo", "rtNome", "rtCrea", "timbradoTopo", "timbradoFundo"],
 
     REGIMES: { simples: "Simples Nacional", presumido: "Lucro Presumido", real: "Lucro Real" },
     /* valor válido ou "" — nunca devolve texto livre vindo de fora */

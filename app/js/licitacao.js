@@ -72,6 +72,112 @@
   var LIM_INEXEQUIVEL = 0.75;   // § 4º
   var LIM_GARANTIA = 0.85;      // § 5º
 
+  /* Categoria do insumo: MO, MAT, EQ ou "" (composição auxiliar: tem de tudo dentro, e o
+     analítico do órgão não abre). ⚠ A auxiliar é "" MESMO quando a base a rotula MAT: a
+     SEINFRA marca C3130 (areia de rio, extração) e C3253 (brita produzida) como material,
+     e por dentro elas são equipamento e servente. Dar o fator nelas inteiras era supor
+     100% material; o que tem dentro só se sabe abrindo a composição (_listaComFator). */
+  function _ehComp(i) { return String((i && i.tipo) || "").toUpperCase() === "COMPOSICAO"; }
+  function _catDe(i) {
+    if (_ehComp(i)) return "";
+    var c = String((i && i.categoria) || "").toUpperCase();
+    return (c === "MO" || c === "MAT" || c === "EQ") ? c : "";
+  }
+  function _r4(v) { return Math.round(v * 1e4) / 1e4; }
+  function _normTxt(t) {
+    var x = String(t == null ? "" : t).toUpperCase();
+    try { x = x.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+    return x.replace(/[^A-Z0-9]/g, "");
+  }
+  /* tolerância do contrato do analítico (docs/ANALITICO-BASES-CONTRATO.md): max(R$ 0,02; 0,5%) */
+  function _tolAux(cu) { return Math.max(0.02, Math.abs(cu) * 0.005); }
+
+  /* ------------------------------------------------------------------
+   * DESCONTO CONCENTRADO DENTRO DAS AUXILIARES (pedido de cliente, 30/10/2026)
+   * "Só no material" quer dizer TODO material da obra com o mesmo fator, inclusive
+   * a areia e o cimento da argamassa C0171 que está dentro da C2895: o modelo de
+   * 49 p. da CE 021 faz assim (areia 83,58 → 47,50; cimento 0,71 → 0,4035). Antes
+   * a auxiliar entrava inteira, sem desconto, e o documento a imprimia pela base.
+   * `ctx` = { obter(cod) → composição da base ou null, memo, semComp, divergente }.
+   * Devolve a lista nova (cópia), Σ antes, Σ depois e, em `aux`, a versão
+   * descontada de cada auxiliar aberta (para o documento imprimir os mesmos números).
+   * Auxiliar sem composição conhecida, ou cuja composição não explica o preço
+   * usado no item (outra competência), fica como está e é contada: nunca se
+   * inventa parcela.
+   * ------------------------------------------------------------------ */
+  function _listaComFator(lista, fator, cat, ctx, trilha, aux) {
+    var nova = [], somaO = 0, somaN = 0;
+    (lista || []).forEach(function (i) {
+      if (!i || typeof i !== "object") { nova.push(i); return; }
+      var c = JSON.parse(JSON.stringify(i)), co = num(i.coeficiente), u = num(i.custoUnitario);
+      if (_ehComp(i)) {
+        var nv = _auxNovoCusto(i, u, fator, cat, ctx, trilha, aux);
+        if (nv != null) c.custoUnitario = nv;
+      } else if (_catDe(i) === cat) c.custoUnitario = _r4(u * fator);
+      if (c.custoTotal != null) c.custoTotal = _r4(co * num(c.custoUnitario));
+      somaO += co * u; somaN += co * num(c.custoUnitario);
+      nova.push(c);
+    });
+    return { lista: nova, antes: somaO, depois: somaN };
+  }
+  /* Custo novo da auxiliar `i` (custo `u` nesta linha) com o fator, ou null se não dá para abrir.
+     O custo novo parte do preço DESTA linha (u − queda), e a versão guardada em `aux` leva o
+     mesmo número: o documento imprime a auxiliar com o valor que a linha de cima usou. */
+  function _auxNovoCusto(i, u, fator, cat, ctx, trilha, aux) {
+    var cod = s(i.codigo);
+    if (!ctx || !cod) { if (ctx) ctx.semComp[cod || "(sem código)"] = 1; return null; }
+    if (trilha[cod]) { ctx.ciclo[cod] = 1; return null; }   /* auxiliar que contém a si mesma: não desce de novo */
+    if (ctx.memoFator !== fator) { ctx.memo = {}; ctx.memoFator = fator; }
+    var m = ctx.memo[cod];
+    if (!m) {
+      var comp = null;
+      try { comp = ctx.obter(cod); } catch (e) { comp = null; }
+      if (!comp || !Array.isArray(comp.insumos) || !comp.insumos.length) { ctx.memo[cod] = m = { sem: true }; }
+      else {
+        var sub = {};
+        trilha[cod] = 1;
+        var r = _listaComFator(comp.insumos, fator, cat, ctx, trilha, sub);
+        delete trilha[cod];
+        var cb = num(comp.custoUnitario) > 0 ? num(comp.custoUnitario) : r.antes;
+        ctx.memo[cod] = m = { soma: r.antes, delta: r.antes - r.depois, sub: sub,
+          ent: { codigo: cod, descricao: s(comp.descricao), unidade: s(comp.unidade), fonte: s(comp.fonte || i.fonte), custoBase: cb, insumos: r.lista } };
+      }
+    }
+    if (m.sem) { ctx.semComp[cod] = 1; return null; }
+    /* a composição da base tem de explicar o preço usado AQUI; senão é outra tabela */
+    if (Math.abs(m.soma - u) > _tolAux(u)) { ctx.divergente[cod] = 1; return null; }
+    /* sem a categoria dentro, a auxiliar fica no preço que já tinha (nem o arredondamento mexe) */
+    var nv = m.delta > 1e-9 ? Math.max(0, Math.min(u, ctx.arrAux(u - m.delta))) : u;   /* auxiliar só de material com fator 0 não fica negativa */
+    Object.keys(m.sub).forEach(function (k) { aux[k] = JSON.parse(JSON.stringify(m.sub[k])); });
+    var e = JSON.parse(JSON.stringify(m.ent));
+    e.custoUnitario = m.delta > 1e-9 ? nv : e.custoBase;
+    aux[cod] = e;
+    return nv;
+  }
+  /* Σ coeficiente × custo, com `fator` nos insumos da categoria `cat` */
+  function _somaInsumos(lista, fator, cat) {
+    var soma = 0;
+    (lista || []).forEach(function (i) {
+      if (!i || typeof i !== "object") return;
+      var u = num(i.custoUnitario);
+      soma += num(i.coeficiente) * ((!cat || _catDe(i) === cat) ? u * fator : u);
+    });
+    return soma;
+  }
+  function _copiaInsumos(it) {
+    return (it && Array.isArray(it.insumos) && it.insumos.length) ? JSON.parse(JSON.stringify(it.insumos)) : null;
+  }
+  /* Desconto linear ou por item: o analítico anda junto, senão a composição impressa
+     continua somando o preço cheio ao lado de uma planilha com desconto. */
+  function _escalarInsumos(it, k) {
+    if (!(it && Array.isArray(it.insumos) && it.insumos.length) || !(k > 0) || k === 1) return;
+    it.insumos.forEach(function (i) {
+      if (!i || typeof i !== "object") return;
+      i.custoUnitario = Math.round(num(i.custoUnitario) * k * 1e4) / 1e4;
+      if (i.custoTotal != null) i.custoTotal = Math.round(num(i.coeficiente) * num(i.custoUnitario) * 1e4) / 1e4;
+    });
+  }
+
   var Licitacao = {
     LIM_INEXEQUIVEL: LIM_INEXEQUIVEL,
     LIM_GARANTIA: LIM_GARANTIA,
@@ -106,6 +212,9 @@
       lic.dataBase = s(bloco.data_base);
       lic.precosIncluemBdi = bloco.precos_incluem_bdi === true;
       lic.devolverPara = s(bloco.devolver_para);
+      /* link para voltar à tela do certame depois de devolver (só http/https;
+         qualquer outro esquema, como javascript:, é descartado) */
+      lic.urlCertame = /^https?:\/\//i.test(s(bloco.url_certame)) ? s(bloco.url_certame) : "";
       /* o que o CertamePRO avisou ao montar o pacote (item fora por falta de
          quantidade, item sem preço do órgão) — ver avisos(), chave "pacote" */
       lic.avisosPacote = (Array.isArray(bloco.avisos) ? bloco.avisos : []).map(function (x) { return s(x); }).filter(function (x) { return !!x; }).slice(0, 10);
@@ -147,6 +256,15 @@
         var cod = s(r.codigo), p = num(r.preco_unitario);
         if (cod && p > 0 && cont[cod] === 1) porC[cod] = { numero: s(r.numero), codigo: cod, fonte: s(r.fonte), preco: p, precoBdi: comBdiDe(r) };
       });
+      /* LEITURA DO PDF DO ÓRGÃO (BDI, encargos, cronograma, memória, tabelas, conferência), que o
+         pacote do CertamePRO traz em `leitura`. É a matéria-prima do pacote da proposta
+         (js/licitacaodocs.js). Fica dentro de config.licitacao, que o Excel leva inteiro na aba _meta
+         e o orçamento leva em todo salvar/exportar — nada de campo solto que se perca no caminho.
+         Cópia profunda: o pacote importado não pode ficar amarrado ao objeto do orçamento.
+         Pacote SEM `leitura` não apaga a que já está (importar de novo é idempotente). */
+      if (bloco.leitura && typeof bloco.leitura === "object" && !Array.isArray(bloco.leitura)) {
+        try { lic.leitura = JSON.parse(JSON.stringify(bloco.leitura)); } catch (eL) {}
+      }
       lic.refs = { n: porN, c: porC };
       lic.nRefs = n || Object.keys(porC).length;
       lic.travaLiberada = false;
@@ -497,7 +615,16 @@
     },
 
     /* simula numa CÓPIA: devolve o total que ficaria e a faixa de exequibilidade */
-    simularDesconto: function (orc, pct) {
+    simularDesconto: function (orc, pct, opts) {
+      opts = opts || {};
+      if (opts.incidencia && opts.incidencia !== "todos") {
+        var cpI = JSON.parse(JSON.stringify(orc));
+        var rI = this.aplicarDescontoIncidencia(cpI, pct, opts.incidencia, opts);
+        if (!rI.ok) return rI;
+        return { ok: true, pct: rI.pct, itens: rI.itens, semReferencia: rI.semReferencia, semComposicao: rI.semComposicao, fator: rI.fator, efetivo: rI.efetivo,
+          auxDescontadas: rI.auxDescontadas, auxSemComposicao: rI.auxSemComposicao, auxDivergentes: rI.auxDivergentes, auxCiclo: rI.auxCiclo, baseRecusada: rI.baseRecusada,
+          totalAntes: rI.totalAntes, totalDepois: rI.totalDepois, avisos: this.avisos(cpI) };
+      }
       var p = this.descontoPlano(orc, pct);
       if (!p.ok) return p;
       var cp = JSON.parse(JSON.stringify(orc));
@@ -513,6 +640,7 @@
       var Orc = O();
       if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de aplicar o desconto linear." };
       var lic = this.cfg(orc);
+      if (opts.incidencia && opts.incidencia !== "todos") return this.aplicarDescontoIncidencia(orc, pct, opts.incidencia, opts);
       if (lic && lic.descontoLinear) return { ok: false, erro: "Já existe um desconto linear aplicado (" + fmtPct(lic.descontoLinear.pct) + "). Desfaça-o antes de aplicar outro." };
       if (lic && lic.descontoItens) return { ok: false, erro: "Já existe um desconto por item aplicado. Desfaça-o antes de aplicar o desconto linear." };
       var p = this.descontoPlano(orc, pct);
@@ -521,10 +649,14 @@
       p.plano.forEach(function (x) {
         var it = x.item;
         antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUnitario), custoMO: it.custoMO, custoMAT: it.custoMAT, custoEQ: it.custoEQ,
-          custoBase: it.custoBase != null ? num(it.custoBase) : null });
+          custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
       });
       var antesTotal = this.totalProposta(orc);
-      p.plano.forEach(function (x) { Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo }); });
+      p.plano.forEach(function (x) {
+        var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
+        Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
+        _escalarInsumos(x.item, k);
+      });
       lic.descontoLinear = { pct: p.pct, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal };
       return { ok: true, pct: p.pct, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
     },
@@ -542,10 +674,168 @@
         if (a.custoMAT !== undefined) it.custoMAT = a.custoMAT;
         if (a.custoEQ !== undefined) it.custoEQ = a.custoEQ;
         if (a.custoBase != null) it.custoBase = a.custoBase;
+        if (a.insumos) it.insumos = a.insumos; else if (a.insumos === null) delete it.insumos;
+        /* as auxiliares descontadas nascem com o desconto concentrado; registro de antes dele não tem o campo */
+        if (a.auxiliaresDesconto) it.auxiliaresDesconto = a.auxiliaresDesconto; else delete it.auxiliaresDesconto;
         n++;
       });
       delete lic.descontoLinear;
       return { ok: true, itens: n };
+    },
+
+    /* ------------------------------------------------------------------
+     * 4a) DESCONTO CONCENTRADO: só no material, só na mão de obra ou só no
+     * equipamento (pedido de cliente, 29/10/2026; é assim que o modelo de 49 p.
+     * da CE 021-2026 foi feito: MO intacta, material com um fator único).
+     * O percentual é sobre o TOTAL da proposta; o fator φ da parcela sai da
+     * conta. φ é um só para a obra inteira: todo insumo da categoria recebe o
+     * mesmo fator, e o custo do item passa a ser a soma do analítico, de forma
+     * que o relatório analítico e a planilha fecham pelo mesmo número.
+     * Item sem composição conhecida não recebe e vem contado em `semComposicao`:
+     * nunca se inventa parcela. Quem pede o desconto vê o efetivo: o preço anda em
+     * centavos, então o total fica no primeiro valor que não passa do alvo.
+     * ------------------------------------------------------------------ */
+    INCIDENCIAS: { MAT: "no material", MO: "na mão de obra", EQ: "no equipamento" },
+
+    /* Composição do item: a que veio do órgão no pacote, ou a da base só quando ela
+       dá o mesmo custo (até 1%). Tabela de outra competência daria parcela errada. */
+    _insumosDoItem: function (it) {
+      /* Composição que não dá o custo do item (preço cotado à mão, leitura incompleta) não recebe fator:
+         com R$ 100 cotados numa composição de R$ 502,89, 20% no material dava custo negativo. */
+      var conf = function (lista) {
+        var cu0 = num(it.custoUnitario), so = _somaInsumos(lista, 1, "");
+        return cu0 > 0 && Math.abs(so - cu0) <= Math.max(0.02, cu0 * 0.01);
+      };
+      if (Array.isArray(it.insumos) && it.insumos.length) return conf(it.insumos) ? it.insumos : null;
+      var comp = null;
+      try {
+        if (it.origem === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) comp = Bases.obter("PROPRIA", String(it.codigo));
+        else if (typeof Analitico !== "undefined" && Analitico.obter) comp = Analitico.obter(it.codigo);
+      } catch (e) { comp = null; }
+      var lista = comp && Array.isArray(comp.insumos) ? comp.insumos : null;
+      if (!lista || !lista.length) return null;
+      if (!conf(lista)) return null;
+      return JSON.parse(JSON.stringify(lista));
+    },
+
+    /* Onde abrir a composição de uma auxiliar: a base passada em `opts.base` (o mesmo
+       objeto de LicitacaoDocs.baseDe que o documento usa) ou a SEINFRA já carregada pelo
+       AnaliticoBases; o Analitico (SINAPI) só para código que a base não tem. Base de outra
+       versão da tabela do projeto não vale (mesma regra do documento): preço de outra
+       competência dava parcela errada. */
+    _ctxAux: function (orc, opts) {
+      var lic = this.cfg(orc) || {}, tab = (lic.leitura && lic.leitura.tabelas) || {}, base = null, recusada = "";
+      if (opts && opts.base && typeof opts.base.obter === "function") base = opts.base;
+      else {
+        try {
+          if (typeof AnaliticoBases !== "undefined" && AnaliticoBases.urlsDe && AnaliticoBases._cache) {
+            var u = AnaliticoBases.urlsDe("SEINFRA"), ent = u.nomes.length ? AnaliticoBases._cache[u.nomes[0]] : null;
+            if (ent && ent.pacote && ent.porCodigo) base = { mes: s(ent.pacote.mes), obter: function (c) { return ent.porCodigo[String(c)] || null; } };
+          }
+        } catch (e) { base = null; }
+      }
+      if (base && s(tab.seinfra) && s(base.mes) && _normTxt(base.mes) !== _normTxt(tab.seinfra)) { recusada = s(base.mes); base = null; }
+      var Ar = A(), modo = O().garantirConfig(orc).arredondamento;
+      return {
+        /* custo da auxiliar recalculada: a regra do modo de arredondamento para auxiliar (Arred.auxiliar:
+           truncar2 trunca, arred2aux arredonda, os demais mantêm a precisão) e nunca acima do anterior */
+        arrAux: function (v) { return _r4(Ar && Ar.auxiliar ? Ar.auxiliar(v, modo) : v); },
+        baseRecusada: recusada, temBase: !!base, memo: {}, memoFator: null, semComp: {}, divergente: {}, ciclo: {},
+        obter: function (cod) {
+          var c = null;
+          try { if (base) c = base.obter(cod); } catch (e) { c = null; }
+          if (!c) { try { if (typeof Analitico !== "undefined" && Analitico.obter) c = Analitico.obter(cod); } catch (e2) { c = null; } }
+          return c;
+        }
+      };
+    },
+
+    /* Lista do item com o fator (auxiliares abertas pelo `ctx`) e o custo novo do item. */
+    _itemComFator: function (orc, it, lista, cat, fator, ctx) {
+      var a = A(), modo = O().garantirConfig(orc).arredondamento;
+      var uni = function (v) { return a && a.unitario ? a.unitario(v, modo) : tr2(v); };
+      var aux = {}, r = _listaComFator(lista, fator, cat, ctx, {}, aux);
+      var cu = num(it.custoUnitario), novo;
+      /* A soma do analítico é a verdade quando ela já dava o custo impresso. Se não dava
+         (órgão arredondou diferente), o custo anda pela diferença e não pula um centavo. */
+      if (fator === 1) novo = cu;
+      /* Math.min: arredondar nunca pode subir o custo. 48,325 viraria 48,33 e o preço passaria da referência. */
+      else if (Math.abs(uni(r.antes) - uni(cu)) < 0.005) novo = Math.min(cu, uni(r.depois));
+      else novo = Math.min(cu, uni(cu - (r.antes - r.depois)));
+      return { custo: novo, lista: r.lista, aux: aux, queda: r.antes - r.depois };
+    },
+    _custoComFator: function (orc, it, lista, cat, fator, ctx) {
+      return this._itemComFator(orc, it, lista, cat, fator, ctx).custo;
+    },
+
+    aplicarDescontoIncidencia: function (orc, pct, cat, opts) {
+      var self = this, Orc = O(), d = num(pct);
+      if (!this.INCIDENCIAS[cat]) return { ok: false, erro: "Escolha onde o desconto incide." };
+      if (!(d > 0 && d < 100)) return { ok: false, erro: "Informe um desconto entre 0 e 100%." };
+      if (!this.ativo(orc)) return { ok: false, erro: "Este orçamento não está em modo licitação." };
+      if (orc.fechamento) return { ok: false, erro: "Este orçamento tem um \"Fechar valor\" ativo. Desfaça o fechamento antes de aplicar o desconto." };
+      var lic = this.cfg(orc);
+      if (lic && lic.descontoLinear) return { ok: false, erro: "Já existe um desconto aplicado (" + fmtPct(lic.descontoLinear.pct) + "). Desfaça-o antes de aplicar outro." };
+      if (lic && lic.descontoItens) return { ok: false, erro: "Já existe um desconto por item aplicado. Desfaça-o antes de aplicar este." };
+      var ctx = this._ctxAux(orc, opts);
+      var calc = Orc.calcular(orc), alvos = [], semComp = 0, semRef = 0, base = 0;
+      (calc.linhas || []).forEach(function (L) {
+        var it = L.item;
+        if (L.opcional || !it || it.qtdPendente || !(num(it.quantidade) > 0)) return;
+        var ref = self.refDoItem(orc, it);
+        if (ref) base += num(it.quantidade) * ref.comBdi;
+        else { base += num(it.quantidade) * self._puComBdi(orc, L); semRef++; } /* com BDI: em "BDI sobre o preço final" precoTotal vem sem */
+        var lista = self._insumosDoItem(it);
+        if (!lista) { semComp++; return; }
+        /* item sem a categoria em lugar nenhum, nem dentro das auxiliares */
+        if (!(_listaComFator(lista, 0, cat, ctx, {}, {}).depois < _somaInsumos(lista, 1, "") - 1e-9)) return;
+        alvos.push({ etapaId: L.etapaId, itemId: L.itemId, item: it, lista: lista });
+      });
+      if (!alvos.length) return { ok: false, erro: "Nenhum item tem " + (cat === "MAT" ? "material" : cat === "MO" ? "mão de obra" : "equipamento") + " na composição para receber o desconto." };
+      var alvo = tr2(base * (1 - d / 100));
+      var self2 = this, totalCom = function (fator) {
+        var cp = JSON.parse(JSON.stringify(orc));
+        var idx = {};
+        (cp.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (i) { idx[i.id] = i; }); });
+        alvos.forEach(function (a) { idx[a.itemId].custoUnitario = self2._custoComFator(orc, a.item, a.lista, cat, fator, ctx); });
+        return self2.totalProposta(cp);
+      };
+      var teto = totalCom(0);
+      if (teto > alvo) {
+        var max = base > 0 ? (1 - teto / base) * 100 : 0;
+        return { ok: false, erro: "A parcela " + this.INCIDENCIAS[cat].replace(/^n[oa] /, "de ") + " não comporta " + fmtPct(d) + " sobre o total. O máximo possível zerando essa parcela é " + fmtPct(Math.floor(max * 100) / 100) + "." };
+      }
+      /* Bisseção: o maior fator cujo total não passa do alvo. */
+      var lo = 0, hi = 1;
+      for (var n = 0; n < 34; n++) {
+        var meio = (lo + hi) / 2;
+        if (totalCom(meio) <= alvo + 0.0049) lo = meio; else hi = meio;
+      }
+      var fator = Math.floor(lo * 1e6) / 1e6;
+      var finais = alvos.map(function (a) { return self2._itemComFator(orc, a.item, a.lista, cat, fator, ctx); });
+      var negativo = null;
+      alvos.forEach(function (a, k) { if (!negativo && !(finais[k].custo > 0)) negativo = a; });
+      if (negativo) return { ok: false, erro: "O desconto zeraria o custo do item " + (negativo.item.codigo || negativo.itemId) + ". Reduza o percentual ou confira a composição." };
+      var antes = [], antesTotal = this.totalProposta(orc), nAux = {};
+      alvos.forEach(function (a, k) {
+        var it = a.item, f = finais[k];
+        antes.push({ etapaId: a.etapaId, itemId: a.itemId, custoUnitario: num(it.custoUnitario), custoMO: it.custoMO, custoMAT: it.custoMAT, custoEQ: it.custoEQ,
+          custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it),
+          auxiliaresDesconto: it.auxiliaresDesconto ? JSON.parse(JSON.stringify(it.auxiliaresDesconto)) : null });
+        Orc.atualizarItem(orc, a.etapaId, a.itemId, { custoUnitario: f.custo });
+        it.insumos = f.lista;
+        /* a versão descontada de cada auxiliar aberta, para o documento imprimir os mesmos números */
+        var ks = Object.keys(f.aux);
+        if (ks.length) { it.auxiliaresDesconto = f.aux; ks.forEach(function (c) { nAux[c] = 1; }); }
+        else delete it.auxiliaresDesconto;
+      });
+      var depois = this.totalProposta(orc);
+      var auxSem = Object.keys(ctx.semComp).sort(), auxDiv = Object.keys(ctx.divergente).sort(), auxCiclo = Object.keys(ctx.ciclo).sort();
+      lic.descontoLinear = { pct: d, incidencia: cat, fator: fator, em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), antes: antes, totalAntes: antesTotal,
+        auxDescontadas: Object.keys(nAux).sort(), auxSemComposicao: auxSem, auxDivergentes: auxDiv, auxCiclo: auxCiclo, baseRecusada: ctx.baseRecusada || "" };
+      return { ok: true, pct: d, incidencia: cat, fator: fator, efetivo: base > 0 ? (1 - depois / base) * 100 : 0, itens: alvos.length, semComposicao: semComp, semReferencia: semRef,
+        auxDescontadas: Object.keys(nAux).length, auxSemComposicao: auxSem, auxDivergentes: auxDiv, auxCiclo: auxCiclo, baseRecusada: ctx.baseRecusada || "",
+        totalAntes: antesTotal, totalDepois: depois };
     },
 
     /* ------------------------------------------------------------------
@@ -616,10 +906,14 @@
       p.plano.forEach(function (x) {
         var it = x.item;
         antes.push({ etapaId: x.etapaId, itemId: x.itemId, custoUnitario: num(it.custoUnitario), custoMO: it.custoMO, custoMAT: it.custoMAT, custoEQ: it.custoEQ,
-          custoBase: it.custoBase != null ? num(it.custoBase) : null });
+          custoBase: it.custoBase != null ? num(it.custoBase) : null, insumos: _copiaInsumos(it) });
       });
       var antesTotal = this.totalProposta(orc);
-      p.plano.forEach(function (x) { Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo }); });
+      p.plano.forEach(function (x) {
+        var k = num(x.item.custoUnitario) > 0 ? x.custo / num(x.item.custoUnitario) : 1;
+        Orc.atualizarItem(orc, x.etapaId, x.itemId, { custoUnitario: x.custo });
+        _escalarInsumos(x.item, k);
+      });
       lic.descontoItens = { em: (U() && U().agoraISO) ? U().agoraISO() : new Date().toISOString(), padrao: p.padrao,
         mapa: JSON.parse(JSON.stringify(mapa || {})), antes: antes, totalAntes: antesTotal };
       return { ok: true, itens: p.plano.length, semReferencia: p.semReferencia, totalAntes: antesTotal, totalDepois: this.totalProposta(orc) };
@@ -638,6 +932,7 @@
         if (a.custoMAT !== undefined) it.custoMAT = a.custoMAT;
         if (a.custoEQ !== undefined) it.custoEQ = a.custoEQ;
         if (a.custoBase != null) it.custoBase = a.custoBase;
+        if (a.insumos) it.insumos = a.insumos; else if (a.insumos === null) delete it.insumos;
         n++;
       });
       delete lic.descontoItens;
@@ -647,8 +942,8 @@
     /* comparativo: desconto UNIFORME em todos os itens, um % por linha. Não
        altera o orçamento. O custo direto "original" é o de antes de qualquer
        desconto já aplicado (linear ou por item), medido numa cópia desfeita. */
-    cenarios: function (orc, listaPct) {
-      var self = this;
+    cenarios: function (orc, listaPct, opts) {
+      var self = this, inc = (opts && opts.incidencia && opts.incidencia !== "todos") ? opts.incidencia : null;
       var lista = (Array.isArray(listaPct) && listaPct.length) ? listaPct : [0, 5, 10, 15, 20, 25];
       if (!this.ativo(orc)) return { ok: false, erro: "Este orçamento não está em modo licitação." };
       var cp0 = JSON.parse(JSON.stringify(orc)), lic0 = this.cfg(cp0);
@@ -666,8 +961,8 @@
       lista.forEach(function (p) {
         if (erro) return;
         var pct = num(p);
-        var s = self.simularDescontoItens(cp0, {}, pct, { incluirZero: true });
-        if (!s.ok) { erro = s.erro; return; }
+        var s = (inc && pct > 0) ? self.simularDesconto(cp0, pct, { incidencia: inc, base: opts && opts.base }) : self.simularDescontoItens(cp0, {}, pct, { incluirZero: true });
+        if (!s.ok) { if (inc) { linhas.push({ pct: pct, erro: s.erro }); return; } erro = s.erro; return; }
         var total = s.totalDepois;
         var inex = s.avisos.resumo.some(function (a) { return a.chave === "exeq" && a.tom === "erro"; });
         linhas.push({ pct: pct, total: total, pctDoEstimado: est > 0 ? (total / est) * 100 : null,

@@ -938,6 +938,20 @@
         '<div class="field"><label>Logo (PNG/JPG — aparece na capa dos documentos)</label>' +
         '<input type="file" id="emp-logo" accept="image/png,image/jpeg,image/jpg,image/webp">' +
         '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>' +
+        /* DADOS DA PROPOSTA DE LICITAÇÃO (js/licitacaodocs.js) — opcionais; faltando algum, o pacote sai
+           com [PREENCHER: ...] em vermelho */
+        '<h3 style="margin:10px 0 4px;border-top:1px solid var(--linha);padding-top:12px;font-size:13px">Proposta de licitação (opcional)</h3>' +
+        '<div class="muted" style="font-size:11.5px;margin:0 0 6px">Usados na carta, no rodapé e nas assinaturas do pacote da proposta. O que ficar em branco sai marcado em vermelho no PDF.</div>' +
+        '<div class="row">' + f("inscricaoMunicipal", "Inscrição municipal", emp.inscricaoMunicipal) + f("banco", "Banco (código e nome)", emp.banco) + '</div>' +
+        '<div class="row">' + f("agencia", "Agência", emp.agencia) + f("conta", "Conta corrente", emp.conta) + '</div>' +
+        '<div class="row">' + f("socioNome", "Sócio administrador (nome)", emp.socioNome) + f("socioCargo", "Cargo do sócio", emp.socioCargo) + '</div>' +
+        '<div class="row">' + f("rtNome", "Responsável técnico (nome na proposta)", emp.rtNome) + f("rtCrea", "CREA do responsável técnico", emp.rtCrea) + '</div>' +
+        '<div class="row">' +
+          '<div class="field"><label>Timbrado: imagem do topo (logo)</label><input type="file" id="emp-timbradoTopo-arq" accept="image/png,image/jpeg,image/webp">' +
+            '<div id="emp-timbradoTopo-prev" class="mt">' + (emp.timbradoTopo ? '<img src="' + emp.timbradoTopo + '" style="max-height:56px;border:1px solid var(--linha);border-radius:6px;padding:3px;background:#fff">' : '<span class="muted">Nenhuma.</span>') + '</div></div>' +
+          '<div class="field"><label>Timbrado: marca d&#39;água (fundo)</label><input type="file" id="emp-timbradoFundo-arq" accept="image/png,image/jpeg,image/webp">' +
+            '<div id="emp-timbradoFundo-prev" class="mt">' + (emp.timbradoFundo ? '<img src="' + emp.timbradoFundo + '" style="max-height:56px;border:1px solid var(--linha);border-radius:6px;padding:3px;background:#fff">' : '<span class="muted">Nenhuma.</span>') + '</div></div>' +
+        '</div>' +
         this._renderEmpresaDocs() + this._renderEmpresaPerfil();
     },
     /* ==================================================================
@@ -3716,6 +3730,7 @@
         if (lic.descontoLinear) acoes += bt("lic-desconto-desfazer", "Desfazer desconto (" + Util.fmtNum(lic.descontoLinear.pct, 2) + "%)", "Volta os preços ao que eram antes do desconto linear");
         acoes += bt("lic-desconto-itens", "Desconto por item…", "Um percentual por item (e um padrão) sobre os preços de referência do órgão");
         if (lic.descontoItens) acoes += bt("lic-desconto-itens-desfazer", "Desfazer desconto por item", "Volta os preços ao que eram antes do desconto por item");
+        if (typeof LicitacaoDocs !== "undefined") acoes += bt("lic-pacote", "Gerar pacote da proposta", "Carta, resumo, planilha, analítico, composições, curva ABC, cronograma, BDI e encargos no timbrado da empresa (PDF). Confere antes se falta algum dado.");
         acoes += bt("lic-cenarios", "Comparar cenários…", "Total, % do estimado, margem e exequibilidade para vários descontos, sem alterar nada");
         acoes += bt("lic-trava", lic.travaLiberada ? "Travar itens do órgão" : "Liberar edição", lic.travaLiberada
           ? "Trava de novo quantidade, descrição e remoção dos itens do órgão"
