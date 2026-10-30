@@ -611,6 +611,17 @@
       if (!c || c.tipo !== "laje" || arr(c.contorno).length < 3 || !doNivel(c) || c.contorno.some(function (q) { return q && q.m; })) return;
       tratar("laje", c, JSON.parse(JSON.stringify(c.contorno)), alinharDaLaje(c), function (c2) { return { op: "ajustar", id: c.id, campos: { contorno: c2.map(function (q) { var r = { x: q.x, z: q.z }; if (q.pr != null && q.pr !== "") { r.pr = q.pr; if (q.pf) r.pf = q.pf; if (q.po != null) r.po = q.po; } return r; }) } }; });
     });
+    /* ÍMÃ DA ESTRUTURA (29/10/2026): vigas/perfis, chapas, pilares do modelo entram no mesmo lote (js/bimima.js) */
+    var BIm = dep("BimIma", "./bimima.js");
+    if (BIm && BIm.ajustarTudo) {
+      var ri = BIm.ajustarTudo(estado, { nivelId: o.nivelId, tol: o.tolEstrutura });
+      if (ri && ri.ok) {
+        ri.ops.forEach(function (op) { ops.push(op); });
+        ri.pecas.forEach(function (it) { pecas.push(it); });
+        nPec += ri.nPecas; nLig += ri.nLigadas; nAre += ri.nPossiveis;
+        ri.naoLigou.forEach(function (t) { nao.push(t); });
+      }
+    }
     var resumo = nPec + " peça" + (nPec === 1 ? "" : "s") + ", " + nLig + " de " + nAre + " arestas ligadas às paredes" + (nao.length ? ". Não ligou: " + nao.join("; ") : "") + ".";
     return { ok: true, ops: ops, pecas: pecas, resumo: resumo, nPecas: nPec, nLigadas: nLig, nArestas: nAre, naoLigou: nao };
   }
@@ -663,6 +674,8 @@
     editar: editar, moverVertice: moverVertice, inserirVertice: inserirVertice, removerVertice: removerVertice, moverAresta: moverAresta,
     contornoDeParedes: contornoDeParedes, contornoDaEdificacao: contornoDaEdificacao, cadeiaDeParedes: cadeiaDeParedes,
     resolverVinculos: resolverVinculos, vincularArestas: vincularArestas, lajesAntes: lajesAntes, lajesDepois: lajesDepois, ajustarTudo: ajustarTudo, alinharDaLaje: alinharDaLaje, ROT_PECA: ROT_PECA, faceDaAresta: faceDaAresta, desvincular: desvincular, resumoVinculo: resumoVinculo, temVinculo: temVinculo,
+    /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): as peças da reta-face reaproveitam o mesmo motor */
+    _paredeReta: paredeReta, _retaDaFace: retaDaFace, _normaisFora: normaisFora, _acharFace: acharFace, _interReta: interReta, _FACES: FACES,
     aguasContorno: aguasContorno, arestaMaisPerto: arestaMaisPerto, verticeMaisPerto: verticeMaisPerto,
     /* o alinhamento padrão de cada peça: laje e telhado pela face externa; piso e forro pela interna */
     alinharPadrao: function (peca) { return peca === "piso" || peca === "forro" ? "interna" : "externa"; }

@@ -417,6 +417,22 @@
           }
         }
         if (avF.length) return { ok: true, ops: ops, avisos: avF };
+      } else if (e === "ima.seguir") {
+        /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): "Seguir as paredes" Sim/Não da viga e do pilar do modelador. Não = solta tudo (uma op); Sim = liga as pontas /
+           o canto às faces de parede mais perto (BimIma.ajustarPeca) sem mexer na peça. Uma op por peça; Ctrl+Z desfaz. */
+        var BIm = global.BimIma, avI = [];
+        if (!BIm || !BIm.ajustarPeca) return { ok: false, erro: "O motor do ímã da estrutura (js/bimima.js) não carregou." };
+        for (var iI = 0; iI < ids.length; iI++) {
+          var pI = elDe(ctx.estado, ids[iI]);
+          if (!pI || !BIm.tipoDe(pI)) return { ok: false, erro: "Seguir as paredes vale para viga e pilar retos (a curva ou a inclinada demais não segue)." };
+          if (valor === "Não") { var oS = BIm.soltar(pI); if (oS) ops.push(oS); }
+          else {
+            var vI = BIm.ajustarPeca(ctx.estado, pI.id);
+            if (!vI.ok) return { ok: false, erro: (vI.motivo || "Não deu para ligar às paredes.") + " " + (vI.corrigir || "") };
+            ops.push(vI.op); avI.push((pI.tipo === "pilar" ? "Pilar " : "Viga ") + pI.id + ": " + vI.resumo);
+          }
+        }
+        if (avI.length) return { ok: true, ops: ops, avisos: avI };
       } else if (e === "telhado.seguir") {
         /* TELHADO SEGUE AS PAREDES (29/10/2026): Não = grava o contorno de agora SEM o vínculo (uma op); Sim = liga cada aresta à
            face de parede paralela mais perto (BimContorno.vincularArestas) e grava UMA op. Ctrl+Z desfaz. */

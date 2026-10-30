@@ -426,6 +426,7 @@
           if (ordemC.indexOf(o.id) < 0) ordemC.push(o.id);
         } else if (o.op === "mover" && caixas[o.id]) {
           var cm0 = caixas[o.id], mx0 = cm0.cx, mz0 = cm0.cz;
+          if (cm0.ima) delete cm0.ima;   /* ÍMÃ: mover a peça SOZINHA solta o vínculo dela com as paredes (a parede que anda leva a peça pelo próprio vínculo) */
           caixas[o.id].cx = r4(num(o.cx, caixas[o.id].cx));
           caixas[o.id].cz = r4(num(o.cz, caixas[o.id].cz));
           /* B2: contorno, escada e caminho andam junto com a caixa */
@@ -527,9 +528,12 @@
          do telhado (paredes aplicadas, antes do derivar, que refaz área/volume/furos da laje). Sem `pr` nenhum nada roda. */
       if (ctx.forros) { var BFv = depForro(); if (BFv && BFv.vincular) BFv.vincular(ctx, saida); }
       var BCl = global.BimContorno || null; if (!BCl && typeof require === "function") { try { BCl = require("./bimcontorno.js"); } catch (eBC) {} } if (BCl && BCl.lajesAntes) BCl.lajesAntes(saida);
+      /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): vigas/perfis, chapas e pilares com `ima` andam com as paredes de AGORA (mesmo ponto das lajes) */
+      var BIm = global.BimIma || null; if (!BIm && typeof require === "function") { try { BIm = require("./bimima.js"); } catch (eIm) {} } if (BIm && BIm.antes) BIm.antes(saida);
       if (ctx.fundacoes) { var F3 = depP3("f"); if (F3) F3.fim(ctx, saida, NIV); }
       if (ARQ && ARQ.derivar) ARQ.derivar(saida);
       if (BCl && BCl.lajesDepois) BCl.lajesDepois(saida);
+      if (BIm && BIm.depois) BIm.depois(saida);
       /* P2-B: os forros (só quando houve op de forro: o estado das ops antigas fica igual) */
       if (ctx.forros) { var BFf = depForro(); if (BFf) BFf.fim(ctx, saida, NIV); }
       /* P2-A: o contorno de cada ambiente sai das paredes JÁ unidas (depois do

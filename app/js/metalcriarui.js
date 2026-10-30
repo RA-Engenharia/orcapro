@@ -382,11 +382,45 @@
       var aco = comum(function (c) { return c.metal.aco; }), base = kind === "chapa" ? ACOS_CHAPA : ACOS_PERFIL, lis = base.slice();
       cs.forEach(function (c) { if (c.metal.aco && lis.indexOf(c.metal.aco) < 0) lis.push(c.metal.aco); });
       if (cs.every(function (c) { return c.metal.kind === "perfil" || c.metal.kind === "chapa"; })) sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: aco || "", opcoes: (aco ? [] : [{ id: "", rotulo: VAR }]).concat(lis.map(function (a) { return { id: a, rotulo: a }; })) }] });
+      var sImL = this._secIma(pre, cs); if (sImL) sec.push(sImL);   /* ÍMÃ: segue as paredes (js/bimima.js) */
       var sAcL = this._secAcab(pre, cs); if (sAcL) sec.push(sAcL);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       /* ELEVAR (js/bimelevarui.js): a mesma seção, com ‹vários› e o mesmo delta para todas (um Ctrl+Z) */
       try { var sElL = global.BimElevarUI && global.BimElevarUI.secao ? global.BimElevarUI.secao(ids) : null; if (sElL) sec.push(sElL); } catch (eEl) {}
       return { daPeca: true, uid: info.uid, semEditarTipo: true, lote: cs.length, titulo: cs.length + " selecionados", icone: "estrutura", secoes: sec,
         onMudar: function (pid, v) { self.mudarLote(ids, pid, v); return G && G._bimPropsPeca ? G._bimPropsPeca(info) : self.propsPeca(info, G); } };
+    },
+    /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): "Seguir as paredes" + "Ajustar às paredes agora" — a viga/perfil, a chapa horizontal e o pilar metálico
+       acompanham a face da parede onde apoiam. Só aparece quando TODAS as peças da seleção são do tipo que segue. */
+    _secIma: function (pre, cs) {
+      var BI = global.BimIma, self = this; if (!BI || !BI.tipoDe || !cs.length) return null;
+      if (!cs.every(function (c) { return !!BI.tipoDe(c); })) return null;
+      var VAR = "‹vários›", seg = cs.map(function (c) { return BI.temIma(c) ? "Sim" : "Não"; }), v0 = seg[0], igual = seg.every(function (x) { return x === v0; });
+      var ids = cs.map(function (c) { return String(c.id); }), ps = [{ id: pre + "ima:seguir", rotulo: "Seguir as paredes", tipo: "lista", valor: igual ? v0 : "__var",
+        opcoes: (igual ? [] : [{ id: "__var", rotulo: VAR }]).concat([{ id: "Sim", rotulo: "Sim" }, { id: "Não", rotulo: "Não" }]),
+        motivo: "Sim: a ponta da viga, a aresta da chapa ou o canto do pilar acompanham a face da parede onde apoiam (puxou a parede, a peça se refaz). Não: a peça fica parada." }];
+      if (cs.length === 1) {
+        var r = BI.resumo(cs[0]), tp = BI.tipoDe(cs[0]);
+        ps.push({ id: pre + "ima:n", rotulo: tp === "chapa" ? "Arestas que seguem paredes" : (tp === "pilar" ? "Paredes do canto" : "Pontas que seguem paredes"), leitura: true, valor: r.ligadas + " de " + r.total });
+      }
+      ps.push({ id: pre + "ima:agora", rotulo: "Ajustar às paredes agora", tipo: "botao", rotuloBotao: "Ajustar agora", fn: function () { self._imaAgora(ids); } });
+      return { nome: "Seguir as paredes", params: ps };
+    },
+    /* Sim/Não e o botão: UMA op `ima` por peça, num lote só (um Ctrl+Z desfaz) */
+    _imaAgora: function (ids) { return this._mudarIma(ids, "Sim"); },
+    _mudarIma: function (ids, v) {
+      var BI = global.BimIma; if (!BI) { status("O motor do ímã (js/bimima.js) não carregou."); return false; }
+      if (v === "__var") return true;
+      var ops = [], recus = [], est = estado();
+      ids.forEach(function (id) {
+        var c = caixaDe(id); if (!c) return;
+        if (v === "Não") { var o = BI.soltar(c); if (o) ops.push(o); return; }
+        var r = BI.ajustarPeca(est, id);
+        if (r.ok) ops.push(r.op); else recus.push((r.motivo || "") + " " + (r.corrigir || ""));
+      });
+      if (!ops.length) { status(recus.length ? recus[0] : "Nada mudou."); return false; }
+      if (!enviarLote(ops, v === "Não" ? "Soltar das paredes — " + ops.length + " peça(s)" : "Ajustar às paredes — " + ops.length + " peça(s)")) { status("O editor recusou a mudança."); return false; }
+      status(v === "Não" ? ops.length + " peça(s) soltas das paredes (Ctrl+Z desfaz)." : ops.length + " peça(s) seguem as paredes: puxou a parede, a peça se refaz (Ctrl+Z desfaz)" + (recus.length ? "; " + recus.length + " sem parede perto" : "") + ".");
+      return true;
     },
     /* ACABAMENTO E COR POR PEÇA (js/metalacab.js): o grupo "Acabamento" das Propriedades (uma peça ou a seleção inteira) */
     _secAcab: function (pre, cs) {
@@ -452,6 +486,7 @@
       var M = MC(), k = String(pid).replace(/^mcrl:/, ""), mud = {};
       if (!M) return false;
       if (k === "busca") { this._buscaLote = String(v || "").slice(0, 60); return true; }
+      if (k === "ima:seguir") return this._mudarIma(ids, String(v));   /* ÍMÃ (js/bimima.js) */
       if (/^acab/.test(k)) return this._mudarAcab(ids, k, v);   /* ACABAMENTO E COR (js/metalacab.js) */
       if (k === "cat") { if (!v) return false; mud.cat = String(v); }
       else if (k === "aco") { if (!v) return false; mud.aco = String(v); }
@@ -544,6 +579,7 @@
         ] });
         sec.push({ nome: "Material", params: [{ id: pre + "aco", rotulo: "Aço", tipo: "lista", valor: m.aco, opcoes: ACOS_CHAPA.concat(ACOS_CHAPA.indexOf(m.aco) < 0 ? [m.aco] : []).map(function (a) { return { id: a, rotulo: a }; }) }] });
       }
+      var sIm = this._secIma(pre, [c]); if (sIm) sec.push(sIm);   /* ÍMÃ: segue as paredes (js/bimima.js) */
       var sAc = this._secAcab(pre, [c]); if (sAc) sec.push(sAc);   /* ACABAMENTO E COR por peça (js/metalacab.js) */
       var md = c.medidas || {};
       sec.push({ nome: "Quantidades", params: [ro("massa", "Peso", br(c.massa, 2) + " kg"), ro("area", "Área de pintura", br(md.area, 3) + " m²"), ro("vol", "Volume", br(md.volume, 5) + " m³")] });
@@ -598,6 +634,7 @@
       if (/^elev:/.test(String(pid)) && global.BimElevarUI) return global.BimElevarUI.mudarCampo([id], pid, v).ok;   /* ELEVAR */
       var k = String(pid).replace(/^mcrp:/, ""), mud = {};
       if (k === "busca") { this._buscaPeca = { id: id, texto: String(v || "").slice(0, 60) }; return true; }
+      if (k === "ima:seguir") return this._mudarIma([id], String(v));   /* ÍMÃ (js/bimima.js) */
       if (/^acab/.test(k)) return this._mudarAcab([id], k, v);   /* ACABAMENTO E COR (js/metalacab.js) */
       if (k === "vinc:a" || k === "vinc:b") {   /* VÍNCULOS: a op do motor, um Ctrl+Z */
         var BV = global.BimVinculos, rv = BV ? BV.opPonta(estado(), id, k.slice(5), !v) : { erro: "O motor dos vínculos (js/bimvinculos.js) não carregou." };

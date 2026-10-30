@@ -275,6 +275,11 @@
         aoSelecionar: function (uids) {
           uids = arr(uids);
           if (concluindo) return false;
+          /* ÍMÃ DA ESTRUTURA: a sessão de alças da viga/chapa/pilar fecha ao selecionar outra coisa */
+          if (sE) {
+            if (uids.length === 1 && uids[0] === "edit:" + sE.id) return true;
+            fecharE();   /* trocar a seleção (ou o Esc que a limpa) CANCELA o que não foi confirmado com Enter */
+          }
           if (sessao) {
             if (!sessao.auto) return false;
             if (uids.length === 1 && uids[0] === "edit:" + sessao.alvo.id) return true;
@@ -282,7 +287,7 @@
           }
           if (!edit || !edit.on || edit.sub || !edit.estado || uids.length !== 1 || !/^edit:/.test(uids[0])) return false;
           var id = uids[0].replace(/^edit:/, "");
-          return pecaPorId(edit.estado, id, true) ? self.editar(uids, true) : false;   /* TUDO SEGUE AS PAREDES: telhado, forro por contorno e laje abrem as alças no clique */
+          return pecaPorId(edit.estado, id, true) ? self.editar(uids, true) : abrirE(id);   /* ÍMÃ DA ESTRUTURA: viga/perfil, chapa e pilar já ligados abrem as alças das partes */   /* TUDO SEGUE AS PAREDES: telhado, forro por contorno e laje abrem as alças no clique */
         },
         /* "Ajustar às paredes agora": liga as arestas do telhado, do forro por contorno ou da laje/piso selecionado às faces de parede paralelas e grava UMA op */
         ajustarParedes: function () {
@@ -293,7 +298,19 @@
           }
           var st = edit.estado, uids = api.selecao ? api.selecao() : [], pc = null;
           uids.forEach(function (u) { if (!pc) pc = pecaPorId(st, String(u).replace(/^edit:/, ""), true); });
-          if (!pc) { api.hint("Selecione um telhado por perímetro, um forro por contorno ou uma laje (clique nele) e use \"Ajustar às paredes\"."); return false; }
+          if (!pc) {
+            /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): viga/perfil, chapa horizontal ou pilar selecionado → liga pontas / arestas / canto às paredes (UMA op ima; Ctrl+Z desfaz) */
+            var BIm = (typeof window !== "undefined" ? window.BimIma : null), selI = null;
+            uids.forEach(function (u) { if (!selI && BIm && BIm.ajustarPeca) { var idI = String(u).replace(/^edit:/, ""); var ci = arr(st.caixas).filter(function (x) { return x && String(x.id) === idI; })[0]; if (ci && BIm.tipoDe(ci)) selI = ci; } });
+            if (selI) {
+              var rI = BIm.ajustarPeca(st, selI.id);
+              if (!rI.ok) { api.hint((rI.motivo || "Não deu para ligar às paredes.") + " " + (rI.corrigir || "")); return false; }
+              api.op(rI.op);
+              api.hint("Peça " + selI.id + ": " + rI.resumo + " Puxou a parede, a peça se refaz. Ctrl+Z desfaz.");
+              return true;
+            }
+            api.hint("Selecione um telhado por perímetro, um forro por contorno, uma laje, ou uma viga, chapa ou pilar (clique nele) e use \"Ajustar às paredes\"."); return false;
+          }
           var RP = M.ROT_PECA ? M.ROT_PECA[pc.tipo] : null, nome = pc.rot + " " + pc.p.id;
           var v = M.vincularArestas(arr(st.caixas), pc.pts, { alinhar: pc.alinhar, nome: RP && RP.nome, de: RP && RP.de, rot: RP && RP.rot });
           if (!v.ok) { api.hint(nome + ": " + (v.motivo || "não deu para ligar às paredes.") + " " + (v.corrigir || "")); return false; }
@@ -316,7 +333,7 @@
           }
           var niv = !o.todos && api.nivel ? api.nivel() : null;
           var r = M.ajustarTudo(edit.estado, { nivelId: niv && niv.id != null ? niv.id : null, contornoTelhado: contornoDoTelhado });
-          if (!r.nPecas && !r.naoLigou.length) { api.hint("Nenhum telhado, forro por contorno ou laje por contorno" + (niv ? " neste nível" : "") + " para ajustar."); return false; }
+          if (!r.nPecas && !r.naoLigou.length) { api.hint("Nenhum telhado, forro, laje por contorno ou peça de estrutura (viga, chapa, pilar)" + (niv ? " neste nível" : "") + " para ajustar."); return false; }
           if (!r.ops.length) { api.hint("Ajustar tudo às paredes: " + r.resumo + " Nada mudou: as peças já estão nas paredes."); return true; }
           concluindo = true;
           try { api.op(r.ops.length === 1 ? r.ops[0] : { op: "lote", id: "ap" + Date.now().toString(36), origem: "modificar", pedido: "Ajustar TUDO às paredes", ops: r.ops }); if (api.fechou) api.fechou(); } finally { concluindo = false; }
@@ -493,6 +510,88 @@
         concluindo = true;
         try { api.op(op); if (api.fechou) api.fechou(); } finally { concluindo = false; }
         api.hint(rot + ": contorno gravado (" + n2(v.area) + " m², perímetro " + n2(v.perimetro) + " m). Ctrl+Z desfaz.");
+        return true;
+      }
+
+      /* ---------------- ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): as alças da viga/perfil (pontas), da chapa (arestas) e do pilar (canto)
+         que JÁ seguem paredes. Alça verde = segue a parede; laranja = solta. ARRASTAR uma alça solta SÓ aquela parte (a peça não se move:
+         quem quer reposicionar usa as ferramentas de sempre). Enter grava UMA op `ima`; Esc cancela; clicar sem arrastar não faz nada. */
+      var sE = null, camE = null, painelE = null, rafE = 0, alcasE = [];
+      function BImE() { return global.BimIma || null; }
+      function escE(t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+      function abrirE(id) {
+        var BI = BImE(); if (!BI || !BI.alcas || !edit || !edit.on || !edit.estado) return false;
+        var c = arr(edit.estado.caixas).filter(function (x) { return x && String(x.id) === String(id); })[0];
+        if (!c || !BI.tipoDe(c) || !BI.temIma(c)) return false;
+        var h = api.host(); if (!h) return false;
+        sE = { id: String(id), c: clone(c), partes: [], drag: null };
+        camE = document.createElement("div"); camE.setAttribute("data-bim", "ima-edicao");
+        camE.style.cssText = "position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:40";
+        painelE = document.createElement("div"); painelE.setAttribute("data-bim", "ima-painel");
+        painelE.style.cssText = "position:absolute;left:12px;top:12px;pointer-events:auto;background:rgba(15,23,42,.92);color:#fff;padding:8px 10px;border-radius:8px;font:12px/1.35 system-ui,sans-serif;max-width:340px";
+        camE.appendChild(painelE); h.appendChild(camE);
+        window.addEventListener("keydown", teclaE, true);
+        document.addEventListener("pointermove", moverE, true); document.addEventListener("pointerup", soltarE, true);
+        var r = BI.resumo(c);
+        api.hint("Peça " + c.id + ": " + r.ligadas + " de " + r.total + " ligações seguem as paredes. Arraste uma alça verde para SOLTAR só aquela parte da parede; Enter grava, Esc cancela.");
+        loopE();
+        return true;
+      }
+      function fecharE() {
+        sE = null;
+        window.removeEventListener("keydown", teclaE, true);
+        document.removeEventListener("pointermove", moverE, true); document.removeEventListener("pointerup", soltarE, true);
+        if (rafE) { cancelAnimationFrame(rafE); rafE = 0; }
+        if (camE && camE.parentNode) camE.parentNode.removeChild(camE);
+        camE = painelE = null; alcasE = [];
+      }
+      function loopE() { if (!sE) return; desenharE(); rafE = requestAnimationFrame(loopE); }
+      function desenharE() {
+        if (!sE || !camE) return;
+        var BI = BImE(), L = BI.alcas(sE.c), hr = api.host().getBoundingClientRect();
+        while (alcasE.length > L.length) { var d = alcasE.pop(); if (d.el.parentNode) d.el.parentNode.removeChild(d.el); }
+        L.forEach(function (a, j) {
+          var t = api.telaDe(a.x, a.y, a.z), el = alcasE[j] && alcasE[j].el;
+          if (!el) { el = document.createElement("div"); alcasE[j] = { el: el }; (function (parte) { el.addEventListener("pointerdown", function (ev) { descerE(ev, parte); }); })(a.parte); camE.appendChild(el); }
+          var solta = sE.partes.indexOf(a.parte) >= 0, ok = a.ligada && !solta, vis = t && !t.atras;
+          el.setAttribute("data-alca", "ima-" + a.parte); el.setAttribute("data-ligada", ok ? "1" : "0");
+          el.title = a.rotulo + (ok ? " — segue a parede (arraste para soltar)" : " — solta");
+          el.style.cssText = "position:absolute;pointer-events:" + (vis ? "auto" : "none") + ";cursor:pointer;width:16px;height:16px;margin:-8px 0 0 -8px;box-sizing:border-box;border:2px solid #fff;border-radius:" + (typeof a.parte === "number" ? "50%" : "3px") + ";background:" + (ok ? "#22c55e" : "#f59e0b") + ";left:" + (t ? (t.x - hr.left).toFixed(1) : -99) + "px;top:" + (t ? (t.y - hr.top).toFixed(1) : -99) + "px;display:" + (vis ? "block" : "none");
+        });
+        var r0 = BI.resumo(sE.c), nSol = sE.partes.filter(function (p) { return L.some(function (a) { return a.parte === p && a.ligada; }); }).length, lig = Math.max(0, r0.ligadas - nSol);
+        painelE.innerHTML = "<b>" + escE(sE.c.id) + " — segue as paredes</b><br><span data-im=\"resumo\" style=\"color:" + (lig ? "#86efac" : "#fcd34d") + "\">" + lig + " de " + r0.total + " ligações seguem as paredes</span>" +
+          (nSol ? "<br><span data-im=\"solta\" style=\"color:#fcd34d\">" + nSol + " parte(s) solta(s) da parede</span>" : "") +
+          "<div style=\"margin-top:6px;display:flex;gap:6px\"><button type=\"button\" data-im=\"concluir\" style=\"cursor:pointer\">Concluir (Enter)</button><button type=\"button\" data-im=\"cancelar\" style=\"cursor:pointer\">Cancelar (Esc)</button></div>";
+        var bc = painelE.querySelector('[data-im="concluir"]'), bx = painelE.querySelector('[data-im="cancelar"]');
+        if (bc) bc.onclick = function () { concluirE(); };
+        if (bx) bx.onclick = function () { fecharE(); api.hint("Alças da estrutura canceladas."); };
+      }
+      function descerE(ev, parte) { if (!sE) return; ev.preventDefault(); ev.stopPropagation(); sE.drag = { parte: parte, x0: ev.clientX, y0: ev.clientY, moved: false }; }
+      function moverE(ev) {
+        var d = sE && sE.drag; if (!d) return;
+        if (d.moved || Math.abs(ev.clientX - d.x0) + Math.abs(ev.clientY - d.y0) < 4) return;
+        d.moved = true;
+        if (sE.partes.indexOf(d.parte) < 0) sE.partes.push(d.parte);
+        api.hint("Parte solta da parede: ela não acompanha mais a parede (as outras continuam seguindo). Enter grava, Esc desfaz.");
+        desenharE();
+      }
+      function soltarE() { if (sE) sE.drag = null; }
+      function teclaE(ev) {
+        if (!sE) return;
+        if (ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); concluirE(); }
+        else if (ev.key === "Escape") {
+          if (!sE.partes.length) { fecharE(); return; }   /* nada mudou: o Esc segue para limpar a seleção */
+          ev.stopPropagation(); fecharE(); api.hint("Alças da estrutura canceladas.");
+        }
+      }
+      function concluirE() {
+        if (!sE) return false;
+        var BI = BImE(), op = sE.partes.length ? BI.soltarPartes(sE.c, sE.partes) : null, id = sE.id;
+        fecharE();
+        if (!op) return true;   /* nada solto: não suja o desfazer */
+        concluindo = true;
+        try { api.op(op); if (api.fechou) api.fechou(); } finally { concluindo = false; }
+        api.hint("Peça " + id + ": parte(s) solta(s) da parede. Ctrl+Z desfaz.");
         return true;
       }
 

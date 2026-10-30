@@ -77,6 +77,7 @@
     if (typeof require === "function") { try { return require(arq); } catch (e) {} }
     return null;
   }
+  function depIma() { return dep("BimIma", "./bimima.js"); }   /* ÍMÃ DA ESTRUTURA (js/bimima.js) */
   function num(v, d) { if (v == null || v === "") return d; var n = Number(v); return isFinite(n) ? n : d; }
   function fin(v) { return typeof v === "number" && isFinite(v); }
   function r4(v) { return Math.round(v * 10000) / 10000; }
@@ -367,6 +368,9 @@
        (forro automático e laje retangular: sem contorno gravado = não se aplica, o parâmetro some) */
     pcSeguir: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; return arr(c.contorno).some(function (q) { return q && q.pr != null && q.pr !== ""; }) ? "Sim" : "Não"; },
     pcSeguirN: function (x) { var c = el(x); if (c.modo === "automatico" || arr(c.contorno).length < 3 || arr(c.contorno).some(function (q) { return q && q.m; })) return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
+    /* ÍMÃ DA ESTRUTURA (29/10/2026, js/bimima.js): viga e pilar do modelador seguem as paredes (pontas / canto); sem o motor ou peça que não segue (inclinada, curva) = não se aplica */
+    imaSeguir: function (x) { var BI = depIma(); var c = el(x); if (!BI || !BI.tipoDe || !BI.tipoDe(c)) return null; return BI.temIma(c) ? "Sim" : "Não"; },
+    imaSeguirN: function (x) { var BI = depIma(); var c = el(x); if (!BI || !BI.tipoDe || !BI.tipoDe(c)) return null; var r = BI.resumo(c); return r.ligadas + " de " + r.total + (BI.tipoDe(c) === "pilar" ? " paredes do canto" : " pontas") + " seguem paredes"; },
     teSeguirN: function (x) { var c = el(x); if (c.modo === "extrusao") return null; var l = arr(c.contorno).filter(function (q) { return q && q.pr != null && q.pr !== ""; }).length; return l + " de " + arr(c.contorno).length + " arestas seguem paredes"; },
     /* TELHADO PARAMÉTRICO (T1, js/bimtelhadoestrut.js): o modelo da estrutura e os AVISOS dele, à vista nas Propriedades
        (o "fase 2: meias-tesouras de espigão", pontalete sem apoio, tesoura metálica baixa…) */
@@ -830,6 +834,8 @@
            está no inventário); no OrçaPRO ele delimita ambiente (padrão sim):
            o piso não passa por dentro do pilar — divergência declarada */
         P(I, "Restrições", "Delimitação de ambientes", "RA_PILAR_DELIMITA", "simnao", { calc: "pecaDelimita", escrita: "delimitar.delimita", leitura: false }),
+        P(I, "Restrições", "Seguir as paredes", "RA_PILAR_SEGUIR", "lista", { calc: "imaSeguir", escrita: "ima.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+        P(I, "Restrições", "Paredes do canto que o pilar segue", "RA_PILAR_SEGUIR_N", "texto", { calc: "imaSeguirN" }),
         P(I, "Materiais e acabamentos", "Material estrutural", "STRUCTURAL_MATERIAL_PARAM", "material", { calc: "materialRotulo", escrita: "ajustarTipo.valores.material", leitura: false }),
         /* P1-D: o NetWeight do IFC é o PESO EXATO (a geometria modelada × massa
            específica) — o mesmo número que o orçamento usa na medida "massa"; o
@@ -850,6 +856,8 @@
         P(I, "Restrições", "Nível de referência", "INSTANCE_REFERENCE_LEVEL_PARAM", "nivel", { calc: "nivelNome", campo: "nivelId", escrita: "ajustar.restricoes.nivelBase", leitura: false }),
         P(I, "Restrições", "Elevação do nível de referência", "STRUCTURAL_REFERENCE_LEVEL_ELEVATION", "comprimento", { calc: "vigaElevNivel" }),
         P(I, "Restrições", "Plano de trabalho", "SKETCH_PLANE_PARAM", "texto", { calc: "vigaPlano" }),
+        P(I, "Restrições", "Seguir as paredes", "RA_VIGA_SEGUIR", "lista", { calc: "imaSeguir", escrita: "ima.seguir", leitura: false, opcoes: ["Sim", "Não"] }),
+        P(I, "Restrições", "Pontas que seguem paredes", "RA_VIGA_SEGUIR_N", "texto", { calc: "imaSeguirN" }),
         P(I, "Restrições", "Deslocamento do nível inicial", "STRUCTURAL_BEAM_END0_ELEVATION", "comprimento", { calc: "vigaDeslocNivel", escrita: "ajustar.restricoes.deslocBase", leitura: false }),
         P(I, "Restrições", "Deslocamento do nível final", "STRUCTURAL_BEAM_END1_ELEVATION", "comprimento", { calc: "vigaDeslocNivel", escrita: "ajustar.restricoes.deslocBase", leitura: false }),
         P(I, "Posição geométrica", "Justificação z", "Z_JUSTIFICATION", "texto", { calc: "vigaJustZ" }),
