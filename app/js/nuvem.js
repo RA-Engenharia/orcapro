@@ -262,6 +262,10 @@
        Pelo mesmo motivo do carp_param: preço não pode morar em prefs (o local vence campo a campo). */
     "marm_precos", "marm_propostas",
     "remun_param", "remun_apur",
+    /* PRODUTIVIDADE E PRÊMIO (js/prodpremioui.js, prévia): a configuração
+       (metas e prêmio máximo = dinheiro, por isso entidade e não prefs), o
+       lançamento diário, a ocorrência e o fechamento homologado do mês. */
+    "pp_config", "pp_lanc", "pp_oc", "pp_fech",
     /* padrao de privacidade do Portal do Cliente (o que a obra herda quando
        ainda nao decidiu). Nao e sob demanda — vale para qualquer empresa —
        e tambem nao pode morar em prefs: e decisao de PRIVACIDADE, e o

@@ -294,6 +294,7 @@
      "fornecedores", "familias", "centrocusto", "cc_regras", "cc_aprop", "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
      "crono_obra", "crono_selo", "folha", "fs_lancamentos", "fs_pagamentos", "ponto", "frota_mov", "carp_param",
      "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros", "marm_precos", "marm_propostas", "remun_param", "remun_apur", "portal_padrao",
+     "pp_config", "pp_lanc", "pp_oc", "pp_fech",
      "precosinsumos", "perfil_impl", "crono_alt", "_lapides", "_syncmarcas"].forEach(function (e) { o[e] = 1; });
     return o;
   })();
@@ -1885,6 +1886,7 @@
        (contrato, ART, memorial assinado). */
     _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1, obra_docs: 1,
                        folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1,
+                       pp_lanc: 1, pp_oc: 1, pp_fech: 1,
                        remun_apur: 1, carp_propostas: 1, horas_extras: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
     /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,

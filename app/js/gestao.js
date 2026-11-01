@@ -95,7 +95,7 @@
     engenharia:     ["dashboard", "orcamentos", "obras", "documentos", "medicoes", "rdo", "cronobra", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "documentos", "fiscal", "centrocusto", "relatorios"],
-    rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar"],
+    rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar", "prodpremio"],
     administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
@@ -481,6 +481,10 @@
        proposta e a folha variavel de obra que nao e dele. Registro SEM
        obra continua visivel — ver a nota do filtro logo abaixo. */
     carp_propostas: 1, remun_apur: 1,
+    /* Produtividade e prêmio (js/prodpremioui.js): lançamento, ocorrência e
+       fechamento carregam obraId e o NOME/produção de quem trabalhou — o
+       sub-usuário de outra obra não os vê. */
+    pp_lanc: 1, pp_oc: 1, pp_fech: 1,
     /* a proposta da marmoraria (js/marmorariaui.js, 21/10/2026) carrega obraId, sincroniza (Nuvem.ENTIDADES) e
        morre com a obra (_ENT_DA_OBRA): pelo mesmo motivo da carp_propostas, o sub-usuário de outra obra não a vê.
        A emissão sem obra (id "mprop:sem-obra:…") fica visível, como a nota do filtro abaixo. */
@@ -751,6 +755,8 @@
        só aparecem para o perfil que os nomeia */
     carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
     remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
+    /* produtividade e prêmio: barras subindo até a meta (linha no topo) */
+    prodpremio: '<path d="M3 20h18"/><path d="M6 20v-5"/><path d="M11 20v-8"/><path d="M16 20v-11"/><path d="M3 5h18" stroke-dasharray="2 2"/>',
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     requisicoes: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/>',
@@ -942,6 +948,8 @@
       { id: "folha", nome: "Folha / Encargos", curto: "Encargos", g: "equipe" },
       { id: "epi", nome: "EPI", g: "equipe" },
       { id: "remunvar", nome: "Remuneração variável", curto: "Remun. variável", g: "equipe" },   // sob demanda — ver perfis.js
+      /* sob demanda (js/perfis.js SOB_DEMANDA): só aparece para o perfil que NOMEIA `prodpremio` */
+      { id: "prodpremio", nome: "Produtividade e prêmio", curto: "Produtividade", g: "equipe" },
       { id: "frota", nome: "Frota", g: "ativos" },
       { id: "patrimonio", nome: "Patrimônio", g: "ativos" },
       { id: "financeiro", nome: "Financeiro", curto: "Lançamentos", g: "dinheiro" },
@@ -1693,6 +1701,7 @@
         case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
         case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
+        case "prodpremio": return this.renderProdPremio ? this.renderProdPremio() : this._moduloNaoCarregado("Produtividade e prêmio", "js/prodpremioui.js");
         case "galeria": return this.renderGaleria();
         /* mesma regra das duas de cima: a tela mora em js/tour360ui.js, que o
            index.html carrega depois deste arquivo. Se faltar, a tela diz qual
@@ -5979,6 +5988,12 @@
          apagava — em todos os aparelhos, sem aparecer no modal. */
       ["remun_apur", "apuração(ões) da remuneração variável"],
       ["carp_propostas", "proposta(s) da carpintaria"],
+      /* Produtividade e prêmio: o lançamento aprovado, a ocorrência e o
+         fechamento homologado são a PROVA do prêmio pago a pessoa física
+         (guardar 5 anos). A obra some, eles perdem o vínculo, não a existência. */
+      ["pp_lanc", "lançamento(s) de produtividade"],
+      ["pp_oc", "ocorrência(s) de produtividade"],
+      ["pp_fech", "fechamento(s) do prêmio"],
       /* ⚠ v1.2 — MESMO DEFEITO, ENTIDADE MAIS ANTIGA. `horas_extras` grava
          `obraId` no formulário, sincroniza, e não estava em NENHUMA das três
          listas. A tela nunca a apagava (não aparecia no modal, não era

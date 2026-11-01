@@ -60,7 +60,20 @@ var Perfis = (function () {
    * Aqui o sentido é invertido: quem está NESTA lista só aparece para o
    * perfil que o NOMEIA. Módulo do produto continua valendo por omissão;
    * módulo de cliente precisa de convite. */
-  var SOB_DEMANDA = ["carpintaria", "remunvar"];
+  var SOB_DEMANDA = ["carpintaria", "remunvar", "prodpremio"];
+
+  /* MÓDULO EM PRÉVIA (31/10/2026): só existe na instalação que ligou a
+     prévia pelo atalho (`?previa=<nome>`, App._PREVIAS em js/app.js grava a
+     chave). Sem a chave, `permite` responde false — e como menu, busca,
+     render e "Organizar menu" perguntam aqui, uma guarda cobre todos.
+     ⚠ É ANTES do perfil: com a prévia ligada, o perfil ainda decide (um
+     perfil de cliente com lista própria precisa NOMEAR o módulo). */
+  var EM_PREVIA = {};
+  function _previaFechada(id) {
+    var k = EM_PREVIA[id];
+    if (!k) return false;
+    try { return !(typeof localStorage !== "undefined" && localStorage.getItem(k)); } catch (e) { return true; }
+  }
 
   /* ⚠ AQUI SÓ MORA O PERFIL DO PRODUTO. Perfil de CLIENTE — nome comercial,
    *   resumo da operação e os números que fazem o preço dele — é material do
@@ -264,6 +277,7 @@ var Perfis = (function () {
        está olhando. */
   function permite(id) {
     var s = String(id);
+    if (_previaFechada(s)) return false;
     try {
       var libs = modulosLiberados();
       if (!libs) return !_sobDemanda(s);        // perfil completo
