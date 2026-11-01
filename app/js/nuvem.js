@@ -2054,6 +2054,25 @@
       } catch (e2) {}
       return { empresaId: String(empresaId || ""), empresa: nome, cnpj: cnpj, email: email };
     },
+    /* ⚠⚠ "local" NÃO É IDENTIDADE (revisão do login-mestre, 30/10/2026; corrigido 01/11/2026).
+     *
+     * No uso solo TODO aparelho de TODA empresa tem empresaId "local" (auth.js). O portão liberava por
+     * `dono.empresaId === meu.empresaId` ANTES de olhar o CNPJ: a empresa B que trocasse para a chave da A
+     * (link ?lic= confirmado, ou Licença digitada) passava por "mesmo aparelho" e o merge misturava as duas
+     * bases — o incidente de 27/08 de novo, pela porta do uso solo. Agora:
+     *  · empresaId genérico ("local"/"default"/vazio) não vale como prova de nada;
+     *  · a LINHAGEM (um sorteio gravado no aparelho que assumiu o tenant, e no `_dono`) é o que diz
+     *    "este é o aparelho dono" no uso solo — só ela completa a ficha de um dono anônimo;
+     *  · sem linhagem e com empresaId genérico, decidem CNPJ, e-mail e nome, como sempre. */
+    _idGenerico: function (id) { id = String(id || ""); return !id || id === "local" || id === "default"; },
+    _linhagemLocal: function (criar) {
+      var k = "orcapro:nuvem:linhagem:" + String(this.uid || "");
+      try {
+        var v = localStorage.getItem(k);
+        if (!v && criar) { v = "lin_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12); localStorage.setItem(k, v); }
+        return v || "";
+      } catch (e) { return ""; }
+    },
     /* Devolve Promise<{ok:true}> ou Promise<{ok:false, dono:…}> — nunca rejeita:
        falha de rede aqui não pode barrar a sincronização de quem está certo. */
     _conferirDono: function (empresaId) {
@@ -2066,9 +2085,10 @@
         .then(function (snap) {
           var dono = snap.exists ? (snap.data() || {}).v : null;
           if (!dono || !dono.empresaId) {
-            /* tenant novo (ou de antes desta trava): este aparelho o assume */
+            /* tenant novo (ou de antes desta trava): este aparelho o assume, e grava a linhagem dele */
+            var novo = Object.assign({}, meu, { linhagem: self._linhagemLocal(true) });
             return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
-              .set({ v: meu, em: Date.now() }).then(function () { return { ok: true, assumiu: true }; })
+              .set({ v: novo, em: Date.now() }).then(function () { return { ok: true, assumiu: true }; })
               .catch(function () { return { ok: true }; });
           }
           /* ⚠⚠ BLOQUEIA POR PROVA, NUNCA POR FALTA DE PROVA.
@@ -2099,20 +2119,48 @@
            * Aqui a régua é: o registro só ganha identidade pelo aparelho que
            * JÁ CONSTA como dono (mesmo `empresaId`). Ele não está tomando
            * posse — está completando a própria ficha. */
-          if (dono.empresaId && meu.empresaId && dono.empresaId === meu.empresaId) {
-            var faltaFicha = (!dono.email && meu.email) || (!dono.empresa && meu.empresa) || (!dono.cnpj && meu.cnpj);
-            if (faltaFicha) {
-              return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
-                .set({ v: meu, em: Date.now() }).then(function () { return { ok: true, adotou: true }; })
-                .catch(function (e) { try { self._registrarFalha(self.DOC_DONO, e); } catch (_) {} return { ok: true }; });
+          /* "mesmo aparelho" = mesma linhagem, ou o mesmo empresaId de verdade (multi-empresa).
+             "local" não entra: é igual em todo aparelho solo (ver _idGenerico). */
+          var minhaLin = self._linhagemLocal(false);
+          var mesmaLinhagem = !!(dono.linhagem && minhaLin && dono.linhagem === minhaLin);
+          var mesmoId = !self._idGenerico(meu.empresaId) && dono.empresaId === meu.empresaId;
+          var gravarDono = function (v, marca) {
+            return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
+              .set({ v: v, em: Date.now() }).then(function () { var r = { ok: true }; r[marca] = true; return r; })
+              .catch(function (e) { try { self._registrarFalha(self.DOC_DONO, e); } catch (_) {} return { ok: true }; });
+          };
+          if (mesmaLinhagem || mesmoId) {
+            /* ⚠ A FICHA ACOMPANHA A EMPRESA (revisão adversarial de 01/11/2026, achado 1). Completar só o que
+               FALTA deixava o _dono com o CNPJ velho depois de uma correção: o CNPJ novo descia pelo prefs para os
+               outros aparelhos, e na abertura seguinte TODOS eles batiam no CNPJ velho e ficavam bloqueados. A
+               linhagem é a prova de que é o dono falando: o que ele tem preenchido vale; o vazio dele não apaga. */
+            var ficha = {
+              empresaId: meu.empresaId || dono.empresaId,
+              empresa: meu.empresa || dono.empresa || "", cnpj: meu.cnpj || dono.cnpj || "", email: meu.email || dono.email || "",
+              linhagem: dono.linhagem || self._linhagemLocal(true)
+            };
+            if (ficha.empresa !== (dono.empresa || "") || ficha.cnpj !== (dono.cnpj || "") || ficha.email !== (dono.email || "") || ficha.linhagem !== dono.linhagem) {
+              return gravarDono(ficha, "adotou");
             }
             return { ok: true };
           }
           /* CNPJ primeiro: é único por empresa e o cliente digita uma vez só */
-          if (meu.cnpj && dono.cnpj) return norm(meu.cnpj) === norm(dono.cnpj) ? { ok: true } : { ok: false, dono: dono, meu: meu };
-          if (meu.email && dono.email) return norm(meu.email) === norm(dono.email) ? { ok: true } : { ok: false, dono: dono, meu: meu };
-          if (meu.empresa && dono.empresa) return norm(meu.empresa) === norm(dono.empresa) ? { ok: true } : { ok: false, dono: dono, meu: meu };
-          return { ok: true, semProva: true };   // nem a favor nem contra: passa
+          var prova = null;
+          if (meu.cnpj && dono.cnpj) prova = norm(meu.cnpj) === norm(dono.cnpj);
+          else if (meu.email && dono.email) prova = norm(meu.email) === norm(dono.email);
+          else if (meu.empresa && dono.empresa) prova = norm(meu.empresa) === norm(dono.empresa);
+          if (prova === false) return { ok: false, dono: dono, meu: meu };
+          if (prova === true) {
+            /* PROVOU QUE É A MESMA EMPRESA → o aparelho entra na linhagem dela. Assim qualquer aparelho legítimo
+               pode corrigir a ficha depois (acima). Tenant de antes desta versão (sem linhagem): o primeiro que
+               prova grava a linhagem no _dono, uma vez só — sem isso as empresas antigas nunca a teriam. */
+            if (dono.linhagem) {
+              try { localStorage.setItem("orcapro:nuvem:linhagem:" + String(self.uid || ""), dono.linhagem); } catch (eL) {}
+              return { ok: true };
+            }
+            return gravarDono(Object.assign({}, dono, { linhagem: self._linhagemLocal(true) }), "linhagemGravada");
+          }
+          return { ok: true, semProva: true };   // nem a favor nem contra: passa (e ninguém ganha linhagem)
         })
         .catch(function () { return { ok: true }; });   // sem rede: não bloqueia quem está certo
     },
@@ -2150,6 +2198,13 @@
         return self._sincronizarAgora(empresaId);
       });
     },
+    /* ⚠ O "Configurar admin" (gestao.js) só cria admin novo quando isto é verdade: a entidade "conta" DESTA
+       licença (uid atual) já foi lida da nuvem e gravada no aparelho. Por uid, não por "já sincronizou alguma
+       vez": o app troca de licença sem recarregar a página, e a marca da licença A liberava criar admin na B
+       antes de ler a nuvem dela (revisão adversarial de 01/11/2026, achados 3 e 4). Sincronização parcial que
+       leu a conta vale; a que falhou justo na conta, não. */
+    _contaLidaUid: "",
+    nuvemLidaParaAdmin: function () { return !!(this.uid && this._contaLidaUid === this.uid); },
     /* ⚠ O SINCRONIZAR NÃO ESPERA A CONFIRMAÇÃO DO SERVIDOR PARA SEMPRE (revisão adversarial, 20/10/2026, 1.2.162 —
        tools/test-nuvem-fila-oom.js [5]). O SDK repete sem fim a gravação que o servidor não confirma por erro
        passageiro (cota estourada, rede caindo, envio grande demais para a conexão) — a promessa nunca termina. E o
@@ -2235,6 +2290,8 @@
           self._aplicandoDaNuvem = true;
           try { Store.adapter.gravar(empresaId, ent, merged); }
           finally { self._aplicandoDaNuvem = false; }
+          /* a conta do admin DESTA licença já desceu e foi gravada aqui (ver nuvemLidaParaAdmin) */
+          if (ent === "conta") self._contaLidaUid = self.uid;
           /* ⚠ v1.1.235 — A MARCA TAMBÉM NASCE AQUI. Ela só era gravada no
              push deste aparelho; quem apenas RECEBIA (o celular que abre o app
              depois de o escritório trabalhar) nunca tinha marca, a guarda do

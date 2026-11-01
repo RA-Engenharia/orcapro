@@ -27885,6 +27885,15 @@ var corpo = '<p class="muted" style="margin:0 0 12px">Defina a conta de <b>admin
 '<div class="field"><label>Senha de administrador</label><input id="ca-senha" type="text" placeholder="crie uma senha (mín. 4)"></div>';
 UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + " Acesso multi-aparelho", corpo, [{ texto: "Salvar", classe: "primary", onClick: function () {
 var email = (UI.el("ca-email") || {}).value || "", senha = (UI.el("ca-senha") || {}).value || "";
+var temLic = typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave();
+if (!conta.email && temLic && typeof Nuvem !== "undefined" && !(Nuvem.nuvemLidaParaAdmin && Nuvem.nuvemLidaParaAdmin())) {
+UI.toast("A nuvem desta licença ainda não foi lida neste aparelho (sem internet, nuvem desligada ou sincronização em andamento). Esta licença pode já ter um administrador: ligue a nuvem, espere sincronizar e tente de novo.", "erro");
+return;
+}
+if (!conta.email && ((Auth.contaMestre && Auth.contaMestre()) || {}).email) {
+UI.fecharModal(); UI.toast("A nuvem acabou de trazer o administrador desta licença. Entre com ele para trocar a senha.", "erro"); App.render();
+return;
+}
 var r = Auth.criarContaMestre((Auth.usuario() || {}).empresa, email, senha);
 if (!r.ok) { UI.toast(r.erro, "erro"); return; }
 UI.fecharModal(); UI.toast("Acesso multi-aparelho ativado! Agora cada usuário entra no aparelho dele com o próprio login.", "ok"); App.render();
@@ -54424,6 +54433,15 @@ if (typeof Auth !== "undefined" && Auth.contaMestre) { var c = Auth.contaMestre(
 } catch (e2) {}
 return { empresaId: String(empresaId || ""), empresa: nome, cnpj: cnpj, email: email };
 },
+_idGenerico: function (id) { id = String(id || ""); return !id || id === "local" || id === "default"; },
+_linhagemLocal: function (criar) {
+var k = "orcapro:nuvem:linhagem:" + String(this.uid || "");
+try {
+var v = localStorage.getItem(k);
+if (!v && criar) { v = "lin_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12); localStorage.setItem(k, v); }
+return v || "";
+} catch (e) { return ""; }
+},
 _conferirDono: function (empresaId) {
 var self = this, meu = this._idDono(empresaId);
 if (!this.db || !this.uid) return Promise.resolve({ ok: true });
@@ -54431,23 +54449,43 @@ return this.db.collection("empresas").doc(this.uid).collection("dados").doc(this
 .then(function (snap) {
 var dono = snap.exists ? (snap.data() || {}).v : null;
 if (!dono || !dono.empresaId) {
+var novo = Object.assign({}, meu, { linhagem: self._linhagemLocal(true) });
 return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
-.set({ v: meu, em: Date.now() }).then(function () { return { ok: true, assumiu: true }; })
+.set({ v: novo, em: Date.now() }).then(function () { return { ok: true, assumiu: true }; })
 .catch(function () { return { ok: true }; });
 }
 function norm(s) { return String(s || "").trim().toLowerCase().replace(/\s+/g, " "); }
-if (dono.empresaId && meu.empresaId && dono.empresaId === meu.empresaId) {
-var faltaFicha = (!dono.email && meu.email) || (!dono.empresa && meu.empresa) || (!dono.cnpj && meu.cnpj);
-if (faltaFicha) {
+var minhaLin = self._linhagemLocal(false);
+var mesmaLinhagem = !!(dono.linhagem && minhaLin && dono.linhagem === minhaLin);
+var mesmoId = !self._idGenerico(meu.empresaId) && dono.empresaId === meu.empresaId;
+var gravarDono = function (v, marca) {
 return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
-.set({ v: meu, em: Date.now() }).then(function () { return { ok: true, adotou: true }; })
+.set({ v: v, em: Date.now() }).then(function () { var r = { ok: true }; r[marca] = true; return r; })
 .catch(function (e) { try { self._registrarFalha(self.DOC_DONO, e); } catch (_) {} return { ok: true }; });
+};
+if (mesmaLinhagem || mesmoId) {
+var ficha = {
+empresaId: meu.empresaId || dono.empresaId,
+empresa: meu.empresa || dono.empresa || "", cnpj: meu.cnpj || dono.cnpj || "", email: meu.email || dono.email || "",
+linhagem: dono.linhagem || self._linhagemLocal(true)
+};
+if (ficha.empresa !== (dono.empresa || "") || ficha.cnpj !== (dono.cnpj || "") || ficha.email !== (dono.email || "") || ficha.linhagem !== dono.linhagem) {
+return gravarDono(ficha, "adotou");
 }
 return { ok: true };
 }
-if (meu.cnpj && dono.cnpj) return norm(meu.cnpj) === norm(dono.cnpj) ? { ok: true } : { ok: false, dono: dono, meu: meu };
-if (meu.email && dono.email) return norm(meu.email) === norm(dono.email) ? { ok: true } : { ok: false, dono: dono, meu: meu };
-if (meu.empresa && dono.empresa) return norm(meu.empresa) === norm(dono.empresa) ? { ok: true } : { ok: false, dono: dono, meu: meu };
+var prova = null;
+if (meu.cnpj && dono.cnpj) prova = norm(meu.cnpj) === norm(dono.cnpj);
+else if (meu.email && dono.email) prova = norm(meu.email) === norm(dono.email);
+else if (meu.empresa && dono.empresa) prova = norm(meu.empresa) === norm(dono.empresa);
+if (prova === false) return { ok: false, dono: dono, meu: meu };
+if (prova === true) {
+if (dono.linhagem) {
+try { localStorage.setItem("orcapro:nuvem:linhagem:" + String(self.uid || ""), dono.linhagem); } catch (eL) {}
+return { ok: true };
+}
+return gravarDono(Object.assign({}, dono, { linhagem: self._linhagemLocal(true) }), "linhagemGravada");
+}
 return { ok: true, semProva: true };
 })
 .catch(function () { return { ok: true }; });
@@ -54475,6 +54513,8 @@ self.bloqueioDeDono = null;
 return self._sincronizarAgora(empresaId);
 });
 },
+_contaLidaUid: "",
+nuvemLidaParaAdmin: function () { return !!(this.uid && this._contaLidaUid === this.uid); },
 TETO_CONFIRMA_SYNC: 30000,
 _esperarConfirmacao: function (ent, pW, ck, tam) {
 var self = this, acabou = false;
@@ -54530,6 +54570,7 @@ var merged = self._merge(local, cloud, ent, empresaId);
 self._aplicandoDaNuvem = true;
 try { Store.adapter.gravar(empresaId, ent, merged); }
 finally { self._aplicandoDaNuvem = false; }
+if (ent === "conta") self._contaLidaUid = self.uid;
 self._marcarSync(empresaId, ent, merged, cloud);
 var subir = paraNuvem(ent, merged);
 var carga = "";

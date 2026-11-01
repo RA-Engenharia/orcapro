@@ -38902,6 +38902,20 @@
         '<div class="field"><label>Senha de administrador</label><input id="ca-senha" type="text" placeholder="crie uma senha (mín. 4)"></div>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + " Acesso multi-aparelho", corpo, [{ texto: "Salvar", classe: "primary", onClick: function () {
         var email = (UI.el("ca-email") || {}).value || "", senha = (UI.el("ca-senha") || {}).value || "";
+        /* ⚠ ADMIN NOVO SÓ DEPOIS DE OUVIR A NUVEM (revisão do login-mestre, 30/10/2026; corrigido 01/11/2026).
+           Aparelho sem admin local, com licença, que ainda não baixou a nuvem: a conta criada aqui sai mais nova
+           e o merge da "conta" (o mais novo vence) trocava o e-mail e a senha do admin que JÁ existia na nuvem —
+           o dono legítimo ficava sem login. Trocar a senha do próprio admin (já existe conta local) segue livre. */
+        var temLic = typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave();
+        if (!conta.email && temLic && typeof Nuvem !== "undefined" && !(Nuvem.nuvemLidaParaAdmin && Nuvem.nuvemLidaParaAdmin())) {
+          UI.toast("A nuvem desta licença ainda não foi lida neste aparelho (sem internet, nuvem desligada ou sincronização em andamento). Esta licença pode já ter um administrador: ligue a nuvem, espere sincronizar e tente de novo.", "erro");
+          return;
+        }
+        /* a sincronização pode terminar com o modal aberto e trazer o admin que já existia */
+        if (!conta.email && ((Auth.contaMestre && Auth.contaMestre()) || {}).email) {
+          UI.fecharModal(); UI.toast("A nuvem acabou de trazer o administrador desta licença. Entre com ele para trocar a senha.", "erro"); App.render();
+          return;
+        }
         var r = Auth.criarContaMestre((Auth.usuario() || {}).empresa, email, senha);
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
         UI.fecharModal(); UI.toast("Acesso multi-aparelho ativado! Agora cada usuário entra no aparelho dele com o próprio login.", "ok"); App.render();
