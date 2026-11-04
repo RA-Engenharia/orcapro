@@ -37,7 +37,10 @@
         { id: "p70", nome: "0,70 × 2,10", valores: { Largura: 0.70 } },
         { id: "p80", nome: "0,80 × 2,10", valores: { Largura: 0.80 } },
         { id: "p90", nome: "0,90 × 2,10", valores: { Largura: 0.90 } },
-        { id: "p60", nome: "0,60 × 2,10", valores: { Largura: 0.60 } }   /* lavabo, despensa (esquadrias automáticas, 20/10/2026) — no FIM: a ordem dos tipos antigos não muda */
+        { id: "p60", nome: "0,60 × 2,10", valores: { Largura: 0.60 } },   /* lavabo, despensa (esquadrias automáticas, 20/10/2026) — no FIM: a ordem dos tipos antigos não muda */
+        /* alturas maiores (04/11/2026): a altura tambem e dimensao de tipo — presets p/ nao parecer travada em 2,10 (o campo Altura segue editavel em Editar tipo) */
+        { id: "p80a", nome: "0,80 × 2,30", valores: { Largura: 0.80, Altura: 2.30 } },
+        { id: "p90a", nome: "0,90 × 2,40", valores: { Largura: 0.90, Altura: 2.40 } }
       ],
       abertura: { largura: "Largura + 2*Batente", altura: "Altura + Batente", peitoril: "0" },
       solidos: [
@@ -419,7 +422,10 @@
       tipos: [
         { id: "c160", nome: "1,60 × 2,10", valores: { Largura: 1.60 } },
         { id: "c200", nome: "2,00 × 2,10", valores: { Largura: 2.00 } },
-        { id: "c240", nome: "2,40 × 2,10", valores: { Largura: 2.40 } }
+        { id: "c240", nome: "2,40 × 2,10", valores: { Largura: 2.40 } },
+        /* alturas maiores (04/11/2026): vidro/correr costuma ir mais alto; Altura segue editavel em Editar tipo */
+        { id: "c200a", nome: "2,00 × 2,40", valores: { Largura: 2.00, Altura: 2.40 } },
+        { id: "c240a", nome: "2,40 × 2,70", valores: { Largura: 2.40, Altura: 2.70 } }
       ],
       abertura: { largura: "Largura", altura: "Altura", peitoril: "0" },
       solidos: [
@@ -446,7 +452,9 @@
       tipos: [
         { id: "d120", nome: "1,20 × 2,10", valores: { Largura: 1.20 } },
         { id: "d140", nome: "1,40 × 2,10", valores: { Largura: 1.40 } },
-        { id: "d160", nome: "1,60 × 2,10", valores: { Largura: 1.60 } }
+        { id: "d160", nome: "1,60 × 2,10", valores: { Largura: 1.60 } },
+        /* altura maior (04/11/2026): Altura segue editavel em Editar tipo */
+        { id: "d160a", nome: "1,60 × 2,40", valores: { Largura: 1.60, Altura: 2.40 } }
       ],
       abertura: { largura: "Largura + 2*Batente", altura: "Altura + Batente", peitoril: "0" },
       solidos: [
