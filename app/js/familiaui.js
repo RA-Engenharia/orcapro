@@ -39,6 +39,8 @@
       (global.FamiliasRA ? FamiliasRA.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* F1: as famílias ORÇÁVEIS (cada tipo = uma composição SINAPI real, js/familiasorc.js) — da RA, só leitura */
       (global.FamiliasOrc ? FamiliasOrc.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
+      /* TELHADO sanduíche paramétrico (js/familiastelhado.js): telha + estrutura + travamento X + forro + rufo + calha */
+      (global.FamiliasTelhado ? FamiliasTelhado.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* CARPINTARIA & MARCENARIA (js/marcenaria.js): os módulos em chapa e a carpintaria — só com o modelador e a disciplina ligados */
       (global.FamiliasMarcenaria ? FamiliasMarcenaria.lista() : []).forEach(function (f) { f._origem = "ra"; mapa[f.id] = f; });
       /* HIDROSSANITÁRIO/CLIMATIZAÇÃO (J4/J11): só com a prévia ?previa=hidro; o grupo "hidro" baixa sob demanda e a biblioteca se refaz quando chega */
