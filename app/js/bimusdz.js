@@ -153,8 +153,11 @@
     var porCor = {}, ordem = [];
     for (i = 0; i < pecas.length; i++) {
       var c = pecas[i].cor || [0.8, 0.8, 0.8, 1], a = c[3] == null ? 1 : c[3];
-      var k = n(c[0], 2) + "|" + n(c[1], 2) + "|" + n(c[2], 2) + "|" + n(a, 2);
-      if (!porCor[k]) { porCor[k] = { cor: [c[0], c[1], c[2], a], itens: [], nv: 0, ni: 0 }; ordem.push(k); }
+      /* ⚠ `umaFace` (o número das cotas da RA, 03/11/2026) separa o grupo: a mesma cor com uma face e com duas faces
+         não pode dividir malha — a face dupla é a regra de sempre (não muda nada para quem não pede) */
+      var uma = pecas[i].umaFace === true;
+      var k = n(c[0], 2) + "|" + n(c[1], 2) + "|" + n(c[2], 2) + "|" + n(a, 2) + (uma ? "|1" : "");
+      if (!porCor[k]) { porCor[k] = { cor: [c[0], c[1], c[2], a], itens: [], nv: 0, ni: 0, uma: uma }; ordem.push(k); }
       porCor[k].itens.push(pecas[i]);
       porCor[k].nv += Math.floor(pecas[i].pos.length / 3);
       porCor[k].ni += Math.floor(pecas[i].idx.length / 3) * 3;
@@ -186,7 +189,7 @@
         }
         vb += nv; ib += q;
       });
-      return { cor: g.cor, pos: pos, nor: nor, idx: idx };
+      return { cor: g.cor, pos: pos, nor: nor, idx: idx, umaFace: g.uma };
     });
     return {
       ok: true, grupos: grupos, tri: tri, escala: escala, casas: escala < 0.2 ? 5 : 4,
@@ -209,7 +212,7 @@
       }
       for (j = 0; j + 2 < gr.idx.length; j += 3) { cont.push("3"); ind.push(gr.idx[j] + ", " + gr.idx[j + 1] + ", " + gr.idx[j + 2]); }
       partes.push('        def Mesh "Malha_' + g + '" (\n            prepend apiSchemas = ["MaterialBindingAPI"]\n        )\n        {\n' +
-        '            uniform bool doubleSided = 1\n' +
+        '            uniform bool doubleSided = ' + (gr.umaFace ? '0' : '1') + '\n' +
         '            int[] faceVertexCounts = [' + cont.join(", ") + ']\n' +
         '            int[] faceVertexIndices = [' + ind.join(", ") + ']\n' +
         '            normal3f[] normals = [' + nrm.join(", ") + '] (\n                interpolation = "vertex"\n            )\n' +
@@ -255,7 +258,7 @@
       acessores.push({ bufferView: vn, componentType: 5126, count: nv, type: "VEC3" });
       acessores.push({ bufferView: vi, componentType: 5125, count: g.idx.length, type: "SCALAR" });
       var a = Math.max(0.05, Math.min(1, g.cor[3] == null ? 1 : g.cor[3]));
-      materiais.push({ name: "Mat_" + i, doubleSided: true, alphaMode: a < 0.99 ? "BLEND" : "OPAQUE",
+      materiais.push({ name: "Mat_" + i, doubleSided: !g.umaFace, alphaMode: a < 0.99 ? "BLEND" : "OPAQUE",
         pbrMetallicRoughness: { baseColorFactor: [linear(g.cor[0]), linear(g.cor[1]), linear(g.cor[2]), a], metallicFactor: 0.05, roughnessFactor: 0.85 } });
       malhas.push({ name: "Malha_" + i, primitives: [{ attributes: { POSITION: i * 3, NORMAL: i * 3 + 1 }, indices: i * 3 + 2, material: i, mode: 4 }] });
       nos.push({ mesh: i, name: "Malha_" + i });

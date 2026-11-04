@@ -7161,6 +7161,7 @@ try { if (window.MadCalcUI) MadCalcUI.registrar(reg, self); } catch (eMad) {}
 try { if (window.MadEngUI) MadEngUI.registrar(reg, self); } catch (eMadEng) {}
 try { if (window.BlocokExecUI) BlocokExecUI.registrar(reg, self); } catch (eBkx) {}
 try { if (window.PranchaVivaUI) PranchaVivaUI.registrar(reg, self); } catch (ePv) {}
+try { if (window.BimExplodirUI) BimExplodirUI.registrar(reg, self); } catch (eExp) {}
 try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
 try { if (window.BimFita) BimFita.registrar(reg, self); } catch (eFita) {}
 try { if (window.BimProjetosUI) BimProjetosUI.registrar(reg, self); } catch (eProj) {}
@@ -71742,5 +71743,5 @@ document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revo
 })(typeof window !== "undefined" ? window : this);
 } catch (e) { setTimeout(function () { throw e; }); }
 /* ==== lista dos pacotes dos grupos sob demanda (js/carregar.js) ==== */
-try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=0b18b91a69"},{"src":"js/bim-pacote.js?v=d240f17dbc","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5d244b9eae"}]}; } catch (e) { setTimeout(function () { throw e; }); }
+try { if (window.Carregar) Carregar.pacotes = {"bim":[{"src":"js/pacotes/bim.js?v=b564b730b2"},{"src":"js/bim-pacote.js?v=32ffcaa479","modulo":true},{"src":"js/metalcalcvista-pacote.js?v=122abc30d5","modulo":true}],"hidro":[{"src":"js/pacotes/hidro.js?v=5d244b9eae"}]}; } catch (e) { setTimeout(function () { throw e; }); }
 //# sourceMappingURL=nucleo-2.js.map

@@ -141,6 +141,17 @@
     ".pviva-info .pviva-sec b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--pv-sub);margin-bottom:3px}",
     ".pviva-info .pviva-pend{background:#fff8e6;border:1px solid #f3c77a;color:#6b4300;border-radius:8px;padding:6px 8px;margin-top:6px}",
     ".pviva-info .pviva-pend .pviva-bt{margin:6px 6px 0 0;min-height:30px;padding:4px 8px}",
+    /* O CENÁRIO "PEÇA A PEÇA" (03/11/2026): o 3D direto, sem folha; a barra do cenário no lugar da barra da folha */
+    ".pviva-app:not(.pviva-cenario) [data-pviva-cen]{display:none}",
+    ".pviva-app.pviva-cenario [data-pviva-acao=corte],.pviva-app.pviva-cenario [data-pviva-acao=voltar],.pviva-app.pviva-cenario .pviva-cortebox{display:none}",
+    ".pviva-cenmodos{display:inline-flex;gap:4px;flex-wrap:wrap}",
+    ".pviva-bt[disabled]{opacity:.45;cursor:not-allowed}",
+    ".pviva-info .pviva-furos{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}.pviva-info .pviva-furos th{text-align:left;color:var(--pv-sub);font-weight:600;padding:2px 4px 2px 0}.pviva-info .pviva-furos td{padding:2px 4px 2px 0;border-top:1px solid var(--pv-borda)}",
+    ".pviva-info .pviva-lig-lista{margin:4px 0 0;padding-left:16px}",
+    ".pviva-ficha{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;background:rgba(10,16,24,.9);pointer-events:auto}",
+    ".pviva-ficha-topo{display:flex;align-items:center;gap:6px;padding:8px 10px;background:var(--pv-cartao);border-bottom:1px solid var(--pv-borda);color:var(--pv-texto);flex-wrap:wrap}.pviva-ficha-topo b{flex:1;min-width:140px}",
+    ".pviva-ficha-palco{position:relative;flex:1;overflow:hidden;touch-action:none;cursor:grab}.pviva-ficha-palco img{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;user-select:none;-webkit-user-drag:none;background:#fff}",
+    ".pviva-ficha-erro{position:absolute;left:12px;right:12px;top:70px;background:#fff8e6;border:1px solid #f3c77a;color:#6b4300;border-radius:10px;padding:12px}",
     ".pviva-alca{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:#fff;border:2px solid " + ACO + ";box-shadow:0 2px 8px rgba(0,0,0,.2);pointer-events:auto;cursor:ns-resize;display:flex;align-items:center;justify-content:center;touch-action:none}",
     ".pviva-alca svg{width:18px;height:18px;stroke:" + ACO + ";stroke-width:2.4;fill:none}",
     ".pviva-pino{position:absolute;transform:translate(-50%,-100%);pointer-events:none;text-align:center}",
@@ -411,6 +422,7 @@
     fechar: function () {
       var st = this._st; if (!st) return false;
       try { if (st._vigia) clearInterval(st._vigia); clearTimeout(st._tMsg); } catch (eV) {}
+      try { if (st.cenario) this._cenarioLimpar(); } catch (eCl) {}
       try { this._restaurarCena(); } catch (e) {}
       this._ligarCanvas(false);
       try { if (st.ro) st.ro.disconnect(); } catch (e2) {}
@@ -525,6 +537,11 @@
         '<div class="pviva-guia" data-pviva="guia" hidden></div></main></div>' +
         '<div class="pviva-3d" data-pviva="3d" hidden>' +
         '<div class="pviva-barra3d" role="toolbar" aria-label="Ferramentas do 3D">' +
+        '<button type="button" class="pviva-bt prim" data-pviva-cen="1" data-pviva-acao="cen-explodir" title="Afasta as peças do modelo (o afastamento que o projeto traz)">' + ico("camadas", 16) + '<span class="pviva-rot">Explodir</span></button>' +
+        '<button type="button" class="pviva-bt" data-pviva-cen="1" data-pviva-acao="cen-montar" title="Devolve as peças ao lugar">' + ico("voltar", 16) + '<span class="pviva-rot">Montar</span></button>' +
+        '<span class="pviva-cenmodos" data-pviva-cen="1" data-pviva="cen-modos" role="group" aria-label="Modo da explodida"></span>' +
+        '<button type="button" class="pviva-bt" data-pviva-cen="1" data-pviva-acao="cen-cotas" aria-pressed="false" title="As cotas vivas: medem cada módulo na tela, na aresta de silhueta">' + ico("medir", 16) + '<span class="pviva-rot">Cotas</span></button>' +
+        '<button type="button" class="pviva-bt prim" data-pviva-cen="1" data-pviva-acao="cen-voltar" title="Volta à lista (Esc)">' + ico("voltar", 16) + '<span class="pviva-rot">Voltar</span></button>' +
         '<button type="button" class="pviva-bt prim" data-pviva-acao="voltar" title="Volta para a folha no mesmo ponto (Esc)">' + ico("voltar", 16) + '<span class="pviva-rot">Voltar à prancha</span></button>' +
         '<button type="button" class="pviva-bt ligado" data-pviva-acao="corte" aria-pressed="true" title="O corte na cota da prancha">' + ico("corte", 16) + '<span class="pviva-rot">Corte</span></button>' +
         '<button type="button" class="pviva-bt" data-pviva-acao="disc" aria-pressed="false" title="Ligar e desligar disciplinas">' + ico("camadas", 16) + '<span class="pviva-rot">Disciplinas</span></button>' +
@@ -546,6 +563,9 @@
         var alvo = ev.target && ev.target.tagName; if (/^(INPUT|TEXTAREA|SELECT)$/.test(alvo || "")) return;
         if (global.document.getElementById("modal-bg")) return;
         ev.stopPropagation(); ev.preventDefault();
+        if (self.q("ficha")) { self._fecharFicha(); return; }
+        /* o grupo aberto (ficha dele, depois Agrupar e o destaque) tem o Esc antes de sair do 3D */
+        try { if (B() && B().grupoEsc && B().grupoEsc()) return; } catch (eGe) {}
         if (st.medindo) self._medir(false); else if (st.modo === "3d") self.voltar(); else if (st.modo === "2d") self.fechar();
       };
       global.addEventListener("keydown", st.onKey, true);
@@ -577,6 +597,9 @@
       var grupos = {}, ordem = [];
       st.folhas.forEach(function (f, i) { if (!grupos[f.grupo]) { grupos[f.grupo] = []; ordem.push(f.grupo); } grupos[f.grupo].push(i); });
       var h = "";
+      /* CENÁRIOS (03/11/2026): o que não é folha — o modelo com a volumetria das peças abre o "Peça a peça" */
+      if (this._temVol()) h += '<h3>Cenários</h3><button type="button" class="pviva-folha-bt" data-pviva-cenario="peca" aria-current="' + (st.cenario === "peca") + '"><span>Peça a peça</span>' +
+        '<small>Explodir, medir e abrir a ficha de cada peça</small></button>';
       ordem.forEach(function (gN) {
         h += "<h3>" + esc(gN) + "</h3>";
         grupos[gN].forEach(function (i) {
@@ -598,6 +621,9 @@
       }
       el.innerHTML = h;
       var self = this;
+      Array.prototype.forEach.call(el.querySelectorAll("[data-pviva-cenario]"), function (b) {
+        b.onclick = function () { if (st.ocupado) return; self.abrirCenario(b.getAttribute("data-pviva-cenario")); };
+      });
       Array.prototype.forEach.call(el.querySelectorAll("[data-pviva-folha]"), function (b) {
         b.onclick = function () { var i = +b.getAttribute("data-pviva-folha"); if (st.ocupado) return; if (st.modo === "3d") self.voltar(true).then(function () { self.abrirFolha(i); }); else self.abrirFolha(i); };
       });
@@ -606,6 +632,14 @@
       var p = this.q("palco"); if (!p) return;
       var v = global.document.createElement("div"); v.className = "pviva-vazio";
       var st = this._st, link = st && st.fonte === "link", comModelo = this._temModelo();
+      if (this._temVol()) {
+        v.innerHTML = "<div><b>" + (link ? "Este link não trouxe pranchas." : "Esta obra ainda não tem prancha.") + "</b><br>Mas o modelo traz as peças com marca, medidas e ficha: abra o cenário <b>Peça a peça</b> na lista." +
+          '<div style="margin-top:10px"><button type="button" class="pviva-bt prim" data-pviva-cenario-ir="peca">' + ico("camadas", 15) + "Abrir a Peça a peça</button></div></div>";
+        p.appendChild(v);
+        var bi = v.querySelector("[data-pviva-cenario-ir]"), selfV = this; if (bi) bi.onclick = function () { selfV.abrirCenario("peca"); };
+        this.q("dica").hidden = true; this._tit("Sem folhas", "");
+        return;
+      }
       v.innerHTML = link ? "<div><b>Este link não trouxe pranchas.</b><br>Peça a quem enviou um link novo com a opção <b>Pranchas (Prancha Viva)</b> marcada. O 3D do projeto continua no visualizador: feche esta tela.</div>" :
         "<div><b>Esta obra ainda não tem prancha.</b><br>" +
         (comModelo ? "O modelo está aberto: <b>Gerar as pranchas do modelo</b> monta as plantas de cada nível, os cortes e as elevações, cada vista ligada ao 3D — é só tocar." :
@@ -624,6 +658,7 @@
     /* ------------------------------------------------------------ abrir uma folha */
     abrirFolha: function (i, opts) {
       var st = this._st, self = this, f = st.folhas[i]; if (!f) return Promise.resolve(false);
+      if (!st.cenario) this._montarJa();
       st.atual = i;
       Array.prototype.forEach.call(st.el.querySelectorAll("[data-pviva-folha]"), function (b) { b.setAttribute("aria-current", String(+b.getAttribute("data-pviva-folha") === i)); });
       this._tit(f.titulo, f.nLig ? "toque num ponto para abrir o 3D" : "esta folha não tem vista ligada ao modelo");
@@ -1060,8 +1095,17 @@
     /* ==================================================================
      * FOLHA → 3D
      * ================================================================== */
+    /* ⚠ a folha mostra e leva ao modelo MONTADO (03/11/2026, revisão): a explodida ligada no BIM vazava para a vista da folha, para o raio
+       que acha a peça do ponto tocado e para o desenho do corte. Monta na hora, sem animação, e avisa. */
+    _montarJa: function () {
+      var b = B(), r = null;
+      try { r = b && b.explodirMontar ? b.explodirMontar({ agora: true }) : null; } catch (e) { r = null; }
+      if (r && r.desfeita) toast("A vista explodida foi desfeita: a folha mostra o modelo montado.", "aviso");
+      return !!(r && r.desfeita);
+    },
     irPara3D: function (lig, x, y, extra) {
       var st = this._st, self = this, api = this._api(), P0 = PV();
+      if (!st.cenario) this._montarJa();
       if (!api) { toast("O visualizador 3D não está aberto.", "erro"); return Promise.resolve(false); }
       st.ocupado = true;
       this._pausar3d(false);
@@ -1150,6 +1194,7 @@
     },
     voltar: function (rapido) {
       var st = this._st, self = this, api = this._api(), P0 = PV();
+      if (st && st.cenario) return this.fecharCenario(rapido);
       if (!st || st.modo !== "3d" || st.ocupado || !api) return Promise.resolve(false);
       st.ocupado = true;
       this._medir(false); this._painelInfo(null); this._abrirDisc(false);
@@ -1335,6 +1380,31 @@
       try { if (st.fonte === "obra" && global.TesteModulo && TesteModulo.tocar) TesteModulo.tocar("pranchaviva"); } catch (eT) {}
       var hit = api.raycast ? api.raycast(cx, cy) : null, uid = null;
       try { uid = b.uidEm ? b.uidEm(cx, cy) : null; } catch (e) { uid = null; }
+      /* O CENÁRIO "PEÇA A PEÇA": tocar numa peça com volumetria FOCA nela (enquadra, raio-X no resto, cotas da peça); no vazio, sai do foco */
+      if (st.cenario) {
+        /* no vazio: sai do foco da peça e do grupo (agrupa antes e tira o destaque) */
+        if (!hit || !uid) { try { if (b.focoSair) b.focoSair(); if (b.grupoFechar) b.grupoFechar(); } catch (eF) {} st.sel = null; this._painelInfo(null); return null; }
+        var dv = null; try { dv = b.dadosPeca ? b.dadosPeca(uid) : null; } catch (eD) { dv = null; }
+        if (dv) {
+          /* ⚠ O FOCO DA PEÇA É O ÚLTIMO NÍVEL (03/11/2026): com a explodida ligada o toque numa peça escolhe o GRUPO dela (destaque + cartão de 2 opções); só
+             com o grupo aberto e a peça dentro dele vem o foco de sempre. Explodida desligada: como antes (foco direto). */
+          var esx = null; try { esx = b.explodirEstado ? b.explodirEstado() : null; } catch (eX) { esx = null; }
+          if (esx && esx.alvo === 1 && b.grupoEscolher) {
+            var gx = esx.grupo || {}, dentro = !!(gx.aberto && (gx.uids || []).indexOf(uid) >= 0);
+            if (!dentro) {
+              try { if (gx.escolhido && b.grupoDaPeca) { var gp = b.grupoDaPeca(uid); if (!gp || gp.modulo !== gx.modulo || gp.mid !== gx.mid) b.grupoFechar(); } } catch (eG2) {}
+              var rG = null; try { rG = b.grupoEscolher(uid); } catch (eG3) { rG = null; }
+              /* ⚠ só encerra o toque se o grupo foi mesmo escolhido (03/11/2026, revisão): peça com `vol` e sem módulo não tem grupo e o toque morria — segue para o foco */
+              if (rG && rG.ok) { st.sel = null; this._painelInfo(null); return null; }
+            }
+          }
+          st.sel = { uid: uid, P: [hit.point.x, hit.point.y, hit.point.z] };
+          try { b.focoPeca(uid); } catch (eFp) {}
+          var infoC = this.infoDaPeca(uid);
+          this._painelInfo(infoC);
+          return infoC;
+        }
+      }
       if (!hit || !uid) { st.sel = null; this._painelInfo(null); return null; }
       var P = [hit.point.x, hit.point.y, hit.point.z];
       st.sel = { uid: uid, P: P };
@@ -1375,15 +1445,162 @@
         } catch (e3) {}
         try { var cl = global.BimQto && BimQto._classificarTipo ? BimQto._classificarTipo(el.tipo) : null; categoria = cl ? cl.cat : ""; } catch (e4) {}
       }
-      return PV().infoPeca({ el: el, plano4d: plano, etapas: etapas, orc: orc, vinculos: vinc, categoria: categoria, nomeCat: function (c) { try { return global.BIM4D ? BIM4D.nomeCat(c) : c; } catch (e) { return c; } } });
+      var vol = null; try { vol = b.dadosPeca ? b.dadosPeca(uid) : null; } catch (eV) { vol = null; }
+      return PV().infoPeca({ el: el, vol: vol, plano4d: plano, etapas: etapas, orc: orc, vinculos: vinc, categoria: categoria, nomeCat: function (c) { try { return global.BIM4D ? BIM4D.nomeCat(c) : c; } catch (e) { return c; } } });
     },
+    /* ==================================================================
+     * O CENÁRIO "PEÇA A PEÇA" (03/11/2026): não é folha — é o 3D direto, com a explodida, as cotas vivas e o foco na peça
+     * (js/bimexplodirui.js). A cena é EMPRESTADA como no resto: estadoVista/aplicarVista guardam e devolvem a câmera, os cortes e a
+     * visibilidade; sair do cenário desliga as cotas, monta a explodida e tira o foco.
+     * ================================================================== */
+    _temVol: function () { var b = B(); try { return ((b && b.elementos) || []).some(function (e) { return !!e.vol; }); } catch (e) { return false; } },
+    abrirCenario: function (id) {
+      var st = this._st, b = B(), api = this._api(), self = this;
+      if (!st || !b || !api) { toast("O visualizador 3D não está aberto.", "erro"); return Promise.resolve(false); }
+      if (st.cenario) return Promise.resolve(true);
+      if (!this._temVol()) { toast("Este modelo não traz a volumetria das peças.", "aviso"); return Promise.resolve(false); }
+      if (st.modo !== "2d") return this.voltar(true).then(function () { return self.abrirCenario(id); });
+      st.cenario = id; st.cenModo = null; st.cenCotasOff = false; st.sel = null;
+      /* o toque do cenário é DELE (selecionarEm): o gancho de clique do BIM sai da frente; o cartão do grupo sobe acima da barra do 3D */
+      /* ⚠ guarda as opções do cartão de antes (03/11/2026, revisão): o visor pôs o cartão no topo e o cenário o devolvia embaixo, sobre a barra */
+      try { st.cenGrp = b.grupoOpcoes({}); } catch (eGp) { st.cenGrp = null; }
+      try { b.grupoOpcoes({ clique: false, base: (window.innerWidth >= 600 ? 160 : 70), topo: null, cotasAuto: true }); } catch (eGo) {}
+      /* agrupar, Esc e Fechar tiram o foco da peça junto: o painel e a seleção dela saem com ele */
+      try { if (b.grupoOuvir) b.grupoOuvir(function () { var s2 = self._st, b2 = B(); if (!s2 || !s2.cenario || !s2.sel || !b2) return; var e2 = null; try { e2 = b2.explodirEstado(); } catch (eE) { e2 = null; } if (e2 && e2.foco) return; s2.sel = null; self._painelInfo(null); }); } catch (eGl) {}
+      this._pausar3d(false);
+      this._guardarCena();
+      st.modo = "3d"; st.corteOn = false; st.lig = null; st.ligCorte = null;
+      try { api.renderer.clippingPlanes = []; } catch (e0) {}
+      if (api.orbit) api.orbit.enabled = true;
+      st.el.classList.add("pviva-em3d", "pviva-cenario");
+      this.q("3d").hidden = false; this._painelInfo(null); this._tit("Peça a peça", "toque numa peça · explodir mostra cada uma");
+      try { if (b.home) b.home(); } catch (e1) {}
+      this._pintarCen();
+      var dica = this.q("dica"); if (dica) dica.hidden = true;
+      var fx = this.q("faixa"); if (fx) { fx.hidden = true; }
+      try { if (global.Auditoria && Auditoria.registrar) Auditoria.registrar("prancha-viva", "cenario", { id: id }); } catch (eA) {}
+      return Promise.resolve(true);
+    },
+    _cenarioLimpar: function () {
+      var b = B(), st = this._st;
+      try { this._fecharFicha(); } catch (e0) {}
+      try { if (b.focoSair) b.focoSair(); } catch (e1) {}
+      try { if (b.explodirMontar) b.explodirMontar({ semEnquadrar: true }); } catch (e2) {}   /* a câmera volta pelo _restaurarCena */
+      try { if (b.cotasVivas) b.cotasVivas(false); } catch (e3) {}
+      var ant = st && st.cenGrp;
+      try { if (b.grupoOuvir) b.grupoOuvir(null); } catch (eGl) {}
+      try { if (b.grupoFechar) b.grupoFechar(); if (b.grupoOpcoes) b.grupoOpcoes({ clique: ant ? ant.clique : true, base: ant ? ant.base : 0, topo: ant ? ant.topo : null, cotasAuto: ant ? ant.cotasAuto : true }); } catch (e4) {}
+      if (st) { st.cenario = null; st.cenModo = null; st.cenGrp = null; }
+    },
+    fecharCenario: function () {
+      var st = this._st, self = this;
+      if (!st || !st.cenario) return Promise.resolve(false);
+      this._cenarioLimpar();
+      this._painelInfo(null);
+      st.el.classList.remove("pviva-cenario", "pviva-em3d");
+      this.q("3d").hidden = true; this.q("sobre").innerHTML = "";
+      this._restaurarCena();
+      st.modo = "2d"; st.sel = null;
+      var dica = this.q("dica"); if (dica) dica.hidden = !st.folhas.length;
+      this._tit(st.folhas[st.atual] ? st.folhas[st.atual].titulo : "Sem folhas", st.folhas[st.atual] ? "toque num ponto para abrir o 3D" : "");
+      this._pausar3d(true);
+      this._pintarLista();
+      return Promise.resolve(true);
+    },
+    /* a barra do cenário: os modos que o modelo tem, o que está ligado, o motivo do que está desligado */
+    _pintarCen: function () {
+      var st = this._st, b = B(); if (!st || !st.cenario || !b) return;
+      var info = b.explodirInfo ? b.explodirInfo() : { modos: [], motivo: "" }, es = b.explodirEstado ? b.explodirEstado() : null;
+      var el = this.q("cen-modos"), self = this;
+      if (el) el.innerHTML = info.modos.map(function (m) {
+        return '<button type="button" class="pviva-bt' + (es && es.ativo && es.modo === m.id ? " ligado" : "") + '" data-pviva-acao="cen-modo" data-modo="' + esc(m.id) + '" aria-pressed="' + !!(es && es.ativo && es.modo === m.id) + '">' + esc(m.nome) + "</button>";
+      }).join("");
+      var sem = !info.modos.length;
+      Array.prototype.forEach.call(st.el.querySelectorAll('[data-pviva-acao="cen-explodir"],[data-pviva-acao="cen-montar"]'), function (x) { x.disabled = sem; x.title = sem ? info.motivo : x.title; });
+      var bc = st.el.querySelector('[data-pviva-acao="cen-cotas"]'); if (bc) { var on = !!(es && es.cotas); bc.classList.toggle("ligado", on); bc.setAttribute("aria-pressed", String(on)); }
+    },
+    cenExplodir: function (modo) {
+      var st = this._st, b = B(); if (!st || !st.cenario || !b) return false;
+      var r = b.explodir(modo || st.cenModo || undefined);
+      if (!r || !r.ok) { toast((r && r.motivo) || "Não há o que explodir neste modelo.", "aviso"); this._pintarCen(); return false; }
+      st.cenModo = r.modo;
+      /* as cotas vivas ligam sozinhas ao explodir (a pessoa desliga; a escolha dela vale) */
+      if (!st.cenCotasOff) { try { b.cotasVivas(true); } catch (e) {} }
+      this._pintarCen();
+      return true;
+    },
+    cenMontar: function () { var st = this._st, b = B(); if (!st || !st.cenario || !b) return false; b.explodirMontar(); this._pintarCen(); return true; },
+    cenCotas: function () {
+      var st = this._st, b = B(); if (!st || !st.cenario || !b) return false;
+      var es = b.explodirEstado ? b.explodirEstado() : null, on = !(es && es.cotas);
+      b.cotasVivas(on); st.cenCotasOff = !on; try { b.grupoOpcoes({ cotasAuto: on }); } catch (eGc) {}   /* a escolha da pessoa vale: com as cotas apagadas o grupo não as liga */
+      this._pintarCen(); return on;
+    },
+    /* a volumetria da peça no cartão: marca, tipo, seção, comprimento, furos (posição s, ø, face, ligação), ligações e a ficha */
+    _htmlVol: function (v) {
+      if (!v) return "";
+      var h = '<div class="pviva-sec" data-pviva="vol"><b>Peça ' + esc(v.marca) + '</b><dl>' +
+        (v.tipo ? "<dt>Tipo</dt><dd>" + esc(v.tipo) + "</dd>" : "") + (v.secao ? "<dt>Seção</dt><dd>" + esc(v.secao) + "</dd>" : "") +
+        (v.comprimentoTxt ? "<dt>Comprimento</dt><dd>" + esc(v.comprimentoTxt) + "</dd>" : "") + "<dt>Furos</dt><dd>" + v.nFuros + "</dd></dl>";
+      if (v.nFuros) {
+        h += '<table class="pviva-furos" data-pviva="furos"><tr><th>s</th><th>ø</th><th>Face</th><th>Ligação</th></tr>' +
+          v.furos.map(function (f) { return "<tr><td>" + esc(f.sTxt) + "</td><td>" + esc(f.dTxt) + "</td><td>" + esc(f.face) + (f.profTxt ? " · " + esc(f.profTxt) : "") + "</td><td>" + esc(f.ligacao || "—") + "</td></tr>"; }).join("") + "</table>";
+      }
+      if (v.ligacoes.length) h += '<div style="margin-top:6px"><span style="color:var(--pv-sub)">Ligações</span><ul class="pviva-lig-lista" data-pviva="ligacoes">' + v.ligacoes.map(function (l) { return "<li><b>" + esc(l.codigo) + "</b> · " + esc(l.tipo) + "</li>"; }).join("") + "</ul></div>";
+      if (v.ficha) h += '<div style="margin-top:8px"><button type="button" class="pviva-bt prim" data-pviva-acao="ficha" title="' + esc(v.ficha.rotulo) + '">' + ico("prancha", 14) + "Abrir a ficha</button></div>";
+      return h + "</div>";
+    },
+    /* a FICHA: a imagem do endereço do carimbo, com zoom (roda, + e −) e arrasto; sem rede, o recado diz qual é a ficha */
+    _abrirFicha: function (de) {
+      var st = this._st, d = global.document, info = this.q("info") && this.q("info")._info, fi = info && info.vol && info.vol.ficha, self = this;
+      if (!st || !fi) return false;
+      this._fecharFicha(); this._cartaoGrupo(false);
+      var ov = d.createElement("div"); ov.className = "pviva-ficha"; ov.setAttribute("data-pviva", "ficha"); ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Ficha da peça");
+      ov.innerHTML = '<div class="pviva-ficha-topo"><b data-pviva="ficha-tit">' + esc(fi.rotulo) + '</b>' +
+        '<button type="button" class="pviva-bt" data-pviva-acao="ficha-menos" aria-label="Afastar">−</button><button type="button" class="pviva-bt" data-pviva-acao="ficha-mais" aria-label="Aproximar">+</button>' +
+        '<button type="button" class="pviva-bt" data-pviva-acao="ficha-ajustar">Ajustar</button><button type="button" class="pviva-bt prim" data-pviva-acao="ficha-fechar">Fechar</button></div>' +
+        '<div class="pviva-ficha-palco" data-pviva="ficha-palco"><img alt="" data-pviva="ficha-img"></div><div class="pviva-ficha-erro" data-pviva="ficha-erro" hidden></div>';
+      st.el.appendChild(ov);
+      var palco = this.q("ficha-palco"), img = this.q("ficha-img"), er = this.q("ficha-erro");
+      st.fichaV = { s: 1, tx: 0, ty: 0 };
+      img.onload = function () { self._fichaAjustar(); };
+      img.onerror = function () {
+        er.innerHTML = "<b>Não consegui abrir a ficha pela rede.</b><br>" + esc(fi.titulo) + (fi.pagina ? ", página " + esc(fi.pagina) : "") + ". Confira a conexão e tente de novo.<div style='margin-top:8px'><button type='button' class='pviva-bt' data-pviva-acao='ficha-tentar'>Tentar de novo</button></div>";
+        er.hidden = false;
+      };
+      img.src = fi.url + (de ? (fi.url.indexOf("?") < 0 ? "?" : "&") + "t=" + Date.now() : "");
+      palco.addEventListener("wheel", function (e) { e.preventDefault(); var r = palco.getBoundingClientRect(); self._fichaZoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+      var p0 = null;
+      palco.addEventListener("pointerdown", function (e) { p0 = { x: e.clientX, y: e.clientY, tx: st.fichaV.tx, ty: st.fichaV.ty }; try { palco.setPointerCapture(e.pointerId); } catch (e1) {} });
+      palco.addEventListener("pointermove", function (e) { if (!p0) return; st.fichaV.tx = p0.tx + e.clientX - p0.x; st.fichaV.ty = p0.ty + e.clientY - p0.y; self._fichaPintar(); });
+      palco.addEventListener("pointerup", function () { p0 = null; });
+      return true;
+    },
+    _fichaPintar: function () { var st = this._st, img = this.q("ficha-img"); if (!st || !st.fichaV || !img) return; var v = st.fichaV; img.style.transform = "translate(" + v.tx + "px," + v.ty + "px) scale(" + v.s + ")"; },
+    _fichaAjustar: function () {
+      var st = this._st, palco = this.q("ficha-palco"), img = this.q("ficha-img"); if (!st || !palco || !img || !img.naturalWidth) return;
+      var s = Math.min(palco.clientWidth / img.naturalWidth, palco.clientHeight / img.naturalHeight, 1) || 1;
+      st.fichaV = { s: s, tx: (palco.clientWidth - img.naturalWidth * s) / 2, ty: (palco.clientHeight - img.naturalHeight * s) / 2 };
+      this._fichaPintar();
+    },
+    _fichaZoom: function (k, cx, cy) {
+      var st = this._st; if (!st || !st.fichaV) return;
+      var v = st.fichaV, s2 = clamp(v.s * k, 0.05, 12), f = s2 / v.s;
+      v.tx = cx - (cx - v.tx) * f; v.ty = cy - (cy - v.ty) * f; v.s = s2; this._fichaPintar();
+    },
+    /* ⚠ o cartão do grupo mora no <body>, acima de tudo: com a ficha aberta ele ficava por cima dela e roubava o arrasto (03/11/2026, e2e) */
+    _cartaoGrupo: function (ver) { try { if (global.BIM && global.BIM.grupoOpcoes) global.BIM.grupoOpcoes({ cartao: ver }); } catch (e) {} },
+    _fecharFicha: function () { var ov = this.q("ficha"); if (ov && ov.parentNode) { ov.parentNode.removeChild(ov); this._cartaoGrupo(true); } if (this._st) this._st.fichaV = null; },
     _painelInfo: function (info) {
       var st = this._st, el = this.q("info"), self = this; if (!el) return;
       if (!info) { el.hidden = true; el.innerHTML = ""; return; }
       var link = st.fonte === "link";
-      var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><span style="font-size:11px;color:#5b6875">' + esc(info.disciplina || "Peça") + "</span><h3>" + esc(info.tipoPt) + '</h3></div><button type="button" class="pviva-bt" data-pviva-acao="info-fechar" title="Fechar" style="min-height:28px;padding:2px 6px">' + ico("fechar", 14) + "</button></div>" +
+      var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><span style="font-size:11px;color:#5b6875">' + esc(info.disciplina || "Peça") + "</span><h3>" + esc(st.cenario && info.vol ? info.vol.marca : info.tipoPt) + '</h3></div><button type="button" class="pviva-bt" data-pviva-acao="info-fechar" title="Fechar" style="min-height:28px;padding:2px 6px">' + ico("fechar", 14) + "</button></div>" +
         "<dl>" + (info.nome ? "<dt>Nome</dt><dd>" + esc(info.nome) + "</dd>" : "") + "<dt>Classe IFC</dt><dd>" + esc(info.tipo || "—") + "</dd>" +
         '<dt>GUID</dt><dd><span class="pviva-guid" data-pviva="guid">' + esc(info.guid || "—") + "</span>" + (info.guid ? ' <button type="button" class="pviva-bt" data-pviva-acao="copiar-guid" style="min-height:24px;padding:1px 6px;font-size:11px">copiar</button>' : "") + "</dd></dl>";
+      /* no cenário Peça a peça a medida vem primeiro; classe e GUID ficam embaixo */
+      var volH = this._htmlVol(info.vol), iDl = h.indexOf("<dl>");
+      if (st.cenario && info.vol && iDl > -1) h = h.slice(0, iDl) + volH + h.slice(iDl); else h += volH;
       if (!link) {
         var it = info.item;
         h += '<div class="pviva-sec" data-pviva="item"><b>Item do orçamento</b>' + (it ? "<div>" + esc(it.descricao || "—") + "</div><div style='color:#5b6875;font-size:12px'>" + (it.codigo ? "código " + esc(it.codigo) + " · " : "") +
@@ -1437,6 +1654,16 @@
       if (a === "compartilhar") return this.compartilhar();
       if (a === "ra") return this.ra();
       if (a === "importar") return this.importar();
+      if (a === "cen-explodir") return this.cenExplodir();
+      if (a === "cen-montar") return this.cenMontar();
+      if (a === "cen-modo") return this.cenExplodir(bt.getAttribute("data-modo"));
+      if (a === "cen-cotas") return this.cenCotas();
+      if (a === "cen-voltar") return this.fecharCenario();
+      if (a === "ficha") return this._abrirFicha();
+      if (a === "ficha-fechar") return this._fecharFicha();
+      if (a === "ficha-mais" || a === "ficha-menos") { var pf = this.q("ficha-palco"); return this._fichaZoom(a === "ficha-mais" ? 1.4 : 1 / 1.4, pf.clientWidth / 2, pf.clientHeight / 2); }
+      if (a === "ficha-ajustar") return this._fichaAjustar();
+      if (a === "ficha-tentar") return this._abrirFicha(true);
       if (a === "ir-pranchas") { this.fechar(); try { if (G() && G().bimPranchas) G().bimPranchas(); } catch (e2) {} return; }
     },
 

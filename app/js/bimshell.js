@@ -645,6 +645,8 @@
       this._pintarRapidos();
       var v = r.render();
       fita.innerHTML = "";
+      /* ⚠ trocar de aba volta a rolagem da faixa ao início (03/11/2026): a Vista tem ~4.400 px e a rolagem da aba anterior escondia o primeiro painel */
+      if (this._abaDaFita !== r.abaAtiva()) { this._abaDaFita = r.abaAtiva(); try { fita.scrollLeft = 0; } catch (eSc) {} }
       if (!v) return;
 
       v.paineis.forEach(function (p) {

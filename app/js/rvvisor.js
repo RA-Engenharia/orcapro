@@ -240,6 +240,8 @@
       "#rvv-barra{position:absolute;left:0;right:0;bottom:0;height:" + BASE + "px;padding:4px 4px calc(env(safe-area-inset-bottom,0px) + 4px);box-sizing:border-box;display:flex;justify-content:space-around;align-items:stretch;background:rgba(8,20,34,.96);border-top:1px solid #1d3550;z-index:2147483000}" +
       "#rvv-barra button{flex:1;min-width:0;border:0;background:transparent;color:#9fb2c8;font-size:10.5px;font-family:inherit;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-radius:10px;cursor:pointer;-webkit-tap-highlight-color:transparent;padding:2px 0}" +
       "#rvv-barra button.on{color:#fff;background:rgba(37,99,235,.35)}#rvv-barra button[hidden]{display:none}" +
+      /* a Explodir (03/11/2026) é o 8º botão possível: em 320 px o rótulo "Camadas" passava da largura do botão */
+      "@media (max-width:340px){#rvv-barra button{font-size:9px}}" +
       /* selo do Apontar: quantos esperam sinal neste aparelho */
       "#rvv-barra button{position:relative}#rvv-barra button[data-n]::after{content:attr(data-n);position:absolute;top:3px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:8px;background:#f59e0b;color:#111;font-size:10px;font-weight:700;line-height:16px;text-align:center}" +
       ".rvv-fila{font-size:12px;color:#fcd34d;margin:8px 0;line-height:1.45}" +
@@ -258,7 +260,12 @@
          para cima dela (opção eixoBase no montar) */
       "#rvv-trena{position:absolute;left:10px;right:10px;bottom:" + (BASE + 8) + "px;height:" + TRENA_H + "px;box-sizing:border-box;display:none;align-items:center;gap:6px;padding:5px 6px 5px 10px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:12px;z-index:2147482994;box-shadow:0 6px 18px rgba(0,0,0,.4)}" +
       "#rvv-trena .tx{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#rvv-trena .tx svg{vertical-align:-3px}" +
-      "#rvv-trena .v{color:#86efac;margin-left:6px;font-weight:700}#rvv-trena .rvv-bt{padding:7px 9px}";
+      "#rvv-trena .v{color:#86efac;margin-left:6px;font-weight:700}#rvv-trena .rvv-bt{padding:7px 9px}" +
+      /* A FICHA DA PEÇA (03/11/2026): a imagem do endereço do carimbo, com zoom e arrasto, por cima de tudo */
+      "#rvv-ficha{position:absolute;inset:0;z-index:2147483200;display:flex;flex-direction:column;background:rgba(5,10,16,.94)}" +
+      "#rvv-ficha .topo{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#0f2740;border-bottom:1px solid #24435f;flex-wrap:wrap}#rvv-ficha .topo b{flex:1;min-width:120px;font-size:13px}" +
+      "#rvv-ficha .palco{position:relative;flex:1;overflow:hidden;touch-action:none}#rvv-ficha img{position:absolute;left:0;top:0;transform-origin:0 0;max-width:none;background:#fff;user-select:none;-webkit-user-drag:none}" +
+      "#rvv-ficha .erro{position:absolute;left:12px;right:12px;top:70px;background:#3a2a0a;border:1px solid #f3c77a;color:#fde9b8;border-radius:10px;padding:12px;font-size:13px}";
     document.head.appendChild(s);
   }
 
@@ -285,6 +292,8 @@
       '<nav id="rvv-barra">' +
       '<button data-f="vistas">' + I("camera", 20) + 'Vistas</button>' +
       '<button data-f="camadas">' + I("camadas", 20) + 'Camadas</button>' +
+      /* VISTA EXPLODIDA (03/11/2026): escondido até o modelo dizer que traz o que explodir (explodirInfo().modos) */
+      '<button data-f="explodir" hidden>' + I("camadas", 20) + 'Explodir</button>' +
       /* PRANCHA VIVA: as folhas ligadas ao modelo que vieram no link (dados.pranchas) — escondido até chegarem */
       '<button data-f="pranchas" hidden>' + I("prancha", 20) + 'Prancha Viva</button>' +
       '<button data-f="4d" hidden>' + I("calendario", 20) + 'Obra no tempo</button>' +
@@ -391,6 +400,7 @@
     var html = "";
     if (f === "vistas") html = folhaVistas();
     else if (f === "camadas") html = folhaCamadas();
+    else if (f === "explodir") html = folhaExplodir();
     else if (f === "4d") html = folha4D();
     else if (f === "notas") html = folhaNotas();
     else if (f === "mais") html = folhaMais();
@@ -452,6 +462,58 @@
       '<input type="range" min="0" max="100" value="' + cf + '" data-a="corte" style="width:100%;accent-color:#22c55e">';
     h += '<div style="margin-top:12px"><button class="rvv-bt" data-a="tudo">' + I("olho", 15) + ' Mostrar tudo</button></div>';
     return h;
+  }
+
+  // ---- Explodir (03/11/2026, js/bimexplodirui.js) ----
+  /* a folha dos modos: o que o modelo sabe explodir (o carimbo do projeto, ou os pavimentos), Montar e as Cotas — que ligam
+     SOZINHAS ao explodir (a pessoa desliga e a escolha dela vale) */
+  function folhaExplodir() {
+    var i = B().explodirInfo ? B().explodirInfo() : { modos: [], motivo: "" }, es = B().explodirEstado ? B().explodirEstado() : null;
+    var h = cabecalho(I("camadas", 17) + " Explodir");
+    if (!i.modos.length) return h + '<p style="font-size:12.5px;color:#9fb2c8">' + esc(i.motivo || "Este modelo não traz o que explodir.") + '</p>';
+    h += '<div class="rvv-rot">Modo (toque para explodir)</div><div class="rvv-chips">';
+    i.modos.forEach(function (m) { h += '<button class="rvv-chip' + (es && es.ativo && es.modo === m.id ? ' on' : '') + '" data-a="exp-modo" data-k="' + esc(m.id) + '">' + esc(m.nome) + '</button>'; });
+    h += '</div><div style="display:flex;gap:6px;margin:10px 0;flex-wrap:wrap"><button class="rvv-bt" data-a="exp-montar">' + I("voltar", 15) + ' Montar</button>' +
+      '<button class="rvv-bt' + (es && es.cotas ? ' on' : '') + '" data-a="exp-cotas">' + I("medir", 15) + ' Cotas</button></div>' +
+      '<p style="font-size:11px;color:#8fa3b8">' + (i.auto ? 'O arquivo não traz afastamentos: os pavimentos se afastam uns dos outros. ' : '') + 'Toque numa peça para ver a marca, a seção, os furos e a ficha.</p>';
+    return h;
+  }
+  function mostrarBotaoExplodir() {
+    var b = document.querySelector('#rvv-barra [data-f="explodir"]'); if (!b) return false;
+    var i = B().explodirInfo ? B().explodirInfo() : null, tem = !!(i && i.modos && i.modos.length);
+    b.hidden = !tem; return tem;
+  }
+  /* a ficha da peça: imagem do endereço do carimbo, zoom (+, −, roda) e arrasto; sem rede, o recado diz qual é a ficha */
+  function abrirFicha(fi) {
+    var old = $("rvv-ficha"); if (old) old.remove();
+    var ov = document.createElement("div"); ov.id = "rvv-ficha";
+    ov.innerHTML = '<div class="topo"><b>' + esc(fi.rotulo) + '</b><button class="rvv-bt" data-fi="menos" aria-label="Afastar">−</button><button class="rvv-bt" data-fi="mais" aria-label="Aproximar">+</button>' +
+      '<button class="rvv-bt" data-fi="ajustar">Ajustar</button><button class="rvv-bt pri" data-fi="fechar">Fechar</button></div><div class="palco"><img alt=""></div><div class="erro" hidden></div>';
+    $("rvfull").appendChild(ov);
+    var palco = ov.querySelector(".palco"), img = ov.querySelector("img"), er = ov.querySelector(".erro"), v = { s: 1, tx: 0, ty: 0 };
+    function pintar() { img.style.transform = "translate(" + v.tx + "px," + v.ty + "px) scale(" + v.s + ")"; }
+    function ajustar() {
+      if (!img.naturalWidth) return;
+      var s = Math.min(palco.clientWidth / img.naturalWidth, palco.clientHeight / img.naturalHeight, 1) || 1;
+      v.s = s; v.tx = (palco.clientWidth - img.naturalWidth * s) / 2; v.ty = (palco.clientHeight - img.naturalHeight * s) / 2; pintar();
+    }
+    function zoom(k, cx, cy) { var s2 = Math.max(0.05, Math.min(12, v.s * k)), f = s2 / v.s; v.tx = cx - (cx - v.tx) * f; v.ty = cy - (cy - v.ty) * f; v.s = s2; pintar(); }
+    img.onload = ajustar;
+    img.onerror = function () {
+      er.innerHTML = "<b>Não consegui abrir a ficha pela rede.</b><br>" + esc(fi.titulo) + (fi.pagina ? ", página " + esc(fi.pagina) : "") + ". Confira a conexão e tente de novo.";
+      er.hidden = false;
+    };
+    img.src = fi.url;
+    ov.addEventListener("click", function (e) {
+      var b = e.target.closest("[data-fi]"); if (!b) return; var a = b.getAttribute("data-fi");
+      if (a === "fechar") ov.remove(); else if (a === "ajustar") ajustar();
+      else zoom(a === "mais" ? 1.4 : 1 / 1.4, palco.clientWidth / 2, palco.clientHeight / 2);
+    });
+    palco.addEventListener("wheel", function (e) { e.preventDefault(); var r = palco.getBoundingClientRect(); zoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
+    var p0 = null;
+    palco.addEventListener("pointerdown", function (e) { p0 = { x: e.clientX, y: e.clientY, tx: v.tx, ty: v.ty }; try { palco.setPointerCapture(e.pointerId); } catch (e1) {} });
+    palco.addEventListener("pointermove", function (e) { if (!p0) return; v.tx = p0.tx + e.clientX - p0.x; v.ty = p0.ty + e.clientY - p0.y; pintar(); });
+    palco.addEventListener("pointerup", function () { p0 = null; });
   }
 
   // ---- 4D ----
@@ -727,11 +789,19 @@
       var at = ae && ae.atv != null && st.simCel.porId[ae.atv] != null ? st.simCel.atividades[st.simCel.porId[ae.atv]] : null;
       if (at) { var s4 = st.est4d.porAtv[at.id]; ln("Cronograma", at.nome + " · " + (global.BIM4DSim.ROTULO[s4 && s4.estado] || (s4 && s4.estado) || "") + " (" + global.BIM4DSim.br(at.inicio) + " a " + global.BIM4DSim.br(at.termino) + ")"); }
     }
-    st.pecaTocada = { p: p, el: el };
+    /* A VOLUMETRIA (03/11/2026): a peça que traz os carimbos mostra marca, seção, comprimento, furos, ligações e a ficha */
+    var vol = null;
+    try { var dp = el && B().dadosPeca ? B().dadosPeca(el.uid) : null; vol = dp && global.PranchaViva && global.PranchaViva.volInfo ? global.PranchaViva.volInfo(dp) : null; } catch (eV) { vol = null; }
+    if (vol) {
+      ln("Marca", vol.marca); ln("Seção", vol.secao); ln("Comprimento da peça", vol.comprimentoTxt);
+      ln("Furos", String(vol.nFuros)); ln("Ligações", vol.ligacoes.map(function (l) { return l.codigo + (l.tipo ? " (" + l.tipo + ")" : ""); }).join("; "));
+    }
+    st.pecaTocada = { p: p, el: el, vol: vol };
     var c = $("rvv-card");
     c.innerHTML = '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:6px"><b style="font-size:14px">' + esc((el && (el.familia || el.nome)) || p.nome || "Peça") + '</b>' +
       '<button class="rvv-bt" data-a="card-fechar">' + I("fechar", 14) + '</button></div>' +
       '<table>' + linhas.join("") + '</table>' +
+      (vol && vol.ficha ? '<div style="margin-top:8px"><button class="rvv-bt pri" data-a="ficha-abrir" title="' + esc(vol.ficha.rotulo) + '">' + I("prancha", 14) + ' Abrir a ficha</button></div>' : '') +
       (st.man && st.man.aceitaNotas ? '<div style="margin-top:8px"><button class="rvv-bt pri" data-a="card-apontar">' + I("nota", 14) + ' Apontar nesta peça</button></div>' : '');
     c.style.display = "block";
   }
@@ -828,6 +898,15 @@
         esquecerPlaca(st.placa, true); esquecerLink(st.token).then(function () { location.reload(); }); return;
       }
       if (a === "card-fechar") return fecharCard();
+      if (a === "ficha-abrir") { var pcF = st.pecaTocada; if (pcF && pcF.vol && pcF.vol.ficha) abrirFicha(pcF.vol.ficha); return; }
+      if (a === "exp-modo") {
+        var rx = B().explodir ? B().explodir(b.getAttribute("data-k")) : null;
+        if (!rx || !rx.ok) { recado((rx && rx.motivo) || "Não há o que explodir neste modelo.", true); return; }
+        if (!st.expCotasOff && B().cotasVivas) B().cotasVivas(true);
+        return abrirFolha("explodir");
+      }
+      if (a === "exp-montar") { if (B().explodirMontar) B().explodirMontar(); return abrirFolha("explodir"); }
+      if (a === "exp-cotas") { var esx = B().explodirEstado ? B().explodirEstado() : null, onx = !(esx && esx.cotas); if (B().cotasVivas) B().cotasVivas(onx); st.expCotasOff = !onx; try { if (B().grupoOpcoes) B().grupoOpcoes({ cotasAuto: onx }); } catch (eCa) {} return abrirFolha("explodir"); }
       if (a === "card-apontar") {
         var pc = st.pecaTocada; fecharCard(); if (!pc || !pc.el || !pc.el.aabb) return comecarApontar();
         var mn = pc.el.aabb.min, mx = pc.el.aabb.max;
@@ -878,11 +957,13 @@
   }
   function abrirPranchas() {
     var P = global.PranchaVivaUI, d = pranchasDoLink();
-    if (!P || !d) { recado("Este link não trouxe pranchas.", true); return; }
-    P.abrir({ fonte: "link", folhas: d.folhas, visor: true, uidDaChave: uidDaChave, esperando3d: !st.carregou, textoCarga: st.txtCarga || "" });
+    if (!P || (!d && !temCenario())) { recado("Este link não trouxe pranchas.", true); return; }
+    P.abrir({ fonte: "link", folhas: d ? d.folhas : [], visor: true, uidDaChave: uidDaChave, esperando3d: !st.carregou, textoCarga: st.txtCarga || "" });
   }
+  /* o cenário "Peça a peça" (js/pranchavivaui.js): o modelo traz a volumetria das peças — o botão aparece mesmo sem folhas */
+  function temCenario() { try { return ((B() && B().elementos) || []).some(function (e) { return !!e.vol; }); } catch (e) { return false; } }
   function mostrarBotaoPranchas() {
-    if (!pranchasDoLink() || !global.PranchaVivaUI) return false;
+    if (!global.PranchaVivaUI || (!pranchasDoLink() && !temCenario())) return false;
     var bP = document.querySelector('#rvv-barra [data-f="pranchas"]'); if (bP) bP.hidden = false;
     return true;
   }
@@ -907,6 +988,7 @@
     } else { st.dados = {}; st.inverso = {}; }
     st.carregou = true;
     mostrarBotaoPranchas();
+    mostrarBotaoExplodir();
     /* a Prancha Viva já aberta (o link com pv=1 abre nela) recebe o 3D: o toque guardado abre agora */
     try { if (global.PranchaVivaUI && global.PranchaVivaUI.aberto()) global.PranchaVivaUI.pronto3d(); } catch (ePv) {}
     recado("Toque numa peça para ver o que ela é. RA/RV mostra o projeto no seu ambiente.", false);
@@ -1077,6 +1159,8 @@
             onVozErro: function (nm) { if (app._rvAudioBadge) app._rvAudioBadge(false); recado(nm === "NotAllowedError" ? "Você negou o microfone. Toque em Áudio de novo e permita." : "Não consegui abrir o microfone: " + nm, true); }
           });
         } catch (e) { erroCarga("Falha ao iniciar o visualizador."); return; }
+        /* O GRUPO da vista explodida (03/11/2026): o cartão de 2 opções fica logo abaixo do cabeçalho — embaixo estão a barra e o cartão da peça */
+        try { global.BIM.grupoOpcoes({ topo: TOPO + 8 }); } catch (eGr) {}
         vigiarImersivo();
         setInterval(pintarTrava, 700);   /* a trava também se desfaz pelo aviso do 3D */
         setInterval(pintarTrena, 300);

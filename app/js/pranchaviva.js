@@ -37,6 +37,11 @@
   function cruz(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]; }
   function norma(a) { return Math.sqrt(dot(a, a)); }
   function unit(a) { var l = norma(a); return l > 1e-12 ? esc(a, 1 / l) : [0, 0, 0]; }
+  function fichaUrlOk(u) {
+    var E = global.BimExplodir, og = global.location && global.location.origin;
+    if (E && E.urlFichaOk) return E.urlFichaOk(u, og);
+    return /^https:\/\/[^\/\s]+/i.test(u) || (!/^[a-z][a-z0-9+.\-]*:/i.test(u) && u.indexOf("//") !== 0 && !/[\s\\]/.test(u));
+  }
   function vetOk(a) { return arr(a).length === 3 && isFinite(a[0]) && isFinite(a[1]) && isFinite(a[2]); }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
@@ -393,7 +398,28 @@
         }
       }
       if (!out.etapa) out.pendencias.push({ id: "sem-etapa", texto: "Esta peça não está em nenhuma etapa do cronograma.", acao: "quatro-d", rotulo: "Abrir a Simulação 4D" });
+      /* a VOLUMETRIA da peça (carimbos OrcaPRO_*, 03/11/2026): o cenário "Peça a peça" mostra marca, seção, comprimento, furos, ligações e a ficha */
+      out.vol = e.vol ? this.volInfo(e.vol) : null;
       return out;
+    },
+    /* a volumetria de uma peça pronta para a tela (BIM.dadosPeca → texto): comprimento em metros com 3 casas e vírgula, furo
+       em mm; a ficha só existe com URL (ficha sem endereço é ficha que não abre — melhor não mostrar o botão) */
+    volInfo: function (d) {
+      if (!d || typeof d !== "object") return null;
+      var c = num(txt(d.comprimento).replace(",", "."), null);
+      var fu = arr(d.furos).map(function (f) {
+        f = f || {};
+        var s = num(f.s, 0), dm = num(f.d, 0), pr = f.prof == null ? null : num(f.prof, null);
+        return { s: s, sTxt: Math.round(s) + " mm", d: dm, dTxt: "\u00F8" + (Math.round(dm * 10) / 10 + "").replace(".", ",") + " mm", face: txt(f.face), ligacao: txt(f.ligacao), ferragem: txt(f.ferragem),
+          passante: !!f.passante, prof: pr, profTxt: f.passante ? "passante" : (pr ? Math.round(pr) + " mm" : "") };
+      });
+      var lg = arr(d.ligacoes).map(function (l) { l = l || {}; return { codigo: txt(l.codigo), tipo: txt(l.tipo) }; });
+      /* ⚠ a URL vem do arquivo do projeto e vira o `src` de uma imagem: só https, caminho relativo ou a mesma origem do app (03/11/2026, revisão) */
+      var fi = d.ficha && txt(d.ficha.url).trim() && fichaUrlOk(txt(d.ficha.url).trim()) ? { titulo: txt(d.ficha.titulo) || "Ficha da peça", url: txt(d.ficha.url).trim(), pagina: txt(d.ficha.pagina) } : null;
+      if (fi) fi.rotulo = fi.titulo + (fi.pagina ? " (página " + fi.pagina + ")" : "");
+      return { marca: txt(d.marca), modulo: txt(d.modulo), tipo: txt(d.tipo), secao: txt(d.secao), comprimento: c, comprimentoTxt: c == null ? "" : c.toFixed(3).replace(".", ",") + " m",
+        furos: fu, nFuros: fu.length, ligacoes: lg, ficha: fi,
+        titulo: [txt(d.marca), txt(d.tipo)].filter(function (x) { return x; }).join(" \u00B7 ") || "Pe\u00E7a" };
     },
 
     /* ==================================================================

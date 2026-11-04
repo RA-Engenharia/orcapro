@@ -11403,6 +11403,8 @@
       /* PRANCHA VIVA (21/10/2026): Anotar › Documentar › Prancha Viva — a prancha que abre o 3D no ponto tocado (js/pranchavivaui.js;
          módulo à parte: a trava é na função, js/pranchavivamodulo.js) */
       try { if (window.PranchaVivaUI) PranchaVivaUI.registrar(reg, self); } catch (ePv) {}
+      /* VISTA EXPLODIDA (03/11/2026): Vista › Explodida — explodir (4 modos), montar e cotas vivas — js/bimexplodirui.js (a fita organizada MOVE os comandos: registrar ANTES do js/bimfita.js) */
+      try { if (window.BimExplodirUI) BimExplodirUI.registrar(reg, self); } catch (eExp) {}
       /* CORES POR CATEGORIA (14/10/2026): Vista › Gráficos › Cores por categoria + a legenda e o painel — js/bimcorescatui.js (a barra de baixo e as Propriedades da vista chamam o mesmo módulo) */
       try { if (window.BimCoresCatUI) BimCoresCatUI.registrar(reg, self); } catch (eCC) {}
       /* PROJETOS BIM (12/10/2026): Novo/Abrir/Salvar passam pelo projeto, e um comando com a tela inicial na frente é a pessoa começando a trabalhar — js/bimprojetosui.js. POR ÚLTIMO: ele embrulha o que os outros registraram */

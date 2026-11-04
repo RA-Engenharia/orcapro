@@ -133,6 +133,8 @@
     "gerar-pranchas",
     /* PRANCHA VIVA (js/pranchavivaui.js): a folha que abre o 3D — vale em toda disciplina (módulo à parte, a trava é dele) */
     "prancha-viva",
+    /* VISTA EXPLODIDA E COTAS VIVAS (js/bimexplodirui.js): o painel Vista › Explodida vale em toda disciplina; o botão se desabilita sozinho (com o motivo) quando o modelo não tem o que explodir */
+    "explodir", "explodir-geral", "explodir-paineis", "explodir-niveis", "explodir-coberturas", "explodir-montar", "cotas-vivas",
     /* Gerenciar: biblioteca, materiais, colaborar */
     "familias-param", "editor-familia", "familia-ia", "familias", "templates", "materiais-proj", "reuniao", "compartilhar"
   ]);

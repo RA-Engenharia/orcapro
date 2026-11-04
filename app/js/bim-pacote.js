@@ -1011,7 +1011,7 @@ if (ctec.ativo) return;
 if (S.medir && S.medir.on) return;
 if (area.on) { if (area.pts.length >= 3) fecharArea(); return; }
 if (ang.on) return;
-if (S._aoClicarPeca) return;
+if (S._aoClicarPeca && !S._aoClicarPeca._grupo) return;
 if (S._aoMarcarPonto) return;
 try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
 var vazioD = false; try { vazioD = !visitante && !raycastEm(e.clientX, e.clientY); } catch (_) {}
@@ -1019,11 +1019,12 @@ selecionarEm(e.clientX, e.clientY);
 if (vazioD && S._fit) S._fit();
 });
 function selecionarEm(cx, cy) {
-if (S._limparRaioX) S._limparRaioX();
+S._selN = (S._selN || 0) + 1;
 var r = canvasEl.getBoundingClientRect();
 mouse.x = ((cx - r.left) / r.width) * 2 - 1; mouse.y = -((cy - r.top) / r.height) * 2 + 1;
 ray.setFromCamera(mouse, camera);
 var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
+if (S._limparRaioX) S._limparRaioX();
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
 if (hit && hit.object.userData && hit.object.userData.expressID != null) {
 S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
@@ -1470,6 +1471,7 @@ if (visitante) vcMain.el.style.display = 'none';
 S._tickPos.push(function () { vcMain.atualizar(); ajustarPlanosOrto(camera, orbit, ortoMain); });
 S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
 try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
+try { if (window.BimExplodirUI) S._explodirUI = window.BimExplodirUI.criar(S, THREE); } catch (_) {}
 try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
 try { if (window.BimAbrirUI && !visitante) S._abrirUI = window.BimAbrirUI.instalar(S, THREE); } catch (_) {}
 try { if (window.BimTwinmotion && !visitante) S._twinmotion = window.BimTwinmotion.instalar(S, THREE); } catch (_) {}
@@ -2534,7 +2536,7 @@ else { medir.pts = []; tirarProv(); btnCotas(); esconderSnapMarca(); }
 if (S._pintarEixo) S._pintarEixo();
 var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? corAtiva() : ''; bm.style.color = on ? '#fff' : ''; }
 atualizarCursor();
-S._hint(on ? trenaTxt(planta.on ? 'planta' : 'on') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
+S._hint(on ? trenaTxt(planta.on ? 'planta' : 'on') + ((S._explodirUI && S._explodirUI.ligada && S._explodirUI.ligada()) ? ' Vista explodida aberta: a medida é entre peças afastadas.' : '') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
 }
 S._setMedir = setMedir;
 var _ultimosHits = [];
@@ -2658,9 +2660,10 @@ var p = pontoNaTela(e.clientX, e.clientY);
 var agora = (e && e.timeStamp > 0) ? e.timeStamp : performance.now();
 if (p && p.uid && _ultColeta && _ultColeta.uid === p.uid && agora - _ultColeta.t < 400) return;
 _ultColeta = p && p.uid ? { uid: p.uid, t: agora } : null;
-try { S._aoClicarPeca(p); } catch (_) {}
+try { S._aoClicarPeca(p, e); } catch (_) {}
 }
 S._cliqueColetor = cliqueColetor;
+S._cliqueNormal = function (e) { if (!e) return; if (!visitante && S._sel3Clique) S._sel3Clique(e); else selecionarEm(e.clientX, e.clientY); };
 function modeloDaPeca(uid) {
 var s = String(uid || ''), i = s.lastIndexOf(':'); if (i < 0) return null;
 var mid = s.slice(0, i);
@@ -4584,6 +4587,7 @@ if (m.userData._apM0) m.userData._apM0.copy(m.matrix);
 }
 function abrirFechar(uid, abrir) {
 var pt = abrDe(uid); if (!pt || !pt.moveis) return null;
+if (S._explodirUI && S._explodirUI.ligada && S._explodirUI.ligada()) { S._hint('Com a vista explodida aberta as portas ficam fechadas. Toque em Montar para abrir ou fechar a porta.'); return null; }
 pt.alvo = (abrir == null) ? (pt.alvo > 0 ? 0 : 1) : (abrir ? 1 : 0);
 if (ABR.ativas.indexOf(pt) < 0) ABR.ativas.push(pt);
 return pt.alvo > 0;
@@ -4604,6 +4608,19 @@ function abrResumo(pt) {
 return { porta: pt.mid + ':' + pt.id, globalId: pt.globalId, tipo: pt.ab.tipo, nomeTipo: abrMotor().nomeTipo(pt.ab.tipo), folhas: pt.folhas.length,
 moveis: pt.moveis, aberta: pt.alvo > 0, t: pt.t, convencao: pt.ab.convencao, avisos: pt.ab.avisos.slice() };
 }
+S._fecharPortasAgora = function () {
+var n = 0;
+S.modelos.forEach(function (mo) {
+var ix = mo._abr; if (!ix) return;
+Object.keys(ix.portas).forEach(function (k) {
+var pt = ix.portas[k], rep0 = pt.repouso || 0;
+if (pt.t === rep0 && pt.alvo === rep0) return;
+pt.t = rep0; pt.alvo = rep0; abrAplicar(pt); n++;
+});
+});
+ABR.ativas = [];
+return n;
+};
 S._aberturaDe = function (uid) { var pt = abrDe(uid); return pt ? abrResumo(pt) : null; };
 S._abrirFechar = abrirFechar;
 S._portas = function () {
@@ -4676,6 +4693,7 @@ return { x: t.x, y: t.y, atras: !!t.atras, centro: [c.x, c.y, c.z], min: [bb.min
 S._texVestir = function (mat) { if (TEXR.on) texVestir(mat); };
 S._texAuto = texAuto; S._texEscolher = texEscolher; S._texEstado = texEstado; S._texLiberar = texLiberar; S._texAplicar = texAplicar; S._texGravarPref = texGravarPref;
 S._tickExtra.push(function () { sincronizarAgregado(); });
+try { if (S._explodirUI && S._explodirUI.tick) { var ixEx = S._tickExtra.indexOf(S._explodirUI.tick); if (ixEx !== -1) { S._tickExtra.splice(ixEx, 1); S._tickExtra.push(S._explodirUI.tick); } } } catch (_) {}
 S._tickExtra.push(function () { if (S._cristalTickEscala) S._cristalTickEscala(); });
 var EST = { modo: 'sombreado', fixo: false, ar: {}, luz: null, real: null, mat: null, ultimo: null };
 var acabMats = {}, acabSoltos = [];
@@ -4831,6 +4849,13 @@ e.ls.geometry.index.needsUpdate = true; e.ls.geometry.setDrawRange(0, n);
 });
 Object.keys(EST.ar).forEach(function (k) { if (!vivos[k]) { estArestasSoltar(EST.ar[k]); delete EST.ar[k]; } });
 }
+S._arestasDoModelo = function (mid) { return EST.ar[mid] || null; };
+S._montarParaDesenho = function () {
+var feito = false;
+try { feito = !!(S._explodirUI && S._explodirUI.montarAgora && S._explodirUI.montarAgora()); } catch (_) { feito = false; }
+if (feito) S._hint('A vista explodida foi desfeita: o desenho técnico mede o modelo montado.');
+return feito;
+};
 function estArestasLigar(on) {
 if (on) { estArestasSync(); return; }
 Object.keys(EST.ar).forEach(function (k) { estArestasSoltar(EST.ar[k]); });
@@ -5188,6 +5213,7 @@ var eds = mod ? novo.filter(function (u) { return /^edit:/.test(u) && insts.inde
 var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
 selInst = insts; realcarInst();
 if (mod) { if ((eds.length || insts.length) && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
+S._selN = (S._selN || 0) + 1;
 if (S._limparRaioX) S._limparRaioX();
 if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
 contornoSelecao(null);
@@ -7406,6 +7432,7 @@ host.appendChild(ctecModal);
 S.ctecModal = ctecModal;
 var SERIE_ESC = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500];
 function gerarCorteTec(o) {
+S._montarParaDesenho();
 if (S._famLodTudo0) S._famLodTudo0();
 var box = new THREE.Box3().setFromObject(modelRoot);
 if (box.isEmpty()) return null;
@@ -7756,6 +7783,7 @@ out.push({ minx: a.min[0] - 0.03, maxx: a.max[0] + 0.03, minz: a.min[2] - 0.03, 
 return out;
 }
 function gerarPlantaTec(o) {
+S._montarParaDesenho();
 if (S._famLodTudo0) S._famLodTudo0();
 var box = new THREE.Box3().setFromObject(modelRoot);
 if (box.isEmpty()) return null;
@@ -7966,6 +7994,7 @@ if (BMU && typeof BMU.emLote === 'function') return BMU.emLote(semBlocos);
 return semBlocos();
 }
 function vista2dCorpo(def) {
+S._montarParaDesenho();
 if (S._famLodTudo0) S._famLodTudo0();
 var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 def = def || {};
@@ -8658,11 +8687,12 @@ S._isolarTipo = isolarTipo;
 var xray = { on: false, ghosted: [] };
 var _ghostMat = null;
 function ghostMat() { if (!_ghostMat) _ghostMat = new THREE.MeshStandardMaterial({ color: 0x93a7bd, transparent: true, opacity: .1, depthWrite: false, metalness: 0, roughness: 1, side: THREE.DoubleSide }); return _ghostMat; }
-function limparRaioX() { if (!xray.on) return; xray.ghosted.forEach(function (m) { m.material = ehAndamento4d(m) ? S.matAndamento : matBase(m); }); xray.ghosted = []; xray.on = false; }
+function raioCamadasXray(on) { if (on) ray.layers.enable(0); else if (AGREG.on) ray.layers.set(1); }
+function limparRaioX() { if (!xray.on) return; xray.ghosted.forEach(function (m) { m.material = ehAndamento4d(m) ? S.matAndamento : matBase(m); }); xray.ghosted = []; xray.on = false; raioCamadasXray(false); }
 S._limparRaioX = limparRaioX;
 function aplicarRaioX(ehAlvo, msg) {
 limparRaioX();
-xray.on = true;
+xray.on = true; raioCamadasXray(true);
 var nAlvo = 0;
 todasMalhas(function (m) {
 if (m.userData.expressID == null) return;
@@ -8671,7 +8701,7 @@ if (ehAlvo(m)) { nAlvo++; return; }
 m.material = ghostMat(); xray.ghosted.push(m);
 });
 if (!nAlvo) { limparRaioX(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Nada correspondeu ao alvo do raio-X.'); return 0; }
-S._hint(msg);
+if (msg !== false) S._hint(msg);
 return nAlvo;
 }
 function raioXSelecao() {
@@ -8688,9 +8718,10 @@ function raioXChaves(chaves, msg) {
 var alvo = {};
 uidsDeChaves(chaves).forEach(function (u) { alvo[u] = 1; });
 return aplicarRaioX(function (m) { return !!alvo[m.userData.mid + ':' + m.userData.expressID]; },
-msg || ('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: o grupo em destaque, o resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.')) || 0;
+msg === false ? false : msg || ('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: o grupo em destaque, o resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.')) || 0;
 }
 S._raioXChaves = raioXChaves;
+S._raioXAtivo = function () { return xray.on ? xray.ghosted.length : 0; };
 visPanel.addEventListener('click', function (e) {
 var b = e.target.closest('[data-v]'); if (!b) return; var k = b.getAttribute('data-v');
 if (k === 'fechar') { visPanel.style.display = 'none'; var bvF = bar.querySelector('[data-b="vis"]'); if (bvF) bvF.style.outline = ''; return; }
@@ -8699,7 +8730,7 @@ else if (k === 'occ') ocultarSelecao();
 else if (k === 'tipo') isolarTipo();
 else if (k === 'rx') raioXSelecao();
 else if (k === 'rxt') raioXTipo();
-else if (k === 'tudo') { restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Tudo visível de novo.'); }
+else if (k === 'tudo') { try { if (S._explodirUI && S._explodirUI.grupoFechar) S._explodirUI.grupoFechar(); } catch (_) {} restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Tudo visível de novo.'); }
 });
 function toggleVisPanel() {
 var abrir = (visPanel.style.display === 'none' || !visPanel.style.display);
@@ -9083,19 +9114,20 @@ pos: pa.array, nor: (na && !na.isInterleavedBufferAttribute) ? na.array : null, 
 });
 return out;
 }
+function somaBytes(b) { var h = 2166136261; for (var i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619) >>> 0; } return h; }
 var _ql = null;
 function abrirQuickLook(modo, btn) {
 var pecas = pecasVisiveis(), tri = 0;
 pecas.forEach(function (p) { tri += Math.floor(p.idx.length / 3); });
-var chave = modo + '|' + pecas.length + '|' + tri;
+var chave = modo + '|' + pecas.length + '|' + tri + '|' + (S._explodirUI ? S._explodirUI.chaveRA() : '');
 if (_ql && _ql.chave === chave) { dispararQuickLook(_ql.url); return; }
 var rot = btn ? btn.innerHTML : '';
 if (btn) { btn.disabled = true; btn.textContent = 'Montando o arquivo da RA…'; }
 setTimeout(function () {
 var r;
-try { r = BimUsdz.gerar(pecas, { modo: modo }); } catch (e) { r = { ok: false, erro: String(e && e.message || e) }; }
+r = arquivoRA('usdz', modo);
 if (btn) { btn.disabled = false; btn.innerHTML = rot; }
-S._qlUltimo = { ok: r.ok, erro: r.erro || '', tri: r.tri || 0, malhas: r.malhas || 0, bytes: r.ok ? r.bytes.length : 0, modo: modo };
+S._qlUltimo = { chave: chave, soma: r.ok ? somaBytes(r.bytes) : 0, ok: r.ok, erro: r.erro || '', tri: r.tri || 0, malhas: r.malhas || 0, bytes: r.ok ? r.bytes.length : 0, modo: modo };
 if (!r.ok) {
 S._hint(r.erro === 'grande'
 ? 'Este modelo tem ' + Math.round(r.tri / 1000) + ' mil triângulos visíveis; a RA do iPhone aguenta até ' + Math.round(r.limite / 1000) + ' mil. Desligue disciplinas (ex.: deixe só a Arquitetura) e toque de novo — ou use Caminhar.'
@@ -9127,10 +9159,12 @@ setTimeout(function () { try { a.remove(); } catch (_) {} }, 1500);
 function arquivoRA(formato, modo) {
 if (!window.BimUsdz) return { ok: false, erro: 'motor da RA não carregou' };
 var pecas = pecasVisiveis();
+try { if (S._explodirUI && S._explodirUI.cotasLigadas()) pecas = pecas.concat(S._explodirUI.pecasDeCotas()); } catch (_) {}
 try { return formato === 'glb' ? BimUsdz.gerarGlb(pecas, { modo: modo }) : BimUsdz.gerar(pecas, { modo: modo }); }
 catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
 }
 S._arquivoRA = arquivoRA;
+S._abrirQuickLook = function (modo) { abrirQuickLook(modo, null); return true; };
 function toggleXRPanel() {
 if (xrPanel.style.display === 'flex') { xrPanel.style.display = 'none'; return; }
 if (S._fecharPaineis) S._fecharPaineis(xrPanel);
@@ -12450,6 +12484,7 @@ var ps = (carimbo && String(carimbo.descricaoPset || '').trim()) || '';
 if (ps) return { descricao: ps, fonte: 'pset' };
 return { descricao: '', fonte: '' };
 }
+var VOL_NOMES = { OrcaPRO_Marca: 'marca', OrcaPRO_Modulo: 'modulo', OrcaPRO_TipoPeca: 'tipo', OrcaPRO_Secao: 'secao', OrcaPRO_Comprimento: 'comprimento', OrcaPRO_Caixa: 'caixa', OrcaPRO_Explodir: 'explodir', OrcaPRO_Furos: 'furos', OrcaPRO_Ligacoes: 'ligacoes', OrcaPRO_Ficha: 'ficha' };
 function lerCarimbosOrcaPro(mid) {
 var mapa = {};
 try {
@@ -12462,7 +12497,7 @@ var psetID = rel.RelatingPropertyDefinition.value; if (psetID == null) continue;
 var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
 if (!pset || !pset.HasProperties) continue;
 var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null, folha = null;
+var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null, folha = null, vol = null;
 var psNome = pset.Name && pset.Name.value, abre = null, folhaDe = null;
 for (var p = 0; p < props.length; p++) {
 var h = props[p]; if (!h || h.value == null) continue;
@@ -12483,12 +12518,13 @@ else if (nm === 'OrcaPRO_Disciplina' && pv.NominalValue) discP = pv.NominalValue
 else if (nm === 'OrcaPRO_Detalhe' && pv.NominalValue) detalhe = pv.NominalValue.value;
 else if (nm === 'OrcaPRO_Montagem' && pv.NominalValue) montagem = pv.NominalValue.value;
 else if (nm === 'OrcaPRO_Folha' && pv.NominalValue) folha = pv.NominalValue.value;
+else if (VOL_NOMES[nm] && pv.NominalValue) { if (!vol) vol = {}; vol[VOL_NOMES[nm]] = pv.NominalValue.value == null ? '' : String(pv.NominalValue.value); }
 else if (nm && pv.NominalValue && descrPset == null && ehNomeDeDescricao(nm)) {
 var vD = pv.NominalValue.value;
 if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
 }
 }
-if (!abre && !folhaDe && etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null && montagem == null && folha == null) continue;
+if (!abre && !folhaDe && etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && vol == null && detalhe == null && montagem == null && folha == null) continue;
 var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
 for (var o = 0; o < objs.length; o++) {
 var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -12501,6 +12537,7 @@ if (discP != null && String(discP).trim()) mapa[eid].disciplinaPeca = String(dis
 if (detalhe != null && String(detalhe).trim()) mapa[eid].detalhe = String(detalhe).trim();
 if (montagem != null && String(montagem).trim()) mapa[eid].montagem = String(montagem).trim();
 if (folha != null && String(folha).trim()) mapa[eid].folhas = String(folha).trim();
+if (vol) mapa[eid].vol = vol;
 if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
 if (abre) mapa[eid].abertura = abre;
 if (folhaDe) mapa[eid].folhaDe = folhaDe;
@@ -13774,7 +13811,7 @@ var famEl = (modelo.familias && modelo.familias[mesh.expressID]) || null;
 var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
 var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
 var dM = descricaoDeMercado(idIfc, famEl, cb);
-modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, materiais: materiais[mesh.expressID] || (famEl && famEl.tipoId != null && materiais[famEl.tipoId]) || null, qto: (qto && qto[mesh.expressID]) || null });
+modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, vol: cb.vol || null, materiais: materiais[mesh.expressID] || (famEl && famEl.tipoId != null && materiais[famEl.tipoId]) || null, qto: (qto && qto[mesh.expressID]) || null });
 modelo.nEl++;
 });
 modelo.disciplina = String(disc || '') || detectarDisciplina(modelo.nome, modelo.tipos);
@@ -14088,6 +14125,7 @@ try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } c
 try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
 try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}
 try { if (S._ctl) S._ctl.dispor(); } catch (_) {}
+try { if (S._explodirUI) S._explodirUI.dispor(); } catch (_) {}
 try { if (S._mouse) S._mouse.dispor(); } catch (_) {}
 try { if (S._abrirUI) S._abrirUI.dispor(); } catch (_) {}
 try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
@@ -14676,7 +14714,7 @@ _apoiando: function (on) { if (S) S._apoiando = !!on; },
 apoiarCanvas: function () { return S && S.renderer ? S.renderer.domElement : null; },
 aoTocar: function (fn) { if (S) S._aoTocar = typeof fn === 'function' ? fn : null; },
 coletarCliques: function (fn) { if (S) S._aoClicarPeca = typeof fn === 'function' ? fn : null; return !!(S && S._aoClicarPeca); },
-coletandoCliques: function () { return !!(S && S._aoClicarPeca); },
+coletandoCliques: function () { return !!(S && S._aoClicarPeca && !S._aoClicarPeca._grupo); },
 _cliqueColetorEm: function (x, y) { if (S && S._cliqueColetor) S._cliqueColetor({ clientX: x, clientY: y }); },
 volumeMalha: function (uid) { return (S && S._volumeMalha) ? S._volumeMalha(uid) : null; },
 icarGeometria: function (uids) { return (S && S._icar) ? S._icar.geometria(uids) : {}; },
@@ -14729,6 +14767,7 @@ tetoVisitante: function (frac) { return S && S._tetoVisitante ? S._tetoVisitante
 disciplinas: function () { return S && S._disciplinas ? S._disciplinas() : []; },
 disciplinaVisivel: function (chave, on) { if (S && S._disciplinaVisivel) S._disciplinaVisivel(chave, on); },
 arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
+_abrirQuickLook: function (modo) { if (!S || !S._abrirQuickLook) return null; S._abrirQuickLook(modo || 'real'); return new Promise(function (ok) { setTimeout(function () { ok(S._qlUltimo || null); }, 500); }); },
 selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
 _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); },
 _caixaMalha: function (uid) { var m = S && S.meshPorUid && S.meshPorUid[uid]; if (!m) return null; var bx = new THREE.Box3().setFromObject(m); return { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z] }; },
@@ -15006,6 +15045,25 @@ var alvo = (mid != null) ? mid : (S.modelos.filter(function (m) { return typeof 
 if (alvo == null) return null;
 try { var m = S.api.GetCoordinationMatrix(alvo); return Array.prototype.slice.call(m); } catch (e) { return String(e && e.message || e); }
 },
+explodirInfo: function () { return (S && S._explodirUI) ? S._explodirUI.info() : { modos: [], auto: false, nPecas: 0, nVol: 0, motivo: 'A vista explodida não carregou.' }; },
+explodir: function (modo) { return (S && S._explodirUI) ? S._explodirUI.explodir(modo) : { ok: false, motivo: 'A vista explodida não carregou.' }; },
+explodirMontar: function (o) { return (S && S._explodirUI) ? S._explodirUI.montar(o) : { ok: false }; },
+explodirEstado: function () { return (S && S._explodirUI) ? S._explodirUI.estado() : null; },
+cotasVivas: function (ligar) { return (S && S._explodirUI) ? S._explodirUI.cotasVivas(ligar) : false; },
+focoPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.focoPeca(uid) : { ok: false }; },
+focoSair: function () { return (S && S._explodirUI) ? S._explodirUI.focoSair() : { ok: false }; },
+dadosPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.dadosPeca(uid) : null; },
+grupoDaPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.grupoDaPeca(uid) : null; },
+grupoEscolher: function (uid) { return (S && S._explodirUI) ? S._explodirUI.grupoEscolher(uid) : { ok: false }; },
+grupoAbrir: function () { return (S && S._explodirUI) ? S._explodirUI.grupoAbrir() : { ok: false }; },
+grupoAgrupar: function () { return (S && S._explodirUI) ? S._explodirUI.grupoAgrupar() : { ok: false }; },
+grupoFechar: function () { return (S && S._explodirUI) ? S._explodirUI.grupoFechar() : { ok: false }; },
+grupoEstado: function () { return (S && S._explodirUI) ? S._explodirUI.grupoEstado() : null; },
+grupoOpcoes: function (o) { return (S && S._explodirUI) ? S._explodirUI.grupoOpcoes(o) : null; },
+grupoOuvir: function (fn) { if (S && S._explodirUI) S._explodirUI.grupoOuvir(fn); },
+grupoEsc: function () { return (S && S._explodirUI) ? S._explodirUI.grupoEsc() : false; },
+_explodirProva: function (uids) { return (S && S._explodirUI) ? S._explodirUI.prova(uids) : null; },
+_cotasVivasDiag: function (recalcular) { return (S && S._explodirUI) ? (recalcular ? S._explodirUI.recalcular() : S._explodirUI.diag()) : null; },
 _snapAt: function (cx, cy, raio) { if (!S || !S._mirarEm) return null; var sn = S._mirarEm(cx, cy, raio || (S.snap ? S.snap.raio : 14)); if (!sn || !sn.p) return null; return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; },
 _perf: function () {
 if (!S || !S.alive || !S.renderer) return null;

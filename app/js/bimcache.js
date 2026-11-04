@@ -219,7 +219,10 @@
    * gravado ANTES de o campo entrar na lista acima se conserta sozinho. Só
    * preenche o campo que o registro NÃO tem (`in`): campo gravado vazio é
    * resposta, e não se sobrescreve resposta. */
-  var CAMPOS_DO_CARIMBO = ["etapa", "codOrc", "fase", "tarefa", "disciplinaPeca", "detalhe", "montagem", "folhas"];
+  /* `vol` (03/11/2026): a VOLUMETRIA da peça (marca, módulo, caixa, afastamentos da vista explodida, furos, ligações, ficha —
+     js/bimexplodir.js). Mora no mapa de carimbos e volta por aqui para o elemento do modelo reaberto; sem isto a explodida
+     e as cotas vivas funcionavam ao importar o IFC e sumiam no dia seguinte, com o botão dizendo "não há o que explodir". */
+  var CAMPOS_DO_CARIMBO = ["etapa", "codOrc", "fase", "tarefa", "disciplinaPeca", "detalhe", "montagem", "folhas", "vol"];
 
   function elementoLimpo(e) {
     var o = {};

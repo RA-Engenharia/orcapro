@@ -207,7 +207,9 @@
     { nome: "Similar e grupos", grande: true, ids: ["criar-similar", "criar-grupo", "editar-grupo", "desagrupar", "colar-niveis"] },
     { nome: "Caixa de seleção", ids: ["fx-caixa-selecao"] }
   ];
+  /* ⚠ Explodida é o PRIMEIRO painel da Vista (03/11/2026): a faixa tem ~4.400 px e o painel, no meio, ficava fora da tela, rolado. */
   var ABA_VISTA = [
+    { nome: "Explodida", ids: ["explodir", "explodir-montar", "cotas-vivas"] },
     { nome: "Navegar", ids: ["home", "fx-recuperar-vista", "orbita", "voo", "mesa", "imersivo", "vistas", "atalhos"] },
     { nome: "Exibir", ids: ["visibilidade", "pavimentos", "disciplinas", "sistemas", "conjuntos", "cores-categoria", "cores-categoria-paleta", "ambientes-3d"] },
     { nome: "Estilo e projeção", ids: ["estilo", "materiais", "ultra", "ortogonal", "grade", "caixa-corte"] },

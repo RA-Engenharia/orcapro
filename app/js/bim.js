@@ -1659,7 +1659,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     if (area.on) { if (area.pts.length >= 3) fecharArea(); return; } // no modo área o duplo-clique FECHA o polígono
     if (ang.on) return; // no modo ângulo o clique é ponto — não seleção
-    if (S._aoClicarPeca) return; // coletando peças (peso/içamento): o clique simples já juntou — ver `cliqueColetor`
+    if (S._aoClicarPeca && !S._aoClicarPeca._grupo) return; // coletando peças (peso/içamento): o clique simples já juntou — ver `cliqueColetor`. (O gancho da vista explodida, `_grupo`, não rouba o duplo clique)
     if (S._aoMarcarPonto) return; // marcando a posição do equipamento: o clique simples é o ponto
     /* M5 (14/10/2026): duplo clique numa peça de PEÇA PRONTA (componente) abre o diálogo dela para editar no lugar (js/metalcomponenteui.js) */
     try { if (window.MetalComponenteUI && MetalComponenteUI.duplo && S._uidEm) { var uD = S._uidEm(e.clientX, e.clientY); if (uD && /^edit:/.test(uD) && MetalComponenteUI.duplo(uD)) return; } } catch (_) {}
@@ -1672,11 +1672,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      visitante, a do TOQUE simples (no celular o duplo-toque é zoom do
      sistema e a seleção nunca acontecia) */
   function selecionarEm(cx, cy) {
-    if (S._limparRaioX) S._limparRaioX(); // nova seleção reseta o raio-X (senão o ghostMat vaza pro prevMat)
+    S._selN = (S._selN || 0) + 1;   /* o contador de seleções: quem mantém o raio-X por cima (foco, grupo) refaz quando ele muda — comparar S.selected não vê reselecionar a MESMA peça */
     var r = canvasEl.getBoundingClientRect();
     mouse.x = ((cx - r.left) / r.width) * 2 - 1; mouse.y = -((cy - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
+    /* ⚠ o raio sai ANTES de limpar o raio-X (03/11/2026, revisão): limpar volta a máscara do raio à camada 1, e com o mesclado suspenso (módulo que divide cor com outro) as malhas estão só na camada 0 até o próximo quadro — o toque não achava nada e fechava o cartão */
     var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
+    if (S._limparRaioX) S._limparRaioX(); // nova seleção reseta o raio-X (senão o ghostMat vaza pro prevMat)
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
       S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
@@ -2219,6 +2221,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      sem controle conectado ele volta na 1a linha (custo zero). Sai junto no desmontarMorto — sem listener vazando a cada remontagem. */
   S._orientarMain = function (d) { orientarPara({ cam: function () { return camera; }, orbit: function () { return orbit; }, voar: function (p, t) { voarCam(p, t, 0.55); } }, _V3(d[0], d[1], d[2])); };
   try { if (window.BimControle && !visitante) { S._ctl = window.BimControle.criar(S, THREE); S._tickExtra.push(S._ctl.tick); } } catch (_) {}
+  /* VISTA EXPLODIDA, COTAS VIVAS E FOCO NA PEÇA (03/11/2026, js/bimexplodirui.js): vale também para o visitante (link/placa); empurra o próprio tick */
+  try { if (window.BimExplodirUI) S._explodirUI = window.BimExplodirUI.criar(S, THREE); } catch (_) {}
   /* MOUSE E TECLADO (16/10/2026, js/bimmouse.js, BACKLOG #56): teclas F/H/I/C/M/1-6 e botões laterais do mouse; usam a camada de ação do controle (S._ctl.agir) */
   try { if (window.BimMouse && !visitante) S._mouse = window.BimMouse.instalar(S); } catch (_) {}
   /* PORTAS, PORTÕES E GAVETAS QUE ABREM (20/10/2026, js/bimabrirui.js): clique no modo "Abrir portas"/Alt/passeio, cursor de mão, tecla O e o freio do passeio */
@@ -3626,7 +3630,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S._pintarEixo) S._pintarEixo();
     var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? corAtiva() : ''; bm.style.color = on ? '#fff' : ''; }
     atualizarCursor();
-    S._hint(on ? trenaTxt(planta.on ? 'planta' : 'on') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
+    S._hint(on ? trenaTxt(planta.on ? 'planta' : 'on') + ((S._explodirUI && S._explodirUI.ligada && S._explodirUI.ligada()) ? ' Vista explodida aberta: a medida é entre peças afastadas.' : '') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
   S._setMedir = setMedir;
   // captura por CLIQUE-SEM-ARRASTE (não atrapalha a órbita: se arrastou, é rotação).
@@ -3795,9 +3799,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var agora = (e && e.timeStamp > 0) ? e.timeStamp : performance.now();
     if (p && p.uid && _ultColeta && _ultColeta.uid === p.uid && agora - _ultColeta.t < 400) return;
     _ultColeta = p && p.uid ? { uid: p.uid, t: agora } : null;
-    try { S._aoClicarPeca(p); } catch (_) {}
+    try { S._aoClicarPeca(p, e); } catch (_) {}
   }
   S._cliqueColetor = cliqueColetor;
+  /* o clique de SEMPRE (seleção): quem usa a porta `_aoClicarPeca` por cortesia (a vista explodida, js/bimexplodirui.js) devolve a ele o que não é seu */
+  S._cliqueNormal = function (e) { if (!e) return; if (!visitante && S._sel3Clique) S._sel3Clique(e); else selecionarEm(e.clientX, e.clientY); };
 
   /* VOLUME PELA MALHA — para a peça cujo IFC não publica volume (porta,
    * janela e louça costumam vir assim). Volume assinado dos tetraedros contra
@@ -6210,6 +6216,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function abrirFechar(uid, abrir) {
     var pt = abrDe(uid); if (!pt || !pt.moveis) return null;
+    /* ⚠ com a vista explodida ligada a porta NÃO abre (03/11/2026, revisão): a explodida guarda a pose das malhas e a soma de k·d; a folha
+       que girava no meio dela voltava errada no Montar. Ela fecha sozinha ao explodir (S._fecharPortasAgora). */
+    if (S._explodirUI && S._explodirUI.ligada && S._explodirUI.ligada()) { S._hint('Com a vista explodida aberta as portas ficam fechadas. Toque em Montar para abrir ou fechar a porta.'); return null; }
     pt.alvo = (abrir == null) ? (pt.alvo > 0 ? 0 : 1) : (abrir ? 1 : 0);
     if (ABR.ativas.indexOf(pt) < 0) ABR.ativas.push(pt);
     return pt.alvo > 0;
@@ -6231,6 +6240,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { porta: pt.mid + ':' + pt.id, globalId: pt.globalId, tipo: pt.ab.tipo, nomeTipo: abrMotor().nomeTipo(pt.ab.tipo), folhas: pt.folhas.length,
              moveis: pt.moveis, aberta: pt.alvo > 0, t: pt.t, convencao: pt.ab.convencao, avisos: pt.ab.avisos.slice() };
   }
+  /* o Explodir fecha as portas abertas NA HORA, sem animação: cada folha volta à matriz fechada que guardou (js/bimexplodirui.js) */
+  S._fecharPortasAgora = function () {
+    var n = 0;
+    S.modelos.forEach(function (mo) {
+      var ix = mo._abr; if (!ix) return;
+      Object.keys(ix.portas).forEach(function (k) {
+        var pt = ix.portas[k], rep0 = pt.repouso || 0;
+        if (pt.t === rep0 && pt.alvo === rep0) return;
+        pt.t = rep0; pt.alvo = rep0; abrAplicar(pt); n++;
+      });
+    });
+    ABR.ativas = [];
+    return n;
+  };
   S._aberturaDe = function (uid) { var pt = abrDe(uid); return pt ? abrResumo(pt) : null; };
   S._abrirFechar = abrirFechar;
   S._portas = function () {
@@ -6324,6 +6347,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   /* o espelhamento anda com o quadro — e o mesmo gancho que a lupa e as cotas usam */
   S._tickExtra.push(function () { sincronizarAgregado(); });
+  /* ⚠ o tick da vista explodida roda DEPOIS do sync do mesclado (03/11/2026, revisão): o sync refaz o buffer (raio-X que sai) na base, e com o tick antes um quadro era desenhado montado */
+  try { if (S._explodirUI && S._explodirUI.tick) { var ixEx = S._tickExtra.indexOf(S._explodirUI.tick); if (ixEx !== -1) { S._tickExtra.splice(ixEx, 1); S._tickExtra.push(S._explodirUI.tick); } } } catch (_) {}
   S._tickExtra.push(function () { if (S._cristalTickEscala) S._cristalTickEscala(); });
 
   /* =====================================================================
@@ -6547,6 +6572,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     Object.keys(EST.ar).forEach(function (k) { if (!vivos[k]) { estArestasSoltar(EST.ar[k]); delete EST.ar[k]; } });
   }
+  S._arestasDoModelo = function (mid) { return EST.ar[mid] || null; };
+  /* ⚠ DESENHO TÉCNICO = MODELO MONTADO (03/11/2026, revisão): o corte, a fachada, a planta e a vista 2D leem a matriz das malhas, e a explodida
+     as tinha deslocado — o desenho saía com as peças afastadas, em escala de desenho. Monta na hora, sem animação, e avisa. */
+  S._montarParaDesenho = function () {
+    var feito = false;
+    try { feito = !!(S._explodirUI && S._explodirUI.montarAgora && S._explodirUI.montarAgora()); } catch (_) { feito = false; }
+    if (feito) S._hint('A vista explodida foi desfeita: o desenho técnico mede o modelo montado.');
+    return feito;
+  };   /* a explodida desloca os vértices das arestas montadas (js/bimexplodirui.js) */
   function estArestasLigar(on) {
     if (on) { estArestasSync(); return; }
     Object.keys(EST.ar).forEach(function (k) { estArestasSoltar(EST.ar[k]); });
@@ -7018,6 +7052,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var outros = novo.filter(function (u) { return !(mod && /^edit:/.test(u)); });
     selInst = insts; realcarInst();
     if (mod) { if ((eds.length || insts.length) && !edit.on) setEdit(true); S._prec.api.selecionar(eds); }
+    S._selN = (S._selN || 0) + 1;
     if (S._limparRaioX) S._limparRaioX();
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
     contornoSelecao(null);
@@ -10029,6 +10064,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // série de escalas padrão de arquitetura (denominadores que existem em escalímetro)
   var SERIE_ESC = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500];
   function gerarCorteTec(o) {
+    S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {ax,az,bx,bz, escala, tipo:'corte'|'fachada', prof, inv} — coords do MUNDO (metros)
     var box = new THREE.Box3().setFromObject(modelRoot);
@@ -10446,6 +10482,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
 
   function gerarPlantaTec(o) {
+    S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     // o: {y (altura do corte no MUNDO, metros), escala, cotas, prof, rotAlt}
     var box = new THREE.Box3().setFromObject(modelRoot);
@@ -10705,6 +10742,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return semBlocos();
   }
   function vista2dCorpo(def) {
+    S._montarParaDesenho();
     if (S._famLodTudo0) S._famLodTudo0();   /* desenho técnico: louça gerada no detalhe máximo (QUALIDADE VISUAL 3) */
     var t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     def = def || {};
@@ -11532,11 +11570,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var xray = { on: false, ghosted: [] };
   var _ghostMat = null;
   function ghostMat() { if (!_ghostMat) _ghostMat = new THREE.MeshStandardMaterial({ color: 0x93a7bd, transparent: true, opacity: .1, depthWrite: false, metalness: 0, roughness: 1, side: THREE.DoubleSide }); return _ghostMat; }
-  function limparRaioX() { if (!xray.on) return; xray.ghosted.forEach(function (m) { m.material = ehAndamento4d(m) ? S.matAndamento : matBase(m); }); xray.ghosted = []; xray.on = false; } // devolve o âmbar do 4D a quem estava "em andamento" (senão o restore mostra como concluído)
+  /* ⚠ O CLIQUE DURANTE O RAIO-X (03/11/2026): com o raio-X ligado o mesclado é suspenso e as malhas reais voltam a ser desenhadas por si na camada 0 SÓ
+     (`desagregarModelo`), mas o raio do clique olha a camada 1 — medido: 0 de 35 peças achadas na tela com o raio-X ligado, e nenhum toque pegava peça
+     nenhuma (a vista explodida destaca o grupo escolhido por raio-X e precisa que o toque seguinte funcione). Enquanto o raio-X está ligado o raio olha
+     também a camada 0; ao sair, volta ao que a agregação manda (só a 1). O mesclado não fica sob o modelRoot, então não há acerto em dobro. */
+  function raioCamadasXray(on) { if (on) ray.layers.enable(0); else if (AGREG.on) ray.layers.set(1); }
+  function limparRaioX() { if (!xray.on) return; xray.ghosted.forEach(function (m) { m.material = ehAndamento4d(m) ? S.matAndamento : matBase(m); }); xray.ghosted = []; xray.on = false; raioCamadasXray(false); } // devolve o âmbar do 4D a quem estava "em andamento" (senão o restore mostra como concluído)
   S._limparRaioX = limparRaioX;
   function aplicarRaioX(ehAlvo, msg) {
     limparRaioX();
-    xray.on = true; // ANTES do loop: senão o aborto abaixo chama limparRaioX() com xray.on=false e ele sai no early-return, deixando o modelo translúcido travado (gate v1.1.89)
+    xray.on = true; raioCamadasXray(true); // ANTES do loop: senão o aborto abaixo chama limparRaioX() com xray.on=false e ele sai no early-return, deixando o modelo translúcido travado (gate v1.1.89)
     var nAlvo = 0;
     todasMalhas(function (m) {
       if (m.userData.expressID == null) return;
@@ -11545,7 +11588,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       m.material = ghostMat(); xray.ghosted.push(m);
     });
     if (!nAlvo) { limparRaioX(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Nada correspondeu ao alvo do raio-X.'); return 0; } // agora restaura de verdade
-    S._hint(msg);
+    if (msg !== false) S._hint(msg);   // false: quem chamou já mostra o que está em destaque (o cartão da explodida)
     return nAlvo;
   }
   function raioXSelecao() {
@@ -11566,9 +11609,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var alvo = {};
     uidsDeChaves(chaves).forEach(function (u) { alvo[u] = 1; });
     return aplicarRaioX(function (m) { return !!alvo[m.userData.mid + ':' + m.userData.expressID]; },
-      msg || ('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: o grupo em destaque, o resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.')) || 0;
+      msg === false ? false : msg || ('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: o grupo em destaque, o resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.')) || 0;
   }
   S._raioXChaves = raioXChaves;
+  S._raioXAtivo = function () { return xray.on ? xray.ghosted.length : 0; };   /* quantas malhas estão em fantasma (a vista explodida lê para saber se o destaque do grupo segue ligado) */
   visPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-v]'); if (!b) return; var k = b.getAttribute('data-v');
     if (k === 'fechar') { visPanel.style.display = 'none'; var bvF = bar.querySelector('[data-b="vis"]'); if (bvF) bvF.style.outline = ''; return; }
@@ -11577,7 +11621,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'tipo') isolarTipo();
     else if (k === 'rx') raioXSelecao();
     else if (k === 'rxt') raioXTipo();
-    else if (k === 'tudo') { restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Tudo visível de novo.'); }
+    else if (k === 'tudo') { try { if (S._explodirUI && S._explodirUI.grupoFechar) S._explodirUI.grupoFechar(); } catch (_) {} restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Tudo visível de novo.'); }
   });
   function toggleVisPanel() {
     var abrir = (visPanel.style.display === 'none' || !visPanel.style.display);
@@ -12142,20 +12186,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     return out;
   }
+  function somaBytes(b) { var h = 2166136261; for (var i = 0; i < b.length; i++) { h ^= b[i]; h = Math.imul(h, 16777619) >>> 0; } return h; }   // o teste compara os bytes do arquivo da RA
   var _ql = null; // { chave, url } — o mesmo arquivo serve ao segundo toque
   function abrirQuickLook(modo, btn) {
     var pecas = pecasVisiveis(), tri = 0;
     pecas.forEach(function (p) { tri += Math.floor(p.idx.length / 3); });
-    var chave = modo + '|' + pecas.length + '|' + tri;
+    /* ⚠ a chave leva a EXPLODIDA (modo, quanto abriu) e as cotas (03/11/2026, revisão): explodir não muda a contagem de peças nem de
+       triângulos, e o segundo toque reentregava o arquivo MONTADO e sem cotas */
+    var chave = modo + '|' + pecas.length + '|' + tri + '|' + (S._explodirUI ? S._explodirUI.chaveRA() : '');
     if (_ql && _ql.chave === chave) { dispararQuickLook(_ql.url); return; }
     var rot = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Montando o arquivo da RA…'; }
     // setTimeout: deixa o botão mostrar o "montando" antes do trabalho pesado
     setTimeout(function () {
       var r;
-      try { r = BimUsdz.gerar(pecas, { modo: modo }); } catch (e) { r = { ok: false, erro: String(e && e.message || e) }; }
+      r = arquivoRA('usdz', modo);   /* o MESMO caminho da RA do Android: explodida e cotas já dentro */
       if (btn) { btn.disabled = false; btn.innerHTML = rot; }
-      S._qlUltimo = { ok: r.ok, erro: r.erro || '', tri: r.tri || 0, malhas: r.malhas || 0, bytes: r.ok ? r.bytes.length : 0, modo: modo };
+      S._qlUltimo = { chave: chave, soma: r.ok ? somaBytes(r.bytes) : 0, ok: r.ok, erro: r.erro || '', tri: r.tri || 0, malhas: r.malhas || 0, bytes: r.ok ? r.bytes.length : 0, modo: modo };
       if (!r.ok) {
         S._hint(r.erro === 'grande'
           ? 'Este modelo tem ' + Math.round(r.tri / 1000) + ' mil triângulos visíveis; a RA do iPhone aguenta até ' + Math.round(r.limite / 1000) + ' mil. Desligue disciplinas (ex.: deixe só a Arquitetura) e toque de novo — ou use Caminhar.'
@@ -12200,10 +12247,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function arquivoRA(formato, modo) {
     if (!window.BimUsdz) return { ok: false, erro: 'motor da RA não carregou' };
     var pecas = pecasVisiveis();
+    /* COTAS NA RA (03/11/2026): com as cotas vivas ligadas, o número de cada módulo vai em GEOMETRIA (traço grosso, fundo claro, 4 quadros de uma face em cruz) — a RA nativa não tem textura nem texto */
+    try { if (S._explodirUI && S._explodirUI.cotasLigadas()) pecas = pecas.concat(S._explodirUI.pecasDeCotas()); } catch (_) {}
     try { return formato === 'glb' ? BimUsdz.gerarGlb(pecas, { modo: modo }) : BimUsdz.gerar(pecas, { modo: modo }); }
     catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
   }
   S._arquivoRA = arquivoRA;
+  S._abrirQuickLook = function (modo) { abrirQuickLook(modo, null); return true; };
 
   function toggleXRPanel() {
     if (xrPanel.style.display === 'flex') { xrPanel.style.display = 'none'; return; }
@@ -16221,6 +16271,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return { descricao: '', fonte: '' };
   }
 
+  var VOL_NOMES = { OrcaPRO_Marca: 'marca', OrcaPRO_Modulo: 'modulo', OrcaPRO_TipoPeca: 'tipo', OrcaPRO_Secao: 'secao', OrcaPRO_Comprimento: 'comprimento', OrcaPRO_Caixa: 'caixa', OrcaPRO_Explodir: 'explodir', OrcaPRO_Furos: 'furos', OrcaPRO_Ligacoes: 'ligacoes', OrcaPRO_Ficha: 'ficha' };
   function lerCarimbosOrcaPro(mid) {
     var mapa = {};
     try {
@@ -16233,7 +16284,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null, folha = null;
+        var etapa = null, cod = null, fase = null, descrPset = null, tarefa = null, discP = null, detalhe = null, montagem = null, folha = null, vol = null;
         /* PORTAS QUE ABREM (js/bimabrir.js): o pset `RA_Abertura` da esquadria e o
            `RA_Folha` de cada peça da folha. Lidos AQUI, na mesma varredura, e
            guardados no mapa de carimbos — que vai inteiro para o cache, então o
@@ -16271,6 +16322,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              "Ver no 3D" de uma prancha inteira do Projeto estrutural casa por
              aqui (js/estrutui.js casaFolha) — por identidade, nunca pelo texto */
           else if (nm === 'OrcaPRO_Folha' && pv.NominalValue) folha = pv.NominalValue.value;
+          /* A VOLUMETRIA DA PEÇA (03/11/2026, js/bimexplodir.js): marca, módulo, seção, comprimento, a caixa orientada, os
+             afastamentos da vista explodida, os furos, as ligações e a ficha. Texto puro; quem interpreta é o motor.
+             Vai no mapa de carimbos — e portanto no cache do modelo reaberto. */
+          else if (VOL_NOMES[nm] && pv.NominalValue) { if (!vol) vol = {}; vol[VOL_NOMES[nm]] = pv.NominalValue.value == null ? '' : String(pv.NominalValue.value); }
           /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
              exportador leva o campo Descrição do Revit para o atributo
              `Description` do IFC — vários o despejam como propriedade num
@@ -16286,7 +16341,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
         /* ⚠ o pset da porta entra pela FRENTE da condição: o fim dela ("… && folha
            == null) continue;") é a âncora do controle negativo do test-pacote-fiacao */
-        if (!abre && !folhaDe && etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && detalhe == null && montagem == null && folha == null) continue;
+        if (!abre && !folhaDe && etapa == null && cod == null && fase == null && descrPset == null && tarefa == null && discP == null && vol == null && detalhe == null && montagem == null && folha == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -16299,6 +16354,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (detalhe != null && String(detalhe).trim()) mapa[eid].detalhe = String(detalhe).trim();
           if (montagem != null && String(montagem).trim()) mapa[eid].montagem = String(montagem).trim();
           if (folha != null && String(folha).trim()) mapa[eid].folhas = String(folha).trim();
+          if (vol) mapa[eid].vol = vol;
           if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
           if (abre) mapa[eid].abertura = abre;
           if (folhaDe) mapa[eid].folhaDe = folhaDe;
@@ -18055,7 +18111,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
         var dM = descricaoDeMercado(idIfc, famEl, cb);
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, materiais: materiais[mesh.expressID] || (famEl && famEl.tipoId != null && materiais[famEl.tipoId]) || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, tarefa: cb.tarefa || null, disciplinaPeca: cb.disciplinaPeca || null, detalhe: cb.detalhe || null, montagem: cb.montagem || null, folhas: cb.folhas || null, vol: cb.vol || null, materiais: materiais[mesh.expressID] || (famEl && famEl.tipoId != null && materiais[famEl.tipoId]) || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       /* a disciplina que o engenheiro deixou no modelo viaja no manifesto do
@@ -18478,7 +18534,8 @@ function desmontarMorto() {
   try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
   try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
   try { if (S._selTeclas) window.removeEventListener('keydown', S._selTeclas, true); } catch (_) {}   /* SELECIONAR */
-  try { if (S._ctl) S._ctl.dispor(); } catch (_) {}   /* CONTROLE: gamepadconnected/disconnected + a mira */
+  try { if (S._ctl) S._ctl.dispor(); } catch (_) {}
+  try { if (S._explodirUI) S._explodirUI.dispor(); } catch (_) {}   /* EXPLODIDA: devolve as peças e solta o tick e as cotas */   /* CONTROLE: gamepadconnected/disconnected + a mira */
   try { if (S._mouse) S._mouse.dispor(); } catch (_) {}   /* MOUSE: teclas e botões laterais */
   try { if (S._abrirUI) S._abrirUI.dispor(); } catch (_) {}   /* PARTES MÓVEIS: clique, tecla O e freio do passeio */
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
@@ -19238,7 +19295,7 @@ window.BIM = {
   /* coletor de cliques (peso/içamento): fn({uid, chave, nome, tipo, p}) a cada
      clique simples numa peça — ou {uid:''} no vazio — até `coletarCliques(null)` */
   coletarCliques: function (fn) { if (S) S._aoClicarPeca = typeof fn === 'function' ? fn : null; return !!(S && S._aoClicarPeca); },
-  coletandoCliques: function () { return !!(S && S._aoClicarPeca); },
+  coletandoCliques: function () { return !!(S && S._aoClicarPeca && !S._aoClicarPeca._grupo); },   // o gancho da vista explodida (`_grupo`) não é coletor: o painel de peso não liga por causa dele
   _cliqueColetorEm: function (x, y) { if (S && S._cliqueColetor) S._cliqueColetor({ clientX: x, clientY: y }); }, // gancho de teste
   /* volume pela malha (m³) da peça sem volume no IFC — ESTIMATIVA: {volume, caixa} ou null */
   volumeMalha: function (uid) { return (S && S._volumeMalha) ? S._volumeMalha(uid) : null; },
@@ -19296,6 +19353,7 @@ window.BIM = {
   disciplinas: function () { return S && S._disciplinas ? S._disciplinas() : []; },
   disciplinaVisivel: function (chave, on) { if (S && S._disciplinaVisivel) S._disciplinaVisivel(chave, on); },
   arquivoRA: function (formato, modo) { return S && S._arquivoRA ? S._arquivoRA(formato, modo) : { ok: false, erro: 'visualizador não montado' }; },
+  _abrirQuickLook: function (modo) { if (!S || !S._abrirQuickLook) return null; S._abrirQuickLook(modo || 'real'); return new Promise(function (ok) { setTimeout(function () { ok(S._qlUltimo || null); }, 500); }); },   // hook de teste: o caminho do toque na RA do iPhone (chave do arquivo, arquivoRA); devolve o que a geração gravou
   selecionarEm: function (x, y) { if (S && S._selecionarEm) S._selecionarEm(x, y); },
   _selecionarUid: function (uid) { return !!(S && S._selecionarUid && S._selecionarUid(uid)); }, // hook de teste
   _caixaMalha: function (uid) { var m = S && S.meshPorUid && S.meshPorUid[uid]; if (!m) return null; var bx = new THREE.Box3().setFromObject(m); return { min: [bx.min.x, bx.min.y, bx.min.z], max: [bx.max.x, bx.max.y, bx.max.z] }; }, // hook de teste: a caixa da malha no 3D (o e2e do telhado que segue as paredes mede a malha, não só o estado)
@@ -19693,6 +19751,28 @@ window.BIM = {
     if (alvo == null) return null;
     try { var m = S.api.GetCoordinationMatrix(alvo); return Array.prototype.slice.call(m); } catch (e) { return String(e && e.message || e); }
   },
+  /* ---- VISTA EXPLODIDA, COTAS VIVAS E FOCO NA PEÇA (03/11/2026, js/bimexplodirui.js) ----
+     ⚠ `BIM.montar` já é o montador do visor: a "montar" da explodida chama-se `explodirMontar`. */
+  explodirInfo: function () { return (S && S._explodirUI) ? S._explodirUI.info() : { modos: [], auto: false, nPecas: 0, nVol: 0, motivo: 'A vista explodida não carregou.' }; },
+  explodir: function (modo) { return (S && S._explodirUI) ? S._explodirUI.explodir(modo) : { ok: false, motivo: 'A vista explodida não carregou.' }; },
+  explodirMontar: function (o) { return (S && S._explodirUI) ? S._explodirUI.montar(o) : { ok: false }; },
+  explodirEstado: function () { return (S && S._explodirUI) ? S._explodirUI.estado() : null; },
+  cotasVivas: function (ligar) { return (S && S._explodirUI) ? S._explodirUI.cotasVivas(ligar) : false; },
+  focoPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.focoPeca(uid) : { ok: false }; },
+  focoSair: function () { return (S && S._explodirUI) ? S._explodirUI.focoSair() : { ok: false }; },
+  dadosPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.dadosPeca(uid) : null; },
+  /* O GRUPO (03/11/2026): um módulo escolhido na explodida, em destaque, e aberto sozinho em camadas (canal k2 do js/bimexplodirui.js) */
+  grupoDaPeca: function (uid) { return (S && S._explodirUI) ? S._explodirUI.grupoDaPeca(uid) : null; },
+  grupoEscolher: function (uid) { return (S && S._explodirUI) ? S._explodirUI.grupoEscolher(uid) : { ok: false }; },
+  grupoAbrir: function () { return (S && S._explodirUI) ? S._explodirUI.grupoAbrir() : { ok: false }; },
+  grupoAgrupar: function () { return (S && S._explodirUI) ? S._explodirUI.grupoAgrupar() : { ok: false }; },
+  grupoFechar: function () { return (S && S._explodirUI) ? S._explodirUI.grupoFechar() : { ok: false }; },
+  grupoEstado: function () { return (S && S._explodirUI) ? S._explodirUI.grupoEstado() : null; },
+  grupoOpcoes: function (o) { return (S && S._explodirUI) ? S._explodirUI.grupoOpcoes(o) : null; },
+  grupoOuvir: function (fn) { if (S && S._explodirUI) S._explodirUI.grupoOuvir(fn); },   // quem quer saber quando o grupo muda (a Prancha Viva limpa o painel da peça)
+  grupoEsc: function () { return (S && S._explodirUI) ? S._explodirUI.grupoEsc() : false; },   // o Esc do grupo (ficha, depois agrupar e tirar o destaque); true = tratou
+  _explodirProva: function (uids) { return (S && S._explodirUI) ? S._explodirUI.prova(uids) : null; },   // hook de teste: hash byte a byte dos buffers e matrizes que a explodida mexe
+  _cotasVivasDiag: function (recalcular) { return (S && S._explodirUI) ? (recalcular ? S._explodirUI.recalcular() : S._explodirUI.diag()) : null; },   // hook de teste: o que as cotas vivas escolheram agora
   _snapAt: function (cx, cy, raio) { if (!S || !S._mirarEm) return null; var sn = S._mirarEm(cx, cy, raio || (S.snap ? S.snap.raio : 14)); if (!sn || !sn.p) return null; return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: o MESMO cálculo do marcador e do clique (mirarEm)
   /* =====================================================================
    * _perf — a régua do B2, e a razão de ela existir
