@@ -949,7 +949,7 @@
       { id: "epi", nome: "EPI", g: "equipe" },
       { id: "remunvar", nome: "Remuneração variável", curto: "Remun. variável", g: "equipe" },   // sob demanda — ver perfis.js
       /* sob demanda (js/perfis.js SOB_DEMANDA): só aparece para o perfil que NOMEIA `prodpremio` */
-      { id: "prodpremio", nome: "Produtividade e prêmio", curto: "Produtividade", g: "equipe" },
+      { id: "prodpremio", nome: "Produtividade e bonificação", curto: "Produtividade", g: "equipe" },
       { id: "frota", nome: "Frota", g: "ativos" },
       { id: "patrimonio", nome: "Patrimônio", g: "ativos" },
       { id: "financeiro", nome: "Financeiro", curto: "Lançamentos", g: "dinheiro" },
@@ -1701,7 +1701,7 @@
         case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
         case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
-        case "prodpremio": return this.renderProdPremio ? this.renderProdPremio() : this._moduloNaoCarregado("Produtividade e prêmio", "js/prodpremioui.js");
+        case "prodpremio": return this.renderProdPremio ? this.renderProdPremio() : this._moduloNaoCarregado("Produtividade e bonificação", "js/prodpremioui.js");
         case "galeria": return this.renderGaleria();
         /* mesma regra das duas de cima: a tela mora em js/tour360ui.js, que o
            index.html carrega depois deste arquivo. Se faltar, a tela diz qual
@@ -33782,6 +33782,8 @@
         campo("Obra *", sel("g-obra", optsRec(obras, "nome", r.obraId, "— selecionar —"))) +
         '<div class="row">' + campo("Clima (manhã)", sel("g-cmanha", opts(P.rdoClima, r.climaManha || "ensolarado"))) + campo("Clima (tarde)", sel("g-ctarde", opts(P.rdoClima, r.climaTarde || "ensolarado"))) + campo("Condição de trabalho", sel("g-cond", opts(P.rdoCondicao, r.condicao || "praticavel"))) + "</div>" +
         '<div class="row">' + campo("Efetivo direto (nº)", inp("g-efd", r.efetivoDireto)) + campo("Efetivo indireto (nº)", inp("g-efi", r.efetivoIndireto)) + campo("Terceiros / equipes", inp("g-terc", r.terceiros)) + "</div>" +
+        /* bonificação da equipe (js/bonificacaoui.js): presença e etapas do dia, só se a obra está na configuração. Vem primeiro: é o que o encarregado preenche todo dia, e o efetivo por função sai daqui */
+        (this._bonifBlocoRdoHtml ? this._bonifBlocoRdoHtml(r) : "") +
         this._htmlBlocoAtividades() +
         this._htmlBlocoEfetivo() +
         this._htmlBlocoEquip() +
@@ -33858,6 +33860,11 @@
         }
         obj.atividadesItens = buf.ativ;
         obj.efetivo = buf.efe;
+        /* presença, etapas do dia e efetivo por função a partir de quem esteve presente (js/bonificacaoui.js) */
+        if (self._bonifBlocoRdoColetar) {
+          var _erroBn = self._bonifBlocoRdoColetar(obj, buf);
+          if (_erroBn) { UI.toast(_erroBn, "erro"); return false; }
+        }
         obj.equipamentosItens = buf.equip;
         obj.ocorrenciasItens = buf.ocor;
         /* "sem restrições" EXPRESSO: diário em branco não prova que o dia
@@ -33973,7 +33980,7 @@
         }
         /* Um diário precisa registrar ALGUMA coisa: serviço lançado OU resumo
            escrito. Exigir os dois travaria quem só quer anotar o dia parado. */
-        if (!buf.ativ.length && !obj.atividades) {
+        if (!buf.ativ.length && !obj.atividades && !(obj.etapasDia && obj.etapasDia.length)) {
           UI.toast("Lance ao menos um serviço do dia, ou escreva o resumo.", "erro"); return false;
         }
         // Last Planner: diário evidencia execução → conclui a tarefa da semana.
@@ -34018,7 +34025,7 @@
         var ob = lista("obras").filter(function (o) { return o.id === obj.obraId; })[0];
         obj.obraNome = ob ? ob.nome : "";
         return true;
-      }, null, {
+      }, function (objSalvo) { if (self._bonifPosSalvarDiario) self._bonifPosSalvarDiario(objSalvo); }, {
         /* ⚠ ABRIR PARA LER É LIVRE; GRAVAR CONSULTA A REGRA.
          * Este formulário é o único visualizador do módulo — recusar a
          * abertura tirava do encarregado a leitura do próprio diário depois de
@@ -34089,6 +34096,7 @@
       });
       // UI.modal já colocou o form no DOM (síncrono). Liga os blocos e as fotos.
       try { this._ligarBlocosRdo(r, buf); } catch (eB) { console.warn("[rdo] blocos:", eB && eB.message); }
+      try { if (this._bonifBlocoRdoLigar) this._bonifBlocoRdoLigar(r); } catch (eBn) { console.warn("[rdo] bonificação:", eBn && eBn.message); }
 
       /* ---- o número acompanha a OBRA escolhida ----
        * A sequência é por obra, então trocar a obra no seletor tem de trocar
@@ -39103,7 +39111,9 @@
           /* "planejamento e gestão": o único campo dos Dados da empresa que um
              usuário comum pode mudar — e só com esta permissão (Auth.podeEditarGestao).
              Caso de quem faz o planejamento da obra sem ser o dono da conta. */
-          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-editagestao"' + (u.editaGestao ? " checked" : "") + ' style="margin-top:3px"> <span>Pode definir o <b>responsável pelo planejamento e gestão</b><br><span class="muted" style="font-size:12px">Só esse campo dos Dados da empresa, no menu da conta (Planejamento e gestão). Os outros dados continuam só do administrador.</span></span></label>');
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-editagestao"' + (u.editaGestao ? " checked" : "") + ' style="margin-top:3px"> <span>Pode definir o <b>responsável pelo planejamento e gestão</b><br><span class="muted" style="font-size:12px">Só esse campo dos Dados da empresa, no menu da conta (Planejamento e gestão). Os outros dados continuam só do administrador.</span></span></label>'
+          /* bonificação da equipe: ver salário, fator e total de cada pessoa e fechar o mês (Auth.podeGestaoPremio) */
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-gestaopremio"' + (u.gestaoPremio ? " checked" : "") + ' style="margin-top:3px"> <span>Pode ver valores e fechar a bonificação da equipe<br><span class="muted" style="font-size:12px">Salário, fatores e total de cada pessoa no módulo Produtividade e bonificação, e a homologação do mês. Sem isto, quem lança o diário só vê as metas e o andamento.</span></span></label>');
       if (ehTitular) corpo = seletorTipo + '<div id="us-bloco-empresa">' + corpo + '</div>';
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
         /* licença independente: NÃO nasce registro em equipe. Devolver false
@@ -39181,6 +39191,7 @@
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
         obj.autoAprovar = !!(document.getElementById("g-autoaprovar") && document.getElementById("g-autoaprovar").checked);
         obj.editaGestao = !!(document.getElementById("g-editagestao") && document.getElementById("g-editagestao").checked);
+        obj.gestaoPremio = !!(document.getElementById("g-gestaopremio") && document.getElementById("g-gestaopremio").checked);
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
       }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);
@@ -53081,6 +53092,11 @@ renderFolha: function () {
           var acaoRdo = gacao.replace("rdo-", "");
           var rr = Store.obter(eid(), "rdo", id); if (!rr) return;
           var euR = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          /* ⚠ obra na bonificação: enviar sem a presença do dia é recusado (rascunho continua livre) */
+          if (acaoRdo === "enviar" && this._bonifExigePresenca) {
+            var _msgBn = this._bonifExigePresenca(rr);
+            if (_msgBn) { UI.toast(_msgBn, "erro"); return; }
+          }
 
           var incerta = function () {
             return acaoRdo === "aprovar" && typeof RDO !== "undefined" && RDO.autoriaIncerta && RDO.autoriaIncerta(rr);
@@ -53118,6 +53134,7 @@ renderFolha: function () {
                razao social na conta mestre. Ver Aprovacao.nomeDe. */
             var quem = (typeof Aprovacao !== "undefined" && Aprovacao.nomeDe)
               ? Aprovacao.nomeDe(euR) : (euR.nome || euR.email || "—");
+            var _antesBn = rr.estado || "";
             rr.estado = t.estado;
             /* trilha: quem fez o quê e quando. Sem ela, "quem liberou isso?"
                não tem resposta — e é a primeira pergunta quando algo errado
@@ -53134,6 +53151,15 @@ renderFolha: function () {
             if (acaoRdo === "publicar") { rr.publicadoEm = agora; rr.status = "finalizado"; }
             if (acaoRdo === "despublicar") { rr.publicadoEm = ""; }
             Store.salvar(eid(), "rdo", rr);
+            /* ⚠ DIÁRIO APROVADO ALIMENTA O CRONOGRAMA (js/bonificacaoui.js). A aprovação já foi gravada acima e NADA
+               aqui a desfaz: se o avanço não puder ser lançado, a função avisa em toast e o diário segue aprovado. */
+            /* diário aprovado devolvido para revisão: o fim que ele lançou no avanço sai (js/bonificacaoui.js) */
+            if (acaoRdo === "revisar" && (_antesBn === "aprovado" || _antesBn === "publicado" || _antesBn === "publicado_legado") && Gestao._bonifDiarioRevisado) {
+              try { Gestao._bonifDiarioRevisado(rr); } catch (eBn3) { console.warn("[rdo] revisão do avanço:", eBn3 && eBn3.message); }
+            }
+            if (acaoRdo === "aprovar" && Gestao._bonifDiarioAprovado) {
+              try { Gestao._bonifDiarioAprovado(rr); } catch (eBn2) { console.warn("[rdo] avanço pelo diário:", eBn2 && eBn2.message); }
+            }
             App.render();
             var msg = { enviar: "Diário enviado para aprovação.", aprovar: "Diário aprovado.",
                         revisar: "Revisão solicitada — quem escreveu vê o motivo na lista.",

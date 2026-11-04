@@ -137,7 +137,7 @@
         /* prazo vencido sai como o inativo — mas com o recado, para a tela de
            login dizer o porquê (ver `acessoVencido`, acima) */
         if (this.acessoVencido(atual)) { var recado = this.msgAcessoVencido(atual); this.logout(); this._recadoSaida = recado; return null; }
-        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.editaGestao = atual.editaGestao === true; u.gestaoPremio = atual.gestaoPremio === true; u.trocarSenha = atual.trocarSenha === true; u.acessoAte = String(atual.acessoAte || "");
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -396,7 +396,7 @@
             if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
             if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
             var mot = c.legado ? "seguranca" : "";
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
           }
         }
       }
@@ -482,6 +482,12 @@
        ver Nuvem._merge). Guarda de função: a tela e o salvar perguntam aqui,
        não só o menu. */
     podeEditarGestao: function () { var u = this._usuario; if (!u) return false; return this.ehAdmin() || u.editaGestao === true; },
+    /* ⚠ QUEM VÊ DINHEIRO DE PESSOA E FECHA A BONIFICAÇÃO (03/11/2026). Mesmo molde de
+       `podeEditarGestao`: admin ou usuário comum MARCADO em Usuários. Existe separada de `rdo`
+       de propósito: o encarregado que lança o diário entra no módulo Produtividade (ver
+       podeModulo) mas não vê salário, fator nem total de ninguém. Guarda de função: toda ação
+       que grava valor, meta ou fechamento pergunta aqui, não só o botão escondido. */
+    podeGestaoPremio: function () { var u = this._usuario; if (!u) return false; return this.ehAdmin() || u.gestaoPremio === true; },
     papel: function () { return (this._usuario && this._usuario.papel) || (this._usuario ? "admin" : ""); },
     /* ⚠ O NOME DA PESSOA, NAO O DA EMPRESA.
      *
@@ -582,6 +588,10 @@
       if (id === "dashboard" || id === "ajuda" || id === "relatos") return true; // painel, ajuda e suporte sempre acessíveis
       if (id === "usuarios") return false;             // gestão de usuários é exclusiva do admin
       var mods = (this._usuario && this._usuario.modulos) || [];
+      /* ⚠ Produtividade e bonificação: quem lança o diário (`rdo`) precisa entrar para marcar
+         presença e ver as metas. Só entra DEPOIS do Perfis.permite acima, então conta cujo
+         perfil não nomeia o módulo continua sem ele. Valores continuam atrás de podeGestaoPremio. */
+      if (id === "prodpremio" && mods.indexOf("rdo") > -1) return true;
       return mods.indexOf(id) > -1;
     },
     /* ===== ESCOPO POR OBRA =====
@@ -834,7 +844,7 @@
           if (this.acessoVencido(u)) { if (!vencido) vencido = this._erroAcessoVencido(u); continue; }
           if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
           var mot = c.legado ? "seguranca" : "";
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _editaGestao: u.editaGestao === true, _gestaoPremio: u.gestaoPremio === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot, _acessoAte: String(u.acessoAte || "") } };
         }
       }
       return vencido || { ok: false, erro: "Usuário ou senha inválidos." };
@@ -1287,6 +1297,7 @@
         obras: u._obras || null,
         aprovador: u._aprovador === true,
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
+        gestaoPremio: u._gestaoPremio === true,  // pode ver valores e fechar a bonificação da equipe (ver podeGestaoPremio)
         editaGestao: u._editaGestao === true,  // pode definir o responsável pelo planejamento e gestão sem ser admin (ver podeEditarGestao)
         trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)
         motivoTroca: u._motivoTroca || "",      // "seguranca" = a senha estava no formato antigo e foi migrada agora

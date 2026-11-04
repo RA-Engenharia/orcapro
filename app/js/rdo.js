@@ -1266,6 +1266,11 @@
       tour360Id: (r.tour360 && String(r.tour360.docTipo || "") === "tour360")
         ? String(r.tour360.docId || "") : ""
     };
+    /* ⚠ NOME DE TRABALHADOR NÃO VAI AO CLIENTE. `presenca` (quem veio, quem faltou, com nome) e
+       `etapasDia` são da bonificação da equipe (js/bonificacaoui.js). O objeto acima já é uma
+       allowlist e não os leva; este cinto existe para o dia em que alguém trocar a allowlist por um
+       spread "para não esquecer campo". Prova: tools/test-cliente-nao-vaza.js. */
+    delete p.presenca; delete p.etapasDia;
     return p;
   };
 
@@ -1386,6 +1391,9 @@
     novo.fotos = [];
     novo.baseadoEm = o.id || "";
     novo.baseadoEmNumero = o.numero || "";
+    /* ⚠ presença e etapas são FATOS DE UM DIA (js/bonificacaoui.js): copiar a de ontem marcaria hoje todo
+       mundo como presente sem ninguém ter conferido, e pagaria bonificação por um dia que não aconteceu. */
+    delete novo.presenca; delete novo.etapasDia;
     return novo;
   };
 

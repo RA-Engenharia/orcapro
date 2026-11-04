@@ -522,10 +522,17 @@
    * máximo da função: corta no que sobrar e diz por quê na própria linha.
    * `outros` = fechamentos homologados do mesmo mês em outras obras.
    * ------------------------------------------------------------------ */
+  /* ⚠ O FECHAMENTO DA BONIFICAÇÃO (js/bonificacao.js) MORA NA MESMA ENTIDADE
+     (pp_fech) mas é OUTRA conta: o valor dele é carteira + bonificação, não prêmio
+     por serviço. Se o teto do prêmio descontasse esse total, o prêmio máximo
+     da pessoa sairia cortado por um dinheiro que nada tem a ver com ele; se o
+     mês homologado dele travasse a obra, o lançamento do modelo antigo
+     pararia sem motivo. Os dois filtros abaixo existem por isso. */
+  function ehBonificacao(f) { return !!f && (f.tipo === "bonificacao" || String(f.id || "").indexOf("ppb_") === 0); }
   PP.limitarAoTeto = function (linhas, outros) {
     var ja = {};
     arr(outros).forEach(function (f) {
-      if (!f || f.estado !== "homologado") return;
+      if (!f || f.estado !== "homologado" || ehBonificacao(f)) return;
       arr(f.linhas).forEach(function (x) {
         if (!x || x.colaboradorId == null) return;
         ja[x.colaboradorId] = (ja[x.colaboradorId] || 0) + (x.premioCent != null ? num(x.premioCent) : Math.round(100 * num(x.premio)));
@@ -576,7 +583,7 @@
      obra/mês — a porta é reabrir (só gestão). Devolve o fechamento que trava. */
   PP.mesHomologado = function (fechamentos, obraId, competencia) {
     var out = null;
-    arr(fechamentos).forEach(function (f) { if (f && f.estado === "homologado" && f.obraId === obraId && f.competencia === competencia) out = f; });
+    arr(fechamentos).forEach(function (f) { if (f && !ehBonificacao(f) && f.estado === "homologado" && f.obraId === obraId && f.competencia === competencia) out = f; });
     return out;
   };
   PP.MSG_MES_TRAVADO = "Este mês está homologado para esta obra. Reabra o mês (aba Fechamento, só a gestão) para alterar.";
@@ -597,7 +604,7 @@
    * de fora; o que não é do formato não vai para o armazenamento) e as chaves
    * perigosas de objeto são cortadas em qualquer profundidade.
    * ------------------------------------------------------------------ */
-  var CAMPOS_CFG = ["schema", "geradoEm", "empresa", "obra", "aviso", "parametros", "funcoes", "equipes", "obras", "colaboradores", "colaboradoresObs", "servicos", "foraDaEquipe", "exemploMes", "vinculos"];
+  var CAMPOS_CFG = ["schema", "geradoEm", "empresa", "obra", "aviso", "parametros", "funcoes", "equipes", "obras", "colaboradores", "colaboradoresObs", "servicos", "foraDaEquipe", "exemploMes", "vinculos", "bonificacao"];
   function limpar(v, nivel) {
     if (nivel > 8) return null;
     if (Array.isArray(v)) return v.map(function (x) { return limpar(x, nivel + 1); });

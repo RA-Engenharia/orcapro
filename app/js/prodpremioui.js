@@ -659,6 +659,10 @@
         if (atual) {
           if (!arr(dado.colaboradores).length && arr(atual.colaboradores).length) dado.colaboradores = atual.colaboradores;
           if (atual.vinculos && !dado.vinculos) dado.vinculos = atual.vinculos;
+          /* ⚠ A BONIFICAÇÃO (js/bonificacaoui.js) MORA NO MESMO REGISTRO. Reimportar o JSON do modelo antigo
+             substitui o registro inteiro; sem esta linha o salário, os fatores e as metas combinados sumiriam
+             calados. O que já está configurado vale mais que o que vem no arquivo. */
+          if (atual.bonificacao) dado.bonificacao = atual.bonificacao;
           var porId = {}; arr(dado.obras).forEach(function (o) { porId[o.id] = o; }); arr(atual.obras).forEach(function (o) { porId[o.id] = o; });
           dado.obras = Object.keys(porId).map(function (k) { return porId[k]; });
         }
