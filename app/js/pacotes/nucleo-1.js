@@ -17,7 +17,7 @@ iaBackend: "https://187-127-40-14.sslip.io",
 licencaServer: "https://187-127-40-14.sslip.io",
 appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
-versao: "1.2.249",
+versao: "1.2.250",
 schemaVersao: 3,
 ofertaFim: "2026-07-11T23:59:59-03:00",
 planos: {
@@ -13893,6 +13893,7 @@ var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
 if (!lic) return "";
 var lbl, alerta = false;
 if (lic.trial && lic.ativo) { lbl = "Teste grátis: " + (lic.rotulo || "") + " restantes"; alerta = (lic.restanteMs || 0) < 2 * 86400000; }
+else if (lic.trial && lic.pendente) { lbl = "Confirme telefone e e-mail para testar"; alerta = true; }
 else if (lic.trial) { lbl = "Teste encerrado (ativar licença)"; alerta = true; }
 else if (lic.expirada) { lbl = "Licença vencida"; alerta = true; }
 else if (lic.suspensa) { lbl = "Licença suspensa (pagamento)"; alerta = true; }
@@ -14234,8 +14235,10 @@ renderLicenca: function (st) {
 var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
 if (st.trial && st.ativo) {
 html += '<div class="card"><b>' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
+} else if (st.trial && st.pendente) {
+html += '<div class="card"><b>Falta confirmar o seu telefone e o seu e-mail</b><br>O teste de 7 dias começa quando os dois forem confirmados por código. Até lá o app fica só para consulta. Se você já comprou, cole a chave da licença abaixo.</div>';
 } else if (st.trial) {
-html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
+html += '<div class="card"><b>⏰ Seu período de teste terminou</b><br>Seus orçamentos continuam aqui para consulta. ' + ('Ative sua licença') + ' com a chave da compra para voltar a editar e exportar.</div>';
 } else if (st.expirada) {
 html += '<div class="card"><b style="color:#b91c1c">Licença vencida</b>' + (st.expira ? ' em ' + new Date(st.expira).toLocaleDateString("pt-BR") : '') + '<br>' + Util.esc(st.email || "") + '. Para voltar a salvar e exportar, renove sua licença. A renovação vale nesta mesma chave: depois do pagamento, basta abrir o OrçaPRO com internet. Seus dados continuam onde estão.</div>';
 } else if (st.revalidar) {
@@ -77157,36 +77160,259 @@ if (this._timer) clearInterval(this._timer);
 this._timer = setInterval(function () { self.enviar("ping"); }, 5 * 60 * 1000);
 },
 gate: function (aoLiberar) {
-if (!this.ehTrial()) return false;
-var emailOk = function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim()); };
-var rPre = this.reg();
-if (rPre && emailOk(rPre.email)) return false;
-var self = this;
-var nomePre = (rPre && rPre.nome) || "";
-var fonePre = (rPre && rPre.telefone) || "";
-var emailPre = (rPre && rPre.email) || "";
+var s0 = null;
+try { s0 = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e0) { s0 = null; }
+if (!(s0 && s0.trial && s0.pendente)) return false;
+if (this._soConsulta) return false;
+return this.exigirValidacao(aoLiberar);
+},
+exigirValidacao: function (aoLiberar) {
+if (this._cadastroAberto || this._soConsulta) return true;
+var rPre = this.reg() || {};
+var nomePre = rPre.nome || "", fonePre = rPre.telefone || "", emailPre = rPre.email || "";
 try { if (!emailPre && typeof Auth !== "undefined" && Auth.usuario) emailPre = (Auth.usuario() || {}).email || ""; } catch (e) {}
+this._cadastroAberto = true;
+var self = this;
+var liberar = function () { self._cadastroAberto = false; if (typeof aoLiberar === "function") aoLiberar(); };
+this._passoCadastro(liberar, { nome: nomePre, fone: fonePre, email: emailPre }, {});
+this._semFechar();
+return true;
+},
+_botaoSoConsultar: function (aoLiberar) {
+var self = this;
+return { texto: "Só consultar", classe: "ghost", onClick: function () {
+self._soConsulta = true; self._cadastroAberto = false;
+try { UI.fecharModal(); } catch (e) {}
+if (typeof aoLiberar === "function") aoLiberar();
+} };
+},
+_esc: function (v) { return String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); },
+_emailOk: function (v) { return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v || "").trim()); },
+_salvarCadastro: function (d, validado) {
+var r = { nome: d.nome, telefone: d.fone, email: d.email, em: new Date().toISOString() };
+if (validado) r.confirmadoEm = Date.now();
+this.salvarReg(r);
+},
+_fmtFone: function (n) {
+var d = String(n || "").replace(/\D/g, "");
+return d.length === 13 ? "+" + d.slice(0, 2) + " " + d.slice(2, 4) + " " + d.slice(4, 9) + "-" + d.slice(9) : (d ? "+" + d : "");
+},
+_passoCadastro: function (aoLiberar, pre, op) {
+var self = this, esc = this._esc;
+op = op || {};
 var corpo =
-'<p class="muted" style="margin:0 0 12px">Bem-vindo ao <b>teste grátis de 7 dias</b> — sistema completo, sem cartão. Só precisamos saber quem está testando:</p>' +
-'<div class="field"><label>Seu nome *</label><input id="tg-nome" value="' + String(nomePre).replace(/"/g, "&quot;") + '" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
-'<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" value="' + String(fonePre).replace(/"/g, "&quot;") + '" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"></div>' +
-'<div class="field"><label>E-mail *</label><input id="tg-email" value="' + String(emailPre).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
-'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:12.5px;color:var(--texto-fraco);margin-top:6px"><input type="checkbox" id="tg-ok" style="margin-top:3px">Autorizo o contato da RA Engenharia sobre o meu teste e o uso dos meus dados para esse fim (LGPD).</label>';
-UI.modal("🚀 Liberar meu teste grátis", corpo, [
-{ texto: "Já sou cliente: entrar", classe: "ghost", onClick: function () { UI.fecharModal(); self._jaSouCliente(aoLiberar); } },
-{ texto: "Liberar meu teste grátis →", classe: "primary", onClick: function () {
+'<p class="muted" style="margin:0 0 12px">Bem-vindo ao <b>teste grátis de 7 dias</b> — sistema completo, sem cartão. Para começar, informe quem está testando e <b>confirme o seu e-mail e o seu WhatsApp</b> (leva um minuto):</p>' +
+'<div class="field"><label>Seu nome *</label><input id="tg-nome" value="' + esc(pre.nome) + '" placeholder="Nome e sobrenome" autocomplete="name"></div>' +
+'<div class="field"><label>WhatsApp / telefone *</label><input id="tg-fone" value="' + esc(pre.fone) + '" placeholder="(34) 90000-0000" inputmode="tel" autocomplete="tel"><div class="muted" style="font-size:11.5px;margin-top:3px">Use um número de celular com WhatsApp.</div></div>' +
+'<div class="field"><label>E-mail *</label><input id="tg-email" value="' + esc(pre.email) + '" placeholder="voce@empresa.com.br" autocomplete="email"></div>' +
+'<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:12.5px;color:var(--texto-fraco);margin-top:6px"><input type="checkbox" id="tg-ok" style="margin-top:3px">Autorizo o contato da RA Engenharia sobre o meu teste e o uso dos meus dados para esse fim (LGPD).</label>' +
+'<p class="muted" style="font-size:11.5px;margin:8px 0 0">Para evitar o uso repetido do teste, guardamos também um identificador deste aparelho, em formato codificado (hash) — não é possível ler dele nenhum dado seu. Detalhes na Política de Privacidade.</p>';
+var botoesC = [{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar); } }];
+if (!op.legado) botoesC.push(this._botaoSoConsultar(aoLiberar));
+if (op.legado) botoesC.push({ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } });
+botoesC.push(
+{ texto: "Continuar →", classe: "primary", onClick: function () {
 var nome = (UI.el("tg-nome") || {}).value || "", fone = (UI.el("tg-fone") || {}).value || "";
 var email = (UI.el("tg-email") || {}).value || "", ok = (UI.el("tg-ok") || {}).checked;
 if (nome.replace(/\s+/g, " ").trim().length < 3) { UI.toast("Informe o seu nome.", "erro"); return; }
 if (fone.replace(/\D/g, "").length < 10) { UI.toast("Informe um telefone válido com DDD.", "erro"); return; }
-if (!emailOk(email)) { UI.toast("Informe um e-mail válido.", "erro"); return; }
+if (!self._emailOk(email)) { UI.toast("Informe um e-mail válido.", "erro"); return; }
 if (!ok) { UI.toast("Marque o consentimento pra liberar o teste.", "erro"); return; }
-self.salvarReg({ nome: nome.trim(), telefone: fone.trim(), email: email.trim(), em: new Date().toISOString() });
 UI.fecharModal();
+self._iniciarValidacao(aoLiberar, { nome: nome.trim(), fone: fone.trim(), email: email.trim() }, { falta: op.falta || ["telefone", "email"], legado: !!op.legado });
+} });
+UI.modal("🚀 Liberar meu teste grátis", corpo, botoesC);
+},
+_iniciarValidacao: function (aoLiberar, dados, op) {
+var self = this;
+Licenca.canaisTeste(function (c) {
+if (c && c.desligado) {
+if (op.legado) return;
+self._salvarCadastro(dados, false);
+try { Licenca.iniciarFluxoAntigo(); } catch (eFa) {}
+self._cadastroAberto = false;
 if (typeof aoLiberar === "function") aoLiberar();
-} }
+return;
+}
+if (c && c.podeIniciar) { self._passoValidar(aoLiberar, dados, op); return; }
+if (op.legado) {
+UI.toast("Não consegui abrir a validação do telefone e do e-mail agora. Seu teste continua; vamos pedir de novo na próxima abertura.", "erro", 9000);
+return;
+}
+self._canalFora(aoLiberar, dados, op, c);
+});
+},
+_canalFora: function (aoLiberar, dados, op, c) {
+var self = this, srv = "";
+try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
+var semServidor = !c;
+UI.modal("📡 Não consegui enviar o código agora",
+'<p style="margin:0 0 10px">' + (semServidor ? 'Não consegui falar com o servidor.' : 'O envio dos códigos de confirmação está fora do ar neste momento.') + ' <b>Tente novamente em instantes.</b></p>' +
+'<p class="muted" style="margin:0">Se continuar, fale com a RA Engenharia' + (srv ? ' pelo <a href="' + srv + '/planos" target="_blank" rel="noopener">site</a>' : ' pelo site') + '. O teste só começa depois de confirmar o telefone e o e-mail.</p>', [
+{ texto: "Corrigir dados", classe: "ghost", onClick: function () { UI.fecharModal(); self._passoCadastro(aoLiberar, { nome: dados.nome, fone: dados.fone, email: dados.email }, op); self._semFechar(); } },
+{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar); } },
+(op.legado ? { texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } } : self._botaoSoConsultar(aoLiberar)),
+{ texto: "Tentar novamente", classe: "primary", onClick: function () { UI.fecharModal(); self._iniciarValidacao(aoLiberar, dados, op); self._semFechar(); } }
 ]);
 this._semFechar();
+},
+_passoValidar: function (aoLiberar, dados, op) {
+var self = this, esc = this._esc;
+var S = { ref: "", emailOk: op.falta.indexOf("email") < 0, telOk: op.falta.indexOf("telefone") < 0, cod: null, timer: null, ate: 0, fim: false };
+var parar = function () { S.fim = true; if (S.timer) { clearInterval(S.timer); S.timer = null; } };
+var base = function () { return { nome: dados.nome, telefone: dados.fone, email: dados.email }; };
+var ver = function (id) { return UI.el(id); };
+var resultado = function (d) {
+if (d && d.ref) S.ref = d.ref;
+if (!d || !d.ok) return;
+if (d.falta) { S.emailOk = d.falta.indexOf("email") < 0; S.telOk = d.falta.indexOf("telefone") < 0; }
+pintar();
+if (d.validado === true && d.liberado !== false) {
+parar(); self._cadastroAberto = false;
+self._salvarCadastro(dados, true);
+UI.fecharModal();
+if (d.expirado) { self._encerrado(aoLiberar); return; }
+UI.toast("Telefone e e-mail confirmados. Seu teste está liberado.", "ok");
+if (typeof aoLiberar === "function") aoLiberar();
+}
+};
+var pintar = function () {
+var e = ver("tv-email-st"), t = ver("tv-tel-st");
+if (e) e.innerHTML = S.emailOk ? '<b style="color:var(--verde,#16a34a)">✓ E-mail confirmado</b>' : '<span class="muted">Aguardando o código do e-mail</span>';
+if (t) t.innerHTML = S.telOk ? '<b style="color:var(--verde,#16a34a)">✓ Telefone confirmado</b>' : '<span class="muted">Aguardando a sua mensagem no WhatsApp…</span>';
+var eb = ver("tv-email-bloco"), tb = ver("tv-tel-bloco");
+if (eb && S.emailOk) eb.style.display = "none";
+if (tb && S.telOk) tb.style.display = "none";
+};
+var consultar = function () {
+if (S.fim || !S.cod || S.telOk) return;
+if (!ver("tv-raiz")) { parar(); return; }
+if (Date.now() > S.ate) { var t0 = ver("tv-tel-st"); if (t0) t0.innerHTML = '<span style="color:#b91c1c">O código venceu.</span> Gere um código novo.'; parar(); var nb = ver("tv-novo-cod"); if (nb) nb.style.display = ""; return; }
+var o = base(); o.destino = dados.fone; o.codigo = S.cod.codigo; o.ref = S.ref;
+Licenca.acompanharTelefoneTeste(o, function (d) {
+if (S.fim) return;
+var tSt = ver("tv-tel-st");
+if (!d) { if (tSt && !S.telOk) tSt.innerHTML = '<span style="color:#b45309">Sem resposta do servidor agora — tentando de novo…</span>'; return; }
+if (d.ok === false && !d.vencido) { if (tSt) tSt.innerHTML = '<span style="color:#b91c1c">' + esc(d.erro || "Não consegui consultar agora.") + '</span>'; return; }
+if (d.aguardando && tSt && (Date.now() - (S.cod.criadoLocal || Date.now())) > 180000) {
+tSt.innerHTML = '<span style="color:#b45309">Ainda aguardando a sua mensagem. Confira se você enviou <b>do número informado</b>, ' + esc(dados.fone) + ', toque em <b>Gerar código novo</b> se preferir recomeçar, ou fale com a RA Engenharia pelo site.</span>';
+}
+if (d && d.vencido) { var t1 = ver("tv-tel-st"); if (t1) t1.innerHTML = '<span style="color:#b91c1c">O código venceu.</span> Gere um código novo.'; parar(); var nb2 = ver("tv-novo-cod"); if (nb2) nb2.style.display = ""; return; }
+if (d && d.ok && d.codigoOk) resultado(d);
+});
+};
+var pedirTelefone = function (depois) {
+var o = base(); o.canal = "telefone"; o.destino = dados.fone;
+Licenca.pedirCodigoTeste(o, function (d) {
+if (!d) { UI.toast("Sem resposta do servidor. Tente de novo em instantes.", "erro", 8000); return; }
+if (d.expirado) { parar(); UI.fecharModal(); self._encerrado(aoLiberar); return; }
+if (!d.ok) { UI.toast(d.erro || "Não consegui gerar o código do WhatsApp agora. Tente novamente em instantes.", "erro", 9000); return; }
+S.cod = d; S.cod.criadoLocal = Date.now(); S.ate = Date.now() + (Number(d.validadeMin) || 15) * 60000;
+if (typeof depois === "function") depois();
+});
+};
+var ehMovel = function () { try { return (typeof window !== "undefined") && ((window.matchMedia && window.matchMedia("(pointer: coarse)").matches) || (Number(window.innerWidth) > 0 && window.innerWidth < 600)); } catch (e) { return false; } };
+var desenharTel = function () {
+var d = S.cod, box = ver("tv-tel-corpo"); if (!box || !d) return;
+var qr = (typeof QR !== "undefined" && QR.svg) ? QR.svg(d.link, { tamanhoPx: 150 }) : "";
+var botaoZap = '<a href="' + esc(d.link) + '" target="_blank" rel="noopener" class="btn primary" style="display:inline-block;padding:9px 16px;border-radius:8px;text-decoration:none">Abrir o WhatsApp</a>';
+var codigo = '<p style="margin:0 0 8px;font-size:20px;letter-spacing:1px;font-weight:700;text-align:center;font-family:var(--fonte-num,monospace)">' + esc(d.texto) + '</p>';
+var rodape = '<p class="muted" style="font-size:11.5px;margin:8px 0 0">O código vale ' + esc(d.validadeMin || 15) + ' minutos. Use um número de celular com WhatsApp.</p>';
+if (ehMovel()) {
+box.innerHTML =
+'<p style="margin:0 0 8px;font-size:13px">Toque no botão para abrir o WhatsApp e envie a mensagem, <b>do telefone que você informou</b>, ' + esc(dados.fone) + ':</p>' +
+'<div style="text-align:center;margin:0 0 8px">' + botaoZap + '</div>' + codigo +
+'<div style="text-align:center"><button type="button" class="btn ghost" id="tv-qr-toggle">Mostrar QR</button></div>' +
+'<div id="tv-qr-caixa" style="display:none;margin-top:8px;text-align:center"><div style="display:inline-block;background:#fff;padding:4px;border-radius:8px">' + qr + '</div></div>' + rodape;
+var tg = ver("tv-qr-toggle");
+if (tg) tg.onclick = function () { var cx = ver("tv-qr-caixa"); if (!cx) return; var abre = cx.style.display === "none"; cx.style.display = abre ? "" : "none"; tg.textContent = abre ? "Esconder QR" : "Mostrar QR"; };
+return;
+}
+box.innerHTML =
+'<p style="margin:0 0 6px;font-size:13px">Envie esta mensagem pelo WhatsApp, <b>do telefone que você informou</b>, para o número da RA (' + esc(self._fmtFone(d.numero)) + '):</p>' + codigo +
+'<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center">' +
+(qr ? '<div style="background:#fff;padding:4px;border-radius:8px" title="Aponte a câmera do celular">' + qr + '</div>' : '') +
+'<div style="font-size:12.5px;max-width:230px">' + (qr ? 'No computador, aponte a câmera do celular para o QR ao lado. ' : '') +
+'<span style="display:block;margin-top:6px">' + botaoZap + '</span></div></div>' + rodape;
+};
+var corpo = '<div id="tv-raiz">' +
+'<div id="tv-email-bloco" style="' + (S.emailOk ? 'display:none;' : '') + 'margin:0 0 14px;padding:10px 12px;border:1px solid var(--linha,#d8e0ea);border-radius:8px">' +
+'<b>1. E-mail</b> <span class="muted" style="font-size:12px">— ' + (op.legado ? 'toque em "Enviar código" para receber um código de 6 dígitos em ' : 'enviamos um código de 6 dígitos para ') + esc(dados.email) + ' (olhe também o spam)</span>' +
+'<div class="field" style="margin-top:8px"><input id="tg-cod" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" style="font-size:20px;letter-spacing:5px;text-align:center"></div>' +
+'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" class="btn ghost" id="tv-email-reenviar">' + (op.legado ? 'Enviar código' : 'Reenviar e-mail') + '</button><button type="button" class="btn primary" id="tv-email-confirmar">Confirmar e-mail</button></div></div>' +
+'<div id="tv-tel-bloco" style="' + (S.telOk ? 'display:none;' : '') + 'margin:0 0 10px;padding:10px 12px;border:1px solid var(--linha,#d8e0ea);border-radius:8px">' +
+'<b>2. WhatsApp</b> <span class="muted" style="font-size:12px">— ' + esc(dados.fone) + '</span>' +
+'<div id="tv-tel-corpo" style="margin-top:8px"><span class="muted">Gerando o seu código…</span></div>' +
+'<button type="button" class="btn ghost" id="tv-novo-cod" style="margin-top:8px">Gerar código novo</button></div>' +
+'<div style="font-size:12.5px;display:flex;flex-direction:column;gap:2px"><div id="tv-email-st"></div><div id="tv-tel-st"></div></div></div>';
+var botoes = [
+{ texto: "Corrigir dados", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); self._passoCadastro(aoLiberar, { nome: dados.nome, fone: dados.fone, email: dados.email }, op); self._semFechar(); } },
+{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); self._cadastroAberto = false; self._jaSouCliente(aoLiberar || function () { try { if (typeof App !== "undefined" && App.render) App.render(); } catch (e) {} }); } }
+];
+if (op.legado) botoes.push({ texto: "Agora não", classe: "ghost", onClick: function () { parar(); UI.fecharModal(); } });
+else { var bSc = this._botaoSoConsultar(aoLiberar), fSc = bSc.onClick; bSc.onClick = function () { parar(); fSc(); }; botoes.push(bSc); }
+UI.modal("✉️ Confirme o seu e-mail e o seu WhatsApp", corpo, botoes);
+this._semFechar();
+pintar();
+var pedirEmail = function (silencioso) {
+var o = base(); o.canal = "email"; o.destino = dados.email;
+Licenca.pedirCodigoTeste(o, function (d) {
+if (!d) { UI.toast("Sem resposta do servidor. Tente de novo em instantes.", "erro", 8000); return; }
+if (d.expirado) { parar(); UI.fecharModal(); self._encerrado(aoLiberar); return; }
+if (!d.ok && d.espereSeg) { if (!silencioso) UI.toast(d.erro, "erro", 8000); return; }
+if (!d.ok) { UI.toast(d.erro || "Não consegui enviar o e-mail agora. Tente novamente em instantes.", "erro", 9000); return; }
+if (!silencioso) UI.toast("Código reenviado para o seu e-mail.", "ok");
+});
+};
+if (!S.emailOk) {
+if (!op.legado) pedirEmail(true);
+var bc = ver("tv-email-confirmar"), br = ver("tv-email-reenviar");
+if (br) br.onclick = function () { pedirEmail(false); };
+if (bc) bc.onclick = function () {
+if (S.enviando) return;
+var cod = ((ver("tg-cod") || {}).value || "").replace(/\D/g, "");
+if (cod.length !== 6) { UI.toast("Digite os 6 números do código do e-mail.", "erro"); return; }
+S.enviando = true;
+var o = base(); o.canal = "email"; o.destino = dados.email; o.codigo = cod; o.ref = S.ref;
+Licenca.confirmarCodigoTeste(o, function (d) {
+S.enviando = false;
+if (!d) { UI.toast("Sem resposta do servidor. Tente de novo — o código continua valendo.", "erro", 8000); return; }
+if (d.ok) { resultado(d); return; }
+UI.toast(d.erro || "Não consegui confirmar o código.", "erro", 8000);
+});
+};
+}
+if (!S.telOk) {
+var iniciarTel = function () {
+S.fim = false;
+pedirTelefone(function () { desenharTel(); if (S.timer) clearInterval(S.timer); S.timer = setInterval(consultar, 3000); });
+};
+iniciarTel();
+var nc = ver("tv-novo-cod"); if (nc) nc.onclick = iniciarTel;
+}
+},
+_encerrado: function (aoLiberar) {
+var srv = "";
+try { srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : ""; } catch (e) {}
+UI.modal("⏰ Seu período de teste terminou",
+'<p style="margin:0 0 10px">O teste grátis deste computador já foi usado. Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+'<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
+{ texto: "Já tenho a chave", classe: "ghost", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); try { if (typeof App !== "undefined" && App.abrirLicenca) App.abrirLicenca(); } catch (e2) {} } },
+{ texto: "Continuar só para consulta", classe: "primary", onClick: function () { UI.fecharModal(); if (typeof aoLiberar === "function") aoLiberar(); } }
+]);
+this._semFechar();
+},
+validarContatos: function (op) {
+op = op || {};
+var r = this.reg() || {};
+var falta = (op.falta && op.falta.length) ? op.falta : ["telefone", "email"];
+var temFone = String(r.telefone || "").replace(/\D/g, "").length >= 10;
+if (!this._emailOk(r.email) || !temFone) {
+var self = this;
+this._passoCadastro(null, { nome: r.nome || "", fone: r.telefone || "", email: r.email || "" }, { legado: true, falta: falta });
+return true;
+}
+this._iniciarValidacao(null, { nome: r.nome || "", fone: r.telefone, email: r.email }, { falta: falta, legado: true });
 return true;
 },
 _jaSouCliente: function (aoLiberar) {
@@ -78037,8 +78263,19 @@ var Licenca = {
 _ler: function () { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } },
 _gravar: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
 chave: function () { var l = this._ler() || {}; return l.chave || ""; },
+_modoVisor: function () {
+try {
+if (typeof location === "undefined") return false;
+var q = String(location.search || ""), h = String(location.hash || "");
+if (/[?&]demo=1/.test(q)) return true;
+if (/^#placa=[a-z2-9]{6,16}/.test(h)) return true;
+if (/[?&]t=[a-f0-9]{12,40}/.test(h + q) && /(^|[#&/])rv\b/i.test(h || q)) return true;
+} catch (e) {}
+return false;
+},
 sincronizarDevice: function () {
 try {
+if (this._modoVisor()) return;
 if (typeof fetch === "undefined" || typeof localStorage === "undefined") return;
 var cur = null; try { cur = localStorage.getItem("orcapro:deviceid"); } catch (e) {}
 fetch("/__device" + (cur ? "?seed=" + encodeURIComponent(cur) : ""))
@@ -78048,13 +78285,95 @@ if (!j || !j.ok || !j.id) return;
 try { if (localStorage.getItem("orcapro:deviceid") !== j.id && !cur) localStorage.setItem("orcapro:deviceid", j.id); } catch (e2) {}
 })["catch"](function () {});
 } catch (e3) {}
+try { this._idbDevSync(); } catch (e4) {}
+},
+_cookieDev: function () {
+try {
+if (typeof document === "undefined") return "";
+var m = String(document.cookie || "").match(/(?:^|;\s*)orcapro_dev=([\w-]{8,64})/);
+return m ? m[1] : "";
+} catch (e) { return ""; }
+},
+_gravarCookieDev: function (d) {
+try { if (typeof document !== "undefined" && d && d !== "nodev") document.cookie = "orcapro_dev=" + d + "; max-age=315360000; path=/; SameSite=Lax"; } catch (e) {}
 },
 deviceId: function () {
-try {
-var k = "orcapro:deviceid", d = localStorage.getItem(k);
-if (!d) { d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)); localStorage.setItem(k, d); }
+var k = "orcapro:deviceid", d = "", lsOk = true;
+if (this._modoVisor()) return "nodev";
+try { d = localStorage.getItem(k) || ""; } catch (e) { lsOk = false; }
+if (!d) d = this._cookieDev();
+if (!d && this._devMem) d = this._devMem;
+if (!d) {
+if (!lsOk) return "nodev";
+d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+try { localStorage.setItem(k, d); } catch (e2) { return "nodev"; }
+this._devNovo = true;
+} else if (lsOk) {
+try { if (localStorage.getItem(k) !== d) localStorage.setItem(k, d); } catch (e3) {}
+}
+this._gravarCookieDev(d);
 return d;
-} catch (e) { return "nodev"; }
+},
+_idbDev: function (cb) {
+try {
+if (typeof indexedDB === "undefined") { cb(""); return; }
+var rq = indexedDB.open("orcapro-ident", 1);
+rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
+rq.onerror = function () { cb(""); };
+rq.onsuccess = function () {
+try {
+var g = rq.result.transaction("k", "readonly").objectStore("k").get("deviceid");
+g.onsuccess = function () { cb(typeof g.result === "string" ? g.result : ""); };
+g.onerror = function () { cb(""); };
+} catch (e) { cb(""); }
+};
+} catch (e2) { cb(""); }
+},
+_idbGravarDev: function (id) {
+try {
+if (typeof indexedDB === "undefined" || !id || id === "nodev") return;
+var rq = indexedDB.open("orcapro-ident", 1);
+rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
+rq.onsuccess = function () { try { rq.result.transaction("k", "readwrite").objectStore("k").put(id, "deviceid"); } catch (e) {} };
+} catch (e2) {}
+},
+_idbDevSync: function () {
+var self = this;
+this._idbDev(function (guardado) {
+try {
+var atual = self.deviceId();
+if (guardado && guardado !== atual) {
+var l = self._ler() || {};
+if ((self._devNovo || atual === "nodev") && !(l.verificado && l.deviceId === atual)) {
+try { localStorage.setItem("orcapro:deviceid", guardado); } catch (e) { self._devMem = guardado; }
+self._gravarCookieDev(guardado); self._devNovo = false;
+} else self._idbGravarDev(atual);
+} else if (!guardado && atual !== "nodev") self._idbGravarDev(atual);
+} catch (e2) {}
+});
+},
+_fnv: function (str, seed) {
+var h = seed >>> 0, i;
+for (i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; }
+return ("00000000" + h.toString(16)).slice(-8);
+},
+_fp: function () {
+try {
+var nv = (typeof navigator !== "undefined") ? navigator : {}, sc = (typeof screen !== "undefined") ? screen : {};
+var txt = [nv.userAgent, nv.language, nv.platform, sc.width + "x" + sc.height + "x" + sc.colorDepth, new Date().getTimezoneOffset(), nv.hardwareConcurrency, nv.deviceMemory].join("|");
+return this._fnv(txt, 2166136261) + this._fnv(txt, 5381);
+} catch (e) { return ""; }
+},
+_hw: function (cb) {
+var self = this;
+if (this._hwCache !== undefined) { cb(this._hwCache); return; }
+try {
+if (typeof fetch === "undefined") { cb(null); return; }
+var feito = false, fim = function (v) { if (feito) return; feito = true; self._hwCache = v; cb(v); };
+var tm = setTimeout(function () { fim(null); }, 8000); if (tm && tm.unref) tm.unref();
+fetch("/__hw").then(function (r) { return r.ok ? r.json() : null; })
+.then(function (j) { fim(j && j.ok ? { hw: j.hw || "", hwm: j.hwm || "" } : null); })["catch"](function () { fim(null); });
+} catch (e) { cb(null); }
 },
 _servidor: function () { return (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
 _ehV2: function (chave) { return String(chave || "").indexOf("v2.") === 0; },
@@ -78187,19 +78506,109 @@ cb({ ok: true, mudouRenovacao: mudouR });
 }
 }, function () { cb({ ok: true, offline: true }); });
 },
-registrarTeste: function () {
-try {
-var self = this, srv = this._servidor(); if (!srv || typeof fetch === "undefined") return;
-fetch(srv + "/api/teste", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: this.deviceId() }) })
-.then(function (r) { return r.json(); })
-.then(function (d) {
-try {
-if (d && d.trialInicio) { var l = self._ler() || {}; if (!l.trialServidor || d.trialInicio < l.trialServidor) { l.trialServidor = d.trialInicio; self._gravar(l); } }
-localStorage.setItem("orcapro:teste_pingado", "1");
-} catch (e) {}
-}).catch(function () {});
-} catch (e) {}
+_veredito: function () {
+try { var v = JSON.parse(localStorage.getItem("orcapro:testectl") || "null"); return (v && typeof v === "object") ? v : null; } catch (e) { return null; }
 },
+_gravarVeredito: function (v) { try { localStorage.setItem("orcapro:testectl", JSON.stringify(v)); } catch (e) {} },
+_aplicarVeredito: function (d) {
+if (!d || d.semVeredito || d.pago || d.desligado) return false;
+var encerrado = d.expirado === true && Number(d.trialInicio) > 0;
+if (d.ok !== true && !encerrado) return false;
+var antes = this._veredito(), v = antes || {}, mudou = false;
+if (Number(d.trialInicio) > 0) {
+var ini = Number(d.trialInicio);
+v = { inicio: ini, fim: Number(d.trialFim) > ini ? Number(d.trialFim) : ini + TRIAL_MS, expirado: d.expirado === true, motivo: String(d.motivo || ""),
+confirmado: d.confirmado === true, validado: d.validado !== false, falta: (d.falta && d.falta.length !== undefined) ? d.falta : [],
+precisaConfirmar: d.precisaConfirmar === true, diasUsados: Number(d.diasUsados) || 0, em: agora() };
+try { var l = this._ler() || {}; if (!l.trialServidor || ini < l.trialServidor) { l.trialServidor = ini; this._gravar(l); } } catch (e) {}
+mudou = !antes || antes.inicio !== v.inicio || antes.fim !== v.fim || antes.expirado !== v.expirado || antes.motivo !== v.motivo ||
+antes.validado !== v.validado || antes.precisaConfirmar !== v.precisaConfirmar;
+} else if (d.precisaConfirmar === true) {
+mudou = !antes || antes.precisaConfirmar !== true || Number(antes.inicio) > 0;
+v = { precisaConfirmar: true, falta: d.falta || ["telefone", "email"], em: agora() };
+}
+else return false;
+this._gravarVeredito(v);
+return mudou;
+},
+_regTeste: function () { try { return JSON.parse(localStorage.getItem("orcapro:trialreg") || "null"); } catch (e) { return null; } },
+_idsTeste: function (cb) {
+var self = this, dev = this.deviceId();
+this._hw(function (h) {
+var o = { ctl: 2, fp: self._fp() };
+if (dev && dev !== "nodev") o.deviceId = dev;
+if (h) { if (h.hw) o.hw = h.hw; if (h.hwm) o.hwm = h.hwm; }
+try { if (typeof CONFIG !== "undefined" && CONFIG.versao) o.v = CONFIG.versao; } catch (e) {}
+cb(o);
+});
+},
+_postTeste: function (rota, corpo, cb) {
+var srv = this._servidor();
+if (!srv || typeof fetch === "undefined") { cb(null); return; }
+var feito = false, tm = null, fim = function (d) { if (feito) return; feito = true; try { clearTimeout(tm); } catch (e) {} cb(d); };
+tm = setTimeout(function () { fim(null); }, 15000); if (tm && tm.unref) tm.unref();
+try {
+fetch(srv + rota, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+.then(function (r) {
+return r.json().then(function (d) { return d; }, function () { return r && r.status === 404 ? { ok: true, desligado: true } : null; });
+}).then(function (d) { fim(d || null); }, function () { fim(null); });
+} catch (e2) { fim(null); }
+},
+registrarTeste: function (cb) {
+cb = cb || function () {};
+try {
+var self = this;
+if (!this._servidor() || typeof fetch === "undefined") { cb(null, false); return; }
+this._idsTeste(function (o) {
+var reg = self._regTeste() || {}, l = self._ler() || {};
+if (reg.telefone) o.telefone = String(reg.telefone);
+if (reg.email) o.email = String(reg.email);
+if (reg.nome) o.nome = String(reg.nome);
+if (l.chave) o.chave = l.chave;
+self._postTeste("/api/teste", o, function (d) {
+var mudou = self._aplicarVeredito(d);
+try { if (d && d.ok) localStorage.setItem("orcapro:teste_pingado", "1"); } catch (e) {}
+cb(d, mudou);
+});
+});
+} catch (e) { cb(null, false); }
+},
+canaisTeste: function (cb) {
+this._postTeste("/api/teste/canais", { ctl: 2 }, function (d) {
+if (d && d.desligado) { cb({ desligado: true }); return; }
+cb(d && d.ok && d.canais ? d.canais : null);
+});
+},
+pedirCodigoTeste: function (o, cb) {
+var self = this;
+this._idsTeste(function (ids) {
+ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino;
+ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
+self._postTeste("/api/teste/codigo", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+});
+},
+confirmarCodigoTeste: function (o, cb) {
+var self = this;
+this._idsTeste(function (ids) {
+ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino; ids.codigo = o.codigo;
+ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || ""; ids.ref = o.ref || "";
+self._postTeste("/api/teste/confirmar", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+});
+},
+acompanharTelefoneTeste: function (o, cb) {
+var self = this;
+this._idsTeste(function (ids) {
+ids.canal = "telefone"; ids.destino = o.destino; ids.codigo = o.codigo; ids.ref = o.ref || "";
+ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
+self._postTeste("/api/teste/telefone/estado", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+});
+},
+iniciarFluxoAntigo: function () {
+var t = agora();
+this._gravarVeredito({ inicio: t, fim: t + TRIAL_MS, expirado: false, motivo: "ok", confirmado: false, validado: true, falta: [], precisaConfirmar: false, diasUsados: 0, em: t, antigo: true });
+},
+testePendente: function () { try { var s = this.status(); return !!(s && s.trial && s.pendente); } catch (e) { return false; } },
+testeEncerrado: function () { try { var s = this.status(); return !!(s && s.trial && s.expirado); } catch (e) { return false; } },
 emitirIndependente: function (nome, email, usuariosEmpresa, cb) {
 var self = this, srv = this._servidor(), l = this._ler() || {};
 if (!srv || !l.chave || typeof fetch === "undefined") { cb({ ok: false, erro: "Emitir licença independente precisa de internet." }); return; }
@@ -78300,10 +78709,23 @@ return this._com({ ativo: false, trial: false, revalidar: true, email: l.email, 
 }
 }
 var ini = l.trialServidor || l.trialInicio;
-if (!ini) { ini = agora(); l.trialInicio = ini; this._gravar(l); }
-var fim = ini + TRIAL_MS;
+var fim = ini ? ini + TRIAL_MS : 0;
+var v = this._veredito(), encerradoPeloServidor = false, motivo = "", validar = false, faltaVal = [];
+if (v && Number(v.inicio) > 0) {
+ini = Number(v.inicio);
+fim = Number(v.fim) > ini ? Number(v.fim) : ini + TRIAL_MS;
+encerradoPeloServidor = v.expirado === true;
+motivo = String(v.motivo || "");
+validar = v.validado === false;
+faltaVal = v.falta || [];
+} else if ((v && v.precisaConfirmar === true) || !ini) {
+return this._com({ ativo: false, trial: true, expirado: false, pendente: true, expira: 0, restanteMs: 0, rotulo: "aguardando confirmação",
+testeMotivo: "confirmar", testeValidar: false, testeFalta: (v && v.falta) || ["telefone", "email"] }, {});
+}
 var rest = fim - agora();
-return this._com({ ativo: rest > 0, trial: true, expira: fim, expirado: rest <= 0, restanteMs: Math.max(0, rest), rotulo: rotuloTempo(rest) }, {});
+var vencido = encerradoPeloServidor || rest <= 0;
+return this._com({ ativo: !vencido, trial: true, expira: fim, expirado: vencido, restanteMs: vencido ? 0 : Math.max(0, rest), rotulo: rotuloTempo(vencido ? 0 : rest),
+testeMotivo: motivo, testeValidar: validar && !vencido, testeFalta: faltaVal }, {});
 }
 };
 global.Licenca = Licenca;

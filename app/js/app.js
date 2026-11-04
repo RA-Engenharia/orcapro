@@ -330,7 +330,7 @@
       // licença: trial -> registra/ancora no servidor; licenciado -> revalida (renova carência / detecta bloqueio)
       try {
         if (typeof Licenca !== "undefined") {
-          if (Licenca.status().trial) Licenca.registrarTeste();
+          if (Licenca.status().trial) Licenca.registrarTeste(function (dTeste, mudouTeste) { try { self._aposVeredito(dTeste, mudouTeste); } catch (eVd) {} });
           else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } else if (r && (r.mudouEquipe || r.mudouRenovacao)) { try { self.render(); } catch (e2) {} } });
         }
       } catch (e) {}
@@ -3043,7 +3043,11 @@
             self.render();
           } else if (typeof UI !== "undefined") {
             UI.toast("Não deu pra ativar por este link: " + ((r && r.erro) || "erro de conexão") + ". Tente com internet ou fale com o administrador.", "erro");
-            self.render(); // volta ao fluxo normal (trial) sem travar
+            /* ⚠ link que NÃO ativou (chave inventada, vencida, sem internet) não pode deixar o cadastro do teste pulado: o gate rodava só
+               quando `!_ativandoPorLink`, então `?lic=qualquercoisa` abria o app sem teste confirmado. Agora, falhou a ativação, o
+               gate decide pelo status do teste (sem teste confirmado → cadastro + dois códigos). */
+            try { if (typeof Telemetria !== "undefined" && Telemetria.gate(function () { Telemetria.iniciar(); self.render(); })) return; } catch (eGl) {}
+            self.render();
           }
         });
       } catch (e) {}
@@ -16663,6 +16667,43 @@
       if (s.suspensa) return true;
       return !s.ativo;                    // licenciado: bloqueia se não está ativo (vencida/carência/outra máquina)
     },
+    /* O servidor respondeu sobre o teste deste aparelho (js/licenca.js registrarTeste → server/teste-controle-srv.js).
+       Aqui só se AVISA — quem bloqueia é o status() + _trialBloqueado, que já leem o veredito gravado.
+       Uma vez por abertura, para não virar insistência. */
+    _aposVeredito: function (d, mudou) {
+      if (typeof Licenca === "undefined" || !Licenca.status) return;
+      var s = Licenca.status(), self0 = this;
+      if (!s || !s.trial) return;
+      if (mudou) { try { this.render(); } catch (eR) {} }
+      /* o servidor respondeu "não há teste confirmado para este aparelho" (instalação limpa, cadastro escrito à mão, ou o admin
+         desbloqueou): abre SEMPRE a validação obrigatória — nunca libera pelo relógio local. */
+      if (s.pendente) {
+        if (typeof Telemetria !== "undefined" && Telemetria.exigirValidacao) Telemetria.exigirValidacao(function () { try { Telemetria.iniciar(); } catch (eT) {} self0.render(); });
+        return;
+      }
+      if (s.expirado) {
+        if (this._avisouTesteEncerrado) return;
+        this._avisouTesteEncerrado = true;
+        this._avisoTesteEncerrado();
+      } else if (s.testeValidar && !this._pediuValidacao) {
+        /* já estava testando antes da confirmação por código: valida telefone e e-mail agora. Obrigatório quando os dois
+           canais estão no ar; se algum canal ou o servidor falhar, deixa seguir (quem está no prazo nunca fica trancado
+           por defeito nosso) e pede de novo na próxima abertura. */
+        this._pediuValidacao = true;
+        if (typeof Telemetria !== "undefined" && Telemetria.validarContatos) Telemetria.validarContatos({ falta: s.testeFalta });
+      }
+    },
+    /* "Seu período de teste terminou" — a porta de compra e a do contato. Não mostra dado de nenhum cadastro anterior. */
+    _avisoTesteEncerrado: function () {
+      var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var self = this;
+      UI.modal("⏰ Seu período de teste terminou",
+        '<p style="margin:0 0 10px">Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+        '<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Já tenho a chave", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirLicenca(); } }
+      ]);
+    },
     _avisoTrial: function () {
       var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
       var msg;
@@ -16682,7 +16723,8 @@
       if (s.expirada) msg = "Sua licença venceu. Renove para continuar salvando e exportando.";
       else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
       else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
-      else if (s.trial && s.expirado) msg = "⏰ Seu teste grátis de 7 dias terminou. Ative uma licença (🔑) para continuar salvando e exportando — seus orçamentos estão preservados.";
+      else if (s.trial && s.pendente) msg = "Falta confirmar o seu telefone e o seu e-mail para começar o teste. Enquanto isso o app fica só para consulta.";
+      else if (s.trial && s.expirado) msg = "⏰ Seu período de teste terminou. Ative uma licença (🔑) para continuar editando e exportando — seus orçamentos continuam aqui para consulta.";
       else msg = "" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Ative sua licença (🔑) para salvar e exportar.";
       UI.toast(msg, "erro");
       try { this.abrirLicenca(); } catch (e) {}

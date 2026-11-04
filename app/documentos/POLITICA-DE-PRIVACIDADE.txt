@@ -1,6 +1,14 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.17 — vigente a partir de 21/10/2026
+Versão 1.18 — vigente a partir de 04/11/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.18: o TESTE GRÁTIS passou a ter controle contra uso repetido
+(item 3.2). Para começar o teste é preciso informar nome, telefone e e-mail e
+CONFIRMAR o telefone e o e-mail por código. Guardamos também um identificador
+do aparelho em formato codificado (hash), sem o qual não seria possível evitar
+que o mesmo teste seja usado várias vezes. Passados 12 meses sem uso, apagamos
+o que identifica você e guardamos por 5 anos só impressões codificadas, para o
+teste não ser repetido (item 6).
 
 O que mudou na 1.17: o ORÇAMENTO POR IA do Escopo Inteligente (item 4.1). Quando
 você gera um orçamento descrevendo a obra, o texto do escopo passa pelo nosso
@@ -194,6 +202,40 @@ minutos enquanto estiver aberto:
   · quais módulos foram abertos e quantas vezes.
   · No período de teste, em vez dos dados de licença, vão o nome, o telefone e
     o e-mail que você informou no cadastro do teste — com aceite explícito.
+  · Também no período de teste, para evitar o uso repetido do teste grátis
+    (fraude), o programa envia:
+      - um identificador do aparelho em formato codificado (hash), gerado a
+        partir de dados do próprio computador (o identificador da placa e o do
+        sistema, quando existem) e do navegador. Só o hash é enviado e
+        guardado: não é possível ler dele esses dados nem identificar você, e o
+        valor original nunca sai do seu computador;
+      - um número ALEATÓRIO que identifica este programa no seu aparelho. Para
+        o teste não recomeçar se um dos lugares for limpo, ele é gravado em três
+        lugares do navegador: o armazenamento local, um cookie chamado
+        "orcapro_dev" (que só serve para isso) e o IndexedDB. Esse número é
+        enviado ao nosso servidor como é (não tem relação com os seus dados). O
+        servidor guarda o hash dele no controle do teste e, à parte, o próprio
+        número com a data do primeiro uso, por até 5 anos (item 6). Quem apenas abre o link de uma obra
+        (QR da placa ou do visor) ou a vitrine do site não recebe esse número,
+        nem o cookie, nem o IndexedDB;
+      - o endereço IP da conexão, usado só no momento do pedido para limitar
+        quantos códigos e testes saem de uma mesma origem (impedir abuso). Ele
+        não é guardado junto ao seu teste: fica numa contagem temporária que o
+        servidor apaga em até 1 hora;
+      - a CONFIRMAÇÃO do telefone e do e-mail, por código: o e-mail por um
+        código que enviamos para ele; o telefone por uma mensagem que VOCÊ
+        manda, pelo WhatsApp, ao número da RA Engenharia, com um código mostrado
+        na tela do programa. Nessa mensagem recebemos o número de quem enviou,
+        só para conferir com o telefone que você informou; a mensagem de
+        confirmação não entra no atendimento nem é lida por pessoa ou por
+        inteligência artificial. A Meta Platforms, dona do WhatsApp, recebe essa
+        mensagem como recebe qualquer outra (itens 4.4 e 8);
+      - o registro de cada confirmação (data e canal) e dos dias em que o
+        programa foi aberto durante o teste.
+    Esses dados ficam ligados ao seu teste e só servem para controlar o teste
+    grátis e o contato sobre ele. Se o teste já tiver sido usado neste
+    computador, o programa mostra que o período de teste terminou, sem
+    informar dados de nenhum cadastro anterior.
 
   · NÃO vai conteúdo de orçamento, de obra nem de cliente.
   · Este envio é automático e não pode ser desligado dentro do programa: a
@@ -892,6 +934,21 @@ Base legal: seu consentimento, manifestado pelo uso do recurso.
     solicitar, apagamos em até 30 dias.
   · Registros de uso e licença (item 3.2): 12 meses contados do último acesso,
     apagados automaticamente do nosso servidor depois disso.
+  · Controle do teste grátis (item 3.2): enquanto o teste está em uso, e por 12
+    meses contados do último uso, guardamos o nome, o telefone, o e-mail, as
+    confirmações (data e canal), os dias de uso e o identificador codificado do
+    aparelho. Passados os 12 meses sem uso, APAGAMOS o nome, o telefone e o
+    e-mail legíveis e o registro de uso. Para impedir que o mesmo teste grátis
+    seja usado de novo, guardamos por mais 5 (cinco) anos SOMENTE impressões
+    codificadas (hash, calculado com uma chave que só o nosso servidor tem) do
+    telefone, do e-mail, do identificador do aparelho e do hardware, a data em
+    que o teste começou e a informação de que ele foi encerrado; dessas
+    impressões não é possível recuperar o telefone nem o e-mail. A base legal é
+    a mesma do item 3.2 (execução do contrato e legítimo interesse, prevenção
+    de fraude, art. 7º, V e IX). Passados os 5 anos, apagamos também isso. O
+    número aleatório do programa (item 3.2) fica com a data do primeiro uso por
+    até 5 anos. Teste que nunca chegou a começar é apagado em 7 dias se não teve
+    contato confirmado e em 12 meses se teve.
   · Contagem e custo da modelagem por comando (item 4.1): 12 meses, apagados
     automaticamente do nosso servidor depois disso.
   · Portal do Cliente (item 4.2): enquanto a obra estiver publicada. Excluir a

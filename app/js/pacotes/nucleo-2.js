@@ -56279,7 +56279,7 @@ if (typeof Carregar !== "undefined" && Carregar.grupo) Carregar.grupo("bim").the
 if (typeof AutoUpdate !== "undefined") { setTimeout(function () { AutoUpdate.verificar(); }, 1800); }
 try {
 if (typeof Licenca !== "undefined") {
-if (Licenca.status().trial) Licenca.registrarTeste();
+if (Licenca.status().trial) Licenca.registrarTeste(function (dTeste, mudouTeste) { try { self._aposVeredito(dTeste, mudouTeste); } catch (eVd) {} });
 else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } else if (r && (r.mudouEquipe || r.mudouRenovacao)) { try { self.render(); } catch (e2) {} } });
 }
 } catch (e) {}
@@ -58138,6 +58138,7 @@ try { self._conectarNuvemLicenca(); } catch (e) {}
 self.render();
 } else if (typeof UI !== "undefined") {
 UI.toast("Não deu pra ativar por este link: " + ((r && r.erro) || "erro de conexão") + ". Tente com internet ou fale com o administrador.", "erro");
+try { if (typeof Telemetria !== "undefined" && Telemetria.gate(function () { Telemetria.iniciar(); self.render(); })) return; } catch (eGl) {}
 self.render();
 }
 });
@@ -67499,6 +67500,34 @@ if (s.trial) return !s.ativo;
 if (s.suspensa) return true;
 return !s.ativo;
 },
+_aposVeredito: function (d, mudou) {
+if (typeof Licenca === "undefined" || !Licenca.status) return;
+var s = Licenca.status(), self0 = this;
+if (!s || !s.trial) return;
+if (mudou) { try { this.render(); } catch (eR) {} }
+if (s.pendente) {
+if (typeof Telemetria !== "undefined" && Telemetria.exigirValidacao) Telemetria.exigirValidacao(function () { try { Telemetria.iniciar(); } catch (eT) {} self0.render(); });
+return;
+}
+if (s.expirado) {
+if (this._avisouTesteEncerrado) return;
+this._avisouTesteEncerrado = true;
+this._avisoTesteEncerrado();
+} else if (s.testeValidar && !this._pediuValidacao) {
+this._pediuValidacao = true;
+if (typeof Telemetria !== "undefined" && Telemetria.validarContatos) Telemetria.validarContatos({ falta: s.testeFalta });
+}
+},
+_avisoTesteEncerrado: function () {
+var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+var self = this;
+UI.modal("⏰ Seu período de teste terminou",
+'<p style="margin:0 0 10px">Para continuar editando e exportando, ative uma licença do OrçaPRO.</p>' +
+'<p class="muted" style="margin:0">O que você já montou continua aqui para consulta. ' + (srv ? '<a href="' + srv + '/planos" target="_blank" rel="noopener">Ver planos e comprar</a> · ' : '') + 'ou fale com a RA Engenharia pelo site.</p>', [
+{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+{ texto: "Já tenho a chave", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirLicenca(); } }
+]);
+},
 _avisoTrial: function () {
 var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
 var msg;
@@ -67514,7 +67543,8 @@ return;
 if (s.expirada) msg = "Sua licença venceu. Renove para continuar salvando e exportando.";
 else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
 else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
-else if (s.trial && s.expirado) msg = "⏰ Seu teste grátis de 7 dias terminou. Ative uma licença (🔑) para continuar salvando e exportando — seus orçamentos estão preservados.";
+else if (s.trial && s.pendente) msg = "Falta confirmar o seu telefone e o seu e-mail para começar o teste. Enquanto isso o app fica só para consulta.";
+else if (s.trial && s.expirado) msg = "⏰ Seu período de teste terminou. Ative uma licença (🔑) para continuar editando e exportando — seus orçamentos continuam aqui para consulta.";
 else msg = "" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Ative sua licença (🔑) para salvar e exportar.";
 UI.toast(msg, "erro");
 try { this.abrirLicenca(); } catch (e) {}

@@ -33,7 +33,14 @@ forma de plataforma (isto é, oferecer o próprio OrçaPRO como serviço).
 3. TESTE GRATUITO, PAGAMENTO E GARANTIA
 
 O programa pode ser testado gratuitamente por 7 (sete) dias, com os recursos
-liberados. Terminado o teste, é preciso ativar com uma chave de licença válida.
+liberados. O teste é concedido por pessoa e por aparelho: para começar, é
+preciso informar nome, telefone e e-mail e confirmar o telefone e o e-mail por
+código. Para impedir que o mesmo teste seja usado mais de uma vez, o programa
+guarda um identificador codificado (hash) do aparelho, conforme a Política de
+Privacidade (item 3.2); reinstalar o programa ou trocar o telefone ou o e-mail
+informados no mesmo aparelho não abre um novo teste. Terminado o teste, o que
+você montou continua visível para consulta, mas só é possível editar e exportar
+com uma chave de licença válida ativada.
 
 O pagamento é feito por PIX ou boleto. Confirmado o pagamento, a chave de
 licença e o link de download são entregues digitalmente.

@@ -384,6 +384,7 @@
               var lbl, alerta = false;
               // LOTE 5: trial 7 dias completo — mostra o tempo restante e acende no fim
               if (lic.trial && lic.ativo) { lbl = "Teste grátis: " + (lic.rotulo || "") + " restantes"; alerta = (lic.restanteMs || 0) < 2 * 86400000; }
+              else if (lic.trial && lic.pendente) { lbl = "Confirme telefone e e-mail para testar"; alerta = true; }
               else if (lic.trial) { lbl = "Teste encerrado (ativar licença)"; alerta = true; }
               else if (lic.expirada) { lbl = "Licença vencida"; alerta = true; }
               else if (lic.suspensa) { lbl = "Licença suspensa (pagamento)"; alerta = true; }
@@ -863,8 +864,10 @@
       var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
       if (st.trial && st.ativo) {
         html += '<div class="card"><b>' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
+      } else if (st.trial && st.pendente) {
+        html += '<div class="card"><b>Falta confirmar o seu telefone e o seu e-mail</b><br>O teste de 7 dias começa quando os dois forem confirmados por código. Até lá o app fica só para consulta. Se você já comprou, cole a chave da licença abaixo.</div>';
       } else if (st.trial) {
-        html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
+        html += '<div class="card"><b>⏰ Seu período de teste terminou</b><br>Seus orçamentos continuam aqui para consulta. ' + ('Ative sua licença') + ' com a chave da compra para voltar a editar e exportar.</div>';
       } else if (st.expirada) {
         /* a renovação vale NESTA chave: o texto não pode sugerir chave nova */
         /* ⚠ NÃO DIZ MAIS "renove COM A RA ENGENHARIA". Enquanto renovar era

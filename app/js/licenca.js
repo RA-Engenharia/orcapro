@@ -37,8 +37,22 @@
        sendo o mesmo dispositivo); depois, storage limpo é RESTAURADO do
        disco. No PWA (sem servidor local) o fetch falha calado e fica o
        comportamento de sempre — o cerco fecha onde há onde ancorar. */
+    /* ⚠ VISOR, VITRINE E PLACA NÃO CRIAM IDENTIDADE. Quem abre o link do QR de uma obra (#rv, #placa) ou a vitrine (?demo=1) não é
+       testador nem cliente: criar deviceId, cookie e IndexedDB nele seria gravar no aparelho de um visitante um identificador que a
+       política não prevê para esse uso. (Os mesmos três curto-circuitos do App.iniciar.) */
+    _modoVisor: function () {
+      try {
+        if (typeof location === "undefined") return false;
+        var q = String(location.search || ""), h = String(location.hash || "");
+        if (/[?&]demo=1/.test(q)) return true;
+        if (/^#placa=[a-z2-9]{6,16}/.test(h)) return true;
+        if (/[?&]t=[a-f0-9]{12,40}/.test(h + q) && /(^|[#&/])rv\b/i.test(h || q)) return true;
+      } catch (e) {}
+      return false;
+    },
     sincronizarDevice: function () {
       try {
+        if (this._modoVisor()) return;
         if (typeof fetch === "undefined" || typeof localStorage === "undefined") return;
         var cur = null; try { cur = localStorage.getItem("orcapro:deviceid"); } catch (e) {}
         fetch("/__device" + (cur ? "?seed=" + encodeURIComponent(cur) : ""))
@@ -48,15 +62,117 @@
             try { if (localStorage.getItem("orcapro:deviceid") !== j.id && !cur) localStorage.setItem("orcapro:deviceid", j.id); } catch (e2) {}
           })["catch"](function () {});
       } catch (e3) {}
+      try { this._idbDevSync(); } catch (e4) {}
     },
 
+    /* ===== 03/11/2026 — A IDENTIDADE DO APARELHO EM TRÊS LUGARES =====
+       Só no localStorage, qualquer limpeza parcial (cookies, extensão, "limpar
+       dados do site" que poupa o resto) gerava outro id e, com ele, outro teste
+       de 7 dias. Agora o id vive no localStorage, num cookie e no IndexedDB, e
+       cada um restaura os outros. NÃO é identidade de hardware (o navegador não
+       dá acesso a isso): quem baixa o programa de novo é pego pelo hash do
+       hardware (/__hw, ver server/hwid.js); no celular/PWA este é o melhor sinal.
+       ⚠ "nodev" e id vazio NUNCA contam como identidade — o servidor os ignora
+         (server/teste-controle-srv.js idValido), senão um aparelho sem
+         armazenamento travaria todos os outros. */
+    _cookieDev: function () {
+      try {
+        if (typeof document === "undefined") return "";
+        var m = String(document.cookie || "").match(/(?:^|;\s*)orcapro_dev=([\w-]{8,64})/);
+        return m ? m[1] : "";
+      } catch (e) { return ""; }
+    },
+    _gravarCookieDev: function (d) {
+      try { if (typeof document !== "undefined" && d && d !== "nodev") document.cookie = "orcapro_dev=" + d + "; max-age=315360000; path=/; SameSite=Lax"; } catch (e) {}
+    },
     // ID do dispositivo (gerado 1x e guardado) — base da trava anti-compartilhamento
     deviceId: function () {
+      var k = "orcapro:deviceid", d = "", lsOk = true;
+      if (this._modoVisor()) return "nodev";          // visor/vitrine/placa: nada é criado nem gravado (ver _modoVisor)
+      try { d = localStorage.getItem(k) || ""; } catch (e) { lsOk = false; }
+      if (!d) d = this._cookieDev();
+      if (!d && this._devMem) d = this._devMem;
+      if (!d) {
+        if (!lsOk) return "nodev";
+        d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
+        try { localStorage.setItem(k, d); } catch (e2) { return "nodev"; }
+        this._devNovo = true;
+      } else if (lsOk) {
+        try { if (localStorage.getItem(k) !== d) localStorage.setItem(k, d); } catch (e3) {}
+      }
+      this._gravarCookieDev(d);
+      return d;
+    },
+    /* o terceiro lugar: IndexedDB (sobrevive a "limpar cookies"). Nunca lança. */
+    _idbDev: function (cb) {
       try {
-        var k = "orcapro:deviceid", d = localStorage.getItem(k);
-        if (!d) { d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)); localStorage.setItem(k, d); }
-        return d;
-      } catch (e) { return "nodev"; }
+        if (typeof indexedDB === "undefined") { cb(""); return; }
+        var rq = indexedDB.open("orcapro-ident", 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
+        rq.onerror = function () { cb(""); };
+        rq.onsuccess = function () {
+          try {
+            var g = rq.result.transaction("k", "readonly").objectStore("k").get("deviceid");
+            g.onsuccess = function () { cb(typeof g.result === "string" ? g.result : ""); };
+            g.onerror = function () { cb(""); };
+          } catch (e) { cb(""); }
+        };
+      } catch (e2) { cb(""); }
+    },
+    _idbGravarDev: function (id) {
+      try {
+        if (typeof indexedDB === "undefined" || !id || id === "nodev") return;
+        var rq = indexedDB.open("orcapro-ident", 1);
+        rq.onupgradeneeded = function () { try { rq.result.createObjectStore("k"); } catch (e) {} };
+        rq.onsuccess = function () { try { rq.result.transaction("k", "readwrite").objectStore("k").put(id, "deviceid"); } catch (e) {} };
+      } catch (e2) {}
+    },
+    _idbDevSync: function () {
+      var self = this;
+      this._idbDev(function (guardado) {
+        try {
+          var atual = self.deviceId();
+          if (guardado && guardado !== atual) {
+            /* o id foi SORTEADO agora (nada no localStorage nem no cookie) e o IndexedDB guarda o de verdade:
+               adota o antigo — mas nunca se uma licença já está presa ao id de agora */
+            var l = self._ler() || {};
+            if ((self._devNovo || atual === "nodev") && !(l.verificado && l.deviceId === atual)) {
+              try { localStorage.setItem("orcapro:deviceid", guardado); } catch (e) { self._devMem = guardado; }
+              self._gravarCookieDev(guardado); self._devNovo = false;
+            } else self._idbGravarDev(atual);
+          } else if (!guardado && atual !== "nodev") self._idbGravarDev(atual);
+        } catch (e2) {}
+      });
+    },
+    /* sinal FRACO: impressão digital do navegador. Aparelhos iguais no mesmo
+       escritório dão a mesma — por isso o servidor só marca "suspeito" no painel
+       e NUNCA bloqueia por ela. 16 hex (dois FNV-1a de 32 bits com sementes diferentes). */
+    _fnv: function (str, seed) {
+      var h = seed >>> 0, i;
+      for (i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; }
+      return ("00000000" + h.toString(16)).slice(-8);
+    },
+    _fp: function () {
+      try {
+        var nv = (typeof navigator !== "undefined") ? navigator : {}, sc = (typeof screen !== "undefined") ? screen : {};
+        var txt = [nv.userAgent, nv.language, nv.platform, sc.width + "x" + sc.height + "x" + sc.colorDepth, new Date().getTimezoneOffset(), nv.hardwareConcurrency, nv.deviceMemory].join("|");
+        return this._fnv(txt, 2166136261) + this._fnv(txt, 5381);
+      } catch (e) { return ""; }
+    },
+    /* o ID DE HARDWARE, em hash, que o servidor LOCAL calcula (/__hw → server/hwid.js).
+       No PWA/celular a rota não existe: volta null e fica o resto. 4 s de teto. */
+    _hw: function (cb) {
+      var self = this;
+      if (this._hwCache !== undefined) { cb(this._hwCache); return; }
+      try {
+        if (typeof fetch === "undefined") { cb(null); return; }
+        var feito = false, fim = function (v) { if (feito) return; feito = true; self._hwCache = v; cb(v); };
+        /* até 8 s: o 1º cálculo do ID de hardware (PowerShell/reg) leva ~0,5 s numa máquina boa e bem mais numa ocupada — o veredito
+           do teste ESPERA o hash (registrarTeste só pergunta ao servidor depois), senão o 1º contato iria sem a placa */
+        var tm = setTimeout(function () { fim(null); }, 8000); if (tm && tm.unref) tm.unref();
+        fetch("/__hw").then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) { fim(j && j.ok ? { hw: j.hw || "", hwm: j.hwm || "" } : null); })["catch"](function () { fim(null); });
+      } catch (e) { cb(null); }
     },
     _servidor: function () { return (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
     _ehV2: function (chave) { return String(chave || "").indexOf("v2.") === 0; },
@@ -258,20 +374,138 @@
           }
         }, function () { cb({ ok: true, offline: true }); });
     },
-    // Ping de teste + ancora o início do trial no servidor (por dispositivo)
-    registrarTeste: function () {
-      try {
-        var self = this, srv = this._servidor(); if (!srv || typeof fetch === "undefined") return;
-        fetch(srv + "/api/teste", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: this.deviceId() }) })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            try {
-              if (d && d.trialInicio) { var l = self._ler() || {}; if (!l.trialServidor || d.trialInicio < l.trialServidor) { l.trialServidor = d.trialInicio; self._gravar(l); } }
-              localStorage.setItem("orcapro:teste_pingado", "1");
-            } catch (e) {}
-          }).catch(function () {});
-      } catch (e) {}
+    /* ===== 03/11/2026 — O VEREDITO DO TESTE VEM DO SERVIDOR =====
+       Antes: o servidor só devolvia o início por deviceId e nunca recusava nada;
+       quem reinstalava e trocava o telefone ganhava 7 dias novos. Agora o
+       servidor (server/teste-controle-srv.js) liga telefone, e-mail, aparelho e
+       hardware ao MESMO teste e devolve {trialInicio, trialFim, expirado, motivo}.
+       O app OBEDECE e guarda o ÚLTIMO veredito (orcapro:testectl): ficar offline
+       não devolve teste novo, e servidor fora do ar não trava quem está no prazo
+       (sem resposta = vale o último veredito, ou o relógio local de sempre).
+       Nada disso toca licença paga: o status() só olha o veredito no ramo do teste. */
+    _veredito: function () {
+      try { var v = JSON.parse(localStorage.getItem("orcapro:testectl") || "null"); return (v && typeof v === "object") ? v : null; } catch (e) { return null; }
     },
+    _gravarVeredito: function (v) { try { localStorage.setItem("orcapro:testectl", JSON.stringify(v)); } catch (e) {} },
+    /* true se mudou o que o app sabe. Resposta sem veredito (servidor com defeito, semVeredito) NÃO muda nada. */
+    _aplicarVeredito: function (d) {
+      if (!d || d.semVeredito || d.pago || d.desligado) return false;
+      var encerrado = d.expirado === true && Number(d.trialInicio) > 0;
+      if (d.ok !== true && !encerrado) return false;
+      var antes = this._veredito(), v = antes || {}, mudou = false;
+      if (Number(d.trialInicio) > 0) {
+        var ini = Number(d.trialInicio);
+        v = { inicio: ini, fim: Number(d.trialFim) > ini ? Number(d.trialFim) : ini + TRIAL_MS, expirado: d.expirado === true, motivo: String(d.motivo || ""),
+          confirmado: d.confirmado === true, validado: d.validado !== false, falta: (d.falta && d.falta.length !== undefined) ? d.falta : [],
+          precisaConfirmar: d.precisaConfirmar === true, diasUsados: Number(d.diasUsados) || 0, em: agora() };
+        /* o relógio antigo (trialServidor) só desce — nunca dá dia a quem já tinha */
+        try { var l = this._ler() || {}; if (!l.trialServidor || ini < l.trialServidor) { l.trialServidor = ini; this._gravar(l); } } catch (e) {}
+        mudou = !antes || antes.inicio !== v.inicio || antes.fim !== v.fim || antes.expirado !== v.expirado || antes.motivo !== v.motivo ||
+          antes.validado !== v.validado || antes.precisaConfirmar !== v.precisaConfirmar;
+      } else if (d.precisaConfirmar === true) {
+        /* ⚠ O SERVIDOR ALCANÇÁVEL DIZ QUE NÃO HÁ TESTE para este aparelho: o veredito local (inclusive um "encerrado" antigo) é
+           APAGADO. Foi o que faltava quando o admin desbloqueia: o servidor passa a pedir confirmação e o app continuava
+           preso ao encerrado de antes. Também derruba um veredito forjado à mão no navegador. */
+        mudou = !antes || antes.precisaConfirmar !== true || Number(antes.inicio) > 0;
+        v = { precisaConfirmar: true, falta: d.falta || ["telefone", "email"], em: agora() };
+      }
+      else return false;
+      this._gravarVeredito(v);
+      return mudou;
+    },
+    _regTeste: function () { try { return JSON.parse(localStorage.getItem("orcapro:trialreg") || "null"); } catch (e) { return null; } },
+    _idsTeste: function (cb) {
+      var self = this, dev = this.deviceId();
+      this._hw(function (h) {
+        var o = { ctl: 2, fp: self._fp() };
+        if (dev && dev !== "nodev") o.deviceId = dev;
+        if (h) { if (h.hw) o.hw = h.hw; if (h.hwm) o.hwm = h.hwm; }
+        try { if (typeof CONFIG !== "undefined" && CONFIG.versao) o.v = CONFIG.versao; } catch (e) {}
+        cb(o);
+      });
+    },
+    /* POST com teto de 15 s; qualquer falha devolve null (nunca lança, nunca trava) */
+    _postTeste: function (rota, corpo, cb) {
+      var srv = this._servidor();
+      if (!srv || typeof fetch === "undefined") { cb(null); return; }
+      var feito = false, tm = null, fim = function (d) { if (feito) return; feito = true; try { clearTimeout(tm); } catch (e) {} cb(d); };
+      tm = setTimeout(function () { fim(null); }, 15000); if (tm && tm.unref) tm.unref();
+      try {
+        fetch(srv + rota, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+          .then(function (r) {
+            /* servidor ANTIGO (sem o controle do teste): a rota nova responde 404 text/plain — isso é "desligado", não "sem resposta" */
+            return r.json().then(function (d) { return d; }, function () { return r && r.status === 404 ? { ok: true, desligado: true } : null; });
+          }).then(function (d) { fim(d || null); }, function () { fim(null); });
+      } catch (e2) { fim(null); }
+    },
+    // Ping de teste: ancora o início no servidor e traz o veredito. cb(resposta|null, mudou) — opcional.
+    registrarTeste: function (cb) {
+      cb = cb || function () {};
+      try {
+        var self = this;
+        if (!this._servidor() || typeof fetch === "undefined") { cb(null, false); return; }
+        this._idsTeste(function (o) {
+          var reg = self._regTeste() || {}, l = self._ler() || {};
+          if (reg.telefone) o.telefone = String(reg.telefone);
+          if (reg.email) o.email = String(reg.email);
+          if (reg.nome) o.nome = String(reg.nome);
+          /* o telefone/e-mail aqui são só DIGITADOS: o servidor os guarda como "não confirmados" e NUNCA liga o aparelho a
+             nenhum registro por causa deles (só o código prova) */
+          if (l.chave) o.chave = l.chave;
+          self._postTeste("/api/teste", o, function (d) {
+            var mudou = self._aplicarVeredito(d);
+            try { if (d && d.ok) localStorage.setItem("orcapro:teste_pingado", "1"); } catch (e) {}
+            cb(d, mudou);
+          });
+        });
+      } catch (e) { cb(null, false); }
+    },
+    /* quais canais de código existem agora ({email, telefone}); null = servidor não respondeu → só e-mail */
+    canaisTeste: function (cb) {
+      this._postTeste("/api/teste/canais", { ctl: 2 }, function (d) {
+        if (d && d.desligado) { cb({ desligado: true }); return; }       // controle desligado no servidor (ou servidor antigo): fluxo antigo
+        cb(d && d.ok && d.canais ? d.canais : null);
+      });
+    },
+    /* o: {canal: "email"|"telefone", destino, nome, telefone, email}. cb(resposta|null). Resposta de "teste encerrado" já vira veredito. */
+    pedirCodigoTeste: function (o, cb) {
+      var self = this;
+      this._idsTeste(function (ids) {
+        ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino;
+        ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
+        self._postTeste("/api/teste/codigo", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+      });
+    },
+    /* o + {codigo}. Confirmado = o servidor já devolve o veredito (teste novo, ou o antigo herdado). */
+    confirmarCodigoTeste: function (o, cb) {
+      var self = this;
+      this._idsTeste(function (ids) {
+        ids.canal = o.canal === "telefone" ? "telefone" : "email"; ids.destino = o.destino; ids.codigo = o.codigo;
+        ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || ""; ids.ref = o.ref || "";
+        self._postTeste("/api/teste/confirmar", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+      });
+    },
+    /* O TELEFONE se confirma pelo WhatsApp (a pessoa manda "ORCAPRO-123456"; a ponte confere o remetente real).
+       Esta consulta pergunta ao servidor se a ponte já confirmou; ele aplica a confirmação ao teste e devolve o veredito.
+       o: {destino, codigo, nome, telefone, email, ref}. cb({aguardando}|{vencido}|veredito|null). Nunca confirma sozinho. */
+    acompanharTelefoneTeste: function (o, cb) {
+      var self = this;
+      this._idsTeste(function (ids) {
+        ids.canal = "telefone"; ids.destino = o.destino; ids.codigo = o.codigo; ids.ref = o.ref || "";
+        ids.nome = o.nome || ""; ids.telefone = o.telefone || ""; ids.email = o.email || "";
+        self._postTeste("/api/teste/telefone/estado", ids, function (d) { try { self._aplicarVeredito(d); } catch (e) {} cb(d); });
+      });
+    },
+    /* SERVIDOR SEM O CONTROLE (desligado, ou servidor antigo): volta ao fluxo de antes — 7 dias a partir de agora, sem códigos.
+       O servidor antigo, ao responder /api/teste, ainda pode devolver um início mais antigo, que prevalece. */
+    iniciarFluxoAntigo: function () {
+      var t = agora();
+      this._gravarVeredito({ inicio: t, fim: t + TRIAL_MS, expirado: false, motivo: "ok", confirmado: false, validado: true, falta: [], precisaConfirmar: false, diasUsados: 0, em: t, antigo: true });
+    },
+    /* o teste deste aparelho acabou? (para a tela não prender quem já está encerrado) */
+    /* instalação sem teste ainda (falta confirmar telefone e e-mail)? */
+    testePendente: function () { try { var s = this.status(); return !!(s && s.trial && s.pendente); } catch (e) { return false; } },
+    testeEncerrado: function () { try { var s = this.status(); return !!(s && s.trial && s.expirado); } catch (e) { return false; } },
 
     /* O titular com cota emite, de dentro do app, uma licença independente
        (server/licencas-filhas.js). A chave INTEIRA volta só nesta resposta: é a
@@ -411,10 +645,33 @@
       }
       // trial: usa o início ancorado no servidor, se houver
       var ini = l.trialServidor || l.trialInicio;
-      if (!ini) { ini = agora(); l.trialInicio = ini; this._gravar(l); }
-      var fim = ini + TRIAL_MS;
+      var fim = ini ? ini + TRIAL_MS : 0;
+      /* O VEREDITO DO SERVIDOR (server/teste-controle-srv.js) MANDA: o início e o fim são os dele (o mais antigo
+         entre telefone, e-mail, aparelho e hardware; mais os dias que a RA liberou), e "encerrado" fica
+         encerrado enquanto o servidor não disser o contrário — ficar offline não devolve teste. */
+      var v = this._veredito(), encerradoPeloServidor = false, motivo = "", validar = false, faltaVal = [];
+      if (v && Number(v.inicio) > 0) {
+        ini = Number(v.inicio);
+        fim = Number(v.fim) > ini ? Number(v.fim) : ini + TRIAL_MS;
+        encerradoPeloServidor = v.expirado === true;
+        motivo = String(v.motivo || "");
+        /* no prazo mas sem os DOIS códigos (telefone e e-mail) confirmados: o app PEDE a validação; o relógio não para nem reinicia */
+        validar = v.validado === false;
+        faltaVal = v.falta || [];
+      } else if ((v && v.precisaConfirmar === true) || !ini) {
+        /* ⚠ SEM VEREDITO DE INÍCIO DO SERVIDOR NÃO HÁ TESTE. Antes, status() inventava um relógio local de 7 dias para qualquer
+           instalação nova/limpa — era o que a burla `?lic=qualquercoisa` (que pula o cadastro) e o `trialreg` escrito à mão
+           aproveitavam. Agora o teste novo só existe com início CONFIRMADO pelo servidor (os dois códigos). Quem já testava
+           antes tem a âncora velha (trialServidor/trialInicio) e segue pelo relógio dele até o servidor responder: servidor
+           fora do ar não trava quem está no prazo. Servidor ALCANÇÁVEL dizendo "não há teste" (precisaConfirmar) vale mais
+           que a âncora velha. */
+        return this._com({ ativo: false, trial: true, expirado: false, pendente: true, expira: 0, restanteMs: 0, rotulo: "aguardando confirmação",
+          testeMotivo: "confirmar", testeValidar: false, testeFalta: (v && v.falta) || ["telefone", "email"] }, {});
+      }
       var rest = fim - agora();
-      return this._com({ ativo: rest > 0, trial: true, expira: fim, expirado: rest <= 0, restanteMs: Math.max(0, rest), rotulo: rotuloTempo(rest) }, {});
+      var vencido = encerradoPeloServidor || rest <= 0;
+      return this._com({ ativo: !vencido, trial: true, expira: fim, expirado: vencido, restanteMs: vencido ? 0 : Math.max(0, rest), rotulo: rotuloTempo(vencido ? 0 : rest),
+        testeMotivo: motivo, testeValidar: validar && !vencido, testeFalta: faltaVal }, {});
     }
   };
 
